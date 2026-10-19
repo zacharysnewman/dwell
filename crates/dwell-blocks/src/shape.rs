@@ -16,6 +16,35 @@ pub fn faces_of(shape: &ShapeInfo) -> &'static [ShapeFace] {
     &SHAPE_FACES[first..first + usize::from(shape.face_count)]
 }
 
+/// The same shape turned upside down (mirrored in y): hanging ↔ upright. A shape whose mirror image
+/// is not in the table (none today) is returned as it is.
+pub fn turned_over(shape: &'static ShapeInfo) -> &'static ShapeInfo {
+    static MIRROR: std::sync::OnceLock<Vec<u16>> = std::sync::OnceLock::new();
+    let table = MIRROR.get_or_init(|| {
+        (0..SHAPES.len())
+            .map(|i| {
+                let a = &SHAPES[i];
+                SHAPES
+                    .iter()
+                    .position(|b| {
+                        b.face_count > 0
+                            && b.inverted != a.inverted
+                            && b.corners == a.corners
+                            && b.points == a.points
+                            && b.fan == a.fan
+                            && b.diagonal == a.diagonal
+                    })
+                    .unwrap_or(i) as u16
+            })
+            .collect()
+    });
+    // Its row in SHAPES (a shape from elsewhere is returned as it is).
+    match SHAPES.iter().position(|s| std::ptr::eq(s, shape)) {
+        Some(i) => &SHAPES[usize::from(table[i])],
+        None => shape,
+    }
+}
+
 /// The solid's extent in y at a horizontal point within the cell.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct SolidSpan {
@@ -152,6 +181,9 @@ fn segment_hits_triangle(p: V, q: V, a: V, b: V, c: V) -> bool {
 
 /// Height of the surface (cell units) at (x, z): the planar triangle the point lies in.
 fn surface_height(s: &ShapeInfo, x: f32, z: f32) -> f32 {
+    if s.fan {
+        return fan_height(s, x, z);
+    }
     let h = |i: usize| f32::from(s.corners[i]) * 0.5;
     if s.diagonal == 0 {
         // NW–SE
@@ -165,6 +197,26 @@ fn surface_height(s: &ShapeInfo, x: f32, z: f32) -> f32 {
         h(0) + (h(1) - h(0)) * x + (h(3) - h(0)) * z
     } else {
         h(2) + (h(3) - h(2)) * (1.0 - x) + (h(1) - h(2)) * (1.0 - z)
+    }
+}
+
+/// A ridge shape's surface: in the quadrant holding (x, z), the triangle of its corner K, the
+/// centre C and the edge midpoint on the point's side of the K–C diagonal.
+fn fan_height(s: &ShapeInfo, x: f32, z: f32) -> f32 {
+    let p = |r: usize, c: usize| f32::from(s.points[r][c]) * 0.25;
+    let (kc, kx) = if x >= 0.5 { (2, 1.0) } else { (0, 0.0) };
+    let (kr, kz) = if z >= 0.5 { (2, 1.0) } else { (0, 0.0) };
+    // Distances from K toward the centre along x and z, in [0, 1].
+    let u = (x - kx).abs() * 2.0;
+    let w = (z - kz).abs() * 2.0;
+    let (hk, hc) = (p(kr, kc), p(1, 1));
+    if u >= w {
+        // K, the midpoint along x from K (same row), C.
+        let hm = p(kr, 1);
+        hk + (hm - hk) * u + (hc - hm) * w
+    } else {
+        let hm = p(1, kc);
+        hk + (hm - hk) * w + (hc - hm) * u
     }
 }
 
@@ -219,13 +271,13 @@ pub fn face_covered(shape: &ShapeInfo, face: usize, neighbour: &ShapeInfo) -> bo
             let side = |f: usize| if f < 2 { f } else { f - 2 };
             let mine = shape.sides[side(face)];
             let theirs = neighbour.sides[side(opposite_face(face))];
-            if mine == [0, 0] {
+            if mine == [0; 3] {
                 return true;
             }
             if shape.inverted == neighbour.inverted {
-                theirs[0] >= mine[0] && theirs[1] >= mine[1]
+                (0..3).all(|i| theirs[i] >= mine[i])
             } else {
-                theirs == [2, 2]
+                theirs == [4; 3]
             }
         }
     }
@@ -240,15 +292,16 @@ pub struct ShapeHit {
 
 /// The nearest entry of the ray `origin + t·dir`, t ∈ [min_t, max_t], into the solid of the cell
 /// whose minimum corner is `cell` (origin and cell share a frame). A ray starting inside does not
-/// hit its own surface. With `neighbours` (the shapes across faces +X −X +Y −Y +Z −Z), a point of a
-/// cell face lying against the neighbour's solid is internal and not an entry.
+/// hit its own surface. With `neighbours` (the shape across face +X −X +Y −Y +Z −Z, asked only for
+/// faces the ray could enter through), a point of a cell face lying against the neighbour's solid
+/// is internal and not an entry.
 pub fn ray_enter_shape(
     shape: &ShapeInfo,
     cell: [f32; 3],
     origin: [f32; 3],
     dir: [f32; 3],
     max_t: f32,
-    neighbours: Option<&[&ShapeInfo; 6]>,
+    mut neighbours: Option<&mut dyn FnMut(usize) -> &'static ShapeInfo>,
     min_t: f32,
 ) -> Option<ShapeHit> {
     let mut best = f32::INFINITY;
@@ -284,12 +337,12 @@ pub fn ray_enter_shape(
         if !inside {
             continue;
         }
-        if let Some(nb) = neighbours
+        if let Some(nb) = neighbours.as_mut()
             && face.tag < SURFACE_TAG
         {
             let mut q = sub(p, cell);
             q[usize::from(face.tag >> 1)] -= if face.tag & 1 != 0 { -1.0 } else { 1.0 };
-            if point_in_solid(nb[usize::from(face.tag)], q[0], q[1], q[2], 1e-4) {
+            if point_in_solid(nb(usize::from(face.tag)), q[0], q[1], q[2], 1e-4) {
                 continue;
             }
         }

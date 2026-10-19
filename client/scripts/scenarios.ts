@@ -47,6 +47,11 @@ export type Step =
    */
   | { do: 'time'; t: number; moon?: number }
   /**
+   * Turns pieces of the water's shading off (`names`, the `?waterdbg=` switches, comma-separated;
+   * "" turns them all back on), so a cost can be told apart within one page and one load.
+   */
+  | { do: 'waterDebug'; names: string }
+  /**
    * A timelapse: `frames` screenshots `<name>-00.png`… from time of day `from` to `to` (wrapping
    * past midnight when `to` < `from`), waiting `waitS` after each change.
    */
@@ -138,6 +143,7 @@ const STEP_FIELDS: Record<Step['do'], readonly string[]> = {
   traceStart: [],
   traceStop: ['name'],
   time: ['t', 'moon'],
+  waterDebug: ['names'],
   timelapse: ['name', 'frames', 'from', 'to', 'waitS'],
   repeat: ['times', 'steps'],
 };
@@ -227,6 +233,12 @@ export function parseStep(where: string, v: unknown): Step {
       return o.moon === undefined
         ? { do: d, t }
         : { do: d, t, moon: num(at('moon'), o.moon, 0, 1) };
+    }
+    case 'waterDebug': {
+      if (typeof o.names !== 'string' || !/^[a-z0-9,]*$/.test(o.names)) {
+        throw new ViewError(`${at('names')}: expected switch names joined by commas`);
+      }
+      return { do: d, names: o.names };
     }
     case 'timelapse':
       return {

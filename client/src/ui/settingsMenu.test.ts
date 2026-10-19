@@ -53,7 +53,7 @@ describe('settings JSON', () => {
       audio: { master: 0.8049, effects: 1, ui: 0.333 },
       clouds: 'low',
       water: { quality: 'medium' },
-      motion: { speedEffects: false, fovBoost: 0.456 },
+      motion: { speedEffects: false, fovBoost: 0.456, plantSway: false },
       fovDeg: 82.4,
     });
     const parsed = JSON.parse(json) as { fog: unknown; detail: unknown };
@@ -64,7 +64,7 @@ describe('settings JSON', () => {
       audio: { master: 0.8, effects: 1, ui: 0.33 },
       clouds: 'low',
       water: { quality: 'medium' },
-      motion: { speedEffects: false, fovBoost: 0.46 },
+      motion: { speedEffects: false, fovBoost: 0.46, plantSway: false },
       fovDeg: 82,
     });
     expect(sanitizeFog(parsed.fog)).toEqual({ distanceM: 11314, density: 0.6, heightM: 1500 });

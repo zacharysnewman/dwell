@@ -49,6 +49,7 @@ import {
   CompareOverlay,
   RENDERER_CHOICES,
   choiceOf,
+  displayScale,
   rendererParams,
   type CompareState,
 } from './ui/renderer';
@@ -128,6 +129,8 @@ interface DwellDebug {
   placeCamera(position: Vec3, yaw: number, pitch: number): boolean;
   /** Back to the player's eyes. */
   releaseCamera(): void;
+  /** Plants' wind scale (0 still, 1 the data's) and whether cutout meshes draw (cost A/B). */
+  plants(wind: number, shown: boolean): void;
   /** The last frame's draw calls and triangles. */
   renderStats(): RenderStats;
   /** What the game knows it holds in memory (ui/memory.ts), once playing. */
@@ -163,6 +166,8 @@ interface DwellDebug {
    * on this client only, as `?time=` and `?moon=` do; null returns to the world's.
    */
   setTime(t: number | null, moon?: number | null): void;
+  /** The water's cost-isolation switches (`?waterdbg=` names, comma-separated; "" for none). */
+  waterDebug(names: string): void;
 }
 
 /** A distribution's summary (telemetry.rs `Stats`). */
@@ -256,12 +261,6 @@ interface App {
   playing: boolean;
   /** Compare mode's labels and divider (the renderer switch, local builds). */
   compare: CompareOverlay | null;
-}
-
-/** The ?scale= drawing-buffer scale (comparing performance on a device). */
-function displayScale(search: string): number {
-  const scale = Number(new URLSearchParams(search).get('scale') ?? 1);
-  return Number.isFinite(scale) ? Math.min(2, Math.max(0.25, scale)) : 1;
 }
 
 /** Workers per pool: generation and meshing each get this many (fewer on phones). */
@@ -415,7 +414,8 @@ async function start(): Promise<App | null> {
   element('build-info', HTMLDivElement).textContent = formatBuildInfo(buildInfo);
   const canvas = element('view', HTMLCanvasElement);
   const params = new URLSearchParams(location.search);
-  const scale = displayScale(location.search);
+  // The ?scale= drawing-buffer scale; 1 when the marcher's upscaler takes the scale.
+  const scale = displayScale(location.search, __RENDERER_SWITCH__);
   const mobile = prefersTouch();
   let client: Client;
   try {
@@ -490,23 +490,45 @@ async function start(): Promise<App | null> {
   forwardInput(app);
   // Sound (docs/AUDIO.md): started by the first gesture; menus sound by delegation.
   const sfx = installPageSounds();
-  const sounds = new EventPlayer(SOUND_DATA, (sound, o) => {
-    sfx.play(sound, {
-      bus: 'effects',
-      intensity: o.intensity,
-      at: o.at,
-      gain: o.gain,
-      ...(o.pan !== undefined ? { pan: o.pan } : {}),
-    });
-  });
+  const sounds = new EventPlayer(
+    SOUND_DATA,
+    (sound, o) => {
+      sfx.play(sound, {
+        bus: 'effects',
+        intensity: o.intensity,
+        at: o.at,
+        gain: o.gain,
+        ...(o.pan !== undefined ? { pan: o.pan } : {}),
+      });
+    },
+    {
+      start: (voice, sound, o) =>
+        sfx.startLoop(voice, sound, {
+          bus: 'effects',
+          intensity: o.intensity,
+          at: o.at,
+          gain: o.gain,
+        }),
+      update: (voice, intensity, at) => {
+        sfx.updateLoop(voice, intensity, at);
+      },
+      stop: (voice) => {
+        sfx.stopLoop(voice);
+      },
+    },
+  );
   // The game menu (top left, or Esc): settings applied as the sliders move.
   const settings = new SettingsMenu(document.body, mobile, (s) => {
     sfx.setVolumes(s.audio);
     client.setFog(s.fog.distanceM, s.fog.density, s.fog.heightM);
     client.setExposure(s.exposure);
     client.setWaterQuality(waterQualityLevel(s.water.quality));
+    // ?waterdbg=caustics,foam,… turns pieces of the water's shading off (a dev tool, DEV_TOOLS.md).
+    const waterDebug = new URLSearchParams(location.search).get('waterdbg');
+    if (waterDebug) client.setWaterDebug(waterDebug);
     client.setClouds(s.clouds);
     client.setMotion(s.motion.speedEffects, s.motion.fovBoost);
+    client.setPlants(s.motion.plantSway ? 1 : 0, true);
     client.setFov(s.fovDeg);
     client.setDetail(s.detail.distanceM, s.detail.pixelError, s.detail.memoryMb);
   });
@@ -623,6 +645,9 @@ async function start(): Promise<App | null> {
     releaseCamera: () => {
       client.releaseCamera();
     },
+    plants: (wind, shown) => {
+      client.setPlants(wind, shown);
+    },
     renderStats: () => client.renderStats() as RenderStats,
     renderers: () => client.renderers() as string[],
     upscalers: () => client.upscalers() as string[],
@@ -645,6 +670,9 @@ async function start(): Promise<App | null> {
       client.telemetryReset();
     },
     sounds: () => [...sfx.recent],
+    waterDebug: (names) => {
+      client.setWaterDebug(names);
+    },
     setTime: (t, moon) => {
       client.setTimeOfDay(t ?? undefined);
       if (moon !== undefined) client.setMoonPhase(moon ?? undefined);
@@ -1039,7 +1067,15 @@ async function routeMadeWorld(): Promise<boolean> {
   return true;
 }
 
-if (launchOf(location.search).kind === 'menu') {
+if (__LOCAL_BUILD__ && new URLSearchParams(location.search).get('marchtest') === '1') {
+  // The ray marcher's dev page (local builds only): a generated world, the marcher alone.
+  void loadWasm()
+    .then(() => import('./debug/marchTest'))
+    .then((m) => m.startMarchTest(element('view', HTMLCanvasElement), location.search))
+    .catch((e: unknown) => {
+      showFatal(`March test: ${e instanceof Error ? e.message : String(e)}`);
+    });
+} else if (launchOf(location.search).kind === 'menu') {
   element('build-info', HTMLDivElement).textContent = formatBuildInfo(buildInfo);
   openMainMenu(null, new URLSearchParams(location.search).get('say') ?? undefined);
   void loadTools();

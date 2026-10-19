@@ -7,6 +7,7 @@
   [`BASELINE_EVALUATION.md`](../BASELINE_EVALUATION.md) §3.7): the rule table is data, with
   per-neighbourhood overrides the Shape Playground exports; every solid block in the baseline is
   natural, so the placed families are removed outright. Built as Phase 18.
+- Built: Phase 18 (2026-10-15), as below; see "As built".
 - Partly supersedes: [0016](0016-slope-blocks.md) for natural materials (placed slope families
   and the generator's slope stage); 0016 stands for crafted materials and the shape table.
 
@@ -78,3 +79,25 @@ The 1 m grid stays.
   overridden, and the exhaustive adjacency test guards the result whatever its source.
 - Reversal: shapes are derived, so turning adaptivity off for a material (a data change) returns
   its blocks to cubes without touching saved worlds.
+
+## As built (Phase 18, 2026-10-15)
+
+- **Readers:** one Rust reader (`dwell_blocks::adaptive`), since the port to Rust (ADR 0028) serves
+  the server, the WASM client, the meshers and the controller; the TypeScript shell never derives a
+  shape, so it has no reader (the "C++ and TypeScript" of the decision predate the port).
+- **The table** is `shared/blocks/adaptive.json` (`"rules": "five-rules"`, `overrides`, none today);
+  `adaptive.mjs` builds, validates and runs the exhaustive adjacency test (sides drawn as culled,
+  equal-height neighbours meeting at their shared corners); generated `ADAPTIVE_UP`/`ADAPTIVE_DOWN`
+  (upright and hanging, for face B) and `adaptive_vectors.txt`; it reproduces the owner's 151
+  hand-shaped playground blocks (`playground-export.json`), in node and in the Rust world.
+- **Adaptive:** grass, dirt, stone, sand. The registry's state strings and hash are unchanged.
+- **Collision:** full-cube cells in Parry's `Voxels` collider, shaped cells one triangle mesh per
+  chunk. The owner decided (2026-10-15) that faces steeper than 44° — 45° ramps and ridge flanks,
+  the saddles' 54.74° — are slides, not stairs (stairs become their own block); sliding is built
+  separately.
+- **Generation:** the generator's voxels are unchanged (its goldens too); spawn and the generator's
+  point query read the shaped surface. With the shapes' effect on collision, spawn height and what
+  a seed's terrain is, it is a new compatibility line (the owner raises `client/package.json`);
+  the protocol version is raised so builds that shape differently never play together.
+- **LOD:** the table on LOD cells' dry tops; wet columns and shores keep exact heights.
+- **Outstanding:** the Shape Playground's override export, the two-client e2e, the owner's walk.

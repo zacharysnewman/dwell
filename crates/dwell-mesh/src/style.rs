@@ -1,12 +1,13 @@
 //! How block states are drawn (`client/src/world/materials.ts`): each state's look, colour,
-//! opacity, render mode, textures, ladder face, shape, flooding and fluid, read from the generated registry
+//! opacity, render mode, textures, ladder face, shape, flooding, fluid and the cross look, read
+//! from the generated registry
 //! (`dwell-blocks`), with the TS fallback for ids the registry does not know (a magenta cube).
 
 use std::sync::OnceLock;
 
 use dwell_blocks::{
-    FLUIDS, Facing, FluidId, FluidInfo, RenderMode, SHAPES, STATES, ShapeInfo, StateId, StateInfo,
-    Textures,
+    Cross, FLUIDS, Facing, Fade, FluidId, FluidInfo, RenderMode, SHAPES, STATES, ShapeInfo,
+    StateId, StateInfo, Textures, Wind,
 };
 
 /// The look a state is drawn with (the registry's `look` name).
@@ -17,6 +18,8 @@ pub(crate) enum Look {
     Ladder,
     /// A fluid's look (`"look": "fluid"`): its parameters are the state's `fluid`.
     Fluid,
+    /// Crossed vertical quads through the cell (plants).
+    Cross,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -32,6 +35,10 @@ pub(crate) struct MaterialStyle {
     /// Index into `SHAPES`.
     pub shape: usize,
     pub flooded: bool,
+    /// The cross look's geometry, wind and distance fade.
+    pub cross: Option<Cross>,
+    pub wind: Option<Wind>,
+    pub fade: Option<Fade>,
     /// Fluids: how far below the cell's top its surface is drawn, in cells (0 otherwise).
     pub surface_drop: f64,
     /// The fluid whose look it is drawn with (an index into the registry's fluid table).
@@ -59,9 +66,13 @@ fn cube_index() -> usize {
 /// The style of a state row, with `fluids` the table its `fluid` indexes (the build's, or a test
 /// registry's).
 pub(crate) fn style_of(s: &StateInfo, fluids: &[FluidInfo]) -> MaterialStyle {
+    if !drawable(s, fluids) {
+        return fallback_style(usize::from(s.shape_index), s.flooded);
+    }
     let look = match s.look {
         "shaped" => Look::Shaped,
         "ladder" => Look::Ladder,
+        "cross" => Look::Cross,
         "fluid" => Look::Fluid,
         // 'cube', and any look the meshers do not know: a full cube.
         _ => Look::Cube,
@@ -86,6 +97,9 @@ pub(crate) fn style_of(s: &StateInfo, fluids: &[FluidInfo]) -> MaterialStyle {
         },
         shape: usize::from(s.shape_index),
         flooded: s.flooded,
+        cross: s.cross,
+        wind: s.wind,
+        fade: s.fade,
         surface_drop: s
             .fluid
             .and_then(|f| fluids.get(usize::from(f)))
@@ -95,6 +109,44 @@ pub(crate) fn style_of(s: &StateInfo, fluids: &[FluidInfo]) -> MaterialStyle {
 }
 
 const UNKNOWN_COLOR: u32 = 0xff00ff;
+
+/// Whether this build can draw a state as its data asks: a look the meshers know, texture tiles
+/// the atlas has, and a fluid for the fluid look. Every build state can (a test pins it); a state
+/// synced from a server may not (ADR 0038 decision 7).
+pub(crate) fn drawable(s: &StateInfo, fluids: &[FluidInfo]) -> bool {
+    let look = matches!(s.look, "cube" | "shaped" | "ladder" | "cross" | "fluid");
+    let tiles = s.textures.is_none_or(|t| {
+        crate::textures::has_tile(t.top)
+            && crate::textures::has_tile(t.side)
+            && crate::textures::has_tile(t.bottom)
+    });
+    let fluid = s.look != "fluid" || s.fluid.is_some_and(|f| usize::from(f) < fluids.len());
+    look && tiles && fluid
+}
+
+/// The fallback look: the magenta and black checker on a cube over the state's own shape (its
+/// collision is the state's, whatever it looks like).
+fn fallback_style(shape: usize, flooded: bool) -> MaterialStyle {
+    let missing = crate::textures::MISSING_TILE;
+    MaterialStyle {
+        look: Look::Cube,
+        color: UNKNOWN_COLOR,
+        render: RenderMode::Opaque,
+        textures: Some(Textures {
+            top: missing,
+            side: missing,
+            bottom: missing,
+        }),
+        ladder_face: None,
+        shape,
+        flooded,
+        cross: None,
+        wind: None,
+        fade: None,
+        surface_drop: 0.0,
+        fluid: None,
+    }
+}
 
 /// The style of state `id`.
 pub(crate) fn material_style(id: StateId) -> MaterialStyle {
@@ -107,19 +159,7 @@ pub(crate) fn material_style(id: StateId) -> MaterialStyle {
     if let Some(s) = dwell_blocks::try_info(id) {
         return style_of(s, &FLUIDS);
     }
-    {
-        MaterialStyle {
-            look: Look::Cube,
-            color: UNKNOWN_COLOR,
-            render: RenderMode::Opaque,
-            textures: None,
-            ladder_face: None,
-            shape: cube_index(),
-            flooded: false,
-            surface_drop: 0.0,
-            fluid: None,
-        }
-    }
+    fallback_style(cube_index(), false)
 }
 
 /// The state turned upside down (slabs and slopes swap `half`); ids the registry does not know

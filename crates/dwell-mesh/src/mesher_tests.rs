@@ -14,8 +14,9 @@ fn grass() -> u16 {
 fn stone() -> u16 {
     require("dwell:stone")
 }
-fn dirt() -> u16 {
-    require("dwell:dirt")
+/// A full cube that is not adaptive (natural blocks shape themselves as top blocks).
+fn cube_block() -> u16 {
+    require("dwell:sandbox_floor")
 }
 
 /// Padded voxels with the given cells set (chunk-local, −1..32).
@@ -77,7 +78,7 @@ fn draws_a_lone_cube_as_six_quads_wound_counter_clockwise_facing_out() {
         opaque,
         transparent,
         ..
-    } = mesh(&[(1, 1, 1, dirt())], false);
+    } = mesh(&[(1, 1, 1, cube_block())], false);
     assert_eq!(quads(&opaque), 6);
     assert_eq!(quads(&transparent), 0);
     let mut normals = std::collections::HashSet::new();
@@ -108,17 +109,18 @@ fn merges_a_floor_of_one_material_into_one_quad_per_side() {
     for z in 0..32 {
         for x in 0..32 {
             cells.push((x, 0, z, stone()));
+            cells.push((x, 1, z, cube_block())); // under a layer of cubes, stone is a cube
         }
     }
     let opaque = mesh(&cells, false).opaque;
-    // Top, bottom, and one strip per side.
-    assert_eq!(quads(&opaque), 6);
-    let top = (0..quads(&opaque))
-        .find(|q| opaque.normals[q * 12 + 1] == 1.0)
-        .expect("a top");
-    let (min, max) = bounds(&opaque, top);
-    assert_eq!(min, [0.0, 1.0, 0.0]);
-    assert_eq!(max, [32.0, 1.0, 32.0]);
+    // Per layer: top or bottom, and one strip per side (the two layers' tops and bottoms hide).
+    assert_eq!(quads(&opaque), 10);
+    let bottom = (0..quads(&opaque))
+        .find(|q| opaque.normals[q * 12 + 1] == -1.0)
+        .expect("a bottom");
+    let (min, max) = bounds(&opaque, bottom);
+    assert_eq!(min, [0.0, 0.0, 0.0]);
+    assert_eq!(max, [32.0, 0.0, 32.0]);
     // The texture repeats per block: uvs span 32 blocks, the tile stays the stone tile.
     let r = tile_rect("stone");
     assert_eq!(opaque.uvs.iter().copied().fold(f32::MIN, f32::max), 32.0);
@@ -129,10 +131,10 @@ fn merges_a_floor_of_one_material_into_one_quad_per_side() {
 #[test]
 fn keeps_materials_apart_and_hides_faces_against_full_neighbours_including_the_apron() {
     // Two different blocks side by side: the shared faces are hidden, the tops do not merge.
-    let opaque = mesh(&[(0, 0, 0, dirt()), (1, 0, 0, grass())], false).opaque;
+    let opaque = mesh(&[(0, 0, 0, cube_block()), (1, 0, 0, UNKNOWN)], false).opaque;
     assert_eq!(quads(&opaque), 10);
     // A block at the chunk's edge next to a solid neighbour chunk (apron): that face is hidden.
-    let opaque = mesh(&[(31, 5, 5, dirt()), (32, 5, 5, dirt())], false).opaque;
+    let opaque = mesh(&[(31, 5, 5, cube_block()), (32, 5, 5, cube_block())], false).opaque;
     assert_eq!(quads(&opaque), 5);
 }
 
@@ -167,7 +169,7 @@ fn a_fluid_added_by_data_alone_is_meshed_with_its_own_surface_drop_and_opacity()
         opaque,
         transparent,
         ..
-    } = mesh_chunk_with(&kinds, &cells, false).expect("padded volume");
+    } = mesh_chunk_with(&kinds, &cells, false, [0; 3]).expect("padded volume");
     assert_eq!(quads(&opaque), 0);
     let mut tops: Vec<(f32, f32)> = (0..quads(&transparent))
         .filter(|q| transparent.normals[q * 12 + 1] == 1.0)
@@ -190,6 +192,61 @@ fn a_fluid_added_by_data_alone_is_meshed_with_its_own_surface_drop_and_opacity()
         assert_eq!(FLUIDS[f as usize].name, want, "vertex {v}");
     }
     assert!(opaque.fluids.is_empty());
+}
+
+#[test]
+fn blocks_of_each_render_mode_added_by_data_alone_go_to_their_meshes() {
+    // shared/blocks/fixtures/test.json adds `test:hedge` (cutout cube), `test:glass` (translucent
+    // cube) and `test:reed` (a three-quad cross) and nothing else: the mesher sorts them by data.
+    use dwell_blocks::fixture::{FLUIDS, STATES};
+    let id = |name: &str| STATES.iter().position(|s| s.name == name).expect(name) as u16;
+    let (leaves, glass, reed, stone, water) = (
+        id("test:hedge"),
+        id("test:glass"),
+        id("test:reed"),
+        id("dwell:stone"),
+        id("dwell:water"),
+    );
+    let kinds = Kinds::new(&STATES, &FLUIDS, Some(water));
+    let mesh_of = |cells: &[(i32, i32, i32, u16)]| {
+        mesh_chunk_with(&kinds, &voxels(cells), false, [0; 3]).expect("padded volume")
+    };
+    // A lone leaf block: six cutout faces, nothing opaque or blended.
+    let m = mesh_of(&[(1, 1, 1, leaves)]);
+    assert_eq!(
+        (quads(&m.opaque), quads(&m.cutout), quads(&m.transparent)),
+        (0, 6, 0)
+    );
+    // Glass: six blended faces, each tagged as no fluid's.
+    let m = mesh_of(&[(1, 1, 1, glass)]);
+    assert_eq!(
+        (quads(&m.opaque), quads(&m.cutout), quads(&m.transparent)),
+        (0, 0, 6)
+    );
+    assert!(m.transparent.fluids.iter().all(|&f| f == crate::NO_FLUID));
+    // See-through blocks hide no face of their neighbours, and none between two of themselves.
+    let alone = quads(&mesh_of(&[(2, 1, 1, stone)]).opaque);
+    for b in [leaves, glass] {
+        let m = mesh_of(&[(1, 1, 1, b), (2, 1, 1, stone), (1, 1, 2, b)]);
+        assert_eq!(quads(&m.opaque), alone, "{}", STATES[usize::from(b)].name);
+        let see = quads(&m.cutout) + quads(&m.transparent);
+        // Two blocks in a row along z: their shared faces skipped, coplanar faces merged (−x, ±y),
+        // the end faces, and the +x face of the one beside stone drawn only for the other.
+        assert_eq!(see, 6, "{}", STATES[usize::from(b)].name);
+    }
+    // A water plant (`test:kelp`, `medium: water`) in a pool: drawn inside the water, which shows
+    // no hole: its cell draws water like a flooded shape's, its neighbours' faces toward it hidden.
+    let kelp = id("test:kelp[flooded=true]");
+    let pool = mesh_of(&[(1, 1, 1, water), (2, 1, 1, kelp), (3, 1, 1, water)]);
+    assert_eq!(quads(&pool.cutout), 2, "the kelp's cross");
+    let tops = (0..quads(&pool.transparent))
+        .filter(|q| pool.transparent.normals[q * 12 + 1] == 1.0)
+        .count();
+    assert_eq!(tops, 3, "three cells of water surface");
+    // The reed: its data's three quads, in the cutout mesh with its plants stream.
+    let m = mesh_of(&[(1, 1, 1, reed)]);
+    assert_eq!(quads(&m.cutout), 3);
+    assert_eq!(m.cutout.plants.len(), 3 * 4 * 4);
 }
 
 #[test]
@@ -247,24 +304,150 @@ fn a_flooded_ladder_draws_the_water_around_it() {
     assert_eq!(quads(&pool.cutout), 1, "the plate");
 }
 
+fn tall_grass() -> u16 {
+    require("dwell:tall_grass")
+}
+
 #[test]
-fn textures_faces_by_material_and_face_grass_top_and_side_unknown_ids_plain_magenta() {
-    let opaque = mesh(&[(0, 0, 0, grass()), (5, 0, 0, UNKNOWN)], false).opaque;
+fn draws_tall_grass_as_crossed_cutout_quads_from_its_data() {
+    let info = dwell_blocks::info(tall_grass());
+    let cross = info.cross.expect("the data gives it a cross");
+    let m = mesh(&[(4, 0, 4, grass()), (4, 1, 4, tall_grass())], false);
+    let c = &m.cutout;
+    // One quad per cross quad (4 vertices, 2 triangles), drawn once: the pipeline is two-sided.
+    let quads_n = usize::from(cross.quads);
+    assert_eq!(c.positions.len(), quads_n * 4 * 3);
+    assert_eq!(c.indices.len(), quads_n * 6);
+    assert_eq!(c.plants.len(), quads_n * 4 * 4);
+    // The grass block below keeps its top face: the plant hides nothing.
+    let alone = quads(&mesh(&[(4, 0, 4, grass())], false).opaque);
+    assert_eq!(quads(&m.opaque), alone);
+    assert_eq!(quads(&m.transparent), 0);
+    for v in 0..c.positions.len() / 3 {
+        let p = vertex(&c.positions, v as u32);
+        // Rooted on the block below, at most the data's height, near the cell.
+        assert!(
+            p[1] >= 1.0 - 1e-6 && p[1] <= 1.0 + f64::from(cross.height) + 1e-6,
+            "{p:?}"
+        );
+        assert!(
+            (p[0] - 4.5).abs() < 1.0 && (p[2] - 4.5).abs() < 1.0,
+            "{p:?}"
+        );
+        // Normals lean up, so the blades are lit from either side.
+        assert!(c.normals[v * 3 + 1] > 0.7);
+        // Sway: none at the foot, the wind's strength (scaled by the plant's height) at the top.
+        let sway = c.plants[v * 4];
+        let wind = info.wind.expect("wind");
+        if p[1] < 1.0 + 1e-6 {
+            assert_eq!(sway, 0.0);
+        } else {
+            assert!(sway > 0.0 && sway <= wind.strength + 1e-6);
+        }
+        let fade = info.fade.expect("fade");
+        assert_eq!(c.plants[v * 4 + 2..v * 4 + 4], [fade.start, fade.end]);
+        assert_eq!(c.tiles[v * 4], tile_rect("tallGrass").u0 as f32);
+    }
+}
+
+#[test]
+fn tall_grass_jitter_is_deterministic_by_world_position() {
+    let cells = [(4, 0, 4, grass()), (4, 1, 4, tall_grass())];
+    let at = |origin| {
+        mesh_chunk_at(&voxels(&cells), false, origin)
+            .expect("meshed")
+            .cutout
+    };
+    // The same plant every time it is meshed.
+    assert_eq!(at([0, 0, 0]), at([0, 0, 0]));
+    // A different place gets a different plant (offset, turn or height).
+    let here = at([0, 0, 0]);
+    let there = at([32, 0, -64]);
+    assert_ne!(here.positions, there.positions);
+    // Neighbouring plants differ too, within the data's jitter.
+    let field: Vec<(i32, i32, i32, u16)> = (0..8)
+        .flat_map(|x| [(x, 0, 0, grass()), (x, 1, 0, tall_grass())])
+        .collect();
+    let m = mesh_chunk_at(&voxels(&field), false, [0; 3])
+        .expect("meshed")
+        .cutout;
+    let cross = dwell_blocks::info(tall_grass()).cross.expect("cross");
+    let per = usize::from(cross.quads) * 4;
+    let tops: Vec<f32> = (0..8)
+        .map(|i| {
+            (0..per)
+                .map(|v| m.positions[(i * per + v) * 3 + 1])
+                .fold(0.0, f32::max)
+        })
+        .collect();
+    assert!(
+        tops.windows(2).any(|w| w[0] != w[1]),
+        "heights vary: {tops:?}"
+    );
+    for t in &tops {
+        let h = t - 1.0;
+        assert!(h >= cross.height * cross.height_min - 1e-5 && h <= cross.height + 1e-5);
+    }
+}
+
+#[test]
+fn ladders_and_plants_share_the_cutout_mesh_with_aligned_streams() {
+    let ladder = require("dwell:ladder[facing=north,flooded=false]");
+    let m = mesh(
+        &[
+            (0, 0, 0, ladder),
+            (4, 0, 4, grass()),
+            (4, 1, 4, tall_grass()),
+            (9, 0, 0, ladder),
+        ],
+        false,
+    );
+    let c = &m.cutout;
+    assert_eq!(c.plants.len() / 4, c.positions.len() / 3);
+    assert_eq!(c.tiles.len() / 4, c.positions.len() / 3);
+    // Mirrored for face B, it is still cutout and keeps its streams.
+    let b = mesh(&[(4, 0, 4, grass()), (4, 1, 4, tall_grass())], true).cutout;
+    assert_eq!(b.plants.len() / 4, b.positions.len() / 3);
+    assert!(!b.indices.is_empty());
+}
+
+#[test]
+fn textures_faces_by_material_and_face_grass_top_and_side_unknown_ids_the_fallback_tile() {
+    // A grass block under a cube (so a cube itself: its sides).
+    let cells = vec![
+        (0, 0, 0, grass()),
+        (0, 1, 0, cube_block()),
+        (5, 0, 0, UNKNOWN),
+    ];
+    let opaque = mesh(&cells, false).opaque;
     let tile_of = |q: usize| [opaque.tiles[q * 16], opaque.tiles[q * 16 + 1]];
     let find = |pred: &dyn Fn(usize) -> bool| (0..quads(&opaque)).find(|q| pred(*q)).expect("quad");
-    let grass_top = find(&|q| opaque.normals[q * 12 + 1] == 1.0 && bounds(&opaque, q).1[0] == 1.0);
     let grass_side = find(&|q| opaque.normals[q * 12] == 1.0 && bounds(&opaque, q).1[0] == 1.0);
+    // The middle of a 3 x 3 field of grass: a flat half-height top with the grass top tile.
+    let mut field = Vec::new();
+    for z in 0..3 {
+        for x in 10..13 {
+            field.push((x, 0, z, grass()));
+        }
+    }
+    let f = mesh(&field, false).opaque;
+    let grass_top = (0..f.normals.len() / 3)
+        .find(|&v| f.normals[v * 3 + 1] == 1.0)
+        .expect("a flat top");
     let unknown = find(&|q| bounds(&opaque, q).0[0] >= 5.0);
     let rect = |name: &str| {
         let r = tile_rect(name);
         [r.u0 as f32, r.v0 as f32]
     };
-    assert_eq!(tile_of(grass_top), rect("grass"));
+    assert_eq!(
+        [f.tiles[grass_top * 4], f.tiles[grass_top * 4 + 1]],
+        rect("grass")
+    );
     assert_eq!(tile_of(grass_side), rect("grassSide"));
-    assert_eq!(tile_of(unknown), rect("plain"));
-    // Textured faces shade white (the texture carries the colour); unknown ids keep a flat colour.
-    assert_eq!(opaque.colors[grass_top * 12], 1.0);
-    assert_eq!(opaque.colors[unknown * 12 + 1], 0.0); // magenta
+    // Unknown ids draw with the fallback look (ADR 0038): the magenta and black checker tile.
+    assert_eq!(tile_of(unknown), rect(crate::MISSING_TILE));
+    // Textured faces shade white (the texture carries the colour).
+    assert_eq!(f.colors[grass_top * 3], 1.0);
 }
 
 mod face_b {
@@ -290,8 +473,15 @@ mod face_b {
     fn puts_the_top_texture_and_shading_on_the_face_toward_the_sky_which_on_face_b_is_minus_y() {
         // A grass block at the top of face A's chunk, and the same block hanging at the bottom of
         // a face-B chunk's row 0 (its sky is below).
-        let a = mesh(&[(5, 0, 5, grass())], false);
-        let b = mesh(&[(5, 0, 5, grass())], true);
+        // (The middle of a 3 x 3 field: its top is flat, at half height.)
+        let mut field = Vec::new();
+        for z in 4..7 {
+            for x in 4..7 {
+                field.push((x, 0, z, grass()));
+            }
+        }
+        let a = mesh(&field, false);
+        let b = mesh(&field, true);
         assert_eq!(tile_of(&a.opaque, 1.0), rect("grass"));
         assert_eq!(tile_of(&a.opaque, -1.0), rect("dirt"));
         assert_eq!(tile_of(&b.opaque, -1.0), rect("grass"));
@@ -324,7 +514,7 @@ fn rejects_a_wrong_voxel_count_and_accounts_bytes() {
             got: 10
         })
     );
-    let m = mesh(&[(1, 1, 1, dirt())], false);
+    let m = mesh(&[(1, 1, 1, cube_block())], false);
     // 24 vertices × (3 + 3 + 3 + 2 + 4) floats + 36 indices, 4 bytes each.
     assert_eq!(m.opaque.byte_len(), 4 * (24 * 15 + 36));
     assert_eq!(m.transparent.byte_len(), 0);
@@ -412,7 +602,7 @@ fn shape_of(name: &str) -> &'static ShapeInfo {
 fn shape_table_describes_the_cube_and_the_empty_shape() {
     // The shaped families were cut with the baseline (Phase 15): the table is the empty shape and
     // the cube. Shaped blocks return as adaptive natural blocks (Phase 18).
-    let s = shape_of("dwell:stone");
+    let s = shape_of("dwell:sandbox_floor");
     assert!((volume_of(s) - 1.0).abs() < 1e-9);
     assert!(is_closed(s));
     assert!(is_convex(s));
@@ -442,23 +632,6 @@ fn in_polygon(f: &ShapeFace, axis: usize, a: f64, b: f64) -> bool {
     sign != 0
 }
 
-/// Height of the shape's top surface at (x, z) in the cell (mirrors SurfaceHeight).
-fn surface_height(s: &ShapeInfo, x: f64, z: f64) -> f64 {
-    let h = |i: usize| f64::from(s.corners[i]) / 2.0;
-    if s.diagonal == 0 {
-        return if x >= z {
-            h(0) + (h(1) - h(0)) * x + (h(2) - h(1)) * z
-        } else {
-            h(0) + (h(2) - h(3)) * x + (h(3) - h(0)) * z
-        };
-    }
-    if x + z <= 1.0 {
-        h(0) + (h(1) - h(0)) * x + (h(3) - h(0)) * z
-    } else {
-        h(2) + (h(3) - h(2)) * (1.0 - x) + (h(1) - h(2)) * (1.0 - z)
-    }
-}
-
 /// Is there solid on the plane of the cell face `face`, at in-plane point (a, b)?
 fn solid_on_face(s: &ShapeInfo, face: usize, a: f64, b: f64) -> bool {
     let axis = face >> 1;
@@ -478,23 +651,18 @@ fn solid_on_face(s: &ShapeInfo, face: usize, a: f64, b: f64) -> bool {
         0.0
     };
     let y = if axis == 0 { a } else { b };
-    let h = surface_height(s, x, z);
-    let lo = if s.inverted { 1.0 - h } else { 0.0 };
-    let hi = if s.inverted { 1.0 } else { h };
+    let span = dwell_blocks::shape::solid_span_at(s, x as f32, z as f32);
+    let (lo, hi) = (f64::from(span.lo), f64::from(span.hi));
     hi - lo > 1e-6 && y > lo + 1e-6 && y < hi - 1e-6
 }
 
 #[test]
 fn shape_adjacency_leaves_no_holes_between_any_two_shapes_on_any_side() {
-    let mut distinct: Vec<usize> = Vec::new();
-    for st in &dwell_blocks::STATES {
-        let s = usize::from(st.shape_index);
-        if s != 0 && !distinct.contains(&s) {
-            distinct.push(s);
-        }
-    }
-    assert!(!distinct.is_empty());
-    const SAMPLES: usize = 7;
+    // Every shape in the table: the states' and every shape the adaptive rules derive, upright and
+    // hanging, against each other on every side.
+    let distinct: Vec<usize> = (1..dwell_blocks::SHAPES.len()).collect();
+    assert!(distinct.len() > 190);
+    const SAMPLES: usize = 5;
     let mut checked = 0;
     let mut failures = Vec::new();
     for &ia in &distinct {
@@ -537,4 +705,102 @@ fn shape_adjacency_leaves_no_holes_between_any_two_shapes_on_any_side() {
     }
     assert_eq!(failures, Vec::<String>::new());
     assert!(checked > 0);
+}
+
+// --- adaptive natural blocks (ADAPTIVE_BLOCKS.md) --------------------------------------------
+
+/// The opaque triangles' unit normals' y, rounded to 3 places.
+fn normal_ys(m: &MeshArrays) -> Vec<i32> {
+    m.indices
+        .chunks_exact(3)
+        .map(|t| {
+            let n = normal_of(&m.positions, t[0], t[1], t[2]);
+            let len = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt();
+            (n[1] / len * 1000.0).round() as i32
+        })
+        .collect()
+}
+
+#[test]
+fn a_lone_grass_block_is_a_half_pyramid_and_a_field_rests_at_half_height() {
+    let lone = mesh(&[(5, 3, 5, grass())], false).opaque;
+    let ys = normal_ys(&lone);
+    // Four faces sloping at 45° (normal y = cos 45°) over the floor; no vertical side.
+    assert_eq!(ys.iter().filter(|&&y| y == 707).count(), 4, "{ys:?}");
+    assert!(ys.iter().all(|&y| y == 707 || y == -1000), "{ys:?}");
+    assert!(lone.positions.chunks_exact(3).all(|p| p[1] <= 3.5));
+    // The middle of a field: flat at half height, with the grass top tile.
+    let mut field = Vec::new();
+    for z in 4..7 {
+        for x in 4..7 {
+            field.push((x, 3, z, grass()));
+        }
+    }
+    let m = mesh(&field, false).opaque;
+    let flat: Vec<f32> = (0..m.normals.len() / 3)
+        .filter(|&i| m.normals[i * 3 + 1] == 1.0)
+        .map(|i| m.positions[i * 3 + 1])
+        .collect();
+    assert!(
+        !flat.is_empty() && flat.iter().all(|&y| y == 3.5),
+        "{flat:?}"
+    );
+}
+
+#[test]
+fn a_grass_block_with_a_block_on_it_stays_a_cube() {
+    let m = mesh(&[(5, 3, 5, grass()), (5, 4, 5, cube_block())], false).opaque;
+    // Two cubes stacked: 10 quads, every triangle axis-aligned.
+    assert_eq!(quads(&m), 10);
+    assert!(normal_ys(&m).iter().all(|&y| y == 0 || y.abs() == 1000));
+}
+
+#[test]
+fn a_shaped_bank_beside_water_holds_water_in_its_open_part() {
+    // Sand at the water's row beside water: shaped, and flooded — its cell's water faces are drawn
+    // (toward the air), and the water beside it draws none against it.
+    let m = mesh(
+        &[(5, 3, 5, require("dwell:sand")), (6, 3, 5, water())],
+        false,
+    );
+    let tops: Vec<f32> = (0..m.transparent.normals.len() / 3)
+        .filter(|&i| m.transparent.normals[i * 3 + 1] == 1.0)
+        .map(|i| m.transparent.positions[i * 3])
+        .collect();
+    // The bank's water top spans x 5..6 and the water cell's 6..7.
+    assert!(tops.iter().any(|&x| x < 6.0), "{tops:?}");
+    assert!(tops.iter().any(|&x| x >= 6.0), "{tops:?}");
+    // No water face stands between them (at x = 6, facing ±x).
+    let between = (0..m.transparent.normals.len() / 3).any(|i| {
+        m.transparent.normals[i * 3].abs() == 1.0
+            && (m.transparent.positions[i * 3] - 6.0).abs() < 0.01
+    });
+    assert!(!between);
+}
+
+#[test]
+fn face_b_shapes_hang_toward_its_sky() {
+    // A lone grass block on face B (meshed mirrored): the pyramid hangs, its slopes face down.
+    let m = mesh(&[(5, 3, 5, grass())], true).opaque;
+    let ys = normal_ys(&m);
+    assert_eq!(ys.iter().filter(|&&y| y == -707).count(), 4, "{ys:?}");
+}
+
+#[test]
+fn a_level_field_of_natural_blocks_merges_its_flat_tops() {
+    // 10 × 10 grass: the 8 × 8 inside rests at half height in one rectangle; the rim slopes.
+    let mut field = Vec::new();
+    for z in 0..10 {
+        for x in 0..10 {
+            field.push((x, 2, z, grass()));
+        }
+    }
+    let m = mesh(&field, false).opaque;
+    let flat: Vec<usize> = (0..m.normals.len() / 3)
+        .filter(|&v| m.normals[v * 3 + 1] == 1.0)
+        .collect();
+    assert_eq!(flat.len(), 4, "one merged quad");
+    for &v in &flat {
+        assert_eq!(m.positions[v * 3 + 1], 2.5);
+    }
 }

@@ -16,9 +16,11 @@
 //! ```wgsl
 //! struct LevelInfo {            // 12 words (WGSL alignment: vec3 at 0 and 16)
 //!   origin: vec3<i32>,          // first node of the level's box, node coordinates
+//!   occ_hi: i32,                // top of the level's occupied cells, grid rows (exclusive)
 //!   dims: vec3<u32>,            // nodes along x, y, z
 //!   slot_base: u32,             // first slot of the level in `slots`
 //!   cell_log2: u32,             // L: a cell is 2^L m
+//!   occ_lo: i32,                // bottom of its occupied cells (none: MAX, MIN)
 //! };
 //! @binding(0) var<storage, read> levels: array<LevelInfo, 20>;
 //! @binding(1) var<storage, read> slots: array<u32>;   // slot_base + x + dims.x * (y + dims.y * z)
@@ -94,10 +96,10 @@ pub enum Slot {
 }
 
 pub const SLOT_NONE: u32 = 0xFFFF_FFFF;
-const TAG_SHIFT: u32 = 30;
-const TAG_NODE: u32 = 0;
-const TAG_AIR: u32 = 1;
-const TAG_SOLID: u32 = 2;
+pub const TAG_SHIFT: u32 = 30;
+pub const TAG_NODE: u32 = 0;
+pub const TAG_AIR: u32 = 1;
+pub const TAG_SOLID: u32 = 2;
 /// Node indices fit below the tag.
 pub const MAX_NODES: u32 = 1 << TAG_SHIFT;
 
@@ -138,21 +140,26 @@ pub struct LevelInfo {
 pub const LEVEL_WORDS: usize = 12;
 
 impl LevelInfo {
-    /// The WGSL struct's words (vec3 alignment: padding at word 3 and 9–11). A level with no data
-    /// has zero dims.
+    /// The WGSL struct's words (vec3 alignment: padding at words 10–11), with no occupied rows. A
+    /// level with no data has zero dims.
     pub fn to_words(&self) -> [u32; LEVEL_WORDS] {
+        self.to_words_with_rows((i32::MAX, i32::MIN))
+    }
+    /// The words with the level's occupied grid rows `(lo, hi)` (`Scene::rows`; `(i32::MAX,
+    /// i32::MIN)` for none): `occ_hi` in word 3, `occ_lo` in word 9.
+    pub fn to_words_with_rows(&self, (lo, hi): (i32, i32)) -> [u32; LEVEL_WORDS] {
         let o = self.origin.map(|v| v as u32);
         [
             o[0],
             o[1],
             o[2],
-            0,
+            hi as u32,
             self.dims[0],
             self.dims[1],
             self.dims[2],
             self.slot_base,
             self.cell_log2,
-            0,
+            lo as u32,
             0,
             0,
         ]
@@ -386,6 +393,22 @@ impl ColumnGrid {
             w[i >> 1] |= e << ((i & 1) * 16);
         }
         w
+    }
+}
+
+impl ColumnGrid {
+    /// From `to_words`'s words (`None` if too short).
+    pub fn from_words(w: &[u32]) -> Option<Self> {
+        if w.len() < COLUMN_WORDS {
+            return None;
+        }
+        let spans = (0..COLUMN_ENTRIES)
+            .map(|i| {
+                let e = w[i >> 1] >> ((i & 1) * 16);
+                ((e & 0xFF) as u8, ((e >> 8) & 0xFF) as u8)
+            })
+            .collect();
+        Some(Self { spans })
     }
 }
 

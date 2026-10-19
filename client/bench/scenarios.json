@@ -454,6 +454,286 @@
       ]
     },
     {
+      "name": "water-reflections",
+      "notes": "The water's reflections (Phase 26 W5a: land by screen-space reflection, clouds along the reflected ray) on Medium: flies to the water-views coast, then from 1.5 m over a lagoon shoots a sand bank and the treeline behind it at a low angle (recorded: the cost), turned and steeper, the beach across open water at several pitches and from the side (the screen-edge fades), the clouds in the sea, then the bank at dusk and at night and the low sun over the water.",
+      "settings": {
+        "water": {
+          "quality": "medium"
+        },
+        "clouds": "high",
+        "timeOfDay": 0.5
+      },
+      "steps": [
+        {
+          "do": "settle",
+          "maxS": 120
+        },
+        {
+          "do": "fly",
+          "on": true
+        },
+        {
+          "do": "flySpeed",
+          "level": 12
+        },
+        {
+          "do": "hold",
+          "code": "Space",
+          "s": 1.0
+        },
+        {
+          "do": "look",
+          "yaw": 112.5,
+          "pitch": 0
+        },
+        {
+          "do": "key",
+          "code": "KeyW",
+          "down": true
+        },
+        {
+          "do": "wait",
+          "s": 28.3
+        },
+        {
+          "do": "key",
+          "code": "KeyW",
+          "down": false
+        },
+        {
+          "do": "wait",
+          "s": 1
+        },
+        {
+          "do": "flySpeed",
+          "level": 6
+        },
+        {
+          "do": "hold",
+          "code": "KeyC",
+          "s": 10
+        },
+        {
+          "do": "settle",
+          "maxS": 120
+        },
+        {
+          "do": "camera",
+          "position": [-200, 1.5, -350],
+          "yaw": 292.5,
+          "pitch": -3,
+          "aroundPlayer": true
+        },
+        {
+          "do": "wait",
+          "s": 2
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 5
+        },
+        {
+          "do": "record",
+          "name": "bank"
+        },
+        {
+          "do": "shot",
+          "name": "bank"
+        },
+        {
+          "do": "camera",
+          "position": [-200, 1.5, -350],
+          "yaw": 300,
+          "pitch": -3,
+          "aroundPlayer": true
+        },
+        {
+          "do": "wait",
+          "s": 2
+        },
+        {
+          "do": "shot",
+          "name": "bank-turned"
+        },
+        {
+          "do": "camera",
+          "position": [-200, 1.5, -350],
+          "yaw": 292.5,
+          "pitch": -12,
+          "aroundPlayer": true
+        },
+        {
+          "do": "wait",
+          "s": 2
+        },
+        {
+          "do": "shot",
+          "name": "bank-down"
+        },
+        {
+          "do": "camera",
+          "position": [-40, 1.5, 0],
+          "yaw": 292.5,
+          "pitch": -4,
+          "aroundPlayer": true
+        },
+        {
+          "do": "wait",
+          "s": 2
+        },
+        {
+          "do": "shot",
+          "name": "shore-low"
+        },
+        {
+          "do": "camera",
+          "position": [-20, 0.6, 0],
+          "yaw": 292.5,
+          "pitch": -1.5,
+          "aroundPlayer": true
+        },
+        {
+          "do": "wait",
+          "s": 2
+        },
+        {
+          "do": "shot",
+          "name": "shore-grazing"
+        },
+        {
+          "do": "camera",
+          "position": [-40, 1.5, 0],
+          "yaw": 292.5,
+          "pitch": -1,
+          "aroundPlayer": true
+        },
+        {
+          "do": "wait",
+          "s": 2
+        },
+        {
+          "do": "shot",
+          "name": "shore-pitch-up"
+        },
+        {
+          "do": "camera",
+          "position": [-40, 1.5, 0],
+          "yaw": 292.5,
+          "pitch": -9,
+          "aroundPlayer": true
+        },
+        {
+          "do": "wait",
+          "s": 2
+        },
+        {
+          "do": "shot",
+          "name": "shore-pitch-down"
+        },
+        {
+          "do": "camera",
+          "position": [-40, 1.5, 0],
+          "yaw": 250,
+          "pitch": -5,
+          "aroundPlayer": true
+        },
+        {
+          "do": "wait",
+          "s": 2
+        },
+        {
+          "do": "shot",
+          "name": "shore-side"
+        },
+        {
+          "do": "camera",
+          "position": [0, 3, 0],
+          "yaw": 112.5,
+          "pitch": -14,
+          "aroundPlayer": true
+        },
+        {
+          "do": "wait",
+          "s": 2
+        },
+        {
+          "do": "shot",
+          "name": "clouds-sea"
+        },
+        {
+          "do": "camera",
+          "position": [0, 3, 0],
+          "yaw": 30,
+          "pitch": -20,
+          "aroundPlayer": true
+        },
+        {
+          "do": "wait",
+          "s": 2
+        },
+        {
+          "do": "shot",
+          "name": "clouds-up"
+        },
+        {
+          "do": "time",
+          "t": 0.82
+        },
+        {
+          "do": "camera",
+          "position": [0, 3, 0],
+          "yaw": 208,
+          "pitch": -6,
+          "aroundPlayer": true
+        },
+        {
+          "do": "wait",
+          "s": 2
+        },
+        {
+          "do": "shot",
+          "name": "dusk-sun"
+        },
+        {
+          "do": "camera",
+          "position": [-200, 1.5, -350],
+          "yaw": 292.5,
+          "pitch": -3,
+          "aroundPlayer": true
+        },
+        {
+          "do": "wait",
+          "s": 2
+        },
+        {
+          "do": "shot",
+          "name": "dusk-bank"
+        },
+        {
+          "do": "time",
+          "t": 0.0
+        },
+        {
+          "do": "camera",
+          "position": [-200, 1.5, -350],
+          "yaw": 292.5,
+          "pitch": -3,
+          "aroundPlayer": true
+        },
+        {
+          "do": "wait",
+          "s": 2
+        },
+        {
+          "do": "shot",
+          "name": "night-bank"
+        }
+      ]
+    },
+    {
       "name": "jump-in-place",
       "notes": "Jumps on flat ground at the spawn: the controller trace shows the jump's peak.",
       "steps": [
@@ -2024,6 +2304,168 @@
           "do": "shot",
           "name": "sunset-b"
         }
+      ]
+    },
+    {
+      "name": "clouds-above",
+      "notes": "The cloud deck (1.8 km up) seen from above (CLOUDS.md §7): the camera 3.5 km up looking down at 40°, then 15 km up (a cloud sea to the deck's horizon), then 5 s recorded 3.5 km up looking down (the deck over the terrain: compare gpu.composite with clouds-off).",
+      "settings": { "clouds": "high" },
+      "steps": [
+        { "do": "settle", "maxS": 120 },
+        { "do": "camera", "position": [0, 3500, 0], "yaw": 240, "pitch": -40 },
+        { "do": "wait", "s": 3 },
+        { "do": "shot", "name": "above-3500" },
+        { "do": "camera", "position": [0, 15000, 0], "yaw": 240, "pitch": -30 },
+        { "do": "wait", "s": 3 },
+        { "do": "shot", "name": "above-15000" },
+        { "do": "camera", "position": [0, 3500, 0], "yaw": 240, "pitch": -40 },
+        { "do": "wait", "s": 2 },
+        { "do": "settle", "maxS": 60 },
+        { "do": "mark" },
+        { "do": "wait", "s": 5 },
+        { "do": "record", "name": "above" }
+      ]
+    },
+    {
+      "name": "clouds-above-off",
+      "notes": "clouds-above's recorded view with the clouds off: the baseline for the deck's cost from above.",
+      "settings": { "clouds": "off" },
+      "steps": [
+        { "do": "settle", "maxS": 120 },
+        { "do": "camera", "position": [0, 3500, 0], "yaw": 240, "pitch": -40 },
+        { "do": "wait", "s": 3 },
+        { "do": "settle", "maxS": 60 },
+        { "do": "mark" },
+        { "do": "wait", "s": 5 },
+        { "do": "record", "name": "above" },
+        { "do": "shot", "name": "above-off" }
+      ]
+    },
+    {
+      "name": "clouds-through",
+      "notes": "Rising through the deck (1.8 km): the camera at 1.3, 1.65, 1.8, 1.95 and 2.3 km looking 10° down: the deck fades out below it, the in-cloud fog where a cloud is, then the deck's top below. No pop between the shots. At the deck's height also at x = 1.5, 3, 4.5 and 6 km, so some shots are inside a cloud (the in-cloud fog).",
+      "settings": { "clouds": "high" },
+      "steps": [
+        { "do": "settle", "maxS": 120 },
+        { "do": "camera", "position": [0, 1300, 0], "yaw": 240, "pitch": -10 },
+        { "do": "wait", "s": 1.5 },
+        { "do": "shot", "name": "y1300" },
+        { "do": "camera", "position": [0, 1650, 0], "yaw": 240, "pitch": -10 },
+        { "do": "wait", "s": 1.5 },
+        { "do": "shot", "name": "y1650" },
+        { "do": "camera", "position": [0, 1800, 0], "yaw": 240, "pitch": -10 },
+        { "do": "wait", "s": 1.5 },
+        { "do": "shot", "name": "y1800" },
+        { "do": "camera", "position": [1500, 1800, 0], "yaw": 240, "pitch": -10 },
+        { "do": "wait", "s": 1.5 },
+        { "do": "shot", "name": "y1800-x1500" },
+        { "do": "camera", "position": [3000, 1800, 0], "yaw": 240, "pitch": -10 },
+        { "do": "wait", "s": 1.5 },
+        { "do": "shot", "name": "y1800-x3000" },
+        { "do": "camera", "position": [4500, 1800, 0], "yaw": 240, "pitch": -10 },
+        { "do": "wait", "s": 1.5 },
+        { "do": "shot", "name": "y1800-x4500" },
+        { "do": "camera", "position": [6000, 1800, 0], "yaw": 240, "pitch": -10 },
+        { "do": "wait", "s": 1.5 },
+        { "do": "shot", "name": "y1800-x6000" },
+        { "do": "camera", "position": [0, 1950, 0], "yaw": 240, "pitch": -10 },
+        { "do": "wait", "s": 1.5 },
+        { "do": "shot", "name": "y1950" },
+        { "do": "camera", "position": [0, 2300, 0], "yaw": 240, "pitch": -10 },
+        { "do": "wait", "s": 1.5 },
+        { "do": "shot", "name": "y2300" }
+      ]
+    },
+    {
+      "name": "clouds-level",
+      "notes": "At the deck's height (1.8 km) looking at the horizon, and 100 m above and below it.",
+      "settings": { "clouds": "high" },
+      "steps": [
+        { "do": "settle", "maxS": 120 },
+        { "do": "camera", "position": [0, 1800, 0], "yaw": 240, "pitch": 0 },
+        { "do": "wait", "s": 1.5 },
+        { "do": "shot", "name": "level" },
+        { "do": "camera", "position": [0, 1700, 0], "yaw": 240, "pitch": 0 },
+        { "do": "wait", "s": 1.5 },
+        { "do": "shot", "name": "below-100" },
+        { "do": "camera", "position": [0, 1900, 0], "yaw": 240, "pitch": 0 },
+        { "do": "wait", "s": 1.5 },
+        { "do": "shot", "name": "above-100" }
+      ]
+    },
+    {
+      "name": "clouds-above-night",
+      "notes": "The deck from above by moonlight (midnight), 3.5 km up looking down at 30°.",
+      "settings": { "clouds": "high", "timeOfDay": 0.0 },
+      "steps": [
+        { "do": "settle", "maxS": 120 },
+        { "do": "camera", "position": [0, 3500, 0], "yaw": 240, "pitch": -30 },
+        { "do": "wait", "s": 3 },
+        { "do": "shot", "name": "above-night" }
+      ]
+    },
+    {
+      "name": "walk-over-a-placed-block",
+      "notes": "Places a block in front of the spawn and walks over it without jumping (Phase 18, ADAPTIVE_BLOCKS.md): natural ground shapes itself, so the placed block is a half pyramid (45° faces: a slide, owner 2026-10-15) and the ground under and around it ramps up at 27° — the controller trace shows what the player does on it (no jump, no launch).",
+      "steps": [
+        { "do": "settle", "maxS": 120 },
+        { "do": "select", "slot": 0 },
+        { "do": "look", "yaw": 90, "pitch": -50 },
+        { "do": "wait", "s": 0.3 },
+        { "do": "edit", "action": "place" },
+        { "do": "wait", "s": 0.5 },
+        { "do": "shot", "name": "placed" },
+        { "do": "look", "yaw": 90, "pitch": 0 },
+        { "do": "mark" },
+        { "do": "key", "code": "KeyW", "down": true },
+        { "do": "wait", "s": 2 },
+        { "do": "key", "code": "KeyW", "down": false },
+        { "do": "wait", "s": 0.5 },
+        { "do": "record", "name": "walk" }
+      ]
+    },
+    {
+      "name": "slide-off-a-steep-block",
+      "notes": "Slides on 45° ground (PLAYER_CONTROLLER.md §6.8, owner 2026-10-15): places a block in front of the spawn (natural ground shapes it into a half pyramid with 45° faces), walks up the 27° ground around it into its 45° face (walking up it fails: the player slides back, braking), steers right along the face mid-slide with forward still held, then lets go and slides off. The controller trace (records.slide.ticks) shows the Sliding state, the speeds and the steer; the sounds (window.__dwell.sounds) the slide's loop and stop.",
+      "steps": [
+        { "do": "settle", "maxS": 120 },
+        { "do": "select", "slot": 0 },
+        { "do": "look", "yaw": 90, "pitch": -50 },
+        { "do": "wait", "s": 0.3 },
+        { "do": "edit", "action": "place" },
+        { "do": "wait", "s": 0.5 },
+        { "do": "shot", "name": "placed" },
+        { "do": "look", "yaw": 90, "pitch": -10 },
+        { "do": "mark" },
+        { "do": "key", "code": "KeyW", "down": true },
+        { "do": "wait", "s": 0.8 },
+        { "do": "shot", "name": "on-the-slope" },
+        { "do": "key", "code": "KeyD", "down": true },
+        { "do": "wait", "s": 0.4 },
+        { "do": "key", "code": "KeyD", "down": false },
+        { "do": "key", "code": "KeyW", "down": false },
+        { "do": "wait", "s": 1.0 },
+        { "do": "record", "name": "slide" },
+        { "do": "shot", "name": "after" }
+      ]
+    },
+    {
+      "name": "slopes-near-far",
+      "notes": "Natural slopes from the player's eyes, looking down at the ground nearby and out to the horizon (Phase 18): screenshots of the adaptive shapes near (chunks) and far (the LOD's sloped tops), and the steady frame there.",
+      "steps": [
+        { "do": "settle", "maxS": 120 },
+        { "do": "look", "yaw": 0, "pitch": -35 },
+        { "do": "wait", "s": 0.5 },
+        { "do": "shot", "name": "near-north" },
+        { "do": "look", "yaw": 135, "pitch": -25 },
+        { "do": "wait", "s": 0.5 },
+        { "do": "shot", "name": "near-southeast" },
+        { "do": "look", "yaw": 90, "pitch": -4 },
+        { "do": "wait", "s": 0.5 },
+        { "do": "mark" },
+        { "do": "wait", "s": 4 },
+        { "do": "record", "name": "steady" },
+        { "do": "shot", "name": "far-east" }
       ]
     }
   ]

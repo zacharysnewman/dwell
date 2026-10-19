@@ -675,3 +675,84 @@ fn exact_ties_and_axis_aligned_rays_agree_with_brute_force() {
         }
     }
 }
+
+/// Flat ground seen from 20 m up along a radial line, rays from 30° below the horizon to 1°:
+/// level 0 holds the ground with its top at `fine_top` (cells above the node base) out to 512 m,
+/// levels 1 and 2 hold the same ground voxelised at their cell size, rounded up (a coarse cell is
+/// solid when any of it is below the surface, as the LOD's cells are), out to 2 km. The cone LOD
+/// moves from level 0 to 1 at 100 m and to 2 at 200 m. Returns each ray's hit (face, the hit
+/// point's height above the node base, t), nearest pitch first.
+fn radial_line_over_flat_ground(fine_top: i32) -> Vec<(Option<usize>, f32, f32)> {
+    let table = StateTable::registry();
+    let grass = require("dwell:grass");
+    let mut scene = Scene::new(table.clone());
+    let n = BASE;
+    for level in 0..=2u32 {
+        let top = (fine_top + (1 << level) - 1) >> level; // rounded up, in this level's cells
+        let ground = build_node(
+            |_, y, _| if y < top { grass } else { 0 },
+            &table,
+            if level == 0 {
+                dwell_march::BuildOptions::CHUNK
+            } else {
+                dwell_march::BuildOptions::SECTION
+            },
+        );
+        let nodes = if level == 0 { 16 } else { 64 >> level };
+        for x in 0..nodes {
+            for z in -1..=1 {
+                let at = [(n[0] >> level) + x, n[1] >> level, (n[2] >> level) + z];
+                scene.put(level, at, &ground);
+            }
+        }
+    }
+    let p = MarchParams {
+        pixel_angle: 0.005,
+        lod_pixels: 4.0,
+        ..MarchParams::default()
+    };
+    assert_eq!(level_for(99.0, &p), 0);
+    assert_eq!(level_for(101.0, &p), 1);
+    let base_y = n[1] << 5;
+    let eye = [(n[0] << 5) + 2, base_y + 20, (n[2] << 5) + 16];
+    let mut out = Vec::new();
+    for i in 0..600 {
+        let pitch = (-30.0f32 + 29.0 * i as f32 / 599.0).to_radians();
+        let ray = Ray::new(eye, [0.5; 3], [pitch.cos(), pitch.sin(), 0.0137]);
+        let m = scene.march(&ray, &p);
+        let h = m.hit().expect("flat ground is hit");
+        let y = h.point(&ray)[1] + (eye[1] - base_y) as f32 + 0.5;
+        out.push((h.face, y, h.t));
+    }
+    out
+}
+
+#[test]
+fn cone_lod_switches_leave_no_seam_on_flat_ground() {
+    // Tops on every level's grid: the levels agree, so the line is one smooth plane.
+    let aligned = radial_line_over_flat_ground(8);
+    for (i, &(face, y, t)) in aligned.iter().enumerate() {
+        assert_eq!(face, Some(2), "ray {i}: the top face (t {t})");
+        assert!((y - 8.0).abs() < 1e-3, "ray {i}: hit at height {y}");
+    }
+    // Depth along the line grows smoothly: no jump beyond the plane's own spacing.
+    for w in aligned.windows(2) {
+        assert!(w[1].2 >= w[0].2 && w[1].2 - w[0].2 < 0.05 * w[0].2, "{w:?}");
+    }
+    // Tops off the coarse grids (5 m: level 1 rounds to 6, level 2 to 8). Where the cone LOD
+    // moves up a level the ray must not hit the coarser cell on the plane it last crossed (a side
+    // face, a dark arc around the eye): every hit is a top face, at one of the levels' heights.
+    let off = radial_line_over_flat_ground(5);
+    let sides: Vec<_> = off
+        .iter()
+        .enumerate()
+        .filter(|(_, h)| h.0 != Some(2))
+        .collect();
+    assert!(sides.is_empty(), "side faces at the switch: {sides:?}");
+    for (i, &(_, y, _)) in off.iter().enumerate() {
+        assert!(
+            [5.0, 6.0, 8.0].iter().any(|h| (y - h).abs() < 1e-3),
+            "ray {i}: hit at height {y}"
+        );
+    }
+}

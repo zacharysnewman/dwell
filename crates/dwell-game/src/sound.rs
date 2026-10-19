@@ -20,16 +20,20 @@ pub struct SoundEvent {
     pub at: Option<[f64; 3]>,
     /// Footsteps: the gait (the shell's loudness per gait).
     pub gait: Option<Gait>,
+    /// Continuous sounds (the slide): the voice the event starts, updates or stops — the mover's
+    /// (`MoverSounds::voice`).
+    pub voice: Option<u16>,
 }
 
 impl SoundEvent {
-    fn new(kind: SoundKind, block: StateId, intensity: f64, at: Option<[f64; 3]>) -> Self {
+    pub fn new(kind: SoundKind, block: StateId, intensity: f64, at: Option<[f64; 3]>) -> Self {
         Self {
             kind,
             block,
             intensity: intensity.clamp(0.0, 1.0) as f32,
             at,
             gait: None,
+            voice: None,
         }
     }
 }
@@ -57,6 +61,9 @@ pub struct MoverSample {
     pub ground: StateId,
     /// The block at the body (a ladder being climbed, the water swum in).
     pub body: StateId,
+    /// Seconds since the mover's previous sample (a tick for the local player, a frame for
+    /// others).
+    pub dt: f64,
 }
 
 /// Submersion that counts as entering water, and as having left it (hysteresis).
@@ -85,9 +92,34 @@ fn liquid(id: StateId) -> bool {
     id != 0 && (info(id).liquid || info(id).flooded)
 }
 
-/// Turns one mover's motion into footsteps, landings, jumps, splashes and the like.
+/// Seconds a slide may pause (the state flickering at the foot of a ramp, a bump) and go on as the
+/// same slide; longer, and it has ended.
+pub const SLIDE_HOLD: f64 = 0.15;
+/// Speed updates of a slide: at most this often (s), and only for a change of intensity this
+/// large (the shell glides between them).
+pub const SLIDE_UPDATE_EVERY: f64 = 0.05;
+pub const SLIDE_UPDATE_STEP: f64 = 0.02;
+
+/// A slide in progress (one continuous voice in the shell).
+#[derive(Clone, Copy, Debug)]
+struct Slide {
+    /// The surface it scrapes (its block's sound set).
+    block: StateId,
+    /// The intensity last sent.
+    sent: f64,
+    /// The intensity while last sliding (the stop sound's).
+    last: f64,
+    since_update: f64,
+    /// Seconds not sliding.
+    paused: f64,
+}
+
+/// Turns one mover's motion into footsteps, landings, jumps, splashes, slides and the like.
 #[derive(Clone, Debug, Default)]
 pub struct MoverSounds {
+    /// The voice of this mover's continuous sounds (0: the local player; others: their id).
+    voice: u16,
+    slide: Option<Slide>,
     prev: Option<MoverSample>,
     /// Distance walked toward the next footstep.
     travelled: f64,
@@ -101,6 +133,91 @@ pub struct MoverSounds {
 impl MoverSounds {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Another player's sounds: `voice` is its player id.
+    pub fn with_voice(voice: u16) -> Self {
+        Self {
+            voice,
+            ..Self::default()
+        }
+    }
+
+    fn voiced(&self, mut e: SoundEvent) -> SoundEvent {
+        e.voice = Some(self.voice);
+        e
+    }
+
+    /// Ends what is still sounding (a slide), e.g. when the mover goes out of view.
+    /// `at` None for another player's sounds: where it was last seen.
+    pub fn finish(&mut self, at: Option<[f64; 3]>, out: &mut Vec<SoundEvent>) {
+        let at = at.or_else(|| {
+            (self.voice != 0)
+                .then(|| self.prev.map(|p| p.feet))
+                .flatten()
+        });
+        if let Some(sl) = self.slide.take() {
+            out.push(self.voiced(SoundEvent::new(SoundKind::SlideEnd, sl.block, sl.last, at)));
+        }
+    }
+
+    /// The slide's continuous scrape (docs/AUDIO.md §5): `slide` starts the mover's voice on
+    /// the surface's set, `slide_speed` moves its intensity with the speed, `slide_end` stops it
+    /// and plays the set's soft stop. A pause shorter than `SLIDE_HOLD` keeps the same slide
+    /// (its voice falls silent meanwhile); a new surface restarts the voice on that set.
+    fn slide(
+        &mut self,
+        s: &MoverSample,
+        surface: StateId,
+        at: Option<[f64; 3]>,
+        out: &mut Vec<SoundEvent>,
+    ) {
+        let speed = (s.velocity[0].powi(2) + s.velocity[1].powi(2) + s.velocity[2].powi(2)).sqrt();
+        let level = (s.state == PlayerState::Sliding)
+            .then(|| speed_intensity(SoundKind::Slide, speed))
+            .flatten();
+        let Some(mut sl) = self.slide else {
+            if let Some(i) = level {
+                out.push(self.voiced(SoundEvent::new(SoundKind::Slide, surface, i, at)));
+                self.slide = Some(Slide {
+                    block: surface,
+                    sent: i,
+                    last: i,
+                    since_update: 0.0,
+                    paused: 0.0,
+                });
+            }
+            return;
+        };
+        sl.since_update += s.dt;
+        match level {
+            Some(i) => {
+                sl.paused = 0.0;
+                sl.last = i;
+                if surface != sl.block && solid(surface) {
+                    // Onto another material: the voice restarts on its set.
+                    sl.block = surface;
+                    sl.sent = i;
+                    sl.since_update = 0.0;
+                    out.push(self.voiced(SoundEvent::new(SoundKind::Slide, surface, i, at)));
+                }
+            }
+            None => sl.paused += s.dt,
+        }
+        if sl.paused > SLIDE_HOLD {
+            self.slide = Some(sl);
+            self.finish(at, out);
+            return;
+        }
+        let target = level.unwrap_or(0.0);
+        let moved =
+            (target - sl.sent).abs() >= SLIDE_UPDATE_STEP || (target == 0.0) != (sl.sent == 0.0);
+        if sl.since_update >= SLIDE_UPDATE_EVERY && moved {
+            sl.sent = target;
+            sl.since_update = 0.0;
+            out.push(self.voiced(SoundEvent::new(SoundKind::SlideSpeed, sl.block, target, at)));
+        }
+        self.slide = Some(sl);
     }
 
     /// One update; events are pushed to `out`, placed at `at` (None for the local player).
@@ -132,6 +249,7 @@ impl MoverSounds {
         // A jump of more than a few metres between samples is a teleport (respawn, snap): no sound.
         if horizontal + d[1].abs() > 4.0 {
             self.travelled = 0.0;
+            self.finish(at, out);
             return;
         }
         let speed = |v: [f64; 3]| (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
@@ -177,9 +295,7 @@ impl MoverSounds {
         if s.state == PlayerState::Running && p.state != PlayerState::Running && from_footing {
             out.push(SoundEvent::new(SoundKind::Sprint, 0, 1.0, at));
         }
-        if s.state == PlayerState::Sliding && p.state != PlayerState::Sliding {
-            out.push(SoundEvent::new(SoundKind::Slide, surface, 1.0, at));
-        }
+        self.slide(s, surface, at, out);
 
         // Flight: a whoosh when starting to rise or dive.
         if s.state == PlayerState::Flying {
@@ -339,14 +455,16 @@ impl EditSounds {
 }
 
 /// Events as the JS API hands them over: 7 numbers each (kind, block state, intensity, x, y, z,
-/// flags: bit 0 spatial, bits 1–3 the gait + 1).
+/// flags: bit 0 spatial, bits 1–3 the gait + 1, bits 4–20 the voice + 1).
 pub const FLOATS_PER_EVENT: usize = 7;
 
 pub fn encode(events: &[SoundEvent]) -> Vec<f64> {
     let mut v = Vec::with_capacity(events.len() * FLOATS_PER_EVENT);
     for e in events {
         let at = e.at.unwrap_or([0.0; 3]);
-        let flags = u8::from(e.at.is_some()) | (e.gait.map_or(0, |g| g as u8 + 1) << 1);
+        let flags = u32::from(e.at.is_some())
+            | (e.gait.map_or(0, |g| g as u32 + 1) << 1)
+            | (e.voice.map_or(0, |v| u32::from(v) + 1) << 4);
         v.extend_from_slice(&[
             f64::from(e.kind as u8),
             f64::from(e.block),
@@ -382,6 +500,7 @@ mod tests {
             submerged: 0.0,
             ground: stone(),
             body: 0,
+            dt: DT,
         }
     }
 
@@ -535,6 +654,118 @@ mod tests {
         assert_eq!(kinds(&run), [SoundKind::Sprint]);
         let slide = walk(&mut m, &mut s, PlayerState::Sliding, 8.0, 0.1);
         assert_eq!(kinds(&slide), [SoundKind::Slide]);
+    }
+
+    /// Slides along +x for `seconds` at a speed following `speed(t)`; returns the events.
+    fn slide_for(
+        m: &mut MoverSounds,
+        s: &mut MoverSample,
+        seconds: f64,
+        speed: impl Fn(f64) -> f64,
+    ) -> Vec<SoundEvent> {
+        let mut out = Vec::new();
+        s.state = PlayerState::Sliding;
+        for k in 0..(seconds / DT).round() as usize {
+            let v = speed(k as f64 * DT);
+            s.velocity = [v * 0.7, -v * 0.7, 0.0];
+            s.feet[0] += v * 0.7 * DT;
+            s.feet[1] -= v * 0.7 * DT;
+            m.update(s, None, &mut out);
+        }
+        out
+    }
+
+    #[test]
+    fn a_slide_starts_a_voice_follows_its_speed_and_ends_with_a_stop() {
+        let (mut m, mut s) = (MoverSounds::new(), standing());
+        m.update(&s, None, &mut Vec::new());
+        // Speeding up from 1 to 13 m/s over a second, then stepping off onto the flat.
+        let events = slide_for(&mut m, &mut s, 1.0, |t| 1.0 + 12.0 * t);
+        assert_eq!(events[0].kind, SoundKind::Slide);
+        assert_eq!(events[0].block, stone());
+        assert_eq!(events[0].voice, Some(0));
+        let (min, full) = SoundKind::Slide.speed().unwrap();
+        assert!((f64::from(events[0].intensity) - (1.0 - min) / (full - min)).abs() < 0.02);
+        let speeds: Vec<f32> = events[1..]
+            .iter()
+            .inspect(|e| assert_eq!(e.kind, SoundKind::SlideSpeed))
+            .map(|e| e.intensity)
+            .collect();
+        // Updates rise with the speed, at most every SLIDE_UPDATE_EVERY.
+        assert!(speeds.len() >= 10 && speeds.len() <= 21, "{}", speeds.len());
+        assert!(speeds.windows(2).all(|w| w[1] > w[0]));
+        assert!(*speeds.last().unwrap() > 0.8);
+        // Off the slope: the voice goes silent at once, and the slide ends after the hold with
+        // the stop sound at the speed it slid at.
+        s.state = PlayerState::Walking;
+        s.velocity = [5.0, 0.0, 0.0];
+        let mut end = Vec::new();
+        for _ in 0..(0.3 / DT) as usize {
+            m.update(&s, None, &mut end);
+        }
+        let end: Vec<_> = end.iter().filter(|e| e.kind != SoundKind::Step).collect();
+        assert_eq!(
+            end.iter().map(|e| e.kind).collect::<Vec<_>>(),
+            [SoundKind::SlideSpeed, SoundKind::SlideEnd]
+        );
+        assert_eq!(end[0].intensity, 0.0);
+        assert!(end[1].intensity > 0.8);
+    }
+
+    #[test]
+    fn a_short_pause_keeps_the_slide_and_slow_creeping_makes_no_sound() {
+        let (mut m, mut s) = (MoverSounds::new(), standing());
+        m.update(&s, None, &mut Vec::new());
+        let mut events = slide_for(&mut m, &mut s, 0.5, |_| 6.0);
+        // A few ticks walking (the state flickers at a ramp's foot), then sliding again.
+        s.state = PlayerState::Walking;
+        for _ in 0..4 {
+            m.update(&s, None, &mut events);
+        }
+        events.extend(slide_for(&mut m, &mut s, 0.5, |_| 6.0));
+        let starts = events.iter().filter(|e| e.kind == SoundKind::Slide).count();
+        assert_eq!(starts, 1, "{events:?}");
+        assert!(events.iter().all(|e| e.kind != SoundKind::SlideEnd));
+        // Below the slide's start speed: nothing.
+        let (mut m, mut s) = (MoverSounds::new(), standing());
+        m.update(&s, None, &mut Vec::new());
+        assert!(slide_for(&mut m, &mut s, 1.0, |_| 0.2).is_empty());
+    }
+
+    #[test]
+    fn a_slide_onto_another_surface_restarts_its_voice_on_that_set() {
+        let (mut m, mut s) = (MoverSounds::new(), standing());
+        m.update(&s, None, &mut Vec::new());
+        slide_for(&mut m, &mut s, 0.3, |_| 6.0);
+        s.ground = require("dwell:sand");
+        let events = slide_for(&mut m, &mut s, 0.3, |_| 6.0);
+        assert_eq!(events[0].kind, SoundKind::Slide);
+        assert_eq!(events[0].block, require("dwell:sand"));
+    }
+
+    #[test]
+    fn another_players_slide_is_spatial_on_its_own_voice_and_ends_when_it_leaves() {
+        let mut m = MoverSounds::with_voice(7);
+        let mut s = standing();
+        let at = Some([1.0, 2.0, 3.0]);
+        m.update(&s, at, &mut Vec::new());
+        s.state = PlayerState::Sliding;
+        s.velocity = [6.0, -6.0, 0.0];
+        let mut out = Vec::new();
+        m.update(&s, at, &mut out);
+        assert_eq!(out[0].kind, SoundKind::Slide);
+        assert_eq!((out[0].voice, out[0].at), (Some(7), at));
+        let mut gone = Vec::new();
+        m.finish(at, &mut gone);
+        assert_eq!(gone.len(), 1);
+        assert_eq!(
+            (gone[0].kind, gone[0].voice),
+            (SoundKind::SlideEnd, Some(7))
+        );
+        // The voice travels in the flags: bits 4 and up hold voice + 1.
+        let v = encode(&out);
+        assert_eq!(v[6] as u32 >> 4, 8);
+        assert_eq!(v[6] as u32 & 1, 1);
     }
 
     #[test]

@@ -187,6 +187,11 @@ that touches the public API, a release or the workflows:
   network protocols, the cross-version browser storage — needs a new compatibility line** (before
   `1.0.0`, the next MINOR). Say so in the PR and let the owner raise `package.json`; do not leave
   such a change shipping under the old line, whose players' worlds it would break.
+- **Blocks and registry sync (ADR 0038):** the server sends its block registry at join and clients
+  map ids by name, so **adding** blocks or states, or changing looks, is not breaking. Still
+  breaking: removing or renaming a state (or adding/removing a property), changing an existing
+  state's shape or rules, changing the shapes or the adaptive shape rules, and changing worldgen
+  (`docs/RELEASES.md` §3).
 - **The browser's shared stores are append-only** (the world index, settings, device key): new
   fields optional, unknown fields and unreadable records preserved on rewrite (a test pins it).
 - **Release logic lives in tested scripts** (`client/scripts/release.ts`, `site.ts`), not in workflow
@@ -222,7 +227,7 @@ Check these before chasing an e2e failure:
   the drawing buffer), and shard 1 went from 8m43s failing to 3m58s passing. A new per-pixel
   visual needs its CPU-adapter tier too. If shard 1 slows again, compare its per-test times with
   that run before widening a timeout.
-- The hotbar slot count in `e2e/edit.spec.ts` is the palette's length (5); update it when the palette
+- The hotbar slot count in `e2e/edit.spec.ts` is the palette's length (7); update it when the palette
   changes.
 
 ## Running the browser in a sandbox

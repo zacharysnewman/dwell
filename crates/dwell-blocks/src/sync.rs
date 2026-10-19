@@ -19,7 +19,7 @@
 use dwell_protocol::bytes::{ByteReader, ByteWriter};
 
 use crate::{
-    AIR, Cross, FLUIDS, Facing, Fade, Grid, NewBlock, Origin, RenderMode, SHAPES, STATES,
+    AIR, Cross, FLUIDS, Facing, Fade, Grid, Medium, NewBlock, Origin, RenderMode, SHAPES, STATES,
     ShapeInfo, StateId, StateInfo, Support, Textures, VoxelShape, Wind, blocks, build_state, info,
     intern, register, shape::faces_of, state_count,
 };
@@ -49,7 +49,8 @@ pub mod tag {
     pub const PLACE_ON: u8 = 7;
     /// `u8` (0 none, 1 below): the neighbour it needs to stay.
     pub const NEEDS_SUPPORT: u8 = 8;
-    // 9 reserved.
+    /// `u8` medium (0 any, 1 air, 2 water): what the block may be placed into.
+    pub const MEDIUM: u8 = 9;
     /// `str`.
     pub const LOOK: u8 = 0x81;
     /// `u32` sRGB, `f32` opacity.
@@ -71,7 +72,7 @@ pub mod tag {
     pub const FADE: u8 = 0x8a;
 }
 
-/// Rule flag bits (tag `FLAGS`). Bit 6 is reserved for `adaptive` (#82).
+/// Rule flag bits (tag `FLAGS`).
 pub mod flag {
     pub const SOLID: u32 = 1;
     pub const INDESTRUCTIBLE: u32 = 2;
@@ -79,15 +80,17 @@ pub mod flag {
     pub const CLIMBABLE: u32 = 8;
     pub const LIQUID: u32 = 16;
     pub const PLACEABLE: u32 = 32;
+    pub const ADAPTIVE: u32 = 64;
     pub const REPLACEABLE: u32 = 128;
-    pub const KNOWN: u32 = 63 | REPLACEABLE;
-    pub const NAMES: [(u32, &str); 7] = [
+    pub const KNOWN: u32 = 63 | ADAPTIVE | REPLACEABLE;
+    pub const NAMES: [(u32, &str); 8] = [
         (SOLID, "solid"),
         (INDESTRUCTIBLE, "indestructible"),
         (FLOODED, "flooded"),
         (CLIMBABLE, "climbable"),
         (LIQUID, "liquid"),
         (PLACEABLE, "placeable"),
+        (ADAPTIVE, "adaptive"),
         (REPLACEABLE, "replaceable"),
     ];
 }
@@ -142,6 +145,10 @@ pub fn shape_bytes(s: &ShapeInfo) -> Vec<u8> {
         }
     }
     w.bytes(&s.corners);
+    for row in &s.points {
+        w.bytes(row);
+    }
+    w.u8(u8::from(s.fan));
     w.u8(u8::from(s.inverted));
     w.u8(s.diagonal);
     w.u8(u8::from(s.convex));
@@ -201,6 +208,7 @@ pub fn state_fields(s: &StateInfo) -> Fields {
         (flag::CLIMBABLE, s.climbable),
         (flag::LIQUID, s.liquid),
         (flag::PLACEABLE, s.placeable),
+        (flag::ADAPTIVE, s.adaptive),
         (flag::REPLACEABLE, s.replaceable),
     ] {
         if on {
@@ -250,6 +258,15 @@ pub fn state_fields(s: &StateInfo) -> Fields {
     if s.needs_support != Support::None {
         out.push(field(tag::NEEDS_SUPPORT, |w| w.u8(1)));
     }
+    if s.medium != Medium::Any {
+        out.push(field(tag::MEDIUM, |w| {
+            w.u8(match s.medium {
+                Medium::Any => 0,
+                Medium::Air => 1,
+                Medium::Water => 2,
+            })
+        }));
+    }
     out.push(field(tag::RENDER, |w| {
         w.u8(match s.render {
             RenderMode::Opaque => 0,
@@ -284,15 +301,20 @@ pub fn state_fields(s: &StateInfo) -> Fields {
 }
 
 impl Payload {
-    /// The registry this process serves: the build's blocks and every block registered as a
-    /// server's (never states it synced from another server).
+    /// The build's registry (what a server without blocks of its own serves).
     pub fn served() -> Payload {
+        Self::served_by(|b| b.origin == Origin::Build)
+    }
+
+    /// A server's registry: the table's blocks `serves` keeps (the build's and the server's own;
+    /// never states synced from another server).
+    pub fn served_by(serves: impl Fn(&crate::Block) -> bool) -> Payload {
         Payload {
             format: FORMAT,
             shapes: SHAPES.iter().map(shape_bytes).collect(),
             fluids: FLUIDS.iter().map(|f| f.name.to_owned()).collect(),
             blocks: blocks()
-                .filter(|b| b.origin.served())
+                .filter(|b| b.origin.served() && serves(b))
                 .map(|b| PayloadBlock {
                     name: b.name.to_owned(),
                     first_state: b.first_state,
@@ -562,6 +584,8 @@ fn default_row(name: &str) -> StateInfo {
         place_on: &[],
         needs_support: Support::None,
         replaceable: false,
+        adaptive: false,
+        medium: Medium::Any,
     }
 }
 
@@ -582,6 +606,7 @@ fn apply_rules(
     row.selection = None;
     row.place_on = &[];
     row.needs_support = Support::None;
+    row.medium = Medium::Any;
     for (t, bytes) in fields {
         let mut r = ByteReader::new(bytes);
         match *t {
@@ -620,6 +645,17 @@ fn apply_rules(
                     }
                 }
             }
+            tag::MEDIUM => {
+                row.medium = match r.u8() {
+                    0 => Medium::Any,
+                    1 => Medium::Air,
+                    2 => Medium::Water,
+                    other => {
+                        notes.push(format!("medium {other} not in this version (any)"));
+                        Medium::Any
+                    }
+                }
+            }
             t if t & tag::LOOK_BIT == 0 => {
                 notes.push(format!("rule field {t} not in this version (ignored)"));
             }
@@ -634,6 +670,7 @@ fn apply_rules(
     row.liquid = has(flag::LIQUID);
     row.placeable = has(flag::PLACEABLE);
     row.replaceable = has(flag::REPLACEABLE);
+    row.adaptive = has(flag::ADAPTIVE);
     if flags & !flag::KNOWN != 0 {
         notes.push(format!(
             "rule flags {:#x} not in this version (ignored)",
@@ -891,7 +928,9 @@ fn changed_fields(a: &StateInfo, b: &StateInfo) -> Vec<String> {
             flag::FLOODED => s.flooded,
             flag::CLIMBABLE => s.climbable,
             flag::LIQUID => s.liquid,
-            _ => s.placeable,
+            flag::PLACEABLE => s.placeable,
+            flag::ADAPTIVE => s.adaptive,
+            _ => s.replaceable,
         };
         if get(a) != get(b) {
             out.push(name.to_owned());
@@ -917,6 +956,9 @@ fn changed_fields(a: &StateInfo, b: &StateInfo) -> Vec<String> {
     }
     if a.needs_support != b.needs_support {
         out.push("needs support".into());
+    }
+    if a.medium != b.medium {
+        out.push("medium".into());
     }
     out
 }
@@ -1142,7 +1184,7 @@ mod tests {
         let mut look = Vec::new();
         ByteWriter::new(&mut look).str("test:glow_look");
         set_field(&mut glow, tag::LOOK, look);
-        set_field(&mut glow, 9, vec![1]);
+        set_field(&mut glow, 31, vec![1]);
         p.blocks.push(PayloadBlock {
             name: "test:glow".into(),
             first_state: next,
@@ -1189,7 +1231,12 @@ mod tests {
             names,
             ["test:glow[lit=false]", "test:glow[lit=true]", "test:wedge"]
         );
-        assert!(d.added[0].fields.iter().any(|f| f.contains("rule field 9")));
+        assert!(
+            d.added[0]
+                .fields
+                .iter()
+                .any(|f| f.contains("rule field 31"))
+        );
         assert!(d.added[2].fields.iter().any(|f| f.contains("full cube")));
 
         // Ids shift past the removed ladder; each maps by name, both ways.

@@ -6,7 +6,7 @@
 //! | class         | rule (registry fields)                                | primary ray     |
 //! |---------------|-------------------------------------------------------|-----------------|
 //! | `Empty`       | not liquid, `shape: Empty`, `opacity` 0 (air)         | passes          |
-//! | `Transparent` | `liquid` (water)                                      | passes (raster) |
+//! | `Transparent` | `liquid` (water), or `render` not `opaque` (cutout ladders and plants, translucent glass) | passes (raster) |
 //! | `Solid`       | `shape: Full`                                         | hits the cube   |
 //! | `Shaped`      | `shape: Shaped`, or `shape: Empty` with `opacity` > 0 | the shape hook  |
 //!
@@ -14,11 +14,12 @@
 //! class: it stays a raster pass over both renderers at first (RAY_MARCHED_RENDERER.md §6), so it
 //! is not occupied for primary rays; its ids are still kept in a mixed brick's states for the water
 //! rays of WATER_RENDERING.md W6, and a brick holding only air and water is empty. `Shaped` covers
-//! the registry's shape table and thin looks the mesher draws without a shape (a ladder's plate):
-//! the shape hook ([`crate::march::shape_hit`]) is where analytic shape planes go (step A5); today
-//! it hits the cell's cube.
+//! the registry's shape table and opaque thin looks the mesher draws without a shape: the shape hook ([`crate::march::shape_hit`]) is where analytic shape planes go (step A5); today
+//! it hits the cell's cube. **See-through looks** (the registry's `render`: `cutout` ladders and
+//! plants, `translucent` blocks; docs/TRANSPARENT_BLOCKS.md) are `Transparent` too: alpha-tested or
+//! blended texels are a raster pass over either renderer, never a cube that stops primary rays.
 
-use dwell_blocks::{StateId, StateInfo, VoxelShape};
+use dwell_blocks::{RenderMode, StateId, StateInfo, VoxelShape};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MarchClass {
@@ -30,7 +31,7 @@ pub enum MarchClass {
 
 impl MarchClass {
     pub fn of(s: &StateInfo) -> Self {
-        if s.liquid {
+        if s.liquid || s.render != RenderMode::Opaque {
             MarchClass::Transparent
         } else {
             match s.shape {
@@ -130,8 +131,14 @@ mod tests {
         assert_eq!(t.class(require("dwell:air")), MarchClass::Empty);
         assert_eq!(t.class(require("dwell:stone")), MarchClass::Solid);
         assert_eq!(t.class(require("dwell:water")), MarchClass::Transparent);
-        assert_eq!(t.class(require("dwell:ladder")), MarchClass::Shaped);
+        // Cutout looks (the registry's `render`) never stop primary rays: a raster pass draws them.
+        assert_eq!(t.class(require("dwell:ladder")), MarchClass::Transparent);
+        assert_eq!(
+            t.class(require("dwell:tall_grass")),
+            MarchClass::Transparent
+        );
         assert!(!t.occupied(require("dwell:water")));
+        assert!(!t.occupied(require("dwell:tall_grass")));
         assert!(!t.occupied(u16::MAX));
         assert_eq!(t.len(), dwell_blocks::STATES.len());
         assert_eq!(t.to_words().len(), 2 * t.len());

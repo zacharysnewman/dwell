@@ -46,6 +46,44 @@ fn modifications(messages: &[Message]) -> Vec<VoxelModification> {
 }
 
 #[test]
+fn a_fill_of_tall_grass_keeps_only_the_plants_that_stand_on_grass() {
+    // Tall grass needs support (block data `placeOn`, `needsSupport`): a 3 × 3 × 3 fill on the
+    // flat world's grass keeps the bottom layer; the layers above (standing on tall grass) and the
+    // cells over a stone block go, in the same modification. Clearing the ground takes the rest.
+    let tall = dwell_blocks::require("dwell:tall_grass");
+    let mut f = Fixture::new(flat());
+    join_streaming(&mut f, 1);
+    f.server.step();
+    f.take_all();
+    f.send(1, fill([-2, -1, 3], [1, 1, 1], M.stone));
+    f.server.step();
+    for _ in 0..30 {
+        f.server.step();
+    }
+    f.send(1, fill([-2, 0, 2], [3, 3, 3], tall));
+    f.server.step();
+    for x in -2..1 {
+        for z in 2..5 {
+            let want = if [x, z] == [-2, 3] { M.air } else { tall };
+            assert_eq!(f.server.world().get_voxel(x, 0, z), want, "{x} 0 {z}");
+            for y in 1..3 {
+                assert_eq!(f.server.world().get_voxel(x, y, z), M.air, "{x} {y} {z}");
+            }
+        }
+    }
+    for _ in 0..30 {
+        f.server.step();
+    }
+    f.send(1, fill([-2, -1, 2], [3, 1, 3], M.air));
+    f.server.step();
+    for x in -2..1 {
+        for z in 2..5 {
+            assert_eq!(f.server.world().get_voxel(x, 0, z), M.air, "{x} 0 {z}");
+        }
+    }
+}
+
+#[test]
 fn the_welcome_announces_region_edits() {
     let mut f = Fixture::new(flat());
     let w = join_streaming(&mut f, 1);

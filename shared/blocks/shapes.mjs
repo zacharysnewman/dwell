@@ -171,13 +171,23 @@ export function buildShape(corners, inverted, diagonal) {
     return { tag, pts };
   });
 
-  // Side profiles for culling: heights (halves) at the lower and higher coordinate of the face's
-  // running axis (z for ±X, x for ±Z), in face order +X, −X, +Z, −Z.
+  // Side profiles for culling: heights (halves) at the lower end, the middle and the higher end
+  // of the face's running axis (z for ±X, x for ±Z), in face order +X, −X, +Z, −Z. A corner shape's
+  // side is straight, so its middle is the mean of its ends.
+  const mid = (a, b) => (h[a] + h[b]) / 2;
   const sides = [
-    [h[1], h[2]], // +X: NE (z = 0), SE (z = 1)
-    [h[0], h[3]], // −X: NW, SW
-    [h[3], h[2]], // +Z: SW (x = 0), SE (x = 1)
-    [h[0], h[1]], // −Z: NW, NE
+    [h[1], mid(1, 2), h[2]], // +X: NE (z = 0), SE (z = 1)
+    [h[0], mid(0, 3), h[3]], // −X: NW, SW
+    [h[3], mid(3, 2), h[2]], // +Z: SW (x = 0), SE (x = 1)
+    [h[0], mid(0, 1), h[1]], // −Z: NW, NE
+  ];
+  // The top as 3 × 3 surface points (halves; rows north to south, columns west to east): corners,
+  // edge midpoints and the centre, which lies on the split diagonal.
+  const centre = diagonal === 0 ? (h[0] + h[2]) / 2 : (h[1] + h[3]) / 2;
+  const points = [
+    [h[0], mid(0, 1), h[1]],
+    [mid(0, 3), centre, mid(1, 2)],
+    [h[3], mid(3, 2), h[2]],
   ];
   // Volume: each triangle's area (½) × its mean height (halves → cells).
   const tri = (a, b, c) => (h[a] + h[b] + h[c]) / 3 / 2;
@@ -192,6 +202,8 @@ export function buildShape(corners, inverted, diagonal) {
   const minH = Math.min(...h) / 2;
   return {
     corners: h.slice(),
+    points,
+    fan: false,
     inverted,
     diagonal,
     faces: outFaces,
@@ -225,3 +237,283 @@ export function slabShape(values) {
 }
 
 export const cubeShape = () => buildShape([2, 2, 2, 2], false, 0);
+
+// ---- Adaptive natural blocks (docs/ADAPTIVE_BLOCKS.md, Phase 18) --------------------------------
+//
+// The rules of the Shape Playground need 12 more corner shapes, which split along their *higher*
+// diagonal (a crest, not a valley), and 6 shapes that are not corner shapes: half-height ridges
+// whose crest runs to edge midpoints or the centre, given as 3 × 3 surface points (halves; rows
+// north to south, columns west to east) in canonical orientation (facing east). Names and corner
+// heights are the prototypes' (docs/prototypes/shape-playground.html).
+
+export const ADAPTIVE_CORNER_SHAPES = {
+  half_and_half_left: [2, 0, 0, 1],
+  half_and_half_right: [1, 0, 0, 2],
+  tall_half_and_half_left: [2, 2, 1, 0],
+  tall_half_and_half_right: [2, 2, 0, 1],
+  tilt_left: [2, 1, 1, 0],
+  tilt_right: [1, 2, 0, 1],
+  diagonal_slope: [1, 2, 1, 0],
+  dimple: [2, 1, 2, 0],
+  saddle: [2, 0, 2, 0],
+  uneven_saddle: [2, 0, 1, 0],
+  half_saddle: [1, 0, 1, 0],
+  high_half_saddle: [2, 1, 2, 1],
+};
+
+export const RIDGE_SHAPES = {
+  half_pyramid: [
+    [0, 0, 0],
+    [0, 1, 0],
+    [0, 0, 0],
+  ],
+  // Runs east–west; turned once, north–south.
+  half_ridge: [
+    [0, 0, 0],
+    [1, 1, 1],
+    [0, 0, 0],
+  ],
+  // A tent's end: the crest runs from the centre to the edge it faces.
+  half_ridge_end: [
+    [0, 0, 0],
+    [0, 1, 1],
+    [0, 0, 0],
+  ],
+  // The crest turns: to the edge it faces and the next one clockwise.
+  half_ridge_corner: [
+    [0, 0, 0],
+    [0, 1, 1],
+    [0, 1, 0],
+  ],
+  // Crests to three edges; facing east, the open side is south.
+  half_ridge_tee: [
+    [0, 1, 0],
+    [1, 1, 1],
+    [0, 0, 0],
+  ],
+  half_ridge_cross: [
+    [0, 1, 0],
+    [1, 1, 1],
+    [0, 1, 0],
+  ],
+};
+
+/** The Phase 9 corner shapes, the full cube and the slab, by name (canonical orientation). */
+export const GAME_CORNER_SHAPES = { full: [2, 2, 2, 2], slab: [1, 1, 1, 1], ...SLOPE_SHAPES };
+
+/** Every shape name the adaptive rules may name. */
+export const ADAPTIVE_SHAPE_NAMES = [
+  ...Object.keys(GAME_CORNER_SHAPES),
+  ...Object.keys(ADAPTIVE_CORNER_SHAPES),
+  ...Object.keys(RIDGE_SHAPES),
+];
+/** Shapes that look the same at every turn (they take no facing). */
+export const SYMMETRIC_SHAPES = new Set(["full", "slab", "half_pyramid", "half_ridge_cross"]);
+
+/** Rotates a 3 × 3 grid `turns` quarter turns clockwise seen from above. */
+export function rotateGrid(g, turns) {
+  let o = g.map((r) => r.slice());
+  for (let t = 0; t < ((turns % 4) + 4) % 4; ++t)
+    o = o.map((_, r) => o.map((row) => row[r]).reverse());
+  return o;
+}
+
+/**
+ * Corner heights and split of a named corner shape at `turns`: the Phase 9 shapes split through
+ * their special corner (NW–SE, or NE–SW once turned an odd number of times), the adaptive ones
+ * along their higher diagonal.
+ */
+export function cornerShapeAt(name, turns) {
+  const adaptive = name in ADAPTIVE_CORNER_SHAPES;
+  const base = adaptive ? ADAPTIVE_CORNER_SHAPES[name] : GAME_CORNER_SHAPES[name];
+  if (!base) throw new Error(`unknown corner shape ${name}`);
+  const c = rotateCorners(base, turns);
+  const diagonal = adaptive ? (c[1] + c[3] > c[0] + c[2] ? 1 : 0) : (((turns % 4) + 4) % 4) % 2;
+  return { corners: c, diagonal };
+}
+
+/** The 3 × 3 surface points (halves) of a named shape at `turns`. */
+export function pointsOf(name, turns) {
+  if (name in RIDGE_SHAPES) return rotateGrid(RIDGE_SHAPES[name], turns);
+  return buildShape(cornerShapeAt(name, turns).corners, false, cornerShapeAt(name, turns).diagonal)
+    .points;
+}
+
+const key3 = (p) => `${p[0]},${p[1]},${p[2]}`;
+function gcd(a, b) {
+  a = Math.abs(a);
+  b = Math.abs(b);
+  while (b) [a, b] = [b, a % b];
+  return a;
+}
+const turn = (a, b, c) => cross(sub(b, a), sub(c, b));
+
+/**
+ * A ridge shape from its 3 × 3 surface points (halves): the top is the fan of 8 triangles around
+ * the centre, each quadrant split along its centre–corner diagonal (the prototypes' surface),
+ * with coplanar neighbours merged into convex polygons of at most 4 points; the sides follow the
+ * edge profiles (three points each). Same fields as `buildShape`, with `fan` set.
+ */
+export function buildRidgeShape(points, inverted) {
+  // Integer working frame: x and z in halves of a cell (0..2), y in halves (0..2).
+  const P = (r, c) => [c, points[r][c], r];
+  const C = P(1, 1);
+  const tris = [];
+  for (const [kr, kc] of [
+    [0, 0],
+    [0, 2],
+    [2, 2],
+    [2, 0],
+  ]) {
+    const K = P(kr, kc);
+    tris.push([C, P(kr, 1), K], [C, K, P(1, kc)]);
+  }
+  const up = (t) => (cross(sub(t[1], t[0]), sub(t[2], t[0]))[1] < 0 ? [t[0], t[2], t[1]] : t);
+  const plane = (t) => {
+    const n = cross(sub(t[1], t[0]), sub(t[2], t[0]));
+    const g = gcd(gcd(n[0], n[1]), n[2]) || 1;
+    const m = n.map((v) => v / g);
+    return `${m.join(",")}|${m[0] * t[0][0] + m[1] * t[0][1] + m[2] * t[0][2]}`;
+  };
+  const groups = new Map();
+  for (const t0 of tris) {
+    const t = up(t0);
+    const k = plane(t);
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(t);
+  }
+  const surface = [];
+  for (const group of groups.values()) {
+    // The group's boundary: its directed edges whose reverse is not also in it.
+    const edges = new Map();
+    for (const t of group) {
+      for (let i = 0; i < 3; ++i) {
+        const a = t[i];
+        const b = t[(i + 1) % 3];
+        const back = `${key3(b)}>${key3(a)}`;
+        if (edges.has(back)) edges.delete(back);
+        else edges.set(`${key3(a)}>${key3(b)}`, [a, b]);
+      }
+    }
+    const next = new Map([...edges.values()].map(([a, b]) => [key3(a), b]));
+    const seen = new Set();
+    const loops = [];
+    let ok = next.size === edges.size; // a point with two outgoing edges: keep the triangles
+    for (const [a] of edges.values()) {
+      if (!ok || seen.has(key3(a))) continue;
+      const loop = [];
+      let p = a;
+      while (p && !seen.has(key3(p))) {
+        seen.add(key3(p));
+        loop.push(p);
+        p = next.get(key3(p));
+      }
+      const pts = loop.filter((q, i) => {
+        const c = turn(loop[(i + loop.length - 1) % loop.length], q, loop[(i + 1) % loop.length]);
+        return c[0] !== 0 || c[1] !== 0 || c[2] !== 0;
+      });
+      const convex = pts.every(
+        (q, i) => turn(pts[(i + pts.length - 1) % pts.length], q, pts[(i + 1) % pts.length])[1] >= 0,
+      );
+      if (!convex || pts.length > 4 || pts.length < 3) ok = false;
+      loops.push(pts);
+    }
+    if (ok) surface.push(...loops);
+    else surface.push(...group);
+  }
+  const faces = [];
+  const push = (tag, pts) => {
+    const out = [];
+    for (const p of pts) {
+      const q = out[out.length - 1];
+      if (!q || key3(q) !== key3(p)) out.push(p);
+    }
+    while (out.length > 1 && key3(out[0]) === key3(out[out.length - 1])) out.pop();
+    if (out.length < 3) return;
+    let area2 = [0, 0, 0];
+    for (let i = 1; i + 1 < out.length; ++i) {
+      const c = cross(sub(out[i], out[0]), sub(out[i + 1], out[0]));
+      area2 = [area2[0] + c[0], area2[1] + c[1], area2[2] + c[2]];
+    }
+    if (area2[0] === 0 && area2[1] === 0 && area2[2] === 0) return;
+    const want = tag === SURFACE ? [0, 1, 0] : AXES[tag];
+    const dot = area2[0] * want[0] + area2[1] * want[1] + area2[2] * want[2];
+    faces.push({ tag, pts: dot < 0 ? out.reverse() : out });
+  };
+  // Side profiles (halves) at the low end, middle and high end of the running axis.
+  const sides = [
+    [points[0][2], points[1][2], points[2][2]], // +X, along z
+    [points[0][0], points[1][0], points[2][0]], // −X
+    [points[2][0], points[2][1], points[2][2]], // +Z, along x
+    [points[0][0], points[0][1], points[0][2]], // −Z
+  ];
+  const side = (tag, k) => {
+    const pr = sides[k];
+    const at = (s, y) => (tag < 2 ? [tag === 0 ? 1 : 0, y, s] : [s, y, tag === 4 ? 1 : 0]);
+    return [at(0, 0), at(1, 0), at(1, pr[2] / 2), at(0.5, pr[1] / 2), at(0, pr[0] / 2)];
+  };
+  push(1, side(1, 1));
+  push(0, side(0, 0));
+  push(3, [
+    [0, 0, 0],
+    [1, 0, 0],
+    [1, 0, 1],
+    [0, 0, 1],
+  ]);
+  for (const pts of surface) push(SURFACE, pts.map((p) => [p[0] / 2, p[1] / 2, p[2] / 2]));
+  push(5, side(5, 3));
+  push(4, side(4, 2));
+  // A side with a raised middle is a pentagon: a fan of triangles (convex, the middle is never
+  // below its ends in a ridge shape).
+  const split = [];
+  for (const f of faces) {
+    if (f.pts.length <= 4) split.push(f);
+    else
+      for (let i = 1; i + 1 < f.pts.length; ++i)
+        split.push({ tag: f.tag, pts: [f.pts[0], f.pts[i], f.pts[i + 1]] });
+  }
+  const outFaces = split.map((f) => {
+    if (!inverted) return f;
+    const pts = f.pts.map((p) => [p[0], 1 - p[1], p[2]]).reverse();
+    const tag = f.tag === 2 ? 3 : f.tag === 3 ? 2 : f.tag;
+    return { tag, pts };
+  });
+  // Volume: each fan triangle covers ⅛ of the floor, at its mean height (halves → cells).
+  let volume = 0;
+  for (const t of tris) volume += ((t[0][1] + t[1][1] + t[2][1]) / 3 / 2) * 0.125;
+  // Convex iff all nine points lie on or below every fan triangle's plane.
+  const all = [0, 1, 2].flatMap((r) => [0, 1, 2].map((c) => P(r, c)));
+  const convex = tris.every((t0) => {
+    const t = up(t0);
+    const n = cross(sub(t[1], t[0]), sub(t[2], t[0]));
+    return all.every(
+      (p) => n[0] * (p[0] - t[0][0]) + n[1] * (p[1] - t[0][1]) + n[2] * (p[2] - t[0][2]) <= 0,
+    );
+  });
+  const flat = points.flat();
+  const maxH = Math.max(...flat) / 2;
+  return {
+    corners: [points[0][0], points[0][2], points[2][2], points[2][0]],
+    points: points.map((r) => r.slice()),
+    fan: true,
+    inverted,
+    diagonal: 0,
+    faces: outFaces,
+    sides,
+    volume,
+    convex,
+    minY: inverted ? 1 - maxH : 0,
+    maxY: inverted ? 1 : maxH,
+    fullTop: inverted,
+    fullBottom: !inverted,
+    flatMin: Math.min(...flat) / 2,
+  };
+}
+
+/** A named shape (corner or ridge) at `turns`, upright or `inverted`: its baked geometry. */
+export function namedShape(name, turns, inverted = false) {
+  if (name in RIDGE_SHAPES)
+    return buildRidgeShape(rotateGrid(RIDGE_SHAPES[name], turns), inverted);
+  const { corners, diagonal } = cornerShapeAt(name, turns);
+  return buildShape(corners, inverted, diagonal);
+}

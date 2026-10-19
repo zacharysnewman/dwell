@@ -8,6 +8,7 @@ use std::collections::{BTreeMap, VecDeque};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use dwell_blocks::info;
 use dwell_physics::config::PlayerControllerConfig;
 use dwell_physics::controller::{Input, PlayerHandle, Players, events};
 use dwell_physics::net::{dequantize_input, player_flags_of, quantize_pitch, quantize_yaw, to_net};
@@ -22,11 +23,14 @@ use dwell_protocol::{
 };
 use dwell_storage::{PlayerRecord, SaveBatch, SavedLodSection, WorldMeta, WorldStore};
 use dwell_world::brush::brush_policy;
-use dwell_world::edit::{DEFAULT_REACH, EditCapsule, EditCheck, check_block_edit};
+use dwell_world::edit::{
+    DEFAULT_REACH, EditCapsule, EditCheck, below, check_block_edit, medium_kept, supported_on,
+    unsupported_after,
+};
 use dwell_world::lod::{INDEX_LEVEL, LodCoord, in_world, lod_of_chunk, parent};
 use dwell_world::region::{RegionCheck, check_region_edit, region_reach};
 use dwell_world::{
-    AirChunkTest, CHUNK_SIZE, Chunk, ChunkCoord, ChunkGenerator, MAX_CHUNK_Y, MIN_CHUNK_Y,
+    AirChunkTest, CHUNK_SIZE, Chunk, ChunkCoord, ChunkGenerator, M, MAX_CHUNK_Y, MIN_CHUNK_Y,
     SavedChunks, VoxelWorld, chunk_distance, chunk_hash, chunk_of, local_index,
 };
 
@@ -80,6 +84,17 @@ struct TickChanges {
 }
 
 impl TickChanges {
+    /// Sets the cell and records it, and then removes what that leaves unsupported (block data
+    /// `needsSupport`: tall grass on a broken block goes with it), in the same modification.
+    fn set_and_unsupport(&mut self, world: &mut VoxelWorld, cell: [i32; 3], material: u16) {
+        // An air plant never stays flooded (block data `medium`).
+        let material = medium_kept(material);
+        self.set(world, cell, material);
+        for (above, left) in unsupported_after(world, cell, material) {
+            self.set(world, above, left);
+        }
+    }
+
     /// Sets the cell in the world and records the change.
     fn set(&mut self, world: &mut VoxelWorld, cell: [i32; 3], material: u16) {
         let coord = chunk_of(cell[0], cell[1], cell[2]);
@@ -501,6 +516,10 @@ pub struct Server {
     /// The registry payload sent at join (ADR 0038) and its definitions hash, for the table size
     /// it was made at (states registered later — placeholders, mods — remake it).
     registry: (usize, std::sync::Arc<Vec<u8>>, u64),
+    /// First state ids of the blocks this server registered at run time (mods, placeholders for
+    /// states its world file names): with the build's, its registry. Other servers in the process
+    /// (local mode, tests) do not serve them.
+    own_blocks: Vec<dwell_blocks::StateId>,
     view_offsets: Vec<ChunkCoord>, // chunks in view relative to the center, nearest first
     prefetch_offsets: Vec<ChunkCoord>, // generated ahead around each player
     explicit_wanted: Vec<ChunkCoord>, // full-mode chunks to generate for streaming
@@ -566,6 +585,7 @@ impl Server {
             verification_chunk: chunk_at(spawn[0], spawn[1] - 1.0, spawn[2]),
             verification_hash: 0,
             registry: (0, Default::default(), 0),
+            own_blocks: Vec::new(),
             view_offsets: Vec::new(),
             prefetch_offsets: cube_offsets(PREFETCH_CHUNKS),
             explicit_wanted: Vec::new(),
@@ -875,11 +895,28 @@ impl Server {
         }
     }
 
+    /// Adds a block to this server's registry from data (a mod's block; ADR 0038): it is sent to
+    /// every client that joins after. Its first state id.
+    pub fn register_block(
+        &mut self,
+        block: dwell_blocks::NewBlock,
+    ) -> Result<dwell_blocks::StateId, String> {
+        let first = dwell_blocks::register(dwell_blocks::Origin::Server, block)?;
+        if !self.own_blocks.contains(&first) {
+            self.own_blocks.push(first);
+        }
+        Ok(first)
+    }
+
     /// The registry payload this server sends at join and its definitions hash (ADR 0038).
     pub fn registry(&mut self) -> (std::sync::Arc<Vec<u8>>, u64) {
-        let count = dwell_blocks::state_count();
+        let count = self.own_blocks.len();
         if self.registry.0 != count || self.registry.1.is_empty() {
-            let bytes = dwell_blocks::sync::Payload::served().encode();
+            let own = &self.own_blocks;
+            let bytes = dwell_blocks::sync::Payload::served_by(|b| {
+                b.origin == dwell_blocks::Origin::Build || own.contains(&b.first_state)
+            })
+            .encode();
             let hash = dwell_blocks::sync::definitions_hash(&bytes);
             self.registry = (count, std::sync::Arc::new(bytes), hash);
         }
@@ -1553,7 +1590,7 @@ impl Server {
                 }
                 s.edit_credit -= 1.0;
                 s.stats.edits_applied += 1;
-                changes.set(&mut self.world, outcome.cell, outcome.material);
+                changes.set_and_unsupport(&mut self.world, outcome.cell, outcome.material);
             }
             // Region edits (§6.5), after the block edits, in the order they arrived; each costs
             // its box's volume in cells, valid or not (validation reads the whole box).
@@ -1573,8 +1610,20 @@ impl Server {
                 }
                 s.stats.region_edits_applied += 1;
                 s.stats.region_cells_changed += outcome.changes.len() as u64;
+                let cells: Vec<[i32; 3]> = outcome.changes.iter().map(|(c, _)| *c).collect();
                 for (cell, m) in outcome.changes {
-                    changes.set(&mut self.world, cell, m);
+                    changes.set_and_unsupport(&mut self.world, cell, m);
+                }
+                // A region may put blocks that need support where nothing holds them (tall grass
+                // filled into the air, or onto itself): those are not kept.
+                for cell in cells {
+                    let m = self.world.get_voxel(cell[0], cell[1], cell[2]);
+                    let under = below(cell);
+                    let ground = self.world.get_voxel(under[0], under[1], under[2]);
+                    if m != M.air && !supported_on(m, ground) {
+                        let left = if info(m).flooded { M.water } else { M.air };
+                        changes.set_and_unsupport(&mut self.world, cell, left);
+                    }
                 }
             }
         }

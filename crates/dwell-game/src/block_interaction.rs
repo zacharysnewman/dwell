@@ -24,6 +24,11 @@ pub struct BlockTarget {
 pub trait TargetSource {
     fn target(&mut self, origin: [f64; 3], dir: [f32; 3], max_distance: f32)
     -> Option<BlockTarget>;
+    /// Whether the block in `cell` is replaced by what is placed against it (block data
+    /// `replaceable`: tall grass), so placing goes into its cell.
+    fn replaceable(&mut self, _cell: [i32; 3]) -> bool {
+        false
+    }
 }
 
 impl TargetSource for VoxelWorld {
@@ -37,6 +42,10 @@ impl TargetSource for VoxelWorld {
             cell: h.cell,
             face: h.face,
         })
+    }
+    fn replaceable(&mut self, [x, y, z]: [i32; 3]) -> bool {
+        let m = self.get_voxel(x, y, z);
+        usize::from(m) < STATES.len() && info(m).replaceable && !info(m).indestructible
     }
 }
 
@@ -138,6 +147,8 @@ pub struct BlockInteraction {
     /// Touch: what a tap on the view does.
     pub touch_action: EditAction,
     current: Option<BlockTarget>,
+    /// The current target is replaceable: placing goes into its cell.
+    into_target: bool,
     yaw: f64,
     last_edit_ms: f64,
 }
@@ -155,6 +166,7 @@ impl BlockInteraction {
             selected: 0,
             touch_action: EditAction::Break,
             current: None,
+            into_target: false,
             yaw: 0.0,
             last_edit_ms: f64::NEG_INFINITY,
         }
@@ -184,6 +196,7 @@ impl BlockInteraction {
         self.yaw = yaw_deg;
         let dir = view_direction(yaw_deg, pitch_deg, face).map(|v| v as f32);
         self.current = eye.and_then(|e| world.target(e, dir, players::REACH_DISTANCE));
+        self.into_target = self.current.is_some_and(|t| world.replaceable(t.cell));
         self.current
     }
 
@@ -195,7 +208,12 @@ impl BlockInteraction {
             .get(usize::from(t.face))
             .copied()
             .unwrap_or([0; 3]);
-        let cell = std::array::from_fn(|i| t.cell[i] + dir[i]);
+        // As the server places (dwell_world::edit::check_block_edit): into a replaceable target.
+        let cell = if self.into_target {
+            t.cell
+        } else {
+            std::array::from_fn(|i| t.cell[i] + dir[i])
+        };
         if slot.ladder {
             return Some((cell, ladder_for(t.face, self.yaw)));
         }
@@ -257,7 +275,19 @@ mod tests {
     #[test]
     fn offers_every_placeable_material_once_ladders_as_one_slot() {
         let names: Vec<_> = palette().into_iter().map(|s| s.name).collect();
-        assert_eq!(names, ["stone", "dirt", "grass", "ladder", "sand"]);
+        assert_eq!(
+            names,
+            [
+                "stone",
+                "dirt",
+                "grass",
+                "ladder",
+                "sand",
+                "log",
+                "leaves",
+                "tall_grass"
+            ]
+        );
     }
 
     #[test]
@@ -412,7 +442,8 @@ mod tests {
     #[test]
     fn the_voxel_world_targets_through_the_shared_ray_cast() {
         let mut world = VoxelWorld::streamed();
-        world.set_voxel(3, 0, 4, require("dwell:stone"));
+        // A non-adaptive cube (a lone stone block would be a half pyramid).
+        world.set_voxel(3, 0, 4, require("dwell:sandbox_floor"));
         let mut interaction = BlockInteraction::new();
         let t = interaction.update(&mut world, Some([3.5, 0.5, 0.5]), 0.0, 0.0, 1);
         assert_eq!(

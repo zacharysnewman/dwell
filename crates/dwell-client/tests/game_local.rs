@@ -121,7 +121,7 @@ impl Scene for Recorder {
     fn set_camera(&mut self, eye: [f64; 3], _yaw: f64, _pitch: f64, _face: f64, _flip: f64) {
         self.camera = Some(eye);
     }
-    fn set_block_outline(&mut self, cell: Option<[f64; 3]>, _height: f64) {
+    fn set_block_outline(&mut self, cell: Option<[f64; 3]>, _bounds: ([f32; 3], [f32; 3])) {
         self.outline = cell;
     }
     fn set_fov(&mut self, fov_y_deg: Option<f64>) {
@@ -156,7 +156,12 @@ struct Rig {
     step: u32,
     up: std::collections::VecDeque<(u32, bool, Vec<u8>)>,
     down: std::collections::VecDeque<(u32, Option<Channel>, Vec<u8>)>,
+    /// A second client, session-level only (no game): its key, and the game messages it got.
+    guest: Option<(Session, SigningKey, Vec<dwell_protocol::Message>)>,
 }
+
+/// The guest's session id on the local core.
+const GUEST: u32 = 2;
 
 const SEED: u64 = 1;
 
@@ -190,6 +195,48 @@ impl Rig {
             step: 0,
             up: std::collections::VecDeque::new(),
             down: std::collections::VecDeque::new(),
+            guest: None,
+        }
+    }
+
+    /// Opens the world to a guest client (session-level: it joins, takes the registry prompt's
+    /// Continue, asks for explicit chunks and keeps what arrives).
+    fn add_guest(&mut self) {
+        use dwell_sim::server::EditPolicy;
+        let host = self.key.verifying_key().to_bytes();
+        self.core
+            .host(4, EditPolicy::Everyone, EditPolicy::Everyone, host);
+        self.core.connected(GUEST, TransportKind::WebRtc, [0; 32]);
+        let key = SigningKey::from_bytes(&[6; 32]);
+        let mut session = Session::new(
+            [0; 32],
+            key.verifying_key().to_bytes(),
+            "Guest",
+            "t",
+            1000.0,
+        );
+        session.start(self.now);
+        self.guest = Some((session, key, Vec::new()));
+    }
+
+    fn pump_guest_up(&mut self) {
+        let Some((session, key, got)) = &mut self.guest else {
+            return;
+        };
+        if matches!(session.state(), SessionState::Confirming { .. }) {
+            session.accept_registry();
+            session.send_control(&dwell_protocol::Message::WorldgenCheck(0));
+        }
+        while let Some((m, _)) = session.next_game() {
+            got.push(m);
+        }
+        for out in session.take_out() {
+            match out {
+                Out::Reliable(b) => self.core.reliable(GUEST, Channel::Control, &b),
+                Out::Datagram(b) => self.core.datagram(GUEST, &b),
+                Out::Sign(t) => session.signed(key.sign(&t).to_bytes()),
+                Out::Close => {}
+            }
         }
     }
 
@@ -229,8 +276,16 @@ impl Rig {
                 self.core.datagram(LOCAL_SESSION, &b);
             }
         }
+        self.pump_guest_up();
         self.core.advance(1.0 / 60.0);
         for o in self.core.take_outbox() {
+            if o.session == GUEST {
+                if let (Some((guest, _, _)), OutKind::Reliable(channel)) = (&mut self.guest, o.kind)
+                {
+                    guest.on_reliable(channel, &o.bytes, now);
+                }
+                continue;
+            }
             match o.kind {
                 OutKind::Reliable(channel) => self.down.push_back((due, Some(channel), o.bytes)),
                 OutKind::Datagram => self.down.push_back((due, None, o.bytes)),
@@ -388,7 +443,9 @@ fn a_region_fill_comes_back_from_the_server_and_undo_restores_it() {
     };
     assert!(region_edits, "the local server announces region edits");
     rig.game.as_mut().unwrap().region.enabled = region_edits;
-    rig.input.look.pitch = -60.0;
+    // A cell clear of the player: natural ground rests at half height (ADAPTIVE_BLOCKS.md), so the
+    // top cell right under the feet holds part of the capsule, and filling it is refused.
+    rig.input.look.pitch = -40.0;
     assert!(rig.run_until(30, |r| {
         r.game.as_ref().unwrap().debug_state().target.is_some()
     }));
@@ -782,5 +839,174 @@ fn a_slow_device_walks_without_snapping() {
         predicted >= 16 * 11 - 11,
         "{predicted} ticks predicted for {} of the server's",
         16 * 11
+    );
+}
+
+/// The fixture's server-only block (`shared/blocks/fixtures/test.json` `test:glow`), as a server
+/// mod registers it from data (ADR 0038): this build's client has never heard of it.
+fn glow_block() -> dwell_blocks::NewBlock {
+    let mut row = *dwell_blocks::fixture::STATES
+        .iter()
+        .find(|s| s.name == "test:glow")
+        .expect("the fixture has test:glow");
+    row.shape_index = dwell_blocks::info(dwell_blocks::require("dwell:stone")).shape_index;
+    dwell_blocks::NewBlock {
+        name: "test:glow".into(),
+        properties: Vec::new(),
+        states: vec![row],
+    }
+}
+
+/// The extensibility test of registry sync (ADR 0038): a block only the server has arrives by
+/// sync, after the join prompt; the client draws it with the fallback look, stands on it exactly
+/// where the server does, targets and breaks it, and another client sees it and its removal.
+#[test]
+fn a_block_only_the_server_has_arrives_by_sync_and_plays_like_any_other() {
+    let mut rig = Rig::new();
+    let server_glow = rig
+        .core
+        .server()
+        .register_block(glow_block())
+        .expect("registers");
+    // A 5 × 5 pad of it under the spawn, in the server's world only (modified chunks are sent
+    // explicitly), with room to stand above.
+    let spawn = rig.core.server().config().spawn.expect("spawn");
+    let (sx, sz) = (spawn[0].floor() as i32, spawn[2].floor() as i32);
+    let world = rig.core.server().world();
+    let top = (-160..spawn[1].floor() as i32 + 8)
+        .rev()
+        .find(|&y| dwell_blocks::info(world.get_voxel(sx, y, sz)).solid)
+        .expect("ground under the spawn");
+    for dx in -2..=2 {
+        for dz in -2..=2 {
+            world.set_voxel(sx + dx, top, sz + dz, server_glow);
+            for up in 1..=3 {
+                world.set_voxel(sx + dx, top + up, sz + dz, dwell_blocks::AIR);
+            }
+        }
+    }
+    for c in [
+        dwell_world::chunk_of(sx - 2, top, sz - 2),
+        dwell_world::chunk_of(sx + 2, top, sz + 2),
+        dwell_world::chunk_of(sx - 2, top, sz + 2),
+        dwell_world::chunk_of(sx + 2, top, sz - 2),
+        dwell_world::chunk_of(sx, top + 3, sz),
+    ] {
+        if let Some(chunk) = world.find_mut(c) {
+            chunk.bump_revision();
+        }
+    }
+
+    // The join prompt lists it as new; Continue.
+    assert!(rig.run_until(600, |r| matches!(
+        r.session.state(),
+        SessionState::Confirming { .. }
+    )));
+    let SessionState::Confirming { differences, .. } = rig.session.state().clone() else {
+        unreachable!()
+    };
+    assert_eq!(differences.added.len(), 1);
+    assert_eq!(differences.added[0].name, "test:glow");
+    assert!(differences.different.is_empty() && differences.client_only.is_empty());
+    rig.session.accept_registry();
+    assert!(
+        rig.run_until(60 * 30, |r| r
+            .game
+            .as_ref()
+            .is_some_and(|g| g.debug_state().terrain_ready)),
+        "joined, and the terrain around the player arrives"
+    );
+
+    // The client holds its own synced copy of the state, with the server's rules.
+    let glow = rig.game.as_mut().unwrap().voxel(sx, top, sz);
+    assert_eq!(dwell_blocks::info(glow).name, "test:glow");
+    assert!(!dwell_blocks::is_build_state(glow));
+    assert_ne!(
+        glow, server_glow,
+        "the client's id is its own, mapped at the boundary"
+    );
+    assert!(dwell_blocks::info(glow).solid);
+    assert!(
+        dwell_mesh::uses_fallback_look(glow),
+        "its texture is in no atlas here"
+    );
+
+    // It collides as on the server: the player lands on its top, and prediction agrees.
+    let pad = dwell_world::chunk_of(sx, top, sz);
+    assert!(
+        rig.run_until(600, |r| r.scene.borrow().chunks.contains(&pad)),
+        "its chunk is meshed"
+    );
+    rig.run_until(120, |_| false);
+    let state = rig.game.as_ref().unwrap().debug_state();
+    let pid = state.player_id;
+    let server_feet = rig.core.server().feet_of(pid).expect("server player");
+    assert!(
+        (state.feet[1] - f64::from(top + 1)).abs() < 0.01,
+        "stands on the pad: {:?} (top {top})",
+        state.feet
+    );
+    assert!(
+        (server_feet[1] - state.feet[1]).abs() < 0.01,
+        "{server_feet:?} {:?}",
+        state.feet
+    );
+    assert_eq!(state.stats.snaps, 0, "no prediction snaps");
+
+    // A second client sees it too.
+    rig.add_guest();
+    assert!(
+        rig.run_until(600, |r| {
+            r.guest.as_ref().is_some_and(|(_, _, got)| {
+                got.iter().any(|m| match m {
+                    dwell_protocol::Message::ChunkData(c) => c
+                        .voxels
+                        .iter()
+                        .any(|&v| dwell_blocks::try_info(v).is_some_and(|s| s.name == "test:glow")),
+                    _ => false,
+                })
+            })
+        }),
+        "the guest gets the pad's chunk, glow mapped to its ids"
+    );
+
+    // Target it (looking straight down) and break it; both clients see it gone.
+    rig.input.look.pitch = -89.0;
+    let on_pad = |c: [i32; 3]| c[1] == top && (c[0] - sx).abs() <= 2 && (c[2] - sz).abs() <= 2;
+    assert!(
+        rig.run_until(30, |r| {
+            r.game
+                .as_ref()
+                .unwrap()
+                .debug_state()
+                .target
+                .is_some_and(|t| on_pad(t.cell))
+        }),
+        "the glow under the player is targeted"
+    );
+    let [x, y, z] = rig
+        .game
+        .as_ref()
+        .unwrap()
+        .debug_state()
+        .target
+        .unwrap()
+        .cell;
+    assert_eq!(rig.game.as_mut().unwrap().voxel(x, y, z), glow);
+    let now = rig.now + 1000.0;
+    assert!(rig.game.as_mut().unwrap().edit(EditAction::Break, now));
+    assert!(
+        rig.run_until(60, |r| r.game.as_mut().unwrap().voxel(x, y, z) == 0),
+        "the server's modification arrives"
+    );
+    assert_eq!(rig.core.server().world().get_voxel(x, y, z), 0);
+    assert!(
+        rig.run_until(60, |r| r.guest.as_ref().is_some_and(|(_, _, got)| {
+            got.iter().any(|m| {
+                matches!(m, dwell_protocol::Message::VoxelModification(v)
+            if v.chunks.iter().any(|c| c.changes.iter().any(|ch| ch.material == 0)))
+            })
+        })),
+        "the guest sees it broken"
     );
 }

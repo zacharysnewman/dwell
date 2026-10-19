@@ -14,15 +14,15 @@
   "blocks": [
     { "name": "air", "density": 0, "shape": "empty", "look": "cube", "color": "#000000", "opacity": 0 },
     {
-      "name": "stone", "sound": "dwell:stone", "density": 2400, "shape": "full", "placeable": true,
+      "name": "stone", "sound": "dwell:stone", "density": 2400, "shape": "full", "placeable": true, "adaptive": true,
       "color": "#bbafa6", "textures": "stone"
     },
     {
-      "name": "dirt", "sound": "dwell:dirt", "density": 1500, "shape": "full", "placeable": true,
+      "name": "dirt", "sound": "dwell:dirt", "density": 1500, "shape": "full", "placeable": true, "adaptive": true,
       "color": "#8a5a3a", "textures": "dirt"
     },
     {
-      "name": "grass", "sound": "dwell:grass", "density": 1400, "shape": "full", "placeable": true,
+      "name": "grass", "sound": "dwell:grass", "density": 1400, "shape": "full", "placeable": true, "adaptive": true,
       "color": "#8dbf3f",
       "textures": { "top": "grass", "side": "grassSide", "bottom": "dirt" }
     },
@@ -44,13 +44,33 @@
       "liquid": true, "render": "translucent", "color": "#2f86e0", "textures": "water"
     },
     {
-      "name": "sand", "sound": "dwell:sand", "density": 1600, "shape": "full", "placeable": true,
+      "name": "sand", "sound": "dwell:sand", "density": 1600, "shape": "full", "placeable": true, "adaptive": true,
       "color": "#eed9a4", "textures": "sand"
     },
     {
       "$comment": "The structure sandbox's ground (prototype, docs/STRUCTURES.md §7.6): white with a faint line at every block edge (the `grid` tile) and a stronger one every 8 blocks (the `grid` look option), not in the palette, and indestructible so it can always be built on. Not adaptive: it stays flat cubes.",
       "name": "sandbox_floor", "sound": "dwell:stone", "density": 2400, "shape": "full", "indestructible": true,
       "color": "#ffffff", "textures": "grid", "grid": { "every": 8, "strength": 0.3 }
+    },
+    {
+      "name": "log", "sound": "dwell:wood", "density": 700, "shape": "full", "placeable": true,
+      "color": "#7a5236", "textures": { "top": "logTop", "side": "logSide", "bottom": "logTop" }
+    },
+    {
+      "$comment": "Drawn cutout: the leaves tile has transparent gaps between the leaves.",
+      "name": "leaves", "sound": "dwell:grass", "density": 200, "shape": "full", "placeable": true,
+      "render": "cutout", "color": "#6fa83a", "textures": "leaves"
+    },
+    {
+      "$comment": "Prototype content (docs/TRANSPARENT_BLOCKS.md §6): blades of grass, the first plant. No collision; crossed quads drawn cutout, jittered per cell, swaying in the wind and fading out before the LOD; placed by hand only (world generation doesn't grow it), on grass or dirt, replaced by what is placed into it, and gone with the block under it.",
+      "name": "tall_grass", "sound": "dwell:grass", "density": 200, "shape": "empty", "placeable": true,
+      "look": "cross", "render": "cutout",
+      "cross": { "height": 0.85, "quads": 2, "jitter": { "offset": 0.22, "rotation": 30, "height": [0.75, 1.0] } },
+      "wind": { "strength": 0.09, "speed": 1.0 },
+      "fade": { "start": 48, "end": 88 },
+      "selectionBox": [0.15, 0, 0.15, 0.85, 0.6, 0.85],
+      "placeOn": ["dwell:grass", "dwell:dirt"], "needsSupport": "below", "replaceable": true, "medium": "air",
+      "color": "#8dbf3f", "textures": "tallGrass"
     }
   ]
 }

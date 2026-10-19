@@ -67,6 +67,15 @@ by the Vite build and linked from the menu's About screen). Beside the native se
     client → server message is compatible only behind a `Welcome` flag (servers reject unknown
     messages; clients ignore unknown flags), so builds of a line still play together
     (ARCHITECTURE.md §10.5; the first is `RegionEdit`).
+  - **Block content and compatibility (registry sync, ADR 0038, from 0.14):** adding blocks or
+    states (anywhere in the data: ids are mapped by name at join), adding a value to an existing
+    property, and changing looks (colour, textures, render mode, cross, wind, fade, grid, fluid looks,
+    sound sets) are compatible. Changing an existing state's shape or rules no longer refuses a join
+    (the client adopts the server's, after a prompt) but changes what players of other builds see,
+    so treat it as breaking for worlds. Still breaking: removing or renaming a state (adding or
+    removing a property renames every state of its block), changing the shapes themselves or the
+    adaptive shape rules (code both sides run), changing the terrain a seed generates, and changing
+    the registry payload's format.
   - **From `1.0.0`** (launch): MAJOR for breaking changes, MINOR for compatible new features, PATCH
     for compatible fixes.
   - **Before `1.0.0`** SemVer allows anything to change; Dwell follows the common `0.y.z` convention

@@ -50,17 +50,68 @@ pub use lod_mesher::{
     SURFACE_STRIDE, SectionMeshes, lod_color, mesh_section, mirror_rows, section_bytes,
 };
 pub use mesher::{
-    ChunkMeshes, MeshArrays, PAD, PADDED_VOLUME, face_covered, mesh_chunk, mirror_padded,
-    padded_index,
+    ChunkMeshes, MeshArrays, PAD, PADDED_VOLUME, face_covered, mesh_chunk, mesh_chunk_at,
+    mirror_padded, padded_index,
 };
 /// The `fluids` stream's value for a see-through face that is not a fluid's.
 pub const NO_FLUID: f32 = 255.0;
 
 pub use textures::{
-    ATLAS_CELLS, ATLAS_SIZE, ATLAS_TILES, CELL, GUTTER, TILE, TILE_ORDER, TileRect,
-    average_tile_color, build_atlas, linear_to_srgb_byte, srgb_to_linear, swatch, tile_grids,
-    tile_has_alpha, tile_rect,
+    ATLAS_CELLS, ATLAS_SIZE, ATLAS_TILES, CELL, GUTTER, MISSING_TILE, TILE, TILE_ORDER, TileRect,
+    average_tile_color, build_atlas, has_tile, linear_to_srgb_byte, srgb_to_linear, swatch,
+    tile_grids, tile_has_alpha, tile_rect,
 };
+
+/// Whether state `id` is drawn with the fallback look (the magenta and black checker, ADR 0038):
+/// its look or textures are not this build's (a state synced from a server).
+pub fn uses_fallback_look(id: dwell_blocks::StateId) -> bool {
+    style::material_style(id)
+        .textures
+        .is_some_and(|t| t.top == MISSING_TILE)
+}
+
+#[cfg(test)]
+mod fallback_tests {
+    use super::*;
+    use dwell_blocks::{FLUIDS, STATES};
+
+    #[test]
+    fn every_build_state_draws_with_its_own_look() {
+        for (i, s) in STATES.iter().enumerate() {
+            assert!(style::drawable(s, &FLUIDS), "{}", s.name);
+            assert!(
+                !uses_fallback_look(i as dwell_blocks::StateId),
+                "{}",
+                s.name
+            );
+        }
+    }
+
+    #[test]
+    fn a_state_this_build_cannot_draw_gets_the_checker_on_its_own_shape() {
+        let stone = *dwell_blocks::info(dwell_blocks::require("dwell:stone"));
+        let mut unknown_tile = stone;
+        unknown_tile.textures = Some(dwell_blocks::Textures {
+            top: "modTile",
+            side: "stone",
+            bottom: "stone",
+        });
+        let mut unknown_look = stone;
+        unknown_look.look = "mod:fancy";
+        let mut fluid_without = stone;
+        fluid_without.look = "fluid";
+        fluid_without.fluid = None;
+        for s in [unknown_tile, unknown_look, fluid_without] {
+            assert!(!style::drawable(&s, &FLUIDS));
+            let st = style::style_of(&s, &FLUIDS);
+            assert_eq!(st.textures.map(|t| t.side), Some(MISSING_TILE));
+            assert_eq!(st.shape, usize::from(stone.shape_index));
+        }
+        // A mod block reusing this build's look and tiles draws with them.
+        assert!(style::drawable(&stone, &FLUIDS));
+        assert!(has_tile(MISSING_TILE) && TILE_ORDER.contains(&MISSING_TILE));
+    }
+}
 
 /// JavaScript's `Math.round`: the nearest integer, ties toward +∞ (Rust's `round` ties away from
 /// zero, which differs for negative halves).
