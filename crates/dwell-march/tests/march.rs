@@ -8,7 +8,7 @@ use dwell_blocks::{STATES, StateId, StateInfo, VoxelShape, mirror, require};
 use dwell_march::layout::GRID_OFFSET;
 use dwell_march::reference::brute_march;
 use dwell_march::{
-    MarchParams, NodeBuild, Outcome, Ray, Scene, StateTable, StepHistogram, build_chunk,
+    Beam, MarchParams, NodeBuild, Outcome, Ray, Scene, StateTable, StepHistogram, build_chunk,
     build_node, build_section, face_up, level_for,
 };
 use dwell_world::{CHUNK_VOLUME, Face, MIRROR_SUM, local_index, lod};
@@ -682,13 +682,21 @@ fn exact_ties_and_axis_aligned_rays_agree_with_brute_force() {
 /// solid when any of it is below the surface, as the LOD's cells are), out to 2 km. The cone LOD
 /// moves from level 0 to 1 at 100 m and to 2 at 200 m. Returns each ray's hit (face, the hit
 /// point's height above the node base, t), nearest pitch first.
-fn radial_line_over_flat_ground(fine_top: i32) -> Vec<(Option<usize>, f32, f32)> {
+/// Flat ground at `fine_top` m on levels 0–2, each rounding it up to its cells: 16 chunks along
+/// +x from `BASE`, and the sections over the same span.
+fn flat_ground_levels(fine_top: i32) -> Scene {
+    // Rounded up, in each level's cells.
+    flat_ground_tops(std::array::from_fn(|l| (fine_top + (1 << l) - 1) >> l))
+}
+
+/// Flat ground with its top at `tops[L]` cells of level L.
+fn flat_ground_tops(tops: [i32; 3]) -> Scene {
     let table = StateTable::registry();
     let grass = require("dwell:grass");
     let mut scene = Scene::new(table.clone());
     let n = BASE;
     for level in 0..=2u32 {
-        let top = (fine_top + (1 << level) - 1) >> level; // rounded up, in this level's cells
+        let top = tops[level as usize];
         let ground = build_node(
             |_, y, _| if y < top { grass } else { 0 },
             &table,
@@ -706,6 +714,12 @@ fn radial_line_over_flat_ground(fine_top: i32) -> Vec<(Option<usize>, f32, f32)>
             }
         }
     }
+    scene
+}
+
+fn radial_line_over_flat_ground(fine_top: i32) -> Vec<(Option<usize>, f32, f32)> {
+    let scene = flat_ground_levels(fine_top);
+    let n = BASE;
     let p = MarchParams {
         pixel_angle: 0.005,
         lod_pixels: 4.0,
@@ -755,4 +769,188 @@ fn cone_lod_switches_leave_no_seam_on_flat_ground() {
             "ray {i}: hit at height {y}"
         );
     }
+}
+
+// --- the beam prepass (Phase 25 A4b) ------------------------------------------------------------
+
+fn normalize(v: [f32; 3]) -> [f32; 3] {
+    let l = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
+    v.map(|x| x / l)
+}
+
+fn cross(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
+    [
+        a[1] * b[2] - a[2] * b[1],
+        a[2] * b[0] - a[0] * b[2],
+        a[0] * b[1] - a[1] * b[0],
+    ]
+}
+
+/// A tile of `BEAM_TILE`² pixel rays `pixel_angle` apart around `forward`, and its beam.
+fn tile(cell: [i32; 3], frac: [f32; 3], forward: [f32; 3], pixel_angle: f32) -> (Beam, Vec<Ray>) {
+    let f = normalize(forward);
+    let hint = if f[1].abs() > 0.9 {
+        [1.0, 0.0, 0.0]
+    } else {
+        [0.0, 1.0, 0.0]
+    };
+    let right = normalize(cross(f, hint));
+    let up = cross(right, f);
+    let n = dwell_march::BEAM_TILE as i32;
+    let at = |u: f32, v: f32| -> [f32; 3] {
+        normalize(std::array::from_fn(|k| {
+            f[k] + u * pixel_angle * right[k] + v * pixel_angle * up[k]
+        }))
+    };
+    let half = n as f32 / 2.0;
+    let mut rays = Vec::new();
+    for j in 0..n {
+        for i in 0..n {
+            let d = at(i as f32 + 0.5 - half, j as f32 + 0.5 - half);
+            rays.push(Ray { cell, frac, dir: d });
+        }
+    }
+    let c = half - 0.5;
+    let corners = [at(-c, -c), at(c, -c), at(-c, c), at(c, c)];
+    (Beam::new(cell, frac, at(0.0, 0.0), &corners), rays)
+}
+
+/// Checks a tile: no pixel ray hits before the beam's start, and marching from the start finds
+/// the hit a march from the eye finds. Returns (start, steps from the eye, steps from the start).
+fn check_tile(scene: &Scene, beam: &Beam, rays: &[Ray], p: &MarchParams) -> (f32, u64, u64) {
+    let s = scene.beam_start(beam, p);
+    let (mut a, mut b) = (0u64, 0u64);
+    for ray in rays {
+        let full = scene.march(ray, p);
+        let from = scene.march_from(ray, p, s);
+        if let Outcome::Hit(h) = full.outcome {
+            assert!(
+                s <= h.t,
+                "the start {s} passes the hit at {} ({ray:?}, {beam:?})",
+                h.t
+            );
+        }
+        assert_eq!(from.outcome, full.outcome, "start {s}: {ray:?} {beam:?}");
+        a += u64::from(full.steps);
+        b += u64::from(from.steps);
+    }
+    (s, a, b)
+}
+
+#[test]
+fn beam_starts_never_pass_a_hit_on_random_scenes() {
+    let table = StateTable::registry();
+    let (mut started, mut tiles, mut steps) = (0, 0, (0u64, 0u64));
+    for seed in 0..4 {
+        let voxels = random_scene(seed);
+        let scene = scene_of(&voxels, &table);
+        let mut r = Rng(seed + 900);
+        for i in 0..120 {
+            let ray = random_ray(&mut r);
+            let pa = [0.002, 0.01, 0.04][i % 3];
+            let p = MarchParams {
+                pixel_angle: pa,
+                ..params()
+            };
+            let (beam, rays) = tile(ray.cell, ray.frac, ray.dir, pa);
+            let (s, a, b) = check_tile(&scene, &beam, &rays, &p);
+            tiles += 1;
+            if s > 0.0 {
+                started += 1;
+            }
+            steps.0 += a;
+            steps.1 += b;
+        }
+    }
+    // It does start rays late, and saves steps.
+    assert!(started * 2 > tiles, "{started} of {tiles} tiles start late");
+    assert!(steps.1 < steps.0, "{steps:?}");
+}
+
+fn beam_ray(b: &Beam) -> Ray {
+    Ray {
+        cell: b.cell,
+        frac: b.frac,
+        dir: b.dir,
+    }
+}
+
+#[test]
+fn a_beam_stops_before_a_voxel_only_some_pixel_rays_hit() {
+    let table = StateTable::registry();
+    let stone = require("dwell:stone");
+    let n = BASE;
+    let pa = 0.01;
+    let eye = [(n[0] << 5) + 2, (n[1] << 5) + 16, (n[2] << 5) + 16];
+    let frac = [0.5; 3];
+    let (beam, rays) = tile(eye, frac, [1.0, 0.0, 0.0], pa);
+    // The voxel one pixel ray (not the centre's, not a corner's) passes through at 60 m.
+    let target = rays[2 * 8 + 5];
+    let t = 60.0;
+    let hit: [i32; 3] =
+        std::array::from_fn(|k| eye[k] + (frac[k] + t * target.dir[k]).floor() as i32);
+    let mut voxels = Voxels::new();
+    for x in 0..4 {
+        voxels.insert([n[0] + x, n[1], n[2]], vec![0u16; CHUNK_VOLUME]);
+    }
+    let node = hit.map(|v| v >> 5);
+    voxels.get_mut(&node).expect("in the scene")
+        [local_index(hit[0] & 31, hit[1] & 31, hit[2] & 31)] = stone;
+    let scene = scene_of(&voxels, &table);
+    let p = MarchParams {
+        pixel_angle: pa,
+        ..params()
+    };
+    let hits = rays
+        .iter()
+        .filter(|r| scene.march(r, &p).hit().is_some())
+        .count();
+    assert!((1..64).contains(&hits), "{hits} rays hit the voxel");
+    assert!(
+        scene.march(&beam_ray(&beam), &p).hit().is_none(),
+        "the centre ray misses it"
+    );
+    let (s, _, _) = check_tile(&scene, &beam, &rays, &p);
+    assert!(s > 20.0 && s < 60.0, "start {s}");
+}
+
+#[test]
+fn beam_starts_never_pass_a_hit_across_lod_levels() {
+    // Levels 0–2 disagree on the ground's height (5, 6 and 8 m; then 9, 6 and 4 m, a finer level
+    // above a coarser one, as an edit not yet in the LOD leaves it): a ray can stop at any of them
+    // near a switch, so the beam must clear every level it could ask for.
+    for scene in [flat_ground_levels(5), flat_ground_tops([9, 3, 1])] {
+        beam_over_flat_ground(&scene);
+    }
+}
+
+fn beam_over_flat_ground(scene: &Scene) {
+    let n = BASE;
+    let eye = [(n[0] << 5) + 2, (n[1] << 5) + 20, (n[2] << 5) + 16];
+    let mut r = Rng(5);
+    let mut started = 0;
+    let mut tiles = 0;
+    for i in 0..200 {
+        let pitch = (-30.0f32 + 29.0 * i as f32 / 199.0).to_radians();
+        let yaw = (r.unit() - 0.5) * 0.4;
+        let dir = [pitch.cos() * yaw.cos(), pitch.sin(), pitch.cos() * yaw.sin()];
+        let pa = [0.005, 0.003, 0.01][i % 3];
+        let p = MarchParams {
+            pixel_angle: pa,
+            lod_pixels: 4.0,
+            ..MarchParams::default()
+        };
+        let (beam, rays) = tile(eye, [0.5; 3], dir, pa);
+        let s = scene.beam_start(&beam, &p);
+        for ray in &rays {
+            if let Some(h) = scene.march(ray, &p).hit() {
+                assert!(s <= h.t, "start {s} passes the hit at {} ({ray:?})", h.t);
+            }
+        }
+        tiles += 1;
+        if s > 10.0 {
+            started += 1;
+        }
+    }
+    assert!(started * 2 > tiles, "{started} of {tiles}");
 }
