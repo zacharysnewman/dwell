@@ -152,7 +152,7 @@ fn constant_block() -> String {
     out
 }
 
-/// The uniforms (group 1, binding 0), 272 words; `MarchUniforms::to_words` writes them.
+/// The uniforms (group 1, binding 0), `MARCH_UNIFORM_WORDS` words; `MarchUniforms::to_words` writes them.
 const UNIFORMS: &str = r"
 struct LevelInfo {
     origin: vec3<i32>,
@@ -165,7 +165,7 @@ struct LevelInfo {
     _pad: u32,
 };
 struct MarchUniforms {
-    levels: array<LevelInfo, 20>,
+    levels: array<LevelInfo, LEVEL_COUNT>,
     eye_cell: vec3<i32>,
     top: u32,
     eye_frac: vec3<f32>,
