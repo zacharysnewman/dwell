@@ -101,7 +101,6 @@ function parseConfig(index: string, raw: unknown): Config {
   const params = o.params ?? {};
   if (
     typeof params !== 'object' ||
-    params === null ||
     Array.isArray(params) ||
     !Object.values(params).every((v) => typeof v === 'string')
   ) {
