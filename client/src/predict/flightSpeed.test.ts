@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { World } from '../protocol/constants.gen';
 import {
   clampFlySpeedLevel,
   FLY_BASE_SPEED,
@@ -15,14 +16,13 @@ describe('flight speed levels (mirror dwell-physics fly_speed_factor)', () => {
     expect(flySpeedFactor(1)).toBe(Math.SQRT2);
     expect(flySpeedFactor(2)).toBe(2);
     expect(flySpeedFactor(20)).toBe(1024);
-    expect(flySpeedFactor(MAX_FLY_SPEED_LEVEL)).toBe(Math.SQRT2 * 2 ** 19);
+    expect(flySpeedFactor(MAX_FLY_SPEED_LEVEL)).toBe(1024);
   });
 
-  it('reach about the speed near the flight ceiling at the top', () => {
-    // The height-based factor at 24,000 km is 1 + 24e6 / 32 ≈ 750,000.
-    expect(flySpeedFactor(MAX_FLY_SPEED_LEVEL)).toBeLessThanOrEqual(1 + 24e6 / 32);
-    expect(flySpeedFactor(MAX_FLY_SPEED_LEVEL)).toBeGreaterThan(0.95 * (1 + 24e6 / 32));
-    expect(flySpeedFloor(MAX_FLY_SPEED_LEVEL)).toBeCloseTo(FLY_BASE_SPEED * 741455.2, -2);
+  it('cross the 50 km world in seconds at the top (Phase 16)', () => {
+    expect(MAX_FLY_SPEED_LEVEL).toBe(20);
+    expect(flySpeedFloor(MAX_FLY_SPEED_LEVEL)).toBe(FLY_BASE_SPEED * 1024);
+    expect((2 * World.worldRadius) / flySpeedFloor(MAX_FLY_SPEED_LEVEL)).toBeLessThan(10);
   });
 
   it('clamp levels', () => {

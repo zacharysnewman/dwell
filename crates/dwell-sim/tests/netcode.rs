@@ -28,7 +28,10 @@ use ed25519_dalek::{Signer, SigningKey};
 
 // --- the test origin -----------------------------------------------------------------------------
 
-const FAR_ORIGIN_X: i32 = 3906 * 2048;
+/// ~49 km east, 848 m from the rim (Phase 16: the 50 km world).
+const FAR_ORIGIN_X: i32 = 24 * 2048;
+/// The flat world's surface (feet height on its ground).
+const G: f64 = dwell_world::FLAT_TOP_Y as f64;
 
 fn origin_x() -> i32 {
     match std::env::var("DWELL_ORIGIN_X").as_deref() {
@@ -57,9 +60,9 @@ fn shifted(g: ChunkGenerator) -> ChunkGenerator {
 
 static PLAYGROUND: LazyLock<Arc<Placed>> = LazyLock::new(|| {
     // The movement playground (PLAYER_CONTROLLER.md §9, shared/structures/playground.json), its
-    // anchor at the origin; it has no variants, so the seed changes nothing.
+    // anchor on the flat ground at the origin; it has no variants, so the seed changes nothing.
     let playground = load("dwell:playground").expect("the playground structure");
-    Arc::new(playground.place([0, 0, 0], 0))
+    Arc::new(playground.place([0, dwell_world::FLAT_TOP_Y, 0], 0))
 });
 
 /// The flat world with the playground stamped over it.
@@ -646,14 +649,14 @@ fn a_hard_fall_damages_a_lethal_one_kills_and_every_client_sees_the_respawn() {
         players.teleport(physics, h, to_world(8.5, y, -8.5), Vec3::ZERO);
     };
     // Drop player A from 5 m (lands at ~14 m/s: damaged) and later from 30 m (lethal).
-    teleport(&mut sim, 5.9);
+    teleport(&mut sim, G + 5.9);
     sim.step(90);
     let health = sim.server.health_of(pa);
     assert!(
         health < players::MAX_HEALTH as i32 && health > 0,
         "{health}"
     );
-    teleport(&mut sim, 30.9);
+    teleport(&mut sim, G + 30.9);
     sim.step(150);
     assert_eq!(sim.server.health_of(pa), 0);
     assert!(sim.server.player_handle_of(pa).is_none());
@@ -858,18 +861,11 @@ fn predictor_remote_proxy_right_after_the_first_snapshot() {
         server_tick: 3,
         ..PhysicsSnapshot::default()
     };
-    snap.local.position = [0.0, 0.9, -0.25];
+    snap.local.position = [0.0, G + 0.9, -0.25];
     snap.local.controller.flags = controller_flags::GROUNDED;
     snap.local.controller.ground_kind = GroundKind::Terrain;
     p.on_snapshot(&mut world, &snap);
-    p.set_remote(
-        1,
-        DVec3::new(-1.0, 0.0, -0.25),
-        Vec3::ZERO,
-        false,
-        0.0,
-        false,
-    );
+    p.set_remote(1, DVec3::new(-1.0, G, -0.25), Vec3::ZERO, false, 0.0, false);
     for _ in 0..10 {
         let f = quantize_input(&Input::default(), p.next_seq());
         p.tick(&mut world, &f);
@@ -888,7 +884,7 @@ fn stairs_generator() -> ChunkGenerator {
         base(coord, chunk);
         let voxels = chunk.voxels_mut();
         for k in 0..4 {
-            for y in 0..=k {
+            for y in G as i32..=G as i32 + k {
                 let (x, z) = (30, 30 + k);
                 let o = [
                     coord.x * CHUNK_SIZE,
@@ -908,7 +904,7 @@ fn stairs_generator() -> ChunkGenerator {
 /// and goes off to roam; B later runs into them from their foot. Returns the run (12 s) after
 /// checking that both slid, B saw A sliding, and neither climbed the stairs.
 fn sliding_on_steep_stairs(conditions: LinkConditions) -> (NetSim, [usize; 2]) {
-    let mut sim = NetSim::with_world(conditions, stairs_generator(), [32.0, 2.6, 33.25]);
+    let mut sim = NetSim::with_world(conditions, stairs_generator(), [32.0, G + 2.6, 33.25]);
     let a = sim.join(
         Some(Box::new(|t, c| match t {
             0..90 => Input::default(),
@@ -959,7 +955,7 @@ fn sliding_on_steep_stairs(conditions: LinkConditions) -> (NetSim, [usize; 2]) {
             s.snaps
         );
         // Neither climbed the stairs (the top is 4 m up; this is the capsule's centre).
-        assert!(c.position().y < 2.5, "{}", c.position());
+        assert!(c.position().y < G as f32 + 2.5, "{}", c.position());
     }
     (sim, [a, b])
 }
@@ -1002,7 +998,7 @@ fn sliding_predicts_without_snaps_at_150_ms_rtt_20_ms_jitter_5_percent_loss() {
 fn a_block_placed_by_one_player_blocks_another_on_the_server_and_in_its_prediction() {
     // Open ground; slot 0 at x 19, slot 1 at x 20.
     let config = ServerConfig {
-        spawn: Some([20.5, 0.0, 0.5]),
+        spawn: Some([20.5, G, 0.5]),
         ..playground_config()
     };
     let mut sim = NetSim::with(
@@ -1030,10 +1026,14 @@ fn a_block_placed_by_one_player_blocks_another_on_the_server_and_in_its_predicti
 
     // A builds a wall two blocks high across B's path at z = 3 (edits spaced for the rate limit).
     let stone = require("dwell:stone");
-    for y in [-1, 0] {
+    for y in [G as i32 - 1, G as i32] {
         // The second row from the far end: a natural block beside a higher one is a ramp rising to
         // it (ADAPTIVE_BLOCKS.md), whose top A (at x 19) must face to place on it.
-        let xs = if y < 0 { [19, 20, 21] } else { [21, 20, 19] };
+        let xs = if y < G as i32 {
+            [19, 20, 21]
+        } else {
+            [21, 20, 19]
+        };
         for x in xs {
             let edit = BlockEditRequest {
                 action: BlockEditAction::Place,
@@ -1046,7 +1046,7 @@ fn a_block_placed_by_one_player_blocks_another_on_the_server_and_in_its_predicti
         }
     }
     sim.step(ticks(0.5));
-    for y in [0, 1] {
+    for y in [G as i32, G as i32 + 1] {
         for x in [19, 20, 21] {
             let at = (world_cell_x(x), y, 3);
             assert_eq!(

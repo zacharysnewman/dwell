@@ -176,18 +176,15 @@ collision paths before adopting; it is a deliverable gated on that measurement.
   in the new format.
 - **Deferred to world upgrades** ([`FUTURE.md`](./FUTURE.md)): a data table of aliases and upgrade
   rules (`dwell:old_name → dwell:new_name`, property renames, defaults for added properties), and a
-  placeholder for unknown states (`dwell:unknown`, keeping the original string so saving writes it
-  back). String palettes on disk are what make these possible later.
+  placeholder for unknown states (keeping the original string so saving writes it back) is
+  **built** with registry sync (§8, ADR 0038): a one-state placeholder block named by the exact
+  string, solid and indestructible. String palettes on disk are what made it possible.
 - The **LOD cache** (`lod_sections`) is a cache: it is dropped when the registry hash changes,
   instead of being migrated.
 
-**Wire.** Runtime ids stay on the wire (palette + RLE of `u16`, unchanged), because server and
-client must already run the same build (protocol version). `Welcome` adds the **registry hash**;
-a mismatch is rejected like a protocol mismatch. The verification chunk (`WorldgenCheck`) already
-proves identical generation, and it hashes runtime ids, so it implies the same registry too.
-*Later*, for server-defined content: the server sends its registry (the canonical strings) at join
-and the client maps them to its own runtime ids (Minecraft's registry sync); the hash makes that a
-drop-in addition.
+**Wire.** Runtime ids stay on the wire (palette + RLE of `u16`), but they are the **server's**:
+since registry sync (§8, ADR 0038) the server sends its registry at join and each client maps the
+server's ids to its own. The registry hash no longer has to match.
 
 **Determinism.** Worldgen output is runtime ids, so the golden hashes depend on the registry:
 adding or reordering blocks changes them (regenerate, as for a generator version bump). Pure
@@ -228,3 +225,42 @@ liquids). `shared/blocks/gen.mjs` checks every reference against the sound data
 TS `BLOCK_DEFS`, where the shell's audio maps a state's block to its set. A block without `sound`
 uses the sound data's `fallback` set. Sounds are per build and change no state, id or hash: adding
 or changing one is not a compatibility change.
+
+## 8. Registry sync **[built, ADR 0038]**
+
+The owner's decision (2026-10-16): "we need registry sync" — server mods may add blocks, as in
+Minecraft — amended the same day: **a registry difference never refuses a join**; the server is
+authoritative, so the client adopts its definitions and asks the player first.
+
+- **Message.** After `ClientAuth` verifies and before `Welcome`, the server sends `BlockRegistry`
+  parts (`u16 part, u16 parts, u32 length, bytes`; 64 KiB each) carrying the **registry payload**
+  (`dwell_blocks::sync`, format 1): the build's shapes (baked geometry, matched by bytes), the
+  fluid look names, then each block (name, first server id, properties) and per state its
+  definition as tagged fields — rules (flags solid / indestructible / flooded / climbable / liquid /
+  placeable / adaptive / replaceable, occupancy and shape, density, facing, climb speed, selection
+  box, `placeOn`, `needsSupport`, `medium`) that a client must understand, and looks (look name,
+  colour and opacity, textures, grid, fluid, render mode, cross, wind, fade; top bit of the tag)
+  that it may ignore. `Welcome.registry_hash` is the **definitions hash** (FNV-1a 64 of the
+  payload): logs, and the key of the join prompt's "don't ask again".
+- **Mapping.** The client keeps its own ids (the generated table, so its worldgen, meshing and
+  physics are untouched) and appends **synced states** (`Origin::Synced`) for what it lacks: a
+  state the build has with different rules gets a copy with the server's rules and the client's
+  look; an unknown state gets the received definition. The session translates every incoming id
+  (`ChunkData`, `VoxelModification`, `LodData`) and outgoing one (`BlockEditRequest`, `RegionEdit`
+  fill / hollow / replace / paste, brush `KEEP` cells kept) through two flat tables, and does
+  nothing when they are the identity. Job workers get the synced states in a broadcast
+  `Job::Registry`. The worldgen check hashes the verification chunk in the server's ids (0 while a
+  state differs: every chunk is sent explicitly).
+- **Unknown looks** draw with the fallback look (`dwell-mesh` `MISSING_TILE`, a magenta and black
+  checker) on the state's own shape; collision and rules are always the received ones. A shape
+  outside the build's vocabulary degrades to the full cube (listed in the prompt).
+- **The join prompt** (`client/src/ui/registryPrompt.ts`): "Different on this server", "New on this
+  server (shown as placeholders)", "Only in your version (not used here)", Continue / Cancel, and
+  "Don't ask again for this server" in the append-only `dwell.registryTrust` record (server and
+  definitions hash). The F3 overlay and the console show the differences.
+- **Server blocks.** `Server::register_block` adds a block from data to that server's registry (a
+  mod; the tests' `test:glow`); a world file naming a state the server lacks loads it as a
+  **placeholder** (§4) kept under its exact string, so it is synced, played (a solid,
+  indestructible cube) and saved back unchanged.
+- **Follow-up:** server-sent looks and textures (Phase 19's textures as data), shapes from the
+  server, a palette fed by the synced registry.

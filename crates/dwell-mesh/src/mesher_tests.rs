@@ -412,7 +412,7 @@ fn ladders_and_plants_share_the_cutout_mesh_with_aligned_streams() {
 }
 
 #[test]
-fn textures_faces_by_material_and_face_grass_top_and_side_unknown_ids_plain_magenta() {
+fn textures_faces_by_material_and_face_grass_top_and_side_unknown_ids_the_fallback_tile() {
     // A grass block under a cube (so a cube itself: its sides).
     let cells = vec![
         (0, 0, 0, grass()),
@@ -444,10 +444,10 @@ fn textures_faces_by_material_and_face_grass_top_and_side_unknown_ids_plain_mage
         rect("grass")
     );
     assert_eq!(tile_of(grass_side), rect("grassSide"));
-    assert_eq!(tile_of(unknown), rect("plain"));
-    // Textured faces shade white (the texture carries the colour); unknown ids keep a flat colour.
+    // Unknown ids draw with the fallback look (ADR 0038): the magenta and black checker tile.
+    assert_eq!(tile_of(unknown), rect(crate::MISSING_TILE));
+    // Textured faces shade white (the texture carries the colour).
     assert_eq!(f.colors[grass_top * 3], 1.0);
-    assert_eq!(opaque.colors[unknown * 12 + 1], 0.0); // magenta
 }
 
 mod face_b {

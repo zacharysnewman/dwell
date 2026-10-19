@@ -26,7 +26,7 @@ fn vectors() -> Vec<(&'static str, Vec<u8>)> {
 fn messages_round_trip_byte_for_byte() {
     let mut checked = 0;
     for (name, bytes) in vectors() {
-        if name.starts_with('!') || name == "auth_transcript" {
+        if name.starts_with('!') || name == "auth_transcript" || name == "registry_payload" {
             continue;
         }
         let m = Message::decode(&bytes).unwrap_or_else(|| panic!("{name}: does not decode"));
@@ -98,6 +98,17 @@ fn decoded_fields_are_the_vectors_values() {
         (r.op, r.from, r.material, r.size),
         (RegionEditOp::Replace, 2, 6, [1, 32, 2])
     );
+    let payload = get("registry_payload");
+    let Some(Message::BlockRegistry(b)) = Message::decode(&get("block_registry")) else {
+        panic!("block_registry")
+    };
+    assert_eq!((b.part, b.parts), (0, 1));
+    assert_eq!(b.data, payload);
+    let Some(Message::BlockRegistry(b)) = Message::decode(&get("block_registry_part")) else {
+        panic!("block_registry_part")
+    };
+    assert_eq!((b.part, b.parts), (1, 2));
+    assert_eq!(b.data, payload[40..]);
 }
 
 #[test]

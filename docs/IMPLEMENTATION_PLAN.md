@@ -34,7 +34,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 14 — Baseline decisions & ADRs | ✅ Complete — the owner answered D1–D10 (2026-10-12; D3 changed: the build sphere bounds building, not movement; D4 adds the active renderer shown in the settings menu); ADRs 0025–0027 written and 0024 amended, all Accepted |
 | 15 — Cut to the baseline | 🚧 In progress — built and verified locally (native, WASM, Vitest; goldens regenerated; generator version 12, one island; `package.json` 0.9.0, the new compatibility line); e2e passes in CI; outstanding: the owner's look in a browser; follow-up (owner, 2026-10-16): the log and leaves blocks restored as prototype content (appended to the registry, no worldgen placement; a new registry hash, so the 0.13 line) |
 | 24 — Rust port (one Cargo workspace, Rapier, wgpu client; runs after 15, before 16) | 🚧 In progress — 24f (the cutover): 24a–24e built; the C++/TS tree deleted; every Rust suite, the e2e suite and Electron's smoke test pass in CI on the Rust client and `dwell-server`; `package.json` 0.10.0, the new compatibility line (world files are redb now); playtest follow-ups built (2026-10-14): the grey see-through haze on distant ground (atlas mipmaps whose filtering reached past a tile's gutter; checked in a browser), each depth pass draws what reaches its depth range (by distance it could miss terrain toward the sides of the view; suspected, not confirmed, as the cause of gaps seen from high up), replaced meshes never freeing their GPU buffers on the web (the frame rate falling over a session), the LOD's velocity lookahead removed (detail loads by location alone), and named views (`client/views/views.json`: a placed camera, window and settings per view, opened by e2e specs and shot by `scripts/shots.ts`, no flying); the gaps seen from high up not reproduced and not pursued (owner); the dev telemetry and bench (`docs/DEV_TOOLS.md`), and with it the jump onto a block from against it fixed (Rapier's contact clustering hid the body's contacts; also crouching against a wall moving the player back), and the frame time cut about 3.5× idle and flying low (no dropped frames at 60 Hz when flying fast and low; fast hasher, arena-paged meshes with one draw call each, instance-indexed draw data, leaner LOD traversal and chunk padding); the menus redesigned (owner, 2026-10-14: a themed main menu, a full-screen game menu with Settings, Controls and Debug pages, key hints, phones upright and sideways, touch controls no longer taking the menus' taps); `package.json` raised to 0.10.3, a patch release of the 0.10 line (no compatibility change), with the launcher owning the main menu; outstanding: the owner's look at the new menus; the frame-time measurement and the owner's manual check, including a long session's frame rate; `package.json` raised to 0.11.15, a patch release of the 0.11 line |
-| 16 — World shape & build volume (50 km disc, 10-layer core, spherical build volume) | ⏳ Not started — built in Rust after Phase 24 |
+| 16 — World shape & build volume (50 km disc, 10-layer core, spherical build volume) | 🚧 In progress — built: the data-driven build volume (sphere) bounding edits, generation, storage, streaming and LOD; the 50 km disc, midplane 0, 10-layer core, sea level 32, LOD root 12, no flight ceiling, the island at its Phase 15 size (data); generator v14, protocol 14; outstanding: CI, the owner's browser look, an e2e edit at the boundary |
 | 17 — Terrain definitions (terrain as data) | ⏳ Not started — built in Rust after Phase 24 |
 | 18 — Adaptive natural blocks (formerly 9e) | 🚧 In progress — every deliverable built and tested (natively, WASM, Vitest); protocol v13, a new compatibility line for the owner to raise; outstanding: the two-client e2e, the LOD seam check, the owner's walk; owner decision 2026-10-15: faces steeper than 44° slide (Phase 35); `package.json` raised to 0.12.0, the new compatibility line (protocol 13; adaptive blocks change collision and terrain; the owner's decision, 2026-10-16) |
 | 19 — WebGPU, looks & textures | ⏳ Not started — re-scoped by ADR 0028: WebGPU is done by Phase 24 (wgpu, no fallback); the look registry and textures as data are built on wgpu after it |
@@ -53,6 +53,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 33 — Transparent blocks (render modes, cross geometry, tall grass) | 🚧 In progress — render modes as block data and cutout (see-through) ladders shipped on the 0.11 line (0.11.18; no registry-hash change); on `claude/transparent-blocks` for the 0.13.0 line (with wood and leaves): the cross look with wind and fade, placement rules and `medium`, `dwell:tall_grass` grown by world generation (decorations as data, generator version 13; a partial reversal of B10 for plants), the Plant sway setting, the marcher's classes, all tested and checked in a browser (about +0.3 ms GPU for a 150-plant field); outstanding: hillside screenshots of generated grass (T9), the owner's look, the e2e suite on CI; `package.json` raised to 0.13.0, the new compatibility line (new blocks: log, leaves, tall grass; generator v13; the owner's decision, 2026-10-16) |
 | 34 — Brushes | 🚧 In progress — B1 built and tested: VoxelSniper-style brushes in the sandbox (ADR 0037, `BRUSHES.md`): brushes, performers and sculpt in `dwell-world` `brush.rs`, presets and the per-world-type policy as data (`shared/brushes/brushes.json`, generator, CI stale check), strokes as `KEEP` pastes behind the `brushes` Welcome flag (0.11 line, no protocol bump), the brush tool, its HUD panel and keys, the region `tool` sound; browser check done; outstanding: the owner's try-out and answers to `BRUSHES.md` §5, CI; `package.json` raised to 0.11.20, a patch release of the 0.11 line |
 | 35 — Sliding on steep ground (stacks on 18, uses 28) | 🚧 In progress — built and tested natively (controller, netcode, sound events and data, the shell's loop voices, WAV renders) and in a browser (the bench); outstanding: CI (the WASM divergence run and the e2e suite, not run on the branch), the owner's review of the feel and of the slide WAV renders; `package.json` raised to 0.12.0, the new compatibility line (protocol 13; adaptive blocks change collision and terrain; the owner's decision, 2026-10-16) |
+| 36 — Block registry sync | 🚧 In progress — built and tested natively and in Vitest (ADR 0038, `BLOCK_REGISTRY.md` §8): the server's registry sent at join (`BlockRegistry`, protocol 14), ids mapped at the session boundary, the join prompt (no refusals), the fallback look, server-registered blocks, placeholders for unknown states in world files; outstanding: CI, the e2e suite, the owner's review of the prompt; ships in the next minor (0.14.0), coordinated with Phase 16's protocol bump |
 
 Phase numbering: Phase 4 was inserted on 2026-09-29 for the planet-scale world (ADRs 0011, 0012);
 the former Phases 4–7 are now 5–8, and Phase 3's former 3c and 3d are now 3d and 3e.
@@ -2291,37 +2292,59 @@ Exit criteria
 
 **Goal:** The baseline's geometry, with every bound read from one data-driven predicate.
 
-**Status:** Not started.
+**Status:** 🚧 Built and tested (generator v14, protocol 14: the 0.14 line); outstanding: CI, the
+owner's manual look in a browser, and one e2e edit at the boundary.
 
 Deliverables
-- [ ] **Constants** (`shared/protocol/constants.json`): `worldRadius` 50,000; `midplaneY` 0;
+- [x] **Constants** (`shared/protocol/constants.json`): `worldRadius` 50,000; `midplaneY` 0;
   `seaLevel` and the core's thickness move to the terrain definition in Phase 17 (interim values here:
   sea level `h` = 32, core 10); `worldBottomY`/`worldMaxY` replaced by `bounds`
   `{ "shape": "sphere", "center": [0, 0, 0], "radius": 50000 }`; `lod.maxLevel` 12;
   `flightCeiling` removed (D3: no movement limit); fly-speed levels re-checked for a 50 km world.
   Protocol version bumped.
-- [ ] **`InsideBuildVolume`** in `core/voxel.h` and `client/src/world/`: shapes a closed set in code
+- [x] **`InsideBuildVolume`** in `core/voxel.h` and `client/src/world/`: shapes a closed set in code
   (sphere; slab kept for tests), parameters from data. Used by: edits (server rejection, client
   pre-check), generation and storage (chunks wholly outside are air, never stored; `IsAirChunk`,
   `LodBoundsAt`), streaming and LOD requests. Not movement: players may fly outside it (D3).
-- [ ] **Bifacial re-tune**: the mirror constant, `kMinChunkY`/`kMaxChunkY` from the bounds, the
+- [x] **Bifacial re-tune**: the mirror constant, `kMinChunkY`/`kMaxChunkY` from the bounds, the
   flip band and `CORE_ANCHOR_LAYERS` (8) checked against the 10-layer core.
-- [ ] **Thin-crust LOD**: sections straddling the midplane at every level draw the viewer's face
+- [x] **Thin-crust LOD**: sections straddling the midplane at every level draw the viewer's face
   only, without holes or the other face showing through.
-- [ ] Far-origin test runs moved to ~49 km; F4 zoom range narrowed.
-- [ ] Docs: `ARCHITECTURE.md` world bounds, bifacial, §6.6, §7.4; `BIFACIAL_WORLD.md` geometry.
+- [x] Far-origin test runs moved to ~49 km; F4 zoom range narrowed.
+- [x] Docs: `ARCHITECTURE.md` world bounds, bifacial, §6.6, §7.4; `BIFACIAL_WORLD.md` geometry.
 
 Exit criteria
-- [ ] Edits outside the sphere are rejected by the server and not sent by the client (unit tests;
-  one e2e edit at the boundary).
-- [ ] No chunk or LOD section wholly outside the sphere is generated, stored or requested (tests).
-- [ ] Flight is not bounded by the sphere (D3): a controller scenario flies out through it, native
+- [x] Edits outside the sphere are rejected by the server and not sent by the client (unit tests;
+  the e2e edit at the boundary is split out below).
+- [x] No chunk or LOD section wholly outside the sphere is generated, stored or requested (tests).
+- [x] Flight is not bounded by the sphere (D3): a controller scenario flies out through it, native
   and WASM, and the client requests no chunk or LOD section outside it while there (test).
-- [ ] LOD meshing of straddling sections at levels 1–8 shows no holes and none of the other face
+- [x] LOD meshing of straddling sections at levels 1–8 shows no holes and none of the other face
   (mesher tests over a 20-layer crust).
-- [ ] Walking over the rim still carries a player across the midplane to face B (controller
+- [x] Walking over the rim still carries a player across the midplane to face B (controller
   scenario).
-- [ ] Manual: a look in a browser from the ground, from altitude and from face B.
+- [ ] Manual: a look in a browser from the ground, from altitude and from face B (screenshots
+  taken by the agent, 2026-10-19; the owner's look outstanding).
+- [ ] Edits outside the sphere: unit tests built (server `check_block_edit`/`check_region_edit`,
+  client `BlockInteraction::act` and the region tools, red → green); the e2e edit at the boundary
+  outstanding (moved here from the criterion above, which is ticked for its unit tests only).
+
+Deviations
+- **Rust, not C++/TS** (ADR 0028): `InsideBuildVolume` is `dwell_world::bounds` (`BuildVolume`,
+  `inside_build_volume`, `BoundsShape` generated into `dwell-protocol`); `kMinChunkY`/`kMaxChunkY`
+  are `MIN_CHUNK_Y`/`MAX_CHUNK_Y`; the client pre-checks are in `dwell-game`.
+- **The island keeps its size** (owner, 2026-10-15): its mean radius is `world.islandRadius` =
+  25,000 m in `constants.json`, absolute; measured identical before and after (BASELINE_EVALUATION.md
+  §7); a test holds the mean coast within ±10%.
+- **Thin crust:** with the midplane at 0 every section up to level 11 is aligned to it; only the
+  root straddles. The mesher test runs over a 20-layer crust at every level 1–12, both faces.
+- **The flat worlds** (test world, sandbox) fill the midplane up to `FLAT_TOP_Y` = 32, and the
+  controller tests' local frame puts y 0 at sea level (32 m over the midplane): their old ground at
+  y = 0 would have lain on the midplane.
+- **Fly speeds:** `flySpeedMaxLevel` 39 → 20 (11.3 km/s); the height-based speed is capped at the
+  top level's; the terrain band (6,144 m) is a controller tunable; flight is held only at the wire
+  range (`POS64_LIMIT`).
+- `coreAnchorLayers` stays 8, within the 10-layer core (a compile-time check).
 
 ---
 
@@ -3495,3 +3518,58 @@ Deviations:
 - Every new message type gets golden-byte tests in `dwell-protocol` (`tests/vectors.rs`) against
   `shared/protocol/vectors.txt` from the independent Python encoder (`make_vectors.py`).
 - CI must stay green; the Pages deployment must stay playable in local mode.
+
+## Phase 36 — Block Registry Sync
+
+> **Numbering note (for the integrator):** 36 was the next phase number free on `main` when this
+> was written (2026-10-19); renumber it if another branch took it.
+
+**Status:** Built and tested natively and in Vitest (2026-10-19). Outstanding: CI, the e2e suite
+(not run on the branch), the owner's review of the join prompt in a browser. A protocol change:
+protocol 14, shipping in the next minor (0.14.0) — shared with Phase 16 (#114) if they land
+together, otherwise whichever lands second bumps once more.
+
+Owner (2026-10-16): *"we need registry sync; have it go out at the same time with 0.12.0"* —
+server mods that add blocks, as in Minecraft — and the same day: **never refuse a join over
+registry differences**; the server wins and the player is asked. Design and defaults in
+[ADR 0038](./adr/0038-block-registry-sync.md) and [`BLOCK_REGISTRY.md`](./BLOCK_REGISTRY.md) §8.
+
+Deliverables
+- [x] The registry payload (`dwell_blocks::sync`, format 1): shapes by geometry, fluid names,
+  blocks with properties, every state's definition as tagged fields (rules a client must
+  understand, looks it may ignore), carrying every field of `StateInfo`; golden vectors from the
+  independent Python encoder (`registry_payload`, `block_registry*`).
+- [x] `BlockRegistry` parts before `Welcome`; `Welcome.registry_hash` is the definitions hash.
+- [x] The client's table grows at run time (`dwell_blocks` `table.rs`): synced states, server
+  blocks, placeholders; lock-free reads, the build's ids unchanged.
+- [x] Mapping at the session boundary, both ways (chunks, LOD, modifications; block edits,
+  region edits, brush pastes with `KEEP`); client-only states are never sent; tests.
+- [x] The check never refuses: differences adopt the server's rules (a synced copy keeps the
+  client's look), unknown states take the received definition, unrepresentable shapes degrade to
+  the cube; the session's `Confirming` state; tests.
+- [x] The join prompt in the shell: three groups, Continue / Cancel (to the menu), "don't ask
+  again" in the append-only `dwell.registryTrust` record keyed by server and definitions hash
+  (Vitest); differences in the console and the F3 overlay.
+- [x] Job workers receive synced states (`Job::Registry` broadcast).
+- [x] `WorldgenCheck` in the server's ids (0 while a state differs).
+- [x] The fallback look (`dwell-mesh` `MISSING_TILE`); every build state draws its own (test).
+- [x] `Server::register_block` (a server's own blocks, from data); the fixture's server-only
+  `test:glow`.
+- [x] World files keep unknown states as placeholders under their exact strings and save them
+  back (regression test, red then green); a server serves its file's non-build states.
+- [x] Docs: ARCHITECTURE.md §6.1 and §8.3, BLOCK_REGISTRY.md §4 and §8, RELEASES.md §3, CLAUDE.md.
+- [ ] Follow-up (not this phase): server-sent looks and textures (Phase 19's textures as data),
+  shapes from the server, a palette fed by the synced registry, mods loaded by the dedicated
+  server from data files.
+
+Exit criteria
+- [x] A block only the server has arrives by sync, draws with the fallback look, collides exactly
+  as on the server (no prediction snaps), is targeted and broken, and another client sees it and
+  its removal (`game_local.rs`, native).
+- [x] Mismatched-but-mappable registries connect (shifted ids, removed and added blocks,
+  differing definitions); a malformed or missing registry closes with a reason.
+- [x] Local mode maps to the identity with the build's definitions hash.
+- [x] Meshing and physics cost unchanged (the build's ids index the generated array as before;
+  identity sessions skip translation; microbench in the PR).
+- [ ] CI green, and the e2e suite (specs that may need updating: `e2e/edit.spec.ts`,
+  `e2e/play.spec.ts`, any reading the session's phases).

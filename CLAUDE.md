@@ -190,6 +190,11 @@ that touches the public API, a release or the workflows:
   network protocols, the cross-version browser storage — needs a new compatibility line** (before
   `1.0.0`, the next MINOR). Say so in the PR and let the owner raise `package.json`; do not leave
   such a change shipping under the old line, whose players' worlds it would break.
+- **Blocks and registry sync (ADR 0038):** the server sends its block registry at join and clients
+  map ids by name, so **adding** blocks or states, or changing looks, is not breaking. Still
+  breaking: removing or renaming a state (or adding/removing a property), changing an existing
+  state's shape or rules, changing the shapes or the adaptive shape rules, and changing worldgen
+  (`docs/RELEASES.md` §3).
 - **The browser's shared stores are append-only** (the world index, settings, device key): new
   fields optional, unknown fields and unreadable records preserved on rewrite (a test pins it).
 - **Release logic lives in tested scripts** (`client/scripts/release.ts`, `site.ts`), not in workflow

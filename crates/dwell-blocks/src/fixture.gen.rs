@@ -3,7 +3,7 @@
 use crate::types::*;
 
 /// FNV-1a 64 over the canonical state strings (each followed by a newline) in runtime id order.
-pub const REGISTRY_HASH: u64 = 0x5c42310a225403f4;
+pub const REGISTRY_HASH: u64 = 0xc49ca46313166f63;
 
 pub static PROPERTY_VALUES: [&str; 8] = [
     "north",
@@ -22,7 +22,7 @@ pub static PROPERTIES: [PropertyDef; 3] = [
     PropertyDef { name: "flooded", first_value: 6, value_count: 2 },
 ];
 
-pub static BLOCKS: [BlockDef; 16] = [
+pub static BLOCKS: [BlockDef; 17] = [
     BlockDef { name: "dwell:air", first_state: 0, state_count: 1, first_property: 0, property_count: 0 },
     BlockDef { name: "dwell:stone", first_state: 1, state_count: 1, first_property: 0, property_count: 0 },
     BlockDef { name: "dwell:dirt", first_state: 2, state_count: 1, first_property: 0, property_count: 0 },
@@ -38,7 +38,8 @@ pub static BLOCKS: [BlockDef; 16] = [
     BlockDef { name: "test:hedge", first_state: 19, state_count: 1, first_property: 2, property_count: 0 },
     BlockDef { name: "test:glass", first_state: 20, state_count: 1, first_property: 2, property_count: 0 },
     BlockDef { name: "test:kelp", first_state: 21, state_count: 2, first_property: 2, property_count: 1 },
-    BlockDef { name: "test:reed", first_state: 23, state_count: 1, first_property: 3, property_count: 0 },
+    BlockDef { name: "test:glow", first_state: 23, state_count: 1, first_property: 3, property_count: 0 },
+    BlockDef { name: "test:reed", first_state: 24, state_count: 1, first_property: 3, property_count: 0 },
 ];
 
 pub static SHAPE_FACES: [ShapeFace; 1276] = [
@@ -1516,7 +1517,7 @@ pub static SHAPES: [ShapeInfo; 193] = [
     ShapeInfo { first_face: 1269, face_count: 7, corners: [2, 1, 2, 1], points: [[4, 3, 2], [3, 4, 3], [2, 3, 4]], fan: false, inverted: true, diagonal: 0, convex: true, volume: 0.8333333333333334, sides: [[2, 3, 4], [4, 3, 2], [2, 3, 4], [4, 3, 2]], full_top: true, full_bottom: false, min_y: 0.0, max_y: 1.0 },
 ];
 
-pub static STATES: [StateInfo; 24] = [
+pub static STATES: [StateInfo; 25] = [
     StateInfo { name: "dwell:air", block: 0, density_kg_m3: 0.0, solid: false, indestructible: false, shape: VoxelShape::Empty, shape_index: 0, flooded: false, climbable: false, facing: Facing::None, climb_speed_scale: 1.0, liquid: false, adaptive: false, fluid: None, placeable: false, look: "cube", color: 0x000000, opacity: 0.0, textures: None, grid: None, render: RenderMode::Opaque, cross: None, wind: None, fade: None, selection: None, place_on: &[], needs_support: Support::None, replaceable: false, medium: Medium::Any },
     StateInfo { name: "dwell:stone", block: 1, density_kg_m3: 2400.0, solid: true, indestructible: false, shape: VoxelShape::Full, shape_index: 1, flooded: false, climbable: false, facing: Facing::None, climb_speed_scale: 1.0, liquid: false, adaptive: true, fluid: None, placeable: true, look: "cube", color: 0xbbafa6, opacity: 1.0, textures: Some(Textures { top: "stone", side: "stone", bottom: "stone" }), grid: None, render: RenderMode::Opaque, cross: None, wind: None, fade: None, selection: None, place_on: &[], needs_support: Support::None, replaceable: false, medium: Medium::Any },
     StateInfo { name: "dwell:dirt", block: 2, density_kg_m3: 1500.0, solid: true, indestructible: false, shape: VoxelShape::Full, shape_index: 1, flooded: false, climbable: false, facing: Facing::None, climb_speed_scale: 1.0, liquid: false, adaptive: true, fluid: None, placeable: true, look: "cube", color: 0x8a5a3a, opacity: 1.0, textures: Some(Textures { top: "dirt", side: "dirt", bottom: "dirt" }), grid: None, render: RenderMode::Opaque, cross: None, wind: None, fade: None, selection: None, place_on: &[], needs_support: Support::None, replaceable: false, medium: Medium::Any },
@@ -1540,7 +1541,8 @@ pub static STATES: [StateInfo; 24] = [
     StateInfo { name: "test:glass", block: 13, density_kg_m3: 2500.0, solid: true, indestructible: false, shape: VoxelShape::Full, shape_index: 1, flooded: false, climbable: false, facing: Facing::None, climb_speed_scale: 1.0, liquid: false, adaptive: false, fluid: None, placeable: false, look: "cube", color: 0xc8e8f0, opacity: 0.4, textures: Some(Textures { top: "water", side: "water", bottom: "water" }), grid: None, render: RenderMode::Translucent, cross: None, wind: None, fade: None, selection: None, place_on: &[], needs_support: Support::None, replaceable: false, medium: Medium::Any },
     StateInfo { name: "test:kelp[flooded=true]", block: 14, density_kg_m3: 100.0, solid: false, indestructible: false, shape: VoxelShape::Empty, shape_index: 0, flooded: true, climbable: false, facing: Facing::None, climb_speed_scale: 1.0, liquid: false, adaptive: false, fluid: None, placeable: false, look: "cross", color: 0x2a6a3a, opacity: 1.0, textures: Some(Textures { top: "tallGrass", side: "tallGrass", bottom: "tallGrass" }), grid: None, render: RenderMode::Cutout, cross: Some(Cross { height: 0.9, quads: 2, offset: 0.0, rotation_deg: 0.0, height_min: 1.0, height_max: 1.0 }), wind: None, fade: None, selection: None, place_on: &[], needs_support: Support::None, replaceable: false, medium: Medium::Water },
     StateInfo { name: "test:kelp[flooded=false]", block: 14, density_kg_m3: 100.0, solid: false, indestructible: false, shape: VoxelShape::Empty, shape_index: 0, flooded: false, climbable: false, facing: Facing::None, climb_speed_scale: 1.0, liquid: false, adaptive: false, fluid: None, placeable: false, look: "cross", color: 0x2a6a3a, opacity: 1.0, textures: Some(Textures { top: "tallGrass", side: "tallGrass", bottom: "tallGrass" }), grid: None, render: RenderMode::Cutout, cross: Some(Cross { height: 0.9, quads: 2, offset: 0.0, rotation_deg: 0.0, height_min: 1.0, height_max: 1.0 }), wind: None, fade: None, selection: None, place_on: &[], needs_support: Support::None, replaceable: false, medium: Medium::Water },
-    StateInfo { name: "test:reed", block: 15, density_kg_m3: 100.0, solid: false, indestructible: false, shape: VoxelShape::Empty, shape_index: 0, flooded: false, climbable: false, facing: Facing::None, climb_speed_scale: 1.0, liquid: false, adaptive: false, fluid: None, placeable: false, look: "cross", color: 0x6a8a3a, opacity: 1.0, textures: Some(Textures { top: "tallGrass", side: "tallGrass", bottom: "tallGrass" }), grid: None, render: RenderMode::Cutout, cross: Some(Cross { height: 1.0, quads: 3, offset: 0.0, rotation_deg: 0.0, height_min: 1.0, height_max: 1.0 }), wind: None, fade: None, selection: None, place_on: &[], needs_support: Support::None, replaceable: false, medium: Medium::Any },
+    StateInfo { name: "test:glow", block: 15, density_kg_m3: 1800.0, solid: true, indestructible: false, shape: VoxelShape::Full, shape_index: 1, flooded: false, climbable: false, facing: Facing::None, climb_speed_scale: 1.0, liquid: false, adaptive: false, fluid: None, placeable: true, look: "cube", color: 0xffd060, opacity: 1.0, textures: Some(Textures { top: "testGlow", side: "testGlow", bottom: "testGlow" }), grid: None, render: RenderMode::Opaque, cross: None, wind: None, fade: None, selection: None, place_on: &[], needs_support: Support::None, replaceable: false, medium: Medium::Any },
+    StateInfo { name: "test:reed", block: 16, density_kg_m3: 100.0, solid: false, indestructible: false, shape: VoxelShape::Empty, shape_index: 0, flooded: false, climbable: false, facing: Facing::None, climb_speed_scale: 1.0, liquid: false, adaptive: false, fluid: None, placeable: false, look: "cross", color: 0x6a8a3a, opacity: 1.0, textures: Some(Textures { top: "tallGrass", side: "tallGrass", bottom: "tallGrass" }), grid: None, render: RenderMode::Cutout, cross: Some(Cross { height: 1.0, quads: 3, offset: 0.0, rotation_deg: 0.0, height_min: 1.0, height_max: 1.0 }), wind: None, fade: None, selection: None, place_on: &[], needs_support: Support::None, replaceable: false, medium: Medium::Any },
 ];
 
 pub static FLUIDS: [FluidInfo; 2] = [

@@ -10,7 +10,7 @@
 //! changed cells, sent as `RegionEdit` pastes of at most 32³ whose other cells are
 //! `region_edit::KEEP` ([`paste_edits`]); the server validates them like any region edit.
 
-use dwell_blocks::{STATES, StateId, info};
+use dwell_blocks::StateId;
 use dwell_protocol::{RegionEdit, RegionEditOp, region_edit};
 
 use crate::M;
@@ -441,7 +441,7 @@ impl Grid {
 }
 
 fn solid(m: StateId) -> bool {
-    usize::from(m) < STATES.len() && info(m).solid
+    dwell_blocks::try_info(m).is_some_and(|s| s.solid)
 }
 
 const FACES: [[i32; 3]; 6] = [
@@ -644,7 +644,7 @@ pub fn perform(
                 let (old, new) = (grid.cells[i], work.cells[i]);
                 if old == new
                     || unbreakable(old)
-                    || usize::from(new) >= STATES.len()
+                    || usize::from(new) >= dwell_blocks::state_count()
                     || unbreakable(new)
                 {
                     continue;

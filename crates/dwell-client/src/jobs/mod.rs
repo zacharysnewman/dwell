@@ -47,6 +47,10 @@ pub enum Job {
         mirror: bool,
         payloads: Payloads,
     },
+    /// The block states the main thread registered at run time (synced from a server, ADR 0038),
+    /// as `dwell_blocks::sync::extension_payload`: a worker adds them to its own table, so mesh
+    /// jobs naming synced ids read the same rows. Sent to every worker ([`crate::pool::Jobs::broadcast`]).
+    Registry { payload: Vec<u8> },
 }
 
 impl Job {
@@ -77,6 +81,8 @@ pub enum Output {
     ChunkMesh(Box<ChunkTerrain>),
     SectionMesh(Box<SectionTerrain>),
     Failed(String),
+    /// A job without a result (`Registry`).
+    Done,
 }
 
 /// Runs jobs for one world (a worker's state).
@@ -117,6 +123,10 @@ impl Runner {
 
     pub fn run(&self, job: Job) -> Output {
         match job {
+            Job::Registry { payload } => match dwell_blocks::sync::apply_extension(&payload) {
+                Ok(()) => Output::Done,
+                Err(e) => Output::Failed(e),
+            },
             Job::Generate { coord } => {
                 let Some(g) = &self.chunks else {
                     return no_world();
@@ -155,7 +165,9 @@ impl Runner {
                 for j in 0..n {
                     for k in 0..n {
                         let c = local.column_at(x0 + k * step, z0 + j * step);
-                        let h = c.height.clamp(-32768.0, 32767.0) as i16;
+                        // Above sea level (the map's colours): heights count from the midplane.
+                        let h = (c.height - dwell_world::SEA_LEVEL as f32).clamp(-32768.0, 32767.0)
+                            as i16;
                         out.extend_from_slice(&h.to_le_bytes());
                         out.push(u8::from(c.outside));
                     }
@@ -319,6 +331,12 @@ mod tests {
             panic!()
         };
         assert_eq!(bytes.len(), 8 * 8 * 3);
+        // Heights above sea level (the map's colours: sea below 0), not face-local ones: the
+        // generator's heights count from the midplane since Phase 16 (sea level 32).
+        let t = dwell_worldgen::BifacialTerrain::new(1);
+        let want = t.local(dwell_world::Face::A).column_at(-64, -64).height
+            - dwell_world::SEA_LEVEL as f32;
+        assert_eq!(i16::from_le_bytes([bytes[0], bytes[1]]), want as i16);
         let Output::Map(None) = Runner::world(0, 1).run(Job::Map {
             x0: 0,
             z0: 0,

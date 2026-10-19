@@ -147,6 +147,10 @@ impl<'a> ByteReader<'a> {
             self.ok = false;
         }
     }
+    /// `n` raw bytes (empty after a failure).
+    pub fn bytes(&mut self, n: usize) -> Vec<u8> {
+        self.take(n).map(<[u8]>::to_vec).unwrap_or_default()
+    }
     pub fn fixed<const N: usize>(&mut self) -> [u8; N] {
         self.take(N)
             .map(|b| b.try_into().expect("N bytes"))

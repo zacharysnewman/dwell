@@ -53,6 +53,9 @@ const RECENT: f64 = 0.1;
 pub const NEAR_SPLIT: f64 = dwell_protocol::lod::NEAR_SPLIT_M as f64;
 pub const NEAR_PLANE: f64 = 0.05;
 pub const FAR_PLANE: f64 = 5e7;
+/// Face-local height no terrain reaches (m): above it, nothing is nearer than the altitude over it,
+/// so the far pass's near plane moves out with it.
+const TERRAIN_TOP_M: f64 = 1024.0;
 pub const SAMPLES: u32 = 4;
 
 // A CPU (software) adapter — SwiftShader: CI, machines without a GPU — draws the cheapest tier of
@@ -2110,7 +2113,7 @@ impl Renderer {
         } else {
             2.0 * dwell_look::MIDPLANE_Y - self.eye[1]
         };
-        let altitude = local_y - f64::from(dwell_world::WORLD_MAX_Y);
+        let altitude = local_y - TERRAIN_TOP_M;
         let far_near = (NEAR_SPLIT * 0.95).max(altitude * 0.8);
         let passes = [(far_near, FAR_PLANE), (NEAR_PLANE, NEAR_SPLIT)];
         let draws = self.collect(passes, chunk_visible);

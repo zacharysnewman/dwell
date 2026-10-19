@@ -98,9 +98,22 @@ impl Fixture {
         };
         let signature = who.sign(&auth_transcript(&nonce, &self.binding, &who.public_key));
         self.send(id, Message::ClientAuth(signature));
-        match self.take(id).remove(0).0 {
-            Message::Welcome(w) => w,
-            other => panic!("expected Welcome, got {other:?}"),
+        // The registry's parts come first (ADR 0038), then Welcome.
+        let mut out = self.take(id).into_iter().map(|(m, _)| m);
+        let mut registry = Vec::new();
+        loop {
+            match out.next() {
+                Some(Message::BlockRegistry(b)) => registry.extend_from_slice(&b.data),
+                Some(Message::Welcome(w)) => {
+                    assert_eq!(
+                        w.registry_hash,
+                        dwell_blocks::sync::definitions_hash(&registry),
+                        "Welcome carries the hash of the registry sent before it"
+                    );
+                    return w;
+                }
+                other => panic!("expected BlockRegistry or Welcome, got {other:?}"),
+            }
         }
     }
 
@@ -141,11 +154,11 @@ impl Fixture {
     }
 }
 
-/// The flat world with the spawn at (0.5, 0, 0.5).
+/// The flat world with the spawn on its ground at (0.5, `FLAT_TOP_Y`, 0.5).
 pub fn flat() -> ServerConfig {
     ServerConfig {
         generator_version: GENERATOR_FLAT,
-        spawn: Some([0.5, 0.0, 0.5]),
+        spawn: Some([0.5, f64::from(dwell_world::FLAT_TOP_Y), 0.5]),
         ..ServerConfig::default()
     }
 }

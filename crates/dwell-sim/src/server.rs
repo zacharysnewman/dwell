@@ -8,7 +8,7 @@ use std::collections::{BTreeMap, VecDeque};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use dwell_blocks::{REGISTRY_HASH, info};
+use dwell_blocks::info;
 use dwell_physics::config::PlayerControllerConfig;
 use dwell_physics::controller::{Input, PlayerHandle, Players, events};
 use dwell_physics::net::{dequantize_input, player_flags_of, quantize_pitch, quantize_yaw, to_net};
@@ -30,8 +30,8 @@ use dwell_world::edit::{
 use dwell_world::lod::{INDEX_LEVEL, LodCoord, in_world, lod_of_chunk, parent};
 use dwell_world::region::{RegionCheck, check_region_edit, region_reach};
 use dwell_world::{
-    AirChunkTest, CHUNK_SIZE, Chunk, ChunkCoord, ChunkGenerator, M, MAX_CHUNK_Y, MIN_CHUNK_Y,
-    SavedChunks, VoxelWorld, chunk_distance, chunk_hash, chunk_of, local_index,
+    AirChunkTest, BUILD_VOLUME, CHUNK_SIZE, Chunk, ChunkCoord, ChunkGenerator, M, SavedChunks,
+    VoxelWorld, chunk_distance, chunk_hash, chunk_of, local_index,
 };
 
 use dwell_protocol::auth::verify_ed25519;
@@ -513,6 +513,13 @@ pub struct Server {
     generator: ChunkGenerator,
     verification_chunk: ChunkCoord,
     verification_hash: u64,
+    /// The registry payload sent at join (ADR 0038) and its definitions hash, for the table size
+    /// it was made at (states registered later — placeholders, mods — remake it).
+    registry: (usize, std::sync::Arc<Vec<u8>>, u64),
+    /// First state ids of the blocks this server registered at run time (mods, placeholders for
+    /// states its world file names): with the build's, its registry. Other servers in the process
+    /// (local mode, tests) do not serve them.
+    own_blocks: Vec<dwell_blocks::StateId>,
     view_offsets: Vec<ChunkCoord>, // chunks in view relative to the center, nearest first
     prefetch_offsets: Vec<ChunkCoord>, // generated ahead around each player
     explicit_wanted: Vec<ChunkCoord>, // full-mode chunks to generate for streaming
@@ -577,6 +584,8 @@ impl Server {
             generator,
             verification_chunk: chunk_at(spawn[0], spawn[1] - 1.0, spawn[2]),
             verification_hash: 0,
+            registry: (0, Default::default(), 0),
+            own_blocks: Vec::new(),
             view_offsets: Vec::new(),
             prefetch_offsets: cube_offsets(PREFETCH_CHUNKS),
             explicit_wanted: Vec::new(),
@@ -857,8 +866,19 @@ impl Server {
                 } else {
                     0
                 },
-            registry_hash: REGISTRY_HASH,
+            registry_hash: self.registry().1,
         };
+        // The registry first (ADR 0038): the client maps ids with it when Welcome arrives.
+        let (payload, _) = self.registry();
+        let parts = dwell_blocks::sync::parts(&payload);
+        for (i, part) in parts.iter().enumerate() {
+            let m = Message::BlockRegistry(BlockRegistry {
+                part: i as u16,
+                parts: parts.len() as u16,
+                data: part.to_vec(),
+            });
+            self.send_reliable(id, &m, Channel::Control);
+        }
         self.send_reliable(id, &Message::Welcome(welcome), Channel::Control);
         // A returning player continues where it left the world (§6.4), unless it was dead.
         let saved = self
@@ -873,6 +893,47 @@ impl Server {
             }
             _ => self.spawn_player(id, None),
         }
+    }
+
+    /// Adds a block to this server's registry from data (a mod's block; ADR 0038): it is sent to
+    /// every client that joins after. Its first state id.
+    pub fn register_block(
+        &mut self,
+        block: dwell_blocks::NewBlock,
+    ) -> Result<dwell_blocks::StateId, String> {
+        let first = dwell_blocks::register(dwell_blocks::Origin::Server, block)?;
+        if !self.own_blocks.contains(&first) {
+            self.own_blocks.push(first);
+        }
+        Ok(first)
+    }
+
+    /// The registry payload this server sends at join and its definitions hash (ADR 0038).
+    pub fn registry(&mut self) -> (std::sync::Arc<Vec<u8>>, u64) {
+        // Placeholders for states the world file names and this server lacks are its own too.
+        let placeholders = self
+            .config
+            .store
+            .as_ref()
+            .map(|st| st.db().placeholders())
+            .unwrap_or_default();
+        for p in placeholders {
+            if !self.own_blocks.contains(&p) {
+                self.own_blocks.push(p);
+            }
+        }
+        let count = self.own_blocks.len();
+        if self.registry.0 != count || self.registry.1.is_empty() {
+            let own = &self.own_blocks;
+            let bytes = dwell_blocks::sync::Payload::served_by(|b| {
+                b.origin == dwell_blocks::Origin::Build
+                    || own.iter().any(|&id| b.states().contains(&usize::from(id)))
+            })
+            .encode();
+            let hash = dwell_blocks::sync::definitions_hash(&bytes);
+            self.registry = (count, std::sync::Arc::new(bytes), hash);
+        }
+        (self.registry.1.clone(), self.registry.2)
     }
 
     /// Gameplay input comes as datagrams. On control: the one WorldgenCheck, which picks how the
@@ -1173,7 +1234,7 @@ impl Server {
         for o in &self.prefetch_offsets {
             for &center in &centers {
                 let c = add(center, *o);
-                if c.y < MIN_CHUNK_Y || c.y > MAX_CHUNK_Y || self.world.find(c).is_some() {
+                if !BUILD_VOLUME.chunk_may_hold(c) || self.world.find(c).is_some() {
                     continue;
                 }
                 if self.is_saved(c) {
@@ -1222,7 +1283,7 @@ impl Server {
             }
             let ok = s.chunk_mode != ChunkMode::AwaitingCheck
                 && center.is_some_and(|center| within_radius(c, center, render))
-                && (MIN_CHUNK_Y..=MAX_CHUNK_Y).contains(&c.y)
+                && BUILD_VOLUME.chunk_may_hold(c)
                 && s.chunk_request_credit >= 1.0
                 && s.chunk_requests.len() < MAX_QUEUED_CHUNK_REQUESTS;
             if !ok {
@@ -1311,7 +1372,8 @@ impl Server {
         for i in 0..self.view_offsets.len() {
             let c = add(center, self.view_offsets[i]);
             let s = &self.sessions[&id];
-            if c.y < MIN_CHUNK_Y || c.y > MAX_CHUNK_Y || s.streamed.contains(&c) {
+            // Chunks wholly outside the build volume are air everywhere: never sent (ADR 0025).
+            if !BUILD_VOLUME.chunk_may_hold(c) || s.streamed.contains(&c) {
                 continue;
             }
             complete = false;

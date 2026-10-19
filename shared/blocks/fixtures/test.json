@@ -29,6 +29,10 @@
       "cross": { "height": 0.9 }, "color": "#2a6a3a", "textures": "tallGrass"
     },
     {
+      "$comment": "A server-only block (ADR 0038): tests register it on a server only, so a client learns it by registry sync. Its texture tile is in no atlas: the client draws the fallback look.",
+      "name": "glow", "density": 1800, "shape": "full", "placeable": true, "color": "#ffd060", "textures": "testGlow"
+    },
+    {
       "name": "reed", "density": 100, "shape": "empty", "look": "cross", "render": "cutout",
       "cross": { "height": 1.0, "quads": 3 }, "color": "#6a8a3a", "textures": "tallGrass"
     }

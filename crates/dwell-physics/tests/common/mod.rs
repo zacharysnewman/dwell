@@ -1,7 +1,8 @@
 //! `PlayerTestWorld` (PLAYER_CONTROLLER.md §10): a headless world for controller tests, the voxel
 //! counterpart of the PPC's test world — voxel primitives, Tier 1 boxes as platforms, scheduled
 //! kicks and explosions, per-player event counters. Everything is in the test's local frame, which
-//! sits at the test origin: `DWELL_ORIGIN_X=far` puts it ~8,000 km east (ADR 0011) and
+//! sits at the test origin: local y 0 is sea level ([`ORIGIN_Y`], the flat worlds' surface, 32 m
+//! above the midplane), `DWELL_ORIGIN_X=far` puts it ~49 km east, near the rim (ADR 0025), and
 //! `DWELL_FACE=b` on face B's mirror image (ADR 0023); the suites must pass unchanged in each.
 
 #![allow(dead_code)]
@@ -17,8 +18,13 @@ use dwell_world::*;
 #[allow(unused_imports)]
 pub use dwell_physics::controller::State;
 
-/// A far origin inside the disc: 7 999 488 m east.
-pub const FAR_ORIGIN_X: i32 = 3906 * 2048;
+/// A far origin inside the disc and the build sphere: 49,152 m east, 848 m from the rim (Phase 16:
+/// the 50 km world).
+pub const FAR_ORIGIN_X: i32 = 24 * 2048;
+/// The local frame's y = 0 in world y on face A: sea level, where the flight speeds' heights count
+/// from and the flat worlds' surface lies; the midplane is this far below.
+pub const ORIGIN_Y: i32 = dwell_world::SEA_LEVEL;
+const _: () = assert!(ORIGIN_Y == dwell_world::FLAT_TOP_Y && ORIGIN_Y % CHUNK_SIZE == 0);
 
 pub fn origin_x() -> i32 {
     match std::env::var("DWELL_ORIGIN_X").as_deref() {
@@ -33,22 +39,22 @@ pub fn face_b() -> bool {
 pub const MIRROR: f64 = MIRROR_SUM as f64 + 1.0;
 
 pub fn to_world(l: Vec3) -> DVec3 {
+    let y = f64::from(l.y) + f64::from(ORIGIN_Y);
     DVec3::new(
         f64::from(l.x) + f64::from(origin_x()),
-        if face_b() {
-            MIRROR - f64::from(l.y)
-        } else {
-            f64::from(l.y)
-        },
+        if face_b() { MIRROR - y } else { y },
         f64::from(l.z),
     )
 }
 pub fn to_local(w: DVec3) -> Vec3 {
-    let y = if face_b() { MIRROR - w.y } else { w.y };
-    Vec3::new((w.x - f64::from(origin_x())) as f32, y as f32, w.z as f32)
+    Vec3::new(
+        (w.x - f64::from(origin_x())) as f32,
+        to_local_y(w.y) as f32,
+        w.z as f32,
+    )
 }
 pub fn to_local_y(y: f64) -> f64 {
-    if face_b() { MIRROR - y } else { y }
+    (if face_b() { MIRROR - y } else { y }) - f64::from(ORIGIN_Y)
 }
 /// Velocities and directions (the same map both ways).
 pub fn mirror_vec(v: Vec3) -> Vec3 {
@@ -62,6 +68,7 @@ pub fn world_cell_x(x: i32) -> i32 {
     x + origin_x()
 }
 pub fn world_cell_y(y: i32) -> i32 {
+    let y = y + ORIGIN_Y;
     if face_b() { mirror_y(y) } else { y }
 }
 pub fn world_material(m: StateId) -> StateId {
@@ -76,7 +83,8 @@ pub fn mirror_rotation(q: DQuat) -> DQuat {
     }
 }
 
-/// A generator whose output is moved to the test origin (and, on face B, flipped).
+/// A generator whose output is moved to the test origin (and, on face B, flipped). Its rows are
+/// face A's world rows: the flat world's surface (`FLAT_TOP_Y`) is local y 0.
 pub fn shifted(generator: ChunkGenerator) -> ChunkGenerator {
     if origin_x() == 0 && !face_b() {
         return generator;

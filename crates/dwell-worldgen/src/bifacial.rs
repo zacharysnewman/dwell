@@ -146,9 +146,9 @@ impl BifacialTerrain {
             copy_rows(cells, &local, first_a..=lod::SECTION_CELLS, &|r| r);
         }
         if first_a >= 0 {
-            // Face-local row r' is world row 31 − r': the section's mirror image starts at
-            // −4,096 − y0 − S.
-            let origin_l = -4096 - y0 - lod::section_size(c.level);
+            // Face-local row r' is world row 31 − r': the section's mirror image starts at the
+            // mirror of the section's top.
+            let origin_l = lod::mirror_row_bottom(y0, lod::section_size(c.level));
             let (_, b) = self.b.generate_lod_at(c, origin_l, &mut local, surface_b);
             bounds.lo_b = b.lo;
             bounds.hi_b = b.hi;

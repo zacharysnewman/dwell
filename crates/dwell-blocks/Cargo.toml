@@ -7,6 +7,9 @@ rust-version.workspace = true
 publish.workspace = true
 license-file.workspace = true
 
+[dependencies]
+dwell-protocol = { path = "../dwell-protocol" }
+
 [features]
 # The test registry (`fixture`, from shared/blocks/fixtures): enabled by tests' dev-dependencies.
 fixture = []

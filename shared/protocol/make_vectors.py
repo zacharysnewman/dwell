@@ -308,11 +308,55 @@ vectors = {
     "lod_index_empty": lod_index(1, []),
     "lod_index_part": lod_index(0, [(-5, 1022, 3, 1)]),
     "lod_index_update": lod_update([(5, 1024, 6, 9)]),
-    "lod_request": lod_request([(3, (-4, 17, 8), 0), (19, (0, 0, 0), 12)]),
+    "lod_request": lod_request([(3, (-4, 17, 8), 0), (12, (0, 0, 0), 12)]),
     "lod_data_generated": lod_head(LF["Generated"], 5, (100, 3, -2), 0),
     "lod_data_unchanged": lod_head(LF["Unchanged"], 12, (1, 0, 2), 77),
     "lod_data_explicit": LOD_EXPLICIT,
 }
+
+
+# Registry sync (ADR 0038): a registry payload (format 1) of air and a two-state block, with a
+# shape the Rust build lacks, and BlockRegistry messages carrying parts of it.
+def payload_fields(fields):
+    return struct.pack("<B", len(fields)) + b"".join(
+        struct.pack("<BH", t, len(b)) + b for t, b in fields
+    )
+
+
+def rules(flags, occupancy, shape, density, facing, climb):
+    return [(1, struct.pack("<I", flags)), (2, struct.pack("<BH", occupancy, shape)),
+            (3, f32s(density)), (4, struct.pack("<B", facing)), (5, f32s(climb))]
+
+
+AIR_FIELDS = rules(0, 0, 0, 0.0, 0, 1.0) + [(0x81, s("cube")), (0x82, struct.pack("<If", 0, 0.0))]
+
+
+def lamp(lit):
+    return rules(1 | 32, 1, 1, 1200.0, 2, 1.0) + [
+        (0x81, s("cube")),
+        (0x82, struct.pack("<If", 0xFFCC00 if lit else 0x806600, 1.0)),
+        (0x83, s("lamp") + s("lamp") + s("lamp")),
+    ]
+
+
+REGISTRY_PAYLOAD = (
+    struct.pack("<H", 1)
+    + struct.pack("<H", 2) + struct.pack("<H", 0) + struct.pack("<H", 3) + bytes([1, 2, 3])
+    + struct.pack("<H", 1) + s("dwell:water")
+    + struct.pack("<H", 2)
+    + s("dwell:air") + struct.pack("<HB", 0, 0) + payload_fields(AIR_FIELDS)
+    + s("test:lamp") + struct.pack("<HB", 1, 1) + s("lit") + struct.pack("<B", 2) + s("false") + s("true")
+    + payload_fields(lamp(False)) + payload_fields(lamp(True))
+)
+
+
+def block_registry(part, parts, data):
+    return struct.pack("<BHHI", T["BlockRegistry"], part, parts, len(data)) + data
+
+
+vectors["registry_payload"] = REGISTRY_PAYLOAD
+vectors["block_registry"] = block_registry(0, 1, REGISTRY_PAYLOAD)
+vectors["block_registry_part"] = block_registry(1, 2, REGISTRY_PAYLOAD[40:])
 
 malformed = {
     "!empty": b"",
@@ -386,6 +430,10 @@ malformed = {
     "!chunk_request_empty": struct.pack("<BH", T["ChunkRequest"], 0),
     "!resync_too_many": struct.pack("<BH", T["ChunkResync"], c["limits"]["maxResyncChunks"] + 1)
     + struct.pack("<iii", 0, 0, 0) * (c["limits"]["maxResyncChunks"] + 1),
+    "!block_registry_zero_parts": block_registry(0, 0, b""),
+    "!block_registry_part_past_end": block_registry(2, 2, b"\x00"),
+    "!block_registry_truncated": block_registry(0, 1, REGISTRY_PAYLOAD)[:-1],
+    "!block_registry_too_long": struct.pack("<BHHI", T["BlockRegistry"], 0, 1, 256 * 1024 + 1),
     "!chunk_request_too_many": struct.pack("<BH", T["ChunkRequest"], c["limits"]["maxResyncChunks"] + 1)
     + struct.pack("<iii", 0, 0, 0) * (c["limits"]["maxResyncChunks"] + 1),
 }
