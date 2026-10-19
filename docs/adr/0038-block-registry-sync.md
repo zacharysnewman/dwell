@@ -8,7 +8,7 @@
 - Builds on: [0015](0015-block-registry.md) (namespaced states, runtime ids, string palettes on
   disk), [0014](0014-versioned-releases.md) (compatibility lines)
 - Design: [`BLOCK_REGISTRY.md`](../BLOCK_REGISTRY.md) §4 "Wire" and §8 "Registry sync"
-- Ships in: **0.12.0** (a protocol change: a new compatibility line)
+- Ships in: the next minor, **0.14.0** (a protocol change, protocol 14: a new compatibility line; first planned for 0.12.0)
 
 ## Context
 
@@ -27,7 +27,7 @@ runtime ids (Minecraft's registry sync)".
 
 Clients **predict** movement and edits (PLAYER_CONTROLLER.md), and generate terrain locally
 (`ChunkForm::Generated`, client-side LOD), so client and server must agree on every state's shape
-and rules, not only on its name. Two changes bound for 0.12 add fields the sync must carry: #82
+and rules, not only on its name. Two changes bound for the same line add fields the sync must carry: #82
 (adaptive blocks, open: an `adaptive` flag and derived top shapes) and transparent blocks
 ([ADR 0036](0036-render-modes-and-cross-geometry.md), on main: render
 modes, `cross` geometry, wind, fade, a selection box, and the placement rules `placeOn`,
@@ -178,9 +178,9 @@ predicts) and **asks the player** before entering, listing what differs.
 9. **Local mode and the sandbox** go through the same messages and session: the in-process server
    sends its registry, the session maps it (the identity), and the client checks the definitions
    hash against its own build's.
-10. **Compatibility.** The new message and the changed check are a protocol change: protocol 13 for
-   the whole 0.12 bundle (#82 already raised 12 → 13; whichever of the 0.12 PRs merges first keeps
-   13 and the others do not bump again). From 0.12 on:
+10. **Compatibility.** The new message and the changed check are a protocol change: protocol 14 for
+   0.14 (main is at 13; Phase 16, #114, also bumps to 14: if both ship together they share it,
+   otherwise whichever lands second bumps once more). From 0.14 on:
    - **non-breaking**: adding blocks or states anywhere in the data (ids may shift — they are
      mapped), adding a value to an existing property, changing looks (colour, textures, sound
      sets, fluid looks, grid);

@@ -176,8 +176,9 @@ collision paths before adopting; it is a deliverable gated on that measurement.
   in the new format.
 - **Deferred to world upgrades** ([`FUTURE.md`](./FUTURE.md)): a data table of aliases and upgrade
   rules (`dwell:old_name → dwell:new_name`, property renames, defaults for added properties), and a
-  placeholder for unknown states (`dwell:unknown`, keeping the original string so saving writes it
-  back). String palettes on disk are what make these possible later.
+  placeholder for unknown states (keeping the original string so saving writes it back) is
+  **built** with registry sync (§8, ADR 0038): a one-state placeholder block named by the exact
+  string, solid and indestructible. String palettes on disk are what made it possible.
 - The **LOD cache** (`lod_sections`) is a cache: it is dropped when the registry hash changes,
   instead of being migrated.
 
@@ -213,6 +214,17 @@ so a failure says which changed.
 - Determinism goldens pass (regenerated once if runtime ids change); protocol golden vectors for
   `Welcome`'s registry hash; e2e "break and place every palette block" still passes.
 - If paletted containers are adopted: chunk memory and meshing time measured before and after.
+
+## 7. Sound sets **[in progress, Phase 28]**
+
+A block may name its **sound set** by id: `"sound": "dwell:stone"` (ladders: `"dwell:wood"`). Sets
+live in `shared/sounds/*.json` ([`AUDIO.md`](./AUDIO.md), [ADR 0032](./adr/0032-audio.md)): the
+sound each event plays on that material (step, land, break, place, hit; enter, exit and swim for
+liquids). `shared/blocks/gen.mjs` checks every reference against the sound data
+(`shared/sounds/validate.mjs`) and fails naming the block; the set id is emitted on the block in the
+TS `BLOCK_DEFS`, where the shell's audio maps a state's block to its set. A block without `sound`
+uses the sound data's `fallback` set. Sounds are per build and change no state, id or hash: adding
+or changing one is not a compatibility change.
 
 ## 8. Registry sync **[built, ADR 0038]**
 
@@ -252,14 +264,3 @@ authoritative, so the client adopts its definitions and asks the player first.
   indestructible cube) and saved back unchanged.
 - **Follow-up:** server-sent looks and textures (Phase 19's textures as data), shapes from the
   server, a palette fed by the synced registry.
-
-## 7. Sound sets **[in progress, Phase 28]**
-
-A block may name its **sound set** by id: `"sound": "dwell:stone"` (ladders: `"dwell:wood"`). Sets
-live in `shared/sounds/*.json` ([`AUDIO.md`](./AUDIO.md), [ADR 0032](./adr/0032-audio.md)): the
-sound each event plays on that material (step, land, break, place, hit; enter, exit and swim for
-liquids). `shared/blocks/gen.mjs` checks every reference against the sound data
-(`shared/sounds/validate.mjs`) and fails naming the block; the set id is emitted on the block in the
-TS `BLOCK_DEFS`, where the shell's audio maps a state's block to its set. A block without `sound`
-uses the sound data's `fallback` set. Sounds are per build and change no state, id or hash: adding
-or changing one is not a compatibility change.

@@ -288,7 +288,9 @@ fn a_chunk_means_its_strings_not_the_runtime_ids() {
     // It loads as a placeholder under that exact string (a solid, indestructible cube), and
     // saving writes the string back unchanged.
     let db = WorldDb::open(&path).expect("reopens");
-    let mut c = db.load_chunk(ChunkCoord::new(0, 0, 0)).expect("kept, not regenerated");
+    let mut c = db
+        .load_chunk(ChunkCoord::new(0, 0, 0))
+        .expect("kept, not regenerated");
     let p = c.voxels[0];
     let row = dwell_blocks::info(p);
     assert_eq!(row.name, "mod:unobtainium[lit=true]");
@@ -304,9 +306,15 @@ fn a_chunk_means_its_strings_not_the_runtime_ids() {
     .expect("save");
     drop(db);
     let db = WorldDb::open(&path).expect("reopens");
-    assert!(db.block_states().contains(&"mod:unobtainium[lit=true]".to_string()));
+    assert!(
+        db.block_states()
+            .contains(&"mod:unobtainium[lit=true]".to_string())
+    );
     let c = db.load_chunk(ChunkCoord::new(0, 0, 0)).expect("chunk");
-    assert_eq!(dwell_blocks::info(c.voxels[0]).name, "mod:unobtainium[lit=true]");
+    assert_eq!(
+        dwell_blocks::info(c.voxels[0]).name,
+        "mod:unobtainium[lit=true]"
+    );
     assert_eq!(c.voxels[0], p, "the same placeholder, not a second one");
     assert_eq!(c.voxels[1], require("dwell:stone"));
     let _ = std::fs::remove_file(&path);

@@ -53,6 +53,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 33 — Transparent blocks (render modes, cross geometry, tall grass) | 🚧 In progress — render modes as block data and cutout (see-through) ladders shipped on the 0.11 line (0.11.18; no registry-hash change); on `claude/transparent-blocks` for the 0.13.0 line (with wood and leaves): the cross look with wind and fade, placement rules and `medium`, `dwell:tall_grass` grown by world generation (decorations as data, generator version 13; a partial reversal of B10 for plants), the Plant sway setting, the marcher's classes, all tested and checked in a browser (about +0.3 ms GPU for a 150-plant field); outstanding: hillside screenshots of generated grass (T9), the owner's look, the e2e suite on CI; `package.json` raised to 0.13.0, the new compatibility line (new blocks: log, leaves, tall grass; generator v13; the owner's decision, 2026-10-16) |
 | 34 — Brushes | 🚧 In progress — B1 built and tested: VoxelSniper-style brushes in the sandbox (ADR 0037, `BRUSHES.md`): brushes, performers and sculpt in `dwell-world` `brush.rs`, presets and the per-world-type policy as data (`shared/brushes/brushes.json`, generator, CI stale check), strokes as `KEEP` pastes behind the `brushes` Welcome flag (0.11 line, no protocol bump), the brush tool, its HUD panel and keys, the region `tool` sound; browser check done; outstanding: the owner's try-out and answers to `BRUSHES.md` §5, CI; `package.json` raised to 0.11.20, a patch release of the 0.11 line |
 | 35 — Sliding on steep ground (stacks on 18, uses 28) | 🚧 In progress — built and tested natively (controller, netcode, sound events and data, the shell's loop voices, WAV renders) and in a browser (the bench); outstanding: CI (the WASM divergence run and the e2e suite, not run on the branch), the owner's review of the feel and of the slide WAV renders; `package.json` raised to 0.12.0, the new compatibility line (protocol 13; adaptive blocks change collision and terrain; the owner's decision, 2026-10-16) |
+| 36 — Block registry sync | 🚧 In progress — built and tested natively and in Vitest (ADR 0038, `BLOCK_REGISTRY.md` §8): the server's registry sent at join (`BlockRegistry`, protocol 14), ids mapped at the session boundary, the join prompt (no refusals), the fallback look, server-registered blocks, placeholders for unknown states in world files; outstanding: CI, the e2e suite, the owner's review of the prompt; ships in the next minor (0.14.0), coordinated with Phase 16's protocol bump |
 
 Phase numbering: Phase 4 was inserted on 2026-09-29 for the planet-scale world (ADRs 0011, 0012);
 the former Phases 4–7 are now 5–8, and Phase 3's former 3c and 3d are now 3d and 3e.
@@ -3495,3 +3496,58 @@ Deviations:
 - Every new message type gets golden-byte tests in `dwell-protocol` (`tests/vectors.rs`) against
   `shared/protocol/vectors.txt` from the independent Python encoder (`make_vectors.py`).
 - CI must stay green; the Pages deployment must stay playable in local mode.
+
+## Phase 36 — Block Registry Sync
+
+> **Numbering note (for the integrator):** 36 was the next phase number free on `main` when this
+> was written (2026-10-19); renumber it if another branch took it.
+
+**Status:** Built and tested natively and in Vitest (2026-10-19). Outstanding: CI, the e2e suite
+(not run on the branch), the owner's review of the join prompt in a browser. A protocol change:
+protocol 14, shipping in the next minor (0.14.0) — shared with Phase 16 (#114) if they land
+together, otherwise whichever lands second bumps once more.
+
+Owner (2026-10-16): *"we need registry sync; have it go out at the same time with 0.12.0"* —
+server mods that add blocks, as in Minecraft — and the same day: **never refuse a join over
+registry differences**; the server wins and the player is asked. Design and defaults in
+[ADR 0038](./adr/0038-block-registry-sync.md) and [`BLOCK_REGISTRY.md`](./BLOCK_REGISTRY.md) §8.
+
+Deliverables
+- [x] The registry payload (`dwell_blocks::sync`, format 1): shapes by geometry, fluid names,
+  blocks with properties, every state's definition as tagged fields (rules a client must
+  understand, looks it may ignore), carrying every field of `StateInfo`; golden vectors from the
+  independent Python encoder (`registry_payload`, `block_registry*`).
+- [x] `BlockRegistry` parts before `Welcome`; `Welcome.registry_hash` is the definitions hash.
+- [x] The client's table grows at run time (`dwell_blocks` `table.rs`): synced states, server
+  blocks, placeholders; lock-free reads, the build's ids unchanged.
+- [x] Mapping at the session boundary, both ways (chunks, LOD, modifications; block edits,
+  region edits, brush pastes with `KEEP`); client-only states are never sent; tests.
+- [x] The check never refuses: differences adopt the server's rules (a synced copy keeps the
+  client's look), unknown states take the received definition, unrepresentable shapes degrade to
+  the cube; the session's `Confirming` state; tests.
+- [x] The join prompt in the shell: three groups, Continue / Cancel (to the menu), "don't ask
+  again" in the append-only `dwell.registryTrust` record keyed by server and definitions hash
+  (Vitest); differences in the console and the F3 overlay.
+- [x] Job workers receive synced states (`Job::Registry` broadcast).
+- [x] `WorldgenCheck` in the server's ids (0 while a state differs).
+- [x] The fallback look (`dwell-mesh` `MISSING_TILE`); every build state draws its own (test).
+- [x] `Server::register_block` (a server's own blocks, from data); the fixture's server-only
+  `test:glow`.
+- [x] World files keep unknown states as placeholders under their exact strings and save them
+  back (regression test, red then green); a server serves its file's non-build states.
+- [x] Docs: ARCHITECTURE.md §6.1 and §8.3, BLOCK_REGISTRY.md §4 and §8, RELEASES.md §3, CLAUDE.md.
+- [ ] Follow-up (not this phase): server-sent looks and textures (Phase 19's textures as data),
+  shapes from the server, a palette fed by the synced registry, mods loaded by the dedicated
+  server from data files.
+
+Exit criteria
+- [x] A block only the server has arrives by sync, draws with the fallback look, collides exactly
+  as on the server (no prediction snaps), is targeted and broken, and another client sees it and
+  its removal (`game_local.rs`, native).
+- [x] Mismatched-but-mappable registries connect (shifted ids, removed and added blocks,
+  differing definitions); a malformed or missing registry closes with a reason.
+- [x] Local mode maps to the identity with the build's definitions hash.
+- [x] Meshing and physics cost unchanged (the build's ids index the generated array as before;
+  identity sessions skip translation; microbench in the PR).
+- [ ] CI green, and the e2e suite (specs that may need updating: `e2e/edit.spec.ts`,
+  `e2e/play.spec.ts`, any reading the session's phases).

@@ -387,6 +387,14 @@ fn joins_streams_walks_and_breaks_a_block() {
             .is_some_and(|g| g.debug_state().terrain_ready)),
         "the player is placed and the terrain around them arrives"
     );
+    // Local mode goes through registry sync too (ADR 0038): the same build serves the same
+    // definitions, so the map is the identity and nothing is asked.
+    let m = rig.session.mapping().expect("mapped at Welcome");
+    assert!(m.identity && m.generated_ok && m.differences.is_empty());
+    assert_eq!(
+        m.hash,
+        dwell_blocks::sync::definitions_hash(&dwell_blocks::sync::Payload::served().encode())
+    );
     assert!(
         rig.run_until(60 * 10, |r| !r.scene.borrow().chunks.is_empty()),
         "chunks are meshed and handed to the scene"

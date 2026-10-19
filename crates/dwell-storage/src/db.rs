@@ -622,7 +622,11 @@ impl WorldDb {
                 let mut world_voxels = Vec::with_capacity(c.voxels.len());
                 for &v in &c.voxels {
                     // Unknown ids read as air.
-                    let v = if dwell_blocks::try_info(v).is_some() { v } else { 0 };
+                    let v = if dwell_blocks::try_info(v).is_some() {
+                        v
+                    } else {
+                        0
+                    };
                     let id = match states.to_world.get(usize::from(v)).copied().flatten() {
                         Some(id) => id,
                         None => {
