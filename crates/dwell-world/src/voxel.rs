@@ -168,6 +168,16 @@ pub const GENERATOR_FLAT: u32 = 0;
 pub const GENERATOR_TERRAIN: u32 = 8;
 pub const GENERATOR_SANDBOX: u32 = 100;
 
+/// A world's type by its generator (the names `client/src/local/worldIndex.ts` and data files use,
+/// e.g. `shared/brushes/brushes.json`): unknown and retired versions load as the flat world.
+pub fn world_type(generator_version: u32) -> &'static str {
+    match generator_version {
+        GENERATOR_TERRAIN => "terrain",
+        GENERATOR_SANDBOX => "sandbox",
+        _ => "flat",
+    }
+}
+
 /// FNV-1a 64 over a chunk's ids (u16 little-endian, index order): goldens and `WorldgenCheck`.
 pub fn chunk_hash(chunk: &Chunk) -> u64 {
     let mut h: u64 = 0xcbf2_9ce4_8422_2325;
@@ -290,6 +300,10 @@ pub fn face_of_chunk_y(cy: i32) -> Face {
     } else {
         Face::B
     }
+}
+/// The direction of up for a voxel row: +1 on face A, −1 on face B (its terrain faces −y).
+pub fn up_of_y(y: i32) -> i32 {
+    if y >= MIDPLANE_Y { 1 } else { -1 }
 }
 pub const fn mirror_y(y: i32) -> i32 {
     MIRROR_SUM - y
@@ -537,6 +551,59 @@ impl VoxelWorld {
             y - c.y * CHUNK_SIZE,
             z - c.z * CHUNK_SIZE,
         )
+    }
+
+    /// The shape the voxel is drawn, collided and targeted as (docs/ADAPTIVE_BLOCKS.md): an
+    /// adaptive top block's derived shape — hanging on face B, whose up is −y — or its own.
+    pub fn shape_at(&mut self, x: i32, y: i32, z: i32) -> &'static dwell_blocks::ShapeInfo {
+        let up = up_of_y(y);
+        dwell_blocks::adaptive::shape_at(|dx, dy, dz| self.get_voxel(x + dx, y + dy, z + dz), up)
+    }
+
+    /// Whether the voxel holds water in its open part (a flooded state or a shaped bank).
+    pub fn flooded_at(&mut self, x: i32, y: i32, z: i32) -> bool {
+        let up = up_of_y(y);
+        dwell_blocks::adaptive::flooded_at(|dx, dy, dz| self.get_voxel(x + dx, y + dy, z + dz), up)
+    }
+
+    /// The chunk's voxels with an apron of `pad` (1..=CHUNK_SIZE) voxels from its 26 neighbours,
+    /// x fastest, then z, then y: index `(x + pad) + e·((z + pad) + e·(y + pad))` with
+    /// e = CHUNK_SIZE + 2·pad. Each neighbour is read once (generated if needed; air when missing
+    /// from a streamed world).
+    pub fn padded_block(&mut self, coord: ChunkCoord, pad: i32) -> Vec<StateId> {
+        let n = CHUNK_SIZE;
+        let e = n + 2 * pad;
+        let mut out = vec![0; (e * e * e) as usize];
+        for dy in -1..=1 {
+            for dz in -1..=1 {
+                for dx in -1..=1 {
+                    let c = ChunkCoord::new(coord.x + dx, coord.y + dy, coord.z + dz);
+                    let chunk = self.read(c);
+                    // The part of this neighbour inside the padded block, in its local coordinates.
+                    let range = |d: i32| match d {
+                        -1 => (n - pad, n),
+                        0 => (0, n),
+                        _ => (0, pad),
+                    };
+                    let (x0, x1) = range(dx);
+                    let (y0, y1) = range(dy);
+                    let (z0, z1) = range(dz);
+                    for ly in y0..y1 {
+                        let py = ly + dy * n + pad;
+                        for lz in z0..z1 {
+                            let pz = lz + dz * n + pad;
+                            let row = (pz + e * py) * e;
+                            let px0 = x0 + dx * n + pad;
+                            let src = local_index(x0, ly, lz);
+                            let len = (x1 - x0) as usize;
+                            out[(row + px0) as usize..(row + px0) as usize + len]
+                                .copy_from_slice(&chunk.voxels()[src..src + len]);
+                        }
+                    }
+                }
+            }
+        }
+        out
     }
 
     pub fn set_voxel(&mut self, x: i32, y: i32, z: i32, m: StateId) {

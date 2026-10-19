@@ -31,11 +31,13 @@ pub enum Job {
         face: u8,
     },
     /// A chunk's terrain payloads from its padded voxels: the greedy mesh, the marcher's bricks,
-    /// or both (`payloads`, as the renderer seam asks: RAY_MARCHED_RENDERER.md §3).
+    /// or both (`payloads`, as the renderer seam asks: RAY_MARCHED_RENDERER.md §3); `origin` is its
+    /// minimum corner's world cell (plants are jittered by their world position).
     MeshChunk {
         padded: Vec<u16>,
         mirror: bool,
         payloads: Payloads,
+        origin: [i32; 3],
     },
     /// An LOD section's terrain payloads (its meshes, its bricks, or both).
     MeshSection {
@@ -166,9 +168,10 @@ impl Runner {
                 padded,
                 mirror,
                 payloads,
+                origin,
             } => {
                 let raster = if payloads.mesh() {
-                    match dwell_mesh::mesh_chunk(&padded, mirror) {
+                    match dwell_mesh::mesh_chunk_at(&padded, mirror, origin) {
                         Ok(m) => Some(m),
                         Err(e) => return Output::Failed(format!("{e:?}")),
                     }

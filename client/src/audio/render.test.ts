@@ -9,7 +9,16 @@ describe('offline renders', () => {
     const names = renderPlan(SOUND_DATA).map((j) => j.name);
     for (const [set, events] of Object.entries(SOUND_DATA.sets)) {
       const local = set.split(':')[1] ?? '';
-      for (const e of Object.keys(events)) expect(names).toContain(`set_${local}_${e}`);
+      for (const [e, sound] of Object.entries(events)) {
+        // A loop sound renders as the surface's slide, slow to fast, ending in its stop.
+        if (SOUND_DATA.sounds[sound]?.loop) {
+          const slide = renderPlan(SOUND_DATA).find(
+            (j) => j.name === `slide_${local}_slow_to_fast`,
+          );
+          expect(slide?.plays[0]?.loop).toBeDefined();
+          expect(slide?.plays[1]?.sound).toBe(events.slide_stop);
+        } else expect(names).toContain(`set_${local}_${e}`);
+      }
       expect(names).toContain(`steps_${local}_walk_x10`);
       expect(names).toContain(`break_${local}_x4`);
     }

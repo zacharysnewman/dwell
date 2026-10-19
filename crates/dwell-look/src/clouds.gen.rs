@@ -6,8 +6,9 @@ use crate::clouds::*;
 pub const CLOUDS: CloudTunables = CloudTunables {
     deck: DeckTunables {
         altitude_m: 1800.0,
-        curvature_m: 120000.0,
-        ceiling_fade_m: 400.0,
+        curvature_m: 400000.0,
+        cross_fade_m: 400.0,
+        inside_fog: 0.9,
         horizon_fade: 0.06,
         fade_start_m: 9000.0,
         fade_end_m: 28000.0,
@@ -40,5 +41,6 @@ pub const CLOUDS: CloudTunables = CloudTunables {
         silver_lining: 0.9,
         silver_power: 8.0,
         sun_warmth: 0.4,
+        top_light: 0.9,
     },
 };

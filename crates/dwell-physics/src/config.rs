@@ -42,7 +42,9 @@ pub struct Movement {
 pub struct Probes {
     pub ground_probe_margin: f32,
     pub ceiling_probe_margin: f32,
-    /// Degrees: above the 45° pitch of a standard slope.
+    /// Degrees: the steepest ground; steeper faces are walls. Ground steeper than
+    /// `slide.min_angle` slides, so this stays above the steepest face the adaptive shapes make
+    /// (a saddle's 54.74°): at 50° a player rested, ungrounded, on a saddle (§6.8).
     pub max_slope_angle: f32,
 }
 
@@ -114,6 +116,34 @@ pub struct Fly {
     pub position_limit: f32,
 }
 
+/// ◆ Sliding on steep ground (PLAYER_CONTROLLER.md §6.8): ground steeper than `min_angle` (and
+/// still ground: up to `probes.max_slope_angle`) cannot be stood on or walked up; the player
+/// slides. Speeds are along the slope.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Slide {
+    /// Degrees: ground steeper than this slides. Tested as `angle > min_angle`, so a 45° face
+    /// slides whatever the rounding of its normal.
+    pub min_angle: f32,
+    /// Coefficient of friction: the slope pulls with `gravity × (sin θ − friction × cos θ)`.
+    pub friction: f32,
+    /// m/s along the slope.
+    pub terminal_speed: f32,
+    /// Fraction of `movement.acceleration` (and `deceleration`) for steering across the slope.
+    pub steering: f32,
+    /// m/s: the fastest steering across the slope.
+    pub steer_speed: f32,
+    /// Holding up the slope lowers the terminal speed by up to this fraction (never to 0).
+    pub brake: f32,
+    /// m/s² along the slope: how fast braking (or a lower terminal speed) slows the slide.
+    pub brake_deceleration: f32,
+    /// m/s² along the slope: momentum carried up a steep face dies at this rate (with the slope's
+    /// pull), so walking or running at one never climbs it.
+    pub uphill_deceleration: f32,
+    /// Crouched: the terminal speed × this, and `crouch_friction` instead of `friction`.
+    pub crouch_terminal_factor: f32,
+    pub crouch_friction: f32,
+}
+
 /// ◆ Dwell addition.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Damage {
@@ -146,6 +176,7 @@ pub struct PlayerControllerConfig {
     pub swim: Swim,
     pub band: Band,
     pub fly: Fly,
+    pub slide: Slide,
     pub damage: Damage,
     pub advanced: Advanced,
 }
@@ -181,7 +212,7 @@ impl Default for PlayerControllerConfig {
             probes: Probes {
                 ground_probe_margin: 0.15,
                 ceiling_probe_margin: 0.10,
-                max_slope_angle: 50.0,
+                max_slope_angle: 56.0,
             },
             jump: Jump {
                 height: 1.25,
@@ -219,6 +250,18 @@ impl Default for PlayerControllerConfig {
                 terrain_speed: 400.0,
                 terrain_band: 6_144.0,
                 position_limit: (dwell_protocol::world::POS64_LIMIT - 1_024) as f32,
+            },
+            slide: Slide {
+                min_angle: 44.0,
+                friction: 0.3,
+                terminal_speed: 14.0,
+                steering: 0.4,
+                steer_speed: 5.0,
+                brake: 0.6,
+                brake_deceleration: 10.0,
+                uphill_deceleration: 60.0,
+                crouch_terminal_factor: 1.15,
+                crouch_friction: 0.2,
             },
             damage: Damage {
                 fall_damage_min_speed: 12.0,

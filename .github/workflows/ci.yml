@@ -24,15 +24,22 @@ jobs:
           node shared/blocks/gen.mjs
           node shared/structures/gen.mjs
           node shared/look/gen.mjs
+          node shared/brushes/gen.mjs
           node --test shared/look/gen.test.mjs
           node shared/look/clouds.mjs
           node --test shared/look/clouds.test.mjs
+          node shared/look/reflections.mjs
+          node --test shared/look/reflections.test.mjs
           node shared/look/daynight.mjs
           node --test shared/look/daynight.test.mjs
           node shared/sounds/gen.mjs
+          node shared/worldgen/gen.mjs
+          node --test shared/worldgen/gen.test.mjs
           python3 shared/protocol/make_vectors.py
           node shared/master/make_vectors.mjs
           git diff --exit-code
+      - name: The adaptive rule table's data and generator (ADAPTIVE_BLOCKS.md)
+        run: node --test shared/blocks/adaptive.test.mjs
       - name: Structure generator tests
         run: node --test shared/structures/gen.test.mjs
 

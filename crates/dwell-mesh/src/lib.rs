@@ -50,8 +50,8 @@ pub use lod_mesher::{
     SURFACE_STRIDE, SectionMeshes, lod_color, mesh_section, mirror_rows, section_bytes,
 };
 pub use mesher::{
-    ChunkMeshes, MeshArrays, PAD, PADDED_VOLUME, face_covered, mesh_chunk, mirror_padded,
-    padded_index,
+    ChunkMeshes, MeshArrays, PAD, PADDED_VOLUME, face_covered, mesh_chunk, mesh_chunk_at,
+    mirror_padded, padded_index,
 };
 /// The `fluids` stream's value for a see-through face that is not a fluid's.
 pub const NO_FLUID: f32 = 255.0;
@@ -59,7 +59,7 @@ pub const NO_FLUID: f32 = 255.0;
 pub use textures::{
     ATLAS_CELLS, ATLAS_SIZE, ATLAS_TILES, CELL, GUTTER, TILE, TILE_ORDER, TileRect,
     average_tile_color, build_atlas, linear_to_srgb_byte, srgb_to_linear, swatch, tile_grids,
-    tile_rect,
+    tile_has_alpha, tile_rect,
 };
 
 /// JavaScript's `Math.round`: the nearest integer, ties toward +∞ (Rust's `round` ties away from

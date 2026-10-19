@@ -6,11 +6,25 @@
 use dwell_blocks::{Facing, STATES, StateId, info, with_facing};
 use dwell_protocol::{RegionEdit, RegionEditOp, region_edit};
 
-use crate::edit::{EditCapsule, REACH_SLACK, flooded_for, overlaps_player, placeable, unbreakable};
+use crate::edit::{
+    EditCapsule, REACH_SLACK, flooded_for, medium_allows, overlaps_player, placeable, unbreakable,
+};
 use crate::{BUILD_VOLUME, M, Overlap, VoxelWorld, chunk_of, inside_world_disc};
 
 /// How far the server lets a region edit's nearest cell be from the eye (m).
 pub const DEFAULT_REGION_REACH: f32 = region_edit::REACH + REACH_SLACK;
+
+/// A paste cell left as it is (`region_edit::KEEP`, taken by servers that announce
+/// `welcome_flags::BRUSHES`; older ones reject it as an unknown state).
+pub const KEEP: StateId = region_edit::KEEP as StateId;
+
+/// How far a region edit may reach in a world (by its generator, §6.3): where the world type's
+/// brush policy allows brushes (`shared/brushes/brushes.json`) its reach, else the default.
+pub fn region_reach(generator_version: u32) -> f32 {
+    crate::brush::brush_policy(generator_version).map_or(DEFAULT_REGION_REACH, |p| {
+        p.reach.max(region_edit::REACH) + REACH_SLACK
+    })
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RegionCheck {
@@ -133,7 +147,11 @@ fn check_region_edit_with(
         RegionEditOp::Replace => {
             may_put(request.material) && known(request.from) && !unbreakable(request.from)
         }
-        RegionEditOp::Paste => request.cells.iter().all(|&m| known(m) && !unbreakable(m)),
+        // A `KEEP` cell (a brush stroke's, BRUSHES.md) leaves its cell as it is.
+        RegionEditOp::Paste => request
+            .cells
+            .iter()
+            .all(|&m| m == KEEP || (known(m) && !unbreakable(m))),
     };
     if !materials_ok {
         return RegionOutcome::fail(RegionCheck::NotPlaceable);
@@ -169,15 +187,23 @@ fn check_region_edit_with(
                     }
                     RegionEditOp::Replace => continue,
                     RegionEditOp::Paste => {
-                        request.cells[RegionEdit::cell_index(
+                        let m = request.cells[RegionEdit::cell_index(
                             request.size,
                             x as usize,
                             y as usize,
                             z as usize,
-                        )]
+                        )];
+                        if m == KEEP {
+                            continue;
+                        }
+                        m
                     }
                 };
                 if wanted == existing {
+                    continue;
+                }
+                // A plant goes only into its medium (block data `medium`).
+                if !medium_allows(info(wanted), info(existing)) {
                     continue;
                 }
                 if unbreakable(existing) {
@@ -420,7 +446,8 @@ mod tests {
         );
         let bad_paste = RegionEdit {
             op: RegionEditOp::Paste,
-            cells: vec![u16::MAX],
+            // An unknown state (u16::MAX is KEEP, which leaves the cell alone).
+            cells: vec![u16::MAX - 1],
             ..fill([0, 0, 0], [1, 1, 1], 0)
         };
         assert_eq!(check(&mut w, &bad_paste), RegionCheck::NotPlaceable);
@@ -478,6 +505,42 @@ mod tests {
         for (i, s) in STATES.iter().enumerate() {
             assert_eq!(unbreakable(i as StateId), s.indestructible);
         }
+    }
+
+    #[test]
+    fn a_paste_leaves_keep_cells_as_they_are() {
+        let (stone, sand) = (require("dwell:stone"), require("dwell:sand"));
+        let locked = |m: StateId| m == stone;
+        let mut w = world();
+        w.set_voxel(0, 0, 0, sand);
+        w.set_voxel(2, 0, 0, stone); // unbreakable here: a keep cell over it is fine
+        let paste = RegionEdit {
+            op: RegionEditOp::Paste,
+            cells: vec![KEEP, sand, KEEP],
+            ..fill([0, 0, 0], [3, 1, 1], 0)
+        };
+        let out = check_region_edit_with(&mut w, &paste, EYE, &[], 64.0, locked);
+        assert_eq!(out.check, RegionCheck::Ok);
+        assert_eq!(out.changes, vec![([1, 0, 0], sand)]);
+        assert_eq!(out.unbreakable, 0);
+    }
+
+    #[test]
+    fn region_edits_reach_further_where_the_world_type_allows_brushes() {
+        assert_eq!(region_reach(crate::GENERATOR_TERRAIN), DEFAULT_REGION_REACH);
+        assert_eq!(region_reach(crate::GENERATOR_FLAT), DEFAULT_REGION_REACH);
+        let sandbox = region_reach(crate::GENERATOR_SANDBOX);
+        assert!(sandbox >= 128.0, "{sandbox}");
+        let mut w = world();
+        let far = fill([100, 1, 0], [1, 1, 1], require("dwell:stone"));
+        assert_eq!(
+            check_region_edit(&mut w, &far, EYE, &[], DEFAULT_REGION_REACH).check,
+            RegionCheck::OutOfReach
+        );
+        assert_eq!(
+            check_region_edit(&mut w, &far, EYE, &[], sandbox).check,
+            RegionCheck::Ok
+        );
     }
 
     #[test]

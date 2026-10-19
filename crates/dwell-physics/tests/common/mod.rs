@@ -146,8 +146,11 @@ pub fn euler(pitch: f64, yaw: f64, roll: f64) -> DQuat {
         * DQuat::from_axis_angle(DVec3::Z, roll * k)
 }
 
-pub fn stone() -> StateId {
-    require("dwell:stone")
+/// The block the controller suites build geometry from: a full cube that is not adaptive, so it
+/// keeps its shape whatever its neighbours (the natural blocks shape themselves, ADAPTIVE_BLOCKS.md;
+/// the adaptive scenarios use them).
+pub fn cube_block() -> StateId {
+    require("dwell:sandbox_floor")
 }
 pub fn air() -> StateId {
     require("dwell:air")
@@ -244,7 +247,7 @@ impl PlayerTestWorld {
             half - 1,
             top_y - 1,
             half - 1,
-            stone(),
+            cube_block(),
         );
     }
     pub fn floor(&mut self) {

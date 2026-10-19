@@ -25,10 +25,21 @@ describe('bench --compare configurations', () => {
     expect(skipped.map((s) => s.name)).toEqual([
       'march',
       'march-half-fsr',
+      'march-075-fsr',
+      'march-half-bilateral',
       'march-half-taa',
       'march-075-taa',
     ]);
     expect(skipped[0].reason).toMatch(/no "march" renderer/);
+    // A build with the marcher and its upscalers runs all but TAA-U.
+    const marcher = supportOf({
+      renderers: ['raster', 'march'],
+      upscalers: ['none', 'bilinear', 'fsr1', 'bilateral'],
+    });
+    expect(partition(file.configs, marcher).skipped.map((s) => s.name)).toEqual([
+      'march-half-taa',
+      'march-075-taa',
+    ]);
   });
 
   it('a new configuration works by data alone', () => {
@@ -42,6 +53,21 @@ describe('bench --compare configurations', () => {
     expect(scenarioUrl('http://h/dwell/', sc, configParams(c))).toBe(
       'http://h/dwell/?local=1&seed=7&renderer=raster&scale=0.25',
     );
+  });
+
+  it('a configuration adds its own page parameters', () => {
+    const file = parseConfigs({
+      configs: [
+        raster,
+        { name: 'no-caustics', renderer: 'raster', params: { waterdbg: 'caustics' } },
+      ],
+    });
+    expect(configParams(file.configs[1])).toEqual({
+      waterdbg: 'caustics',
+      renderer: 'raster',
+      scale: '1',
+    });
+    expect(() => parseConfigs({ configs: [{ ...raster, params: { a: 1 } }] })).toThrow(/params/);
   });
 
   it('a build that offers a renderer and an upscaler runs their configurations', () => {

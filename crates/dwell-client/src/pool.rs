@@ -76,6 +76,9 @@ pub enum Purpose {
     Map,
     /// The F3 overlay's regenerate-and-diff of a chunk.
     Diff(Coord),
+    /// The marcher's bricks of a chunk or a LOD section (RAY_MARCHED_RENDERER.md §4.1).
+    ChunkBricks(Coord, u64),
+    SectionBricks(u64),
 }
 
 impl Purpose {
@@ -91,6 +94,8 @@ impl Purpose {
             Purpose::Verify => ("job.verify.wait", "job.verify.run"),
             Purpose::Map => ("job.map.wait", "job.map.run"),
             Purpose::Diff(..) => ("job.diff.wait", "job.diff.run"),
+            Purpose::ChunkBricks(..) => ("job.chunk_bricks.wait", "job.chunk_bricks.run"),
+            Purpose::SectionBricks(..) => ("job.section_bricks.wait", "job.section_bricks.run"),
         }
     }
 }
@@ -240,6 +245,7 @@ impl Mesher for MeshJobs {
             Job::MeshChunk {
                 padded: job.padded,
                 mirror: job.mirror,
+                origin: job.coord.map(|c| c * dwell_world::CHUNK_SIZE),
                 payloads,
             },
         );

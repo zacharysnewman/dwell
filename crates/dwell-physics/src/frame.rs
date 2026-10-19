@@ -101,6 +101,16 @@ impl FaceQuery<'_, '_> {
     pub fn submerged_fraction(&self, center: DVec3, half_height: f32) -> f32 {
         self.q.submerged_fraction(self.f.p(center), half_height)
     }
+    /// The cell's shape (derived for an adaptive top block) in the local frame: turned over on
+    /// face B.
+    pub fn shape(&self, x: i32, y: i32, z: i32) -> &'static dwell_blocks::ShapeInfo {
+        let s = self.q.shape(x, self.f.row(y), z);
+        if self.f.b() {
+            dwell_blocks::shape::turned_over(s)
+        } else {
+            s
+        }
+    }
     pub fn material(&self, x: i32, y: i32, z: i32) -> StateId {
         self.f.m(self.q.material(x, self.f.row(y), z))
     }

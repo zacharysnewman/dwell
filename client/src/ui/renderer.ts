@@ -23,19 +23,46 @@ export const RENDERER_CHOICES: RendererChoice[] = [
   },
 ];
 
-/** What the page asks for: `?renderer=` and `?compare=`, only with the switch. */
-export function rendererParams(
-  search: string,
-  enabled: boolean,
-): { renderer?: string; compare?: string } {
+/** The marcher's own upscalers (`?upscaler=`): the march renders at `?scale=` and is upscaled to
+ * the canvas, which stays at full resolution (RAY_MARCHED_RENDERER.md §4.2 step 3). */
+export const MARCH_UPSCALERS = ['fsr1', 'bilateral'];
+
+interface RendererParams {
+  renderer?: string;
+  compare?: string;
+  upscaler?: string;
+  marchScale?: number;
+}
+
+/** What the page asks for: `?renderer=`, `?compare=`, and the marcher's `?upscaler=` with its
+ * `?scale=` (as `marchScale`), only with the switch. */
+export function rendererParams(search: string, enabled: boolean): RendererParams {
   if (!enabled) return {};
   const p = new URLSearchParams(search);
-  const out: { renderer?: string; compare?: string } = {};
+  const out: RendererParams = {};
   const renderer = p.get('renderer');
   const compare = p.get('compare');
   if (renderer !== null) out.renderer = renderer;
   if (compare !== null) out.compare = compare;
+  const upscaler = p.get('upscaler');
+  if (upscaler !== null && MARCH_UPSCALERS.includes(upscaler)) {
+    out.upscaler = upscaler;
+    out.marchScale = clampScale(Number(p.get('scale') ?? 1));
+  }
   return out;
+}
+
+function clampScale(scale: number): number {
+  return Number.isFinite(scale) ? Math.min(2, Math.max(0.25, scale)) : 1;
+}
+
+/** The `?scale=` drawing-buffer scale (comparing performance on a device): 1 when one of the
+ * marcher's upscalers takes the scale instead (with the switch). */
+export function displayScale(search: string, enabled: boolean): number {
+  const p = new URLSearchParams(search);
+  const upscaler = p.get('upscaler');
+  if (enabled && upscaler !== null && MARCH_UPSCALERS.includes(upscaler)) return 1;
+  return clampScale(Number(p.get('scale') ?? 1));
 }
 
 /** The choice matching the client's label (`raster`, `march`, `compare raster | march`). */

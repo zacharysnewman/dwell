@@ -1,5 +1,7 @@
-//! Procedural terrain, generator version 12 (ARCHITECTURE.md §6.3): the interim baseline of Phase
-//! 15 — one island at the origin, a 2D height field, and the ground filled by depth. A chunk is a
+//! Procedural terrain, generator version 14 (ARCHITECTURE.md §6.3): the interim baseline of Phase
+//! 15 — one island at the origin, a 2D height field, and the ground filled by depth — and since
+//! version 13 (Phase 33) the decorations of `shared/worldgen/decorations.json` one cell above the
+//! ground (tall grass; `decorations.rs`). A chunk is a
 //! pure function of (world seed, chunk coordinate), so chunks generate in any order, on any thread,
 //! natively or in WASM, bit-identically (noise.rs, ADR 0010).
 //!
@@ -19,6 +21,7 @@ use dwell_world::{
     SEA_LEVEL, chunk_disc_overlap, inside_world_disc, local_index,
 };
 
+use crate::decorations::{DECORATIONS, Placer};
 use crate::island::{self, IslandLayout};
 use crate::noise::{
     clamp01, fbm2, floor_div, floor_mod, floor_to_int, lerp, noise_offset, octaves_resolved,
@@ -111,7 +114,13 @@ pub struct TerrainGenerator {
     offset_x: i64,
     offset_z: i64,
     island: IslandLayout,
+    /// The decorations (data), resolved for this world.
+    decorations: Vec<Placer>,
 }
+
+/// How far above the ground decorations reach: the sky test leaves this much room over the
+/// highest ground before a chunk is all air.
+const DECORATION_RISE: f32 = 1.0;
 
 impl TerrainGenerator {
     pub fn new(world_seed: u64) -> Self {
@@ -121,6 +130,7 @@ impl TerrainGenerator {
             offset_x: noise_offset(seed_word(world_seed, 3)),
             offset_z: noise_offset(seed_word(world_seed, 4)),
             island: IslandLayout::new(world_seed),
+            decorations: Placer::resolve(&DECORATIONS, world_seed),
         }
     }
 
@@ -231,6 +241,41 @@ impl TerrainGenerator {
         (!col.outside).then(|| top_voxel(col.height).clamp(FACE_MIN_Y, FACE_MAX_Y - 1))
     }
 
+    /// The state `generate` puts at (x, y, z) (face-local), from the column alone.
+    pub fn state_at(&self, x: i32, y: i32, z: i32) -> StateId {
+        Self::state_in(&self.column_at(x, z), y)
+    }
+
+    fn state_in(col: &Column, y: i32) -> StateId {
+        if col.outside || !(FACE_MIN_Y..FACE_MAX_Y).contains(&y) {
+            return M.air;
+        }
+        let top = top_voxel(col.height);
+        if y <= top {
+            fill(top, i64::from(top - y))
+        } else if y < SEA_LEVEL {
+            M.water
+        } else {
+            M.air
+        }
+    }
+
+    /// The height of the ground's surface at (x, z) (face-local, inside the disc): the top voxel's
+    /// shape as the adaptive rules derive it (docs/ADAPTIVE_BLOCKS.md), at the column's centre — on
+    /// level ground half a block above the top voxel's floor.
+    pub fn surface_y_at(&self, x: i32, z: i32) -> Option<f64> {
+        let g = self.ground_y(x, z)?;
+        let mut cols = [[None; 3]; 3];
+        let mut get = |dx: i32, dy: i32, dz: i32| {
+            let c = cols[(dz + 1) as usize][(dx + 1) as usize]
+                .get_or_insert_with(|| self.column_at(x + dx, z + dz));
+            Self::state_in(c, g + dy)
+        };
+        let shape = dwell_blocks::adaptive::shape_at(&mut get, 1);
+        let top = dwell_blocks::shape::solid_span_at(shape, 0.5, 0.5).hi;
+        Some(f64::from(g) + f64::from(top))
+    }
+
     /// The island's coast distance at the point itself (no lattice).
     pub fn coast_at(&self, x: i32, z: i32) -> f32 {
         self.island.coast_at(i64::from(x), i64::from(z), None)
@@ -267,6 +312,7 @@ impl TerrainGenerator {
         cols.iter()
             .filter(|c| !c.outside)
             .fold(-1e9f32, |top, c| top.max(c.height))
+            + DECORATION_RISE
     }
 
     /// The sky test's height for a chunk column: chunks with y0 above it (and at or above sea
@@ -346,8 +392,52 @@ impl TerrainGenerator {
                         *v = M.water;
                     }
                 }
+                // A decoration in the air cell over the ground, if this chunk holds that cell.
+                let above = top + 1;
+                if (y0..y0 + S).contains(&above)
+                    && above >= SEA_LEVEL
+                    && (FACE_MIN_Y..FACE_MAX_Y).contains(&above)
+                    && let Some(m) = self.decoration_at(&cols, x0, z0, x, z, top)
+                {
+                    voxels[local_index(x, above - y0, z)] = m;
+                }
             }
         }
+    }
+
+    /// The decoration (if any) over the ground of column (x0 + lx, z0 + lz), whose top is `top`;
+    /// `cols` are the chunk's columns, and columns beyond them come from `column_at` (the same
+    /// arithmetic), so the answer doesn't depend on the chunk asking.
+    fn decoration_at(
+        &self,
+        cols: &[Column],
+        x0: i32,
+        z0: i32,
+        lx: i32,
+        lz: i32,
+        top: i32,
+    ) -> Option<StateId> {
+        const S: i32 = CHUNK_SIZE;
+        let (x, z) = (x0 + lx, z0 + lz);
+        let ground = fill(top, 0);
+        let neighbour_top = |nx: i32, nz: i32| {
+            let (ix, iz) = (nx - x0, nz - z0);
+            let col = if (0..S).contains(&ix) && (0..S).contains(&iz) {
+                cols[(iz * S + ix) as usize]
+            } else {
+                self.column_at(nx, nz)
+            };
+            if col.outside {
+                i32::MIN / 2
+            } else {
+                top_voxel(col.height)
+            }
+        };
+        let noise = (i64::from(x) + self.offset_x, i64::from(z) + self.offset_z);
+        self.decorations
+            .iter()
+            .find(|p| p.places((x, z), noise, ground, top, neighbour_top))
+            .map(Placer::state)
     }
 
     // --- level of detail (§6.6) -------------------------------------------------------------------
@@ -527,7 +617,9 @@ impl TerrainGenerator {
             if let Some(g) = self.ground_y(x, z)
                 && g >= SEA_LEVEL + SHORE_HEIGHT
             {
-                let point = [f64::from(x) + 0.5, f64::from(g) + 1.0, f64::from(z) + 0.5];
+                // On the shaped surface (a level patch's top blocks rest at half height).
+                let feet = self.surface_y_at(x, z).unwrap_or(f64::from(g) + 1.0);
+                let point = [f64::from(x) + 0.5, feet, f64::from(z) + 0.5];
                 fallback.get_or_insert(point);
                 let level = (-SPAWN_CLEAR..=SPAWN_CLEAR).all(|pz| {
                     (-SPAWN_CLEAR..=SPAWN_CLEAR).all(|px| self.ground_y(x + px, z + pz) == Some(g))

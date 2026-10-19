@@ -10,7 +10,7 @@ use dwell_world::lod::{LodCells, LodCoord, lod_hash, section_size};
 use dwell_world::{Chunk, ChunkCoord, chunk_hash};
 use dwell_worldgen::BifacialTerrain;
 
-const VERSION: u32 = 13;
+const VERSION: u32 = 14;
 const SEEDS: [u64; 2] = [0, 20_260_925];
 
 fn section_at(level: i32, p: [i64; 3]) -> LodCoord {

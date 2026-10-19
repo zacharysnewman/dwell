@@ -5,7 +5,7 @@
 //! Section content is 34³ cells (the section and a one-cell apron) in layer order (x fastest, then
 //! z, then y): the codec's order and the client mesher's padded layout.
 
-use dwell_blocks::{StateId, info};
+use dwell_blocks::{RenderMode, StateId, VoxelShape, info};
 use dwell_protocol::lod;
 
 use crate::voxel::*;
@@ -199,11 +199,20 @@ pub fn lod_solid(m: StateId) -> bool {
     m != M.air && !info(m).liquid
 }
 
+/// Whether the LOD draws a state at all: cutout blocks without a solid (ladders, plants) are thin
+/// and see-through, drawn only at full detail (their chunk geometry fades out first,
+/// docs/TRANSPARENT_BLOCKS.md), and count as air in the sections.
+pub fn lod_drawn(m: StateId) -> bool {
+    let s = info(m);
+    !(s.render == RenderMode::Cutout && s.shape == VoxelShape::Empty)
+}
+
 /// A 2×2×2 block → one cell of the next level (§6.6): filled if at least 4 of 8 are not air (liquid
 /// counts, so seas keep their surface), else air. The material is the most common among the top
 /// filled cell of each of the four columns, ties to the upper cells. Index: dx | dy << 1 | dz << 2.
 pub fn downsample_block(cells: &[StateId; 8]) -> StateId {
     let air = M.air;
+    let cells: &[StateId; 8] = &cells.map(|m| if lod_drawn(m) { m } else { air });
     let filled = cells.iter().filter(|&&m| m != air).count();
     if filled < 4 {
         return air;

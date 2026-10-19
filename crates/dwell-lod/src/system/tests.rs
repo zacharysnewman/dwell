@@ -21,10 +21,6 @@ fn zero() -> f64 {
     0.0
 }
 
-fn flat_bounds() -> LodBounds {
-    flat_bounds_at(0.0)
-}
-
 /// The flat test world with its surface at `top` instead of 0.
 fn flat_bounds_at(top: f64) -> LodBounds {
     LodBounds {

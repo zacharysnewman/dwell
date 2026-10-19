@@ -18,7 +18,7 @@ pub const ATLAS_SIZE: usize = CELL * ATLAS_CELLS;
 pub const ATLAS_TILES: usize = ATLAS_CELLS * ATLAS_CELLS;
 
 /// The tiles in atlas order (the registry's texture names).
-pub const TILE_ORDER: [&str; 9] = [
+pub const TILE_ORDER: [&str; 13] = [
     "plain",
     "grass",
     "grassSide",
@@ -28,6 +28,10 @@ pub const TILE_ORDER: [&str; 9] = [
     "water",
     "ladder",
     "grid",
+    "logSide",
+    "logTop",
+    "leaves",
+    "tallGrass",
 ];
 
 /// A tile's rectangle in the atlas, in 0–1 texture coordinates (v = 0 is the atlas's row 0).
@@ -134,6 +138,10 @@ const STONE_FLECK: Rgb = rgb(0xd6c6b4);
 const SAND: Rgb = rgb(0xeed9a4);
 const WATER: Rgb = rgb(0x2f86e0);
 const RAIL: Rgb = rgb(0xa0703a);
+const BARK: Rgb = rgb(0x7a5236);
+const WOOD: Rgb = rgb(0xc09a62);
+const LEAVES: Rgb = rgb(0x6fa83a);
+const LEAVES_HIGH: Rgb = rgb(0xa9c94a);
 
 fn grass(x: i64, y: i64) -> Rgb {
     let (fx, fy) = (x as f64, y as f64);
@@ -201,17 +209,131 @@ fn water(x: i64, y: i64) -> Rgb {
     scale(WATER, 0.85 + 0.15 * ripple + 0.12 * fine)
 }
 
+/// Bark: vertical streaks (noise varying along x only, stretched along y).
+fn log_side(x: i64, y: i64) -> Rgb {
+    let (fx, fy) = (x as f64, y as f64);
+    let streak = tiled_noise(fx, fy * 0.125, 16, 4, 91);
+    let n = tiled_fbm(fx, fy, 92);
+    scale(BARK, 0.7 + 0.35 * streak + 0.15 * n)
+}
+
+/// Cut wood with growth rings around the tile centre, and a bark rim.
+fn log_top(x: i64, y: i64) -> Rgb {
+    let half = (TILE / 2) as f64;
+    let dx = x as f64 - half + 0.5;
+    let dy = y as f64 - half + 0.5;
+    if dx.abs().max(dy.abs()) > half - 3.0 {
+        return log_side(x, y);
+    }
+    let ring = 0.5 + 0.5 * (dx.hypot(dy) * 1.3).cos();
+    scale(
+        WOOD,
+        0.8 + 0.15 * ring + 0.1 * tiled_fbm(x as f64, y as f64, 93),
+    )
+}
+
+/// Leaves; the gaps between them are transparent (`leaves_alpha`: the leaves draw cutout).
+fn leaves(x: i64, y: i64) -> Rgb {
+    let n = tiled_fbm(x as f64, y as f64, 101);
+    mix(scale(LEAVES, 0.95), LEAVES_HIGH, (n - 0.3).max(0.0) * 1.5)
+}
+
+fn leaves_alpha(x: i64, y: i64) -> f64 {
+    if hash(x, y, 2, 102) > 0.8 { 0.0 } else { 255.0 }
+}
+
+/// The ladder's rails (two columns) and rungs (every 8 texels).
+fn ladder_wood(x: i64, y: i64) -> bool {
+    let rail = (3..=6).contains(&x) || (25..=28).contains(&x);
+    let rung = (2..=4).contains(&y.rem_euclid(8));
+    rail || rung
+}
+
+/// Rails and rungs; the gaps between them are transparent (`ladder_alpha`: the ladder draws
+/// cutout) and keep the wood's colour, so filtering at a gap's edge never darkens the wood.
 fn ladder(x: i64, y: i64) -> Rgb {
     let grain = 0.8 + 0.3 * tiled_noise(x as f64, y as f64 * 0.25, 16, 6, 161);
     let rail = (3..=6).contains(&x) || (25..=28).contains(&x);
-    let rung = (2..=4).contains(&(y % 8));
     if rail {
         return scale(RAIL, grain);
     }
-    if rung {
-        return scale(RAIL, grain * 0.9);
+    scale(RAIL, grain * 0.9)
+}
+
+fn ladder_alpha(x: i64, y: i64) -> f64 {
+    if ladder_wood(x, y) { 255.0 } else { 0.0 }
+}
+
+/// Blades of the `tallGrass` tile: (base x, base half-width, height, lean at the tip), in texels.
+/// Bases stay two texels inside the tile's sides and tips under its top row, so nothing wraps
+/// round the tile (a cross quad shows exactly one copy).
+const BLADES: [(f64, f64, f64, f64); 18] = [
+    (5.5, 0.75, 22.0, 1.5),
+    (7.0, 0.85, 29.0, 2.0),
+    (8.5, 0.65, 17.0, 3.5),
+    (10.0, 0.8, 25.0, -3.0),
+    (11.5, 0.6, 12.0, -1.5),
+    (12.5, 0.7, 20.0, 2.5),
+    (14.0, 0.9, 30.0, 0.5),
+    (15.5, 0.6, 15.0, -2.5),
+    (16.5, 0.75, 26.5, -4.0),
+    (18.0, 0.7, 23.0, 4.0),
+    (19.5, 0.6, 13.0, 1.0),
+    (20.5, 0.85, 27.5, -1.5),
+    (22.0, 0.65, 16.0, -3.5),
+    (23.0, 0.8, 26.0, 2.5),
+    (24.5, 0.6, 18.0, 0.5),
+    (25.5, 0.7, 21.0, -1.0),
+    (26.5, 0.75, 24.0, -2.0),
+    (13.0, 0.55, 10.0, 1.5),
+];
+
+/// How fast a blade's alpha falls off across its edge, per texel: the alpha is a distance field
+/// (0.5 on the edge), so the cutout shader's bilinear alpha up close traces each blade's true
+/// outline — thin, pointed blades from a 32-texel tile.
+const BLADE_FALLOFF: f64 = 0.5;
+
+/// The blade nearest to covering texel (x, y) of the `tallGrass` tile (y = 0 at its foot): its
+/// index, how far up it the texel is (0–1) and the texel's alpha (0–1, a distance field: above
+/// 0.5 inside the blade). Each blade tapers from its base to a point and curves as it leans.
+fn blade_at(x: i64, y: i64) -> Option<(usize, f64, f64)> {
+    let (px, py) = (x as f64 + 0.5, y as f64 + 0.5);
+    let mut best: Option<(usize, f64, f64)> = None;
+    for (i, &(bx, half, height, lean)) in BLADES.iter().enumerate() {
+        let t = py / height;
+        if t >= 1.0 {
+            continue;
+        }
+        let centre = bx + lean * t * t;
+        let width = half * (1.0 - t).powf(0.8);
+        let a = (0.5 + (width - (px - centre).abs()) * BLADE_FALLOFF).clamp(0.0, 1.0);
+        // The most covering blade wins (later ones on ties: they draw over).
+        if a > 0.0 && best.is_none_or(|(_, _, b)| a >= b) {
+            best = Some((i, t, a));
+        }
     }
-    scale(RAIL, 0.3 + 0.08 * tiled_fbm(x as f64, y as f64, 162))
+    best
+}
+
+/// Blades of grass in the grass block's top colours, darker at the foot and lighter at the tips,
+/// each blade its own shade; the gaps are transparent (`tall_grass_alpha`) and take the blades'
+/// mean colour so filtering at an edge adds no fringe.
+fn tall_grass(x: i64, y: i64) -> Rgb {
+    let Some((i, t, _)) = blade_at(x, y) else {
+        return mix(GRASS_LOW, GRASS, 0.6);
+    };
+    let shade = hash(i as i64, 0, 3, 171);
+    let base = mix(GRASS_LOW, GRASS, 0.35 + 0.5 * shade);
+    let tip = mix(GRASS, GRASS_HIGH, 0.3 + 0.6 * shade);
+    let grain = 0.97 + 0.06 * hash(x, y, 1, 172);
+    scale(
+        mix(base, tip, t.powf(0.8)),
+        grain * (0.78 + 0.22 * t.sqrt()),
+    )
+}
+
+fn tall_grass_alpha(x: i64, y: i64) -> f64 {
+    blade_at(x, y).map_or(0.0, |(_, _, a)| 255.0 * a)
 }
 
 /// The grid lines of each atlas tile slot (index cx + cy × `ATLAS_CELLS`, `TILE_ORDER` order):
@@ -258,8 +380,28 @@ fn painter(name: &str) -> fn(i64, i64) -> Rgb {
         "water" => water,
         "ladder" => ladder,
         "grid" => grid,
+        "logSide" => log_side,
+        "logTop" => log_top,
+        "leaves" => leaves,
+        "tallGrass" => tall_grass,
         _ => |_, _| [255.0, 255.0, 255.0],
     }
+}
+
+/// The alpha (0–255) of tile `name` at texel (x, y): opaque but where a cutout tile is
+/// see-through.
+fn alpha(name: &str, x: i64, y: i64) -> f64 {
+    match name {
+        "ladder" => ladder_alpha(x, y),
+        "leaves" => leaves_alpha(x, y),
+        "tallGrass" => tall_grass_alpha(x, y),
+        _ => 255.0,
+    }
+}
+
+/// Whether tile `name` has transparent texels (it is drawn cutout or translucent).
+pub fn tile_has_alpha(name: &str) -> bool {
+    (0..TILE as i64).any(|y| (0..TILE as i64).any(|x| alpha(name, x, y) < 255.0))
 }
 
 fn byte(v: f64) -> u8 {
@@ -282,7 +424,7 @@ pub fn build_atlas() -> Vec<u8> {
                 data[o] = byte(r);
                 data[o + 1] = byte(g);
                 data[o + 2] = byte(b);
-                data[o + 3] = 255;
+                data[o + 3] = byte(alpha(name, tx, ty));
             }
         }
     }
@@ -311,22 +453,25 @@ pub fn linear_to_srgb_byte(v: f64) -> u8 {
 
 fn compute_average(name: &str) -> u32 {
     let paint = painter(name);
-    let (mut r, mut g, mut b) = (0.0, 0.0, 0.0);
+    let (mut r, mut g, mut b, mut n) = (0.0, 0.0, 0.0, 0.0);
+    // Weighted by coverage: a cutout tile's transparent texels don't count.
     for y in 0..TILE as i64 {
         for x in 0..TILE as i64 {
             let [pr, pg, pb] = paint(x, y);
-            r += srgb_to_linear(byte(pr));
-            g += srgb_to_linear(byte(pg));
-            b += srgb_to_linear(byte(pb));
+            let a = f64::from(byte(alpha(name, x, y))) / 255.0;
+            r += srgb_to_linear(byte(pr)) * a;
+            g += srgb_to_linear(byte(pg)) * a;
+            b += srgb_to_linear(byte(pb)) * a;
+            n += a;
         }
     }
-    let n = (TILE * TILE) as f64;
+    let n = if n > 0.0 { n } else { 1.0 };
     (u32::from(linear_to_srgb_byte(r / n)) << 16)
         | (u32::from(linear_to_srgb_byte(g / n)) << 8)
         | u32::from(linear_to_srgb_byte(b / n))
 }
 
-/// A tile's average colour (`0xRRGGBB`, sRGB): the mean of its texels in linear light, as a
+/// A tile's average colour (`0xRRGGBB`, sRGB): the mean of its covered texels in linear light, as a
 /// mipmapped sRGB texture averages from afar — the flat colour of LOD faces. Computed from the
 /// painters once per tile.
 pub fn average_tile_color(name: &str) -> u32 {
@@ -381,6 +526,60 @@ mod tests {
         let avg = average_tile_color("grid");
         assert!(avg >> 16 > 0xf0 && avg >> 16 < 0xff, "{avg:06x}");
         assert!(tile_rect("grid").u1 <= 1.0 && tile_rect("grid").v1 <= 1.0);
+    }
+
+    #[test]
+    fn the_ladder_tile_is_see_through_between_its_rails_and_rungs() {
+        // Rails and rungs are opaque; the gaps are transparent, not painted dark.
+        assert_eq!(alpha("ladder", 4, 0), 255.0, "a rail");
+        assert_eq!(alpha("ladder", 15, 3), 255.0, "a rung");
+        assert_eq!(alpha("ladder", 15, 6), 0.0, "a gap");
+        assert!(tile_has_alpha("ladder"));
+        assert!(!tile_has_alpha("stone") && !tile_has_alpha("grass"));
+        let atlas = build_atlas();
+        let r = tile_rect("ladder");
+        let (x0, y0) = (
+            (r.u0 * ATLAS_SIZE as f64).round() as usize,
+            (r.v0 * ATLAS_SIZE as f64).round() as usize,
+        );
+        let texel = |x: usize, y: usize| &atlas[((y0 + y) * ATLAS_SIZE + x0 + x) * 4..][..4];
+        assert_eq!(texel(15, 6)[3], 0, "transparent in the atlas");
+        assert_eq!(texel(4, 6)[3], 255);
+        // The gap keeps the wood's colour (no dark fringe when filtered).
+        assert!(texel(15, 6)[0] > 0x60, "{:?}", texel(15, 6));
+        // The flat (LOD) colour is the wood's, not darkened by the gaps.
+        let avg = average_tile_color("ladder");
+        assert!(avg >> 16 > 0x80, "{avg:06x}");
+    }
+
+    #[test]
+    fn the_tall_grass_tile_is_blades_with_transparent_gaps() {
+        let covered = (0..TILE as i64)
+            .flat_map(|y| (0..TILE as i64).map(move |x| (x, y)))
+            .filter(|&(x, y)| alpha("tallGrass", x, y) >= 128.0)
+            .count();
+        let share = covered as f64 / (TILE * TILE) as f64;
+        assert!((0.12..0.5).contains(&share), "{share}");
+        // Dense at the foot, open at the top; nothing on the top row or the side columns (no
+        // blade wraps round the tile).
+        let row = |y: i64| {
+            (0..TILE as i64)
+                .filter(|&x| alpha("tallGrass", x, y) >= 128.0)
+                .count()
+        };
+        assert!(row(1) > row(20) && row(20) > 0);
+        assert_eq!(row(TILE as i64 - 1), 0);
+        for y in 0..TILE as i64 {
+            assert_eq!(alpha("tallGrass", 0, y), 0.0);
+            assert_eq!(alpha("tallGrass", TILE as i64 - 1, y), 0.0);
+        }
+        // Its colour is the grass block's: the covered texels average near the grass top's.
+        let avg = average_tile_color("tallGrass");
+        let top = average_tile_color("grass");
+        for shift in [16, 8, 0] {
+            let (a, b) = ((avg >> shift) & 0xff, (top >> shift) & 0xff);
+            assert!(a.abs_diff(b) < 0x30, "{avg:06x} vs {top:06x}");
+        }
     }
 
     #[test]

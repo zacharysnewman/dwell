@@ -109,7 +109,7 @@ test('local mode: every palette block can be picked from the hotbar, placed, and
   await page.goto('./?world=flat');
   await ready(page);
   const slots = await page.locator('.hotbar-slot').count();
-  expect(slots).toBe(5);
+  expect(slots).toBe(8);
   const ground = await aim(page);
   expect(ground.face).toBe(2);
   const cell = add(ground.cell, FACE_DIRS[ground.face] ?? [0, 0, 0]);
@@ -125,8 +125,9 @@ test('local mode: every palette block can be picked from the hotbar, placed, and
     expect(await call<boolean>(page, `d.edit('place')`)).toBe(true);
     await expect.poll(() => voxel(page, cell), { timeout: 5_000 }).not.toBe(0);
     const placed = await voxel(page, cell);
-    // Breaking targets the new block itself.
-    await expect.poll(async () => (await state(page))?.target?.cell.join() ?? '').toBe(cell.join());
+    // Breaking targets the new block itself: looked at, as tall grass is aimed at by a box
+    // smaller than its cell.
+    await lookAt(page, cell);
     await page.waitForTimeout(120); // BLOCK_EDIT_INTERVAL_MS
     expect(await call<boolean>(page, `d.edit('break')`)).toBe(true);
     await expect.poll(() => voxel(page, cell), { timeout: 5_000 }).toBe(0);

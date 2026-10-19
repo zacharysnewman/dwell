@@ -42,9 +42,12 @@ describe('sound events', () => {
       1,
     ];
     expect(decodeSounds(v)).toEqual([
-      { kind: kind('step'), block: 3, intensity: 1, at: null, gait: gait('run') },
-      { kind: kind('land'), block: 2, intensity: 0.5, at: [1, 2, 3], gait: null },
+      { kind: kind('step'), block: 3, intensity: 1, at: null, gait: gait('run'), voice: null },
+      { kind: kind('land'), block: 2, intensity: 0.5, at: [1, 2, 3], gait: null, voice: null },
     ]);
+    // Bits 4 and up: the voice + 1 (sound.rs's encode).
+    expect(decodeSounds([kind('slide'), 3, 0.4, 0, 0, 0, (7 + 1) * 16])[0]?.voice).toBe(7);
+    expect(decodeSounds([kind('slide'), 3, 0.4, 0, 0, 0, 16])[0]?.voice).toBe(0);
     expect(decodeSounds([1, 2, 3])).toEqual([]);
   });
 
@@ -68,6 +71,47 @@ describe('sound events', () => {
     intensity: 1,
     at: null,
     gait: g,
+    voice: null,
+  });
+
+  it("run a slide's scrape on the mover's voice: start on the surface's set, update, stop", () => {
+    const calls: string[] = [];
+    const player = new EventPlayer(
+      SOUND_DATA,
+      (sound, o) => calls.push(`play ${sound} ${String(o.intensity)}`),
+      {
+        start: (voice, sound, o) => calls.push(`start ${voice} ${sound} ${String(o.intensity)}`),
+        update: (voice, i) => calls.push(`update ${voice} ${String(i)}`),
+        stop: (voice) => calls.push(`stop ${voice}`),
+      },
+    );
+    const sand = state('dwell:sand');
+    const ladder = state('dwell:ladder[facing=east,flooded=false]');
+    const e = (name: string, block: number, intensity: number, voice: number): SoundEvent => ({
+      ...event(name, block),
+      intensity,
+      voice,
+    });
+    player.playAll([
+      e('slide', sand, 0.2, 0),
+      e('slide_speed', sand, 0.6, 0),
+      e('slide_end', sand, 0.6, 0),
+      // Another player's slide on wood, which has no slide of its own: the fallback's.
+      e('slide', ladder, 0.5, 4),
+    ]);
+    const fallback = SOUND_DATA.sets[SOUND_DATA.fallback];
+    expect(calls).toEqual([
+      `start mover:0 ${String(SOUND_DATA.sets['dwell:sand']?.slide)} 0.2`,
+      'update mover:0 0.6',
+      'stop mover:0',
+      `play ${String(SOUND_DATA.sets['dwell:sand']?.slide_stop)} 0.6`,
+      `start mover:4 ${String(fallback?.slide)} 0.5`,
+    ]);
+    // Every slide sound loops, every stop plays once.
+    for (const set of Object.values(SOUND_DATA.sets)) {
+      if (set.slide) expect(SOUND_DATA.sounds[set.slide]?.loop).toBe(true);
+      if (set.slide_stop) expect(SOUND_DATA.sounds[set.slide_stop]?.loop).toBeUndefined();
+    }
   });
 
   it("play the set's sound for set events, with the gait's loudness for steps", () => {

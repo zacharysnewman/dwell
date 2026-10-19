@@ -392,7 +392,7 @@ mod tests {
     fn full() -> ChunkTerrain {
         Terrain {
             raster: Some(ChunkMeshes::default()),
-            march: Some(ChunkBricks { solid: 7 }),
+            march: Some(ChunkBricks(dwell_march::NodeBuild::Solid(7))),
         }
     }
 
@@ -454,7 +454,7 @@ mod tests {
                 2.0,
                 Some(&Terrain {
                     raster: Some(SectionMeshes::default()),
-                    march: Some(SectionBricks { solid: 1 }),
+                    march: Some(SectionBricks(dwell_march::NodeBuild::Solid(1))),
                 }),
             );
             assert_eq!(r.raster.chunks.contains_key(&C), raster, "{sel:?}");
@@ -475,7 +475,10 @@ mod tests {
         let mut r = both(Selection::parse("compare", None).unwrap());
         r.set_chunk(C, Some(&full()));
         r.set_chunk(C, Some(&ChunkTerrain::meshes(ChunkMeshes::default())));
-        assert_eq!(r.march.chunks[&C], ChunkBricks { solid: 7 });
+        assert_eq!(
+            r.march.chunks[&C],
+            ChunkBricks(dwell_march::NodeBuild::Solid(7))
+        );
     }
 
     #[test]
@@ -503,11 +506,11 @@ mod tests {
         m.opaque.positions = vec![0.0; 10];
         let t = SectionTerrain {
             raster: Some(m.clone()),
-            march: Some(SectionBricks { solid: 3 }),
+            march: Some(SectionBricks(dwell_march::NodeBuild::Solid(3))),
         };
         assert_eq!(
             t.payload_bytes(),
-            section_bytes(&m) + SectionBricks { solid: 3 }.bytes()
+            section_bytes(&m) + SectionBricks(dwell_march::NodeBuild::Solid(3)).bytes()
         );
     }
 }

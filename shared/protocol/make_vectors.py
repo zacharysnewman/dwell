@@ -191,6 +191,10 @@ def region_cells(cells):
 PASTE_SIZE = (2, 3, 2)
 PASTE_CELLS = [1, 1, 1, 1, 4, 0, 4, 0, 0, 0, 0, 0]
 REGION_PASTE = region_head(RO["Paste"], (-3, 70, 8191990), PASTE_SIZE) + region_cells(PASTE_CELLS)
+# A brush stroke's paste (BRUSHES.md): cells it leaves alone are `keep` (0xFFFF), a palette entry
+# like any state; only servers that announce the `brushes` Welcome flag take it.
+KEEP = c["regionEdit"]["keep"]
+REGION_PASTE_KEEP = region_head(RO["Paste"], (4, 1, -2), (3, 1, 1)) + region_cells([KEEP, 2, KEEP])
 
 LF = c["lodForms"]
 LOD_PAD = c["lod"]["sectionCells"] + 2
@@ -294,6 +298,7 @@ vectors = {
     "region_edit_replace": region_head(RO["Replace"], (10, -20, 30), (1, 32, 2))
     + struct.pack("<HH", 2, 6),
     "region_edit_paste": REGION_PASTE,
+    "region_edit_paste_keep": REGION_PASTE_KEEP,
     "voxel_modification": VOXEL_MOD,
     "chunk_resync": struct.pack("<BH", T["ChunkResync"], 2)
     + struct.pack("<iiiiii", 0, -1, 2, 256000, 191, -256000),

@@ -3,6 +3,7 @@
 //! (`dwell-blocks`); built-in ones the engine needs are resolved once into [`M`].
 
 pub mod bounds;
+pub mod brush;
 pub mod edit;
 pub mod fluid;
 pub mod hash;

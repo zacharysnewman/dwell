@@ -97,7 +97,9 @@ pub enum GroundRef { None, Terrain, Tier1Body(BodyHandle), Player(BodyHandle) } 
 
 pub struct GroundInfo {
     pub grounded: bool, pub was_grounded: bool,  // THE grounded flag every pass uses (PPC semantics)
-    pub normal: Vec3, pub slope_angle: f32, pub gap: f32,
+    pub normal: Vec3, pub slope_angle: f32,
+    pub under_normal: Vec3, pub under_angle: f32,  // the ground under the centre: what slides (§6.8)
+    pub gap: f32,
     pub ground: GroundRef,
     pub ceiling_blocked: bool, pub touching_wall: bool, pub wall_normal: Vec3,
 }
@@ -158,10 +160,10 @@ The server tick (ARCHITECTURE §4.2) runs, for every player, **before** `Physics
 | 6 | `step_jump` | `PPCJumpSystem` | Buffer + coyote (in ticks); `accumulated_y = max(accumulated_y, jump_v + platform_y)`; no coyote after a real jump; auto-jump (§6.2) |
 | 7 | `step_climb` | `PPCClimbSystem` | Exclusive layer on climbable voxels (§6.3); not while flying |
 | 8 | `step_swim` | — (Dwell) | Exclusive layer in water voxels (§6.4) and in the flip band (§11); not while climbing or flying |
-| 9 | `step_horizontal` | `PPCMovementLayerSystem` | Absorb external; accel/decel/reverse in the platform's frame; air control; step-up; edge guard |
+| 9 | `step_horizontal` | `PPCMovementLayerSystem` | Absorb external; on ground steeper than 44° the slide (§6.8); else accel/decel/reverse in the platform's frame; air control; step-up; edge guard |
 | 10 | `step_vertical` | `PPCVerticalLayerSystem` | Gravity; walk-off keeps platform Y; ceiling cancel; launch detection; ground following + snap |
 | 11 | `step_aggregate` | `PPCAggregateSystem` | `target = exclusive ? layer.velocity : horizontal.contribution + (0, vertical.target_y, 0)`; set the body's linear velocity |
-| 12 | `step_state` | `PPCStateSystem` | Priority: Climbing > Swimming > Flying > Crouching > Jumping/Falling > Running/Walking/Idle |
+| 12 | `step_state` | `PPCStateSystem` | Priority: Climbing > Swimming > Flying > Sliding (§6.8) > Crouching > Jumping/Falling > Running/Walking/Idle |
 | — | *`Physics::step(1/60)`* | Quantum physics step | Contacts resolved; deviations are absorbed next tick |
 
 Each pass's behaviour is exactly the PPC Quantum system's, including its fixes over the Unity
@@ -268,13 +270,17 @@ Why:
 - `FaceQuery` (`frame.rs`) wraps these for a face-B player's mirrored frame (§11).
 
 **Terrain collision** (`TerrainCollision`, `terrain.rs`): one static body with one Rapier (Parry)
-`Voxels` collider for the whole world, holding the solid cells of the chunks around players. Parry
+`Voxels` collider for the whole world, holding the cells of the chunks around players that collide
+as full cubes (shaped cells — adaptive top blocks — are each chunk's triangle mesh, below). Parry
 classifies each voxel by its neighbours, so the capsule slides across voxel edges and chunk borders
 without catching on internal edges (`walking_across_chunk_seams_in_every_direction_never_loses_the_ground`:
 no loss of ground crossing chunk borders in 8 directions). With `f64` positions it is exact anywhere
-in the world, so it needs no regions, anchors or seams between bodies. Every solid state collides
-as its full cell: the baseline has only cubes (Phase 15); shaped blocks (Phase 18) will need their
-own colliders.
+in the world, so it needs no regions, anchors or seams between bodies. **Shaped cells** (Phase 18)
+collide as one Parry `TriMesh` per chunk (`FIX_INTERNAL_EDGES`, at the chunk's corner) of their
+derived shapes' faces that no neighbour covers; a chunk's collision reads a two-cell apron, and a
+chunk with solid cells is rebuilt when any of the 27 chunks around it changes stamp or revision
+(an empty chunk watches only itself). Crossing between chunks'
+meshes keeps the ground (`walking_a_grass_field_across_chunk_seams_never_loses_the_ground`).
 - Chunks are added on demand: each tick, `Players::tick` makes sure every chunk within
   `3 m + min(2 ticks of travel, 64 m)` of each player is in the collider. Each loaded chunk keeps
   its stamp, revision and a bit mask of its solid cells; a chunk with no solid cells keeps no mask,
@@ -295,8 +301,8 @@ Rules that keep the grid and the physics world consistent:
   `crates/dwell-sim/tests/netcode.rs`).
 - Probes read voxels from the world (`VoxelWorld::read`, generating a chunk if needed), so a probe
   and the collider see the same cells.
-- Non-cube voxel shapes extend the DDA through the block shape table; the probe interface does not
-  change.
+- Non-cube voxel shapes extend the DDA through the block shape table, adaptive blocks through
+  their derived shapes (`VoxelQuery::shape`); the probe interface does not change.
 
 ---
 
@@ -308,14 +314,33 @@ through a 1-wide, 2-tall doorway. Dwell's defaults (§7): **radius 0.3, height 1
 openings), **crouch height 0.9** (fits 1-tall crawlspaces with skin to spare).
 
 ### 6.2 Blocks, steps, slopes
-- The baseline's blocks are full cubes with axis-aligned faces: Phase 15 cut the placed slope and
-  slab families and terrain slope shaping ([`SLOPE_BLOCKS.md`](./SLOPE_BLOCKS.md)). The shape
-  mechanism stays in the probes (§5) for Phase 18's adaptive blocks, which bring their own
-  scenarios. Slope logic matters on **Tier 1 bodies** (rotated clusters; ramps in the tests are
-  rotated Tier 1 boxes, `walks_up_and_down_a_20_degree_ramp_staying_grounded`), and half-height
-  steps (stairs, the scenario's step) are static Tier 1 boxes (`PlayerTestWorld::half_step`).
-- `max_slope_angle` is **50°**: a standard 45° slope face must not hinge on float rounding of its
-  normal (`the_slope_limit_leaves_room_for_45_degrees`).
+- **Natural ground is shaped** (Phase 18, [`ADAPTIVE_BLOCKS.md`](./ADAPTIVE_BLOCKS.md)): grass,
+  dirt, stone and sand top blocks take their shapes from their neighbours — a level field rests at
+  half height, edges slope 27° to the ground, a 1-block step is one even 27° slope across both
+  blocks (walked up without jumping), one-wide rows are half-height ridges (45° flanks), a one-wide
+  block against a higher one is a 45° ramp, saddles and dimples reach 54.74°. **Faces steeper than
+  44° slide** (owner, 2026-10-15; §6.8): the 45° ramps (so single-block stairs are no longer
+  walked up — a stairs block comes later), ridge and pyramid flanks, saddles and dimples. The
+  probes (§5) read the derived shapes (`VoxelQuery::shape`, `FaceQuery::shape`, turned over on
+  face B), and the terrain collider holds shaped cells as per-chunk triangle meshes (§5). The
+  suites build cube geometry from the non-adaptive `dwell:sandbox_floor` (`cube_block()`), and
+  `tests/adaptive.rs` walks the adaptive shapes: the Shape Playground's 28 situations built as
+  terrain (every shape the rules make), where a player stands still on every block whose ground is
+  gentle, slides off every block whose ground under it is steeper than 44°, and never ends at rest
+  on such ground; walkers along every row and column never launch, hop or jump; a terrace's
+  1-block step up and down; a one-wide ridge stops a walker at its flank and a jump clears it; a
+  grass field across chunk seams (the per-chunk meshes) without losing the ground; a block placed
+  beside a standing player reshaping the ground under it without a launch — at the origin, far out
+  and on face B. Slope logic matters on **Tier 1 bodies** (rotated clusters; ramps in the tests
+  are rotated Tier 1 boxes, `walks_up_and_down_a_20_degree_ramp_staying_grounded` and the 45°
+  ramps of `tests/slide.rs`), and half-height steps (stairs, the scenario's step) are static Tier
+  1 boxes (`PlayerTestWorld::half_step`).
+- `max_slope_angle` is **56°**: the steepest *ground*; steeper faces are walls. Ground steeper
+  than `slide.min_angle` (44°) slides, so the limit must stay above every face the adaptive shapes
+  make — a saddle's or a dimple's, from its raised diagonal down to a floor corner, is arctan √2 ≈
+  54.74° (`every_slope_the_adaptive_table_makes_is_ground_and_the_steep_ones_slide`). At 50° (a
+  short-lived tuning on Phase 18's branch) a player put on a saddle rested on its face ungrounded,
+  in the Falling state: the air's absorption of the contact held it up.
 - The bifacial world puts a second face on the disc's underside, where up is −y; the controller
   runs in a face-local frame there (§11, [`BIFACIAL_WORLD.md`](./BIFACIAL_WORLD.md) §6).
 - `max_step_height` 0.55 m (PPC: 0.45): half-height steps (0.5 m) are stepped up without leaving
@@ -439,6 +464,63 @@ layer — so a player can rise from the ground to see the whole world (ARCHITECT
 
 ---
 
+### 6.8 Sliding on steep ground (Dwell addition) **[built]**
+Owner (2026-10-15): *"Make the player slide on steep >44° slopes, give the player some control,
+and make sure there are relevant sound effects"* and *"Stairs will be their own thing later on.
+Ramps steeper than 44° will slide."* The defaults below were chosen for this; the tunables are
+data (`PlayerControllerConfig::slide`, §7).
+- **When.** A player slides while grounded on ground **under its centre** steeper than
+  `slide.min_angle` (44°): `PlayerController::sliding` = not climbing, swimming or flying, grounded,
+  `ground.under_angle > min_angle`, and the ground is not another player (a capsule's round head
+  is not a slope). The test is `> 44°`, not `≥ 45°`, so an exact 45° face slides whatever the
+  rounding of its normal. `under_normal` / `under_angle` come from the probe's centre ray (else the
+  ring's nearest hit): the ring's nearest hit, which the ground following uses, can lie across a
+  crest, whose face would push the player back onto the crest — a player balanced on every ridge.
+  27°–44° ground is walked and rested on as before. All of it runs in the face-local frame (§11),
+  so the slope's down is the face's down on face B too.
+- **How it moves.** The slide replaces the walking part of the horizontal layer (`slide()` in
+  `controller.rs`); the vertical layer's ground following keeps the body on the slope as when
+  walking. With θ the slope and `down` its horizontal downhill direction, the slope pulls with
+  `g (sin θ − friction cos θ)` (`slide.friction` 0.3; g = 20 m/s²) up to `terminal_speed` (14 m/s)
+  along the slope; quantities along the slope are taken to the horizontal with `cos θ`. Above the
+  terminal speed (braking, or arriving faster) the slide slows at `brake_deceleration`.
+- **Momentum.** The slide's whole velocity is split between the layer's two terms: the first
+  walking speed's worth (the tick's walk, run or crouch speed) is the player's own `current`,
+  which walks on where the slope ends; the rest is `external`, which ground friction
+  (`ground_external_friction`) takes away on flat ground and nothing does in the air. So the
+  player keeps its speed off the bottom of a slope and slows with the normal ground friction
+  (holding forward there adds no boost), and a jump off a slide keeps its downhill momentum
+  (the player's own part slows with air control, as after any jump).
+- **Control.** Input across the slope steers at `steering` (0.4) × the walking acceleration, up
+  to `steer_speed` (5 m/s). Input up the slope brakes: the terminal speed falls by up to `brake`
+  (60 %), never to zero, and up-slope input never drives the player up. Momentum carried up a
+  steep face (walking or running into a ramp) dies at `uphill_deceleration` (60 m/s²) plus the
+  slope's pull, so a 45° ramp is never walked or run up (the capsule's round bottom climbs onto
+  its foot at most). **Crouching** slides lower (the crouched capsule), with `crouch_friction` 0.2
+  and the terminal speed × `crouch_terminal_factor` (1.15). The **step-up** never steps onto
+  ground steeper than `min_angle`, and a sliding player does not step at all. **Jumping** off a
+  slide is a normal jump. **Ladders and water** override sliding (exclusive layers).
+- **State.** `State::Sliding` (the PPC's state enum always had it; nothing set it before) when
+  sliding, above Crouching in `step_state`'s priority: Climbing > Swimming > Flying > Sliding >
+  Crouching > Jumping/Falling > Running/Walking/Idle.
+- **Netcode.** Sliding is derived each tick from the probe and the resumable state
+  (`ControllerState`, §8.4: the momentum is in `current` and `external`), so it needs nothing
+  new on the wire and replays exactly: without latency the netcode suite's sliding run replays
+  only at the spawn; at 150 ms RTT, 20 ms jitter and 5 % loss there are no snaps (corrections are a
+  tick or two of slide motion when jitter starves the server's input buffer, ≤ 0.35 m measured).
+- **Sound** (docs/AUDIO.md §5): a slide is one continuous voice per player — a scrape of the
+  surface's sound set whose loudness, brightness and rate follow the slide's speed, ending in a
+  soft stop; other players' slides are spatial.
+- **Tests:** `tests/slide.rs` (a wide 45° Tier 1 ramp, single-block grass stairs, a crest):
+  standing on a 45° ramp slides down and never rests on it; standing on single-block stairs slides
+  down them; walking or running up a 45° ramp fails, as does walking up the stairs; steering moves
+  across the slope with reduced acceleration; braking slows but never stops or climbs; the floor
+  keeps the momentum without a hop and friction stops it, with no boost from holding forward; running
+  over a crest onto a 45° ramp slides down without a launch; the terminal speed, and a crouched
+  slide faster and lower; a jump off a slide keeps the momentum; 27° slopes are still walked up and
+  rested on; swimming and climbing override sliding; and a face-B player slides down the stairs
+  toward the midplane (world frame). The suite also runs far from the origin and on face B.
+
 ## 7. Configuration
 
 `PlayerControllerConfig` lives in `crates/dwell-physics/src/config.rs` — both sides compile the
@@ -466,7 +548,7 @@ PPC default for voxels.
 | | `max_push_force` ◆ | 800 N | — | Contact limit (Phase 20) |
 | | `pushable_mass_limit` ◆ | 400 kg | — | Heavier clusters are immovable by players (Phase 20) |
 | `probes` | `ground_probe_margin` / `ceiling_probe_margin` | 0.15 / 0.10 m | same | |
-| | `max_slope_angle` | 50° ◆ (45° would hinge on rounding at a 45° face) | same | |
+| | `max_slope_angle` | 56° ◆ (the steepest ground: above the adaptive saddle's 54.74°; steeper than `slide.min_angle` slides) | same | |
 | `jump` | `height` | 1.25 m | same | Clears one block |
 | | `buffer_ticks` / `coyote_ticks` ◆ | 12 / 12 ticks (0.2 / 0.2 s) | 0.2 / 0.1 s | Coyote time doubled: 0.1 s felt stingy next to other games |
 | `crouch` | `height` ◆ | 0.9 m | 1.0 | Fits 1-tall crawlspaces |
@@ -478,6 +560,10 @@ PPC default for voxels.
 | `band` ◆ | `boost_gravities` | 2 | — | The flip band (§11) |
 | `fly` ◆ | `speed` / `run_factor` / `boost_height` / `drag` | 11 m/s / 2.5 / 32 m / 8 /s | — | Dwell addition (§6.7): speed × max(1 + height above sea / boost_height, 2^(speed level / 2)) |
 | | `terrain_speed` / `terrain_band` / `position_limit` | 400 m/s / 6,144 m / 33,553 km | — | The height-based speed's cap / feet height it applies below / \|x\|, \|y\|, \|z\| (the wire range; no world limit, Phase 16) |
+| `slide` ◆ | `min_angle` / `friction` / `terminal_speed` | 44° / 0.3 / 14 m/s | — | Dwell addition (§6.8): ground steeper than `min_angle` slides; pull `g (sin θ − friction cos θ)`; speed along the slope |
+| | `steering` / `steer_speed` | 0.4 × `acceleration` / 5 m/s | — | Across the slope |
+| | `brake` / `brake_deceleration` / `uphill_deceleration` | 0.6 / 10 m/s² / 60 m/s² | — | Up-slope input lowers the terminal speed by up to 60 %; momentum up a steep face dies fast |
+| | `crouch_terminal_factor` / `crouch_friction` | 1.15 / 0.2 | — | A crouched slide |
 | `damage` ◆ | `fall_damage_min_speed` / `fall_damage_per_speed` | 12 m/s / 8 per m/s | — | From the `LANDED` event's impact speed |
 | | `crush_speed` / `crush_ticks` | 4 m/s / 6 | — | Phase 20 |
 | `advanced` | `step_probe_distance` / `probe_ring_radius` / `wall_check_distance` | 0.01 m / 0.9 / 0.16 m | same | |
@@ -553,6 +639,9 @@ simulated links, two clients; Release):
   (≤ 13 cm at run speed) when jitter starves the server's input buffer.
 - Server knockback (14 m/s up while walking): no snaps, largest rendered step ~0.6 m per tick.
 - Head-on bump: no snaps, largest rendered step ≤ 0.26 m.
+- Sliding (§6.8; two clients, one sliding off steep stairs and steering, the other running into
+  them): without latency no replay but the spawn's; at 150 ms RTT, 20 ms jitter and 5 % loss no
+  snaps, ack error p95 < 1 µm, corrections ≤ 0.35 m (one or two ticks of slide motion).
 - Input takes effect on the next predicted tick.
 
 ### 8.3 Divergence budget **[built]**
@@ -661,7 +750,7 @@ launch-pad knockback test is a server-issued knockback.
 | Phase6Climb | `platform_climb_swim.rs`: ladder columns: grab, climb, look-down reversal, strafe, jump-off, climb over the top |
 | CharacterStacking / GroundedConsistency / StepSmoothness | `scenario.rs`: the same scenarios on voxel geometry (standing on heads, half-step stairs, stair corners, ledges) |
 | GoldenTrace | `scenario.rs`: the five-player scenario is identical across repeated runs and matches `tests/golden/scenario.trace` bit for bit in the origin frame (natively and under `wasm32-wasip1`, §8.3); far from the origin and on face B every state must match and positions stay within 1 mm. Re-record with `DWELL_UPDATE_GOLDEN=1` (origin frame only); re-recorded on Rapier in Phase 24 |
-| — (Dwell) | Swim enter/float/dive/exit and shallow water (`platform_climb_swim.rs`); creative flight (`flight.rs`: hover, rise/sink/move, speed growing with height, the terrain-band cap, no ceiling (out through the build sphere), the speed level, flying round the rim to face B, a fast dive stopping on the ground); auto-jump, edge guard, doorways, crawlspaces, block-under-feet removal, same-tick collision with a placed block, chunk seams (`scenario.rs`); voxel ray casts and flooded cells (`voxel_query.rs`); the bifacial controller (`bifacial.rs`) and Tier 1 bodies across the midplane (`tier1_bifacial.rs`); the predictor against an in-process server (`tests/predictor.rs`: no replays without surprises, knockback replays, the render offset decaying, death, remote proxies). Networked players (`crates/dwell-sim/tests/netcode.rs`, the `NetSim` harness: the real server and per-client predictors over simulated links) — input validation and rate limits, fall damage, death and respawn on every client, reconciliation under latency, jitter and loss, knockback replay, player bumps, block edits, the server's flight policy and fast flight. Later phases: crush and push-force cap (Phase 20) |
+| — (Dwell) | Swim enter/float/dive/exit and shallow water (`platform_climb_swim.rs`); creative flight (`flight.rs`: hover, rise/sink/move, speed growing with height, the terrain-band cap, no ceiling (out through the build sphere), the speed level, flying round the rim to face B, a fast dive stopping on the ground); sliding on steep ground (`slide.rs`, §6.8); auto-jump, edge guard, doorways, crawlspaces, block-under-feet removal, same-tick collision with a placed block, chunk seams (`scenario.rs`); voxel ray casts and flooded cells (`voxel_query.rs`); the bifacial controller (`bifacial.rs`) and Tier 1 bodies across the midplane (`tier1_bifacial.rs`); the predictor against an in-process server (`tests/predictor.rs`: no replays without surprises, knockback replays, the render offset decaying, death, remote proxies). Networked players (`crates/dwell-sim/tests/netcode.rs`, the `NetSim` harness: the real server and per-client predictors over simulated links) — input validation and rate limits, fall damage, death and respawn on every client, reconciliation under latency, jitter and loss, knockback replay, player bumps, block edits, sliding (exact without latency, no snaps at 150 ms RTT), the server's flight policy and fast flight. Later phases: crush and push-force cap (Phase 20) |
 
 Performance gate: 64 players' controller passes (excluding the physics step) under 1 ms/tick —
 measured at ~0.48 ms in a Release build with `enhanced-determinism` on, ~0.51 ms ~8,000 km from the

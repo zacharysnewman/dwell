@@ -151,7 +151,7 @@ function fixedPlay(name: string, sound: SoundDef, intensity: number): PlayParams
 /** The intensity's factor for one of gain, cutoff or time: linear between the data's pair. */
 export function intensityFactor(
   sound: SoundDef,
-  key: 'gain' | 'cutoff' | 'time',
+  key: 'gain' | 'cutoff' | 'time' | 'pitch',
   intensity: number,
 ): number {
   const pair = sound.intensity?.[key];
