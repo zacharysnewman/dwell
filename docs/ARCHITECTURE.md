@@ -146,7 +146,9 @@ GitHub Pages only serves static files. Consequences that shape the architecture:
   `minLauncher`). The version is Semantic Versioning 2.0.0, one for the whole app; before `1.0.0`
   breaking changes bump MINOR and compatible ones PATCH (§10.5).
 - **The site is assembled from the releases** (`.github/workflows/pages.yml`, called at the end of
-  each release and runnable by hand; `client/scripts/site.ts`): `index.html` (the launcher),
+  each release from `main` — dispatched on `main` by a release run on a tag or another branch,
+  since the `github-pages` environment deploys only from `main` — and runnable by hand;
+  `client/scripts/site.ts`): `index.html` (the launcher),
   `versions.json` (generated from each `build.json`) and `v/<version>/` for every stable release and
   the newest 10 dev builds, each unpacked and immutable; older dev releases and their tags are
   deleted. It is deployed with `actions/deploy-pages`, and its size is reported against Pages'

@@ -178,11 +178,14 @@ that touches the public API, a release or the workflows:
 
 - **The app version is Semantic Versioning.** `client/package.json`'s `version` is a **floor**, not a
   counter: the next version is the next patch after the newest published release, or `package.json`'s
-  version if that is higher. Never bump it after a release (nothing needs it).
-- **A push to `main` is a dev build** (`v<next>-dev.<run>`), **unless it leaves `package.json` above
-  the newest release, which releases that version as stable.** So raising `package.json` is a
-  release: do it only when that should ship, and **only a human decides it** — do not raise it on your
-  own initiative. Patch releases are manual (Actions → Release → Run workflow, or a `v<version>` tag).
+  version if that is higher. Never bump it on its own after a release; the bump rides in the next PR.
+- **Every PR merged to `main` raises `package.json` and ships as a stable tagged release** (owner,
+  2026-10-19): features, bug fixes, CI, test and workflow fixes alike. Nothing merges as a dev-only
+  build: the owner sees a change only once a tag is released. Raise it to the next patch above the
+  newest release, or the next MINOR for a compatibility break (below), in the PR just before it
+  merges, one release per PR. The owner has given standing approval for these bumps. A push that
+  leaves `package.json` at or below the newest release (e.g. a direct push) is a dev build
+  (`v<next>-dev.<run>`).
 - **A breaking change to the public API — the saved world format, the terrain a seed generates, the
   network protocols, the cross-version browser storage — needs a new compatibility line** (before
   `1.0.0`, the next MINOR). Say so in the PR and let the owner raise `package.json`; do not leave
