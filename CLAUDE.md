@@ -49,6 +49,10 @@ and friend worlds), with a small master server for discovery; there are no offic
   the structures store; worldgen placement deferred.
 - `docs/TREE_GROWTH.md` — design for Phase 30 (ADR 0033): hand-built trees grown by a computed skeleton
   reveal, skeleton-jitter variants, and trees as a layer composed at chunk load (tombstones, `growers`).
+- `docs/ART_DIRECTION.md` — the storybook art direction: the palette (`shared/textures/palette.json`),
+  the brush vocabulary, how materials read, the lighting assumptions; shared by the world and characters.
+- `docs/PAINTERLY_TEXTURES.md` — design for Phase 39 (ADR 0040): painterly textures as data, one stroke
+  generator baked at build time, behind `?textures=painterly`.
 - `docs/proposals/` — investigated but not yet adopted plans, each with open questions for the owner;
   not architecture until an ADR adopts it (adopted ones move to a design doc; its README lists them).
 - `docs/adr/` — architecture decision records.
