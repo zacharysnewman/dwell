@@ -137,14 +137,23 @@ The **presets** players pick, and which **world types** allow brushes, are data:
   `sandbox`. The server announces them with the `brushes` Welcome flag. The client offers the tool
   only then: V does nothing in other worlds.
 - **Aim.** The brush aims along the view ray up to the world type's `reach` (128 m in the sandbox),
-  not just the 5 m block reach. A wireframe shows at the target, drawn over everything like the
-  region boxes, in orange:
-  - ball and splatter: three great circles;
-  - ellipsoid: its three ellipses;
-  - disc and cylinder: two circles and four uprights;
-  - cube: a box;
-  - line, jagged line and triangle: the clicks so far joined to the aim, with a box at each;
-  - every other brush: the box of its cells.
+  not just the 5 m block reach.
+- **Preview** (owner, 2026-10-19: the exact cells, in place of the wireframe). At the target, a
+  see-through **ghost of the exact cells the stroke would change** shows: the performer is run on
+  the client's world, so a splatter shows its real cells, a smooth only the cells it would move,
+  and an erase only the blocks there are. Its colour says what a cell becomes: orange for a block
+  put down, red for a block taken away, pale yellow for one block painted over another. It is drawn
+  over the composite, at a third of its opacity where the terrain is in front of it, so cells inside
+  the ground still show. A line or triangle also shows its clicks so far joined to the aim.
+  - **Shown by a toggle**, `\`, on by default. Off, the box of the brush's cells shows instead (in
+    orange lines, over everything). A held key was the alternative; a toggle was chosen because
+    the ghost is what you aim by, and holding a key while clicking and steering is awkward.
+  - **Bounded cost.** The ghost has only the changed cells' outer faces (a face between two cells
+    of the same colour is left out), a little proud of the cells, at most `GHOST_FACE_CAP` (16,384)
+    of them; a stroke whose ghost would have more shows the box of its cells. A size-16 ball's ghost
+    is about 7,000 faces; a dense size-16 splatter's is over the cap. It is rebuilt when the aim,
+    the brush or the blocks change, and otherwise every `PREVIEW_REFRESH_MS` (250 ms) for changes in
+    the world under it; the renderer uploads it only when the picture changed (its `version`).
 - **Clicks**, after VoxelSniper's arrow and gunpowder:
   - Left click centres the stroke on the aimed-at block. A line's first click sets its start; a
     triangle takes two clicks before the one that strokes, then starts again.
