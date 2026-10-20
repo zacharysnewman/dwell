@@ -157,3 +157,52 @@ test('the materials the characters reference exist with a ramp and an overlay', 
   }
   assert.ok(palette.swatches.ink);
 });
+
+/**
+ * How far a material painted `over` another hangs down from its top edge, per column: the run of
+ * texels from the top row down that differ from the material underneath.
+ */
+function hemLengths(name) {
+  const top = paintMaterial(name, materials, palette);
+  const under = paintMaterial(materials.materials[name].over, materials, palette);
+  const covered = (x, y) => {
+    const a = texel(top, x, y);
+    const b = texel(under, x, y);
+    return Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]) + Math.abs(a[2] - b[2]) > 24;
+  };
+  return Array.from({ length: TILE }, (_, x) => {
+    let n = 0;
+    while (n < TILE && covered(x, TILE - 1 - n)) n++;
+    return n;
+  });
+}
+
+test('a thin band spreads its strokes over the whole width, not only its first cells', () => {
+  const m = clone(materials);
+  m.materials.fringe = {
+    use: 'block',
+    ramp: 'stone',
+    layers: [
+      { kind: 'fill', color: '@base' },
+      { kind: 'slab', count: 4, band: [0.5, 0.52], jitter: 0, colors: ['ink'], width: 2, length: 2 },
+    ],
+  };
+  const tile = paintMaterial('fringe', m, palette);
+  const inked = (x0, x1) => {
+    for (let x = x0; x < x1; x++) for (let y = 14; y < 18; y++) if (String(texel(tile, x, y).slice(0, 3)) === String(resolveColor(palette, 'ink'))) return true;
+    return false;
+  };
+  for (let q = 0; q < 4; q++) assert.ok(inked((q * TILE) / 4, ((q + 1) * TILE) / 4), `a stroke in quarter ${q}`);
+});
+
+test("grass_side's turf skirt is one continuous, uneven hem that wraps across the tile", () => {
+  const hem = hemLengths('grass_side');
+  // The turf band (the edgeLight, 7 texels) plus at least two texels of overhang in every column:
+  // no column of the skirt is bare, so tiles side by side join into one fringe.
+  const bare = hem.flatMap((n, x) => (n < 9 ? [x] : []));
+  assert.deepEqual(bare, [], `columns without an overhang (hem lengths ${hem.join(' ')})`);
+  // It wraps: the first and last columns hang about as far, as neighbours across the seam do.
+  assert.ok(Math.abs(hem[0] - hem[TILE - 1]) <= 3, `the seam: ${hem[0]} vs ${hem[TILE - 1]}`);
+  // And it is a painted, uneven hem, not a ruler-straight one.
+  assert.ok(Math.max(...hem) - Math.min(...hem) >= 3, `hem lengths ${hem.join(' ')}`);
+});

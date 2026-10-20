@@ -35,12 +35,12 @@
       ]
     },
     "grass_side": {
-      "$comment": "Soil with a hanging fringe of turf: a ragged band of meadow at the top, darker drips under it, and a painted light along the rim.",
+      "$comment": "Soil with a hanging skirt of turf: a band of meadow at the top, and darker and lighter drips rooted inside it all along the width (an uneven hem that wraps, so side-by-side blocks join into one skirt), and a painted light along the rim.",
       "use": "block", "ramp": "meadow", "overlay": 1, "over": "soil",
       "layers": [
-        { "kind": "blade", "count": 9, "band": [0.72, 0.76], "colors": ["@shadow"], "width": [3.5, 5], "length": [4, 9], "angle": -90, "angleJitter": 8, "bend": [-1, 1], "opacity": 0.85, "seed": 2 },
-        { "kind": "edgeLight", "edge": "top", "color": "@base", "width": 7, "ragged": 1.2, "seed": 1 },
-        { "kind": "blade", "count": 10, "band": [0.74, 0.78], "colors": ["@base"], "width": [3, 4.5], "length": [3, 7], "angle": -90, "angleJitter": 8, "bend": [-1, 1], "seed": 4 },
+        { "kind": "blade", "count": 9, "band": [0.76, 0.8], "colors": ["@shadow"], "width": [3.5, 5], "length": [5, 11], "angle": -90, "angleJitter": 8, "bend": [-1, 1], "opacity": 0.85, "seed": 4 },
+        { "kind": "edgeLight", "edge": "top", "color": "@base", "width": 8, "ragged": 1, "seed": 1 },
+        { "kind": "blade", "count": 11, "band": [0.78, 0.82], "colors": ["@base"], "width": [3, 4.5], "length": [4, 9], "angle": -90, "angleJitter": 8, "bend": [-1, 1], "seed": 9 },
         { "kind": "dab", "count": 5, "band": [0.84, 0.95], "colors": ["@light"], "width": [2, 3], "length": [5, 8], "angle": 0, "angleJitter": 15, "opacity": 0.35 },
         { "kind": "edgeLight", "edge": "top", "color": "@light", "width": 2, "ragged": 0.8, "opacity": 0.6, "seed": 2 }
       ]
