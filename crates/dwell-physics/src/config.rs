@@ -177,6 +177,22 @@ pub struct Damage {
     pub crush_ticks: u16,
 }
 
+/// ◆ The camera over steps (PLAYER_CONTROLLER.md §9, Dwell): the body steps in one tick, and the
+/// first-person eye (and a drawn body) follows it along a virtual ramp instead. Client-only: the
+/// sim never reads it, so it changes nothing on the wire or in prediction.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct StepView {
+    /// The virtual ramp's slope (rise per m walked) over a lone step: the eye climbs or descends a
+    /// step's height over `height ÷ slope` of travel (0.5: a ½ m step over 1 m, like a ½ m ramp).
+    pub slope: f32,
+    /// The steepest virtual ramp: on a stair the slope is the step's height over the distance
+    /// walked since the step before (the stair's own slope), from `slope` up to this.
+    pub max_slope: f32,
+    /// The eye's least speed (m/s) toward the feet, so a step taken slowly, or standing still
+    /// after one, still settles.
+    pub min_speed: f32,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Advanced {
     /// ◆ How far past a step's face its top is read (m).
@@ -212,6 +228,7 @@ pub struct PlayerControllerConfig {
     pub slide: Slide,
     pub sprint_slide: SprintSlide,
     pub damage: Damage,
+    pub step_view: StepView,
     pub advanced: Advanced,
 }
 
@@ -311,6 +328,11 @@ impl Default for PlayerControllerConfig {
                 fall_damage_per_speed: 8.0,
                 crush_speed: 4.0,
                 crush_ticks: 6,
+            },
+            step_view: StepView {
+                slope: 0.5,
+                max_slope: 1.0,
+                min_speed: 1.0,
             },
             advanced: Advanced {
                 step_probe_distance: 0.05,
