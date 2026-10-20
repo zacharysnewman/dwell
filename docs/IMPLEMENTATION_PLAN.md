@@ -3935,6 +3935,17 @@ Deviations:
   v16's steepness unchanged: highest ~495 m, mean slope ~22°).
 - [x] Fix: the server's edit line of sight passes plants (a break beside tall grass was refused,
   NoLineOfSight, on ½ m cells only: a scan of 17,767 aims on `main` found none); regression test.
+- [x] Checked in Chrome on a real GPU (seed 7, 2026-10-20): the spawn settles in ~10 s (29 s before
+  the merge), frame CPU ~1.8 ms with the LOD at ~0.7 ms (7.7 and 5.0 ms before), ~2–3k LOD nodes on
+  the ground and from 800 m (26,953 before: Phase 16's 12 LOD levels), 60 fps; dropped onto a
+  generated 45° run, the player slides at exactly 45° to 5.5 m/s and runs out onto the flat; the
+  sprint slide slides (88 ticks, 9.4 m/s); a ball brush in the sandbox strokes, with its preview.
+- Outstanding (playtest): walking into a 45° face from below, the player rests on its toe (0.24 m
+  up) and the state alternates sliding/walking every tick (the "flicker at the foot"): the probe
+  under the centre lands on the toe's seam; a fix needs slide hysteresis, which is controller state
+  on the wire (a protocol change), so it waits for the owner. Diagonal steep slopes are 1 m steps
+  without ramps (the cardinal-only set has no corner piece), so they need a jump. The sprint-slide
+  bench showed frame hitches (p99 198 ms) while sprinting.
 - Deviations: the build sphere stays in cells (it reaches 25 km up and down); brushes stay in cells
   (radii and heights count cells, so a ball is half as tall as wide; reach is metres); the golden
   trace's bound 49 km out is 2 mm (1.3 mm measured; `main` 1 mm).
