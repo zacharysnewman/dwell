@@ -1029,3 +1029,38 @@ fn a_side_tile_rule_added_by_data_alone_is_applied() {
     let faces = plus_x_tiles(&mesh_of(&[(1, 1, 1, loam)]), 2.0);
     assert_eq!(faces, [((1, 1), rect_of("sand"))]);
 }
+
+#[test]
+fn the_cutout_mesh_carries_which_vertices_take_no_ink() {
+    // Owner's report (2026-10-20, `?outline=creases`): tall grass was mostly black. Block data
+    // `outline` (cross plants default to false) reaches the frame through the cutout mesh's
+    // `bare` stream: 1 on a plant that takes no ink, 0 on a ladder, a cutout cube and a cross
+    // that says `outline: true` (`test:reed`, by data alone).
+    let ladder = require("dwell:ladder[facing=north,flooded=false]");
+    let m = mesh(
+        &[
+            (4, 0, 4, grass()),
+            (4, 1, 4, tall_grass()),
+            (6, 1, 6, ladder),
+        ],
+        false,
+    );
+    let c = &m.cutout;
+    assert_eq!(c.bare.len(), c.positions.len() / 3);
+    let plant = c.bare.iter().filter(|&&b| b == 1.0).count();
+    assert_eq!(
+        plant,
+        c.positions.len() / 3 - 4,
+        "every plant vertex, not the ladder's 4"
+    );
+    assert!(!dwell_blocks::info(tall_grass()).outline);
+    use dwell_blocks::fixture::{FLUIDS, STATES};
+    let id = |name: &str| STATES.iter().position(|s| s.name == name).expect(name) as u16;
+    let kinds = Kinds::new(&STATES, &FLUIDS, Some(id("dwell:water")));
+    for name in ["test:reed", "test:hedge"] {
+        let m = mesh_chunk_with(&kinds, &voxels(&[(1, 1, 1, id(name))]), false, [0; 3])
+            .expect("padded volume");
+        assert!(!m.cutout.bare.is_empty(), "{name}");
+        assert!(m.cutout.bare.iter().all(|&b| b == 0.0), "{name} is inked");
+    }
+}

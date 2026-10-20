@@ -168,6 +168,7 @@ describe('block generator: the cross geometry and wind', { timeout: 30_000 }, ()
       [{ wind: { strength: 0.1, speed: 0 } }, 'wind.speed must be in (0, 10]'],
       [{ fade: { start: 50, end: 200 } }, 'fade must have 0 < start < end <= 96'],
       [{ selectionBox: [0, 0, 0, 1, 1] }, 'selectionBox must be'],
+      [{ outline: 'no' }, 'outline must be true or false'],
     ] as const) {
       const r = generate([plant('bad', extra)]);
       expect(r.status, JSON.stringify(extra)).not.toBe(0);
@@ -177,6 +178,8 @@ describe('block generator: the cross geometry and wind', { timeout: 30_000 }, ()
     expect(cube.output).toContain('dwell:bad: cross options need look cross');
     const windy = generate([block('bad', { wind: { strength: 0.1, speed: 1 } })]);
     expect(windy.output).toContain('dwell:bad: wind needs look cross');
+    const inked = generate([block('bad', { outline: false })]);
+    expect(inked.output).toContain('dwell:bad: outline needs look cross');
   });
 });
 

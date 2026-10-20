@@ -74,6 +74,9 @@ pub mod tag {
     pub const FADE: u8 = 0x8a;
     /// `u8` count, each: `str` block id above, `str` side tile (`StateInfo::side_under`).
     pub const SIDE_UNDER: u8 = 0x8b;
+    /// `u8` 0 or 1: whether the ink outline draws on it (`StateInfo::outline`), sent only where
+    /// it differs from its look's default (`crate::outline_default`).
+    pub const OUTLINE: u8 = 0x8c;
 }
 
 /// Rule flag bits (tag `FLAGS`).
@@ -299,6 +302,9 @@ pub fn state_fields(s: &StateInfo) -> Fields {
             w.f32(f.start);
             w.f32(f.end);
         }));
+    }
+    if s.outline != crate::outline_default(s.look) {
+        out.push(field(tag::OUTLINE, |w| w.u8(u8::from(s.outline))));
     }
     if !s.side_under.is_empty() {
         out.push(field(tag::SIDE_UNDER, |w| {
@@ -594,6 +600,7 @@ fn default_row(name: &str) -> StateInfo {
         cross: None,
         wind: None,
         fade: None,
+        outline: true,
         selection: None,
         place_on: &[],
         needs_support: Support::None,
@@ -732,6 +739,7 @@ fn apply_look(fields: &Fields, fluids: &[String], row: &mut StateInfo) {
     row.fade = None;
     row.side_under = &[];
     row.render = RenderMode::Opaque;
+    let mut outline = None;
     for (t, bytes) in fields {
         let mut r = ByteReader::new(bytes);
         match *t {
@@ -812,9 +820,14 @@ fn apply_look(fields: &Fields, fluids: &[String], row: &mut StateInfo) {
                     row.side_under = Box::leak(rules.into_boxed_slice());
                 }
             }
+            tag::OUTLINE => {
+                let v = r.u8();
+                outline = r.ok().then_some(v != 0);
+            }
             _ => {}
         }
     }
+    row.outline = outline.unwrap_or_else(|| crate::outline_default(row.look));
 }
 
 /// The client side: maps a server's registry onto this process's table, registering synced
@@ -1384,6 +1397,29 @@ mod tests {
         let before = state_count();
         apply_extension(&extension_payload()).expect("applies");
         assert_eq!(state_count(), before);
+    }
+
+    #[test]
+    fn the_ink_outline_flag_is_sent_only_where_it_differs_from_its_looks_default() {
+        // Block data `outline` (docs/ART_DIRECTION.md §7.4): a cross plant is bare by default, so
+        // the build's payload is as before; a cross that says `outline: true` (as the fixture's
+        // `test:reed` does) carries the tag.
+        let grass = info(crate::require("dwell:tall_grass"));
+        let reed = &StateInfo {
+            outline: true,
+            ..*grass
+        };
+        assert!(!grass.outline);
+        let has = |s: &StateInfo| state_fields(s).iter().any(|(t, _)| *t == tag::OUTLINE);
+        assert!(has(reed) && !has(grass));
+        assert!(
+            STATES.iter().all(|s| !has(s)),
+            "the build's own rows need no tag"
+        );
+        for s in [reed, grass] {
+            let row = row_from_fields(s.name, &state_fields(s), &[]);
+            assert_eq!(row.outline, s.outline, "{}", s.name);
+        }
     }
 
     #[test]

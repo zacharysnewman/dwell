@@ -38,7 +38,8 @@
       "sideUnder": { "dwell:stone": "grassSide" }
     },
     {
-      "name": "reed", "density": 100, "shape": "empty", "look": "cross", "render": "cutout",
+      "$comment": "A cross plant outlined by data alone (`outline: true`; the cross default is off, docs/ART_DIRECTION.md §7.4).",
+      "name": "reed", "density": 100, "shape": "empty", "look": "cross", "render": "cutout", "outline": true,
       "cross": { "height": 1.0, "quads": 3 }, "color": "#6a8a3a", "textures": "tallGrass"
     }
   ]
