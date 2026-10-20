@@ -562,8 +562,10 @@ fn the_five_player_scenario_matches_the_golden_trace() {
             }
         }
     }
+    // Half-height branch: 1.3 mm at 49 km on ½ m cells (twice the cell boundaries crossed), over
+    // main's 1 mm; the bound is 2 mm here (HALF_HEIGHT_GRID.md §7).
     assert!(
-        worst <= 0.001,
+        worst <= 0.002,
         "max deviation from golden: {worst} m: {worst_row}"
     );
 }

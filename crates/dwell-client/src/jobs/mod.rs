@@ -166,8 +166,8 @@ impl Runner {
                     for k in 0..n {
                         let c = local.column_at(x0 + k * step, z0 + j * step);
                         // Above sea level (the map's colours): heights count from the midplane.
-                        let h = (c.height - dwell_world::SEA_LEVEL as f32).clamp(-32768.0, 32767.0)
-                            as i16;
+                        let h = (c.height - dwell_world::SEA_LEVEL_M as f32)
+                            .clamp(-32768.0, 32767.0) as i16;
                         out.extend_from_slice(&h.to_le_bytes());
                         out.push(u8::from(c.outside));
                     }
@@ -332,7 +332,7 @@ mod tests {
         // generator's heights count from the midplane since Phase 16 (sea level 32).
         let t = dwell_worldgen::BifacialTerrain::new(1);
         let want = t.local(dwell_world::Face::A).column_at(-64, -64).height
-            - dwell_world::SEA_LEVEL as f32;
+            - dwell_world::SEA_LEVEL_M as f32;
         assert_eq!(i16::from_le_bytes([bytes[0], bytes[1]]), want as i16);
         let Output::Map(None) = Runner::world(0, 1).run(Job::Map {
             x0: 0,

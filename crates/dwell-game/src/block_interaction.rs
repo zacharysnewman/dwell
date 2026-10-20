@@ -452,7 +452,7 @@ mod tests {
         let mut world = VoxelWorld::streamed();
         world.set_voxel(0, top - 1, 0, require("dwell:stone"));
         let mut interaction = BlockInteraction::new();
-        let eye = [0.5, f64::from(top) + 1.5, 0.5];
+        let eye = [0.5, dwell_world::m_of_row(top) + 1.5, 0.5];
         let t = interaction.update(&mut world, Some(eye), 0.0, -90.0, 1);
         assert_eq!(t.map(|t| (t.cell, t.face)), Some(([0, top - 1, 0], 2)));
         assert_eq!(interaction.placement().unwrap().0, [0, top, 0]);

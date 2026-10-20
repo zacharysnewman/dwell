@@ -993,11 +993,14 @@ mod tests {
 
     /// The cells a ghost's faces belong to (each face's centre moved half a cell inward).
     fn ghost_cells(o: &BrushOutline) -> Vec<[i32; 3]> {
-        let c = o.origin.map(|v| (v - 0.5) as i32);
+        // The preview is in metres; its cells are found in cell space (HALF_HEIGHT_GRID.md §2).
+        let c = dwell_world::cell_of_pos(o.origin);
+        let h = dwell_world::CELL_H as f32;
         let mut out: Vec<[i32; 3]> = o
             .faces
             .iter()
             .map(|(q, _)| {
+                let q = q.map(|p| [p[0], p[1] / h, p[2]]);
                 let centre: [f32; 3] = std::array::from_fn(|i| (q[0][i] + q[2][i]) / 2.0);
                 let e1: [f32; 3] = std::array::from_fn(|i| q[1][i] - q[0][i]);
                 let e2: [f32; 3] = std::array::from_fn(|i| q[3][i] - q[0][i]);

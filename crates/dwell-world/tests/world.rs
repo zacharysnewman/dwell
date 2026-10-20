@@ -702,3 +702,31 @@ fn chunk_changes_apply_with_the_modifications_revision() {
         4
     );
 }
+
+#[test]
+fn a_plant_on_the_block_does_not_hide_it_from_the_servers_line_of_sight() {
+    // Regression (the local-mode game test after main's steep terrain): the client targeted a
+    // grass block's top beside the tall grass on it, through the gap beside the plant's selection
+    // box, but every one of the server's sight rays to that face ran into the plant, so the break
+    // was refused (NoLineOfSight). Plants don't hide what is behind them.
+    let mut world = empty();
+    let grass = s("dwell:grass");
+    for x in -1..=1 {
+        for z in -1..=1 {
+            world.set_voxel(x, 0, z, grass);
+        }
+    }
+    world.set_voxel(0, 1, 0, s("dwell:tall_grass"));
+    // The eye as it was: 1.67 m over the top, at the cell's west edge, 0.875 m north of it.
+    let eye = [0.0, m_of_row(1) + 1.6725, -0.875];
+    assert_eq!(
+        check(&mut world, brk([0, 0, 0], 2), eye, &[]).check,
+        EditCheck::Ok
+    );
+    // A solid block on it still hides it.
+    world.set_voxel(0, 1, 0, s("dwell:stone"));
+    assert_eq!(
+        check(&mut world, brk([0, 0, 0], 2), eye, &[]).check,
+        EditCheck::NoLineOfSight
+    );
+}

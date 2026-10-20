@@ -17,6 +17,9 @@ use dwell_world::lod::{
 };
 use dwell_world::{Chunk, ChunkCoord, M, chunk_hash, chunk_of, generate_flat_chunk};
 
+/// The chunk row holding the flat world's surface row (`FLAT_TOP_Y`): 2 on ½ m cells.
+const GC: i32 = dwell_world::FLAT_TOP_Y / dwell_world::CHUNK_SIZE;
+
 /// A chunk's ancestor at `level`.
 fn above(c: ChunkCoord, level: i32) -> LodCoord {
     ancestor(lod_of_chunk(c), level)
@@ -104,7 +107,7 @@ fn stone() -> Chunk {
 #[test]
 fn a_chunk_change_is_downsampled_into_its_sections_up_to_the_root_each_a_new_revision() {
     let mut lod = LodPropagation::new(flat_generator(), 0);
-    let edited = ChunkCoord::new(0, 1, 0); // above the flat ground: air when generated
+    let edited = ChunkCoord::new(0, GC, 0); // above the flat ground: air when generated
     let stone = stone();
     let mut modified = |c: ChunkCoord| (c == edited).then(|| stone.voxels().to_vec());
     lod.mark_chunk(edited);
@@ -147,7 +150,7 @@ fn propagation_is_budgeted_per_tick_and_runs_on_threads_with_the_same_result() {
     // 40 changed chunks in a row: 40 level-1 sections... fewer (2 chunks per section along x).
     let mut inline_lod = LodPropagation::new(flat_generator(), 0);
     for x in 0..40 {
-        inline_lod.mark_chunk(ChunkCoord::new(x * 2, 0, 0));
+        inline_lod.mark_chunk(ChunkCoord::new(x * 2, GC - 1, 0));
     }
     inline_lod.step(
         &[[0.0, 0.0, 0.0]],
@@ -166,7 +169,7 @@ fn propagation_is_budgeted_per_tick_and_runs_on_threads_with_the_same_result() {
 
     let mut threaded = LodPropagation::new(flat_generator(), 2);
     for x in 0..40 {
-        threaded.mark_chunk(ChunkCoord::new(x * 2, 0, 0));
+        threaded.mark_chunk(ChunkCoord::new(x * 2, GC - 1, 0));
     }
     threaded.drain(&[[0.0, 0.0, 0.0]], &mut modified);
     assert_eq!(threaded.sections().len(), inline_lod.sections().len());
@@ -218,8 +221,8 @@ fn an_edit_reaches_a_far_client_index_update_then_explicit_only_where_it_changed
     }
 
     // B holds these sections over the spawn, all generated so far (the index is empty).
-    let site1 = ChunkCoord::new(-1, 1, 0); // cell (-1, G, 2)
-    let site2 = chunk_of(-5001, G as i32, 2); // another level-7 section, same level 8
+    let site1 = ChunkCoord::new(-1, GC, 0); // cell (-1, G, 2)
+    let site2 = chunk_of(-5001, dwell_world::FLAT_TOP_Y, 2); // another level-7 section, same level 8
     let index_section = above(site1, INDEX_LEVEL);
     assert_eq!(above(site2, INDEX_LEVEL), index_section);
     assert_ne!(above(site2, 7), above(site1, 7));
@@ -228,7 +231,7 @@ fn an_edit_reaches_a_far_client_index_update_then_explicit_only_where_it_changed
         1,
         Message::BlockEditRequest(BlockEditRequest {
             action: BlockEditAction::Place,
-            cell: [-1, G as i32 - 1, 2],
+            cell: [-1, dwell_world::FLAT_TOP_Y - 1, 2],
             face: 2,
             material: M.sand,
         }),
@@ -313,7 +316,7 @@ fn an_edit_reaches_a_far_client_index_update_then_explicit_only_where_it_changed
         1,
         Message::BlockEditRequest(BlockEditRequest {
             action: BlockEditAction::Place,
-            cell: [-5001, G as i32 - 1, 2],
+            cell: [-5001, dwell_world::FLAT_TOP_Y - 1, 2],
             face: 2,
             material: M.sand,
         }),
@@ -376,7 +379,7 @@ fn requests_are_rate_limited_and_answered_within_the_byte_budget() {
     verify(&mut f, 1, &w, true); // full-chunk mode: every answer Explicit (~1–6 KB)
     step_into(&mut f, &mut boxes);
     // 3 × 32 sections at once: the bucket holds LOD_REQUESTS_PER_SECOND.
-    let base = above(ChunkCoord::new(0, 0, 0), 2);
+    let base = above(ChunkCoord::new(0, GC - 1, 0), 2);
     for m in 0..3 {
         let r = (0..32)
             .map(|i| ask(LodCoord::new(2, base.i + m * 32 + i, base.j, base.k), 0))
@@ -427,7 +430,7 @@ fn explicit_sections_carry_their_modified_neighbours_borders_in_the_apron() {
     let mut lod = LodPropagation::new(flat_generator(), 0);
     let stone = stone();
     // Two chunks in neighbouring level-1 sections along x.
-    let (left, right) = (ChunkCoord::new(-1, 1, 0), ChunkCoord::new(0, 1, 0));
+    let (left, right) = (ChunkCoord::new(-1, GC, 0), ChunkCoord::new(0, GC, 0));
     assert_ne!(above(left, 1), above(right, 1));
     lod.mark_chunk(left);
     lod.mark_chunk(right);

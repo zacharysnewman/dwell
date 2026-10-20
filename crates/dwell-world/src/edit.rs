@@ -220,6 +220,17 @@ pub fn raycast_block(
     dir: [f32; 3],
     max_distance: f32,
 ) -> Option<BlockHit> {
+    raycast_block_past(world, origin, dir, max_distance, |_, _| false)
+}
+
+/// [`raycast_block`] passing through the targetable cells `see_through(cell, state)` names.
+pub fn raycast_block_past(
+    world: &mut VoxelWorld,
+    origin: [f64; 3],
+    dir: [f32; 3],
+    max_distance: f32,
+    see_through: impl Fn([i32; 3], StateId) -> bool,
+) -> Option<BlockHit> {
     let origin = cell_space(origin);
     let dir = cell_dir(dir.map(f64::from)).map(|d| d as f32);
     let mut base = [0i32; 3];
@@ -248,7 +259,7 @@ pub fn raycast_block(
     while t_cell <= max_distance {
         let at: [i32; 3] = std::array::from_fn(|i| base[i] + cell[i]);
         let m = world.get_voxel(at[0], at[1], at[2]);
-        if targetable(m) {
+        if targetable(m) && !see_through(at, m) {
             let corner = cell.map(|c| c as f32);
             let hit = if info(m).selection.is_some() {
                 ray_enter_box(target_box(world, at), corner, o, dir, max_distance)
@@ -446,8 +457,11 @@ pub fn check_block_edit(
                 continue;
             }
             let dir = delta.map(|d| (d / length) as f32);
-            // On past the point: a grazing ray needs a while to cross the 1 cm to the face.
-            if let Some(hit) = raycast_block(world, eye, dir, length as f32 + 1.0)
+            // On past the point: a grazing ray needs a while to cross the 1 cm to the face. Plants
+            // and other non-solid blocks don't hide what is behind them (the client targets
+            // through the gaps beside a plant's selection box, so the server must not refuse it).
+            let past = |at: [i32; 3], m: StateId| at != c && !info(m).solid;
+            if let Some(hit) = raycast_block_past(world, eye, dir, length as f32 + 1.0, past)
                 && hit.cell == c
             {
                 visible = true;

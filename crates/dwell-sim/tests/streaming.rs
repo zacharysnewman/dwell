@@ -422,7 +422,7 @@ fn after_fast_flight_the_chunks_around_the_player_all_arrive() {
     f.move_to(1, 4880.0, ground + 2.0, 3500.0);
     pump(&mut f, 600);
     let mut missing = Vec::new();
-    let row = (ground / 32.0).floor() as i32;
+    let row = dwell_world::chunk_of_pos([0.0, ground, 0.0]).y;
     for cy in row - 1..=row + 1 {
         for cz in 108..=110 {
             for cx in 151..=153 {

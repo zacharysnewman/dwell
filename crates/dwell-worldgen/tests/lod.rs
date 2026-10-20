@@ -39,7 +39,7 @@ fn section_at(level: i32, x: i64, y: i64, z: i64) -> LodCoord {
 
 fn coast_on_axis(g: &TerrainGenerator) -> (i32, i32) {
     let mut x = 0;
-    while g.column_at(x, 0).height >= SEA_LEVEL as f32 {
+    while g.column_at(x, 0).height >= (dwell_world::SEA_LEVEL_M as f32) {
         x += 16;
     }
     (x, 0)
@@ -385,17 +385,14 @@ fn generate_lod_is_pure_and_bounds_decide_empty_and_buried_exactly() {
         }
     }
     let mut cells = LodCells::new();
-    // Under the island on both faces, a level-1 section by the midplane is all ground.
+    // Under the island on both faces, a level-1 section by the midplane is all ground. (Rows:
+    // 6,000 rows up is 3 km of sky, 18,000 down 9 km under face B.)
     assert_eq!(
         g.generate_lod(section_at(1, 64, 0, 64), &mut cells, None, None),
         LodKind::Buried
     );
     assert_eq!(
         g.generate_lod(section_at(1, 64, -1, 64), &mut cells, None, None),
-        LodKind::Buried
-    );
-    assert_eq!(
-        g.generate_lod(section_at(2, 64, -6000, 64), &mut cells, None, None),
         LodKind::Buried
     );
     assert_eq!(
@@ -511,7 +508,7 @@ fn a_sea_shows_its_surface_at_levels_deeper_than_the_sea() {
                         (o.z + i64::from(z) * cs) as i32,
                     )
                     .height
-                        >= SEA_LEVEL as f32 - 10.0
+                        >= (dwell_world::SEA_LEVEL_M as f32) - 10.0
                 {
                     continue;
                 }

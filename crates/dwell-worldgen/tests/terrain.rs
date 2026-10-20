@@ -45,7 +45,7 @@ fn gen_world(g: &BifacialTerrain, c: ChunkCoord) -> Chunk {
 /// Where the island's coast crosses the +x axis (the first sea column, 16 m steps).
 fn coast_on_axis(g: &TerrainGenerator) -> (i32, i32) {
     let mut x = 0;
-    while g.column_at(x, 0).height >= SEA_LEVEL as f32 {
+    while g.column_at(x, 0).height >= (dwell_world::SEA_LEVEL_M as f32) {
         x += 16;
     }
     (x, 0)
@@ -113,10 +113,10 @@ fn heights_a_low_shore_land_rising_inland_a_shallow_sea_floor() {
         }
     }
     // Face-local heights from the midplane: sea level 32, the core's top 10.
-    let sea = SEA_LEVEL as f32;
+    let sea = dwell_world::SEA_LEVEL_M as f32;
     assert!(highest > sea + 300.0 && highest < sea + 650.0, "{highest}");
     assert!(
-        lowest >= CORE_LAYERS as f32 && lowest > sea - 30.0,
+        lowest >= (dwell_world::CORE_M as f32) && lowest > sea - 30.0,
         "{lowest}"
     );
     assert!((g.column_at(cx, cz).height - sea).abs() < 6.0);
@@ -262,7 +262,10 @@ fn chunks_the_air_test_calls_air_generate_as_air() {
             (1560, 10),
             (-3, 1550),
         ] {
-            let surface = floor_div(g.column_at(cx * S, cz * S).height as i32, S);
+            let surface = floor_div(
+                dwell_world::row_of_m(g.column_at(cx * S, cz * S).height.into()),
+                S,
+            );
             for cy in (surface - 2).max(0)..=surface + 6 {
                 let c = ChunkCoord::new(cx, cy, cz);
                 let is_air = air(c);
@@ -338,11 +341,12 @@ fn the_sandbox_is_the_flat_world_in_its_indestructible_floor_block() {
 fn the_flat_world_and_retired_versions_are_unchanged_by_the_sandbox() {
     // The flat world's ground chunk, what every version but terrain and sandbox generates.
     let mut chunk = Chunk::default();
-    generate_flat_chunk(ChunkCoord::new(0, 0, 0), &mut chunk);
+    let ground = ChunkCoord::new(0, FLAT_TOP_Y / S - 1, 0);
+    generate_flat_chunk(ground, &mut chunk);
     let flat_hash = chunk_hash(&chunk);
     for version in [GENERATOR_FLAT, 1, 2, 7, 9, 99] {
         let mut c = Chunk::default();
-        generator_for(version, 3)(ChunkCoord::new(0, 0, 0), &mut c);
+        generator_for(version, 3)(ground, &mut c);
         assert_eq!(chunk_hash(&c), flat_hash, "version {version}");
     }
     assert_eq!(chunk.get(0, 31, 0), M.grass);
@@ -548,7 +552,7 @@ fn face_b_is_its_own_landscape() {
                     g.local(Face::A).column_at(i * 1500, j * 1500),
                     g.local(Face::B).column_at(i * 1500, j * 1500),
                 );
-                let sea = SEA_LEVEL as f32;
+                let sea = dwell_world::SEA_LEVEL_M as f32;
                 if a.outside || b.outside || (a.height < sea && b.height < sea) {
                     continue;
                 }

@@ -128,7 +128,7 @@ struct Stats {
 
 fn sample(g: &TerrainGenerator, x: i32, z: i32, s: &mut Stats) {
     let col = g.column_at(x, z);
-    let h = col.height - SEA_LEVEL as f32;
+    let h = col.height - (dwell_world::SEA_LEVEL_M as f32);
     if col.outside {
         return;
     }

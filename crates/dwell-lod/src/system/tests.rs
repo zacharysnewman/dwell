@@ -1266,16 +1266,19 @@ fn never_asks_for_buried_chunks_underground_only_the_streamed_view_is_drawn() {
     let ground = 1024.0;
     let surface = [0.5, ground + 1.6, 0.5];
     let mut top = ChunkSetup::new(surface, 4.0);
-    top.host.flat_top = ground as i64;
+    top.host.flat_top = dwell_world::row_of_m(ground).into(); // rows
     top.run(&camera(surface, 0.0, -10.0), 300);
     assert!(top.requested().len() > 20);
     for c in top.requested() {
-        assert!(c.y >= 32 - 2, "{c:?}");
+        assert!(
+            c.y >= dwell_world::chunk_of_pos([0.0, ground, 0.0]).y - 2,
+            "{c:?}"
+        );
     }
 
     let deep = [16.5, ground - 12.0 * 32.0 + 16.0, 16.5];
     let mut below = ChunkSetup::new(deep, 4.0);
-    below.host.flat_top = ground as i64;
+    below.host.flat_top = dwell_world::row_of_m(ground).into();
     below.run(&camera(deep, 30.0, 0.0), 300);
     assert!(below.requested().is_empty());
     // The streamed chunks around the camera are still drawn (caves stay visible).

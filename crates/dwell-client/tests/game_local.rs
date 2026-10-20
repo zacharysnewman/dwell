@@ -1020,7 +1020,7 @@ fn a_block_only_the_server_has_arrives_by_sync_and_plays_like_any_other() {
     let spawn = rig.core.server().config().spawn.expect("spawn");
     let (sx, sz) = (spawn[0].floor() as i32, spawn[2].floor() as i32);
     let world = rig.core.server().world();
-    let top = (-160..spawn[1].floor() as i32 + 8)
+    let top = (-160..dwell_world::row_of_m(spawn[1]) + 8)
         .rev()
         .find(|&y| dwell_blocks::info(world.get_voxel(sx, y, sz)).solid)
         .expect("ground under the spawn");
@@ -1089,7 +1089,7 @@ fn a_block_only_the_server_has_arrives_by_sync_and_plays_like_any_other() {
     let pid = state.player_id;
     let server_feet = rig.core.server().feet_of(pid).expect("server player");
     assert!(
-        (state.feet[1] - f64::from(top + 1)).abs() < 0.01,
+        (state.feet[1] - dwell_world::m_of_row(top + 1)).abs() < 0.01,
         "stands on the pad: {:?} (top {top})",
         state.feet
     );

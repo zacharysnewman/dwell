@@ -1147,10 +1147,10 @@ fn a_block_placed_by_one_player_blocks_another_on_the_server_and_in_its_predicti
 
     // A builds a wall two blocks high across B's path at z = 3 (edits spaced for the rate limit).
     let stone = require("dwell:stone");
-    for y in [G as i32 - 1, G as i32] {
+    for y in [dwell_world::FLAT_TOP_Y - 1, dwell_world::FLAT_TOP_Y] {
         // The second row from the far end: a natural block beside a higher one is a ramp rising to
         // it (ADAPTIVE_BLOCKS.md), whose top A (at x 19) must face to place on it.
-        let xs = if y < G as i32 {
+        let xs = if y < dwell_world::FLAT_TOP_Y {
             [19, 20, 21]
         } else {
             [21, 20, 19]
@@ -1167,7 +1167,7 @@ fn a_block_placed_by_one_player_blocks_another_on_the_server_and_in_its_predicti
         }
     }
     sim.step(ticks(0.5));
-    for y in [G as i32, G as i32 + 1] {
+    for y in [dwell_world::FLAT_TOP_Y, dwell_world::FLAT_TOP_Y + 1] {
         for x in [19, 20, 21] {
             let at = (world_cell_x(x), y, 3);
             assert_eq!(

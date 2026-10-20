@@ -722,7 +722,7 @@ mod tests {
         // deck itself fades out over the same band (dwell_cloud_deck's cross fade): no pop.
         let mut t = CLOUDS;
         t.shape.coverage = 1.0;
-        let deck = t.deck.altitude_m + dwell_protocol::world::SEA_LEVEL as f64;
+        let deck = t.deck.altitude_m + dwell_protocol::world::SEA_LEVEL_M;
         // An eye position over a cloud (not every point of even full coverage is cloud).
         let x = (0..200)
             .map(|i| f64::from(i) * 97.0)
@@ -785,7 +785,7 @@ mod tests {
     #[test]
     fn the_deck_is_over_each_faces_own_sea_level() {
         let alt = CLOUDS.deck.altitude_m;
-        let sea = dwell_protocol::world::SEA_LEVEL as f64;
+        let sea = dwell_protocol::world::SEA_LEVEL_M;
         assert_eq!(deck_height(&CLOUDS, sea, 1.0), alt);
         assert_eq!(deck_height(&CLOUDS, sea + 300.0, 1.0), alt - 300.0);
         // Face B: the eye 300 m below its sea level's mirror is 300 m up on its own face.
