@@ -5,7 +5,10 @@ name: Release
 #                             or, if the push raised client/package.json above the newest
 #                             release (the baseline, a new line), that version as a stable release;
 #   - a pushed `v<version>` tag, or this workflow run by hand
-#                           → a stable release.
+#                           → a stable release;
+#   - this workflow run by hand on any branch with channel `dev`
+#                           → a dev build of that branch, `v<next>-dev.<run>` (a pre-release, never
+#                             Latest), titled with the branch's name.
 # The version follows the newest release (its next patch), so nothing is bumped after a release;
 # client/package.json is a floor, raised by hand only for a breaking change (the merge that raises
 # it is the release), and the manual run can name a higher version (client/scripts/release.ts, RELEASES.md §3).
@@ -23,6 +26,12 @@ on:
         description: 'Version to release (empty: the next patch after the newest release; e.g. 0.2.0 for a breaking change)'
         required: false
         default: ''
+      channel:
+        description: 'stable: a stable release (Latest). dev: a dev build (pre-release) of the branch chosen above; leave the version empty'
+        required: false
+        type: choice
+        options: [stable, dev]
+        default: stable
 
 permissions:
   contents: write
@@ -47,6 +56,8 @@ jobs:
       tag: ${{ steps.plan.outputs.tag }}
       channel: ${{ steps.plan.outputs.channel }}
       archive: ${{ steps.plan.outputs.archive }}
+      title: ${{ steps.plan.outputs.title }}
+      notes: ${{ steps.plan.outputs.notes }}
       publish: ${{ steps.check.outputs.action }}
       event: ${{ steps.plan.outputs.event }}
       site: ${{ steps.site.outputs.site }}
@@ -64,6 +75,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           REQUESTED: ${{ inputs.version }}
+          CHANNEL: ${{ inputs.channel }}
         run: |
           gh release list --limit 500 --json tagName > "$RUNNER_TEMP/releases.json"
           case "$GITHUB_REF" in
@@ -72,7 +84,7 @@ jobs:
             *) echo "::error::unexpected ref $GITHUB_REF"; exit 1 ;;
           esac
           previous=$(git show HEAD^1:client/package.json 2>/dev/null | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{console.log(JSON.parse(s).version)}catch{console.log("")}})')
-          node --experimental-strip-types scripts/release.ts "$event" "$GITHUB_REF" "$GITHUB_RUN_NUMBER" "$GITHUB_SHA" "$RUNNER_TEMP/releases.json" "$REQUESTED" "$previous" | tee -a "$GITHUB_OUTPUT"
+          node --experimental-strip-types scripts/release.ts "$event" "$GITHUB_REF" "$GITHUB_RUN_NUMBER" "$GITHUB_SHA" "$RUNNER_TEMP/releases.json" "$REQUESTED" "$previous" "$CHANNEL" | tee -a "$GITHUB_OUTPUT"
           echo "event=$event" >> "$GITHUB_OUTPUT"
       # Call pages.yml here, or dispatch it on the default branch (release.ts siteDeploy).
       - id: site
@@ -175,6 +187,8 @@ jobs:
           CHANNEL: ${{ needs.plan.outputs.channel }}
           ARCHIVE: ${{ needs.plan.outputs.archive }}
           EVENT: ${{ needs.plan.outputs.event }}
+          TITLE: ${{ needs.plan.outputs.title }}
+          NOTES: ${{ needs.plan.outputs.notes }}
         run: |
           # Again, just before publishing (release.ts publishAction): another run may have published
           # this version since the plan.
@@ -187,13 +201,14 @@ jobs:
           fi
           # `build.json` was uploaded from client/dist/, so it sits under client/dist/ here.
           files=("$ARCHIVE" client/dist/build.json)
+          # Title and notes from release.ts releaseNotes: a dev build run by hand names its branch.
           if [ "$CHANNEL" = dev ]; then
-            gh release create "$TAG" "${files[@]}" --target "$GITHUB_SHA" --prerelease \
-              --title "Dwell $VERSION (dev)" --notes "Dev build of $GITHUB_SHA."
+            gh release create "$TAG" "${files[@]}" --target "$GITHUB_SHA" --prerelease --latest=false \
+              --title "$TITLE" --notes "$NOTES"
           elif git ls-remote --exit-code --tags "https://github.com/$GH_REPO" "refs/tags/$TAG" >/dev/null 2>&1; then
-            gh release create "$TAG" "${files[@]}" --verify-tag --title "Dwell $VERSION" --generate-notes
+            gh release create "$TAG" "${files[@]}" --verify-tag --title "$TITLE" --generate-notes
           else
-            gh release create "$TAG" "${files[@]}" --target "$GITHUB_SHA" --title "Dwell $VERSION" --generate-notes
+            gh release create "$TAG" "${files[@]}" --target "$GITHUB_SHA" --title "$TITLE" --generate-notes
           fi
 
   site:

@@ -149,10 +149,23 @@ act, so merging it is the release. Patch releases are manual:
    releases the line's next patch, or the version typed, which must be on the line). The version
    must be newer than the line's newest release; the launcher's latest stays the newest version,
    and the line's worlds move onto the patch. `release.ts` refuses another line's version from the
-   branch, and an older line's version from `main`. No dev builds are made of maintenance branches.
+   branch, and an older line's version from `main`. No dev builds are made of maintenance branches
+   by a push (one can be made by hand, 3b).
    The run publishes the GitHub Release and, as for a tag, dispatches the Pages workflow on `main`
    (the `github-pages` environment deploys only from `main`); the site is assembled from all
    releases, so that deploy publishes the patch.
+3b. **A dev build of any branch, by hand** (an experiment to try out without merging it, e.g.
+   `claude/half-height-voxels`): run the **Release** workflow on that branch with *channel* `dev`
+   (leave *version* empty; `release.ts` refuses one). It builds `v<next>-dev.<run>` exactly as a
+   push to `main` does — a GitHub pre-release created with `--latest=false`, built for
+   `/dwell/v/<version>/`, its `build.json` channel `dev` — so `main`, the stable releases and the
+   launcher's latest are untouched. Its title and notes name the branch
+   (`Dwell 0.18.4-dev.123 (dev, claude/half-height-voxels)`, `release.ts releaseNotes`, tested), and
+   the run dispatches the Pages workflow on `main` as a tag run does. The site's assembly reads
+   only the releases and their `build.json`, never the branch, so a build whose commit is not on
+   `main` is listed with the other dev builds on the version page ("Show dev builds"). It counts
+   among the newest `DEV_KEEP` (10) dev builds (§4): later pushes to `main` prune it like any other.
+   The channel defaults to `stable`, the run by hand of step 1.
 4. A change that breaks the public API (§3) raises `package.json`'s version (to the next MINOR,
    before `1.0.0`) in its PR, so the merge releases that version as stable and worlds of the old
    line stay with the old builds. (Merge the breaking change only when it should ship: there is no

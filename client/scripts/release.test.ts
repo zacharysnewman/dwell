@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { latestStable, nextVersion, publishAction, releasePlan, siteDeploy } from './release';
+import {
+  latestStable,
+  nextVersion,
+  publishAction,
+  releaseNotes,
+  releasePlan,
+  siteDeploy,
+} from './release';
 
 const SHA = 'ab12cd34ef56ab12cd34ef56ab12cd34ef56ab12';
 const base = { run: 42, sha: SHA, packageVersion: '0.2.0', latestStable: null };
@@ -354,5 +361,91 @@ describe('how a run updates the site (the v0.13.0 tag run, 2026-10-16)', () => {
   });
   it('and from a run by hand on another branch', () => {
     expect(siteDeploy('refs/heads/release-0.12', 'main')).toBe('dispatch');
+  });
+});
+
+// The owner's experiment branches (2026-10-20): a run by hand on the dev channel publishes a dev
+// build of any branch, a pre-release that is never Latest, beside main's dev builds.
+describe('a dev build run by hand on any branch', () => {
+  const branch = 'refs/heads/claude/half-height-voxels';
+  const released = { ...base, packageVersion: '0.18.0', latestStable: '0.18.2' };
+
+  it('is a dev pre-release of the next version, never the stable release', () => {
+    const plan = releasePlan({ ...released, event: 'dispatch', ref: branch, channel: 'dev' });
+    expect(plan).toEqual({
+      version: '0.18.3-dev.42',
+      buildVersion: '0.18.3-dev.42+ab12cd3',
+      tag: 'v0.18.3-dev.42',
+      channel: 'dev',
+      archive: 'dwell-0.18.3-dev.42.tar.gz',
+    });
+    // Its title and notes name the branch, so it is clearly not main's.
+    expect(releaseNotes(plan, 'dispatch', branch, SHA)).toEqual({
+      title: 'Dwell 0.18.3-dev.42 (dev, claude/half-height-voxels)',
+      notes: `Dev build of ${SHA} on claude/half-height-voxels (run by hand).`,
+    });
+    // The site is deployed by a Pages run on main, which lists it with the other dev builds.
+    expect(siteDeploy(branch, 'main')).toBe('dispatch');
+  });
+
+  it('is a dev build even when package.json is above the newest release', () => {
+    const plan = releasePlan({
+      ...base,
+      packageVersion: '0.19.0',
+      latestStable: '0.18.2',
+      event: 'dispatch',
+      ref: branch,
+      channel: 'dev',
+    });
+    expect(plan.channel).toBe('dev');
+    expect(plan.version).toBe('0.19.0-dev.42');
+  });
+
+  it('refuses a version typed in for a dev build', () => {
+    expect(() =>
+      releasePlan({
+        ...released,
+        event: 'dispatch',
+        ref: branch,
+        channel: 'dev',
+        requested: '0.19.0',
+      }),
+    ).toThrow(/dev/);
+  });
+
+  it('leaves the stable run by hand as it was', () => {
+    for (const channel of [undefined, 'stable'] as const) {
+      const plan = releasePlan({
+        ...released,
+        event: 'dispatch',
+        ref: 'refs/heads/main',
+        ...(channel ? { channel } : {}),
+      });
+      expect(plan).toEqual({
+        version: '0.18.3',
+        buildVersion: '0.18.3',
+        tag: 'v0.18.3',
+        channel: 'stable',
+        archive: 'dwell-0.18.3.tar.gz',
+      });
+      expect(releaseNotes(plan, 'dispatch', 'refs/heads/main', SHA)).toEqual({
+        title: 'Dwell 0.18.3',
+        notes: '',
+      });
+    }
+  });
+
+  it('keeps main’s dev builds titled as before', () => {
+    const plan = releasePlan({ ...released, event: 'push', ref: 'refs/heads/main' });
+    expect(releaseNotes(plan, 'push', 'refs/heads/main', SHA)).toEqual({
+      title: 'Dwell 0.18.3-dev.42 (dev)',
+      notes: `Dev build of ${SHA}.`,
+    });
+  });
+
+  it('refuses the dev channel outside a run by hand', () => {
+    expect(() =>
+      releasePlan({ ...released, event: 'tag', ref: 'refs/tags/v0.18.3', channel: 'dev' }),
+    ).toThrow();
   });
 });

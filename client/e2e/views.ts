@@ -31,6 +31,8 @@ export interface ViewResult {
   settled: boolean;
   /** Seconds from placing the camera to settled (or to giving up). */
   seconds: number;
+  /** The player's feet when the terrain was ready, before the camera was placed. */
+  spawnFeet: [number, number, number];
   /** The player's feet (where it stayed). */
   feet: [number, number, number];
   lod: LodStats | null;
@@ -67,6 +69,9 @@ export async function openView(page: Page, view: View, base = './'): Promise<Vie
   }, storage);
   await page.goto(viewUrl(base, view));
   await until(page, 'd.state()?.terrainReady === true', 120_000);
+  const spawnFeet = (await call<[number, number, number] | undefined>(page, 'd.state()?.feet')) ?? [
+    0, 0, 0,
+  ];
   const { position, yaw, pitch } = view.camera;
   const look = `${String(yaw)}, ${String(pitch)}`;
   if (position) {
@@ -115,6 +120,7 @@ export async function openView(page: Page, view: View, base = './'): Promise<Vie
   return {
     settled,
     seconds,
+    spawnFeet,
     feet: state?.feet ?? [0, 0, 0],
     lod: state?.lod ?? null,
     render: state?.render ?? { calls: 0, triangles: 0 },
