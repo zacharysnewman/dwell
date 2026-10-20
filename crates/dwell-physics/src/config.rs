@@ -179,7 +179,14 @@ pub struct Damage {
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Advanced {
+    /// ◆ How far past a step's face its top is read (m).
     pub step_probe_distance: f32,
+    /// ◆ Heights above the feet (m) at which the step-up looks for a step's face: one low for short
+    /// steps, one high enough to see over the ground rising up to a step on a ramp.
+    pub step_face_heights: [f32; 2],
+    /// ◆ How far inside the probe ring a step's edge ends up after a step-up (m), so the ground ring
+    /// stands on the step.
+    pub step_footing: f32,
     /// Fraction of the capsule radius.
     pub probe_ring_radius: f32,
     pub wall_check_distance: f32,
@@ -303,7 +310,9 @@ impl Default for PlayerControllerConfig {
                 crush_ticks: 6,
             },
             advanced: Advanced {
-                step_probe_distance: 0.01,
+                step_probe_distance: 0.05,
+                step_face_heights: [0.05, 0.25],
+                step_footing: 0.01,
                 probe_ring_radius: 0.9,
                 wall_check_distance: 0.16,
                 external_absorb_threshold: 0.01,
