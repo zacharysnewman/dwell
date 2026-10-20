@@ -1,0 +1,19 @@
+{
+  "$comment": "Prototype content (ARCHITECTURE.md §6.1): a small boulder for the brushes' stencil-list preset (docs/BRUSHES.md). Not Dwell's rock design.",
+  "format": 1,
+  "name": "dwell:proto_rock",
+  "kind": "voxels",
+  "size": [4, 3, 3],
+  "anchor": [1, 0, 1],
+  "palette": { ".": null, "s": "dwell:stone", "d": "dwell:dirt" },
+  "layers": [
+    ["sss.", "ssss", ".ss."],
+    [".ss.", "sssd", ".s.."],
+    ["....", ".s..", "...."]
+  ],
+  "variants": {
+    "rotate": [0, 90, 180, 270],
+    "mirror": ["x", "z"],
+    "choices": { "s": [["dwell:stone", 4], ["dwell:dirt", 1]] }
+  }
+}
