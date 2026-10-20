@@ -16,7 +16,8 @@ const kind = (name: string): number => {
   return i;
 };
 const state = (s: string): number => {
-  const d = STATE_DEFS.find((x) => x.state === s);
+  // A block's name alone is its default state (`dwell:sand` is `dwell:sand[flooded=false]`).
+  const d = STATE_DEFS.find((x) => x.state === s || x.state === `${s}[flooded=false]`);
   if (!d) throw new Error(`no state ${s}`);
   return d.id;
 };

@@ -1325,6 +1325,14 @@ fn sparkle(i: FluidOut, s: Surface, f: Fluid, footprint: f32) -> vec3f {
 const SPARKLE_WAVELENGTH: f32 = 0.06;
 const SPARKLE_POWER: f32 = 2400.0;
 
+// Whether a fluid face is seen from inside its fluid: its back, when it is a surface (a top or a
+// bottom) or the eye is under a fluid. A side face's back seen from the air (across a pool's
+// open edge, or past a bank) is the fluid seen from outside, so it takes the outside look, not
+// the inside's flat body colour (WATER_RENDERING.md §9).
+fn seen_from_inside(i: FluidOut, front: bool) -> bool {
+    return !front && (abs(i.normal.y) > 0.5 || frame.water.x > 0.5);
+}
+
 // A fluid's surface seen from inside (the W4 stub): the body's colour, out through Snell's window,
 // else totally reflected.
 fn from_below(s: Surface, f: Fluid) -> vec4f {
@@ -1357,7 +1365,7 @@ fn water_fs(i: FluidOut, @builtin(front_facing) front: bool) -> SceneOut {
     }
     let f = fluids[i.fluid];
     let s = water_surface(i, front, footprint, f, draw);
-    if (!front) {
+    if (seen_from_inside(i, front)) {
         o.color = from_below(s, f);
         return o;
     }
@@ -1399,7 +1407,7 @@ fn water_scene_fs(i: FluidOut, @builtin(front_facing) front: bool) -> @location(
     }
     let f = fluids[i.fluid];
     let s = water_surface(i, front, footprint, f, draw);
-    if (!front) {
+    if (seen_from_inside(i, front)) {
         return from_below(s, f);
     }
     let fres = schlick(s.ndv, f.extra.x);

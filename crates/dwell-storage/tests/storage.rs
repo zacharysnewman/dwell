@@ -256,7 +256,11 @@ fn a_chunk_means_its_strings_not_the_runtime_ids() {
         // World state ids are assigned in order of first appearance, not runtime ids.
         assert_eq!(
             db.block_states(),
-            vec!["dwell:dirt", "dwell:sand", "dwell:air"]
+            vec![
+                "dwell:dirt[flooded=false]",
+                "dwell:sand[flooded=false]",
+                "dwell:air"
+            ]
         );
     }
     {
@@ -265,8 +269,8 @@ fn a_chunk_means_its_strings_not_the_runtime_ids() {
         let txn = raw.begin_write().expect("write");
         {
             let mut t = txn.open_table(BLOCK_STATES).expect("table");
-            t.insert(0, "dwell:sand").expect("insert");
-            t.insert(1, "dwell:dirt").expect("insert");
+            t.insert(0, "dwell:sand[flooded=false]").expect("insert");
+            t.insert(1, "dwell:dirt[flooded=false]").expect("insert");
         }
         txn.commit().expect("commit");
     }

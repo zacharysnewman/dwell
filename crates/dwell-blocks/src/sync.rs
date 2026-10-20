@@ -1293,7 +1293,7 @@ mod tests {
         );
         let d = &m.differences;
         assert_eq!(d.different.len(), 1);
-        assert_eq!(d.different[0].name, "dwell:sand");
+        assert_eq!(d.different[0].name, "dwell:sand[flooded=false]");
         assert_eq!(d.different[0].fields, vec!["density".to_string()]);
         assert_eq!(d.client_only, vec!["dwell:ladder".to_string()]);
         let names: Vec<&str> = d.added.iter().map(|a| a.name.as_str()).collect();
@@ -1315,7 +1315,9 @@ mod tests {
             assert_eq!(info(client).name, name);
             assert_eq!(m.server(client), Some(server));
         }
-        let sand_here = m.client(server_id(&p, "dwell:sand")).expect("sand");
+        let sand_here = m
+            .client(server_id(&p, "dwell:sand[flooded=false]"))
+            .expect("sand");
         assert!(
             !crate::is_build_state(sand_here),
             "a synced copy with the server's rules"
@@ -1328,7 +1330,7 @@ mod tests {
         );
         assert_eq!(
             m.server(require("dwell:sand")),
-            Some(server_id(&p, "dwell:sand")),
+            Some(server_id(&p, "dwell:sand[flooded=false]")),
             "the palette's sand places the server's sand"
         );
         assert_eq!(
@@ -1363,10 +1365,10 @@ mod tests {
         let p = modded();
         let m = map(&p, 0).expect("maps");
         let stone = require("dwell:stone");
-        let mut ids = vec![0, stone, server_id(&p, "dwell:sand")];
+        let mut ids = vec![0, stone, server_id(&p, "dwell:sand[flooded=false]")];
         assert!(m.to_client_ids(&mut ids));
         assert_eq!(ids[..2], [0, stone]);
-        assert_eq!(info(ids[2]).name, "dwell:sand");
+        assert_eq!(info(ids[2]).name, "dwell:sand[flooded=false]");
         let mut bad = vec![p.id_end() as u16];
         assert!(!m.to_client_ids(&mut bad));
     }
@@ -1389,7 +1391,7 @@ mod tests {
         let p = modded();
         let mut m = map(&p, 0).expect("maps");
         let stone = require("dwell:stone");
-        let server_stone = server_id(&p, "dwell:stone");
+        let server_stone = server_id(&p, "dwell:stone[flooded=false]");
         assert_eq!(
             server_stone, stone,
             "ids before the removed ladder are kept"
