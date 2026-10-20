@@ -54,6 +54,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 34 — Brushes | 🚧 In progress — B1 built and tested: VoxelSniper-style brushes in the sandbox (ADR 0037, `BRUSHES.md`): brushes, performers and sculpt in `dwell-world` `brush.rs`, presets and the per-world-type policy as data (`shared/brushes/brushes.json`, generator, CI stale check), strokes as `KEEP` pastes behind the `brushes` Welcome flag (0.11 line, no protocol bump), the brush tool, its HUD panel and keys, the region `tool` sound; browser check done; outstanding: the owner's try-out and answers to `BRUSHES.md` §5, CI; `package.json` raised to 0.11.20, a patch release of the 0.11 line |
 | 35 — Sliding on steep ground (stacks on 18, uses 28) | 🚧 In progress — built and tested natively (controller, netcode, sound events and data, the shell's loop voices, WAV renders) and in a browser (the bench); outstanding: CI (the WASM divergence run and the e2e suite, not run on the branch), the owner's review of the feel and of the slide WAV renders; `package.json` raised to 0.12.0, the new compatibility line (protocol 13; adaptive blocks change collision and terrain; the owner's decision, 2026-10-16) |
 | 36 — Block registry sync | 🚧 In progress — built and tested natively and in Vitest (ADR 0038, `BLOCK_REGISTRY.md` §8): the server's registry sent at join (`BlockRegistry`, protocol 14), ids mapped at the session boundary, the join prompt (no refusals), the fallback look, server-registered blocks, placeholders for unknown states in world files; outstanding: CI, the e2e suite (WebRTC join fixed: parts fit a WebRTC message, larger messages are fragmented), the owner's review of the prompt; ships in the next minor (0.14.0), coordinated with Phase 16's protocol bump |
+| 37 — Sprint slide (stacks on 35) | 🚧 In progress — built and tested natively (controller, predictor, netcode, protocol 15 vectors): crouch while sprinting slides on, crouched, with friction and slopes, limited steering, a jump out and a cooldown (`PLAYER_CONTROLLER.md` §6.9); outstanding: the browser check, CI (the WASM divergence run and the e2e suite), the owner's review; a protocol change (15): the owner raises `package.json` to a new minor |
 
 Phase numbering: Phase 4 was inserted on 2026-09-29 for the planet-scale world (ADRs 0011, 0012);
 the former Phases 4–7 are now 5–8, and Phase 3's former 3c and 3d are now 3d and 3e.
@@ -3603,3 +3604,64 @@ Exit criteria
   identity sessions skip translation; microbench in the PR).
 - [ ] CI green, and the e2e suite (specs that may need updating: `e2e/edit.spec.ts`,
   `e2e/play.spec.ts`, any reading the session's phases).
+
+---
+
+## Phase 37 — Sprint Slide
+
+> **Numbering note (for the integrator):** 37 was the next phase number free on `main` when this
+> was written (2026-10-19); renumber it (heading and Progress row) if another branch took it.
+
+**Status:** Built and tested natively (controller, predictor, netcode, protocol vectors; also far
+from the origin and on face B). Outstanding: the browser check, CI (the `wasm32-wasip1` divergence
+run and the e2e suite), the owner's feel review. A protocol change: protocol 15 (the snapshot's
+controller state grows by two bytes), so it ships on a new minor — the owner raises
+`client/package.json`. Stacks on Phase 35 (it reuses the steep slide's state, velocity split and
+sound) and Phase 29 (the motion effects respond through the Sliding state).
+
+Owner (2026-10-19): *"when sprinting, if you crouch, you'll continue to slide forward (could reuse
+some existing 'sliding' mechanics). You should still be in 'crouch' (height etc.) while sliding."*
+The task set the behaviour (start from a sprint, friction with slopes, end at crouch speed or on
+release, the crouch capsule and low ceilings, limited steering, a jump out, a cooldown, data
+tunables, deterministic prediction); the numbers are defaults recorded in `PLAYER_CONTROLLER.md`
+§6.9 (all data in `PlayerControllerConfig::sprint_slide`). It extends an existing system (the
+controller's config sections), so no new data format was asked about.
+
+Deliverables
+- [x] **The sprint slide** (`PLAYER_CONTROLLER.md` §6.9): crouch pressed on the ground with run held
+  at ≥ `min_start_speed` starts it (with `start_boost`); the crouch capsule throughout; friction
+  and the ground's tilt (`slope_gravity`) up to `max_speed`; steering at `steer_rate`; step-ups;
+  ends at the crouch speed, on release, on leaving the ground (a jump keeps the momentum), at a
+  wall, or when an exclusive layer takes over; the steep slide's velocity split; `cooldown_ticks`;
+  `State::Sliding`; `SPRINT_SLIDE_STARTED` / `ENDED` events.
+- [x] **Netcode**: `SprintSlideState` (active, cooldown) resumable on the wire — `slideFlags` and
+  `slideCooldown` in `ControllerState` (protocol 15; `shared/protocol` constants, generator, the
+  Python reference encoder and the vectors regenerated); the predictor compares them.
+- [x] **Tests**: `tests/sprint_slide.rs` (10 scenarios), `tests/predictor.rs` (a slide and a
+  cooldown resumed from a snapshot), `dwell-sim` netcode (two clients, one sprint-sliding: exact
+  without latency, no snaps at 150 ms RTT / 20 ms jitter / 5 % loss), the protocol vectors' decoded
+  slide fields, `net.rs`'s round trip.
+- [x] **Sound and motion effects**: none new — both follow `State::Sliding` (the slide's scrape
+  voice, the crouch sound at the start; the sliding FOV/wind gain of 1); documented in `AUDIO.md`
+  and `MOTION_EFFECTS.md`.
+- [x] Docs: `PLAYER_CONTROLLER.md` §3, §4, §6.9, §7, §8.2, §8.4, §10; `ARCHITECTURE.md` (the
+  controller, the snapshot layout, the protocol history, §7.4).
+- [ ] **Browser**: the bench scenario `sprint-slide` (sprint, slide, steer, jump out) on the real
+  GPU, with a screenshot sequence.
+
+Exit criteria
+- [x] The new controller and netcode tests failed with the slide's start disabled (9 of 10
+  controller tests; the walk case is a guard; both netcode tests), and the predictor test failed
+  with the slide fields left out of `from_net` (51 replays against 0).
+- [x] The golden trace unchanged (its scenario never crouches at a sprint); every `dwell-physics`
+  suite passes natively, far from the origin and on face B.
+- [ ] Browser: the slide seen in game (controller trace and screenshots).
+- [ ] CI green, including the `wasm32-wasip1` divergence run and the e2e suite.
+- [ ] Manual: the owner slides in game and reviews the feel.
+
+Deviations:
+- **The wire changed** although the steep slide (§6.8) needed none: the sprint slide is a state
+  started by a press, not derived from the probe, and the controller flags byte was full, so it
+  takes two new bytes (protocol 15).
+- **No slide from landing** with crouch and run held (Fortnite allows it): the task asked for a
+  start on the ground; a possible follow-up.

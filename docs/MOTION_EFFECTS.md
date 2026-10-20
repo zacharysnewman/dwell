@@ -23,7 +23,9 @@ owner then answered (2026-10-15, at the end).
 - The **camera's actual velocity**: the predicted player's velocity (`ClientState.velocity`, flight
   included), so knockback and falls count, not raw input. The controller **state** (Running,
   Sliding, Falling, Flying, …) multiplies the targets by a per-state gain from the data (climbing 0,
-  swimming 0.4, crouching 0.5, the rest 1).
+  swimming 0.4, crouching 0.5, the rest 1). A sprint slide (PLAYER_CONTROLLER.md §6.9) is
+  `Sliding`, not `Crouching`, though the player is crouched: it keeps the full gain, so the FOV
+  boost and the wind carry on from the sprint (and widen as the slide speeds up downhill).
 - The effects **read** state each drawn frame and never write simulation state: prediction stays
   deterministic.
 - Walk and run speeds come from the controller config (`movement.walk_speed`, `run_speed`), not
