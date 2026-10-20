@@ -21,11 +21,11 @@ pub use painterly::{PAINTERLY_TILE, PAINTERLY_TILES};
 /// Which texture set paints the atlas's tiles.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum TextureSet {
-    /// The procedural noise painters (the look players have).
-    #[default]
+    /// The procedural noise painters, the original look (`?textures=classic`).
     Classic,
-    /// The painterly storybook set (docs/ART_DIRECTION.md), behind `?textures=painterly` until the
-    /// owner approves it; flipping the default is moving `#[default]` here.
+    /// The painterly storybook set (docs/ART_DIRECTION.md): the default since the owner approved it
+    /// (2026-10-20).
+    #[default]
     Painterly,
 }
 
@@ -61,7 +61,9 @@ impl TextureSet {
     }
 }
 
-static SET: AtomicU8 = AtomicU8::new(TextureSet::Classic as u8);
+/// The set in use until [`set_texture_set`] chooses one: the default set.
+const INITIAL_SET: u8 = TextureSet::Painterly as u8;
+static SET: AtomicU8 = AtomicU8::new(INITIAL_SET);
 
 /// Chooses the texture set the atlas, the tiles' average colours (the LOD colours) and the hotbar
 /// swatches use. Call it before any of them is first built (each is computed once per set): on the
@@ -72,10 +74,10 @@ pub fn set_texture_set(set: TextureSet) {
 
 /// The texture set in use ([`set_texture_set`]).
 pub fn texture_set() -> TextureSet {
-    if SET.load(Ordering::Relaxed) == TextureSet::Painterly as u8 {
-        TextureSet::Painterly
-    } else {
+    if SET.load(Ordering::Relaxed) == TextureSet::Classic as u8 {
         TextureSet::Classic
+    } else {
+        TextureSet::Painterly
     }
 }
 
@@ -782,16 +784,24 @@ mod painterly_tests {
         texel(P, name, x, y).1
     }
 
+    /// The set in use before anything is chosen (the atomic's initial value).
+    fn texture_set_default_atomic() -> TextureSet {
+        if INITIAL_SET == TextureSet::Painterly as u8 {
+            TextureSet::Painterly
+        } else {
+            TextureSet::Classic
+        }
+    }
+
     #[test]
-    fn the_query_picks_the_set_and_the_default_is_classic() {
-        assert_eq!(TextureSet::default(), TextureSet::Classic);
-        assert_eq!(TextureSet::from_query(""), TextureSet::Classic);
+    fn the_query_picks_the_set_and_the_default_is_painterly() {
+        // The owner made painterly the default (2026-10-20); `?textures=classic` keeps the old set.
+        assert_eq!(TextureSet::default(), P);
+        assert_eq!(TextureSet::from_query(""), P);
+        assert_eq!(texture_set_default_atomic(), P);
         assert_eq!(TextureSet::from_query("?textures=painterly"), P);
         assert_eq!(TextureSet::from_query("?seed=3&textures=painterly&x"), P);
-        assert_eq!(
-            TextureSet::from_query("?textures=nope"),
-            TextureSet::Classic
-        );
+        assert_eq!(TextureSet::from_query("?textures=nope"), P);
         assert_eq!(
             TextureSet::from_query("?textures=classic"),
             TextureSet::Classic
