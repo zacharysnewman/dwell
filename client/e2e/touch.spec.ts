@@ -32,7 +32,7 @@ async function touch(
 test('touch controls: stick, look, and jump', async ({ page }) => {
   // CI's software rendering is slow: the steps before the jump alone take ~20 s there.
   test.setTimeout(90_000);
-  await page.goto('./?local=1');
+  await page.goto('./?world=flat');
   await expect
     .poll(async () => (await read(page))?.active ?? false, { timeout: 20_000 })
     .toBe(true);
@@ -77,6 +77,7 @@ test('touch controls: stick, look, and jump', async ({ page }) => {
     peak = Math.max(peak, (await read(page))?.feet[1] ?? 0);
   }
   await touch(cdp, 'touchEnd', []);
+  console.log('DIAG interval', JSON.stringify((await page.evaluate<any>('globalThis.__dwell.telemetry()')).frames.interval));
   console.log('DIAG start', JSON.stringify(start?.feet), 'walked', JSON.stringify(walked?.feet), 'ground', ground);
   for (const t of await page.evaluate<any[]>('globalThis.__dwell.ticks()'))
     console.log('DIAG tick', t.seq, t.atMs.toFixed(0), t.feet.map((v: number) => v.toFixed(3)).join(','), t.velocity.map((v: number) => v.toFixed(2)).join(','), t.state, t.grounded, t.ceilingBlocked, t.move.join(','), t.jump);
