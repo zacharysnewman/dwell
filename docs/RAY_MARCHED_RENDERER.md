@@ -841,6 +841,34 @@ The search now runs in a mixed brick only for rays with `|d.y| < 0.15`
 empty bricks always search. Tried at 0.05–0.4: 0.15 was best on every view. `?marchsteep=0`, the
 bench's `march-nosteep`.
 
+**Measured in Chrome** (`bench --compare … --unthrottled`, M1, 1280×720, 2026-10-19, **under load**:
+the machine was shared with other agents, load average 4 at the start rising to 26 by the last
+scenarios, so `far-view` and `look-around` are the noisiest). `gpu.march` p50 in ms, with steps
+per ray as mean / p95; raster's column is its whole `gpu.frame`. `march-a4b` turns off all three
+techniques; `march-noreuse` has the first and third (every frame marched); `march` has all three.
+
+| Scenario | raster | march-a4b | march-noreuse | march | march-half-fsr |
+|---|---|---|---|---|---|
+| idle-spawn | 7.1 | 11.1 (2.9 / 11) | 10.4 (3.0 / 12) | **1.0** | 1.6 |
+| look-horizon | 6.8 | 13.1 (2.9 / 8) | **10.9** (2.9 / 8) | **1.0** | 1.6 |
+| look-down | 5.5 | 3.9 (2.3 / 3) | **3.0** (2.3 / 3) | **1.1** | 1.6 |
+| fly-high (moving) | 6.0 | 26.8 (4.1 / 9) | **18.5** (6.2 / 15) | 19.1 | 8.6 |
+| far-view (540 m, still) | 5.0 | 21.5 (3.0 / 8) | **15.1** (4.9 / 15) | **2.1** | 5.4 |
+| look-around (eye still, panning) | 7.4 | 12.6 (2.9 / 8) | 17.5¹ | **1.1** | 5.3 |
+| fly-low-fast (flight) | 5.6 | 10.0 (2.3 / 7) | **9.1** (2.3 / 7) | 2.0² | 4.3 |
+
+¹ Taken at load 26; not comparable.
+² The bench runs unthrottled: frames between the game's 60 Hz ticks see the same camera, and are
+kept. At 60 Hz with the camera moving every frame, `march-noreuse` is the figure.
+
+- **Marching every frame** (`march-noreuse` against `march-a4b`): 17 % off at the horizon, 23 %
+  looking down (the slope rule), 31 % flying 540 m up and 30 % far away (mostly the slope rule:
+  more steps, each cheaper), 9 % flying low (streaming changes nodes every frame).
+- **A still, unchanged view** costs its shading and the copy into the frame, about 1 ms: under
+  raster's whole frame everywhere.
+- Natively (Metal, the eye moving 0.5 m a frame, min of interleaved rounds): the spawn 8.2 → 6.0 ms,
+  540 m up 10.6 → 8.6, looking down 2.5 → 2.1.
+
 **Tried and dropped** (native, interleaved rounds, the eye moving 0.5 m a frame):
 
 - The if-if loop (Aila & Laine): one loop whose iterations are each a voxel step or a hierarchy
