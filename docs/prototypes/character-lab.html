@@ -28,15 +28,16 @@
     --bg: #15121a; --panel: #1c1822; --fg: #efe8ee; --muted: #a79bab; --line: #332c3a;
     --accent: #ea8a5e; --accent-ink: #2a120c; --accent-soft: #3a2420; --chip: #26202d;
     --ok: #93c070; --bad: #ef7a6c;
-    --sky-top: #2c3a70; --sky-bottom: #6b6f8c; color-scheme: dark;
+    color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
   --bg: #15121a; --panel: #1c1822; --fg: #efe8ee; --muted: #a79bab; --line: #332c3a;
   --accent: #ea8a5e; --accent-ink: #2a120c; --accent-soft: #3a2420; --chip: #26202d;
   --ok: #93c070; --bad: #ef7a6c;
-  --sky-top: #2c3a70; --sky-bottom: #6b6f8c; color-scheme: dark;
+  color-scheme: dark;
 }
+[hidden] { display: none !important; }
 html, body { height: 100%; margin: 0; overflow: hidden; }
 body { background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 14px; line-height: 1.45; }
 #app { height: 100%; display: grid; grid-template-columns: 360px 1fr; grid-template-rows: minmax(0, 100%); }
@@ -184,7 +185,7 @@ details summary { cursor: pointer; font-size: 13px; }
       <label class="toggle"><input type="checkbox" id="opt-sil"><span class="switch"></span><span>Silhouette check<small>Everything flat ink: does the shape read on its own?</small></span></label>
       <label class="toggle"><input type="checkbox" id="opt-bones"><span class="switch"></span><span>Bones and sockets</span></label>
       <label class="toggle"><input type="checkbox" id="opt-aces" checked><span class="switch"></span><span>Game tone mapping<small>ACES filmic with exposure, as the game draws.</small></span></label>
-      <div class="slider"><span>Exposure</span><output id="o-exposure"></output><input type="range" id="exposure" min="0.6" max="2.4" step="0.05" value="1.45"></div>
+      <div class="slider"><span>Exposure</span><output id="o-exposure"></output><input type="range" id="exposure" min="0.6" max="2.4" step="0.05" value="1.3"></div>
     </section>
 
     <section id="edit-box">
@@ -2589,9 +2590,9 @@ const DATA = {
      "hand_r"
     ],
     "anchor": [
-     -0.2,
-     -0.26,
-     -0.06
+     -0.28,
+     -0.25,
+     0.02
     ],
     "fov": 62,
     "clips": {
@@ -2606,7 +2607,7 @@ const DATA = {
    "name": "dwell:wolf",
    "label": "Wolf",
    "rig": "quadruped",
-   "height": 1.16,
+   "height": 1.08,
    "bones": {
     "root": [
      0,
@@ -2625,13 +2626,13 @@ const DATA = {
     ],
     "neck": [
      0,
-     0.1,
-     0.3
+     0.07,
+     0.32
     ],
     "head": [
      0,
-     0.16,
-     0.14
+     0.1,
+     0.17
     ],
     "ear_l": [
      0.075,
@@ -2645,13 +2646,13 @@ const DATA = {
     ],
     "tail_1": [
      0,
-     0.06,
-     -0.26
+     0.08,
+     -0.15
     ],
     "tail_2": [
      0,
-     -0.15,
-     -0.26
+     -0.19,
+     -0.19
     ],
     "front_upper_l": [
      0.1,
@@ -2816,11 +2817,11 @@ const DATA = {
      ],
      "at": [
       0,
-      0.06,
-      0.04
+      0.04,
+      0.06
      ],
      "rot": [
-      30,
+      55,
       0,
       0
      ],
@@ -2868,13 +2869,13 @@ const DATA = {
      "kind": "round_box",
      "size": [
       0.12,
-      0.08,
-      0.2
+      0.085,
+      0.23
      ],
      "at": [
       0,
       -0.01,
-      0.19
+      0.2
      ],
      "round": 0.4,
      "material": "coat"
@@ -2907,8 +2908,8 @@ const DATA = {
      ],
      "at": [
       0,
-      0.01,
-      0.29
+      0.012,
+      0.315
      ],
      "round": 0.4,
      "material": "ink"
@@ -2918,19 +2919,19 @@ const DATA = {
      "on": "head",
      "kind": "ellipsoid",
      "size": [
-      0.035,
-      0.025,
+      0.04,
+      0.022,
       0.02
      ],
      "at": [
       0.07,
-      0.05,
+      0.045,
       0.125
      ],
      "rot": [
       0,
       0,
-      -15
+      -22
      ],
      "material": "ink",
      "mirror": true
@@ -2940,9 +2941,9 @@ const DATA = {
      "on": "ear_l",
      "kind": "cone",
      "size": [
-      0.08,
+      0.1,
       0.16,
-      0.05
+      0.075
      ],
      "at": [
       0,
@@ -2962,14 +2963,14 @@ const DATA = {
      "on": "ear_l",
      "kind": "cone",
      "size": [
-      0.05,
+      0.06,
       0.1,
       0.02
      ],
      "at": [
       0,
       0.055,
-      0.02
+      0.03
      ],
      "rot": [
       0,
@@ -2990,11 +2991,11 @@ const DATA = {
      ],
      "at": [
       0,
-      -0.075,
-      -0.13
+      -0.09,
+      -0.1
      ],
      "rot": [
-      30,
+      45,
       0,
       0
      ],
@@ -3005,17 +3006,17 @@ const DATA = {
      "on": "tail_2",
      "kind": "ellipsoid",
      "size": [
-      0.17,
-      0.17,
-      0.3
+      0.18,
+      0.18,
+      0.32
      ],
      "at": [
       0,
-      -0.06,
-      -0.12
+      -0.07,
+      -0.08
      ],
      "rot": [
-      25,
+      50,
       0,
       0
      ],
@@ -3026,17 +3027,17 @@ const DATA = {
      "on": "tail_2",
      "kind": "ellipsoid",
      "size": [
-      0.11,
-      0.11,
-      0.12
+      0.12,
+      0.12,
+      0.13
      ],
      "at": [
       0,
-      -0.12,
-      -0.25
+      -0.17,
+      -0.15
      ],
      "rot": [
-      25,
+      50,
       0,
       0
      ],
@@ -3064,9 +3065,9 @@ const DATA = {
      "on": "front_lower_l",
      "kind": "capsule",
      "size": [
-      0.075,
+      0.085,
       0.26,
-      0.075
+      0.085
      ],
      "at": [
       0,
@@ -3117,9 +3118,9 @@ const DATA = {
      "on": "hind_lower_l",
      "kind": "capsule",
      "size": [
-      0.075,
+      0.085,
       0.32,
-      0.075
+      0.085
      ],
      "at": [
       0,
@@ -3190,13 +3191,13 @@ const DATA = {
      0.13
     ],
     "ear_l": [
-     0.08,
-     0.06,
+     0.09,
+     0.07,
      -0.04
     ],
     "ear_r": [
-     -0.08,
-     0.06,
+     -0.09,
+     0.07,
      -0.04
     ],
     "tail_1": [
@@ -3412,9 +3413,9 @@ const DATA = {
      "on": "head",
      "kind": "round_box",
      "size": [
-      0.17,
-      0.17,
-      0.22
+      0.2,
+      0.19,
+      0.24
      ],
      "at": [
       0,
@@ -3490,14 +3491,14 @@ const DATA = {
      "on": "head",
      "kind": "ellipsoid",
      "size": [
-      0.035,
-      0.042,
+      0.04,
+      0.05,
       0.03
      ],
      "at": [
-      0.08,
+      0.094,
       0.03,
-      0.08
+      0.085
      ],
      "material": "ink",
      "mirror": true
@@ -4575,23 +4576,45 @@ const DATA = {
    ],
    "parts": [
     {
+     "id": "antler_burr_l",
+     "on": "antler_l",
+     "kind": "cylinder",
+     "size": [
+      0.06,
+      0.03,
+      0.06
+     ],
+     "at": [
+      0,
+      0.01,
+      0
+     ],
+     "rot": [
+      0,
+      0,
+      -30
+     ],
+     "material": "antler.shadow",
+     "mirror": true
+    },
+    {
      "id": "antler_beam_l",
      "on": "antler_l",
      "kind": "capsule",
      "size": [
-      0.035,
-      0.24,
-      0.035
+      0.05,
+      0.22,
+      0.05
      ],
      "at": [
-      0.035,
-      0.1,
+      0.05,
+      0.09,
       -0.01
      ],
      "rot": [
-      -15,
+      -12,
       0,
-      -22
+      -32
      ],
      "material": "antler",
      "mirror": true
@@ -4601,19 +4624,19 @@ const DATA = {
      "on": "antler_l",
      "kind": "capsule",
      "size": [
-      0.03,
-      0.22,
-      0.03
+      0.045,
+      0.2,
+      0.045
      ],
      "at": [
-      0.09,
-      0.28,
+      0.13,
+      0.24,
       0.02
      ],
      "rot": [
-      18,
+      16,
       0,
-      -12
+      -14
      ],
      "material": "antler",
      "mirror": true
@@ -4623,20 +4646,21 @@ const DATA = {
      "on": "antler_l",
      "kind": "cone",
      "size": [
-      0.028,
+      0.045,
       0.12,
-      0.028
+      0.045
      ],
      "at": [
-      0.04,
+      0.05,
       0.1,
       0.07
      ],
      "rot": [
-      60,
+      62,
       0,
-      0
+      -10
      ],
+     "tip": 0.2,
      "material": "antler",
      "mirror": true
     },
@@ -4645,20 +4669,21 @@ const DATA = {
      "on": "antler_l",
      "kind": "cone",
      "size": [
-      0.026,
+      0.042,
       0.12,
-      0.026
+      0.042
      ],
      "at": [
-      0.13,
-      0.24,
+      0.19,
+      0.2,
       -0.04
      ],
      "rot": [
-      -35,
+      -30,
       0,
-      -30
+      -55
      ],
+     "tip": 0.2,
      "material": "antler",
      "mirror": true
     },
@@ -4667,20 +4692,21 @@ const DATA = {
      "on": "antler_l",
      "kind": "cone",
      "size": [
-      0.025,
+      0.04,
       0.11,
-      0.025
+      0.04
      ],
      "at": [
-      0.11,
-      0.41,
-      0.06
+      0.15,
+      0.36,
+      0.05
      ],
      "rot": [
-      30,
+      24,
       0,
-      -10
+      -12
      ],
+     "tip": 0.2,
      "material": "antler",
      "mirror": true
     }
@@ -4703,8 +4729,8 @@ const DATA = {
      ],
      "at": [
       0,
-      -0.06,
-      0.04
+      -0.03,
+      0.07
      ],
      "material": "$block"
     }
@@ -4777,21 +4803,37 @@ const DATA = {
      "on": "grip_r",
      "kind": "cone",
      "size": [
-      0.09,
-      0.15,
-      0.09
+      0.1,
+      0.1,
+      0.1
      ],
      "at": [
       0,
       0.02,
-      0.335
+      0.315
      ],
      "rot": [
       90,
       0,
       0
      ],
-     "tip": 0.1,
+     "tip": 0.55,
+     "material": "$block"
+    },
+    {
+     "id": "brush_tip",
+     "on": "grip_r",
+     "kind": "ellipsoid",
+     "size": [
+      0.058,
+      0.058,
+      0.07
+     ],
+     "at": [
+      0,
+      0.02,
+      0.37
+     ],
      "material": "$block"
     }
    ]
@@ -5383,17 +5425,17 @@ const DATA = {
      ],
      "bones": {
       "arm_r": [
-       -62,
-       -12,
+       -70,
+       22,
        0
       ],
       "forearm_r": [
-       -58,
+       -40,
        0,
        0
       ],
       "hand_r": [
-       0,
+       10,
        0,
        0
       ]
@@ -5408,17 +5450,17 @@ const DATA = {
      ],
      "bones": {
       "arm_r": [
-       -60,
-       -12,
+       -68,
+       22,
        0
       ],
       "forearm_r": [
-       -61,
+       -43,
        0,
        0
       ],
       "hand_r": [
-       -2,
+       8,
        0,
        0
       ]
@@ -5444,12 +5486,12 @@ const DATA = {
      ],
      "bones": {
       "arm_r": [
-       -62,
-       -12,
+       -70,
+       22,
        0
       ],
       "forearm_r": [
-       -58,
+       -40,
        0,
        0
       ]
@@ -5464,12 +5506,12 @@ const DATA = {
      ],
      "bones": {
       "arm_r": [
-       -64,
-       -12,
+       -72,
+       22,
        0
       ],
       "forearm_r": [
-       -56,
+       -38,
        0,
        0
       ]
@@ -5484,12 +5526,12 @@ const DATA = {
      ],
      "bones": {
       "arm_r": [
-       -62,
-       -12,
+       -70,
+       22,
        0
       ],
       "forearm_r": [
-       -58,
+       -40,
        0,
        0
       ]
@@ -5504,12 +5546,12 @@ const DATA = {
      ],
      "bones": {
       "arm_r": [
-       -64,
-       -12,
+       -72,
+       22,
        0
       ],
       "forearm_r": [
-       -56,
+       -38,
        0,
        0
       ]
@@ -5534,17 +5576,17 @@ const DATA = {
      ],
      "bones": {
       "arm_r": [
-       -62,
-       -12,
+       -70,
+       22,
        0
       ],
       "forearm_r": [
-       -58,
+       -40,
        0,
        0
       ],
       "hand_r": [
-       0,
+       10,
        0,
        0
       ]
@@ -5559,17 +5601,17 @@ const DATA = {
      ],
      "bones": {
       "arm_r": [
-       -100,
-       -16,
+       -108,
+       18,
        0
       ],
       "forearm_r": [
-       -95,
+       -80,
        0,
        0
       ],
       "hand_r": [
-       -25,
+       -20,
        0,
        0
       ]
@@ -5584,17 +5626,17 @@ const DATA = {
      ],
      "bones": {
       "arm_r": [
-       -40,
-       -6,
+       -46,
+       26,
        0
       ],
       "forearm_r": [
-       -35,
+       -20,
        0,
        0
       ],
       "hand_r": [
-       30,
+       35,
        0,
        0
       ]
@@ -5609,17 +5651,17 @@ const DATA = {
      ],
      "bones": {
       "arm_r": [
-       -62,
-       -12,
+       -70,
+       22,
        0
       ],
       "forearm_r": [
-       -58,
+       -40,
        0,
        0
       ],
       "hand_r": [
-       0,
+       10,
        0,
        0
       ]
@@ -5644,12 +5686,12 @@ const DATA = {
      ],
      "bones": {
       "arm_r": [
-       -62,
-       -12,
+       -70,
+       22,
        0
       ],
       "forearm_r": [
-       -58,
+       -40,
        0,
        0
       ]
@@ -5664,12 +5706,12 @@ const DATA = {
      ],
      "bones": {
       "arm_r": [
-       -80,
-       -6,
+       -84,
+       18,
        0
       ],
       "forearm_r": [
-       -28,
+       -18,
        0,
        0
       ]
@@ -5684,12 +5726,12 @@ const DATA = {
      ],
      "bones": {
       "arm_r": [
-       -62,
-       -12,
+       -70,
+       22,
        0
       ],
       "forearm_r": [
-       -58,
+       -40,
        0,
        0
       ]
@@ -6862,6 +6904,9 @@ const shared = {
   uStrokes: { value: 1 },
   uSil: { value: 0 },
   uInk: { value: new THREE.Color(PALETTE.swatches.ink) },
+  uFog: { value: new THREE.Color(PALETTE.ramps.cloud.base) },
+  uFogNear: { value: 12 },
+  uFogFar: { value: 40 },
 };
 const VERT = /* glsl */ `
   varying vec3 vN; varying vec3 vLocal; varying vec3 vLocalN; varying vec3 vView; varying vec2 vUv;
@@ -6876,7 +6921,7 @@ const FRAG = /* glsl */ `
   uniform vec3 uShadow; uniform vec3 uBase; uniform vec3 uLight; uniform float uOverlay;
   uniform sampler2D uTile; uniform float uHasTile; uniform float uTileLum; uniform float uTileMetres;
   uniform float uAlbedo; uniform float uFaceUv; uniform vec3 uSun; uniform float uStrokes; uniform float uSil;
-  uniform vec3 uInk; uniform float uHighlight;
+  uniform vec3 uInk; uniform float uHighlight; uniform vec3 uFog; uniform float uFogNear; uniform float uFogFar;
   varying vec3 vN; varying vec3 vLocal; varying vec3 vLocalN; varying vec3 vView; varying vec2 vUv;
   vec3 tri() {
     vec3 b = abs(normalize(vLocalN)); b = pow(b, vec3(4.0)); b /= (b.x + b.y + b.z);
@@ -6911,6 +6956,8 @@ const FRAG = /* glsl */ `
     if (uSil > 0.5) c = uInk;
     gl_FragColor = vec4(c, 1.0);
     #include <tonemapping_fragment>
+    // Distance fog toward the sky's horizon, after tone mapping (the sky isn't tone mapped).
+    if (uSil < 0.5) gl_FragColor.rgb = mix(gl_FragColor.rgb, uFog, smoothstep(uFogNear, uFogFar, length(vView)));
     #include <colorspace_fragment>
   }`;
 const OUTLINE_VERT = /* glsl */ `
@@ -7037,10 +7084,17 @@ const canvas = $('view');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, preserveDrawingBuffer: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.45;
+renderer.toneMappingExposure = 1.3;
 renderer.autoClear = false;
 const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(32, 1, 0.05, 200);
+const camera = new THREE.PerspectiveCamera(32, 1, 0.05, 400);
+// The sky: the palette's water light overhead fading to the cloud base at the horizon (the fog colour).
+const sky = new THREE.Mesh(new THREE.SphereGeometry(150, 32, 16), new THREE.ShaderMaterial({
+  side: THREE.BackSide, depthWrite: false, toneMapped: false,
+  uniforms: { uTop: { value: new THREE.Color(PALETTE.ramps.water.light) }, uHorizon: shared.uFog },
+  vertexShader: 'varying vec3 vP; void main() { vP = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+  fragmentShader: 'uniform vec3 uTop; uniform vec3 uHorizon; varying vec3 vP; void main() { float h = clamp(normalize(vP).y, 0.0, 1.0); gl_FragColor = vec4(mix(uHorizon, uTop, pow(h, 0.6)), 1.0);\n#include <colorspace_fragment>\n}',
+}));
 const controls = new OrbitControls(camera, canvas);
 controls.enableDamping = true;
 controls.dampingFactor = 0.12;
@@ -7050,10 +7104,11 @@ const armsCamera = new THREE.PerspectiveCamera(62, 1, 0.02, 10);
 armsScene.add(armsCamera);
 
 // Ground: painted grass blocks at the game's 1 m tile, a soft contact shadow under each actor.
-const groundGeo = new THREE.CircleGeometry(14, 64).rotateX(-Math.PI / 2);
+const groundGeo = new THREE.CircleGeometry(80, 96).rotateX(-Math.PI / 2);
 const ground = new THREE.Mesh(groundGeo, paintMaterialFor('grass_top', { albedo: true, tileMetres: 1 }));
 ground.material.uniforms.uAlbedo.value = 1;
 scene.add(ground);
+scene.add(sky);
 const shadowTex = (() => {
   const cv = document.createElement('canvas');
   cv.width = cv.height = 128;
@@ -7201,7 +7256,7 @@ function rebuild() {
   } else {
     const id = state.subject;
     place(id, 0, 0, 0, { item: id === 'player' && state.held ? state.held : undefined });
-    props.add(block('grass_side', -1.6, -1.2));
+    props.add(block('grass_side', -2.4, -2.2));
   }
   if (state.subject !== 'group' && state.subject !== 'fp') lastGood = actors[0]?.actor.model ?? lastGood;
   highlight();
@@ -7226,9 +7281,9 @@ function frame() {
   camera.fov = 32;
   camera.updateProjectionMatrix();
   let h = 1.8, len = 0.6;
-  if (state.subject === 'wolf') { h = 1.16; len = 1.4; }
+  if (state.subject === 'wolf') { h = 1.08; len = 1.4; }
   if (state.subject === 'deer') { h = 1.72; len = 1.4; }
-  if (state.subject === 'group') { h = 1.9; len = 7.5; }
+  if (state.subject === 'group') { h = 1.9; len = 5.2; }
   const target = new THREE.Vector3(state.subject === 'group' ? 0.7 : 0, h * 0.5, 0);
   const dist = Math.max(h * 2.6, len * 1.75) + 1.2;
   const dirs = { front: [0, 0.12, 1], back: [0, 0.12, -1], side: [1, 0.12, 0], three: [0.72, 0.28, 0.92] };
@@ -7324,7 +7379,8 @@ function renderLook() {
     renderLook();
     rebuild();
   });
-  const accs = Object.entries(data.accessories).filter(([, a]) => a.fits.includes(ch.rig));
+  const attach = (on) => data.rigs[ch.rig].bones.some((b) => b.name === on) || Object.hasOwn(ch.sockets ?? {}, on);
+  const accs = Object.entries(data.accessories).filter(([, a]) => a.fits.includes(ch.rig) && a.parts.every((p) => attach(p.on)));
   chipsInto($('accessories'), accs.map(([a, acc]) => ({ a, place: acc.place, label: acc.label ?? a, title: `${a} · ${acc.place}` })), (it) => l.accessories.includes(it.a), (it) => {
     if (l.accessories.includes(it.a)) l.accessories = l.accessories.filter((x) => x !== it.a);
     else l.accessories = [...l.accessories.filter((x) => data.accessories[x]?.place !== it.place), it.a];
@@ -7719,15 +7775,21 @@ function tick(now) {
   }
   if (armsActor) applyPose(armsActor, poseFor('player', state.t, { arms: true }), { arms: true });
   syncBones();
-  controls.update();
+  if (state.subject !== 'fp') controls.update();
   renderer.clear();
+  outlineMat.uniforms.uWidth.value = 0.006;
   renderer.render(scene, camera);
   if (state.subject === 'fp' && armsActor) {
     // The arms: their own scene and camera, drawn after the world over a cleared depth buffer, so they
     // never clip into walls and the body never clips the eye. The sun is the world's, in view space.
     shared.uSun.value.copy(SUN).transformDirection(camera.matrixWorldInverse);
     renderer.clearDepth();
+    outlineMat.uniforms.uWidth.value = 0.0018;
+    shared.uFogFar.value = 1e6;
+    shared.uFogNear.value = 1e6 - 1;
     renderer.render(armsScene, armsCamera);
+    shared.uFogNear.value = 12;
+    shared.uFogFar.value = 40;
     shared.uSun.value.copy(SUN);
   }
   requestAnimationFrame(tick);
@@ -7736,7 +7798,7 @@ function tick(now) {
 // Hooks for scripted screenshots (docs/prototypes/README.md).
 window.lab = {
   subject: (s) => { state.subject = s; state.selected = null; state.action = null; renderAll(); frame(); },
-  angle: (a) => { state.angle = a; frame(); },
+  angle: (a) => { state.angle = a; for (const x of $('angles').children) x.setAttribute('aria-pressed', String(x.dataset.v === a)); frame(); },
   variant: (id, v) => { const l = look(id); l.variant = v; l.accessories = clone(data.characters[id].variants[v].accessories ?? []); l.slots = {}; renderAll(); },
   held: (h) => { state.held = h; renderAll(); },
   role: (key, r) => { state.role[key] = r; state.t = 0; renderClips(); },

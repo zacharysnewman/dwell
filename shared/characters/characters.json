@@ -147,7 +147,7 @@
       },
       "firstPerson": {
         "bones": ["arm_r", "forearm_r", "hand_r"],
-        "anchor": [-0.2, -0.26, -0.06],
+        "anchor": [-0.28, -0.25, 0.02],
         "fov": 62,
         "clips": {
           "idle": "fp_idle",
@@ -161,17 +161,17 @@
       "name": "dwell:wolf",
       "label": "Wolf",
       "rig": "quadruped",
-      "height": 1.16,
+      "height": 1.08,
       "bones": {
         "root": [0, 0, 0],
         "body": [0, 0.62, -0.28],
         "chest": [0, 0.03, 0.4],
-        "neck": [0, 0.1, 0.3],
-        "head": [0, 0.16, 0.14],
+        "neck": [0, 0.07, 0.32],
+        "head": [0, 0.1, 0.17],
         "ear_l": [0.075, 0.1, -0.02],
         "ear_r": [-0.075, 0.1, -0.02],
-        "tail_1": [0, 0.06, -0.26],
-        "tail_2": [0, -0.15, -0.26],
+        "tail_1": [0, 0.08, -0.15],
+        "tail_2": [0, -0.19, -0.19],
         "front_upper_l": [0.1, -0.1, 0.14],
         "front_lower_l": [0, -0.25, 0],
         "front_foot_l": [0, -0.24, 0],
@@ -192,23 +192,23 @@
         { "id": "belly", "on": "chest", "kind": "round_box", "size": [0.24, 0.12, 0.4], "at": [0, -0.16, 0], "round": 0.45, "material": "pale" },
         { "id": "ruff", "on": "chest", "kind": "round_box", "size": [0.4, 0.38, 0.2], "at": [0, 0.06, 0.24], "round": 0.45, "material": "coat" },
         { "id": "bib", "on": "chest", "kind": "round_box", "size": [0.26, 0.24, 0.1], "at": [0, -0.06, 0.33], "round": 0.45, "material": "pale" },
-        { "id": "neck", "on": "neck", "kind": "round_box", "size": [0.22, 0.26, 0.22], "at": [0, 0.06, 0.04], "rot": [30, 0, 0], "round": 0.45, "material": "coat" },
+        { "id": "neck", "on": "neck", "kind": "round_box", "size": [0.22, 0.26, 0.22], "at": [0, 0.04, 0.06], "rot": [55, 0, 0], "round": 0.45, "material": "coat" },
         { "id": "skull", "on": "head", "kind": "round_box", "size": [0.24, 0.2, 0.22], "at": [0, 0.02, 0.02], "round": 0.4, "material": "coat" },
         { "id": "cheek_l", "on": "head", "kind": "round_box", "size": [0.07, 0.1, 0.1], "at": [0.12, -0.02, 0], "round": 0.45, "material": "pale", "mirror": true },
-        { "id": "muzzle", "on": "head", "kind": "round_box", "size": [0.12, 0.08, 0.2], "at": [0, -0.01, 0.19], "round": 0.4, "material": "coat" },
+        { "id": "muzzle", "on": "head", "kind": "round_box", "size": [0.12, 0.085, 0.23], "at": [0, -0.01, 0.2], "round": 0.4, "material": "coat" },
         { "id": "jaw", "on": "head", "kind": "round_box", "size": [0.1, 0.05, 0.17], "at": [0, -0.065, 0.17], "round": 0.4, "material": "pale" },
-        { "id": "nose", "on": "head", "kind": "round_box", "size": [0.06, 0.045, 0.04], "at": [0, 0.01, 0.29], "round": 0.4, "material": "ink" },
-        { "id": "eye_l", "on": "head", "kind": "ellipsoid", "size": [0.035, 0.025, 0.02], "at": [0.07, 0.05, 0.125], "rot": [0, 0, -15], "material": "ink", "mirror": true },
-        { "id": "ear_l", "on": "ear_l", "kind": "cone", "size": [0.08, 0.16, 0.05], "at": [0, 0.07, 0], "rot": [0, 0, -8], "material": "coat", "mirror": true },
-        { "id": "ear_inner_l", "on": "ear_l", "kind": "cone", "size": [0.05, 0.1, 0.02], "at": [0, 0.055, 0.02], "rot": [0, 0, -8], "material": "pale", "mirror": true },
-        { "id": "tail_base", "on": "tail_1", "kind": "ellipsoid", "size": [0.14, 0.14, 0.32], "at": [0, -0.075, -0.13], "rot": [30, 0, 0], "material": "coat" },
-        { "id": "tail_brush", "on": "tail_2", "kind": "ellipsoid", "size": [0.17, 0.17, 0.3], "at": [0, -0.06, -0.12], "rot": [25, 0, 0], "material": "coat" },
-        { "id": "tail_tip", "on": "tail_2", "kind": "ellipsoid", "size": [0.11, 0.11, 0.12], "at": [0, -0.12, -0.25], "rot": [25, 0, 0], "material": "tip" },
+        { "id": "nose", "on": "head", "kind": "round_box", "size": [0.06, 0.045, 0.04], "at": [0, 0.012, 0.315], "round": 0.4, "material": "ink" },
+        { "id": "eye_l", "on": "head", "kind": "ellipsoid", "size": [0.04, 0.022, 0.02], "at": [0.07, 0.045, 0.125], "rot": [0, 0, -22], "material": "ink", "mirror": true },
+        { "id": "ear_l", "on": "ear_l", "kind": "cone", "size": [0.1, 0.16, 0.075], "at": [0, 0.07, 0], "rot": [0, 0, -8], "material": "coat", "mirror": true },
+        { "id": "ear_inner_l", "on": "ear_l", "kind": "cone", "size": [0.06, 0.1, 0.02], "at": [0, 0.055, 0.03], "rot": [0, 0, -8], "material": "pale", "mirror": true },
+        { "id": "tail_base", "on": "tail_1", "kind": "ellipsoid", "size": [0.14, 0.14, 0.32], "at": [0, -0.09, -0.1], "rot": [45, 0, 0], "material": "coat" },
+        { "id": "tail_brush", "on": "tail_2", "kind": "ellipsoid", "size": [0.18, 0.18, 0.32], "at": [0, -0.07, -0.08], "rot": [50, 0, 0], "material": "coat" },
+        { "id": "tail_tip", "on": "tail_2", "kind": "ellipsoid", "size": [0.12, 0.12, 0.13], "at": [0, -0.17, -0.15], "rot": [50, 0, 0], "material": "tip" },
         { "id": "front_upper_l", "on": "front_upper_l", "kind": "capsule", "size": [0.1, 0.3, 0.11], "at": [0, -0.11, 0], "material": "coat", "mirror": true },
-        { "id": "front_lower_l", "on": "front_lower_l", "kind": "capsule", "size": [0.075, 0.26, 0.075], "at": [0, -0.12, 0], "material": "coat", "mirror": true },
+        { "id": "front_lower_l", "on": "front_lower_l", "kind": "capsule", "size": [0.085, 0.26, 0.085], "at": [0, -0.12, 0], "material": "coat", "mirror": true },
         { "id": "front_paw_l", "on": "front_foot_l", "kind": "round_box", "size": [0.1, 0.07, 0.13], "at": [0, -0.025, 0.03], "round": 0.4, "material": "pale", "mirror": true },
         { "id": "hind_thigh_l", "on": "hind_upper_l", "kind": "round_box", "size": [0.13, 0.3, 0.2], "at": [0, -0.09, 0.02], "round": 0.45, "material": "coat", "mirror": true },
-        { "id": "hind_shank_l", "on": "hind_lower_l", "kind": "capsule", "size": [0.075, 0.32, 0.075], "at": [0, -0.14, 0], "rot": [-8, 0, 0], "material": "coat", "mirror": true },
+        { "id": "hind_shank_l", "on": "hind_lower_l", "kind": "capsule", "size": [0.085, 0.32, 0.085], "at": [0, -0.14, 0], "rot": [-8, 0, 0], "material": "coat", "mirror": true },
         { "id": "hind_paw_l", "on": "hind_foot_l", "kind": "round_box", "size": [0.1, 0.07, 0.13], "at": [0, -0.025, 0.03], "round": 0.4, "material": "pale", "mirror": true }
       ],
       "clips": { "idle": "wolf_idle", "trot": "wolf_trot" }
@@ -224,8 +224,8 @@
         "chest": [0, 0.02, 0.44],
         "neck": [0, 0.12, 0.28],
         "head": [0, 0.44, 0.13],
-        "ear_l": [0.08, 0.06, -0.04],
-        "ear_r": [-0.08, 0.06, -0.04],
+        "ear_l": [0.09, 0.07, -0.04],
+        "ear_r": [-0.09, 0.07, -0.04],
         "tail_1": [0, 0.1, -0.25],
         "tail_2": [0, -0.08, -0.02],
         "front_upper_l": [0.09, -0.14, 0.12],
@@ -253,11 +253,11 @@
         { "id": "belly", "on": "chest", "kind": "round_box", "size": [0.22, 0.1, 0.5], "at": [0, -0.15, -0.04], "round": 0.45, "material": "pale" },
         { "id": "neck", "on": "neck", "kind": "round_box", "size": [0.16, 0.48, 0.18], "at": [0, 0.2, 0.06], "rot": [17, 0, 0], "round": 0.45, "material": "coat" },
         { "id": "throat", "on": "neck", "kind": "round_box", "size": [0.11, 0.32, 0.08], "at": [0, 0.15, 0.13], "rot": [17, 0, 0], "round": 0.45, "material": "pale" },
-        { "id": "skull", "on": "head", "kind": "round_box", "size": [0.17, 0.17, 0.22], "at": [0, 0, 0.03], "round": 0.4, "material": "coat" },
+        { "id": "skull", "on": "head", "kind": "round_box", "size": [0.2, 0.19, 0.24], "at": [0, 0, 0.03], "round": 0.4, "material": "coat" },
         { "id": "muzzle", "on": "head", "kind": "round_box", "size": [0.1, 0.1, 0.16], "at": [0, -0.04, 0.17], "rot": [12, 0, 0], "round": 0.4, "material": "coat" },
         { "id": "muzzle_tip", "on": "head", "kind": "round_box", "size": [0.09, 0.05, 0.08], "at": [0, -0.075, 0.21], "rot": [12, 0, 0], "round": 0.45, "material": "pale" },
         { "id": "nose", "on": "head", "kind": "round_box", "size": [0.06, 0.04, 0.035], "at": [0, -0.04, 0.255], "round": 0.4, "material": "ink" },
-        { "id": "eye_l", "on": "head", "kind": "ellipsoid", "size": [0.035, 0.042, 0.03], "at": [0.08, 0.03, 0.08], "material": "ink", "mirror": true },
+        { "id": "eye_l", "on": "head", "kind": "ellipsoid", "size": [0.04, 0.05, 0.03], "at": [0.094, 0.03, 0.085], "material": "ink", "mirror": true },
         { "id": "ear_l", "on": "ear_l", "kind": "ellipsoid", "size": [0.06, 0.18, 0.09], "at": [0.074, 0.05, 0], "rot": [0, 0, -55], "material": "coat", "mirror": true },
         { "id": "ear_inner_l", "on": "ear_l", "kind": "ellipsoid", "size": [0.035, 0.13, 0.03], "at": [0.072, 0.05, 0.03], "rot": [0, 0, -55], "material": "pale", "mirror": true },
         { "id": "tail", "on": "tail_1", "kind": "ellipsoid", "size": [0.09, 0.14, 0.06], "at": [0, -0.04, -0.02], "material": "coat" },
@@ -412,11 +412,12 @@
       "place": "antlers",
       "fits": ["quadruped"],
       "parts": [
-        { "id": "antler_beam_l", "on": "antler_l", "kind": "capsule", "size": [0.035, 0.24, 0.035], "at": [0.035, 0.1, -0.01], "rot": [-15, 0, -22], "material": "antler", "mirror": true },
-        { "id": "antler_upper_l", "on": "antler_l", "kind": "capsule", "size": [0.03, 0.22, 0.03], "at": [0.09, 0.28, 0.02], "rot": [18, 0, -12], "material": "antler", "mirror": true },
-        { "id": "antler_brow_l", "on": "antler_l", "kind": "cone", "size": [0.028, 0.12, 0.028], "at": [0.04, 0.1, 0.07], "rot": [60, 0, 0], "material": "antler", "mirror": true },
-        { "id": "antler_back_l", "on": "antler_l", "kind": "cone", "size": [0.026, 0.12, 0.026], "at": [0.13, 0.24, -0.04], "rot": [-35, 0, -30], "material": "antler", "mirror": true },
-        { "id": "antler_top_l", "on": "antler_l", "kind": "cone", "size": [0.025, 0.11, 0.025], "at": [0.11, 0.41, 0.06], "rot": [30, 0, -10], "material": "antler", "mirror": true }
+        { "id": "antler_burr_l", "on": "antler_l", "kind": "cylinder", "size": [0.06, 0.03, 0.06], "at": [0, 0.01, 0], "rot": [0, 0, -30], "material": "antler.shadow", "mirror": true },
+        { "id": "antler_beam_l", "on": "antler_l", "kind": "capsule", "size": [0.05, 0.22, 0.05], "at": [0.05, 0.09, -0.01], "rot": [-12, 0, -32], "material": "antler", "mirror": true },
+        { "id": "antler_upper_l", "on": "antler_l", "kind": "capsule", "size": [0.045, 0.2, 0.045], "at": [0.13, 0.24, 0.02], "rot": [16, 0, -14], "material": "antler", "mirror": true },
+        { "id": "antler_brow_l", "on": "antler_l", "kind": "cone", "size": [0.045, 0.12, 0.045], "at": [0.05, 0.1, 0.07], "rot": [62, 0, -10], "tip": 0.2, "material": "antler", "mirror": true },
+        { "id": "antler_back_l", "on": "antler_l", "kind": "cone", "size": [0.042, 0.12, 0.042], "at": [0.19, 0.2, -0.04], "rot": [-30, 0, -55], "tip": 0.2, "material": "antler", "mirror": true },
+        { "id": "antler_top_l", "on": "antler_l", "kind": "cone", "size": [0.04, 0.11, 0.04], "at": [0.15, 0.36, 0.05], "rot": [24, 0, -12], "tip": 0.2, "material": "antler", "mirror": true }
       ]
     }
   },
@@ -425,7 +426,7 @@
       "label": "The hotbar's block",
       "on": "grip_r",
       "parts": [
-        { "id": "held_block", "on": "grip_r", "kind": "box", "size": [0.2, 0.2, 0.2], "at": [0, -0.06, 0.04], "material": "$block" }
+        { "id": "held_block", "on": "grip_r", "kind": "box", "size": [0.2, 0.2, 0.2], "at": [0, -0.03, 0.07], "material": "$block" }
       ]
     },
     "brush": {
@@ -435,7 +436,8 @@
         { "id": "brush_handle", "on": "grip_r", "kind": "cylinder", "size": [0.04, 0.32, 0.04], "at": [0, 0.02, 0.06], "rot": [90, 0, 0], "material": "heartwood" },
         { "id": "brush_pommel", "on": "grip_r", "kind": "ellipsoid", "size": [0.06, 0.06, 0.06], "at": [0, 0.02, -0.1], "material": "metal_brass" },
         { "id": "brush_ferrule", "on": "grip_r", "kind": "cylinder", "size": [0.058, 0.07, 0.058], "at": [0, 0.02, 0.23], "rot": [90, 0, 0], "material": "metal_brass" },
-        { "id": "brush_tuft", "on": "grip_r", "kind": "cone", "size": [0.09, 0.15, 0.09], "at": [0, 0.02, 0.335], "rot": [90, 0, 0], "tip": 0.1, "material": "$block" }
+        { "id": "brush_tuft", "on": "grip_r", "kind": "cone", "size": [0.1, 0.1, 0.1], "at": [0, 0.02, 0.315], "rot": [90, 0, 0], "tip": 0.55, "material": "$block" },
+        { "id": "brush_tip", "on": "grip_r", "kind": "ellipsoid", "size": [0.058, 0.058, 0.07], "at": [0, 0.02, 0.37], "material": "$block" }
       ]
     }
   },
@@ -508,8 +510,8 @@
       "loop": true,
       "ease": "spline",
       "keys": [
-        { "t": 0, "root": [0, 0, 0], "bones": { "arm_r": [-62, -12, 0], "forearm_r": [-58, 0, 0], "hand_r": [0, 0, 0] } },
-        { "t": 1.5, "root": [0, -0.006, 0], "bones": { "arm_r": [-60, -12, 0], "forearm_r": [-61, 0, 0], "hand_r": [-2, 0, 0] } }
+        { "t": 0, "root": [0, 0, 0], "bones": { "arm_r": [-70, 22, 0], "forearm_r": [-40, 0, 0], "hand_r": [10, 0, 0] } },
+        { "t": 1.5, "root": [0, -0.006, 0], "bones": { "arm_r": [-68, 22, 0], "forearm_r": [-43, 0, 0], "hand_r": [8, 0, 0] } }
       ]
     },
     "fp_walk": {
@@ -521,10 +523,10 @@
       "ease": "spline",
       "cycle": 1.6,
       "keys": [
-        { "t": 0, "root": [0.012, -0.014, 0], "bones": { "arm_r": [-62, -12, 0], "forearm_r": [-58, 0, 0] } },
-        { "t": 0.25, "root": [0, 0.008, 0], "bones": { "arm_r": [-64, -12, 0], "forearm_r": [-56, 0, 0] } },
-        { "t": 0.5, "root": [-0.012, -0.014, 0], "bones": { "arm_r": [-62, -12, 0], "forearm_r": [-58, 0, 0] } },
-        { "t": 0.75, "root": [0, 0.008, 0], "bones": { "arm_r": [-64, -12, 0], "forearm_r": [-56, 0, 0] } }
+        { "t": 0, "root": [0.012, -0.014, 0], "bones": { "arm_r": [-70, 22, 0], "forearm_r": [-40, 0, 0] } },
+        { "t": 0.25, "root": [0, 0.008, 0], "bones": { "arm_r": [-72, 22, 0], "forearm_r": [-38, 0, 0] } },
+        { "t": 0.5, "root": [-0.012, -0.014, 0], "bones": { "arm_r": [-70, 22, 0], "forearm_r": [-40, 0, 0] } },
+        { "t": 0.75, "root": [0, 0.008, 0], "bones": { "arm_r": [-72, 22, 0], "forearm_r": [-38, 0, 0] } }
       ]
     },
     "fp_break": {
@@ -535,10 +537,10 @@
       "loop": false,
       "ease": "smooth",
       "keys": [
-        { "t": 0, "root": [0, 0, 0], "bones": { "arm_r": [-62, -12, 0], "forearm_r": [-58, 0, 0], "hand_r": [0, 0, 0] } },
-        { "t": 0.14, "root": [0, 0.03, -0.02], "bones": { "arm_r": [-100, -16, 0], "forearm_r": [-95, 0, 0], "hand_r": [-25, 0, 0] } },
-        { "t": 0.26, "root": [0, -0.02, 0.05], "bones": { "arm_r": [-40, -6, 0], "forearm_r": [-35, 0, 0], "hand_r": [30, 0, 0] } },
-        { "t": 0.5, "root": [0, 0, 0], "bones": { "arm_r": [-62, -12, 0], "forearm_r": [-58, 0, 0], "hand_r": [0, 0, 0] } }
+        { "t": 0, "root": [0, 0, 0], "bones": { "arm_r": [-70, 22, 0], "forearm_r": [-40, 0, 0], "hand_r": [10, 0, 0] } },
+        { "t": 0.14, "root": [0, 0.03, -0.02], "bones": { "arm_r": [-108, 18, 0], "forearm_r": [-80, 0, 0], "hand_r": [-20, 0, 0] } },
+        { "t": 0.26, "root": [0, -0.02, 0.05], "bones": { "arm_r": [-46, 26, 0], "forearm_r": [-20, 0, 0], "hand_r": [35, 0, 0] } },
+        { "t": 0.5, "root": [0, 0, 0], "bones": { "arm_r": [-70, 22, 0], "forearm_r": [-40, 0, 0], "hand_r": [10, 0, 0] } }
       ]
     },
     "fp_place": {
@@ -549,9 +551,9 @@
       "loop": false,
       "ease": "smooth",
       "keys": [
-        { "t": 0, "root": [0, 0, 0], "bones": { "arm_r": [-62, -12, 0], "forearm_r": [-58, 0, 0] } },
-        { "t": 0.14, "root": [0, 0.015, 0.08], "bones": { "arm_r": [-80, -6, 0], "forearm_r": [-28, 0, 0] } },
-        { "t": 0.36, "root": [0, 0, 0], "bones": { "arm_r": [-62, -12, 0], "forearm_r": [-58, 0, 0] } }
+        { "t": 0, "root": [0, 0, 0], "bones": { "arm_r": [-70, 22, 0], "forearm_r": [-40, 0, 0] } },
+        { "t": 0.14, "root": [0, 0.015, 0.08], "bones": { "arm_r": [-84, 18, 0], "forearm_r": [-18, 0, 0] } },
+        { "t": 0.36, "root": [0, 0, 0], "bones": { "arm_r": [-70, 22, 0], "forearm_r": [-40, 0, 0] } }
       ]
     },
     "wolf_idle": {
