@@ -29,17 +29,23 @@ const TOP_KEYS = ['$comment', 'format', 'rigs', 'characters', 'accessories', 'it
 const BONE_KEYS = ['name', 'parent', 'joint', 'axis', 'limits'];
 const CHARACTER_KEYS = [
   '$comment', 'name', 'label', 'rig', 'height', 'bones', 'sockets', 'slots', 'parts', 'accessories',
-  'variants', 'clips', 'firstPerson',
+  'variants', 'clips', 'firstPerson', 'chains',
 ];
-const PART_KEYS = ['id', 'on', 'kind', 'size', 'at', 'rot', 'material', 'round', 'tip', 'mirror', 'view'];
+const PART_KEYS = ['id', 'on', 'kind', 'size', 'at', 'rot', 'material', 'round', 'tip', 'mirror', 'view', 'with'];
 const ACCESSORY_KEYS = ['$comment', 'label', 'place', 'fits', 'slots', 'hides', 'parts'];
 const ITEM_KEYS = ['$comment', 'label', 'on', 'parts'];
 const VARIANT_KEYS = ['label', 'accessories', 'slots'];
-const CLIP_KEYS = ['$comment', 'rig', 'space', 'layer', 'duration', 'loop', 'ease', 'cycle', 'keys'];
+const CLIP_KEYS = ['$comment', 'rig', 'space', 'layer', 'duration', 'loop', 'ease', 'cycle', 'grounded', 'blend', 'keys'];
 const KEY_KEYS = ['t', 'bones', 'root'];
 const FP_KEYS = ['bones', 'anchor', 'fov', 'clips'];
 /** Rest pose: the body without accessories must reach `height` within this, feet on the ground. */
 export const HEIGHT_TOLERANCE = 0.03;
+/** Chains (a tail): the end of each segment meets the start of the next within this (metres)… */
+export const CHAIN_TOLERANCE = 0.03;
+/** …and one segment turns from the last by at most this (degrees), so the chain bends smoothly. */
+export const CHAIN_MAX_BEND = 60;
+/** A clip's default cross-fade in (seconds) when the character switches to it. */
+export const DEFAULT_BLEND = 0.2;
 const MAX_SIZE = 4;
 
 const fail = (where, message) => {
@@ -139,6 +145,13 @@ function validatePart(p, where, ctx) {
     if (!isNum(p.tip) || p.tip < 0 || p.tip > 1) fail(`${w}.tip`, 'must be 0–1 (the top radius as a fraction)');
   }
   if (p.view !== undefined) oneOf(p.view, VIEWS, `${w}.view`);
+  if (p.with !== undefined) {
+    if (!ctx.earlier) fail(w, '"with" is for a character\'s own parts (a part it hangs from)');
+    if (typeof p.with !== 'string' || !ctx.earlier.has(p.with))
+      fail(`${w}.with`, `"${p.with}" is not an earlier part of ${ctx.of} (a part hangs from one listed before it)`);
+    if (p.mirror && mirrorName(p.with) && !ctx.earlier.has(mirrorName(p.with)))
+      fail(`${w}.with`, `its mirror needs "${mirrorName(p.with)}"`);
+  }
   if (p.mirror !== undefined) {
     if (typeof p.mirror !== 'boolean') fail(`${w}.mirror`, 'must be true or false');
     if (p.mirror) {
@@ -166,6 +179,10 @@ function validateClip(id, c, rigs) {
   oneOf(c.ease, EASES, `${where}.ease`);
   if (c.cycle !== undefined && (!isNum(c.cycle) || c.cycle <= 0 || c.cycle > 20))
     fail(`${where}.cycle`, 'must be metres travelled per loop, 0–20');
+  if (c.grounded !== undefined && typeof c.grounded !== 'boolean') fail(`${where}.grounded`, 'must be true or false');
+  if (c.grounded !== undefined && c.layer !== 'base') fail(`${where}.grounded`, 'only a base clip stands on something');
+  if (c.blend !== undefined && (!isNum(c.blend) || c.blend < 0 || c.blend > 2))
+    fail(`${where}.blend`, 'must be seconds, 0–2 (the cross-fade into this clip)');
   if (!Array.isArray(c.keys) || c.keys.length === 0) fail(`${where}.keys`, 'must be a non-empty list');
   let last = -1;
   c.keys.forEach((k, i) => {
@@ -198,7 +215,7 @@ function validateClip(id, c, rigs) {
       }
     }
   });
-  return { ...c, space: c.space ?? 'body' };
+  return { ...c, space: c.space ?? 'body', grounded: c.grounded ?? c.layer === 'base' };
 }
 
 /**
@@ -282,8 +299,12 @@ export function validate(data, style) {
     }
     const attach = (on) => bones.has(on) || Object.hasOwn(sockets, on);
     if (!Array.isArray(ch.parts) || ch.parts.length === 0) fail(`${w}.parts`, 'must be a non-empty list');
-    const own = { of: `character "${id}"`, sockets: true, attach, material: (m) => Object.hasOwn(slots, m) || material(m) };
-    ch.parts.forEach((p, i) => validatePart(p, `${w}.parts[${i}]`, own));
+    const earlier = new Set();
+    const own = { of: `character "${id}"`, sockets: true, attach, earlier, material: (m) => Object.hasOwn(slots, m) || material(m) };
+    ch.parts.forEach((p, i) => {
+      validatePart(p, `${w}.parts[${i}]`, own);
+      for (const x of partIds([p])) earlier.add(x);
+    });
     const ids = partIds(ch.parts);
     const dup = ids.find((x, i) => ids.indexOf(x) !== i);
     if (dup) fail(`${w}.parts`, `part id "${dup}" is repeated`);
@@ -362,8 +383,27 @@ export function validate(data, style) {
       it.parts.forEach((p, i) => validatePart(p, `items.${iid}.parts[${i}]`, ctx));
     }
 
-    // The rest pose: feet on the ground, the top at the declared height.
-    const b = bounds(compose(data, style, id, { accessories: [] }), 'body');
+    // Chains (a tail): body parts in order, joined end to end.
+    const chains = ch.chains ?? {};
+    keysOf(chains, Object.keys(chains), `${w}.chains`);
+    for (const [cn, chain] of Object.entries(chains)) {
+      const cw = `${w}.chains.${cn}`;
+      if (!NAME.test(cn)) fail(cw, 'chain names are lower_snake_case');
+      keysOf(chain, ['from', 'parts'], cw);
+      if (typeof chain.from !== 'string' || !ids.includes(chain.from)) fail(`${cw}.from`, `"${chain.from}" is not a part of character "${id}" (the part the chain grows from)`);
+      const list = chain.parts;
+      if (!Array.isArray(list) || list.length < 2) fail(`${cw}.parts`, 'must list two or more part ids, root first');
+      for (const pid of list) if (!ids.includes(pid)) fail(`${cw}.parts`, `"${pid}" is not a part of character "${id}"`);
+      if (new Set([chain.from, ...list]).size !== list.length + 1) fail(`${cw}.parts`, 'a part is listed twice');
+    }
+
+    // The rest pose: feet on the ground, the top at the declared height, chains joined.
+    const rest = compose(data, style, id, { accessories: [] });
+    for (const [cn, chain] of Object.entries(chains)) {
+      const bad = chainProblem(rest, chain);
+      if (bad) fail(`${w}.chains.${cn}`, `in the rest pose ${bad}`);
+    }
+    const b = bounds(rest, 'body');
     if (Math.abs(b.min[1]) > 0.01) fail(w, `the rest pose's lowest point is at ${b.min[1].toFixed(3)} m, not on the ground (0)`);
     if (Math.abs(b.max[1] - ch.height) > HEIGHT_TOLERANCE)
       fail(`${w}.height`, `the rest pose without accessories is ${b.max[1].toFixed(3)} m tall, not ${ch.height} m (±${HEIGHT_TOLERANCE})`);
@@ -378,6 +418,7 @@ const mirrorPart = (p) => ({
   on: mirrorName(p.on) ?? p.on,
   at: p.at ? [-p.at[0], p.at[1], p.at[2]] : undefined,
   rot: p.rot ? [p.rot[0], -p.rot[1], -p.rot[2]] : undefined,
+  with: p.with ? mirrorName(p.with) ?? p.with : undefined,
   mirror: false,
 });
 const expand = (parts) => parts.flatMap((p) => (p.mirror ? [{ ...p, mirror: false }, mirrorPart(p)] : [p]));
@@ -407,6 +448,8 @@ export function compose(data, style, id, opts = {}) {
   };
   const hidden = new Set();
   for (const a of worn) for (const h of data.accessories[a]?.hides ?? []) hidden.add(h);
+  // A part hangs from the one named by its `with` (the fringe from the top hair): hiding that hides it.
+  for (const p of expand(ch.parts)) if (p.with && hidden.has(p.with)) hidden.add(p.id);
   const out = [];
   const add = (parts, from) => {
     for (const p of expand(parts)) {
@@ -422,6 +465,7 @@ export function compose(data, style, id, opts = {}) {
         round: p.round ?? (p.kind === 'round_box' ? 0.25 : 0),
         tip: p.tip ?? 0,
         view: p.view ?? 'both',
+        with: p.with,
         material: slots[p.material] ?? p.material,
         from,
       });
@@ -502,6 +546,93 @@ export function bounds(model, view = 'body', pose = {}) {
   return { min, max };
 }
 
+/** A point in a part's own frame (its centre at 0) placed in the character's frame, given the pivots. */
+function partPoint(piv, p, v) {
+  const b = piv.get(p.bone);
+  let w = rotate(v, p.rot);
+  w = [w[0] + p.at[0], w[1] + p.at[1], w[2] + p.at[2]];
+  w = b.chain.reduce((acc, e) => rotate(acc, e), w);
+  return [b.at[0] + w[0], b.at[1] + w[1], b.at[2] + w[2]];
+}
+/** The inverse of `rotate` (Rz⁻¹·Ry⁻¹·Rx⁻¹). */
+function unrotate(v, r) {
+  let [x, y, z] = v;
+  const [a, b, c] = [-r[0] * D, -r[1] * D, -r[2] * D];
+  [y, z] = [y * Math.cos(a) - z * Math.sin(a), y * Math.sin(a) + z * Math.cos(a)];
+  [x, z] = [x * Math.cos(b) + z * Math.sin(b), -x * Math.sin(b) + z * Math.cos(b)];
+  [x, y] = [x * Math.cos(c) - y * Math.sin(c), x * Math.sin(c) + y * Math.cos(c)];
+  return [x, y, z];
+}
+/** A point in the character's frame in a part's own frame (the inverse of `partPoint`). */
+function partLocal(piv, p, v) {
+  const b = piv.get(p.bone);
+  let w = [v[0] - b.at[0], v[1] - b.at[1], v[2] - b.at[2]];
+  for (let i = b.chain.length - 1; i >= 0; i--) w = unrotate(w, b.chain[i]);
+  return unrotate([w[0] - p.at[0], w[1] - p.at[1], w[2] - p.at[2]], p.rot);
+}
+/** How far (metres, roughly) a point lies outside a part's shape; 0 or less inside. */
+function outside(piv, p, v) {
+  const l = partLocal(piv, p, v);
+  const h = p.size.map((s) => s / 2);
+  if (p.kind === 'box' || p.kind === 'round_box') return Math.max(...l.map((x, k) => Math.abs(x) - h[k]));
+  const n = Math.hypot(l[0] / h[0], l[1] / h[1], l[2] / h[2]);
+  return (n - 1) * Math.min(...h);
+}
+const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+const len = (v) => Math.hypot(v[0], v[1], v[2]);
+
+/**
+ * A chain's segments in a pose: `[{ id, start, end }]` for `chain = { from, parts }`. A segment runs
+ * along its part's longest side; its ends are the centres of its end caps (the centre ± the axis ×
+ * (half its length − its radius)), so neighbours overlap smoothly. The start is the end nearer the
+ * previous segment's end (for the first, nearer its bone's pivot: where the chain grows from).
+ */
+export function chainSegments(model, chain, pose = {}) {
+  const piv = pivots(model, pose);
+  const out = [];
+  let prev;
+  for (const id of chain.parts) {
+    const p = model.parts.find((x) => x.id === id);
+    if (!p) fail('chain', `part "${id}" is not drawn`);
+    const k = p.size.indexOf(Math.max(...p.size));
+    const r = Math.min(...p.size.filter((_, j) => j !== k)) / 2;
+    const h = Math.max(0, p.size[k] / 2 - r);
+    const ax = [0, 0, 0];
+    ax[k] = h;
+    const a = partPoint(piv, p, ax);
+    const b = partPoint(piv, p, ax.map((x) => -x));
+    const from = prev ? prev.end : piv.get(p.bone).at;
+    const [start, end] = len(sub(a, from)) <= len(sub(b, from)) ? [a, b] : [b, a];
+    out.push((prev = { id, start, end, pivot: prev ? undefined : from }));
+  }
+  return out;
+}
+
+/** What's wrong with a chain in a pose (detached from the part it grows from, a gap or a kink), or
+ * undefined when it's joined and smooth. */
+export function chainProblem(model, chain, pose = {}) {
+  const segs = chainSegments(model, chain, pose);
+  const g0 = len(sub(segs[0].start, segs[0].pivot));
+  if (g0 > CHAIN_TOLERANCE) return `"${segs[0].id}" starts ${g0.toFixed(3)} m from its bone's pivot`;
+  const root = model.parts.find((x) => x.id === chain.from);
+  if (!root) fail('chain', `part "${chain.from}" is not drawn`);
+  const off = outside(pivots(model, pose), root, segs[0].start);
+  if (off > CHAIN_TOLERANCE) return `"${segs[0].id}" starts ${off.toFixed(3)} m off "${chain.from}", which it grows from`;
+  for (let i = 1; i < segs.length; i++) {
+    const [a, b] = [segs[i - 1], segs[i]];
+    const gap = len(sub(b.start, a.end));
+    if (gap > CHAIN_TOLERANCE) return `"${a.id}" ends ${gap.toFixed(3)} m from where "${b.id}" starts (more than ${CHAIN_TOLERANCE} m)`;
+    const da = sub(a.end, a.start);
+    const db = sub(b.end, b.start);
+    if (len(da) > 1e-6 && len(db) > 1e-6) {
+      const cos = (da[0] * db[0] + da[1] * db[1] + da[2] * db[2]) / (len(da) * len(db));
+      const bend = Math.acos(Math.max(-1, Math.min(1, cos))) / D;
+      if (bend > CHAIN_MAX_BEND) return `"${b.id}" turns ${bend.toFixed(0)}° from "${a.id}" (more than ${CHAIN_MAX_BEND}°)`;
+    }
+  }
+  return undefined;
+}
+
 // ---- Animation ------------------------------------------------------------------------------------
 const lerp = (a, b, u) => a + (b - a) * u;
 const lerp3 = (a, b, u) => [lerp(a[0], b[0], u), lerp(a[1], b[1], u), lerp(a[2], b[2], u)];
@@ -571,4 +702,14 @@ export function layer(entries) {
     if (pose.root) root = lerp3(root, pose.root, weight);
   }
   return { bones, root };
+}
+
+/** A cross-fade from pose `a` to pose `b` (0 → a, 1 → b), every bone either keys: a bone one pose
+ * doesn't key is at rest (0) in it, so switching base clips (walk → sprint → slide) never leaves a
+ * bone behind. */
+export function crossfade(a, b, u) {
+  const bones = {};
+  for (const n of new Set([...Object.keys(a.bones), ...Object.keys(b.bones)]))
+    bones[n] = lerp3(a.bones[n] ?? [0, 0, 0], b.bones[n] ?? [0, 0, 0], u);
+  return { bones, root: lerp3(a.root ?? [0, 0, 0], b.root ?? [0, 0, 0], u) };
 }
