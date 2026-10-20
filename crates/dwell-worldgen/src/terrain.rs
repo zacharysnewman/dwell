@@ -1,4 +1,4 @@
-//! Procedural terrain, generator version 14 (ARCHITECTURE.md §6.3): the interim baseline of Phase
+//! Procedural terrain, generator version 15 (ARCHITECTURE.md §6.3): the interim baseline of Phase
 //! 15 — one island at the origin, a 2D height field, and the ground filled by depth — and since
 //! version 13 (Phase 33) the decorations of `shared/worldgen/decorations.json` one cell above the
 //! ground (tall grass; `decorations.rs`). A chunk is a
@@ -156,8 +156,22 @@ impl TerrainGenerator {
         let (nx, nz) = (x + self.offset_x, z + self.offset_z);
         Corner {
             coast: self.island.coast_at(x, z, None),
-            hills: fbm2(self.hills_seed, nx, nz, H.hill_wavelength, H.hill_octaves, None),
-            bumps: fbm2(self.bumps_seed, nx, nz, H.bump_wavelength, H.bump_octaves, None),
+            hills: fbm2(
+                self.hills_seed,
+                nx,
+                nz,
+                H.hill_wavelength,
+                H.hill_octaves,
+                None,
+            ),
+            bumps: fbm2(
+                self.bumps_seed,
+                nx,
+                nz,
+                H.bump_wavelength,
+                H.bump_octaves,
+                None,
+            ),
         }
     }
 

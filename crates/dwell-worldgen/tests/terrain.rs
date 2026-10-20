@@ -105,7 +105,7 @@ fn heights_a_low_shore_land_rising_inland_a_shallow_sea_floor() {
     }
     // Face-local heights from the midplane: sea level 32, the core's top 10.
     let sea = SEA_LEVEL as f32;
-    assert!(highest > sea + 60.0 && highest < sea + 200.0, "{highest}");
+    assert!(highest > sea + 60.0 && highest < sea + 260.0, "{highest}");
     assert!(
         lowest >= CORE_LAYERS as f32 && lowest > sea - 30.0,
         "{lowest}"
@@ -693,5 +693,51 @@ fn the_island_keeps_its_phase_15_size_in_the_50_km_world() {
         }
         let mean = sum / 72.0;
         assert!((mean - 25_000.0).abs() < 2_500.0, "seed {seed}: {mean}");
+    }
+}
+
+#[test]
+fn the_relief_is_hilly_but_the_island_stays_dry() {
+    // Owner, 2026-10-19: more elevation variance (generator version 15, `shared/worldgen/terrain.json`).
+    // Land columns on a 499 m grid over three seeds, both faces. Version 14 measured a height
+    // standard deviation of ~21 m, a highest column ~105 m above sea level and a mean slope of
+    // ~2.7° (`--example relief`); version 15 ~36 m, ~190 m and ~5.9°, with about as little of the
+    // island under water (< 1 %).
+    for face in [Face::A, Face::B] {
+        let (mut heights, mut slope, mut island, mut flooded) = (Vec::new(), 0.0f64, 0, 0);
+        for seed in [1u64, 42, 12345] {
+            let terrain = BifacialTerrain::new(seed);
+            let g = terrain.local(face);
+            for z in (-30_000..=30_000).step_by(499) {
+                for x in (-30_000..=30_000).step_by(499) {
+                    let col = g.column_at(x, z);
+                    let h = f64::from(col.height - SEA_LEVEL as f32);
+                    if col.coast > 0.0 {
+                        island += 1;
+                        flooded += usize::from(h <= 0.0);
+                    }
+                    if h <= 0.0 {
+                        continue;
+                    }
+                    heights.push(h);
+                    let dx = g.column_at(x + 1, z).height - g.column_at(x - 1, z).height;
+                    let dz = g.column_at(x, z + 1).height - g.column_at(x, z - 1).height;
+                    slope += f64::from((dx * 0.5).hypot(dz * 0.5)).atan().to_degrees();
+                }
+            }
+        }
+        let n = heights.len() as f64;
+        let mean = heights.iter().sum::<f64>() / n;
+        let sd = (heights.iter().map(|h| (h - mean).powi(2)).sum::<f64>() / n).sqrt();
+        let highest = heights.iter().cloned().fold(0.0, f64::max);
+        let slope = slope / n;
+        let wet = flooded as f64 / f64::from(island);
+        let at = format!(
+            "{face:?}: sd {sd:.1} m, highest {highest:.1} m, slope {slope:.2}°, wet {wet:.4}"
+        );
+        assert!((30.0..50.0).contains(&sd), "{at}");
+        assert!((150.0..260.0).contains(&highest), "{at}");
+        assert!((4.5..9.0).contains(&slope), "{at}");
+        assert!(wet < 0.01, "{at}");
     }
 }

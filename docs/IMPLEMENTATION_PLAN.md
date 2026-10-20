@@ -34,7 +34,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 14 — Baseline decisions & ADRs | ✅ Complete — the owner answered D1–D10 (2026-10-12; D3 changed: the build sphere bounds building, not movement; D4 adds the active renderer shown in the settings menu); ADRs 0025–0027 written and 0024 amended, all Accepted |
 | 15 — Cut to the baseline | 🚧 In progress — built and verified locally (native, WASM, Vitest; goldens regenerated; generator version 12, one island; `package.json` 0.9.0, the new compatibility line); e2e passes in CI; outstanding: the owner's look in a browser; follow-up (owner, 2026-10-16): the log and leaves blocks restored as prototype content (appended to the registry, no worldgen placement; a new registry hash, so the 0.13 line) |
 | 24 — Rust port (one Cargo workspace, Rapier, wgpu client; runs after 15, before 16) | 🚧 In progress — 24f (the cutover): 24a–24e built; the C++/TS tree deleted; every Rust suite, the e2e suite and Electron's smoke test pass in CI on the Rust client and `dwell-server`; `package.json` 0.10.0, the new compatibility line (world files are redb now); playtest follow-ups built (2026-10-14): the grey see-through haze on distant ground (atlas mipmaps whose filtering reached past a tile's gutter; checked in a browser), each depth pass draws what reaches its depth range (by distance it could miss terrain toward the sides of the view; suspected, not confirmed, as the cause of gaps seen from high up), replaced meshes never freeing their GPU buffers on the web (the frame rate falling over a session), the LOD's velocity lookahead removed (detail loads by location alone), and named views (`client/views/views.json`: a placed camera, window and settings per view, opened by e2e specs and shot by `scripts/shots.ts`, no flying); the gaps seen from high up not reproduced and not pursued (owner); the dev telemetry and bench (`docs/DEV_TOOLS.md`), and with it the jump onto a block from against it fixed (Rapier's contact clustering hid the body's contacts; also crouching against a wall moving the player back), and the frame time cut about 3.5× idle and flying low (no dropped frames at 60 Hz when flying fast and low; fast hasher, arena-paged meshes with one draw call each, instance-indexed draw data, leaner LOD traversal and chunk padding); the menus redesigned (owner, 2026-10-14: a themed main menu, a full-screen game menu with Settings, Controls and Debug pages, key hints, phones upright and sideways, touch controls no longer taking the menus' taps); `package.json` raised to 0.10.3, a patch release of the 0.10 line (no compatibility change), with the launcher owning the main menu; outstanding: the owner's look at the new menus; the frame-time measurement and the owner's manual check, including a long session's frame rate; `package.json` raised to 0.11.15, a patch release of the 0.11 line |
-| 16 — World shape & build volume (50 km disc, 10-layer core, spherical build volume) | 🚧 In progress — built: the data-driven build volume (sphere) bounding edits, generation, storage, streaming and LOD; the 50 km disc, midplane 0, 10-layer core, sea level 32, LOD root 12, no flight ceiling, the island at its Phase 15 size (data); generator v14, protocol 14; outstanding: CI, the owner's browser look, an e2e edit at the boundary |
+| 16 — World shape & build volume (50 km disc, 10-layer core, spherical build volume) | 🚧 In progress — built: the data-driven build volume (sphere) bounding edits, generation, storage, streaming and LOD; the 50 km disc, midplane 0, 10-layer core, sea level 32, LOD root 12, no flight ceiling, the island at its Phase 15 size (data); generator v14, protocol 14; outstanding: CI, the owner's browser look, an e2e edit at the boundary; follow-up (owner, 2026-10-19): more elevation variance — the height field's parameters moved to data (`shared/worldgen/terrain.json`), hills ±30 → ±80 m, bumps ±2.5 → ±5 m, inland rise 90 → 130 m, generator v15, goldens regenerated, a test pins the relief; needs a new compatibility line (0.15.0) for the owner to raise; outstanding: CI and the owner's look |
 | 17 — Terrain definitions (terrain as data) | ⏳ Not started — built in Rust after Phase 24 |
 | 18 — Adaptive natural blocks (formerly 9e) | 🚧 In progress — every deliverable built and tested (natively, WASM, Vitest); protocol v13, a new compatibility line for the owner to raise; outstanding: the two-client e2e, the LOD seam check, the owner's walk; owner decision 2026-10-15: faces steeper than 44° slide (Phase 35); `package.json` raised to 0.12.0, the new compatibility line (protocol 13; adaptive blocks change collision and terrain; the owner's decision, 2026-10-16) |
 | 19 — WebGPU, looks & textures | ⏳ Not started — re-scoped by ADR 0028: WebGPU is done by Phase 24 (wgpu, no fallback); the look registry and textures as data are built on wgpu after it |
@@ -2293,7 +2293,9 @@ Exit criteria
 **Goal:** The baseline's geometry, with every bound read from one data-driven predicate.
 
 **Status:** 🚧 Built and tested (generator v14, protocol 14: the 0.14 line); outstanding: CI, the
-owner's manual look in a browser, and one e2e edit at the boundary.
+owner's manual look in a browser, and one e2e edit at the boundary. Follow-up (owner, 2026-10-19):
+more elevation variance, generator v15 (below); it changes the terrain a seed generates, so it needs
+a new compatibility line (0.15.0), which the owner raises; outstanding: CI and the owner's look.
 
 Deliverables
 - [x] **Constants** (`shared/protocol/constants.json`): `worldRadius` 50,000; `midplaneY` 0;
@@ -2345,6 +2347,17 @@ Deviations
   top level's; the terrain band (6,144 m) is a controller tunable; flight is held only at the wire
   range (`POS64_LIMIT`).
 - `coreAnchorLayers` stays 8, within the 10-layer core (a compile-time check).
+- **More elevation variance** (owner, 2026-10-19: "just more height from the noise really"; tuning,
+  not a new system): the height field's parameters moved from code constants to data
+  (`shared/worldgen/terrain.json`, generated into `terrain.gen.rs` by `shared/worldgen/gen.mjs`, the
+  move itself checked against the unchanged goldens); hills ±30 → ±80 m, bumps ±2.5 → ±5 m, and the
+  inland rise 90 → 130 m so the deeper hollows stay above sea level. Generator version 15, goldens
+  regenerated (with chunk rows up to the hilltops). Over 7 seeds and both faces (`--example relief`):
+  height standard deviation 21 → 36 m, highest ground ~105 → ~194 m above sea level, mean slope
+  2.7° → 5.9°, island under water 0.2 → 0.6 %, surface steeper than the slide's 44° 0 → ~0.01 %,
+  columns too steep for tall grass 0 → 0. The island's size is unchanged (the ±10 % test passes).
+  `the_relief_is_hilly_but_the_island_stays_dry` pins it (red on version 14's values: sd 21.1 m).
+  Screenshots before and after (ground, altitude, face B) were taken in Chrome on the GPU.
 
 ---
 
