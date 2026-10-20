@@ -22,6 +22,8 @@ const CROUCH_RATE: f64 = 12.0;
 const STEP_MIN: f64 = 0.1;
 /// A crouch offset larger than this is a teleport (respawn), not a crouch.
 const CROUCH_MAX: f64 = 2.0;
+/// A drawn body's step offset decays at this speed (m/s) in the air ([`StepSmoother::follow`]).
+const AIR_SPEED: f64 = 6.0;
 /// Steps further apart than this (m walked) are each a lone step, not one stair.
 const STAIR_GAP: f64 = 3.0;
 
@@ -96,6 +98,38 @@ impl StepSmoother {
     /// The offset to add to the feet (m, along the up): negative while a step up is being climbed.
     pub fn offset(&self) -> f64 {
         self.offset
+    }
+
+    /// The per-frame form, for a drawn body whose feet come interpolated (a remote player: its
+    /// step-up is spread over a snapshot interval, so no single frame shows it): on the ground the
+    /// drawn feet follow the real ones at no more than the steepest virtual ramp's speed
+    /// (`max(min_speed, max_slope × speed)`, so walkable slopes are followed exactly and a step is
+    /// taken as a 45° ramp); in the air the offset left decays at `AIR_SPEED`; further than two
+    /// steps off is a teleport. Returns a step when one starts (the offset leaves zero).
+    pub fn follow(&mut self, s: StepSample, dt: f64) -> Option<Step> {
+        let r = s.ramp;
+        let was = self.offset;
+        let mut offset = match &self.last {
+            Some(last) if s.grounded && last.grounded => was + last.feet - s.feet,
+            _ => was,
+        };
+        if offset.abs() > 2.0 * s.max_step {
+            offset = 0.0;
+        }
+        let speed = if s.grounded {
+            (r.max_slope * s.speed).max(r.min_speed)
+        } else {
+            AIR_SPEED
+        };
+        let decay = speed * dt;
+        offset = if offset.abs() <= decay {
+            0.0
+        } else {
+            offset - offset.signum() * decay
+        };
+        self.offset = offset;
+        self.last = Some(s);
+        (was.abs() < STEP_MIN && offset.abs() >= STEP_MIN).then_some(Step { height: -offset })
     }
 
     /// Advances one tick of `dt` seconds; returns the step taken this tick, if any.
@@ -439,6 +473,65 @@ mod tests {
                     }
                 }
             }
+        }
+
+        /// A drawn body's feet per frame (240 Hz) through `follow`; returns the drawn feet.
+        fn follow(feet: &[(f64, bool)], speed: f64) -> (Vec<f64>, usize) {
+            let dt = DT / 4.0;
+            let mut s = StepSmoother::new();
+            let mut steps = 0;
+            let drawn = feet
+                .iter()
+                .map(|&(f, grounded)| {
+                    let step = s.follow(
+                        StepSample {
+                            feet: f,
+                            grounded,
+                            speed,
+                            max_step: 0.85,
+                            ramp: StepRamp::default(),
+                        },
+                        dt,
+                    );
+                    steps += usize::from(step.is_some());
+                    f + s.offset()
+                })
+                .collect();
+            (drawn, steps)
+        }
+
+        #[test]
+        fn a_drawn_body_takes_an_interpolated_step_as_a_ramp_and_follows_slopes_exactly() {
+            // A remote player's step-up arrives spread over a snapshot interval (here 50 ms,
+            // 12 frames); the drawn body rises at no more than the steepest ramp's speed (45° at
+            // walking speed: 5 m/s) and starts one step. A 26.6° slope is followed exactly.
+            let ramp = StepRamp::default();
+            let step: Vec<_> = (0..120)
+                .map(|i| (0.5 * (f64::from(i - 20) / 12.0).clamp(0.0, 1.0), true))
+                .collect();
+            let (drawn, steps) = follow(&step, WALK);
+            assert_eq!(steps, 1);
+            let dt = DT / 4.0;
+            for w in drawn.windows(2) {
+                assert!((w[1] - w[0]) / dt <= ramp.max_slope * WALK + 1e-6);
+            }
+            assert_close(*drawn.last().unwrap(), 0.5, 6);
+            let slope: Vec<_> = (0..120)
+                .map(|i| (0.5 * WALK * DT / 4.0 * f64::from(i), true))
+                .collect();
+            let (drawn, steps) = follow(&slope, WALK);
+            assert_eq!(steps, 0);
+            for (d, (f, _)) in drawn.iter().zip(&slope) {
+                assert_close(*d, *f, 9);
+            }
+            // Jumping mid-step: the offset decays in the air; the fall itself is drawn as it is.
+            let jump: Vec<_> = step[..26]
+                .iter()
+                .copied()
+                .chain((0..60).map(|i| (0.5 + 0.02 * f64::from(i), false)))
+                .collect();
+            let (drawn, _) = follow(&jump, WALK);
+            assert_close(*drawn.last().unwrap(), jump.last().unwrap().0, 9);
         }
 
         #[test]

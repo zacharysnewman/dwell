@@ -1465,7 +1465,11 @@ impl<S: Scene> Game<S> {
                 Some(m) => m.client(b),
                 None => Some(b),
             });
-            let view = self.bodies.remote(v, held, dt);
+            let world = self.streamer.store_mut();
+            let reach = self.current.max_step_lift;
+            let view = self.bodies.remote(v, held, dt, &mut |f, p| {
+                crate::bodies::ground_at(world, f, p, reach)
+            });
             self.scene
                 .borrow_mut()
                 .set_player(u32::from(v.player_id), Some(view));
@@ -1482,7 +1486,11 @@ impl<S: Scene> Game<S> {
             for v in p.views(now_ms / 1000.0) {
                 drawn.insert(v.player_id);
                 let held = crate::bodies::held_from_wire(v.held, Some);
-                let view = self.bodies.remote(&v, held, dt);
+                let world = self.streamer.store_mut();
+                let reach = self.current.max_step_lift;
+                let view = self.bodies.remote(&v, held, dt, &mut |f, p| {
+                    crate::bodies::ground_at(world, f, p, reach)
+                });
                 self.scene
                     .borrow_mut()
                     .set_player(u32::from(v.player_id), Some(view));
