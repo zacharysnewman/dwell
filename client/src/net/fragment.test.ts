@@ -7,7 +7,17 @@ import {
 } from '../protocol/constants.gen';
 import { FragmentError, Reassembler, fragment } from './fragment';
 
-const message = (n: number): Uint8Array => Uint8Array.from({ length: n }, (_, i) => (i * 7) % 256);
+const message = (n: number): Uint8Array => {
+  const m = new Uint8Array(n);
+  for (let i = 0; i < n; i++) m[i] = (i * 7) % 256;
+  return m;
+};
+/** The first index where `a` and `b` differ, or -1. `toEqual` on a 1 MiB array takes seconds. */
+const firstDifference = (a: Uint8Array, b: Uint8Array): number => {
+  const n = Math.min(a.length, b.length);
+  for (let i = 0; i < n; i++) if (a[i] !== b[i]) return i;
+  return a.length === b.length ? -1 : n;
+};
 const nth = <T>(a: T[], i: number): T => {
   const v = a[i];
   if (v === undefined) throw new Error(`no element ${String(i)}`);
@@ -43,7 +53,10 @@ describe('WebRTC fragments', () => {
         return r.push(p);
       });
       expect(out.slice(0, -1).every((o) => o === null)).toBe(true);
-      expect(out.at(-1)).toEqual(m);
+      const whole = out.at(-1);
+      expect(whole).toBeInstanceOf(Uint8Array);
+      expect(whole?.length).toBe(n);
+      expect(firstDifference(whole ?? new Uint8Array(), m)).toBe(-1);
       expect(r.push(Uint8Array.of(17, 1))).toEqual(Uint8Array.of(17, 1));
     }
   });
