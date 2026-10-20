@@ -8,12 +8,9 @@
 
 pub mod arena;
 pub mod camera;
-pub mod compare;
-pub mod difference;
 pub mod display;
 pub mod frame;
 pub mod geometry;
-pub mod march;
 pub mod pacing;
 pub mod reflection;
 pub mod seam;
@@ -38,17 +35,12 @@ use dwell_world::{CHUNK_SIZE, ChunkCoord, chunk_of};
 
 use arena::{Arena, ArenaRef, Region};
 use camera::{Basis, V3, aim, mul, perspective, vertical_fov, view_matrix};
-use compare::{Assemble, Compare, DiffCounts};
 pub use display::RenderStats;
 use frame::{DEPTH, HDR, Targets, VIEW_DEPTH};
-use march::MarchRenderer;
-use seam::{ChunkTerrain, Routed, SectionTerrain, Selection, TerrainKind, TerrainRenderer};
+use seam::TerrainRenderer;
 use timing::GpuTimer;
 use water::WaterQuality;
 use water_tiles::WaterTiles;
-
-/// Weight of the newest value in the compare overlay's recent means.
-const RECENT: f64 = 0.1;
 
 /// Beyond this the far pass draws (§6.6); the near pass's far plane.
 pub const NEAR_SPLIT: f64 = dwell_protocol::lod::NEAR_SPLIT_M as f64;
@@ -501,9 +493,6 @@ impl RasterTerrain {
 }
 
 impl TerrainRenderer for RasterTerrain {
-    type Chunk = ChunkMeshes;
-    type Section = SectionMeshes;
-
     /// Replaces (or, with `None`, removes) a terrain chunk; meshes are chunk-local.
     fn set_chunk(&mut self, coord: ChunkCoord, meshes: Option<&ChunkMeshes>) {
         self.chunks.remove(&coord);
@@ -717,8 +706,8 @@ pub struct Renderer {
     ink_outline: Option<&'static OutlineMode>,
     /// The spyglass's magnification this frame (1 unzoomed): the outline's fade follows it.
     magnification: f64,
-    /// The frame's targets: one set per side (compare mode: two).
-    targets: Vec<Targets>,
+    /// The frame's targets (made when first needed).
+    targets: Option<Targets>,
     samples: u32,
     draw_layout: wgpu::BindGroupLayout,
     pipelines: HashMap<(Kind, bool, bool), wgpu::RenderPipeline>,
@@ -736,17 +725,8 @@ pub struct Renderer {
     water_scene_pipeline: wgpu::RenderPipeline,
     under_layout: wgpu::BindGroupLayout,
     under_sampler: wgpu::Sampler,
-    /// Compare mode's difference view: its pipeline, counts and group 3 (difference.rs).
-    difference_pipeline: wgpu::RenderPipeline,
-    difference_layout: wgpu::BindGroupLayout,
-    difference: difference::Difference,
-    difference_group: Option<wgpu::BindGroup>,
-    /// The terrain renderers behind the seam (seam.rs), and compare mode's state.
-    terrain: Routed<RasterTerrain, MarchRenderer>,
-    compare: Compare,
-    /// Recent GPU pass times and each side's CPU time (ms), for the compare overlay.
-    gpu_recent: HashMap<&'static str, f64>,
-    cpu_recent: [f64; 2],
+    /// The terrain's chunks and LOD sections (seam.rs).
+    terrain: RasterTerrain,
     /// The vertical FOV the game chose for this frame (the speed boost, `set_fov`); none: the
     /// screen's own (`vertical_fov`).
     fov: Option<f64>,
@@ -1182,41 +1162,6 @@ impl Renderer {
             immediate_size: 0,
         });
         let motion_pipeline = full_screen("motion", &motion_layout, "motion_fs", format.into());
-        // The difference view: both sides' targets (groups 2 and 3) into the canvas.
-        let difference_layout = difference::layout(&device, samples);
-        let difference_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("difference"),
-            layout: Some(
-                &device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                    label: Some("difference"),
-                    bind_group_layouts: &[
-                        Some(&frame_layout),
-                        Some(&draw_layout),
-                        Some(&scene_layout),
-                        Some(&difference_layout),
-                    ],
-                    immediate_size: 0,
-                }),
-            ),
-            vertex: wgpu::VertexState {
-                module: &module,
-                entry_point: Some("sky_vs"),
-                compilation_options: Default::default(),
-                buffers: &[],
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &module,
-                entry_point: Some("difference_fs"),
-                compilation_options: Default::default(),
-                targets: &[Some(format.into())],
-            }),
-            primitive: Default::default(),
-            depth_stencil: None,
-            multisample: Default::default(),
-            multiview_mask: None,
-            cache: None,
-        });
-        let difference = difference::Difference::new(&device);
         let timer = GpuTimer::new(&device, &queue);
         let (atlas_view, sampler) = Self::atlas(&device, &queue);
         let (tile_grid_buffer, fluid_buffer) = frame_extras(&device, &queue);
@@ -1273,7 +1218,6 @@ impl Renderer {
         let arena = Arena::new(device.clone(), queue.clone(), &STRIDES);
         let outline_box = ([0.0; 3], [1.0; 3]);
         let outline_mesh = Self::outline_lines(&arena, outline_box);
-        let march = MarchRenderer::new(device.clone(), queue.clone(), format);
         Self {
             device,
             queue,
@@ -1282,7 +1226,7 @@ impl Renderer {
             pixel_ratio: 1.0,
             ink_outline: None,
             magnification: 1.0,
-            targets: Vec::new(),
+            targets: None,
             samples,
             draw_layout,
             pipelines,
@@ -1295,18 +1239,7 @@ impl Renderer {
             water_scene_pipeline,
             under_layout,
             under_sampler,
-            difference_pipeline,
-            difference_layout,
-            difference,
-            difference_group: None,
-            terrain: Routed::new(
-                RasterTerrain::new(arena.clone()),
-                march,
-                Selection::default(),
-            ),
-            compare: Compare::default(),
-            gpu_recent: HashMap::default(),
-            cpu_recent: [0.0; 2],
+            terrain: RasterTerrain::new(arena.clone()),
             fov: None,
             wind: WindView::default(),
             timer,
@@ -1433,7 +1366,7 @@ impl Renderer {
     pub fn resize(&mut self, width: u32, height: u32, pixel_ratio: f64) {
         self.size = (width.max(1), height.max(1));
         self.pixel_ratio = pixel_ratio;
-        self.targets.clear();
+        self.targets = None;
         self.finished = None;
     }
     pub fn size(&self) -> (u32, u32) {
@@ -1451,7 +1384,7 @@ impl Renderer {
 
     /// Replaces (or, with `None`, removes) a raster terrain chunk; meshes are chunk-local.
     pub fn set_terrain_chunk(&mut self, coord: ChunkCoord, meshes: Option<&ChunkMeshes>) {
-        self.terrain.raster.set_chunk(coord, meshes);
+        self.terrain.set_chunk(coord, meshes);
     }
     /// LOD sections' raster meshes (§6.6), in cells from `origin` scaled by `cell_size`. Nothing
     /// shows until `show_lod_sections` lists it.
@@ -1462,9 +1395,7 @@ impl Renderer {
         cell_size: f64,
         meshes: Option<&SectionMeshes>,
     ) {
-        self.terrain
-            .raster
-            .set_section(id, origin, cell_size, meshes);
+        self.terrain.set_section(id, origin, cell_size, meshes);
     }
     /// The sections to draw from now on, each with the sides (bit per face) whose skirt shows.
     pub fn show_lod_sections(&mut self, visible: &[(i64, u8)]) {
@@ -1700,14 +1631,11 @@ impl Renderer {
     }
     pub fn stats(&self) -> RenderStats {
         let pixels = u64::from(self.size.0) * u64::from(self.size.1);
-        // Compare mode's second set of targets is all but the canvas's buffers again.
-        let sides = self.targets.len().max(1) as u64;
         let per_pixel = frame::bytes_per_pixel(self.samples, self.water().reads_scene());
         RenderStats {
             mesh_bytes: self.terrain.gpu_bytes(),
             screen_bytes: pixels
                 * (per_pixel
-                    + (sides - 1) * (per_pixel - 8)
                     + if self.finished.is_some() {
                         frame::FINISHED_BYTES
                     } else {
@@ -1715,36 +1643,6 @@ impl Renderer {
                     }),
             pixel_ratio: self.pixel_ratio,
             ..self.stats
-        }
-    }
-
-    /// The marcher's resolution against the output's and its upscaler (`?scale=` with
-    /// `?upscaler=fsr1|bilateral`; docs/RAY_MARCHED_RENDERER.md §4.2 step 3).
-    pub fn set_march_resolution(&mut self, scale: f32, upscaler: march::upscale::Upscaler) {
-        self.terrain.march.scale = scale;
-        self.terrain.march.upscaler = upscaler;
-    }
-
-    /// The march's dev switches from the page's query (`MarchSettings::apply_query`).
-    pub fn set_march_query(&mut self, search: &str) {
-        self.terrain.march.marcher.settings.apply_query(search);
-    }
-
-    /// The camera and frame uniforms as the marcher reads them (`march::Marcher::draw`): the same
-    /// lights, fog, sky and view as this renderer's frame.
-    pub fn march_frame(&self) -> march::MarchFrame {
-        let basis = aim(self.yaw, self.pitch, self.face, self.flip);
-        let aspect = f64::from(self.size.0) / f64::from(self.size.1);
-        // The frame's FOV (the speed boost, the spyglass): the rays and the cone LOD follow it.
-        let tan_y = (self.frame_fov().to_radians() / 2.0).tan();
-        let f3 = |v: V3| v.map(|x| x as f32);
-        march::MarchFrame {
-            uniforms: self.frame_uniforms(&basis, NEAR_PLANE, FAR_PLANE).to_vec(),
-            eye: self.eye,
-            forward: f3(basis.forward()),
-            right: f3(basis.right),
-            up: f3(basis.up),
-            tan: [(tan_y * aspect) as f32, tan_y as f32],
         }
     }
 
@@ -1890,7 +1788,7 @@ impl Renderer {
     fn mesh_of(&self, m: &DrawMesh) -> (&GpuMesh, Vec<std::ops::Range<u32>>) {
         match m {
             DrawMesh::Chunk(c, part) => {
-                let chunk = &self.terrain.raster.chunks[c];
+                let chunk = &self.terrain.chunks[c];
                 let m = match part {
                     Part::Opaque => chunk.opaque.as_ref(),
                     Part::Water => chunk.water.as_ref(),
@@ -1900,7 +1798,7 @@ impl Renderer {
                 (m, vec![m.parts[0].clone()])
             }
             DrawMesh::Section(id, w, mask) => {
-                let s = &self.terrain.raster.sections[id];
+                let s = &self.terrain.sections[id];
                 let m = if *w {
                     s.water.as_ref()
                 } else {
@@ -1954,7 +1852,7 @@ impl Renderer {
             u8::from(view.holds(origin, size, passes[0].0, passes[0].1))
                 | u8::from(view.holds(origin, size, passes[1].0, passes[1].1)) << 1
         };
-        for (&coord, c) in &self.terrain.raster.chunks {
+        for (&coord, c) in &self.terrain.chunks {
             let passes = if chunk_visible(coord) {
                 reaches(c.origin, f64::from(CHUNK_SIZE))
             } else {
@@ -2019,8 +1917,8 @@ impl Renderer {
             };
             [t[0], t[1], t[2], alpha]
         };
-        for &(id, mask) in &self.terrain.raster.shown {
-            let Some(s) = self.terrain.raster.sections.get(&id) else {
+        for &(id, mask) in &self.terrain.shown {
+            let Some(s) = self.terrain.sections.get(&id) else {
                 continue;
             };
             let passes = reaches(s.origin, s.cell * 32.0);
@@ -2061,11 +1959,10 @@ impl Renderer {
             }
         }
         // Stand-ins: the source section's surface, clipped to the hole's box (its own skirts off).
-        for st in self.terrain.raster.stand_ins.iter().take(MAX_STAND_INS) {
+        for st in self.terrain.stand_ins.iter().take(MAX_STAND_INS) {
             let passes = 3;
             let Some(s) = self
                 .terrain
-                .raster
                 .sections
                 .get(&st.id)
                 .filter(|s| s.opaque.is_some())
@@ -2224,51 +2121,35 @@ impl Renderer {
         split
     }
 
-    /// The frame's targets: a set per side (compare mode: two), made again when the size or the
-    /// number of sides changes.
+    /// The frame's targets, made again when the size changes or the water starts or stops
+    /// reading the scene.
     fn ensure_targets(&mut self) {
-        let sides = if self.terrain.selection().compare() {
-            2
-        } else {
-            1
-        };
         // The under-water copy only where the water reads the scene (Medium and High).
         let under = self.water().reads_scene();
-        if self.targets.len() == sides && self.targets.iter().all(|t| t.under.is_some() == under) {
+        if self
+            .targets
+            .as_ref()
+            .is_some_and(|t| t.under.is_some() == under)
+        {
             return;
         }
-        self.difference_group = None;
         // Dropped first: their textures are destroyed before the new ones are made.
-        self.targets = Vec::new();
-        self.targets = (0..sides)
-            .map(|_| {
-                Targets::new(
-                    &self.device,
-                    self.size,
-                    self.samples,
-                    &self.scene_layout,
-                    under.then_some((&self.under_layout, &self.under_sampler)),
-                )
-            })
-            .collect();
-        if sides == 2 {
-            self.difference_group = Some(self.difference.group(
-                &self.device,
-                &self.difference_layout,
-                &self.targets[1],
-            ));
-        }
+        self.targets = None;
+        self.targets = Some(Targets::new(
+            &self.device,
+            self.size,
+            self.samples,
+            &self.scene_layout,
+            under.then_some((&self.under_layout, &self.under_sampler)),
+        ));
     }
 
     /// Draws one frame into `target` (a canvas texture or an offscreen one, `format`, the size
     /// given to `resize`).
     /// `chunk_visible` says which terrain chunks to draw (the LOD draws instead of the others).
     ///
-    /// Each side of the frame (one, or compare mode's two: `compare.rs`) is drawn by its terrain
-    /// renderer into its own targets — raster's far and near passes (players and water with them),
-    /// or the marcher's pass — scissored to the part of the screen it shows; then the composite
-    /// assembles them into `target` (each side's part, or the difference heatmap) with the lines
-    /// over it.
+    /// The terrain's far and near passes (players and water with them) draw into the frame's
+    /// targets; then the composite draws them into `target` with the lines over it.
     pub fn render(
         &mut self,
         target: &wgpu::TextureView,
@@ -2279,20 +2160,9 @@ impl Renderer {
         if let Some(timer) = &mut self.timer {
             for (name, ms) in timer.collect() {
                 crate::telemetry::sample(name, ms);
-                let recent = self.gpu_recent.entry(name).or_insert(ms);
-                *recent += (ms - *recent) * RECENT;
             }
             timer.begin();
         }
-        self.difference.collect();
-        let selection = self.terrain.selection();
-        let full = [0, 0, self.size.0, self.size.1];
-        let regions = if selection.compare() {
-            self.compare.draws(self.size)
-        } else {
-            [Some(full), None]
-        };
-        let kinds = [selection.left, selection.right.unwrap_or(selection.left)];
         let collect_start = crate::telemetry::now_ms();
         let basis = aim(self.yaw, self.pitch, self.face, self.flip);
         // Two passes (§6.6): the far one beyond the split (its near plane pushed out with altitude,
@@ -2358,124 +2228,82 @@ impl Renderer {
         }
         let arena = self.arena.borrow();
         let (mut calls, mut triangles) = (0u32, 0u64);
-        let mut cpu = [0.0f64; 2];
         let scene_passes = passes.len();
-        for side in 0..self.targets.len() {
-            let Some(rect) = regions[side] else {
-                continue; // not shown this frame: its targets are not read
+        let targets = self.targets.as_ref().expect("ensure_targets made them");
+        let t0 = crate::telemetry::now_ms();
+        // With water that reads the scene (W3), a pass with water is split: its opaque half
+        // (colour resolved, depth kept), a copy of the colour, then its water half, which samples
+        // the copy and the view depth.
+        let reads_scene = self.water().reads_scene();
+        let names = [timing::FAR, timing::NEAR];
+        let water_names = [timing::FAR_WATER, timing::NEAR_WATER];
+        for (i, pass_draws) in draws[..scene_passes].iter().enumerate() {
+            let query = self.timer.as_mut().and_then(|t| t.pass(names[i]));
+            let split = reads_scene
+                .then(|| pass_draws.iter().position(|d| d.water))
+                .flatten();
+            let (ops, water_ops) = match split {
+                Some(_) => {
+                    let (o, w) = frame::split_pass_ops(i, scene_passes, self.samples);
+                    (o, Some(w))
+                }
+                None => (frame::scene_pass_ops(i, scene_passes, self.samples), None),
             };
-            let t0 = crate::telemetry::now_ms();
-            match kinds[side] {
-                TerrainKind::Raster => {
-                    let names = if side == 0 {
-                        [timing::FAR, timing::NEAR]
-                    } else {
-                        [timing::RIGHT_FAR, timing::RIGHT_NEAR]
-                    };
-                    let water_names = if side == 0 {
-                        [timing::FAR_WATER, timing::NEAR_WATER]
-                    } else {
-                        [timing::RIGHT_FAR_WATER, timing::RIGHT_NEAR_WATER]
-                    };
-                    // With water that reads the scene (W3), a pass with water is split: its opaque
-                    // half (colour resolved, depth kept), a copy of the colour, then its water half,
-                    // which samples the copy and the view depth.
-                    let reads_scene = self.water().reads_scene();
-                    for (i, pass_draws) in draws[..scene_passes].iter().enumerate() {
-                        let query = self.timer.as_mut().and_then(|t| t.pass(names[i]));
-                        let targets = &self.targets[side];
-                        let split = reads_scene
-                            .then(|| pass_draws.iter().position(|d| d.water))
-                            .flatten();
-                        let (ops, water_ops) = match split {
-                            Some(_) => {
-                                let (o, w) = frame::split_pass_ops(i, scene_passes, self.samples);
-                                (o, Some(w))
-                            }
-                            None => (frame::scene_pass_ops(i, scene_passes, self.samples), None),
-                        };
-                        let opaque = &pass_draws[..split.unwrap_or(pass_draws.len())];
-                        {
-                            let mut pass = Self::scene_pass(
-                                &mut encoder,
-                                targets,
-                                i,
-                                ops,
-                                split.is_some(),
-                                self.timer.as_ref().and_then(|t| t.writes(query)),
-                            );
-                            pass.set_scissor_rect(rect[0], rect[1], rect[2], rect[3]);
-                            pass.set_bind_group(0, &self.frame_groups[i], &[]);
-                            pass.set_bind_group(1, &self.draw_group, &[]);
-                            self.record(
-                                &mut pass,
-                                opaque,
-                                first[i],
-                                &arena,
-                                false,
-                                &mut calls,
-                                &mut triangles,
-                            );
-                        }
-                        let (Some(at), Some(water_ops)) = (split, water_ops) else {
-                            continue;
-                        };
-                        let (copy, under) = targets.under.as_ref().expect("reads_scene targets");
-                        encoder.copy_texture_to_texture(
-                            targets.colour.0.as_image_copy(),
-                            copy.0.as_image_copy(),
-                            copy.0.size(),
-                        );
-                        let query = self.timer.as_mut().and_then(|t| t.pass(water_names[i]));
-                        let mut pass = Self::water_pass(
-                            &mut encoder,
-                            targets,
-                            water_ops,
-                            self.timer.as_ref().and_then(|t| t.writes(query)),
-                        );
-                        pass.set_scissor_rect(rect[0], rect[1], rect[2], rect[3]);
-                        pass.set_bind_group(0, &self.frame_groups[i], &[]);
-                        pass.set_bind_group(1, &self.draw_group, &[]);
-                        pass.set_bind_group(2, under, &[]);
-                        self.record(
-                            &mut pass,
-                            &pass_draws[at..],
-                            first[i] + at as u64,
-                            &arena,
-                            true,
-                            &mut calls,
-                            &mut triangles,
-                        );
-                    }
-                    cpu[side] = crate::telemetry::now_ms() - t0 + collect_ms;
-                }
-                TerrainKind::March => {
-                    let query = self.timer.as_mut().and_then(|t| t.pass(timing::MARCH));
-                    let frame = self.march_frame();
-                    self.terrain.march.draw(
-                        &mut encoder,
-                        &self.targets[side],
-                        &frame,
-                        self.timer.as_ref().and_then(|t| t.writes(query)),
-                    );
-                    cpu[side] = crate::telemetry::now_ms() - t0;
-                }
+            let opaque = &pass_draws[..split.unwrap_or(pass_draws.len())];
+            {
+                let mut pass = Self::scene_pass(
+                    &mut encoder,
+                    targets,
+                    i,
+                    ops,
+                    split.is_some(),
+                    self.timer.as_ref().and_then(|t| t.writes(query)),
+                );
+                pass.set_bind_group(0, &self.frame_groups[i], &[]);
+                pass.set_bind_group(1, &self.draw_group, &[]);
+                self.record(
+                    &mut pass,
+                    opaque,
+                    first[i],
+                    &arena,
+                    false,
+                    &mut calls,
+                    &mut triangles,
+                );
             }
+            let (Some(at), Some(water_ops)) = (split, water_ops) else {
+                continue;
+            };
+            let (copy, under) = targets.under.as_ref().expect("reads_scene targets");
+            encoder.copy_texture_to_texture(
+                targets.colour.0.as_image_copy(),
+                copy.0.as_image_copy(),
+                copy.0.size(),
+            );
+            let query = self.timer.as_mut().and_then(|t| t.pass(water_names[i]));
+            let mut pass = Self::water_pass(
+                &mut encoder,
+                targets,
+                water_ops,
+                self.timer.as_ref().and_then(|t| t.writes(query)),
+            );
+            pass.set_bind_group(0, &self.frame_groups[i], &[]);
+            pass.set_bind_group(1, &self.draw_group, &[]);
+            pass.set_bind_group(2, under, &[]);
+            self.record(
+                &mut pass,
+                &pass_draws[at..],
+                first[i] + at as u64,
+                &arena,
+                true,
+                &mut calls,
+                &mut triangles,
+            );
         }
-        // The composite into `target`, with the lines over it (scissored to each side, depth-tested
-        // against that side's view depth).
-        let assemble = if selection.compare() {
-            self.compare.assemble(self.size)
-        } else {
-            Assemble::Regions(vec![(0, full)])
-        };
-        let differ = assemble == Assemble::Difference;
-        if differ {
-            self.difference.reset(&self.queue);
-        }
+        let cpu = crate::telemetry::now_ms() - t0 + collect_ms;
         // With the wind on, the composite draws the finished image and the motion pass reads it
         // (docs/MOTION_EFFECTS.md: post effects that sample neighbours read the finished image).
-        let motion = !differ && motion_pass(self.wind.intensity);
+        let motion = motion_pass(self.wind.intensity);
         if motion && self.finished.is_none() {
             self.finished = Some(frame::Finished::new(
                 &self.device,
@@ -2483,7 +2311,7 @@ impl Renderer {
                 &self.finished_layout,
             ));
         }
-        if motion && let (Some(finished), Assemble::Regions(parts)) = (&self.finished, &assemble) {
+        if let (true, Some(finished)) = (motion, &self.finished) {
             let query = self.timer.as_mut().and_then(|t| t.pass(timing::COMPOSITE));
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("finished"),
@@ -2502,12 +2330,9 @@ impl Renderer {
             pass.set_bind_group(0, &self.frame_groups[scene_passes - 1], &[]);
             pass.set_bind_group(1, &self.draw_group, &[]);
             pass.set_pipeline(&self.finished_pipeline);
-            for (side, rect) in parts {
-                pass.set_scissor_rect(rect[0], rect[1], rect[2], rect[3]);
-                pass.set_bind_group(2, &self.targets[*side].scene, &[]);
-                pass.draw(0..3, 0..1);
-                calls += 1;
-            }
+            pass.set_bind_group(2, &targets.scene, &[]);
+            pass.draw(0..3, 0..1);
+            calls += 1;
         }
         {
             let name = if motion {
@@ -2533,48 +2358,25 @@ impl Renderer {
             // The composite and lines use the near pass's uniforms.
             pass.set_bind_group(0, &self.frame_groups[scene_passes - 1], &[]);
             pass.set_bind_group(1, &self.draw_group, &[]);
+            pass.set_bind_group(2, &targets.scene, &[]);
             if let (true, Some(finished)) = (motion, &self.finished) {
-                // The wind over the finished image, the whole canvas at once.
-                pass.set_bind_group(2, &self.targets[0].scene, &[]);
+                // The wind over the finished image.
                 pass.set_bind_group(3, &finished.group, &[]);
                 pass.set_pipeline(&self.motion_pipeline);
-                pass.draw(0..3, 0..1);
-                calls += 1;
+            } else {
+                pass.set_pipeline(&self.composite_pipeline);
             }
-            match assemble {
-                Assemble::Regions(parts) => {
-                    for (side, rect) in parts {
-                        pass.set_scissor_rect(rect[0], rect[1], rect[2], rect[3]);
-                        pass.set_bind_group(2, &self.targets[side].scene, &[]);
-                        if !motion {
-                            pass.set_pipeline(&self.composite_pipeline);
-                            pass.draw(0..3, 0..1);
-                            calls += 1;
-                        }
-                        self.record(
-                            &mut pass,
-                            &draws[scene_passes],
-                            first[scene_passes],
-                            &arena,
-                            false,
-                            &mut calls,
-                            &mut triangles,
-                        );
-                    }
-                }
-                Assemble::Difference => {
-                    pass.set_bind_group(2, &self.targets[0].scene, &[]);
-                    if let Some(group) = &self.difference_group {
-                        pass.set_bind_group(3, group, &[]);
-                        pass.set_pipeline(&self.difference_pipeline);
-                        pass.draw(0..3, 0..1);
-                        calls += 1;
-                    }
-                }
-            }
-        }
-        if differ {
-            self.difference.copy(&mut encoder);
+            pass.draw(0..3, 0..1);
+            calls += 1;
+            self.record(
+                &mut pass,
+                &draws[scene_passes],
+                first[scene_passes],
+                &arena,
+                false,
+                &mut calls,
+                &mut triangles,
+            );
         }
         drop(arena);
         if let Some(timer) = &self.timer {
@@ -2585,25 +2387,7 @@ impl Renderer {
         if let Some(timer) = &mut self.timer {
             timer.submitted();
         }
-        if kinds.contains(&TerrainKind::March) {
-            self.terrain.march.submitted();
-        }
-        if differ {
-            self.difference.submitted();
-        }
-        for (side, ms) in cpu.iter().enumerate() {
-            if regions[side].is_some() && side < self.targets.len() {
-                crate::telemetry::add(
-                    if kinds[side] == TerrainKind::Raster {
-                        "draw.raster"
-                    } else {
-                        "draw.march"
-                    },
-                    *ms,
-                );
-                self.cpu_recent[side] += (ms - self.cpu_recent[side]) * RECENT;
-            }
-        }
+        crate::telemetry::add("draw.raster", cpu);
         self.stats.calls = calls;
         self.stats.triangles = triangles;
     }
@@ -2750,62 +2534,9 @@ impl Renderer {
         })
     }
 
-    /// Compare mode's state (split, blink, difference; the divider).
-    pub fn compare(&self) -> Compare {
-        self.compare
-    }
-    pub fn set_compare(&mut self, compare: Compare) {
-        self.compare = compare;
-    }
-    /// The latest difference counts read back (difference view), if any.
-    pub fn difference_counts(&self) -> Option<DiffCounts> {
-        self.difference.last
-    }
-
-    /// Compare mode's overlay, a line per side: its renderer, CPU and GPU time (recent means),
-    /// GPU memory and settings. None outside compare mode.
-    pub fn compare_overlay(&self) -> Option<[String; 2]> {
-        let selection = self.terrain.selection();
-        let right = selection.right?;
-        let gpu = |names: &[&str]| -> String {
-            let ms: Vec<f64> = names
-                .iter()
-                .filter_map(|n| self.gpu_recent.get(n).copied())
-                .collect();
-            if self.timer.is_none() || ms.is_empty() {
-                "–".into()
-            } else {
-                format!("{:.2} ms", ms.iter().sum::<f64>())
-            }
-        };
-        let side = |i: usize, kind: TerrainKind| -> String {
-            let (gpu, bytes) = match (i, kind) {
-                (_, TerrainKind::March) => (gpu(&[timing::MARCH]), self.terrain.march.gpu_bytes()),
-                (0, TerrainKind::Raster) => (
-                    gpu(&[timing::FAR, timing::NEAR]),
-                    self.terrain.raster.gpu_bytes(),
-                ),
-                _ => (
-                    gpu(&[timing::RIGHT_FAR, timing::RIGHT_NEAR]),
-                    self.terrain.raster.gpu_bytes(),
-                ),
-            };
-            let placeholder = kind == TerrainKind::March && !march::BUILT;
-            format!(
-                "{}{} · cpu {:.2} ms · gpu {gpu} · {:.1} MB · scale {:.2} · upscaler none",
-                kind.name(),
-                if placeholder { " (not built)" } else { "" },
-                self.cpu_recent[i],
-                bytes as f64 / 1_048_576.0,
-                self.pixel_ratio,
-            )
-        };
-        Some([side(0, selection.left), side(1, right)])
-    }
-
     /// The chunk at a world position (tests and tools).
     pub fn has_chunk_at(&self, x: i32, y: i32, z: i32) -> bool {
-        self.terrain.raster.chunks.contains_key(&chunk_of(x, y, z))
+        self.terrain.chunks.contains_key(&chunk_of(x, y, z))
     }
 }
 
@@ -2854,37 +2585,7 @@ impl PassView {
     }
 }
 
-/// The frame group's fixed entries after the uniforms, atlas and sampler (shaders.rs `FRAME`):
-/// binding 3 each atlas tile's grid lines (`dwell_mesh::tile_grids`), binding 4 the fluid looks
-/// (water.rs), seen by `visibility`. The marcher's frame group has them too.
-pub(crate) fn frame_extra_entries(
-    visibility: wgpu::ShaderStages,
-) -> [wgpu::BindGroupLayoutEntry; 2] {
-    [
-        wgpu::BindGroupLayoutEntry {
-            binding: 3,
-            visibility,
-            ty: wgpu::BindingType::Buffer {
-                ty: wgpu::BufferBindingType::Uniform,
-                has_dynamic_offset: false,
-                min_binding_size: None,
-            },
-            count: None,
-        },
-        wgpu::BindGroupLayoutEntry {
-            binding: 4,
-            visibility,
-            ty: wgpu::BindingType::Buffer {
-                ty: wgpu::BufferBindingType::Storage { read_only: true },
-                has_dynamic_offset: false,
-                min_binding_size: wgpu::BufferSize::new(water::FLUID_STRIDE),
-            },
-            count: None,
-        },
-    ]
-}
-
-/// The buffers for [`frame_extra_entries`], written once: the tile grids and the fluid looks
+/// The frame group's buffers 3 and 4, written once: the tile grids and the fluid looks
 /// (generated from the registry, `water::pack_fluids`: fixed per build).
 pub(crate) fn frame_extras(
     device: &wgpu::Device,
@@ -3031,9 +2732,7 @@ fn downsample(src: &[u8], size: usize) -> Vec<u8> {
 }
 
 impl TerrainRenderer for Renderer {
-    type Chunk = ChunkTerrain;
-    type Section = SectionTerrain;
-    fn set_chunk(&mut self, coord: ChunkCoord, payload: Option<&ChunkTerrain>) {
+    fn set_chunk(&mut self, coord: ChunkCoord, payload: Option<&ChunkMeshes>) {
         self.terrain.set_chunk(coord, payload);
     }
     fn set_section(
@@ -3041,7 +2740,7 @@ impl TerrainRenderer for Renderer {
         id: i64,
         origin: V3,
         cell_size: f64,
-        payload: Option<&SectionTerrain>,
+        payload: Option<&SectionMeshes>,
     ) {
         self.terrain.set_section(id, origin, cell_size, payload);
     }
@@ -3060,12 +2759,6 @@ impl TerrainRenderer for Renderer {
 }
 
 impl crate::game::Scene for Renderer {
-    fn selection(&self) -> Selection {
-        self.terrain.selection()
-    }
-    fn select(&mut self, selection: Selection) -> bool {
-        self.terrain.select(selection)
-    }
     fn set_player(&mut self, id: u32, view: Option<PlayerView>) {
         Renderer::set_player(self, id, view);
     }
@@ -3565,58 +3258,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn compare_mode_draws_cleanly_in_every_view_and_switches_back() {
-        // Two sets of targets, scissored sides, the placeholder marcher's pass, the difference
-        // pipeline and its counts' read back, timed or not: valid WebGPU throughout.
-        use crate::game::Scene;
-        for (samples, features) in [
-            (1, wgpu::Features::empty()),
-            (4, wgpu::Features::TIMESTAMP_QUERY),
-        ] {
-            for right in ["march", "raster"] {
-                for view in [
-                    compare::CompareView::Split,
-                    compare::CompareView::Blink,
-                    compare::CompareView::Difference,
-                ] {
-                    let mut r = noop_renderer_with(samples, features);
-                    r.select(Selection::parse("compare", Some(right)).unwrap());
-                    r.set_compare(Compare {
-                        view,
-                        divider: 0.3,
-                        blink_right: true,
-                    });
-                    assert!(r.compare_overlay().is_some());
-                    draws_cleanly(r);
-                }
-            }
-            let mut r = noop_renderer_with(samples, features);
-            r.select(Selection::single(TerrainKind::March));
-            assert!(r.compare_overlay().is_none());
-            draws_cleanly(r);
-        }
-    }
-
-    #[test]
-    fn compare_mode_keeps_a_second_set_of_targets_only_while_on() {
-        use crate::game::Scene;
-        let mut r = noop_renderer();
-        r.resize(8, 8, 1.0);
-        r.ensure_targets();
-        assert_eq!(r.targets.len(), 1);
-        let one = r.stats().screen_bytes;
-        r.select(Selection::parse("compare", None).unwrap());
-        r.ensure_targets();
-        assert_eq!(r.targets.len(), 2);
-        assert!(r.difference_group.is_some());
-        assert!(r.stats().screen_bytes > one, "counted in the GPU memory");
-        r.select(Selection::default());
-        r.ensure_targets();
-        assert_eq!(r.targets.len(), 1);
-        assert!(r.difference_group.is_none());
-    }
-
     fn draws_cleanly(mut r: Renderer) {
         let scope = r.device.push_error_scope(wgpu::ErrorFilter::Validation);
         let target = r.device.create_texture(&wgpu::TextureDescriptor {
@@ -3733,58 +3374,6 @@ mod tests {
     }
 
     #[test]
-    fn difference_frames_never_reuse_a_readback_buffer_still_mapping() {
-        // The browser's map callback can land frames later: frames rendered back to back with
-        // their maps unfinished must neither map a buffer twice nor copy into one still mapping
-        // ("buffer used in submit while mapped"); they skip the read back instead. The noop device
-        // fires map callbacks within the submit, so the late callback itself is
-        // `difference::Slots`'s test; this checks the ring stays valid WebGPU and still reads.
-        use crate::game::Scene;
-        let mut r = noop_renderer();
-        r.select(Selection::parse("compare", Some("raster")).unwrap());
-        r.set_compare(Compare {
-            view: compare::CompareView::Difference,
-            divider: 0.5,
-            blink_right: false,
-        });
-        let scope = r.device.push_error_scope(wgpu::ErrorFilter::Validation);
-        let target = r.device.create_texture(&wgpu::TextureDescriptor {
-            label: None,
-            size: wgpu::Extent3d {
-                width: 8,
-                height: 8,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8Unorm,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            view_formats: &[],
-        });
-        let view = target.create_view(&Default::default());
-        r.resize(8, 8, 1.0);
-        for _ in 0..8 {
-            r.render(&view, &|_| true);
-        }
-        r.device
-            .poll(wgpu::PollType::wait_indefinitely())
-            .expect("polled");
-        for _ in 0..4 {
-            r.render(&view, &|_| true);
-            r.device
-                .poll(wgpu::PollType::wait_indefinitely())
-                .expect("polled");
-        }
-        assert!(r.difference.last.is_some(), "counts still read back");
-        let mut cx = std::task::Context::from_waker(std::task::Waker::noop());
-        match std::pin::pin!(scope.pop()).as_mut().poll(&mut cx) {
-            std::task::Poll::Ready(e) => assert!(e.is_none(), "{e:?}"),
-            std::task::Poll::Pending => panic!("error scope pending"),
-        }
-    }
-
-    #[test]
     fn the_frame_uses_the_fov_the_game_chose() {
         // The projection, the sky's rays and each pass's culling all use the frame's FOV.
         let mut r = noop_renderer();
@@ -3805,36 +3394,6 @@ mod tests {
         let narrow = PassView::new([0.0; 3], [0.0, 0.0, 1.0], vertical_fov(aspect), aspect);
         let wide = PassView::new([0.0; 3], [0.0, 0.0, 1.0], 80.0, aspect);
         assert!(wide.stretch > narrow.stretch);
-    }
-
-    #[test]
-    fn the_marcher_draws_with_the_fov_the_game_chose() {
-        // Regression (the spyglass, docs/SPYGLASS.md): the marcher's rays and its cone LOD came
-        // from the screen's own FOV, so it ignored the speed boost and would ignore the zoom.
-        let mut r = noop_renderer();
-        r.resize(1600, 900, 1.0);
-        let aspect = 16.0 / 9.0;
-        let tan = |fov: f64| (fov.to_radians() / 2.0).tan() as f32;
-        let f = r.march_frame();
-        assert!((f.tan[1] - tan(vertical_fov(aspect))).abs() < 1e-6);
-        let narrow = dwell_look::spyglass::zoom_fov(vertical_fov(aspect), 8.0);
-        r.set_fov(Some(narrow));
-        let f = r.march_frame();
-        assert!((f.tan[1] - tan(narrow)).abs() < 1e-6, "{:?}", f.tan);
-        assert!((f.tan[0] - tan(narrow) * aspect as f32).abs() < 1e-6);
-        // Its cone LOD follows: each pixel covers an eighth of the angle, so a level lasts 8× as far.
-        let p = r.terrain.march.marcher.reference_params(&f, (1600, 900));
-        let wide = r.terrain.march.marcher.reference_params(
-            &march::MarchFrame {
-                tan: [
-                    tan(vertical_fov(aspect)) * aspect as f32,
-                    tan(vertical_fov(aspect)),
-                ],
-                ..f.clone()
-            },
-            (1600, 900),
-        );
-        assert!((wide.pixel_angle / p.pixel_angle - 8.0).abs() < 1e-3);
     }
 
     #[test]

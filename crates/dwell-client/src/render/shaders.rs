@@ -4,7 +4,7 @@
 //! only its own face's lights), ACES filmic tone mapping with exposure, sRGB encoding, then the
 //! height fog mixed toward the sky's colour in output space, as three's fog was.
 //!
-//! The frame is shared (docs/RAY_MARCHED_RENDERER.md step A1, docs/WATER_RENDERING.md W2): the scene passes write lit, linear
+//! The frame is shared (docs/WATER_RENDERING.md W2): the scene passes write lit, linear
 //! colour (premultiplied by coverage: alpha 0 where nothing is drawn) into an `rgba16float` target
 //! and each opaque fragment's view depth into an `r32float` one; the composite (`composite_fs`)
 //! tone-maps, encodes, fogs by the stored depth and puts the sky behind, into the canvas. Lines are
@@ -120,8 +120,6 @@ struct Draw {
 };
 ";
 
-/// The per-draw array (group 1): the raster passes'. The marcher's module leaves it out and binds
-/// its own data there.
 /// The view depth as the frame stores it (docs/ART_DIRECTION.md §7.4): its lowest bit is the
 /// ink flag, set where the surface takes no ink outline (block data `outline: false`: the cross
 /// plants). One unit in the last place (about 1e-7 of the depth) is far below anything a reader
@@ -139,6 +137,7 @@ fn frame_inked(d: f32) -> bool {
 }
 ";
 
+/// The per-draw array (group 1): the raster passes'.
 const DRAWS: &str = r"
 @group(1) @binding(0) var<storage, read> draws: array<Draw>;
 ";
@@ -746,7 +745,7 @@ fn composited_scene(c: vec4f, depth: f32, s: Composited) -> vec3f {
 
 // A scene colour `c` (premultiplied by coverage) at view depth `depth` along `ray` (view depth 1),
 // tone-mapped, encoded, fogged toward the clear sky `clear` and over `back` (the sky with its
-// clouds) by its coverage. Compare mode's two sides are composited by it too, as the frame is.
+// clouds) by its coverage.
 fn composited_of(c: vec4f, depth: f32, ray: vec3f, clear: vec3f, back: vec3f) -> vec3f {
     if (c.a <= 0.0) {
         return back;
@@ -785,57 +784,6 @@ fn composite_fs(i: SkyOut) -> @location(0) vec4f {
 @fragment
 fn finished_fs(i: SkyOut) -> @location(0) vec4f {
     return vec4f(composite_pixel(vec2i(i.clip.xy), i.ndc), 1.0);
-}
-
-// Compare mode's second side (group 3): its scene targets and the difference counts.
-fn scene_b_depth_at(p: vec2i) -> vec2f {
-    var d: array<f32, SAMPLE_SLOTS>;
-    for (var s = 0; s < SCENE_SAMPLES; s++) {
-        d[s] = textureLoad(scene_b_depth, p, s).r;
-    }
-    return depth_of(d);
-}
-
-// sRGB-encoded colour to CIE L*a*b* (D65).
-fn srgb_to_lab(c: vec3f) -> vec3f {
-    let lin = select(pow((c + 0.055) / 1.055, vec3f(2.4)), c / 12.92, c <= vec3f(0.04045));
-    let xyz = mat3x3f(
-        vec3f(0.4124, 0.2126, 0.0193),
-        vec3f(0.3576, 0.7152, 0.1192),
-        vec3f(0.1805, 0.0722, 0.9505),
-    ) * lin / vec3f(0.95047, 1.0, 1.08883);
-    let f = select(xyz * 7.787 + 16.0 / 116.0, pow(xyz, vec3f(1.0 / 3.0)), xyz > vec3f(0.008856));
-    return vec3f(116.0 * f.y - 16.0, 500.0 * (f.x - f.y), 200.0 * (f.y - f.z));
-}
-
-// Compare mode's difference view (render/compare.rs): each pixel in its worst class — coverage
-// differs (red), view depth differs (orange), the composited colour's ΔE (yellow) — counted into
-// diff_counts (pixels, coverage, depth, colour); elsewhere the left side, dimmed to grey.
-@fragment
-fn difference_fs(i: SkyOut) -> @location(0) vec4f {
-    let p = vec2i(i.clip.xy);
-    let da = scene_depth_at(p);
-    let db = scene_b_depth_at(p);
-    let ray = view_ray(i.ndc);
-    let back = sky(normalize(ray));
-    let a = composited_of(textureLoad(scene_color, p, 0), da.x, ray, back, back);
-    let b = composited_of(textureLoad(scene_b_color, p, 0), db.x, ray, back, back);
-    atomicAdd(&diff_counts[0], 1u);
-    let hit_a = da.y > 0.5;
-    let hit_b = db.y > 0.5;
-    if (hit_a != hit_b) {
-        atomicAdd(&diff_counts[1], 1u);
-        return vec4f(1.0, 0.15, 0.1, 1.0);
-    }
-    if (hit_a && abs(da.x - db.x) > DIFF_DEPTH * max(da.x, db.x)) {
-        atomicAdd(&diff_counts[2], 1u);
-        return vec4f(1.0, 0.55, 0.0, 1.0);
-    }
-    if (length(srgb_to_lab(a) - srgb_to_lab(b)) > DIFF_DELTA_E) {
-        atomicAdd(&diff_counts[3], 1u);
-        return vec4f(1.0, 0.95, 0.1, 1.0);
-    }
-    return vec4f(vec3f(dot(a, vec3f(0.2126, 0.7152, 0.0722)) * 0.35), 1.0);
 }
 
 // How many metres the pixel at `p` covers on a surface at view depth `depth` along `ray`, facing
@@ -986,8 +934,7 @@ fn motion_fs(i: SkyOut) -> @location(0) vec4f {
 
 /// The ink outline (docs/ART_DIRECTION.md §7), drawn by the composite over the scene's composited
 /// colour while a mode is on (`frame.outline.x`, the edge kinds; 0 off): edges found in the view
-/// depth alone (the frame has no normal or id targets), so it is the same for the mesher and the
-/// marcher. dwell-look's `outline.rs` is the CPU twin of its depth and crease rule and its fade.
+/// depth alone (the frame has no normal or id targets). dwell-look's `outline.rs` is the CPU twin of its depth and crease rule and its fade.
 const OUTLINE: &str = r"
 const EDGE_DEPTH: u32 = 1u;
 const EDGE_NORMAL: u32 = 2u;
@@ -1909,17 +1856,10 @@ fn scene_bindings(samples: u32) -> String {
     format!(
         "const SCENE_SAMPLES: i32 = {samples};\n\
          const SAMPLE_SLOTS: u32 = {samples}u;\n\
-         const DIFF_DEPTH: f32 = {:e};\n\
-         const DIFF_DELTA_E: f32 = {:?};\n\
          @group(2) @binding(0) var scene_color: texture_2d<f32>;\n\
          @group(2) @binding(1) var scene_depth: {depth};\n\
-         @group(3) @binding(0) var scene_b_color: texture_2d<f32>;\n\
-         @group(3) @binding(1) var scene_b_depth: {depth};\n\
-         @group(3) @binding(2) var<storage, read_write> diff_counts: array<atomic<u32>, 4>;\n\
-         @group(3) @binding(3) var finished: texture_2d<f32>;\n\
+         @group(3) @binding(0) var finished: texture_2d<f32>;\n\
          @group(2) @binding(2) var scene_sampler: sampler;\n",
-        super::compare::DEPTH_TOLERANCE,
-        super::compare::DELTA_E,
     )
 }
 
@@ -1934,10 +1874,9 @@ pub fn source(samples: u32) -> String {
     )
 }
 
-/// The shared lighting (RAY_MARCHED_RENDERER.md §2: one `lambert`, `aces`, `fog_amount`, `sky` for
-/// both renderers): the constants, the fluids, the frame uniforms (group 0: `frame`, `atlas`,
+/// The shared lighting: the constants, the fluids, the frame uniforms (group 0: `frame`, `atlas`,
 /// `atlas_sampler`), the sky, the clouds and the shading functions, without any pass's bindings or
-/// entry points. The marcher's shade module is this plus its own code.
+/// entry points.
 pub fn lighting_source() -> String {
     format!(
         "const MIDPLANE_Y: f32 = {:.1};\nconst SEA_LEVEL: f32 = {:.1};\nconst ATLAS_CELLS: u32 = {}u;\nconst ATLAS_TILES: u32 = {}u;\n{}\n{}\n{}\n{FRAME}\n{}\n{}\n{FRAME_DEPTH}\n{COMMON}\n",
@@ -1987,7 +1926,6 @@ mod tests {
                 "tile_vs",
                 "noise_tile_fs",
                 "caustic_tile_fs",
-                "difference_fs",
             ] {
                 assert!(
                     module.entry_points.iter().any(|e| e.name == entry),
@@ -2000,7 +1938,7 @@ mod tests {
     #[test]
     fn tone_mapping_and_fog_are_only_in_the_composite() {
         // The scene passes write linear colour: their fragment shaders never tone-map, encode or
-        // fog; the composite does all three (RAY_MARCHED_RENDERER.md A1).
+        // fog; the composite does all three.
         let src = super::source(4);
         let body = |name: &str| -> String {
             let at = src.find(&format!("fn {name}(")).expect(name);
@@ -2021,9 +1959,6 @@ mod tests {
         assert!(
             c.contains("sky(") && c.contains("dwell_clouds(") && c.contains("dwell_cloud_deck(")
         );
-        // Both compare-mode sides are composited as the frame is, before they are compared.
-        let d = body("difference_fs");
-        assert_eq!(d.matches("composited_of(").count(), 2);
         assert!(body("composite_pixel").contains("composited("));
     }
 

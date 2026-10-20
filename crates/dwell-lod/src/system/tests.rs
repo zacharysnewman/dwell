@@ -1344,39 +1344,6 @@ fn ignores_results_whose_token_is_no_longer_current() {
     assert_eq!(lod.generating, 0);
 }
 
-#[test]
-fn rebuild_all_meshes_every_drawn_section_again() {
-    // A renderer switch rebuilds the GPU data from the CPU data, without a reload: every drawn
-    // section gets a new payload (regenerated where its cells were dropped after meshing).
-    let (mut lod, mut host) = settle_bifacial([0.5, 100.0, 0.5], false);
-    let drawn: Vec<LodId> = host
-        .shown
-        .iter()
-        .map(|&(id, _)| id)
-        .filter(|id| host.meshed.contains(id))
-        .collect();
-    assert!(!drawn.is_empty());
-    let generated = host.generated.len();
-    host.set.clear();
-    lod.rebuild_all();
-    let cam = camera([0.5, 100.0, 0.5], 0.0, -10.0);
-    for frame in 1501..=2500 {
-        lod.update(&cam, f64::from(frame) * 50.0, &mut host);
-        finish(&mut lod, &mut host, &mut zero, 1.0);
-    }
-    let again: HashSet<LodId> = host.set.iter().copied().collect();
-    // Sections evicted meanwhile (the cache budget) are gone, not stale.
-    let missing = drawn
-        .iter()
-        .filter(|id| lod.nodes.contains_key(id) && !again.contains(id))
-        .count();
-    assert_eq!(missing, 0, "of {} drawn sections", drawn.len());
-    assert!(
-        host.generated.len() > generated,
-        "dropped cells are regenerated"
-    );
-}
-
 /// The spyglass's camera (docs/SPYGLASS.md): the frame's FOV narrowed `m` times, as the client
 /// draws it (dwell-look `zoom_fov`), with the magnification and its detail.
 fn zoomed(mut cam: LodCamera, m: f64, detail: f64) -> LodCamera {

@@ -20,15 +20,14 @@ Full reference: `docs/DEV_TOOLS.md`. Quick path:
    controller trace, `.frames` for raw per-frame values, `.telemetry.samples` for job timings), the
    PNGs (Read them to see the frame) and `<name>.trace.json` (DevTools Performance).
 
-5. Renderers side by side: `npm run bench -- --compare <scenario…> [--configs a,b]` runs each
-   scenario once per configuration in `client/bench/configs.json` (renderer, scale, upscaler) and
+5. Configurations side by side: `npm run bench -- --compare <scenario…> [--configs a,b]` runs each
+   scenario once per configuration in `client/bench/configs.json` (a scale and page parameters) and
    writes `OUT/compare.json`, a printed table, and per `shot` a `<shot>.<config>.side.png` (baseline
    left) and `.diff.png` (ΔE heatmap) with % of pixels over the threshold, mean and max ΔE.
    `OUT/compare.html` (path printed at the end) shows it all for a person: the metrics tables, each
    shot's configurations side by side at full size, a click/keypress blink per pair and the heatmap;
    give the owner that path. Use `--unthrottled` for frame costs rather than vsync.
-   Configurations the build can't run (no such renderer from `__dwell.renderers()`; today every
-   `march` one) are skipped with a note. Read the side and diff PNGs to see the difference.
+   Read the side and diff PNGs to see the difference.
 
 Tips:
 

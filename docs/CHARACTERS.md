@@ -308,8 +308,7 @@ None of this is built; it is what the next phases need, recorded so the data is 
   resolves material names against the painterly set (ADR 0040).
 - **Shading.** A character shader in the raster renderer: the ramp shading of §2 with the material's
   tile at its overlay, then the frame's tone mapping and fog like terrain; the outline as a second,
-  back-facing draw. The ray marcher (ADR 0029) draws characters with the raster pass over its depth
-  (as it does other overlays, A3c).
+  back-facing draw.
 - **The arms pass.** After the world and the water, before the HUD: clear depth, draw the arm chain
   with its own projection (`fov`, a 2 cm near plane), the sun turned into view space. Not drawn while
   dead (the body is drawn instead, as today).

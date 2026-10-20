@@ -1,4 +1,4 @@
-//! The shared frame (docs/RAY_MARCHED_RENDERER.md step A1, docs/WATER_RENDERING.md W2): what the scene passes draw into and
+//! The shared frame (docs/WATER_RENDERING.md W2): what the scene passes draw into and
 //! the composite reads.
 //!
 //! - **Colour**: `rgba16float`, lit linear colour premultiplied by coverage (cleared to 0: alpha is
@@ -266,12 +266,12 @@ pub struct Finished {
 /// Bytes per drawing-buffer pixel of the finished image while it is held.
 pub const FINISHED_BYTES: u64 = 8;
 
-/// The finished image as the motion pass reads it (group 3, binding 3: loaded by texel).
+/// The finished image as the motion pass reads it (group 3, binding 0: loaded by texel).
 pub fn finished_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
     device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         label: Some("finished"),
         entries: &[wgpu::BindGroupLayoutEntry {
-            binding: 3,
+            binding: 0,
             visibility: wgpu::ShaderStages::FRAGMENT,
             ty: wgpu::BindingType::Texture {
                 sample_type: wgpu::TextureSampleType::Float { filterable: false },
@@ -308,7 +308,7 @@ impl Finished {
             label: Some("finished"),
             layout,
             entries: &[wgpu::BindGroupEntry {
-                binding: 3,
+                binding: 0,
                 resource: wgpu::BindingResource::TextureView(&view),
             }],
         });

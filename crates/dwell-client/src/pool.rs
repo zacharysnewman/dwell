@@ -11,7 +11,6 @@ use dwell_game::chunk_stream::{ChunkSource, Coord, MeshJob, Mesher};
 use dwell_world::lod::LodCoord;
 
 use crate::jobs::{Job, Output, Runner};
-use crate::render::seam::Payloads;
 
 /// Where jobs run: Web Workers in the browser, inline natively.
 pub trait Jobs {
@@ -82,9 +81,6 @@ pub enum Purpose {
     Map,
     /// The F3 overlay's regenerate-and-diff of a chunk.
     Diff(Coord),
-    /// The marcher's bricks of a chunk or a LOD section (RAY_MARCHED_RENDERER.md §4.1).
-    ChunkBricks(Coord, u64),
-    SectionBricks(u64),
 }
 
 impl Purpose {
@@ -100,8 +96,6 @@ impl Purpose {
             Purpose::Verify => ("job.verify.wait", "job.verify.run"),
             Purpose::Map => ("job.map.wait", "job.map.run"),
             Purpose::Diff(..) => ("job.diff.wait", "job.diff.run"),
-            Purpose::ChunkBricks(..) => ("job.chunk_bricks.wait", "job.chunk_bricks.run"),
-            Purpose::SectionBricks(..) => ("job.section_bricks.wait", "job.section_bricks.run"),
         }
     }
 }
@@ -118,9 +112,6 @@ pub struct Pool {
     /// Waiting for room: generation, meshing.
     queued: [VecDeque<(u32, Job)>; 2],
     in_flight: [usize; 2],
-    /// What meshing jobs make: the payloads the drawing renderers take (the renderer seam; the
-    /// game sets it from the scene's selection).
-    pub payloads: Payloads,
 }
 
 pub type PoolRef = Rc<RefCell<Pool>>;
@@ -134,7 +125,6 @@ impl Pool {
             times: HashMap::default(),
             queued: Default::default(),
             in_flight: [0; 2],
-            payloads: Payloads::MESH,
         }))
     }
 
@@ -243,21 +233,18 @@ impl ChunkSource for ChunkJobs {
 pub struct MeshJobs(pub PoolRef);
 
 impl Mesher for MeshJobs {
-    type Meshes = crate::render::seam::ChunkTerrain;
+    type Meshes = dwell_mesh::ChunkMeshes;
     fn capacity(&self) -> usize {
         // Enough in flight to keep every worker busy while results travel back.
         2 * self.0.borrow().capacity(true)
     }
     fn mesh(&mut self, job: MeshJob) {
-        let mut pool = self.0.borrow_mut();
-        let payloads = pool.payloads;
-        pool.submit(
+        self.0.borrow_mut().submit(
             Purpose::ChunkMesh(job.coord, job.token),
             Job::MeshChunk {
                 padded: job.padded,
                 mirror: job.mirror,
                 origin: job.coord.map(|c| c * dwell_world::CHUNK_SIZE),
-                payloads,
             },
         );
     }
@@ -278,16 +265,13 @@ impl dwell_lod::SectionSource for ChunkJobs {
 
 impl dwell_lod::SectionMesher for MeshJobs {
     fn mesh_section(&mut self, job: dwell_lod::LodMeshJob, token: u64) {
-        let mut pool = self.0.borrow_mut();
-        let payloads = pool.payloads;
-        pool.submit(
+        self.0.borrow_mut().submit(
             Purpose::SectionMesh(token),
             Job::MeshSection {
                 cells: job.cells,
                 surface: job.surface,
                 water_drop: job.water_drop,
                 mirror: job.mirror,
-                payloads,
             },
         );
     }

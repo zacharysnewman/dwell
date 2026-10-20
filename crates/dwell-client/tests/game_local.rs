@@ -12,10 +12,7 @@ use dwell_client::local::{LOCAL_SESSION, LocalCore};
 use dwell_client::net::session::{Out, Session, SessionState};
 use dwell_client::pool::{InlineJobs, Pool};
 use dwell_client::render::display::RenderStats;
-use dwell_client::render::march::{ChunkBricks, SectionBricks};
-use dwell_client::render::seam::{
-    ChunkTerrain, Recording, Routed, SectionTerrain, Selection, TerrainKind, TerrainRenderer,
-};
+use dwell_client::render::seam::{Recording, TerrainRenderer};
 use dwell_client::render::{Line, PlayerView, RegionBox, StandIn, WindView};
 use dwell_client::telemetry;
 use dwell_game::brush_tool::{BrushAction, BrushOutline};
@@ -30,13 +27,10 @@ use dwell_storage::StorageBackend;
 use dwell_world::{ChunkCoord, GENERATOR_SANDBOX, GENERATOR_TERRAIN};
 use ed25519_dalek::{Signer, SigningKey};
 
-type Renderers =
-    Routed<Recording<ChunkMeshes, SectionMeshes>, Recording<ChunkBricks, SectionBricks>>;
-
-/// A recording scene: what reaches the scene, and (behind the renderer seam) what each terrain
-/// renderer holds.
+/// A recording scene: what reaches the scene, and the terrain it holds.
+#[derive(Default)]
 struct Recorder {
-    terrain: Renderers,
+    terrain: Recording,
     chunks: std::collections::HashSet<ChunkCoord>,
     sections: usize,
     /// Each section held: its origin and cell size.
@@ -50,32 +44,8 @@ struct Recorder {
     brush: Option<BrushOutline>,
 }
 
-impl Default for Recorder {
-    fn default() -> Self {
-        Self {
-            terrain: Routed::new(
-                Recording::default(),
-                Recording::default(),
-                Selection::default(),
-            ),
-            chunks: Default::default(),
-            sections: 0,
-            held: Default::default(),
-            shown: Vec::new(),
-            camera: None,
-            outline: None,
-            region_boxes: Vec::new(),
-            brush: None,
-            fov: None,
-            wind: WindView::default(),
-        }
-    }
-}
-
 impl TerrainRenderer for Recorder {
-    type Chunk = ChunkTerrain;
-    type Section = SectionTerrain;
-    fn set_chunk(&mut self, coord: ChunkCoord, payload: Option<&ChunkTerrain>) {
+    fn set_chunk(&mut self, coord: ChunkCoord, payload: Option<&ChunkMeshes>) {
         self.terrain.set_chunk(coord, payload);
         if payload.is_some() {
             self.chunks.insert(coord);
@@ -88,7 +58,7 @@ impl TerrainRenderer for Recorder {
         id: i64,
         origin: [f64; 3],
         cell: f64,
-        payload: Option<&SectionTerrain>,
+        payload: Option<&SectionMeshes>,
     ) {
         self.terrain.set_section(id, origin, cell, payload);
         self.sections += usize::from(payload.is_some());
@@ -112,12 +82,6 @@ impl TerrainRenderer for Recorder {
 }
 
 impl Scene for Recorder {
-    fn selection(&self) -> Selection {
-        self.terrain.selection()
-    }
-    fn select(&mut self, selection: Selection) -> bool {
-        self.terrain.select(selection)
-    }
     fn set_player(&mut self, _id: u32, _view: Option<PlayerView>) {}
     fn set_camera(&mut self, eye: [f64; 3], _yaw: f64, _pitch: f64, _face: f64, _flip: f64) {
         self.camera = Some(eye);
@@ -701,78 +665,6 @@ fn a_placed_camera_views_the_world_from_there() {
     rig.run_until(2, |_| false);
     let camera = rig.scene.borrow().camera.unwrap();
     assert!((camera[0] - feet[0]).abs() < 2.0 && (camera[2] - feet[2]).abs() < 2.0);
-}
-
-#[test]
-fn switching_renderer_rebuilds_the_terrain_for_it_without_a_reload() {
-    // The renderer seam (RAY_MARCHED_RENDERER.md §3): the jobs make what the drawing renderers
-    // take, and a switch rebuilds every loaded chunk and LOD section from the client's own data.
-    let mut rig = Rig::new();
-    assert!(rig.run_until(60 * 30, |r| {
-        r.game
-            .as_ref()
-            .is_some_and(|g| g.debug_state().terrain_ready)
-    }));
-    rig.game
-        .as_mut()
-        .unwrap()
-        .enable_lod(dwell_client::game::LodSettings {
-            pixel_error: 2.0,
-            cache_bytes: 256 << 20,
-            detail_distance_m: None,
-            full_mode: false,
-        });
-    assert!(rig.run_until(60 * 20, |r| {
-        let s = r.scene.borrow();
-        s.terrain.raster.chunks.len() > 4 && !s.terrain.raster.sections.is_empty()
-    }));
-    assert!(
-        rig.scene.borrow().terrain.march.chunks.is_empty(),
-        "raster only: no bricks are made"
-    );
-    let loaded: Vec<ChunkCoord> = rig
-        .scene
-        .borrow()
-        .terrain
-        .raster
-        .chunks
-        .keys()
-        .copied()
-        .collect();
-
-    // Compare mode: bricks for every chunk already loaded (and the meshes kept meanwhile).
-    let compare = Selection::parse("compare", None).unwrap();
-    rig.game.as_mut().unwrap().set_renderer(compare);
-    assert!(
-        rig.scene.borrow().terrain.raster.chunks.len() >= loaded.len(),
-        "raster kept"
-    );
-    assert!(
-        rig.run_until(60 * 10, |r| {
-            let s = r.scene.borrow();
-            loaded
-                .iter()
-                .all(|c| s.terrain.march.chunks.contains_key(c))
-                && !s.terrain.march.sections.is_empty()
-        }),
-        "every loaded chunk and some sections rebuilt as bricks"
-    );
-
-    // March only: the meshes go (their GPU memory with them) and are not made again.
-    rig.game
-        .as_mut()
-        .unwrap()
-        .set_renderer(Selection::single(TerrainKind::March));
-    assert!(rig.scene.borrow().terrain.raster.chunks.is_empty());
-    assert!(rig.scene.borrow().terrain.raster.sections.is_empty());
-    rig.run_until(60, |_| false);
-    let s = rig.scene.borrow();
-    assert!(s.terrain.raster.chunks.is_empty() && s.terrain.raster.sections.is_empty());
-    assert!(
-        loaded
-            .iter()
-            .all(|c| s.terrain.march.chunks.contains_key(c))
-    );
 }
 
 #[test]

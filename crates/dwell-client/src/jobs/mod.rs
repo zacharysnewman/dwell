@@ -7,8 +7,7 @@ pub mod codec;
 
 use dwell_mesh::MeshSectionOptions;
 
-use crate::render::march;
-use crate::render::seam::{ChunkTerrain, Payloads, SectionTerrain};
+use dwell_mesh::{ChunkMeshes, SectionMeshes};
 use dwell_world::lod::{self, LodBounds, LodCoord, LodGenerator, LodSurfaces};
 use dwell_world::{Chunk, ChunkCoord, ChunkGenerator, GENERATOR_TERRAIN, chunk_hash};
 use dwell_worldgen::BifacialTerrain;
@@ -30,22 +29,19 @@ pub enum Job {
         n: i32,
         face: u8,
     },
-    /// A chunk's terrain payloads from its padded voxels: the greedy mesh, the marcher's bricks,
-    /// or both (`payloads`, as the renderer seam asks: RAY_MARCHED_RENDERER.md §3); `origin` is its
-    /// minimum corner's world cell (plants are jittered by their world position).
+    /// A chunk's greedy mesh from its padded voxels; `origin` is its minimum corner's world cell
+    /// (plants are jittered by their world position).
     MeshChunk {
         padded: Vec<u16>,
         mirror: bool,
-        payloads: Payloads,
         origin: [i32; 3],
     },
-    /// An LOD section's terrain payloads (its meshes, its bricks, or both).
+    /// An LOD section's meshes.
     MeshSection {
         cells: Vec<u16>,
         surface: Option<Vec<f32>>,
         water_drop: f64,
         mirror: bool,
-        payloads: Payloads,
     },
     /// The block states the main thread registered at run time (synced from a server, ADR 0038),
     /// as `dwell_blocks::sync::extension_payload`: a worker adds them to its own table, so mesh
@@ -78,8 +74,8 @@ pub enum Output {
     },
     /// Height (i16 little-endian) and an outside flag per sample; `None` without a terrain.
     Map(Option<Vec<u8>>),
-    ChunkMesh(Box<ChunkTerrain>),
-    SectionMesh(Box<SectionTerrain>),
+    ChunkMesh(Box<ChunkMeshes>),
+    SectionMesh(Box<SectionMeshes>),
     Failed(String),
     /// A job without a result (`Registry`).
     Done,
@@ -177,46 +173,26 @@ impl Runner {
             Job::MeshChunk {
                 padded,
                 mirror,
-                payloads,
                 origin,
-            } => {
-                let raster = if payloads.mesh() {
-                    match dwell_mesh::mesh_chunk_at(&padded, mirror, origin) {
-                        Ok(m) => Some(m),
-                        Err(e) => return Output::Failed(format!("{e:?}")),
-                    }
-                } else {
-                    None
-                };
-                let march = payloads
-                    .bricks()
-                    .then(|| march::build_chunk_bricks(&padded, mirror));
-                Output::ChunkMesh(Box::new(ChunkTerrain { raster, march }))
-            }
+            } => match dwell_mesh::mesh_chunk_at(&padded, mirror, origin) {
+                Ok(m) => Output::ChunkMesh(Box::new(m)),
+                Err(e) => Output::Failed(format!("{e:?}")),
+            },
             Job::MeshSection {
                 cells,
                 surface,
                 water_drop,
                 mirror,
-                payloads,
             } => {
                 let options = MeshSectionOptions {
                     surface: surface.as_deref(),
                     water_drop,
                     mirror,
                 };
-                let raster = if payloads.mesh() {
-                    match dwell_mesh::mesh_section(&cells, &options) {
-                        Ok(m) => Some(m),
-                        Err(e) => return Output::Failed(format!("{e:?}")),
-                    }
-                } else {
-                    None
-                };
-                let march = payloads
-                    .bricks()
-                    .then(|| march::build_section_bricks(&cells, mirror));
-                Output::SectionMesh(Box::new(SectionTerrain { raster, march }))
+                match dwell_mesh::mesh_section(&cells, &options) {
+                    Ok(m) => Output::SectionMesh(Box::new(m)),
+                    Err(e) => Output::Failed(format!("{e:?}")),
+                }
             }
         }
     }

@@ -38,12 +38,12 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 17 — Terrain definitions (terrain as data) | ⏳ Not started — built in Rust after Phase 24 |
 | 18 — Adaptive natural blocks (formerly 9e) | 🚧 In progress — every deliverable built and tested (natively, WASM, Vitest); protocol v13, a new compatibility line for the owner to raise; outstanding: the two-client e2e, the LOD seam check, the owner's walk; owner decision 2026-10-15: faces steeper than 44° slide (Phase 35); `package.json` raised to 0.12.0, the new compatibility line (protocol 13; adaptive blocks change collision and terrain; the owner's decision, 2026-10-16) |
 | 19 — WebGPU, looks & textures | ⏳ Not started — re-scoped by ADR 0028: WebGPU is done by Phase 24 (wgpu, no fallback); the look registry and textures as data are built on wgpu after it |
-| 20 — Voxel awakening | ⏸ Waits for Phases 6–19 (2026-10-05; the baseline rework, 14–19, added 2026-10-12) and for Phase 25's renderer decision (A7, 2026-10-14: cluster rendering is built once, for the chosen renderer) |
+| 20 — Voxel awakening | ⏸ Waits for Phases 6–19 (2026-10-05; the baseline rework, 14–19, added 2026-10-12); Phase 25's renderer decision is made (A7, 2026-10-20: the mesher), so clusters are drawn as meshes |
 | 21 — Tiered physics | ⏸ Waits for Phases 6–19 (2026-10-05; the baseline rework, 14–19, added 2026-10-12) |
 | 22 — Sleep / re-bake | ⏸ Waits for Phases 6–19 (2026-10-05; the baseline rework, 14–19, added 2026-10-12) |
 | 23 — Dedicated servers & packaging | ⏳ Not started |
-| 25 — Ray-marched renderer comparison | 🚧 In progress — A0 (ADR 0029), A1 (the shared frame and GPU timing; the owner approved its image differences, 2026-10-14, and the e2e suite passes on CI), A2 (the renderer seam, compare mode, bench `--compare`; its exit check done) and A3a (the CPU core: `crates/dwell-march`) built; A3b (the GPU march behind the seam, checked against the reference per pixel; its CI run outstanding) built; A4a (speed: level-rows skip, vectorised march, shade pass, the cone-LOD ring fix) and A5a (render scales 0.5/0.75 with FSR 1 or a bilateral upscale) built; A4b (the beam prepass, and the temporal start with the eye still) built: at 720p on an M1, 8.5 ms at the spawn and 17.5 ms flying (A4a: 21 and 24) against raster's whole GPU frame of 3.6–5.0 ms, and 2.2–6.6 ms at half scale with FSR 1; A4c (the optimization survey; the temporal start while the eye moves, kept unchanged frames, the column search's slope rule) built: marching every frame, 17–31 % off A4b at the spawn, the horizon, looking down, flying high and far away (Chrome, M1, measured under load), and a still, unchanged view costs only its shading (about 1 ms); A4c's three far-case picks (the per-step cost at the LOD levels, a second beam, half-rate marching) built, measured and not kept, none beating the march as it is; the cone LOD's pixel error at 8 px (−24 % flying high) left to the owner as a change of look; next: A3c (overlays over marched terrain, LOD column heights in the bricks, raster ids); outstanding: A4's phone report; A2's edit-to-visible latency and the bench's id/depth agreement (moved to A3); local builds only until the owner's decision (A7); `package.json` raised to 0.11.21, a patch release of the 0.11 line |
-| 26 — Water and fluid looks | 🚧 In progress — W1a (fluid data, the eye-under-fluid uniform) done; W2 built (it is Phase 25's A1, built once there; the owner approved its image differences, 2026-10-14); W1b (the water shader, the underwater fog stub, the water quality setting) built and checked in Chrome on an M1, outstanding: the owner's look; W3 (refraction, depth absorption, shoreline foam, sparkle, and caustics brought forward from W4, above and under the surface) built and checked in Chrome on an M1, outstanding: the owner's look and an unloaded per-tier cost measurement; W5a (reflections of land by screen-space reflection, and of the clouds, brought forward from W5 at the owner's report) built and checked in Chrome on an M1, outstanding: the owner's look and an unloaded cost measurement; water cost work (WATER_RENDERING.md §8, "Cost"): cheaper hashing, noise and caustic tiles, frame pacing against the stalls, Medium the desktop default — Medium +1.6 ms and High +1.7 ms over Low on the shore view before the reflections, which now add the most (outstanding: W5a's reflection cost against the 2/3 ms targets); next: W4; W6 only if marching is kept at A7; `package.json` raised to 0.12.1, a patch release of the 0.11 line; **follow-up (owner, 2026-10-20): shore water** (WATER_RENDERING.md §9) built and tested — the sea floods natural top blocks below sea level (generator version 17, a new compatibility line for the owner to raise, 0.19.0), fluid sides clipped to the surface and to shaped neighbours, side faces' backs seen from the air take the outside look; outstanding: the owner's look |
+| 25 — Ray-marched renderer comparison | ✖ Dropped at A7 by the owner (2026-10-20: "Ray marching is massively slower… Mesher / raster is definitely our way forward"; ADR 0044). A0–A4c and A5a were built and measured (at A4c, marching every frame cost 1.5–3× raster's whole GPU frame); the marcher, compare mode and the renderer switch are removed from main, their code kept as the `archive/ray-marcher` tag and branch. Kept: A1's shared frame and GPU timing (water's W2) and `bench --compare` for raster configurations. Follow-up: the face-B "stray dark slabs" bug, deferred in case marching replaced the mesher, now needs fixing in the mesher |
+| 26 — Water and fluid looks | 🚧 In progress — W1a (fluid data, the eye-under-fluid uniform) done; W2 built (it is Phase 25's A1, built once there; the owner approved its image differences, 2026-10-14); W1b (the water shader, the underwater fog stub, the water quality setting) built and checked in Chrome on an M1, outstanding: the owner's look; W3 (refraction, depth absorption, shoreline foam, sparkle, and caustics brought forward from W4, above and under the surface) built and checked in Chrome on an M1, outstanding: the owner's look and an unloaded per-tier cost measurement; W5a (reflections of land by screen-space reflection, and of the clouds, brought forward from W5 at the owner's report) built and checked in Chrome on an M1, outstanding: the owner's look and an unloaded cost measurement; water cost work (WATER_RENDERING.md §8, "Cost"): cheaper hashing, noise and caustic tiles, frame pacing against the stalls, Medium the desktop default — Medium +1.6 ms and High +1.7 ms over Low on the shore view before the reflections, which now add the most (outstanding: W5a's reflection cost against the 2/3 ms targets); next: W4; W6 dropped with the ray marcher (A7, ADR 0044); `package.json` raised to 0.12.1, a patch release of the 0.11 line; **follow-up (owner, 2026-10-20): shore water** (WATER_RENDERING.md §9) built and tested — the sea floods natural top blocks below sea level (generator version 17, a new compatibility line for the owner to raise, 0.19.0), fluid sides clipped to the surface and to shaped neighbours, side faces' backs seen from the air take the outside look; outstanding: the owner's look |
 | 27 — Structure sandbox | 🚧 In progress — S0 (ADR 0031), S1 (the structure format, `gen.mjs`, the Rust loader, the playground converted), S2a (floor block, sandbox world type), S2b (the structures store: save, load through the region paste, export and import) and S3a (region edits, the region tools) done, S2a's e2e check outstanding; `package.json` raised to 0.11.0, the new compatibility line (S2a's registry change; the owner's decision, 2026-10-14); next: S3b (anchor, touch) and the S3 sandbox e2e outstanding; S4a (worldgen placement as interim data, the owner's pines in groves, generator v18, ADR 0043) built and tested natively and in Chrome on the GPU — it changes the terrain a seed generates, so it needs a new compatibility line (0.20.0), which the owner raises; outstanding: CI and the owner's look; S4b (the rules moved into Phase 17's terrain definitions) waits for Phase 17; `package.json` raised to 0.11.11, a patch release of the 0.11 line |
 | 28 — Sound effects | 🚧 In progress — F0–F6 built and tested (procedural Web Audio, no library; sound data and generator, the registry's `sound` field, Rust sound events, synth, variation, mixer, spatial playback, menu and game-action sounds, volume sliders, offline WAV renders); outstanding: the owner listens to the WAV renders and approves them, and answers `AUDIO.md` §9; `package.json` raised to 0.11.12, a patch release of the 0.11 line |
 | 29 — Motion effects (speed FOV and wind) | 🚧 In progress — built and tested (the FOV widening with the camera's speed for the renderer and the LOD alike, the wind streaks, vignette and edge blur in the shared frame's composite, tunables as data, the settings, bench scenarios and screenshots; fix 2026-10-20: the edge blur keeps the clouds seen from above); outstanding: the owner's look in a browser and approval, CI; `package.json` raised to 0.11.7, a patch release of the 0.11 line |
@@ -91,7 +91,8 @@ On 2026-10-14 the owner adopted three proposals as **Phases 25–27**, numbered 
 phases: **25 — the ray-marched renderer comparison** ([ADR 0029](./adr/0029-ray-marched-renderer.md)),
 **26 — water and fluid looks** ([ADR 0030](./adr/0030-fluid-looks-and-water-rendering.md)) and
 **27 — the structure sandbox** ([ADR 0031](./adr/0031-data-driven-structures.md)). Each needs Phase 24
-only; they can run alongside Phases 16–19. Phase 20 waits for Phase 25's decision (A7). Deliverables
+only; they can run alongside Phases 16–19. Phase 20 waited for Phase 25's decision (A7: the mesher,
+2026-10-20, ADR 0044). Deliverables
 are named by their design docs' step ids (A0–A7, W1a–W6, S0–S4).
 Also on 2026-10-14 the owner adopted the tree-growth proposal as **Phase 30 — tree growth**
 ([ADR 0033](./adr/0033-tree-growth.md), [`TREE_GROWTH.md`](./TREE_GROWTH.md)), numbered after the
@@ -2588,10 +2589,10 @@ Exit criteria
 §7.1).
 
 **Status:** Not started. Runs after Phases 6–13 (owner's decision, 2026-10-05); previously on hold
-until Phase 5 (multiplayer ready) was complete (2026-09-30). **Waits for Phase 25's renderer decision
-(A7; ADR 0029, owner 2026-10-14)**, so cluster rendering is built once, for the chosen renderer: greedy
-meshes with a rotation per draw if the mesher stays, brick volumes per body if marching is chosen
-(`RAY_MARCHED_RENDERER.md` §6).
+until Phase 5 (multiplayer ready) was complete (2026-09-30). It waited for Phase 25's renderer
+decision so cluster rendering is built once: the owner kept the mesher (A7, 2026-10-20,
+[ADR 0044](./adr/0044-mesher-over-ray-marching.md)), so clusters are greedy meshes drawn with a
+rotation per draw.
 
 Deliverables
 - [ ] Bifacial world (Phase 13): the core anchor zone around the midplane (positional, diggable;
@@ -2747,20 +2748,20 @@ chunks and every LOD level — beside the mesher, compare the two side by side i
 the owner decide which draws Dwell's terrain ([ADR 0029](./adr/0029-ray-marched-renderer.md),
 [`RAY_MARCHED_RENDERER.md`](./RAY_MARCHED_RENDERER.md)).
 
-**Status:** In progress — A0 (the ADR) and A3a (the CPU core in `crates/dwell-march`: layout,
-builders, pool, reference marcher) done; A2 (the renderer seam, compare mode, bench `--compare`)
-built, its exit check done (compare mode with raster on both sides reports zero difference); A1
-(the shared frame and GPU timing) built, its exit check done: the bench before/after (design doc §7,
-"A1 as built") and the picture differs slightly — antialiased edges, the sea's colour (water now
-blends in linear light), the outline no longer multisampled — which the owner approved (2026-10-14);
-the e2e suite passes on CI. A3b (the GPU march, uploads, brick jobs, telemetry) built, its CI run of
-the per-pixel test outstanding. A4a (the march's speed: each level's occupied rows skipped, a
-vectorised inner loop, shading in its own pass; the cone-LOD switch rule that removes the owner's
-concentric rings) and A5a (render scales with FSR 1 or a bilateral upscale) built, A4's desktop
-exit check done, its phone report outstanding; A4b (the beam prepass, the temporal start with the
-eye still) built and measured on an M1; A4c (survey, the temporal start while moving, kept frames, the column search's slope rule) built and measured on an M1 under load; its three far-case picks measured and not kept; next: A3c (overlays, LOD column heights, raster ids). Needs Phase 24 only. The marcher and compare mode are in local builds only (dev server, local preview, bench)
-until A7; deployed builds keep the mesher throughout and stay shippable after every step. Phase 20
-waits for A7; Phase 26 shares A1 (its W2). No public API change, so no new compatibility line.
+**Status:** ✖ **Dropped at A7 by the owner** (2026-10-20): *"Ray marching is massively slower. We can
+roll it back… Mesher / raster is definitely our way forward."* ([ADR 0044](./adr/0044-mesher-over-ray-marching.md),
+superseding ADR 0029.) A0–A4c and A5a were built and measured; at A4c, marching every frame cost
+1.5–3× raster's whole GPU frame at the spawn, the horizon and flying high, and only a still,
+unchanged view or a view straight down beat raster (the figures are in ADR 0044). The marcher
+(`dwell-march`, `render/march`), compare mode, the renderer switch and the bench's march
+configurations are removed from main; the code is kept as the `archive/ray-marcher` tag and branch
+(commit `8ed481f`, main at 0.20.3), with the design doc in full. **Kept**, since the mesher uses
+them: A1 (the shared frame and GPU timing, Phase 26's W2) and A2's `bench --compare` (raster
+configurations: a scale and page parameters). Unfinished items are dropped with it, not done (they
+stay unticked, marked below). Phase 20 is unblocked.
+
+**Follow-up:** the face-B "stray dark slabs" bug was deferred only in case marching replaced the
+mesher; with the mesher kept, it now needs a fix in the mesher.
 
 Deliverables
 - [x] **A0** — ADR 0029 (a second renderer behind a runtime switch, amending ADR 0028's renderer);
@@ -2788,7 +2789,7 @@ Deliverables
   the bench; compare mode's split (scissored, a draggable divider), blink (F8) and difference (F7
   cycles; coverage, view depth and colour ΔE, counted on the GPU) views and the per-side overlay
   (CPU, GPU, memory, settings), with a placeholder "march" side (`render/march.rs`, magenta).
-- [ ] **A2 follow-ups, moved to A3** (they need the marcher's output): edit-to-visible latency (an
+- [ ] *(dropped at A7)* **A2 follow-ups, moved to A3** (they need the marcher's output): edit-to-visible latency (an
   edit's sequence carried through the remesh to the frame that draws it; `DEV_TOOLS.md` TODO) and
   the bench's image agreement by cell id, face and depth (the renderers' id buffers; the bench
   compares colour only, compare mode's difference view compares coverage and depth in game).
@@ -2809,7 +2810,7 @@ Deliverables
   GPU-against-reference per-pixel test (native and the WebGPU probe); `?marchtest=1`. `march` mode
   draws all terrain with no meshes. Deviation: a buffer that fills is re-created at double size and
   re-filled from the CPU copy (which holds every word), not grown by `copy_buffer_to_buffer`.
-- [ ] **A3c** — The rest of A3: overlays over marched terrain through the `frag_depth` pass
+- [ ] *(dropped at A7)* **A3c** — The rest of A3: overlays over marched terrain through the `frag_depth` pass
   (players, the outline, water); LOD column heights and side tints in the bricks; a raster id target
   so compare mode and the bench compare cell ids and faces; edit-to-visible latency (from A2).
 - [x] **A4a** — Empty-space skipping and the per-step cost on the GPU (design doc "A4 as built"):
@@ -2857,12 +2858,11 @@ Deliverables
   depth- and normal-aware bilateral upscale (`render/march/upscale.rs`), `?scale=` with
   `?upscaler=fsr1|bilateral`, `__dwell.upscalers()`, the bench's `march-half-fsr`, `march-075-fsr`
   and `march-half-bilateral` configurations.
-- [ ] **A5** — The rest of A5: TAA-U (reprojection), and shaped cells as analytic planes.
-- [ ] **A6** — Lighting under both: half-res sun-shadow and AO rays from the G-buffer (march) or
+- [ ] *(dropped at A7)* **A5** — The rest of A5: TAA-U (reprojection), and shaped cells as analytic planes.
+- [ ] *(dropped at A7)* **A6** — Lighting under both: half-res sun-shadow and AO rays from the G-buffer (march) or
   raster's depth (the hybrid), bilateral upsample, temporal accumulation; a quality setting.
-- [ ] **A7** — The decision: the owner decides from the full comparison ("measure all"; design doc
-  §5); ADR 0029's status, `ARCHITECTURE.md` §5 and this plan updated for the chosen path (and
-  Phase 20 unblocked).
+- [x] **A7** — The decision: the owner kept the mesher (2026-10-20) and the marcher is removed
+  (ADR 0044; ADR 0029 superseded; `ARCHITECTURE.md` §5 and this plan updated; Phase 20 unblocked).
 
 Exit criteria
 - [x] A1: bench before/after; raster screenshots match today's, or the owner approves the
@@ -2875,23 +2875,23 @@ Exit criteria
   pass — `crates/dwell-march/tests/march.rs`: against a brute-force DDA on random scenes (with and
   without skipping, exact ties, chunk and LOD levels), chunk and brick borders, 4,000 km from the
   origin (bit-identical), face B as face A mirrored, a state added by data alone.
-- [ ] A3b: the GPU-against-reference per-pixel test passes in CI (SwiftShader). Passes locally on
+- [ ] *(dropped at A7)* A3b: the GPU-against-reference per-pixel test passes in CI (SwiftShader). Passes locally on
   SwiftShader (the same probe CI runs: every record bit-identical) and on an M1's Metal (ids exact,
   `t` within 2 ULP, depth 2.6e-7); CI's run outstanding.
 - [x] A3b: a first comparison report on a desktop (2026-10-15, M1 Mac, `bench --compare idle-spawn
   look-horizon look-down fly-high`: design doc "A3b as built").
-- [ ] A3c: the named views, near and distant, agree with the mesher (over 99.5 % cell-id match where
+- [ ] *(dropped at A7)* A3c: the named views, near and distant, agree with the mesher (over 99.5 % cell-id match where
   both hit) — needs raster ids and LOD column heights in the bricks.
 - [x] A4 (desktop): steps-per-ray p99 down on `look-horizon` and `fly-high` (GPU histogram, seed 7, 1280×720:
   the horizon view's p99 96 → 39, 540 m up 89 → 29; `march_steps`' horizon p95 68 → 22) and a
   comparison report on a desktop (2026-10-15, M1 Mac, `bench --compare idle-spawn look-horizon
   look-down fly-high`: design doc "A4 as built").
-- [ ] A4 (phone): the comparison report on a phone (needs the bench to drive a device).
-- [ ] A5: the full comparison report on every device in the design doc (Mac, Windows integrated and
+- [ ] *(dropped at A7)* A4 (phone): the comparison report on a phone (needs the bench to drive a device).
+- [ ] *(dropped at A7)* A5: the full comparison report on every device in the design doc (Mac, Windows integrated and
   discrete, an iPhone from the last three years, a recent Android flagship; SwiftShader for
   correctness only).
-- [ ] A6: a comparison with lighting on and off; the owner's look.
-- [ ] A7: the owner's decision recorded in ADR 0029.
+- [ ] *(dropped at A7)* A6: a comparison with lighting on and off; the owner's look.
+- [x] A7: the owner's decision recorded (in a new ADR, 0044, which supersedes 0029).
 
 
 Deviations
@@ -2903,6 +2903,8 @@ Deviations
 - Water is its own `Transparent` march class: never occupied for primary rays (it stays a raster
   pass, W6 later), its ids kept in mixed bricks. Level-0 bricks with shaped cells carry the optional
   shape plane as a second fixed size class; the shape hook hits the cell's cube until A5.
+- A7's decision is recorded in ADR 0044 (superseding 0029), not in 0029 itself, so 0029 stays the
+  record of what was tried.
 ---
 
 ## Phase 26 — Water and Fluid Looks
@@ -2922,7 +2924,7 @@ the owner's look and the per-tier cost on an unloaded machine; W5a built (the wa
 by screen-space reflection and the clouds along the reflected ray, on Medium and High, tunables as data;
 WATER_RENDERING.md §8; checked in Chrome on an M1 with `water-reflections`), outstanding: the owner's
 look and the cost on an unloaded machine. Next: W4; W3–W5 build on the shared
-frame (A1); W6 needs A3 and the decision at A7 to keep marching. Fluids are per build, looks only, edited in the
+frame (A1); W6 was dropped with the ray marcher at A7 (ADR 0044). Fluids are per build, looks only, edited in the
 data file; the water surface stays still. No public API change. **Follow-up, shore water (owner,
 2026-10-20; WATER_RENDERING.md §9):** water stood 0.375 m above dry beach blocks in the sea's top row
 and drew flat blue walls at banks; the sea now floods the open part of every natural top block below
@@ -2954,8 +2956,8 @@ Deliverables
   WATER_RENDERING.md §8, W5a).
 - [ ] **W5b** — The rest of W5: half-res copies, the Ultra tier (full-res SSR), the phone defaults
   confirmed; Low the phone default, tentatively (owner).
-- [ ] **W6** — Under ray marching (after A3, and only if marching is kept at A7): reflection and
-  refraction rays replace SSR and the copy on the high tiers.
+- [ ] *(dropped at A7)* **W6** — Under ray marching: reflection and refraction rays replace SSR and
+  the copy on the high tiers. Dropped: the owner kept the mesher (ADR 0044).
 
 Exit criteria
 - [x] W1a: a fixture test adds a second fluid (`test:oil`) by data alone and sees it meshed with its
@@ -3034,7 +3036,7 @@ Deviations (W1a):
 - [ ] W5a: the owner's look, and the cost measured on an unloaded machine.
 - [ ] W5: bench on a desktop and a phone per tier; the owner confirms the phone default after seeing
   it on the two target phones.
-- [ ] W6: parity against W5's views.
+- [ ] *(dropped at A7)* W6: parity against W5's views.
 
 ---
 
@@ -3883,7 +3885,7 @@ painter). Built as data: `sideUnder` on a block (`shared/blocks/dwell.json`, val
 `0x8b` in the registry payload (old clients ignore look tags), applied by the chunk mesher, skipped
 where the grass shows a full side of its own. Mesher tests red → green; checked in Chrome on the GPU
 in both sets. Deviation: the classic set changes too (the same rule picks the classic tile); the LOD
-keeps flat dirt side colours. Not in the ray-marched renderer (Phase 25, local builds only).
+keeps flat dirt side colours.
 Follow-up (owner, 2026-10-20: "I see the Character Lab has edge lines, I like that. What would that
 look like applied to the whole game?"): a preview of the **ink outline** (ART_DIRECTION.md §7), a
 screen-space line in the palette's `ink` drawn by the composite from the view depth (silhouettes,

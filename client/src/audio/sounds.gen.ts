@@ -381,15 +381,6 @@ export const SOUND_DATA: SoundData = {
     "Copy block info": [
       "action:copy"
     ],
-    "Compare view: split, blink, difference": [
-      "event:tool"
-    ],
-    "Blink: swap the sides": [
-      "event:tool"
-    ],
-    "Move the split": [
-      "ui:slider"
-    ],
     "Break or place": [
       "event:break",
       "event:place",

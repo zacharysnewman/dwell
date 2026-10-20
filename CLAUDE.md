@@ -40,9 +40,8 @@ and friend worlds), with a small master server for discovery; there are no offic
   drive it with scripted scenarios (`client/bench/scenarios.json`, `npm run bench`) and read frame
   timings, job latencies, controller ticks, traces and screenshots. Use and extend it to test and
   benchmark in the browser.
-- `docs/RAY_MARCHED_RENDERER.md` — design for Phase 25 (ADR 0029): a ray-marched terrain renderer built
-  complete beside the mesher, the shared frame, compare mode and `bench --compare`; local builds only
-  until the owner's decision (A7).
+- `docs/RAY_MARCHED_RENDERER.md` — a note on Phase 25's ray-marched renderer, dropped at A7 (ADR 0044):
+  what was measured and where the code lives (the `archive/ray-marcher` tag and branch).
 - `docs/WATER_RENDERING.md` — design for Phase 26 (ADR 0030): fluid looks as registry data, the water
   shader, refraction, underwater and reflections in quality tiers.
 - `docs/STRUCTURES.md` — design for Phase 27 (ADR 0031): the structure format, the in-game sandbox world,

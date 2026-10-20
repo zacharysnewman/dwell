@@ -187,8 +187,8 @@ nearer fade. Each mode has these fields:
 
 ### 7.2 The edge rule
 
-The composite finds edges in the shared frame's **view depth** alone. The frame has no normal or id
-targets, so the mesher and the ray marcher get the same rule. It reads one sample per tap over a
+The composite finds edges in the shared frame's **view depth** alone (the frame has no normal or id
+targets). It reads one sample per tap over a
 3 × 3 grid, with the taps half the line's width apart. Inverse depth is linear across the screen on
 any plane, so a flat face at any angle has no edge.
 
@@ -242,8 +242,7 @@ Voxel terrain is mostly edges, so the main risk is a horizon of noise. Four meas
   the edge blur's taps carry the ink to the screen's edges (MOTION_EFFECTS.md: post effects that
   sample neighbours read the finished image; before this fix the lines vanished outside the blur's
   inner circle when sprinting).
-- **Both texture sets and the ray marcher** use the same rule. The marcher's frame has depth, so its
-  output is identical in kind.
+- **Both texture sets** use the same rule.
 
 ### 7.5 Cost
 
@@ -265,7 +264,8 @@ off, which meets the 0.5 ms target. The first version read four samples per tap 
 
 ### 7.6 For the owner
 
-The screenshots show every view off and in each mode, with both texture sets, plus the marcher.
+The screenshots showed every view off and in each mode, with both texture sets, plus the ray marcher
+(since removed: ADR 0044).
 The views are the ground at the spawn, a hillside, blocks close up, a steep slope, the shore, 600 m
 up, the spyglass and the brush ghost. Questions:
 

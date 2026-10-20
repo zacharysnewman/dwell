@@ -8,14 +8,13 @@ raymarching vs LODs; this would actually show higher res farther away but in a s
 essentially."*
 
 A key zooms the view in. The view narrows, and the distant terrain inside it is drawn at the detail
-its pixels now need: the LOD refines far sections inside the narrow cone, and the ray marcher's cone
-LOD follows the smaller pixels. Outside the cone, nothing loads that the unzoomed view would not.
+its pixels now need: the LOD refines far sections inside the narrow cone. Outside the cone, nothing loads that the unzoomed view would not.
 
 ## 1. The owner's answers
 
 | Question | Answer (2026-10-19) |
 | --- | --- |
-| Who is it for? | **Both.** Players get it in releases, with the raster renderer and the LOD. In local builds it also serves the renderer comparison: it works with `?renderer=march` and `?renderer=compare`, so the marcher and the LOD can be compared at distance while zoomed. |
+| Who is it for? | **Both.** Players get it in releases, with the raster renderer and the LOD. In local builds it also serves the renderer comparison: it works with `?renderer=march` and `?renderer=compare`, so the marcher and the LOD can be compared at distance while zoomed. (The marcher was removed at Phase 25's A7, ADR 0044.) |
 | How is it turned on? | **A toggle key**: press to zoom in, press again to zoom out. Cycling steps while zoomed is the implementer's call (below: the wheel). Touch can come later; the game targets desktop for now. |
 | What does it do? | **A narrow view with more detail**: a narrower field of view, and distant terrain at higher detail inside it. LOD selection follows the true pixel size (the projected pixel error at the narrow FOV), the marcher's cone and LOD switch follow it too, memory and streaming stay bounded, a subtle vignette, and a smooth transition that respects reduced motion. |
 | What is extendable, and how? | **A data file**: zoom steps, FOV per step, the vignette, the detail boost and the transition time in a file under `shared/`, with a generator and validation like the others; a test adds a step by data alone. |
@@ -34,8 +33,7 @@ LOD follows the smaller pixels. Outside the cone, nothing loads that the unzoome
 frame's narrowed by it, `2·atan(tan(fov/2) / magnification)`, where the frame's FOV is the player's
 Field of view setting (narrowed on wide screens) plus the speed boost. A magnification gives the same
 zoom whatever the setting and the screen's shape; a fixed angle would zoom 60° players less than
-100° ones. Each pixel covers 1/magnification of the angle it did, which is also what the LOD and the
-marcher need.
+100° ones. Each pixel covers 1/magnification of the angle it did, which is also what the LOD needs.
 
 `shared/look/spyglass.mjs` validates the file (an unknown, missing or out-of-range entry fails naming
 its path) and generates `crates/dwell-look/src/spyglass.gen.rs` (the tunables) and
@@ -87,12 +85,8 @@ the full-detail distance the finest level the cone reaches is level 1 (2 m cells
 ## 5. Renderers
 
 - **Raster**: the projection, the sky's rays and each pass's culling already used the frame's FOV;
-  the zoomed FOV is the frame's.
-- **The marcher** built its rays and its cone LOD (`pixel_angle = 2·tan(fov/2) / height`, and the
-  band ends from it) from the screen's own FOV, not the frame's: it ignored the speed boost. Fixed
-  (`Renderer::march_frame` uses `frame_fov()`; regression test
-  `the_marcher_draws_with_the_fov_the_game_chose`), so zoomed its cone LOD lasts `magnification`
-  times as far. Compare mode draws both sides from the same frame.
+  the zoomed FOV is the frame's. (The ray marcher, while it existed, was fixed to use it too; it was
+  removed at Phase 25's A7, ADR 0044.)
 
 ## 6. The vignette and the transition
 
@@ -101,7 +95,7 @@ The zoom eases in log-magnification space (each doubling takes the same share) w
 browser's `prefers-reduced-motion`, `Client.setReducedMotion`) it changes at once. The vignette is a
 DOM layer in the HUD (`ui/spyglass.ts`: a radial gradient sized to the screen height), its opacity
 `opacity × progress` where progress is the zoom's share of the first step (log scale). It is over the
-whole view whatever the renderer, so compare mode's split shows it on both sides.
+whole view.
 
 ## 7. Tests and tools
 
@@ -113,7 +107,8 @@ whole view whatever the renderer, so compare mode's split shows it on both sides
   4 km ahead at 8×, unchanged behind, two levels at detail 4, and unchanged if the narrow FOV is not
   passed; it failed with a direction-independent pixel size, red → green).
 - `dwell-client`: `game_local.rs` (the zoomed FOV reaches the renderer and the LOD camera with its
-  magnification, eases in, and is instant under reduced motion) and the marcher's FOV test.
+  magnification, eases in, and is instant under reduced motion) and the renderer's FOV test
+  (`the_frame_uses_the_fov_the_game_chose`).
 - Vitest: the controls entry and the vignette's CSS; the bench's `spyglass` step.
 - The bench: the `spyglass` step and the `spyglass-far` scenario (unzoomed, both steps, unzoomed
   again); `npm run bench -- spyglass-far --compare --configs march` shoots raster and march side by

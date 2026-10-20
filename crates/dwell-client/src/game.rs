@@ -27,6 +27,7 @@ use dwell_lod::{LodCamera, LodSystem, LodView, StandInBox, format_lod_stats};
 use dwell_look::daynight::{DAY_NIGHT, DayState};
 use dwell_look::motion::{MOTION, MotionFx, MotionInput, MotionSettings, Speeds, effective_fov};
 use dwell_look::spyglass::{SPYGLASS, Spyglass, SpyglassView, zoom_fov};
+use dwell_mesh::{ChunkMeshes, SectionMeshes};
 use dwell_physics::config::PlayerControllerConfig;
 use dwell_physics::net::to_net;
 use dwell_physics::predictor::{Predictor, PredictorStats};
@@ -40,7 +41,7 @@ use dwell_world::{ChunkCoord, VoxelWorld};
 use crate::jobs::Output;
 use crate::pool::{ChunkJobs, Done, MeshJobs, PoolRef, Purpose};
 use crate::render::display::{RenderStats, format_render_stats};
-use crate::render::seam::{ChunkTerrain, SectionTerrain, Selection, TerrainRenderer};
+use crate::render::seam::TerrainRenderer;
 use crate::render::{Line, PlayerView, RegionBox, StandIn, WindView};
 use crate::telemetry::{self, TickSample};
 
@@ -70,14 +71,9 @@ const PLAYER_COLORS: [u32; 7] = [
 pub const FULL_CELL: ([f32; 3], [f32; 3]) = ([0.0; 3], [1.0; 3]);
 
 /// What the game draws through (the wgpu renderer, or a recorder in tests). The terrain part is
-/// the renderer seam's ([`TerrainRenderer`], RAY_MARCHED_RENDERER.md §3): each chunk's and
-/// section's payloads, routed to the terrain renderers the [`Selection`] draws; the rest (camera,
-/// players, outline, lines, stats) is shared by every renderer.
-pub trait Scene: TerrainRenderer<Chunk = ChunkTerrain, Section = SectionTerrain> {
-    /// What draws the terrain (its payloads are what the meshing jobs make).
-    fn selection(&self) -> Selection;
-    /// Switches renderer; true when the payloads change (the game then rebuilds the terrain).
-    fn select(&mut self, selection: Selection) -> bool;
+/// [`TerrainRenderer`]'s: each chunk's and section's meshes; the rest is the camera, players,
+/// outline, lines and stats.
+pub trait Scene: TerrainRenderer {
     fn set_player(&mut self, id: u32, view: Option<PlayerView>);
     fn set_camera(&mut self, eye: [f64; 3], yaw_deg: f64, pitch_deg: f64, face: f64, flip: f64);
     /// The fluid whose drawn surface the camera's eye is under (`dwell_world::fluid::eye_fluid`).
@@ -152,21 +148,21 @@ pub type SceneRef<S> = Rc<RefCell<S>>;
 /// The streamer's and the LOD system's view of the scene.
 pub struct View<S>(pub SceneRef<S>);
 
-impl<S: Scene> TerrainView<ChunkTerrain> for View<S> {
-    fn set_terrain_chunk(&mut self, coord: Coord, _origin: [i32; 3], meshes: Option<ChunkTerrain>) {
+impl<S: Scene> TerrainView<ChunkMeshes> for View<S> {
+    fn set_terrain_chunk(&mut self, coord: Coord, _origin: [i32; 3], meshes: Option<ChunkMeshes>) {
         self.0
             .borrow_mut()
             .set_chunk(ChunkCoord::from_array(coord), meshes.as_ref());
     }
 }
 
-impl<S: Scene> LodView<SectionTerrain> for View<S> {
+impl<S: Scene> LodView<SectionMeshes> for View<S> {
     fn set_lod_section(
         &mut self,
         id: i64,
         origin: [f64; 3],
         cell_size: f64,
-        meshes: Option<SectionTerrain>,
+        meshes: Option<SectionMeshes>,
     ) {
         self.0
             .borrow_mut()
@@ -507,7 +503,6 @@ impl<S: Scene> Game<S> {
                     .push(Send::Control(Message::ChunkResync(coords.to_vec())));
             },
         );
-        pool.borrow_mut().payloads = scene.borrow().selection().payloads();
         let speeds = Speeds {
             walk: f64::from(config.movement.walk_speed),
             run: f64::from(config.movement.run_speed),
@@ -587,20 +582,6 @@ impl<S: Scene> Game<S> {
             None => game.verify(0),
         }
         game
-    }
-
-    /// Switches the terrain renderer at runtime (the renderer seam, RAY_MARCHED_RENDERER.md §3):
-    /// when the payloads change, the meshing jobs make the new ones and every chunk and LOD section
-    /// is rebuilt from the voxels and cells the client holds, without a reload.
-    pub fn set_renderer(&mut self, selection: Selection) {
-        if !self.scene.borrow_mut().select(selection) {
-            return;
-        }
-        self.pool.borrow_mut().payloads = selection.payloads();
-        self.streamer.remesh_all();
-        if let Some(lod) = &mut self.lod {
-            lod.rebuild_all();
-        }
     }
 
     /// Places the camera (None: back to the player's eyes).
@@ -1548,11 +1529,7 @@ impl<S: Scene> Game<S> {
                 lines.push(format_lod_stats(&lod.debug_stats()));
             }
             let scene = self.scene.borrow();
-            lines.push(format!(
-                "{} · {}",
-                scene.selection().status(),
-                format_render_stats(&scene.stats())
-            ));
+            lines.push(format_render_stats(&scene.stats()));
             drop(scene);
             lines.push(self.day.debug_line());
             if let Some(r) = self.registry_summary() {
@@ -1783,13 +1760,13 @@ impl<S: Scene> dwell_lod::SectionMesher for LodHost<'_, S> {
         self.pool_mesh.mesh_section(job, token);
     }
 }
-impl<S: Scene> LodView<SectionTerrain> for LodHost<'_, S> {
+impl<S: Scene> LodView<SectionMeshes> for LodHost<'_, S> {
     fn set_lod_section(
         &mut self,
         id: i64,
         origin: [f64; 3],
         cell_size: f64,
-        meshes: Option<SectionTerrain>,
+        meshes: Option<SectionMeshes>,
     ) {
         self.view.set_lod_section(id, origin, cell_size, meshes);
     }
