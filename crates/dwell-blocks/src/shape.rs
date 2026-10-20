@@ -234,6 +234,19 @@ pub fn solid_span_at(shape: &ShapeInfo, fx: f32, fz: f32) -> SolidSpan {
     }
 }
 
+/// How far a plant that sits on its support (`Cross::sit_on_support`) is lowered below its cell's
+/// floor at (fx, fz) ∈ [0, 1]² (clamped): the gap between the supporting cell's face toward the
+/// plant and the support's solid there — `1 − hi` where up is +y (`up` > 0), `lo` where up is −y
+/// (face B read in the world, its shapes hanging). 0 over a full cube or an empty cell.
+pub fn plant_sink(support: &ShapeInfo, fx: f32, fz: f32, up: i32) -> f32 {
+    if support.face_count == 0 {
+        return 0.0;
+    }
+    let span = solid_span_at(support, fx, fz);
+    let sink = if up > 0 { 1.0 - span.hi } else { span.lo };
+    sink.clamp(0.0, 1.0)
+}
+
 /// Height of the top of the solid at (fx, fz) (0 for an empty cell).
 pub fn surface_height_at(state: StateId, fx: f32, fz: f32) -> f32 {
     let shape = shape_of(state);
