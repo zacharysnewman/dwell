@@ -17,6 +17,7 @@ use dwell_client::render::seam::{
     ChunkTerrain, Recording, Routed, SectionTerrain, Selection, TerrainKind, TerrainRenderer,
 };
 use dwell_client::render::{Line, PlayerView, RegionBox, StandIn, WindView};
+use dwell_client::telemetry;
 use dwell_game::brush_tool::{BrushAction, BrushOutline};
 use dwell_game::input::{EditAction, KeyboardMouseInput};
 use dwell_game::region_tools::ToolAction;
@@ -846,10 +847,26 @@ fn the_spyglass_narrows_the_view_for_the_renderer_and_the_lod_alike() {
 #[test]
 fn a_slow_device_walks_without_snapping() {
     // A device drawing ~5.5 frames a second (CI's software renderer with two pages,
-    // e2e/play.spec.ts): each frame covers 11 of the server's 60 Hz ticks. Its prediction must
-    // keep the server's time, or the server fills the missing ticks by repeating the last input
-    // (walking further than the player did) and the replays drag the player along, snapping it
-    // once a correction passes RECONCILE_SNAP_DISTANCE.
+    // e2e/play.spec.ts): each frame covers 11 of the server's 60 Hz ticks, over a 150 ms round
+    // trip (as the e2e test's B page: `?netsim=150,…`).
+    slow_device_keeps_the_servers_time(11, 5);
+}
+
+#[test]
+fn a_device_at_under_two_frames_a_second_walks_and_jumps_without_snapping() {
+    // CI's software renderer drew e2e/touch.spec.ts's phone page at 440–810 ms a frame
+    // (2026-10-19): up to 48 of the server's ticks a frame, more than the 15 the client used to
+    // catch up. It dropped the rest, the starved server repeated the held input (a held jump flew
+    // and landed there), and the snapshot replays put the player back on the ground one predicted
+    // tick into the jump (the test read a 0.112 m peak).
+    slow_device_keeps_the_servers_time(48, 0);
+}
+
+/// A device whose frames each cover `steps` of the server's 60 Hz ticks walks, then holds jump.
+/// Its prediction must keep the server's time, or the server fills the missing ticks by repeating
+/// the last input (walking further, or jumping earlier, than the player did) and the replays drag
+/// the player along, snapping it once a correction passes RECONCILE_SNAP_DISTANCE.
+fn slow_device_keeps_the_servers_time(steps: usize, latency_steps: u32) {
     let mut rig = Rig::new();
     assert!(
         rig.run_until(60 * 30, |r| r
@@ -858,45 +875,62 @@ fn a_slow_device_walks_without_snapping() {
             .is_some_and(|g| g.debug_state().terrain_ready)),
         "the player is placed and the terrain around them arrives"
     );
-    // Settle on the ground at full speed, then slow down, over a 150 ms round trip (as the e2e
-    // test's B page: `?netsim=150,…`).
+    // Settle on the ground at full speed, then slow down.
     rig.run_until(60, |_| false);
-    rig.latency_steps = 5;
+    rig.latency_steps = latency_steps;
     let stats = |r: &Rig| r.game.as_ref().unwrap().debug_state().stats;
     let mut worst = 0.0f32;
     let mut slow_frames = |rig: &mut Rig, n: usize| {
         for _ in 0..n {
             let replays = stats(rig).replays;
-            rig.slow_frame(11);
+            rig.slow_frame(steps);
             let s = stats(rig);
             if s.replays > replays {
                 worst = worst.max(s.last_correction);
             }
         }
     };
-    slow_frames(&mut rig, 10);
+    // Each phase lasts about a second of frames.
+    let second = 60usize.div_ceil(steps);
+    slow_frames(&mut rig, second.max(10));
     let before = stats(&rig);
     let start = rig.game.as_ref().unwrap().debug_state().feet;
     rig.input.set_key("KeyW", true);
-    slow_frames(&mut rig, 6);
+    slow_frames(&mut rig, second);
     rig.input.set_key("KeyW", false);
-    slow_frames(&mut rig, 10);
-    let after = stats(&rig);
+    slow_frames(&mut rig, second);
     let feet = rig.game.as_ref().unwrap().debug_state().feet;
     let moved = ((feet[0] - start[0]).powi(2) + (feet[2] - start[2]).powi(2)).sqrt();
     assert!(moved > 2.0, "walked {moved} m");
+    // Hold jump through the jump (as the touch button is held), then land: the predicted ticks
+    // rise the whole jump (about 1.2 m), not one tick of it before a replay lands the player.
+    let ground = feet[1];
+    let last = telemetry::with(|t| t.ticks().last().map_or(0, |s| s.seq));
+    rig.input.set_key("Space", true);
+    slow_frames(&mut rig, second);
+    rig.input.set_key("Space", false);
+    slow_frames(&mut rig, second);
+    let peak = telemetry::with(|t| {
+        t.ticks()
+            .filter(|s| s.seq > last)
+            .map(|s| s.feet[1])
+            .fold(ground, f64::max)
+    });
+    assert!(peak - ground > 1.0, "jumped {} m", peak - ground);
+    let after = stats(&rig);
     // The prediction matches the server: no correction to speak of, so no snap.
     assert!(
         worst < 0.2,
         "a {worst} m correction: {before:?} -> {after:?}"
     );
     assert_eq!(after.snaps, before.snaps);
-    // Predicted ticks keep up with the server's (16 frames of 11 ticks).
+    // Predicted ticks keep up with the server's.
+    let frames = 4 * second;
     let predicted = after.ticks - before.ticks;
     assert!(
-        predicted >= 16 * 11 - 11,
+        predicted as usize >= frames * steps - steps,
         "{predicted} ticks predicted for {} of the server's",
-        16 * 11
+        frames * steps
     );
 }
 
