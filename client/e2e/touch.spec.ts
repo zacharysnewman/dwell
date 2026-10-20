@@ -82,13 +82,18 @@ for (let rep = 0; rep < 6; rep++) test(`touch controls: stick, look, and jump ${
   const jumpPeak = async () =>
     Math.max(ground, ...(await ticks(page)).filter((t) => t.seq > lastSeq).map((t) => t.feet[1]));
   let peak = ground;
-  let drawn = ground; // DIAG
   const deadline = Date.now() + 10_000;
-  while ((peak - ground <= 0.5 || drawn - ground <= 0.5) && Date.now() < deadline) { // DIAG
-    await page.waitForTimeout(40);
+  const every = rep % 2 ? 250 : 40; // DIAG
+  while (peak - ground <= 0.5 && Date.now() < deadline) {
+    await page.waitForTimeout(every);
     peak = await jumpPeak();
-    drawn = Math.max(drawn, (await read(page))?.feet[1] ?? 0); // DIAG
   }
+  // DIAG: frame intervals with no polling, then with 40 ms polling of state().
+  const now = () => page.evaluate<number>('performance.now()'); // DIAG
+  const gaps = async (from: number) => { const fr = await page.evaluate<{ frames: number[][] }>('globalThis.__dwell.telemetryFrames()'); const f = fr.frames.filter((x) => x[0] >= from).map((x) => x[0]); return f.slice(1).map((v, i) => (v - f[i]).toFixed(0)).join(' '); }; // DIAG
+  let t0 = await now(); await page.waitForTimeout(3000); console.log('DIAG idle', rep, await gaps(t0)); // DIAG
+  t0 = await now(); const end = Date.now() + 3000; while (Date.now() < end) { await page.waitForTimeout(40); await read(page); } console.log('DIAG poll40', rep, await gaps(t0)); // DIAG
+  t0 = await now(); const end2 = Date.now() + 3000; while (Date.now() < end2) { await page.waitForTimeout(40); await ticks(page); } console.log('DIAG polltick40', rep, await gaps(t0)); // DIAG
   await touch(cdp, 'touchEnd', []);
   // A page that predicts far fewer than 60 ticks a second drops time, and the server, filling the
   // missing ticks with the held input, flies and lands the jump without it (game.rs
@@ -99,7 +104,7 @@ for (let rep = 0; rep < 6; rep++) test(`touch controls: stick, look, and jump ${
     'globalThis.__dwell.telemetry().frames.interval?.p50 ?? 0',
   );
   const context = `jump peak, predicting ${rate.toFixed(1)} ticks/s, frames ${frame.toFixed(0)} ms`;
-  console.log('DIAG', context, 'drawn', drawn - ground, 'ticks', peak - ground, JSON.stringify(await page.evaluate('globalThis.__dwell.telemetry().frames.interval'))); // DIAG
+  console.log('DIAG', rep, every, context, 'drawn', 0, 'ticks', peak - ground, JSON.stringify(await page.evaluate('globalThis.__dwell.telemetry().frames.interval'))); // DIAG
   const fr = await page.evaluate<{ names: string[]; frames: number[][] }>('globalThis.__dwell.telemetryFrames()'); // DIAG
   console.log('DIAG frames', fr.frames.slice(-60).map((f, i, a) => (i ? (f[0] - a[i - 1][0]).toFixed(0) : '')).join(' ')); // DIAG
   for (const t of (await page.evaluate<any[]>('globalThis.__dwell.ticks()')).filter((t) => t.jump || t.state === 'jumping').slice(0, 160)) console.log('DIAG tick', t.seq, t.atMs.toFixed(0), t.feet[1].toFixed(3), t.state, t.jump); // DIAG
