@@ -111,6 +111,7 @@ fn march_perf() {
         .unwrap_or(0);
     if let Some(path) = env("DWELL_PERF_DUMP") {
         std::fs::write(&path, super::wgsl::source()).expect("dump");
+        std::fs::write(format!("{path}.beam"), super::wgsl::beam_source()).expect("dump");
     }
     // `name=bits` or `name=@file.wgsl` or `name=@file.wgsl:bits`, separated by `;`.
     let variants: Vec<(String, Option<String>, u32)> = env("DWELL_PERF_VARIANTS")
@@ -200,11 +201,13 @@ fn march_perf() {
     let queries = device.create_query_set(&wgpu::QuerySetDescriptor {
         label: None,
         ty: wgpu::QueryType::Timestamp,
-        count: 2,
+        count: 3,
     });
+    // The beam prepass's end, too (index 2).
+    m.beam_end_query = Some(2);
     let resolve = device.create_buffer(&wgpu::BufferDescriptor {
         label: None,
-        size: 16,
+        size: 24,
         usage: wgpu::BufferUsages::QUERY_RESOLVE | wgpu::BufferUsages::COPY_SRC,
         mapped_at_creation: false,
     });
@@ -218,6 +221,9 @@ fn march_perf() {
         ("high side", high, 0.0, -20.0),
     ];
     // Rounds of every variant in turn: a shared, busy GPU drifts, so compare within a round.
+    let moving: f64 = env("DWELL_PERF_MOVE")
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0.0);
     let rounds: usize = env("DWELL_PERF_ROUNDS")
         .and_then(|s| s.parse().ok())
         .unwrap_or(1);
@@ -228,9 +234,21 @@ fn march_perf() {
             None => super::wgsl::source(),
         });
         m.settings.debug = *bits;
+        // A beam module of the variant's own: `<file>.beam` beside it, if there is one.
+        let beam = file
+            .as_ref()
+            .and_then(|f| std::fs::read_to_string(format!("{f}.beam")).ok());
+        m.set_beam_source(&beam.unwrap_or_else(super::wgsl::beam_source));
         m.shade = env("DWELL_PERF_NOSHADE").is_none() && !variant.starts_with("noshade");
         m.settings.beam = env("DWELL_PERF_NOBEAM").is_none() && !variant.contains("nobeam");
         m.settings.temporal = !variant.contains("notemporal");
+        // `…still…`: the temporal start with the eye still only (A4b).
+        m.settings.moving = !variant.contains("still");
+        // The harness draws one view again and again: kept frames only when asked (`…reuse…`).
+        m.settings.reuse = variant.contains("reuse");
+        m.settings.columns = !variant.contains("nocolumns");
+        m.settings.distances = !variant.contains("nodistances");
+        m.settings.steep_dda = !variant.contains("nosteep");
         // `beamonly…`: the beam prepass alone.
         m.march_pass = !variant.starts_with("beamonly");
         m.shade &= m.march_pass;
@@ -249,9 +267,18 @@ fn march_perf() {
         };
         eprintln!("variant {variant} (dbg {bits:#x})");
         for (view, at, yaw, pitch) in views {
-            let frame = frame_for(at, yaw, pitch, size);
+            let mut frame = frame_for(at, yaw, pitch, size);
             let mut ms = Vec::new();
+            let mut beam_ms = Vec::new();
             for i in 0..25 {
+                // `DWELL_PERF_MOVE`: the eye moves this far to the right each frame.
+                let along = moving * f64::from(i);
+                frame = frame_for(
+                    std::array::from_fn(|k| at[k] + along * f64::from(frame.right[k])),
+                    yaw,
+                    pitch,
+                    size,
+                );
                 // The last frame fills the histogram (its atomics are not part of the timing).
                 m.settings.histogram_every = u32::from(i == 24);
                 let mut e = device.create_command_encoder(&Default::default());
@@ -265,23 +292,35 @@ fn march_perf() {
                         end_of_pass_write_index: Some(1),
                     }),
                 );
-                e.resolve_query_set(&queries, 0..2, &resolve, 0);
+                e.resolve_query_set(&queries, 0..3, &resolve, 0);
                 queue.submit([e.finish()]);
                 m.submitted();
                 let words = block_on(
                     &device,
-                    super::check::read_buffer(&device, &queue, &resolve, 0, 16),
+                    super::check::read_buffer(&device, &queue, &resolve, 0, 24),
                 )
                 .expect("timestamps");
                 let t = |i: usize| u64::from(words[2 * i]) | (u64::from(words[2 * i + 1]) << 32);
                 if (4..24).contains(&i) {
                     ms.push((t(1).saturating_sub(t(0))) as f64 * period / 1e6);
+                    if m.settings.beam && m.march_pass {
+                        beam_ms.push((t(2).saturating_sub(t(0))) as f64 * period / 1e6);
+                    }
                 }
                 m.collect();
             }
             ms.sort_by(f64::total_cmp);
+            beam_ms.sort_by(f64::total_cmp);
             if env("DWELL_PERF_CHECK").is_some() {
-                check_starts(&device, &queue, &mut m, (at, yaw, pitch), &targets, size);
+                check_starts(
+                    &device,
+                    &queue,
+                    &mut m,
+                    (at, yaw, pitch),
+                    &targets,
+                    size,
+                    moving,
+                );
             }
             if let Some(dir) = env("DWELL_PERF_IMAGES") {
                 steps_image(
@@ -299,9 +338,14 @@ fn march_perf() {
             }
             let s = m.last_steps;
             eprintln!(
-                "  {view:<20} march p50 {:6.2} ms  min {:6.2}  steps p50/p95/p99 {}",
+                "  {view:<20} march p50 {:6.2} ms  min {:6.2}  beam {}  steps p50/p95/p99 {}",
                 ms[ms.len() / 2],
                 ms[0],
+                beam_ms.first().map_or("–".into(), |b| format!(
+                    "{:.2}/{:.2}",
+                    b,
+                    beam_ms[beam_ms.len() / 2]
+                )),
                 s.map_or("–".into(), |s| format!(
                     "{}/{}/{} mean {:.1}",
                     s.median, s.p95, s.p99, s.mean
@@ -380,17 +424,21 @@ fn check_starts(
     (at, yaw, pitch): ([f64; 3], f64, f64),
     targets: &super::MarchTargets,
     size: (u32, u32),
+    moving: f64,
 ) {
     use super::stats::{DEBUG_WORDS, DebugRay, HIST_WORDS};
     use dwell_march::{Outcome, Ray};
     let pixels = (size.0 * size.1) as usize;
     m.set_debug(pixels);
-    for (y, p) in [
-        (yaw + 2.0, pitch + 1.0),
-        (yaw + 2.0, pitch + 1.0),
-        (yaw, pitch),
+    // With `moving`, the frame before comes from an eye that far to the left.
+    let fwd = frame_for(at, yaw, pitch, size).right;
+    for (y, p, back) in [
+        (yaw + 2.0, pitch + 1.0, 1.0),
+        (yaw + 2.0, pitch + 1.0, 1.0),
+        (yaw, pitch, 0.0),
     ] {
-        let frame = frame_for(at, y, p, size);
+        let eye: [f64; 3] = std::array::from_fn(|k| at[k] - back * moving * f64::from(fwd[k]));
+        let frame = frame_for(eye, y, p, size);
         let mut e = device.create_command_encoder(&Default::default());
         m.draw(&mut e, &frame, targets, None);
         queue.submit([e.finish()]);
