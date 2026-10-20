@@ -1878,6 +1878,9 @@ in the code yet.
 | `slide.min_angle` / `friction` / `terminal_speed` (`config.rs`) | 44° / 0.3 / 14 m/s | Ground under the player steeper than this slides (owner, 2026-10-15), pulled by `g (sin θ − friction cos θ)` up to the terminal speed along the slope (PLAYER_CONTROLLER.md §6.8) |
 | `slide.steering` / `steer_speed` / `brake` / `brake_deceleration` / `uphill_deceleration` (`config.rs`) | 0.4 / 5 m/s / 0.6 / 10 m/s² / 60 m/s² | Control on a slide: steering across it at 0.4 × the walking acceleration; holding up-slope lowers the terminal speed by up to 60 % (never stops, never climbs); momentum carried up a steep face dies fast |
 | `slide.crouch_terminal_factor` / `crouch_friction` (`config.rs`) | 1.15 / 0.2 | A crouched slide: faster and lower |
+| `sprint_slide.min_start_speed` / `start_boost` / `max_speed` (`config.rs`) | 6.5 m/s / 1.5 m/s / 14 m/s | The sprint slide (owner, 2026-10-19; PLAYER_CONTROLLER.md §6.9): crouch pressed at this horizontal speed or more (a sprint, not a walk) slides, with the boost; downhill speeds it up to the maximum |
+| `sprint_slide.friction` / `slope_gravity` (`config.rs`) | 6 m/s² / 1 | Its deceleration, and the fraction of gravity the ground's tilt along the slide adds (downhill) or takes (uphill): 1.3 s / ~7 m on flat ground from a sprint |
+| `sprint_slide.steer_rate` / `cooldown_ticks` (`config.rs`) | 90 °/s / 30 ticks (0.5 s) | Limited steering toward the move input; the wait after a slide before the next (≤ 255: a `u8` on the wire) |
 | `SLIDE_HOLD` / `SLIDE_UPDATE_EVERY` (*client*, `dwell-game` `sound.rs`) | 0.15 s / 50 ms | A slide's sound: a pause shorter than the hold keeps the same voice; speed updates at most this often (AUDIO.md §5) |
 | Motion effects (*client*, `shared/look/motion.json`) | FOV zoomed out 10 % at run speed, 20 % at 2000 m/s (75° → ≈ 80.3°, 85.3°); spring 8/s widen, 3.5/s settle; at most 120°; wind 0.35 at run, 1 at 2000 m/s | The speed FOV and wind ([`MOTION_EFFECTS.md`](./MOTION_EFFECTS.md)); generated into dwell-look's `motion.gen.rs` |
 | `TIER1_MIN_BLOCKS` | 4 | Clusters at or above this size are Tier 1 |
@@ -2045,7 +2048,7 @@ protocol v5); `LodIndex` 0x13, `LodIndexUpdate` 0x14, `LodData` 0x15, `LodReques
 state and flags, and the wider `pos64` range for creative flight (Phase 4; protocol v7); `ChunkRequest`
 0x4D for full detail beyond the view (Phase 4; protocol v8); the flight speed level in `PlayerInput`'s
 `buttons` (Phase 4; protocol v9); `HostStatus` 0x4E and the `ServerClosing` reject reason
-(Phase 5c; protocol v10); the block registry hash in `Welcome` (Phase 8; protocol v11); the row `j` in `LodIndex` entries and the `faceB` bits of `controllerFlags` and `playerFlags` (Phase 13; protocol v12); `RegionEdit` 0x4F and the `regionEdits` Welcome flag (structure sandbox S3; still protocol v12, an addition within the 0.10 line negotiated by the flag, §10.5); the `KEEP` paste cell and the `brushes` Welcome flag (Phase 34; still protocol v12, negotiated by the flag); `BlockRegistry` 0x50 and the definitions hash in `Welcome` (registry sync, ADR 0038; protocol v14) — layouts pinned by `shared/protocol/vectors.txt` (made by the independent Python
+(Phase 5c; protocol v10); the block registry hash in `Welcome` (Phase 8; protocol v11); the row `j` in `LodIndex` entries and the `faceB` bits of `controllerFlags` and `playerFlags` (Phase 13; protocol v12); `RegionEdit` 0x4F and the `regionEdits` Welcome flag (structure sandbox S3; still protocol v12, an addition within the 0.10 line negotiated by the flag, §10.5); the `KEEP` paste cell and the `brushes` Welcome flag (Phase 34; still protocol v12, negotiated by the flag); `BlockRegistry` 0x50 and the definitions hash in `Welcome` (registry sync, ADR 0038; protocol v14); `slideFlags` and the slide cooldown in the local player's controller state (the sprint slide, Phase 37; protocol v15) — layouts pinned by `shared/protocol/vectors.txt` (made by the independent Python
 reference encoder, including half floats; the Rust codec, `dwell-protocol`, round-trips every
 vector byte for byte and rejects every malformed one). The Rust port kept protocol v12's layouts. **Protocol v13** (Phase 18) changes no layout: client and server must derive the same adaptive shapes from the same table (§6.1), so a build that shapes differently must not connect. The remaining formats below are drafts, finalized in the
 phase that builds them. Enumerations and bit sets (`inputButtons`, `playerStates`, `playerFlags`,
@@ -2093,7 +2096,7 @@ local player:
   u8   state                    // player::State
   u8   inputBuffer              // inputs queued on the server (client tick-rate steering)
   u32  lastKnockbackSeq         // inputSeq of the latest knockback applied (0 = none)
-  controller state (47 B + 12 while climbing + 8 after releasing a ladder;
+  controller state (49 B + 12 while climbing + 8 after releasing a ladder;
                     exact fields in PLAYER_CONTROLLER.md §8.4)
 u8   remotePlayerCount          // nearest first, as many as fit in one datagram
 repeat remotePlayerCount:
@@ -2315,6 +2318,15 @@ architectural summary.
   `State::Sliding`. It is derived each tick from the probe and the resumable controller state, so
   the wire is unchanged and prediction replays it exactly. Single-block stairs (45° ramps) slide;
   a stairs block comes later.
+- **The sprint slide** **[built, Phase 37]** (PLAYER_CONTROLLER.md §6.9; owner, 2026-10-19):
+  pressing crouch while sprinting on the ground slides on in the direction of travel with the
+  sprint's momentum (plus a small boost), in the crouch capsule, slowing with friction — less
+  downhill, more uphill — until the crouch speed, the crouch's release (standing only where the
+  player fits), leaving the ground (a jump keeps the momentum) or a wall; limited steering, a
+  cooldown before the next. `State::Sliding`, so the slide's sound and the motion effects follow.
+  Its state (active, cooldown) is resumable and carried in the snapshot's controller state
+  (protocol v15), so prediction resumes it exactly. Tunables are `PlayerControllerConfig::sprint_slide`
+  (§7.4).
 - **Creative flight** **[built, Phase 4]** (PLAYER_CONTROLLER.md §6.7): an exclusive layer while
   the input's `fly` mode bit is set — no gravity, move along the view's yaw, jump up, crouch down,
   speed growing with height above the sea, with no ceiling (Phase 16, D3: held only inside the wire
@@ -2355,7 +2367,7 @@ Details and measurements: PLAYER_CONTROLLER.md §8.
   catches up at most 60 ticks a frame (1 s), so a device at 1 fps or more keeps the server's
   time (PLAYER_CONTROLLER.md §8). The client nudges its tick
   rate ±2 % to keep the server's queue (reported in snapshots) between 1 and 4. Snapshots carry `ackInputSeq`, the authoritative body state, and the local player's
-  controller state (layers, timers, crouch/climb/swim, ground ref).
+  controller state (layers, timers, crouch/climb/swim, the sprint slide, ground ref).
 - On snapshot: if the stored prediction for `ackInputSeq` matches within tolerance, nothing is
   replayed. Otherwise the client restores the server state, replays unacked inputs (pipeline +
   prediction-world step), and smooths the visible correction; errors above
