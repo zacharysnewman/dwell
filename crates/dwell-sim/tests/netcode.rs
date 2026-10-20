@@ -901,8 +901,9 @@ fn stairs_generator() -> ChunkGenerator {
 }
 
 /// A spawns on the third stair's ramp and slides off it, steers, then tries to walk up the stairs
-/// and goes off to roam; B later runs into them from their foot. Returns the run (12 s) after
-/// checking that both slid, B saw A sliding, and neither climbed the stairs.
+/// and goes off to roam; B later runs into them from their foot, where the 45° ramp stops it like
+/// a wall (PLAYER_CONTROLLER.md §6.8: no climbing onto the toe and sliding back). Returns the run
+/// (12 s) after checking that A slid, B saw A sliding, B never slid, and neither climbed the stairs.
 fn sliding_on_steep_stairs(conditions: LinkConditions) -> (NetSim, [usize; 2]) {
     let mut sim = NetSim::with_world(conditions, stairs_generator(), [32.0, G + 2.6, 33.25]);
     let a = sim.join(
@@ -940,7 +941,7 @@ fn sliding_on_steep_stairs(conditions: LinkConditions) -> (NetSim, [usize; 2]) {
             .is_some_and(|r| r.state == PlayerState::Sliding);
     }
     assert!(slid_a > 10, "A slid for {slid_a} ticks");
-    assert!(slid_b > 3, "B slid for {slid_b} ticks");
+    assert_eq!(slid_b, 0, "B slid for {slid_b} ticks at the ramp's foot");
     assert!(b_saw_a_slide, "B sees A sliding (for its sounds)");
     for c in [a, b] {
         let c = &sim.clients[c];

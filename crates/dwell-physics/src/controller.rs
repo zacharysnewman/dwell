@@ -126,6 +126,9 @@ pub struct GroundInfo {
     pub ceiling_blocked: bool,
     pub touching_wall: bool,
     pub wall_normal: Vec3,
+    /// At a steep ramp's foot (§6.8): the ramp's normal, which the ground ring touches while the
+    /// centre stands on gentle ground; else zero. Walking treats the ramp as a wall.
+    pub foot_normal: Vec3,
 }
 
 impl Default for GroundInfo {
@@ -142,6 +145,7 @@ impl Default for GroundInfo {
             ceiling_blocked: false,
             touching_wall: false,
             wall_normal: Vec3::ZERO,
+            foot_normal: Vec3::ZERO,
         }
     }
 }
@@ -895,10 +899,36 @@ impl Players {
             g.slope_angle = slope_angle(hit.normal);
             // Sliding reads the ground under the centre: the ring's highest hit can lie across a
             // crest, whose face would push the player back onto it.
+            let centre = under;
             let under = under.unwrap_or(hit);
             g.under_normal = under.normal;
             g.under_angle = slope_angle(under.normal);
             g.ground = hit.ground;
+            g.foot_normal = Vec3::ZERO;
+            // At a steep ramp's foot the ring's highest hit is the ramp (ground that slides) while
+            // the centre stands on gentle ground: the player stands on the ground under its centre.
+            // Following the ramp's face instead walked the player up onto its toe until the centre
+            // crossed onto it and slid back down, switching between sliding and walking every few
+            // ticks (the "flicker at the foot", §6.8).
+            // Only while driving into the ramp: standing still beside it the ring's ramp holds the
+            // capsule's round bottom where it rests.
+            // (The player's own velocity and momentum, which the clip below leaves alone.)
+            let away = safe_normalized(flat(hit.normal));
+            let own = c.horizontal.current + c.horizontal.external - flat(c.platform.base_velocity);
+            let into_ramp = -own.dot(away) > MIN_DIRECTION
+                || -move_direction(&c.input).dot(away) > INPUT_DEADZONE;
+            if let Some(c0) = centre
+                && g.slope_angle > cfg.slide.min_angle
+                && g.under_angle <= cfg.slide.min_angle
+                && into_ramp
+                && !matches!(c0.ground, GroundRef::Player(_))
+            {
+                g.foot_normal = g.normal;
+                g.normal = c0.normal;
+                g.gap = c0.distance - half_height;
+                g.slope_angle = g.under_angle;
+                g.ground = c0.ground;
+            }
             let walkable = g.slope_angle <= cfg.probes.max_slope_angle;
             // Rising faster than the ground below keeps the previous answer until the rise ends.
             let ground_vy = if c.platform.ground == hit.ground {
@@ -910,6 +940,7 @@ impl Players {
             g.grounded = walkable && (!rising || g.was_grounded);
         } else {
             g.grounded = false;
+            g.foot_normal = Vec3::ZERO;
             g.normal = Vec3::Y;
             g.slope_angle = 0.0;
             g.under_normal = Vec3::Y;
@@ -1880,6 +1911,16 @@ impl Players {
         let change = move_towards(Vec3::ZERO, relative_delta, rate * DT);
         c.horizontal.current = relative + change + base;
         c.horizontal.contribution = c.horizontal.current + c.horizontal.external;
+        // At a steep ramp's foot the ramp is a wall to walking: driving into it climbed its toe
+        // until the centre crossed onto it and slid back (§6.8).
+        let foot = flat(c.ground.foot_normal);
+        if grounded && foot.length() > MIN_DIRECTION {
+            let away = normalized(foot);
+            let into = (c.horizontal.contribution - base).dot(away);
+            if into < 0.0 {
+                c.horizontal.contribution -= away * into;
+            }
+        }
         if grounded {
             let motion = c.horizontal.contribution - base;
             let shift = Self::try_step(world, physics, p, motion, move_dir);
