@@ -2379,8 +2379,12 @@ Deviations
   decorations' height band (`decorations.json`, metres above sea level) was compared with the
   face-local top, 32 m off since Phase 16; `a_decorations_height_band_is_metres_above_sea_level`
   (red: 12,387 of 54,254 shore grass cells below the band planted; green: none). Meshing cost
-  (`cargo run --release -p dwell-mesh --example mesh_cost`) and the bench: see ARCHITECTURE.md
-  §6.3.
+  (new: `cargo run --release -p dwell-mesh --example mesh_cost`): chunk mesh vertices around the
+  spawn 1.04 M → 1.85 M (more rows hold ground; +20 % per chunk), LOD section vertices 0.94 M →
+  2.36 M; the bench's `gpu.frame` (seed 7, unthrottled) 6.1 → 8.5 ms at `idle-spawn`, 4.6 → 7.3 ms
+  at `fly-high`. Screenshots before and after (the ground, a hillside slide in progress, 600 m up,
+  face B) were taken in Chrome on the GPU; the walk downhill from seed 7's spawn slides in version
+  16 and never in 15 (the controller's trace).
 
 ---
 

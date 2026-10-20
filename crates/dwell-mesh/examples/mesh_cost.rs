@@ -41,9 +41,7 @@ struct Cost {
 fn world_chunk(face: Face, cx: i32, row: i32, cz: i32) -> ChunkCoord {
     (-64..64)
         .map(|y| ChunkCoord::new(cx, y, cz))
-        .find(|c| {
-            face_local_chunk(*c).y == row && (c.y >= 0) == (face == Face::A)
-        })
+        .find(|c| face_local_chunk(*c).y == row && (c.y >= 0) == (face == Face::A))
         .expect("a row inside the world")
 }
 

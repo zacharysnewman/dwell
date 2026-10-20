@@ -716,7 +716,10 @@ fn a_decorations_height_band_is_metres_above_sea_level() {
         }
     }
     assert!(low > 200, "{low} low grass cells checked");
-    assert_eq!(planted, 0, "{planted} of {low} grass cells below the band have a plant");
+    assert_eq!(
+        planted, 0,
+        "{planted} of {low} grass cells below the band have a plant"
+    );
 }
 
 #[test]
@@ -799,9 +802,8 @@ fn the_hills_are_steep_enough_to_slide_and_reach_about_500_m() {
                         }
                     };
                     let shaped = dwell_blocks::adaptive::shape_at(get, 1);
-                    let hi = |fx: f32, fz: f32| {
-                        dwell_blocks::shape::solid_span_at(shaped, fx, fz).hi
-                    };
+                    let hi =
+                        |fx: f32, fz: f32| dwell_blocks::shape::solid_span_at(shaped, fx, fz).hi;
                     for (fx, fz) in [(0.25, 0.25), (0.75, 0.25), (0.25, 0.75), (0.75, 0.75)] {
                         let gx = (hi(fx + 0.05, fz) - hi(fx - 0.05, fz)) / 0.1;
                         let gz = (hi(fx, fz + 0.05) - hi(fx, fz - 0.05)) / 0.1;

@@ -41,7 +41,11 @@ fn ground_rows(seed: u64, cx: i32, cz: i32) -> Vec<i32> {
             }
         }
         for row in lo.div_euclid(CHUNK_SIZE)..=hi.div_euclid(CHUNK_SIZE) + 1 {
-            out.push(if face == Face::A { row } else { mirror_chunk_y(row) });
+            out.push(if face == Face::A {
+                row
+            } else {
+                mirror_chunk_y(row)
+            });
         }
     }
     out
@@ -58,7 +62,11 @@ fn main() {
         for (x, z) in [(0, 0), (5, -3)] {
             let base = [-5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 6];
             let mut rows = base.to_vec();
-            rows.extend(ground_rows(seed, x, z).into_iter().filter(|y| !base.contains(y)));
+            rows.extend(
+                ground_rows(seed, x, z)
+                    .into_iter()
+                    .filter(|y| !base.contains(y)),
+            );
             for y in rows {
                 chunks.push((seed, [x, y, z]));
             }
@@ -67,7 +75,11 @@ fn main() {
         // ground's rows there.
         for (x, z) in [(-14, -36), (40, -12), (-300, 450)] {
             let mut rows = vec![1, -2];
-            rows.extend(ground_rows(seed, x, z).into_iter().filter(|y| ![1, -2].contains(y)));
+            rows.extend(
+                ground_rows(seed, x, z)
+                    .into_iter()
+                    .filter(|y| ![1, -2].contains(y)),
+            );
             for y in rows {
                 chunks.push((seed, [x, y, z]));
             }

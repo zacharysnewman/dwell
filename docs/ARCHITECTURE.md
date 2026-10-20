@@ -1077,7 +1077,13 @@ lattice and interpolated bilinearly; the chunk path and the point queries (`colu
    91–100 % is reachable from it without climbing a slide or a cliff (going down any), and 79–100 %
    both ways, over three seeds per face; the spawn's patch is level, never a slide. A test pins
    the targets (`the_hills_are_steep_enough_to_slide_and_reach_about_500_m`: 12–18 % sliding, the
-   highest column 430–580 m). **Generator version 15** (owner, 2026-10-19: more elevation variance)
+   highest column 430–580 m). The cost of the steeper ground: around the spawns of seeds 7, 1 and
+   42 (`cargo run --release -p dwell-mesh --example mesh_cost`: the chunks holding ground within 4
+   chunks of the spawn, and 900 LOD sections of levels 1–4) face A's chunk meshes went from 1.04 M
+   to 1.85 M vertices (267 → 395 chunks hold ground, 3,900 → 4,700 vertices each) and its LOD
+   sections' from 0.94 M to 2.36 M (38 → 96 MB); face B alike. In the bench (seed 7, Chrome on an
+   Apple GPU, unthrottled) `gpu.frame` went from 6.1 to 8.5 ms at `idle-spawn` and from 4.6 to
+   7.3 ms at `fly-high`, still well inside a 60 Hz frame. **Generator version 15** (owner, 2026-10-19: more elevation variance)
    raised the hills from ±30 m, the bumps from ±2.5 m and the inland rise from 90 m (so the deeper
    hollows stay above sea level): over 7 seeds and both faces (`--example relief`) the land's height
    standard deviation went from 21 to 36 m, its highest column from ~105 to ~194 m and its mean slope
