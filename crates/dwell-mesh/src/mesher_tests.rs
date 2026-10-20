@@ -778,6 +778,91 @@ fn a_shaped_bank_beside_water_holds_water_in_its_open_part() {
     assert!(!between);
 }
 
+/// A shore: water at row 3 east of x = 6, sand banks west of it (some a block higher, for step
+/// slopes and ramps), a dry bank cell that only touches water diagonally, and water open to the
+/// air at its south edge.
+fn shore_scene() -> Vec<(i32, i32, i32, u16)> {
+    let sand = require("dwell:sand");
+    let mut cells = Vec::new();
+    for z in 2..10 {
+        for x in 0..12 {
+            cells.push((x, 2, z, sand));
+            let bank = x < 6 || (x == 6 && z == 5);
+            cells.push((x, 3, z, if bank { sand } else { water() }));
+            if x < 3 || (x == 4 && z == 7) {
+                cells.push((x, 4, z, sand));
+            }
+        }
+    }
+    // A dry bank cell beside a bank cell whose only water is diagonal.
+    cells.retain(|&(x, y, z, _)| !(y == 3 && (x == 6 || x == 7) && z == 9));
+    cells.push((6, 3, 9, sand));
+    cells
+}
+
+#[test]
+fn fluid_side_faces_stand_only_over_the_open_part_beside_them_and_under_the_fluids_surface() {
+    //! Regression (owner, 2026-10-20: flat blue walls along shores): a water cell's and a flooded
+    //! bank's side faces were drawn over the whole cell side, up to the cell's top (above the
+    //! water's drawn surface) and over the solid part of a shaped neighbour (behind its slope or
+    //! ramp). A fluid side face now covers only the part of its side where the neighbour is open,
+    //! up to the fluid's drawn surface (WATER_RENDERING.md §9).
+    let cells = shore_scene();
+    let at = |x: i32, y: i32, z: i32| {
+        cells
+            .iter()
+            .rev()
+            .find(|c| (c.0, c.1, c.2) == (x, y, z))
+            .map_or(0, |c| c.3)
+    };
+    let m = mesh(&cells, false).transparent;
+    let water_id = f32::from(dwell_blocks::fluid("dwell:water").expect("water"));
+    let top = 1.0 - dwell_blocks::require_fluid("dwell:water").surface_drop;
+    let mut sides = 0;
+    for t in m.indices.chunks_exact(3) {
+        let [a, b, c] = [t[0], t[1], t[2]].map(|i| vertex(&m.positions, i));
+        // Every fluid face carries the water's fluid id (the water shader's parameters).
+        for &i in t {
+            assert_eq!(m.fluids[i as usize], water_id);
+        }
+        let n = [
+            f64::from(m.normals[t[0] as usize * 3]),
+            f64::from(m.normals[t[0] as usize * 3 + 1]),
+            f64::from(m.normals[t[0] as usize * 3 + 2]),
+        ];
+        if n[1] != 0.0 {
+            continue;
+        }
+        sides += 1;
+        let centre = [0, 1, 2].map(|i| (a[i] + b[i] + c[i]) / 3.0);
+        let row = centre[1].floor();
+        for p in [a, b, c] {
+            assert!(
+                p[1] <= row + top + 1e-5,
+                "a side face above the water's surface: {a:?} {b:?} {c:?}"
+            );
+        }
+        // Just across the face: the neighbour cell, which must be open there.
+        let q = [0, 1, 2].map(|i| centre[i] + n[i] * 0.01);
+        let [qx, qy, qz] = q.map(|v| v.floor() as i32);
+        let shape = dwell_blocks::adaptive::shape_at(|dx, dy, dz| at(qx + dx, qy + dy, qz + dz), 1);
+        let local = [
+            q[0] - f64::from(qx),
+            q[1] - f64::from(qy),
+            q[2] - f64::from(qz),
+        ]
+        .map(|v| v as f32);
+        assert!(
+            !dwell_blocks::shape::point_in_solid(shape, local[0], local[1], local[2], -1e-3),
+            "a side face against its neighbour's solid at {q:?}: {a:?} {b:?} {c:?}"
+        );
+    }
+    assert!(
+        sides > 0,
+        "the water's open south edge and the dry bank show sides"
+    );
+}
+
 #[test]
 fn face_b_shapes_hang_toward_its_sky() {
     // A lone grass block on face B (meshed mirrored): the pyramid hangs, its slopes face down.
