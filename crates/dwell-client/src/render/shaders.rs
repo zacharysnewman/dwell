@@ -127,7 +127,7 @@ struct Draw {
 /// plants). One unit in the last place (about 1e-7 of the depth) is far below anything a reader
 /// resolves, so the readers that don't ask are unchanged. **Every writer of the view depth goes
 /// through `frame_depth`** (a test checks it), or the flag would be its depth's own noise.
-pub const FRAME_DEPTH: &str = r"
+const FRAME_DEPTH: &str = r"
 fn frame_depth(d: f32, inked: bool) -> f32 {
     let b = bitcast<u32>(d) & ~1u;
     return bitcast<f32>(select(b | 1u, b, inked));
@@ -2260,15 +2260,14 @@ mod tests {
     fn every_view_depth_writer_goes_through_frame_depth() {
         // The ink flag is the view depth's lowest bit, so every writer of the frame's view depth
         // must set it (`frame_depth`), or a surface's flag would be its depth's own noise. The
-        // scene's fragment outputs (`SceneOut`, `CutoutSceneOut`) and the marcher's copy.
+        // scene's fragment outputs (`SceneOut`, `CutoutSceneOut`).
         let src = super::source(4);
-        let copy = crate::render::march::renderer::copy_source();
         let mut writers = 0;
-        for s in [src.as_str(), copy.as_str()] {
+        for s in [src.as_str()] {
             for (at, _) in s.match_indices("@fragment\nfn ") {
                 let f = &s[at..at + s[at..].find("\n}\n").expect("end")];
                 let header = &f[..f.find('{').expect("body")];
-                if !["-> SceneOut", "-> CutoutSceneOut", "-> CopyOut"]
+                if !["-> SceneOut", "-> CutoutSceneOut"]
                     .iter()
                     .any(|t| header.contains(t))
                 {
@@ -2280,13 +2279,13 @@ mod tests {
                 }
             }
         }
-        // scene_out (terrain, flat), the cutout, the water's, the copy.
+        // And scene_out, which terrain_fs and flat_fs return.
         let scene_out = &src[src.find("fn scene_out(").expect("scene_out")..];
         assert!(
             scene_out[..scene_out.find("\n}\n").unwrap()]
                 .contains("frame_depth(view_depth(rel), true)")
         );
-        assert!(writers >= 3, "{writers}");
+        assert!(writers >= 2, "the cutout and the water: {writers}");
     }
 
     #[test]

@@ -79,11 +79,6 @@ pub fn section_node(origin: [f64; 3], cell_size: f64) -> (u32, [i32; 3]) {
     (level, n)
 }
 
-/// The copy into the shared frame, with `frame_depth` (the view depth as the frame stores it).
-pub(crate) fn copy_source() -> String {
-    format!("{}{COPY}", super::super::shaders::FRAME_DEPTH)
-}
-
 const COPY: &str = r"
 @group(0) @binding(0) var march_color: texture_2d<f32>;
 @group(0) @binding(1) var march_depth: texture_2d<f32>;
@@ -108,7 +103,7 @@ fn copy_fs(@builtin(position) at: vec4f) -> CopyOut {
     let low = min(vec2i(at.xy * ratio), vec2i(textureDimensions(march_depth)) - vec2i(1));
     var o: CopyOut;
     o.color = textureLoad(march_color, p, 0);
-    o.depth = frame_depth(textureLoad(march_depth, low, 0).r, true);
+    o.depth = textureLoad(march_depth, low, 0).r;
     return o;
 }
 ";
@@ -162,7 +157,7 @@ impl MarchRenderer {
     fn copy_pipeline(device: &wgpu::Device, samples: u32) -> Copy {
         let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("march copy"),
-            source: wgpu::ShaderSource::Wgsl(copy_source().into()),
+            source: wgpu::ShaderSource::Wgsl(COPY.into()),
         });
         let texture = |binding, filterable| wgpu::BindGroupLayoutEntry {
             binding,
