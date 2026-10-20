@@ -182,15 +182,24 @@ defaults were taken instead (coordinator, 2026-10-15):
 Questions for the owner:
 
 1. Should players eventually save their own presets, per player in browser storage? Or is
-   `brushes.json` enough?
+   `brushes.json` enough? **Answered (owner, 2026-10-19): the built-in presets are enough.** No
+   player presets.
 2. Should brushes come to other world types, such as creative terrain worlds? If so, with what
-   permission (ops only?) and what reach?
+   permission (ops only?) and what reach? **Answered (owner, 2026-10-19): yes, eventually, in
+   creative.** Dwell has no game modes yet; adventure and creative modes are wanted (`FUTURE.md`,
+   "Game modes"). Brushes come to terrain worlds in creative mode only. If excluding them by
+   finer permission (ops only) is logically complicated, allowing them for everyone in creative is
+   fine. Until game modes exist, brushes stay in the sandbox.
 3. Is 128 m the right reach, and is 16 the right maximum radius? A size-16 stroke is about 36,000
-   cells, half a second of the server's rate.
+   cells, half a second of the server's rate. **Answered (owner, 2026-10-19): yes, both are fine.**
 4. VoxelSniper offers more brushes: blend, linear blend, overlay variants, stencils and tree
-   brushes. Which of them, if any, next?
+   brushes. Which of them, if any, next? **Answered (owner, 2026-10-19): support all of them.**
 5. Should strokes be predicted, shown before the server's echo? Today a large stroke appears about
-   a round trip later.
-6. Should touch screens get brushes? They have none today.
+   a round trip later. **Answered (owner, 2026-10-19): yes.** Normal break/place edits aren't
+   predicted either (ARCHITECTURE.md §5: the change shows when the server's delta arrives); the
+   owner asked whether they are, so predicting them is a candidate alongside.
+6. Should touch screens get brushes? They have none today. **Answered (owner, 2026-10-19): yes,
+   but later and at low priority:** the game targets desktop for now, until it is heavily optimised.
 7. Should a ghost of the actual cells replace the wireframe preview? It costs more lines; splatter
-   would show its exact cells.
+   would show its exact cells. **Answered (owner, 2026-10-19): yes, a preview of the exact cells**,
+   shown by a toggle or while a key is held (to decide in its design).
