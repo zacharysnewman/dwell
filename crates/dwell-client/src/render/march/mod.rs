@@ -40,7 +40,9 @@ pub use renderer::{
 
 /// Words of `MarchUniforms` (wgsl.rs; a test checks the struct's size).
 pub const MARCH_UNIFORM_WORDS: usize =
-    dwell_march::layout::LEVEL_COUNT * dwell_march::layout::LEVEL_WORDS + 44;
+    dwell_march::layout::LEVEL_COUNT * dwell_march::layout::LEVEL_WORDS
+        + 48
+        + 8 * wgsl::MAX_DIRTY;
 
 pub const COLOR: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
 pub const DEPTH: wgpu::TextureFormat = wgpu::TextureFormat::R32Float;
@@ -53,8 +55,11 @@ pub const BEAM: wgpu::TextureFormat = wgpu::TextureFormat::Rg32Float;
 /// Per beam tile, the least distance its rays are known clear to (a hit's, the farthest distance
 /// on a miss, 0 at the cap): next frame's temporal start.
 pub const CLEAR_T: wgpu::TextureFormat = wgpu::TextureFormat::R32Float;
-/// The eye may move this far (metres) between frames and keep the temporal start.
-pub const TEMPORAL_MAX_SHIFT: f64 = 1.0e-3;
+/// The eye may move this far (metres) between frames and keep the temporal start: with the eye
+/// still only (A4b, `MarchSettings::moving` off), or while it moves (A4c; farther than this is a
+/// jump, where last frame's image says little).
+pub const TEMPORAL_STILL_SHIFT: f64 = 1.0e-3;
+pub const TEMPORAL_MAX_SHIFT: f64 = 256.0;
 
 /// What the march is asked for.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -73,6 +78,10 @@ pub struct MarchSettings {
     /// §4.3 item 5: with the eye still, a tile starts from last frame's distances instead
     /// (needs `beam`: it runs in the prepass).
     pub temporal: bool,
+    /// A4c: the temporal start while the eye moves too (last frame's distances reprojected from
+    /// last frame's eye, outside the nodes that changed since); off, only with the eye still and
+    /// no brick uploaded (A4b).
+    pub moving: bool,
     /// Every this many frames the steps-per-ray histogram is filled and read back (0: never).
     pub histogram_every: u32,
     /// Profiling switches (`wgsl::DBG_*`, `?marchdbg=`): parts of the per-step work turned off.
@@ -90,6 +99,7 @@ impl Default for MarchSettings {
             distances: true,
             beam: true,
             temporal: true,
+            moving: true,
             histogram_every: 30,
             debug: 0,
         }
@@ -99,7 +109,7 @@ impl Default for MarchSettings {
 impl MarchSettings {
     /// The page's dev switches for the march (local builds, `bench --compare` configurations'
     /// `params`): `?marchbeam=0` turns the beam prepass off, `?marchtemporal=0` the temporal
-    /// start.
+    /// start, `?marchmoving=0` the temporal start while the eye moves (A4b's still-eye one).
     pub fn apply_query(&mut self, search: &str) {
         for (k, v) in search
             .trim_start_matches('?')
@@ -110,6 +120,7 @@ impl MarchSettings {
             match k {
                 "marchbeam" => self.beam = on,
                 "marchtemporal" => self.temporal = on,
+                "marchmoving" => self.moving = on,
                 _ => {}
             }
         }
@@ -188,8 +199,11 @@ pub struct MarchTargets {
     /// The beam prepass's starts (`size` / `BEAM_TILE`, rounded up).
     pub beam: (wgpu::Texture, wgpu::TextureView),
     /// Per beam tile, the distance its rays are known clear to (`CLEAR_T`), read by next frame's
-    /// beam prepass.
+    /// beam prepass, with its min pyramid in the mips (the view: all of them).
     pub clear_t: (wgpu::Texture, wgpu::TextureView),
+    /// Per mip after the first, the reduce pass's bind group (the mip below in, this one out)
+    /// and the mip's size.
+    reduce_groups: Vec<(wgpu::BindGroup, (u32, u32))>,
     /// Tells targets apart (the temporal start reads only the targets the last frame wrote).
     serial: u64,
     out_group: wgpu::BindGroup,
@@ -231,6 +245,8 @@ pub struct Marcher {
     pipeline: wgpu::ComputePipeline,
     beam_pipeline: wgpu::ComputePipeline,
     shade_pipeline: wgpu::ComputePipeline,
+    reduce_pipeline: wgpu::ComputePipeline,
+    reduce_layout: wgpu::BindGroupLayout,
     /// Kept to rebuild the pipeline from another source (profiling variants, tests).
     #[cfg_attr(not(test), allow(dead_code))]
     pipeline_layout: wgpu::PipelineLayout,
@@ -441,6 +457,29 @@ impl Marcher {
             });
         let shade_pipeline =
             Self::march_pipeline(&device, &shade_pipeline_layout, &shade_module, "shade_main");
+        let reduce_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("march reduce"),
+            entries: &[
+                sampled(0, wgpu::TextureSampleType::Float { filterable: false }),
+                storage_texture(1, CLEAR_T),
+            ],
+        });
+        let reduce_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("march reduce"),
+            source: wgpu::ShaderSource::Wgsl(wgsl::reduce_source().into()),
+        });
+        let reduce_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("march reduce"),
+                bind_group_layouts: &[Some(&reduce_layout)],
+                immediate_size: 0,
+            });
+        let reduce_pipeline = Self::march_pipeline(
+            &device,
+            &reduce_pipeline_layout,
+            &reduce_module,
+            "reduce_main",
+        );
         // The shared composite (shaders.rs, one sample per pixel) over the march's targets.
         let scene_layout = super::frame::scene_layout(&device, 1);
         let empty = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -550,6 +589,8 @@ impl Marcher {
             pipeline,
             beam_pipeline,
             shade_pipeline,
+            reduce_pipeline,
+            reduce_layout,
             pipeline_layout: layout,
             composite,
             frame_layout,
@@ -675,7 +716,7 @@ impl Marcher {
 
     /// Targets at `size`.
     pub fn targets(&self, size: (u32, u32)) -> MarchTargets {
-        let make_at = |size: (u32, u32), format, label| {
+        let make_mips = |size: (u32, u32), format, label, mips: u32| {
             let texture = self.device.create_texture(&wgpu::TextureDescriptor {
                 label: Some(label),
                 size: wgpu::Extent3d {
@@ -683,7 +724,7 @@ impl Marcher {
                     height: size.1.max(1),
                     depth_or_array_layers: 1,
                 },
-                mip_level_count: 1,
+                mip_level_count: mips,
                 sample_count: 1,
                 dimension: wgpu::TextureDimension::D2,
                 format,
@@ -695,6 +736,7 @@ impl Marcher {
             let view = texture.create_view(&Default::default());
             (texture, view)
         };
+        let make_at = |size, format, label| make_mips(size, format, label, 1);
         let make = |format, label| make_at(size, format, label);
         let tile = dwell_march::BEAM_TILE;
         let beam = make_at(
@@ -702,11 +744,18 @@ impl Marcher {
             BEAM,
             "march beam",
         );
-        let clear_t = make_at(
-            (size.0.div_ceil(tile), size.1.div_ceil(tile)),
-            CLEAR_T,
-            "march clear t",
-        );
+        let tiles = (size.0.div_ceil(tile).max(1), size.1.div_ceil(tile).max(1));
+        let mips = 32 - tiles.0.max(tiles.1).leading_zeros();
+        let clear_t = make_mips(tiles, CLEAR_T, "march clear t", mips);
+        let mip_views: Vec<wgpu::TextureView> = (0..mips)
+            .map(|m| {
+                clear_t.0.create_view(&wgpu::TextureViewDescriptor {
+                    base_mip_level: m,
+                    mip_level_count: Some(1),
+                    ..Default::default()
+                })
+            })
+            .collect();
         let serial = self.target_serial.get() + 1;
         self.target_serial.set(serial);
         let color = make(COLOR, "march colour");
@@ -727,9 +776,19 @@ impl Marcher {
                 view(1, &id.1),
                 view(2, &hit.1),
                 view(3, &beam.1),
-                view(4, &clear_t.1),
+                view(4, &mip_views[0]),
             ],
         });
+        let reduce_groups = (1..mips as usize)
+            .map(|m| {
+                let group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some("march reduce"),
+                    layout: &self.reduce_layout,
+                    entries: &[view(0, &mip_views[m - 1]), view(1, &mip_views[m])],
+                });
+                ((group), ((tiles.0 >> m).max(1), (tiles.1 >> m).max(1)))
+            })
+            .collect();
         let beam_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("march beam"),
             layout: &self.beam_layout,
@@ -753,6 +812,7 @@ impl Marcher {
             hit,
             beam,
             clear_t,
+            reduce_groups,
             serial,
             out_group,
             beam_group,
@@ -839,6 +899,19 @@ impl Marcher {
         w.push(f(pf.tan[0]));
         w.extend(pf.up.map(f));
         w.push(f(pf.tan[1]));
+        let delta: [f32; 3] = std::array::from_fn(|k| (frame.eye[k] - pf.eye[k]) as f32);
+        w.extend(delta.map(f));
+        let changed = &self.gpu.changed;
+        w.push(changed.len() as u32);
+        for side in 0..2 {
+            for k in 0..wgsl::MAX_DIRTY {
+                let b = changed
+                    .get(k)
+                    .map_or([0; 3], |b| if side == 0 { b.0 } else { b.1 });
+                w.extend(b.map(i));
+                w.push(0);
+            }
+        }
         debug_assert_eq!(w.len(), MARCH_UNIFORM_WORDS);
         w
     }
@@ -888,17 +961,23 @@ impl Marcher {
         let debug = self.debug_pixels >= (targets.size.0 * targets.size.1) as usize;
         self.queue
             .write_buffer(&self.frame_buffer, 0, bytemuck::cast_slice(&frame.uniforms));
-        // The temporal start: last frame drew these targets from (nearly) this eye, with the
-        // same field of view and size, and no brick data changed since.
-        let data_changed = bytes > 0 || self.data_group.is_none();
+        // The temporal start: last frame drew these targets with the same field of view and
+        // size, from an eye at most this far away; the nodes changed since are named in the
+        // uniforms (`GpuScene::changed`), and last frame's distances are not used in them.
+        // (A4b's, `moving` off: the eye still and no brick uploaded.)
+        let (max_shift, data_ok) = if self.settings.moving {
+            (TEMPORAL_MAX_SHIFT, true)
+        } else {
+            (TEMPORAL_STILL_SHIFT, bytes == 0 && self.data_group.is_some())
+        };
         let prev = self.prev.take().filter(|p| {
             self.settings.beam
                 && self.settings.temporal
-                && !data_changed
+                && data_ok
                 && p.serial == targets.serial
                 && p.size == targets.size
                 && p.tan == frame.tan
-                && p.shift(frame) <= TEMPORAL_MAX_SHIFT
+                && p.shift(frame) <= max_shift
         });
         self.temporal_used = prev.is_some();
         let u = self.uniform_words_with(frame, targets.size, debug, prev.as_ref());
@@ -976,6 +1055,19 @@ impl Marcher {
             pass.set_bind_group(2, &targets.out_group, &[]);
             let [gx, gy] = self.workgroup;
             pass.dispatch_workgroups(targets.size.0.div_ceil(gx), targets.size.1.div_ceil(gy), 1);
+        }
+        // The tile distances' min pyramid, for next frame's temporal start.
+        if self.march_pass && self.settings.beam && self.settings.temporal {
+            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("march reduce"),
+                timestamp_writes: None,
+            });
+            pass.set_pipeline(&self.reduce_pipeline);
+            let g = wgsl::WORKGROUP;
+            for (group, (w, h)) in &targets.reduce_groups {
+                pass.set_bind_group(0, group, &[]);
+                pass.dispatch_workgroups(w.div_ceil(g), h.div_ceil(g), 1);
+            }
         }
         if self.shade {
             let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {

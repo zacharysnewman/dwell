@@ -59,6 +59,11 @@ pub struct Dirty {
     pub columns: Vec<u32>,
     /// Pool ranges: word offset and length.
     pub pool: Vec<(u32, u32)>,
+    /// The nodes whose content changed (put or removed), as `(level, node)`: what a ray finds
+    /// in each one's box may differ from before, at any level (a removed node lets a coarser
+    /// level show through). The temporal start (A4c) trusts last frame's clear distances only
+    /// outside these boxes.
+    pub regions: Vec<(u32, [i32; 3])>,
 }
 
 impl Dirty {
@@ -68,6 +73,45 @@ impl Dirty {
             && self.nodes.is_empty()
             && self.columns.is_empty()
             && self.pool.is_empty()
+            && self.regions.is_empty()
+    }
+
+    /// The changed regions as level-0 grid boxes, `(lo, hi)` inclusive, at most `max` of them:
+    /// over that, each level's boxes are merged into their bounding box (still covering every
+    /// change), and over that again, all of them into one.
+    pub fn boxes(&self, max: usize) -> Vec<([i32; 3], [i32; 3])> {
+        type Box3 = ([i32; 3], [i32; 3]);
+        let of = |&(l, n): &(u32, [i32; 3])| -> Box3 {
+            let s = l + 5;
+            (n.map(|v| v << s), n.map(|v| ((v + 1) << s) - 1))
+        };
+        let join = |a: Box3, b: Box3| -> Box3 {
+            (
+                std::array::from_fn(|k| a.0[k].min(b.0[k])),
+                std::array::from_fn(|k| a.1[k].max(b.1[k])),
+            )
+        };
+        let mut out: Vec<Box3> = Vec::new();
+        for r in &self.regions {
+            let b = of(r);
+            if !out.contains(&b) {
+                out.push(b);
+            }
+        }
+        if out.len() <= max {
+            return out;
+        }
+        let mut per_level: Vec<Option<Box3>> = vec![None; LEVEL_COUNT];
+        for r in &self.regions {
+            let b = of(r);
+            let e = &mut per_level[r.0 as usize];
+            *e = Some(e.map_or(b, |a| join(a, b)));
+        }
+        out = per_level.into_iter().flatten().collect();
+        if out.len() > max {
+            out = vec![out.iter().copied().reduce(join).expect("non-empty")];
+        }
+        out
     }
 }
 
@@ -336,6 +380,7 @@ impl Scene {
         let i = lv.info.slot_of(n).expect("inside");
         lv.slots[i] = slot.to_word();
         self.dirty.slots.push(base + i as u32);
+        self.dirty.regions.push((level, n));
     }
 
     /// Back to NONE (no data at this level).
@@ -348,6 +393,7 @@ impl Scene {
         {
             lv.slots[i] = SLOT_NONE;
             self.dirty.slots.push(base + i as u32);
+            self.dirty.regions.push((level, n));
         }
     }
 
@@ -457,6 +503,33 @@ mod tests {
     use super::*;
     use crate::build::build_chunk;
     use dwell_world::CHUNK_VOLUME;
+
+    #[test]
+    fn changed_nodes_are_named_as_regions_and_boxes_cover_them_within_the_limit() {
+        let t = StateTable::registry();
+        let mut s = Scene::new(t);
+        s.take_dirty();
+        s.put(0, [10, 10, 10], &NodeBuild::Solid(1));
+        s.put(2, [-1, 3, 0], &NodeBuild::Air);
+        s.remove(0, [10, 10, 10]);
+        let d = s.take_dirty();
+        assert_eq!(d.regions, vec![(0, [10, 10, 10]), (2, [-1, 3, 0]), (0, [10, 10, 10])]);
+        // A node at level l spans 2^(l+5) level-0 cells a side.
+        assert_eq!(
+            d.boxes(8),
+            vec![([320; 3], [351; 3]), ([-128, 384, 0], [-1, 511, 127])]
+        );
+        // Over the limit: merged per level, then into one; every change stays covered.
+        let mut many = Dirty::default();
+        for i in 0..20 {
+            many.regions.push((0, [i, 0, 0]));
+        }
+        many.regions.push((1, [5, 5, 5]));
+        let b = many.boxes(4);
+        assert_eq!(b, vec![([0; 3], [639, 31, 31]), ([320; 3], [383; 3])]);
+        assert_eq!(many.boxes(1), vec![([0; 3], [639, 383, 383])]);
+        assert!(s.take_dirty().regions.is_empty());
+    }
 
     #[test]
     fn put_replace_and_remove_recycle_storage() {

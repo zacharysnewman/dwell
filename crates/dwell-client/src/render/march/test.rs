@@ -92,13 +92,21 @@ fn the_gpu_marcher_matches_the_reference_per_pixel() {
         report.max_dir_error
     );
     eprintln!(
-        "beam: {} rays started late ({} from the temporal start), {} past a hit, {} changed \
-         outcome",
-        report.started_late, report.temporal_starts, report.start_past_hit, report.start_changed
+        "beam: {} rays started late ({} from the temporal start, {} of them after the eye moved), \
+         {} past a hit, {} changed outcome",
+        report.started_late,
+        report.temporal_starts,
+        report.moving_temporal_starts,
+        report.start_past_hit,
+        report.start_changed
     );
     assert!(
         report.temporal_starts > report.pixels / 20,
         "the temporal start is taken (where it starts farther than the beam)"
+    );
+    assert!(
+        report.moving_temporal_starts > report.pixels / 40,
+        "the temporal start is taken after the eye moved"
     );
     assert!(
         report.started_late > report.pixels / 4,

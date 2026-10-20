@@ -218,6 +218,9 @@ fn march_perf() {
         ("high side", high, 0.0, -20.0),
     ];
     // Rounds of every variant in turn: a shared, busy GPU drifts, so compare within a round.
+    let moving: f64 = env("DWELL_PERF_MOVE")
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0.0);
     let rounds: usize = env("DWELL_PERF_ROUNDS")
         .and_then(|s| s.parse().ok())
         .unwrap_or(1);
@@ -249,9 +252,17 @@ fn march_perf() {
         };
         eprintln!("variant {variant} (dbg {bits:#x})");
         for (view, at, yaw, pitch) in views {
-            let frame = frame_for(at, yaw, pitch, size);
+            let mut frame = frame_for(at, yaw, pitch, size);
             let mut ms = Vec::new();
             for i in 0..25 {
+                // `DWELL_PERF_MOVE`: the eye moves this far to the right each frame.
+                let along = moving * f64::from(i);
+                frame = frame_for(
+                    std::array::from_fn(|k| at[k] + along * f64::from(frame.right[k])),
+                    yaw,
+                    pitch,
+                    size,
+                );
                 // The last frame fills the histogram (its atomics are not part of the timing).
                 m.settings.histogram_every = u32::from(i == 24);
                 let mut e = device.create_command_encoder(&Default::default());
@@ -281,7 +292,7 @@ fn march_perf() {
             }
             ms.sort_by(f64::total_cmp);
             if env("DWELL_PERF_CHECK").is_some() {
-                check_starts(&device, &queue, &mut m, (at, yaw, pitch), &targets, size);
+                check_starts(&device, &queue, &mut m, (at, yaw, pitch), &targets, size, moving);
             }
             if let Some(dir) = env("DWELL_PERF_IMAGES") {
                 steps_image(
@@ -380,17 +391,21 @@ fn check_starts(
     (at, yaw, pitch): ([f64; 3], f64, f64),
     targets: &super::MarchTargets,
     size: (u32, u32),
+    moving: f64,
 ) {
     use super::stats::{DEBUG_WORDS, DebugRay, HIST_WORDS};
     use dwell_march::{Outcome, Ray};
     let pixels = (size.0 * size.1) as usize;
     m.set_debug(pixels);
-    for (y, p) in [
-        (yaw + 2.0, pitch + 1.0),
-        (yaw + 2.0, pitch + 1.0),
-        (yaw, pitch),
+    // With `moving`, the frame before comes from an eye that far to the left.
+    let fwd = frame_for(at, yaw, pitch, size).right;
+    for (y, p, back) in [
+        (yaw + 2.0, pitch + 1.0, 1.0),
+        (yaw + 2.0, pitch + 1.0, 1.0),
+        (yaw, pitch, 0.0),
     ] {
-        let frame = frame_for(at, y, p, size);
+        let eye: [f64; 3] = std::array::from_fn(|k| at[k] - back * moving * f64::from(fwd[k]));
+        let frame = frame_for(eye, y, p, size);
         let mut e = device.create_command_encoder(&Default::default());
         m.draw(&mut e, &frame, targets, None);
         queue.submit([e.finish()]);
