@@ -4,6 +4,7 @@
 // this table describes them, one entry per action, so a new binding is a new entry here.
 
 import { BRUSH_PRESETS } from './brushes.gen';
+import { SPYGLASS } from './spyglass.gen';
 
 export interface Control {
   /** What it does, as the player would say it. */
@@ -83,6 +84,18 @@ export const KEYBOARD: ControlGroup[] = [
     ],
   },
   {
+    // The spyglass (docs/SPYGLASS.md; its key and steps are shared/look/spyglass.json's).
+    title: 'View',
+    controls: [
+      {
+        action: 'Spyglass zoom in or out',
+        keys: [keyLabel(SPYGLASS.key)],
+        when: SPYGLASS.magnifications.map((m) => `${String(m)}×`).join(', '),
+      },
+      { action: 'Zoom further / back', keys: ['Wheel'], when: 'while zoomed' },
+    ],
+  },
+  {
     title: 'Game',
     controls: [{ action: 'Menu and settings', keys: ['Esc'] }],
   },
@@ -98,6 +111,7 @@ export function keyLabel(code: string): string {
     Slash: '/',
     BracketLeft: '[',
     BracketRight: ']',
+    Backquote: '`',
   };
   return named[code] ?? code.replace(/^Key|^Digit/, '');
 }
