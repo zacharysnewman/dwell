@@ -682,3 +682,73 @@ fn chunk_changes_apply_with_the_modifications_revision() {
         4
     );
 }
+
+#[test]
+fn tall_grass_aims_and_outlines_where_it_sits_on_its_support() {
+    // The owner (2026-10-20): over a level field (resting at half height) the plant is drawn on
+    // the ground, so its box (the outline, the crosshair's target and the server's line of
+    // sight) sits down with it. A field at row 4 (face A), the plant at (0, 5, 2).
+    let grass = s("dwell:tall_grass");
+    let b = dwell_blocks::info(grass).selection.expect("a box");
+    let mut world = empty();
+    for x in -4..=4 {
+        for z in -4..=8 {
+            world.set_voxel(x, 4, z, s("dwell:grass"));
+        }
+    }
+    world.set_voxel(0, 5, 2, grass);
+    let (lo, hi) = target_box(&mut world, [0, 5, 2]);
+    assert_eq!(lo, [b[0], b[1] - 0.5, b[2]]);
+    assert_eq!(hi, [b[3], b[4] - 0.5, b[5]]);
+    // A level ray through the lowered part of the box (in the support's cell, over its top) hits
+    // the plant.
+    let hit = raycast_block(&mut world, [0.5, 4.75, -1.5], [0.0, 0.0, 1.0], 6.0)
+        .expect("the plant's lowered box");
+    assert_eq!((hit.cell, hit.face), ([0, 5, 2], 5));
+    assert!(
+        (hit.distance - (3.5 + b[2])).abs() < 1e-4,
+        "{}",
+        hit.distance
+    );
+    // The server sees it there too.
+    assert_eq!(
+        check(&mut world, brk([0, 5, 2], 2), [0.5, 6.62, 0.5], &[]).check,
+        EditCheck::Ok
+    );
+    // The support reshaped by its neighbours (blocks beside it at the plant's row): the box
+    // follows the support's height under the plant's middle.
+    world.set_voxel(1, 5, 2, s("dwell:sandbox_floor"));
+    world.set_voxel(-1, 5, 2, s("dwell:sandbox_floor"));
+    let support = world.shape_at(0, 4, 2);
+    let top = dwell_blocks::shape::solid_span_at(support, 0.5, 0.5).hi;
+    assert!(top > 0.5, "{top}");
+    let (lo, _) = target_box(&mut world, [0, 5, 2]);
+    assert!((lo[1] - (b[1] - (1.0 - top))).abs() < 1e-6, "{lo:?}");
+    // On a full cube: unchanged.
+    let mut world = empty();
+    world.set_voxel(0, 4, 2, s("dwell:sandbox_floor"));
+    world.set_voxel(0, 5, 2, grass);
+    assert_eq!(
+        target_box(&mut world, [0, 5, 2]),
+        ([b[0], b[1], b[2]], [b[3], b[4], b[5]])
+    );
+}
+
+#[test]
+fn tall_grass_on_face_b_aims_toward_its_ground() {
+    // On face B the ground is toward the midplane (+y): the box stands down from the cell's top,
+    // sunk into the field's half-height top there.
+    let grass = s("dwell:tall_grass");
+    let b = dwell_blocks::info(grass).selection.expect("a box");
+    let mut world = empty();
+    let y = MIDPLANE_Y - 10;
+    for x in -2..=2 {
+        for z in -2..=2 {
+            world.set_voxel(x, y + 1, z, s("dwell:grass"));
+        }
+    }
+    world.set_voxel(0, y, 0, grass);
+    let (lo, hi) = target_box(&mut world, [0, y, 0]);
+    assert!((lo[1] - (1.0 - b[4] + 0.5)).abs() < 1e-6, "{lo:?}");
+    assert!((hi[1] - (1.0 - b[1] + 0.5)).abs() < 1e-6, "{hi:?}");
+}

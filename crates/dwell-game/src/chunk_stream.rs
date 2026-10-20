@@ -1136,6 +1136,26 @@ mod tests {
     }
 
     #[test]
+    fn an_edit_beside_a_plants_support_across_a_chunk_border_re_meshes_the_plants_chunk() {
+        // A plant at the bottom row of chunk (0, 1, 0) sits on its support at the top row of
+        // (0, 0, 0) (TRANSPARENT_BLOCKS.md §4); a block put beside the support (in the lower
+        // chunk, one cell over) reshapes it, so the plant's chunk re-meshes to follow it.
+        let (mut s, _) = setup();
+        s.on_chunk_data(explicit([0, 0, 0], 3, 0));
+        s.on_chunk_data(explicit([0, 1, 0], 0, 0));
+        s.mesh_dirty([0.0; 3], 100.0, no_clock);
+        flush(&mut s);
+        s.store_mut().meshed_from.clear();
+        let beside_support = 6 | (31 << 5) | (5 << 10);
+        s.on_voxel_modification(&[modification([0, 0, 0], 4, &[beside_support, 2])]);
+        s.mesh_dirty([0.0; 3], 100.0, no_clock);
+        assert_eq!(
+            sorted(s.store().meshed_from.clone()),
+            vec![[0, 0, 0], [0, 1, 0]]
+        );
+    }
+
+    #[test]
     fn keeps_at_most_the_meshers_capacity_of_jobs_in_flight() {
         let mesher = FakeMesher {
             capacity: Some(2),

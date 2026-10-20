@@ -19,6 +19,7 @@ use crate::style::{
     Look, MaterialStyle, cube, fluid_value, material_style, mirror_material, style_of,
 };
 use crate::textures::{TileRect, tile_rect};
+use dwell_blocks::shape::plant_sink;
 use dwell_look::{face_tint, normal_tint};
 
 const N: i32 = CHUNK_SIZE;
@@ -304,6 +305,25 @@ impl<'a> Cells<'a> {
         self.padded[padded_index(x, y, z)]
     }
 
+    /// The solid a plant in the chunk's cell (x, y, z) stands on: the cell below's shape — an
+    /// adaptive top block's derived one, worked out exactly even in the apron's bottom row (its
+    /// neighbours there are all in the padded block) — or none when it has no solid.
+    fn support(&self, x: i32, y: i32, z: i32) -> Option<&'static ShapeInfo> {
+        let sy = y - 1;
+        let k = if sy >= 0 {
+            self.kind(x, y - 1, z)
+        } else {
+            let mut k = self.kinds.of(self.state(x, sy, z));
+            let get = |dx: i32, dy: i32, dz: i32| self.state(x + dx, sy + dy, z + dz);
+            if let Some(i) = dwell_blocks::adaptive::derive(get, 1) {
+                k.shape = Shape::Shaped;
+                k.def = Some(&dwell_blocks::SHAPES[usize::from(i)]);
+            }
+            k
+        };
+        if k.shape == Shape::Empty { None } else { k.def }
+    }
+
     fn kind(&self, x: i32, y: i32, z: i32) -> Kind {
         let i = padded_index(x, y, z);
         let mut k = self.kinds.of(self.padded[i]);
@@ -551,8 +571,28 @@ const CROSS_UP: f64 = 0.8;
 /// A cross (plants): `quads` vertical quads through the cell's centre, evenly turned, jittered by
 /// the cell's world position (`world`), each vertex carrying its wind sway and the distance fade
 /// in `plants`. Drawn from both sides by the cutout pipeline: one face per quad.
-fn cross_voxel(b: &mut Builder, style: &MaterialStyle, world: [i64; 3], [x, y, z]: [i32; 3]) {
+///
+/// A plant that sits on its support (`Cross::sit_on_support`) stands on `support`'s drawn
+/// surface: each foot is lowered by the support's [`plant_sink`] under it (a level field's top at
+/// half height, a slope's height at that foot), its top by the same amount, so the blades keep
+/// their height and the wind still leans only the tops.
+fn cross_voxel(
+    b: &mut Builder,
+    style: &MaterialStyle,
+    world: [i64; 3],
+    [x, y, z]: [i32; 3],
+    support: Option<&ShapeInfo>,
+) {
     let Some(c) = style.cross else { return };
+    let sink = |px: f64, pz: f64| match support {
+        Some(s) if c.sit_on_support => f64::from(plant_sink(
+            s,
+            (px - f64::from(x)) as f32,
+            (pz - f64::from(z)) as f32,
+            1,
+        )),
+        _ => 0.0,
+    };
     let jitter = |salt| 2.0 * cell_noise(world, salt) - 1.0;
     let cx = f64::from(x) + 0.5 + jitter(1) * f64::from(c.offset);
     let cz = f64::from(z) + 0.5 + jitter(2) * f64::from(c.offset);
@@ -594,6 +634,7 @@ fn cross_voxel(b: &mut Builder, style: &MaterialStyle, world: [i64; 3], [x, y, z
         ];
         for (along, py, u, v, s) in corners {
             let (px, pz) = (cx + dx * along, cz + dz * along);
+            let py = py - sink(px, pz);
             b.m.positions.extend([px as f32, py as f32, pz as f32]);
             b.m.normals.extend(n.map(|v| v as f32));
             b.m.colors.extend([
@@ -1161,7 +1202,8 @@ pub(crate) fn mesh_chunk_with(
                         i64::from(origin[1]) + i64::from(cy),
                         i64::from(origin[2]) + i64::from(cz),
                     ];
-                    cross_voxel(target, &k.style, world, [cx, cy, cz]);
+                    let support = cells.support(cx, cy, cz);
+                    cross_voxel(target, &k.style, world, [cx, cy, cz], support);
                     if k.style.render == RenderMode::Translucent {
                         target.tag_fluid(k.style.fluid);
                     }
