@@ -67,6 +67,7 @@ impl W {
         self.f32s(&m.tiles);
         self.f32s(&m.fluids);
         self.f32s(&m.plants);
+        self.f32s(&m.bare);
         self.u32s(&m.indices);
     }
     /// The marcher's bricks: a node build as words (`dwell_march::NodeBuild::to_words`).
@@ -171,6 +172,7 @@ impl R<'_> {
             tiles: self.f32s()?,
             fluids: self.f32s()?,
             plants: self.f32s()?,
+            bare: self.f32s()?,
             indices: self.u32s()?,
         })
     }

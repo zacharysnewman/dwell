@@ -51,6 +51,10 @@ pub struct MeshArrays {
     /// plant's base and on ladders), the wind's speed, and the distance fade's start and end (m;
     /// end 0: no fade).
     pub plants: Vec<f32>,
+    /// The cutout mesh only (empty in the others): per vertex, 1 where the ink outline doesn't
+    /// draw (block data `outline: false`, the cross plants' default; docs/ART_DIRECTION.md §7.4),
+    /// else 0 (ladders and every other cutout).
+    pub bare: Vec<f32>,
     /// The transparent mesh's fluid id per vertex (`crate::NO_FLUID` for a see-through face that
     /// is no fluid's); empty in the opaque mesh.
     pub fluids: Vec<f32>,
@@ -67,6 +71,7 @@ impl MeshArrays {
             + self.uvs.len()
             + self.tiles.len()
             + self.plants.len()
+            + self.bare.len()
             + self.fluids.len()
             + self.indices.len())
     }
@@ -607,8 +612,11 @@ fn cross_voxel(
         .fade
         .map_or((0.0, 0.0), |f| (f64::from(f.start), f64::from(f.end)));
     let tile = surface(style, 0, 1).1;
-    // Ladders before it carry no sway: line the plants stream up with the vertices.
+    // Ladders before it carry no sway and take the ink: line the plants streams up with the
+    // vertices.
     b.m.plants.resize(b.vertex_count() as usize * 4, 0.0);
+    b.m.bare.resize(b.vertex_count() as usize, 0.0);
+    let bare = if style.outline { 0.0 } else { 1.0 };
     // Texture: across the quad and up it, just inside the tile (fract(1) would wrap to its foot).
     const EDGE: f64 = 1e-3;
     for q in 0..u32::from(c.quads) {
@@ -646,6 +654,7 @@ fn cross_voxel(
             b.push_tile(&tile);
             b.m.plants
                 .extend([s as f32, speed as f32, fade0 as f32, fade1 as f32]);
+            b.m.bare.push(bare);
         }
         b.m.indices
             .extend([base, base + 1, base + 2, base, base + 2, base + 3]);
@@ -1217,9 +1226,10 @@ pub(crate) fn mesh_chunk_with(
             flat_tops(&mut opaque, kinds, &mut mask, cy);
         }
     }
-    // Ladders carry no sway or fade.
+    // Ladders carry no sway or fade, and take the ink.
     let vertices = cutout.m.positions.len() / 3;
     cutout.m.plants.resize(vertices * 4, 0.0);
+    cutout.m.bare.resize(vertices, 0.0);
     Ok(ChunkMeshes {
         opaque: opaque.m,
         transparent: transparent.m,

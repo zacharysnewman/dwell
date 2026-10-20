@@ -81,6 +81,9 @@ level covers the same share of the tile as the full-size tile (coverage-preservi
   without MSAA) between those distances, which must end within the smallest full-detail distance
   (96 m, `gen.mjs` checks it), so plants are gone before chunks meet the LOD and nothing pops. The
   LOD draws cutout blocks without a solid as air.
+- **No ink**: `"outline": false`, the cross plants' default (`true` outlines one): the ink outline
+  draws neither on the plant nor on its edges against what is behind it (ART_DIRECTION.md §7.4).
+  Per vertex in the cutout mesh's `bare` stream; the cutout pass flags the view depth.
 - **Sitting on the support** (owner, 2026-10-20: *"Make the grass align (sit down) when over a half
   block"*): `"cross": { "sitOnSupport": true }`, the default. Adaptive natural tops are often lower
   than their cell's top (a level field rests at half height; slopes and pyramids are lower still

@@ -224,10 +224,24 @@ Voxel terrain is mostly edges, so the main risk is a horizon of noise. Four meas
   under water.
 - **Clouds:** the ink goes under the cloud deck where the deck is in front of the edge, and it is
   gone inside a cloud.
-- **Tall grass** (cutout) is outlined like any other surface. Up close the outline reads as a drawn
-  meadow. At 20–40 m dense grass becomes a dark band (§7.6).
+- **Tall grass** takes no ink (owner, 2026-10-20: *"The grass on creases is mostly black, perhaps
+  don't apply it to the grass."*). Block data **`outline`** (a cross option; `false` by default for
+  the cross plants, `true` for everything else; `shared/blocks/gen.mjs` validates it and the fixture
+  `test:reed` says `true` by data alone) reaches the frame in the cutout mesh's `bare` stream, and
+  the cutout pass flags the pixel's view depth: its lowest bit (`frame_depth`, which every writer of
+  the view depth calls, so the bit is never noise; about 1e-7 of the depth, below anything a reader
+  resolves). No extra target or load: the ink already reads the depth. A flagged pixel gets no ink,
+  and the edge rule treats flagged taps as see-through: such a tap takes what the plane through the
+  pixel and the opposite tap gives (no edge across that pair), or the pixel's own where both are
+  flagged, never nearer than the sky. So the blades, their edges against the ground and against the
+  sky draw nothing, and the terraces and blocks among them keep their lines (dwell-look's
+  `see_through` is the CPU twin, `plants_that_take_no_ink_are_seen_through` its test). A ridge
+  hidden behind a blade loses its line there; the frame has no depth behind a plant.
 - **The brush ghost and the block outline** are drawn after the composite, so they sit over the ink.
-- **The wind** (motion effects) is drawn over the ink.
+- **The wind** (motion effects) is drawn over the ink, as a later pass over the finished image, so
+  the edge blur's taps carry the ink to the screen's edges (MOTION_EFFECTS.md: post effects that
+  sample neighbours read the finished image; before this fix the lines vanished outside the blur's
+  inner circle when sprinting).
 - **Both texture sets and the ray marcher** use the same rule. The marcher's frame has depth, so its
   output is identical in kind.
 
@@ -257,7 +271,6 @@ up, the spyglass and the brush ghost. Questions:
 
 1. Which mode, if any? `creases` gives the storybook contour lines on terraces. `blocks` adds a grid
    that reads more like a diagram.
-2. Should tall grass be outlined? It is the noisiest part of the picture at 20–40 m. Leaving cutouts
-   out would need the frame to know which pixels are cutouts (an id or a flag target).
+2. ~~Should tall grass be outlined?~~ Answered (2026-10-20): no; block data `outline`, §7.4.
 3. Line width and distance: a thicker line and a shorter fade, or the reverse?
 4. If one stays: a setting in the menu, and a new compatibility line isn't needed (it is a look only).

@@ -166,6 +166,9 @@ pub struct StateInfo {
     pub cross: Option<Cross>,
     pub wind: Option<Wind>,
     pub fade: Option<Fade>,
+    /// Whether the ink outline draws on it (block data `outline`; docs/ART_DIRECTION.md §7.4):
+    /// off by default for the cross plants, on for the rest ([`outline_default`]).
+    pub outline: bool,
     /// A smaller box (min x, y, z, max x, y, z in the cell) for targeting, line of sight and the
     /// outline; none: its shape, or the whole cell for a block without one.
     pub selection: Option<[f32; 6]>,
@@ -268,4 +271,11 @@ impl ShapeInfo {
         min_y: 0.0,
         max_y: 0.0,
     };
+}
+
+/// Whether the ink outline draws on a state of `look` whose data doesn't say (block data
+/// `outline`; shared/blocks/gen.mjs `outlineOf`): not on the cross plants, whose blades would turn
+/// a field to scribble, on everything else.
+pub fn outline_default(look: &str) -> bool {
+    look != "cross"
 }

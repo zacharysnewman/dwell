@@ -145,13 +145,37 @@ pub fn edge_strength(w: [f64; 9], edges: u32, depth_t: f64, crease_t: f64) -> f6
     s
 }
 
+/// No tap on a surface that takes no ink (`edge_at`'s `bare`).
+pub const NONE_BARE: [bool; 9] = [false; 9];
+
+/// The 3 × 3 of inverse depths with the taps on a surface that takes no ink (`bare`: block data
+/// `outline: false`, the cross plants) seen through (docs/ART_DIRECTION.md §7.4): such a tap takes
+/// what the plane through the pixel and the opposite tap gives, so the pair has no edge, or the
+/// pixel's own where the opposite tap is bare too; never nearer than the sky (0). The frame has no
+/// depth behind a plant, so this is the stand-in for it.
+pub fn see_through(w: [f64; 9], bare: [bool; 9]) -> [f64; 9] {
+    std::array::from_fn(|k| {
+        if !bare[k] {
+            w[k]
+        } else if bare[8 - k] {
+            w[4]
+        } else {
+            (2.0 * w[4] - w[8 - k]).max(0.0)
+        }
+    })
+}
+
 /// The outline at a pixel from the view depths of the 3 × 3 around it at the tap distance (row by
 /// row from the top left, the pixel's in the middle; 0: nothing drawn), with `ray_len` the length
-/// of its view ray per unit of view depth: (opacity, the edge's view depth: its nearest tap). The
+/// of its view ray per unit of view depth: (opacity, the edge's view depth: its nearest tap). Taps
+/// on a surface that takes no ink (`bare`) are seen through, and a bare pixel has no ink. The
 /// depth and normal kinds of the shader's rule; the block kind needs positions and stays in the
 /// shader.
-pub fn edge_at(depths: [f64; 9], ray_len: f64, m: &OutlineMode) -> (f64, f64) {
-    let w = depths.map(|d| if d > 0.0 { 1.0 / d } else { 0.0 });
+pub fn edge_at(depths: [f64; 9], bare: [bool; 9], ray_len: f64, m: &OutlineMode) -> (f64, f64) {
+    if bare[4] {
+        return (0.0, 0.0);
+    }
+    let w = see_through(depths.map(|d| if d > 0.0 { 1.0 / d } else { 0.0 }), bare);
     let s = edge_strength(w, m.edges, m.depth_threshold, m.crease_threshold);
     let near = w.iter().copied().fold(0.0, f64::max);
     if near <= 0.0 {
@@ -272,7 +296,7 @@ mod tests {
         // A block's silhouette against the sky: inked near, faded by the fade's end.
         for name in ["silhouette", "creases", "blocks"] {
             let m = mode(name);
-            let at = |d: f64| edge_at(split(0.0, d), 1.0, m).0;
+            let at = |d: f64| edge_at(split(0.0, d), NONE_BARE, 1.0, m).0;
             assert!(
                 (at(m.fade_start_m * 0.5) - m.strength).abs() < 1e-9,
                 "{name}: full near"
@@ -285,9 +309,9 @@ mod tests {
         // The distance is along the ray (an off-axis pixel is farther than its view depth).
         let m = mode("silhouette");
         let d = m.fade_end_m * 0.8;
-        assert_eq!(edge_at(split(0.0, d), 1.5, m).0, 0.0);
+        assert_eq!(edge_at(split(0.0, d), NONE_BARE, 1.5, m).0, 0.0);
         // The sky alone has no edge.
-        assert_eq!(edge_at([0.0; 9], 1.0, m), (0.0, 0.0));
+        assert_eq!(edge_at([0.0; 9], NONE_BARE, 1.0, m), (0.0, 0.0));
     }
 
     #[test]
@@ -295,8 +319,59 @@ mod tests {
         // A sky pixel beside a block 5 m away is the block's silhouette, at its depth.
         let mut d = [0.0; 9];
         d[3] = 5.0;
-        let (a, depth) = edge_at(d, 1.0, mode("silhouette"));
+        let (a, depth) = edge_at(d, NONE_BARE, 1.0, mode("silhouette"));
         assert_eq!(depth, 5.0);
         assert!(a > 0.0);
+    }
+
+    #[test]
+    fn plants_that_take_no_ink_are_seen_through() {
+        // Owner's report (2026-10-20, `creases`): tall grass turned fields into black scribble.
+        // A blade 4 m away in front of ground at 12 m: drawn as a silhouette when inked, nothing
+        // when the blade is bare (its edge against the ground), and none on the blade itself.
+        let m = mode("creases");
+        let ground = |k: usize| 12.0 + 0.3 * ((k / 3) as f64 - 1.0);
+        let mut d: [f64; 9] = std::array::from_fn(ground);
+        d[5] = 4.0;
+        let mut bare = NONE_BARE;
+        assert!(
+            edge_at(d, bare, 1.0, m).0 > 0.5,
+            "an inked plant has its line"
+        );
+        bare[5] = true;
+        assert_eq!(
+            edge_at(d, bare, 1.0, m).0,
+            0.0,
+            "the ground beside a bare plant"
+        );
+        let mut on = NONE_BARE;
+        on[4] = true;
+        assert_eq!(edge_at(d, on, 1.0, m), (0.0, 0.0), "no ink on the plant");
+        // Against the sky: a sky pixel beside a bare blade, and a blade on both sides of it.
+        let mut sky = [0.0; 9];
+        sky[3] = 4.0;
+        sky[5] = 5.0;
+        let both = std::array::from_fn(|k| k == 3 || k == 5);
+        assert_eq!(edge_at(sky, both, 1.0, m).0, 0.0);
+        let mut one = NONE_BARE;
+        one[3] = true;
+        sky[5] = 0.0;
+        assert_eq!(edge_at(sky, one, 1.0, m).0, 0.0, "seen through to the sky");
+        // A real edge beside a bare blade still draws: a block's silhouette against the sky.
+        let mut block = split(0.0, 6.0);
+        block[7] = 3.0;
+        let mut b = NONE_BARE;
+        b[7] = true;
+        assert!(edge_at(block, b, 1.0, m).0 > 0.5);
+        // The plane through the pixel stands in for a bare tap: a flat face stays flat.
+        let w: [f64; 9] =
+            std::array::from_fn(|k| 0.1 + 0.002 * (k % 3) as f64 + 0.001 * (k / 3) as f64);
+        let mut b = NONE_BARE;
+        b[0] = true;
+        b[5] = true;
+        assert_eq!(
+            see_through(w, b).map(|v| (v * 1e9).round()),
+            w.map(|v| (v * 1e9).round())
+        );
     }
 }
