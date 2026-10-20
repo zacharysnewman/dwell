@@ -49,6 +49,21 @@ fn main() {
                 }
             }
         }
+        if let Ok(z) = std::env::var("SHORE_ROW") {
+            // The ground's top along one row of x, for finding the waterline by eye.
+            let z: i32 = z.parse().expect("z");
+            let x0: i32 = std::env::var("SHORE_X")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(s[0] as i32);
+            let tops: Vec<String> = (x0..x0 + 40_000)
+                .step_by(1)
+                .skip_while(|&x| local.ground_y(x, z).is_some_and(|g| g > row + 3))
+                .take(40)
+                .map(|x| format!("{x}:{}", local.ground_y(x, z).unwrap_or(0)))
+                .collect();
+            println!("  row z={z}: {}", tops.join(" "));
+        }
         if let Ok(at) = std::env::var("SHORE_AT") {
             let v: Vec<i32> = at.split(',').filter_map(|s| s.parse().ok()).collect();
             coasts = vec![(v[0], v[1])];
