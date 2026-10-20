@@ -29,6 +29,7 @@ use dwell_look::clouds::{CLOUDS, CloudQuality, cloud_uniforms};
 use dwell_look::daynight::{DAY_SKY_FLOATS, DayState};
 use dwell_look::fog::{DEFAULT_FOG, FogSettings, fog_sigma};
 use dwell_look::motion::{MOTION, vanishing_point};
+use dwell_look::outline::{OUTLINE, OutlineMode, outline_uniforms};
 use dwell_look::reflections::{REFLECTIONS, reflection_uniforms};
 use dwell_look::{DEFAULT_EXPOSURE, hex, sanitize_exposure, srgb_to_linear};
 use dwell_mesh::{ChunkMeshes, FlatMesh, MeshArrays, SectionMeshes};
@@ -703,6 +704,10 @@ pub struct Renderer {
     format: wgpu::TextureFormat,
     size: (u32, u32),
     pixel_ratio: f64,
+    /// The ink outline's mode (`?outline=`; docs/ART_DIRECTION.md §7), none by default.
+    ink_outline: Option<&'static OutlineMode>,
+    /// The spyglass's magnification this frame (1 unzoomed): the outline's fade follows it.
+    magnification: f64,
     /// The frame's targets: one set per side (compare mode: two).
     targets: Vec<Targets>,
     samples: u32,
@@ -1222,6 +1227,8 @@ impl Renderer {
             format,
             size: (1, 1),
             pixel_ratio: 1.0,
+            ink_outline: None,
+            magnification: 1.0,
             targets: Vec::new(),
             samples,
             draw_layout,
@@ -1590,6 +1597,24 @@ impl Renderer {
     pub fn set_wind(&mut self, wind: WindView) {
         self.wind = wind;
     }
+    /// The spyglass's magnification this frame (1 unzoomed; docs/SPYGLASS.md).
+    pub fn set_magnification(&mut self, magnification: f64) {
+        self.magnification = magnification;
+    }
+    /// The ink outline's mode by name (`shared/look/outline.json`; docs/ART_DIRECTION.md §7);
+    /// `off` or an unknown name turns it off. True when a mode is on.
+    pub fn set_outline(&mut self, name: &str) -> bool {
+        self.ink_outline = OUTLINE.mode(name);
+        self.ink_outline.is_some()
+    }
+    /// The ink outline's mode from the page's query (`?outline=<mode>`); none without it.
+    pub fn set_outline_query(&mut self, search: &str) {
+        self.ink_outline = dwell_look::outline::mode_from_query(&OUTLINE, search);
+    }
+    /// The ink outline's mode (its name), or none.
+    pub fn outline(&self) -> Option<&'static str> {
+        self.ink_outline.map(|m| m.name)
+    }
     /// The vertical FOV this frame draws with.
     pub fn frame_fov(&self) -> f64 {
         let aspect = f64::from(self.size.0) / f64::from(self.size.1);
@@ -1678,6 +1703,14 @@ impl Renderer {
         };
         for col in &vp {
             put(col);
+        }
+        for v in outline_uniforms(
+            &OUTLINE,
+            self.ink_outline,
+            self.pixel_ratio,
+            self.magnification,
+        ) {
+            put(&v);
         }
         let weight_a = self.viewer_weight_a();
         let viewer = self.day.viewer(weight_a);
@@ -2764,10 +2797,11 @@ pub(crate) fn frame_extras(
 /// position is passed modulo it.
 const WIND_PERIOD: f64 = 1024.0;
 
-/// Floats in the frame uniform block (`Frame` in shaders.rs): a matrix, 19 vec4s (after `tan` the
-/// clouds' three, then the water's, the wind's six, the wrap and the reflections' two) and the
-/// day/night cycle's block.
-pub(crate) const FRAME_FLOATS: usize = 16 + 19 * 4 + DAY_SKY_FLOATS;
+/// Floats in the frame uniform block (`Frame` in shaders.rs): a matrix, 22 vec4s (the outline's
+/// three; after `tan` the clouds' three, then the water's, the wind's six, the wrap and the
+/// reflections' two) and the day/night cycle's block.
+pub(crate) const FRAME_FLOATS: usize =
+    16 + dwell_look::outline::OUTLINE_FLOATS + 19 * 4 + DAY_SKY_FLOATS;
 
 /// The atlas and its mipmaps, each with its side in texels: down to the level where a tile's gutter
 /// is one texel wide. Filtering a smaller level at a tile's edge would reach past the gutter into
@@ -2945,6 +2979,9 @@ impl crate::game::Scene for Renderer {
     }
     fn set_wind(&mut self, wind: WindView) {
         Renderer::set_wind(self, wind);
+    }
+    fn set_magnification(&mut self, magnification: f64) {
+        Renderer::set_magnification(self, magnification);
     }
     fn stats(&self) -> RenderStats {
         Renderer::stats(self)
@@ -3706,6 +3743,53 @@ mod tests {
         assert!(w[1] < -0.3 && w[0].abs() < 1e-6 && w[2] == 0.5 && w[7] == 1.0);
         // Widths are in CSS pixels: doubled on a 2× screen.
         assert!((f64::from(w[15]) - 2.0 * MOTION.wind.width_px).abs() < 1e-5);
+    }
+
+    #[test]
+    fn the_ink_outline_reaches_the_composite_through_the_frame_block_and_is_off_by_default() {
+        use dwell_look::outline::{EDGE_BLOCK, EDGE_DEPTH, EDGE_NORMAL, tap_px};
+        let mut r = noop_renderer();
+        r.resize(1600, 900, 2.0);
+        let basis = aim(0.0, 0.0, 1.0, 0.0);
+        // Right after the matrix: `outline`, `outline_ink`, `outline_cfg`.
+        let outline = |r: &Renderer| r.frame_uniforms(&basis, 1.0, 100.0)[16..28].to_vec();
+        assert_eq!(r.outline(), None);
+        assert_eq!(outline(&r), vec![0.0; 12], "off: the composite skips it");
+        r.set_outline_query("?local=1&outline=blocks");
+        let m = OUTLINE.mode("blocks").unwrap();
+        let u = outline(&r);
+        assert_eq!(u[0], (EDGE_DEPTH | EDGE_NORMAL | EDGE_BLOCK) as f32);
+        assert_eq!(
+            f64::from(u[1]),
+            tap_px(m.width_px, 2.0),
+            "CSS pixels on a 2x screen"
+        );
+        assert_eq!(
+            (f64::from(u[2]), f64::from(u[3])),
+            (m.fade_start_m, m.fade_end_m)
+        );
+        assert_eq!(
+            u[4..8],
+            [
+                OUTLINE.ink[0] as f32,
+                OUTLINE.ink[1] as f32,
+                OUTLINE.ink[2] as f32,
+                m.strength as f32
+            ]
+        );
+        assert_eq!(
+            u[8..10],
+            [m.depth_threshold as f32, m.crease_threshold as f32]
+        );
+        // The spyglass carries the fade out with its magnification.
+        r.set_magnification(4.0);
+        assert_eq!(f64::from(outline(&r)[3]), m.fade_end_m * 4.0);
+        assert!(r.set_outline("silhouette"));
+        assert_eq!(outline(&r)[0], EDGE_DEPTH as f32);
+        assert!(!r.set_outline("off"));
+        assert_eq!(outline(&r), vec![0.0; 12]);
+        r.set_outline_query("?outline=unknown");
+        assert_eq!(r.outline(), None);
     }
 
     #[test]

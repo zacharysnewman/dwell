@@ -368,6 +368,8 @@ impl Client {
         renderer.resize(width, height, 1.0);
         renderer.set_lod_level_colors(options.lod_colors);
         renderer.select(selection);
+        // `?outline=<mode>` (docs/ART_DIRECTION.md §7): the ink outline, off without it.
+        renderer.set_outline_query(&options.search);
         if options.renderer_switch {
             renderer.set_march_resolution(options.march_scale, options.upscaler);
             renderer.set_march_query(&options.search);
@@ -1173,6 +1175,23 @@ impl Client {
             .renderer
             .borrow_mut()
             .set_water_debug(crate::render::water::debug_mask(names));
+    }
+    /// The ink outline's mode by name (`shared/look/outline.json`; docs/ART_DIRECTION.md §7), as
+    /// `?outline=` takes it; `off` or an unknown name turns it off. True when a mode is on.
+    #[wasm_bindgen(js_name = setOutline)]
+    pub fn set_outline(&self, name: &str) -> bool {
+        self.inner.borrow().renderer.borrow_mut().set_outline(name)
+    }
+    /// The ink outline's mode, or `off`.
+    #[wasm_bindgen(js_name = outline)]
+    pub fn outline(&self) -> String {
+        self.inner
+            .borrow()
+            .renderer
+            .borrow()
+            .outline()
+            .unwrap_or("off")
+            .into()
     }
     /// The motion effects (docs/MOTION_EFFECTS.md): on or off, and the FOV boost's strength 0–1.
     #[wasm_bindgen(js_name = setMotion)]

@@ -1,0 +1,36 @@
+{
+  "$comment": "The ink outline (docs/ART_DIRECTION.md §7): a thin dark line the composite draws over the whole picture where the frame's edges are, after the Character Lab's ink outline. Off by default; `?outline=<mode name>` picks a mode (`off` or an unknown name: none). ink: the line's colour, a palette reference (shared/textures/palette.json: a swatch, a ramp, or ramp.stop), drawn in output colour. Each mode: name (lower-case, letters, digits and '-'; not 'off'); edges: which of the frame's edges it draws, one or more of 'depth' (silhouettes: where the depth jumps), 'normal' (creases: where the surface turns, from normals reconstructed from the depth) and 'block' (block edges: where the voxel cell under the pixel changes, from the position reconstructed from the depth; the frame has no ids); widthPx: the line's width in CSS pixels; fadeStartM, fadeEndM: the line is full strength out to fadeStartM metres and gone by fadeEndM (the spyglass scales both by its magnification), and the height fog fades it as it fades the ground; strength: the line's opacity (0–1); depthThreshold: how big a jump in inverse depth, relative to the nearer side, is a silhouette (line from it, full at twice it); creaseThreshold: how much the depth's slope must change, relative to the steeper side, to be a crease (same ramp). Run `node shared/look/outline.mjs` after editing; CI fails if crates/dwell-look/src/outline.gen.rs is stale.",
+  "ink": "ink",
+  "modes": [
+    {
+      "name": "silhouette",
+      "edges": ["depth"],
+      "widthPx": 1.5,
+      "fadeStartM": 32,
+      "fadeEndM": 128,
+      "strength": 0.85,
+      "depthThreshold": 0.12,
+      "creaseThreshold": 0.6
+    },
+    {
+      "name": "creases",
+      "edges": ["depth", "normal"],
+      "widthPx": 1.5,
+      "fadeStartM": 24,
+      "fadeEndM": 96,
+      "strength": 0.8,
+      "depthThreshold": 0.12,
+      "creaseThreshold": 0.6
+    },
+    {
+      "name": "blocks",
+      "edges": ["depth", "normal", "block"],
+      "widthPx": 1,
+      "fadeStartM": 12,
+      "fadeEndM": 48,
+      "strength": 0.6,
+      "depthThreshold": 0.12,
+      "creaseThreshold": 0.6
+    }
+  ]
+}
