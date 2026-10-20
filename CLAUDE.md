@@ -2,6 +2,8 @@
 
 ## This branch: `claude/half-height-voxels` (an experiment, not for `main`)
 
+**Variant: this is `hh-variant/v1-old-snap`, V1 of the slopes 2×2 (owner, 2026-10-20; generator label 1101): both of option A's changes undone: the 1 m step snap on (terrain.json steps.height 1) and the old ramp rule (ramps.rs as before option A), i.e. the terrain of the previous build (generator 1018).** Otherwise identical to `claude/half-height-voxels` at a317587.
+
 This long-lived branch tries **½ m tall cells** (1 × ½ × 1 m) in place of 1 m cubes, for the owner
 to playtest. It reaches `main` only if the owner keeps it after playing it; don't merge it, open a
 PR for it, or raise `package.json` on it.
