@@ -564,8 +564,10 @@ player's full body, its first-person arms, and creatures: a wolf and a deer so f
 (`shared/characters/characters.json`): rigid chunky parts (box, rounded box, ellipsoid, cylinder,
 capsule, cone) on the bones of a shared rig (`biped`, `quadruped`: bones with ball, hinge or fixed
 joints and limits), each character giving its proportions as rest offsets, sockets, colour slots,
-parts, accessories (by place and socket, with the parts they hide), variants and keyframed clips by
-role (layered `base`, `hold`, `action`). Materials are names from the shared style (the painterly
+parts (a part may hang from another, `with`: hiding the top hair hides the fringe), accessories (by
+place and socket, with the parts they hide), variants, chains (a tail's segments, checked joined end
+to end and bending smoothly through every clip) and keyframed clips by role (layered `base`, `hold`,
+`action`; one base clip per player controller state, cross-faded by each clip's `blend`). Materials are names from the shared style (the painterly
 set's palette and materials, ADR 0040). The first-person arms are the body's own arm chain, anchored in view space and drawn
 in their own pass and FOV over a cleared depth buffer. `shared/characters/gen.mjs` validates the data
 (`rig.mjs`; the rest pose must stand on the ground at its height) and writes it with the painter

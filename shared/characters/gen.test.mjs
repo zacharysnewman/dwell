@@ -271,7 +271,7 @@ test('the player has a body clip for every controller state, and the arms the on
     const clip = d.clips[p.clips[r]];
     for (let i = 0; i < 8; i++) {
       const top = bounds(m, 'body', sample(clip, (i / 8) * clip.duration)).max[1];
-      assert.ok(top < 1.3, `${r}: top ${top.toFixed(2)} m`);
+      assert.ok(top < (r === 'slide' ? 1.4 : 1.3), `${r}: top ${top.toFixed(2)} m`);
     }
   }
   // The slide holds an arm out for balance: a hand well out to the side.

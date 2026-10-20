@@ -3208,12 +3208,12 @@ const DATA = {
      "size": [
       0.12,
       0.12,
-      0.16
+      0.2
      ],
      "at": [
       0,
-      -0.157,
-      -0.087
+      -0.195,
+      -0.1
      ],
      "rot": [
       -70,
@@ -4030,7 +4030,7 @@ const DATA = {
      "at": [
       0.182,
       -0.1,
-      0
+      0.02
      ],
      "round": 0.45,
      "material": "hair",
@@ -6442,22 +6442,22 @@ const DATA = {
      "t": 0,
      "root": [
       0,
-      -0.447,
+      -0.462,
       -0.12
      ],
      "bones": {
       "hips": [
-       -22,
+       -12,
        8,
        0
       ],
       "chest": [
-       -22,
+       -12,
        10,
        -4
       ],
       "head": [
-       40,
+       22,
        -12,
        0
       ],
@@ -6477,17 +6477,17 @@ const DATA = {
        10
       ],
       "arm_r": [
-       36,
+       44,
        0,
-       -50
+       -18
       ],
       "forearm_r": [
-       -30,
+       -24,
        0,
        0
       ],
       "thigh_r": [
-       -8,
+       -18,
        0,
        -10
       ],
@@ -6502,7 +6502,7 @@ const DATA = {
        0
       ],
       "thigh_l": [
-       -51,
+       -62,
        0,
        0
       ],
@@ -6512,7 +6512,7 @@ const DATA = {
        0
       ],
       "foot_l": [
-       31,
+       33,
        0,
        0
       ]
@@ -6522,22 +6522,22 @@ const DATA = {
      "t": 0.6,
      "root": [
       0,
-      -0.447,
+      -0.462,
       -0.12
      ],
      "bones": {
       "hips": [
-       -22,
+       -12,
        8,
        0
       ],
       "chest": [
-       -22,
+       -12,
        13,
        -4
       ],
       "head": [
-       40,
+       22,
        -12,
        0
       ],
@@ -6557,17 +6557,17 @@ const DATA = {
        10
       ],
       "arm_r": [
-       36,
+       44,
        0,
-       -50
+       -18
       ],
       "forearm_r": [
-       -30,
+       -24,
        0,
        0
       ],
       "thigh_r": [
-       -8,
+       -18,
        0,
        -10
       ],
@@ -6582,7 +6582,7 @@ const DATA = {
        0
       ],
       "thigh_l": [
-       -51,
+       -62,
        0,
        0
       ],
@@ -6592,7 +6592,7 @@ const DATA = {
        0
       ],
       "foot_l": [
-       31,
+       33,
        0,
        0
       ]
@@ -8330,15 +8330,15 @@ const DATA = {
     {
      "t": 0,
      "root": [
-      -0.06,
-      -0.05,
+      -0.035,
+      -0.04,
       -0.02
      ],
      "bones": {
       "arm_r": [
-       -58,
-       34,
-       -28
+       -60,
+       32,
+       -20
       ],
       "forearm_r": [
        -22,
@@ -8355,15 +8355,15 @@ const DATA = {
     {
      "t": 0.6,
      "root": [
-      -0.064,
-      -0.054,
+      -0.038,
+      -0.044,
       -0.02
      ],
      "bones": {
       "arm_r": [
-       -56,
-       34,
-       -31
+       -58,
+       32,
+       -23
       ],
       "forearm_r": [
        -20,
@@ -10259,7 +10259,9 @@ const AIR_START = 0.2;   // the jump clip's push-off: the arc of the preview sta
 const GRAVITY = 20;      // PLAYER_CONTROLLER.md §7: the controller's gravity and 1.25 m jump
 const JUMP_AIR = 2 * Math.sqrt((2 * GRAVITY * 1.25)) / GRAVITY;
 const PRESETS = [
-  { label: 'walk → sprint → slide', steps: ['walk', 'sprint', 'slide', 'crouch_walk'] },
+  { label: 'walk → sprint → slide', steps: ['walk', 'sprint', 'slide', 'walk'] },
+  { label: 'idle → trot', steps: ['idle', 'trot'] },
+  { label: 'idle → walk → graze', steps: ['idle', 'walk', 'graze'] },
   { label: 'jump: take-off, air, landing', steps: ['idle', 'jump', 'fall', 'land', 'idle'] },
   { label: 'walk → crouch', steps: ['walk', 'crouch', 'crouch_walk', 'walk'] },
   { label: 'walk → climb', steps: ['walk', 'climb'] },

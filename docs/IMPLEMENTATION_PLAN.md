@@ -57,7 +57,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 37 — Sprint slide (stacks on 35) | 🚧 In progress — built and tested natively (controller, predictor, netcode, protocol 15 vectors): crouch while sprinting slides on, crouched, with friction and slopes, limited steering, a jump out and a cooldown (`PLAYER_CONTROLLER.md` §6.9), checked in Chrome (the `sprint-slide` bench); outstanding: CI (the WASM divergence run and the e2e suite), the owner's review; a protocol change (15): the owner raises `package.json` to a new minor |
 | 38 — The spyglass | 🚧 In progress — built and tested natively, in Vitest and on a real GPU (ADR 0039, `SPYGLASS.md`): a toggle key (`` ` ``) and wheel steps from `shared/look/spyglass.json` (generator, CI stale check), the zoomed FOV for the raster renderer, the marcher (its FOV bug fixed) and the LOD, which refines only inside the narrow view (bounded by the detail boost), the vignette, reduced motion, the `spyglass-far` bench scenario; outstanding: CI and the owner's review in a browser; a patch release |
 | 39 — Painterly textures | 🚧 In progress — built and tested natively, in Node and on a real GPU (ADR 0040, `ART_DIRECTION.md`, `PAINTERLY_TEXTURES.md`): the storybook palette and materials as data (`shared/textures`), one stroke generator baked into the atlas (CI stale check, a material added by data alone), `?textures=painterly` on the page and in the meshing workers (the classic set stays the default), the Painterly Texture Lab, the bench's `painterly` configuration (same frame cost); follow-up: grass_side's skirt made continuous across the tile (owner's review); outstanding: CI and the owner's review of the look, then flipping the default; a patch release |
-| 40 — Characters and creatures (design and concept) | 🚧 In progress — C0 built and tested (ADR 0041, `CHARACTERS.md`): the rig vocabulary and validator (`shared/characters/rig.mjs`), the data (the player with three looks, the wolf, the deer; accessories, the block and brush items, clips), the generator and its tests, the Character Lab prototype checked in Chrome and published; stacked on Phase 39's palette and materials; outstanding: the owner's review and answers (`CHARACTERS.md` §10), CI; C1–C3 (in the game) not started; a patch release |
+| 40 — Characters and creatures (design and concept) | 🚧 In progress — C0 built and tested (ADR 0041, `CHARACTERS.md`): the rig vocabulary and validator (`shared/characters/rig.mjs`), the data (the player with three looks, the wolf, the deer; accessories, the block and brush items, clips), the generator and its tests, the Character Lab prototype checked in Chrome and published; stacked on Phase 39's palette and materials; C0b (the owner's first review, 2026-10-20) built and tested: hair composes with hats (`with`), the wolf's and deer's tails are chains checked joined through every clip, the player's clips for every controller state (sprint, crouch, crouch-walk, slide, jump, fall, land, climb, swim, fly; the arms' sprint, slide, jump, fall, land) and the Lab's transitions player; outstanding: the owner's review of the fixes and the rest of `CHARACTERS.md` §10, CI; C1–C3 (in the game) not started; a patch release |
 
 Phase numbering: Phase 4 was inserted on 2026-09-29 for the planet-scale world (ADRs 0011, 0012);
 the former Phases 4–7 are now 5–8, and Phase 3's former 3c and 3d are now 3d and 3e.
@@ -3865,8 +3865,10 @@ Exit criteria
 ## Phase 40 — Characters and Creatures
 
 **Status:** C0 (the design, data and prototype) built and tested (2026-10-20): `node --test
-shared/characters/gen.test.mjs` passes and the Character Lab was checked in Chrome. Outstanding:
-the owner's review and answers to `CHARACTERS.md` §10, CI. C1–C3 are not
+shared/characters/gen.test.mjs` passes and the Character Lab was checked in Chrome. C0b (the
+owner's first review's fixes, 2026-10-20) built and tested, the Lab checked in Chrome and
+republished. Outstanding: the owner's review of the fixes and answers to the rest of
+`CHARACTERS.md` §10, CI. C1–C3 are not
 started: the owner asked for a design and concept only. Stacked on Phase 39 (the palette, materials
 and painter it shades with). No change to saves, the protocol or terrain: a patch release.
 
@@ -3903,6 +3905,40 @@ Exit criteria
 - [x] The first-person arms draw every body part on the arm chain (`gen.test.mjs`) and are checked in
   the Lab with a block and the brush.
 - [ ] The owner's review of the look, and answers to `CHARACTERS.md` §10.
+
+**C0b — the owner's first review (2026-10-20)**
+
+Owner: the fringe floats under a hat; the wolf's last tail segments are turned and apart; new player
+animations for the controller's states, with first-person versions where they matter and a way to
+preview transitions. (Later the same day: the deer's tail isn't connected either.)
+
+Deliverables
+- [x] Hair and hats compose as data: a part's `with` (it hangs from an earlier part; hiding that hides
+  it), the fringe hanging from the top hair, the wide-brimmed hat's own fringe and side tufts tucked
+  under the brim in the wearer's hair slot (`CHARACTERS.md` §4.1).
+- [x] Chains: a character's `chains` (`{ from, parts }`), `chainSegments` and `chainProblem` in
+  `rig.mjs` (segments joined within 3 cm, bending at most 60°, starting on their root part), checked
+  on the rest pose by the validator; the wolf's tail rebuilt end to end (each tail bone's pivot at the
+  end of the segment before) and its trot tail raised with the brush following; the deer's tail moved
+  onto the rump and its flicks turned back (§4.2).
+- [x] Clips for every controller state: `biped_sprint`, `biped_crouch`, `biped_crouch_walk`,
+  `biped_slide`, `biped_jump`, `biped_fall`, `biped_land`, `biped_climb`, `biped_swim`, `biped_fly`;
+  `fp_sprint`, `fp_slide`, `fp_jump`, `fp_fall`, `fp_land`; clip `grounded` and `blend`, and
+  `crossfade` for switching base clips; the state → role table (§6).
+- [x] The Lab: every role in the clip picker (one-shots replay), the transitions player (presets and a
+  sequence built clip by clip, cross-faded by `blend`, the jump's arc), `lab.cam` and `lab.sequence`
+  hooks; republished to the same link. Before/after screenshots in the session's scratchpad
+  (`art/characters-v2/`).
+
+Exit criteria
+- [x] No part is drawn while the part it hangs from is hidden, in every look; every hat hiding the top
+  hair hides the fringe (`gen.test.mjs`; red on the old data: the fringe had no `with`).
+- [x] Every quadruped's tail chain is joined and smooth at rest and at 25 samples of every clip, every
+  look (`gen.test.mjs`; red on the old data: the wolf's `tail_base` started 0.158 m from its pivot, the
+  deer's `tail` 0.070 m off the rump).
+- [x] The player has a body clip for every controller state and arms clips for sprint, slide, jump,
+  fall and land; grounded clips keep the feet on the ground (`gen.test.mjs`).
+- [ ] The owner's review of the fixes.
 
 **C1 — characters in the renderer (later)**: a Rust loader and mesh builder from the same data
 (`characters.gen.rs`), the character shader and outline, remote players drawn as the full body

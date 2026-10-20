@@ -100,8 +100,12 @@ URL after reading it). Commit the file with the change.
 - **Subjects:** the player, first person (a small world, the hotbar, the arms drawn in their own pass
   and FOV), the wolf, the deer, and a group to scale with 1 m blocks. Orbit, front, back, side and ¾
   views, a turntable.
-- **Animation:** the clips by role (idle, walk; trot; graze), play, scrub and speed; break and place
-  swings (<kbd>B</kbd>, <kbd>P</kbd>) layered over the walk and the hold.
+- **Animation:** the clips by role (the player's idle, walk, sprint, crouch, crouch-walk, slide, jump,
+  fall, land, climb, swim, fly; the arms' idle, walk, sprint, slide, jump, fall, land; the wolf's trot;
+  the deer's graze), play, scrub and speed; break and place swings (<kbd>B</kbd>, <kbd>P</kbd>) layered
+  over the base and the hold. **Transitions:** presets (walk → sprint → slide; jump, fall, land; walk →
+  crouch; climb, swim, fly) or a sequence built clip by clip, cross-faded by each clip's `blend`, the
+  jump's rise drawn as the controller's 1.25 m arc.
 - **Looks:** variants (wanderer, ranger, tinker; stag, doe), accessories by place (one per place),
   colour slots from the shared materials, the held item (block or brush) and its block.
 - **Parts:** the list of the character's, its accessories' and the held item's parts; click a part
@@ -111,4 +115,4 @@ URL after reading it). Commit the file with the change.
   bones and sockets, the game's tone mapping and exposure.
 - **Copy characters.json** copies the whole file with the edits (or one character), to paste over
   the data file and run the generator. `window.lab` drives it from a script (subject, angle,
-  variant, held item, clip time, a swing) for screenshots.
+  variant, held item, clip time, a swing, a sequence, the camera) for screenshots.
