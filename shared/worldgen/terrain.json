@@ -5,7 +5,7 @@
   "hills": { "amplitude": 225, "wavelength": 1024, "octaves": 5, "fadeFrom": 500, "fadeTo": 4000 },
   "bumps": { "amplitude": 5, "wavelength": 128, "octaves": 3 },
   "steps": {
-    "$comment": "Half-height branch (HALF_HEIGHT_GRID.md §4): where the ground is at least fromSlope steep (m per m, across a 4 m lattice cell), heights snap to whole multiples of height (m), so steep ground is 1 m steps of two ½ m cells that the generation rule tops with 45° ramps. height 0 turns it off: off since generator 1019 (owner, 2026-10-20, option A of the slopes investigation), so every slope is ½ m cells and the rule picks ½ m or 45° ramps from the drop.",
+    "$comment": "Half-height branch (HALF_HEIGHT_GRID.md §4): where the ground is at least fromSlope steep (m per m, across a 4 m lattice cell), heights snap to whole multiples of height (m), so steep ground is 1 m steps of two ½ m cells that the generation rule tops with 45° ramps. height 0 turns it off: off since generator 1019 (owner, 2026-10-20, the slopes investigation; kept off in V2, generator 1020, the owner's choice), so every slope is ½ m cells.",
     "fromSlope": 0.5,
     "height": 0
   }

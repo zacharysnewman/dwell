@@ -22,7 +22,7 @@ PR for it, or raise `package.json` on it.
   those), the design and the as-built list of what is still in cells (ray marcher, brushes, fluid
   surface drop, view radius, the build sphere) is `docs/HALF_HEIGHT_GRID.md` §7.
 - **Versions:** the protocol and generator versions are **1000 + the version of `main` last merged**
-  (now protocol 1016, generator 1019: one more for option A's slopes, HALF_HEIGHT_GRID.md §4), so a dev build never joins or loads `main`'s; bump both when merging a `main` that
+  (now protocol 1016, generator 1020: two more for the slopes, 1019 option A and 1020 V2, the owner's choice, HALF_HEIGHT_GRID.md §4), so a dev build never joins or loads `main`'s; bump both when merging a `main` that
   bumped its own.
 - On this branch, `docs/ARCHITECTURE.md` and the plan describe the branch. If the owner keeps it,
   renumber Phase 41 to the next free phase on `main` and remove this section; if not, the branch is

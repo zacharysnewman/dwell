@@ -788,9 +788,10 @@ looks them up by name. **[built, Phase 41 H4]** with ½ m cells no natural block
 (`dwell.json` has no `adaptive` flag): the generated ramps are the only shaped natural ground; a
 placed natural block is a flat cell. On today's prototype terrain no two neighbouring columns
 differ by a metre, so only ½ m ramps generate; 45° ramps appear only where the ground steps
-(tests build them). **[on the half-height branch, generator 1019]** the facing is the 9 heights'
-Sobel descent and a ramp needs only its downhill neighbour lower and the uphill one not
-(`HALF_HEIGHT_GRID.md` §4, option A). The geometry is
+(tests build them). **[on the half-height branch, generator 1020]** the rule is the old one (a ramp
+needs its downhill neighbour lower, the uphill one not, and both sides and back diagonals not
+lower, or is a one-wide path) with the 1 m snap off: V2, the owner's choice over option A's Sobel
+facing (`HALF_HEIGHT_GRID.md` §4). The geometry is
 baked once by
 `shared/blocks/shapes.mjs` (`gen.mjs`) into the generated tables: each shape's closed, outward-wound
 polygons tagged with the cell face they lie on (or the sloped surface), its side profiles for
@@ -1132,11 +1133,11 @@ lattice and interpolated bilinearly; the chunk path and the point queries (`colu
    `shared/worldgen/terrain.json` (`HeightField`, generated into `terrain.gen.rs` by
    `shared/worldgen/gen.mjs`, range-checked, stale-checked and node-tested in CI). Heights over the
    island span about 0–500 m above sea level (sea level is face-local 32, over the 10-layer core).
-   **[on the half-height branch]** generator **1019** (1016 at the steps; 1017 the flooded shores; 1018 main's pines, two cells per block; 1019 option A's slopes) keeps v16's height field. **Steps**
+   **[on the half-height branch]** generator **1020** (1016 at the steps; 1017 the flooded shores; 1018 main's pines, two cells per block; 1019 option A's slopes; 1020 V2, the owner's choice) keeps v16's height field. **Steps**
    (`steps` in `terrain.json`) can snap heights to whole `height` metres where a 4 m lattice cell
-   rises at least `fromSlope`; since 1019 `height` is 0 (off), and the generation rule's Sobel
-   facing (`HALF_HEIGHT_GRID.md` §4) ramps the hillsides in ½ m and 45° pieces: about 10.6 % of
-   land tops slide, 1.3 cliff edges ≥ 1 m per 100 land columns (`tests/slopes.rs`).
+   rises at least `fromSlope`; since 1019 `height` is 0 (off), and since 1020 (V2,
+   `HALF_HEIGHT_GRID.md` §4) the old generation rule makes the hillsides ½ m steps and ½ m ramps:
+   about 3.2 % of land tops slide, 24.5 cliff edges ≥ 1 m per 100 land columns (`tests/slopes.rs`).
    **Generator version 16** (owner, 2026-10-19: "terrain steep enough to slide on" — about 15 % of
    the land's surface steeper than the slide's 44°, everywhere, peaks up to ~500 m) made the hills
    steeper rather than adding a noise term: the adaptive blocks turn a column with a higher
@@ -1229,8 +1230,8 @@ Server (native), local mode (WASM), and client (WASM) must produce **bit-identic
   for version 18 (the pines; 17 was the sea's flooded top blocks; the rows holding the ground at the origin and inland are found
   from the generator, wherever the relief puts them; 16 was the steep hills, 15 the larger relief, 14 Phase 16's new
   geometry, 13 added decorations), with `cargo run -p dwell-worldgen --example goldens`.
-  **[on the half-height branch]** generator version 1019 (½ m cells, generated ramps, main's steep
-  hills, option A's slopes) re-recorded them with the same example.
+  **[on the half-height branch]** generator version 1020 (½ m cells, generated ramps, main's steep
+  hills, the 1 m snap off with the old ramp rule: V2) re-recorded them with the same example.
 - `generatorVersion` is bumped for any change that alters output (and the golden hashes are
   regenerated); saved worlds record it.
 - **[built, Phase 3c]** Planet-scale coordinates (ADR 0011): noise never converts a whole world

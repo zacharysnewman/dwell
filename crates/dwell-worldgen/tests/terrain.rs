@@ -851,7 +851,8 @@ fn the_hills_are_steep_enough_to_slide_and_reach_about_500_m() {
     // mean slope of ~5.9°; version 16 ~15 %, ~500 m and ~22°, with the island under water
     // (hollows below sea level) still under 1.5 %. Half-height generator 1019 (option A: no 1 m
     // step snap, the Sobel facing) slides on ~10.6 % (A) where 1018's steps slid on ~12.9 %: the
-    // band's floor is 9 % on this branch.
+    // band's floor is 9 % on this branch. Generator 1020 (V2, the owner's choice: the old ramp rule, no 1 m snap) slides on ~3.2 % (A),
+    // ~3.0 % (B): the old rule makes few 45° ramps, so the band is 2–5 % on this branch.
     use dwell_worldgen::ramps::{Around, Top, top_of};
     for face in [Face::A, Face::B] {
         let (mut highest, mut slope, mut land) = (0.0f64, 0.0f64, 0usize);
@@ -899,7 +900,7 @@ fn the_hills_are_steep_enough_to_slide_and_reach_about_500_m() {
             100.0 * wet
         );
         println!("{at}");
-        assert!((0.09..0.18).contains(&sliding), "{at}");
+        assert!((0.02..0.05).contains(&sliding), "{at}");
         assert!((430.0..580.0).contains(&highest), "{at}");
         assert!((15.0..30.0).contains(&slope), "{at}");
         assert!(wet < 0.015, "{at}");

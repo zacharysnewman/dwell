@@ -541,15 +541,21 @@ fn hillside(slope: f32, uphill: f32) -> impl Fn(i32, i32) -> i32 + Clone {
 
 #[test]
 fn walking_and_running_over_diagonal_hillsides_has_no_hang_ups_or_flicker() {
-    // Owner, 2026-10-20 (option A, HALF_HEIGHT_GRID.md §4): a hillside whose fall line is off the
-    // axes is ½ m ramps facing the dominant axis, with ½ m wedge-shaped side faces where the
-    // contour shifts sideways. Walkers cross it up, down, along and across its fall line on ½ m
-    // ramp ground (no 45° pieces): step-up (0.55 m) takes the side faces in stride, so nobody is
-    // held up, hops or flickers between walking and anything else.
+    // Owner, 2026-10-20 (V2, HALF_HEIGHT_GRID.md §4): a hillside whose fall line is off the axes
+    // is ½ m ramps facing an axis where both sides are level, and flat tops with ½ m vertical
+    // faces where the contour shifts sideways (under option A, generator 1019, those were ramps
+    // with ½ m wedge-shaped side faces, which the step-up's highest top across a face fixed).
+    // Walkers cross it up, down, along and across its fall line on ½ m ground (no 45° pieces):
+    // step-up (0.55 m) takes the ½ m faces in stride, so nobody is held up, hops or flickers
+    // between walking and anything else. Only the 0.3 m/m hillside: on V2's steeper ones a ramp's
+    // low edge can sit beside a column 1 m higher (a wedge face 0.5–1 m tall, one of V2's 24.5
+    // cliff edges per 100 columns, `dwell-worldgen/tests/slopes.rs`), which stops a walker driving
+    // straight at it, as any 1 m face does (measured on 0.45: 6 of 42 straight walks stopped, and
+    // walkers going down fall off the 1 m drops, as they should).
     const SIZE: i32 = 48;
     let mut fails = Vec::new();
     let (mut walks, mut side_faces) = (0, 0);
-    for slope in [0.3, 0.45] {
+    for slope in [0.3] {
         for uphill in [30.0f32, 45.0, 60.0] {
             let height = hillside(slope, uphill);
             for z in 1..SIZE - 1 {
@@ -559,11 +565,12 @@ fn walking_and_running_over_diagonal_hillsides_has_no_hang_ups_or_flicker() {
                         !matches!(top, Top::Steep(_)),
                         "{slope} {uphill}: ({x}, {z})"
                     );
-                    // A ramp with a lower column beside it: a ½ m side face.
-                    if let Top::Gentle(f) = top {
-                        let (dx, dz) = f.step();
+                    // A flat top with a lower edge neighbour: a ½ m face to step over.
+                    if matches!(top, Top::Flat) {
                         let lower = |sx: i32, sz: i32| height(x + sx, z + sz) < height(x, z);
-                        side_faces += i32::from(lower(dz, dx) || lower(-dz, -dx));
+                        side_faces += i32::from(
+                            lower(1, 0) || lower(-1, 0) || lower(0, 1) || lower(0, -1),
+                        );
                     }
                 }
             }
@@ -595,10 +602,11 @@ fn walking_and_running_over_diagonal_hillsides_has_no_hang_ups_or_flicker() {
             }
         }
     }
-    assert!(side_faces > 100, "{side_faces} ramps beside a lower side");
+    assert!(side_faces > 50, "{side_faces} flat tops beside a lower column");
     eprintln!(
         "diagonal hillsides: {} of {walks} walks failed",
         fails.len()
     );
     assert!(fails.is_empty(), "{}", fails.join("\n"));
 }
+

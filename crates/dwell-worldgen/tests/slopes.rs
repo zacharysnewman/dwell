@@ -157,13 +157,14 @@ impl Tally {
 }
 
 #[test]
-fn hillsides_are_ramps_without_1_m_terraces() {
-    // Owner, 2026-10-20 (option A of the slopes investigation): with the 1 m step snap off and
-    // the Sobel facing, the slopes investigation measured 1.0 cliff edge ≥ 1 m per 100 land
-    // columns (36.8 as built at generator 1018), 10–25° ground 33 % flat, 56 % ½ m ramp and 11 %
-    // vertical (48 / 28 / 24 %), no flat run ending in a 1 m face (54 % of runs) and the drawn
-    // ground 0.15 m RMS from the continuous field (0.33 m). Windows of 48 × 48 land columns on a
-    // 1.5 km grid, inland, over five seeds.
+fn hillsides_are_v2_steps_and_ramps() {
+    // Owner, 2026-10-20: of the slopes 2×2 (HALF_HEIGHT_GRID.md §4) the owner chose V2, the old
+    // ramp rule (both sides and both back diagonals not lower) with the 1 m step snap off, over
+    // option A (the Sobel facing). V2 measured 24.5 cliff edges ≥ 1 m per 100 land columns
+    // (option A 1.0, generator 1018 36.8), 10–25° ground 47 % flat, 31 % ½ m ramp and 23 %
+    // vertical (A: 33 / 56 / 11 %), 19.8 % of flat runs on ≥ 10° ending in a 1 m face (A 0 %) and
+    // the drawn ground 0.25 m RMS from the continuous field (A 0.15 m). Windows of 48 × 48 land
+    // columns on a 1.5 km grid, inland, over five seeds.
     let mut t = Tally::default();
     for seed in [1u64, 2, 3, 7, 42] {
         let g = TerrainGenerator::new(seed);
@@ -201,10 +202,10 @@ fn hillsides_are_ramps_without_1_m_terraces() {
     );
     println!("{at}");
     assert!(t.cols > 50_000.0, "{at}");
-    assert!(per_100 < 2.5, "{at}");
-    assert!((25.0..42.0).contains(&flat), "{at}");
-    assert!((48.0..65.0).contains(&gentle), "{at}");
-    assert!(vertical < 15.0, "{at}");
-    assert!(terraces < 1.0, "{at}");
-    assert!(rms < 0.2, "{at}");
+    assert!((20.0..29.0).contains(&per_100), "{at}");
+    assert!((40.0..55.0).contains(&flat), "{at}");
+    assert!((25.0..38.0).contains(&gentle), "{at}");
+    assert!((18.0..28.0).contains(&vertical), "{at}");
+    assert!((15.0..25.0).contains(&terraces), "{at}");
+    assert!((0.2..0.3).contains(&rms), "{at}");
 }
