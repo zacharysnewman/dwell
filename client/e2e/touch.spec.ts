@@ -72,9 +72,14 @@ test('touch controls: stick, look, and jump', async ({ page }) => {
   const deadline = Date.now() + 10_000;
   while (peak - ground <= 0.5 && Date.now() < deadline) {
     await page.waitForTimeout(40);
+    const st = (await page.evaluate('globalThis.__dwell.state()')) as any;
+    console.log('DIAG poll', Date.now(), st?.feet?.join(','), JSON.stringify(st?.stats), JSON.stringify(st?.terrain));
     peak = Math.max(peak, (await read(page))?.feet[1] ?? 0);
   }
   await touch(cdp, 'touchEnd', []);
+  console.log('DIAG start', JSON.stringify(start?.feet), 'walked', JSON.stringify(walked?.feet), 'ground', ground);
+  for (const t of await page.evaluate<any[]>('globalThis.__dwell.ticks()'))
+    console.log('DIAG tick', t.seq, t.atMs.toFixed(0), t.feet.map((v: number) => v.toFixed(3)).join(','), t.velocity.map((v: number) => v.toFixed(2)).join(','), t.state, t.grounded, t.ceilingBlocked, t.move.join(','), t.jump);
   expect(peak - ground).toBeGreaterThan(0.5);
 });
 
