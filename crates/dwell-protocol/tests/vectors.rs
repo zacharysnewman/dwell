@@ -73,7 +73,10 @@ fn decoded_fields_are_the_vectors_values() {
         panic!("physics_snapshot")
     };
     let c = s.local.controller;
-    assert_eq!((c.step_grace, c.slide_flags, c.slide_cooldown), (2, slide_flags::ACTIVE, 29));
+    assert_eq!(
+        (c.step_grace, c.slide_flags, c.slide_cooldown),
+        (2, slide_flags::ACTIVE, 29)
+    );
     assert_eq!(c.ladder, [-5, 64, 1_000_000]);
     let Some(Message::ChunkData(c)) = Message::decode(&get("chunk_data_explicit_solid")) else {
         panic!("chunk")
