@@ -1646,16 +1646,13 @@ impl Players {
         faces.sort_by(|a, b| a.0.total_cmp(&b.0));
         let up = |h: f32| DVec3::new(0.0, f64::from(h), 0.0);
         let mut tried: Vec<(f32, Vec3)> = Vec::new();
-        for (distance, n, point) in faces {
-            if tried
-                .iter()
-                .any(|&(dd, nn)| nn.dot(n) > 0.99 && (dd - distance).abs() < 0.01)
-            {
-                continue;
-            }
-            tried.push((distance, n));
-            // The step's height is from the ground at its foot: on a ramp up to a step that ground
-            // is above the feet, and the lift is the step plus that rise.
+        let same_face = |(d1, n1): (f32, Vec3), (d2, n2): (f32, Vec3)| {
+            n1.dot(n2) > 0.99 && (d1 - d2).abs() < 0.01
+        };
+        // The step's height is from the ground at its foot: on a ramp up to a step that ground is
+        // above the feet, and the lift is the step plus that rise. Its top is read just past the
+        // face. (The rise, the top) at one of the face's hit points.
+        let top_at = |n: Vec3, point: DVec3| {
             let foot = q
                 .cast_ray(
                     point + (n * STEP_FOOT_OFFSET).as_dvec3(),
@@ -1668,18 +1665,33 @@ impl Players {
                 .max(feet);
             let rise = (foot - feet) as f32;
             if rise > cfg.advanced.step_max_rise {
-                continue;
+                return None;
             }
-            // The step's top, just past its face.
             let mut probe = point - (n * cfg.advanced.step_probe_distance).as_dvec3();
             probe.y = foot + f64::from(m.max_step_height + STEP_TOP_CLEARANCE);
-            let Some(top) = q.cast_ray(
+            q.cast_ray(
                 probe,
                 -Vec3::Y,
                 m.max_step_height + STEP_TOP_CLEARANCE,
                 Some(p.body),
                 bodies,
-            ) else {
+            )
+            .map(|top| (rise, top))
+        };
+        for &(distance, n, _) in &faces {
+            if tried.iter().any(|&t| same_face(t, (distance, n))) {
+                continue;
+            }
+            tried.push((distance, n));
+            // A step's top need not be level (the side of a ½ m ramp beside a lower one rises
+            // along the face, HALF_HEIGHT_GRID.md §4): of the face's hit points, the highest top,
+            // so the lifted capsule clears all of it (the first of equal ones, in ray order).
+            let Some((rise, top)) = faces
+                .iter()
+                .filter(|&&(dd, nn, _)| same_face((dd, nn), (distance, n)))
+                .filter_map(|&(_, _, point)| top_at(n, point))
+                .reduce(|a, b| if b.1.point.y > a.1.point.y { b } else { a })
+            else {
                 continue;
             };
             let lift = (top.point.y - feet) as f32;

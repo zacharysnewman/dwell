@@ -462,3 +462,143 @@ fn pressing_into_a_45_degree_ramps_foot_does_not_flicker_between_sliding_and_wal
     eprintln!("ramp foot: {} of {total} flickered", fails.len());
     assert!(fails.is_empty(), "{}", fails.join("\n"));
 }
+
+/// What a walker across a hillside did: ticks it was held up (grounded and moving slower than
+/// half its speed) and the longest run of them, ticks it rose in the air without jumping, how often it left the ground, switches
+/// between walking states and anything else, and how far it got (m).
+#[derive(Debug, Default)]
+struct Crossing {
+    held_up: i32,
+    longest_hold: i32,
+    rising_airborne: i32,
+    take_offs: i32,
+    switches: i32,
+    distance: f32,
+}
+
+/// Walks (or runs) one player across `height` from `start` at `yaw` for `seconds`.
+fn cross(
+    height: &dyn Fn(i32, i32) -> i32,
+    size: i32,
+    start: Vec3,
+    yaw: f32,
+    run: bool,
+    seconds: f32,
+) -> Crossing {
+    let mut w = PlayerTestWorld::new();
+    terrain(&mut w, (0, 0, size - 1, size - 1), height);
+    let feet = surface(height, start.x, start.z) + 0.02;
+    let e = w.spawn_yaw(Vec3::new(start.x, feet, start.z), yaw);
+    w.step(ticks(0.3));
+    w.set_input(move |_, _| input(0.0, 1.0, run, false, false, yaw, 0.0));
+    let speed = if run {
+        w.config.movement.run_speed
+    } else {
+        w.config.movement.walk_speed
+    };
+    let from = w.pos(e);
+    let mut c = Crossing::default();
+    let (mut was_grounded, mut was_moving, mut last, mut hold) = (true, None, from, 0);
+    for t in 0..ticks(seconds) {
+        w.step(1);
+        let ctl = w.c(e);
+        let grounded = ctl.ground.grounded;
+        let moving = matches!(ctl.state, State::Walking | State::Running);
+        let p = w.pos(e);
+        // How far it moved this tick (the body's velocity after a step-up is what the step's
+        // shift left of it, not the motion).
+        let moved = (p.x - last.x).hypot(p.z - last.z) * 60.0;
+        last = p;
+        if t > ticks(0.4) {
+            if grounded && moved < 0.5 * speed {
+                c.held_up += 1;
+                hold += 1;
+                c.longest_hold = c.longest_hold.max(hold);
+            } else {
+                hold = 0;
+            }
+            c.rising_airborne += i32::from(!grounded && w.vel(e).y > 0.5);
+            c.take_offs += i32::from(was_grounded && !grounded);
+            c.switches += i32::from(was_moving.is_some_and(|m| m != moving));
+        }
+        (was_grounded, was_moving) = (grounded, Some(moving));
+    }
+    let d = w.pos(e) - from;
+    c.distance = d.x.hypot(d.z);
+    assert_eq!(w.count(e, events::JUMPED), 0);
+    c
+}
+
+/// A plane rising `slope` m per m toward `uphill` (degrees from +x toward +z), in rows over
+/// columns, as the generator rounds a height: ceil(h ÷ cell height).
+fn hillside(slope: f32, uphill: f32) -> impl Fn(i32, i32) -> i32 + Clone {
+    let (s, c) = uphill.to_radians().sin_cos();
+    move |x: i32, z: i32| {
+        let h = 2.0 + slope * ((x as f32 + 0.5) * c + (z as f32 + 0.5) * s + 60.0);
+        (h / CELL_H as f32).ceil() as i32
+    }
+}
+
+#[test]
+fn walking_and_running_over_diagonal_hillsides_has_no_hang_ups_or_flicker() {
+    // Owner, 2026-10-20 (option A, HALF_HEIGHT_GRID.md §4): a hillside whose fall line is off the
+    // axes is ½ m ramps facing the dominant axis, with ½ m wedge-shaped side faces where the
+    // contour shifts sideways. Walkers cross it up, down, along and across its fall line on ½ m
+    // ramp ground (no 45° pieces): step-up (0.55 m) takes the side faces in stride, so nobody is
+    // held up, hops or flickers between walking and anything else.
+    const SIZE: i32 = 48;
+    let mut fails = Vec::new();
+    let (mut walks, mut side_faces) = (0, 0);
+    for slope in [0.3, 0.45] {
+        for uphill in [30.0f32, 45.0, 60.0] {
+            let height = hillside(slope, uphill);
+            for z in 1..SIZE - 1 {
+                for x in 1..SIZE - 1 {
+                    let top = top_at(&height, x, z);
+                    assert!(
+                        !matches!(top, Top::Steep(_)),
+                        "{slope} {uphill}: ({x}, {z})"
+                    );
+                    // A ramp with a lower column beside it: a ½ m side face.
+                    if let Top::Gentle(f) = top {
+                        let (dx, dz) = f.step();
+                        let lower = |sx: i32, sz: i32| height(x + sx, z + sz) < height(x, z);
+                        side_faces += i32::from(lower(dz, dx) || lower(-dz, -dx));
+                    }
+                }
+            }
+            // Headings (yaw 0 is +z, 90 is +x): up and down the fall line, along each axis, and
+            // across the slope.
+            let fall = 90.0 - uphill;
+            for heading in [fall, fall + 180.0, 0.0, 90.0, 180.0, 270.0, fall + 90.0] {
+                for run in [false, true] {
+                    walks += 1;
+                    let h = f32::to_radians(heading);
+                    let mid = SIZE as f32 * 0.5;
+                    // From 14 m back along the heading from the middle.
+                    let start = Vec3::new(mid - h.sin() * 14.0, 0.0, mid - h.cos() * 14.0);
+                    let c = cross(&height, SIZE, start, heading, run, 3.0);
+                    let speed = if run { 8.0 } else { 5.0 };
+                    // A hitch of a tick or two at a side face (measured: one tick, once in 84
+                    // walks) is not a hang-up; being stopped against one is.
+                    if c.longest_hold > 2
+                        || c.held_up > 3
+                        || c.rising_airborne > 3
+                        || c.switches > 0
+                        || c.distance < 0.75 * speed * 2.6
+                    {
+                        fails.push(format!(
+                            "slope {slope} uphill {uphill}° heading {heading}° run {run}: {c:?}"
+                        ));
+                    }
+                }
+            }
+        }
+    }
+    assert!(side_faces > 100, "{side_faces} ramps beside a lower side");
+    eprintln!(
+        "diagonal hillsides: {} of {walks} walks failed",
+        fails.len()
+    );
+    assert!(fails.is_empty(), "{}", fails.join("\n"));
+}
