@@ -766,8 +766,8 @@ figures are not A4b's):
 |---|---|---|---|---|---|
 | **Temporal reprojection while moving** (Hi-Z of last frame's clear distances: Uludag's Hi-Z traversal applied to the start distance) | The beam's segments already have a conservative footprint: project it into last frame's image and read a min pyramid of last frame's tile distances. Disocclusion is handled by construction: only space last frame's rays crossed is trusted | Moving views at the spawn back to the still-eye step counts (6 → 3 iterations a ray) | A reduce pass, 4 loads per segment test, the changed nodes in the uniforms | LOD bands: last frame vouches only for the level it marched at | **Built (A4c 1)** |
 | **Keeping an unchanged frame** (same eye, view, size, data, settings) | Trivial: the march's outputs persist in its targets | Standing still and untouched: the march skipped, only shading runs | A comparison per frame | None: bit-identical by construction | **Built (A4c 2)** |
-| **If-if traversal** (Aila & Laine 2009): one loop whose iterations are each one voxel step or one hierarchy step, instead of a DDA loop nested in the hierarchy loop | The march is while-while today (the brick DDA nested in the node loop); lanes in a brick hold their SIMD group while the rest skip | 10–30 % where lanes diverge (540 m up, grazing) | Control flow only; same arithmetic, so the per-pixel check stays exact | Registers | Next (A4c 3) |
-| A cheaper column search: one load per iteration, a coarse heightfield phase before the fine one, or the column grid addressed by node index | The column grid is what costs at the LOD levels (above) | Up to 2× per iteration 540 m up | Layout change in `dwell_march` and the WGSL | Registers again; the reference changes with it | After A4c 3, if it is still the cost |
+| **If-if traversal** (Aila & Laine 2009): one loop whose iterations are each one voxel step or one hierarchy step, instead of a DDA loop nested in the hierarchy loop | The march is while-while today (the brick DDA nested in the node loop); lanes in a brick hold their SIMD group while the rest skip | 10–30 % where lanes diverge (540 m up, grazing) | Control flow only; same arithmetic, so the per-pixel check stays exact | Registers | Tried: 0–15 % slower, dropped |
+| A cheaper column search: one load per iteration, a coarse heightfield phase before the fine one, or the column grid addressed by node index | The column grid is what costs at the LOD levels (above) | Up to 2× per iteration 540 m up | Layout change in `dwell_march` and the WGSL | Registers again; the reference changes with it | Its cheapest form built: steep rays skip the search in mixed bricks (**A4c 3**); the layout changes not yet |
 | A top-level sparse 64-tree over the nodes (VoxelRT's Tree64), a flatter level stack | Dwell already has the 64-tree inside a chunk; the clipmap slots are a flat array per level | Small now: after the beam the sky takes few steps | A new top structure, edits and streaming | Medium | Not now |
 | Distance fields per voxel in mixed bricks | Empty-brick distances exist (§4.3 item 4); with them off the march is unchanged within noise | Small: 1–2 voxel steps per ray remain | A byte per voxel | Low | Not now |
 | Per-pixel temporal start (each pixel's own last distance, not the tile's least) | Rays then start nearer their hit with the eye still or turning | Modest: the 2-cell margin dominates at distance | A full-resolution distance target | Low | Maybe, after the above |
@@ -779,7 +779,77 @@ figures are not A4b's):
 
 **The choice.** The temporal start while moving and the kept frame first (the moving and the
 still cases, cheap and exact), then the if-if loop (the far case's divergence), then the column
-search's cost if it is still what dominates far away.
+search's cost if it is still what dominates far away. (As built, below: the if-if loop measured
+slower and was dropped; the column search's cost was cut by its slope rule.)
+
+### A4c as built (2026-10-19)
+
+**1. The temporal start while the eye moves.** A4b trusted last frame's distances only with the eye
+still, since a surface hidden behind a near occluder can appear in a strip as wide as the
+parallax. A4c trusts them for the space last frame's rays actually crossed, wherever this frame's
+eye is:
+
+- **The footprint.** A stretch `[t0, t1]` of a tile's pixel rays is the piece of the cone between
+  its four corner rays. Its 8 corner points, taken relative to last frame's eye, are projected
+  into last frame's image; the piece projects inside their rect, widened by 2 px. Every point of
+  it is within `t1 + s` of last frame's eye, where `s` is how far the eye moved. So the stretch is
+  clear if last frame's least clear distance over the rect, less `s` and A4b's margin of two
+  cone-level cells, reaches `t1`. Nothing a ray now sees can be nearer than that without having
+  been in last frame's cleared space, so disocclusion needs no test: a newly visible surface lies
+  behind last frame's distances.
+- **A min pyramid** of last frame's tile distances (a reduce pass, `reduce_main`, after the march)
+  reads the rect in 4 loads, at the mip where it spans at most 2 texels a side.
+- **Changed data.** The nodes put or removed since last frame (`Dirty::regions`, as level-0 boxes,
+  `Dirty::boxes`, at most 16 in the uniforms: merged per level, then into one, beyond that) are
+  not trusted: a stretch whose box meets one is left to the box test. Streaming no longer turns the
+  temporal start off.
+- **Cone-LOD bands.** Last frame's rays only vouch for the level they marched at, and a point is up
+  to `s` nearer or farther than it was, so its cone level can differ. A stretch is trusted only
+  inside one band from both eyes (ending `s` before the band's end); the `2s` around each band's
+  end is the box test's.
+- **The LOD-switch rule.** A ray the rule held at a finer level than its cone level vouches only
+  for the finer level from there: the march's clear distance now stops where that first happened
+  (`wait_t`). This also cut the still-eye outcome changes in the crafted section views (356 → 48).
+- **One jump per band.** Testing every segment of the beam's walk cost the beam pass more than the
+  march saved (the beam pass is latency-bound: one thread per tile, a dependent chain of tests).
+  The walk now tries, once per band, to jump from where it is to the tile's own last distance less
+  the margin (`temporal_goal`); if the footprint's least distance falls short, it jumps as far as
+  that reaches (a shorter stretch's footprint lies inside it) and otherwise leaves the band to the
+  box test. Within `8 s` of the eye it uses the box test alone (the footprint is too wide there).
+  The tile's corner rays are kept as vectors in last frame's axes: an array of them spilled.
+- **Switches:** `?marchmoving=0` (A4b's still-eye start); the bench's `march-a4b`.
+- **Correctness.** The per-pixel GPU check draws each view after three last frames: the view
+  turned (A4b's), and turned from an eye 1.5 m behind and 1.5 m ahead. **Red → green:** before the
+  band rule it found 3 starts past a hit (the section views, after a step back, start 39 m against
+  a hit at 21 m); with it, none, over 36 views and 147,456 px (ids and records still exact, `t`
+  within 2 ULP). On generated terrain with the eye moving 0.5 m a frame (`DWELL_PERF_MOVE`,
+  `DWELL_PERF_CHECK`): no start past a hit; outcome changes only 540 m up, 0.05–0.09 % of rays, at
+  LOD switches (the beam alone: 0.03–0.04 %).
+
+**2. Keeping an unchanged frame.** With the same eye, view axes, field of view, size, targets and
+settings as last frame, and no brick uploaded, the march's outputs (depth, ids, hit records) are
+still right, so the beam, march and reduce passes are skipped and only the shade pass runs (the
+lights and the time of day can change). Bit-identical by construction; a test pins what counts as a
+change (the eye by 1e-6 m, a turn, a zoom, an edit, other targets, a setting; not the lights).
+`?marchreuse=0`, the bench's `march-noreuse`. Telemetry: `march.reused`, `march.temporal`,
+`march.changed` per frame.
+
+**3. The column search only for rays near level.** In a mixed brick the march searched the column
+mips every iteration; for a steep ray the voxel steps across the brick cost less than the search.
+The search now runs in a mixed brick only for rays with `|d.y| < 0.15`
+(`COLUMN_MIXED_MAX_DY`, in the reference and the WGSL alike, so the per-pixel check stays exact);
+empty bricks always search. Tried at 0.05–0.4: 0.15 was best on every view. `?marchsteep=0`, the
+bench's `march-nosteep`.
+
+**Tried and dropped** (native, interleaved rounds, the eye moving 0.5 m a frame):
+
+- The if-if loop (Aila & Laine): one loop whose iterations are each a voxel step or a hierarchy
+  step. 0–15 % *slower* on every view: divergence was not the cost.
+- Testing the box first and last frame's distances only where it fails; trying last frame's
+  distances only while the walk grows; ending the walk where they stop: each within ±5 % of the
+  chosen walk, or worse.
+- The column mips loaded at once, a node's column offset cached, the level-rows skip off, the
+  search off at level 0 (see the survey).
 
 ## 8. Risks
 

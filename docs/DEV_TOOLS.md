@@ -174,7 +174,13 @@ The renderer seam ([`RAY_MARCHED_RENDERER.md`](./RAY_MARCHED_RENDERER.md) §3, �
   check that compare mode itself adds no difference). The marcher is the GPU ray marcher
   (`render/march/`, A3b): it marches the whole screen and its copy pass fills its side.
   `?marchbeam=0` turns off its beam prepass and `?marchtemporal=0` its temporal start (A4b; the
-  bench's `march-nobeam` and `march-notemporal` configurations).
+  bench's `march-nobeam` and `march-notemporal` configurations); `?marchmoving=0` keeps the
+  temporal start to a still eye, `?marchreuse=0` marches every frame even when nothing changed,
+  `?marchsteep=0` searches the columns in every mixed brick (A4c; `march-a4b` is all three,
+  `march-noreuse` and `march-nosteep` one each). Those
+  technique configurations (`march-nobeam`, `march-notemporal`, `march-a4b`, `march-noreuse`,
+  `march-nosteep`) all march every frame, so views with the camera still measure the march, not a
+  kept frame: compare them with `march-noreuse`.
 - The settings menu's foot shows the renderer and a picker that switches it at runtime (no reload:
   the terrain is rebuilt from the voxels and LOD cells held). F3 shows `renderer …` before the
   render stats.
@@ -265,11 +271,17 @@ From the console: `__dwell.telemetry()`, `__dwell.telemetryFrames()`, `__dwell.t
   bench's views, timed with timestamp queries (march and shade passes), with the GPU's steps
   histogram: `cargo test --release -p dwell-client march_perf -- --ignored --nocapture`.
   `DWELL_PERF_VARIANTS='a=@file.wgsl;b=0'` times shader variants (a march module from a file,
-  `DWELL_PERF_DUMP=path` writes the current one to start from; a name starting `noshade` skips the
-  shade pass, `beamonly` times the beam prepass alone, and one containing `nobeam` or `notemporal`
-  turns off the beam prepass or the temporal start), `DWELL_PERF_CHECK=1` marches every pixel on
-  the CPU from the eye after drawing the view (and a turned one before it) and counts starts that
-  pass a hit (must be 0) and outcomes the start changes, `DWELL_PERF_ROUNDS=n` interleaves them in rounds (a shared GPU drifts),
+  `DWELL_PERF_DUMP=path` writes the current one to start from, and the beam module to
+  `path.beam`; a variant's `file.wgsl.beam` beside it, if there is one, replaces the beam module; a
+  name starting `noshade` skips the shade pass, `beamonly` times the beam prepass alone, and one
+  containing `nobeam`, `notemporal`, `still`, `nocolumns`, `nodistances`, `nosteep` or `reuse`
+  turns off the beam prepass, the temporal start, the temporal start while moving, the column
+  grids, the brick distances or the column search's slope rule, or keeps unchanged frames (off by
+  default here: the harness draws one view again and again)), each view's line also gives the beam
+  pass's own time (min/p50), `DWELL_PERF_MOVE=m` moves the eye `m` metres to the right every
+  frame, `DWELL_PERF_CHECK=1` marches every pixel on the CPU from the eye after drawing the view
+  (and a turned one before it, from an eye a frame's move away) and counts starts that pass a hit
+  (must be 0) and outcomes the start changes, `DWELL_PERF_ROUNDS=n` interleaves them in rounds (a shared GPU drifts),
   `DWELL_PERF_IMAGES=dir` writes a steps-per-ray heatmap (PGM) per view and prints steps per
   8×4 SIMD group, `DWELL_PERF_SIZE=WxH`, `DWELL_PERF_SEED`. Naga's Metal output, not Chrome's
   Tint: the bench is the measurement, this the quick loop.

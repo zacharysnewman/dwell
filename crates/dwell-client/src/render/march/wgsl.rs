@@ -51,6 +51,8 @@ pub const FLAG_BEAM: u32 = 32;
 /// Last frame's tile distances (`out_t`) are valid for this frame's temporal start: the same eye
 /// (within `MarchUniforms.eye_shift`), field of view, size and brick data (`Marcher::draw`).
 pub const FLAG_TEMPORAL: u32 = 64;
+/// In mixed bricks, the column search only for rays near level (`dwell_march::COLUMN_MIXED_MAX_DY`).
+pub const FLAG_STEEP_DDA: u32 = 128;
 
 /// The temporal start (`beam_main`, A4b and A4c): a segment of a tile's beam is clear if last
 /// frame's rays found clear every point of it. Its footprint in last frame's image is widened by
@@ -122,6 +124,7 @@ pub fn constants() -> Vec<(&'static str, Value)> {
         ("FLAG_DATA", U32(FLAG_DATA)),
         ("FLAG_BEAM", U32(FLAG_BEAM)),
         ("FLAG_TEMPORAL", U32(FLAG_TEMPORAL)),
+        ("FLAG_STEEP_DDA", U32(FLAG_STEEP_DDA)),
         ("TEMPORAL_BORDER", I32(TEMPORAL_BORDER)),
         ("MAX_DIRTY", U32(MAX_DIRTY as u32)),
         ("TEMPORAL_BAND_EPS", F32(TEMPORAL_BAND_EPS)),
@@ -650,7 +653,7 @@ fn march(start: f32) -> Result {
         let cols = node_columns[ni];
         var column = false;
         var col: Region;
-        if ((u.flags & FLAG_COLUMNS) != 0u && cols != COLUMNS_NONE && (!mixed || abs(rd.y) < COLUMN_MIXED_MAX_DY)) {
+        if ((u.flags & FLAG_COLUMNS) != 0u && cols != COLUMNS_NONE && (!mixed || (u.flags & FLAG_STEEP_DDA) == 0u || abs(rd.y) < COLUMN_MIXED_MAX_DY)) {
             let scale = bitcast<f32>((127u - l) << 23u);
             var m = min(mip_guess, COLUMN_MIPS - 1u);
             let r = region(cols, m, local, nlo, nhi, l, scale);

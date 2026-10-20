@@ -217,7 +217,10 @@ fn an_unchanged_frame_keeps_its_march_and_any_change_marches_again() {
         m.reused
     };
     assert!(!draw(&mut m, &frame, &targets), "the first frame marches");
-    assert!(draw(&mut m, &frame, &targets), "the same frame again is kept");
+    assert!(
+        draw(&mut m, &frame, &targets),
+        "the same frame again is kept"
+    );
     assert!(draw(&mut m, &frame, &targets));
     // The eye moves by a hair: marched again.
     let mut moved = frame.clone();
@@ -264,4 +267,7 @@ fn the_page_query_switches_the_beam_prepass() {
     assert!(s.moving && s.reuse);
     s.apply_query("?marchmoving=0&marchreuse=off");
     assert!(!s.moving && !s.reuse);
+    assert!(s.steep_dda);
+    s.apply_query("?marchsteep=0");
+    assert!(!s.steep_dda);
 }

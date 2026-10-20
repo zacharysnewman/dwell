@@ -204,7 +204,11 @@ fn frame_for(eye: [f64; 3], yaw: f64, pitch: f64, face: f64) -> MarchFrame {
 
 /// The last frames each view is drawn after: a name, and how far along the view (metres) last
 /// frame's eye was.
-const LAST_FRAMES: [(&str, f64); 3] = [("a turn", 0.0), ("a step forward", -1.5), ("a step back", 1.5)];
+const LAST_FRAMES: [(&str, f64); 3] = [
+    ("a turn", 0.0),
+    ("a step forward", -1.5),
+    ("a step back", 1.5),
+];
 
 /// The scenes and their views: (scene builder, views).
 type Scene = (&'static str, fn(&mut Marcher), Vec<View>);
@@ -314,9 +318,8 @@ pub async fn run(device: &wgpu::Device, queue: &wgpu::Queue) -> Result<Report, S
         m.set_debug(pixels);
         build(&mut m);
         let targets = m.targets((SIZE, SIZE));
-        for ((view, eye, yaw, pitch, face), (before, step)) in views
-            .into_iter()
-            .flat_map(|v| LAST_FRAMES.map(|l| (v, l)))
+        for ((view, eye, yaw, pitch, face), (before, step)) in
+            views.into_iter().flat_map(|v| LAST_FRAMES.map(|l| (v, l)))
         {
             // Last frame: the view turned a little, from an eye `step` metres along the view
             // (twice: the first draw uploads the bricks).

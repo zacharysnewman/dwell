@@ -248,6 +248,7 @@ fn march_perf() {
         m.settings.reuse = variant.contains("reuse");
         m.settings.columns = !variant.contains("nocolumns");
         m.settings.distances = !variant.contains("nodistances");
+        m.settings.steep_dda = !variant.contains("nosteep");
         // `beamonly…`: the beam prepass alone.
         m.march_pass = !variant.starts_with("beamonly");
         m.shade &= m.march_pass;
@@ -311,7 +312,15 @@ fn march_perf() {
             ms.sort_by(f64::total_cmp);
             beam_ms.sort_by(f64::total_cmp);
             if env("DWELL_PERF_CHECK").is_some() {
-                check_starts(&device, &queue, &mut m, (at, yaw, pitch), &targets, size, moving);
+                check_starts(
+                    &device,
+                    &queue,
+                    &mut m,
+                    (at, yaw, pitch),
+                    &targets,
+                    size,
+                    moving,
+                );
             }
             if let Some(dir) = env("DWELL_PERF_IMAGES") {
                 steps_image(
@@ -332,9 +341,11 @@ fn march_perf() {
                 "  {view:<20} march p50 {:6.2} ms  min {:6.2}  beam {}  steps p50/p95/p99 {}",
                 ms[ms.len() / 2],
                 ms[0],
-                beam_ms
-                    .first()
-                    .map_or("–".into(), |b| format!("{:.2}/{:.2}", b, beam_ms[beam_ms.len() / 2])),
+                beam_ms.first().map_or("–".into(), |b| format!(
+                    "{:.2}/{:.2}",
+                    b,
+                    beam_ms[beam_ms.len() / 2]
+                )),
                 s.map_or("–".into(), |s| format!(
                     "{}/{}/{} mean {:.1}",
                     s.median, s.p95, s.p99, s.mean

@@ -40,9 +40,7 @@ pub use renderer::{
 
 /// Words of `MarchUniforms` (wgsl.rs; a test checks the struct's size).
 pub const MARCH_UNIFORM_WORDS: usize =
-    dwell_march::layout::LEVEL_COUNT * dwell_march::layout::LEVEL_WORDS
-        + 48
-        + 8 * wgsl::MAX_DIRTY;
+    dwell_march::layout::LEVEL_COUNT * dwell_march::layout::LEVEL_WORDS + 48 + 8 * wgsl::MAX_DIRTY;
 
 pub const COLOR: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
 pub const DEPTH: wgpu::TextureFormat = wgpu::TextureFormat::R32Float;
@@ -73,6 +71,8 @@ pub struct MarchSettings {
     /// §4.3 items 3 and 4.
     pub columns: bool,
     pub distances: bool,
+    /// A4c: in mixed bricks, the column search only for rays near level.
+    pub steep_dda: bool,
     /// §4.3 item 5: the beam prepass gives each tile of pixels a start distance.
     pub beam: bool,
     /// §4.3 item 5: with the eye still, a tile starts from last frame's distances instead
@@ -101,6 +101,7 @@ impl Default for MarchSettings {
             max_t: 1.0e6,
             columns: true,
             distances: true,
+            steep_dda: true,
             beam: true,
             temporal: true,
             moving: true,
@@ -115,7 +116,8 @@ impl MarchSettings {
     /// The page's dev switches for the march (local builds, `bench --compare` configurations'
     /// `params`): `?marchbeam=0` turns the beam prepass off, `?marchtemporal=0` the temporal
     /// start, `?marchmoving=0` the temporal start while the eye moves (A4b's still-eye one),
-    /// `?marchreuse=0` keeping an unchanged frame's march.
+    /// `?marchreuse=0` keeping an unchanged frame's march, `?marchsteep=0` the column search's
+    /// slope rule in mixed bricks.
     pub fn apply_query(&mut self, search: &str) {
         for (k, v) in search
             .trim_start_matches('?')
@@ -128,6 +130,7 @@ impl MarchSettings {
                 "marchtemporal" => self.temporal = on,
                 "marchmoving" => self.moving = on,
                 "marchreuse" => self.reuse = on,
+                "marchsteep" => self.steep_dda = on,
                 _ => {}
             }
         }
@@ -178,15 +181,15 @@ impl PrevFrame {
             && self.right == frame.right
             && self.up == frame.up
             && self.tan == frame.tan
-            && (s.step_cap, s.lod_pixels, s.max_t, s.columns, s.distances, s.debug)
+            && (s.step_cap, s.lod_pixels, s.max_t, s.debug)
                 == (
                     settings.step_cap,
                     settings.lod_pixels,
                     settings.max_t,
-                    settings.columns,
-                    settings.distances,
                     settings.debug,
                 )
+            && (s.columns, s.distances, s.steep_dda)
+                == (settings.columns, settings.distances, settings.steep_dda)
     }
     /// How far the eye moved since (metres).
     fn shift(&self, frame: &MarchFrame) -> f64 {
@@ -705,8 +708,12 @@ impl Marcher {
                 label: Some("beam variant"),
                 source: wgpu::ShaderSource::Wgsl(source.into()),
             });
-        self.beam_pipeline =
-            Self::march_pipeline(&self.device, &self.beam_pipeline_layout, &module, "beam_main");
+        self.beam_pipeline = Self::march_pipeline(
+            &self.device,
+            &self.beam_pipeline_layout,
+            &module,
+            "beam_main",
+        );
     }
 
     fn stats_buffer(device: &wgpu::Device, words: usize) -> wgpu::Buffer {
@@ -916,6 +923,9 @@ impl Marcher {
         if st.distances {
             flags |= wgsl::FLAG_DISTANCES;
         }
+        if st.steep_dda {
+            flags |= wgsl::FLAG_STEEP_DDA;
+        }
         if st.beam {
             flags |= wgsl::FLAG_BEAM;
         }
@@ -989,6 +999,7 @@ impl Marcher {
             lod_pixels: self.settings.lod_pixels,
             columns: self.settings.columns,
             distances: self.settings.distances,
+            steep_dda: self.settings.steep_dda,
         }
     }
 
@@ -1027,9 +1038,10 @@ impl Marcher {
             && !debug
             && bytes == 0
             && self.data_group.is_some()
-            && self.prev.as_ref().is_some_and(|p| {
-                p.same_view(frame, targets.size, targets.serial, &self.settings)
-            });
+            && self
+                .prev
+                .as_ref()
+                .is_some_and(|p| p.same_view(frame, targets.size, targets.serial, &self.settings));
         self.reused = reuse;
         crate::telemetry::sample("march.reused", f64::from(u8::from(reuse)));
         if reuse {
@@ -1049,7 +1061,10 @@ impl Marcher {
         let (max_shift, data_ok) = if self.settings.moving {
             (TEMPORAL_MAX_SHIFT, true)
         } else {
-            (TEMPORAL_STILL_SHIFT, bytes == 0 && self.data_group.is_some())
+            (
+                TEMPORAL_STILL_SHIFT,
+                bytes == 0 && self.data_group.is_some(),
+            )
         };
         let prev = self.prev.take().filter(|p| {
             self.settings.beam
@@ -1066,9 +1081,9 @@ impl Marcher {
         crate::telemetry::sample("march.temporal", f64::from(u8::from(self.temporal_used)));
         crate::telemetry::sample("march.changed", self.gpu.changed.len() as f64);
         let u = self.uniform_words_with(frame, targets.size, debug, prev.as_ref());
-        self.prev = self.march_pass.then(|| {
-            PrevFrame::of(frame, targets.size, targets.serial, self.settings)
-        });
+        self.prev = self
+            .march_pass
+            .then(|| PrevFrame::of(frame, targets.size, targets.serial, self.settings));
         self.queue
             .write_buffer(&self.uniforms, 0, bytemuck::cast_slice(&u));
         if self.data_group.is_none() {

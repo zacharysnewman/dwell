@@ -513,7 +513,10 @@ mod tests {
         s.put(2, [-1, 3, 0], &NodeBuild::Air);
         s.remove(0, [10, 10, 10]);
         let d = s.take_dirty();
-        assert_eq!(d.regions, vec![(0, [10, 10, 10]), (2, [-1, 3, 0]), (0, [10, 10, 10])]);
+        assert_eq!(
+            d.regions,
+            vec![(0, [10, 10, 10]), (2, [-1, 3, 0]), (0, [10, 10, 10])]
+        );
         // A node at level l spans 2^(l+5) level-0 cells a side.
         assert_eq!(
             d.boxes(8),

@@ -101,6 +101,9 @@ pub struct MarchParams {
     pub columns: bool,
     /// §4.3 item 4: skip empty bricks by their distance.
     pub distances: bool,
+    /// A4c: in mixed bricks, search the columns only for rays near level
+    /// ([`COLUMN_MIXED_MAX_DY`]).
+    pub steep_dda: bool,
 }
 
 impl Default for MarchParams {
@@ -112,6 +115,7 @@ impl Default for MarchParams {
             lod_pixels: 4.0,
             columns: true,
             distances: true,
+            steep_dda: true,
         }
     }
 }
@@ -544,8 +548,8 @@ impl Scene {
             let cols = self.node_columns[ni];
             // The largest column region the ray clears, and where it leaves it.
             let mut column = None;
-            if p.columns && cols != COLUMNS_NONE && (!mixed || rm.d[1].abs() < COLUMN_MIXED_MAX_DY)
-            {
+            let search = !mixed || !p.steep_dda || rm.d[1].abs() < COLUMN_MIXED_MAX_DY;
+            if p.columns && cols != COLUMNS_NONE && search {
                 let words = &self.columns[cols as usize..cols as usize + COLUMN_WORDS];
                 let scale = 1.0 / (1u32 << l) as f32;
                 for m in (0..COLUMN_MIPS).rev() {

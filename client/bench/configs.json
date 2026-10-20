@@ -30,9 +30,15 @@
     },
     {
       "name": "march-a4b",
-      "notes": "Ray-marched at full resolution as A4b left it: the temporal start only while the eye is still and no brick uploaded, and every frame marched (A4c's before).",
+      "notes": "Ray-marched at full resolution as A4b left it: the temporal start only while the eye is still and no brick uploaded, the column search in every mixed brick, and every frame marched (A4c's before).",
       "renderer": "march",
-      "params": { "marchmoving": "0", "marchreuse": "0" }
+      "params": { "marchmoving": "0", "marchreuse": "0", "marchsteep": "0" }
+    },
+    {
+      "name": "march-nosteep",
+      "notes": "Ray-marched at full resolution, every frame marched, with the column search in every mixed brick (before A4c's slope rule).",
+      "renderer": "march",
+      "params": { "marchsteep": "0", "marchreuse": "0" }
     },
     {
       "name": "march-noreuse",
