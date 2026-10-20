@@ -81,6 +81,21 @@ level covers the same share of the tile as the full-size tile (coverage-preservi
   without MSAA) between those distances, which must end within the smallest full-detail distance
   (96 m, `gen.mjs` checks it), so plants are gone before chunks meet the LOD and nothing pops. The
   LOD draws cutout blocks without a solid as air.
+- **Sitting on the support** (owner, 2026-10-20: *"Make the grass align (sit down) when over a half
+  block"*): `"cross": { "sitOnSupport": true }`, the default. Adaptive natural tops are often lower
+  than their cell's top (a level field rests at half height; slopes and pyramids are lower still
+  under parts of the cell), so a plant at its cell's floor floated up to ½ m above the ground. A
+  plant that sits is drawn on its support's solid: each foot is lowered by
+  `dwell_blocks::shape::plant_sink` (the gap between the support cell's top and its solid's top
+  under that foot, `solid_span_at(shape, x, z).hi`; on face B the mirror) and the top by the same
+  amount, so a plant on a slope follows it foot by foot, keeps its height, and still sways only at
+  the top. Over a full cube, or nothing, nothing changes. The mesher reads the support's derived
+  shape exactly, even in the apron's bottom row; an edit beside the support re-meshes the plant's
+  chunk through the usual neighbour marking (an edit marks every chunk within one cell of it, and
+  every cell that changes a support's shape is within one cell of the plant). `false` keeps the
+  plant on its cell's floor (the fixture `test:reed` shows it by data alone). Registry sync: an
+  optional last byte of the `CROSS` look field, written only when false, so payloads for sitting
+  plants are unchanged.
 - Crosses have `"shape": "empty"`: no collision, players walk through.
 
 ## 5. Placement rules
@@ -95,7 +110,10 @@ Generic block data, checked by the server's edit validation (`dwell_world::edit:
   (broken, or replaced), the block is removed too (left as air, or water if flooded), in the same
   `VoxelModification` batch (`dwell_world::edit::unsupported_after`).
 - `"selectionBox": [x0, y0, z0, x1, y1, z1]` — a smaller box in the cell for targeting, the
-  server's line-of-sight check and the outline.
+  server's line-of-sight check and the outline (`dwell_world::edit::target_box`). On face B it is
+  turned to stand on that face's ground; a plant that sits on its support (§4) sinks it by the
+  support's `plant_sink` under the box's middle, so it may reach into the support's cell, where the
+  targeting ray also meets it.
 - `"medium": "air" | "water"` — what the block may stand in. **Air** (tall grass): placing it into
   a liquid is refused (`EditCheck::WrongMedium`), a region edit skips those cells, and an air
   plant that would end up flooded gives way to water in the same batch (water doesn't flow yet,
