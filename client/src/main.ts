@@ -686,7 +686,7 @@ async function start(): Promise<App | null> {
     },
     outline: () => client.outline(),
     setOutline: (name) => client.setOutline(name),
-    compare:() => client.compareState() as CompareState | null,
+    compare: () => client.compareState() as CompareState | null,
     setCompare: (view, divider) => {
       client.setCompare(view, divider);
     },
