@@ -1043,7 +1043,9 @@ impl LodSystem {
 
     /// Refine while cells project larger than the pixel error — in every direction, not only in
     /// view: detail depends on distance alone, so turning shows what is already loaded instead of
-    /// popping in. Where the camera looks only decides what loads first (schedule).
+    /// popping in. Where the camera looks only decides what loads first (schedule). The spyglass
+    /// (docs/SPYGLASS.md) is the exception: inside its narrow view cells are measured at its
+    /// magnification, outside it at the unzoomed FOV's.
     fn refine(&self, id: LodId, frustum: &Frustum) -> bool {
         let n = self.n(id);
         self.refine_box(n.coord, n.lo, n.hi, frustum)
@@ -1057,7 +1059,7 @@ impl LodSystem {
         {
             return true;
         }
-        cell_size(coord.level) as f64 / d * frustum.pixels_per_radian
+        cell_size(coord.level) as f64 / d * frustum.pixels_per_radian_for(lo, hi)
             > self.options.pixel_error * self.error_scale
     }
 

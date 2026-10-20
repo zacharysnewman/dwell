@@ -1572,7 +1572,8 @@ impl Renderer {
     pub fn march_frame(&self) -> march::MarchFrame {
         let basis = aim(self.yaw, self.pitch, self.face, self.flip);
         let aspect = f64::from(self.size.0) / f64::from(self.size.1);
-        let tan_y = (vertical_fov(aspect).to_radians() / 2.0).tan();
+        // The frame's FOV (the speed boost, the spyglass): the rays and the cone LOD follow it.
+        let tan_y = (self.frame_fov().to_radians() / 2.0).tan();
         let f3 = |v: V3| v.map(|x| x as f32);
         march::MarchFrame {
             uniforms: self.frame_uniforms(&basis, NEAR_PLANE, FAR_PLANE).to_vec(),
@@ -3548,6 +3549,36 @@ mod tests {
         let narrow = PassView::new([0.0; 3], [0.0, 0.0, 1.0], vertical_fov(aspect), aspect);
         let wide = PassView::new([0.0; 3], [0.0, 0.0, 1.0], 80.0, aspect);
         assert!(wide.stretch > narrow.stretch);
+    }
+
+    #[test]
+    fn the_marcher_draws_with_the_fov_the_game_chose() {
+        // Regression (the spyglass, docs/SPYGLASS.md): the marcher's rays and its cone LOD came
+        // from the screen's own FOV, so it ignored the speed boost and would ignore the zoom.
+        let mut r = noop_renderer();
+        r.resize(1600, 900, 1.0);
+        let aspect = 16.0 / 9.0;
+        let tan = |fov: f64| (fov.to_radians() / 2.0).tan() as f32;
+        let f = r.march_frame();
+        assert!((f.tan[1] - tan(vertical_fov(aspect))).abs() < 1e-6);
+        let narrow = dwell_look::spyglass::zoom_fov(vertical_fov(aspect), 8.0);
+        r.set_fov(Some(narrow));
+        let f = r.march_frame();
+        assert!((f.tan[1] - tan(narrow)).abs() < 1e-6, "{:?}", f.tan);
+        assert!((f.tan[0] - tan(narrow) * aspect as f32).abs() < 1e-6);
+        // Its cone LOD follows: each pixel covers an eighth of the angle, so a level lasts 8× as far.
+        let p = r.terrain.march.marcher.reference_params(&f, (1600, 900));
+        let wide = r.terrain.march.marcher.reference_params(
+            &march::MarchFrame {
+                tan: [
+                    tan(vertical_fov(aspect)) * aspect as f32,
+                    tan(vertical_fov(aspect)),
+                ],
+                ..f.clone()
+            },
+            (1600, 900),
+        );
+        assert!((wide.pixel_angle / p.pixel_angle - 8.0).abs() < 1e-3);
     }
 
     #[test]
