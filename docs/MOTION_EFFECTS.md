@@ -89,7 +89,12 @@ Part of the shared frame's composite pass (Phase 25 A1; `render/shaders.rs` `MOT
   intensity², so it is a flight effect): four taps jittered per pixel (smooth rather than ghosted
   copies), sharing the pixel's view ray and its sky with the clouds (the sky is the composite's
   costly part; over a cloudless sky of their own, the clouds faded past the blur's inner radius at
-  a hard circular edge: the owner's 2026-10-16 report).
+  a hard circular edge: the owner's 2026-10-16 report). Each tap is composited as the pixel is
+  (`composited_scene`): under the pixel's clouds wherever the deck is in front of the tap's own
+  depth (the deck seen from above, over the terrain), and in the in-cloud fog. The clouds are found
+  once per pixel as a layer (`dwell_cloud_layer`) and laid over each tap; before that, the taps
+  dropped the deck in front of the terrain, so from above at speed the clouds showed only inside
+  the blur's inner circle (the owner's 2026-10-20 report; bench `clouds-above-fast`).
 
 **Cost** (this Mac's GPU, `fly-low-fast --unthrottled`, effects off against on in one build): the
 composite pass's GPU time p50 1.13 → 1.37 ms (mean 1.39 → 1.60 ms); frame interval unchanged

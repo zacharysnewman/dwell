@@ -659,17 +659,21 @@ fn scene_depth_at(p: vec2i) -> vec2f {
 // The sky behind is the clear sky with the sun, moon and stars (`dwell_sky_bodies`) under the
 // clouds; the time of day sets the scene's saturation (lower by moonlight); dithered last.
 // The composite of one pixel (`color`: the scene tone-mapped, encoded, fogged and over the sky)
-// with the pixel's view ray (view depth 1), clear sky and sky with its clouds, which the edge
-// blur's taps share.
+// with the pixel's view ray (view depth 1), clear sky, sky with its clouds, and the clouds as a
+// layer over the scene (`front`, with the deck's distance along the ray `deck_t`: no cover unless
+// the deck is in front of the pixel's scene or the edge blur needs it), which the edge blur's taps
+// share.
 struct Composited {
     color: vec3f,
     ray: vec3f,
     clear: vec3f,
     back: vec3f,
+    front: vec4f,
+    deck_t: f32,
 };
 
-// `taps`: the edge blur will composite other pixels over this one's sky, so its clouds are found
-// even where the pixel itself is covered.
+// `taps`: the edge blur will composite other pixels along this one's ray, over its sky and under
+// its clouds, so both are found even where the pixel itself is covered or the deck is behind it.
 fn composited(p: vec2i, ndc: vec2f, taps: bool) -> Composited {
     let ray = view_ray(ndc);
     let dir = normalize(ray);
@@ -685,23 +689,45 @@ fn composited(p: vec2i, ndc: vec2f, taps: bool) -> Composited {
         let behind = dwell_sky_bodies(dir, face, frame.day, clear);
         back = dwell_clouds(behind, behind, dir, face, deck, fw, frame.clouds, frame.cloud_cfg, lights);
     }
-    var color = back;
+    var depth = 0.0;
     if (c.a > 0.0) {
-        let depth = scene_depth_at(p).x;
-        var shown = mix(scene_display(c), clear, fog_amount(ray * depth));
-        if (dwell_cloud_in_front(deck.z, length(ray), depth)) {
-            shown = dwell_clouds(shown, clear, dir, face, deck, fw, frame.clouds, frame.cloud_cfg, lights);
-        }
-        color = mix(back, shown, min(c.a, 1.0));
+        depth = scene_depth_at(p).x;
     }
-    color = dwell_cloud_fog(color, frame.cloud_inside.x, face, lights);
-    return Composited(color, ray, clear, back);
+    var front = vec4f(0.0);
+    if (taps || (c.a > 0.0 && dwell_cloud_in_front(deck.z, length(ray), depth))) {
+        front = dwell_cloud_layer(clear, dir, face, deck, fw, frame.clouds, frame.cloud_cfg, lights);
+    }
+    var s = Composited(vec3f(0.0), ray, clear, back, front, deck.z);
+    s.color = composited_scene(c, depth, s);
+    return s;
 }
 
-// The scene at pixel `p` composited along another pixel's ray and over its sky (`s`: the edge
-// blur's taps, which share the pixel's sky).
+// A scene colour `c` (premultiplied by coverage) at view depth `depth`, composited along the
+// pixel's ray `s.ray`: tone-mapped, encoded and fogged toward its clear sky, under its clouds where
+// the deck is in front of it (its hit nearer than the stored view depth), and over its sky with
+// its clouds by its coverage; last, inside the cloud, the whole view fogs toward the cloud. The
+// pixel and the edge blur's taps alike, so the blur keeps what the pixel shows.
+fn composited_scene(c: vec4f, depth: f32, s: Composited) -> vec3f {
+    var color = s.back;
+    if (c.a > 0.0) {
+        var shown = mix(scene_display(c), s.clear, fog_amount(s.ray * depth));
+        if (dwell_cloud_in_front(s.deck_t, length(s.ray), depth)) {
+            shown = dwell_cloud_over(shown, s.front);
+        }
+        color = mix(s.back, shown, min(c.a, 1.0));
+    }
+    return dwell_cloud_fog(color, frame.cloud_inside.x, frame.eye.y, cloud_lighting());
+}
+
+// The scene at pixel `p` composited along another pixel's ray, over its sky and under its clouds
+// (`s`: the edge blur's taps, which share the pixel's sky and clouds).
 fn composited_over(p: vec2i, s: Composited) -> vec3f {
-    return composited_of(textureLoad(scene_color, p, 0), scene_depth_at(p).x, s.ray, s.clear, s.back);
+    let c = textureLoad(scene_color, p, 0);
+    var depth = 0.0;
+    if (c.a > 0.0) {
+        depth = scene_depth_at(p).x;
+    }
+    return composited_scene(c, depth, s);
 }
 
 // A scene colour `c` (premultiplied by coverage) at view depth `depth` along `ray` (view depth 1),
@@ -1755,7 +1781,9 @@ mod tests {
         }
         let c = body("composited_of");
         assert!(c.contains("display(") && c.contains("fog_amount("));
-        assert!(body("composited_over").contains("composited_of("));
+        let c = body("composited_scene");
+        assert!(c.contains("display(") && c.contains("fog_amount("));
+        assert!(body("composited_over").contains("composited_scene("));
         let c = body("composited");
         assert!(
             c.contains("sky(") && c.contains("dwell_clouds(") && c.contains("dwell_cloud_deck(")
@@ -1779,16 +1807,20 @@ mod tests {
         assert_eq!(of.matches("fog_amount(").count(), 1);
         assert!(of.contains(", clear, fog_amount("));
         assert!(of.contains("mix(back, shown,"));
-        let frame = body("composited");
+        let frame = body("composited_scene");
         assert_eq!(frame.matches("fog_amount(").count(), 1);
-        assert!(frame.contains(", clear, fog_amount("));
+        assert!(frame.contains(", s.clear, fog_amount("));
         // Over the scene only where the deck is in front of it, by the stored view depth.
         let front = frame
-            .find("dwell_cloud_in_front(deck.z, length(ray), depth)")
+            .find("dwell_cloud_in_front(s.deck_t, length(s.ray), depth)")
             .expect("test");
-        assert!(frame[front..].contains("shown = dwell_clouds(shown, clear,"));
-        assert!(frame.contains("color = mix(back, shown, min(c.a, 1.0))"));
+        assert!(frame[front..].contains("shown = dwell_cloud_over(shown, s.front)"));
+        assert!(frame.contains("color = mix(s.back, shown, min(c.a, 1.0))"));
         assert!(frame.contains("dwell_cloud_fog(color, frame.cloud_inside.x"));
+        // The layer is the clouds hazed toward the clear sky, found where the deck is in front.
+        let c = body("composited");
+        assert!(c.contains("dwell_cloud_layer(clear, dir,"));
+        assert!(c.contains("dwell_cloud_in_front(deck.z, length(ray), depth)"));
         // The deck's footprint is taken before any branch (derivatives need uniform control flow).
         let c = body("composited");
         let deck = c.find("dwell_cloud_deck(").expect("deck");
@@ -1864,7 +1896,8 @@ mod tests {
         );
         assert!(m.contains("composited_over(vec2i(q), s)"));
         assert!(
-            body("composited_over").contains("s.ray, s.clear, s.back)"),
+            body("composited_over").contains("composited_scene(c, depth, s)")
+                && body("composited_scene").contains("var color = s.back;"),
             "the taps composite over the pixel's sky with its clouds"
         );
         // With the wind on, the clouds are found even where the pixel itself is covered, since
@@ -1873,5 +1906,42 @@ mod tests {
         let clouds = c.find("dwell_clouds(").expect("clouds");
         assert!(c[..clouds].contains("c.a < 1.0 || taps"));
         assert!(body("composite_fs").contains("motion_composite(s,"));
+    }
+
+    #[test]
+    fn the_edge_blur_taps_keep_the_clouds_in_front_of_the_scene() {
+        // Owner's report (2026-10-20): above the deck, looking down, moving fast, the clouds
+        // showed only inside a circle. The deck was in front of the terrain there, drawn over the
+        // scene by the pixel's composite, but the blur's taps composited the scene without it
+        // (`composited_of`: fog and sky only), so past the blur's inner radius four of the five
+        // samples were bare terrain. The taps must composite as the pixel does: under its clouds
+        // where the deck is in front of the tap's depth, and inside the in-cloud fog.
+        let src = super::source(4);
+        let body = |name: &str| {
+            let at = src.find(&format!("fn {name}(")).expect(name);
+            src[at..at + src[at..].find("\n}\n").expect("end")].to_string()
+        };
+        let over = body("composited_over");
+        assert!(
+            over.contains("composited_scene(c, depth, s)") && !over.contains("composited_of("),
+            "the taps composite as the pixel does"
+        );
+        let c = body("composited");
+        assert!(c.contains("composited_scene(c, depth, s)"));
+        // One function for the pixel and its taps: the in-front clouds by the tap's own depth
+        // along the pixel's ray, then the in-cloud fog.
+        let scene = body("composited_scene");
+        let front = scene
+            .find("dwell_cloud_in_front(s.deck_t, length(s.ray), depth)")
+            .expect("in front");
+        assert!(scene[front..].contains("shown = dwell_cloud_over(shown, s.front)"));
+        assert!(scene.contains("dwell_cloud_fog(color, frame.cloud_inside.x"));
+        // With the wind on, the layer is found even where the deck is behind the pixel's own
+        // scene: a tap may land on farther ground the deck covers.
+        let layer = c.find("dwell_cloud_layer(").expect("layer");
+        assert!(c[..layer].contains("if (taps || (c.a > 0.0 && dwell_cloud_in_front("));
+        // The layer is the clouds dwell_clouds draws, found once.
+        let look = dwell_look::clouds::cloud_wgsl(&dwell_look::clouds::CLOUDS);
+        assert!(look.contains("return dwell_cloud_over(under, dwell_cloud_layer(clear,"));
     }
 }
