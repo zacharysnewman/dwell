@@ -83,7 +83,8 @@ predicts) and **asks the player** before entering, listing what differs.
 1. **The `BlockRegistry` message** (S→C, reliable, control channel, type 80), sent by the server
    after `ClientAuth` verifies and before `Welcome`: `u16 part, u16 parts, u32 length, bytes`. The
    parts concatenate to the **registry payload**; the server splits payloads into parts of
-   at most 64 KiB less 64 bytes, so each message fits one WebRTC data channel message (64 KiB).
+   at most 64 KiB less 64 bytes, so each message fits one WebRTC data channel message (64 KiB)
+   and travels whole (larger messages are fragmented, ARCHITECTURE.md §8.2).
    `Welcome` keeps its `registry_hash` field, now the **definitions hash**: FNV-1a 64 over the
    payload bytes, for logging and for checking local mode (same build ⇒ same hash).
 2. **The registry payload** (format 1; layout pinned by golden vectors, `shared/protocol/vectors.txt`):
