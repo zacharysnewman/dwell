@@ -21,7 +21,7 @@ use dwell_sim::server::{EditPolicy, OutKind, Server, ServerConfig, SessionId};
 use dwell_world::edit::apply_chunk_changes;
 use dwell_world::structure::{Placed, load, with_structure};
 use dwell_world::{
-    CHUNK_SIZE, Chunk, ChunkCoord, ChunkGenerator, GENERATOR_FLAT, VoxelWorld, chunk_hash,
+    CHUNK_SIZE, Chunk, ChunkCoord, ChunkGenerator, FaceFrame, GENERATOR_FLAT, VoxelWorld, chunk_hash,
     flat_generator,
 };
 use ed25519_dalek::{Signer, SigningKey};
@@ -366,7 +366,7 @@ impl NetSim {
                                 Vec3::from(r.velocity),
                                 crouched,
                                 0.0,
-                                false,
+                                FaceFrame::A,
                             );
                         }
                     }
@@ -865,7 +865,7 @@ fn predictor_remote_proxy_right_after_the_first_snapshot() {
     snap.local.controller.flags = controller_flags::GROUNDED;
     snap.local.controller.ground_kind = GroundKind::Terrain;
     p.on_snapshot(&mut world, &snap);
-    p.set_remote(1, DVec3::new(-1.0, G, -0.25), Vec3::ZERO, false, 0.0, false);
+    p.set_remote(1, DVec3::new(-1.0, G, -0.25), Vec3::ZERO, false, 0.0, FaceFrame::A);
     for _ in 0..10 {
         let f = quantize_input(&Input::default(), p.next_seq());
         p.tick(&mut world, &f);

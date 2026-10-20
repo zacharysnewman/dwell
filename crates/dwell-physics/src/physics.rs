@@ -7,7 +7,7 @@ use rapier3d_f64::prelude::*;
 pub use rapier3d_f64::glamx::Vec3;
 pub use rapier3d_f64::math::Vector as DVec3;
 
-use dwell_world::MIDPLANE_Y;
+use dwell_world::{FaceFrame, MIDPLANE_Y};
 
 /// A body in the physics world (opaque: game code never sees Rapier's types).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -149,10 +149,11 @@ impl Physics {
             .map(|(h, b)| (h, b.translation().y, b.linvel().y))
             .collect();
         for (h, y, vy) in tier1 {
-            let over = y - f64::from(MIDPLANE_Y);
-            let side = if over >= 0.0 { 1.0 } else { -1.0 };
-            let depth = over.abs();
-            let toward = side * vy < 0.0;
+            // Face-local: the body's height over the midplane, and whether it moves toward it.
+            let face = FaceFrame::at_height(y);
+            let depth = face.y(y) - f64::from(MIDPLANE_Y);
+            let toward = face.vector([0.0, vy, 0.0])[1] < 0.0;
+            let side = face.sign_f64();
             let fade = if depth < self.config.flip_band {
                 if toward {
                     self.config.band_boost_gravities

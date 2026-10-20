@@ -517,7 +517,7 @@ fn a_face_b_player_slides_down_single_block_stairs_toward_the_midplane() {
     }
     let local_feet = stairs_surface(2.5, 0.5) + 0.05;
     let e = w.spawn_at(DVec3::new(2.5, MIRROR - f64::from(local_feet), 0.5), 90.0);
-    assert_eq!(w.c(e).face, -1);
+    assert_eq!(w.c(e).face, dwell_world::FaceFrame::B);
     let mut slid = 0;
     for _ in 0..ticks(3.0) {
         w.step(1);

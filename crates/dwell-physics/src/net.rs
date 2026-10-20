@@ -7,9 +7,27 @@ use dwell_protocol::{
     player_flags as pf, players, slide_flags as sf,
 };
 
+use dwell_world::FaceFrame;
+
 use crate::controller::{Cell, Input, PlayerController};
 use crate::physics::Vec3;
 use crate::query::GroundRef;
+
+/// The face a wire flag byte names by its face-B bit (`controller_flags::FACE_B`,
+/// `player_flags::FACE_B`): the netcode's face boundary (BIFACIAL_WORLD.md §11.1). Everything that
+/// reads a face off the wire goes through this and [`face_bit`].
+pub fn face_of_flags(flags: u8, face_b_bit: u8) -> FaceFrame {
+    if flags & face_b_bit != 0 {
+        FaceFrame::B
+    } else {
+        FaceFrame::A
+    }
+}
+
+/// The face-B bit `face_b_bit` set for face B (0 for face A).
+pub fn face_bit(face: FaceFrame, face_b_bit: u8) -> u8 {
+    if face.is_b() { face_b_bit } else { 0 }
+}
 
 /// Rounds half up, like JavaScript's Math.round (the client's quantizer).
 fn round_half_up(v: f32) -> i32 {
@@ -89,7 +107,7 @@ pub fn to_net(c: &PlayerController, ground_id: impl Fn(GroundRef) -> u16) -> Con
             | flag(c.climb.has_released, cf::HAS_RELEASED)
             | flag(c.swim.swimming, cf::SWIMMING)
             | flag(c.fly.flying, cf::FLYING)
-            | flag(c.face < 0, cf::FACE_B),
+            | face_bit(c.face, cf::FACE_B),
         current_x: c.horizontal.current.x,
         current_z: c.horizontal.current.z,
         external_x: c.horizontal.external.x,
@@ -125,7 +143,7 @@ pub fn from_net(
     c.climb.has_released = s.flags & cf::HAS_RELEASED != 0;
     c.swim.swimming = s.flags & cf::SWIMMING != 0;
     c.fly.flying = s.flags & cf::FLYING != 0;
-    c.face = if s.flags & cf::FACE_B != 0 { -1 } else { 1 };
+    c.face = face_of_flags(s.flags, cf::FACE_B);
     c.horizontal.current = Vec3::new(s.current_x, 0.0, s.current_z);
     c.horizontal.external = Vec3::new(s.external_x, 0.0, s.external_z);
     c.horizontal.contribution = Vec3::new(s.contribution_x, 0.0, s.contribution_z);
@@ -158,7 +176,7 @@ pub fn player_flags_of(c: &PlayerController, dead: bool) -> u8 {
         | flag(c.climb.climbing, pf::CLIMBING)
         | flag(c.swim.swimming, pf::SWIMMING)
         | flag(c.fly.flying, pf::FLYING)
-        | flag(c.face < 0, pf::FACE_B)
+        | face_bit(c.face, pf::FACE_B)
         | flag(dead, pf::DEAD)
 }
 
@@ -208,7 +226,7 @@ mod tests {
         let mut c = PlayerController::default();
         c.ground.grounded = true;
         c.crouching = true;
-        c.face = -1;
+        c.face = FaceFrame::B;
         c.horizontal.external = Vec3::new(1.5, 0.0, -2.0);
         c.vertical.accumulated_y = 3.25;
         c.jump.coyote_ticks = 400;
@@ -231,7 +249,7 @@ mod tests {
             &mut back,
         );
         assert!(back.ground.grounded && back.crouching && back.climb.has_released);
-        assert_eq!(back.face, -1);
+        assert_eq!(back.face, FaceFrame::B);
         assert_eq!(back.horizontal.external, c.horizontal.external);
         assert_eq!(back.vertical.accumulated_y, 3.25);
         assert_eq!(back.jump.coyote_ticks, 255);

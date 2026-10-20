@@ -1095,8 +1095,7 @@ impl Server {
 
     fn feet_y(&self, h: PlayerHandle) -> f64 {
         // Below the capsule's centre on face A, above it on face B.
-        self.players.position(&self.physics, h).y
-            - f64::from(self.players.controller(h).face) * f64::from(self.players.half_height(h))
+        self.players.feet(&self.physics, h)
     }
 
     fn kill(&mut self, id: SessionId, cause: DamageCause) {
@@ -1598,7 +1597,7 @@ impl Server {
         } else {
             body.eye_height
         };
-        let face = f64::from(c.face);
+        let face = c.face.sign_f64();
         [
             p.x,
             p.y - face * f64::from(self.players.half_height(h)) + face * f64::from(eye),

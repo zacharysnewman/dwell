@@ -4,7 +4,7 @@
 //! and WASM builds agree bit for bit.
 
 use dwell_blocks::{Facing, VoxelShape, info, shape::solid_span_at};
-use dwell_world::{MIDPLANE_Y, SEA_LEVEL, VoxelWorld, chunk_distance, chunk_of, mirror_y};
+use dwell_world::{FaceFrame, MIDPLANE_Y, SEA_LEVEL, VoxelWorld, chunk_distance, chunk_of, mirror_y};
 use rapier3d_f64::prelude::*;
 
 use crate::config::PlayerControllerConfig;
@@ -263,8 +263,8 @@ pub struct PlayerController {
     pub sprint_slide: SprintSlideState,
     pub platform: PlatformState,
     pub target_velocity: Vec3,
-    /// The face the layers' vertical quantities are in: +1 face A, −1 face B.
-    pub face: i8,
+    /// The face frame the layers' vertical quantities are in.
+    pub face: FaceFrame,
     pub events: u32,
     /// Impact speed of this tick's Landed event.
     pub landed_speed: f32,
@@ -287,7 +287,7 @@ impl Default for PlayerController {
             sprint_slide: SprintSlideState::default(),
             platform: PlatformState::default(),
             target_velocity: Vec3::ZERO,
-            face: 1,
+            face: FaceFrame::A,
             events: 0,
             landed_speed: 0.0,
         }
@@ -460,15 +460,11 @@ impl Players {
             .unwrap_or(self.players.len()) as PlayerHandle;
         let mut c = PlayerController::default();
         c.input.look_yaw = yaw;
-        c.face = if feet.y >= f64::from(MIDPLANE_Y) {
-            1
-        } else {
-            -1
-        };
+        c.face = FaceFrame::at_height(feet.y);
         let center = feet
             + DVec3::new(
                 0.0,
-                f64::from(c.face) * f64::from(cfg.half_height(false)),
+                c.face.sign_f64() * f64::from(cfg.half_height(false)),
                 0.0,
             );
         // Creative flight at its top speed is far faster than the engine's default limit.
@@ -579,10 +575,10 @@ impl Players {
     }
     /// World height of the feet (a face-B player's feet are above its head).
     pub fn feet(&self, physics: &Physics, h: PlayerHandle) -> f64 {
-        self.position(physics, h).y - f64::from(self.get(h).c.face) * f64::from(self.half_height(h))
+        self.position(physics, h).y - self.get(h).c.face.sign_f64() * f64::from(self.half_height(h))
     }
     pub fn head(&self, physics: &Physics, h: PlayerHandle) -> f64 {
-        self.position(physics, h).y + f64::from(self.get(h).c.face) * f64::from(self.half_height(h))
+        self.position(physics, h).y + self.get(h).c.face.sign_f64() * f64::from(self.half_height(h))
     }
 
     /// Restores a player's full state (controller + body), e.g. from a snapshot before replaying.
@@ -682,13 +678,12 @@ impl Players {
     /// Switches the face (mirroring the layers' vertical state) once the body is across.
     fn update_face(physics: &Physics, p: &mut Player) {
         let c = &mut p.c;
-        let over = physics.position(p.body).y - f64::from(MIDPLANE_Y);
-        let face = if c.face > 0 {
-            if over < -FACE_HYSTERESIS { -1 } else { 1 }
-        } else if over > FACE_HYSTERESIS {
-            1
+        // How far the body is past the midplane toward its face's up (negative: across it).
+        let over = c.face.y(physics.position(p.body).y) - f64::from(MIDPLANE_Y);
+        let face = if over < -FACE_HYSTERESIS {
+            c.face.other()
         } else {
-            -1
+            c.face
         };
         if face == c.face {
             return;
@@ -784,9 +779,7 @@ impl Players {
         Self::update_face(physics, p);
         let c = &mut p.c;
         // A face-B player is upside down: its right is the face-local frame's left.
-        if c.face < 0 {
-            c.input.move_x = -c.input.move_x;
-        }
+        c.input.move_x = c.face.handed(f64::from(c.input.move_x)) as f32;
         let length_sq = c.input.move_x * c.input.move_x + c.input.move_y * c.input.move_y;
         if length_sq > 1.0 {
             let length = length_sq.sqrt();
