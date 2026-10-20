@@ -36,7 +36,9 @@ describe('block registry (docs/BLOCK_REGISTRY.md)', () => {
   });
 
   it('writes every property, keys alphabetical; a block without properties is just its id', () => {
-    expect(stateString(stateId('dwell:stone'))).toBe('dwell:stone');
+    expect(stateString(stateId('dwell:water'))).toBe('dwell:water');
+    // A name alone is the block's default state.
+    expect(stateString(stateId('dwell:stone'))).toBe('dwell:stone[flooded=false]');
     const parsed = parseState('dwell:ladder[flooded=true,facing=east]');
     expect(stateString('id' in parsed ? parsed.id : -1)).toBe(
       'dwell:ladder[facing=east,flooded=true]',

@@ -439,7 +439,7 @@ mod tests {
         interaction.update(&mut world, Some([3.5, 1.6, 0.0]), 0.0, 0.0, 1);
         let (cell, material) = interaction.placement().unwrap();
         assert_eq!(cell, [3, 0, 3]);
-        assert_eq!(name(material), "dwell:sand");
+        assert_eq!(name(material), "dwell:sand[flooded=false]");
         let m = interaction.act(EditAction::Place, 0.0).unwrap();
         assert_eq!(request(&m).material, material);
     }

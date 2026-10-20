@@ -227,8 +227,12 @@ for (const ns of namespaces) {
     }
     if (def.shape === 'shaped' && !def.slopeFamily) fail(`${id}: shaped blocks come from shapeFamilies`);
     if (def.adaptive !== undefined && typeof def.adaptive !== 'boolean') fail(`${id}: adaptive is true or false`);
-    if (def.adaptive && (def.shape !== 'full' || props.length || look !== 'cube'))
-      fail(`${id}: only a full cube block without properties can be adaptive (it is shaped from its neighbours)`);
+    // An adaptive block's only property may be `flooded` (false, true): the sea's water in its open
+    // part (docs/WATER_RENDERING.md §9). Anything else would be shaped over by its neighbours.
+    const floodedOnly =
+      props.length === 1 && props[0].name === 'flooded' && props[0].values.join() === 'false,true';
+    if (def.adaptive && (def.shape !== 'full' || (props.length && !floodedOnly) || look !== 'cube'))
+      fail(`${id}: only a full cube block, without properties but flooded [false, true], can be adaptive (it is shaped from its neighbours)`);
     const count = props.reduce((n, p) => n * p.values.length, 1);
     const fluid = blockFluid(id, def, fluids);
     const block = { id, def, props, first: states.length, count, look, fluid };

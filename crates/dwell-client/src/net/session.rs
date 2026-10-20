@@ -700,8 +700,11 @@ mod tests {
             panic!("{:?}", s.state())
         };
         assert_eq!(hash, definitions_hash(&payload));
-        assert_eq!(differences.different[0].name, "dwell:sand");
-        assert_eq!(differences.added[0].name, "test:session_glow");
+        assert_eq!(differences.different[0].name, "dwell:sand[flooded=false]");
+        assert_eq!(
+            differences.added[0].name,
+            "test:session_glow[flooded=false]"
+        );
         assert!(
             s.next_game().is_none(),
             "nothing reaches the game while asking"
@@ -788,7 +791,10 @@ mod tests {
         use dwell_blocks::{info, require};
         let (payload, p) = ladderless_registry();
         let mut s = joined_with(&payload);
-        let (water, sand) = (server_id(&p, "dwell:water"), server_id(&p, "dwell:sand"));
+        let (water, sand) = (
+            server_id(&p, "dwell:water"),
+            server_id(&p, "dwell:sand[flooded=false]"),
+        );
         assert_ne!(water, require("dwell:water"), "shifted on the server");
         let mut voxels = vec![0u16; CHUNK_VOLUME];
         voxels[1] = water;
@@ -830,7 +836,7 @@ mod tests {
             panic!()
         };
         assert_eq!(c.voxels[1], require("dwell:water"));
-        assert_eq!(info(c.voxels[2]).name, "dwell:sand");
+        assert_eq!(info(c.voxels[2]).name, "dwell:sand[flooded=false]");
         assert_eq!(info(c.voxels[2]).density_kg_m3, 5.0, "the server's sand");
         let Message::VoxelModification(v) = &got[1] else {
             panic!()
@@ -856,7 +862,10 @@ mod tests {
         use dwell_blocks::require;
         let (payload, p) = ladderless_registry();
         let mut s = joined_with(&payload);
-        let (water, sand) = (server_id(&p, "dwell:water"), server_id(&p, "dwell:sand"));
+        let (water, sand) = (
+            server_id(&p, "dwell:water"),
+            server_id(&p, "dwell:sand[flooded=false]"),
+        );
         let place = |material| {
             Message::BlockEditRequest(BlockEditRequest {
                 action: BlockEditAction::Place,

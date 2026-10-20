@@ -446,6 +446,58 @@ come with W5a). A CPU adapter (SwiftShader in CI) draws Low whatever is chosen (
 **Look:** the shore, edge and under-the-surface views were compared before and after: the same look, with
 the caustic and ripple patterns in other places (new hashes and periods).
 
+## 9. Shores: water meets the land (2026-10-20)
+
+Owner, 2026-10-20: along shores the water "piles up" against the land and stands higher than it;
+flat, unlit blue walls stand at the banks. Measured on `main` (1 m cells, adaptive shapes; 5 seeds,
+8 coast windows of 128² each; `cargo run --release -p dwell-mesh --example shore_water`):
+
+- The sea's top row is y = `SEA_LEVEL` − 1 = 31, drawn at 31.875 (`surfaceDrop` 0.125). 88–92 % of
+  the natural top blocks in that row were **dry**, resting at 31.5, 0.375 m under the drawn water.
+  945–1,687 per seed stood right beside drawn water. The generator filled water only into empty
+  cells below sea level. The open half of a shaped top block below sea level stayed air, and the
+  mesher floods a shaped block only when water is over it or in one of its 4 neighbours, so only
+  the first row of beach was wet. (The LOD already counted those columns as sea: near and far
+  disagreed.)
+- Every water side face at the shores (1.8k–2.6k quads per seed) ran to the top of its cell, 32.0.
+  That is above the drawn surface, and over the whole side, including behind the solid part of a
+  shaped neighbour.
+- Those faces turn their front toward the bank, so from the water side the eye sees their back.
+  The water shader drew any back face as "seen from inside the fluid" (the W4 stub's flat body
+  colour, nearly opaque): the flat blue walls.
+- The adaptive rules' shore slopes were not at fault. Once that row is wet, the step slope from a
+  wet top block (31.5) to the land above it (32.0) crosses the water at 31.875, mid-slope.
+
+**The rule.**
+
+1. **The sea fills every open space below sea level, including the open part of a shaped top
+   block.** The generator (version 17) writes each top voxel below sea level as its block's
+   `flooded=true` state. The natural blocks gained a `flooded` property for this. An adaptive
+   block may carry that one property and no other (`shared/blocks/gen.mjs` rejects any other).
+   A flooded natural block holds water only while it is a shaped top block
+   (`dwell_blocks::adaptive::flooded_at`): buried, or shaped full, it has no open part. Edits
+   follow the existing flooded rules: breaking it leaves water, and a natural block placed into
+   water is flooded. Dry land therefore starts a row up, at or above 32.0, over the water at
+   31.875. Water never stands above the dry land beside it. The surface drop stays as it was, so
+   physics' whole-cell water and the eye test are unchanged.
+2. **A fluid's side face covers only what can be seen.** It stops at the fluid's drawn surface,
+   unless more of the fluid, a flooded cell or a solid is over it. Against a shaped neighbour, it
+   covers only the part of the side above that neighbour's profile (`fluid_side` in
+   `crates/dwell-mesh/src/mesher.rs`; a hanging neighbour counts as open). Water cells' sides
+   still merge greedily, except against shaped neighbours.
+3. **A side face's back seen from the air takes the outside look** (`seen_from_inside` in the
+   water shader). Only a surface's back (a top or a bottom), or any back face while the eye is
+   under a fluid, is drawn as seen from inside.
+
+Tests: `crates/dwell-worldgen/tests/terrain.rs`
+(`the_sea_floods_the_open_part_of_every_natural_top_block_below_sea_level`,
+`no_shore_column_has_drawn_water_higher_than_the_dry_land_beside_it`) and
+`crates/dwell-mesh/src/mesher_tests.rs`
+(`fluid_side_faces_stand_only_over_the_open_part_beside_them_and_under_the_fluids_surface`: every
+fluid face is tagged as water, none stands above its surface, none against a neighbour's solid).
+All of them failed on the code before this change. This changes the terrain a seed generates
+(generator version 17, new goldens), so it ships on a new compatibility line.
+
 ## Sources
 
 - GPU Gems 2 ch. 19, generic refraction: https://developer.nvidia.com/gpugems/gpugems2/part-ii-shading-lighting-and-shadows/chapter-19-generic-refraction-simulation
