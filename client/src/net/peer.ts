@@ -2,17 +2,45 @@
 // PeerTransport and the host's HostPeer (one per guest) negotiate through the master's Room
 // (net/roomSocket.ts): SDP offer and answer, then trickled ICE candidates. The data channels are
 // the dedicated servers' (§8.1): 0 control and 1 world (reliable, ordered), 2 datagrams (unordered,
-// no retransmits), 3 lod (reliable, ordered), pre-negotiated by id.
+// no retransmits), 3 lod (reliable, ordered), pre-negotiated by id. A reliable message over the
+// link's max-message-size goes as fragments (net/fragment.ts, §8.2).
 //
 // The transport binding the guest signs in its ClientAuth (ADR 0004) is the SHA-256 of the host's
 // DTLS certificate, which the guest reads from the answer's fingerprint and the host from its own
 // certificate, so a signed join can't be replayed to another host.
 import { Channel, MAX_RELIABLE_MESSAGE_BYTES, TransportKind } from '../protocol/constants.gen';
+import { FragmentError, Reassembler, fragment, maxMessageSize } from './fragment';
 import type { Transport, TransportHandlers } from './Transport';
 
 const DATAGRAM_CHANNEL_ID = 2;
 const LOD_CHANNEL_ID = 3;
 export const PEER_CONNECT_TIMEOUT_MS = 20_000;
+
+/** Sends `bytes` on a reliable channel, in fragments if the peer can't take it whole. */
+function sendReliable(pc: RTCPeerConnection, c: RTCDataChannel, bytes: Uint8Array): void {
+  for (const part of fragment(bytes, maxMessageSize(pc))) c.send(part);
+}
+
+/** An onmessage handler that reassembles a reliable channel's messages; `bad` on a bad one. */
+function reliableReceiver(
+  deliver: (bytes: Uint8Array) => void,
+  bad: () => void,
+): (e: MessageEvent<ArrayBuffer>) => void {
+  const reassembler = new Reassembler(MAX_RELIABLE_MESSAGE_BYTES);
+  return (e) => {
+    let message: Uint8Array | null;
+    try {
+      message = reassembler.push(new Uint8Array(e.data));
+    } catch (err) {
+      if (err instanceof FragmentError) {
+        bad();
+        return;
+      }
+      throw err;
+    }
+    if (message) deliver(message);
+  };
+}
 
 /** What the two sides exchange through the Room. */
 export type SignalData =
@@ -184,11 +212,13 @@ export class PeerTransport implements Transport {
   }
 
   private listen(): void {
-    const deliver = (channel: Channel) => (e: MessageEvent<ArrayBuffer>) => {
-      if (e.data.byteLength <= MAX_RELIABLE_MESSAGE_BYTES) {
-        this.handlers?.onReliable(channel, new Uint8Array(e.data));
-      }
-    };
+    const deliver = (channel: Channel) =>
+      reliableReceiver(
+        (bytes) => this.handlers?.onReliable(channel, bytes),
+        () => {
+          this.fail('the host sent a bad message');
+        },
+      );
     this.channels.control.onmessage = deliver(Channel.control);
     this.channels.world.onmessage = deliver(Channel.world);
     this.channels.lod.onmessage = deliver(Channel.lod);
@@ -213,7 +243,7 @@ export class PeerTransport implements Transport {
   sendReliable(channel: Channel, bytes: Uint8Array): void {
     if (this.closed) return;
     if (channel !== Channel.control) throw new Error('clients send only on the control channel');
-    this.channels.control.send(bytes.slice());
+    sendReliable(this.pc, this.channels.control, bytes);
   }
 
   sendDatagram(bytes: Uint8Array): void {
@@ -279,12 +309,15 @@ export class HostPeer {
     };
     // Guests send only on control and datagrams; anything on world or lod is ignored. The guest
     // may send its ClientHello before this side has seen every channel open: it waits for onOpen.
-    this.channels.control.onmessage = (e: MessageEvent<ArrayBuffer>) => {
-      if (e.data.byteLength > MAX_RELIABLE_MESSAGE_BYTES) return;
-      const bytes = new Uint8Array(e.data);
-      if (this.open) this.handlers.onReliable(Channel.control, bytes);
-      else this.early.push(bytes);
-    };
+    this.channels.control.onmessage = reliableReceiver(
+      (bytes) => {
+        if (this.open) this.handlers.onReliable(Channel.control, bytes);
+        else this.early.push(bytes);
+      },
+      () => {
+        this.end();
+      },
+    );
     this.channels.datagrams.onmessage = (e: MessageEvent<ArrayBuffer>) => {
       if (this.open) this.handlers.onDatagram(new Uint8Array(e.data));
     };
@@ -327,7 +360,7 @@ export class HostPeer {
         : channel === Channel.lod
           ? this.channels.lod
           : this.channels.control;
-    if (c.readyState === 'open') c.send(bytes.slice());
+    if (c.readyState === 'open') sendReliable(this.pc, c, bytes);
   }
 
   sendDatagram(bytes: Uint8Array): void {

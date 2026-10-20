@@ -1,24 +1,23 @@
 //! Fragmentation of reliable messages on WebRTC data channels (ARCHITECTURE.md §8.2, ADR 0008).
 //!
 //! A data channel carries one protocol message per SCTP message, but a peer accepts SCTP messages
-//! only up to its max-message-size (the dedicated server's str0m endpoint can send at most
-//! [`MAX_WEBRTC_MESSAGE_BYTES`]), while a protocol message may be up to
-//! `MAX_RELIABLE_MESSAGE_BYTES`. So a sender splits a message larger than its link's limit into
+//! only up to its max-message-size, while a protocol message may be up to
+//! `MAX_RELIABLE_MESSAGE_BYTES`. The dedicated server's str0m endpoint has no SDP exchange, so it
+//! assumes the browser's default max-message-size (64 KiB, RFC 8841) and sends SCTP messages of at
+//! most [`MAX_WEBRTC_MESSAGE_BYTES`]; fragments are never larger than that on any link. So a sender splits a message larger than its link's limit into
 //! fragments, sent back to back on the same reliable, ordered channel:
 //!
 //! ```text
-//! FRAGMENT_TAG (0xFF) ‖ u32 little-endian total length ‖ the next bytes of the message
+//! WEBRTC_FRAGMENT_TAG (0xFF) ‖ u32 little-endian total length ‖ the next bytes of the message
 //! ```
 //!
 //! A message that fits is sent unchanged. Its first byte is its message type, never
-//! [`FRAGMENT_TAG`], so the receiver tells the two apart. Every message that fit before
+//! [`WEBRTC_FRAGMENT_TAG`] (`shared/protocol/constants.json` checks it), so the receiver tells the two apart. Every message that fit before
 //! fragmentation existed is byte-for-byte what it was; fragments appear only where the sender used
 //! to fail (str0m refused the write, a browser's `send` threw).
 
-use crate::MAX_WEBRTC_MESSAGE_BYTES;
+use crate::{MAX_WEBRTC_MESSAGE_BYTES, WEBRTC_FRAGMENT_TAG as FRAGMENT_TAG};
 
-/// The first byte of a fragment. No message type uses it (a test pins that).
-pub const FRAGMENT_TAG: u8 = 0xFF;
 /// Tag and total length.
 pub const FRAGMENT_HEADER_BYTES: usize = 5;
 

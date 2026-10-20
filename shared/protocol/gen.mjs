@@ -41,6 +41,13 @@ function validateBounds(b) {
   return b;
 }
 validateBounds(c.bounds);
+// A WebRTC fragment (ARCHITECTURE.md §8.2) is told from a whole message by its first byte.
+if (Object.values(c.messageTypes).includes(c.webrtcFragmentTag)) {
+  throw new Error(`constants.json webrtcFragmentTag ${c.webrtcFragmentTag} is a message type`);
+}
+if (!(c.webrtcFragmentTag >= 0 && c.webrtcFragmentTag <= 255)) {
+  throw new Error('constants.json webrtcFragmentTag must be a byte');
+}
 
 const maxOf = (obj) => Math.max(...Object.values(obj));
 
@@ -53,6 +60,8 @@ ts.push(`export const SIM_HZ = ${c.simHz};`);
 ts.push(`export const SNAPSHOT_HZ = ${c.snapshotHz};`);
 ts.push(`export const MAX_DATAGRAM_BYTES = ${c.maxDatagramBytes};`);
 ts.push(`export const MAX_RELIABLE_MESSAGE_BYTES = ${c.maxReliableMessageBytes};`);
+ts.push(`export const MAX_WEBRTC_MESSAGE_BYTES = ${c.maxWebrtcMessageBytes};`);
+ts.push(`export const WEBRTC_FRAGMENT_TAG = ${c.webrtcFragmentTag};`);
 ts.push(`export const CHUNK_SIZE = ${c.chunkSize};`);
 ts.push(`export const AUTH_DOMAIN_TAG = '${c.authDomainTag}';`);
 ts.push(`export const MAX_INPUTS_PER_DATAGRAM = ${c.maxInputsPerDatagram};`);
@@ -131,6 +140,8 @@ rs.push(`pub const SIM_HZ: u32 = ${c.simHz};`);
 rs.push(`pub const SNAPSHOT_HZ: u32 = ${c.snapshotHz};`);
 rs.push(`pub const MAX_DATAGRAM_BYTES: usize = ${c.maxDatagramBytes};`);
 rs.push(`pub const MAX_RELIABLE_MESSAGE_BYTES: usize = ${c.maxReliableMessageBytes};`);
+rs.push(`pub const MAX_WEBRTC_MESSAGE_BYTES: usize = ${c.maxWebrtcMessageBytes};`);
+rs.push(`pub const WEBRTC_FRAGMENT_TAG: u8 = ${c.webrtcFragmentTag};`);
 rs.push(`pub const CHUNK_SIZE: i32 = ${c.chunkSize};`);
 rs.push(`pub const AUTH_DOMAIN_TAG: &str = "${c.authDomainTag}";`);
 rs.push(`pub const MAX_INPUTS_PER_DATAGRAM: usize = ${c.maxInputsPerDatagram};`);

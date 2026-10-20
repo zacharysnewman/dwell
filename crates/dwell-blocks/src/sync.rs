@@ -29,7 +29,7 @@ pub const FORMAT: u16 = 1;
 
 /// Payloads above this are split into parts (`BlockRegistry` messages). A part and its message
 /// header (type, part, parts, length: 9 bytes; 64 reserved) fit one WebRTC data channel message,
-/// `dwell_protocol::MAX_WEBRTC_MESSAGE_BYTES`: a 64 KiB part did not, and stalled WebRTC joins.
+/// `dwell_protocol::MAX_WEBRTC_MESSAGE_BYTES`, so parts travel whole rather than as fragments.
 pub const PART_BYTES: usize = dwell_protocol::MAX_WEBRTC_MESSAGE_BYTES - 64;
 
 /// Field tags. The top bit marks a look.
@@ -1148,7 +1148,7 @@ mod tests {
     use crate::require;
 
     /// A full part, as the `BlockRegistry` message the server sends, fits one WebRTC data channel
-    /// message (a 64 KiB part was 65545 bytes and stalled the WebRTC join before Welcome).
+    /// message, so it isn't fragmented (a 64 KiB part was 65545 bytes).
     #[test]
     fn a_full_part_fits_a_webrtc_message() {
         let payload = vec![7u8; 3 * PART_BYTES + 1];
