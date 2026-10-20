@@ -75,8 +75,9 @@ stop — the closest match; Vintage Story's trees are fully parametric JSON; Vel
 - **Network**: one stage is about 50–300 voxels, 200 B–1.2 KB in one `VoxelModification` with a new
   `Growth` reason (an additive protocol change).
 - **Worldgen**: if worldgen places already-grown trees, the growth algorithm becomes terrain a seed
-  generates (public API), hashed into the terrain definition — and placement itself is deferred
-  (ADR 0031).
+  generates (public API), hashed into the terrain definition. *Since 2026-10-20 (generator
+  version 17, ADR 0042) worldgen places the owner's two pines — mature, not growing — as plain
+  voxels of the generated chunk ([`WORLD_GENERATION.md`](./WORLD_GENERATION.md) §2).*
 
 ## 5a. The owner's persistence model (2026-10-14), mapped onto Dwell
 
@@ -106,6 +107,13 @@ Chopping a tree voxel adds the node's subtree to that tree's pruned set (or the 
 set when the trunk goes) rather than editing terrain voxels. The client composes the same layers from
 the same records (sent with the chunk), so the server and client agree without streaming tree voxels.
 Phase 20 sees the composed voxels; a felled crown becomes a body and leaves the tree record pruned.
+
+**Built so far (2026-10-20), a deviation from this layer:** the pines worldgen places
+([ADR 0042](./adr/0042-structure-placements.md)) don't grow, so they are part of step 1 — the
+generated terrain — not a layer: a chunk stays a pure function of the seed, and an edited chunk is
+saved whole as today, so a chopped pine stays chopped with no tombstone. When G3 builds the layer,
+procedural trees move into it; their id is already `(placement, grid cell)` (`placements.rs`
+`Tree::cell`), and the move is a new generator version.
 
 Costs: an untouched world stores nothing for its trees; a chopped procedural tree costs one id in a
 set; a planted tree one small record. The world-file tables and the chunk message's tree records are

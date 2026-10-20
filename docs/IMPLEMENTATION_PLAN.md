@@ -44,7 +44,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 23 — Dedicated servers & packaging | ⏳ Not started |
 | 25 — Ray-marched renderer comparison | 🚧 In progress — A0 (ADR 0029), A1 (the shared frame and GPU timing; the owner approved its image differences, 2026-10-14, and the e2e suite passes on CI), A2 (the renderer seam, compare mode, bench `--compare`; its exit check done) and A3a (the CPU core: `crates/dwell-march`) built; A3b (the GPU march behind the seam, checked against the reference per pixel; its CI run outstanding) built; A4a (speed: level-rows skip, vectorised march, shade pass, the cone-LOD ring fix) and A5a (render scales 0.5/0.75 with FSR 1 or a bilateral upscale) built; A4b (the beam prepass, and the temporal start with the eye still) built: at 720p on an M1, 8.5 ms at the spawn and 17.5 ms flying (A4a: 21 and 24) against raster's whole GPU frame of 3.6–5.0 ms, and 2.2–6.6 ms at half scale with FSR 1; A4c (the optimization survey; the temporal start while the eye moves, kept unchanged frames, the column search's slope rule) built: marching every frame, 17–31 % off A4b at the spawn, the horizon, looking down, flying high and far away (Chrome, M1, measured under load), and a still, unchanged view costs only its shading (about 1 ms); A4c's three far-case picks (the per-step cost at the LOD levels, a second beam, half-rate marching) built, measured and not kept, none beating the march as it is; the cone LOD's pixel error at 8 px (−24 % flying high) left to the owner as a change of look; next: A3c (overlays over marched terrain, LOD column heights in the bricks, raster ids); outstanding: A4's phone report; A2's edit-to-visible latency and the bench's id/depth agreement (moved to A3); local builds only until the owner's decision (A7); `package.json` raised to 0.11.21, a patch release of the 0.11 line |
 | 26 — Water and fluid looks | 🚧 In progress — W1a (fluid data, the eye-under-fluid uniform) done; W2 built (it is Phase 25's A1, built once there; the owner approved its image differences, 2026-10-14); W1b (the water shader, the underwater fog stub, the water quality setting) built and checked in Chrome on an M1, outstanding: the owner's look; W3 (refraction, depth absorption, shoreline foam, sparkle, and caustics brought forward from W4, above and under the surface) built and checked in Chrome on an M1, outstanding: the owner's look and an unloaded per-tier cost measurement; W5a (reflections of land by screen-space reflection, and of the clouds, brought forward from W5 at the owner's report) built and checked in Chrome on an M1, outstanding: the owner's look and an unloaded cost measurement; water cost work (WATER_RENDERING.md §8, "Cost"): cheaper hashing, noise and caustic tiles, frame pacing against the stalls, Medium the desktop default — Medium +1.6 ms and High +1.7 ms over Low on the shore view before the reflections, which now add the most (outstanding: W5a's reflection cost against the 2/3 ms targets); next: W4; W6 only if marching is kept at A7; `package.json` raised to 0.12.1, a patch release of the 0.11 line |
-| 27 — Structure sandbox | 🚧 In progress — S0 (ADR 0031), S1 (the structure format, `gen.mjs`, the Rust loader, the playground converted), S2a (floor block, sandbox world type), S2b (the structures store: save, load through the region paste, export and import) and S3a (region edits, the region tools) done, S2a's e2e check outstanding; `package.json` raised to 0.11.0, the new compatibility line (S2a's registry change; the owner's decision, 2026-10-14); next: S3b (anchor, touch) and the S3 sandbox e2e outstanding; S4 (worldgen placement) deferred; `package.json` raised to 0.11.11, a patch release of the 0.11 line |
+| 27 — Structure sandbox | 🚧 In progress — S0 (ADR 0031), S1 (the structure format, `gen.mjs`, the Rust loader, the playground converted), S2a (floor block, sandbox world type), S2b (the structures store: save, load through the region paste, export and import) and S3a (region edits, the region tools) done, S2a's e2e check outstanding; `package.json` raised to 0.11.0, the new compatibility line (S2a's registry change; the owner's decision, 2026-10-14); next: S3b (anchor, touch) and the S3 sandbox e2e outstanding; S4a (worldgen placement as interim data, the owner's pines in groves, generator v17, ADR 0042) built and tested natively and in Chrome on the GPU — it changes the terrain a seed generates, so it needs a new compatibility line (0.19.0), which the owner raises; outstanding: CI and the owner's look; S4b (the rules moved into Phase 17's terrain definitions) waits for Phase 17; `package.json` raised to 0.11.11, a patch release of the 0.11 line |
 | 28 — Sound effects | 🚧 In progress — F0–F6 built and tested (procedural Web Audio, no library; sound data and generator, the registry's `sound` field, Rust sound events, synth, variation, mixer, spatial playback, menu and game-action sounds, volume sliders, offline WAV renders); outstanding: the owner listens to the WAV renders and approves them, and answers `AUDIO.md` §9; `package.json` raised to 0.11.12, a patch release of the 0.11 line |
 | 29 — Motion effects (speed FOV and wind) | 🚧 In progress — built and tested (the FOV widening with the camera's speed for the renderer and the LOD alike, the wind streaks, vignette and edge blur in the shared frame's composite, tunables as data, the settings, bench scenarios and screenshots; fix 2026-10-20: the edge blur keeps the clouds seen from above); outstanding: the owner's look in a browser and approval, CI; `package.json` raised to 0.11.7, a patch release of the 0.11 line |
 | 30 — Tree growth | 🚧 In progress — G-ADR (ADR 0033) and the G0 prototype page built and verified in Chromium; outstanding for G0: publishing the page and the owner's review; next: G1; G2 needs Phase 27 (S2a/S3); G3 is a new compatibility line (the owner decides the bump) and needs Phase 20 for felling and the day/night cycle's day length; `package.json` raised to 0.11.14, a patch release of the 0.11 line |
@@ -3034,8 +3034,10 @@ and the sandbox world type), S2b (the structures store) and S3a (region edits an
 done; outstanding for S2a: its e2e exit check; outstanding for S3: S3b (anchor, touch) and the
 sandbox e2e.
 Needs Phase 24 only. S2b needs S1; S3 needs S2a. Only the owner adds structures (per build). S4,
-placement in worldgen, is **deferred** (owner: decided once structures exist); it would revisit B10
-in part and ship on a new compatibility line. S1–S3 change no terrain.
+placement in worldgen, was deferred (owner: decided once structures exist); the owner asked for it
+on 2026-10-20 (the two pines), so S4a is built ahead of Phase 17 as an interim data file (ADR 0042,
+revisiting B10): generator v17, a new compatibility line (0.19.0) for the owner to raise;
+outstanding for S4a: CI and the owner's look. S1–S3 change no terrain.
 
 Deliverables
 - [x] **S0** — ADR 0031 (the format with a `kind` and open vocabularies, the sandbox world type, the
@@ -3065,9 +3067,15 @@ Deliverables
   controls table).
 - [ ] **S3b** — Set anchor (moved here from S3: it belongs with saving a selection as a structure,
   S2b); touch controls for the region tools.
-- [ ] **S4** — *Deferred (owner: decided once structures exist).* Placement in worldgen, after Phase
-  17: placement rules in the terrain definition, hashed jittered-grid placement, conditions, LOD
-  handling, goldens; a new ADR revisiting B10, and a new compatibility line.
+- [x] **S4a** — Placement in worldgen (owner, 2026-10-20: the two pines in groves), ahead of Phase
+  17: the rules as data in `shared/worldgen/placements.json` (validated with named errors by
+  `shared/worldgen/gen.mjs`, structures through `shared/structures`' validator, stale-checked),
+  hashed grid placement with a local priority rule against overlaps, conditions (ground blocks,
+  footprint, grove noise, height band and rise, slope, spacing, rotations, weights), the sky test,
+  the spawn kept clear, LOD handling (the chunks' trees at level 1, a canopy tint above), goldens
+  (generator version 17); ADR 0042 revisiting B10; the owner's pines committed as structures.
+- [ ] **S4b** — The placement rules moved into Phase 17's terrain definitions (with the structures'
+  hashes in the definition's hash, ADR 0026 §4); waits for Phase 17.
 
 Exit criteria
 - [x] S1: a fixture structure stamps by data alone; bad entries (unknown block, bad palette
@@ -3100,6 +3108,25 @@ Exit criteria
   `region_tools` tests).
 - [x] S3: region edits over the cap or outside the build volume are rejected (`dwell-sim`
   `tests/region_edits.rs`, `dwell-world` `region.rs` tests).
+- [x] S4a: pines stand on grass in the height band at about the data's target per area, groves
+  holding several times the trees of the ground between them and high ground twice the low's;
+  none on sand, water, slides (> 44°) or above 400 m; chunks agree on trees across their borders
+  in any order; no two overlap and any window finds the same trees; the quarter turns and the 60/40
+  mix; the spawn never in or under a tree; a placement added by data alone (Rust and `gen.test.mjs`);
+  the LOD shows them; bad entries fail naming the entry. *(Verified: `dwell-worldgen`
+  `tests/placements.rs`, `placements.rs` unit tests, `shared/worldgen/gen.test.mjs`; red on the build
+  that resolved the rules but stamped nothing — no tree voxels in chunks, border-crossing trees
+  missing — and green after; the goldens regenerated for version 17.)*
+- [x] S4a: in Chrome on the GPU (seed 7): a grove from the ground, a hillside forest, from 600 m,
+  near the shore (sparse), and both texture sets; the bench before (an empty placements list)
+  and after. *(Screenshots and numbers in WORLD_GENERATION.md §2.)*
+- [ ] S4a: the owner's look.
+
+Deviations (S4a): built before Phase 17 at the owner's ask (2026-10-20), in an interim data file
+beside `decorations.json` rather than a terrain definition; the trees are voxels of the generated
+chunk, not TREE_GROWTH.md §5a's tree layer (they don't grow; edits save the chunk as before); the
+weights are 55/45 so that 60/40 of the trees placed are small/tall (the wider tall pine loses more
+overlaps); the LOD draws trees only at level 1 and tints coarser levels (ADR 0042).
 
 Deviations (S3a): region edits leave **indestructible** cells as they are — the registry's existing
 `indestructible` flag and the same check single breaks make, not a new `breakable` flag
