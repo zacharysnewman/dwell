@@ -346,6 +346,9 @@ fn vec3(c: Rgb) -> String {
 ///   lights' colours from the renderer's frame (the data's colours are tints of those): `under`
 ///   (the sky, or the scene where the deck is in front of it) with the clouds over it, far cloud
 ///   hazing toward the clear sky `clear` (sRGB, from `dwell_sky`).
+/// - `fn dwell_cloud_layer(clear, dir, face, deck, fw, offsets, cfg, lights) -> vec4f` and
+///   `fn dwell_cloud_over(under: vec3f, layer: vec4f) -> vec3f`: the same clouds found once as a
+///   layer (colour, cover) and put over any colour behind them (`dwell_clouds` is the two).
 ///
 /// `offsets` and `cfg` are [`cloud_uniforms`]'s.
 pub fn cloud_wgsl(t: &CloudTunables) -> String {
@@ -524,6 +527,18 @@ fn cloud_hue(c: vec3f) -> vec3f {
 }
 
 fn dwell_clouds(under: vec3f, clear: vec3f, dir: vec3f, face: f32, deck: vec4f, fw: f32, offsets: vec4f, cfg: vec4f, lights: CloudLighting) -> vec3f {
+	return dwell_cloud_over(under, dwell_cloud_layer(clear, dir, face, deck, fw, offsets, cfg, lights));
+}
+
+// A cloud layer (dwell_cloud_layer) over `under`.
+fn dwell_cloud_over(under: vec3f, layer: vec4f) -> vec3f {
+	return mix(under, layer.rgb, layer.a);
+}
+
+// The clouds along `dir` as a layer: their colour (rgb, far cloud hazed toward `clear`) and how
+// much of what is behind they hide (a, 0 for none). Found once, it goes over any number of colours
+// behind it (the edge blur's taps: MOTION_EFFECTS.md).
+fn dwell_cloud_layer(clear: vec3f, dir: vec3f, face: f32, deck: vec4f, fw: f32, offsets: vec4f, cfg: vec4f, lights: CloudLighting) -> vec4f {
 	let day_pole = lights.day_pole;
 	let sun = lights.sun;
 	let moon = lights.moon;
@@ -531,7 +546,7 @@ fn dwell_clouds(under: vec3f, clear: vec3f, dir: vec3f, face: f32, deck: vec4f, 
 	let band = deck.w < 0.0;
 	let weight = abs(deck.w);
 	if (octaves <= 0 || weight <= 0.0) {
-		return under;
+		return vec4f(0.0);
 	}
 	var p = deck.xy;
 	var d = cfg.x;
@@ -540,7 +555,7 @@ fn dwell_clouds(under: vec3f, clear: vec3f, dir: vec3f, face: f32, deck: vec4f, 
 		d = cloud_shape(cloud_fbm(p, octaves, fw), cfg.x);
 	}
 	if (d <= 0.0) {
-		return under;
+		return vec4f(0.0);
 	}
 	let up = vec3f(0.0, face, 0.0);
 	// The light: the sun or the moon, whichever is above this face.
@@ -577,7 +592,7 @@ fn dwell_clouds(under: vec3f, clear: vec3f, dir: vec3f, face: f32, deck: vec4f, 
 	col = mix(col, clear, 0.85 * smoothstep(0.0, dwell_cloud_fade(cfg.w).y, deck.z));
 	// From above the deck is seen through its whole depth: denser, and solid sooner at its edges.
 	let cover = select(d, sqrt(d), from_above);
-	return mix(under, col, cover * CLOUD_OPACITY * weight);
+	return vec4f(col, cover * CLOUD_OPACITY * weight);
 }
 
 // Inside the cloud: the whole view mixed toward the cloud's lit colour by `amount` (cloud_uniforms'
