@@ -30,6 +30,7 @@ use crate::noise::{
     clamp01, fbm2, floor_div, floor_mod, floor_to_int, lerp, noise_offset, octaves_resolved,
     seed_word, smooth_step,
 };
+use crate::placements::{self, Ground, PLACEMENTS, Planter, Tree};
 
 /// A generator works face-locally: its band is [FACE_MIN_Y, FACE_MAX_Y), from the midplane to the
 /// build volume's top (the sphere is symmetric about the midplane, so both faces' bands are equal).
@@ -150,11 +151,20 @@ pub struct TerrainGenerator {
     island: IslandLayout,
     /// The decorations (data), resolved for this world.
     decorations: Vec<Placer>,
+    /// The structure placements (data), resolved for this world.
+    planters: Vec<Planter>,
+    /// How far above the ground decorations and placed structures reach (m): the sky test leaves
+    /// this much room over the highest ground before a chunk is all air.
+    rise: f32,
+    world_seed: u64,
 }
 
-/// How far above the ground decorations reach: the sky test leaves this much room over the
-/// highest ground before a chunk is all air.
-const DECORATION_RISE: f32 = 1.0;
+/// How far above the ground decorations reach (one cell).
+const DECORATION_RISE: i32 = 1;
+
+/// The LOD draws placed structures as blobs of their voxels at levels of cells this size (m) or
+/// finer, and as a canopy tint on the ground at coarser ones.
+const LOD_TREE_CELL: i64 = 2;
 
 impl TerrainGenerator {
     pub fn new(world_seed: u64) -> Self {
@@ -165,7 +175,31 @@ impl TerrainGenerator {
             offset_z: noise_offset(seed_word(world_seed, 4)),
             island: IslandLayout::new(world_seed),
             decorations: Placer::resolve(&DECORATIONS, world_seed),
+            planters: Vec::new(),
+            rise: DECORATION_RISE as f32,
+            world_seed,
         }
+        .with_placements(&PLACEMENTS)
+    }
+
+    /// The generator with these structure placements in place of the build's (tests add one by
+    /// data alone).
+    pub fn with_placements(mut self, rules: &[placements::Placement]) -> Self {
+        self.planters = Planter::resolve(rules, self.world_seed, (self.offset_x, self.offset_z));
+        // A structure anchored beside the chunk on ground up to its reach higher still reaches in.
+        let reach = self.planters.iter().map(Planter::reach).max().unwrap_or(0);
+        let rise = if self.planters.is_empty() {
+            0
+        } else {
+            placements::max_rise(&self.planters) + 1 + reach
+        };
+        self.rise = DECORATION_RISE.max(rise) as f32;
+        self
+    }
+
+    /// The structure placements, resolved.
+    pub fn planters(&self) -> &[Planter] {
+        &self.planters
     }
 
     fn sample_corner(&self, lx: i32, lz: i32) -> Corner {
@@ -331,42 +365,86 @@ impl TerrainGenerator {
 
     /// Columns of a chunk (S × S, row-major from (x0, z0)).
     fn chunk_columns(&self, x0: i32, z0: i32) -> Vec<Column> {
-        const S: i32 = CHUNK_SIZE;
-        const NL: i32 = S / LATTICE + 1;
+        self.rect_columns(x0, z0, CHUNK_SIZE, CHUNK_SIZE)
+    }
+
+    /// Columns of a w × l rectangle (row-major from (x0, z0)), with exactly `column_at`'s
+    /// arithmetic: the lattice corners sampled once and interpolated.
+    fn rect_columns(&self, x0: i32, z0: i32, w: i32, l: i32) -> Vec<Column> {
         let lx0 = floor_div(x0, LATTICE);
         let lz0 = floor_div(z0, LATTICE);
-        let mut corners = Vec::with_capacity((NL * NL) as usize);
-        for j in 0..NL {
-            for i in 0..NL {
+        let nx = floor_div(x0 + w - 1, LATTICE) - lx0 + 2;
+        let nz = floor_div(z0 + l - 1, LATTICE) - lz0 + 2;
+        let mut corners = Vec::with_capacity((nx * nz) as usize);
+        for j in 0..nz {
+            for i in 0..nx {
                 corners.push(self.sample_corner(lx0 + i, lz0 + j));
             }
         }
-        let at = |i: i32, j: i32| corners[(j * NL + i) as usize];
-        let mut cols = Vec::with_capacity((S * S) as usize);
-        for z in 0..S {
-            for x in 0..S {
-                let (i, j) = (x / LATTICE, z / LATTICE);
+        let at = |i: i32, j: i32| corners[(j * nx + i) as usize];
+        let mut cols = Vec::with_capacity((w * l) as usize);
+        for z in z0..z0 + l {
+            for x in x0..x0 + w {
+                let (i, j) = (floor_div(x, LATTICE) - lx0, floor_div(z, LATTICE) - lz0);
                 let c = [at(i, j), at(i + 1, j), at(i, j + 1), at(i + 1, j + 1)];
-                let mut col = Self::interp(&c, x % LATTICE, z % LATTICE);
-                col.outside = !inside_world_disc(i64::from(x0 + x), i64::from(z0 + z));
+                let mut col = Self::interp(&c, floor_mod(x, LATTICE), floor_mod(z, LATTICE));
+                col.outside = !inside_world_disc(i64::from(x), i64::from(z));
                 cols.push(col);
             }
         }
         cols
     }
 
-    /// The highest ground of the columns inside the disc.
-    fn sky_floor(cols: &[Column]) -> f32 {
+    /// The highest ground of the columns inside the disc, plus what grows on it.
+    fn sky_floor(&self, cols: &[Column]) -> f32 {
         cols.iter()
             .filter(|c| !c.outside)
             .fold(-1e9f32, |top, c| top.max(c.height))
-            + DECORATION_RISE
+            + self.rise
     }
 
     /// The sky test's height for a chunk column: chunks with y0 above it (and at or above sea
     /// level) are air. Depends only on (cx, cz), so callers cache it per column.
     pub fn sky_floor_at(&self, cx: i32, cz: i32) -> f32 {
-        Self::sky_floor(&self.chunk_columns(cx * CHUNK_SIZE, cz * CHUNK_SIZE))
+        self.sky_floor(&self.chunk_columns(cx * CHUNK_SIZE, cz * CHUNK_SIZE))
+    }
+
+    /// A column's ground as placements see it (`None` beyond the rim).
+    fn ground_of(col: &Column) -> Option<Ground> {
+        if col.outside {
+            return None;
+        }
+        let top = top_voxel(col.height);
+        // The top block as generated: below sea level it takes its flooded state.
+        let block = under_sea(fill(top, 0), top, top);
+        Some(Ground {
+            top,
+            above_sea: top - SEA_LEVEL,
+            height: col.height,
+            block,
+            dry: top >= SEA_LEVEL && !dwell_blocks::info(block).flooded,
+        })
+    }
+
+    /// The structures placed reaching columns [x0, x1] × [z0, z1] (face-local), the ground they
+    /// ask for computed once for the rectangle and its margin.
+    pub fn trees_in(&self, (x0, z0): (i32, i32), (x1, z1): (i32, i32)) -> Vec<Tree> {
+        if self.planters.is_empty() {
+            return Vec::new();
+        }
+        let m = placements::ground_margin(&self.planters);
+        let (rx, rz) = (x0 - m, z0 - m);
+        let (w, l) = (x1 - x0 + 1 + 2 * m, z1 - z0 + 1 + 2 * m);
+        let cols = self.rect_columns(rx, rz, w, l);
+        let ground = |x: i32, z: i32| {
+            let (i, j) = (x - rx, z - rz);
+            if (0..w).contains(&i) && (0..l).contains(&j) {
+                Self::ground_of(&cols[(j * w + i) as usize])
+            } else {
+                Self::ground_of(&self.column_at(x, z))
+            }
+        };
+        placements::trees_in(&self.planters, (x0, z0), (x1, z1), &ground)
     }
 
     /// `is_air_chunk` given `sky_floor_at(coord.x, coord.z)`.
@@ -410,7 +488,7 @@ impl TerrainGenerator {
         }
         let cols = self.chunk_columns(x0, z0);
         // Sky above all ground and sea: all air (`is_air_chunk` is this same test).
-        if y0 as f32 > Self::sky_floor(&cols) && y0 >= SEA_LEVEL {
+        if y0 as f32 > self.sky_floor(&cols) && y0 >= SEA_LEVEL {
             return;
         }
         let voxels = chunk.voxels_mut();
@@ -448,6 +526,57 @@ impl TerrainGenerator {
                     && let Some(m) = self.decoration_at(&cols, x0, z0, x, z, top)
                 {
                     voxels[local_index(x, above - y0, z)] = m;
+                }
+            }
+        }
+        self.stamp_trees(coord, &cols, volume, chunk);
+    }
+
+    /// Stands the placed structures reaching this chunk in it, over air and replaceable cells
+    /// only (decorations; never the ground or water). Only chunks holding a row between the lowest
+    /// ground and the highest crown look.
+    fn stamp_trees(&self, coord: ChunkCoord, cols: &[Column], volume: Overlap, chunk: &mut Chunk) {
+        const S: i32 = CHUNK_SIZE;
+        if self.planters.is_empty() {
+            return;
+        }
+        let (x0, y0, z0) = (coord.x * S, coord.y * S, coord.z * S);
+        let (mut lo, mut hi) = (i32::MAX, i32::MIN);
+        for c in cols.iter().filter(|c| !c.outside) {
+            let top = top_voxel(c.height);
+            lo = lo.min(top);
+            hi = hi.max(top);
+        }
+        let reach = self.rise as i32;
+        if lo == i32::MAX || y0 + S <= lo - reach || y0 > hi + reach {
+            return;
+        }
+        let trees = self.trees_in((x0, z0), (x0 + S - 1, z0 + S - 1));
+        let voxels = chunk.voxels_mut();
+        for t in &trees {
+            let placed = self.planters[t.planter as usize].place(t);
+            if placed.misses(coord) {
+                continue;
+            }
+            for (p, state) in placed.cells() {
+                let (lx, ly, lz) = (p[0] - x0, p[1] - y0, p[2] - z0);
+                let inside = (0..S).contains(&lx)
+                    && (0..S).contains(&ly)
+                    && (0..S).contains(&lz)
+                    && (FACE_MIN_Y..FACE_MAX_Y).contains(&p[1]);
+                if !inside
+                    || (volume == Overlap::Partial
+                        && !BUILD_VOLUME.contains_voxel(
+                            i64::from(p[0]),
+                            i64::from(p[1]),
+                            i64::from(p[2]),
+                        ))
+                {
+                    continue;
+                }
+                let v = &mut voxels[local_index(lx, ly, lz)];
+                if *v == M.air || dwell_blocks::info(*v).replaceable {
+                    *v = state;
                 }
             }
         }
@@ -517,7 +646,17 @@ impl TerrainGenerator {
         cols
     }
 
-    fn lod_bounds_of(cols: &[Column]) -> LodBounds {
+    /// How far above its ground a level's sections draw placed structures (m): their full rise
+    /// at the levels that draw them as blobs, none where they only tint the ground.
+    fn lod_rise(&self, level: i32) -> f64 {
+        if lod::cell_size(level) <= LOD_TREE_CELL && !self.planters.is_empty() {
+            f64::from(self.rise)
+        } else {
+            0.0
+        }
+    }
+
+    fn lod_bounds_of(cols: &[Column], rise: f64) -> LodBounds {
         let mut b = LodBounds {
             lo: f64::INFINITY,
             hi: f64::NEG_INFINITY,
@@ -533,7 +672,7 @@ impl TerrainGenerator {
             b.any_inside = true;
             // A cell is solid when its bottom voxel lies below the column's height: samples below
             // `lo` are solid, at or above `hi` open.
-            b.hi = b.hi.max(f64::from(col.height) + 1.0);
+            b.hi = b.hi.max(f64::from(col.height) + 1.0 + rise);
             b.lo = b.lo.min(f64::from(col.height) - 1.0);
         }
         if !b.any_inside {
@@ -549,7 +688,7 @@ impl TerrainGenerator {
     /// The column bounds sections are classified by (`lod::kind_from_bounds`).
     pub fn lod_bounds_at(&self, level: i32, i: i32, k: i32) -> LodBounds {
         let o = lod::section_origin(LodCoord::new(level, i, 0, k));
-        Self::lod_bounds_of(&self.lod_columns(o, level))
+        Self::lod_bounds_of(&self.lod_columns(o, level), self.lod_rise(level))
     }
 
     /// A section evaluated at its cells' resolution: each cell samples the height field at its
@@ -593,7 +732,7 @@ impl TerrainGenerator {
         o.y = origin_y;
         let cell = lod::cell_size(c.level);
         let cols = self.lod_columns(o, c.level);
-        let bounds = Self::lod_bounds_of(&cols);
+        let bounds = Self::lod_bounds_of(&cols, self.lod_rise(c.level));
         let kind = if bounds.any_inside {
             lod::kind_of_face(c.level, origin_y, bounds.lo, bounds.hi)
         } else {
@@ -657,7 +796,108 @@ impl TerrainGenerator {
                 }
             }
         }
+        self.lod_trees(c.level, o, &cols, cells, surface);
         (kind, bounds)
+    }
+
+    /// The placed structures in a section: at levels of cells up to `LOD_TREE_CELL`, each tree
+    /// the chunks hold (`trees_in`, exactly) fills the air cells whose centre column and rows its
+    /// voxels reach; at coarser levels a share of the columns as large as the trees' cover shows
+    /// the canopy's block on its top cell.
+    fn lod_trees(
+        &self,
+        level: i32,
+        o: lod::LodOrigin,
+        cols: &[Column],
+        cells: &mut LodCells,
+        mut surface: Option<&mut LodSurfaces>,
+    ) {
+        if self.planters.is_empty() {
+            return;
+        }
+        let cell = lod::cell_size(level);
+        let half = cell / 2;
+        let n = lod::SECTION_CELLS;
+        let centre = |o: i64, i: i32| (o + i64::from(i) * cell + half) as i32;
+        if cell <= LOD_TREE_CELL {
+            let (x0, z0) = (centre(o.x, -1), centre(o.z, -1));
+            let (x1, z1) = (centre(o.x, n), centre(o.z, n));
+            for t in self.trees_in((x0, z0), (x1, z1)) {
+                let p = &self.planters[t.planter as usize];
+                let placed = p.place(&t);
+                let fp = p.footprint(&t);
+                for zi in -1..=n {
+                    let wz = centre(o.z, zi);
+                    if wz < fp[1] || wz > fp[3] {
+                        continue;
+                    }
+                    for xi in -1..=n {
+                        let wx = centre(o.x, xi);
+                        if wx < fp[0] || wx > fp[2] {
+                            continue;
+                        }
+                        for yi in -1..=n {
+                            let a = o.y + i64::from(yi) * cell;
+                            if a + cell <= i64::from(placed.min[1]) || a > i64::from(placed.max[1])
+                            {
+                                continue;
+                            }
+                            let m = &mut cells[lod::cell_index(xi, yi, zi)];
+                            if *m != M.air {
+                                continue;
+                            }
+                            if let Some(s) =
+                                (a..a + cell).find_map(|y| placed.at([wx, y as i32, wz]))
+                            {
+                                *m = s;
+                            }
+                        }
+                    }
+                }
+            }
+            return;
+        }
+        for zi in -1..=n {
+            for xi in -1..=n {
+                let col = cols[lod::column_index(xi, zi)];
+                let Some(g) = Self::ground_of(&col) else {
+                    continue;
+                };
+                let h = |dx: i32, dz: i32| {
+                    let (x, z) = ((xi + dx).clamp(-1, n), (zi + dz).clamp(-1, n));
+                    cols[lod::column_index(x, z)].height
+                };
+                let run = 2.0 * cell as f32;
+                let gx = (h(1, 0) - h(-1, 0)) / run;
+                let gz = (h(0, 1) - h(0, -1)) / run;
+                let (wx, wz) = (centre(o.x, xi), centre(o.z, zi));
+                let Some(p) = self
+                    .planters
+                    .iter()
+                    .find(|p| p.canopy_at((wx, wz), level, g, gx * gx + gz * gz))
+                else {
+                    continue;
+                };
+                // The column's topmost solid cell in the section, if its top is the ground's.
+                let Some(yi) = (-1..=n).rev().find(|&y| {
+                    let m = cells[lod::cell_index(xi, y, zi)];
+                    m != M.air && m != M.water
+                }) else {
+                    continue;
+                };
+                let a = o.y + i64::from(yi) * cell;
+                if i64::from(g.top) >= a + cell {
+                    continue; // buried: the ground goes on above this section
+                }
+                cells[lod::cell_index(xi, yi, zi)] = p.canopy();
+                if let Some(s) = surface.as_deref_mut() {
+                    let sc = &mut s[lod::column_index(xi, zi)];
+                    if sc.valid && !sc.wet {
+                        sc.material = p.canopy();
+                    }
+                }
+            }
+        }
     }
 
     /// Feet position for players: the level dry ground nearest the origin (a square spiral in 8 m
@@ -677,7 +917,15 @@ impl TerrainGenerator {
                 let level = (-SPAWN_CLEAR..=SPAWN_CLEAR).all(|pz| {
                     (-SPAWN_CLEAR..=SPAWN_CLEAR).all(|px| self.ground_y(x + px, z + pz) == Some(g))
                 });
-                if level {
+                // Never in (or under) a placed structure: the patch is clear of their boxes.
+                if level
+                    && self
+                        .trees_in(
+                            (x - SPAWN_CLEAR, z - SPAWN_CLEAR),
+                            (x + SPAWN_CLEAR, z + SPAWN_CLEAR),
+                        )
+                        .is_empty()
+                {
                     return point;
                 }
             }
