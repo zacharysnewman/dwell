@@ -7,7 +7,16 @@ import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { blockFluid, fluidsRust, readFluids } from './fluids.mjs';
-import { FACINGS as SHAPE_FACINGS, SLOPE_SHAPES, cubeShape, namedShape, slabShape, slopeShape } from './shapes.mjs';
+import {
+  FACINGS as SHAPE_FACINGS,
+  RAMP_SHAPES,
+  SLOPE_SHAPES,
+  cubeShape,
+  namedShape,
+  rampShape,
+  slabShape,
+  slopeShape,
+} from './shapes.mjs';
 import { NEIGHBOURHOODS, aroundOf, buildTable, describe, summary } from './adaptive.mjs';
 import { loadSounds } from '../sounds/load.mjs';
 import { checkBlockSounds } from '../sounds/validate.mjs';
@@ -81,6 +90,23 @@ const familyBlock = (base, kind, extra = {}) => {
     slopeFamily: kind,
     palette: 'all',
   };
+  if (kind === 'ramp') {
+    // Stored cardinal ramps (docs/HALF_HEIGHT_GRID.md §3): placed by generation only, so not in
+    // the palette; they sound like their base block.
+    return {
+      ...common,
+      name: `${base.name}_ramp`,
+      sound: base.sound,
+      palette: [],
+      properties: {
+        facing: SHAPE_FACINGS,
+        flooded: ['false', 'true'],
+        half: ['bottom', 'top'],
+        shape: RAMP_SHAPES,
+      },
+      ...extra,
+    };
+  }
   return kind === 'slope'
     ? {
         ...common,
@@ -114,6 +140,11 @@ for (const ns of namespaces) {
     for (const kind of ['slope', 'slab']) {
       if (!declared.has(`${m}:${kind}`)) generated.push(familyBlock(base(m), kind));
     }
+  }
+  // `rampFamilies`: `<m>_ramp[facing, flooded, half, shape]` for natural ground on the half-height
+  // grid (Phase 36).
+  for (const m of ns.rampFamilies ?? []) {
+    if (!declared.has(`${m}:ramp`)) generated.push(familyBlock(base(m), 'ramp'));
   }
   ns.blocks = [...ns.blocks, ...generated];
 }
@@ -293,7 +324,10 @@ for (const st of states) {
   st.flooded = st.values.flooded === 'true';
   if (d.shape === 'empty') st.shapeIndex = 0;
   else if (d.shape === 'full') st.shapeIndex = shapeIndexOf(cubeShape());
-  else st.shapeIndex = shapeIndexOf((d.slopeFamily === 'slope' ? slopeShape : slabShape)(st.values));
+  else {
+    const of = { slope: slopeShape, slab: slabShape, ramp: rampShape }[d.slopeFamily];
+    st.shapeIndex = shapeIndexOf(of(st.values));
+  }
 }
 const stateShapeCount = shapeTable.length;
 

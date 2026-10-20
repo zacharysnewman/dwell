@@ -53,7 +53,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 33 — Transparent blocks (render modes, cross geometry, tall grass) | 🚧 In progress — render modes as block data and cutout (see-through) ladders shipped on the 0.11 line (0.11.18; no registry-hash change); on `claude/transparent-blocks` for the 0.13.0 line (with wood and leaves): the cross look with wind and fade, placement rules and `medium`, `dwell:tall_grass` grown by world generation (decorations as data, generator version 13; a partial reversal of B10 for plants), the Plant sway setting, the marcher's classes, all tested and checked in a browser (about +0.3 ms GPU for a 150-plant field); outstanding: hillside screenshots of generated grass (T9), the owner's look, the e2e suite on CI; `package.json` raised to 0.13.0, the new compatibility line (new blocks: log, leaves, tall grass; generator v13; the owner's decision, 2026-10-16) |
 | 34 — Brushes | 🚧 In progress — B1 built and tested: VoxelSniper-style brushes in the sandbox (ADR 0037, `BRUSHES.md`): brushes, performers and sculpt in `dwell-world` `brush.rs`, presets and the per-world-type policy as data (`shared/brushes/brushes.json`, generator, CI stale check), strokes as `KEEP` pastes behind the `brushes` Welcome flag (0.11 line, no protocol bump), the brush tool, its HUD panel and keys, the region `tool` sound; browser check done; outstanding: the owner's try-out and answers to `BRUSHES.md` §5, CI; `package.json` raised to 0.11.20, a patch release of the 0.11 line |
 | 35 — Sliding on steep ground (stacks on 18, uses 28) | 🚧 In progress — built and tested natively (controller, netcode, sound events and data, the shell's loop voices, WAV renders) and in a browser (the bench); outstanding: CI (the WASM divergence run and the e2e suite, not run on the branch), the owner's review of the feel and of the slide WAV renders; `package.json` raised to 0.12.0, the new compatibility line (protocol 13; adaptive blocks change collision and terrain; the owner's decision, 2026-10-16) |
-| 36 — Half-height grid (½ m cells, stored cardinal ramps; branch `claude/half-height-voxels` only) | 🚧 In progress — H0 (ADR 0038, `HALF_HEIGHT_GRID.md`, this phase) done; H1 (one named cell height, at 1.0, every conversion routed through it) built and verified locally, its WASM suites outstanding (CI); next: H2 (stored cardinal ramps); a playtest branch, not for `main` until the owner keeps it; `package.json` not raised on the branch |
+| 36 — Half-height grid (½ m cells, stored cardinal ramps; branch `claude/half-height-voxels` only) | 🚧 In progress — H0 (ADR 0038, `HALF_HEIGHT_GRID.md`, this phase) done; H1 (one named cell height, at 1.0, every conversion routed through it) built and verified locally, its WASM suites outstanding (CI); H2 (the stored cardinal ramps as block states) built and verified locally; next: H3 (shaping at generation); a playtest branch, not for `main` until the owner keeps it; `package.json` not raised on the branch |
 
 Phase numbering: Phase 4 was inserted on 2026-09-29 for the planet-scale world (ADRs 0011, 0012);
 the former Phases 4–7 are now 5–8, and Phase 3's former 3c and 3d are now 3d and 3e.
@@ -3490,8 +3490,9 @@ Deviations:
 > playtest; it reaches `main` only if the owner keeps it ([ADR 0038](./adr/0038-half-height-cells.md)).
 > If it is merged, renumber it to the next free phase number on `main`.
 
-**Status:** H0 done (2026-10-19); H1 built and verified locally (2026-10-20), its WASM suites
-outstanding (CI); the ray marcher's cell space moved to H4. Next: H2. The design is
+**Status:** H0 done (2026-10-19); H1 and H2 built and verified locally (2026-10-20), their WASM
+suites outstanding (CI); the ray marcher's cell space, and turning `adaptive` off, moved to H4.
+Next: H3. The design is
 [`HALF_HEIGHT_GRID.md`](./HALF_HEIGHT_GRID.md).
 
 Owner (2026-10-19): *"Cardinal ramps only, 1/2m blocks as voxels, 1m on steep ground (still made up
@@ -3520,11 +3521,18 @@ first. Earlier the same day: tall grass grows only on flat surfaces (the lab).
 - [ ] The WASM suites (`wasm32-wasip1`) unchanged, on CI.
 
 **H2 — Stored cardinal ramps**
-- [ ] The pieces (`HALF_HEIGHT_GRID.md` §3) in `shapes.mjs`, with the shape family (`shape`,
-  `facing`, `half`, `flooded`) on the natural blocks by data; `adaptive` off for every material.
-- [ ] Mesher, collider, picking and the marcher's shapes for the pieces; the steep pair meets as
-  one plane (a test); face B hangs them.
-- [ ] Placing a natural block places `shape=full`; breaking changes no other cell (tests).
+- [x] The pieces (`HALF_HEIGHT_GRID.md` §3) in `shapes.mjs` (`rampShape`, `buildStepShape`), with
+  the ramp family (`shape`, `facing`, `half`, `flooded`) on the natural blocks by data
+  (`rampFamilies`), looked up by name in `dwell-world` `ramps.rs`.
+- [x] The chunk mesher, collider and picking read the pieces through the shared shape mechanism:
+  the shape-table tests (closed, wound outward, side profiles, top over its footprint, rays
+  matching spans, open parts missed) cover them; the steep pair meets as one 45° plane and the
+  upper half is open beyond its middle (`dwell-blocks` and `dwell-mesh` tests); face B hangs them
+  (mesher test); a flooded ramp holds water. The slide and netcode tests now slide on stored 45°
+  stone and grass ramps (on both faces) instead of adaptive stairs.
+- [ ] Moved to H4: `adaptive` off for every material, and with it "placing a natural block places a
+  full block; breaking changes no other cell" (tests). The marcher's shapes for the pieces moved
+  to H4 with the marcher.
 
 **H3 — Shaping at generation**
 - [ ] The rule (`HALF_HEIGHT_GRID.md` §4) in `dwell-worldgen`, tested on fixture height fields
@@ -3546,6 +3554,11 @@ first. Earlier the same day: tall grass grows only on flat surfaces (the lab).
   and generator version bumped; the registry hash changes.
 - [ ] Exit: every suite passes; the bench walks a hill (½ m steps and 27° ramps walked, 45° ramps
   slide); screenshots of the hill and a meadow with grass on flat tops.
+
+Deviations:
+- **H2: `adaptive` stays on until H4** (2026-10-20). Turning it off while cells are 1 m tall broke 24
+  of Phase 18's tests (flat fields resting at half height, ridges, the playground walk) for a
+  grid that only exists once cells are ½ m tall; the switch and its test changes belong together.
 
 **H5 — Playtest**
 - [ ] Bench numbers against `main` (chunk generation, meshing, memory, frame time).

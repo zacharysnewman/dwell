@@ -19,6 +19,7 @@ use dwell_protocol::*;
 use dwell_sim::entropy::SeededEntropy;
 use dwell_sim::server::{EditPolicy, OutKind, Server, ServerConfig, SessionId};
 use dwell_world::edit::apply_chunk_changes;
+use dwell_world::ramps::RampFacing;
 use dwell_world::structure::{Placed, load, with_structure};
 use dwell_world::{
     CHUNK_SIZE, Chunk, ChunkCoord, ChunkGenerator, GENERATOR_FLAT, VoxelWorld, chunk_hash,
@@ -879,16 +880,37 @@ fn predictor_remote_proxy_right_after_the_first_snapshot() {
 
 // --- sliding (PLAYER_CONTROLLER.md §6.8) ---------------------------------------------------------
 
-/// Single-block stone stairs 1–4 high along +z at x = 30 (z 30…33) on the flat world: 45° ramps,
-/// which slide.
+/// Single-block stone stairs 1–4 m high along +z at x = 30 (z 30…33) on the flat world, each
+/// topped by a stored 45° ramp rising toward +z (the half-height grid's pieces, HALF_HEIGHT_GRID.md
+/// §3; under Phase 18 the rules shaped them): they slide.
 fn stairs_generator() -> ChunkGenerator {
     let base = flat_generator();
     let stone = require("dwell:stone");
+    let top = dwell_world::ramps::steep_cells("dwell:stone", RampFacing::North, false)
+        .expect("stone has ramps");
+    // Level ground around the stairs, flush with their foot: a block that never shapes itself (the
+    // flat world's grass rests half a block lower while natural blocks are adaptive, and nothing
+    // steps up onto a 45° ramp).
+    let floor = require("dwell:sandbox_floor");
     Arc::new(move |coord, chunk| {
         base(coord, chunk);
         let voxels = chunk.voxels_mut();
+        let o = [
+            coord.x * CHUNK_SIZE,
+            coord.y * CHUNK_SIZE,
+            coord.z * CHUNK_SIZE,
+        ];
+        for z in 20..44 {
+            for x in 20..44 {
+                let l = [x - o[0], -1 - o[1], z - o[2]];
+                if l.iter().all(|&v| (0..CHUNK_SIZE).contains(&v)) {
+                    voxels[dwell_world::local_index(l[0], l[1], l[2])] = floor;
+                }
+            }
+        }
         for k in 0..4 {
-            for y in 0..=k {
+            let rows = dwell_world::rows_for_m(f64::from(k + 1));
+            for y in 0..rows {
                 let (x, z) = (30, 30 + k);
                 let o = [
                     coord.x * CHUNK_SIZE,
@@ -896,8 +918,15 @@ fn stairs_generator() -> ChunkGenerator {
                     coord.z * CHUNK_SIZE,
                 ];
                 let l = [x - o[0], y - o[1], z - o[2]];
+                // The top metre is the ramp's cells, the rest stone.
+                let from_top = rows - 1 - y;
+                let m = if (from_top as usize) < top.len() {
+                    top[top.len() - 1 - from_top as usize]
+                } else {
+                    stone
+                };
                 if l.iter().all(|&v| (0..CHUNK_SIZE).contains(&v)) {
-                    voxels[dwell_world::local_index(l[0], l[1], l[2])] = stone;
+                    voxels[dwell_world::local_index(l[0], l[1], l[2])] = m;
                 }
             }
         }

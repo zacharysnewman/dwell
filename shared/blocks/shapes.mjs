@@ -510,6 +510,114 @@ export function buildRidgeShape(points, inverted) {
   };
 }
 
+// ---- Stored cardinal ramps (docs/HALF_HEIGHT_GRID.md §3, Phase 36) ------------------------------
+//
+// On the half-height grid natural ground is shaped once, at generation, from three pieces facing
+// north, east, south or west (canonical: descending toward +X): the ½ m ramp (a wedge in one cell)
+// and the two halves of a 1 m (45°) ramp that spans two cells. The halves are given as 3 × 3
+// surface points (halves of a cell; rows north to south, columns west to east), a height field
+// whose zero part is open.
+
+export const RAMP_SHAPES = ['ramp', 'steep_lower', 'steep_upper'];
+const STEP_POINTS = {
+  // Flat to the middle, then down to the floor at the east edge.
+  steep_lower: [
+    [2, 2, 0],
+    [2, 2, 0],
+    [2, 2, 0],
+  ],
+  // From the top at the west edge down to the floor at the middle; open beyond.
+  steep_upper: [
+    [2, 0, 0],
+    [2, 0, 0],
+    [2, 0, 0],
+  ],
+};
+
+/**
+ * A piece given by 3 × 3 surface points whose zero part is open (the 45° halves): the fan shape
+ * of `buildRidgeShape`, its faces rebuilt so that only the solid part has any. Surface polygons at
+ * zero height go, the floor covers only the solid part's footprint, side polygons lose the points
+ * where they double back along the floor, and the floor counts as full only when it is.
+ */
+export function buildStepShape(points, inverted) {
+  const upright = buildRidgeShape(points, false);
+  const zero = (pts) => pts.every((p) => p[1] === 0);
+  const kept = upright.faces.filter((f) => f.tag !== SURFACE || !zero(f.pts));
+  const surfacePts = kept.filter((f) => f.tag === SURFACE).flatMap((f) => f.pts);
+  const [x0, x1] = [Math.min(...surfacePts.map((p) => p[0])), Math.max(...surfacePts.map((p) => p[0]))];
+  const [z0, z1] = [Math.min(...surfacePts.map((p) => p[2])), Math.max(...surfacePts.map((p) => p[2]))];
+  const fullFloor = x0 === 0 && x1 === 1 && z0 === 0 && z1 === 1;
+  // A side point where the outline doubles back (it goes on along the floor, then returns).
+  const backtracks = (a, q, b) => {
+    const u = sub(q, a);
+    const v = sub(b, q);
+    const c = cross(u, v);
+    return c[0] === 0 && c[1] === 0 && c[2] === 0 && u[0] * v[0] + u[1] * v[1] + u[2] * v[2] < 0;
+  };
+  const faces = [];
+  for (const f of kept) {
+    if (f.tag === 3) {
+      faces.push({
+        tag: 3,
+        pts: [
+          [x0, 0, z0],
+          [x1, 0, z0],
+          [x1, 0, z1],
+          [x0, 0, z1],
+        ],
+      });
+      continue;
+    }
+    let pts = f.pts;
+    for (let changed = true; changed && pts.length > 3; ) {
+      changed = false;
+      const i = pts.findIndex((q, k) =>
+        backtracks(pts[(k + pts.length - 1) % pts.length], q, pts[(k + 1) % pts.length]),
+      );
+      if (i >= 0) {
+        pts = pts.filter((_, k) => k !== i);
+        changed = true;
+      }
+    }
+    // A full-height wall's fan has a sliver of zero area (its top points are collinear): the
+    // other triangles already cover the wall.
+    let area = [0, 0, 0];
+    for (let i = 1; i + 1 < pts.length; ++i) {
+      const c = cross(sub(pts[i], pts[0]), sub(pts[i + 1], pts[0]));
+      area = [area[0] + c[0], area[1] + c[1], area[2] + c[2]];
+    }
+    if (area[0] !== 0 || area[1] !== 0 || area[2] !== 0) faces.push({ tag: f.tag, pts });
+  }
+  const outFaces = faces.map((f) => {
+    if (!inverted) return f;
+    const pts = f.pts.map((p) => [p[0], 1 - p[1], p[2]]).reverse();
+    const tag = f.tag === 2 ? 3 : f.tag === 3 ? 2 : f.tag;
+    return { tag, pts };
+  });
+  return {
+    ...upright,
+    inverted,
+    faces: outFaces,
+    // The solid prism is convex.
+    convex: true,
+    minY: inverted ? 1 - upright.maxY : 0,
+    maxY: inverted ? 1 : upright.maxY,
+    fullTop: inverted && fullFloor,
+    fullBottom: !inverted && fullFloor,
+  };
+}
+
+/** A ramp state's geometry from its property values (`shape`, `facing`, `half`). */
+export function rampShape(values) {
+  const turns = FACING_TURNS[values.facing];
+  const inverted = values.half === 'top';
+  if (values.shape === 'ramp') return buildShape(rotateCorners([2, 0, 0, 2], turns), inverted, turns % 2);
+  const points = STEP_POINTS[values.shape];
+  if (!points) throw new Error(`unknown ramp shape ${values.shape}`);
+  return buildStepShape(rotateGrid(points, turns), inverted);
+}
+
 /** A named shape (corner or ridge) at `turns`, upright or `inverted`: its baked geometry. */
 export function namedShape(name, turns, inverted = false) {
   if (name in RIDGE_SHAPES)

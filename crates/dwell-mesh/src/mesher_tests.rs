@@ -804,3 +804,85 @@ fn a_level_field_of_natural_blocks_merges_its_flat_tops() {
         assert_eq!(m.positions[v * 3 + 1], 2.5);
     }
 }
+
+/// A stored ramp state of the half-height grid (Phase 36, docs/HALF_HEIGHT_GRID.md §3).
+fn ramp(material: &str, shape: &str, facing: &str, half: &str, flooded: bool) -> u16 {
+    dwell_blocks::state(&format!(
+        "dwell:{material}_ramp[facing={facing},flooded={flooded},half={half},shape={shape}]"
+    ))
+    .expect("a ramp state")
+}
+
+#[test]
+fn stored_ramp_pieces_mesh_their_own_shape() {
+    // A ½ m ramp descending east: its sloped top rises toward −x; the two 45° halves stacked make
+    // one slope, the upper one open beyond its middle (no floor drawn there).
+    let r = mesh(
+        &[(5, 3, 5, ramp("grass", "ramp", "east", "bottom", false))],
+        false,
+    )
+    .opaque;
+    let ys = normal_ys(&r);
+    assert!(ys.contains(&707), "{ys:?}");
+    let upper = ramp("grass", "steep_upper", "east", "bottom", false);
+    let lower = ramp("grass", "steep_lower", "east", "bottom", false);
+    let m = mesh(&[(5, 3, 5, lower), (5, 4, 5, upper)], false).opaque;
+    // Every sloped triangle of the pair lies in the one plane through (5, 5) and (6, 3) in x–y.
+    for t in m.indices.chunks_exact(3) {
+        let n = normal_of(&m.positions, t[0], t[1], t[2]);
+        if n[0] > 0.0 && n[1] > 0.0 {
+            for &v in t {
+                let p = vertex(&m.positions, v);
+                assert!((p[1] - (5.0 - 2.0 * (p[0] - 5.0))).abs() < 1e-5, "{p:?}");
+            }
+        }
+    }
+    // Nothing is drawn in the upper cell's open half at its floor (y = 4, x > 5.5).
+    let floor_in_open_half = m.indices.chunks_exact(3).any(|t| {
+        t.iter().all(|&v| {
+            let p = vertex(&m.positions, v);
+            (p[1] - 4.0).abs() < 1e-6 && p[0] > 5.5 - 1e-6
+        })
+    });
+    assert!(!floor_in_open_half);
+}
+
+#[test]
+fn a_flooded_ramp_beside_water_holds_water_in_its_open_part() {
+    // A sand ramp descending into water at the water's row, stored flooded (the generator sets it;
+    // HALF_HEIGHT_GRID.md §5): its cell's water faces are drawn (toward the air), and the water
+    // beside it draws none against it.
+    let m = mesh(
+        &[
+            (5, 3, 5, ramp("sand", "ramp", "east", "bottom", true)),
+            (6, 3, 5, water()),
+        ],
+        false,
+    );
+    let tops: Vec<f32> = (0..m.transparent.normals.len() / 3)
+        .filter(|&i| m.transparent.normals[i * 3 + 1] == 1.0)
+        .map(|i| m.transparent.positions[i * 3])
+        .collect();
+    // The bank's water top spans x 5..6 and the water cell's 6..7.
+    assert!(tops.iter().any(|&x| x < 6.0), "{tops:?}");
+    assert!(tops.iter().any(|&x| x >= 6.0), "{tops:?}");
+    // No water face stands between them (at x = 6, facing ±x).
+    let between = (0..m.transparent.normals.len() / 3).any(|i| {
+        m.transparent.normals[i * 3].abs() == 1.0
+            && (m.transparent.positions[i * 3] - 6.0).abs() < 0.01
+    });
+    assert!(!between);
+}
+
+#[test]
+fn a_hanging_ramp_on_face_b_faces_its_sky() {
+    // A hanging ramp on face B (meshed mirrored): its slope faces down, toward face B's sky.
+    let m = mesh(
+        &[(5, 3, 5, ramp("grass", "ramp", "east", "top", false))],
+        true,
+    )
+    .opaque;
+    let ys = normal_ys(&m);
+    assert!(ys.contains(&-707), "{ys:?}");
+    assert!(!ys.contains(&707), "{ys:?}");
+}

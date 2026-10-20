@@ -721,7 +721,14 @@ derives: the 12 adaptive corner shapes (split along their higher diagonal) and 6
 given as 3 × 3 surface points (corners, edge midpoints, centre; the surface is the fan of 8
 triangles around the centre), each in its facings, upright and hanging — 191 more. Every shape
 carries its 3 × 3 points and three-point side profiles (quarters of a cell), and `solid_span_at`
-reads a ridge shape's fan. The geometry is baked once by
+reads a ridge shape's fan. **[built, Phase 36 H2, on the branch `claude/half-height-voxels`]**
+`rampFamilies` in the block data gives each listed natural block `<name>_ramp[facing, flooded,
+half, shape]`: the stored cardinal ramps of the half-height grid (`HALF_HEIGHT_GRID.md` §3) — the
+`ramp` (a wedge), and `steep_lower` and `steep_upper`, the two halves of a 45° ramp that spans two
+½ m cells, given as 3 × 3 points whose zero part is open (the upper half has no floor beyond its
+middle). They are not in the palette: the generator places them (H3). `dwell-world` `ramps.rs`
+looks them up by name. Until H4 switches the grid, natural blocks stay adaptive. The geometry is
+baked once by
 `shared/blocks/shapes.mjs` (`gen.mjs`) into the generated tables: each shape's closed, outward-wound
 polygons tagged with the cell face they lie on (or the sloped surface), its side profiles for
 culling, volume, convexity and extent — one table, so server, client and meshers agree.

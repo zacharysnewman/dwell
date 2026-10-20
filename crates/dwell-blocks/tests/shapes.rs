@@ -126,7 +126,10 @@ fn side_faces_cover_exactly_their_profiles() {
 }
 
 #[test]
-fn the_top_surface_covers_the_cell_once_at_the_height_the_probes_read() {
+fn the_top_surface_covers_the_footprint_once_at_the_height_the_probes_read() {
+    // The footprint is the floor face (the ceiling, hanging): the whole cell, but for the upper
+    // half of a 45° ramp on the half-height grid (HALF_HEIGHT_GRID.md §3), which is open beyond
+    // its middle.
     for (i, s) in shapes() {
         let projected: f64 = faces_of(s)
             .iter()
@@ -135,9 +138,14 @@ fn the_top_surface_covers_the_cell_once_at_the_height_the_probes_read() {
             })
             .map(|f| area2(&pts(f))[1].abs() / 2.0)
             .sum();
+        let footprint: f64 = faces_of(s)
+            .iter()
+            .filter(|f| f.tag == 3 && !s.inverted || f.tag == 2 && s.inverted)
+            .map(|f| area2(&pts(f))[1].abs() / 2.0)
+            .sum();
         assert!(
-            (projected - 1.0).abs() < 1e-6,
-            "shape {i}: top covers {projected}"
+            (projected - footprint).abs() < 1e-6 && footprint > 0.0,
+            "shape {i}: top covers {projected}, the footprint is {footprint}"
         );
         // A ray straight down (or up, hanging) enters the solid where `solid_span_at` says.
         for (x, z) in [
@@ -154,7 +162,15 @@ fn the_top_surface_covers_the_cell_once_at_the_height_the_probes_read() {
             } else {
                 ([x, 2.0, z], [0.0, -1.0, 0.0], 2.0 - span.hi)
             };
-            let hit = ray_enter_shape(s, [0.0; 3], origin, dir, 5.0, None, 0.0).expect("hits");
+            // A ray straight through an open part (the 45° upper half beyond its middle) meets
+            // nothing; elsewhere it enters where the span says (on an open part's edge, its floor).
+            let Some(hit) = ray_enter_shape(s, [0.0; 3], origin, dir, 5.0, None, 0.0) else {
+                assert!(
+                    span.hi <= span.lo,
+                    "shape {i} at ({x}, {z}): solid, but the ray misses"
+                );
+                continue;
+            };
             assert!(
                 (hit.t - want).abs() < 1e-5,
                 "shape {i} at ({x}, {z}): the ray enters at {}, the span says {want}",
@@ -197,9 +213,10 @@ fn the_adaptive_table_matches_its_shared_vector() {
 #[test]
 fn ridge_shapes_are_convex_only_without_a_turning_crest() {
     // Half pyramid, ridge and ridge end are convex; the corner, T and cross are not (Phase 20
-    // splits them).
+    // splits them). Ridges are the fan shapes whose corners lie on the floor (the 45° halves of the
+    // half-height grid are fan shapes too, with raised corners).
     let mut seen = std::collections::BTreeSet::new();
-    for (_, s) in shapes().filter(|(_, s)| s.fan && !s.inverted) {
+    for (_, s) in shapes().filter(|(_, s)| s.fan && !s.inverted && s.corners == [0; 4]) {
         let raised = s.points.iter().flatten().filter(|&&q| q > 0).count();
         // Centre plus 0..4 edge midpoints raised: 1 pyramid, 2 end, 3 ridge or corner, 4 T, 5 cross.
         let straight = raised == 3 && (s.points[1][0] == s.points[1][2]);
@@ -208,4 +225,48 @@ fn ridge_shapes_are_convex_only_without_a_turning_crest() {
         seen.insert(raised);
     }
     assert_eq!(seen.into_iter().collect::<Vec<_>>(), vec![1, 2, 3, 4, 5]);
+}
+
+#[test]
+fn the_half_height_grids_45_degree_halves_are_convex_prisms_that_stack_into_one_plane() {
+    // HALF_HEIGHT_GRID.md §3: the steep lower piece is flat to its middle, then down to its floor;
+    // the upper one slopes from its top to its middle, open beyond. Stacked with the same facing
+    // they are one 45° plane: at x the surface is 2 − 2x cells above the lower piece's floor.
+    let lower = dwell_blocks::shape::shape_of(
+        dwell_blocks::state(
+            "dwell:grass_ramp[facing=east,flooded=false,half=bottom,shape=steep_lower]",
+        )
+        .expect("a state"),
+    );
+    let upper = dwell_blocks::shape::shape_of(
+        dwell_blocks::state(
+            "dwell:grass_ramp[facing=east,flooded=false,half=bottom,shape=steep_upper]",
+        )
+        .expect("a state"),
+    );
+    assert!(lower.convex && upper.convex);
+    assert!((lower.volume - 0.75).abs() < 1e-9 && (upper.volume - 0.25).abs() < 1e-9);
+    assert!(lower.full_bottom && !upper.full_bottom && !upper.full_top);
+    for x in [0.55f32, 0.7, 0.95] {
+        let span = solid_span_at(lower, x, 0.5);
+        assert!(
+            (span.hi - (2.0 - 2.0 * x)).abs() < 1e-5,
+            "lower at {x}: {}",
+            span.hi
+        );
+    }
+    for x in [0.05f32, 0.25, 0.45] {
+        let span = solid_span_at(upper, x, 0.5);
+        assert!(
+            (1.0 + span.hi - (2.0 - 2.0 * x)).abs() < 1e-5,
+            "upper at {x}: {}",
+            span.hi
+        );
+        assert_eq!(solid_span_at(lower, x, 0.5).hi, 1.0);
+    }
+    let open = solid_span_at(upper, 0.75, 0.5);
+    assert!(
+        open.hi <= open.lo,
+        "the upper piece is open beyond its middle"
+    );
 }
