@@ -187,6 +187,9 @@ pub struct Advanced {
     /// ◆ How far inside the probe ring a step's edge ends up after a step-up (m), so the ground ring
     /// stands on the step.
     pub step_footing: f32,
+    /// ◆ The most the ground may rise from the feet to a step's foot (m), as on a ramp up to a step:
+    /// the step-up then lifts by the step plus that rise.
+    pub step_max_rise: f32,
     /// Fraction of the capsule radius.
     pub probe_ring_radius: f32,
     pub wall_check_distance: f32,
@@ -313,6 +316,7 @@ impl Default for PlayerControllerConfig {
                 step_probe_distance: 0.05,
                 step_face_heights: [0.05, 0.25],
                 step_footing: 0.01,
+                step_max_rise: 0.25,
                 probe_ring_radius: 0.9,
                 wall_check_distance: 0.16,
                 external_absorb_threshold: 0.01,
@@ -363,6 +367,11 @@ impl PlayerControllerConfig {
     /// Take-off speed that reaches `jump.height` under this config's gravity.
     pub fn jump_velocity(&self) -> f32 {
         (2.0 * self.body.gravity * self.jump.height).sqrt()
+    }
+    /// The most one step-up lifts the player: a step, plus the ground's rise to its foot. The
+    /// camera smooths feet changes up to this (PLAYER_CONTROLLER.md §9).
+    pub fn max_step_lift(&self) -> f32 {
+        self.movement.max_step_height + self.advanced.step_max_rise
     }
     pub const fn dt() -> f32 {
         1.0 / dwell_protocol::SIM_HZ as f32
