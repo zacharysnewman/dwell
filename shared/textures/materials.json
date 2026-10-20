@@ -22,7 +22,7 @@
         { "kind": "fill", "color": "@base" },
         { "kind": "dab", "count": 7, "colors": ["@shadow"], "width": [7, 10], "length": [11, 15], "angle": 25, "angleJitter": 40, "opacity": 0.28, "softness": 3 },
         { "kind": "dab", "count": 8, "colors": ["@light"], "width": [4, 6], "length": [8, 12], "angle": 30, "angleJitter": 30, "opacity": 0.32, "softness": 2 },
-        { "kind": "blade", "count": 14, "colors": ["@light", "@base"], "width": [1.8, 2.4], "length": [4, 6], "angle": 70, "angleJitter": 25, "bend": [-1, 1], "opacity": 0.45, "seed": 3 }
+        { "kind": "blade", "count": 14, "colors": ["@light", "@base"], "width": [1.8, 2.4], "length": [4, 6], "angle": 70, "angleJitter": 25, "bend": [-1, 1], "opacity": 0.3, "seed": 3 }
       ]
     },
     "soil": {

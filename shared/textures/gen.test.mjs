@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { bake, registryTiles, rustSource } from './gen.mjs';
+import { bake, labPage, registryTiles, rustSource } from './gen.mjs';
 import { TILE, imageRows, materialRamp, paintMaterial, resolveColor, validateMaterials, validatePalette } from './paint.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -24,6 +24,20 @@ test('the checked-in data is valid and the baked tiles are current', () => {
   assert.ok(Buffer.from(texels).equals(baked), 'painterly.rgba is stale: run node shared/textures/gen.mjs');
   const src = readFileSync(join(here, '..', '..', 'crates', 'dwell-mesh', 'src', 'painterly.gen.rs'), 'utf8');
   assert.equal(src, rustSource(names));
+});
+
+test('the editor page embeds the current painter and data, and its painter paints the same', () => {
+  const lab = join(here, '..', '..', 'docs', 'prototypes', 'painterly-texture-lab.html');
+  const html = readFileSync(lab, 'utf8');
+  const paintSource = readFileSync(join(here, 'paint.mjs'), 'utf8');
+  assert.equal(html, labPage(html, paintSource, palette, materials), 'stale: run node shared/textures/gen.mjs');
+  // The embedded block runs on its own and paints what the module paints.
+  const block = html.slice(html.indexOf('const PAINT = '), html.indexOf('// END GENERATED'));
+  const page = new Function(`${block}; return { PAINT, REPO_PALETTE, REPO_MATERIALS };`)();
+  assert.deepEqual(
+    page.PAINT.paintMaterial('grass_side', page.REPO_MATERIALS, page.REPO_PALETTE),
+    paintMaterial('grass_side', materials, palette),
+  );
 });
 
 test('painting is deterministic', () => {

@@ -1,10 +1,10 @@
 {
   "$comment": "Dwell's storybook palette (docs/ART_DIRECTION.md §2): the one source of colour for the painterly textures (shared/textures/materials.json) and the characters (shared/characters). A ramp is three painted values of one material: `shadow` (cooler, toward blue-violet), `base` (the local colour) and `light` (warmer, toward yellow). Reference a ramp stop as \"ramp.stop\" (\"meadow.light\"), a bare ramp name for its base, and a single swatch by its name (\"ink\"). Albedos stay inside about 0.06–0.92 in sRGB so the lights and ACES tone mapping keep them readable. Run `node shared/textures/gen.mjs` after editing.",
   "ramps": {
-    "meadow":      { "shadow": "#3d7a45", "base": "#74b043", "light": "#c2dc62" },
+    "meadow":      { "shadow": "#4a8a45", "base": "#82bd45", "light": "#c8e06a" },
     "leaf":        { "shadow": "#2e6450", "base": "#5f9e3e", "light": "#a6cf52" },
     "soil":        { "shadow": "#5b3a3c", "base": "#8e5d3d", "light": "#b98352" },
-    "stone":       { "shadow": "#737891", "base": "#a9a3a3", "light": "#dcd0b9" },
+    "stone":       { "shadow": "#817e8e", "base": "#a9a3a3", "light": "#dcd0b9" },
     "sand":        { "shadow": "#c4a07a", "base": "#ebd39c", "light": "#f8ecc6" },
     "water":       { "shadow": "#1d5ea6", "base": "#2f8fd8", "light": "#96dcf0" },
     "bark":        { "shadow": "#4a3438", "base": "#7c5338", "light": "#a77a4c" },
