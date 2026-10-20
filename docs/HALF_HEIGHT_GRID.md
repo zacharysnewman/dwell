@@ -80,18 +80,36 @@ For a natural column whose top cell is row `t − 1` (the column holds rows up t
 8 neighbours' column heights in rows (from the terrain's height function, so chunk borders need
 nothing extra):
 
-1. **Ramp.** The top cell is a ramp facing `d` if the edge neighbour toward `d` is lower (`< t`),
-   the opposite edge neighbour is not lower (`≥ t`), and either:
-   - **(slope)** both side neighbours, and the two diagonals on the opposite side, are not lower;
-     or
-   - **(one wide)** the opposite neighbour is higher (`> t`) and both side neighbours are lower:
-     a path or stair one block wide, which becomes a run of ramps.
-
-   At most one facing can satisfy this (each pair of facings contradicts on an edge neighbour).
-2. **Steep.** A ramp facing `d` whose neighbour toward `d` is at least 1 m lower (`≤ t − 2`)
+1. **Facing.** The facing `d` is the descent of the 9 heights' Sobel gradient, along its dominant
+   axis: `gx = (NE + 2E + SE) − (NW + 2W + SW)`, `gz = (SW + 2S + SE) − (NW + 2N + NE)`, east if
+   `gx < 0` and `|gx| ≥ |gz|` (x wins a tie), and so on; a neighbourhood with no gradient has none
+   and is flat.
+2. **Ramp.** The top cell is a ramp facing `d` if the edge neighbour toward `d` is lower (`< t`)
+   and the opposite edge neighbour is not lower (`≥ t`). The side neighbours and the diagonals are
+   not tested.
+3. **Steep.** A ramp facing `d` whose neighbour toward `d` is at least 1 m lower (`≤ t − 2`)
    becomes a 1 m ramp instead: the top cell is the steep upper piece and the cell below it the
    steep lower piece, both facing `d` and both of the surface material.
-3. **Otherwise flat.**
+4. **Otherwise flat.**
+
+**Option A (owner, 2026-10-20).** Until generator 1018 the rule had no gradient: a ramp facing `d`
+also needed both side neighbours and the two back diagonals not lower (a slope), or the opposite
+higher and both sides lower (a one-wide path), and steep ground snapped to whole metres
+(`terrain.json` `steps`). The slopes investigation found that on a hillside whose fall line is off
+the axes the contour shifts sideways every few columns, and at each shift the higher column has a
+lower side neighbour, so it stayed flat and left a vertical face, a 1 m one on the snapped ground:
+36.8 cliff edges ≥ 1 m per 100 land columns, 10–25° ground 48 % flat, 28 % ½ m ramp and 24 %
+vertical, 54 % of flat runs down the fall line ending in a face, and the drawn ground 0.33 m RMS
+from the continuous height. The owner chose option A: the snap off (`steps.height` 0) and the
+Sobel facing with only the toward/opposite test. This bends the old "otherwise flat": a corner, a
+ramp beside a lower side and a sideways contour shift now ramp, and the side of such a ramp is a
+½ m wedge-shaped face that the step-up (0.55 m) takes. Measured (`tests/slopes.rs`, 30 windows of
+48 × 48 over five seeds): 1.3 cliff edges per 100 columns (34.0 before), 10–25° ground 34 % flat,
+57 % ½ m ramp, 10 % vertical (47 / 31 / 23 %), no flat top on ≥ 10° ground whose downhill edge is a
+1 m face (19.9 %), RMS 0.152 m (0.285 m). Still cardinal pieces only, and still a pure function of
+the 9 heights. 45° pieces (the slides) cover 10.6 % of land tops, down from 12.9 %; the pines are
+unchanged (seed 7: 14,334 against 14,172, high ground 0.129 a cell against 0.127), so the
+footprint rule stays all flat grass.
 
 Everything below the top cell (or the top two, on steep ground) stays a full block. The rule is a
 pure function of the 9 column heights, so the generator, its tests and the LOD can apply it alike.
@@ -161,8 +179,10 @@ What the switch to ½ m cells did, and what it left for the playtest:
 
 ## 8. After merging `main` (H6, 2026-10-20)
 
-- **Versions:** protocol **1016** and generator **1018**, 1000 + the `main` versions last merged
-  (main 0.20.0: protocol 16, generator 18), so a dev build never joins or loads one of `main`'s.
+- **Versions:** protocol **1016** and generator **1019**: 1000 + the `main` versions last merged
+  (main 0.20.0: protocol 16, generator 18), so a dev build never joins or loads one of `main`'s,
+  and the generator one more for option A's slopes (§4). The next `main` merge takes the larger of
+  1000 + main's and this + 1.
 - **Shore water (main's generator 17, 2026-10-20):** see §5, Water; the fluid side faces and the
   water shader's fix came with it.
 - **Pines (main's generator 18, ADR 0043):** each structure layer of `pine_tree` and
@@ -177,10 +197,10 @@ What the switch to ½ m cells did, and what it left for the playtest:
   (64, 64, 20: 32 m, 32 m, 10 m), with metre twins. The build sphere (`bounds`) is in cells, so it
   reaches 25 km up and down (50 km across); nothing gets near either.
 - **Steep ground (main's v16 hills):** the height field and its steepness are main's
-  (`shared/worldgen/terrain.json`). Where a 4 m lattice cell rises at least `steps.fromSlope`
-  (0.5 m/m), heights snap to whole `steps.height` (1 m), so steep ground is 1 m steps of two ½ m
-  cells; the rule (§4) tops each with a 45° ramp, and a slope near 45° is a run of them. About 13 %
-  of land tops are 45° pieces (the slide's share), against 3 % without the steps.
+  (`shared/worldgen/terrain.json`). Generators 1016–1018 snapped heights to whole metres where a
+  4 m lattice cell rose at least `steps.fromSlope` (0.5 m/m), so steep ground was 1 m steps topped
+  with 45° ramps (12.9 % of land tops). Since 1019 (option A, §4) `steps.height` is 0: every slope
+  is ½ m cells, and a column ≥ 1 m above its downhill neighbour takes a 45° ramp (10.6 %).
 - **Brushes:** radii, heights and the preview's cells count cells (a ball is half as tall as it is
   wide); the preview is drawn in metres; reach is metres. A metric brush is a later step.
 - **Edits:** the server's line of sight passes plants, so a block under tall grass can be broken

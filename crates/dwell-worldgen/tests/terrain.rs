@@ -758,7 +758,7 @@ fn generated_ramps_follow_the_rule_across_chunk_borders_and_hold_the_sea_at_the_
             }
         }
     }
-    // The steep hills (generator 1017's whole-metre steps on steep ground) make 1 m ramps too.
+    // The steep hills (a column 1 m above its downhill neighbour) make 1 m ramps too.
     assert!(
         gentle > 100 && steep > 100 && flooded > 10 && on_borders > 10,
         "{gentle} {steep} {flooded} {on_borders}"

@@ -235,6 +235,11 @@ WASM builds compute them identically (§8.3).
      `step_probe_distance` (5 cm) past the face, from `max_step_height` + 5 cm above the foot: it
      must be at most `max_step_height` above the foot and no steeper than `slide.min_angle` (never
      onto ground that slides, §6.8). The lift is the top less the feet (the step plus the rise).
+     A face's top need not be level (on the half-height branch the side of a ½ m ramp beside one
+     a row lower rises along the face), so the top is read at each of the face's hit points and
+     the highest is used (the first of equal ones, so level steps are as before). Reading only the
+     first ray's point could take the face's low end, and the lifted capsule then hit the high end:
+     a walker stopped against the side of a ramp (`tests/ramps.rs`, diagonal hillsides).
   4. **Room.** The capsule (slimmed by 2 cm) must fit lifted (a ceiling over the step stops it),
      shifted, and after this tick's and the next tick's move.
   5. **Footing.** The ground ring (radius `0.9 × radius`) must stand on the step after the move,

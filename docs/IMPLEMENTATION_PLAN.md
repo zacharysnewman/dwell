@@ -58,7 +58,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 38 — The spyglass | 🚧 In progress — built and tested natively, in Vitest and on a real GPU (ADR 0039, `SPYGLASS.md`): a toggle key (`` ` ``) and wheel steps from `shared/look/spyglass.json` (generator, CI stale check), the zoomed FOV for the raster renderer, the marcher (its FOV bug fixed) and the LOD, which refines only inside the narrow view (bounded by the detail boost), the vignette, reduced motion, the `spyglass-far` bench scenario; outstanding: CI and the owner's review in a browser; a patch release |
 | 39 — Painterly textures | 🚧 In progress — built and tested natively, in Node and on a real GPU (ADR 0040, `ART_DIRECTION.md`, `PAINTERLY_TEXTURES.md`): the storybook palette and materials as data (`shared/textures`), one stroke generator baked into the atlas (CI stale check, a material added by data alone), `?textures=painterly` on the page and in the meshing workers (the classic set stays the default), the Painterly Texture Lab, the bench's `painterly` configuration (same frame cost); follow-ups: grass_side's skirt made continuous across the tile (owner's review); the skirt on dirt sides under grass (`sideUnder` block data, the `dirtSkirt` tile, in both sets; owner, 2026-10-20); outstanding: CI and the owner's review of the look, then flipping the default; a patch release |
 | 40 — Characters and creatures (design and concept) | 🚧 In progress — C0 built and tested (ADR 0041, `CHARACTERS.md`): the rig vocabulary and validator (`shared/characters/rig.mjs`), the data (the player with three looks, the wolf, the deer; accessories, the block and brush items, clips), the generator and its tests, the Character Lab prototype checked in Chrome and published; stacked on Phase 39's palette and materials; C0b (the owner's first review, 2026-10-20) built and tested: hair composes with hats (`with`), the wolf's and deer's tails are chains checked joined through every clip, the player's clips for every controller state (sprint, crouch, crouch-walk, slide, jump, fall, land, climb, swim, fly; the arms' sprint, slide, jump, fall, land) and the Lab's transitions player; outstanding: the owner's review of the fixes and the rest of `CHARACTERS.md` §10, CI; C1–C3 (in the game) not started; a patch release |
-| 41 — Half-height grid (½ m cells, stored cardinal ramps; branch `claude/half-height-voxels` only) | 🚧 In progress — H0–H4 built and verified locally: one named cell height (H1), the stored cardinal ramps (H2), the generation rule (H3), and the switch to ½ m cells (H4: no block adaptive; face B's LOD mirror and the LOD id fixed). H6: `main` merged in (Phase 16's world, registry sync, sprint slide, spyglass, brushes and predicted edits, steep v16 hills as whole-metre steps with 45° ramps; protocol and generator 1016), native, WASI, clippy and Vitest green locally; main 0.20.0 merged (shore water: ramps below sea level flooded; step-up; the pines at two cells per block; protocol 1016, generator 1018), the touched suites green locally; playtest fix: no flicker at a 45° ramp's foot (§6.8). Outstanding: CI; the ray marcher, brushes, the fluid surface drop, the vertical view radius and the build sphere left in cells (deviations, for the playtest). Next: H5, the owner's playtest on a dev build. A playtest branch, not for `main` until the owner keeps it; `package.json` not raised on the branch |
+| 41 — Half-height grid (½ m cells, stored cardinal ramps; branch `claude/half-height-voxels` only) | 🚧 In progress — H0–H4 built and verified locally: one named cell height (H1), the stored cardinal ramps (H2), the generation rule (H3), and the switch to ½ m cells (H4: no block adaptive; face B's LOD mirror and the LOD id fixed). H6: `main` merged in (Phase 16's world, registry sync, sprint slide, spyglass, brushes and predicted edits, steep v16 hills as whole-metre steps with 45° ramps; protocol and generator 1016), native, WASI, clippy and Vitest green locally; main 0.20.0 merged (shore water: ramps below sea level flooded; step-up; the pines at two cells per block; protocol 1016, generator 1018), the touched suites green locally; playtest fix: no flicker at a 45° ramp's foot (§6.8); option A's slopes (generator 1019: no 1 m step snap, the Sobel ramp facing; 1.3 cliff edges per 100 columns from 34.0) and the step-up's highest top across a face. Outstanding: CI; the ray marcher, brushes, the fluid surface drop, the vertical view radius and the build sphere left in cells (deviations, for the playtest). Next: H5, the owner's playtest on a dev build. A playtest branch, not for `main` until the owner keeps it; `package.json` not raised on the branch |
 
 Phase numbering: Phase 4 was inserted on 2026-09-29 for the planet-scale world (ADRs 0011, 0012);
 the former Phases 4–7 are now 5–8, and Phase 3's former 3c and 3d are now 3d and 3e.
@@ -4144,9 +4144,24 @@ Deviations:
   ramp, the ground is now the one under the centre and the ramp is a wall to the tick's motion
   (PLAYER_CONTROLLER.md §6.8, "The ramp's foot"); no slide hysteresis or wire change was needed.
   `tests/ramps.rs`: 40 of 40 approaches flickered before, none after.
-- Outstanding (playtest): Diagonal steep slopes are 1 m steps
-  without ramps (the cardinal-only set has no corner piece), so they need a jump. The sprint-slide
-  bench showed frame hitches (p99 198 ms) while sprinting.
+- [x] Option A of the slopes investigation (owner, 2026-10-20; HALF_HEIGHT_GRID.md §4): the 1 m
+  step snap off (`steps.height` 0) and the ramp facing from the 9 heights' Sobel gradient, with
+  only the downhill neighbour lower and the uphill one not; generator 1019, goldens regenerated
+  (the golden trace unchanged). `tests/slopes.rs` (red on 1018, green on 1019): cliff edges ≥ 1 m
+  per 100 land columns 34.0 → 1.3; 10–25° ground flat / ½ m ramp / vertical 47/31/23 → 34/57/10 %;
+  flat tops on ≥ 10° ending downhill in a 1 m face 19.9 → 0 %; RMS to the continuous field 0.285 →
+  0.152 m. Slides 12.9 → 10.6 % of land tops (the hills test's floor 12 → 9 %); pines unchanged.
+- [x] Fix: the step-up read a face's top at its first hit point, which on the side of a ½ m ramp
+  beside a lower one could be the low end, so the lifted capsule hit the high end and the player
+  stopped (2.7 m into a walk along a 0.45 m/m hillside 30° off the z axis); now the highest top of
+  the face's hit points (PLAYER_CONTROLLER.md §4). `tests/ramps.rs` diagonal hillsides: 84 walks
+  and runs at 30/45/60° off the axes, 3 stopped (133–155 ticks) before, none after.
+- [x] Checked in Chrome on a real GPU (seed 7): the hillside north-east of spawn is ½ m ramps where
+  it was 1 m terraces; walks and runs up, down and across it at 30/45/60/90° have no hang-ups, no
+  take-offs and no state flicker in the controller trace.
+- Outstanding (playtest): the sprint-slide bench showed frame hitches (p99 198 ms) while
+  sprinting. (Diagonal steep slopes as 1 m steps needing a jump: answered by option A, for the
+  owner's playtest.)
 - Deviations: the build sphere stays in cells (it reaches 25 km up and down); brushes stay in cells
   (radii and heights count cells, so a ball is half as tall as wide; reach is metres); the golden
   trace's bound 49 km out is 2 mm (1.3 mm measured; `main` 1 mm).
