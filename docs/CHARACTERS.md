@@ -13,6 +13,13 @@ shared palette and materials of [`ART_DIRECTION.md`](./ART_DIRECTION.md). Adopte
 colours and clips) are the first art direction, still prototype in scope (`ARCHITECTURE.md` §6.1):
 the system is what this phase fixes, and the content grows by data.
 
+**The owner's first review (2026-10-20)** asked for three fixes, now in: hair and hats compose (a
+part can hang from another, so a hat that hides the top hair takes the fringe with it, and the
+wide-brimmed hat tucks its own fringe under the brim, §4.1); the wolf's and the deer's tails are
+**chains** whose segments join end to end and bend smoothly in every clip (§4.2); and the player has
+a clip for every controller state, with first-person versions of the sprint, slide and jump and a
+transitions preview in the Lab (§6).
+
 ## 1. The owner's answers (2026-10-20)
 
 | Question | Answer |
@@ -82,6 +89,9 @@ The engine behind the data (CLAUDE.md, "extendable system") is small and fixed, 
 | Views | A part is drawn in `both` views, the `body` only, or the first-person `arms` only (extra detail). |
 | Places | Where an accessory sits: `head`, `hair`, `face`, `neck`, `shoulders`, `back`, `back_top`, `waist`, `hands`, `wrists`, `feet`, `antlers`. One accessory per place. |
 | Run-time materials | `$block`: the held block's own painted tile (the brush's tuft takes it too). |
+| Hanging parts | A part's `with` names a part it hangs from; hiding that one hides it too (§4.1). |
+| Chain check | A segment runs along its part's longest side, between the centres of its end caps; each meets the next within 3 cm (`CHAIN_TOLERANCE`) and turns from it by at most 60° (`CHAIN_MAX_BEND`); the first starts at its bone's pivot and on the part it grows from (§4.2). |
+| Clip flags | `grounded` (a base clip stands on the ground; `false` in the air, in water, on a ladder) and `blend` (the cross-fade into it, seconds; 0.2 by default). Switching base clips cross-fades every bone either clip keys (`crossfade`). |
 
 Conventions: metres; +y up, +z the way the character faces, +x its left; rotations are Euler XYZ in
 degrees (three.js's default order), so +x pitches a bone's top toward +z and a hanging limb swings
@@ -107,7 +117,9 @@ one stop of it (`"brass"`, `"leather.shadow"`), a swatch (`"ink"`), a colour slo
   - `slots`: colour slots → materials (`"tunic": "cloth_wool_blue"`). Parts name a slot; a variant
     or the Lab recolours by changing the slot.
   - `parts`: `{ id, on (bone or socket), kind, size, at?, rot?, material, round?, tip?, mirror?,
-    view? }`.
+    view?, with? }`. `with` names an earlier part this one hangs from (the fringe from the top hair).
+  - `chains`: named chains of parts, `{ from, parts }`: the part the chain grows from and its
+    segments, root first (the wolf's tail: `haunch` → `tail_base`, `tail_brush`, `tail_tip`).
   - `accessories`: the default look's accessory names; `variants`: named looks `{ label, accessories,
     slots }` (the player's *wanderer*, *ranger*, *tinker*; the deer's *stag* and *doe*).
   - `clips`: roles → clip names (`idle`, `walk`, `hold`, `break`, `place`; the wolf's `trot`, the
@@ -115,10 +127,12 @@ one stop of it (`"brass"`, `"leather.shadow"`), a swatch (`"ink"`), a colour slo
   - `firstPerson`: the arm chain (`["arm_r", "forearm_r", "hand_r"]`), its `anchor` in view space
     (metres from the eye), the arms view's `fov`, and its clips (§5).
 - **`accessories`**: `{ label, place, fits (rigs), slots (its own colour slots and defaults), hides
-  (body part ids it covers), parts }`. A hat hides the hair's top; gloves hide the hands.
+  (body part ids it covers), parts }`. A hat hides the hair's top; gloves hide the hands. An
+  accessory's parts may paint with the wearer's slots (`hair`, `skin`), so it can bring a variant of
+  what it hides (§4.1).
 - **`items`**: things held in hand: `{ label, on (a socket), parts }`. `block` (a 0.2 m cube of
   `$block`) and `brush` (a wooden handle, a brass ferrule, a tuft in the selected block's colour).
-- **`clips`**: `{ rig, space?, layer, duration, loop, ease, cycle?, keys }`. A key is `{ t, bones:
+- **`clips`**: `{ rig, space?, layer, duration, loop, ease, cycle?, grounded?, blend?, keys }`. A key is `{ t, bones:
   { bone: [x, y, z] degrees }, root?: [x, y, z] metres }`; each bone interpolates between the keys
   that name it, so a key lists only what moves at that moment. `cycle` is the distance travelled per
   loop: a gait plays at `speed / cycle` loops a second, so feet don't slide.
@@ -136,8 +150,41 @@ Checked: unknown keys, names, shapes and their parameters, bones and sockets tha
 included), materials that resolve, repeated ids, every rig bone given a rest offset, accessories
 that fit the rig and don't share a place, slots that exist, hidden parts that exist, clips on the
 right rig and space, keys in time order, hinges turned about their axis only, joint limits, the
-first-person chain connected and its clips keying only it — and **the rest pose**: feet on the
-ground and the body (without accessories) as tall as `height`, within 3 cm.
+first-person chain connected and its clips keying only it, a `with` naming an earlier part of the
+character (not an accessory's), chains naming parts, `grounded` only on a base clip, `blend` 0–2 s —
+and **the rest pose**: feet on the ground, the body (without accessories) as tall as `height` within
+3 cm, and every chain joined and smooth.
+
+### 4.1 Hair under hats
+
+The hair is three parts: `hair_top`, `hair_back` and `hair_fringe`, the fringe hanging from the top
+(`"with": "hair_top"`). A hat says what it covers (`"hides": ["hair_top"]`), and anything hanging
+from a hidden part is hidden with it, so the fringe never floats on the forehead without the hair it
+grows from (the owner's review: *"a lone brown bar floats across the forehead under the brim"*). A
+hat that wants hair showing brings its own: the wide-brimmed hat adds `hat_fringe` and two
+`hat_tuft` side locks tucked under the brim, painted with the wearer's `hair` slot so they take any
+look's hair colour; the hood hides the fringe and shows none. A new hat chooses by data: hide the top
+(the fringe goes too), bring a tucked variant, or both. Tests: in every look of every character no
+drawn part hangs from a hidden one, every hat that hides the top hair hides the fringe, and the wide
+hat's own hair sits under its brim.
+
+### 4.2 Chains: tails
+
+A chain is a list of parts joined end to end, each on its own bone or riding the last one's. A part's
+segment runs along its longest side between the centres of its end caps (half its length less its
+radius from the middle), so neighbouring segments overlap into a smooth tube. The chain is joined
+when each segment starts within 3 cm of where the last ends, the first starts at its bone's pivot
+and on the part it grows from, and no segment turns more than 60° from the last. The validator
+checks the rest pose; a test samples every clip of the character (25 times each, every look) and
+checks the same, so a clip that kinks or tears a tail fails.
+
+The rule that keeps it joined in motion: **each tail bone's pivot is the end of the segment before**,
+so turning a bone swings the rest of the tail about the joint instead of opening a gap. The wolf's
+tail grows from the top of the haunch, 40° below the horizontal, then 60° and 70° for the brush and
+its dark tip (each part's `rot` lays its long side along the chain); the deer's short tail hangs from
+the rump with its white flash continuing it, and its flicks lift it back (+x), not forward into the
+rump. Before the fix the wolf's base segment ran across the chain (0.16 m from its pivot) and the
+deer's tail hung 7 cm behind the rump.
 
 ## 5. The first-person arms
 
@@ -168,19 +215,42 @@ Clips are keyed rotations on the rig (and a root offset for bob), sampled and la
 
 | Character | Base | Hold | Action |
 | --- | --- | --- | --- |
-| Player (body) | `biped_idle` (breathing, 3 s), `biped_walk` (1 s, 1.6 m a loop: legs, counter-swinging arms, hips and chest twist, bob) | `biped_hold` (the right forearm forward) | `biped_break`, `biped_place` |
-| Player (arms) | `fp_idle`, `fp_walk` | (in the base) | `fp_break`, `fp_place` |
+| Player (body) | `biped_idle` (breathing, 3 s), `biped_walk` (1 s, 1.6 m a loop: legs, counter-swinging arms, hips and chest twist, bob), `biped_sprint` (0.66 s, 3 m: chest forward, arms pumping, high knees), `biped_crouch` (a deep squat, chest forward), `biped_crouch_walk` (1 s, 0.9 m), `biped_slide` (low and leaning back, the lead leg out, the other folded under, the left arm out for balance), `biped_jump` (0.42 s, one-shot: a dip, the push onto the toes with the arms swinging up, then knees tucked), `biped_fall` (legs loose, arms up and out), `biped_land` (0.4 s, one-shot: the squash on touching down, to standing), `biped_climb` (hand over hand, 1.2 m a loop), `biped_swim` (a breaststroke and a frog kick, leaning into it), `biped_fly` (a hover, legs trailing) | `biped_hold` (the right forearm forward) | `biped_break`, `biped_place` |
+| Player (arms) | `fp_idle`, `fp_walk`, `fp_sprint` (a bigger, faster bob and the arm pumping), `fp_slide` (the arm out to the right and lowered), `fp_jump` (a dip on the take-off, the arm lifting with the push), `fp_fall` (raised a little, fluttering), `fp_land` (a dip, back to the hold) | (in the base) | `fp_break`, `fp_place` |
 | Wolf | `wolf_idle` (tail sway, head turns, an ear flick), `wolf_trot` (0.56 s, 1.4 m: diagonal pairs, a suspended bob, the tail up and swaying) | | |
 | Deer | `deer_idle` (head turns, ear and tail flicks), `deer_walk` (1.2 s, 1.1 m: four beats, left hind, left fore, right hind, right fore), `deer_graze` (6 s: head down to the grass, nibbling, a look up with ears forward, down again) | | |
 
 Layering is `base`, then `hold` (when an item is held), then `action` (a swing), each replacing the
 bones it keys: the player walks with the block held in front and swings without stopping. A test
-samples every base clip and checks the lowest point stays within 6 cm of the ground (no foot through
-the floor, no floating).
+samples every grounded base clip and checks the lowest point stays within 6 cm of the ground (no foot
+through the floor, no floating); the crouch, crouch-walk and slide stay low (under 1.3 m, the slide
+1.4 m) and the slide's hand reaches out past 0.45 m. The new clips' legs were solved with two-bone
+IK onto planted feet, then rounded to whole degrees in the data.
 
-In the game the state comes from what the controller already has (§9.3): `idle` or `walk` from the
-player's state and speed (walk plays at `speed / cycle`), `hold` from the hotbar, `break` or `place`
-from an edit. Crouch, swim, climb, fall, slide and the death pose are later clips (§10, question 4).
+**The controller's states → roles** (`PLAYER_CONTROLLER.md` §3; the state comes from what snapshots
+already carry, §9.3):
+
+| Controller | Body role | Arms role |
+| --- | --- | --- |
+| `Idle` | `idle` | `idle` |
+| `Walking` (plays at `speed / cycle`) | `walk` | `walk` |
+| `Running` | `sprint` | `sprint` |
+| `Crouching`, still / moving | `crouch` / `crouch_walk` | `idle` / `walk` |
+| `Sliding` (the steep slide and the sprint slide) | `slide` | `slide` |
+| `JUMPED` event, then `Jumping` | `jump` (one-shot) | `jump` |
+| `Falling` (and `Jumping` after the jump clip ends) | `fall` | `fall` |
+| `LANDED` event | `land` (one-shot, then the ground state) | `land` |
+| `Climbing` | `climb` (at `climb speed / cycle`) | `idle` |
+| `Swimming` | `swim` | `idle` |
+| `Flying` | `fly` | `idle` |
+| hotbar item / an edit | `hold` / `break`, `place` | `break`, `place` |
+
+**Transitions.** Switching base clips cross-fades from the old pose to the new over the new clip's
+`blend` (0.25 s into the sprint, 0.12 s into the slide, 0.06 s into the jump, 0.05 s into the land;
+0.2 s when it doesn't say), every bone either clip keys taking part (a bone one clip doesn't key is at
+rest in it). The Lab's **Transitions** player previews it: presets (walk → sprint → slide → walk;
+idle → jump → fall → land → idle; walk → crouch; climb, swim, fly; the wolf's trot, the deer's graze) or a sequence built clip by
+clip, the jump's rise drawn as the controller's 1.25 m arc. The death pose is still to come.
 
 ## 7. Tools: generator, tests, the Character Lab
 
@@ -189,15 +259,19 @@ from an edit. Crouch, swim, climb, fall, slide and the death pose are later clip
   Lab page between its generated markers. CI regenerates the page and fails on any diff, so editing
   `characters.json`, the palette or the materials means running `node shared/characters/gen.mjs`.
   When the game draws characters it also writes the Rust tables (§9.1).
-- **`shared/characters/gen.test.mjs`** (`node --test`): the data valid and the page fresh; 26 bad
+- **`shared/characters/gen.test.mjs`** (`node --test`): the data valid and the page fresh; 36 bad
   entries each failing with its message; a part, an accessory and a variant **added by data alone**
   composed and worn (a mirrored pauldron reaches past the shoulder; a top hat hides the hair and
   stands on the head); the held item on its socket and the arms view sharing the body's parts;
-  sampling, looping and layering; feet on the ground in every base clip.
+  sampling, looping and layering; feet on the ground in every grounded clip; hair never left floating
+  under a hat (§4.1); every quadruped's tail a chain, joined and smooth at rest and through every clip
+  in every look, and a turned or detached segment caught (§4.2); a body clip for every controller
+  state and arms clips for the ones that show (§6); cross-fades over every keyed bone.
 - **The [Character Lab](./prototypes/character-lab.html)** (three.js, standalone, publishable):
   the player full body, the first-person view (a little world, the hotbar, the arms in their own
   pass), the wolf, the deer and a group to scale with 1 m blocks; orbit, front/back/side/¾ views and
-  a turntable; clip playback with a scrubber and speed, and break and place swings; looks (variants),
+  a turntable; clip playback with a scrubber and speed, break and place swings, and the transitions
+  player (§6); looks (variants),
   accessories by place, colour slots, the held item and block; a parts list (click a part in the view
   to select it) with live editing of every field, duplicate, delete and add; the silhouette check,
   brush strokes, outline, bones and sockets, and the game's tone mapping; validation by the same
@@ -290,7 +364,10 @@ key).
    satchel), tinker (braids, scarf, bright cuffs, satchel). The right archetypes? How many at
    first, and should players mix accessories freely or pick whole outfits?
 3. **Faces.** Dot eyes, brows and a nose, no mouth. Add a mouth line, or faces as decals later?
-4. **More clips.** Which next: crouch, swim, climb, fall, slide, the death pose, a jump?
+4. **More clips.** *Answered (2026-10-20):* sprint, slide, jump (take-off, air, landing), crouch and
+   crouch-walk, fall, climb, swim and fly, with first-person sprint, slide and jump. Still open: the
+   death pose, and whether the crouched body should fit the 0.9 m crouch capsule (with the big head
+   its top is ~1.2 m, so it pokes ~0.2 m above a 1-block crawlspace's ceiling when seen from outside).
 5. **The outline.** Keep the thin ink outline in the game (one extra draw per part), or rely on the
    rim and the palette?
 6. **First-person framing.** The arm sits low on the right with the block at about a third of the
