@@ -157,6 +157,7 @@ impl Tally {
 }
 
 #[test]
+#[ignore = "pins V4 (option A)'s hillsides; this is hh-variant V3, where it does not hold (run with --ignored for its numbers)"]
 fn hillsides_are_ramps_without_1_m_terraces() {
     // Owner, 2026-10-20 (option A of the slopes investigation): with the 1 m step snap off and
     // the Sobel facing, the slopes investigation measured 1.0 cliff edge ≥ 1 m per 100 land
