@@ -6,6 +6,7 @@ pub mod bifacial;
 pub mod decorations;
 pub mod island;
 pub mod noise;
+pub mod ramps;
 pub mod terrain;
 
 use std::collections::HashMap;

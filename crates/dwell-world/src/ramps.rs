@@ -42,8 +42,19 @@ impl RampFacing {
 /// The state of `base`'s ramp family (`"dwell:grass"` → `dwell:grass_ramp[...]`), dry, or None
 /// when `base` has no ramp family.
 pub fn ramp_state(base: &str, shape: &str, facing: RampFacing, hanging: bool) -> Option<StateId> {
+    ramp_state_flooded(base, shape, facing, hanging, false)
+}
+
+/// [`ramp_state`], holding the fluid around it in its open part when `flooded`.
+pub fn ramp_state_flooded(
+    base: &str,
+    shape: &str,
+    facing: RampFacing,
+    hanging: bool,
+    flooded: bool,
+) -> Option<StateId> {
     dwell_blocks::state(&format!(
-        "{base}_ramp[facing={},flooded=false,half={},shape={shape}]",
+        "{base}_ramp[facing={},flooded={flooded},half={},shape={shape}]",
         facing.name(),
         if hanging { "top" } else { "bottom" },
     ))
@@ -81,6 +92,22 @@ pub fn gentle_cell(base: &str, facing: RampFacing, hanging: bool) -> Option<Stat
         return None;
     }
     ramp_state(base, "ramp", facing, hanging)
+}
+
+/// [`gentle_cell`] upright, flooded or dry, for the generator.
+pub fn gentle_cell_flooded(base: &str, facing: RampFacing, flooded: bool) -> Option<StateId> {
+    if CELL_H != 0.5 {
+        return None;
+    }
+    ramp_state_flooded(base, "ramp", facing, false, flooded)
+}
+
+/// [`steep_cells`] upright, flooded or dry, for the generator.
+pub fn steep_cells_flooded(base: &str, facing: RampFacing, flooded: bool) -> Option<Vec<StateId>> {
+    steep_pieces()?
+        .iter()
+        .map(|&p| ramp_state_flooded(base, p, facing, false, flooded))
+        .collect()
 }
 
 #[cfg(test)]

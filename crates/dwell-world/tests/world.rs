@@ -1,6 +1,7 @@
 //! The voxel grid and block edits (ported from the C++ core and block-edit tests); structures are
 //! in `structures.rs`.
 
+use dwell_world::ramps::RampFacing;
 use std::sync::Arc;
 
 use dwell_blocks::{StateId, require};
@@ -305,6 +306,25 @@ fn tall_grass_is_placed_only_on_grass_or_dirt() {
         .check,
         EditCheck::Ok
     );
+}
+
+#[test]
+fn tall_grass_is_not_placed_on_a_stored_ramp() {
+    // HALF_HEIGHT_GRID.md §5: plants grow on flat tops only. A grass or dirt ramp piece is its own
+    // block (`dwell:grass_ramp`), which tall grass's `placeOn` does not list.
+    let grass = s("dwell:tall_grass");
+    let mut world = ground();
+    let eye = [0.5, 1.62, 0.5];
+    for base in ["dwell:grass", "dwell:dirt"] {
+        let ramp =
+            dwell_world::ramps::ramp_state(base, "ramp", RampFacing::East, false).expect("a ramp");
+        world.set_voxel(0, -1, 2, ramp);
+        assert_eq!(
+            check(&mut world, place([0, -1, 2], 2, grass), eye, &[]).check,
+            EditCheck::NoSupport,
+            "{base}"
+        );
+    }
 }
 
 #[test]

@@ -726,7 +726,11 @@ reads a ridge shape's fan. **[built, Phase 36 H2, on the branch `claude/half-hei
 half, shape]`: the stored cardinal ramps of the half-height grid (`HALF_HEIGHT_GRID.md` §3) — the
 `ramp` (a wedge), and `steep_lower` and `steep_upper`, the two halves of a 45° ramp that spans two
 ½ m cells, given as 3 × 3 points whose zero part is open (the upper half has no floor beyond its
-middle). They are not in the palette: the generator places them (H3). `dwell-world` `ramps.rs`
+middle). They are not in the palette: the generator places them. **[built, Phase 36 H3]**
+`dwell-worldgen` `ramps.rs` holds the generation rule (`HALF_HEIGHT_GRID.md` §4), a pure function
+of a column's height and its 8 neighbours' (rows); the generator tops each natural column with its
+pieces (flooded under the sea) and decorates only flat tops. It is active only where the pieces
+exist for the cell height (½ m cells). `dwell-world` `ramps.rs`
 looks them up by name. Until H4 switches the grid, natural blocks stay adaptive. The geometry is
 baked once by
 `shared/blocks/shapes.mjs` (`gen.mjs`) into the generated tables: each shape's closed, outward-wound
