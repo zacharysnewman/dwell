@@ -135,7 +135,9 @@ GitHub Pages only serves static files. Consequences that shape the architecture:
 - **Builds are releases** (`.github/workflows/release.yml`). A push to `main` builds a **dev** build,
   `v<next version>-dev.<run>` (a GitHub pre-release) — unless it leaves `client/package.json` above
   the newest release, which releases that version as **stable** (the baseline, a new line); a pushed `v<version>` tag, or the workflow run
-  by hand, builds the **stable** release. `client/scripts/release.ts` decides which version: the next
+  by hand, builds the **stable** release. The run by hand with *channel* `dev` instead builds a dev
+  build of whichever branch it runs on (a pre-release, never Latest, titled with the branch;
+  RELEASES.md §3, step 3b), listed by the launcher like `main`'s dev builds. `client/scripts/release.ts` decides which version: the next
   patch after the newest published release, or `client/package.json`'s version if that is higher
   (`package.json` is a floor, raised by hand only to start a new line; nothing is bumped after a
   release), or one named in the manual run's *version* input or by the tag, which must be newer than
