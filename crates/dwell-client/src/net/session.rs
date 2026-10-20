@@ -931,7 +931,10 @@ mod tests {
         };
         // The game's ids need not be in order (a stroke's queued edits were numbered first).
         assert!(s.send_edit(&place(require("dwell:sand")), 40));
-        assert!(!s.send_edit(&place(require("dwell:ladder")), 41), "client-only: not sent");
+        assert!(
+            !s.send_edit(&place(require("dwell:ladder")), 41),
+            "client-only: not sent"
+        );
         assert!(s.send_edit(&place(require("dwell:stone")), 7));
         assert!(s.send_edit(&place(require("dwell:dirt")), 8));
         assert_eq!(sent(&s.take_out()).len(), 3);

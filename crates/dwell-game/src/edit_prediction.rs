@@ -122,15 +122,15 @@ impl EditPredictor {
         }
         for c in chunks {
             let coord = c.coord;
-            c.changes.retain(|ch| {
-                match self.cells.get_mut(&chunk_cell(coord, ch.index)) {
+            c.changes.retain(
+                |ch| match self.cells.get_mut(&chunk_cell(coord, ch.index)) {
                     Some(o) => {
                         o.server = ch.material;
                         false
                     }
                     None => true,
-                }
-            });
+                },
+            );
         }
     }
 
@@ -242,7 +242,10 @@ mod tests {
         p.resolve(&[(id, false)], &mut w);
         assert_eq!(w.state([1, 2, 3]), STONE);
         assert_eq!(w.writes, writes, "nothing to write back");
-        assert_eq!((p.pending(), p.predicted_cells(), p.stats.corrected), (0, 0, 0));
+        assert_eq!(
+            (p.pending(), p.predicted_cells(), p.stats.corrected),
+            (0, 0, 0)
+        );
     }
 
     #[test]
@@ -264,7 +267,11 @@ mod tests {
         p.predict(id, &[([0, 0, 0], STONE)], &mut w);
         // Another player's edit landed first: the server put sand there.
         w.modification(&mut p, &[([0, 0, 0], SAND)]);
-        assert_eq!(w.state([0, 0, 0]), STONE, "the prediction stays until the ack");
+        assert_eq!(
+            w.state([0, 0, 0]),
+            STONE,
+            "the prediction stays until the ack"
+        );
         p.resolve(&[(id, false)], &mut w);
         assert_eq!(w.state([0, 0, 0]), SAND);
     }

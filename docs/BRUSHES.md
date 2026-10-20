@@ -213,8 +213,18 @@ been an alternative, but it fails twice:
   - the cell-rate bucket (65,536 cells/s, a burst of 131,072).
 
   The client mirrors the bucket and queues a stroke's edits, sending them as the rate allows. A new
-  edit waits until the queue is empty. Nothing is predicted: the change shows when the
-  VoxelModification arrives.
+  edit waits until the queue is empty. The whole stroke shows at once (predicted, below).
+- **Predicted strokes and edits** (owner, 2026-10-19: §5, question 5; protocol v16, so a new
+  compatibility line, 0.17). One mechanism serves strokes and normal break/place edits alike
+  (`ARCHITECTURE.md` §6.5, edit prediction): when a stroke is made, each of its queued edits is
+  checked as the server will check it, on the client's world, and its cells are written at once;
+  the server's changes to those cells wait in an overlay. The server numbers every edit it
+  receives and, after the step's modification, acknowledges them with an `EditAck` naming the
+  refused ones. Once no edit waits on a cell, it shows the server's state: unchanged for a
+  confirmed edit, rolled back for a refused one, the server's result where it differs (another
+  player's edit landed first, a cell in a body, a block left unsupported). Normal edits were
+  predicted too, rather than brushes only: the same overlay and acks serve both, and nothing about
+  a single break or place made it riskier than a stroke.
 - **Undo over unbreakable cells.** With `KEEP` available, undo keeps unbreakable cells as `KEEP`.
   This also fixes S3's undo of a box over the sandbox floor, which the server used to reject.
 

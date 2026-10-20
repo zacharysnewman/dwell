@@ -1123,12 +1123,12 @@ impl<S: Scene> Game<S> {
                     &[],
                     dwell_world::edit::DEFAULT_REACH,
                 );
-                (out.check == dwell_world::edit::EditCheck::Ok).then(|| vec![(out.cell, out.material)])
+                (out.check == dwell_world::edit::EditCheck::Ok)
+                    .then(|| vec![(out.cell, out.material)])
             }
             Message::RegionEdit(e) => {
                 // Every chunk of the box loaded (Air ones too), so the client's world reads it right.
-                self.streamer
-                    .read_box(e.min, e.size.map(i32::from))?;
+                self.streamer.read_box(e.min, e.size.map(i32::from))?;
                 let reach = self.region.reach + 1.0;
                 let out = dwell_world::region::check_region_edit(
                     self.streamer.store_mut(),

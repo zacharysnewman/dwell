@@ -1,8 +1,8 @@
 //! The region tools (ARCHITECTURE.md §6.5; structure sandbox S3): a two-corner box selection, fill,
 //! hollow, replace and clear with the hotbar's block, copy, paste with a ghost box (rotated and
 //! mirrored on paste), and undo/redo as a client-side stack of region diffs replayed as region
-//! edits. Each edit is a `RegionEdit` the server validates; like single edits, nothing is
-//! predicted — the change shows when the server's VoxelModification arrives.
+//! edits. Each edit is a `RegionEdit` the server validates; like single edits, it is predicted
+//! (`edit_prediction.rs`): the client shows it at once and reconciles with the server's acks.
 //!
 //! A diff keeps the box's states read from the client's world just before the edit is sent: undo
 //! pastes them back (and keeps what it replaced, for redo). Edits only go to a server that
@@ -632,7 +632,10 @@ impl RegionTools {
 
     /// The queued edits the server's rate allows now (each frame).
     pub fn pump(&mut self, now_ms: f64) -> Vec<Message> {
-        self.pump_tagged(now_ms).into_iter().map(|(m, _)| m).collect()
+        self.pump_tagged(now_ms)
+            .into_iter()
+            .map(|(m, _)| m)
+            .collect()
     }
 
     /// [`pump`](Self::pump), with each edit's prediction id (`tag`), if it has one.
