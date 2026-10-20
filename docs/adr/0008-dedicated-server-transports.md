@@ -72,3 +72,11 @@ removed** from the architecture.
   work in browsers that allow loopback (e.g. Playwright's Chromium); real servers advertise a
   routable IP (`--advertise`).
 - Safari has not been tested yet (no Safari in the development environment).
+- **Message size (2026-10-19).** With no SDP exchange, `str0m` assumes the browser accepts SCTP
+  messages of at most 64 KiB (RFC 8841's default) and refuses larger writes, while a reliable
+  message may be up to 1 MiB (a near-checkerboard chunk encodes to 65 562 bytes). Reliable
+  messages over a link's limit travel as **fragments** (`WEBRTC_FRAGMENT_TAG` ‖ `u32` total length
+  ‖ bytes, ARCHITECTURE.md §8.2) on every WebRTC link, both directions; messages that fit are sent
+  unchanged. Chosen over capping message sizes, which every message kind (chunks, LOD sections,
+  registry parts, future ones) would have to honour forever; no protocol bump, since a message
+  that worked before is byte-identical and fragments appear only where the send used to fail.

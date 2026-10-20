@@ -431,10 +431,13 @@ Client certificates are not verified (str0m fingerprint verification off): the c
 server fingerprint and proves its identity with the device-key handshake, which is bound to that
 fingerprint. Clients that don't open all channels within 10 s are dropped, and half-open clients
 are capped at 512. Reliable writes queue while SCTP buffers are full. **Message size:** with no
-SDP exchange, str0m takes the browser's max-message-size as SCTP's default, 64 KiB, so every
-message the server sends on a reliable channel must fit `MAX_WEBRTC_MESSAGE_BYTES` (64 KiB,
-`dwell-protocol`; the transport does not split messages). A message SCTP refuses closes the
-connection rather than blocking its channel. A test pins that a join and its first terrain fit.
+SDP exchange, str0m takes the browser's max-message-size as SCTP's default, 64 KiB, and refuses
+larger writes, so a reliable message over `MAX_WEBRTC_MESSAGE_BYTES` (64 KiB,
+`shared/protocol/constants.json`) is sent as fragments of at most that size, and the control
+channel's incoming fragments are reassembled (`dwell_protocol::fragment`, §8.2). A message SCTP
+still refuses closes the connection rather than blocking its channel, as does a malformed
+fragment. A test (`dwell-net` `tests/webrtc.rs`, a str0m peer) pins that 1 MiB messages and a
+near-checkerboard chunk (65 562 bytes) cross every reliable channel intact, both ways.
 
 ---
 
@@ -1982,7 +1985,7 @@ JS object with this interface (`client/src/net/Transport.ts`) that the shell han
 | `world` | server-opened uni stream | data channel id 1, reliable, ordered | worker message |
 | datagrams | QUIC datagrams | data channel id 2, unordered, `maxRetransmits: 0` | worker message |
 | `lod` **[built, Phase 4b]** | second server-opened uni stream (first byte 2) | data channel id 3, reliable, ordered | worker message |
-| framing | first byte = channel id, then `u32 LE length ‖ payload` per message | none (SCTP keeps message boundaries) | none |
+| framing | first byte = channel id, then `u32 LE length ‖ payload` per message | none (SCTP keeps message boundaries); a reliable message over the link's limit is fragmented (§8.2) | none |
 | transport binding | SHA-256 of the server certificate | same (DTLS uses that certificate) | 32 zero bytes |
 
 ### 8.2 Channels
@@ -2000,9 +2003,21 @@ separate uni streams later if head-of-line blocking is measured to matter. LOD t
 bulky and needs no ordering against `world` (sections carry their own revisions), so it gets its
 own `lod` stream and budget and never delays chunk data or voxel deltas.
 
-`MAX_DATAGRAM_BYTES` = 1200 (safe QUIC payload); `MAX_RELIABLE_MESSAGE_BYTES` = 1 MiB. WebRTC
-reliable messages are additionally capped by SCTP `max-message-size` (256 KiB), so large world
-messages (Phase 3 chunk data) must stay under it or be split. All multi-byte fields
+`MAX_DATAGRAM_BYTES` = 1200 (safe QUIC payload); `MAX_RELIABLE_MESSAGE_BYTES` = 1 MiB, on every
+transport. **WebRTC fragments [built]:** an SCTP message can't exceed the peer's
+`max-message-size` (the dedicated server's str0m endpoint assumes 64 KiB; browsers negotiate
+256 KiB or more between themselves), so a reliable message larger than the link's limit is sent
+as consecutive fragments on its channel, each `WEBRTC_FRAGMENT_TAG (0xFF) ‖ u32 LE total length ‖
+the next bytes` and at most `MAX_WEBRTC_MESSAGE_BYTES` (64 KiB); the receiver appends them until
+it has the total. A message that fits is sent unchanged: its first byte is its message type, which
+is never the tag (`gen.mjs` refuses a message type equal to it), so the receiver tells the two
+apart. Both constants are in `shared/protocol/constants.json`; the codec is
+`dwell_protocol::fragment` (the Rust client and the server) and `client/src/net/fragment.ts` (the
+friend-world peers). The dedicated server fragments above 64 KiB; the browser fragments above
+`RTCPeerConnection.sctp.maxMessageSize`. A whole message inside a fragmented one, a fragment of
+another total, one past its total or over `MAX_RELIABLE_MESSAGE_BYTES` closes the connection. Not
+a protocol bump: every message that crossed before is byte-identical, and fragments appear only
+where the send used to fail; datagrams are never fragmented. All multi-byte fields
 little-endian; strings are `u16 byte length ‖ UTF-8`, validated and capped per field
 (`shared/protocol/constants.json` `limits`).
 

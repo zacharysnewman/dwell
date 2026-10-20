@@ -8,6 +8,7 @@ publish.workspace = true
 license-file.workspace = true
 
 [dependencies]
+dwell-protocol = { path = "../dwell-protocol" }
 wtransport = { version = "0.7.2", default-features = false, features = ["ring", "self-signed"] }
 tokio = { version = "1", default-features = false, features = ["rt-multi-thread", "macros", "sync", "time", "net"] }
 str0m = { version = "0.23.1", default-features = false, features = ["aws-lc-rs"] }

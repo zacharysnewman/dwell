@@ -234,7 +234,7 @@ authoritative, so the client adopts its definitions and asks the player first.
 
 - **Message.** After `ClientAuth` verifies and before `Welcome`, the server sends `BlockRegistry`
   parts (`u16 part, u16 parts, u32 length, bytes`; at most `PART_BYTES`, 64 KiB less 64 bytes, so a
-  part and its header fit one WebRTC message) carrying the **registry payload**
+  part and its header fit one WebRTC message and need no fragmenting, ARCHITECTURE.md §8.2) carrying the **registry payload**
   (`dwell_blocks::sync`, format 1): the build's shapes (baked geometry, matched by bytes), the
   fluid look names, then each block (name, first server id, properties) and per state its
   definition as tagged fields — rules (flags solid / indestructible / flooded / climbable / liquid /
