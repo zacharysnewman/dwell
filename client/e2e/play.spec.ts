@@ -57,19 +57,37 @@ async function waitTerrain(page: Page): Promise<DebugState> {
 }
 
 /**
- * Holds W facing `yaw` (0: +Z) for `ticks` predicted ticks (60 per simulated second). Counting
- * ticks rather than wall time keeps the distance independent of the frame rate, which CI's
- * software renderer (SwiftShader) holds well below 60 fps with a full view of streamed terrain.
+ * Holds W facing `yaw` (0: +Z) for `ticks` predicted ticks (60 per simulated second), and returns
+ * the ticks predicted with it held. Counting ticks rather than wall time keeps the distance
+ * independent of the frame rate, which CI's software renderer (SwiftShader) holds well below 60 fps
+ * with a full view of streamed terrain.
+ *
+ * The walk runs inside the page: the count starts as the key goes down, and the key comes up
+ * between frames once the count is reached. Read from the test, a slow page's frame (it runs up to
+ * 60 ticks) could fall between reading the count and pressing the key, its idle ticks counted as
+ * the walk's and the key released before any tick saw it: on CI a 15-tick walk moved 0 m.
  */
-async function walkForward(page: Page, ticks: number, yaw = 0): Promise<void> {
+async function walkForward(page: Page, ticks: number, yaw = 0): Promise<number> {
   const h = hooks.toString();
-  const ticksNow = async () => Number(await page.evaluate(`(${h})()?.state()?.stats.ticks ?? 0`));
-  const start = await ticksNow();
-  await page.evaluate(`(${h})()?.look(${String(yaw)}, 0); (${h})()?.press('KeyW', true);`);
-  await expect
-    .poll(ticksNow, { timeout: 20_000, intervals: [20] })
-    .toBeGreaterThanOrEqual(start + ticks);
-  await page.evaluate(`(${h})()?.press('KeyW', false);`);
+  return Number(
+    await page.evaluate(`new Promise((resolve, reject) => {
+      const d = (${h})();
+      const count = () => d?.state()?.stats.ticks ?? 0;
+      const start = count();
+      d?.look(${String(yaw)}, 0);
+      d?.press('KeyW', true);
+      const deadline = performance.now() + 20000;
+      const check = () => {
+        const n = count() - start;
+        if (n >= ${String(ticks)} || performance.now() > deadline) {
+          d?.press('KeyW', false);
+          if (n >= ${String(ticks)}) resolve(n);
+          else reject(new Error('walked ' + n + ' of ${String(ticks)} ticks in 20 s'));
+        } else setTimeout(check, 10);
+      };
+      check();
+    })`),
+  );
 }
 
 test('local mode: the predicted player walks forward', async ({ page }) => {
@@ -159,9 +177,12 @@ test('two clients on a native server see each other move', async ({ browser }) =
     // client's last input, so a long walk would diverge whatever the prediction does.
     // (Relative to where B stood: the spawn lies wherever the terrain puts it, not at z = 0.)
     const startB = await state(b);
-    await walkForward(b, 15);
+    const walked = await walkForward(b, 15);
     const sb = await state(b);
-    expect((sb?.feet[2] ?? 0) - (startB?.feet[2] ?? 0)).toBeGreaterThan(0.5);
+    expect(
+      (sb?.feet[2] ?? 0) - (startB?.feet[2] ?? 0),
+      JSON.stringify({ walked, from: startB?.feet, to: sb?.feet }),
+    ).toBeGreaterThan(0.5);
     const stats = await b.evaluate(`(${hooks.toString()})()?.state()?.stats`);
     expect((stats as { snaps?: number } | undefined)?.snaps, JSON.stringify(stats)).toBe(0);
   } finally {
