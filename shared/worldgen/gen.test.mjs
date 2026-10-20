@@ -4,7 +4,16 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { decorationsRust, registryBlocks, terrainRust, validateDecorations, validateTerrain } from './gen.mjs';
+import {
+  decorationsRust,
+  placementsRust,
+  registryBlocks,
+  registryStructures,
+  terrainRust,
+  validateDecorations,
+  validatePlacements,
+  validateTerrain,
+} from './gen.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const load = () => JSON.parse(readFileSync(join(here, 'decorations.json'), 'utf8'));
@@ -86,4 +95,68 @@ test('a bad height field fails with the key and the problem', () => {
     edit(t);
     assert.throws(() => validateTerrain(t), message);
   }
+});
+
+const loadPlacements = () => JSON.parse(readFileSync(join(here, 'placements.json'), 'utf8'));
+const structures = registryStructures();
+
+test('the checked-in placements are valid and generate the checked-in Rust', () => {
+  const rs = placementsRust(validatePlacements(loadPlacements(), blocks, structures));
+  const checkedIn = readFileSync(join(here, '../../crates/dwell-worldgen/src/placements.gen.rs'), 'utf8');
+  assert.equal(rs, checkedIn, 'run `node shared/worldgen/gen.mjs`');
+});
+
+test('a placement added by data alone is emitted', () => {
+  const d = loadPlacements();
+  d.placements.push({
+    name: 'rock_scatter',
+    structures: { 'dwell:proto_rock': 1 },
+    on: ['dwell:grass', 'dwell:dirt'],
+    footprint: 'anchor',
+    grid: 24,
+    density: 0.2,
+    height: [0, 600],
+    maxSlopeDeg: 30,
+    spacing: 0,
+    rotate: [0, 180],
+  });
+  const rs = placementsRust(validatePlacements(d, blocks, structures));
+  assert.match(rs, /PLACEMENTS: \[Placement; 2\]/);
+  assert.match(
+    rs,
+    /name: "rock_scatter",\n\s+structures: &\[\("dwell:proto_rock", 1\)\],\n\s+on: &\["dwell:grass", "dwell:dirt"\],\n\s+footprint_on: false,\n\s+grid: 24,/,
+  );
+  // No groves: everywhere; no rise: flat; 30° as a squared gradient (tan² 30° = 1/3); quarter turns.
+  assert.match(rs, /grove_wavelength: 0,\n\s+grove_coverage: 1\.0,\n\s+grove_outside: 1\.0,/);
+  assert.match(rs, /rise_full: 0,\n\s+rise_low: 1\.0,\n\s+max_gradient_sq: 0\.333333/);
+  assert.match(rs, /rotations: &\[0, 2\],/);
+});
+
+test('a bad placement fails with its name and the problem', () => {
+  const cases = [
+    [(p) => (p.structures = { 'dwell:oak': 1 }), /pine_groves: structure dwell:oak is not in shared\/structures/],
+    [(p) => (p.structures = {}), /structures must map structure names to weights/],
+    [(p) => (p.structures['dwell:pine_tree'] = 0.5), /weight must be a whole number/],
+    [(p) => (p.on = ['dwell:moss']), /on names unknown block dwell:moss/],
+    [(p) => (p.on = ['dwell:water']), /on block dwell:water is not a full block/],
+    [(p) => (p.footprint = 'crown'), /footprint must be one of on, anchor/],
+    [(p) => (p.grid = 1), /grid must be a whole number of metres in \[2, 256\]/],
+    [(p) => (p.density = 1.5), /density must be in \(0, 1\]/],
+    [(p) => (p.groves.wavelength = 4), /groves\.wavelength/],
+    [(p) => (p.groves.outside = -0.1), /groves\.outside must be in \[0, 1\]/],
+    [(p) => (p.height = [500, 400]), /height must be \[min, max\]/],
+    [(p) => (p.rise.full = 900), /rise\.full must be a whole number of metres in \(height\[0\], height\[1\]\]/],
+    [(p) => (p.maxSlopeDeg = 90), /maxSlopeDeg must be in \(0, 90\) degrees/],
+    [(p) => (p.spacing = -1), /spacing must be a whole number of blocks/],
+    [(p) => (p.rotate = [0, 45]), /rotate must be distinct angles from 0, 90, 180, 270/],
+    [(p) => (p.mirror = ['x']), /pine_groves: unknown mirror/],
+  ];
+  for (const [edit, message] of cases) {
+    const d = loadPlacements();
+    edit(d.placements[0]);
+    assert.throws(() => validatePlacements(d, blocks, structures), message);
+  }
+  const d = loadPlacements();
+  d.placements.push({ ...d.placements[0] });
+  assert.throws(() => validatePlacements(d, blocks, structures), /duplicate name/);
 });

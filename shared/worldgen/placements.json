@@ -1,0 +1,19 @@
+{
+  "$comment": "Structure placements (docs/WORLD_GENERATION.md §13, docs/STRUCTURES.md §7): committed structures (shared/structures) the terrain generator stands on its ground. One candidate per `grid` cell, at a hashed point in it, kept by the density (inside the grove noise, `groves.outside` of it elsewhere), scaled by the height (`rise`: `low` at height[0], 1 from `full` up), and only where the ground at the anchor is one of `on`, its height (m above sea level) inside `height`, its slope at most `maxSlopeDeg` and, with footprint \"on\", every column under the structure is one of `on` too; of two candidates whose boxes come within `spacing` blocks the one with the lower priority hash is dropped. Each is turned by one of `rotate` and picked from `structures` by weight. All decided from the world seed and positions, so chunks agree in any order. Prototype content. Run `node shared/worldgen/gen.mjs` after editing; CI fails on stale output.",
+  "placements": [
+    {
+      "name": "pine_groves",
+      "structures": { "dwell:pine_tree": 55, "dwell:tall_pine_tree": 45 },
+      "on": ["dwell:grass"],
+      "footprint": "on",
+      "grid": 7,
+      "density": 0.75,
+      "groves": { "wavelength": 192, "coverage": 0.4, "outside": 0.06 },
+      "height": [3, 400],
+      "rise": { "full": 120, "low": 0.15 },
+      "maxSlopeDeg": 44,
+      "spacing": 1,
+      "rotate": [0, 90, 180, 270]
+    }
+  ]
+}
