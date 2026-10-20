@@ -53,7 +53,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 33 — Transparent blocks (render modes, cross geometry, tall grass) | 🚧 In progress — render modes as block data and cutout (see-through) ladders shipped on the 0.11 line (0.11.18; no registry-hash change); on `claude/transparent-blocks` for the 0.13.0 line (with wood and leaves): the cross look with wind and fade, placement rules and `medium`, `dwell:tall_grass` grown by world generation (decorations as data, generator version 13; a partial reversal of B10 for plants), the Plant sway setting, the marcher's classes, all tested and checked in a browser (about +0.3 ms GPU for a 150-plant field); outstanding: hillside screenshots of generated grass (T9), the owner's look, the e2e suite on CI; `package.json` raised to 0.13.0, the new compatibility line (new blocks: log, leaves, tall grass; generator v13; the owner's decision, 2026-10-16) |
 | 34 — Brushes | 🚧 In progress — B1 built and tested: VoxelSniper-style brushes in the sandbox (ADR 0037, `BRUSHES.md`): brushes, performers and sculpt in `dwell-world` `brush.rs`, presets and the per-world-type policy as data (`shared/brushes/brushes.json`, generator, CI stale check), strokes as `KEEP` pastes behind the `brushes` Welcome flag (0.11 line, no protocol bump), the brush tool, its HUD panel and keys, the region `tool` sound; browser check done; outstanding: the owner's try-out and answers to `BRUSHES.md` §5, CI; `package.json` raised to 0.11.20, a patch release of the 0.11 line |
 | 35 — Sliding on steep ground (stacks on 18, uses 28) | 🚧 In progress — built and tested natively (controller, netcode, sound events and data, the shell's loop voices, WAV renders) and in a browser (the bench); outstanding: CI (the WASM divergence run and the e2e suite, not run on the branch), the owner's review of the feel and of the slide WAV renders; `package.json` raised to 0.12.0, the new compatibility line (protocol 13; adaptive blocks change collision and terrain; the owner's decision, 2026-10-16) |
-| 36 — Block registry sync | 🚧 In progress — built and tested natively and in Vitest (ADR 0038, `BLOCK_REGISTRY.md` §8): the server's registry sent at join (`BlockRegistry`, protocol 14), ids mapped at the session boundary, the join prompt (no refusals), the fallback look, server-registered blocks, placeholders for unknown states in world files; outstanding: CI, the e2e suite, the owner's review of the prompt; ships in the next minor (0.14.0), coordinated with Phase 16's protocol bump |
+| 36 — Block registry sync | 🚧 In progress — built and tested natively and in Vitest (ADR 0038, `BLOCK_REGISTRY.md` §8): the server's registry sent at join (`BlockRegistry`, protocol 14), ids mapped at the session boundary, the join prompt (no refusals), the fallback look, server-registered blocks, placeholders for unknown states in world files; outstanding: CI, the e2e suite (WebRTC join fixed: parts fit a WebRTC message), the owner's review of the prompt; ships in the next minor (0.14.0), coordinated with Phase 16's protocol bump |
 
 Phase numbering: Phase 4 was inserted on 2026-09-29 for the planet-scale world (ADRs 0011, 0012);
 the former Phases 4–7 are now 5–8, and Phase 3's former 3c and 3d are now 3d and 3e.
@@ -3527,7 +3527,12 @@ Deviations:
 **Status:** Built and tested natively and in Vitest (2026-10-19). Outstanding: CI, the e2e suite
 (not run on the branch), the owner's review of the join prompt in a browser. A protocol change:
 protocol 14, shipping in the next minor (0.14.0) — shared with Phase 16 (#114) if they land
-together, otherwise whichever lands second bumps once more.
+together, otherwise whichever lands second bumps once more. Fix (2026-10-19, e2e): WebRTC joins
+stalled before Welcome — a full 64 KiB `BlockRegistry` part plus its header (65 545 bytes) was over
+the server's WebRTC message limit (str0m assumes SCTP's default 64 KiB). Parts are now 64 KiB less
+64 bytes (`MAX_WEBRTC_MESSAGE_BYTES`; not a wire change, clients take any part size), a test pins
+that a join and its first terrain fit, and a message SCTP refuses closes the connection instead of
+blocking its channel.
 
 Owner (2026-10-16): *"we need registry sync; have it go out at the same time with 0.12.0"* —
 server mods that add blocks, as in Minecraft — and the same day: **never refuse a join over

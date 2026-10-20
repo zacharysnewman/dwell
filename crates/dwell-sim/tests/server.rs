@@ -260,3 +260,43 @@ fn the_default_terrain_world_starts_and_admits_a_player() {
     assert_eq!(f.join(1, &Client::new(9)).player_id, 1);
     f.server.step();
 }
+
+/// Regression (e2e `join.spec.ts` "joins a native server over the WebRTC fallback", 0.14.0): the
+/// server's WebRTC endpoint can send SCTP messages of at most `MAX_WEBRTC_MESSAGE_BYTES` (str0m's
+/// direct API assumes the peer's default max-message-size), and a full 64 KiB `BlockRegistry`
+/// part plus its header was larger, so the join stalled before Welcome. Every reliable message a
+/// join and its first terrain send must fit.
+#[test]
+fn every_message_of_a_join_fits_a_webrtc_data_channel_message() {
+    let mut f = fixture(ServerConfig::default());
+    f.server.on_connected(1, TransportKind::WebRtc, f.binding);
+    let who = Client::new(9);
+    f.send(1, hello(who.public_key, PROTOCOL_VERSION));
+    let Message::Challenge(nonce) = f.take(1).remove(0).0 else {
+        panic!("expected a challenge")
+    };
+    let signature = who.sign(&auth_transcript(&nonce, &f.binding, &who.public_key));
+    f.send(1, Message::ClientAuth(signature));
+    let mut sizes: Vec<(String, usize)> = Vec::new();
+    let mut record = |out: Vec<(Message, usize)>| {
+        for (m, n) in out {
+            sizes.push((format!("{:?}", m.message_type()), n));
+        }
+    };
+    record(f.take(1));
+    f.send(1, Message::WorldgenCheck(0)); // full mode: large explicit chunks
+    for _ in 0..120 {
+        f.server.step();
+        record(f.take(1));
+    }
+    assert!(
+        sizes.iter().any(|(k, _)| k == "BlockRegistry")
+            && sizes.iter().any(|(k, _)| k == "ChunkData"),
+        "{sizes:?}"
+    );
+    let over: Vec<_> = sizes
+        .iter()
+        .filter(|(_, n)| *n > MAX_WEBRTC_MESSAGE_BYTES)
+        .collect();
+    assert!(over.is_empty(), "messages over the WebRTC limit: {over:?}");
+}

@@ -225,7 +225,19 @@ fn flush_pending(c: &mut Client) {
                 Ok(true) => {
                     c.pending[idx].pop_front();
                 }
-                _ => break, // retried on ChannelBufferedAmountLow
+                Ok(false) => break, // retried on ChannelBufferedAmountLow
+                // A message SCTP refuses (one over the peer's max-message-size, which str0m's
+                // direct API takes as 64 KiB) would block its channel for good, a join that
+                // never completes: close the connection instead, so the client sees it end.
+                Err(e) => {
+                    eprintln!(
+                        "webrtc: session {}: dropping the connection, a {}-byte message was refused: {e}",
+                        c.session,
+                        msg.len()
+                    );
+                    c.rtc.disconnect();
+                    return;
+                }
             }
         }
     }
