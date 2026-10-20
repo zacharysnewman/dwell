@@ -22,8 +22,6 @@ pub mod remotes;
 pub mod sound;
 pub mod touch;
 
-/// The face as a sign: +1 face A (head up), −1 face B (head down) (BIFACIAL_WORLD.md §6).
-pub type FaceSign = i32;
 
 /// Rounds half up, like JavaScript's `Math.round`.
 pub(crate) fn js_round(v: f64) -> f64 {

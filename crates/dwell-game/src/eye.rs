@@ -4,12 +4,11 @@
 //! Each jump is folded into an offset that then decays, so the eye always moves continuously.
 //! [`EyeSmoother`] runs once per sim tick; [`EyeCamera`] feeds it client states and interpolates its
 //! last two results for each drawn frame. Heights are measured along the player's up
-//! (BIFACIAL_WORLD.md §6): on face B the head points toward −y, so `up height = face × y`; the
-//! smoothing is the same either way, and starts afresh when the player crosses to the other face.
+//! (BIFACIAL_WORLD.md §6): the smoothing runs in face-local heights (`FaceFrame::y`), the same either
+//! way, and starts afresh when the player crosses to the other face.
 
 use dwell_protocol::controller_flags;
-
-use crate::FaceSign;
+use dwell_world::FaceFrame;
 
 /// Step offset decay: a fixed speed (m/s, PPC SmoothSteps) plus a share of the offset (1/s).
 const STEP_SPEED: f64 = 4.0;
@@ -97,7 +96,7 @@ pub struct EyeState {
     pub half_height: f64,
     pub velocity: [f64; 3],
     pub controller_flags: u8,
-    pub face: FaceSign,
+    pub face: FaceFrame,
     pub eye_height: f64,
     pub crouch_eye_height: f64,
     pub max_step_height: f64,
@@ -105,12 +104,12 @@ pub struct EyeState {
 
 /// Feet height from a state's own half height: the capsule centre moves when crouching.
 pub fn eye_sample_of(s: &EyeState) -> EyeSample {
-    let face = f64::from(s.face);
+    let f = s.face;
     EyeSample {
-        feet: face * (s.position[1] + s.render_offset[1]) - s.half_height,
+        feet: f.y(s.position[1] + s.render_offset[1]) - s.half_height,
         crouched: s.controller_flags & controller_flags::CROUCHING != 0,
         grounded: s.controller_flags & controller_flags::GROUNDED != 0,
-        velocity_y: face * s.velocity[1],
+        velocity_y: f.vector(s.velocity)[1],
         eye_height: s.eye_height,
         crouch_eye_height: s.crouch_eye_height,
         max_step_height: s.max_step_height,
@@ -123,7 +122,7 @@ pub struct EyeCamera {
     smoother: EyeSmoother,
     previous: Option<f64>,
     current: f64,
-    face: FaceSign,
+    face: FaceFrame,
 }
 
 impl Default for EyeCamera {
@@ -132,7 +131,7 @@ impl Default for EyeCamera {
             smoother: EyeSmoother::new(),
             previous: None,
             current: 0.0,
-            face: 1,
+            face: FaceFrame::A,
         }
     }
 }
@@ -151,7 +150,7 @@ impl EyeCamera {
             self.face = s.face;
         }
         // Along the player's up, back to a world height.
-        let eye = f64::from(s.face) * self.smoother.tick(eye_sample_of(s), dt);
+        let eye = s.face.y(self.smoother.tick(eye_sample_of(s), dt));
         self.previous = Some(match self.previous {
             None => eye,
             Some(_) => self.current,
@@ -352,7 +351,7 @@ mod tests {
                 } else {
                     0
                 }),
-                face: 1,
+                face: FaceFrame::A,
                 eye_height: 1.62,
                 crouch_eye_height: 0.8,
                 max_step_height: 0.55,
@@ -365,11 +364,11 @@ mod tests {
         /// The state turned upside down (face B): heights negated, head down.
         fn mirrored(s: &EyeState) -> EyeState {
             EyeState {
-                position: [s.position[0], -s.position[1], s.position[2]],
-                render_offset: [s.render_offset[0], -s.render_offset[1], s.render_offset[2]],
-                velocity: [s.velocity[0], -s.velocity[1], s.velocity[2]],
+                position: FaceFrame::B.point(s.position),
+                render_offset: FaceFrame::B.vector(s.render_offset),
+                velocity: FaceFrame::B.vector(s.velocity),
                 controller_flags: s.controller_flags | controller_flags::FACE_B,
-                face: -1,
+                face: FaceFrame::B,
                 ..*s
             }
         }
@@ -497,7 +496,7 @@ mod tests {
                 let down = frames(&states.iter().map(mirrored).collect::<Vec<_>>());
                 assert_eq!(down.len(), up.len());
                 for (d, u) in down.iter().zip(&up) {
-                    assert_close(*d, -u, 6);
+                    assert_close(*d, FaceFrame::B.y(*u), 6);
                 }
             }
         }
@@ -509,7 +508,7 @@ mod tests {
             camera.tick(&state(0.5), DT); // a step on face A: smoothed
             camera.tick(&mirrored(&state(0.0)), DT);
             // The first tick on face B is drawn as it is (the eye at the feet's up-height 0 + 1.62 below).
-            assert_close(camera.draw(0.0), -1.62, 6);
+            assert_close(camera.draw(0.0), FaceFrame::B.y(1.62), 6);
         }
     }
 }

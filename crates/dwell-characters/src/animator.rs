@@ -34,10 +34,9 @@ impl Swing {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct MoveInput {
     pub state: PlayerState,
-    /// World velocity (m/s).
+    /// Velocity (m/s), face-local: +y is the player's up on either face (the caller maps it
+    /// through its `FaceFrame`, BIFACIAL_WORLD.md §11), so the animator never knows the face.
     pub velocity: [f32; 3],
-    /// ±1: the face it stands on (its up is ±y).
-    pub face: f32,
     pub crouched: bool,
     pub climbing: bool,
     pub swimming: bool,
@@ -58,7 +57,6 @@ impl Default for MoveInput {
         Self {
             state: PlayerState::Idle,
             velocity: [0.0; 3],
-            face: 1.0,
             crouched: false,
             climbing: false,
             swimming: false,
@@ -90,7 +88,7 @@ fn airborne(i: &MoveInput) -> bool {
 /// jump → fall → land sequence). Pure: the clip selection the tests pin.
 pub fn body_role(i: &MoveInput, now: &str) -> &'static str {
     let speed = horizontal(i.velocity);
-    let up = i.velocity[1] * i.face;
+    let up = i.velocity[1];
     if i.flying || i.state == PlayerState::Flying {
         return "fly";
     }
@@ -351,17 +349,15 @@ mod tests {
         for (i, now, want) in cases {
             assert_eq!(body_role(i, now), *want, "{i:?} from {now}");
         }
-        // Flags win over a stale state; on face B up is −y, so falling there is +y velocity... down.
+        // Flags win over a stale state.
         let flying = MoveInput {
             flying: true,
             ..input(Walking, [1.0, 0.0, 0.0])
         };
         assert_eq!(body_role(&flying, "walk"), "fly");
-        let rising_on_b = MoveInput {
-            face: -1.0,
-            ..input(Jumping, [0.0, -5.0, 0.0])
-        };
-        assert_eq!(body_role(&rising_on_b, "walk"), "jump");
+        // Velocities are face-local (the caller's FaceFrame turned face B's over): up is +y.
+        assert_eq!(body_role(&input(Jumping, [0.0, 5.0, 0.0]), "walk"), "jump");
+        assert_eq!(body_role(&input(Jumping, [0.0, -5.0, 0.0]), "walk"), "fall");
         assert_eq!(arms_role(&input(Climbing, [0.0, 2.0, 0.0]), "idle"), "idle");
         assert_eq!(arms_role(&input(Sliding, [0.0, 0.0, 8.0]), "walk"), "slide");
     }

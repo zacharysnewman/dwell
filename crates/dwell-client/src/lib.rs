@@ -215,7 +215,7 @@ pub async fn render_scene(device: wgpu::Device, queue: wgpu::Queue) -> Result<Ve
         1,
         Some(render::PlayerView {
             feet: [16.0, 9.0, 16.0],
-            face: 1.0,
+            face: dwell_world::FaceFrame::A,
             yaw: 0.0,
             dead: false,
             // The red-tunicked look, which the smoke test finds.
@@ -235,7 +235,7 @@ pub async fn render_scene(device: wgpu::Device, queue: wgpu::Queue) -> Result<Ve
             id,
             Some(render::PlayerView {
                 feet,
-                face: 1.0,
+                face: dwell_world::FaceFrame::A,
                 yaw,
                 dead,
                 look: dwell_characters::DEFAULT_LOOK,
@@ -247,7 +247,7 @@ pub async fn render_scene(device: wgpu::Device, queue: wgpu::Queue) -> Result<Ve
         );
     }
     // Looking along −Z from above the chunk's +Z edge, the horizon across the middle.
-    renderer.set_camera([16.0, 11.0, 24.0], 180.0, -12.0, 1.0, 0.0);
+    renderer.set_camera([16.0, 11.0, 24.0], 180.0, -12.0, dwell_world::FaceFrame::A, 0.0);
     renderer.render(&texture.create_view(&Default::default()), &|_| true);
     read_back(&device, &queue, &texture).await
 }

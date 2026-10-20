@@ -95,7 +95,14 @@ impl Scene for Recorder {
     fn set_arms(&mut self, arms: Option<dwell_client::render::ArmsView>) {
         self.arms = arms.is_some();
     }
-    fn set_camera(&mut self, eye: [f64; 3], _yaw: f64, _pitch: f64, _face: f64, _flip: f64) {
+    fn set_camera(
+        &mut self,
+        eye: [f64; 3],
+        _yaw: f64,
+        _pitch: f64,
+        _face: dwell_world::FaceFrame,
+        _flip: f64,
+    ) {
         self.camera = Some(eye);
     }
     fn set_block_outline(&mut self, cell: Option<[f64; 3]>, _bounds: ([f32; 3], [f32; 3])) {

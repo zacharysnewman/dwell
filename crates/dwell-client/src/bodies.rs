@@ -6,6 +6,7 @@ use dwell_characters::animator::{Animator, MoveInput, Space, Swing};
 use dwell_characters::{Character, TABLES};
 use dwell_game::remotes::RemoteView;
 use dwell_protocol::{controller_flags, held_item, player_flags, swing_flags};
+use dwell_world::FaceFrame;
 use dwell_world::hash::HashMap;
 
 use crate::render::{ArmsView, Held, PlayerView};
@@ -14,8 +15,7 @@ use crate::render::{ArmsView, Held, PlayerView};
 pub fn remote_input(v: &RemoteView, holding: bool) -> MoveInput {
     MoveInput {
         state: v.state,
-        velocity: v.velocity,
-        face: if v.is_face_b() { -1.0 } else { 1.0 },
+        velocity: v.face().vector_f32(v.velocity),
         crouched: v.is_crouched(),
         climbing: v.flags & player_flags::CLIMBING != 0,
         swimming: v.flags & player_flags::SWIMMING != 0,
@@ -31,12 +31,11 @@ pub fn local_input(
     state: dwell_protocol::PlayerState,
     velocity: [f64; 3],
     controller: u8,
-    face: i32,
+    face: FaceFrame,
 ) -> MoveInput {
     MoveInput {
         state,
-        velocity: velocity.map(|v| v as f32),
-        face: if face < 0 { -1.0 } else { 1.0 },
+        velocity: face.vector(velocity).map(|v| v as f32),
         crouched: controller & controller_flags::CROUCHING != 0,
         climbing: controller & controller_flags::CLIMBING != 0,
         swimming: controller & controller_flags::SWIMMING != 0,
@@ -132,7 +131,7 @@ impl Bodies {
         let pose = body.animator.update(&input, dt as f32);
         PlayerView {
             feet: v.feet,
-            face: if v.is_face_b() { -1.0 } else { 1.0 },
+            face: v.face(),
             yaw: f64::from(v.yaw),
             dead: v.is_dead(),
             look: dwell_characters::DEFAULT_LOOK,
@@ -149,7 +148,7 @@ impl Bodies {
     }
 
     /// Your body lying where you died.
-    pub fn own_dead(&mut self, feet: [f64; 3], yaw: f64, face: f64, dt: f64) -> PlayerView {
+    pub fn own_dead(&mut self, feet: [f64; 3], yaw: f64, face: FaceFrame, dt: f64) -> PlayerView {
         let pose = self.own.update(&MoveInput::default(), dt as f32);
         PlayerView {
             feet,

@@ -3,8 +3,9 @@
 
 use std::collections::VecDeque;
 
-use dwell_physics::net::{dequantize_pitch, dequantize_yaw};
+use dwell_physics::net::{dequantize_pitch, dequantize_yaw, face_of_flags};
 use dwell_protocol::{PlayerState, RemotePlayerState, SIM_HZ, player_flags, players};
+use dwell_world::FaceFrame;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct RemoteView {
@@ -30,9 +31,9 @@ impl RemoteView {
     pub fn is_crouched(&self) -> bool {
         self.flags & player_flags::CROUCHED != 0
     }
-    /// On face B: upside down, its feet above its head (BIFACIAL_WORLD.md §6).
-    pub fn is_face_b(&self) -> bool {
-        self.flags & player_flags::FACE_B != 0
+    /// The face it is on: upside down on face B, its feet above its head (BIFACIAL_WORLD.md §6).
+    pub fn face(&self) -> FaceFrame {
+        face_of_flags(self.flags, player_flags::FACE_B)
     }
 }
 

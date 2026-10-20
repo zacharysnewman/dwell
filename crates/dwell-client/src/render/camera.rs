@@ -1,6 +1,8 @@
 //! The camera (port of render/fov.ts, render/three/aimCamera.ts, world/face.ts's viewForward), in
 //! f64: positions stay precise ~8,000 km out because the renderer draws camera-relative.
 
+use dwell_world::FaceFrame;
+
 pub type V3 = [f64; 3];
 
 pub fn sub(a: V3, b: V3) -> V3 {
@@ -39,17 +41,6 @@ pub fn horizontal_fov(vertical_deg: f64, aspect: f64) -> f64 {
     (2.0 * ((vertical_deg.to_radians() / 2.0).tan() * aspect).atan()).to_degrees()
 }
 
-/// The view direction for yaw/pitch (degrees; yaw 0 = +Z) on `face` (±1: pitch is toward the
-/// face's up).
-pub fn view_forward(yaw_deg: f64, pitch_deg: f64, face: f64) -> V3 {
-    let (yaw, pitch) = (yaw_deg.to_radians(), pitch_deg.to_radians());
-    [
-        yaw.sin() * pitch.cos(),
-        face * pitch.sin(),
-        yaw.cos() * pitch.cos(),
-    ]
-}
-
 /// The camera's world axes: right, up, and back (it looks along −back), as three.js's.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Basis {
@@ -64,13 +55,14 @@ impl Basis {
     }
 }
 
-/// Aims the camera along yaw/pitch for the player's `face` (up is ±y); `flip` (radians, 0 at rest)
-/// then pitches the view over about its own right axis, nose first: the camera turning over across
-/// the midplane. The heading has already turned by 180°, so a flip of π is the view before.
-pub fn aim(yaw_deg: f64, pitch_deg: f64, face: f64, flip: f64) -> Basis {
-    let up = [0.0, face, 0.0];
+/// Aims the camera along yaw/pitch for the player's `face` (its up, the look by
+/// [`FaceFrame::look`]); `flip` (radians, 0 at rest) then pitches the view over about its own right
+/// axis, nose first: the camera turning over across the midplane. The heading has already turned
+/// by 180°, so a flip of π is the view before.
+pub fn aim(yaw_deg: f64, pitch_deg: f64, face: FaceFrame, flip: f64) -> Basis {
+    let up = face.up();
     // three's lookAt for cameras: back = eye − target, right = up × back, up = back × right.
-    let back = scale(normalize(view_forward(yaw_deg, pitch_deg, face)), -1.0);
+    let back = scale(normalize(face.look(yaw_deg, pitch_deg)), -1.0);
     let mut right = cross(up, back);
     if dot(right, right) < 1e-20 {
         // Looking straight along up: three nudges the back axis.
@@ -139,33 +131,39 @@ mod tests {
     fn the_half_forward_somersault_across_the_midplane() {
         let yaw = 37.0;
         for pitch in [-80.0, -30.0, 0.0, 45.0] {
-            let b = aim(yaw, pitch, 1.0, 0.0);
+            let b = aim(yaw, pitch, FaceFrame::A, 0.0);
             // The crossing frame: heading turned by 180°, face −1, a flip of π: the same view.
-            let a = aim(yaw + 180.0, pitch, -1.0, std::f64::consts::PI);
+            let a = aim(yaw + 180.0, pitch, FaceFrame::B, std::f64::consts::PI);
             close(a.forward(), b.forward());
             close(a.up, b.up);
             // The right vector is the same all the way: the player's own left and right.
             for flip in [std::f64::consts::PI, std::f64::consts::FRAC_PI_2, 0.0] {
-                close(aim(yaw + 180.0, pitch, -1.0, flip).right, b.right);
+                close(aim(yaw + 180.0, pitch, FaceFrame::B, flip).right, b.right);
             }
             // Halfway the view looks along the old camera's down.
             close(
-                aim(yaw + 180.0, pitch, -1.0, std::f64::consts::FRAC_PI_2).forward(),
+                aim(yaw + 180.0, pitch, FaceFrame::B, std::f64::consts::FRAC_PI_2).forward(),
                 scale(b.up, -1.0),
             );
         }
     }
 
-    #[test]
-    fn looks_along_view_forward_with_the_faces_up() {
-        let b = aim(90.0, 20.0, 1.0, 0.0);
-        close(b.forward(), normalize(view_forward(90.0, 20.0, 1.0)));
-        assert!(b.up[1] > 0.0);
-        assert!(
-            aim(90.0, 20.0, -1.0, 0.0).up[1] < 0.0,
-            "face B's view is upside down"
-        );
-    }
+    dwell_world::both_faces!(
+        /// On face `f` the camera looks along the face's look with the face's up: face-local, its
+        /// forward and up are face A's, and its right is face A's mirrored (a mirror reverses
+        /// handedness, `FaceFrame::handed`): face B's view is face A's upside down.
+        fn looks_along_the_faces_look_with_the_faces_up(f: FaceFrame) {
+            for (yaw, pitch) in [(90.0, 20.0), (-30.0, -60.0), (200.0, 0.0)] {
+                let a = aim(yaw, pitch, FaceFrame::A, 0.0);
+                let b = aim(yaw, pitch, f, 0.0);
+                close(b.forward(), normalize(f.look(yaw, pitch)));
+                close(f.vector(b.forward()), a.forward());
+                close(f.vector(b.up), a.up);
+                close(f.vector(b.right), a.right.map(|c| f.handed(c)));
+                assert!(f.vector(b.up)[1] > 0.0);
+            }
+        }
+    );
 
     #[test]
     fn keeps_the_horizontal_fov_under_the_cap_on_wide_screens() {
