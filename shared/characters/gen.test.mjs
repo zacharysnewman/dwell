@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { loadData, loadStyle, loadTextures, PAGE, renderPage } from './gen.mjs';
-import { bounds, compose, layer, mirrorName, pivots, sample, validate } from './rig.mjs';
+import { bounds, chainProblem, chainSegments, compose, crossfade, layer, mirrorName, pivots, sample, validate } from './rig.mjs';
 
 const style = loadStyle();
 const load = () => loadData();
@@ -42,6 +42,16 @@ test('a bad entry fails with its path named', () => {
     [(d) => (d.characters.player.clips.walk = 'fp_walk'), /plays on the arms; list it under firstPerson\.clips/],
     [(d) => (d.clips.fp_idle.keys[0].bones.chest = [0, 0, 0]), /keys "chest", which is not in the arm chain/],
     [(d) => d.characters.player.firstPerson.bones.splice(1, 1), /"hand_r"'s parent is not in the chain/],
+    [(d) => (d.characters.player.parts[0].with = 'hair_top'), /\(head\)\.with: "hair_top" is not an earlier part of character "player"/],
+    [(d) => (d.accessories.hood.parts[0].with = 'hood_brow'), /"with" is for a character's own parts/],
+    [(d) => (d.characters.wolf.chains = { tail: { from: 'haunch', parts: ['tail_base'] } }), /characters\.wolf\.chains\.tail\.parts: must list two or more part ids/],
+    [(d) => (d.characters.wolf.chains = { tail: { from: 'haunch', parts: ['tail_base', 'tail_plume'] } }), /chains\.tail\.parts: "tail_plume" is not a part of character "wolf"/],
+    [(d) => (d.characters.wolf.chains = { tail: { from: 'rump', parts: ['tail_base', 'tail_tip'] } }), /chains\.tail\.from: "rump" is not a part of character "wolf"/],
+    [(d) => (d.characters.wolf.chains = { tail: { from: 'haunch', parts: ['tail_base', 'muzzle'] } }), /chains\.tail: in the rest pose "tail_base" ends \d\.\d+ m from where "muzzle" starts/],
+    [(d) => (d.characters.wolf.chains = { tail: { from: 'muzzle', parts: ['tail_base', 'tail_tip'] } }), /chains\.tail: in the rest pose "tail_base" starts \d\.\d+ m off "muzzle", which it grows from/],
+    [(d) => (d.clips.biped_idle.grounded = 'yes'), /clips\.biped_idle\.grounded: must be true or false/],
+    [(d) => (d.clips.biped_break.grounded = true), /only a base clip stands on something/],
+    [(d) => (d.clips.biped_walk.blend = 5), /clips\.biped_walk\.blend: must be seconds, 0–2/],
   ];
   for (const [edit, message] of cases) {
     const d = load();
@@ -131,18 +141,159 @@ test('clips sample between keys, loop, and layer by replacing the bones they key
   assert.deepEqual(half.bones.arm_r, [-21, 0, -5]);
 });
 
-test('every clip keeps the feet of a standing character near the ground', () => {
-  // A walk, trot or graze that drives a foot through the ground or lifts both off it is a bad clip.
+test('every grounded clip keeps the feet of a standing character near the ground', () => {
+  // A walk, trot, crouch or slide that drives a foot through the ground or lifts both off it is a bad
+  // clip. Clips in the air, in water or on a ladder (jump, fall, climb, swim, fly) say "grounded": false.
   const d = load();
   for (const [id, ch] of Object.entries(d.characters)) {
     const m = compose(d, style, id, { accessories: [] });
     for (const c of Object.values(ch.clips ?? {})) {
       const clip = d.clips[c];
-      if (clip.layer !== 'base') continue;
+      if (clip.layer !== 'base' || clip.grounded === false) continue;
       for (let i = 0; i < 16; i++) {
         const b = bounds(m, 'body', sample(clip, (i / 16) * clip.duration));
         assert.ok(b.min[1] > -0.06 && b.min[1] < 0.06, `${id} ${c} at ${((i / 16) * clip.duration).toFixed(2)} s: lowest point ${b.min[1].toFixed(3)} m`);
       }
     }
   }
+});
+
+// ---- Hair under hats (owner's review, 2026-10-20) ------------------------------------------------------
+/** Every look a character can wear: [name, compose options]. */
+const looksOf = (d, id) => [
+  ['default', {}],
+  ...Object.keys(d.characters[id].variants ?? {}).map((v) => [v, { variant: v }]),
+];
+const partBounds = (m, id) => bounds({ ...m, parts: m.parts.filter((p) => p.id === id) });
+
+test('no hair is left floating when the hair it hangs from is hidden', () => {
+  const d = load();
+  for (const id of Object.keys(d.characters)) {
+    for (const [name, opts] of looksOf(d, id)) {
+      const m = compose(d, style, id, opts);
+      const drawn = new Set(m.parts.filter((p) => p.from === 'body').map((p) => p.id));
+      for (const p of m.parts)
+        if (p.from === 'body' && p.with) assert.ok(drawn.has(p.with), `${id} ${name}: "${p.id}" is drawn but "${p.with}", which it hangs from, is hidden`);
+    }
+  }
+  // The fringe hangs from the top hair, so every hat that hides the top hair takes the fringe with it.
+  const fringe = d.characters.player.parts.find((p) => p.id === 'hair_fringe');
+  assert.equal(fringe.with, 'hair_top', 'the fringe hangs from the top hair');
+  for (const [a, acc] of Object.entries(d.accessories)) {
+    if (!(acc.hides ?? []).includes('hair_top')) continue;
+    const m = compose(d, style, 'player', { accessories: [a] });
+    assert.ok(!m.parts.some((p) => p.id === 'hair_fringe'), `${a} hides the top hair, so the fringe goes too`);
+  }
+});
+
+test('the wide-brimmed hat tucks its own fringe under the brim; the hood shows none', () => {
+  const d = load();
+  const m = compose(d, style, 'player', { accessories: ['wide_brim_hat'] });
+  const hair = d.characters.player.slots.hair;
+  const tucked = m.parts.filter((p) => p.from === 'wide_brim_hat' && p.material === hair);
+  assert.ok(tucked.length > 0, 'the hat brings hair of its own, painted with the hair slot');
+  // Its top tucked into the brim (no higher than the brim's middle): hair pushed down by the
+  // hat, not a bar floating on the face.
+  const bb = partBounds(m, 'hat_brim');
+  const brim = (bb.min[1] + bb.max[1]) / 2; // the brim's middle: its rim tilts, so its box is no guide
+  for (const p of tucked) assert.ok(partBounds(m, p.id).max[1] <= brim, `${p.id} sits under the brim`);
+  // It recolours with the look: the ranger's black hair would paint it black too.
+  const tinted = compose(d, style, 'player', { accessories: ['wide_brim_hat'], slots: { hair: 'hair_black' } });
+  assert.ok(tinted.parts.filter((p) => p.from === 'wide_brim_hat').some((p) => p.material === 'hair_black'));
+  const r = compose(d, style, 'player', { variant: 'ranger' });
+  assert.ok(!r.parts.some((p) => p.id.includes('fringe')), 'the hood covers the forehead: no fringe');
+});
+
+// ---- Chains: tails (owner's review, 2026-10-20) ---------------------------------------------------------
+test('every quadruped declares its tail as a chain', () => {
+  const d = load();
+  for (const [id, ch] of Object.entries(d.characters)) {
+    if (ch.rig !== 'quadruped') continue;
+    assert.ok(ch.chains?.tail?.parts?.length >= 2, `${id} lists its tail's segments, root first, under chains.tail`);
+  }
+});
+
+test("a chain's segments stay joined end to end and bend smoothly, at rest and through every clip", () => {
+  const d = load();
+  for (const [id, ch] of Object.entries(d.characters)) {
+    for (const [name, opts] of looksOf(d, id)) {
+      const m = compose(d, style, id, opts);
+      for (const [cn, chain] of Object.entries(ch.chains ?? {})) {
+        assert.equal(chainProblem(m, chain), undefined, `${id} ${name} ${cn} at rest`);
+        for (const c of Object.values(ch.clips ?? {})) {
+          const clip = d.clips[c];
+          for (let i = 0; i <= 24; i++) {
+            const t = (i / 24) * clip.duration;
+            const bad = chainProblem(m, chain, sample(clip, t));
+            assert.equal(bad, undefined, `${id} ${name} ${cn} in ${c} at ${t.toFixed(2)} s: ${bad}`);
+          }
+        }
+      }
+    }
+  }
+});
+
+test('a segment turned across its chain, or moved off its root, is caught', () => {
+  for (const id of ['wolf', 'deer']) {
+    const d = load();
+    const ch = d.characters[id];
+    const m = compose(d, style, id, { accessories: [] });
+    assert.equal(chainSegments(m, ch.chains.tail).length, ch.chains.tail.parts.length);
+    const p = ch.parts.find((x) => x.id === ch.chains.tail.parts[1]);
+    p.rot = [(p.rot?.[0] ?? 0) + 90, 0, 0];
+    assert.throws(() => validate(d, style), /chains\.tail: in the rest pose/, `${id}: turned`);
+    const e = load();
+    e.characters[id].bones.tail_1 = [0, 0.1, -0.6];
+    assert.throws(() => validate(e, style), /chains\.tail: in the rest pose .* off /, `${id}: moved off`);
+  }
+});
+
+// ---- Player clips for the controller's states (owner's review, 2026-10-20) -------------------------------
+// PLAYER_CONTROLLER.md §3: Idle, Walking, Running, Crouching, Sliding, Jumping, Falling, Climbing,
+// Swimming, Flying, and the JUMPED and LANDED events. Each has a role; crouching has two (still, moving).
+const BODY_ROLES = ['idle', 'walk', 'sprint', 'crouch', 'crouch_walk', 'slide', 'jump', 'fall', 'land', 'climb', 'swim', 'fly'];
+const ARMS_ROLES = ['idle', 'walk', 'sprint', 'slide', 'jump', 'fall', 'land'];
+
+test('the player has a body clip for every controller state, and the arms the ones that show', () => {
+  const d = load();
+  const p = d.characters.player;
+  for (const r of BODY_ROLES) assert.ok(p.clips[r], `body role "${r}"`);
+  for (const r of ARMS_ROLES) assert.ok(p.firstPerson.clips[r], `arms role "${r}"`);
+  for (const r of ['jump', 'fall', 'climb', 'swim', 'fly']) assert.equal(d.clips[p.clips[r]].grounded, false, `${r} is not grounded`);
+  for (const r of ['idle', 'walk', 'sprint', 'crouch', 'crouch_walk', 'slide', 'land'])
+    assert.notEqual(d.clips[p.clips[r]].grounded, false, `${r} is grounded`);
+  // Gaits play at speed / cycle: the sprint covers more ground a loop than the walk, the crouch-walk less.
+  const cyc = (r) => d.clips[p.clips[r]].cycle;
+  assert.ok(cyc('sprint') > cyc('walk') && cyc('crouch_walk') < cyc('walk'), 'cycles');
+  // Crouched (the 0.9 m crouch capsule): the top stays low through crouch, crouch-walk and the slide.
+  const m = compose(d, style, 'player', { accessories: [] });
+  for (const r of ['crouch', 'crouch_walk', 'slide']) {
+    const clip = d.clips[p.clips[r]];
+    for (let i = 0; i < 8; i++) {
+      const top = bounds(m, 'body', sample(clip, (i / 8) * clip.duration)).max[1];
+      assert.ok(top < 1.3, `${r}: top ${top.toFixed(2)} m`);
+    }
+  }
+  // The slide holds an arm out for balance: a hand well out to the side.
+  const slide = pivots(m, sample(d.clips[p.clips.slide], 0.2));
+  const reach = Math.max(Math.abs(slide.get('hand_l').at[0]), Math.abs(slide.get('hand_r').at[0]));
+  assert.ok(reach > 0.45, `a hand out to the side (${reach.toFixed(2)} m)`);
+  // The jump crouches to take off and ends airborne, the land starts tucked and ends standing.
+  const land = d.clips[p.clips.land];
+  assert.equal(land.loop, false);
+  assert.equal(d.clips[p.clips.jump].loop, false);
+});
+
+test('switching base clips cross-fades every bone either keys', () => {
+  const d = load();
+  const walk = sample(d.clips.biped_walk, 0);
+  const slide = sample(d.clips[d.characters.player.clips.slide], 0.2);
+  const half = crossfade(walk, slide, 0.5);
+  for (const n of new Set([...Object.keys(walk.bones), ...Object.keys(slide.bones)])) {
+    const a = walk.bones[n] ?? [0, 0, 0];
+    const b = slide.bones[n] ?? [0, 0, 0];
+    assert.deepEqual(half.bones[n], [0, 1, 2].map((j) => a[j] + (b[j] - a[j]) / 2), n);
+  }
+  assert.deepEqual(crossfade(walk, slide, 0).bones.thigh_l, walk.bones.thigh_l);
+  assert.deepEqual(crossfade(walk, slide, 1).root, slide.root ?? [0, 0, 0]);
 });
