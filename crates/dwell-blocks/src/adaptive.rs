@@ -127,36 +127,20 @@ mod tests {
         }
     }
 
+    /// The half-height grid (Phase 36, docs/HALF_HEIGHT_GRID.md) shapes natural ground once, at
+    /// generation: no block is adaptive, so the derivation leaves every natural block as it is
+    /// (under Phase 18 a flat field rested at half height and a lone block was a half pyramid).
     #[test]
-    fn a_flat_field_rests_at_half_height_and_a_buried_block_is_a_cube() {
-        let get = columns([[1; 3]; 3], 0);
-        let s = shape_at(&get, 1);
-        assert_eq!(s.points, [[2; 3]; 3]);
-        assert_eq!(s.max_y, 0.5);
-        // With a block above it, a cube.
-        let below = columns([[2; 3]; 3], 0);
-        assert_eq!(derive(&below, 1), None);
-        assert_eq!(shape_at(&below, 1).max_y, 1.0);
-    }
-
-    #[test]
-    fn a_lone_block_is_a_half_pyramid_and_hangs_on_face_b() {
-        let get = columns([[0, 0, 0], [0, 1, 0], [0, 0, 0]], 0);
-        let up = &SHAPES[usize::from(derive(&get, 1).expect("adaptive"))];
-        assert!(up.fan && !up.inverted);
-        assert_eq!(up.points, [[0, 0, 0], [0, 2, 0], [0, 0, 0]]);
-        // Face B reads its neighbours toward −y: the same columns mirrored give the hanging shape.
-        let stone = require("dwell:stone");
-        let mirrored = move |dx: i32, dy: i32, dz: i32| {
-            if dx == 0 && dz == 0 && dy == 0 {
-                stone
-            } else {
-                0
-            }
-        };
-        let down = &SHAPES[usize::from(derive(mirrored, -1).expect("adaptive"))];
-        assert!(down.inverted && down.fan);
-        assert_eq!(down.points, up.points);
+    fn natural_blocks_are_not_adaptive_on_the_half_height_grid() {
+        for name in ["dwell:stone", "dwell:dirt", "dwell:grass", "dwell:sand"] {
+            assert!(!crate::info(require(name)).adaptive, "{name}");
+        }
+        let field = columns([[1; 3]; 3], 0);
+        assert_eq!(derive(&field, 1), None);
+        assert_eq!(shape_at(&field, 1).max_y, 1.0);
+        let lone = columns([[0, 0, 0], [0, 1, 0], [0, 0, 0]], 0);
+        assert_eq!(derive(&lone, 1), None);
+        assert_eq!(derive(&lone, -1), None);
     }
 
     #[test]
@@ -168,15 +152,14 @@ mod tests {
     }
 
     #[test]
-    fn a_shaped_bank_beside_water_is_flooded() {
+    fn a_natural_bank_beside_water_is_not_flooded_without_a_derived_shape() {
+        // Shores hold water in stored ramp pieces (`flooded=true`, set by the generator) instead.
         let (sand, water) = (require("dwell:sand"), require("dwell:water"));
         let bank = move |dx: i32, dy: i32, dz: i32| match (dx, dy, dz) {
             (0, 0, 0) | (-1, 0, _) => sand,
             (1, 0, _) => water,
             _ => 0,
         };
-        assert!(flooded_at(bank, 1));
-        let dry = move |dx: i32, dy: i32, _dz: i32| if dy == 0 && dx <= 0 { sand } else { 0 };
-        assert!(!flooded_at(dry, 1));
+        assert!(!flooded_at(bank, 1));
     }
 }

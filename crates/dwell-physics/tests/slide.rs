@@ -100,7 +100,7 @@ fn stairs(w: &mut PlayerTestWorld) {
     w.fill(-6, -1, -6, 10, -1, 6, cube_block());
     for x in 0..5 {
         for (y, piece) in stairs_column(x).into_iter().enumerate() {
-            w.set(x, y as i32, 0, stairs_state(piece, false));
+            w.set_cell(x, y as i32, 0, stairs_state(piece, false));
         }
     }
 }

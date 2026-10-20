@@ -8,17 +8,17 @@ mod common;
 use common::*;
 use dwell_physics::controller::events as ev;
 use dwell_physics::{DVec3, Vec3};
-use dwell_world::MIDPLANE_Y;
+use dwell_world::MIDPLANE_M;
 
 /// A player on face B hangs under a slab whose lower face is at y = −4,098.
 const SLAB_BOTTOM: i32 = -4098;
-const MID: f64 = MIDPLANE_Y as f64;
+const MID: f64 = MIDPLANE_M;
 
 fn build_slab(w: &mut PlayerTestWorld) {
     for z in -8..8 {
         for x in -8..8 {
             for y in SLAB_BOTTOM..SLAB_BOTTOM + 2 {
-                w.world.set_voxel(x, y, z, cube_block());
+                w.set_world(x, y, z, cube_block());
             }
         }
     }
@@ -32,7 +32,7 @@ fn build_shaft(w: &mut PlayerTestWorld) {
                 continue;
             }
             for y in -2064..=-2033 {
-                w.world.set_voxel(x, y, z, cube_block());
+                w.set_world(x, y, z, cube_block());
             }
         }
     }
@@ -68,7 +68,7 @@ fn a_face_b_player_falls_toward_the_midplane_and_lands_on_a_floor_above() {
     // A floor at y −3,000: a player 20 m below it falls up and lands on it, head away from it.
     for z in -8..8 {
         for x in -8..8 {
-            w.world.set_voxel(x, -3000, z, cube_block());
+            w.set_world(x, -3000, z, cube_block());
         }
     }
     let y0 = -3000.0 - 20.0;
@@ -123,7 +123,7 @@ fn strafing_right_is_toward_the_players_right_on_either_face() {
         } else {
             for z in -8..8 {
                 for x in -8..8 {
-                    w.world.set_voxel(x, -1, z, cube_block());
+                    w.set_world(x, -1, z, cube_block());
                 }
             }
         }

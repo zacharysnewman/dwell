@@ -94,17 +94,22 @@ mod tests {
         dwell_blocks::fluid("dwell:water").expect("dwell:water")
     }
 
+    /// A height `frac` of the way up row `row` (m).
+    fn up(row: i32, frac: f64) -> f64 {
+        crate::m_of_row(row) + frac * crate::CELL_H
+    }
+
     #[test]
     fn an_eye_above_the_drawn_surface_of_a_water_cell_under_air_is_not_submerged() {
         // Regression (WATER_RENDERING.md §1): physics counts the whole cell wet, but the surface is drawn
-        // 1/8 below its top; 0.9 m up the cell the eye is above the water.
+        // 1/8 of a cell below its top; 0.9 of the way up the cell the eye is above the water.
         let col = Column::new(&[(9, "dwell:stone"), (10, "dwell:water")]);
-        assert_eq!(col.at([0.5, 10.9, 0.5]), None);
+        assert_eq!(col.at([0.5, up(10, 0.9), 0.5]), None);
         assert_eq!(
-            col.at([0.5, 10.8, 0.5]),
+            col.at([0.5, up(10, 0.8), 0.5]),
             Some(EyeFluid {
                 fluid: water(),
-                surface_y: 10.875
+                surface_y: up(10, 0.875)
             })
         );
     }
@@ -116,9 +121,9 @@ mod tests {
             (11, "dwell:water"),
             (12, "dwell:water"),
         ]);
-        let at = col.at([0.5, 10.99, 0.5]).expect("under");
-        assert_eq!(at.surface_y, 12.875);
-        assert_eq!(col.at([0.5, 12.9, 0.5]), None);
+        let at = col.at([0.5, up(10, 0.99), 0.5]).expect("under");
+        assert_eq!(at.surface_y, up(12, 0.875));
+        assert_eq!(col.at([0.5, up(12, 0.9), 0.5]), None);
     }
 
     #[test]
@@ -127,9 +132,12 @@ mod tests {
             (10, "dwell:stone"),
             (12, "dwell:ladder[facing=north,flooded=true]"),
         ]);
-        assert_eq!(col.at([0.5, 10.5, 0.5]), None);
-        assert_eq!(col.at([0.5, 11.5, 0.5]), None);
-        assert_eq!(col.at([0.5, 12.5, 0.5]).map(|e| e.fluid), Some(water()));
+        assert_eq!(col.at([0.5, up(10, 0.5), 0.5]), None);
+        assert_eq!(col.at([0.5, up(11, 0.5), 0.5]), None);
+        assert_eq!(
+            col.at([0.5, up(12, 0.5), 0.5]).map(|e| e.fluid),
+            Some(water())
+        );
     }
 
     #[test]
@@ -137,19 +145,18 @@ mod tests {
         // Face B's up is −y: the cell "above" is y − 1 and the surface is 1/8 above the bottom.
         let y = MIDPLANE_Y - 20;
         let col = Column::new(&[(y + 1, "dwell:stone"), (y, "dwell:water")]);
-        let yf = f64::from(y);
-        assert_eq!(col.at([0.5, yf + 0.1, 0.5]), None);
+        assert_eq!(col.at([0.5, up(y, 0.1), 0.5]), None);
         assert_eq!(
-            col.at([0.5, yf + 0.2, 0.5]),
+            col.at([0.5, up(y, 0.2), 0.5]),
             Some(EyeFluid {
                 fluid: water(),
-                surface_y: yf + 0.125
+                surface_y: up(y, 0.125)
             })
         );
         let deep = Column::new(&[(y, "dwell:water"), (y - 1, "dwell:water")]);
         assert_eq!(
-            deep.at([0.5, yf + 0.01, 0.5]).map(|e| e.surface_y),
-            Some(yf - 1.0 + 0.125)
+            deep.at([0.5, up(y, 0.01), 0.5]).map(|e| e.surface_y),
+            Some(up(y - 1, 0.125))
         );
     }
 
@@ -157,7 +164,7 @@ mod tests {
     fn deeper_than_the_scan_reports_the_last_cell_scanned() {
         let cells: Vec<(i32, &str)> = (0..200).map(|y| (y, "dwell:water")).collect();
         let col = Column::new(&cells);
-        let at = col.at([0.5, 0.5, 0.5]).expect("under");
-        assert_eq!(at.surface_y, f64::from(SURFACE_SCAN) + 1.0);
+        let at = col.at([0.5, up(0, 0.5), 0.5]).expect("under");
+        assert_eq!(at.surface_y, crate::m_of_row(SURFACE_SCAN + 1));
     }
 }

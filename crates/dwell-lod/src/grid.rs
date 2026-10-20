@@ -6,20 +6,33 @@ use dwell_world::lod::{
     LodCoord, MAX_LEVEL, ORIGIN_X, ORIGIN_Y, ORIGIN_Z, first_row, last_row, section_origin,
     section_size, sections_across,
 };
-use dwell_world::{CELL_H, MIDPLANE_Y, MIRROR_SUM, cell_space, metres};
+use dwell_world::{
+    CELL_H, MIDPLANE_Y, MIRROR_SUM, WORLD_BOTTOM_Y, WORLD_MAX_Y, cell_space, metres,
+};
 
 /// World metres, as the client's `Vec3`.
 pub type Vec3 = [f64; 3];
 
-/// The octree's corner (−2²³, −2²³, −2²³) in metres.
+/// The octree's corner (−2²³, −2²³, −2²³) in cell space (x and z in metres, y in rows).
 pub const ORIGIN: Vec3 = [ORIGIN_X as f64, ORIGIN_Y as f64, ORIGIN_Z as f64];
 
-/// The deepest level whose sections never straddle the midplane (2,048 m sections).
+/// The deepest level handled as never straddling the midplane (2,048-row sections). On ½ m cells
+/// level 7's sections don't straddle it either; they are handled as if they might, which is correct
+/// for any section.
 pub const MAX_ALIGNED_LEVEL: i32 = 6;
 
-/// A section as one number (5 + 19 + 9 + 19 bits, the row counted from the world's first), for
-/// maps on hot paths. Coordinates outside the octree or the world's rows map to −1.
+/// A section as one number (5 + 19 + 10 + 19 bits, the row counted from the world's first, under
+/// 2^53 so it is exact in a double), for maps on hot paths. Coordinates outside the octree or the
+/// world's rows map to −1.
 pub type LodId = i64;
+
+/// Slots for a level's section rows in an id: level 0's row count, to a power of two (1,024 for
+/// the half-height grid's 32,768 rows; 512 held 1 m cells').
+const ROW_SLOTS: i64 = (((WORLD_MAX_Y - WORLD_BOTTOM_Y) / 32) as u64).next_power_of_two() as i64;
+const _: () = assert!(
+    (MAX_LEVEL as i64 + 1) * 524_288 * ROW_SLOTS * 524_288 <= 1 << 53,
+    "a section id is exact in a double"
+);
 
 pub fn lod_id(level: i32, i: i32, j: i32, k: i32) -> LodId {
     if !(0..=MAX_LEVEL).contains(&level) {
@@ -28,13 +41,18 @@ pub fn lod_id(level: i32, i: i32, j: i32, k: i32) -> LodId {
     let across = sections_across(level);
     let row = j - first_row(level);
     let (i64i, i64k) = (i64::from(i), i64::from(k));
-    if i < 0 || k < 0 || i64i >= across || i64k >= across || !(0..512).contains(&row) {
+    if i < 0
+        || k < 0
+        || i64i >= across
+        || i64k >= across
+        || !(0..ROW_SLOTS).contains(&i64::from(row))
+    {
         return -1;
     }
     if j > last_row(level) {
         return -1;
     }
-    ((i64::from(level) * 524_288 + i64i) * 512 + i64::from(row)) * 524_288 + i64k
+    ((i64::from(level) * 524_288 + i64i) * ROW_SLOTS + i64::from(row)) * 524_288 + i64k
 }
 
 pub fn id_of(c: LodCoord) -> LodId {
@@ -96,14 +114,7 @@ mod tests {
         ] {
             let l = lod_of_chunk(c);
             assert_eq!(chunk_of_lod(l), c);
-            assert_eq!(
-                origin_m(l),
-                [
-                    f64::from(c.x * 32),
-                    f64::from(c.y * 32),
-                    f64::from(c.z * 32)
-                ]
-            );
+            assert_eq!(origin_m(l), dwell_world::chunk_origin_m(c));
         }
         assert!(in_world(lc(MAX_LEVEL, 0, 0, 0)));
         assert!(!in_world(lc(MAX_LEVEL, 1, 0, 0)));
@@ -121,7 +132,13 @@ mod tests {
     fn counts_y_from_minus_2_23_too_rows_cover_both_faces_one_row_from_level_9() {
         assert_eq!(ORIGIN, [-8_388_608.0; 3]);
         let rows = |level: i32| last_row(level) - first_row(level) + 1;
-        assert_eq!([rows(0), rows(6), rows(8), rows(19)], [512, 8, 3, 1]);
+        // The world's rows (HALF_HEIGHT_GRID.md §2: 32,768 rows of ½ m cells, the 16,384 m of
+        // ADR 0025) in sections of 32 · 2^L rows; level 8's straddle a section boundary.
+        let world_rows = WORLD_MAX_Y - WORLD_BOTTOM_Y;
+        assert_eq!(
+            [rows(0), rows(6), rows(8), rows(19)],
+            [world_rows / 32, world_rows / 2048, world_rows / 8192 + 1, 1]
+        );
         assert_eq!(first_row(19), 0);
         let bottom = ChunkCoord::new(0, WORLD_BOTTOM_Y / 32, 0);
         assert_eq!(lod_of_chunk(bottom).j, first_row(0));
@@ -138,11 +155,11 @@ mod tests {
         ))));
         let j8 = first_row(8);
         assert!(in_world(lc(8, 1024, j8, 1024)));
-        assert!(in_world(lc(8, 1024, j8 + 2, 1024)));
+        assert!(in_world(lc(8, 1024, j8 + rows(8) - 1, 1024)));
         assert!(!in_world(lc(8, 1024, j8 - 1, 1024)));
-        assert!(!in_world(lc(8, 1024, j8 + 3, 1024)));
+        assert!(!in_world(lc(8, 1024, j8 + rows(8), 1024)));
         // Up to level 6 a section lies wholly on one face; a coarser one holds the midplane.
-        let mid = f64::from(MIDPLANE_Y);
+        let mid = dwell_world::MIDPLANE_M;
         for level in 0..=6 {
             let s = section_at(level, [0.0, mid, 0.0]);
             assert_eq!(origin_m(s)[1], mid);
@@ -160,7 +177,7 @@ mod tests {
         for j in first_row(0)..=last_row(0) {
             ids.insert(lod_id(0, 262_144, j, 262_144));
         }
-        assert_eq!(ids.len(), 512);
+        assert_eq!(ids.len(), ((WORLD_MAX_Y - WORLD_BOTTOM_Y) / 32) as usize);
         assert!(!ids.contains(&-1));
         assert_eq!(lod_id(0, 262_144, first_row(0) - 1, 262_144), -1);
         assert_eq!(lod_id(0, 262_144, last_row(0) + 1, 262_144), -1);
@@ -181,7 +198,7 @@ mod tests {
                 [x[0] - pp[0], x[1] - pp[1], x[2] - pp[2]],
                 [
                     f64::from(o & 1) * h,
-                    f64::from((o >> 1) & 1) * h,
+                    f64::from((o >> 1) & 1) * h * dwell_world::CELL_H,
                     f64::from(o >> 2) * h
                 ]
             );
@@ -217,7 +234,7 @@ mod tests {
         assert_eq!(kind_from_bounds(at(-3000.0), &b), LodKind::Buried);
         assert_eq!(kind_from_bounds(at(-9000.0), &b), LodKind::Empty);
         assert_eq!(kind_from_bounds(at(-4100.0), &b), LodKind::Content);
-        assert_eq!(MIDPLANE_Y, -2048);
+        assert_eq!(MIDPLANE_Y, -4096);
     }
 
     #[test]

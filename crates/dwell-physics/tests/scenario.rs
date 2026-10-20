@@ -393,7 +393,16 @@ fn scenario_world() -> PlayerTestWorld {
         0.0,
     ); // ramp
     w.half_step(4, 0, 6, 7, 10);
-    w.fill(-1, 1, 7, 1, 1, 9, cube_block()); // crawlspace roof
+    // Crawlspace roof, 1 m thick from 1.5 m (a cell above the old 1 m): at 1 m a crouched
+    // player's ceiling probe (0.1 m over the 0.9 m capsule) ended exactly on it, where float noise
+    // far from the origin decided a jump.
+    for z in 7..=9 {
+        for x in -1..=1 {
+            for row in dwell_world::rows_for_m(1.5)..=dwell_world::rows_for_m(1.5) + 1 {
+                w.set_cell(x, row, z, cube_block());
+            }
+        }
+    }
     w.fill(10, 0, 2, 14, 2, 6, cube_block()); // ledge
     w.fill(12, 0, 1, 12, 2, 1, require("dwell:ladder[facing=north]"));
     w.fill(-16, -1, -12, -10, -1, -6, air()); // pool pit

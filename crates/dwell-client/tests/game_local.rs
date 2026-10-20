@@ -386,8 +386,7 @@ fn a_region_fill_comes_back_from_the_server_and_undo_restores_it() {
     };
     assert!(region_edits, "the local server announces region edits");
     rig.game.as_mut().unwrap().region.enabled = region_edits;
-    // A cell clear of the player: natural ground rests at half height (ADAPTIVE_BLOCKS.md), so the
-    // top cell right under the feet holds part of the capsule, and filling it is refused.
+    // A cell clear of the player, ahead of the feet.
     rig.input.look.pitch = -40.0;
     assert!(rig.run_until(30, |r| {
         r.game.as_ref().unwrap().debug_state().target.is_some()
@@ -411,7 +410,11 @@ fn a_region_fill_comes_back_from_the_server_and_undo_restores_it() {
         1,
         "the selection is outlined"
     );
-    assert_eq!(rig.scene.borrow().region_boxes[0].size, [1.0; 3]);
+    // One cell: 1 m across, ½ m tall (HALF_HEIGHT_GRID.md).
+    assert_eq!(
+        rig.scene.borrow().region_boxes[0].size,
+        [1.0, dwell_world::CELL_H, 1.0]
+    );
     assert!(game.tool(ToolAction::Fill, rig.now), "the fill is sent");
     assert!(
         rig.run_until(60, |r| r.game.as_mut().unwrap().voxel(x, y, z) == stone),

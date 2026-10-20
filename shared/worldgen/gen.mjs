@@ -65,7 +65,7 @@ export function validateDecorations(data, blocks) {
       if (!(isNum(p.coverage) && p.coverage > 0 && p.coverage <= 1)) fail(`${at}: patches.coverage must be in (0, 1]`);
     }
     if (!(Number.isInteger(d.maxSlope) && d.maxSlope >= 0 && d.maxSlope <= 16)) {
-      fail(`${at}: maxSlope must be a whole number of blocks in [0, 16]`);
+      fail(`${at}: maxSlope must be a whole number of metres in [0, 16]`);
     }
     const h = d.height;
     if (!(Array.isArray(h) && h.length === 2 && h.every(Number.isInteger) && h[0] <= h[1])) {

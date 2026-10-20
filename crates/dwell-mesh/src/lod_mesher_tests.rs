@@ -45,6 +45,28 @@ fn surface_at(x: i32, z: i32) -> usize {
     col(x, z) * SURFACE_STRIDE
 }
 
+// The LOD mesher emits y scaled by the cell height (HALF_HEIGHT_GRID.md §2). These tests are about
+// what is drawn where in a section's cells, so they read it back in cells: `mesh_section` below
+// shadows the mesher's, dividing y by the cell height.
+fn in_cells(mut m: SectionMeshes) -> SectionMeshes {
+    let h = dwell_world::CELL_H;
+    let fix = |a: &mut FlatMesh| {
+        for p in a.positions.iter_mut().skip(1).step_by(3) {
+            *p = (f64::from(*p) / h) as f32;
+        }
+    };
+    fix(&mut m.opaque);
+    fix(&mut m.water);
+    m.skirts.iter_mut().for_each(fix);
+    m
+}
+fn mesh_section(
+    cells: &[u16],
+    options: &MeshSectionOptions<'_>,
+) -> Result<SectionMeshes, LengthError> {
+    super::mesh_section(cells, options).map(in_cells)
+}
+
 fn mesh(cells: &[u16]) -> SectionMeshes {
     mesh_section(cells, &MeshSectionOptions::default()).expect("section volume")
 }
@@ -799,9 +821,9 @@ fn rejects_a_wrong_cell_count_and_accounts_bytes() {
     assert_eq!(section_bytes(&m), 4 * (24 * 9 + 36));
 }
 
-mod adaptive_tops {
-    //! The adaptive rule on LOD cells (ADAPTIVE_BLOCKS.md §4.4): a natural column's top cell takes
-    //! the shape the rule table gives its neighbourhood of cells, as the chunks' blocks do.
+mod natural_tops {
+    //! Natural LOD cells on the half-height grid (Phase 36): no block is adaptive, so a natural
+    //! column's top cell is a block, as the chunks' are (Phase 18 shaped it by the rule table).
     use super::*;
 
     fn normal_ys(m: &FlatMesh) -> Vec<i32> {
@@ -814,20 +836,19 @@ mod adaptive_tops {
     }
 
     #[test]
-    fn a_lone_natural_cell_is_a_half_pyramid() {
+    fn a_lone_natural_cell_is_a_block() {
         let mut cells = new_cells();
         put(&mut cells, 3, 4, 5, grass());
         let m = mesh(&cells);
-        // Four 45° faces (normal y = cos 45°) and the floor; nothing reaches the cell's top.
-        assert_eq!(normal_ys(&m.opaque), [-1000, 707]);
+        assert_eq!(normal_ys(&m.opaque), [-1000, 0, 1000]);
         assert_eq!(
             max(m.opaque.positions.iter().skip(1).step_by(3).copied()),
-            4.5
+            5.0
         );
     }
 
     #[test]
-    fn a_natural_field_rests_at_half_a_cell_and_merges() {
+    fn a_natural_field_is_flat_at_its_top_and_merges() {
         let mut cells = new_cells();
         for z in -1..=32 {
             for x in -1..=32 {
@@ -840,7 +861,7 @@ mod adaptive_tops {
                 .filter(|v| m.opaque.normals[v * 3 + 1] == 1.0)
                 .map(|v| m.opaque.positions[v * 3 + 1]),
         );
-        assert_eq!(tops, [0.5]);
+        assert_eq!(tops, [1.0]);
         let flat_tops = (0..quads(&m.opaque))
             .filter(|q| m.opaque.normals[q * 12 + 1] == 1.0)
             .count();
@@ -848,8 +869,7 @@ mod adaptive_tops {
     }
 
     #[test]
-    fn a_one_cell_step_is_one_even_slope_and_face_b_hangs() {
-        // Natural ground one cell deep for x < 16, two from x = 16: the step slopes.
+    fn a_one_cell_step_is_a_step_and_face_b_mirrors_it() {
         let mut cells = new_cells();
         for z in -1..=32 {
             for x in -1..=32 {
@@ -860,12 +880,7 @@ mod adaptive_tops {
             }
         }
         let a = mesh(&cells);
-        // The lower block rises to its top, the upper sinks to its floor: ½ cell per cell, 26.57°.
-        assert!(
-            normal_ys(&a.opaque).contains(&894),
-            "{:?}",
-            normal_ys(&a.opaque)
-        );
+        assert_eq!(normal_ys(&a.opaque), [-1000, 0, 1000]);
         let b = mesh_section(
             &mirror_rows(&cells),
             &MeshSectionOptions {
@@ -874,10 +889,6 @@ mod adaptive_tops {
             },
         )
         .expect("section volume");
-        assert!(
-            normal_ys(&b.opaque).contains(&-894),
-            "{:?}",
-            normal_ys(&b.opaque)
-        );
+        assert_eq!(normal_ys(&b.opaque), [-1000, 0, 1000]);
     }
 }

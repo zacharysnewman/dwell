@@ -368,6 +368,10 @@ impl Builder {
         let g = channel(color, 8) * tint[1];
         let b = channel(color, 0) * tint[2];
         let s = f64::from(sign);
+        // A side's texture runs in metres down from the quad's top edge, which sits on a tile
+        // boundary: a 1 m tile spans 1 m, and a block's grass fringe hangs from its top
+        // (HALF_HEIGHT_GRID.md §6).
+        let top = if u == 1 { u1.max(u0) } else { v1.max(v0) };
         for (cu, cv) in [(u0, v0), (u1, v0), (u1, v1), (u0, v1)] {
             let mut p = [0.0; 3];
             p[axis] = plane;
@@ -382,10 +386,11 @@ impl Builder {
             ]);
             self.m.colors.extend([r as f32, g as f32, b as f32]);
             // In blocks: s across, t up the face (world y on sides), tops and bottoms in x/z.
+            let ty = (py - top) * CELL_H + top;
             let (su, sv) = match axis {
                 1 => (px, pz),
-                0 => (pz, py),
-                _ => (px, py),
+                0 => (pz, ty),
+                _ => (px, ty),
             };
             self.m.uvs.extend([su as f32, sv as f32]);
             self.push_tile(tile);
@@ -427,10 +432,12 @@ impl Builder {
             let px = qx + x;
             let py = qy + y;
             let pz = qz + z;
-            // Texture height: from the face's top edge down (a side), else the world height.
+            // Texture height in metres (a 1 m tile spans 1 m whatever the cell height,
+            // HALF_HEIGHT_GRID.md §6): from the face's top edge down (a side), the edge on a tile
+            // boundary so the grass fringe hangs from it; else the world height.
             let tv = match side_top {
-                Some(st) => y + qy - st.at(pt) + 1.0,
-                None => py,
+                Some(st) => (qy - st.at(pt)) * CELL_H + y + 1.0,
+                None => py * CELL_H,
             };
             self.m.positions.extend([px as f32, py as f32, pz as f32]);
             self.m.normals.extend([nx as f32, ny as f32, nz as f32]);

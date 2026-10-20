@@ -14,5 +14,8 @@ dwell-world = { path = "../dwell-world" }
 rapier3d-f64 = { version = "0.36", features = ["enhanced-determinism"] }
 libm = "0.2"
 
+[dev-dependencies]
+dwell-worldgen = { path = "../dwell-worldgen" }
+
 [lints]
 workspace = true

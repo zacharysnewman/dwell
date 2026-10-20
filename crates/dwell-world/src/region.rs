@@ -425,7 +425,7 @@ mod tests {
             .check,
             RegionCheck::OutOfWorld
         );
-        let top = [0.0, f64::from(WORLD_MAX_Y), 0.0];
+        let top = [0.0, crate::m_of_row(WORLD_MAX_Y), 0.0];
         assert_eq!(
             check_region_edit(
                 &mut w,

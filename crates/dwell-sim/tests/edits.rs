@@ -275,16 +275,16 @@ fn an_edited_chunk_the_air_test_calls_empty_is_kept_and_streamed_explicitly() {
     };
     let x = spawn.x.floor() as i32;
     let z = spawn.z.floor() as i32;
-    let y = 4000; // open sky
+    let y = 4000; // open sky (a row, 2 km up)
     let sky = chunk_of(x, y, z + 2);
-    // A floating block (tests put it directly), then the player next to it breaks it. Another on
-    // it keeps it a cube (alone, a natural block is a half pyramid, with no side to aim at).
+    // A floating 1 m block of two cells (tests put it directly), then the player next to it
+    // breaks its lower cell.
     f.server.world().set_voxel(x, y, z + 2, M.stone);
     f.server.world().set_voxel(x, y + 1, z + 2, M.stone);
     f.move_to(
         w.player_id,
         f64::from(x) + 0.5,
-        f64::from(y) - 1.0,
+        dwell_world::m_of_row(y) - 1.0,
         f64::from(z) + 0.5,
     );
     f.send(1, Message::WorldgenCheck(0)); // full-chunk mode

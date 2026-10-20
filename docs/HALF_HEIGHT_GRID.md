@@ -1,6 +1,6 @@
 # Dwell — The Half-Height Grid: ½ m Cells and Stored Cardinal Ramps
 
-> **Status: [in progress, Phase 36]** on the long-lived branch `claude/half-height-voxels`, for
+> **Status: [in progress, Phase 36: H0–H4 built, H5 (playtest) next]** on the long-lived branch `claude/half-height-voxels`, for
 > the owner to playtest before anything reaches `main` ([ADR 0038](./adr/0038-half-height-cells.md)).
 > The investigation is [`proposals/HALF_HEIGHT_VOXELS.md`](./proposals/HALF_HEIGHT_VOXELS.md) and
 > the [Half-Height Voxel Lab](./prototypes/half-height-lab.html), whose **Cardinal ramps only**,
@@ -120,10 +120,38 @@ The plan's Phase 36 lists the steps and their checks. In short:
   column, footstep cells) count metres.
 - **Rendering:** chunk and LOD meshes are emitted in metres, so normals of sloped faces stay
   correct. Textures run in metres, so a 1 m tile spans two cells. The ray marcher steps in cell
-  space with its rays transformed into it.
+  space with its rays transformed into it (not yet: §7).
 - **Worldgen:** terrain heights stay in metres; rows are `ceil(height ÷ cellHeight) − 1`; decoration
   heights are in metres. Generator version bump; chunk and LOD goldens regenerated.
 - **Structures:** authored in cells, so existing content would come out half as tall. The branch
   doubles each layer of the prototype structures once, by script.
 - **Compatibility:** protocol version bump (cell coordinates change meaning), new registry hash.
   `package.json` is not raised on the branch (the owner decides at a merge).
+
+## 7. As built (H4, 2026-10-20)
+
+What the switch to ½ m cells did, and what it left for the playtest:
+
+- **Built:** `cellHeight` 0.5 with the rows doubled (metres kept); protocol version 14; generator
+  version 14 with its chunk and LOD goldens re-recorded at the same places in metres; no block
+  adaptive; texture v in metres from each cell's top (the grass fringe hangs from every grass
+  cell); worldgen depths and the shore in metres; the decoration rule's heights and slope in
+  metres (`decorations.json`); the movement playground's layers doubled. The controller suites
+  walk generated ground (`dwell-physics` `tests/ramps.rs`, replacing Phase 18's adaptive suite): ½ m
+  ramps and placed ½ m blocks are walked without jumping, 45° ramps slide, and placing a block
+  beside a player leaves the ground under them alone.
+- **Found and fixed:** face B's LOD sections were mirrored about a hard-coded row (−4,096, the
+  1 m grid's 2 × midplane), so on ½ m cells face B's distant terrain read the wrong rows; the
+  LOD section id gave each level 512 row slots, fewer than level 0's 1,024 rows on ½ m cells
+  (ids collided). Both have regression tests.
+- **Found:** today's prototype terrain never steps a metre between neighbouring columns, so it
+  generates only ½ m ramps; the 45° ramps exist where the ground is steeper (tests build them).
+- **Not converted (deviations, for the playtest to judge):**
+  - the ray marcher (local builds only, A7) still assumes 1 m cells: it draws ½ m cells stretched;
+  - brushes stay in cells: radii and heights count cells, so a ball is half as tall as wide;
+  - a fluid's `surfaceDrop` stays a fraction of its cell (water's surface 1/16 m below a ½ m cell's
+    top instead of 1/8 m);
+  - the chunk view sphere (`VIEW_RADIUS_CHUNKS`) is in chunks, so it reaches half as far up and
+    down in metres;
+  - the LOD draws natural tops flat (a ½ m ramp is below a level-1 cell);
+  - structures carry no cell height: one saved on `main` (1 m cells) comes out half as tall here.

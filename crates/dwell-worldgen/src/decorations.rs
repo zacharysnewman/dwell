@@ -7,6 +7,7 @@
 //! ADR 0010).
 
 use dwell_blocks::StateId;
+use dwell_world::rows_for_m;
 
 use crate::noise::{fbm2, hash2, seed_word, smooth_step, unit};
 
@@ -25,9 +26,9 @@ pub struct Decoration {
     pub patch_wavelength: i32,
     pub patch_coverage: f32,
     /// The steepest ground it stands on: the most the ground's top differs from its four
-    /// neighbours', in blocks.
+    /// neighbours', in metres.
     pub max_slope: i32,
-    /// The ground's top (face-local, sea level 0) must lie in [min_height, max_height].
+    /// The ground's top (m, face-local, sea level 0) must lie in [min_height, max_height].
     pub min_height: i32,
     pub max_height: i32,
 }
@@ -48,6 +49,8 @@ pub struct Placer {
     patch_high: f32,
     patch_seed: u32,
     cell_seed: u32,
+    /// The rule's slope and heights in rows of cells (HALF_HEIGHT_GRID.md §2: the data is in
+    /// metres, the grid's rows are ½ m).
     max_slope: i32,
     min_height: i32,
     max_height: i32,
@@ -76,9 +79,9 @@ impl Placer {
                     patch_high: threshold + PATCH_EDGE,
                     patch_seed: seed_word(world_seed, stream),
                     cell_seed: seed_word(world_seed, stream + 1),
-                    max_slope: d.max_slope,
-                    min_height: d.min_height,
-                    max_height: d.max_height,
+                    max_slope: rows_for_m(f64::from(d.max_slope)),
+                    min_height: rows_for_m(f64::from(d.min_height)),
+                    max_height: rows_for_m(f64::from(d.max_height)),
                 }
             })
             .collect()
@@ -104,7 +107,7 @@ impl Placer {
     }
 
     /// Whether the cell above ground at (x, z) gets this decoration: its ground block `ground`,
-    /// whose top is `top`, with neighbours' tops from `neighbour_top` (+x, −x, +z, −z).
+    /// whose top is row `top`, with neighbours' tops (rows) from `neighbour_top` (+x, −x, +z, −z).
     pub fn places(
         &self,
         (x, z): (i32, i32),
@@ -158,14 +161,39 @@ mod tests {
         let p = &Placer::resolve(&[rule], 3)[0];
         let dirt = dwell_blocks::require("dwell:dirt");
         let grass = dwell_blocks::require("dwell:grass");
-        let flat = |_: i32, _: i32| 5;
-        assert!(p.places((4, 9), (4, 9), dirt, 5, flat));
-        assert!(!p.places((4, 9), (4, 9), grass, 5, flat), "not its ground");
-        assert!(!p.places((4, 9), (4, 9), dirt, 11, |_, _| 11), "too high");
-        assert!(!p.places((4, 9), (4, 9), dirt, 1, |_, _| 1), "too low");
+        // Rows of cells: the rule's 2–10 m and 1 m of slope, whatever the cell height.
+        let r = |m: f64| rows_for_m(m);
+        let at = r(5.0);
+        let flat = move |_: i32, _: i32| at;
+        assert!(p.places((4, 9), (4, 9), dirt, at, flat));
+        assert!(!p.places((4, 9), (4, 9), grass, at, flat), "not its ground");
+        let high = r(10.0) + 1;
         assert!(
-            !p.places((4, 9), (4, 9), dirt, 5, |x, _| if x == 5 { 7 } else { 5 }),
+            !p.places((4, 9), (4, 9), dirt, high, move |_, _| high),
+            "too high"
+        );
+        let low = r(2.0) - 1;
+        assert!(
+            !p.places((4, 9), (4, 9), dirt, low, move |_, _| low),
+            "too low"
+        );
+        let steep = at + r(1.0) + 1;
+        assert!(
+            !p.places((4, 9), (4, 9), dirt, at, move |x, _| if x == 5 {
+                steep
+            } else {
+                at
+            }),
             "too steep"
+        );
+        let edge = at + r(1.0);
+        assert!(
+            p.places((4, 9), (4, 9), dirt, at, move |x, _| if x == 5 {
+                edge
+            } else {
+                at
+            }),
+            "1 m of slope is within it"
         );
         // A density below 1 is a deterministic share of cells, the same on every call.
         let half = &Placer::resolve(
@@ -176,12 +204,12 @@ mod tests {
             3,
         )[0];
         let picks: Vec<bool> = (0..400)
-            .map(|x| half.places((x, 0), (x.into(), 0), dirt, 5, flat))
+            .map(|x| half.places((x, 0), (x.into(), 0), dirt, at, flat))
             .collect();
         let n = picks.iter().filter(|&&b| b).count();
         assert!((150..250).contains(&n), "{n}");
         let again: Vec<bool> = (0..400)
-            .map(|x| half.places((x, 0), (x.into(), 0), dirt, 5, flat))
+            .map(|x| half.places((x, 0), (x.into(), 0), dirt, at, flat))
             .collect();
         assert_eq!(picks, again);
     }

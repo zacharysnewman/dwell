@@ -5,6 +5,36 @@ use dwell_blocks::{RenderMode, ShapeFace, require};
 
 const UNKNOWN: u16 = 65_000;
 
+// The mesher emits chunk-local metres (HALF_HEIGHT_GRID.md §2). These tests are about what is
+// drawn where in the cells, so they read its output back in cells: the entry points below shadow
+// the mesher's, dividing y by the cell height (`emits_metres_one_cell_tall` checks the metres).
+fn in_cells(mut m: ChunkMeshes) -> ChunkMeshes {
+    for a in [&mut m.opaque, &mut m.transparent, &mut m.cutout] {
+        for p in a.positions.iter_mut().skip(1).step_by(3) {
+            *p = (f64::from(*p) / dwell_world::CELL_H) as f32;
+        }
+    }
+    m
+}
+fn mesh_chunk(padded: &[u16], mirror: bool) -> Result<ChunkMeshes, LengthError> {
+    super::mesh_chunk(padded, mirror).map(in_cells)
+}
+fn mesh_chunk_at(
+    padded: &[u16],
+    mirror: bool,
+    origin: [i32; 3],
+) -> Result<ChunkMeshes, LengthError> {
+    super::mesh_chunk_at(padded, mirror, origin).map(in_cells)
+}
+fn mesh_chunk_with(
+    kinds: &Kinds,
+    padded: &[u16],
+    mirror: bool,
+    origin: [i32; 3],
+) -> Result<ChunkMeshes, LengthError> {
+    super::mesh_chunk_with(kinds, padded, mirror, origin).map(in_cells)
+}
+
 fn water() -> u16 {
     require("dwell:water")
 }
@@ -722,14 +752,14 @@ fn normal_ys(m: &MeshArrays) -> Vec<i32> {
 }
 
 #[test]
-fn a_lone_grass_block_is_a_half_pyramid_and_a_field_rests_at_half_height() {
+fn a_lone_grass_block_is_a_cube_and_a_field_is_flat_at_its_top() {
+    // Natural blocks are not adaptive on the half-height grid: no half pyramid, no resting at half
+    // height (Phase 18); a lone block is a cube.
     let lone = mesh(&[(5, 3, 5, grass())], false).opaque;
     let ys = normal_ys(&lone);
-    // Four faces sloping at 45° (normal y = cos 45°) over the floor; no vertical side.
-    assert_eq!(ys.iter().filter(|&&y| y == 707).count(), 4, "{ys:?}");
-    assert!(ys.iter().all(|&y| y == 707 || y == -1000), "{ys:?}");
-    assert!(lone.positions.chunks_exact(3).all(|p| p[1] <= 3.5));
-    // The middle of a field: flat at half height, with the grass top tile.
+    assert!(ys.iter().all(|&y| [1000, 0, -1000].contains(&y)), "{ys:?}");
+    assert_eq!(ys.iter().filter(|&&y| y == 1000).count(), 2, "{ys:?}");
+    assert!(lone.positions.chunks_exact(3).any(|p| p[1] == 4.0));
     let mut field = Vec::new();
     for z in 4..7 {
         for x in 4..7 {
@@ -742,7 +772,7 @@ fn a_lone_grass_block_is_a_half_pyramid_and_a_field_rests_at_half_height() {
         .map(|i| m.positions[i * 3 + 1])
         .collect();
     assert!(
-        !flat.is_empty() && flat.iter().all(|&y| y == 3.5),
+        !flat.is_empty() && flat.iter().all(|&y| y == 4.0),
         "{flat:?}"
     );
 }
@@ -756,39 +786,10 @@ fn a_grass_block_with_a_block_on_it_stays_a_cube() {
 }
 
 #[test]
-fn a_shaped_bank_beside_water_holds_water_in_its_open_part() {
-    // Sand at the water's row beside water: shaped, and flooded — its cell's water faces are drawn
-    // (toward the air), and the water beside it draws none against it.
-    let m = mesh(
-        &[(5, 3, 5, require("dwell:sand")), (6, 3, 5, water())],
-        false,
-    );
-    let tops: Vec<f32> = (0..m.transparent.normals.len() / 3)
-        .filter(|&i| m.transparent.normals[i * 3 + 1] == 1.0)
-        .map(|i| m.transparent.positions[i * 3])
-        .collect();
-    // The bank's water top spans x 5..6 and the water cell's 6..7.
-    assert!(tops.iter().any(|&x| x < 6.0), "{tops:?}");
-    assert!(tops.iter().any(|&x| x >= 6.0), "{tops:?}");
-    // No water face stands between them (at x = 6, facing ±x).
-    let between = (0..m.transparent.normals.len() / 3).any(|i| {
-        m.transparent.normals[i * 3].abs() == 1.0
-            && (m.transparent.positions[i * 3] - 6.0).abs() < 0.01
-    });
-    assert!(!between);
-}
-
-#[test]
-fn face_b_shapes_hang_toward_its_sky() {
-    // A lone grass block on face B (meshed mirrored): the pyramid hangs, its slopes face down.
-    let m = mesh(&[(5, 3, 5, grass())], true).opaque;
-    let ys = normal_ys(&m);
-    assert_eq!(ys.iter().filter(|&&y| y == -707).count(), 4, "{ys:?}");
-}
-
-#[test]
 fn a_level_field_of_natural_blocks_merges_its_flat_tops() {
-    // 10 × 10 grass: the 8 × 8 inside rests at half height in one rectangle; the rim slopes.
+    // 10 × 10 grass: natural blocks are not adaptive on the half-height grid (Phase 36), so the
+    // whole field is flat at its cells' top in one rectangle (under Phase 18 the rim sloped and the
+    // inside rested at half height).
     let mut field = Vec::new();
     for z in 0..10 {
         for x in 0..10 {
@@ -801,7 +802,7 @@ fn a_level_field_of_natural_blocks_merges_its_flat_tops() {
         .collect();
     assert_eq!(flat.len(), 4, "one merged quad");
     for &v in &flat {
-        assert_eq!(m.positions[v * 3 + 1], 2.5);
+        assert_eq!(m.positions[v * 3 + 1], 3.0);
     }
 }
 
@@ -885,4 +886,61 @@ fn a_hanging_ramp_on_face_b_faces_its_sky() {
     let ys = normal_ys(&m);
     assert!(ys.contains(&-707), "{ys:?}");
     assert!(!ys.contains(&707), "{ys:?}");
+}
+
+#[test]
+fn emits_metres_one_cell_tall() {
+    // A cube spans the cell height in y (HALF_HEIGHT_GRID.md §2), and a ½ m ramp's stored normal
+    // is its slope in metres (26.57°, normal y = cos 26.57° ≈ 0.894), not the cell-space 45°.
+    let m = super::mesh_chunk(&voxels(&[(4, 3, 4, stone())]), false).expect("padded volume");
+    let ys: Vec<f32> = m
+        .opaque
+        .positions
+        .iter()
+        .skip(1)
+        .step_by(3)
+        .copied()
+        .collect();
+    let h = dwell_world::CELL_H as f32;
+    assert_eq!(ys.iter().copied().fold(f32::MAX, f32::min), 3.0 * h);
+    assert_eq!(ys.iter().copied().fold(f32::MIN, f32::max), 4.0 * h);
+    let r = super::mesh_chunk(
+        &voxels(&[(4, 3, 4, ramp("grass", "ramp", "east", "bottom", false))]),
+        false,
+    )
+    .expect("padded volume");
+    let slope_y = (0..r.opaque.normals.len() / 3)
+        .map(|v| r.opaque.normals[v * 3 + 1])
+        .filter(|&y| y > 0.1 && y < 0.99)
+        .fold(0.0f32, f32::max);
+    let want = (1.0 / (1.0 + (h as f64).powi(2)).sqrt()) as f32;
+    assert!((slope_y - want).abs() < 1e-3, "{slope_y} vs {want}");
+}
+
+#[test]
+fn a_side_texture_spans_its_metres_and_a_grass_fringe_hangs_from_each_blocks_top() {
+    // A 1 m tile spans 1 m of side whatever the cell height, and v runs down from the side's top
+    // edge, which sits on a tile boundary: a ½ m grass block in any row shows the tile's top half,
+    // the fringe at its top (HALF_HEIGHT_GRID.md §6).
+    for row in [3, 4] {
+        let m = super::mesh_chunk(&voxels(&[(4, row, 4, grass())]), false).expect("padded volume");
+        let side: Vec<f32> = (0..m.opaque.normals.len() / 3)
+            .filter(|&v| m.opaque.normals[v * 3] == 1.0)
+            .map(|v| m.opaque.uvs[v * 2 + 1])
+            .collect();
+        assert_eq!(side.len(), 4, "one side quad");
+        let (lo, hi) = (
+            side.iter().copied().fold(f32::MAX, f32::min),
+            side.iter().copied().fold(f32::MIN, f32::max),
+        );
+        assert_eq!(
+            hi.fract(),
+            0.0,
+            "row {row}: the top edge on a tile boundary"
+        );
+        assert!(
+            ((hi - lo) as f64 - dwell_world::CELL_H).abs() < 1e-6,
+            "row {row}"
+        );
+    }
 }

@@ -16,7 +16,7 @@ use dwell_sim::server::ServerConfig;
 use dwell_sim::worldgen_pool::WorldgenPool;
 use dwell_world::{
     CHUNK_SIZE, Chunk, ChunkCoord, GENERATOR_FLAT, GENERATOR_TERRAIN, M, MAX_CHUNK_Y, MIDPLANE_Y,
-    MIN_CHUNK_Y, WORLD_RADIUS, chunk_hash, chunk_of,
+    MIN_CHUNK_Y, WORLD_RADIUS, chunk_hash,
 };
 use dwell_worldgen::{TerrainGenerator, air_test_for, generator_for};
 
@@ -53,11 +53,7 @@ fn a_matching_verification_hash_gets_generated_chunks_nearest_first() {
     assert!(!chunks.is_empty());
     // Streaming centres on the player's chunk (players are spread around the spawn point).
     let position = position_of(&mut f, welcome.player_id).expect("a live player");
-    let spawn = chunk_of(
-        position.x.floor() as i32,
-        position.y.floor() as i32,
-        position.z.floor() as i32,
-    );
+    let spawn = dwell_world::chunk_of_pos(position.to_array());
     assert_eq!(coord_of(&chunks[0]), spawn);
     let mut previous = 0;
     let mut ordered = true;
@@ -141,11 +137,13 @@ fn a_mismatched_hash_or_0_gets_every_chunk_explicitly_as_generated() {
 
 #[test]
 fn open_sky_costs_nothing_the_view_is_a_sphere_across_the_worlds_rows() {
-    // A player high in the sky (the world is 256 chunk rows tall): the view is all Air chunks, and
+    // A player high in the sky (the world is 1,024 chunk rows tall): the view is all Air chunks, and
     // the server neither generates nor stores them.
     let mut f = Fixture::new(ServerConfig {
         world_seed: 99,
-        spawn: Some([0.5, 3000.0, 0.5]),
+        // Near the top of a 16 m chunk (2,992–3,008 m): the body's centre (0.9 m over the feet)
+        // stays in it through the second's fall (10 m).
+        spawn: Some([0.5, 3006.0, 0.5]),
         worldgen_budget: Duration::from_secs(1),
         ..ServerConfig::default()
     });

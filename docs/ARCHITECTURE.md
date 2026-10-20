@@ -677,7 +677,10 @@ decoration rule as data; the owner's partial reversal of B10, for plants only). 
 the registry hash: the 0.12 compatibility line.
 
 **Adaptive natural blocks [in progress, Phase 18; formerly 9e]** ([`ADAPTIVE_BLOCKS.md`](./ADAPTIVE_BLOCKS.md),
-[ADR 0024](./adr/0024-adaptive-natural-blocks.md)). A block with `"adaptive": true` in its data
+[ADR 0024](./adr/0024-adaptive-natural-blocks.md)). *On the branch `claude/half-height-voxels`
+(Phase 36 H4) no block is adaptive: natural ground is shaped once, at generation, from stored
+ramps (below), and placing or breaking a block changes no other cell. The mechanism stays in the
+code, unused there.* A block with `"adaptive": true` in its data
 (grass, dirt, stone and sand; not water, the ladder or the sandbox floor) is stored as a plain cube
 and **shaped at use**: when nothing solid is above it (a *top block*), its shape comes from its 8
 horizontal neighbours, each **higher** (filled one row up), **the same** or **lower** (open in its
@@ -731,7 +734,11 @@ middle). They are not in the palette: the generator places them. **[built, Phase
 of a column's height and its 8 neighbours' (rows); the generator tops each natural column with its
 pieces (flooded under the sea) and decorates only flat tops. It is active only where the pieces
 exist for the cell height (½ m cells). `dwell-world` `ramps.rs`
-looks them up by name. Until H4 switches the grid, natural blocks stay adaptive. The geometry is
+looks them up by name. **[built, Phase 36 H4]** with ½ m cells no natural block is adaptive
+(`dwell.json` has no `adaptive` flag): the generated ramps are the only shaped natural ground; a
+placed natural block is a flat cell. On today's prototype terrain no two neighbouring columns
+differ by a metre, so only ½ m ramps generate; 45° ramps appear only where the ground steps
+(tests build them). The geometry is
 baked once by
 `shared/blocks/shapes.mjs` (`gen.mjs`) into the generated tables: each shape's closed, outward-wound
 polygons tagged with the cell face they lie on (or the sloped surface), its side profiles for
@@ -752,23 +759,27 @@ into water: flooded; anywhere else: dry — no water from nothing), breaking a f
 water, and a flooded cell counts as water for swimming. Shape picking in the hotbar (the R key, the
 placement preview) went with the placed families.
 
-- Voxel = 1 m cube; `uint16` block-state ID (0 = air). **[planned, Phase 36, on the branch
-  `claude/half-height-voxels` only]** cells 1 × ½ × 1 m, chunks 32³ cells (32 × 16 × 32 m), natural
-  ground shaped once at generation from stored cardinal ramps ([`HALF_HEIGHT_GRID.md`](./HALF_HEIGHT_GRID.md),
-  ADR 0038); until it is built, everything below describes 1 m cells.
+- Voxel = a cell, 1 m × `CELL_HEIGHT` × 1 m; `uint16` block-state ID (0 = air). `main` has 1 m
+  cubes. **[built, Phase 36 H4, on the branch `claude/half-height-voxels` only]** cells are
+  1 × ½ × 1 m, chunks 32³ cells (32 × 16 × 32 m), natural ground shaped once at generation from
+  stored cardinal ramps ([`HALF_HEIGHT_GRID.md`](./HALF_HEIGHT_GRID.md), ADR 0038). Block-sized
+  things in this document (a block, a step, a layer) are cells: ½ m tall on the branch.
   **[built, Phase 36 H1]** one named cell height: `cellHeight` in `shared/protocol/constants.json`
-  (1.0 on `main`), and every conversion between metres and cells goes through `dwell-world`
+  (1.0 on `main`, 0.5 on the branch), and every conversion between metres and cells goes through `dwell-world`
   `cell.rs`. **Cell space** (x and z in metres, y in rows) is the unit of every voxel algorithm:
   chunk indexing, meshing, shapes as fractions of a cell, the LOD octree, the cell DDA, region and
   brush boxes. Metres are used at the boundaries: physics (the terrain collider's voxel size is
   the cell; shaped cells' trimeshes, the voxel queries and the controller's probes convert), the
   chunk and LOD meshes (emitted in metres, normals converted), the camera, culling and outlines,
-  worldgen heights, fluids, audio, and positions on the wire and in saves. The ray marcher still
-  assumes 1 m cells (Phase 36 H4). The registry defines each state's density,
+  worldgen heights, fluids, audio, and positions on the wire and in saves. Texture coordinates
+  are metres (a side's v from the cell's top edge), so a ½ m cell shows half a tile and the grass
+  fringe hangs from each grass cell's top. Not converted on the branch (Phase 36 deviations): the
+  ray marcher (it draws ½ m cells stretched to 1 m), brushes (radii and heights in cells, so a
+  ball is half as tall as wide), and a fluid's `surfaceDrop` (a fraction of a cell). The registry defines each state's density,
   strength, and render properties and is shared by server and client (generated from one data set).
 - Chunk = **32 × 32 × 32** voxels, addressed by `ChunkCoord(int32 x, y, z)`. The grid is 3D in
-  every respect — generation, storage, streaming (§6.3) and LOD (§6.6). The world is 256 chunk
-  rows (8,192 m) tall; `int32` coordinates reach the rim of the 8,192 km disc (chunk ±256 000) with
+  every respect — generation, storage, streaming (§6.3) and LOD (§6.6). The world is 512 chunk
+  rows (16,384 m) tall (on ½ m cells, 1,024 rows of 16 m chunks); `int32` coordinates reach the rim of the 8,192 km disc (chunk ±256 000) with
   room to spare.
 - Wire / storage encoding **[built]**: per-chunk **palette + run-length encoding**
   (`ChunkData Explicit`, §8.3). Voxels are taken in layer order (x fastest, then z, then y) so
@@ -874,9 +885,10 @@ A planet-scale world ([ADR 0011](./adr/0011-planet-scale-world.md)):
   Columns outside it generate nothing, in every generator: the rim is a cliff about 4 km tall
   between the two seas, with nothing in front of it, and a body that goes over it falls toward the
   midplane and is carried across it by the flip band (*Bifacial world* below).
-- **Vertical:** `WORLD_BOTTOM_Y` = −10 240 to `WORLD_MAX_Y` = 6 144 (16,384 m, 512 chunk rows):
-  **face A** (the top, today's terrain) from the midplane `MIDPLANE_Y` = −2 048 to `WORLD_MAX_Y`, with
-  `SEA_LEVEL` = 0, and **face B** its mirror image below the midplane, [−10 240, −2 048). There is
+- **Vertical:** `WORLD_BOTTOM_Y` = −10 240 to `WORLD_MAX_Y` = 6 144 m (16,384 m, 512 chunk rows):
+  **face A** (the top, today's terrain) from the midplane `MIDPLANE_Y` = −2 048 m to `WORLD_MAX_Y`, with
+  `SEA_LEVEL` = 0, and **face B** its mirror image below the midplane, [−10 240, −2 048) m. (These are
+  rows of cells; on ½ m cells the rows double — −20 480, 12 288, −4 096 — and the metres stay.) There is
   no void below the world and no bedrock (below).
 - **Precision:** float32 steps by 0.5 m at 8,192 km, so physics is Rapier's f64 build
   (`rapier3d-f64`) on the server and in the browser (f64 world positions through the controller,
@@ -1044,10 +1056,12 @@ lattice and interpolated bilinearly; the chunk path and the point queries (`colu
    (generated into `decorations.gen.rs` by `shared/worldgen/gen.mjs`, validated against the block
    data, stale-checked in CI): the block (an air plant with no collision), the ground blocks it
    stands on, a density inside noise patches, the steepest slope (against the four neighbours'
-   tops, through `column_at`) and the ground's height range; each cell decided from the seed and its
+   tops, through `column_at`) and the ground's height range, both whole metres (converted to rows
+   when resolved); each cell decided from the seed and its
    position alone, so chunk borders agree. Today one rule: tall grass in meadows on grass (the
    owner's partial reversal of baseline B10, for plants only; [ADR 0036](./adr/0036-render-modes-and-cross-geometry.md)).
-   The LOD doesn't draw them. The rules move into Phase 17's terrain definitions when those exist.
+   The LOD doesn't draw them. **[built, Phase 36 H4]** on ½ m cells a plant is one cell (½ m) tall and
+   grows only on flat tops (no ramp). The rules move into Phase 17's terrain definitions when those exist.
 
 A chunk took ~0.07 ms to generate natively and a LOD section 0.55–0.85 ms in the C++ build
 (Release), against ~1.05 ms and 0.9–2.1 ms for generator version 11; the Rust generator has not
@@ -1070,7 +1084,9 @@ Server (native), local mode (WASM), and client (WASM) must produce **bit-identic
   axis (and just inland and offshore), the open sea, the rim and the sea ~8,000 km out — and chunks
   of face B (the rows either side of the midplane and its island's surface); CI runs it natively and under
   WASM (`wasm32-wasip1` on Node's WASI). The hashes were recorded by the C++ generator; the Rust
-  port reproduces them exactly, so none were re-recorded.
+  port reproduces them exactly, so none were re-recorded then. **[Phase 36 H4, on the branch]**
+  generator version 14 (½ m cells and generated ramps) re-recorded them, each at the same place in
+  metres (its chunk or section row doubled, then the one holding the same content kind).
 - `generatorVersion` is bumped for any change that alters output (and the golden hashes are
   regenerated); saved worlds record it.
 - **[built, Phase 3c]** Planet-scale coordinates (ADR 0011): noise never converts a whole world
@@ -1122,7 +1138,8 @@ Server (native), local mode (WASM), and client (WASM) must produce **bit-identic
   client to drop chunks.
 - **Interest management** (per client, `stream_chunks` in `dwell-sim` `server.rs`). The view is a **sphere** of
   `VIEW_RADIUS_CHUNKS` around the player's chunk (`x² + y² + z² ≤ r² + r`), clipped to the world's
-  rows. Chunks the client lacks are sent nearest first, at most
+  rows. (In chunks: on ½ m cells, where a chunk is 16 m tall, it reaches half as far up and down
+  in metres; the playtest decides whether it should be an ellipsoid.) Chunks the client lacks are sent nearest first, at most
   `MAX_CHUNKS_PER_TICK` per tick and within `CHUNK_BYTES_PER_SECOND` (a byte credit refilled each
   tick; one chunk may overdraw it). When the player's chunk changes, chunks beyond the view plus
   `UNLOAD_MARGIN_CHUNKS` (hysteresis) are unloaded (outside the sphere of r + margin). Dead players
@@ -1686,7 +1703,9 @@ Each frame the octree is walked from the root around the **camera** (the eye):
   cracks along section borders, found in a playtest.) The cells themselves — and so the
   server, downsampling, the protocol and the golden hashes — are unchanged; modified sections
   (`Explicit` from the server) carry no surfaces and keep cell tops.
-- **Adaptive tops [built, Phase 18]** (ADAPTIVE_BLOCKS.md §4.4): the LOD mesher applies the
+- **Adaptive tops [built, Phase 18]** (ADAPTIVE_BLOCKS.md §4.4; on the branch
+  `claude/half-height-voxels` no block is adaptive, so the LOD draws natural tops flat, and the
+  generated ½ m ramps, below a level-1 cell, are not drawn): the LOD mesher applies the
   adaptive rule table to its cells — a dry column's topmost cell, if a natural block with nothing
   above it, takes the shape its neighbourhood of cells gives (corner heights in halves of a cell),
   so near and far terrain follow one rule. A level run's tops (the rule's slab) rest at half a cell
@@ -1833,7 +1852,7 @@ in the code yet.
 | `INTEGRITY_BUDGET_VOXELS` | 32 768 / tick | Flood-fill budget per tick |
 | `AUTOSAVE_SECONDS` | 30 s | World autosave interval (per-world `autosave_seconds` setting); local mode saves every 5 s (`LOCAL_AUTOSAVE_SECONDS`, `dwell-client` local.rs), and when the page is hidden or closed |
 | `CHUNK_SIZE` | 32 | Voxels per chunk edge |
-| `CELL_HEIGHT` | 1.0 m | A cell is 1 m × `CELL_HEIGHT` × 1 m (§6.1): the vertical world values below are rows of cells, with metre twins (`MIDPLANE_M`, `WORLD_BOTTOM_M`, `WORLD_MAX_M`, `SEA_LEVEL_M`) generated beside them; every metre↔cell conversion goes through `dwell-world` `cell.rs` (Phase 36 H1; the branch `claude/half-height-voxels` sets ½ m in H4) |
+| `CELL_HEIGHT` | 1.0 m (`main`) / 0.5 m (the branch `claude/half-height-voxels`, Phase 36 H4) | A cell is 1 m × `CELL_HEIGHT` × 1 m (§6.1): the vertical world values below are rows of cells, with metre twins (`MIDPLANE_M`, `WORLD_BOTTOM_M`, `WORLD_MAX_M`, `SEA_LEVEL_M`) generated beside them; every metre↔cell conversion goes through `dwell-world` `cell.rs` |
 | **Players (§9)** | | |
 | Controller tuning | see `PLAYER_CONTROLLER.md` §7 | Capsule, speeds, jump, crouch, climb, swim, push, damage |
 | `RECONCILE_SNAP_DISTANCE` | 1.0 m | Correction above this snaps instead of smoothing |
@@ -1854,10 +1873,10 @@ in the code yet.
 | `MAX_LOD_INDEX_ENTRIES` | 16 384 | Entries per `LodIndex` / `LodIndexUpdate` message (~256 KB; 16 bytes each since Phase 13) |
 | `LOD_MAX_REQUEST_SECTIONS` | 32 | Sections per `LodRequest` |
 | **Terrain (§6.3)** | | |
-| `MIDPLANE_Y` | −2 048 rows | The halfway plane: face A starts here, face B's mirror image lies below (§6.3) |
-| `WORLD_BOTTOM_Y` / `WORLD_MAX_Y` | −10 240 / 6 144 rows | Vertical world bounds (16,384 rows: face B and face A; × `CELL_HEIGHT` in metres) |
+| `MIDPLANE_Y` | −2 048 rows (−4 096 on ½ m cells; −2,048 m either way) | The halfway plane: face A starts here, face B's mirror image lies below (§6.3) |
+| `WORLD_BOTTOM_Y` / `WORLD_MAX_Y` | −10 240 / 6 144 rows (−20 480 / 12 288 on ½ m cells) | Vertical world bounds (16,384 m: face B and face A; rows × `CELL_HEIGHT`) |
 | `FLIP_BAND` | 4 m | Distance from the midplane within which a body moving toward it is accelerated and one moving away feels a fading pull (§6.3) |
-| `CORE_ANCHOR_LAYERS` | 8 | Layers either side of the midplane that anchor both faces (Phase 20) |
+| `CORE_ANCHOR_LAYERS` | 8 | Layers (rows: 4 m on ½ m cells) either side of the midplane that anchor both faces (Phase 20) |
 | `WORLD_RADIUS` | 8 192 000 m | Radius of the world disc; beyond it, the void |
 | `POSITION_FIXED_SCALE` | 256 per m | Fixed-point wire positions (`i32`, ±8 388 km at 3.9 mm, §8.3) |
 | `POS64_LIMIT` | 33 554 432 m | Range decoders accept for `pos64` positions (§8.3) |

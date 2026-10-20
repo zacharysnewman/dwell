@@ -3,9 +3,9 @@
 //! `server/tests/bifacial_physics_test.cpp`; geometry is in world coordinates (no test origin).
 
 use dwell_physics::{BodyHandle, BoxBody, DVec3, Motion, Physics};
-use dwell_world::MIDPLANE_Y;
+use dwell_world::MIDPLANE_M;
 
-const MID: f64 = MIDPLANE_Y as f64;
+const MID: f64 = MIDPLANE_M;
 
 struct World {
     physics: Physics,

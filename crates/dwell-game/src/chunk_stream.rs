@@ -964,7 +964,7 @@ mod tests {
         }
         assert_eq!(s.source().pending(), 0);
         assert_eq!(s.store().chunks.len(), 0);
-        assert!(s.ready_around([16.0, 16.0, 16.0]));
+        assert!(s.ready_around([16.0, dwell_world::m_of_row(16), 16.0]));
         assert_eq!(s.mesh_dirty([0.0; 3], 100.0, no_clock), 0);
         assert_eq!(s.view().chunks.len(), 0);
         // Unloading an Air chunk removes nothing from the store; a stored chunk replaced by Air is
@@ -1152,7 +1152,7 @@ mod tests {
     #[test]
     fn is_ready_once_the_chunks_around_the_player_are_loaded() {
         let (mut s, _) = setup();
-        let at = [10.0, 70.0, -5.0]; // chunk (0, 2, -1)
+        let at = [10.0, dwell_world::m_of_row(70), -5.0]; // chunk (0, 2, -1)
         assert!(!s.ready_around(at));
         for y in 1..=3 {
             for z in -2..=0 {
@@ -1167,7 +1167,11 @@ mod tests {
     #[test]
     fn only_needs_rows_inside_the_world_at_its_bottom() {
         let (mut s, _) = setup();
-        let at = [0.0, f64::from(MIN_CHUNK_Y * CHUNK_SIZE + 8), 0.0]; // the lowest chunk row
+        let at = [
+            0.0,
+            dwell_world::m_of_row(MIN_CHUNK_Y * CHUNK_SIZE + 8),
+            0.0,
+        ]; // the lowest chunk row
         for y in MIN_CHUNK_Y..=MIN_CHUNK_Y + 1 {
             for z in -1..=1 {
                 for x in -1..=1 {
@@ -1188,7 +1192,8 @@ mod tests {
         );
         s.on_chunk_data(explicit([3, 0, 4], 1, 2));
         assert_eq!(s.mesh_dirty([0.0; 3], 100.0, no_clock), 1);
-        s.on_chunk_data(explicit([3, -70, 4], 1, 2));
+        // A chunk row below the midplane (face B).
+        s.on_chunk_data(explicit([3, dwell_world::MIDPLANE_CHUNK_Y - 6, 4], 1, 2));
         assert_eq!(s.mesh_dirty([0.0; 3], 100.0, no_clock), 1);
         assert_eq!(s.mesher().received, vec![false, true]);
     }

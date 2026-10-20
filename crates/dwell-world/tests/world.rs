@@ -11,6 +11,8 @@ use dwell_world::*;
 
 /// ~8,000 km out (tests/test_origin.h): everything must work there as at the origin.
 const FAR_X: i32 = 3906 * 2048;
+/// The middle of row 0 (m).
+const MID_ROW_0: f64 = 0.5 * CELL_H;
 
 fn s(name: &str) -> StateId {
     require(name)
@@ -101,7 +103,8 @@ fn the_ray_finds_the_first_targetable_cell_and_its_face() {
         // A non-adaptive cube (a lone stone block would be a half pyramid: its slopes count as tops).
         world.set_voxel(ox, 0, 5, s("dwell:sandbox_floor"));
         world.set_voxel(ox, 0, 3, s("dwell:water")); // liquids are not targets
-        let eye = [f64::from(ox) + 0.5, 0.5, 0.5];
+        // The middle of row 0 (HALF_HEIGHT_GRID.md §2: rows are the cell height tall).
+        let eye = [f64::from(ox) + 0.5, MID_ROW_0, 0.5];
         let hit = raycast_block(&mut world, eye, [0.0, 0.0, 1.0], 5.0).expect("hit");
         assert_eq!((hit.cell, hit.face), ([ox, 0, 5], 5)); // entered through −Z
         assert!((hit.distance - 4.5).abs() < 1e-5);
@@ -122,7 +125,7 @@ fn the_ray_finds_the_first_targetable_cell_and_its_face() {
         assert!(
             raycast_block(
                 &mut world,
-                [f64::from(ox) + 5.5, 0.5, 0.5],
+                [f64::from(ox) + 5.5, MID_ROW_0, 0.5],
                 [1.0, 0.0, 0.0],
                 3.0
             )
@@ -139,7 +142,7 @@ fn a_ladder_is_targeted_broken_and_built_against_as_its_whole_cell() {
         world.set_voxel(ox, 0, 3, s("dwell:ladder"));
         let hit = raycast_block(
             &mut world,
-            [f64::from(ox) + 0.5, 0.5, 0.5],
+            [f64::from(ox) + 0.5, MID_ROW_0, 0.5],
             [0.0, 0.0, 1.0],
             5.0,
         )
@@ -577,19 +580,19 @@ fn nothing_is_placed_outside_the_worlds_rows_or_disc() {
     world.set_voxel(0, top, 2, s("dwell:sandbox_floor")); // a cube: its −Z face is there to aim at
     let r = place([0, top, 2], 2, s("dwell:stone"));
     assert_eq!(
-        check(&mut world, r, [0.5, f64::from(WORLD_MAX_Y) + 0.6, 2.5], &[]).check,
+        check(&mut world, r, [0.5, m_of_row(WORLD_MAX_Y) + 0.6, 2.5], &[]).check,
         EditCheck::OutOfWorld
     );
     let r = place([0, top, 2], 5, s("dwell:stone"));
     assert_eq!(
-        check(&mut world, r, [0.5, f64::from(WORLD_MAX_Y) - 0.5, 0.5], &[]).check,
+        check(&mut world, r, [0.5, m_of_row(top) + 0.5 * CELL_H, 0.5], &[]).check,
         EditCheck::Ok
     );
     let rim = WORLD_RADIUS - 1;
     world.set_voxel(rim, 0, 0, s("dwell:sandbox_floor"));
     let r = place([rim, 0, 0], 0, s("dwell:stone"));
     assert_eq!(
-        check(&mut world, r, [f64::from(rim) + 1.5, 0.5, 0.5], &[]).check,
+        check(&mut world, r, [f64::from(rim) + 1.5, MID_ROW_0, 0.5], &[]).check,
         EditCheck::OutOfWorld
     );
 }

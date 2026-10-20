@@ -689,7 +689,7 @@ mod tests {
         assert_eq!((w.get_voxel(2, 0, 2), w.get_voxel(2, -1, 2)), (sand, stone));
         // The outline follows the target; nothing outlines while the tool is off.
         let o = t.outline().expect("outline");
-        assert_eq!(o.origin, [0.5, 0.5, 0.5]);
+        assert_eq!(o.origin, dwell_world::centre_of_cell([0, 0, 0]));
         assert!(!o.segments.is_empty());
         t.key(BrushAction::Toggle);
         assert_eq!(t.outline(), None);

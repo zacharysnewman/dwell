@@ -30,7 +30,8 @@ pub fn origin_x() -> i32 {
 pub fn face_b() -> bool {
     std::env::var("DWELL_FACE").as_deref() == Ok("b")
 }
-pub const MIRROR: f64 = MIRROR_SUM as f64 + 1.0;
+/// The continuous mirror (m): face B's height y is face A's `MIRROR − y`.
+pub const MIRROR: f64 = dwell_world::MIRROR_M;
 
 pub fn to_world(l: Vec3) -> DVec3 {
     DVec3::new(
@@ -245,9 +246,26 @@ impl PlayerTestWorld {
     pub fn floor(&mut self) {
         self.floor_at(0, 16);
     }
+    /// Sets the 1 m block at (x, y, z) (local frame): the suites build in metres, so on the
+    /// half-height grid a block is the rows of cells that fill its metre (HALF_HEIGHT_GRID.md §2).
     pub fn set(&mut self, x: i32, y: i32, z: i32, m: StateId) {
+        let k = rows_for_m(1.0);
+        for row in y * k..(y + 1) * k {
+            self.set_cell(x, row, z, m);
+        }
+    }
+    /// Sets one cell (local frame, `row` in rows of cells).
+    pub fn set_cell(&mut self, x: i32, row: i32, z: i32, m: StateId) {
         self.world
-            .set_voxel(world_cell_x(x), world_cell_y(y), z, world_material(m));
+            .set_voxel(world_cell_x(x), world_cell_y(row), z, world_material(m));
+    }
+    /// Sets a 1 m block whose floor is at `y` metres, in world coordinates (no test origin or
+    /// mirroring: for the suites about the faces themselves).
+    pub fn set_world(&mut self, x: i32, y: i32, z: i32, m: StateId) {
+        let k = rows_for_m(1.0);
+        for row in y * k..(y + 1) * k {
+            self.world.set_voxel(x, row, z, m);
+        }
     }
     pub fn remove(&mut self, x: i32, y: i32, z: i32) {
         self.set(x, y, z, air());

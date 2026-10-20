@@ -21,6 +21,15 @@ fn decoration(m: StateId) -> bool {
         .any(|d| dwell_blocks::require(d.block) == m)
 }
 
+/// The block a state is made of: a stored ramp (`dwell:grass_ramp[...]`) is its base material's.
+fn material(m: StateId) -> StateId {
+    let name = dwell_blocks::block_of(m).name;
+    match name.strip_suffix("_ramp") {
+        Some(base) => require(base),
+        None => m,
+    }
+}
+
 fn gen_chunk(g: &TerrainGenerator, c: ChunkCoord) -> Chunk {
     let mut chunk = Chunk::default();
     g.generate(c, &mut chunk);
@@ -115,10 +124,12 @@ fn a_chunk_is_a_pure_function_of_seed_and_coordinate() {
         TerrainGenerator::new(123),
         TerrainGenerator::new(124),
     );
-    let coord = ChunkCoord::new(1, 2, -1);
+    // The chunk at the ground (rows) of column (48, −16), which the seed moves.
+    let cy = floor_div(a.ground_y(48, -16).expect("inside"), S);
+    let coord = ChunkCoord::new(1, cy, -1);
     assert_eq!(gen_chunk(&a, coord).voxels(), gen_chunk(&b, coord).voxels());
     assert_ne!(gen_chunk(&a, coord).voxels(), gen_chunk(&c, coord).voxels());
-    let n = ChunkCoord::new(2, 2, -1);
+    let n = ChunkCoord::new(2, cy, -1);
     let mut w1 = VoxelWorld::new(generator_for(GENERATOR_TERRAIN, 123), None);
     let mut w2 = VoxelWorld::new(generator_for(GENERATOR_TERRAIN, 123), None);
     w1.get_or_create(coord);
@@ -142,7 +153,7 @@ fn point_queries_agree_with_the_chunk_path() {
         ChunkCoord::new(-1, -3, 3),
     ];
     for (x, z) in [(cx, cz), (cx + 600, cz), (-9000, 4000)] {
-        coords.push(chunk_of(x, g.column_at(x, z).height as i32, z));
+        coords.push(chunk_of(x, g.ground_y(x, z).expect("inside"), z));
     }
     for c in coords {
         let chunk = gen_chunk(&g, c);
@@ -318,8 +329,10 @@ fn the_fill_grass_over_dirt_sand_at_the_shore_sea_to_its_level() {
     let g = TerrainGenerator::new(0);
     let (cx, cz) = coast_on_axis(&g);
     let (mut water, mut grass, mut sand, mut decorated) = (0, 0, 0, 0);
+    // Depths and the shore in rows of cells.
+    let r = |m: f64| rows_for_m(m);
     for x in (cx - 200..=cx + 200).step_by(40) {
-        let h = g.column_at(x, cz).height as i32;
+        let h = g.ground_y(x, cz).expect("inside");
         for cy in [floor_div(h, S) - 1, floor_div(h, S), floor_div(h, S) + 1] {
             let c = chunk_of(x, cy * S, cz);
             let chunk = gen_chunk(&g, c);
@@ -328,20 +341,21 @@ fn the_fill_grass_over_dirt_sand_at_the_shore_sea_to_its_level() {
                     let ground = g.ground_y(c.x * S + lx, c.z * S + z).expect("inside");
                     for y in 0..S {
                         let wy = c.y * S + y;
-                        let m = chunk.get(lx, y, z);
+                        // A stored ramp topping a column is its material, shaped.
+                        let m = material(chunk.get(lx, y, z));
                         let depth = ground - wy;
                         if depth == -1 && wy >= SEA_LEVEL && decoration(m) {
                             decorated += 1;
                         } else if depth < 0 {
                             assert_eq!(m, if wy < SEA_LEVEL { M.water } else { M.air });
                             water += i32::from(m == M.water);
-                        } else if ground < SEA_LEVEL + 2 {
-                            assert_eq!(m, if depth < 3 { M.sand } else { M.stone });
+                        } else if ground < SEA_LEVEL + r(2.0) {
+                            assert_eq!(m, if depth < r(3.0) { M.sand } else { M.stone });
                             sand += i32::from(m == M.sand);
                         } else {
                             let want = if depth == 0 {
                                 M.grass
-                            } else if depth <= 3 {
+                            } else if depth <= r(3.0) {
                                 M.dirt
                             } else {
                                 M.stone
@@ -365,14 +379,9 @@ fn players_spawn_on_level_open_ground_near_the_origin() {
     for seed in 0..16u64 {
         let s = spawn_point_for(GENERATOR_TERRAIN, seed);
         let mut world = VoxelWorld::new(generator_for(GENERATOR_TERRAIN, seed), None);
-        // The feet stand on the shaped surface: a level patch's top blocks rest at half height
-        // (ADAPTIVE_BLOCKS.md), half a block above the top voxel's floor.
-        let (x, g, z) = (
-            s[0].floor() as i32,
-            s[1].floor() as i32,
-            s[2].floor() as i32,
-        );
-        assert_eq!(s[1], f64::from(g) + 0.5, "seed {seed}: {s:?}");
+        // The feet stand on the top of a level patch's top cell (row g): no ramp tops it.
+        let (x, g, z) = (s[0].floor() as i32, row_of_m(s[1]) - 1, s[2].floor() as i32);
+        assert_eq!(s[1], m_of_row(g + 1), "seed {seed}: {s:?}");
         assert!(
             x.abs() < 512 && z.abs() < 512 && g >= SEA_LEVEL,
             "seed {seed}: {s:?}"
@@ -383,17 +392,21 @@ fn players_spawn_on_level_open_ground_near_the_origin() {
                 // Open: air, or a decoration players walk through (tall grass).
                 let at = world.get_voxel(x + dx, g + 1, z + dz);
                 assert!(at == M.air || (decoration(at) && !solid(at)), "seed {seed}");
-                assert_eq!(world.get_voxel(x + dx, g + 2, z + dz), M.air);
+                // Headroom: 2 m clear above the plant's cell.
+                for row in g + 2..=g + 1 + rows_for_m(2.0) {
+                    let above = world.get_voxel(x + dx, row, z + dz);
+                    assert!(above == M.air || !solid(above), "seed {seed}");
+                }
             }
         }
         assert_eq!(
             world.shape_at(x, g, z).max_y,
-            0.5,
-            "seed {seed}: the generator's point query agrees with the world's derived shape"
+            1.0,
+            "seed {seed}: a level patch's top is a full cell"
         );
     }
-    // The flat world's grass top rests at half height.
-    assert_eq!(spawn_point_for(GENERATOR_FLAT, 9)[1], -0.5);
+    // The flat world's grass top is its top layer's.
+    assert_eq!(spawn_point_for(GENERATOR_FLAT, 9)[1], 0.0);
 }
 
 #[test]
@@ -419,30 +432,31 @@ fn one_island_at_the_origin_with_sea_all_round() {
 
 #[test]
 fn the_mirror_maps_voxels_and_chunks_and_is_its_own_inverse() {
-    assert_eq!(MIDPLANE_Y, -2048);
+    // In rows: the midplane is at −2,048 m, row −4,096 on ½ m cells.
+    assert_eq!(MIDPLANE_Y, -4096);
     assert_eq!(
         (
-            mirror_y(-2048),
-            mirror_y(-2049),
             mirror_y(-4096),
-            mirror_y(-4097)
+            mirror_y(-4097),
+            mirror_y(-8192),
+            mirror_y(-8193)
         ),
-        (-2049, -2048, -1, 0)
+        (-4097, -4096, -1, 0)
     );
-    assert_eq!((mirror_chunk_y(-64), mirror_chunk_y(-65)), (-65, -64));
-    for y in [-10240, -5000, -2049, -2048, -1, 0, 6143] {
+    assert_eq!((mirror_chunk_y(-128), mirror_chunk_y(-129)), (-129, -128));
+    for y in [-20480, -10000, -4097, -4096, -1, 0, 12287] {
         assert_eq!(mirror_y(mirror_y(y)), y);
         let cy = floor_div(y, S);
         let local = mirror_y(y);
         assert!(mirror_chunk_y(cy) * S <= local && local < (mirror_chunk_y(cy) + 1) * S);
     }
-    assert_eq!((face_of_y(-2048), face_of_y(-2049)), (Face::A, Face::B));
+    assert_eq!((face_of_y(-4096), face_of_y(-4097)), (Face::A, Face::B));
     assert_eq!(mirror_y(WORLD_BOTTOM_Y), WORLD_MAX_Y - 1);
-    assert_eq!(MIN_CHUNK_Y, -320);
+    assert_eq!(MIN_CHUNK_Y, -640);
     assert_eq!(mirror_chunk_y(MIN_CHUNK_Y), MAX_CHUNK_Y);
     assert_eq!(
-        face_local_chunk(ChunkCoord::new(3, -70, -4)),
-        ChunkCoord::new(3, -59, -4)
+        face_local_chunk(ChunkCoord::new(3, -140, -4)),
+        ChunkCoord::new(3, -117, -4)
     );
     for m in 0..dwell_blocks::STATES.len() as StateId {
         assert_eq!(mirror(mirror(m)), m);
@@ -555,7 +569,9 @@ fn the_air_test_knows_face_bs_sky_and_rows_outside_the_world() {
     let (mut sky, mut checked) = (0, 0);
     for cx in -3..=3 {
         for cz in -3..=3 {
-            for cy in [-66, -65, -130, -129, -128, -127, -200, -320, -321] {
+            // Chunks are 16 m tall (32 rows of ½ m): face B's core under the midplane, its
+            // surface around sea level's mirror, deep down, the bottom and beyond.
+            for cy in [-132, -130, -260, -258, -256, -254, -400, -640, -641] {
                 let c = ChunkCoord::new(cx * 997, cy, cz * 1013);
                 let is_air = air(c);
                 checked += 1;
@@ -571,7 +587,8 @@ fn the_air_test_knows_face_bs_sky_and_rows_outside_the_world() {
         }
     }
     assert!(sky > 0 && sky < checked);
-    for cy in [-229, -279, MIN_CHUNK_Y] {
+    // Face B's sky, 3.2 km and 4.8 km above its sea level.
+    for cy in [-457, -557, MIN_CHUNK_Y] {
         assert!(air(ChunkCoord::new(0, cy, 0)) && air(ChunkCoord::new(1000, cy, -1000)));
     }
     assert!(
@@ -590,7 +607,7 @@ fn meadows_of_tall_grass_grow_on_grass_by_the_decoration_data() {
     let tall = require(rule.block);
     let (mut plants, mut grass_tops) = (0, 0);
     for (cx, cz) in [(0, 0), (1, 0), (0, 1), (-3, 5), (12, -7)] {
-        let h = g.column_at(cx * S + 16, cz * S + 16).height as i32;
+        let h = g.ground_y(cx * S + 16, cz * S + 16).expect("inside");
         for cy in [floor_div(h, S), floor_div(h, S) + 1] {
             let c = ChunkCoord::new(cx, cy, cz);
             let chunk = gen_chunk(&g, c);
@@ -610,11 +627,13 @@ fn meadows_of_tall_grass_grow_on_grass_by_the_decoration_data() {
                         }
                         plants += 1;
                         assert_eq!(c.y * S + y, top + 1, "over the ground");
+                        // The rule is in metres, the grid in rows.
                         for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
                             let n = g.ground_y(wx + dx, wz + dz).expect("inside");
-                            assert!((n - top).abs() <= rule.max_slope);
+                            assert!((n - top).abs() <= rows_for_m(f64::from(rule.max_slope)));
                         }
-                        assert!((rule.min_height..=rule.max_height).contains(&top));
+                        let (lo, hi) = (rule.min_height, rule.max_height);
+                        assert!((rows_for_m(lo.into())..=rows_for_m(hi.into())).contains(&top));
                     }
                 }
             }
@@ -624,5 +643,67 @@ fn meadows_of_tall_grass_grow_on_grass_by_the_decoration_data() {
     assert!(
         plants > 20 && plants < grass_tops,
         "{plants} of {grass_tops}"
+    );
+}
+
+#[test]
+fn generated_ramps_follow_the_rule_across_chunk_borders_and_hold_the_sea_at_the_shore() {
+    // HALF_HEIGHT_GRID.md §4: each natural top is the rule's answer over its 9 columns' heights,
+    // whichever chunk asks (the strip crosses chunk borders every 32 m), and under the sea a ramp
+    // is flooded. A world generates the chunks; the heights come from the point query.
+    use dwell_blocks::state_property;
+    use dwell_worldgen::ramps::{Around, Top, top_of};
+    let seed = 0;
+    let g = TerrainGenerator::new(seed);
+    let mut world = VoxelWorld::new(generator_for(GENERATOR_TERRAIN, seed), None);
+    let (cx, cz) = coast_on_axis(&g);
+    let (mut gentle, mut steep, mut flooded, mut on_borders) = (0, 0, 0, 0);
+    // From 3 km inland (hills) out past the coast, across the chunk border at z = 0.
+    for z in cz - 8..cz + 8 {
+        for x in cx - 3000..cx + 40 {
+            let top = g.ground_y(x, z).expect("inside");
+            let around: Around = std::array::from_fn(|r| {
+                std::array::from_fn(|c| {
+                    g.ground_y(x + c as i32 - 1, z + r as i32 - 1)
+                        .expect("inside")
+                        + 1
+                })
+            });
+            let m = world.get_voxel(x, top, z);
+            let shape = state_property(m, "shape");
+            let facing = state_property(m, "facing");
+            match top_of(&around, rows_for_m(1.0)) {
+                Top::Flat => assert_eq!(shape, None, "({x}, {z})"),
+                Top::Gentle(f) => {
+                    assert_eq!(
+                        (shape, facing),
+                        (Some("ramp"), Some(f.name())),
+                        "({x}, {z})"
+                    );
+                    gentle += 1;
+                }
+                Top::Steep(f) => {
+                    let below = world.get_voxel(x, top - 1, z);
+                    assert_eq!((shape, facing), (Some("steep_upper"), Some(f.name())));
+                    assert_eq!(state_property(below, "shape"), Some("steep_lower"));
+                    steep += 1;
+                }
+            }
+            if shape.is_some() {
+                let wet = top + 1 < SEA_LEVEL;
+                assert_eq!(
+                    state_property(m, "flooded"),
+                    Some(if wet { "true" } else { "false" })
+                );
+                flooded += i32::from(wet);
+                on_borders += i32::from(x.rem_euclid(S) == 0 || x.rem_euclid(S) == S - 1);
+            }
+        }
+    }
+    // (The prototype terrain never drops a metre between neighbouring columns, so it makes no
+    // 1 m ramps: `steep` is 0 today; the rule's steep case is tested in `ramps.rs`.)
+    assert!(
+        gentle > 100 && flooded > 10 && on_borders > 10,
+        "{gentle} {steep} {flooded} {on_borders}"
     );
 }
