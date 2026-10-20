@@ -3,7 +3,6 @@
 pub mod app;
 pub mod jobs;
 pub mod local_worker;
-pub mod march_test;
 pub mod transport;
 
 use wasm_bindgen::prelude::*;
@@ -69,44 +68,6 @@ pub async fn probe_scene() -> Result<Vec<u8>, JsError> {
     crate::render_scene(device, queue)
         .await
         .map_err(|e| JsError::new(&e))
-}
-
-/// The GPU marcher against the CPU reference per pixel (`render::march::check`): renders its
-/// crafted scenes offscreen and returns the report as JSON (`client/e2e-webgpu/march.spec.ts`).
-#[wasm_bindgen(js_name = probeMarch)]
-pub async fn probe_march() -> Result<String, JsError> {
-    let instance = instance();
-    let (adapter, device, queue) = crate::request_device(&instance, None)
-        .await
-        .map_err(|e| JsError::new(&e))?;
-    let r = crate::render::march::check::run(&device, &queue)
-        .await
-        .map_err(|e| JsError::new(&e))?;
-    let strings = |v: &[String]| {
-        v.iter()
-            .map(|s| format!("{s:?}"))
-            .collect::<Vec<_>>()
-            .join(",")
-    };
-    Ok(format!(
-        "{{\"adapter\":{:?},\"views\":{},\"pixels\":{},\"hits\":{},\"idMismatches\":{},\
-         \"recordMismatches\":{},\"tInexact\":{},\"tUlpsMax\":{},\"maxDepthError\":{},\
-         \"maxDirError\":{},\"levelsHit\":{},\"passes\":{},\"lines\":[{}],\"examples\":[{}]}}",
-        adapter.get_info().name,
-        r.views,
-        r.pixels,
-        r.hits,
-        r.id_mismatches,
-        r.record_mismatches,
-        r.t_inexact,
-        r.t_ulps_max,
-        r.max_depth_error,
-        r.max_dir_error,
-        r.levels_hit,
-        r.passes(),
-        strings(&r.lines),
-        strings(&r.examples),
-    ))
 }
 
 /// The hotbar picture of palette slot `slot` (TILE × TILE RGBA8).

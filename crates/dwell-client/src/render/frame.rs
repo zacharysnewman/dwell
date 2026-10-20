@@ -1,4 +1,4 @@
-//! The shared frame (docs/RAY_MARCHED_RENDERER.md step A1, docs/WATER_RENDERING.md W2): what the scene passes draw into and
+//! The shared frame (docs/WATER_RENDERING.md W2): what the scene passes draw into and
 //! the composite reads.
 //!
 //! - **Colour**: `rgba16float`, lit linear colour premultiplied by coverage (cleared to 0: alpha is

@@ -8,19 +8,13 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU8, Ordering};
 
-/// The raster passes' samples (one renderer, or compare mode's left side), the marcher's, and the
-/// composite's. Compare mode's right side, when it is raster too, is `gpu.right.far`/`.near`.
+/// The scene passes' samples, and the composite's.
 pub const FAR: &str = "gpu.far";
 pub const NEAR: &str = "gpu.near";
-pub const RIGHT_FAR: &str = "gpu.right.far";
-pub const RIGHT_NEAR: &str = "gpu.right.near";
 /// A raster pass's water half when the water reads the scene (W3: Medium and High split a pass
 /// with water into its opaque half, timed as the pass, and this).
 pub const FAR_WATER: &str = "gpu.far.water";
 pub const NEAR_WATER: &str = "gpu.near.water";
-pub const RIGHT_FAR_WATER: &str = "gpu.right.far.water";
-pub const RIGHT_NEAR_WATER: &str = "gpu.right.near.water";
-pub const MARCH: &str = "gpu.march";
 /// The water's tiles (water_tiles.rs): the noise tile once, the caustic layers each frame.
 pub const WATER_TILES: &str = "gpu.water.tiles";
 pub const COMPOSITE: &str = "gpu.composite";
@@ -281,15 +275,15 @@ mod tests {
         );
         // Ticks of another period scale.
         assert_eq!(samples(&raw, &names, 2.0)[0], ("gpu.far", 2.0));
-        // Each frame names its own passes (compare mode: both sides, then the composite); the
-        // unused queries after them are ignored.
+        // Each frame names its own passes (with the water's halves or without); the unused
+        // queries after them are ignored.
         let mut raw = raw.to_vec();
         raw.extend([0; 4]);
         assert_eq!(
-            samples(&raw[..6], &[FAR, MARCH, COMPOSITE], 1.0)[1],
-            ("gpu.march", 0.5)
+            samples(&raw[..6], &[FAR, NEAR, COMPOSITE], 1.0)[1],
+            ("gpu.near", 0.5)
         );
-        assert_eq!(samples(&raw, &[FAR, MARCH, COMPOSITE], 1.0).len(), 4);
+        assert_eq!(samples(&raw, &[FAR, NEAR, COMPOSITE], 1.0).len(), 4);
     }
 
     #[test]

@@ -20,15 +20,12 @@ use wasm_bindgen_futures::{JsFuture, spawn_local};
 
 use super::jobs::WebJobs;
 use super::transport::{TransportEvent, WebRtcConn, WebTransportConn};
-use crate::game::Scene;
 use crate::game::{DayOverride, Game, LodSettings, Send};
 use crate::net::netsim::{Direction, NetConditions, parse_net_conditions};
 use crate::net::sdp::WebRtcInvite;
 use crate::net::session::{Out, Session, SessionState};
 use crate::pool::Pool;
 use crate::render::Renderer;
-use crate::render::compare::CompareView;
-use crate::render::seam::{Selection, TerrainKind};
 use crate::telemetry;
 
 /// The most cells `Client::voxels` reads at once (about 2 M: a 128³ box).
@@ -218,13 +215,7 @@ struct Options {
     netsim: Option<NetConditions>,
     /// `?time=`, `?moon=`, `?timespeed=` (the day/night cycle's dev switches).
     day: DayOverride,
-    /// The renderer switch (`?renderer=`, compare mode): local builds only (the shell's build-time
-    /// flag, RAY_MARCHED_RENDERER.md §3); deployed builds keep the mesher.
-    renderer_switch: bool,
-    /// The marcher's render scale and upscaler (`marchScale`, `upscaler`: local builds).
-    march_scale: f32,
-    upscaler: crate::render::march::upscale::Upscaler,
-    /// The page's query, for the march's dev switches (`MarchSettings::apply_query`).
+    /// The page's query, for the dev switches read from it (`?textures=`, `?outline=`).
     search: String,
 }
 
@@ -277,8 +268,7 @@ pub struct Client {
 impl Client {
     /// Starts WebGPU on the canvas. Rejects when WebGPU is unavailable (the shell shows its
     /// "unsupported" screen). `options`: `{ displayName, clientVersion, makeWorker() → Worker,
-    /// workers, lod, lodColors, fullChunks, netsim, search, rendererSwitch, renderer, compare }`
-    /// (`renderer`, `compare`: `?renderer=` and `?compare=`, taken only with `rendererSwitch`).
+    /// workers, lod, lodColors, fullChunks, netsim, search }`.
     pub async fn create(
         canvas: web_sys::HtmlCanvasElement,
         options: JsValue,
@@ -300,25 +290,11 @@ impl Client {
             full_chunks: get("fullChunks").as_bool().unwrap_or(false),
             netsim: parse_net_conditions(get("netsim").as_string().as_deref()),
             day: DayOverride::from_query(&get("search").as_string().unwrap_or_default()),
-            renderer_switch: get("rendererSwitch").as_bool().unwrap_or(false),
-            march_scale: get("marchScale").as_f64().unwrap_or(1.0) as f32,
-            upscaler: get("upscaler")
-                .as_string()
-                .and_then(|u| crate::render::march::upscale::Upscaler::parse(&u))
-                .unwrap_or_default(),
             search: get("search").as_string().unwrap_or_default(),
         };
         // `?textures=painterly` (docs/PAINTERLY_TEXTURES.md): chosen before the atlas is built; the
         // meshing workers get it in their init message (web/jobs.rs).
         dwell_mesh::set_texture_set(dwell_mesh::TextureSet::from_query(&options.search));
-        let selection = options
-            .renderer_switch
-            .then(|| {
-                let renderer = get("renderer").as_string()?;
-                Selection::parse(&renderer, get("compare").as_string().as_deref())
-            })
-            .flatten()
-            .unwrap_or_default();
         let (width, height) = (canvas.width().max(1), canvas.height().max(1));
         let mut desc = wgpu::InstanceDescriptor::new_without_display_handle();
         desc.backends = wgpu::Backends::BROWSER_WEBGPU;
@@ -367,13 +343,8 @@ impl Client {
         renderer.set_adapter(device_type);
         renderer.resize(width, height, 1.0);
         renderer.set_lod_level_colors(options.lod_colors);
-        renderer.select(selection);
         // `?outline=<mode>` (docs/ART_DIRECTION.md §7): the ink outline, off without it.
         renderer.set_outline_query(&options.search);
-        if options.renderer_switch {
-            renderer.set_march_resolution(options.march_scale, options.upscaler);
-            renderer.set_march_query(&options.search);
-        }
         let inner = Inner {
             _instance: instance,
             _adapter: adapter,
@@ -691,24 +662,6 @@ impl Client {
         time_stamp_ms: f64,
     ) -> bool {
         let mut s = self.inner.borrow_mut();
-        // Compare mode's keys (controls.ts): F7 the next view, F8 blink.
-        if matches!(code, "F7" | "F8") && s.renderer.borrow().selection().compare() {
-            if !repeat {
-                let mut r = s.renderer.borrow_mut();
-                let mut c = r.compare();
-                if code == "F7" {
-                    c.cycle();
-                } else {
-                    c.blink();
-                }
-                r.set_compare(c);
-                drop(r);
-                if let Some(g) = s.game.as_mut() {
-                    g.sound(dwell_game::sound::SoundKind::Tool);
-                }
-            }
-            return true;
-        }
         // The spyglass (docs/SPYGLASS.md): its key, while playing (the pointer locked).
         if s.input.pointer_locked
             && dwell_look::spyglass::is_spyglass_key(
@@ -1273,110 +1226,6 @@ impl Client {
             lod.set_quality(pixel_error, (memory_mb * 1_048_576.0) as usize);
         }
     }
-    // ----- The renderer seam and compare mode (docs/RAY_MARCHED_RENDERER.md §3, §5) -----
-
-    /// The terrain renderers this build offers for `?renderer=` (`bench --compare` reads it):
-    /// `raster` everywhere; `march` with the renderer switch once the marcher draws terrain.
-    pub fn renderers(&self) -> Array {
-        let s = self.inner.borrow();
-        let mut names = vec![TerrainKind::Raster.name()];
-        if s.options.renderer_switch && crate::render::march::BUILT {
-            names.push(TerrainKind::March.name());
-        }
-        names.into_iter().map(JsValue::from).collect()
-    }
-    /// The upscalers it offers: the browser's own stretch, and with the marcher its upscalers
-    /// (`?upscaler=fsr1|bilateral` with `?scale=`; RAY_MARCHED_RENDERER.md §4.2).
-    pub fn upscalers(&self) -> Array {
-        let s = self.inner.borrow();
-        let mut names = vec!["none", "bilinear"];
-        if s.options.renderer_switch && crate::render::march::BUILT {
-            names.extend(crate::render::march::upscale::Upscaler::ALL.map(|u| u.name()));
-        }
-        names.into_iter().map(JsValue::from).collect()
-    }
-    /// What draws the terrain: `raster`, `march` or `compare raster | march`.
-    pub fn renderer(&self) -> String {
-        self.inner.borrow().renderer.borrow().selection().label()
-    }
-    /// Whether the renderer can be switched (a local build).
-    #[wasm_bindgen(js_name = rendererSwitch)]
-    pub fn renderer_switch(&self) -> bool {
-        self.inner.borrow().options.renderer_switch
-    }
-    /// Switches renderer at runtime (`raster`, `march`, `compare`; `compare` names compare mode's
-    /// right side, default `march`): the terrain is rebuilt from the client's data, no reload.
-    /// False without the switch or for an unknown name.
-    #[wasm_bindgen(js_name = setRenderer)]
-    pub fn set_renderer(&self, name: &str, compare: Option<String>) -> bool {
-        let mut s = self.inner.borrow_mut();
-        if !s.options.renderer_switch {
-            return false;
-        }
-        let Some(selection) = Selection::parse(name, compare.as_deref()) else {
-            return false;
-        };
-        match &mut s.game {
-            Some(g) => g.set_renderer(selection),
-            None => {
-                s.renderer.borrow_mut().select(selection);
-            }
-        }
-        true
-    }
-    /// Compare mode's state: `{ renderer, view, divider, blinkRight, overlay: [left, right],
-    /// difference: { pixels, coverage, depth, colour } | null }`, or null outside compare mode.
-    #[wasm_bindgen(js_name = compareState)]
-    pub fn compare_state(&self) -> JsValue {
-        let s = self.inner.borrow();
-        let r = s.renderer.borrow();
-        let Some(overlay) = r.compare_overlay() else {
-            return JsValue::NULL;
-        };
-        let c = r.compare();
-        let o = Object::new();
-        set(&o, "renderer", r.selection().label());
-        set(&o, "view", c.view.name());
-        set(&o, "divider", c.divider);
-        set(&o, "blinkRight", c.blink_right);
-        set(
-            &o,
-            "overlay",
-            overlay
-                .iter()
-                .map(|l| JsValue::from(l.as_str()))
-                .collect::<Array>(),
-        );
-        set(
-            &o,
-            "difference",
-            r.difference_counts().map_or(JsValue::NULL, |d| {
-                let v = Object::new();
-                set(&v, "pixels", d.pixels);
-                set(&v, "coverage", d.coverage);
-                set(&v, "depth", d.depth);
-                set(&v, "colour", d.colour);
-                v.into()
-            }),
-        );
-        o.into()
-    }
-    /// Sets compare mode's view (`split`, `blink`, `difference`; unchanged if unknown) and the
-    /// divider (a share of the width; unchanged if not a number).
-    #[wasm_bindgen(js_name = setCompare)]
-    pub fn set_compare(&self, view: Option<String>, divider: Option<f64>) {
-        let s = self.inner.borrow();
-        let mut r = s.renderer.borrow_mut();
-        let mut c = r.compare();
-        if let Some(v) = view.as_deref().and_then(CompareView::parse) {
-            c.view = v;
-        }
-        if let Some(d) = divider {
-            c.set_divider(d);
-        }
-        r.set_compare(c);
-    }
-
     #[wasm_bindgen(js_name = setDebugVisible)]
     pub fn set_debug_visible(&self, visible: bool) {
         let mut s = self.inner.borrow_mut();
