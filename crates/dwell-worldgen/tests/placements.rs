@@ -122,7 +122,8 @@ fn pines_stand_on_grass_in_the_height_band_at_about_the_target_density() {
     );
     // On the half-height grid the hills are steps topped by ramps, and a pine's whole footprint
     // must be flat grass, so high ground keeps fewer of its (more likely) candidates than on main
-    // (there 1.5×; here measured 0.127 against 0.111, seed 7).
+    // (there 1.5×; here measured 0.127 against 0.111 at generator 1018, seed 7, and 0.129
+    // against 0.112 at 1019, option A's slopes).
     assert!(
         rate(high, high_cells) > 1.1 * rate(low, low_cells),
         "more on higher ground"

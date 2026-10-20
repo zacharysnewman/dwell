@@ -10,7 +10,7 @@ use dwell_world::lod::{LodCells, LodCoord, lod_hash, section_size};
 use dwell_world::{CHUNK_SIZE, Chunk, ChunkCoord, Face, chunk_hash, mirror_chunk_y};
 use dwell_worldgen::BifacialTerrain;
 
-const VERSION: u32 = 1018; // the half-height branch: 1000 + main's 18
+const VERSION: u32 = 1019; // the half-height branch: 1000 + main's 18, + 1 for option A's slopes
 const SEEDS: [u64; 2] = [0, 20_260_925];
 
 fn section_at(level: i32, p: [i64; 3]) -> LodCoord {

@@ -1,5 +1,5 @@
-//! Procedural terrain, generator version 1018 (ARCHITECTURE.md §6.3; on the half-height branch,
-//! 1000 + main's version 18): the interim baseline of Phase
+//! Procedural terrain, generator version 1019 (ARCHITECTURE.md §6.3; on the half-height branch,
+//! 1000 + main's version 18, and 1019 for option A's slopes, HALF_HEIGHT_GRID.md §4): the interim baseline of Phase
 //! 15 — one island at the origin, a 2D height field, and the ground filled by depth — and since
 //! version 13 (Phase 33) the decorations of `shared/worldgen/decorations.json` one cell above the
 //! ground (tall grass; `decorations.rs`), and since version 14 (Phase 41, HALF_HEIGHT_GRID.md) ½ m
