@@ -42,7 +42,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 21 — Tiered physics | ⏸ Waits for Phases 6–19 (2026-10-05; the baseline rework, 14–19, added 2026-10-12) |
 | 22 — Sleep / re-bake | ⏸ Waits for Phases 6–19 (2026-10-05; the baseline rework, 14–19, added 2026-10-12) |
 | 23 — Dedicated servers & packaging | ⏳ Not started |
-| 25 — Ray-marched renderer comparison | 🚧 In progress — A0 (ADR 0029), A1 (the shared frame and GPU timing; the owner approved its image differences, 2026-10-14, and the e2e suite passes on CI), A2 (the renderer seam, compare mode, bench `--compare`; its exit check done) and A3a (the CPU core: `crates/dwell-march`) built; A3b (the GPU march behind the seam, checked against the reference per pixel; its CI run outstanding) built; A4a (speed: level-rows skip, vectorised march, shade pass, the cone-LOD ring fix; ~19 ms at 720p on an M1 against raster's ~2.5) and A5a (render scales 0.5/0.75 with FSR 1 or a bilateral upscale; ~5 ms at half scale) built; next: A3c (overlays over marched terrain, LOD column heights in the bricks, raster ids), A4b (beam prepass, temporal start); outstanding: A4's phone report; A2's edit-to-visible latency and the bench's id/depth agreement (moved to A3); local builds only until the owner's decision (A7); `package.json` raised to 0.11.21, a patch release of the 0.11 line |
+| 25 — Ray-marched renderer comparison | 🚧 In progress — A0 (ADR 0029), A1 (the shared frame and GPU timing; the owner approved its image differences, 2026-10-14, and the e2e suite passes on CI), A2 (the renderer seam, compare mode, bench `--compare`; its exit check done) and A3a (the CPU core: `crates/dwell-march`) built; A3b (the GPU march behind the seam, checked against the reference per pixel; its CI run outstanding) built; A4a (speed: level-rows skip, vectorised march, shade pass, the cone-LOD ring fix) and A5a (render scales 0.5/0.75 with FSR 1 or a bilateral upscale) built; A4b (the beam prepass, and the temporal start with the eye still) built: at 720p on an M1, 8.5 ms at the spawn and 17.5 ms flying (A4a: 21 and 24) against raster's whole GPU frame of 3.6–5.0 ms, and 2.2–6.6 ms at half scale with FSR 1; next: A3c (overlays over marched terrain, LOD column heights in the bricks, raster ids); outstanding: A4's phone report; A2's edit-to-visible latency and the bench's id/depth agreement (moved to A3); local builds only until the owner's decision (A7); `package.json` raised to 0.11.21, a patch release of the 0.11 line |
 | 26 — Water and fluid looks | 🚧 In progress — W1a (fluid data, the eye-under-fluid uniform) done; W2 built (it is Phase 25's A1, built once there; the owner approved its image differences, 2026-10-14); W1b (the water shader, the underwater fog stub, the water quality setting) built and checked in Chrome on an M1, outstanding: the owner's look; W3 (refraction, depth absorption, shoreline foam, sparkle, and caustics brought forward from W4, above and under the surface) built and checked in Chrome on an M1, outstanding: the owner's look and an unloaded per-tier cost measurement; W5a (reflections of land by screen-space reflection, and of the clouds, brought forward from W5 at the owner's report) built and checked in Chrome on an M1, outstanding: the owner's look and an unloaded cost measurement; water cost work (WATER_RENDERING.md §8, "Cost"): cheaper hashing, noise and caustic tiles, frame pacing against the stalls, Medium the desktop default — Medium +1.6 ms and High +1.7 ms over Low on the shore view before the reflections, which now add the most (outstanding: W5a's reflection cost against the 2/3 ms targets); next: W4; W6 only if marching is kept at A7; `package.json` raised to 0.12.1, a patch release of the 0.11 line |
 | 27 — Structure sandbox | 🚧 In progress — S0 (ADR 0031), S1 (the structure format, `gen.mjs`, the Rust loader, the playground converted), S2a (floor block, sandbox world type), S2b (the structures store: save, load through the region paste, export and import) and S3a (region edits, the region tools) done, S2a's e2e check outstanding; `package.json` raised to 0.11.0, the new compatibility line (S2a's registry change; the owner's decision, 2026-10-14); next: S3b (anchor, touch) and the S3 sandbox e2e outstanding; S4 (worldgen placement) deferred; `package.json` raised to 0.11.11, a patch release of the 0.11 line |
 | 28 — Sound effects | 🚧 In progress — F0–F6 built and tested (procedural Web Audio, no library; sound data and generator, the registry's `sound` field, Rust sound events, synth, variation, mixer, spatial playback, menu and game-action sounds, volume sliders, offline WAV renders); outstanding: the owner listens to the WAV renders and approves them, and answers `AUDIO.md` §9; `package.json` raised to 0.11.12, a patch release of the 0.11 line |
@@ -2707,8 +2707,8 @@ the e2e suite passes on CI. A3b (the GPU march, uploads, brick jobs, telemetry) 
 the per-pixel test outstanding. A4a (the march's speed: each level's occupied rows skipped, a
 vectorised inner loop, shading in its own pass; the cone-LOD switch rule that removes the owner's
 concentric rings) and A5a (render scales with FSR 1 or a bilateral upscale) built, A4's desktop
-exit check done, its phone report outstanding; next: A3c (overlays, LOD column heights, raster
-ids), A4b (the beam prepass, the temporal start). Needs Phase 24 only. The marcher and compare mode are in local builds only (dev server, local preview, bench)
+exit check done, its phone report outstanding; A4b (the beam prepass, the temporal start with the
+eye still) built and measured on an M1; next: A3c (overlays, LOD column heights, raster ids). Needs Phase 24 only. The marcher and compare mode are in local builds only (dev server, local preview, bench)
 until A7; deployed builds keep the mesher throughout and stay shippable after every step. Phase 20
 waits for A7; Phase 26 shares A1 (its W2). No public API change, so no new compatibility line.
 
@@ -2770,11 +2770,18 @@ Deliverables
   switch waits while the coarser cell is occupied (the owner's concentric rings, a test that failed
   first); `perf.rs`, a native profiling harness. Reference and WGSL together, the per-pixel check
   exact.
-- [ ] **A4b** — The rest of A4's list: the beam prepass (a conservative start distance per 8×8
-  tile, with a test that it never passes the true hit) and the temporal start distance (invalidated
-  on edits and disocclusion). Moved out of A4a: after the level-rows skip the sky takes 15–20
-  steps and the ground 5–10, and the profile puts the cost in the per-step latency, not the count
-  (design doc "A4 as built").
+- [x] **A4b** — The rest of A4's list (design doc "A4b as built"):
+  - **The beam prepass:** a conservative start distance per 8×8 tile (`dwell_march::beam` and
+    WGSL `beam_main`). It is tested never to pass the true hit on the CPU (random scenes, a voxel
+    only some pixel rays hit, levels that disagree both ways) and per pixel on the GPU against a
+    march from the eye.
+  - **The temporal start distance:** only with the eye still (1 mm), the same view size and no
+    brick upload since the last frame, so edits and streaming invalidate it and disocclusion can't
+    occur.
+  - **Switches and configurations:** `?marchbeam=0` and `?marchtemporal=0`, and the bench's
+    `march-nobeam` and `march-notemporal` configurations.
+  - **Effect** (720p on an M1, Chrome): `gpu.march` 21 → 8.5 ms at the spawn, 19 → 6.6 ms at the
+    horizon, 4.8 → 3.5 ms looking down, 24 → 17.5 ms flying 540 m up.
 - [x] **A5a** — Render scales 0.5 and 0.75 for the marcher with FSR 1 (EASU + RCAS in WGSL) or a
   depth- and normal-aware bilateral upscale (`render/march/upscale.rs`), `?scale=` with
   `?upscaler=fsr1|bilateral`, `__dwell.upscalers()`, the bench's `march-half-fsr`, `march-075-fsr`

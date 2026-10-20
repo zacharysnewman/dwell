@@ -173,6 +173,8 @@ The renderer seam ([`RAY_MARCHED_RENDERER.md`](./RAY_MARCHED_RENDERER.md) §3, �
   and, by default, the marcher on the right — `?compare=raster` puts raster on **both** sides (the
   check that compare mode itself adds no difference). The marcher is the GPU ray marcher
   (`render/march/`, A3b): it marches the whole screen and its copy pass fills its side.
+  `?marchbeam=0` turns off its beam prepass and `?marchtemporal=0` its temporal start (A4b; the
+  bench's `march-nobeam` and `march-notemporal` configurations).
 - The settings menu's foot shows the renderer and a picker that switches it at runtime (no reload:
   the terrain is rebuilt from the voxels and LOD cells held). F3 shows `renderer …` before the
   render stats.
@@ -264,7 +266,10 @@ From the console: `__dwell.telemetry()`, `__dwell.telemetryFrames()`, `__dwell.t
   histogram: `cargo test --release -p dwell-client march_perf -- --ignored --nocapture`.
   `DWELL_PERF_VARIANTS='a=@file.wgsl;b=0'` times shader variants (a march module from a file,
   `DWELL_PERF_DUMP=path` writes the current one to start from; a name starting `noshade` skips the
-  shade pass), `DWELL_PERF_ROUNDS=n` interleaves them in rounds (a shared GPU drifts),
+  shade pass, `beamonly` times the beam prepass alone, and one containing `nobeam` or `notemporal`
+  turns off the beam prepass or the temporal start), `DWELL_PERF_CHECK=1` marches every pixel on
+  the CPU from the eye after drawing the view (and a turned one before it) and counts starts that
+  pass a hit (must be 0) and outcomes the start changes, `DWELL_PERF_ROUNDS=n` interleaves them in rounds (a shared GPU drifts),
   `DWELL_PERF_IMAGES=dir` writes a steps-per-ray heatmap (PGM) per view and prints steps per
   8×4 SIMD group, `DWELL_PERF_SIZE=WxH`, `DWELL_PERF_SEED`. Naga's Metal output, not Chrome's
   Tint: the bench is the measurement, this the quick loop.
