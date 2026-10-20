@@ -3613,8 +3613,9 @@ Exit criteria
 > was written (2026-10-19); renumber it (heading and Progress row) if another branch took it.
 
 **Status:** Built and tested natively (controller, predictor, netcode, protocol vectors; also far
-from the origin and on face B) and in Chrome on the GPU (the bench). Outstanding: CI (the
-`wasm32-wasip1` divergence run and the e2e suite), the owner's feel review. A protocol change: protocol 15 (the snapshot's
+from the origin and on face B), under `wasm32-wasip1` locally (`dwell-protocol` and
+`dwell-physics`, as CI runs them, the golden trace included) and in Chrome on the GPU (the bench).
+Outstanding: CI (the divergence run there and the e2e suite), the owner's feel review. A protocol change: protocol 15 (the snapshot's
 controller state grows by two bytes), so it ships on a new minor — the owner raises
 `client/package.json`. Stacks on Phase 35 (it reuses the steep slide's state, velocity split and
 sound) and Phase 29 (the motion effects respond through the Sliding state).
