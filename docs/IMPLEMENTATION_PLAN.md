@@ -57,7 +57,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 37 — Sprint slide (stacks on 35) | 🚧 In progress — built and tested natively (controller, predictor, netcode, protocol 15 vectors): crouch while sprinting slides on, crouched, with friction and slopes, limited steering, a jump out and a cooldown (`PLAYER_CONTROLLER.md` §6.9), checked in Chrome (the `sprint-slide` bench); outstanding: CI (the WASM divergence run and the e2e suite), the owner's review; a protocol change (15): the owner raises `package.json` to a new minor |
 | 38 — The spyglass | 🚧 In progress — built and tested natively, in Vitest and on a real GPU (ADR 0039, `SPYGLASS.md`): a toggle key (`` ` ``) and wheel steps from `shared/look/spyglass.json` (generator, CI stale check), the zoomed FOV for the raster renderer, the marcher (its FOV bug fixed) and the LOD, which refines only inside the narrow view (bounded by the detail boost), the vignette, reduced motion, the `spyglass-far` bench scenario; outstanding: CI and the owner's review in a browser; a patch release |
 | 39 — Painterly textures | 🚧 In progress — built and tested natively, in Node and on a real GPU (ADR 0040, `ART_DIRECTION.md`, `PAINTERLY_TEXTURES.md`): the storybook palette and materials as data (`shared/textures`), one stroke generator baked into the atlas (CI stale check, a material added by data alone), `?textures=painterly` on the page and in the meshing workers (the classic set stays the default), the Painterly Texture Lab, the bench's `painterly` configuration (same frame cost); follow-ups: grass_side's skirt made continuous across the tile (owner's review); the skirt on dirt sides under grass (`sideUnder` block data, the `dirtSkirt` tile, in both sets; owner, 2026-10-20); the ink outline preview behind `?outline=` (ART_DIRECTION.md §7, off by default), then no ink on tall grass (block data `outline`) and the edge blur moved to its own pass over the finished image so the ink reaches the screen edges at speed (owner, 2026-10-20); outstanding: the owner's pick of an outline mode; CI and the owner's review of the look, then flipping the default; a patch release |
-| 40 — Characters and creatures (design and concept) | 🚧 In progress — C0 built and tested (ADR 0041, `CHARACTERS.md`): the rig vocabulary and validator (`shared/characters/rig.mjs`), the data (the player with three looks, the wolf, the deer; accessories, the block and brush items, clips), the generator and its tests, the Character Lab prototype checked in Chrome and published; stacked on Phase 39's palette and materials; C0b (the owner's first review, 2026-10-20) built and tested: hair composes with hats (`with`), the wolf's and deer's tails are chains checked joined through every clip, the player's clips for every controller state (sprint, crouch, crouch-walk, slide, jump, fall, land, climb, swim, fly; the arms' sprint, slide, jump, fall, land) and the Lab's transitions player; outstanding: the owner's review of the fixes and the rest of `CHARACTERS.md` §10, CI; C1–C3 (in the game) not started; a patch release |
+| 40 — Characters and creatures | 🚧 In progress — C0 built and tested (ADR 0041, `CHARACTERS.md`): the rig vocabulary and validator (`shared/characters/rig.mjs`), the data (the player with three looks, the wolf, the deer; accessories, the block and brush items, clips), the generator and its tests, the Character Lab prototype checked in Chrome and published; stacked on Phase 39's palette and materials; C0b (the owner's first review, 2026-10-20) built and tested: hair composes with hats (`with`), the wolf's and deer's tails are chains checked joined through every clip, the player's clips for every controller state (sprint, crouch, crouch-walk, slide, jump, fall, land, climb, swim, fly; the arms' sprint, slide, jump, fall, land) and the Lab's transitions player; C1 (players in the game) built and tested (2026-10-20): `dwell-characters` (tables generated from the data, part meshes, clips, clip selection), the full body for remote players and your first-person arms in their own pass, the Show your arms setting, the `puppets` dev tool; with C2's held item and swings in snapshots (protocol v17: **a new compatibility line**, the owner raises `package.json`); outstanding: CI, the owner's review in game and of `CHARACTERS.md` §10, C2's looks at join, foot IK on steps (with claude/smooth-steps), C3 |
 
 Phase numbering: Phase 4 was inserted on 2026-09-29 for the planet-scale world (ADRs 0011, 0012);
 the former Phases 4–7 are now 5–8, and Phase 3's former 3c and 3d are now 3d and 3e.
@@ -3955,9 +3955,11 @@ Exit criteria
 shared/characters/gen.test.mjs` passes and the Character Lab was checked in Chrome. C0b (the
 owner's first review's fixes, 2026-10-20) built and tested, the Lab checked in Chrome and
 republished. Outstanding: the owner's review of the fixes and answers to the rest of
-`CHARACTERS.md` §10, CI. C1–C3 are not
-started: the owner asked for a design and concept only. Stacked on Phase 39 (the palette, materials
-and painter it shades with). No change to saves, the protocol or terrain: a patch release.
+`CHARACTERS.md` §10, CI. C1 built and tested (2026-10-20, owner: *"add the player character into the
+game"*), with C2's held item and swings; C2's looks at join and C3 not started. Stacked on Phase 39
+(the palette, materials and painter it shades with). C0 changed no save, protocol or terrain; **C1
+changes the protocol (v17: held items and swings in snapshots, `HeldItem`): a new compatibility
+line**, so the owner raises `package.json` to the next minor.
 
 Owner (2026-10-20): the character design concept, the player's first-person arms and hands holding
 the hotbar's block or the brush with break and place swings, the full body other players see, and
@@ -4027,12 +4029,62 @@ Exit criteria
   fall and land; grounded clips keep the feet on the ground (`gen.test.mjs`).
 - [ ] The owner's review of the fixes.
 
-**C1 — characters in the renderer (later)**: a Rust loader and mesh builder from the same data
-(`characters.gen.rs`), the character shader and outline, remote players drawn as the full body
-(replacing the capsule), the arms pass with its own FOV (`CHARACTERS.md` §9.1–9.2).
+**C1 — characters in the game (2026-10-20)**
 
-**C2 — looks and poses over the network (later; a new compatibility line)**: the look at join, the
-held item, swings without an edit (`CHARACTERS.md` §9.3–9.4).
+Owner: add the player character into the game: a Rust loader and mesh builder from the same data,
+the character shader with the painterly materials and the ink outline, remote players as the full
+body with clips from their controller state and swings, your first-person arms in their own pass
+with their own FOV, the held item over the network, respecting the speed FOV, the spyglass, the
+edge blur, both texture sets, face B and the settings; the cost with 1, 8 and 32 remote players.
+
+Deliverables
+- [x] `shared/characters/gen.mjs` writes `crates/dwell-characters/src/characters.gen.rs` and
+  `characters.tiles` (every look composed, items on their sockets, clips as per-bone channels, the
+  materials and their brush tiles), and the fixture's from `shared/characters/fixtures/` (a mirrored
+  pauldron added by data alone); `gen.test.mjs`: the tables current, the part in the fixture's
+  tables on its bone in every look; CI's stale check (the generators' `git diff`).
+- [x] `dwell-characters`: the types, part meshes (`mesh.rs`: every kind filling its size, wound
+  outward; the arms view only the arm chain), clip sampling, layering, cross-fades and bone
+  transforms (`anim.rs`, checked against rig.mjs's Euler order), the animator (`animator.rs`: the
+  controller state → role, one-shots, cross-fades by `blend`, gait rate, hold and swing layers, the
+  head following pitch) and its tests; `MoveInput::foot_ground`, the hook for foot IK.
+- [x] The renderer (`render/characters.rs`): the character shader (ramp, brush tile at its overlay
+  in the painterly set, rim, the frame's light per face; the held block from the atlas), the ink
+  hull, bodies in the scene passes (face B a half turn, dead on its back, small parts and outline
+  dropped past 64 m), the arms pass over a cleared depth buffer with the data's FOV and a 2 cm near
+  plane, `gpu.arms`; the capsule (`geometry::player_mesh`) removed.
+- [x] The game (`bodies.rs`): an animator per remote player from its interpolated snapshot, your
+  arms from the prediction (swinging on edits and brush strokes), hidden while dead, zoomed, in a
+  placed camera or with **Show your arms** off (settings, the view record); body roles and the arms'
+  role in `__dwell.state()`, character stats in `renderStats()`.
+- [x] Dev tools: `__dwell.puppets` and the bench's `puppets` and `arms` steps (DEV_TOOLS.md).
+- [x] Checked in Chrome on the real GPU with two clients on a native server (first person with the
+  block and swings; B seeing A idle, walk, sprint, slide, crouch, jump), face B, classic against
+  painterly (the session's scratchpad, `character-ingame/`).
+- [x] The cost: 0, 1, 8, 32 bodies (`gpu.frame` within noise; 4 draws and ~23 k triangles a body),
+  the meshes (385–428 KB a look, 55 KB the arms) and 1,280 bytes of uniforms a body a frame
+  (`CHARACTERS.md` §9.6).
+- [ ] Foot IK and a step pose on step-ups (the step inputs from claude/smooth-steps).
+
+Exit criteria
+- [x] The loader turns data into meshes: a part added by data alone is meshed on its bone and
+  widens the body (`a_part_added_by_data_alone_is_meshed_on_its_bone`).
+- [x] Clip selection from the controller state (`the_controller_state_picks_the_body_clip`,
+  `a_jump_falls_then_lands_then_stands`, `switching_clips_cross_fades_over_the_new_clips_blend`).
+- [x] The arms pass doesn't depth-test against the world
+  (`the_arms_pass_clears_depth_and_draws_over_the_world`); the arms hide in the spyglass and with
+  the setting off (`the_spyglass_narrows_the_view…`).
+- [x] Two clients: B draws A's body with the right clip while A walks, sprints, slides and jumps,
+  and what each holds reaches the other (`game_local`
+  `another_client_sees_your_body_walk_sprint_slide_and_jump_and_what_you_hold`; red with the server
+  not relaying it; e2e `characters.spec.ts` on a native server).
+- [ ] CI green; the owner's review of the characters in game.
+
+**C2 — looks and poses over the network (a new compatibility line)**: the held item and swings
+(even refused edits) are built with C1 (protocol v17: `HeldItem`, each remote's `held` and `swing`
+in snapshots; ARCHITECTURE.md §8.3). Still to do: the look at join (CHARACTERS.md §9.4: chosen from
+the variants, kept in the browser's settings, sent at join and validated by the server); a swing
+for an edit the client never sends (none today).
 
 **C3 — creatures in the world (later)**: spawning, AI, bodies and netcode for the wolf and the deer
 (`CHARACTERS.md` §9.5).
