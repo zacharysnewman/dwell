@@ -18,25 +18,25 @@
     },
     {
       "name": "march-nobeam",
-      "notes": "Ray-marched at full resolution without the beam prepass (A4b's before).",
+      "notes": "Ray-marched at full resolution without the beam prepass (A4b's before), every frame marched.",
       "renderer": "march",
-      "params": { "marchbeam": "0" }
+      "params": { "marchbeam": "0", "marchreuse": "0" }
     },
     {
       "name": "march-notemporal",
-      "notes": "Ray-marched at full resolution with the beam prepass but no temporal start (A4b).",
+      "notes": "Ray-marched at full resolution with the beam prepass but no temporal start (A4b), every frame marched.",
       "renderer": "march",
-      "params": { "marchtemporal": "0" }
+      "params": { "marchtemporal": "0", "marchreuse": "0" }
     },
     {
-      "name": "march-stilltemporal",
-      "notes": "Ray-marched at full resolution with the temporal start only while the eye is still and no brick uploaded (A4b's; A4c's before).",
+      "name": "march-a4b",
+      "notes": "Ray-marched at full resolution as A4b left it: the temporal start only while the eye is still and no brick uploaded, and every frame marched (A4c's before).",
       "renderer": "march",
-      "params": { "marchmoving": "0" }
+      "params": { "marchmoving": "0", "marchreuse": "0" }
     },
     {
       "name": "march-noreuse",
-      "notes": "Ray-marched at full resolution, marching again even when nothing changed since the last frame (A4c's before).",
+      "notes": "Ray-marched at full resolution, marching again even when nothing changed since the last frame (before A4c's kept frame).",
       "renderer": "march",
       "params": { "marchreuse": "0" }
     },

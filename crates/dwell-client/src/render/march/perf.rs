@@ -111,6 +111,7 @@ fn march_perf() {
         .unwrap_or(0);
     if let Some(path) = env("DWELL_PERF_DUMP") {
         std::fs::write(&path, super::wgsl::source()).expect("dump");
+        std::fs::write(format!("{path}.beam"), super::wgsl::beam_source()).expect("dump");
     }
     // `name=bits` or `name=@file.wgsl` or `name=@file.wgsl:bits`, separated by `;`.
     let variants: Vec<(String, Option<String>, u32)> = env("DWELL_PERF_VARIANTS")
@@ -200,11 +201,13 @@ fn march_perf() {
     let queries = device.create_query_set(&wgpu::QuerySetDescriptor {
         label: None,
         ty: wgpu::QueryType::Timestamp,
-        count: 2,
+        count: 3,
     });
+    // The beam prepass's end, too (index 2).
+    m.beam_end_query = Some(2);
     let resolve = device.create_buffer(&wgpu::BufferDescriptor {
         label: None,
-        size: 16,
+        size: 24,
         usage: wgpu::BufferUsages::QUERY_RESOLVE | wgpu::BufferUsages::COPY_SRC,
         mapped_at_creation: false,
     });
@@ -231,6 +234,11 @@ fn march_perf() {
             None => super::wgsl::source(),
         });
         m.settings.debug = *bits;
+        // A beam module of the variant's own: `<file>.beam` beside it, if there is one.
+        let beam = file
+            .as_ref()
+            .and_then(|f| std::fs::read_to_string(format!("{f}.beam")).ok());
+        m.set_beam_source(&beam.unwrap_or_else(super::wgsl::beam_source));
         m.shade = env("DWELL_PERF_NOSHADE").is_none() && !variant.starts_with("noshade");
         m.settings.beam = env("DWELL_PERF_NOBEAM").is_none() && !variant.contains("nobeam");
         m.settings.temporal = !variant.contains("notemporal");
@@ -260,6 +268,7 @@ fn march_perf() {
         for (view, at, yaw, pitch) in views {
             let mut frame = frame_for(at, yaw, pitch, size);
             let mut ms = Vec::new();
+            let mut beam_ms = Vec::new();
             for i in 0..25 {
                 // `DWELL_PERF_MOVE`: the eye moves this far to the right each frame.
                 let along = moving * f64::from(i);
@@ -282,21 +291,25 @@ fn march_perf() {
                         end_of_pass_write_index: Some(1),
                     }),
                 );
-                e.resolve_query_set(&queries, 0..2, &resolve, 0);
+                e.resolve_query_set(&queries, 0..3, &resolve, 0);
                 queue.submit([e.finish()]);
                 m.submitted();
                 let words = block_on(
                     &device,
-                    super::check::read_buffer(&device, &queue, &resolve, 0, 16),
+                    super::check::read_buffer(&device, &queue, &resolve, 0, 24),
                 )
                 .expect("timestamps");
                 let t = |i: usize| u64::from(words[2 * i]) | (u64::from(words[2 * i + 1]) << 32);
                 if (4..24).contains(&i) {
                     ms.push((t(1).saturating_sub(t(0))) as f64 * period / 1e6);
+                    if m.settings.beam && m.march_pass {
+                        beam_ms.push((t(2).saturating_sub(t(0))) as f64 * period / 1e6);
+                    }
                 }
                 m.collect();
             }
             ms.sort_by(f64::total_cmp);
+            beam_ms.sort_by(f64::total_cmp);
             if env("DWELL_PERF_CHECK").is_some() {
                 check_starts(&device, &queue, &mut m, (at, yaw, pitch), &targets, size, moving);
             }
@@ -316,9 +329,12 @@ fn march_perf() {
             }
             let s = m.last_steps;
             eprintln!(
-                "  {view:<20} march p50 {:6.2} ms  min {:6.2}  steps p50/p95/p99 {}",
+                "  {view:<20} march p50 {:6.2} ms  min {:6.2}  beam {}  steps p50/p95/p99 {}",
                 ms[ms.len() / 2],
                 ms[0],
+                beam_ms
+                    .first()
+                    .map_or("–".into(), |b| format!("{:.2}/{:.2}", b, beam_ms[beam_ms.len() / 2])),
                 s.map_or("–".into(), |s| format!(
                     "{}/{}/{} mean {:.1}",
                     s.median, s.p95, s.p99, s.mean

@@ -27,7 +27,7 @@ use dwell_march::layout::{
     BRICK_CELLS, COLUMN_MIPS, COLUMN_WORDS, GRID_OFFSET, LEVEL_COUNT, MAX_LEVEL, MAX_NODES,
     MIP_OFFSET, NODE_WORDS, OCC_WORDS, RAW_WIDTH, SLOT_NONE, TAG_AIR, TAG_SHIFT, TAG_SOLID,
 };
-use dwell_march::march::COLUMN_EPS;
+use dwell_march::march::{COLUMN_EPS, COLUMN_MIXED_MAX_DY};
 use dwell_march::scene::COLUMNS_NONE;
 
 use super::looks::LOOK_WORDS;
@@ -61,6 +61,8 @@ pub const TEMPORAL_MARGIN_CELLS: f32 = 2.0;
 /// With the eye moved, a band's end is moved by this fraction toward the stretch the box test
 /// takes (the `f32` rounding of the distances).
 pub const TEMPORAL_BAND_EPS: f32 = 1.0e-4;
+/// Within this many times the eye's shift of the eye, the beam walk uses the box test alone.
+pub const TEMPORAL_NEAR_SHIFTS: f32 = 8.0;
 /// The changed nodes' boxes (`dwell_march::Dirty::boxes`) the uniforms carry: last frame's
 /// distances are not trusted inside them.
 pub const MAX_DIRTY: usize = 16;
@@ -103,6 +105,7 @@ pub fn constants() -> Vec<(&'static str, Value)> {
         ("COLUMN_MIPS", U32(COLUMN_MIPS as u32)),
         ("COLUMNS_NONE", U32(COLUMNS_NONE)),
         ("COLUMN_EPS", F32(COLUMN_EPS)),
+        ("COLUMN_MIXED_MAX_DY", F32(COLUMN_MIXED_MAX_DY)),
         ("MAX_LEVEL", U32(MAX_LEVEL)),
         ("LEVEL_COUNT", U32(LEVEL_COUNT as u32)),
         ("LOOK_WORDS", U32(LOOK_WORDS as u32)),
@@ -122,6 +125,7 @@ pub fn constants() -> Vec<(&'static str, Value)> {
         ("TEMPORAL_BORDER", I32(TEMPORAL_BORDER)),
         ("MAX_DIRTY", U32(MAX_DIRTY as u32)),
         ("TEMPORAL_BAND_EPS", F32(TEMPORAL_BAND_EPS)),
+        ("TEMPORAL_NEAR_SHIFTS", F32(TEMPORAL_NEAR_SHIFTS)),
         ("TEMPORAL_MARGIN_CELLS", F32(TEMPORAL_MARGIN_CELLS)),
         ("BEAM_TILE", U32(BEAM_TILE)),
         ("BEAM_ITERATIONS", U32(BEAM_ITERATIONS)),
@@ -646,7 +650,7 @@ fn march(start: f32) -> Result {
         let cols = node_columns[ni];
         var column = false;
         var col: Region;
-        if ((u.flags & FLAG_COLUMNS) != 0u && cols != COLUMNS_NONE) {
+        if ((u.flags & FLAG_COLUMNS) != 0u && cols != COLUMNS_NONE && (!mixed || abs(rd.y) < COLUMN_MIXED_MAX_DY)) {
             let scale = bitcast<f32>((127u - l) << 23u);
             var m = min(mip_guess, COLUMN_MIPS - 1u);
             let r = region(cols, m, local, nlo, nhi, l, scale);
@@ -907,9 +911,41 @@ fn prev_clear(lo: vec2<f32>, hi: vec2<f32>) -> f32 {
     return v;
 }
 
-// The tile's corner directions (unit; through the tile's outer pixel corners): every pixel ray of
-// the tile is inside the cone they span.
-var<private> tile_corner: array<vec3<f32>, 4>;
+// The tile's corner rays (unit; through the tile's outer pixel corners; every pixel ray of the
+// tile is inside the cone they span) in last frame's camera axes, one corner per component: a
+// corner's point at distance t is, relative to last frame's eye, t × (corner_r, corner_u,
+// corner_f) + prev_d along last frame's right, up and forward. (Vectors, not an array: a private
+// array is spilled.)
+var<private> corner_r: vec4<f32>;
+var<private> corner_u: vec4<f32>;
+var<private> corner_f: vec4<f32>;
+var<private> prev_d: vec3<f32>;
+
+fn set_corners(c0: vec3<f32>, c1: vec3<f32>, c2: vec3<f32>, c3: vec3<f32>) {
+    let r = u.prev_right;
+    let up = u.prev_up;
+    let f = u.prev_forward;
+    corner_r = vec4<f32>(dot(c0, r), dot(c1, r), dot(c2, r), dot(c3, r));
+    corner_u = vec4<f32>(dot(c0, up), dot(c1, up), dot(c2, up), dot(c3, up));
+    corner_f = vec4<f32>(dot(c0, f), dot(c1, f), dot(c2, f), dot(c3, f));
+    prev_d = vec3<f32>(dot(u.prev_delta, r), dot(u.prev_delta, up), dot(u.prev_delta, f));
+}
+
+// The four corner rays' points at distance t in last frame's image: (x, y) per corner, as two
+// vectors, or false where one is behind last frame's eye.
+struct Corners {
+    x: vec4<f32>,
+    y: vec4<f32>,
+    front: bool,
+};
+
+fn corners_at(t: f32) -> Corners {
+    let z = corner_f * t + vec4<f32>(prev_d.z);
+    let size = vec2<f32>(u.size);
+    let nx = (corner_r * t + vec4<f32>(prev_d.x)) / (z * u.prev_tan_x);
+    let ny = (corner_u * t + vec4<f32>(prev_d.y)) / (z * u.prev_tan_y);
+    return Corners((nx + 1.0) * 0.5 * size.x, (1.0 - ny) * 0.5 * size.y, all(z > vec4<f32>(0.0)));
+}
 
 // Whether box [lo, hi] (level-0 grid cells, inclusive) meets a node that changed since last frame.
 fn meets_dirty(lo: vec3<i32>, hi: vec3<i32>) -> bool {
@@ -921,34 +957,37 @@ fn meets_dirty(lo: vec3<i32>, hi: vec3<i32>) -> bool {
     return false;
 }
 
-// The temporal start (RAY_MARCHED_RENDERER.md §4.3 item 5, A4c as built): whether last frame's
-// rays, from last frame's eye, found clear every point of the tile's pixel rays between t0 and
-// t1 (whose box is [lo, hi]). The 8 points of the tile's corner rays at t0 and t1 are projected
-// into last frame's image (the piece of the cone between them projects inside their rect); every
-// point of it is within t1 + the eye's shift of last frame's eye, so it is clear if last frame's
-// least distance over the rect reaches that plus the margin. Not where the data changed, or
-// where part of it was behind last frame's eye or outside its image.
-fn temporal_clear(t0: f32, t1: f32, lo: vec3<i32>, hi: vec3<i32>) -> bool {
+// The temporal start (RAY_MARCHED_RENDERER.md §4.3 item 5, A4c as built): how far last frame's
+// rays, from last frame's eye, vouch for the tile's pixel rays from t0 over the stretch to t1
+// (whose box is [lo, hi]): the stretch is clear up to the result if that is at least t1 (-1:
+// not at all). The 8 points of the tile's corner rays at t0 and t1 are projected into last
+// frame's image (the piece of the cone between them projects inside their rect); every point of
+// it is within t1 + the eye's shift of last frame's eye, so it is clear if last frame's least
+// distance over the rect, less the eye's shift and the margin, reaches t1. A shorter stretch
+// from t0 projects inside the same rect, so it is clear up to the result too. Not where the
+// data changed, or where part of it was behind last frame's eye or outside its image.
+fn temporal_clear(t0: f32, t1: f32, lo: vec3<i32>, hi: vec3<i32>) -> f32 {
     if (meets_dirty(lo, hi)) {
-        return false;
+        return -1.0;
     }
-    var plo = vec2<f32>(BIG);
-    var phi = vec2<f32>(-BIG);
-    for (var k = 0u; k < 8u; k++) {
-        let q = prev_pixel(tile_corner[k & 3u] * select(t0, t1, k >= 4u) + u.prev_delta);
-        if (q.z <= 0.0) {
-            return false;
-        }
-        plo = min(plo, q.xy);
-        phi = max(phi, q.xy);
+    let a = corners_at(t0);
+    let b = corners_at(t1);
+    if (!a.front || !b.front) {
+        return -1.0;
     }
+    let xlo = min(a.x, b.x);
+    let ylo = min(a.y, b.y);
+    let xhi = max(a.x, b.x);
+    let yhi = max(a.y, b.y);
+    let plo = vec2<f32>(min(min(xlo.x, xlo.y), min(xlo.z, xlo.w)), min(min(ylo.x, ylo.y), min(ylo.z, ylo.w)));
+    let phi = vec2<f32>(max(max(xhi.x, xhi.y), max(xhi.z, xhi.w)), max(max(yhi.x, yhi.y), max(yhi.z, yhi.w)));
     let m = prev_clear(plo, phi);
     if (m <= 0.0) {
-        return false;
+        return -1.0;
     }
     let cell = f32(1u << min(level_for(m), u.top));
     let margin = TEMPORAL_MARGIN_CELLS * cell + BEAM_SLACK + BEAM_SLACK_PER_M * m;
-    return t1 + u.eye_shift + margin <= m;
+    return m - u.eye_shift - margin;
 }
 
 // Whether level l has a slot in every node the level-0 box [lo, hi] meets (Scene::level_covers).
@@ -1100,10 +1139,6 @@ fn box_clear(lo: vec3<i32>, hi: vec3<i32>, want: u32, top: u32) -> bool {
     return true;
 }
 
-// Scene::beam_walk: the distance the tile's pixel rays can start from. With last frame's
-// distances (FLAG_TEMPORAL), a segment is clear if they say so or its box is.
-var<private> temporal_used: bool;
-
 struct SegBox {
     lo: vec3<i32>,
     hi: vec3<i32>,
@@ -1118,33 +1153,28 @@ fn seg_box(dir: vec3<f32>, spread: f32, t0: f32, t1: f32) -> SegBox {
     return SegBox(rc + vec3<i32>(floor(min(pa, pb) - vec3<f32>(r))), rc + vec3<i32>(floor(max(pa, pb) + vec3<f32>(r))));
 }
 
-// How far from t0 toward t1 last frame's distances clear the tile (t0: not at all), and, when
-// t0 is too near a cone-LOD band's end to use them, where that stretch ends (else 0).
-//
-// Last frame's rays only vouch for the level they marched at, and with the eye moved by s a point
-// is up to s nearer or farther than it was: so with the eye moved, a stretch is used only where
-// its points are in one cone-LOD band from both eyes (the band's end, from the eye, at least s
-// past it). The stretch of 2s around each band's end is left to the box test.
-fn temporal_reach(dir: vec3<f32>, spread: f32, t0: f32, t1: f32) -> vec2<f32> {
-    var te = t1;
-    let s = u.eye_shift;
-    if (s > 0.0) {
-        let l0 = min(level_for(max(t0 - s, 0.0)), u.top);
-        if (l0 < u.top) {
-            let end = u.levels[l0].band_end;
-            let b = end * (1.0 - TEMPORAL_BAND_EPS) - s;
-            if (b <= t0) {
-                return vec2<f32>(t0, end * (1.0 + TEMPORAL_BAND_EPS) + s);
-            }
-            te = min(te, b);
-        }
+// Where last frame's distances could carry the tile to: its own last distance (its centre ray's
+// tile in last frame's image), less the margin and the eye's shift; -1 if it was outside.
+fn temporal_goal(dir: vec3<f32>) -> f32 {
+    let q = prev_pixel(dir);
+    if (q.z <= 0.0 || any(q.xy < vec2<f32>(0.0)) || any(q.xy >= vec2<f32>(u.size))) {
+        return -1.0;
     }
-    let bx = seg_box(dir, spread, t0, te);
-    if (temporal_clear(t0, te, bx.lo, bx.hi)) {
-        return vec2<f32>(te, 0.0);
-    }
-    return vec2<f32>(t0, 0.0);
+    let c = textureLoad(prev_t, vec2<i32>(q.xy) / i32(BEAM_TILE), 0).r;
+    let cell = f32(1u << min(level_for(c), u.top));
+    return c - u.eye_shift - TEMPORAL_MARGIN_CELLS * cell;
 }
+
+// The beam walk (Scene::beam_walk): the distance the tile's pixel rays can start from.
+//
+// With last frame's distances (FLAG_TEMPORAL) the walk also tries, once per cone-LOD band, to
+// jump from where it is to the tile's goal (`temporal_goal`) in one segment cleared by them
+// (`temporal_clear`). With the eye moved by s, a point is up to s nearer or farther than it was,
+// and last frame's rays vouch only for the level they marched at, so a jump stays inside the band
+// it starts in, from both eyes: it ends s before the band's end, and the walk tries the next band
+// only once it is s past it (the stretch between is the box test's alone). Near the eye
+// (`TEMPORAL_NEAR_SHIFTS` shifts) only the box test is used: the footprint there is too wide.
+var<private> temporal_used: bool;
 
 fn beam_walk(dir: vec3<f32>, spread: f32) -> f32 {
     let temporal = (u.flags & FLAG_TEMPORAL) != 0u;
@@ -1154,35 +1184,47 @@ fn beam_walk(dir: vec3<f32>, spread: f32) -> f32 {
     var dt = BEAM_FIRST_STEP;
     // Doubling until a segment is blocked, then bisecting.
     var grow = 2.0;
+    var goal = -1.0;
+    if (temporal) {
+        goal = temporal_goal(dir);
+    }
+    let s = u.eye_shift;
+    // The band whose jump failed (none yet).
+    var failed = -1;
     for (var i = 0u; i < BEAM_ITERATIONS; i++) {
         if (t >= u.max_t) {
             break;
         }
         let t1 = min(t + dt, u.max_t);
-        let bx = seg_box(dir, spread, t, t1);
-        var reach = vec2<f32>(t, 0.0);
-        if (temporal) {
-            reach = temporal_reach(dir, spread, t, t1);
-        }
-        if (reach.x >= t1) {
-            t = t1;
-            temporal_used = true;
-        } else if (box_clear(bx.lo, bx.hi, min(level_for(t1), top), top)) {
-            t = t1;
-        } else if (reach.x > t) {
-            // Up to a band's end: the rest of the segment is tried again from there.
-            t = reach.x;
-            temporal_used = true;
-            continue;
-        } else if (reach.y > t) {
-            // Across a band's end by the box test alone, then on as before.
-            let tz = min(reach.y, t1);
-            let z = seg_box(dir, spread, t, tz);
-            if (box_clear(z.lo, z.hi, min(level_for(tz), top), top)) {
-                t = tz;
-                continue;
+        if (goal > t1 && t >= max(TEMPORAL_NEAR_SHIFTS * s, BEAM_FIRST_STEP)) {
+            let lv = min(level_for(max(t - s, 0.0)), top);
+            if (i32(lv) != failed) {
+                var jump_to = goal;
+                if (s > 0.0 && lv < top) {
+                    jump_to = min(jump_to, u.levels[lv].band_end * (1.0 - TEMPORAL_BAND_EPS) - s);
+                }
+                if (jump_to > t1) {
+                    let jb = seg_box(dir, spread, t, jump_to);
+                    var reach = temporal_clear(t, jump_to, jb.lo, jb.hi);
+                    if (reach < jump_to && reach > t1) {
+                        // Not that far: as far as the stretch's footprint vouches for, which a
+                        // shorter stretch's footprint (inside it) does too.
+                        jump_to = reach;
+                        let jb2 = seg_box(dir, spread, t, jump_to);
+                        reach = temporal_clear(t, jump_to, jb2.lo, jb2.hi);
+                    }
+                    if (reach >= jump_to) {
+                        t = jump_to;
+                        temporal_used = true;
+                        continue;
+                    }
+                    failed = i32(lv);
+                }
             }
-            grow = 0.5;
+        }
+        let bx = seg_box(dir, spread, t, t1);
+        if (box_clear(bx.lo, bx.hi, min(level_for(t1), top), top)) {
+            t = t1;
         } else {
             grow = 0.5;
         }
@@ -1208,8 +1250,10 @@ fn beam_main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let p1 = min(p0 + vec2<u32>(BEAM_TILE), u.size);
     rc = u.eye_cell;
     rf = u.eye_frac;
-    for (var c = 0u; c < 4u; c++) {
-        tile_corner[c] = image_ray(vec2<f32>(f32(select(p0.x, p1.x, (c & 1u) != 0u)), f32(select(p0.y, p1.y, (c & 2u) != 0u))));
+    if ((u.flags & FLAG_TEMPORAL) != 0u) {
+        let a = vec2<f32>(p0);
+        let b = vec2<f32>(p1);
+        set_corners(image_ray(a), image_ray(vec2<f32>(b.x, a.y)), image_ray(vec2<f32>(a.x, b.y)), image_ray(b));
     }
     let dir = image_ray(vec2<f32>(p0 + p1) * 0.5);
     let last = p1 - vec2<u32>(1u);

@@ -279,6 +279,8 @@ pub struct Marcher {
     pub(crate) shade: bool,
     /// Whether the march pass runs (profiling: the beam prepass alone, with `shade` off).
     pub(crate) march_pass: bool,
+    /// Profiling: the beam prepass's end is also written to this index of the frame's query set.
+    pub(crate) beam_end_query: Option<u32>,
     pipeline: wgpu::ComputePipeline,
     beam_pipeline: wgpu::ComputePipeline,
     shade_pipeline: wgpu::ComputePipeline,
@@ -287,6 +289,8 @@ pub struct Marcher {
     /// Kept to rebuild the pipeline from another source (profiling variants, tests).
     #[cfg_attr(not(test), allow(dead_code))]
     pipeline_layout: wgpu::PipelineLayout,
+    #[cfg_attr(not(test), allow(dead_code))]
+    beam_pipeline_layout: wgpu::PipelineLayout,
     composite: wgpu::RenderPipeline,
     frame_layout: wgpu::BindGroupLayout,
     data_layout: wgpu::BindGroupLayout,
@@ -484,6 +488,7 @@ impl Marcher {
         });
         let beam_pipeline =
             Self::march_pipeline(&device, &beam_pipeline_layout, &beam_module, "beam_main");
+
         let shade_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("march shade"),
             source: wgpu::ShaderSource::Wgsl(wgsl::shade_source().into()),
@@ -625,12 +630,14 @@ impl Marcher {
             workgroup: [wgsl::WORKGROUP; 2],
             shade: true,
             march_pass: true,
+            beam_end_query: None,
             pipeline,
             beam_pipeline,
             shade_pipeline,
             reduce_pipeline,
             reduce_layout,
             pipeline_layout: layout,
+            beam_pipeline_layout,
             composite,
             frame_layout,
             data_layout,
@@ -687,6 +694,19 @@ impl Marcher {
             });
         self.pipeline =
             Self::march_pipeline(&self.device, &self.pipeline_layout, &module, "march_main");
+    }
+
+    /// Replaces the beam prepass's shader (profiling variants: `perf.rs`).
+    #[cfg(test)]
+    pub(crate) fn set_beam_source(&mut self, source: &str) {
+        let module = self
+            .device
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("beam variant"),
+                source: wgpu::ShaderSource::Wgsl(source.into()),
+            });
+        self.beam_pipeline =
+            Self::march_pipeline(&self.device, &self.beam_pipeline_layout, &module, "beam_main");
     }
 
     fn stats_buffer(device: &wgpu::Device, words: usize) -> wgpu::Buffer {
@@ -1096,7 +1116,11 @@ impl Marcher {
                 label: Some("march beam"),
                 timestamp_writes: writes(
                     begin.take(),
-                    if self.march_pass { None } else { end.take() },
+                    if self.march_pass {
+                        self.beam_end_query
+                    } else {
+                        end.take()
+                    },
                 ),
             });
             pass.set_pipeline(&self.beam_pipeline);
