@@ -36,7 +36,7 @@ async function touch(
   });
 }
 
-for (let rep = 0; rep < 6; rep++) test(`touch controls: stick, look, and jump ${rep}`, async ({ page }) => { // DIAG
+test('touch controls: stick, look, and jump', async ({ page }) => {
   // CI's software rendering is slow: the steps before the jump alone take ~20 s there. The flat
   // world, as the other touch tests use: on the generated terrain CI drew this page at ~1 fps by
   // the jump (frames 0.8-1.7 s), at the client's 1 s catch-up (game.rs MAX_TICKS_PER_FRAME), and a
@@ -102,9 +102,7 @@ for (let rep = 0; rep < 6; rep++) test(`touch controls: stick, look, and jump ${
   );
   const context = `jump peak, predicting ${rate.toFixed(1)} ticks/s, frames p50 ${(frames?.p50 ?? 0).toFixed(0)} ms, max ${(frames?.max ?? 0).toFixed(0)} ms`;
   expect(peak - ground, context).toBeGreaterThan(0.5);
-  console.log('DIAG', rep, context, peak - ground); // DIAG
-}); // DIAG rep
-
+});
 
 test('touch controls: Break/Place toggle, tapping the view edits, tapping the hotbar picks', async ({
   page,
