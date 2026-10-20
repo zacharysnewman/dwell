@@ -12,7 +12,7 @@ use dwell_blocks::{
 use dwell_protocol::{BlockEditAction, BlockEditRequest, ChunkChanges, players};
 
 use crate::{
-    ChunkCoord, M, MIDPLANE_Y, VoxelWorld, inside_build_volume, inside_world_disc, up_of_y,
+    ChunkCoord, FaceFrame, M, MIDPLANE_Y, VoxelWorld, inside_build_volume, inside_world_disc, up_of_y,
 };
 
 /// Face index → outward direction: 0 +X, 1 −X, 2 +Y, 3 −Y, 4 +Z, 5 −Z.
@@ -81,21 +81,18 @@ pub fn plant_sink_at(world: &mut VoxelWorld, cell: [i32; 3], fx: f32, fz: f32) -
 /// support, so it may reach into the support's cell), else its shape's extent, else the whole
 /// cell.
 pub fn target_box(world: &mut VoxelWorld, cell: [i32; 3]) -> ([f32; 3], [f32; 3]) {
+    // Built face-local (the ground below) and turned into the cell through the face frame.
+    let f = FaceFrame::at_row(cell[1]);
     let m = world.get_voxel(cell[0], cell[1], cell[2]);
     if let Some(b) = info(m).selection {
-        let up = up_of_y(cell[1]);
-        let (y0, y1) = if up > 0 {
-            (b[1], b[4])
-        } else {
-            (1.0 - b[4], 1.0 - b[1])
-        };
         let sink = plant_sink_at(world, cell, 0.5 * (b[0] + b[3]), 0.5 * (b[2] + b[5]));
-        let dy = -(up as f32) * sink;
-        return ([b[0], y0 + dy, b[2]], [b[3], y1 + dy, b[5]]);
+        let (y0, y1) = f.in_cell(b[1] - sink, b[4] - sink);
+        return ([b[0], y0, b[2]], [b[3], y1, b[5]]);
     }
-    let shape = target_shape(world, cell);
+    let shape = f.shape(target_shape(world, cell));
     let top = if shape.inverted { 1.0 } else { shape.max_y };
-    ([0.0; 3], [1.0, top, 1.0])
+    let (y0, y1) = f.in_cell(0.0, top);
+    ([0.0, y0, 0.0], [1.0, y1, 1.0])
 }
 
 /// The polygons of a box in its cell, outward-wound, tagged with the face each lies on.

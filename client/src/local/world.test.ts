@@ -24,4 +24,14 @@ describe('local world options', () => {
     });
     expect(parseLocalWorld('?seed=1.5').worldSeed).toBe(0);
   });
+
+  it('reads the dev link ?spawn=b as a face-B spawn in a world file of its own', () => {
+    expect(parseLocalWorld('?seed=7&spawn=b')).toEqual({
+      worldSeed: 7,
+      generatorVersion: GENERATORS.terrain,
+      file: 'local-g8-s7-faceb',
+      spawnFaceB: true,
+    });
+    expect(parseLocalWorld('?spawn=a').spawnFaceB).toBeUndefined();
+  });
 });

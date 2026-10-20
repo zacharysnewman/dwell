@@ -175,6 +175,13 @@ impl BifacialTerrain {
         self.a.spawn_point()
     }
 
+    /// Face B's spawn point (a dev tool's: `?spawn=b` local worlds), its generator's face-local
+    /// feet mirrored into the world: the player stands on face B's ground, upside down.
+    pub fn spawn_point_b(&self) -> [f64; 3] {
+        let [x, y, z] = self.b.spawn_point();
+        [x, dwell_world::FaceFrame::B.y(y), z]
+    }
+
     /// Face B's voxel (x, y, z) is the face-local voxel (x, mirror_y(y), z) of face B's generator.
     pub fn solid_at(&self, x: i32, y: i32, z: i32) -> bool {
         match face_of_y(i64::from(y)) {

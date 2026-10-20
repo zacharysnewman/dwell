@@ -1417,3 +1417,30 @@ fn the_spyglass_refines_far_terrain_inside_its_narrow_view_only() {
     });
     assert_eq!(level_at(&unthreaded, ahead), a0);
 }
+
+dwell_world::both_faces!(
+    /// Face parity (BIFACIAL_WORLD.md §11): standing on either face of the bifacial world, the
+    /// LOD asks for the chunks around the camera beyond the streamed view — the face-local mirror
+    /// of each other, chunk for chunk.
+    fn asks_for_the_chunks_around_the_camera_on_either_face(f: dwell_world::FaceFrame) {
+        let feet = [0.5, f.y(CRUST as f64 + 1.6), 0.5];
+        let mut t = ChunkSetup::new(feet, 4.0);
+        t.host.bifacial = true;
+        // Looking 10° below the face's horizon: in the world, toward the face's ground.
+        t.run(&camera(feet, 0.0, -10.0 * f.sign_f64()), 400);
+        let at = f.chunk(chunk_of(feet));
+        let local: HashSet<ChunkCoord> = t.requested().into_iter().map(|c| f.chunk(c)).collect();
+        assert!(
+            local.iter().filter(|&&c| chebyshev(c, at) > 3).count() > 20,
+            "{:?}: {} asked",
+            f.face,
+            local.len()
+        );
+        let a_feet = [0.5, CRUST as f64 + 1.6, 0.5];
+        let mut on_a = ChunkSetup::new(a_feet, 4.0);
+        on_a.host.bifacial = true;
+        on_a.run(&camera(a_feet, 0.0, -10.0), 400);
+        let a: HashSet<ChunkCoord> = on_a.requested().into_iter().collect();
+        assert_eq!(local, a, "{:?}: not face A's mirror", f.face);
+    }
+);

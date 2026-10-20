@@ -10,6 +10,11 @@ export const GENERATORS = { flat: 0, terrain: 8, sandbox: 100 } as const;
 /** The retired movement playground (now a test structure, Phase 15): old worlds only. */
 export const RETIRED_PLAYGROUND = 1;
 
+/** File name (in `dwell/worlds/`) of the local world for a generator and seed. */
+export function localWorldName(generatorVersion: number, worldSeed: number): string {
+  return `local-g${String(generatorVersion)}-s${String(worldSeed)}`;
+}
+
 export interface LocalWorld {
   worldSeed: number;
   generatorVersion: number;
@@ -18,6 +23,11 @@ export interface LocalWorld {
    * generator and seed that `?world=`/`?seed=` links open (`localWorldName`).
    */
   file?: string;
+  /**
+   * Dev link `?spawn=b`: a new world spawns its player on face B (BIFACIAL_WORLD.md §11), to play
+   * and check face B; it is its own world file (`<name>-faceb`), so the face-A world is untouched.
+   */
+  spawnFaceB?: boolean;
 }
 
 export function parseLocalWorld(search: string): LocalWorld {
@@ -28,5 +38,9 @@ export function parseLocalWorld(search: string): LocalWorld {
   // Seeds are u64 on the wire; local mode accepts integers exactly representable in a double.
   const seed = Number(params.get('seed') ?? '0');
   const worldSeed = Number.isSafeInteger(seed) && seed >= 0 ? seed : 0;
+  if (params.get('spawn') === 'b') {
+    const file = `${localWorldName(generatorVersion, worldSeed)}-faceb`;
+    return { worldSeed, generatorVersion, file, spawnFaceB: true };
+  }
   return { worldSeed, generatorVersion };
 }
