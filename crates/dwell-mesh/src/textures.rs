@@ -4,8 +4,98 @@
 //! texels so mipmapping never bleeds. Tiles are named by the block registry's texture names; the
 //! painters are prototype content, like the blocks (ARCHITECTURE.md §6.1). The noise reproduces the
 //! TS bit for bit (JS int32 arithmetic).
+//!
+//! Two texture sets fill the same tiles ([`TextureSet`], ADR 0040): the **classic** painters below,
+//! and the **painterly** set, baked at build time by `shared/textures/gen.mjs` from data
+//! (`shared/textures/materials.json`, docs/PAINTERLY_TEXTURES.md) into `painterly.rgba`. A tile the
+//! painterly set doesn't paint (the utility tiles: `plain`, `grid`, `missing`) keeps its classic
+//! painter in both. The set is chosen once, before the atlas is built (`?textures=painterly`).
 
 use std::sync::OnceLock;
+use std::sync::atomic::{AtomicU8, Ordering};
+
+#[path = "painterly.gen.rs"]
+mod painterly;
+pub use painterly::{PAINTERLY_TILE, PAINTERLY_TILES};
+
+/// Which texture set paints the atlas's tiles.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum TextureSet {
+    /// The procedural noise painters (the look players have).
+    #[default]
+    Classic,
+    /// The painterly storybook set (docs/ART_DIRECTION.md), behind `?textures=painterly` until the
+    /// owner approves it; flipping the default is moving `#[default]` here.
+    Painterly,
+}
+
+impl TextureSet {
+    pub const ALL: [TextureSet; 2] = [TextureSet::Classic, TextureSet::Painterly];
+
+    /// The set's name (`classic`, `painterly`), as `?textures=` takes it.
+    pub fn name(self) -> &'static str {
+        match self {
+            TextureSet::Classic => "classic",
+            TextureSet::Painterly => "painterly",
+        }
+    }
+
+    pub fn parse(name: &str) -> Option<TextureSet> {
+        Self::ALL.into_iter().find(|s| s.name() == name)
+    }
+
+    /// The set a page's query (`?textures=painterly`) asks for; the default for none or an unknown
+    /// name.
+    pub fn from_query(search: &str) -> TextureSet {
+        search
+            .trim_start_matches('?')
+            .split('&')
+            .filter_map(|kv| kv.split_once('='))
+            .find(|(k, _)| *k == "textures")
+            .and_then(|(_, v)| TextureSet::parse(v))
+            .unwrap_or_default()
+    }
+
+    pub(crate) fn index(self) -> usize {
+        self as usize
+    }
+}
+
+static SET: AtomicU8 = AtomicU8::new(TextureSet::Classic as u8);
+
+/// Chooses the texture set the atlas, the tiles' average colours (the LOD colours) and the hotbar
+/// swatches use. Call it before any of them is first built (each is computed once per set): on the
+/// page at start-up and in each meshing worker before its first job.
+pub fn set_texture_set(set: TextureSet) {
+    SET.store(set as u8, Ordering::Relaxed);
+}
+
+/// The texture set in use ([`set_texture_set`]).
+pub fn texture_set() -> TextureSet {
+    if SET.load(Ordering::Relaxed) == TextureSet::Painterly as u8 {
+        TextureSet::Painterly
+    } else {
+        TextureSet::Classic
+    }
+}
+
+/// The painterly texel (x, y) of tile `name`, if the painterly set paints it.
+fn painterly_texel(name: &str, x: i64, y: i64) -> Option<[u8; 4]> {
+    let i = PAINTERLY_TILES.iter().position(|t| *t == name)?;
+    let o = ((i * TILE + y as usize) * TILE + x as usize) * 4;
+    let t = &painterly::PAINTERLY_TEXELS[o..o + 4];
+    Some([t[0], t[1], t[2], t[3]])
+}
+
+/// Texel (x, y) of tile `name` in `set`: its colour (sRGB, 0–255) and alpha (0–255).
+fn texel(set: TextureSet, name: &str, x: i64, y: i64) -> (Rgb, f64) {
+    if set == TextureSet::Painterly
+        && let Some([r, g, b, a]) = painterly_texel(name, x, y)
+    {
+        return ([f64::from(r), f64::from(g), f64::from(b)], f64::from(a));
+    }
+    (painter(name)(x, y), alpha(name, x, y))
+}
 
 /// Texels per tile edge; every noise lattice size below divides it.
 pub const TILE: usize = 32;
@@ -18,7 +108,7 @@ pub const ATLAS_SIZE: usize = CELL * ATLAS_CELLS;
 pub const ATLAS_TILES: usize = ATLAS_CELLS * ATLAS_CELLS;
 
 /// The tiles in atlas order (the registry's texture names).
-pub const TILE_ORDER: [&str; 14] = [
+pub const TILE_ORDER: [&str; 15] = [
     "plain",
     "grass",
     "grassSide",
@@ -32,6 +122,8 @@ pub const TILE_ORDER: [&str; 14] = [
     "logTop",
     "leaves",
     "tallGrass",
+    // A dirt side under grass (dirt's `sideUnder`): the turf's skirt over the dirt's top edge.
+    "dirtSkirt",
     // The fallback look of a state whose look or textures this build lacks (synced from a server,
     // ADR 0038): a magenta and black checker, never content.
     MISSING_TILE,
@@ -393,7 +485,8 @@ fn grid(x: i64, y: i64) -> Rgb {
 fn painter(name: &str) -> fn(i64, i64) -> Rgb {
     match name {
         "grass" => grass,
-        "grassSide" => grass_side,
+        // The same skirt as the grass side, so the two line up where they meet.
+        "grassSide" | "dirtSkirt" => grass_side,
         "dirt" => dirt,
         "stone" => stone,
         "sand" => sand,
@@ -420,32 +513,41 @@ fn alpha(name: &str, x: i64, y: i64) -> f64 {
     }
 }
 
-/// Whether tile `name` has transparent texels (it is drawn cutout or translucent).
+/// Whether tile `name` has transparent texels (it is drawn cutout or translucent) in the set in use.
 pub fn tile_has_alpha(name: &str) -> bool {
-    (0..TILE as i64).any(|y| (0..TILE as i64).any(|x| alpha(name, x, y) < 255.0))
+    tile_has_alpha_in(texture_set(), name)
+}
+
+/// Whether tile `name` has transparent texels in `set`.
+pub fn tile_has_alpha_in(set: TextureSet, name: &str) -> bool {
+    (0..TILE as i64).any(|y| (0..TILE as i64).any(|x| texel(set, name, x, y).1 < 255.0))
 }
 
 fn byte(v: f64) -> u8 {
     crate::js_round(v.clamp(0.0, 255.0)) as u8
 }
 
-/// The atlas: RGBA8, `ATLAS_SIZE`², row 0 at v = 0 (no vertical flip on upload).
+/// The atlas in the set in use: RGBA8, `ATLAS_SIZE`², row 0 at v = 0 (no vertical flip on upload).
 pub fn build_atlas() -> Vec<u8> {
+    build_atlas_in(texture_set())
+}
+
+/// The atlas painted with `set`.
+pub fn build_atlas_in(set: TextureSet) -> Vec<u8> {
     let mut data = vec![0u8; ATLAS_SIZE * ATLAS_SIZE * 4];
     for (index, name) in TILE_ORDER.iter().enumerate() {
-        let paint = painter(name);
         let ox = (index % ATLAS_CELLS) * CELL;
         let oy = (index / ATLAS_CELLS) * CELL;
         for py in 0..CELL {
             for px in 0..CELL {
                 let tx = (px as i64 - GUTTER as i64).rem_euclid(TILE as i64);
                 let ty = (py as i64 - GUTTER as i64).rem_euclid(TILE as i64);
-                let [r, g, b] = paint(tx, ty);
+                let ([r, g, b], a) = texel(set, name, tx, ty);
                 let o = ((oy + py) * ATLAS_SIZE + ox + px) * 4;
                 data[o] = byte(r);
                 data[o + 1] = byte(g);
                 data[o + 2] = byte(b);
-                data[o + 3] = byte(alpha(name, tx, ty));
+                data[o + 3] = byte(a);
             }
         }
     }
@@ -472,14 +574,13 @@ pub fn linear_to_srgb_byte(v: f64) -> u8 {
     crate::js_round(c.clamp(0.0, 1.0) * 255.0) as u8
 }
 
-fn compute_average(name: &str) -> u32 {
-    let paint = painter(name);
+fn compute_average(set: TextureSet, name: &str) -> u32 {
     let (mut r, mut g, mut b, mut n) = (0.0, 0.0, 0.0, 0.0);
     // Weighted by coverage: a cutout tile's transparent texels don't count.
     for y in 0..TILE as i64 {
         for x in 0..TILE as i64 {
-            let [pr, pg, pb] = paint(x, y);
-            let a = f64::from(byte(alpha(name, x, y))) / 255.0;
+            let ([pr, pg, pb], alpha) = texel(set, name, x, y);
+            let a = f64::from(byte(alpha)) / 255.0;
             r += srgb_to_linear(byte(pr)) * a;
             g += srgb_to_linear(byte(pg)) * a;
             b += srgb_to_linear(byte(pb)) * a;
@@ -494,13 +595,18 @@ fn compute_average(name: &str) -> u32 {
 
 /// A tile's average colour (`0xRRGGBB`, sRGB): the mean of its covered texels in linear light, as a
 /// mipmapped sRGB texture averages from afar — the flat colour of LOD faces. Computed from the
-/// painters once per tile.
+/// painters once per tile, in the set in use.
 pub fn average_tile_color(name: &str) -> u32 {
-    static AVERAGES: OnceLock<[u32; TILE_ORDER.len()]> = OnceLock::new();
-    let table = AVERAGES.get_or_init(|| TILE_ORDER.map(compute_average));
+    average_tile_color_in(texture_set(), name)
+}
+
+/// A tile's average colour in `set`.
+pub fn average_tile_color_in(set: TextureSet, name: &str) -> u32 {
+    static AVERAGES: [OnceLock<[u32; TILE_ORDER.len()]>; 2] = [OnceLock::new(), OnceLock::new()];
+    let table = AVERAGES[set.index()].get_or_init(|| TILE_ORDER.map(|n| compute_average(set, n)));
     match TILE_ORDER.iter().position(|t| *t == name) {
         Some(i) => table[i],
-        None => compute_average(name),
+        None => compute_average(set, name),
     }
 }
 
@@ -661,8 +767,146 @@ pub fn swatch(state: dwell_blocks::StateId) -> Vec<u8> {
 }
 
 fn shared_atlas() -> &'static [u8] {
-    static ATLAS: std::sync::OnceLock<Vec<u8>> = std::sync::OnceLock::new();
-    ATLAS.get_or_init(build_atlas)
+    static ATLAS: [OnceLock<Vec<u8>>; 2] = [OnceLock::new(), OnceLock::new()];
+    let set = texture_set();
+    ATLAS[set.index()].get_or_init(|| build_atlas_in(set))
+}
+
+#[cfg(test)]
+mod painterly_tests {
+    use super::*;
+
+    const P: TextureSet = TextureSet::Painterly;
+
+    fn painterly_alpha(name: &str, x: i64, y: i64) -> f64 {
+        texel(P, name, x, y).1
+    }
+
+    #[test]
+    fn the_query_picks_the_set_and_the_default_is_classic() {
+        assert_eq!(TextureSet::default(), TextureSet::Classic);
+        assert_eq!(TextureSet::from_query(""), TextureSet::Classic);
+        assert_eq!(TextureSet::from_query("?textures=painterly"), P);
+        assert_eq!(TextureSet::from_query("?seed=3&textures=painterly&x"), P);
+        assert_eq!(
+            TextureSet::from_query("?textures=nope"),
+            TextureSet::Classic
+        );
+        assert_eq!(
+            TextureSet::from_query("?textures=classic"),
+            TextureSet::Classic
+        );
+        for s in TextureSet::ALL {
+            assert_eq!(TextureSet::parse(s.name()), Some(s));
+        }
+    }
+
+    #[test]
+    fn the_baked_tiles_are_atlas_tiles_of_the_atlas_size() {
+        assert_eq!(PAINTERLY_TILE, TILE);
+        assert_eq!(
+            painterly::PAINTERLY_TEXELS.len(),
+            PAINTERLY_TILES.len() * TILE * TILE * 4
+        );
+        for name in PAINTERLY_TILES {
+            assert!(has_tile(name), "{name} is not an atlas tile");
+        }
+        // Every registry tile but the utility ones is painted.
+        for s in &dwell_blocks::STATES {
+            if let Some(t) = s.textures {
+                for name in [t.top, t.side, t.bottom] {
+                    assert!(name == "grid" || PAINTERLY_TILES.contains(&name), "{name}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn the_painterly_atlas_differs_from_the_classic_only_in_painted_tiles() {
+        let classic = build_atlas_in(TextureSet::Classic);
+        let painterly = build_atlas_in(P);
+        assert_eq!(classic.len(), painterly.len());
+        for name in TILE_ORDER {
+            let r = tile_rect(name);
+            let (x0, y0) = (
+                (r.u0 * ATLAS_SIZE as f64).round() as usize,
+                (r.v0 * ATLAS_SIZE as f64).round() as usize,
+            );
+            let same = (0..TILE).all(|y| {
+                let o = ((y0 + y) * ATLAS_SIZE + x0) * 4;
+                classic[o..o + TILE * 4] == painterly[o..o + TILE * 4]
+            });
+            assert_eq!(same, !PAINTERLY_TILES.contains(&name), "{name}");
+        }
+    }
+
+    #[test]
+    fn painterly_cutouts_keep_the_shapes_the_meshes_assume() {
+        // Opaque blocks stay opaque; the cutouts have gaps.
+        for name in [
+            "grass",
+            "grassSide",
+            "dirt",
+            "stone",
+            "sand",
+            "logSide",
+            "logTop",
+        ] {
+            assert!(!tile_has_alpha_in(P, name), "{name}");
+        }
+        for name in ["leaves", "tallGrass", "ladder"] {
+            assert!(tile_has_alpha_in(P, name), "{name}");
+        }
+        // The ladder: rails, rungs and gaps where the classic tile has them.
+        assert_eq!(painterly_alpha("ladder", 4, 0), 255.0, "a rail");
+        assert_eq!(painterly_alpha("ladder", 15, 3), 255.0, "a rung");
+        assert_eq!(painterly_alpha("ladder", 15, 6), 0.0, "a gap");
+        // Tall grass: blades, nothing on the top row or the side columns (it doesn't wrap).
+        let covered = |y: i64| {
+            (0..TILE as i64)
+                .filter(|&x| painterly_alpha("tallGrass", x, y) >= 128.0)
+                .count()
+        };
+        let share = (0..TILE as i64).map(covered).sum::<usize>() as f64 / (TILE * TILE) as f64;
+        assert!((0.12..0.5).contains(&share), "{share}");
+        assert!(covered(1) > covered(20) && covered(20) > 0);
+        assert_eq!(covered(TILE as i64 - 1), 0);
+        for y in 0..TILE as i64 {
+            assert_eq!(painterly_alpha("tallGrass", 0, y), 0.0);
+            assert_eq!(painterly_alpha("tallGrass", TILE as i64 - 1, y), 0.0);
+        }
+        // Leaves: mostly covered, with gaps.
+        let leaf = (0..TILE as i64)
+            .flat_map(|y| (0..TILE as i64).map(move |x| (x, y)))
+            .filter(|&(x, y)| painterly_alpha("leaves", x, y) >= 128.0)
+            .count() as f64
+            / (TILE * TILE) as f64;
+        assert!((0.6..0.95).contains(&leaf), "{leaf}");
+    }
+
+    #[test]
+    fn painterly_averages_stay_near_the_classic_hues() {
+        // The LOD colours: the same material reads as the same colour from afar in either set.
+        for name in [
+            "grass",
+            "dirt",
+            "stone",
+            "sand",
+            "water",
+            "logSide",
+            "leaves",
+            "tallGrass",
+        ] {
+            let (a, b) = (
+                average_tile_color_in(P, name),
+                average_tile_color_in(TextureSet::Classic, name),
+            );
+            for shift in [16, 8, 0] {
+                let (x, y) = ((a >> shift) & 0xff, (b >> shift) & 0xff);
+                assert!(x.abs_diff(y) < 0x40, "{name}: {a:06x} vs {b:06x}");
+            }
+        }
+    }
 }
 
 #[cfg(test)]

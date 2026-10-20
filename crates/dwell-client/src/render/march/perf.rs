@@ -249,6 +249,8 @@ fn march_perf() {
         m.settings.columns = !variant.contains("nocolumns");
         m.settings.distances = !variant.contains("nodistances");
         m.settings.steep_dda = !variant.contains("nosteep");
+        // `…lod8…`: the cone LOD's pixel error 8 (phones), not 4.
+        m.settings.lod_pixels = if variant.contains("lod8") { 8.0 } else { 4.0 };
         // `beamonly…`: the beam prepass alone.
         m.march_pass = !variant.starts_with("beamonly");
         m.shade &= m.march_pass;

@@ -99,8 +99,10 @@ fn compute_lod_color(m: StateId, group: usize) -> u32 {
 
 /// A material's flat colour (sRGB `0xRRGGBB`) on a face group (0 top, 1 side, 2 bottom).
 pub fn lod_color(m: StateId, group: usize) -> u32 {
-    static COLORS: OnceLock<Vec<[u32; 3]>> = OnceLock::new();
-    let table = COLORS.get_or_init(|| {
+    // One table per texture set: the colours are its tiles' averages.
+    static COLORS: [OnceLock<Vec<[u32; 3]>>; 2] = [OnceLock::new(), OnceLock::new()];
+    let set = crate::textures::texture_set();
+    let table = COLORS[set.index()].get_or_init(|| {
         (0..STATES.len())
             .map(|i| [0, 1, 2].map(|g| compute_lod_color(i as StateId, g)))
             .collect()

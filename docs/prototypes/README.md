@@ -10,10 +10,13 @@ link). They are not part of any build; Prettier and CI ignore `docs/`.
 | Shape Playground | [`shape-playground.html`](./shape-playground.html) | https://claude.ai/artifact/Sc4Pu3UqX8TcpcrRrEYpVz | Every shape and situation, hand-shaped by the owner; the rules fitted to it |
 | Half-Height Voxel Lab | [`half-height-lab.html`](./half-height-lab.html) | https://claude.ai/artifact/DGQZG6GH1GhxvZRtPgh5MN | Today's 1 m cells beside 1 × ½ × 1 m cells with 1 m double blocks: shapes, 27° and 45° slopes, plants standing on the ground, ½ m growth ([proposal](../proposals/HALF_HEIGHT_VOXELS.md)) |
 | Tree Growth | [`tree-growth.html`](./tree-growth.html) | https://claude.ai/artifact/MRW4RcNKTHkYdxMyRKLLHz | A hand-built tree grown by revealing its skeleton, obstacles, and jitter variants (Phase 30, G0) |
+| Painterly Texture Lab | [`painterly-texture-lab.html`](./painterly-texture-lab.html) | https://claude.ai/artifact/4CTkNW4G6p8p67MkSNMUJA | The painterly materials and palette edited live with the game's generator; the JSON copied back (Phase 39) |
+| Character Lab | [`character-lab.html`](./character-lab.html) | https://claude.ai/artifact/YAieiGfJnp5f2FnoR6wQWB | The player's full body and first-person arms, the wolf and the deer, from `shared/characters` (Phase 40, C0) |
 
 The first two feed [`ADAPTIVE_BLOCKS.md`](../ADAPTIVE_BLOCKS.md) (Phase 18, formerly 9e) and
 [ADR 0024](../adr/0024-adaptive-natural-blocks.md); Tree Growth feeds
-[`TREE_GROWTH.md`](../TREE_GROWTH.md) and [ADR 0033](../adr/0033-tree-growth.md).
+[`TREE_GROWTH.md`](../TREE_GROWTH.md) and [ADR 0033](../adr/0033-tree-growth.md). The Character Lab feeds
+[`CHARACTERS.md`](../CHARACTERS.md) and [ADR 0041](../adr/0041-characters.md).
 
 ## Adaptive Block Lab
 
@@ -98,9 +101,51 @@ The first two feed [`ADAPTIVE_BLOCKS.md`](../ADAPTIVE_BLOCKS.md) (Phase 18, form
   occupies. The cell inspector lists what each world stores for the
   column under the pointer (`tall_grass {height: 1.5 m}` + `{part: upper}` against three plant
   voxels).
+## Painterly Texture Lab
+
+- Feeds [`PAINTERLY_TEXTURES.md`](../PAINTERLY_TEXTURES.md) and [`ART_DIRECTION.md`](../ART_DIRECTION.md)
+  ([ADR 0040](../adr/0040-painterly-textures.md)).
+- **Generated in part**: `node shared/textures/gen.mjs` rewrites the block between its `BEGIN
+  GENERATED` and `END GENERATED` markers. The block holds `paint.mjs` (the game's painter) and the
+  repo's palette and materials, and CI fails if it is stale. Edit the rest of the page by hand,
+  regenerate, then republish.
+- Materials by use (blocks, characters, sky accents). Each shows its tile, a 3 × 3 repeat, a block lit
+  from above at the game's face tints, and its colour from afar (the LOD's flat colour).
+- Edit the material's fields (use, ramp, overlay, wrap, alpha, `like`, `over`) and each layer: its kind,
+  palette colours as chips, numbers as `4` or `4, 7` for a [min, max] range, and `at` as JSON. Add,
+  move and delete layers. Edit the palette's ramps with colour pickers. Bad data shows the
+  generator's own validation message.
+- **Copy back**: one material, the whole `materials.json` or `palette.json`, ready to paste into
+  `shared/textures/`. Edits are kept in the browser; **Reset** returns to the repo's data.
 
 ## Updating them
 
 Edit the file here and republish it to the same link, so the URL stays the same (in Claude Code:
 "publish `docs/prototypes/<file>` to <link>"; the Artifact tool updates an existing artifact by its
 URL after reading it). Commit the file with the change.
+
+## Character Lab
+
+- **Generated, not hand-edited, in part:** `node shared/characters/gen.mjs` writes the character data
+  (`shared/characters/characters.json`), the shared palette and materials, the rig module
+  (`rig.mjs`) and the painter (`shared/textures/paint.mjs`) into the page between its generated
+  markers; CI fails if the page is stale. Edit the rest of the page by hand.
+- **Subjects:** the player, first person (a small world, the hotbar, the arms drawn in their own pass
+  and FOV), the wolf, the deer, and a group to scale with 1 m blocks. Orbit, front, back, side and ¾
+  views, a turntable.
+- **Animation:** the clips by role (the player's idle, walk, sprint, crouch, crouch-walk, slide, jump,
+  fall, land, climb, swim, fly; the arms' idle, walk, sprint, slide, jump, fall, land; the wolf's trot;
+  the deer's graze), play, scrub and speed; break and place swings (<kbd>B</kbd>, <kbd>P</kbd>) layered
+  over the base and the hold. **Transitions:** presets (walk → sprint → slide; jump, fall, land; walk →
+  crouch; climb, swim, fly) or a sequence built clip by clip, cross-faded by each clip's `blend`, the
+  jump's rise drawn as the controller's 1.25 m arc.
+- **Looks:** variants (wanderer, ranger, tinker; stag, doe), accessories by place (one per place),
+  colour slots from the shared materials, the held item (block or brush) and its block.
+- **Parts:** the list of the character's, its accessories' and the held item's parts; click a part
+  in the view to select it; edit every field live, duplicate, delete, add. Validated by `rig.mjs` as
+  you go.
+- **View options:** the silhouette check (flat ink), brush strokes on or off, the ink outline,
+  bones and sockets, the game's tone mapping and exposure.
+- **Copy characters.json** copies the whole file with the edits (or one character), to paste over
+  the data file and run the generator. `window.lab` drives it from a script (subject, angle,
+  variant, held item, clip time, a swing, a sequence, the camera) for screenshots.

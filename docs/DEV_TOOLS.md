@@ -103,6 +103,7 @@ at the scale; `bilinear` is the browser stretching a scaled canvas, today's `?sc
 | Config | Renderer | Scale | Upscaler |
 | --- | --- | --- | --- |
 | `raster` (baseline) | raster | 1 | none |
+| `painterly` | raster, with `?textures=painterly` (PAINTERLY_TEXTURES.md) | 1 | none |
 | `raster-half` | raster | 0.5 | bilinear |
 | `march` | march | 1 | none |
 | `march-half-fsr` | march | 0.5 | fsr1 |
@@ -278,7 +279,8 @@ From the console: `__dwell.telemetry()`, `__dwell.telemetryFrames()`, `__dwell.t
   containing `nobeam`, `notemporal`, `still`, `nocolumns`, `nodistances`, `nosteep` or `reuse`
   turns off the beam prepass, the temporal start, the temporal start while moving, the column
   grids, the brick distances or the column search's slope rule, or keeps unchanged frames (off by
-  default here: the harness draws one view again and again)), each view's line also gives the beam
+  default here: the harness draws one view again and again); `lod8` sets the cone LOD's pixel
+  error to 8), each view's line also gives the beam
   pass's own time (min/p50), `DWELL_PERF_MOVE=m` moves the eye `m` metres to the right every
   frame, `DWELL_PERF_CHECK=1` marches every pixel on the CPU from the eye after drawing the view
   (and a turned one before it, from an eye a frame's move away) and counts starts that pass a hit

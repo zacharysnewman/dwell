@@ -79,6 +79,13 @@ and friend worlds), with a small master server for discovery; there are no offic
   reveal, skeleton-jitter variants, and trees as a layer composed at chunk load (tombstones, `growers`).
 - `docs/HALF_HEIGHT_GRID.md` — design for Phase 41 (ADR 0042), on the long-lived branch
   `claude/half-height-voxels` only: ½ m cells, stored cardinal ramps shaped at generation, no reshaping.
+- `docs/ART_DIRECTION.md` — the storybook art direction: the palette (`shared/textures/palette.json`),
+  the brush vocabulary, how materials read, the lighting assumptions; shared by the world and characters.
+- `docs/PAINTERLY_TEXTURES.md` — design for Phase 39 (ADR 0040): painterly textures as data, one stroke
+  generator baked at build time, behind `?textures=painterly`.
+- `docs/CHARACTERS.md` — design for Phase 40 (ADR 0041): characters and creatures as rigid chunky parts
+  on a data rig (`shared/characters/characters.json`), the first-person arms view, clips; a concept and
+  the Character Lab prototype, not in the game yet.
 - `docs/proposals/` — investigated but not yet adopted plans, each with open questions for the owner;
   not architecture until an ADR adopts it (adopted ones move to a design doc; its README lists them).
 - `docs/adr/` — architecture decision records.

@@ -308,6 +308,9 @@ impl Client {
                 .unwrap_or_default(),
             search: get("search").as_string().unwrap_or_default(),
         };
+        // `?textures=painterly` (docs/PAINTERLY_TEXTURES.md): chosen before the atlas is built; the
+        // meshing workers get it in their init message (web/jobs.rs).
+        dwell_mesh::set_texture_set(dwell_mesh::TextureSet::from_query(&options.search));
         let selection = options
             .renderer_switch
             .then(|| {

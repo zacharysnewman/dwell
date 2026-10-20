@@ -879,6 +879,38 @@ kept. At 60 Hz with the camera moving every frame, `march-noreuse` is the figure
 - The column mips loaded at once, a node's column offset cached, the level-rows skip off, the
   search off at level 0 (see the survey).
 
+### A4c, the far cases (2026-10-20)
+
+After milestone 1, the owner asked for the three techniques with the largest remaining gains for the
+cases still behind raster: flying high and seeing far. All three were built and measured natively
+(M1, Metal, load about 2, interleaved rounds, the eye moving 0.5 m a frame, terrain generator v16).
+On this terrain the march takes 5.6 ms at the spawn, 2.1 looking down and 11.0 at 540 m up, and none
+of the three beat that, so none was kept (their patches were set aside, not merged):
+
+1. **The per-step cost at the LOD levels.** On v16 terrain, 7 of the 8.4 iterations a ray takes
+   540 m up are voxel steps in LOD mixed bricks, not column searches. Two attempts:
+   - the slope rule for empty bricks too (0.3, 0.6 and 0.9): within ±1 %;
+   - skipping empty 2 × 2 × 2 blocks inside a brick (two occupancy words per block test): 27 % fewer
+     iterations but 15 % slower, because re-entering a cell after a skip costs more than the steps.
+
+   The per-step cost is the memory latency of each step's loads, not their number.
+2. **A second beam per 2 × 2 or 4 × 4 pixels**, walking on from its tile's start with its own
+   cone. It is conservative (a CPU test on random scenes; the per-pixel GPU check stays exact once a
+   moved-on start is backed off by `BEAM_SLACK`), and it halves the iterations 540 m up (8.4 → 3.9).
+   But its walk near the surface costs what it saves: +2.2 ms with 2 × 2 sub-tiles; break-even
+   (11.4 against 11.4 ms) with 4 × 4 or a 6-segment cap.
+3. **Half-rate marching for distant tiles**: one ray per 2 × 2 pixels where a tile's start is at
+   cone level 2 or more, the rest filled from four samples that hit the same face of the same cell
+   (their own depth from that face's plane), otherwise marched. It agreed with full rate on 99.9 %
+   of pixels, but 540 m up it took 18 ms against 11: the cone LOD already keeps cells 2–4 px wide,
+   so four samples 2 px apart seldom share a face, and the pixels left over are marched by
+   scattered lanes.
+
+**What would help instead.** The cone LOD's pixel error: at 8 px (the phones' setting, §4.3)
+instead of 4, 540 m up takes 8.3 ms against 11.0 (−24 %), and the spawn is unchanged. That is a
+change of look (coarser distant cells, like the raster LOD's own pixel-error setting), so it is the
+owner's choice, not an optimization; the native harness has it as the `lod8` variant.
+
 ## 8. Risks
 
 - Full-resolution marching may be slower than raster on mobile and iOS (expected, §1); the

@@ -1,0 +1,42 @@
+{
+  "$comment": "Dwell's storybook palette (docs/ART_DIRECTION.md §2): the one source of colour for the painterly textures (shared/textures/materials.json) and the characters (shared/characters). A ramp is three painted values of one material: `shadow` (cooler, toward blue-violet), `base` (the local colour) and `light` (warmer, toward yellow). Reference a ramp stop as \"ramp.stop\" (\"meadow.light\"), a bare ramp name for its base, and a single swatch by its name (\"ink\"). Albedos stay inside about 0.06–0.92 in sRGB so the lights and ACES tone mapping keep them readable. Run `node shared/textures/gen.mjs` after editing.",
+  "ramps": {
+    "meadow":      { "shadow": "#4a8a45", "base": "#82bd45", "light": "#c8e06a" },
+    "leaf":        { "shadow": "#2e6450", "base": "#5f9e3e", "light": "#a6cf52" },
+    "soil":        { "shadow": "#5b3a3c", "base": "#8e5d3d", "light": "#b98352" },
+    "stone":       { "shadow": "#817e8e", "base": "#a9a3a3", "light": "#dcd0b9" },
+    "sand":        { "shadow": "#c4a07a", "base": "#ebd39c", "light": "#f8ecc6" },
+    "water":       { "shadow": "#1d5ea6", "base": "#2f8fd8", "light": "#96dcf0" },
+    "bark":        { "shadow": "#4a3438", "base": "#7c5338", "light": "#a77a4c" },
+    "heartwood":   { "shadow": "#9c7650", "base": "#c99f66", "light": "#ecc98e" },
+    "canvas":      { "shadow": "#8a7464", "base": "#cbb48e", "light": "#efe2c0" },
+    "linen":       { "shadow": "#7f8cb6", "base": "#d3dcee", "light": "#f7f6f0" },
+    "wool_red":   { "shadow": "#73304a", "base": "#b9473f", "light": "#ea8a5e" },
+    "wool_blue":   { "shadow": "#2c3a70", "base": "#4166ad", "light": "#86aee0" },
+    "wool_green":  { "shadow": "#2f5a4e", "base": "#4f8a4a", "light": "#93c070" },
+    "leather":     { "shadow": "#4a2c2c", "base": "#8c5636", "light": "#c78d55" },
+    "iron":        { "shadow": "#4b536c", "base": "#8f9aae", "light": "#e8eff4" },
+    "brass":       { "shadow": "#7a5530", "base": "#c99a40", "light": "#f6dc8c" },
+    "wolf":        { "shadow": "#4a5068", "base": "#8b909e", "light": "#c9cbd0" },
+    "wolf_pale":   { "shadow": "#b4b2b4", "base": "#e8e3d6", "light": "#faf6ec" },
+    "deer":        { "shadow": "#74472f", "base": "#ba7f4b", "light": "#e0b27a" },
+    "deer_cream":  { "shadow": "#cbb89c", "base": "#f2e4c8", "light": "#fdf8ee" },
+    "antler":      { "shadow": "#9e8a70", "base": "#dccaa6", "light": "#f7eed6" },
+    "skin_fair":   { "shadow": "#c98f80", "base": "#f0c6a6", "light": "#fde4cc" },
+    "skin_tan":    { "shadow": "#a46e56", "base": "#d9a27a", "light": "#f2c89e" },
+    "skin_brown":  { "shadow": "#6c4436", "base": "#a2694a", "light": "#cc946a" },
+    "skin_deep":   { "shadow": "#3f2726", "base": "#6b4334", "light": "#98674c" },
+    "hair_black":  { "shadow": "#1f1b28", "base": "#302a3a", "light": "#5a4e62" },
+    "hair_brown":  { "shadow": "#3c2620", "base": "#6b4329", "light": "#9d6c42" },
+    "hair_ginger": { "shadow": "#873a26", "base": "#c9652f", "light": "#ee9d55" },
+    "hair_blonde": { "shadow": "#ad8848", "base": "#e2bf6c", "light": "#f7e2a4" },
+    "cloud":       { "shadow": "#c6d2ec", "base": "#f2f4fa", "light": "#ffffff" }
+  },
+  "swatches": {
+    "ink": "#241c28",
+    "ink_soft": "#43354a",
+    "foam": "#f0f8f8",
+    "sun": "#fff1c2",
+    "star": "#f7f0da"
+  }
+}

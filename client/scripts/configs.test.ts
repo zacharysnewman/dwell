@@ -13,7 +13,7 @@ import { parseScenarios, scenarioUrl } from './scenarios.ts';
 const raster = { name: 'raster', renderer: 'raster' };
 
 describe('bench --compare configurations', () => {
-  it('parses the checked-in file: raster runs today, the march entries wait', () => {
+  it('parses the checked-in file: raster (and the painterly textures) run today, the march entries wait', () => {
     const file = parseConfigs(
       JSON.parse(
         readFileSync(new URL('../bench/configs.json', import.meta.url), 'utf8'),
@@ -21,7 +21,7 @@ describe('bench --compare configurations', () => {
     );
     expect(file.baseline).toBe('raster');
     const { run, skipped } = partition(file.configs, DEFAULT_SUPPORT);
-    expect(run.map((c) => c.name)).toEqual(['raster', 'raster-half']);
+    expect(run.map((c) => c.name)).toEqual(['raster', 'painterly', 'raster-half']);
     expect(skipped.map((s) => s.name)).toEqual([
       'march',
       'march-nobeam',

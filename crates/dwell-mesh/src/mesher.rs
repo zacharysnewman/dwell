@@ -475,6 +475,40 @@ fn surface(style: &MaterialStyle, axis: usize, sign: i32) -> (u32, TileRect) {
     }
 }
 
+/// Merge-mask keys: the state + 1 in the low bits, the side rule + 1 (0: none) above them.
+const RULE_SHIFT: u32 = 17;
+const STATE_MASK: i32 = (1 << RULE_SHIFT) - 1;
+
+/// The side-tile rule (an index into `k.style.side_under`, block data `sideUnder`) that side face
+/// `face` of the cell at (x, y, z) takes: the first naming the block in the cell above, unless that
+/// block shows a full side on the same face itself (a full grass cube already hangs its own
+/// skirt). The padded block faces up, so on face B "above" is toward its sky too.
+fn side_rule(cells: &Cells<'_>, k: &Kind, x: i32, y: i32, z: i32, face: usize) -> Option<usize> {
+    let side = SIDE_OF_TAG.get(face).copied().unwrap_or(-1);
+    if k.style.side_under.is_empty() || side < 0 || y + 1 > N {
+        return None;
+    }
+    let above = cells.kind(x, y + 1, z);
+    let rule = k
+        .style
+        .side_under
+        .iter()
+        .position(|r| r.above == above.style.block)?;
+    let full_side = above
+        .def
+        .is_some_and(|d| !d.inverted && d.sides[side as usize] == [4; 3]);
+    (!full_side).then_some(rule)
+}
+
+/// The vertex colour and tile of side face `face` under `rule` (`side_rule`), or as `surface`.
+fn side_surface(style: &MaterialStyle, face: usize, rule: Option<usize>) -> (u32, TileRect) {
+    let (axis, sign) = FACES[face];
+    match rule.and_then(|i| style.side_under.get(i)) {
+        Some(r) => (0xffffff, tile_rect(r.side)),
+        None => surface(style, axis, sign),
+    }
+}
+
 /// A ladder's plate: one quad against the back of its cell.
 fn ladder_face(b: &mut Builder, style: &MaterialStyle, face: usize, x: i32, y: i32, z: i32) {
     let (axis, sign) = FACES[face];
@@ -741,7 +775,11 @@ fn shaped_voxel(
         } else {
             -1
         };
-        let (color, tile) = surface(&k.style, axis, sign);
+        let (color, tile) = if tag < 6 && axis != 1 {
+            side_surface(&k.style, tag, side_rule(cells, k, x, y, z, tag))
+        } else {
+            surface(&k.style, axis, sign)
+        };
         let at = [f64::from(x), f64::from(y), f64::from(z)];
         b.polygon(&pts, at, normal, tint, color, &tile, side_top_of(def, tag));
     }
@@ -922,7 +960,8 @@ fn mesh_cells(kinds: &Kinds, padded: &[u16], origin: [i32; 3]) -> ChunkMeshes {
                     if hidden(&k, &kn, m, cells.state(nx, ny, nz), face) {
                         continue;
                     }
-                    mask[i as usize + n * j as usize] = i32::from(m) + 1;
+                    let rule = side_rule(&cells, &k, cx, cy, cz, face).map_or(0, |r| r as i32 + 1);
+                    mask[i as usize + n * j as usize] = (i32::from(m) + 1) | (rule << RULE_SHIFT);
                     any = true;
                 }
             }
@@ -954,13 +993,14 @@ fn mesh_cells(kinds: &Kinds, padded: &[u16], origin: [i32; 3]) -> ChunkMeshes {
                     for dv in 0..h {
                         mask[i + n * (j + dv)..i + w + n * (j + dv)].fill(0);
                     }
-                    let m = (key - 1) as StateId;
+                    let m = ((key & STATE_MASK) - 1) as StateId;
+                    let rule = (key >> RULE_SHIFT).checked_sub(1).map(|r| r as usize);
                     let style = kinds.of(m).style;
                     let mut plane = f64::from(if sign > 0 { d + 1 } else { d });
                     if style.look == Look::Fluid && face == 2 {
                         plane = fluid_top(d, &style);
                     }
-                    let (color, tile) = surface(&style, axis, sign);
+                    let (color, tile) = side_surface(&style, face, rule);
                     let see_through = style.render == RenderMode::Translucent;
                     let target = match style.render {
                         RenderMode::Opaque => &mut opaque,

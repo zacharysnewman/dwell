@@ -42,7 +42,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 21 — Tiered physics | ⏸ Waits for Phases 6–19 (2026-10-05; the baseline rework, 14–19, added 2026-10-12) |
 | 22 — Sleep / re-bake | ⏸ Waits for Phases 6–19 (2026-10-05; the baseline rework, 14–19, added 2026-10-12) |
 | 23 — Dedicated servers & packaging | ⏳ Not started |
-| 25 — Ray-marched renderer comparison | 🚧 In progress — A0 (ADR 0029), A1 (the shared frame and GPU timing; the owner approved its image differences, 2026-10-14, and the e2e suite passes on CI), A2 (the renderer seam, compare mode, bench `--compare`; its exit check done) and A3a (the CPU core: `crates/dwell-march`) built; A3b (the GPU march behind the seam, checked against the reference per pixel; its CI run outstanding) built; A4a (speed: level-rows skip, vectorised march, shade pass, the cone-LOD ring fix) and A5a (render scales 0.5/0.75 with FSR 1 or a bilateral upscale) built; A4b (the beam prepass, and the temporal start with the eye still) built: at 720p on an M1, 8.5 ms at the spawn and 17.5 ms flying (A4a: 21 and 24) against raster's whole GPU frame of 3.6–5.0 ms, and 2.2–6.6 ms at half scale with FSR 1; A4c (the optimization survey; the temporal start while the eye moves, kept unchanged frames, the column search's slope rule) built: marching every frame, 17–31 % off A4b at the spawn, the horizon, looking down, flying high and far away (Chrome, M1, measured under load), and a still, unchanged view costs only its shading (about 1 ms); A4c continues (the per-step cost at the LOD levels); next: A3c (overlays over marched terrain, LOD column heights in the bricks, raster ids); outstanding: A4's phone report; A2's edit-to-visible latency and the bench's id/depth agreement (moved to A3); local builds only until the owner's decision (A7); `package.json` raised to 0.11.21, a patch release of the 0.11 line |
+| 25 — Ray-marched renderer comparison | 🚧 In progress — A0 (ADR 0029), A1 (the shared frame and GPU timing; the owner approved its image differences, 2026-10-14, and the e2e suite passes on CI), A2 (the renderer seam, compare mode, bench `--compare`; its exit check done) and A3a (the CPU core: `crates/dwell-march`) built; A3b (the GPU march behind the seam, checked against the reference per pixel; its CI run outstanding) built; A4a (speed: level-rows skip, vectorised march, shade pass, the cone-LOD ring fix) and A5a (render scales 0.5/0.75 with FSR 1 or a bilateral upscale) built; A4b (the beam prepass, and the temporal start with the eye still) built: at 720p on an M1, 8.5 ms at the spawn and 17.5 ms flying (A4a: 21 and 24) against raster's whole GPU frame of 3.6–5.0 ms, and 2.2–6.6 ms at half scale with FSR 1; A4c (the optimization survey; the temporal start while the eye moves, kept unchanged frames, the column search's slope rule) built: marching every frame, 17–31 % off A4b at the spawn, the horizon, looking down, flying high and far away (Chrome, M1, measured under load), and a still, unchanged view costs only its shading (about 1 ms); A4c's three far-case picks (the per-step cost at the LOD levels, a second beam, half-rate marching) built, measured and not kept, none beating the march as it is; the cone LOD's pixel error at 8 px (−24 % flying high) left to the owner as a change of look; next: A3c (overlays over marched terrain, LOD column heights in the bricks, raster ids); outstanding: A4's phone report; A2's edit-to-visible latency and the bench's id/depth agreement (moved to A3); local builds only until the owner's decision (A7); `package.json` raised to 0.11.21, a patch release of the 0.11 line |
 | 26 — Water and fluid looks | 🚧 In progress — W1a (fluid data, the eye-under-fluid uniform) done; W2 built (it is Phase 25's A1, built once there; the owner approved its image differences, 2026-10-14); W1b (the water shader, the underwater fog stub, the water quality setting) built and checked in Chrome on an M1, outstanding: the owner's look; W3 (refraction, depth absorption, shoreline foam, sparkle, and caustics brought forward from W4, above and under the surface) built and checked in Chrome on an M1, outstanding: the owner's look and an unloaded per-tier cost measurement; W5a (reflections of land by screen-space reflection, and of the clouds, brought forward from W5 at the owner's report) built and checked in Chrome on an M1, outstanding: the owner's look and an unloaded cost measurement; water cost work (WATER_RENDERING.md §8, "Cost"): cheaper hashing, noise and caustic tiles, frame pacing against the stalls, Medium the desktop default — Medium +1.6 ms and High +1.7 ms over Low on the shore view before the reflections, which now add the most (outstanding: W5a's reflection cost against the 2/3 ms targets); next: W4; W6 only if marching is kept at A7; `package.json` raised to 0.12.1, a patch release of the 0.11 line |
 | 27 — Structure sandbox | 🚧 In progress — S0 (ADR 0031), S1 (the structure format, `gen.mjs`, the Rust loader, the playground converted), S2a (floor block, sandbox world type), S2b (the structures store: save, load through the region paste, export and import) and S3a (region edits, the region tools) done, S2a's e2e check outstanding; `package.json` raised to 0.11.0, the new compatibility line (S2a's registry change; the owner's decision, 2026-10-14); next: S3b (anchor, touch) and the S3 sandbox e2e outstanding; S4 (worldgen placement) deferred; `package.json` raised to 0.11.11, a patch release of the 0.11 line |
 | 28 — Sound effects | 🚧 In progress — F0–F6 built and tested (procedural Web Audio, no library; sound data and generator, the registry's `sound` field, Rust sound events, synth, variation, mixer, spatial playback, menu and game-action sounds, volume sliders, offline WAV renders); outstanding: the owner listens to the WAV renders and approves them, and answers `AUDIO.md` §9; `package.json` raised to 0.11.12, a patch release of the 0.11 line |
@@ -56,6 +56,8 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 36 — Block registry sync | 🚧 In progress — built and tested natively and in Vitest (ADR 0038, `BLOCK_REGISTRY.md` §8): the server's registry sent at join (`BlockRegistry`, protocol 14), ids mapped at the session boundary, the join prompt (no refusals), the fallback look, server-registered blocks, placeholders for unknown states in world files; outstanding: CI, the e2e suite (WebRTC join fixed: parts fit a WebRTC message, larger messages are fragmented), the owner's review of the prompt; ships in the next minor (0.14.0), coordinated with Phase 16's protocol bump |
 | 37 — Sprint slide (stacks on 35) | 🚧 In progress — built and tested natively (controller, predictor, netcode, protocol 15 vectors): crouch while sprinting slides on, crouched, with friction and slopes, limited steering, a jump out and a cooldown (`PLAYER_CONTROLLER.md` §6.9), checked in Chrome (the `sprint-slide` bench); outstanding: CI (the WASM divergence run and the e2e suite), the owner's review; a protocol change (15): the owner raises `package.json` to a new minor |
 | 38 — The spyglass | 🚧 In progress — built and tested natively, in Vitest and on a real GPU (ADR 0039, `SPYGLASS.md`): a toggle key (`` ` ``) and wheel steps from `shared/look/spyglass.json` (generator, CI stale check), the zoomed FOV for the raster renderer, the marcher (its FOV bug fixed) and the LOD, which refines only inside the narrow view (bounded by the detail boost), the vignette, reduced motion, the `spyglass-far` bench scenario; outstanding: CI and the owner's review in a browser; a patch release |
+| 39 — Painterly textures | 🚧 In progress — built and tested natively, in Node and on a real GPU (ADR 0040, `ART_DIRECTION.md`, `PAINTERLY_TEXTURES.md`): the storybook palette and materials as data (`shared/textures`), one stroke generator baked into the atlas (CI stale check, a material added by data alone), `?textures=painterly` on the page and in the meshing workers (the classic set stays the default), the Painterly Texture Lab, the bench's `painterly` configuration (same frame cost); follow-ups: grass_side's skirt made continuous across the tile (owner's review); the skirt on dirt sides under grass (`sideUnder` block data, the `dirtSkirt` tile, in both sets; owner, 2026-10-20); outstanding: CI and the owner's review of the look, then flipping the default; a patch release |
+| 40 — Characters and creatures (design and concept) | 🚧 In progress — C0 built and tested (ADR 0041, `CHARACTERS.md`): the rig vocabulary and validator (`shared/characters/rig.mjs`), the data (the player with three looks, the wolf, the deer; accessories, the block and brush items, clips), the generator and its tests, the Character Lab prototype checked in Chrome and published; stacked on Phase 39's palette and materials; C0b (the owner's first review, 2026-10-20) built and tested: hair composes with hats (`with`), the wolf's and deer's tails are chains checked joined through every clip, the player's clips for every controller state (sprint, crouch, crouch-walk, slide, jump, fall, land, climb, swim, fly; the arms' sprint, slide, jump, fall, land) and the Lab's transitions player; outstanding: the owner's review of the fixes and the rest of `CHARACTERS.md` §10, CI; C1–C3 (in the game) not started; a patch release |
 | 41 — Half-height grid (½ m cells, stored cardinal ramps; branch `claude/half-height-voxels` only) | 🚧 In progress — H0–H4 built and verified locally: one named cell height (H1), the stored cardinal ramps (H2), the generation rule (H3), and the switch to ½ m cells (H4: no block adaptive; face B's LOD mirror and the LOD id fixed). H6: `main` merged in (Phase 16's world, registry sync, sprint slide, spyglass, brushes and predicted edits, steep v16 hills as whole-metre steps with 45° ramps; protocol and generator 1016), native, WASI, clippy and Vitest green locally. Outstanding: CI; the ray marcher, brushes, the fluid surface drop, the vertical view radius and the build sphere left in cells (deviations, for the playtest). Next: H5, the owner's playtest on a dev build. A playtest branch, not for `main` until the owner keeps it; `package.json` not raised on the branch |
 
 Phase numbering: Phase 4 was inserted on 2026-09-29 for the planet-scale world (ADRs 0011, 0012);
@@ -2749,7 +2751,7 @@ the per-pixel test outstanding. A4a (the march's speed: each level's occupied ro
 vectorised inner loop, shading in its own pass; the cone-LOD switch rule that removes the owner's
 concentric rings) and A5a (render scales with FSR 1 or a bilateral upscale) built, A4's desktop
 exit check done, its phone report outstanding; A4b (the beam prepass, the temporal start with the
-eye still) built and measured on an M1; A4c (survey, the temporal start while moving, kept frames, the column search's slope rule) built and measured on an M1 under load, continuing with the per-step cost at the LOD levels; next: A3c (overlays, LOD column heights, raster ids). Needs Phase 24 only. The marcher and compare mode are in local builds only (dev server, local preview, bench)
+eye still) built and measured on an M1; A4c (survey, the temporal start while moving, kept frames, the column search's slope rule) built and measured on an M1 under load; its three far-case picks measured and not kept; next: A3c (overlays, LOD column heights, raster ids). Needs Phase 24 only. The marcher and compare mode are in local builds only (dev server, local preview, bench)
 until A7; deployed builds keep the mesher throughout and stay shippable after every step. Phase 20
 waits for A7; Phase 26 shares A1 (its W2). No public API change, so no new compatibility line.
 
@@ -2839,8 +2841,11 @@ Deliverables
   - **Switches and configurations:** `?marchmoving=0`, `?marchreuse=0`, `?marchsteep=0`; the bench's
     `march-a4b`, `march-noreuse`, `march-nosteep`; scenarios `far-view` and `look-around`.
   - Tried and dropped: the if-if loop, other beam-walk orders, parallel column loads.
-- [ ] **A4c, continued** — The per-step cost at the LOD levels (the column grid's layout, the
-  lookup chain), and the rest of the survey's candidates.
+- [x] **A4c, the far cases** — The owner's three picks for flying high and seeing far, each built
+  and measured, none kept (design doc "A4c, the far cases"): the per-step cost at the LOD levels
+  (the slope rule for empty bricks, skipping empty 2 × 2 × 2 blocks), a second beam per sub-tile,
+  half-rate marching for distant tiles. Found instead: the cone LOD's pixel error at 8 px takes
+  24 % off 540 m up, a change of look left to the owner.
 - [x] **A5a** — Render scales 0.5 and 0.75 for the marcher with FSR 1 (EASU + RCAS in WGSL) or a
   depth- and normal-aware bilateral upscale (`render/march/upscale.rs`), `?scale=` with
   `?upscaler=fsr1|bilateral`, `__dwell.upscalers()`, the bench's `march-half-fsr`, `march-075-fsr`
@@ -3792,6 +3797,155 @@ Exit criteria
 - [x] Raster and march compared zoomed on a real GPU (`npm run bench -- spyglass-far --compare
   --configs march`, 60 fps raster, 37 ms GPU march at 8×).
 - [ ] CI green; the owner's review in a browser.
+
+## Phase 39 — Painterly Textures
+
+**Status:** Built and tested natively, in Node and Vitest, and in Chrome on the GPU (2026-10-20),
+behind `?textures=painterly`; the classic set stays the default. Outstanding: CI, the owner's
+review of the look (then flipping the default, one line). No change to saves, the protocol or
+terrain: a patch release.
+Follow-up (owner's review, 2026-10-20): grass_side's hanging skirt covered only the left ~60 % of the
+tile (a thin `band` gave the placement grid more columns than strokes), so tiled blocks read as
+separate goatees. Fixed in `paint.mjs` (no more columns than strokes) and the data (drips rooted
+inside the turf band, a firmer band edge), with tests that the skirt is continuous, uneven and wraps;
+no other material changed.
+Follow-up (owner, 2026-10-20: "I want to see the grass skirt fringe on dirt that's below sloped
+grass"): a dirt side face with grass directly above (a slope's low side at a step or cliff) takes the
+new `dirtSkirt` tile, the grass side's skirt on soil (`like: grass_side`; classic: the grass side's
+painter). Built as data: `sideUnder` on a block (`shared/blocks/dwell.json`, validated by
+`shared/blocks/faces.mjs` with `faces.test.mjs` in CI), carried in the registry rows and as look tag
+`0x8b` in the registry payload (old clients ignore look tags), applied by the chunk mesher, skipped
+where the grass shows a full side of its own. Mesher tests red → green; checked in Chrome on the GPU
+in both sets. Deviation: the classic set changes too (the same rule picks the classic tile); the LOD
+keeps flat dirt side colours. Not in the ray-marched renderer (Phase 25, local builds only).
+
+Owner (2026-10-20, the art brief): *procedural painterly storybook textures for everything* —
+blocks, plants, water, sky accents and characters — from one data-driven generator of brush
+strokes, painted highlights and clean gradients, sharing one palette, brush vocabulary and lighting
+with the character design (Phase 40, ADR 0041). The answers and the design are in
+[`ART_DIRECTION.md`](./ART_DIRECTION.md), [`PAINTERLY_TEXTURES.md`](./PAINTERLY_TEXTURES.md) and
+[ADR 0040](./adr/0040-painterly-textures.md).
+
+Deliverables
+- [x] `docs/ART_DIRECTION.md` (the style, the palette, the brush vocabulary, how materials read, the
+  lighting assumptions), `docs/PAINTERLY_TEXTURES.md`, ADR 0040, ARCHITECTURE.md (`dwell-mesh`,
+  `/shared/textures`).
+- [x] `shared/textures/palette.json` (named three-stop ramps and swatches) and `materials.json`
+  (11 block tiles, 21 character materials, a sky accent; `like` templates, `over` stacking).
+- [x] `shared/textures/paint.mjs` (the generator: fill, gradient, dab, streak, blade, slab, ring,
+  edgeLight; jittered-grid or exact placement; validation naming the bad entry) and `gen.mjs`
+  (→ `dwell-mesh` `painterly.rgba` and `painterly.gen.rs`, and the editor page's embedded block);
+  `gen.test.mjs` (a material added by data alone, every bad case, the bake and the page current);
+  CI stale check and tests.
+- [x] `dwell-mesh` `TextureSet` (classic default, painterly): one texel lookup for the atlas,
+  cutout detection, the averages and LOD colours (cached per set) and the hotbar swatches; tests.
+- [x] `?textures=painterly` on the page (`Client.create`) and in the meshing workers (their init
+  message, `jobWorker.ts`), so the LOD colours match the atlas.
+- [x] The Painterly Texture Lab (`docs/prototypes/painterly-texture-lab.html`, published).
+- [x] The bench's `painterly` configuration (`--compare --configs painterly`).
+- [x] Screenshots classic against painterly on a real GPU: ground, blocks close up, a grassy
+  hillside, water, from 600 m.
+- [ ] Later (not this phase): the sky drawing `cloud_puff`; the fluids' colours from the palette;
+  the characters in game (Phase 40); a 64-texel atlas for finer brushes.
+
+Exit criteria
+- [x] A material added by data alone is painted, mapped to a tile and read by name
+  (`gen.test.mjs`).
+- [x] A bad entry fails with a message naming it (`gen.test.mjs`).
+- [x] The default look is unchanged: the classic atlas is built as before and the default set is
+  classic (`the_query_picks_the_set_and_the_default_is_classic`,
+  `the_painterly_atlas_differs_from_the_classic_only_in_painted_tiles`).
+- [x] The frame cost is unchanged (the same atlas, meshes and shaders; `npm run bench --
+  --compare --configs painterly`, PAINTERLY_TEXTURES.md §7).
+- [ ] CI green; the owner's review of the look.
+
+## Phase 40 — Characters and Creatures
+
+**Status:** C0 (the design, data and prototype) built and tested (2026-10-20): `node --test
+shared/characters/gen.test.mjs` passes and the Character Lab was checked in Chrome. C0b (the
+owner's first review's fixes, 2026-10-20) built and tested, the Lab checked in Chrome and
+republished. Outstanding: the owner's review of the fixes and answers to the rest of
+`CHARACTERS.md` §10, CI. C1–C3 are not
+started: the owner asked for a design and concept only. Stacked on Phase 39 (the palette, materials
+and painter it shades with). No change to saves, the protocol or terrain: a patch release.
+
+Owner (2026-10-20): the character design concept, the player's first-person arms and hands holding
+the hotbar's block or the brush with break and place swings, the full body other players see, and
+a wolf and a deer in the same style, *"so we can get a cohesive style together"*; first person
+only; procedural from data, no modelling tool. The answers and the design are in
+[`CHARACTERS.md`](./CHARACTERS.md) and [ADR 0041](./adr/0041-characters.md).
+
+**C0 — design, data and prototype**
+
+Deliverables
+- [x] `docs/CHARACTERS.md` (art direction, the vocabulary, the data format, the first-person arms,
+  poses and clips, building it in, open questions) and ADR 0041; ARCHITECTURE.md §3 and §5.3.
+- [x] `shared/characters/rig.mjs`: the fixed vocabulary (part kinds, joints, easing, layers, spaces,
+  views, places, `$block`), validation with named errors (the rest pose on the ground at its
+  height), composing (sockets, slots, mirrors, accessories, hides, items), sampling and layering.
+- [x] `shared/characters/characters.json`: the `biped` and `quadruped` rigs; the player (wanderer,
+  ranger, tinker), the wolf, the deer (stag, doe); twelve accessories; the block and brush items;
+  clips (idle, walk, hold, break, place; the arms' idle, walk, break, place; the wolf's idle and
+  trot; the deer's idle, walk and graze). Materials named from `shared/textures`.
+- [x] `shared/characters/gen.mjs` (validates; writes the data, the style, `rig.mjs` and `paint.mjs`
+  into the page) and `gen.test.mjs` (26 bad entries, a part, an accessory and a variant added by data
+  alone, the arms sharing the body's parts, clips, feet on the ground); the CI step.
+- [x] `docs/prototypes/character-lab.html`: the player, first person, the wolf, the deer and a group
+  to scale; orbit and turntable; playback and swings; looks, accessories, slots, held items; live part
+  editing; validation; copy the JSON back. Screenshots in the session's scratchpad.
+- [x] Published (https://claude.ai/artifact/YAieiGfJnp5f2FnoR6wQWB, listed in `docs/prototypes/README.md`).
+
+Exit criteria
+- [x] A part, an accessory and a variant added by data alone are composed and worn
+  (`gen.test.mjs`).
+- [x] A bad entry fails with its path named (`gen.test.mjs`, 26 cases).
+- [x] The first-person arms draw every body part on the arm chain (`gen.test.mjs`) and are checked in
+  the Lab with a block and the brush.
+- [ ] The owner's review of the look, and answers to `CHARACTERS.md` §10.
+
+**C0b — the owner's first review (2026-10-20)**
+
+Owner: the fringe floats under a hat; the wolf's last tail segments are turned and apart; new player
+animations for the controller's states, with first-person versions where they matter and a way to
+preview transitions. (Later the same day: the deer's tail isn't connected either.)
+
+Deliverables
+- [x] Hair and hats compose as data: a part's `with` (it hangs from an earlier part; hiding that hides
+  it), the fringe hanging from the top hair, the wide-brimmed hat's own fringe and side tufts tucked
+  under the brim in the wearer's hair slot (`CHARACTERS.md` §4.1).
+- [x] Chains: a character's `chains` (`{ from, parts }`), `chainSegments` and `chainProblem` in
+  `rig.mjs` (segments joined within 3 cm, bending at most 60°, starting on their root part), checked
+  on the rest pose by the validator; the wolf's tail rebuilt end to end (each tail bone's pivot at the
+  end of the segment before) and its trot tail raised with the brush following; the deer's tail moved
+  onto the rump and its flicks turned back (§4.2).
+- [x] Clips for every controller state: `biped_sprint`, `biped_crouch`, `biped_crouch_walk`,
+  `biped_slide`, `biped_jump`, `biped_fall`, `biped_land`, `biped_climb`, `biped_swim`, `biped_fly`;
+  `fp_sprint`, `fp_slide`, `fp_jump`, `fp_fall`, `fp_land`; clip `grounded` and `blend`, and
+  `crossfade` for switching base clips; the state → role table (§6).
+- [x] The Lab: every role in the clip picker (one-shots replay), the transitions player (presets and a
+  sequence built clip by clip, cross-faded by `blend`, the jump's arc), `lab.cam` and `lab.sequence`
+  hooks; republished to the same link. Before/after screenshots in the session's scratchpad
+  (`art/characters-v2/`).
+
+Exit criteria
+- [x] No part is drawn while the part it hangs from is hidden, in every look; every hat hiding the top
+  hair hides the fringe (`gen.test.mjs`; red on the old data: the fringe had no `with`).
+- [x] Every quadruped's tail chain is joined and smooth at rest and at 25 samples of every clip, every
+  look (`gen.test.mjs`; red on the old data: the wolf's `tail_base` started 0.158 m from its pivot, the
+  deer's `tail` 0.070 m off the rump).
+- [x] The player has a body clip for every controller state and arms clips for sprint, slide, jump,
+  fall and land; grounded clips keep the feet on the ground (`gen.test.mjs`).
+- [ ] The owner's review of the fixes.
+
+**C1 — characters in the renderer (later)**: a Rust loader and mesh builder from the same data
+(`characters.gen.rs`), the character shader and outline, remote players drawn as the full body
+(replacing the capsule), the arms pass with its own FOV (`CHARACTERS.md` §9.1–9.2).
+
+**C2 — looks and poses over the network (later; a new compatibility line)**: the look at join, the
+held item, swings without an edit (`CHARACTERS.md` §9.3–9.4).
+
+**C3 — creatures in the world (later)**: spawning, AI, bodies and netcode for the wolf and the deer
+(`CHARACTERS.md` §9.5).
 
 ---
 

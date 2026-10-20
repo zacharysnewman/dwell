@@ -20,8 +20,8 @@ use dwell_protocol::bytes::{ByteReader, ByteWriter};
 
 use crate::{
     AIR, Cross, FLUIDS, Facing, Fade, Grid, Medium, NewBlock, Origin, RenderMode, SHAPES, STATES,
-    ShapeInfo, StateId, StateInfo, Support, Textures, VoxelShape, Wind, blocks, build_state, info,
-    intern, register, shape::faces_of, state_count,
+    ShapeInfo, SideUnder, StateId, StateInfo, Support, Textures, VoxelShape, Wind, blocks,
+    build_state, info, intern, register, shape::faces_of, state_count,
 };
 
 /// The payload format this build reads and writes.
@@ -72,6 +72,8 @@ pub mod tag {
     pub const WIND: u8 = 0x89;
     /// `f32` start, end (m).
     pub const FADE: u8 = 0x8a;
+    /// `u8` count, each: `str` block id above, `str` side tile (`StateInfo::side_under`).
+    pub const SIDE_UNDER: u8 = 0x8b;
 }
 
 /// Rule flag bits (tag `FLAGS`).
@@ -296,6 +298,15 @@ pub fn state_fields(s: &StateInfo) -> Fields {
         out.push(field(tag::FADE, |w| {
             w.f32(f.start);
             w.f32(f.end);
+        }));
+    }
+    if !s.side_under.is_empty() {
+        out.push(field(tag::SIDE_UNDER, |w| {
+            w.u8(s.side_under.len() as u8);
+            for r in s.side_under {
+                w.str(r.above);
+                w.str(r.side);
+            }
         }));
     }
     out.sort_by_key(|(t, _)| *t);
@@ -577,6 +588,7 @@ fn default_row(name: &str) -> StateInfo {
         color: 0,
         opacity: 1.0,
         textures: None,
+        side_under: &[],
         grid: None,
         render: RenderMode::Opaque,
         cross: None,
@@ -718,6 +730,7 @@ fn apply_look(fields: &Fields, fluids: &[String], row: &mut StateInfo) {
     row.cross = None;
     row.wind = None;
     row.fade = None;
+    row.side_under = &[];
     row.render = RenderMode::Opaque;
     for (t, bytes) in fields {
         let mut r = ByteReader::new(bytes);
@@ -786,6 +799,18 @@ fn apply_look(fields: &Fields, fluids: &[String], row: &mut StateInfo) {
                     end: r.f32(),
                 };
                 row.fade = r.ok().then_some(f);
+            }
+            tag::SIDE_UNDER => {
+                let n = r.u8();
+                let rules: Vec<SideUnder> = (0..n)
+                    .map(|_| SideUnder {
+                        above: intern(&r.str(MAX_STR)),
+                        side: intern(&r.str(MAX_STR)),
+                    })
+                    .collect();
+                if r.ok() {
+                    row.side_under = Box::leak(rules.into_boxed_slice());
+                }
             }
             _ => {}
         }

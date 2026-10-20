@@ -5,6 +5,12 @@
   "configs": [
     { "name": "raster", "notes": "The mesher at full resolution.", "renderer": "raster" },
     {
+      "name": "painterly",
+      "notes": "The mesher with the painterly texture set (docs/PAINTERLY_TEXTURES.md): the same atlas size, meshes and shaders, other texels; the frame cost should match raster's.",
+      "renderer": "raster",
+      "params": { "textures": "painterly" }
+    },
+    {
       "name": "raster-half",
       "notes": "The mesher at half resolution, stretched by the browser (today's ?scale=).",
       "renderer": "raster",
