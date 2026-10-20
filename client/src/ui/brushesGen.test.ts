@@ -10,6 +10,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { BRUSH_PRESETS, BRUSH_SIZES } from './brushes.gen';
 
 const brushesDir = fileURLToPath(new URL('../../../shared/brushes/', import.meta.url));
+const sharedDir = fileURLToPath(new URL('../../../shared/', import.meta.url));
 const real = JSON.parse(readFileSync(join(brushesDir, 'brushes.json'), 'utf8')) as {
   presets: object[];
 };
@@ -28,6 +29,17 @@ function generate(data: object): {
   mkdirSync(join(root, 'client/src/ui'), { recursive: true });
   mkdirSync(join(root, 'crates/dwell-world/src'), { recursive: true });
   copyFileSync(join(brushesDir, 'gen.mjs'), join(here, 'gen.mjs'));
+  // What presets name: the block registry's vectors and the structures, with their format's rules.
+  mkdirSync(join(root, 'shared/blocks'), { recursive: true });
+  mkdirSync(join(root, 'shared/structures'), { recursive: true });
+  copyFileSync(join(sharedDir, 'blocks/vectors.txt'), join(root, 'shared/blocks/vectors.txt'));
+  copyFileSync(
+    join(sharedDir, 'structures/format.mjs'),
+    join(root, 'shared/structures/format.mjs'),
+  );
+  for (const f of ['proto_tree.json', 'proto_rock.json']) {
+    copyFileSync(join(sharedDir, 'structures', f), join(root, 'shared/structures', f));
+  }
   writeFileSync(join(here, 'brushes.json'), JSON.stringify(data));
   const r = spawnSync(process.execPath, [join(here, 'gen.mjs')], { encoding: 'utf8' });
   const read = (p: string): string => {
@@ -88,6 +100,31 @@ describe('brush presets (shared/brushes/gen.mjs)', () => {
     expect(out.ts).toContain("name: 'tall_ellipsoid'");
   }, 20_000);
 
+  it('a stencil and a tree name their structures and blocks', () => {
+    const stencil = {
+      name: 'rocks',
+      label: 'Rocks',
+      brush: 'stencil',
+      performer: 'stamp',
+      size: 1,
+      params: { structures: ['dwell:proto_rock', 'dwell:proto_tree'], mask: 'air' },
+    };
+    const tree = {
+      name: 'birch',
+      label: 'Birch',
+      brush: 'tree',
+      performer: 'stamp',
+      size: 2,
+      params: { wood: 'dwell:sand', leaves: 'dwell:grass', height: 12, branches: 0 },
+    };
+    const out = generate(base([ball, stencil, tree]));
+    expect(out.status, out.output).toBe(0);
+    expect(out.rust).toContain('structures: &["dwell:proto_rock", "dwell:proto_tree"]');
+    expect(out.rust).toContain('wood: "dwell:sand"');
+    expect(out.rust).toContain('mask: Mask::Air');
+    expect(out.rust).toContain('height: 12');
+  }, 20_000);
+
   it('fails a bad entry with a message naming it', () => {
     const cases: [object, RegExp][] = [
       [base([{ ...ball, brush: 'torus' }]), /presets\[0\] \(ball\): brush torus/],
@@ -105,6 +142,18 @@ describe('brush presets (shared/brushes/gen.mjs)', () => {
       [base([{ ...ball, params: { height: 3 } }]), /height is for cylinder/],
       [base([{ ...ball, brush: 'splatter', params: { density: 2 } }]), /density must be/],
       [base([{ ...ball, colour: 'red' }]), /unknown field colour/],
+      [base([{ ...ball, performer: 'stamp' }]), /stamp puts a brush's own blocks/],
+      [base([{ ...ball, brush: 'stencil', performer: 'stamp' }]), /a stencil needs structures/],
+      [
+        base([{ ...ball, brush: 'stencil', params: { structures: ['dwell:nope'] } }]),
+        /structures must be 1–16 structure names/,
+      ],
+      [
+        base([{ ...ball, brush: 'tree', params: { wood: 'dwell:nope' } }]),
+        /wood must be a block state/,
+      ],
+      [base([{ ...ball, params: { width: 2 } }]), /width is for ring/],
+      [base([{ ...ball, params: { mask: 'sometimes' } }]), /mask must be/],
       [
         { ...base([ball]), worldTypes: { moon: { brushes: true, reach: 128 } } },
         /moon: not a world type/,

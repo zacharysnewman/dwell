@@ -4,6 +4,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { stateId } from '../src/world/blocks';
 
 type Vec3 = [number, number, number];
+const EYE_HEIGHT = 1.62;
 const call = <T>(page: Page, expr: string): Promise<T> =>
   page.evaluate<T>(`(() => { const d = globalThis.__dwell; return d ? ${expr} : null; })()`);
 
@@ -20,12 +21,24 @@ test('the debug overlay copies the targeted block and its neighbours as JSON', a
   await call(page, 'd.look(0, -45)');
   await expect.poll(() => call(page, 'd.state()?.target ?? null')).not.toBeNull();
   await page.keyboard.press('Digit1');
-  expect(await call<boolean>(page, `d.edit('place')`)).toBe(true);
+  // The target before the edit: placing is predicted, so the next frame already aims at the block.
   const ground = await call<{ cell: Vec3 }>(page, 'd.state().target');
+  expect(await call<boolean>(page, `d.edit('place')`)).toBe(true);
   const placed: Vec3 = [ground.cell[0], ground.cell[1] + 1, ground.cell[2]];
   await expect
     .poll(() => call<number>(page, `d.voxel(${placed.join(',')})`))
     .toBe(stateId('dwell:stone'));
+  // Looked at, as the look straight on would now miss it: a lone natural block is a half pyramid,
+  // and the ground beside it rises to it (ADAPTIVE_BLOCKS.md), so the same look hits that ramp.
+  const feet = await call<Vec3>(page, 'd.state().feet');
+  const d: Vec3 = [
+    placed[0] + 0.5 - feet[0],
+    placed[1] + 0.25 - feet[1] - EYE_HEIGHT,
+    placed[2] + 0.5 - feet[2],
+  ];
+  const yaw = (Math.atan2(d[0], d[2]) * 180) / Math.PI;
+  const pitch = (Math.atan2(d[1], Math.hypot(d[0], d[2])) * 180) / Math.PI;
+  await call(page, `d.look(${String(yaw)}, ${String(pitch)})`);
   await expect
     .poll(async () => (await call<{ cell: Vec3 } | null>(page, 'd.state().target'))?.cell.join())
     .toBe(placed.join());

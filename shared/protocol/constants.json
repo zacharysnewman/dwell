@@ -1,12 +1,15 @@
 {
   "$comment": "Single source of truth for protocol constants (ARCHITECTURE.md §7.4, §8). Run `node shared/protocol/gen.mjs` after editing; CI fails if generated files are stale.",
-  "protocolVersion": 14,
+  "$protocolVersion": "On the half-height branch: 1000 + the version of main it last merged, so a dev build never connects to main's builds (HALF_HEIGHT_GRID.md §2).",
+  "protocolVersion": 1016,
   "simHz": 60,
   "snapshotHz": 20,
   "maxDatagramBytes": 1200,
   "maxReliableMessageBytes": 1048576,
+  "maxWebrtcMessageBytes": 65536,
+  "webrtcFragmentTag": 255,
   "chunkSize": 32,
-  "$cellHeight": "A cell is 1 m × cellHeight × 1 m (HALF_HEIGHT_GRID.md §2). The world's vertical values (midplaneY, worldBottomY, worldMaxY, seaLevel) are rows of cells; the generator adds metre twins (row × cellHeight). flipBand is metres. Changing cellHeight changes what every cell coordinate means: bump protocolVersion.",
+  "$cellHeight": "A cell is 1 m × cellHeight × 1 m (HALF_HEIGHT_GRID.md §2). The world's vertical values (midplaneY, coreLayers, seaLevel, flatTopY) are rows of cells; the generator adds metre twins (row × cellHeight). flipBand, islandRadius and worldRadius are metres. The bounds sphere is in cells (cell space), so it reaches half as far up and down in metres. Changing cellHeight changes what every cell coordinate means: bump protocolVersion.",
   "cellHeight": 0.5,
   "authDomainTag": "dwell-auth-v1",
   "maxInputsPerDatagram": 4,
@@ -18,18 +21,18 @@
     "predictProxyRadius": 16,
     "reachDistance": 5,
     "blockEditIntervalMs": 100,
-    "flightCeiling": 24000000,
     "flySpeedShift": 4,
-    "flySpeedMaxLevel": 39
+    "flySpeedMaxLevel": 20
   },
   "world": {
-    "midplaneY": -4096,
-    "worldBottomY": -20480,
-    "worldMaxY": 12288,
+    "midplaneY": 0,
+    "coreLayers": 20,
     "coreAnchorLayers": 8,
     "flipBand": 4,
-    "seaLevel": 0,
-    "worldRadius": 8192000,
+    "seaLevel": 64,
+    "islandRadius": 25000,
+    "flatTopY": 64,
+    "worldRadius": 50000,
     "positionFixedScale": 256,
     "viewRadiusChunks": 3,
     "renderRadiusChunks": 12,
@@ -40,9 +43,10 @@
     "autosaveSeconds": 30,
     "pos64Limit": 33554432
   },
+  "bounds": { "shape": "sphere", "center": [0, 0, 0], "radius": 50000 },
   "lod": {
     "sectionCells": 32,
-    "maxLevel": 19,
+    "maxLevel": 12,
     "indexLevel": 8,
     "pixelErrorDesktop": 4,
     "pixelErrorMobile": 8,
@@ -62,7 +66,8 @@
     "motdMaxBytes": 256,
     "rejectMessageMaxBytes": 256,
     "maxResyncChunks": 64,
-    "maxLodIndexEntries": 16384
+    "maxLodIndexEntries": 16384,
+    "maxEditAckRejected": 1024
   },
   "regionEdit": {
     "maxSide": 32,
@@ -104,7 +109,9 @@
     "LodRequest": 76,
     "ChunkRequest": 77,
     "HostStatus": 78,
-    "RegionEdit": 79
+    "RegionEdit": 79,
+    "BlockRegistry": 80,
+    "EditAck": 81
   },
   "rejectReasons": {
     "ProtocolVersion": 1,
@@ -162,6 +169,9 @@
     "swimming": 32,
     "flying": 64,
     "faceB": 128
+  },
+  "slideFlags": {
+    "active": 1
   },
   "welcomeFlags": {
     "flight": 1,

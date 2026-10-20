@@ -63,8 +63,8 @@ test('settings menu: fog sliders open from the corner and are kept', async ({ pa
     exposure: 1,
     audio: { master: 0.8, effects: 1, ui: 0.6 },
     clouds: 'high',
-    water: { quality: 'high' },
-    motion: { speedEffects: true, fovBoost: 1 },
+    water: { quality: 'medium' },
+    motion: { speedEffects: true, fovBoost: 1, plantSway: true },
     fovDeg: 75,
   });
 });

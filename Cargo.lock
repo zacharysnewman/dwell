@@ -605,6 +605,9 @@ checksum = "92773504d58c093f6de2459af4af33faa518c13451eb8f2b5698ed3d36e7c813"
 [[package]]
 name = "dwell-blocks"
 version = "0.0.0"
+dependencies = [
+ "dwell-protocol",
+]
 
 [[package]]
 name = "dwell-client"
@@ -649,6 +652,7 @@ version = "0.0.0"
 dependencies = [
  "dwell-blocks",
  "dwell-mesh",
+ "dwell-physics",
  "dwell-protocol",
  "dwell-world",
 ]
@@ -678,12 +682,14 @@ dependencies = [
  "dwell-look",
  "dwell-protocol",
  "dwell-world",
+ "dwell-worldgen",
 ]
 
 [[package]]
 name = "dwell-net"
 version = "0.0.0"
 dependencies = [
+ "dwell-protocol",
  "getrandom 0.3.4",
  "ring",
  "serde_json",

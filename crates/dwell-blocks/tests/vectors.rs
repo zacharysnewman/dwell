@@ -43,3 +43,38 @@ fn states_reference_valid_rows() {
         assert!(usize::from(shape.first_face + shape.face_count) <= blocks::SHAPE_FACES.len());
     }
 }
+
+/// The registry payload's golden vector (`shared/protocol/vectors.txt` `registry_payload`, written
+/// by the independent Python encoder): it decodes, re-encodes byte for byte, and maps.
+#[test]
+fn the_registry_payload_vector_decodes_and_maps() {
+    use blocks::sync::{Payload, definitions_hash, map};
+    let text = include_str!("../../../shared/protocol/vectors.txt");
+    let hex = text
+        .lines()
+        .find_map(|l| l.strip_prefix("registry_payload "))
+        .expect("registry_payload vector");
+    let bytes: Vec<u8> = (0..hex.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).expect("hex"))
+        .collect();
+    let p = Payload::decode(&bytes).expect("decodes");
+    assert_eq!(p.encode(), bytes);
+    let names: Vec<String> = p.states().map(|(_, n, _)| n).collect();
+    assert_eq!(
+        names,
+        ["dwell:air", "test:lamp[lit=false]", "test:lamp[lit=true]"]
+    );
+    let m = map(&p, definitions_hash(&bytes)).expect("maps");
+    assert_eq!(m.client(0), Some(blocks::AIR));
+    let lamp = blocks::info(m.client(2).expect("lamp"));
+    assert_eq!(lamp.name, "test:lamp[lit=true]");
+    assert_eq!(lamp.density_kg_m3, 1200.0);
+    assert_eq!(lamp.facing, blocks::Facing::East);
+    assert!(lamp.solid && lamp.placeable && !lamp.liquid);
+    assert_eq!(lamp.color, 0xffcc00);
+    // Its shape (bytes 01 02 03) is not this build's: a full cube, and the prompt says so.
+    assert_eq!(lamp.shape, blocks::VoxelShape::Full);
+    assert!(m.differences.added[1].fields[0].contains("full cube"));
+    assert!(m.differences.client_only.iter().any(|n| n == "dwell:stone"));
+}

@@ -1,8 +1,9 @@
 //! Dwell's ray-marched terrain, CPU core (docs/RAY_MARCHED_RENDERER.md; Phase 25, step A3a): the
 //! GPU data layout of the fixed-depth brickmap ([`layout`]), the builders that turn chunks and LOD
 //! sections into it ([`build`]), the pool allocator ([`alloc`]), the CPU mirror of the buffers
-//! ([`scene`]) and the reference marcher ([`march`]) with its brute-force oracle ([`reference`])
-//! and steps-per-ray statistics ([`stats`]).
+//! ([`scene`]) and the reference marcher ([`march`]) with its brute-force oracle ([`reference`]),
+//! the beam prepass's conservative start distances ([`beam`]) and steps-per-ray statistics
+//! ([`stats`]).
 //!
 //! Pure data, no GPU, threads or I/O: it runs in the workers, natively and in tests, and builds
 //! for `wasm32-unknown-unknown`. What counts as occupied comes from the block registry's data
@@ -12,6 +13,7 @@
 //! [`march`] over the words [`scene::Scene::gpu`] returns.
 
 pub mod alloc;
+pub mod beam;
 pub mod build;
 pub mod layout;
 pub mod march;
@@ -20,6 +22,7 @@ pub mod scene;
 pub mod state;
 pub mod stats;
 
+pub use beam::{BEAM_TILE, Beam};
 pub use build::{BuildOptions, NodeBuild, Packing, build_chunk, build_node, build_section};
 pub use march::{
     BAND_END_NONE, Hit, March, MarchParams, Outcome, Ray, band_end, band_reach, face_up, level_for,

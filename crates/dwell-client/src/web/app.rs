@@ -38,6 +38,35 @@ type Events = Rc<RefCell<VecDeque<TransportEvent>>>;
 /// The device key's signature of the join transcript, once the shell's promise settles.
 type SignatureSlot = Rc<RefCell<Option<Result<[u8; 64], String>>>>;
 
+/// The join prompt's lists (ADR 0038): `{ hash, different, added, clientOnly }`, each item of the
+/// first two `{ name, fields }`.
+fn registry_object(d: &dwell_blocks::sync::Differences, hash: u64) -> Object {
+    let items = |list: &[dwell_blocks::sync::Difference]| {
+        let a = Array::new();
+        for item in list {
+            let o = Object::new();
+            set(&o, "name", item.name.as_str());
+            let fields = Array::new();
+            for f in &item.fields {
+                fields.push(&JsValue::from(f.as_str()));
+            }
+            set(&o, "fields", fields);
+            a.push(&o);
+        }
+        a
+    };
+    let r = Object::new();
+    set(&r, "hash", format!("{hash:016x}"));
+    set(&r, "different", items(&d.different));
+    set(&r, "added", items(&d.added));
+    let only = Array::new();
+    for n in &d.client_only {
+        only.push(&JsValue::from(n.as_str()));
+    }
+    set(&r, "clientOnly", only);
+    r
+}
+
 fn set(o: &Object, k: &str, v: impl Into<JsValue>) {
     let _ = Reflect::set(o, &k.into(), &v.into());
 }
@@ -195,6 +224,8 @@ struct Options {
     /// The marcher's render scale and upscaler (`marchScale`, `upscaler`: local builds).
     march_scale: f32,
     upscaler: crate::render::march::upscale::Upscaler,
+    /// The page's query, for the march's dev switches (`MarchSettings::apply_query`).
+    search: String,
 }
 
 struct Inner {
@@ -211,6 +242,8 @@ struct Inner {
     link: Option<Link>,
     events: Events,
     session: Option<Session>,
+    /// A registry definitions hash the player said not to ask about for this server (ADR 0038).
+    trusted_registry: Option<u64>,
     netsim: Option<NetSim>,
     signature: SignatureSlot,
     game: Option<Game<Renderer>>,
@@ -224,6 +257,8 @@ struct Inner {
     menu_open: bool,
     /// The Field of view setting (degrees, vertical).
     fov_setting: f64,
+    /// The browser asks for reduced motion (the spyglass zooms at once).
+    reduced_motion: bool,
 }
 
 fn shell_event(kind: &str, value: impl Into<JsValue>) -> JsValue {
@@ -271,6 +306,7 @@ impl Client {
                 .as_string()
                 .and_then(|u| crate::render::march::upscale::Upscaler::parse(&u))
                 .unwrap_or_default(),
+            search: get("search").as_string().unwrap_or_default(),
         };
         let selection = options
             .renderer_switch
@@ -331,6 +367,7 @@ impl Client {
         renderer.select(selection);
         if options.renderer_switch {
             renderer.set_march_resolution(options.march_scale, options.upscaler);
+            renderer.set_march_query(&options.search);
         }
         let inner = Inner {
             _instance: instance,
@@ -345,6 +382,7 @@ impl Client {
             link: None,
             events: Rc::default(),
             session: None,
+            trusted_registry: None,
             netsim: None,
             signature: Rc::default(),
             game: None,
@@ -359,6 +397,7 @@ impl Client {
             motion: Default::default(),
             menu_open: false,
             fov_setting: dwell_lod::frustum::VERTICAL_FOV,
+            reduced_motion: false,
         };
         Ok(Client {
             inner: Rc::new(RefCell::new(inner)),
@@ -443,6 +482,7 @@ impl Client {
             &s.options.client_version,
             1000.0,
         );
+        session.trust_registry(s.trusted_registry);
         // The frame loop's clock (requestAnimationFrame's timestamps are performance.now()'s).
         session.start(perf_now());
         s.netsim = s.options.netsim.map(|c| NetSim {
@@ -466,6 +506,13 @@ impl Client {
         }
         if let (Some(game), Some(session)) = (&mut s.game, &mut s.session) {
             while let Some((m, bytes)) = session.next_game() {
+                // An edit ack names the session's numbers: the game's ids come from the session,
+                // in order with the modifications before it (edit prediction, §6.5).
+                if let dwell_protocol::Message::EditAck(a) = &m {
+                    let done = session.edit_results(a);
+                    game.on_edit_results(&done);
+                    continue;
+                }
                 game.on_game_message(m, bytes.len(), now_ms);
             }
             let stats = session.stats();
@@ -473,6 +520,7 @@ impl Client {
             game.motion_settings = s.motion;
             game.menu_open = s.menu_open;
             game.fov_setting = s.fov_setting;
+            game.reduced_motion = s.reduced_motion;
             let touch = s.touch_used.then_some(s.touch.state);
             let perf = web_sys::window().and_then(|w| w.performance());
             let mut clock = || perf.as_ref().map_or(0.0, |p| p.now());
@@ -481,8 +529,17 @@ impl Client {
                 match out {
                     Send::Control(m) => session.send_control(&m),
                     Send::Datagram(m) => session.send_game_datagram(&m),
+                    Send::Edit(m, id) => {
+                        session.send_edit(&m, id);
+                    }
                 }
             }
+            let dropped: Vec<(u32, bool)> = session
+                .take_dropped_edits()
+                .into_iter()
+                .map(|id| (id, true))
+                .collect();
+            game.on_edit_results(&dropped);
         }
         telemetry::span("net", || s.pump_network(now_ms));
         // The clouds drift by the world's clock once the server's ticks have arrived.
@@ -508,6 +565,7 @@ impl Client {
                     set(&r, "p50", st.p50);
                     set(&r, "p95", st.p95);
                     set(&r, "p99", st.p99);
+                    set(&r, "min", st.min);
                     set(&r, "max", st.max);
                     set(&r, "sum", st.sum);
                     set(&o, name, r);
@@ -646,6 +704,21 @@ impl Client {
             }
             return true;
         }
+        // The spyglass (docs/SPYGLASS.md): its key, while playing (the pointer locked).
+        if s.input.pointer_locked
+            && dwell_look::spyglass::is_spyglass_key(
+                &dwell_look::spyglass::SPYGLASS,
+                code,
+                ctrl,
+                meta,
+            )
+        {
+            if !repeat && let Some(g) = s.game.as_mut() {
+                g.spyglass.toggle(&dwell_look::spyglass::SPYGLASS);
+                g.sound(dwell_game::sound::SoundKind::Tool);
+            }
+            return true;
+        }
         let k = s.input.key_down(code, repeat, ctrl, meta);
         for e in k.events {
             s.on_input_event(e, time_stamp_ms);
@@ -669,7 +742,13 @@ impl Client {
     }
     #[wasm_bindgen(js_name = mouseMove)]
     pub fn mouse_move(&self, dx: f64, dy: f64) {
-        self.inner.borrow_mut().input.mouse_move(dx, dy);
+        let mut s = self.inner.borrow_mut();
+        // Zoomed, the view turns as many pixels per movement as unzoomed (docs/SPYGLASS.md).
+        let k = s
+            .game
+            .as_ref()
+            .map_or(1.0, |g| g.spyglass_view().look_scale);
+        s.input.mouse_move(dx * k, dy * k);
     }
     /// A `mousedown`: `alt` is Alt (⌥) held. With the brush tool on, a middle or Alt click picks
     /// the replace target (BRUSHES.md).
@@ -687,9 +766,20 @@ impl Client {
             s.edit(action, now_ms);
         }
     }
-    /// A `wheel` event: the hotbar, or with Alt held and the brush tool on, the brush's size.
+    /// A `wheel` event: the hotbar, or with Alt held and the brush tool on, the brush's size, or
+    /// while the spyglass is zoomed its steps (up zooms in; docs/SPYGLASS.md).
     pub fn wheel(&self, delta_y: f64, alt: bool) {
         let mut s = self.inner.borrow_mut();
+        if !alt
+            && let Some(step) = s.input.wheel(delta_y)
+            && let Some(g) = &mut s.game
+            && g.spyglass.on()
+        {
+            if g.spyglass.cycle(-step, &dwell_look::spyglass::SPYGLASS) {
+                g.sound(dwell_game::sound::SoundKind::Tool);
+            }
+            return;
+        }
         if let Some(step) = s.input.wheel(delta_y)
             && alt
             && let Some(g) = &mut s.game
@@ -1107,6 +1197,20 @@ impl Client {
     pub fn set_fov(&self, degrees: f64) {
         self.inner.borrow_mut().fov_setting = dwell_lod::sanitize_fov_setting(degrees);
     }
+    /// Whether the browser asks for reduced motion: the spyglass then zooms without easing.
+    #[wasm_bindgen(js_name = setReducedMotion)]
+    pub fn set_reduced_motion(&self, reduced: bool) {
+        self.inner.borrow_mut().reduced_motion = reduced;
+    }
+    /// Zooms the spyglass to `step` (0 the least zoom) or out (docs/SPYGLASS.md; dev tools:
+    /// `__dwell.spyglass`). False before the game has started.
+    pub fn spyglass(&self, on: bool, step: u32) -> bool {
+        let mut s = self.inner.borrow_mut();
+        let Some(g) = &mut s.game else { return false };
+        g.spyglass
+            .set(on, step as usize, &dwell_look::spyglass::SPYGLASS);
+        true
+    }
     /// The game menu opened or closed: the motion effects hold still while it is open.
     #[wasm_bindgen(js_name = setMenuOpen)]
     pub fn set_menu_open(&self, open: bool) {
@@ -1274,7 +1378,34 @@ impl Client {
 
     // ----- State for the shell -----
 
-    /// `{ phase: 'connecting' | 'handshaking' | 'joined' | 'rejected' | 'closed', … }`.
+    /// Joins without the registry prompt when the server's definitions hash is `hash` (16 hex
+    /// digits; "don't ask again for this server", ADR 0038). Call before `connect`.
+    #[wasm_bindgen(js_name = trustRegistry)]
+    pub fn trust_registry(&self, hash: Option<String>) {
+        let hash = hash.and_then(|h| u64::from_str_radix(&h, 16).ok());
+        let mut s = self.inner.borrow_mut();
+        s.trusted_registry = hash;
+        if let Some(session) = &mut s.session {
+            session.trust_registry(hash);
+        }
+    }
+
+    /// The player's answer to the registry prompt (`phase: 'confirming'`): Continue or Cancel.
+    #[wasm_bindgen(js_name = answerRegistry)]
+    pub fn answer_registry(&self, proceed: bool) {
+        let mut s = self.inner.borrow_mut();
+        let Some(session) = &mut s.session else {
+            return;
+        };
+        if proceed {
+            session.accept_registry();
+        } else {
+            session.cancel_registry();
+        }
+    }
+
+    /// `{ phase: 'connecting' | 'handshaking' | 'confirming' | 'joined' | 'rejected' | 'closed',
+    /// … }`; `confirming` carries `registry: { hash, different, added, clientOnly }` (ADR 0038).
     #[wasm_bindgen(js_name = sessionState)]
     pub fn session_state(&self) -> JsValue {
         let s = self.inner.borrow();
@@ -1282,6 +1413,10 @@ impl Client {
         match s.session.as_ref().map(Session::state) {
             None => set(&o, "phase", "connecting"),
             Some(SessionState::Handshaking) => set(&o, "phase", "handshaking"),
+            Some(SessionState::Confirming { differences, hash }) => {
+                set(&o, "phase", "confirming");
+                set(&o, "registry", registry_object(differences, *hash));
+            }
             Some(SessionState::Joined {
                 player_id,
                 world_seed,
@@ -1361,6 +1496,25 @@ impl Client {
                 None => set(&o, "brush", JsValue::NULL),
             }
             set(&o, "brushes", g.brush.available);
+            // The spyglass's vignette (docs/SPYGLASS.md): null while unzoomed.
+            let v = g.spyglass_view();
+            if v.vignette > 0.0 {
+                let t = &dwell_look::spyglass::SPYGLASS.vignette;
+                let z = Object::new();
+                set(&z, "amount", v.vignette);
+                set(&z, "magnification", v.magnification);
+                set(&z, "innerRadius", t.inner_radius);
+                set(&z, "outerRadius", t.outer_radius);
+                set(&z, "opacity", t.opacity);
+                let rgb = Array::new();
+                for c in t.color {
+                    rgb.push(&JsValue::from(c));
+                }
+                set(&z, "color", rgb);
+                set(&o, "spyglass", z);
+            } else {
+                set(&o, "spyglass", JsValue::NULL);
+            }
         }
         o.into()
     }
@@ -1454,6 +1608,9 @@ impl Client {
             }),
         );
         set(&o, "flying", d.flying);
+        // The frame's vertical FOV and the spyglass's magnification (docs/SPYGLASS.md).
+        set(&o, "fov", g.frame_fov());
+        set(&o, "spyglass", g.spyglass_view().magnification);
         o.into()
     }
 
@@ -1744,6 +1901,28 @@ impl Inner {
         game.debug_visible = self.debug_visible;
         game.set_capabilities(region_edits, brushes, generator_version);
         game.day_override = self.options.day;
+        let mapping = self.session.as_ref().and_then(|s| s.mapping().cloned());
+        if let Some(m) = mapping.as_ref().filter(|m| !m.differences.is_empty()) {
+            // The console keeps the full lists (the F3 overlay shows the summary).
+            let d = &m.differences;
+            let list = |v: &[dwell_blocks::sync::Difference]| {
+                v.iter()
+                    .map(|d| format!("{} ({})", d.name, d.fields.join(", ")))
+                    .collect::<Vec<_>>()
+                    .join("; ")
+            };
+            web_sys::console::info_1(
+                &format!(
+                    "Dwell: {}. Different on this server: {}. New on this server: {}. Only in this version: {}.",
+                    d.summary(),
+                    list(&d.different),
+                    list(&d.added),
+                    d.client_only.join(", ")
+                )
+                .into(),
+            );
+        }
+        game.set_registry(mapping);
         if let Some(v) = self.input.flight.set_allowed(may_fly) {
             self.shell_events.push(shell_event("flightAllowed", v));
         }
@@ -1756,6 +1935,16 @@ impl Inner {
     }
 
     fn draw(&mut self) {
+        // Not while the GPU is still behind on earlier frames (render/pacing.rs): recording now
+        // would block this thread until it caught up.
+        if !self
+            .renderer
+            .borrow_mut()
+            .ready_to_draw(telemetry::now_ms())
+        {
+            telemetry::count("draw.skipped", 1.0);
+            return;
+        }
         let acquire = telemetry::now_ms();
         let current = self.surface.get_current_texture();
         telemetry::add("draw.acquire", telemetry::now_ms() - acquire);

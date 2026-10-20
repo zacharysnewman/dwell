@@ -1,4 +1,4 @@
-//! The generation rule of the half-height grid (HALF_HEIGHT_GRID.md §4, Phase 36): which stored
+//! The generation rule of the half-height grid (HALF_HEIGHT_GRID.md §4, Phase 39): which stored
 //! cardinal ramp, if any, tops a natural column, from its own height and its 8 neighbours'
 //! (rows). A pure function of the 9 heights, so the generator, the point queries and tests agree.
 //! The pieces themselves are block data (`rampFamilies`); this is the small fixed vocabulary.

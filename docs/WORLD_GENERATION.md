@@ -8,6 +8,34 @@
 > until Phase 17 replaces it with terrain definitions (data, [ADR 0026](./adr/0026-terrain-definitions.md)),
 > and Phase 12 is cancelled. The removed designs remain in the repository's history (and in their
 > ADRs, 0017–0022, superseded); `ARCHITECTURE.md` §6.3 describes what is built.
+>
+> **The interim height field's relief (generator version 16, owner 2026-10-19: "I want terrain
+> steep enough to slide on").** Its parameters are data, `shared/worldgen/terrain.json`: the inland
+> rise (320 m, half done 6 km inland), the sea floor (−20 m over 2.5 km), hills (±225 m, 1,024 m,
+> 5 octaves, faded in 0.5–4 km inland) and bumps (±5 m, 128 m, 3 octaves). The owner's targets:
+> steeper hills everywhere (not mountain regions), about 15 % of the land's surface steeper than
+> the slide's 44° (Phase 35's slide on the adaptive blocks' 45° ramps, ridge flanks and saddles,
+> [`ADAPTIVE_BLOCKS.md`](./ADAPTIVE_BLOCKS.md)), and peaks up to about 500 m above sea level.
+> Sliding needs single-block steps between neighbouring columns (a gradient near 1; two blocks or
+> more is a cliff), so the steepness comes from the hills' shorter wavelength and extra octave (each
+> octave of a fractal sum adds about as much gradient), with the rise lifted so the deeper hollows
+> stay dry; no noise term was added (a ridged or terraced one would wall basins in with slides,
+> which a plain sum's varying steepness does not). Over 7 seeds and both faces (`cargo run
+> --release -p dwell-worldgen --example relief`): sliding surface ~0.01 → ~15 %, highest ground
+> ~194 → ~504 m, height standard deviation 36 → 91 m, mean slope 5.9° → 21.6°, island under water
+> 0.6 → 0.8 %, columns too steep for tall grass 0 → 0.3 %; of the dry land within 512 m of the
+> spawn, 91–100 % is reachable without climbing a slide (79–100 % both ways). The bumps and the
+> coast are unchanged. Version 16 also reads the decorations' height band in metres above sea
+> level, as `decorations.json` says (it had been compared with the face-local top). A test pins it
+> (`the_hills_are_steep_enough_to_slide_and_reach_about_500_m`).
+>
+> **Generator version 15** (owner 2026-10-19: "more height from the noise"): the inland rise 130 m,
+> hills ±80 m, 2,048 m, 4 octaves, and bumps ±5 m. Version 14 had hills of ±30 m, bumps of
+> ±2.5 m and a 90 m rise. Over 7 seeds and both faces the land's height standard deviation went
+> from 21 to 36 m, the highest ground from ~105 to ~194 m above sea level and the mean slope from
+> 2.7° to 5.9°; the island's coast is unchanged (the layout is untouched) and its hollows below sea
+> level stay under 1 % of it. Prototype content (§6.1 of the architecture): tune by editing the
+> file, regenerating, bumping the generator version and the goldens.
 
 **Content is still prototype.** `ARCHITECTURE.md` §6.1 applies: block names and colours here are
 placeholders that give the systems a direction, not Dwell's final content design. What *is* a

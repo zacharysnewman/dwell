@@ -1,6 +1,7 @@
 // The session's state as the Rust client reports it (`Client.sessionState()`, dwell-client's
 // web/app.rs): the join handshake's progress, the world once joined, and the connection's stats.
 import type { RejectReason } from '../protocol/constants.gen';
+import type { RegistryDifferences } from '../ui/registryPrompt';
 
 export interface SessionStats {
   /** Smoothed round trip over the reliable control stream, ms. */
@@ -15,6 +16,8 @@ export interface SessionStats {
 export type SessionState =
   | { phase: 'connecting' }
   | { phase: 'handshaking' }
+  /** The server's blocks differ from this version's: waiting for the join prompt (ADR 0038). */
+  | { phase: 'confirming'; registry: RegistryDifferences }
   | {
       phase: 'joined';
       playerId: number;

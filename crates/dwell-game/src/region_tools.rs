@@ -1,8 +1,8 @@
 //! The region tools (ARCHITECTURE.md §6.5; structure sandbox S3): a two-corner box selection, fill,
 //! hollow, replace and clear with the hotbar's block, copy, paste with a ghost box (rotated and
 //! mirrored on paste), and undo/redo as a client-side stack of region diffs replayed as region
-//! edits. Each edit is a `RegionEdit` the server validates; like single edits, nothing is
-//! predicted — the change shows when the server's VoxelModification arrives.
+//! edits. Each edit is a `RegionEdit` the server validates; like single edits, it is predicted
+//! (`edit_prediction.rs`): the client shows it at once and reconciles with the server's acks.
 //!
 //! A diff keeps the box's states read from the client's world just before the edit is sent: undo
 //! pastes them back (and keeps what it replaced, for redo). Edits only go to a server that
@@ -19,7 +19,7 @@ use dwell_blocks::StateId;
 use dwell_protocol::{Message, RegionEdit, RegionEditOp, region_edit};
 use dwell_world::VoxelWorld;
 use dwell_world::edit::unbreakable;
-use dwell_world::region::{KEEP, PasteTransform, box_distance_sq, read_box};
+use dwell_world::region::{KEEP, PasteTransform, box_distance_sq, box_in_world, read_box};
 
 /// Undo steps kept (each holds its boxes' states twice; a brush stroke's boxes are trimmed to
 /// the cells it changes).
@@ -158,7 +158,8 @@ pub struct RegionTools {
     undo: Vec<Vec<Diff>>,
     redo: Vec<Vec<Diff>>,
     /// Edits waiting for the rate, and how many the last batch had.
-    queue: VecDeque<RegionEdit>,
+    /// With the id edit prediction gave each (`tag`), once it has.
+    queue: VecDeque<(RegionEdit, Option<u32>)>,
     queued: usize,
     /// Cells the server's rate allows now (its token bucket, mirrored).
     credit: f64,
@@ -505,7 +506,7 @@ impl RegionTools {
         states
     }
 
-    /// Checks what the server will (support, reach, rate), reads the box's states for undo, and
+    /// Checks what the server will (support, the build volume, reach, rate), reads the box's states for undo, and
     /// returns the request.
     fn sendable(
         &mut self,
@@ -516,6 +517,11 @@ impl RegionTools {
     ) -> Option<Vec<StateId>> {
         if !self.enabled {
             self.note = "This server doesn't take region edits (an older build)".into();
+            return None;
+        }
+        // The server refuses a box not wholly inside the build volume (ADR 0025).
+        if !box_in_world(edit.min, dims(edit.size)) {
+            self.note = "Outside the build volume".into();
             return None;
         }
         let eye = ctx.eye?;
@@ -621,25 +627,52 @@ impl RegionTools {
 
     fn enqueue(&mut self, edits: Vec<RegionEdit>) {
         self.queued = edits.len();
-        self.queue.extend(edits);
+        self.queue.extend(edits.into_iter().map(|e| (e, None)));
     }
 
     /// The queued edits the server's rate allows now (each frame).
     pub fn pump(&mut self, now_ms: f64) -> Vec<Message> {
+        self.pump_tagged(now_ms)
+            .into_iter()
+            .map(|(m, _)| m)
+            .collect()
+    }
+
+    /// [`pump`](Self::pump), with each edit's prediction id (`tag`), if it has one.
+    pub fn pump_tagged(&mut self, now_ms: f64) -> Vec<(Message, Option<u32>)> {
         let mut out = Vec::new();
         if self.queue.is_empty() {
             return out;
         }
         self.refill(now_ms);
-        while let Some(e) = self.queue.front() {
+        while let Some((e, _)) = self.queue.front() {
             let cost = e.volume() as f64;
             if self.credit < cost {
                 break;
             }
             self.credit -= cost;
-            out.push(Message::RegionEdit(self.queue.pop_front().expect("front")));
+            let (e, id) = self.queue.pop_front().expect("front");
+            out.push((Message::RegionEdit(e), id));
         }
         out
+    }
+
+    /// Queued edits without a prediction id yet, by their place in the queue (edit prediction
+    /// shows a stroke's edits at once, before they are sent).
+    pub fn untagged(&self) -> Vec<(usize, RegionEdit)> {
+        self.queue
+            .iter()
+            .enumerate()
+            .filter(|(_, (_, id))| id.is_none())
+            .map(|(i, (e, _))| (i, e.clone()))
+            .collect()
+    }
+
+    /// Gives the queued edit at `i` its prediction id.
+    pub fn tag(&mut self, i: usize, id: u32) {
+        if let Some(q) = self.queue.get_mut(i) {
+            q.1 = Some(id);
+        }
     }
 
     /// Queued edits sent of all (a stroke's progress), while any wait.
@@ -1020,6 +1053,17 @@ mod tests {
             ..ctx(None, 0)
         };
         assert!(t.act(ToolAction::Clear, &later, &mut w).is_some());
+        // Outside the build sphere (ADR 0025): over its top, eye beside it.
+        let top = dwell_world::BUILD_VOLUME.y_range().1 as i32;
+        let near_top = ToolContext {
+            eye: Some([0.5, f64::from(top) - 1.0, 0.5]),
+            now_ms: 10_000.0,
+            ..ctx(None, stone)
+        };
+        t.act(ToolAction::CornerA, &ctx(Some([0, top - 3, 0]), 0), &mut w);
+        t.act(ToolAction::CornerB, &ctx(Some([1, top, 1]), 0), &mut w);
+        assert_eq!(t.act(ToolAction::Fill, &near_top, &mut w), None);
+        assert!(t.status().contains("build volume"), "{}", t.status());
         // Not loaded: a streamed world without the chunks.
         let mut streamed = VoxelWorld::streamed();
         assert_eq!(t.act(ToolAction::Copy, &ctx(None, 0), &mut streamed), None);

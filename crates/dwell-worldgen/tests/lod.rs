@@ -39,7 +39,7 @@ fn section_at(level: i32, x: i64, y: i64, z: i64) -> LodCoord {
 
 fn coast_on_axis(g: &TerrainGenerator) -> (i32, i32) {
     let mut x = 0;
-    while g.column_at(x, 0).height >= 0.0 {
+    while g.column_at(x, 0).height >= SEA_LEVEL as f32 {
         x += 16;
     }
     (x, 0)
@@ -102,8 +102,8 @@ fn compare(a: &LodCells, b: &LodCells, face: Face) -> (f64, f64, f64) {
 fn level_0_is_the_chunk_grid_and_the_root_holds_the_disc() {
     for c in [
         ChunkCoord::new(0, 0, 0),
-        ChunkCoord::new(-1, -64, 5),
-        ChunkCoord::new(255_999, 191, -256_000),
+        ChunkCoord::new(-1, -2, 5),
+        ChunkCoord::new(1561, 1562, -1563),
     ] {
         let l = lod_of_chunk(c);
         assert_eq!(chunk_of_lod(l), c);
@@ -119,12 +119,12 @@ fn level_0_is_the_chunk_grid_and_the_root_holds_the_disc() {
     }
     let root = LodCoord::new(MAX_LEVEL, 0, 0, 0);
     assert!(in_world(root));
-    assert_eq!(section_size(MAX_LEVEL), 1 << 24);
-    assert_eq!(section_origin(root).x, -(1 << 23));
+    assert_eq!(section_size(MAX_LEVEL), 1 << 17);
+    assert_eq!(section_origin(root).x, -(1 << 16));
     assert!(!in_world(LodCoord::new(MAX_LEVEL, 1, 0, 0)));
     assert_eq!(
         ancestor(
-            lod_of_chunk(ChunkCoord::new(-256_000, -64, 255_999)),
+            lod_of_chunk(ChunkCoord::new(-1563, MIN_CHUNK_Y, 1562)),
             MAX_LEVEL
         ),
         root
@@ -132,13 +132,11 @@ fn level_0_is_the_chunk_grid_and_the_root_holds_the_disc() {
 }
 
 #[test]
-fn rows_cover_both_faces() {
-    // The world's 32,768 rows of ½ m cells.
-    assert_eq!(last_row(0) - first_row(0) + 1, 1024);
-    assert_eq!(last_row(6) - first_row(6) + 1, 16);
-    assert_eq!(last_row(8) - first_row(8) + 1, 5);
-    assert_eq!(last_row(10) - first_row(10) + 1, 2);
-    assert_eq!((first_row(19), last_row(19)), (0, 0));
+fn rows_cover_the_build_sphere_one_row_at_the_root() {
+    assert_eq!(last_row(0) - first_row(0) + 1, 3126);
+    assert_eq!(last_row(6) - first_row(6) + 1, 50);
+    assert_eq!(last_row(8) - first_row(8) + 1, 14);
+    assert_eq!((first_row(12), last_row(12)), (0, 0));
     assert_eq!(
         lod_of_chunk(ChunkCoord::new(0, MIN_CHUNK_Y, 0)).j,
         first_row(0)
@@ -158,15 +156,11 @@ fn rows_cover_both_faces() {
         0
     ))));
     let j8 = first_row(8);
+    assert!(in_world(LodCoord::new(8, 8, j8, 8)) && in_world(LodCoord::new(8, 8, j8 + 13, 8)));
     assert!(
-        in_world(LodCoord::new(8, 1024, j8, 1024))
-            && in_world(LodCoord::new(8, 1024, j8 + 4, 1024))
+        !in_world(LodCoord::new(8, 8, j8 - 1, 8)) && !in_world(LodCoord::new(8, 8, j8 + 14, 8))
     );
-    assert!(
-        !in_world(LodCoord::new(8, 1024, j8 - 1, 1024))
-            && !in_world(LodCoord::new(8, 1024, j8 + 5, 1024))
-    );
-    for level in 0..=6 {
+    for level in 0..=11 {
         let s = section_at(level, 0, i64::from(MIDPLANE_Y), 0);
         assert_eq!(section_origin(s).y, i64::from(MIDPLANE_Y));
         assert_eq!((row_face(s, -1), row_face(s, 0)), (Face::B, Face::A));
@@ -176,7 +170,7 @@ fn rows_cover_both_faces() {
             (Face::B, Face::A)
         );
     }
-    let straddle = section_at(8, 0, i64::from(MIDPLANE_Y), 0);
+    let straddle = section_at(12, 0, i64::from(MIDPLANE_Y), 0);
     assert_eq!(
         (row_face(straddle, 0), row_face(straddle, 31)),
         (Face::B, Face::A)
@@ -185,7 +179,7 @@ fn rows_cover_both_faces() {
 
 #[test]
 fn children_nest_in_their_parent() {
-    let p = LodCoord::new(5, 1000, 3, 1001);
+    let p = LodCoord::new(5, 100, 3, 101);
     let po = section_origin(p);
     for o in 0..8 {
         let c = child(p, o);
@@ -205,9 +199,12 @@ fn children_nest_in_their_parent() {
 
 #[test]
 fn sections_beyond_the_rim_are_outside() {
-    assert!(in_world(section_at(10, 8_000_000, 0, 0)));
-    assert!(!in_world(section_at(10, 8_230_000, 0, 0)));
-    assert!(!in_world(section_at(10, 5_840_000, 0, 5_840_000)));
+    assert!(in_world(section_at(4, 49_000, 0, 0)));
+    assert!(!in_world(section_at(4, 50_200, 0, 0)));
+    assert!(!in_world(section_at(4, 35_900, 0, 35_900)));
+    // Over the rim the build sphere is low: a section above it is outside (ADR 0025).
+    assert!(in_world(section_at(4, 49_000, 9_000, 0)));
+    assert!(!in_world(section_at(4, 49_000, 12_000, 0)));
 }
 
 fn block(f: impl Fn(usize, usize, usize) -> StateId) -> StateId {
@@ -306,7 +303,7 @@ fn a_chunk_downsamples_into_its_octant() {
 fn the_flat_worlds_lod_equals_the_downsample_of_its_chunks() {
     let flat = flat_generator();
     for level in 1..=3 {
-        let c = section_at(level, 5, -1, -7);
+        let c = section_at(level, 5, i64::from(FLAT_TOP_Y) - 1, -7);
         let mut generated = LodCells::new();
         assert_eq!(generate_flat_lod(c, &mut generated), LodKind::Content);
         let down = downsampled_from_chunks(&flat, c);
@@ -343,7 +340,7 @@ fn the_sandbox_lod_is_its_floor_and_equals_the_downsample_of_its_chunks() {
     let lod = lod_generator_for(GENERATOR_SANDBOX, 0);
     let floor = dwell_blocks::require(SANDBOX_FLOOR);
     for level in 1..=3 {
-        let c = section_at(level, 5, -1, -7);
+        let c = section_at(level, 5, i64::from(FLAT_TOP_Y) - 1, -7);
         let mut generated = LodCells::new();
         assert_eq!(lod(c, &mut generated), LodKind::Content);
         assert!(generated.iter().all(|&m| m == M.air || m == floor));
@@ -387,10 +384,14 @@ fn generate_lod_is_pure_and_bounds_decide_empty_and_buried_exactly() {
             }
         }
     }
-    // (Rows: 1.5 km down, face B's core at 3 km, 3 km up, face B's sky 9 km down.)
     let mut cells = LodCells::new();
+    // Under the island on both faces, a level-1 section by the midplane is all ground.
     assert_eq!(
-        g.generate_lod(section_at(2, 64, -3000, 64), &mut cells, None, None),
+        g.generate_lod(section_at(1, 64, 0, 64), &mut cells, None, None),
+        LodKind::Buried
+    );
+    assert_eq!(
+        g.generate_lod(section_at(1, 64, -1, 64), &mut cells, None, None),
         LodKind::Buried
     );
     assert_eq!(
@@ -436,10 +437,9 @@ fn a_face_b_section_agrees_with_the_downsample_of_its_chunks() {
     let g = BifacialTerrain::new(0);
     let chunks = generator_for(GENERATOR_TERRAIN, 0);
     for (name, x, z) in sites(g.local(Face::B)) {
-        let h = row(g.local(Face::B).column_at(x, z).height.max(0.0));
+        let h = row(g.local(Face::B).column_at(x, z).height) as i32;
         for level in 1..=2 {
-            let mirror = 2 * i64::from(MIDPLANE_Y) - 1;
-            let c = section_at(level, i64::from(x), mirror - h.max(-1), i64::from(z));
+            let c = section_at(level, i64::from(x), i64::from(mirror_y(h)), i64::from(z));
             let mut generated = LodCells::new();
             g.generate_lod(c, &mut generated, None, None);
             let (classes, within, _) =
@@ -455,20 +455,20 @@ fn a_face_b_section_agrees_with_the_downsample_of_its_chunks() {
 #[test]
 fn a_straddling_section_keeps_each_cell_on_its_face() {
     let g = BifacialTerrain::new(0);
-    // Level 9 (16,384 rows, 512 to a cell, ending at sea level): face B's surface and sky below
-    // the midplane, face A's core above it.
-    let c = section_at(9, 0, i64::from(MIDPLANE_Y), 0);
+    // Only the root holds both faces: rows 0–15 face B's, 16–31 face A's (4,096 m cells).
+    let c = section_at(MAX_LEVEL, 0, i64::from(MIDPLANE_Y), 0);
     let mut cells = LodCells::new();
     assert_eq!(g.generate_lod(c, &mut cells, None, None), LodKind::Content);
     let at = |x, y, z| cells[cell_index(x, y, z)];
-    assert!(lod_solid(at(16, 24, 16)) && lod_solid(at(16, 23, 16)) && lod_solid(at(16, 22, 16)));
-    assert_eq!(at(16, 0, 16), M.air);
+    assert!(lod_solid(at(16, 16, 16)) && lod_solid(at(16, 15, 16)));
+    assert_eq!((at(16, 17, 16), at(16, 14, 16)), (M.air, M.air));
+    assert_eq!((at(16, 0, 16), at(16, 31, 16)), (M.air, M.air));
 }
 
 #[test]
 fn coarse_cells_show_the_grounds_surface_not_the_floor() {
     let g = TerrainGenerator::new(0);
-    for level in [12, 13, 15] {
+    for level in [8, 10, 11] {
         let c = section_at(level, 0, 0, 0);
         let mut cells = LodCells::new();
         assert_eq!(g.generate_lod(c, &mut cells, None), LodKind::Content);
@@ -496,8 +496,8 @@ fn coarse_cells_show_the_grounds_surface_not_the_floor() {
 #[test]
 fn a_sea_shows_its_surface_at_levels_deeper_than_the_sea() {
     let g = TerrainGenerator::new(0);
-    for level in [6, 8, 10] {
-        let c = section_at(level, 120_000, -1, 70_000);
+    for level in [6, 8, 9] {
+        let c = section_at(level, 36_000, i64::from(SEA_LEVEL) - 1, -26_000);
         let mut cells = LodCells::new();
         assert_eq!(g.generate_lod(c, &mut cells, None), LodKind::Content);
         let o = section_origin(c);
@@ -511,7 +511,7 @@ fn a_sea_shows_its_surface_at_levels_deeper_than_the_sea() {
                         (o.z + i64::from(z) * cs) as i32,
                     )
                     .height
-                        >= -10.0
+                        >= SEA_LEVEL as f32 - 10.0
                 {
                     continue;
                 }
@@ -554,7 +554,7 @@ fn section_content_round_trips_through_the_codec() {
 #[test]
 fn column_surfaces_put_distant_land_and_seas_at_their_true_height() {
     let g = TerrainGenerator::new(5);
-    for level in 1..=13 {
+    for level in 1..=MAX_LEVEL {
         let cell = cell_size(level);
         let (mut error_surface, mut columns, mut valid) = (0.0f64, 0, 0);
         for s in 0..6 {

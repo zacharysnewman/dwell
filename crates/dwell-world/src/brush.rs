@@ -1,20 +1,21 @@
 //! Brushes (docs/BRUSHES.md; VoxelSniper-style painting and sculpting): a **brush** is the set of
-//! cells a stroke covers (ball, disc, cylinder, cube, ellipsoid, splatter, line), a **performer** is
-//! what happens to them (set, replace, overlay, erase, and the sculpt performers smooth, erode,
-//! flatten, raise, lower). Both are a small fixed vocabulary here; the named presets players pick
-//! are data (`shared/brushes/brushes.json` → `brushes.gen.rs`), as is which world types allow
-//! brushes and how far they reach.
+//! cells a stroke covers (balls, discs, cubes, lines, blobs, stencils, trees, …), a **performer** is
+//! what happens to them (set, replace, overlay, erase, blend, and the sculpt performers smooth,
+//! erode, flatten, raise, lower, …). Both are a small fixed vocabulary here; the named presets
+//! players pick are data (`shared/brushes/brushes.json` → `brushes.gen.rs`), as is which world
+//! types allow brushes and how far they reach.
 //!
 //! Everything is a pure function of the brush, the aim and a grid of the world's states, so the
-//! preview, the stroke and the tests agree (splatter is seeded). A stroke's result is a list of
-//! changed cells, sent as `RegionEdit` pastes of at most 32³ whose other cells are
-//! `region_edit::KEEP` ([`paste_edits`]); the server validates them like any region edit.
+//! preview, the stroke and the tests agree (every random choice is seeded by the preset's seed and
+//! the aim). A stroke's result is a list of changed cells, sent as `RegionEdit` pastes of at most
+//! 32³ whose other cells are `region_edit::KEEP` ([`paste_edits`]); the server validates them like
+//! any region edit.
 
-use dwell_blocks::{STATES, StateId, info};
+use dwell_blocks::StateId;
 use dwell_protocol::{RegionEdit, RegionEditOp, region_edit};
 
 use crate::M;
-use crate::edit::{flooded_for, placeable, unbreakable};
+use crate::edit::{FACE_DIRS, flooded_for, placeable, unbreakable};
 
 #[rustfmt::skip]
 #[path = "brushes.gen.rs"]
@@ -37,13 +38,40 @@ pub enum BrushKind {
     Cube,
     /// A ball stretched by `stretch` along x, y, z.
     Ellipsoid,
-    /// A ball with a seeded `density` of its cells.
+    /// A ball with a seeded `density` of its cells (½ unless the preset says).
     Splatter,
     /// From the line's start (the previous click) to the aimed-at cell, `size` cells thick.
     Line,
+    /// A horizontal square one cell thick (VoxelSniper's voxel disc).
+    Square,
+    /// A disc across the aimed-at face: horizontal on a floor, upright on a wall.
+    DiscFace,
+    /// A square across the aimed-at face (VoxelSniper's voxel disc face).
+    SquareFace,
+    /// An ellipse across the aimed-at face, stretched by `stretch` along the face's two axes.
+    Ellipse,
+    /// A horizontal ring `width` cells wide at the disc's edge.
+    Ring,
+    /// A filled triangle through the last two clicks and this one, `size` cells thick.
+    Triangle,
+    /// A line from the previous click that wanders by up to `jitter` cells (seeded).
+    JaggedLine,
+    /// A lump grown from the centre within the ball, each step taking a neighbour with chance
+    /// `growth` (seeded).
+    Blob,
+    /// The upper half of an ellipsoid (stretched by `stretch`), standing on the aimed-at cell.
+    Dome,
+    /// The aimed-at cell alone.
+    Snipe,
+    /// A structure's cells (STRUCTURES.md), one of `structures` picked and turned by its variants
+    /// (seeded): VoxelSniper's stencil and stencil list.
+    Stencil,
+    /// A procedural tree of `wood` and `leaves`: a trunk `height` tall, `branches` limbs
+    /// `branch_length` long, a crown `size` in radius, `roots` roots (seeded).
+    Tree,
 }
 
-pub const BRUSH_KINDS: [BrushKind; 7] = [
+pub const BRUSH_KINDS: [BrushKind; 19] = [
     BrushKind::Ball,
     BrushKind::Disc,
     BrushKind::Cylinder,
@@ -51,6 +79,18 @@ pub const BRUSH_KINDS: [BrushKind; 7] = [
     BrushKind::Ellipsoid,
     BrushKind::Splatter,
     BrushKind::Line,
+    BrushKind::Square,
+    BrushKind::DiscFace,
+    BrushKind::SquareFace,
+    BrushKind::Ellipse,
+    BrushKind::Ring,
+    BrushKind::Triangle,
+    BrushKind::JaggedLine,
+    BrushKind::Blob,
+    BrushKind::Dome,
+    BrushKind::Snipe,
+    BrushKind::Stencil,
+    BrushKind::Tree,
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -59,7 +99,8 @@ pub enum PerformerKind {
     Set,
     /// The material in cells holding the replace target.
     Replace,
-    /// The material on the top `depth` layers of solid ground: cells with open space above.
+    /// The material on the top `depth` layers of solid ground: cells with open space above. With
+    /// `on_top`, `depth` new layers on the ground instead, in the open cells above it.
     Overlay,
     /// Air.
     Erase,
@@ -78,9 +119,29 @@ pub enum PerformerKind {
     Raise,
     /// Columns under the brush cut down by `height` cells.
     Lower,
+    /// VoxelSniper's blend: each cell takes the commonest state among its neighbours (26, or the 8
+    /// in the plane for a flat brush) when one state leads; air and liquids count unless
+    /// `exclude_air` / `exclude_water`; `iterations` times.
+    Blend,
+    /// A blend that fades out linearly toward the brush's edge: a cell is blended with a chance
+    /// of 1 − its distance from the centre over the radius (seeded).
+    LinearBlend,
+    /// The material on the bottom `depth` layers of solid ground: cells with open space below.
+    Underlay,
+    /// Hollows solids out (VoxelSniper's shell brushes): solid cells further than `depth` cells
+    /// from open space become air, leaving a shell `depth` thick.
+    Hollow,
+    /// Each column of the brush filled with the material from the aimed-at height down to the
+    /// first solid block, at most `height` cells.
+    FillDown,
+    /// Solid cells pushed out along the aimed-at face's normal: up to `height` copies of each
+    /// cell's block in the open cells in front of it.
+    Extrude,
+    /// The brush's own blocks (a stencil's or a tree's), where the mask lets them.
+    Stamp,
 }
 
-pub const PERFORMER_KINDS: [PerformerKind; 9] = [
+pub const PERFORMER_KINDS: [PerformerKind; 16] = [
     PerformerKind::Set,
     PerformerKind::Replace,
     PerformerKind::Overlay,
@@ -90,6 +151,13 @@ pub const PERFORMER_KINDS: [PerformerKind; 9] = [
     PerformerKind::Flatten,
     PerformerKind::Raise,
     PerformerKind::Lower,
+    PerformerKind::Blend,
+    PerformerKind::LinearBlend,
+    PerformerKind::Underlay,
+    PerformerKind::Hollow,
+    PerformerKind::FillDown,
+    PerformerKind::Extrude,
+    PerformerKind::Stamp,
 ];
 
 impl BrushKind {
@@ -102,7 +170,39 @@ impl BrushKind {
             Self::Ellipsoid => "Ellipsoid",
             Self::Splatter => "Splatter",
             Self::Line => "Line",
+            Self::Square => "Square",
+            Self::DiscFace => "Disc on face",
+            Self::SquareFace => "Square on face",
+            Self::Ellipse => "Ellipse",
+            Self::Ring => "Ring",
+            Self::Triangle => "Triangle",
+            Self::JaggedLine => "Jagged line",
+            Self::Blob => "Blob",
+            Self::Dome => "Dome",
+            Self::Snipe => "Snipe",
+            Self::Stencil => "Stencil",
+            Self::Tree => "Tree",
         }
+    }
+
+    /// Clicks it takes before the stroke's: a line's start, a triangle's first two corners.
+    pub fn points(self) -> usize {
+        match self {
+            Self::Line | Self::JaggedLine => 1,
+            Self::Triangle => 2,
+            _ => 0,
+        }
+    }
+
+    /// Brings its own blocks (a stencil's, a tree's), which only its preset's data names: the
+    /// shape key (Z) skips it, and only it can stamp.
+    pub fn own_blocks(self) -> bool {
+        matches!(self, Self::Stencil | Self::Tree)
+    }
+
+    /// One cell thick and horizontal: a blend there looks at the 8 neighbours in its plane.
+    pub fn flat(self) -> bool {
+        matches!(self, Self::Disc | Self::Square | Self::Ring)
     }
 }
 
@@ -118,21 +218,31 @@ impl PerformerKind {
             Self::Flatten => "Flatten",
             Self::Raise => "Raise",
             Self::Lower => "Lower",
+            Self::Blend => "Blend",
+            Self::LinearBlend => "Linear blend",
+            Self::Underlay => "Paint underside",
+            Self::Hollow => "Hollow",
+            Self::FillDown => "Fill down",
+            Self::Extrude => "Extrude",
+            Self::Stamp => "Stamp",
         }
     }
 
     /// Acts on whole columns under the brush's footprint, not on its cells.
     pub fn by_column(self) -> bool {
-        matches!(self, Self::Flatten | Self::Raise | Self::Lower)
+        matches!(
+            self,
+            Self::Flatten | Self::Raise | Self::Lower | Self::FillDown
+        )
     }
 
     /// Uses the replace target (picked with a middle or Alt click).
     pub fn uses_target(self, mask: Mask) -> bool {
-        self == Self::Replace || mask == Mask::Target
+        self == Self::Replace || matches!(mask, Mask::Target | Mask::NotTarget)
     }
 }
 
-/// Which cells a set, erase or overlay may change.
+/// Which cells a set, erase, overlay, underlay, blend or stamp may change.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Mask {
     None,
@@ -140,8 +250,12 @@ pub enum Mask {
     Air,
     /// Only solid cells.
     Solid,
-    /// Only cells holding the replace target.
+    /// Only cells holding the replace target (VoxelSniper's include).
     Target,
+    /// Every cell but those holding the replace target (VoxelSniper's exclude).
+    NotTarget,
+    /// Only liquid cells (water): an erase with it drains.
+    Liquid,
 }
 
 /// A preset's parameters; each brush and performer reads the ones it takes (`gen.mjs` says which).
@@ -149,8 +263,11 @@ pub enum Mask {
 pub struct Params {
     pub height: u8,
     pub stretch: [f32; 3],
+    /// The share of the brush's cells kept (seeded); 1 keeps them all. Any brush takes it.
     pub density: f32,
     pub seed: u32,
+    /// Only the cells of a 3D checkerboard (x + y + z even). Any brush takes it.
+    pub checker: bool,
     pub depth: u8,
     pub mask: Mask,
     pub iterations: u8,
@@ -159,6 +276,26 @@ pub struct Params {
     pub fill_faces: u8,
     pub fill_iterations: u8,
     pub falloff: bool,
+    /// Overlay: new layers on the ground rather than painting its top.
+    pub on_top: bool,
+    /// Blend: air (and with `exclude_water`, liquids) never wins.
+    pub exclude_air: bool,
+    pub exclude_water: bool,
+    /// Ring: its width in cells.
+    pub width: u8,
+    /// Jagged line: how far it wanders, in cells.
+    pub jitter: u8,
+    /// Blob: the chance a step takes a neighbour.
+    pub growth: f32,
+    /// Stencil: the structures (by name) one is picked from.
+    pub structures: &'static [&'static str],
+    /// Tree: its blocks by name ("" for the hotbar's block), limbs and roots.
+    pub wood: &'static str,
+    pub leaves: &'static str,
+    pub branches: u8,
+    pub branch_length: u8,
+    pub roots: u8,
+    pub thickness: u8,
 }
 
 impl Default for Params {
@@ -166,8 +303,9 @@ impl Default for Params {
         Self {
             height: 1,
             stretch: [1.0; 3],
-            density: 0.5,
+            density: 1.0,
             seed: 0,
+            checker: false,
             depth: 1,
             mask: Mask::None,
             iterations: 1,
@@ -176,6 +314,19 @@ impl Default for Params {
             fill_faces: 5,
             fill_iterations: 1,
             falloff: false,
+            on_top: false,
+            exclude_air: false,
+            exclude_water: false,
+            width: 1,
+            jitter: 1,
+            growth: 0.5,
+            structures: &[],
+            wood: "",
+            leaves: "",
+            branches: 4,
+            branch_length: 5,
+            roots: 0,
+            thickness: 1,
         }
     }
 }
@@ -236,11 +387,37 @@ pub struct BrushSpec {
     pub params: Params,
 }
 
-/// Where a stroke goes: the cell it is centred on, and a line's start.
+/// Where a stroke goes: the cell it is centred on, the face it was aimed at (an index into
+/// `FACE_DIRS`; 2, +Y, for a floor), and the earlier clicks a line or triangle takes (`from` the
+/// last, `before` the one before it).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Aim {
     pub center: [i32; 3],
+    pub face: u8,
     pub from: Option<[i32; 3]>,
+    pub before: Option<[i32; 3]>,
+}
+
+impl Aim {
+    /// Centred on `center`, aimed at a floor, with no earlier clicks.
+    pub fn at(center: [i32; 3]) -> Self {
+        Self {
+            center,
+            face: 2,
+            from: None,
+            before: None,
+        }
+    }
+
+    /// The axis (0 x, 1 y, 2 z) the aimed-at face looks along.
+    pub fn axis(&self) -> usize {
+        usize::from(self.face.min(5)) / 2
+    }
+
+    /// The aimed-at face's outward normal.
+    pub fn normal(&self) -> [i32; 3] {
+        FACE_DIRS[usize::from(self.face.min(5))]
+    }
 }
 
 /// The blocks a stroke puts down: the hotbar's block, and the replace target.
@@ -265,108 +442,392 @@ fn cell_hash(seed: u64, c: [i32; 3]) -> u64 {
     h
 }
 
-/// The cells a brush covers, in layer order (y, then z, then x) without repeats. Splatter's cells
-/// are seeded by the preset's seed and the centre, so the same stroke picks the same cells.
-pub fn brush_cells(spec: &BrushSpec, aim: Aim) -> Vec<[i32; 3]> {
-    let r = i32::from(spec.size.clamp(MIN_SIZE, MAX_SIZE));
-    let c = aim.center;
-    let rr = (f64::from(r) + 0.5).powi(2);
+/// A seeded number in [0, 1) for `c` (an offset or a counter) in the stream `seed`.
+fn unit(seed: u64, c: [i32; 3]) -> f64 {
+    (cell_hash(seed, c) >> 11) as f64 / (1u64 << 53) as f64
+}
+
+/// The stroke's own seed: the preset's, mixed with the centre (and a stream for each use).
+fn stroke_seed(spec: &BrushSpec, aim: Aim, stream: u64) -> u64 {
+    cell_hash(
+        u64::from(spec.params.seed) ^ stream.wrapping_mul(0x9e37),
+        aim.center,
+    )
+}
+
+/// The distance from `p` to the segment `a`–`b`, squared.
+fn segment_dist2(p: [f64; 3], a: [f64; 3], b: [f64; 3]) -> f64 {
+    let d: [f64; 3] = std::array::from_fn(|i| b[i] - a[i]);
+    let len2: f64 = d.iter().map(|v| v * v).sum();
+    let k = if len2 > 0.0 {
+        ((0..3).map(|i| (p[i] - a[i]) * d[i]).sum::<f64>() / len2).clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    (0..3).map(|i| (p[i] - a[i] - k * d[i]).powi(2)).sum()
+}
+
+fn sub3(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
+    [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
+}
+
+fn dot3(a: [f64; 3], b: [f64; 3]) -> f64 {
+    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+}
+
+/// The distance from `p` to the triangle `a b c` (filled), squared: the closest point on a
+/// triangle (Ericson, *Real-Time Collision Detection*, 5.1.5).
+fn triangle_dist2(p: [f64; 3], a: [f64; 3], b: [f64; 3], c: [f64; 3]) -> f64 {
+    let (ab, ac, ap) = (sub3(b, a), sub3(c, a), sub3(p, a));
+    let at = |v: f64, w: f64| -> [f64; 3] { std::array::from_fn(|i| a[i] + ab[i] * v + ac[i] * w) };
+    let d2 = |q: [f64; 3]| -> f64 { dot3(sub3(p, q), sub3(p, q)) };
+    let (d1, d2v) = (dot3(ab, ap), dot3(ac, ap));
+    if d1 <= 0.0 && d2v <= 0.0 {
+        return d2(a);
+    }
+    let bp = sub3(p, b);
+    let (d3, d4) = (dot3(ab, bp), dot3(ac, bp));
+    if d3 >= 0.0 && d4 <= d3 {
+        return d2(b);
+    }
+    let vc = d1 * d4 - d3 * d2v;
+    if vc <= 0.0 && d1 >= 0.0 && d3 <= 0.0 {
+        return d2(at(d1 / (d1 - d3), 0.0));
+    }
+    let cp = sub3(p, c);
+    let (d5, d6) = (dot3(ab, cp), dot3(ac, cp));
+    if d6 >= 0.0 && d5 <= d6 {
+        return d2(c);
+    }
+    let vb = d5 * d2v - d1 * d6;
+    if vb <= 0.0 && d2v >= 0.0 && d6 <= 0.0 {
+        return d2(at(0.0, d2v / (d2v - d6)));
+    }
+    let va = d3 * d6 - d5 * d4;
+    if va <= 0.0 && (d4 - d3) >= 0.0 && (d5 - d6) >= 0.0 {
+        let w = (d4 - d3) / ((d4 - d3) + (d5 - d6));
+        let q: [f64; 3] = std::array::from_fn(|i| b[i] + (c[i] - b[i]) * w);
+        return d2(q);
+    }
+    let denom = 1.0 / (va + vb + vc);
+    if !denom.is_finite() {
+        // Degenerate (the corners in a line): the distance to its longest side.
+        return segment_dist2(p, a, b)
+            .min(segment_dist2(p, b, c))
+            .min(segment_dist2(p, a, c));
+    }
+    d2(at(vb * denom, vc * denom))
+}
+
+/// Every cell of the box `lo..=hi` whose centre `keep` accepts, as offsets.
+fn scan(lo: [i32; 3], hi: [i32; 3], mut keep: impl FnMut([i32; 3]) -> bool) -> Vec<[i32; 3]> {
     let mut out = Vec::new();
-    let mut push = |o: [i32; 3]| out.push([c[0] + o[0], c[1] + o[1], c[2] + o[2]]);
-    match spec.brush {
-        BrushKind::Ball | BrushKind::Splatter => {
-            let seed = cell_hash(u64::from(spec.params.seed), c);
-            let threshold =
-                (f64::from(spec.params.density.clamp(0.0, 1.0)) * u32::MAX as f64) as u64;
-            for y in -r..=r {
-                for z in -r..=r {
-                    for x in -r..=r {
-                        if f64::from(x * x + y * y + z * z) > rr {
-                            continue;
-                        }
-                        if spec.brush == BrushKind::Splatter
-                            && cell_hash(seed, [x, y, z]) & 0xffff_ffff > threshold
-                        {
-                            continue;
-                        }
-                        push([x, y, z]);
-                    }
+    for y in lo[1]..=hi[1] {
+        for z in lo[2]..=hi[2] {
+            for x in lo[0]..=hi[0] {
+                if keep([x, y, z]) {
+                    out.push([x, y, z]);
                 }
             }
         }
-        BrushKind::Ellipsoid => {
-            let axes = spec
-                .params
-                .stretch
-                .map(|s| (f64::from(r) + 0.5) * f64::from(s));
-            let ext = axes.map(|a| (a - 0.5).ceil().max(0.0) as i32);
-            for y in -ext[1]..=ext[1] {
-                for z in -ext[2]..=ext[2] {
-                    for x in -ext[0]..=ext[0] {
-                        let d = [x, y, z]
-                            .iter()
-                            .zip(&axes)
-                            .map(|(&o, &a)| (f64::from(o) / a).powi(2))
-                            .sum::<f64>();
-                        if d <= 1.0 {
-                            push([x, y, z]);
-                        }
-                    }
-                }
+    }
+    out
+}
+
+/// Cells within `t` of the polyline through `points` (offsets from the centre).
+fn thick_path(points: &[[i32; 3]], t: f64) -> Vec<[i32; 3]> {
+    let reach = t.ceil() as i32;
+    let lo: [i32; 3] =
+        std::array::from_fn(|i| points.iter().map(|p| p[i]).min().unwrap_or(0) - reach);
+    let hi: [i32; 3] =
+        std::array::from_fn(|i| points.iter().map(|p| p[i]).max().unwrap_or(0) + reach);
+    let f = |p: [i32; 3]| p.map(f64::from);
+    scan(lo, hi, |c| {
+        let p = f(c);
+        if points.len() == 1 {
+            return dot3(sub3(p, f(points[0])), sub3(p, f(points[0]))) <= t * t;
+        }
+        points
+            .windows(2)
+            .any(|w| segment_dist2(p, f(w[0]), f(w[1])) <= t * t)
+    })
+}
+
+/// The cells of the brush's own blocks (a stencil's, a tree's) with those blocks, as world cells
+/// in layer order; empty for other brushes. A tree's blocks named "" are the hotbar's `material`.
+pub fn brush_blocks(spec: &BrushSpec, aim: Aim, material: StateId) -> Vec<Change> {
+    let mut out = match spec.brush {
+        BrushKind::Stencil => stencil_blocks(spec, aim),
+        BrushKind::Tree => tree_blocks(spec, aim, material),
+        _ => Vec::new(),
+    };
+    out.sort_by_key(|(p, _)| [p[1], p[2], p[0]]);
+    out.dedup_by_key(|(p, _)| *p);
+    out
+}
+
+/// A stencil: one of the preset's structures, turned by its variants, its anchor on the centre.
+fn stencil_blocks(spec: &BrushSpec, aim: Aim) -> Vec<Change> {
+    let names = spec.params.structures;
+    if names.is_empty() {
+        return Vec::new();
+    }
+    let seed = stroke_seed(spec, aim, 1);
+    let name = names[(mix(seed) % names.len() as u64) as usize];
+    let Ok(s) = crate::structure::load(name) else {
+        return Vec::new();
+    };
+    s.place(aim.center, mix(seed ^ 0x51)).cells().collect()
+}
+
+/// A state by name, else `fallback` ("" or a name this registry lacks).
+fn named(name: &str, fallback: StateId) -> StateId {
+    if name.is_empty() {
+        return fallback;
+    }
+    dwell_blocks::parse_state(name).unwrap_or(fallback)
+}
+
+/// A procedural tree (VoxelSniper's generate-tree brush, in Dwell's own terms): a trunk, limbs
+/// rising from its upper half, a leafy crown at the top and a smaller one at each limb's end, and
+/// roots spreading down from its foot.
+fn tree_blocks(spec: &BrushSpec, aim: Aim, material: StateId) -> Vec<Change> {
+    let p = &spec.params;
+    let (wood, leaves) = (named(p.wood, material), named(p.leaves, material));
+    let seed = stroke_seed(spec, aim, 2);
+    let mut k = 0;
+    let mut rnd = || {
+        k += 1;
+        unit(seed, [k, 0, 0])
+    };
+    let c = aim.center;
+    let height = i32::from(p.height.max(1)) + (rnd() * f64::from(p.height) * 0.25) as i32;
+    let t = i32::from(p.thickness.clamp(1, 4));
+    let mut wood_cells: Vec<[i32; 3]> = Vec::new();
+    for y in 0..height {
+        for z in 0..t {
+            for x in 0..t {
+                wood_cells.push([c[0] + x - (t - 1) / 2, c[1] + y, c[2] + z - (t - 1) / 2]);
             }
+        }
+    }
+    let top = [c[0], c[1] + height - 1, c[2]];
+    // Limbs: from the upper half, outward and up.
+    let mut crowns: Vec<([i32; 3], f64)> = vec![(top, f64::from(spec.size) + 0.5)];
+    let branches = i32::from(p.branches);
+    for b in 0..branches {
+        let start = c[1] + (f64::from(height) * (0.5 + 0.4 * rnd())) as i32;
+        let angle = (f64::from(b) + rnd() * 0.6) / f64::from(branches) * std::f64::consts::TAU;
+        let len = f64::from(p.branch_length.max(1)) * (0.7 + 0.3 * rnd());
+        let end = [
+            c[0] + (angle.cos() * len).round() as i32,
+            start + (len * 0.5).round() as i32,
+            c[2] + (angle.sin() * len).round() as i32,
+        ];
+        let from = [c[0], start, c[2]];
+        for q in thick_path(&[[0; 3], sub_i(end, from)], 0.6) {
+            wood_cells.push(add(from, q));
+        }
+        crowns.push((end, (f64::from(spec.size) * 0.6).max(1.0) + 0.5));
+    }
+    // Roots: from the foot, outward and down.
+    for r in 0..i32::from(p.roots) {
+        let angle = (f64::from(r) + rnd() * 0.5) / f64::from(p.roots) * std::f64::consts::TAU;
+        let len = 2.0 + f64::from(t) + rnd() * 2.0;
+        let end = [
+            (angle.cos() * len).round() as i32,
+            -(len * 0.6).round() as i32,
+            (angle.sin() * len).round() as i32,
+        ];
+        for q in thick_path(&[[0; 3], end], 0.6) {
+            wood_cells.push(add(c, q));
+        }
+    }
+    let mut out: Vec<Change> = wood_cells.iter().map(|&w| (w, wood)).collect();
+    // Leaves: ragged balls round the crowns, never over wood.
+    for (centre, r) in crowns {
+        let n = r.ceil() as i32;
+        for o in scan([-n; 3], [n; 3], |o| {
+            let d2 = f64::from(o[0] * o[0] + o[1] * o[1] + o[2] * o[2]);
+            d2 <= r * r
+                && (d2 <= (r - 1.0).max(0.0).powi(2) || unit(seed ^ 0x1eaf, add(centre, o)) < 0.6)
+        }) {
+            let cell = add(centre, o);
+            if !wood_cells.contains(&cell) {
+                out.push((cell, leaves));
+            }
+        }
+    }
+    out
+}
+
+fn sub_i(a: [i32; 3], b: [i32; 3]) -> [i32; 3] {
+    [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
+}
+
+/// The cells a brush covers, in layer order (y, then z, then x) without repeats. Every random
+/// choice (splatter, blob, jagged line, density, stencil and tree picks) is seeded by the preset's
+/// seed and the aim, so the same stroke covers the same cells.
+pub fn brush_cells(spec: &BrushSpec, aim: Aim) -> Vec<[i32; 3]> {
+    let r = i32::from(spec.size.clamp(MIN_SIZE, MAX_SIZE));
+    let c = aim.center;
+    let rf = f64::from(r) + 0.5;
+    let rr = rf * rf;
+    let p = &spec.params;
+    let rel = |q: Option<[i32; 3]>| sub_i(q.unwrap_or(c), c);
+    // Offsets from the centre, in any order.
+    let offsets: Vec<[i32; 3]> = match spec.brush {
+        BrushKind::Ball | BrushKind::Splatter => scan([-r; 3], [r; 3], |[x, y, z]| {
+            f64::from(x * x + y * y + z * z) <= rr
+        }),
+        BrushKind::Ellipsoid | BrushKind::Dome => {
+            let axes = p.stretch.map(|s| rf * f64::from(s));
+            let ext = axes.map(|a| (a - 0.5).ceil().max(0.0) as i32);
+            let y0 = if spec.brush == BrushKind::Dome {
+                0
+            } else {
+                -ext[1]
+            };
+            scan([-ext[0], y0, -ext[2]], ext, |o| {
+                (0..3)
+                    .map(|i| (f64::from(o[i]) / axes[i]).powi(2))
+                    .sum::<f64>()
+                    <= 1.0
+            })
         }
         BrushKind::Disc | BrushKind::Cylinder => {
             let h = if spec.brush == BrushKind::Disc {
                 1
             } else {
-                i32::from(spec.params.height.max(1))
+                i32::from(p.height.max(1))
             };
-            for y in 0..h {
-                for z in -r..=r {
-                    for x in -r..=r {
-                        if f64::from(x * x + z * z) <= rr {
-                            push([x, y, z]);
-                        }
-                    }
-                }
-            }
+            scan([-r, 0, -r], [r, h - 1, r], |[x, _, z]| {
+                f64::from(x * x + z * z) <= rr
+            })
         }
-        BrushKind::Cube => {
-            for y in -r..=r {
-                for z in -r..=r {
-                    for x in -r..=r {
-                        push([x, y, z]);
-                    }
+        BrushKind::Ring => {
+            let inner = (rf - f64::from(p.width.max(1))).max(0.0);
+            scan([-r, 0, -r], [r, 0, r], |[x, _, z]| {
+                let d = f64::from(x * x + z * z);
+                d <= rr && d > inner * inner
+            })
+        }
+        BrushKind::Cube => scan([-r; 3], [r; 3], |_| true),
+        BrushKind::Square => scan([-r, 0, -r], [r, 0, r], |_| true),
+        BrushKind::DiscFace | BrushKind::SquareFace | BrushKind::Ellipse => {
+            let a = aim.axis();
+            let (u, v) = ((a + 1) % 3, (a + 2) % 3);
+            let mut lo = [-r; 3];
+            let mut hi = [r; 3];
+            let mut radii = [rf; 3];
+            if spec.brush == BrushKind::Ellipse {
+                // The face's two axes, in x, y, z order: stretch's.
+                for i in [u, v] {
+                    radii[i] = rf * f64::from(p.stretch[i]);
+                    hi[i] = (radii[i] - 0.5).ceil().max(0.0) as i32;
+                    lo[i] = -hi[i];
                 }
             }
+            (lo[a], hi[a]) = (0, 0);
+            scan(lo, hi, |o| {
+                spec.brush == BrushKind::SquareFace
+                    || (f64::from(o[u]) / radii[u]).powi(2) + (f64::from(o[v]) / radii[v]).powi(2)
+                        <= 1.0
+            })
         }
         BrushKind::Line => {
-            let from = aim.from.unwrap_or(c);
-            let d: [f64; 3] = std::array::from_fn(|i| f64::from(from[i] - c[i]));
-            let len2 = d.iter().map(|v| v * v).sum::<f64>();
             // `size` 1 is a line one cell thick.
-            let t = f64::from(r - 1) + 0.6;
-            let lo: [i32; 3] = std::array::from_fn(|i| (from[i] - c[i]).min(0) - r);
-            let hi: [i32; 3] = std::array::from_fn(|i| (from[i] - c[i]).max(0) + r);
-            for y in lo[1]..=hi[1] {
-                for z in lo[2]..=hi[2] {
-                    for x in lo[0]..=hi[0] {
-                        let p = [f64::from(x), f64::from(y), f64::from(z)];
-                        let k = if len2 > 0.0 {
-                            (p.iter().zip(&d).map(|(a, b)| a * b).sum::<f64>() / len2)
-                                .clamp(0.0, 1.0)
+            thick_path(&[rel(aim.from), [0; 3]], f64::from(r - 1) + 0.6)
+        }
+        BrushKind::JaggedLine => {
+            let (from, to) = (rel(aim.from), [0; 3]);
+            let len = (0..3)
+                .map(|i| f64::from(from[i]).powi(2))
+                .sum::<f64>()
+                .sqrt();
+            let jitter = i32::from(p.jitter);
+            let step = f64::from((2 * jitter).max(2));
+            let n = (len / step).ceil().max(1.0) as i32;
+            let seed = stroke_seed(spec, aim, 3);
+            let points: Vec<[i32; 3]> = (0..=n)
+                .map(|k| {
+                    let t = f64::from(k) / f64::from(n);
+                    std::array::from_fn(|i| {
+                        let base = f64::from(from[i]) * (1.0 - t) + f64::from(to[i]) * t;
+                        let wobble = if k == 0 || k == n {
+                            0
                         } else {
-                            0.0
+                            (unit(seed, [k, i as i32, 0]) * f64::from(2 * jitter + 1)) as i32
+                                - jitter
                         };
-                        let dist2 = (0..3).map(|i| (p[i] - k * d[i]).powi(2)).sum::<f64>();
-                        if dist2 <= t * t {
-                            push([x, y, z]);
-                        }
+                        base.round() as i32 + wobble
+                    })
+                })
+                .collect();
+            thick_path(&points, f64::from(r - 1) + 0.6)
+        }
+        BrushKind::Triangle => {
+            let (a, b) = (rel(aim.before), rel(aim.from));
+            let t = f64::from(r - 1) + 0.6;
+            let reach = t.ceil() as i32;
+            let lo: [i32; 3] = std::array::from_fn(|i| a[i].min(b[i]).min(0) - reach);
+            let hi: [i32; 3] = std::array::from_fn(|i| a[i].max(b[i]).max(0) + reach);
+            let f = |q: [i32; 3]| q.map(f64::from);
+            scan(lo, hi, |o| {
+                triangle_dist2(f(o), f(a), f(b), [0.0; 3]) <= t * t
+            })
+        }
+        BrushKind::Blob => {
+            let seed = stroke_seed(spec, aim, 4);
+            let side = (2 * r + 1) as usize;
+            let index = |o: [i32; 3]| {
+                ((o[0] + r) as usize)
+                    + side * (((o[2] + r) as usize) + side * ((o[1] + r) as usize))
+            };
+            let inside = |o: [i32; 3]| f64::from(o[0] * o[0] + o[1] * o[1] + o[2] * o[2]) <= rr;
+            let mut grown = vec![false; side * side * side];
+            grown[index([0; 3])] = true;
+            let ball = scan([-r; 3], [r; 3], inside);
+            for step in 0..r {
+                let before = grown.clone();
+                for &o in &ball {
+                    if before[index(o)] {
+                        continue;
+                    }
+                    let touches = FACES.iter().any(|&f| {
+                        let n = add(o, f);
+                        n.iter().all(|v| v.abs() <= r) && before[index(n)]
+                    });
+                    if touches && unit(seed, [o[0], o[1], o[2] ^ (step << 8)]) < f64::from(p.growth)
+                    {
+                        grown[index(o)] = true;
                     }
                 }
             }
+            ball.into_iter().filter(|&o| grown[index(o)]).collect()
         }
-    }
+        BrushKind::Snipe => vec![[0; 3]],
+        BrushKind::Stencil | BrushKind::Tree => brush_blocks(spec, aim, M.air)
+            .into_iter()
+            .map(|(q, _)| sub_i(q, c))
+            .collect(),
+    };
+    // Splatter keeps half its cells unless its preset says otherwise.
+    let density = if spec.brush == BrushKind::Splatter && p.density >= 1.0 {
+        0.5
+    } else {
+        f64::from(p.density.clamp(0.0, 1.0))
+    };
+    let thin_seed = cell_hash(u64::from(p.seed), c);
+    let threshold = (density * u32::MAX as f64) as u64;
+    let mut out: Vec<[i32; 3]> = offsets
+        .into_iter()
+        .filter(|&o| density >= 1.0 || cell_hash(thin_seed, o) & 0xffff_ffff <= threshold)
+        .map(|o| add(c, o))
+        .filter(|w| !p.checker || (w[0] + w[1] + w[2]).rem_euclid(2) == 0)
+        .collect();
+    out.sort_by_key(|q| [q[1], q[2], q[0]]);
+    out.dedup();
     out
 }
 
@@ -389,9 +850,26 @@ pub fn read_bounds(spec: &BrushSpec, cells: &[[i32; 3]]) -> Option<([i32; 3], [i
     let (min, size) = bounds(cells)?;
     let p = &spec.params;
     let (side, up, down) = match spec.performer {
-        PerformerKind::Set | PerformerKind::Replace | PerformerKind::Erase => (0, 0, 0),
+        PerformerKind::Set
+        | PerformerKind::Replace
+        | PerformerKind::Erase
+        | PerformerKind::Stamp => (0, 0, 0),
+        PerformerKind::Overlay if p.on_top => (0, 0, i32::from(p.depth)),
         PerformerKind::Overlay => (0, i32::from(p.depth), 0),
-        PerformerKind::Smooth | PerformerKind::Erode => (1, 1, 1),
+        PerformerKind::Underlay => (0, 0, i32::from(p.depth)),
+        PerformerKind::Smooth
+        | PerformerKind::Erode
+        | PerformerKind::Blend
+        | PerformerKind::LinearBlend => (1, 1, 1),
+        PerformerKind::Hollow => {
+            let d = i32::from(p.depth);
+            (d, d, d)
+        }
+        PerformerKind::FillDown => (0, 0, i32::from(p.height)),
+        PerformerKind::Extrude => {
+            let h = i32::from(p.height);
+            (h, h, h)
+        }
         PerformerKind::Flatten => {
             let h = i32::from(p.height);
             (0, h, h)
@@ -441,7 +919,7 @@ impl Grid {
 }
 
 fn solid(m: StateId) -> bool {
-    usize::from(m) < STATES.len() && info(m).solid
+    dwell_blocks::try_info(m).is_some_and(|s| s.solid)
 }
 
 const FACES: [[i32; 3]; 6] = [
@@ -479,7 +957,36 @@ fn passes(mask: Mask, existing: StateId, target: StateId) -> bool {
         Mask::Air => !solid(existing),
         Mask::Solid => solid(existing),
         Mask::Target => existing == target,
+        Mask::NotTarget => existing != target,
+        Mask::Liquid => dwell_blocks::try_info(existing).is_some_and(|s| s.liquid),
     }
+}
+
+/// Blend's pick for a cell: the commonest state among `around` that may win (no unbreakable or
+/// unplaceable solid; air and liquids unless excluded), when one leads; `None` on a tie.
+fn blend_pick(around: &[StateId], p: &Params) -> Option<StateId> {
+    let mut counts: Vec<(StateId, u32)> = Vec::new();
+    for &m in around {
+        let liquid = dwell_blocks::try_info(m).is_some_and(|s| s.liquid);
+        let may = if solid(m) {
+            placeable(m)
+        } else if liquid {
+            !p.exclude_water
+        } else {
+            !p.exclude_air && !unbreakable(m)
+        };
+        if !may {
+            continue;
+        }
+        match counts.iter_mut().find(|(s, _)| *s == m) {
+            Some((_, n)) => *n += 1,
+            None => counts.push((m, 1)),
+        }
+    }
+    let best = counts.iter().map(|&(_, n)| n).max()?;
+    let mut leaders = counts.iter().filter(|&&(_, n)| n == best);
+    let (m, _) = *leaders.next()?;
+    leaders.next().is_none().then_some(m)
 }
 
 /// What a stroke changes: (cell, new state) in layer order, only cells whose state changes and
@@ -511,6 +1018,130 @@ pub fn perform(
                 let existing = grid.get(c);
                 if passes(mask, existing, target) {
                     work.set(c, flooded_for(put, existing));
+                }
+            }
+        }
+        PerformerKind::Overlay if p.on_top => {
+            // The `depth` open cells right above solid ground, through open cells.
+            for &c in cells {
+                let existing = grid.get(c);
+                if solid(existing) || !passes(p.mask, existing, target) {
+                    continue;
+                }
+                let on_ground = (1..=i32::from(p.depth))
+                    .map(|k| grid.get([c[0], c[1] - k, c[2]]))
+                    .try_fold((), |(), m| if solid(m) { Err(()) } else { Ok(()) })
+                    .is_err();
+                if on_ground {
+                    work.set(c, flooded_for(material, existing));
+                }
+            }
+        }
+        PerformerKind::Underlay => {
+            for &c in cells {
+                let existing = grid.get(c);
+                if !solid(existing) || !passes(p.mask, existing, target) {
+                    continue;
+                }
+                let exposed =
+                    (1..=i32::from(p.depth)).any(|k| !solid(grid.get([c[0], c[1] - k, c[2]])));
+                if exposed {
+                    work.set(c, material);
+                }
+            }
+        }
+        PerformerKind::Blend | PerformerKind::LinearBlend => {
+            let flat = spec.brush.flat();
+            let seed = stroke_seed(spec, aim, 5);
+            let r = f64::from(spec.size) + 0.5;
+            for _ in 0..p.iterations {
+                let before = work.clone();
+                for &c in cells {
+                    if spec.performer == PerformerKind::LinearBlend {
+                        let o = sub_i(c, aim.center);
+                        let d = f64::from(o[0] * o[0] + o[1] * o[1] + o[2] * o[2]).sqrt();
+                        if unit(seed, c) >= 1.0 - d / r {
+                            continue;
+                        }
+                    }
+                    let here = before.get(c);
+                    if !passes(p.mask, here, target) {
+                        continue;
+                    }
+                    let mut around = Vec::with_capacity(26);
+                    for dy in if flat { 0..=0 } else { -1..=1 } {
+                        for dz in -1..=1 {
+                            for dx in -1..=1 {
+                                if (dx, dy, dz) != (0, 0, 0) {
+                                    around.push(before.get(add(c, [dx, dy, dz])));
+                                }
+                            }
+                        }
+                    }
+                    if let Some(m) = blend_pick(&around, p) {
+                        work.set(c, flooded_for(m, here));
+                    }
+                }
+            }
+        }
+        PerformerKind::Hollow => {
+            // Distance (in face steps) to open space, up to `depth`: solid cells further are
+            // inside the shell.
+            let d = i32::from(p.depth);
+            let mut near: std::collections::HashSet<[i32; 3]> = std::collections::HashSet::new();
+            let mut frontier: Vec<[i32; 3]> = Vec::new();
+            for y in 0..grid.size[1] {
+                for z in 0..grid.size[2] {
+                    for x in 0..grid.size[0] {
+                        let c = add(grid.min, [x, y, z]);
+                        if solid(grid.get(c)) && FACES.iter().any(|&f| !solid(grid.get(add(c, f))))
+                        {
+                            near.insert(c);
+                            frontier.push(c);
+                        }
+                    }
+                }
+            }
+            for _ in 1..d {
+                let mut next = Vec::new();
+                for c in frontier {
+                    for f in FACES {
+                        let n = add(c, f);
+                        if solid(grid.get(n)) && near.insert(n) {
+                            next.push(n);
+                        }
+                    }
+                }
+                frontier = next;
+            }
+            for &c in cells {
+                let existing = grid.get(c);
+                if solid(existing) && !near.contains(&c) {
+                    work.set(c, M.air);
+                }
+            }
+        }
+        PerformerKind::Extrude => {
+            let n = aim.normal();
+            for &c in cells {
+                let m = grid.get(c);
+                if !solid(m) || !placeable(m) {
+                    continue;
+                }
+                for k in 1..=i32::from(p.height) {
+                    let q = add(c, n.map(|v| v * k));
+                    if solid(grid.get(q)) {
+                        break;
+                    }
+                    work.set(q, flooded_for(m, grid.get(q)));
+                }
+            }
+        }
+        PerformerKind::Stamp => {
+            for (c, m) in brush_blocks(spec, aim, material) {
+                let existing = grid.get(c);
+                if passes(p.mask, existing, target) {
+                    work.set(c, flooded_for(m, existing));
                 }
             }
         }
@@ -574,6 +1205,25 @@ pub fn perform(
                     if !solid(before.get(c)) && n >= usize::from(p.fill_faces) {
                         work.set(c, commonest(faces.into_iter(), material));
                     }
+                }
+            }
+        }
+        PerformerKind::FillDown => {
+            // Each column, from the brush's lowest cell in it down to the first solid block.
+            let mut columns: Vec<([i32; 2], i32)> = Vec::new();
+            for c in cells {
+                match columns.iter_mut().find(|(k, _)| *k == [c[0], c[2]]) {
+                    Some((_, y)) => *y = (*y).min(c[1]),
+                    None => columns.push(([c[0], c[2]], c[1])),
+                }
+            }
+            for ([x, z], top) in columns {
+                for y in (top - i32::from(p.height)..=top).rev() {
+                    let existing = grid.get([x, y, z]);
+                    if solid(existing) {
+                        break;
+                    }
+                    work.set([x, y, z], flooded_for(material, existing));
                 }
             }
         }
@@ -644,7 +1294,7 @@ pub fn perform(
                 let (old, new) = (grid.cells[i], work.cells[i]);
                 if old == new
                     || unbreakable(old)
-                    || usize::from(new) >= STATES.len()
+                    || usize::from(new) >= dwell_blocks::state_count()
                     || unbreakable(new)
                 {
                     continue;
@@ -713,10 +1363,7 @@ mod tests {
     }
 
     fn at(c: [i32; 3]) -> Aim {
-        Aim {
-            center: c,
-            from: None,
-        }
+        Aim::at(c)
     }
 
     fn mats(material: StateId) -> Materials {
@@ -813,8 +1460,8 @@ mod tests {
         let line = brush_cells(
             &s,
             Aim {
-                center: [10, 0, 0],
                 from: Some([0, 0, 0]),
+                ..Aim::at([10, 0, 0])
             },
         );
         assert_eq!(line.len(), 11);
@@ -823,8 +1470,8 @@ mod tests {
         let diag = brush_cells(
             &s,
             Aim {
-                center: [7, 3, -5],
                 from: Some([0, 0, 0]),
+                ..Aim::at([7, 3, -5])
             },
         );
         assert!(diag.contains(&[0, 0, 0]) && diag.contains(&[7, 3, -5]));
@@ -838,8 +1485,8 @@ mod tests {
         let thick = brush_cells(
             &spec(BrushKind::Line, PerformerKind::Set, 2),
             Aim {
-                center: [10, 0, 0],
                 from: Some([0, 0, 0]),
+                ..Aim::at([10, 0, 0])
             },
         );
         assert!(thick.len() > 5 * 11);
@@ -1163,9 +1810,11 @@ mod tests {
             let mut s = spec(brush, PerformerKind::Set, 3);
             s.params.seed = 5;
             s.params.height = 3;
+            s.params.structures = &["dwell:proto_tree"];
             let aim = Aim {
-                center: [4, 4, 4],
                 from: Some([0, 2, 0]),
+                before: Some([8, 3, 1]),
+                ..Aim::at([4, 4, 4])
             };
             let mut w = world();
             let preview = brush_cells(&s, aim);
@@ -1175,6 +1824,340 @@ mod tests {
                 .collect();
             assert_eq!(changed, preview, "{brush:?}");
         }
+    }
+
+    #[test]
+    fn the_new_shapes_cover_what_they_say() {
+        let c = [3, 7, -2];
+        let set = PerformerKind::Set;
+        let cells = |s: &BrushSpec, aim: Aim| brush_cells(s, aim);
+        // A square is a cube's middle layer; a ring is the disc's edge.
+        let square = cells(&spec(BrushKind::Square, set, 2), at(c));
+        assert_eq!(square.len(), 25);
+        assert!(square.iter().all(|p| p[1] == c[1]));
+        let disc = cells(&spec(BrushKind::Disc, set, 5), at(c));
+        let mut ring = spec(BrushKind::Ring, set, 5);
+        ring.params.width = 2;
+        let ring = cells(&ring, at(c));
+        assert!(ring.iter().all(|p| disc.contains(p)));
+        assert!(!ring.contains(&c) && ring.contains(&[c[0] + 5, c[1], c[2]]));
+        assert!(ring.len() < disc.len() * 3 / 4);
+        // On a wall (+X), a disc on the face stands upright across it.
+        let wall = Aim { face: 0, ..at(c) };
+        let upright = cells(&spec(BrushKind::DiscFace, set, 3), wall);
+        assert_eq!(upright.len(), 37);
+        assert!(upright.iter().all(|p| p[0] == c[0]));
+        assert_eq!(
+            cells(&spec(BrushKind::DiscFace, set, 3), at(c)),
+            cells(&spec(BrushKind::Disc, set, 3), at(c))
+        );
+        assert_eq!(cells(&spec(BrushKind::SquareFace, set, 2), wall).len(), 25);
+        let mut ellipse = spec(BrushKind::Ellipse, set, 2);
+        ellipse.params.stretch = [2.0, 1.0, 1.0];
+        let (_, size) = bounds(&cells(&ellipse, at(c))).unwrap();
+        assert_eq!(size, [11, 1, 5]);
+        // A dome is the top half of its ellipsoid; a snipe is one cell.
+        let ball = cells(&spec(BrushKind::Ball, set, 3), at(c));
+        let dome = cells(&spec(BrushKind::Dome, set, 3), at(c));
+        assert_eq!(
+            dome,
+            ball.iter()
+                .copied()
+                .filter(|p| p[1] >= c[1])
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(cells(&spec(BrushKind::Snipe, set, 9), at(c)), vec![c]);
+        // A blob grows from the centre within the ball, seeded.
+        let mut blob = spec(BrushKind::Blob, set, 5);
+        blob.params.growth = 0.5;
+        blob.params.seed = 3;
+        let b = cells(&blob, at(c));
+        assert!(b.contains(&c) && b.len() > 1);
+        let big = cells(&spec(BrushKind::Ball, set, 5), at(c));
+        assert!(b.iter().all(|p| big.contains(p)) && b.len() < big.len());
+        assert_eq!(b, cells(&blob, at(c)));
+        // Density thins any brush; checker keeps alternate cells.
+        let mut thin = spec(BrushKind::Cube, set, 4);
+        thin.params.density = 0.3;
+        let n = cells(&thin, at(c)).len() as f64 / 729.0;
+        assert!((n - 0.3).abs() < 0.06, "{n}");
+        let mut checker = spec(BrushKind::Square, set, 2);
+        checker.params.checker = true;
+        let ch = cells(&checker, at([0, 0, 0]));
+        assert_eq!(ch.len(), 13);
+        assert!(ch.iter().all(|p| (p[0] + p[1] + p[2]).rem_euclid(2) == 0));
+    }
+
+    #[test]
+    fn triangles_and_jagged_lines_join_their_clicks() {
+        let set = PerformerKind::Set;
+        let aim = Aim {
+            before: Some([0, 0, 0]),
+            from: Some([10, 0, 0]),
+            ..Aim::at([0, 0, 10])
+        };
+        let tri = brush_cells(&spec(BrushKind::Triangle, set, 1), aim);
+        assert!(tri.iter().all(|p| p[1] == 0));
+        for corner in [[0, 0, 0], [10, 0, 0], [0, 0, 10], [3, 0, 3]] {
+            assert!(tri.contains(&corner), "{corner:?}");
+        }
+        assert!(!tri.contains(&[8, 0, 8]));
+        let mut jag = spec(BrushKind::JaggedLine, set, 1);
+        jag.params.jitter = 3;
+        jag.params.seed = 1;
+        let aim = Aim {
+            from: Some([0, 0, 0]),
+            ..Aim::at([30, 0, 0])
+        };
+        let j = brush_cells(&jag, aim);
+        assert!(j.contains(&[0, 0, 0]) && j.contains(&[30, 0, 0]));
+        assert!(j.iter().any(|p| p[1] != 0 || p[2] != 0), "it wanders");
+        assert!(j.iter().all(|p| p[1].abs() <= 3 && p[2].abs() <= 3));
+        for p in &j {
+            assert!(
+                j.iter()
+                    .any(|q| q != p && (0..3).all(|i| (q[i] - p[i]).abs() <= 1)),
+                "{p:?} is alone"
+            );
+        }
+    }
+
+    fn copy_box(from: &mut VoxelWorld, r: i32) -> VoxelWorld {
+        let mut w = world();
+        for y in -r..=r {
+            for z in -r..=r {
+                for x in -r..=r {
+                    w.set_voxel(x, y, z, from.get_voxel(x, y, z));
+                }
+            }
+        }
+        w
+    }
+
+    #[test]
+    fn blend_takes_the_commonest_neighbour() {
+        let (stone, sand) = (require("dwell:stone"), require("dwell:sand"));
+        let mut w = world();
+        // A stone slab with a sand speck and a pit: blending returns both to stone.
+        for y in -2..=0 {
+            for z in -4..=4 {
+                for x in -4..=4 {
+                    w.set_voxel(x, y, z, stone);
+                }
+            }
+        }
+        w.set_voxel(0, -1, 0, sand);
+        w.set_voxel(1, -1, 0, M.air);
+        let s = spec(BrushKind::Ball, PerformerKind::Blend, 2);
+        stroke(&mut w, &s, at([0, -1, 0]), mats(sand));
+        assert_eq!(w.get_voxel(0, -1, 0), stone);
+        assert_eq!(w.get_voxel(1, -1, 0), stone);
+        // A tie changes nothing.
+        let around: Vec<StateId> = [stone; 13].into_iter().chain([sand; 13]).collect();
+        assert_eq!(blend_pick(&around, &Params::default()), None);
+        // Air wins unless excluded.
+        let mostly_air: Vec<StateId> = [M.air; 20].into_iter().chain([stone; 6]).collect();
+        assert_eq!(blend_pick(&mostly_air, &Params::default()), Some(M.air));
+        let solid_only = Params {
+            exclude_air: true,
+            ..Params::default()
+        };
+        assert_eq!(blend_pick(&mostly_air, &solid_only), Some(stone));
+        // A linear blend changes fewer cells than a blend.
+        let mut noisy = world();
+        for y in -6i32..=6 {
+            for z in -6..=6 {
+                for x in -6..=6 {
+                    let m = if (x * 7 + y * 3 + z * 5).rem_euclid(4) == 0 {
+                        sand
+                    } else {
+                        stone
+                    };
+                    noisy.set_voxel(x, y, z, m);
+                }
+            }
+        }
+        let mut copy = copy_box(&mut noisy, 6);
+        let full = stroke(
+            &mut noisy,
+            &spec(BrushKind::Ball, PerformerKind::Blend, 5),
+            at([0; 3]),
+            mats(sand),
+        );
+        let mut lin = spec(BrushKind::Ball, PerformerKind::LinearBlend, 5);
+        lin.params.seed = 2;
+        let linear = stroke(&mut copy, &lin, at([0; 3]), mats(sand));
+        assert!(
+            !linear.is_empty() && linear.len() < full.len(),
+            "{} {}",
+            linear.len(),
+            full.len()
+        );
+    }
+
+    #[test]
+    fn underlay_cover_hollow_fill_down_and_extrude() {
+        let (stone, grass, sand) = (
+            require("dwell:stone"),
+            require("dwell:grass"),
+            require("dwell:sand"),
+        );
+        // A floating 5 × 3 × 5 slab, y 0..=2.
+        let mut w = world();
+        for y in 0..3 {
+            for z in -2..=2 {
+                for x in -2..=2 {
+                    w.set_voxel(x, y, z, stone);
+                }
+            }
+        }
+        stroke(
+            &mut w,
+            &spec(BrushKind::Ball, PerformerKind::Underlay, 4),
+            at([0, 0, 0]),
+            mats(sand),
+        );
+        assert_eq!(count(&mut w, [-2, 0, -2], [5, 1, 5], sand), 25);
+        assert_eq!(count(&mut w, [-2, 1, -2], [5, 2, 5], stone), 50);
+        // Cover: a new layer on top, in the air.
+        let mut cover = spec(BrushKind::Ball, PerformerKind::Overlay, 4);
+        cover.params.on_top = true;
+        stroke(&mut w, &cover, at([0, 3, 0]), mats(grass));
+        assert_eq!(count(&mut w, [-2, 3, -2], [5, 1, 5], grass), 25);
+        assert_eq!(w.get_voxel(0, 4, 0), M.air);
+        // Hollow: a 7³ cube keeps its one-cell shell.
+        let mut w = world();
+        for y in 0..7 {
+            for z in 0..7 {
+                for x in 0..7 {
+                    w.set_voxel(x, y, z, stone);
+                }
+            }
+        }
+        let shell = stroke(
+            &mut w,
+            &spec(BrushKind::Cube, PerformerKind::Hollow, 4),
+            at([3, 3, 3]),
+            mats(sand),
+        );
+        assert_eq!(shell.len(), 125);
+        assert_eq!(count(&mut w, [0, 0, 0], [7, 7, 7], stone), 343 - 125);
+        // Fill down: from the disc to the ground.
+        let mut w = world();
+        floor(&mut w, 4, stone);
+        let mut fd = spec(BrushKind::Disc, PerformerKind::FillDown, 1);
+        fd.params.height = 16;
+        stroke(&mut w, &fd, at([0, 5, 0]), mats(sand));
+        assert_eq!(count(&mut w, [0, 1, 0], [1, 5, 1], sand), 5);
+        assert_eq!(w.get_voxel(0, 0, 0), stone);
+        // Extrude: a wall's face pushed out by 2 along the aimed-at face's normal (+X).
+        let mut w = world();
+        for y in 0..3 {
+            for z in 0..3 {
+                w.set_voxel(0, y, z, stone);
+            }
+        }
+        let mut ex = spec(BrushKind::SquareFace, PerformerKind::Extrude, 1);
+        ex.params.height = 2;
+        let pushed = stroke(
+            &mut w,
+            &ex,
+            Aim {
+                face: 0,
+                ..at([0, 1, 1])
+            },
+            mats(sand),
+        );
+        assert_eq!(pushed.len(), 18);
+        assert!(
+            pushed
+                .iter()
+                .all(|(c, m)| (c[0] == 1 || c[0] == 2) && *m == stone)
+        );
+    }
+
+    #[test]
+    fn masks_exclude_the_target_and_drain_liquids() {
+        let (stone, sand, water) = (
+            require("dwell:stone"),
+            require("dwell:sand"),
+            require("dwell:water"),
+        );
+        let mut w = world();
+        w.set_voxel(0, 0, 0, sand);
+        let mut not = spec(BrushKind::Ball, PerformerKind::Set, 1);
+        not.params.mask = Mask::NotTarget;
+        let m = Materials {
+            material: stone,
+            target: sand,
+        };
+        stroke(&mut w, &not, at([0, 0, 0]), m);
+        assert_eq!(w.get_voxel(0, 0, 0), sand, "the target is left");
+        assert_eq!(w.get_voxel(0, 1, 0), stone);
+        let mut w = world();
+        w.set_voxel(1, 0, 0, water);
+        w.set_voxel(-1, 0, 0, stone);
+        let mut drain = spec(BrushKind::Ball, PerformerKind::Erase, 2);
+        drain.params.mask = Mask::Liquid;
+        assert_eq!(
+            stroke(&mut w, &drain, at([0, 0, 0]), mats(stone)),
+            vec![([1, 0, 0], M.air)]
+        );
+        assert_eq!(w.get_voxel(-1, 0, 0), stone);
+    }
+
+    #[test]
+    fn stencils_stamp_a_structure_and_trees_grow_of_their_blocks() {
+        let (log, leaves, stone) = (
+            require("dwell:log"),
+            require("dwell:leaves"),
+            require("dwell:stone"),
+        );
+        let mut s = spec(BrushKind::Stencil, PerformerKind::Stamp, 1);
+        s.params.structures = &["dwell:proto_tree"];
+        let tree = crate::structure::load("dwell:proto_tree").unwrap();
+        let mut w = world();
+        let changed = stroke(&mut w, &s, at([0, 1, 0]), mats(require("dwell:sand")));
+        // The structure's cells, its anchor (the trunk's foot) on the centre.
+        assert_eq!(changed.len(), tree.place([0, 1, 0], 0).cells().count());
+        assert_eq!(w.get_voxel(0, 1, 0), log);
+        assert!(changed.iter().any(|&(_, m)| m == leaves));
+        // A stencil list picks among its structures by the aim.
+        s.params.structures = &["dwell:proto_tree", "dwell:proto_rock"];
+        let picks: std::collections::HashSet<usize> = (0..12)
+            .map(|i| brush_blocks(&s, at([i * 10, 0, 0]), 0).len())
+            .collect();
+        assert!(picks.len() >= 2, "{picks:?}");
+        // The fill mode (air mask) stamps only into open cells.
+        let mut w = world();
+        w.set_voxel(0, 4, 0, stone);
+        s.params.structures = &["dwell:proto_tree"];
+        s.params.mask = Mask::Air;
+        stroke(&mut w, &s, at([0, 1, 0]), mats(0));
+        assert_eq!(w.get_voxel(0, 4, 0), stone);
+        // A tree: a trunk of wood from the centre up, leaves round its crown, seeded.
+        let mut t = spec(BrushKind::Tree, PerformerKind::Stamp, 3);
+        t.params = Params {
+            wood: "dwell:log",
+            leaves: "dwell:leaves",
+            height: 8,
+            branches: 3,
+            branch_length: 4,
+            roots: 2,
+            seed: 4,
+            ..Params::default()
+        };
+        let blocks = brush_blocks(&t, at([0, 0, 0]), 0);
+        assert_eq!(blocks, brush_blocks(&t, at([0, 0, 0]), 0));
+        for y in 0..8 {
+            assert!(blocks.contains(&([0, y, 0], log)), "trunk {y}");
+        }
+        assert!(blocks.iter().any(|&(c, m)| m == leaves && c[1] >= 8));
+        assert!(blocks.iter().any(|&(c, m)| m == log && c[1] < 0), "roots");
+        // A tree's blocks named "" are the hotbar's.
+        t.params.wood = "";
+        let sand = require("dwell:sand");
+        assert!(brush_blocks(&t, at([0, 0, 0]), sand).contains(&([0, 0, 0], sand)));
     }
 
     #[test]
@@ -1196,8 +2179,8 @@ mod tests {
             let mut w = world();
             floor(&mut w, 20, stone);
             let aim = Aim {
-                center: [0, 0, 0],
                 from: Some([-5, 0, 0]),
+                ..Aim::at([0, 0, 0])
             };
             let cells = brush_cells(&p.spec(), aim);
             assert!(!cells.is_empty(), "{}", p.name);

@@ -5,7 +5,8 @@ name: Deploy site to GitHub Pages
 #   /dwell/index.html          the launcher (client/launcher)
 #   /dwell/versions.json       the manifest of the builds below
 #   /dwell/v/<version>/…       every stable release and the newest dev builds, each unpacked
-# Called by release.yml after a release is published; run by hand to rebuild the site (e.g. after a
+# Called by release.yml after a release is published (or dispatched by it on the default branch,
+# from a run on a tag: the github-pages environment deploys only from main); run by hand to rebuild the site (e.g. after a
 # launcher change, or to re-deploy).
 on:
   workflow_call:

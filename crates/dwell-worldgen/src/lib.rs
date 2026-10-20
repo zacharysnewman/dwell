@@ -15,8 +15,8 @@ use std::sync::{Arc, Mutex};
 use dwell_world::lod::{self, LodBoundsFn, LodGenerator};
 use dwell_world::{
     AirChunkTest, CHUNK_SIZE, ChunkCoord, ChunkGenerator, DiscOverlap, FlatLayers,
-    GENERATOR_SANDBOX, GENERATOR_TERRAIN, SEA_LEVEL, WORLD_MAX_Y, chunk_disc_overlap,
-    face_local_chunk, face_of_chunk_y, flat_generator, flat_generator_of, flat_is_air,
+    GENERATOR_SANDBOX, GENERATOR_TERRAIN, SEA_LEVEL, chunk_disc_overlap, face_local_chunk,
+    face_of_chunk_y, flat_generator, flat_generator_of, flat_is_air,
 };
 
 pub use bifacial::BifacialTerrain;
@@ -55,7 +55,7 @@ pub fn air_test_for(version: u32, world_seed: u64) -> AirChunkTest {
     Arc::new(move |coord: ChunkCoord| {
         let face = face_of_chunk_y(coord.y);
         let y0 = face_local_chunk(coord).y * CHUNK_SIZE;
-        if !(SEA_LEVEL..WORLD_MAX_Y).contains(&y0)
+        if !(SEA_LEVEL..terrain::FACE_MAX_Y).contains(&y0)
             || chunk_disc_overlap(coord.x, coord.z) == DiscOverlap::Outside
         {
             return terrain.is_air_chunk(coord);
@@ -77,10 +77,15 @@ pub fn spawn_point_for(version: u32, world_seed: u64) -> [f64; 3] {
     if version == GENERATOR_TERRAIN {
         return BifacialTerrain::new(world_seed).spawn_point();
     }
-    // The flat world's surface: the top of its top layer (row −1), as its shape gives it.
-    let mut flat = dwell_world::VoxelWorld::flat();
-    let top = flat.shape_at(0, -1, 0);
-    let feet = dwell_world::m_of_row(-1)
+    // The flat world's (or the sandbox's) surface: the top of its top layer (row FLAT_TOP_Y − 1),
+    // as its shape gives it, so the spawn is on the ground, not inside it.
+    let mut flat = dwell_world::VoxelWorld::new(
+        generator_for(version, world_seed),
+        Some(air_test_for(version, world_seed)),
+    );
+    let top_y = dwell_world::FLAT_TOP_Y - 1;
+    let top = flat.shape_at(0, top_y, 0);
+    let feet = dwell_world::m_of_row(top_y)
         + f64::from(dwell_blocks::shape::solid_span_at(top, 0.5, 0.5).hi) * dwell_world::CELL_H;
     [0.5, feet, 0.5]
 }

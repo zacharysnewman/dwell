@@ -34,7 +34,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 14 — Baseline decisions & ADRs | ✅ Complete — the owner answered D1–D10 (2026-10-12; D3 changed: the build sphere bounds building, not movement; D4 adds the active renderer shown in the settings menu); ADRs 0025–0027 written and 0024 amended, all Accepted |
 | 15 — Cut to the baseline | 🚧 In progress — built and verified locally (native, WASM, Vitest; goldens regenerated; generator version 12, one island; `package.json` 0.9.0, the new compatibility line); e2e passes in CI; outstanding: the owner's look in a browser; follow-up (owner, 2026-10-16): the log and leaves blocks restored as prototype content (appended to the registry, no worldgen placement; a new registry hash, so the 0.13 line) |
 | 24 — Rust port (one Cargo workspace, Rapier, wgpu client; runs after 15, before 16) | 🚧 In progress — 24f (the cutover): 24a–24e built; the C++/TS tree deleted; every Rust suite, the e2e suite and Electron's smoke test pass in CI on the Rust client and `dwell-server`; `package.json` 0.10.0, the new compatibility line (world files are redb now); playtest follow-ups built (2026-10-14): the grey see-through haze on distant ground (atlas mipmaps whose filtering reached past a tile's gutter; checked in a browser), each depth pass draws what reaches its depth range (by distance it could miss terrain toward the sides of the view; suspected, not confirmed, as the cause of gaps seen from high up), replaced meshes never freeing their GPU buffers on the web (the frame rate falling over a session), the LOD's velocity lookahead removed (detail loads by location alone), and named views (`client/views/views.json`: a placed camera, window and settings per view, opened by e2e specs and shot by `scripts/shots.ts`, no flying); the gaps seen from high up not reproduced and not pursued (owner); the dev telemetry and bench (`docs/DEV_TOOLS.md`), and with it the jump onto a block from against it fixed (Rapier's contact clustering hid the body's contacts; also crouching against a wall moving the player back), and the frame time cut about 3.5× idle and flying low (no dropped frames at 60 Hz when flying fast and low; fast hasher, arena-paged meshes with one draw call each, instance-indexed draw data, leaner LOD traversal and chunk padding); the menus redesigned (owner, 2026-10-14: a themed main menu, a full-screen game menu with Settings, Controls and Debug pages, key hints, phones upright and sideways, touch controls no longer taking the menus' taps); `package.json` raised to 0.10.3, a patch release of the 0.10 line (no compatibility change), with the launcher owning the main menu; outstanding: the owner's look at the new menus; the frame-time measurement and the owner's manual check, including a long session's frame rate; `package.json` raised to 0.11.15, a patch release of the 0.11 line |
-| 16 — World shape & build volume (50 km disc, 10-layer core, spherical build volume) | ⏳ Not started — built in Rust after Phase 24 |
+| 16 — World shape & build volume (50 km disc, 10-layer core, spherical build volume) | 🚧 In progress — built: the data-driven build volume (sphere) bounding edits, generation, storage, streaming and LOD; the 50 km disc, midplane 0, 10-layer core, sea level 32, LOD root 12, no flight ceiling, the island at its Phase 15 size (data); generator v14, protocol 14; outstanding: CI, the owner's browser look, an e2e edit at the boundary; follow-up (owner, 2026-10-19): more elevation variance — the height field's parameters moved to data (`shared/worldgen/terrain.json`), hills ±30 → ±80 m, bumps ±2.5 → ±5 m, inland rise 90 → 130 m, generator v15, goldens regenerated, a test pins the relief; needs a new compatibility line (0.15.0) for the owner to raise; outstanding: CI and the owner's look; follow-up (owner, 2026-10-19): terrain steep enough to slide on — hills ±225 m over 1 km in five octaves, inland rise 320 m, ~15 % of the land's surface sliding, peaks ~500 m, generator v16, goldens regenerated, a test pins the targets, decorations' height band read above sea level; needs a new compatibility line (0.18.0) for the owner to raise; outstanding: CI and the owner's look |
 | 17 — Terrain definitions (terrain as data) | ⏳ Not started — built in Rust after Phase 24 |
 | 18 — Adaptive natural blocks (formerly 9e) | 🚧 In progress — every deliverable built and tested (natively, WASM, Vitest); protocol v13, a new compatibility line for the owner to raise; outstanding: the two-client e2e, the LOD seam check, the owner's walk; owner decision 2026-10-15: faces steeper than 44° slide (Phase 35); `package.json` raised to 0.12.0, the new compatibility line (protocol 13; adaptive blocks change collision and terrain; the owner's decision, 2026-10-16) |
 | 19 — WebGPU, looks & textures | ⏳ Not started — re-scoped by ADR 0028: WebGPU is done by Phase 24 (wgpu, no fallback); the look registry and textures as data are built on wgpu after it |
@@ -42,18 +42,21 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 21 — Tiered physics | ⏸ Waits for Phases 6–19 (2026-10-05; the baseline rework, 14–19, added 2026-10-12) |
 | 22 — Sleep / re-bake | ⏸ Waits for Phases 6–19 (2026-10-05; the baseline rework, 14–19, added 2026-10-12) |
 | 23 — Dedicated servers & packaging | ⏳ Not started |
-| 25 — Ray-marched renderer comparison | 🚧 In progress — A0 (ADR 0029), A1 (the shared frame and GPU timing; the owner approved its image differences, 2026-10-14, and the e2e suite passes on CI), A2 (the renderer seam, compare mode, bench `--compare`; its exit check done) and A3a (the CPU core: `crates/dwell-march`) built; A3b (the GPU march behind the seam, checked against the reference per pixel; its CI run outstanding) built; A4a (speed: level-rows skip, vectorised march, shade pass, the cone-LOD ring fix; ~19 ms at 720p on an M1 against raster's ~2.5) and A5a (render scales 0.5/0.75 with FSR 1 or a bilateral upscale; ~5 ms at half scale) built; next: A3c (overlays over marched terrain, LOD column heights in the bricks, raster ids), A4b (beam prepass, temporal start); outstanding: A4's phone report; A2's edit-to-visible latency and the bench's id/depth agreement (moved to A3); local builds only until the owner's decision (A7); `package.json` raised to 0.11.21, a patch release of the 0.11 line |
-| 26 — Water and fluid looks | 🚧 In progress — W1a (fluid data, the eye-under-fluid uniform) done; W2 built (it is Phase 25's A1, built once there; the owner approved its image differences, 2026-10-14); W1b (the water shader, the underwater fog stub, the water quality setting) built and checked in Chrome on an M1, outstanding: the owner's look; W3 (refraction, depth absorption, shoreline foam, sparkle, and caustics brought forward from W4, above and under the surface) built and checked in Chrome on an M1, outstanding: the owner's look and an unloaded per-tier cost measurement; W5a (reflections of land by screen-space reflection, and of the clouds, brought forward from W5 at the owner's report) built and checked in Chrome on an M1, outstanding: the owner's look and an unloaded cost measurement; next: W4; W6 only if marching is kept at A7; `package.json` raised to 0.12.1, a patch release of the 0.11 line |
+| 25 — Ray-marched renderer comparison | 🚧 In progress — A0 (ADR 0029), A1 (the shared frame and GPU timing; the owner approved its image differences, 2026-10-14, and the e2e suite passes on CI), A2 (the renderer seam, compare mode, bench `--compare`; its exit check done) and A3a (the CPU core: `crates/dwell-march`) built; A3b (the GPU march behind the seam, checked against the reference per pixel; its CI run outstanding) built; A4a (speed: level-rows skip, vectorised march, shade pass, the cone-LOD ring fix) and A5a (render scales 0.5/0.75 with FSR 1 or a bilateral upscale) built; A4b (the beam prepass, and the temporal start with the eye still) built: at 720p on an M1, 8.5 ms at the spawn and 17.5 ms flying (A4a: 21 and 24) against raster's whole GPU frame of 3.6–5.0 ms, and 2.2–6.6 ms at half scale with FSR 1; A4c (the optimization survey; the temporal start while the eye moves, kept unchanged frames, the column search's slope rule) built: marching every frame, 17–31 % off A4b at the spawn, the horizon, looking down, flying high and far away (Chrome, M1, measured under load), and a still, unchanged view costs only its shading (about 1 ms); A4c continues (the per-step cost at the LOD levels); next: A3c (overlays over marched terrain, LOD column heights in the bricks, raster ids); outstanding: A4's phone report; A2's edit-to-visible latency and the bench's id/depth agreement (moved to A3); local builds only until the owner's decision (A7); `package.json` raised to 0.11.21, a patch release of the 0.11 line |
+| 26 — Water and fluid looks | 🚧 In progress — W1a (fluid data, the eye-under-fluid uniform) done; W2 built (it is Phase 25's A1, built once there; the owner approved its image differences, 2026-10-14); W1b (the water shader, the underwater fog stub, the water quality setting) built and checked in Chrome on an M1, outstanding: the owner's look; W3 (refraction, depth absorption, shoreline foam, sparkle, and caustics brought forward from W4, above and under the surface) built and checked in Chrome on an M1, outstanding: the owner's look and an unloaded per-tier cost measurement; W5a (reflections of land by screen-space reflection, and of the clouds, brought forward from W5 at the owner's report) built and checked in Chrome on an M1, outstanding: the owner's look and an unloaded cost measurement; water cost work (WATER_RENDERING.md §8, "Cost"): cheaper hashing, noise and caustic tiles, frame pacing against the stalls, Medium the desktop default — Medium +1.6 ms and High +1.7 ms over Low on the shore view before the reflections, which now add the most (outstanding: W5a's reflection cost against the 2/3 ms targets); next: W4; W6 only if marching is kept at A7; `package.json` raised to 0.12.1, a patch release of the 0.11 line |
 | 27 — Structure sandbox | 🚧 In progress — S0 (ADR 0031), S1 (the structure format, `gen.mjs`, the Rust loader, the playground converted), S2a (floor block, sandbox world type), S2b (the structures store: save, load through the region paste, export and import) and S3a (region edits, the region tools) done, S2a's e2e check outstanding; `package.json` raised to 0.11.0, the new compatibility line (S2a's registry change; the owner's decision, 2026-10-14); next: S3b (anchor, touch) and the S3 sandbox e2e outstanding; S4 (worldgen placement) deferred; `package.json` raised to 0.11.11, a patch release of the 0.11 line |
 | 28 — Sound effects | 🚧 In progress — F0–F6 built and tested (procedural Web Audio, no library; sound data and generator, the registry's `sound` field, Rust sound events, synth, variation, mixer, spatial playback, menu and game-action sounds, volume sliders, offline WAV renders); outstanding: the owner listens to the WAV renders and approves them, and answers `AUDIO.md` §9; `package.json` raised to 0.11.12, a patch release of the 0.11 line |
-| 29 — Motion effects (speed FOV and wind) | 🚧 In progress — built and tested (the FOV widening with the camera's speed for the renderer and the LOD alike, the wind streaks, vignette and edge blur in the shared frame's composite, tunables as data, the settings, bench scenarios and screenshots); outstanding: the owner's look in a browser and approval, CI; `package.json` raised to 0.11.7, a patch release of the 0.11 line |
+| 29 — Motion effects (speed FOV and wind) | 🚧 In progress — built and tested (the FOV widening with the camera's speed for the renderer and the LOD alike, the wind streaks, vignette and edge blur in the shared frame's composite, tunables as data, the settings, bench scenarios and screenshots; fix 2026-10-20: the edge blur keeps the clouds seen from above); outstanding: the owner's look in a browser and approval, CI; `package.json` raised to 0.11.7, a patch release of the 0.11 line |
 | 30 — Tree growth | 🚧 In progress — G-ADR (ADR 0033) and the G0 prototype page built and verified in Chromium; outstanding for G0: publishing the page and the owner's review; next: G1; G2 needs Phase 27 (S2a/S3); G3 is a new compatibility line (the owner decides the bump) and needs Phase 20 for felling and the day/night cycle's day length; `package.json` raised to 0.11.14, a patch release of the 0.11 line |
 | 31 — Sky clouds | 🚧 In progress — C0–C5 built and tested: a 2D cloud deck in the composite's sky (ADR 0034, `CLOUDS.md`), tunables as data (`shared/look/clouds.json`, generator and CI stale check), the Clouds setting (Off / Low / High), the drift on the server's tick, bench scenarios and screenshots, GPU cost measured (about +0.9 ms composite on High at 720p, Apple GPU); the owner approved the look (2026-10-15) and asked for clouds from above (C5, built: the deck over the terrain by the stored depth, sunlit tops, a fogged crossing); outstanding: CI, a phone's frame time; future, not started: weather-driven coverage (C6), cloud shadows on the terrain (C7); `package.json` raised to 0.13.1, a patch release of the 0.11 line |
 | 32 — Day/night cycle | 🚧 In progress — D0–D5 built and tested: world time (the server's tick, no protocol change) drives a keyframed sky, light, fog, exposure and saturation (ADR 0035, `DAY_NIGHT.md`), data in `shared/look/daynight.json` (generator, CI stale check), a limb-darkened sun, a moon with phases and maria, stars, per-face light on both faces, the clouds and the water's glint lit by it, `?time`/`?moon`/`?timespeed`, F3, bench `time`/`timelapse` steps; screenshots and GPU cost (about +0.1 ms composite, 720p, Apple GPU); outstanding: the owner's look and answers to `DAY_NIGHT.md` §8, CI, a phone's frame time; `package.json` raised to 0.11.16, a patch release of the 0.11 line |
 | 33 — Transparent blocks (render modes, cross geometry, tall grass) | 🚧 In progress — render modes as block data and cutout (see-through) ladders shipped on the 0.11 line (0.11.18; no registry-hash change); on `claude/transparent-blocks` for the 0.13.0 line (with wood and leaves): the cross look with wind and fade, placement rules and `medium`, `dwell:tall_grass` grown by world generation (decorations as data, generator version 13; a partial reversal of B10 for plants), the Plant sway setting, the marcher's classes, all tested and checked in a browser (about +0.3 ms GPU for a 150-plant field); outstanding: hillside screenshots of generated grass (T9), the owner's look, the e2e suite on CI; `package.json` raised to 0.13.0, the new compatibility line (new blocks: log, leaves, tall grass; generator v13; the owner's decision, 2026-10-16) |
-| 34 — Brushes | 🚧 In progress — B1 built and tested: VoxelSniper-style brushes in the sandbox (ADR 0037, `BRUSHES.md`): brushes, performers and sculpt in `dwell-world` `brush.rs`, presets and the per-world-type policy as data (`shared/brushes/brushes.json`, generator, CI stale check), strokes as `KEEP` pastes behind the `brushes` Welcome flag (0.11 line, no protocol bump), the brush tool, its HUD panel and keys, the region `tool` sound; browser check done; outstanding: the owner's try-out and answers to `BRUSHES.md` §5, CI; `package.json` raised to 0.11.20, a patch release of the 0.11 line |
+| 34 — Brushes | 🚧 In progress — B1 built and tested (brushes, performers and sculpt in `dwell-world` `brush.rs`, presets and the per-world-type policy as data, strokes as `KEEP` pastes behind the `brushes` Welcome flag, the brush tool, HUD panel and keys). The owner answered `BRUSHES.md` §5 (2026-10-19); B2 (the rest of VoxelSniper's brushes, §7), B3 (the exact-cell preview) and B4 (predicted strokes and edits, protocol v16: a new compatibility line) built and tested; touch brushes later (owner). Outstanding: the owner's try-out, CI |
 | 35 — Sliding on steep ground (stacks on 18, uses 28) | 🚧 In progress — built and tested natively (controller, netcode, sound events and data, the shell's loop voices, WAV renders) and in a browser (the bench); outstanding: CI (the WASM divergence run and the e2e suite, not run on the branch), the owner's review of the feel and of the slide WAV renders; `package.json` raised to 0.12.0, the new compatibility line (protocol 13; adaptive blocks change collision and terrain; the owner's decision, 2026-10-16) |
-| 36 — Half-height grid (½ m cells, stored cardinal ramps; branch `claude/half-height-voxels` only) | 🚧 In progress — H0–H4 built and verified locally: one named cell height (H1), the stored cardinal ramps (H2), the generation rule (H3), and the switch to ½ m cells (H4: protocol and generator version 14, goldens re-recorded, no block adaptive; face B's LOD mirror and the LOD id fixed). Outstanding: the WASM suites (CI); the bench walk and screenshots; the ray marcher, brushes, the fluid surface drop and the vertical view radius left in cells (deviations, for the playtest). Next: H5, the owner's playtest. A playtest branch, not for `main` until the owner keeps it; `package.json` not raised on the branch |
+| 36 — Block registry sync | 🚧 In progress — built and tested natively and in Vitest (ADR 0038, `BLOCK_REGISTRY.md` §8): the server's registry sent at join (`BlockRegistry`, protocol 14), ids mapped at the session boundary, the join prompt (no refusals), the fallback look, server-registered blocks, placeholders for unknown states in world files; outstanding: CI, the e2e suite (WebRTC join fixed: parts fit a WebRTC message, larger messages are fragmented), the owner's review of the prompt; ships in the next minor (0.14.0), coordinated with Phase 16's protocol bump |
+| 37 — Sprint slide (stacks on 35) | 🚧 In progress — built and tested natively (controller, predictor, netcode, protocol 15 vectors): crouch while sprinting slides on, crouched, with friction and slopes, limited steering, a jump out and a cooldown (`PLAYER_CONTROLLER.md` §6.9), checked in Chrome (the `sprint-slide` bench); outstanding: CI (the WASM divergence run and the e2e suite), the owner's review; a protocol change (15): the owner raises `package.json` to a new minor |
+| 38 — The spyglass | 🚧 In progress — built and tested natively, in Vitest and on a real GPU (ADR 0039, `SPYGLASS.md`): a toggle key (`` ` ``) and wheel steps from `shared/look/spyglass.json` (generator, CI stale check), the zoomed FOV for the raster renderer, the marcher (its FOV bug fixed) and the LOD, which refines only inside the narrow view (bounded by the detail boost), the vignette, reduced motion, the `spyglass-far` bench scenario; outstanding: CI and the owner's review in a browser; a patch release |
+| 39 — Half-height grid (½ m cells, stored cardinal ramps; branch `claude/half-height-voxels` only) | 🚧 In progress — H0–H4 built and verified locally: one named cell height (H1), the stored cardinal ramps (H2), the generation rule (H3), and the switch to ½ m cells (H4: protocol and generator version 14, goldens re-recorded, no block adaptive; face B's LOD mirror and the LOD id fixed). Outstanding: the WASM suites (CI); the bench walk and screenshots; the ray marcher, brushes, the fluid surface drop and the vertical view radius left in cells (deviations, for the playtest). Next: H5, the owner's playtest. A playtest branch, not for `main` until the owner keeps it; `package.json` not raised on the branch |
 
 Phase numbering: Phase 4 was inserted on 2026-09-29 for the planet-scale world (ADRs 0011, 0012);
 the former Phases 4–7 are now 5–8, and Phase 3's former 3c and 3d are now 3d and 3e.
@@ -2292,37 +2295,97 @@ Exit criteria
 
 **Goal:** The baseline's geometry, with every bound read from one data-driven predicate.
 
-**Status:** Not started.
+**Status:** 🚧 Built and tested (generator v14, protocol 14: the 0.14 line); outstanding: CI, the
+owner's manual look in a browser, and one e2e edit at the boundary. Follow-up (owner, 2026-10-19):
+more elevation variance, generator v15 (below); it changes the terrain a seed generates, so it needs
+a new compatibility line (0.15.0), which the owner raises; outstanding: CI and the owner's look.
+Follow-up (owner, 2026-10-19): terrain steep enough to slide on, generator v16 (below); a new
+compatibility line (0.18.0), which the owner raises; outstanding: CI and the owner's look.
 
 Deliverables
-- [ ] **Constants** (`shared/protocol/constants.json`): `worldRadius` 50,000; `midplaneY` 0;
+- [x] **Constants** (`shared/protocol/constants.json`): `worldRadius` 50,000; `midplaneY` 0;
   `seaLevel` and the core's thickness move to the terrain definition in Phase 17 (interim values here:
   sea level `h` = 32, core 10); `worldBottomY`/`worldMaxY` replaced by `bounds`
   `{ "shape": "sphere", "center": [0, 0, 0], "radius": 50000 }`; `lod.maxLevel` 12;
   `flightCeiling` removed (D3: no movement limit); fly-speed levels re-checked for a 50 km world.
   Protocol version bumped.
-- [ ] **`InsideBuildVolume`** in `core/voxel.h` and `client/src/world/`: shapes a closed set in code
+- [x] **`InsideBuildVolume`** in `core/voxel.h` and `client/src/world/`: shapes a closed set in code
   (sphere; slab kept for tests), parameters from data. Used by: edits (server rejection, client
   pre-check), generation and storage (chunks wholly outside are air, never stored; `IsAirChunk`,
   `LodBoundsAt`), streaming and LOD requests. Not movement: players may fly outside it (D3).
-- [ ] **Bifacial re-tune**: the mirror constant, `kMinChunkY`/`kMaxChunkY` from the bounds, the
+- [x] **Bifacial re-tune**: the mirror constant, `kMinChunkY`/`kMaxChunkY` from the bounds, the
   flip band and `CORE_ANCHOR_LAYERS` (8) checked against the 10-layer core.
-- [ ] **Thin-crust LOD**: sections straddling the midplane at every level draw the viewer's face
+- [x] **Thin-crust LOD**: sections straddling the midplane at every level draw the viewer's face
   only, without holes or the other face showing through.
-- [ ] Far-origin test runs moved to ~49 km; F4 zoom range narrowed.
-- [ ] Docs: `ARCHITECTURE.md` world bounds, bifacial, §6.6, §7.4; `BIFACIAL_WORLD.md` geometry.
+- [x] Far-origin test runs moved to ~49 km; F4 zoom range narrowed.
+- [x] Docs: `ARCHITECTURE.md` world bounds, bifacial, §6.6, §7.4; `BIFACIAL_WORLD.md` geometry.
 
 Exit criteria
-- [ ] Edits outside the sphere are rejected by the server and not sent by the client (unit tests;
-  one e2e edit at the boundary).
-- [ ] No chunk or LOD section wholly outside the sphere is generated, stored or requested (tests).
-- [ ] Flight is not bounded by the sphere (D3): a controller scenario flies out through it, native
+- [x] Edits outside the sphere are rejected by the server and not sent by the client (unit tests;
+  the e2e edit at the boundary is split out below).
+- [x] No chunk or LOD section wholly outside the sphere is generated, stored or requested (tests).
+- [x] Flight is not bounded by the sphere (D3): a controller scenario flies out through it, native
   and WASM, and the client requests no chunk or LOD section outside it while there (test).
-- [ ] LOD meshing of straddling sections at levels 1–8 shows no holes and none of the other face
+- [x] LOD meshing of straddling sections at levels 1–8 shows no holes and none of the other face
   (mesher tests over a 20-layer crust).
-- [ ] Walking over the rim still carries a player across the midplane to face B (controller
+- [x] Walking over the rim still carries a player across the midplane to face B (controller
   scenario).
-- [ ] Manual: a look in a browser from the ground, from altitude and from face B.
+- [ ] Manual: a look in a browser from the ground, from altitude and from face B (screenshots
+  taken by the agent, 2026-10-19; the owner's look outstanding).
+- [ ] Edits outside the sphere: unit tests built (server `check_block_edit`/`check_region_edit`,
+  client `BlockInteraction::act` and the region tools, red → green); the e2e edit at the boundary
+  outstanding (moved here from the criterion above, which is ticked for its unit tests only).
+
+Deviations
+- **Rust, not C++/TS** (ADR 0028): `InsideBuildVolume` is `dwell_world::bounds` (`BuildVolume`,
+  `inside_build_volume`, `BoundsShape` generated into `dwell-protocol`); `kMinChunkY`/`kMaxChunkY`
+  are `MIN_CHUNK_Y`/`MAX_CHUNK_Y`; the client pre-checks are in `dwell-game`.
+- **The island keeps its size** (owner, 2026-10-15): its mean radius is `world.islandRadius` =
+  25,000 m in `constants.json`, absolute; measured identical before and after (BASELINE_EVALUATION.md
+  §7); a test holds the mean coast within ±10%.
+- **Thin crust:** with the midplane at 0 every section up to level 11 is aligned to it; only the
+  root straddles. The mesher test runs over a 20-layer crust at every level 1–12, both faces.
+- **The flat worlds** (test world, sandbox) fill the midplane up to `FLAT_TOP_Y` = 32, and the
+  controller tests' local frame puts y 0 at sea level (32 m over the midplane): their old ground at
+  y = 0 would have lain on the midplane.
+- **Fly speeds:** `flySpeedMaxLevel` 39 → 20 (11.3 km/s); the height-based speed is capped at the
+  top level's; the terrain band (6,144 m) is a controller tunable; flight is held only at the wire
+  range (`POS64_LIMIT`).
+- `coreAnchorLayers` stays 8, within the 10-layer core (a compile-time check).
+- **More elevation variance** (owner, 2026-10-19: "just more height from the noise really"; tuning,
+  not a new system): the height field's parameters moved from code constants to data
+  (`shared/worldgen/terrain.json`, generated into `terrain.gen.rs` by `shared/worldgen/gen.mjs`, the
+  move itself checked against the unchanged goldens); hills ±30 → ±80 m, bumps ±2.5 → ±5 m, and the
+  inland rise 90 → 130 m so the deeper hollows stay above sea level. Generator version 15, goldens
+  regenerated (with chunk rows up to the hilltops). Over 7 seeds and both faces (`--example relief`):
+  height standard deviation 21 → 36 m, highest ground ~105 → ~194 m above sea level, mean slope
+  2.7° → 5.9°, island under water 0.2 → 0.6 %, surface steeper than the slide's 44° 0 → ~0.01 %,
+  columns too steep for tall grass 0 → 0. The island's size is unchanged (the ±10 % test passes).
+  `the_relief_is_hilly_but_the_island_stays_dry` pins it (red on version 14's values: sd 21.1 m).
+  Screenshots before and after (ground, altitude, face B) were taken in Chrome on the GPU.
+- **Steep terrain** (owner, 2026-10-19: "I want terrain steep enough to slide on"; tuning of the
+  height field, not a new system). The owner's answers: everywhere (steeper hills overall, not
+  mountain regions); about 15 % of the land's surface steeper than the slide's 44° (Phase 35);
+  peaks up to about 500 m. The existing parameters reach it, so no noise term was added: hills
+  ±80 m, 2,048 m, 4 octaves → ±225 m, 1,024 m, 5 octaves (finest 64 m), inland rise 130 → 320 m;
+  bumps and coast unchanged. Generator version 16, goldens regenerated (the ground's rows now found
+  from the generator). Over 7 seeds and both faces (`--example relief`): sliding surface ~0.01 →
+  ~15 %, highest ground ~194 → ~504 m, height sd 36 → 91 m, mean slope 5.9° → 21.6°, island under
+  water 0.6 → 0.8 %, too steep for tall grass 0 → 0.3 %, offshore islets unchanged (2.8 % of the
+  sea within 3 km of the coast). Walkability (new in `--example relief`): of the dry land within
+  512 m of the spawn, 91–100 % reachable without climbing a slide, 79–100 % both ways; the spawn is
+  never on a slide (its level patch, `players_spawn_on_level_open_ground_near_the_origin`).
+  `the_hills_are_steep_enough_to_slide_and_reach_about_500_m` pins it (red on version 15's values:
+  sliding 0.00 %, highest 190 m; green: 15.3 %, 495 m). Found along the way and fixed: the
+  decorations' height band (`decorations.json`, metres above sea level) was compared with the
+  face-local top, 32 m off since Phase 16; `a_decorations_height_band_is_metres_above_sea_level`
+  (red: 12,387 of 54,254 shore grass cells below the band planted; green: none). Meshing cost
+  (new: `cargo run --release -p dwell-mesh --example mesh_cost`): chunk mesh vertices around the
+  spawn 1.04 M → 1.85 M (more rows hold ground; +20 % per chunk), LOD section vertices 0.94 M →
+  2.36 M; the bench's `gpu.frame` (seed 7, unthrottled) 6.1 → 8.5 ms at `idle-spawn`, 4.6 → 7.3 ms
+  at `fly-high`. Screenshots before and after (the ground, a hillside slide in progress, 600 m up,
+  face B) were taken in Chrome on the GPU; the walk downhill from seed 7's spawn slides in version
+  16 and never in 15 (the controller's trace).
 
 ---
 
@@ -2685,8 +2748,8 @@ the e2e suite passes on CI. A3b (the GPU march, uploads, brick jobs, telemetry) 
 the per-pixel test outstanding. A4a (the march's speed: each level's occupied rows skipped, a
 vectorised inner loop, shading in its own pass; the cone-LOD switch rule that removes the owner's
 concentric rings) and A5a (render scales with FSR 1 or a bilateral upscale) built, A4's desktop
-exit check done, its phone report outstanding; next: A3c (overlays, LOD column heights, raster
-ids), A4b (the beam prepass, the temporal start). Needs Phase 24 only. The marcher and compare mode are in local builds only (dev server, local preview, bench)
+exit check done, its phone report outstanding; A4b (the beam prepass, the temporal start with the
+eye still) built and measured on an M1; A4c (survey, the temporal start while moving, kept frames, the column search's slope rule) built and measured on an M1 under load, continuing with the per-step cost at the LOD levels; next: A3c (overlays, LOD column heights, raster ids). Needs Phase 24 only. The marcher and compare mode are in local builds only (dev server, local preview, bench)
 until A7; deployed builds keep the mesher throughout and stay shippable after every step. Phase 20
 waits for A7; Phase 26 shares A1 (its W2). No public API change, so no new compatibility line.
 
@@ -2748,11 +2811,36 @@ Deliverables
   switch waits while the coarser cell is occupied (the owner's concentric rings, a test that failed
   first); `perf.rs`, a native profiling harness. Reference and WGSL together, the per-pixel check
   exact.
-- [ ] **A4b** — The rest of A4's list: the beam prepass (a conservative start distance per 8×8
-  tile, with a test that it never passes the true hit) and the temporal start distance (invalidated
-  on edits and disocclusion). Moved out of A4a: after the level-rows skip the sky takes 15–20
-  steps and the ground 5–10, and the profile puts the cost in the per-step latency, not the count
-  (design doc "A4 as built").
+- [x] **A4b** — The rest of A4's list (design doc "A4b as built"):
+  - **The beam prepass:** a conservative start distance per 8×8 tile (`dwell_march::beam` and
+    WGSL `beam_main`). It is tested never to pass the true hit on the CPU (random scenes, a voxel
+    only some pixel rays hit, levels that disagree both ways) and per pixel on the GPU against a
+    march from the eye.
+  - **The temporal start distance:** only with the eye still (1 mm), the same view size and no
+    brick upload since the last frame, so edits and streaming invalidate it and disocclusion can't
+    occur.
+  - **Switches and configurations:** `?marchbeam=0` and `?marchtemporal=0`, and the bench's
+    `march-nobeam` and `march-notemporal` configurations.
+  - **Effect** (720p on an M1, Chrome): `gpu.march` 21 → 8.5 ms at the spawn, 19 → 6.6 ms at the
+    horizon, 4.8 → 3.5 ms looking down, 24 → 17.5 ms flying 540 m up.
+- [x] **A4c** — Optimizing the marcher (owner, 2026-10-19; design doc "A4c: the survey" and "A4c as built"):
+  - **The survey** of the common ray-marching optimizations against Dwell's layout, with
+    measurements of where the time goes.
+  - **The temporal start while the eye moves:** last frame's tile distances reprojected from last
+    frame's eye through a min pyramid (the reduce pass); not trusted in nodes changed since
+    (`Dirty::regions`) or across a cone-LOD band's end; one jump per band in the beam walk; clear
+    distances stop where the LOD-switch rule held a ray. The per-pixel GPU check draws each view
+    after a turn, a step forward and a step back (it found 3 starts past a hit before the band rule;
+    0 after); the WebGPU probe checks 36 views.
+  - **Kept unchanged frames:** the march skipped, only shading run, when nothing it depends on
+    changed (a test pins what counts as a change).
+  - **The column search's slope rule:** in mixed bricks only for rays with `|d.y| < 0.15`
+    (reference and WGSL together).
+  - **Switches and configurations:** `?marchmoving=0`, `?marchreuse=0`, `?marchsteep=0`; the bench's
+    `march-a4b`, `march-noreuse`, `march-nosteep`; scenarios `far-view` and `look-around`.
+  - Tried and dropped: the if-if loop, other beam-walk orders, parallel column loads.
+- [ ] **A4c, continued** — The per-step cost at the LOD levels (the column grid's layout, the
+  lookup chain), and the rest of the survey's candidates.
 - [x] **A5a** — Render scales 0.5 and 0.75 for the marcher with FSR 1 (EASU + RCAS in WGSL) or a
   depth- and normal-aware bilateral upscale (`render/march/upscale.rs`), `?scale=` with
   `?upscaler=fsr1|bilateral`, `__dwell.upscalers()`, the bench's `march-half-fsr`, `march-075-fsr`
@@ -3043,7 +3131,9 @@ streaks blow past the screen's edges, from data-driven tunables
 
 **Status:** In progress — built and tested; outstanding: the owner's look in a browser and approval
 (and the open questions in `MOTION_EFFECTS.md`), CI. Built on Phase 25's shared frame (A1): the
-wind is part of its composite pass.
+wind is part of its composite pass. Fix (2026-10-20): above the deck at speed, the edge blur's
+taps dropped the clouds in front of the terrain, leaving them only inside a circle; the taps now
+composite as the pixel does (bench `clouds-above-fast`).
 
 **Deviation:** the owner was not asked the "ask before designing" questions first; the defaults
 chosen are recorded in `MOTION_EFFECTS.md` with the open questions.
@@ -3267,8 +3357,11 @@ system: a fixed vocabulary of brushes and performers, named presets as data
 ([ADR 0037](./adr/0037-brushes.md), [`BRUSHES.md`](./BRUSHES.md); the owner's brief, 2026-10-15:
 "painting tooling … like Voxel Sniper").
 
-**Status:** In progress — B1 built and tested; outstanding: the owner's try-out and answers to
-`BRUSHES.md` §5, CI. Needs Phase 27's sandbox world type and region edits (S2a, S3a).
+**Status:** In progress — B1 built and tested; the owner answered `BRUSHES.md` §5 (2026-10-19), and
+the follow-ups are built and tested: B2 (the rest of VoxelSniper's brushes), B3 (the exact-cell
+preview) and B4 (predicted strokes and edits; protocol v16, a new compatibility line). Touch brushes are later, at low priority (owner).
+Outstanding: the owner's try-out, CI. Needs Phase 27's sandbox world type and region edits (S2a,
+S3a).
 
 Deliverables
 - [x] **B1** — Brushes (ball, disc, cylinder, cube, ellipsoid, seeded splatter, line), performers
@@ -3279,6 +3372,22 @@ Deliverables
   the brush tool (`dwell-game` `brush_tool.rs`: keys, ranged aim, wireframe outline,
   arrow/gunpowder, pick, one undo step per stroke, rate-paced sending, the region `tool` sound);
   the HUD panel and the controls table.
+- [x] **B2** — The rest of VoxelSniper's brushes and performers (owner, 2026-10-19; `BRUSHES.md` §7
+  lists what was added and what was skipped, with the reasons): brushes square, disc/square on the
+  face, ellipse, ring, triangle, jagged line, blob, dome, snipe, stencil (over the structures
+  format, two prototype structures added) and tree; `density` and `checker` on any brush;
+  performers blend, linear blend, underlay, hollow, fill down, extrude and stamp; overlay's
+  `onTop`; masks `not_target` and `liquid`; 30 presets for them; `gen.mjs` checks named structures
+  and blocks against their data.
+- [x] **B3** — The exact-cell preview in place of the wireframe (`BRUSHES.md` §3, §5 question 7): a
+  see-through ghost of the cells the stroke would change, coloured by what each becomes, its outer
+  faces only, capped at 16,384 faces (else the brush's box), rebuilt on change or every 250 ms;
+  `\` toggles it; a ghost pipeline in the renderer (fainter where the scene hides it).
+- [x] **B4** — Predicted strokes and normal edits, reconciled with the server (`BRUSHES.md` §4,
+  §5 question 5; `ARCHITECTURE.md` §6.5): `EditAck` (protocol v16) numbering every edit and naming
+  the refused; the session mapping the server's numbers to the game's ids; `EditPredictor`'s
+  overlay holding the server's changes to predicted cells until their acks; a stroke's queued edits
+  predicted when it is made; `ChunkStreamer::set_local`. Needs a new compatibility line (0.17.0).
 
 Exit criteria
 - [x] Each brush's cells (counts, symmetry, seeded splatter, lines), each performer and sculpt on
@@ -3292,7 +3401,31 @@ Exit criteria
   `__dwell.brush`): a mound built from two balls 26 m away, a dirt disc beside it, then smooth,
   erode, a sand splatter and grass surface paint, each screenshotted with the wireframe and the HUD
   panel; undo took the paint off in one step and redo put it back.
-- [ ] The owner tries the brushes and answers `BRUSHES.md` §5.
+- [x] The new brushes' cells, the new performers on fixtures, stencils and trees, and the masks
+  (`dwell-world` `brush.rs`: `the_new_shapes_cover_what_they_say`,
+  `triangles_and_jagged_lines_join_their_clicks`, `blend_takes_the_commonest_neighbour`,
+  `underlay_cover_hollow_fill_down_and_extrude`, `masks_exclude_the_target_and_drain_liquids`,
+  `stencils_stamp_a_structure_and_trees_grow_of_their_blocks`; every preset strokes); the tool's
+  triangle clicks and the shape key keeping stencils (`brush_tool.rs`); a stencil and a tree by
+  data alone and their bad entries (`brushesGen.test.ts`).
+- [x] The preview is the exact cells (a splatter's ghost is its changed cells, each face pointing
+  out of its cell), outer faces only, coloured by kind, bounded by the cap, toggled, and rebuilt
+  only when needed (`brush_tool.rs` `the_preview_is_a_ghost_of_the_exact_cells`,
+  `the_preview_is_bounded_toggled_and_rebuilt_only_when_needed`). In the browser (2026-10-19,
+  Chrome on the GPU, a sandbox world through `__dwell.brush`): the ghosts of a splatter, a
+  generated tree, a blob and a tree stencil, and an erase's red ghost over a stone ball, screenshotted.
+- [x] Prediction: shown before the echo, confirmed without a write, a refusal rolled back, a
+  different result replaced, rapid edits with refusals and acks out of order reconciled
+  (`edit_prediction.rs` tests); the server numbering edits, acking after the modification and
+  naming the refused (`dwell-sim` `region_edits.rs`
+  `every_edit_is_acknowledged_after_its_changes_with_the_refused_ones_named`); the session's id
+  mapping and unsent edits (`session.rs`); end to end over a delayed link, a host and a guest
+  (`game_local`: `an_edit_shows_at_once_and_the_servers_ack_settles_it` — a place and a whole
+  brush stroke on the host before the server has them, then the server, host and guest agreeing;
+  `a_refused_edit_rolls_back`; `rapid_edits_and_a_refusal_reconcile_with_the_server`); the
+  `EditAck` layout and malformed acks (`vectors.txt`).
+- [x] The owner answers `BRUSHES.md` §5 (2026-10-19).
+- [ ] The owner tries the brushes.
 
 Deviations: built without the "ask before designing" questions (the coordinator's defaults, recorded
 with open questions in `BRUSHES.md` §5). The S3 paste could not leave cells alone (and a paste over
@@ -3482,12 +3615,190 @@ Deviations:
   lie across a crest and push the player back onto it (players balanced on every ridge).
 - **The 44° threshold makes more than ramps slide**: the 45° flanks of the adaptive ridges and half
   pyramids too, so a one-wide ridge or a lone natural block needs a jump to cross (the owner's
-  "steeper than 44°" taken as stated).
+  "steeper than 44°" taken as stated). **Owner decision (2026-10-19): intended** — one-wide ridges
+  and lone natural blocks do slide, and crossing them needs a jump.
 
-## Phase 36 — Half-Height Grid: ½ m Cells and Stored Cardinal Ramps
+## Phase 36 — Block Registry Sync
+
+> **Numbering note (for the integrator):** 36 was the next phase number free on `main` when this
+> was written (2026-10-19); renumber it if another branch took it.
+
+**Status:** Built and tested natively and in Vitest (2026-10-19). Outstanding: CI, the e2e suite
+(not run on the branch), the owner's review of the join prompt in a browser. A protocol change:
+protocol 14, shipping in the next minor (0.14.0) — shared with Phase 16 (#114) if they land
+together, otherwise whichever lands second bumps once more. Fix (2026-10-19, e2e): WebRTC joins
+stalled before Welcome — a full 64 KiB `BlockRegistry` part plus its header (65 545 bytes) was over
+the server's WebRTC message limit (str0m assumes SCTP's default 64 KiB). Parts are now 64 KiB less
+64 bytes (`MAX_WEBRTC_MESSAGE_BYTES`; not a wire change, clients take any part size), a test pins
+that a join and its first terrain fit, and a message SCTP refuses closes the connection instead of
+blocking its channel. Fix (2026-10-19): other messages could still exceed 64 KiB (a
+near-checkerboard chunk encodes to 65 562 bytes) and disconnect a WebRTC player; reliable messages
+over a WebRTC link's limit are now fragmented and reassembled on every WebRTC link
+(ARCHITECTURE.md §8.2; no protocol bump, messages that fit are unchanged), pinned by a str0m peer
+test (`dwell-net` `tests/webrtc.rs`) in place of the join-fits test.
+
+Owner (2026-10-16): *"we need registry sync; have it go out at the same time with 0.12.0"* —
+server mods that add blocks, as in Minecraft — and the same day: **never refuse a join over
+registry differences**; the server wins and the player is asked. Design and defaults in
+[ADR 0038](./adr/0038-block-registry-sync.md) and [`BLOCK_REGISTRY.md`](./BLOCK_REGISTRY.md) §8.
+
+Deliverables
+- [x] The registry payload (`dwell_blocks::sync`, format 1): shapes by geometry, fluid names,
+  blocks with properties, every state's definition as tagged fields (rules a client must
+  understand, looks it may ignore), carrying every field of `StateInfo`; golden vectors from the
+  independent Python encoder (`registry_payload`, `block_registry*`).
+- [x] `BlockRegistry` parts before `Welcome`; `Welcome.registry_hash` is the definitions hash.
+- [x] The client's table grows at run time (`dwell_blocks` `table.rs`): synced states, server
+  blocks, placeholders; lock-free reads, the build's ids unchanged.
+- [x] Mapping at the session boundary, both ways (chunks, LOD, modifications; block edits,
+  region edits, brush pastes with `KEEP`); client-only states are never sent; tests.
+- [x] The check never refuses: differences adopt the server's rules (a synced copy keeps the
+  client's look), unknown states take the received definition, unrepresentable shapes degrade to
+  the cube; the session's `Confirming` state; tests.
+- [x] The join prompt in the shell: three groups, Continue / Cancel (to the menu), "don't ask
+  again" in the append-only `dwell.registryTrust` record keyed by server and definitions hash
+  (Vitest); differences in the console and the F3 overlay.
+- [x] Job workers receive synced states (`Job::Registry` broadcast).
+- [x] `WorldgenCheck` in the server's ids (0 while a state differs).
+- [x] The fallback look (`dwell-mesh` `MISSING_TILE`); every build state draws its own (test).
+- [x] `Server::register_block` (a server's own blocks, from data); the fixture's server-only
+  `test:glow`.
+- [x] World files keep unknown states as placeholders under their exact strings and save them
+  back (regression test, red then green); a server serves its file's non-build states.
+- [x] Docs: ARCHITECTURE.md §6.1 and §8.3, BLOCK_REGISTRY.md §4 and §8, RELEASES.md §3, CLAUDE.md.
+- [ ] Follow-up (not this phase): server-sent looks and textures (Phase 19's textures as data),
+  shapes from the server, a palette fed by the synced registry, mods loaded by the dedicated
+  server from data files.
+
+Exit criteria
+- [x] A block only the server has arrives by sync, draws with the fallback look, collides exactly
+  as on the server (no prediction snaps), is targeted and broken, and another client sees it and
+  its removal (`game_local.rs`, native).
+- [x] Mismatched-but-mappable registries connect (shifted ids, removed and added blocks,
+  differing definitions); a malformed or missing registry closes with a reason.
+- [x] Local mode maps to the identity with the build's definitions hash.
+- [x] Meshing and physics cost unchanged (the build's ids index the generated array as before;
+  identity sessions skip translation; microbench in the PR).
+- [ ] CI green, and the e2e suite (specs that may need updating: `e2e/edit.spec.ts`,
+  `e2e/play.spec.ts`, any reading the session's phases).
+
+---
+
+## Phase 37 — Sprint Slide
+
+> **Numbering note (for the integrator):** 37 was the next phase number free on `main` when this
+> was written (2026-10-19); renumber it (heading and Progress row) if another branch took it.
+
+**Status:** Built and tested natively (controller, predictor, netcode, protocol vectors; also far
+from the origin and on face B), under `wasm32-wasip1` locally (`dwell-protocol` and
+`dwell-physics`, as CI runs them, the golden trace included) and in Chrome on the GPU (the bench).
+Outstanding: CI (the divergence run there and the e2e suite), the owner's feel review. A protocol change: protocol 15 (the snapshot's
+controller state grows by two bytes), so it ships on a new minor — the owner raises
+`client/package.json`. Stacks on Phase 35 (it reuses the steep slide's state, velocity split and
+sound) and Phase 29 (the motion effects respond through the Sliding state).
+
+Owner (2026-10-19): *"when sprinting, if you crouch, you'll continue to slide forward (could reuse
+some existing 'sliding' mechanics). You should still be in 'crouch' (height etc.) while sliding."*
+The task set the behaviour (start from a sprint, friction with slopes, end at crouch speed or on
+release, the crouch capsule and low ceilings, limited steering, a jump out, a cooldown, data
+tunables, deterministic prediction); the numbers are defaults recorded in `PLAYER_CONTROLLER.md`
+§6.9 (all data in `PlayerControllerConfig::sprint_slide`). It extends an existing system (the
+controller's config sections), so no new data format was asked about.
+
+Deliverables
+- [x] **The sprint slide** (`PLAYER_CONTROLLER.md` §6.9): crouch pressed on the ground with run held
+  at ≥ `min_start_speed` starts it (with `start_boost`); the crouch capsule throughout; friction
+  and the ground's tilt (`slope_gravity`) up to `max_speed`; steering at `steer_rate`; step-ups;
+  ends at the crouch speed, on release, on leaving the ground (a jump keeps the momentum), at a
+  wall, or when an exclusive layer takes over; the steep slide's velocity split; `cooldown_ticks`;
+  `State::Sliding`; `SPRINT_SLIDE_STARTED` / `ENDED` events.
+- [x] **Netcode**: `SprintSlideState` (active, cooldown) resumable on the wire — `slideFlags` and
+  `slideCooldown` in `ControllerState` (protocol 15; `shared/protocol` constants, generator, the
+  Python reference encoder and the vectors regenerated); the predictor compares them.
+- [x] **Tests**: `tests/sprint_slide.rs` (10 scenarios), `tests/predictor.rs` (a slide and a
+  cooldown resumed from a snapshot), `dwell-sim` netcode (two clients, one sprint-sliding: exact
+  without latency, no snaps at 150 ms RTT / 20 ms jitter / 5 % loss), the protocol vectors' decoded
+  slide fields, `net.rs`'s round trip.
+- [x] **Sound and motion effects**: none new — both follow `State::Sliding` (the slide's scrape
+  voice, the crouch sound at the start; the sliding FOV/wind gain of 1); documented in `AUDIO.md`
+  and `MOTION_EFFECTS.md`.
+- [x] Docs: `PLAYER_CONTROLLER.md` §3, §4, §6.9, §7, §8.2, §8.4, §10; `ARCHITECTURE.md` (the
+  controller, the snapshot layout, the protocol history, §7.4).
+- [x] **Browser**: the bench scenario `sprint-slide` (sprint, slide, jump out, sprint again, slide
+  and steer) on the real GPU, with a screenshot sequence.
+
+Exit criteria
+- [x] The new controller and netcode tests failed with the slide's start disabled (9 of 10
+  controller tests; the walk case is a guard; both netcode tests), and the predictor test failed
+  with the slide fields left out of `from_net` (51 replays against 0).
+- [x] The golden trace unchanged (its scenario never crouches at a sprint); the workspace's tests
+  pass natively (the 64-player timing gate only alone: the machine was loaded by other builds, 0.7–
+  1.0 ms against its 1 ms bar); `tests/sprint_slide.rs` also far from the origin and on face B.
+- [x] Browser (Chrome, Metal; seed 7's spawn): the trace shows two slides from a sprint (9.4 m/s
+  after the boost, crouched, `Sliding`), the first jumped out of and carried at 6.4 m/s through the
+  air, the second steered right and ridden out to the crouch speed, then crouch-walking; no page
+  errors. Screenshots: the crouch eye height through the slide.
+- [ ] CI green, including the `wasm32-wasip1` divergence run and the e2e suite.
+- [ ] Manual: the owner slides in game and reviews the feel.
+
+Deviations:
+- **The wire changed** although the steep slide (§6.8) needed none: the sprint slide is a state
+  started by a press, not derived from the probe, and the controller flags byte was full, so it
+  takes two new bytes (protocol 15).
+- **No slide from landing** with crouch and run held (Fortnite allows it): the task asked for a
+  start on the ground; a possible follow-up.
+
+## Phase 38 — The Spyglass
+
+**Status:** Built and tested natively, in Vitest and in Chrome on the GPU (2026-10-19).
+Outstanding: CI, the owner's review in a browser. No change to saves, the protocol or terrain: a
+patch release.
+
+Owner (2026-10-19): *"a spyglass zoom like feature to see the clarity difference when using
+raymarching vs LODs; this would actually show higher res farther away but in a smaller cone
+essentially."* The owner's answers (who it is for, the toggle key, the narrow view with more detail,
+a data file) and the design are in [`SPYGLASS.md`](./SPYGLASS.md) and
+[ADR 0039](./adr/0039-spyglass.md).
+
+Deliverables
+- [x] `shared/look/spyglass.json` (key, magnification steps, detail boost, transition, vignette),
+  `shared/look/spyglass.mjs` (validation; → `dwell-look` `spyglass.gen.rs` and
+  `client/src/ui/spyglass.gen.ts`), `spyglass.test.mjs` (a step added by data alone), CI stale check.
+- [x] `dwell-look` `spyglass.rs`: `zoom_fov`, the zoom state (toggle, wheel steps, the eased
+  transition, reduced motion), the LOD's detail magnification, the look scale; tests.
+- [x] The frame's FOV narrowed by the zoom (speed boost included), given to the renderer and the
+  LOD camera (`game.rs`); test in `game_local.rs`.
+- [x] `dwell-lod`: `LodCamera.magnification` and `detail_magnification`;
+  `Frustum::pixels_per_radian_for` measures sections inside the view at the detail's pixel size,
+  others at the unzoomed FOV's; tests (red → green: a direction-independent pixel size refined
+  behind the camera too).
+- [x] The marcher draws with the frame's FOV (it used the screen's own: the speed boost was ignored);
+  regression test, red → green.
+- [x] Input (`web/app.rs`): the key while playing, the wheel's steps while zoomed, mouse look scaled
+  by 1/magnification; `setReducedMotion`; `__dwell.spyglass(on, step)`; `state().fov`, `spyglass`.
+- [x] The vignette (`ui/spyglass.ts`, the HUD) and the controls table's *View* group; Vitest.
+- [x] The bench's `spyglass` step and the `spyglass-far` scenario; screenshots raster and march,
+  unzoomed and at both steps.
+- [x] Docs: `SPYGLASS.md`, ADR 0039, ARCHITECTURE.md (`dwell-look`, `render/`, §6.6, §7.4),
+  DEV_TOOLS.md.
+- [ ] Later (not this phase): touch, a zoom sound of its own (it plays the tools' sound).
+
+Exit criteria
+- [x] Zoomed, a far section inside the view refines `log2(detail)` levels finer and one behind the
+  camera does not change (`the_spyglass_refines_far_terrain_inside_its_narrow_view_only`).
+- [x] The raster renderer, the marcher and the LOD all use the zoomed FOV (`game_local.rs`, the
+  render test).
+- [x] A step added by data alone zooms (`spyglass.test.mjs`, `spyglass.rs`).
+- [x] Raster and march compared zoomed on a real GPU (`npm run bench -- spyglass-far --compare
+  --configs march`, 60 fps raster, 37 ms GPU march at 8×).
+- [ ] CI green; the owner's review in a browser.
+
+---
+
+## Phase 39 — Half-Height Grid: ½ m Cells and Stored Cardinal Ramps
 
 > **Branch note:** built on the long-lived branch `claude/half-height-voxels` for the owner to
-> playtest; it reaches `main` only if the owner keeps it ([ADR 0038](./adr/0038-half-height-cells.md)).
+> playtest; it reaches `main` only if the owner keeps it ([ADR 0040](./adr/0040-half-height-cells.md)).
 > If it is merged, renumber it to the next free phase number on `main`.
 
 **Status:** H0 done (2026-10-19); H1–H4 built and verified locally (2026-10-20). Outstanding: the
@@ -3501,7 +3812,7 @@ block the ones around it don't change."* Answers to the follow-up questions: 45�
 first. Earlier the same day: tall grass grows only on flat surfaces (the lab).
 
 **H0 — Decision and design**
-- [x] ADR 0038; `HALF_HEIGHT_GRID.md`; this phase and its Progress row; the proposal marked adopted;
+- [x] ADR 0040 (numbered 0038 before main took that number); `HALF_HEIGHT_GRID.md`; this phase and its Progress row; the proposal marked adopted;
   `ARCHITECTURE.md` notes the planned change on the branch.
 
 **H1 — One named cell height (at 1.0)**

@@ -26,6 +26,8 @@ export function formatStatus(
     case 'connecting':
     case 'handshaking':
       return `Joining ${target}…`;
+    case 'confirming':
+      return `Joining ${target}: its blocks differ from this version’s…`;
     case 'joined':
       return `${stats.hostPaused ? 'Host paused · ' : ''}${target} (${TRANSPORT_NAMES[transport] ?? transport}) · player ${String(state.playerId)} · RTT ${ms(stats.rttMs)} (datagram ${ms(stats.datagramRttMs)}) · tick ${String(stats.serverTick)}${fps === null ? '' : ` · ${String(Math.round(fps))} fps`}`;
     case 'rejected':

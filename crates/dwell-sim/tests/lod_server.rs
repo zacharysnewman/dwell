@@ -41,6 +41,9 @@ fn verify(f: &mut Fixture, id: SessionId, w: &Welcome, full: bool) {
     );
 }
 
+/// The flat world's surface (feet height on its ground).
+const G: f64 = dwell_world::FLAT_TOP_M;
+
 fn flat_lod(c: LodCoord) -> LodCells {
     let mut cells = LodCells::new();
     generate_flat_lod(c, &mut cells);
@@ -101,7 +104,7 @@ fn stone() -> Chunk {
 #[test]
 fn a_chunk_change_is_downsampled_into_its_sections_up_to_the_root_each_a_new_revision() {
     let mut lod = LodPropagation::new(flat_generator(), 0);
-    let edited = ChunkCoord::new(0, 0, 0); // above the flat ground: air when generated
+    let edited = ChunkCoord::new(0, 1, 0); // above the flat ground: air when generated
     let stone = stone();
     let mut modified = |c: ChunkCoord| (c == edited).then(|| stone.voxels().to_vec());
     lod.mark_chunk(edited);
@@ -115,8 +118,9 @@ fn a_chunk_change_is_downsampled_into_its_sections_up_to_the_root_each_a_new_rev
         previous = s.revision;
     }
     assert_eq!(lod.sections().len(), MAX_LEVEL as usize);
-    // The stone cube shows where it fills cells; the rest of the section is as generated.
-    for level in 1..=6 {
+    // The stone cube shows where it fills cells; the rest of the section is as generated. (From
+    // level 6 a cell holding the chunk also holds the flat ground below it: solid either way.)
+    for level in 1..=5 {
         let c = above(edited, level);
         let cells = lod.cells_for_client(c);
         let generated = flat_lod(c);
@@ -125,18 +129,14 @@ fn a_chunk_change_is_downsampled_into_its_sections_up_to_the_root_each_a_new_rev
         // The cell holding the chunk's lowest corner.
         let (x, y, z) = (
             (-o.x / size) as i32,
-            (-o.y / size) as i32,
+            ((i64::from(edited.y) * 32 - o.y) / size) as i32,
             (-o.z / size) as i32,
         );
         let at = cell_index(x, y, z);
         assert_eq!(generated[at], M.air, "level {level}");
-        assert_eq!(
-            cells[at],
-            if level <= 5 { M.stone } else { M.air },
-            "level {level}"
-        ); // 32 m of stone: one level-5 cell
+        assert_eq!(cells[at], M.stone, "level {level}"); // 32 m of stone: one level-5 cell
         let differ = cells.iter().zip(&generated).filter(|(a, b)| a != b).count();
-        assert_eq!(differ > 0, level <= 5, "level {level}");
+        assert!(differ > 0, "level {level}");
     }
 }
 
@@ -201,15 +201,15 @@ fn the_index_follows_the_worldgen_check_untouched_worlds_cost_no_lod_data() {
 
 #[test]
 fn an_edit_reaches_a_far_client_index_update_then_explicit_only_where_it_changed() {
-    // A builds near the spawn; B is 50 km away and holds sections over A's area; C, 60 km the
-    // other way, has no modification in view and requests nothing.
+    // A builds near the spawn; B is 40 km away and holds sections over A's area; C, 45 km the
+    // other way, has no modification in view and requests nothing (Phase 16: the 50 km disc).
     let mut f = Fixture::new(flat());
     let mut boxes = Boxes::new();
     let a = f.join(1, &Client::new(1));
     let b = f.join(2, &Client::new(2));
     let c = f.join(3, &Client::new(3));
-    f.move_to(b.player_id, 50000.5, 0.0, 0.5);
-    f.move_to(c.player_id, -60000.5, 0.0, 0.5);
+    f.move_to(b.player_id, 40000.5, G, 0.5);
+    f.move_to(c.player_id, -45000.5, G, 0.5);
     for (id, w) in [(1, &a), (2, &b), (3, &c)] {
         verify(&mut f, id, w, false);
     }
@@ -218,8 +218,8 @@ fn an_edit_reaches_a_far_client_index_update_then_explicit_only_where_it_changed
     }
 
     // B holds these sections over the spawn, all generated so far (the index is empty).
-    let site1 = ChunkCoord::new(-1, 0, 0); // cell (-1, 0, 2)
-    let site2 = chunk_of(-5001, 0, 2); // another level-7 section, same level 8
+    let site1 = ChunkCoord::new(-1, 1, 0); // cell (-1, G, 2)
+    let site2 = chunk_of(-5001, G as i32, 2); // another level-7 section, same level 8
     let index_section = above(site1, INDEX_LEVEL);
     assert_eq!(above(site2, INDEX_LEVEL), index_section);
     assert_ne!(above(site2, 7), above(site1, 7));
@@ -228,7 +228,7 @@ fn an_edit_reaches_a_far_client_index_update_then_explicit_only_where_it_changed
         1,
         Message::BlockEditRequest(BlockEditRequest {
             action: BlockEditAction::Place,
-            cell: [-1, -1, 2],
+            cell: [-1, G as i32 - 1, 2],
             face: 2,
             material: M.sand,
         }),
@@ -305,7 +305,7 @@ fn an_edit_reaches_a_far_client_index_update_then_explicit_only_where_it_changed
     // A second edit elsewhere under the same entry: B asks again with what it holds. Only the
     // changed path comes back Explicit; the first path's section is Unchanged.
     let updates_before = boxes[&2].updates.len();
-    f.move_to(a.player_id, -4999.5, 0.0, 0.5);
+    f.move_to(a.player_id, -4999.5, G, 0.5);
     for _ in 0..3 {
         step_into(&mut f, &mut boxes);
     }
@@ -313,7 +313,7 @@ fn an_edit_reaches_a_far_client_index_update_then_explicit_only_where_it_changed
         1,
         Message::BlockEditRequest(BlockEditRequest {
             action: BlockEditAction::Place,
-            cell: [-5001, -1, 2],
+            cell: [-5001, G as i32 - 1, 2],
             face: 2,
             material: M.sand,
         }),
@@ -376,7 +376,7 @@ fn requests_are_rate_limited_and_answered_within_the_byte_budget() {
     verify(&mut f, 1, &w, true); // full-chunk mode: every answer Explicit (~1–6 KB)
     step_into(&mut f, &mut boxes);
     // 3 × 32 sections at once: the bucket holds LOD_REQUESTS_PER_SECOND.
-    let base = above(ChunkCoord::new(0, -1, 0), 2);
+    let base = above(ChunkCoord::new(0, 0, 0), 2);
     for m in 0..3 {
         let r = (0..32)
             .map(|i| ask(LodCoord::new(2, base.i + m * 32 + i, base.j, base.k), 0))
@@ -427,7 +427,7 @@ fn explicit_sections_carry_their_modified_neighbours_borders_in_the_apron() {
     let mut lod = LodPropagation::new(flat_generator(), 0);
     let stone = stone();
     // Two chunks in neighbouring level-1 sections along x.
-    let (left, right) = (ChunkCoord::new(-1, 0, 0), ChunkCoord::new(0, 0, 0));
+    let (left, right) = (ChunkCoord::new(-1, 1, 0), ChunkCoord::new(0, 1, 0));
     assert_ne!(above(left, 1), above(right, 1));
     lod.mark_chunk(left);
     lod.mark_chunk(right);
@@ -437,7 +437,7 @@ fn explicit_sections_carry_their_modified_neighbours_borders_in_the_apron() {
     let cells = lod.cells_for_client(above(right, 1));
     // The right section's −x apron is the left section's stone border; a generated apron would
     // be air there (above the ground).
-    let y = (-section_origin(above(right, 1)).y / 2) as i32;
+    let y = ((i64::from(right.y) * 32 - section_origin(above(right, 1)).y) / 2) as i32;
     assert_eq!(cells[cell_index(-1, y, 0)], M.stone);
     let generated = flat_lod(above(right, 1));
     assert_eq!(generated[cell_index(-1, y, 0)], M.air);
@@ -459,10 +459,11 @@ fn a_large_build_is_in_the_sections_drawn_from_50_km_away_and_from_altitude() {
     let (at_50km, at_100km) = (drawn_level(50_000.0), drawn_level(100_000.0));
     assert_eq!(at_50km, 8);
     assert_eq!(at_100km, 9);
-    // A wall 512 m wide, 512 m tall and 1 m thick on the flat ground (x = 1000, z 0..511).
+    // A wall 512 m wide, 512 m tall and 1 m thick floating 512 m over the flat ground (x = 1000,
+    // z 0..511): coarse cells near the ground hold the ground too (Phase 16: it lies at 0..32).
     const X: i32 = 1000;
     let mut built: BTreeMap<ChunkCoord, Chunk> = BTreeMap::new();
-    for cy in 0..16 {
+    for cy in 16..32 {
         for cz in 0..16 {
             let coord = ChunkCoord::new(X / 32, cy, cz);
             let mut chunk = Chunk::default();
@@ -483,12 +484,12 @@ fn a_large_build_is_in_the_sections_drawn_from_50_km_away_and_from_altitude() {
         built.get(&c).map(|chunk| chunk.voxels().to_vec())
     });
     for level in [at_50km, at_100km] {
-        // The section holding the wall's middle, 256 m up.
+        // The section holding the wall's middle, 768 m up.
         let (s, cell) = (section_size(level), cell_size(level));
         let c = LodCoord::new(
             level,
             ((i64::from(X) - ORIGIN_X) / s) as i32,
-            ((256 - ORIGIN_Y) / s) as i32,
+            ((768 - ORIGIN_Y) / s) as i32,
             ((256 - ORIGIN_Z) / s) as i32,
         );
         let cells = lod.cells_for_client(c);
@@ -503,8 +504,8 @@ fn a_large_build_is_in_the_sections_drawn_from_50_km_away_and_from_altitude() {
             )
         };
         let x = i64::from(X);
-        assert_eq!(generated[at(x, 256, 256)], M.air, "level {level}");
-        assert_eq!(cells[at(x, 256, 256)], M.stone, "level {level}"); // the wall, in mid air above ground
-        assert_eq!(cells[at(x + 4 * cell, 256, 256)], M.air, "level {level}");
+        assert_eq!(generated[at(x, 768, 256)], M.air, "level {level}");
+        assert_eq!(cells[at(x, 768, 256)], M.stone, "level {level}"); // the wall, in mid air above ground
+        assert_eq!(cells[at(x + 4 * cell, 768, 256)], M.air, "level {level}");
     }
 }

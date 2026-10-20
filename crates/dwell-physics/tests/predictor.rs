@@ -28,7 +28,7 @@ impl Server {
         let h = players.spawn(
             &mut physics,
             PlayerControllerConfig::default(),
-            DVec3::new(0.5, 0.0, 0.5),
+            DVec3::new(0.5, dwell_world::FLAT_TOP_M, 0.5),
             0.0,
         );
         Self {
@@ -195,7 +195,8 @@ fn a_remote_proxy_blocks_the_local_player() {
     let mut world = VoxelWorld::flat();
     let mut p = Predictor::new(PlayerControllerConfig::default());
     p.on_snapshot(&mut world, &server.snapshot(0));
-    p.set_remote(7, DVec3::new(0.5, 0.0, 3.0), Vec3::ZERO, false, 0.0, false);
+    let top = dwell_world::FLAT_TOP_M;
+    p.set_remote(7, DVec3::new(0.5, top, 3.0), Vec3::ZERO, false, 0.0, false);
     for seq in 1..=120 {
         p.tick(
             &mut world,
@@ -212,4 +213,48 @@ fn a_remote_proxy_blocks_the_local_player() {
     assert!(p.remote_position(7).is_some());
     p.remove_remote(7);
     assert!(p.remote_position(7).is_none());
+}
+
+/// Sprints, slides (crouch at 60), lets go at 70 and crouches again at 76, inside the slide's
+/// cooldown (PLAYER_CONTROLLER.md §6.9).
+fn sprint_slide_script(seq: u32) -> Input {
+    Input {
+        move_y: 1.0,
+        run: true,
+        crouch: (60..70).contains(&seq) || seq >= 76,
+        ..Input::default()
+    }
+}
+
+#[test]
+fn prediction_resumes_a_sprint_slide_and_its_cooldown_from_the_wire() {
+    // A client whose prediction starts from a snapshot (a join, or history lost) mid-slide, and
+    // again inside the cooldown: the slide's state comes only from the wire, and the prediction
+    // must carry on exactly as the server does.
+    for join in [62, 74] {
+        let mut server = Server::new();
+        let mut world = VoxelWorld::flat();
+        for seq in 1..=join {
+            server.step(&quantize_input(&sprint_slide_script(seq), seq), None);
+        }
+        let c = server.players.controller(server.h);
+        if join == 62 {
+            assert!(c.sprint_slide.active, "the server slides at {join}");
+        } else {
+            assert!(
+                c.sprint_slide.cooldown_ticks > 0,
+                "the cooldown runs at {join}"
+            );
+        }
+        let mut p = Predictor::new(PlayerControllerConfig::default());
+        p.on_snapshot(&mut world, &server.snapshot(join));
+        assert_eq!(p.next_seq(), join + 1);
+        for seq in join + 1..=join + 60 {
+            let input = quantize_input(&sprint_slide_script(seq), seq);
+            p.tick(&mut world, &input);
+            server.step(&input, None);
+            p.on_snapshot(&mut world, &server.snapshot(seq));
+        }
+        assert_eq!(p.stats().replays, 0, "joined at {join}: {:?}", p.stats());
+    }
 }

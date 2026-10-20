@@ -67,6 +67,15 @@ by the Vite build and linked from the menu's About screen). Beside the native se
     client → server message is compatible only behind a `Welcome` flag (servers reject unknown
     messages; clients ignore unknown flags), so builds of a line still play together
     (ARCHITECTURE.md §10.5; the first is `RegionEdit`).
+  - **Block content and compatibility (registry sync, ADR 0038, from 0.14):** adding blocks or
+    states (anywhere in the data: ids are mapped by name at join), adding a value to an existing
+    property, and changing looks (colour, textures, render mode, cross, wind, fade, grid, fluid looks,
+    sound sets) are compatible. Changing an existing state's shape or rules no longer refuses a join
+    (the client adopts the server's, after a prompt) but changes what players of other builds see,
+    so treat it as breaking for worlds. Still breaking: removing or renaming a state (adding or
+    removing a property renames every state of its block), changing the shapes themselves or the
+    adaptive shape rules (code both sides run), changing the terrain a seed generates, and changing
+    the registry payload's format.
   - **From `1.0.0`** (launch): MAJOR for breaking changes, MINOR for compatible new features, PATCH
     for compatible fixes.
   - **Before `1.0.0`** SemVer allows anything to change; Dwell follows the common `0.y.z` convention
@@ -113,7 +122,13 @@ act, so merging it is the release. Patch releases are manual:
    it releases the next version. To release a different one — a breaking change's `0.2.0` — type it
    in the *version* box (it must be newer than the newest release and not below `package.json`'s).
    Or push the tag yourself: `git tag v<version> && git push origin v<version>` (same rules; the
-   workflow stops with a message if they are broken).
+   workflow stops with a message if they are broken). The `github-pages` environment deploys only
+   from `main` (its deployment branch policy), so a run on a tag cannot deploy the site itself: it
+   publishes the release and then **dispatches the Pages workflow on `main`**
+   (`release.ts siteDeploy`, tested), which assembles the site from every release, the new one
+   included. (v0.13.0's tag run called `pages.yml` directly and its deploy was rejected: "Tag
+   "v0.13.0" is not allowed to deploy to github-pages due to environment protection rules",
+   2026-10-16; the next run from `main` deployed it.)
 2. Check `https://dropkickarcade.com/dwell/` (the launcher opens the new stable build; the menu
    shows its version).
 3. Nothing to bump afterwards: later dev builds are pre-releases of the next patch.
@@ -135,11 +150,9 @@ act, so merging it is the release. Patch releases are manual:
    must be newer than the line's newest release; the launcher's latest stays the newest version,
    and the line's worlds move onto the patch. `release.ts` refuses another line's version from the
    branch, and an older line's version from `main`. No dev builds are made of maintenance branches.
-   The run publishes the GitHub Release, but its site update is refused: the `github-pages`
-   environment deploys only from `main`. The site is assembled from all releases, so the next
-   deploy from `main` publishes the patch — run the **Pages** workflow on `main` (Actions → Pages →
-   Run workflow), or let the next release from `main` do it. (Allowing `release/*` in the
-   environment's deployment branches would let the backport deploy itself.)
+   The run publishes the GitHub Release and, as for a tag, dispatches the Pages workflow on `main`
+   (the `github-pages` environment deploys only from `main`); the site is assembled from all
+   releases, so that deploy publishes the patch.
 4. A change that breaks the public API (§3) raises `package.json`'s version (to the next MINOR,
    before `1.0.0`) in its PR, so the merge releases that version as stable and worlds of the old
    line stay with the old builds. (Merge the breaking change only when it should ship: there is no

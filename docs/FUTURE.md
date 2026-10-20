@@ -80,3 +80,12 @@ regenerate untouched areas, or blend at the border).
 registry stores states as strings (Phase 8); generator versions are recorded per
 world; the newest build of every line in use stays published, so a world can always be opened.
 
+
+## Game modes: adventure and creative
+
+Dwell has no game modes yet; the owner wants two, adventure and creative (2026-10-19). A mode is a
+world (or player) setting that gates abilities. The first known use: creative allows the
+VoxelSniper-style brushes (`docs/BRUSHES.md` §5, question 2) in terrain worlds, which today only the
+sandbox allows. Allowing brushes for everyone in creative is acceptable if a finer permission is
+logically complicated. Needs an ADR (modes as data, per world or per player, what each gates)
+before it is built.

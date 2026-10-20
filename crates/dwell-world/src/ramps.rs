@@ -1,4 +1,4 @@
-//! The stored cardinal ramps of the half-height grid (HALF_HEIGHT_GRID.md §3, Phase 36): a natural
+//! The stored cardinal ramps of the half-height grid (HALF_HEIGHT_GRID.md §3, Phase 39): a natural
 //! block's `<name>_ramp` family (`shared/blocks/dwell.json` `rampFamilies`), looked up by name. A
 //! ramp rises toward the side opposite its facing (it descends toward `facing`); `half = top` hangs
 //! it (face B).

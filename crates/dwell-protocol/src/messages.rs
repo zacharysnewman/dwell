@@ -62,9 +62,22 @@ pub struct Welcome {
     pub verification_chunk: ChunkCoordNet,
     /// `welcome_flags`.
     pub flags: u8,
-    /// The block registry hash: runtime state ids mean the same blocks only if it matches.
+    /// The definitions hash: FNV-1a 64 of the registry payload the server sent in its
+    /// `BlockRegistry` parts (ADR 0038), for logs and the join prompt's "don't ask again".
     pub registry_hash: u64,
 }
+
+/// S→C reliable, control channel, before `Welcome` (ADR 0038): part `part` of `parts` of the
+/// server's registry payload (`dwell_blocks::sync`), each at most `MAX_REGISTRY_PART_BYTES`.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct BlockRegistry {
+    pub part: u16,
+    pub parts: u16,
+    pub data: Vec<u8>,
+}
+
+/// The largest `BlockRegistry` part.
+pub const MAX_REGISTRY_PART_BYTES: usize = 256 * 1024;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Reject {
@@ -138,6 +151,17 @@ impl RegionEdit {
     pub fn cell_index(size: [u8; 3], x: usize, y: usize, z: usize) -> usize {
         x + usize::from(size[0]) * (z + usize::from(size[2]) * y)
     }
+}
+
+/// S→C on the world channel, right after the tick's `VoxelModification`: the server has processed
+/// this session's edit requests (`BlockEditRequest`s and `RegionEdit`s, numbered together from 1
+/// in the order they arrived) up to `through`; `rejected` (ascending, each ≤ `through`, at most
+/// `limits::MAX_EDIT_ACK_REJECTED`) are those it refused. The rest were applied, and their changes
+/// arrived before this message.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct EditAck {
+    pub through: u32,
+    pub rejected: Vec<u32>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -231,6 +255,10 @@ pub struct ControllerState {
     pub buffer_ticks: u8,
     pub coyote_ticks: u8,
     pub step_grace: u8,
+    /// `slide_flags` (the sprint slide, protocol v15).
+    pub slide_flags: u8,
+    /// Ticks until another sprint slide may start (capped at 255).
+    pub slide_cooldown: u8,
     pub ladder: [i32; 3],
     pub released: [i32; 2],
 }
@@ -254,6 +282,8 @@ impl Default for ControllerState {
             buffer_ticks: 0,
             coyote_ticks: 0,
             step_grace: 0,
+            slide_flags: 0,
+            slide_cooldown: 0,
             ladder: [0; 3],
             released: [0; 2],
         }
@@ -363,6 +393,10 @@ pub enum Message {
     HostStatus(HostState),
     /// C→S, only to a server whose Welcome has `welcome_flags::REGION_EDITS`.
     RegionEdit(RegionEdit),
+    BlockRegistry(BlockRegistry),
+    /// S→C, world channel: which of this client's edits the server has processed (edit
+    /// prediction, ARCHITECTURE.md §6.5).
+    EditAck(EditAck),
 }
 
 impl Message {
@@ -396,6 +430,8 @@ impl Message {
             M::ChunkRequest(_) => MessageType::ChunkRequest,
             M::HostStatus(_) => MessageType::HostStatus,
             M::RegionEdit(_) => MessageType::RegionEdit,
+            M::BlockRegistry(_) => MessageType::BlockRegistry,
+            M::EditAck(_) => MessageType::EditAck,
         }
     }
 
@@ -663,6 +699,8 @@ fn write_controller(w: &mut ByteWriter, c: &ControllerState) {
     w.u8(c.buffer_ticks);
     w.u8(c.coyote_ticks);
     w.u8(c.step_grace);
+    w.u8(c.slide_flags);
+    w.u8(c.slide_cooldown);
     if c.flags & controller_flags::CLIMBING != 0 {
         write_coord(w, &c.ladder);
     }
@@ -698,6 +736,8 @@ fn read_controller(r: &mut ByteReader) -> ControllerState {
     c.buffer_ticks = r.u8();
     c.coyote_ticks = r.u8();
     c.step_grace = r.u8();
+    c.slide_flags = r.u8();
+    c.slide_cooldown = r.u8();
     if c.flags & controller_flags::CLIMBING != 0 {
         c.ladder = read_coord(r);
     }
@@ -909,6 +949,19 @@ fn write_body(w: &mut ByteWriter, m: &Message) {
             }
         }
         M::HostStatus(s) => w.u8(*s as u8),
+        M::EditAck(m) => {
+            w.u32(m.through);
+            w.u16(m.rejected.len() as u16);
+            for &seq in &m.rejected {
+                w.u32(seq);
+            }
+        }
+        M::BlockRegistry(m) => {
+            w.u16(m.part);
+            w.u16(m.parts);
+            w.u32(m.data.len() as u32);
+            w.bytes(&m.data);
+        }
         M::RegionEdit(m) => {
             w.u8(m.op as u8);
             write_coord(w, &m.min);
@@ -1118,6 +1171,34 @@ fn read_body(r: &mut ByteReader, t: MessageType) -> Option<Message> {
             })
         }
         T::HostStatus => M::HostStatus(HostState::from_u8(r.u8())?),
+        T::EditAck => {
+            let through = r.u32();
+            let count = usize::from(r.u16());
+            r.check(count <= limits::MAX_EDIT_ACK_REJECTED);
+            let mut rejected = Vec::new();
+            for _ in 0..count {
+                if !r.ok() {
+                    break;
+                }
+                let seq = r.u32();
+                // Ascending, from 1, none past `through`.
+                r.check(seq >= 1 && seq <= through && rejected.last().is_none_or(|&l| seq > l));
+                rejected.push(seq);
+            }
+            M::EditAck(EditAck { through, rejected })
+        }
+        T::BlockRegistry => {
+            let (part, parts, len) = (r.u16(), r.u16(), r.u32() as usize);
+            r.check(parts >= 1 && part < parts && len <= MAX_REGISTRY_PART_BYTES);
+            if !r.ok() {
+                return None;
+            }
+            M::BlockRegistry(BlockRegistry {
+                part,
+                parts,
+                data: r.bytes(len),
+            })
+        }
         T::RegionEdit => {
             let op = RegionEditOp::from_u8(r.u8())?;
             let min = read_coord(r);

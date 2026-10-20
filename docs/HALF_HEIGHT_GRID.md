@@ -1,7 +1,7 @@
 # Dwell — The Half-Height Grid: ½ m Cells and Stored Cardinal Ramps
 
-> **Status: [in progress, Phase 36: H0–H4 built, H5 (playtest) next]** on the long-lived branch `claude/half-height-voxels`, for
-> the owner to playtest before anything reaches `main` ([ADR 0038](./adr/0038-half-height-cells.md)).
+> **Status: [in progress, Phase 39: H0–H4 built, H5 (playtest) next]** on the long-lived branch `claude/half-height-voxels`, for
+> the owner to playtest before anything reaches `main` ([ADR 0040](./adr/0040-half-height-cells.md)).
 > The investigation is [`proposals/HALF_HEIGHT_VOXELS.md`](./proposals/HALF_HEIGHT_VOXELS.md) and
 > the [Half-Height Voxel Lab](./prototypes/half-height-lab.html), whose **Cardinal ramps only**,
 > **½ m blocks only** and **1 m on steep ground** settings preview this design (as 1 m double
@@ -112,7 +112,7 @@ registry lacks fails generation with a message.
 
 ## 6. What changes where
 
-The plan's Phase 36 lists the steps and their checks. In short:
+The plan's Phase 39 lists the steps and their checks. In short:
 
 - **Physics:** the terrain collider's voxel size is the cell (1, ½, 1); trimesh vertices of shaped
   cells are scaled to metres; the voxel queries step in cell space. The controller's tunables are

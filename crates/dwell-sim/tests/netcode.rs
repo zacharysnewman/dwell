@@ -29,7 +29,10 @@ use ed25519_dalek::{Signer, SigningKey};
 
 // --- the test origin -----------------------------------------------------------------------------
 
-const FAR_ORIGIN_X: i32 = 3906 * 2048;
+/// ~49 km east, 848 m from the rim (Phase 16: the 50 km world).
+const FAR_ORIGIN_X: i32 = 24 * 2048;
+/// The flat world's surface (feet height on its ground).
+const G: f64 = dwell_world::FLAT_TOP_M;
 
 fn origin_x() -> i32 {
     match std::env::var("DWELL_ORIGIN_X").as_deref() {
@@ -58,9 +61,9 @@ fn shifted(g: ChunkGenerator) -> ChunkGenerator {
 
 static PLAYGROUND: LazyLock<Arc<Placed>> = LazyLock::new(|| {
     // The movement playground (PLAYER_CONTROLLER.md §9, shared/structures/playground.json), its
-    // anchor at the origin; it has no variants, so the seed changes nothing.
+    // anchor on the flat ground at the origin; it has no variants, so the seed changes nothing.
     let playground = load("dwell:playground").expect("the playground structure");
-    Arc::new(playground.place([0, 0, 0], 0))
+    Arc::new(playground.place([0, dwell_world::FLAT_TOP_Y, 0], 0))
 });
 
 /// The flat world with the playground stamped over it.
@@ -647,14 +650,14 @@ fn a_hard_fall_damages_a_lethal_one_kills_and_every_client_sees_the_respawn() {
         players.teleport(physics, h, to_world(8.5, y, -8.5), Vec3::ZERO);
     };
     // Drop player A from 5 m (lands at ~14 m/s: damaged) and later from 30 m (lethal).
-    teleport(&mut sim, 5.9);
+    teleport(&mut sim, G + 5.9);
     sim.step(90);
     let health = sim.server.health_of(pa);
     assert!(
         health < players::MAX_HEALTH as i32 && health > 0,
         "{health}"
     );
-    teleport(&mut sim, 30.9);
+    teleport(&mut sim, G + 30.9);
     sim.step(150);
     assert_eq!(sim.server.health_of(pa), 0);
     assert!(sim.server.player_handle_of(pa).is_none());
@@ -859,18 +862,11 @@ fn predictor_remote_proxy_right_after_the_first_snapshot() {
         server_tick: 3,
         ..PhysicsSnapshot::default()
     };
-    snap.local.position = [0.0, 0.9, -0.25];
+    snap.local.position = [0.0, G + 0.9, -0.25];
     snap.local.controller.flags = controller_flags::GROUNDED;
     snap.local.controller.ground_kind = GroundKind::Terrain;
     p.on_snapshot(&mut world, &snap);
-    p.set_remote(
-        1,
-        DVec3::new(-1.0, 0.0, -0.25),
-        Vec3::ZERO,
-        false,
-        0.0,
-        false,
-    );
+    p.set_remote(1, DVec3::new(-1.0, G, -0.25), Vec3::ZERO, false, 0.0, false);
     for _ in 0..10 {
         let f = quantize_input(&Input::default(), p.next_seq());
         p.tick(&mut world, &f);
@@ -892,6 +888,7 @@ fn stairs_generator() -> ChunkGenerator {
     // flat world's grass rests half a block lower while natural blocks are adaptive, and nothing
     // steps up onto a 45° ramp).
     let floor = require("dwell:sandbox_floor");
+    let g = dwell_world::FLAT_TOP_Y;
     Arc::new(move |coord, chunk| {
         base(coord, chunk);
         let voxels = chunk.voxels_mut();
@@ -902,7 +899,7 @@ fn stairs_generator() -> ChunkGenerator {
         ];
         for z in 20..44 {
             for x in 20..44 {
-                let l = [x - o[0], -1 - o[1], z - o[2]];
+                let l = [x - o[0], g - 1 - o[1], z - o[2]];
                 if l.iter().all(|&v| (0..CHUNK_SIZE).contains(&v)) {
                     voxels[dwell_world::local_index(l[0], l[1], l[2])] = floor;
                 }
@@ -910,7 +907,7 @@ fn stairs_generator() -> ChunkGenerator {
         }
         for k in 0..4 {
             let rows = dwell_world::rows_for_m(f64::from(k + 1));
-            for y in 0..rows {
+            for y in g..g + rows {
                 let (x, z) = (30, 30 + k);
                 let o = [
                     coord.x * CHUNK_SIZE,
@@ -919,7 +916,7 @@ fn stairs_generator() -> ChunkGenerator {
                 ];
                 let l = [x - o[0], y - o[1], z - o[2]];
                 // The top metre is the ramp's cells, the rest stone.
-                let from_top = rows - 1 - y;
+                let from_top = g + rows - 1 - y;
                 let m = if (from_top as usize) < top.len() {
                     top[top.len() - 1 - from_top as usize]
                 } else {
@@ -937,7 +934,7 @@ fn stairs_generator() -> ChunkGenerator {
 /// and goes off to roam; B later runs into them from their foot. Returns the run (12 s) after
 /// checking that both slid, B saw A sliding, and neither climbed the stairs.
 fn sliding_on_steep_stairs(conditions: LinkConditions) -> (NetSim, [usize; 2]) {
-    let mut sim = NetSim::with_world(conditions, stairs_generator(), [32.0, 2.6, 33.25]);
+    let mut sim = NetSim::with_world(conditions, stairs_generator(), [32.0, G + 2.6, 33.25]);
     let a = sim.join(
         Some(Box::new(|t, c| match t {
             0..90 => Input::default(),
@@ -988,7 +985,7 @@ fn sliding_on_steep_stairs(conditions: LinkConditions) -> (NetSim, [usize; 2]) {
             s.snaps
         );
         // Neither climbed the stairs (the top is 4 m up; this is the capsule's centre).
-        assert!(c.position().y < 2.5, "{}", c.position());
+        assert!(c.position().y < G as f32 + 2.5, "{}", c.position());
     }
     (sim, [a, b])
 }
@@ -1025,13 +1022,104 @@ fn sliding_predicts_without_snaps_at_150_ms_rtt_20_ms_jitter_5_percent_loss() {
     }
 }
 
+// --- the sprint slide (PLAYER_CONTROLLER.md §6.9) ------------------------------------------------
+
+/// A sprints round a square on the flat world, sliding along each side: a crouch from the sprint,
+/// a turn mid-slide, a jump out of every other slide, the crouch let go; B roams nearby. Returns
+/// the run (10 s) after checking that A slid every side and B saw it.
+fn sprint_sliding(conditions: LinkConditions) -> (NetSim, [usize; 2]) {
+    let mut sim = NetSim::with_world(conditions, flat_generator(), [40.0, G + 0.1, 0.0]);
+    let a = sim.join(
+        Some(Box::new(|t, _| {
+            let (side, k) = (t / 150, t % 150);
+            let mut i = Input {
+                look_yaw: (side * 90 % 360) as f32 + if k >= 60 { 30.0 } else { 0.0 },
+                move_y: 1.0,
+                run: true,
+                crouch: (40..100).contains(&k),
+                ..Input::default()
+            };
+            i.jump = side % 2 == 1 && (85..87).contains(&k);
+            i
+        })),
+        false,
+    );
+    let (mut slid, mut starts, mut b_saw_a_slide) = (0, 0, false);
+    let mut was = false;
+    let id_a = sim.clients[a].player_id;
+    // B joins once A has left the spawn (two capsules spawned together push apart, which
+    // mispredicts on its own, §8.2), and roams clear of A's square.
+    let mut b = usize::MAX;
+    for t in 0..ticks(10.0) {
+        if t == 200 {
+            b = sim.join(Some(roam(20.0, 40.0, 4)), false);
+        }
+        sim.step(1);
+        let c = sim.clients[a].predictor.controller();
+        slid += i32::from(c.sprint_slide.active);
+        starts += i32::from(c.sprint_slide.active && !was);
+        was = c.sprint_slide.active;
+        b_saw_a_slide |= b != usize::MAX
+            && sim.clients[b]
+                .remotes
+                .get(&id_a)
+                .is_some_and(|r| r.state == PlayerState::Sliding);
+    }
+    assert!(starts >= 3, "A started {starts} slides");
+    assert!(slid > 90, "A slid for {slid} ticks");
+    assert!(b_saw_a_slide, "B sees A sliding (for its sounds)");
+    for c in [a, b] {
+        let c = &sim.clients[c];
+        let s = c.predictor.stats();
+        eprintln!(
+            "client {}: {} snapshots, {} replays, error at ack p95 {} m; corrections max {} m, snaps {}",
+            c.player_id,
+            s.snapshots,
+            s.replays,
+            percentile(c.ack_errors.clone(), 0.95),
+            percentile(c.corrections.clone(), 1.0),
+            s.snaps
+        );
+    }
+    (sim, [a, b])
+}
+
+#[test]
+fn the_sprint_slide_is_predicted_exactly_without_latency() {
+    // The slide's state (active, cooldown) is resumable and on the wire, and its motion is the
+    // controller's: the prediction matches the server, with only the spawn's replay.
+    let (sim, clients) = sprint_sliding(LinkConditions::default());
+    for c in clients {
+        let c = &sim.clients[c];
+        assert!(
+            c.predictor.stats().replays <= 2,
+            "{:?}",
+            c.predictor.stats()
+        );
+        assert_eq!(c.predictor.stats().snaps, 0);
+        assert!(percentile(c.ack_errors.clone(), 0.99) < 0.001);
+    }
+}
+
+#[test]
+fn the_sprint_slide_predicts_without_snaps_at_150_ms_rtt_20_ms_jitter_5_percent_loss() {
+    let (sim, clients) = sprint_sliding(lossy());
+    for c in clients {
+        let c = &sim.clients[c];
+        assert_eq!(c.predictor.stats().snaps, 0);
+        assert!(percentile(c.ack_errors.clone(), 0.95) < 0.05);
+        let worst = percentile(c.corrections.clone(), 1.0);
+        assert!(worst < 0.5, "{worst}");
+    }
+}
+
 // --- block edits ---------------------------------------------------------------------------------
 
 #[test]
 fn a_block_placed_by_one_player_blocks_another_on_the_server_and_in_its_prediction() {
     // Open ground; slot 0 at x 19, slot 1 at x 20.
     let config = ServerConfig {
-        spawn: Some([20.5, 0.0, 0.5]),
+        spawn: Some([20.5, G, 0.5]),
         ..playground_config()
     };
     let mut sim = NetSim::with(
@@ -1059,10 +1147,14 @@ fn a_block_placed_by_one_player_blocks_another_on_the_server_and_in_its_predicti
 
     // A builds a wall two blocks high across B's path at z = 3 (edits spaced for the rate limit).
     let stone = require("dwell:stone");
-    for y in [-1, 0] {
+    for y in [G as i32 - 1, G as i32] {
         // The second row from the far end: a natural block beside a higher one is a ramp rising to
         // it (ADAPTIVE_BLOCKS.md), whose top A (at x 19) must face to place on it.
-        let xs = if y < 0 { [19, 20, 21] } else { [21, 20, 19] };
+        let xs = if y < G as i32 {
+            [19, 20, 21]
+        } else {
+            [21, 20, 19]
+        };
         for x in xs {
             let edit = BlockEditRequest {
                 action: BlockEditAction::Place,
@@ -1075,7 +1167,7 @@ fn a_block_placed_by_one_player_blocks_another_on_the_server_and_in_its_predicti
         }
     }
     sim.step(ticks(0.5));
-    for y in [0, 1] {
+    for y in [G as i32, G as i32 + 1] {
         for x in [19, 20, 21] {
             let at = (world_cell_x(x), y, 3);
             assert_eq!(

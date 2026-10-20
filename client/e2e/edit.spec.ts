@@ -108,8 +108,9 @@ test('local mode: every palette block can be picked from the hotbar, placed, and
   test.setTimeout(120_000);
   await page.goto('./?world=flat');
   await ready(page);
+  // The hotbar is built once the page has taken the join, which can be a frame after the terrain.
+  await expect(page.locator('.hotbar-slot')).toHaveCount(8);
   const slots = await page.locator('.hotbar-slot').count();
-  expect(slots).toBe(8);
   const ground = await aim(page);
   expect(ground.face).toBe(2);
   const cell = add(ground.cell, FACE_DIRS[ground.face] ?? [0, 0, 0]);
@@ -121,9 +122,19 @@ test('local mode: every palette block can be picked from the hotbar, placed, and
     else await page.locator(`.hotbar-slot[data-slot="${String(slot)}"]`).click();
     await expect(page.locator('.hotbar-slot.selected')).toHaveAttribute('data-slot', String(slot));
 
-    await aim(page);
+    // Back to the ground cell, and wait until it is the target: the target is the previous look's
+    // (aimed at the block just broken, so past it now) until the next frame re-targets.
+    await call(page, 'd.look(0, -45)');
+    await expect
+      .poll(async () => {
+        const t = (await state(page))?.target;
+        return t ? `${t.cell.join()}/${String(t.face)}` : '';
+      })
+      .toBe(`${ground.cell.join()}/${String(ground.face)}`);
     expect(await call<boolean>(page, `d.edit('place')`)).toBe(true);
-    await expect.poll(() => voxel(page, cell), { timeout: 5_000 }).not.toBe(0);
+    await expect
+      .poll(() => voxel(page, cell), { message: `slot ${String(slot)} placed`, timeout: 5_000 })
+      .not.toBe(0);
     const placed = await voxel(page, cell);
     // Breaking targets the new block itself: looked at, as tall grass is aimed at by a box
     // smaller than its cell.

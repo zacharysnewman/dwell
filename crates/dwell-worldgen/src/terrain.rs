@@ -1,24 +1,29 @@
-//! Procedural terrain, generator version 14 (ARCHITECTURE.md §6.3): the interim baseline of Phase
+//! Procedural terrain, generator version 1016 (ARCHITECTURE.md §6.3; on the half-height branch,
+//! 1000 + main's version 16): the interim baseline of Phase
 //! 15 — one island at the origin, a 2D height field, and the ground filled by depth — and since
 //! version 13 (Phase 33) the decorations of `shared/worldgen/decorations.json` one cell above the
-//! ground (tall grass; `decorations.rs`), and since version 14 (Phase 36, HALF_HEIGHT_GRID.md) ½ m
+//! ground (tall grass; `decorations.rs`), and since version 14 (Phase 39, HALF_HEIGHT_GRID.md) ½ m
 //! cells with natural tops shaped from stored cardinal ramps (`ramps.rs`). A chunk is a
 //! pure function of (world seed, chunk coordinate), so chunks generate in any order, on any thread,
 //! natively or in WASM, bit-identically (noise.rs, ADR 0010).
 //!
 //! Per chunk: (1) layout: the signed distance to the coast; (2) height: the sea floor falling from
-//! the coast, or the land rising inland, plus hills; (3) fill: stone up to the surface under grass
-//! over dirt on land, sand at the shore and under water, water in open space below sea level. 2D
-//! fields are sampled every 4 columns and interpolated. Parameters are code constants: Phase 17
-//! replaces this with an evaluator of terrain definitions (data, ADR 0026).
+//! the coast, or the land rising inland, plus hills, never below the core; (3) fill: the stone core
+//! (`CORE_LAYERS` from the midplane, never carved), stone up to the surface under grass over dirt
+//! on land, sand at the shore and under water, water in open space below sea level. 2D fields are
+//! sampled every 4 columns and interpolated. Heights are face-local, from the midplane (Phase 16:
+//! the midplane at 0, sea level `h` = 32). The height field's parameters are data
+//! (`shared/worldgen/terrain.json`, `HeightField`); the island's layout and the fill depths are
+//! still code constants. Phase 17 replaces this with an evaluator of terrain definitions (data,
+//! ADR 0026). Nothing is generated outside the build volume.
 
 use dwell_blocks::StateId;
 use dwell_world::hash::HashMap;
 use dwell_world::lod::{self, LodBounds, LodCells, LodCoord, LodKind, LodSurface, LodSurfaces};
 use dwell_world::ramps::{self, RampFacing};
 use dwell_world::{
-    CELL_H, CHUNK_SIZE, Chunk, ChunkCoord, DiscOverlap, M, MIDPLANE_Y, SEA_LEVEL, WORLD_MAX_Y,
-    chunk_disc_overlap, inside_world_disc, local_index, m_of_row, rows_for_m,
+    BUILD_VOLUME, CELL_H, CHUNK_SIZE, CORE_LAYERS, Chunk, ChunkCoord, DiscOverlap, M, MIDPLANE_Y,
+    Overlap, SEA_LEVEL, chunk_disc_overlap, inside_world_disc, local_index, m_of_row, rows_for_m,
 };
 use std::sync::Arc;
 
@@ -31,27 +36,53 @@ use crate::noise::{
 use crate::ramps as ramps_rule;
 use crate::ramps::Top;
 
-/// A generator works face-locally: its ground band is [FACE_MIN_Y, WORLD_MAX_Y), sea level 0.
+/// A generator works face-locally: its band is [FACE_MIN_Y, FACE_MAX_Y), from the midplane to the
+/// build volume's top (the sphere is symmetric about the midplane, so both faces' bands are equal).
 const FACE_MIN_Y: i32 = MIDPLANE_Y;
+pub const FACE_MAX_Y: i32 = BUILD_VOLUME.y_range().1 as i32;
+const _: () = assert!(
+    BUILD_VOLUME.y_range().0 + BUILD_VOLUME.y_range().1 == 2 * MIDPLANE_Y as i64,
+    "the build volume is symmetric about the midplane"
+);
 /// Lattice spacing of the interpolated 2D fields (columns, m).
 const LATTICE: i32 = 4;
 const LATTICE_STEP: f32 = 0.25;
-/// The land's rise inland (m, approached far inland) and the distance (m) at which it is half done.
-const INLAND_RISE: f32 = 90.0;
-const RISE_HALF: f32 = 6_000.0;
-/// The sea floor's depth offshore (m below sea level), reached linearly over this distance (m).
-const SEA_FLOOR: f32 = -20.0;
-const SHELF: f32 = 2_500.0;
-/// Hills on land, faded in from HILL_FADE_FROM to HILL_FADE_TO m inland.
-const HILL_HEIGHT: f32 = 30.0;
-const HILL_WAVELENGTH: i32 = 2_048;
-const HILL_OCTAVES: u32 = 4;
-const HILL_FADE_FROM: f32 = 500.0;
-const HILL_FADE_TO: f32 = 4_000.0;
-/// Small bumps everywhere.
-const BUMP_HEIGHT: f32 = 2.5;
-const BUMP_WAVELENGTH: i32 = 128;
-const BUMP_OCTAVES: u32 = 3;
+/// The height field's parameters (data: `shared/worldgen/terrain.json`, generated into
+/// `terrain.gen.rs` by `shared/worldgen/gen.mjs`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct HeightField {
+    /// The land's rise inland (m, approached far inland) and the distance (m) at which it is half
+    /// done.
+    pub inland_rise: f32,
+    pub rise_half: f32,
+    /// The sea floor's depth offshore (m below sea level, negative), reached linearly over `shelf`
+    /// (m).
+    pub sea_floor: f32,
+    pub shelf: f32,
+    /// Hills on land (about ±`hill_height` m; a fractal sum of this wavelength in m and octaves),
+    /// faded in from `hill_fade_from` to `hill_fade_to` m inland.
+    pub hill_height: f32,
+    pub hill_wavelength: i32,
+    pub hill_octaves: u32,
+    pub hill_fade_from: f32,
+    pub hill_fade_to: f32,
+    /// Small bumps everywhere (about ±`bump_height` m).
+    pub bump_height: f32,
+    pub bump_wavelength: i32,
+    pub bump_octaves: u32,
+    /// Half-height branch (HALF_HEIGHT_GRID.md §4): where a lattice cell's ground is at least this
+    /// steep (m per m), heights snap to whole multiples of `step_height` (m; 0: off), so steep
+    /// ground is whole steps that the generation rule tops with 45° ramps.
+    pub step_from_slope: f32,
+    pub step_height: f32,
+}
+
+mod table {
+    include!("terrain.gen.rs");
+}
+pub use table::HEIGHT;
+
+const H: HeightField = HEIGHT;
 /// Fill by depth: sand at the shore (top voxel below SHORE_HEIGHT above sea) to SAND_DEPTH, else
 /// grass over dirt to DIRT_DEPTH; stone below. In rows, from metres (2 m, 3 m, 3 m).
 const SHORE_HEIGHT: i32 = (2.0 / CELL_H) as i32;
@@ -66,8 +97,8 @@ pub const SPAWN_CLEAR: i32 = 4;
 pub struct Column {
     /// Signed distance to the coast (m): > 0 land, < 0 sea.
     pub coast: f32,
-    /// Ground height (m, face-local, sea level 0): the top voxel is the row ceil(height ÷ cell
-    /// height) − 1.
+    /// Ground height (m, face-local from the midplane): the top voxel is the row ceil(height ÷
+    /// cell height) − 1.
     pub height: f32,
     /// Beyond the world's disc: nothing is generated.
     pub outside: bool,
@@ -78,6 +109,18 @@ fn rows(h: f32) -> f32 {
     h / CELL_H as f32
 }
 
+/// The steepest edge of a lattice cell whose corners' heights (m) are `h` (corner order as
+/// `interp`'s: (0, 0), (1, 0), (0, 1), (1, 1)), in m per m.
+fn lattice_slope(h: [f32; 4]) -> f32 {
+    let d = [h[1] - h[0], h[3] - h[2], h[2] - h[0], h[3] - h[1]];
+    d.iter().fold(0.0f32, |m, v| m.max(v.abs())) / LATTICE as f32
+}
+
+/// A height (m) snapped to the nearest whole step (`step_height`).
+fn snap_to_step(h: f32) -> f32 {
+    (h / H.step_height).round() * H.step_height
+}
+
 /// The top voxel (row) of a column of height h (m): ceil(h in rows) − 1.
 fn top_voxel(h: f32) -> i32 {
     let r = rows(h);
@@ -85,8 +128,12 @@ fn top_voxel(h: f32) -> i32 {
     if f as f32 == r { f - 1 } else { f }
 }
 
-/// The material `depth` m below the surface of a column whose top voxel is `top`.
+/// The material `depth` m below the surface of a column whose top voxel is `top`: the core's stone
+/// below `CORE_LAYERS`.
 fn fill(top: i32, depth: i64) -> StateId {
+    if i64::from(top) - depth < i64::from(MIDPLANE_Y + CORE_LAYERS) {
+        return M.stone;
+    }
     if top < SEA_LEVEL + SHORE_HEIGHT {
         return if depth < SAND_DEPTH { M.sand } else { M.stone };
     }
@@ -185,8 +232,22 @@ impl TerrainGenerator {
         let (nx, nz) = (x + self.offset_x, z + self.offset_z);
         Corner {
             coast: self.island.coast_at(x, z, None),
-            hills: fbm2(self.hills_seed, nx, nz, HILL_WAVELENGTH, HILL_OCTAVES, None),
-            bumps: fbm2(self.bumps_seed, nx, nz, BUMP_WAVELENGTH, BUMP_OCTAVES, None),
+            hills: fbm2(
+                self.hills_seed,
+                nx,
+                nz,
+                H.hill_wavelength,
+                H.hill_octaves,
+                None,
+            ),
+            bumps: fbm2(
+                self.bumps_seed,
+                nx,
+                nz,
+                H.bump_wavelength,
+                H.bump_octaves,
+                None,
+            ),
         }
     }
 
@@ -206,17 +267,17 @@ impl TerrainGenerator {
                 self.hills_seed,
                 nx,
                 nz,
-                HILL_WAVELENGTH,
-                HILL_OCTAVES,
-                Some(octaves_resolved(HILL_WAVELENGTH, HILL_OCTAVES, cell)),
+                H.hill_wavelength,
+                H.hill_octaves,
+                Some(octaves_resolved(H.hill_wavelength, H.hill_octaves, cell)),
             ),
             bumps: fbm2(
                 self.bumps_seed,
                 nx,
                 nz,
-                BUMP_WAVELENGTH,
-                BUMP_OCTAVES,
-                Some(octaves_resolved(BUMP_WAVELENGTH, BUMP_OCTAVES, cell)),
+                H.bump_wavelength,
+                H.bump_octaves,
+                Some(octaves_resolved(H.bump_wavelength, H.bump_octaves, cell)),
             ),
         }
     }
@@ -224,14 +285,17 @@ impl TerrainGenerator {
     fn finish(c: Corner) -> Column {
         // Fractal sums rarely leave ±0.5: × 2 brings the amplitudes to about their nominal values.
         let base = if c.coast > 0.0 {
-            INLAND_RISE * (c.coast / (c.coast + RISE_HALF))
+            H.inland_rise * (c.coast / (c.coast + H.rise_half))
         } else {
-            SEA_FLOOR * clamp01(-c.coast * (1.0 / SHELF))
+            H.sea_floor * clamp01(-c.coast * (1.0 / H.shelf))
         };
-        let land = smooth_step(HILL_FADE_FROM, HILL_FADE_TO, c.coast);
+        let land = smooth_step(H.hill_fade_from, H.hill_fade_to, c.coast);
+        let relief = base + land * H.hill_height * 2.0 * c.hills + H.bump_height * 2.0 * c.bumps;
         Column {
             coast: c.coast,
-            height: base + land * HILL_HEIGHT * 2.0 * c.hills + BUMP_HEIGHT * 2.0 * c.bumps,
+            // Never below the core's top.
+            height: (dwell_world::SEA_LEVEL_M as f32 + relief)
+                .max((dwell_world::MIDPLANE_M + dwell_world::CORE_M) as f32),
             outside: false,
         }
     }
@@ -246,11 +310,18 @@ impl TerrainGenerator {
                 tz,
             )
         };
-        Self::finish(Corner {
+        let mut col = Self::finish(Corner {
             coast: bi(|c| c.coast),
             hills: bi(|c| c.hills),
             bumps: bi(|c| c.bumps),
-        })
+        });
+        if H.step_height > 0.0 {
+            let h = c.map(|c| Self::finish(c).height);
+            if lattice_slope(h) >= H.step_from_slope {
+                col.height = snap_to_step(col.height);
+            }
+        }
+        col
     }
 
     /// A column with exactly the chunk path's arithmetic (spawn, tools, tests).
@@ -269,7 +340,9 @@ impl TerrainGenerator {
     }
 
     pub fn solid_at(&self, x: i32, y: i32, z: i32) -> bool {
-        if !(FACE_MIN_Y..WORLD_MAX_Y).contains(&y) {
+        if !(FACE_MIN_Y..FACE_MAX_Y).contains(&y)
+            || !BUILD_VOLUME.contains_voxel(i64::from(x), i64::from(y), i64::from(z))
+        {
             return false;
         }
         let col = self.column_at(x, z);
@@ -279,7 +352,7 @@ impl TerrainGenerator {
     /// The top solid voxel of a column inside the disc.
     pub fn ground_y(&self, x: i32, z: i32) -> Option<i32> {
         let col = self.column_at(x, z);
-        (!col.outside).then(|| top_voxel(col.height).clamp(FACE_MIN_Y, WORLD_MAX_Y - 1))
+        (!col.outside).then(|| top_voxel(col.height).clamp(FACE_MIN_Y, FACE_MAX_Y - 1))
     }
 
     /// The state `generate` puts at (x, y, z) (face-local), from the column alone.
@@ -288,7 +361,7 @@ impl TerrainGenerator {
     }
 
     fn state_in(col: &Column, y: i32) -> StateId {
-        if col.outside || !(FACE_MIN_Y..WORLD_MAX_Y).contains(&y) {
+        if col.outside || !(FACE_MIN_Y..FACE_MAX_Y).contains(&y) {
             return M.air;
         }
         let top = top_voxel(col.height);
@@ -367,10 +440,12 @@ impl TerrainGenerator {
     /// `is_air_chunk` given `sky_floor_at(coord.x, coord.z)`.
     pub fn is_air_chunk_with(coord: ChunkCoord, sky_floor: f32) -> bool {
         let y0 = coord.y * CHUNK_SIZE;
-        if y0 + CHUNK_SIZE <= FACE_MIN_Y || y0 >= WORLD_MAX_Y {
+        if y0 + CHUNK_SIZE <= FACE_MIN_Y || y0 >= FACE_MAX_Y {
             return true;
         }
-        if chunk_disc_overlap(coord.x, coord.z) == DiscOverlap::Outside {
+        if chunk_disc_overlap(coord.x, coord.z) == DiscOverlap::Outside
+            || !BUILD_VOLUME.chunk_may_hold(coord)
+        {
             return true;
         }
         y0 >= SEA_LEVEL && y0 as f32 > sky_floor
@@ -379,8 +454,9 @@ impl TerrainGenerator {
     /// True when `generate` would leave the chunk all air: exactly the generator's own shortcut.
     pub fn is_air_chunk(&self, coord: ChunkCoord) -> bool {
         let y0 = coord.y * CHUNK_SIZE;
-        if !(SEA_LEVEL..WORLD_MAX_Y).contains(&y0)
+        if !(SEA_LEVEL..FACE_MAX_Y).contains(&y0)
             || chunk_disc_overlap(coord.x, coord.z) == DiscOverlap::Outside
+            || !BUILD_VOLUME.chunk_may_hold(coord)
         {
             return Self::is_air_chunk_with(coord, 0.0);
         }
@@ -390,11 +466,14 @@ impl TerrainGenerator {
     pub fn generate(&self, coord: ChunkCoord, chunk: &mut Chunk) {
         const S: i32 = CHUNK_SIZE;
         let (x0, y0, z0) = (coord.x * S, coord.y * S, coord.z * S);
-        if y0 + S <= FACE_MIN_Y || y0 >= WORLD_MAX_Y {
+        if y0 + S <= FACE_MIN_Y || y0 >= FACE_MAX_Y {
             return;
         }
-        // Beyond the rim of the world's disc: nothing.
-        if chunk_disc_overlap(coord.x, coord.z) == DiscOverlap::Outside {
+        // Beyond the rim of the world's disc or outside the build volume: nothing.
+        let volume = BUILD_VOLUME.chunk_overlap(coord);
+        if chunk_disc_overlap(coord.x, coord.z) == DiscOverlap::Outside
+            || volume == Overlap::Outside
+        {
             return;
         }
         let cols = self.chunk_columns(x0, z0);
@@ -415,7 +494,14 @@ impl TerrainGenerator {
                 let first_piece = top + 1 - pieces.len() as i32;
                 for ly in 0..S {
                     let y = y0 + ly;
-                    if !(FACE_MIN_Y..WORLD_MAX_Y).contains(&y) {
+                    if !(FACE_MIN_Y..FACE_MAX_Y).contains(&y)
+                        || (volume == Overlap::Partial
+                            && !BUILD_VOLUME.contains_voxel(
+                                i64::from(x0 + x),
+                                i64::from(y),
+                                i64::from(z0 + z),
+                            ))
+                    {
                         continue;
                     }
                     let v = &mut voxels[local_index(x, ly, z)];
@@ -431,7 +517,7 @@ impl TerrainGenerator {
                 let above = top + 1;
                 if (y0..y0 + S).contains(&above)
                     && above >= SEA_LEVEL
-                    && (FACE_MIN_Y..WORLD_MAX_Y).contains(&above)
+                    && (FACE_MIN_Y..FACE_MAX_Y).contains(&above)
                     && let Some(m) = self.decoration_at(&cols, x0, z0, x, z, top)
                 {
                     voxels[local_index(x, above - y0, z)] = m;
@@ -533,7 +619,12 @@ impl TerrainGenerator {
         let noise = (i64::from(x) + self.offset_x, i64::from(z) + self.offset_z);
         self.decorations
             .iter()
-            .find(|p| p.places((x, z), noise, ground, top, neighbour_top))
+            // The rules' heights are metres above sea level.
+            .find(|p| {
+                p.places((x, z), noise, ground, top - SEA_LEVEL, |nx, nz| {
+                    neighbour_top(nx, nz) - SEA_LEVEL
+                })
+            })
             .map(Placer::state)
     }
 

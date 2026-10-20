@@ -20,6 +20,8 @@ export type Step =
   /** Creative flight on or off; its speed level. */
   | { do: 'fly'; on: boolean }
   | { do: 'flySpeed'; level: number }
+  /** The spyglass zoomed to `step` (0 the least zoom, shared/look/spyglass.json) or out. */
+  | { do: 'spyglass'; on: boolean; step?: number }
   /**
    * Places the camera (the player stays), or returns it to the player. With `aroundPlayer`, the
    * position's x and z are offsets from the player's feet (y stays absolute): a view near wherever
@@ -27,6 +29,8 @@ export type Step =
    */
   | { do: 'camera'; position: Vec3; yaw: number; pitch: number; aroundPlayer?: boolean }
   | { do: 'releaseCamera' }
+  /** The water quality, and/or its cost-isolation switches (`?waterdbg=` names; "" for none). */
+  | { do: 'water'; quality?: 'low' | 'medium' | 'high'; debug?: string }
   /** Breaks or places at the crosshair, as a click does; selects a hotbar slot. */
   | { do: 'edit'; action: 'break' | 'place' }
   | { do: 'select'; slot: number }
@@ -132,8 +136,10 @@ const STEP_FIELDS: Record<Step['do'], readonly string[]> = {
   look: ['yaw', 'pitch'],
   fly: ['on'],
   flySpeed: ['level'],
+  spyglass: ['on', 'step'],
   camera: ['position', 'yaw', 'pitch', 'aroundPlayer'],
   releaseCamera: [],
+  water: ['quality', 'debug'],
   edit: ['action'],
   select: ['slot'],
   settle: ['maxS'],
@@ -185,6 +191,12 @@ export function parseStep(where: string, v: unknown): Step {
       return { do: d, on: bool(at('on'), o.on) };
     case 'flySpeed':
       return { do: d, level: num(at('level'), o.level, 0, 63) };
+    case 'spyglass':
+      return {
+        do: d,
+        on: bool(at('on'), o.on),
+        ...(o.step === undefined ? {} : { step: num(at('step'), o.step, 0, 7) }),
+      };
     case 'camera':
       return {
         do: d,
@@ -195,6 +207,21 @@ export function parseStep(where: string, v: unknown): Step {
           ? {}
           : { aroundPlayer: bool(at('aroundPlayer'), o.aroundPlayer) }),
       };
+    case 'water': {
+      const q = o.quality;
+      if (q !== undefined && q !== 'low' && q !== 'medium' && q !== 'high') {
+        throw new ViewError(`${at('quality')}: expected "low", "medium" or "high"`);
+      }
+      // "" turns every switch off again, so text may be empty here.
+      if (o.debug !== undefined && typeof o.debug !== 'string') {
+        throw new ViewError(`${at('debug')}: expected text`);
+      }
+      return {
+        do: d,
+        ...(q === undefined ? {} : { quality: q }),
+        ...(o.debug === undefined ? {} : { debug: o.debug }),
+      };
+    }
     case 'edit':
       if (o.action !== 'break' && o.action !== 'place') {
         throw new ViewError(`${at('action')}: expected "break" or "place"`);

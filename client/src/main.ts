@@ -27,6 +27,7 @@ import { LAUNCHER_PATH } from './launcherPath';
 import { PROTOCOL_VERSION } from './protocol/constants.gen';
 import { regenerateWorld } from './local/regenerate';
 import type { SessionReport } from './net/sessionState';
+import { rememberTrust, showRegistryPrompt, trustedHash } from './ui/registryPrompt';
 import { sameLine } from './version/semver';
 import { parseLocalWorld, type LocalWorld } from './local/world';
 import { cleanName, creatableType, parseSeed, WorldIndex } from './local/worldIndex';
@@ -37,13 +38,15 @@ import { rememberServer } from './ui/recentServers';
 import { prefersTouch, TouchControls } from './ui/touchControls';
 import { Hotbar } from './ui/hotbar';
 import type { BrushPanelState } from './ui/brushPanel';
+import { prefersReducedMotion } from './ui/motionSettings';
+import type { SpyglassHud } from './ui/spyglass';
 import { Hud } from './ui/hud';
 import { MAP_SIZE, MapOverlay } from './ui/mapOverlay';
 import { SettingsMenu } from './ui/settingsMenu';
 import { StructuresPanel } from './ui/structuresPanel';
 import { opfsStructureDir, StructureStore } from './local/structureStore';
 import { clipboardOf, type Vec3 as Cell } from './local/structures';
-import { waterQualityLevel } from './ui/waterSettings';
+import { waterQualityLevel, type WaterQuality } from './ui/waterSettings';
 import {
   CompareOverlay,
   RENDERER_CHOICES,
@@ -85,6 +88,9 @@ export interface GameDebugState {
   timeOfDay: number;
   day: number;
   moonPhase: number;
+  /** The frame's vertical FOV (degrees) and the spyglass's magnification (1: unzoomed). */
+  fov: number;
+  spyglass: number;
 }
 
 interface RenderStats {
@@ -122,6 +128,11 @@ interface DwellDebug {
   /** Sets the flight speed level, as the slider does. */
   flySpeed(level: number): void;
   /**
+   * Zooms the spyglass to `step` (0 the least zoom; docs/SPYGLASS.md) or out, as its key and the
+   * wheel do. False before the game has started.
+   */
+  spyglass(on: boolean, step?: number): boolean;
+  /**
    * Places the camera at `position` looking along yaw/pitch (degrees): the view and the LOD come
    * from there while the player stays put (e2e/views). False before the game has started.
    */
@@ -146,6 +157,11 @@ interface DwellDebug {
   renderer(): string;
   /** Switches renderer at runtime (local builds; false otherwise): see `?renderer=`. */
   setRenderer(name: string, compare?: string): boolean;
+  /**
+   * The water quality (as the settings menu sets it, not stored) and/or its cost-isolation
+   * switches (`?waterdbg=` names, comma-separated; "" for none); null leaves either as it is.
+   */
+  setWater(quality: WaterQuality | null, debug: string | null): void;
   /** Compare mode's state (view, divider, overlay, difference counts); null outside it. */
   compare(): CompareState | null;
   /** Sets compare mode's view (`split`, `blink`, `difference`) and/or divider (0–1). */
@@ -397,8 +413,10 @@ function showHud(app: App, now: number): void {
     damaged?: boolean;
     region?: string;
     brush?: BrushPanelState | null;
+    spyglass?: SpyglassHud | null;
   };
   if (h.message === undefined) return;
+  app.hud.setSpyglass(h.spyglass ?? null);
   if (h.damaged) app.hud.flashDamage(now);
   app.hud.setHealth(h.health ?? 0, now);
   app.hud.setMessage(h.message);
@@ -527,6 +545,7 @@ async function start(): Promise<App | null> {
     if (waterDebug) client.setWaterDebug(waterDebug);
     client.setClouds(s.clouds);
     client.setMotion(s.motion.speedEffects, s.motion.fovBoost);
+    client.setReducedMotion(prefersReducedMotion());
     client.setPlants(s.motion.plantSway ? 1 : 0, true);
     client.setFov(s.fovDeg);
     client.setDetail(s.detail.distanceM, s.detail.pixelError, s.detail.memoryMb);
@@ -640,6 +659,7 @@ async function start(): Promise<App | null> {
     flySpeed: (level) => {
       client.flySpeed(level);
     },
+    spyglass: (on, step) => client.spyglass(on, step ?? 0),
     placeCamera: ([x, y, z], yaw, pitch) => client.placeCamera(x, y, z, yaw, pitch),
     releaseCamera: () => {
       client.releaseCamera();
@@ -655,6 +675,10 @@ async function start(): Promise<App | null> {
       const ok = client.setRenderer(name, compare);
       showRenderer();
       return ok;
+    },
+    setWater: (quality, debug) => {
+      if (quality !== null) client.setWaterQuality(waterQualityLevel(quality));
+      if (debug !== null) client.setWaterDebug(debug);
     },
     compare: () => client.compareState() as CompareState | null,
     setCompare: (view, divider) => {
@@ -984,6 +1008,9 @@ async function connect(app: App): Promise<void> {
     const key = await identify(client);
     let local: LocalSession | null = null;
     let onJoined: (() => void) | undefined;
+    // "Don't ask again" for this server's blocks (ADR 0038), keyed by how it was reached.
+    const serverKey = code ? `code:${code}` : invite ? `invite:${target}` : `local:${target}`;
+    client.trustRegistry(trustedHash(storage(), serverKey) ?? undefined);
     if (code) {
       const base = configuredMasterUrl();
       if (!base) throw new Error('this build has no master server configured');
@@ -999,6 +1026,7 @@ async function connect(app: App): Promise<void> {
     // A local world can be opened to friends (Host…, Phase 5c).
     if (local && app.settings) enableHosting(app.settings, local, prefersTouch(), worldName);
     let started = false;
+    let asking = false;
     const showStatus = () => {
       const s = client.sessionState() as SessionReport;
       const stats = s.stats ?? {
@@ -1008,6 +1036,15 @@ async function connect(app: App): Promise<void> {
         hostPaused: false,
       };
       status.textContent = formatStatus(target, s.transport, s, stats, app.fps.fps);
+      if (s.phase === 'confirming' && !asking) {
+        asking = true;
+        console.info('Dwell: this server’s blocks differ', s.registry);
+        void showRegistryPrompt(document, target, s.registry).then((answer) => {
+          if (answer.dontAsk) rememberTrust(storage(), serverKey, s.registry.hash, Date.now());
+          client.answerRegistry(answer.proceed);
+          if (!answer.proceed) go({});
+        });
+      }
       if (s.phase === 'joined' && !started) {
         started = true;
         const joinedInvite = invite ? pastedInvite(location.search) : null;

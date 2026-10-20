@@ -30,6 +30,8 @@ jobs:
           node --test shared/look/clouds.test.mjs
           node shared/look/reflections.mjs
           node --test shared/look/reflections.test.mjs
+          node shared/look/spyglass.mjs
+          node --test shared/look/spyglass.test.mjs
           node shared/look/daynight.mjs
           node --test shared/look/daynight.test.mjs
           node shared/sounds/gen.mjs
@@ -224,8 +226,8 @@ jobs:
           DWELL_ORIGIN_X=far cargo nextest run -p dwell-physics
           DWELL_FACE=b cargo nextest run -p dwell-physics
           DWELL_ORIGIN_X=far cargo nextest run -p dwell-sim --test netcode
-      - name: Deterministic suites under WASM (worldgen goldens, the controller's golden trace as the native↔WASM divergence check, ADR 0010; Node's WASI, tools/wasi-run.mjs)
-        run: cargo test -p dwell-blocks -p dwell-protocol -p dwell-world -p dwell-worldgen -p dwell-physics --target wasm32-wasip1
+      - name: Deterministic suites under WASM (worldgen goldens, the controller's golden trace as the native↔WASM divergence check, ADR 0010; the fly-out-of-the-build-sphere LOD scenario, Phase 16; Node's WASI, tools/wasi-run.mjs)
+        run: cargo test -p dwell-blocks -p dwell-protocol -p dwell-world -p dwell-worldgen -p dwell-physics -p dwell-lod --target wasm32-wasip1
       - name: 64 players' controller passes under 1 ms per tick (Release, enhanced-determinism on)
         run: cargo test --release -p dwell-physics --test scenario sixty_four -- --nocapture
       - name: WebGPU probe in headless Chromium

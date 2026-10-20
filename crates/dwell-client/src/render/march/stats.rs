@@ -7,7 +7,8 @@
 //! - `HIST_CAPPED`: rays that reached the step cap; `HIST_HITS`, `HIST_MISSES`: outcomes;
 //! - from `HIST_WORDS`, when the debug flag is set: `DEBUG_WORDS` per pixel (row-major): kind
 //!   (0 miss, 1 hit, 2 cap), steps, level, cell x/y/z (i32 bits), face (6 none), t (f32 bits),
-//!   state, the ray's direction x/y/z (f32 bits).
+//!   state, the ray's direction x/y/z (f32 bits), the distance it started from (f32 bits: the
+//!   beam prepass's, or 0), and whether that start was the temporal one (1) or the beam's (0).
 
 use dwell_march::StepSummary;
 
@@ -18,7 +19,7 @@ pub const HIST_CAPPED: usize = HIST_BINS;
 pub const HIST_HITS: usize = HIST_BINS + 1;
 pub const HIST_MISSES: usize = HIST_BINS + 2;
 pub const HIST_WORDS: usize = HIST_BINS + 3;
-pub const DEBUG_WORDS: usize = 12;
+pub const DEBUG_WORDS: usize = 14;
 
 /// One pixel's debug record.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -31,6 +32,10 @@ pub struct DebugRay {
     pub t: f32,
     pub state: u32,
     pub dir: [f32; 3],
+    /// Where the ray started (the beam prepass's distance, or 0).
+    pub start: f32,
+    /// Whether the start was the temporal one.
+    pub temporal: bool,
 }
 
 impl DebugRay {
@@ -48,6 +53,8 @@ impl DebugRay {
                 f32::from_bits(w[10]),
                 f32::from_bits(w[11]),
             ],
+            start: f32::from_bits(w[12]),
+            temporal: w[13] != 0,
         }
     }
 }

@@ -10,7 +10,10 @@ use dwell_blocks::STATES;
 use dwell_protocol::*;
 use dwell_sim::server::{EditPolicy, ServerConfig, SessionId};
 use dwell_world::region::{RegionCheck, read_box};
-use dwell_world::{Chunk, ChunkCoord, M, chunk_hash, generate_flat_chunk};
+use dwell_world::{Chunk, ChunkCoord, FLAT_TOP_Y, M, chunk_hash, generate_flat_chunk};
+
+/// The flat world's surface: its top voxel is G − 1.
+const G: i32 = FLAT_TOP_Y;
 
 fn join_streaming(f: &mut Fixture, id: SessionId) -> Welcome {
     let w = f.join(id, &Client::new(id as u8));
@@ -55,30 +58,34 @@ fn a_fill_of_tall_grass_keeps_only_the_plants_that_stand_on_grass() {
     join_streaming(&mut f, 1);
     f.server.step();
     f.take_all();
-    f.send(1, fill([-2, -1, 3], [1, 1, 1], M.stone));
+    f.send(1, fill([-2, 31, 3], [1, 1, 1], M.stone));
     f.server.step();
     for _ in 0..30 {
         f.server.step();
     }
-    f.send(1, fill([-2, 0, 2], [3, 3, 3], tall));
+    f.send(1, fill([-2, 32, 2], [3, 3, 3], tall));
     f.server.step();
     for x in -2..1 {
         for z in 2..5 {
             let want = if [x, z] == [-2, 3] { M.air } else { tall };
-            assert_eq!(f.server.world().get_voxel(x, 0, z), want, "{x} 0 {z}");
+            assert_eq!(f.server.world().get_voxel(x, 32, z), want, "{x} 0 {z}");
             for y in 1..3 {
-                assert_eq!(f.server.world().get_voxel(x, y, z), M.air, "{x} {y} {z}");
+                assert_eq!(
+                    f.server.world().get_voxel(x, y + 32, z),
+                    M.air,
+                    "{x} {y} {z}"
+                );
             }
         }
     }
     for _ in 0..30 {
         f.server.step();
     }
-    f.send(1, fill([-2, -1, 2], [3, 1, 3], M.air));
+    f.send(1, fill([-2, 31, 2], [3, 1, 3], M.air));
     f.server.step();
     for x in -2..1 {
         for z in 2..5 {
-            assert_eq!(f.server.world().get_voxel(x, 0, z), M.air, "{x} 0 {z}");
+            assert_eq!(f.server.world().get_voxel(x, 32, z), M.air, "{x} 0 {z}");
         }
     }
 }
@@ -97,11 +104,11 @@ fn a_fill_reaches_every_client_as_one_modification_and_marks_its_chunks_dirty() 
     join_streaming(&mut f, 2);
     f.server.step();
     f.take_all();
-    // A 4 × 2 × 3 slab ahead of player 1 (at about (−1, 0, −0.25)), across chunks x −1 and 0.
-    f.send(1, fill([-2, 0, 2], [4, 2, 3], M.stone));
+    // A 4 × 2 × 3 slab ahead of player 1 (at about (−1, G, −0.25)), across chunks x −1 and 0.
+    f.send(1, fill([-2, G, 2], [4, 2, 3], M.stone));
     f.server.step();
     for x in -2..2 {
-        for y in 0..2 {
+        for y in G..G + 2 {
             for z in 2..5 {
                 assert_eq!(f.server.world().get_voxel(x, y, z), M.stone, "{x} {y} {z}");
             }
@@ -129,7 +136,7 @@ fn an_undo_pastes_the_box_back_as_it_was() {
     let mut f = Fixture::new(flat());
     join_streaming(&mut f, 1);
     f.server.step();
-    let (min, size) = ([-3, -2, 1], [5u8, 4, 4]);
+    let (min, size) = ([-3, G - 2, 1], [5u8, 4, 4]);
     let dims = size.map(i32::from);
     let before = read_box(f.server.world(), min, dims).expect("a generated world reads");
     // Hollow out a box that reaches into the ground, then paste the earlier states back.
@@ -159,14 +166,14 @@ fn an_oversized_box_is_a_malformed_message() {
     f.server.step();
     f.take_all();
     let side = region_edit::MAX_SIDE as u8 + 1;
-    f.send(1, fill([0, 0, 2], [side, 1, 1], M.stone));
+    f.send(1, fill([0, G, 2], [side, 1, 1], M.stone));
     let out = f.take_all().remove(&1).unwrap_or_default();
     assert!(
         out.iter()
             .any(|m| matches!(m, Message::Reject(r) if r.reason == RejectReason::Malformed)),
         "{out:?}"
     );
-    assert_eq!(f.server.world().get_voxel(0, 0, 2), M.air);
+    assert_eq!(f.server.world().get_voxel(0, G, 2), M.air);
 }
 
 #[test]
@@ -209,7 +216,7 @@ fn more_than_max_queued_in_a_tick_are_dropped() {
     join_streaming(&mut f, 1);
     f.server.step();
     for x in 0..region_edit::MAX_QUEUED as i32 + 2 {
-        f.send(1, fill([x, 0, 2], [1, 1, 1], M.dirt));
+        f.send(1, fill([x, G, 2], [1, 1, 1], M.dirt));
     }
     f.server.step();
     let s = f.server.stats_of(1).unwrap();
@@ -222,12 +229,12 @@ fn out_of_reach_or_not_permitted_changes_nothing() {
     let mut f = Fixture::new(flat());
     join_streaming(&mut f, 1);
     f.server.step();
-    f.send(1, fill([200, 0, 0], [2, 2, 2], M.stone));
+    f.send(1, fill([200, G, 0], [2, 2, 2], M.stone));
     f.server.step();
     let s = f.server.stats_of(1).unwrap();
     assert_eq!(s.last_region_check, RegionCheck::OutOfReach);
     assert_eq!(s.region_edits_rejected, 1);
-    assert_eq!(f.server.world().get_voxel(200, 0, 0), M.air);
+    assert_eq!(f.server.world().get_voxel(200, G, 0), M.air);
 
     let mut f = Fixture::new(ServerConfig {
         edits: EditPolicy::Nobody,
@@ -235,10 +242,10 @@ fn out_of_reach_or_not_permitted_changes_nothing() {
     });
     join_streaming(&mut f, 1);
     f.server.step();
-    f.send(1, fill([0, 0, 2], [2, 2, 2], M.stone));
+    f.send(1, fill([0, G, 2], [2, 2, 2], M.stone));
     f.server.step();
     assert_eq!(f.server.stats_of(1).unwrap().region_edits_applied, 0);
-    assert_eq!(f.server.world().get_voxel(0, 0, 2), M.air);
+    assert_eq!(f.server.world().get_voxel(0, G, 2), M.air);
 }
 
 /// The registry's unbreakable (`indestructible`) blocks survive a fill and a paste. Covered with a
@@ -253,11 +260,11 @@ fn unbreakable_blocks_are_left_as_they_are() {
     let mut f = Fixture::new(flat());
     join_streaming(&mut f, 1);
     f.server.step();
-    f.server.world().set_voxel(0, 0, 2, locked);
-    f.send(1, fill([-1, 0, 2], [3, 1, 1], M.stone));
+    f.server.world().set_voxel(0, G, 2, locked);
+    f.send(1, fill([-1, G, 2], [3, 1, 1], M.stone));
     f.server.step();
-    assert_eq!(f.server.world().get_voxel(0, 0, 2), locked);
-    assert_eq!(f.server.world().get_voxel(1, 0, 2), M.stone);
+    assert_eq!(f.server.world().get_voxel(0, G, 2), locked);
+    assert_eq!(f.server.world().get_voxel(1, G, 2), M.stone);
 }
 
 /// The structure sandbox (generator 100): the world type `shared/brushes/brushes.json` lets brush.
@@ -290,7 +297,7 @@ fn only_a_brush_world_announces_brushes() {
 #[test]
 fn brush_strokes_reach_far_in_the_sandbox_only() {
     // 100 m from the spawn: beyond the region reach (64 m), within the sandbox's brush reach.
-    let far = fill([100, 3, 0], [2, 2, 2], M.stone);
+    let far = fill([100, 35, 0], [2, 2, 2], M.stone);
     let mut f = Fixture::new(flat());
     join_streaming(&mut f, 1);
     f.server.step();
@@ -298,7 +305,7 @@ fn brush_strokes_reach_far_in_the_sandbox_only() {
     f.server.step();
     let stats = f.server.stats_of(1).unwrap();
     assert_eq!(stats.last_region_check, RegionCheck::OutOfReach);
-    assert_eq!(f.server.world().get_voxel(100, 3, 0), M.air);
+    assert_eq!(f.server.world().get_voxel(100, 35, 0), M.air);
 
     let mut f = Fixture::new(sandbox());
     join_sandbox(&mut f, 1);
@@ -306,9 +313,9 @@ fn brush_strokes_reach_far_in_the_sandbox_only() {
     f.send(1, far);
     f.server.step();
     assert_eq!(f.server.stats_of(1).unwrap().region_edits_applied, 1);
-    assert_eq!(f.server.world().get_voxel(100, 3, 0), M.stone);
+    assert_eq!(f.server.world().get_voxel(100, 35, 0), M.stone);
     // Still bounded: 200 m is out of reach.
-    f.send(1, fill([200, 3, 0], [1, 1, 1], M.stone));
+    f.send(1, fill([200, 35, 0], [1, 1, 1], M.stone));
     f.server.step();
     let stats = f.server.stats_of(1).unwrap();
     assert_eq!(stats.last_region_check, RegionCheck::OutOfReach);
@@ -319,19 +326,19 @@ fn a_brush_paste_keeps_its_keep_cells_and_the_unbreakable_floor() {
     let mut f = Fixture::new(sandbox());
     join_sandbox(&mut f, 1);
     f.server.step();
-    let floor = f.server.world().get_voxel(4, -1, 4);
+    let floor = f.server.world().get_voxel(4, 31, 4);
     assert!(
         STATES[usize::from(floor)].indestructible,
         "the sandbox floor"
     );
-    f.server.world().set_voxel(5, 0, 4, M.sand);
+    f.server.world().set_voxel(5, 32, 4, M.sand);
     // A 3 × 2 × 1 paste over the floor: stone on the cell above it, keep everywhere else.
     let keep = region_edit::KEEP as u16;
     f.send(
         1,
         Message::RegionEdit(RegionEdit {
             cells: vec![keep, keep, keep, M.stone, keep, keep],
-            ..region(RegionEditOp::Paste, [4, -1, 4], [3, 2, 1], 0)
+            ..region(RegionEditOp::Paste, [4, 31, 4], [3, 2, 1], 0)
         }),
     );
     f.server.step();
@@ -341,7 +348,60 @@ fn a_brush_paste_keeps_its_keep_cells_and_the_unbreakable_floor() {
         (1, 1)
     );
     let w = f.server.world();
-    assert_eq!(w.get_voxel(4, 0, 4), M.stone);
-    assert_eq!(w.get_voxel(5, 0, 4), M.sand);
-    assert_eq!(w.get_voxel(4, -1, 4), floor);
+    assert_eq!(w.get_voxel(4, 32, 4), M.stone);
+    assert_eq!(w.get_voxel(5, 32, 4), M.sand);
+    assert_eq!(w.get_voxel(4, 31, 4), floor);
+}
+
+#[test]
+fn every_edit_is_acknowledged_after_its_changes_with_the_refused_ones_named() {
+    // Edit prediction (§6.5): block and region edits are numbered together in arrival order; after
+    // the tick's VoxelModification, an EditAck says how far the server got and which it refused.
+    let mut f = Fixture::new(flat());
+    join_streaming(&mut f, 1);
+    f.server.step();
+    f.take_all();
+    let block = |cell: [i32; 3]| {
+        Message::BlockEditRequest(BlockEditRequest {
+            action: BlockEditAction::Break,
+            cell,
+            face: 2,
+            material: 0,
+        })
+    };
+    f.send(1, fill([3, G, 3], [2, 1, 1], M.stone)); // 1: applied
+    f.send(1, block([200, G - 1, 0])); // 2: out of reach, refused
+    f.send(1, fill([300, G, 3], [2, 1, 1], M.stone)); // 3: out of reach, refused
+    f.server.step();
+    let got = f.take_all().remove(&1).unwrap_or_default();
+    let ack_at = got
+        .iter()
+        .position(|m| matches!(m, Message::EditAck(_)))
+        .expect("an ack");
+    let modified_at = got
+        .iter()
+        .position(|m| matches!(m, Message::VoxelModification(_)))
+        .expect("the fill's modification");
+    assert!(modified_at < ack_at, "the changes come first");
+    let Message::EditAck(ack) = &got[ack_at] else {
+        unreachable!()
+    };
+    assert_eq!(ack.through, 3);
+    assert_eq!(ack.rejected, vec![2, 3]);
+    // A tick with no edits sends no ack; a refused edit alone still gets one.
+    f.server.step();
+    assert!(
+        !f.take_all()
+            .remove(&1)
+            .unwrap_or_default()
+            .iter()
+            .any(|m| matches!(m, Message::EditAck(_)))
+    );
+    f.send(1, block([200, G - 1, 0]));
+    f.server.step();
+    let got = f.take_all().remove(&1).unwrap_or_default();
+    assert!(got.contains(&Message::EditAck(EditAck {
+        through: 4,
+        rejected: vec![4],
+    })));
 }

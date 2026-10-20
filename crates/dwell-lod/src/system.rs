@@ -1040,7 +1040,9 @@ impl LodSystem {
 
     /// Refine while cells project larger than the pixel error — in every direction, not only in
     /// view: detail depends on distance alone, so turning shows what is already loaded instead of
-    /// popping in. Where the camera looks only decides what loads first (schedule).
+    /// popping in. Where the camera looks only decides what loads first (schedule). The spyglass
+    /// (docs/SPYGLASS.md) is the exception: inside its narrow view cells are measured at its
+    /// magnification, outside it at the unzoomed FOV's.
     fn refine(&self, id: LodId, frustum: &Frustum) -> bool {
         let n = self.n(id);
         self.refine_box(n.coord, n.lo, n.hi, frustum)
@@ -1054,7 +1056,7 @@ impl LodSystem {
         {
             return true;
         }
-        cell_size(coord.level) as f64 / d * frustum.pixels_per_radian
+        cell_size(coord.level) as f64 / d * frustum.pixels_per_radian_for(lo, hi)
             > self.options.pixel_error * self.error_scale
     }
 
@@ -1437,12 +1439,7 @@ impl LodSystem {
         n.remesh = false;
         n.token = token;
         n.mesh_token = token;
-        // Level ≥ 7 sections may hold rows of both faces: the other face's rows become stone
-        // (nothing is drawn against stone).
-        let both = coord.level > MAX_ALIGNED_LEVEL && !self.near_rim;
-        if both {
-            self.blank_other_face(coord, &mut cells);
-        }
+        let both = cells_for_viewer(coord, &mut cells, self.view_face, self.near_rim);
         let viewer_b = both && self.view_face == -1;
         let job = LodMeshJob {
             cells,
@@ -1457,27 +1454,6 @@ impl LodSystem {
         };
         self.mesh_jobs.insert(token, id);
         host.mesh_section(job, token);
-    }
-
-    fn blank_other_face(&self, c: LodCoord, cells: &mut [u16]) {
-        let stone = dwell_blocks::require("dwell:stone");
-        let viewer = if self.view_face == 1 {
-            Face::A
-        } else {
-            Face::B
-        };
-        for r in -1..=SECTION_CELLS {
-            if row_face(c, r) == viewer {
-                continue;
-            }
-            for z in -1..=SECTION_CELLS {
-                for x in -1..=SECTION_CELLS {
-                    if let Some(v) = cells.get_mut(cell_index(x, r, z)) {
-                        *v = stone;
-                    }
-                }
-            }
-        }
     }
 
     fn set_cells(&mut self, id: LodId, cells: Option<Vec<u16>>) {
@@ -1667,6 +1643,39 @@ impl LodSystem {
             bytes_per_second: self.received.iter().map(|&(_, b)| b).sum(),
         }
     }
+}
+
+/// Prepares a section's cells for meshing for a viewer on `view_face` (1: A, −1: B); true when the
+/// section holds rows of both faces (only the root, above `MAX_ALIGNED_LEVEL`, since Phase 16's
+/// midplane at 0). Then, away from the rim, the other face's rows become stone, so nothing of that
+/// face is drawn and the viewer's face has no hole where the thin crust (10 layers a face, often
+/// under one cell) meets it. Aligned sections are wholly one face's: face B's are meshed as their
+/// mirror image (`is_face_b_section`).
+pub(crate) fn cells_for_viewer(
+    c: LodCoord,
+    cells: &mut [u16],
+    view_face: i32,
+    near_rim: bool,
+) -> bool {
+    let both = c.level > MAX_ALIGNED_LEVEL && !near_rim;
+    if !both {
+        return false;
+    }
+    let stone = dwell_blocks::require("dwell:stone");
+    let viewer = if view_face == 1 { Face::A } else { Face::B };
+    for r in -1..=SECTION_CELLS {
+        if row_face(c, r) == viewer {
+            continue;
+        }
+        for z in -1..=SECTION_CELLS {
+            for x in -1..=SECTION_CELLS {
+                if let Some(v) = cells.get_mut(cell_index(x, r, z)) {
+                    *v = stone;
+                }
+            }
+        }
+    }
+    true
 }
 
 /// A section wholly on the face the camera is not on (`view_face`), far from it: not loaded or

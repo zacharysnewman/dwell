@@ -18,7 +18,7 @@ pub const ATLAS_SIZE: usize = CELL * ATLAS_CELLS;
 pub const ATLAS_TILES: usize = ATLAS_CELLS * ATLAS_CELLS;
 
 /// The tiles in atlas order (the registry's texture names).
-pub const TILE_ORDER: [&str; 13] = [
+pub const TILE_ORDER: [&str; 14] = [
     "plain",
     "grass",
     "grassSide",
@@ -32,7 +32,27 @@ pub const TILE_ORDER: [&str; 13] = [
     "logTop",
     "leaves",
     "tallGrass",
+    // The fallback look of a state whose look or textures this build lacks (synced from a server,
+    // ADR 0038): a magenta and black checker, never content.
+    MISSING_TILE,
 ];
+
+/// The fallback tile (ADR 0038 decision 7).
+pub const MISSING_TILE: &str = "missing";
+
+/// Whether the atlas has tile `name`.
+pub fn has_tile(name: &str) -> bool {
+    TILE_ORDER.contains(&name)
+}
+
+/// Magenta and black squares, 4 × 4 per tile: what a block this build cannot draw looks like.
+fn missing(x: i64, y: i64) -> Rgb {
+    if ((x / 8) + (y / 8)) % 2 == 0 {
+        [255.0, 0.0, 255.0]
+    } else {
+        [0.0, 0.0, 0.0]
+    }
+}
 
 /// A tile's rectangle in the atlas, in 0–1 texture coordinates (v = 0 is the atlas's row 0).
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -384,6 +404,7 @@ fn painter(name: &str) -> fn(i64, i64) -> Rgb {
         "logTop" => log_top,
         "leaves" => leaves,
         "tallGrass" => tall_grass,
+        MISSING_TILE => missing,
         _ => |_, _| [255.0, 255.0, 255.0],
     }
 }

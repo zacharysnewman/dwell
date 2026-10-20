@@ -401,6 +401,22 @@ settings menu shows the backend in use). Recorded in ADRs [0025](./adr/0025-base
 | D9 | Midplane at y = 0 | Yes: the origin of generation is the centre of the disc, the midplane and the build sphere | As proposed |
 | D10 | How far "data" goes for terrain | A fixed vocabulary of node kinds in code, parameters and composition in data (§3.5) — not a general scripting language | As proposed |
 
+**Later decision (owner, 2026-10-15): the island keeps its size.** Shrinking the world to 50 km
+(Phase 16) must not shrink the continent. The interim island (Phase 15, `island.rs`) was already
+sized absolutely — a 25 km mean radius, not a fraction of `worldRadius` — and Phase 16 moved that
+radius into data (`world.islandRadius` = 25 000 in `constants.json`, a single value Phase 17 moves
+into the terrain definition's layout). Measured over five seeds and both faces (`cargo run --release
+-p dwell-worldgen --example island`): the coast lies 16.4–21.2 km out at its nearest, 28.7–31.9 km at
+its farthest, 24.8–25.7 km on average, ~1,900–2,070 km² of land — identical before and after the
+resize, leaving at least 18 km of sea to the 50 km rim (D8 asks ≥ 8 km). The larger relief of
+generator version 15 (owner, 2026-10-19; hills ±80 m, bumps ±5 m, inland rise 130 m, data in
+`shared/worldgen/terrain.json`) leaves the layout alone: the mean coast lies 24.9–25.8 km out and the
+land covers ~1,900–2,060 km² (the same five seeds); the nearest water is now 8.7–15.6 km out, since a
+few inland hollows dip below sea level (under 1 % of the island). The steep hills of generator
+version 16 (owner, 2026-10-19; hills ±225 m over 1 km in five octaves, inland rise 320 m) leave the
+layout alone too (the ±10 % size test passes), with the hollows below sea level at ~0.8 % of the
+island.
+
 ## 8. Order of work
 
 Planned as **Phases 14–19** of [`IMPLEMENTATION_PLAN.md`](./IMPLEMENTATION_PLAN.md), which holds

@@ -92,6 +92,12 @@ struct Fluid {
     optics: vec4f,
 };
 @group(0) @binding(4) var<storage, read> fluids: array<Fluid>;
+// The water's tiles (render/water_tiles.rs): gradient noise and its derivatives over NOISE_TILE
+// lattice cells (value, d/dx, d/dy), and per fluid this frame's caustic cell-edge distances over
+// CAUSTIC_TILE cells (the coarse layer, the fine one); a repeating linear sampler.
+@group(0) @binding(5) var noise_tile: texture_2d<f32>;
+@group(0) @binding(6) var caustic_tile: texture_2d_array<f32>;
+@group(0) @binding(7) var tile_sampler: sampler;
 
 // Per draw (group 1, a storage array indexed by the draw's instance: draw k is drawn as instance k,
 // so a draw needs no bind call of its own): the mesh's origin relative to the eye (xyz) and its scale (w),
@@ -566,6 +572,21 @@ fn line_fs(i: LineOut) -> @location(0) vec4f {
     return vec4f(i.color * draw.tint.rgb, draw.tint.a * shown / f32(SCENE_SAMPLES));
 }
 
+// A brush preview's ghost (BRUSHES.md §3): see-through faces, at a third of their opacity where
+// the scene is in front of them, so cells inside the ground still show.
+@fragment
+fn ghost_fs(i: LineOut) -> @location(0) vec4f {
+    let draw = draws[i.draw];
+    let p = vec2i(i.clip.xy);
+    var shown = 0.0;
+    for (var s = 0; s < SCENE_SAMPLES; s++) {
+        let d = textureLoad(scene_depth, p, s).r;
+        shown += select(0.0, 1.0, d <= 0.0 || i.depth <= d * (1.0 + 1e-5));
+    }
+    let k = shown / f32(SCENE_SAMPLES);
+    return vec4f(i.color * draw.tint.rgb, draw.tint.a * (0.33 + 0.67 * k));
+}
+
 // Lines drawn over everything (the debug lines).
 @fragment
 fn line_top_fs(i: LineOut) -> @location(0) vec4f {
@@ -638,17 +659,21 @@ fn scene_depth_at(p: vec2i) -> vec2f {
 // The sky behind is the clear sky with the sun, moon and stars (`dwell_sky_bodies`) under the
 // clouds; the time of day sets the scene's saturation (lower by moonlight); dithered last.
 // The composite of one pixel (`color`: the scene tone-mapped, encoded, fogged and over the sky)
-// with the pixel's view ray (view depth 1), clear sky and sky with its clouds, which the edge
-// blur's taps share.
+// with the pixel's view ray (view depth 1), clear sky, sky with its clouds, and the clouds as a
+// layer over the scene (`front`, with the deck's distance along the ray `deck_t`: no cover unless
+// the deck is in front of the pixel's scene or the edge blur needs it), which the edge blur's taps
+// share.
 struct Composited {
     color: vec3f,
     ray: vec3f,
     clear: vec3f,
     back: vec3f,
+    front: vec4f,
+    deck_t: f32,
 };
 
-// `taps`: the edge blur will composite other pixels over this one's sky, so its clouds are found
-// even where the pixel itself is covered.
+// `taps`: the edge blur will composite other pixels along this one's ray, over its sky and under
+// its clouds, so both are found even where the pixel itself is covered or the deck is behind it.
 fn composited(p: vec2i, ndc: vec2f, taps: bool) -> Composited {
     let ray = view_ray(ndc);
     let dir = normalize(ray);
@@ -664,23 +689,45 @@ fn composited(p: vec2i, ndc: vec2f, taps: bool) -> Composited {
         let behind = dwell_sky_bodies(dir, face, frame.day, clear);
         back = dwell_clouds(behind, behind, dir, face, deck, fw, frame.clouds, frame.cloud_cfg, lights);
     }
-    var color = back;
+    var depth = 0.0;
     if (c.a > 0.0) {
-        let depth = scene_depth_at(p).x;
-        var shown = mix(scene_display(c), clear, fog_amount(ray * depth));
-        if (dwell_cloud_in_front(deck.z, length(ray), depth)) {
-            shown = dwell_clouds(shown, clear, dir, face, deck, fw, frame.clouds, frame.cloud_cfg, lights);
-        }
-        color = mix(back, shown, min(c.a, 1.0));
+        depth = scene_depth_at(p).x;
     }
-    color = dwell_cloud_fog(color, frame.cloud_inside.x, face, lights);
-    return Composited(color, ray, clear, back);
+    var front = vec4f(0.0);
+    if (taps || (c.a > 0.0 && dwell_cloud_in_front(deck.z, length(ray), depth))) {
+        front = dwell_cloud_layer(clear, dir, face, deck, fw, frame.clouds, frame.cloud_cfg, lights);
+    }
+    var s = Composited(vec3f(0.0), ray, clear, back, front, deck.z);
+    s.color = composited_scene(c, depth, s);
+    return s;
 }
 
-// The scene at pixel `p` composited along another pixel's ray and over its sky (`s`: the edge
-// blur's taps, which share the pixel's sky).
+// A scene colour `c` (premultiplied by coverage) at view depth `depth`, composited along the
+// pixel's ray `s.ray`: tone-mapped, encoded and fogged toward its clear sky, under its clouds where
+// the deck is in front of it (its hit nearer than the stored view depth), and over its sky with
+// its clouds by its coverage; last, inside the cloud, the whole view fogs toward the cloud. The
+// pixel and the edge blur's taps alike, so the blur keeps what the pixel shows.
+fn composited_scene(c: vec4f, depth: f32, s: Composited) -> vec3f {
+    var color = s.back;
+    if (c.a > 0.0) {
+        var shown = mix(scene_display(c), s.clear, fog_amount(s.ray * depth));
+        if (dwell_cloud_in_front(s.deck_t, length(s.ray), depth)) {
+            shown = dwell_cloud_over(shown, s.front);
+        }
+        color = mix(s.back, shown, min(c.a, 1.0));
+    }
+    return dwell_cloud_fog(color, frame.cloud_inside.x, frame.eye.y, cloud_lighting());
+}
+
+// The scene at pixel `p` composited along another pixel's ray, over its sky and under its clouds
+// (`s`: the edge blur's taps, which share the pixel's sky and clouds).
 fn composited_over(p: vec2i, s: Composited) -> vec3f {
-    return composited_of(textureLoad(scene_color, p, 0), scene_depth_at(p).x, s.ray, s.clear, s.back);
+    let c = textureLoad(scene_color, p, 0);
+    var depth = 0.0;
+    if (c.a > 0.0) {
+        depth = scene_depth_at(p).x;
+    }
+    return composited_scene(c, depth, s);
 }
 
 // A scene colour `c` (premultiplied by coverage) at view depth `depth` along `ray` (view depth 1),
@@ -773,7 +820,8 @@ fn pixel_m(p: vec2i, ray: vec3f, depth: f32) -> f32 {
 // distance in it — to what the pixel shows, or to the surface where the ray reaches it first —
 // replaces the height fog; past the surface, the sky.
 fn composite_underwater(p: vec2i, ray: vec3f, c: vec4f) -> vec3f {
-    let f = fluids[min(u32(frame.water.y), arrayLength(&fluids) - 1u)];
+    let fluid = min(u32(frame.water.y), arrayLength(&fluids) - 1u);
+    let f = fluids[fluid];
     let dir = normalize(ray);
     let rise = dir.y * frame.eye.y;
     let below = max((frame.water.z - frame.eye.x) * frame.eye.y, 0.0);
@@ -792,7 +840,7 @@ fn composite_underwater(p: vec2i, ray: vec3f, c: vec4f) -> vec3f {
         let under = (frame.water.z - (frame.eye.x + rel.y)) * frame.eye.y;
         // Lit by light that came down through the fluid, focused into caustics.
         lit *= exp(-f.absorption.rgb * max(under, 0.0))
-            * caustic_light(frame.wrap.xy + rel.xz, under, frame.eye.x + rel.y, pixel_m(p, ray, depth), UNDERWATER_CAUSTICS, f);
+            * caustic_light(frame.wrap.xy + rel.xz, under, frame.eye.x + rel.y, pixel_m(p, ray, depth), UNDERWATER_CAUSTICS, f, fluid);
     }
     let shown = display(underwater(lit, min(dist, to_surface), f));
     return mix(back, shown, min(c.a, 1.0));
@@ -930,39 +978,44 @@ fn fluid_vs(v: FluidIn, @builtin(instance_index) k: u32) -> FluidOut {
     return o;
 }
 
-// A unit gradient per lattice point, wrapping every `period` points.
-fn hash_grad(c: vec2i, period: i32) -> vec2f {
-    let w = vec2u(((c % period) + period) % period);
-    var h = (w.x * 0x8da6b343u) ^ (w.y * 0xd8163841u) ^ 0x9e3779b9u;
-    h = (h ^ (h >> 16u)) * 0x7feb352du;
-    h = (h ^ (h >> 15u)) * 0x846ca68bu;
-    h = h ^ (h >> 16u);
-    let a = f32(h >> 8u) * (6.283185307 / 16777216.0);
-    return vec2f(cos(a), sin(a));
+// Lattice coordinates wrapped to [0, period) (render/water.rs `wrap_cell`): the integer modulo
+// once per lookup; neighbours step from it with `wrap_next`.
+fn wrap_cell(c: vec2i, period: i32) -> vec2i {
+    return ((c % period) + period) % period;
 }
 
-// Two values in [0, 1) per lattice point, wrapping every `period` points (no trig: the caustics'
-// Worley points).
-fn hash_unit2(c: vec2i, period: i32) -> vec2f {
-    let w = vec2u(((c % period) + period) % period);
-    var h = (w.x * 0x8da6b343u) ^ (w.y * 0xd8163841u) ^ 0x9e3779b9u;
+// A wrapped lattice coordinate stepped by -1, 0 or +1 (render/water.rs `wrap_step`).
+fn wrap_step(w: vec2i, o: vec2i, period: i32) -> vec2i {
+    let v = w + o;
+    return select(select(v, v - period, v >= vec2i(period)), v + period, v < vec2i(0));
+}
+
+// The lattice hash of a wrapped point.
+fn lattice_hash(w: vec2i) -> u32 {
+    let u = vec2u(w);
+    var h = (u.x * 0x8da6b343u) ^ (u.y * 0xd8163841u) ^ 0x9e3779b9u;
     h = (h ^ (h >> 16u)) * 0x7feb352du;
     h = (h ^ (h >> 15u)) * 0x846ca68bu;
-    h = h ^ (h >> 16u);
-    return vec2f(f32(h & 0xffffu), f32(h >> 16u)) * (1.0 / 65536.0);
+    return h ^ (h >> 16u);
+}
+
+// A unit vector from two bytes of a hash (render/water.rs `hash_dir`): no trig, one rsqrt.
+fn hash_dir(h: u32) -> vec2f {
+    let v = vec2f(f32(h & 0xffu), f32((h >> 8u) & 0xffu)) - 127.5;
+    return v * inverseSqrt(max(dot(v, v), 1.0));
 }
 
 // Gradient noise and its derivatives (value, d/dx, d/dy), quintic, wrapping every `period` cells.
 fn noise_d(p: vec2f, period: i32) -> vec3f {
     let cell = floor(p);
-    let i = vec2i(cell);
+    let w = wrap_cell(vec2i(cell), period);
     let f = p - cell;
     let u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
     let du = 30.0 * f * f * (f * (f - 2.0) + 1.0);
-    let ga = hash_grad(i, period);
-    let gb = hash_grad(i + vec2i(1, 0), period);
-    let gc = hash_grad(i + vec2i(0, 1), period);
-    let gd = hash_grad(i + vec2i(1, 1), period);
+    let ga = hash_dir(lattice_hash(w));
+    let gb = hash_dir(lattice_hash(wrap_step(w, vec2i(1, 0), period)));
+    let gc = hash_dir(lattice_hash(wrap_step(w, vec2i(0, 1), period)));
+    let gd = hash_dir(lattice_hash(wrap_step(w, vec2i(1, 1), period)));
     let va = dot(ga, f);
     let vb = dot(gb, f - vec2f(1.0, 0.0));
     let vc = dot(gc, f - vec2f(0.0, 1.0));
@@ -974,11 +1027,22 @@ fn noise_d(p: vec2f, period: i32) -> vec3f {
     return vec3f(value, d);
 }
 
+// Cells of about `want` metres in WRAP_M, a whole number of `tile`s (render/water.rs `tile_cells`).
+fn tile_cells(want: f32, tile: i32) -> f32 {
+    return f32(tile) * max(1.0, round(WRAP_M / (max(want, 1e-3) * f32(tile))));
+}
+
+// Gradient noise and its derivatives (value, d/dx, d/dy) at lattice point `q`, from the noise
+// tile: `noise_d` with a period that is a whole number of tiles.
+fn noise_t(q: vec2f) -> vec3f {
+    return textureSampleLevel(noise_tile, tile_sampler, q / f32(NOISE_TILE), 0.0).xyz;
+}
+
 // One layer of normal detail (render/water.rs `WaveLayer`): its height slope (xy) at wrapped
 // world `xz`, faded out where a pixel covers `footprint` m (Nyquist), and the slope variance the
 // fade lost (z). Wavelengths divide WRAP_M, so the detail wraps with the position.
 fn wave_layer(xz: vec2f, f: Fluid, footprint: f32, ratio: f32, slope: f32, speed: f32, dir: vec2f, turn: mat2x2f) -> vec3f {
-    let n = max(1.0, round(WRAP_M / max(f.wave.z * ratio, 1e-3)));
+    let n = tile_cells(f.wave.z * ratio, NOISE_TILE);
     let wavelength = WRAP_M / n;
     let s = f.wave.y * slope;
     let fade = 1.0 - smoothstep(wavelength * FADE_LO, wavelength * FADE_HI, footprint);
@@ -988,7 +1052,7 @@ fn wave_layer(xz: vec2f, f: Fluid, footprint: f32, ratio: f32, slope: f32, speed
     }
     let shift = dir * (frame.fog.z * f.wave.w * speed / wavelength);
     let q = turn * (xz / wavelength) + (shift - n * floor(shift / n));
-    let d = noise_d(q, i32(n));
+    let d = noise_t(q);
     let scale = sqrt(abs(determinant(turn)));
     return vec3f(transpose(turn) * d.yz * (s * fade / scale), lost);
 }
@@ -1246,10 +1310,11 @@ fn sparkle(i: FluidOut, s: Surface, f: Fluid, footprint: f32) -> vec3f {
     if (k <= 0.0 || fade <= 0.0) {
         return vec3f(0.0);
     }
-    let n_cells = max(1.0, round(WRAP_M / wavelength));
-    let shift = vec2f(0.6, 0.8) * (frame.fog.z * f.wave.w * 3.1 / wavelength);
-    let q = mat2x2f(2.0, -1.0, 1.0, 2.0) * (i.wrapped / wavelength) + (shift - n_cells * floor(shift / n_cells));
-    let d = noise_d(q, i32(n_cells));
+    let n_cells = tile_cells(wavelength, NOISE_TILE);
+    let cell = WRAP_M / n_cells;
+    let shift = vec2f(0.6, 0.8) * (frame.fog.z * f.wave.w * 3.1 / cell);
+    let q = mat2x2f(2.0, -1.0, 1.0, 2.0) * (i.wrapped / cell) + (shift - n_cells * floor(shift / n_cells));
+    let d = noise_t(q);
     let n = normalize(s.n + vec3f(-d.y, 0.0, -d.z) * 0.35 * sign(s.n.y));
     let r = reflect(-s.v, n);
     let day = frame.day;
@@ -1371,7 +1436,7 @@ fn water_scene_fs(i: FluidOut, @builtin(front_facing) front: bool) -> @location(
     if (scene.a > 0.0 && d_b > 0.0 && !water_off(DBG_CAUSTICS)) {
         // The floor's pixel footprint: the surface's, scaled out to the floor's distance.
         let floor_fp = footprint * d_b / d_w;
-        floor *= caustic_light(i.wrapped + floor_rel.xz - i.rel.xz, under, frame.eye.x + floor_rel.y, floor_fp, 1.0, f);
+        floor *= caustic_light(i.wrapped + floor_rel.xz - i.rel.xz, under, frame.eye.x + floor_rel.y, floor_fp, 1.0, f, i.fluid);
     }
     var through = mix(floor, s.body, 0.5);
     if (!water_off(DBG_ABSORPTION)) {
@@ -1411,10 +1476,11 @@ fn foam_amount(xz: vec2f, under: f32, f: Fluid) -> f32 {
     }
     let edge = 1.0 - under / depth;
     let t = frame.fog.z;
-    let n_cells = round(WRAP_M / FOAM_CELL);
-    let drift = vec2f(0.13, 0.09) * t / FOAM_CELL;
-    let q = xz / FOAM_CELL + (drift - n_cells * floor(drift / n_cells));
-    let n = noise_d(q, i32(n_cells)).x + 0.5 * noise_d(q * 2.0 + vec2f(0.5, 0.25), i32(2.0 * n_cells)).x;
+    let n_cells = tile_cells(FOAM_CELL, NOISE_TILE);
+    let cell = WRAP_M / n_cells;
+    let drift = vec2f(0.13, 0.09) * t / cell;
+    let q = xz / cell + (drift - n_cells * floor(drift / n_cells));
+    let n = noise_t(q).x + 0.5 * noise_t(q * 2.0 + vec2f(0.5, 0.25)).x;
     // Lines that move toward the shore (edge rises toward it) as time passes.
     let lap = fract(edge * FOAM_LINES - t * FOAM_LAP_SPEED + n * 0.8);
     let line = smoothstep(0.0, 0.18, lap) * (1.0 - smoothstep(0.3, 0.55, lap));
@@ -1433,7 +1499,7 @@ const FOAM_LAP_SPEED: f32 = 0.12;
 // The pattern is shifted back along the refracted sun (or moon, much dimmer), animated with the
 // ripples' flow, and fades with depth over the fluid's caustic depth (render/water.rs
 // `caustic_fade`). Focused, not added: dimmer between the lines, brighter on them.
-fn caustic_light(xz: vec2f, under: f32, frag_y: f32, footprint: f32, boost: f32, f: Fluid) -> f32 {
+fn caustic_light(xz: vec2f, under: f32, frag_y: f32, footprint: f32, boost: f32, f: Fluid, fluid: u32) -> f32 {
     // Faded out where a pixel covers a good part of a cell (they would alias into noise).
     let sharp = 1.0 - smoothstep(0.08, 0.3, footprint / max(f.optics.y, 1e-3));
     if (under <= 0.0 || f.extra.y <= 0.0 || sharp <= 0.0) {
@@ -1458,7 +1524,7 @@ fn caustic_light(xz: vec2f, under: f32, frag_y: f32, footprint: f32, boost: f32,
     if (strength < 0.02) {
         return 1.0;
     }
-    let c = caustic_pattern(xz + back, f, footprint);
+    let c = caustic_pattern(xz + back, f, footprint, fluid);
     return max(1.0 + strength * (c * CAUSTIC_GAIN - CAUSTIC_MEAN), 0.0);
 }
 
@@ -1469,45 +1535,104 @@ const UNDERWATER_CAUSTICS: f32 = 1.7;
 const CAUSTIC_GAIN: f32 = 2.2;
 const CAUSTIC_MEAN: f32 = 0.2;
 
-// Two layers of moving cell edges (Worley F2 − F1), warped so the lines wander, wrapping with the
-// position (cells divide WRAP_M, render/water.rs `caustic_period`): bright thin lines, near 0
-// between them.
-fn caustic_pattern(xz: vec2f, f: Fluid, footprint: f32) -> f32 {
-    let n = max(1.0, round(WRAP_M / max(f.optics.y, 1e-3)));
-    let p = xz / (WRAP_M / n);
+// The caustic layers' time: each fluid's own (its flow speed), the coarse layer's and the fine's.
+fn caustic_times(f: Fluid) -> vec2f {
     let t = frame.fog.z * (0.5 + 12.0 * f.wave.w);
-    let warp = 0.11 * vec2f(sin(6.2831853 * p.y + t), sin(6.2831853 * p.x + 1.37 * t));
-    let a = cell_edge(p + warp, i32(n), t);
+    return vec2f(t, 1.31 * t + 2.0);
+}
+
+// One caustic layer's cell-edge distance at cell coordinate `p` (the pattern repeats every
+// CAUSTIC_TILE cells, which divide the wrap): from the tile (channel `ch` of
+// the fluid's layer) where a pixel covers at least a texel (`texels`: texels per pixel), else
+// evaluated (`cell_edge`), blended between. Coherent per region: near water evaluates, far samples.
+fn caustic_edge(p: vec2f, t: f32, texels: f32, fluid: u32, ch: i32) -> f32 {
+    let k = smoothstep(0.6, 1.0, texels);
+    var a = 0.0;
+    if (k > 0.0) {
+        let c = textureSampleLevel(caustic_tile, tile_sampler, p / f32(CAUSTIC_TILE), fluid, 0.0);
+        a = select(c.y, c.x, ch == 0);
+    }
+    if (k < 1.0) {
+        a = mix(cell_edge(p, CAUSTIC_TILE, t), a, k);
+    }
+    return a;
+}
+
+// Two layers of moving cell edges (Worley F2 − F1), warped so the lines wander, wrapping with the
+// position (cells divide WRAP_M in whole caustic tiles, render/water.rs `caustic_period`): bright
+// thin lines, near 0 between them.
+fn caustic_pattern(xz: vec2f, f: Fluid, footprint: f32, fluid: u32) -> f32 {
+    let n = tile_cells(f.optics.y, CAUSTIC_TILE);
+    let cell = WRAP_M / n;
+    let p = xz / cell;
+    let t = caustic_times(f);
+    let warp = 0.11 * vec2f(sin(6.2831853 * p.y + t.x), sin(6.2831853 * p.x + 1.37 * t.x));
+    // Texels of the tile per pixel, for the coarse layer (the fine one's cells are half the size).
+    let texels = footprint / cell * CAUSTIC_TEXELS;
+    let a = caustic_edge(p + warp, t.x, texels, fluid, 0);
     var c = exp(-a * 11.0);
-    // The finer layer only near, where a pixel is small against its cells.
-    let fine = 1.0 - smoothstep(0.04, 0.12, footprint / max(f.optics.y, 1e-3));
+    // The finer layer only near, where a pixel is small against its cells; on High (an extra)
+    // twice as far out.
+    let reach = select(1.0, 2.0, frame.water.w > 1.5);
+    let fine = 1.0 - smoothstep(0.04 * reach, 0.12 * reach, footprint / cell);
     if (fine > 0.0) {
-        let b = cell_edge(p * 2.0 + vec2f(0.37, 0.71) - 2.0 * warp, i32(2.0 * n), 1.31 * t + 2.0);
+        let b = caustic_edge(p * 2.0 + vec2f(0.37, 0.71) - 2.0 * warp, t.y, 2.0 * texels, fluid, 1);
         c += 0.6 * fine * exp(-b * 9.0);
     }
     return c;
 }
 
+// The water's tiles (render/water_tiles.rs), drawn by a full-screen triangle per tile (or caustic
+// layer: the instance is the fluid).
+struct TileOut {
+    @builtin(position) clip: vec4f,
+    @location(0) @interpolate(flat) fluid: u32,
+};
+
+@vertex
+fn tile_vs(@builtin(vertex_index) i: u32, @builtin(instance_index) k: u32) -> TileOut {
+    let p = array(vec2f(-1.0, -1.0), vec2f(3.0, -1.0), vec2f(-1.0, 3.0));
+    var o: TileOut;
+    o.clip = vec4f(p[i], 0.0, 1.0);
+    o.fluid = k;
+    return o;
+}
+
+// The noise tile: `noise_d` over NOISE_TILE cells at each texel's centre.
+@fragment
+fn noise_tile_fs(i: TileOut) -> @location(0) vec4f {
+    return vec4f(noise_d(i.clip.xy / NOISE_TEXELS, NOISE_TILE), 0.0);
+}
+
+// A fluid's caustic layer: both caustic layers' cell-edge distances over CAUSTIC_TILE cells, at this
+// frame's times.
+@fragment
+fn caustic_tile_fs(i: TileOut) -> @location(0) vec4f {
+    let t = caustic_times(fluids[i.fluid]);
+    let p = i.clip.xy / CAUSTIC_TEXELS;
+    return vec4f(cell_edge(p, CAUSTIC_TILE, t.x), cell_edge(p, CAUSTIC_TILE, t.y), 0.0, 0.0);
+}
+
 // The distance from the nearest cell edge of moving Worley points (F2 − F1), wrapping every
-// `period` cells.
+// `period` cells. Each point wanders as 0.38 (sin(t + φ), cos(0.83 t + ψ)) about its cell's
+// centre, its phases from the hash as unit vectors, so the angle sums need the time's sines only
+// (once per call), not two per point.
 fn cell_edge(p: vec2f, period: i32, t: f32) -> f32 {
     let cell = floor(p);
     let fp = p - cell;
-    let ci = vec2i(cell);
+    let w = wrap_cell(vec2i(cell), period);
+    let ts = vec2f(sin(t), cos(t));
+    let tc = vec2f(cos(0.83 * t), -sin(0.83 * t));
     var d1 = 9.0;
     var d2 = 9.0;
     for (var y = -1; y <= 1; y++) {
         for (var x = -1; x <= 1; x++) {
             let o = vec2i(x, y);
-            let g = hash_unit2(ci + o, period);
-            let pt = vec2f(o) + 0.5 + 0.38 * vec2f(sin(t + 6.2831853 * g.x), cos(0.83 * t + 6.2831853 * g.y));
-            let d = length(pt - fp);
-            if (d < d1) {
-                d2 = d1;
-                d1 = d;
-            } else if (d < d2) {
-                d2 = d;
-            }
+            let h = lattice_hash(wrap_step(w, o, period));
+            let wander = vec2f(dot(ts, hash_dir(h)), dot(tc, hash_dir(h >> 16u)));
+            let d = length(vec2f(o) + 0.5 + 0.38 * wander - fp);
+            d2 = min(d2, max(d1, d));
+            d1 = min(d1, d);
         }
     }
     return d2 - d1;
@@ -1625,6 +1750,9 @@ mod tests {
                 "fluid_vs",
                 "water_fs",
                 "water_scene_fs",
+                "tile_vs",
+                "noise_tile_fs",
+                "caustic_tile_fs",
                 "difference_fs",
             ] {
                 assert!(
@@ -1653,7 +1781,9 @@ mod tests {
         }
         let c = body("composited_of");
         assert!(c.contains("display(") && c.contains("fog_amount("));
-        assert!(body("composited_over").contains("composited_of("));
+        let c = body("composited_scene");
+        assert!(c.contains("display(") && c.contains("fog_amount("));
+        assert!(body("composited_over").contains("composited_scene("));
         let c = body("composited");
         assert!(
             c.contains("sky(") && c.contains("dwell_clouds(") && c.contains("dwell_cloud_deck(")
@@ -1677,16 +1807,20 @@ mod tests {
         assert_eq!(of.matches("fog_amount(").count(), 1);
         assert!(of.contains(", clear, fog_amount("));
         assert!(of.contains("mix(back, shown,"));
-        let frame = body("composited");
+        let frame = body("composited_scene");
         assert_eq!(frame.matches("fog_amount(").count(), 1);
-        assert!(frame.contains(", clear, fog_amount("));
+        assert!(frame.contains(", s.clear, fog_amount("));
         // Over the scene only where the deck is in front of it, by the stored view depth.
         let front = frame
-            .find("dwell_cloud_in_front(deck.z, length(ray), depth)")
+            .find("dwell_cloud_in_front(s.deck_t, length(s.ray), depth)")
             .expect("test");
-        assert!(frame[front..].contains("shown = dwell_clouds(shown, clear,"));
-        assert!(frame.contains("color = mix(back, shown, min(c.a, 1.0))"));
+        assert!(frame[front..].contains("shown = dwell_cloud_over(shown, s.front)"));
+        assert!(frame.contains("color = mix(s.back, shown, min(c.a, 1.0))"));
         assert!(frame.contains("dwell_cloud_fog(color, frame.cloud_inside.x"));
+        // The layer is the clouds hazed toward the clear sky, found where the deck is in front.
+        let c = body("composited");
+        assert!(c.contains("dwell_cloud_layer(clear, dir,"));
+        assert!(c.contains("dwell_cloud_in_front(deck.z, length(ray), depth)"));
         // The deck's footprint is taken before any branch (derivatives need uniform control flow).
         let c = body("composited");
         let deck = c.find("dwell_cloud_deck(").expect("deck");
@@ -1762,7 +1896,8 @@ mod tests {
         );
         assert!(m.contains("composited_over(vec2i(q), s)"));
         assert!(
-            body("composited_over").contains("s.ray, s.clear, s.back)"),
+            body("composited_over").contains("composited_scene(c, depth, s)")
+                && body("composited_scene").contains("var color = s.back;"),
             "the taps composite over the pixel's sky with its clouds"
         );
         // With the wind on, the clouds are found even where the pixel itself is covered, since
@@ -1771,5 +1906,42 @@ mod tests {
         let clouds = c.find("dwell_clouds(").expect("clouds");
         assert!(c[..clouds].contains("c.a < 1.0 || taps"));
         assert!(body("composite_fs").contains("motion_composite(s,"));
+    }
+
+    #[test]
+    fn the_edge_blur_taps_keep_the_clouds_in_front_of_the_scene() {
+        // Owner's report (2026-10-20): above the deck, looking down, moving fast, the clouds
+        // showed only inside a circle. The deck was in front of the terrain there, drawn over the
+        // scene by the pixel's composite, but the blur's taps composited the scene without it
+        // (`composited_of`: fog and sky only), so past the blur's inner radius four of the five
+        // samples were bare terrain. The taps must composite as the pixel does: under its clouds
+        // where the deck is in front of the tap's depth, and inside the in-cloud fog.
+        let src = super::source(4);
+        let body = |name: &str| {
+            let at = src.find(&format!("fn {name}(")).expect(name);
+            src[at..at + src[at..].find("\n}\n").expect("end")].to_string()
+        };
+        let over = body("composited_over");
+        assert!(
+            over.contains("composited_scene(c, depth, s)") && !over.contains("composited_of("),
+            "the taps composite as the pixel does"
+        );
+        let c = body("composited");
+        assert!(c.contains("composited_scene(c, depth, s)"));
+        // One function for the pixel and its taps: the in-front clouds by the tap's own depth
+        // along the pixel's ray, then the in-cloud fog.
+        let scene = body("composited_scene");
+        let front = scene
+            .find("dwell_cloud_in_front(s.deck_t, length(s.ray), depth)")
+            .expect("in front");
+        assert!(scene[front..].contains("shown = dwell_cloud_over(shown, s.front)"));
+        assert!(scene.contains("dwell_cloud_fog(color, frame.cloud_inside.x"));
+        // With the wind on, the layer is found even where the deck is behind the pixel's own
+        // scene: a tap may land on farther ground the deck covers.
+        let layer = c.find("dwell_cloud_layer(").expect("layer");
+        assert!(c[..layer].contains("if (taps || (c.a > 0.0 && dwell_cloud_in_front("));
+        // The layer is the clouds dwell_clouds draws, found once.
+        let look = dwell_look::clouds::cloud_wgsl(&dwell_look::clouds::CLOUDS);
+        assert!(look.contains("return dwell_cloud_over(under, dwell_cloud_layer(clear,"));
     }
 }

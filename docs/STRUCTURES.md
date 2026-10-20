@@ -161,7 +161,7 @@ capped at about 32³ per request.
   - painting: set, replace, paint surface, erase, with masks;
   - sculpting: smooth, erode, melt, fill/inflate, flatten, raise, lower.
 
-  They aim up to 128 m along the view and show a wireframe preview. A brush's size runs from 1 to 16.
+  They aim up to 128 m along the view and show a see-through preview of the exact cells a stroke would change. A brush's size runs from 1 to 16.
   Presets are data, in `shared/brushes/brushes.json`. A stroke goes as region-edit pastes whose
   untouched cells are `KEEP`, and is one undo step.
 

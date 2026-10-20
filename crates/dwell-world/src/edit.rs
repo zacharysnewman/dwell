@@ -10,8 +10,8 @@ use dwell_blocks::{
 use dwell_protocol::{BlockEditAction, BlockEditRequest, ChunkChanges, players};
 
 use crate::{
-    CELL, CELL_H, ChunkCoord, M, MIDPLANE_Y, VoxelWorld, WORLD_BOTTOM_Y, WORLD_MAX_Y, cell_dir,
-    cell_space, inside_world_disc, m_of_row, metres, normal_to_m, pos_of_cell,
+    CELL, CELL_H, ChunkCoord, M, MIDPLANE_Y, VoxelWorld, cell_dir, cell_space, inside_build_volume,
+    inside_world_disc, m_of_row, metres, normal_to_m, pos_of_cell,
 };
 
 /// Face index → outward direction: 0 +X, 1 −X, 2 +Y, 3 −Y, 4 +Z, 5 −Z.
@@ -31,7 +31,7 @@ pub fn targetable(m: StateId) -> bool {
 
 /// In the infinite creative palette (§6.5).
 pub fn placeable(m: StateId) -> bool {
-    usize::from(m) < dwell_blocks::STATES.len() && info(m).placeable
+    dwell_blocks::try_info(m).is_some_and(|s| s.placeable)
 }
 
 /// The cell face a surface normal points through: its dominant axis, ties to the vertical. A 45°
@@ -186,7 +186,9 @@ pub fn unsupported_after(
         // The cell standing on `at`: the one whose `below` is `at`.
         let up = if at[1] >= MIDPLANE_Y { 1 } else { -1 };
         let next = [at[0], at[1] + up, at[2]];
-        if below(next) != at || next[1] < WORLD_BOTTOM_Y || next[1] >= WORLD_MAX_Y {
+        if below(next) != at
+            || !inside_build_volume(i64::from(next[0]), i64::from(next[1]), i64::from(next[2]))
+        {
             break;
         }
         let m = world.get_voxel(next[0], next[1], next[2]);
@@ -477,8 +479,8 @@ pub fn check_block_edit(
     } else {
         [c[0] + n[0], c[1] + n[1], c[2] + n[2]]
     };
-    if cell[1] < WORLD_BOTTOM_Y
-        || cell[1] >= WORLD_MAX_Y
+    // The build volume bounds building (ADR 0025); the disc, the terrain's columns.
+    if !inside_build_volume(i64::from(cell[0]), i64::from(cell[1]), i64::from(cell[2]))
         || !inside_world_disc(i64::from(cell[0]), i64::from(cell[2]))
     {
         return EditOutcome::fail(EditCheck::OutOfWorld);

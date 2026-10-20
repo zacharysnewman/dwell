@@ -23,7 +23,9 @@ owner then answered (2026-10-15, at the end).
 - The **camera's actual velocity**: the predicted player's velocity (`ClientState.velocity`, flight
   included), so knockback and falls count, not raw input. The controller **state** (Running,
   Sliding, Falling, Flying, …) multiplies the targets by a per-state gain from the data (climbing 0,
-  swimming 0.4, crouching 0.5, the rest 1).
+  swimming 0.4, crouching 0.5, the rest 1). A sprint slide (PLAYER_CONTROLLER.md §6.9) is
+  `Sliding`, not `Crouching`, though the player is crouched: it keeps the full gain, so the FOV
+  boost and the wind carry on from the sprint (and widen as the slide speeds up downhill).
 - The effects **read** state each drawn frame and never write simulation state: prediction stays
   deterministic.
 - Walk and run speeds come from the controller config (`movement.walk_speed`, `run_speed`), not
@@ -87,7 +89,12 @@ Part of the shared frame's composite pass (Phase 25 A1; `render/shaders.rs` `MOT
   intensity², so it is a flight effect): four taps jittered per pixel (smooth rather than ghosted
   copies), sharing the pixel's view ray and its sky with the clouds (the sky is the composite's
   costly part; over a cloudless sky of their own, the clouds faded past the blur's inner radius at
-  a hard circular edge: the owner's 2026-10-16 report).
+  a hard circular edge: the owner's 2026-10-16 report). Each tap is composited as the pixel is
+  (`composited_scene`): under the pixel's clouds wherever the deck is in front of the tap's own
+  depth (the deck seen from above, over the terrain), and in the in-cloud fog. The clouds are found
+  once per pixel as a layer (`dwell_cloud_layer`) and laid over each tap; before that, the taps
+  dropped the deck in front of the terrain, so from above at speed the clouds showed only inside
+  the blur's inner circle (the owner's 2026-10-20 report; bench `clouds-above-fast`).
 
 **Cost** (this Mac's GPU, `fly-low-fast --unthrottled`, effects off against on in one build): the
 composite pass's GPU time p50 1.13 → 1.37 ms (mean 1.39 → 1.60 ms); frame interval unchanged

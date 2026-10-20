@@ -6,7 +6,8 @@ use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::rc::Rc;
 
-use dwell_protocol::{Channel, MAX_RELIABLE_MESSAGE_BYTES};
+use dwell_protocol::fragment::{Reassembler, fragment};
+use dwell_protocol::{Channel, MAX_RELIABLE_MESSAGE_BYTES, MAX_WEBRTC_MESSAGE_BYTES};
 use js_sys::{Reflect, Uint8Array};
 use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::*;
@@ -266,7 +267,8 @@ const CONNECT_TIMEOUT_MS: i32 = 8000;
 
 /// WebRTC to a dedicated server's ICE-lite endpoint. Channels: 0 = control and 1 = world
 /// (reliable, ordered), 2 = datagrams (unordered, no retransmits), 3 = lod. SCTP keeps message
-/// boundaries, so messages are sent unframed.
+/// boundaries, so messages are sent unframed; a reliable message over the link's max-message-size
+/// travels as fragments (`dwell_protocol::fragment`; the server sends at most 64 KiB at a time).
 pub struct WebRtcConn {
     pc: RtcPeerConnection,
     control: RtcDataChannel,
@@ -350,17 +352,31 @@ impl WebRtcConn {
         let events: Events = Rc::default();
         let closed: Rc<RefCell<bool>> = Rc::default();
         let deliver = |c: Option<Channel>| {
-            let events = events.clone();
+            let (events, closed) = (events.clone(), closed.clone());
+            let mut reassembler = Reassembler::new(MAX_RELIABLE_MESSAGE_BYTES);
             Closure::<dyn FnMut(web_sys::MessageEvent)>::new(move |e: web_sys::MessageEvent| {
                 let bytes = Uint8Array::new(&e.data()).to_vec();
-                match c {
-                    Some(c) if bytes.len() <= MAX_RELIABLE_MESSAGE_BYTES => events
+                let Some(c) = c else {
+                    events
                         .borrow_mut()
-                        .push_back(TransportEvent::Reliable(c, bytes)),
-                    Some(_) => {}
-                    None => events
+                        .push_back(TransportEvent::Datagram(bytes));
+                    return;
+                };
+                match reassembler.push(&bytes) {
+                    Ok(Some(m)) => events
                         .borrow_mut()
-                        .push_back(TransportEvent::Datagram(bytes)),
+                        .push_back(TransportEvent::Reliable(c, m)),
+                    Ok(None) => {}
+                    // Oversize or malformed: the channel can't be read past it.
+                    Err(e) => {
+                        if !std::mem::replace(&mut *closed.borrow_mut(), true) {
+                            events
+                                .borrow_mut()
+                                .push_back(TransportEvent::Closed(format!(
+                                    "the server sent a bad message ({e:?})"
+                                )));
+                        }
+                    }
                 }
             })
         };
@@ -404,8 +420,11 @@ impl WebRtcConn {
         self.events.clone()
     }
     pub fn send_reliable(&self, bytes: &[u8]) {
-        if !*self.closed.borrow() {
-            let _ = self.control.send_with_u8_array(bytes);
+        if *self.closed.borrow() {
+            return;
+        }
+        for part in fragment(bytes, max_message_size(&self.pc)) {
+            let _ = self.control.send_with_u8_array(&part);
         }
     }
     pub fn send_datagram(&self, bytes: &[u8]) {
@@ -417,6 +436,20 @@ impl WebRtcConn {
         *self.closed.borrow_mut() = true;
         self.pc.close();
     }
+}
+
+/// The largest message the server accepts, as the browser negotiated it (`pc.sctp.maxMessageSize`,
+/// from the answer this side built), or 64 KiB before that is known.
+fn max_message_size(pc: &RtcPeerConnection) -> usize {
+    Reflect::get(pc, &"sctp".into())
+        .ok()
+        .filter(|s| s.is_object())
+        .and_then(|s| Reflect::get(&s, &"maxMessageSize".into()).ok())
+        .and_then(|n| n.as_f64())
+        .filter(|n| *n >= 1024.0)
+        .map_or(MAX_WEBRTC_MESSAGE_BYTES, |n| {
+            n.min(f64::from(u32::MAX)) as usize
+        })
 }
 
 /// Resolves after `ms` (setTimeout), on the window or in a worker.

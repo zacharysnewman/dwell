@@ -147,6 +147,16 @@ impl Jobs for WebJobs {
             .worker
             .post_message_with_transfer(&buffer, &Array::of1(&buffer));
     }
+    fn broadcast(&mut self, job: Job) {
+        // Id 0 is never a pool job: its results are dropped.
+        let bytes = encode_job(0, &job);
+        for slot in self.slots.iter().flatten() {
+            let buffer = Uint8Array::from(&bytes[..]).buffer();
+            let _ = slot
+                .worker
+                .post_message_with_transfer(&buffer, &Array::of1(&buffer));
+        }
+    }
     fn poll(&mut self) -> Vec<(u32, Output)> {
         let mut out = Vec::new();
         while let Some(bytes) = self.done.borrow_mut().pop_front() {

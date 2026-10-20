@@ -510,7 +510,7 @@ export function buildRidgeShape(points, inverted) {
   };
 }
 
-// ---- Stored cardinal ramps (docs/HALF_HEIGHT_GRID.md §3, Phase 36) ------------------------------
+// ---- Stored cardinal ramps (docs/HALF_HEIGHT_GRID.md §3, Phase 39) ------------------------------
 //
 // On the half-height grid natural ground is shaped once, at generation, from three pieces facing
 // north, east, south or west (canonical: descending toward +X): the ½ m ramp (a wedge in one cell)

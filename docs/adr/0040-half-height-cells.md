@@ -1,4 +1,4 @@
-# 0038. Half-height cells with stored cardinal ramps, shaped at generation
+# 0040. Half-height cells with stored cardinal ramps, shaped at generation
 
 - Status: Accepted for a playtest on a long-lived branch (`claude/half-height-voxels`); it
   reaches `main` only if the owner keeps it after playing it

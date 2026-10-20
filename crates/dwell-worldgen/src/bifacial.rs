@@ -5,8 +5,8 @@
 use dwell_blocks::mirror;
 use dwell_world::lod::{self, LodBounds, LodCells, LodCoord, LodKind, LodSurfaces};
 use dwell_world::{
-    CHUNK_SIZE, Chunk, ChunkCoord, Face, M, MIDPLANE_Y, face_local_chunk, face_of_chunk_y,
-    face_of_y, local_index, mirror_y,
+    CHUNK_SIZE, Chunk, ChunkCoord, Face, M, face_local_chunk, face_of_chunk_y, face_of_y,
+    local_index, mirror_y,
 };
 
 use crate::noise::seed_word;
@@ -146,9 +146,9 @@ impl BifacialTerrain {
             copy_rows(cells, &local, first_a..=lod::SECTION_CELLS, &|r| r);
         }
         if first_a >= 0 {
-            // Face-local row r' is world row 31 − r': the section's mirror image (row y ↔
-            // 2 · MIDPLANE_Y − 1 − y) starts at 2 · MIDPLANE_Y − y0 − S.
-            let origin_l = 2 * i64::from(MIDPLANE_Y) - y0 - lod::section_size(c.level);
+            // Face-local row r' is world row 31 − r': the section's mirror image starts at the
+            // mirror of the section's top.
+            let origin_l = lod::mirror_row_bottom(y0, lod::section_size(c.level));
             let (_, b) = self.b.generate_lod_at(c, origin_l, &mut local, surface_b);
             bounds.lo_b = b.lo;
             bounds.hi_b = b.hi;

@@ -442,7 +442,7 @@ fn ladders_and_plants_share_the_cutout_mesh_with_aligned_streams() {
 }
 
 #[test]
-fn textures_faces_by_material_and_face_grass_top_and_side_unknown_ids_plain_magenta() {
+fn textures_faces_by_material_and_face_grass_top_and_side_unknown_ids_the_fallback_tile() {
     // A grass block under a cube (so a cube itself: its sides).
     let cells = vec![
         (0, 0, 0, grass()),
@@ -474,10 +474,10 @@ fn textures_faces_by_material_and_face_grass_top_and_side_unknown_ids_plain_mage
         rect("grass")
     );
     assert_eq!(tile_of(grass_side), rect("grassSide"));
-    assert_eq!(tile_of(unknown), rect("plain"));
-    // Textured faces shade white (the texture carries the colour); unknown ids keep a flat colour.
+    // Unknown ids draw with the fallback look (ADR 0038): the magenta and black checker tile.
+    assert_eq!(tile_of(unknown), rect(crate::MISSING_TILE));
+    // Textured faces shade white (the texture carries the colour).
     assert_eq!(f.colors[grass_top * 3], 1.0);
-    assert_eq!(opaque.colors[unknown * 12 + 1], 0.0); // magenta
 }
 
 mod face_b {
@@ -787,7 +787,7 @@ fn a_grass_block_with_a_block_on_it_stays_a_cube() {
 
 #[test]
 fn a_level_field_of_natural_blocks_merges_its_flat_tops() {
-    // 10 × 10 grass: natural blocks are not adaptive on the half-height grid (Phase 36), so the
+    // 10 × 10 grass: natural blocks are not adaptive on the half-height grid (Phase 39), so the
     // whole field is flat at its cells' top in one rectangle (under Phase 18 the rim sloped and the
     // inside rested at half height).
     let mut field = Vec::new();
@@ -806,7 +806,7 @@ fn a_level_field_of_natural_blocks_merges_its_flat_tops() {
     }
 }
 
-/// A stored ramp state of the half-height grid (Phase 36, docs/HALF_HEIGHT_GRID.md §3).
+/// A stored ramp state of the half-height grid (Phase 39, docs/HALF_HEIGHT_GRID.md §3).
 fn ramp(material: &str, shape: &str, facing: &str, half: &str, flooded: bool) -> u16 {
     dwell_blocks::state(&format!(
         "dwell:{material}_ramp[facing={facing},flooded={flooded},half={half},shape={shape}]"

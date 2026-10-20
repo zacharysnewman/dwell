@@ -19,10 +19,12 @@ pub const CHUNK_EXTENT_M: [f64; 3] = [
 
 /// The midplane (m), where face A starts (BIFACIAL_WORLD.md).
 pub const MIDPLANE_M: f64 = world::MIDPLANE_M;
-/// Face B's lowest point (m).
-pub const WORLD_BOTTOM_M: f64 = world::WORLD_BOTTOM_M;
-/// Generated terrain stays below this (m).
-pub const WORLD_MAX_M: f64 = world::WORLD_MAX_M;
+/// The stone core's depth per face (m).
+pub const CORE_M: f64 = world::CORE_M;
+/// The flat worlds' surface (m): `FLAT_TOP_Y` in metres.
+pub const FLAT_TOP_M: f64 = world::FLAT_TOP_M;
+/// The build volume's top (m): its highest row's top. The volume does not bound movement.
+pub const BUILD_TOP_M: f64 = crate::bounds::BUILD_VOLUME.y_range().1 as f64 * CELL_H;
 /// Terrain: water fills open space below this (m).
 pub const SEA_LEVEL_M: f64 = world::SEA_LEVEL_M;
 /// Face B's height y (m) is face A's `MIRROR_M − y`: the mirror about the midplane.
@@ -177,10 +179,12 @@ mod tests {
 
     #[test]
     fn the_metre_twins_are_the_rows_times_the_cell_height() {
-        use crate::voxel::{MIDPLANE_Y, SEA_LEVEL, WORLD_BOTTOM_Y, WORLD_MAX_Y};
+        use crate::voxel::{CORE_LAYERS, FLAT_TOP_Y, MIDPLANE_Y, SEA_LEVEL};
         assert_eq!(MIDPLANE_M, m_of_row(MIDPLANE_Y));
-        assert_eq!(WORLD_BOTTOM_M, m_of_row(WORLD_BOTTOM_Y));
-        assert_eq!(WORLD_MAX_M, m_of_row(WORLD_MAX_Y));
+        assert_eq!(CORE_M, m_of_row(CORE_LAYERS));
+        assert_eq!(FLAT_TOP_M, m_of_row(FLAT_TOP_Y));
+        let top = crate::bounds::BUILD_VOLUME.y_range().1;
+        assert_eq!(BUILD_TOP_M, m_of_row(top as i32));
         assert_eq!(SEA_LEVEL_M, m_of_row(SEA_LEVEL));
         // The mirror in rows (y ↦ MIRROR_SUM − y, a cell's index) and in metres agree: a cell's
         // bottom maps to its mirror's top.

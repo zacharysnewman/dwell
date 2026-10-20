@@ -6,10 +6,12 @@
 > §9 players) and [`PLAYER_CONTROLLER.md`](./PLAYER_CONTROLLER.md), with an ADR superseding the
 > vertical bounds of ADR 0011 and Phase 12's dome.
 >
-> **Re-sized by the baseline rework** (`IMPLEMENTATION_PLAN.md` Phase 16, `BASELINE_EVALUATION.md`
-> §3.1): a 50 km disc, the midplane at y = 0, a 10-layer stone core per face and a spherical build
-> volume replace the ~4 km crust and bounds below. Phase 12 (the domes this file mentions) is
-> cancelled. The text below is the Phase 13 design and build until Phase 16 updates it.
+> **Re-sized by the baseline rework [built, Phase 16]** (`IMPLEMENTATION_PLAN.md` Phase 16,
+> `BASELINE_EVALUATION.md` §3.1, ADR 0025): a 50 km disc, the midplane at y = 0, a 10-layer stone
+> core per face and a spherical build volume replace the ~4 km crust and bounds of the Phase 13
+> design; §2 gives the geometry as built. Phase 12 (the domes this file mentions) is cancelled. The
+> rest of the text is the Phase 13 design: its gravity, crossing, generation and rendering rules
+> stand, at the new sizes.
 
 ## 1. Intent (owner, 2026-10-05)
 
@@ -22,7 +24,21 @@ back to back.
 
 ## 2. Geometry
 
-Today (after Phase 12): the disc's ground band runs from `WORLD_MIN_Y` = −2,048 to
+**As built (Phase 16).** The disc has radius 50 km (`WORLD_RADIUS`); the **midplane** is y = 0
+(`MIDPLANE_Y`, chunk row boundary 0/−1), also the origin of generation and the centre of the
+**build sphere** (`bounds`: radius 50 km, ARCHITECTURE.md §6.3), whose equator is the rim. Face A is
+y ≥ 0; face B's voxel at y is the face-local voxel `h = −1 − y` (`MIRROR_SUM` = −1), its chunk row
+`cy` the face-local row `−1 − cy`, so face B's sea surface is y = −32 (sea level `h` = 32 on both
+faces). Each face has a **core of 10 stone layers** (`h` 0–9, `CORE_LAYERS`) that generation never
+carves, so the disc is at least 20 layers thick; the core anchor zone (`CORE_ANCHOR_LAYERS` = 8,
+Phase 20) lies within it. The chunk rows run from −1 563 to 1 562 (the sphere's height, symmetric
+under the mirror). The **flip band** stays 4 m (`FLIP_BAND`): well inside the 20-layer crust, so
+the band is reached only in a dug shaft or beside the rim, as before. The rim is a cliff a few tens
+of metres tall between the two seas instead of ~4 km. In the LOD every section up to level 11 lies
+wholly on one face; only the root (level 12) straddles the midplane (ARCHITECTURE.md §6.6, the thin
+crust).
+
+The Phase 13 design follows. Then (after Phase 12): the disc's ground band runs from `WORLD_MIN_Y` = −2,048 to
 `TERRAIN_MAX_Y` = 6,144 with sea level at 0, bedrock at the bottom, the void below, and a dome of
 radius `DOME_RADIUS` = 8,192 km above.
 

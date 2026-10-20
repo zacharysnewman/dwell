@@ -1,28 +1,62 @@
 {
   "formatVersion": 1,
-  "sizes": { "min": 1, "max": 16 },
+  "sizes": {
+    "min": 1,
+    "max": 16
+  },
   "worldTypes": {
-    "sandbox": { "brushes": true, "reach": 128 }
+    "sandbox": {
+      "brushes": true,
+      "reach": 128
+    }
   },
   "presets": [
-    { "name": "ball", "label": "Ball", "brush": "ball", "performer": "set", "size": 3, "key": "KeyU" },
-    { "name": "disc", "label": "Disc", "brush": "disc", "performer": "set", "size": 4, "key": "KeyI" },
+    {
+      "name": "ball",
+      "label": "Ball",
+      "brush": "ball",
+      "performer": "set",
+      "size": 3,
+      "key": "KeyU"
+    },
+    {
+      "name": "disc",
+      "label": "Disc",
+      "brush": "disc",
+      "performer": "set",
+      "size": 4,
+      "key": "KeyI"
+    },
     {
       "name": "cylinder",
       "label": "Cylinder",
       "brush": "cylinder",
       "performer": "set",
       "size": 3,
-      "params": { "height": 6 }
+      "params": {
+        "height": 6
+      }
     },
-    { "name": "cube", "label": "Cube", "brush": "cube", "performer": "set", "size": 2 },
+    {
+      "name": "cube",
+      "label": "Cube",
+      "brush": "cube",
+      "performer": "set",
+      "size": 2
+    },
     {
       "name": "ellipsoid",
       "label": "Ellipsoid",
       "brush": "ellipsoid",
       "performer": "set",
       "size": 6,
-      "params": { "stretch": [1, 0.5, 1] }
+      "params": {
+        "stretch": [
+          1,
+          0.5,
+          1
+        ]
+      }
     },
     {
       "name": "splatter",
@@ -31,7 +65,10 @@
       "performer": "set",
       "size": 4,
       "key": "KeyJ",
-      "params": { "density": 0.45, "seed": 1 }
+      "params": {
+        "density": 0.45,
+        "seed": 1
+      }
     },
     {
       "name": "fill_air",
@@ -39,11 +76,31 @@
       "brush": "ball",
       "performer": "set",
       "size": 3,
-      "params": { "mask": "air" }
+      "params": {
+        "mask": "air"
+      }
     },
-    { "name": "line", "label": "Line", "brush": "line", "performer": "set", "size": 1 },
-    { "name": "erase", "label": "Erase", "brush": "ball", "performer": "erase", "size": 3 },
-    { "name": "replace", "label": "Replace", "brush": "ball", "performer": "replace", "size": 4 },
+    {
+      "name": "line",
+      "label": "Line",
+      "brush": "line",
+      "performer": "set",
+      "size": 1
+    },
+    {
+      "name": "erase",
+      "label": "Erase",
+      "brush": "ball",
+      "performer": "erase",
+      "size": 3
+    },
+    {
+      "name": "replace",
+      "label": "Replace",
+      "brush": "ball",
+      "performer": "replace",
+      "size": 4
+    },
     {
       "name": "overlay",
       "label": "Paint surface",
@@ -51,7 +108,9 @@
       "performer": "overlay",
       "size": 5,
       "key": "KeyK",
-      "params": { "depth": 1 }
+      "params": {
+        "depth": 1
+      }
     },
     {
       "name": "smooth",
@@ -60,7 +119,9 @@
       "performer": "smooth",
       "size": 4,
       "key": "KeyO",
-      "params": { "iterations": 2 }
+      "params": {
+        "iterations": 2
+      }
     },
     {
       "name": "erode",
@@ -69,7 +130,12 @@
       "performer": "erode",
       "size": 4,
       "key": "KeyL",
-      "params": { "erodeFaces": 2, "erodeIterations": 1, "fillFaces": 5, "fillIterations": 1 }
+      "params": {
+        "erodeFaces": 2,
+        "erodeIterations": 1,
+        "fillFaces": 5,
+        "fillIterations": 1
+      }
     },
     {
       "name": "melt",
@@ -77,7 +143,12 @@
       "brush": "ball",
       "performer": "erode",
       "size": 4,
-      "params": { "erodeFaces": 2, "erodeIterations": 2, "fillFaces": 5, "fillIterations": 1 }
+      "params": {
+        "erodeFaces": 2,
+        "erodeIterations": 2,
+        "fillFaces": 5,
+        "fillIterations": 1
+      }
     },
     {
       "name": "inflate",
@@ -86,16 +157,33 @@
       "performer": "erode",
       "size": 4,
       "key": "KeyY",
-      "params": { "erodeFaces": 6, "erodeIterations": 0, "fillFaces": 2, "fillIterations": 1 }
+      "params": {
+        "erodeFaces": 6,
+        "erodeIterations": 0,
+        "fillFaces": 2,
+        "fillIterations": 1
+      }
     },
-    { "name": "flatten", "label": "Flatten", "brush": "cylinder", "performer": "flatten", "size": 5, "params": { "height": 8 } },
+    {
+      "name": "flatten",
+      "label": "Flatten",
+      "brush": "cylinder",
+      "performer": "flatten",
+      "size": 5,
+      "params": {
+        "height": 8
+      }
+    },
     {
       "name": "raise",
       "label": "Raise",
       "brush": "disc",
       "performer": "raise",
       "size": 5,
-      "params": { "height": 2, "falloff": true }
+      "params": {
+        "height": 2,
+        "falloff": true
+      }
     },
     {
       "name": "lower",
@@ -103,7 +191,310 @@
       "brush": "disc",
       "performer": "lower",
       "size": 5,
-      "params": { "height": 2, "falloff": true }
+      "params": {
+        "height": 2,
+        "falloff": true
+      }
+    },
+    {
+      "name": "square",
+      "label": "Square",
+      "brush": "square",
+      "performer": "set",
+      "size": 3
+    },
+    {
+      "name": "disc_face",
+      "label": "Disc on face",
+      "brush": "disc_face",
+      "performer": "set",
+      "size": 3
+    },
+    {
+      "name": "square_face",
+      "label": "Square on face",
+      "brush": "square_face",
+      "performer": "set",
+      "size": 3
+    },
+    {
+      "name": "ellipse",
+      "label": "Ellipse",
+      "brush": "ellipse",
+      "performer": "set",
+      "size": 4,
+      "params": {
+        "stretch": [
+          2,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "name": "ring",
+      "label": "Ring",
+      "brush": "ring",
+      "performer": "set",
+      "size": 5,
+      "params": {
+        "width": 2
+      }
+    },
+    {
+      "name": "triangle",
+      "label": "Triangle",
+      "brush": "triangle",
+      "performer": "set",
+      "size": 1
+    },
+    {
+      "name": "jagged_line",
+      "label": "Jagged line",
+      "brush": "jagged_line",
+      "performer": "set",
+      "size": 1,
+      "params": {
+        "jitter": 2,
+        "seed": 3
+      }
+    },
+    {
+      "name": "blob",
+      "label": "Blob",
+      "brush": "blob",
+      "performer": "set",
+      "size": 5,
+      "params": {
+        "growth": 0.55,
+        "seed": 2
+      }
+    },
+    {
+      "name": "dome",
+      "label": "Dome",
+      "brush": "dome",
+      "performer": "set",
+      "size": 5,
+      "params": {
+        "stretch": [
+          1,
+          0.8,
+          1
+        ]
+      }
+    },
+    {
+      "name": "snipe",
+      "label": "Snipe",
+      "brush": "snipe",
+      "performer": "set",
+      "size": 1
+    },
+    {
+      "name": "splatter_disc",
+      "label": "Splatter disc",
+      "brush": "disc",
+      "performer": "set",
+      "size": 5,
+      "params": {
+        "density": 0.4,
+        "seed": 4
+      }
+    },
+    {
+      "name": "checker",
+      "label": "Checker square",
+      "brush": "square",
+      "performer": "set",
+      "size": 4,
+      "params": {
+        "checker": true
+      }
+    },
+    {
+      "name": "eraser",
+      "label": "Eraser",
+      "brush": "cube",
+      "performer": "erase",
+      "size": 3
+    },
+    {
+      "name": "drain",
+      "label": "Drain",
+      "brush": "ball",
+      "performer": "erase",
+      "size": 6,
+      "params": {
+        "mask": "liquid"
+      }
+    },
+    {
+      "name": "exclude",
+      "label": "Set, not target",
+      "brush": "ball",
+      "performer": "set",
+      "size": 3,
+      "params": {
+        "mask": "not_target"
+      }
+    },
+    {
+      "name": "shell",
+      "label": "Hollow (shell)",
+      "brush": "ball",
+      "performer": "hollow",
+      "size": 6,
+      "params": {
+        "depth": 1
+      }
+    },
+    {
+      "name": "blend_ball",
+      "label": "Blend ball",
+      "brush": "ball",
+      "performer": "blend",
+      "size": 4,
+      "key": "Semicolon"
+    },
+    {
+      "name": "blend_disc",
+      "label": "Blend disc",
+      "brush": "disc",
+      "performer": "blend",
+      "size": 5
+    },
+    {
+      "name": "blend_cube",
+      "label": "Blend cube",
+      "brush": "cube",
+      "performer": "blend",
+      "size": 3
+    },
+    {
+      "name": "blend_square",
+      "label": "Blend square",
+      "brush": "square",
+      "performer": "blend",
+      "size": 4
+    },
+    {
+      "name": "blend_solid",
+      "label": "Blend, no air",
+      "brush": "ball",
+      "performer": "blend",
+      "size": 4,
+      "params": {
+        "excludeAir": true
+      }
+    },
+    {
+      "name": "linear_blend",
+      "label": "Linear blend",
+      "brush": "ball",
+      "performer": "linear_blend",
+      "size": 6,
+      "params": {
+        "seed": 5
+      }
+    },
+    {
+      "name": "cover",
+      "label": "Cover surface",
+      "brush": "ball",
+      "performer": "overlay",
+      "size": 5,
+      "params": {
+        "depth": 1,
+        "onTop": true
+      }
+    },
+    {
+      "name": "splatter_overlay",
+      "label": "Splatter surface",
+      "brush": "ball",
+      "performer": "overlay",
+      "size": 5,
+      "params": {
+        "depth": 1,
+        "density": 0.5,
+        "seed": 6
+      }
+    },
+    {
+      "name": "underlay",
+      "label": "Paint underside",
+      "brush": "ball",
+      "performer": "underlay",
+      "size": 5,
+      "params": {
+        "depth": 1
+      }
+    },
+    {
+      "name": "fill_down",
+      "label": "Fill down",
+      "brush": "disc",
+      "performer": "fill_down",
+      "size": 4,
+      "params": {
+        "height": 16
+      }
+    },
+    {
+      "name": "extrude",
+      "label": "Extrude",
+      "brush": "disc_face",
+      "performer": "extrude",
+      "size": 3,
+      "params": {
+        "height": 2
+      }
+    },
+    {
+      "name": "tree_snipe",
+      "label": "Tree stencil",
+      "brush": "stencil",
+      "performer": "stamp",
+      "size": 1,
+      "key": "Comma",
+      "params": {
+        "structures": [
+          "dwell:proto_tree"
+        ],
+        "seed": 7
+      }
+    },
+    {
+      "name": "stencil_list",
+      "label": "Rock or tree",
+      "brush": "stencil",
+      "performer": "stamp",
+      "size": 1,
+      "params": {
+        "structures": [
+          "dwell:proto_rock",
+          "dwell:proto_tree"
+        ],
+        "seed": 8
+      }
+    },
+    {
+      "name": "tree",
+      "label": "Generate tree",
+      "brush": "tree",
+      "performer": "stamp",
+      "size": 3,
+      "key": "Quote",
+      "params": {
+        "wood": "dwell:log",
+        "leaves": "dwell:leaves",
+        "height": 8,
+        "branches": 4,
+        "branchLength": 4,
+        "roots": 2,
+        "seed": 9
+      }
     }
   ]
 }

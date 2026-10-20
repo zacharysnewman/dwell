@@ -252,6 +252,10 @@ pub fn encode_job(id: u32, job: &Job) -> Vec<u8> {
             w.u16s(cells);
             w.opt_f32s(surface);
         }
+        Job::Registry { payload } => {
+            w.u8(6);
+            w.bytes(payload);
+        }
     }
     w.0
 }
@@ -305,6 +309,9 @@ pub fn decode_job(bytes: &[u8]) -> Result<(u32, Job), DecodeError> {
                 surface: r.opt_f32s()?,
             }
         }
+        6 => Job::Registry {
+            payload: r.bytes()?,
+        },
         _ => return Err(DecodeError),
     };
     Ok((id, job))
@@ -374,6 +381,7 @@ pub fn encode_output(id: u32, out: &Output) -> Vec<u8> {
             w.u8(6);
             w.str(e);
         }
+        Output::Done => w.u8(7),
     }
     w.0
 }
@@ -449,6 +457,7 @@ pub fn decode_output(bytes: &[u8]) -> Result<(u32, Output), DecodeError> {
             Output::SectionMesh(Box::new(SectionTerrain { raster, march }))
         }
         6 => Output::Failed(String::from_utf8_lossy(&r.bytes()?).into_owned()),
+        7 => Output::Done,
         _ => return Err(DecodeError),
     };
     Ok((id, out))
@@ -481,6 +490,9 @@ mod tests {
                 step: 8,
                 n: 4,
                 face: 1,
+            },
+            Job::Registry {
+                payload: dwell_blocks::sync::extension_payload(),
             },
         ];
         let mut jobs = jobs.to_vec();

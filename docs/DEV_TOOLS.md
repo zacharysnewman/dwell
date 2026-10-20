@@ -68,6 +68,7 @@ fields, ranges and names fail with the entry named):
 | `key {code, down}`, `hold {code, s}` | presses/releases a key (`KeyboardEvent.code`), or holds it for `s` |
 | `look {yaw, pitch}` | turns the player's look (degrees; yaw 0 = +Z, 90 = +X) |
 | `fly {on}`, `flySpeed {level}` | creative flight and its speed level (L flies at ≥ 11 × 2^(L/2) m/s: 6 ≈ 88, 8 ≈ 176) |
+| `spyglass {on, step?}` | the spyglass zoomed to a step (0 the least, `shared/look/spyglass.json`) or out ([`SPYGLASS.md`](./SPYGLASS.md)); `spyglass-far` shoots far terrain unzoomed and at each step |
 | `camera {position, yaw, pitch, aroundPlayer?}`, `releaseCamera` | places the camera (the player stays), or returns it; with `aroundPlayer`, x and z are offsets from the player's feet (y absolute): a view wherever a flight ended, where the chunks are streamed |
 | `edit {action}`, `select {slot}` | break/place at the crosshair; picks a hotbar slot |
 | `settle {maxS}` | waits until the LOD has had nothing to generate, mesh or ask for, for 1 s |
@@ -77,6 +78,7 @@ fields, ranges and names fail with the entry named):
 | `traceStart`, `traceStop {name}` | a Chrome performance trace (timeline, GPU, V8, the CPU profiler) and its profile summary |
 | `time {t, moon?}` | shows the time of day `t` (0–1, 0 midnight) and optionally the moon's phase on this client (`?time=`, `?moon=`; DAY_NIGHT.md) |
 | `timelapse {name, frames, from?, to?, waitS?}` | `frames` screenshots `<name>-00.png`… from time of day `from` (0) toward `to` (1), wrapping past midnight, waiting `waitS` (0.3 s) after each |
+| `water {quality?, debug?}` | sets the water quality (`low`, `medium`, `high`) and/or its cost-isolation switches (`?waterdbg=` names, `""` for none) mid-run, through `__dwell.setWater` |
 | `repeat {times, steps}` | runs `steps` `times` times (e.g. `edit-burst`'s 300 edits); no `mark`, `record`, `shot`, `timelapse` or trace steps inside |
 
 Scenarios for the renderer comparison ([`RAY_MARCHED_RENDERER.md`](./RAY_MARCHED_RENDERER.md)
@@ -172,6 +174,14 @@ The renderer seam ([`RAY_MARCHED_RENDERER.md`](./RAY_MARCHED_RENDERER.md) §3, �
   and, by default, the marcher on the right — `?compare=raster` puts raster on **both** sides (the
   check that compare mode itself adds no difference). The marcher is the GPU ray marcher
   (`render/march/`, A3b): it marches the whole screen and its copy pass fills its side.
+  `?marchbeam=0` turns off its beam prepass and `?marchtemporal=0` its temporal start (A4b; the
+  bench's `march-nobeam` and `march-notemporal` configurations); `?marchmoving=0` keeps the
+  temporal start to a still eye, `?marchreuse=0` marches every frame even when nothing changed,
+  `?marchsteep=0` searches the columns in every mixed brick (A4c; `march-a4b` is all three,
+  `march-noreuse` and `march-nosteep` one each). Those
+  technique configurations (`march-nobeam`, `march-notemporal`, `march-a4b`, `march-noreuse`,
+  `march-nosteep`) all march every frame, so views with the camera still measure the march, not a
+  kept frame: compare them with `march-noreuse`.
 - The settings menu's foot shows the renderer and a picker that switches it at runtime (no reload:
   the terrain is rebuilt from the voxels and LOD cells held). F3 shows `renderer …` before the
   render stats.
@@ -222,6 +232,8 @@ What is recorded now:
 | `mesh_dirty` | starting chunk mesh jobs (copying padded chunks), within its 4 ms budget |
 | `lod` | the whole-world view's update (`LodSystem`): selection, job requests, stand-ins |
 | `draw.acquire`, `draw.render`, `draw.present` | the surface texture, encoding and submitting the frame, presenting |
+| `draw.skipped` (counter) | frames not drawn because two were still on the GPU (`render/pacing.rs`) |
+| `gpu.water.tiles` (samples) | the water's noise tile (once) and caustic layers (each Medium/High frame with water; `render/water_tiles.rs`) |
 | `upload.chunk`, `upload.section`, `upload.chunks`, `upload.sections`, `upload.bytes` | creating GPU buffers for chunk and LOD section meshes, how many, and their bytes |
 | `job.<kind>.wait`, `job.<kind>.run` (samples) | per job kind (`chunk`, `chunk_mesh`, `bounds`, `section`, `section_mesh`, `verify`, `map`, `diff`): time queued in the pool before a worker had room; time from posting it to a worker until its result was polled (the worker's run, the transfers and the wait for the next frame) |
 | `gpu.march` (samples) | The ray marcher's GPU time (A3b): from the start of its compute pass to the end of the pass that copies its output into the shared frame's targets (`render/march/renderer.rs`); on the `?marchtest=1` page, the compute pass alone |
@@ -260,8 +272,17 @@ From the console: `__dwell.telemetry()`, `__dwell.telemetryFrames()`, `__dwell.t
   bench's views, timed with timestamp queries (march and shade passes), with the GPU's steps
   histogram: `cargo test --release -p dwell-client march_perf -- --ignored --nocapture`.
   `DWELL_PERF_VARIANTS='a=@file.wgsl;b=0'` times shader variants (a march module from a file,
-  `DWELL_PERF_DUMP=path` writes the current one to start from; a name starting `noshade` skips the
-  shade pass), `DWELL_PERF_ROUNDS=n` interleaves them in rounds (a shared GPU drifts),
+  `DWELL_PERF_DUMP=path` writes the current one to start from, and the beam module to
+  `path.beam`; a variant's `file.wgsl.beam` beside it, if there is one, replaces the beam module; a
+  name starting `noshade` skips the shade pass, `beamonly` times the beam prepass alone, and one
+  containing `nobeam`, `notemporal`, `still`, `nocolumns`, `nodistances`, `nosteep` or `reuse`
+  turns off the beam prepass, the temporal start, the temporal start while moving, the column
+  grids, the brick distances or the column search's slope rule, or keeps unchanged frames (off by
+  default here: the harness draws one view again and again)), each view's line also gives the beam
+  pass's own time (min/p50), `DWELL_PERF_MOVE=m` moves the eye `m` metres to the right every
+  frame, `DWELL_PERF_CHECK=1` marches every pixel on the CPU from the eye after drawing the view
+  (and a turned one before it, from an eye a frame's move away) and counts starts that pass a hit
+  (must be 0) and outcomes the start changes, `DWELL_PERF_ROUNDS=n` interleaves them in rounds (a shared GPU drifts),
   `DWELL_PERF_IMAGES=dir` writes a steps-per-ray heatmap (PGM) per view and prints steps per
   8×4 SIMD group, `DWELL_PERF_SIZE=WxH`, `DWELL_PERF_SEED`. Naga's Metal output, not Chrome's
   Tint: the bench is the measurement, this the quick loop.
@@ -292,3 +313,12 @@ same scenarios against both: `npm run bench -- <scenario…> --base http://local
 then without `--base` into `B`, and compare the two `report.json` files' `telemetry.frames`
 (and the screenshots, pixel by pixel). A worktree needs its own `target/`: cargo names a path
 crate's artifacts the same wherever it is, so sharing one directory mixes the two builds.
+
+## Water cost isolation (`?waterdbg=`)
+
+`?waterdbg=caustics,foam` (names from `render/water.rs` `DEBUG_SWITCHES`: `ripple0`–`ripple2`, `glint`, `sky`,
+`refraction`, `absorption`, `caustics`, `foam`, `sparkle`, `under`, `flat`, `all`) turns pieces of the water's
+shading off, to attribute `gpu.*.water` and `gpu.frame` to them; a `--compare` configuration can set it with
+`params` (`{ "name": "no-caustics", "renderer": "raster", "params": { "waterdbg": "caustics" } }`), and a
+scenario's `water` step switches it mid-run. On a GPU shared with other processes, compare a pass's `min` (in
+every summary) rather than its p50. WATER_RENDERING.md §8 ("Cost") has the method and the numbers.

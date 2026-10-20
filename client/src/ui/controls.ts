@@ -4,6 +4,7 @@
 // this table describes them, one entry per action, so a new binding is a new entry here.
 
 import { BRUSH_PRESETS } from './brushes.gen';
+import { SPYGLASS } from './spyglass.gen';
 
 export interface Control {
   /** What it does, as the player would say it. */
@@ -74,12 +75,25 @@ export const KEYBOARD: ControlGroup[] = [
       { action: 'Next / previous brush shape', keys: ['Z', 'Shift+Z'] },
       { action: 'Next / previous performer', keys: ['P', 'Shift+P'] },
       { action: 'Smaller / bigger brush', keys: ['[', ']', 'Alt+Wheel'] },
+      { action: 'Exact-cell preview on or off', keys: ['\\'], when: 'off, the brush’s box shows' },
       {
         action: 'Pick a preset by its key',
         keys: BRUSH_PRESETS.flatMap((p) => (p.key ? [`${keyLabel(p.key)} ${p.label}`] : [])),
         when: 'the keys are the presets’ (shared/brushes/brushes.json)',
       },
       { action: 'Undo / redo a stroke', keys: ['Ctrl+Z', '⌘+Z'], when: 'as the region tools' },
+    ],
+  },
+  {
+    // The spyglass (docs/SPYGLASS.md; its key and steps are shared/look/spyglass.json's).
+    title: 'View',
+    controls: [
+      {
+        action: 'Spyglass zoom in or out',
+        keys: [keyLabel(SPYGLASS.key)],
+        when: SPYGLASS.magnifications.map((m) => `${String(m)}×`).join(', '),
+      },
+      { action: 'Zoom further / back', keys: ['Wheel'], when: 'while zoomed' },
     ],
   },
   {
@@ -98,6 +112,7 @@ export function keyLabel(code: string): string {
     Slash: '/',
     BracketLeft: '[',
     BracketRight: ']',
+    Backquote: '`',
   };
   return named[code] ?? code.replace(/^Key|^Digit/, '');
 }

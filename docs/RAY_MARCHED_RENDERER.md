@@ -104,7 +104,7 @@ is exactly one 4×4×4 node of 8³ bricks.
 
 ```wgsl
 struct LevelInfo { origin: vec3<i32>, dims: vec3<u32>, slot_base: u32, cell_log2: u32 };
-@group(0) @binding(0) var<storage, read> levels: array<LevelInfo, 20>;
+@group(0) @binding(0) var<storage, read> levels: array<LevelInfo, LEVEL_COUNT>;
 @group(0) @binding(1) var<storage, read> slots: array<u32>;  // node | NONE | ALL_AIR | ALL_SOLID(state)
 struct Node {
   mixed:   vec2<u32>,         // 64-bit mask: brick has a payload
@@ -137,7 +137,8 @@ struct Node {
 
 ### 4.2 Passes
 
-1. **Beam prepass**, 1/8 resolution: one conservative ray per 8×8 tile writes a start distance.
+1. **Beam prepass**, 1/8 resolution: one conservative ray per 8×8 tile writes a start distance
+   (built in A4b, with the temporal start: see "A4b as built").
 2. **Primary march**, at the render scale (1, 0.75, 0.5): bitmask long-step marching over nodes,
    branchless Amanatides–Woo DDA inside bricks (its step mask gives the face normal free), analytic
    shape planes in shaped cells. Writes a G-buffer: albedo (atlas lookup with the hit's face UV and
@@ -178,9 +179,9 @@ p99, and the share hitting the cap) that the marcher writes to telemetry and the
    nearest non-empty one, computed when the node is built; a ray in an empty brick jumps that many
    bricks at once. One byte per brick, built in the worker. Most useful for grazing rays, where the
    masks alone still step brick by brick.
-5. **Start rays late.** The beam prepass (one conservative ray per 8×8 tile at 1/8 resolution) and
-   last frame's reprojected hit distance give each ray a start distance, so most rays begin a few
-   cells before their hit.
+5. **Start rays late.** The beam prepass (one conservative ray per 8×8 tile at 1/8 resolution) and,
+   with the eye still, last frame's distances give each ray a start distance, so most rays begin a
+   few cells before their hit (built in A4b: "A4b as built").
 6. **End rays early.** The fog distance is the max range; past about 99 % fog the colour is the
    sky's. A step cap (128 on phones) returns fog colour if reached — visible only on the worst
    grazing rays, and counted in the histogram.
@@ -425,7 +426,7 @@ Nothing here changes public API (world files, seeds' terrain, protocols), so no 
   they fill (re-filled from the CPU copy; no `copy_buffer_to_buffer` needed, since the CPU holds every
   word) and are capped at the device's `max_storage_buffer_binding_size` (128 MiB by default; the
   device's own limit is read); a build that would pass it is refused and counted
-  (`march.pool_full`). **Binding layout** (group 1): 0 uniforms (the 20 levels and the camera, 1,088
+  (`march.pool_full`). **Binding layout** (group 1): 0 uniforms (the 13 levels, `LEVEL_COUNT`, and the camera: 752
   B), 1 slots, 2 nodes, 3 node column offsets, 4 column grids, 5 the brick pool, 6 the state table,
   7 the stats buffer (atomics: the histogram, and per-pixel debug records for the test) — 7 storage
   buffers of the default 8, 3 storage textures of 4. Group 0 is the frame (uniforms, atlas, sampler);
@@ -542,10 +543,7 @@ three stores and the empty dispatch cost 0.3 ms.
 and the ground 5–10, and the cost is in each step's chain of dependent loads (slot → node →
 columns → brick → state).
 
-- **The beam prepass:** a conservative start distance per 8×8 tile.
-  - It needs a cone-safe skip: a box is crossed only while the cone's cross-section stays inside it.
-  - Across levels, it must also stay safe where a pixel's coarser level is rounded up.
-- **The temporal start distance.**
+- **The beam prepass** and **the temporal start distance:** built in A4b (below).
 - **Clipmap recentring:** the level boxes still only grow (A3b's note). That costs slot memory on
   long flights, not march time.
 
@@ -620,6 +618,267 @@ look-down 4.9, fly-high 21.4, half-scale FSR 5.4 / 9.3 / 2.4 / 10.3.
 - The next levers are in "Not done" above, with lower per-step latency on Tint (Chrome's
   compiler; Naga's Metal output is 1.3–1.6× faster on the same views).
 
+### A4b as built (2026-10-19)
+
+After A4a, each ray took 15–20 steps through the sky and 5–10 to reach the ground, and every step
+cost a chain of dependent loads. A4b starts rays late, so most of those steps are never taken.
+
+**The beam prepass** (`dwell_march::beam`, WGSL `beam_main`): a compute pass before the march, one
+thread per 8×8 tile at the render scale.
+
+- **The cone.** At the same distance `t`, a pixel ray of the tile is within `t · |d − d_c|` of
+  the tile's centre ray. The largest `|d − d_c|` is at a corner of the tile, and that is the
+  beam's spread κ, widened by 0.1 %. Over a segment `[t0, t1]`, every pixel ray lies in the box
+  around the centre ray's segment, widened by `κ · t1` plus a slack for `f32` rounding.
+- **A segment is cleared** only if that box holds no occupied cell at any level a pixel ray there
+  could stop at. That is every level from 0 up to the first level, from the cone level at `t1`
+  upward, that has data all over the box. The cone level grows with `t`, and the LOD-switch rule
+  can keep a ray at a finer level it marched before, so finer levels count too.
+- **Per level, the cheapest test first:** the level's box and occupied rows; then each node the
+  box meets (at most 3 a side); the node's column grid, at the mip whose regions the box fits two
+  a side; then the bricks; and in a mixed brick, the occupancy bits a row at a time.
+- **The walk** doubles segments from 1 m until one is blocked, then bisects down to one
+  cone-level cell, with at most 48 segments. Every pixel ray of the tile then starts at the
+  distance cleared (`Scene::march_from`).
+  - Bisecting after the first blocked segment, instead of growing again after every cleared one,
+    took the pass from about 5 ms to 1 ms natively.
+  - A coarser stop (4 cells instead of 1) cost more pixel steps than it saved.
+
+**The temporal start.** When last frame drew the same targets, the beam prepass can also start a
+tile from last frame's distances. It does so only if all of these hold:
+
+- the eye moved at most 1 mm;
+- the field of view and size are the same;
+- no bricks were uploaded since (edits, streaming, a rebind).
+
+Each march workgroup (one tile) reduces its rays' clear distances into a tile texture: a hit's
+`t`, the farthest distance on a miss, and 0 at the step cap. The next frame's prepass projects
+the tile's corners into last frame's image, widens the footprint by 2 px, and reads the tiles it
+meets (at most 3 a side). The start is the least of those distances, minus two cone-level cells
+and the eye's shift. The tile takes whichever start reaches farther, the beam's or the temporal
+one.
+
+- **Why the eye must be still.** With the eye and the data unchanged, the set of surfaces the eye
+  sees doesn't change, so a newly visible surface (disocclusion) can't occur. Every cell is wider
+  than 2 px at its cone level, so it can't hide between last frame's samples. The margin covers
+  the slant across a cell.
+- **Disocclusion when the eye moves.** A surface hidden behind a near occluder can appear in a
+  strip as wide as the parallax, which is about 10 px at 5 m walking at 6 m/s. Neither a gather
+  nor a scatter of last frame's depths bounds that strip. So the temporal start is off whenever
+  the eye moves, and the beam alone applies.
+- **Earlier versions.** Taking the temporal start alone, without the beam, cost more than it
+  saved looking down: its margin is wider than the beam's. Reading the full-resolution distances
+  over a 12² region per tile cost 0.4 ms. The tile reduction removed both costs.
+
+**Correctness.**
+
+- **The per-pixel GPU check** (`check.rs`, Apple M1 Metal) reads back the start each GPU ray used
+  and marches the reference from it. Each view is drawn after the same view turned by 3°, so
+  temporal starts are exercised. Across 12 views and 49,152 px: ids differ 0, records differ 0,
+  `t` within 2 ULP, and no start passes the hit of a march from the eye. 5,248 rays took the
+  temporal start.
+- **Outcome changes.** 368 rays end differently from a march from the eye. All of them are in the
+  two section views, at LOD switches: those views build each level's terrain in its own cells, so
+  the levels disagree by 2–8×. The switch rule waits at the finer level only where the iterations
+  fall, and a later start moves the iterations. Both outcomes are pictures the rule allows.
+- **Generated terrain** (seed 7's spawn, 1280×720, `DWELL_PERF_CHECK=1`, every pixel marched on
+  the CPU from the eye): no start passes a hit on any view. The outcome changes at the spawn, the
+  horizon and looking down: none. 540 m up: 1,352–2,113 (0.15–0.23 %), all from the beam (the
+  same count without the temporal start), at LOD switches.
+- **The CPU tests** (`tests/march.rs`) cover random scenes at three cone widths, a single voxel
+  that only some of a tile's pixel rays hit, and flat ground whose levels disagree both ways
+  (coarser above finer, and finer above coarser). Their starts never pass a hit. The tests fail if
+  the cone's spread is dropped, or if levels finer than the cone level are left out of the check.
+
+**Measured natively** (Metal, `perf.rs`, seed 7, 1280×720, minimum of 20 frames, load 3–7). Each
+cell is the march through the shade pass, in ms, with steps per ray as mean / p95:
+
+| View | A4a (no beam) | beam | beam + temporal | the beam pass alone |
+|---|---|---|---|---|
+| The spawn | 13.9–14.1 (11.5 / 23) | 5.3–5.4 (3.0 / 16) | 4.3 (2.1 / 5) | 1.0 |
+| The horizon (−3°) | 11.3–13.9 (11.0 / 23) | 5.6 (3.1 / 16) | 4.3–4.4 (2.3 / 5) | 0.9–1.0 |
+| Looking down | 2.7–3.0 (3.2 / 4) | 2.3–2.5 (2.3 / 3) | 2.3–2.6 (2.3 / 3) | 0.1 |
+| 540 m up | 15.3–16.3 (10.0 / 16) | 9.1–9.3 (3.7 / 8) | 9.3 (3.7 / 8) | 1.3–1.6 |
+
+The beam pass alone is timed without the temporal start (`beamonly` variant).
+
+**Measured in Chrome** (`bench --compare idle-spawn look-horizon look-down fly-high --unthrottled`,
+M1, 1280×720, load 3–4, 2026-10-19).
+
+- Each cell is `gpu.march` p50 in ms (beam pass through the copy), with steps per ray as mean /
+  p95.
+- `march-nobeam` is A4a's march; `march-notemporal` has the beam alone.
+- Raster's column is its whole GPU frame (`gpu.frame` p50), now with the water passes of Phase 26.
+- Every view but `fly-high` holds the camera still, so the temporal start applies there;
+  `fly-high` moves, so it falls back to the beam.
+
+| Scenario | raster | march-nobeam | march-notemporal | march | march-half-fsr |
+|---|---|---|---|---|---|
+| idle-spawn | 5.0 | 21.3 (12.2 / 27) | 10.7 (3.7 / 18) | **8.5** (2.5 / 9) | **4.9** |
+| look-horizon | 4.7 | 19.2 (11.2 / 25) | 8.3 (3.2 / 15) | **6.6** (2.3 / 5) | **3.9** |
+| look-down | 4.1 | 4.8 (3.3 / 4) | 3.6 (2.3 / 3) | **3.5** (2.3 / 3) | **2.2** |
+| fly-high | 3.6 | 23.9 (7.7 / 11) | 17.5 (3.8 / 8) | **17.5** (3.8 / 8) | **6.6** |
+
+**Against the goal:**
+
+- **Full resolution.** The march is 2.2–2.9× faster at the spawn and the horizon, and within
+  1.3–1.7× of raster's whole frame there. It is faster than raster looking down.
+- **540 m up.** Only 1.4× faster: about 3.8 steps a ray still cost 17 ms in Chrome and 9 ms
+  natively. Each step there costs about twice what it does at the spawn, which points to the
+  per-iteration chain at the LOD levels (the level search, the switch rule's extra lookups, the
+  column-mip walk, palette bricks) and to divergence: as 8×4 SIMD groups the rays take 5.0 steps
+  against a mean of 3.7.
+- **Half scale with FSR 1.** At or under raster's GPU frame at the spawn, the horizon and looking
+  down (4.9, 3.9 and 2.2 ms against 5.0, 4.7 and 4.1), and 1.8× it 540 m up.
+- **Next levers.** The per-step cost at the LOD levels, and temporal reuse while the eye moves,
+  which needs a disocclusion test or a conservative reprojection.
+
+### A4c: the survey (2026-10-19)
+
+The owner asked for the marcher to be optimized in every case (moving fast, seeing far, standing
+still), with temporal reuse while moving if it can be done without artefacts. This survey of the
+common ways to speed up ray marching was written first. Each technique is rated by its fit to
+Dwell's layout (the 64-tree node per chunk over 8³ bricks, a clipmap of node slots per LOD level,
+column min-max grids per node, the beam prepass, A4b's temporal start).
+
+**Where the time goes, measured first** (native Metal, `perf.rs`, seed 7, 1280 × 720, with the
+eye still and the temporal start on; terrain generator v15, about twice A4b's relief, so the
+figures are not A4b's):
+
+- Rays take 2.3–3.8 iterations on average after the beam and temporal starts. The beam pass itself
+  is 0.1–2.5 ms; 540 m up it is the largest single pass.
+- 540 m up, the march costs about 2.3 ms per mean iteration, against about 0.8 at the spawn and
+  looking down. Counting each kind of iteration (a `CAT` counter per site, in profiling variants):
+  per ray there, 2.1 column-region skips in mixed bricks, 8.6 column-region tests (about 4 per
+  skip: the walk up and down the column mips), 3.8 level lookups and only 1.3 voxel steps.
+- **Turning the column grids and level rows off** (`nocolumns`) made the march 540 m up *faster*
+  (9.0 against 10.7 ms) at 2.6× the iterations (9.9 against 3.8), and looking down 0.5 ms faster at
+  the same iterations. So the per-iteration cost is the column machinery, not the step count. It is
+  latency-bound: about 400 lane-cycles per column test, one dependent load each.
+- Loading every column mip at once (independent loads into a private array) was 20 % *slower*
+  everywhere: the array spills registers. Caching a node's column offset, or skipping the column
+  search at level 0, changed nothing beyond the noise. The cost is sensitive to registers and to
+  divergence, not to the arithmetic.
+- Divergence: per 8 × 4 SIMD group the longest ray takes 1.0–1.4× the mean iterations (1.4×
+  540 m up).
+
+| Technique | Fit to Dwell | Expected gain | Cost | Risk | Decision |
+|---|---|---|---|---|---|
+| **Temporal reprojection while moving** (Hi-Z of last frame's clear distances: Uludag's Hi-Z traversal applied to the start distance) | The beam's segments already have a conservative footprint: project it into last frame's image and read a min pyramid of last frame's tile distances. Disocclusion is handled by construction: only space last frame's rays crossed is trusted | Moving views at the spawn back to the still-eye step counts (6 → 3 iterations a ray) | A reduce pass, 4 loads per segment test, the changed nodes in the uniforms | LOD bands: last frame vouches only for the level it marched at | **Built (A4c 1)** |
+| **Keeping an unchanged frame** (same eye, view, size, data, settings) | Trivial: the march's outputs persist in its targets | Standing still and untouched: the march skipped, only shading runs | A comparison per frame | None: bit-identical by construction | **Built (A4c 2)** |
+| **If-if traversal** (Aila & Laine 2009): one loop whose iterations are each one voxel step or one hierarchy step, instead of a DDA loop nested in the hierarchy loop | The march is while-while today (the brick DDA nested in the node loop); lanes in a brick hold their SIMD group while the rest skip | 10–30 % where lanes diverge (540 m up, grazing) | Control flow only; same arithmetic, so the per-pixel check stays exact | Registers | Tried: 0–15 % slower, dropped |
+| A cheaper column search: one load per iteration, a coarse heightfield phase before the fine one, or the column grid addressed by node index | The column grid is what costs at the LOD levels (above) | Up to 2× per iteration 540 m up | Layout change in `dwell_march` and the WGSL | Registers again; the reference changes with it | Its cheapest form built: steep rays skip the search in mixed bricks (**A4c 3**); the layout changes not yet |
+| A top-level sparse 64-tree over the nodes (VoxelRT's Tree64), a flatter level stack | Dwell already has the 64-tree inside a chunk; the clipmap slots are a flat array per level | Small now: after the beam the sky takes few steps | A new top structure, edits and streaming | Medium | Not now |
+| Distance fields per voxel in mixed bricks | Empty-brick distances exist (§4.3 item 4); with them off the march is unchanged within noise | Small: 1–2 voxel steps per ray remain | A byte per voxel | Low | Not now |
+| Per-pixel temporal start (each pixel's own last distance, not the tile's least) | Rays then start nearer their hit with the eye still or turning | Modest: the 2-cell margin dominates at distance | A full-resolution distance target | Low | Maybe, after the above |
+| Checkerboard or interleaved marching (Rainbow Six Siege, El Mansouri 2016) | Half the rays each frame, the rest reprojected | About 40 % | Reprojection and hole filling | Artefacts in motion (the owner wants none); half scale with FSR 1 exists already | Not chosen |
+| Variable-rate or foveated marching; a lower resolution for distant pixels | One ray per 2 × 2 where a tile's rays all stop at coarse cells | 20–40 % far | A coarse pass and a fill | Silhouettes; overlaps the cone LOD | Not chosen |
+| Subgroup-coherent traversal, ray sorting (Garanzha & Loop 2010; Meister et al. 2025), persistent threads | Divergence is 1.0–1.4× (above), so the bound is about 30 % | Small | Subgroups aren't mapped by wgpu's web backend nor on iOS; sorting's overhead | High | Not chosen |
+| Compressing the per-step data | The march is latency-bound, not bandwidth-bound | Small | Layout | Low | Not chosen |
+| Early termination at LOD distance | The fog distance and the level-rows skip already end sky rays | Small | — | — | Already there |
+
+**The choice.** The temporal start while moving and the kept frame first (the moving and the
+still cases, cheap and exact), then the if-if loop (the far case's divergence), then the column
+search's cost if it is still what dominates far away. (As built, below: the if-if loop measured
+slower and was dropped; the column search's cost was cut by its slope rule.)
+
+### A4c as built (2026-10-19)
+
+**1. The temporal start while the eye moves.** A4b trusted last frame's distances only with the eye
+still, since a surface hidden behind a near occluder can appear in a strip as wide as the
+parallax. A4c trusts them for the space last frame's rays actually crossed, wherever this frame's
+eye is:
+
+- **The footprint.** A stretch `[t0, t1]` of a tile's pixel rays is the piece of the cone between
+  its four corner rays. Its 8 corner points, taken relative to last frame's eye, are projected
+  into last frame's image; the piece projects inside their rect, widened by 2 px. Every point of
+  it is within `t1 + s` of last frame's eye, where `s` is how far the eye moved. So the stretch is
+  clear if last frame's least clear distance over the rect, less `s` and A4b's margin of two
+  cone-level cells, reaches `t1`. Nothing a ray now sees can be nearer than that without having
+  been in last frame's cleared space, so disocclusion needs no test: a newly visible surface lies
+  behind last frame's distances.
+- **A min pyramid** of last frame's tile distances (a reduce pass, `reduce_main`, after the march)
+  reads the rect in 4 loads, at the mip where it spans at most 2 texels a side.
+- **Changed data.** The nodes put or removed since last frame (`Dirty::regions`, as level-0 boxes,
+  `Dirty::boxes`, at most 16 in the uniforms: merged per level, then into one, beyond that) are
+  not trusted: a stretch whose box meets one is left to the box test. Streaming no longer turns the
+  temporal start off.
+- **Cone-LOD bands.** Last frame's rays only vouch for the level they marched at, and a point is up
+  to `s` nearer or farther than it was, so its cone level can differ. A stretch is trusted only
+  inside one band from both eyes (ending `s` before the band's end); the `2s` around each band's
+  end is the box test's.
+- **The LOD-switch rule.** A ray the rule held at a finer level than its cone level vouches only
+  for the finer level from there: the march's clear distance now stops where that first happened
+  (`wait_t`). This also cut the still-eye outcome changes in the crafted section views (356 → 48).
+- **One jump per band.** Testing every segment of the beam's walk cost the beam pass more than the
+  march saved (the beam pass is latency-bound: one thread per tile, a dependent chain of tests).
+  The walk now tries, once per band, to jump from where it is to the tile's own last distance less
+  the margin (`temporal_goal`); if the footprint's least distance falls short, it jumps as far as
+  that reaches (a shorter stretch's footprint lies inside it) and otherwise leaves the band to the
+  box test. Within `8 s` of the eye it uses the box test alone (the footprint is too wide there).
+  The tile's corner rays are kept as vectors in last frame's axes: an array of them spilled.
+- **Switches:** `?marchmoving=0` (A4b's still-eye start); the bench's `march-a4b`.
+- **Correctness.** The per-pixel GPU check draws each view after three last frames: the view
+  turned (A4b's), and turned from an eye 1.5 m behind and 1.5 m ahead. **Red → green:** before the
+  band rule it found 3 starts past a hit (the section views, after a step back, start 39 m against
+  a hit at 21 m); with it, none, over 36 views and 147,456 px (ids and records still exact, `t`
+  within 2 ULP). On generated terrain with the eye moving 0.5 m a frame (`DWELL_PERF_MOVE`,
+  `DWELL_PERF_CHECK`): no start past a hit; outcome changes only 540 m up, 0.05–0.09 % of rays, at
+  LOD switches (the beam alone: 0.03–0.04 %).
+
+**2. Keeping an unchanged frame.** With the same eye, view axes, field of view, size, targets and
+settings as last frame, and no brick uploaded, the march's outputs (depth, ids, hit records) are
+still right, so the beam, march and reduce passes are skipped and only the shade pass runs (the
+lights and the time of day can change). Bit-identical by construction; a test pins what counts as a
+change (the eye by 1e-6 m, a turn, a zoom, an edit, other targets, a setting; not the lights).
+`?marchreuse=0`, the bench's `march-noreuse`. Telemetry: `march.reused`, `march.temporal`,
+`march.changed` per frame.
+
+**3. The column search only for rays near level.** In a mixed brick the march searched the column
+mips every iteration; for a steep ray the voxel steps across the brick cost less than the search.
+The search now runs in a mixed brick only for rays with `|d.y| < 0.15`
+(`COLUMN_MIXED_MAX_DY`, in the reference and the WGSL alike, so the per-pixel check stays exact);
+empty bricks always search. Tried at 0.05–0.4: 0.15 was best on every view. `?marchsteep=0`, the
+bench's `march-nosteep`.
+
+**Measured in Chrome** (`bench --compare … --unthrottled`, M1, 1280×720, 2026-10-19, **under load**:
+the machine was shared with other agents, load average 4 at the start rising to 26 by the last
+scenarios, so `far-view` and `look-around` are the noisiest). `gpu.march` p50 in ms, with steps
+per ray as mean / p95; raster's column is its whole `gpu.frame`. `march-a4b` turns off all three
+techniques; `march-noreuse` has the first and third (every frame marched); `march` has all three.
+
+| Scenario | raster | march-a4b | march-noreuse | march | march-half-fsr |
+|---|---|---|---|---|---|
+| idle-spawn | 7.1 | 11.1 (2.9 / 11) | 10.4 (3.0 / 12) | **1.0** | 1.6 |
+| look-horizon | 6.8 | 13.1 (2.9 / 8) | **10.9** (2.9 / 8) | **1.0** | 1.6 |
+| look-down | 5.5 | 3.9 (2.3 / 3) | **3.0** (2.3 / 3) | **1.1** | 1.6 |
+| fly-high (moving) | 6.0 | 26.8 (4.1 / 9) | **18.5** (6.2 / 15) | 19.1 | 8.6 |
+| far-view (540 m, still) | 5.0 | 21.5 (3.0 / 8) | **15.1** (4.9 / 15) | **2.1** | 5.4 |
+| look-around (eye still, panning) | 7.4 | 12.6 (2.9 / 8) | 17.5¹ | **1.1** | 5.3 |
+| fly-low-fast (flight) | 5.6 | 10.0 (2.3 / 7) | **9.1** (2.3 / 7) | 2.0² | 4.3 |
+
+¹ Taken at load 26; not comparable.
+² The bench runs unthrottled: frames between the game's 60 Hz ticks see the same camera, and are
+kept. At 60 Hz with the camera moving every frame, `march-noreuse` is the figure.
+
+- **Marching every frame** (`march-noreuse` against `march-a4b`): 17 % off at the horizon, 23 %
+  looking down (the slope rule), 31 % flying 540 m up and 30 % far away (mostly the slope rule:
+  more steps, each cheaper), 9 % flying low (streaming changes nodes every frame).
+- **A still, unchanged view** costs its shading and the copy into the frame, about 1 ms: under
+  raster's whole frame everywhere.
+- Natively (Metal, the eye moving 0.5 m a frame, min of interleaved rounds): the spawn 8.2 → 6.0 ms,
+  540 m up 10.6 → 8.6, looking down 2.5 → 2.1.
+
+**Tried and dropped** (native, interleaved rounds, the eye moving 0.5 m a frame):
+
+- The if-if loop (Aila & Laine): one loop whose iterations are each a voxel step or a hierarchy
+  step. 0–15 % *slower* on every view: divergence was not the cost.
+- Testing the box first and last frame's distances only where it fails; trying last frame's
+  distances only while the walk grows; ending the walk where they stop: each within ±5 % of the
+  chosen walk, or worse.
+- The column mips loaded at once, a node's column offset cached, the level-rows skip off, the
+  search off at level 0 (see the survey).
+
 ## 8. Risks
 
 - Full-resolution marching may be slower than raster on mobile and iOS (expected, §1); the
@@ -663,3 +922,11 @@ No questions are open for this proposal; A0 turns these answers into the ADR.
 - WebGPU feature availability: https://web3dsurvey.com/webgpu · subgroups in Chrome 134: https://developer.chrome.com/blog/new-in-webgpu-134
 - Chrome developer features (timestamp precision): https://developer.chrome.com/docs/web-platform/webgpu/developer-features
 - WebGPU spec (depth formats not storage; copies into depth): https://www.w3.org/TR/webgpu/
+- A4c's survey: Aila & Laine, Understanding the Efficiency of Ray Traversal on GPUs (HPG 2009; if-if
+  and while-while loops, persistent threads): https://research.nvidia.com/publication/understanding-efficiency-ray-traversal-gpus ·
+  Uludag, Hi-Z Screen-Space Cone-Traced Reflections (GPU Pro 5, 2014): https://gameenginegems.com/gemsdb/article.php?id=1221 ·
+  El Mansouri, Rendering Rainbow Six Siege (GDC 2016, checkerboard rendering): https://gdcvault.com/play/1022990/Rendering-Rainbow-Six-Siege ·
+  Garanzha & Loop, Fast Ray Sorting and Breadth-First Packet Traversal for GPU Ray Tracing (2010): https://diglib.eg.org/items/86c62fdb-d534-458a-86fc-8c75d37d019c/full ·
+  Meister et al., On Ray Reordering Techniques for Faster GPU Ray Tracing: https://arxiv.org/abs/2506.11273 ·
+  Museth, hierarchical DDA in OpenVDB: https://research.dreamworks.com/wp-content/uploads/2018/07/talk_hierarchical_digital_OpenVDB_v4-Edited.pdf ·
+  Aaltonen, GPU-based clay simulation and ray tracing in Claybook (GDC 2018): https://www.gdcvault.com/play/1025316/Advanced-Graphics-Techniques-Tutorial-GPU

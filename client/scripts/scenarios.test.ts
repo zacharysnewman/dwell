@@ -32,6 +32,27 @@ describe('scenarios', () => {
     expect(viewUrl('./', scenarioView(s))).toBe('./?local=1&seed=7');
   });
 
+  it('zooms the spyglass to a step, or out (docs/SPYGLASS.md)', () => {
+    const [s] = parseScenarios(
+      file([
+        {
+          name: 'z',
+          steps: [
+            { do: 'spyglass', on: true, step: 1 },
+            { do: 'spyglass', on: false },
+          ],
+        },
+      ]),
+    );
+    expect(s.steps).toEqual([
+      { do: 'spyglass', on: true, step: 1 },
+      { do: 'spyglass', on: false },
+    ]);
+    expect(() =>
+      parseScenarios(file([{ name: 'z', steps: [{ do: 'spyglass', on: 'yes' }] }])),
+    ).toThrow(/on/);
+  });
+
   it('a new step entry works by data alone', () => {
     const [s] = parseScenarios(
       file([
@@ -121,6 +142,24 @@ describe('scenarios', () => {
     expect(() =>
       parseScenarios(file([{ name: 'a', split: 'mid', steps: [{ do: 'mark' }] }])),
     ).toThrow(/"near" or "far"/);
+  });
+
+  it('sets the water quality and its cost switches mid-run', () => {
+    const [s] = parseScenarios(
+      file([
+        {
+          name: 'a',
+          steps: [{ do: 'water', quality: 'medium', debug: 'caustics' }, { do: 'water' }],
+        },
+      ]),
+    );
+    expect(s.steps).toEqual([
+      { do: 'water', quality: 'medium', debug: 'caustics' },
+      { do: 'water' },
+    ]);
+    expect(() =>
+      parseScenarios(file([{ name: 'a', steps: [{ do: 'water', quality: 'ultra' }] }])),
+    ).toThrow(/quality/);
   });
 
   it('rejects bad entries with a message', () => {

@@ -88,9 +88,12 @@ impl StateTable {
             gpu,
         }
     }
-    /// This build's registry.
+    /// The process's block table: the build's states and any registered at run time (ADR 0038).
     pub fn registry() -> Self {
-        Self::from_states(&dwell_blocks::STATES)
+        let states: Vec<StateInfo> = (0..dwell_blocks::state_count())
+            .map(|i| *dwell_blocks::info(i as StateId))
+            .collect();
+        Self::from_states(&states)
     }
     /// Unknown ids are empty.
     pub fn class(&self, id: StateId) -> MarchClass {

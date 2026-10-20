@@ -127,7 +127,7 @@ mod tests {
         }
     }
 
-    /// The half-height grid (Phase 36, docs/HALF_HEIGHT_GRID.md) shapes natural ground once, at
+    /// The half-height grid (Phase 39, docs/HALF_HEIGHT_GRID.md) shapes natural ground once, at
     /// generation: no block is adaptive, so the derivation leaves every natural block as it is
     /// (under Phase 18 a flat field rested at half height and a lone block was a half pyramid).
     #[test]

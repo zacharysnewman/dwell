@@ -4,6 +4,7 @@
 use super::*;
 use crate::grid::{MAX_ALIGNED_LEVEL, is_face_b_section, origin_m};
 use dwell_world::MIDPLANE_M;
+use dwell_world::inside_build_volume;
 use dwell_world::lod::{PAD, VOLUME, ancestor, mirror_row_bottom, section_origin};
 
 /// A deterministic PRNG (mulberry32), as the TS tests use.
@@ -21,10 +22,11 @@ fn zero() -> f64 {
     0.0
 }
 
-fn flat_bounds() -> LodBounds {
+/// The flat test world with its surface at `top` instead of 0.
+fn flat_bounds_at(top: f64) -> LodBounds {
     LodBounds {
-        lo: 0.0,
-        hi: -1.0,
+        lo: top,
+        hi: top - 1.0,
         lo_b: f64::NEG_INFINITY,
         hi_b: f64::NEG_INFINITY,
         any_inside: true,
@@ -32,13 +34,16 @@ fn flat_bounds() -> LodBounds {
     }
 }
 
-/// Both faces, each flat: stone where a face-local cell's bottom is below 0.
+/// The bifacial test world's crust per face: the 10-layer core (Phase 16), so 20 layers in all.
+const CRUST: i64 = dwell_world::CORE_LAYERS as i64;
+
+/// Both faces, each flat: ground where a face-local cell's bottom is below `CRUST`.
 fn bifacial_bounds() -> LodBounds {
     LodBounds {
         lo: f64::NEG_INFINITY,
-        hi: 0.0,
+        hi: CRUST as f64,
         lo_b: f64::NEG_INFINITY,
-        hi_b: 0.0,
+        hi_b: CRUST as f64,
         any_inside: true,
         bifacial: true,
     }
@@ -61,10 +66,13 @@ fn bifacial_section(c: LodCoord) -> GeneratedSection {
         for y in -1..=32 {
             let bottom = y0 + i64::from(y) * size;
             let on_a = row_face(c, y) == Face::A;
+            // The face-local bottom of the cell, within the crust: on face A its own, on face B
+            // that of its mirror image; the other side of the midplane is that face's crust.
             let solid = if on_a {
-                bottom < 0
+                bottom < CRUST && bottom + size > -CRUST
             } else {
-                mirror_row_bottom(bottom, size) < 0
+                mirror_row_bottom(bottom, size) < CRUST
+                    && mirror_row_bottom(bottom, size) + size > -CRUST
             };
             if !solid {
                 continue;
@@ -86,13 +94,17 @@ fn bifacial_section(c: LodCoord) -> GeneratedSection {
 
 /// The flat world at LOD: stone where a cell's bottom is below 0.
 fn flat_section(c: LodCoord) -> GeneratedSection {
+    flat_section_at(c, 0)
+}
+
+fn flat_section_at(c: LodCoord, top: i64) -> GeneratedSection {
     let mut cells = vec![0u16; VOLUME];
-    let kind = kind_from_bounds(c, &flat_bounds());
+    let kind = kind_from_bounds(c, &flat_bounds_at(top as f64));
     let y0 = section_origin(c).y;
     let size = cell_size(c.level);
     if kind != LodKind::Empty {
         for y in -1..=32 {
-            if y0 + i64::from(y) * size >= 0 {
+            if y0 + i64::from(y) * size >= top {
                 continue;
             }
             for z in -1..=32 {
@@ -135,6 +147,8 @@ struct Host {
     stuck_below: i32,
     /// Serve the bifacial test world instead of the flat one.
     bifacial: bool,
+    /// The flat test world's surface (m; 0 unless a test needs ground deeper than the midplane).
+    flat_top: i64,
     /// Every generated section's surface is a river: floor 118 m, water 121 m.
     river: bool,
     /// Every section asked of the generator.
@@ -254,7 +268,7 @@ fn finish(lod: &mut LodSystem, h: &mut Host, random: &mut dyn FnMut() -> f64, sh
                 let b = if h.bifacial {
                     bifacial_bounds()
                 } else {
-                    flat_bounds()
+                    flat_bounds_at(h.flat_top as f64)
                 };
                 lod.on_lod_bounds(level, i, k, Some(b));
             }
@@ -262,7 +276,7 @@ fn finish(lod: &mut LodSystem, h: &mut Host, random: &mut dyn FnMut() -> f64, sh
                 let mut s = if h.bifacial {
                     bifacial_section(c)
                 } else {
-                    flat_section(c)
+                    flat_section_at(c, h.flat_top)
                 };
                 if h.river {
                     let mut surface = vec![0.0f32; SURFACE_LEN];
@@ -292,6 +306,8 @@ fn camera(position: Vec3, yaw_deg: f64, pitch_deg: f64) -> LodCamera {
         fov_y_deg: 75.0,
         aspect: 16.0 / 9.0,
         height_px: 1080.0,
+        magnification: 1.0,
+        detail_magnification: 1.0,
     }
 }
 
@@ -330,7 +346,11 @@ fn point_in_view(cam: &LodCamera, random: &mut dyn FnMut() -> f64, range: f64) -
     }
     let radius = f64::from(dwell_world::WORLD_RADIUS);
     let inside = p[1] >= dwell_world::MIDPLANE_M
-        && p[1] < dwell_world::WORLD_MAX_M
+        && inside_build_volume(
+            p[0].floor() as i64,
+            dwell_world::row_of_m(p[1]).into(),
+            p[2].floor() as i64,
+        )
         && p[0] * p[0] + p[2] * p[2] < radius * radius;
     inside.then_some(p)
 }
@@ -377,7 +397,7 @@ fn covers_the_view_with_no_holes_or_overlaps_every_frame_while_moving_and_swappi
     // Chunks within 3 of the body are streamed (and drawable after a while).
     let mut host = Host::with_chunks(|c| chebyshev(c, cc(0, 0, 0)) <= 3);
     let mut lod = system(4.0, 64, 16, 8);
-    // Walk, look around, then rise with the dev camera to 2,000 km.
+    // Walk, look around, then rise with the dev camera to 200 km (four of the world's radii).
     let mut path = Vec::new();
     for i in 0..60 {
         let i = f64::from(i);
@@ -385,7 +405,7 @@ fn covers_the_view_with_no_holes_or_overlaps_every_frame_while_moving_and_swappi
     }
     for i in 0..90 {
         let i = f64::from(i);
-        let alt = 1.6 * (2e6f64 / 1.6).powf(i / 89.0);
+        let alt = 1.6 * (2e5f64 / 1.6).powf(i / 89.0);
         path.push(camera(
             [180.0, alt, 0.5 + i * alt * 0.01],
             30.0,
@@ -412,7 +432,7 @@ fn covers_the_view_with_no_holes_or_overlaps_every_frame_while_moving_and_swappi
             assert_eq!(shown.len(), s.drawn.len());
             let l = leaves(&s, false);
             for _ in 0..100 {
-                let Some(p) = point_in_view(cam, &mut random, 3e6) else {
+                let Some(p) = point_in_view(cam, &mut random, 3e5) else {
                     continue;
                 };
                 let n = covering(&l, p);
@@ -733,9 +753,9 @@ fn refines_by_screen_space_error_coarser_with_distance_and_altitude() {
 #[test]
 fn keeps_each_columns_bounds_apart() {
     // The TS keyed a column's bounds by lodId(level, i, 0, k), which is −1 (row 0 is below the
-    // world's first row) at every level up to 17 since the octree counts y from −2²³: all columns
-    // of those levels shared the first bounds fetched. Each column's key is its own here.
-    for level in [1, 5, 8, 17, 18, 19] {
+    // world's first row) at most levels since the octree counts y from its root's corner: all
+    // columns of those levels shared the first bounds fetched. Each column's key is its own here.
+    for level in [1, 5, 8, 10, 11, MAX_LEVEL] {
         let c = section_at(level, [0.0, 0.0, 0.0]);
         let key = bounds_key(level, c.i, c.k);
         assert!(key >= 0, "level {level}");
@@ -827,6 +847,95 @@ fn meshes_level_7_and_up_sections_for_the_viewers_face_the_other_faces_rows_are_
     }
 }
 
+// --- the thin crust (Phase 16) -----------------------------------------------------------------
+
+/// Signed area (cells²) of a mesh's faces whose normals point up (+) and down (−).
+fn up_down_area(m: &dwell_mesh::FlatMesh) -> (f64, f64) {
+    let (mut up, mut down) = (0.0, 0.0);
+    let p = |i: u32| {
+        let i = i as usize * 3;
+        [
+            f64::from(m.positions[i]),
+            f64::from(m.positions[i + 1]),
+            f64::from(m.positions[i + 2]),
+        ]
+    };
+    for t in m.indices.chunks_exact(3) {
+        let (a, b, c) = (p(t[0]), p(t[1]), p(t[2]));
+        let e1 = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+        let e2 = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
+        // The y component of the normal, its length twice the triangle's horizontal area.
+        let ny = e1[2] * e2[0] - e1[0] * e2[2];
+        if ny > 1e-9 {
+            up += ny / 2.0;
+        } else if ny < -1e-9 {
+            down -= ny / 2.0;
+        }
+    }
+    (up, down)
+}
+
+/// Columns of a section with any ground: what the viewer's face should cover, once.
+fn ground_columns(c: LodCoord) -> f64 {
+    let cells = bifacial_section(c).cells;
+    let mut n = 0;
+    for z in 0..SECTION_CELLS {
+        for x in 0..SECTION_CELLS {
+            n += i32::from((0..SECTION_CELLS).any(|y| cells[cell_index(x, y, z)] != 0));
+        }
+    }
+    f64::from(n)
+}
+
+/// Meshes a section of the 20-layer crust as the system does for a viewer on `view_face`.
+fn crust_mesh(c: LodCoord, view_face: i32) -> dwell_mesh::SectionMeshes {
+    let mut cells = bifacial_section(c).cells;
+    cells_for_viewer(c, &mut cells, view_face, false);
+    dwell_mesh::mesh_section(
+        &cells,
+        &dwell_mesh::MeshSectionOptions {
+            mirror: is_face_b_section(c),
+            ..Default::default()
+        },
+    )
+    .expect("section volume")
+}
+
+#[test]
+fn a_thin_crust_meshes_the_viewers_face_whole_and_none_of_the_other_at_every_level() {
+    // ADR 0025's risk: with a crust of 20 layers, a cell from level 4 up is thicker than a face's
+    // crust. Every level's sections by the midplane, seen from each face: the viewer's face covers
+    // every column with ground exactly once (no holes), and no face of the other side faces the
+    // viewer (none of it shows through). Levels up to 11 lie wholly on one face; the root holds
+    // both and is meshed for the viewer's face.
+    for level in 1..=MAX_LEVEL {
+        let above = section_at(level, [0.5, 0.5, 0.5]);
+        let below = section_at(level, [0.5, -0.5, 0.5]);
+        for view_face in [1, -1] {
+            for c in [above, below] {
+                let (up, down) = up_down_area(&crust_mesh(c, view_face).opaque);
+                let ctx = format!("level {level} {c:?} viewer {view_face}: up {up} down {down}");
+                let columns = ground_columns(c);
+                assert!(columns > 0.0, "{ctx}");
+                if level == MAX_LEVEL {
+                    // Both faces in one section: only the viewer's, whole.
+                    let (mine, other) = if view_face == 1 {
+                        (up, down)
+                    } else {
+                        (down, up)
+                    };
+                    assert_eq!((mine, other), (columns, 0.0), "{ctx}");
+                } else if is_face_b_section(c) {
+                    // Face B's own section: its ground faces −y (down, away from face A).
+                    assert_eq!((up, down), (0.0, columns), "{ctx}");
+                } else {
+                    assert_eq!((up, down), (columns, 0.0), "{ctx}");
+                }
+            }
+        }
+    }
+}
+
 // --- LOD requests (§6.6) -------------------------------------------------------------------------
 
 struct Requests {
@@ -879,7 +988,7 @@ impl Server {
     fn new(site: Vec3) -> Self {
         Self {
             site,
-            path: (1..=19)
+            path: (1..=MAX_LEVEL)
                 .map(|level| id_of(section_at(level, site)))
                 .collect(),
             revision: 5,
@@ -953,14 +1062,14 @@ fn asks_for_sections_under_an_index_entry_top_down_and_trusts_generated_for_subt
     assert!(r.lod.active);
     // Every section on the modified path was asked about (down to the finest level in view)...
     let asked: HashSet<LodId> = s.asked.iter().map(request_id).collect();
-    for level in 8..=19 {
+    for level in 8..=MAX_LEVEL {
         assert!(asked.contains(&id_of(section_at(level, site))), "{level}");
     }
     // ...and nothing else but their children: a Generated answer covered the rest of a subtree.
     for q in &s.asked {
         let on_path = s.on_path(q);
         let parent = ancestor(request_coord(q), i32::from(q.level) + 1);
-        assert!(on_path || q.level == 19 || s.path.contains(&id_of(parent)));
+        assert!(on_path || i32::from(q.level) == MAX_LEVEL || s.path.contains(&id_of(parent)));
         if q.level > 8 {
             assert!(on_path); // above the index level: from the index alone
         }
@@ -981,7 +1090,7 @@ fn asks_again_with_the_revision_it_holds_when_an_index_entry_changes_unchanged_s
     s.exchange(&mut r, 60);
     // The entry and its ancestors, with the revision held; then the path below, top down.
     let above: Vec<&LodSectionRequest> = s.asked.iter().filter(|q| q.level >= 8).collect();
-    assert_eq!(above.len(), 20 - 8);
+    assert_eq!(above.len(), (MAX_LEVEL + 1 - 8) as usize);
     for q in above {
         assert_eq!(q.known_revision, 5);
     }
@@ -1043,6 +1152,73 @@ impl ChunkSetup {
 }
 
 #[test]
+fn flying_out_through_the_build_sphere_asks_for_nothing_outside_it() {
+    // Phase 16's exit criterion (ADR 0025 D3): the controller flies out of the sphere — flight is not
+    // bounded by it — while the LOD follows the eye, generating sections and asking the server for
+    // chunks: none of either is wholly outside the build volume. Runs natively and under WASM.
+    use dwell_physics::config::PlayerControllerConfig;
+    use dwell_physics::controller::{Input, Players};
+    use dwell_physics::{DVec3, Physics};
+    use dwell_protocol::players::FLY_SPEED_MAX_LEVEL;
+    use dwell_world::{BUILD_VOLUME, Overlap, VoxelWorld, empty_generator};
+
+    let mut world = VoxelWorld::new(empty_generator(), Some(std::sync::Arc::new(|_| true)));
+    let mut physics = Physics::default();
+    let mut players = Players::new(&mut physics, true);
+    let config = PlayerControllerConfig::default();
+    // Over the rim, low: up and out, past the sphere's surface ~9 km above (and the rim beside).
+    let start = DVec3::new(49_000.0, 100.0, 0.5);
+    let h = players.spawn(&mut physics, config, start, 90.0);
+    let mut setup = ChunkSetup::new([start.x, start.y + 1.6, start.z], 4.0);
+    setup.host.bifacial = true;
+    let (mut outside_ticks, mut highest) = (0, 0.0f64);
+    for tick in 0..240 {
+        players.set_input(
+            h,
+            Input {
+                fly: true,
+                fly_speed: FLY_SPEED_MAX_LEVEL as u8,
+                jump: true,
+                move_y: 1.0,
+                look_yaw: 90.0,
+                ..Input::default()
+            },
+        );
+        players.tick(&mut world, &mut physics);
+        physics.step(1.0 / 60.0);
+        let p = players.position(&physics, h);
+        highest = highest.max(p.y);
+        let cell = [p.x.floor() as i64, p.y.floor() as i64, p.z.floor() as i64];
+        if !BUILD_VOLUME.contains_voxel(cell[0], cell[1], cell[2]) {
+            outside_ticks += 1;
+        }
+        if tick % 4 == 0 {
+            let cam = camera([p.x, p.y + 1.6, p.z], 90.0, -30.0);
+            setup.run(&cam, 1);
+        }
+    }
+    assert!(
+        outside_ticks > 60,
+        "{outside_ticks} ticks outside, highest {highest}"
+    );
+    assert!(highest > 10_000.0, "{highest}");
+    let generated = &setup.host.generated;
+    assert!(!generated.is_empty());
+    for c in generated {
+        let o = section_origin(*c);
+        let s = section_size(c.level);
+        assert_ne!(
+            BUILD_VOLUME.box_overlap([o.x, o.y, o.z], [o.x + s, o.y + s, o.z + s]),
+            Overlap::Outside,
+            "{c:?}"
+        );
+    }
+    for c in setup.requested() {
+        assert!(BUILD_VOLUME.chunk_may_hold(c), "{c:?}");
+    }
+}
+
+#[test]
 fn asks_for_the_chunks_beyond_the_view_nearest_first_within_the_render_radius_once_each() {
     let body = [0.5, 1.6, 0.5];
     let mut t = ChunkSetup::new(body, 4.0);
@@ -1084,19 +1260,22 @@ fn asks_for_the_chunks_beyond_the_view_nearest_first_within_the_render_radius_on
 fn never_asks_for_buried_chunks_underground_only_the_streamed_view_is_drawn() {
     // Regression (playtest: RTT and frame time climbing while standing still): drawing caves in
     // buried sections also asked the server for every solid-rock chunk within the full-detail
-    // distance. In the flat world everything below y = 0 is buried; at the surface, only chunks
-    // near it are asked.
-    let surface = [0.5, 1.6, 0.5];
+    // distance. In the flat world everything below its surface is buried; at the surface, only
+    // chunks near it are asked. The surface is 1 km up, so the rock below it is face A's (Phase 16:
+    // the midplane is at 0).
+    let ground = 1024.0;
+    let surface = [0.5, ground + 1.6, 0.5];
     let mut top = ChunkSetup::new(surface, 4.0);
+    top.host.flat_top = ground as i64;
     top.run(&camera(surface, 0.0, -10.0), 300);
     assert!(top.requested().len() > 20);
     for c in top.requested() {
-        assert!(c.y >= -2, "{c:?}");
+        assert!(c.y >= 32 - 2, "{c:?}");
     }
 
-    // 368 m down: beyond the full-detail distance of the ground above.
-    let deep = [16.5, -368.0, 16.5];
+    let deep = [16.5, ground - 12.0 * 32.0 + 16.0, 16.5];
     let mut below = ChunkSetup::new(deep, 4.0);
+    below.host.flat_top = ground as i64;
     below.run(&camera(deep, 30.0, 0.0), 300);
     assert!(below.requested().is_empty());
     // The streamed chunks around the camera are still drawn (caves stay visible).
@@ -1197,4 +1376,78 @@ fn rebuild_all_meshes_every_drawn_section_again() {
         host.generated.len() > generated,
         "dropped cells are regenerated"
     );
+}
+
+/// The spyglass's camera (docs/SPYGLASS.md): the frame's FOV narrowed `m` times, as the client
+/// draws it (dwell-look `zoom_fov`), with the magnification and its detail.
+fn zoomed(mut cam: LodCamera, m: f64, detail: f64) -> LodCamera {
+    cam.fov_y_deg = 2.0
+        * ((cam.fov_y_deg.to_radians() / 2.0).tan() / m)
+            .atan()
+            .to_degrees();
+    cam.magnification = m;
+    cam.detail_magnification = detail;
+    cam
+}
+
+#[test]
+fn the_spyglass_refines_far_terrain_inside_its_narrow_view_only() {
+    // The LOD follows the pixel size the zoomed view really has: 8× magnified, a section 4 km
+    // ahead refines three levels finer (cells 8× smaller), and one 4 km behind stays as it was.
+    // A camera whose narrow FOV is not passed (fov unchanged) does not refine ahead.
+    let settle = |cam: &LodCamera| -> LodSystem {
+        let mut host = Host::new();
+        let mut lod = system(8.0, 1024, 64, 64);
+        for i in 0..2000 {
+            lod.update(cam, f64::from(i) * 16.0, &mut host);
+            if host.pending.is_empty() && lod.active {
+                break;
+            }
+            finish(&mut lod, &mut host, &mut zero, 1.0);
+        }
+        lod
+    };
+    let level_at = |lod: &LodSystem, p: Vec3| -> i32 {
+        leaves(lod.last_selection(), false)
+            .into_iter()
+            .find(|&c| contains(c, p))
+            .map_or(i32::MAX, |c| c.level)
+    };
+    let drawn = |lod: &LodSystem| lod.last_selection().drawn.len();
+    let ahead = [0.0, 0.5, 4000.0];
+    let behind = [0.0, 0.5, -4000.0];
+    let base = camera([0.0, 40.0, 0.0], 0.0, -1.0);
+    let plain = settle(&base);
+    let (a0, b0) = (level_at(&plain, ahead), level_at(&plain, behind));
+    assert!(
+        (4..i32::MAX).contains(&a0),
+        "unzoomed, 4 km ahead: level {a0}"
+    );
+    assert_eq!(a0, b0, "unzoomed, detail is by distance alone");
+
+    let zoom = settle(&zoomed(base, 8.0, 8.0));
+    assert_eq!(level_at(&zoom, ahead), a0 - 3, "8× finer ahead");
+    assert_eq!(level_at(&zoom, behind), b0, "unchanged behind");
+
+    // The detail boost caps the refinement: 8× magnified, refined as 4× (two levels), and with it
+    // the sections the narrow cone adds (on flat ground about (h-FOV / m) / 360° × detail² of the
+    // unzoomed view's: half as many again here).
+    let capped = settle(&zoomed(base, 8.0, 4.0));
+    assert_eq!(level_at(&capped, ahead), a0 - 2);
+    assert_eq!(level_at(&capped, behind), b0);
+    assert!(drawn(&capped) < drawn(&zoom));
+    assert!(
+        drawn(&capped) * 10 < drawn(&plain) * 18,
+        "{} sections zoomed vs {}",
+        drawn(&capped),
+        drawn(&plain)
+    );
+
+    // Not threaded through: the narrow FOV never reaches the LOD camera.
+    let unthreaded = settle(&LodCamera {
+        magnification: 8.0,
+        detail_magnification: 8.0,
+        ..base
+    });
+    assert_eq!(level_at(&unthreaded, ahead), a0);
 }

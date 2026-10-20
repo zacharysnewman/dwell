@@ -22,7 +22,7 @@
 //!   cell_log2: u32,             // L: a cell is 2^L m
 //!   occ_lo: i32,                // bottom of its occupied cells (none: MAX, MIN)
 //! };
-//! @binding(0) var<storage, read> levels: array<LevelInfo, 20>;
+//! @binding(0) var<storage, read> levels: array<LevelInfo, LEVEL_COUNT>;
 //! @binding(1) var<storage, read> slots: array<u32>;   // slot_base + x + dims.x * (y + dims.y * z)
 //! struct Node { mixed: vec2<u32>, uniform: vec2<u32>, brick: array<u32, 64> };   // 68 words
 //! @binding(2) var<storage, read> nodes: array<Node>;

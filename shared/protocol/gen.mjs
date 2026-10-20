@@ -17,9 +17,46 @@ if (!(c.cellHeight > 0) || !Number.isInteger(1 / c.cellHeight)) {
 // A float literal in Rust (JSON's 1.0 reads back as 1).
 const rsFloat = (v) => (Number.isInteger(v) ? `${v}.0` : `${v}`);
 // The world's vertical values are rows; their metre twins are row × cellHeight.
-const WORLD_ROWS = { midplaneY: 'MIDPLANE_M', worldBottomY: 'WORLD_BOTTOM_M', worldMaxY: 'WORLD_MAX_M', seaLevel: 'SEA_LEVEL_M' };
+const WORLD_ROWS = { midplaneY: 'MIDPLANE_M', coreLayers: 'CORE_M', seaLevel: 'SEA_LEVEL_M', flatTopY: 'FLAT_TOP_M' };
 
 const enumEntries = (obj) => Object.entries(obj);
+
+// The build volume (ARCHITECTURE.md §6.3, ADR 0025): one shape of a closed set, its parameters
+// data. The shapes and their parameters are the engine's vocabulary (dwell-world's `BuildVolume`);
+// a bad entry fails here with a message.
+const BOUNDS_SHAPES = {
+  sphere: { center: 'point', radius: 'positive' },
+  slab: { minY: 'integer', maxY: 'integer' },
+};
+function validateBounds(b) {
+  const fail = (m) => {
+    throw new Error(`constants.json bounds: ${m}`);
+  };
+  if (!b || typeof b !== 'object') fail('missing');
+  const params = BOUNDS_SHAPES[b.shape];
+  if (!params) fail(`unknown shape "${b.shape}" (known: ${Object.keys(BOUNDS_SHAPES).join(', ')})`);
+  for (const k of Object.keys(b)) {
+    if (k !== 'shape' && !(k in params)) fail(`${b.shape} has no parameter "${k}"`);
+  }
+  for (const [k, kind] of Object.entries(params)) {
+    const v = b[k];
+    const ok =
+      kind === 'point'
+        ? Array.isArray(v) && v.length === 3 && v.every(Number.isSafeInteger)
+        : Number.isSafeInteger(v) && (kind !== 'positive' || v > 0);
+    if (!ok) fail(`${b.shape}.${k} must be ${kind === 'point' ? 'three integers' : `a ${kind} integer`}`);
+  }
+  if (b.shape === 'slab' && !(b.minY < b.maxY)) fail('slab.minY must be below maxY');
+  return b;
+}
+validateBounds(c.bounds);
+// A WebRTC fragment (ARCHITECTURE.md §8.2) is told from a whole message by its first byte.
+if (Object.values(c.messageTypes).includes(c.webrtcFragmentTag)) {
+  throw new Error(`constants.json webrtcFragmentTag ${c.webrtcFragmentTag} is a message type`);
+}
+if (!(c.webrtcFragmentTag >= 0 && c.webrtcFragmentTag <= 255)) {
+  throw new Error('constants.json webrtcFragmentTag must be a byte');
+}
 
 const maxOf = (obj) => Math.max(...Object.values(obj));
 
@@ -32,6 +69,8 @@ ts.push(`export const SIM_HZ = ${c.simHz};`);
 ts.push(`export const SNAPSHOT_HZ = ${c.snapshotHz};`);
 ts.push(`export const MAX_DATAGRAM_BYTES = ${c.maxDatagramBytes};`);
 ts.push(`export const MAX_RELIABLE_MESSAGE_BYTES = ${c.maxReliableMessageBytes};`);
+ts.push(`export const MAX_WEBRTC_MESSAGE_BYTES = ${c.maxWebrtcMessageBytes};`);
+ts.push(`export const WEBRTC_FRAGMENT_TAG = ${c.webrtcFragmentTag};`);
 ts.push(`export const CHUNK_SIZE = ${c.chunkSize};`);
 ts.push(`export const CELL_HEIGHT = ${c.cellHeight};`);
 ts.push(`export const AUTH_DOMAIN_TAG = '${c.authDomainTag}';`);
@@ -44,6 +83,13 @@ ts.push('');
 ts.push('export const World = {');
 for (const [k, v] of enumEntries(c.world)) ts.push(`  ${k}: ${v},`);
 ts.push('} as const;');
+ts.push('');
+ts.push('/** The build volume (ARCHITECTURE.md §6.3): one shape of a closed set. */');
+ts.push(
+  `export const Bounds = { ${Object.entries(c.bounds)
+    .map(([k, v]) => `${k}: ${Array.isArray(v) ? `[${v.join(', ')}]` : typeof v === 'string' ? `'${v}'` : v}`)
+    .join(', ')} } as const;`,
+);
 ts.push('');
 ts.push('export const Lod = {');
 for (const [k, v] of enumEntries(c.lod)) ts.push(`  ${k}: ${v},`);
@@ -88,6 +134,7 @@ const tsFlags = (name, obj) => {
 tsFlags('InputButtons', c.inputButtons);
 tsFlags('PlayerFlags', c.playerFlags);
 tsFlags('ControllerFlags', c.controllerFlags);
+tsFlags('SlideFlags', c.slideFlags);
 tsFlags('WelcomeFlags', c.welcomeFlags);
 ts.push('');
 writeFileSync(join(root, 'client/src/protocol/constants.gen.ts'), ts.join('\n'));
@@ -104,6 +151,8 @@ rs.push(`pub const SIM_HZ: u32 = ${c.simHz};`);
 rs.push(`pub const SNAPSHOT_HZ: u32 = ${c.snapshotHz};`);
 rs.push(`pub const MAX_DATAGRAM_BYTES: usize = ${c.maxDatagramBytes};`);
 rs.push(`pub const MAX_RELIABLE_MESSAGE_BYTES: usize = ${c.maxReliableMessageBytes};`);
+rs.push(`pub const MAX_WEBRTC_MESSAGE_BYTES: usize = ${c.maxWebrtcMessageBytes};`);
+rs.push(`pub const WEBRTC_FRAGMENT_TAG: u8 = ${c.webrtcFragmentTag};`);
 rs.push(`pub const CHUNK_SIZE: i32 = ${c.chunkSize};`);
 rs.push('/// A cell is 1 m × `CELL_HEIGHT` × 1 m (HALF_HEIGHT_GRID.md §2).');
 rs.push(`pub const CELL_HEIGHT: f64 = ${rsFloat(c.cellHeight)};`);
@@ -130,6 +179,23 @@ for (const [k, name] of Object.entries(WORLD_ROWS)) {
 }
 rs.push('}');
 rsGroup('lod', c.lod, () => 'i64');
+rs.push('');
+rs.push('/// The build volume (ARCHITECTURE.md §6.3, ADR 0025): one shape of a closed set, its parameters');
+rs.push('/// from `constants.json` (`dwell_world::BuildVolume` evaluates it).');
+rs.push('#[derive(Clone, Copy, Debug, PartialEq, Eq)]');
+rs.push('pub enum BoundsShape {');
+rs.push('    /// Voxels whose centres lie within `radius` of `center`.');
+rs.push('    Sphere { center: [i64; 3], radius: i64 },');
+rs.push('    /// Voxel rows `min_y..max_y`, unbounded across (tests and old worlds).');
+rs.push('    Slab { min_y: i64, max_y: i64 },');
+rs.push('}');
+rs.push('');
+const b = c.bounds;
+rs.push(
+  b.shape === 'sphere'
+    ? `pub const BOUNDS: BoundsShape = BoundsShape::Sphere {\n    center: [${b.center.join(', ')}],\n    radius: ${b.radius},\n};`
+    : `pub const BOUNDS: BoundsShape = BoundsShape::Slab {\n    min_y: ${b.minY},\n    max_y: ${b.maxY},\n};`,
+);
 rsGroup('limits', c.limits, () => 'usize');
 // Region edits (§6.5): sizes and rates in cells, reach in metres.
 rsGroup('region_edit', c.regionEdit, (k) => (k === 'reach' ? 'f32' : 'usize'));
@@ -180,6 +246,7 @@ const rsFlags = (mod, type, obj) => {
 rsFlags('input_buttons', 'u16', c.inputButtons);
 rsFlags('player_flags', 'u8', c.playerFlags);
 rsFlags('controller_flags', 'u8', c.controllerFlags);
+rsFlags('slide_flags', 'u8', c.slideFlags);
 rsFlags('welcome_flags', 'u8', c.welcomeFlags);
 rs.push('');
 writeFileSync(join(root, 'crates/dwell-protocol/src/constants.gen.rs'), rs.join('\n'));

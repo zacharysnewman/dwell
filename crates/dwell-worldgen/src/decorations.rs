@@ -28,7 +28,7 @@ pub struct Decoration {
     /// The steepest ground it stands on: the most the ground's top differs from its four
     /// neighbours', in metres.
     pub max_slope: i32,
-    /// The ground's top (m, face-local, sea level 0) must lie in [min_height, max_height].
+    /// The ground's top (m above sea level, face-local) must lie in [min_height, max_height].
     pub min_height: i32,
     pub max_height: i32,
 }

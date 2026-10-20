@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { World } from '../protocol/constants.gen';
 import {
   DISC_ZOOM,
   MAP_COLUMN_BYTES,
@@ -67,18 +68,20 @@ describe('terrain map overlay', () => {
   it('zooms from the surroundings out to the whole disc, centred on the player until then', () => {
     // The first zoom is the old fixed map: 128 columns of 8 m around the player.
     expect(mapView(0, 1000, -2000)).toEqual({ x0: 1000 - 512, z0: -2000 - 512, step: 8 });
-    // Every zoom is a wider view; the last covers the whole 16,384 km disc about the origin,
+    // Every zoom is a wider view; the last covers the whole 100 km disc about the origin,
     // wherever the player is.
     for (let z = 1; z < MAP_ZOOMS.length; z++) {
       expect(MAP_ZOOMS[z] ?? 0).toBeGreaterThan(MAP_ZOOMS[z - 1] ?? 0);
     }
-    const disc = mapView(DISC_ZOOM, 3_000_000, -5_000_000);
-    expect(disc.step * MAP_SIZE).toBe(16_384_000);
-    expect(disc.x0).toBe(-8_192_000);
-    expect(disc.z0).toBe(-8_192_000);
+    const disc = mapView(DISC_ZOOM, 30_000, -45_000);
+    expect(disc.step).toBe(782);
+    expect(disc.step * MAP_SIZE).toBeGreaterThanOrEqual(2 * World.worldRadius);
+    expect(disc.step * MAP_SIZE).toBeLessThan(2 * World.worldRadius + MAP_SIZE);
+    expect(disc.x0).toBe(-(MAP_SIZE / 2) * 782);
+    expect(disc.z0).toBe(-(MAP_SIZE / 2) * 782);
     expect(mapView(DISC_ZOOM, 0, 0)).toEqual(disc);
     // A wide zoom short of the disc stays on the player.
-    expect(mapView(DISC_ZOOM - 1, 10_000, 20_000).x0).toBe(10_000 - (MAP_SIZE / 2) * 32768);
+    expect(mapView(DISC_ZOOM - 1, 10_000, 20_000).x0).toBe(10_000 - (MAP_SIZE / 2) * 512);
     // Out of range zooms clamp.
     expect(mapView(99, 0, 0)).toEqual(disc);
     expect(mapView(-3, 0, 0).step).toBe(8);

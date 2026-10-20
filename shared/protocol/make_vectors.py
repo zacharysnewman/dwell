@@ -21,6 +21,7 @@ def s(text: str) -> bytes:
 
 B = c["inputButtons"]
 CF = c["controllerFlags"]
+SF = c["slideFlags"]
 PF = c["playerFlags"]
 PS = c["playerStates"]
 GK = c["groundKinds"]
@@ -50,10 +51,12 @@ def input_frame(seq, mx, my, buttons, yaw, pitch):
     return struct.pack("<IbbHhh", seq, mx, my, buttons, yaw, pitch)
 
 
-def controller(flags, ladder=None, released=None):
+def controller(flags, ladder=None, released=None, slide=(0, 0)):
     out = struct.pack("<B", flags)
     out += f32s(1.5, -2.25, 0.5, 0.0, 2.0, -2.25, 3.0, 0.0, -1.0, 0.25)
     out += struct.pack("<BHBBB", GK["Player"], 7, 11, 5, 2)
+    # The sprint slide (protocol v15): slideFlags, then the cooldown in ticks.
+    out += struct.pack("<BB", *slide)
     if ladder is not None:
         out += struct.pack("<iii", *ladder)
     if released is not None:
@@ -77,7 +80,8 @@ SNAPSHOT = (
     struct.pack("<BII", T["PhysicsSnapshot"], 603, 42)
     + snapshot_local(
         PF["grounded"] | PF["climbing"], 87, PS["Climbing"],
-        controller(CF["grounded"] | CF["climbing"] | CF["hasReleased"], (-5, 64, 1000000), (-5, 7)),
+        controller(CF["grounded"] | CF["climbing"] | CF["hasReleased"], (-5, 64, 1000000), (-5, 7),
+                   slide=(SF["active"], 29)),
         input_buffer=3, knockback=40,
     )
     + struct.pack("<B", 2)
@@ -308,11 +312,66 @@ vectors = {
     "lod_index_empty": lod_index(1, []),
     "lod_index_part": lod_index(0, [(-5, 1022, 3, 1)]),
     "lod_index_update": lod_update([(5, 1024, 6, 9)]),
-    "lod_request": lod_request([(3, (-4, 17, 8), 0), (19, (0, 0, 0), 12)]),
+    "lod_request": lod_request([(3, (-4, 17, 8), 0), (12, (0, 0, 0), 12)]),
     "lod_data_generated": lod_head(LF["Generated"], 5, (100, 3, -2), 0),
     "lod_data_unchanged": lod_head(LF["Unchanged"], 12, (1, 0, 2), 77),
     "lod_data_explicit": LOD_EXPLICIT,
 }
+
+
+# Registry sync (ADR 0038): a registry payload (format 1) of air and a two-state block, with a
+# shape the Rust build lacks, and BlockRegistry messages carrying parts of it.
+def payload_fields(fields):
+    return struct.pack("<B", len(fields)) + b"".join(
+        struct.pack("<BH", t, len(b)) + b for t, b in fields
+    )
+
+
+def rules(flags, occupancy, shape, density, facing, climb):
+    return [(1, struct.pack("<I", flags)), (2, struct.pack("<BH", occupancy, shape)),
+            (3, f32s(density)), (4, struct.pack("<B", facing)), (5, f32s(climb))]
+
+
+AIR_FIELDS = rules(0, 0, 0, 0.0, 0, 1.0) + [(0x81, s("cube")), (0x82, struct.pack("<If", 0, 0.0))]
+
+
+def lamp(lit):
+    return rules(1 | 32, 1, 1, 1200.0, 2, 1.0) + [
+        (0x81, s("cube")),
+        (0x82, struct.pack("<If", 0xFFCC00 if lit else 0x806600, 1.0)),
+        (0x83, s("lamp") + s("lamp") + s("lamp")),
+    ]
+
+
+REGISTRY_PAYLOAD = (
+    struct.pack("<H", 1)
+    + struct.pack("<H", 2) + struct.pack("<H", 0) + struct.pack("<H", 3) + bytes([1, 2, 3])
+    + struct.pack("<H", 1) + s("dwell:water")
+    + struct.pack("<H", 2)
+    + s("dwell:air") + struct.pack("<HB", 0, 0) + payload_fields(AIR_FIELDS)
+    + s("test:lamp") + struct.pack("<HB", 1, 1) + s("lit") + struct.pack("<B", 2) + s("false") + s("true")
+    + payload_fields(lamp(False)) + payload_fields(lamp(True))
+)
+
+
+def block_registry(part, parts, data):
+    return struct.pack("<BHHI", T["BlockRegistry"], part, parts, len(data)) + data
+
+
+vectors["registry_payload"] = REGISTRY_PAYLOAD
+vectors["block_registry"] = block_registry(0, 1, REGISTRY_PAYLOAD)
+
+
+# EditAck (edit prediction, protocol v16): u32 through, u16 count, count u32 rejected (ascending).
+def edit_ack(through, rejected):
+    return struct.pack("<BIH", T["EditAck"], through, len(rejected)) + b"".join(
+        struct.pack("<I", r) for r in rejected
+    )
+
+
+vectors["block_registry_part"] = block_registry(1, 2, REGISTRY_PAYLOAD[40:])
+vectors["edit_ack"] = edit_ack(7, [])
+vectors["edit_ack_rejected"] = edit_ack(0x01020304, [2, 0x01020303, 0x01020304])
 
 malformed = {
     "!empty": b"",
@@ -355,6 +414,12 @@ malformed = {
     "!block_edit_break_material": block_edit(BA["Break"], (0, 0, 0), 0, 2),
     "!block_edit_place_no_material": block_edit(BA["Place"], (0, 0, 0), 0),
     "!region_edit_bad_op": region_head(0, (0, 0, 0), (1, 1, 1)) + struct.pack("<H", 1),
+    "!edit_ack_past_through": edit_ack(3, [4]),
+    "!edit_ack_zero": edit_ack(3, [0]),
+    "!edit_ack_unsorted": edit_ack(9, [5, 2]),
+    "!edit_ack_truncated": edit_ack(9, [1, 2])[:-2],
+    "!edit_ack_too_many": struct.pack("<BIH", T["EditAck"], 99999, c["limits"]["maxEditAckRejected"] + 1)
+    + b"".join(struct.pack("<I", i + 1) for i in range(c["limits"]["maxEditAckRejected"] + 1)),
     "!region_edit_unknown_op": region_head(5, (0, 0, 0), (1, 1, 1)) + struct.pack("<H", 1),
     "!region_edit_empty_side": region_head(RO["Fill"], (0, 0, 0), (1, 0, 1)) + struct.pack("<H", 1),
     "!region_edit_side_too_long": region_head(RO["Fill"], (0, 0, 0), (1, c["regionEdit"]["maxSide"] + 1, 1))
@@ -386,6 +451,10 @@ malformed = {
     "!chunk_request_empty": struct.pack("<BH", T["ChunkRequest"], 0),
     "!resync_too_many": struct.pack("<BH", T["ChunkResync"], c["limits"]["maxResyncChunks"] + 1)
     + struct.pack("<iii", 0, 0, 0) * (c["limits"]["maxResyncChunks"] + 1),
+    "!block_registry_zero_parts": block_registry(0, 0, b""),
+    "!block_registry_part_past_end": block_registry(2, 2, b"\x00"),
+    "!block_registry_truncated": block_registry(0, 1, REGISTRY_PAYLOAD)[:-1],
+    "!block_registry_too_long": struct.pack("<BHHI", T["BlockRegistry"], 0, 1, 256 * 1024 + 1),
     "!chunk_request_too_many": struct.pack("<BH", T["ChunkRequest"], c["limits"]["maxResyncChunks"] + 1)
     + struct.pack("<iii", 0, 0, 0) * (c["limits"]["maxResyncChunks"] + 1),
 }

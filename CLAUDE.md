@@ -12,12 +12,12 @@ PR for it, or raise `package.json` on it.
   ground (still made up of half blocks), and no adaptive blocks (just adaptive at generation time),
   when you destroy a block the ones around it don't change." Also: 45° ramps slide, a placed
   natural block is flat, ½ m per click, grass only on flat tops.
-- **Where it stands:** Phase 36 in `docs/IMPLEMENTATION_PLAN.md`: H0–H4 built (½ m cells live,
+- **Where it stands:** Phase 39 in `docs/IMPLEMENTATION_PLAN.md`: H0–H4 built (½ m cells live,
   ramps generated, nothing adaptive); next is **H5, the owner's playtest**. The decision is
-  [ADR 0038](docs/adr/0038-half-height-cells.md), the design and the as-built list of what is still
+  [ADR 0040](docs/adr/0040-half-height-cells.md), the design and the as-built list of what is still
   in cells (ray marcher, brushes, fluid surface drop, view radius) is `docs/HALF_HEIGHT_GRID.md` §7.
 - On this branch, `docs/ARCHITECTURE.md` and the plan describe the branch. If the owner keeps it,
-  renumber Phase 36 to the next free phase on `main` and remove this section; if not, the branch is
+  renumber Phase 39 to the next free phase on `main` and remove this section; if not, the branch is
   abandoned and `main` is unchanged.
 
 ## Project
@@ -48,6 +48,8 @@ and friend worlds), with a small master server for discovery; there are no offic
   system; built by the baseline rework, Phases 14–19 of the implementation plan.
 - `docs/prototypes/` — saved design prototypes (Adaptive Block Lab, Shape Playground) with their
   published links; republish to the same link after editing.
+- `docs/SPYGLASS.md` — design for Phase 38 (ADR 0039): the spyglass zoom, its data file, and the
+  LOD's detail inside the zoomed cone.
 - `docs/RELEASES.md` — Phase 6: builds as tagged releases loaded by a version launcher,
   version-locked worlds, the license, and the release procedure.
 - `docs/BIFACIAL_WORLD.md` — design for Phase 13: the disc's second face below the midplane, gravity
@@ -67,7 +69,7 @@ and friend worlds), with a small master server for discovery; there are no offic
   the structures store; worldgen placement deferred.
 - `docs/TREE_GROWTH.md` — design for Phase 30 (ADR 0033): hand-built trees grown by a computed skeleton
   reveal, skeleton-jitter variants, and trees as a layer composed at chunk load (tombstones, `growers`).
-- `docs/HALF_HEIGHT_GRID.md` — design for Phase 36 (ADR 0038), on the long-lived branch
+- `docs/HALF_HEIGHT_GRID.md` — design for Phase 39 (ADR 0040), on the long-lived branch
   `claude/half-height-voxels` only: ½ m cells, stored cardinal ramps shaped at generation, no reshaping.
 - `docs/proposals/` — investigated but not yet adopted plans, each with open questions for the owner;
   not architecture until an ADR adopts it (adopted ones move to a design doc; its README lists them).
@@ -200,15 +202,23 @@ that touches the public API, a release or the workflows:
 
 - **The app version is Semantic Versioning.** `client/package.json`'s `version` is a **floor**, not a
   counter: the next version is the next patch after the newest published release, or `package.json`'s
-  version if that is higher. Never bump it after a release (nothing needs it).
-- **A push to `main` is a dev build** (`v<next>-dev.<run>`), **unless it leaves `package.json` above
-  the newest release, which releases that version as stable.** So raising `package.json` is a
-  release: do it only when that should ship, and **only a human decides it** — do not raise it on your
-  own initiative. Patch releases are manual (Actions → Release → Run workflow, or a `v<version>` tag).
+  version if that is higher. Never bump it on its own after a release; the bump rides in the next PR.
+- **Every PR merged to `main` raises `package.json` and ships as a stable tagged release** (owner,
+  2026-10-19): features, bug fixes, CI, test and workflow fixes alike. Nothing merges as a dev-only
+  build: the owner sees a change only once a tag is released. Raise it to the next patch above the
+  newest release, or the next MINOR for a compatibility break (below), in the PR just before it
+  merges, one release per PR. The owner has given standing approval for these bumps. A push that
+  leaves `package.json` at or below the newest release (e.g. a direct push) is a dev build
+  (`v<next>-dev.<run>`).
 - **A breaking change to the public API — the saved world format, the terrain a seed generates, the
   network protocols, the cross-version browser storage — needs a new compatibility line** (before
   `1.0.0`, the next MINOR). Say so in the PR and let the owner raise `package.json`; do not leave
   such a change shipping under the old line, whose players' worlds it would break.
+- **Blocks and registry sync (ADR 0038):** the server sends its block registry at join and clients
+  map ids by name, so **adding** blocks or states, or changing looks, is not breaking. Still
+  breaking: removing or renaming a state (or adding/removing a property), changing an existing
+  state's shape or rules, changing the shapes or the adaptive shape rules, and changing worldgen
+  (`docs/RELEASES.md` §3).
 - **The browser's shared stores are append-only** (the world index, settings, device key): new
   fields optional, unknown fields and unreadable records preserved on rewrite (a test pins it).
 - **Release logic lives in tested scripts** (`client/scripts/release.ts`, `site.ts`), not in workflow
@@ -222,11 +232,15 @@ that touches the public API, a release or the workflows:
 Check these before chasing an e2e failure:
 
 - `e2e/touch.spec.ts` "touch controls: stick, look, and jump": the jump peak has read short of the
-  0.5 m bar on CI. On the C++ build it read exactly 0.4158 m on every run. On the Rust build it
-  read 0.455 m on one PR branch (A1, run 38694905876), and it passed on main's runs up to 9a4dc44.
-  Locally on SwiftShader it read 0.11 m before the slow-device fix (`MAX_TICKS_PER_FRAME`,
-  2026-10-15) and passed after. If it recurs, check the page's tick rate (`stats.ticks` against
-  wall time) before widening the wait.
+  0.5 m bar on CI, three causes so far. (1) Before 0.15.3 the client caught up at most 250 ms a
+  frame; at CI's 440–810 ms frames it dropped time and the starved server flew and landed the held
+  jump (0.1123 m, one tick; fixed by `MAX_TICKS_PER_FRAME` 60, `game_local.rs`
+  `a_device_at_under_two_frames_a_second_…`). (2) The test read the drawn position, which at
+  300–800 ms frames can miss the whole ~0.7 s arc (0, 0.11 or 0.22 m in half of six CI runs); it
+  now reads the controller's tick trace (`__dwell.ticks()`). (3) On the generated terrain CI drew
+  the page at ~1 fps by the jump (0.8–1.7 s frames), so a frame past the 1 s catch-up still lost
+  it; the test now uses `?world=flat`. The failure message prints ticks/s and the frame p50/max: a
+  max over 1 s during the jump means the page is dropping time again, not a controller bug.
 - CI's software renderer draws the e2e pages at ~5 fps. That is why `play.spec.ts`'s two-client
   test snapped (fixed 2026-10-15: a client that dropped time predicted fewer ticks than the
   server's 60 Hz). A page that predicts far fewer than 60 ticks a second is the first thing to

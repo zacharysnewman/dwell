@@ -13,5 +13,9 @@ dwell-mesh = { path = "../dwell-mesh" }
 dwell-protocol = { path = "../dwell-protocol" }
 dwell-world = { path = "../dwell-world" }
 
+[dev-dependencies]
+# The fly-out scenario (Phase 16): the real controller drives the LOD's camera.
+dwell-physics = { path = "../dwell-physics" }
+
 [lints]
 workspace = true

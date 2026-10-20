@@ -822,7 +822,7 @@ fn rejects_a_wrong_cell_count_and_accounts_bytes() {
 }
 
 mod natural_tops {
-    //! Natural LOD cells on the half-height grid (Phase 36): no block is adaptive, so a natural
+    //! Natural LOD cells on the half-height grid (Phase 39): no block is adaptive, so a natural
     //! column's top cell is a block, as the chunks' are (Phase 18 shaped it by the rule table).
     use super::*;
 

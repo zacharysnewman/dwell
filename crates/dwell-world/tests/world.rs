@@ -57,16 +57,17 @@ fn chunk_coordinates_use_floor_division() {
 #[test]
 fn flat_world_layers_and_revisions() {
     let mut world = VoxelWorld::flat();
-    assert_eq!(world.get_voxel(5, 0, 5), s("dwell:air"));
-    assert_eq!(world.get_voxel(5, -1, 5), s("dwell:grass"));
-    assert_eq!(world.get_voxel(5, -2, 5), s("dwell:dirt"));
-    assert_eq!(world.get_voxel(5, -10, 5), s("dwell:stone"));
+    let top = FLAT_TOP_Y;
+    assert_eq!(world.get_voxel(5, top, 5), s("dwell:air"));
+    assert_eq!(world.get_voxel(5, top - 1, 5), s("dwell:grass"));
+    assert_eq!(world.get_voxel(5, top - 2, 5), s("dwell:dirt"));
+    assert_eq!(world.get_voxel(5, top - 10, 5), s("dwell:stone"));
     assert_eq!(world.get_voxel(5, MIDPLANE_Y, 5), s("dwell:stone")); // the core: stone, no bedrock
-    assert_eq!(world.get_voxel(5, MIDPLANE_Y - 1, 5), s("dwell:air")); // the void
-    let coord = chunk_of(5, -1, 5);
+    assert_eq!(world.get_voxel(5, MIDPLANE_Y - 1, 5), s("dwell:air")); // no face B
+    let coord = chunk_of(5, top - 1, 5);
     assert_eq!(world.find(coord).expect("generated").revision(), 0);
-    world.set_voxel(5, -1, 5, s("dwell:air"));
-    assert_eq!(world.get_voxel(5, -1, 5), s("dwell:air"));
+    world.set_voxel(5, top - 1, 5, s("dwell:air"));
+    assert_eq!(world.get_voxel(5, top - 1, 5), s("dwell:air"));
     assert_eq!(world.find(coord).expect("chunk").revision(), 1);
 }
 
@@ -87,6 +88,8 @@ fn the_palette_is_the_registrys_placeable_states() {
             "dwell:ladder[facing=south,flooded=false]",
             "dwell:ladder[facing=west,flooded=false]",
             "dwell:sand",
+            "dwell:log",
+            "dwell:leaves",
             "dwell:tall_grass"
         ]
     );
@@ -362,22 +365,25 @@ fn placing_into_tall_grass_replaces_it() {
 #[test]
 fn breaking_the_block_under_tall_grass_takes_the_grass_with_it() {
     let grass = s("dwell:tall_grass");
+    // On face A, clear of the midplane (Phase 16: it is at y = 0).
     let mut world = ground();
-    world.set_voxel(0, 0, 2, grass);
+    world.set_voxel(0, 31, 2, s("dwell:grass"));
+    world.set_voxel(1, 31, 2, s("dwell:grass"));
+    world.set_voxel(0, 32, 2, grass);
     // The grass block under it is broken: the plant goes too (it needs support below).
     assert_eq!(
-        unsupported_after(&mut world, [0, -1, 2], s("dwell:air")),
-        vec![([0, 0, 2], s("dwell:air"))]
+        unsupported_after(&mut world, [0, 31, 2], s("dwell:air")),
+        vec![([0, 32, 2], s("dwell:air"))]
     );
     // Turned to dirt, it still stands; on stone it would not.
-    assert!(unsupported_after(&mut world, [0, -1, 2], s("dwell:dirt")).is_empty());
+    assert!(unsupported_after(&mut world, [0, 31, 2], s("dwell:dirt")).is_empty());
     assert_eq!(
-        unsupported_after(&mut world, [0, -1, 2], s("dwell:stone")).len(),
+        unsupported_after(&mut world, [0, 31, 2], s("dwell:stone")).len(),
         1
     );
     // A block with no rule above a broken one is left alone.
-    world.set_voxel(1, 0, 2, s("dwell:stone"));
-    assert!(unsupported_after(&mut world, [1, -1, 2], s("dwell:air")).is_empty());
+    world.set_voxel(1, 32, 2, s("dwell:stone"));
+    assert!(unsupported_after(&mut world, [1, 31, 2], s("dwell:air")).is_empty());
     // On face B "below" is toward the midplane (+y).
     let y = MIDPLANE_Y - 10;
     world.set_voxel(0, y, 9, grass);
@@ -574,13 +580,16 @@ fn flooded_blocks_follow_their_cell_and_leave_water() {
 }
 
 #[test]
-fn nothing_is_placed_outside_the_worlds_rows_or_disc() {
+fn nothing_is_placed_outside_the_build_volume_or_disc() {
+    // The build sphere (ADR 0025): over its top, under its bottom (face B), and beside it high
+    // over the rim, where the sphere is low.
     let mut world = empty();
-    let top = WORLD_MAX_Y - 1;
+    let sky = BUILD_VOLUME.y_range().1 as i32;
+    let top = sky - 1;
     world.set_voxel(0, top, 2, s("dwell:sandbox_floor")); // a cube: its −Z face is there to aim at
     let r = place([0, top, 2], 2, s("dwell:stone"));
     assert_eq!(
-        check(&mut world, r, [0.5, m_of_row(WORLD_MAX_Y) + 0.6, 2.5], &[]).check,
+        check(&mut world, r, [0.5, m_of_row(sky) + 0.6, 2.5], &[]).check,
         EditCheck::OutOfWorld
     );
     let r = place([0, top, 2], 5, s("dwell:stone"));
@@ -588,6 +597,29 @@ fn nothing_is_placed_outside_the_worlds_rows_or_disc() {
         check(&mut world, r, [0.5, m_of_row(top) + 0.5 * CELL_H, 0.5], &[]).check,
         EditCheck::Ok
     );
+    let bottom = BUILD_VOLUME.y_range().0 as i32;
+    world.set_voxel(0, bottom, 2, s("dwell:sandbox_floor"));
+    let r = place([0, bottom, 2], 3, s("dwell:stone"));
+    assert_eq!(
+        check(&mut world, r, [0.5, m_of_row(bottom) - 0.6, 2.5], &[]).check,
+        EditCheck::OutOfWorld
+    );
+    // 45 km out the sphere (in cells) is 21,794 rows tall: inside below, outside above.
+    let (x, high) = (45_000, 21_793);
+    world.set_voxel(x, high - 1, 0, s("dwell:sandbox_floor"));
+    let r = place([x, high - 1, 0], 2, s("dwell:stone"));
+    assert_eq!(
+        check(
+            &mut world,
+            r,
+            [f64::from(x) + 0.5, m_of_row(high) + 0.6, 0.5],
+            &[]
+        )
+        .check,
+        EditCheck::OutOfWorld
+    );
+    assert!(inside_build_volume(i64::from(x), i64::from(high) - 1, 0));
+    assert!(!inside_build_volume(i64::from(x), i64::from(high), 0));
     let rim = WORLD_RADIUS - 1;
     world.set_voxel(rim, 0, 0, s("dwell:sandbox_floor"));
     let r = place([rim, 0, 0], 0, s("dwell:stone"));

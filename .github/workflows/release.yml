@@ -10,7 +10,9 @@ name: Release
 # client/package.json is a floor, raised by hand only for a breaking change (the merge that raises
 # it is the release), and the manual run can name a higher version (client/scripts/release.ts, RELEASES.md §3).
 # Each build is made for its own path (`/dwell/v/<version>/`); the site is then assembled from the
-# releases by pages.yml, called at the end (a workflow's own GITHUB_TOKEN can't trigger another).
+# releases by pages.yml, called at the end (a workflow's own GITHUB_TOKEN can't trigger another by a
+# push, only by a dispatch). The github-pages environment deploys only from the default branch, so
+# a run on a tag dispatches pages.yml on it instead (release.ts siteDeploy, RELEASES.md §4).
 on:
   push:
     branches: [main]
@@ -47,6 +49,7 @@ jobs:
       archive: ${{ steps.plan.outputs.archive }}
       publish: ${{ steps.check.outputs.action }}
       event: ${{ steps.plan.outputs.event }}
+      site: ${{ steps.site.outputs.site }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -71,6 +74,12 @@ jobs:
           previous=$(git show HEAD^1:client/package.json 2>/dev/null | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{console.log(JSON.parse(s).version)}catch{console.log("")}})')
           node --experimental-strip-types scripts/release.ts "$event" "$GITHUB_REF" "$GITHUB_RUN_NUMBER" "$GITHUB_SHA" "$RUNNER_TEMP/releases.json" "$REQUESTED" "$previous" | tee -a "$GITHUB_OUTPUT"
           echo "event=$event" >> "$GITHUB_OUTPUT"
+      # Call pages.yml here, or dispatch it on the default branch (release.ts siteDeploy).
+      - id: site
+        working-directory: client
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: node --experimental-strip-types scripts/release.ts site "$GITHUB_REF" "$DEFAULT_BRANCH" | tee -a "$GITHUB_OUTPUT"
       # A release is made once (release.ts publishAction): checked here, and again just before
       # publishing, since another run may publish the version in between.
       - id: check
@@ -190,8 +199,26 @@ jobs:
   site:
     name: Update the site
     needs: [plan, publish]
+    if: needs.plan.outputs.site == 'call'
     permissions:
       contents: write
       pages: write
       id-token: write
     uses: ./.github/workflows/pages.yml
+
+  # A run on a tag (or by hand on another branch) can't deploy to github-pages, whose deployment
+  # branch policy allows the default branch only (v0.13.0's tag run, 2026-10-16): it runs pages.yml
+  # on the default branch, which assembles the site from every release, this one included.
+  site-dispatch:
+    name: Update the site (on the default branch)
+    needs: [plan, publish]
+    if: needs.plan.outputs.site == 'dispatch'
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: write
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: gh workflow run pages.yml --ref "$DEFAULT_BRANCH"

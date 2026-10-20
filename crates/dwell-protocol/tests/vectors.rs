@@ -26,7 +26,7 @@ fn vectors() -> Vec<(&'static str, Vec<u8>)> {
 fn messages_round_trip_byte_for_byte() {
     let mut checked = 0;
     for (name, bytes) in vectors() {
-        if name.starts_with('!') || name == "auth_transcript" {
+        if name.starts_with('!') || name == "auth_transcript" || name == "registry_payload" {
             continue;
         }
         let m = Message::decode(&bytes).unwrap_or_else(|| panic!("{name}: does not decode"));
@@ -69,6 +69,15 @@ fn decoded_fields_are_the_vectors_values() {
     };
     assert_eq!(w.player_id, 42);
     assert_eq!(w.world_seed, 0x0123_4567_89ab_cdef);
+    let Some(Message::PhysicsSnapshot(s)) = Message::decode(&get("physics_snapshot")) else {
+        panic!("physics_snapshot")
+    };
+    let c = s.local.controller;
+    assert_eq!(
+        (c.step_grace, c.slide_flags, c.slide_cooldown),
+        (2, slide_flags::ACTIVE, 29)
+    );
+    assert_eq!(c.ladder, [-5, 64, 1_000_000]);
     let Some(Message::ChunkData(c)) = Message::decode(&get("chunk_data_explicit_solid")) else {
         panic!("chunk")
     };
@@ -98,6 +107,17 @@ fn decoded_fields_are_the_vectors_values() {
         (r.op, r.from, r.material, r.size),
         (RegionEditOp::Replace, 2, 6, [1, 32, 2])
     );
+    let payload = get("registry_payload");
+    let Some(Message::BlockRegistry(b)) = Message::decode(&get("block_registry")) else {
+        panic!("block_registry")
+    };
+    assert_eq!((b.part, b.parts), (0, 1));
+    assert_eq!(b.data, payload);
+    let Some(Message::BlockRegistry(b)) = Message::decode(&get("block_registry_part")) else {
+        panic!("block_registry_part")
+    };
+    assert_eq!((b.part, b.parts), (1, 2));
+    assert_eq!(b.data, payload[40..]);
 }
 
 #[test]
