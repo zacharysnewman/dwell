@@ -33,7 +33,10 @@ function generate(data: object): {
   mkdirSync(join(root, 'shared/blocks'), { recursive: true });
   mkdirSync(join(root, 'shared/structures'), { recursive: true });
   copyFileSync(join(sharedDir, 'blocks/vectors.txt'), join(root, 'shared/blocks/vectors.txt'));
-  copyFileSync(join(sharedDir, 'structures/format.mjs'), join(root, 'shared/structures/format.mjs'));
+  copyFileSync(
+    join(sharedDir, 'structures/format.mjs'),
+    join(root, 'shared/structures/format.mjs'),
+  );
   for (const f of ['proto_tree.json', 'proto_rock.json']) {
     copyFileSync(join(sharedDir, 'structures', f), join(root, 'shared/structures', f));
   }
@@ -145,7 +148,10 @@ describe('brush presets (shared/brushes/gen.mjs)', () => {
         base([{ ...ball, brush: 'stencil', params: { structures: ['dwell:nope'] } }]),
         /structures must be 1–16 structure names/,
       ],
-      [base([{ ...ball, brush: 'tree', params: { wood: 'dwell:nope' } }]), /wood must be a block state/],
+      [
+        base([{ ...ball, brush: 'tree', params: { wood: 'dwell:nope' } }]),
+        /wood must be a block state/,
+      ],
       [base([{ ...ball, params: { width: 2 } }]), /width is for ring/],
       [base([{ ...ball, params: { mask: 'sometimes' } }]), /mask must be/],
       [

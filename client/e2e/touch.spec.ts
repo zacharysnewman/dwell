@@ -12,6 +12,12 @@ interface State {
 const read = (page: Page) =>
   page.evaluate<State | null>('(globalThis.__dwell && globalThis.__dwell.state()) || null');
 
+/** The player controller's kept ticks (telemetry.rs `TickSample`), oldest first. */
+const ticks = (page: Page) =>
+  page.evaluate<{ seq: number; feet: [number, number, number] }[]>(
+    'globalThis.__dwell ? globalThis.__dwell.ticks() : []',
+  );
+
 const yaw = (page: Page) =>
   page.evaluate<number>('globalThis.__dwell ? globalThis.__dwell.view().yaw : 0');
 
@@ -31,9 +37,13 @@ async function touch(
 }
 
 test('touch controls: stick, look, and jump', async ({ page }) => {
-  // CI's software rendering is slow: the steps before the jump alone take ~20 s there.
+  // CI's software rendering is slow: the steps before the jump alone take ~20 s there. The flat
+  // world, as the other touch tests use: on the generated terrain CI drew this page at ~1 fps by
+  // the jump (frames 0.8-1.7 s), at the client's 1 s catch-up (game.rs MAX_TICKS_PER_FRAME), and a
+  // frame past it drops time the server fills with the held jump. The flat world drew at
+  // ~250 ms (p95 ~570 ms) a frame.
   test.setTimeout(90_000);
-  await page.goto('./?local=1');
+  await page.goto('./?world=flat');
   await expect
     .poll(async () => (await read(page))?.active ?? false, { timeout: 20_000 })
     .toBe(true);
@@ -67,22 +77,31 @@ test('touch controls: stick, look, and jump', async ({ page }) => {
   const box = await page.locator('#touch-jump').boundingBox();
   if (!box) throw new Error('no jump button');
   const ground = (await read(page))?.feet[1] ?? 0;
+  const lastSeq = (await ticks(page)).at(-1)?.seq ?? 0;
   await touch(cdp, 'touchStart', [{ x: box.x + box.width / 2, y: box.y + box.height / 2, id: 3 }]);
+  // The jump's height from the controller's per-tick trace, not the drawn position: at CI's
+  // 300-800 ms frames the jump's whole arc (~0.7 s) can fall between two frames' positions (the
+  // drawn peak read 0, 0.11 or 0.22 m in half of six CI runs; the trace read 1.19 m). Watch until
+  // the jump has clearly left the ground (or a deadline), not for a fixed number of frames.
+  const jumpPeak = async () =>
+    Math.max(ground, ...(await ticks(page)).filter((t) => t.seq > lastSeq).map((t) => t.feet[1]));
   let peak = ground;
-  // Software rendering is slow and the sim keeps up with real time only roughly: watch until the
-  // jump has clearly left the ground (or a deadline), not for a fixed number of frames.
   const deadline = Date.now() + 10_000;
   while (peak - ground <= 0.5 && Date.now() < deadline) {
-    await page.waitForTimeout(40);
-    peak = Math.max(peak, (await read(page))?.feet[1] ?? 0);
+    await page.waitForTimeout(100);
+    peak = await jumpPeak();
   }
   await touch(cdp, 'touchEnd', []);
   // A page that predicts far fewer than 60 ticks a second drops time, and the server, filling the
   // missing ticks with the held input, flies and lands the jump without it (game.rs
-  // MAX_TICKS_PER_FRAME): the rate says whether that is what happened.
-  const ticks = ((await read(page))?.stats.ticks ?? 0) - (start?.stats.ticks ?? 0);
-  const rate = (ticks * 1000) / (Date.now() - startedAt);
-  expect(peak - ground, `jump peak, predicting ${rate.toFixed(1)} ticks/s`).toBeGreaterThan(0.5);
+  // MAX_TICKS_PER_FRAME): the rate and frame times say whether that is what happened.
+  const predicted = ((await read(page))?.stats.ticks ?? 0) - (start?.stats.ticks ?? 0);
+  const rate = (predicted * 1000) / (Date.now() - startedAt);
+  const frames = await page.evaluate<{ p50: number; max: number } | undefined>(
+    'globalThis.__dwell.telemetry().frames.interval',
+  );
+  const context = `jump peak, predicting ${rate.toFixed(1)} ticks/s, frames p50 ${(frames?.p50 ?? 0).toFixed(0)} ms, max ${(frames?.max ?? 0).toFixed(0)} ms`;
+  expect(peak - ground, context).toBeGreaterThan(0.5);
 });
 
 test('touch controls: Break/Place toggle, tapping the view edits, tapping the hotbar picks', async ({

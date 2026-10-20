@@ -321,6 +321,9 @@ export const SOUND_DATA: SoundData = {
     "Spyglass zoom in or out": [
       "event:tool"
     ],
+    "Exact-cell preview on or off": [
+      "event:tool"
+    ],
     "Zoom further / back": [
       "event:tool"
     ],

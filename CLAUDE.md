@@ -210,14 +210,15 @@ that touches the public API, a release or the workflows:
 Check these before chasing an e2e failure:
 
 - `e2e/touch.spec.ts` "touch controls: stick, look, and jump": the jump peak has read short of the
-  0.5 m bar on CI. On 0.15.1's main (run 39359812263) it read 0.1123 m, exactly one tick of a jump,
-  on both attempts: CI drew that phone page at 440–810 ms a frame, past the client's catch-up cap
-  (then 15 ticks, 250 ms), so it dropped time; the starved server repeated the held jump, flew and
-  landed it, and the replays put the player back on the ground. Fixed 2026-10-19 by catching up to
-  60 ticks (1 s, `MAX_TICKS_PER_FRAME`) with the server's input queue and latency window to match
-  (`game_local.rs` `a_device_at_under_two_frames_a_second_…`). The failure message prints the
-  page's tick rate: well under 60 ticks/s means the page is slower than 1 fps and dropping time
-  again; check the frame interval (`__dwell.telemetry().frames.interval`) before widening the wait.
+  0.5 m bar on CI, three causes so far. (1) Before 0.15.3 the client caught up at most 250 ms a
+  frame; at CI's 440–810 ms frames it dropped time and the starved server flew and landed the held
+  jump (0.1123 m, one tick; fixed by `MAX_TICKS_PER_FRAME` 60, `game_local.rs`
+  `a_device_at_under_two_frames_a_second_…`). (2) The test read the drawn position, which at
+  300–800 ms frames can miss the whole ~0.7 s arc (0, 0.11 or 0.22 m in half of six CI runs); it
+  now reads the controller's tick trace (`__dwell.ticks()`). (3) On the generated terrain CI drew
+  the page at ~1 fps by the jump (0.8–1.7 s frames), so a frame past the 1 s catch-up still lost
+  it; the test now uses `?world=flat`. The failure message prints ticks/s and the frame p50/max: a
+  max over 1 s during the jump means the page is dropping time again, not a controller bug.
 - CI's software renderer draws the e2e pages at ~5 fps. That is why `play.spec.ts`'s two-client
   test snapped (fixed 2026-10-15: a client that dropped time predicted fewer ticks than the
   server's 60 Hz). A page that predicts far fewer than 60 ticks a second is the first thing to
