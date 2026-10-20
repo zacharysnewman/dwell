@@ -29,7 +29,7 @@
 > level, as `decorations.json` says (it had been compared with the face-local top). A test pins it
 > (`the_hills_are_steep_enough_to_slide_and_reach_about_500_m`).
 >
-> **Generator version 17** (owner 2026-10-20): the owner's two pines in groves, placed by data
+> **Generator version 18** (owner 2026-10-20): the owner's two pines in groves, placed by data
 > (`shared/worldgen/placements.json`, §2 below, ADR 0043); the height field is unchanged.
 >
 > **Generator version 15** (owner 2026-10-19: "more height from the noise"): the inland rise 130 m,
@@ -179,7 +179,7 @@ Optional if cheap: a slight fresnel brightening at grazing angles.
 
 ---
 
-## 2. Structure placements: the pines (generator version 17) **[built]**
+## 2. Structure placements: the pines (generator version 18) **[built]**
 
 The owner (2026-10-20): generate the two hand-built pines with the world — "theoretically small
 versions of the conifer in the growth lab" ([`TREE_GROWTH.md`](./TREE_GROWTH.md)). They are

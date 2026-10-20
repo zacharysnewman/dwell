@@ -97,14 +97,21 @@ pub fn shape_at(mut get: impl FnMut(i32, i32, i32) -> StateId, up: i32) -> &'sta
 /// cube.
 pub fn flooded_at(mut get: impl FnMut(i32, i32, i32) -> StateId, up: i32) -> bool {
     let own = get(0, 0, 0);
-    if row(own).is_some_and(|s| s.flooded) {
-        return true;
+    let flagged = row(own).is_some_and(|s| s.flooded);
+    if !row(own).is_some_and(|s| s.adaptive) {
+        return flagged;
     }
+    // An adaptive block holds water only where it has an open part: as a shaped top block.
     let Some(i) = derive_around(own, &mut get, up) else {
         return false;
     };
     if is_cube(&SHAPES[usize::from(i)]) {
         return false;
+    }
+    // Its `flooded` state (the sea's water below sea level, WATER_RENDERING.md §9), or water
+    // above it or beside it in its row.
+    if flagged {
+        return true;
     }
     let liquid = |m: StateId| row(m).is_some_and(|s| s.liquid);
     liquid(get(0, up, 0))
@@ -178,5 +185,28 @@ mod tests {
         assert!(flooded_at(bank, 1));
         let dry = move |dx: i32, dy: i32, _dz: i32| if dy == 0 && dx <= 0 { sand } else { 0 };
         assert!(!flooded_at(dry, 1));
+    }
+
+    #[test]
+    fn a_flooded_natural_block_holds_water_only_while_it_is_a_shaped_top_block() {
+        // The sea's flooded sand (WATER_RENDERING.md §9): water in its open part with no water
+        // beside it; buried, or shaped full (a pit), it has no open part and holds none.
+        let wet = crate::require("dwell:sand[flooded=true]");
+        let sand = require("dwell:sand");
+        let alone =
+            move |dx: i32, dy: i32, dz: i32| if (dx, dy, dz) == (0, 0, 0) { wet } else { 0 };
+        assert!(flooded_at(alone, 1));
+        let buried = move |dx: i32, dy: i32, dz: i32| match (dx, dy, dz) {
+            (0, 0, 0) => wet,
+            (0, 1, 0) => sand,
+            _ => 0,
+        };
+        assert!(!flooded_at(buried, 1));
+        let pit = move |dx: i32, dy: i32, dz: i32| match (dx, dy, dz) {
+            (0, 0, 0) => wet,
+            (_, 0 | 1, _) if (dx, dz) != (0, 0) => sand,
+            _ => 0,
+        };
+        assert!(!flooded_at(pit, 1));
     }
 }

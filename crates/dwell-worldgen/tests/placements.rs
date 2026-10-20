@@ -159,6 +159,10 @@ fn no_pine_on_sand_water_slides_or_bare_peaks_in_the_chunks() {
                             let top = g.ground_y(wx, wz).expect("inside");
                             assert!(wy > top, "{seed}: above the ground");
                             assert!(top >= SEA_LEVEL, "{seed}: never over water");
+                            assert!(
+                                !dwell_blocks::info(g.state_at(wx, top, wz)).flooded,
+                                "{seed}: never on a flooded block"
+                            );
                             assert_eq!(
                                 g.state_at(wx, top, wz),
                                 M.grass,

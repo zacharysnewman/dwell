@@ -27,7 +27,7 @@ describe('block dump', () => {
     const at = (x: number, y: number, z: number) =>
       d.palette[d.layers[y - 8]?.[z + 6]?.[x - 1] ?? -1];
     expect(at(3, 10, -4)).toBe('dwell:ladder[facing=east,flooded=false]');
-    expect(at(1, 8, -6)).toBe('dwell:stone');
+    expect(at(1, 8, -6)).toBe('dwell:stone[flooded=false]');
     expect(at(5, 12, -2)).toBe('dwell:air');
     expect(new Set(d.palette).size).toBe(d.palette.length); // each state named once
   });

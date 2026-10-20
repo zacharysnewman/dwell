@@ -1,4 +1,4 @@
-//! Procedural terrain, generator version 16 (ARCHITECTURE.md §6.3): the interim baseline of Phase
+//! Procedural terrain, generator version 17 (ARCHITECTURE.md §6.3): the interim baseline of Phase
 //! 15 — one island at the origin, a 2D height field, and the ground filled by depth — and since
 //! version 13 (Phase 33) the decorations of `shared/worldgen/decorations.json` one cell above the
 //! ground (tall grass; `decorations.rs`). A chunk is a
@@ -8,7 +8,9 @@
 //! Per chunk: (1) layout: the signed distance to the coast; (2) height: the sea floor falling from
 //! the coast, or the land rising inland, plus hills, never below the core; (3) fill: the stone core
 //! (`CORE_LAYERS` from the midplane, never carved), stone up to the surface under grass over dirt
-//! on land, sand at the shore and under water, water in open space below sea level. 2D fields are
+//! on land, sand at the shore and under water, water in open space below sea level — since version
+//! 17 also the open part of a top block below sea level, which takes its `flooded` state
+//! (docs/WATER_RENDERING.md §9). 2D fields are
 //! sampled every 4 columns and interpolated. Heights are face-local, from the midplane (Phase 16:
 //! the midplane at 0, sea level `h` = 32). The height field's parameters are data
 //! (`shared/worldgen/terrain.json`, `HeightField`); the island's layout and the fill depths are
@@ -114,6 +116,22 @@ fn fill(top: i32, depth: i64) -> StateId {
     } else {
         M.stone
     }
+}
+
+/// The state the generator writes at row `y` of a column whose top voxel is `top`, filled with
+/// `m`: the top voxel below sea level holds the sea in its open part (its `flooded` state, when
+/// its block has one; docs/WATER_RENDERING.md §9), so a natural top block shaped below the water
+/// line is under the water, not dry beside it.
+fn under_sea(m: StateId, top: i32, y: i32) -> StateId {
+    if y != top || y >= SEA_LEVEL {
+        return m;
+    }
+    static FLOODED: std::sync::LazyLock<Vec<StateId>> = std::sync::LazyLock::new(|| {
+        (0..dwell_blocks::STATES.len() as StateId)
+            .map(|id| dwell_blocks::with_property(id, "flooded", "true").unwrap_or(id))
+            .collect()
+    });
+    FLOODED.get(usize::from(m)).copied().unwrap_or(m)
 }
 
 /// The noise fields of a point, before the height is derived from them.
@@ -316,7 +334,7 @@ impl TerrainGenerator {
         }
         let top = top_voxel(col.height);
         if y <= top {
-            fill(top, i64::from(top - y))
+            under_sea(fill(top, i64::from(top - y)), top, y)
         } else if y < SEA_LEVEL {
             M.water
         } else {
@@ -397,12 +415,14 @@ impl TerrainGenerator {
             return None;
         }
         let top = top_voxel(col.height);
+        // The top block as generated: below sea level it takes its flooded state.
+        let block = under_sea(fill(top, 0), top, top);
         Some(Ground {
             top,
             above_sea: top - SEA_LEVEL,
             height: col.height,
-            block: fill(top, 0),
-            dry: top >= SEA_LEVEL,
+            block,
+            dry: top >= SEA_LEVEL && !dwell_blocks::info(block).flooded,
         })
     }
 
@@ -493,7 +513,7 @@ impl TerrainGenerator {
                     }
                     let v = &mut voxels[local_index(x, ly, z)];
                     if y <= top {
-                        *v = fill(top, i64::from(top - y));
+                        *v = under_sea(fill(top, i64::from(top - y)), top, y);
                     } else if y < SEA_LEVEL {
                         *v = M.water;
                     }

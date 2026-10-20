@@ -48,7 +48,7 @@ so that growing trees stay out of the chunk voxels.
   them; the spawn's level patch is clear of them.
 - The LOD draws the trees at level 1 (2 m cells) from their voxels, exactly the chunks' trees, and at
   coarser levels tints a share of columns (the trees' cover there) with the canopy's block.
-- Generator version 17; a new compatibility line (0.19.0), which the owner raises.
+- Generator version 18 (17 was the flooded shores); a new compatibility line (0.20.0), which the owner raises.
 
 ## Consequences
 

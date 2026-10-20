@@ -375,8 +375,14 @@ fn the_fill_grass_over_dirt_sand_at_the_shore_sea_to_its_level() {
                         } else if wy < MIDPLANE_Y + CORE_LAYERS {
                             assert_eq!(m, M.stone); // the core
                         } else if ground < SEA_LEVEL + 2 {
-                            assert_eq!(m, if depth < 3 { M.sand } else { M.stone });
-                            sand += i32::from(m == M.sand);
+                            // The top voxel under the sea holds it (its flooded state).
+                            let sand_here = if depth == 0 && wy < SEA_LEVEL {
+                                require("dwell:sand[flooded=true]")
+                            } else {
+                                M.sand
+                            };
+                            assert_eq!(m, if depth < 3 { sand_here } else { M.stone });
+                            sand += i32::from(m == sand_here);
                         } else {
                             let want = if depth == 0 {
                                 M.grass
@@ -833,5 +839,127 @@ fn the_hills_are_steep_enough_to_slide_and_reach_about_500_m() {
         assert!((430.0..580.0).contains(&highest), "{at}");
         assert!((15.0..30.0).contains(&slope), "{at}");
         assert!(wet < 0.015, "{at}");
+    }
+}
+
+/// The generated world (face A) and where the island's coast crosses the four axes.
+fn shore_world(seed: u64) -> (VoxelWorld, Vec<(i32, i32)>) {
+    let g = TerrainGenerator::new(seed);
+    let mut coasts = Vec::new();
+    for (dx, dz) in [(1, 0), (0, 1), (-1, 0), (0, -1)] {
+        let mut d = 0;
+        while g.column_at(d * dx, d * dz).height >= SEA_LEVEL as f32 - 1.0 {
+            d += 8;
+        }
+        coasts.push((d * dx, d * dz));
+    }
+    let world = VoxelWorld::new(
+        generator_for(GENERATOR_TERRAIN, seed),
+        Some(air_test_for(GENERATOR_TERRAIN, seed)),
+    );
+    (world, coasts)
+}
+
+/// The water's drawn top in the sea's top row: sea level less the surface drop.
+fn drawn_sea_top() -> f64 {
+    let drop = dwell_blocks::require_fluid("dwell:water").surface_drop;
+    f64::from(SEA_LEVEL) - drop
+}
+
+#[test]
+fn the_sea_floods_the_open_part_of_every_natural_top_block_below_sea_level() {
+    //! Regression (owner, 2026-10-20: water piled up against the beach): the generator filled
+    //! only empty cells below sea level, so a beach top block in the sea's top row rested at
+    //! half height, ½ m under sea level and 0.375 m under the drawn water, dry, with the water
+    //! beside it standing above it. Every adaptive top block below sea level is flooded now
+    //! (WATER_RENDERING.md §9).
+    for seed in [0, 7] {
+        let (mut w, coasts) = shore_world(seed);
+        let (mut checked, mut dry) = (0, Vec::new());
+        for &(cx, cz) in &coasts {
+            for z in cz - 24..cz + 24 {
+                for x in cx - 24..cx + 24 {
+                    for y in SEA_LEVEL - 3..SEA_LEVEL {
+                        let m = w.get_voxel(x, y, z);
+                        let top = dwell_blocks::adaptive::fills(m)
+                            && !dwell_blocks::adaptive::fills(w.get_voxel(x, y + 1, z));
+                        // A one-block pit derives a full cube: no open part to flood.
+                        let s = w.shape_at(x, y, z);
+                        if !top || (!s.fan && s.corners == [2; 4]) {
+                            continue;
+                        }
+                        checked += 1;
+                        if !w.flooded_at(x, y, z) {
+                            dry.push((x, y, z));
+                        }
+                    }
+                }
+            }
+        }
+        assert!(checked > 500, "seed {seed}: {checked}");
+        assert!(
+            dry.is_empty(),
+            "seed {seed}: {} of {checked} top blocks below sea level are dry, e.g. {:?}",
+            dry.len(),
+            &dry[..dry.len().min(5)]
+        );
+    }
+}
+
+#[test]
+fn no_shore_column_has_drawn_water_higher_than_the_dry_land_beside_it() {
+    //! The rule of WATER_RENDERING.md §9: wherever drawn water (a water cell's or a flooded
+    //! bank's) is beside a dry top block, the land's surface on the side they share is at or
+    //! above the water's.
+    let top = drawn_sea_top();
+    for seed in [0, 7] {
+        let (mut w, coasts) = shore_world(seed);
+        let water = require("dwell:water");
+        let (mut pairs, mut piled) = (0, Vec::new());
+        for &(cx, cz) in &coasts {
+            for z in cz - 24..cz + 24 {
+                for x in cx - 24..cx + 24 {
+                    let y = SEA_LEVEL - 1;
+                    let m = w.get_voxel(x, y, z);
+                    let wet = m == water || (m != 0 && w.flooded_at(x, y, z));
+                    if !wet {
+                        continue;
+                    }
+                    for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+                        let (nx, nz) = (x + dx, z + dz);
+                        // The neighbour column's top block, in this row or above.
+                        let mut ny = y;
+                        while dwell_blocks::adaptive::fills(w.get_voxel(nx, ny + 1, nz)) {
+                            ny += 1;
+                        }
+                        let n = w.get_voxel(nx, ny, nz);
+                        if !dwell_blocks::adaptive::fills(n) || w.flooded_at(nx, ny, nz) {
+                            continue;
+                        }
+                        pairs += 1;
+                        let shape = w.shape_at(nx, ny, nz);
+                        // Its side toward the water (profiles +X −X +Z −Z, in quarters).
+                        let side = match (dx, dz) {
+                            (1, 0) => 1,
+                            (-1, 0) => 0,
+                            (0, 1) => 3,
+                            _ => 2,
+                        };
+                        let low = shape.sides[side].iter().copied().min().unwrap_or(0);
+                        let land = f64::from(ny) + f64::from(low) / 4.0;
+                        if land < top - 1e-6 {
+                            piled.push(((x, z), (nx, ny, nz), land));
+                        }
+                    }
+                }
+            }
+        }
+        assert!(pairs > 100, "seed {seed}: {pairs}");
+        assert!(
+            piled.is_empty(),
+            "seed {seed}: {} of {pairs} shore pairs have the water at {top} above the land, e.g. {:?}",
+            piled.len(),
+            &piled[..piled.len().min(5)]
+        );
     }
 }

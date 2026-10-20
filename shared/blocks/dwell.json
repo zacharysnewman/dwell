@@ -15,16 +15,19 @@
     { "name": "air", "density": 0, "shape": "empty", "look": "cube", "color": "#000000", "opacity": 0 },
     {
       "name": "stone", "sound": "dwell:stone", "density": 2400, "shape": "full", "placeable": true, "adaptive": true,
+      "properties": { "flooded": ["false", "true"] },
       "color": "#bbafa6", "textures": "stone"
     },
     {
       "name": "dirt", "sound": "dwell:dirt", "density": 1500, "shape": "full", "placeable": true, "adaptive": true,
+      "properties": { "flooded": ["false", "true"] },
       "color": "#8a5a3a", "textures": "dirt",
       "$comment": "sideUnder: a dirt side face with grass directly above (a grass slope's low side at a step or cliff) shows the turf's skirt hanging over its top edge (docs/PAINTERLY_TEXTURES.md §2).",
       "sideUnder": { "dwell:grass": "dirtSkirt" }
     },
     {
       "name": "grass", "sound": "dwell:grass", "density": 1400, "shape": "full", "placeable": true, "adaptive": true,
+      "properties": { "flooded": ["false", "true"] },
       "color": "#8dbf3f",
       "textures": { "top": "grass", "side": "grassSide", "bottom": "dirt" }
     },
@@ -47,6 +50,7 @@
     },
     {
       "name": "sand", "sound": "dwell:sand", "density": 1600, "shape": "full", "placeable": true, "adaptive": true,
+      "properties": { "flooded": ["false", "true"] },
       "color": "#eed9a4", "textures": "sand"
     },
     {
