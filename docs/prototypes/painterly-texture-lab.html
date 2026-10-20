@@ -678,17 +678,25 @@ const REPO_MATERIALS = {"$comment":"The painterly materials (docs/PAINTERLY_TEXT
   const { TILE, LAYER_KINDS, STROKE_KINDS, USES, RAMP_STOPS, paintMaterial, imageRows, resolveColor, resolveMaterial, validateMaterials, validatePalette } = PAINT;
   const KEY = 'painterly-texture-lab-v1';
   const clone = (v) => JSON.parse(JSON.stringify(v));
-  let palette, materials, current;
+  // The repo's data this page was generated with: saved edits made against older data are set aside,
+  // so a republished page shows the repo's current materials, not a stale copy.
+  const REPO_STAMP = JSON.stringify([REPO_PALETTE, REPO_MATERIALS]);
+  let palette, materials, current, loadNote = '';
 
   function load() {
     try {
       const saved = JSON.parse(localStorage.getItem(KEY) || 'null');
-      if (saved && saved.palette && saved.materials) { palette = saved.palette; materials = saved.materials; current = saved.current; return; }
+      if (saved && saved.palette && saved.materials) {
+        if (saved.repo === REPO_STAMP) { palette = saved.palette; materials = saved.materials; current = saved.current; return; }
+        localStorage.setItem(KEY + '-previous', JSON.stringify(saved));
+        current = saved.current;
+        loadNote = 'The repo\'s data has changed since your last edits: showing it. Your earlier edits are kept in this browser under ' + KEY + '-previous.';
+      }
     } catch (e) { /* storage unavailable: start from the repo's data */ }
-    palette = clone(REPO_PALETTE); materials = clone(REPO_MATERIALS); current = null;
+    palette = clone(REPO_PALETTE); materials = clone(REPO_MATERIALS);
   }
   function save() {
-    try { localStorage.setItem(KEY, JSON.stringify({ palette, materials, current })); } catch (e) { /* not saved */ }
+    try { localStorage.setItem(KEY, JSON.stringify({ palette, materials, current, repo: REPO_STAMP })); } catch (e) { /* not saved */ }
   }
   load();
   if (!materials.materials[current]) current = Object.keys(materials.materials)[0];
@@ -991,5 +999,6 @@ const REPO_MATERIALS = {"$comment":"The painterly materials (docs/PAINTERLY_TEXT
   $('copy-palette').addEventListener('click', () => copy(JSON.stringify(palette, null, 2) + '\n', 'palette.json'));
 
   renderAll();
+  if (loadNote) setStatus(loadNote);
 })();
 </script>
