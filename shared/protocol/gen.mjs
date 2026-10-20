@@ -124,6 +124,7 @@ const tsFlags = (name, obj) => {
 tsFlags('InputButtons', c.inputButtons);
 tsFlags('PlayerFlags', c.playerFlags);
 tsFlags('ControllerFlags', c.controllerFlags);
+tsFlags('SlideFlags', c.slideFlags);
 tsFlags('WelcomeFlags', c.welcomeFlags);
 ts.push('');
 writeFileSync(join(root, 'client/src/protocol/constants.gen.ts'), ts.join('\n'));
@@ -226,6 +227,7 @@ const rsFlags = (mod, type, obj) => {
 rsFlags('input_buttons', 'u16', c.inputButtons);
 rsFlags('player_flags', 'u8', c.playerFlags);
 rsFlags('controller_flags', 'u8', c.controllerFlags);
+rsFlags('slide_flags', 'u8', c.slideFlags);
 rsFlags('welcome_flags', 'u8', c.welcomeFlags);
 rs.push('');
 writeFileSync(join(root, 'crates/dwell-protocol/src/constants.gen.rs'), rs.join('\n'));

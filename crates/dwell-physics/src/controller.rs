@@ -182,6 +182,14 @@ pub struct FlyState {
     pub velocity: Vec3,
 }
 
+/// ◆ The sprint slide (§6.9). Resumable: both fields are on the wire (`ControllerState`).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct SprintSlideState {
+    pub active: bool,
+    /// Ticks until another slide may start.
+    pub cooldown_ticks: u16,
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct PlatformState {
     /// What the ground probe sees (tracked even while airborne).
@@ -206,6 +214,9 @@ pub mod events {
     pub const SWIM_ENDED: u32 = 1 << 6;
     pub const FLY_STARTED: u32 = 1 << 7;
     pub const FLY_ENDED: u32 = 1 << 8;
+    /// The sprint slide (§6.9).
+    pub const SPRINT_SLIDE_STARTED: u32 = 1 << 9;
+    pub const SPRINT_SLIDE_ENDED: u32 = 1 << 10;
 }
 
 /// Complete controller state: a plain value, copied into history buffers and snapshots.
@@ -222,6 +233,7 @@ pub struct PlayerController {
     pub climb: ClimbState,
     pub swim: SwimState,
     pub fly: FlyState,
+    pub sprint_slide: SprintSlideState,
     pub platform: PlatformState,
     pub target_velocity: Vec3,
     /// The face the layers' vertical quantities are in: +1 face A, −1 face B.
@@ -245,6 +257,7 @@ impl Default for PlayerController {
             climb: ClimbState::default(),
             swim: SwimState::default(),
             fly: FlyState::default(),
+            sprint_slide: SprintSlideState::default(),
             platform: PlatformState::default(),
             target_velocity: Vec3::ZERO,
             face: 1,
@@ -978,6 +991,7 @@ impl Players {
                 p.c.events |= events::CROUCH_CHANGED;
             }
         };
+        p.c.sprint_slide.cooldown_ticks = p.c.sprint_slide.cooldown_ticks.saturating_sub(1);
         if p.c.exclusive() {
             if p.c.crouching {
                 try_stand(world, physics, p);
@@ -997,8 +1011,62 @@ impl Players {
                 p.c.vertical.accumulated_y += cfg.crouch.mid_air_boost;
             }
             p.c.events |= events::CROUCH_CHANGED;
+            Self::start_sprint_slide(p);
         } else if !p.c.input.crouch && p.c.crouching {
             try_stand(world, physics, p);
+        }
+    }
+
+    /// The sprint slide (◆ Dwell, §6.9) starts on the tick crouch is pressed on the ground while
+    /// sprinting (run held, horizontal speed at least `min_start_speed`) once the cooldown is over:
+    /// the momentum, boosted by `start_boost`, becomes the player's own `current`.
+    fn start_sprint_slide(p: &mut Player) {
+        let s = p.cfg.sprint_slide;
+        let c = &mut p.c;
+        if !c.crouching
+            || !c.ground.grounded
+            || !c.input.run
+            || c.sprint_slide.active
+            || c.sprint_slide.cooldown_ticks > 0
+        {
+            return;
+        }
+        let base = flat(c.platform.base_velocity);
+        let v = c.horizontal.current + c.horizontal.external - base;
+        let speed = v.length();
+        if speed < s.min_start_speed {
+            return;
+        }
+        let boosted = (speed + s.start_boost).min(s.max_speed.max(speed));
+        c.horizontal.current = v * (boosted / speed) + base;
+        c.horizontal.external = Vec3::ZERO;
+        c.sprint_slide.active = true;
+        c.events |= events::SPRINT_SLIDE_STARTED;
+    }
+
+    /// Ends the sprint slide and starts its cooldown. `total` (relative to the ground's carry) is
+    /// split as the steep slide splits its velocity: the tick's walking speed is the player's own
+    /// `current`, the rest `external`, which ground friction takes away and nothing does in the air
+    /// (a jump out of the slide keeps its momentum).
+    fn end_sprint_slide(c: &mut PlayerController, cfg: &PlayerControllerConfig, total: Vec3) {
+        let base = flat(c.platform.base_velocity);
+        let own = clamp_length(total, Self::walk_speed(c, cfg));
+        c.horizontal.current = own + base;
+        c.horizontal.external = total - own;
+        c.horizontal.contribution = c.horizontal.current + c.horizontal.external;
+        c.sprint_slide.active = false;
+        c.sprint_slide.cooldown_ticks = cfg.sprint_slide.cooldown_ticks;
+        c.events |= events::SPRINT_SLIDE_ENDED;
+    }
+
+    /// The tick's walking speed: crouch, run or walk.
+    fn walk_speed(c: &PlayerController, cfg: &PlayerControllerConfig) -> f32 {
+        if c.crouching {
+            cfg.crouch.speed
+        } else if c.input.run {
+            cfg.movement.run_speed
+        } else {
+            cfg.movement.walk_speed
         }
     }
 
@@ -1498,6 +1566,13 @@ impl Players {
         let grounded = p.c.ground.grounded;
         p.drive_lift = 0.0;
         if p.c.exclusive() {
+            // Ladders, water and flight take over (their layers own the velocity).
+            let c = &mut p.c;
+            if c.sprint_slide.active {
+                c.sprint_slide.active = false;
+                c.sprint_slide.cooldown_ticks = cfg.sprint_slide.cooldown_ticks;
+                c.events |= events::SPRINT_SLIDE_ENDED;
+            }
             return;
         }
         let frame = Self::frame(p);
@@ -1530,15 +1605,21 @@ impl Players {
         if external_delta.length() > cfg.advanced.external_absorb_threshold {
             c.horizontal.external += external_delta;
         }
+        // The sprint slide (§6.9) ends when crouch is let go or the player leaves the ground (a
+        // jump), keeping its momentum.
+        if c.sprint_slide.active && (!c.input.crouch || !grounded) {
+            let total =
+                c.horizontal.current + c.horizontal.external - flat(c.platform.base_velocity);
+            Self::end_sprint_slide(c, &cfg, total);
+        }
         if c.sliding(cfg.slide.min_angle) {
-            let speed = if c.crouching {
-                cfg.crouch.speed
-            } else if c.input.run {
-                m.run_speed
-            } else {
-                m.walk_speed
-            };
+            // Steep ground slides as always; a sprint slide carries on from it on gentler ground.
+            let speed = Self::walk_speed(c, &cfg);
             Self::slide(c, &cfg, move_direction(&c.input), speed);
+            return;
+        }
+        if c.sprint_slide.active {
+            Self::sprint_slide(world, physics, p, actual, h.contribution);
             return;
         }
         c.horizontal.external = if grounded {
@@ -1558,13 +1639,7 @@ impl Players {
             Vec3::ZERO
         };
         let c = &mut p.c;
-        let speed = if c.crouching {
-            cfg.crouch.speed
-        } else if input.run {
-            m.run_speed
-        } else {
-            m.walk_speed
-        };
+        let speed = Self::walk_speed(c, &cfg);
         let player_target = move_dir * speed;
         // Accelerate in the platform's frame so standing on a moving body needs no input.
         let base = flat(c.platform.base_velocity);
@@ -1591,7 +1666,14 @@ impl Players {
         let change = move_towards(Vec3::ZERO, relative_delta, rate * DT);
         c.horizontal.current = relative + change + base;
         c.horizontal.contribution = c.horizontal.current + c.horizontal.external;
-        // Dwell: a step-up's nudge is part of this tick's movement: take it out of the velocity.
+        Self::pay_nudge(c, nudge);
+        if m.edge_guard && grounded && c.crouching {
+            Self::apply_edge_guard(&ring, world, physics, p);
+        }
+    }
+
+    /// Dwell: a step-up's nudge is part of this tick's movement: take it out of the velocity.
+    fn pay_nudge(c: &mut PlayerController, nudge: Vec3) {
         let nudge_length = nudge.length();
         if nudge_length > 0.0 {
             let along = nudge / nudge_length;
@@ -1602,9 +1684,67 @@ impl Players {
                 .clamp(0.0, nudge_length / DT);
             c.horizontal.contribution -= along * pay;
         }
-        if m.edge_guard && grounded && c.crouching {
-            Self::apply_edge_guard(&ring, world, physics, p);
+    }
+
+    /// The sprint slide (◆ Dwell, §6.9): the horizontal layer while a slide started from a sprint
+    /// lasts, on ground up to `slide.min_angle`. The slide keeps its speed in its direction of
+    /// travel: move input turns it at up to `steer_rate`; friction slows it, and the ground's tilt
+    /// along the slide speeds it downhill and slows it uphill (`gravity × slope_gravity × tilt`),
+    /// never above `max_speed`. It steps up half steps as walking does. It ends at the crouch speed
+    /// or when a wall stops it (the body moved slower than the crouch speed though it was driven
+    /// faster, and no step lifted it); then the crouched player walks on.
+    fn sprint_slide(
+        world: &mut VoxelWorld,
+        physics: &mut Physics,
+        p: &mut Player,
+        actual: Vec3,
+        last_contribution: Vec3,
+    ) {
+        let cfg = p.cfg;
+        let s = cfg.sprint_slide;
+        let c = &mut p.c;
+        let base = flat(c.platform.base_velocity);
+        let v = c.horizontal.current + c.horizontal.external - base;
+        let speed = v.length();
+        if speed < MIN_DIRECTION {
+            Self::end_sprint_slide(c, &cfg, Vec3::ZERO);
+            return;
         }
+        let mut dir = v / speed;
+        let wish = flat(move_direction(&c.input));
+        if wish.length() > INPUT_DEADZONE {
+            let cross = dir.x * wish.z - dir.z * wish.x;
+            let max = s.steer_rate * DEG_TO_RAD * DT;
+            let turn = libm::atan2f(cross, dir.dot(wish)).clamp(-max, max);
+            let (sin, cos) = (libm::sinf(turn), libm::cosf(turn));
+            dir = Vec3::new(dir.x * cos - dir.z * sin, 0.0, dir.x * sin + dir.z * cos);
+        }
+        // The ground's horizontal tilt along the slide: > 0 downhill.
+        let tilt = flat(c.ground.under_normal).dot(dir);
+        let accel = cfg.body.gravity * s.slope_gravity * tilt - s.friction;
+        let mut next = speed + accel * DT;
+        if accel > 0.0 {
+            next = next.min(s.max_speed.max(speed));
+        }
+        let next = next.max(0.0);
+        let nudge = Self::try_step(world, physics, p, dir);
+        let c = &mut p.c;
+        let end = cfg.crouch.speed;
+        let blocked = nudge == Vec3::ZERO
+            && (actual - base).length() < end
+            && (last_contribution - base).length() > end;
+        if blocked {
+            Self::end_sprint_slide(c, &cfg, actual - base);
+            return;
+        }
+        if next <= end {
+            Self::end_sprint_slide(c, &cfg, dir * next);
+            return;
+        }
+        c.horizontal.current = dir * next + base;
+        c.horizontal.external = Vec3::ZERO;
+        c.horizontal.contribution = c.horizontal.current;
+        Self::pay_nudge(c, nudge);
     }
 
     /// The slide layer (◆ Dwell, §6.8): the horizontal layer on ground steeper than
@@ -1761,7 +1901,7 @@ impl Players {
             State::Swimming
         } else if c.fly.flying {
             State::Flying
-        } else if c.sliding(min_angle) {
+        } else if c.sliding(min_angle) || c.sprint_slide.active {
             State::Sliding
         } else if c.crouching {
             State::Crouching

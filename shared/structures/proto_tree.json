@@ -1,0 +1,19 @@
+{
+  "$comment": "Prototype content (ARCHITECTURE.md §6.1): a small hand-built tree for the brushes' tree-snipe stencil (docs/BRUSHES.md). Not Dwell's tree design.",
+  "format": 1,
+  "name": "dwell:proto_tree",
+  "kind": "voxels",
+  "size": [5, 7, 5],
+  "anchor": [2, 0, 2],
+  "palette": { ".": null, "w": "dwell:log", "l": "dwell:leaves" },
+  "layers": [
+    [".....", ".....", "..w..", ".....", "....."],
+    [".....", ".....", "..w..", ".....", "....."],
+    [".....", ".....", "..w..", ".....", "....."],
+    [".lll.", "lllll", "llwll", "lllll", ".lll."],
+    [".lll.", "lllll", "llwll", "lllll", ".lll."],
+    [".....", ".lll.", ".lwl.", ".lll.", "....."],
+    [".....", "..l..", ".lll.", "..l..", "....."]
+  ],
+  "variants": { "rotate": [0, 90, 180, 270], "mirror": ["x"] }
+}

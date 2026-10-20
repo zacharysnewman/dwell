@@ -244,6 +244,10 @@ pub struct ControllerState {
     pub buffer_ticks: u8,
     pub coyote_ticks: u8,
     pub step_grace: u8,
+    /// `slide_flags` (the sprint slide, protocol v15).
+    pub slide_flags: u8,
+    /// Ticks until another sprint slide may start (capped at 255).
+    pub slide_cooldown: u8,
     pub ladder: [i32; 3],
     pub released: [i32; 2],
 }
@@ -267,6 +271,8 @@ impl Default for ControllerState {
             buffer_ticks: 0,
             coyote_ticks: 0,
             step_grace: 0,
+            slide_flags: 0,
+            slide_cooldown: 0,
             ladder: [0; 3],
             released: [0; 2],
         }
@@ -678,6 +684,8 @@ fn write_controller(w: &mut ByteWriter, c: &ControllerState) {
     w.u8(c.buffer_ticks);
     w.u8(c.coyote_ticks);
     w.u8(c.step_grace);
+    w.u8(c.slide_flags);
+    w.u8(c.slide_cooldown);
     if c.flags & controller_flags::CLIMBING != 0 {
         write_coord(w, &c.ladder);
     }
@@ -713,6 +721,8 @@ fn read_controller(r: &mut ByteReader) -> ControllerState {
     c.buffer_ticks = r.u8();
     c.coyote_ticks = r.u8();
     c.step_grace = r.u8();
+    c.slide_flags = r.u8();
+    c.slide_cooldown = r.u8();
     if c.flags & controller_flags::CLIMBING != 0 {
         c.ladder = read_coord(r);
     }

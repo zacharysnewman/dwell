@@ -408,6 +408,17 @@ pub struct Placed {
 }
 
 impl Placed {
+    /// Every voxel the placement sets, with its state, in layer order (kept cells left out).
+    pub fn cells(&self) -> impl Iterator<Item = ([i32; 3], StateId)> + '_ {
+        let w = self.max[0] - self.min[0] + 1;
+        let l = self.max[2] - self.min[2] + 1;
+        self.cells.iter().enumerate().filter_map(move |(i, s)| {
+            let i = i as i32;
+            let d = [i % w, i / (w * l), (i / w) % l];
+            s.map(|s| (std::array::from_fn(|j| self.min[j] + d[j]), s))
+        })
+    }
+
     /// The state the placement puts at a voxel (`None` outside it or where it keeps the base).
     pub fn at(&self, p: [i32; 3]) -> Option<StateId> {
         if (0..3).any(|i| p[i] < self.min[i] || p[i] > self.max[i]) {

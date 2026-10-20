@@ -11,7 +11,7 @@
 use dwell_blocks::{StateId, info};
 use dwell_world::brush::{
     Aim, BRUSH_KINDS, BrushKind, BrushSpec, Grid, MAX_SIZE, MIN_SIZE, Materials, PERFORMER_KINDS,
-    PRESETS, brush_cells, paste_edits, perform, read_bounds,
+    PRESETS, PerformerKind, bounds, brush_cells, paste_edits, perform, read_bounds,
 };
 use dwell_world::edit::FACE_DIRS;
 
@@ -97,7 +97,8 @@ pub struct BrushTool {
     spec: BrushSpec,
     target: Option<BlockTarget>,
     replace: Option<StateId>,
-    line_from: Option<[i32; 3]>,
+    /// The earlier clicks of a line or triangle (oldest first).
+    points: Vec<[i32; 3]>,
     note: String,
 }
 
@@ -130,7 +131,7 @@ impl BrushTool {
             spec: PRESETS[0].spec(),
             target: None,
             replace: None,
-            line_from: None,
+            points: Vec::new(),
             note: String::new(),
         }
     }
@@ -169,24 +170,41 @@ impl BrushTool {
         let set_preset = |t: &mut Self, i: usize| {
             t.preset = i % PRESETS.len();
             t.spec = PRESETS[t.preset].spec();
-            t.line_from = None;
+            t.points.clear();
         };
         match action {
             B::Toggle => {
                 self.active = !self.active;
-                self.line_from = None;
+                self.points.clear();
             }
             B::NextPreset => set_preset(self, self.preset + 1),
             B::PreviousPreset => set_preset(self, self.preset + PRESETS.len() - 1),
             B::Preset(i) => set_preset(self, i),
             B::NextBrush | B::PreviousBrush => {
-                let by = if action == B::NextBrush { 1 } else { -1 };
-                self.spec.brush = step(&BRUSH_KINDS, self.spec.brush, by);
-                self.line_from = None;
+                // Stencils and trees take their blocks from their preset's data: the key keeps to
+                // the shapes, and leaves a stencil or tree as it is.
+                if !self.spec.brush.own_blocks() {
+                    let by = if action == B::NextBrush { 1 } else { -1 };
+                    let shapes: Vec<BrushKind> = BRUSH_KINDS
+                        .into_iter()
+                        .filter(|b| !b.own_blocks())
+                        .collect();
+                    self.spec.brush = step(&shapes, self.spec.brush, by);
+                    if self.spec.performer == PerformerKind::Stamp {
+                        self.spec.performer = PerformerKind::Set;
+                    }
+                }
+                self.points.clear();
             }
             B::NextPerformer | B::PreviousPerformer => {
+                // Only a stencil or tree stamps.
                 let by = if action == B::NextPerformer { 1 } else { -1 };
-                self.spec.performer = step(&PERFORMER_KINDS, self.spec.performer, by);
+                let own = self.spec.brush.own_blocks();
+                let performers: Vec<PerformerKind> = PERFORMER_KINDS
+                    .into_iter()
+                    .filter(|p| own || *p != PerformerKind::Stamp)
+                    .collect();
+                self.spec.performer = step(&performers, self.spec.performer, by);
             }
             B::Bigger | B::Smaller => self.resize(if action == B::Bigger { 1 } else { -1 }),
         }
@@ -218,9 +236,12 @@ impl BrushTool {
     }
 
     fn aim_at(&self, center: [i32; 3]) -> Aim {
+        let n = self.points.len();
         Aim {
             center,
-            from: self.line_from,
+            face: self.target.map_or(2, |t| t.face),
+            from: n.checked_sub(1).map(|i| self.points[i]),
+            before: n.checked_sub(2).map(|i| self.points[i]),
         }
     }
 
@@ -266,9 +287,15 @@ impl BrushTool {
             self.note = "Aim at a block".into();
             return false;
         };
-        if self.spec.brush == BrushKind::Line && self.line_from.is_none() {
-            self.line_from = Some(center);
-            self.note = "Line starts here: click its other end".into();
+        let needs = self.spec.brush.points();
+        if self.points.len() < needs {
+            self.points.push(center);
+            self.note = match (self.spec.brush, self.points.len()) {
+                (BrushKind::Triangle, 1) => "Triangle's first corner: click the second",
+                (BrushKind::Triangle, _) => "Second corner: click the third",
+                _ => "Line starts here: click its other end",
+            }
+            .into();
             return false;
         }
         let target = match self.replace {
@@ -287,8 +314,11 @@ impl BrushTool {
         let sent = region.stroke(paste_edits(&changes), ctx, world);
         if sent {
             self.note = format!("{n} blocks");
-            if self.spec.brush == BrushKind::Line {
-                self.line_from = Some(center);
+            // A line chains from its end; a triangle starts again.
+            match self.spec.brush {
+                BrushKind::Line | BrushKind::JaggedLine => self.points = vec![center],
+                BrushKind::Triangle => self.points.clear(),
+                _ => {}
             }
         } else {
             self.note = region.note().to_owned();
@@ -363,14 +393,33 @@ impl BrushTool {
                 let e = r;
                 cuboid(&mut segments, [-e; 3], [e; 3]);
             }
-            BrushKind::Line => {
-                let t = r - 0.5 + 0.5;
-                if let Some(f) = self.line_from {
-                    let rel: [f32; 3] = std::array::from_fn(|i| (f[i] - c[i]) as f32);
-                    segments.push(([0.0; 3], rel));
-                    cuboid(&mut segments, rel.map(|v| v - t), rel.map(|v| v + t));
+            BrushKind::Line | BrushKind::JaggedLine | BrushKind::Triangle => {
+                let t = r;
+                // The clicks so far and this one, joined.
+                let mut corners: Vec<[f32; 3]> = self
+                    .points
+                    .iter()
+                    .map(|f| std::array::from_fn(|i| (f[i] - c[i]) as f32))
+                    .collect();
+                corners.push([0.0; 3]);
+                for w in corners.windows(2) {
+                    segments.push((w[0], w[1]));
                 }
-                cuboid(&mut segments, [-t; 3], [t; 3]);
+                if self.spec.brush == BrushKind::Triangle && corners.len() == 3 {
+                    segments.push((corners[2], corners[0]));
+                }
+                for k in corners {
+                    cuboid(&mut segments, k.map(|v| v - t), k.map(|v| v + t));
+                }
+            }
+            _ => {
+                // The box of the cells it would cover.
+                let cells = brush_cells(&self.spec, self.aim_at(c));
+                if let Some((min, size)) = bounds(&cells) {
+                    let lo: [f32; 3] = std::array::from_fn(|i| (min[i] - c[i]) as f32 - 0.5);
+                    let hi: [f32; 3] = std::array::from_fn(|i| lo[i] + size[i] as f32);
+                    cuboid(&mut segments, lo, hi);
+                }
             }
         }
         Some(BrushOutline { origin, segments })
@@ -504,7 +553,11 @@ mod tests {
         assert_eq!(t.spec().brush, BrushKind::Disc);
         t.key(BrushAction::PreviousBrush);
         t.key(BrushAction::PreviousBrush);
-        assert_eq!(t.spec().brush, BrushKind::Line, "wraps");
+        assert_eq!(
+            t.spec().brush,
+            BrushKind::Snipe,
+            "wraps, past the stencil and tree"
+        );
         t.key(BrushAction::NextPerformer);
         assert_eq!(t.spec().performer, PerformerKind::Replace);
         for _ in 0..40 {
@@ -648,6 +701,61 @@ mod tests {
         for z in 0..=10 {
             assert_eq!(w.get_voxel(5, 0, z), stone, "{z}");
         }
+    }
+
+    #[test]
+    fn stencils_keep_their_shape_and_only_they_stamp() {
+        let mut t = tool();
+        select(&mut t, "tree_snipe");
+        assert_eq!(
+            (t.spec().brush, t.spec().performer),
+            (BrushKind::Stencil, PerformerKind::Stamp)
+        );
+        t.key(BrushAction::NextBrush);
+        assert_eq!(t.spec().brush, BrushKind::Stencil, "Z keeps a stencil");
+        for _ in 0..PERFORMER_KINDS.len() {
+            t.key(BrushAction::NextPerformer);
+        }
+        assert_eq!(
+            t.spec().performer,
+            PerformerKind::Stamp,
+            "it cycles through stamp"
+        );
+        select(&mut t, "ball");
+        for _ in 0..PERFORMER_KINDS.len() * 2 {
+            t.key(BrushAction::NextPerformer);
+            assert_ne!(
+                t.spec().performer,
+                PerformerKind::Stamp,
+                "a ball has no blocks to stamp"
+            );
+        }
+    }
+
+    #[test]
+    fn a_triangle_takes_three_clicks() {
+        let stone = require("dwell:stone");
+        let mut w = world();
+        let mut t = tool();
+        let mut r = region();
+        select(&mut t, "triangle");
+        let click = |t: &mut BrushTool, r: &mut RegionTools, w: &mut VoxelWorld, c: [i32; 3]| {
+            t.aim(Some(BlockTarget { cell: c, face: 2 }));
+            t.apply(false, &ctx(stone, 0.0), r, w)
+        };
+        assert!(!click(&mut t, &mut r, &mut w, [0, 0, 0]));
+        assert!(t.note().contains("first corner"), "{}", t.note());
+        assert!(!click(&mut t, &mut r, &mut w, [8, 0, 0]));
+        assert!(t.note().contains("third"), "{}", t.note());
+        // The outline joins the corners so far to the aim.
+        assert!(t.outline().is_some());
+        assert!(click(&mut t, &mut r, &mut w, [0, 0, 8]));
+        apply_all(&mut w, r.pump(0.0));
+        for c in [[0, 0, 0], [8, 0, 0], [0, 0, 8], [2, 0, 2]] {
+            assert_eq!(w.get_voxel(c[0], c[1], c[2]), stone, "{c:?}");
+        }
+        // It starts again.
+        assert!(!click(&mut t, &mut r, &mut w, [3, 0, 3]));
     }
 
     #[test]
