@@ -151,9 +151,24 @@ must be [min, max] in [0.25, 32]`. The checks cover:
 
 The tiles are baked at build time and uploaded once as the same atlas (same size, same mip chain).
 The shaders, meshes and draw calls are unchanged, so the frame costs the same in either set. Start-up
-copies 11 baked tiles instead of running the noise painters, which is slightly less work. The bench
-comparison is in the PR. Run `npm run bench` with the scenario's URL plus `&textures=painterly`
-against the default.
+copies 11 baked tiles instead of running the noise painters, which is slightly less work.
+
+Measured 2026-10-20 in Chrome on an Apple GPU (Metal), with `npm run bench -- --compare --configs
+painterly` (the `painterly` configuration in `client/bench/configs.json`). Each scenario ran in a
+fresh page with the same seed and inputs. All numbers are p95, in ms:
+
+| view | config | frame interval | `frame.cpu` | `gpu.frame` |
+| --- | --- | --- | --- | --- |
+| Spawn, looking at the ground | classic | 18.6 | 4.9 | 8.80 |
+| | painterly | 18.6 | 2.1 | 8.49 |
+| 600 m up | classic | 18.6 | 2.2 | 9.32 |
+| | painterly | 18.7 | 1.5 | 9.34 |
+| Over the sea | classic | 18.6 | 2.9 | 11.72 |
+| | painterly | 18.7 | 2.6 | 11.79 |
+
+Both sets run at 60 fps with no dropped frames. The GPU times differ by less than run-to-run noise.
+The painterly CPU times are lower only because the painterly run comes second in each pair, with the
+browser warm.
 
 ## 8. The editor
 
@@ -164,6 +179,11 @@ into `shared/textures/`.
 
 ## 9. Outstanding and later
 
+- Water's surface is drawn by the water shader from its fluid look (`fluids` in
+  `shared/blocks/dwell.json`, ADR 0030), not from the atlas. The painterly `water` tile only changes
+  where the tile itself is used (the hotbar, a tile's average), so the sea looks the same in both
+  sets. Taking the fluid's colours from the palette would be a change to the fluid data, and is
+  left for later.
 - The sky does not draw `cloud_puff` yet. Clouds are shaded analytically
   ([`CLOUDS.md`](./CLOUDS.md)).
 - Characters are not in the game yet. Their materials are read by the character prototype (ADR
