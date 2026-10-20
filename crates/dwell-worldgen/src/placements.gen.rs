@@ -18,7 +18,7 @@ pub static PLACEMENTS: [Placement; 1] = [
         max_height: 400,
         rise_full: 120,
         rise_low: 0.15,
-        max_gradient_sq: 0.9325547814369202,
+        max_gradient_sq: 0.9325548,
         spacing: 1,
         rotations: &[0, 1, 2, 3],
     },

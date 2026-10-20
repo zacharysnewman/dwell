@@ -200,7 +200,16 @@ export function placementsRust(data) {
     const g = p.groves ?? { wavelength: 0, coverage: 1, outside: 1 };
     const r = p.rise ?? { full: p.height[0], low: 1 };
     const tan = Math.tan((p.maxSlopeDeg * Math.PI) / 180);
-    const grad = Math.fround(tan * tan);
+    // The shortest decimal that reads back as the same f32.
+    const f = Math.fround(tan * tan);
+    let grad = f;
+    for (let digits = 1; digits <= 9; digits++) {
+      const v = Number(f.toPrecision(digits));
+      if (Math.fround(v) === f) {
+        grad = v;
+        break;
+      }
+    }
     const ss = Object.entries(p.structures).map(([n, w]) => `(${JSON.stringify(n)}, ${w})`);
     rs.push('    Placement {');
     rs.push(`        name: ${JSON.stringify(p.name)},`);

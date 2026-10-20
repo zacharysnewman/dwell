@@ -540,8 +540,11 @@ impl TerrainGenerator {
             }
             for (p, state) in placed.cells() {
                 let (lx, ly, lz) = (p[0] - x0, p[1] - y0, p[2] - z0);
-                if !((0..S).contains(&lx) && (0..S).contains(&ly) && (0..S).contains(&lz))
-                    || !(FACE_MIN_Y..FACE_MAX_Y).contains(&p[1])
+                let inside = (0..S).contains(&lx)
+                    && (0..S).contains(&ly)
+                    && (0..S).contains(&lz)
+                    && (FACE_MIN_Y..FACE_MAX_Y).contains(&p[1]);
+                if !inside
                     || (volume == Overlap::Partial
                         && !BUILD_VOLUME.contains_voxel(
                             i64::from(p[0]),
