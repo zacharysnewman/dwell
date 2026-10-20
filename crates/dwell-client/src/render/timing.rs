@@ -18,6 +18,8 @@ pub const NEAR_WATER: &str = "gpu.near.water";
 /// The water's tiles (water_tiles.rs): the noise tile once, the caustic layers each frame.
 pub const WATER_TILES: &str = "gpu.water.tiles";
 pub const COMPOSITE: &str = "gpu.composite";
+/// The motion pass (the wind's blur and streaks over the finished image), while the wind is on.
+pub const MOTION: &str = "gpu.motion";
 /// The whole frame on the GPU: the first pass's start to the last one's end.
 pub const FRAME: &str = "gpu.frame";
 /// Readback buffers: the GPU runs a frame or two behind, so three keep one free.

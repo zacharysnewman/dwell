@@ -85,10 +85,18 @@ pub fn water_for(device_type: wgpu::DeviceType, quality: WaterQuality) -> WaterQ
     }
 }
 
-/// Whether the wind's edge blur draws (four more composites of the pixel): not on a CPU adapter.
-/// The streaks and vignette still do.
+/// Whether the wind's edge blur draws (four more loads of the finished image per pixel): not on a
+/// CPU adapter. The streaks and vignette still do.
 pub fn motion_blur_for(device_type: wgpu::DeviceType) -> bool {
     !is_cpu(device_type)
+}
+
+/// Whether this frame draws the wind (docs/MOTION_EFFECTS.md): then the composite writes the
+/// finished image (`finished_fs`) and the motion pass (`motion_fs`) reads it, blurs it and draws
+/// the streaks over it into the canvas; otherwise the composite draws into the canvas
+/// (`composite_fs`). The shader's own test of the intensity (`frame.wind_point.z`) is the same.
+pub fn motion_pass(wind_intensity: f64) -> bool {
+    wind_intensity > 1e-3
 }
 
 /// Whether the night sky draws its stars (a hashed grid per pixel): not on a CPU adapter.
@@ -204,12 +212,12 @@ struct GpuMesh {
 /// Bytes per vertex of each `Kind`'s interleaved format (the pipelines' vertex layouts), in the
 /// enum's order: `Kind as usize` indexes it.
 const STRIDES: [u64; 6] = [
-    4 * (3 + 3 + 3 + 2 + 4),     // Terrain: position, normal, colour, uv, tile
-    4 * (3 + 3 + 3),             // Flat: position, normal, colour
-    4 * (3 + 3),                 // Line: position, colour
-    4 * (3 + 3),                 // Ghost: the lines' format (triangles)
-    4 * (3 + 3 + 3 + 1),         // Fluid: position, normal, colour, fluid id
-    4 * (3 + 3 + 3 + 2 + 4 + 4), // Cutout: the terrain's, and plant (sway, wind speed, fade)
+    4 * (3 + 3 + 3 + 2 + 4), // Terrain: position, normal, colour, uv, tile
+    4 * (3 + 3 + 3),         // Flat: position, normal, colour
+    4 * (3 + 3),             // Line: position, colour
+    4 * (3 + 3),             // Ghost: the lines' format (triangles)
+    4 * (3 + 3 + 3 + 1),     // Fluid: position, normal, colour, fluid id
+    4 * (3 + 3 + 3 + 2 + 4 + 4 + 1), // Cutout: the terrain's, plant (sway, wind speed, fade), bare
 ];
 
 fn floats(v: &[f32]) -> &[u8] {
@@ -307,6 +315,7 @@ impl GpuMesh {
         ];
         if kind == Kind::Cutout {
             streams.push((&m.plants, 4));
+            streams.push((&m.bare, 1));
         }
         let vertices = interleave(&streams);
         Some(Self::upload(
@@ -705,6 +714,12 @@ pub struct Renderer {
     /// The scene targets as the composite and lines read them (`frame::scene_layout`).
     scene_layout: wgpu::BindGroupLayout,
     composite_pipeline: wgpu::RenderPipeline,
+    /// While the wind is on (`motion_pass`): the composite into the finished image, the motion
+    /// pass from it into the canvas, the image's layout, and the image (made when first needed).
+    finished_pipeline: wgpu::RenderPipeline,
+    motion_pipeline: wgpu::RenderPipeline,
+    finished_layout: wgpu::BindGroupLayout,
+    finished: Option<frame::Finished>,
     /// The water that reads the scene (W3, Medium and High): its pipeline, drawn in each raster
     /// scene pass's water half, and its view of the scene (`frame::under_layout`) with the sampler.
     water_scene_pipeline: wgpu::RenderPipeline,
@@ -936,7 +951,7 @@ impl Renderer {
             (offset, attributes)
         };
         let terrain_attrs = attrs(&[(0, 3), (1, 3), (2, 3), (3, 2), (4, 4)]);
-        let cutout_attrs = attrs(&[(0, 3), (1, 3), (2, 3), (3, 2), (4, 4), (5, 4)]);
+        let cutout_attrs = attrs(&[(0, 3), (1, 3), (2, 3), (3, 2), (4, 4), (5, 4), (6, 1)]);
         let flat_attrs = attrs(&[(0, 3), (1, 3), (2, 3)]);
         let line_attrs = attrs(&[(0, 3), (1, 3)]);
         let fluid_attrs = attrs(&[(0, 3), (1, 3), (2, 3), (3, 1)]);
@@ -1109,6 +1124,44 @@ impl Renderer {
             multiview_mask: None,
             cache: None,
         });
+        // With the wind on: the composite into the finished image, and the motion pass from it
+        // (group 3) into the canvas, where the lines follow it.
+        let full_screen = |label, layout, entry, target: wgpu::ColorTargetState| {
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some(label),
+                layout: Some(layout),
+                vertex: wgpu::VertexState {
+                    module: &module,
+                    entry_point: Some("sky_vs"),
+                    compilation_options: Default::default(),
+                    buffers: &[],
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &module,
+                    entry_point: Some(entry),
+                    compilation_options: Default::default(),
+                    targets: &[Some(target)],
+                }),
+                primitive: Default::default(),
+                depth_stencil: None,
+                multisample: Default::default(),
+                multiview_mask: None,
+                cache: None,
+            })
+        };
+        let finished_pipeline = full_screen("finished", &overlay_layout, "finished_fs", HDR.into());
+        let finished_layout = frame::finished_layout(&device);
+        let motion_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("motion"),
+            bind_group_layouts: &[
+                Some(&frame_layout),
+                Some(&draw_layout),
+                Some(&scene_layout),
+                Some(&finished_layout),
+            ],
+            immediate_size: 0,
+        });
+        let motion_pipeline = full_screen("motion", &motion_layout, "motion_fs", format.into());
         let timer = GpuTimer::new(&device, &queue);
         let (atlas_view, sampler) = Self::atlas(&device, &queue);
         let (tile_grid_buffer, fluid_buffer) = frame_extras(&device, &queue);
@@ -1179,6 +1232,10 @@ impl Renderer {
             pipelines,
             scene_layout,
             composite_pipeline,
+            finished_pipeline,
+            motion_pipeline,
+            finished_layout,
+            finished: None,
             water_scene_pipeline,
             under_layout,
             under_sampler,
@@ -1310,6 +1367,7 @@ impl Renderer {
         self.size = (width.max(1), height.max(1));
         self.pixel_ratio = pixel_ratio;
         self.targets = None;
+        self.finished = None;
     }
     pub fn size(&self) -> (u32, u32) {
         self.size
@@ -1576,7 +1634,13 @@ impl Renderer {
         let per_pixel = frame::bytes_per_pixel(self.samples, self.water().reads_scene());
         RenderStats {
             mesh_bytes: self.terrain.gpu_bytes(),
-            screen_bytes: pixels * per_pixel,
+            screen_bytes: pixels
+                * (per_pixel
+                    + if self.finished.is_some() {
+                        frame::FINISHED_BYTES
+                    } else {
+                        0
+                    }),
             pixel_ratio: self.pixel_ratio,
             ..self.stats
         }
@@ -2237,10 +2301,46 @@ impl Renderer {
             );
         }
         let cpu = crate::telemetry::now_ms() - t0 + collect_ms;
-        // The composite into `target`, with the lines over it (depth-tested against the view
-        // depth).
-        {
+        // With the wind on, the composite draws the finished image and the motion pass reads it
+        // (docs/MOTION_EFFECTS.md: post effects that sample neighbours read the finished image).
+        let motion = motion_pass(self.wind.intensity);
+        if motion && self.finished.is_none() {
+            self.finished = Some(frame::Finished::new(
+                &self.device,
+                self.size,
+                &self.finished_layout,
+            ));
+        }
+        if let (true, Some(finished)) = (motion, &self.finished) {
             let query = self.timer.as_mut().and_then(|t| t.pass(timing::COMPOSITE));
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("finished"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &finished.view,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                timestamp_writes: self.timer.as_ref().and_then(|t| t.writes(query)),
+                ..Default::default()
+            });
+            pass.set_bind_group(0, &self.frame_groups[scene_passes - 1], &[]);
+            pass.set_bind_group(1, &self.draw_group, &[]);
+            pass.set_pipeline(&self.finished_pipeline);
+            pass.set_bind_group(2, &targets.scene, &[]);
+            pass.draw(0..3, 0..1);
+            calls += 1;
+        }
+        {
+            let name = if motion {
+                timing::MOTION
+            } else {
+                timing::COMPOSITE
+            };
+            let query = self.timer.as_mut().and_then(|t| t.pass(name));
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("composite"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -2259,7 +2359,13 @@ impl Renderer {
             pass.set_bind_group(0, &self.frame_groups[scene_passes - 1], &[]);
             pass.set_bind_group(1, &self.draw_group, &[]);
             pass.set_bind_group(2, &targets.scene, &[]);
-            pass.set_pipeline(&self.composite_pipeline);
+            if let (true, Some(finished)) = (motion, &self.finished) {
+                // The wind over the finished image.
+                pass.set_bind_group(3, &finished.group, &[]);
+                pass.set_pipeline(&self.motion_pipeline);
+            } else {
+                pass.set_pipeline(&self.composite_pipeline);
+            }
             pass.draw(0..3, 0..1);
             calls += 1;
             self.record(
@@ -2707,7 +2813,7 @@ mod tests {
             (Kind::Line, line),
             (Kind::Ghost, line),
             (Kind::Fluid, 4 * (3 + 3 + 3 + 1)),
-            (Kind::Cutout, 4 * (3 + 3 + 3 + 2 + 4 + 4)),
+            (Kind::Cutout, 4 * (3 + 3 + 3 + 2 + 4 + 4 + 1)),
         ] {
             assert_eq!(STRIDES.get(kind as usize), Some(&stride), "{kind:?}");
         }

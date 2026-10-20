@@ -47,14 +47,7 @@ import { StructuresPanel } from './ui/structuresPanel';
 import { opfsStructureDir, StructureStore } from './local/structureStore';
 import { clipboardOf, type Vec3 as Cell } from './local/structures';
 import { waterQualityLevel, type WaterQuality } from './ui/waterSettings';
-import {
-  CompareOverlay,
-  RENDERER_CHOICES,
-  choiceOf,
-  displayScale,
-  rendererParams,
-  type CompareState,
-} from './ui/renderer';
+import { displayScale } from './ui/displayScale';
 import { FlightSpeedControl } from './ui/flightSpeedControl';
 import { loadFlySpeedLevel, saveFlySpeedLevel } from './predict/flightSpeed';
 import { formatStatus } from './ui/statusOverlay';
@@ -148,16 +141,6 @@ interface DwellDebug {
   /** The block dump around the target (debug/blockDump.ts), or null before playing. */
   blockDump(): BlockDump | null;
   /**
-   * The terrain renderers `?renderer=` can pick in this build (docs/DEV_TOOLS.md: `bench
-   * --compare` skips the others), and the upscalers.
-   */
-  renderers(): string[];
-  upscalers(): string[];
-  /** What draws the terrain: `raster`, `march` or `compare raster | march`. */
-  renderer(): string;
-  /** Switches renderer at runtime (local builds; false otherwise): see `?renderer=`. */
-  setRenderer(name: string, compare?: string): boolean;
-  /**
    * The water quality (as the settings menu sets it, not stored) and/or its cost-isolation
    * switches (`?waterdbg=` names, comma-separated; "" for none); null leaves either as it is.
    */
@@ -166,10 +149,6 @@ interface DwellDebug {
   outline(): string;
   /** Sets the ink outline's mode by name (`off` or an unknown name: off); true when one is on. */
   setOutline(name: string): boolean;
-  /** Compare mode's state (view, divider, overlay, difference counts); null outside it. */
-  compare(): CompareState | null;
-  /** Sets compare mode's view (`split`, `blink`, `difference`) and/or divider (0–1). */
-  setCompare(view?: string, divider?: number): void;
   /** Dev telemetry (docs/DEV_TOOLS.md): per-frame series, event samples and counters, summarised. */
   telemetry(): Telemetry;
   /** The kept frames' raw values: `frames[i]` is `[atMs, ...values in names' order]`. */
@@ -278,8 +257,6 @@ interface App {
   /** The world being played (its seed and generator), once joined: for the block dump. */
   world: { seed: bigint; generatorVersion: number } | null;
   playing: boolean;
-  /** Compare mode's labels and divider (the renderer switch, local builds). */
-  compare: CompareOverlay | null;
 }
 
 /** Workers per pool: generation and meshing each get this many (fewer on phones). */
@@ -428,15 +405,14 @@ function showHud(app: App, now: number): void {
   app.hotbar?.setRegion(h.region ?? '');
   app.hotbar?.setBrush(h.brush ?? null);
   if (h.debug) app.hud.setDebug(h.debug);
-  app.compare?.show(app.client.compareState() as CompareState | null);
 }
 
 async function start(): Promise<App | null> {
   element('build-info', HTMLDivElement).textContent = formatBuildInfo(buildInfo);
   const canvas = element('view', HTMLCanvasElement);
   const params = new URLSearchParams(location.search);
-  // The ?scale= drawing-buffer scale; 1 when the marcher's upscaler takes the scale.
-  const scale = displayScale(location.search, __RENDERER_SWITCH__);
+  // The ?scale= drawing-buffer scale.
+  const scale = displayScale(location.search);
   const mobile = prefersTouch();
   let client: Client;
   try {
@@ -453,9 +429,6 @@ async function start(): Promise<App | null> {
       fullChunks: params.get('chunks') === 'full',
       netsim: params.get('netsim') ?? undefined,
       search: location.search,
-      // ?renderer= and compare mode: local builds only (vite.config.ts, RAY_MARCHED_RENDERER.md §3).
-      rendererSwitch: __RENDERER_SWITCH__,
-      ...rendererParams(location.search, __RENDERER_SWITCH__),
     });
   } catch (err) {
     showFatal(startupMessage(err, 'gpu' in navigator));
@@ -488,12 +461,6 @@ async function start(): Promise<App | null> {
     loopback: null,
     world: null,
     playing: false,
-    compare: __RENDERER_SWITCH__
-      ? new CompareOverlay(document.body, canvas, (share) => {
-          client.setCompare(undefined, share);
-          installPageSounds().ui('slider');
-        })
-      : null,
   };
   // On-screen controls on touch devices (shown on the first touch too, e.g. a tablet with a mouse).
   const touch = new TouchControls(document.body, client);
@@ -563,20 +530,6 @@ async function start(): Promise<App | null> {
     client.setMenuOpen(open);
   };
   settings.setFootnote(formatBuildInfo(buildInfo));
-  const showRenderer = (): void => {
-    const label = client.renderer();
-    settings.setRenderer(
-      label,
-      client.rendererSwitch() ? RENDERER_CHOICES : null,
-      choiceOf(label)?.id,
-      (id) => {
-        const c = RENDERER_CHOICES.find((r) => r.id === id);
-        if (c) client.setRenderer(c.renderer, c.compare);
-        showRenderer();
-      },
-    );
-  };
-  showRenderer();
   settings.addDebugTools([
     {
       key: 'F3',
@@ -672,24 +625,12 @@ async function start(): Promise<App | null> {
       client.setPlants(wind, shown);
     },
     renderStats: () => client.renderStats() as RenderStats,
-    renderers: () => client.renderers() as string[],
-    upscalers: () => client.upscalers() as string[],
-    renderer: () => client.renderer(),
-    setRenderer: (name, compare) => {
-      const ok = client.setRenderer(name, compare);
-      showRenderer();
-      return ok;
-    },
     setWater: (quality, debug) => {
       if (quality !== null) client.setWaterQuality(waterQualityLevel(quality));
       if (debug !== null) client.setWaterDebug(debug);
     },
     outline: () => client.outline(),
     setOutline: (name) => client.setOutline(name),
-    compare: () => client.compareState() as CompareState | null,
-    setCompare: (view, divider) => {
-      client.setCompare(view, divider);
-    },
     memory: () => memoryReport(app),
     blockDump: () => blockDumpOf(app),
     telemetry: () => client.telemetry() as Telemetry,
@@ -1096,15 +1037,7 @@ async function routeMadeWorld(): Promise<boolean> {
   return true;
 }
 
-if (__LOCAL_BUILD__ && new URLSearchParams(location.search).get('marchtest') === '1') {
-  // The ray marcher's dev page (local builds only): a generated world, the marcher alone.
-  void loadWasm()
-    .then(() => import('./debug/marchTest'))
-    .then((m) => m.startMarchTest(element('view', HTMLCanvasElement), location.search))
-    .catch((e: unknown) => {
-      showFatal(`March test: ${e instanceof Error ? e.message : String(e)}`);
-    });
-} else if (launchOf(location.search).kind === 'menu') {
+if (launchOf(location.search).kind === 'menu') {
   element('build-info', HTMLDivElement).textContent = formatBuildInfo(buildInfo);
   openMainMenu(null, new URLSearchParams(location.search).get('say') ?? undefined);
   void loadTools();

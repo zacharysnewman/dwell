@@ -611,39 +611,6 @@ export class SettingsMenu {
     this.addPage('debug', page);
   }
 
-  /**
-   * The active terrain renderer (RAY_MARCHED_RENDERER.md §3), at the foot of the menu; with
-   * `choices` (local builds' renderer switch) a picker that switches it at runtime.
-   */
-  setRenderer(
-    label: string,
-    choices: { id: string; label: string }[] | null,
-    current: string | undefined,
-    onPick: (id: string) => void,
-  ): void {
-    let row = this.footer.querySelector<HTMLElement>('.gm-renderer');
-    if (!row) {
-      row = el('p', 'gm-renderer');
-      row.id = 'menu-renderer';
-      this.footer.prepend(row);
-    }
-    row.replaceChildren(el('span', 'gm-renderer-name', `Renderer: ${label}`));
-    if (!choices) return;
-    const pick = document.createElement('select');
-    pick.setAttribute('aria-label', 'Renderer');
-    for (const c of choices) {
-      const o = document.createElement('option');
-      o.value = c.id;
-      o.textContent = c.label;
-      o.selected = c.id === current;
-      pick.append(o);
-    }
-    pick.addEventListener('change', () => {
-      onPick(pick.value);
-    });
-    row.append(' ', pick);
-  }
-
   /** A line at the foot of the menu (the build). */
   setFootnote(text: string): void {
     let note = this.footer.querySelector<HTMLElement>('.gm-note');

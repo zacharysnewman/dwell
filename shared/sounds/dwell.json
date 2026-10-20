@@ -156,9 +156,6 @@
     "Terrain map": ["action:map_open", "action:map_close"],
     "Map zoom": ["action:map_zoom"],
     "Copy block info": ["action:copy"],
-    "Compare view: split, blink, difference": ["event:tool"],
-    "Blink: swap the sides": ["event:tool"],
-    "Move the split": ["ui:slider"],
     "Break or place": ["event:break", "event:place", "event:hit", "event:deny", "action:touch_mode"],
     "Jump, Run, Crouch, Fly": ["event:jump", "event:sprint", "event:crouch_on", "action:fly_on"]
   },

@@ -44,6 +44,9 @@ pub(crate) struct MaterialStyle {
     pub cross: Option<Cross>,
     pub wind: Option<Wind>,
     pub fade: Option<Fade>,
+    /// Whether the ink outline draws on it (block data `outline`): the cross geometry carries it
+    /// to the frame in the cutout mesh's `bare` stream.
+    pub outline: bool,
     /// Fluids: how far below the cell's top its surface is drawn, in cells (0 otherwise).
     pub surface_drop: f64,
     /// The fluid whose look it is drawn with (an index into the registry's fluid table).
@@ -107,6 +110,7 @@ pub(crate) fn style_of(s: &StateInfo, fluids: &[FluidInfo]) -> MaterialStyle {
         cross: s.cross,
         wind: s.wind,
         fade: s.fade,
+        outline: s.outline,
         surface_drop: s
             .fluid
             .and_then(|f| fluids.get(usize::from(f)))
@@ -160,6 +164,7 @@ fn fallback_style(shape: usize, flooded: bool) -> MaterialStyle {
         cross: None,
         wind: None,
         fade: None,
+        outline: true,
         surface_drop: 0.0,
         fluid: None,
     }

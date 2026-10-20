@@ -12,7 +12,6 @@ export interface CompareHtmlInput {
   deltaE: number;
   /** The configurations run, the baseline first. */
   configs: readonly { name: string; notes: string }[];
-  skipped: readonly { name: string; reason: string }[];
   scenarios: readonly ScenarioResult[];
   /** How the run was made (GPU or SwiftShader, vsync or unthrottled), shown under the title. */
   mode: string;
@@ -151,11 +150,6 @@ export function compareHtml(input: CompareHtmlInput): string {
   const configs = input.configs
     .map((c) => `<li><code>${e(c.name)}</code>${c.notes ? ` — ${e(c.notes)}` : ''}</li>`)
     .join('');
-  const skipped = input.skipped.length
-    ? `<p>Skipped (not in this build):</p><ul>${input.skipped
-        .map((s) => `<li><code>${e(s.name)}</code>: ${e(s.reason)}</li>`)
-        .join('')}</ul>`
-    : '';
   const tables = input.scenarios.map((r) => table(r, input)).join('\n');
   const sections = input.scenarios
     .map((r) => {
@@ -185,7 +179,6 @@ export function compareHtml(input: CompareHtmlInput): string {
 <h1>Bench comparison</h1>
 <p class="meta">${e(input.when)} · ${e(input.mode)} · baseline <code>${e(input.baseline)}</code> · ΔE threshold ${e(String(input.deltaE))} (CIE76)</p>
 <ul>${configs}</ul>
-${skipped}
 <div class="tables">
 ${tables}
 </div>

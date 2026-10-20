@@ -10,11 +10,6 @@ describe('controls', () => {
     for (const k of ['F3', 'F4']) expect(START_HINT).toContain(k);
   });
 
-  it("names compare mode's keys (web/app.rs handles them in compare mode)", () => {
-    const keys = DEBUG_KEYS.flatMap((c) => c.keys);
-    for (const k of ['F7', 'F8']) expect(keys).toContain(k);
-  });
-
   it("lists the spyglass with its key from the data, on no other control's key", () => {
     const view = KEYBOARD.find((g) => g.title === 'View')?.controls ?? [];
     const zoom = view.find((c) => c.action.startsWith('Spyglass'));

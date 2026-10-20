@@ -74,8 +74,6 @@ export interface Scenario {
   settings: View['settings'];
   debug: boolean;
   scale: number;
-  /** `?renderer=` (a renderer the client knows by name); null: the client's default. */
-  renderer: string | null;
   /** Near or far view, for `bench --compare`'s split; null: neither. */
   split: Split | null;
   steps: Step[];
@@ -294,7 +292,6 @@ function parseScenario(where: string, v: unknown): Scenario {
     'settings',
     'debug',
     'scale',
-    'renderer',
     'split',
     'steps',
   ]);
@@ -337,7 +334,6 @@ function parseScenario(where: string, v: unknown): Scenario {
     settings,
     debug: bool(`${where}.debug`, o.debug, false),
     scale: num(`${where}.scale`, o.scale, 0.25, 2, 1),
-    renderer: o.renderer === undefined ? null : name(`${where}.renderer`, o.renderer),
     split: split(`${where}.split`, o.split),
     steps,
   };
@@ -364,8 +360,8 @@ export function timelapseTimes(s: { from: number; to: number; frames: number }):
 }
 
 /**
- * The scenario's page address (views.ts's `viewUrl`) with its renderer, or `params`' (a
- * `bench --compare` configuration's: `renderer`, `scale`, `upscaler`) in its place.
+ * The scenario's page address (views.ts's `viewUrl`) with `params` (a `bench --compare`
+ * configuration's: `scale` and its own) over it.
  */
 export function scenarioUrl(
   base: string,
@@ -373,7 +369,6 @@ export function scenarioUrl(
   params: Record<string, string> = {},
 ): string {
   const url = new URL(viewUrl(base, scenarioView(s)), 'http://x');
-  if (s.renderer !== null) url.searchParams.set('renderer', s.renderer);
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
   return `${base}${url.search}`;
 }

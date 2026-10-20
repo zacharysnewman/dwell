@@ -9,7 +9,7 @@
 //   --swiftshader    software WebGPU (no GPU: CI, Linux sandboxes); default is Chrome on the GPU
 //   --unthrottled    no vsync or frame-rate cap: frame intervals show the frame's real cost
 //   --file FILE      another scenarios file
-//   --compare        each scenario once per renderer configuration, compared (scripts/compare.ts)
+//   --compare        each scenario once per configuration, compared (scripts/compare.ts)
 //   --configs A,B    with --compare: these configurations (and the baseline) only
 //   --configs-file F with --compare: another configurations file (default bench/configs.json)
 // Build first: `npm run build:wasm && npm run build`. Per scenario, OUT/<name>/ gets report.json
@@ -20,7 +20,6 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { chromium, type Browser, type Page } from '@playwright/test';
 import { compare, type ScenarioReport } from './compare.ts';
-import { supportOf } from './configs.ts';
 import { formatProfile, profileOf, work } from './profile.ts';
 import {
   parseScenarios,
@@ -432,10 +431,6 @@ async function runScenario(
   if (!(await until(page, 'd.state()?.terrainReady === true', 120_000))) {
     throw new Error(`${sc.name}: the game did not start (${errors.join('; ')})`);
   }
-  // The renderer seam's hooks (docs/DEV_TOOLS.md); a build without them has only `raster`.
-  const support = supportOf(
-    await call(page, `{ renderers: d.renderers?.() ?? null, upscalers: d.upscalers?.() ?? null }`),
-  );
   const run: Run = { page, browser, dir, markMs: 0, records: {}, settles: [] };
   for (const s of sc.steps) await step(run, s);
   const report: ScenarioReport = {
@@ -445,7 +440,6 @@ async function runScenario(
     records: run.records,
     settles: run.settles,
     url,
-    support,
   };
   writeFileSync(join(dir, 'report.json'), `${JSON.stringify(report, null, 2)}\n`);
   if (errors.length) console.log(`  page errors: ${errors.slice(0, 5).join(' | ')}`);

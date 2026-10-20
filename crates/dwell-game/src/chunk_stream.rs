@@ -552,23 +552,6 @@ where
         count
     }
 
-    /// Meshes every loaded chunk again (a renderer switch, RAY_MARCHED_RENDERER.md §3: the new
-    /// renderer's payloads are built from the voxels the store holds, without a reload). Chunks stay
-    /// drawable meanwhile; jobs in flight are superseded.
-    pub fn remesh_all(&mut self) {
-        self.meshing.clear();
-        let mut coords: Vec<Coord> = self
-            .loaded
-            .keys()
-            .filter(|c| !self.air.contains(*c))
-            .copied()
-            .collect();
-        coords.sort_unstable();
-        for c in coords {
-            self.dirty.mark(c);
-        }
-    }
-
     /// A mesh job finished.
     pub fn on_meshed(&mut self, coord: Coord, token: u64, meshes: M::Meshes) {
         if self.meshing.get(&coord) != Some(&token) {
@@ -975,43 +958,6 @@ mod tests {
         assert_eq!(s.read_box([3, -1, 3], [1, 2, 1]), Some(vec![7, 0]));
         // Into a chunk the server hasn't sent: not loaded.
         assert_eq!(s.read_box([3, 31, 3], [1, 2, 1]), None);
-    }
-
-    #[test]
-    fn remesh_all_meshes_every_loaded_chunk_again_and_supersedes_jobs_in_flight() {
-        let (mut s, _) = setup();
-        s.on_chunk_data(explicit([0, 0, 0], 1, 2));
-        s.on_chunk_data(explicit([1, 0, 0], 1, 2));
-        s.on_chunk_data(air([2, 0, 0]));
-        s.mesh_dirty([0.0; 3], 10.0, no_clock);
-        flush(&mut s);
-        assert_eq!(s.view().chunks.len(), 2);
-        // A job in flight when the switch comes is superseded by the rebuild.
-        s.on_chunk_data(explicit([0, 0, 1], 1, 2));
-        s.mesh_dirty([0.0; 3], 10.0, no_clock);
-        let stale = std::mem::take(&mut s.mesher_mut().jobs);
-        s.remesh_all();
-        for job in &stale {
-            s.on_meshed(job.coord, job.token, ());
-        }
-        assert!(
-            !s.view().chunks.contains_key(&[0, 0, 1]),
-            "a stale job is ignored"
-        );
-        assert!(
-            s.drawable([0, 0, 0]),
-            "drawn chunks stay drawable while rebuilt"
-        );
-        assert_eq!(
-            s.mesh_dirty([0.0; 3], 10.0, no_clock),
-            3,
-            "every loaded chunk but air"
-        );
-        let mut coords: Vec<Coord> = s.mesher().jobs.iter().map(|j| j.coord).collect();
-        coords.sort();
-        assert_eq!(coords, vec![[0, 0, 0], [0, 0, 1], [1, 0, 0]]);
-        flush(&mut s);
-        assert_eq!(s.view().chunks.len(), 3);
     }
 
     #[test]

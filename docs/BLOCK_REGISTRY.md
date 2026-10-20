@@ -92,6 +92,15 @@ that block is directly above (first entry that matches wins). Dirt's
 block without textures fails, naming the block; `faces.test.mjs`), and `gen.mjs` emits
 `StateInfo::side_under`. A look option: outside the registry hash, synced as look tag `0x8b`.
 
+**The ink outline per block** (**built**, 2026-10-20; [`ART_DIRECTION.md`](./ART_DIRECTION.md) §7.4):
+`"outline": false | true` on a `cross` block says whether the ink outline draws on it; absent, the
+look decides (`outline_default`: off for `cross`, on for everything else), so tall grass takes no
+ink and `test:reed` (fixtures) is outlined by data alone. Only the cross geometry carries the flag
+to the frame (the cutout mesh's `bare` stream), so `gen.mjs` refuses it on other looks, and a
+non-boolean, naming the block. `StateInfo::outline`; a look option outside the registry hash,
+synced as look tag `0x8c` only where it differs from the look's default (the build's own payload is
+unchanged).
+
 **Family convention for shaped variants** (**built, Phase 9**, [ADR 0016](./adr/0016-slope-blocks.md); recommended here first): plain
 blocks stay plain (`dwell:stone`), and shaped forms are separate blocks generated per shapeable
 material, carrying only the properties that matter to them — `dwell:stone_slab[half,flooded]`,

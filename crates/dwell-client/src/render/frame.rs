@@ -252,6 +252,80 @@ impl Drop for Targets {
     }
 }
 
+/// The finished image (docs/MOTION_EFFECTS.md, "post effects that sample neighbours read the
+/// finished image"): the composite's output (`finished_fs`), every per-pixel effect in it, which
+/// the motion pass (`motion_fs`) reads to blur and draws the wind over, into the canvas. Only while
+/// the wind is on; made the first time it is (`HDR`, single-sample, the drawing's size), kept until
+/// the size changes. Its group is group 3 of the motion pipeline (`finished_layout`).
+pub struct Finished {
+    texture: wgpu::Texture,
+    pub view: wgpu::TextureView,
+    pub group: wgpu::BindGroup,
+}
+
+/// Bytes per drawing-buffer pixel of the finished image while it is held.
+pub const FINISHED_BYTES: u64 = 8;
+
+/// The finished image as the motion pass reads it (group 3, binding 0: loaded by texel).
+pub fn finished_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
+    device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("finished"),
+        entries: &[wgpu::BindGroupLayoutEntry {
+            binding: 0,
+            visibility: wgpu::ShaderStages::FRAGMENT,
+            ty: wgpu::BindingType::Texture {
+                sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                view_dimension: wgpu::TextureViewDimension::D2,
+                multisampled: false,
+            },
+            count: None,
+        }],
+    })
+}
+
+impl Finished {
+    pub fn new(
+        device: &wgpu::Device,
+        (width, height): (u32, u32),
+        layout: &wgpu::BindGroupLayout,
+    ) -> Self {
+        let texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("finished"),
+            size: wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: HDR,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
+        let view = texture.create_view(&Default::default());
+        let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("finished"),
+            layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::TextureView(&view),
+            }],
+        });
+        Self {
+            texture,
+            view,
+            group,
+        }
+    }
+}
+
+impl Drop for Finished {
+    fn drop(&mut self) {
+        self.texture.destroy();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
