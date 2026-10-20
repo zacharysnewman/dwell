@@ -1045,7 +1045,11 @@ fn surface_under(cells: &[(i32, i32, i32, u16)], s: [i32; 3], x: f64, z: f64) ->
     let padded = voxels(cells);
     let at = |dx: i32, dy: i32, dz: i32| padded[padded_index(s[0] + dx, s[1] + dy, s[2] + dz)];
     let shape = dwell_blocks::adaptive::shape_at(at, 1);
-    let span = dwell_blocks::shape::solid_span_at(shape, (x - f64::from(s[0])) as f32, (z - f64::from(s[2])) as f32);
+    let span = dwell_blocks::shape::solid_span_at(
+        shape,
+        (x - f64::from(s[0])) as f32,
+        (z - f64::from(s[2])) as f32,
+    );
     f64::from(s[1]) + f64::from(span.hi)
 }
 
@@ -1067,7 +1071,10 @@ fn tall_grass_sits_down_on_a_level_fields_half_height_top() {
     let feet = plant_feet(&c);
     assert!(!feet.is_empty());
     for p in &feet {
-        assert!((p[1] - 0.5).abs() < 1e-5, "foot at the support's top: {p:?}");
+        assert!(
+            (p[1] - 0.5).abs() < 1e-5,
+            "foot at the support's top: {p:?}"
+        );
     }
     let lowest = (0..c.positions.len() / 3)
         .map(|v| c.positions[v * 3 + 1])
@@ -1078,7 +1085,9 @@ fn tall_grass_sits_down_on_a_level_fields_half_height_top() {
     let top = (0..c.positions.len() / 3)
         .map(|v| c.positions[v * 3 + 1])
         .fold(0.0, f32::max);
-    assert!(top - 0.5 <= cross.height + 1e-5 && top - 0.5 >= cross.height * cross.height_min - 1e-5);
+    assert!(
+        top - 0.5 <= cross.height + 1e-5 && top - 0.5 >= cross.height * cross.height_min - 1e-5
+    );
 }
 
 #[test]
@@ -1163,7 +1172,10 @@ fn a_plant_that_does_not_sit_on_its_support_keeps_to_its_cells_floor_by_data_alo
         id("dwell:water"),
     );
     // The fixture keeps the build's blocks first (adaptive shapes read the build's table).
-    assert_eq!(STATES[usize::from(ground)].name, dwell_blocks::STATES[usize::from(ground)].name);
+    assert_eq!(
+        STATES[usize::from(ground)].name,
+        dwell_blocks::STATES[usize::from(ground)].name
+    );
     let kinds = Kinds::new(&STATES, &FLUIDS, Some(water));
     let feet_of = |p: u16| {
         let mut cells: Vec<_> = (3..6)
@@ -1178,6 +1190,9 @@ fn a_plant_that_does_not_sit_on_its_support_keeps_to_its_cells_floor_by_data_alo
     };
     let reed_feet = feet_of(reed);
     assert!(!reed_feet.is_empty());
-    assert!(reed_feet.iter().all(|p| (p[1] - 1.0).abs() < 1e-6), "{reed_feet:?}");
+    assert!(
+        reed_feet.iter().all(|p| (p[1] - 1.0).abs() < 1e-6),
+        "{reed_feet:?}"
+    );
     assert!(feet_of(plant).iter().all(|p| (p[1] - 0.5).abs() < 1e-5));
 }

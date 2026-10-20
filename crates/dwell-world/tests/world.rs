@@ -705,7 +705,11 @@ fn tall_grass_aims_and_outlines_where_it_sits_on_its_support() {
     let hit = raycast_block(&mut world, [0.5, 4.75, -1.5], [0.0, 0.0, 1.0], 6.0)
         .expect("the plant's lowered box");
     assert_eq!((hit.cell, hit.face), ([0, 5, 2], 5));
-    assert!((hit.distance - (3.5 + b[2])).abs() < 1e-4, "{}", hit.distance);
+    assert!(
+        (hit.distance - (3.5 + b[2])).abs() < 1e-4,
+        "{}",
+        hit.distance
+    );
     // The server sees it there too.
     assert_eq!(
         check(&mut world, brk([0, 5, 2], 2), [0.5, 6.62, 0.5], &[]).check,

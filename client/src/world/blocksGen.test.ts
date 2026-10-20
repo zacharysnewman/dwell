@@ -135,7 +135,12 @@ describe('block generator: the cross geometry and wind', { timeout: 30_000 }, ()
   it('emits a cross with its options, wind and fade', () => {
     const r = generate([
       plant('reeds', {
-        cross: { height: 0.9, quads: 3, jitter: { offset: 0.2, rotation: 30, height: [0.7, 1] }, sitOnSupport: false },
+        cross: {
+          height: 0.9,
+          quads: 3,
+          jitter: { offset: 0.2, rotation: 30, height: [0.7, 1] },
+          sitOnSupport: false,
+        },
         wind: { strength: 0.1, speed: 2 },
         fade: { start: 40, end: 80 },
         selectionBox: [0.25, 0, 0.25, 0.75, 0.5, 0.75],
