@@ -52,6 +52,9 @@ const LAUNCH_THRESHOLD: f32 = 0.10;
 /// Dwell: during step_grace.
 const STEP_LAUNCH_THRESHOLD: f32 = 1.5;
 const STEP_GRACE_TICKS: u8 = 6;
+/// The vertical pass's `step_grace` on the tick after a step-up: then the ground snap holds the
+/// step's height while the player moves on over the edge (the probe ran before the move).
+const STEP_HOLD: u8 = STEP_GRACE_TICKS - 2;
 const ABSORB_THRESHOLD: f32 = 0.01;
 const MOVING_SPEED: f32 = 0.10;
 const CROUCH_SKIN: f32 = 0.02;
@@ -863,11 +866,15 @@ impl Players {
         let c = &mut p.c;
         let g = &mut c.ground;
         g.was_grounded = g.grounded;
-        // While grounded, reach down a whole step so walking down stairs keeps the ground.
+        // While grounded, reach down a whole step so walking down stairs keeps the ground; the
+        // tick after a step-up, down to the floor it left (the step and the ground's rise to it).
         let reach = if g.grounded {
-            cfg.probes
-                .ground_probe_margin
-                .max(cfg.movement.max_step_height)
+            let step = if c.vertical.step_grace == STEP_HOLD + 1 {
+                2.0 * cfg.movement.max_step_height
+            } else {
+                cfg.movement.max_step_height
+            };
+            cfg.probes.ground_probe_margin.max(step)
         } else {
             cfg.probes.ground_probe_margin
         };
@@ -1633,6 +1640,9 @@ impl Players {
                 .map_or(feet, |h| h.point.y)
                 .max(feet);
             let rise = (foot - feet) as f32;
+            if rise > cfg.advanced.step_max_rise {
+                continue;
+            }
             // The step's top, just past its face.
             let mut probe = point - (n * cfg.advanced.step_probe_distance).as_dvec3();
             probe.y = foot + f64::from(m.max_step_height + STEP_TOP_CLEARANCE);
@@ -1653,11 +1663,13 @@ impl Players {
             {
                 continue;
             }
-            // The move must leave the ground ring standing on the step. The axis must end within
-            // `ring − footing` of the face: when the tick's own motion doesn't take it there, the
-            // step shifts it toward the face (and that shift is paid from the motion into the face,
-            // `pay_nudge`, so only the shortfall is extra). At a step's outside corner that is not
-            // enough, and the shift is toward the step's top, in small steps up to a limit.
+            // The move must leave the ground ring standing on the step: the axis within
+            // `ring − footing` of the face. The player keeps moving at its own speed, and the
+            // vertical pass holds the step's height for one tick after it (`STEP_HOLD`), so two
+            // ticks of motion may get it there. When they don't (slow, or nearly along the face),
+            // the step shifts it toward the face, paid from the motion into the face (`pay_nudge`),
+            // so only the shortfall is extra. At a step's outside corner that is not enough, and
+            // the shift is toward the step's top, in small steps up to a limit.
             let into = -d.dot(n);
             let need = distance - (ring_radius - cfg.advanced.step_footing);
             let toward = flat((top.point - center).as_vec3());
@@ -1666,7 +1678,13 @@ impl Players {
             } else {
                 -n
             };
-            let shifts = std::iter::once(-n * if need > travel * into { need } else { 0.0 }).chain(
+            let progress = travel * into;
+            let first = if need > 2.0 * progress {
+                need - progress
+            } else {
+                0.0
+            };
+            let shifts = std::iter::once(-n * first).chain(
                 (1..=STEP_CORNER_SHIFTS)
                     .map(|k| toward * (k as f32 * STEP_CORNER_SHIFT / STEP_CORNER_SHIFTS as f32)),
             );
@@ -1674,34 +1692,40 @@ impl Players {
             if Self::overlaps_at(q, p, lifted) {
                 continue;
             }
+            let motion = d * travel;
+            let stands = |at: DVec3| {
+                Self::ring_cast(
+                    ring,
+                    q,
+                    p.body,
+                    at,
+                    -Vec3::Y,
+                    half_height + STEP_TOP_CLEARANCE,
+                    ring_radius,
+                    true,
+                )
+                .is_some_and(|g| g.distance <= half_height + STEP_LANDING_TOLERANCE)
+            };
             for shift in shifts {
                 let length = shift.length();
-                let motion = d * travel;
-                let after_motion = if length > 0.0 {
+                let paid = if length > 0.0 {
                     let along = shift / length;
                     motion - along * motion.dot(along).clamp(0.0, length)
                 } else {
                     motion
                 };
                 let placed = lifted + shift.as_dvec3();
-                let after = placed + after_motion.as_dvec3();
-                if Self::overlaps_at(q, p, placed) || Self::overlaps_at(q, p, after) {
+                let after = placed + paid.as_dvec3();
+                let next = after + motion.as_dvec3();
+                if Self::overlaps_at(q, p, placed)
+                    || Self::overlaps_at(q, p, after)
+                    || Self::overlaps_at(q, p, next)
+                {
                     continue;
                 }
-                // After the move the ground ring stands on the step, not on the floor it left.
-                let Some(ground) = Self::ring_cast(
-                    ring,
-                    q,
-                    p.body,
-                    after,
-                    -Vec3::Y,
-                    half_height + STEP_TOP_CLEARANCE,
-                    ring_radius,
-                    true,
-                ) else {
-                    continue;
-                };
-                if ground.distance <= half_height + STEP_LANDING_TOLERANCE {
+                // After this tick's move, or the next one's, the ground ring stands on the step,
+                // not on the floor it left.
+                if stands(after) || stands(next) {
                     return Some((lift, shift, top.normal));
                 }
             }
@@ -2045,7 +2069,13 @@ impl Players {
                 } else {
                     0.0
                 };
-                v.accumulated_y = v.platform_y + along_slope - c.ground.gap.max(0.0) / DT;
+                // The tick after a step-up the ground ring may not yet be over the step: hold.
+                let gap = if v.step_grace == STEP_HOLD {
+                    0.0
+                } else {
+                    c.ground.gap.max(0.0)
+                };
+                v.accumulated_y = v.platform_y + along_slope - gap / DT;
             }
         } else {
             // Airborne: absorb external vertical forces (not the lift from driving into a block's
