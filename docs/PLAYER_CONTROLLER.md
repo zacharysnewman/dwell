@@ -536,6 +536,22 @@ data (`PlayerControllerConfig::slide`, §7).
   and the terminal speed × `crouch_terminal_factor` (1.15). The **step-up** never steps onto
   ground steeper than `min_angle`, and a sliding player does not step at all. **Jumping** off a
   slide is a normal jump. **Ladders and water** override sliding (exclusive layers).
+- **The ramp's foot** (found in the half-height branch's playtest, 2026-10-20; the same on the
+  adaptive 45° flanks). Walking into a 45° face from below, the ground ring's highest hit is the
+  face while the centre still stands on gentle ground: the ground following climbed the face (and
+  the solver turned the drive into it into a climb) until the centre crossed onto it, slid back off
+  and walked up again, switching between Sliding and Walking every few ticks. Now, while the player
+  drives into such a face (its own velocity or the move input), the probe's ground is the ground
+  under the centre (`step_probe`: its normal and gap; `GroundInfo::foot_normal` keeps the face's),
+  and the horizontal pass removes the tick's motion into the face's horizontal normal, as a wall
+  would (`current` is kept, so the player walks on along the foot or away at once). The player stops
+  at the foot, its round bottom against the toe, in one state; running into it stops the same way
+  rather than running up its toe and sliding back. Standing still beside a face is unchanged (the
+  ring's face holds the capsule where it rests). Derived from the probe each tick, so it needs
+  nothing on the wire. Tested by `tests/adaptive.rs`
+  (`pressing_into_a_45_degree_flanks_foot_does_not_flicker_between_sliding_and_walking`: a one-wide
+  ridge's flank, walking at 0–60° and running at 0–45° from four starting distances; all flickered
+  before, 44–52 switches in 2.5 s) and the netcode suite's stairs run (B stops at the foot).
 - **State.** `State::Sliding` (the PPC's state enum always had it; nothing set it before) when
   sliding, above Crouching in `step_state`'s priority: Climbing > Swimming > Flying > Sliding >
   Crouching > Jumping/Falling > Running/Walking/Idle.
