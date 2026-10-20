@@ -56,7 +56,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 36 — Block registry sync | 🚧 In progress — built and tested natively and in Vitest (ADR 0038, `BLOCK_REGISTRY.md` §8): the server's registry sent at join (`BlockRegistry`, protocol 14), ids mapped at the session boundary, the join prompt (no refusals), the fallback look, server-registered blocks, placeholders for unknown states in world files; outstanding: CI, the e2e suite (WebRTC join fixed: parts fit a WebRTC message, larger messages are fragmented), the owner's review of the prompt; ships in the next minor (0.14.0), coordinated with Phase 16's protocol bump |
 | 37 — Sprint slide (stacks on 35) | 🚧 In progress — built and tested natively (controller, predictor, netcode, protocol 15 vectors): crouch while sprinting slides on, crouched, with friction and slopes, limited steering, a jump out and a cooldown (`PLAYER_CONTROLLER.md` §6.9), checked in Chrome (the `sprint-slide` bench); outstanding: CI (the WASM divergence run and the e2e suite), the owner's review; a protocol change (15): the owner raises `package.json` to a new minor |
 | 38 — The spyglass | 🚧 In progress — built and tested natively, in Vitest and on a real GPU (ADR 0039, `SPYGLASS.md`): a toggle key (`` ` ``) and wheel steps from `shared/look/spyglass.json` (generator, CI stale check), the zoomed FOV for the raster renderer, the marcher (its FOV bug fixed) and the LOD, which refines only inside the narrow view (bounded by the detail boost), the vignette, reduced motion, the `spyglass-far` bench scenario; outstanding: CI and the owner's review in a browser; a patch release |
-| 40 — Characters and creatures (design and concept) | 🚧 In progress — C0 built and tested (ADR 0041, `CHARACTERS.md`): the rig vocabulary and validator (`shared/characters/rig.mjs`), the data (the player with three looks, the wolf, the deer; accessories, the block and brush items, clips), the generator and its tests, the Character Lab prototype checked in Chrome; stacked on Phase 39's palette and materials; outstanding: publishing the page, the owner's review and answers (`CHARACTERS.md` §10), CI; C1–C3 (in the game) not started; a patch release |
+| 40 — Characters and creatures (design and concept) | 🚧 In progress — C0 built and tested (ADR 0041, `CHARACTERS.md`): the rig vocabulary and validator (`shared/characters/rig.mjs`), the data (the player with three looks, the wolf, the deer; accessories, the block and brush items, clips), the generator and its tests, the Character Lab prototype checked in Chrome and published; stacked on Phase 39's palette and materials; outstanding: the owner's review and answers (`CHARACTERS.md` §10), CI; C1–C3 (in the game) not started; a patch release |
 
 Phase numbering: Phase 4 was inserted on 2026-09-29 for the planet-scale world (ADRs 0011, 0012);
 the former Phases 4–7 are now 5–8, and Phase 3's former 3c and 3d are now 3d and 3e.
@@ -3810,7 +3810,7 @@ Exit criteria
 
 **Status:** C0 (the design, data and prototype) built and tested (2026-10-20): `node --test
 shared/characters/gen.test.mjs` passes and the Character Lab was checked in Chrome. Outstanding:
-publishing the page, the owner's review and answers to `CHARACTERS.md` §10, CI. C1–C3 are not
+the owner's review and answers to `CHARACTERS.md` §10, CI. C1–C3 are not
 started: the owner asked for a design and concept only. Stacked on Phase 39 (the palette, materials
 and painter it shades with). No change to saves, the protocol or terrain: a patch release.
 
@@ -3838,7 +3838,7 @@ Deliverables
 - [x] `docs/prototypes/character-lab.html`: the player, first person, the wolf, the deer and a group
   to scale; orbit and turntable; playback and swings; looks, accessories, slots, held items; live part
   editing; validation; copy the JSON back. Screenshots in the session's scratchpad.
-- [ ] Published (the Artifact link in `docs/prototypes/README.md`) and reviewed by the owner.
+- [x] Published (https://claude.ai/artifact/YAieiGfJnp5f2FnoR6wQWB, listed in `docs/prototypes/README.md`).
 
 Exit criteria
 - [x] A part, an accessory and a variant added by data alone are composed and worn
