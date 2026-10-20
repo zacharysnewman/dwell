@@ -45,14 +45,17 @@ pub type SessionId = u32;
 pub type TransportBinding = [u8; 32];
 
 const SNAPSHOT_EVERY: u32 = SIM_HZ / SNAPSHOT_HZ; // ticks
-const MAX_QUEUED_INPUTS: usize = 32; // hard cap per session (> a slow client's frame of inputs)
+/// Hard cap per session: above a slow client's frame of inputs (the client's MAX_TICKS_PER_FRAME,
+/// 60), which arrives at once.
+const MAX_QUEUED_INPUTS: usize = 96;
 const INPUT_BUFFER: usize = 2; // jitter buffer depth (ticks)
 /// Inputs queued beyond this for a whole window are skipped, to bound input latency. A window's
 /// low-water mark decides, not the queue at one tick: a client drawing a few frames a second sends
 /// a frame's ticks at once (up to the client's MAX_TICKS_PER_FRAME), and skipping that burst would
-/// drop inputs the client predicted (a correction every frame).
+/// drop inputs the client predicted (a correction every frame). The window is a second, as long as
+/// the slowest frame the client catches up, so it always holds the trough before a burst.
 const MAX_BUFFERED_INPUTS: usize = 6;
-const LATENCY_WINDOW_TICKS: u32 = 30;
+const LATENCY_WINDOW_TICKS: u32 = 60;
 const MAX_SEQ_AHEAD: u32 = 256; // inputs further ahead are rejected
 const INPUT_DATAGRAMS_PER_SECOND: u32 = 2 * SIM_HZ; // §11: SIM_HZ + redundancy
 const PREFETCH_CHUNKS: i32 = 2; // generated ahead around each player (collision reach + 1)
