@@ -9,8 +9,8 @@ use crate::math::Affine;
 use crate::types::{Kind, Part, View};
 
 /// Segments around a round part, and rings over a sphere: chunky shapes read at these counts.
-const AROUND: u32 = 16;
-const RINGS: u32 = 10;
+const AROUND: u32 = 12;
+const RINGS: u32 = 8;
 const CAPSULE_RINGS: u32 = 4;
 
 /// A mesh in bone frames: per vertex its position and normal in its bone's frame, the bone, the
@@ -446,5 +446,36 @@ mod tests {
                 .iter()
                 .all(|uv| (0.0..=1.0).contains(&uv[0]) && (0.0..=1.0).contains(&uv[1]))
         );
+    }
+
+    /// The meshes' size (CHARACTERS.md §9.1, the cost): every look's body mesh stays under 512 KB
+    /// on the GPU (`cargo test -p dwell-characters mesh_sizes -- --nocapture` prints them).
+    #[test]
+    fn mesh_sizes() {
+        let ch = crate::player();
+        for l in ch.looks {
+            let m = build(l.parts, View::Body, &[]);
+            println!(
+                "look {}: {} parts, {} vertices, {} triangles, {} bytes",
+                l.name,
+                m.parts.len(),
+                m.vertex_count(),
+                m.indices.len() / 3,
+                m.byte_len()
+            );
+            assert!(m.byte_len() < 512 * 1024, "{}", l.name);
+        }
+        let fp = ch.first_person.unwrap();
+        let arms = build(ch.look(DEFAULT_LOOK).unwrap().parts, View::Arms, fp.bones);
+        println!(
+            "arms: {} vertices, {} triangles, {} bytes",
+            arms.vertex_count(),
+            arms.indices.len() / 3,
+            arms.byte_len()
+        );
+        for i in ch.items {
+            let m = build(i.parts, View::Body, &[]);
+            println!("item {}: {} vertices, {} bytes", i.name, m.vertex_count(), m.byte_len());
+        }
     }
 }

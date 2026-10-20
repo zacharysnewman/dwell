@@ -76,11 +76,24 @@ export function sanitizeFovSetting(record: unknown): number {
     : DEFAULT_FOV;
 }
 
+/** A stored view record's Show your arms setting (docs/CHARACTERS.md §5): on unless stored off. */
+export function sanitizeShowArms(record: unknown): boolean {
+  const v =
+    typeof record === 'object' && record !== null
+      ? (record as Record<string, unknown>).showArms
+      : undefined;
+  return v !== false;
+}
+
 /** The view record to store: the stored one's other fields kept (newer builds' fields survive). */
-export function viewRecord(stored: unknown, fovDeg: number): Record<string, unknown> {
+export function viewRecord(
+  stored: unknown,
+  fovDeg: number,
+  showArms = true,
+): Record<string, unknown> {
   const base =
     typeof stored === 'object' && stored !== null && !Array.isArray(stored)
       ? (stored as Record<string, unknown>)
       : {};
-  return { ...base, fovDeg };
+  return { ...base, fovDeg, showArms };
 }

@@ -429,6 +429,9 @@ pub struct Game<S: Scene> {
     held_sent: Option<u16>,
     /// The Show your arms setting (the settings menu; on by default).
     pub show_arms: bool,
+    /// Stand-in players for the dev tools (`__dwell.puppets`): the frame cost of N bodies and
+    /// their clips without N clients.
+    pub puppets: Option<Puppets>,
     /// The eye the crosshair targets from (None while not playing).
     target_eye: Option<[f64; 3]>,
     lod: Option<LodSystem>,
@@ -582,6 +585,7 @@ impl<S: Scene> Game<S> {
             bodies: Bodies::default(),
             held_sent: None,
             show_arms: true,
+            puppets: None,
         };
         match verification {
             Some(c) => game
@@ -1460,6 +1464,24 @@ impl<S: Scene> Game<S> {
                 self.scene.borrow_mut().set_player(u32::from(id), None);
             }
         }
+        if let Some(mut p) = self.puppets {
+            if p.held == Puppets::HOTBAR {
+                p.held = self.selected_material();
+            }
+            for v in p.views(now_ms / 1000.0) {
+                drawn.insert(v.player_id);
+                let held = crate::bodies::held_from_wire(v.held, Some);
+                let view = self.bodies.remote(&v, held, dt);
+                self.scene
+                    .borrow_mut()
+                    .set_player(u32::from(v.player_id), Some(view));
+            }
+        }
+        for id in Puppets::ID_BASE..Puppets::ID_BASE + Puppets::MAX {
+            if !drawn.contains(&id) {
+                self.scene.borrow_mut().set_player(u32::from(id), None);
+            }
+        }
         self.bodies.retain(|id| drawn.contains(&id));
         // A player gone from view (or dead) stops sounding: its slide's voice ends.
         let sounds = &mut self.sounds;
@@ -2007,5 +2029,77 @@ mod tests {
         assert!(text.contains("smoothing 3.00 cm"));
         assert!(text.contains("RTT 151 ms"));
         assert!(text.contains("health 83/100"));
+    }
+}
+
+/// Stand-in players for the dev tools (`__dwell.puppets`, docs/DEV_TOOLS.md): `count` bodies in
+/// rows ahead of `origin` (feet), on `face`, each walking a small circle with a clip of its own
+/// (the controller's states in turn) and a held block, so the bench can time N bodies and a
+/// screenshot can show every clip, on either face.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Puppets {
+    pub count: u16,
+    pub origin: [f64; 3],
+    /// ±1.
+    pub face: f64,
+    /// A block every puppet holds (0: none).
+    pub held: u16,
+}
+
+impl Puppets {
+    pub const ID_BASE: u16 = 60000;
+    pub const MAX: u16 = 256;
+    /// `held`: the hotbar's block, whatever it is.
+    pub const HOTBAR: u16 = u16::MAX;
+
+    /// The puppets at time `t` (s), as remote snapshots would carry them.
+    pub fn views(&self, t: f64) -> Vec<dwell_game::remotes::RemoteView> {
+        use dwell_protocol::player_flags as pf;
+        let states = [
+            (PlayerState::Walking, 2.5, 0u8),
+            (PlayerState::Running, 6.0, 0),
+            (PlayerState::Sliding, 7.0, pf::CROUCHED),
+            (PlayerState::Crouching, 1.2, pf::CROUCHED),
+            (PlayerState::Idle, 0.0, 0),
+            (PlayerState::Jumping, 2.0, 0),
+            (PlayerState::Swimming, 1.5, pf::SWIMMING),
+            (PlayerState::Climbing, 0.0, pf::CLIMBING),
+        ];
+        let n = self.count.min(Self::MAX);
+        let cols = 8.0;
+        (0..n)
+            .map(|i| {
+                let (state, speed, flags) = states[usize::from(i) % states.len()];
+                let (row, col) = ((f64::from(i) / cols).floor(), f64::from(i) % cols);
+                let yaw = (t * 40.0 + f64::from(i) * 45.0) % 360.0;
+                let r = yaw.to_radians();
+                let up = if state == PlayerState::Jumping {
+                    3.0 * (t * 2.0 + f64::from(i)).sin()
+                } else {
+                    0.0
+                };
+                let face_b = if self.face < 0.0 { pf::FACE_B } else { 0 };
+                let grounded = if state == PlayerState::Jumping { 0 } else { pf::GROUNDED };
+                dwell_game::remotes::RemoteView {
+                    player_id: Self::ID_BASE + i,
+                    feet: [
+                        self.origin[0] + (col - cols / 2.0) * 2.5,
+                        self.origin[1],
+                        self.origin[2] + 4.0 + row * 2.5,
+                    ],
+                    velocity: [
+                        (r.sin() * speed) as f32,
+                        (up * self.face) as f32,
+                        (r.cos() * speed) as f32,
+                    ],
+                    yaw: yaw as f32,
+                    pitch: 0.0,
+                    state,
+                    flags: flags | face_b | grounded,
+                    held: self.held,
+                    swing: 0,
+                }
+            })
+            .collect()
     }
 }

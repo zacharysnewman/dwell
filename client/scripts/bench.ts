@@ -318,6 +318,18 @@ async function step(run: Run, s: Step): Promise<void> {
     case 'select':
       await call(page, `d.select(${String(s.slot)})`);
       return;
+    case 'arms':
+      await call(page, `d.showArms(${String(s.on)})`);
+      return;
+    case 'puppets': {
+      const [x, y, z] = s.at ?? [0, 0, 0];
+      const held = s.held ? '65535' : '0';
+      await call(
+        page,
+        `(() => { const f = d.state().feet; return d.puppets(${String(s.count)}, [f[0] + ${String(x)}, f[1] + ${String(y)}, f[2] + ${String(z)}], ${String(s.face ?? 1)}, ${held}); })()`,
+      );
+      return;
+    }
     case 'settle': {
       const start = Date.now();
       let quiet: number | null = null;
