@@ -42,7 +42,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 21 — Tiered physics | ⏸ Waits for Phases 6–19 (2026-10-05; the baseline rework, 14–19, added 2026-10-12) |
 | 22 — Sleep / re-bake | ⏸ Waits for Phases 6–19 (2026-10-05; the baseline rework, 14–19, added 2026-10-12) |
 | 23 — Dedicated servers & packaging | ⏳ Not started |
-| 25 — Ray-marched renderer comparison | 🚧 In progress — A0 (ADR 0029), A1 (the shared frame and GPU timing; the owner approved its image differences, 2026-10-14, and the e2e suite passes on CI), A2 (the renderer seam, compare mode, bench `--compare`; its exit check done) and A3a (the CPU core: `crates/dwell-march`) built; A3b (the GPU march behind the seam, checked against the reference per pixel; its CI run outstanding) built; A4a (speed: level-rows skip, vectorised march, shade pass, the cone-LOD ring fix) and A5a (render scales 0.5/0.75 with FSR 1 or a bilateral upscale) built; A4b (the beam prepass, and the temporal start with the eye still) built: at 720p on an M1, 8.5 ms at the spawn and 17.5 ms flying (A4a: 21 and 24) against raster's whole GPU frame of 3.6–5.0 ms, and 2.2–6.6 ms at half scale with FSR 1; A4c (the optimization survey; the temporal start while the eye moves, kept unchanged frames, the column search's slope rule) built: marching every frame, 17–31 % off A4b at the spawn, the horizon, looking down, flying high and far away (Chrome, M1, measured under load), and a still, unchanged view costs only its shading (about 1 ms); A4c continues (the per-step cost at the LOD levels); next: A3c (overlays over marched terrain, LOD column heights in the bricks, raster ids); outstanding: A4's phone report; A2's edit-to-visible latency and the bench's id/depth agreement (moved to A3); local builds only until the owner's decision (A7); `package.json` raised to 0.11.21, a patch release of the 0.11 line |
+| 25 — Ray-marched renderer comparison | 🚧 In progress — A0 (ADR 0029), A1 (the shared frame and GPU timing; the owner approved its image differences, 2026-10-14, and the e2e suite passes on CI), A2 (the renderer seam, compare mode, bench `--compare`; its exit check done) and A3a (the CPU core: `crates/dwell-march`) built; A3b (the GPU march behind the seam, checked against the reference per pixel; its CI run outstanding) built; A4a (speed: level-rows skip, vectorised march, shade pass, the cone-LOD ring fix) and A5a (render scales 0.5/0.75 with FSR 1 or a bilateral upscale) built; A4b (the beam prepass, and the temporal start with the eye still) built: at 720p on an M1, 8.5 ms at the spawn and 17.5 ms flying (A4a: 21 and 24) against raster's whole GPU frame of 3.6–5.0 ms, and 2.2–6.6 ms at half scale with FSR 1; A4c (the optimization survey; the temporal start while the eye moves, kept unchanged frames, the column search's slope rule) built: marching every frame, 17–31 % off A4b at the spawn, the horizon, looking down, flying high and far away (Chrome, M1, measured under load), and a still, unchanged view costs only its shading (about 1 ms); A4c's three far-case picks (the per-step cost at the LOD levels, a second beam, half-rate marching) built, measured and not kept, none beating the march as it is; the cone LOD's pixel error at 8 px (−24 % flying high) left to the owner as a change of look; next: A3c (overlays over marched terrain, LOD column heights in the bricks, raster ids); outstanding: A4's phone report; A2's edit-to-visible latency and the bench's id/depth agreement (moved to A3); local builds only until the owner's decision (A7); `package.json` raised to 0.11.21, a patch release of the 0.11 line |
 | 26 — Water and fluid looks | 🚧 In progress — W1a (fluid data, the eye-under-fluid uniform) done; W2 built (it is Phase 25's A1, built once there; the owner approved its image differences, 2026-10-14); W1b (the water shader, the underwater fog stub, the water quality setting) built and checked in Chrome on an M1, outstanding: the owner's look; W3 (refraction, depth absorption, shoreline foam, sparkle, and caustics brought forward from W4, above and under the surface) built and checked in Chrome on an M1, outstanding: the owner's look and an unloaded per-tier cost measurement; W5a (reflections of land by screen-space reflection, and of the clouds, brought forward from W5 at the owner's report) built and checked in Chrome on an M1, outstanding: the owner's look and an unloaded cost measurement; water cost work (WATER_RENDERING.md §8, "Cost"): cheaper hashing, noise and caustic tiles, frame pacing against the stalls, Medium the desktop default — Medium +1.6 ms and High +1.7 ms over Low on the shore view before the reflections, which now add the most (outstanding: W5a's reflection cost against the 2/3 ms targets); next: W4; W6 only if marching is kept at A7; `package.json` raised to 0.12.1, a patch release of the 0.11 line |
 | 27 — Structure sandbox | 🚧 In progress — S0 (ADR 0031), S1 (the structure format, `gen.mjs`, the Rust loader, the playground converted), S2a (floor block, sandbox world type), S2b (the structures store: save, load through the region paste, export and import) and S3a (region edits, the region tools) done, S2a's e2e check outstanding; `package.json` raised to 0.11.0, the new compatibility line (S2a's registry change; the owner's decision, 2026-10-14); next: S3b (anchor, touch) and the S3 sandbox e2e outstanding; S4 (worldgen placement) deferred; `package.json` raised to 0.11.11, a patch release of the 0.11 line |
 | 28 — Sound effects | 🚧 In progress — F0–F6 built and tested (procedural Web Audio, no library; sound data and generator, the registry's `sound` field, Rust sound events, synth, variation, mixer, spatial playback, menu and game-action sounds, volume sliders, offline WAV renders); outstanding: the owner listens to the WAV renders and approves them, and answers `AUDIO.md` §9; `package.json` raised to 0.11.12, a patch release of the 0.11 line |
@@ -56,6 +56,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 36 — Block registry sync | 🚧 In progress — built and tested natively and in Vitest (ADR 0038, `BLOCK_REGISTRY.md` §8): the server's registry sent at join (`BlockRegistry`, protocol 14), ids mapped at the session boundary, the join prompt (no refusals), the fallback look, server-registered blocks, placeholders for unknown states in world files; outstanding: CI, the e2e suite (WebRTC join fixed: parts fit a WebRTC message, larger messages are fragmented), the owner's review of the prompt; ships in the next minor (0.14.0), coordinated with Phase 16's protocol bump |
 | 37 — Sprint slide (stacks on 35) | 🚧 In progress — built and tested natively (controller, predictor, netcode, protocol 15 vectors): crouch while sprinting slides on, crouched, with friction and slopes, limited steering, a jump out and a cooldown (`PLAYER_CONTROLLER.md` §6.9), checked in Chrome (the `sprint-slide` bench); outstanding: CI (the WASM divergence run and the e2e suite), the owner's review; a protocol change (15): the owner raises `package.json` to a new minor |
 | 38 — The spyglass | 🚧 In progress — built and tested natively, in Vitest and on a real GPU (ADR 0039, `SPYGLASS.md`): a toggle key (`` ` ``) and wheel steps from `shared/look/spyglass.json` (generator, CI stale check), the zoomed FOV for the raster renderer, the marcher (its FOV bug fixed) and the LOD, which refines only inside the narrow view (bounded by the detail boost), the vignette, reduced motion, the `spyglass-far` bench scenario; outstanding: CI and the owner's review in a browser; a patch release |
+| 39 — Painterly textures | 🚧 In progress — built and tested natively, in Node and on a real GPU (ADR 0040, `ART_DIRECTION.md`, `PAINTERLY_TEXTURES.md`): the storybook palette and materials as data (`shared/textures`), one stroke generator baked into the atlas (CI stale check, a material added by data alone), `?textures=painterly` on the page and in the meshing workers (the classic set stays the default), the Painterly Texture Lab, the bench's `painterly` configuration (same frame cost); outstanding: CI and the owner's review of the look, then flipping the default; a patch release |
 | 40 — Characters and creatures (design and concept) | 🚧 In progress — C0 built and tested (ADR 0041, `CHARACTERS.md`): the rig vocabulary and validator (`shared/characters/rig.mjs`), the data (the player with three looks, the wolf, the deer; accessories, the block and brush items, clips), the generator and its tests, the Character Lab prototype checked in Chrome and published; stacked on Phase 39's palette and materials; outstanding: the owner's review and answers (`CHARACTERS.md` §10), CI; C1–C3 (in the game) not started; a patch release |
 
 Phase numbering: Phase 4 was inserted on 2026-09-29 for the planet-scale world (ADRs 0011, 0012);
@@ -2749,7 +2750,7 @@ the per-pixel test outstanding. A4a (the march's speed: each level's occupied ro
 vectorised inner loop, shading in its own pass; the cone-LOD switch rule that removes the owner's
 concentric rings) and A5a (render scales with FSR 1 or a bilateral upscale) built, A4's desktop
 exit check done, its phone report outstanding; A4b (the beam prepass, the temporal start with the
-eye still) built and measured on an M1; A4c (survey, the temporal start while moving, kept frames, the column search's slope rule) built and measured on an M1 under load, continuing with the per-step cost at the LOD levels; next: A3c (overlays, LOD column heights, raster ids). Needs Phase 24 only. The marcher and compare mode are in local builds only (dev server, local preview, bench)
+eye still) built and measured on an M1; A4c (survey, the temporal start while moving, kept frames, the column search's slope rule) built and measured on an M1 under load; its three far-case picks measured and not kept; next: A3c (overlays, LOD column heights, raster ids). Needs Phase 24 only. The marcher and compare mode are in local builds only (dev server, local preview, bench)
 until A7; deployed builds keep the mesher throughout and stay shippable after every step. Phase 20
 waits for A7; Phase 26 shares A1 (its W2). No public API change, so no new compatibility line.
 
@@ -2839,8 +2840,11 @@ Deliverables
   - **Switches and configurations:** `?marchmoving=0`, `?marchreuse=0`, `?marchsteep=0`; the bench's
     `march-a4b`, `march-noreuse`, `march-nosteep`; scenarios `far-view` and `look-around`.
   - Tried and dropped: the if-if loop, other beam-walk orders, parallel column loads.
-- [ ] **A4c, continued** — The per-step cost at the LOD levels (the column grid's layout, the
-  lookup chain), and the rest of the survey's candidates.
+- [x] **A4c, the far cases** — The owner's three picks for flying high and seeing far, each built
+  and measured, none kept (design doc "A4c, the far cases"): the per-step cost at the LOD levels
+  (the slope rule for empty bricks, skipping empty 2 × 2 × 2 blocks), a second beam per sub-tile,
+  half-rate marching for distant tiles. Found instead: the cone LOD's pixel error at 8 px takes
+  24 % off 540 m up, a change of look left to the owner.
 - [x] **A5a** — Render scales 0.5 and 0.75 for the marcher with FSR 1 (EASU + RCAS in WGSL) or a
   depth- and normal-aware bilateral upscale (`render/march/upscale.rs`), `?scale=` with
   `?upscaler=fsr1|bilateral`, `__dwell.upscalers()`, the bench's `march-half-fsr`, `march-075-fsr`
@@ -3806,6 +3810,53 @@ Exit criteria
   --configs march`, 60 fps raster, 37 ms GPU march at 8×).
 - [ ] CI green; the owner's review in a browser.
 
+## Phase 39 — Painterly Textures
+
+**Status:** Built and tested natively, in Node and Vitest, and in Chrome on the GPU (2026-10-20),
+behind `?textures=painterly`; the classic set stays the default. Outstanding: CI, the owner's
+review of the look (then flipping the default, one line). No change to saves, the protocol or
+terrain: a patch release.
+
+Owner (2026-10-20, the art brief): *procedural painterly storybook textures for everything* —
+blocks, plants, water, sky accents and characters — from one data-driven generator of brush
+strokes, painted highlights and clean gradients, sharing one palette, brush vocabulary and lighting
+with the character design (Phase 40, ADR 0041). The answers and the design are in
+[`ART_DIRECTION.md`](./ART_DIRECTION.md), [`PAINTERLY_TEXTURES.md`](./PAINTERLY_TEXTURES.md) and
+[ADR 0040](./adr/0040-painterly-textures.md).
+
+Deliverables
+- [x] `docs/ART_DIRECTION.md` (the style, the palette, the brush vocabulary, how materials read, the
+  lighting assumptions), `docs/PAINTERLY_TEXTURES.md`, ADR 0040, ARCHITECTURE.md (`dwell-mesh`,
+  `/shared/textures`).
+- [x] `shared/textures/palette.json` (named three-stop ramps and swatches) and `materials.json`
+  (11 block tiles, 21 character materials, a sky accent; `like` templates, `over` stacking).
+- [x] `shared/textures/paint.mjs` (the generator: fill, gradient, dab, streak, blade, slab, ring,
+  edgeLight; jittered-grid or exact placement; validation naming the bad entry) and `gen.mjs`
+  (→ `dwell-mesh` `painterly.rgba` and `painterly.gen.rs`, and the editor page's embedded block);
+  `gen.test.mjs` (a material added by data alone, every bad case, the bake and the page current);
+  CI stale check and tests.
+- [x] `dwell-mesh` `TextureSet` (classic default, painterly): one texel lookup for the atlas,
+  cutout detection, the averages and LOD colours (cached per set) and the hotbar swatches; tests.
+- [x] `?textures=painterly` on the page (`Client.create`) and in the meshing workers (their init
+  message, `jobWorker.ts`), so the LOD colours match the atlas.
+- [x] The Painterly Texture Lab (`docs/prototypes/painterly-texture-lab.html`, published).
+- [x] The bench's `painterly` configuration (`--compare --configs painterly`).
+- [x] Screenshots classic against painterly on a real GPU: ground, blocks close up, a grassy
+  hillside, water, from 600 m.
+- [ ] Later (not this phase): the sky drawing `cloud_puff`; the fluids' colours from the palette;
+  the characters in game (Phase 40); a 64-texel atlas for finer brushes.
+
+Exit criteria
+- [x] A material added by data alone is painted, mapped to a tile and read by name
+  (`gen.test.mjs`).
+- [x] A bad entry fails with a message naming it (`gen.test.mjs`).
+- [x] The default look is unchanged: the classic atlas is built as before and the default set is
+  classic (`the_query_picks_the_set_and_the_default_is_classic`,
+  `the_painterly_atlas_differs_from_the_classic_only_in_painted_tiles`).
+- [x] The frame cost is unchanged (the same atlas, meshes and shaders; `npm run bench --
+  --compare --configs painterly`, PAINTERLY_TEXTURES.md §7).
+- [ ] CI green; the owner's review of the look.
+
 ## Phase 40 — Characters and Creatures
 
 **Status:** C0 (the design, data and prototype) built and tested (2026-10-20): `node --test
@@ -3857,3 +3908,4 @@ held item, swings without an edit (`CHARACTERS.md` §9.3–9.4).
 
 **C3 — creatures in the world (later)**: spawning, AI, bodies and netcode for the wolf and the deer
 (`CHARACTERS.md` §9.5).
+
