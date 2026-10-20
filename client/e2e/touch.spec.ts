@@ -7,6 +7,7 @@ test.use({ ...devices['iPhone 13 landscape'], browserName: 'chromium' });
 interface State {
   active: boolean;
   feet: [number, number, number];
+  stats: { ticks: number };
 }
 const read = (page: Page) =>
   page.evaluate<State | null>('(globalThis.__dwell && globalThis.__dwell.state()) || null');
@@ -40,6 +41,7 @@ test('touch controls: stick, look, and jump', async ({ page }) => {
   await expect(page.locator('#touch-jump')).toBeVisible();
   const cdp = await page.context().newCDPSession(page);
   const start = await read(page);
+  const startedAt = Date.now();
 
   // Drag the stick up (forward) from the lower left and hold for a second.
   await touch(cdp, 'touchStart', [{ x: 150, y: 300, id: 1 }]);
@@ -75,7 +77,12 @@ test('touch controls: stick, look, and jump', async ({ page }) => {
     peak = Math.max(peak, (await read(page))?.feet[1] ?? 0);
   }
   await touch(cdp, 'touchEnd', []);
-  expect(peak - ground).toBeGreaterThan(0.5);
+  // A page that predicts far fewer than 60 ticks a second drops time, and the server, filling the
+  // missing ticks with the held input, flies and lands the jump without it (game.rs
+  // MAX_TICKS_PER_FRAME): the rate says whether that is what happened.
+  const ticks = ((await read(page))?.stats.ticks ?? 0) - (start?.stats.ticks ?? 0);
+  const rate = (ticks * 1000) / (Date.now() - startedAt);
+  expect(peak - ground, `jump peak, predicting ${rate.toFixed(1)} ticks/s`).toBeGreaterThan(0.5);
 });
 
 test('touch controls: Break/Place toggle, tapping the view edits, tapping the hotbar picks', async ({
