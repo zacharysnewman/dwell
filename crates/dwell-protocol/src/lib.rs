@@ -4,6 +4,7 @@
 
 pub mod auth;
 pub mod bytes;
+pub mod fragment;
 mod messages;
 
 #[rustfmt::skip]

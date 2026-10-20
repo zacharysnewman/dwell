@@ -5,6 +5,8 @@
   "snapshotHz": 20,
   "maxDatagramBytes": 1200,
   "maxReliableMessageBytes": 1048576,
+  "maxWebrtcMessageBytes": 65536,
+  "webrtcFragmentTag": 255,
   "chunkSize": 32,
   "authDomainTag": "dwell-auth-v1",
   "maxInputsPerDatagram": 4,

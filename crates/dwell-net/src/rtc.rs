@@ -6,7 +6,9 @@
 //! request and creates a `str0m::Rtc` for it. Four pre-negotiated data channels mirror the
 //! WebTransport channels: 0 = control (reliable, ordered), 1 = world (reliable, ordered),
 //! 2 = datagrams (unordered, no retransmits), 3 = lod (reliable, ordered). SCTP preserves message
-//! boundaries, so no framing.
+//! boundaries, so a message that fits one SCTP message (`MAX_WEBRTC_MESSAGE_BYTES`) is sent as it
+//! is; a larger reliable message is split into fragments and reassembled by the receiver
+//! (`dwell_protocol::fragment`), in both directions.
 //!
 //! Security: the client pins the server's DTLS fingerprint (the same certificate as WebTransport).
 //! The server does not verify client certificates; clients are authenticated by the device-key
@@ -16,6 +18,9 @@ use std::collections::{HashMap, VecDeque};
 use std::net::SocketAddr;
 use std::sync::mpsc as std_mpsc;
 use std::time::{Duration, Instant};
+
+use dwell_protocol::MAX_WEBRTC_MESSAGE_BYTES;
+use dwell_protocol::fragment::{Reassembler, fragment};
 
 use str0m::channel::{ChannelConfig, ChannelId, Reliability};
 use str0m::config::{DtlsCert, Fingerprint};
@@ -71,8 +76,11 @@ struct Client {
     open: [bool; 4],
     connected: bool,
     created: Instant,
-    /// Reliable messages waiting for SCTP buffer space, per channel (control, world, lod).
+    /// SCTP messages (whole messages and fragments) waiting for buffer space, per reliable channel
+    /// (control, world, lod).
     pending: [VecDeque<Vec<u8>>; 3],
+    /// The control channel's incoming fragments (clients send only on control and datagrams).
+    control_in: Reassembler,
 }
 
 pub async fn run(
@@ -137,7 +145,7 @@ pub async fn run(
                             CHANNEL_LOD => 2,
                             _ => 0,
                         };
-                        c.pending[idx].push_back(data);
+                        c.pending[idx].extend(fragment(&data, MAX_WEBRTC_MESSAGE_BYTES));
                         flush_pending(c);
                     }
                     Command::Datagram(data) => {
@@ -211,6 +219,7 @@ fn new_client(data: &[u8], params: &RtcParams) -> Option<Client> {
         connected: false,
         created: now,
         pending: [VecDeque::new(), VecDeque::new(), VecDeque::new()],
+        control_in: Reassembler::new(params.limits.max_reliable_message_bytes as usize),
     })
 }
 
@@ -226,9 +235,10 @@ fn flush_pending(c: &mut Client) {
                     c.pending[idx].pop_front();
                 }
                 Ok(false) => break, // retried on ChannelBufferedAmountLow
-                // A message SCTP refuses (one over the peer's max-message-size, which str0m's
-                // direct API takes as 64 KiB) would block its channel for good, a join that
-                // never completes: close the connection instead, so the client sees it end.
+                // A message SCTP refuses would block its channel for good, a join that never
+                // completes: close the connection instead, so the client sees it end. (Messages
+                // over the peer's max-message-size, which str0m's direct API takes as 64 KiB,
+                // are fragmented first, so this is not expected.)
                 Err(e) => {
                     eprintln!(
                         "webrtc: session {}: dropping the connection, a {}-byte message was refused: {e}",
@@ -284,23 +294,30 @@ async fn drive(
                 RtcEvent::ChannelData(d) if c.connected => {
                     let idx = c.channels.iter().position(|x| *x == d.id);
                     let event = match idx {
-                        Some(0)
-                            if d.data.len()
-                                <= params.limits.max_reliable_message_bytes as usize =>
-                        {
-                            Event::Reliable {
+                        Some(0) => match c.control_in.push(&d.data) {
+                            Ok(Some(data)) => Event::Reliable {
                                 session: c.session,
                                 channel: CHANNEL_CONTROL,
-                                data: d.data,
+                                data,
+                            },
+                            Ok(None) => continue,
+                            // Oversize or malformed: the channel can't be read past it.
+                            Err(e) => {
+                                eprintln!(
+                                    "webrtc: session {}: dropping the connection, a bad control message: {e:?}",
+                                    c.session
+                                );
+                                c.rtc.disconnect();
+                                return None;
                             }
-                        }
+                        },
                         Some(2) if d.data.len() <= params.limits.max_datagram_bytes as usize => {
                             Event::Datagram {
                                 session: c.session,
                                 data: d.data,
                             }
                         }
-                        // Clients never send on the world or lod channels; oversize messages are dropped.
+                        // Clients never send on the world or lod channels; oversize datagrams are dropped.
                         _ => continue,
                     };
                     let _ = events.send(event);

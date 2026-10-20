@@ -79,13 +79,6 @@ pub struct BlockRegistry {
 /// The largest `BlockRegistry` part.
 pub const MAX_REGISTRY_PART_BYTES: usize = 256 * 1024;
 
-/// The largest reliable message a dedicated server sends over WebRTC (ADR 0008): one SCTP message
-/// on a data channel. The server's str0m endpoint has no SDP exchange, so it assumes the peer's
-/// default max-message-size (64 KiB, RFC 8841) whatever the browser would accept. Messages are
-/// not split by the transport: everything sent on a reliable channel must fit (the registry's
-/// parts do, `dwell_blocks::sync::PART_BYTES`).
-pub const MAX_WEBRTC_MESSAGE_BYTES: usize = 64 * 1024;
-
 #[derive(Clone, Debug, PartialEq)]
 pub struct Reject {
     pub reason: RejectReason,
