@@ -142,7 +142,7 @@ for (const ns of namespaces) {
     }
   }
   // `rampFamilies`: `<m>_ramp[facing, flooded, half, shape]` for natural ground on the half-height
-  // grid (Phase 39).
+  // grid (Phase 41).
   for (const m of ns.rampFamilies ?? []) {
     if (!declared.has(`${m}:ramp`)) generated.push(familyBlock(base(m), 'ramp'));
   }

@@ -12,12 +12,20 @@ PR for it, or raise `package.json` on it.
   ground (still made up of half blocks), and no adaptive blocks (just adaptive at generation time),
   when you destroy a block the ones around it don't change." Also: 45° ramps slide, a placed
   natural block is flat, ½ m per click, grass only on flat tops.
-- **Where it stands:** Phase 39 in `docs/IMPLEMENTATION_PLAN.md`: H0–H4 built (½ m cells live,
-  ramps generated, nothing adaptive); next is **H5, the owner's playtest**. The decision is
-  [ADR 0040](docs/adr/0040-half-height-cells.md), the design and the as-built list of what is still
-  in cells (ray marcher, brushes, fluid surface drop, view radius) is `docs/HALF_HEIGHT_GRID.md` §7.
+- **Where it stands:** Phase 41 in `docs/IMPLEMENTATION_PLAN.md`: H0–H4 built (½ m cells live,
+  ramps generated, nothing adaptive), and **H6: `main` merged in (2026-10-20)**, with Phase 16's
+  world, registry sync, the sprint slide, the spyglass, brushes and predicted edits, WebRTC
+  fragmentation and main's steep v16 hills, which come out on ½ m cells as whole-metre steps topped
+  by 45° ramps that slide. It ships as **dev builds** (pre-releases, `channel: dev`), never as a
+  release of `main`. Next is **H5, the owner's playtest**. The decision is
+  [ADR 0042](docs/adr/0042-half-height-cells.md) (it was 0038, then 0040; `main`'s branches took
+  those), the design and the as-built list of what is still in cells (ray marcher, brushes, fluid
+  surface drop, view radius, the build sphere) is `docs/HALF_HEIGHT_GRID.md` §7.
+- **Versions:** the protocol and generator versions are **1000 + the version of `main` last merged**
+  (now 1016), so a dev build never joins or loads `main`'s; bump both when merging a `main` that
+  bumped its own.
 - On this branch, `docs/ARCHITECTURE.md` and the plan describe the branch. If the owner keeps it,
-  renumber Phase 39 to the next free phase on `main` and remove this section; if not, the branch is
+  renumber Phase 41 to the next free phase on `main` and remove this section; if not, the branch is
   abandoned and `main` is unchanged.
 
 ## Project
@@ -69,7 +77,7 @@ and friend worlds), with a small master server for discovery; there are no offic
   the structures store; worldgen placement deferred.
 - `docs/TREE_GROWTH.md` — design for Phase 30 (ADR 0033): hand-built trees grown by a computed skeleton
   reveal, skeleton-jitter variants, and trees as a layer composed at chunk load (tombstones, `growers`).
-- `docs/HALF_HEIGHT_GRID.md` — design for Phase 39 (ADR 0040), on the long-lived branch
+- `docs/HALF_HEIGHT_GRID.md` — design for Phase 41 (ADR 0042), on the long-lived branch
   `claude/half-height-voxels` only: ½ m cells, stored cardinal ramps shaped at generation, no reshaping.
 - `docs/proposals/` — investigated but not yet adopted plans, each with open questions for the owner;
   not architecture until an ADR adopts it (adopted ones move to a design doc; its README lists them).

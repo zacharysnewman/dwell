@@ -1,7 +1,7 @@
 # Dwell — The Half-Height Grid: ½ m Cells and Stored Cardinal Ramps
 
-> **Status: [in progress, Phase 39: H0–H4 built, H5 (playtest) next]** on the long-lived branch `claude/half-height-voxels`, for
-> the owner to playtest before anything reaches `main` ([ADR 0040](./adr/0040-half-height-cells.md)).
+> **Status: [in progress, Phase 41: H0–H4 and H6 (main merged) built, H5 (playtest) next]** on the long-lived branch `claude/half-height-voxels`, for
+> the owner to playtest before anything reaches `main` ([ADR 0042](./adr/0042-half-height-cells.md)).
 > The investigation is [`proposals/HALF_HEIGHT_VOXELS.md`](./proposals/HALF_HEIGHT_VOXELS.md) and
 > the [Half-Height Voxel Lab](./prototypes/half-height-lab.html), whose **Cardinal ramps only**,
 > **½ m blocks only** and **1 m on steep ground** settings preview this design (as 1 m double
@@ -112,7 +112,7 @@ registry lacks fails generation with a message.
 
 ## 6. What changes where
 
-The plan's Phase 39 lists the steps and their checks. In short:
+The plan's Phase 41 lists the steps and their checks. In short:
 
 - **Physics:** the terrain collider's voxel size is the cell (1, ½, 1); trimesh vertices of shaped
   cells are scaled to metres; the voxel queries step in cell space. The controller's tunables are
@@ -133,7 +133,7 @@ The plan's Phase 39 lists the steps and their checks. In short:
 What the switch to ½ m cells did, and what it left for the playtest:
 
 - **Built:** `cellHeight` 0.5 with the rows doubled (metres kept); protocol version 14; generator
-  version 14 with its chunk and LOD goldens re-recorded at the same places in metres; no block
+  version 14 (now 1016, §8) with its chunk and LOD goldens re-recorded at the same places in metres; no block
   adaptive; texture v in metres from each cell's top (the grass fringe hangs from every grass
   cell); worldgen depths and the shore in metres; the decoration rule's heights and slope in
   metres (`decorations.json`); the movement playground's layers doubled. The controller suites
@@ -144,7 +144,7 @@ What the switch to ½ m cells did, and what it left for the playtest:
   1 m grid's 2 × midplane), so on ½ m cells face B's distant terrain read the wrong rows; the
   LOD section id gave each level 512 row slots, fewer than level 0's 1,024 rows on ½ m cells
   (ids collided). Both have regression tests.
-- **Found:** today's prototype terrain never steps a metre between neighbouring columns, so it
+- **Found (H4; fixed in H6, §8):** the prototype terrain then never stepped a metre between neighbouring columns, so it
   generates only ½ m ramps; the 45° ramps exist where the ground is steeper (tests build them).
 - **Not converted (deviations, for the playtest to judge):**
   - the ray marcher (local builds only, A7) still assumes 1 m cells: it draws ½ m cells stretched;
@@ -155,3 +155,22 @@ What the switch to ½ m cells did, and what it left for the playtest:
     down in metres;
   - the LOD draws natural tops flat (a ½ m ramp is below a level-1 cell);
   - structures carry no cell height: one saved on `main` (1 m cells) comes out half as tall here.
+
+## 8. After merging `main` (H6, 2026-10-20)
+
+- **Versions:** protocol and generator **1016**, 1000 + the `main` version last merged, so a dev
+  build never joins or loads one of `main`'s.
+- **Phase 16's world:** the midplane at row 0; sea level, the flat worlds' top and the core are rows
+  (64, 64, 20: 32 m, 32 m, 10 m), with metre twins. The build sphere (`bounds`) is in cells, so it
+  reaches 25 km up and down (50 km across); nothing gets near either.
+- **Steep ground (main's v16 hills):** the height field and its steepness are main's
+  (`shared/worldgen/terrain.json`). Where a 4 m lattice cell rises at least `steps.fromSlope`
+  (0.5 m/m), heights snap to whole `steps.height` (1 m), so steep ground is 1 m steps of two ½ m
+  cells; the rule (§4) tops each with a 45° ramp, and a slope near 45° is a run of them. About 13 %
+  of land tops are 45° pieces (the slide's share), against 3 % without the steps.
+- **Brushes:** radii, heights and the preview's cells count cells (a ball is half as tall as it is
+  wide); the preview is drawn in metres; reach is metres. A metric brush is a later step.
+- **Edits:** the server's line of sight passes plants, so a block under tall grass can be broken
+  where the client targets it (on ½ m cells the plant's cell is half as tall, and every sight ray
+  crossed it).
+

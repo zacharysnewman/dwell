@@ -697,7 +697,7 @@ the registry hash: the 0.12 compatibility line.
 
 **Adaptive natural blocks [in progress, Phase 18; formerly 9e]** ([`ADAPTIVE_BLOCKS.md`](./ADAPTIVE_BLOCKS.md),
 [ADR 0024](./adr/0024-adaptive-natural-blocks.md)). *On the branch `claude/half-height-voxels`
-(Phase 39 H4) no block is adaptive: natural ground is shaped once, at generation, from stored
+(Phase 41 H4) no block is adaptive: natural ground is shaped once, at generation, from stored
 ramps (below), and placing or breaking a block changes no other cell. The mechanism stays in the
 code, unused there.* A block with `"adaptive": true` in its data
 (grass, dirt, stone and sand; not water, the ladder or the sandbox floor) is stored as a plain cube
@@ -743,17 +743,17 @@ derives: the 12 adaptive corner shapes (split along their higher diagonal) and 6
 given as 3 × 3 surface points (corners, edge midpoints, centre; the surface is the fan of 8
 triangles around the centre), each in its facings, upright and hanging — 191 more. Every shape
 carries its 3 × 3 points and three-point side profiles (quarters of a cell), and `solid_span_at`
-reads a ridge shape's fan. **[built, Phase 39 H2, on the branch `claude/half-height-voxels`]**
+reads a ridge shape's fan. **[built, Phase 41 H2, on the branch `claude/half-height-voxels`]**
 `rampFamilies` in the block data gives each listed natural block `<name>_ramp[facing, flooded,
 half, shape]`: the stored cardinal ramps of the half-height grid (`HALF_HEIGHT_GRID.md` §3) — the
 `ramp` (a wedge), and `steep_lower` and `steep_upper`, the two halves of a 45° ramp that spans two
 ½ m cells, given as 3 × 3 points whose zero part is open (the upper half has no floor beyond its
-middle). They are not in the palette: the generator places them. **[built, Phase 39 H3]**
+middle). They are not in the palette: the generator places them. **[built, Phase 41 H3]**
 `dwell-worldgen` `ramps.rs` holds the generation rule (`HALF_HEIGHT_GRID.md` §4), a pure function
 of a column's height and its 8 neighbours' (rows); the generator tops each natural column with its
 pieces (flooded under the sea) and decorates only flat tops. It is active only where the pieces
 exist for the cell height (½ m cells). `dwell-world` `ramps.rs`
-looks them up by name. **[built, Phase 39 H4]** with ½ m cells no natural block is adaptive
+looks them up by name. **[built, Phase 41 H4]** with ½ m cells no natural block is adaptive
 (`dwell.json` has no `adaptive` flag): the generated ramps are the only shaped natural ground; a
 placed natural block is a flat cell. On today's prototype terrain no two neighbouring columns
 differ by a metre, so only ½ m ramps generate; 45° ramps appear only where the ground steps
@@ -779,11 +779,11 @@ water, and a flooded cell counts as water for swimming. Shape picking in the hot
 placement preview) went with the placed families.
 
 - Voxel = a cell, 1 m × `CELL_HEIGHT` × 1 m; `uint16` block-state ID (0 = air). `main` has 1 m
-  cubes. **[built, Phase 39 H4, on the branch `claude/half-height-voxels` only]** cells are
+  cubes. **[built, Phase 41 H4, on the branch `claude/half-height-voxels` only]** cells are
   1 × ½ × 1 m, chunks 32³ cells (32 × 16 × 32 m), natural ground shaped once at generation from
-  stored cardinal ramps ([`HALF_HEIGHT_GRID.md`](./HALF_HEIGHT_GRID.md), ADR 0040). Block-sized
+  stored cardinal ramps ([`HALF_HEIGHT_GRID.md`](./HALF_HEIGHT_GRID.md), ADR 0042). Block-sized
   things in this document (a block, a step, a layer) are cells: ½ m tall on the branch.
-  **[built, Phase 39 H1]** one named cell height: `cellHeight` in `shared/protocol/constants.json`
+  **[built, Phase 41 H1]** one named cell height: `cellHeight` in `shared/protocol/constants.json`
   (1.0 on `main`, 0.5 on the branch), and every conversion between metres and cells goes through `dwell-world`
   `cell.rs`. **Cell space** (x and z in metres, y in rows) is the unit of every voxel algorithm:
   chunk indexing, meshing, shapes as fractions of a cell, the LOD octree, the cell DDA, region and
@@ -792,7 +792,7 @@ placement preview) went with the placed families.
   chunk and LOD meshes (emitted in metres, normals converted), the camera, culling and outlines,
   worldgen heights, fluids, audio, and positions on the wire and in saves. Texture coordinates
   are metres (a side's v from the cell's top edge), so a ½ m cell shows half a tile and the grass
-  fringe hangs from each grass cell's top. Not converted on the branch (Phase 39 deviations): the
+  fringe hangs from each grass cell's top. Not converted on the branch (Phase 41 deviations): the
   ray marcher (it draws ½ m cells stretched to 1 m), brushes (radii and heights in cells, so a
   ball is half as tall as wide), and a fluid's `surfaceDrop` (a fraction of a cell). The registry defines each state's density,
   strength, and render properties and is shared by server and client (generated from one data set).
@@ -1099,6 +1099,10 @@ lattice and interpolated bilinearly; the chunk path and the point queries (`colu
    `shared/worldgen/terrain.json` (`HeightField`, generated into `terrain.gen.rs` by
    `shared/worldgen/gen.mjs`, range-checked, stale-checked and node-tested in CI). Heights over the
    island span about 0–500 m above sea level (sea level is face-local 32, over the 10-layer core).
+   **[on the half-height branch]** generator **1016** keeps v16's height field and adds **steps**
+   (`steps` in `terrain.json`): where a 4 m lattice cell rises at least 0.5 m/m, heights snap to
+   whole metres, so steep ground is 1 m steps of two ½ m cells that the generation rule tops with
+   45° ramps (`HALF_HEIGHT_GRID.md` §8): about 13 % of land tops slide (3 % without the steps).
    **Generator version 16** (owner, 2026-10-19: "terrain steep enough to slide on" — about 15 % of
    the land's surface steeper than the slide's 44°, everywhere, peaks up to ~500 m) made the hills
    steeper rather than adding a noise term: the adaptive blocks turn a column with a higher
@@ -1143,7 +1147,7 @@ lattice and interpolated bilinearly; the chunk path and the point queries (`colu
    metres (converted to rows when resolved); each cell decided from the seed and its
    position alone, so chunk borders agree. Today one rule: tall grass in meadows on grass (the
    owner's partial reversal of baseline B10, for plants only; [ADR 0036](./adr/0036-render-modes-and-cross-geometry.md)).
-   The LOD doesn't draw them. **[built, Phase 39 H4]** on ½ m cells a plant is one cell (½ m) tall and
+   The LOD doesn't draw them. **[built, Phase 41 H4]** on ½ m cells a plant is one cell (½ m) tall and
    grows only on flat tops (no ramp). The rules move into Phase 17's terrain definitions when those exist.
 
 A chunk took ~0.07 ms to generate natively and a LOD section 0.55–0.85 ms in the C++ build
@@ -1984,7 +1988,7 @@ in the code yet.
 | `INTEGRITY_BUDGET_VOXELS` | 32 768 / tick | Flood-fill budget per tick |
 | `AUTOSAVE_SECONDS` | 30 s | World autosave interval (per-world `autosave_seconds` setting); local mode saves every 5 s (`LOCAL_AUTOSAVE_SECONDS`, `dwell-client` local.rs), and when the page is hidden or closed |
 | `CHUNK_SIZE` | 32 | Voxels per chunk edge |
-| `CELL_HEIGHT` | 1.0 m (`main`) / 0.5 m (the branch `claude/half-height-voxels`, Phase 39 H4) | A cell is 1 m × `CELL_HEIGHT` × 1 m (§6.1): the vertical world values below are rows of cells, with metre twins (`MIDPLANE_M`, `CORE_M`, `SEA_LEVEL_M`, `FLAT_TOP_M`) generated beside them; every metre↔cell conversion goes through `dwell-world` `cell.rs` |
+| `CELL_HEIGHT` | 1.0 m (`main`) / 0.5 m (the branch `claude/half-height-voxels`, Phase 41 H4) | A cell is 1 m × `CELL_HEIGHT` × 1 m (§6.1): the vertical world values below are rows of cells, with metre twins (`MIDPLANE_M`, `CORE_M`, `SEA_LEVEL_M`, `FLAT_TOP_M`) generated beside them; every metre↔cell conversion goes through `dwell-world` `cell.rs` |
 | **Players (§9)** | | |
 | Controller tuning | see `PLAYER_CONTROLLER.md` §7 | Capsule, speeds, jump, crouch, climb, swim, push, damage |
 | `RECONCILE_SNAP_DISTANCE` | 1.0 m | Correction above this snaps instead of smoothing |

@@ -2,7 +2,7 @@
   "$comment": "Block definitions of the built-in `dwell` namespace (docs/BLOCK_REGISTRY.md). Run `node shared/blocks/gen.mjs` after editing; CI fails if the generated files are stale. Blocks take runtime state ids in this order, each block's states in property order (keys alphabetical, the last key varying fastest, values in declared order). Air must come first (id 0). `fluids` are the named fluid looks (docs/BLOCK_REGISTRY.md, 'Fluid looks') that blocks with `\"look\": \"fluid\"` reference by name; a fluid block's opacity is its fluid's. The content is prototype (ARCHITECTURE.md §6.1).",
   "namespace": "dwell",
   "shapeFamilies": [],
-  "$rampFamilies": "Half-height grid (Phase 39, docs/HALF_HEIGHT_GRID.md): each listed natural block gets `<name>_ramp[facing, flooded, half, shape]`, the stored cardinal ramps the generator places (shape ramp, steep_lower, steep_upper). Natural blocks are not adaptive on this grid: shapes are chosen once, at generation.",
+  "$rampFamilies": "Half-height grid (Phase 41, docs/HALF_HEIGHT_GRID.md): each listed natural block gets `<name>_ramp[facing, flooded, half, shape]`, the stored cardinal ramps the generator places (shape ramp, steep_lower, steep_upper). Natural blocks are not adaptive on this grid: shapes are chosen once, at generation.",
   "rampFamilies": ["stone", "dirt", "grass", "sand"],
   "fluids": {
     "dwell:water": {

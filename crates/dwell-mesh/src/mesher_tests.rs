@@ -787,7 +787,7 @@ fn a_grass_block_with_a_block_on_it_stays_a_cube() {
 
 #[test]
 fn a_level_field_of_natural_blocks_merges_its_flat_tops() {
-    // 10 × 10 grass: natural blocks are not adaptive on the half-height grid (Phase 39), so the
+    // 10 × 10 grass: natural blocks are not adaptive on the half-height grid (Phase 41), so the
     // whole field is flat at its cells' top in one rectangle (under Phase 18 the rim sloped and the
     // inside rested at half height).
     let mut field = Vec::new();
@@ -806,7 +806,7 @@ fn a_level_field_of_natural_blocks_merges_its_flat_tops() {
     }
 }
 
-/// A stored ramp state of the half-height grid (Phase 39, docs/HALF_HEIGHT_GRID.md §3).
+/// A stored ramp state of the half-height grid (Phase 41, docs/HALF_HEIGHT_GRID.md §3).
 fn ramp(material: &str, shape: &str, facing: &str, half: &str, flooded: bool) -> u16 {
     dwell_blocks::state(&format!(
         "dwell:{material}_ramp[facing={facing},flooded={flooded},half={half},shape={shape}]"

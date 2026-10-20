@@ -15,7 +15,7 @@ Adopted proposals, and where they went:
 | Water (`WATER.md`): fluid looks as data, refraction, underwater, reflections | 2026-10-14, [ADR 0030](../adr/0030-fluid-looks-and-water-rendering.md), Phase 26 | [`docs/WATER_RENDERING.md`](../WATER_RENDERING.md) |
 | Structures (`STRUCTURES.md`): a structure sandbox and a data-driven structure system | 2026-10-14, [ADR 0031](../adr/0031-data-driven-structures.md), Phase 27 | [`docs/STRUCTURES.md`](../STRUCTURES.md) |
 | Tree growth (`TREE_GROWTH.md`): growing a hand-built tree from its extracted skeleton, and variations of it | 2026-10-14, [ADR 0033](../adr/0033-tree-growth.md), Phase 30 | [`docs/TREE_GROWTH.md`](../TREE_GROWTH.md) |
-| Half-height voxels (`HALF_HEIGHT_VOXELS.md`): ½ m cells, stored cardinal ramps, shaped at generation | 2026-10-19, [ADR 0040](../adr/0040-half-height-cells.md), Phase 39, for a playtest on the branch `claude/half-height-voxels` | [`docs/HALF_HEIGHT_GRID.md`](../HALF_HEIGHT_GRID.md); the proposal is kept beside it as the investigation's record |
+| Half-height voxels (`HALF_HEIGHT_VOXELS.md`): ½ m cells, stored cardinal ramps, shaped at generation | 2026-10-19, [ADR 0042](../adr/0042-half-height-cells.md), Phase 41, for a playtest on the branch `claude/half-height-voxels` | [`docs/HALF_HEIGHT_GRID.md`](../HALF_HEIGHT_GRID.md); the proposal is kept beside it as the investigation's record |
 
 Numbers marked *estimate* in a proposal are extrapolated from published figures or arithmetic, not
 measured on Dwell. Measure them with the bench (`docs/DEV_TOOLS.md`) before relying on them.

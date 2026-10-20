@@ -2,7 +2,7 @@
 //! 1000 + main's version 16): the interim baseline of Phase
 //! 15 — one island at the origin, a 2D height field, and the ground filled by depth — and since
 //! version 13 (Phase 33) the decorations of `shared/worldgen/decorations.json` one cell above the
-//! ground (tall grass; `decorations.rs`), and since version 14 (Phase 39, HALF_HEIGHT_GRID.md) ½ m
+//! ground (tall grass; `decorations.rs`), and since version 14 (Phase 41, HALF_HEIGHT_GRID.md) ½ m
 //! cells with natural tops shaped from stored cardinal ramps (`ramps.rs`). A chunk is a
 //! pure function of (world seed, chunk coordinate), so chunks generate in any order, on any thread,
 //! natively or in WASM, bit-identically (noise.rs, ADR 0010).

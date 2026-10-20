@@ -56,7 +56,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 36 — Block registry sync | 🚧 In progress — built and tested natively and in Vitest (ADR 0038, `BLOCK_REGISTRY.md` §8): the server's registry sent at join (`BlockRegistry`, protocol 14), ids mapped at the session boundary, the join prompt (no refusals), the fallback look, server-registered blocks, placeholders for unknown states in world files; outstanding: CI, the e2e suite (WebRTC join fixed: parts fit a WebRTC message, larger messages are fragmented), the owner's review of the prompt; ships in the next minor (0.14.0), coordinated with Phase 16's protocol bump |
 | 37 — Sprint slide (stacks on 35) | 🚧 In progress — built and tested natively (controller, predictor, netcode, protocol 15 vectors): crouch while sprinting slides on, crouched, with friction and slopes, limited steering, a jump out and a cooldown (`PLAYER_CONTROLLER.md` §6.9), checked in Chrome (the `sprint-slide` bench); outstanding: CI (the WASM divergence run and the e2e suite), the owner's review; a protocol change (15): the owner raises `package.json` to a new minor |
 | 38 — The spyglass | 🚧 In progress — built and tested natively, in Vitest and on a real GPU (ADR 0039, `SPYGLASS.md`): a toggle key (`` ` ``) and wheel steps from `shared/look/spyglass.json` (generator, CI stale check), the zoomed FOV for the raster renderer, the marcher (its FOV bug fixed) and the LOD, which refines only inside the narrow view (bounded by the detail boost), the vignette, reduced motion, the `spyglass-far` bench scenario; outstanding: CI and the owner's review in a browser; a patch release |
-| 39 — Half-height grid (½ m cells, stored cardinal ramps; branch `claude/half-height-voxels` only) | 🚧 In progress — H0–H4 built and verified locally: one named cell height (H1), the stored cardinal ramps (H2), the generation rule (H3), and the switch to ½ m cells (H4: protocol and generator version 14, goldens re-recorded, no block adaptive; face B's LOD mirror and the LOD id fixed). Outstanding: the WASM suites (CI); the bench walk and screenshots; the ray marcher, brushes, the fluid surface drop and the vertical view radius left in cells (deviations, for the playtest). Next: H5, the owner's playtest. A playtest branch, not for `main` until the owner keeps it; `package.json` not raised on the branch |
+| 41 — Half-height grid (½ m cells, stored cardinal ramps; branch `claude/half-height-voxels` only) | 🚧 In progress — H0–H4 built and verified locally: one named cell height (H1), the stored cardinal ramps (H2), the generation rule (H3), and the switch to ½ m cells (H4: no block adaptive; face B's LOD mirror and the LOD id fixed). H6: `main` merged in (Phase 16's world, registry sync, sprint slide, spyglass, brushes and predicted edits, steep v16 hills as whole-metre steps with 45° ramps; protocol and generator 1016), native, WASI, clippy and Vitest green locally. Outstanding: CI; the ray marcher, brushes, the fluid surface drop, the vertical view radius and the build sphere left in cells (deviations, for the playtest). Next: H5, the owner's playtest on a dev build. A playtest branch, not for `main` until the owner keeps it; `package.json` not raised on the branch |
 
 Phase numbering: Phase 4 was inserted on 2026-09-29 for the planet-scale world (ADRs 0011, 0012);
 the former Phases 4–7 are now 5–8, and Phase 3's former 3c and 3d are now 3d and 3e.
@@ -3795,15 +3795,16 @@ Exit criteria
 
 ---
 
-## Phase 39 — Half-Height Grid: ½ m Cells and Stored Cardinal Ramps
+## Phase 41 — Half-Height Grid: ½ m Cells and Stored Cardinal Ramps
 
 > **Branch note:** built on the long-lived branch `claude/half-height-voxels` for the owner to
-> playtest; it reaches `main` only if the owner keeps it ([ADR 0040](./adr/0040-half-height-cells.md)).
+> playtest; it reaches `main` only if the owner keeps it ([ADR 0042](./adr/0042-half-height-cells.md)).
 > If it is merged, renumber it to the next free phase number on `main`.
 
-**Status:** H0 done (2026-10-19); H1–H4 built and verified locally (2026-10-20). Outstanding: the
-WASM suites (CI), H4's bench walk and screenshots, and the ray marcher (deferred, below). Next: H5,
-the owner's playtest. The design is [`HALF_HEIGHT_GRID.md`](./HALF_HEIGHT_GRID.md) (§7: as built).
+**Status:** H0 done (2026-10-19); H1–H4 built and verified locally (2026-10-20); H6 (`main` merged
+in, 2026-10-20) built, the native and WASI suites, clippy and Vitest green locally. Outstanding: CI
+(not run on the branch), the ray marcher (deferred, below). Next: H5, the owner's playtest, on a dev
+build. The design is [`HALF_HEIGHT_GRID.md`](./HALF_HEIGHT_GRID.md) (§7: as built).
 
 Owner (2026-10-19): *"Cardinal ramps only, 1/2m blocks as voxels, 1m on steep ground (still made up
 of half blocks), and no adaptive blocks (just adaptive at generation time), when you destroy a
@@ -3812,7 +3813,7 @@ block the ones around it don't change."* Answers to the follow-up questions: 45�
 first. Earlier the same day: tall grass grows only on flat surfaces (the lab).
 
 **H0 — Decision and design**
-- [x] ADR 0040 (numbered 0038 before main took that number); `HALF_HEIGHT_GRID.md`; this phase and its Progress row; the proposal marked adopted;
+- [x] ADR 0042 (numbered 0038, then 0040, before main's branches took those numbers); `HALF_HEIGHT_GRID.md`; this phase and its Progress row; the proposal marked adopted;
   `ARCHITECTURE.md` notes the planned change on the branch.
 
 **H1 — One named cell height (at 1.0)**
@@ -3919,6 +3920,24 @@ Deviations:
 - [ ] Bench numbers against `main` (chunk generation, meshing, memory, frame time).
 - [ ] Manual: the owner plays the branch and decides whether to keep it.
 
+
+**H6 — `main` merged in (2026-10-20)**
+- [x] `main` at 0.18.x merged (167 commits): Phase 16's world (midplane 0; sea level, the flat top
+  and the core in rows, 64, 64 and 20, with metre twins `SEA_LEVEL_M`, `FLAT_TOP_M`, `CORE_M`),
+  registry sync, the sprint slide, the spyglass, brushes, the exact-cell preview and predicted
+  edits (the preview emitted in metres), WebRTC fragmentation, the marcher's A4b/A4c.
+- [x] Protocol and generator 1016 (1000 + `main`'s 16): a dev build never joins `main`'s; goldens and
+  the controller's trace re-recorded.
+- [x] Main's steep v16 hills on ½ m cells: where a lattice cell is at least 0.5 m/m steep, heights
+  snap to whole metres (`shared/worldgen/terrain.json` `steps`, generated, validated: a step is a
+  whole number of cells), so steep ground is 1 m steps of two cells that the rule tops with 45°
+  ramps. 12.9 % of land tops are 45° pieces (3.2 % without the steps: the steep test failed then;
+  v16's steepness unchanged: highest ~495 m, mean slope ~22°).
+- [x] Fix: the server's edit line of sight passes plants (a break beside tall grass was refused,
+  NoLineOfSight, on ½ m cells only: a scan of 17,767 aims on `main` found none); regression test.
+- Deviations: the build sphere stays in cells (it reaches 25 km up and down); brushes stay in cells
+  (radii and heights count cells, so a ball is half as tall as wide; reach is metres); the golden
+  trace's bound 49 km out is 2 mm (1.3 mm measured; `main` 1 mm).
 ---
 
 ## Cross-Cutting Work (every phase)

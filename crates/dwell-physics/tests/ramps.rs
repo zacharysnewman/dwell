@@ -1,4 +1,4 @@
-//! The controller on the half-height grid's generated ground (HALF_HEIGHT_GRID.md §4, Phase 39):
+//! The controller on the half-height grid's generated ground (HALF_HEIGHT_GRID.md §4, Phase 41):
 //! columns of ½ m cells topped by the stored cardinal ramps the generation rule picks
 //! (`dwell_worldgen::ramps::top_of`) — ½ m ramps (26.57°) are rested on and walked, 1 m ramps
 //! (45°) slide (PLAYER_CONTROLLER.md §6.8; the slide itself is in `slide.rs`) — with no launches

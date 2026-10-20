@@ -1,7 +1,7 @@
 # Proposal: Half-Height Voxels (1 × ½ × 1 m cells)
 
-> **Status: adopted for a playtest** (2026-10-19, [ADR 0040](../adr/0040-half-height-cells.md),
-> Phase 39, design in [`HALF_HEIGHT_GRID.md`](../HALF_HEIGHT_GRID.md)), on the long-lived branch
+> **Status: adopted for a playtest** (2026-10-19, [ADR 0042](../adr/0042-half-height-cells.md),
+> Phase 41, design in [`HALF_HEIGHT_GRID.md`](../HALF_HEIGHT_GRID.md)), on the long-lived branch
 > `claude/half-height-voxels`. The owner chose ½ m cells, cardinal ramps only (½ m, and 1 m from
 > two ½ m cells on steep ground), shapes stored at generation and never reshaped, placed natural
 > blocks flat, ½ m per click, and 45° ramps that slide. This file is kept as the investigation's
