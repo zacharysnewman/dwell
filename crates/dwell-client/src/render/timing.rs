@@ -17,6 +17,8 @@ pub const FAR_WATER: &str = "gpu.far.water";
 pub const NEAR_WATER: &str = "gpu.near.water";
 /// The water's tiles (water_tiles.rs): the noise tile once, the caustic layers each frame.
 pub const WATER_TILES: &str = "gpu.water.tiles";
+/// The first-person arms' pass (docs/CHARACTERS.md §9.1).
+pub const ARMS: &str = "gpu.arms";
 pub const COMPOSITE: &str = "gpu.composite";
 /// The motion pass (the wind's blur and streaks over the finished image), while the wind is on.
 pub const MOTION: &str = "gpu.motion";

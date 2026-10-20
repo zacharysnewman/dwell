@@ -92,6 +92,11 @@ interface RenderStats {
   meshBytes: number;
   screenBytes: number;
   pixelRatio: number;
+  /** Bodies drawn, whether the arms were, the characters' mesh bytes and instance upload. */
+  characters: number;
+  arms: boolean;
+  characterMeshBytes: number;
+  characterUploadBytes: number;
 }
 
 /** Hooks for automated tests (Playwright) and debugging from the console. */
@@ -130,6 +135,13 @@ interface DwellDebug {
    * from there while the player stays put (e2e/views). False before the game has started.
    */
   placeCamera(position: Vec3, yaw: number, pitch: number): boolean;
+  /**
+   * Stand-in players (docs/DEV_TOOLS.md): `count` bodies ahead of `feet` on `face` (1 or −1), each
+   * playing a clip of its own and holding block `held` (0: none); 0 removes them.
+   */
+  puppets(count: number, feet: Vec3, face?: number, held?: number): boolean;
+  /** Shows or hides your first-person arms (the setting, for this page only). */
+  showArms(on: boolean): void;
   /** Back to the player's eyes. */
   releaseCamera(): void;
   /** Plants' wind scale (0 still, 1 the data's) and whether cutout meshes draw (cost A/B). */
@@ -521,6 +533,7 @@ async function start(): Promise<App | null> {
     client.setReducedMotion(prefersReducedMotion());
     client.setPlants(s.motion.plantSway ? 1 : 0, true);
     client.setFov(s.fovDeg);
+    client.setShowArms(s.showArms);
     client.setDetail(s.detail.distanceM, s.detail.pixelError, s.detail.memoryMb);
   });
   app.settings = settings;
@@ -620,6 +633,10 @@ async function start(): Promise<App | null> {
     },
     spyglass: (on, step) => client.spyglass(on, step ?? 0),
     placeCamera: ([x, y, z], yaw, pitch) => client.placeCamera(x, y, z, yaw, pitch),
+    puppets: (count, [x, y, z], face, held) => client.puppets(count, x, y, z, face ?? 1, held ?? 0),
+    showArms: (on) => {
+      client.setShowArms(on);
+    },
     releaseCamera: () => {
       client.releaseCamera();
     },

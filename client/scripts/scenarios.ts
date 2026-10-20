@@ -34,6 +34,14 @@ export type Step =
   /** Breaks or places at the crosshair, as a click does; selects a hotbar slot. */
   | { do: 'edit'; action: 'break' | 'place' }
   | { do: 'select'; slot: number }
+  /**
+   * Stand-in players (`__dwell.puppets`, docs/CHARACTERS.md): `count` full bodies ahead of the
+   * player (offset `at` from its feet, metres) on `face` (1 or −1), each playing a clip of its
+   * own, holding the hotbar's first block when `held`; 0 removes them.
+   */
+  | { do: 'puppets'; count: number; at?: Vec3; face?: number; held?: boolean }
+  /** Your first-person arms shown or hidden (the Show your arms setting, for this page only). */
+  | { do: 'arms'; on: boolean }
   /** Waits (at most `maxS`) until the LOD has nothing to generate, mesh or ask for, for 1 s. */
   | { do: 'settle'; maxS: number }
   /** Forgets the telemetry so far: the next `record` measures from here. */
@@ -142,6 +150,8 @@ const STEP_FIELDS: Record<Step['do'], readonly string[]> = {
   water: ['quality', 'debug'],
   edit: ['action'],
   select: ['slot'],
+  puppets: ['count', 'at', 'face', 'held'],
+  arms: ['on'],
   settle: ['maxS'],
   mark: [],
   record: ['name'],
@@ -188,6 +198,7 @@ export function parseStep(where: string, v: unknown): Step {
         pitch: num(at('pitch'), o.pitch, -90, 90),
       };
     case 'fly':
+    case 'arms':
       return { do: d, on: bool(at('on'), o.on) };
     case 'flySpeed':
       return { do: d, level: num(at('level'), o.level, 0, 63) };
@@ -229,6 +240,20 @@ export function parseStep(where: string, v: unknown): Step {
       return { do: d, action: o.action };
     case 'select':
       return { do: d, slot: num(at('slot'), o.slot, 0, 63) };
+    case 'puppets': {
+      const count = num(at('count'), o.count, 0, 256);
+      if (!Number.isInteger(count)) throw new ViewError(`${at('count')}: expected a whole number`);
+      if (o.face !== undefined && o.face !== 1 && o.face !== -1) {
+        throw new ViewError(`${at('face')}: expected 1 or -1`);
+      }
+      return {
+        do: d,
+        count,
+        ...(o.at === undefined ? {} : { at: vec3(at('at'), o.at) }),
+        ...(o.face === undefined ? {} : { face: o.face }),
+        ...(o.held === undefined ? {} : { held: bool(at('held'), o.held) }),
+      };
+    }
     case 'settle':
       return { do: d, maxS: num(at('maxS'), o.maxS, 0, 3600) };
     case 'record':

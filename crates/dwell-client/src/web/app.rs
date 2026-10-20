@@ -250,6 +250,8 @@ struct Inner {
     fov_setting: f64,
     /// The browser asks for reduced motion (the spyglass zooms at once).
     reduced_motion: bool,
+    /// The Show your arms setting (docs/CHARACTERS.md §5).
+    show_arms: bool,
 }
 
 fn shell_event(kind: &str, value: impl Into<JsValue>) -> JsValue {
@@ -374,6 +376,7 @@ impl Client {
             menu_open: false,
             fov_setting: dwell_lod::frustum::VERTICAL_FOV,
             reduced_motion: false,
+            show_arms: true,
         };
         Ok(Client {
             inner: Rc::new(RefCell::new(inner)),
@@ -497,6 +500,7 @@ impl Client {
             game.menu_open = s.menu_open;
             game.fov_setting = s.fov_setting;
             game.reduced_motion = s.reduced_motion;
+            game.show_arms = s.show_arms;
             let touch = s.touch_used.then_some(s.touch.state);
             let perf = web_sys::window().and_then(|w| w.performance());
             let mut clock = || perf.as_ref().map_or(0.0, |p| p.now());
@@ -771,6 +775,19 @@ impl Client {
             yaw_deg: yaw,
             pitch_deg: pitch,
         }));
+        true
+    }
+    /// Stand-in players for the dev tools (`__dwell.puppets`): `count` bodies ahead of `x, y, z`
+    /// (feet) on `face` (±1) holding block `held` (0: none); 0 removes them.
+    pub fn puppets(&self, count: u16, x: f64, y: f64, z: f64, face: f64, held: u16) -> bool {
+        let mut s = self.inner.borrow_mut();
+        let Some(g) = &mut s.game else { return false };
+        g.puppets = (count > 0).then_some(crate::game::Puppets {
+            count,
+            origin: [x, y, z],
+            face,
+            held,
+        });
         true
     }
     #[wasm_bindgen(js_name = releaseCamera)]
@@ -1173,6 +1190,11 @@ impl Client {
     pub fn set_fov(&self, degrees: f64) {
         self.inner.borrow_mut().fov_setting = dwell_lod::sanitize_fov_setting(degrees);
     }
+    /// The Show your arms setting: your first-person arms and what they hold (CHARACTERS.md §5).
+    #[wasm_bindgen(js_name = setShowArms)]
+    pub fn set_show_arms(&self, shown: bool) {
+        self.inner.borrow_mut().show_arms = shown;
+    }
     /// Whether the browser asks for reduced motion: the spyglass then zooms without easing.
     #[wasm_bindgen(js_name = setReducedMotion)]
     pub fn set_reduced_motion(&self, reduced: bool) {
@@ -1422,6 +1444,26 @@ impl Client {
             })
             .collect();
         set(&o, "remotes", remotes);
+        let bodies: Array = d
+            .bodies
+            .iter()
+            .map(|&(id, role, action)| {
+                let b = Object::new();
+                set(&b, "playerId", id);
+                set(&b, "role", role);
+                set(&b, "action", action.map_or(JsValue::NULL, JsValue::from));
+                JsValue::from(b)
+            })
+            .collect();
+        set(&o, "bodies", bodies);
+        let arms = Object::new();
+        set(&arms, "role", d.arms.0);
+        set(
+            &arms,
+            "action",
+            d.arms.1.map_or(JsValue::NULL, JsValue::from),
+        );
+        set(&o, "arms", arms);
         let st = Object::new();
         set(&st, "ticks", d.stats.ticks);
         set(&st, "snapshots", d.stats.snapshots);
@@ -1496,6 +1538,13 @@ impl Client {
         set(&o, "meshBytes", st.mesh_bytes as f64);
         set(&o, "screenBytes", st.screen_bytes as f64);
         set(&o, "pixelRatio", st.pixel_ratio);
+        // The characters (render/characters.rs): bodies drawn, the arms, their meshes' GPU bytes
+        // and this frame's instance upload.
+        let c = self.inner.borrow().renderer.borrow().character_stats();
+        set(&o, "characters", c.bodies);
+        set(&o, "arms", c.arms);
+        set(&o, "characterMeshBytes", c.mesh_bytes as f64);
+        set(&o, "characterUploadBytes", c.upload_bytes as f64);
         o.into()
     }
 

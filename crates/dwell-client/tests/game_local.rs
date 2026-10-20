@@ -42,6 +42,10 @@ struct Recorder {
     wind: WindView,
     region_boxes: Vec<RegionBox>,
     brush: Option<BrushOutline>,
+    /// The players drawn (the full bodies, with their clips), by id.
+    players: std::collections::HashMap<u32, PlayerView>,
+    /// Whether your arms were drawn last frame.
+    arms: bool,
 }
 
 impl TerrainRenderer for Recorder {
@@ -82,7 +86,15 @@ impl TerrainRenderer for Recorder {
 }
 
 impl Scene for Recorder {
-    fn set_player(&mut self, _id: u32, _view: Option<PlayerView>) {}
+    fn set_player(&mut self, id: u32, view: Option<PlayerView>) {
+        match view {
+            Some(v) => self.players.insert(id, v),
+            None => self.players.remove(&id),
+        };
+    }
+    fn set_arms(&mut self, arms: Option<dwell_client::render::ArmsView>) {
+        self.arms = arms.is_some();
+    }
     fn set_camera(&mut self, eye: [f64; 3], _yaw: f64, _pitch: f64, _face: f64, _flip: f64) {
         self.camera = Some(eye);
     }
@@ -245,9 +257,12 @@ impl Rig {
         self.core.advance(1.0 / 60.0);
         for o in self.core.take_outbox() {
             if o.session == GUEST {
-                if let (Some((guest, _, _)), OutKind::Reliable(channel)) = (&mut self.guest, o.kind)
-                {
-                    guest.on_reliable(channel, &o.bytes, now);
+                match (&mut self.guest, o.kind) {
+                    (Some((guest, _, _)), OutKind::Reliable(channel)) => {
+                        guest.on_reliable(channel, &o.bytes, now);
+                    }
+                    (Some((guest, _, _)), OutKind::Datagram) => guest.on_datagram(&o.bytes, now),
+                    _ => {}
                 }
                 continue;
             }
@@ -778,12 +793,19 @@ fn the_spyglass_narrows_the_view_for_the_renderer_and_the_lod_alike() {
     assert_eq!(lod.fov_y_deg, zoomed, "the LOD selects with the zoomed FOV");
     assert!((lod.magnification - m).abs() < 1e-9);
     assert!((lod.detail_magnification - m.min(SPYGLASS.detail_boost)).abs() < 1e-9);
+    // Your arms hide while zoomed (docs/CHARACTERS.md §9.1).
+    assert!(!rig.scene.borrow().arms, "no arms in the spyglass");
 
     // Reduced motion: out at once.
     rig.game.as_mut().unwrap().reduced_motion = true;
     rig.game.as_mut().unwrap().spyglass.toggle(&SPYGLASS);
     rig.run_until(1, |_| false);
     assert_eq!(rig.scene.borrow().fov.unwrap(), base);
+    assert!(rig.scene.borrow().arms, "the arms are back");
+    // The Show your arms setting off hides them.
+    rig.game.as_mut().unwrap().show_arms = false;
+    rig.run_until(1, |_| false);
+    assert!(!rig.scene.borrow().arms);
     let lod = rig.game.as_ref().unwrap().lod_camera().unwrap();
     assert_eq!((lod.fov_y_deg, lod.magnification), (base, 1.0));
 }
@@ -1277,4 +1299,119 @@ fn rapid_edits_and_a_refusal_reconcile_with_the_server() {
     );
     let stats = rig.game.as_ref().unwrap().prediction.stats;
     assert_eq!(stats.refused, 2);
+}
+
+/// The guest's input on its next server step: `move_y` forward, `buttons` held.
+fn guest_input(rig: &mut Rig, seq: u32, move_y: i8, buttons: u16) {
+    let (guest, _, _) = rig.guest.as_mut().unwrap();
+    guest.send_game_datagram(&dwell_protocol::Message::PlayerInput(
+        dwell_protocol::PlayerInput {
+            last_snapshot_tick: 0,
+            inputs: vec![dwell_protocol::InputFrame {
+                seq,
+                move_x: 0,
+                move_y,
+                buttons,
+                yaw: 0,
+                pitch: 0,
+            }],
+        },
+    ));
+}
+
+/// The guest's body as the host draws it.
+fn guest_body(rig: &Rig) -> Option<PlayerView> {
+    let host = rig.game.as_ref().unwrap().debug_state().player_id;
+    let scene = rig.scene.borrow();
+    scene
+        .players
+        .iter()
+        .find(|(id, _)| **id != u32::from(host))
+        .map(|(_, v)| *v)
+}
+
+/// Phase 40 C1 (docs/CHARACTERS.md §6, §9.2–9.3): client B (the host's game) draws client A (a
+/// guest sending its own inputs) as the full body, playing the clip its controller state calls
+/// for, while A walks, sprints, slides and jumps; and what each holds reaches the other.
+#[test]
+fn another_client_sees_your_body_walk_sprint_slide_and_jump_and_what_you_hold() {
+    use dwell_protocol::{Message, held_item, input_buttons};
+    let mut rig = predicting_rig(0);
+    let mut seq = 1u32;
+    // Plays `frames` frames of the guest's input; true once B draws A playing `role`.
+    let mut play = |rig: &mut Rig, frames: usize, move_y: i8, buttons: u16, role: &str| {
+        let mut seen = Vec::new();
+        for _ in 0..frames {
+            guest_input(rig, seq, move_y, buttons);
+            seq += 1;
+            rig.frame();
+            if let Some(v) = guest_body(rig) {
+                if seen.last() != Some(&v.role) {
+                    seen.push(v.role);
+                }
+                if v.role == role {
+                    return Ok(());
+                }
+            }
+        }
+        Err(seen)
+    };
+    play(&mut rig, 120, 0, 0, "idle").expect("A stands idle");
+    play(&mut rig, 180, 127, 0, "walk").expect("A walks");
+    play(&mut rig, 180, 127, input_buttons::RUN, "sprint").expect("A sprints");
+    play(
+        &mut rig,
+        60,
+        127,
+        input_buttons::RUN | input_buttons::CROUCH,
+        "slide",
+    )
+    .expect("A slides");
+    play(&mut rig, 120, 0, 0, "idle").expect("A stops");
+    play(&mut rig, 60, 0, input_buttons::JUMP, "jump").expect("A jumps");
+    play(&mut rig, 120, 0, 0, "fall").expect("then falls");
+
+    // What A holds reaches B: a block, then the brush (server ids; one registry here).
+    let stone = dwell_blocks::require("dwell:stone");
+    let (guest, _, _) = rig.guest.as_mut().unwrap();
+    guest.send_control(&Message::HeldItem(stone));
+    assert!(rig.run_until(60, |r| {
+        guest_body(r).is_some_and(|v| v.held == dwell_client::render::Held::Block(stone))
+    }));
+    let (guest, _, _) = rig.guest.as_mut().unwrap();
+    guest.send_control(&Message::HeldItem(held_item::BRUSH | stone));
+    assert!(rig.run_until(60, |r| {
+        guest_body(r).is_some_and(|v| v.held == dwell_client::render::Held::Brush(stone))
+    }));
+    // And what B holds reaches A: the host's game sends its hotbar block when it changes.
+    rig.game.as_mut().unwrap().interaction.select(0);
+    let want = rig.game.as_ref().unwrap().held();
+    let dwell_client::render::Held::Block(block) = want else {
+        panic!("the hotbar's first slot holds a block: {want:?}")
+    };
+    let host = rig.game.as_ref().unwrap().debug_state().player_id;
+    assert!(rig.run_until(60, |r| {
+        r.guest.as_ref().unwrap().2.iter().rev().any(|m| match m {
+            Message::PhysicsSnapshot(s) => s
+                .remotes
+                .iter()
+                .any(|p| p.player_id == host && p.held == block),
+            _ => false,
+        })
+    }));
+    // A's edit swings its arm on B's screen, even one the server refuses (out of reach here).
+    let (guest, _, _) = rig.guest.as_mut().unwrap();
+    guest.send_control(&Message::BlockEditRequest(
+        dwell_protocol::BlockEditRequest {
+            action: dwell_protocol::BlockEditAction::Break,
+            cell: [1000, 0, 1000],
+            face: 0,
+            material: 0,
+        },
+    ));
+    assert!(rig.run_until(60, |r| {
+        guest_body(r).is_some_and(|v| v.action == Some("break"))
+    }));
+    // Your own arms are drawn (first person, nothing zoomed).
+    assert!(rig.scene.borrow().arms);
 }

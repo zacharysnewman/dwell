@@ -8,6 +8,7 @@
 
 pub mod arena;
 pub mod camera;
+pub mod characters;
 pub mod display;
 pub mod frame;
 pub mod geometry;
@@ -142,7 +143,9 @@ const LEVEL_TINTS: [u32; 20] = [
     0x808080, 0x404040,
 ];
 
-/// A player drawn by the renderer (remote players, and the local one when dead).
+/// A player drawn by the renderer as the full body (docs/CHARACTERS.md §9.2): remote players,
+/// and the local one when dead. The game animates it (`dwell_characters::animator`); the renderer
+/// draws the pose.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct PlayerView {
     /// Feet position.
@@ -151,13 +154,24 @@ pub struct PlayerView {
     pub face: f64,
     /// Degrees; 0 = +Z.
     pub yaw: f64,
-    pub crouched: bool,
     /// Lying on the ground (cosmetic death pose).
     pub dead: bool,
-    pub color: u32,
-    pub radius: f32,
-    pub height: f32,
+    /// The look it wears (a variant of the player character's data; `DEFAULT_LOOK` for everyone
+    /// until looks are chosen, CHARACTERS.md §9.4).
+    pub look: &'static str,
+    /// The bones' rotations this frame.
+    pub pose: dwell_characters::anim::Pose,
+    /// The base role playing (`walk`, `sprint`: telemetry and tests).
+    pub role: &'static str,
+    /// The swing playing, if any (`break`, `place`).
+    pub action: Option<&'static str>,
+    pub held: Held,
 }
+
+/// Your own first-person arms (docs/CHARACTERS.md §5), drawn in their own pass; none while dead,
+/// zoomed in the spyglass, or hidden in the settings.
+pub type ArmsView = characters::ArmsDraw;
+pub use characters::Held;
 
 /// The wind to draw this frame (docs/MOTION_EFFECTS.md): none when `intensity` is 0.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -672,7 +686,6 @@ fn fluid_rotation(origin: V3) -> [f32; 4] {
 enum DrawMesh {
     Chunk(ChunkCoord, Part),
     Section(i64, bool, u8),
-    Player(PlayerShape),
     Outline,
     Debug,
     Region(usize),
@@ -734,14 +747,19 @@ pub struct Renderer {
     wind: WindView,
     /// GPU pass timing, when the device has timestamp queries (`timing.rs`).
     timer: Option<GpuTimer>,
-    frame_buffers: [wgpu::Buffer; 2],
-    frame_groups: [wgpu::BindGroup; 2],
+    /// The frame uniforms: the far pass's, the near pass's and the first-person arms' (their own
+    /// projection, characters.rs).
+    frame_buffers: [wgpu::Buffer; 3],
+    frame_groups: [wgpu::BindGroup; 3],
     draw_buffer: wgpu::Buffer,
     draw_group: wgpu::BindGroup,
     draw_capacity: u64,
     level_colors: bool,
     players: HashMap<u32, PlayerView>,
-    capsules: HashMap<PlayerShape, GpuMesh>,
+    /// The first-person arms this frame, if drawn.
+    arms: Option<ArmsView>,
+    /// The characters' pipelines, meshes and instances (characters.rs).
+    characters: characters::CharacterRenderer,
     outline: Option<V3>,
     /// The outline's box in its cell, and its lines.
     outline_box: ([f32; 3], [f32; 3]),
@@ -793,24 +811,6 @@ pub struct Renderer {
 fn linear(c: u32) -> [f32; 3] {
     hex(c).map(|v| srgb_to_linear(v) as f32)
 }
-
-/// What a player's mesh depends on: radius and height (bits), dead, colour, face B.
-type PlayerShape = (u32, u32, bool, u32, bool);
-
-fn player_shape(v: &PlayerView) -> PlayerShape {
-    let height = if v.crouched { v.height / 2.0 } else { v.height };
-    let color = if v.dead { DEAD_COLOR } else { v.color };
-    (
-        v.radius.to_bits(),
-        height.to_bits(),
-        v.dead,
-        color,
-        v.face < 0.0,
-    )
-}
-
-/// Dead players are grey (and lie down, geometry::player_mesh).
-const DEAD_COLOR: u32 = 0x6b6b6b;
 
 impl Renderer {
     /// A renderer drawing into `format` targets (a canvas's, or an offscreen texture's).
@@ -1214,6 +1214,8 @@ impl Renderer {
                 entries: &entries,
             })
         });
+        let characters =
+            characters::CharacterRenderer::new(&device, &queue, &frame_layout, samples);
         let (draw_buffer, draw_group) = Self::draw_buffer(&device, &draw_layout, 1024);
         let arena = Arena::new(device.clone(), queue.clone(), &STRIDES);
         let outline_box = ([0.0; 3], [1.0; 3]);
@@ -1250,7 +1252,8 @@ impl Renderer {
             draw_capacity: 1024,
             level_colors: false,
             players: HashMap::default(),
-            capsules: HashMap::default(),
+            arms: None,
+            characters,
             outline: None,
             outline_box,
             outline_mesh,
@@ -1550,20 +1553,6 @@ impl Renderer {
     pub fn set_player(&mut self, id: u32, view: Option<PlayerView>) {
         match view {
             Some(v) => {
-                let key = player_shape(&v);
-                self.capsules.entry(key).or_insert_with(|| {
-                    let (radius, height) = (f32::from_bits(key.0), f32::from_bits(key.1));
-                    let face = if key.4 { -1.0 } else { 1.0 };
-                    let g = geometry::player_mesh(radius, height, key.2, linear(key.3), face);
-                    let m = FlatMesh {
-                        positions: g.positions,
-                        normals: g.normals,
-                        colors: g.colors,
-                        fluids: Vec::new(),
-                        indices: g.indices,
-                    };
-                    GpuMesh::flat(&self.arena, &[&m]).expect("a capsule has faces")
-                });
                 self.players.insert(id, v);
             }
             None => {
@@ -1573,6 +1562,14 @@ impl Renderer {
     }
     /// Places the camera at `eye`, looking along yaw/pitch (degrees) for `face`; `flip` turns the
     /// view over about its right axis across the midplane.
+    /// Your first-person arms this frame, or none (dead, zoomed, hidden).
+    pub fn set_arms(&mut self, arms: Option<ArmsView>) {
+        self.arms = arms;
+    }
+    /// The characters drawn last frame and their GPU bytes (telemetry, the bench).
+    pub fn character_stats(&self) -> characters::CharacterStats {
+        self.characters.stats
+    }
     pub fn set_camera(&mut self, eye: V3, yaw_deg: f64, pitch_deg: f64, face: f64, flip: f64) {
         (self.eye, self.yaw, self.pitch, self.face, self.flip) =
             (eye, yaw_deg, pitch_deg, face, flip);
@@ -1655,8 +1652,18 @@ impl Renderer {
     }
 
     fn frame_uniforms(&self, basis: &Basis, near: f64, far: f64) -> [f32; FRAME_FLOATS] {
+        self.frame_uniforms_at(basis, near, far, self.frame_fov())
+    }
+
+    /// The frame uniforms with a vertical FOV of their own (the first-person arms').
+    fn frame_uniforms_at(
+        &self,
+        basis: &Basis,
+        near: f64,
+        far: f64,
+        fov: f64,
+    ) -> [f32; FRAME_FLOATS] {
         let aspect = f64::from(self.size.0) / f64::from(self.size.1);
-        let fov = self.frame_fov();
         let vp = mul(&perspective(fov, aspect, near, far), &view_matrix(basis));
         let mut u = [0.0f32; FRAME_FLOATS];
         let mut i = 0;
@@ -1812,10 +1819,6 @@ impl Renderer {
                         .filter_map(|f| m.parts.get(1 + f).cloned()),
                 );
                 (m, r)
-            }
-            DrawMesh::Player(key) => {
-                let m = &self.capsules[key];
-                (m, vec![m.parts[0].clone()])
             }
             DrawMesh::Outline => (&self.outline_mesh, vec![self.outline_mesh.parts[0].clone()]),
             DrawMesh::Region(i) => {
@@ -1983,28 +1986,6 @@ impl Renderer {
                 passes,
                 key: 0,
                 mesh: DrawMesh::Section(st.id, false, 0),
-            });
-        }
-        for v in self.players.values() {
-            let passes = reaches(v.feet, 4.0);
-            if passes == 0 {
-                continue;
-            }
-            // The mesh is posed and coloured in feet-local space; the draw turns it to the yaw.
-            let r = self.rel(v.feet);
-            let yaw = (v.yaw as f32).to_radians();
-            out.push(DrawItem {
-                kind: Kind::Flat,
-                water: false,
-                no_depth: false,
-                offset: [r[0], r[1], r[2], 1.0],
-                clip: None,
-                tint: [1.0, 1.0, 1.0, 1.0],
-                rotation: [yaw.cos(), yaw.sin(), 0.0, 0.0],
-                page: 0,
-                passes,
-                key: 0,
-                mesh: DrawMesh::Player(player_shape(v)),
             });
         }
         if let Some(cell) = self.outline.filter(|c| reaches(*c, 2.0) != 0) {
@@ -2181,6 +2162,44 @@ impl Renderer {
             self.queue
                 .write_buffer(&self.frame_buffers[i], 0, floats(&u));
         }
+        // The characters: other players' bodies in the scene passes, your arms after them with
+        // their own projection (characters.rs).
+        let bodies: Vec<characters::BodyDraw> = self
+            .players
+            .values()
+            .map(|v| characters::BodyDraw {
+                feet: v.feet,
+                yaw: v.yaw,
+                face: v.face,
+                dead: v.dead,
+                look: v.look,
+                pose: v.pose,
+                held: v.held,
+            })
+            .collect();
+        let strokes = dwell_mesh::texture_set() == dwell_mesh::TextureSet::Painterly;
+        self.characters.prepare(
+            &self.device,
+            &self.queue,
+            self.eye,
+            &basis,
+            &passes,
+            &bodies,
+            self.arms.as_ref(),
+            strokes,
+        );
+        let arms = self.characters.has_arms();
+        if arms {
+            let fov = dwell_characters::player()
+                .first_person
+                .map_or(62.0, |f| f64::from(f.fov));
+            let u =
+                self.frame_uniforms_at(&basis, characters::ARMS_NEAR, characters::ARMS_FAR, fov);
+            self.queue
+                .write_buffer(&self.frame_buffers[2], 0, floats(&u));
+        }
+        // With the arms, the world's last pass keeps its colour and the arms' pass resolves.
+        let planned = passes.len() + usize::from(arms);
         // Per-draw uniforms, every pass's in one buffer.
         let total = draws.iter().map(Vec::len).sum::<usize>() as u64;
         if total > self.draw_capacity {
@@ -2244,12 +2263,14 @@ impl Renderer {
                 .flatten();
             let (ops, water_ops) = match split {
                 Some(_) => {
-                    let (o, w) = frame::split_pass_ops(i, scene_passes, self.samples);
+                    let (o, w) = frame::split_pass_ops(i, planned, self.samples);
                     (o, Some(w))
                 }
-                None => (frame::scene_pass_ops(i, scene_passes, self.samples), None),
+                None => (frame::scene_pass_ops(i, planned, self.samples), None),
             };
             let opaque = &pass_draws[..split.unwrap_or(pass_draws.len())];
+            // The characters draw with the opaque draws, before any see-through water.
+            let solid = opaque.iter().position(|d| d.water).unwrap_or(opaque.len());
             {
                 let mut pass = Self::scene_pass(
                     &mut encoder,
@@ -2263,8 +2284,23 @@ impl Renderer {
                 pass.set_bind_group(1, &self.draw_group, &[]);
                 self.record(
                     &mut pass,
-                    opaque,
+                    &opaque[..solid],
                     first[i],
+                    &arena,
+                    false,
+                    &mut calls,
+                    &mut triangles,
+                );
+                if self
+                    .characters
+                    .draw_bodies(&mut pass, i, &mut calls, &mut triangles)
+                {
+                    pass.set_bind_group(1, &self.draw_group, &[]);
+                }
+                self.record(
+                    &mut pass,
+                    &opaque[solid..],
+                    first[i] + solid as u64,
                     &arena,
                     false,
                     &mut calls,
@@ -2299,6 +2335,24 @@ impl Renderer {
                 &mut calls,
                 &mut triangles,
             );
+        }
+        // Your arms over the world: the same targets, the depth buffer cleared (characters.rs
+        // `arms_pass`), their own projection.
+        if arms {
+            let plan = characters::arms_pass(scene_passes, self.samples);
+            let query = self.timer.as_mut().and_then(|t| t.pass(timing::ARMS));
+            let mut pass = Self::begin_scene_pass(
+                &mut encoder,
+                targets,
+                "arms",
+                plan.ops,
+                plan.depth,
+                false,
+                self.timer.as_ref().and_then(|t| t.writes(query)),
+            );
+            pass.set_bind_group(0, &self.frame_groups[2], &[]);
+            self.characters
+                .draw_arms(&mut pass, &mut calls, &mut triangles);
         }
         let cpu = crate::telemetry::now_ms() - t0 + collect_ms;
         // With the wind on, the composite draws the finished image and the motion pass reads it
@@ -2450,13 +2504,35 @@ impl Renderer {
         keep_depth: bool,
         timestamp_writes: Option<wgpu::RenderPassTimestampWrites<'a>>,
     ) -> wgpu::RenderPass<'a> {
+        Self::begin_scene_pass(
+            encoder,
+            targets,
+            if i == 0 { "far" } else { "near" },
+            ops,
+            wgpu::LoadOp::Clear(1.0),
+            keep_depth,
+            timestamp_writes,
+        )
+    }
+
+    /// A pass into a side's scene targets: `ops` for the colour and view depth, `depth` for the
+    /// depth buffer (every scene pass clears it: each has its own projection).
+    fn begin_scene_pass<'a>(
+        encoder: &'a mut wgpu::CommandEncoder,
+        targets: &'a Targets,
+        label: &'static str,
+        ops: frame::PassOps,
+        depth: wgpu::LoadOp<f32>,
+        keep_depth: bool,
+        timestamp_writes: Option<wgpu::RenderPassTimestampWrites<'a>>,
+    ) -> wgpu::RenderPass<'a> {
         let clear_or_load = if ops.clear {
             wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT)
         } else {
             wgpu::LoadOp::Load
         };
         encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some(if i == 0 { "far" } else { "near" }),
+            label: Some(label),
             color_attachments: &[
                 Some(wgpu::RenderPassColorAttachment {
                     view: targets.scene_colour(),
@@ -2484,7 +2560,7 @@ impl Renderer {
             depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                 view: &targets.depth.1,
                 depth_ops: Some(wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(1.0),
+                    load: depth,
                     store: if keep_depth {
                         wgpu::StoreOp::Store
                     } else {
@@ -2761,6 +2837,9 @@ impl TerrainRenderer for Renderer {
 impl crate::game::Scene for Renderer {
     fn set_player(&mut self, id: u32, view: Option<PlayerView>) {
         Renderer::set_player(self, id, view);
+    }
+    fn set_arms(&mut self, arms: Option<ArmsView>) {
+        Renderer::set_arms(self, arms);
     }
     fn set_camera(&mut self, eye: V3, yaw_deg: f64, pitch_deg: f64, face: f64, flip: f64) {
         Renderer::set_camera(self, eye, yaw_deg, pitch_deg, face, flip);
@@ -3307,6 +3386,33 @@ mod tests {
             color: 0xff0000,
         }]));
         r.set_camera([16.0, 4.0, 16.0], 0.0, -30.0, 1.0, 0.0);
+        // Characters: a body holding the brush, one on face B holding a block, a dead one, and
+        // your arms (their own pass).
+        let grass = dwell_blocks::require("dwell:grass");
+        for (id, feet, face, dead, held) in [
+            (1, [16.0, 1.0, 20.0], 1.0, false, Held::Brush(grass)),
+            (2, [18.0, -3.0, 20.0], -1.0, false, Held::Block(grass)),
+            (3, [14.0, 1.0, 20.0], 1.0, true, Held::Empty),
+        ] {
+            r.set_player(
+                id,
+                Some(PlayerView {
+                    feet,
+                    face,
+                    yaw: 30.0,
+                    dead,
+                    look: dwell_characters::DEFAULT_LOOK,
+                    pose: Default::default(),
+                    role: "idle",
+                    action: None,
+                    held,
+                }),
+            );
+        }
+        r.set_arms(Some(ArmsView {
+            pose: Default::default(),
+            held: Held::Block(grass),
+        }));
         // A boosted FOV and the wind (streaks, vignette, edge blur in the composite) too.
         r.set_fov(Some(85.0));
         r.set_wind(WindView {

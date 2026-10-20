@@ -1,0 +1,8 @@
+{
+  "$comment": "Test content (CHARACTERS.md §7): a mirrored pauldron added to the player by data alone, which the Rust loader must mesh on the arm bones (crates/dwell-characters, fixture.gen.rs). Never in a build.",
+  "parts": {
+    "player": [
+      { "id": "test_pauldron_l", "on": "arm_l", "kind": "round_box", "size": [0.22, 0.12, 0.22], "at": [0.06, 0.02, 0], "round": 0.3, "material": "metal_iron", "mirror": true }
+    ]
+  }
+}

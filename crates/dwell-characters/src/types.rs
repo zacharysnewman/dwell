@@ -1,0 +1,188 @@
+//! The generated tables' types (`characters.gen.rs`, written by `shared/characters/gen.mjs`): the
+//! engine's fixed vocabulary of CHARACTERS.md §3, as data the game reads by name.
+
+/// A part's shape; every kind fills its `size` box, its axis along y.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Kind {
+    Box,
+    RoundBox,
+    Ellipsoid,
+    Cylinder,
+    Capsule,
+    Cone,
+}
+
+/// Which view draws a part.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum View {
+    Both,
+    Body,
+    Arms,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Space {
+    Body,
+    Arms,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Layer {
+    Base,
+    Hold,
+    Action,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Ease {
+    Linear,
+    Smooth,
+    Spline,
+    Step,
+}
+
+/// A bone with no parent (the rig's root).
+pub const NO_PARENT: usize = usize::MAX;
+
+/// `$block`'s material index: the held block's own look (its atlas tiles), supplied at run time.
+pub const BLOCK_MATERIAL: u16 = u16::MAX;
+
+#[derive(Clone, Copy, Debug)]
+pub struct Bone {
+    pub name: &'static str,
+    /// An earlier bone's index, or `NO_PARENT`.
+    pub parent: usize,
+    /// The rest offset from the parent's pivot (metres): the proportions.
+    pub rest: [f32; 3],
+}
+
+/// A composed part (rig.mjs `compose`): on a bone, `at` in the bone's frame, turned by `rot`
+/// (Euler XYZ degrees), filling `size`.
+#[derive(Clone, Copy, Debug)]
+pub struct Part {
+    pub id: &'static str,
+    pub bone: usize,
+    pub kind: Kind,
+    pub size: [f32; 3],
+    pub at: [f32; 3],
+    pub rot: [f32; 3],
+    /// `round_box`: the rounding, 0–0.5 of the smallest side.
+    pub round: f32,
+    /// `cone`: the top radius, 0–1.
+    pub tip: f32,
+    pub view: View,
+    /// An index into `MATERIALS`, or `BLOCK_MATERIAL`.
+    pub material: u16,
+}
+
+/// A look (a variant): every part it draws, accessories included and hidden parts left out.
+#[derive(Clone, Copy, Debug)]
+pub struct Look {
+    pub name: &'static str,
+    pub label: &'static str,
+    pub parts: &'static [Part],
+}
+
+/// A held item, composed onto the character's socket.
+#[derive(Clone, Copy, Debug)]
+pub struct Item {
+    pub name: &'static str,
+    pub parts: &'static [Part],
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct FirstPerson {
+    /// The arm chain, root first (bone indices).
+    pub bones: &'static [usize],
+    /// The chain's first bone in view space (metres from the eye; +z ahead, +x left).
+    pub anchor: [f32; 3],
+    /// The arms pass's vertical FOV (degrees).
+    pub fov: f32,
+    /// Role → clip index.
+    pub clips: &'static [(&'static str, usize)],
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct Character {
+    /// The data's key (`player`).
+    pub id: &'static str,
+    /// Namespaced (`dwell:player`).
+    pub name: &'static str,
+    pub rig: &'static str,
+    pub height: f32,
+    pub bones: &'static [Bone],
+    /// Role → clip index.
+    pub clips: &'static [(&'static str, usize)],
+    pub looks: &'static [Look],
+    pub items: &'static [Item],
+    pub first_person: Option<FirstPerson>,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct Material {
+    pub name: &'static str,
+    /// sRGB `0xRRGGBB`.
+    pub shadow: u32,
+    pub base: u32,
+    pub light: u32,
+    /// How strongly the brush tile shows (0 clean).
+    pub overlay: f32,
+    /// Index into `TILES`, or −1.
+    pub tile: i32,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct Key {
+    pub t: f32,
+    pub v: [f32; 3],
+}
+
+/// One bone's keys, in time order.
+#[derive(Clone, Copy, Debug)]
+pub struct Channel {
+    pub bone: usize,
+    pub keys: &'static [Key],
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct Clip {
+    pub name: &'static str,
+    pub rig: &'static str,
+    pub space: Space,
+    pub layer: Layer,
+    pub duration: f32,
+    pub looping: bool,
+    pub ease: Ease,
+    /// Metres travelled per loop (0: not a gait).
+    pub cycle: f32,
+    pub grounded: bool,
+    /// The cross-fade into it (s).
+    pub blend: f32,
+    pub channels: &'static [Channel],
+    /// The root offset's keys (metres), if it keys one.
+    pub root: &'static [Key],
+}
+
+impl Character {
+    /// The clip a role names (`walk`), if the character has it.
+    pub fn clip(&self, role: &str) -> Option<usize> {
+        self.clips.iter().find(|(r, _)| *r == role).map(|(_, c)| *c)
+    }
+    /// The first-person clip a role names.
+    pub fn arms_clip(&self, role: &str) -> Option<usize> {
+        self.first_person?
+            .clips
+            .iter()
+            .find(|(r, _)| *r == role)
+            .map(|(_, c)| *c)
+    }
+    pub fn look(&self, name: &str) -> Option<&'static Look> {
+        self.looks.iter().find(|l| l.name == name)
+    }
+    pub fn item(&self, name: &str) -> Option<&'static Item> {
+        self.items.iter().find(|i| i.name == name)
+    }
+    pub fn bone(&self, name: &str) -> Option<usize> {
+        self.bones.iter().position(|b| b.name == name)
+    }
+}

@@ -9,7 +9,14 @@ import { defaultDetail, detailLimits, sanitizeDetail, type DetailSettings } from
 import { DEFAULT_FOG, FOG_LIMITS, sanitizeFog, type FogSettings } from './viewSettings';
 import { DEFAULT_EXPOSURE, EXPOSURE_LIMITS, sanitizeExposure } from './viewSettings';
 import { CLOUD_QUALITIES, defaultClouds, sanitizeClouds, type CloudQuality } from './viewSettings';
-import { DEFAULT_FOV, FOV_LIMITS, VIEW_KEY, sanitizeFovSetting, viewRecord } from './viewSettings';
+import {
+  DEFAULT_FOV,
+  FOV_LIMITS,
+  VIEW_KEY,
+  sanitizeFovSetting,
+  sanitizeShowArms,
+  viewRecord,
+} from './viewSettings';
 import { DEBUG_KEYS, KEYBOARD, TOUCH, keysLabel, type Control } from './controls';
 import { audio } from '../audio/engine';
 import { DEFAULT_VOLUMES, type Volumes } from '../audio/mixer';
@@ -72,6 +79,8 @@ export interface Settings {
   motion: MotionSettings;
   /** The vertical field of view in degrees (60–100; narrower on wide screens, dwell-lod's base_fov). */
   fovDeg: number;
+  /** Your first-person arms and what they hold (docs/CHARACTERS.md §5). */
+  showArms: boolean;
 }
 
 export function defaultSettings(mobile: boolean, reducedMotion = false): Settings {
@@ -84,6 +93,7 @@ export function defaultSettings(mobile: boolean, reducedMotion = false): Setting
     water: defaultWater(mobile),
     motion: defaultMotion(reducedMotion),
     fovDeg: DEFAULT_FOV,
+    showArms: true,
   };
 }
 
@@ -114,6 +124,7 @@ export function settingsJson(s: Settings): string {
       plantSway: s.motion.plantSway,
     },
     fovDeg: Math.round(s.fovDeg),
+    showArms: s.showArms,
   };
   return JSON.stringify(rounded, null, 2);
 }
@@ -150,6 +161,7 @@ export function loadSettings(mobile: boolean): Settings {
     water: sanitizeWater(load(WATER_KEY), defaults.water),
     motion: sanitizeMotion(load(MOTION_KEY), prefersReducedMotion()),
     fovDeg: sanitizeFovSetting(load(VIEW_KEY)),
+    showArms: sanitizeShowArms(load(VIEW_KEY)),
   };
 }
 
@@ -162,7 +174,10 @@ export function saveSettings(s: Settings): void {
     localStorage.setItem(WATER_KEY, JSON.stringify(waterRecord(load(WATER_KEY), s.water)));
     // Append-only: fields a newer build stored are kept.
     localStorage.setItem(MOTION_KEY, JSON.stringify(motionRecord(load(MOTION_KEY), s.motion)));
-    localStorage.setItem(VIEW_KEY, JSON.stringify(viewRecord(load(VIEW_KEY), s.fovDeg)));
+    localStorage.setItem(
+      VIEW_KEY,
+      JSON.stringify(viewRecord(load(VIEW_KEY), s.fovDeg, s.showArms)),
+    );
   } catch {
     // Not kept: the settings still apply for this visit.
   }
@@ -312,6 +327,14 @@ function sections(
           format: (v) => `${v.toFixed(2)}×`,
           get: (s) => s.exposure,
           with: (s, v) => ({ ...s, exposure: v }),
+        },
+      ],
+      toggles: [
+        {
+          label: 'Show your arms',
+          hint: 'Your hand and what it holds, in first person',
+          get: (s) => s.showArms,
+          with: (s, v) => ({ ...s, showArms: v }),
         },
       ],
     },

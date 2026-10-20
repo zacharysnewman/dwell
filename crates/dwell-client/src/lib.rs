@@ -3,6 +3,7 @@
 //! (`render`), with the JS API in `web` (wasm-bindgen). This file also holds the WebGPU probe and
 //! the renderer's smoke scene, which `client/e2e-webgpu` checks in headless Chromium.
 
+pub mod bodies;
 pub mod game;
 pub mod jobs;
 pub mod local;
@@ -216,11 +217,13 @@ pub async fn render_scene(device: wgpu::Device, queue: wgpu::Queue) -> Result<Ve
             feet: [16.0, 9.0, 16.0],
             face: 1.0,
             yaw: 0.0,
-            crouched: false,
             dead: false,
-            color: 0xff3030,
-            radius: 0.4,
-            height: 1.8,
+            // The red-tunicked look, which the smoke test finds.
+            look: "tinker",
+            pose: Default::default(),
+            role: "idle",
+            action: None,
+            held: render::Held::Empty,
         }),
     );
     // A dead player lying beside it, and one turned to face the camera's right.
@@ -234,11 +237,12 @@ pub async fn render_scene(device: wgpu::Device, queue: wgpu::Queue) -> Result<Ve
                 feet,
                 face: 1.0,
                 yaw,
-                crouched: false,
                 dead,
-                color: 0x3060ff,
-                radius: 0.4,
-                height: 1.8,
+                look: dwell_characters::DEFAULT_LOOK,
+                pose: Default::default(),
+                role: "idle",
+                action: None,
+                held: render::Held::Empty,
             }),
         );
     }
