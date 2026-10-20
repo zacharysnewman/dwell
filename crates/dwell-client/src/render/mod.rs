@@ -208,11 +208,13 @@ struct GpuMesh {
     arena: ArenaRef,
 }
 
-/// Bytes per vertex of each `Kind`'s interleaved format (the pipelines' vertex layouts).
-const STRIDES: [u64; 5] = [
+/// Bytes per vertex of each `Kind`'s interleaved format (the pipelines' vertex layouts), in the
+/// enum's order: `Kind as usize` indexes it.
+const STRIDES: [u64; 6] = [
     4 * (3 + 3 + 3 + 2 + 4),     // Terrain: position, normal, colour, uv, tile
     4 * (3 + 3 + 3),             // Flat: position, normal, colour
     4 * (3 + 3),                 // Line: position, colour
+    4 * (3 + 3),                 // Ghost: the lines' format (triangles)
     4 * (3 + 3 + 3 + 1),         // Fluid: position, normal, colour, fluid id
     4 * (3 + 3 + 3 + 2 + 4 + 4), // Cutout: the terrain's, and plant (sway, wind speed, fade)
 ];
@@ -2952,6 +2954,24 @@ impl crate::game::Scene for Renderer {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Every `Kind` indexes `STRIDES` (the arena's formats) with its own format's stride: a kind
+    /// inserted without its stride shifted the later kinds (fluids read the cutout's stride, and
+    /// cutout meshes indexed past the end and panicked in `Arena::upload`).
+    #[test]
+    fn every_kind_has_its_own_stride() {
+        let line = 4 * (3 + 3);
+        for (kind, stride) in [
+            (Kind::Terrain, 4 * (3 + 3 + 3 + 2 + 4)),
+            (Kind::Flat, 4 * (3 + 3 + 3)),
+            (Kind::Line, line),
+            (Kind::Ghost, line),
+            (Kind::Fluid, 4 * (3 + 3 + 3 + 1)),
+            (Kind::Cutout, 4 * (3 + 3 + 3 + 2 + 4 + 4)),
+        ] {
+            assert_eq!(STRIDES.get(kind as usize), Some(&stride), "{kind:?}");
+        }
+    }
 
     #[test]
     fn the_water_uniform_carries_the_eye_fluid_and_the_water_quality() {
