@@ -33,7 +33,8 @@ test('the GPU marcher matches the CPU reference pixel for pixel', async ({ page 
   console.log(JSON.stringify({ ...m, lines: undefined }, null, 1));
   for (const line of m.lines ?? []) console.log(line);
   expect(m.error).toBeUndefined();
-  expect(m.views).toBe(12);
+  // 12 views, each after three last frames: a turn, a step forward, a step back (A4c).
+  expect(m.views).toBe(36);
   expect(m.idMismatches).toBe(0);
   expect(m.recordMismatches).toBe(0);
   expect(m.maxDepthError ?? 1).toBeLessThanOrEqual(1e-4);
