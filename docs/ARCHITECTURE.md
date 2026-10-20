@@ -106,7 +106,7 @@ GitHub Pages only serves static files. Consequences that shape the architecture:
    path: the launcher opens the build the choice needs. Links still open
    directly: an invite, a friend world's join code (`?code=`, Phase 5c, §10.2), or a local world
    by `?local=1`, `?world=` or `?seed=`. Local mode and
-   dedicated servers generate the **procedural terrain** world (generator version 14, §6.3) by
+   dedicated servers generate the **procedural terrain** world (generator version 15, §6.3) by
    default; `?world=flat`, `?world=sandbox` and `?seed=N` (local mode) or `--generator N` and
    `--seed N` (`dwell-server`) pick another generator or seed. (The movement playground, version 1, became a
    test structure file in Phase 15, §6.3; old playground worlds open in their own versions.)
@@ -296,7 +296,7 @@ There are **no official game servers**; players host (ADR 0003, details in §10)
 /shared/sounds       Sound data (dwell.json: sounds, block sound sets, events, gaits, actions, UI,
                      controls) + gen.mjs (→ TS for client/src/audio, Rust for dwell-game) and
                      validate.mjs (also used by shared/blocks/gen.mjs and the client's tests).
-/shared/worldgen     golden/: chunk and LOD-section hashes of generator version 14 (§6.3); decorations.json: the terrain's decoration rules (§6.3).
+/shared/worldgen     golden/: chunk and LOD-section hashes of generator version 15 (§6.3); terrain.json: the height field's parameters, decorations.json: the terrain's decoration rules, gen.mjs (→ Rust tables for dwell-worldgen) (§6.3).
 /shared/structures   Structure files (*.json; test/ holds fixtures) + gen.mjs (→ Rust tables for
                      dwell-world) and gen.test.mjs; format.mjs, the format's rules, shared by gen.mjs
                      and the client's structures store; playground.json is the movement playground
@@ -804,9 +804,10 @@ current *content* — one island, its heights and surface materials — is proto
 [`BASELINE_EVALUATION.md`](./BASELINE_EVALUATION.md), [ADR 0025](./adr/0025-baseline-world.md)) cut
 the generator down to an **interim** one: one island at the origin, a 2D height field and a fill by
 depth — no continents, plates, rivers, lakes, climate, biomes, tints, mountain cascade, 3D density,
-caves, ores, trees, boulders or slope stage (their ADRs 0017–0022 are superseded). Its parameters
-are code constants: Phase 17 replaces it with an evaluator of terrain definitions (data,
-[ADR 0026](./adr/0026-terrain-definitions.md)). **[built, Phase 16]** The world is the 50 km disc
+caves, ores, trees, boulders or slope stage (their ADRs 0017–0022 are superseded). Its height
+field's parameters are data (`shared/worldgen/terrain.json`, since generator version 15); the island
+layout's and the fill's are code constants. Phase 17 replaces it with an evaluator of terrain
+definitions (data, [ADR 0026](./adr/0026-terrain-definitions.md)). **[built, Phase 16]** The world is the 50 km disc
 with the midplane at 0, the 10-layer core and sea level `h` = 32 (generator version 14); the island
 keeps its Phase 15 size (owner, 2026-10-15): its mean radius is an absolute distance in data,
 `world.islandRadius` = 25 000 m in `constants.json`, independent of `worldRadius` (Phase 17 moves it
@@ -818,7 +819,7 @@ sides ([ADR 0023](./adr/0023-bifacial-world.md), [`BIFACIAL_WORLD.md`](./BIFACIA
 *Bifacial world* below). Each phase updates this section, §6.6 and §5 as it lands.
 
 **Built (Phases 3a, 3c, 13, 15; Rust, Phase 24):** the generator (`dwell-worldgen`: `terrain.rs`,
-`island.rs`, `noise.rs`, `bifacial.rs`) is **generator version 14** (Phase 15's interim baseline generator, with Phase 33's decorations (13) and Phase 16's resize (14); versions 2–13
+`island.rs`, `noise.rs`, `bifacial.rs`) is **generator version 15** (Phase 15's interim baseline generator, with Phase 33's decorations (13), Phase 16's resize (14) and the larger relief (15, owner 2026-10-19); versions 2–14
 were the earlier terrains — planet-scale relief, slopes, continents, rivers, climate and biomes, face
 B — and are retired: a world saved with one loads as the flat world; the version launcher opens the
 build that saved it, §2.1). It is announced in Welcome as generator **8** (`GENERATOR_TERRAIN`), the
@@ -906,8 +907,9 @@ its precision decisions stand):
   (`DWELL_ORIGIN_X=far`), with the same results; the golden trace is held bit-exactly in the
   origin frame (local y 0 at sea level, 32 m above the midplane), natively and in WASM.
 - **Scale of terrain:** (prototype content, §6.1) since generator version 12 (Phase 15) **one
-  island** 20–30 km in radius at the origin (*Interim island layout* below), land up to ~130 m above
-  sea level and a sea floor ~20 m deep (never below the core), and open sea out to the rim. The
+  island** 20–30 km in radius at the origin (*Interim island layout* below), land up to ~200 m above
+  sea level (since generator version 15) and a sea floor ~20 m deep (never below the core), and open
+  sea out to the rim. The
   full-detail world is never generated wholesale — distant terrain comes from the LOD system (§6.6).
 
 The terrain has **no bedrock**: the rock at the midplane is ordinary stone and can be dug
@@ -1044,18 +1046,28 @@ that subtree (or tombstones the tree); the cut-off part is a Phase 20 body (§7.
 wait for structure placement in worldgen (Open Decision #24).
 
 
-#### Generator pipeline **[built, Phase 15: generator version 12; decorations, Phase 33: 13; Phase 16: 14]**
+#### Generator pipeline **[built, Phase 15: generator version 12; decorations, Phase 33: 13; Phase 16: 14; the larger relief: 15]**
 Executed per chunk. Every stage reads only noise of world coordinates, never another chunk's data,
 so chunks can be generated in any order and in parallel. The 2D fields are sampled on a 4-column
 lattice and interpolated bilinearly; the chunk path and the point queries (`column_at`, `solid_at`,
 `ground_y`) share that arithmetic.
 
 1. **Layout (2D).** The coast distance of the interim island (above).
-2. **Height (2D).** On land the ground rises from sea level at the coast toward 90 m inland
-   (`90 · c / (c + 6 km)` for coast distance `c`), with hills of ±30 m (a 2 km, four-octave fBm)
+2. **Height (2D).** On land the ground rises from sea level at the coast toward 130 m inland
+   (`130 · c / (c + 6 km)` for coast distance `c`), with hills of ±80 m (a 2 km, four-octave fBm)
    faded in from 0.5 to 4 km inland; at sea the floor falls linearly to −20 m over 2.5 km; small
-   bumps (±2.5 m, a 128 m three-octave fBm) everywhere. Heights over the island span about 0–130 m
-   above sea level (sea level is face-local 0; Phase 16 moves it to `h` = 32 over a 10-layer core).
+   bumps (±5 m, a 128 m three-octave fBm) everywhere. The parameters are data,
+   `shared/worldgen/terrain.json` (`HeightField`, generated into `terrain.gen.rs` by
+   `shared/worldgen/gen.mjs`, range-checked, stale-checked and node-tested in CI). Heights over the
+   island span about 0–200 m above sea level (sea level is face-local 0; Phase 16 moves it to `h` = 32
+   over a 10-layer core). **Generator version 15** (owner, 2026-10-19: more elevation variance)
+   raised the hills from ±30 m, the bumps from ±2.5 m and the inland rise from 90 m (so the deeper
+   hollows stay above sea level): over 7 seeds and both faces (`--example relief`) the land's height
+   standard deviation went from 21 to 36 m, its highest column from ~105 to ~194 m and its mean slope
+   from 2.7° to 5.9°; the island under water (hollows below sea level) from 0.2 % to 0.6 %; the
+   surface steeper than the slide's 44° from none to ~0.01 % of the shaped top blocks, and no column
+   is too steep for tall grass (a step of more than one block) in either version. A test pins the
+   relief (`the_relief_is_hilly_but_the_island_stays_dry`).
 3. **Fill.** A column is solid from the face's bottom (the midplane) to its top voxel
    (`ceil(height) − 1`): stone, under a skin of grass over three of dirt on land, or three of sand
    at the shore (a top voxel less than 2 m above sea level) and under water. Open space below sea
@@ -1093,7 +1105,8 @@ Server (native), local mode (WASM), and client (WASM) must produce **bit-identic
   axis and the diagonal on both faces and beyond it, and the build sphere's edge (above the centre
   and over the rim); CI runs it natively and under WASM (`wasm32-wasip1` on Node's WASI). The
   hashes were recorded by the C++ generator up to version 12 and re-recorded by the Rust generator
-  for version 14 (Phase 16: the new geometry; 13 added decorations), with `cargo run -p dwell-worldgen --example goldens`.
+  for version 15 (the larger relief, with rows up to the hilltops; 14 was Phase 16's new geometry,
+  13 added decorations), with `cargo run -p dwell-worldgen --example goldens`.
 - `generatorVersion` is bumped for any change that alters output (and the golden hashes are
   regenerated); saved worlds record it.
 - **[built, Phase 3c]** Planet-scale coordinates (ADR 0011): noise never converts a whole world

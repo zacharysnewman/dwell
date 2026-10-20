@@ -1,4 +1,4 @@
-//! Procedural terrain, generator version 14 (ARCHITECTURE.md §6.3): the interim baseline of Phase
+//! Procedural terrain, generator version 15 (ARCHITECTURE.md §6.3): the interim baseline of Phase
 //! 15 — one island at the origin, a 2D height field, and the ground filled by depth — and since
 //! version 13 (Phase 33) the decorations of `shared/worldgen/decorations.json` one cell above the
 //! ground (tall grass; `decorations.rs`). A chunk is a
@@ -10,9 +10,10 @@
 //! (`CORE_LAYERS` from the midplane, never carved), stone up to the surface under grass over dirt
 //! on land, sand at the shore and under water, water in open space below sea level. 2D fields are
 //! sampled every 4 columns and interpolated. Heights are face-local, from the midplane (Phase 16:
-//! the midplane at 0, sea level `h` = 32). Parameters are code constants: Phase 17 replaces this
-//! with an evaluator of terrain definitions (data, ADR 0026). Nothing is generated outside the
-//! build volume.
+//! the midplane at 0, sea level `h` = 32). The height field's parameters are data
+//! (`shared/worldgen/terrain.json`, `HeightField`); the island's layout and the fill depths are
+//! still code constants. Phase 17 replaces this with an evaluator of terrain definitions (data,
+//! ADR 0026). Nothing is generated outside the build volume.
 
 use dwell_blocks::StateId;
 use dwell_world::lod::{self, LodBounds, LodCells, LodCoord, LodKind, LodSurface, LodSurfaces};
@@ -39,22 +40,37 @@ const _: () = assert!(
 /// Lattice spacing of the interpolated 2D fields (voxels).
 const LATTICE: i32 = 4;
 const LATTICE_STEP: f32 = 0.25;
-/// The land's rise inland (m, approached far inland) and the distance (m) at which it is half done.
-const INLAND_RISE: f32 = 90.0;
-const RISE_HALF: f32 = 6_000.0;
-/// The sea floor's depth offshore (m below sea level), reached linearly over this distance (m).
-const SEA_FLOOR: f32 = -20.0;
-const SHELF: f32 = 2_500.0;
-/// Hills on land, faded in from HILL_FADE_FROM to HILL_FADE_TO m inland.
-const HILL_HEIGHT: f32 = 30.0;
-const HILL_WAVELENGTH: i32 = 2_048;
-const HILL_OCTAVES: u32 = 4;
-const HILL_FADE_FROM: f32 = 500.0;
-const HILL_FADE_TO: f32 = 4_000.0;
-/// Small bumps everywhere.
-const BUMP_HEIGHT: f32 = 2.5;
-const BUMP_WAVELENGTH: i32 = 128;
-const BUMP_OCTAVES: u32 = 3;
+/// The height field's parameters (data: `shared/worldgen/terrain.json`, generated into
+/// `terrain.gen.rs` by `shared/worldgen/gen.mjs`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct HeightField {
+    /// The land's rise inland (m, approached far inland) and the distance (m) at which it is half
+    /// done.
+    pub inland_rise: f32,
+    pub rise_half: f32,
+    /// The sea floor's depth offshore (m below sea level, negative), reached linearly over `shelf`
+    /// (m).
+    pub sea_floor: f32,
+    pub shelf: f32,
+    /// Hills on land (about ±`hill_height` m; a fractal sum of this wavelength in m and octaves),
+    /// faded in from `hill_fade_from` to `hill_fade_to` m inland.
+    pub hill_height: f32,
+    pub hill_wavelength: i32,
+    pub hill_octaves: u32,
+    pub hill_fade_from: f32,
+    pub hill_fade_to: f32,
+    /// Small bumps everywhere (about ±`bump_height` m).
+    pub bump_height: f32,
+    pub bump_wavelength: i32,
+    pub bump_octaves: u32,
+}
+
+mod table {
+    include!("terrain.gen.rs");
+}
+pub use table::HEIGHT;
+
+const H: HeightField = HEIGHT;
 /// Fill by depth (m): sand at the shore (top voxel below SHORE_HEIGHT above sea) to SAND_DEPTH,
 /// else grass over dirt to DIRT_DEPTH; stone below.
 const SHORE_HEIGHT: i32 = 2;
@@ -140,8 +156,22 @@ impl TerrainGenerator {
         let (nx, nz) = (x + self.offset_x, z + self.offset_z);
         Corner {
             coast: self.island.coast_at(x, z, None),
-            hills: fbm2(self.hills_seed, nx, nz, HILL_WAVELENGTH, HILL_OCTAVES, None),
-            bumps: fbm2(self.bumps_seed, nx, nz, BUMP_WAVELENGTH, BUMP_OCTAVES, None),
+            hills: fbm2(
+                self.hills_seed,
+                nx,
+                nz,
+                H.hill_wavelength,
+                H.hill_octaves,
+                None,
+            ),
+            bumps: fbm2(
+                self.bumps_seed,
+                nx,
+                nz,
+                H.bump_wavelength,
+                H.bump_octaves,
+                None,
+            ),
         }
     }
 
@@ -161,17 +191,17 @@ impl TerrainGenerator {
                 self.hills_seed,
                 nx,
                 nz,
-                HILL_WAVELENGTH,
-                HILL_OCTAVES,
-                Some(octaves_resolved(HILL_WAVELENGTH, HILL_OCTAVES, cell)),
+                H.hill_wavelength,
+                H.hill_octaves,
+                Some(octaves_resolved(H.hill_wavelength, H.hill_octaves, cell)),
             ),
             bumps: fbm2(
                 self.bumps_seed,
                 nx,
                 nz,
-                BUMP_WAVELENGTH,
-                BUMP_OCTAVES,
-                Some(octaves_resolved(BUMP_WAVELENGTH, BUMP_OCTAVES, cell)),
+                H.bump_wavelength,
+                H.bump_octaves,
+                Some(octaves_resolved(H.bump_wavelength, H.bump_octaves, cell)),
             ),
         }
     }
@@ -179,12 +209,12 @@ impl TerrainGenerator {
     fn finish(c: Corner) -> Column {
         // Fractal sums rarely leave ±0.5: × 2 brings the amplitudes to about their nominal values.
         let base = if c.coast > 0.0 {
-            INLAND_RISE * (c.coast / (c.coast + RISE_HALF))
+            H.inland_rise * (c.coast / (c.coast + H.rise_half))
         } else {
-            SEA_FLOOR * clamp01(-c.coast * (1.0 / SHELF))
+            H.sea_floor * clamp01(-c.coast * (1.0 / H.shelf))
         };
-        let land = smooth_step(HILL_FADE_FROM, HILL_FADE_TO, c.coast);
-        let relief = base + land * HILL_HEIGHT * 2.0 * c.hills + BUMP_HEIGHT * 2.0 * c.bumps;
+        let land = smooth_step(H.hill_fade_from, H.hill_fade_to, c.coast);
+        let relief = base + land * H.hill_height * 2.0 * c.hills + H.bump_height * 2.0 * c.bumps;
         Column {
             coast: c.coast,
             // Never below the core's top.

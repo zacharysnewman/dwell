@@ -1,10 +1,10 @@
-// The terrain decorations' validation and generation (node --test shared/worldgen/gen.test.mjs).
+// The terrain data's validation and generation (decorations and the height field) (node --test shared/worldgen/gen.test.mjs).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { decorationsRust, registryBlocks, validateDecorations } from './gen.mjs';
+import { decorationsRust, registryBlocks, terrainRust, validateDecorations, validateTerrain } from './gen.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const load = () => JSON.parse(readFileSync(join(here, 'decorations.json'), 'utf8'));
@@ -48,5 +48,42 @@ test('a bad entry fails with its name and the problem', () => {
     const d = load();
     edit(d);
     assert.throws(() => validateDecorations(d, blocks), message);
+  }
+});
+
+const loadTerrain = () => JSON.parse(readFileSync(join(here, 'terrain.json'), 'utf8'));
+
+test('the checked-in height field is valid and generates the checked-in Rust', () => {
+  const rs = terrainRust(validateTerrain(loadTerrain()));
+  const checkedIn = readFileSync(join(here, '../../crates/dwell-worldgen/src/terrain.gen.rs'), 'utf8');
+  assert.equal(rs, checkedIn, 'run `node shared/worldgen/gen.mjs`');
+});
+
+test('a height-field value changed by data alone is emitted', () => {
+  const t = loadTerrain();
+  t.hills.amplitude = 75;
+  t.bumps.wavelength = 256;
+  t.seaFloor.depth = 12.5;
+  const rs = terrainRust(validateTerrain(t));
+  assert.match(rs, /hill_height: 75\.0,/);
+  assert.match(rs, /bump_wavelength: 256,/);
+  assert.match(rs, /sea_floor: -12\.5,/);
+});
+
+test('a bad height field fails with the key and the problem', () => {
+  const cases = [
+    [(t) => (t.hills.amplitude = -1), /hills\.amplitude must be in \[0, 1000\]/],
+    [(t) => (t.hills.octaves = 2.5), /hills\.octaves must be a whole number in \[1, 8\]/],
+    [(t) => (t.inland.halfDistance = 0), /inland\.halfDistance must be in \(0, 100000\]/],
+    [(t) => (t.bumps.wavelength = 2), /bumps\.wavelength/],
+    [(t) => (t.hills.fadeTo = 100), /hills\.fadeTo must be greater than hills\.fadeFrom/],
+    [(t) => (t.hills.roughness = 1), /hills: unknown roughness/],
+    [(t) => (t.mountains = {}), /unknown mountains/],
+    [(t) => delete t.seaFloor, /seaFloor must be an object/],
+  ];
+  for (const [edit, message] of cases) {
+    const t = loadTerrain();
+    edit(t);
+    assert.throws(() => validateTerrain(t), message);
   }
 });

@@ -10,7 +10,7 @@ use dwell_world::lod::{LodCells, LodCoord, lod_hash, section_size};
 use dwell_world::{Chunk, ChunkCoord, chunk_hash};
 use dwell_worldgen::BifacialTerrain;
 
-const VERSION: u32 = 14;
+const VERSION: u32 = 15;
 const SEEDS: [u64; 2] = [0, 20_260_925];
 
 fn section_at(level: i32, p: [i64; 3]) -> LodCoord {
@@ -30,8 +30,9 @@ fn main() {
 
     let mut chunks: Vec<(u64, [i32; 3])> = Vec::new();
     for seed in SEEDS {
-        // Origin: the core and ground, the sea surface or land, air above; face B's mirror rows.
-        for y in [-3, -2, -1, 0, 1, 2, 6] {
+        // Origin: the core and ground, the sea surface or land up to the hilltops (version 15), air
+        // above; face B's mirror rows.
+        for y in [-5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 6] {
             chunks.push((seed, [0, y, 0]));
             chunks.push((seed, [5, y, -3]));
         }

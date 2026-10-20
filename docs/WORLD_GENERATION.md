@@ -8,6 +8,16 @@
 > until Phase 17 replaces it with terrain definitions (data, [ADR 0026](./adr/0026-terrain-definitions.md)),
 > and Phase 12 is cancelled. The removed designs remain in the repository's history (and in their
 > ADRs, 0017–0022, superseded); `ARCHITECTURE.md` §6.3 describes what is built.
+>
+> **The interim height field's relief (generator version 15, owner 2026-10-19: "more height from
+> the noise").** Its parameters are data, `shared/worldgen/terrain.json`: the inland rise (130 m,
+> half done 6 km inland), the sea floor (−20 m over 2.5 km), hills (±80 m, 2,048 m, 4 octaves, faded
+> in 0.5–4 km inland) and bumps (±5 m, 128 m, 3 octaves). Version 14 had hills of ±30 m, bumps of
+> ±2.5 m and a 90 m rise. Over 7 seeds and both faces the land's height standard deviation went
+> from 21 to 36 m, the highest ground from ~105 to ~194 m above sea level and the mean slope from
+> 2.7° to 5.9°; the island's coast is unchanged (the layout is untouched) and its hollows below sea
+> level stay under 1 % of it. Prototype content (§6.1 of the architecture): tune by editing the
+> file, regenerating, bumping the generator version and the goldens.
 
 **Content is still prototype.** `ARCHITECTURE.md` §6.1 applies: block names and colours here are
 placeholders that give the systems a direction, not Dwell's final content design. What *is* a
