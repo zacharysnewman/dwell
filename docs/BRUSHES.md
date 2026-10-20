@@ -182,9 +182,14 @@ defaults were taken instead (coordinator, 2026-10-15):
 Questions for the owner:
 
 1. Should players eventually save their own presets, per player in browser storage? Or is
-   `brushes.json` enough?
+   `brushes.json` enough? **Answered (owner, 2026-10-19): the built-in presets are enough.** No
+   player presets.
 2. Should brushes come to other world types, such as creative terrain worlds? If so, with what
-   permission (ops only?) and what reach?
+   permission (ops only?) and what reach? **Answered (owner, 2026-10-19): yes, eventually, in
+   creative.** Dwell has no game modes yet; adventure and creative modes are wanted (`FUTURE.md`,
+   "Game modes"). Brushes come to terrain worlds in creative mode only. If excluding them by
+   finer permission (ops only) is logically complicated, allowing them for everyone in creative is
+   fine. Until game modes exist, brushes stay in the sandbox.
 3. Is 128 m the right reach, and is 16 the right maximum radius? A size-16 stroke is about 36,000
    cells, half a second of the server's rate.
 4. VoxelSniper offers more brushes: blend, linear blend, overlay variants, stencils and tree
