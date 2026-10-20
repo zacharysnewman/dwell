@@ -13,8 +13,12 @@ test('a named view places the camera and the LOD settles around it', async ({ pa
   ).toBe(true);
   expect(result.lod?.drawn.reduce((a, b) => a + b, 0) ?? 0).toBeGreaterThan(20);
   expect(result.render.calls).toBeGreaterThan(10);
-  // The camera is 300 m up; the player is still standing at the spawn.
-  expect(result.feet[1]).toBeLessThan(200);
+  // The camera is placed far above the ground; the player is still standing at the spawn.
+  const camera = v.camera.position;
+  expect(camera).not.toBeNull();
+  expect(result.feet[1]).toBeLessThan((camera?.[1] ?? 0) - 50);
+  for (let i = 0; i < 3; i++)
+    expect(Math.abs(result.feet[i] - result.spawnFeet[i])).toBeLessThan(1);
   // ?debug=1 opens the F3 overlay from the start (it was lost before the game existed).
   await expect(page.locator('#debug-overlay')).toContainText('LOD ');
   expect(await page.screenshot()).toBeTruthy();
