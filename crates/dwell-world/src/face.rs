@@ -93,7 +93,11 @@ impl FaceFrame {
     }
     /// A chunk row, world ↔ face-local.
     pub const fn chunk_y(self, cy: i32) -> i32 {
-        if self.is_b() { MIRROR_CHUNK_SUM - cy } else { cy }
+        if self.is_b() {
+            MIRROR_CHUNK_SUM - cy
+        } else {
+            cy
+        }
     }
     /// A chunk, world ↔ face-local.
     pub const fn chunk(self, c: ChunkCoord) -> ChunkCoord {
@@ -121,17 +125,69 @@ impl FaceFrame {
     }
     /// A block state, world ↔ face-local: a shaped block (its `half`) turned over on face B.
     pub fn state(self, s: StateId) -> StateId {
-        if self.is_b() { dwell_blocks::mirror(s) } else { s }
+        if self.is_b() {
+            dwell_blocks::mirror(s)
+        } else {
+            s
+        }
     }
     /// A span of heights within a cell (0 its floor, 1 its top), world ↔ face-local: turned over
     /// on face B. Returns (low, high).
     pub fn in_cell(self, lo: f32, hi: f32) -> (f32, f32) {
-        if self.is_b() { (1.0 - hi, 1.0 - lo) } else { (lo, hi) }
+        if self.is_b() {
+            (1.0 - hi, 1.0 - lo)
+        } else {
+            (lo, hi)
+        }
     }
     /// A shape, world ↔ face-local: turned over on face B.
     pub fn shape(self, s: &'static ShapeInfo) -> &'static ShapeInfo {
-        if self.is_b() { dwell_blocks::shape::turned_over(s) } else { s }
+        if self.is_b() {
+            dwell_blocks::shape::turned_over(s)
+        } else {
+            s
+        }
     }
+    /// The world box (min corner) whose cells are a face-local box's, world ↔ face-local: its
+    /// rows run the other way on face B. `size` is the same in both frames.
+    pub const fn box_min(self, min: [i32; 3], size: [i32; 3]) -> [i32; 3] {
+        if self.is_b() {
+            [min[0], self.row(min[1] + size[1] - 1), min[2]]
+        } else {
+            min
+        }
+    }
+    /// The frame of a box: face B's if it lies wholly on face B, else face A's (a box across the
+    /// midplane is taken as it is).
+    pub const fn of_box(min: [i32; 3], size: [i32; 3]) -> Self {
+        if Self::at_row(min[1] + size[1] - 1).is_b() {
+            Self::B
+        } else {
+            Self::A
+        }
+    }
+    /// A box's cells in layer order (x fastest, then z, then y), world ↔ face-local: rows reversed
+    /// and blocks turned over on face B.
+    pub fn box_cells(self, size: [i32; 3], cells: &[StateId]) -> Vec<StateId> {
+        if !self.is_b() {
+            return cells.to_vec();
+        }
+        let layer = (size[0] * size[2]).max(1) as usize;
+        cells
+            .chunks(layer)
+            .rev()
+            .flat_map(|row| row.iter().map(|&m| self.state(m)))
+            .collect()
+    }
+    /// [`FaceFrame::box_cells`] for per-cell flags (rows reversed only).
+    pub fn box_flags(self, size: [i32; 3], flags: &[bool]) -> Vec<bool> {
+        if !self.is_b() || flags.is_empty() {
+            return flags.to_vec();
+        }
+        let layer = (size[0] * size[2]).max(1) as usize;
+        flags.chunks(layer).rev().flatten().copied().collect()
+    }
+
     /// A cell-face index (0 +X, 1 −X, 2 +Y, 3 −Y, 4 +Z, 5 −Z), world ↔ face-local: ±Y swap on
     /// face B.
     pub const fn cell_face(self, face: usize) -> usize {

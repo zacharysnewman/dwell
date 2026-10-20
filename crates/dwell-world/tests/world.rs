@@ -782,6 +782,11 @@ both_faces!(
         let down = f.vector_f32([0.0, -1.0, 0.0]);
         let hit = raycast_block(&mut world, eye, down, 5.0).expect("hit");
         assert_eq!(hit.cell, [0, row, 0]);
-        assert!((hit.distance - 1.1).abs() < 1e-4, "{:?}: {}", f.face, hit.distance);
+        assert!(
+            (hit.distance - 1.1).abs() < 1e-4,
+            "{:?}: {}",
+            f.face,
+            hit.distance
+        );
     }
 );

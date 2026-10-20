@@ -958,8 +958,24 @@ player on face B stands upside down in the world.
 - **The mirror.** A voxel at height `y` on face B is the face-local voxel `h = −1 − y`
   (`mirror_y`, `MIRROR_SUM` = −1), a chunk row `cy` is face-local row `−1 − cy` (`mirror_chunk_y`):
   voxels map onto voxels and chunks onto chunks. Face B's sea surface is `y = −32`. The build
-  sphere is symmetric under the mirror, so a face-B chunk and its face-local chunk lie alike in it. `dwell_world::Face`,
-  `face_of_y` and `face_local_chunk` (`voxel.rs`) are the one mapping, used by server and client.
+  sphere is symmetric under the mirror, so a face-B chunk and its face-local chunk lie alike in it.
+  **`dwell_world::FaceFrame`** (`face.rs`) is the one mapping, used by server and client: rows,
+  heights, chunks, points, vectors, block states and shapes, spans in a cell, cell faces and boxes,
+  world ↔ face-local (`face_of_y`, `up_of_y`, `mirror_y` and `face_local_chunk` in `voxel.rs` are
+  its shorthands).
+- **Face parity [built, 2026-10-20] (BIFACIAL_WORLD.md §11).** The rule: face-dependent code is
+  written once in face-local coordinates and crosses into the world only through `FaceFrame`, at a
+  few documented boundaries — generation, the chunk and LOD meshers (a face-B chunk or section is
+  meshed as its mirror image and turned back), the controller (`dwell-physics` `Frame` maps through
+  `FaceFrame`), and the tools (a brush stroke, `dwell-game` `brush_tool.rs`, and the region tools'
+  clipboard and paste box run face-local, so a structure pastes upright on either face). Tests of
+  face-dependent code run on both faces: `dwell_world::both_faces!` declares a test per face
+  (`DWELL_FACE=a|b` narrows it), and the parity suites compare whole systems across the faces over
+  the **mirror world** (`BifacialTerrain::mirrored`, a test tool whose face B is face A's mirror
+  image): generation, the chunk mesher, the LOD's selection and meshes, targeting, every brush
+  preset, copy and paste; the controller keeps its whole-suite mirror run. The dev link `?spawn=b`
+  (and a bench scenario's `"face": "b"`) starts a local world on face B's spawn
+  (`spawn_point_b`, its own world file `…-faceb`); real worlds spawn on face A.
 - **Generation.** `dwell_worldgen::BifacialTerrain` (`bifacial.rs`) holds two `TerrainGenerator`s working
   in face-local coordinates: face A's is seeded by the world seed as ever, face B's by
   `face_seed(seed, B)`, a hash through streams no stage uses — its own island and hills. A chunk of

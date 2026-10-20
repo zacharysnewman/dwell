@@ -2,8 +2,8 @@
 //! voxel grid that generates, loads or streams chunks. What bounds building and storage is the
 //! build volume (`bounds.rs`).
 
-use crate::bounds::{BUILD_VOLUME, Overlap};
 use crate::FaceFrame;
+use crate::bounds::{BUILD_VOLUME, Overlap};
 use crate::hash::HashMap;
 use std::sync::{Arc, LazyLock};
 

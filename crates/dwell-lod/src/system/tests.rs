@@ -91,6 +91,36 @@ fn bifacial_section(c: LodCoord) -> GeneratedSection {
     }
 }
 
+/// A section of real terrain, as the client's worldgen worker answers (`dwell-client` jobs).
+fn terrain_section(t: &dwell_worldgen::BifacialTerrain, c: LodCoord) -> GeneratedSection {
+    let mut cells = Vec::new();
+    let (mut a, mut b) = (
+        dwell_world::lod::LodSurfaces::new(),
+        dwell_world::lod::LodSurfaces::new(),
+    );
+    t.generate_lod(c, &mut cells, Some(&mut a), Some(&mut b));
+    let first = dwell_world::lod::first_face_a_row(c);
+    let pack = |s: &dwell_world::lod::LodSurfaces, ran: bool| {
+        (ran && in_world(c) && !s.is_empty()).then(|| {
+            s.iter()
+                .flat_map(|c| {
+                    [
+                        c.height,
+                        f32::from(c.material),
+                        f32::from(u8::from(c.valid) | (u8::from(c.wet) << 1)),
+                        c.water,
+                    ]
+                })
+                .collect()
+        })
+    };
+    GeneratedSection {
+        cells,
+        surface: pack(&a, first <= SECTION_CELLS),
+        surface_b: pack(&b, first >= 0),
+    }
+}
+
 /// The flat world at LOD: stone where a cell's bottom is below 0.
 fn flat_section(c: LodCoord) -> GeneratedSection {
     flat_section_at(c, 0)
@@ -150,6 +180,11 @@ struct Host {
     flat_top: i64,
     /// Every generated section's surface is a river: floor 118 m, water 121 m.
     river: bool,
+    /// Generate (and mesh, for real) this terrain instead of the test worlds.
+    terrain: Option<std::sync::Arc<dwell_worldgen::BifacialTerrain>>,
+    /// With `terrain`: the meshing jobs waiting, by token, and every section's mesh as set.
+    jobs: HashMap<u64, LodMeshJob>,
+    sections: HashMap<LodId, (Vec3, f64, SectionMeshes)>,
     /// Every section asked of the generator.
     generated: Vec<LodCoord>,
     meshes: Vec<MeshRecord>,
@@ -199,6 +234,11 @@ impl SectionSource for Host {
 
 impl SectionMesher for Host {
     fn mesh_section(&mut self, job: LodMeshJob, token: u64) {
+        if self.terrain.is_some() {
+            self.jobs.insert(token, job);
+            self.pending.push(Job::Mesh(token, 0));
+            return;
+        }
         // Selection only needs to know a mesh exists (the mesher's own tests test meshing).
         let (has_face_a, has_stone) = if self.record_cells {
             let s = stone();
@@ -217,7 +257,12 @@ impl SectionMesher for Host {
 }
 
 impl LodView for Host {
-    fn set_lod_section(&mut self, id: LodId, _o: Vec3, _c: f64, meshes: Option<SectionMeshes>) {
+    fn set_lod_section(&mut self, id: LodId, o: Vec3, cell: f64, meshes: Option<SectionMeshes>) {
+        if self.terrain.is_some()
+            && let Some(m) = &meshes
+        {
+            self.sections.insert(id, (o, cell, m.clone()));
+        }
         if meshes.is_some() {
             self.set.push(id);
             self.meshed.insert(id);
@@ -264,7 +309,9 @@ fn finish(lod: &mut LodSystem, h: &mut Host, random: &mut dyn FnMut() -> f64, sh
     for job in done {
         match job {
             Job::Bounds(level, i, k) => {
-                let b = if h.bifacial {
+                let b = if let Some(t) = &h.terrain {
+                    t.lod_bounds_at(level, i, k)
+                } else if h.bifacial {
                     bifacial_bounds()
                 } else {
                     flat_bounds_at(h.flat_top as f64)
@@ -272,7 +319,9 @@ fn finish(lod: &mut LodSystem, h: &mut Host, random: &mut dyn FnMut() -> f64, sh
                 lod.on_lod_bounds(level, i, k, Some(b));
             }
             Job::Generate(c, token) => {
-                let mut s = if h.bifacial {
+                let mut s = if let Some(t) = &h.terrain {
+                    terrain_section(t, c)
+                } else if h.bifacial {
                     bifacial_section(c)
                 } else {
                     flat_section_at(c, h.flat_top)
@@ -285,6 +334,16 @@ fn finish(lod: &mut LodSystem, h: &mut Host, random: &mut dyn FnMut() -> f64, sh
                     s.surface = Some(surface);
                 }
                 lod.on_generated(token, Some(s));
+            }
+            Job::Mesh(token, _) if h.jobs.contains_key(&token) => {
+                let job = h.jobs.remove(&token).expect("job");
+                let options = dwell_mesh::MeshSectionOptions {
+                    surface: job.surface.as_deref(),
+                    water_drop: job.water_drop,
+                    mirror: job.mirror,
+                };
+                let m = dwell_mesh::mesh_section(&job.cells, &options).expect("meshes");
+                lod.on_meshed(token, m, h);
             }
             Job::Mesh(token, bytes) => {
                 let mut m = SectionMeshes::default();
@@ -1442,5 +1501,122 @@ dwell_world::both_faces!(
         on_a.run(&camera(a_feet, 0.0, -10.0), 400);
         let a: HashSet<ChunkCoord> = on_a.requested().into_iter().collect();
         assert_eq!(local, a, "{:?}: not face A's mirror", f.face);
+    }
+);
+
+/// The LOD on the mirror world (face B is face A's mirror image) seen by a camera standing on
+/// `f`'s face, settled: every face-aligned section's mesh, by its face-local origin, with the mesh
+/// turned face-local (y in cells mirrored, triangles re-wound on B).
+fn mirror_world_lod(f: dwell_world::FaceFrame) -> HashMap<[i64; 4], SectionMeshes> {
+    let t = std::sync::Arc::new(dwell_worldgen::BifacialTerrain::mirrored(7));
+    let s = t.spawn_point();
+    let mut host = Host {
+        terrain: Some(t),
+        ..Host::new()
+    };
+    let mut lod = LodSystem::new(LodOptions::new(8.0, 256 * 1_048_576, 16, 8));
+    let eye = f.point([s[0], s[1] + 1.6, s[2]]);
+    let cam = camera(eye, 30.0, -15.0 * f.sign_f64());
+    let mut random = rng(5);
+    for frame in 0..200 {
+        lod.update(&cam, f64::from(frame) * 16.0, &mut host);
+        finish(&mut lod, &mut host, &mut random, 1.0);
+    }
+    let flip = |mut m: dwell_mesh::FlatMesh| {
+        if f.is_b() {
+            for p in m.positions.iter_mut().skip(1).step_by(3) {
+                *p = SECTION_CELLS as f32 - *p;
+            }
+            for n in m.normals.iter_mut().skip(1).step_by(3) {
+                *n = -*n;
+            }
+            for t in m.indices.chunks_exact_mut(3) {
+                t.swap(1, 2);
+            }
+        }
+        m
+    };
+    let mut out = HashMap::default();
+    for (_, (o, cell, m)) in std::mem::take(&mut host.sections) {
+        let level = cell.log2().round() as i32;
+        if level > MAX_ALIGNED_LEVEL {
+            continue; // straddling sections are meshed for the viewer's face (§10)
+        }
+        let size = f64::from(SECTION_CELLS) * cell;
+        let y = if f.is_b() { f.y(o[1]) - size } else { o[1] };
+        let [s0, s1, s2, s3, s4, s5] = m.skirts;
+        // ±Y skirts swap with the mirror.
+        let skirts = if f.is_b() {
+            [s0, s1, s3, s2, s4, s5]
+        } else {
+            [s0, s1, s2, s3, s4, s5]
+        };
+        out.insert(
+            [i64::from(level), o[0] as i64, y as i64, o[2] as i64],
+            SectionMeshes {
+                opaque: flip(m.opaque),
+                water: flip(m.water),
+                skirts: skirts.map(flip),
+            },
+        );
+    }
+    out
+}
+
+dwell_world::both_faces!(
+    /// Face parity (BIFACIAL_WORLD.md §11): over the mirror world, a camera on face B selects,
+    /// generates and meshes the mirror image of what the same camera on face A does — the same
+    /// sections, cell for cell and triangle for triangle (face-B sections' rows, their face-local
+    /// surfaces, the mirrored meshing and the swapped skirts).
+    fn the_lod_draws_the_same_face_local_on_either_face(f: dwell_world::FaceFrame) {
+        let a = mirror_world_lod(dwell_world::FaceFrame::A);
+        let b = mirror_world_lod(f);
+        assert!(a.len() > 50, "{} sections", a.len());
+        let mut missing = 0;
+        for (k, ma) in &a {
+            let Some(mb) = b.get(k) else {
+                missing += 1;
+                continue;
+            };
+            for (name, x, y) in [
+                ("opaque", &mb.opaque, &ma.opaque),
+                ("water", &mb.water, &ma.water),
+            ] {
+                assert_eq!(
+                    x.indices.len(),
+                    y.indices.len(),
+                    "{k:?} {name}: {:?}",
+                    f.face
+                );
+                let close = |p: &[f32], q: &[f32]| {
+                    p.len() == q.len() && p.iter().zip(q).all(|(a, b)| (a - b).abs() < 1e-3)
+                };
+                assert!(
+                    close(&x.positions, &y.positions),
+                    "{k:?} {name} positions: {:?}",
+                    f.face
+                );
+                assert!(
+                    close(&x.normals, &y.normals),
+                    "{k:?} {name} normals: {:?}",
+                    f.face
+                );
+                assert!(
+                    close(&x.colors, &y.colors),
+                    "{k:?} {name} colours: {:?}",
+                    f.face
+                );
+                assert_eq!(x.indices, y.indices, "{k:?} {name} winding: {:?}", f.face);
+            }
+            for i in 0..6 {
+                assert_eq!(
+                    mb.skirts[i].indices.len(),
+                    ma.skirts[i].indices.len(),
+                    "{k:?} skirt {i}: {:?}",
+                    f.face
+                );
+            }
+        }
+        assert_eq!(missing, 0, "{missing} of {} sections not mirrored", a.len());
     }
 );

@@ -41,7 +41,13 @@ impl LocalCore {
         storage: Option<impl StorageBackend>,
         entropy: Box<dyn Entropy>,
     ) -> Result<Self, LocalError> {
-        Self::create_on(dwell_world::Face::A, world_seed, generator_version, storage, entropy)
+        Self::create_on(
+            dwell_world::Face::A,
+            world_seed,
+            generator_version,
+            storage,
+            entropy,
+        )
     }
 
     /// [`LocalCore::create`] with a new world's spawn on `face` (the dev link `?spawn=b`: face B's

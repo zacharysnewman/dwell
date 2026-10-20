@@ -1291,7 +1291,11 @@ dwell_world::both_faces!(
             )
         };
         let s = at(spawn[0], spawn[1] - 1.0, spawn[2]);
-        let mut chunks = vec![s, ChunkCoord::new(s.x + 1, s.y, s.z), ChunkCoord::new(s.x, s.y, s.z - 1)];
+        let mut chunks = vec![
+            s,
+            ChunkCoord::new(s.x + 1, s.y, s.z),
+            ChunkCoord::new(s.x, s.y, s.z - 1),
+        ];
         // A shore: the first column east of the spawn at sea level.
         let t = dwell_worldgen::BifacialTerrain::new(7);
         let local = t.local(dwell_world::Face::A);
@@ -1299,7 +1303,11 @@ dwell_world::both_faces!(
         while local.column_at(x, spawn[2] as i32).height >= dwell_world::SEA_LEVEL as f32 {
             x += 8;
         }
-        chunks.push(at(f64::from(x), f64::from(dwell_world::SEA_LEVEL) - 1.0, spawn[2]));
+        chunks.push(at(
+            f64::from(x),
+            f64::from(dwell_world::SEA_LEVEL) - 1.0,
+            spawn[2],
+        ));
         for c in chunks {
             let a = mesh_on_face(&mut source, c, FaceFrame::A);
             let b = mesh_on_face(&mut source, c, f);
@@ -1321,11 +1329,16 @@ dwell_world::both_faces!(
                     ("fluids", &mb.fluids, &ma.fluids),
                 ] {
                     // To float rounding: the mirror's positions are turned in f64 and back.
-                    let i = x.iter().zip(y.iter()).position(|(p, q)| (p - q).abs() > 1e-4);
+                    let i = x
+                        .iter()
+                        .zip(y.iter())
+                        .position(|(p, q)| (p - q).abs() > 1e-4);
                     assert!(
                         x.len() == y.len() && i.is_none(),
                         "{c:?} {name} {field}: {:?} lens {} {} at {i:?}: {:?} vs {:?}",
-                        f.face, x.len(), y.len(),
+                        f.face,
+                        x.len(),
+                        y.len(),
                         i.map(|i| &x[i.saturating_sub(3)..(i + 3).min(x.len())]),
                         i.map(|i| &y[i.saturating_sub(3)..(i + 3).min(y.len())])
                     );

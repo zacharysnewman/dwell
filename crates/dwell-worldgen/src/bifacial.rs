@@ -38,6 +38,14 @@ impl BifacialTerrain {
         }
     }
 
+    /// The mirror world (a test tool for face parity, BIFACIAL_WORLD.md §11): face B generated
+    /// from face A's seed, so it is face A's exact mirror image and anything drawn, collided or
+    /// edited on one face can be compared with the other. Never a real world's generator.
+    pub fn mirrored(world_seed: u64) -> Self {
+        let a = TerrainGenerator::new(face_seed(world_seed, Face::A));
+        Self { b: a.clone(), a }
+    }
+
     /// A face's generator, in face-local coordinates.
     pub fn local(&self, face: Face) -> &TerrainGenerator {
         match face {

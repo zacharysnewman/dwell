@@ -10,12 +10,12 @@
 //! click picks the aimed-at block as the replace target.
 
 use dwell_blocks::{StateId, info};
+use dwell_world::FaceFrame;
 use dwell_world::brush::{
     Aim, BRUSH_KINDS, BrushKind, BrushSpec, Change, Grid, MAX_SIZE, MIN_SIZE, Materials,
     PERFORMER_KINDS, PRESETS, PerformerKind, bounds, brush_cells, paste_edits, perform,
     read_bounds,
 };
-use dwell_world::FaceFrame;
 use dwell_world::edit::FACE_DIRS;
 use std::collections::HashMap;
 
@@ -30,26 +30,6 @@ fn local_aim(f: FaceFrame, aim: Aim) -> Aim {
         from: aim.from.map(|p| f.cell(p)),
         before: aim.before.map(|p| f.cell(p)),
     }
-}
-
-/// The world box (min corner, size) a face-local box of cells covers.
-fn world_box(f: FaceFrame, min: [i32; 3], size: [i32; 3]) -> ([i32; 3], [i32; 3]) {
-    let y = if f.is_b() { f.row(min[1] + size[1] - 1) } else { min[1] };
-    ([min[0], y, min[2]], size)
-}
-
-/// A world grid's states in face-local layer order (rows reversed and blocks turned over on B).
-fn local_cells(f: FaceFrame, grid: &Grid) -> Vec<StateId> {
-    if !f.is_b() {
-        return grid.cells.clone();
-    }
-    let layer = (grid.size[0] * grid.size[2]) as usize;
-    let rows = grid.size[1] as usize;
-    let mut out = Vec::with_capacity(grid.cells.len());
-    for r in (0..rows).rev() {
-        out.extend(grid.cells[r * layer..(r + 1) * layer].iter().map(|&m| f.state(m)));
-    }
-    out
 }
 
 /// What a key asks of the brush tool ([`brush_key`]; the controls table in
@@ -467,9 +447,9 @@ impl BrushTool {
         let aim = local_aim(f, self.aim_at(center));
         let cells = brush_cells(&self.spec, aim);
         let (min, size) = read_bounds(&self.spec, &cells)?;
-        let (wmin, wsize) = world_box(f, min, size);
-        let grid = Grid::new(wmin, wsize, world.read_box(wmin, wsize)?);
-        let local = Grid::new(min, size, local_cells(f, &grid));
+        let wmin = f.box_min(min, size);
+        let grid = Grid::new(wmin, size, world.read_box(wmin, size)?);
+        let local = Grid::new(min, size, f.box_cells(size, &grid.cells));
         let materials = Materials {
             material: f.state(materials.material),
             target: f.state(materials.target),
