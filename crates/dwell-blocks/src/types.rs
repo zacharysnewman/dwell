@@ -79,7 +79,10 @@ pub enum RenderMode {
 /// The `cross` look's geometry (block data `cross`): `quads` vertical quads through the cell's
 /// centre, evenly turned, `height` tall, each cell's copy jittered from its world position by up
 /// to `offset` (m, in x and z), `rotation_deg` (about y) and a height scale in
-/// [`height_min`, `height_max`].
+/// [`height_min`, `height_max`]. `sit_on_support` (data `sitOnSupport`, default true): the plant
+/// stands on the supporting block's drawn surface under it (an adaptive top resting at half
+/// height, a slope's height at each foot) rather than on its cell's floor
+/// ([`crate::shape::plant_sink`]).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Cross {
     pub height: f32,
@@ -88,6 +91,7 @@ pub struct Cross {
     pub rotation_deg: f32,
     pub height_min: f32,
     pub height_max: f32,
+    pub sit_on_support: bool,
 }
 
 /// Wind sway of a cross's top (block data `wind`): `strength` metres at the top, gusts at `speed`

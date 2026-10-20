@@ -66,7 +66,9 @@ pub mod tag {
     // 0x86 reserved: sound set.
     /// `u8` render mode (0 opaque, 1 cutout, 2 translucent).
     pub const RENDER: u8 = 0x87;
-    /// `f32` height, `u8` quads, `f32` offset, rotation (degrees), height min, height max.
+    /// `f32` height, `u8` quads, `f32` offset, rotation (degrees), height min, height max, then
+    /// optionally `u8` sits on its support (written only when 0: absent reads as 1, so payloads
+    /// before it and readers before it agree).
     pub const CROSS: u8 = 0x88;
     /// `f32` strength, speed.
     pub const WIND: u8 = 0x89;
@@ -289,6 +291,9 @@ pub fn state_fields(s: &StateInfo) -> Fields {
             w.f32(c.rotation_deg);
             w.f32(c.height_min);
             w.f32(c.height_max);
+            if !c.sit_on_support {
+                w.u8(0);
+            }
         }));
     }
     if let Some(v) = s.wind {
@@ -791,8 +796,13 @@ fn apply_look(fields: &Fields, fluids: &[String], row: &mut StateInfo) {
                     rotation_deg: r.f32(),
                     height_min: r.f32(),
                     height_max: r.f32(),
+                    sit_on_support: true,
                 };
-                row.cross = r.ok().then_some(c);
+                let sit = r.at_end() || r.u8() != 0;
+                row.cross = r.ok().then_some(Cross {
+                    sit_on_support: sit,
+                    ..c
+                });
             }
             tag::WIND => {
                 let w = Wind {
@@ -1420,6 +1430,35 @@ mod tests {
             let row = row_from_fields(s.name, &state_fields(s), &[]);
             assert_eq!(row.outline, s.outline, "{}", s.name);
         }
+    }
+
+    #[test]
+    fn a_plant_that_does_not_sit_on_its_support_says_so_and_older_payloads_sit() {
+        // `sitOnSupport` rides at the end of the cross field, written only when false: the
+        // build's plants (all sitting) send the same bytes as before it, and a reader of a
+        // payload without it reads true.
+        let fluids: Vec<String> = FLUIDS.iter().map(|f| f.name.to_owned()).collect();
+        let grass = info(require("dwell:tall_grass"));
+        let cross = grass.cross.expect("cross");
+        assert!(cross.sit_on_support);
+        let cross_field = |s: &StateInfo| {
+            state_fields(s)
+                .into_iter()
+                .find(|(t, _)| *t == tag::CROSS)
+                .expect("a cross field")
+                .1
+        };
+        assert_eq!(cross_field(grass).len(), 21, "six values, no flag byte");
+        let mut standing = *grass;
+        standing.cross = Some(Cross {
+            sit_on_support: false,
+            ..cross
+        });
+        assert_eq!(cross_field(&standing).len(), 22);
+        let row = row_from_fields(standing.name, &state_fields(&standing), &fluids);
+        assert_eq!(row.cross, standing.cross);
+        let row = row_from_fields(grass.name, &state_fields(grass), &fluids);
+        assert_eq!(row.cross, grass.cross);
     }
 
     #[test]

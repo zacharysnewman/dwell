@@ -2,14 +2,18 @@
 //! crosshair's cell) and server (line of sight), and the server's validation of a
 //! `BlockEditRequest` (§11). Pure functions of the voxel world and the players' capsules.
 
-use dwell_blocks::shape::{faces_of, ray_enter_shape, shape_of, vertical_segment_distance_sq};
+use dwell_blocks::shape::{
+    faces_of, plant_sink, ray_enter_shape, shape_of, vertical_segment_distance_sq,
+};
 use dwell_blocks::{
     Medium, ShapeFace, ShapeInfo, StateId, StateInfo, Support, VoxelShape, block_of, info,
     state_property, with_property,
 };
 use dwell_protocol::{BlockEditAction, BlockEditRequest, ChunkChanges, players};
 
-use crate::{ChunkCoord, M, MIDPLANE_Y, VoxelWorld, inside_build_volume, inside_world_disc};
+use crate::{
+    ChunkCoord, M, MIDPLANE_Y, VoxelWorld, inside_build_volume, inside_world_disc, up_of_y,
+};
 
 /// Face index → outward direction: 0 +X, 1 −X, 2 +Y, 3 −Y, 4 +Z, 5 −Z.
 pub const FACE_DIRS: [[i32; 3]; 6] = [
@@ -56,12 +60,38 @@ fn target_shape(world: &mut VoxelWorld, cell: [i32; 3]) -> &'static ShapeInfo {
     }
 }
 
+/// How far the plant in `cell` is drawn below its cell's floor (toward its ground) at (fx, fz) in
+/// the cell: a cross that sits on its support (`Cross::sit_on_support`) stands on the support's
+/// solid there, as the mesher draws it (TRANSPARENT_BLOCKS.md §4). 0 for anything else.
+pub fn plant_sink_at(world: &mut VoxelWorld, cell: [i32; 3], fx: f32, fz: f32) -> f32 {
+    let m = world.get_voxel(cell[0], cell[1], cell[2]);
+    if !info(m).cross.is_some_and(|c| c.sit_on_support) {
+        return 0.0;
+    }
+    let up = up_of_y(cell[1]);
+    let s = [cell[0], cell[1] - up, cell[2]];
+    if info(world.get_voxel(s[0], s[1], s[2])).shape == VoxelShape::Empty {
+        return 0.0;
+    }
+    plant_sink(world.shape_at(s[0], s[1], s[2]), fx, fz, up)
+}
+
 /// The box (min, max corner in the cell) a block is aimed at, seen by and outlined with: its data's
-/// `selectionBox`, else its shape's extent, else the whole cell.
+/// `selectionBox` (turned to stand on face B's ground, and sunk with a plant that sits on its
+/// support, so it may reach into the support's cell), else its shape's extent, else the whole
+/// cell.
 pub fn target_box(world: &mut VoxelWorld, cell: [i32; 3]) -> ([f32; 3], [f32; 3]) {
     let m = world.get_voxel(cell[0], cell[1], cell[2]);
     if let Some(b) = info(m).selection {
-        return ([b[0], b[1], b[2]], [b[3], b[4], b[5]]);
+        let up = up_of_y(cell[1]);
+        let (y0, y1) = if up > 0 {
+            (b[1], b[4])
+        } else {
+            (1.0 - b[4], 1.0 - b[1])
+        };
+        let sink = plant_sink_at(world, cell, 0.5 * (b[0] + b[3]), 0.5 * (b[2] + b[5]));
+        let dy = -(up as f32) * sink;
+        return ([b[0], y0 + dy, b[2]], [b[3], y1 + dy, b[5]]);
     }
     let shape = target_shape(world, cell);
     let top = if shape.inverted { 1.0 } else { shape.max_y };
@@ -257,12 +287,27 @@ pub fn raycast_block(
                     0.0,
                 )
                 .map(|h| (h.t, h.normal))
+            }
+            .map(|(t, n)| (t, n, at));
+            // A plant sitting on this cell reaches down into it: its box can be met here first.
+            let up = up_of_y(at[1]);
+            let above = [at[0], at[1] + up, at[2]];
+            let plant = if plant_sink_at(world, above, 0.5, 0.5) > 0.0 {
+                let c = [corner[0], corner[1] + up as f32, corner[2]];
+                ray_enter_box(target_box(world, above), c, o, dir, max_distance)
+                    .map(|(t, n)| (t, n, above))
+            } else {
+                None
             };
-            if let Some((t, normal)) = hit
+            let nearest = match (hit, plant) {
+                (Some(a), Some(b)) => Some(if b.0 < a.0 { b } else { a }),
+                (a, b) => a.or(b),
+            };
+            if let Some((t, normal, cell)) = nearest
                 && t <= max_distance
             {
                 return Some(BlockHit {
-                    cell: std::array::from_fn(|i| base[i] + cell[i]),
+                    cell,
                     face: face_of_normal(normal),
                     distance: t,
                 });

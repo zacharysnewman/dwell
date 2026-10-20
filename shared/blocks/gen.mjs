@@ -144,8 +144,9 @@ function validateRender(id, def, look, isAir) {
   }
   if (def.cross !== undefined) {
     if (look !== 'cross') fail(`${id}: cross options need look cross`);
-    onlyKeys(id, 'cross', def.cross, ['height', 'quads', 'jitter']);
-    const { height = 1, quads = 2, jitter } = def.cross;
+    onlyKeys(id, 'cross', def.cross, ['height', 'quads', 'jitter', 'sitOnSupport']);
+    const { height = 1, quads = 2, jitter, sitOnSupport = true } = def.cross;
+    if (typeof sitOnSupport !== 'boolean') fail(`${id}: cross.sitOnSupport must be true or false`);
     if (!(isNum(height) && height > 0 && height <= 1)) fail(`${id}: cross.height must be in (0, 1]`);
     if (![2, 3, 4].includes(quads)) fail(`${id}: cross.quads must be 2, 3 or 4`);
     if (jitter !== undefined) {
@@ -582,7 +583,7 @@ if (!fixture) writeFileSync(join(root, 'client/src/world/blocks.gen.ts'), ts.joi
     const c = d.cross ?? {};
     const j = c.jitter ?? {};
     const [lo, hi] = j.height ?? [1, 1];
-    return `Some(Cross { height: ${rf(c.height ?? 1)}, quads: ${c.quads ?? 2}, offset: ${rf(j.offset ?? 0)}, rotation_deg: ${rf(j.rotation ?? 0)}, height_min: ${rf(lo)}, height_max: ${rf(hi)} })`;
+    return `Some(Cross { height: ${rf(c.height ?? 1)}, quads: ${c.quads ?? 2}, offset: ${rf(j.offset ?? 0)}, rotation_deg: ${rf(j.rotation ?? 0)}, height_min: ${rf(lo)}, height_max: ${rf(hi)}, sit_on_support: ${c.sitOnSupport ?? true} })`;
   };
   rs.push(`pub static STATES: [StateInfo; ${states.length}] = [`);
   for (const st of states) {

@@ -708,12 +708,16 @@ the vertex shader leans the tops along a slow gust field of travelling waves who
 divide 1,024 m, sampled at the world position modulo that from the eye's position passed modulo it,
 plus a faster flutter; `Renderer::set_wind` scales it, 0 for none) and `fade` (start, end in metres,
 `gen.mjs` requires end ≤ 96 m, the smallest full-detail distance, so plants are gone before chunks
-meet the LOD). Normals lean up (0.8) so plants are lit like the ground from every side; the tint is
+meet the LOD), and **[built, 2026-10-20]** `cross.sitOnSupport` (default true: each foot is lowered
+onto the support's solid under it, `dwell_blocks::shape::plant_sink`, so grass stands on a level
+field's half-height top and follows a slope; sent as an optional last byte of the `CROSS` look
+field, only when false). Normals lean up (0.8) so plants are lit like the ground from every side; the tint is
 that normal's face tint. Crosses need `"shape": "empty"`: no collider. **Placement rules** are block
 data too, checked by the server (§6.5): `placeOn` (block ids the block below must be),
 `needsSupport` (`"below"`: removed with what it stands on, in the same modification), `replaceable`
 (placing into its cell replaces it) `selectionBox` (a smaller box in the cell for targeting,
-line of sight and the outline, `dwell_world::edit::target_box`) and `medium` (`air`: refused into a
+line of sight and the outline, `dwell_world::edit::target_box`; turned for face B, and sunk with a
+plant that sits on its support, the targeting ray meeting it in the support's cell) and `medium` (`air`: refused into a
 liquid, never kept flooded; `water`: placed only into water, drawn inside it as its `flooded` state). The first user is
 **`dwell:tall_grass`** (prototype content, appended to the block list so earlier ids and every
 terrain hash hold): cross, cutout, a `tallGrass` tile of tapering blades in the grass top's colours

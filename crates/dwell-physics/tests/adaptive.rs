@@ -15,7 +15,7 @@ use dwell_blocks::shape::solid_span_at;
 use dwell_blocks::{StateId, require};
 use dwell_physics::Vec3;
 use dwell_physics::config::PlayerControllerConfig;
-use dwell_physics::controller::events;
+use dwell_physics::controller::{State, events};
 
 fn grass() -> StateId {
     require("dwell:grass")
@@ -532,4 +532,72 @@ fn every_slope_the_adaptive_table_makes_is_ground_and_the_steep_ones_slide() {
         "{steepest}° against a limit of {limit}°"
     );
     assert!(steepest > config.slide.min_angle);
+}
+
+/// Walks or runs into a one-wide ridge's 45° flank from below and holds forward: (state switches
+/// between sliding and walking/running while pressed against it, the feet's highest point, the
+/// last state).
+fn press_into_ridge_flank(angle: f32, run: bool, start: f32) -> (i32, f32, State) {
+    // The ridge of `a_one_wide_ridge_stops_a_walker…`: its flank's foot is at z = 4, at y = 0.5.
+    let height = |_: i32, z: i32| if z == 4 { 2 } else { 1 };
+    let mut w = PlayerTestWorld::new();
+    // Long enough in x for a run along the flank at 60° (~17 m in 2.5 s).
+    terrain(&mut w, (-28, -8, 28, 16), &height);
+    let rad = angle.to_radians();
+    let along = start + 0.3 / rad.cos();
+    let e = w.spawn(Vec3::new(
+        0.5 - rad.sin() * along,
+        0.52,
+        4.0 - rad.cos() * along,
+    ));
+    w.step(ticks(0.5));
+    w.set_input(move |_, _| input(0.0, 1.0, run, false, false, angle, 0.0));
+    let (mut switches, mut highest) = (0, f32::MIN);
+    let mut last = None;
+    for t in 0..ticks(2.5) {
+        w.step(1);
+        highest = highest.max(w.feet(e));
+        let sliding = w.c(e).state == State::Sliding;
+        if t > ticks(0.3) {
+            if let Some(was) = last
+                && was != sliding
+            {
+                switches += 1;
+            }
+            last = Some(sliding);
+        }
+    }
+    (switches, highest, w.c(e).state)
+}
+
+#[test]
+fn pressing_into_a_45_degree_flanks_foot_does_not_flicker_between_sliding_and_walking() {
+    // Playtest on the half-height branch (2026-10-20): walking into a 45° face from below, the
+    // player rested on its toe and its state switched between sliding and walking every few ticks.
+    let mut fails = Vec::new();
+    let mut total = 0;
+    for run in [false, true] {
+        // (Running at 60°, nearly along the one-wide ridge, can carry the player over its crest
+        // and down the far flank: a slide or two, not a flicker.)
+        let angles: &[f32] = if run {
+            &[0.0, 15.0, 30.0, 45.0]
+        } else {
+            &[0.0, 15.0, 30.0, 45.0, 60.0]
+        };
+        for &angle in angles {
+            for start in [0.4, 0.43, 0.46, 0.49] {
+                total += 1;
+                let (switches, highest, state) = press_into_ridge_flank(angle, run, start);
+                // The capsule's round bottom rests on the flank's toe at most (feet ~0.94 m, at the
+                // top of the 27° slope up to the ridge; ~1.4 m before).
+                if switches > 2 || highest > 1.1 || state == State::Sliding {
+                    fails.push(format!(
+                        "run {run} {angle}° from {start}: {switches} switches, feet up to {highest:.2}, ends {state:?}"
+                    ));
+                }
+            }
+        }
+    }
+    eprintln!("flank foot: {} of {total} flickered", fails.len());
+    assert!(fails.is_empty(), "{}", fails.join("\n"));
 }
