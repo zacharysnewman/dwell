@@ -6,8 +6,10 @@
 //! match exactly and depths within 1e-4 relative; the report also counts how many rays agree on
 //! every field (steps, level, cell, face, `t` to the bit). Every ray is also marched from the eye:
 //! a beam start must never pass that march's hit (`Report::start_past_hit`). Each view is drawn
-//! after the same view turned by a few degrees, so its tiles take the temporal start (last
-//! frame's distances, the eye unmoved) where they can: the same bar holds for those starts.
+//! three times, each after another last frame, so its tiles take the temporal start (last frame's
+//! distances) where they can: the same view turned by a few degrees from the same eye (A4b), and
+//! from an eye a step behind and a step ahead, turned too (A4c: the temporal start while the eye
+//! moves). The same bar holds for every start.
 //!
 //! Shared by the native test (`march/test.rs`, on the machine's GPU when it has one) and the
 //! browser probe (`probeMarch`, headless SwiftShader in CI).
@@ -51,8 +53,10 @@ pub struct Report {
     /// from the march from the eye's (a LOD switch can fall elsewhere; counted, not a failure).
     pub started_late: usize,
     pub start_changed: usize,
-    /// Rays whose start was the temporal one.
+    /// Rays whose start the temporal start cleared part of (any last frame).
     pub temporal_starts: usize,
+    /// Of those, the ones after a last frame from another eye (A4c).
+    pub moving_temporal_starts: usize,
     /// Levels hit, as a bit set (the views reach LOD sections).
     pub levels_hit: u32,
     /// One line per view: its name and counts.
@@ -198,6 +202,14 @@ fn frame_for(eye: [f64; 3], yaw: f64, pitch: f64, face: f64) -> MarchFrame {
     }
 }
 
+/// The last frames each view is drawn after: a name, and how far along the view (metres) last
+/// frame's eye was.
+const LAST_FRAMES: [(&str, f64); 3] = [
+    ("a turn", 0.0),
+    ("a step forward", -1.5),
+    ("a step back", 1.5),
+];
+
 /// The scenes and their views: (scene builder, views).
 type Scene = (&'static str, fn(&mut Marcher), Vec<View>);
 
@@ -306,15 +318,21 @@ pub async fn run(device: &wgpu::Device, queue: &wgpu::Queue) -> Result<Report, S
         m.set_debug(pixels);
         build(&mut m);
         let targets = m.targets((SIZE, SIZE));
-        for (view, eye, yaw, pitch, face) in views {
-            // Last frame: the view turned a little (twice: the first draw uploads the bricks).
+        for ((view, eye, yaw, pitch, face), (before, step)) in
+            views.into_iter().flat_map(|v| LAST_FRAMES.map(|l| (v, l)))
+        {
+            // Last frame: the view turned a little, from an eye `step` metres along the view
+            // (twice: the first draw uploads the bricks).
+            let frame = frame_for(eye, yaw, pitch, face);
+            let last_eye: [f64; 3] =
+                std::array::from_fn(|k| eye[k] + step * f64::from(frame.forward[k]));
             for _ in 0..2 {
-                let turned = frame_for(eye, yaw + 3.0, pitch - 2.0, face);
+                let turned = frame_for(last_eye, yaw + 3.0, pitch - 2.0, face);
                 let mut encoder = device.create_command_encoder(&Default::default());
                 m.draw(&mut encoder, &turned, &targets, None);
                 queue.submit([encoder.finish()]);
             }
-            let frame = frame_for(eye, yaw, pitch, face);
+            let view = format!("{view} after {before}");
             let mut encoder = device.create_command_encoder(&Default::default());
             m.draw(&mut encoder, &frame, &targets, None);
             queue.submit([encoder.finish()]);
@@ -354,6 +372,9 @@ pub async fn run(device: &wgpu::Device, queue: &wgpu::Queue) -> Result<Report, S
                     }
                     if g.temporal {
                         report.temporal_starts += 1;
+                        if step != 0.0 {
+                            report.moving_temporal_starts += 1;
+                        }
                     }
                     if full.outcome != r.outcome {
                         report.start_changed += 1;

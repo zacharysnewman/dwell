@@ -27,7 +27,8 @@ pub struct Decoration {
     /// The steepest ground it stands on: the most the ground's top differs from its four
     /// neighbours', in blocks.
     pub max_slope: i32,
-    /// The ground's top (face-local, sea level 0) must lie in [min_height, max_height].
+    /// The ground's top (its top voxel, in metres above sea level) must lie in [min_height,
+    /// max_height].
     pub min_height: i32,
     pub max_height: i32,
 }
@@ -104,7 +105,8 @@ impl Placer {
     }
 
     /// Whether the cell above ground at (x, z) gets this decoration: its ground block `ground`,
-    /// whose top is `top`, with neighbours' tops from `neighbour_top` (+x, −x, +z, −z).
+    /// whose top is `top` (m above sea level), with neighbours' tops from `neighbour_top` (+x, −x,
+    /// +z, −z; the same).
     pub fn places(
         &self,
         (x, z): (i32, i32),

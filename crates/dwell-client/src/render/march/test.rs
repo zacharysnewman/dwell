@@ -92,13 +92,21 @@ fn the_gpu_marcher_matches_the_reference_per_pixel() {
         report.max_dir_error
     );
     eprintln!(
-        "beam: {} rays started late ({} from the temporal start), {} past a hit, {} changed \
-         outcome",
-        report.started_late, report.temporal_starts, report.start_past_hit, report.start_changed
+        "beam: {} rays started late ({} from the temporal start, {} of them after the eye moved), \
+         {} past a hit, {} changed outcome",
+        report.started_late,
+        report.temporal_starts,
+        report.moving_temporal_starts,
+        report.start_past_hit,
+        report.start_changed
     );
     assert!(
         report.temporal_starts > report.pixels / 20,
         "the temporal start is taken (where it starts farther than the beam)"
+    );
+    assert!(
+        report.moving_temporal_starts > report.pixels / 40,
+        "the temporal start is taken after the eye moved"
     );
     assert!(
         report.started_late > report.pixels / 4,
@@ -181,6 +189,71 @@ fn draws_on_the_noop_device_and_takes_terrain_through_the_seam() {
 }
 
 #[test]
+fn an_unchanged_frame_keeps_its_march_and_any_change_marches_again() {
+    let (device, queue) = noop_device();
+    let mut m = Marcher::new(
+        device.clone(),
+        queue.clone(),
+        wgpu::TextureFormat::Rgba8Unorm,
+    );
+    let table = m.gpu.scene.table().clone();
+    let mut v = vec![0u16; dwell_world::CHUNK_VOLUME];
+    v[100] = dwell_blocks::require("dwell:stone");
+    let c = dwell_world::ChunkCoord::new(0, 0, 0);
+    m.set_chunk(c, Some(&dwell_march::build_chunk(&v, &table)));
+    let targets = m.targets((32, 16));
+    let frame = MarchFrame {
+        uniforms: vec![0.0; crate::render::FRAME_FLOATS],
+        eye: [0.5, 10.0, 0.5],
+        forward: [0.0, -1.0, 0.0],
+        right: [1.0, 0.0, 0.0],
+        up: [0.0, 0.0, -1.0],
+        tan: [0.5, 0.5],
+    };
+    let draw = |m: &mut Marcher, f: &MarchFrame, t: &super::MarchTargets| {
+        let mut e = device.create_command_encoder(&Default::default());
+        m.draw(&mut e, f, t, None);
+        queue.submit([e.finish()]);
+        m.reused
+    };
+    assert!(!draw(&mut m, &frame, &targets), "the first frame marches");
+    assert!(
+        draw(&mut m, &frame, &targets),
+        "the same frame again is kept"
+    );
+    assert!(draw(&mut m, &frame, &targets));
+    // The eye moves by a hair: marched again.
+    let mut moved = frame.clone();
+    moved.eye[0] += 1e-6;
+    assert!(!draw(&mut m, &moved, &targets));
+    assert!(draw(&mut m, &moved, &targets));
+    // The view turns, or the field of view changes.
+    let mut turned = moved.clone();
+    turned.forward = [0.0, -0.999_95, 0.01];
+    assert!(!draw(&mut m, &turned, &targets));
+    let mut zoomed = turned.clone();
+    zoomed.tan = [0.25, 0.25];
+    assert!(!draw(&mut m, &zoomed, &targets));
+    assert!(draw(&mut m, &zoomed, &targets));
+    // The lights alone don't count: the shade pass runs every frame.
+    let mut lit = zoomed.clone();
+    lit.uniforms[0] = 0.5;
+    assert!(draw(&mut m, &lit, &targets));
+    // A brick upload (an edit, streaming).
+    v[200] = dwell_blocks::require("dwell:dirt");
+    m.set_chunk(c, Some(&dwell_march::build_chunk(&v, &table)));
+    assert!(!draw(&mut m, &lit, &targets));
+    assert!(draw(&mut m, &lit, &targets));
+    // Other targets (a resize, the other side in compare mode), or a setting.
+    let other = m.targets((32, 16));
+    assert!(!draw(&mut m, &lit, &other));
+    m.settings.lod_pixels = 8.0;
+    assert!(!draw(&mut m, &lit, &other));
+    m.settings.reuse = false;
+    assert!(!draw(&mut m, &lit, &other), "off: always marched");
+}
+
+#[test]
 fn the_page_query_switches_the_beam_prepass() {
     let mut s = super::MarchSettings::default();
     assert!(s.beam);
@@ -191,4 +264,10 @@ fn the_page_query_switches_the_beam_prepass() {
     assert!(s.temporal);
     s.apply_query("?marchtemporal=0");
     assert!(!s.temporal && s.beam);
+    assert!(s.moving && s.reuse);
+    s.apply_query("?marchmoving=0&marchreuse=off");
+    assert!(!s.moving && !s.reuse);
+    assert!(s.steep_dda);
+    s.apply_query("?marchsteep=0");
+    assert!(!s.steep_dda);
 }

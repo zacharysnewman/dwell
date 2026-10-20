@@ -79,6 +79,9 @@ pub struct GpuScene {
     pub refused: u64,
     /// The first sync writes every buffer (the looks among them).
     synced: bool,
+    /// The last sync's changed nodes as level-0 grid boxes (`Dirty::boxes`), at most
+    /// `wgsl::MAX_DIRTY`: where last frame's distances no longer hold (the temporal start).
+    pub changed: Vec<([i32; 3], [i32; 3])>,
 }
 
 impl GpuScene {
@@ -103,6 +106,7 @@ impl GpuScene {
             uploaded_bytes: 0,
             refused: 0,
             synced: false,
+            changed: Vec::new(),
         }
     }
 
@@ -142,6 +146,7 @@ impl GpuScene {
     /// Uploads what changed since the last sync. Returns the bytes written.
     pub fn sync(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) -> u64 {
         let dirty = self.scene.take_dirty();
+        self.changed = dirty.boxes(super::wgsl::MAX_DIRTY);
         let mut bytes = 0u64;
         let mut write = |buffer: &wgpu::Buffer, at: usize, words: &[u32]| {
             if !words.is_empty() {

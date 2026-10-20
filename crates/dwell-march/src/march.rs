@@ -21,8 +21,9 @@
 //! - an empty brick: skip the cube of bricks its distance says is empty (§4.3 item 4), or the
 //!   largest column region (whole node down to one column) whose occupied rows the ray stays
 //!   above or below across the region (§4.3 item 3), whichever reaches further;
-//! - a mixed brick: skip such a column region if there is one, else Amanatides–Woo DDA over its
-//!   voxels until a hit or it leaves the brick.
+//! - a mixed brick: skip such a column region if there is one (searched for only for rays near
+//!   level, [`COLUMN_MIXED_MAX_DY`]), else Amanatides–Woo DDA over its voxels until a hit or it
+//!   leaves the brick.
 //!
 //! Where the wanted level grows mid-node the ray carries on at the coarser level from where it
 //! is — unless the coarser cell there is occupied while the level the ray marched at has data
@@ -100,6 +101,9 @@ pub struct MarchParams {
     pub columns: bool,
     /// §4.3 item 4: skip empty bricks by their distance.
     pub distances: bool,
+    /// A4c: in mixed bricks, search the columns only for rays near level
+    /// ([`COLUMN_MIXED_MAX_DY`]).
+    pub steep_dda: bool,
 }
 
 impl Default for MarchParams {
@@ -111,6 +115,7 @@ impl Default for MarchParams {
             lod_pixels: 4.0,
             columns: true,
             distances: true,
+            steep_dda: true,
         }
     }
 }
@@ -342,6 +347,12 @@ impl RayMath {
 /// Margin (cells) by which a ray must clear a column region's occupied rows to skip it.
 pub const COLUMN_EPS: f32 = 1e-4;
 
+/// In a mixed brick, the column search runs only for rays this close to level (`|d.y|` below
+/// it): a steeper ray crosses a brick's air in a few voxel steps, which cost less than the
+/// search (A4c, measured: 16 % off the march 540 m up, 8 % looking down, 5 % at the spawn).
+/// Empty bricks always search.
+pub const COLUMN_MIXED_MAX_DY: f32 = 0.15;
+
 fn box_of(cell: [i32; 3], shift: u32) -> ([i32; 3], [i32; 3]) {
     (cell.map(|c| c << shift), cell.map(|c| (c + 1) << shift))
 }
@@ -531,10 +542,14 @@ impl Scene {
             };
             let node = &self.nodes[ni];
             let local: [i32; 3] = std::array::from_fn(|k| cell[k] - (n[k] << 5));
+            let bc = local.map(|v| v >> 3);
+            let b = brick_index(bc[0], bc[1], bc[2]);
+            let mixed = matches!(node.get(b), BrickRef::Mixed(_));
             let cols = self.node_columns[ni];
             // The largest column region the ray clears, and where it leaves it.
             let mut column = None;
-            if p.columns && cols != COLUMNS_NONE {
+            let search = !mixed || !p.steep_dda || rm.d[1].abs() < COLUMN_MIXED_MAX_DY;
+            if p.columns && cols != COLUMNS_NONE && search {
                 let words = &self.columns[cols as usize..cols as usize + COLUMN_WORDS];
                 let scale = 1.0 / (1u32 << l) as f32;
                 for m in (0..COLUMN_MIPS).rev() {
@@ -558,8 +573,6 @@ impl Scene {
                     break;
                 }
             }
-            let bc = local.map(|v| v >> 3);
-            let b = brick_index(bc[0], bc[1], bc[2]);
             let brick_shift = l + 3;
             match node.get(b) {
                 BrickRef::Empty(d) => {
