@@ -248,6 +248,15 @@ step-up now finds the step's face over the front half circle, checks headroom an
 the step's height a tick and keeps the player's speed (PLAYER_CONTROLLER.md §4, "The step-up");
 `tests/step_up.rs`'s approach matrix went from 564 of 903 approaches failing to none, and a step
 under a low ceiling is no longer climbed into it.
+Later finding (owner, 2026-10-20, fixed): *"treat steps like half ramps, so smooth transition
+between them."* Measured first: through ½ m stairs the body kept 93–100 % of its speed with no
+stall or airborne tick, so the hitch was the camera's step curve (4 m/s + 6/s of the offset: a
+7 m/s kick per step, a stair climbed in bursts). The body still steps in one tick; the eye now
+decays along a virtual ramp, `max(min_speed, slope × horizontal speed)`, the slope a lone step's
+0.5 or a stair's own up to 1.0 (`step_view` in the config, client-only; PLAYER_CONTROLLER.md §9,
+which records the approaches weighed). `dwell-game` `eye.rs`'s ramp tests failed on the old curve
+and pass; `tests/step_up.rs` pins the body (½ m stairs above 90 % of the speed, on the ground; a
+1 m drop falls). No sim, wire or golden-trace change.
 
 | Exit criterion | Result |
 |---|---|

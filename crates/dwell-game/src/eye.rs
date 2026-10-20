@@ -12,6 +12,7 @@
 
 use dwell_physics::config::StepView;
 use dwell_protocol::controller_flags;
+use dwell_world::FaceFrame;
 
 use crate::FaceSign;
 
@@ -44,7 +45,9 @@ impl From<StepView> for StepRamp {
 
 impl Default for StepRamp {
     fn default() -> Self {
-        StepView::from(dwell_physics::config::PlayerControllerConfig::default().step_view).into()
+        dwell_physics::config::PlayerControllerConfig::default()
+            .step_view
+            .into()
     }
 }
 
@@ -101,17 +104,6 @@ impl StepSmoother {
         if self.slope == 0.0 {
             self.slope = r.slope;
         }
-        // Along the virtual ramp: the rise a walker at this speed would make on it.
-        // Further behind than one step (a stair steeper than the ramp so far), it catches up in
-        // proportion, so the lag stays about a step.
-        let behind = 1.0 + 0.5 * (self.offset.abs() / self.height.max(STEP_MIN) - 1.0).max(0.0);
-        let speed = (self.slope * s.speed).max(r.min_speed) * behind;
-        let decay = speed * dt;
-        self.offset = if self.offset.abs() <= decay {
-            0.0
-        } else {
-            self.offset - self.offset.signum() * decay
-        };
         self.since += s.speed * dt;
         let mut step = None;
         if let Some(last) = &self.last {
@@ -139,6 +131,17 @@ impl StepSmoother {
                 step = Some(Step { height: d });
             }
         }
+        // Along the virtual ramp (from the step's own tick, so the eye never pauses on a stair): the rise a walker at this speed would make on it.
+        // Further behind than one step (a stair steeper than the ramp so far), it catches up in
+        // proportion, so the lag stays about a step.
+        let behind = 1.0 + 0.5 * (self.offset.abs() / self.height.max(STEP_MIN) - 1.0).max(0.0);
+        let speed = (self.slope * s.speed).max(r.min_speed) * behind;
+        let decay = speed * dt;
+        self.offset = if self.offset.abs() <= decay {
+            0.0
+        } else {
+            self.offset - self.offset.signum() * decay
+        };
         // Never more than a step behind: on a stair steeper than the steepest ramp the eye keeps
         // up at the step's height.
         self.offset = self.offset.clamp(-2.0 * s.max_step, 2.0 * s.max_step);
@@ -228,15 +231,24 @@ pub struct EyeState {
     pub ramp: StepRamp,
 }
 
+/// The face frame of a face sign (BIFACIAL_WORLD.md §11): the eye smooths in face-local heights.
+pub fn frame_of(face: FaceSign) -> FaceFrame {
+    if face < 0 { FaceFrame::B } else { FaceFrame::A }
+}
+
 /// Feet height from a state's own half height: the capsule centre moves when crouching.
 pub fn eye_sample_of(s: &EyeState) -> EyeSample {
-    let face = f64::from(s.face);
+    let f = frame_of(s.face);
+    let [px, py, pz] = s.position;
+    let [ox, oy, oz] = s.render_offset;
+    let at = f.point([px + ox, py + oy, pz + oz]);
+    let v = f.vector(s.velocity);
     EyeSample {
-        feet: face * (s.position[1] + s.render_offset[1]) - s.half_height,
+        feet: at[1] - s.half_height,
         crouched: s.controller_flags & controller_flags::CROUCHING != 0,
         grounded: s.controller_flags & controller_flags::GROUNDED != 0,
-        velocity_y: face * s.velocity[1],
-        speed: s.velocity[0].hypot(s.velocity[2]),
+        velocity_y: v[1],
+        speed: v[0].hypot(v[2]),
         eye_height: s.eye_height,
         crouch_eye_height: s.crouch_eye_height,
         max_step_height: s.max_step_height,
@@ -277,7 +289,7 @@ impl EyeCamera {
             self.face = s.face;
         }
         // Along the player's up, back to a world height.
-        let eye = f64::from(s.face) * self.smoother.tick(eye_sample_of(s), dt);
+        let eye = frame_of(s.face).y(self.smoother.tick(eye_sample_of(s), dt));
         self.previous = Some(match self.previous {
             None => eye,
             Some(_) => self.current,
@@ -379,10 +391,7 @@ mod tests {
                 for rise in [0.5, -0.5] {
                     let samples: Vec<_> = std::iter::repeat_n(0.0, 10)
                         .chain(std::iter::repeat_n(rise, 60))
-                        .map(|f| EyeSample {
-                            speed,
-                            ..sample(f)
-                        })
+                        .map(|f| EyeSample { speed, ..sample(f) })
                         .collect();
                     let eyes = run(&samples);
                     let ramp = slope * speed;
@@ -391,10 +400,11 @@ mod tests {
                     assert!(v.iter().all(|s| s.abs() <= ramp + 1e-9), "{at}");
                     // A constant speed along the ramp, from the step to the top.
                     let climb = (rise.abs() / ramp / DT).floor() as usize;
-                    for s in &v[10..10 + climb] {
+                    // (The eye moves on the step's own tick, v[9].)
+                    for s in &v[9..9 + climb - 1] {
                         assert_close(s * rise.signum(), ramp, 6);
                     }
-                    assert_close(eyes[10 + climb + 1], 1.62 + rise, 6);
+                    assert_close(eyes[9 + climb + 1], 1.62 + rise, 6);
                 }
             }
         }
@@ -576,10 +586,18 @@ mod tests {
 
         /// The state turned upside down (face B): heights negated, head down.
         fn mirrored(s: &EyeState) -> EyeState {
+            on(FaceFrame::B, s)
+        }
+
+        /// A face-A (face-local) state placed on face `f` through its frame.
+        fn on(f: FaceFrame, s: &EyeState) -> EyeState {
+            if !f.is_b() {
+                return *s;
+            }
             EyeState {
-                position: [s.position[0], -s.position[1], s.position[2]],
-                render_offset: [s.render_offset[0], -s.render_offset[1], s.render_offset[2]],
-                velocity: [s.velocity[0], -s.velocity[1], s.velocity[2]],
+                position: f.point(s.position),
+                render_offset: f.vector(s.render_offset),
+                velocity: f.vector(s.velocity),
                 controller_flags: s.controller_flags | controller_flags::FACE_B,
                 face: -1,
                 ..*s
@@ -620,6 +638,28 @@ mod tests {
             assert!(largest_tick_change(&eyes) < 0.05);
             assert_close(*eyes.last().unwrap(), 2.12, 4);
         }
+
+        dwell_world::both_faces!(
+            /// The virtual ramp on either face (BIFACIAL_WORLD.md §11): a ½ m stair walked on
+            /// face `f` draws, face-local, the eye face A draws, and it rises on every frame from
+            /// the first step to the last at no more than the steepest ramp's speed.
+            fn a_stair_draws_the_virtual_ramp_on_either_face(f: FaceFrame) {
+                let local: Vec<EyeState> = (0..60)
+                    .map(|t| state(0.5 * f64::from((t / 12).min(4))))
+                    .collect();
+                let a = frames(&local);
+                let here = frames(&local.iter().map(|s| on(f, s)).collect::<Vec<_>>());
+                for (h, e) in here.iter().zip(&a) {
+                    assert_close(f.y(*h), *e, 6);
+                }
+                let ramp = StepRamp::default();
+                // Face-local per-frame rises, from the first step (tick 12) to the last (48).
+                for w in a[12 * FRAMES..48 * FRAMES].windows(2) {
+                    let rise = (w[1] - w[0]) / (DT / FRAMES as f64);
+                    assert!(rise > 0.0 && rise <= ramp.max_slope * WALK + 1e-6, "{rise}");
+                }
+            }
+        );
 
         #[test]
         fn crouching_in_mid_air_does_not_jolt_the_eye() {
@@ -709,7 +749,7 @@ mod tests {
                 let down = frames(&states.iter().map(mirrored).collect::<Vec<_>>());
                 assert_eq!(down.len(), up.len());
                 for (d, u) in down.iter().zip(&up) {
-                    assert_close(*d, -u, 6);
+                    assert_close(*d, FaceFrame::B.y(*u), 6);
                 }
             }
         }
@@ -721,7 +761,7 @@ mod tests {
             camera.tick(&state(0.5), DT); // a step on face A: smoothed
             camera.tick(&mirrored(&state(0.0)), DT);
             // The first tick on face B is drawn as it is (the eye at the feet's up-height 0 + 1.62 below).
-            assert_close(camera.draw(0.0), -1.62, 6);
+            assert_close(camera.draw(0.0), FaceFrame::B.y(1.62), 6);
         }
     }
 }

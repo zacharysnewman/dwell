@@ -647,7 +647,11 @@ fn half_metre_stairs_are_walked_and_run_up_and_down_at_speed_and_on_the_ground()
                 assert_eq!(airborne, 0, "{at}: airborne ticks");
                 assert!(largest <= lift, "{at}: feet moved {largest} m in a tick");
                 let end = if down { 0.0 } else { 0.5 * n as f32 };
-                assert!((w.feet(e) - end).abs() < 0.01, "{at}: ended at {}", w.feet(e));
+                assert!(
+                    (w.feet(e) - end).abs() < 0.01,
+                    "{at}: ended at {}",
+                    w.feet(e)
+                );
             }
         }
     }
