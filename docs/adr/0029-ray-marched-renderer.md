@@ -1,6 +1,7 @@
 # 0029. A ray-marched terrain renderer, built complete beside the mesher and compared side by side
 
-- Status: Accepted
+- Status: Superseded by [0044](0044-mesher-over-ray-marching.md) (2026-10-20: the owner kept the
+  mesher at A7; the renderer was removed, its code kept as the `archive/ray-marcher` tag and branch)
 - Date: 2026-10-14
 - Amends: [0028](0028-rust-port.md) §3 (the client's renderer: a wgpu renderer that draws terrain
   from meshes) — terrain may be drawn by either of two renderers until the decision below (A7)

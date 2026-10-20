@@ -33,8 +33,8 @@ one's status line. Resolving an item in `ARCHITECTURE.md` Open Decisions require
 | [0025](0025-baseline-world.md) | The baseline world: a 50 km bifacial disc, a 10-layer core, a spherical build volume, six blocks | Accepted (Rapier f64: 0028) |
 | [0026](0026-terrain-definitions.md) | Terrain definitions: terrain as data, evaluated by a fixed vocabulary of node kinds | Accepted (Rust tables: 0028) |
 | [0027](0027-webgpu-renderer.md) | WebGPU renderer: Three's `WebGPURenderer` with TSL materials, a WebGL2 fallback, and a look registry | Superseded by 0028 |
-| [0028](0028-rust-port.md) | One Rust codebase: server, sim core and client, with Rapier physics and a wgpu renderer (WebGPU only) | Accepted (renderer amended by 0029) |
-| [0029](0029-ray-marched-renderer.md) | A ray-marched terrain renderer, built complete beside the mesher and compared side by side | Accepted |
+| [0028](0028-rust-port.md) | One Rust codebase: server, sim core and client, with Rapier physics and a wgpu renderer (WebGPU only) | Accepted (renderer amended by 0029, which 0044 supersedes) |
+| [0029](0029-ray-marched-renderer.md) | A ray-marched terrain renderer, built complete beside the mesher and compared side by side | Superseded by 0044 |
 | [0030](0030-fluid-looks-and-water-rendering.md) | Fluid looks as registry data, and a water shader with refraction, underwater and reflections in quality tiers | Accepted |
 | [0031](0031-data-driven-structures.md) | Data-driven structures, built in an in-game sandbox world | Accepted |
 | [0032](0032-audio.md) | Procedural, data-driven sound effects in plain Web Audio, with events from the Rust game | Accepted |

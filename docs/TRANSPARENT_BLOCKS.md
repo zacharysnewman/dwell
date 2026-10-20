@@ -139,9 +139,6 @@ set is the grass block's (`dwell:grass`).
 
 - **Physics**: shape empty, `solid: false`: no collider; a test walks a player through.
 - **Targeting**: the selection box (above); breaking it is a normal break.
-- **Ray marching** (Phase 25, `dwell-march`): its state classes count every state whose `render`
-  isn't `opaque` (ladders, tall grass, future glass) as `Transparent`, like water: never occupied
-  for primary rays, drawn by a raster pass over either renderer (a test pins ladders and tall grass).
 - **Region edits** (Phase 27 S3): a fill's cells that need support but have none (tall grass filled
   into the air, or stacked on itself) are not kept; clearing the ground takes the plants with it.
 - **Sounds** (Phase 28): tall grass uses the grass sound set (`"sound": "dwell:grass"`).
