@@ -31,6 +31,26 @@ const MIN_DIRECTION: f32 = 0.01;
 const RETAIN_EVERY_TICKS: u32 = 64;
 const RETAIN_CHUNKS: i32 = 2;
 const MIN_STEP: f32 = 0.01;
+/// The step-up's face rays: this many each side of the move over the front half circle.
+const STEP_ARC_RAYS: i32 = 3;
+/// How far beyond the capsule and the tick's travel the face rays reach.
+const STEP_FACE_REACH: f32 = 0.1;
+/// The least part of the move into a face (cos 87°) that steps up onto it.
+const STEP_MIN_INTO: f32 = 0.05;
+/// A face within this of the capsule after the tick's travel is run into.
+const STEP_CONTACT_SKIN: f32 = 0.005;
+/// The step's top is read from this far above the highest step.
+const STEP_TOP_CLEARANCE: f32 = 0.05;
+/// After a step-up the ground ring finds the step within this of the feet.
+const STEP_LANDING_TOLERANCE: f32 = 0.03;
+/// At a step's outside corner the step-up shifts the player up to this far (m) toward the step's
+/// top, in this many tries.
+const STEP_CORNER_SHIFT: f32 = 0.12;
+const STEP_CORNER_SHIFTS: i32 = 6;
+/// The ground at a step's foot is read this far (m) in front of its face.
+const STEP_FOOT_OFFSET: f32 = 0.02;
+/// Two step directions closer than this (cos 10°) are one.
+const STEP_SAME_DIRECTION: f32 = 0.985;
 const LAUNCH_THRESHOLD: f32 = 0.10;
 /// Dwell: during step_grace.
 const STEP_LAUNCH_THRESHOLD: f32 = 1.5;
@@ -1454,59 +1474,235 @@ impl Players {
         c.vertical.target_y = velocity.y;
     }
 
-    /// Lifts the player onto a step just ahead (PPC TryStep); returns the forward nudge.
+    /// Does the capsule (the player's current shape, slimmed by a skin) overlap anything at
+    /// `center`? Touching the ground or a wall doesn't count.
+    fn overlaps_at(q: &FaceQuery, p: &Player, center: DVec3) -> bool {
+        let r = p.cfg.body.radius;
+        let capsule = Capsule {
+            center,
+            radius: r - CROUCH_SKIN,
+            half_cylinder: (p.cfg.half_height(p.c.crouching) - r - CROUCH_SKIN).max(0.0),
+        };
+        q.overlaps_solid(&capsule, Some(p.body))
+    }
+
+    /// The step-up (§4; PPC TryStep, reworked by Dwell): lifts the player onto a step this tick's
+    /// move runs into. `motion` is the tick's horizontal velocity relative to the ground, `wish` the
+    /// move input's direction; the step is looked for along both. Returns the horizontal shift the
+    /// step made beyond the tick's own motion (paid from the velocity), or zero.
     fn try_step(
         world: &mut VoxelWorld,
         physics: &mut Physics,
         p: &mut Player,
-        move_dir: Vec3,
+        motion: Vec3,
+        wish: Vec3,
     ) -> Vec3 {
-        let cfg = p.cfg;
-        let f = flat(move_dir);
-        if f.length() < MIN_DIRECTION {
+        let motion = flat(motion);
+        let wish = flat(wish);
+        let mut along: [Option<(Vec3, f32)>; 2] = [None, None];
+        if motion.length() > MIN_DIRECTION {
+            along[0] = Some((normalized(motion), motion.length() * DT));
+        }
+        if wish.length() > MIN_DIRECTION {
+            let w = normalized(wish);
+            if along[0].is_none_or(|(d, _)| d.dot(w) < STEP_SAME_DIRECTION) {
+                along[1] = Some((w, motion.dot(w).max(0.0) * DT));
+            }
+        }
+        if along.iter().all(Option::is_none) {
             return Vec3::ZERO;
         }
-        let dir = normalized(f);
         let center = Self::pos(physics, p);
-        let half_height = cfg.half_height(p.c.crouching);
-        let feet = center.y as f32 - half_height;
-        let mut origin =
-            center + (dir * (cfg.body.radius + cfg.advanced.step_probe_distance)).as_dvec3();
-        // Start at centre height, or just above step height when crouched.
-        origin.y = f64::from((center.y as f32).max(feet + cfg.movement.max_step_height + 0.05));
-        let hit = {
+        let ring = ring();
+        let found = {
             let vq = VoxelQuery::new(world, physics);
             let q = FaceQuery {
                 q: &vq,
                 f: Self::frame(p),
             };
-            q.cast_ray(
-                origin,
-                -Vec3::Y,
-                origin.y as f32 - feet + half_height,
-                Some(p.body),
-                true,
-            )
+            along
+                .into_iter()
+                .flatten()
+                .find_map(|(d, travel)| Self::find_step(&q, p, &ring, center, d, travel))
         };
-        let Some(hit) = hit else { return Vec3::ZERO };
-        let step_height = hit.point.y as f32 - feet;
-        // Never onto ground that slides (§6.8): stepping would walk the player up a steep face.
-        if step_height > MIN_STEP
-            && step_height <= cfg.movement.max_step_height
-            && slope_angle(hit.normal) <= cfg.probes.max_slope_angle.min(cfg.slide.min_angle)
-        {
-            // Dwell: also nudge forward so the probe ring is over the step.
-            let ring = cfg.body.radius * cfg.advanced.probe_ring_radius;
-            let nudge = cfg.body.radius + cfg.advanced.step_probe_distance - ring + 0.01;
-            Self::set_pos(
-                physics,
-                p,
-                center + DVec3::new(0.0, f64::from(step_height), 0.0) + (dir * nudge).as_dvec3(),
-            );
-            p.c.vertical.step_grace = STEP_GRACE_TICKS;
-            return dir * nudge;
+        let Some((lift, shift, normal)) = found else {
+            return Vec3::ZERO;
+        };
+        Self::set_pos(
+            physics,
+            p,
+            center + DVec3::new(0.0, f64::from(lift), 0.0) + shift.as_dvec3(),
+        );
+        p.c.vertical.step_grace = STEP_GRACE_TICKS;
+        // The player now stands on the step: the vertical pass follows its top, not the ground the
+        // probe saw before the lift.
+        let g = &mut p.c.ground;
+        g.normal = normal;
+        g.slope_angle = slope_angle(normal);
+        g.gap = 0.0;
+        shift
+    }
+
+    /// A step the capsule runs into this tick, moving `travel` along `d`. Its face (steeper than
+    /// the steepest ground) is found by rays from the axis over the front half circle at
+    /// `step_face_heights`; its top, read `step_probe_distance` past the face, must be walkable
+    /// ground no higher than `max_step_height` above the ground at the face's foot; the capsule
+    /// must fit lifted (no ceiling in the way) and moved on; and after the tick's move the ground
+    /// ring must stand on the step. The move is the lift plus, when the tick's own motion doesn't
+    /// take the axis far enough over the edge, a shift toward the face (or, at an outside corner,
+    /// toward the step's top). Returns (lift, shift, the step top's normal).
+    fn find_step(
+        q: &FaceQuery,
+        p: &Player,
+        ring: &[Vec3; RING_RAYS],
+        center: DVec3,
+        d: Vec3,
+        travel: f32,
+    ) -> Option<(f32, Vec3, Vec3)> {
+        let cfg = &p.cfg;
+        let m = &cfg.movement;
+        let r = cfg.body.radius;
+        let half_height = cfg.half_height(p.c.crouching);
+        let ring_radius = r * cfg.advanced.probe_ring_radius;
+        let feet = center.y - f64::from(half_height);
+        let reach = r + travel + STEP_FACE_REACH;
+        let pad = f64::from(reach);
+        let bodies = q.bodies_near(
+            center - DVec3::new(pad, f64::from(half_height), pad),
+            center + DVec3::new(pad, f64::from(half_height), pad),
+            Some(p.body),
+        );
+        // The faces ahead: (axis to face, face normal, hit point).
+        let mut faces: Vec<(f32, Vec3, DVec3)> = Vec::new();
+        for height in cfg.advanced.step_face_heights {
+            if height >= m.max_step_height {
+                continue;
+            }
+            let origin = DVec3::new(center.x, feet + f64::from(height), center.z);
+            for k in -STEP_ARC_RAYS..=STEP_ARC_RAYS {
+                let angle = k as f32 * (90.0 / STEP_ARC_RAYS as f32) * DEG_TO_RAD;
+                let (sin, cos) = (libm::sinf(angle), libm::cosf(angle));
+                let u = Vec3::new(d.x * cos - d.z * sin, 0.0, d.x * sin + d.z * cos);
+                let Some(hit) = q.cast_ray(origin, u, reach, Some(p.body), bodies) else {
+                    continue;
+                };
+                // Walkable ground rising ahead is a slope: ground following walks up it.
+                if slope_angle(hit.normal) <= cfg.probes.max_slope_angle {
+                    continue;
+                }
+                let n = flat(hit.normal);
+                if n.length() < MIN_DIRECTION {
+                    continue;
+                }
+                let n = normalized(n);
+                let into = -d.dot(n);
+                let distance = hit.distance * -u.dot(n);
+                // Moving into it, and reaching it this tick.
+                if into < STEP_MIN_INTO || distance - travel * into >= r + STEP_CONTACT_SKIN {
+                    continue;
+                }
+                faces.push((distance, n, hit.point));
+            }
         }
-        Vec3::ZERO
+        // Nearest first (a stable sort: the ray order breaks ties, the same on every machine).
+        faces.sort_by(|a, b| a.0.total_cmp(&b.0));
+        let up = |h: f32| DVec3::new(0.0, f64::from(h), 0.0);
+        let mut tried: Vec<(f32, Vec3)> = Vec::new();
+        for (distance, n, point) in faces {
+            if tried
+                .iter()
+                .any(|&(dd, nn)| nn.dot(n) > 0.99 && (dd - distance).abs() < 0.01)
+            {
+                continue;
+            }
+            tried.push((distance, n));
+            // The step's height is from the ground at its foot: on a ramp up to a step that ground
+            // is above the feet, and the lift is the step plus that rise.
+            let foot = q
+                .cast_ray(
+                    point + (n * STEP_FOOT_OFFSET).as_dvec3(),
+                    -Vec3::Y,
+                    (point.y - feet) as f32 + m.max_step_height,
+                    Some(p.body),
+                    bodies,
+                )
+                .map_or(feet, |h| h.point.y)
+                .max(feet);
+            let rise = (foot - feet) as f32;
+            // The step's top, just past its face.
+            let mut probe = point - (n * cfg.advanced.step_probe_distance).as_dvec3();
+            probe.y = foot + f64::from(m.max_step_height + STEP_TOP_CLEARANCE);
+            let Some(top) = q.cast_ray(
+                probe,
+                -Vec3::Y,
+                m.max_step_height + STEP_TOP_CLEARANCE,
+                Some(p.body),
+                bodies,
+            ) else {
+                continue;
+            };
+            let lift = (top.point.y - feet) as f32;
+            // Never onto ground that slides (§6.8): stepping would walk the player up a steep face.
+            if lift <= MIN_STEP
+                || lift - rise > m.max_step_height
+                || slope_angle(top.normal) > cfg.probes.max_slope_angle.min(cfg.slide.min_angle)
+            {
+                continue;
+            }
+            // The move must leave the ground ring standing on the step. The axis must end within
+            // `ring − footing` of the face: when the tick's own motion doesn't take it there, the
+            // step shifts it toward the face (and that shift is paid from the motion into the face,
+            // `pay_nudge`, so only the shortfall is extra). At a step's outside corner that is not
+            // enough, and the shift is toward the step's top, in small steps up to a limit.
+            let into = -d.dot(n);
+            let need = distance - (ring_radius - cfg.advanced.step_footing);
+            let toward = flat((top.point - center).as_vec3());
+            let toward = if toward.length() > MIN_DIRECTION {
+                normalized(toward)
+            } else {
+                -n
+            };
+            let shifts = std::iter::once(-n * if need > travel * into { need } else { 0.0 }).chain(
+                (1..=STEP_CORNER_SHIFTS)
+                    .map(|k| toward * (k as f32 * STEP_CORNER_SHIFT / STEP_CORNER_SHIFTS as f32)),
+            );
+            let lifted = center + up(lift);
+            if Self::overlaps_at(q, p, lifted) {
+                continue;
+            }
+            for shift in shifts {
+                let length = shift.length();
+                let motion = d * travel;
+                let after_motion = if length > 0.0 {
+                    let along = shift / length;
+                    motion - along * motion.dot(along).clamp(0.0, length)
+                } else {
+                    motion
+                };
+                let placed = lifted + shift.as_dvec3();
+                let after = placed + after_motion.as_dvec3();
+                if Self::overlaps_at(q, p, placed) || Self::overlaps_at(q, p, after) {
+                    continue;
+                }
+                // After the move the ground ring stands on the step, not on the floor it left.
+                let Some(ground) = Self::ring_cast(
+                    ring,
+                    q,
+                    p.body,
+                    after,
+                    -Vec3::Y,
+                    half_height + STEP_TOP_CLEARANCE,
+                    ring_radius,
+                    true,
+                ) else {
+                    continue;
+                };
+                if ground.distance <= half_height + STEP_LANDING_TOLERANCE {
+                    return Some((lift, shift, top.normal));
+                }
+            }
+        }
+        None
     }
 
     /// Edge guard (Dwell): crouched on the ground, don't move (per axis) where the ground ring
@@ -1629,12 +1825,6 @@ impl Players {
         };
         let input = c.input;
         let move_dir = move_direction(&input);
-        let nudge = if grounded && move_dir.length() > MIN_DIRECTION {
-            Self::try_step(world, physics, p, move_dir)
-        } else {
-            Vec3::ZERO
-        };
-        let c = &mut p.c;
         let speed = Self::walk_speed(c, &cfg);
         let player_target = move_dir * speed;
         // Accelerate in the platform's frame so standing on a moving body needs no input.
@@ -1662,8 +1852,12 @@ impl Players {
         let change = move_towards(Vec3::ZERO, relative_delta, rate * DT);
         c.horizontal.current = relative + change + base;
         c.horizontal.contribution = c.horizontal.current + c.horizontal.external;
-        Self::pay_nudge(c, nudge);
-        if m.edge_guard && grounded && c.crouching {
+        if grounded {
+            let motion = c.horizontal.contribution - base;
+            let shift = Self::try_step(world, physics, p, motion, move_dir);
+            Self::pay_nudge(&mut p.c, shift);
+        }
+        if m.edge_guard && grounded && p.c.crouching {
             Self::apply_edge_guard(&ring, world, physics, p);
         }
     }
@@ -1723,7 +1917,7 @@ impl Players {
             next = next.min(s.max_speed.max(speed));
         }
         let next = next.max(0.0);
-        let nudge = Self::try_step(world, physics, p, dir);
+        let nudge = Self::try_step(world, physics, p, dir * next, dir);
         let c = &mut p.c;
         let end = cfg.crouch.speed;
         let blocked = nudge == Vec3::ZERO

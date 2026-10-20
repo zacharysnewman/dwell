@@ -27,6 +27,8 @@ enum Gait {
 const GAITS: [Gait; 3] = [Gait::Walk, Gait::Sprint, Gait::Crouch];
 /// Degrees off the face's normal.
 const ANGLES: [f32; 9] = [0.0, 10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 70.0, 80.0];
+/// Ticks standing still before the approach.
+const SETTLE: i32 = 3;
 /// Starting distances (m, capsule surface to the face): 7 phases across a sprint tick's travel.
 const STARTS: [f32; 7] = [0.6, 0.62, 0.64, 0.66, 0.68, 0.70, 0.72];
 
@@ -62,8 +64,8 @@ struct Approach {
     from: f32,
     /// x where the walker crosses the face line.
     cross_x: f32,
-    /// Extra ticks after the expected arrival.
-    slack: i32,
+    /// Further distance (m) to the last face, beyond the first.
+    slack: f32,
     /// The ground's height under the spawn (z), when it is not `from`.
     ground: Option<fn(f32) -> f32>,
 }
@@ -81,23 +83,29 @@ fn run(a: &Approach, angle: f32, gait: Gait, start: f32) -> Outcome {
     let e = w.spawn(spawn);
     let yaw = angle; // yaw a° moves along (sin a, 0, cos a)
     let (run_held, crouch) = (gait == Gait::Sprint, gait == Gait::Crouch);
-    w.set_input(move |_, _| input(0.0, 1.0, run_held, false, crouch, yaw, 0.0));
+    // Settle on the ground first, then go.
+    w.set_input(move |t, _| {
+        let go = t >= SETTLE;
+        input(0.0, f32::from(u8::from(go)), run_held && go, false, crouch && go, yaw, 0.0)
+    });
     let speed = speed_of(gait);
-    let arrive = ticks(start / (speed * c)) + ticks(0.3);
-    let total = arrive + ticks(0.6) + a.slack;
+    let arrive = ticks(start / (speed * c)) + ticks(0.3) + SETTLE;
+    let total = arrive + ticks(0.6) + ticks(a.slack / (speed * c));
     let mut o = Outcome {
         min_speed: f32::MAX,
         ..Outcome::default()
     };
     let mut contact = None;
     let mut on_top = false;
+    let mut last = w.pos(e);
     for t in 0..total {
         w.step(1);
         let p = w.pos(e);
         let feet = w.feet(e);
         let vel = w.vel(e);
-        let h = w.horizontal_speed(e);
-        if t > 1 && !w.c(e).ground.grounded {
+        let h = ((p.x - last.x).powi(2) + (p.z - last.z).powi(2)).sqrt() * 60.0;
+        last = p;
+        if t > SETTLE && !w.c(e).ground.grounded {
             o.airborne += 1;
         }
         o.max_up = o.max_up.max(vel.y);
@@ -112,6 +120,13 @@ fn run(a: &Approach, angle: f32, gait: Gait, start: f32) -> Outcome {
         }
         if t > ticks(0.25) && !o.climbed {
             o.min_speed = o.min_speed.min(h / speed);
+        }
+        if std::env::var("DWELL_TRACE").is_ok() {
+            let g = &w.c(e).ground;
+            eprintln!(
+                "{t:3} pos {:.3} {:.3} feet {:.3} vel {:.2} {:.2} {:.2} grounded {} gap {:.3} {:?}",
+                p.x, p.z, feet, vel.x, vel.y, vel.z, g.grounded, g.gap, w.c(e).state
+            );
         }
         if on_top && feet < a.from + a.top - 0.08 {
             o.drops += 1;
@@ -211,21 +226,24 @@ fn step_by_wall(w: &mut PlayerTestWorld) {
 fn ramp_then_step(w: &mut PlayerTestWorld) {
     w.floor_at(0, 24);
     w.boxed(
-        v(0.5, 0.0, 6.0),
-        v(4.0, 0.5, 5.0),
+        v(0.5, 0.0, RAMP_Z),
+        v(12.0, 0.5, 2.5),
         euler(-20.0, 0.0, 0.0),
         Vec3::ZERO,
         0.0,
     );
     let y = ramp_y(7.0);
-    w.static_box(v(0.5, (y + 0.5) / 2.0, 9.5), v(4.0, (y + 0.5) / 2.0, 2.5));
+    w.static_box(v(0.5, (y + 0.5) / 2.0, 13.5), v(12.0, (y + 0.5) / 2.0, 6.5));
 }
+
+/// The ramp's centre: its top ends at the step's face.
+const RAMP_Z: f32 = 4.8;
 
 /// The 20° ramp's surface height at z.
 fn ramp_y(z: f32) -> f32 {
     let a = 20f32.to_radians();
     // Top face through the centre + 0.5 along the normal (0, cos a, −sin a).
-    0.5 * a.cos() + (z - (6.0 - 0.5 * a.sin())) * a.tan()
+    0.5 * a.cos() + (z - (RAMP_Z - 0.5 * a.sin())) * a.tan()
 }
 
 // --- the tests ----------------------------------------------------------------------------------
@@ -240,7 +258,7 @@ fn every_approach_climbs_a_half_box_step() {
             top: 0.5,
             from: 0.0,
             cross_x: 0.5,
-            slack: 0,
+            slack: 0.0,
             ground: None,
         },
         &ANGLES,
@@ -257,7 +275,7 @@ fn every_approach_climbs_a_half_voxel_step() {
             top: 0.5,
             from: 0.5,
             cross_x: 0.5,
-            slack: 0,
+            slack: 0.0,
             ground: None,
         },
         &ANGLES,
@@ -274,7 +292,7 @@ fn every_approach_climbs_two_steps() {
             top: 1.0,
             from: 0.0,
             cross_x: 0.5,
-            slack: ticks(0.5),
+            slack: 0.7,
             ground: None,
         },
         &ANGLES,
@@ -293,7 +311,7 @@ fn every_approach_climbs_a_steps_outside_corner() {
                 top: 0.5,
                 from: 0.0,
                 cross_x: cross,
-                slack: 0,
+                slack: 0.0,
             ground: None,
             },
             &[0.0, 20.0, 40.0, 60.0],
@@ -312,7 +330,7 @@ fn every_approach_climbs_a_step_beside_a_wall() {
             top: 0.5,
             from: 0.0,
             cross_x: -0.68,
-            slack: 0,
+            slack: 0.0,
             ground: None,
         },
         &[0.0, -10.0, -20.0, -30.0],
@@ -321,17 +339,32 @@ fn every_approach_climbs_a_step_beside_a_wall() {
 
 #[test]
 fn every_approach_climbs_a_step_at_a_ramps_top() {
-    assert_matrix(
-        "ramp then step",
-        &Approach {
-            build: ramp_then_step,
-            face: 7.0,
-            top: 0.5,
-            from: ramp_y(7.0),
-            cross_x: 0.5,
-            slack: ticks(0.2),
-            ground: Some(ramp_y),
-        },
-        &[0.0, 20.0, 40.0, 60.0],
-    );
+    assert_matrix("ramp then step", &ramp(), &[0.0, 20.0, 40.0, 60.0]);
+}
+
+fn ramp() -> Approach {
+    Approach {
+        build: ramp_then_step,
+        face: 7.0,
+        top: 0.5,
+        from: ramp_y(7.0),
+        cross_x: 0.5,
+        slack: 0.3,
+        ground: Some(ramp_y),
+    }
+}
+
+/// `DWELL_TRACE=<gait>,<angle>,<start>` prints the ramp approach tick by tick.
+#[test]
+fn trace_one() {
+    let Ok(spec) = std::env::var("DWELL_TRACE") else {
+        return;
+    };
+    let f: Vec<&str> = spec.split(',').collect();
+    let gait = match f[0] {
+        "sprint" => Gait::Sprint,
+        "crouch" => Gait::Crouch,
+        _ => Gait::Walk,
+    };
+    eprintln!("{:?}", run(&ramp(), f[1].parse().unwrap(), gait, f[2].parse().unwrap()));
 }
