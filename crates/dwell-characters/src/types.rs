@@ -13,7 +13,7 @@ pub enum Kind {
 }
 
 /// Which view draws a part.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum View {
     Both,
     Body,

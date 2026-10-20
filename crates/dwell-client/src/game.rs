@@ -38,11 +38,12 @@ use dwell_protocol::{
 };
 use dwell_world::{ChunkCoord, VoxelWorld};
 
+use crate::bodies::Bodies;
 use crate::jobs::Output;
 use crate::pool::{ChunkJobs, Done, MeshJobs, PoolRef, Purpose};
 use crate::render::display::{RenderStats, format_render_stats};
 use crate::render::seam::TerrainRenderer;
-use crate::render::{Line, PlayerView, RegionBox, StandIn, WindView};
+use crate::render::{ArmsView, Held, Line, PlayerView, RegionBox, StandIn, WindView};
 use crate::telemetry::{self, TickSample};
 
 const TICK_MS: f64 = 1000.0 / SIM_HZ as f64;
@@ -63,9 +64,6 @@ const RATE_NUDGE: f64 = 0.02;
 /// The region tools' outlines: the selection, and where a paste would go.
 const REGION_SELECTION_COLOR: u32 = 0xffffff;
 const REGION_GHOST_COLOR: u32 = 0x6fd3ff;
-const PLAYER_COLORS: [u32; 7] = [
-    0xe0564a, 0x4a8fe0, 0xe0c24a, 0x5fc26b, 0xb15fe0, 0x4ad0c8, 0xe08a4a,
-];
 
 /// The whole cell, as an outline box.
 pub const FULL_CELL: ([f32; 3], [f32; 3]) = ([0.0; 3], [1.0; 3]);
@@ -75,6 +73,8 @@ pub const FULL_CELL: ([f32; 3], [f32; 3]) = ([0.0; 3], [1.0; 3]);
 /// outline, lines and stats.
 pub trait Scene: TerrainRenderer {
     fn set_player(&mut self, id: u32, view: Option<PlayerView>);
+    /// Your first-person arms this frame (docs/CHARACTERS.md §5), or none.
+    fn set_arms(&mut self, _arms: Option<ArmsView>) {}
     fn set_camera(&mut self, eye: [f64; 3], yaw_deg: f64, pitch_deg: f64, face: f64, flip: f64);
     /// The fluid whose drawn surface the camera's eye is under (`dwell_world::fluid::eye_fluid`).
     fn set_eye_fluid(&mut self, _eye_fluid: Option<dwell_world::fluid::EyeFluid>) {}
@@ -423,6 +423,12 @@ pub struct Game<S: Scene> {
     pub brush: BrushTool,
     /// Every edit shown at once and reconciled with the server's acks (§6.5).
     pub prediction: EditPredictor,
+    /// The characters' animators: the remote players' bodies and your arms (bodies.rs).
+    bodies: Bodies,
+    /// What you hold as last sent to the server (`Message::HeldItem`, protocol v17).
+    held_sent: Option<u16>,
+    /// The Show your arms setting (the settings menu; on by default).
+    pub show_arms: bool,
     /// The eye the crosshair targets from (None while not playing).
     target_eye: Option<[f64; 3]>,
     lod: Option<LodSystem>,
@@ -573,6 +579,9 @@ impl<S: Scene> Game<S> {
             day_override: DayOverride::default(),
             day: DayState::default(),
             first_draw_ms: None,
+            bodies: Bodies::default(),
+            held_sent: None,
+            show_arms: true,
         };
         match verification {
             Some(c) => game
@@ -984,6 +993,10 @@ impl<S: Scene> Game<S> {
                     }
                     (EditAction::Place, None) => {}
                 }
+                self.bodies.swing_arms(match action {
+                    EditAction::Break => dwell_characters::animator::Swing::Break,
+                    EditAction::Place => dwell_characters::animator::Swing::Place,
+                });
                 self.send_edit(m, None);
                 true
             }
@@ -1061,6 +1074,8 @@ impl<S: Scene> Game<S> {
         // The region tools' click as a stroke goes out; its blocks sound as they arrive.
         if sent {
             self.sounds.push(sound_event(SoundKind::Tool));
+            self.bodies
+                .swing_arms(dwell_characters::animator::Swing::Place);
         }
         // The stroke shows at once; its first edits go out now, the rest as the rate allows (each
         // frame).
@@ -1429,14 +1444,13 @@ impl<S: Scene> Game<S> {
                     .or_insert_with(|| MoverSounds::with_voice(v.player_id))
                     .update(&sample, Some(v.feet), &mut self.sounds);
             }
-            let view = self.player_view(
-                v.player_id,
-                v.feet,
-                f64::from(v.yaw),
-                v.is_crouched(),
-                v.is_dead(),
-                if v.is_face_b() { -1.0 } else { 1.0 },
-            );
+            // The full body, animated from the snapshot's controller state (bodies.rs).
+            let registry = &self.registry;
+            let held = crate::bodies::held_from_wire(v.held, |b| match registry {
+                Some(m) => m.client(b),
+                None => Some(b),
+            });
+            let view = self.bodies.remote(v, held, dt);
             self.scene
                 .borrow_mut()
                 .set_player(u32::from(v.player_id), Some(view));
@@ -1446,6 +1460,7 @@ impl<S: Scene> Game<S> {
                 self.scene.borrow_mut().set_player(u32::from(id), None);
             }
         }
+        self.bodies.retain(|id| drawn.contains(&id));
         // A player gone from view (or dead) stops sounding: its slide's voice ends.
         let sounds = &mut self.sounds;
         self.remote_sounds.retain(|id, m| {
@@ -1458,18 +1473,16 @@ impl<S: Scene> Game<S> {
 
         let (yaw, pitch) = (input.look.yaw, input.look.pitch);
         let camera_eye;
+        let held = self.held();
+        self.send_held(held);
         if self.dead {
             // Third person over the body.
-            let view = self.player_view(
-                self.player_id,
-                self.death_feet,
-                yaw,
-                false,
-                true,
-                f64::from(face),
-            );
+            let view = self
+                .bodies
+                .own_dead(self.death_feet, yaw, f64::from(face), dt);
             let mut scene = self.scene.borrow_mut();
             scene.set_player(u32::from(self.player_id), Some(view));
+            scene.set_arms(None);
             let r = yaw.to_radians();
             let [x, y, z] = self.death_feet;
             camera_eye = [
@@ -1497,6 +1510,16 @@ impl<S: Scene> Game<S> {
             let ready = self.terrain_ready();
             self.target(ready.then_some(eye), input, now_ms);
             self.update_motion(eye, dt);
+            // Your arms in their own pass (CHARACTERS.md §5): not while zoomed in the spyglass, in
+            // a placed camera, or with the setting off.
+            let move_input =
+                crate::bodies::local_input(c.state, c.velocity, c.controller_flags, c.face);
+            let arms = self.bodies.arms(&move_input, held, dt);
+            let shown = self.show_arms
+                && c.active
+                && self.view.is_none()
+                && self.spyglass_view.magnification <= 1.001;
+            self.scene.borrow_mut().set_arms(shown.then_some(arms));
         }
         let camera_eye = match self.view {
             Some(v) => {
@@ -1716,25 +1739,38 @@ impl<S: Scene> Game<S> {
             .set_block_outline(Some(t.cell.map(f64::from)), bounds);
     }
 
-    fn player_view(
-        &self,
-        id: u16,
-        feet: [f64; 3],
-        yaw: f64,
-        crouched: bool,
-        dead: bool,
-        face: f64,
-    ) -> PlayerView {
-        PlayerView {
-            feet,
-            face,
-            yaw,
-            crouched,
-            dead,
-            color: PLAYER_COLORS[usize::from(id) % PLAYER_COLORS.len()],
-            radius: self.current.radius as f32,
-            height: self.current.standing_height as f32,
+    /// What your hand holds: the hotbar's block, or the brush painting with it while the brush tool
+    /// is on (an empty slot: an empty hand).
+    pub fn held(&self) -> Held {
+        let block = self.selected_material();
+        if block == 0 {
+            Held::Empty
+        } else if self.brush.active() {
+            Held::Brush(block)
+        } else {
+            Held::Block(block)
         }
+    }
+
+    /// Tells the server what you hold when it changes (`Message::HeldItem`, protocol v17), so the
+    /// others see it in their snapshots.
+    fn send_held(&mut self, held: Held) {
+        let registry = &self.registry;
+        let wire = crate::bodies::held_to_wire(held, |b| match registry {
+            Some(m) => m.server(b),
+            None => Some(b),
+        });
+        if self.held_sent != Some(wire) {
+            self.held_sent = Some(wire);
+            self.outbox
+                .borrow_mut()
+                .push(Send::Control(Message::HeldItem(wire)));
+        }
+    }
+
+    /// The arms' base role and swing (tests, telemetry).
+    pub fn arms_state(&self) -> (&'static str, Option<&'static str>) {
+        self.bodies.arms_state()
     }
 }
 

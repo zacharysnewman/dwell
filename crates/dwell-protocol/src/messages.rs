@@ -331,6 +331,10 @@ pub struct RemotePlayerState {
     pub pitch: i16,
     pub state: PlayerState,
     pub flags: u8,
+    /// What it holds (`held_item`: a block state, the server's id, and the brush bit; protocol v17).
+    pub held: u16,
+    /// Its last swing (`swing_flags`: a count and break or place; v17).
+    pub swing: u8,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -397,6 +401,9 @@ pub enum Message {
     /// S→C, world channel: which of this client's edits the server has processed (edit
     /// prediction, ARCHITECTURE.md §6.5).
     EditAck(EditAck),
+    /// C→S, control channel, sent when it changes: what the player holds (`held_item`; protocol
+    /// v17, CHARACTERS.md §9.3). Others see it in snapshots.
+    HeldItem(u16),
 }
 
 impl Message {
@@ -432,6 +439,7 @@ impl Message {
             M::RegionEdit(_) => MessageType::RegionEdit,
             M::BlockRegistry(_) => MessageType::BlockRegistry,
             M::EditAck(_) => MessageType::EditAck,
+            M::HeldItem(_) => MessageType::HeldItem,
         }
     }
 
@@ -867,6 +875,8 @@ fn write_body(w: &mut ByteWriter, m: &Message) {
                 w.i16(p.pitch);
                 w.u8(p.state as u8);
                 w.u8(p.flags);
+                w.u16(p.held);
+                w.u8(p.swing);
             }
         }
         M::PlayerEvent(m) => {
@@ -949,6 +959,7 @@ fn write_body(w: &mut ByteWriter, m: &Message) {
             }
         }
         M::HostStatus(s) => w.u8(*s as u8),
+        M::HeldItem(h) => w.u16(*h),
         M::EditAck(m) => {
             w.u32(m.through);
             w.u16(m.rejected.len() as u16);
@@ -1114,6 +1125,8 @@ fn read_body(r: &mut ByteReader, t: MessageType) -> Option<Message> {
                     pitch: r.i16(),
                     state: read_state(r),
                     flags: r.u8(),
+                    held: r.u16(),
+                    swing: r.u8(),
                 };
                 r.check(p.flags & !player_flags::ALL == 0);
                 remotes.push(p);
@@ -1171,6 +1184,7 @@ fn read_body(r: &mut ByteReader, t: MessageType) -> Option<Message> {
             })
         }
         T::HostStatus => M::HostStatus(HostState::from_u8(r.u8())?),
+        T::HeldItem => M::HeldItem(r.u16()),
         T::EditAck => {
             let through = r.u32();
             let count = usize::from(r.u16());
