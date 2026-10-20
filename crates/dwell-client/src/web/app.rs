@@ -699,6 +699,7 @@ impl Client {
         {
             if !repeat && let Some(g) = s.game.as_mut() {
                 g.spyglass.toggle(&dwell_look::spyglass::SPYGLASS);
+                g.sound(dwell_game::sound::SoundKind::Tool);
             }
             return true;
         }
@@ -758,7 +759,9 @@ impl Client {
             && let Some(g) = &mut s.game
             && g.spyglass.on()
         {
-            g.spyglass.cycle(-step, &dwell_look::spyglass::SPYGLASS);
+            if g.spyglass.cycle(-step, &dwell_look::spyglass::SPYGLASS) {
+                g.sound(dwell_game::sound::SoundKind::Tool);
+            }
             return;
         }
         if let Some(step) = s.input.wheel(delta_y)
