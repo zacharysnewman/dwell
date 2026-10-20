@@ -3,7 +3,7 @@
 **Status:** Adopted ([ADR 0031](./adr/0031-data-driven-structures.md)), 2026-10-14. Built as Phase 27 of the
 [implementation plan](./IMPLEMENTATION_PLAN.md) (steps S0–S4; S2 split into S2a, the floor and the world
 type, and S2b, the structures store; S4, worldgen placement, built early for the owner's pines on
-2026-10-20 as an interim data file before Phase 17, §8 and [ADR 0042](./adr/0042-structure-placements.md)).
+2026-10-20 as an interim data file before Phase 17, §8 and [ADR 0043](./adr/0043-structure-placements.md)).
 Owner answers in §7.
 
 The ask: a tool with a simple flat white terrain sandbox where you build things (trees, rocks,
@@ -249,7 +249,7 @@ game; bulk edits stressing streaming and save size.
 The owner asked for the two hand-built pines (`dwell:pine_tree`, `dwell:tall_pine_tree`) in the
 generated world; the answers and the measurements are in
 [`WORLD_GENERATION.md`](./WORLD_GENERATION.md) §2, the decision in
-[ADR 0042](./adr/0042-structure-placements.md). Against §3 and §6's plan:
+[ADR 0043](./adr/0043-structure-placements.md). Against §3 and §6's plan:
 
 - **The rules are data apart from the structures**, as §3 sketched, but in an interim file,
   `shared/worldgen/placements.json` (beside `decorations.json`), not a terrain definition: Phase 17

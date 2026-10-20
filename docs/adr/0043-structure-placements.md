@@ -1,4 +1,4 @@
-# 0042. Structure placements in world generation, as data
+# 0043. Structure placements in world generation, as data
 
 - Status: Accepted (the owner's ask and answers, 2026-10-20: [`WORLD_GENERATION.md`](../WORLD_GENERATION.md) §2)
 - Revisits: [0025](0025-baseline-world.md)'s baseline decision **B10** (no special terrain

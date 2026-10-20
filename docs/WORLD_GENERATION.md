@@ -30,7 +30,7 @@
 > (`the_hills_are_steep_enough_to_slide_and_reach_about_500_m`).
 >
 > **Generator version 17** (owner 2026-10-20): the owner's two pines in groves, placed by data
-> (`shared/worldgen/placements.json`, §2 below, ADR 0042); the height field is unchanged.
+> (`shared/worldgen/placements.json`, §2 below, ADR 0043); the height field is unchanged.
 >
 > **Generator version 15** (owner 2026-10-19: "more height from the noise"): the inland rise 130 m,
 > hills ±80 m, 2,048 m, 4 octaves, and bumps ±5 m. Version 14 had hills of ±30 m, bumps of
@@ -185,7 +185,7 @@ The owner (2026-10-20): generate the two hand-built pines with the world — "th
 versions of the conifer in the growth lab" ([`TREE_GROWTH.md`](./TREE_GROWTH.md)). They are
 committed structures (`shared/structures/pine_tree.json`, 5 × 5 × 5, and `tall_pine_tree.json`,
 7 × 9 × 7; [`STRUCTURES.md`](./STRUCTURES.md)), placed by a data-driven layer
-([ADR 0042](./adr/0042-structure-placements.md)). Prototype content (ARCHITECTURE.md §6.1).
+([ADR 0043](./adr/0043-structure-placements.md)). Prototype content (ARCHITECTURE.md §6.1).
 
 **The owner's answers.**
 

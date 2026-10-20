@@ -1,4 +1,4 @@
-//! Structure placements (docs/WORLD_GENERATION.md §2, docs/STRUCTURES.md §8, ADR 0042): committed structures
+//! Structure placements (docs/WORLD_GENERATION.md §2, docs/STRUCTURES.md §8, ADR 0043): committed structures
 //! (`shared/structures`) the generator stands on its ground — today the owner's two pines, in
 //! groves. The rules are data (`shared/worldgen/placements.json`, generated into
 //! `placements.gen.rs` by `shared/worldgen/gen.mjs`), resolved by name once per generator.

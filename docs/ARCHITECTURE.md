@@ -298,7 +298,7 @@ There are **no official game servers**; players host (ADR 0003, details in §10)
 /shared/sounds       Sound data (dwell.json: sounds, block sound sets, events, gaits, actions, UI,
                      controls) + gen.mjs (→ TS for client/src/audio, Rust for dwell-game) and
                      validate.mjs (also used by shared/blocks/gen.mjs and the client's tests).
-/shared/worldgen     golden/: chunk and LOD-section hashes of generator version 17 (§6.3); terrain.json: the height field's parameters, decorations.json: the terrain's decoration rules, placements.json: the structure placements (the pines, ADR 0042), gen.mjs (→ Rust tables for dwell-worldgen) (§6.3).
+/shared/worldgen     golden/: chunk and LOD-section hashes of generator version 17 (§6.3); terrain.json: the height field's parameters, decorations.json: the terrain's decoration rules, placements.json: the structure placements (the pines, ADR 0043), gen.mjs (→ Rust tables for dwell-worldgen) (§6.3).
 /shared/structures   Structure files (*.json; test/ holds fixtures) + gen.mjs (→ Rust tables for
                      dwell-world) and gen.test.mjs; format.mjs, the format's rules, shared by gen.mjs
                      and the client's structures store; playground.json is the movement playground
@@ -849,7 +849,7 @@ sides ([ADR 0023](./adr/0023-bifacial-world.md), [`BIFACIAL_WORLD.md`](./BIFACIA
 *Bifacial world* below). Each phase updates this section, §6.6 and §5 as it lands.
 
 **Built (Phases 3a, 3c, 13, 15; Rust, Phase 24):** the generator (`dwell-worldgen`: `terrain.rs`,
-`island.rs`, `noise.rs`, `bifacial.rs`, `decorations.rs`, `placements.rs`) is **generator version 17** (Phase 15's interim baseline generator, with Phase 33's decorations (13), Phase 16's resize (14), the larger relief (15, owner 2026-10-19), the steep hills (16, owner 2026-10-19) and the pines placed by data (17, owner 2026-10-20, ADR 0042); versions 2–16
+`island.rs`, `noise.rs`, `bifacial.rs`, `decorations.rs`, `placements.rs`) is **generator version 17** (Phase 15's interim baseline generator, with Phase 33's decorations (13), Phase 16's resize (14), the larger relief (15, owner 2026-10-19), the steep hills (16, owner 2026-10-19) and the pines placed by data (17, owner 2026-10-20, ADR 0043); versions 2–16
 were the earlier terrains — planet-scale relief, slopes, continents, rivers, climate and biomes, face
 B — and are retired: a world saved with one loads as the flat world; the version launcher opens the
 build that saved it, §2.1). It is announced in Welcome as generator **8** (`GENERATOR_TERRAIN`), the
@@ -1136,7 +1136,7 @@ lattice and interpolated bilinearly; the chunk path and the point queries (`colu
    position alone, so chunk borders agree. Today one rule: tall grass in meadows on grass (the
    owner's partial reversal of baseline B10, for plants only; [ADR 0036](./adr/0036-render-modes-and-cross-geometry.md)).
    The LOD doesn't draw them. The rules move into Phase 17's terrain definitions when those exist.
-5. **Structure placements [built, 2026-10-20: generator version 17; ADR 0042].** Committed
+5. **Structure placements [built, 2026-10-20: generator version 17; ADR 0043].** Committed
    structures (`shared/structures`) stand on the ground by rules kept as data in
    `shared/worldgen/placements.json` (generated into `placements.gen.rs` by `shared/worldgen/gen.mjs`,
    validated against the block data and through `shared/structures`' own validator, stale-checked
