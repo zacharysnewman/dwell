@@ -610,6 +610,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "dwell-characters"
+version = "0.0.0"
+dependencies = [
+ "dwell-protocol",
+]
+
+[[package]]
 name = "dwell-client"
 version = "0.0.0"
 dependencies = [

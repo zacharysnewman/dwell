@@ -5,13 +5,16 @@
 // (docs/CHARACTERS.md §8, ADR 0041). The page is checked in; CI regenerates it and fails on any
 // diff. A bad entry fails with a message naming it.
 //
-// The game doesn't load characters yet (CHARACTERS.md §9): when it does, this generator also writes
-// the Rust tables, as shared/look/gen.mjs does.
-import { readFileSync, writeFileSync } from 'node:fs';
+// It also writes the game's tables (CHARACTERS.md §9.1): crates/dwell-characters/src/characters.gen.rs
+// (the rigs, every character's looks composed into parts on bones, its items, the clips and the
+// materials they paint with, by index) and characters.tiles (each material's brush tile as a
+// luminance ratio); and the same from the data plus shared/characters/fixtures/*.json as
+// fixture.gen.rs and fixture.tiles (tests only: a part added by data alone). CI fails on any diff.
+import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { validate } from './rig.mjs';
-import { resolveMaterial } from '../textures/paint.mjs';
+import { compose, lookupMaterial, validate } from './rig.mjs';
+import { TILE, paintMaterial, resolveMaterial } from '../textures/paint.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, '..', '..');
@@ -76,12 +79,193 @@ export function renderPage(page, data, textures) {
   );
 }
 
+
+// ---- The game's tables (Rust) -------------------------------------------------------------------
+export const RUST_DIR = join(root, 'crates/dwell-characters/src');
+
+/** The fixture data: the build's plus each fixtures/*.json's `parts` (character id → extra parts). */
+export function withFixtures(data) {
+  const d = structuredClone(data);
+  const dir = join(here, 'fixtures');
+  for (const f of readdirSync(dir).filter((n) => n.endsWith('.json')).sort()) {
+    const fx = JSON.parse(readFileSync(join(dir, f), 'utf8'));
+    for (const [id, parts] of Object.entries(fx.parts ?? {})) d.characters[id].parts.push(...parts);
+  }
+  return d;
+}
+
+const f32 = (v) => {
+  const s = String(Number(v.toPrecision(7)));
+  return s.includes('.') || s.includes('e') ? s : `${s}.0`;
+};
+const v3 = (v) => `[${v.map(f32).join(', ')}]`;
+const str = (s) => JSON.stringify(s);
+const hexOf = (h) => `0x${h.replace('#', '').toLowerCase()}`;
+const camel = (s) => s.split('_').map((w) => w[0].toUpperCase() + w.slice(1)).join('');
+/** `$block`'s material index: the held block's own look. */
+export const BLOCK_MATERIAL = 65535;
+
+/** Linear light of an sRGB byte. */
+const lin = (b) => {
+  const c = b / 255;
+  return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+};
+/** A material's brush tile as the game's shader uses it: each texel's luminance over the tile's mean,
+ * × 127.5 (1 → 128), so `colour × mix(1, k, overlay)` brings the strokes in at the material's strength
+ * (the Lab's `lum(tile) / uTileLum`). */
+export function luminanceTile(name, materials, palette) {
+  const px = paintMaterial(name, materials, palette);
+  const lum = [];
+  for (let i = 0; i < px.length; i += 4) lum.push(0.2126 * lin(px[i]) + 0.7152 * lin(px[i + 1]) + 0.0722 * lin(px[i + 2]));
+  const mean = lum.reduce((a, b) => a + b, 0) / lum.length || 1;
+  return Uint8Array.from(lum, (l) => Math.round(Math.min(2, l / mean) * 127.5));
+}
+
+/** The Rust tables and the tile bytes for `data` (validated): `{ rust, tiles }`. Every character's
+ * looks are composed here (rig.mjs `compose`: sockets, slots, mirrors, accessories, hidden parts), so
+ * the game draws exactly what the Lab does from a list of parts on bones. */
+export function rustTables(data, textures, { header, tilesFile }) {
+  const style = styleFrom(textures);
+  const materials = [];
+  const matIndex = new Map();
+  const tiles = [];
+  const mat = (ref) => {
+    if (ref === '$block') return BLOCK_MATERIAL;
+    if (matIndex.has(ref)) return matIndex.get(ref);
+    const m = lookupMaterial(style, ref);
+    let tile = -1;
+    if (m.kind === 'material' && m.overlay > 0) {
+      tile = tiles.length;
+      tiles.push(luminanceTile(ref, textures.materials, textures.palette));
+    }
+    matIndex.set(ref, materials.length);
+    materials.push({ name: ref, ramp: m.ramp, overlay: m.overlay ?? 0, tile });
+    return matIndex.get(ref);
+  };
+  const clipNames = Object.keys(data.clips);
+  const clipIndex = (n) => clipNames.indexOf(n);
+  const part = (p, bones) =>
+    `Part { id: ${str(p.id)}, bone: ${bones.indexOf(p.bone)}, kind: Kind::${camel(p.kind)}, size: ${v3(p.size)}, at: ${v3(p.at)}, rot: ${v3(p.rot)}, round: ${f32(p.round)}, tip: ${f32(p.tip)}, view: View::${camel(p.view)}, material: ${mat(p.material)} }`;
+  const parts = (list, bones) => `&[\n${list.map((p) => `                ${part(p, bones)},\n`).join('')}            ]`;
+  const roles = (r) => `&[${Object.entries(r).map(([k, v]) => `(${str(k)}, ${clipIndex(v)})`).join(', ')}]`;
+  const chars = [];
+  for (const [id, ch] of Object.entries(data.characters)) {
+    const rig = data.rigs[ch.rig];
+    const bones = rig.bones.map((b) => b.name);
+    const variants = Object.keys(ch.variants ?? {});
+    const looks = (variants.length ? variants : [undefined]).map((v) => {
+      const m = compose(data, style, id, v ? { variant: v } : {});
+      const label = v ? ch.variants[v].label : (ch.label ?? id);
+      return `Look { name: ${str(v ?? 'default')}, label: ${str(label)}, parts: ${parts(m.parts, bones)} }`;
+    });
+    const items = Object.keys(data.items).filter((it) => {
+      const on = data.items[it].on;
+      return (ch.sockets ?? {})[on] || bones.includes(on);
+    });
+    const itemSrc = items.map((it) => {
+      const m = compose(data, style, id, { item: it, accessories: [] });
+      return `Item { name: ${str(it)}, parts: ${parts(m.parts.filter((p) => p.from === `item:${it}`), bones)} }`;
+    });
+    const fp = ch.firstPerson
+      ? `Some(FirstPerson { bones: &[${ch.firstPerson.bones.map((b) => bones.indexOf(b)).join(', ')}], anchor: ${v3(ch.firstPerson.anchor)}, fov: ${f32(ch.firstPerson.fov)}, clips: ${roles(ch.firstPerson.clips)} })`
+      : 'None';
+    chars.push(`    Character {
+        id: ${str(id)},
+        name: ${str(ch.name)},
+        rig: ${str(ch.rig)},
+        height: ${f32(ch.height)},
+        bones: &[
+${rig.bones.map((b) => `            Bone { name: ${str(b.name)}, parent: ${b.parent ? bones.indexOf(b.parent) : 'NO_PARENT'}, rest: ${v3(ch.bones[b.name])} },\n`).join('')}        ],
+        clips: ${roles(ch.clips ?? {})},
+        looks: &[
+${looks.map((l) => `            ${l},\n`).join('')}        ],
+        items: &[
+${itemSrc.map((l) => `            ${l},\n`).join('')}        ],
+        first_person: ${fp},
+    },
+`);
+  }
+  const clipSrc = clipNames.map((name) => {
+    const c = data.clips[name];
+    const bones = data.rigs[c.rig].bones.map((b) => b.name);
+    const chans = new Map();
+    const root = [];
+    for (const k of c.keys) {
+      for (const [b, r] of Object.entries(k.bones ?? {})) {
+        if (!chans.has(b)) chans.set(b, []);
+        chans.get(b).push(`Key { t: ${f32(k.t)}, v: ${v3(r)} }`);
+      }
+      if (k.root) root.push(`Key { t: ${f32(k.t)}, v: ${v3(k.root)} }`);
+    }
+    const channels = [...chans].map(([b, keys]) => `            Channel { bone: ${bones.indexOf(b)}, keys: &[${keys.join(', ')}] },\n`).join('');
+    return `    Clip {
+        name: ${str(name)},
+        rig: ${str(c.rig)},
+        space: Space::${camel(c.space ?? 'body')},
+        layer: Layer::${camel(c.layer)},
+        duration: ${f32(c.duration)},
+        looping: ${!!c.loop},
+        ease: Ease::${camel(c.ease)},
+        cycle: ${f32(c.cycle ?? 0)},
+        grounded: ${c.grounded ?? c.layer === 'base'},
+        blend: ${f32(c.blend ?? 0.2)},
+        channels: &[
+${channels}        ],
+        root: &[${root.join(', ')}],
+    },
+`;
+  });
+  const matSrc = materials.map(
+    (m) => `    Material { name: ${str(m.name)}, shadow: ${hexOf(m.ramp.shadow)}, base: ${hexOf(m.ramp.base)}, light: ${hexOf(m.ramp.light)}, overlay: ${f32(m.overlay)}, tile: ${m.tile} },\n`,
+  );
+  const tileBytes = new Uint8Array(tiles.length * TILE * TILE);
+  tiles.forEach((t, i) => tileBytes.set(t, i * TILE * TILE));
+  const rust = `// ${header}
+
+use crate::types::*;
+
+/// Texels per brush tile edge.
+pub const TILE: usize = ${TILE};
+
+/// The materials the characters paint with (shared/textures), by index; a part's \`material\` is one
+/// of them or \`BLOCK_MATERIAL\`. Colours are sRGB \`0xRRGGBB\`; \`tile\` indexes \`TILES\` (-1: none).
+pub static MATERIALS: &[Material] = &[
+${matSrc.join('')}];
+
+/// Every material's brush tile (\`TILE\` x \`TILE\` bytes each, row y = 0 first): its luminance over the
+/// tile's mean, x 127.5.
+pub static TILES: &[u8; ${tileBytes.length}] = include_bytes!("${tilesFile}");
+
+pub static CLIPS: &[Clip] = &[
+${clipSrc.join('')}];
+
+pub static CHARACTERS: &[Character] = &[
+${chars.join('')}];
+`;
+  return { rust, tiles: tileBytes };
+}
+
+/** Writes the Rust tables (or, `fixture`, the test fixture's). */
+export function writeRust(data, textures, fixture = false) {
+  const base = fixture ? 'fixture' : 'characters';
+  const header = fixture
+    ? 'Generated by shared/characters/gen.mjs --fixture from shared/characters/characters.json and fixtures/*.json (tests only). Do not edit.'
+    : 'Generated by shared/characters/gen.mjs from shared/characters/characters.json and shared/textures. Do not edit.';
+  const { rust, tiles } = rustTables(data, textures, { header, tilesFile: `${base}.tiles` });
+  writeFileSync(join(RUST_DIR, `${base}.gen.rs`), rust);
+  writeFileSync(join(RUST_DIR, `${base}.tiles`), tiles);
+  return `${base}.gen.rs`;
+}
+
 if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
   const textures = loadTextures();
-  const data = validate(loadData(), styleFrom(textures));
+  const style = styleFrom(textures);
+  const data = validate(loadData(), style);
   const page = readFileSync(PAGE, 'utf8');
   const next = renderPage(page, data, textures);
   if (next !== page) writeFileSync(PAGE, next);
+  const a = writeRust(data, textures);
+  const b = writeRust(validate(withFixtures(loadData()), style), textures, true);
   const n = Object.keys(data.characters).length;
-  console.log(`shared/characters: ${n} characters valid; wrote ${PAGE.slice(root.length + 1)}`);
+  console.log(`shared/characters: ${n} characters valid; wrote ${PAGE.slice(root.length + 1)}, ${a} and ${b}`);
 }
