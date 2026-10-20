@@ -37,9 +37,13 @@ async function touch(
 }
 
 for (let rep = 0; rep < 6; rep++) test(`touch controls: stick, look, and jump ${rep}`, async ({ page }) => { // DIAG
-  // CI's software rendering is slow: the steps before the jump alone take ~20 s there.
+  // CI's software rendering is slow: the steps before the jump alone take ~20 s there. The flat
+  // world, as the other touch tests use: on the generated terrain CI drew this page at ~1 fps by
+  // the jump (frames 0.8-1.7 s), at the client's 1 s catch-up (game.rs MAX_TICKS_PER_FRAME), and a
+  // frame past it drops time the server fills with the held jump. The flat world drew at
+  // ~250 ms (p95 ~570 ms) a frame.
   test.setTimeout(90_000);
-  await page.goto('./?local=1');
+  await page.goto('./?world=flat');
   await expect
     .poll(async () => (await read(page))?.active ?? false, { timeout: 20_000 })
     .toBe(true);
@@ -75,40 +79,30 @@ for (let rep = 0; rep < 6; rep++) test(`touch controls: stick, look, and jump ${
   const ground = (await read(page))?.feet[1] ?? 0;
   const lastSeq = (await ticks(page)).at(-1)?.seq ?? 0;
   await touch(cdp, 'touchStart', [{ x: box.x + box.width / 2, y: box.y + box.height / 2, id: 3 }]);
-  // The jump's height from the controller's per-tick trace, not the drawn position: CI's software
-  // renderer draws this page at 440–810 ms a frame, and a jump's whole arc (~0.7 s) can fall
-  // between two frames' positions (it read 0.22 m, two ticks in, on main). Watch until the jump
-  // has clearly left the ground (or a deadline), not for a fixed number of frames.
+  // The jump's height from the controller's per-tick trace, not the drawn position: at CI's
+  // 300-800 ms frames the jump's whole arc (~0.7 s) can fall between two frames' positions (the
+  // drawn peak read 0, 0.11 or 0.22 m in half of six CI runs; the trace read 1.19 m). Watch until
+  // the jump has clearly left the ground (or a deadline), not for a fixed number of frames.
   const jumpPeak = async () =>
     Math.max(ground, ...(await ticks(page)).filter((t) => t.seq > lastSeq).map((t) => t.feet[1]));
   let peak = ground;
   const deadline = Date.now() + 10_000;
-  const every = rep % 2 ? 250 : 40; // DIAG
   while (peak - ground <= 0.5 && Date.now() < deadline) {
-    await page.waitForTimeout(every);
+    await page.waitForTimeout(100);
     peak = await jumpPeak();
   }
-  // DIAG: frame intervals with no polling, then with 40 ms polling of state().
-  const now = () => page.evaluate<number>('performance.now()'); // DIAG
-  const gaps = async (from: number) => { const fr = await page.evaluate<{ frames: number[][] }>('globalThis.__dwell.telemetryFrames()'); const f = fr.frames.filter((x) => x[0] >= from).map((x) => x[0]); return f.slice(1).map((v, i) => (v - f[i]).toFixed(0)).join(' '); }; // DIAG
-  let t0 = await now(); await page.waitForTimeout(3000); console.log('DIAG idle', rep, await gaps(t0)); // DIAG
-  t0 = await now(); const end = Date.now() + 3000; while (Date.now() < end) { await page.waitForTimeout(40); await read(page); } console.log('DIAG poll40', rep, await gaps(t0)); // DIAG
-  t0 = await now(); const end2 = Date.now() + 3000; while (Date.now() < end2) { await page.waitForTimeout(40); await ticks(page); } console.log('DIAG polltick40', rep, await gaps(t0)); // DIAG
   await touch(cdp, 'touchEnd', []);
   // A page that predicts far fewer than 60 ticks a second drops time, and the server, filling the
   // missing ticks with the held input, flies and lands the jump without it (game.rs
-  // MAX_TICKS_PER_FRAME): the rate and frame time say whether that is what happened.
+  // MAX_TICKS_PER_FRAME): the rate and frame times say whether that is what happened.
   const predicted = ((await read(page))?.stats.ticks ?? 0) - (start?.stats.ticks ?? 0);
   const rate = (predicted * 1000) / (Date.now() - startedAt);
-  const frame = await page.evaluate<number>(
-    'globalThis.__dwell.telemetry().frames.interval?.p50 ?? 0',
+  const frames = await page.evaluate<{ p50: number; max: number } | undefined>(
+    'globalThis.__dwell.telemetry().frames.interval',
   );
-  const context = `jump peak, predicting ${rate.toFixed(1)} ticks/s, frames ${frame.toFixed(0)} ms`;
-  console.log('DIAG', rep, every, context, 'drawn', 0, 'ticks', peak - ground, JSON.stringify(await page.evaluate('globalThis.__dwell.telemetry().frames.interval'))); // DIAG
-  const fr = await page.evaluate<{ names: string[]; frames: number[][] }>('globalThis.__dwell.telemetryFrames()'); // DIAG
-  console.log('DIAG frames', fr.frames.slice(-60).map((f, i, a) => (i ? (f[0] - a[i - 1][0]).toFixed(0) : '')).join(' ')); // DIAG
-  for (const t of (await page.evaluate<any[]>('globalThis.__dwell.ticks()')).filter((t) => t.jump || t.state === 'jumping').slice(0, 160)) console.log('DIAG tick', t.seq, t.atMs.toFixed(0), t.feet[1].toFixed(3), t.state, t.jump); // DIAG
+  const context = `jump peak, predicting ${rate.toFixed(1)} ticks/s, frames p50 ${(frames?.p50 ?? 0).toFixed(0)} ms, max ${(frames?.max ?? 0).toFixed(0)} ms`;
   expect(peak - ground, context).toBeGreaterThan(0.5);
+  console.log('DIAG', rep, context, peak - ground); // DIAG
 }); // DIAG rep
 
 
