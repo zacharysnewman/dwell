@@ -2,24 +2,150 @@
 //! jumps the camera must not show: onto or down a step in one tick (step-up, ground snap), and by
 //! up to a body height when crouching or standing in mid-air (the head stays put, the feet move).
 //! Each jump is folded into an offset that then decays, so the eye always moves continuously.
-//! [`EyeSmoother`] runs once per sim tick; [`EyeCamera`] feeds it client states and interpolates its
-//! last two results for each drawn frame. Heights are measured along the player's up
-//! (BIFACIAL_WORLD.md §6): on face B the head points toward −y, so `up height = face × y`; the
-//! smoothing is the same either way, and starts afresh when the player crosses to the other face.
+//! A step's offset decays along a virtual ramp ([`StepSmoother`]): at the speed a walker climbing
+//! a ramp of the step view's slope would rise, so a step feels like a short ramp and a stair like
+//! one long one, while the body itself steps (the sim is unchanged). [`EyeSmoother`] runs once per
+//! sim tick; [`EyeCamera`] feeds it client states and interpolates its last two results for each
+//! drawn frame. Heights are measured along the player's up (BIFACIAL_WORLD.md §6): on face B the
+//! head points toward −y, so `up height = face × y`; the smoothing is the same either way, and
+//! starts afresh when the player crosses to the other face.
 
+use dwell_physics::config::StepView;
 use dwell_protocol::controller_flags;
 
 use crate::FaceSign;
 
-/// Step offset decay: a fixed speed (m/s, PPC SmoothSteps) plus a share of the offset (1/s).
-const STEP_SPEED: f64 = 4.0;
-const STEP_RATE: f64 = 6.0;
 /// Crouch offset decay rate (1/s).
 const CROUCH_RATE: f64 = 12.0;
 /// A grounded per-tick feet change larger than this is a step, not riding a lift or a slope.
 const STEP_MIN: f64 = 0.1;
 /// A crouch offset larger than this is a teleport (respawn), not a crouch.
 const CROUCH_MAX: f64 = 2.0;
+/// Steps further apart than this (m walked) are each a lone step, not one stair.
+const STAIR_GAP: f64 = 3.0;
+
+/// The step view's tunables (`PlayerControllerConfig::step_view`), in f64.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct StepRamp {
+    pub slope: f64,
+    pub max_slope: f64,
+    pub min_speed: f64,
+}
+
+impl From<StepView> for StepRamp {
+    fn from(v: StepView) -> Self {
+        Self {
+            slope: f64::from(v.slope),
+            max_slope: f64::from(v.max_slope),
+            min_speed: f64::from(v.min_speed),
+        }
+    }
+}
+
+impl Default for StepRamp {
+    fn default() -> Self {
+        StepView::from(dwell_physics::config::PlayerControllerConfig::default().step_view).into()
+    }
+}
+
+/// One tick of a body's feet, for [`StepSmoother`].
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct StepSample {
+    /// Feet height along the body's up (drawn position).
+    pub feet: f64,
+    pub grounded: bool,
+    /// Horizontal speed (m/s).
+    pub speed: f64,
+    /// The largest grounded one-tick feet change that is a step (larger is a teleport).
+    pub max_step: f64,
+    pub ramp: StepRamp,
+}
+
+/// A step the smoother saw this tick: the feet moved `height` (signed, + up) in one tick.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Step {
+    pub height: f64,
+}
+
+/// Smooths a body's steps (step-ups and the ground snap down a step) into a virtual ramp: the
+/// offset to add to the feet so the drawn height glides. Used by the first-person eye and meant
+/// for a drawn body too (a third-person character's root), one per body. Client-only.
+#[derive(Clone, Debug, Default)]
+pub struct StepSmoother {
+    offset: f64,
+    /// The current virtual ramp's slope (rise per m walked).
+    slope: f64,
+    /// Distance walked since the last step, and that step's direction (+1 up, −1 down).
+    since: f64,
+    last_sign: f64,
+    /// The last step's height (unsigned).
+    height: f64,
+    /// On a stair, the last tread: the step's height and the distance walked to it.
+    tread: Option<(f64, f64)>,
+    last: Option<StepSample>,
+}
+
+impl StepSmoother {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// The offset to add to the feet (m, along the up): negative while a step up is being climbed.
+    pub fn offset(&self) -> f64 {
+        self.offset
+    }
+
+    /// Advances one tick of `dt` seconds; returns the step taken this tick, if any.
+    pub fn tick(&mut self, s: StepSample, dt: f64) -> Option<Step> {
+        let r = s.ramp;
+        if self.slope == 0.0 {
+            self.slope = r.slope;
+        }
+        // Along the virtual ramp: the rise a walker at this speed would make on it.
+        // Further behind than one step (a stair steeper than the ramp so far), it catches up in
+        // proportion, so the lag stays about a step.
+        let behind = 1.0 + 0.5 * (self.offset.abs() / self.height.max(STEP_MIN) - 1.0).max(0.0);
+        let speed = (self.slope * s.speed).max(r.min_speed) * behind;
+        let decay = speed * dt;
+        self.offset = if self.offset.abs() <= decay {
+            0.0
+        } else {
+            self.offset - self.offset.signum() * decay
+        };
+        self.since += s.speed * dt;
+        let mut step = None;
+        if let Some(last) = &self.last {
+            let d = s.feet - last.feet;
+            if s.grounded && last.grounded && d.abs() > STEP_MIN && d.abs() <= s.max_step {
+                let sign = d.signum();
+                // A stair: the slope from this step and the distance since the one before.
+                // Over the last two treads when there were two: a tick's rounding of one tread's
+                // length is noise.
+                let stair = sign == self.last_sign && self.since < STAIR_GAP;
+                self.slope = if stair {
+                    let (rise, run) = match self.tread {
+                        Some((h, l)) => (d.abs() + h, self.since + l),
+                        None => (d.abs(), self.since),
+                    };
+                    (rise / run.max(1e-6)).clamp(r.slope, r.max_slope)
+                } else {
+                    r.slope
+                };
+                self.tread = stair.then_some((d.abs(), self.since));
+                self.offset -= d;
+                self.since = 0.0;
+                self.last_sign = sign;
+                self.height = d.abs();
+                step = Some(Step { height: d });
+            }
+        }
+        // Never more than a step behind: on a stair steeper than the steepest ramp the eye keeps
+        // up at the step's height.
+        self.offset = self.offset.clamp(-2.0 * s.max_step, 2.0 * s.max_step);
+        self.last = Some(s);
+        step
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct EyeSample {
@@ -29,9 +155,12 @@ pub struct EyeSample {
     pub grounded: bool,
     /// Vertical velocity along the player's up.
     pub velocity_y: f64,
+    /// Horizontal speed (m/s).
+    pub speed: f64,
     pub eye_height: f64,
     pub crouch_eye_height: f64,
     pub max_step_height: f64,
+    pub ramp: StepRamp,
 }
 
 pub fn eye_of(s: &EyeSample) -> f64 {
@@ -45,7 +174,7 @@ pub fn eye_of(s: &EyeSample) -> f64 {
 
 #[derive(Clone, Debug, Default)]
 pub struct EyeSmoother {
-    step: f64,
+    step: StepSmoother,
     crouch: f64,
     last: Option<EyeSample>,
 }
@@ -57,35 +186,30 @@ impl EyeSmoother {
 
     /// Advances one tick of `dt` seconds; returns the camera's eye height for that tick.
     pub fn tick(&mut self, s: EyeSample, dt: f64) -> f64 {
-        let step_decay = (STEP_SPEED + self.step.abs() * STEP_RATE) * dt;
-        self.step = if self.step.abs() <= step_decay {
-            0.0
-        } else {
-            self.step - self.step.signum() * step_decay
-        };
         self.crouch *= (-CROUCH_RATE * dt).exp();
-
-        if let Some(last) = &self.last {
-            let d_feet = s.feet - last.feet;
-            if s.crouched != last.crouched {
-                // Everything but the tick's own motion is the crouch.
-                self.crouch -= eye_of(&s) - eye_of(last) - s.velocity_y * dt;
-            } else if s.grounded
-                && last.grounded
-                && d_feet.abs() > STEP_MIN
-                && d_feet.abs() <= s.max_step_height + 0.05
-            {
-                self.step -= d_feet;
-            }
+        let crouch_changed = self.last.is_some_and(|l| l.crouched != s.crouched);
+        if let Some(last) = &self.last
+            && crouch_changed
+        {
+            // Everything but the tick's own motion is the crouch.
+            self.crouch -= eye_of(&s) - eye_of(last) - s.velocity_y * dt;
         }
-        if self.step.abs() > s.max_step_height + 0.05 {
-            self.step = 0.0;
-        }
+        self.step.tick(
+            StepSample {
+                feet: s.feet,
+                // A crouch moves the feet in mid-air (or on the ground it doesn't): not a step.
+                grounded: s.grounded && !crouch_changed,
+                speed: s.speed,
+                max_step: s.max_step_height + 0.05,
+                ramp: s.ramp,
+            },
+            dt,
+        );
         if self.crouch.abs() > CROUCH_MAX {
             self.crouch = 0.0;
         }
         self.last = Some(s);
-        eye_of(&s) + self.step + self.crouch
+        eye_of(&s) + self.step.offset() + self.crouch
     }
 }
 
@@ -101,6 +225,7 @@ pub struct EyeState {
     pub eye_height: f64,
     pub crouch_eye_height: f64,
     pub max_step_height: f64,
+    pub ramp: StepRamp,
 }
 
 /// Feet height from a state's own half height: the capsule centre moves when crouching.
@@ -111,12 +236,13 @@ pub fn eye_sample_of(s: &EyeState) -> EyeSample {
         crouched: s.controller_flags & controller_flags::CROUCHING != 0,
         grounded: s.controller_flags & controller_flags::GROUNDED != 0,
         velocity_y: face * s.velocity[1],
+        speed: s.velocity[0].hypot(s.velocity[2]),
         eye_height: s.eye_height,
         crouch_eye_height: s.crouch_eye_height,
         max_step_height: s.max_step_height,
+        ramp: s.ramp,
     }
 }
-
 /// The first-person camera's eye height: smoothed per tick, interpolated per frame.
 #[derive(Clone, Debug)]
 pub struct EyeCamera {
@@ -179,10 +305,41 @@ mod tests {
             crouched: false,
             grounded: true,
             velocity_y: 0.0,
+            speed: WALK,
             eye_height: 1.62,
             crouch_eye_height: 0.8,
             max_step_height: 0.55,
+            ramp: StepRamp::default(),
         }
+    }
+
+    /// The default walk and run speeds (m/s).
+    const WALK: f64 = 5.0;
+    const RUN: f64 = 8.0;
+
+    /// Feet heights over a stair of `n` steps of `rise` (signed) and `tread` m, walked at `speed`
+    /// from 1 m before the first step: each step is taken in one tick, as the controller does.
+    fn stair(n: i32, rise: f64, tread: f64, speed: f64) -> Vec<EyeSample> {
+        let ticks = ((f64::from(n) * tread + 3.0) / (speed * DT)) as i32;
+        (0..ticks)
+            .map(|t| {
+                let walked = f64::from(t) * speed * DT - 1.0;
+                let steps = if walked < 0.0 {
+                    0
+                } else {
+                    ((walked / tread).floor() as i32 + 1).min(n)
+                };
+                EyeSample {
+                    speed,
+                    ..sample(rise * f64::from(steps))
+                }
+            })
+            .collect()
+    }
+
+    /// The eye's vertical speed per tick (m/s).
+    fn speeds(eyes: &[f64]) -> Vec<f64> {
+        eyes.windows(2).map(|w| (w[1] - w[0]) / DT).collect()
     }
 
     /// Runs `samples` through a smoother; returns the eye per tick.
@@ -211,28 +368,82 @@ mod tests {
         }
 
         #[test]
-        fn smooths_a_step_up_and_a_step_down_alike() {
-            for rise in [0.5, -0.5] {
-                let samples: Vec<_> = std::iter::repeat_n(0.0, 5)
-                    .chain(std::iter::repeat_n(rise, 30))
-                    .map(sample)
-                    .collect();
-                let eyes = run(&samples);
-                assert!(largest_tick_change(&eyes) < 0.12);
-                assert_close(*eyes.last().unwrap(), 1.62 + rise, 6);
+        fn a_lone_step_is_climbed_and_descended_like_a_half_metre_ramp() {
+            // Owner, 2026-10-20: "treat steps like half ramps, so smooth transition between
+            // them". The body steps in one tick; the eye rises (or falls) at the speed a walker
+            // on a ramp of the step view's slope (0.5, a ½ m ramp) would: 2.5 m/s walking, 4 m/s
+            // running, from the tick of the step until it is level with the feet, and never
+            // faster. Before, every step was a kick: the eye left at 7 m/s and slowed.
+            let slope = StepRamp::default().slope;
+            for speed in [WALK, RUN] {
+                for rise in [0.5, -0.5] {
+                    let samples: Vec<_> = std::iter::repeat_n(0.0, 10)
+                        .chain(std::iter::repeat_n(rise, 60))
+                        .map(|f| EyeSample {
+                            speed,
+                            ..sample(f)
+                        })
+                        .collect();
+                    let eyes = run(&samples);
+                    let ramp = slope * speed;
+                    let v = speeds(&eyes);
+                    let at = format!("speed {speed} rise {rise}: {v:.2?}");
+                    assert!(v.iter().all(|s| s.abs() <= ramp + 1e-9), "{at}");
+                    // A constant speed along the ramp, from the step to the top.
+                    let climb = (rise.abs() / ramp / DT).floor() as usize;
+                    for s in &v[10..10 + climb] {
+                        assert_close(s * rise.signum(), ramp, 6);
+                    }
+                    assert_close(eyes[10 + climb + 1], 1.62 + rise, 6);
+                }
             }
         }
 
         #[test]
-        fn keeps_up_with_running_down_a_staircase() {
-            let samples: Vec<_> = (0..60)
-                .map(|i| sample(-0.5 * (f64::from(i) / 7.5).floor()))
+        fn a_stair_is_climbed_and_descended_like_one_ramp() {
+            // The virtual ramp's slope is the stair's own (a step's height over the distance
+            // walked since the step before, 0.5 to 1.0), so the eye moves on every tick from the
+            // first step to the last, at about the stair's slope × speed, and never more than a
+            // step behind the feet. Before, it rose in bursts and stood still between steps.
+            for tread in [1.0, 0.75, 0.6] {
+                for speed in [WALK, RUN] {
+                    for rise in [0.5, -0.5] {
+                        let samples = stair(6, rise, tread, speed);
+                        let eyes = run(&samples);
+                        let v = speeds(&eyes);
+                        let at = format!("tread {tread} speed {speed} rise {rise}: {v:.2?}");
+                        let stair_speed = (0.5 / tread) * speed;
+                        let first = samples.iter().position(|s| s.feet != 0.0).unwrap();
+                        let last = samples
+                            .iter()
+                            .position(|s| s.feet == samples.last().unwrap().feet)
+                            .unwrap();
+                        for s in &v[first..last] {
+                            assert!(s * rise.signum() > 0.35 * stair_speed, "{at}");
+                            assert!(s.abs() < 1.6 * stair_speed, "{at}");
+                        }
+                        for (s, e) in samples.iter().zip(&eyes) {
+                            assert!((e - eye_of(s)).abs() <= 0.75, "{at}");
+                        }
+                        assert_close(*eyes.last().unwrap(), eye_of(samples.last().unwrap()), 6);
+                    }
+                }
+            }
+        }
+
+        #[test]
+        fn a_step_taken_standing_still_settles_at_the_least_speed() {
+            let samples: Vec<_> = std::iter::repeat_n(0.0, 5)
+                .chain(std::iter::repeat_n(0.5, 40))
+                .map(|f| EyeSample {
+                    speed: 0.0,
+                    ..sample(f)
+                })
                 .collect();
             let eyes = run(&samples);
-            assert!(largest_tick_change(&eyes) < 0.12);
-            for (s, e) in samples.iter().zip(&eyes) {
-                assert!((e - eye_of(s)).abs() < 0.55);
-            }
+            let least = StepRamp::default().min_speed;
+            assert!(largest_tick_change(&eyes) <= least * DT + 1e-9);
+            assert_close(eyes[5 + (0.5 / (least * DT)) as usize], 2.12, 6);
         }
 
         #[test]
@@ -342,7 +553,7 @@ mod tests {
                 position: [0.0, feet + half, 0.0],
                 render_offset: [0.0; 3],
                 half_height: half,
-                velocity: [0.0, o.vy, 0.0],
+                velocity: [0.0, o.vy, WALK],
                 controller_flags: (if o.crouched {
                     controller_flags::CROUCHING
                 } else {
@@ -356,6 +567,7 @@ mod tests {
                 eye_height: 1.62,
                 crouch_eye_height: 0.8,
                 max_step_height: 0.55,
+                ramp: StepRamp::default(),
             }
         }
         fn state(feet: f64) -> EyeState {

@@ -576,3 +576,103 @@ fn a_sprint_slide_steps_up_a_half_step_and_slides_on() {
         );
     }
 }
+
+/// A stair of `n` ½ m Tier 1 box steps with treads of `tread` m, rising toward +z from z = 2, on a
+/// floor at y = 0; its top runs on 6 m past the last step.
+fn stair(w: &mut PlayerTestWorld, tread: f32, n: i32) {
+    w.floor_at(0, 40);
+    for k in 0..n {
+        let z0 = 2.0 + k as f32 * tread;
+        let z1 = 2.0 + n as f32 * tread + 6.0;
+        let top = 0.5 * (k + 1) as f32;
+        w.static_box(
+            v(0.0, top / 2.0, (z0 + z1) / 2.0),
+            v(10.0, top / 2.0, (z1 - z0) / 2.0),
+        );
+    }
+}
+
+#[test]
+fn half_metre_stairs_are_walked_and_run_up_and_down_at_speed_and_on_the_ground() {
+    // Owner, 2026-10-20 ("treat steps like half ramps"): the hitch on V2's ½ m steps was measured
+    // to be the camera's (PLAYER_CONTROLLER.md §9, the step view), not the body's. The body keeps
+    // stepping in one tick, and this pins what the camera relies on: through every step-up and
+    // step-down of a stair the horizontal speed stays above 90 % of the gait's, the player stays on
+    // the ground, and no tick moves the feet further than the camera smooths (`max_step_lift`).
+    // Measured on 0.20.5: 93–100 % (mean 100 %), no airborne tick, 0.5 m a step.
+    let n = 6;
+    for tread in [0.6f32, 1.0, 2.0] {
+        for run in [false, true] {
+            for down in [false, true] {
+                let mut w = PlayerTestWorld::new();
+                stair(&mut w, tread, n);
+                let top_z = 2.0 + n as f32 * tread + 3.0;
+                let (start, yaw) = if down {
+                    (v(0.0, 0.5 * n as f32 + 0.02, top_z), 180.0)
+                } else {
+                    (v(0.0, 0.02, -6.0), 0.0)
+                };
+                let e = w.spawn_yaw(start, yaw);
+                w.step(ticks(0.3));
+                w.set_input(move |_, _| input(0.0, 1.0, run, false, false, yaw, 0.0));
+                let speed = if run {
+                    w.config.movement.run_speed
+                } else {
+                    w.config.movement.walk_speed
+                };
+                let lift = w.config.max_step_lift();
+                let at = format!("tread {tread} run {run} down {down}");
+                let (mut last, mut feet) = (w.pos(e), w.feet(e));
+                let (mut slowest, mut airborne, mut largest, mut steps) = (f32::MAX, 0, 0.0f32, 0);
+                for _ in 0..ticks(4.0) {
+                    w.step(1);
+                    let p = w.pos(e);
+                    let moved = (p.x - last.x).hypot(p.z - last.z) * 60.0;
+                    let f = w.feet(e);
+                    // On the stair: from a metre before its first face to a metre past its last.
+                    if p.z > 1.0 && p.z < 2.0 + (n - 1) as f32 * tread + 1.0 {
+                        slowest = slowest.min(moved);
+                        airborne += i32::from(!w.c(e).ground.grounded);
+                        largest = largest.max((f - feet).abs());
+                    }
+                    steps += i32::from((f - feet).abs() > 0.3);
+                    (last, feet) = (p, f);
+                    // Off the stair at either end (its top runs on 6 m; the floor 40 m).
+                    if (!down && p.z > top_z) || (down && p.z < -2.0) {
+                        break;
+                    }
+                }
+                assert_eq!(steps, n, "{at}: steps taken");
+                assert!(slowest > 0.9 * speed, "{at}: slowed to {slowest} m/s");
+                assert_eq!(airborne, 0, "{at}: airborne ticks");
+                assert!(largest <= lift, "{at}: feet moved {largest} m in a tick");
+                let end = if down { 0.0 } else { 0.5 * n as f32 };
+                assert!((w.feet(e) - end).abs() < 0.01, "{at}: ended at {}", w.feet(e));
+            }
+        }
+    }
+}
+
+#[test]
+fn walking_off_a_drop_higher_than_a_step_falls() {
+    // The ground snap down a step (which the camera smooths as a virtual ramp) never takes a real
+    // drop: off a 1 m ledge the player leaves the ground and falls.
+    let mut w = PlayerTestWorld::new();
+    w.floor_at(0, 40);
+    w.fill(-10, 0, -10, 9, 0, 2, cube_block());
+    let e = w.spawn_yaw(v(0.0, 1.02, 0.0), 0.0);
+    w.step(ticks(0.3));
+    w.set_input(|_, _| input(0.0, 1.0, false, false, false, 0.0, 0.0));
+    let mut airborne = 0;
+    let mut largest = 0.0f32;
+    let mut feet = w.feet(e);
+    for _ in 0..ticks(1.5) {
+        w.step(1);
+        airborne += i32::from(!w.c(e).ground.grounded);
+        largest = largest.max(feet - w.feet(e));
+        feet = w.feet(e);
+    }
+    assert!(airborne >= 5, "{airborne} airborne ticks");
+    assert!(largest < 0.3, "dropped {largest} m in a tick");
+    assert!(w.feet(e).abs() < 0.01, "landed at {}", w.feet(e));
+}
