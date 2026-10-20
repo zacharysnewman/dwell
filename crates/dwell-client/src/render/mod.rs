@@ -1562,6 +1562,11 @@ impl Renderer {
         self.terrain.march.upscaler = upscaler;
     }
 
+    /// The march's dev switches from the page's query (`MarchSettings::apply_query`).
+    pub fn set_march_query(&mut self, search: &str) {
+        self.terrain.march.marcher.settings.apply_query(search);
+    }
+
     /// The camera and frame uniforms as the marcher reads them (`march::Marcher::draw`): the same
     /// lights, fog, sky and view as this renderer's frame.
     pub fn march_frame(&self) -> march::MarchFrame {

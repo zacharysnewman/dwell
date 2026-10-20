@@ -942,6 +942,8 @@ fn beam_walk(dir: vec3<f32>, spread: f32) -> f32 {
     let top = u.top;
     var t = 0.0;
     var dt = BEAM_FIRST_STEP;
+    // Doubling until a segment is blocked, then bisecting.
+    var grow = 2.0;
     for (var i = 0u; i < BEAM_ITERATIONS; i++) {
         if (t >= u.max_t) {
             break;
@@ -954,14 +956,13 @@ fn beam_walk(dir: vec3<f32>, spread: f32) -> f32 {
         let hi = rc + vec3<i32>(floor(max(pa, pb) + vec3<f32>(r)));
         if (box_clear(lo, hi, min(level_for(t1), top), top)) {
             t = t1;
-            dt *= 2.0;
         } else {
-            let cell = f32(1u << min(level_for(t), top));
-            if (dt <= BEAM_MIN_STEP * cell) {
-                break;
-            }
-            dt *= 0.5;
+            grow = 0.5;
         }
+        if (grow < 1.0 && dt <= BEAM_MIN_STEP * f32(1u << min(level_for(t), top))) {
+            break;
+        }
+        dt *= grow;
     }
     return t;
 }

@@ -174,3 +174,13 @@ fn draws_on_the_noop_device_and_takes_terrain_through_the_seam() {
     m.set_chunk(c, None);
     assert_eq!(m.gpu.scene.live_nodes(), 0);
 }
+
+#[test]
+fn the_page_query_switches_the_beam_prepass() {
+    let mut s = super::MarchSettings::default();
+    assert!(s.beam);
+    s.apply_query("?local=1&marchbeam=0&seed=7");
+    assert!(!s.beam);
+    s.apply_query("?marchbeam=1");
+    assert!(s.beam);
+}

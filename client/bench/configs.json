@@ -17,6 +17,12 @@
       "renderer": "march"
     },
     {
+      "name": "march-nobeam",
+      "notes": "Ray-marched at full resolution without the beam prepass (A4b's before).",
+      "renderer": "march",
+      "params": { "marchbeam": "0" }
+    },
+    {
       "name": "march-half-fsr",
       "notes": "Ray-marched at half resolution, FSR 1 upscaling (A4).",
       "renderer": "march",

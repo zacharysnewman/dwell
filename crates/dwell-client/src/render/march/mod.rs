@@ -86,6 +86,23 @@ impl Default for MarchSettings {
     }
 }
 
+impl MarchSettings {
+    /// The page's dev switches for the march (local builds, `bench --compare` configurations'
+    /// `params`): `?marchbeam=0` turns the beam prepass off.
+    pub fn apply_query(&mut self, search: &str) {
+        for (k, v) in search
+            .trim_start_matches('?')
+            .split('&')
+            .filter_map(|kv| kv.split_once('='))
+        {
+            let on = !matches!(v, "0" | "off" | "false");
+            if k == "marchbeam" {
+                self.beam = on;
+            }
+        }
+    }
+}
+
 /// The camera and the shared frame uniforms of one frame.
 #[derive(Clone, Debug)]
 pub struct MarchFrame {

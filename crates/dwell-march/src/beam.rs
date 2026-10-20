@@ -121,6 +121,9 @@ impl Scene {
         };
         let mut t = 0.0f32;
         let mut dt = BEAM_FIRST_STEP;
+        // Segments double until one is blocked, then the walk bisects: each later segment is
+        // half the last, cleared or not, down to the minimum.
+        let mut grow = 2.0f32;
         let mut tried = 0;
         while tried < BEAM_ITERATIONS && t < p.max_t {
             tried += 1;
@@ -128,14 +131,13 @@ impl Scene {
             let (lo, hi) = beam.segment_box(t, t1);
             if self.box_clear(lo, hi, level_for(t1, p).min(top), top) {
                 t = t1;
-                dt *= 2.0;
             } else {
-                let cell = (1u32 << level_for(t, p).min(top)) as f32;
-                if dt <= BEAM_MIN_STEP * cell {
-                    break;
-                }
-                dt *= 0.5;
+                grow = 0.5;
             }
+            if grow < 1.0 && dt <= BEAM_MIN_STEP * (1u32 << level_for(t, p).min(top)) as f32 {
+                break;
+            }
+            dt *= grow;
         }
         (t, tried)
     }
