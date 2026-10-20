@@ -44,6 +44,18 @@ pub struct Textures {
     pub bottom: &'static str,
 }
 
+/// A side-face tile rule (block data `sideUnder`, docs/PAINTERLY_TEXTURES.md §2): a side face of
+/// the state whose cell above holds block `above` (any state, any derived shape) takes tile `side`,
+/// unless that block shows a full side there itself. A look (registry sync tag `SIDE_UNDER`, which
+/// older clients ignore).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SideUnder {
+    /// Namespaced block id, e.g. `dwell:grass`.
+    pub above: &'static str,
+    /// The texture tile its side faces take.
+    pub side: &'static str,
+}
+
 /// World-space grid lines the terrain shader draws on a state's faces (block data `grid`, a look
 /// option): a line every `every` blocks (a divisor of the chunk size), darkening by `strength`.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -142,6 +154,8 @@ pub struct StateInfo {
     pub color: u32,
     pub opacity: f32,
     pub textures: Option<Textures>,
+    /// Side tiles chosen by the block above (first match wins); empty: always `textures.side`.
+    pub side_under: &'static [SideUnder],
     pub grid: Option<Grid>,
     pub render: RenderMode,
     /// The `cross` look's geometry (other looks: none).

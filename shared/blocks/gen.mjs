@@ -8,6 +8,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { blockFluid, fluidsRust, readFluids } from './fluids.mjs';
 import { FACINGS as SHAPE_FACINGS, SLOPE_SHAPES, cubeShape, namedShape, slabShape, slopeShape } from './shapes.mjs';
+import { blockTiles, sideUnderRules } from './faces.mjs';
 import { NEIGHBOURHOODS, aroundOf, buildTable, describe, summary } from './adaptive.mjs';
 import { loadSounds } from '../sounds/load.mjs';
 import { checkBlockSounds } from '../sounds/validate.mjs';
@@ -253,14 +254,19 @@ for (const b of blocks) {
   for (const name of b.def.placeOn ?? []) {
     if (!blocks.some((o) => o.id === name)) fail(`${b.id}: placeOn names unknown block ${name}`);
   }
+  // Side tiles chosen by the block above (faces.mjs).
+  try {
+    b.sideUnder = sideUnderRules(b.id, b.def, blocks.map((o) => o.id));
+  } catch (e) {
+    fail(e.message);
+  }
 }
 // The terrain shader finds a face's grid from its texture tile (dwell-mesh tile_grids), so every
 // block drawn with a tile (an untextured one with `plain`) must want the same grid, or none.
 {
   const gridOfTile = new Map();
   for (const b of blocks) {
-    const t = b.def.textures;
-    const tiles = t ? (typeof t === 'string' ? [t] : [t.top, t.side, t.bottom]) : ['plain'];
+    const tiles = b.def.textures ? blockTiles(b.def) : ['plain'];
     const want = b.def.grid ? `every ${b.def.grid.every}, strength ${b.def.grid.strength}` : 'no grid';
     for (const tile of tiles) {
       const seen = gridOfTile.get(tile);
@@ -591,6 +597,7 @@ if (!fixture) writeFileSync(join(root, 'client/src/world/blocks.gen.ts'), ts.joi
       `color: 0x${d.color.replace('#', '').toLowerCase()}`,
       `opacity: ${rf(opacityOf(st.block))}`,
       `textures: ${t ? `Some(Textures { top: ${rstr(t.top)}, side: ${rstr(t.side)}, bottom: ${rstr(t.bottom)} })` : 'None'}`,
+      `side_under: &[${st.block.sideUnder.map((r) => `SideUnder { above: ${rstr(r.above)}, side: ${rstr(r.side)} }`).join(', ')}]`,
       `grid: ${d.grid ? `Some(Grid { every: ${d.grid.every}, strength: ${rf(d.grid.strength)} })` : 'None'}`,
       `render: RenderMode::${pascal(renderOf(d))}`,
       `cross: ${crossRs(d)}`,

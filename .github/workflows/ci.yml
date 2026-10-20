@@ -46,6 +46,8 @@ jobs:
           git diff --exit-code
       - name: The adaptive rule table's data and generator (ADAPTIVE_BLOCKS.md)
         run: node --test shared/blocks/adaptive.test.mjs
+      - name: Block data's face-tile rules (PAINTERLY_TEXTURES.md §2)
+        run: node --test shared/blocks/faces.test.mjs
       - name: Structure generator tests
         run: node --test shared/structures/gen.test.mjs
 
