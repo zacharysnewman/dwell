@@ -28,6 +28,8 @@ and friend worlds), with a small master server for discovery; there are no offic
   system; built by the baseline rework, Phases 14–19 of the implementation plan.
 - `docs/prototypes/` — saved design prototypes (Adaptive Block Lab, Shape Playground) with their
   published links; republish to the same link after editing.
+- `docs/SPYGLASS.md` — design for Phase 38 (ADR 0039): the spyglass zoom, its data file, and the
+  LOD's detail inside the zoomed cone.
 - `docs/RELEASES.md` — Phase 6: builds as tagged releases loaded by a version launcher,
   version-locked worlds, the license, and the release procedure.
 - `docs/BIFACIAL_WORLD.md` — design for Phase 13: the disc's second face below the midplane, gravity

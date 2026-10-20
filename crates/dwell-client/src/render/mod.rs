@@ -24,7 +24,7 @@ pub mod water_tiles;
 
 use dwell_world::hash::HashMap;
 
-use dwell_game::brush_tool::BrushOutline;
+use dwell_game::brush_tool::{BrushOutline, GhostFace, GhostKind};
 use dwell_look::clouds::{CLOUDS, CloudQuality, cloud_uniforms};
 use dwell_look::daynight::{DAY_SKY_FLOATS, DayState};
 use dwell_look::fog::{DEFAULT_FOG, FogSettings, fog_sigma};
@@ -396,6 +396,43 @@ impl GpuMesh {
             bytes,
         )
     }
+
+    /// A brush preview's ghost (BRUSHES.md §3): two triangles per face, in the lines' vertex
+    /// format (position, colour), drawn by the ghost pipeline.
+    fn ghost(arena: &ArenaRef, faces: &[GhostFace]) -> Self {
+        let mut p: Vec<f32> = Vec::with_capacity(faces.len() * 12);
+        let mut c: Vec<f32> = Vec::with_capacity(faces.len() * 12);
+        let mut idx: Vec<u32> = Vec::with_capacity(faces.len() * 6);
+        for (k, (quad, kind)) in faces.iter().enumerate() {
+            let colour = hex(ghost_color(*kind)).map(|v| v as f32);
+            for v in quad {
+                p.extend_from_slice(v);
+                c.extend_from_slice(&colour);
+            }
+            let b = 4 * k as u32;
+            idx.extend_from_slice(&[b, b + 1, b + 2, b, b + 2, b + 3]);
+        }
+        let bytes = 4 * (p.len() + c.len() + idx.len()) as u64;
+        let vertices = interleave(&[(&p, 3), (&c, 3)]);
+        Self::upload(
+            arena,
+            Kind::Line,
+            &vertices,
+            &idx,
+            std::iter::once(0..idx.len() as u32).collect(),
+            bytes,
+        )
+    }
+}
+
+/// A ghost cell's colour by what it becomes: blocks put down in the brush's orange, removals red,
+/// repaints a pale yellow.
+fn ghost_color(kind: GhostKind) -> u32 {
+    match kind {
+        GhostKind::Put => BRUSH_COLOR,
+        GhostKind::Remove => 0xff5040,
+        GhostKind::Paint => 0xfff0a0,
+    }
 }
 
 /// A mesh's regions go back to its page when it goes (the pages themselves are destroyed with the
@@ -561,10 +598,20 @@ enum Kind {
     Terrain,
     Flat,
     Line,
+    /// A brush preview's see-through faces: triangles in the lines' format, drawn with them over
+    /// the composite, fainter where the scene hides them.
+    Ghost,
     /// Fluids (chunk and LOD water): the water shader.
     Fluid,
     /// Cutout terrain (ladders, plants): alpha-tested, depth-writing, both sides, wind sway.
     Cutout,
+}
+
+impl Kind {
+    /// Drawn over the composite, into the canvas (lines and the brush's ghost).
+    fn overlay(self) -> bool {
+        matches!(self, Self::Line | Self::Ghost)
+    }
 }
 
 /// One draw, collected before the passes record.
@@ -594,11 +641,12 @@ struct DrawItem {
 /// change the picture: depth decides). Distances compare by their f32 bits (non-negative floats
 /// order as their bits do).
 fn draw_order(d: &DrawItem) -> u128 {
-    let rank = u128::from(u8::from(d.water) + 2 * u8::from(d.kind == Kind::Line));
+    let rank = u128::from(u8::from(d.water) + 2 * u8::from(d.kind.overlay()));
     let dist = (d.offset[0] * d.offset[0] + d.offset[1] * d.offset[1] + d.offset[2] * d.offset[2])
         .to_bits();
-    let rest: u128 = if d.kind == Kind::Line {
-        0
+    let rest: u128 = if d.kind.overlay() {
+        // The ghost before the lines over it.
+        u128::from(d.kind == Kind::Line)
     } else if d.water {
         u128::from(u32::MAX - dist)
     } else {
@@ -627,7 +675,8 @@ enum DrawMesh {
     Outline,
     Debug,
     Region(usize),
-    Brush,
+    /// The brush preview's ghost (true) or lines.
+    Brush(bool),
 }
 
 /// The brush outline's colour (BRUSHES.md): warm, apart from the region tools' white and blue.
@@ -635,6 +684,16 @@ const BRUSH_COLOR: u32 = 0xffb347;
 /// How far a brush outline reaches from its centre at most (m): a line's length aside, the
 /// largest brush stretched, for the passes it is drawn in.
 const MAX_BRUSH_EXTENT: f32 = 80.0;
+/// A brush ghost's opacity where nothing hides it (the shader draws hidden parts at a third).
+const GHOST_ALPHA: f32 = 0.38;
+
+/// A brush preview as uploaded.
+struct BrushDraw {
+    version: u64,
+    origin: [f64; 3],
+    lines: Option<GpuMesh>,
+    ghost: Option<GpuMesh>,
+}
 
 pub struct Renderer {
     device: wgpu::Device,
@@ -688,8 +747,9 @@ pub struct Renderer {
     debug: Option<GpuMesh>,
     /// The region tools' boxes, each with its edges (rebuilt only when the boxes change).
     region_boxes: Vec<(RegionBox, GpuMesh)>,
-    /// The brush tool's wireframe (rebuilt only when it changes).
-    brush: Option<(BrushOutline, GpuMesh)>,
+    /// The brush tool's preview (rebuilt only when its version changes): its origin, lines and
+    /// ghost.
+    brush: Option<BrushDraw>,
     /// The GPU pages every mesh lives in (arena.rs).
     arena: ArenaRef,
     /// The plants' wind scale (block data `wind`; 1 by default, 0 keeps them still).
@@ -899,15 +959,20 @@ impl Renderer {
         let variants = [Kind::Terrain, Kind::Flat, Kind::Line]
             .into_iter()
             .flat_map(|k| [(k, false, false), (k, false, true)])
-            .chain([(Kind::Fluid, true, false), (Kind::Cutout, false, false)]);
+            .chain([
+                (Kind::Fluid, true, false),
+                (Kind::Cutout, false, false),
+                (Kind::Ghost, false, false),
+            ]);
         for (kind, water, no_depth) in variants {
-            let line = kind == Kind::Line;
+            let line = kind.overlay();
             let cutout = kind == Kind::Cutout;
             let (vs, fs, a) = match kind {
                 Kind::Terrain => ("terrain_vs", "terrain_fs", &terrain_attrs),
                 Kind::Flat => ("flat_vs", "flat_fs", &flat_attrs),
                 Kind::Line if no_depth => ("line_vs", "line_top_fs", &line_attrs),
                 Kind::Line => ("line_vs", "line_fs", &line_attrs),
+                Kind::Ghost => ("line_vs", "ghost_fs", &line_attrs),
                 Kind::Fluid => ("fluid_vs", "water_fs", &fluid_attrs),
                 Kind::Cutout => ("cutout_vs", "cutout_fs", &cutout_attrs),
             };
@@ -1463,19 +1528,25 @@ impl Renderer {
             })
             .collect();
     }
-    /// The brush tool's wireframe (BRUSHES.md), outlined over the terrain, or none.
+    /// The brush tool's preview (BRUSHES.md §3): the ghost of the cells a stroke would change and
+    /// its lines, over the terrain, or none. Uploaded only when its version changes.
     pub fn set_brush_outline(&mut self, outline: Option<&BrushOutline>) {
-        if self.brush.as_ref().map(|(o, _)| o) == outline {
+        if self.brush.as_ref().map(|b| b.version) == outline.map(|o| o.version) {
             return;
         }
-        self.brush = outline.filter(|o| !o.segments.is_empty()).map(|o| {
+        self.brush = outline.map(|o| {
             let c = hex(BRUSH_COLOR).map(|v| v as f32);
             let pts: Vec<([f32; 3], [f32; 3])> = o
                 .segments
                 .iter()
                 .flat_map(|&(a, b)| [(a, c), (b, c)])
                 .collect();
-            (o.clone(), GpuMesh::lines(&self.arena, &pts))
+            BrushDraw {
+                version: o.version,
+                origin: o.origin,
+                lines: (!pts.is_empty()).then(|| GpuMesh::lines(&self.arena, &pts)),
+                ghost: (!o.faces.is_empty()).then(|| GpuMesh::ghost(&self.arena, &o.faces)),
+            }
         });
     }
     pub fn set_player(&mut self, id: u32, view: Option<PlayerView>) {
@@ -1572,7 +1643,8 @@ impl Renderer {
     pub fn march_frame(&self) -> march::MarchFrame {
         let basis = aim(self.yaw, self.pitch, self.face, self.flip);
         let aspect = f64::from(self.size.0) / f64::from(self.size.1);
-        let tan_y = (vertical_fov(aspect).to_radians() / 2.0).tan();
+        // The frame's FOV (the speed boost, the spyglass): the rays and the cone LOD follow it.
+        let tan_y = (self.frame_fov().to_radians() / 2.0).tan();
         let f3 = |v: V3| v.map(|x| x as f32);
         march::MarchFrame {
             uniforms: self.frame_uniforms(&basis, NEAR_PLANE, FAR_PLANE).to_vec(),
@@ -1752,8 +1824,10 @@ impl Renderer {
                 let m = &self.region_boxes[*i].1;
                 (m, vec![m.parts[0].clone()])
             }
-            DrawMesh::Brush => {
-                let m = &self.brush.as_ref().expect("collected").1;
+            DrawMesh::Brush(ghost) => {
+                let b = self.brush.as_ref().expect("collected");
+                let m = if *ghost { &b.ghost } else { &b.lines };
+                let m = m.as_ref().expect("collected");
                 (m, vec![m.parts[0].clone()])
             }
             DrawMesh::Debug => {
@@ -1976,26 +2050,36 @@ impl Renderer {
                 mesh: DrawMesh::Region(i),
             });
         }
-        // The brush wireframe (BRUSHES.md): over everything, like the region boxes.
-        if let Some((o, _)) = &self.brush {
+        // The brush preview (BRUSHES.md §3): its lines over everything, like the region boxes; its
+        // ghost see-through, fainter where the terrain hides it.
+        if let Some(b) = &self.brush {
             let side = 2.0 * f64::from(MAX_BRUSH_EXTENT);
-            let corner = o.origin.map(|v| v - f64::from(MAX_BRUSH_EXTENT));
+            let corner = b.origin.map(|v| v - f64::from(MAX_BRUSH_EXTENT));
             let passes = reaches(corner, side);
             if passes != 0 {
-                let r = self.rel(o.origin);
-                out.push(DrawItem {
-                    kind: Kind::Line,
-                    water: false,
-                    no_depth: true,
-                    offset: [r[0], r[1], r[2], 1.0],
-                    clip: None,
-                    tint: [1.0, 1.0, 1.0, 0.95],
-                    rotation: NO_ROTATION,
-                    page: 0,
-                    passes,
-                    key: 0,
-                    mesh: DrawMesh::Brush,
-                });
+                let r = self.rel(b.origin);
+                for (ghost, present) in [(true, b.ghost.is_some()), (false, b.lines.is_some())] {
+                    if !present {
+                        continue;
+                    }
+                    out.push(DrawItem {
+                        kind: if ghost { Kind::Ghost } else { Kind::Line },
+                        water: false,
+                        no_depth: !ghost,
+                        offset: [r[0], r[1], r[2], 1.0],
+                        clip: None,
+                        tint: if ghost {
+                            [1.0, 1.0, 1.0, GHOST_ALPHA]
+                        } else {
+                            [1.0, 1.0, 1.0, 0.95]
+                        },
+                        rotation: NO_ROTATION,
+                        page: 0,
+                        passes,
+                        key: 0,
+                        mesh: DrawMesh::Brush(ghost),
+                    });
+                }
             }
         }
         // Debug lines: in the pass that draws from the near plane.
@@ -2026,7 +2110,7 @@ impl Renderer {
         out.sort_by_key(|d| d.key);
         let mut split: [Vec<DrawItem>; 3] = [Vec::with_capacity(out.len()), Vec::new(), Vec::new()];
         for d in out {
-            if d.kind == Kind::Line {
+            if d.kind.overlay() {
                 split[2].push(d);
             } else if d.passes == 3 {
                 split[1].push(d.clone());
@@ -3548,6 +3632,36 @@ mod tests {
         let narrow = PassView::new([0.0; 3], [0.0, 0.0, 1.0], vertical_fov(aspect), aspect);
         let wide = PassView::new([0.0; 3], [0.0, 0.0, 1.0], 80.0, aspect);
         assert!(wide.stretch > narrow.stretch);
+    }
+
+    #[test]
+    fn the_marcher_draws_with_the_fov_the_game_chose() {
+        // Regression (the spyglass, docs/SPYGLASS.md): the marcher's rays and its cone LOD came
+        // from the screen's own FOV, so it ignored the speed boost and would ignore the zoom.
+        let mut r = noop_renderer();
+        r.resize(1600, 900, 1.0);
+        let aspect = 16.0 / 9.0;
+        let tan = |fov: f64| (fov.to_radians() / 2.0).tan() as f32;
+        let f = r.march_frame();
+        assert!((f.tan[1] - tan(vertical_fov(aspect))).abs() < 1e-6);
+        let narrow = dwell_look::spyglass::zoom_fov(vertical_fov(aspect), 8.0);
+        r.set_fov(Some(narrow));
+        let f = r.march_frame();
+        assert!((f.tan[1] - tan(narrow)).abs() < 1e-6, "{:?}", f.tan);
+        assert!((f.tan[0] - tan(narrow) * aspect as f32).abs() < 1e-6);
+        // Its cone LOD follows: each pixel covers an eighth of the angle, so a level lasts 8× as far.
+        let p = r.terrain.march.marcher.reference_params(&f, (1600, 900));
+        let wide = r.terrain.march.marcher.reference_params(
+            &march::MarchFrame {
+                tan: [
+                    tan(vertical_fov(aspect)) * aspect as f32,
+                    tan(vertical_fov(aspect)),
+                ],
+                ..f.clone()
+            },
+            (1600, 900),
+        );
+        assert!((wide.pixel_angle / p.pixel_angle - 8.0).abs() < 1e-3);
     }
 
     #[test]

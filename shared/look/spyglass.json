@@ -1,0 +1,20 @@
+{
+  "$comment": "The spyglass (docs/SPYGLASS.md, ADR 0039): a toggle key zooms the view in to the first step; the wheel steps through the others while zoomed. key: its KeyboardEvent.code (free of every other binding, client/src/ui/controls.ts). Steps go in order of magnification, each larger than the last and over 1. detailBoost: inside the zoomed view the distant terrain (the LOD) refines as if the screen were magnified by up to this much (1: no extra detail; above it a step zooms without refining further), bounding the extra sections a far, narrow view loads; outside the view it refines for the unzoomed FOV as before. transitionS: seconds a zoom change eases over (0 under reduced motion). Run `node shared/look/spyglass.mjs` after editing; CI fails if crates/dwell-look/src/spyglass.gen.rs or client/src/ui/spyglass.gen.ts is stale.",
+  "key": "Backquote",
+  "steps": [
+    {
+      "$comment": "magnification: how many times the view is enlarged. The step's vertical FOV is the frame's (the Field of view setting, narrowed on wide screens, plus the speed boost) narrowed by it: 2·atan(tan(fov/2) / magnification).",
+      "magnification": 4
+    },
+    { "magnification": 8 }
+  ],
+  "detailBoost": 4,
+  "transitionS": 0.25,
+  "vignette": {
+    "$comment": "A dark ring around the zoomed view, faded in with the zoom: clear out to innerRadius, opacity (0–1) of colour (sRGB) from outerRadius on, both in units of half the screen height.",
+    "innerRadius": 0.95,
+    "outerRadius": 1.6,
+    "opacity": 0.6,
+    "color": "#05070a"
+  }
+}

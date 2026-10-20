@@ -992,6 +992,97 @@ fn sliding_predicts_without_snaps_at_150_ms_rtt_20_ms_jitter_5_percent_loss() {
     }
 }
 
+// --- the sprint slide (PLAYER_CONTROLLER.md §6.9) ------------------------------------------------
+
+/// A sprints round a square on the flat world, sliding along each side: a crouch from the sprint,
+/// a turn mid-slide, a jump out of every other slide, the crouch let go; B roams nearby. Returns
+/// the run (10 s) after checking that A slid every side and B saw it.
+fn sprint_sliding(conditions: LinkConditions) -> (NetSim, [usize; 2]) {
+    let mut sim = NetSim::with_world(conditions, flat_generator(), [40.0, G + 0.1, 0.0]);
+    let a = sim.join(
+        Some(Box::new(|t, _| {
+            let (side, k) = (t / 150, t % 150);
+            let mut i = Input {
+                look_yaw: (side * 90 % 360) as f32 + if k >= 60 { 30.0 } else { 0.0 },
+                move_y: 1.0,
+                run: true,
+                crouch: (40..100).contains(&k),
+                ..Input::default()
+            };
+            i.jump = side % 2 == 1 && (85..87).contains(&k);
+            i
+        })),
+        false,
+    );
+    let (mut slid, mut starts, mut b_saw_a_slide) = (0, 0, false);
+    let mut was = false;
+    let id_a = sim.clients[a].player_id;
+    // B joins once A has left the spawn (two capsules spawned together push apart, which
+    // mispredicts on its own, §8.2), and roams clear of A's square.
+    let mut b = usize::MAX;
+    for t in 0..ticks(10.0) {
+        if t == 200 {
+            b = sim.join(Some(roam(20.0, 40.0, 4)), false);
+        }
+        sim.step(1);
+        let c = sim.clients[a].predictor.controller();
+        slid += i32::from(c.sprint_slide.active);
+        starts += i32::from(c.sprint_slide.active && !was);
+        was = c.sprint_slide.active;
+        b_saw_a_slide |= b != usize::MAX
+            && sim.clients[b]
+                .remotes
+                .get(&id_a)
+                .is_some_and(|r| r.state == PlayerState::Sliding);
+    }
+    assert!(starts >= 3, "A started {starts} slides");
+    assert!(slid > 90, "A slid for {slid} ticks");
+    assert!(b_saw_a_slide, "B sees A sliding (for its sounds)");
+    for c in [a, b] {
+        let c = &sim.clients[c];
+        let s = c.predictor.stats();
+        eprintln!(
+            "client {}: {} snapshots, {} replays, error at ack p95 {} m; corrections max {} m, snaps {}",
+            c.player_id,
+            s.snapshots,
+            s.replays,
+            percentile(c.ack_errors.clone(), 0.95),
+            percentile(c.corrections.clone(), 1.0),
+            s.snaps
+        );
+    }
+    (sim, [a, b])
+}
+
+#[test]
+fn the_sprint_slide_is_predicted_exactly_without_latency() {
+    // The slide's state (active, cooldown) is resumable and on the wire, and its motion is the
+    // controller's: the prediction matches the server, with only the spawn's replay.
+    let (sim, clients) = sprint_sliding(LinkConditions::default());
+    for c in clients {
+        let c = &sim.clients[c];
+        assert!(
+            c.predictor.stats().replays <= 2,
+            "{:?}",
+            c.predictor.stats()
+        );
+        assert_eq!(c.predictor.stats().snaps, 0);
+        assert!(percentile(c.ack_errors.clone(), 0.99) < 0.001);
+    }
+}
+
+#[test]
+fn the_sprint_slide_predicts_without_snaps_at_150_ms_rtt_20_ms_jitter_5_percent_loss() {
+    let (sim, clients) = sprint_sliding(lossy());
+    for c in clients {
+        let c = &sim.clients[c];
+        assert_eq!(c.predictor.stats().snaps, 0);
+        assert!(percentile(c.ack_errors.clone(), 0.95) < 0.05);
+        let worst = percentile(c.corrections.clone(), 1.0);
+        assert!(worst < 0.5, "{worst}");
+    }
+}
+
 // --- block edits ---------------------------------------------------------------------------------
 
 #[test]

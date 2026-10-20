@@ -25,6 +25,7 @@ use dwell_game::touch::TouchState;
 use dwell_lod::{LodCamera, LodSystem, LodView, StandInBox, format_lod_stats};
 use dwell_look::daynight::{DAY_NIGHT, DayState};
 use dwell_look::motion::{MOTION, MotionFx, MotionInput, MotionSettings, Speeds, effective_fov};
+use dwell_look::spyglass::{SPYGLASS, Spyglass, SpyglassView, zoom_fov};
 use dwell_physics::config::PlayerControllerConfig;
 use dwell_physics::net::to_net;
 use dwell_physics::predictor::{Predictor, PredictorStats};
@@ -457,6 +458,11 @@ pub struct Game<S: Scene> {
     motion_face: Option<i32>,
     /// The vertical FOV of the last drawn frame, given to the renderer and the LOD alike.
     frame_fov: f64,
+    /// The spyglass (docs/SPYGLASS.md): its zoom, and the last frame's view of it.
+    pub spyglass: Spyglass,
+    spyglass_view: SpyglassView,
+    /// The browser asks for reduced motion: the spyglass zooms at once.
+    pub reduced_motion: bool,
     /// The camera the LOD selection last used.
     lod_camera: Option<LodCamera>,
     /// The dev switches over the day/night cycle, and its state at the last frame (world time is
@@ -552,6 +558,9 @@ impl<S: Scene> Game<S> {
             speeds,
             motion_face: None,
             frame_fov: dwell_lod::vertical_fov(1280.0 / 720.0),
+            spyglass: Spyglass::new(),
+            spyglass_view: SpyglassView::NONE,
+            reduced_motion: false,
             lod_camera: None,
             day_override: DayOverride::default(),
             day: DayState::default(),
@@ -591,6 +600,10 @@ impl<S: Scene> Game<S> {
     /// The vertical FOV the last frame drew with (and the LOD selected with).
     pub fn frame_fov(&self) -> f64 {
         self.frame_fov
+    }
+    /// The spyglass's view at the last frame (its magnification, the LOD's detail, the vignette).
+    pub fn spyglass_view(&self) -> SpyglassView {
+        self.spyglass_view
     }
     /// The camera the LOD selection last used (tests: it has the frame's FOV).
     pub fn lod_camera(&self) -> Option<LodCamera> {
@@ -1378,7 +1391,7 @@ impl<S: Scene> Game<S> {
             scene.set_camera(camera_eye, yaw, -25.0, f64::from(face), 0.0);
             drop(scene);
             self.show_hud_text();
-            self.target(None, input);
+            self.target(None, input, now_ms);
             self.update_motion(c.position, dt);
         } else {
             self.scene
@@ -1393,7 +1406,7 @@ impl<S: Scene> Game<S> {
                 .set_camera(eye, yaw, pitch, f64::from(face), flip);
             self.listener = listener(eye, yaw, pitch, face);
             let ready = self.terrain_ready();
-            self.target(ready.then_some(eye), input);
+            self.target(ready.then_some(eye), input, now_ms);
             self.update_motion(eye, dt);
         }
         let camera_eye = match self.view {
@@ -1503,7 +1516,12 @@ impl<S: Scene> Game<S> {
             &MOTION,
         );
         let viewport = self.viewport();
-        self.frame_fov = effective_fov(viewport.fov_y_deg, out.fov_boost_pct);
+        // The spyglass narrows the frame's FOV, speed boost included (docs/SPYGLASS.md).
+        self.spyglass_view = self.spyglass.frame(dt, self.reduced_motion, &SPYGLASS);
+        self.frame_fov = zoom_fov(
+            effective_fov(viewport.fov_y_deg, out.fov_boost_pct),
+            self.spyglass_view.magnification,
+        );
         let mut scene = self.scene.borrow_mut();
         scene.set_fov(Some(self.frame_fov));
         scene.set_wind(WindView {
@@ -1543,10 +1561,14 @@ impl<S: Scene> Game<S> {
             position,
             yaw_deg,
             pitch_deg,
-            // The frame's FOV, speed boost included: what the renderer draws with.
+            // The frame's FOV, speed boost and spyglass included: what the renderer draws with.
             fov_y_deg: self.frame_fov,
             aspect: viewport.aspect,
             height_px: viewport.height_px,
+            // Inside the zoomed view the sections refine for its magnification (up to the
+            // spyglass's detail boost), outside it for the unzoomed FOV.
+            magnification: self.spyglass_view.magnification,
+            detail_magnification: self.spyglass_view.detail,
         };
         self.lod_camera = Some(camera);
         let mut host = LodHost {
@@ -1562,7 +1584,7 @@ impl<S: Scene> Game<S> {
     }
 
     /// Targets the block under the crosshair from `eye` and outlines it (none while not playing).
-    fn target(&mut self, eye: Option<[f64; 3]>, input: &KeyboardMouseInput) {
+    fn target(&mut self, eye: Option<[f64; 3]>, input: &KeyboardMouseInput, now_ms: f64) {
         let face = self.current.face;
         let t = self.interaction.update(
             self.streamer.store_mut(),
@@ -1584,9 +1606,18 @@ impl<S: Scene> Game<S> {
         } else {
             t
         };
+        // The brush's preview: the ghost of the cells a stroke there would change (BRUSHES.md §3).
+        let target_state = self.brush.target().map_or(0, |t| {
+            self.streamer
+                .store_mut()
+                .get_voxel(t.cell[0], t.cell[1], t.cell[2])
+        });
+        let materials = self.brush.materials(self.selected_material(), target_state);
+        self.brush
+            .update_preview(materials, &mut self.streamer, now_ms);
         self.scene
             .borrow_mut()
-            .set_brush_outline(self.brush.outline().as_ref());
+            .set_brush_outline(self.brush.outline());
         let Some(t) = t else {
             self.scene.borrow_mut().set_block_outline(None, FULL_CELL);
             return;

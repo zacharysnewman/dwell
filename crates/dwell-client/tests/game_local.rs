@@ -795,6 +795,56 @@ fn sprinting_widens_the_view_for_the_renderer_and_the_lod_alike() {
 }
 
 #[test]
+fn the_spyglass_narrows_the_view_for_the_renderer_and_the_lod_alike() {
+    // The spyglass (docs/SPYGLASS.md): the zoomed FOV is the frame's, the LOD camera has it and
+    // the magnification its detail follows, and zooming out restores both.
+    use dwell_look::spyglass::{SPYGLASS, zoom_fov};
+    let mut rig = Rig::new();
+    assert!(rig.run_until(60 * 30, |r| {
+        r.game
+            .as_ref()
+            .is_some_and(|g| g.debug_state().terrain_ready)
+    }));
+    rig.game
+        .as_mut()
+        .unwrap()
+        .enable_lod(dwell_client::game::LodSettings {
+            pixel_error: 2.0,
+            cache_bytes: 256 << 20,
+            detail_distance_m: None,
+            full_mode: false,
+        });
+    rig.run_until(30, |_| false);
+    let base = rig.scene.borrow().fov.unwrap();
+    let m = SPYGLASS.steps[0].magnification;
+    rig.game.as_mut().unwrap().spyglass.toggle(&SPYGLASS);
+    rig.run_until(2, |_| false);
+    let easing = rig.scene.borrow().fov.unwrap();
+    assert!(
+        easing < base && easing > zoom_fov(base, m),
+        "eases in: {easing}"
+    );
+    rig.run_until(60, |_| false);
+    let zoomed = rig.scene.borrow().fov.unwrap();
+    assert!(
+        (zoomed - zoom_fov(base, m)).abs() < 1e-9,
+        "{zoomed} vs {base}"
+    );
+    let lod = rig.game.as_ref().unwrap().lod_camera().unwrap();
+    assert_eq!(lod.fov_y_deg, zoomed, "the LOD selects with the zoomed FOV");
+    assert!((lod.magnification - m).abs() < 1e-9);
+    assert!((lod.detail_magnification - m.min(SPYGLASS.detail_boost)).abs() < 1e-9);
+
+    // Reduced motion: out at once.
+    rig.game.as_mut().unwrap().reduced_motion = true;
+    rig.game.as_mut().unwrap().spyglass.toggle(&SPYGLASS);
+    rig.run_until(1, |_| false);
+    assert_eq!(rig.scene.borrow().fov.unwrap(), base);
+    let lod = rig.game.as_ref().unwrap().lod_camera().unwrap();
+    assert_eq!((lod.fov_y_deg, lod.magnification), (base, 1.0));
+}
+
+#[test]
 fn a_slow_device_walks_without_snapping() {
     // A device drawing ~5.5 frames a second (CI's software renderer with two pages,
     // e2e/play.spec.ts): each frame covers 11 of the server's 60 Hz ticks, over a 150 ms round

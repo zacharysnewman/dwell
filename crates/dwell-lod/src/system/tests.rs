@@ -305,6 +305,8 @@ fn camera(position: Vec3, yaw_deg: f64, pitch_deg: f64) -> LodCamera {
         fov_y_deg: 75.0,
         aspect: 16.0 / 9.0,
         height_px: 1080.0,
+        magnification: 1.0,
+        detail_magnification: 1.0,
     }
 }
 
@@ -1373,4 +1375,78 @@ fn rebuild_all_meshes_every_drawn_section_again() {
         host.generated.len() > generated,
         "dropped cells are regenerated"
     );
+}
+
+/// The spyglass's camera (docs/SPYGLASS.md): the frame's FOV narrowed `m` times, as the client
+/// draws it (dwell-look `zoom_fov`), with the magnification and its detail.
+fn zoomed(mut cam: LodCamera, m: f64, detail: f64) -> LodCamera {
+    cam.fov_y_deg = 2.0
+        * ((cam.fov_y_deg.to_radians() / 2.0).tan() / m)
+            .atan()
+            .to_degrees();
+    cam.magnification = m;
+    cam.detail_magnification = detail;
+    cam
+}
+
+#[test]
+fn the_spyglass_refines_far_terrain_inside_its_narrow_view_only() {
+    // The LOD follows the pixel size the zoomed view really has: 8× magnified, a section 4 km
+    // ahead refines three levels finer (cells 8× smaller), and one 4 km behind stays as it was.
+    // A camera whose narrow FOV is not passed (fov unchanged) does not refine ahead.
+    let settle = |cam: &LodCamera| -> LodSystem {
+        let mut host = Host::new();
+        let mut lod = system(8.0, 1024, 64, 64);
+        for i in 0..2000 {
+            lod.update(cam, f64::from(i) * 16.0, &mut host);
+            if host.pending.is_empty() && lod.active {
+                break;
+            }
+            finish(&mut lod, &mut host, &mut zero, 1.0);
+        }
+        lod
+    };
+    let level_at = |lod: &LodSystem, p: Vec3| -> i32 {
+        leaves(lod.last_selection(), false)
+            .into_iter()
+            .find(|&c| contains(c, p))
+            .map_or(i32::MAX, |c| c.level)
+    };
+    let drawn = |lod: &LodSystem| lod.last_selection().drawn.len();
+    let ahead = [0.0, 0.5, 4000.0];
+    let behind = [0.0, 0.5, -4000.0];
+    let base = camera([0.0, 40.0, 0.0], 0.0, -1.0);
+    let plain = settle(&base);
+    let (a0, b0) = (level_at(&plain, ahead), level_at(&plain, behind));
+    assert!(
+        (4..i32::MAX).contains(&a0),
+        "unzoomed, 4 km ahead: level {a0}"
+    );
+    assert_eq!(a0, b0, "unzoomed, detail is by distance alone");
+
+    let zoom = settle(&zoomed(base, 8.0, 8.0));
+    assert_eq!(level_at(&zoom, ahead), a0 - 3, "8× finer ahead");
+    assert_eq!(level_at(&zoom, behind), b0, "unchanged behind");
+
+    // The detail boost caps the refinement: 8× magnified, refined as 4× (two levels), and with it
+    // the sections the narrow cone adds (on flat ground about (h-FOV / m) / 360° × detail² of the
+    // unzoomed view's: half as many again here).
+    let capped = settle(&zoomed(base, 8.0, 4.0));
+    assert_eq!(level_at(&capped, ahead), a0 - 2);
+    assert_eq!(level_at(&capped, behind), b0);
+    assert!(drawn(&capped) < drawn(&zoom));
+    assert!(
+        drawn(&capped) * 10 < drawn(&plain) * 18,
+        "{} sections zoomed vs {}",
+        drawn(&capped),
+        drawn(&plain)
+    );
+
+    // Not threaded through: the narrow FOV never reaches the LOD camera.
+    let unthreaded = settle(&LodCamera {
+        magnification: 8.0,
+        detail_magnification: 8.0,
+        ..base
+    });
+    assert_eq!(level_at(&unthreaded, ahead), a0);
 }

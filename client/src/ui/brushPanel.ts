@@ -29,7 +29,7 @@ export function brushRows(s: BrushPanelState): [string, string][] {
 
 /** The key hints under the rows (the controls table's Brushes group has them all). */
 export const BRUSH_HINT =
-  'Click paint · Right click in front · Middle/⌥ click pick · Q E preset · Z shape · P performer · [ ] size · V off';
+  'Click paint · Right click in front · Middle/⌥ click pick · Q E preset · Z shape · P performer · [ ] size · \\ preview · V off';
 
 export class BrushPanel {
   private readonly root: HTMLDivElement;
