@@ -13,8 +13,8 @@ pub const OUTLINE: OutlineTunables = OutlineTunables {
             fade_start_m: 32.0,
             fade_end_m: 128.0,
             strength: 0.85,
-            depth_threshold: 0.12,
-            crease_threshold: 0.6,
+            depth_threshold: 0.04,
+            crease_threshold: 0.35,
         },
         OutlineMode {
             name: "creases",
@@ -23,8 +23,8 @@ pub const OUTLINE: OutlineTunables = OutlineTunables {
             fade_start_m: 24.0,
             fade_end_m: 96.0,
             strength: 0.8,
-            depth_threshold: 0.12,
-            crease_threshold: 0.6,
+            depth_threshold: 0.04,
+            crease_threshold: 0.35,
         },
         OutlineMode {
             name: "blocks",
@@ -33,8 +33,8 @@ pub const OUTLINE: OutlineTunables = OutlineTunables {
             fade_start_m: 12.0,
             fade_end_m: 48.0,
             strength: 0.6,
-            depth_threshold: 0.12,
-            crease_threshold: 0.6,
+            depth_threshold: 0.04,
+            crease_threshold: 0.35,
         },
     ],
 };

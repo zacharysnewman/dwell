@@ -966,12 +966,29 @@ fn ink_inv(d: f32) -> f32 {
     return select(0.0, 1.0 / d, d > 0.0);
 }
 
-// One axis's edge strength from three taps of inverse view depth (0: nothing drawn), the pixel's
-// in the middle (dwell-look `axis_edge`). Inverse depth is linear across the screen on a plane, so
-// a flat face at any angle has none: a silhouette is a large second difference (relative to the
-// nearest tap), a crease a change of slope (relative to the steeper side).
-fn ink_axis(wl: f32, w0: f32, wr: f32, edges: u32) -> f32 {
-    let top = max(max(wl, w0), wr);
+// Back from inverse depth (0 stays 0).
+fn ink_dinv(w: f32) -> f32 {
+    return select(0.0, 1.0 / w, w > 0.0);
+}
+
+// How much two slopes of inverse depth differ: 0 equal, 1 where one is flat or they have
+// opposite signs (dwell-look `slope_change`).
+fn ink_change(a: f32, b: f32, top: f32) -> f32 {
+    return abs(a - b) / (abs(a) + abs(b) + 1e-4 * top);
+}
+
+// The edge strength from a 3 × 3 of inverse view depths at the tap distance (row by row from the
+// top left; 0: nothing drawn), the pixel's in the middle (dwell-look `edge_strength`). Inverse
+// depth is linear across the screen on a plane, so a flat face at any angle has no edge: a
+// silhouette is a large second difference across the pixel (relative to the nearest tap), a crease
+// a change of slope, along a row or column or between the outer ones (the surface's normal turns).
+fn ink_edges(w: array<f32, 9>, edges: u32) -> f32 {
+    var top = 0.0;
+    var low = w[0];
+    for (var k = 0; k < 9; k++) {
+        top = max(top, w[k]);
+        low = min(low, w[k]);
+    }
     if (top <= 0.0) {
         return 0.0;
     }
@@ -979,13 +996,14 @@ fn ink_axis(wl: f32, w0: f32, wr: f32, edges: u32) -> f32 {
     let ct = frame.outline_cfg.y;
     var s = 0.0;
     if ((edges & EDGE_DEPTH) != 0u) {
-        let e = abs(wl + wr - 2.0 * w0) / top;
+        let e = max(abs(w[3] + w[5] - 2.0 * w[4]), abs(w[1] + w[7] - 2.0 * w[4])) / top;
         s = max(s, smoothstep(dt, 2.0 * dt, e));
     }
-    if ((edges & EDGE_NORMAL) != 0u && min(min(wl, w0), wr) > 0.0) {
-        let sl = w0 - wl;
-        let sr = wr - w0;
-        let c = abs(sr - sl) / (max(abs(sl), abs(sr)) + 1e-4 * top);
+    if ((edges & EDGE_NORMAL) != 0u && low > 0.0) {
+        let c = max(
+            max(ink_change(w[4] - w[3], w[5] - w[4], top), ink_change(w[4] - w[1], w[7] - w[4], top)),
+            max(ink_change(w[6] - w[0], w[8] - w[2], top), ink_change(w[2] - w[0], w[8] - w[6], top)),
+        );
         s = max(s, smoothstep(ct, 2.0 * ct, c));
     }
     return s;
@@ -1003,8 +1021,23 @@ fn ink_cell(rel: vec3f, n: vec3f) -> vec3i {
     return vec3i(floor(world));
 }
 
+// The view depth the edges are found in: a pixel's farthest sample, and nothing (0) if any sample
+// shows the sky. The composite's mean over the covered samples would let a few samples of a
+// blade's tip or a fading plant's dither pull a pixel forward, which dots lines over the grass.
+fn ink_depth(p: vec2i) -> f32 {
+    var far = 0.0;
+    for (var s = 0; s < SCENE_SAMPLES; s++) {
+        let d = textureLoad(scene_depth, p, s).r;
+        if (d <= 0.0) {
+            return 0.0;
+        }
+        far = max(far, d);
+    }
+    return far;
+}
+
 // The outline at pixel `p` (view ray `ray`): its opacity and the edge's view depth (its nearest
-// tap), from its view depth and its four neighbours' at the tap distance (dwell-look `edge_at`),
+// tap), from the view depths of the 3 × 3 around it at the tap distance (dwell-look `edge_at`),
 // faded out over the distance fade; with block edges, where the cell behind the surface changes
 // from the pixel to a neighbour on it (positions from the depths, the normal from the nearer
 // neighbours).
@@ -1013,22 +1046,23 @@ fn ink_outline(p: vec2i, ray: vec3f) -> vec2f {
     let r = i32(frame.outline.y);
     let size = textureDimensions(scene_color);
     let dims = vec2i(size);
-    let q = array(p + vec2i(-r, 0), p + vec2i(r, 0), p + vec2i(0, -r), p + vec2i(0, r));
-    var d: array<f32, 4>;
-    for (var k = 0; k < 4; k++) {
-        d[k] = scene_depth_at(clamp(q[k], vec2i(0), dims - 1)).x;
+    var w: array<f32, 9>;
+    for (var k = 0; k < 9; k++) {
+        let o = vec2i(k % 3 - 1, k / 3 - 1) * r;
+        w[k] = ink_inv(ink_depth(clamp(p + o, vec2i(0), dims - 1)));
     }
-    let d0 = scene_depth_at(p).x;
-    let w0 = ink_inv(d0);
-    let wl = ink_inv(d[0]);
-    let wr = ink_inv(d[1]);
-    let wu = ink_inv(d[2]);
-    let wd = ink_inv(d[3]);
-    let near = max(max(max(w0, wl), max(wr, wu)), wd);
+    var near = 0.0;
+    for (var k = 0; k < 9; k++) {
+        near = max(near, w[k]);
+    }
     if (near <= 0.0) {
         return vec2f(0.0);
     }
-    var s = max(ink_axis(wl, w0, wr, edges), ink_axis(wu, w0, wd, edges));
+    var s = ink_edges(w, edges);
+    // Left, right, up and down: their offsets and view depths.
+    let q = array(p + vec2i(-r, 0), p + vec2i(r, 0), p + vec2i(0, -r), p + vec2i(0, r));
+    let d = array(ink_dinv(w[3]), ink_dinv(w[5]), ink_dinv(w[1]), ink_dinv(w[7]));
+    let d0 = ink_dinv(w[4]);
     if ((edges & EDGE_BLOCK) != 0u && d0 > 0.0 && s < 1.0) {
         let fd = vec2f(size);
         let p0 = ray * d0;
@@ -2037,9 +2071,12 @@ mod tests {
         // The edge rule of dwell-look's outline.rs: inverse depth's second difference and slope
         // change, the nearest tap's depth, and the distance fade over the ray's length so far
         // pixels get none (dwell-look's `far_pixels_get_no_outline` pins the same rule).
-        let axis = body("ink_axis");
-        assert!(axis.contains("let e = abs(wl + wr - 2.0 * w0) / top;"));
-        assert!(axis.contains("let c = abs(sr - sl) / (max(abs(sl), abs(sr)) + 1e-4 * top);"));
+        let rule = body("ink_edges");
+        assert!(rule.contains(
+            "let e = max(abs(w[3] + w[5] - 2.0 * w[4]), abs(w[1] + w[7] - 2.0 * w[4])) / top;"
+        ));
+        assert!(rule.contains("ink_change(w[6] - w[0], w[8] - w[2], top)"));
+        assert!(body("ink_change").contains("abs(a - b) / (abs(a) + abs(b) + 1e-4 * top)"));
         let edge = body("ink_outline");
         assert!(edge.contains("let depth = 1.0 / near;"));
         assert!(edge.contains(

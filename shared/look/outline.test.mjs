@@ -36,7 +36,7 @@ test('a mode added by data alone is in the output, its edges as bits', () => {
     fadeEndM: 20,
     strength: 1,
     depthThreshold: 0.2,
-    creaseThreshold: 1,
+    creaseThreshold: 0.5,
   });
   const rs = outlineRust(validateOutline(d, palette()));
   assert.match(rs, /name: "thick-blocks",\n {12}edges: 5,\n {12}width_px: 3\.0,/);

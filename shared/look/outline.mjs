@@ -81,7 +81,7 @@ export function validateOutline(data, palette) {
     if (m.fadeEndM <= m.fadeStartM) fail(`${at}.fadeEndM must be greater than ${at}.fadeStartM`);
     checkNumber(`${at}.strength`, m.strength, 0, 1);
     checkNumber(`${at}.depthThreshold`, m.depthThreshold, 0.001, 1);
-    checkNumber(`${at}.creaseThreshold`, m.creaseThreshold, 0.01, 4);
+    checkNumber(`${at}.creaseThreshold`, m.creaseThreshold, 0.01, 0.5);
   });
   return { ...data, inkRgb: ink };
 }

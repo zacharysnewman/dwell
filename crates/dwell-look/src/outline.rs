@@ -107,41 +107,53 @@ pub fn distance_fade(distance_m: f64, start_m: f64, end_m: f64) -> f64 {
     1.0 - smoothstep(start_m, end_m, distance_m)
 }
 
-/// One axis's edge strength (0–1) from three taps of inverse view depth (`1 / depth`; 0 where
-/// nothing is drawn: the sky is at infinity), the pixel's in the middle. Inverse depth is linear
-/// across the screen on any plane, so its second difference is zero on a flat face at any angle:
-/// a silhouette is a large one (relative to the nearest tap) and a crease is a change of slope
-/// (relative to the steeper side).
-pub fn axis_edge(w: [f64; 3], edges: u32, depth_t: f64, crease_t: f64) -> f64 {
-    let [wl, w0, wr] = w;
-    let top = wl.max(w0).max(wr);
+/// How much two slopes of inverse depth differ: 0 equal, 1 where one is flat or they have opposite
+/// signs. `top` (the nearest tap's inverse depth) scales the floor that keeps two near-flat slopes
+/// from reading as a turn.
+pub fn slope_change(a: f64, b: f64, top: f64) -> f64 {
+    (a - b).abs() / (a.abs() + b.abs() + 1e-4 * top)
+}
+
+/// The edge strength (0–1) from a 3 × 3 of inverse view depths (`1 / depth`; 0 where nothing is
+/// drawn: the sky is at infinity) at the tap distance, row by row from the top left, the pixel's in
+/// the middle. Inverse depth is linear across the screen on any plane, so a flat face at any angle
+/// has no edge: a silhouette is a large second difference across the pixel (relative to the
+/// nearest tap) and a crease a change of slope along the middle row or column or between the outer
+/// ones (the surface's normal turns: a block's side against the ground it stands on, where the
+/// depth barely jumps).
+pub fn edge_strength(w: [f64; 9], edges: u32, depth_t: f64, crease_t: f64) -> f64 {
+    let top = w.iter().copied().fold(0.0, f64::max);
+    let low = w.iter().copied().fold(f64::INFINITY, f64::min);
     if top <= 0.0 {
         return 0.0;
     }
     let mut s: f64 = 0.0;
     if edges & EDGE_DEPTH != 0 {
-        let e = (wl + wr - 2.0 * w0).abs() / top;
+        let e = (w[3] + w[5] - 2.0 * w[4])
+            .abs()
+            .max((w[1] + w[7] - 2.0 * w[4]).abs())
+            / top;
         s = s.max(smoothstep(depth_t, 2.0 * depth_t, e));
     }
-    if edges & EDGE_NORMAL != 0 && wl.min(w0).min(wr) > 0.0 {
-        let (sl, sr) = (w0 - wl, wr - w0);
-        let c = (sr - sl).abs() / (sl.abs().max(sr.abs()) + 1e-4 * top);
+    if edges & EDGE_NORMAL != 0 && low > 0.0 {
+        let c = slope_change(w[4] - w[3], w[5] - w[4], top)
+            .max(slope_change(w[4] - w[1], w[7] - w[4], top))
+            .max(slope_change(w[6] - w[0], w[8] - w[2], top))
+            .max(slope_change(w[2] - w[0], w[8] - w[6], top));
         s = s.max(smoothstep(crease_t, 2.0 * crease_t, c));
     }
     s
 }
 
-/// The outline at a pixel from its view depth and its four neighbours' at the tap distance
-/// (`[left, right, up, down]`; 0: nothing drawn), with `ray_len` the length of its view ray per
-/// unit of view depth: (opacity, the edge's view depth: its nearest tap). The depth and normal
-/// kinds of the shader's rule; the block kind needs positions and stays in the shader.
-pub fn edge_at(depth: f64, around: [f64; 4], ray_len: f64, m: &OutlineMode) -> (f64, f64) {
-    let inv = |d: f64| if d > 0.0 { 1.0 / d } else { 0.0 };
-    let w0 = inv(depth);
-    let [l, r, u, d] = around.map(inv);
-    let (dt, ct) = (m.depth_threshold, m.crease_threshold);
-    let s = axis_edge([l, w0, r], m.edges, dt, ct).max(axis_edge([u, w0, d], m.edges, dt, ct));
-    let near = w0.max(l).max(r).max(u).max(d);
+/// The outline at a pixel from the view depths of the 3 × 3 around it at the tap distance (row by
+/// row from the top left, the pixel's in the middle; 0: nothing drawn), with `ray_len` the length
+/// of its view ray per unit of view depth: (opacity, the edge's view depth: its nearest tap). The
+/// depth and normal kinds of the shader's rule; the block kind needs positions and stays in the
+/// shader.
+pub fn edge_at(depths: [f64; 9], ray_len: f64, m: &OutlineMode) -> (f64, f64) {
+    let w = depths.map(|d| if d > 0.0 { 1.0 / d } else { 0.0 });
+    let s = edge_strength(w, m.edges, m.depth_threshold, m.crease_threshold);
+    let near = w.iter().copied().fold(0.0, f64::max);
     if near <= 0.0 {
         return (0.0, 0.0);
     }
@@ -156,6 +168,16 @@ mod tests {
 
     fn mode(name: &str) -> &'static OutlineMode {
         OUTLINE.mode(name).unwrap()
+    }
+
+    /// Inverse depths of the plane `w = a + bx·x + by·y` at the 3 × 3 (x right, y down).
+    fn plane(a: f64, bx: f64, by: f64) -> [f64; 9] {
+        std::array::from_fn(|k| a + bx * (k % 3) as f64 - bx + by * (k / 3) as f64 - by)
+    }
+
+    /// A 3 × 3 of view depths: the left column `left`, the rest `rest`.
+    fn split(left: f64, rest: f64) -> [f64; 9] {
+        std::array::from_fn(|k| if k % 3 == 0 { left } else { rest })
     }
 
     #[test]
@@ -221,24 +243,28 @@ mod tests {
     #[test]
     fn a_flat_face_has_no_edge_at_any_angle() {
         // Inverse depth is linear across the screen on a plane.
-        for slope in [0.0, 1e-4, 0.01, 0.05] {
-            let w = [0.1 - slope, 0.1, 0.1 + slope];
-            assert!(
-                axis_edge(w, EDGE_DEPTH | EDGE_NORMAL, 0.12, 0.6) < 1e-9,
-                "slope {slope}"
-            );
+        let all = EDGE_DEPTH | EDGE_NORMAL;
+        for (bx, by) in [(0.0, 0.0), (1e-4, 0.0), (0.0, 0.01), (0.003, -0.02)] {
+            let s = edge_strength(plane(0.1, bx, by), all, 0.04, 0.35);
+            assert!(s < 1e-9, "slope {bx}, {by}: {s}");
         }
     }
 
     #[test]
     fn a_silhouette_and_a_crease_are_edges() {
+        let all = EDGE_DEPTH | EDGE_NORMAL;
         // A block at 10 m in front of ground at 20 m, and against the sky.
-        assert_eq!(axis_edge([0.1, 0.1, 0.05], EDGE_DEPTH, 0.12, 0.6), 1.0);
-        assert_eq!(axis_edge([0.1, 0.1, 0.0], EDGE_DEPTH, 0.12, 0.6), 1.0);
-        // A wall facing the eye (flat in depth) meeting a floor that recedes: only creases see it.
-        let crease = [0.1, 0.1, 0.1 - 0.0006];
-        assert!(axis_edge(crease, EDGE_DEPTH, 0.12, 0.6) < 0.01);
-        assert!(axis_edge(crease, EDGE_NORMAL, 0.12, 0.6) > 0.5);
+        assert_eq!(edge_strength(split(0.05, 0.1), EDGE_DEPTH, 0.04, 0.35), 1.0);
+        assert_eq!(edge_strength(split(0.0, 0.1), EDGE_DEPTH, 0.04, 0.35), 1.0);
+        // A block's side facing the eye (flat in depth) against the ground beside it, which
+        // recedes up the screen and meets it at the same depth in the middle row: the depth hardly
+        // jumps, so only the turn of the surface finds it (the columns' slopes differ).
+        let mut w = plane(0.1, 0.0, 0.0);
+        for k in [0, 3, 6] {
+            w[k] = 0.1 + 0.0006 * ((k / 3) as f64 - 1.0);
+        }
+        assert!(edge_strength(w, EDGE_DEPTH, 0.04, 0.35) < 0.01);
+        assert!(edge_strength(w, all, 0.04, 0.35) > 0.9);
     }
 
     #[test]
@@ -246,7 +272,7 @@ mod tests {
         // A block's silhouette against the sky: inked near, faded by the fade's end.
         for name in ["silhouette", "creases", "blocks"] {
             let m = mode(name);
-            let at = |d: f64| edge_at(d, [d, 0.0, d, d], 1.0, m).0;
+            let at = |d: f64| edge_at(split(0.0, d), 1.0, m).0;
             assert!(
                 (at(m.fade_start_m * 0.5) - m.strength).abs() < 1e-9,
                 "{name}: full near"
@@ -259,16 +285,18 @@ mod tests {
         // The distance is along the ray (an off-axis pixel is farther than its view depth).
         let m = mode("silhouette");
         let d = m.fade_end_m * 0.8;
-        assert_eq!(edge_at(d, [d, 0.0, d, d], 1.5, m).0, 0.0);
+        assert_eq!(edge_at(split(0.0, d), 1.5, m).0, 0.0);
         // The sky alone has no edge.
-        assert_eq!(edge_at(0.0, [0.0; 4], 1.0, m), (0.0, 0.0));
+        assert_eq!(edge_at([0.0; 9], 1.0, m), (0.0, 0.0));
     }
 
     #[test]
     fn the_edge_is_as_near_as_its_nearest_tap() {
         // A sky pixel beside a block 5 m away is the block's silhouette, at its depth.
-        let (a, d) = edge_at(0.0, [5.0, 0.0, 0.0, 0.0], 1.0, mode("silhouette"));
-        assert_eq!(d, 5.0);
+        let mut d = [0.0; 9];
+        d[3] = 5.0;
+        let (a, depth) = edge_at(d, 1.0, mode("silhouette"));
+        assert_eq!(depth, 5.0);
         assert!(a > 0.0);
     }
 }
