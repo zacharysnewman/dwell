@@ -88,7 +88,15 @@ fn run(a: &Approach, angle: f32, gait: Gait, start: f32) -> Outcome {
     // Settle on the ground first, then go.
     w.set_input(move |t, _| {
         let go = t >= SETTLE;
-        input(0.0, f32::from(u8::from(go)), run_held && go, false, crouch && go, yaw, 0.0)
+        input(
+            0.0,
+            f32::from(u8::from(go)),
+            run_held && go,
+            false,
+            crouch && go,
+            yaw,
+            0.0,
+        )
     });
     let speed = speed_of(gait);
     let arrive = ticks(start / (speed * c)) + ticks(0.3) + SETTLE;
@@ -132,7 +140,15 @@ fn run(a: &Approach, angle: f32, gait: Gait, start: f32) -> Outcome {
             let g = &w.c(e).ground;
             eprintln!(
                 "{t:3} pos {:.3} {:.3} feet {:.3} vel {:.2} {:.2} {:.2} grounded {} gap {:.3} {:?}",
-                p.x, p.z, feet, vel.x, vel.y, vel.z, g.grounded, g.gap, w.c(e).state
+                p.x,
+                p.z,
+                feet,
+                vel.x,
+                vel.y,
+                vel.z,
+                g.grounded,
+                g.gap,
+                w.c(e).state
             );
         }
         if on_top && feet < a.from + a.top - 0.08 {
@@ -183,7 +199,12 @@ fn matrix(name: &str, a: &Approach, angles: &[f32]) -> (usize, usize, Vec<String
 
 fn assert_matrix(name: &str, a: &Approach, angles: &[f32]) {
     let (fails, total, lines) = matrix(name, a, angles);
-    assert_eq!(fails, 0, "{name}: {fails} of {total} failed:\n{}", lines.join("\n"));
+    assert_eq!(
+        fails,
+        0,
+        "{name}: {fails} of {total} failed:\n{}",
+        lines.join("\n")
+    );
 }
 
 // --- the geometry -------------------------------------------------------------------------------
@@ -378,7 +399,10 @@ fn trace_one() {
         "crouch" => Gait::Crouch,
         _ => Gait::Walk,
     };
-    eprintln!("{:?}", run(&ramp(), f[1].parse().unwrap(), gait, f[2].parse().unwrap()));
+    eprintln!(
+        "{:?}",
+        run(&ramp(), f[1].parse().unwrap(), gait, f[2].parse().unwrap())
+    );
 }
 
 /// Jumps toward a step, taking off `distance` before its face: (landed on top, ticks stalled
@@ -494,7 +518,10 @@ fn a_step_under_a_low_ceiling_is_not_stepped_onto() {
             assert!(w.feet(e) < 0.05, "standing: feet {}", w.feet(e));
             assert!(w.pos(e).z < 2.0, "standing: {}", w.pos(e));
         }
-        assert!(highest_head <= 2.1 + 0.01, "crouch {crouch}: head {highest_head}");
+        assert!(
+            highest_head <= 2.1 + 0.01,
+            "crouch {crouch}: head {highest_head}"
+        );
     }
 }
 
@@ -539,7 +566,13 @@ fn a_sprint_slide_steps_up_a_half_step_and_slides_on() {
             stepped |= w.feet(e) > 0.45;
         }
         assert!(stepped, "{angle}°: never stepped up, at {}", w.pos(e));
-        assert!(slowest > 4.0, "{angle}°: slowed to {slowest} m/s at the step");
-        assert!(w.c(e).sprint_slide.active, "{angle}°: the slide ended at the step");
+        assert!(
+            slowest > 4.0,
+            "{angle}°: slowed to {slowest} m/s at the step"
+        );
+        assert!(
+            w.c(e).sprint_slide.active,
+            "{angle}°: the slide ended at the step"
+        );
     }
 }

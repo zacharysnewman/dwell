@@ -2431,7 +2431,7 @@ architectural summary.
 
 | Interaction | Behavior | Authority |
 |---|---|---|
-| Voxel terrain | Collide; step-up ≤ 0.45 m (slabs, debris); full blocks need a jump (optional auto-jump); ladders are climbable materials; water switches to the swim layer | Server; client predicts |
+| Voxel terrain | Collide; step-up ≤ 0.55 m (slabs, debris) from any approach angle, with headroom checked (PLAYER_CONTROLLER.md §4); full blocks need a jump (optional auto-jump); ladders are climbable materials; water switches to the swim layer | Server; client predicts |
 | Player → Tier 1 body | Solver push, capped by contact mass scaling (`maxPushForce`, `pushableMassLimit`) | Server only; client does not predict body motion |
 | Tier 1 body → player | Solver push, absorbed as external velocity and decayed | Server; client corrected via reconciliation |
 | Standing on a Tier 1 body | Carried by the body's linear + angular velocity at the player's position (PPC platform model); camera turns with it | Server; client predicts in the body's frame (§9.4) |
