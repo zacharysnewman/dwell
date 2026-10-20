@@ -211,18 +211,50 @@ WASM builds compute them identically (§8.3).
   `explained = max(target_y, ground's vertical velocity)`) also subtracts the drive lift: the
   solver rolls the capsule over the edge of a step just climbed with up to ~2.6 m/s of upward
   velocity, which would otherwise read as a launch.
-- **Step-up nudge.** After lifting onto a step, the capsule also moves forward by
-  `radius + step_probe_distance − ring_radius + 1 cm`, so the probe ring (inside the capsule) is
-  over the step and the ground snap doesn't pull the player back down. The nudge is part of the
-  tick's movement, not extra: that tick's horizontal contribution drops by `nudge / dt` along the
-  move (never below zero), so stepping onto a half step, landing on a block's edge from a jump, or
-  walking up a slope (a step-up every tick) moves no faster than the speed
-  (`stepping_up_never_moves_the_player_faster_than_its_speed`). `current` is unchanged, so full
-  speed resumes next tick.
+- **The step-up** (`try_step` / `find_step` in `controller.rs`; reworked 2026-10-20 after the
+  owner's playtest: *"player step up doesn't always work, sometimes you get hung up on the step and
+  run into it instead"*). The PPC's TryStep casts one ray down `radius + step_probe_distance` ahead
+  along the move. At more than ~15° off a step's normal that point lies in front of the face, so
+  the player slid along the step instead of climbing it (564 of the 903 approaches in
+  `tests/step_up.rs` failed: everything 20° or more off the normal, slow approaches that stalled
+  against the face for a tick first, the second of two stairs, outside corners, and a ramp up to a
+  step, where the step was measured from the feet rather than the ground at its foot). It also
+  lifted the player into a low ceiling. Now, in the horizontal pass, after this tick's velocity is
+  known and only while grounded (and not on ground that slides):
+  1. **Directions.** The step is looked for along the tick's horizontal velocity (relative to the
+     ground) and, when it differs by more than 10°, along the move input's direction.
+  2. **The face.** Rays from the capsule's axis over the front half circle (7 directions, 30°
+     apart) at `step_face_heights` above the feet (0.05 m for short steps, 0.25 m to see over the
+     ground rising to a step on a ramp) find faces steeper than `max_slope_angle` (walkable ground
+     rising ahead is a slope: the ground following walks up it, with no step-up). A face counts
+     when the move goes into it (at least cos 87°) and the capsule reaches it this tick: the axis's
+     distance to the face's plane, less the tick's travel into it, is under `radius` + 5 mm.
+     Faces are tried nearest first.
+  3. **The top.** The ground at the face's foot is read 2 cm in front of it; its rise above the
+     feet (a ramp up to the step) may be at most `step_max_rise` (0.25 m). The step's top is read
+     `step_probe_distance` (5 cm) past the face, from `max_step_height` + 5 cm above the foot: it
+     must be at most `max_step_height` above the foot and no steeper than `slide.min_angle` (never
+     onto ground that slides, §6.8). The lift is the top less the feet (the step plus the rise).
+  4. **Room.** The capsule (slimmed by 2 cm) must fit lifted (a ceiling over the step stops it),
+     shifted, and after this tick's and the next tick's move.
+  5. **Footing.** The ground ring (radius `0.9 × radius`) must stand on the step after the move,
+     so the ground snap does not pull the player back down: the axis within `ring_radius −
+     step_footing` of the face. The player keeps moving at its own velocity (the step is a lift,
+     not a forward jump), and on the tick after a step-up the vertical pass **holds** the step's
+     height (the ground snap ignores the gap, and the probe reaches down two steps that tick, so the
+     player stays grounded), so two ticks of motion may take the axis over. When they don't (a slow
+     crouch-walk, or nearly along the face) the step also **shifts** the player toward the face by
+     the shortfall; at a step's outside corner, toward the step's top in 2 cm steps up to 12 cm.
+     The shift is part of the tick's movement: that tick's horizontal contribution drops by
+     `shift / dt` along it (never below zero, `pay_nudge`), so a step-up never moves the player
+     faster than its speed (`stepping_up_never_moves_the_player_faster_than_its_speed`).
+  6. The player is lifted (and shifted); the probe's ground for the vertical pass becomes the
+     step's top (gap 0, its normal), so the ground following doesn't add the slope it stood on.
+  All of it is voxel and Rapier queries in the face-local frame, the same on the server and the
+  predicting client (`tests/step_up.rs` passes under `wasm32-wasip1` too, and the golden trace
+  matches there).
 - **Step grace.** For 6 ticks after a step-up, only an upward deviation above 1.5 m/s counts as a
   launch: the solver nudges the capsule up as it crosses the step's edge.
-- **Step probe height.** The step ray starts at `max(centre, feet + max_step_height + 5 cm)`, so a
-  crouched player (centre below a half step's top) can still step onto half steps.
 
 ---
 
@@ -347,7 +379,9 @@ openings), **crouch height 0.9** (fits 1-tall crawlspaces with skin to spare).
   runs in a face-local frame there (§11, [`BIFACIAL_WORLD.md`](./BIFACIAL_WORLD.md) §6).
 - `max_step_height` 0.55 m (PPC: 0.45): half-height steps (0.5 m) are stepped up without leaving
   the ground, full 1 m blocks need a **jump** (jump height 1.25 m clears one block); step-up also
-  applies to Tier 1 bodies (the step ray casts moving bodies too). Walking off a 1 m ledge is a
+  applies to Tier 1 bodies (the step's rays cast moving bodies too). It works from any approach up
+  to 87° off the step's normal, at any speed, onto two-step stairs, round outside corners, beside
+  walls and at a ramp's top (§4, `tests/step_up.rs`). Walking off a 1 m ledge is a
   short fall (larger than the step reach), so there is no stair snapping on full blocks
   (`a_one_metre_ledge_is_a_fall_not_a_step`).
 - **Auto-jump** (Dwell addition, config `movement.auto_jump`, on in the touch preset
@@ -544,7 +578,8 @@ Fortnite-style. The numbers below are defaults chosen for this, all data
   adds `gravity × slope_gravity × tilt` (`slope_gravity` 1). On flat ground a slide from a sprint
   (8 → 9.5 m/s) lasts 1.3 s and ~7 m; on a 15° slope downhill gravity (5.2 m/s²) out-pulls friction
   and the slide speeds up to `max_speed` (14 m/s) and goes on while the slope does; uphill it lasts
-  ~0.7 s. It steps up half steps as walking does (the nudge paid the same way, §4). On ground
+  ~0.7 s. It steps up half steps as walking does (along the slide's direction; any shift paid the
+  same way, §4). On ground
   steeper than `slide.min_angle` the steep slide (§6.8) moves the player instead; the sprint slide
   stays on and carries on from that momentum where the ground is gentle again.
 - **Steering.** Move input (camera-relative, as walking) turns the slide's direction toward it at
@@ -627,7 +662,8 @@ PPC default for voxels.
 | | `steer_rate` / `cooldown_ticks` | 90 °/s / 30 ticks (0.5 s, at most 255: the wire's `u8`) | — | Turning toward the move input; before another slide |
 | `damage` ◆ | `fall_damage_min_speed` / `fall_damage_per_speed` | 12 m/s / 8 per m/s | — | From the `LANDED` event's impact speed |
 | | `crush_speed` / `crush_ticks` | 4 m/s / 6 | — | Phase 20 |
-| `advanced` | `step_probe_distance` / `probe_ring_radius` / `wall_check_distance` | 0.01 m / 0.9 / 0.16 m | same | |
+| `advanced` | `step_probe_distance` ◆ / `probe_ring_radius` / `wall_check_distance` | 0.05 m / 0.9 / 0.16 m | 0.01 / same / same | The step's top is read this far past its face (§4) |
+| | `step_face_heights` ◆ / `step_footing` ◆ / `step_max_rise` ◆ | [0.05, 0.25] m / 0.01 m / 0.25 m | — | Dwell's step-up (§4): the face rays' heights; the step's edge this far inside the ring after a step; the most the ground rises to a step's foot (`max_step_lift()` = `max_step_height + step_max_rise`) |
 | | `external_absorb_threshold` | 0.01 m/s | same | Far above native↔WASM noise (none measured, §8.3) |
 | | `max_platform_yaw_speed` | 360 °/s | same | |
 
@@ -770,8 +806,10 @@ velocities and states bit-identical over all 600 ticks, so no divergence eats in
   changes with crouching) and interpolated between ticks. The sim moves the body in jumps the
   camera must not show, and each is folded into an offset that decays:
   - **Steps** (PPC `SmoothSteps`, extended to both directions): a grounded feet change of 0.1 m up
-    to `max_step_height` in one tick (the step-up lift, or the ground snap down a stair) decays at
-    4 m/s plus 6/s of the remaining offset, so it never lags more than one step.
+    to `max_step_lift()` (+ 5 cm) in one tick (the step-up lift, a ramp's rise to the step
+    included, or the ground snap down a stair) decays at 4 m/s plus 6/s of the remaining offset,
+    so it never lags more than one step. `tests/step_up.rs` checks that no step-up lifts further in
+    a tick than this.
   - **Crouch**: the sim's crouch is instant, and in mid-air it moves the feet by the height
     difference (the head stays put). The eye change on the crouch tick, less the tick's own
     vertical motion, decays at 12/s.
@@ -812,7 +850,7 @@ launch-pad knockback test is a server-issued knockback.
 | PPC suite | Dwell equivalent |
 |---|---|
 | Phase1Skeleton | `movement.rs`: the body's settings, stands still without drift or tipping; a heavy cluster pushes the player |
-| Phase2Movement | `movement.rs`: probes, speeds, accel/decel/reverse, walls, no diagonal speed-up, step-up on half steps, blocked by full blocks, air control, external absorption and decay |
+| Phase2Movement | `movement.rs`: probes, speeds, accel/decel/reverse, walls, no diagonal speed-up, step-up on half steps, blocked by full blocks, air control, external absorption and decay. `step_up.rs` (Dwell): the step-up's approach matrix — ½ m Tier 1 and voxel steps, two-step stairs, an outside corner, a step beside a wall, a step at a 20° ramp's top; 0–80° off the face's normal; walk, sprint and crouch; 7 starting distances across a tick's travel — where every approach climbs without stalling (under 40 % of its speed), leaving the ground, dropping back or lifting further than the camera smooths; jumps onto a ½ m step and a 1 m block from every reachable take-off; no step into a low ceiling (crouched under it, a step); no step while walking along a face; a sprint slide stepping up and sliding on |
 | Phase3Vertical | `vertical_crouch.rs`: fall and land event, jump apex, buffer, coyote, no double jump, ceiling, launch, a 20° ramp |
 | Phase4Crouch | `vertical_crouch.rs`: feet planted, crouch into a crawlspace, blocked stand-up, mid-air tuck |
 | Phase5Platform | `platform_climb_swim.rs`: riding translating, rotating, elevating and dynamic Tier 1 bodies; jump-off keeps momentum; explosion |
