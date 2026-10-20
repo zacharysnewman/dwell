@@ -8,6 +8,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { blockFluid, fluidsRust, readFluids } from './fluids.mjs';
 import { FACINGS as SHAPE_FACINGS, SLOPE_SHAPES, cubeShape, namedShape, slabShape, slopeShape } from './shapes.mjs';
+import { blockTiles, sideUnderRules } from './faces.mjs';
 import { NEIGHBOURHOODS, aroundOf, buildTable, describe, summary } from './adaptive.mjs';
 import { loadSounds } from '../sounds/load.mjs';
 import { checkBlockSounds } from '../sounds/validate.mjs';
@@ -226,8 +227,12 @@ for (const ns of namespaces) {
     }
     if (def.shape === 'shaped' && !def.slopeFamily) fail(`${id}: shaped blocks come from shapeFamilies`);
     if (def.adaptive !== undefined && typeof def.adaptive !== 'boolean') fail(`${id}: adaptive is true or false`);
-    if (def.adaptive && (def.shape !== 'full' || props.length || look !== 'cube'))
-      fail(`${id}: only a full cube block without properties can be adaptive (it is shaped from its neighbours)`);
+    // An adaptive block's only property may be `flooded` (false, true): the sea's water in its open
+    // part (docs/WATER_RENDERING.md §9). Anything else would be shaped over by its neighbours.
+    const floodedOnly =
+      props.length === 1 && props[0].name === 'flooded' && props[0].values.join() === 'false,true';
+    if (def.adaptive && (def.shape !== 'full' || (props.length && !floodedOnly) || look !== 'cube'))
+      fail(`${id}: only a full cube block, without properties but flooded [false, true], can be adaptive (it is shaped from its neighbours)`);
     const count = props.reduce((n, p) => n * p.values.length, 1);
     const fluid = blockFluid(id, def, fluids);
     const block = { id, def, props, first: states.length, count, look, fluid };
@@ -253,14 +258,19 @@ for (const b of blocks) {
   for (const name of b.def.placeOn ?? []) {
     if (!blocks.some((o) => o.id === name)) fail(`${b.id}: placeOn names unknown block ${name}`);
   }
+  // Side tiles chosen by the block above (faces.mjs).
+  try {
+    b.sideUnder = sideUnderRules(b.id, b.def, blocks.map((o) => o.id));
+  } catch (e) {
+    fail(e.message);
+  }
 }
 // The terrain shader finds a face's grid from its texture tile (dwell-mesh tile_grids), so every
 // block drawn with a tile (an untextured one with `plain`) must want the same grid, or none.
 {
   const gridOfTile = new Map();
   for (const b of blocks) {
-    const t = b.def.textures;
-    const tiles = t ? (typeof t === 'string' ? [t] : [t.top, t.side, t.bottom]) : ['plain'];
+    const tiles = b.def.textures ? blockTiles(b.def) : ['plain'];
     const want = b.def.grid ? `every ${b.def.grid.every}, strength ${b.def.grid.strength}` : 'no grid';
     for (const tile of tiles) {
       const seen = gridOfTile.get(tile);
@@ -591,6 +601,7 @@ if (!fixture) writeFileSync(join(root, 'client/src/world/blocks.gen.ts'), ts.joi
       `color: 0x${d.color.replace('#', '').toLowerCase()}`,
       `opacity: ${rf(opacityOf(st.block))}`,
       `textures: ${t ? `Some(Textures { top: ${rstr(t.top)}, side: ${rstr(t.side)}, bottom: ${rstr(t.bottom)} })` : 'None'}`,
+      `side_under: &[${st.block.sideUnder.map((r) => `SideUnder { above: ${rstr(r.above)}, side: ${rstr(r.side)} }`).join(', ')}]`,
       `grid: ${d.grid ? `Some(Grid { every: ${d.grid.every}, strength: ${rf(d.grid.strength)} })` : 'None'}`,
       `render: RenderMode::${pascal(renderOf(d))}`,
       `cross: ${crossRs(d)}`,

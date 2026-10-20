@@ -204,7 +204,7 @@ fn blocks_of_each_render_mode_added_by_data_alone_go_to_their_meshes() {
         id("test:hedge"),
         id("test:glass"),
         id("test:reed"),
-        id("dwell:stone"),
+        id("dwell:stone[flooded=false]"),
         id("dwell:water"),
     );
     let kinds = Kinds::new(&STATES, &FLUIDS, Some(water));
@@ -778,6 +778,95 @@ fn a_shaped_bank_beside_water_holds_water_in_its_open_part() {
     assert!(!between);
 }
 
+/// A shore: water at row 3 east of x = 6, sand banks west of it (some a block higher, for step
+/// slopes and ramps), a dry bank cell that only touches water diagonally, and water open to the
+/// air at its south edge.
+fn shore_scene() -> Vec<(i32, i32, i32, u16)> {
+    let sand = require("dwell:sand");
+    let mut cells = Vec::new();
+    for z in 2..10 {
+        for x in 0..12 {
+            cells.push((x, 2, z, sand));
+            let bank = x < 6 || (x == 6 && z == 5);
+            cells.push((x, 3, z, if bank { sand } else { water() }));
+            if x < 3 || (x == 4 && z == 7) {
+                cells.push((x, 4, z, sand));
+            }
+        }
+    }
+    // A dry bank cell beside a bank cell whose only water is diagonal.
+    cells.retain(|&(x, y, z, _)| !(y == 3 && (x == 6 || x == 7) && z == 9));
+    cells.push((6, 3, 9, sand));
+    cells
+}
+
+#[test]
+fn fluid_side_faces_stand_only_over_the_open_part_beside_them_and_under_the_fluids_surface() {
+    //! Regression (owner, 2026-10-20: flat blue walls along shores): a water cell's and a flooded
+    //! bank's side faces were drawn over the whole cell side, up to the cell's top (above the
+    //! water's drawn surface) and over the solid part of a shaped neighbour (behind its slope or
+    //! ramp). A fluid side face now covers only the part of its side where the neighbour is open,
+    //! up to the fluid's drawn surface (WATER_RENDERING.md §9).
+    let cells = shore_scene();
+    let at = |x: i32, y: i32, z: i32| {
+        cells
+            .iter()
+            .rev()
+            .find(|c| (c.0, c.1, c.2) == (x, y, z))
+            .map_or(0, |c| c.3)
+    };
+    let m = mesh(&cells, false).transparent;
+    let water_id = f32::from(dwell_blocks::fluid("dwell:water").expect("water"));
+    let top = 1.0 - dwell_blocks::require_fluid("dwell:water").surface_drop;
+    let mut sides = 0;
+    for t in m.indices.chunks_exact(3) {
+        let [a, b, c] = [t[0], t[1], t[2]].map(|i| vertex(&m.positions, i));
+        // Every fluid face carries the water's fluid id (the water shader's parameters).
+        for &i in t {
+            assert_eq!(m.fluids[i as usize], water_id);
+        }
+        let n = [
+            f64::from(m.normals[t[0] as usize * 3]),
+            f64::from(m.normals[t[0] as usize * 3 + 1]),
+            f64::from(m.normals[t[0] as usize * 3 + 2]),
+        ];
+        if n[1] != 0.0 {
+            continue;
+        }
+        sides += 1;
+        let centre = [0, 1, 2].map(|i| (a[i] + b[i] + c[i]) / 3.0);
+        // The face's own cell: its side stops at the drawn surface unless water is over it.
+        let own = [0, 1, 2].map(|i| (centre[i] - n[i] * 0.01).floor() as i32);
+        let over = |dx: i32, dy: i32, dz: i32| at(own[0] + dx, own[1] + 1 + dy, own[2] + dz);
+        let wet_above = over(0, 0, 0) == water() || dwell_blocks::adaptive::flooded_at(over, 1);
+        let limit = f64::from(own[1]) + if wet_above { 1.0 } else { top };
+        for p in [a, b, c] {
+            assert!(
+                p[1] <= limit + 1e-5,
+                "a side face above the water's surface: {a:?} {b:?} {c:?}"
+            );
+        }
+        // Just across the face: the neighbour cell, which must be open there.
+        let q = [0, 1, 2].map(|i| centre[i] + n[i] * 0.01);
+        let [qx, qy, qz] = q.map(|v| v.floor() as i32);
+        let shape = dwell_blocks::adaptive::shape_at(|dx, dy, dz| at(qx + dx, qy + dy, qz + dz), 1);
+        let local = [
+            q[0] - f64::from(qx),
+            q[1] - f64::from(qy),
+            q[2] - f64::from(qz),
+        ]
+        .map(|v| v as f32);
+        assert!(
+            !dwell_blocks::shape::point_in_solid(shape, local[0], local[1], local[2], -1e-3),
+            "a side face against its neighbour's solid at {q:?}: {a:?} {b:?} {c:?}"
+        );
+    }
+    assert!(
+        sides > 0,
+        "the water's open south edge and the dry bank show sides"
+    );
+}
+
 #[test]
 fn face_b_shapes_hang_toward_its_sky() {
     // A lone grass block on face B (meshed mirrored): the pyramid hangs, its slopes face down.
@@ -803,4 +892,140 @@ fn a_level_field_of_natural_blocks_merges_its_flat_tops() {
     for &v in &flat {
         assert_eq!(m.positions[v * 3 + 1], 2.5);
     }
+}
+
+/// The tile (u0, v0) of the side faces facing +X at plane `x`, by each cell (y, z) a triangle's
+/// bounds cover (a merged quad covers several).
+fn plus_x_tiles(m: &MeshArrays, x: f32) -> Vec<((i32, i32), [f32; 2])> {
+    let mut out = Vec::new();
+    for t in m.indices.chunks_exact(3) {
+        let v = t[0] as usize;
+        if m.normals[v * 3] != 1.0 {
+            continue;
+        }
+        let at = |i: u32, axis: usize| m.positions[i as usize * 3 + axis];
+        if t.iter().any(|&i| (at(i, 0) - x).abs() > 1e-4) {
+            continue;
+        }
+        let range = |axis: usize| {
+            let lo = t.iter().map(|&i| at(i, axis)).fold(f32::INFINITY, f32::min);
+            let hi = t
+                .iter()
+                .map(|&i| at(i, axis))
+                .fold(f32::NEG_INFINITY, f32::max);
+            lo.floor() as i32..hi.ceil() as i32
+        };
+        let tile = [m.tiles[v * 4], m.tiles[v * 4 + 1]];
+        for y in range(1) {
+            for z in range(2) {
+                if !out.contains(&((y, z), tile)) {
+                    out.push(((y, z), tile));
+                }
+            }
+        }
+    }
+    out.sort_by_key(|e| e.0);
+    out
+}
+
+fn rect_of(name: &str) -> [f32; 2] {
+    let r = tile_rect(name);
+    [r.u0 as f32, r.v0 as f32]
+}
+
+/// A 3 × 5 plateau (x 3..=5, z 3..=7) two cells deep of `body` with `top` on it (and `cap` on the
+/// top if any; 0: none), ending in a cliff at x = 6: the +X faces of its edge column are exposed.
+fn plateau(body: u16, top: u16, cap: u16) -> Vec<(i32, i32, i32, u16)> {
+    let mut cells = Vec::new();
+    for z in 3..=7 {
+        for x in 3..=5 {
+            cells.push((x, 0, z, body));
+            cells.push((x, 1, z, body));
+            if top != 0 {
+                cells.push((x, 2, z, top));
+            }
+            if cap != 0 {
+                cells.push((x, 3, z, cap));
+            }
+        }
+    }
+    cells
+}
+
+#[test]
+fn a_dirt_side_under_sloped_grass_shows_the_turf_skirt_and_not_under_air_or_stone() {
+    // dirt's `sideUnder` (shared/blocks/dwell.json): a dirt side face with grass directly above
+    // takes the `dirtSkirt` tile. At a cliff the grass's edge is a slope down to the dirt's top.
+    let dirt = require("dwell:dirt");
+    let m = mesh(&plateau(dirt, grass(), 0), false).opaque;
+    let faces = plus_x_tiles(&m, 6.0);
+    for z in 3..=7 {
+        assert!(
+            faces.contains(&((1, z), rect_of("dirtSkirt"))),
+            "z {z}: {faces:?}"
+        );
+        assert!(
+            faces.contains(&((0, z), rect_of("dirt"))),
+            "z {z}: {faces:?}"
+        );
+        assert!(
+            !faces.contains(&((1, z), rect_of("dirt"))),
+            "z {z}: {faces:?}"
+        );
+    }
+    // The grass is a slope there: it shows no side of its own above the dirt's face.
+    assert!(faces.iter().all(|e| e.0.0 < 2), "{faces:?}");
+    // Under air (dirt is the top block) and under stone: plain dirt.
+    for (top, what) in [(0, "air"), (stone(), "stone")] {
+        let faces = plus_x_tiles(&mesh(&plateau(dirt, top, 0), false).opaque, 6.0);
+        assert!(!faces.is_empty(), "{what}");
+        assert!(
+            faces.iter().all(|e| e.1 != rect_of("dirtSkirt")),
+            "under {what}: {faces:?}"
+        );
+    }
+    // Under a full grass cube (a block on it), the grass side already hangs its skirt: the dirt
+    // below stays plain, never a second skirt.
+    let faces = plus_x_tiles(&mesh(&plateau(dirt, grass(), stone()), false).opaque, 6.0);
+    assert!(faces.contains(&((2, 5), rect_of("grassSide"))), "{faces:?}");
+    assert!(faces.contains(&((1, 5), rect_of("dirt"))), "{faces:?}");
+    assert!(
+        faces.iter().all(|e| e.1 != rect_of("dirtSkirt")),
+        "{faces:?}"
+    );
+    // Face B (meshed mirrored; its sky is toward −y): the plateau hangs from the chunk's top with
+    // the grass under the dirt, and the skirt hangs from the edge toward its sky.
+    let hanging: Vec<_> = plateau(dirt, grass(), 0)
+        .into_iter()
+        .map(|(x, y, z, m)| (x, N - 1 - y, z, m))
+        .collect();
+    let b = mesh(&hanging, true).opaque;
+    assert!(
+        (0..b.tiles.len() / 4)
+            .any(|v| [b.tiles[v * 4], b.tiles[v * 4 + 1]] == rect_of("dirtSkirt")),
+        "face B"
+    );
+}
+
+#[test]
+fn a_side_tile_rule_added_by_data_alone_is_applied() {
+    // shared/blocks/fixtures/test.json adds `test:loam` (sand tiles) with `sideUnder`
+    // `{ "dwell:stone": "grassSide" }` and nothing else.
+    use dwell_blocks::fixture::{FLUIDS, STATES};
+    let id = |name: &str| STATES.iter().position(|s| s.name == name).expect(name) as u16;
+    let (loam, stone, water) = (
+        id("test:loam"),
+        id("dwell:stone[flooded=false]"),
+        id("dwell:water"),
+    );
+    let kinds = Kinds::new(&STATES, &FLUIDS, Some(water));
+    let mesh_of = |cells: &[(i32, i32, i32, u16)]| {
+        mesh_chunk_with(&kinds, &voxels(cells), false, [0; 3])
+            .expect("padded volume")
+            .opaque
+    };
+    let faces = plus_x_tiles(&mesh_of(&[(1, 1, 1, loam), (1, 2, 1, stone)]), 2.0);
+    assert!(faces.contains(&((1, 1), rect_of("grassSide"))), "{faces:?}");
+    let faces = plus_x_tiles(&mesh_of(&[(1, 1, 1, loam)]), 2.0);
+    assert_eq!(faces, [((1, 1), rect_of("sand"))]);
 }

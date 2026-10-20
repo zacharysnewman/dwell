@@ -7,7 +7,7 @@ use std::sync::OnceLock;
 
 use dwell_blocks::{
     Cross, FLUIDS, Facing, Fade, FluidId, FluidInfo, RenderMode, SHAPES, STATES, ShapeInfo,
-    StateId, StateInfo, Textures, Wind,
+    SideUnder, StateId, StateInfo, Textures, Wind,
 };
 
 /// The look a state is drawn with (the registry's `look` name).
@@ -30,6 +30,11 @@ pub(crate) struct MaterialStyle {
     /// How its pixels are drawn: which of the chunk's meshes it goes in.
     pub render: RenderMode,
     pub textures: Option<Textures>,
+    /// Its block's id (`dwell:grass`; the state's name without properties), as `side_under` names
+    /// the block above.
+    pub block: &'static str,
+    /// Side tiles chosen by the block above (block data `sideUnder`).
+    pub side_under: &'static [SideUnder],
     /// Ladders: the face whose side the plate faces (0 +X, 1 −X, 4 +Z, 5 −Z).
     pub ladder_face: Option<usize>,
     /// Index into `SHAPES`.
@@ -90,6 +95,8 @@ pub(crate) fn style_of(s: &StateInfo, fluids: &[FluidInfo]) -> MaterialStyle {
         color: s.color,
         render: s.render,
         textures: s.textures,
+        block: block_id(s.name),
+        side_under: s.side_under,
         ladder_face: if look == Look::Ladder {
             ladder_face
         } else {
@@ -108,6 +115,11 @@ pub(crate) fn style_of(s: &StateInfo, fluids: &[FluidInfo]) -> MaterialStyle {
     }
 }
 
+/// The block id of a canonical state name (`dwell:ladder[facing=north]` → `dwell:ladder`).
+fn block_id(name: &'static str) -> &'static str {
+    name.split_once('[').map_or(name, |(b, _)| b)
+}
+
 const UNKNOWN_COLOR: u32 = 0xff00ff;
 
 /// Whether this build can draw a state as its data asks: a look the meshers know, texture tiles
@@ -119,7 +131,10 @@ pub(crate) fn drawable(s: &StateInfo, fluids: &[FluidInfo]) -> bool {
         crate::textures::has_tile(t.top)
             && crate::textures::has_tile(t.side)
             && crate::textures::has_tile(t.bottom)
-    });
+    }) && s
+        .side_under
+        .iter()
+        .all(|r| crate::textures::has_tile(r.side));
     let fluid = s.look != "fluid" || s.fluid.is_some_and(|f| usize::from(f) < fluids.len());
     look && tiles && fluid
 }
@@ -137,6 +152,8 @@ fn fallback_style(shape: usize, flooded: bool) -> MaterialStyle {
             side: missing,
             bottom: missing,
         }),
+        block: "",
+        side_under: &[],
         ladder_face: None,
         shape,
         flooded,

@@ -120,7 +120,7 @@ describe('brush presets (shared/brushes/gen.mjs)', () => {
     const out = generate(base([ball, stencil, tree]));
     expect(out.status, out.output).toBe(0);
     expect(out.rust).toContain('structures: &["dwell:proto_rock", "dwell:proto_tree"]');
-    expect(out.rust).toContain('wood: "dwell:sand"');
+    expect(out.rust).toContain('wood: "dwell:sand[flooded=false]"');
     expect(out.rust).toContain('mask: Mask::Air');
     expect(out.rust).toContain('height: 12');
   }, 20_000);

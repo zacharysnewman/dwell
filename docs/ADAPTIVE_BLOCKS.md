@@ -74,15 +74,18 @@ rule 5 324. On face B (up is −y) the same table is read in the mirror image an
 ## 3. Definitions the rules need
 
 - **Adaptive.** A block whose data has `"adaptive": true` — grass, dirt, stone and sand (sandstone,
-  gravel and ice were cut with the baseline). Only a full cube without properties may be adaptive
-  (the generator rejects anything else).
+  gravel and ice were cut with the baseline). Only a full cube may be adaptive, and its one allowed
+  property is `flooded` (false, true; 2026-10-20) — the generator rejects anything else.
 - **Top block.** An adaptive block whose cell above is not solid (air, water, or a non-solid
   block such as a ladder). Any other adaptive block is a full cube.
 - **Filled, for comparing heights.** An adaptive block (whatever shape it takes) or any solid block
   whose own shape is a full cube. A partial shape (a slab or placed slope of a future crafted
   block) counts as open, so ground beside it is *lower*. The comparison uses cell occupancy, never
   derived shapes, so nothing iterates and neighbours never depend on each other's results.
-- **Water.** A shaped top block with a liquid above it or beside it in its row is flooded (§1).
+- **Water.** A shaped top block with a liquid above it or beside it in its row is flooded (§1), and
+  so is one whose state is `flooded=true`: the terrain generator writes every top block below sea
+  level so, and the sea fills its open part ([`WATER_RENDERING.md`](./WATER_RENDERING.md) §9). A
+  buried or full-shaped block holds no water, whatever its state.
 - **The rules say full.** When every corner rises (a one-block pit), the derived shape is the cube:
   it collides and is meshed as one.
 
@@ -173,8 +176,9 @@ rules made them unnecessary, and the 1 m grid stays.
   included, and the collider rebuilds a chunk when any of the 27 around it changes.
 - **The placement check** tests a placed block against players as a cube (its shape is only known
   after placing, and the cube is the larger).
-- **Generation is unchanged:** the generator writes the same voxels (its chunk and LOD hashes are
-  unchanged); spawn and the point query read the shaped surface. Phase 17's evaluator must keep that.
+- **Generation was unchanged** by Phase 18: the generator wrote the same voxels; spawn and the
+  point query read the shaped surface. Phase 17's evaluator must keep that. Since generator version
+  17 (2026-10-20) the top voxel below sea level is written `flooded=true` (§3, Water).
 - **LOD:** the rule on dry columns' top cells; wet columns and shores keep the generated surface's
   exact heights.
 

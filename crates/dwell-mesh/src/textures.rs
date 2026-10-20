@@ -108,7 +108,7 @@ pub const ATLAS_SIZE: usize = CELL * ATLAS_CELLS;
 pub const ATLAS_TILES: usize = ATLAS_CELLS * ATLAS_CELLS;
 
 /// The tiles in atlas order (the registry's texture names).
-pub const TILE_ORDER: [&str; 14] = [
+pub const TILE_ORDER: [&str; 15] = [
     "plain",
     "grass",
     "grassSide",
@@ -122,6 +122,8 @@ pub const TILE_ORDER: [&str; 14] = [
     "logTop",
     "leaves",
     "tallGrass",
+    // A dirt side under grass (dirt's `sideUnder`): the turf's skirt over the dirt's top edge.
+    "dirtSkirt",
     // The fallback look of a state whose look or textures this build lacks (synced from a server,
     // ADR 0038): a magenta and black checker, never content.
     MISSING_TILE,
@@ -483,7 +485,8 @@ fn grid(x: i64, y: i64) -> Rgb {
 fn painter(name: &str) -> fn(i64, i64) -> Rgb {
     match name {
         "grass" => grass,
-        "grassSide" => grass_side,
+        // The same skirt as the grass side, so the two line up where they meet.
+        "grassSide" | "dirtSkirt" => grass_side,
         "dirt" => dirt,
         "stone" => stone,
         "sand" => sand,

@@ -73,20 +73,20 @@ export interface ShapeDef {
 }
 
 /** FNV-1a 64 over the canonical state strings (each followed by "\n") in id order. */
-export const REGISTRY_HASH = 0xbcda3473c2fa1fean;
+export const REGISTRY_HASH = 0x2ff86a2d4015f4can;
 
 export const BLOCK_DEFS: readonly BlockDef[] = [
   { id: 'dwell:air', first: 0, count: 1, properties: [] },
-  { id: 'dwell:stone', first: 1, count: 1, properties: [], sound: 'dwell:stone' },
-  { id: 'dwell:dirt', first: 2, count: 1, properties: [], sound: 'dwell:dirt' },
-  { id: 'dwell:grass', first: 3, count: 1, properties: [], sound: 'dwell:grass' },
-  { id: 'dwell:ladder', first: 4, count: 8, properties: [{ name: 'facing', values: ['north', 'east', 'south', 'west'] }, { name: 'flooded', values: ['false', 'true'] }], sound: 'dwell:wood' },
-  { id: 'dwell:water', first: 12, count: 1, properties: [], sound: 'dwell:water' },
-  { id: 'dwell:sand', first: 13, count: 1, properties: [], sound: 'dwell:sand' },
-  { id: 'dwell:sandbox_floor', first: 14, count: 1, properties: [], sound: 'dwell:stone' },
-  { id: 'dwell:log', first: 15, count: 1, properties: [], sound: 'dwell:wood' },
-  { id: 'dwell:leaves', first: 16, count: 1, properties: [], sound: 'dwell:grass' },
-  { id: 'dwell:tall_grass', first: 17, count: 1, properties: [], sound: 'dwell:grass' },
+  { id: 'dwell:stone', first: 1, count: 2, properties: [{ name: 'flooded', values: ['false', 'true'] }], sound: 'dwell:stone' },
+  { id: 'dwell:dirt', first: 3, count: 2, properties: [{ name: 'flooded', values: ['false', 'true'] }], sound: 'dwell:dirt' },
+  { id: 'dwell:grass', first: 5, count: 2, properties: [{ name: 'flooded', values: ['false', 'true'] }], sound: 'dwell:grass' },
+  { id: 'dwell:ladder', first: 7, count: 8, properties: [{ name: 'facing', values: ['north', 'east', 'south', 'west'] }, { name: 'flooded', values: ['false', 'true'] }], sound: 'dwell:wood' },
+  { id: 'dwell:water', first: 15, count: 1, properties: [], sound: 'dwell:water' },
+  { id: 'dwell:sand', first: 16, count: 2, properties: [{ name: 'flooded', values: ['false', 'true'] }], sound: 'dwell:sand' },
+  { id: 'dwell:sandbox_floor', first: 18, count: 1, properties: [], sound: 'dwell:stone' },
+  { id: 'dwell:log', first: 19, count: 1, properties: [], sound: 'dwell:wood' },
+  { id: 'dwell:leaves', first: 20, count: 1, properties: [], sound: 'dwell:grass' },
+  { id: 'dwell:tall_grass', first: 21, count: 1, properties: [], sound: 'dwell:grass' },
 ];
 
 /** The shapes block states use (the adaptive table's derived shapes are in the Rust tables only). */
@@ -97,23 +97,27 @@ export const SHAPES: readonly ShapeDef[] = [
 
 const STATES_0: readonly StateDef[] = [
   { id: 0, state: 'dwell:air', block: 0, values: {  }, look: 'cube', render: 'opaque', color: 0x000000, opacity: 0, shape: 0, flooded: false, placeable: false },
-  { id: 1, state: 'dwell:stone', block: 1, values: {  }, look: 'cube', render: 'opaque', color: 0xbbafa6, opacity: 1, textures: { top: 'stone', side: 'stone', bottom: 'stone' }, shape: 1, flooded: false, placeable: true },
-  { id: 2, state: 'dwell:dirt', block: 2, values: {  }, look: 'cube', render: 'opaque', color: 0x8a5a3a, opacity: 1, textures: { top: 'dirt', side: 'dirt', bottom: 'dirt' }, shape: 1, flooded: false, placeable: true },
-  { id: 3, state: 'dwell:grass', block: 3, values: {  }, look: 'cube', render: 'opaque', color: 0x8dbf3f, opacity: 1, textures: { top: 'grass', side: 'grassSide', bottom: 'dirt' }, shape: 1, flooded: false, placeable: true },
-  { id: 4, state: 'dwell:ladder[facing=north,flooded=false]', block: 4, values: { facing: 'north', flooded: 'false' }, look: 'ladder', render: 'cutout', color: 0xa0703a, opacity: 1, textures: { top: 'ladder', side: 'ladder', bottom: 'ladder' }, ladderFace: 5, shape: 0, flooded: false, placeable: true },
-  { id: 5, state: 'dwell:ladder[facing=north,flooded=true]', block: 4, values: { facing: 'north', flooded: 'true' }, look: 'ladder', render: 'cutout', color: 0xa0703a, opacity: 1, textures: { top: 'ladder', side: 'ladder', bottom: 'ladder' }, ladderFace: 5, shape: 0, flooded: true, placeable: false },
-  { id: 6, state: 'dwell:ladder[facing=east,flooded=false]', block: 4, values: { facing: 'east', flooded: 'false' }, look: 'ladder', render: 'cutout', color: 0xa0703a, opacity: 1, textures: { top: 'ladder', side: 'ladder', bottom: 'ladder' }, ladderFace: 0, shape: 0, flooded: false, placeable: true },
-  { id: 7, state: 'dwell:ladder[facing=east,flooded=true]', block: 4, values: { facing: 'east', flooded: 'true' }, look: 'ladder', render: 'cutout', color: 0xa0703a, opacity: 1, textures: { top: 'ladder', side: 'ladder', bottom: 'ladder' }, ladderFace: 0, shape: 0, flooded: true, placeable: false },
-  { id: 8, state: 'dwell:ladder[facing=south,flooded=false]', block: 4, values: { facing: 'south', flooded: 'false' }, look: 'ladder', render: 'cutout', color: 0xa0703a, opacity: 1, textures: { top: 'ladder', side: 'ladder', bottom: 'ladder' }, ladderFace: 4, shape: 0, flooded: false, placeable: true },
-  { id: 9, state: 'dwell:ladder[facing=south,flooded=true]', block: 4, values: { facing: 'south', flooded: 'true' }, look: 'ladder', render: 'cutout', color: 0xa0703a, opacity: 1, textures: { top: 'ladder', side: 'ladder', bottom: 'ladder' }, ladderFace: 4, shape: 0, flooded: true, placeable: false },
-  { id: 10, state: 'dwell:ladder[facing=west,flooded=false]', block: 4, values: { facing: 'west', flooded: 'false' }, look: 'ladder', render: 'cutout', color: 0xa0703a, opacity: 1, textures: { top: 'ladder', side: 'ladder', bottom: 'ladder' }, ladderFace: 1, shape: 0, flooded: false, placeable: true },
-  { id: 11, state: 'dwell:ladder[facing=west,flooded=true]', block: 4, values: { facing: 'west', flooded: 'true' }, look: 'ladder', render: 'cutout', color: 0xa0703a, opacity: 1, textures: { top: 'ladder', side: 'ladder', bottom: 'ladder' }, ladderFace: 1, shape: 0, flooded: true, placeable: false },
-  { id: 12, state: 'dwell:water', block: 5, values: {  }, look: 'fluid', render: 'translucent', color: 0x2f86e0, opacity: 0.72, textures: { top: 'water', side: 'water', bottom: 'water' }, shape: 0, flooded: false, placeable: false },
-  { id: 13, state: 'dwell:sand', block: 6, values: {  }, look: 'cube', render: 'opaque', color: 0xeed9a4, opacity: 1, textures: { top: 'sand', side: 'sand', bottom: 'sand' }, shape: 1, flooded: false, placeable: true },
-  { id: 14, state: 'dwell:sandbox_floor', block: 7, values: {  }, look: 'cube', render: 'opaque', color: 0xffffff, opacity: 1, textures: { top: 'grid', side: 'grid', bottom: 'grid' }, shape: 1, flooded: false, placeable: false },
-  { id: 15, state: 'dwell:log', block: 8, values: {  }, look: 'cube', render: 'opaque', color: 0x7a5236, opacity: 1, textures: { top: 'logTop', side: 'logSide', bottom: 'logTop' }, shape: 1, flooded: false, placeable: true },
-  { id: 16, state: 'dwell:leaves', block: 9, values: {  }, look: 'cube', render: 'cutout', color: 0x6fa83a, opacity: 1, textures: { top: 'leaves', side: 'leaves', bottom: 'leaves' }, shape: 1, flooded: false, placeable: true },
-  { id: 17, state: 'dwell:tall_grass', block: 10, values: {  }, look: 'cross', render: 'cutout', color: 0x8dbf3f, opacity: 1, textures: { top: 'tallGrass', side: 'tallGrass', bottom: 'tallGrass' }, shape: 0, flooded: false, placeable: true },
+  { id: 1, state: 'dwell:stone[flooded=false]', block: 1, values: { flooded: 'false' }, look: 'cube', render: 'opaque', color: 0xbbafa6, opacity: 1, textures: { top: 'stone', side: 'stone', bottom: 'stone' }, shape: 1, flooded: false, placeable: true },
+  { id: 2, state: 'dwell:stone[flooded=true]', block: 1, values: { flooded: 'true' }, look: 'cube', render: 'opaque', color: 0xbbafa6, opacity: 1, textures: { top: 'stone', side: 'stone', bottom: 'stone' }, shape: 1, flooded: true, placeable: false },
+  { id: 3, state: 'dwell:dirt[flooded=false]', block: 2, values: { flooded: 'false' }, look: 'cube', render: 'opaque', color: 0x8a5a3a, opacity: 1, textures: { top: 'dirt', side: 'dirt', bottom: 'dirt' }, shape: 1, flooded: false, placeable: true },
+  { id: 4, state: 'dwell:dirt[flooded=true]', block: 2, values: { flooded: 'true' }, look: 'cube', render: 'opaque', color: 0x8a5a3a, opacity: 1, textures: { top: 'dirt', side: 'dirt', bottom: 'dirt' }, shape: 1, flooded: true, placeable: false },
+  { id: 5, state: 'dwell:grass[flooded=false]', block: 3, values: { flooded: 'false' }, look: 'cube', render: 'opaque', color: 0x8dbf3f, opacity: 1, textures: { top: 'grass', side: 'grassSide', bottom: 'dirt' }, shape: 1, flooded: false, placeable: true },
+  { id: 6, state: 'dwell:grass[flooded=true]', block: 3, values: { flooded: 'true' }, look: 'cube', render: 'opaque', color: 0x8dbf3f, opacity: 1, textures: { top: 'grass', side: 'grassSide', bottom: 'dirt' }, shape: 1, flooded: true, placeable: false },
+  { id: 7, state: 'dwell:ladder[facing=north,flooded=false]', block: 4, values: { facing: 'north', flooded: 'false' }, look: 'ladder', render: 'cutout', color: 0xa0703a, opacity: 1, textures: { top: 'ladder', side: 'ladder', bottom: 'ladder' }, ladderFace: 5, shape: 0, flooded: false, placeable: true },
+  { id: 8, state: 'dwell:ladder[facing=north,flooded=true]', block: 4, values: { facing: 'north', flooded: 'true' }, look: 'ladder', render: 'cutout', color: 0xa0703a, opacity: 1, textures: { top: 'ladder', side: 'ladder', bottom: 'ladder' }, ladderFace: 5, shape: 0, flooded: true, placeable: false },
+  { id: 9, state: 'dwell:ladder[facing=east,flooded=false]', block: 4, values: { facing: 'east', flooded: 'false' }, look: 'ladder', render: 'cutout', color: 0xa0703a, opacity: 1, textures: { top: 'ladder', side: 'ladder', bottom: 'ladder' }, ladderFace: 0, shape: 0, flooded: false, placeable: true },
+  { id: 10, state: 'dwell:ladder[facing=east,flooded=true]', block: 4, values: { facing: 'east', flooded: 'true' }, look: 'ladder', render: 'cutout', color: 0xa0703a, opacity: 1, textures: { top: 'ladder', side: 'ladder', bottom: 'ladder' }, ladderFace: 0, shape: 0, flooded: true, placeable: false },
+  { id: 11, state: 'dwell:ladder[facing=south,flooded=false]', block: 4, values: { facing: 'south', flooded: 'false' }, look: 'ladder', render: 'cutout', color: 0xa0703a, opacity: 1, textures: { top: 'ladder', side: 'ladder', bottom: 'ladder' }, ladderFace: 4, shape: 0, flooded: false, placeable: true },
+  { id: 12, state: 'dwell:ladder[facing=south,flooded=true]', block: 4, values: { facing: 'south', flooded: 'true' }, look: 'ladder', render: 'cutout', color: 0xa0703a, opacity: 1, textures: { top: 'ladder', side: 'ladder', bottom: 'ladder' }, ladderFace: 4, shape: 0, flooded: true, placeable: false },
+  { id: 13, state: 'dwell:ladder[facing=west,flooded=false]', block: 4, values: { facing: 'west', flooded: 'false' }, look: 'ladder', render: 'cutout', color: 0xa0703a, opacity: 1, textures: { top: 'ladder', side: 'ladder', bottom: 'ladder' }, ladderFace: 1, shape: 0, flooded: false, placeable: true },
+  { id: 14, state: 'dwell:ladder[facing=west,flooded=true]', block: 4, values: { facing: 'west', flooded: 'true' }, look: 'ladder', render: 'cutout', color: 0xa0703a, opacity: 1, textures: { top: 'ladder', side: 'ladder', bottom: 'ladder' }, ladderFace: 1, shape: 0, flooded: true, placeable: false },
+  { id: 15, state: 'dwell:water', block: 5, values: {  }, look: 'fluid', render: 'translucent', color: 0x2f86e0, opacity: 0.72, textures: { top: 'water', side: 'water', bottom: 'water' }, shape: 0, flooded: false, placeable: false },
+  { id: 16, state: 'dwell:sand[flooded=false]', block: 6, values: { flooded: 'false' }, look: 'cube', render: 'opaque', color: 0xeed9a4, opacity: 1, textures: { top: 'sand', side: 'sand', bottom: 'sand' }, shape: 1, flooded: false, placeable: true },
+  { id: 17, state: 'dwell:sand[flooded=true]', block: 6, values: { flooded: 'true' }, look: 'cube', render: 'opaque', color: 0xeed9a4, opacity: 1, textures: { top: 'sand', side: 'sand', bottom: 'sand' }, shape: 1, flooded: true, placeable: false },
+  { id: 18, state: 'dwell:sandbox_floor', block: 7, values: {  }, look: 'cube', render: 'opaque', color: 0xffffff, opacity: 1, textures: { top: 'grid', side: 'grid', bottom: 'grid' }, shape: 1, flooded: false, placeable: false },
+  { id: 19, state: 'dwell:log', block: 8, values: {  }, look: 'cube', render: 'opaque', color: 0x7a5236, opacity: 1, textures: { top: 'logTop', side: 'logSide', bottom: 'logTop' }, shape: 1, flooded: false, placeable: true },
+  { id: 20, state: 'dwell:leaves', block: 9, values: {  }, look: 'cube', render: 'cutout', color: 0x6fa83a, opacity: 1, textures: { top: 'leaves', side: 'leaves', bottom: 'leaves' }, shape: 1, flooded: false, placeable: true },
+  { id: 21, state: 'dwell:tall_grass', block: 10, values: {  }, look: 'cross', render: 'cutout', color: 0x8dbf3f, opacity: 1, textures: { top: 'tallGrass', side: 'tallGrass', bottom: 'tallGrass' }, shape: 0, flooded: false, placeable: true },
 ];
 
 export const STATE_DEFS: readonly StateDef[] = [

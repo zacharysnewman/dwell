@@ -20,8 +20,8 @@ use dwell_protocol::bytes::{ByteReader, ByteWriter};
 
 use crate::{
     AIR, Cross, FLUIDS, Facing, Fade, Grid, Medium, NewBlock, Origin, RenderMode, SHAPES, STATES,
-    ShapeInfo, StateId, StateInfo, Support, Textures, VoxelShape, Wind, blocks, build_state, info,
-    intern, register, shape::faces_of, state_count,
+    ShapeInfo, SideUnder, StateId, StateInfo, Support, Textures, VoxelShape, Wind, blocks,
+    build_state, info, intern, register, shape::faces_of, state_count,
 };
 
 /// The payload format this build reads and writes.
@@ -72,6 +72,8 @@ pub mod tag {
     pub const WIND: u8 = 0x89;
     /// `f32` start, end (m).
     pub const FADE: u8 = 0x8a;
+    /// `u8` count, each: `str` block id above, `str` side tile (`StateInfo::side_under`).
+    pub const SIDE_UNDER: u8 = 0x8b;
 }
 
 /// Rule flag bits (tag `FLAGS`).
@@ -296,6 +298,15 @@ pub fn state_fields(s: &StateInfo) -> Fields {
         out.push(field(tag::FADE, |w| {
             w.f32(f.start);
             w.f32(f.end);
+        }));
+    }
+    if !s.side_under.is_empty() {
+        out.push(field(tag::SIDE_UNDER, |w| {
+            w.u8(s.side_under.len() as u8);
+            for r in s.side_under {
+                w.str(r.above);
+                w.str(r.side);
+            }
         }));
     }
     out.sort_by_key(|(t, _)| *t);
@@ -577,6 +588,7 @@ fn default_row(name: &str) -> StateInfo {
         color: 0,
         opacity: 1.0,
         textures: None,
+        side_under: &[],
         grid: None,
         render: RenderMode::Opaque,
         cross: None,
@@ -718,6 +730,7 @@ fn apply_look(fields: &Fields, fluids: &[String], row: &mut StateInfo) {
     row.cross = None;
     row.wind = None;
     row.fade = None;
+    row.side_under = &[];
     row.render = RenderMode::Opaque;
     for (t, bytes) in fields {
         let mut r = ByteReader::new(bytes);
@@ -786,6 +799,18 @@ fn apply_look(fields: &Fields, fluids: &[String], row: &mut StateInfo) {
                     end: r.f32(),
                 };
                 row.fade = r.ok().then_some(f);
+            }
+            tag::SIDE_UNDER => {
+                let n = r.u8();
+                let rules: Vec<SideUnder> = (0..n)
+                    .map(|_| SideUnder {
+                        above: intern(&r.str(MAX_STR)),
+                        side: intern(&r.str(MAX_STR)),
+                    })
+                    .collect();
+                if r.ok() {
+                    row.side_under = Box::leak(rules.into_boxed_slice());
+                }
             }
             _ => {}
         }
@@ -1268,7 +1293,7 @@ mod tests {
         );
         let d = &m.differences;
         assert_eq!(d.different.len(), 1);
-        assert_eq!(d.different[0].name, "dwell:sand");
+        assert_eq!(d.different[0].name, "dwell:sand[flooded=false]");
         assert_eq!(d.different[0].fields, vec!["density".to_string()]);
         assert_eq!(d.client_only, vec!["dwell:ladder".to_string()]);
         let names: Vec<&str> = d.added.iter().map(|a| a.name.as_str()).collect();
@@ -1290,7 +1315,9 @@ mod tests {
             assert_eq!(info(client).name, name);
             assert_eq!(m.server(client), Some(server));
         }
-        let sand_here = m.client(server_id(&p, "dwell:sand")).expect("sand");
+        let sand_here = m
+            .client(server_id(&p, "dwell:sand[flooded=false]"))
+            .expect("sand");
         assert!(
             !crate::is_build_state(sand_here),
             "a synced copy with the server's rules"
@@ -1303,7 +1330,7 @@ mod tests {
         );
         assert_eq!(
             m.server(require("dwell:sand")),
-            Some(server_id(&p, "dwell:sand")),
+            Some(server_id(&p, "dwell:sand[flooded=false]")),
             "the palette's sand places the server's sand"
         );
         assert_eq!(
@@ -1338,10 +1365,10 @@ mod tests {
         let p = modded();
         let m = map(&p, 0).expect("maps");
         let stone = require("dwell:stone");
-        let mut ids = vec![0, stone, server_id(&p, "dwell:sand")];
+        let mut ids = vec![0, stone, server_id(&p, "dwell:sand[flooded=false]")];
         assert!(m.to_client_ids(&mut ids));
         assert_eq!(ids[..2], [0, stone]);
-        assert_eq!(info(ids[2]).name, "dwell:sand");
+        assert_eq!(info(ids[2]).name, "dwell:sand[flooded=false]");
         let mut bad = vec![p.id_end() as u16];
         assert!(!m.to_client_ids(&mut bad));
     }
@@ -1364,7 +1391,7 @@ mod tests {
         let p = modded();
         let mut m = map(&p, 0).expect("maps");
         let stone = require("dwell:stone");
-        let server_stone = server_id(&p, "dwell:stone");
+        let server_stone = server_id(&p, "dwell:stone[flooded=false]");
         assert_eq!(
             server_stone, stone,
             "ids before the removed ladder are kept"
