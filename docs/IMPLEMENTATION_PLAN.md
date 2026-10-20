@@ -56,7 +56,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 36 — Block registry sync | 🚧 In progress — built and tested natively and in Vitest (ADR 0038, `BLOCK_REGISTRY.md` §8): the server's registry sent at join (`BlockRegistry`, protocol 14), ids mapped at the session boundary, the join prompt (no refusals), the fallback look, server-registered blocks, placeholders for unknown states in world files; outstanding: CI, the e2e suite (WebRTC join fixed: parts fit a WebRTC message, larger messages are fragmented), the owner's review of the prompt; ships in the next minor (0.14.0), coordinated with Phase 16's protocol bump |
 | 37 — Sprint slide (stacks on 35) | 🚧 In progress — built and tested natively (controller, predictor, netcode, protocol 15 vectors): crouch while sprinting slides on, crouched, with friction and slopes, limited steering, a jump out and a cooldown (`PLAYER_CONTROLLER.md` §6.9), checked in Chrome (the `sprint-slide` bench); outstanding: CI (the WASM divergence run and the e2e suite), the owner's review; a protocol change (15): the owner raises `package.json` to a new minor |
 | 38 — The spyglass | 🚧 In progress — built and tested natively, in Vitest and on a real GPU (ADR 0039, `SPYGLASS.md`): a toggle key (`` ` ``) and wheel steps from `shared/look/spyglass.json` (generator, CI stale check), the zoomed FOV for the raster renderer, the marcher (its FOV bug fixed) and the LOD, which refines only inside the narrow view (bounded by the detail boost), the vignette, reduced motion, the `spyglass-far` bench scenario; outstanding: CI and the owner's review in a browser; a patch release |
-| 39 — Painterly textures | 🚧 In progress — built and tested natively, in Node and on a real GPU (ADR 0040, `ART_DIRECTION.md`, `PAINTERLY_TEXTURES.md`): the storybook palette and materials as data (`shared/textures`), one stroke generator baked into the atlas (CI stale check, a material added by data alone), `?textures=painterly` on the page and in the meshing workers (the classic set stays the default), the Painterly Texture Lab, the bench's `painterly` configuration (same frame cost); follow-ups: grass_side's skirt made continuous across the tile (owner's review); the skirt on dirt sides under grass (`sideUnder` block data, the `dirtSkirt` tile, in both sets; owner, 2026-10-20); outstanding: CI and the owner's review of the look, then flipping the default; a patch release |
+| 39 — Painterly textures | 🚧 In progress — built and tested natively, in Node and on a real GPU (ADR 0040, `ART_DIRECTION.md`, `PAINTERLY_TEXTURES.md`): the storybook palette and materials as data (`shared/textures`), one stroke generator baked into the atlas (CI stale check, a material added by data alone), `?textures=painterly` on the page and in the meshing workers (the classic set stays the default), the Painterly Texture Lab, the bench's `painterly` configuration (same frame cost); follow-ups: grass_side's skirt made continuous across the tile (owner's review); the skirt on dirt sides under grass (`sideUnder` block data, the `dirtSkirt` tile, in both sets; owner, 2026-10-20); the ink outline preview behind `?outline=` (ART_DIRECTION.md §7, off by default); outstanding: the owner's pick of an outline mode; CI and the owner's review of the look, then flipping the default; a patch release |
 | 40 — Characters and creatures (design and concept) | 🚧 In progress — C0 built and tested (ADR 0041, `CHARACTERS.md`): the rig vocabulary and validator (`shared/characters/rig.mjs`), the data (the player with three looks, the wolf, the deer; accessories, the block and brush items, clips), the generator and its tests, the Character Lab prototype checked in Chrome and published; stacked on Phase 39's palette and materials; C0b (the owner's first review, 2026-10-20) built and tested: hair composes with hats (`with`), the wolf's and deer's tails are chains checked joined through every clip, the player's clips for every controller state (sprint, crouch, crouch-walk, slide, jump, fall, land, climb, swim, fly; the arms' sprint, slide, jump, fall, land) and the Lab's transitions player; outstanding: the owner's review of the fixes and the rest of `CHARACTERS.md` §10, CI; C1–C3 (in the game) not started; a patch release |
 
 Phase numbering: Phase 4 was inserted on 2026-09-29 for the planet-scale world (ADRs 0011, 0012);
@@ -3872,6 +3872,14 @@ painter). Built as data: `sideUnder` on a block (`shared/blocks/dwell.json`, val
 where the grass shows a full side of its own. Mesher tests red → green; checked in Chrome on the GPU
 in both sets. Deviation: the classic set changes too (the same rule picks the classic tile); the LOD
 keeps flat dirt side colours. Not in the ray-marched renderer (Phase 25, local builds only).
+Follow-up (owner, 2026-10-20: "I see the Character Lab has edge lines, I like that. What would that
+look like applied to the whole game?"): a preview of the **ink outline** (ART_DIRECTION.md §7), a
+screen-space line in the palette's `ink` drawn by the composite from the view depth (silhouettes,
+creases, block edges), its modes as data (`shared/look/outline.json`, `outline.mjs` → `dwell-look`
+`outline.gen.rs`), behind `?outline=silhouette|creases|blocks` (off by default). Built and tested
+(the data's validation, the uniform plumbing, the edge rule's fade, red → green); screenshots of
+every view off and in each mode, painterly and classic, and the ray marcher; cost measured with the
+bench. Outstanding: the owner's pick of a mode (or none), then a setting if it stays.
 
 Owner (2026-10-20, the art brief): *procedural painterly storybook textures for everything* —
 blocks, plants, water, sky accents and characters — from one data-driven generator of brush
@@ -3899,6 +3907,13 @@ Deliverables
 - [x] The bench's `painterly` configuration (`--compare --configs painterly`).
 - [x] Screenshots classic against painterly on a real GPU: ground, blocks close up, a grassy
   hillside, water, from 600 m.
+- [x] Follow-up: the ink outline preview (ART_DIRECTION.md §7): `shared/look/outline.json` (the ink
+  by palette name, three modes: edge kinds, width in CSS pixels, distance fade, strength,
+  thresholds), validated and generated (`outline.mjs`, `outline.test.mjs`, CI stale check); the
+  composite's edge rule over a 3 × 3 of view depths with the distance fade, the height fog and the
+  sea (`ink_outline`, CPU twin `dwell-look` `outline.rs`); `?outline=` and `__dwell.setOutline`;
+  the bench's `outline-*` configurations; screenshots and the cost (§7.5).
+- [ ] The owner's pick of an outline mode, or none (ART_DIRECTION.md §7.6); a setting if it stays.
 - [ ] Later (not this phase): the sky drawing `cloud_puff`; the fluids' colours from the palette;
   the characters in game (Phase 40); a 64-texel atlas for finer brushes.
 

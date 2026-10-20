@@ -21,6 +21,13 @@ use dwell_protocol::world;
 const FRAME: &str = r"
 struct Frame {
     view_proj: mat4x4f,
+    // The ink outline (dwell-look `outline_uniforms`; docs/ART_DIRECTION.md §7): x the edge kinds
+    // (bits: 1 silhouettes, 2 creases, 4 block edges; 0 off), y the taps' distance (px), z and w
+    // the distance fade's start and end (m); the ink (sRGB) and its strength; x the silhouette and
+    // y the crease threshold.
+    outline: vec4f,
+    outline_ink: vec4f,
+    outline_cfg: vec4f,
     // x eye height (world y), y face (±1), z exposure (× the time of day's), w fog density (× the
     // time of day's)
     eye: vec4f,
@@ -749,7 +756,10 @@ fn composite_fs(i: SkyOut) -> @location(0) vec4f {
         return vec4f(composite_underwater(p, view_ray(i.ndc), textureLoad(scene_color, p, 0)), 1.0);
     }
     let wind = frame.wind_point.z > 1e-3;
-    let s = composited(p, i.ndc, wind);
+    var s = composited(p, i.ndc, wind);
+    if (frame.outline.x > 0.5) {
+        s.color = outlined(s, p);
+    }
     var color = s.color;
     if (wind) {
         color = motion_composite(s, p, i.ndc);
@@ -941,6 +951,170 @@ fn motion_composite(s: Composited, px: vec2i, ndc: vec2f) -> vec3f {
     return w.rgb + out * (1.0 - w.a);
 }
 
+";
+
+/// The ink outline (docs/ART_DIRECTION.md §7), drawn by the composite over the scene's composited
+/// colour while a mode is on (`frame.outline.x`, the edge kinds; 0 off): edges found in the view
+/// depth alone (the frame has no normal or id targets), so it is the same for the mesher and the
+/// marcher. dwell-look's `outline.rs` is the CPU twin of its depth and crease rule and its fade.
+const OUTLINE: &str = r"
+const EDGE_DEPTH: u32 = 1u;
+const EDGE_NORMAL: u32 = 2u;
+const EDGE_BLOCK: u32 = 4u;
+
+fn ink_inv(d: f32) -> f32 {
+    return select(0.0, 1.0 / d, d > 0.0);
+}
+
+// Back from inverse depth (0 stays 0).
+fn ink_dinv(w: f32) -> f32 {
+    return select(0.0, 1.0 / w, w > 0.0);
+}
+
+// How much two slopes of inverse depth differ: 0 equal, 1 where one is flat or they have
+// opposite signs (dwell-look `slope_change`).
+fn ink_change(a: f32, b: f32, top: f32) -> f32 {
+    return abs(a - b) / (abs(a) + abs(b) + 1e-4 * top);
+}
+
+// The edge strength from a 3 × 3 of inverse view depths at the tap distance (row by row from the
+// top left; 0: nothing drawn), the pixel's in the middle (dwell-look `edge_strength`). Inverse
+// depth is linear across the screen on a plane, so a flat face at any angle has no edge: a
+// silhouette is a large second difference across the pixel (relative to the nearest tap), a crease
+// a change of slope, along a row or column or between the outer ones (the surface's normal turns).
+fn ink_edges(w: array<f32, 9>, edges: u32) -> f32 {
+    var top = 0.0;
+    var low = w[0];
+    for (var k = 0; k < 9; k++) {
+        top = max(top, w[k]);
+        low = min(low, w[k]);
+    }
+    if (top <= 0.0) {
+        return 0.0;
+    }
+    let dt = frame.outline_cfg.x;
+    let ct = frame.outline_cfg.y;
+    var s = 0.0;
+    if ((edges & EDGE_DEPTH) != 0u) {
+        let e = max(abs(w[3] + w[5] - 2.0 * w[4]), abs(w[1] + w[7] - 2.0 * w[4])) / top;
+        s = max(s, smoothstep(dt, 2.0 * dt, e));
+    }
+    if ((edges & EDGE_NORMAL) != 0u && low > 0.0) {
+        let c = max(
+            max(ink_change(w[4] - w[3], w[5] - w[4], top), ink_change(w[4] - w[1], w[7] - w[4], top)),
+            max(ink_change(w[6] - w[0], w[8] - w[2], top), ink_change(w[2] - w[0], w[8] - w[6], top)),
+        );
+        s = max(s, smoothstep(ct, 2.0 * ct, c));
+    }
+    return s;
+}
+
+fn ink_ndc(q: vec2i, dims: vec2f) -> vec2f {
+    let uv = (vec2f(q) + 0.5) / dims;
+    return vec2f(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0);
+}
+
+// The voxel cell behind a surface point (relative to the eye), a quarter cell inside it along the
+// normal `n` (which faces the eye).
+fn ink_cell(rel: vec3f, n: vec3f) -> vec3i {
+    let world = vec3f(frame.wrap.x, frame.eye.x, frame.wrap.y) + rel - n * 0.25;
+    return vec3i(floor(world));
+}
+
+// The view depth the edges are found in: one sample of the pixel (the first). One load per tap
+// (the cost; a sample's depth is never a blend), where the composite's mean over the covered
+// samples would let a few samples of a blade's tip or a fading plant's dither pull a pixel
+// forward, which dots lines over the grass.
+fn ink_depth(p: vec2i) -> f32 {
+    return textureLoad(scene_depth, p, 0).r;
+}
+
+// The outline at pixel `p` (view ray `ray`): its opacity and the edge's view depth (its nearest
+// tap), from the view depths of the 3 × 3 around it at the tap distance (dwell-look `edge_at`),
+// faded out over the distance fade; with block edges, where the cell behind the surface changes
+// from the pixel to a neighbour on it (positions from the depths, the normal from the nearer
+// neighbours).
+fn ink_outline(p: vec2i, ray: vec3f) -> vec2f {
+    let edges = u32(frame.outline.x + 0.5);
+    let r = i32(frame.outline.y);
+    let size = textureDimensions(scene_color);
+    let dims = vec2i(size);
+    // Ground past the fade has no line of its own: one load and out (most of a distant view).
+    let centre = ink_depth(p);
+    if (centre * length(ray) >= frame.outline.w) {
+        return vec2f(0.0);
+    }
+    var w: array<f32, 9>;
+    for (var k = 0; k < 9; k++) {
+        let o = vec2i(k % 3 - 1, k / 3 - 1) * r;
+        w[k] = ink_inv(ink_depth(clamp(p + o, vec2i(0), dims - 1)));
+    }
+    var near = 0.0;
+    for (var k = 0; k < 9; k++) {
+        near = max(near, w[k]);
+    }
+    if (near <= 0.0) {
+        return vec2f(0.0);
+    }
+    var s = ink_edges(w, edges);
+    // Left, right, up and down: their offsets and view depths.
+    let q = array(p + vec2i(-r, 0), p + vec2i(r, 0), p + vec2i(0, -r), p + vec2i(0, r));
+    let d = array(ink_dinv(w[3]), ink_dinv(w[5]), ink_dinv(w[1]), ink_dinv(w[7]));
+    let d0 = ink_dinv(w[4]);
+    if ((edges & EDGE_BLOCK) != 0u && d0 > 0.0 && s < 1.0) {
+        let fd = vec2f(size);
+        let p0 = ray * d0;
+        var rel: array<vec3f, 4>;
+        for (var k = 0; k < 4; k++) {
+            rel[k] = view_ray(ink_ndc(q[k], fd)) * d[k];
+        }
+        // Each axis's step to the neighbour nearer in depth (the one on the same face).
+        let use_r = d[1] > 0.0 && (d[0] <= 0.0 || abs(d[1] - d0) < abs(d0 - d[0]));
+        let use_d = d[3] > 0.0 && (d[2] <= 0.0 || abs(d[3] - d0) < abs(d0 - d[2]));
+        let ok = (d[0] > 0.0 || d[1] > 0.0) && (d[2] > 0.0 || d[3] > 0.0);
+        if (ok) {
+            let dx = select(p0 - rel[0], rel[1] - p0, use_r);
+            let dy = select(p0 - rel[2], rel[3] - p0, use_d);
+            var n = normalize(cross(dx, dy));
+            n = select(n, -n, dot(n, p0) > 0.0);
+            let c0 = ink_cell(p0, n);
+            for (var k = 0; k < 4; k++) {
+                if (d[k] > 0.0 && any(ink_cell(rel[k], n) != c0)) {
+                    s = 1.0;
+                }
+            }
+        }
+    }
+    let depth = 1.0 / near;
+    let fade = 1.0 - smoothstep(frame.outline.z, frame.outline.w, depth * length(ray));
+    return vec2f(s * fade * frame.outline_ink.a, depth);
+}
+
+// How much of an edge at `rel` (relative to the eye) shows: none under the sea's surface seen from
+// above it. The water doesn't write the view depth, so the frame sees the seabed through it; the
+// sea is the one water whose surface the composite knows (SEA_LEVEL on the viewer's face).
+fn ink_above_sea(rel: vec3f) -> f32 {
+    let face = frame.eye.y;
+    let cam = select(2.0 * MIDPLANE_Y - frame.eye.x, frame.eye.x, face > 0.0);
+    let h = cam + face * rel.y - SEA_LEVEL;
+    return select(1.0, smoothstep(-0.3, -0.05, h), cam > SEA_LEVEL);
+}
+
+// The composited pixel `s` at `p` with the ink over it: fogged toward the clear sky as the ground
+// at the edge's depth is, under the cloud deck where it is in front, and gone inside a cloud.
+fn outlined(s: Composited, p: vec2i) -> vec3f {
+    let e = ink_outline(p, s.ray);
+    if (e.x <= 0.0) {
+        return s.color;
+    }
+    let rel = s.ray * e.y;
+    var a = e.x * ink_above_sea(rel) * (1.0 - frame.cloud_inside.x);
+    if (dwell_cloud_in_front(s.deck_t, length(s.ray), e.y)) {
+        a *= 1.0 - s.front.a;
+    }
+    let ink = mix(frame.outline_ink.rgb, s.clear, fog_amount(rel));
+    return mix(s.color, ink, a);
+}
 ";
 
 const WATER: &str = r"
@@ -1703,7 +1877,7 @@ fn scene_bindings(samples: u32) -> String {
 /// shading and every entry point.
 pub fn source(samples: u32) -> String {
     format!(
-        "{}{DRAWS}\n{}\n{TERRAIN}\n{MOTION}\n{WATER}\n{}",
+        "{}{DRAWS}\n{}\n{TERRAIN}\n{MOTION}\n{OUTLINE}\n{WATER}\n{}",
         lighting_source(),
         scene_bindings(samples),
         water_slope()
@@ -1883,6 +2057,41 @@ mod tests {
             m.contains("composited_over("),
             "the blur samples the composited scene"
         );
+    }
+
+    #[test]
+    fn the_ink_outline_is_drawn_only_while_on_and_fades_far_pixels_out() {
+        let src = super::source(4);
+        let body = |name: &str| {
+            let at = src.find(&format!("fn {name}(")).expect(name);
+            src[at..at + src[at..].find("\n}\n").expect("end")].to_string()
+        };
+        // Off by default (zeros in the frame block): the composite skips it, before the wind so
+        // the edge blur and streaks go over the ink.
+        let c = body("composite_fs");
+        let on = c.find("if (frame.outline.x > 0.5) {").expect("switch");
+        assert!(
+            c[on..].starts_with("if (frame.outline.x > 0.5) {\n        s.color = outlined(s, p);")
+        );
+        assert!(on < c.find("motion_composite(").expect("wind"));
+        // The edge rule of dwell-look's outline.rs: inverse depth's second difference and slope
+        // change, the nearest tap's depth, and the distance fade over the ray's length so far
+        // pixels get none (dwell-look's `far_pixels_get_no_outline` pins the same rule).
+        let rule = body("ink_edges");
+        assert!(rule.contains(
+            "let e = max(abs(w[3] + w[5] - 2.0 * w[4]), abs(w[1] + w[7] - 2.0 * w[4])) / top;"
+        ));
+        assert!(rule.contains("ink_change(w[6] - w[0], w[8] - w[2], top)"));
+        assert!(body("ink_change").contains("abs(a - b) / (abs(a) + abs(b) + 1e-4 * top)"));
+        let edge = body("ink_outline");
+        assert!(edge.contains("let depth = 1.0 / near;"));
+        assert!(edge.contains(
+            "let fade = 1.0 - smoothstep(frame.outline.z, frame.outline.w, depth * length(ray));"
+        ));
+        assert!(edge.contains("return vec2f(s * fade * frame.outline_ink.a, depth);"));
+        // And the height fog takes the ink toward the sky as it takes the ground.
+        let o = body("outlined");
+        assert!(o.contains("mix(frame.outline_ink.rgb, s.clear, fog_amount(rel))"));
     }
 
     #[test]

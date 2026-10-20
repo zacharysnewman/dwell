@@ -90,6 +90,8 @@ pub trait Scene: TerrainRenderer<Chunk = ChunkTerrain, Section = SectionTerrain>
     fn set_fov(&mut self, fov_y_deg: Option<f64>);
     /// The wind streaks to draw this frame.
     fn set_wind(&mut self, wind: WindView);
+    /// The spyglass's magnification this frame (1 unzoomed): the ink outline's fade follows it.
+    fn set_magnification(&mut self, _magnification: f64) {}
     fn set_region_boxes(&mut self, boxes: &[RegionBox]);
     /// The brush tool's wireframe at its target (BRUSHES.md), or none.
     fn set_brush_outline(&mut self, _outline: Option<&BrushOutline>) {}
@@ -1630,6 +1632,7 @@ impl<S: Scene> Game<S> {
         );
         let mut scene = self.scene.borrow_mut();
         scene.set_fov(Some(self.frame_fov));
+        scene.set_magnification(self.spyglass_view.magnification);
         scene.set_wind(WindView {
             intensity: out.wind,
             flight: out.flight,

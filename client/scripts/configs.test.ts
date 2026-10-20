@@ -21,7 +21,14 @@ describe('bench --compare configurations', () => {
     );
     expect(file.baseline).toBe('raster');
     const { run, skipped } = partition(file.configs, DEFAULT_SUPPORT);
-    expect(run.map((c) => c.name)).toEqual(['raster', 'painterly', 'raster-half']);
+    expect(run.map((c) => c.name)).toEqual([
+      'raster',
+      'painterly',
+      'outline-silhouette',
+      'outline-creases',
+      'outline-blocks',
+      'raster-half',
+    ]);
     expect(skipped.map((s) => s.name)).toEqual([
       'march',
       'march-nobeam',

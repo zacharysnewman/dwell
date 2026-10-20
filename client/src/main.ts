@@ -162,6 +162,10 @@ interface DwellDebug {
    * switches (`?waterdbg=` names, comma-separated; "" for none); null leaves either as it is.
    */
   setWater(quality: WaterQuality | null, debug: string | null): void;
+  /** The ink outline's mode (`shared/look/outline.json`, as `?outline=` names it), or `off`. */
+  outline(): string;
+  /** Sets the ink outline's mode by name (`off` or an unknown name: off); true when one is on. */
+  setOutline(name: string): boolean;
   /** Compare mode's state (view, divider, overlay, difference counts); null outside it. */
   compare(): CompareState | null;
   /** Sets compare mode's view (`split`, `blink`, `difference`) and/or divider (0–1). */
@@ -680,6 +684,8 @@ async function start(): Promise<App | null> {
       if (quality !== null) client.setWaterQuality(waterQualityLevel(quality));
       if (debug !== null) client.setWaterDebug(debug);
     },
+    outline: () => client.outline(),
+    setOutline: (name) => client.setOutline(name),
     compare: () => client.compareState() as CompareState | null,
     setCompare: (view, divider) => {
       client.setCompare(view, divider);
