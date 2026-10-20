@@ -56,6 +56,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 36 — Block registry sync | 🚧 In progress — built and tested natively and in Vitest (ADR 0038, `BLOCK_REGISTRY.md` §8): the server's registry sent at join (`BlockRegistry`, protocol 14), ids mapped at the session boundary, the join prompt (no refusals), the fallback look, server-registered blocks, placeholders for unknown states in world files; outstanding: CI, the e2e suite (WebRTC join fixed: parts fit a WebRTC message, larger messages are fragmented), the owner's review of the prompt; ships in the next minor (0.14.0), coordinated with Phase 16's protocol bump |
 | 37 — Sprint slide (stacks on 35) | 🚧 In progress — built and tested natively (controller, predictor, netcode, protocol 15 vectors): crouch while sprinting slides on, crouched, with friction and slopes, limited steering, a jump out and a cooldown (`PLAYER_CONTROLLER.md` §6.9), checked in Chrome (the `sprint-slide` bench); outstanding: CI (the WASM divergence run and the e2e suite), the owner's review; a protocol change (15): the owner raises `package.json` to a new minor |
 | 38 — The spyglass | 🚧 In progress — built and tested natively, in Vitest and on a real GPU (ADR 0039, `SPYGLASS.md`): a toggle key (`` ` ``) and wheel steps from `shared/look/spyglass.json` (generator, CI stale check), the zoomed FOV for the raster renderer, the marcher (its FOV bug fixed) and the LOD, which refines only inside the narrow view (bounded by the detail boost), the vignette, reduced motion, the `spyglass-far` bench scenario; outstanding: CI and the owner's review in a browser; a patch release |
+| 39 — Painterly textures | 🚧 In progress — built and tested natively, in Node and on a real GPU (ADR 0040, `ART_DIRECTION.md`, `PAINTERLY_TEXTURES.md`): the storybook palette and materials as data (`shared/textures`), one stroke generator baked into the atlas (CI stale check, a material added by data alone), `?textures=painterly` on the page and in the meshing workers (the classic set stays the default), the Painterly Texture Lab, the bench's `painterly` configuration (same frame cost); outstanding: CI and the owner's review of the look, then flipping the default; a patch release |
 
 Phase numbering: Phase 4 was inserted on 2026-09-29 for the planet-scale world (ADRs 0011, 0012);
 the former Phases 4–7 are now 5–8, and Phase 3's former 3c and 3d are now 3d and 3e.
@@ -3807,3 +3808,50 @@ Exit criteria
 - [x] Raster and march compared zoomed on a real GPU (`npm run bench -- spyglass-far --compare
   --configs march`, 60 fps raster, 37 ms GPU march at 8×).
 - [ ] CI green; the owner's review in a browser.
+
+## Phase 39 — Painterly Textures
+
+**Status:** Built and tested natively, in Node and Vitest, and in Chrome on the GPU (2026-10-20),
+behind `?textures=painterly`; the classic set stays the default. Outstanding: CI, the owner's
+review of the look (then flipping the default, one line). No change to saves, the protocol or
+terrain: a patch release.
+
+Owner (2026-10-20, the art brief): *procedural painterly storybook textures for everything* —
+blocks, plants, water, sky accents and characters — from one data-driven generator of brush
+strokes, painted highlights and clean gradients, sharing one palette, brush vocabulary and lighting
+with the character design (Phase 40, ADR 0041). The answers and the design are in
+[`ART_DIRECTION.md`](./ART_DIRECTION.md), [`PAINTERLY_TEXTURES.md`](./PAINTERLY_TEXTURES.md) and
+[ADR 0040](./adr/0040-painterly-textures.md).
+
+Deliverables
+- [x] `docs/ART_DIRECTION.md` (the style, the palette, the brush vocabulary, how materials read, the
+  lighting assumptions), `docs/PAINTERLY_TEXTURES.md`, ADR 0040, ARCHITECTURE.md (`dwell-mesh`,
+  `/shared/textures`).
+- [x] `shared/textures/palette.json` (named three-stop ramps and swatches) and `materials.json`
+  (11 block tiles, 21 character materials, a sky accent; `like` templates, `over` stacking).
+- [x] `shared/textures/paint.mjs` (the generator: fill, gradient, dab, streak, blade, slab, ring,
+  edgeLight; jittered-grid or exact placement; validation naming the bad entry) and `gen.mjs`
+  (→ `dwell-mesh` `painterly.rgba` and `painterly.gen.rs`, and the editor page's embedded block);
+  `gen.test.mjs` (a material added by data alone, every bad case, the bake and the page current);
+  CI stale check and tests.
+- [x] `dwell-mesh` `TextureSet` (classic default, painterly): one texel lookup for the atlas,
+  cutout detection, the averages and LOD colours (cached per set) and the hotbar swatches; tests.
+- [x] `?textures=painterly` on the page (`Client.create`) and in the meshing workers (their init
+  message, `jobWorker.ts`), so the LOD colours match the atlas.
+- [x] The Painterly Texture Lab (`docs/prototypes/painterly-texture-lab.html`, published).
+- [x] The bench's `painterly` configuration (`--compare --configs painterly`).
+- [x] Screenshots classic against painterly on a real GPU: ground, blocks close up, a grassy
+  hillside, water, from 600 m.
+- [ ] Later (not this phase): the sky drawing `cloud_puff`; the fluids' colours from the palette;
+  the characters in game (Phase 40); a 64-texel atlas for finer brushes.
+
+Exit criteria
+- [x] A material added by data alone is painted, mapped to a tile and read by name
+  (`gen.test.mjs`).
+- [x] A bad entry fails with a message naming it (`gen.test.mjs`).
+- [x] The default look is unchanged: the classic atlas is built as before and the default set is
+  classic (`the_query_picks_the_set_and_the_default_is_classic`,
+  `the_painterly_atlas_differs_from_the_classic_only_in_painted_tiles`).
+- [x] The frame cost is unchanged (the same atlas, meshes and shaders; `npm run bench --
+  --compare --configs painterly`, PAINTERLY_TEXTURES.md §7).
+- [ ] CI green; the owner's review of the look.

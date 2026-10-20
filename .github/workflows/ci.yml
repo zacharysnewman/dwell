@@ -34,6 +34,8 @@ jobs:
           node --test shared/look/spyglass.test.mjs
           node shared/look/daynight.mjs
           node --test shared/look/daynight.test.mjs
+          node shared/textures/gen.mjs
+          node --test shared/textures/gen.test.mjs
           node shared/sounds/gen.mjs
           node shared/worldgen/gen.mjs
           node --test shared/worldgen/gen.test.mjs

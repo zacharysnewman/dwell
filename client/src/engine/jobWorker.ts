@@ -1,13 +1,16 @@
 // A job worker (ARCHITECTURE.md §5.1, ADR 0007): its own instance of the Rust client's WASM runs
 // the jobs the main thread's pool posts (generation, LOD sections, the map, meshing), one
 // transferred buffer each way (web/jobs.rs).
-import { JobWorker, loadWasm } from './wasm';
+import { JobWorker, loadWasm, setTextureSet } from './wasm';
 
 interface WorkerScope {
   postMessage(message: ArrayBuffer | { memory: number }, transfer?: Transferable[]): void;
   onmessage:
     | ((
-        e: MessageEvent<ArrayBuffer | { t: 'init'; generatorVersion?: number; worldSeed?: bigint }>,
+        e: MessageEvent<
+          | ArrayBuffer
+          | { t: 'init'; generatorVersion?: number; worldSeed?: bigint; textures?: string }
+        >,
       ) => void)
     | null;
 }
@@ -39,6 +42,8 @@ scope.onmessage = (e) => {
   }
   void loadWasm().then((exports) => {
     memory = (exports as { memory?: WebAssembly.Memory }).memory ?? null;
+    // The page's texture set, before the first job: the LOD colours are its tiles' averages.
+    if (msg.textures !== undefined) setTextureSet(msg.textures);
     const w =
       msg.generatorVersion === undefined || msg.worldSeed === undefined
         ? JobWorker.mesher()

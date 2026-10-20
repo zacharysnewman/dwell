@@ -9,6 +9,7 @@ link). They are not part of any build; Prettier and CI ignore `docs/`.
 | Adaptive Block Lab | [`adaptive-block-lab.html`](./adaptive-block-lab.html) | https://claude.ai/artifact/7gvrFMfUyT6GegnyKPTTqV | The adaptive-block rules on whole scenes and three voxel grids |
 | Shape Playground | [`shape-playground.html`](./shape-playground.html) | https://claude.ai/artifact/Sc4Pu3UqX8TcpcrRrEYpVz | Every shape and situation, hand-shaped by the owner; the rules fitted to it |
 | Tree Growth | [`tree-growth.html`](./tree-growth.html) | https://claude.ai/artifact/MRW4RcNKTHkYdxMyRKLLHz | A hand-built tree grown by revealing its skeleton, obstacles, and jitter variants (Phase 30, G0) |
+| Painterly Texture Lab | [`painterly-texture-lab.html`](./painterly-texture-lab.html) | https://claude.ai/artifact/4CTkNW4G6p8p67MkSNMUJA | The painterly materials and palette edited live with the game's generator; the JSON copied back (Phase 39) |
 
 The first two feed [`ADAPTIVE_BLOCKS.md`](../ADAPTIVE_BLOCKS.md) (Phase 18, formerly 9e) and
 [ADR 0024](../adr/0024-adaptive-natural-blocks.md); Tree Growth feeds
@@ -64,6 +65,23 @@ The first two feed [`ADAPTIVE_BLOCKS.md`](../ADAPTIVE_BLOCKS.md) (Phase 18, form
   shows the authored tree and five seeds at full age; "Grow the variant" grows the jittered tree.
 - **Export**: the `growth` and `variants` sections as JSON (with the world's growth speed beside
   them), or the whole structure with them and the palette roles. The state is saved in the browser.
+
+## Painterly Texture Lab
+
+- Feeds [`PAINTERLY_TEXTURES.md`](../PAINTERLY_TEXTURES.md) and [`ART_DIRECTION.md`](../ART_DIRECTION.md)
+  ([ADR 0040](../adr/0040-painterly-textures.md)).
+- **Generated in part**: `node shared/textures/gen.mjs` rewrites the block between its `BEGIN
+  GENERATED` and `END GENERATED` markers. The block holds `paint.mjs` (the game's painter) and the
+  repo's palette and materials, and CI fails if it is stale. Edit the rest of the page by hand,
+  regenerate, then republish.
+- Materials by use (blocks, characters, sky accents). Each shows its tile, a 3 × 3 repeat, a block lit
+  from above at the game's face tints, and its colour from afar (the LOD's flat colour).
+- Edit the material's fields (use, ramp, overlay, wrap, alpha, `like`, `over`) and each layer: its kind,
+  palette colours as chips, numbers as `4` or `4, 7` for a [min, max] range, and `at` as JSON. Add,
+  move and delete layers. Edit the palette's ramps with colour pickers. Bad data shows the
+  generator's own validation message.
+- **Copy back**: one material, the whole `materials.json` or `palette.json`, ready to paste into
+  `shared/textures/`. Edits are kept in the browser; **Reset** returns to the repo's data.
 
 ## Updating them
 
