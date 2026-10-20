@@ -9,10 +9,12 @@ link). They are not part of any build; Prettier and CI ignore `docs/`.
 | Adaptive Block Lab | [`adaptive-block-lab.html`](./adaptive-block-lab.html) | https://claude.ai/artifact/7gvrFMfUyT6GegnyKPTTqV | The adaptive-block rules on whole scenes and three voxel grids |
 | Shape Playground | [`shape-playground.html`](./shape-playground.html) | https://claude.ai/artifact/Sc4Pu3UqX8TcpcrRrEYpVz | Every shape and situation, hand-shaped by the owner; the rules fitted to it |
 | Tree Growth | [`tree-growth.html`](./tree-growth.html) | https://claude.ai/artifact/MRW4RcNKTHkYdxMyRKLLHz | A hand-built tree grown by revealing its skeleton, obstacles, and jitter variants (Phase 30, G0) |
+| Character Lab | [`character-lab.html`](./character-lab.html) | https://claude.ai/artifact/YAieiGfJnp5f2FnoR6wQWB | The player's full body and first-person arms, the wolf and the deer, from `shared/characters` (Phase 40, C0) |
 
 The first two feed [`ADAPTIVE_BLOCKS.md`](../ADAPTIVE_BLOCKS.md) (Phase 18, formerly 9e) and
 [ADR 0024](../adr/0024-adaptive-natural-blocks.md); Tree Growth feeds
-[`TREE_GROWTH.md`](../TREE_GROWTH.md) and [ADR 0033](../adr/0033-tree-growth.md).
+[`TREE_GROWTH.md`](../TREE_GROWTH.md) and [ADR 0033](../adr/0033-tree-growth.md). The Character Lab feeds
+[`CHARACTERS.md`](../CHARACTERS.md) and [ADR 0041](../adr/0041-characters.md).
 
 ## Adaptive Block Lab
 
@@ -70,3 +72,25 @@ The first two feed [`ADAPTIVE_BLOCKS.md`](../ADAPTIVE_BLOCKS.md) (Phase 18, form
 Edit the file here and republish it to the same link, so the URL stays the same (in Claude Code:
 "publish `docs/prototypes/<file>` to <link>"; the Artifact tool updates an existing artifact by its
 URL after reading it). Commit the file with the change.
+
+## Character Lab
+
+- **Generated, not hand-edited, in part:** `node shared/characters/gen.mjs` writes the character data
+  (`shared/characters/characters.json`), the shared palette and materials, the rig module
+  (`rig.mjs`) and the painter (`shared/textures/paint.mjs`) into the page between its generated
+  markers; CI fails if the page is stale. Edit the rest of the page by hand.
+- **Subjects:** the player, first person (a small world, the hotbar, the arms drawn in their own pass
+  and FOV), the wolf, the deer, and a group to scale with 1 m blocks. Orbit, front, back, side and ¾
+  views, a turntable.
+- **Animation:** the clips by role (idle, walk; trot; graze), play, scrub and speed; break and place
+  swings (<kbd>B</kbd>, <kbd>P</kbd>) layered over the walk and the hold.
+- **Looks:** variants (wanderer, ranger, tinker; stag, doe), accessories by place (one per place),
+  colour slots from the shared materials, the held item (block or brush) and its block.
+- **Parts:** the list of the character's, its accessories' and the held item's parts; click a part
+  in the view to select it; edit every field live, duplicate, delete, add. Validated by `rig.mjs` as
+  you go.
+- **View options:** the silhouette check (flat ink), brush strokes on or off, the ink outline,
+  bones and sockets, the game's tone mapping and exposure.
+- **Copy characters.json** copies the whole file with the edits (or one character), to paste over
+  the data file and run the generator. `window.lab` drives it from a script (subject, angle,
+  variant, held item, clip time, a swing) for screenshots.

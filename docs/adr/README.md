@@ -46,6 +46,7 @@ one's status line. Resolving an item in `ARCHITECTURE.md` Open Decisions require
 | [0038](0038-block-registry-sync.md) | Block registry sync: the server sends its registry at join, the client maps ids at the boundary | Proposed |
 | [0039](0039-spyglass.md) | The spyglass: a data-driven zoom whose detail follows the narrow view | Accepted |
 | [0040](0040-painterly-textures.md) | Painterly textures: one data-driven stroke generator, baked at build time, behind a switch | Accepted |
+| [0041](0041-characters.md) | Characters and creatures: rigid chunky parts on a data rig, a separate first-person arms view | Accepted |
 
 Phase numbers in ADRs follow the implementation plan as it was then. In ADRs 0001–0010, Phases
 4–7 became 5–8 when the world-LOD phase (Phase 4) was added on 2026-09-29, and then 6–9 when the

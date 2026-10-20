@@ -308,6 +308,10 @@ There are **no official game servers**; players host (ADR 0003, details in §10)
                      materials) + paint.mjs (the generator, shared with the editor page and the
                      character prototypes) and gen.mjs (→ dwell-mesh painterly.rgba and
                      painterly.gen.rs), gen.test.mjs (PAINTERLY_TEXTURES.md, ADR 0040).
+/shared/characters   characters.json (rigs, characters, accessories, held items, clips; §5.3) +
+                     rig.mjs (the vocabulary, validation, composing, sampling) and gen.mjs (→ the
+                     Character Lab page, docs/prototypes/character-lab.html), gen.test.mjs
+                     (CHARACTERS.md, ADR 0041).
 /shared/brushes      brushes.json (brush presets and the per-world-type brush policy) + gen.mjs
                      (→ Rust for dwell-world brushes.gen.rs, TS for the shell's controls table; §6.5).
 /shared/version      vectors.txt: version precedence, compatibility lines and "may open" cases that the
@@ -348,7 +352,7 @@ argument and their collaborators as traits, so they run natively under test as i
 | Desktop | Electron 44.4.5 (`platforms/electron`) |
 | Releases | `release.yml` and `pages.yml` (§2.1): Node 22 type stripping runs `client/scripts/*.ts`; the Rust client is built with `DWELL_VERSION` (`npm run build:wasm`); `gh` publishes releases; the site is deployed with `actions/deploy-pages` |
 | Master server | TypeScript 6.0 on Cloudflare Workers (`services/master`, compatibility date 2026-08-15), Wrangler 4.124.0, `@cloudflare/workers-types`, Vitest 4.1 with `@cloudflare/vitest-pool-workers` 0.22.0 (tests run in workerd), ESLint/Prettier as the client; `legacy-peer-deps` in its `.npmrc` |
-| CI (`ci.yml`) | Protocol: the generators' (protocol, blocks, sounds) Rust and TS output and the golden vectors (including `shared/master/vectors.json`) must match the committed files. Master: format, lint, typecheck, Vitest in the Workers runtime, `wrangler deploy --dry-run`. Client-lint (its own fast job): builds the Rust client's module and types (`npm run build:wasm`), then format, lint, typecheck. Client: `npm run build:wasm`, Vitest, build, launcher build. E2E (the browser suite is serial, so it runs as four `--shard`s on separate runners, each building `dwell-server` in Release and the client): Playwright Chromium **headed under Xvfb** on SwiftShader's WebGPU — headless Chromium's software adapter loses the WebGPU device as soon as a canvas presents — against the native server and the built client (WebTransport, WebRTC, local mode, session replacement, movement, two clients seeing each other move with one over a simulated 150 ms link, breaking and placing every palette block, an edit seen by a second client, touch edits, a local world surviving a reload, the whole-world view, terrain drawing, flight speed, the block dump, menus, settings, friend worlds through a local `wrangler dev` master, the lobby, the version lock); shard 1 also runs the launcher's own e2e (`npm run e2e:site`: three versions assembled locally — which build each address opens, worlds in their own line, version badges, errors) and the Electron smoke test under Xvfb (a dedicated server over WebTransport, and local mode). Rust: `cargo fmt --check`, clippy `-D warnings` natively (all targets) and for `dwell-client` on wasm32, the third-party notices are current (`shared/licenses/gen.py --check`), `cargo nextest` over the workspace, the controller suites again ~49 km from the origin, near the rim (`DWELL_ORIGIN_X=far`) and on face B (`DWELL_FACE=b`) and the netcode suite far from the origin, the deterministic suites (blocks, protocol, world, worldgen goldens, the controller's golden trace as the native↔WASM divergence check) again under `wasm32-wasip1`, the 64-player controller gate in Release, then the WebGPU probe and the renderer's smoke scene in headless Chromium (`--use-webgpu-adapter=swiftshader`, offscreen first). The `CI` job needs all of the above and fails if any did not succeed: it is the one check to require in branch protection |
+| CI (`ci.yml`) | Protocol: the generators' (protocol, blocks, sounds) Rust and TS output and the golden vectors (including `shared/master/vectors.json`) must match the committed files, as must the Character Lab page that `shared/characters/gen.mjs` writes (§5.3). Master: format, lint, typecheck, Vitest in the Workers runtime, `wrangler deploy --dry-run`. Client-lint (its own fast job): builds the Rust client's module and types (`npm run build:wasm`), then format, lint, typecheck. Client: `npm run build:wasm`, Vitest, build, launcher build. E2E (the browser suite is serial, so it runs as four `--shard`s on separate runners, each building `dwell-server` in Release and the client): Playwright Chromium **headed under Xvfb** on SwiftShader's WebGPU — headless Chromium's software adapter loses the WebGPU device as soon as a canvas presents — against the native server and the built client (WebTransport, WebRTC, local mode, session replacement, movement, two clients seeing each other move with one over a simulated 150 ms link, breaking and placing every palette block, an edit seen by a second client, touch edits, a local world surviving a reload, the whole-world view, terrain drawing, flight speed, the block dump, menus, settings, friend worlds through a local `wrangler dev` master, the lobby, the version lock); shard 1 also runs the launcher's own e2e (`npm run e2e:site`: three versions assembled locally — which build each address opens, worlds in their own line, version badges, errors) and the Electron smoke test under Xvfb (a dedicated server over WebTransport, and local mode). Rust: `cargo fmt --check`, clippy `-D warnings` natively (all targets) and for `dwell-client` on wasm32, the third-party notices are current (`shared/licenses/gen.py --check`), `cargo nextest` over the workspace, the controller suites again ~49 km from the origin, near the rim (`DWELL_ORIGIN_X=far`) and on face B (`DWELL_FACE=b`) and the netcode suite far from the origin, the deterministic suites (blocks, protocol, world, worldgen goldens, the controller's golden trace as the native↔WASM divergence check) again under `wasm32-wasip1`, the 64-player controller gate in Release, then the WebGPU probe and the renderer's smoke scene in headless Chromium (`--use-webgpu-adapter=swiftshader`, offscreen first). The `CI` job needs all of the above and fails if any did not succeed: it is the one check to require in branch protection |
 | Enforced boundaries | Workspace lints forbid `unsafe` code; only `dwell-physics` uses Rapier types (game code holds opaque `BodyHandle`s); ESLint forbids `node:` built-ins outside tests in the client |
 
 ---
@@ -552,6 +556,22 @@ and by the main menu, which the launcher shows without WASM), so every button so
 ones need no wiring; `data-sound` overrides or silences one. Offline renders
 (`npm run sfx:render`) play every sound through the same synth and mixer in Chromium's
 `OfflineAudioContext`, check them (non-silent, peak < 1.0, sensible length) and write WAVs.
+
+### 5.3 Characters and creatures **[planned; Phase 40: the design, data and prototype built]**
+
+([ADR 0041](./adr/0041-characters.md), [`CHARACTERS.md`](./CHARACTERS.md).) Characters (the
+player's full body, its first-person arms, and creatures: a wolf and a deer so far) are **data**
+(`shared/characters/characters.json`): rigid chunky parts (box, rounded box, ellipsoid, cylinder,
+capsule, cone) on the bones of a shared rig (`biped`, `quadruped`: bones with ball, hinge or fixed
+joints and limits), each character giving its proportions as rest offsets, sockets, colour slots,
+parts, accessories (by place and socket, with the parts they hide), variants and keyframed clips by
+role (layered `base`, `hold`, `action`). Materials are names from the shared style (the painterly
+set's palette and materials, ADR 0040). The first-person arms are the body's own arm chain, anchored in view space and drawn
+in their own pass and FOV over a cleared depth buffer. `shared/characters/gen.mjs` validates the data
+(`rig.mjs`; the rest pose must stand on the ground at its height) and writes it with the painter
+into the Character Lab prototype page; CI fails on a stale page. **Not in the game yet:** remote
+players are still drawn as a capsule (`render/geometry.rs`); the renderer's character pass, a Rust
+loader and the netcode for looks, held items and swings are planned (`CHARACTERS.md` §9).
 
 ---
 
