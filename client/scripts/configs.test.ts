@@ -24,6 +24,8 @@ describe('bench --compare configurations', () => {
     expect(run.map((c) => c.name)).toEqual(['raster', 'raster-half']);
     expect(skipped.map((s) => s.name)).toEqual([
       'march',
+      'march-nobeam',
+      'march-notemporal',
       'march-half-fsr',
       'march-075-fsr',
       'march-half-bilateral',

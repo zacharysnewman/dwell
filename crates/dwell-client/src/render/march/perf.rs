@@ -158,7 +158,7 @@ fn march_perf() {
     {
         use dwell_march::layout::{COLUMN_WORDS, GRID_OFFSET, Slot, column_span};
         let sc = &m.gpu.scene;
-        for l in 0..20u32 {
+        for l in 0..dwell_march::layout::LEVEL_COUNT as u32 {
             let Some(info) = sc.level_info(l) else {
                 continue;
             };
@@ -229,6 +229,11 @@ fn march_perf() {
         });
         m.settings.debug = *bits;
         m.shade = env("DWELL_PERF_NOSHADE").is_none() && !variant.starts_with("noshade");
+        m.settings.beam = env("DWELL_PERF_NOBEAM").is_none() && !variant.contains("nobeam");
+        m.settings.temporal = !variant.contains("notemporal");
+        // `beamonly…`: the beam prepass alone.
+        m.march_pass = !variant.starts_with("beamonly");
+        m.shade &= m.march_pass;
         // The workgroup a variant's source declares.
         m.workgroup = match file {
             Some(f) => {
@@ -275,6 +280,9 @@ fn march_perf() {
                 m.collect();
             }
             ms.sort_by(f64::total_cmp);
+            if env("DWELL_PERF_CHECK").is_some() {
+                check_starts(&device, &queue, &mut m, (at, yaw, pitch), &targets, size);
+            }
             if let Some(dir) = env("DWELL_PERF_IMAGES") {
                 steps_image(
                     &device,
@@ -357,5 +365,76 @@ fn steps_image(
         groups as f64 / pixels as f64
     );
     std::fs::write(path, out).expect("image");
+    m.set_debug(0);
+}
+
+/// `DWELL_PERF_CHECK`: the starts on generated terrain. The view is drawn after the same view
+/// turned by a couple of degrees (the temporal start then applies where it can), every pixel's
+/// debug record read back, and every ray marched on the CPU from the eye: a start must never pass
+/// that march's hit. Counts too the rays whose outcome from the start differs from the eye's (a
+/// LOD switch falling elsewhere).
+fn check_starts(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    m: &mut Marcher,
+    (at, yaw, pitch): ([f64; 3], f64, f64),
+    targets: &super::MarchTargets,
+    size: (u32, u32),
+) {
+    use super::stats::{DEBUG_WORDS, DebugRay, HIST_WORDS};
+    use dwell_march::{Outcome, Ray};
+    let pixels = (size.0 * size.1) as usize;
+    m.set_debug(pixels);
+    for (y, p) in [
+        (yaw + 2.0, pitch + 1.0),
+        (yaw + 2.0, pitch + 1.0),
+        (yaw, pitch),
+    ] {
+        let frame = frame_for(at, y, p, size);
+        let mut e = device.create_command_encoder(&Default::default());
+        m.draw(&mut e, &frame, targets, None);
+        queue.submit([e.finish()]);
+    }
+    let frame = frame_for(at, yaw, pitch, size);
+    let words = block_on(
+        device,
+        super::check::read_buffer(
+            device,
+            queue,
+            m.stats_buffer_ref(),
+            HIST_WORDS as u64 * 4,
+            (pixels * DEBUG_WORDS) as u64 * 4,
+        ),
+    )
+    .expect("debug records");
+    let params = m.reference_params(&frame, size);
+    let origin = Ray::from_world(at, frame.forward);
+    let (mut past, mut changed, mut temporal, mut differ) = (0, 0, 0, 0);
+    for i in 0..pixels {
+        let g = DebugRay::from_words(&words[i * DEBUG_WORDS..(i + 1) * DEBUG_WORDS]);
+        let ray = Ray {
+            cell: origin.cell,
+            frac: origin.frac,
+            dir: g.dir,
+        };
+        let full = m.gpu.scene.march(&ray, &params);
+        let from = m.gpu.scene.march_from(&ray, &params, g.start);
+        temporal += usize::from(g.temporal);
+        if let Outcome::Hit(h) = full.outcome
+            && g.start > h.t
+        {
+            past += 1;
+        }
+        if full.outcome != from.outcome {
+            changed += 1;
+        }
+        if from.steps != g.steps {
+            differ += 1;
+        }
+    }
+    eprintln!(
+        "    starts: {pixels} rays, {temporal} temporal, {past} past a hit, {changed} changed \
+         outcome, {differ} records differ from the GPU's"
+    );
     m.set_debug(0);
 }

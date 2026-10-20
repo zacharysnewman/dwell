@@ -91,6 +91,19 @@ fn the_gpu_marcher_matches_the_reference_per_pixel() {
         report.max_depth_error,
         report.max_dir_error
     );
+    eprintln!(
+        "beam: {} rays started late ({} from the temporal start), {} past a hit, {} changed \
+         outcome",
+        report.started_late, report.temporal_starts, report.start_past_hit, report.start_changed
+    );
+    assert!(
+        report.temporal_starts > report.pixels / 20,
+        "the temporal start is taken (where it starts farther than the beam)"
+    );
+    assert!(
+        report.started_late > report.pixels / 4,
+        "the beam starts rays late"
+    );
     assert!(
         report.levels_hit & 0b1111 == 0b1111,
         "chunks and three LOD levels hit"
@@ -165,4 +178,17 @@ fn draws_on_the_noop_device_and_takes_terrain_through_the_seam() {
     assert!(edit > 0 && edit < 8 * 1024, "{edit} bytes for one edit");
     m.set_chunk(c, None);
     assert_eq!(m.gpu.scene.live_nodes(), 0);
+}
+
+#[test]
+fn the_page_query_switches_the_beam_prepass() {
+    let mut s = super::MarchSettings::default();
+    assert!(s.beam);
+    s.apply_query("?local=1&marchbeam=0&seed=7");
+    assert!(!s.beam);
+    s.apply_query("?marchbeam=1");
+    assert!(s.beam);
+    assert!(s.temporal);
+    s.apply_query("?marchtemporal=0");
+    assert!(!s.temporal && s.beam);
 }

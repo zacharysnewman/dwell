@@ -395,6 +395,15 @@ impl Scene {
 
     /// Marches one ray (see the module docs).
     pub fn march(&self, ray: &Ray, p: &MarchParams) -> March {
+        self.march_from(ray, p, 0.0)
+    }
+
+    /// Marches one ray from distance `start` on (metres along the ray): the beam prepass's start
+    /// ([`Scene::beam_start`], `crate::beam`), which no cell the ray would hit lies before. From
+    /// there the ray is in the cell `cell_at` finds inside the data's box, with no entry plane;
+    /// every plane distance is still measured from the ray's origin, so a hit has the bits a march
+    /// from the origin gives it.
+    pub fn march_from(&self, ray: &Ray, p: &MarchParams, start: f32) -> March {
         let rm = RayMath::new(ray);
         let mut steps = 0u32;
         let done = |outcome, steps| March { outcome, steps };
@@ -433,6 +442,11 @@ impl Scene {
             t = t_in.0.max(0.0);
             let plane = if rm.step[a] > 0 { wlo[a] } else { whi[a] };
             entry = Some((a, plane));
+            (lo, hi) = (wlo, whi);
+        }
+        if start > t {
+            t = start;
+            entry = None;
             (lo, hi) = (wlo, whi);
         }
         let t_end = p.max_t.min(rm.exit(wlo, whi).0);
