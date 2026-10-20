@@ -15,6 +15,7 @@ dwell-world = { path = "../dwell-world" }
 
 [dev-dependencies]
 dwell-blocks = { path = "../dwell-blocks", features = ["fixture"] }
+dwell-worldgen = { path = "../dwell-worldgen" }
 
 [lints]
 workspace = true

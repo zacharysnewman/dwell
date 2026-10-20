@@ -4,13 +4,13 @@ use crate::terrain::HeightField;
 
 /// The height field (shared/worldgen/terrain.json).
 pub const HEIGHT: HeightField = HeightField {
-    inland_rise: 130.0,
+    inland_rise: 320.0,
     rise_half: 6000.0,
     sea_floor: -20.0,
     shelf: 2500.0,
-    hill_height: 80.0,
-    hill_wavelength: 2048,
-    hill_octaves: 4,
+    hill_height: 225.0,
+    hill_wavelength: 1024,
+    hill_octaves: 5,
     hill_fade_from: 500.0,
     hill_fade_to: 4000.0,
     bump_height: 5.0,

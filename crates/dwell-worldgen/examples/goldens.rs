@@ -7,10 +7,10 @@
 use std::fmt::Write as _;
 
 use dwell_world::lod::{LodCells, LodCoord, lod_hash, section_size};
-use dwell_world::{Chunk, ChunkCoord, chunk_hash};
+use dwell_world::{CHUNK_SIZE, Chunk, ChunkCoord, Face, chunk_hash, mirror_chunk_y};
 use dwell_worldgen::BifacialTerrain;
 
-const VERSION: u32 = 15;
+const VERSION: u32 = 16;
 const SEEDS: [u64; 2] = [0, 20_260_925];
 
 fn section_at(level: i32, p: [i64; 3]) -> LodCoord {
@@ -24,22 +24,65 @@ fn section_at(level: i32, p: [i64; 3]) -> LodCoord {
     )
 }
 
+/// The world chunk rows holding the ground of chunk column (cx, cz) on both faces, and the row
+/// above each face's: the surface wherever the relief puts it.
+fn ground_rows(seed: u64, cx: i32, cz: i32) -> Vec<i32> {
+    let terrain = BifacialTerrain::new(seed);
+    let mut out = Vec::new();
+    for face in [Face::A, Face::B] {
+        let g = terrain.local(face);
+        let (mut lo, mut hi) = (i32::MAX, i32::MIN);
+        for z in 0..CHUNK_SIZE {
+            for x in 0..CHUNK_SIZE {
+                if let Some(y) = g.ground_y(cx * CHUNK_SIZE + x, cz * CHUNK_SIZE + z) {
+                    lo = lo.min(y);
+                    hi = hi.max(y + 1);
+                }
+            }
+        }
+        for row in lo.div_euclid(CHUNK_SIZE)..=hi.div_euclid(CHUNK_SIZE) + 1 {
+            out.push(if face == Face::A {
+                row
+            } else {
+                mirror_chunk_y(row)
+            });
+        }
+    }
+    out
+}
+
 fn main() {
     let root = concat!(env!("CARGO_MANIFEST_DIR"), "/../../shared/worldgen/golden");
     let registry = format!("{:x}", dwell_blocks::REGISTRY_HASH);
 
     let mut chunks: Vec<(u64, [i32; 3])> = Vec::new();
     for seed in SEEDS {
-        // Origin: the core and ground, the sea surface or land up to the hilltops (version 15), air
-        // above; face B's mirror rows.
-        for y in [-5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 6] {
-            chunks.push((seed, [0, y, 0]));
-            chunks.push((seed, [5, y, -3]));
+        // Origin: the core and ground, the sea surface or land, air above; face B's mirror rows;
+        // and the rows holding the ground wherever it lies (version 16's hills reach ~500 m).
+        for (x, z) in [(0, 0), (5, -3)] {
+            let base = [-5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 6];
+            let mut rows = base.to_vec();
+            rows.extend(
+                ground_rows(seed, x, z)
+                    .into_iter()
+                    .filter(|y| !base.contains(y)),
+            );
+            for y in rows {
+                chunks.push((seed, [x, y, z]));
+            }
         }
-        // Inland and across the coast (the island's coast lies 16–32 km out), both faces.
+        // Inland and across the coast (the island's coast lies 16–32 km out), both faces, and the
+        // ground's rows there.
         for (x, z) in [(-14, -36), (40, -12), (-300, 450)] {
-            chunks.push((seed, [x, 1, z]));
-            chunks.push((seed, [x, -2, z]));
+            let mut rows = vec![1, -2];
+            rows.extend(
+                ground_rows(seed, x, z)
+                    .into_iter()
+                    .filter(|y| ![1, -2].contains(y)),
+            );
+            for y in rows {
+                chunks.push((seed, [x, y, z]));
+            }
         }
         for x in (600..=1000).step_by(50) {
             chunks.push((seed, [x, 0, 0]));

@@ -1,6 +1,6 @@
 //! The worldgen goldens: the Rust generator reproduces, hash for hash, the chunks and LOD sections
 //! recorded in shared/worldgen/golden (by the C++ generator up to version 12, by the Rust generator
-//! since; now generator version 15, the larger relief). The same test runs under wasm32 in CI, so
+//! since; now generator version 16, the steep hills). The same test runs under wasm32 in CI, so
 //! native and WASM agree too (ADR 0010).
 
 use dwell_world::lod::{LodCells, LodCoord, lod_hash};

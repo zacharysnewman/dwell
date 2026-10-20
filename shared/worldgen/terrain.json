@@ -1,7 +1,7 @@
 {
   "$comment": "The interim terrain's height field (ARCHITECTURE.md §6.3, docs/WORLD_GENERATION.md): how the ground rises inland and falls offshore, and the noise relief over it. Heights in metres above sea level, distances and wavelengths in metres, octaves of a fractal sum whose amplitude is about ±amplitude. Prototype content (§6.1). Changing any value changes the terrain a seed generates: bump the generator version, regenerate the goldens (`cargo run -p dwell-worldgen --example goldens`) and ship it on a new compatibility line. Run `node shared/worldgen/gen.mjs` after editing; CI fails on stale output. Phase 17's terrain definitions (ADR 0026) take this over.",
-  "inland": { "rise": 130, "halfDistance": 6000 },
+  "inland": { "rise": 320, "halfDistance": 6000 },
   "seaFloor": { "depth": 20, "shelf": 2500 },
-  "hills": { "amplitude": 80, "wavelength": 2048, "octaves": 4, "fadeFrom": 500, "fadeTo": 4000 },
+  "hills": { "amplitude": 225, "wavelength": 1024, "octaves": 5, "fadeFrom": 500, "fadeTo": 4000 },
   "bumps": { "amplitude": 5, "wavelength": 128, "octaves": 3 }
 }
