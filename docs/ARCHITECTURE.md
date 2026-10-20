@@ -1358,15 +1358,25 @@ Players break and place blocks. Server-authoritative like every voxel change
   [`BRUSHES.md`](./BRUSHES.md); `dwell-world` `brush.rs`, `dwell-game` `brush_tool.rs`):
   VoxelSniper-style painting and sculpting in world types whose brush policy allows it (today only
   `sandbox`).
-  - **Engine.** A **brush** (ball, disc, cylinder, cube, ellipsoid, seeded splatter, line) is a set
-    of cells around a centre, with a radius of 1–16. A **performer** changes the cells read from a
-    grid of the world: set, replace, overlay (the top layers), erase, or the sculpt performers
+  - **Engine.** A **brush** is a set of cells around a centre, with a radius of 1–16: ball, disc,
+    cylinder, cube, ellipsoid, seeded splatter, line, square, a disc, square or ellipse across the
+    aimed-at face, ring, triangle (three clicks), jagged line, blob, dome, snipe (one cell), and
+    two that bring their own blocks — a **stencil** (a structure from `shared/structures`, placed by
+    its anchor with its own variants, one of a list) and a procedural **tree** (wood, leaves,
+    limbs, roots). Any brush can be thinned by a seeded density or a checkerboard. A **performer**
+    changes the cells read from a grid of the world: set, replace, overlay (the top layers, or new
+    layers on top), underlay, erase, stamp (the brush's own blocks), or the sculpt performers
     smooth (a 26-neighbour majority filter), erode (VoxelSniper's erode/fill by open and solid
-    faces), flatten, raise and lower (by column). A mask (air, solid, target) limits a set, erase
-    or overlay. These are a fixed vocabulary in code.
+    faces), blend and linear blend (the commonest neighbouring state), hollow (a shell), flatten,
+    raise, lower and fill down (by column), and extrude (along the aimed-at face). A mask (air,
+    solid, target, not target, liquid) limits which cells change. These are a fixed vocabulary in
+    code; every random choice is seeded by the preset and the aim, so a stroke is a pure function
+    of its inputs.
   - **Data.** Named **presets** (brush, performer, size, an optional free key, parameters) and the
     per-world-type **policy** (`brushes`, `reach`) are data in `shared/brushes/brushes.json`,
     validated by `gen.mjs` into `brushes.gen.rs` and `brushes.gen.ts`; CI fails on stale output.
+    Parameters that name things (a stencil's structures, a tree's blocks) are checked against the
+    structures and the block registry, so `gen.mjs` runs after their generators.
   - **Strokes.** A stroke's changed cells (never an unbreakable one) go as `RegionEdit` **Paste**es
     of at most 32³, split by 32-cell tiles and trimmed to their cells, with every other cell
     **`KEEP`** (`region_edit::KEEP`, 0xFFFF), which the server leaves as it is. The client sends

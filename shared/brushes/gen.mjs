@@ -2,9 +2,10 @@
 // Generates the brush presets and the per-world-type brush policy for Rust and TypeScript from
 // shared/brushes/brushes.json (docs/BRUSHES.md). Outputs are checked in; CI regenerates and fails on
 // any diff. A bad entry fails with a message naming it.
-import { readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { canonicalState, registryFromVector } from '../structures/format.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, '..', '..');
@@ -16,9 +17,33 @@ const fail = (m) => {
 };
 
 // ---- The engine's vocabulary (dwell-world brush.rs): fixed in code ---------------------------------
-const BRUSHES = ['ball', 'disc', 'cylinder', 'cube', 'ellipsoid', 'splatter', 'line'];
-const PERFORMERS = ['set', 'replace', 'overlay', 'erase', 'smooth', 'erode', 'flatten', 'raise', 'lower'];
-const MASKS = ['none', 'air', 'solid', 'target'];
+const BRUSHES = [
+  'ball', 'disc', 'cylinder', 'cube', 'ellipsoid', 'splatter', 'line', 'square', 'disc_face', 'square_face',
+  'ellipse', 'ring', 'triangle', 'jagged_line', 'blob', 'dome', 'snipe', 'stencil', 'tree',
+];
+const PERFORMERS = [
+  'set', 'replace', 'overlay', 'erase', 'smooth', 'erode', 'flatten', 'raise', 'lower', 'blend', 'linear_blend',
+  'underlay', 'hollow', 'fill_down', 'extrude', 'stamp',
+];
+const MASKS = ['none', 'air', 'solid', 'target', 'not_target', 'liquid'];
+/** Brushes that bring their own blocks: the only ones a stamp takes (dwell-world `own_blocks`). */
+const OWN_BLOCKS = ['stencil', 'tree'];
+/** The block registry (shared/blocks/gen.mjs's vectors) and the structures (shared/structures/*.json,
+ * not the test fixtures) that presets name. */
+const registry = registryFromVector(readFileSync(join(root, 'shared/blocks/vectors.txt'), 'utf8'));
+const structuresDir = join(root, 'shared/structures');
+const STRUCTURES = existsSync(structuresDir)
+  ? readdirSync(structuresDir)
+      .filter((f) => f.endsWith('.json'))
+      .map((f) => JSON.parse(readFileSync(join(structuresDir, f), 'utf8')).name)
+  : [];
+const blockName = (v) => {
+  try {
+    return typeof v === 'string' && canonicalState(registry, v) !== undefined;
+  } catch {
+    return false;
+  }
+};
 /** World types a policy may name (client/src/local/worldIndex.ts WORLD_TYPES; dwell-world `world_type`). */
 const WORLD_TYPES = ['terrain', 'flat', 'sandbox'];
 /** Keys a preset may take while the brush tool is on: none of the game's other bindings
@@ -30,25 +55,56 @@ const SIZE_CAP = 16;
 
 const int = (lo, hi) => (v) => Number.isInteger(v) && v >= lo && v <= hi;
 const num = (lo, hi) => (v) => typeof v === 'number' && Number.isFinite(v) && v >= lo && v <= hi;
-/** Each parameter: its check, a description for messages, its default, and who takes it. */
+const bool = { ok: (v) => typeof v === 'boolean', want: 'true or false', def: false };
+/** Each parameter: its check, a description for messages, its default, and who takes it (`*`: every
+ * brush). */
 const PARAMS = {
-  height: { ok: int(1, 32), want: 'an integer 1–32', def: 1, for: ['cylinder', 'flatten', 'raise', 'lower'] },
+  height: {
+    ok: int(1, 32),
+    want: 'an integer 1–32',
+    def: 1,
+    for: ['cylinder', 'tree', 'flatten', 'raise', 'lower', 'fill_down', 'extrude'],
+  },
   stretch: {
     ok: (v) => Array.isArray(v) && v.length === 3 && v.every(num(0.1, 4)),
     want: 'three numbers 0.1–4 (x, y, z)',
     def: [1, 1, 1],
-    for: ['ellipsoid'],
+    for: ['ellipsoid', 'ellipse', 'dome'],
   },
-  density: { ok: num(0.01, 1), want: 'a number 0.01–1', def: 0.5, for: ['splatter'] },
-  seed: { ok: int(0, 0xffffffff), want: 'an integer 0–4294967295', def: 0, for: ['splatter'] },
-  depth: { ok: int(1, 8), want: 'an integer 1–8', def: 1, for: ['overlay'] },
-  mask: { ok: (v) => MASKS.includes(v), want: MASKS.join(', '), def: 'none', for: ['set', 'erase', 'overlay'] },
-  iterations: { ok: int(1, 8), want: 'an integer 1–8', def: 1, for: ['smooth'] },
+  density: { ok: num(0.01, 1), want: 'a number 0.01–1', def: 1, for: ['*'] },
+  seed: { ok: int(0, 0xffffffff), want: 'an integer 0–4294967295', def: 0, for: ['*'] },
+  checker: { ...bool, for: ['*'] },
+  depth: { ok: int(1, 8), want: 'an integer 1–8', def: 1, for: ['overlay', 'underlay', 'hollow'] },
+  mask: {
+    ok: (v) => MASKS.includes(v),
+    want: MASKS.join(', '),
+    def: 'none',
+    for: ['set', 'erase', 'overlay', 'underlay', 'blend', 'linear_blend', 'stamp'],
+  },
+  iterations: { ok: int(1, 8), want: 'an integer 1–8', def: 1, for: ['smooth', 'blend', 'linear_blend'] },
   erodeFaces: { ok: int(1, 6), want: 'an integer 1–6', def: 2, for: ['erode'] },
   erodeIterations: { ok: int(0, 8), want: 'an integer 0–8', def: 1, for: ['erode'] },
   fillFaces: { ok: int(1, 6), want: 'an integer 1–6', def: 5, for: ['erode'] },
   fillIterations: { ok: int(0, 8), want: 'an integer 0–8', def: 1, for: ['erode'] },
-  falloff: { ok: (v) => typeof v === 'boolean', want: 'true or false', def: false, for: ['raise', 'lower'] },
+  falloff: { ...bool, for: ['raise', 'lower'] },
+  onTop: { ...bool, for: ['overlay'] },
+  excludeAir: { ...bool, for: ['blend', 'linear_blend'] },
+  excludeWater: { ...bool, for: ['blend', 'linear_blend'] },
+  width: { ok: int(1, 16), want: 'an integer 1–16', def: 1, for: ['ring'] },
+  jitter: { ok: int(1, 8), want: 'an integer 1–8', def: 1, for: ['jagged_line'] },
+  growth: { ok: num(0.05, 1), want: 'a number 0.05–1', def: 0.5, for: ['blob'] },
+  structures: {
+    ok: (v) => Array.isArray(v) && v.length >= 1 && v.length <= 16 && v.every((n) => STRUCTURES.includes(n)),
+    want: `1–16 structure names from shared/structures (${STRUCTURES.join(', ') || 'none'})`,
+    def: [],
+    for: ['stencil'],
+  },
+  wood: { ok: blockName, want: 'a block state in the registry', def: '', for: ['tree'] },
+  leaves: { ok: blockName, want: 'a block state in the registry', def: '', for: ['tree'] },
+  branches: { ok: int(0, 12), want: 'an integer 0–12', def: 4, for: ['tree'] },
+  branchLength: { ok: int(1, 16), want: 'an integer 1–16', def: 5, for: ['tree'] },
+  roots: { ok: int(0, 8), want: 'an integer 0–8', def: 0, for: ['tree'] },
+  thickness: { ok: int(1, 4), want: 'an integer 1–4', def: 1, for: ['tree'] },
 };
 
 // ---- Validate ------------------------------------------------------------------------------------
@@ -90,12 +146,16 @@ const presets = data.presets.map((p, i) => {
   for (const [k, v] of Object.entries(p.params ?? {})) {
     const def = PARAMS[k];
     if (!def) fail(`${at}: unknown parameter ${k}`);
-    if (!def.for.includes(p.brush) && !def.for.includes(p.performer)) {
+    if (!def.for.includes('*') && !def.for.includes(p.brush) && !def.for.includes(p.performer)) {
       fail(`${at}: ${k} is for ${def.for.join(', ')}, not ${p.brush} ${p.performer}`);
     }
     if (!def.ok(v)) fail(`${at}: ${k} must be ${def.want}`);
     params[k] = v;
   }
+  if (p.performer === 'stamp' && !OWN_BLOCKS.includes(p.brush)) {
+    fail(`${at}: stamp puts a brush's own blocks: only ${OWN_BLOCKS.join(', ')} have them`);
+  }
+  if (p.brush === 'stencil' && params.structures.length === 0) fail(`${at}: a stencil needs structures`);
   return { ...p, params };
 });
 
@@ -136,6 +196,7 @@ for (const p of presets) {
   rs.push(`            stretch: [${q.stretch.map(f32).join(', ')}],`);
   rs.push(`            density: ${f32(q.density)},`);
   rs.push(`            seed: ${q.seed},`);
+  rs.push(`            checker: ${q.checker},`);
   rs.push(`            depth: ${q.depth},`);
   rs.push(`            mask: Mask::${pascal(q.mask)},`);
   rs.push(`            iterations: ${q.iterations},`);
@@ -144,6 +205,19 @@ for (const p of presets) {
   rs.push(`            fill_faces: ${q.fillFaces},`);
   rs.push(`            fill_iterations: ${q.fillIterations},`);
   rs.push(`            falloff: ${q.falloff},`);
+  rs.push(`            on_top: ${q.onTop},`);
+  rs.push(`            exclude_air: ${q.excludeAir},`);
+  rs.push(`            exclude_water: ${q.excludeWater},`);
+  rs.push(`            width: ${q.width},`);
+  rs.push(`            jitter: ${q.jitter},`);
+  rs.push(`            growth: ${f32(q.growth)},`);
+  rs.push(`            structures: &[${q.structures.map((n) => JSON.stringify(n)).join(', ')}],`);
+  rs.push(`            wood: ${JSON.stringify(q.wood && canonicalState(registry, q.wood))},`);
+  rs.push(`            leaves: ${JSON.stringify(q.leaves && canonicalState(registry, q.leaves))},`);
+  rs.push(`            branches: ${q.branches},`);
+  rs.push(`            branch_length: ${q.branchLength},`);
+  rs.push(`            roots: ${q.roots},`);
+  rs.push(`            thickness: ${q.thickness},`);
   rs.push('        },');
   rs.push('    },');
 }
