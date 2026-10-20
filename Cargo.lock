@@ -662,6 +662,7 @@ dependencies = [
  "dwell-physics",
  "dwell-protocol",
  "dwell-world",
+ "dwell-worldgen",
 ]
 
 [[package]]

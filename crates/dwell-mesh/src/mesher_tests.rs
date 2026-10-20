@@ -2,6 +2,7 @@
 
 use super::*;
 use dwell_blocks::{RenderMode, ShapeFace, require};
+use dwell_world::{ChunkCoord, FaceFrame};
 
 const UNKNOWN: u16 = 65_000;
 
@@ -1231,3 +1232,119 @@ fn a_plant_that_does_not_sit_on_its_support_keeps_to_its_cells_floor_by_data_alo
     );
     assert!(feet_of(plant).iter().all(|p| (p[1] - 0.5).abs() < 1e-5));
 }
+
+// --- Face parity (BIFACIAL_WORLD.md §11) --------------------------------------------------------
+
+/// A generated face-A chunk and its apron copied onto `f`'s face as the face-local mirror image,
+/// then gathered as the client does (padded from the world) and meshed for that face.
+fn mesh_on_face(source: &mut dwell_world::VoxelWorld, c: ChunkCoord, f: FaceFrame) -> ChunkMeshes {
+    let mut world = dwell_world::VoxelWorld::new(dwell_world::empty_generator(), None);
+    let n = CHUNK_SIZE;
+    let o = [c.x * n, c.y * n, c.z * n];
+    for y in -1..=n {
+        for z in -1..=n {
+            for x in -1..=n {
+                let m = source.get_voxel(o[0] + x, o[1] + y, o[2] + z);
+                let [wx, wy, wz] = f.cell([o[0] + x, o[1] + y, o[2] + z]);
+                world.set_voxel(wx, wy, wz, f.state(m));
+            }
+        }
+    }
+    let wc = f.chunk(c);
+    let padded = world.padded_block(wc, 1);
+    let mirror = FaceFrame::at_chunk_y(wc.y).is_b();
+    assert_eq!(mirror, f.is_b());
+    mesh_chunk_at(&padded, mirror, [wc.x * n, wc.y * n, wc.z * n]).expect("padded")
+}
+
+/// Positions and normals turned into the face-local frame (y within the chunk mirrored on B,
+/// triangles re-wound), so meshes of the two faces compare.
+fn local_mesh(f: FaceFrame, mut m: MeshArrays) -> MeshArrays {
+    if f.is_b() {
+        for p in m.positions.iter_mut().skip(1).step_by(3) {
+            *p = CHUNK_SIZE as f32 - *p;
+        }
+        for v in m.normals.iter_mut().skip(1).step_by(3) {
+            *v = -*v;
+        }
+        for t in m.indices.chunks_exact_mut(3) {
+            t.swap(1, 2);
+        }
+    }
+    m
+}
+
+dwell_world::both_faces!(
+    /// The chunk mesher draws a face-B chunk as the exact mirror image of the face-A chunk it
+    /// mirrors — terrain shapes, grass skirts, plants (their jitter too), trees, water and shores —
+    /// gathered from the world the way the client gathers it.
+    fn a_chunk_meshes_the_same_face_local_on_either_face(f: FaceFrame) {
+        let g = dwell_worldgen::generator_for(dwell_world::GENERATOR_TERRAIN, 7);
+        let air = dwell_worldgen::air_test_for(dwell_world::GENERATOR_TERRAIN, 7);
+        let mut source = dwell_world::VoxelWorld::new(g, Some(air));
+        let spawn = dwell_worldgen::spawn_point_for(dwell_world::GENERATOR_TERRAIN, 7);
+        let at = |x: f64, y: f64, z: f64| {
+            ChunkCoord::new(
+                (x / 32.0).floor() as i32,
+                (y / 32.0).floor() as i32,
+                (z / 32.0).floor() as i32,
+            )
+        };
+        let s = at(spawn[0], spawn[1] - 1.0, spawn[2]);
+        let mut chunks = vec![
+            s,
+            ChunkCoord::new(s.x + 1, s.y, s.z),
+            ChunkCoord::new(s.x, s.y, s.z - 1),
+        ];
+        // A shore: the first column east of the spawn at sea level.
+        let t = dwell_worldgen::BifacialTerrain::new(7);
+        let local = t.local(dwell_world::Face::A);
+        let mut x = spawn[0] as i32;
+        while local.column_at(x, spawn[2] as i32).height >= dwell_world::SEA_LEVEL as f32 {
+            x += 8;
+        }
+        chunks.push(at(
+            f64::from(x),
+            f64::from(dwell_world::SEA_LEVEL) - 1.0,
+            spawn[2],
+        ));
+        for c in chunks {
+            let a = mesh_on_face(&mut source, c, FaceFrame::A);
+            let b = mesh_on_face(&mut source, c, f);
+            assert!(!a.opaque.indices.is_empty(), "{c:?} is empty");
+            for (name, ma, mb) in [
+                ("opaque", a.opaque, b.opaque),
+                ("transparent", a.transparent, b.transparent),
+                ("cutout", a.cutout, b.cutout),
+            ] {
+                let mb = local_mesh(f, mb);
+                for (field, x, y) in [
+                    ("positions", &mb.positions, &ma.positions),
+                    ("normals", &mb.normals, &ma.normals),
+                    ("colors", &mb.colors, &ma.colors),
+                    ("uvs", &mb.uvs, &ma.uvs),
+                    ("tiles", &mb.tiles, &ma.tiles),
+                    ("plants", &mb.plants, &ma.plants),
+                    ("bare", &mb.bare, &ma.bare),
+                    ("fluids", &mb.fluids, &ma.fluids),
+                ] {
+                    // To float rounding: the mirror's positions are turned in f64 and back.
+                    let i = x
+                        .iter()
+                        .zip(y.iter())
+                        .position(|(p, q)| (p - q).abs() > 1e-4);
+                    assert!(
+                        x.len() == y.len() && i.is_none(),
+                        "{c:?} {name} {field}: {:?} lens {} {} at {i:?}: {:?} vs {:?}",
+                        f.face,
+                        x.len(),
+                        y.len(),
+                        i.map(|i| &x[i.saturating_sub(3)..(i + 3).min(x.len())]),
+                        i.map(|i| &y[i.saturating_sub(3)..(i + 3).min(y.len())])
+                    );
+                }
+                assert_eq!(mb.indices, ma.indices, "{c:?} {name} indices: {:?}", f.face);
+            }
+        }
+    }
+);

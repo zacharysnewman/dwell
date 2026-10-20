@@ -3,7 +3,13 @@ import type { Channel, HostState, TransportKind } from '../protocol/constants.ge
 import type { HostPolicy } from './wasmCore';
 
 export type ToWorker =
-  | { t: 'start'; worldSeed: number; generatorVersion: number; file?: string }
+  | {
+      t: 'start';
+      worldSeed: number;
+      generatorVersion: number;
+      file?: string;
+      spawnFaceB?: boolean;
+    }
   | { t: 'connect'; session: number; kind: TransportKind; binding: Uint8Array }
   | { t: 'reliable'; session: number; channel: Channel; bytes: Uint8Array }
   | { t: 'datagram'; session: number; bytes: Uint8Array }

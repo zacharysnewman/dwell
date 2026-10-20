@@ -131,6 +131,11 @@ describe('scenarios', () => {
     expect(s.steps[0]).toEqual({ do: 'repeat', times: 3, steps: body });
     expect(s.split).toBe('near');
     expect(scenarioUrl('./', s)).toBe('./?local=1&seed=7');
+    // A face-B scenario spawns its player on face B (BIFACIAL_WORLD.md §11).
+    const [b] = parseScenarios(file([{ ...minimal, face: 'b' }]));
+    expect(b.face).toBe('b');
+    expect(scenarioUrl('./', b)).toBe('./?local=1&seed=7&spawn=b');
+    expect(() => parseScenarios(file([{ ...minimal, face: 'c' }]))).toThrow(/"a" or "b"/);
     const repeat = (times: number, steps: unknown[]): unknown =>
       file([{ name: 'a', steps: [{ do: 'repeat', times, steps }] }]);
     expect(() => parseScenarios(repeat(2, [{ do: 'record', name: 'x' }]))).toThrow(

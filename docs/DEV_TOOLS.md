@@ -57,8 +57,9 @@ Output per scenario, in `OUT/<scenario>/`:
 `fog`, `detail`, `exposure`, `clouds`, `water`, `motion` and `timeOfDay` (0–1, 0 midnight: `?time=`) —
 `{ "speedEffects": false }` turns the motion effects off, for a before/after of their cost in one
 build),
-`debug` (`?debug=1`), `scale` and `split` (`near` or `far`: which part of the view it measures, for
-`--compare`'s split) are optional. Steps (`scripts/scenarios.ts`, checked: unknown
+`debug` (`?debug=1`), `scale`, `split` (`near` or `far`: which part of the view it measures, for
+`--compare`'s split) and `face` (`"b"`: the player spawns on face B, the dev link `?spawn=b` —
+BIFACIAL_WORLD.md §11; default `"a"`) are optional. Steps (`scripts/scenarios.ts`, checked: unknown
 fields, ranges and names fail with the entry named):
 
 | Step | Does |
