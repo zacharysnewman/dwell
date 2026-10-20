@@ -2,6 +2,8 @@
 
 ## This branch: `claude/half-height-voxels` (an experiment, not for `main`)
 
+**Variant: this is `hh-variant/v4-sobel-nosnap`, V4 of the slopes 2×2 (owner, 2026-10-20; generator label 1104): the 1 m step snap off (terrain.json steps.height 0) and the new Sobel ramp rule: today's option A.** Otherwise identical to `claude/half-height-voxels` at a317587.
+
 This long-lived branch tries **½ m tall cells** (1 × ½ × 1 m) in place of 1 m cubes, for the owner
 to playtest. It reaches `main` only if the owner keeps it after playing it; don't merge it, open a
 PR for it, or raise `package.json` on it.
