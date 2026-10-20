@@ -75,6 +75,7 @@ export const KEYBOARD: ControlGroup[] = [
       { action: 'Next / previous brush shape', keys: ['Z', 'Shift+Z'] },
       { action: 'Next / previous performer', keys: ['P', 'Shift+P'] },
       { action: 'Smaller / bigger brush', keys: ['[', ']', 'Alt+Wheel'] },
+      { action: 'Exact-cell preview on or off', keys: ['\\'], when: 'off, the brush’s box shows' },
       {
         action: 'Pick a preset by its key',
         keys: BRUSH_PRESETS.flatMap((p) => (p.key ? [`${keyLabel(p.key)} ${p.label}`] : [])),

@@ -1391,7 +1391,7 @@ impl<S: Scene> Game<S> {
             scene.set_camera(camera_eye, yaw, -25.0, f64::from(face), 0.0);
             drop(scene);
             self.show_hud_text();
-            self.target(None, input);
+            self.target(None, input, now_ms);
             self.update_motion(c.position, dt);
         } else {
             self.scene
@@ -1406,7 +1406,7 @@ impl<S: Scene> Game<S> {
                 .set_camera(eye, yaw, pitch, f64::from(face), flip);
             self.listener = listener(eye, yaw, pitch, face);
             let ready = self.terrain_ready();
-            self.target(ready.then_some(eye), input);
+            self.target(ready.then_some(eye), input, now_ms);
             self.update_motion(eye, dt);
         }
         let camera_eye = match self.view {
@@ -1584,7 +1584,7 @@ impl<S: Scene> Game<S> {
     }
 
     /// Targets the block under the crosshair from `eye` and outlines it (none while not playing).
-    fn target(&mut self, eye: Option<[f64; 3]>, input: &KeyboardMouseInput) {
+    fn target(&mut self, eye: Option<[f64; 3]>, input: &KeyboardMouseInput, now_ms: f64) {
         let face = self.current.face;
         let t = self.interaction.update(
             self.streamer.store_mut(),
@@ -1606,9 +1606,18 @@ impl<S: Scene> Game<S> {
         } else {
             t
         };
+        // The brush's preview: the ghost of the cells a stroke there would change (BRUSHES.md §3).
+        let target_state = self.brush.target().map_or(0, |t| {
+            self.streamer
+                .store_mut()
+                .get_voxel(t.cell[0], t.cell[1], t.cell[2])
+        });
+        let materials = self.brush.materials(self.selected_material(), target_state);
+        self.brush
+            .update_preview(materials, &mut self.streamer, now_ms);
         self.scene
             .borrow_mut()
-            .set_brush_outline(self.brush.outline().as_ref());
+            .set_brush_outline(self.brush.outline());
         let Some(t) = t else {
             self.scene.borrow_mut().set_block_outline(None, FULL_CELL);
             return;

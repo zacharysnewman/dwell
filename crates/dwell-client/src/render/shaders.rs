@@ -572,6 +572,21 @@ fn line_fs(i: LineOut) -> @location(0) vec4f {
     return vec4f(i.color * draw.tint.rgb, draw.tint.a * shown / f32(SCENE_SAMPLES));
 }
 
+// A brush preview's ghost (BRUSHES.md §3): see-through faces, at a third of their opacity where
+// the scene is in front of them, so cells inside the ground still show.
+@fragment
+fn ghost_fs(i: LineOut) -> @location(0) vec4f {
+    let draw = draws[i.draw];
+    let p = vec2i(i.clip.xy);
+    var shown = 0.0;
+    for (var s = 0; s < SCENE_SAMPLES; s++) {
+        let d = textureLoad(scene_depth, p, s).r;
+        shown += select(0.0, 1.0, d <= 0.0 || i.depth <= d * (1.0 + 1e-5));
+    }
+    let k = shown / f32(SCENE_SAMPLES);
+    return vec4f(i.color * draw.tint.rgb, draw.tint.a * (0.33 + 0.67 * k));
+}
+
 // Lines drawn over everything (the debug lines).
 @fragment
 fn line_top_fs(i: LineOut) -> @location(0) vec4f {

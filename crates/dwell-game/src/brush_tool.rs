@@ -1,8 +1,9 @@
 //! The brush tool (docs/BRUSHES.md; VoxelSniper-style painting and sculpting in worlds whose type
 //! allows brushes): a preset from `shared/brushes/brushes.json`, changed by keys (brush, performer,
-//! size), aimed along the view ray up to the world's brush reach, outlined at the target, and
-//! applied as one undo step of `KEEP` pastes through the region tools. Like every edit, nothing is
-//! predicted: the change shows when the server's VoxelModification arrives.
+//! size), aimed along the view ray up to the world's brush reach, previewed at the target as a
+//! see-through ghost of the exact cells the stroke would change, and applied as one undo step of
+//! `KEEP` pastes through the region tools. Like every edit, nothing is predicted: the change shows
+//! when the server's VoxelModification arrives.
 //!
 //! Left click is VoxelSniper's arrow (the brush centred on the aimed-at block), right click its
 //! gunpowder (centred on the cell in front of it, where a block would be placed); a middle or Alt
@@ -10,10 +11,12 @@
 
 use dwell_blocks::{StateId, info};
 use dwell_world::brush::{
-    Aim, BRUSH_KINDS, BrushKind, BrushSpec, Grid, MAX_SIZE, MIN_SIZE, Materials, PERFORMER_KINDS,
-    PRESETS, PerformerKind, bounds, brush_cells, paste_edits, perform, read_bounds,
+    Aim, BRUSH_KINDS, BrushKind, BrushSpec, Change, Grid, MAX_SIZE, MIN_SIZE, Materials,
+    PERFORMER_KINDS, PRESETS, PerformerKind, bounds, brush_cells, paste_edits, perform,
+    read_bounds,
 };
 use dwell_world::edit::FACE_DIRS;
+use std::collections::HashMap;
 
 use crate::block_interaction::BlockTarget;
 use crate::region_tools::{BoxSource, RegionTools, ToolContext};
@@ -34,6 +37,8 @@ pub enum BrushAction {
     Smaller,
     /// The preset at this index of `PRESETS` (its data `key`).
     Preset(usize),
+    /// The exact-cell preview on or off (`\`).
+    Preview,
 }
 
 /// The brush key `code` (`KeyboardEvent.code`) is, with Ctrl/⌘ up: V always (where brushes are
@@ -55,6 +60,7 @@ pub fn brush_key(code: &str, shift: bool, active: bool) -> Option<BrushAction> {
         "KeyP" => B::NextPerformer,
         "BracketRight" => B::Bigger,
         "BracketLeft" => B::Smaller,
+        "Backslash" => B::Preview,
         _ => {
             return PRESETS
                 .iter()
@@ -64,11 +70,140 @@ pub fn brush_key(code: &str, shift: bool, active: bool) -> Option<BrushAction> {
     })
 }
 
-/// A wireframe of the brush at its target, for the renderer: segments relative to `origin` (m).
+/// The most ghost faces a preview draws; a stroke whose ghost would have more shows the box of
+/// its cells instead (a size-16 ball's surface is about 7,000 faces, a dense splatter's 30,000).
+pub const GHOST_FACE_CAP: usize = 16_384;
+
+/// How often a preview whose aim and brush are unchanged is rebuilt for the world under it (ms).
+pub const PREVIEW_REFRESH_MS: f64 = 250.0;
+
+/// What a ghost cell becomes (its colour).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum GhostKind {
+    /// A block where there was air or water.
+    Put,
+    /// Air or water where there was a block.
+    Remove,
+    /// Another block where there was one.
+    Paint,
+}
+
+/// One face of the ghost: its corners relative to the preview's `origin` (m), anticlockwise seen
+/// from outside, and what its cell becomes.
+pub type GhostFace = ([[f32; 3]; 4], GhostKind);
+
+/// The brush's preview at its target, for the renderer (BRUSHES.md §3): the ghost of the exact
+/// cells a stroke would change — their outer faces, a little proud of the cells — and lines (a
+/// line's or triangle's clicks; the box of the brush's cells when there is no ghost), relative to
+/// `origin` (m).
 #[derive(Clone, Debug, PartialEq)]
 pub struct BrushOutline {
     pub origin: [f64; 3],
     pub segments: Vec<([f32; 3], [f32; 3])>,
+    pub faces: Vec<GhostFace>,
+    /// Cells the stroke would change.
+    pub cells: usize,
+    /// The ghost would have had more than `GHOST_FACE_CAP` faces.
+    pub over_cap: bool,
+    /// New with each different picture: the renderer uploads only a new one.
+    pub version: u64,
+}
+
+/// How far a ghost face stands out from its cell (m), so it shows over the terrain's own face.
+const GHOST_INSET: f32 = 0.02;
+
+/// A box's twelve edges.
+fn cuboid(segments: &mut Vec<([f32; 3], [f32; 3])>, lo: [f32; 3], hi: [f32; 3]) {
+    for a in 0..3 {
+        let (b, c) = ((a + 1) % 3, (a + 2) % 3);
+        for (sb, sc) in [
+            (lo[b], lo[c]),
+            (hi[b], lo[c]),
+            (lo[b], hi[c]),
+            (hi[b], hi[c]),
+        ] {
+            let (mut p, mut q) = ([0.0; 3], [0.0; 3]);
+            (p[a], q[a]) = (lo[a], hi[a]);
+            (p[b], q[b], p[c], q[c]) = (sb, sb, sc, sc);
+            segments.push((p, q));
+        }
+    }
+}
+
+fn solid(m: StateId) -> bool {
+    dwell_blocks::try_info(m).is_some_and(|s| s.solid)
+}
+
+/// The ghost of `changes` (what they do to `grid`'s cells), relative to the centre of cell `c`:
+/// each changed cell's faces that don't touch another changed cell of the same kind, or `None` if
+/// that is more than `cap` faces.
+pub fn ghost_faces(
+    changes: &[Change],
+    grid: &Grid,
+    c: [i32; 3],
+    cap: usize,
+) -> Option<Vec<GhostFace>> {
+    let kinds: HashMap<[i32; 3], GhostKind> = changes
+        .iter()
+        .map(|&(p, new)| {
+            let old = grid.get(p);
+            let k = match (solid(old), solid(new)) {
+                (false, true) => GhostKind::Put,
+                (true, false) => GhostKind::Remove,
+                _ => GhostKind::Paint,
+            };
+            (p, k)
+        })
+        .collect();
+    let mut out = Vec::new();
+    for &(p, _) in changes {
+        let k = kinds[&p];
+        for (f, d) in FACE_DIRS.iter().enumerate() {
+            let n = [p[0] + d[0], p[1] + d[1], p[2] + d[2]];
+            if kinds.get(&n) == Some(&k) {
+                continue;
+            }
+            if out.len() == cap {
+                return None;
+            }
+            let a = f / 2;
+            let (u, v) = ((a + 1) % 3, (a + 2) % 3);
+            let lo: [f32; 3] = std::array::from_fn(|i| (p[i] - c[i]) as f32 - 0.5 - GHOST_INSET);
+            let hi: [f32; 3] = std::array::from_fn(|i| (p[i] - c[i]) as f32 + 0.5 + GHOST_INSET);
+            let mut base = lo;
+            if d[a] > 0 {
+                base[a] = hi[a];
+            }
+            let at = |du: bool, dv: bool| {
+                let mut q = base;
+                if du {
+                    q[u] = hi[u];
+                }
+                if dv {
+                    q[v] = hi[v];
+                }
+                q
+            };
+            // e_u × e_v = e_a: (0, u, u+v, v) turns anticlockwise about +a.
+            let quad = if d[a] > 0 {
+                [
+                    at(false, false),
+                    at(true, false),
+                    at(true, true),
+                    at(false, true),
+                ]
+            } else {
+                [
+                    at(false, false),
+                    at(false, true),
+                    at(true, true),
+                    at(true, false),
+                ]
+            };
+            out.push((quad, k));
+        }
+    }
+    Some(out)
 }
 
 /// What the HUD's brush panel shows (`BrushTool::panel`).
@@ -100,6 +235,13 @@ pub struct BrushTool {
     /// The earlier clicks of a line or triangle (oldest first).
     points: Vec<[i32; 3]>,
     note: String,
+    /// The exact-cell preview is on (`\`); off, the box of the brush's cells shows.
+    ghost: bool,
+    preview: Option<BrushOutline>,
+    /// What the preview was built from, and when.
+    preview_key: Option<(Aim, BrushSpec, Materials, bool)>,
+    preview_ms: f64,
+    version: u64,
 }
 
 impl Default for BrushTool {
@@ -119,8 +261,6 @@ fn block_name(m: StateId) -> String {
     base.split(':').nth(1).unwrap_or(base).replace('_', " ")
 }
 
-const CIRCLE_SEGMENTS: usize = 48;
-
 impl BrushTool {
     pub fn new() -> Self {
         Self {
@@ -133,6 +273,11 @@ impl BrushTool {
             replace: None,
             points: Vec::new(),
             note: String::new(),
+            ghost: true,
+            preview: None,
+            preview_key: None,
+            preview_ms: f64::NEG_INFINITY,
+            version: 0,
         }
     }
 
@@ -207,6 +352,15 @@ impl BrushTool {
                 self.spec.performer = step(&performers, self.spec.performer, by);
             }
             B::Bigger | B::Smaller => self.resize(if action == B::Bigger { 1 } else { -1 }),
+            B::Preview => {
+                self.ghost = !self.ghost;
+                self.note = if self.ghost {
+                    "Preview: the exact cells"
+                } else {
+                    "Preview: the brush's box"
+                }
+                .into();
+            }
         }
     }
 
@@ -265,11 +419,21 @@ impl BrushTool {
         materials: Materials,
         world: &mut impl BoxSource,
     ) -> Option<Vec<([i32; 3], StateId)>> {
+        self.stroke_at(center, materials, world).map(|(c, _)| c)
+    }
+
+    /// A stroke's changes at `center` and the grid of the world they were read from.
+    fn stroke_at(
+        &self,
+        center: [i32; 3],
+        materials: Materials,
+        world: &mut impl BoxSource,
+    ) -> Option<(Vec<Change>, Grid)> {
         let aim = self.aim_at(center);
         let cells = brush_cells(&self.spec, aim);
         let (min, size) = read_bounds(&self.spec, &cells)?;
         let grid = Grid::new(min, size, world.read_box(min, size)?);
-        Some(perform(&self.spec, aim, &cells, &grid, materials))
+        Some((perform(&self.spec, aim, &cells, &grid, materials), grid))
     }
 
     /// Applies the brush (left click: arrow; right click: gunpowder) with the hotbar's block,
@@ -298,14 +462,7 @@ impl BrushTool {
             .into();
             return false;
         }
-        let target = match self.replace {
-            Some(m) => m,
-            None => self.target.map_or(0, |_| ctx.target_state),
-        };
-        let materials = Materials {
-            material: ctx.material,
-            target,
-        };
+        let materials = self.materials(ctx.material, ctx.target_state);
         let Some(changes) = self.changes(center, materials, world) else {
             self.note = "Not loaded yet".into();
             return false;
@@ -326,103 +483,126 @@ impl BrushTool {
         sent
     }
 
-    /// The outline of the brush where it would go (arrow), or none.
-    pub fn outline(&self) -> Option<BrushOutline> {
-        if !self.active() {
-            return None;
+    /// What a stroke's replace uses: the picked block, else the aimed-at block's state.
+    pub fn materials(&self, material: StateId, target_state: StateId) -> Materials {
+        Materials {
+            material,
+            target: self
+                .replace
+                .unwrap_or(self.target.map_or(0, |_| target_state)),
         }
-        let c = self.center(false)?;
-        let origin = c.map(|v| f64::from(v) + 0.5);
-        let r = f32::from(self.spec.size) + 0.5;
-        let mut segments = Vec::new();
-        let circle =
-            |segments: &mut Vec<_>, axes: (usize, usize), radii: (f32, f32), at: [f32; 3]| {
-                for i in 0..CIRCLE_SEGMENTS {
-                    let p = |k: usize| {
-                        let a = k as f32 / CIRCLE_SEGMENTS as f32 * std::f32::consts::TAU;
-                        let mut v = at;
-                        v[axes.0] += radii.0 * a.cos();
-                        v[axes.1] += radii.1 * a.sin();
-                        v
-                    };
-                    segments.push((p(i), p(i + 1)));
-                }
-            };
-        let cuboid = |segments: &mut Vec<_>, lo: [f32; 3], hi: [f32; 3]| {
-            for a in 0..3 {
-                let (b, c) = ((a + 1) % 3, (a + 2) % 3);
-                for (sb, sc) in [
-                    (lo[b], lo[c]),
-                    (hi[b], lo[c]),
-                    (lo[b], hi[c]),
-                    (hi[b], hi[c]),
-                ] {
-                    let (mut p, mut q) = ([0.0; 3], [0.0; 3]);
-                    (p[a], q[a]) = (lo[a], hi[a]);
-                    (p[b], q[b], p[c], q[c]) = (sb, sb, sc, sc);
-                    segments.push((p, q));
-                }
-            }
+    }
+
+    /// The exact-cell preview on or off (`\`).
+    pub fn ghost(&self) -> bool {
+        self.ghost
+    }
+
+    /// Rebuilds the preview where the stroke would go (arrow) when what it depends on changed — the
+    /// aim, the brush, the blocks — or, for the world under it, at most every
+    /// [`PREVIEW_REFRESH_MS`] (each frame; `materials` as for a stroke).
+    pub fn update_preview(
+        &mut self,
+        materials: Materials,
+        world: &mut impl BoxSource,
+        now_ms: f64,
+    ) {
+        let Some(c) = self.center(false).filter(|_| self.active()) else {
+            self.preview = None;
+            self.preview_key = None;
+            return;
         };
-        match self.spec.brush {
-            BrushKind::Ball | BrushKind::Splatter | BrushKind::Ellipsoid => {
-                let s = if self.spec.brush == BrushKind::Ellipsoid {
-                    self.spec.params.stretch
-                } else {
-                    [1.0; 3]
-                };
-                let k = s.map(|v| v * r);
-                circle(&mut segments, (0, 2), (k[0], k[2]), [0.0; 3]);
-                circle(&mut segments, (0, 1), (k[0], k[1]), [0.0; 3]);
-                circle(&mut segments, (2, 1), (k[2], k[1]), [0.0; 3]);
+        let key = (self.aim_at(c), self.spec, materials, self.ghost);
+        if self.preview_key == Some(key) && now_ms - self.preview_ms < PREVIEW_REFRESH_MS {
+            return;
+        }
+        let rebuilt = self.build_preview(c, materials, world, GHOST_FACE_CAP);
+        // The same picture (the world under it unchanged) keeps its version: nothing re-uploads.
+        let same = self.preview.as_ref().is_some_and(|p| {
+            p.origin == rebuilt.origin && p.segments == rebuilt.segments && p.faces == rebuilt.faces
+        });
+        if !same {
+            self.version += 1;
+            self.preview = Some(BrushOutline {
+                version: self.version,
+                ..rebuilt
+            });
+        }
+        self.preview_key = Some(key);
+        self.preview_ms = now_ms;
+    }
+
+    /// The preview at `c`: the ghost of the cells the stroke would change (at most `cap` faces),
+    /// the clicks a line or triangle has so far, and the box of the brush's cells when there is no
+    /// ghost (it is off, too large, or the world isn't loaded).
+    pub fn build_preview(
+        &self,
+        c: [i32; 3],
+        materials: Materials,
+        world: &mut impl BoxSource,
+        cap: usize,
+    ) -> BrushOutline {
+        let origin = c.map(|v| f64::from(v) + 0.5);
+        let rel = |p: [i32; 3]| -> [f32; 3] { std::array::from_fn(|i| (p[i] - c[i]) as f32) };
+        let mut segments = Vec::new();
+        let mut faces = Vec::new();
+        let mut cells = 0;
+        let mut over = false;
+        let ready = self.points.len() >= self.spec.brush.points();
+        if self.spec.brush.points() > 0 {
+            // The clicks so far joined to the aim, with a box at each.
+            let t = f32::from(self.spec.size) - 0.5;
+            let mut corners: Vec<[f32; 3]> = self.points.iter().map(|&p| rel(p)).collect();
+            corners.push([0.0; 3]);
+            for w in corners.windows(2) {
+                segments.push((w[0], w[1]));
             }
-            BrushKind::Disc | BrushKind::Cylinder => {
-                let h = if self.spec.brush == BrushKind::Disc {
-                    1.0
-                } else {
-                    f32::from(self.spec.params.height)
-                };
-                let (lo, hi) = (-0.5, h - 0.5);
-                circle(&mut segments, (0, 2), (r, r), [0.0, lo, 0.0]);
-                circle(&mut segments, (0, 2), (r, r), [0.0, hi, 0.0]);
-                for (x, z) in [(r, 0.0), (-r, 0.0), (0.0, r), (0.0, -r)] {
-                    segments.push(([x, lo, z], [x, hi, z]));
-                }
+            if self.spec.brush == BrushKind::Triangle && corners.len() == 3 {
+                segments.push((corners[2], corners[0]));
             }
-            BrushKind::Cube => {
-                let e = r;
-                cuboid(&mut segments, [-e; 3], [e; 3]);
-            }
-            BrushKind::Line | BrushKind::JaggedLine | BrushKind::Triangle => {
-                let t = r;
-                // The clicks so far and this one, joined.
-                let mut corners: Vec<[f32; 3]> = self
-                    .points
-                    .iter()
-                    .map(|f| std::array::from_fn(|i| (f[i] - c[i]) as f32))
-                    .collect();
-                corners.push([0.0; 3]);
-                for w in corners.windows(2) {
-                    segments.push((w[0], w[1]));
-                }
-                if self.spec.brush == BrushKind::Triangle && corners.len() == 3 {
-                    segments.push((corners[2], corners[0]));
-                }
-                for k in corners {
-                    cuboid(&mut segments, k.map(|v| v - t), k.map(|v| v + t));
-                }
-            }
-            _ => {
-                // The box of the cells it would cover.
-                let cells = brush_cells(&self.spec, self.aim_at(c));
-                if let Some((min, size)) = bounds(&cells) {
-                    let lo: [f32; 3] = std::array::from_fn(|i| (min[i] - c[i]) as f32 - 0.5);
-                    let hi: [f32; 3] = std::array::from_fn(|i| lo[i] + size[i] as f32);
-                    cuboid(&mut segments, lo, hi);
-                }
+            for k in corners {
+                cuboid(
+                    &mut segments,
+                    k.map(|v| v - t - 0.5),
+                    k.map(|v| v + t + 0.5),
+                );
             }
         }
-        Some(BrushOutline { origin, segments })
+        let mut ghosted = false;
+        if self.ghost
+            && ready
+            && let Some((changes, grid)) = self.stroke_at(c, materials, world)
+        {
+            cells = changes.len();
+            match ghost_faces(&changes, &grid, c, cap) {
+                Some(f) => {
+                    faces = f;
+                    ghosted = true;
+                }
+                None => over = true,
+            }
+        }
+        if !ghosted && ready {
+            let covered = brush_cells(&self.spec, self.aim_at(c));
+            if let Some((min, size)) = bounds(&covered) {
+                let lo: [f32; 3] = std::array::from_fn(|i| (min[i] - c[i]) as f32 - 0.5);
+                let hi: [f32; 3] = std::array::from_fn(|i| lo[i] + size[i] as f32);
+                cuboid(&mut segments, lo, hi);
+            }
+        }
+        BrushOutline {
+            origin,
+            segments,
+            faces,
+            cells,
+            over_cap: over,
+            version: 0,
+        }
+    }
+
+    /// The preview where the stroke would go (arrow), as last built, or none.
+    pub fn outline(&self) -> Option<&BrushOutline> {
+        self.preview.as_ref().filter(|_| self.active())
     }
 
     /// The HUD panel's fields while the tool is on.
@@ -747,8 +927,11 @@ mod tests {
         assert!(t.note().contains("first corner"), "{}", t.note());
         assert!(!click(&mut t, &mut r, &mut w, [8, 0, 0]));
         assert!(t.note().contains("third"), "{}", t.note());
-        // The outline joins the corners so far to the aim.
-        assert!(t.outline().is_some());
+        // The preview joins the corners so far to the aim, with the ghost of the triangle the
+        // third click would make.
+        t.update_preview(t.materials(stone, 0), &mut w, 0.0);
+        let o = t.outline().expect("preview");
+        assert!(!o.segments.is_empty() && !o.faces.is_empty());
         assert!(click(&mut t, &mut r, &mut w, [0, 0, 8]));
         apply_all(&mut w, r.pump(0.0));
         for c in [[0, 0, 0], [8, 0, 0], [0, 0, 8], [2, 0, 2]] {
@@ -789,14 +972,142 @@ mod tests {
         assert!(t.apply(false, &ctx(sand, 0.0), &mut r, &mut w));
         apply_all(&mut w, r.pump(0.0));
         assert_eq!((w.get_voxel(2, 0, 2), w.get_voxel(2, -1, 2)), (sand, stone));
-        // The outline follows the target; nothing outlines while the tool is off.
-        let o = t.outline().expect("outline");
+        // The preview follows the target; nothing shows while the tool is off.
+        t.update_preview(t.materials(grass, 0), &mut w, 0.0);
+        let o = t.outline().expect("preview");
         assert_eq!(o.origin, [0.5, 0.5, 0.5]);
-        assert!(!o.segments.is_empty());
+        assert!(!o.faces.is_empty());
         t.key(BrushAction::Toggle);
+        assert_eq!(t.outline(), None);
+        t.update_preview(t.materials(grass, 0), &mut w, 0.0);
         assert_eq!(t.outline(), None);
         // KEEP never reaches the world.
         assert!(!snapshot(&mut w).contains(&KEEP));
         assert_eq!(w.get_voxel(0, 1, 0), M.air);
+    }
+
+    /// The cells a ghost's faces belong to (each face's centre moved half a cell inward).
+    fn ghost_cells(o: &BrushOutline) -> Vec<[i32; 3]> {
+        let c = o.origin.map(|v| (v - 0.5) as i32);
+        let mut out: Vec<[i32; 3]> = o
+            .faces
+            .iter()
+            .map(|(q, _)| {
+                let centre: [f32; 3] = std::array::from_fn(|i| (q[0][i] + q[2][i]) / 2.0);
+                let e1: [f32; 3] = std::array::from_fn(|i| q[1][i] - q[0][i]);
+                let e2: [f32; 3] = std::array::from_fn(|i| q[3][i] - q[0][i]);
+                let n = [
+                    e1[1] * e2[2] - e1[2] * e2[1],
+                    e1[2] * e2[0] - e1[0] * e2[2],
+                    e1[0] * e2[1] - e1[1] * e2[0],
+                ];
+                let len = n.iter().map(|v| v * v).sum::<f32>().sqrt();
+                std::array::from_fn(|i| (centre[i] - 0.5 * n[i] / len).round() as i32 + c[i])
+            })
+            .collect();
+        out.sort_by_key(|p| [p[1], p[2], p[0]]);
+        out.dedup();
+        out
+    }
+
+    fn aim_at(t: &mut BrushTool, cell: [i32; 3]) {
+        t.aim(Some(BlockTarget { cell, face: 2 }));
+    }
+
+    #[test]
+    fn the_preview_is_a_ghost_of_the_exact_cells() {
+        let stone = require("dwell:stone");
+        let mut w = world();
+        let mut t = tool();
+        // A splatter's ghost is its real cells (faces point outward: each lands in its cell).
+        select(&mut t, "splatter");
+        aim_at(&mut t, [5, 10, -3]);
+        let m = t.materials(stone, 0);
+        t.update_preview(m, &mut w, 0.0);
+        let o = t.outline().expect("preview").clone();
+        let changed: Vec<[i32; 3]> = t
+            .changes([5, 10, -3], m, &mut w)
+            .unwrap()
+            .iter()
+            .map(|c| c.0)
+            .collect();
+        assert_eq!(o.cells, changed.len());
+        assert_eq!(ghost_cells(&o), changed);
+        assert!(o.faces.iter().all(|(_, k)| *k == GhostKind::Put));
+        assert!(o.segments.is_empty(), "no box when the ghost shows");
+        // Only the outer faces: a size-1 cube is 27 cells and 54 faces.
+        select(&mut t, "cube");
+        t.resize(-10);
+        t.update_preview(m, &mut w, 0.0);
+        assert_eq!(t.outline().unwrap().faces.len(), 54);
+        // What a cell becomes picks its colour: an erase of stone is a removal.
+        for y in 0..3 {
+            w.set_voxel(5, 10 + y, -3, stone);
+        }
+        select(&mut t, "erase");
+        t.update_preview(m, &mut w, 0.0);
+        let o = t.outline().unwrap();
+        assert_eq!(o.cells, 3, "the stone cells");
+        assert!(o.faces.iter().all(|(_, k)| *k == GhostKind::Remove));
+        select(&mut t, "replace");
+        t.pick(Some(stone));
+        t.update_preview(t.materials(require("dwell:sand"), 0), &mut w, 0.0);
+        assert!(
+            t.outline()
+                .unwrap()
+                .faces
+                .iter()
+                .all(|(_, k)| *k == GhostKind::Paint)
+        );
+    }
+
+    #[test]
+    fn the_preview_is_bounded_toggled_and_rebuilt_only_when_needed() {
+        let stone = require("dwell:stone");
+        let mut w = world();
+        let mut t = tool();
+        select(&mut t, "splatter");
+        aim_at(&mut t, [0, 20, 0]);
+        let m = t.materials(stone, 0);
+        // Past the cap, the box of the brush's cells shows instead.
+        let big = t.build_preview([0, 20, 0], m, &mut w, 10);
+        assert!(big.over_cap && big.faces.is_empty());
+        assert_eq!(big.segments.len(), 12);
+        let full = t.build_preview([0, 20, 0], m, &mut w, GHOST_FACE_CAP);
+        assert!(!full.over_cap && full.faces.len() > 10);
+        // The largest, densest splatter stays within the cap or falls back to the box.
+        t.resize(20);
+        t.update_preview(m, &mut w, 0.0);
+        assert!(t.outline().unwrap().faces.len() <= GHOST_FACE_CAP);
+        t.resize(-20);
+        // \ turns the ghost off: the box shows.
+        assert_eq!(
+            brush_key("Backslash", false, true),
+            Some(BrushAction::Preview)
+        );
+        t.key(BrushAction::Preview);
+        assert!(!t.ghost());
+        t.update_preview(m, &mut w, 1000.0);
+        let o = t.outline().unwrap();
+        assert!(o.faces.is_empty() && o.segments.len() == 12);
+        t.key(BrushAction::Preview);
+        t.update_preview(m, &mut w, 2000.0);
+        let v = t.outline().unwrap().version;
+        // Unchanged, it keeps its version (nothing re-uploads), even when refreshed.
+        t.update_preview(m, &mut w, 2010.0);
+        t.update_preview(m, &mut w, 5000.0);
+        assert_eq!(t.outline().unwrap().version, v);
+        // A change under it shows within the refresh interval, not before.
+        let first = t.changes([0, 20, 0], m, &mut w).unwrap()[0].0;
+        w.set_voxel(first[0], first[1], first[2], stone);
+        t.update_preview(m, &mut w, 5100.0);
+        assert_eq!(t.outline().unwrap().version, v);
+        t.update_preview(m, &mut w, 5000.0 + PREVIEW_REFRESH_MS);
+        assert!(t.outline().unwrap().version > v);
+        // Moving the aim rebuilds at once.
+        let v = t.outline().unwrap().version;
+        aim_at(&mut t, [3, 20, 0]);
+        t.update_preview(m, &mut w, 5300.0);
+        assert!(t.outline().unwrap().version > v);
     }
 }
