@@ -59,5 +59,5 @@ test('the debug overlay copies the targeted block and its neighbours as JSON', a
   expect(dump.target.cell).toEqual(placed);
   expect(dump.size).toBe(5);
   const centre = dump.layers[2]?.[2]?.[2] ?? -1;
-  expect(dump.palette[centre]).toBe('dwell:stone');
+  expect(dump.palette[centre]).toBe('dwell:stone[flooded=false]'); // the canonical state string, flooded since 0.19.0
 });
