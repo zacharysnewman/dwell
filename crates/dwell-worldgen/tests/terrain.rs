@@ -105,7 +105,7 @@ fn heights_a_low_shore_land_rising_inland_a_shallow_sea_floor() {
     }
     // Face-local heights from the midplane: sea level 32, the core's top 10.
     let sea = SEA_LEVEL as f32;
-    assert!(highest > sea + 60.0 && highest < sea + 260.0, "{highest}");
+    assert!(highest > sea + 300.0 && highest < sea + 650.0, "{highest}");
     assert!(
         lowest >= CORE_LAYERS as f32 && lowest > sea - 30.0,
         "{lowest}"
@@ -120,10 +120,12 @@ fn a_chunk_is_a_pure_function_of_seed_and_coordinate() {
         TerrainGenerator::new(123),
         TerrainGenerator::new(124),
     );
-    let coord = ChunkCoord::new(1, 2, -1);
+    // The row holding seed 123's ground there (the hills reach ~500 m), and its neighbour.
+    let cy = floor_div(a.column_at(48, -16).height as i32, S);
+    let coord = ChunkCoord::new(1, cy, -1);
     assert_eq!(gen_chunk(&a, coord).voxels(), gen_chunk(&b, coord).voxels());
     assert_ne!(gen_chunk(&a, coord).voxels(), gen_chunk(&c, coord).voxels());
-    let n = ChunkCoord::new(2, 2, -1);
+    let n = ChunkCoord::new(2, cy, -1);
     let mut w1 = VoxelWorld::new(generator_for(GENERATOR_TERRAIN, 123), None);
     let mut w2 = VoxelWorld::new(generator_for(GENERATOR_TERRAIN, 123), None);
     w1.get_or_create(coord);
@@ -614,7 +616,7 @@ fn the_air_test_knows_face_bs_sky_and_rows_outside_the_world() {
         }
     }
     assert!(sky > 0 && sky < checked);
-    for cy in [-10, -100, MIN_CHUNK_Y] {
+    for cy in [-24, -100, MIN_CHUNK_Y] {
         assert!(air(ChunkCoord::new(0, cy, 0)) && air(ChunkCoord::new(300, cy, -300)));
     }
     assert!(
@@ -657,7 +659,8 @@ fn meadows_of_tall_grass_grow_on_grass_by_the_decoration_data() {
                             let n = g.ground_y(wx + dx, wz + dz).expect("inside");
                             assert!((n - top).abs() <= rule.max_slope);
                         }
-                        assert!((rule.min_height..=rule.max_height).contains(&top));
+                        // The rule's heights are metres above sea level.
+                        assert!((rule.min_height..=rule.max_height).contains(&(top - SEA_LEVEL)));
                     }
                 }
             }
@@ -668,6 +671,52 @@ fn meadows_of_tall_grass_grow_on_grass_by_the_decoration_data() {
         plants > 20 && plants < grass_tops,
         "{plants} of {grass_tops}"
     );
+}
+
+#[test]
+fn a_decorations_height_band_is_metres_above_sea_level() {
+    // decorations.json gives `height` in metres above sea level, but the generator compared it
+    // with the face-local top (sea level 32 since Phase 16), so meadow grass grew from 29 m below
+    // its band's foot and stopped 32 m short of its top. Here: the grass at the shore's top edge
+    // (2 m above sea level, below the band's 3 m) along the coast of three seeds gets none.
+    let rule = &dwell_worldgen::decorations::DECORATIONS[0];
+    let tall = require(rule.block);
+    let (mut low, mut planted) = (0, 0);
+    for seed in [1u64, 7, 42] {
+        let g = TerrainGenerator::new(seed);
+        for ray in 0..12 {
+            let a = f64::from(ray * 30).to_radians();
+            // The first sea column out from 15 km, in 16 m steps.
+            let mut r = 15_000.0;
+            let at = |r: f64| ((r * a.cos()) as i32, (r * a.sin()) as i32);
+            while g.column_at(at(r).0, at(r).1).height >= SEA_LEVEL as f32 && r < 40_000.0 {
+                r += 16.0;
+            }
+            let (x, z) = at(r);
+            for dz in -2..=2 {
+                for dx in -2..=2 {
+                    let (cx, cz) = (floor_div(x, S) + dx, floor_div(z, S) + dz);
+                    let cy = floor_div(SEA_LEVEL + 3, S);
+                    let chunk = gen_chunk(&g, ChunkCoord::new(cx, cy, cz));
+                    for lz in 0..S {
+                        for lx in 0..S {
+                            let top = g.ground_y(cx * S + lx, cz * S + lz).expect("inside");
+                            if top - SEA_LEVEL >= rule.min_height
+                                || g.state_at(cx * S + lx, top, cz * S + lz) != M.grass
+                                || !(cy * S..cy * S + S).contains(&(top + 1))
+                            {
+                                continue;
+                            }
+                            low += 1;
+                            planted += usize::from(chunk.get(lx, top + 1 - cy * S, lz) == tall);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    assert!(low > 200, "{low} low grass cells checked");
+    assert_eq!(planted, 0, "{planted} of {low} grass cells below the band have a plant");
 }
 
 #[test]
@@ -697,14 +746,19 @@ fn the_island_keeps_its_phase_15_size_in_the_50_km_world() {
 }
 
 #[test]
-fn the_relief_is_hilly_but_the_island_stays_dry() {
-    // Owner, 2026-10-19: more elevation variance (generator version 15, `shared/worldgen/terrain.json`).
-    // Land columns on a 499 m grid over three seeds, both faces. Version 14 measured a height
-    // standard deviation of ~21 m, a highest column ~105 m above sea level and a mean slope of
-    // ~2.7° (`--example relief`); version 15 ~36 m, ~190 m and ~5.9°, with about as little of the
-    // island under water (< 1 %).
+fn the_hills_are_steep_enough_to_slide_and_reach_about_500_m() {
+    // Owner, 2026-10-19: "I want terrain steep enough to slide on" — about 15 % of the land's
+    // surface steeper than the slide's 44° (the adaptive blocks' 45° ramps, ridge flanks and
+    // saddles, ADAPTIVE_BLOCKS.md), everywhere, and peaks up to about 500 m above sea level
+    // (generator version 16, `shared/worldgen/terrain.json`). Land columns on a 499 m grid over
+    // three seeds, both faces; each column's shaped top block sampled at four points, as
+    // `--example relief` does. Version 15 measured ~0.01 % sliding, a highest column ~190 m and a
+    // mean slope of ~5.9°; version 16 ~15 %, ~500 m and ~22°, with the island under water
+    // (hollows below sea level) still under 1.5 %.
+    let slide_tan = 44f32.to_radians().tan();
     for face in [Face::A, Face::B] {
-        let (mut heights, mut slope, mut island, mut flooded) = (Vec::new(), 0.0f64, 0, 0);
+        let (mut highest, mut slope, mut land) = (0.0f64, 0.0f64, 0usize);
+        let (mut samples, mut slides, mut island, mut flooded) = (0usize, 0usize, 0usize, 0usize);
         for seed in [1u64, 42, 12345] {
             let terrain = BifacialTerrain::new(seed);
             let g = terrain.local(face);
@@ -716,28 +770,59 @@ fn the_relief_is_hilly_but_the_island_stays_dry() {
                         island += 1;
                         flooded += usize::from(h <= 0.0);
                     }
-                    if h <= 0.0 {
+                    if col.outside || h <= 0.0 {
                         continue;
                     }
-                    heights.push(h);
+                    land += 1;
+                    highest = highest.max(h);
                     let dx = g.column_at(x + 1, z).height - g.column_at(x - 1, z).height;
                     let dz = g.column_at(x, z + 1).height - g.column_at(x, z - 1).height;
                     slope += f64::from((dx * 0.5).hypot(dz * 0.5)).atan().to_degrees();
+                    // The top block's shape, from the tops of its 3 × 3 columns.
+                    let top = g.ground_y(x, z).expect("inside");
+                    let mut tops = [[0; 3]; 3];
+                    for (j, row) in tops.iter_mut().enumerate() {
+                        for (i, t) in row.iter_mut().enumerate() {
+                            *t = g
+                                .ground_y(x + i as i32 - 1, z + j as i32 - 1)
+                                .expect("inside");
+                        }
+                    }
+                    let get = |ox: i32, oy: i32, oz: i32| {
+                        let y = top + oy;
+                        if y <= tops[(oz + 1) as usize][(ox + 1) as usize] {
+                            M.stone
+                        } else if y < SEA_LEVEL {
+                            M.water
+                        } else {
+                            M.air
+                        }
+                    };
+                    let shaped = dwell_blocks::adaptive::shape_at(get, 1);
+                    let hi = |fx: f32, fz: f32| {
+                        dwell_blocks::shape::solid_span_at(shaped, fx, fz).hi
+                    };
+                    for (fx, fz) in [(0.25, 0.25), (0.75, 0.25), (0.25, 0.75), (0.75, 0.75)] {
+                        let gx = (hi(fx + 0.05, fz) - hi(fx - 0.05, fz)) / 0.1;
+                        let gz = (hi(fx, fz + 0.05) - hi(fx, fz - 0.05)) / 0.1;
+                        samples += 1;
+                        slides += usize::from(gx.hypot(gz) > slide_tan);
+                    }
                 }
             }
         }
-        let n = heights.len() as f64;
-        let mean = heights.iter().sum::<f64>() / n;
-        let sd = (heights.iter().map(|h| (h - mean).powi(2)).sum::<f64>() / n).sqrt();
-        let highest = heights.iter().cloned().fold(0.0, f64::max);
-        let slope = slope / n;
-        let wet = flooded as f64 / f64::from(island);
+        let sliding = slides as f64 / samples as f64;
+        let slope = slope / land as f64;
+        let wet = flooded as f64 / island as f64;
         let at = format!(
-            "{face:?}: sd {sd:.1} m, highest {highest:.1} m, slope {slope:.2}°, wet {wet:.4}"
+            "{face:?}: sliding {:.2} %, highest {highest:.1} m, slope {slope:.2}°, wet {:.2} %",
+            100.0 * sliding,
+            100.0 * wet
         );
-        assert!((30.0..50.0).contains(&sd), "{at}");
-        assert!((150.0..260.0).contains(&highest), "{at}");
-        assert!((4.5..9.0).contains(&slope), "{at}");
-        assert!(wet < 0.01, "{at}");
+        println!("{at}");
+        assert!((0.12..0.18).contains(&sliding), "{at}");
+        assert!((430.0..580.0).contains(&highest), "{at}");
+        assert!((15.0..30.0).contains(&slope), "{at}");
+        assert!(wet < 0.015, "{at}");
     }
 }

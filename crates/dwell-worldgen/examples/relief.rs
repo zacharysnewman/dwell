@@ -5,7 +5,7 @@
 //! field over 1 m), the share of the shaped surface steeper than the slide's 44° (the adaptive top
 //! blocks, sampled at four points each), the share of columns too steep for tall grass (a top
 //! more than one block from a neighbour's) and the share of the island (inside its coast) under
-//! water. Then, per face over the first three seeds, how connected the walkable ground is: of the
+//! water, and the share of the sea within 3 km of the coast above sea level (islets). Then, per face over the first three seeds, how connected the walkable ground is: of the
 //! dry land in a 1,025 m square around the spawn, the share reachable from the spawn without climbing
 //! a slide face or a cliff (a move may go down any drop or slide, and up one block only between two
 //! blocks that don't slide; water is swum at its surface), and the share from which the spawn can be
@@ -121,6 +121,9 @@ struct Stats {
     grass_steep: u64,
     island: u64,
     flooded: u64,
+    /// Columns outside the coast (within 3 km of it), and those of them above sea level (islets).
+    offshore: u64,
+    islets: u64,
 }
 
 fn sample(g: &TerrainGenerator, x: i32, z: i32, s: &mut Stats) {
@@ -132,6 +135,9 @@ fn sample(g: &TerrainGenerator, x: i32, z: i32, s: &mut Stats) {
     if col.coast > 0.0 {
         s.island += 1;
         s.flooded += u64::from(h <= 0.0);
+    } else if col.coast > -3000.0 {
+        s.offshore += 1;
+        s.islets += u64::from(h > 0.0);
     }
     if h <= 0.0 {
         return;
@@ -161,7 +167,7 @@ fn main() {
         seeds = vec![0, 1, 2, 3, 42, 12345, 20_260_925];
     }
     println!(
-        "face columns min_m mean_m stddev_m p99_m max_m mean_slope_deg slide_surface_% grass_too_steep_% island_under_water_%"
+        "face columns min_m mean_m stddev_m p99_m max_m mean_slope_deg slide_surface_% grass_too_steep_% island_under_water_% offshore_dry_%"
     );
     for face in [Face::A, Face::B] {
         let mut s = Stats::default();
@@ -185,7 +191,7 @@ fn main() {
         s.heights.sort_by(f32::total_cmp);
         let p99 = s.heights[((n * 0.99) as usize).min(s.heights.len() - 1)];
         println!(
-            "{face:?} {} {:.1} {mean:.1} {:.1} {p99:.1} {:.1} {:.2} {:.2} {:.2} {:.2}",
+            "{face:?} {} {:.1} {mean:.1} {:.1} {p99:.1} {:.1} {:.2} {:.2} {:.2} {:.2} {:.2}",
             s.heights.len(),
             s.heights[0],
             var.sqrt(),
@@ -194,6 +200,7 @@ fn main() {
             100.0 * s.slides as f64 / s.slide_samples as f64,
             100.0 * s.grass_steep as f64 / n,
             100.0 * s.flooded as f64 / s.island as f64,
+            100.0 * s.islets as f64 / s.offshore as f64,
         );
     }
     println!("face seed reachable_% both_ways_% spawn_slides");
