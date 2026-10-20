@@ -596,7 +596,11 @@ tests only); CI fails on stale output. Code names characters, looks, items and r
   hand holds something; a break or place swing on the `action` layer when the snapshot's swing
   count steps; the head (60 %), chest (15 %) and held arm (50 %) follow the look's pitch. Your arms
   run the same machine on the arms' roles from the prediction, swinging when an edit is sent.
-  `MoveInput::foot_ground` is the hook for foot IK on steps (not built).
+  Over steps a remote body is drawn at its feet plus the step view's offset (`dwell-game`'s
+  `StepSmoother::follow`: a virtual ramp of at most 45° at its speed, PLAYER_CONTROLLER.md §9)
+  and each foot is planted on the render-side ground under it (`bodies.rs` `ground_at`,
+  `MoveInput::foot_ground`, the animator's two-bone `plant_feet`); `Bodies::step_started` is
+  the hook for a step pose.
 - **Drawing** (`render/characters.rs`): per character one block of uniforms (1,280 bytes, a dynamic
   offset: 24 bones' 3 × 4 transforms to eye-relative world space, the held block's atlas tiles,
   settings) and two indexed draws (body and item), each with an **inverted-hull outline** in

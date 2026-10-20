@@ -850,8 +850,10 @@ velocities and states bit-identical over all 600 ticks, so no divergence eats in
     the smoothing to the camera. (b) was chosen: it removes the measured hitch with no change to
     the sim, the wire or prediction (0 new snapshot fields, the golden trace unchanged), and Dwell's
     version ties the decay to the walking speed, so the eye's path is the ramp itself rather than
-    a fixed time. A third-person body uses the same `StepSmoother` for its root, with foot IK on
-    the true ground. `tests/step_up.rs` pins what it relies on: no step-up lifts further in a tick
+    a fixed time. A drawn (third-person) body uses the same `StepSmoother` per frame (`follow`:
+    a remote's step-up arrives interpolated, so its drawn feet follow at no more than
+    `max_slope × speed`, slopes up to 45° exactly) with foot IK on the render-side ground
+    (`CHARACTERS.md` §9.2, Steps). `tests/step_up.rs` pins what it relies on: no step-up lifts further in a tick
     than this, and ½ m stairs keep over 90 % of the speed, on the ground.
   - **Crouch**: the sim's crouch is instant, and in mid-air it moves the feet by the height
     difference (the head stays put). The eye change on the crouch tick, less the tick's own
