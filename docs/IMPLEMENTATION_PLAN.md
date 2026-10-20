@@ -19,7 +19,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 |---|---|
 | 0 — Repository, tooling & Pages | ✅ Complete |
 | 1 — Server core, protocol, transports, local mode | ✅ Complete |
-| 2 — Physics player controller | ✅ Complete (playtested; follow-up fixes made) |
+| 2 — Physics player controller | ✅ Complete (playtested; follow-up fixes made; 2026-10-20: the step-up reworked, consistent at every approach angle and speed) |
 | 3 — Terrain generation & streaming | 🚧 In progress — every sub-phase built (3a–3e: 3d block edits and meshing workers, 3e persistence and debug tooling). Outstanding: playtests for the long walk (3b) and walking/jumping/swimming the terrain |
 | 4 — World LOD & whole-world view | 🚧 In progress — 4a, 4b and 4c built, the dev camera replaced by creative flight; playtest follow-ups built: fog off, super tall mountains (generator version 4), chunks shown first on slow devices, no popping when turning and matching distant colours, flight/HUD/transport fixes and the distant-water comparison, distant terrain at its true height and tinted distant water, seamless see-through distant water without cracks at section borders, no z-fighting on distant water, height fog with a settings menu and playtested defaults, full-detail chunks beyond the view on request (protocol v8) (its velocity lookahead removed 2026-10-14: it looked bad), a flight speed slider (protocol v9) that is a true minimum near the ground, caves deep underground drawn without requesting buried chunks, an FPS counter, the LOD view held within its cache budget with its pixel error in CSS pixels, one draw call per LOD section, static transforms and GPU-only vertex data, the LOD's pixel error and memory as settings, batched terrain behind `?batch=1` and a `?scale=` resolution switch, a memory readout in F3 and a phone memory budget, clipped ancestor stand-ins for the holes on the forced path to the chunks (chopped mountains, `FIX_SPEC_LOD_SKY_FLIP.md` item 1), flight toggled by a dedicated F key instead of a double-tapped Space or Jump (owner, 2026-10-15; the touch Fly button unchanged); outstanding: the frame-rate check on a desktop and a mobile device; `package.json` raised to 0.11.13, a patch release of the 0.11 line |
 | 5 — Multiplayer ready (menus, web hosting, master on Cloudflare, lobby list) | 🚧 In progress — every sub-phase built: 5a (main menu, world management, game menu), 5b (master Worker skeleton, signing, CI, deploy workflow; the master runs at `dwell-master.dropkick.workers.dev`), 5c (friend worlds: host from the browser, join by code), 5d (dedicated servers on the master, join by address, On your network), 5e (lobby list, receipts, server browser). Outstanding: the manual phone checks (5a, 5c, 5d) and the TURN key |
@@ -240,6 +240,14 @@ launched the player forward, and one jump floated the player up a diagonal stair
 blocks — the block's top edge deflected the forward drive upwards and the airborne vertical layer
 absorbed that as an external force (a second jump). That lift is no longer absorbed
 (PLAYER_CONTROLLER.md §4, "Edge lift is not absorbed").
+Later finding (owner, 2026-10-20, fixed): *"player step up doesn't always work, sometimes you get
+hung up on the step and run into it instead."* The step probe was one ray straight ahead along the
+move, which at more than ~15° off a step's normal landed in front of the face; slow approaches
+stalled against the face for a tick, and a ramp up to a step measured the step from the feet. The
+step-up now finds the step's face over the front half circle, checks headroom and the landing, holds
+the step's height a tick and keeps the player's speed (PLAYER_CONTROLLER.md §4, "The step-up");
+`tests/step_up.rs`'s approach matrix went from 564 of 903 approaches failing to none, and a step
+under a low ceiling is no longer climbed into it.
 
 | Exit criterion | Result |
 |---|---|
