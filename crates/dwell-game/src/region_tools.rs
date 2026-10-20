@@ -17,6 +17,7 @@ use std::collections::VecDeque;
 
 use dwell_blocks::StateId;
 use dwell_protocol::{Message, RegionEdit, RegionEditOp, region_edit};
+use dwell_world::FaceFrame;
 use dwell_world::VoxelWorld;
 use dwell_world::edit::unbreakable;
 use dwell_world::region::{KEEP, PasteTransform, box_distance_sq, box_in_world, read_box};
@@ -247,7 +248,10 @@ impl RegionTools {
     fn paste_box(&self, at: [i32; 3]) -> Option<([i32; 3], [i32; 3])> {
         let c = self.clipboard.as_ref()?;
         let size = self.paste?.size(c.size);
-        Some(([at[0] - size[0] / 2, at[1], at[2] - size[2] / 2], size))
+        // Face-local: on the placement cell, up from it; in the world through the face frame.
+        let f = FaceFrame::at_row(at[1]);
+        let local = [at[0] - size[0] / 2, f.row(at[1]), at[2] - size[2] / 2];
+        Some((f.box_min(local, size), size))
     }
 
     /// Follows the crosshair (each frame): the ghost box's cell.
@@ -379,9 +383,10 @@ impl RegionTools {
                     self.note = "Not loaded yet".into();
                     return None;
                 };
+                // Kept face-local (BIFACIAL_WORLD.md §11): it pastes upright on either face.
                 self.clipboard = Some(Clipboard {
                     size,
-                    cells,
+                    cells: FaceFrame::of_box(min, size).box_cells(size, &cells),
                     keep: Vec::new(),
                 });
                 self.note = format!("Copied {}", size_text(size));
@@ -415,15 +420,19 @@ impl RegionTools {
                     self.note = "Aim where to paste".into();
                     return None;
                 };
-                let (size, mut cells) = p.apply(c.size, &c.cells);
+                let (size, local) = p.apply(c.size, &c.cells);
                 let size = self.fit(size)?;
+                // The clipboard is face-local: into the world through the paste's face frame.
+                let f = FaceFrame::of_box(min, dims(size));
+                let mut cells = f.box_cells(dims(size), &local);
                 if c.keep.iter().any(|&k| k) {
                     // Kept cells take what the world holds there now: a paste sets every cell.
                     let Some(now) = world.read_box(min, dims(size)) else {
                         self.note = "Not loaded yet".into();
                         return None;
                     };
-                    for (i, kept) in transform_mask(p, c.size, &c.keep).into_iter().enumerate() {
+                    let kept = f.box_flags(dims(size), &transform_mask(p, c.size, &c.keep));
+                    for (i, kept) in kept.into_iter().enumerate() {
                         if kept {
                             cells[i] = now[i];
                         }
@@ -1069,4 +1078,79 @@ mod tests {
         assert_eq!(t.act(ToolAction::Copy, &ctx(None, 0), &mut streamed), None);
         assert!(t.status().contains("Not loaded"));
     }
+
+    /// Copy an L with a ladder on `from`'s face, turn it, and paste it on `to`'s ground: the
+    /// world near the paste, face-local.
+    fn copy_paste_local(from: dwell_world::FaceFrame, to: dwell_world::FaceFrame) -> Vec<StateId> {
+        let stone = require("dwell:stone");
+        let east = parse_state("dwell:ladder[facing=east]").expect("ladder");
+        let mut w = world();
+        let put = |w: &mut VoxelWorld, f: dwell_world::FaceFrame, c: [i32; 3], m: StateId| {
+            let [x, y, z] = f.cell(c);
+            w.set_voxel(x, y, z, f.state(m));
+        };
+        for x in 0..3 {
+            put(&mut w, from, [x, 0, 0], stone);
+        }
+        put(&mut w, from, [0, 1, 0], east);
+        put(&mut w, from, [2, 2, 0], stone);
+        let at = |f: dwell_world::FaceFrame, target: [i32; 3]| ToolContext {
+            target: Some(f.cell(target)),
+            target_state: 0,
+            placement: Some(f.cell([target[0], target[1] + 1, target[2]])),
+            material: 0,
+            eye: Some([0.5, 1.6, 0.5]),
+            now_ms: 0.0,
+        };
+        let mut t = tools();
+        t.act(ToolAction::CornerA, &at(from, [0, 0, 0]), &mut w);
+        t.act(ToolAction::CornerB, &at(from, [2, 2, 0]), &mut w);
+        t.act(ToolAction::Copy, &ctx(None, 0), &mut w);
+        t.act(ToolAction::PasteMode, &ctx(None, 0), &mut w);
+        t.act(ToolAction::Rotate, &ctx(None, 0), &mut w);
+        // The ghost stands on the aimed-at ground, toward the face's up.
+        t.aim(Some(to.cell([10, 1, 10])));
+        let ghost = t.boxes()[1];
+        let (lo, hi) = (
+            to.cell(ghost.min),
+            to.cell(std::array::from_fn(|i| ghost.min[i] + ghost.size[i] - 1)),
+        );
+        assert_eq!(
+            lo[1].min(hi[1]),
+            1,
+            "the ghost stands on the ground: {:?}",
+            to.face
+        );
+        step(&mut t, &mut w, ToolAction::Paste, &at(to, [10, 0, 10]));
+        let mut out = Vec::new();
+        for y in 0..5 {
+            for z in 7..14 {
+                for x in 8..13 {
+                    let [wx, wy, wz] = to.cell([x, y, z]);
+                    out.push(to.state(w.get_voxel(wx, wy, wz)));
+                }
+            }
+        }
+        out
+    }
+
+    dwell_world::both_faces!(
+        /// Face parity (BIFACIAL_WORLD.md §11): a copy keeps its cells face-local and a paste
+        /// stands on the aimed-at ground toward the face's up, so a structure copied on either
+        /// face pastes upright on either. Regression: on face B the paste box ran from the
+        /// placement cell into the ground (+y), and a copy from face A pasted upside down.
+        fn a_copy_pastes_upright_on_either_face(f: dwell_world::FaceFrame) {
+            let a = dwell_world::FaceFrame::A;
+            let expected = copy_paste_local(a, a);
+            assert_eq!(
+                copy_paste_local(f, f),
+                expected,
+                "{:?} → {:?}",
+                f.face,
+                f.face
+            );
+            assert_eq!(copy_paste_local(a, f), expected, "A → {:?}", f.face);
+            assert_eq!(copy_paste_local(f, a), expected, "{:?} → A", f.face);
+        }
+    );
 }

@@ -38,6 +38,14 @@ impl BifacialTerrain {
         }
     }
 
+    /// The mirror world (a test tool for face parity, BIFACIAL_WORLD.md §11): face B generated
+    /// from face A's seed, so it is face A's exact mirror image and anything drawn, collided or
+    /// edited on one face can be compared with the other. Never a real world's generator.
+    pub fn mirrored(world_seed: u64) -> Self {
+        let a = TerrainGenerator::new(face_seed(world_seed, Face::A));
+        Self { b: a.clone(), a }
+    }
+
     /// A face's generator, in face-local coordinates.
     pub fn local(&self, face: Face) -> &TerrainGenerator {
         match face {
@@ -173,6 +181,13 @@ impl BifacialTerrain {
     /// Feet position players spawn at: always on face A.
     pub fn spawn_point(&self) -> [f64; 3] {
         self.a.spawn_point()
+    }
+
+    /// Face B's spawn point (a dev tool's: `?spawn=b` local worlds), its generator's face-local
+    /// feet mirrored into the world: the player stands on face B's ground, upside down.
+    pub fn spawn_point_b(&self) -> [f64; 3] {
+        let [x, y, z] = self.b.spawn_point();
+        [x, dwell_world::FaceFrame::B.y(y), z]
     }
 
     /// Face B's voxel (x, y, z) is the face-local voxel (x, mirror_y(y), z) of face B's generator.

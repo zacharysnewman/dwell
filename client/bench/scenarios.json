@@ -2226,7 +2226,7 @@
     },
     {
       "name": "day-night-face-b",
-      "notes": "The day/night cycle on face B (DAY_NIGHT.md \u00a73): a camera 50 m over face B's sea; face A's noon is face B's midnight (the moon overhead), face A's sunset is face B's sunrise.",
+      "notes": "The day/night cycle on face B (DAY_NIGHT.md \u00a73): a camera 50 m over face B's ground at the origin (y = −452: seed 7's face B stands 402 m high there; the old −4,150, from before Phase 16's midplane at 0, put the camera inside the rock, the \"stray dark slabs\", BIFACIAL_WORLD.md §11); face A's noon is face B's midnight (the moon overhead), face A's sunset is face B's sunrise.",
       "steps": [
         {
           "do": "settle",
@@ -2238,7 +2238,7 @@
         },
         {
           "do": "camera",
-          "position": [0, -4150, 0],
+          "position": [0, -452, 0],
           "yaw": 121,
           "pitch": 30
         },
@@ -2256,7 +2256,7 @@
         },
         {
           "do": "camera",
-          "position": [0, -4150, 0],
+          "position": [0, -452, 0],
           "yaw": -59,
           "pitch": 30
         },
@@ -2274,7 +2274,7 @@
         },
         {
           "do": "camera",
-          "position": [0, -4150, 0],
+          "position": [0, -452, 0],
           "yaw": 211,
           "pitch": 4
         },
@@ -2292,7 +2292,7 @@
         },
         {
           "do": "camera",
-          "position": [0, -4150, 0],
+          "position": [0, -452, 0],
           "yaw": 31,
           "pitch": 4
         },

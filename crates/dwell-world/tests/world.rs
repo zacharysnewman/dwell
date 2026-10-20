@@ -752,3 +752,41 @@ fn tall_grass_on_face_b_aims_toward_its_ground() {
     assert!((lo[1] - (1.0 - b[4] + 0.5)).abs() < 1e-6, "{lo:?}");
     assert!((hi[1] - (1.0 - b[1] + 0.5)).abs() < 1e-6, "{hi:?}");
 }
+
+/// A box in a cell, world ↔ face-local (y within the cell turned over on face B).
+fn local_box(f: FaceFrame, (lo, hi): ([f32; 3], [f32; 3])) -> ([f32; 3], [f32; 3]) {
+    if f.is_b() {
+        ([lo[0], 1.0 - hi[1], lo[2]], [hi[0], 1.0 - lo[1], hi[2]])
+    } else {
+        (lo, hi)
+    }
+}
+
+both_faces!(
+    /// Regression (face parity audit, 2026-10-20): on face B a level field's half-height top was
+    /// outlined and aimed at as a whole cell (its hanging shape counted as "inverted": full box);
+    /// on either face the box is the shape's face-local extent.
+    fn a_level_fields_top_is_aimed_at_by_its_half_height_box_on_either_face(f: FaceFrame) {
+        let mut world = empty();
+        let row = f.row(20);
+        for x in -2..=2 {
+            for z in -2..=2 {
+                world.set_voxel(x, row, z, s("dwell:grass"));
+                world.set_voxel(x, f.row(19), z, s("dwell:dirt"));
+            }
+        }
+        let (lo, hi) = local_box(f, target_box(&mut world, [0, row, 0]));
+        assert_eq!((lo, hi), ([0.0; 3], [1.0, 0.5, 1.0]), "{:?}", f.face);
+        // Aimed at from above (face-local): the ray stops on the half-height top.
+        let eye = f.point([0.5, 21.6, 0.5]);
+        let down = f.vector_f32([0.0, -1.0, 0.0]);
+        let hit = raycast_block(&mut world, eye, down, 5.0).expect("hit");
+        assert_eq!(hit.cell, [0, row, 0]);
+        assert!(
+            (hit.distance - 1.1).abs() < 1e-4,
+            "{:?}: {}",
+            f.face,
+            hit.distance
+        );
+    }
+);
