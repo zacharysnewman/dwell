@@ -12,6 +12,12 @@ interface State {
 const read = (page: Page) =>
   page.evaluate<State | null>('(globalThis.__dwell && globalThis.__dwell.state()) || null');
 
+/** The player controller's kept ticks (telemetry.rs `TickSample`), oldest first. */
+const ticks = (page: Page) =>
+  page.evaluate<{ seq: number; feet: [number, number, number] }[]>(
+    'globalThis.__dwell ? globalThis.__dwell.ticks() : []',
+  );
+
 const yaw = (page: Page) =>
   page.evaluate<number>('globalThis.__dwell ? globalThis.__dwell.view().yaw : 0');
 
@@ -67,22 +73,34 @@ test('touch controls: stick, look, and jump', async ({ page }) => {
   const box = await page.locator('#touch-jump').boundingBox();
   if (!box) throw new Error('no jump button');
   const ground = (await read(page))?.feet[1] ?? 0;
+  const lastSeq = (await ticks(page)).at(-1)?.seq ?? 0;
   await touch(cdp, 'touchStart', [{ x: box.x + box.width / 2, y: box.y + box.height / 2, id: 3 }]);
+  // The jump's height from the controller's per-tick trace, not the drawn position: CI's software
+  // renderer draws this page at 440–810 ms a frame, and a jump's whole arc (~0.7 s) can fall
+  // between two frames' positions (it read 0.22 m, two ticks in, on main). Watch until the jump
+  // has clearly left the ground (or a deadline), not for a fixed number of frames.
+  const jumpPeak = async () =>
+    Math.max(ground, ...(await ticks(page)).filter((t) => t.seq > lastSeq).map((t) => t.feet[1]));
   let peak = ground;
-  // Software rendering is slow and the sim keeps up with real time only roughly: watch until the
-  // jump has clearly left the ground (or a deadline), not for a fixed number of frames.
+  let drawn = ground; // DIAG
   const deadline = Date.now() + 10_000;
-  while (peak - ground <= 0.5 && Date.now() < deadline) {
+  while ((peak - ground <= 0.5 || drawn - ground <= 0.5) && Date.now() < deadline) { // DIAG
     await page.waitForTimeout(40);
-    peak = Math.max(peak, (await read(page))?.feet[1] ?? 0);
+    peak = await jumpPeak();
+    drawn = Math.max(drawn, (await read(page))?.feet[1] ?? 0); // DIAG
   }
   await touch(cdp, 'touchEnd', []);
   // A page that predicts far fewer than 60 ticks a second drops time, and the server, filling the
   // missing ticks with the held input, flies and lands the jump without it (game.rs
-  // MAX_TICKS_PER_FRAME): the rate says whether that is what happened.
-  const ticks = ((await read(page))?.stats.ticks ?? 0) - (start?.stats.ticks ?? 0);
-  const rate = (ticks * 1000) / (Date.now() - startedAt);
-  expect(peak - ground, `jump peak, predicting ${rate.toFixed(1)} ticks/s`).toBeGreaterThan(0.5);
+  // MAX_TICKS_PER_FRAME): the rate and frame time say whether that is what happened.
+  const predicted = ((await read(page))?.stats.ticks ?? 0) - (start?.stats.ticks ?? 0);
+  const rate = (predicted * 1000) / (Date.now() - startedAt);
+  const frame = await page.evaluate<number>(
+    'globalThis.__dwell.telemetry().frames.interval?.p50 ?? 0',
+  );
+  const context = `jump peak, predicting ${rate.toFixed(1)} ticks/s, frames ${frame.toFixed(0)} ms`;
+  console.log('DIAG', context, 'drawn', drawn - ground, 'ticks', peak - ground, JSON.stringify(await page.evaluate('globalThis.__dwell.telemetry().frames.interval'))); // DIAG
+  expect(peak - ground, context).toBeGreaterThan(0.5);
 });
 
 test('touch controls: Break/Place toggle, tapping the view edits, tapping the hotbar picks', async ({
