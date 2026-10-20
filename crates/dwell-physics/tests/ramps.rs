@@ -12,7 +12,7 @@ use dwell_blocks::shape::{shape_of, solid_span_at};
 use dwell_blocks::{StateId, require};
 use dwell_physics::Vec3;
 use dwell_physics::config::PlayerControllerConfig;
-use dwell_physics::controller::events;
+use dwell_physics::controller::{State, events};
 use dwell_world::ramps::{gentle_cell, steep_cells};
 use dwell_world::{CELL_H, rows_for_m};
 use dwell_worldgen::ramps::{Around, Top, top_of};
@@ -385,4 +385,80 @@ fn a_block_placed_beside_a_standing_player_leaves_the_ground_under_them_alone() 
     w.step(ticks(1.0));
     assert!(w.c(e).ground.grounded);
     assert_eq!(w.feet(e), before);
+}
+
+/// Walks or runs into a 45° ramp's foot from below and holds forward: (state switches between
+/// sliding and walking/running while pressed against it, the feet's highest point, the last state).
+fn press_into_ramp_foot(angle: f32, run: bool, start: f32) -> (i32, f32, State) {
+    // One cell deep for z < 4, three from z = 4 (a 1 m rise): the edge column takes a 45° ramp.
+    let height = |_: i32, z: i32| if z < 4 { 1 } else { 3 };
+    assert!(matches!(top_at(&height, 0, 4), Top::Steep(_)));
+    let mut w = PlayerTestWorld::new();
+    terrain(&mut w, (-12, -8, 12, 16), &height);
+    let rad = angle.to_radians();
+    // `start` m (along the path) before the capsule's front meets the ramp's foot at z = 4.
+    let along = start + 0.3 / rad.cos();
+    let e = w.spawn(Vec3::new(
+        0.5 - rad.sin() * along,
+        0.52,
+        4.0 - rad.cos() * along,
+    ));
+    w.step(ticks(0.5));
+    w.set_input(move |_, _| input(0.0, 1.0, run, false, false, angle, 0.0));
+    let (mut switches, mut highest) = (0, f32::MIN);
+    let mut last = None;
+    for t in 0..ticks(2.5) {
+        w.step(1);
+        highest = highest.max(w.feet(e));
+        let sliding = w.c(e).state == State::Sliding;
+        if std::env::var("DWELL_TRACE_FOOT").is_ok() {
+            let c = w.c(e);
+            eprintln!(
+                "{t} pos {} feet {:.3} vel {} {:?} gr {} gap {:.3} angle {:.1} under {:.1} grace {}",
+                w.pos(e),
+                w.feet(e),
+                w.vel(e),
+                c.state,
+                c.ground.grounded,
+                c.ground.gap,
+                c.ground.slope_angle,
+                c.ground.under_angle,
+                c.vertical.step_grace
+            );
+        }
+        if t > ticks(0.3) {
+            if let Some(was) = last
+                && was != sliding
+            {
+                switches += 1;
+            }
+            last = Some(sliding);
+        }
+    }
+    (switches, highest, w.c(e).state)
+}
+
+#[test]
+fn pressing_into_a_45_degree_ramps_foot_does_not_flicker_between_sliding_and_walking() {
+    // Playtest (2026-10-20): walking into a 45° face from below, the player rested on its toe
+    // ~0.24 m up and its state switched between sliding and walking every tick.
+    let mut fails = Vec::new();
+    let mut total = 0;
+    for run in [false, true] {
+        for angle in [0.0, 15.0, 30.0, 45.0, 60.0] {
+            for start in [0.4, 0.43, 0.46, 0.49] {
+                total += 1;
+                let (switches, highest, state) = press_into_ramp_foot(angle, run, start);
+                // The capsule's round bottom rests on the toe at most: 0.3 m over the lower level
+                // (0.5 m), never far up the face.
+                if switches > 2 || highest > 0.85 || state == State::Sliding {
+                    fails.push(format!(
+                        "run {run} {angle}° from {start}: {switches} switches, feet up to {highest:.2}, ends {state:?}"
+                    ));
+                }
+            }
+        }
+    }
+    eprintln!("ramp foot: {} of {total} flickered", fails.len());
+    assert!(fails.is_empty(), "{}", fails.join("\n"));
 }

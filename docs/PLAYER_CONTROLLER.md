@@ -536,6 +536,22 @@ data (`PlayerControllerConfig::slide`, §7).
   and the terminal speed × `crouch_terminal_factor` (1.15). The **step-up** never steps onto
   ground steeper than `min_angle`, and a sliding player does not step at all. **Jumping** off a
   slide is a normal jump. **Ladders and water** override sliding (exclusive layers).
+- **The ramp's foot** (playtest on the half-height branch, 2026-10-20). Walking into a 45° face
+  from below, the ground ring's highest hit is the ramp while the centre still stands on the floor:
+  the ground following climbed the ramp's face (and the solver turned the drive into the face into
+  a climb) until the centre crossed onto the toe, ~0.24 m up, slid back off it, and walked up
+  again, switching between Sliding and Walking every few ticks. Now, while the player drives into
+  such a ramp (its own velocity or the move input), the probe's ground is the ground under the
+  centre (`step_probe`: its normal and gap, `GroundInfo::foot_normal` keeps the ramp's), and the
+  horizontal pass removes the tick's motion into the ramp's horizontal normal, as a wall would
+  (`current` is kept, so it walks on along the foot or away at once). The player stops at the
+  foot, its round bottom against the toe (feet at most ~0.3 m up), in one state; running into the
+  ramp stops the same way rather than running up its toe and sliding back. Standing still beside a
+  ramp is unchanged (the ring's ramp holds the capsule where it rests). Derived from the probe each
+  tick, so it needs nothing on the wire. Tested by `tests/ramps.rs`
+  (`pressing_into_a_45_degree_ramps_foot_does_not_flicker_between_sliding_and_walking`: walking
+  and running at 0–60° from four starting distances; all 40 flickered before, 40–56 switches in
+  2.5 s) and the netcode suite's stairs run.
 - **State.** `State::Sliding` (the PPC's state enum always had it; nothing set it before) when
   sliding, above Crouching in `step_state`'s priority: Climbing > Swimming > Flying > Sliding >
   Crouching > Jumping/Falling > Running/Walking/Idle.
