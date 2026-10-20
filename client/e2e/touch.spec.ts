@@ -100,6 +100,9 @@ test('touch controls: stick, look, and jump', async ({ page }) => {
   );
   const context = `jump peak, predicting ${rate.toFixed(1)} ticks/s, frames ${frame.toFixed(0)} ms`;
   console.log('DIAG', context, 'drawn', drawn - ground, 'ticks', peak - ground, JSON.stringify(await page.evaluate('globalThis.__dwell.telemetry().frames.interval'))); // DIAG
+  const fr = await page.evaluate<{ names: string[]; frames: number[][] }>('globalThis.__dwell.telemetryFrames()'); // DIAG
+  console.log('DIAG frames', fr.frames.slice(-60).map((f, i, a) => (i ? (f[0] - a[i - 1][0]).toFixed(0) : '')).join(' ')); // DIAG
+  for (const t of (await page.evaluate<any[]>('globalThis.__dwell.ticks()')).filter((t) => t.seq > lastSeq - 5).slice(0, 80)) console.log('DIAG tick', t.seq, t.atMs.toFixed(0), t.feet[1].toFixed(3), t.state, t.jump); // DIAG
   expect(peak - ground, context).toBeGreaterThan(0.5);
 });
 
