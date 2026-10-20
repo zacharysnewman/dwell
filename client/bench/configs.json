@@ -23,6 +23,12 @@
       "params": { "marchbeam": "0" }
     },
     {
+      "name": "march-notemporal",
+      "notes": "Ray-marched at full resolution with the beam prepass but no temporal start (A4b).",
+      "renderer": "march",
+      "params": { "marchtemporal": "0" }
+    },
+    {
       "name": "march-half-fsr",
       "notes": "Ray-marched at half resolution, FSR 1 upscaling (A4).",
       "renderer": "march",

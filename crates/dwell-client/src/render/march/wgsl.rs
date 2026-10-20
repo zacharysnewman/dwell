@@ -19,13 +19,13 @@
 //!   1 where a ray hit, 0 for the sky), `out_depth` (`r32float`, view depth in metres, 0 for none),
 //!   `out_id` (`r32uint`, `cell_id`: hashed level and cell, and the face, 0 for none).
 
-use dwell_march::layout::{
-    BRICK_CELLS, COLUMN_MIPS, COLUMN_WORDS, GRID_OFFSET, LEVEL_COUNT, MAX_LEVEL, MAX_NODES,
-    MIP_OFFSET, NODE_WORDS, OCC_WORDS, RAW_WIDTH, SLOT_NONE, TAG_AIR, TAG_SHIFT, TAG_SOLID,
-};
 use dwell_march::beam::{
     BEAM_FIRST_STEP, BEAM_ITERATIONS, BEAM_MAX_NODES, BEAM_MIN_STEP, BEAM_SLACK, BEAM_SLACK_PER_M,
     BEAM_SPREAD_MARGIN, BEAM_TILE,
+};
+use dwell_march::layout::{
+    BRICK_CELLS, COLUMN_MIPS, COLUMN_WORDS, GRID_OFFSET, LEVEL_COUNT, MAX_LEVEL, MAX_NODES,
+    MIP_OFFSET, NODE_WORDS, OCC_WORDS, RAW_WIDTH, SLOT_NONE, TAG_AIR, TAG_SHIFT, TAG_SOLID,
 };
 use dwell_march::march::COLUMN_EPS;
 use dwell_march::scene::COLUMNS_NONE;
@@ -35,6 +35,8 @@ use super::stats::{DEBUG_WORDS, HIST_BINS, HIST_CAPPED, HIST_HITS, HIST_MISSES, 
 
 /// Workgroup side (8 × 8 invocations).
 pub const WORKGROUP: u32 = 8;
+// A march workgroup is one beam tile: it reduces its rays' clear distances for the temporal start.
+const _: () = assert!(WORKGROUP == BEAM_TILE);
 /// A large finite stand-in for +∞ (fast-math backends may not keep infinities).
 pub const BIG: f32 = 3.0e38;
 
@@ -46,6 +48,17 @@ pub const FLAG_DEBUG: u32 = 8;
 pub const FLAG_DATA: u32 = 16;
 /// Rays start at the beam prepass's distance (`beam_main`, `dwell_march::beam`).
 pub const FLAG_BEAM: u32 = 32;
+/// Last frame's tile distances (`out_t`) are valid for this frame's temporal start: the same eye
+/// (within `MarchUniforms.eye_shift`), field of view, size and brick data (`Marcher::draw`).
+pub const FLAG_TEMPORAL: u32 = 64;
+
+/// The temporal start (`beam_main`): last frame's tile distances are read over the tiles that the
+/// tile's footprint in last frame's image, widened by this many pixels a side, meets,
+pub const TEMPORAL_BORDER: i32 = 2;
+/// at most this many tiles a side (else only the beam's start is used),
+pub const TEMPORAL_MAX_REGION: i32 = 3;
+/// and the tile starts this many cells (of the cone level there) before their minimum.
+pub const TEMPORAL_MARGIN_CELLS: f32 = 2.0;
 
 /// The hit record's bits (`hit_record`): set on every hit, and for a cell on face B.
 pub const HIT_BIT: u32 = 1 << 31;
@@ -100,6 +113,10 @@ pub fn constants() -> Vec<(&'static str, Value)> {
         ("FLAG_DEBUG", U32(FLAG_DEBUG)),
         ("FLAG_DATA", U32(FLAG_DATA)),
         ("FLAG_BEAM", U32(FLAG_BEAM)),
+        ("FLAG_TEMPORAL", U32(FLAG_TEMPORAL)),
+        ("TEMPORAL_BORDER", I32(TEMPORAL_BORDER)),
+        ("TEMPORAL_MAX_REGION", I32(TEMPORAL_MAX_REGION)),
+        ("TEMPORAL_MARGIN_CELLS", F32(TEMPORAL_MARGIN_CELLS)),
         ("BEAM_TILE", U32(BEAM_TILE)),
         ("BEAM_ITERATIONS", U32(BEAM_ITERATIONS)),
         ("BEAM_FIRST_STEP", F32(BEAM_FIRST_STEP)),
@@ -198,6 +215,13 @@ struct MarchUniforms {
     size: vec2<u32>,
     tan_y: f32,
     dbg: u32,
+    // Last frame's camera (the temporal start), and how far the eye moved since (metres).
+    prev_forward: vec3<f32>,
+    eye_shift: f32,
+    prev_right: vec3<f32>,
+    prev_tan_x: f32,
+    prev_up: vec3<f32>,
+    prev_tan_y: f32,
 };
 @group(1) @binding(0) var<uniform> u: MarchUniforms;
 @group(1) @binding(6) var<storage, read> looks: array<u32>;
@@ -231,6 +255,9 @@ const MARCH_OUT: &str = r"
 @group(2) @binding(1) var out_id: texture_storage_2d<r32uint, write>;
 @group(2) @binding(2) var out_hit: texture_storage_2d<r32uint, write>;
 @group(2) @binding(3) var beam_in: texture_2d<f32>;
+// Per tile of BEAM_TILE² pixels (the march's workgroup), the least distance its rays are known
+// clear to: next frame's temporal start.
+@group(2) @binding(4) var out_t: texture_storage_2d<r32float, write>;
 ";
 
 /// The traversal: `march.rs` line for line.
@@ -730,11 +757,32 @@ fn hit_record(r: Result) -> u32 {
     return HIT_BIT | select(0u, ON_B_BIT, on_b) | (r.level << 19u) | (r.face << 16u) | r.state;
 }
 
+var<workgroup> tile_clear: atomic<u32>;
+
+// One workgroup per beam tile: each pixel's ray, then the least distance the tile's rays are
+// known clear to (the float's bits order as the float's for non-negative values).
 @compute @workgroup_size(8, 8)
-fn march_main(@builtin(global_invocation_id) gid: vec3<u32>) {
-    if (gid.x >= u.size.x || gid.y >= u.size.y) {
-        return;
+fn march_main(
+    @builtin(global_invocation_id) gid: vec3<u32>,
+    @builtin(local_invocation_index) li: u32,
+    @builtin(workgroup_id) wid: vec3<u32>,
+) {
+    if (li == 0u) {
+        atomicStore(&tile_clear, bitcast<u32>(BIG));
     }
+    workgroupBarrier();
+    if (gid.x < u.size.x && gid.y < u.size.y) {
+        atomicMin(&tile_clear, bitcast<u32>(march_pixel(gid)));
+    }
+    workgroupBarrier();
+    if (li == 0u) {
+        let clear = bitcast<f32>(atomicLoad(&tile_clear));
+        textureStore(out_t, vec2<i32>(wid.xy), vec4<f32>(clear, 0.0, 0.0, 0.0));
+    }
+}
+
+// One pixel's ray: its outputs, and the distance it is known clear to.
+fn march_pixel(gid: vec3<u32>) -> f32 {
     rd = pixel_ray(gid.xy);
     rc = u.eye_cell;
     rf = u.eye_frac;
@@ -742,11 +790,22 @@ fn march_main(@builtin(global_invocation_id) gid: vec3<u32>) {
     rinv = select(vec3<f32>(1.0) / rd, vec3<f32>(0.0), rzero);
     rstep = select(vec3<i32>(1), vec3<i32>(-1), rd < vec3<f32>(0.0));
     var start = 0.0;
+    var temporal = 0.0;
     if ((u.flags & FLAG_BEAM) != 0u) {
-        start = textureLoad(beam_in, vec2<i32>(gid.xy / BEAM_TILE), 0).r;
+        let b = textureLoad(beam_in, vec2<i32>(gid.xy / BEAM_TILE), 0);
+        start = b.r;
+        temporal = b.g;
     }
     let r = march(start);
     let at = vec2<i32>(gid.xy);
+    // The distance the ray is known clear to, for next frame's temporal start: its hit, the
+    // farthest distance on a miss, nothing at the step cap.
+    var clear = 0.0;
+    if (r.kind == HIT) {
+        clear = r.t;
+    } else if (r.kind == MISS) {
+        clear = u.max_t;
+    }
     if (r.kind == HIT) {
         let p = hit_point(r);
         textureStore(out_depth, at, vec4<f32>(dot(p, u.forward), 0.0, 0.0, 0.0));
@@ -777,7 +836,9 @@ fn march_main(@builtin(global_invocation_id) gid: vec3<u32>) {
         atomicStore(&stats[o + 10u], bitcast<u32>(rd.y));
         atomicStore(&stats[o + 11u], bitcast<u32>(rd.z));
         atomicStore(&stats[o + 12u], bitcast<u32>(start));
+        atomicStore(&stats[o + 13u], u32(temporal));
     }
+    return clear;
 }
 ";
 
@@ -786,7 +847,52 @@ fn march_main(@builtin(global_invocation_id) gid: vec3<u32>) {
 /// the tile's cone holds no occupied cell at any level a pixel ray there could stop at; it writes
 /// the distance cleared, where the tile's pixel rays start.
 const BEAM: &str = r"
-@group(2) @binding(0) var beam_out: texture_storage_2d<r32float, write>;
+@group(2) @binding(0) var beam_out: texture_storage_2d<rg32float, write>;
+@group(2) @binding(1) var prev_t: texture_2d<f32>;
+
+// Where image direction `d` was in last frame's image (pixels), and whether it was in front.
+fn prev_pixel(d: vec3<f32>) -> vec3<f32> {
+    let z = dot(d, u.prev_forward);
+    let ndc = vec2<f32>(dot(d, u.prev_right) / (z * u.prev_tan_x), dot(d, u.prev_up) / (z * u.prev_tan_y));
+    let size = vec2<f32>(u.size);
+    return vec3<f32>((ndc.x + 1.0) * 0.5 * size.x, (1.0 - ndc.y) * 0.5 * size.y, z);
+}
+
+// The temporal start (RAY_MARCHED_RENDERER.md §4.3 item 5): with the eye where it was, the tile's
+// rays start a margin before the least distance last frame's rays found clear over the tiles
+// that the tile's footprint in last frame's image (widened by TEMPORAL_BORDER pixels) meets. -1
+// where it can't tell: part of the footprint outside last frame's image or behind it, too large,
+// or a ray that hit the step cap.
+fn temporal_start(p0: vec2<u32>, p1: vec2<u32>) -> f32 {
+    var lo = vec2<f32>(BIG);
+    var hi = vec2<f32>(-BIG);
+    for (var c = 0u; c < 4u; c++) {
+        let at = vec2<f32>(f32(select(p0.x, p1.x, (c & 1u) != 0u)), f32(select(p0.y, p1.y, (c & 2u) != 0u)));
+        let q = prev_pixel(image_ray(at));
+        if (q.z <= 0.0) {
+            return -1.0;
+        }
+        lo = min(lo, q.xy);
+        hi = max(hi, q.xy);
+    }
+    let a = (vec2<i32>(floor(lo)) - vec2<i32>(TEMPORAL_BORDER)) / i32(BEAM_TILE);
+    let b = (vec2<i32>(floor(hi)) + vec2<i32>(TEMPORAL_BORDER)) / i32(BEAM_TILE);
+    let tiles = vec2<i32>((u.size + vec2<u32>(BEAM_TILE - 1u)) / BEAM_TILE);
+    if (any(floor(lo) < vec2<f32>(f32(TEMPORAL_BORDER))) || any(b >= tiles) || any(b - a >= vec2<i32>(TEMPORAL_MAX_REGION))) {
+        return -1.0;
+    }
+    var m = BIG;
+    for (var y = a.y; y <= b.y; y++) {
+        for (var x = a.x; x <= b.x; x++) {
+            m = min(m, textureLoad(prev_t, vec2<i32>(x, y), 0).r);
+        }
+    }
+    if (m <= 0.0) {
+        return -1.0;
+    }
+    let cell = f32(1u << min(level_for(m), u.top));
+    return max(m - u.eye_shift - TEMPORAL_MARGIN_CELLS * cell - BEAM_SLACK, 0.0);
+}
 
 // Whether level l has a slot in every node the level-0 box [lo, hi] meets (Scene::level_covers).
 fn level_covers(l: u32, lo: vec3<i32>, hi: vec3<i32>) -> bool {
@@ -981,6 +1087,10 @@ fn beam_main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let p1 = min(p0 + vec2<u32>(BEAM_TILE), u.size);
     rc = u.eye_cell;
     rf = u.eye_frac;
+    var temporal = -1.0;
+    if ((u.flags & FLAG_TEMPORAL) != 0u) {
+        temporal = temporal_start(p0, p1);
+    }
     let dir = image_ray(vec2<f32>(p0 + p1) * 0.5);
     let last = p1 - vec2<u32>(1u);
     var spread = length(pixel_ray(p0) - dir);
@@ -988,7 +1098,8 @@ fn beam_main(@builtin(global_invocation_id) gid: vec3<u32>) {
     spread = max(spread, length(pixel_ray(vec2<u32>(p0.x, last.y)) - dir));
     spread = max(spread, length(pixel_ray(last) - dir));
     let start = beam_walk(dir, spread * BEAM_SPREAD_MARGIN);
-    textureStore(beam_out, vec2<i32>(gid.xy), vec4<f32>(start, 0.0, 0.0, 0.0));
+    // The farther of the two.
+    textureStore(beam_out, vec2<i32>(gid.xy), vec4<f32>(max(start, temporal), select(0.0, 1.0, temporal > start), 0.0, 0.0));
 }
 ";
 

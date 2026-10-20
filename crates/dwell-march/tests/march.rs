@@ -933,7 +933,11 @@ fn beam_over_flat_ground(scene: &Scene) {
     for i in 0..200 {
         let pitch = (-30.0f32 + 29.0 * i as f32 / 199.0).to_radians();
         let yaw = (r.unit() - 0.5) * 0.4;
-        let dir = [pitch.cos() * yaw.cos(), pitch.sin(), pitch.cos() * yaw.sin()];
+        let dir = [
+            pitch.cos() * yaw.cos(),
+            pitch.sin(),
+            pitch.cos() * yaw.sin(),
+        ];
         let pa = [0.005, 0.003, 0.01][i % 3];
         let p = MarchParams {
             pixel_angle: pa,

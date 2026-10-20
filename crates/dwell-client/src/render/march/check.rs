@@ -5,7 +5,9 @@
 //! the direction the GPU used, from the distance the GPU's beam prepass started it at. Ids must
 //! match exactly and depths within 1e-4 relative; the report also counts how many rays agree on
 //! every field (steps, level, cell, face, `t` to the bit). Every ray is also marched from the eye:
-//! a beam start must never pass that march's hit (`Report::start_past_hit`).
+//! a beam start must never pass that march's hit (`Report::start_past_hit`). Each view is drawn
+//! after the same view turned by a few degrees, so its tiles take the temporal start (last
+//! frame's distances, the eye unmoved) where they can: the same bar holds for those starts.
 //!
 //! Shared by the native test (`march/test.rs`, on the machine's GPU when it has one) and the
 //! browser probe (`probeMarch`, headless SwiftShader in CI).
@@ -49,6 +51,8 @@ pub struct Report {
     /// from the march from the eye's (a LOD switch can fall elsewhere; counted, not a failure).
     pub started_late: usize,
     pub start_changed: usize,
+    /// Rays whose start was the temporal one.
+    pub temporal_starts: usize,
     /// Levels hit, as a bit set (the views reach LOD sections).
     pub levels_hit: u32,
     /// One line per view: its name and counts.
@@ -303,6 +307,13 @@ pub async fn run(device: &wgpu::Device, queue: &wgpu::Queue) -> Result<Report, S
         build(&mut m);
         let targets = m.targets((SIZE, SIZE));
         for (view, eye, yaw, pitch, face) in views {
+            // Last frame: the view turned a little (twice: the first draw uploads the bricks).
+            for _ in 0..2 {
+                let turned = frame_for(eye, yaw + 3.0, pitch - 2.0, face);
+                let mut encoder = device.create_command_encoder(&Default::default());
+                m.draw(&mut encoder, &turned, &targets, None);
+                queue.submit([encoder.finish()]);
+            }
             let frame = frame_for(eye, yaw, pitch, face);
             let mut encoder = device.create_command_encoder(&Default::default());
             m.draw(&mut encoder, &frame, &targets, None);
@@ -340,6 +351,9 @@ pub async fn run(device: &wgpu::Device, queue: &wgpu::Queue) -> Result<Report, S
                     let full = m.gpu.scene.march(&ray, &params);
                     if g.start > 0.0 {
                         report.started_late += 1;
+                    }
+                    if g.temporal {
+                        report.temporal_starts += 1;
                     }
                     if full.outcome != r.outcome {
                         report.start_changed += 1;
