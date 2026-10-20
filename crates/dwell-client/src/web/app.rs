@@ -224,6 +224,8 @@ struct Options {
     /// The marcher's render scale and upscaler (`marchScale`, `upscaler`: local builds).
     march_scale: f32,
     upscaler: crate::render::march::upscale::Upscaler,
+    /// The page's query, for the march's dev switches (`MarchSettings::apply_query`).
+    search: String,
 }
 
 struct Inner {
@@ -302,6 +304,7 @@ impl Client {
                 .as_string()
                 .and_then(|u| crate::render::march::upscale::Upscaler::parse(&u))
                 .unwrap_or_default(),
+            search: get("search").as_string().unwrap_or_default(),
         };
         let selection = options
             .renderer_switch
@@ -362,6 +365,7 @@ impl Client {
         renderer.select(selection);
         if options.renderer_switch {
             renderer.set_march_resolution(options.march_scale, options.upscaler);
+            renderer.set_march_query(&options.search);
         }
         let inner = Inner {
             _instance: instance,
