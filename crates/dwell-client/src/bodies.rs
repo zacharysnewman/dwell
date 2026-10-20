@@ -22,6 +22,7 @@ pub fn remote_input(v: &RemoteView, holding: bool) -> MoveInput {
         flying: v.flags & player_flags::FLYING != 0,
         pitch: v.pitch,
         holding,
+        foot_ground: [0.0; 2],
     }
 }
 
@@ -42,6 +43,7 @@ pub fn local_input(
         flying: controller & controller_flags::FLYING != 0,
         pitch: 0.0,
         holding: true,
+        foot_ground: [0.0; 2],
     }
 }
 
@@ -173,6 +175,17 @@ impl Bodies {
     /// Your arms swing (an edit sent).
     pub fn swing_arms(&mut self, s: Swing) {
         self.arms.swing(s);
+    }
+
+    /// Every remote body's base role and swing, by player id (tests: `__dwell.state().bodies`).
+    pub fn roles(&self) -> Vec<(u16, &'static str, Option<&'static str>)> {
+        let mut out: Vec<_> = self
+            .remotes
+            .iter()
+            .map(|(id, b)| (*id, b.animator.role(), b.animator.action()))
+            .collect();
+        out.sort_by_key(|r| r.0);
+        out
     }
 
     /// The arms' base role and swing (tests, telemetry).

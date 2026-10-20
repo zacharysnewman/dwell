@@ -46,6 +46,11 @@ pub struct MoveInput {
     pub pitch: f32,
     /// An item is in hand (the hold layer).
     pub holding: bool,
+    /// The ground under each foot (left, right), metres above the feet's height (0 on flat
+    /// ground). A hook for smooth step-ups (foot IK and a hip lift on a step): nothing fills it
+    /// yet and `plant_feet` leaves the pose as the clips made it, until the controller reports the
+    /// step inputs (claude/smooth-steps).
+    pub foot_ground: [f32; 2],
 }
 
 impl Default for MoveInput {
@@ -60,6 +65,7 @@ impl Default for MoveInput {
             flying: false,
             pitch: 0.0,
             holding: false,
+            foot_ground: [0.0; 2],
         }
     }
 }
@@ -282,10 +288,15 @@ impl Animator {
             }
         }
         if self.space == Space::Body {
+            self.plant_feet(&mut pose, i);
             self.look(&mut pose, i);
         }
         pose
     }
+
+    /// Each foot onto the ground under it (`MoveInput::foot_ground`): the place foot IK and a step's
+    /// hip lift go. Not built yet: the step inputs aren't reported, so it changes nothing.
+    fn plant_feet(&self, _pose: &mut Pose, _i: &MoveInput) {}
 
     /// The head (and a little of the chest, and the held arm) follow the look's pitch, added on the
     /// clips (+x pitches a bone's top forward: looking down).

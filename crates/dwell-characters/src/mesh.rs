@@ -475,7 +475,12 @@ mod tests {
         );
         for i in ch.items {
             let m = build(i.parts, View::Body, &[]);
-            println!("item {}: {} vertices, {} bytes", i.name, m.vertex_count(), m.byte_len());
+            println!(
+                "item {}: {} vertices, {} bytes",
+                i.name,
+                m.vertex_count(),
+                m.byte_len()
+            );
         }
     }
 }

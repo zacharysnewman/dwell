@@ -344,6 +344,10 @@ pub struct DebugState {
     pub target: Option<BlockTarget>,
     pub lod: Option<dwell_lod::LodStats>,
     pub flying: bool,
+    /// The bodies drawn for remote players: (player id, base role, swing) (docs/CHARACTERS.md §6).
+    pub bodies: Vec<(u16, &'static str, Option<&'static str>)>,
+    /// Your arms' base role and swing.
+    pub arms: (&'static str, Option<&'static str>),
 }
 
 /// The HUD's contents after a frame (the TS shell draws them).
@@ -949,6 +953,8 @@ impl<S: Scene> Game<S> {
                 .iter()
                 .map(|r| (r.player_id, r.feet, r.is_dead()))
                 .collect(),
+            bodies: self.bodies.roles(),
+            arms: self.bodies.arms_state(),
             stats: c.stats,
             terrain: self.streamer.stats(),
             terrain_ready: self.terrain_ready(),
@@ -2079,7 +2085,11 @@ impl Puppets {
                     0.0
                 };
                 let face_b = if self.face < 0.0 { pf::FACE_B } else { 0 };
-                let grounded = if state == PlayerState::Jumping { 0 } else { pf::GROUNDED };
+                let grounded = if state == PlayerState::Jumping {
+                    0
+                } else {
+                    pf::GROUNDED
+                };
                 dwell_game::remotes::RemoteView {
                     player_id: Self::ID_BASE + i,
                     feet: [

@@ -1443,6 +1443,26 @@ impl Client {
             })
             .collect();
         set(&o, "remotes", remotes);
+        let bodies: Array = d
+            .bodies
+            .iter()
+            .map(|&(id, role, action)| {
+                let b = Object::new();
+                set(&b, "playerId", id);
+                set(&b, "role", role);
+                set(&b, "action", action.map_or(JsValue::NULL, JsValue::from));
+                JsValue::from(b)
+            })
+            .collect();
+        set(&o, "bodies", bodies);
+        let arms = Object::new();
+        set(&arms, "role", d.arms.0);
+        set(
+            &arms,
+            "action",
+            d.arms.1.map_or(JsValue::NULL, JsValue::from),
+        );
+        set(&o, "arms", arms);
         let st = Object::new();
         set(&st, "ticks", d.stats.ticks);
         set(&st, "snapshots", d.stats.snapshots);
