@@ -27,8 +27,10 @@ use crate::{
 /// The payload format this build reads and writes.
 pub const FORMAT: u16 = 1;
 
-/// Payloads above this are split into parts (`BlockRegistry` messages).
-pub const PART_BYTES: usize = 64 * 1024;
+/// Payloads above this are split into parts (`BlockRegistry` messages). A part and its message
+/// header (type, part, parts, length: 9 bytes; 64 reserved) fit one WebRTC data channel message,
+/// `dwell_protocol::MAX_WEBRTC_MESSAGE_BYTES`: a 64 KiB part did not, and stalled WebRTC joins.
+pub const PART_BYTES: usize = dwell_protocol::MAX_WEBRTC_MESSAGE_BYTES - 64;
 
 /// Field tags. The top bit marks a look.
 pub mod tag {
@@ -1144,6 +1146,23 @@ pub fn parts(payload: &[u8]) -> Vec<&[u8]> {
 mod tests {
     use super::*;
     use crate::require;
+
+    /// A full part, as the `BlockRegistry` message the server sends, fits one WebRTC data channel
+    /// message (a 64 KiB part was 65545 bytes and stalled the WebRTC join before Welcome).
+    #[test]
+    fn a_full_part_fits_a_webrtc_message() {
+        let payload = vec![7u8; 3 * PART_BYTES + 1];
+        let parts = parts(&payload);
+        assert_eq!(parts.len(), 4);
+        for (i, p) in parts.iter().enumerate() {
+            let m = dwell_protocol::Message::BlockRegistry(dwell_protocol::BlockRegistry {
+                part: i as u16,
+                parts: parts.len() as u16,
+                data: p.to_vec(),
+            });
+            assert!(m.encode().len() <= dwell_protocol::MAX_WEBRTC_MESSAGE_BYTES);
+        }
+    }
 
     #[test]
     fn the_served_registry_round_trips_and_maps_to_itself() {

@@ -82,8 +82,12 @@ impl Fixture {
     }
 
     pub fn join(&mut self, id: SessionId, who: &Client) -> Welcome {
-        self.server
-            .on_connected(id, TransportKind::WebTransport, self.binding);
+        self.join_over(id, who, TransportKind::WebTransport)
+    }
+
+    /// `join` over the given transport.
+    pub fn join_over(&mut self, id: SessionId, who: &Client, transport: TransportKind) -> Welcome {
+        self.server.on_connected(id, transport, self.binding);
         self.send(
             id,
             Message::ClientHello(ClientHello {

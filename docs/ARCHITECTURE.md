@@ -430,7 +430,11 @@ channels, §8.1). DTLS uses the WebTransport certificate, so both transports sha
 Client certificates are not verified (str0m fingerprint verification off): the client pins the
 server fingerprint and proves its identity with the device-key handshake, which is bound to that
 fingerprint. Clients that don't open all channels within 10 s are dropped, and half-open clients
-are capped at 512. Reliable writes queue while SCTP buffers are full.
+are capped at 512. Reliable writes queue while SCTP buffers are full. **Message size:** with no
+SDP exchange, str0m takes the browser's max-message-size as SCTP's default, 64 KiB, so every
+message the server sends on a reliable channel must fit `MAX_WEBRTC_MESSAGE_BYTES` (64 KiB,
+`dwell-protocol`; the transport does not split messages). A message SCTP refuses closes the
+connection rather than blocking its channel. A test pins that a join and its first terrain fit.
 
 ---
 
