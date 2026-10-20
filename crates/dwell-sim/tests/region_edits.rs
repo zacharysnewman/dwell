@@ -352,3 +352,56 @@ fn a_brush_paste_keeps_its_keep_cells_and_the_unbreakable_floor() {
     assert_eq!(w.get_voxel(5, 32, 4), M.sand);
     assert_eq!(w.get_voxel(4, 31, 4), floor);
 }
+
+#[test]
+fn every_edit_is_acknowledged_after_its_changes_with_the_refused_ones_named() {
+    // Edit prediction (§6.5): block and region edits are numbered together in arrival order; after
+    // the tick's VoxelModification, an EditAck says how far the server got and which it refused.
+    let mut f = Fixture::new(flat());
+    join_streaming(&mut f, 1);
+    f.server.step();
+    f.take_all();
+    let block = |cell: [i32; 3]| {
+        Message::BlockEditRequest(BlockEditRequest {
+            action: BlockEditAction::Break,
+            cell,
+            face: 2,
+            material: 0,
+        })
+    };
+    f.send(1, fill([3, G, 3], [2, 1, 1], M.stone)); // 1: applied
+    f.send(1, block([200, G - 1, 0])); // 2: out of reach, refused
+    f.send(1, fill([300, G, 3], [2, 1, 1], M.stone)); // 3: out of reach, refused
+    f.server.step();
+    let got = f.take_all().remove(&1).unwrap_or_default();
+    let ack_at = got
+        .iter()
+        .position(|m| matches!(m, Message::EditAck(_)))
+        .expect("an ack");
+    let modified_at = got
+        .iter()
+        .position(|m| matches!(m, Message::VoxelModification(_)))
+        .expect("the fill's modification");
+    assert!(modified_at < ack_at, "the changes come first");
+    let Message::EditAck(ack) = &got[ack_at] else {
+        unreachable!()
+    };
+    assert_eq!(ack.through, 3);
+    assert_eq!(ack.rejected, vec![2, 3]);
+    // A tick with no edits sends no ack; a refused edit alone still gets one.
+    f.server.step();
+    assert!(
+        !f.take_all()
+            .remove(&1)
+            .unwrap_or_default()
+            .iter()
+            .any(|m| matches!(m, Message::EditAck(_)))
+    );
+    f.send(1, block([200, G - 1, 0]));
+    f.server.step();
+    let got = f.take_all().remove(&1).unwrap_or_default();
+    assert!(got.contains(&Message::EditAck(EditAck {
+        through: 4,
+        rejected: vec![4],
+    })));
+}

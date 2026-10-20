@@ -23,6 +23,22 @@ use crate::chunk_diff::{PADDED_VOLUME, padded_index};
 /// A chunk coordinate as on the wire.
 pub type Coord = [i32; 3];
 
+/// Edit prediction (`edit_prediction.rs`) reads and writes the client's world through the
+/// streamer: a write is a local change of loaded chunks, remeshed like a modification.
+impl<G, M, V> crate::edit_prediction::PredictionWorld for ChunkStreamer<VoxelWorld, G, M, V>
+where
+    G: ChunkSource,
+    M: Mesher,
+    V: TerrainView<M::Meshes>,
+{
+    fn state(&mut self, c: [i32; 3]) -> u16 {
+        self.store_mut().get_voxel(c[0], c[1], c[2])
+    }
+    fn show(&mut self, cells: &[([i32; 3], u16)]) {
+        self.set_local(cells);
+    }
+}
+
 /// The region tools read the client's world through the streamer (structures too): a box is loaded
 /// when every chunk it covers is, Air chunks included — the client never stores those, and its
 /// world reads them as air. (`region::read_box` on the bare world counts them as missing.) Chunks
@@ -604,6 +620,41 @@ where
         }
     }
 
+    /// Writes cells on the client alone (edit prediction, §6.5): in loaded chunks only (an Air
+    /// chunk is stored from then on), each chunk keeping its revision, remeshed like a
+    /// modification. Cells of chunks not loaded, or still generating, are left. The cells written.
+    pub fn set_local(&mut self, cells: &[([i32; 3], u16)]) -> usize {
+        let mut by_chunk: Vec<ChunkChanges> = Vec::new();
+        for &(c, m) in cells {
+            let key = c.map(|v| v.div_euclid(CHUNK_SIZE));
+            let Some(&revision) = self.loaded.get(&key) else {
+                continue;
+            };
+            if self.generating.contains_key(&key) {
+                continue;
+            }
+            let l = c.map(|v| v.rem_euclid(CHUNK_SIZE));
+            let change = dwell_protocol::VoxelChange {
+                index: (l[0] | l[1] << 5 | l[2] << 10) as u16,
+                material: m,
+            };
+            match by_chunk.iter_mut().find(|ch| ch.coord == key) {
+                Some(ch) => ch.changes.push(change),
+                None => by_chunk.push(ChunkChanges {
+                    coord: key,
+                    revision,
+                    changes: vec![change],
+                }),
+            }
+        }
+        let mut n = 0;
+        for changes in by_chunk {
+            n += changes.changes.len();
+            self.write(changes.coord, &changes);
+        }
+        n
+    }
+
     /// Applies one chunk's changes if they are the next revision; a gap asks for a resync.
     fn apply(&mut self, key: Coord, changes: &ChunkChanges) {
         let Some(&revision) = self.loaded.get(&key) else {
@@ -621,6 +672,12 @@ where
             (self.resync)(&[changes.coord]);
             return;
         }
+        self.write(key, changes);
+    }
+
+    /// Writes a loaded chunk's changes (it takes their revision) and marks it and the neighbours
+    /// they touch for meshing.
+    fn write(&mut self, key: Coord, changes: &ChunkChanges) {
         if self.air.remove(&key) {
             self.store.set_chunk(changes.coord, 0, &[0; CHUNK_VOLUME]);
         }
