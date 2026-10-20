@@ -128,9 +128,16 @@ test('touch controls: Break/Place toggle, tapping the view edits, tapping the ho
     .toBe(stateId('dwell:dirt'));
 
   // Back to Break: a tap removes it again, once the new block is the one targeted (on a slow
-  // runner the target could still be the ground below, which the tap would break instead).
+  // runner the target could still be the ground below, which the tap would break instead). The
+  // crosshair is turned onto it: a lone natural block is a half pyramid and the ground beside it
+  // rises to it (ADAPTIVE_BLOCKS.md), so the look that placed it now hits that ramp.
   await tap(edit.x, edit.y, 7);
   await expect(page.locator('#touch-edit')).toHaveText('Break');
+  const feet = (await read(page))?.feet ?? [0, 0, 0];
+  const d = [x + 0.5 - feet[0], y + 1.25 - feet[1] - 1.62, z + 0.5 - feet[2]] as const; // eye 1.62 m
+  const lookYaw = (Math.atan2(d[0], d[2]) * 180) / Math.PI;
+  const lookPitch = (Math.atan2(d[1], Math.hypot(d[0], d[2])) * 180) / Math.PI;
+  await page.evaluate(`globalThis.__dwell.look(${String(lookYaw)}, ${String(lookPitch)})`);
   await expect
     .poll(() => page.evaluate<string>('globalThis.__dwell.state()?.target?.cell.join() ?? ""'))
     .toBe([x, y + 1, z].join());
