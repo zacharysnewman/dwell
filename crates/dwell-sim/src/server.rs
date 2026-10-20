@@ -372,6 +372,10 @@ struct Session {
     /// The last edit number acknowledged, and those refused since.
     edit_acked: u32,
     edit_refused: Vec<u32>,
+    /// What the player holds (`held_item`, the server's ids; protocol v17) and its last swing
+    /// (`swing_flags`), both carried to the others in snapshots (CHARACTERS.md §9.3).
+    held: u16,
+    swing: u8,
 
     stats: SessionStats,
     // Terrain streaming.
@@ -424,6 +428,8 @@ impl Session {
             edit_seq: 0,
             edit_acked: 0,
             edit_refused: Vec::new(),
+            held: 0,
+            swing: 0,
             stats: SessionStats::default(),
             chunk_mode: ChunkMode::AwaitingCheck,
             streamed: HashSet::default(),
@@ -486,6 +492,18 @@ fn cube_offsets(r: i32) -> Vec<ChunkCoord> {
 fn input_in_range(f: &InputFrame) -> bool {
     let (mx, my) = (i32::from(f.move_x), i32::from(f.move_y));
     mx >= -127 && my >= -127 && mx * mx + my * my <= 127 * 127 + 254 && f.pitch >= -32767
+}
+
+/// A player's swing after one more edit (`swing_flags`): the count steps (wrapping) and the kind
+/// is the edit's, so the others start a break or place swing when they see it change.
+fn next_swing(swing: u8, broke: bool) -> u8 {
+    let count = (swing.wrapping_add(1)) & swing_flags::COUNT_MASK;
+    count
+        | if broke {
+            swing_flags::BREAK
+        } else {
+            swing_flags::PLACE
+        }
 }
 
 fn encode(m: &Message) -> Vec<u8> {
@@ -964,7 +982,18 @@ impl Server {
             }
             // Every edit gets the next number, applied or not: the client's prediction waits for
             // its `EditAck` (§6.5).
+            // What the player holds, for the others' view of it: a block this server doesn't
+            // know is an empty hand.
+            Message::HeldItem(held) => {
+                let block = usize::from(held & held_item::BLOCK_MASK);
+                s.held = if block < dwell_blocks::state_count() {
+                    held
+                } else {
+                    0
+                };
+            }
             Message::BlockEditRequest(edit) => {
+                s.swing = next_swing(s.swing, edit.action == BlockEditAction::Break);
                 s.edit_seq += 1;
                 if s.edits.len() < MAX_QUEUED_EDITS {
                     s.edits.push((s.edit_seq, edit));
@@ -974,6 +1003,7 @@ impl Server {
                 }
             }
             Message::RegionEdit(edit) => {
+                s.swing = next_swing(s.swing, false);
                 s.edit_seq += 1;
                 if s.region_edits.len() < region_edit::MAX_QUEUED {
                     s.region_edits.push((s.edit_seq, edit));
@@ -1763,6 +1793,8 @@ impl Server {
                 pitch: 0,
                 state: PlayerState::Idle,
                 flags: player_flags::DEAD,
+                held: s.held,
+                swing: s.swing,
             };
             if let Some(h) = s.handle {
                 let c = self.players.controller(h);

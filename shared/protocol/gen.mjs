@@ -126,6 +126,8 @@ tsFlags('PlayerFlags', c.playerFlags);
 tsFlags('ControllerFlags', c.controllerFlags);
 tsFlags('SlideFlags', c.slideFlags);
 tsFlags('WelcomeFlags', c.welcomeFlags);
+tsFlags('HeldItem', c.heldItem);
+tsFlags('SwingFlags', c.swingFlags);
 ts.push('');
 writeFileSync(join(root, 'client/src/protocol/constants.gen.ts'), ts.join('\n'));
 
@@ -229,5 +231,11 @@ rsFlags('player_flags', 'u8', c.playerFlags);
 rsFlags('controller_flags', 'u8', c.controllerFlags);
 rsFlags('slide_flags', 'u8', c.slideFlags);
 rsFlags('welcome_flags', 'u8', c.welcomeFlags);
+// A held item (protocol v17, CHARACTERS.md §9.3): a block state in the low bits (the server's id;
+// 0 an empty hand), `BRUSH` for the brush tool painting with it.
+rsFlags('held_item', 'u16', c.heldItem);
+// A remote player's last swing (v17): a count stepping with each edit the server takes from it,
+// and whether it broke or placed.
+rsFlags('swing_flags', 'u8', c.swingFlags);
 rs.push('');
 writeFileSync(join(root, 'crates/dwell-protocol/src/constants.gen.rs'), rs.join('\n'));

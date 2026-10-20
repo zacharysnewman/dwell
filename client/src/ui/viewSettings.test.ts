@@ -13,6 +13,7 @@ import {
   defaultClouds,
   sanitizeClouds,
   sanitizeFovSetting,
+  sanitizeShowArms,
   viewRecord,
 } from './viewSettings';
 
@@ -71,7 +72,19 @@ describe('field of view', () => {
   });
 
   it('is stored append-only: fields this build does not know are kept', () => {
-    expect(viewRecord({ fovDeg: 75, future: [1] }, 90)).toEqual({ fovDeg: 90, future: [1] });
-    expect(viewRecord('garbage', 80)).toEqual({ fovDeg: 80 });
+    expect(viewRecord({ fovDeg: 75, future: [1] }, 90)).toEqual({
+      fovDeg: 90,
+      future: [1],
+      showArms: true,
+    });
+    expect(viewRecord('garbage', 80, false)).toEqual({ fovDeg: 80, showArms: false });
+  });
+
+  it('shows your arms unless the record turned them off', () => {
+    expect(sanitizeShowArms(null)).toBe(true);
+    expect(sanitizeShowArms({ fovDeg: 80 })).toBe(true);
+    expect(sanitizeShowArms({ showArms: 'no' })).toBe(true);
+    expect(sanitizeShowArms({ showArms: false })).toBe(false);
+    expect(sanitizeShowArms(viewRecord({}, 75, false))).toBe(false);
   });
 });

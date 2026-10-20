@@ -17,6 +17,10 @@ pub struct RemoteView {
     pub pitch: f32,
     pub state: PlayerState,
     pub flags: u8,
+    /// What it holds (`held_item`, the server's block id; protocol v17).
+    pub held: u16,
+    /// Its last swing (`swing_flags`; v17).
+    pub swing: u8,
 }
 
 impl RemoteView {
@@ -70,6 +74,8 @@ fn view(s: &RemotePlayerState) -> RemoteView {
         pitch: dequantize_pitch(s.pitch),
         state: s.state,
         flags: s.flags,
+        held: s.held,
+        swing: s.swing,
     }
 }
 
@@ -205,6 +211,8 @@ mod tests {
             pitch: 0,
             state: PlayerState::Walking,
             flags,
+            held: 0,
+            swing: 0,
         }
     }
 
