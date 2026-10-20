@@ -80,7 +80,8 @@ pub fn spawn_point_for(version: u32, world_seed: u64) -> [f64; 3] {
     // field of natural blocks rests at half height (ADAPTIVE_BLOCKS.md).
     let mut flat = dwell_world::VoxelWorld::flat();
     let top = flat.shape_at(0, -1, 0);
-    let feet = -1.0 + f64::from(dwell_blocks::shape::solid_span_at(top, 0.5, 0.5).hi);
+    let feet = dwell_world::m_of_row(-1)
+        + f64::from(dwell_blocks::shape::solid_span_at(top, 0.5, 0.5).hi) * dwell_world::CELL_H;
     [0.5, feet, 0.5]
 }
 

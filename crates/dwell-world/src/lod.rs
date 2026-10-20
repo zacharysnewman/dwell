@@ -1,5 +1,6 @@
 //! Level of detail: the whole-world view (ARCHITECTURE.md §6.6, ADR 0012). A 3D octree of sections:
-//! at level L a cell is a 2^L m cube and a section 32³ cells, so level 0 is the chunk grid.
+//! at level L a cell is 2^L level-0 cells on a side (2^L m wide and 2^L rows tall: cell space,
+//! HALF_HEIGHT_GRID.md §2) and a section 32³ cells, so level 0 is the chunk grid.
 //! Section coordinates count from (−2²³, −2²³, −2²³); one root at `MAX_LEVEL` holds the whole disc.
 //! Section content is 34³ cells (the section and a one-cell apron) in layer order (x fastest, then
 //! z, then y): the codec's order and the client mesher's padded layout.
@@ -67,7 +68,7 @@ pub const fn last_row(level: i32) -> i32 {
     floor_div64(WORLD_MAX_Y as i64 - 1 - ORIGIN_Y, section_size(level)) as i32
 }
 
-/// World metres of a section's minimum corner.
+/// A section's minimum corner in cell space: x and z in metres, y in rows.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct LodOrigin {
     pub x: i64,
@@ -160,9 +161,10 @@ pub struct LodSurface {
     pub valid: bool,
     /// Under water: `height` is the floor, `material` the floor's.
     pub wet: bool,
+    /// Rows (fractional, cell space).
     pub height: f32,
     pub material: StateId,
-    /// Where wet: the water's surface (the sea's).
+    /// Where wet: the water's surface (the sea's), in rows.
     pub water: f32,
 }
 
@@ -334,8 +336,8 @@ pub fn lod_hash(kind: LodKind, cells: &[StateId]) -> u64 {
     h
 }
 
-/// Height bounds of a column of sections (L, i, ·, k) from the generator's columns: cells sampling
-/// above `hi` are air (or sea), below `lo` solid. Face B's are face-local.
+/// Height bounds (rows) of a column of sections (L, i, ·, k) from the generator's columns: cells
+/// sampling above `hi` are air (or sea), below `lo` solid. Face B's are face-local.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct LodBounds {
     pub lo: f64,

@@ -6,7 +6,7 @@ use dwell_world::lod::{
     LodCoord, MAX_LEVEL, ORIGIN_X, ORIGIN_Y, ORIGIN_Z, first_row, last_row, section_origin,
     section_size, sections_across,
 };
-use dwell_world::{MIDPLANE_Y, MIRROR_SUM};
+use dwell_world::{CELL_H, MIDPLANE_Y, MIRROR_SUM, cell_space, metres};
 
 /// World metres, as the client's `Vec3`.
 pub type Vec3 = [f64; 3];
@@ -41,9 +41,10 @@ pub fn id_of(c: LodCoord) -> LodId {
     lod_id(c.level, c.i, c.j, c.k)
 }
 
-/// The section at `level` holding world point p.
+/// The section at `level` holding world point p (m).
 pub fn section_at(level: i32, p: Vec3) -> LodCoord {
     let s = section_size(level) as f64;
+    let p = cell_space(p);
     let at = |a: usize| ((p[a] - ORIGIN[a]) / s).floor() as i32;
     LodCoord::new(level, at(0), at(1), at(2))
 }
@@ -51,14 +52,14 @@ pub fn section_at(level: i32, p: Vec3) -> LodCoord {
 /// World metres of the section's min corner.
 pub fn origin_m(c: LodCoord) -> Vec3 {
     let o = section_origin(c);
-    [o.x as f64, o.y as f64, o.z as f64]
+    metres([o.x as f64, o.y as f64, o.z as f64])
 }
 
 /// The section's box in world metres.
 pub fn section_box(c: LodCoord) -> (Vec3, Vec3) {
     let lo = origin_m(c);
     let s = section_size(c.level) as f64;
-    (lo, [lo[0] + s, lo[1] + s, lo[2] + s])
+    (lo, [lo[0] + s, lo[1] + s * CELL_H, lo[2] + s])
 }
 
 /// Whether the section lies wholly on face B (levels up to 6 never straddle the midplane): it is

@@ -9,7 +9,9 @@ use dwell_protocol::{RegionEdit, RegionEditOp, region_edit};
 use crate::edit::{
     EditCapsule, REACH_SLACK, flooded_for, medium_allows, overlaps_player, placeable, unbreakable,
 };
-use crate::{M, VoxelWorld, WORLD_BOTTOM_Y, WORLD_MAX_Y, chunk_of, inside_world_disc};
+use crate::{
+    CELL, M, VoxelWorld, WORLD_BOTTOM_Y, WORLD_MAX_Y, chunk_of, inside_world_disc, pos_of_cell,
+};
 
 /// How far the server lets a region edit's nearest cell be from the eye (m).
 pub const DEFAULT_REGION_REACH: f32 = region_edit::REACH + REACH_SLACK;
@@ -68,12 +70,13 @@ pub fn box_size(size: [u8; 3]) -> [i32; 3] {
     size.map(i32::from)
 }
 
-/// Distance² from `eye` to the nearest point of the box of `size` cells at `min`.
+/// Distance² (m²) from `eye` (m) to the nearest point of the box of `size` cells at `min`.
 pub fn box_distance_sq(min: [i32; 3], size: [i32; 3], eye: [f64; 3]) -> f64 {
+    let lo_m = pos_of_cell(min);
     (0..3)
         .map(|i| {
-            let lo = f64::from(min[i]);
-            let hi = lo + f64::from(size[i]);
+            let lo = lo_m[i];
+            let hi = lo + f64::from(size[i]) * CELL[i];
             let g = if eye[i] < lo {
                 lo - eye[i]
             } else if eye[i] > hi {

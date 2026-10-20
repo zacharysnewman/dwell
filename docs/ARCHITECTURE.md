@@ -744,7 +744,16 @@ placement preview) went with the placed families.
 - Voxel = 1 m cube; `uint16` block-state ID (0 = air). **[planned, Phase 36, on the branch
   `claude/half-height-voxels` only]** cells 1 × ½ × 1 m, chunks 32³ cells (32 × 16 × 32 m), natural
   ground shaped once at generation from stored cardinal ramps ([`HALF_HEIGHT_GRID.md`](./HALF_HEIGHT_GRID.md),
-  ADR 0038); until it is built, everything below describes 1 m cells. The registry defines each state's density,
+  ADR 0038); until it is built, everything below describes 1 m cells.
+  **[built, Phase 36 H1]** one named cell height: `cellHeight` in `shared/protocol/constants.json`
+  (1.0 on `main`), and every conversion between metres and cells goes through `dwell-world`
+  `cell.rs`. **Cell space** (x and z in metres, y in rows) is the unit of every voxel algorithm:
+  chunk indexing, meshing, shapes as fractions of a cell, the LOD octree, the cell DDA, region and
+  brush boxes. Metres are used at the boundaries: physics (the terrain collider's voxel size is
+  the cell; shaped cells' trimeshes, the voxel queries and the controller's probes convert), the
+  chunk and LOD meshes (emitted in metres, normals converted), the camera, culling and outlines,
+  worldgen heights, fluids, audio, and positions on the wire and in saves. The ray marcher still
+  assumes 1 m cells (Phase 36 H4). The registry defines each state's density,
   strength, and render properties and is shared by server and client (generated from one data set).
 - Chunk = **32 × 32 × 32** voxels, addressed by `ChunkCoord(int32 x, y, z)`. The grid is 3D in
   every respect — generation, storage, streaming (§6.3) and LOD (§6.6). The world is 256 chunk
@@ -1813,6 +1822,7 @@ in the code yet.
 | `INTEGRITY_BUDGET_VOXELS` | 32 768 / tick | Flood-fill budget per tick |
 | `AUTOSAVE_SECONDS` | 30 s | World autosave interval (per-world `autosave_seconds` setting); local mode saves every 5 s (`LOCAL_AUTOSAVE_SECONDS`, `dwell-client` local.rs), and when the page is hidden or closed |
 | `CHUNK_SIZE` | 32 | Voxels per chunk edge |
+| `CELL_HEIGHT` | 1.0 m | A cell is 1 m × `CELL_HEIGHT` × 1 m (§6.1): the vertical world values below are rows of cells, with metre twins (`MIDPLANE_M`, `WORLD_BOTTOM_M`, `WORLD_MAX_M`, `SEA_LEVEL_M`) generated beside them; every metre↔cell conversion goes through `dwell-world` `cell.rs` (Phase 36 H1; the branch `claude/half-height-voxels` sets ½ m in H4) |
 | **Players (§9)** | | |
 | Controller tuning | see `PLAYER_CONTROLLER.md` §7 | Capsule, speeds, jump, crouch, climb, swim, push, damage |
 | `RECONCILE_SNAP_DISTANCE` | 1.0 m | Correction above this snaps instead of smoothing |
@@ -1833,8 +1843,8 @@ in the code yet.
 | `MAX_LOD_INDEX_ENTRIES` | 16 384 | Entries per `LodIndex` / `LodIndexUpdate` message (~256 KB; 16 bytes each since Phase 13) |
 | `LOD_MAX_REQUEST_SECTIONS` | 32 | Sections per `LodRequest` |
 | **Terrain (§6.3)** | | |
-| `MIDPLANE_Y` | −2 048 | The halfway plane: face A starts here, face B's mirror image lies below (§6.3) |
-| `WORLD_BOTTOM_Y` / `WORLD_MAX_Y` | −10 240 / 6 144 | Vertical world bounds (16,384 m: face B and face A) |
+| `MIDPLANE_Y` | −2 048 rows | The halfway plane: face A starts here, face B's mirror image lies below (§6.3) |
+| `WORLD_BOTTOM_Y` / `WORLD_MAX_Y` | −10 240 / 6 144 rows | Vertical world bounds (16,384 rows: face B and face A; × `CELL_HEIGHT` in metres) |
 | `FLIP_BAND` | 4 m | Distance from the midplane within which a body moving toward it is accelerated and one moving away feels a fading pull (§6.3) |
 | `CORE_ANCHOR_LAYERS` | 8 | Layers either side of the midplane that anchor both faces (Phase 20) |
 | `WORLD_RADIUS` | 8 192 000 m | Radius of the world disc; beyond it, the void |
@@ -1842,7 +1852,7 @@ in the code yet.
 | `POS64_LIMIT` | 33 554 432 m | Range decoders accept for `pos64` positions (§8.3) |
 | `FLIGHT_CEILING` | 24 000 000 m | Highest feet position in creative flight (§9.1; PLAYER_CONTROLLER.md §6.7 has the other flight tunables) |
 | `FLY_SPEED_MAX_LEVEL` / `FLY_SPEED_SHIFT` | 39 / 4 | Flight speed slider: highest level (2^19.5 × `fly.speed`) and its bit position in `PlayerInput.buttons` (§9.1) |
-| `SEA_LEVEL` | 0 | Water fill height |
+| `SEA_LEVEL` | 0 rows | Water fill height |
 | `VIEW_RADIUS_CHUNKS` | 3 | Radius of the sphere of chunks streamed around each player |
 | `RENDER_RADIUS_CHUNKS` | 12 | Radius within which a client may request chunks to draw at full detail (§6.3, §6.6) |
 | `CHUNK_REQUESTS_PER_SECOND` | 256 | Per-client `ChunkRequest` rate limit (chunks) |

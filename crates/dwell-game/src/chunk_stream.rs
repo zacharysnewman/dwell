@@ -462,7 +462,8 @@ where
 
     /// True when the chunks around `position` (±1 chunk, within the world's rows) are loaded.
     pub fn ready_around(&self, position: [f64; 3]) -> bool {
-        let [cx, cy, cz] = position.map(|v| (v / f64::from(CHUNK_SIZE)).floor() as i32);
+        let c = dwell_world::chunk_of_pos(position);
+        let [cx, cy, cz] = [c.x, c.y, c.z];
         for y in (cy - 1).max(MIN_CHUNK_Y)..=(cy + 1).min(MAX_CHUNK_Y) {
             for z in cz - 1..=cz + 1 {
                 for x in cx - 1..=cx + 1 {
@@ -490,11 +491,9 @@ where
             return 0;
         }
         let deadline = now() + budget_ms;
-        let size = f64::from(CHUNK_SIZE);
         let distance = |c: &Coord| -> f64 {
-            (0..3)
-                .map(|i| ((f64::from(c[i]) + 0.5) * size - center[i]).powi(2))
-                .sum()
+            let m = dwell_world::chunk_centre_m(ChunkCoord::from_array(*c));
+            (0..3).map(|i| (m[i] - center[i]).powi(2)).sum()
         };
         let mut ready: Vec<Coord> = self
             .dirty

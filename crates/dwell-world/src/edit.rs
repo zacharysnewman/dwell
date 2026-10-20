@@ -10,7 +10,8 @@ use dwell_blocks::{
 use dwell_protocol::{BlockEditAction, BlockEditRequest, ChunkChanges, players};
 
 use crate::{
-    ChunkCoord, M, MIDPLANE_Y, VoxelWorld, WORLD_BOTTOM_Y, WORLD_MAX_Y, inside_world_disc,
+    CELL, CELL_H, ChunkCoord, M, MIDPLANE_Y, VoxelWorld, WORLD_BOTTOM_Y, WORLD_MAX_Y, cell_dir,
+    cell_space, inside_world_disc, m_of_row, metres, normal_to_m, pos_of_cell,
 };
 
 /// Face index → outward direction: 0 +X, 1 −X, 2 +Y, 3 −Y, 4 +Z, 5 −Z.
@@ -207,15 +208,18 @@ pub struct BlockHit {
     pub distance: f32,
 }
 
-/// The nearest targetable cell along the ray (unit `dir`) within `max_distance`, as its exact
-/// shape. A cell containing the origin is skipped. Walks in float relative to the origin's cell,
-/// so it is as precise ~8,000 km out as at the origin.
+/// The nearest targetable cell along the ray (unit `dir`, metres) within `max_distance` (m), as its
+/// exact shape. A cell containing the origin is skipped. Walks in float relative to the origin's
+/// cell, so it is as precise ~8,000 km out as at the origin. The walk is in cell space (y in rows,
+/// HALF_HEIGHT_GRID.md §2) with the direction scaled, not renormalised, so `t` stays in metres.
 pub fn raycast_block(
     world: &mut VoxelWorld,
     origin: [f64; 3],
     dir: [f32; 3],
     max_distance: f32,
 ) -> Option<BlockHit> {
+    let origin = cell_space(origin);
+    let dir = cell_dir(dir.map(f64::from)).map(|d| d as f32);
     let mut base = [0i32; 3];
     let mut cell = [0i32; 3];
     let mut step = [0i32; 3];
@@ -261,9 +265,10 @@ pub fn raycast_block(
             if let Some((t, normal)) = hit
                 && t <= max_distance
             {
+                let n = normal_to_m(normal.map(f64::from)).map(|v| v as f32);
                 return Some(BlockHit {
                     cell: std::array::from_fn(|i| base[i] + cell[i]),
-                    face: face_of_normal(normal),
+                    face: face_of_normal(n),
                     distance: t,
                 });
             }
@@ -350,9 +355,10 @@ pub fn check_block_edit(
     let c = request.cell;
     // Reach first: nothing far away is read (reading would generate it).
     let mut gap2 = 0.0f64;
+    let corner = pos_of_cell(c);
     for i in 0..3 {
-        let lo = f64::from(c[i]);
-        let hi = lo + 1.0;
+        let lo = corner[i];
+        let hi = lo + CELL[i];
         let g = if eye[i] < lo {
             lo - eye[i]
         } else if eye[i] > hi {
@@ -371,7 +377,9 @@ pub fn check_block_edit(
     }
     // Line of sight: the eye is in front of a surface of the target whose normal points through
     // the requested face, and a ray from it reaches the target first at the polygon's centre or
-    // near one of its corners.
+    // near one of its corners. Surfaces are in cell space (y in rows); which side of a plane the
+    // eye is on is the same there as in metres.
+    let eye_c = cell_space(eye);
     let mut visible = false;
     for polygon in &target_faces(world, c) {
         if visible {
@@ -401,11 +409,11 @@ pub fn check_block_edit(
         for v in &mut normal {
             *v /= length_n;
         }
-        if face_of_normal(normal) != request.face {
+        if face_of_normal(normal_to_m(normal.map(f64::from)).map(|v| v as f32)) != request.face {
             continue;
         }
         let side: f64 = (0..3)
-            .map(|k| (eye[k] - (f64::from(c[k]) + f64::from(pts[0][k]))) * f64::from(normal[k]))
+            .map(|k| (eye_c[k] - (f64::from(c[k]) + f64::from(pts[0][k]))) * f64::from(normal[k]))
             .sum();
         if side <= 0.0 {
             continue;
@@ -421,7 +429,7 @@ pub fn check_block_edit(
             if visible {
                 break;
             }
-            let p: [f64; 3] = std::array::from_fn(|k| {
+            let p: [f64; 3] = metres(std::array::from_fn(|k| {
                 // The centre, then 70 % of the way from it to each corner.
                 let local = if sample < 0 {
                     centre[k]
@@ -429,7 +437,7 @@ pub fn check_block_edit(
                     centre[k] + 0.7 * (pts[sample as usize][k] - centre[k])
                 };
                 f64::from(c[k]) + f64::from(local) + 0.01 * f64::from(normal[k])
-            });
+            }));
             let delta = [p[0] - eye[0], p[1] - eye[1], p[2] - eye[2]];
             let length = (delta[0] * delta[0] + delta[1] * delta[1] + delta[2] * delta[2]).sqrt();
             if length <= 0.0 {
@@ -534,10 +542,10 @@ pub fn overlaps_player(material: StateId, cell: [i32; 3], players: &[EditCapsule
     players.iter().any(|p| {
         let x = (p.center[0] - f64::from(cell[0])) as f32;
         let z = (p.center[2] - f64::from(cell[2])) as f32;
-        let y = p.center[1] - f64::from(cell[1]);
+        let y = p.center[1] - m_of_row(cell[1]);
         let bottom = (y - f64::from(p.half_cylinder)) as f32;
         let top = (y + f64::from(p.half_cylinder)) as f32;
-        vertical_segment_distance_sq(shape, x, z, bottom, top) < p.radius * p.radius
+        vertical_segment_distance_sq(shape, CELL_H as f32, x, z, bottom, top) < p.radius * p.radius
     })
 }
 

@@ -446,7 +446,7 @@ fn within_radius(a: ChunkCoord, b: ChunkCoord, r: i32) -> bool {
 }
 
 fn chunk_at(x: f64, y: f64, z: f64) -> ChunkCoord {
-    chunk_of(x.floor() as i32, y.floor() as i32, z.floor() as i32)
+    dwell_world::chunk_of_pos([x, y, z])
 }
 
 fn add(a: ChunkCoord, b: ChunkCoord) -> ChunkCoord {
@@ -575,7 +575,8 @@ impl Server {
             next_player_id: 1,
             worldgen: WorldgenPool::new(generator.clone(), config.worldgen_threads),
             generator,
-            verification_chunk: chunk_at(spawn[0], spawn[1] - 1.0, spawn[2]),
+            // The chunk of the cell under the feet.
+            verification_chunk: chunk_at(spawn[0], spawn[1] - dwell_world::CELL_H, spawn[2]),
             verification_hash: 0,
             view_offsets: Vec::new(),
             prefetch_offsets: cube_offsets(PREFETCH_CHUNKS),

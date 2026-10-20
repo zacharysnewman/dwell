@@ -222,7 +222,9 @@ impl Builder {
         ];
         let len = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt().max(1e-12);
         let n = n.map(|v| v / len);
-        let rgb = linear_rgb(color, dwell_look::normal_tint(n[0], n[1], n[2]));
+        // Shaded as it stands in metres, not as the cell-space slope (HALF_HEIGHT_GRID.md §2).
+        let nm = dwell_world::normal_to_m(n);
+        let rgb = linear_rgb(color, dwell_look::normal_tint(nm[0], nm[1], nm[2]));
         let base = (self.m.positions.len() / 3) as u32;
         for q in &p {
             self.m.positions.extend(q.map(|v| v as f32));
@@ -337,23 +339,45 @@ fn flip_mesh_y(mut m: FlatMesh) -> FlatMesh {
     m
 }
 
-/// Meshes a section's cells (34³, `cell_index` order); positions in cells, 0..32. Liquids are
-/// see-through surfaces (the `water` mesh) over the floor, as the chunks draw them.
+/// A section's mesh in its cells scaled so that the section's uniform level scale (2^L) makes
+/// metres: y × the cell height, normals from cell space to metres (HALF_HEIGHT_GRID.md §2).
+fn mesh_to_metres(mut m: FlatMesh) -> FlatMesh {
+    if dwell_world::CELL_H != 1.0 {
+        for p in m.positions.iter_mut().skip(1).step_by(3) {
+            *p = (f64::from(*p) * dwell_world::CELL_H) as f32;
+        }
+        for n in m.normals.chunks_exact_mut(3) {
+            let v = dwell_world::normal_to_m([n[0], n[1], n[2]].map(f64::from));
+            n.copy_from_slice(&v.map(|c| c as f32));
+        }
+    }
+    m
+}
+
+/// Meshes a section's cells (34³, `cell_index` order); positions in cells, 0..32, with y scaled
+/// by the cell height (so x 0..32, y 0..32 × the cell height). Liquids are see-through surfaces
+/// (the `water` mesh) over the floor, as the chunks draw them.
 pub fn mesh_section(
     cells: &[u16],
     options: &MeshSectionOptions<'_>,
 ) -> Result<SectionMeshes, LengthError> {
-    if options.mirror {
+    let m = if options.mirror {
         let m = mesh_section_above(&mirror_rows(cells), options)?;
         let [s0, s1, s2, s3, s4, s5] = m.skirts;
         let skirts = [s0, s1, s3, s2, s4, s5].map(flip_mesh_y);
-        return Ok(SectionMeshes {
+        SectionMeshes {
             opaque: flip_mesh_y(m.opaque),
             water: flip_mesh_y(m.water),
             skirts,
-        });
-    }
-    mesh_section_above(cells, options)
+        }
+    } else {
+        mesh_section_above(cells, options)?
+    };
+    Ok(SectionMeshes {
+        opaque: mesh_to_metres(m.opaque),
+        water: mesh_to_metres(m.water),
+        skirts: m.skirts.map(mesh_to_metres),
+    })
 }
 
 /// Column index in the 34 × 34 padded layout, x and z each −1..32.

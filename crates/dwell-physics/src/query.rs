@@ -5,7 +5,10 @@ use std::cell::RefCell;
 
 use dwell_blocks::shape::{ray_enter_shape, vertical_segment_distance_sq};
 use dwell_blocks::{ShapeInfo, StateId, info};
-use dwell_world::{CHUNK_SIZE, VoxelWorld, chunk_of};
+use dwell_world::{
+    CELL, CELL_H, CHUNK_SIZE, VoxelWorld, cell_dir, cell_space, chunk_of, m_of_row, normal_to_m,
+    pos_of_cell, row_of_m,
+};
 use rapier3d_f64::parry::query::Ray;
 use rapier3d_f64::parry::shape::Capsule as ParryCapsule;
 use rapier3d_f64::prelude::*;
@@ -153,19 +156,18 @@ impl<'a> VoxelQuery<'a> {
     }
 
     /// Amanatides–Woo walk over cells, entering each cell's shape; in f32 relative to the
-    /// origin's cell, so equally precise anywhere in the world (ADR 0011).
+    /// origin's cell, so equally precise anywhere in the world (ADR 0011). The walk is in cell
+    /// space (y in rows, HALF_HEIGHT_GRID.md §2), the direction scaled but not renormalised, so
+    /// distances stay metres.
     pub fn cast_voxels(&self, origin: DVec3, dir: Vec3, max: f32) -> Option<ProbeHit> {
-        let base = [
-            origin.x.floor() as i32,
-            origin.y.floor() as i32,
-            origin.z.floor() as i32,
-        ];
+        let oc = cell_space(origin.to_array());
+        let base = oc.map(|v| v.floor() as i32);
         let o = [
-            (origin.x - f64::from(base[0])) as f32,
-            (origin.y - f64::from(base[1])) as f32,
-            (origin.z - f64::from(base[2])) as f32,
+            (oc[0] - f64::from(base[0])) as f32,
+            (oc[1] - f64::from(base[1])) as f32,
+            (oc[2] - f64::from(base[2])) as f32,
         ];
-        let d = [dir.x, dir.y, dir.z];
+        let d = cell_dir([f64::from(dir.x), f64::from(dir.y), f64::from(dir.z)]).map(|v| v as f32);
         let mut cell = [0i32; 3];
         let mut step = [0i32; 3];
         let mut t_max = [f32::INFINITY; 3];
@@ -205,10 +207,11 @@ impl<'a> VoxelQuery<'a> {
                     if e.t > max {
                         return None;
                     }
+                    let n = normal_to_m(e.normal.map(f64::from)).map(|v| v as f32);
                     return Some(ProbeHit {
                         distance: e.t,
                         point: origin + dir.as_dvec3() * f64::from(e.t),
-                        normal: Vec3::from(e.normal),
+                        normal: Vec3::from(n),
                         ground: GroundRef::Terrain,
                     });
                 }
@@ -279,10 +282,7 @@ impl<'a> VoxelQuery<'a> {
             (c.center.x - r).floor() as i32,
             (c.center.x + r).floor() as i32,
         );
-        let (y0, y1) = (
-            (c.center.y - hh).floor() as i32,
-            (c.center.y + hh).floor() as i32,
-        );
+        let (y0, y1) = (row_of_m(c.center.y - hh), row_of_m(c.center.y + hh));
         let (z0, z1) = (
             (c.center.z - r).floor() as i32,
             (c.center.z + r).floor() as i32,
@@ -294,8 +294,8 @@ impl<'a> VoxelQuery<'a> {
                     if m == 0 {
                         continue; // air is state 0
                     }
-                    let lo = DVec3::new(f64::from(x), f64::from(y), f64::from(z));
-                    if Self::segment_box_distance(c, lo, lo + DVec3::ONE) < c.radius {
+                    let lo = DVec3::from_array(pos_of_cell([x, y, z]));
+                    if Self::segment_box_distance(c, lo, lo + DVec3::from_array(CELL)) < c.radius {
                         f(x, y, z, m);
                     }
                 }
@@ -313,9 +313,10 @@ impl<'a> VoxelQuery<'a> {
             if shape.face_count == 0 {
                 return;
             }
-            let rel = (c.center - DVec3::new(f64::from(x), f64::from(y), f64::from(z))).as_vec3();
+            let rel = (c.center - DVec3::from_array(pos_of_cell([x, y, z]))).as_vec3();
             if vertical_segment_distance_sq(
                 shape,
+                CELL_H as f32,
                 rel.x,
                 rel.z,
                 rel.y - c.half_cylinder,
@@ -345,13 +346,13 @@ impl<'a> VoxelQuery<'a> {
         let head = center.y as f32 + half_height;
         let (x, z) = (center.x.floor() as i32, center.z.floor() as i32);
         let mut wet = 0.0f32;
-        for y in feet.floor() as i32..=head.floor() as i32 {
+        for y in row_of_m(f64::from(feet))..=row_of_m(f64::from(head)) {
             let cell = info(self.material(x, y, z));
             if !cell.liquid && !self.world.borrow_mut().flooded_at(x, y, z) {
                 continue;
             }
-            let lo = feet.max(y as f32);
-            let hi = head.min(y as f32 + 1.0);
+            let lo = feet.max(m_of_row(y) as f32);
+            let hi = head.min(m_of_row(y + 1) as f32);
             wet += (hi - lo).max(0.0);
         }
         (wet / (head - feet)).clamp(0.0, 1.0)

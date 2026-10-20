@@ -6,6 +6,8 @@ pub const SNAPSHOT_HZ: u32 = 20;
 pub const MAX_DATAGRAM_BYTES: usize = 1200;
 pub const MAX_RELIABLE_MESSAGE_BYTES: usize = 1048576;
 pub const CHUNK_SIZE: i32 = 32;
+/// A cell is 1 m × `CELL_HEIGHT` × 1 m (HALF_HEIGHT_GRID.md §2).
+pub const CELL_HEIGHT: f64 = 1.0;
 pub const AUTH_DOMAIN_TAG: &str = "dwell-auth-v1";
 pub const MAX_INPUTS_PER_DATAGRAM: usize = 4;
 
@@ -39,6 +41,14 @@ pub mod world {
     pub const MAX_CHUNKS_PER_TICK: i64 = 32;
     pub const AUTOSAVE_SECONDS: i64 = 30;
     pub const POS64_LIMIT: i64 = 33554432;
+    /// `MIDPLANE_Y` in metres (row × `CELL_HEIGHT`).
+    pub const MIDPLANE_M: f64 = -2048.0;
+    /// `WORLD_BOTTOM_Y` in metres (row × `CELL_HEIGHT`).
+    pub const WORLD_BOTTOM_M: f64 = -10240.0;
+    /// `WORLD_MAX_Y` in metres (row × `CELL_HEIGHT`).
+    pub const WORLD_MAX_M: f64 = 6144.0;
+    /// `SEA_LEVEL` in metres (row × `CELL_HEIGHT`).
+    pub const SEA_LEVEL_M: f64 = 0.0;
 }
 
 pub mod lod {

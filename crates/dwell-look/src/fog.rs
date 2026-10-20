@@ -37,7 +37,7 @@ pub const MAX_EXPONENT: f64 = 80.0;
 /// at `point_y`: the optical depth of the exponential atmosphere along the straight ray.
 pub fn haze_amount(fog: &FogSettings, camera_y: f64, point_y: f64, distance: f64) -> f64 {
     let h = fog.height_m;
-    let low = camera_y.min(point_y) - world::SEA_LEVEL as f64;
+    let low = camera_y.min(point_y) - world::SEA_LEVEL_M;
     let k = (point_y - camera_y).abs() / h;
     let base = (-low / h).min(MAX_EXPONENT).exp();
     let along = if k < 1e-4 {
@@ -129,7 +129,7 @@ mod tests {
 
     #[test]
     fn stays_finite_at_the_extremes_and_is_off_at_zero_density() {
-        let mid = world::MIDPLANE_Y as f64;
+        let mid = world::MIDPLANE_M;
         for height_m in [HEIGHT_LIMITS.0, HEIGHT_LIMITS.1] {
             for distance_m in [DISTANCE_LIMITS.0, DISTANCE_LIMITS.1] {
                 let fog = FogSettings {

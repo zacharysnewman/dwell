@@ -2,6 +2,7 @@
 // cells around it as JSON, with the world and build they came from, so a report of how the
 // terrain looks somewhere can be regenerated and examined exactly (e.g. which slope piece the
 // generator chose, from the seed and the coordinates) instead of read off a screenshot.
+import { CELL_HEIGHT } from '../protocol/constants.gen';
 import { stateString } from '../world/blocks';
 
 type Vec3 = [number, number, number];
@@ -55,7 +56,7 @@ export function blockDump(input: BlockDumpInput): BlockDump {
   const [fx = 0, fy = 0, fz = 0] = input.feet;
   const centre: Vec3 = input.target
     ? [...input.target.cell]
-    : [Math.floor(fx), Math.floor(fy) - 1, Math.floor(fz)];
+    : [Math.floor(fx), Math.floor(fy / CELL_HEIGHT) - 1, Math.floor(fz)];
   const origin: Vec3 = [centre[0] - r, centre[1] - r, centre[2] - r];
   const size = 2 * r + 1;
   const palette: string[] = [];

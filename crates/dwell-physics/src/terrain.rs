@@ -14,8 +14,8 @@ use dwell_world::hash::HashMap;
 use dwell_blocks::shape::{SURFACE_TAG, face_covered, faces_of};
 use dwell_blocks::{ShapeInfo, adaptive, info};
 use dwell_world::{
-    CHUNK_SIZE, CHUNK_VOLUME, ChunkCoord, MAX_CHUNK_Y, MIN_CHUNK_Y, VoxelWorld, chunk_of,
-    local_index, up_of_y,
+    CELL, CELL_H, CHUNK_SIZE, CHUNK_VOLUME, ChunkCoord, MAX_CHUNK_Y, MIN_CHUNK_Y, VoxelWorld,
+    chunk_of_pos, chunk_origin_m, local_index, up_of_y,
 };
 use rapier3d_f64::math::IVector;
 use rapier3d_f64::parry::shape::{TriMeshFlags, Voxels};
@@ -180,10 +180,11 @@ fn build(world: &mut VoxelWorld, c: ChunkCoord) -> Built {
                 }
             }
             let base = out.vertices.len() as u32;
+            // Chunk-local metres: the shape is in fractions of its cell (HALF_HEIGHT_GRID.md §2).
             for p in &f.v[..usize::from(f.count)] {
                 out.vertices.push(DVec3::new(
                     f64::from(x) + f64::from(p[0]),
-                    f64::from(y) + f64::from(p[1]),
+                    (f64::from(y) + f64::from(p[1])) * CELL_H,
                     f64::from(z) + f64::from(p[2]),
                 ));
             }
@@ -207,7 +208,8 @@ fn key(c: ChunkCoord, i: usize) -> IVector {
 impl TerrainCollision {
     pub fn new(physics: &mut Physics) -> Self {
         let body = physics.w.bodies.insert(RigidBodyBuilder::fixed().build());
-        let shape = SharedShape::new(Voxels::new(DVec3::ONE, &[]));
+        // One voxel per cell: 1 m × the cell height × 1 m.
+        let shape = SharedShape::new(Voxels::new(DVec3::from_array(CELL), &[]));
         let collider = ColliderBuilder::new(shape)
             .collision_groups(groups(Layer::Terrain))
             .friction(0.0)
@@ -270,11 +272,7 @@ impl TerrainCollision {
         )
         .or_else(|_| SharedShape::trimesh(b.vertices, b.triangles))
         .ok()?;
-        let origin = DVec3::new(
-            f64::from(c.x * CHUNK_SIZE),
-            f64::from(c.y * CHUNK_SIZE),
-            f64::from(c.z * CHUNK_SIZE),
-        );
+        let origin = DVec3::from_array(chunk_origin_m(c));
         let collider = ColliderBuilder::new(shape)
             .translation(origin)
             .collision_groups(groups(Layer::Terrain))
@@ -360,16 +358,8 @@ impl TerrainCollision {
         lo: DVec3,
         hi: DVec3,
     ) {
-        let a = chunk_of(
-            lo.x.floor() as i32,
-            lo.y.floor() as i32,
-            lo.z.floor() as i32,
-        );
-        let b = chunk_of(
-            hi.x.floor() as i32,
-            hi.y.floor() as i32,
-            hi.z.floor() as i32,
-        );
+        let a = chunk_of_pos(lo.to_array());
+        let b = chunk_of_pos(hi.to_array());
         for cy in a.y.max(MIN_CHUNK_Y)..=b.y.min(MAX_CHUNK_Y) {
             for cz in a.z..=b.z {
                 for cx in a.x..=b.x {

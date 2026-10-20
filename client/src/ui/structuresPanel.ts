@@ -2,6 +2,7 @@
 // structure, the library of saved structures (local/structureStore.ts) with load, export, rename
 // and delete, and import. Loading puts a structure on the region tools' clipboard in paste mode
 // (§6.5): the ghost box follows the crosshair and a right click pastes it as region edits.
+import { CELL_HEIGHT } from '../protocol/constants.gen';
 import { StructureStore, type StoredStructure } from '../local/structureStore';
 import {
   boxOf,
@@ -75,7 +76,8 @@ export function saveBox(
   } else {
     const feet = deps.feet();
     if (!feet) return { error: 'Not playing yet.' };
-    const f = feet.map(Math.floor) as Vec3;
+    // The feet's cell: y in rows of CELL_HEIGHT (docs/HALF_HEIGHT_GRID.md §2).
+    const f: Vec3 = [Math.floor(feet[0]), Math.floor(feet[1] / CELL_HEIGHT), Math.floor(feet[2])];
     const { side, below, above } = SCAN_AROUND;
     box = scanBuilt(
       deps.read,

@@ -31,7 +31,7 @@ use dwell_look::reflections::{REFLECTIONS, reflection_uniforms};
 use dwell_look::{DEFAULT_EXPOSURE, hex, sanitize_exposure, srgb_to_linear};
 use dwell_mesh::{ChunkMeshes, FlatMesh, MeshArrays, SectionMeshes};
 use dwell_world::fluid::EyeFluid;
-use dwell_world::{CHUNK_SIZE, ChunkCoord, chunk_of};
+use dwell_world::{CELL_H, CHUNK_EXTENT_M, ChunkCoord, chunk_of, chunk_origin_m};
 
 use arena::{Arena, ArenaRef, Region};
 use camera::{Basis, V3, aim, mul, perspective, vertical_fov, view_matrix};
@@ -479,7 +479,7 @@ impl TerrainRenderer for RasterTerrain {
         if opaque.is_none() && water.is_none() && cutout.is_none() {
             return;
         }
-        let origin = [coord.x, coord.y, coord.z].map(|c| f64::from(c * CHUNK_SIZE));
+        let origin = chunk_origin_m(coord);
         self.chunks.insert(
             coord,
             Chunk {
@@ -1715,13 +1715,13 @@ impl Renderer {
         let forward = aim(self.yaw, self.pitch, self.face, self.flip).forward();
         let view = PassView::new(self.eye, forward, self.frame_fov(), aspect);
         // Which passes (bit per pass) a box reaches into.
-        let reaches = |origin: V3, size: f64| -> u8 {
-            u8::from(view.holds(origin, size, passes[0].0, passes[0].1))
-                | u8::from(view.holds(origin, size, passes[1].0, passes[1].1)) << 1
+        let reaches = |origin: V3, size: V3| -> u8 {
+            u8::from(view.holds_box(origin, size, passes[0].0, passes[0].1))
+                | u8::from(view.holds_box(origin, size, passes[1].0, passes[1].1)) << 1
         };
         for (&coord, c) in &self.terrain.raster.chunks {
             let passes = if chunk_visible(coord) {
-                reaches(c.origin, f64::from(CHUNK_SIZE))
+                reaches(c.origin, CHUNK_EXTENT_M)
             } else {
                 0
             };
@@ -1788,7 +1788,8 @@ impl Renderer {
             let Some(s) = self.terrain.raster.sections.get(&id) else {
                 continue;
             };
-            let passes = reaches(s.origin, s.cell * 32.0);
+            let side = s.cell * 32.0;
+            let passes = reaches(s.origin, [side, side * CELL_H, side]);
             if passes == 0 {
                 continue;
             }
@@ -1854,7 +1855,7 @@ impl Renderer {
             });
         }
         for v in self.players.values() {
-            let passes = reaches(v.feet, 4.0);
+            let passes = reaches(v.feet, [4.0; 3]);
             if passes == 0 {
                 continue;
             }
@@ -1875,8 +1876,8 @@ impl Renderer {
                 mesh: DrawMesh::Player(player_shape(v)),
             });
         }
-        if let Some(cell) = self.outline.filter(|c| reaches(*c, 2.0) != 0) {
-            let passes = reaches(cell, 2.0);
+        if let Some(cell) = self.outline.filter(|c| reaches(*c, [2.0; 3]) != 0) {
+            let passes = reaches(cell, [2.0; 3]);
             let r = self.rel(cell);
             let c = hex(0x101418).map(|v| v as f32);
             out.push(DrawItem {
@@ -1896,7 +1897,7 @@ impl Renderer {
         // The region tools' boxes: over everything, so a box around buried cells still shows.
         for (i, (b, _)) in self.region_boxes.iter().enumerate() {
             let side = b.size.iter().copied().fold(0.0, f64::max);
-            let passes = reaches(b.min, side);
+            let passes = reaches(b.min, [side; 3]);
             if passes == 0 {
                 continue;
             }
@@ -1919,7 +1920,7 @@ impl Renderer {
         if let Some((o, _)) = &self.brush {
             let side = 2.0 * f64::from(MAX_BRUSH_EXTENT);
             let corner = o.origin.map(|v| v - f64::from(MAX_BRUSH_EXTENT));
-            let passes = reaches(corner, side);
+            let passes = reaches(corner, [side; 3]);
             if passes != 0 {
                 let r = self.rel(o.origin);
                 out.push(DrawItem {
@@ -2057,7 +2058,7 @@ impl Renderer {
         } else {
             2.0 * dwell_look::MIDPLANE_Y - self.eye[1]
         };
-        let altitude = local_y - f64::from(dwell_world::WORLD_MAX_Y);
+        let altitude = local_y - dwell_world::WORLD_MAX_M;
         let far_near = (NEAR_SPLIT * 0.95).max(altitude * 0.8);
         let passes = [(far_near, FAR_PLANE), (NEAR_PLANE, NEAR_SPLIT)];
         let draws = self.collect(passes, chunk_visible);
@@ -2520,11 +2521,17 @@ impl PassView {
     /// Whether the box [origin, origin + size]³ has anything a pass drawing view depths [near, far]
     /// draws. The passes clip by depth along the view axis, not by distance: a box beside the view
     /// can be farther than `far` and still in front of the far plane.
+    #[cfg(test)]
     fn holds(&self, origin: V3, size: f64, near: f64, far: f64) -> bool {
+        self.holds_box(origin, [size; 3], near, far)
+    }
+
+    /// [`Self::holds`] for the box [origin, origin + size] (m), sides per axis.
+    fn holds_box(&self, origin: V3, size: V3, near: f64, far: f64) -> bool {
         let (mut d2, mut z_lo, mut z_hi) = (0.0, 0.0, 0.0);
-        for ((o, e), f) in origin.iter().zip(self.eye).zip(self.forward) {
+        for (((o, e), f), s) in origin.iter().zip(self.eye).zip(self.forward).zip(size) {
             let lo = o - e;
-            let hi = lo + size;
+            let hi = lo + s;
             let d = if lo > 0.0 {
                 lo
             } else if hi < 0.0 {

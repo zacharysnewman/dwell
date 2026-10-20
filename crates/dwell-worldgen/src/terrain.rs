@@ -14,8 +14,8 @@
 use dwell_blocks::StateId;
 use dwell_world::lod::{self, LodBounds, LodCells, LodCoord, LodKind, LodSurface, LodSurfaces};
 use dwell_world::{
-    CHUNK_SIZE, Chunk, ChunkCoord, DiscOverlap, M, MIDPLANE_Y, SEA_LEVEL, WORLD_MAX_Y,
-    chunk_disc_overlap, inside_world_disc, local_index,
+    CELL_H, CHUNK_SIZE, Chunk, ChunkCoord, DiscOverlap, M, MIDPLANE_Y, SEA_LEVEL, WORLD_MAX_Y,
+    chunk_disc_overlap, inside_world_disc, local_index, m_of_row,
 };
 
 use crate::decorations::{DECORATIONS, Placer};
@@ -60,16 +60,23 @@ pub const SPAWN_CLEAR: i32 = 4;
 pub struct Column {
     /// Signed distance to the coast (m): > 0 land, < 0 sea.
     pub coast: f32,
-    /// Ground height (m, face-local, sea level 0): the top voxel is ceil(height) − 1.
+    /// Ground height (m, face-local, sea level 0): the top voxel is the row ceil(height ÷ cell
+    /// height) − 1.
     pub height: f32,
     /// Beyond the world's disc: nothing is generated.
     pub outside: bool,
 }
 
-/// The top voxel of a column of height h: ceil(h) − 1.
+/// A height (m) in rows of cells (HALF_HEIGHT_GRID.md §2); exact at 1 m and ½ m cells.
+fn rows(h: f32) -> f32 {
+    h / CELL_H as f32
+}
+
+/// The top voxel (row) of a column of height h (m): ceil(h in rows) − 1.
 fn top_voxel(h: f32) -> i32 {
-    let f = floor_to_int(h);
-    if f as f32 == h { f - 1 } else { f }
+    let r = rows(h);
+    let f = floor_to_int(r);
+    if f as f32 == r { f - 1 } else { f }
 }
 
 /// The material `depth` m below the surface of a column whose top voxel is `top`.
@@ -105,7 +112,7 @@ pub struct TerrainGenerator {
     decorations: Vec<Placer>,
 }
 
-/// How far above the ground decorations reach: the sky test leaves this much room over the
+/// How far above the ground decorations reach (rows): the sky test leaves this much room over the
 /// highest ground before a chunk is all air.
 const DECORATION_RISE: f32 = 1.0;
 
@@ -243,7 +250,7 @@ impl TerrainGenerator {
         }
     }
 
-    /// The height of the ground's surface at (x, z) (face-local, inside the disc): the top voxel's
+    /// The height (m) of the ground's surface at (x, z) (face-local, inside the disc): the top voxel's
     /// shape as the adaptive rules derive it (docs/ADAPTIVE_BLOCKS.md), at the column's centre — on
     /// level ground half a block above the top voxel's floor.
     pub fn surface_y_at(&self, x: i32, z: i32) -> Option<f64> {
@@ -256,7 +263,7 @@ impl TerrainGenerator {
         };
         let shape = dwell_blocks::adaptive::shape_at(&mut get, 1);
         let top = dwell_blocks::shape::solid_span_at(shape, 0.5, 0.5).hi;
-        Some(f64::from(g) + f64::from(top))
+        Some(m_of_row(g) + f64::from(top) * CELL_H)
     }
 
     /// The island's coast distance at the point itself (no lattice).
@@ -290,16 +297,17 @@ impl TerrainGenerator {
         cols
     }
 
-    /// The highest ground of the columns inside the disc.
+    /// The highest ground of the columns inside the disc, in rows, with the decorations' room.
     fn sky_floor(cols: &[Column]) -> f32 {
-        cols.iter()
-            .filter(|c| !c.outside)
-            .fold(-1e9f32, |top, c| top.max(c.height))
-            + DECORATION_RISE
+        rows(
+            cols.iter()
+                .filter(|c| !c.outside)
+                .fold(-1e9f32, |top, c| top.max(c.height)),
+        ) + DECORATION_RISE
     }
 
-    /// The sky test's height for a chunk column: chunks with y0 above it (and at or above sea
-    /// level) are air. Depends only on (cx, cz), so callers cache it per column.
+    /// The sky test's height (rows) for a chunk column: chunks with y0 above it (and at or above
+    /// sea level) are air. Depends only on (cx, cz), so callers cache it per column.
     pub fn sky_floor_at(&self, cx: i32, cz: i32) -> f32 {
         Self::sky_floor(&self.chunk_columns(cx * CHUNK_SIZE, cz * CHUNK_SIZE))
     }
@@ -450,8 +458,8 @@ impl TerrainGenerator {
             b.any_inside = true;
             // A cell is solid when its bottom voxel lies below the column's height: samples below
             // `lo` are solid, at or above `hi` open.
-            b.hi = b.hi.max(f64::from(col.height) + 1.0);
-            b.lo = b.lo.min(f64::from(col.height) - 1.0);
+            b.hi = b.hi.max(f64::from(rows(col.height)) + 1.0);
+            b.lo = b.lo.min(f64::from(rows(col.height)) - 1.0);
         }
         if !b.any_inside {
             return b;
@@ -533,7 +541,7 @@ impl TerrainGenerator {
                     continue; // beyond the rim: the void
                 }
                 let top = i64::from(top_voxel(col.height));
-                let is_sea = col.height < SEA_LEVEL as f32;
+                let is_sea = rows(col.height) < SEA_LEVEL as f32;
                 for y in -1..=lod::SECTION_CELLS {
                     let a = o.y + i64::from(y) * cell;
                     let m = &mut cells[lod::cell_index(x, y, z)];
@@ -566,7 +574,7 @@ impl TerrainGenerator {
                         s[lod::column_index(x, z)] = LodSurface {
                             valid: true,
                             wet: is_sea,
-                            height: col.height.min((a + cell) as f32),
+                            height: rows(col.height).min((a + cell) as f32),
                             material: fill(top as i32, 0),
                             water: if is_sea { SEA_LEVEL as f32 } else { 0.0 },
                         };
@@ -588,7 +596,7 @@ impl TerrainGenerator {
                 && g >= SEA_LEVEL + SHORE_HEIGHT
             {
                 // On the shaped surface (a level patch's top blocks rest at half height).
-                let feet = self.surface_y_at(x, z).unwrap_or(f64::from(g) + 1.0);
+                let feet = self.surface_y_at(x, z).unwrap_or(m_of_row(g + 1));
                 let point = [f64::from(x) + 0.5, feet, f64::from(z) + 0.5];
                 fallback.get_or_insert(point);
                 let level = (-SPAWN_CLEAR..=SPAWN_CLEAR).all(|pz| {
@@ -612,6 +620,6 @@ impl TerrainGenerator {
                 }
             }
         }
-        fallback.unwrap_or([0.5, f64::from(SEA_LEVEL) + 1.0, 0.5])
+        fallback.unwrap_or([0.5, m_of_row(SEA_LEVEL + 1), 0.5])
     }
 }

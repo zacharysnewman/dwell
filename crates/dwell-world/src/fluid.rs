@@ -7,13 +7,13 @@
 
 use dwell_blocks::{FLUIDS, FluidId, StateId, info};
 
-use crate::{Face, face_of_y};
+use crate::{Face, cell_of_pos, face_of_y, m_of_row, m_of_rows_f};
 
 /// The eye under a fluid's surface.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct EyeFluid {
     pub fluid: FluidId,
-    /// World y of the drawn surface above the eye (on face B, below it in world y), when it is
+    /// World y (m) of the drawn surface above the eye (on face B, below it in world y), when it is
     /// within [`SURFACE_SCAN`] cells; deeper, the top of the last cell scanned.
     pub surface_y: f64,
 }
@@ -39,7 +39,7 @@ pub fn eye_fluid(
     eye: [f64; 3],
     mut voxel: impl FnMut(i32, i32, i32) -> StateId,
 ) -> Option<EyeFluid> {
-    let [x, y, z] = eye.map(|v| v.floor() as i32);
+    let [x, y, z] = cell_of_pos(eye);
     let fluid = fluid_of(voxel(x, y, z))?;
     let up = match face_of_y(i64::from(y)) {
         Face::A => 1,
@@ -50,13 +50,14 @@ pub fn eye_fluid(
     while (top - y).abs() < SURFACE_SCAN && fluid_of(voxel(x, top + up, z)) == Some(fluid) {
         top += up;
     }
-    let drop = FLUIDS[usize::from(fluid)].surface_drop;
+    // The drop is a fraction of a cell, as the chunk mesher draws it.
+    let drop = m_of_rows_f(FLUIDS[usize::from(fluid)].surface_drop);
     let covered = fluid_of(voxel(x, top + up, z)) == Some(fluid);
     let surface_y = match (up, covered) {
-        (1, false) => f64::from(top) + 1.0 - drop,
-        (1, true) => f64::from(top) + 1.0,
-        (_, false) => f64::from(top) + drop,
-        (_, true) => f64::from(top),
+        (1, false) => m_of_row(top + 1) - drop,
+        (1, true) => m_of_row(top + 1),
+        (_, false) => m_of_row(top) + drop,
+        (_, true) => m_of_row(top),
     };
     let under = if up > 0 {
         eye[1] < surface_y

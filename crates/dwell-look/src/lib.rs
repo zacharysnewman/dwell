@@ -72,8 +72,8 @@ fn smoothstep(a: f64, b: f64, x: f64) -> f64 {
     t * t * (3.0 - 2.0 * t)
 }
 
-/// Fragments below the midplane belong to face B (lit by the lights above face B).
-pub const MIDPLANE_Y: f64 = dwell_protocol::world::MIDPLANE_Y as f64;
+/// The midplane (m): fragments below it belong to face B (lit by the lights above face B).
+pub const MIDPLANE_Y: f64 = dwell_protocol::world::MIDPLANE_M;
 
 /// Tone mapping exposure: 1 leaves the lights as set (the time of day's exposure multiplies it).
 pub const DEFAULT_EXPOSURE: f64 = 1.0;

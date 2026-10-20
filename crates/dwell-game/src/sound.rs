@@ -368,7 +368,7 @@ pub struct CellChange {
 }
 
 fn centre(cell: [i32; 3]) -> [f64; 3] {
-    cell.map(|v| f64::from(v) + 0.5)
+    dwell_world::centre_of_cell(cell)
 }
 
 /// Break and place sounds: our own at once (the client does not predict edits), other players'

@@ -357,24 +357,34 @@ pub fn ray_enter_shape(
     })
 }
 
-/// Squared shortest distance from the vertical segment (x, y0..y1, z) — a capsule axis, cell
-/// coordinates — to the shape's surface; 0 if it touches or lies inside the solid.
-pub fn vertical_segment_distance_sq(shape: &ShapeInfo, x: f32, z: f32, y0: f32, y1: f32) -> f32 {
+/// Squared shortest distance from the vertical segment (x, y0..y1, z) — a capsule axis, in metres
+/// from the cell's minimum corner — to the shape's surface; 0 if it touches or lies inside the
+/// solid. The cell is 1 m × `cell_h` × 1 m (HALF_HEIGHT_GRID.md §2): the shape, in fractions of
+/// the cell, is scaled to it, so distances are true distances.
+pub fn vertical_segment_distance_sq(
+    shape: &ShapeInfo,
+    cell_h: f32,
+    x: f32,
+    z: f32,
+    y0: f32,
+    y1: f32,
+) -> f32 {
     if shape.face_count == 0 {
         return f32::INFINITY;
     }
     if (0.0..=1.0).contains(&x) && (0.0..=1.0).contains(&z) {
         let span = solid_span_at(shape, x, z);
-        if y1 >= span.lo && y0 <= span.hi && span.hi > span.lo {
+        if y1 >= span.lo * cell_h && y0 <= span.hi * cell_h && span.hi > span.lo {
             return 0.0;
         }
     }
     let p = [x, y0, z];
     let q = [x, y1, z];
+    let scale = |v: [f32; 3]| [v[0], v[1] * cell_h, v[2]];
     let mut best = f32::INFINITY;
     for face in faces_of(shape) {
         for k in 1..usize::from(face.count) - 1 {
-            let (a, b, c) = (face.v[0], face.v[k], face.v[k + 1]);
+            let (a, b, c) = (scale(face.v[0]), scale(face.v[k]), scale(face.v[k + 1]));
             if segment_hits_triangle(p, q, a, b, c) {
                 return 0.0;
             }
@@ -414,7 +424,23 @@ mod tests {
         .expect("hits");
         assert_eq!(hit.t, 1.0);
         assert_eq!(hit.normal, [-1.0, 0.0, 0.0]);
-        assert_eq!(vertical_segment_distance_sq(cube, 0.5, 0.5, 1.5, 2.0), 0.25);
-        assert_eq!(vertical_segment_distance_sq(cube, 0.5, 0.5, 0.5, 2.0), 0.0);
+        assert_eq!(
+            vertical_segment_distance_sq(cube, 1.0, 0.5, 0.5, 1.5, 2.0),
+            0.25
+        );
+        assert_eq!(
+            vertical_segment_distance_sq(cube, 1.0, 0.5, 0.5, 0.5, 2.0),
+            0.0
+        );
+        // In a ½ m cell the cube's top is ½ m up: a segment from 1 m is ½ m away, one from 0.4 m
+        // touches.
+        assert_eq!(
+            vertical_segment_distance_sq(cube, 0.5, 0.5, 0.5, 1.0, 2.0),
+            0.25
+        );
+        assert_eq!(
+            vertical_segment_distance_sq(cube, 0.5, 0.5, 0.5, 0.4, 2.0),
+            0.0
+        );
     }
 }

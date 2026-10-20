@@ -302,7 +302,7 @@ impl BrushTool {
             return None;
         }
         let c = self.center(false)?;
-        let origin = c.map(|v| f64::from(v) + 0.5);
+        let origin = dwell_world::centre_of_cell(c);
         let r = f32::from(self.spec.size) + 0.5;
         let mut segments = Vec::new();
         let circle =
@@ -373,6 +373,12 @@ impl BrushTool {
                 cuboid(&mut segments, [-t; 3], [t; 3]);
             }
         }
+        // Drawn in cells; the outline is in metres (HALF_HEIGHT_GRID.md §2).
+        let h = dwell_world::CELL_H as f32;
+        let segments = segments
+            .into_iter()
+            .map(|(p, q)| ([p[0], p[1] * h, p[2]], [q[0], q[1] * h, q[2]]))
+            .collect();
         Some(BrushOutline { origin, segments })
     }
 

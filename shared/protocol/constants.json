@@ -6,6 +6,8 @@
   "maxDatagramBytes": 1200,
   "maxReliableMessageBytes": 1048576,
   "chunkSize": 32,
+  "$cellHeight": "A cell is 1 m × cellHeight × 1 m (HALF_HEIGHT_GRID.md §2). The world's vertical values (midplaneY, worldBottomY, worldMaxY, seaLevel) are rows of cells; the generator adds metre twins (row × cellHeight). flipBand is metres. Changing cellHeight changes what every cell coordinate means: bump protocolVersion.",
+  "cellHeight": 1.0,
   "authDomainTag": "dwell-auth-v1",
   "maxInputsPerDatagram": 4,
   "players": {

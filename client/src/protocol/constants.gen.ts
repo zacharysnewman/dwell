@@ -6,6 +6,7 @@ export const SNAPSHOT_HZ = 20;
 export const MAX_DATAGRAM_BYTES = 1200;
 export const MAX_RELIABLE_MESSAGE_BYTES = 1048576;
 export const CHUNK_SIZE = 32;
+export const CELL_HEIGHT = 1;
 export const AUTH_DOMAIN_TAG = 'dwell-auth-v1';
 export const MAX_INPUTS_PER_DATAGRAM = 4;
 

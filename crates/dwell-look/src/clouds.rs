@@ -183,7 +183,7 @@ pub fn deck_height(t: &CloudTunables, eye_y: f64, face: f64) -> f64 {
     } else {
         2.0 * crate::MIDPLANE_Y - eye_y
     };
-    t.deck.altitude_m - (local - dwell_protocol::world::SEA_LEVEL as f64)
+    t.deck.altitude_m - (local - dwell_protocol::world::SEA_LEVEL_M)
 }
 
 fn heading(deg: f64) -> [f64; 2] {

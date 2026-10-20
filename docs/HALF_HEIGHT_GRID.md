@@ -37,9 +37,12 @@
   wire and in saves, and terrain heights. Conversions sit at those boundaries and go through one
   set of helpers in `dwell-world` `voxel.rs`: the cell size as a vector, a row from a height, a
   height from a row, a cell from a position, and a chunk from a position.
-- The vertical world constants (`midplaneY`, `worldBottomY`, `worldMaxY`, `seaLevel`, `flipBand`)
-  are kept in **metres**; their rows are derived (row = metres ÷ `cellHeight`). The midplane must
-  still fall on a chunk boundary (checked by the existing assertion, in rows).
+- The vertical world constants (`midplaneY`, `worldBottomY`, `worldMaxY`, `seaLevel`) stay **rows**
+  in `constants.json`, because integer code depends on their exact values (the midplane on a chunk
+  boundary, the mirror arithmetic, the LOD's and the marcher's row offsets). The generator emits a
+  metre twin of each (`MIDPLANE_M` and so on, row × `cellHeight`) for every metre consumer: physics,
+  the controller, the shaders, fog and clouds. `flipBand` is already metres and has no row twin.
+  At the switch to ½ m the row values double, so the world keeps its depth in metres.
 
 ## 3. The pieces
 

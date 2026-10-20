@@ -6,7 +6,7 @@
 //! involutions.
 
 use dwell_blocks::{StateId, mirror};
-use dwell_world::{MIRROR_SUM, mirror_y};
+use dwell_world::{MIRROR_M, mirror_y};
 
 use crate::physics::{BodyHandle, DVec3, Vec3};
 use crate::query::{Capsule, ProbeHit, VoxelQuery};
@@ -18,8 +18,9 @@ pub struct Frame {
 }
 
 impl Frame {
-    /// The continuous mirror: heights sum to this (voxel rows to one less).
-    pub const MIRROR: f64 = MIRROR_SUM as f64 + 1.0;
+    /// The continuous mirror: heights (m) sum to this (voxel rows to `MIRROR_SUM`, one less than
+    /// the mirror in rows).
+    pub const MIRROR: f64 = MIRROR_M;
 
     pub fn b(self) -> bool {
         self.face < 0

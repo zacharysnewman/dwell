@@ -5,7 +5,8 @@
 
 use dwell_blocks::{Facing, VoxelShape, info, shape::solid_span_at};
 use dwell_world::{
-    MIDPLANE_Y, SEA_LEVEL, VoxelWorld, WORLD_MAX_Y, chunk_distance, chunk_of, mirror_y,
+    CELL_H, MIDPLANE_M, SEA_LEVEL_M, VoxelWorld, WORLD_MAX_M, centre_of_cell, chunk_distance,
+    chunk_of_pos, m_of_row, mirror_y, row_of_m, rows_for_m,
 };
 use rapier3d_f64::prelude::*;
 
@@ -365,11 +366,7 @@ struct LadderFrame {
 
 fn frame_of(cell: Cell, material: dwell_blocks::StateId) -> LadderFrame {
     let facing = facing_vector(info(material).facing);
-    let center = DVec3::new(
-        f64::from(cell.x) + 0.5,
-        f64::from(cell.y) + 0.5,
-        f64::from(cell.z) + 0.5,
-    );
+    let center = DVec3::from_array(centre_of_cell([cell.x, cell.y, cell.z]));
     LadderFrame {
         facing,
         plate: center - (facing * (0.5 - LADDER_PLATE_HALF_DEPTH)).as_dvec3(),
@@ -422,11 +419,7 @@ impl Players {
             .unwrap_or(self.players.len()) as PlayerHandle;
         let mut c = PlayerController::default();
         c.input.look_yaw = yaw;
-        c.face = if feet.y >= f64::from(MIDPLANE_Y) {
-            1
-        } else {
-            -1
-        };
+        c.face = if feet.y >= MIDPLANE_M { 1 } else { -1 };
         let center = feet
             + DVec3::new(
                 0.0,
@@ -647,7 +640,7 @@ impl Players {
     /// Switches the face (mirroring the layers' vertical state) once the body is across.
     fn update_face(physics: &Physics, p: &mut Player) {
         let c = &mut p.c;
-        let over = physics.position(p.body).y - f64::from(MIDPLANE_Y);
+        let over = physics.position(p.body).y - MIDPLANE_M;
         let face = if c.face > 0 {
             if over < -FACE_HYSTERESIS { -1 } else { 1 }
         } else if over > FACE_HYSTERESIS {
@@ -698,7 +691,7 @@ impl Players {
                     .flatten()
                     .map(|p| {
                         let q = physics.position(p.body);
-                        chunk_of(q.x.floor() as i32, q.y.floor() as i32, q.z.floor() as i32)
+                        chunk_of_pos(q.to_array())
                     })
                     .collect();
                 terrain.retain(physics, |c| {
@@ -1022,7 +1015,7 @@ impl Players {
         c.events |= events::JUMPED;
     }
 
-    /// Auto-jump (Dwell): moving into a one-block obstacle with two free cells above it.
+    /// Auto-jump (Dwell): moving into an obstacle up to 1 m tall with 2 m free above it.
     fn auto_jump_obstacle(q: &FaceQuery, p: &Player, center: DVec3) -> bool {
         let c = &p.c;
         let cfg = &p.cfg;
@@ -1033,9 +1026,9 @@ impl Players {
         let feet = center.y as f32 - cfg.half_height(c.crouching);
         let probe = center + (safe_normalized(f) * (cfg.body.radius + 0.2)).as_dvec3();
         let (x, z) = (probe.x.floor() as i32, probe.z.floor() as i32);
-        let y = (feet + cfg.movement.max_step_height + 0.05).floor() as i32;
+        let y = row_of_m(f64::from(feet + cfg.movement.max_step_height + 0.05));
         let shape = q.shape(x, y, z);
-        let top = y as f32
+        let top = m_of_row(y) as f32
             + if shape.face_count == 0 {
                 0.0
             } else {
@@ -1044,12 +1037,13 @@ impl Players {
                     (probe.x - f64::from(x)) as f32,
                     (probe.z - f64::from(z)) as f32,
                 )
-                .hi
+                .hi * CELL_H as f32
             };
         if top <= feet + cfg.movement.max_step_height || top > feet + 1.05 {
             return false;
         }
-        (1..=2).all(|above| info(q.material(x, y + above, z)).shape == VoxelShape::Empty)
+        (1..=rows_for_m(2.0))
+            .all(|above| info(q.material(x, y + above, z)).shape == VoxelShape::Empty)
     }
 
     // 5 — PPCJumpSystem (timers in ticks)
@@ -1118,7 +1112,7 @@ impl Players {
         // The top of a column reaches LADDER_TOP_REACH above its last cell, so the climber gets
         // their feet onto the ledge. It only keeps a climb going.
         let feet = center.y as f32 - p.cfg.half_height(c.crouching);
-        let y = (feet - LADDER_TOP_REACH).floor() as i32;
+        let y = row_of_m(f64::from(feet - LADDER_TOP_REACH));
         for z in (center.z - f64::from(r)).floor() as i32..=(center.z + f64::from(r)).floor() as i32
         {
             for x in
@@ -1221,7 +1215,7 @@ impl Players {
         }
         let feet = position.y as f32 - cfg.half_height(c.crouching);
         let frame = frame_of(ladder, material);
-        let over_top = vertical > 0.0 && feet > (top + 1) as f32 - 0.3;
+        let over_top = vertical > 0.0 && feet > m_of_row(top + 1) as f32 - 0.3;
         if over_top {
             velocity -= frame.facing * (vertical * speed);
         }
@@ -1260,7 +1254,7 @@ impl Players {
             return;
         }
         let band_height = dwell_protocol::world::FLIP_BAND as f32;
-        let height = (position.y - f64::from(MIDPLANE_Y)).max(0.0) as f32;
+        let height = (position.y - MIDPLANE_M).max(0.0) as f32;
         let band = height < band_height && !c.ground.grounded;
         if !c.swim.swimming {
             if c.swim.submerged <= cfg.swim.enter_fraction && !band {
@@ -1363,11 +1357,11 @@ impl Players {
             return;
         }
         let feet = position.y - f64::from(cfg.half_height(c.crouching));
-        let above_sea = (feet - f64::from(SEA_LEVEL)).max(0.0) as f32;
+        let above_sea = (feet - SEA_LEVEL_M).max(0.0) as f32;
         let base = cfg.fly.speed * if c.input.run { cfg.fly.run_factor } else { 1.0 };
         // The height-based speed, capped in the terrain band, and the slider's true minimum.
         let mut speed = base * (1.0 + above_sea / cfg.fly.boost_height);
-        if feet < f64::from(WORLD_MAX_Y) {
+        if feet < WORLD_MAX_M {
             speed = speed.min(cfg.fly.terrain_speed);
         }
         speed = speed.max(base * fly_speed_factor(c.input.fly_speed));

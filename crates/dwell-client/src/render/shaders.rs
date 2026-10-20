@@ -1584,8 +1584,8 @@ pub fn source(samples: u32) -> String {
 pub fn lighting_source() -> String {
     format!(
         "const MIDPLANE_Y: f32 = {:.1};\nconst SEA_LEVEL: f32 = {:.1};\nconst ATLAS_CELLS: u32 = {}u;\nconst ATLAS_TILES: u32 = {}u;\n{}\n{}\n{}\n{FRAME}\n{}\n{}\n{COMMON}\n",
-        world::MIDPLANE_Y as f64,
-        world::SEA_LEVEL as f64,
+        world::MIDPLANE_M,
+        world::SEA_LEVEL_M,
         dwell_mesh::ATLAS_CELLS,
         dwell_mesh::ATLAS_TILES,
         dwell_look::daynight::DAY_SKY_WGSL,

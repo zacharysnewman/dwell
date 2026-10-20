@@ -265,11 +265,8 @@ mod tests {
     fn generates_hashes_and_meshes_a_chunk() {
         let r = Runner::world(GENERATOR_TERRAIN, 1);
         let spawn = dwell_worldgen::spawn_point_for(GENERATOR_TERRAIN, 1);
-        let coord = dwell_world::chunk_of(
-            spawn[0].floor() as i32,
-            (spawn[1] - 1.0).floor() as i32,
-            spawn[2].floor() as i32,
-        );
+        // The chunk of the cell under the feet.
+        let coord = dwell_world::chunk_of_pos([spawn[0], spawn[1] - dwell_world::CELL_H, spawn[2]]);
         let Output::Chunk { voxels, hash } = r.run(Job::Generate { coord }) else {
             panic!()
         };

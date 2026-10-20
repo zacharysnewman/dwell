@@ -20,6 +20,7 @@ use crate::style::{
 };
 use crate::textures::{TileRect, tile_rect};
 use dwell_look::{face_tint, normal_tint};
+use dwell_world::{CELL_H, normal_to_m};
 
 const N: i32 = CHUNK_SIZE;
 
@@ -402,8 +403,9 @@ impl Builder {
     }
 
     /// A convex polygon (counter-clockwise seen from outside) of `pts`, offset by `at`. `normal` is
-    /// its unit normal; uvs project the face along its dominant axis, in blocks. With `side_top` (a
-    /// vertical side face), v runs down from the face's top edge rather than the cell's top.
+    /// its unit normal in cell space, stored in metres (HALF_HEIGHT_GRID.md §2); uvs project the
+    /// face along its dominant axis, in blocks. With `side_top` (a vertical side face), v runs down
+    /// from the face's top edge rather than the cell's top.
     #[allow(clippy::too_many_arguments)]
     fn polygon(
         &mut self,
@@ -419,7 +421,7 @@ impl Builder {
         let r = channel(color, 16) * tint[0];
         let g = channel(color, 8) * tint[1];
         let b = channel(color, 0) * tint[2];
-        let [nx, ny, nz] = normal;
+        let [nx, ny, nz] = normal_to_m(normal);
         for pt in pts {
             let [qx, qy, qz] = *pt;
             let px = qx + x;
@@ -719,7 +721,9 @@ fn shaped_voxel(
         let tint = if tag < 6 {
             face_tint(tag / 2, face_sign)
         } else {
-            normal_tint(normal[0], normal[1], normal[2])
+            // Shaded as it stands in metres, not as the cell-space slope.
+            let m = normal_to_m(normal);
+            normal_tint(m[0], m[1], m[2])
         };
         // Sides take the side tile, a sloped surface the top (or, hanging, the bottom) tile.
         let axis = if tag < 6 { tag / 2 } else { 1 };
@@ -786,7 +790,18 @@ pub fn mirror_padded(padded: &[u16]) -> Vec<u16> {
     out
 }
 
-/// A mesh in chunk-local units mirrored in y (about the chunk's middle): re-wound.
+/// A mesh in chunk-local cells scaled to chunk-local metres: y × the cell height
+/// (HALF_HEIGHT_GRID.md §2). Normals are already in metres (`Builder::polygon`); uvs stay in cells.
+fn to_metres(mut m: MeshArrays) -> MeshArrays {
+    if CELL_H != 1.0 {
+        for p in m.positions.iter_mut().skip(1).step_by(3) {
+            *p = (f64::from(*p) * CELL_H) as f32;
+        }
+    }
+    m
+}
+
+/// A mesh in chunk-local cells mirrored in y (about the chunk's middle): re-wound.
 fn flip_arrays_y(mut m: MeshArrays) -> MeshArrays {
     for p in m.positions.iter_mut().skip(1).step_by(3) {
         *p = (f64::from(N) - f64::from(*p)) as f32;
@@ -801,7 +816,7 @@ fn flip_arrays_y(mut m: MeshArrays) -> MeshArrays {
 }
 
 /// Meshes a chunk from its padded voxels (`PADDED_VOLUME` state ids, [`padded_index`] order).
-/// Positions are chunk-local. A chunk of face B (`mirror`; BIFACIAL_WORLD.md §6) is meshed as its
+/// Positions are chunk-local metres. A chunk of face B (`mirror`; BIFACIAL_WORLD.md §6) is meshed as its
 /// mirror image and the geometry turned back: its faces toward the player's up take the top
 /// texture and shading, and its water surface lies 1/8 above the bottom of its cell. Plants'
 /// jitter is seeded as if the chunk's minimum corner were the world's origin ([`mesh_chunk_at`]).
@@ -833,14 +848,25 @@ pub(crate) fn mesh_chunk_with(
             got: padded.len(),
         });
     }
-    if mirror {
-        let m = mesh_chunk_with(kinds, &mirror_padded(padded), false, origin)?;
-        return Ok(ChunkMeshes {
+    let m = if mirror {
+        let m = mesh_cells(kinds, &mirror_padded(padded), origin);
+        ChunkMeshes {
             opaque: flip_arrays_y(m.opaque),
             transparent: flip_arrays_y(m.transparent),
             cutout: flip_arrays_y(m.cutout),
-        });
-    }
+        }
+    } else {
+        mesh_cells(kinds, padded, origin)
+    };
+    Ok(ChunkMeshes {
+        opaque: to_metres(m.opaque),
+        transparent: to_metres(m.transparent),
+        cutout: to_metres(m.cutout),
+    })
+}
+
+/// The meshes of a chunk of face A (or a mirrored one), in chunk-local cells.
+fn mesh_cells(kinds: &Kinds, padded: &[u16], origin: [i32; 3]) -> ChunkMeshes {
     let mut opaque = Builder::default();
     let mut transparent = Builder::default();
     let cells = Cells::new(kinds, padded);
@@ -998,11 +1024,11 @@ pub(crate) fn mesh_chunk_with(
     // Ladders carry no sway or fade.
     let vertices = cutout.m.positions.len() / 3;
     cutout.m.plants.resize(vertices * 4, 0.0);
-    Ok(ChunkMeshes {
+    ChunkMeshes {
         opaque: opaque.m,
         transparent: transparent.m,
         cutout: cutout.m,
-    })
+    }
 }
 
 #[cfg(test)]

@@ -53,7 +53,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 33 — Transparent blocks (render modes, cross geometry, tall grass) | 🚧 In progress — render modes as block data and cutout (see-through) ladders shipped on the 0.11 line (0.11.18; no registry-hash change); on `claude/transparent-blocks` for the 0.13.0 line (with wood and leaves): the cross look with wind and fade, placement rules and `medium`, `dwell:tall_grass` grown by world generation (decorations as data, generator version 13; a partial reversal of B10 for plants), the Plant sway setting, the marcher's classes, all tested and checked in a browser (about +0.3 ms GPU for a 150-plant field); outstanding: hillside screenshots of generated grass (T9), the owner's look, the e2e suite on CI; `package.json` raised to 0.13.0, the new compatibility line (new blocks: log, leaves, tall grass; generator v13; the owner's decision, 2026-10-16) |
 | 34 — Brushes | 🚧 In progress — B1 built and tested: VoxelSniper-style brushes in the sandbox (ADR 0037, `BRUSHES.md`): brushes, performers and sculpt in `dwell-world` `brush.rs`, presets and the per-world-type policy as data (`shared/brushes/brushes.json`, generator, CI stale check), strokes as `KEEP` pastes behind the `brushes` Welcome flag (0.11 line, no protocol bump), the brush tool, its HUD panel and keys, the region `tool` sound; browser check done; outstanding: the owner's try-out and answers to `BRUSHES.md` §5, CI; `package.json` raised to 0.11.20, a patch release of the 0.11 line |
 | 35 — Sliding on steep ground (stacks on 18, uses 28) | 🚧 In progress — built and tested natively (controller, netcode, sound events and data, the shell's loop voices, WAV renders) and in a browser (the bench); outstanding: CI (the WASM divergence run and the e2e suite, not run on the branch), the owner's review of the feel and of the slide WAV renders; `package.json` raised to 0.12.0, the new compatibility line (protocol 13; adaptive blocks change collision and terrain; the owner's decision, 2026-10-16) |
-| 36 — Half-height grid (½ m cells, stored cardinal ramps; branch `claude/half-height-voxels` only) | 🚧 In progress — H0 (ADR 0038, `HALF_HEIGHT_GRID.md`, this phase) done; next: H1 (one named cell height at 1.0); a playtest branch, not for `main` until the owner keeps it; `package.json` not raised on the branch |
+| 36 — Half-height grid (½ m cells, stored cardinal ramps; branch `claude/half-height-voxels` only) | 🚧 In progress — H0 (ADR 0038, `HALF_HEIGHT_GRID.md`, this phase) done; H1 (one named cell height, at 1.0, every conversion routed through it) built and verified locally, its WASM suites outstanding (CI); next: H2 (stored cardinal ramps); a playtest branch, not for `main` until the owner keeps it; `package.json` not raised on the branch |
 
 Phase numbering: Phase 4 was inserted on 2026-09-29 for the planet-scale world (ADRs 0011, 0012);
 the former Phases 4–7 are now 5–8, and Phase 3's former 3c and 3d are now 3d and 3e.
@@ -3490,7 +3490,9 @@ Deviations:
 > playtest; it reaches `main` only if the owner keeps it ([ADR 0038](./adr/0038-half-height-cells.md)).
 > If it is merged, renumber it to the next free phase number on `main`.
 
-**Status:** H0 done (2026-10-19). Next: H1. The design is [`HALF_HEIGHT_GRID.md`](./HALF_HEIGHT_GRID.md).
+**Status:** H0 done (2026-10-19); H1 built and verified locally (2026-10-20), its WASM suites
+outstanding (CI); the ray marcher's cell space moved to H4. Next: H2. The design is
+[`HALF_HEIGHT_GRID.md`](./HALF_HEIGHT_GRID.md).
 
 Owner (2026-10-19): *"Cardinal ramps only, 1/2m blocks as voxels, 1m on steep ground (still made up
 of half blocks), and no adaptive blocks (just adaptive at generation time), when you destroy a
@@ -3503,14 +3505,19 @@ first. Earlier the same day: tall grass grows only on flat surfaces (the lab).
   `ARCHITECTURE.md` notes the planned change on the branch.
 
 **H1 — One named cell height (at 1.0)**
-- [ ] `cellHeight` in `shared/protocol/constants.json`, generated into Rust and TypeScript; the
-  helpers in `dwell-world` `voxel.rs` (`HALF_HEIGHT_GRID.md` §2).
-- [ ] Every conversion between metres and cells routed through them: physics (the collider's
-  voxel size, shaped-cell trimeshes, queries), the controller's probes, the mesher's output and
-  textures, the render and LOD transforms, the ray marcher's rays, worldgen heights, spawn, edits
-  and reach, fluids, footsteps, the shaders' baked heights, chunk-from-position for streaming.
-- [ ] Exit: every Rust, WASM and Vitest suite and every golden unchanged at 1.0; a test sets up the
-  helpers at ½ (where they are parameterised) and checks the round trips.
+- [x] `cellHeight` in `shared/protocol/constants.json`, generated into Rust and TypeScript with
+  metre twins of the world's vertical rows; the helpers in `dwell-world` `cell.rs`
+  (`HALF_HEIGHT_GRID.md` §2), with tests.
+- [x] Every conversion between metres and cells routed through them: physics (the collider's
+  voxel size, shaped-cell trimeshes, queries), the controller's probes, the mesher's output, the
+  render and LOD transforms and culling, outlines, worldgen heights, spawn, edits and reach,
+  fluids, footsteps, the shaders' baked heights, chunk-from-position for streaming.
+- [x] Exit: the Rust suites and every golden unchanged at 1.0 — 794 passed (the baseline's 789 and
+  5 new helper tests), with the same 3 failures as the commit before H1 (the sandbox brush stroke
+  and two hotbar palette tests, already failing on `main`); Vitest and the typecheck as before
+  (the same 2 files and 21 errors, all from the unbuilt WASM bindings); fmt and clippy (native and
+  wasm32) clean. The capsule-to-shape distance is tested at ½ m cells.
+- [ ] The WASM suites (`wasm32-wasip1`) unchanged, on CI.
 
 **H2 — Stored cardinal ramps**
 - [ ] The pieces (`HALF_HEIGHT_GRID.md` §3) in `shapes.mjs`, with the shape family (`shape`,
@@ -3526,9 +3533,15 @@ first. Earlier the same day: tall grass grows only on flat surfaces (the lab).
 - [ ] Tall grass only on `full` tops, in generation and in placement and support.
 
 **H4 — ½ m cells**
-- [ ] `cellHeight` = 0.5; the world constants in metres with rows derived; worldgen heights to
-  rows; the controller's block-counting probes in metres; the fluid surface drop in metres;
-  brushes; the prototype structures re-voxelised (each layer doubled).
+- [ ] `cellHeight` = 0.5; the world's row constants doubled (its depth in metres kept); the
+  controller's block-counting probes (auto-jump's obstacle, which reads one cell) in metres; the
+  fluid surface drop in metres; texture v in metres or cells (the grass fringe's look); worldgen
+  depths (sand, dirt) and the decoration rise; brushes; the prototype structures re-voxelised
+  (each layer doubled).
+- [ ] The ray marcher (`dwell-march`, `render/march`) in cell space: rays transformed (y ÷ the cell
+  height, not renormalised), hit points and normals back to metres, its cone LOD and column skips
+  checked; deferred from H1 because its internals assume a unit direction. Local builds only until
+  the owner's A7 decision, so the branch may ship without it.
 - [ ] Goldens regenerated (chunk and LOD hashes, the golden trace if it moves); protocol version
   and generator version bumped; the registry hash changes.
 - [ ] Exit: every suite passes; the bench walks a hill (½ m steps and 27° ramps walked, 45° ramps

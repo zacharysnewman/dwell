@@ -273,7 +273,7 @@ impl MarchTest {
     /// Places the camera (world metres; yaw 0 = +Z, degrees).
     #[wasm_bindgen(js_name = setCamera)]
     pub fn set_camera(&mut self, x: f64, y: f64, z: f64, yaw: f64, pitch: f64) {
-        let face = if y >= f64::from(dwell_world::MIDPLANE_Y) {
+        let face = if y >= dwell_world::MIDPLANE_M {
             1.0
         } else {
             -1.0

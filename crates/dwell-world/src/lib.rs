@@ -3,6 +3,7 @@
 //! (`dwell-blocks`); built-in ones the engine needs are resolved once into [`M`].
 
 pub mod brush;
+mod cell;
 pub mod edit;
 pub mod fluid;
 pub mod hash;
@@ -11,4 +12,5 @@ pub mod region;
 pub mod structure;
 mod voxel;
 
+pub use cell::*;
 pub use voxel::*;
