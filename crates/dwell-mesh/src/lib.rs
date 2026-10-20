@@ -57,9 +57,11 @@ pub use mesher::{
 pub const NO_FLUID: f32 = 255.0;
 
 pub use textures::{
-    ATLAS_CELLS, ATLAS_SIZE, ATLAS_TILES, CELL, GUTTER, MISSING_TILE, TILE, TILE_ORDER, TileRect,
-    average_tile_color, build_atlas, has_tile, linear_to_srgb_byte, srgb_to_linear, swatch,
-    tile_grids, tile_has_alpha, tile_rect,
+    ATLAS_CELLS, ATLAS_SIZE, ATLAS_TILES, CELL, GUTTER, MISSING_TILE, PAINTERLY_TILE,
+    PAINTERLY_TILES, TILE, TILE_ORDER, TextureSet, TileRect, average_tile_color,
+    average_tile_color_in, build_atlas, build_atlas_in, has_tile, linear_to_srgb_byte,
+    set_texture_set, srgb_to_linear, swatch, texture_set, tile_grids, tile_has_alpha,
+    tile_has_alpha_in, tile_rect,
 };
 
 /// Whether state `id` is drawn with the fallback look (the magenta and black checker, ADR 0038):
