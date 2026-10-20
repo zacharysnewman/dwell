@@ -194,6 +194,8 @@ export interface TickSample {
   atMs: number;
   feet: Vec3;
   velocity: Vec3;
+  /** The first-person eye height (world y) after the tick: the step view's smoothing. */
+  eye: number;
   state: string;
   grounded: boolean;
   crouched: boolean;

@@ -233,7 +233,7 @@ pub struct ClientState {
 }
 
 /// The tick's controller state and input, for the telemetry's trace.
-fn record_tick(c: &ClientState, input: &InputFrame) {
+fn record_tick(c: &ClientState, input: &InputFrame, eye: f64) {
     use dwell_protocol::input_buttons;
     let flag = |f: u8| c.controller_flags & f != 0;
     let sample = TickSample {
@@ -245,6 +245,7 @@ fn record_tick(c: &ClientState, input: &InputFrame) {
             c.position[2],
         ],
         velocity: c.velocity,
+        eye,
         state: player_state_name(c.state),
         grounded: flag(controller_flags::GROUNDED),
         crouched: flag(controller_flags::CROUCHING),
@@ -1353,7 +1354,6 @@ impl<S: Scene> Game<S> {
             })));
         self.previous = Some(self.current);
         self.current = ClientState::of(&self.predictor);
-        record_tick(&self.current, &frame);
         let c = self.current;
         let face = f64::from(c.face);
         let sample = self.mover_sample(
@@ -1378,6 +1378,7 @@ impl<S: Scene> Game<S> {
         }
         self.eye
             .tick(&self.current.eye_state(), 1.0 / SIM_HZ as f64);
+        record_tick(&self.current, &frame, self.eye.draw(1.0));
         input.look.turn_sign = f64::from(self.current.face);
         // The camera turns with rotating ground (PPC yawDelta).
         input.look.yaw += self.current.platform_yaw_delta;

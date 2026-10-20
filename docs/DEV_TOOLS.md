@@ -165,7 +165,7 @@ call site:
 - **Event samples** — `telemetry::sample(name, value)`: one value per event (a job's time); the
   last 16384 per name.
 - **Counters** — `telemetry::count(name, n)`: running totals.
-- **Controller ticks** — one `TickSample` per predicted tick: feet, velocity, state, grounded,
+- **Controller ticks** — one `TickSample` per predicted tick: feet, velocity, the camera's eye height (`eye`, after the step view's smoothing), state, grounded,
   crouched, wall and ceiling contact, the input's movement, jump and crouch; the last 3600.
 
 What is recorded now:
