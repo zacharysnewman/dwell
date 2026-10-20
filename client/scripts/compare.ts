@@ -1,10 +1,10 @@
-// `npm run bench -- --compare <scenario…>` (docs/DEV_TOOLS.md, docs/RAY_MARCHED_RENDERER.md §5):
-// each scenario runs once per renderer configuration (client/bench/configs.json, scripts/configs.ts)
+// `npm run bench -- --compare <scenario…>` (docs/DEV_TOOLS.md):
+// each scenario runs once per configuration (client/bench/configs.json, scripts/configs.ts)
 // in a fresh page on the same seed and inputs. Writes OUT/compare.json and prints a table side by
 // side; for every `shot` step, OUT/<scenario>/<shot>.<config>.side.png (the baseline left, the
 // configuration right) and <shot>.<config>.diff.png (a ΔE heatmap). Each run's own output (its
-// report.json and screenshots) is in OUT/<scenario>/<config>/. Configurations the build can't run
-// are skipped with the reason. The math is in scripts/compareReport.ts.
+// report.json and screenshots) is in OUT/<scenario>/<config>/. The math is in
+// scripts/compareReport.ts.
 
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -22,14 +22,7 @@ import {
   type ScenarioResult,
   type ShotDiff,
 } from './compareReport.ts';
-import {
-  configParams,
-  parseConfigs,
-  partition,
-  selectConfigs,
-  type Config,
-  type Support,
-} from './configs.ts';
+import { configParams, parseConfigs, selectConfigs, type Config } from './configs.ts';
 import type { Scenario, Step } from './scenarios.ts';
 
 /** What bench.ts's run of one scenario saves (its `report.json`). */
@@ -40,9 +33,8 @@ export interface ScenarioReport {
   records: Record<string, unknown>;
   /** Each `settle` step's seconds, in order. */
   settles: number[];
-  /** The page address it ran at, and the renderers and upscalers the build offers. */
+  /** The page address it ran at. */
   url: string;
-  support: Support;
 }
 
 export interface CompareOptions {
@@ -112,9 +104,7 @@ export async function compare(o: CompareOptions): Promise<void> {
   const file = parseConfigs(JSON.parse(readFileSync(o.configsFile, 'utf8')) as unknown);
   const configs = selectConfigs(file, o.configNames);
   const baseline = configs[0];
-  let support: Support | null = null;
-  let ran: Config[] = [baseline];
-  let skipped: { name: string; reason: string }[] = [];
+  const ran: Config[] = configs;
   const results: ScenarioResult[] = [];
   const codec = await o.browser.newPage();
   await codec.evaluate(CODEC);
@@ -122,24 +112,9 @@ export async function compare(o: CompareOptions): Promise<void> {
     for (const sc of o.scenarios) {
       console.log(`${sc.name}: ${sc.notes}`);
       const reports: Record<string, ScenarioReport> = {};
-      for (const c of support ? ran : [baseline]) {
+      for (const c of ran) {
         console.log(`  — ${c.name}`);
         reports[c.name] = await o.run(sc, join(o.out, sc.name, c.name), configParams(c));
-      }
-      if (!support) {
-        // The first run tells what the build offers; the rest of the configurations follow.
-        support = reports[baseline.name].support;
-        ({ run: ran, skipped } = partition(configs, support));
-        if (!ran.includes(baseline)) {
-          throw new Error(
-            `the baseline "${baseline.name}" can't run on this build: ${skipped[0]?.reason ?? ''}`,
-          );
-        }
-        for (const s of skipped) console.log(`  skipped ${s.name}: ${s.reason}`);
-        for (const c of ran.slice(1)) {
-          console.log(`  — ${c.name}`);
-          reports[c.name] = await o.run(sc, join(o.out, sc.name, c.name), configParams(c));
-        }
       }
       const result: ScenarioResult = {
         name: sc.name,
@@ -186,18 +161,12 @@ export async function compare(o: CompareOptions): Promise<void> {
   const report = {
     baseline: baseline.name,
     deltaE: file.deltaE,
-    support,
     configs: ran,
-    skipped,
     scenarios: results,
     splits: splits(results, ran),
   };
   writeFileSync(join(o.out, 'compare.json'), `${JSON.stringify(report, null, 2)}\n`);
   console.log(`\n${table(results, ran, file.deltaE)}`);
-  if (skipped.length) {
-    console.log('\nskipped (not in this build):');
-    for (const s of skipped) console.log(`  ${s.name}: ${s.reason}`);
-  }
   if (
     !results.some((r) => Object.values(r.records).some((m) => Object.values(m).some((x) => x.gpu)))
   ) {
@@ -209,7 +178,6 @@ export async function compare(o: CompareOptions): Promise<void> {
       baseline: baseline.name,
       deltaE: file.deltaE,
       configs: ran,
-      skipped,
       scenarios: results,
       mode: o.mode,
       when: new Date().toISOString(),

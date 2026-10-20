@@ -86,8 +86,7 @@ pub struct StandInBox {
     pub hi: Vec3,
 }
 
-/// What a meshing job makes for the renderer (the payload): the mesher's [`SectionMeshes`], or a
-/// renderer's own (RAY_MARCHED_RENDERER.md §3: the marcher's bricks, or both in compare mode). The
+/// What a meshing job makes for the renderer (the payload): the mesher's [`SectionMeshes`]. The
 /// LOD system only passes it through and counts its bytes against the cache budget.
 pub trait SectionPayload {
     /// Bytes held for the section (the cache budget's measure).
@@ -729,17 +728,6 @@ impl LodSystem {
         n.meshed = true;
         if !n.modified {
             self.set_cells(id, None); // regenerated if a neighbour's border changes
-        }
-    }
-
-    /// Builds every drawn section's payload again (a renderer switch, RAY_MARCHED_RENDERER.md §3):
-    /// each meshed section is meshed anew, from its held cells or, where they were dropped after
-    /// meshing, regenerated (modified sections keep theirs). What is drawn stays selected meanwhile.
-    pub fn rebuild_all(&mut self) {
-        for n in self.nodes.values_mut() {
-            if n.meshed {
-                n.remesh = true;
-            }
         }
     }
 

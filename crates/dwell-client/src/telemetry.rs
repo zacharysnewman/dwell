@@ -32,6 +32,8 @@ pub struct TickSample {
     /// The player's feet.
     pub feet: [f64; 3],
     pub velocity: [f64; 3],
+    /// The first-person camera's eye height (world y) after the tick: the step view's smoothing.
+    pub eye: f64,
     /// The PlayerState's name.
     pub state: &'static str,
     pub grounded: bool,

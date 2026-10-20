@@ -135,7 +135,12 @@ describe('block generator: the cross geometry and wind', { timeout: 30_000 }, ()
   it('emits a cross with its options, wind and fade', () => {
     const r = generate([
       plant('reeds', {
-        cross: { height: 0.9, quads: 3, jitter: { offset: 0.2, rotation: 30, height: [0.7, 1] } },
+        cross: {
+          height: 0.9,
+          quads: 3,
+          jitter: { offset: 0.2, rotation: 30, height: [0.7, 1] },
+          sitOnSupport: false,
+        },
         wind: { strength: 0.1, speed: 2 },
         fade: { start: 40, end: 80 },
         selectionBox: [0.25, 0, 0.25, 0.75, 0.5, 0.75],
@@ -144,14 +149,14 @@ describe('block generator: the cross geometry and wind', { timeout: 30_000 }, ()
     ]);
     expect(r.status, r.output).toBe(0);
     expect(r.rust).toContain(
-      'cross: Some(Cross { height: 0.9, quads: 3, offset: 0.2, rotation_deg: 30.0, height_min: 0.7, height_max: 1.0 })',
+      'cross: Some(Cross { height: 0.9, quads: 3, offset: 0.2, rotation_deg: 30.0, height_min: 0.7, height_max: 1.0, sit_on_support: false })',
     );
     expect(r.rust).toContain('wind: Some(Wind { strength: 0.1, speed: 2.0 })');
     expect(r.rust).toContain('fade: Some(Fade { start: 40.0, end: 80.0 })');
     expect(r.rust).toContain('selection: Some([0.25, 0.0, 0.25, 0.75, 0.5, 0.75])');
-    // Defaults: two full-height quads, no jitter, no wind.
+    // Defaults: two full-height quads, no jitter, sitting on the support, no wind.
     expect(r.rust).toMatch(
-      /name: "dwell:tuft".*cross: Some\(Cross \{ height: 1\.0, quads: 2, offset: 0\.0, rotation_deg: 0\.0, height_min: 1\.0, height_max: 1\.0 \}\), wind: None/,
+      /name: "dwell:tuft".*cross: Some\(Cross \{ height: 1\.0, quads: 2, offset: 0\.0, rotation_deg: 0\.0, height_min: 1\.0, height_max: 1\.0, sit_on_support: true \}\), wind: None/,
     );
   });
 
@@ -162,12 +167,14 @@ describe('block generator: the cross geometry and wind', { timeout: 30_000 }, ()
       [{ cross: { quads: 5 } }, 'cross.quads must be 2, 3 or 4'],
       [{ cross: { height: 0 } }, 'cross.height must be in (0, 1]'],
       [{ cross: { sway: 1 } }, 'cross: unknown sway'],
+      [{ cross: { sitOnSupport: 'yes' } }, 'cross.sitOnSupport must be true or false'],
       [{ cross: { jitter: { offset: 0.5 } } }, 'cross.jitter.offset must be in [0, 0.5)'],
       [{ cross: { jitter: { height: [1, 0.5] } } }, 'cross.jitter.height must be [min, max]'],
       [{ wind: { strength: 1, speed: 1 } }, 'wind.strength must be in [0, 0.5]'],
       [{ wind: { strength: 0.1, speed: 0 } }, 'wind.speed must be in (0, 10]'],
       [{ fade: { start: 50, end: 200 } }, 'fade must have 0 < start < end <= 96'],
       [{ selectionBox: [0, 0, 0, 1, 1] }, 'selectionBox must be'],
+      [{ outline: 'no' }, 'outline must be true or false'],
     ] as const) {
       const r = generate([plant('bad', extra)]);
       expect(r.status, JSON.stringify(extra)).not.toBe(0);
@@ -177,6 +184,8 @@ describe('block generator: the cross geometry and wind', { timeout: 30_000 }, ()
     expect(cube.output).toContain('dwell:bad: cross options need look cross');
     const windy = generate([block('bad', { wind: { strength: 0.1, speed: 1 } })]);
     expect(windy.output).toContain('dwell:bad: wind needs look cross');
+    const inked = generate([block('bad', { outline: false })]);
+    expect(inked.output).toContain('dwell:bad: outline needs look cross');
   });
 });
 

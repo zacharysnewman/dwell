@@ -14,7 +14,7 @@ use dwell_game::block_interaction::{BlockInteraction, BlockTarget, TargetSource,
 use dwell_game::brush_tool::{BrushAction, BrushOutline, BrushPanel, BrushTool};
 use dwell_game::chunk_stream::{ChunkMessage, ChunkStreamer, Coord, StreamStats, TerrainView};
 use dwell_game::edit_prediction::EditPredictor;
-use dwell_game::eye::{EyeCamera, EyeState};
+use dwell_game::eye::{EyeCamera, EyeState, StepRamp};
 use dwell_game::face_flip::FaceFlip;
 use dwell_game::gate::prediction_may_run;
 use dwell_game::hud_text::{HudTextInput, hud_text};
@@ -27,6 +27,7 @@ use dwell_lod::{LodCamera, LodSystem, LodView, StandInBox, format_lod_stats};
 use dwell_look::daynight::{DAY_NIGHT, DayState};
 use dwell_look::motion::{MOTION, MotionFx, MotionInput, MotionSettings, Speeds, effective_fov};
 use dwell_look::spyglass::{SPYGLASS, Spyglass, SpyglassView, zoom_fov};
+use dwell_mesh::{ChunkMeshes, SectionMeshes};
 use dwell_physics::config::PlayerControllerConfig;
 use dwell_physics::net::to_net;
 use dwell_physics::predictor::{Predictor, PredictorStats};
@@ -37,11 +38,12 @@ use dwell_protocol::{
 };
 use dwell_world::{ChunkCoord, VoxelWorld};
 
+use crate::bodies::Bodies;
 use crate::jobs::Output;
 use crate::pool::{ChunkJobs, Done, MeshJobs, PoolRef, Purpose};
 use crate::render::display::{RenderStats, format_render_stats};
-use crate::render::seam::{ChunkTerrain, SectionTerrain, Selection, TerrainRenderer};
-use crate::render::{Line, PlayerView, RegionBox, StandIn, WindView};
+use crate::render::seam::TerrainRenderer;
+use crate::render::{ArmsView, Held, Line, PlayerView, RegionBox, StandIn, WindView};
 use crate::telemetry::{self, TickSample};
 
 const TICK_MS: f64 = 1000.0 / SIM_HZ as f64;
@@ -62,23 +64,17 @@ const RATE_NUDGE: f64 = 0.02;
 /// The region tools' outlines: the selection, and where a paste would go.
 const REGION_SELECTION_COLOR: u32 = 0xffffff;
 const REGION_GHOST_COLOR: u32 = 0x6fd3ff;
-const PLAYER_COLORS: [u32; 7] = [
-    0xe0564a, 0x4a8fe0, 0xe0c24a, 0x5fc26b, 0xb15fe0, 0x4ad0c8, 0xe08a4a,
-];
 
 /// The whole cell, as an outline box.
 pub const FULL_CELL: ([f32; 3], [f32; 3]) = ([0.0; 3], [1.0; 3]);
 
 /// What the game draws through (the wgpu renderer, or a recorder in tests). The terrain part is
-/// the renderer seam's ([`TerrainRenderer`], RAY_MARCHED_RENDERER.md §3): each chunk's and
-/// section's payloads, routed to the terrain renderers the [`Selection`] draws; the rest (camera,
-/// players, outline, lines, stats) is shared by every renderer.
-pub trait Scene: TerrainRenderer<Chunk = ChunkTerrain, Section = SectionTerrain> {
-    /// What draws the terrain (its payloads are what the meshing jobs make).
-    fn selection(&self) -> Selection;
-    /// Switches renderer; true when the payloads change (the game then rebuilds the terrain).
-    fn select(&mut self, selection: Selection) -> bool;
+/// [`TerrainRenderer`]'s: each chunk's and section's meshes; the rest is the camera, players,
+/// outline, lines and stats.
+pub trait Scene: TerrainRenderer {
     fn set_player(&mut self, id: u32, view: Option<PlayerView>);
+    /// Your first-person arms this frame (docs/CHARACTERS.md §5), or none.
+    fn set_arms(&mut self, _arms: Option<ArmsView>) {}
     fn set_camera(&mut self, eye: [f64; 3], yaw_deg: f64, pitch_deg: f64, face: f64, flip: f64);
     /// The fluid whose drawn surface the camera's eye is under (`dwell_world::fluid::eye_fluid`).
     fn set_eye_fluid(&mut self, _eye_fluid: Option<dwell_world::fluid::EyeFluid>) {}
@@ -90,6 +86,8 @@ pub trait Scene: TerrainRenderer<Chunk = ChunkTerrain, Section = SectionTerrain>
     fn set_fov(&mut self, fov_y_deg: Option<f64>);
     /// The wind streaks to draw this frame.
     fn set_wind(&mut self, wind: WindView);
+    /// The spyglass's magnification this frame (1 unzoomed): the ink outline's fade follows it.
+    fn set_magnification(&mut self, _magnification: f64) {}
     fn set_region_boxes(&mut self, boxes: &[RegionBox]);
     /// The brush tool's wireframe at its target (BRUSHES.md), or none.
     fn set_brush_outline(&mut self, _outline: Option<&BrushOutline>) {}
@@ -150,21 +148,21 @@ pub type SceneRef<S> = Rc<RefCell<S>>;
 /// The streamer's and the LOD system's view of the scene.
 pub struct View<S>(pub SceneRef<S>);
 
-impl<S: Scene> TerrainView<ChunkTerrain> for View<S> {
-    fn set_terrain_chunk(&mut self, coord: Coord, _origin: [i32; 3], meshes: Option<ChunkTerrain>) {
+impl<S: Scene> TerrainView<ChunkMeshes> for View<S> {
+    fn set_terrain_chunk(&mut self, coord: Coord, _origin: [i32; 3], meshes: Option<ChunkMeshes>) {
         self.0
             .borrow_mut()
             .set_chunk(ChunkCoord::from_array(coord), meshes.as_ref());
     }
 }
 
-impl<S: Scene> LodView<SectionTerrain> for View<S> {
+impl<S: Scene> LodView<SectionMeshes> for View<S> {
     fn set_lod_section(
         &mut self,
         id: i64,
         origin: [f64; 3],
         cell_size: f64,
-        meshes: Option<SectionTerrain>,
+        meshes: Option<SectionMeshes>,
     ) {
         self.0
             .borrow_mut()
@@ -228,12 +226,14 @@ pub struct ClientState {
     pub max_step_height: f64,
     /// The most one step-up lifts the player (a ramp's rise to the step included).
     pub max_step_lift: f64,
+    /// The camera's virtual ramp over steps (`step_view`).
+    pub step_ramp: StepRamp,
     pub radius: f64,
     pub standing_height: f64,
 }
 
 /// The tick's controller state and input, for the telemetry's trace.
-fn record_tick(c: &ClientState, input: &InputFrame) {
+fn record_tick(c: &ClientState, input: &InputFrame, eye: f64) {
     use dwell_protocol::input_buttons;
     let flag = |f: u8| c.controller_flags & f != 0;
     let sample = TickSample {
@@ -245,6 +245,7 @@ fn record_tick(c: &ClientState, input: &InputFrame) {
             c.position[2],
         ],
         velocity: c.velocity,
+        eye,
         state: player_state_name(c.state),
         grounded: flag(controller_flags::GROUNDED),
         crouched: flag(controller_flags::CROUCHING),
@@ -309,6 +310,7 @@ impl ClientState {
             crouch_eye_height: f64::from(config.body.crouch_eye_height),
             max_step_height: f64::from(config.movement.max_step_height),
             max_step_lift: f64::from(config.max_step_lift()),
+            step_ramp: config.step_view.into(),
             radius: f64::from(config.body.radius),
             standing_height: f64::from(config.body.standing_height),
         }
@@ -326,6 +328,7 @@ impl ClientState {
             crouch_eye_height: self.crouch_eye_height,
             // The eye smooths every lift a step-up makes.
             max_step_height: self.max_step_lift,
+            ramp: self.step_ramp,
         }
     }
 }
@@ -346,6 +349,10 @@ pub struct DebugState {
     pub target: Option<BlockTarget>,
     pub lod: Option<dwell_lod::LodStats>,
     pub flying: bool,
+    /// The bodies drawn for remote players: (player id, base role, swing) (docs/CHARACTERS.md §6).
+    pub bodies: Vec<(u16, &'static str, Option<&'static str>)>,
+    /// Your arms' base role and swing.
+    pub arms: (&'static str, Option<&'static str>),
 }
 
 /// The HUD's contents after a frame (the TS shell draws them).
@@ -425,6 +432,15 @@ pub struct Game<S: Scene> {
     pub brush: BrushTool,
     /// Every edit shown at once and reconciled with the server's acks (§6.5).
     pub prediction: EditPredictor,
+    /// The characters' animators: the remote players' bodies and your arms (bodies.rs).
+    bodies: Bodies,
+    /// What you hold as last sent to the server (`Message::HeldItem`, protocol v17).
+    held_sent: Option<u16>,
+    /// The Show your arms setting (the settings menu; on by default).
+    pub show_arms: bool,
+    /// Stand-in players for the dev tools (`__dwell.puppets`): the frame cost of N bodies and
+    /// their clips without N clients.
+    pub puppets: Option<Puppets>,
     /// The eye the crosshair targets from (None while not playing).
     target_eye: Option<[f64; 3]>,
     lod: Option<LodSystem>,
@@ -505,7 +521,6 @@ impl<S: Scene> Game<S> {
                     .push(Send::Control(Message::ChunkResync(coords.to_vec())));
             },
         );
-        pool.borrow_mut().payloads = scene.borrow().selection().payloads();
         let speeds = Speeds {
             walk: f64::from(config.movement.walk_speed),
             run: f64::from(config.movement.run_speed),
@@ -576,6 +591,10 @@ impl<S: Scene> Game<S> {
             day_override: DayOverride::default(),
             day: DayState::default(),
             first_draw_ms: None,
+            bodies: Bodies::default(),
+            held_sent: None,
+            show_arms: true,
+            puppets: None,
         };
         match verification {
             Some(c) => game
@@ -585,20 +604,6 @@ impl<S: Scene> Game<S> {
             None => game.verify(0),
         }
         game
-    }
-
-    /// Switches the terrain renderer at runtime (the renderer seam, RAY_MARCHED_RENDERER.md §3):
-    /// when the payloads change, the meshing jobs make the new ones and every chunk and LOD section
-    /// is rebuilt from the voxels and cells the client holds, without a reload.
-    pub fn set_renderer(&mut self, selection: Selection) {
-        if !self.scene.borrow_mut().select(selection) {
-            return;
-        }
-        self.pool.borrow_mut().payloads = selection.payloads();
-        self.streamer.remesh_all();
-        if let Some(lod) = &mut self.lod {
-            lod.rebuild_all();
-        }
     }
 
     /// Places the camera (None: back to the player's eyes).
@@ -953,6 +958,8 @@ impl<S: Scene> Game<S> {
                 .iter()
                 .map(|r| (r.player_id, r.feet, r.is_dead()))
                 .collect(),
+            bodies: self.bodies.roles(),
+            arms: self.bodies.arms_state(),
             stats: c.stats,
             terrain: self.streamer.stats(),
             terrain_ready: self.terrain_ready(),
@@ -1001,6 +1008,10 @@ impl<S: Scene> Game<S> {
                     }
                     (EditAction::Place, None) => {}
                 }
+                self.bodies.swing_arms(match action {
+                    EditAction::Break => dwell_characters::animator::Swing::Break,
+                    EditAction::Place => dwell_characters::animator::Swing::Place,
+                });
                 self.send_edit(m, None);
                 true
             }
@@ -1078,6 +1089,8 @@ impl<S: Scene> Game<S> {
         // The region tools' click as a stroke goes out; its blocks sound as they arrive.
         if sent {
             self.sounds.push(sound_event(SoundKind::Tool));
+            self.bodies
+                .swing_arms(dwell_characters::animator::Swing::Place);
         }
         // The stroke shows at once; its first edits go out now, the rest as the rate allows (each
         // frame).
@@ -1361,7 +1374,6 @@ impl<S: Scene> Game<S> {
             })));
         self.previous = Some(self.current);
         self.current = ClientState::of(&self.predictor);
-        record_tick(&self.current, &frame);
         let c = self.current;
         let face = f64::from(c.face);
         let sample = self.mover_sample(
@@ -1386,6 +1398,7 @@ impl<S: Scene> Game<S> {
         }
         self.eye
             .tick(&self.current.eye_state(), 1.0 / SIM_HZ as f64);
+        record_tick(&self.current, &frame, self.eye.draw(1.0));
         input.look.turn_sign = f64::from(self.current.face);
         // The camera turns with rotating ground (PPC yawDelta).
         input.look.yaw += self.current.platform_yaw_delta;
@@ -1441,14 +1454,17 @@ impl<S: Scene> Game<S> {
                     .or_insert_with(|| MoverSounds::with_voice(v.player_id))
                     .update(&sample, Some(v.feet), &mut self.sounds);
             }
-            let view = self.player_view(
-                v.player_id,
-                v.feet,
-                f64::from(v.yaw),
-                v.is_crouched(),
-                v.is_dead(),
-                if v.is_face_b() { -1.0 } else { 1.0 },
-            );
+            // The full body, animated from the snapshot's controller state (bodies.rs).
+            let registry = &self.registry;
+            let held = crate::bodies::held_from_wire(v.held, |b| match registry {
+                Some(m) => m.client(b),
+                None => Some(b),
+            });
+            let world = self.streamer.store_mut();
+            let reach = self.current.max_step_lift;
+            let view = self.bodies.remote(v, held, dt, &mut |f, p| {
+                crate::bodies::ground_at(world, f, p, reach)
+            });
             self.scene
                 .borrow_mut()
                 .set_player(u32::from(v.player_id), Some(view));
@@ -1458,6 +1474,29 @@ impl<S: Scene> Game<S> {
                 self.scene.borrow_mut().set_player(u32::from(id), None);
             }
         }
+        if let Some(mut p) = self.puppets {
+            if p.held == Puppets::HOTBAR {
+                p.held = self.selected_material();
+            }
+            for v in p.views(now_ms / 1000.0) {
+                drawn.insert(v.player_id);
+                let held = crate::bodies::held_from_wire(v.held, Some);
+                let world = self.streamer.store_mut();
+                let reach = self.current.max_step_lift;
+                let view = self.bodies.remote(&v, held, dt, &mut |f, p| {
+                    crate::bodies::ground_at(world, f, p, reach)
+                });
+                self.scene
+                    .borrow_mut()
+                    .set_player(u32::from(v.player_id), Some(view));
+            }
+        }
+        for id in Puppets::ID_BASE..Puppets::ID_BASE + Puppets::MAX {
+            if !drawn.contains(&id) {
+                self.scene.borrow_mut().set_player(u32::from(id), None);
+            }
+        }
+        self.bodies.retain(|id| drawn.contains(&id));
         // A player gone from view (or dead) stops sounding: its slide's voice ends.
         let sounds = &mut self.sounds;
         self.remote_sounds.retain(|id, m| {
@@ -1470,18 +1509,16 @@ impl<S: Scene> Game<S> {
 
         let (yaw, pitch) = (input.look.yaw, input.look.pitch);
         let camera_eye;
+        let held = self.held();
+        self.send_held(held);
         if self.dead {
             // Third person over the body.
-            let view = self.player_view(
-                self.player_id,
-                self.death_feet,
-                yaw,
-                false,
-                true,
-                f64::from(face),
-            );
+            let view = self
+                .bodies
+                .own_dead(self.death_feet, yaw, f64::from(face), dt);
             let mut scene = self.scene.borrow_mut();
             scene.set_player(u32::from(self.player_id), Some(view));
+            scene.set_arms(None);
             let r = yaw.to_radians();
             let [x, y, z] = self.death_feet;
             camera_eye = [
@@ -1509,6 +1546,16 @@ impl<S: Scene> Game<S> {
             let ready = self.terrain_ready();
             self.target(ready.then_some(eye), input, now_ms);
             self.update_motion(eye, dt);
+            // Your arms in their own pass (CHARACTERS.md §5): not while zoomed in the spyglass, in
+            // a placed camera, or with the setting off.
+            let move_input =
+                crate::bodies::local_input(c.state, c.velocity, c.controller_flags, c.face);
+            let arms = self.bodies.arms(&move_input, held, dt);
+            let shown = self.show_arms
+                && c.active
+                && self.view.is_none()
+                && self.spyglass_view.magnification <= 1.001;
+            self.scene.borrow_mut().set_arms(shown.then_some(arms));
         }
         let camera_eye = match self.view {
             Some(v) => {
@@ -1541,11 +1588,7 @@ impl<S: Scene> Game<S> {
                 lines.push(format_lod_stats(&lod.debug_stats()));
             }
             let scene = self.scene.borrow();
-            lines.push(format!(
-                "{} · {}",
-                scene.selection().status(),
-                format_render_stats(&scene.stats())
-            ));
+            lines.push(format_render_stats(&scene.stats()));
             drop(scene);
             lines.push(self.day.debug_line());
             if let Some(r) = self.registry_summary() {
@@ -1625,6 +1668,7 @@ impl<S: Scene> Game<S> {
         );
         let mut scene = self.scene.borrow_mut();
         scene.set_fov(Some(self.frame_fov));
+        scene.set_magnification(self.spyglass_view.magnification);
         scene.set_wind(WindView {
             intensity: out.wind,
             flight: out.flight,
@@ -1734,25 +1778,38 @@ impl<S: Scene> Game<S> {
             .set_block_outline(Some(dwell_world::pos_of_cell(t.cell)), bounds);
     }
 
-    fn player_view(
-        &self,
-        id: u16,
-        feet: [f64; 3],
-        yaw: f64,
-        crouched: bool,
-        dead: bool,
-        face: f64,
-    ) -> PlayerView {
-        PlayerView {
-            feet,
-            face,
-            yaw,
-            crouched,
-            dead,
-            color: PLAYER_COLORS[usize::from(id) % PLAYER_COLORS.len()],
-            radius: self.current.radius as f32,
-            height: self.current.standing_height as f32,
+    /// What your hand holds: the hotbar's block, or the brush painting with it while the brush tool
+    /// is on (an empty slot: an empty hand).
+    pub fn held(&self) -> Held {
+        let block = self.selected_material();
+        if block == 0 {
+            Held::Empty
+        } else if self.brush.active() {
+            Held::Brush(block)
+        } else {
+            Held::Block(block)
         }
+    }
+
+    /// Tells the server what you hold when it changes (`Message::HeldItem`, protocol v17), so the
+    /// others see it in their snapshots.
+    fn send_held(&mut self, held: Held) {
+        let registry = &self.registry;
+        let wire = crate::bodies::held_to_wire(held, |b| match registry {
+            Some(m) => m.server(b),
+            None => Some(b),
+        });
+        if self.held_sent != Some(wire) {
+            self.held_sent = Some(wire);
+            self.outbox
+                .borrow_mut()
+                .push(Send::Control(Message::HeldItem(wire)));
+        }
+    }
+
+    /// The arms' base role and swing (tests, telemetry).
+    pub fn arms_state(&self) -> (&'static str, Option<&'static str>) {
+        self.bodies.arms_state()
     }
 }
 
@@ -1778,13 +1835,13 @@ impl<S: Scene> dwell_lod::SectionMesher for LodHost<'_, S> {
         self.pool_mesh.mesh_section(job, token);
     }
 }
-impl<S: Scene> LodView<SectionTerrain> for LodHost<'_, S> {
+impl<S: Scene> LodView<SectionMeshes> for LodHost<'_, S> {
     fn set_lod_section(
         &mut self,
         id: i64,
         origin: [f64; 3],
         cell_size: f64,
-        meshes: Option<SectionTerrain>,
+        meshes: Option<SectionMeshes>,
     ) {
         self.view.set_lod_section(id, origin, cell_size, meshes);
     }
@@ -1989,5 +2046,81 @@ mod tests {
         assert!(text.contains("smoothing 3.00 cm"));
         assert!(text.contains("RTT 151 ms"));
         assert!(text.contains("health 83/100"));
+    }
+}
+
+/// Stand-in players for the dev tools (`__dwell.puppets`, docs/DEV_TOOLS.md): `count` bodies in
+/// rows ahead of `origin` (feet), on `face`, each walking a small circle with a clip of its own
+/// (the controller's states in turn) and a held block, so the bench can time N bodies and a
+/// screenshot can show every clip, on either face.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Puppets {
+    pub count: u16,
+    pub origin: [f64; 3],
+    /// ±1.
+    pub face: f64,
+    /// A block every puppet holds (0: none).
+    pub held: u16,
+}
+
+impl Puppets {
+    pub const ID_BASE: u16 = 60000;
+    pub const MAX: u16 = 256;
+    /// `held`: the hotbar's block, whatever it is.
+    pub const HOTBAR: u16 = u16::MAX;
+
+    /// The puppets at time `t` (s), as remote snapshots would carry them.
+    pub fn views(&self, t: f64) -> Vec<dwell_game::remotes::RemoteView> {
+        use dwell_protocol::player_flags as pf;
+        let states = [
+            (PlayerState::Walking, 2.5, 0u8),
+            (PlayerState::Running, 6.0, 0),
+            (PlayerState::Sliding, 7.0, pf::CROUCHED),
+            (PlayerState::Crouching, 1.2, pf::CROUCHED),
+            (PlayerState::Idle, 0.0, 0),
+            (PlayerState::Jumping, 2.0, 0),
+            (PlayerState::Swimming, 1.5, pf::SWIMMING),
+            (PlayerState::Climbing, 0.0, pf::CLIMBING),
+        ];
+        let n = self.count.min(Self::MAX);
+        let cols = 8.0;
+        (0..n)
+            .map(|i| {
+                let (state, speed, flags) = states[usize::from(i) % states.len()];
+                let (row, col) = ((f64::from(i) / cols).floor(), f64::from(i) % cols);
+                let yaw = (t * 40.0 + f64::from(i) * 45.0) % 360.0;
+                let r = yaw.to_radians();
+                let up = if state == PlayerState::Jumping {
+                    3.0 * (t * 2.0 + f64::from(i)).sin()
+                } else {
+                    0.0
+                };
+                let face_b = if self.face < 0.0 { pf::FACE_B } else { 0 };
+                let grounded = if state == PlayerState::Jumping {
+                    0
+                } else {
+                    pf::GROUNDED
+                };
+                dwell_game::remotes::RemoteView {
+                    player_id: Self::ID_BASE + i,
+                    feet: [
+                        self.origin[0] + (col - cols / 2.0) * 2.5,
+                        self.origin[1],
+                        self.origin[2] + 4.0 + row * 2.5,
+                    ],
+                    velocity: [
+                        (r.sin() * speed) as f32,
+                        (up * self.face) as f32,
+                        (r.cos() * speed) as f32,
+                    ],
+                    yaw: yaw as f32,
+                    pitch: 0.0,
+                    state,
+                    flags: flags | face_b | grounded,
+                    held: self.held,
+                    swing: 0,
+                }
+            })
+            .collect()
     }
 }

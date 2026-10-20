@@ -608,3 +608,72 @@ fn column_surfaces_put_distant_land_and_seas_at_their_true_height() {
         );
     }
 }
+
+both_faces!(
+    /// Face parity (BIFACIAL_WORLD.md §11): in the mirror world (face B from face A's seed) every
+    /// chunk and LOD section of face B, and its column surfaces, is face A's turned over — so the
+    /// generator's face-B path (the row flip, turned-over shapes, the mirrored LOD rows and
+    /// face-local surfaces) is face A's code.
+    fn the_mirror_worlds_face_b_is_face_as_mirror_image(f: FaceFrame) {
+        let g = BifacialTerrain::mirrored(7);
+        let s = g.spawn_point();
+        let at = ChunkCoord::new(
+            (s[0] / 32.0).floor() as i32,
+            ((s[1] - 1.0) / 32.0).floor() as i32,
+            (s[2] / 32.0).floor() as i32,
+        );
+        for c in [
+            at,
+            ChunkCoord::new(at.x + 1, at.y, at.z),
+            ChunkCoord::new(at.x, at.y - 1, at.z),
+        ] {
+            let (mut a, mut b) = (Chunk::default(), Chunk::default());
+            g.generate(c, &mut a);
+            g.generate(f.chunk(c), &mut b);
+            for y in 0..CHUNK_SIZE {
+                for z in 0..CHUNK_SIZE {
+                    for x in 0..CHUNK_SIZE {
+                        let ly = if f.is_b() { CHUNK_SIZE - 1 - y } else { y };
+                        assert_eq!(
+                            f.state(b.get(x, ly, z)),
+                            a.get(x, y, z),
+                            "{c:?} ({x}, {y}, {z}): {:?}",
+                            f.face
+                        );
+                    }
+                }
+            }
+        }
+        for level in 1..=6 {
+            let c = section_at(level, s[0] as i64, s[1] as i64 - 1, s[2] as i64);
+            let size = section_size(level);
+            let mirror_y = i64::from(FaceFrame::MIRROR as i32) - section_origin(c).y - size;
+            let cb = if f.is_b() {
+                section_at(level, s[0] as i64, mirror_y, s[2] as i64)
+            } else {
+                c
+            };
+            let (mut a, mut b) = (LodCells::new(), LodCells::new());
+            let (mut sa, mut sb) = (LodSurfaces::new(), LodSurfaces::new());
+            let (mut sa_b, mut sb_b) = (LodSurfaces::new(), LodSurfaces::new());
+            let ka = g.generate_lod(c, &mut a, Some(&mut sa), Some(&mut sa_b));
+            let kb = g.generate_lod(cb, &mut b, Some(&mut sb), Some(&mut sb_b));
+            assert_eq!(ka, kb, "level {level}: {:?}", f.face);
+            for y in -1..=N {
+                let ly = if f.is_b() { N - 1 - y } else { y };
+                for z in -1..=N {
+                    for x in -1..=N {
+                        assert_eq!(
+                            b[cell_index(x, ly, z)],
+                            a[cell_index(x, y, z)],
+                            "level {level} ({x}, {y}, {z}): {:?}",
+                            f.face
+                        );
+                    }
+                }
+            }
+            let surface_b = if f.is_b() { &sb_b } else { &sb };
+            assert_eq!(surface_b, &sa, "level {level} surfaces: {:?}", f.face);
+        }
+    }
+);

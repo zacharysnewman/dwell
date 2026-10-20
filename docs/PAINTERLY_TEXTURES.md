@@ -5,8 +5,8 @@ One data-driven generator paints every texture in the storybook style of
 and sky accents read by name. Decision record: [ADR 0040](./adr/0040-painterly-textures.md).
 Architecture: [`ARCHITECTURE.md`](./ARCHITECTURE.md) §6.1 (block textures).
 
-**Status: built, behind a switch.** `?textures=painterly` shows the painterly set. The default stays
-the classic set until the owner approves (§6).
+**Status: built, the default** (the owner approved it, 2026-10-20). `?textures=classic` shows the
+classic set (§6).
 
 ## 1. Brief and answers
 
@@ -145,7 +145,7 @@ must be [min, max] in [0.25, 32]`. The checks cover:
 
 `dwell-mesh` (Rust):
 
-- The query parses, and the default is classic.
+- The query parses, and the default is painterly.
 - Every baked tile is an atlas tile of the atlas's size, and every registry tile but `grid` is
   painted.
 - The painterly atlas differs from the classic only in painted tiles.
@@ -160,10 +160,9 @@ must be [min, max] in [0.25, 32]`. The checks cover:
 ## 6. The switch, and flipping it
 
 - `?textures=painterly` picks the painterly set; `?textures=classic` or nothing picks the classic.
-- To make painterly the default once the owner approves, move `#[default]` to
-  `TextureSet::Painterly` in `crates/dwell-mesh/src/textures.rs` (one line). The test
-  `the_query_picks_the_set_and_the_default_is_classic` pins the current default, so it changes with
-  it.
+- Painterly is the default (`#[default]` on `TextureSet::Painterly` in
+  `crates/dwell-mesh/src/textures.rs`, owner, 2026-10-20); `?textures=classic` keeps the classic set.
+  The test `the_query_picks_the_set_and_the_default_is_painterly` pins it.
 - Textures are not part of the public API. They change no world format, protocol or terrain, so
   either set works on any server of the line.
 

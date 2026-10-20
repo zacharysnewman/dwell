@@ -12,10 +12,7 @@ use dwell_client::local::{LOCAL_SESSION, LocalCore};
 use dwell_client::net::session::{Out, Session, SessionState};
 use dwell_client::pool::{InlineJobs, Pool};
 use dwell_client::render::display::RenderStats;
-use dwell_client::render::march::{ChunkBricks, SectionBricks};
-use dwell_client::render::seam::{
-    ChunkTerrain, Recording, Routed, SectionTerrain, Selection, TerrainKind, TerrainRenderer,
-};
+use dwell_client::render::seam::{Recording, TerrainRenderer};
 use dwell_client::render::{Line, PlayerView, RegionBox, StandIn, WindView};
 use dwell_client::telemetry;
 use dwell_game::brush_tool::{BrushAction, BrushOutline};
@@ -30,13 +27,10 @@ use dwell_storage::StorageBackend;
 use dwell_world::{ChunkCoord, GENERATOR_SANDBOX, GENERATOR_TERRAIN};
 use ed25519_dalek::{Signer, SigningKey};
 
-type Renderers =
-    Routed<Recording<ChunkMeshes, SectionMeshes>, Recording<ChunkBricks, SectionBricks>>;
-
-/// A recording scene: what reaches the scene, and (behind the renderer seam) what each terrain
-/// renderer holds.
+/// A recording scene: what reaches the scene, and the terrain it holds.
+#[derive(Default)]
 struct Recorder {
-    terrain: Renderers,
+    terrain: Recording,
     chunks: std::collections::HashSet<ChunkCoord>,
     sections: usize,
     /// Each section held: its origin and cell size.
@@ -48,34 +42,14 @@ struct Recorder {
     wind: WindView,
     region_boxes: Vec<RegionBox>,
     brush: Option<BrushOutline>,
-}
-
-impl Default for Recorder {
-    fn default() -> Self {
-        Self {
-            terrain: Routed::new(
-                Recording::default(),
-                Recording::default(),
-                Selection::default(),
-            ),
-            chunks: Default::default(),
-            sections: 0,
-            held: Default::default(),
-            shown: Vec::new(),
-            camera: None,
-            outline: None,
-            region_boxes: Vec::new(),
-            brush: None,
-            fov: None,
-            wind: WindView::default(),
-        }
-    }
+    /// The players drawn (the full bodies, with their clips), by id.
+    players: std::collections::HashMap<u32, PlayerView>,
+    /// Whether your arms were drawn last frame.
+    arms: bool,
 }
 
 impl TerrainRenderer for Recorder {
-    type Chunk = ChunkTerrain;
-    type Section = SectionTerrain;
-    fn set_chunk(&mut self, coord: ChunkCoord, payload: Option<&ChunkTerrain>) {
+    fn set_chunk(&mut self, coord: ChunkCoord, payload: Option<&ChunkMeshes>) {
         self.terrain.set_chunk(coord, payload);
         if payload.is_some() {
             self.chunks.insert(coord);
@@ -88,7 +62,7 @@ impl TerrainRenderer for Recorder {
         id: i64,
         origin: [f64; 3],
         cell: f64,
-        payload: Option<&SectionTerrain>,
+        payload: Option<&SectionMeshes>,
     ) {
         self.terrain.set_section(id, origin, cell, payload);
         self.sections += usize::from(payload.is_some());
@@ -112,13 +86,15 @@ impl TerrainRenderer for Recorder {
 }
 
 impl Scene for Recorder {
-    fn selection(&self) -> Selection {
-        self.terrain.selection()
+    fn set_player(&mut self, id: u32, view: Option<PlayerView>) {
+        match view {
+            Some(v) => self.players.insert(id, v),
+            None => self.players.remove(&id),
+        };
     }
-    fn select(&mut self, selection: Selection) -> bool {
-        self.terrain.select(selection)
+    fn set_arms(&mut self, arms: Option<dwell_client::render::ArmsView>) {
+        self.arms = arms.is_some();
     }
-    fn set_player(&mut self, _id: u32, _view: Option<PlayerView>) {}
     fn set_camera(&mut self, eye: [f64; 3], _yaw: f64, _pitch: f64, _face: f64, _flip: f64) {
         self.camera = Some(eye);
     }
@@ -281,9 +257,12 @@ impl Rig {
         self.core.advance(1.0 / 60.0);
         for o in self.core.take_outbox() {
             if o.session == GUEST {
-                if let (Some((guest, _, _)), OutKind::Reliable(channel)) = (&mut self.guest, o.kind)
-                {
-                    guest.on_reliable(channel, &o.bytes, now);
+                match (&mut self.guest, o.kind) {
+                    (Some((guest, _, _)), OutKind::Reliable(channel)) => {
+                        guest.on_reliable(channel, &o.bytes, now);
+                    }
+                    (Some((guest, _, _)), OutKind::Datagram) => guest.on_datagram(&o.bytes, now),
+                    _ => {}
                 }
                 continue;
             }
@@ -707,78 +686,6 @@ fn a_placed_camera_views_the_world_from_there() {
 }
 
 #[test]
-fn switching_renderer_rebuilds_the_terrain_for_it_without_a_reload() {
-    // The renderer seam (RAY_MARCHED_RENDERER.md §3): the jobs make what the drawing renderers
-    // take, and a switch rebuilds every loaded chunk and LOD section from the client's own data.
-    let mut rig = Rig::new();
-    assert!(rig.run_until(60 * 30, |r| {
-        r.game
-            .as_ref()
-            .is_some_and(|g| g.debug_state().terrain_ready)
-    }));
-    rig.game
-        .as_mut()
-        .unwrap()
-        .enable_lod(dwell_client::game::LodSettings {
-            pixel_error: 2.0,
-            cache_bytes: 256 << 20,
-            detail_distance_m: None,
-            full_mode: false,
-        });
-    assert!(rig.run_until(60 * 20, |r| {
-        let s = r.scene.borrow();
-        s.terrain.raster.chunks.len() > 4 && !s.terrain.raster.sections.is_empty()
-    }));
-    assert!(
-        rig.scene.borrow().terrain.march.chunks.is_empty(),
-        "raster only: no bricks are made"
-    );
-    let loaded: Vec<ChunkCoord> = rig
-        .scene
-        .borrow()
-        .terrain
-        .raster
-        .chunks
-        .keys()
-        .copied()
-        .collect();
-
-    // Compare mode: bricks for every chunk already loaded (and the meshes kept meanwhile).
-    let compare = Selection::parse("compare", None).unwrap();
-    rig.game.as_mut().unwrap().set_renderer(compare);
-    assert!(
-        rig.scene.borrow().terrain.raster.chunks.len() >= loaded.len(),
-        "raster kept"
-    );
-    assert!(
-        rig.run_until(60 * 10, |r| {
-            let s = r.scene.borrow();
-            loaded
-                .iter()
-                .all(|c| s.terrain.march.chunks.contains_key(c))
-                && !s.terrain.march.sections.is_empty()
-        }),
-        "every loaded chunk and some sections rebuilt as bricks"
-    );
-
-    // March only: the meshes go (their GPU memory with them) and are not made again.
-    rig.game
-        .as_mut()
-        .unwrap()
-        .set_renderer(Selection::single(TerrainKind::March));
-    assert!(rig.scene.borrow().terrain.raster.chunks.is_empty());
-    assert!(rig.scene.borrow().terrain.raster.sections.is_empty());
-    rig.run_until(60, |_| false);
-    let s = rig.scene.borrow();
-    assert!(s.terrain.raster.chunks.is_empty() && s.terrain.raster.sections.is_empty());
-    assert!(
-        loaded
-            .iter()
-            .all(|c| s.terrain.march.chunks.contains_key(c))
-    );
-}
-
-#[test]
 fn sprinting_widens_the_view_for_the_renderer_and_the_lod_alike() {
     // Motion effects (Phase 29): the camera's velocity widens the FOV, and the frame's FOV is the
     // one the LOD selects with; standing still settles it back, and the menu holds it.
@@ -889,12 +796,19 @@ fn the_spyglass_narrows_the_view_for_the_renderer_and_the_lod_alike() {
     assert_eq!(lod.fov_y_deg, zoomed, "the LOD selects with the zoomed FOV");
     assert!((lod.magnification - m).abs() < 1e-9);
     assert!((lod.detail_magnification - m.min(SPYGLASS.detail_boost)).abs() < 1e-9);
+    // Your arms hide while zoomed (docs/CHARACTERS.md §9.1).
+    assert!(!rig.scene.borrow().arms, "no arms in the spyglass");
 
     // Reduced motion: out at once.
     rig.game.as_mut().unwrap().reduced_motion = true;
     rig.game.as_mut().unwrap().spyglass.toggle(&SPYGLASS);
     rig.run_until(1, |_| false);
     assert_eq!(rig.scene.borrow().fov.unwrap(), base);
+    assert!(rig.scene.borrow().arms, "the arms are back");
+    // The Show your arms setting off hides them.
+    rig.game.as_mut().unwrap().show_arms = false;
+    rig.run_until(1, |_| false);
+    assert!(!rig.scene.borrow().arms);
     let lod = rig.game.as_ref().unwrap().lod_camera().unwrap();
     assert_eq!((lod.fov_y_deg, lod.magnification), (base, 1.0));
 }
@@ -1388,4 +1302,119 @@ fn rapid_edits_and_a_refusal_reconcile_with_the_server() {
     );
     let stats = rig.game.as_ref().unwrap().prediction.stats;
     assert_eq!(stats.refused, 2);
+}
+
+/// The guest's input on its next server step: `move_y` forward, `buttons` held.
+fn guest_input(rig: &mut Rig, seq: u32, move_y: i8, buttons: u16) {
+    let (guest, _, _) = rig.guest.as_mut().unwrap();
+    guest.send_game_datagram(&dwell_protocol::Message::PlayerInput(
+        dwell_protocol::PlayerInput {
+            last_snapshot_tick: 0,
+            inputs: vec![dwell_protocol::InputFrame {
+                seq,
+                move_x: 0,
+                move_y,
+                buttons,
+                yaw: 0,
+                pitch: 0,
+            }],
+        },
+    ));
+}
+
+/// The guest's body as the host draws it.
+fn guest_body(rig: &Rig) -> Option<PlayerView> {
+    let host = rig.game.as_ref().unwrap().debug_state().player_id;
+    let scene = rig.scene.borrow();
+    scene
+        .players
+        .iter()
+        .find(|(id, _)| **id != u32::from(host))
+        .map(|(_, v)| *v)
+}
+
+/// Phase 40 C1 (docs/CHARACTERS.md §6, §9.2–9.3): client B (the host's game) draws client A (a
+/// guest sending its own inputs) as the full body, playing the clip its controller state calls
+/// for, while A walks, sprints, slides and jumps; and what each holds reaches the other.
+#[test]
+fn another_client_sees_your_body_walk_sprint_slide_and_jump_and_what_you_hold() {
+    use dwell_protocol::{Message, held_item, input_buttons};
+    let mut rig = predicting_rig(0);
+    let mut seq = 1u32;
+    // Plays `frames` frames of the guest's input; true once B draws A playing `role`.
+    let mut play = |rig: &mut Rig, frames: usize, move_y: i8, buttons: u16, role: &str| {
+        let mut seen = Vec::new();
+        for _ in 0..frames {
+            guest_input(rig, seq, move_y, buttons);
+            seq += 1;
+            rig.frame();
+            if let Some(v) = guest_body(rig) {
+                if seen.last() != Some(&v.role) {
+                    seen.push(v.role);
+                }
+                if v.role == role {
+                    return Ok(());
+                }
+            }
+        }
+        Err(seen)
+    };
+    play(&mut rig, 120, 0, 0, "idle").expect("A stands idle");
+    play(&mut rig, 180, 127, 0, "walk").expect("A walks");
+    play(&mut rig, 180, 127, input_buttons::RUN, "sprint").expect("A sprints");
+    play(
+        &mut rig,
+        60,
+        127,
+        input_buttons::RUN | input_buttons::CROUCH,
+        "slide",
+    )
+    .expect("A slides");
+    play(&mut rig, 120, 0, 0, "idle").expect("A stops");
+    play(&mut rig, 60, 0, input_buttons::JUMP, "jump").expect("A jumps");
+    play(&mut rig, 120, 0, 0, "fall").expect("then falls");
+
+    // What A holds reaches B: a block, then the brush (server ids; one registry here).
+    let stone = dwell_blocks::require("dwell:stone");
+    let (guest, _, _) = rig.guest.as_mut().unwrap();
+    guest.send_control(&Message::HeldItem(stone));
+    assert!(rig.run_until(60, |r| {
+        guest_body(r).is_some_and(|v| v.held == dwell_client::render::Held::Block(stone))
+    }));
+    let (guest, _, _) = rig.guest.as_mut().unwrap();
+    guest.send_control(&Message::HeldItem(held_item::BRUSH | stone));
+    assert!(rig.run_until(60, |r| {
+        guest_body(r).is_some_and(|v| v.held == dwell_client::render::Held::Brush(stone))
+    }));
+    // And what B holds reaches A: the host's game sends its hotbar block when it changes.
+    rig.game.as_mut().unwrap().interaction.select(0);
+    let want = rig.game.as_ref().unwrap().held();
+    let dwell_client::render::Held::Block(block) = want else {
+        panic!("the hotbar's first slot holds a block: {want:?}")
+    };
+    let host = rig.game.as_ref().unwrap().debug_state().player_id;
+    assert!(rig.run_until(60, |r| {
+        r.guest.as_ref().unwrap().2.iter().rev().any(|m| match m {
+            Message::PhysicsSnapshot(s) => s
+                .remotes
+                .iter()
+                .any(|p| p.player_id == host && p.held == block),
+            _ => false,
+        })
+    }));
+    // A's edit swings its arm on B's screen, even one the server refuses (out of reach here).
+    let (guest, _, _) = rig.guest.as_mut().unwrap();
+    guest.send_control(&Message::BlockEditRequest(
+        dwell_protocol::BlockEditRequest {
+            action: dwell_protocol::BlockEditAction::Break,
+            cell: [1000, 0, 1000],
+            face: 0,
+            material: 0,
+        },
+    ));
+    assert!(rig.run_until(60, |r| {
+        guest_body(r).is_some_and(|v| v.action == Some("break"))
+    }));
+    // Your own arms are drawn (first person, nothing zoomed).
+    assert!(rig.scene.borrow().arms);
 }

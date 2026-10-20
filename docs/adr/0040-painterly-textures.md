@@ -64,7 +64,7 @@ four octaves also reads as speckle at a distance, the noise the brief asks to av
   the registry's tile names and bakes the block tiles into `crates/dwell-mesh/src/painterly.rgba`
   and `painterly.gen.rs`, checked in. CI regenerates them, fails on a diff and runs
   `gen.test.mjs`, which adds a material by data alone.
-- `dwell-mesh` has a `TextureSet` (`Classic`, the default, and `Painterly`). One texel lookup serves
+- `dwell-mesh` has a `TextureSet` (`Classic` and `Painterly`, the default since the owner approved it on 2026-10-20). One texel lookup serves
   the atlas, cutout detection, the tile averages (LOD colours) and the hotbar swatches. Tiles the
   painterly set does not paint (`plain`, `grid`, `missing`) keep their classic painter.
 - `?textures=painterly` sets it on the page before the atlas is built, and in each meshing worker

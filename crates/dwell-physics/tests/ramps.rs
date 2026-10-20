@@ -568,9 +568,8 @@ fn walking_and_running_over_diagonal_hillsides_has_no_hang_ups_or_flicker() {
                     // A flat top with a lower edge neighbour: a ½ m face to step over.
                     if matches!(top, Top::Flat) {
                         let lower = |sx: i32, sz: i32| height(x + sx, z + sz) < height(x, z);
-                        side_faces += i32::from(
-                            lower(1, 0) || lower(-1, 0) || lower(0, 1) || lower(0, -1),
-                        );
+                        side_faces +=
+                            i32::from(lower(1, 0) || lower(-1, 0) || lower(0, 1) || lower(0, -1));
                     }
                 }
             }
@@ -602,11 +601,13 @@ fn walking_and_running_over_diagonal_hillsides_has_no_hang_ups_or_flicker() {
             }
         }
     }
-    assert!(side_faces > 50, "{side_faces} flat tops beside a lower column");
+    assert!(
+        side_faces > 50,
+        "{side_faces} flat tops beside a lower column"
+    );
     eprintln!(
         "diagonal hillsides: {} of {walks} walks failed",
         fails.len()
     );
     assert!(fails.is_empty(), "{}", fails.join("\n"));
 }
-

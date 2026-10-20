@@ -7,7 +7,7 @@
 
 use dwell_blocks::{FLUIDS, FluidId, StateId, info};
 
-use crate::{Face, cell_of_pos, face_of_y, m_of_row, m_of_rows_f};
+use crate::{FaceFrame, cell_of_pos, m_of_row, m_of_rows_f};
 
 /// The eye under a fluid's surface.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -41,10 +41,7 @@ pub fn eye_fluid(
 ) -> Option<EyeFluid> {
     let [x, y, z] = cell_of_pos(eye);
     let fluid = fluid_of(voxel(x, y, z))?;
-    let up = match face_of_y(i64::from(y)) {
-        Face::A => 1,
-        Face::B => -1,
-    };
+    let up = FaceFrame::at_row(y).sign();
     // The topmost cell of this fluid in the eye's column (toward the face's up).
     let mut top = y;
     while (top - y).abs() < SURFACE_SCAN && fluid_of(voxel(x, top + up, z)) == Some(fluid) {

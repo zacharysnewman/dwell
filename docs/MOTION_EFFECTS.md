@@ -72,8 +72,25 @@ is ≈ 123°, at 60° ≈ 84°.
 
 ## Wind (shader)
 
-Part of the shared frame's composite pass (Phase 25 A1; `render/shaders.rs` `MOTION`, uniforms
-`frame.wind_*`), applied over the composited picture only while the wind is above zero:
+Its own pass over the finished picture (`render/shaders.rs` `MOTION`, `motion_fs`; uniforms
+`frame.wind_*`), drawn only while the wind is above zero (`render/mod.rs` `motion_pass`): then the
+composite writes the finished picture into the finished image (`finished_fs`, an `rgba16float`
+target the drawing's size, made the first time and kept until a resize) and the motion pass reads it
+and draws into the canvas; with no wind the composite draws into the canvas itself (`composite_fs`).
+Under water the wind isn't drawn (the finished image as it is).
+
+**The rule: post effects that sample neighbours read the finished image.** Every per-pixel effect
+of the composite lives in one function, `composite_pixel` (the fog, the sky, the clouds, the ink;
+whatever is added later), and nothing but the dither comes after it. An effect that samples other
+pixels, like the edge blur, runs as a later pass over the image `composite_pixel` wrote and never
+composites the scene again. Then any per-pixel effect added to the composite is in its taps without
+anyone remembering it. Three times it was not: the taps re-composited the scene inline, and each new
+per-pixel effect vanished outside the blur's inner circle at speed — the clouds from below
+(0.11.19), the clouds from above (0.18.2) and the ink outline (0.20.1, the owner's 2026-10-20
+report). Shader-source tests pin the structure (`post_effects_that_sample_neighbours_read_the_finished_image`,
+`the_ink_outline_survives_the_edge_blur` in `render/shaders.rs`).
+
+The pass draws:
 
 - Thin soft streaks radiating from the **vanishing point of the velocity** (its direction projected
   into the frame's view, so strafing or falling moves it; moving away flips the flow inward), one per
@@ -85,20 +102,28 @@ Part of the shared frame's composite pass (Phase 25 A1; `render/shaders.rs` `MOT
   `sprintIntensity` at run speed, 1 at `fullMps` (log scale), smoothed by its own spring; a second,
   denser, faster and thinner layer fades in above sprint intensity (fast flight).
 - A subtle edge vignette scaled by the intensity.
-- A **radial blur** of the composited scene toward the vanishing point at the edges (`wind.blur` ×
+- A **radial blur** of the finished image toward the vanishing point at the edges (`wind.blur` ×
   intensity², so it is a flight effect): four taps jittered per pixel (smooth rather than ghosted
-  copies), sharing the pixel's view ray and its sky with the clouds (the sky is the composite's
-  costly part; over a cloudless sky of their own, the clouds faded past the blur's inner radius at
-  a hard circular edge: the owner's 2026-10-16 report). Each tap is composited as the pixel is
-  (`composited_scene`): under the pixel's clouds wherever the deck is in front of the tap's own
-  depth (the deck seen from above, over the terrain), and in the in-cloud fog. The clouds are found
-  once per pixel as a layer (`dwell_cloud_layer`) and laid over each tap; before that, the taps
-  dropped the deck in front of the terrain, so from above at speed the clouds showed only inside
-  the blur's inner circle (the owner's 2026-10-20 report; bench `clouds-above-fast`).
+  copies), each a texel of the finished image, so a tap is exactly what that pixel shows: its own
+  sky and clouds, the deck in front of the terrain, the in-cloud fog, the ink (bench
+  `clouds-above-fast`; sprinting with `?outline=creases`).
 
-**Cost** (this Mac's GPU, `fly-low-fast --unthrottled`, effects off against on in one build): the
-composite pass's GPU time p50 1.13 → 1.37 ms (mean 1.39 → 1.60 ms); frame interval unchanged
-within noise (p50 7.8 vs 7.2 ms).
+**Cost** (Apple M1, `bench --compare fly-low-fast --unthrottled`, 1280 × 720, one run each on a
+machine shared with other agents, 2026-10-20; GPU means over the flight, in ms). Before, the
+composite blurred inline, compositing four more pixels per pixel; after, the composite writes the
+finished image and the motion pass reads it (a full-screen write plus five loads per pixel):
+
+| | `gpu.composite` | `gpu.motion` | `gpu.frame` |
+| --- | --- | --- | --- |
+| inline taps, outline off | 3.62 | — | 6.56 |
+| inline taps, `creases` | 3.74 | — | 6.81 |
+| finished image, outline off | 1.64 | 2.08 | 5.02 |
+| finished image, `creases` | 1.89 | 2.39 | 5.14 |
+
+On a tile-based GPU the passes overlap, so `gpu.frame` is the measure: the separate pass is about
+1.5 ms cheaper at speed, since re-compositing a tap (tone mapping, fog, clouds) cost more than
+loading a texel. With no wind nothing changes (`idle-spawn`: `gpu.composite` 1.68 → 1.65 ms off,
+1.85 → 1.81 ms with `creases`). The finished image is 8 bytes a pixel while held.
 
 ## Settings
 

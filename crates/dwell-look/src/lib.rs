@@ -10,6 +10,7 @@ mod clouds_gen;
 pub mod daynight;
 pub mod fog;
 pub mod motion;
+pub mod outline;
 pub mod reflections;
 #[path = "reflections.gen.rs"]
 mod reflections_gen;

@@ -2,6 +2,7 @@
 
 use super::*;
 use dwell_blocks::{RenderMode, ShapeFace, require};
+use dwell_world::{ChunkCoord, FaceFrame};
 
 const UNKNOWN: u16 = 65_000;
 
@@ -342,7 +343,8 @@ fn tall_grass() -> u16 {
 fn draws_tall_grass_as_crossed_cutout_quads_from_its_data() {
     let info = dwell_blocks::info(tall_grass());
     let cross = info.cross.expect("the data gives it a cross");
-    let m = mesh(&[(4, 0, 4, grass()), (4, 1, 4, tall_grass())], false);
+    // On a cube (a natural block's top would lower it: see the sitting tests below).
+    let m = mesh(&[(4, 0, 4, cube_block()), (4, 1, 4, tall_grass())], false);
     let c = &m.cutout;
     // One quad per cross quad (4 vertices, 2 triangles), drawn once: the pipeline is two-sided.
     let quads_n = usize::from(cross.quads);
@@ -350,7 +352,7 @@ fn draws_tall_grass_as_crossed_cutout_quads_from_its_data() {
     assert_eq!(c.indices.len(), quads_n * 6);
     assert_eq!(c.plants.len(), quads_n * 4 * 4);
     // The grass block below keeps its top face: the plant hides nothing.
-    let alone = quads(&mesh(&[(4, 0, 4, grass())], false).opaque);
+    let alone = quads(&mesh(&[(4, 0, 4, cube_block())], false).opaque);
     assert_eq!(quads(&m.opaque), alone);
     assert_eq!(quads(&m.transparent), 0);
     for v in 0..c.positions.len() / 3 {
@@ -396,7 +398,7 @@ fn tall_grass_jitter_is_deterministic_by_world_position() {
     assert_ne!(here.positions, there.positions);
     // Neighbouring plants differ too, within the data's jitter.
     let field: Vec<(i32, i32, i32, u16)> = (0..8)
-        .flat_map(|x| [(x, 0, 0, grass()), (x, 1, 0, tall_grass())])
+        .flat_map(|x| [(x, 0, 0, cube_block()), (x, 1, 0, tall_grass())])
         .collect();
     let m = mesh_chunk_at(&voxels(&field), false, [0; 3])
         .expect("meshed")
@@ -1178,3 +1180,320 @@ fn a_side_tile_rule_added_by_data_alone_is_applied() {
     let faces = plus_x_tiles(&mesh_of(&[(1, 1, 1, loam)]), 2.0);
     assert_eq!(faces, [((1, 1), rect_of("sand"))]);
 }
+
+#[test]
+fn the_cutout_mesh_carries_which_vertices_take_no_ink() {
+    // Owner's report (2026-10-20, `?outline=creases`): tall grass was mostly black. Block data
+    // `outline` (cross plants default to false) reaches the frame through the cutout mesh's
+    // `bare` stream: 1 on a plant that takes no ink, 0 on a ladder, a cutout cube and a cross
+    // that says `outline: true` (`test:reed`, by data alone).
+    let ladder = require("dwell:ladder[facing=north,flooded=false]");
+    let m = mesh(
+        &[
+            (4, 0, 4, grass()),
+            (4, 1, 4, tall_grass()),
+            (6, 1, 6, ladder),
+        ],
+        false,
+    );
+    let c = &m.cutout;
+    assert_eq!(c.bare.len(), c.positions.len() / 3);
+    let plant = c.bare.iter().filter(|&&b| b == 1.0).count();
+    assert_eq!(
+        plant,
+        c.positions.len() / 3 - 4,
+        "every plant vertex, not the ladder's 4"
+    );
+    assert!(!dwell_blocks::info(tall_grass()).outline);
+    use dwell_blocks::fixture::{FLUIDS, STATES};
+    let id = |name: &str| STATES.iter().position(|s| s.name == name).expect(name) as u16;
+    let kinds = Kinds::new(&STATES, &FLUIDS, Some(id("dwell:water")));
+    for name in ["test:reed", "test:hedge"] {
+        let m = mesh_chunk_with(&kinds, &voxels(&[(1, 1, 1, id(name))]), false, [0; 3])
+            .expect("padded volume");
+        assert!(!m.cutout.bare.is_empty(), "{name}");
+        assert!(m.cutout.bare.iter().all(|&b| b == 0.0), "{name} is inked");
+    }
+}
+
+/// A cross's base vertices (the foot of its texture), in the cutout mesh's order.
+fn plant_feet(c: &MeshArrays) -> Vec<[f64; 3]> {
+    (0..c.positions.len() / 3)
+        .filter(|&v| c.uvs[v * 2 + 1] < 0.5)
+        .map(|v| vertex(&c.positions, v as u32))
+        .collect()
+}
+
+/// The height of the derived surface of the support cell `s` (chunk-local) at world (x, z), as
+/// the terrain's queries see it: `cells` read as the padded voxels.
+fn surface_under(cells: &[(i32, i32, i32, u16)], s: [i32; 3], x: f64, z: f64) -> f64 {
+    let padded = voxels(cells);
+    let at = |dx: i32, dy: i32, dz: i32| padded[padded_index(s[0] + dx, s[1] + dy, s[2] + dz)];
+    let shape = dwell_blocks::adaptive::shape_at(at, 1);
+    let span = dwell_blocks::shape::solid_span_at(
+        shape,
+        (x - f64::from(s[0])) as f32,
+        (z - f64::from(s[2])) as f32,
+    );
+    f64::from(s[1]) + f64::from(span.hi)
+}
+
+/// A 3 × 3 field of grass at row `y` around (4, 4), the plant at (4, y + 1, 4).
+fn field_with_plant(y: i32) -> Vec<(i32, i32, i32, u16)> {
+    let mut cells: Vec<_> = (3..6)
+        .flat_map(|z| (3..6).map(move |x| (x, y, z, grass())))
+        .collect();
+    cells.push((4, y + 1, 4, tall_grass()));
+    cells
+}
+
+#[test]
+fn tall_grass_sits_down_on_a_level_fields_half_height_top() {
+    // The owner (2026-10-20): over a level field (resting at half height) the plant's foot is on
+    // the drawn ground, not ½ m above it at the cell's floor.
+    let cells = field_with_plant(0);
+    let c = mesh(&cells, false).cutout;
+    let feet = plant_feet(&c);
+    assert!(!feet.is_empty());
+    for p in &feet {
+        assert!(
+            (p[1] - 0.5).abs() < 1e-5,
+            "foot at the support's top: {p:?}"
+        );
+    }
+    let lowest = (0..c.positions.len() / 3)
+        .map(|v| c.positions[v * 3 + 1])
+        .fold(f32::INFINITY, f32::min);
+    assert!((lowest - 0.5).abs() < 1e-5, "{lowest}");
+    // Its height above its foot is the data's (the whole plant moves down).
+    let cross = dwell_blocks::info(tall_grass()).cross.expect("cross");
+    let top = (0..c.positions.len() / 3)
+        .map(|v| c.positions[v * 3 + 1])
+        .fold(0.0, f32::max);
+    assert!(
+        top - 0.5 <= cross.height + 1e-5 && top - 0.5 >= cross.height * cross.height_min - 1e-5
+    );
+}
+
+#[test]
+fn tall_grass_over_an_apron_support_sits_on_its_derived_top() {
+    // The plant in the chunk's bottom row: its support lies in the apron, whose shape the mesher
+    // otherwise only approximates. The field rests at half height there too.
+    let cells = field_with_plant(-1);
+    for p in plant_feet(&mesh(&cells, false).cutout) {
+        assert!((p[1] + 0.5).abs() < 1e-5, "{p:?}");
+    }
+}
+
+#[test]
+fn tall_grass_over_a_slope_follows_its_height_under_each_foot() {
+    // A ramp: the field's support rises toward +x (a block on the field's +x side, one higher).
+    let mut cells = field_with_plant(0);
+    for z in 3..6 {
+        cells.push((5, 1, z, grass()));
+    }
+    let c = mesh(&cells, false).cutout;
+    let feet = plant_feet(&c);
+    let mut heights = Vec::new();
+    for p in &feet {
+        let want = surface_under(&cells, [4, 0, 4], p[0], p[2]);
+        assert!((p[1] - want).abs() < 1e-4, "{p:?} want {want}");
+        heights.push(p[1]);
+    }
+    assert!(
+        heights.iter().any(|&h| (h - heights[0]).abs() > 0.05),
+        "the feet follow the slope: {heights:?}"
+    );
+}
+
+#[test]
+fn tall_grass_on_a_full_cube_is_unchanged() {
+    let c = mesh(&[(4, 0, 4, cube_block()), (4, 1, 4, tall_grass())], false).cutout;
+    for p in plant_feet(&c) {
+        assert!((p[1] - 1.0).abs() < 1e-6, "{p:?}");
+    }
+}
+
+#[test]
+fn tall_grass_follows_its_support_when_a_neighbour_reshapes_it() {
+    // Level field: the foot at half height. A block put beside the support at the plant's row
+    // makes the support a ramp; one on the support's other side too makes it full height there.
+    let mut cells = field_with_plant(0);
+    let flat = plant_feet(&mesh(&cells, false).cutout);
+    assert!(flat.iter().all(|p| (p[1] - 0.5).abs() < 1e-5));
+    cells.push((5, 1, 4, cube_block()));
+    let ramp = plant_feet(&mesh(&cells, false).cutout);
+    assert_ne!(flat, ramp, "re-meshed with the new support");
+    for p in &ramp {
+        let want = surface_under(&cells, [4, 0, 4], p[0], p[2]);
+        assert!((p[1] - want).abs() < 1e-4, "{p:?} want {want}");
+    }
+    assert!(ramp.iter().any(|p| p[1] > 0.5 + 0.05));
+}
+
+#[test]
+fn tall_grass_on_face_b_sits_on_its_support_too() {
+    // Meshed mirrored: the field rests half a cell from its floor toward the plant, and the
+    // plant's foot is there, ½ below the cell's mirrored floor.
+    let mut cells: Vec<_> = (3..6)
+        .flat_map(|z| (3..6).map(move |x| (x, 5, z, grass())))
+        .collect();
+    cells.push((4, 4, 4, tall_grass()));
+    for p in plant_feet(&mesh(&cells, true).cutout) {
+        assert!((p[1] - 5.5).abs() < 1e-5, "{p:?}");
+    }
+}
+
+#[test]
+fn a_plant_that_does_not_sit_on_its_support_keeps_to_its_cells_floor_by_data_alone() {
+    // shared/blocks/fixtures/test.json's `test:reed` says `"sitOnSupport": false`; the fixture's
+    // tall grass keeps the default. Both over the same level field.
+    use dwell_blocks::fixture::{FLUIDS, STATES};
+    let id = |name: &str| STATES.iter().position(|s| s.name == name).expect(name) as u16;
+    let (reed, plant, ground, water) = (
+        id("test:reed"),
+        id("dwell:tall_grass"),
+        id("dwell:grass[flooded=false]"),
+        id("dwell:water"),
+    );
+    // The fixture keeps the build's blocks first (adaptive shapes read the build's table).
+    assert_eq!(
+        STATES[usize::from(ground)].name,
+        dwell_blocks::STATES[usize::from(ground)].name
+    );
+    let kinds = Kinds::new(&STATES, &FLUIDS, Some(water));
+    let feet_of = |p: u16| {
+        let mut cells: Vec<_> = (3..6)
+            .flat_map(|z| (3..6).map(move |x| (x, 0, z, ground)))
+            .collect();
+        cells.push((4, 1, 4, p));
+        plant_feet(
+            &mesh_chunk_with(&kinds, &voxels(&cells), false, [0; 3])
+                .expect("padded volume")
+                .cutout,
+        )
+    };
+    let reed_feet = feet_of(reed);
+    assert!(!reed_feet.is_empty());
+    assert!(
+        reed_feet.iter().all(|p| (p[1] - 1.0).abs() < 1e-6),
+        "{reed_feet:?}"
+    );
+    assert!(feet_of(plant).iter().all(|p| (p[1] - 0.5).abs() < 1e-5));
+}
+
+// --- Face parity (BIFACIAL_WORLD.md §11) --------------------------------------------------------
+
+/// A generated face-A chunk and its apron copied onto `f`'s face as the face-local mirror image,
+/// then gathered as the client does (padded from the world) and meshed for that face.
+fn mesh_on_face(source: &mut dwell_world::VoxelWorld, c: ChunkCoord, f: FaceFrame) -> ChunkMeshes {
+    let mut world = dwell_world::VoxelWorld::new(dwell_world::empty_generator(), None);
+    let n = CHUNK_SIZE;
+    let o = [c.x * n, c.y * n, c.z * n];
+    for y in -1..=n {
+        for z in -1..=n {
+            for x in -1..=n {
+                let m = source.get_voxel(o[0] + x, o[1] + y, o[2] + z);
+                let [wx, wy, wz] = f.cell([o[0] + x, o[1] + y, o[2] + z]);
+                world.set_voxel(wx, wy, wz, f.state(m));
+            }
+        }
+    }
+    let wc = f.chunk(c);
+    let padded = world.padded_block(wc, 1);
+    let mirror = FaceFrame::at_chunk_y(wc.y).is_b();
+    assert_eq!(mirror, f.is_b());
+    mesh_chunk_at(&padded, mirror, [wc.x * n, wc.y * n, wc.z * n]).expect("padded")
+}
+
+/// Positions and normals turned into the face-local frame (y within the chunk mirrored on B,
+/// triangles re-wound), so meshes of the two faces compare.
+fn local_mesh(f: FaceFrame, mut m: MeshArrays) -> MeshArrays {
+    if f.is_b() {
+        for p in m.positions.iter_mut().skip(1).step_by(3) {
+            *p = CHUNK_SIZE as f32 - *p;
+        }
+        for v in m.normals.iter_mut().skip(1).step_by(3) {
+            *v = -*v;
+        }
+        for t in m.indices.chunks_exact_mut(3) {
+            t.swap(1, 2);
+        }
+    }
+    m
+}
+
+dwell_world::both_faces!(
+    /// The chunk mesher draws a face-B chunk as the exact mirror image of the face-A chunk it
+    /// mirrors — terrain shapes, grass skirts, plants (their jitter too), trees, water and shores —
+    /// gathered from the world the way the client gathers it.
+    fn a_chunk_meshes_the_same_face_local_on_either_face(f: FaceFrame) {
+        let g = dwell_worldgen::generator_for(dwell_world::GENERATOR_TERRAIN, 7);
+        let air = dwell_worldgen::air_test_for(dwell_world::GENERATOR_TERRAIN, 7);
+        let mut source = dwell_world::VoxelWorld::new(g, Some(air));
+        let spawn = dwell_worldgen::spawn_point_for(dwell_world::GENERATOR_TERRAIN, 7);
+        let at = |x: f64, y: f64, z: f64| {
+            ChunkCoord::new(
+                (x / 32.0).floor() as i32,
+                (y / 32.0).floor() as i32,
+                (z / 32.0).floor() as i32,
+            )
+        };
+        let s = at(spawn[0], spawn[1] - 1.0, spawn[2]);
+        let mut chunks = vec![
+            s,
+            ChunkCoord::new(s.x + 1, s.y, s.z),
+            ChunkCoord::new(s.x, s.y, s.z - 1),
+        ];
+        // A shore: the first column east of the spawn at sea level.
+        let t = dwell_worldgen::BifacialTerrain::new(7);
+        let local = t.local(dwell_world::Face::A);
+        let mut x = spawn[0] as i32;
+        while local.column_at(x, spawn[2] as i32).height >= dwell_world::SEA_LEVEL as f32 {
+            x += 8;
+        }
+        chunks.push(at(
+            f64::from(x),
+            f64::from(dwell_world::SEA_LEVEL) - 1.0,
+            spawn[2],
+        ));
+        for c in chunks {
+            let a = mesh_on_face(&mut source, c, FaceFrame::A);
+            let b = mesh_on_face(&mut source, c, f);
+            assert!(!a.opaque.indices.is_empty(), "{c:?} is empty");
+            for (name, ma, mb) in [
+                ("opaque", a.opaque, b.opaque),
+                ("transparent", a.transparent, b.transparent),
+                ("cutout", a.cutout, b.cutout),
+            ] {
+                let mb = local_mesh(f, mb);
+                for (field, x, y) in [
+                    ("positions", &mb.positions, &ma.positions),
+                    ("normals", &mb.normals, &ma.normals),
+                    ("colors", &mb.colors, &ma.colors),
+                    ("uvs", &mb.uvs, &ma.uvs),
+                    ("tiles", &mb.tiles, &ma.tiles),
+                    ("plants", &mb.plants, &ma.plants),
+                    ("bare", &mb.bare, &ma.bare),
+                    ("fluids", &mb.fluids, &ma.fluids),
+                ] {
+                    // To float rounding: the mirror's positions are turned in f64 and back.
+                    let i = x
+                        .iter()
+                        .zip(y.iter())
+                        .position(|(p, q)| (p - q).abs() > 1e-4);
+                    assert!(
+                        x.len() == y.len() && i.is_none(),
+                        "{c:?} {name} {field}: {:?} lens {} {} at {i:?}: {:?} vs {:?}",
+                        f.face,
+                        x.len(),
+                        y.len(),
+                        i.map(|i| &x[i.saturating_sub(3)..(i + 3).min(x.len())]),
+                        i.map(|i| &y[i.saturating_sub(3)..(i + 3).min(y.len())])
+                    );
+                }
+                assert_eq!(mb.indices, ma.indices, "{c:?} {name} indices: {:?}", f.face);
+            }
+        }
+    }
+);

@@ -25,7 +25,7 @@ the frame's real cost rather than 16.7 ms), `--base URL` (a served build; by def
 `vite preview` on :4173 or starts one; the server's root or the build's `…/dwell/`), `--out DIR`
 (default `bench/out/<timestamp>`, ignored by git), `--file FILE` (another scenarios file, e.g. a
 throwaway one in a scratch directory), `--compare` with `--configs A,B` and `--configs-file FILE`
-(each scenario once per renderer configuration, side by side: below).
+(each scenario once per configuration, side by side: below).
 
 By default it drives the **installed Google Chrome, headed, on the machine's GPU** (Metal on a Mac),
 which is what players run. Each scenario runs in a fresh browser context and local world
@@ -57,9 +57,9 @@ Output per scenario, in `OUT/<scenario>/`:
 `fog`, `detail`, `exposure`, `clouds`, `water`, `motion` and `timeOfDay` (0–1, 0 midnight: `?time=`) —
 `{ "speedEffects": false }` turns the motion effects off, for a before/after of their cost in one
 build),
-`debug` (`?debug=1`), `scale`, `renderer` (`?renderer=`: a renderer by name; a build without the
-renderer switch ignores it) and `split` (`near` or `far`: which part of the view it measures, for
-`--compare`'s split) are optional. Steps (`scripts/scenarios.ts`, checked: unknown
+`debug` (`?debug=1`), `scale`, `split` (`near` or `far`: which part of the view it measures, for
+`--compare`'s split) and `face` (`"b"`: the player spawns on face B, the dev link `?spawn=b` —
+BIFACIAL_WORLD.md §11; default `"a"`) are optional. Steps (`scripts/scenarios.ts`, checked: unknown
 fields, ranges and names fail with the entry named):
 
 | Step | Does |
@@ -68,6 +68,8 @@ fields, ranges and names fail with the entry named):
 | `key {code, down}`, `hold {code, s}` | presses/releases a key (`KeyboardEvent.code`), or holds it for `s` |
 | `look {yaw, pitch}` | turns the player's look (degrees; yaw 0 = +Z, 90 = +X) |
 | `fly {on}`, `flySpeed {level}` | creative flight and its speed level (L flies at ≥ 11 × 2^(L/2) m/s: 6 ≈ 88, 8 ≈ 176) |
+| `puppets {count, at?, face?, held?}` | stand-in players (`__dwell.puppets`): `count` full bodies (≤ 256) in rows ahead of the player's feet offset by `at`, on `face` (1, or −1 for face B), each walking a small circle with a clip of its own (walk, sprint, slide, crouch, idle, jump, swim, climb), holding the hotbar's block with `held`; 0 removes them. For the frame cost of N bodies and screenshots of every clip without N clients ([`CHARACTERS.md`](./CHARACTERS.md)) |
+| `arms {on}` | your first-person arms shown or hidden (the Show your arms setting, this page only) |
 | `spyglass {on, step?}` | the spyglass zoomed to a step (0 the least, `shared/look/spyglass.json`) or out ([`SPYGLASS.md`](./SPYGLASS.md)); `spyglass-far` shoots far terrain unzoomed and at each step |
 | `camera {position, yaw, pitch, aroundPlayer?}`, `releaseCamera` | places the camera (the player stays), or returns it; with `aroundPlayer`, x and z are offsets from the player's feet (y absolute): a view wherever a flight ended, where the chunks are streamed |
 | `edit {action}`, `select {slot}` | break/place at the crosshair; picks a hotbar slot |
@@ -81,53 +83,42 @@ fields, ranges and names fail with the entry named):
 | `water {quality?, debug?}` | sets the water quality (`low`, `medium`, `high`) and/or its cost-isolation switches (`?waterdbg=` names, `""` for none) mid-run, through `__dwell.setWater` |
 | `repeat {times, steps}` | runs `steps` `times` times (e.g. `edit-burst`'s 300 edits); no `mark`, `record`, `shot`, `timelapse` or trace steps inside |
 
-Scenarios for the renderer comparison ([`RAY_MARCHED_RENDERER.md`](./RAY_MARCHED_RENDERER.md)
-§5), besides `idle-spawn`, `fly-low-fast`, `fly-low-faster` and `jump-onto-block`: `look-horizon`
+Scenarios for comparing configurations, besides `idle-spawn`, `fly-low-fast`, `fly-low-faster` and
+`jump-onto-block`: `look-horizon`
 (grazing view along the ground; far), `look-down` (near), `edit-burst` (300 place/break edits;
 near), `fly-high` (about 540 m up, flying; far) and `thermal-10min` (phone-oriented: ten minutes of
 flight round a square, its first and last minute recorded, for thermal throttling).
 
-## Comparing renderers (`--compare`)
+## Comparing configurations (`--compare`)
 
 ```sh
 npm run bench -- --compare idle-spawn look-horizon [--configs raster-half] [--configs-file F]
 ```
 
 Runs each scenario once per **configuration** (`client/bench/configs.json`, checked by
-`scripts/configs.ts`: unknown fields, ranges, upscaler names and duplicate names fail with the entry
-named), each in a fresh page on the same seed and inputs. A configuration is a renderer, a scale
-and an upscaler, passed as `?renderer=`, `?scale=` and `?upscaler=` (the last only for the
-marcher's `fsr1`, `bilateral` and `taa-u`, which keep the canvas at full size and render the march
-at the scale; `bilinear` is the browser stretching a scaled canvas, today's `?scale=`):
+`scripts/configs.ts`: unknown fields, ranges and duplicate names fail with the entry named), each in
+a fresh page on the same seed and inputs. A configuration is a scale (`?scale=`: the browser
+stretching a scaled canvas) and page parameters (`params`: dev switches such as `?outline=`):
 
-| Config | Renderer | Scale | Upscaler |
-| --- | --- | --- | --- |
-| `raster` (baseline) | raster | 1 | none |
-| `painterly` | raster, with `?textures=painterly` (PAINTERLY_TEXTURES.md) | 1 | none |
-| `raster-half` | raster | 0.5 | bilinear |
-| `march` | march | 1 | none |
-| `march-half-fsr` | march | 0.5 | fsr1 |
-| `march-075-fsr` | march | 0.75 | fsr1 |
-| `march-half-bilateral` | march | 0.5 | bilateral |
-| `march-half-taa` | march | 0.5 | taa-u |
-| `march-075-taa` | march | 0.75 | taa-u |
+| Config | Scale | Params |
+| --- | --- | --- |
+| `raster` (baseline) | 1 | — |
+| `painterly` | 1 | `?textures=painterly` (PAINTERLY_TEXTURES.md) |
+| `outline-silhouette`, `outline-creases`, `outline-blocks` | 1 | `?outline=` (ART_DIRECTION.md §7) |
+| `raster-half` | 0.5 | — |
 
-**Support:** the first run (the baseline's) asks the page what it offers — `__dwell.renderers()` and
-`__dwell.upscalers()`, each a list of names; a build without them offers `raster` and the browser's
-stretch only. Configurations the build can't run are **skipped with the reason** in the printed
-report and `compare.json` (today: the `taa-u` entries, which A5 builds;
-`renderers()` lists `march` because `render/march`'s `BUILT` is true), not failed. A new configuration is one entry in the file; `baseline` names the one the others are
-compared with and `deltaE` the colour threshold (CIE76, default 2.3, about just noticeable).
+A new configuration is one entry in the file; `baseline` names the one the others are compared
+with and `deltaE` the colour threshold (CIE76, default 2.3, about just noticeable).
 
 Output, in `OUT/`:
 
-- `<scenario>/<config>/`: each run's `report.json` (with its page address and the build's support),
+- `<scenario>/<config>/`: each run's `report.json` (with its page address),
   screenshots and traces, as a normal run's.
 - `<scenario>/<shot>.<config>.side.png`: the baseline left, the configuration right;
   `<shot>.<config>.diff.png`: a heatmap of per-pixel ΔE (dim grey: equal; blue: under the
   threshold; red to yellow to white: over it, white at four times it). Stats per shot: identical %,
   % over the threshold, mean, p99 and max ΔE.
-- `compare.json`: the configurations run and skipped, the build's support, per scenario and
+- `compare.json`: the configurations run, per scenario and
   `record` step and configuration the metrics below, the shot diffs, each `settle`'s seconds, page
   errors, and `splits`: per `near`/`far` split and configuration, the worst interval p95/p99 and the
   dropped frames over its scenarios' records.
@@ -152,55 +143,13 @@ upload bytes (total and per frame), chunks and sections; streaming: whether the 
 had anything left to generate, mesh or ask for at the record (and what), and each `settle`'s time
 (the first: time to a complete view after spawn).
 
-**TODO — edit-to-visible latency** (RAY_MARCHED_RENDERER.md §5): the telemetry can't tie a frame's uploads to
+**TODO — edit-to-visible latency**: the telemetry can't tie a frame's uploads to
 the edit that caused them (an edit is a request to the server, the reply re-meshes the chunk in a
 worker, and the upload is counted per frame), so it isn't measured yet. It needs an edit sequence
 number carried through the remesh and a telemetry sample (`edit.visible`, ms from the request to the
-first frame drawn with its mesh), which the renderers record the same way.
+first frame drawn with its mesh).
 
-Not image agreement by cell id, face or depth in the bench yet: the bench compares screenshots'
-colour only. In-game compare mode's difference view (below) compares coverage, view depth and
-colour on the GPU. The marcher writes a cell id + face target (`MarchRenderer::id_view`, ids from
-`render/march/wgsl.rs` `cell_id`); the raster side has none yet, so the difference view still
-compares coverage, not ids.
-
-## Renderer switch and compare mode (local builds)
-
-The renderer seam ([`RAY_MARCHED_RENDERER.md`](./RAY_MARCHED_RENDERER.md) §3, §5; ARCHITECTURE.md
-§5 `render/`). **Local builds only** (dev server, `vite preview`, the bench): `__RENDERER_SWITCH__`
-(vite.config.ts) is off in the release workflow's builds (`DWELL_VERSION` set; force it with
-`DWELL_RENDERER_SWITCH=0|1`), where `?renderer=` is ignored and the mesher draws.
-
-- `?renderer=raster|march|compare` picks the terrain renderer; compare mode puts raster on the left
-  and, by default, the marcher on the right — `?compare=raster` puts raster on **both** sides (the
-  check that compare mode itself adds no difference). The marcher is the GPU ray marcher
-  (`render/march/`, A3b): it marches the whole screen and its copy pass fills its side.
-  `?marchbeam=0` turns off its beam prepass and `?marchtemporal=0` its temporal start (A4b; the
-  bench's `march-nobeam` and `march-notemporal` configurations); `?marchmoving=0` keeps the
-  temporal start to a still eye, `?marchreuse=0` marches every frame even when nothing changed,
-  `?marchsteep=0` searches the columns in every mixed brick (A4c; `march-a4b` is all three,
-  `march-noreuse` and `march-nosteep` one each). Those
-  technique configurations (`march-nobeam`, `march-notemporal`, `march-a4b`, `march-noreuse`,
-  `march-nosteep`) all march every frame, so views with the camera still measure the march, not a
-  kept frame: compare them with `march-noreuse`.
-- The settings menu's foot shows the renderer and a picker that switches it at runtime (no reload:
-  the terrain is rebuilt from the voxels and LOD cells held). F3 shows `renderer …` before the
-  render stats.
-- Keys (controls.ts): **F7** cycles split → blink → difference; **F8** blinks (swaps the side
-  shown); in split view drag the divider. A label per side shows its renderer, CPU time, GPU time
-  (`gpu.far`+`gpu.near`, `gpu.right.far`+`.near` for a raster right side, `gpu.march`), GPU memory,
-  scale and upscaler. Compare mode's timings carry both renderers' cost: use the bench for decisions.
-- Difference view: red where one side covers the pixel and the other doesn't, orange where view
-  depth differs by more than 1e-3 relative, yellow where the composited colours differ by ΔE > 2.3,
-  grey (the left side, dimmed) where they agree. The counts are read back:
-  `__dwell.compare().difference` is `{ pixels, coverage, depth, colour }` (a frame or two late).
-- Hooks: `__dwell.renderers()` and `upscalers()` (what the build offers, for `bench --compare`),
-  `renderer()`, `setRenderer(name, compare?)`, `compare()` (view, divider, overlay lines, the
-  difference counts; null outside compare mode), `setCompare(view?, divider?)`.
-
-Zero-difference check (Phase 25's A2 exit): open `?renderer=compare&compare=raster`, then
-`__dwell.setCompare('difference')`; after a frame or two `__dwell.compare().difference` reads 0 in
-every class.
+The bench compares screenshots' colour only.
 
 Kept scenarios include `idle-spawn`, `fly-low-fast`, `fly-low-faster`, `jump-onto-block`,
 `jump-in-place`, and the motion effects' `sprint-straight` (shots standing, mid-sprint and after) and
@@ -218,7 +167,7 @@ call site:
 - **Event samples** — `telemetry::sample(name, value)`: one value per event (a job's time); the
   last 16384 per name.
 - **Counters** — `telemetry::count(name, n)`: running totals.
-- **Controller ticks** — one `TickSample` per predicted tick: feet, velocity, state, grounded,
+- **Controller ticks** — one `TickSample` per predicted tick: feet, velocity, the camera's eye height (`eye`, after the step view's smoothing), state, grounded,
   crouched, wall and ceiling contact, the input's movement, jump and crouch; the last 3600.
 
 What is recorded now:
@@ -237,10 +186,7 @@ What is recorded now:
 | `gpu.water.tiles` (samples) | the water's noise tile (once) and caustic layers (each Medium/High frame with water; `render/water_tiles.rs`) |
 | `upload.chunk`, `upload.section`, `upload.chunks`, `upload.sections`, `upload.bytes` | creating GPU buffers for chunk and LOD section meshes, how many, and their bytes |
 | `job.<kind>.wait`, `job.<kind>.run` (samples) | per job kind (`chunk`, `chunk_mesh`, `bounds`, `section`, `section_mesh`, `verify`, `map`, `diff`): time queued in the pool before a worker had room; time from posting it to a worker until its result was polled (the worker's run, the transfers and the wait for the next frame) |
-| `gpu.march` (samples) | The ray marcher's GPU time (A3b): from the start of its compute pass to the end of the pass that copies its output into the shared frame's targets (`render/march/renderer.rs`); on the `?marchtest=1` page, the compute pass alone |
-| `march.steps.p50`, `.p95`, `.p99`, `.max`, `.mean`, `.capped` (samples) | Steps per ray as the GPU counted them: every 30th frame (`MarchSettings::histogram_every`) the march adds each ray's step count to an atomic histogram (1,025 bins, steps 0–1,024, then capped, hits, misses: `render/march/stats.rs`), copied to a readback buffer and summarised when it maps (nearest-rank percentiles; `capped` is the share of rays that reached the step cap). One sample per histogram read |
-| `upload.march.bytes`, `march.pool_full` (counters) | Bytes the marcher wrote to its GPU buffers (only the dirty slots, nodes, column grids and pool ranges); builds refused because the pool would pass its binding's limit |
-| `gpu.far`, `gpu.near`, `gpu.far.water`, `gpu.near.water`, `gpu.composite`, `gpu.frame` (samples) | GPU time of each render pass (the far and near scene passes — on Medium and High water, their opaque halves, with their water halves as `gpu.*.water`, WATER_RENDERING.md §8 W3 — the composite with the lines over it) and of the whole frame (the far pass's start to the composite's end), from timestamp queries (`render/timing.rs`), one sample per timed frame, read back a frame or two later. Only where the adapter has `timestamp-query`. On tile-based GPUs (Apple, phones) passes overlap, so the passes can add up to more than `gpu.frame` |
+| `gpu.far`, `gpu.near`, `gpu.far.water`, `gpu.near.water`, `gpu.arms`, `gpu.composite`, `gpu.motion`, `gpu.frame` (samples) | GPU time of each render pass (the far and near scene passes, your first-person arms' pass (CHARACTERS.md; it resolves the frame's colour when drawn) — on Medium and High water, their opaque halves, with their water halves as `gpu.*.water`, WATER_RENDERING.md §8 W3 — the composite with the lines over it, or, while the wind is on, the composite into the finished image and the motion pass with the lines, MOTION_EFFECTS.md) and of the whole frame (the far pass's start to the composite's end), from timestamp queries (`render/timing.rs`), one sample per timed frame, read back a frame or two later. Only where the adapter has `timestamp-query`. On tile-based GPUs (Apple, phones) passes overlap, so the passes can add up to more than `gpu.frame` |
 
 Timer resolution: without cross-origin isolation the browser's clock is coarsened to 0.1 ms, so
 sub-0.1 ms phases read 0 or 0.1. Chrome rounds GPU timestamps to 65.536 µs unless it runs with
@@ -252,42 +198,6 @@ shows every cutout mesh, for an A/B of their cost at one camera pose.
 
 From the console: `__dwell.telemetry()`, `__dwell.telemetryFrames()`, `__dwell.ticks()`,
 `__dwell.telemetryReset()` (types in `client/src/main.ts`).
-
-## The marcher's pages (local builds)
-
-- **`?marchtest=1`** (`client/src/debug/marchTest.ts`, `crates/dwell-client/src/web/march_test.rs`):
-  a generated world drawn by the ray marcher alone, without the game. The job workers generate the
-  chunks around the spawn (`chunks`, default radius 6, ±3 rows) and the LOD sections of levels 1 to
-  `levels` (default 12, radius `sections`, default 6), then build their bricks; `seed`, `workers`,
-  `x,y,z,yaw,pitch` and `hud=0` are optional. `window.__march`: `setCamera(x, y, z, yaw, pitch)`,
-  `configure(stepCap, lodPixels, columns, distances)`, `spawn()`, `pending()` (jobs left),
-  `stats()` (chunks, sections, nodes, pool and GPU MiB, the last steps histogram, `gpu.*`),
-  `telemetryReset()`.
-- **The GPU-vs-reference check** (`render/march/check.rs`): 12 crafted views rendered at 64² and
-  every ray marched again on the CPU with the GPU's own direction. Natively
-  `cargo test -p dwell-client the_gpu_marcher_matches` (on macOS on the Metal GPU; skipped where no
-  GPU adapter is found), and in the browser `npm run build:probe && npm run e2e:webgpu`
-  (`client/e2e-webgpu/march.spec.ts`, headless SwiftShader, port 4190; CI runs it).
-- **The marcher's native profile** (`render/march/perf.rs`, an ignored test): seed 7's spawn
-  generated (chunks and LOD sections as the game streams them), marched at 1280×720 from the
-  bench's views, timed with timestamp queries (march and shade passes), with the GPU's steps
-  histogram: `cargo test --release -p dwell-client march_perf -- --ignored --nocapture`.
-  `DWELL_PERF_VARIANTS='a=@file.wgsl;b=0'` times shader variants (a march module from a file,
-  `DWELL_PERF_DUMP=path` writes the current one to start from, and the beam module to
-  `path.beam`; a variant's `file.wgsl.beam` beside it, if there is one, replaces the beam module; a
-  name starting `noshade` skips the shade pass, `beamonly` times the beam prepass alone, and one
-  containing `nobeam`, `notemporal`, `still`, `nocolumns`, `nodistances`, `nosteep` or `reuse`
-  turns off the beam prepass, the temporal start, the temporal start while moving, the column
-  grids, the brick distances or the column search's slope rule, or keeps unchanged frames (off by
-  default here: the harness draws one view again and again); `lod8` sets the cone LOD's pixel
-  error to 8), each view's line also gives the beam
-  pass's own time (min/p50), `DWELL_PERF_MOVE=m` moves the eye `m` metres to the right every
-  frame, `DWELL_PERF_CHECK=1` marches every pixel on the CPU from the eye after drawing the view
-  (and a turned one before it, from an eye a frame's move away) and counts starts that pass a hit
-  (must be 0) and outcomes the start changes, `DWELL_PERF_ROUNDS=n` interleaves them in rounds (a shared GPU drifts),
-  `DWELL_PERF_IMAGES=dir` writes a steps-per-ray heatmap (PGM) per view and prints steps per
-  8×4 SIMD group, `DWELL_PERF_SIZE=WxH`, `DWELL_PERF_SEED`. Naga's Metal output, not Chrome's
-  Tint: the bench is the measurement, this the quick loop.
 
 ## Interactive use
 
@@ -321,6 +231,6 @@ crate's artifacts the same wherever it is, so sharing one directory mixes the tw
 `?waterdbg=caustics,foam` (names from `render/water.rs` `DEBUG_SWITCHES`: `ripple0`–`ripple2`, `glint`, `sky`,
 `refraction`, `absorption`, `caustics`, `foam`, `sparkle`, `under`, `flat`, `all`) turns pieces of the water's
 shading off, to attribute `gpu.*.water` and `gpu.frame` to them; a `--compare` configuration can set it with
-`params` (`{ "name": "no-caustics", "renderer": "raster", "params": { "waterdbg": "caustics" } }`), and a
+`params` (`{ "name": "no-caustics", "params": { "waterdbg": "caustics" } }`), and a
 scenario's `water` step switches it mid-run. On a GPU shared with other processes, compare a pass's `min` (in
 every summary) rather than its p50. WATER_RENDERING.md §8 ("Cost") has the method and the numbers.

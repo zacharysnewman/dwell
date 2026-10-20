@@ -20,15 +20,12 @@ use wasm_bindgen_futures::{JsFuture, spawn_local};
 
 use super::jobs::WebJobs;
 use super::transport::{TransportEvent, WebRtcConn, WebTransportConn};
-use crate::game::Scene;
 use crate::game::{DayOverride, Game, LodSettings, Send};
 use crate::net::netsim::{Direction, NetConditions, parse_net_conditions};
 use crate::net::sdp::WebRtcInvite;
 use crate::net::session::{Out, Session, SessionState};
 use crate::pool::Pool;
 use crate::render::Renderer;
-use crate::render::compare::CompareView;
-use crate::render::seam::{Selection, TerrainKind};
 use crate::telemetry;
 
 /// The most cells `Client::voxels` reads at once (about 2 M: a 128³ box).
@@ -218,13 +215,7 @@ struct Options {
     netsim: Option<NetConditions>,
     /// `?time=`, `?moon=`, `?timespeed=` (the day/night cycle's dev switches).
     day: DayOverride,
-    /// The renderer switch (`?renderer=`, compare mode): local builds only (the shell's build-time
-    /// flag, RAY_MARCHED_RENDERER.md §3); deployed builds keep the mesher.
-    renderer_switch: bool,
-    /// The marcher's render scale and upscaler (`marchScale`, `upscaler`: local builds).
-    march_scale: f32,
-    upscaler: crate::render::march::upscale::Upscaler,
-    /// The page's query, for the march's dev switches (`MarchSettings::apply_query`).
+    /// The page's query, for the dev switches read from it (`?textures=`, `?outline=`).
     search: String,
 }
 
@@ -259,6 +250,8 @@ struct Inner {
     fov_setting: f64,
     /// The browser asks for reduced motion (the spyglass zooms at once).
     reduced_motion: bool,
+    /// The Show your arms setting (docs/CHARACTERS.md §5).
+    show_arms: bool,
 }
 
 fn shell_event(kind: &str, value: impl Into<JsValue>) -> JsValue {
@@ -277,8 +270,7 @@ pub struct Client {
 impl Client {
     /// Starts WebGPU on the canvas. Rejects when WebGPU is unavailable (the shell shows its
     /// "unsupported" screen). `options`: `{ displayName, clientVersion, makeWorker() → Worker,
-    /// workers, lod, lodColors, fullChunks, netsim, search, rendererSwitch, renderer, compare }`
-    /// (`renderer`, `compare`: `?renderer=` and `?compare=`, taken only with `rendererSwitch`).
+    /// workers, lod, lodColors, fullChunks, netsim, search }`.
     pub async fn create(
         canvas: web_sys::HtmlCanvasElement,
         options: JsValue,
@@ -300,25 +292,11 @@ impl Client {
             full_chunks: get("fullChunks").as_bool().unwrap_or(false),
             netsim: parse_net_conditions(get("netsim").as_string().as_deref()),
             day: DayOverride::from_query(&get("search").as_string().unwrap_or_default()),
-            renderer_switch: get("rendererSwitch").as_bool().unwrap_or(false),
-            march_scale: get("marchScale").as_f64().unwrap_or(1.0) as f32,
-            upscaler: get("upscaler")
-                .as_string()
-                .and_then(|u| crate::render::march::upscale::Upscaler::parse(&u))
-                .unwrap_or_default(),
             search: get("search").as_string().unwrap_or_default(),
         };
         // `?textures=painterly` (docs/PAINTERLY_TEXTURES.md): chosen before the atlas is built; the
         // meshing workers get it in their init message (web/jobs.rs).
         dwell_mesh::set_texture_set(dwell_mesh::TextureSet::from_query(&options.search));
-        let selection = options
-            .renderer_switch
-            .then(|| {
-                let renderer = get("renderer").as_string()?;
-                Selection::parse(&renderer, get("compare").as_string().as_deref())
-            })
-            .flatten()
-            .unwrap_or_default();
         let (width, height) = (canvas.width().max(1), canvas.height().max(1));
         let mut desc = wgpu::InstanceDescriptor::new_without_display_handle();
         desc.backends = wgpu::Backends::BROWSER_WEBGPU;
@@ -367,11 +345,8 @@ impl Client {
         renderer.set_adapter(device_type);
         renderer.resize(width, height, 1.0);
         renderer.set_lod_level_colors(options.lod_colors);
-        renderer.select(selection);
-        if options.renderer_switch {
-            renderer.set_march_resolution(options.march_scale, options.upscaler);
-            renderer.set_march_query(&options.search);
-        }
+        // `?outline=<mode>` (docs/ART_DIRECTION.md §7): the ink outline, off without it.
+        renderer.set_outline_query(&options.search);
         let inner = Inner {
             _instance: instance,
             _adapter: adapter,
@@ -401,6 +376,7 @@ impl Client {
             menu_open: false,
             fov_setting: dwell_lod::frustum::VERTICAL_FOV,
             reduced_motion: false,
+            show_arms: true,
         };
         Ok(Client {
             inner: Rc::new(RefCell::new(inner)),
@@ -524,6 +500,7 @@ impl Client {
             game.menu_open = s.menu_open;
             game.fov_setting = s.fov_setting;
             game.reduced_motion = s.reduced_motion;
+            game.show_arms = s.show_arms;
             let touch = s.touch_used.then_some(s.touch.state);
             let perf = web_sys::window().and_then(|w| w.performance());
             let mut clock = || perf.as_ref().map_or(0.0, |p| p.now());
@@ -627,6 +604,7 @@ impl Client {
                     set(&o, "atMs", k.at_ms);
                     set(&o, "feet", v3(k.feet));
                     set(&o, "velocity", v3(k.velocity));
+                    set(&o, "eye", k.eye);
                     set(&o, "state", k.state);
                     set(&o, "grounded", k.grounded);
                     set(&o, "crouched", k.crouched);
@@ -689,24 +667,6 @@ impl Client {
         time_stamp_ms: f64,
     ) -> bool {
         let mut s = self.inner.borrow_mut();
-        // Compare mode's keys (controls.ts): F7 the next view, F8 blink.
-        if matches!(code, "F7" | "F8") && s.renderer.borrow().selection().compare() {
-            if !repeat {
-                let mut r = s.renderer.borrow_mut();
-                let mut c = r.compare();
-                if code == "F7" {
-                    c.cycle();
-                } else {
-                    c.blink();
-                }
-                r.set_compare(c);
-                drop(r);
-                if let Some(g) = s.game.as_mut() {
-                    g.sound(dwell_game::sound::SoundKind::Tool);
-                }
-            }
-            return true;
-        }
         // The spyglass (docs/SPYGLASS.md): its key, while playing (the pointer locked).
         if s.input.pointer_locked
             && dwell_look::spyglass::is_spyglass_key(
@@ -815,6 +775,19 @@ impl Client {
             yaw_deg: yaw,
             pitch_deg: pitch,
         }));
+        true
+    }
+    /// Stand-in players for the dev tools (`__dwell.puppets`): `count` bodies ahead of `x, y, z`
+    /// (feet) on `face` (±1) holding block `held` (0: none); 0 removes them.
+    pub fn puppets(&self, count: u16, x: f64, y: f64, z: f64, face: f64, held: u16) -> bool {
+        let mut s = self.inner.borrow_mut();
+        let Some(g) = &mut s.game else { return false };
+        g.puppets = (count > 0).then_some(crate::game::Puppets {
+            count,
+            origin: [x, y, z],
+            face,
+            held,
+        });
         true
     }
     #[wasm_bindgen(js_name = releaseCamera)]
@@ -1174,6 +1147,23 @@ impl Client {
             .borrow_mut()
             .set_water_debug(crate::render::water::debug_mask(names));
     }
+    /// The ink outline's mode by name (`shared/look/outline.json`; docs/ART_DIRECTION.md §7), as
+    /// `?outline=` takes it; `off` or an unknown name turns it off. True when a mode is on.
+    #[wasm_bindgen(js_name = setOutline)]
+    pub fn set_outline(&self, name: &str) -> bool {
+        self.inner.borrow().renderer.borrow_mut().set_outline(name)
+    }
+    /// The ink outline's mode, or `off`.
+    #[wasm_bindgen(js_name = outline)]
+    pub fn outline(&self) -> String {
+        self.inner
+            .borrow()
+            .renderer
+            .borrow()
+            .outline()
+            .unwrap_or("off")
+            .into()
+    }
     /// The motion effects (docs/MOTION_EFFECTS.md): on or off, and the FOV boost's strength 0–1.
     #[wasm_bindgen(js_name = setMotion)]
     pub fn set_motion(&self, enabled: bool, fov_strength: f64) {
@@ -1199,6 +1189,11 @@ impl Client {
     #[wasm_bindgen(js_name = setFov)]
     pub fn set_fov(&self, degrees: f64) {
         self.inner.borrow_mut().fov_setting = dwell_lod::sanitize_fov_setting(degrees);
+    }
+    /// The Show your arms setting: your first-person arms and what they hold (CHARACTERS.md §5).
+    #[wasm_bindgen(js_name = setShowArms)]
+    pub fn set_show_arms(&self, shown: bool) {
+        self.inner.borrow_mut().show_arms = shown;
     }
     /// Whether the browser asks for reduced motion: the spyglass then zooms without easing.
     #[wasm_bindgen(js_name = setReducedMotion)]
@@ -1254,110 +1249,6 @@ impl Client {
             lod.set_quality(pixel_error, (memory_mb * 1_048_576.0) as usize);
         }
     }
-    // ----- The renderer seam and compare mode (docs/RAY_MARCHED_RENDERER.md §3, §5) -----
-
-    /// The terrain renderers this build offers for `?renderer=` (`bench --compare` reads it):
-    /// `raster` everywhere; `march` with the renderer switch once the marcher draws terrain.
-    pub fn renderers(&self) -> Array {
-        let s = self.inner.borrow();
-        let mut names = vec![TerrainKind::Raster.name()];
-        if s.options.renderer_switch && crate::render::march::BUILT {
-            names.push(TerrainKind::March.name());
-        }
-        names.into_iter().map(JsValue::from).collect()
-    }
-    /// The upscalers it offers: the browser's own stretch, and with the marcher its upscalers
-    /// (`?upscaler=fsr1|bilateral` with `?scale=`; RAY_MARCHED_RENDERER.md §4.2).
-    pub fn upscalers(&self) -> Array {
-        let s = self.inner.borrow();
-        let mut names = vec!["none", "bilinear"];
-        if s.options.renderer_switch && crate::render::march::BUILT {
-            names.extend(crate::render::march::upscale::Upscaler::ALL.map(|u| u.name()));
-        }
-        names.into_iter().map(JsValue::from).collect()
-    }
-    /// What draws the terrain: `raster`, `march` or `compare raster | march`.
-    pub fn renderer(&self) -> String {
-        self.inner.borrow().renderer.borrow().selection().label()
-    }
-    /// Whether the renderer can be switched (a local build).
-    #[wasm_bindgen(js_name = rendererSwitch)]
-    pub fn renderer_switch(&self) -> bool {
-        self.inner.borrow().options.renderer_switch
-    }
-    /// Switches renderer at runtime (`raster`, `march`, `compare`; `compare` names compare mode's
-    /// right side, default `march`): the terrain is rebuilt from the client's data, no reload.
-    /// False without the switch or for an unknown name.
-    #[wasm_bindgen(js_name = setRenderer)]
-    pub fn set_renderer(&self, name: &str, compare: Option<String>) -> bool {
-        let mut s = self.inner.borrow_mut();
-        if !s.options.renderer_switch {
-            return false;
-        }
-        let Some(selection) = Selection::parse(name, compare.as_deref()) else {
-            return false;
-        };
-        match &mut s.game {
-            Some(g) => g.set_renderer(selection),
-            None => {
-                s.renderer.borrow_mut().select(selection);
-            }
-        }
-        true
-    }
-    /// Compare mode's state: `{ renderer, view, divider, blinkRight, overlay: [left, right],
-    /// difference: { pixels, coverage, depth, colour } | null }`, or null outside compare mode.
-    #[wasm_bindgen(js_name = compareState)]
-    pub fn compare_state(&self) -> JsValue {
-        let s = self.inner.borrow();
-        let r = s.renderer.borrow();
-        let Some(overlay) = r.compare_overlay() else {
-            return JsValue::NULL;
-        };
-        let c = r.compare();
-        let o = Object::new();
-        set(&o, "renderer", r.selection().label());
-        set(&o, "view", c.view.name());
-        set(&o, "divider", c.divider);
-        set(&o, "blinkRight", c.blink_right);
-        set(
-            &o,
-            "overlay",
-            overlay
-                .iter()
-                .map(|l| JsValue::from(l.as_str()))
-                .collect::<Array>(),
-        );
-        set(
-            &o,
-            "difference",
-            r.difference_counts().map_or(JsValue::NULL, |d| {
-                let v = Object::new();
-                set(&v, "pixels", d.pixels);
-                set(&v, "coverage", d.coverage);
-                set(&v, "depth", d.depth);
-                set(&v, "colour", d.colour);
-                v.into()
-            }),
-        );
-        o.into()
-    }
-    /// Sets compare mode's view (`split`, `blink`, `difference`; unchanged if unknown) and the
-    /// divider (a share of the width; unchanged if not a number).
-    #[wasm_bindgen(js_name = setCompare)]
-    pub fn set_compare(&self, view: Option<String>, divider: Option<f64>) {
-        let s = self.inner.borrow();
-        let mut r = s.renderer.borrow_mut();
-        let mut c = r.compare();
-        if let Some(v) = view.as_deref().and_then(CompareView::parse) {
-            c.view = v;
-        }
-        if let Some(d) = divider {
-            c.set_divider(d);
-        }
-        r.set_compare(c);
-    }
-
     #[wasm_bindgen(js_name = setDebugVisible)]
     pub fn set_debug_visible(&self, visible: bool) {
         let mut s = self.inner.borrow_mut();
@@ -1553,6 +1444,26 @@ impl Client {
             })
             .collect();
         set(&o, "remotes", remotes);
+        let bodies: Array = d
+            .bodies
+            .iter()
+            .map(|&(id, role, action)| {
+                let b = Object::new();
+                set(&b, "playerId", id);
+                set(&b, "role", role);
+                set(&b, "action", action.map_or(JsValue::NULL, JsValue::from));
+                JsValue::from(b)
+            })
+            .collect();
+        set(&o, "bodies", bodies);
+        let arms = Object::new();
+        set(&arms, "role", d.arms.0);
+        set(
+            &arms,
+            "action",
+            d.arms.1.map_or(JsValue::NULL, JsValue::from),
+        );
+        set(&o, "arms", arms);
         let st = Object::new();
         set(&st, "ticks", d.stats.ticks);
         set(&st, "snapshots", d.stats.snapshots);
@@ -1627,6 +1538,13 @@ impl Client {
         set(&o, "meshBytes", st.mesh_bytes as f64);
         set(&o, "screenBytes", st.screen_bytes as f64);
         set(&o, "pixelRatio", st.pixel_ratio);
+        // The characters (render/characters.rs): bodies drawn, the arms, their meshes' GPU bytes
+        // and this frame's instance upload.
+        let c = self.inner.borrow().renderer.borrow().character_stats();
+        set(&o, "characters", c.bodies);
+        set(&o, "arms", c.arms);
+        set(&o, "characterMeshBytes", c.mesh_bytes as f64);
+        set(&o, "characterUploadBytes", c.upload_bytes as f64);
         o.into()
     }
 

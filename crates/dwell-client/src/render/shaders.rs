@@ -4,7 +4,7 @@
 //! only its own face's lights), ACES filmic tone mapping with exposure, sRGB encoding, then the
 //! height fog mixed toward the sky's colour in output space, as three's fog was.
 //!
-//! The frame is shared (docs/RAY_MARCHED_RENDERER.md step A1, docs/WATER_RENDERING.md W2): the scene passes write lit, linear
+//! The frame is shared (docs/WATER_RENDERING.md W2): the scene passes write lit, linear
 //! colour (premultiplied by coverage: alpha 0 where nothing is drawn) into an `rgba16float` target
 //! and each opaque fragment's view depth into an `r32float` one; the composite (`composite_fs`)
 //! tone-maps, encodes, fogs by the stored depth and puts the sky behind, into the canvas. Lines are
@@ -21,6 +21,13 @@ use dwell_protocol::world;
 const FRAME: &str = r"
 struct Frame {
     view_proj: mat4x4f,
+    // The ink outline (dwell-look `outline_uniforms`; docs/ART_DIRECTION.md §7): x the edge kinds
+    // (bits: 1 silhouettes, 2 creases, 4 block edges; 0 off), y the taps' distance (px), z and w
+    // the distance fade's start and end (m); the ink (sRGB) and its strength; x the silhouette and
+    // y the crease threshold.
+    outline: vec4f,
+    outline_ink: vec4f,
+    outline_cfg: vec4f,
     // x eye height (world y), y face (±1), z exposure (× the time of day's), w fog density (× the
     // time of day's)
     eye: vec4f,
@@ -113,8 +120,24 @@ struct Draw {
 };
 ";
 
-/// The per-draw array (group 1): the raster passes'. The marcher's module leaves it out and binds
-/// its own data there.
+/// The view depth as the frame stores it (docs/ART_DIRECTION.md §7.4): its lowest bit is the
+/// ink flag, set where the surface takes no ink outline (block data `outline: false`: the cross
+/// plants). One unit in the last place (about 1e-7 of the depth) is far below anything a reader
+/// resolves, so the readers that don't ask are unchanged. **Every writer of the view depth goes
+/// through `frame_depth`** (a test checks it), or the flag would be its depth's own noise.
+const FRAME_DEPTH: &str = r"
+fn frame_depth(d: f32, inked: bool) -> f32 {
+    let b = bitcast<u32>(d) & ~1u;
+    return bitcast<f32>(select(b | 1u, b, inked));
+}
+
+// Whether a stored view depth takes the ink (nothing drawn, 0, does).
+fn frame_inked(d: f32) -> bool {
+    return (bitcast<u32>(d) & 1u) == 0u;
+}
+";
+
+/// The per-draw array (group 1): the raster passes'.
 const DRAWS: &str = r"
 @group(1) @binding(0) var<storage, read> draws: array<Draw>;
 ";
@@ -271,7 +294,7 @@ struct SceneOut {
 fn scene_out(albedo: vec3f, n: vec3f, rel: vec3f, alpha: f32) -> SceneOut {
     var o: SceneOut;
     o.color = vec4f(lambert(albedo, n, frame.eye.x + rel.y), alpha);
-    o.depth = view_depth(rel);
+    o.depth = frame_depth(view_depth(rel), true);
     return o;
 }
 ";
@@ -358,6 +381,7 @@ struct CutoutIn {
     @location(3) uv: vec2f,
     @location(4) tile: vec4f,
     @location(5) plant: vec4f,
+    @location(6) bare: f32,
 };
 struct CutoutOut {
     @builtin(position) clip: vec4f,
@@ -368,6 +392,7 @@ struct CutoutOut {
     @location(4) tile: vec4f,
     @location(5) @interpolate(flat) draw: u32,
     @location(6) fade: vec2f,
+    @location(7) @interpolate(flat) bare: f32,
 };
 
 // The gust field: travelling waves whose wavelengths divide WIND_PERIOD, sampled at the world
@@ -411,6 +436,7 @@ fn cutout_vs(v: CutoutIn, @builtin(instance_index) k: u32) -> CutoutOut {
     o.uv = v.uv;
     o.tile = v.tile;
     o.fade = v.plant.zw;
+    o.bare = v.bare;
     return o;
 }
 
@@ -484,7 +510,9 @@ fn cutout_fs(i: CutoutOut, @builtin(front_facing) front: bool) -> CutoutSceneOut
     let lit = scene_out(i.color * texel.rgb * draw.tint.rgb, normalize(n), i.rel, 1.0);
     var o: CutoutSceneOut;
     o.color = lit.color;
-    o.depth = lit.depth;
+    // Plants whose look says `outline: false` are flagged in the depth: no ink is drawn on them
+    // and the edge rule sees through them (`ink_outline`).
+    o.depth = frame_depth(lit.depth, i.bare < 0.5);
     o.mask = mask;
     return o;
 }
@@ -661,8 +689,7 @@ fn scene_depth_at(p: vec2i) -> vec2f {
 // The composite of one pixel (`color`: the scene tone-mapped, encoded, fogged and over the sky)
 // with the pixel's view ray (view depth 1), clear sky, sky with its clouds, and the clouds as a
 // layer over the scene (`front`, with the deck's distance along the ray `deck_t`: no cover unless
-// the deck is in front of the pixel's scene or the edge blur needs it), which the edge blur's taps
-// share.
+// the deck is in front of the pixel's scene), which the ink reads.
 struct Composited {
     color: vec3f,
     ray: vec3f,
@@ -672,9 +699,7 @@ struct Composited {
     deck_t: f32,
 };
 
-// `taps`: the edge blur will composite other pixels along this one's ray, over its sky and under
-// its clouds, so both are found even where the pixel itself is covered or the deck is behind it.
-fn composited(p: vec2i, ndc: vec2f, taps: bool) -> Composited {
+fn composited(p: vec2i, ndc: vec2f) -> Composited {
     let ray = view_ray(ndc);
     let dir = normalize(ray);
     let face = frame.eye.y;
@@ -685,7 +710,7 @@ fn composited(p: vec2i, ndc: vec2f, taps: bool) -> Composited {
     let lights = cloud_lighting();
     let c = textureLoad(scene_color, p, 0);
     var back = clear;
-    if (c.a < 1.0 || taps) {
+    if (c.a < 1.0) {
         let behind = dwell_sky_bodies(dir, face, frame.day, clear);
         back = dwell_clouds(behind, behind, dir, face, deck, fw, frame.clouds, frame.cloud_cfg, lights);
     }
@@ -694,7 +719,7 @@ fn composited(p: vec2i, ndc: vec2f, taps: bool) -> Composited {
         depth = scene_depth_at(p).x;
     }
     var front = vec4f(0.0);
-    if (taps || (c.a > 0.0 && dwell_cloud_in_front(deck.z, length(ray), depth))) {
+    if (c.a > 0.0 && dwell_cloud_in_front(deck.z, length(ray), depth)) {
         front = dwell_cloud_layer(clear, dir, face, deck, fw, frame.clouds, frame.cloud_cfg, lights);
     }
     var s = Composited(vec3f(0.0), ray, clear, back, front, deck.z);
@@ -705,8 +730,7 @@ fn composited(p: vec2i, ndc: vec2f, taps: bool) -> Composited {
 // A scene colour `c` (premultiplied by coverage) at view depth `depth`, composited along the
 // pixel's ray `s.ray`: tone-mapped, encoded and fogged toward its clear sky, under its clouds where
 // the deck is in front of it (its hit nearer than the stored view depth), and over its sky with
-// its clouds by its coverage; last, inside the cloud, the whole view fogs toward the cloud. The
-// pixel and the edge blur's taps alike, so the blur keeps what the pixel shows.
+// its clouds by its coverage; last, inside the cloud, the whole view fogs toward the cloud.
 fn composited_scene(c: vec4f, depth: f32, s: Composited) -> vec3f {
     var color = s.back;
     if (c.a > 0.0) {
@@ -719,20 +743,9 @@ fn composited_scene(c: vec4f, depth: f32, s: Composited) -> vec3f {
     return dwell_cloud_fog(color, frame.cloud_inside.x, frame.eye.y, cloud_lighting());
 }
 
-// The scene at pixel `p` composited along another pixel's ray, over its sky and under its clouds
-// (`s`: the edge blur's taps, which share the pixel's sky and clouds).
-fn composited_over(p: vec2i, s: Composited) -> vec3f {
-    let c = textureLoad(scene_color, p, 0);
-    var depth = 0.0;
-    if (c.a > 0.0) {
-        depth = scene_depth_at(p).x;
-    }
-    return composited_scene(c, depth, s);
-}
-
 // A scene colour `c` (premultiplied by coverage) at view depth `depth` along `ray` (view depth 1),
 // tone-mapped, encoded, fogged toward the clear sky `clear` and over `back` (the sky with its
-// clouds) by its coverage. Compare mode's two sides are composited by it too, as the frame is.
+// clouds) by its coverage.
 fn composited_of(c: vec4f, depth: f32, ray: vec3f, clear: vec3f, back: vec3f) -> vec3f {
     if (c.a <= 0.0) {
         return back;
@@ -741,71 +754,36 @@ fn composited_of(c: vec4f, depth: f32, ray: vec3f, clear: vec3f, back: vec3f) ->
     return mix(back, shown, min(c.a, 1.0));
 }
 
-// Then the wind over it while there is any (MOTION: streaks, vignette, edge blur).
+// The finished picture at pixel `p` (docs/MOTION_EFFECTS.md: post effects that sample
+// neighbours read the finished image): **every per-pixel effect of the composite lives here**,
+// and nothing is applied after it but the dither. The effects that sample other pixels (the
+// wind's edge blur) run as their own pass over this image (`motion_fs`), so whatever is added
+// here is in their taps too. Three times a new effect vanished outside the blur's inner circle
+// while the taps re-composited the scene without it: the clouds from below (0.11.19) and above
+// (0.18.2), then the ink (0.20.1).
+fn composite_pixel(p: vec2i, ndc: vec2f) -> vec3f {
+    if (frame.water.x > 0.5) {
+        return composite_underwater(p, view_ray(ndc), textureLoad(scene_color, p, 0));
+    }
+    var s = composited(p, ndc);
+    if (frame.outline.x > 0.5) {
+        s.color = outlined(s, p);
+    }
+    return s.color;
+}
+
+// The finished picture, dithered, into the canvas (no wind this frame).
 @fragment
 fn composite_fs(i: SkyOut) -> @location(0) vec4f {
     let p = vec2i(i.clip.xy);
-    if (frame.water.x > 0.5) {
-        return vec4f(composite_underwater(p, view_ray(i.ndc), textureLoad(scene_color, p, 0)), 1.0);
-    }
-    let wind = frame.wind_point.z > 1e-3;
-    let s = composited(p, i.ndc, wind);
-    var color = s.color;
-    if (wind) {
-        color = motion_composite(s, p, i.ndc);
-    }
-    return vec4f(color + dither(p), 1.0);
+    return vec4f(composite_pixel(p, i.ndc) + dither(p), 1.0);
 }
 
-// Compare mode's second side (group 3): its scene targets and the difference counts.
-fn scene_b_depth_at(p: vec2i) -> vec2f {
-    var d: array<f32, SAMPLE_SLOTS>;
-    for (var s = 0; s < SCENE_SAMPLES; s++) {
-        d[s] = textureLoad(scene_b_depth, p, s).r;
-    }
-    return depth_of(d);
-}
-
-// sRGB-encoded colour to CIE L*a*b* (D65).
-fn srgb_to_lab(c: vec3f) -> vec3f {
-    let lin = select(pow((c + 0.055) / 1.055, vec3f(2.4)), c / 12.92, c <= vec3f(0.04045));
-    let xyz = mat3x3f(
-        vec3f(0.4124, 0.2126, 0.0193),
-        vec3f(0.3576, 0.7152, 0.1192),
-        vec3f(0.1805, 0.0722, 0.9505),
-    ) * lin / vec3f(0.95047, 1.0, 1.08883);
-    let f = select(xyz * 7.787 + 16.0 / 116.0, pow(xyz, vec3f(1.0 / 3.0)), xyz > vec3f(0.008856));
-    return vec3f(116.0 * f.y - 16.0, 500.0 * (f.x - f.y), 200.0 * (f.y - f.z));
-}
-
-// Compare mode's difference view (render/compare.rs): each pixel in its worst class — coverage
-// differs (red), view depth differs (orange), the composited colour's ΔE (yellow) — counted into
-// diff_counts (pixels, coverage, depth, colour); elsewhere the left side, dimmed to grey.
+// The finished picture into the frame's finished target (`finished`), undithered, for the motion
+// pass that reads it (the wind is on this frame).
 @fragment
-fn difference_fs(i: SkyOut) -> @location(0) vec4f {
-    let p = vec2i(i.clip.xy);
-    let da = scene_depth_at(p);
-    let db = scene_b_depth_at(p);
-    let ray = view_ray(i.ndc);
-    let back = sky(normalize(ray));
-    let a = composited_of(textureLoad(scene_color, p, 0), da.x, ray, back, back);
-    let b = composited_of(textureLoad(scene_b_color, p, 0), db.x, ray, back, back);
-    atomicAdd(&diff_counts[0], 1u);
-    let hit_a = da.y > 0.5;
-    let hit_b = db.y > 0.5;
-    if (hit_a != hit_b) {
-        atomicAdd(&diff_counts[1], 1u);
-        return vec4f(1.0, 0.15, 0.1, 1.0);
-    }
-    if (hit_a && abs(da.x - db.x) > DIFF_DEPTH * max(da.x, db.x)) {
-        atomicAdd(&diff_counts[2], 1u);
-        return vec4f(1.0, 0.55, 0.0, 1.0);
-    }
-    if (length(srgb_to_lab(a) - srgb_to_lab(b)) > DIFF_DELTA_E) {
-        atomicAdd(&diff_counts[3], 1u);
-        return vec4f(1.0, 0.95, 0.1, 1.0);
-    }
-    return vec4f(vec3f(dot(a, vec3f(0.2126, 0.7152, 0.0722)) * 0.35), 1.0);
+fn finished_fs(i: SkyOut) -> @location(0) vec4f {
+    return vec4f(composite_pixel(vec2i(i.clip.xy), i.ndc), 1.0);
 }
 
 // How many metres the pixel at `p` covers on a surface at view depth `depth` along `ray`, facing
@@ -915,25 +893,24 @@ fn motion_wind(ndc: vec2f) -> vec4f {
     return vec4f(frame.wind_color.rgb * a, a + v * (1.0 - a));
 }
 
-// The composited picture at pixel `px` blurred toward the vanishing point (the scene streaming
-// past), then the streaks and vignette over it. `s` is the pixel's own composite.
-// The taps share this pixel's view ray and sky with its clouds (the sky is the composite's costly
-// part; it barely changes over a few pixels) and are jittered per pixel, so the blur is smooth
-// rather than copies. Over a clear sky of their own instead, the clouds past the blur's inner
-// radius dropped to a fifth at a hard circular edge (the owner's report, 2026-10-16).
-fn motion_composite(s: Composited, px: vec2i, ndc: vec2f) -> vec3f {
-    var out = s.color;
+// The finished picture at pixel `px` blurred toward the vanishing point (the scene streaming
+// past), then the streaks and vignette over it. The taps read the finished image (`finished`,
+// composite_pixel's output), never the scene: each is exactly what that pixel shows, clouds and
+// ink included. They are jittered per pixel, so the blur is smooth rather than copies.
+fn motion_composite(px: vec2i, ndc: vec2f) -> vec3f {
+    let own = textureLoad(finished, px, 0).rgb;
+    var out = own;
     let blur = frame.wind_extra.x * frame.wind_point.z * frame.wind_point.z * motion_edge(ndc);
     if (blur > 1e-4) {
-        let dims = vec2f(textureDimensions(scene_color));
+        let dims = vec2f(textureDimensions(finished));
         let here = vec2f(px) + 0.5;
         let vp = vec2f(frame.wind_point.x * 0.5 + 0.5, 0.5 - frame.wind_point.y * 0.5) * dims;
         let step = (vp - here) * blur / 4.0;
         let jitter = motion_hash(u32(px.x) * 1973u + u32(px.y) * 9277u);
-        var sum = s.color;
+        var sum = own;
         for (var k = 0; k < 4; k++) {
             let q = clamp(here + step * (f32(k) + jitter), vec2f(0.5), dims - 0.5);
-            sum += composited_over(vec2i(q), s);
+            sum += textureLoad(finished, vec2i(q), 0).rgb;
         }
         out = sum / 5.0;
     }
@@ -941,6 +918,199 @@ fn motion_composite(s: Composited, px: vec2i, ndc: vec2f) -> vec3f {
     return w.rgb + out * (1.0 - w.a);
 }
 
+// The motion pass (the wind is on this frame): the finished image with the wind over it, dithered,
+// into the canvas. Under water the wind isn't drawn (the finished image as it is).
+@fragment
+fn motion_fs(i: SkyOut) -> @location(0) vec4f {
+    let p = vec2i(i.clip.xy);
+    var color = textureLoad(finished, p, 0).rgb;
+    if (frame.water.x <= 0.5) {
+        color = motion_composite(p, i.ndc);
+    }
+    return vec4f(color + dither(p), 1.0);
+}
+
+";
+
+/// The ink outline (docs/ART_DIRECTION.md §7), drawn by the composite over the scene's composited
+/// colour while a mode is on (`frame.outline.x`, the edge kinds; 0 off): edges found in the view
+/// depth alone (the frame has no normal or id targets). dwell-look's `outline.rs` is the CPU twin of its depth and crease rule and its fade.
+const OUTLINE: &str = r"
+const EDGE_DEPTH: u32 = 1u;
+const EDGE_NORMAL: u32 = 2u;
+const EDGE_BLOCK: u32 = 4u;
+
+fn ink_inv(d: f32) -> f32 {
+    return select(0.0, 1.0 / d, d > 0.0);
+}
+
+// Back from inverse depth (0 stays 0).
+fn ink_dinv(w: f32) -> f32 {
+    return select(0.0, 1.0 / w, w > 0.0);
+}
+
+// How much two slopes of inverse depth differ: 0 equal, 1 where one is flat or they have
+// opposite signs (dwell-look `slope_change`).
+fn ink_change(a: f32, b: f32, top: f32) -> f32 {
+    return abs(a - b) / (abs(a) + abs(b) + 1e-4 * top);
+}
+
+// The edge strength from a 3 × 3 of inverse view depths at the tap distance (row by row from the
+// top left; 0: nothing drawn), the pixel's in the middle (dwell-look `edge_strength`). Inverse
+// depth is linear across the screen on a plane, so a flat face at any angle has no edge: a
+// silhouette is a large second difference across the pixel (relative to the nearest tap), a crease
+// a change of slope, along a row or column or between the outer ones (the surface's normal turns).
+fn ink_edges(w: array<f32, 9>, edges: u32) -> f32 {
+    var top = 0.0;
+    var low = w[0];
+    for (var k = 0; k < 9; k++) {
+        top = max(top, w[k]);
+        low = min(low, w[k]);
+    }
+    if (top <= 0.0) {
+        return 0.0;
+    }
+    let dt = frame.outline_cfg.x;
+    let ct = frame.outline_cfg.y;
+    var s = 0.0;
+    if ((edges & EDGE_DEPTH) != 0u) {
+        let e = max(abs(w[3] + w[5] - 2.0 * w[4]), abs(w[1] + w[7] - 2.0 * w[4])) / top;
+        s = max(s, smoothstep(dt, 2.0 * dt, e));
+    }
+    if ((edges & EDGE_NORMAL) != 0u && low > 0.0) {
+        let c = max(
+            max(ink_change(w[4] - w[3], w[5] - w[4], top), ink_change(w[4] - w[1], w[7] - w[4], top)),
+            max(ink_change(w[6] - w[0], w[8] - w[2], top), ink_change(w[2] - w[0], w[8] - w[6], top)),
+        );
+        s = max(s, smoothstep(ct, 2.0 * ct, c));
+    }
+    return s;
+}
+
+// The taps with those on a surface that takes no ink (-1) seen through (dwell-look
+// `see_through`): such a tap takes what the plane through the pixel and the opposite tap gives
+// (no edge across the pair), or the pixel's own where both are flagged; never nearer than the sky.
+// So neither the plant's own outline nor its edges against the ground or the sky draw.
+fn ink_see_through(raw: array<f32, 9>) -> array<f32, 9> {
+    var w = raw;
+    for (var k = 0; k < 9; k++) {
+        if (raw[k] < 0.0) {
+            let o = raw[8 - k];
+            w[k] = select(raw[4], max(2.0 * raw[4] - o, 0.0), o >= 0.0);
+        }
+    }
+    return w;
+}
+
+fn ink_ndc(q: vec2i, dims: vec2f) -> vec2f {
+    let uv = (vec2f(q) + 0.5) / dims;
+    return vec2f(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0);
+}
+
+// The voxel cell behind a surface point (relative to the eye), a quarter cell inside it along the
+// normal `n` (which faces the eye).
+fn ink_cell(rel: vec3f, n: vec3f) -> vec3i {
+    let world = vec3f(frame.wrap.x, frame.eye.x, frame.wrap.y) + rel - n * 0.25;
+    return vec3i(floor(world));
+}
+
+// The view depth the edges are found in: one sample of the pixel (the first). One load per tap
+// (the cost; a sample's depth is never a blend), where the composite's mean over the covered
+// samples would let a few samples of a blade's tip or a fading plant's dither pull a pixel
+// forward, which dots lines over the grass.
+fn ink_depth(p: vec2i) -> f32 {
+    return textureLoad(scene_depth, p, 0).r;
+}
+
+// The outline at pixel `p` (view ray `ray`): its opacity and the edge's view depth (its nearest
+// tap), from the view depths of the 3 × 3 around it at the tap distance (dwell-look `edge_at`),
+// faded out over the distance fade; with block edges, where the cell behind the surface changes
+// from the pixel to a neighbour on it (positions from the depths, the normal from the nearer
+// neighbours).
+fn ink_outline(p: vec2i, ray: vec3f) -> vec2f {
+    let edges = u32(frame.outline.x + 0.5);
+    let r = i32(frame.outline.y);
+    let size = textureDimensions(scene_color);
+    let dims = vec2i(size);
+    // Ground past the fade has no line of its own: one load and out (most of a distant view).
+    // Nor has a surface that takes no ink (`frame_depth`'s flag: the plants).
+    let centre = ink_depth(p);
+    if (centre * length(ray) >= frame.outline.w || !frame_inked(centre)) {
+        return vec2f(0.0);
+    }
+    var raw: array<f32, 9>;
+    for (var k = 0; k < 9; k++) {
+        let o = vec2i(k % 3 - 1, k / 3 - 1) * r;
+        let d = ink_depth(clamp(p + o, vec2i(0), dims - 1));
+        raw[k] = select(-1.0, ink_inv(d), frame_inked(d));
+    }
+    let w = ink_see_through(raw);
+    var near = 0.0;
+    for (var k = 0; k < 9; k++) {
+        near = max(near, w[k]);
+    }
+    if (near <= 0.0) {
+        return vec2f(0.0);
+    }
+    var s = ink_edges(w, edges);
+    // Left, right, up and down: their offsets and view depths.
+    let q = array(p + vec2i(-r, 0), p + vec2i(r, 0), p + vec2i(0, -r), p + vec2i(0, r));
+    let d = array(ink_dinv(w[3]), ink_dinv(w[5]), ink_dinv(w[1]), ink_dinv(w[7]));
+    let d0 = ink_dinv(w[4]);
+    if ((edges & EDGE_BLOCK) != 0u && d0 > 0.0 && s < 1.0) {
+        let fd = vec2f(size);
+        let p0 = ray * d0;
+        var rel: array<vec3f, 4>;
+        for (var k = 0; k < 4; k++) {
+            rel[k] = view_ray(ink_ndc(q[k], fd)) * d[k];
+        }
+        // Each axis's step to the neighbour nearer in depth (the one on the same face).
+        let use_r = d[1] > 0.0 && (d[0] <= 0.0 || abs(d[1] - d0) < abs(d0 - d[0]));
+        let use_d = d[3] > 0.0 && (d[2] <= 0.0 || abs(d[3] - d0) < abs(d0 - d[2]));
+        let ok = (d[0] > 0.0 || d[1] > 0.0) && (d[2] > 0.0 || d[3] > 0.0);
+        if (ok) {
+            let dx = select(p0 - rel[0], rel[1] - p0, use_r);
+            let dy = select(p0 - rel[2], rel[3] - p0, use_d);
+            var n = normalize(cross(dx, dy));
+            n = select(n, -n, dot(n, p0) > 0.0);
+            let c0 = ink_cell(p0, n);
+            for (var k = 0; k < 4; k++) {
+                if (d[k] > 0.0 && any(ink_cell(rel[k], n) != c0)) {
+                    s = 1.0;
+                }
+            }
+        }
+    }
+    let depth = 1.0 / near;
+    let fade = 1.0 - smoothstep(frame.outline.z, frame.outline.w, depth * length(ray));
+    return vec2f(s * fade * frame.outline_ink.a, depth);
+}
+
+// How much of an edge at `rel` (relative to the eye) shows: none under the sea's surface seen from
+// above it. The water doesn't write the view depth, so the frame sees the seabed through it; the
+// sea is the one water whose surface the composite knows (SEA_LEVEL on the viewer's face).
+fn ink_above_sea(rel: vec3f) -> f32 {
+    let face = frame.eye.y;
+    let cam = select(2.0 * MIDPLANE_Y - frame.eye.x, frame.eye.x, face > 0.0);
+    let h = cam + face * rel.y - SEA_LEVEL;
+    return select(1.0, smoothstep(-0.3, -0.05, h), cam > SEA_LEVEL);
+}
+
+// The composited pixel `s` at `p` with the ink over it: fogged toward the clear sky as the ground
+// at the edge's depth is, under the cloud deck where it is in front, and gone inside a cloud.
+fn outlined(s: Composited, p: vec2i) -> vec3f {
+    let e = ink_outline(p, s.ray);
+    if (e.x <= 0.0) {
+        return s.color;
+    }
+    let rel = s.ray * e.y;
+    var a = e.x * ink_above_sea(rel) * (1.0 - frame.cloud_inside.x);
+    if (dwell_cloud_in_front(s.deck_t, length(s.ray), e.y)) {
+        a *= 1.0 - s.front.a;
+    }
+    let ink = mix(frame.outline_ink.rgb, s.clear, fog_amount(rel));
+    return mix(s.color, ink, a);
+}
 ";
 
 const WATER: &str = r"
@@ -1357,7 +1527,7 @@ fn water_fs(i: FluidOut, @builtin(front_facing) front: bool) -> SceneOut {
     let deck_fw = reflected_deck_fw(i.rel);
     let count = arrayLength(&fluids);
     var o: SceneOut;
-    o.depth = view_depth(i.rel);
+    o.depth = frame_depth(view_depth(i.rel), true);
     if (i.fluid >= count) {
         let n = normalize(i.normal);
         o.color = vec4f(lambert(i.color * draw.tint.rgb, select(-n, n, front), frame.eye.x + i.rel.y), 0.5);
@@ -1686,16 +1856,10 @@ fn scene_bindings(samples: u32) -> String {
     format!(
         "const SCENE_SAMPLES: i32 = {samples};\n\
          const SAMPLE_SLOTS: u32 = {samples}u;\n\
-         const DIFF_DEPTH: f32 = {:e};\n\
-         const DIFF_DELTA_E: f32 = {:?};\n\
          @group(2) @binding(0) var scene_color: texture_2d<f32>;\n\
          @group(2) @binding(1) var scene_depth: {depth};\n\
-         @group(3) @binding(0) var scene_b_color: texture_2d<f32>;\n\
-         @group(3) @binding(1) var scene_b_depth: {depth};\n\
-         @group(3) @binding(2) var<storage, read_write> diff_counts: array<atomic<u32>, 4>;\n\
+         @group(3) @binding(0) var finished: texture_2d<f32>;\n\
          @group(2) @binding(2) var scene_sampler: sampler;\n",
-        super::compare::DEPTH_TOLERANCE,
-        super::compare::DELTA_E,
     )
 }
 
@@ -1703,20 +1867,19 @@ fn scene_bindings(samples: u32) -> String {
 /// shading and every entry point.
 pub fn source(samples: u32) -> String {
     format!(
-        "{}{DRAWS}\n{}\n{TERRAIN}\n{MOTION}\n{WATER}\n{}",
+        "{}{DRAWS}\n{}\n{TERRAIN}\n{MOTION}\n{OUTLINE}\n{WATER}\n{}",
         lighting_source(),
         scene_bindings(samples),
         water_slope()
     )
 }
 
-/// The shared lighting (RAY_MARCHED_RENDERER.md §2: one `lambert`, `aces`, `fog_amount`, `sky` for
-/// both renderers): the constants, the fluids, the frame uniforms (group 0: `frame`, `atlas`,
+/// The shared lighting: the constants, the fluids, the frame uniforms (group 0: `frame`, `atlas`,
 /// `atlas_sampler`), the sky, the clouds and the shading functions, without any pass's bindings or
-/// entry points. The marcher's shade module is this plus its own code.
+/// entry points.
 pub fn lighting_source() -> String {
     format!(
-        "const MIDPLANE_Y: f32 = {:.1};\nconst SEA_LEVEL: f32 = {:.1};\nconst ATLAS_CELLS: u32 = {}u;\nconst ATLAS_TILES: u32 = {}u;\n{}\n{}\n{}\n{FRAME}\n{}\n{}\n{COMMON}\n",
+        "const MIDPLANE_Y: f32 = {:.1};\nconst SEA_LEVEL: f32 = {:.1};\nconst ATLAS_CELLS: u32 = {}u;\nconst ATLAS_TILES: u32 = {}u;\n{}\n{}\n{}\n{FRAME}\n{}\n{}\n{FRAME_DEPTH}\n{COMMON}\n",
         world::MIDPLANE_M,
         world::SEA_LEVEL_M,
         dwell_mesh::ATLAS_CELLS,
@@ -1755,13 +1918,14 @@ mod tests {
                 "line_top_fs",
                 "sky_vs",
                 "composite_fs",
+                "finished_fs",
+                "motion_fs",
                 "fluid_vs",
                 "water_fs",
                 "water_scene_fs",
                 "tile_vs",
                 "noise_tile_fs",
                 "caustic_tile_fs",
-                "difference_fs",
             ] {
                 assert!(
                     module.entry_points.iter().any(|e| e.name == entry),
@@ -1774,7 +1938,7 @@ mod tests {
     #[test]
     fn tone_mapping_and_fog_are_only_in_the_composite() {
         // The scene passes write linear colour: their fragment shaders never tone-map, encode or
-        // fog; the composite does all three (RAY_MARCHED_RENDERER.md A1).
+        // fog; the composite does all three.
         let src = super::source(4);
         let body = |name: &str| -> String {
             let at = src.find(&format!("fn {name}(")).expect(name);
@@ -1791,15 +1955,11 @@ mod tests {
         assert!(c.contains("display(") && c.contains("fog_amount("));
         let c = body("composited_scene");
         assert!(c.contains("display(") && c.contains("fog_amount("));
-        assert!(body("composited_over").contains("composited_scene("));
         let c = body("composited");
         assert!(
             c.contains("sky(") && c.contains("dwell_clouds(") && c.contains("dwell_cloud_deck(")
         );
-        // Both compare-mode sides are composited as the frame is, before they are compared.
-        let d = body("difference_fs");
-        assert_eq!(d.matches("composited_of(").count(), 2);
-        assert!(body("composite_fs").contains("composited("));
+        assert!(body("composite_pixel").contains("composited("));
     }
 
     #[test]
@@ -1867,22 +2027,200 @@ mod tests {
     }
 
     #[test]
-    fn the_wind_is_drawn_by_the_composite_only_while_there_is_any() {
+    fn the_wind_is_drawn_by_the_motion_pass_only_while_there_is_any() {
+        // The composite never draws the wind: with it on, the renderer draws the finished image
+        // (`finished_fs`) and the motion pass over it (`motion_fs`, render/mod.rs `motion_pass`).
         let src = super::source(4);
-        let at = src.find("fn composite_fs(").expect("composite");
-        let c = &src[at..at + src[at..].find("\n}\n").expect("end")];
+        let body = |name: &str| {
+            let at = src.find(&format!("fn {name}(")).expect(name);
+            src[at..at + src[at..].find("\n}\n").expect("end")].to_string()
+        };
+        for entry in ["composite_fs", "finished_fs", "composite_pixel"] {
+            assert!(!body(entry).contains("motion_"), "{entry} draws no wind");
+        }
+        let m = body("motion_fs");
+        assert!(m.contains("motion_composite(p, i.ndc)") && m.contains("dither(p)"));
+        // Under water the wind isn't drawn (as before the split).
+        assert!(m.contains("if (frame.water.x <= 0.5)"));
+        // Procedural: no textures beyond the finished image, which the edge blur loads.
+        let motion = &src[src.find("fn motion_hash(").expect("motion")
+            ..src.find("const EDGE_DEPTH").expect("outline")];
+        assert!(!motion.contains("textureSample("));
+    }
+
+    #[test]
+    fn post_effects_that_sample_neighbours_read_the_finished_image() {
+        // The pattern (docs/MOTION_EFFECTS.md): every per-pixel effect of the composite lives in
+        // `composite_pixel`; nothing but the dither comes after it; and an effect that samples
+        // other pixels (the edge blur) reads the finished image `composite_pixel` wrote, never
+        // the scene. Three times the blur's taps re-composited the scene without the newest
+        // per-pixel effect, which then vanished outside its inner circle: the clouds from below
+        // (0.11.19), from above (0.18.2) and the ink (0.20.1). With this structure an effect
+        // added to `composite_pixel` is in the taps without anyone remembering it.
+        let src = super::source(4);
+        let body = |name: &str| {
+            let at = src.find(&format!("fn {name}(")).expect(name);
+            src[at..at + src[at..].find("\n}\n").expect("end")].to_string()
+        };
+        // The two outputs of the composite are composite_pixel alone (and the dither on screen).
+        let canvas = body("composite_fs");
         assert!(
-            c.contains("let wind = frame.wind_point.z > 1e-3;")
-                && c.contains("if (wind)")
-                && c.contains("motion_composite(")
+            canvas.contains("return vec4f(composite_pixel(p, i.ndc) + dither(p), 1.0);"),
+            "{canvas}"
         );
-        // Procedural: no textures beyond the scene's own colour, which the edge blur samples.
-        let m = &src[src.find("fn motion_hash(").expect("motion")..];
-        assert!(!m.contains("textureSample("));
+        assert_eq!(
+            canvas.matches("let ").count(),
+            1,
+            "nothing else in composite_fs"
+        );
+        let finished = body("finished_fs");
+        assert!(finished.contains("return vec4f(composite_pixel(vec2i(i.clip.xy), i.ndc), 1.0);"));
+        assert_eq!(
+            src.matches("composite_pixel(").count(),
+            3,
+            "defined once, called by the two outputs"
+        );
+        // The neighbour-sampling pass reads the finished image and nothing of the scene.
+        let motion = &src[src.find("const TAU").expect("motion")
+            ..src.find("const EDGE_DEPTH").expect("outline")];
+        for scene in [
+            "scene_color",
+            "scene_depth",
+            "composited",
+            "outlined(",
+            "ink_",
+            "dwell_cloud",
+            "sky(",
+        ] {
+            assert!(!motion.contains(scene), "the motion pass reads {scene}");
+        }
+        let blur = body("motion_composite");
+        assert!(blur.contains("let own = textureLoad(finished, px, 0).rgb;"));
+        assert!(blur.contains("sum += textureLoad(finished, vec2i(q), 0).rgb;"));
+        assert_eq!(
+            blur.matches("sum +=").count(),
+            1,
+            "every tap is a texel of the finished image"
+        );
+    }
+
+    #[test]
+    fn the_ink_outline_survives_the_edge_blur() {
+        // Owner's report (2026-10-20, `?outline=creases`, sprinting): the outlines were masked
+        // outside a circle. The blur's taps re-composited the scene (`composited_over`) without
+        // the ink, so past the blur's inner radius four of the five samples had no line. The ink
+        // is part of the finished image, and the taps read that image.
+        let src = super::source(4);
+        let body = |name: &str| {
+            let at = src.find(&format!("fn {name}(")).expect(name);
+            src[at..at + src[at..].find("\n}\n").expect("end")].to_string()
+        };
+        let pixel = body("composite_pixel");
+        let ink = pixel
+            .find("s.color = outlined(s, p);")
+            .expect("the ink is in the pixel");
         assert!(
-            m.contains("composited_over("),
-            "the blur samples the composited scene"
+            pixel[ink..].contains("return s.color;"),
+            "nothing undoes it after"
         );
+        assert!(body("finished_fs").contains("composite_pixel("));
+        assert!(body("motion_composite").contains("textureLoad(finished, vec2i(q), 0)"));
+    }
+
+    #[test]
+    fn the_ink_outline_is_drawn_only_while_on_and_fades_far_pixels_out() {
+        let src = super::source(4);
+        let body = |name: &str| {
+            let at = src.find(&format!("fn {name}(")).expect(name);
+            src[at..at + src[at..].find("\n}\n").expect("end")].to_string()
+        };
+        // Off by default (zeros in the frame block): the composite skips it. It is part of the
+        // finished picture, so the wind (a later pass) goes over it.
+        let c = body("composite_pixel");
+        let on = c.find("if (frame.outline.x > 0.5) {").expect("switch");
+        assert!(
+            c[on..].starts_with("if (frame.outline.x > 0.5) {\n        s.color = outlined(s, p);")
+        );
+        // The edge rule of dwell-look's outline.rs: inverse depth's second difference and slope
+        // change, the nearest tap's depth, and the distance fade over the ray's length so far
+        // pixels get none (dwell-look's `far_pixels_get_no_outline` pins the same rule).
+        let rule = body("ink_edges");
+        assert!(rule.contains(
+            "let e = max(abs(w[3] + w[5] - 2.0 * w[4]), abs(w[1] + w[7] - 2.0 * w[4])) / top;"
+        ));
+        assert!(rule.contains("ink_change(w[6] - w[0], w[8] - w[2], top)"));
+        assert!(body("ink_change").contains("abs(a - b) / (abs(a) + abs(b) + 1e-4 * top)"));
+        let edge = body("ink_outline");
+        assert!(edge.contains("let depth = 1.0 / near;"));
+        assert!(edge.contains(
+            "let fade = 1.0 - smoothstep(frame.outline.z, frame.outline.w, depth * length(ray));"
+        ));
+        assert!(edge.contains("return vec2f(s * fade * frame.outline_ink.a, depth);"));
+        // And the height fog takes the ink toward the sky as it takes the ground.
+        let o = body("outlined");
+        assert!(o.contains("mix(frame.outline_ink.rgb, s.clear, fog_amount(rel))"));
+    }
+
+    #[test]
+    fn plants_without_ink_are_flagged_in_the_depth_and_seen_through() {
+        // Owner's report (2026-10-20, `?outline=creases`): tall grass was mostly black, every
+        // blade inked. A cutout whose block says `outline: false` (the cross plants' default)
+        // flags its view depth; the ink skips a flagged pixel, and the edge rule sees through
+        // flagged taps (dwell-look `see_through`), so a plant's edges against the ground or the
+        // sky draw nothing either.
+        let src = super::source(4);
+        let body = |name: &str| {
+            let at = src.find(&format!("fn {name}(")).expect(name);
+            src[at..at + src[at..].find("\n}\n").expect("end")].to_string()
+        };
+        assert!(body("cutout_vs").contains("o.bare = v.bare;"));
+        assert!(body("cutout_fs").contains("o.depth = frame_depth(lit.depth, i.bare < 0.5);"));
+        let edge = body("ink_outline");
+        assert!(
+            edge.contains("|| !frame_inked(centre)"),
+            "no ink on the plant itself"
+        );
+        assert!(edge.contains("raw[k] = select(-1.0, ink_inv(d), frame_inked(d));"));
+        assert!(edge.contains("let w = ink_see_through(raw);"));
+        let through = body("ink_see_through");
+        assert!(through.contains("w[k] = select(raw[4], max(2.0 * raw[4] - o, 0.0), o >= 0.0);"));
+        // The flag is the depth's lowest bit; nothing drawn (0) takes the ink.
+        let flag = super::FRAME_DEPTH;
+        assert!(flag.contains("let b = bitcast<u32>(d) & ~1u;"));
+        assert!(flag.contains("return bitcast<f32>(select(b | 1u, b, inked));"));
+        assert!(flag.contains("return (bitcast<u32>(d) & 1u) == 0u;"));
+    }
+
+    #[test]
+    fn every_view_depth_writer_goes_through_frame_depth() {
+        // The ink flag is the view depth's lowest bit, so every writer of the frame's view depth
+        // must set it (`frame_depth`), or a surface's flag would be its depth's own noise. The
+        // scene's fragment outputs (`SceneOut`, `CutoutSceneOut`).
+        let src = super::source(4);
+        let mut writers = 0;
+        for s in [src.as_str()] {
+            for (at, _) in s.match_indices("@fragment\nfn ") {
+                let f = &s[at..at + s[at..].find("\n}\n").expect("end")];
+                let header = &f[..f.find('{').expect("body")];
+                if !["-> SceneOut", "-> CutoutSceneOut"]
+                    .iter()
+                    .any(|t| header.contains(t))
+                {
+                    continue;
+                }
+                for line in f.lines().filter(|l| l.contains(".depth = ")) {
+                    writers += 1;
+                    assert!(line.contains("frame_depth("), "{header}: {line}");
+                }
+            }
+        }
+        // And scene_out, which terrain_fs and flat_fs return.
+        let scene_out = &src[src.find("fn scene_out(").expect("scene_out")..];
+        assert!(
+            scene_out[..scene_out.find("\n}\n").unwrap()]
+                .contains("frame_depth(view_depth(rel), true)")
+        );
+        assert!(writers >= 2, "the cutout and the water: {writers}");
     }
 
     #[test]
@@ -1890,64 +2228,45 @@ mod tests {
         // Owner's report (2026-10-16): the clouds tunnelled into a circle at speed. The blur's
         // taps composited over the clear sky (`sky(ray)`, no clouds), so past the blur's inner
         // radius every sky pixel was averaged with four cloudless taps: the clouds dropped to a
-        // fifth at a hard circular edge. The taps must composite over the pixel's own sky with its
-        // clouds (and fog toward its clear sky), as the pixel itself is.
+        // fifth at a hard circular edge. Each tap is now a pixel of the finished image, which has
+        // its own sky with its clouds (`composited`: over `back`, `dwell_clouds`).
         let src = super::source(4);
         let body = |name: &str| {
             let at = src.find(&format!("fn {name}(")).expect(name);
             src[at..at + src[at..].find("\n}\n").expect("end")].to_string()
         };
         let m = body("motion_composite");
-        assert!(
-            !m.contains("sky("),
-            "the blur must not composite over a cloudless sky of its own"
-        );
-        assert!(m.contains("composited_over(vec2i(q), s)"));
-        assert!(
-            body("composited_over").contains("composited_scene(c, depth, s)")
-                && body("composited_scene").contains("var color = s.back;"),
-            "the taps composite over the pixel's sky with its clouds"
-        );
-        // With the wind on, the clouds are found even where the pixel itself is covered, since
-        // its taps may land on sky.
+        assert!(!m.contains("sky(") && m.contains("textureLoad(finished, vec2i(q), 0)"));
         let c = body("composited");
-        let clouds = c.find("dwell_clouds(").expect("clouds");
-        assert!(c[..clouds].contains("c.a < 1.0 || taps"));
-        assert!(body("composite_fs").contains("motion_composite(s,"));
+        assert!(c.contains("dwell_clouds(") && c.contains("composited_scene(c, depth, s)"));
+        assert!(body("composited_scene").contains("var color = s.back;"));
+        assert!(body("composite_pixel").contains("composited(p, ndc)"));
     }
 
     #[test]
     fn the_edge_blur_taps_keep_the_clouds_in_front_of_the_scene() {
         // Owner's report (2026-10-20): above the deck, looking down, moving fast, the clouds
-        // showed only inside a circle. The deck was in front of the terrain there, drawn over the
-        // scene by the pixel's composite, but the blur's taps composited the scene without it
-        // (`composited_of`: fog and sky only), so past the blur's inner radius four of the five
-        // samples were bare terrain. The taps must composite as the pixel does: under its clouds
-        // where the deck is in front of the tap's depth, and inside the in-cloud fog.
+        // showed only inside a circle. The blur's taps composited the scene without the deck in
+        // front of it. Each tap is now a pixel of the finished image: under its clouds where the
+        // deck is in front of its own depth, and inside the in-cloud fog, as every pixel is.
         let src = super::source(4);
         let body = |name: &str| {
             let at = src.find(&format!("fn {name}(")).expect(name);
             src[at..at + src[at..].find("\n}\n").expect("end")].to_string()
         };
-        let over = body("composited_over");
-        assert!(
-            over.contains("composited_scene(c, depth, s)") && !over.contains("composited_of("),
-            "the taps composite as the pixel does"
-        );
-        let c = body("composited");
-        assert!(c.contains("composited_scene(c, depth, s)"));
-        // One function for the pixel and its taps: the in-front clouds by the tap's own depth
-        // along the pixel's ray, then the in-cloud fog.
         let scene = body("composited_scene");
         let front = scene
             .find("dwell_cloud_in_front(s.deck_t, length(s.ray), depth)")
             .expect("in front");
         assert!(scene[front..].contains("shown = dwell_cloud_over(shown, s.front)"));
         assert!(scene.contains("dwell_cloud_fog(color, frame.cloud_inside.x"));
-        // With the wind on, the layer is found even where the deck is behind the pixel's own
-        // scene: a tap may land on farther ground the deck covers.
+        let c = body("composited");
         let layer = c.find("dwell_cloud_layer(").expect("layer");
-        assert!(c[..layer].contains("if (taps || (c.a > 0.0 && dwell_cloud_in_front("));
+        assert!(
+            c[..layer]
+                .contains("if (c.a > 0.0 && dwell_cloud_in_front(deck.z, length(ray), depth))")
+        );
+        assert!(body("motion_composite").contains("textureLoad(finished, vec2i(q), 0)"));
         // The layer is the clouds dwell_clouds draws, found once.
         let look = dwell_look::clouds::cloud_wgsl(&dwell_look::clouds::CLOUDS);
         assert!(look.contains("return dwell_cloud_over(under, dwell_cloud_layer(clear,"));

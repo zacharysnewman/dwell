@@ -13,12 +13,14 @@ use dwell_blocks::{
     FLUIDS, FluidInfo, RenderMode, STATES, ShapeInfo, StateId, StateInfo, shape::faces_of,
 };
 use dwell_protocol::CHUNK_SIZE;
+use dwell_world::FaceFrame;
 
 use crate::LengthError;
 use crate::style::{
     Look, MaterialStyle, cube, fluid_value, material_style, mirror_material, style_of,
 };
 use crate::textures::{TileRect, tile_rect};
+use dwell_blocks::shape::plant_sink;
 use dwell_look::{face_tint, normal_tint};
 use dwell_world::{CELL_H, normal_to_m};
 
@@ -51,6 +53,10 @@ pub struct MeshArrays {
     /// plant's base and on ladders), the wind's speed, and the distance fade's start and end (m;
     /// end 0: no fade).
     pub plants: Vec<f32>,
+    /// The cutout mesh only (empty in the others): per vertex, 1 where the ink outline doesn't
+    /// draw (block data `outline: false`, the cross plants' default; docs/ART_DIRECTION.md §7.4),
+    /// else 0 (ladders and every other cutout).
+    pub bare: Vec<f32>,
     /// The transparent mesh's fluid id per vertex (`crate::NO_FLUID` for a see-through face that
     /// is no fluid's); empty in the opaque mesh.
     pub fluids: Vec<f32>,
@@ -67,6 +73,7 @@ impl MeshArrays {
             + self.uvs.len()
             + self.tiles.len()
             + self.plants.len()
+            + self.bare.len()
             + self.fluids.len()
             + self.indices.len())
     }
@@ -303,6 +310,25 @@ impl<'a> Cells<'a> {
 
     fn state(&self, x: i32, y: i32, z: i32) -> StateId {
         self.padded[padded_index(x, y, z)]
+    }
+
+    /// The solid a plant in the chunk's cell (x, y, z) stands on: the cell below's shape — an
+    /// adaptive top block's derived one, worked out exactly even in the apron's bottom row (its
+    /// neighbours there are all in the padded block) — or none when it has no solid.
+    fn support(&self, x: i32, y: i32, z: i32) -> Option<&'static ShapeInfo> {
+        let sy = y - 1;
+        let k = if sy >= 0 {
+            self.kind(x, y - 1, z)
+        } else {
+            let mut k = self.kinds.of(self.state(x, sy, z));
+            let get = |dx: i32, dy: i32, dz: i32| self.state(x + dx, sy + dy, z + dz);
+            if let Some(i) = dwell_blocks::adaptive::derive(get, 1) {
+                k.shape = Shape::Shaped;
+                k.def = Some(&dwell_blocks::SHAPES[usize::from(i)]);
+            }
+            k
+        };
+        if k.shape == Shape::Empty { None } else { k.def }
     }
 
     fn kind(&self, x: i32, y: i32, z: i32) -> Kind {
@@ -560,8 +586,28 @@ const CROSS_UP: f64 = 0.8;
 /// A cross (plants): `quads` vertical quads through the cell's centre, evenly turned, jittered by
 /// the cell's world position (`world`), each vertex carrying its wind sway and the distance fade
 /// in `plants`. Drawn from both sides by the cutout pipeline: one face per quad.
-fn cross_voxel(b: &mut Builder, style: &MaterialStyle, world: [i64; 3], [x, y, z]: [i32; 3]) {
+///
+/// A plant that sits on its support (`Cross::sit_on_support`) stands on `support`'s drawn
+/// surface: each foot is lowered by the support's [`plant_sink`] under it (a level field's top at
+/// half height, a slope's height at that foot), its top by the same amount, so the blades keep
+/// their height and the wind still leans only the tops.
+fn cross_voxel(
+    b: &mut Builder,
+    style: &MaterialStyle,
+    world: [i64; 3],
+    [x, y, z]: [i32; 3],
+    support: Option<&ShapeInfo>,
+) {
     let Some(c) = style.cross else { return };
+    let sink = |px: f64, pz: f64| match support {
+        Some(s) if c.sit_on_support => f64::from(plant_sink(
+            s,
+            (px - f64::from(x)) as f32,
+            (pz - f64::from(z)) as f32,
+            1,
+        )),
+        _ => 0.0,
+    };
     let jitter = |salt| 2.0 * cell_noise(world, salt) - 1.0;
     let cx = f64::from(x) + 0.5 + jitter(1) * f64::from(c.offset);
     let cz = f64::from(z) + 0.5 + jitter(2) * f64::from(c.offset);
@@ -576,8 +622,11 @@ fn cross_voxel(b: &mut Builder, style: &MaterialStyle, world: [i64; 3], [x, y, z
         .fade
         .map_or((0.0, 0.0), |f| (f64::from(f.start), f64::from(f.end)));
     let tile = surface(style, 0, 1).1;
-    // Ladders before it carry no sway: line the plants stream up with the vertices.
+    // Ladders before it carry no sway and take the ink: line the plants streams up with the
+    // vertices.
     b.m.plants.resize(b.vertex_count() as usize * 4, 0.0);
+    b.m.bare.resize(b.vertex_count() as usize, 0.0);
+    let bare = if style.outline { 0.0 } else { 1.0 };
     // Texture: across the quad and up it, just inside the tile (fract(1) would wrap to its foot).
     const EDGE: f64 = 1e-3;
     for q in 0..u32::from(c.quads) {
@@ -603,6 +652,7 @@ fn cross_voxel(b: &mut Builder, style: &MaterialStyle, world: [i64; 3], [x, y, z
         ];
         for (along, py, u, v, s) in corners {
             let (px, pz) = (cx + dx * along, cz + dz * along);
+            let py = py - sink(px, pz);
             b.m.positions.extend([px as f32, py as f32, pz as f32]);
             b.m.normals.extend(n.map(|v| v as f32));
             b.m.colors.extend([
@@ -614,6 +664,7 @@ fn cross_voxel(b: &mut Builder, style: &MaterialStyle, world: [i64; 3], [x, y, z
             b.push_tile(&tile);
             b.m.plants
                 .extend([s as f32, speed as f32, fade0 as f32, fade1 as f32]);
+            b.m.bare.push(bare);
         }
         b.m.indices
             .extend([base, base + 1, base + 2, base, base + 2, base + 3]);
@@ -1015,7 +1066,10 @@ pub(crate) fn mesh_chunk_with(
         });
     }
     let m = if mirror {
-        let m = mesh_cells(kinds, &mirror_padded(padded), origin);
+        // Meshed in the face-local frame (BIFACIAL_WORLD.md §11): the mirror image's minimum
+        // corner is the face-local chunk's, so a plant is jittered as its face-A twin is.
+        let local = [origin[0], FaceFrame::B.row(origin[1] + N - 1), origin[2]];
+        let m = mesh_cells(kinds, &mirror_padded(padded), local);
         ChunkMeshes {
             opaque: flip_arrays_y(m.opaque),
             transparent: flip_arrays_y(m.transparent),
@@ -1194,7 +1248,8 @@ fn mesh_cells(kinds: &Kinds, padded: &[u16], origin: [i32; 3]) -> ChunkMeshes {
                         i64::from(origin[1]) + i64::from(cy),
                         i64::from(origin[2]) + i64::from(cz),
                     ];
-                    cross_voxel(target, &k.style, world, [cx, cy, cz]);
+                    let support = cells.support(cx, cy, cz);
+                    cross_voxel(target, &k.style, world, [cx, cy, cz], support);
                     if k.style.render == RenderMode::Translucent {
                         target.tag_fluid(k.style.fluid);
                     }
@@ -1208,9 +1263,10 @@ fn mesh_cells(kinds: &Kinds, padded: &[u16], origin: [i32; 3]) -> ChunkMeshes {
             flat_tops(&mut opaque, kinds, &mut mask, cy);
         }
     }
-    // Ladders carry no sway or fade.
+    // Ladders carry no sway or fade, and take the ink.
     let vertices = cutout.m.positions.len() / 3;
     cutout.m.plants.resize(vertices * 4, 0.0);
+    cutout.m.bare.resize(vertices, 0.0);
     ChunkMeshes {
         opaque: opaque.m,
         transparent: transparent.m,

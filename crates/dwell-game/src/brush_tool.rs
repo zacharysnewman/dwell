@@ -10,6 +10,7 @@
 //! click picks the aimed-at block as the replace target.
 
 use dwell_blocks::{StateId, info};
+use dwell_world::FaceFrame;
 use dwell_world::brush::{
     Aim, BRUSH_KINDS, BrushKind, BrushSpec, Change, Grid, MAX_SIZE, MIN_SIZE, Materials,
     PERFORMER_KINDS, PRESETS, PerformerKind, bounds, brush_cells, paste_edits, perform,
@@ -20,6 +21,16 @@ use std::collections::HashMap;
 
 use crate::block_interaction::BlockTarget;
 use crate::region_tools::{BoxSource, RegionTools, ToolContext};
+
+/// An aim in the world, face-local (and back: the map is its own inverse).
+fn local_aim(f: FaceFrame, aim: Aim) -> Aim {
+    Aim {
+        center: f.cell(aim.center),
+        face: f.cell_face(usize::from(aim.face)) as u8,
+        from: aim.from.map(|p| f.cell(p)),
+        before: aim.before.map(|p| f.cell(p)),
+    }
+}
 
 /// What a key asks of the brush tool ([`brush_key`]; the controls table in
 /// `client/src/ui/controls.ts`).
@@ -422,18 +433,43 @@ impl BrushTool {
         self.stroke_at(center, materials, world).map(|(c, _)| c)
     }
 
-    /// A stroke's changes at `center` and the grid of the world they were read from.
+    /// A stroke's changes at `center` and the grid of the world they were read from. The brush
+    /// runs in the face-local frame of `center`'s face (BIFACIAL_WORLD.md §11): its aim, the world
+    /// it reads and the blocks it puts down cross through the [`FaceFrame`] here, so a stroke on
+    /// face B is the mirror image of the same stroke on face A.
     fn stroke_at(
         &self,
         center: [i32; 3],
         materials: Materials,
         world: &mut impl BoxSource,
     ) -> Option<(Vec<Change>, Grid)> {
-        let aim = self.aim_at(center);
+        let f = FaceFrame::at_row(center[1]);
+        let aim = local_aim(f, self.aim_at(center));
         let cells = brush_cells(&self.spec, aim);
         let (min, size) = read_bounds(&self.spec, &cells)?;
-        let grid = Grid::new(min, size, world.read_box(min, size)?);
-        Some((perform(&self.spec, aim, &cells, &grid, materials), grid))
+        let wmin = f.box_min(min, size);
+        let grid = Grid::new(wmin, size, world.read_box(wmin, size)?);
+        let local = Grid::new(min, size, f.box_cells(size, &grid.cells));
+        let materials = Materials {
+            material: f.state(materials.material),
+            target: f.state(materials.target),
+        };
+        let mut changes: Vec<Change> = perform(&self.spec, aim, &cells, &local, materials)
+            .into_iter()
+            .map(|(c, m)| (f.cell(c), f.state(m)))
+            .collect();
+        // Layer order (x fastest, then z, then y) in the world, as `perform` gives it.
+        changes.sort_by_key(|&([x, y, z], _)| (y, z, x));
+        Some((changes, grid))
+    }
+
+    /// The cells the brush covers at `c`, in the world.
+    fn covered_at(&self, c: [i32; 3]) -> Vec<[i32; 3]> {
+        let f = FaceFrame::at_row(c[1]);
+        brush_cells(&self.spec, local_aim(f, self.aim_at(c)))
+            .into_iter()
+            .map(|p| f.cell(p))
+            .collect()
     }
 
     /// Applies the brush (left click: arrow; right click: gunpowder) with the hotbar's block,
@@ -583,7 +619,7 @@ impl BrushTool {
             }
         }
         if !ghosted && ready {
-            let covered = brush_cells(&self.spec, self.aim_at(c));
+            let covered = self.covered_at(c);
             if let Some((min, size)) = bounds(&covered) {
                 let lo: [f32; 3] = std::array::from_fn(|i| (min[i] - c[i]) as f32 - 0.5);
                 let hi: [f32; 3] = std::array::from_fn(|i| lo[i] + size[i] as f32);
@@ -1118,4 +1154,65 @@ mod tests {
         t.update_preview(m, &mut w, 5300.0);
         assert!(t.outline().unwrap().version > v);
     }
+
+    /// Bumpy ground (stone, dirt, grass) around the origin, built face-local on `f`'s face.
+    fn bumpy_ground(f: dwell_world::FaceFrame) -> VoxelWorld {
+        let mut w = world();
+        let (stone, dirt, grass) = (
+            require("dwell:stone"),
+            require("dwell:dirt"),
+            require("dwell:grass"),
+        );
+        for x in -14..=14i32 {
+            for z in -14..=14i32 {
+                let top = 6 + (x * 7 + z * 3).rem_euclid(4) / 2;
+                for y in 0..=top {
+                    let m = if y == top {
+                        grass
+                    } else if y + 2 >= top {
+                        dirt
+                    } else {
+                        stone
+                    };
+                    let [wx, wy, wz] = f.cell([x, y, z]);
+                    w.set_voxel(wx, wy, wz, f.state(m));
+                }
+            }
+        }
+        w
+    }
+
+    dwell_world::both_faces!(
+        /// Face parity (BIFACIAL_WORLD.md §11): every preset's stroke on face B's ground is the
+        /// face-local mirror of the same stroke on face A's, cell for cell — brushes, trees,
+        /// overlays and the column performers run in face-local coordinates. Regression: on face B
+        /// strokes ran in world terms (trees grew into the ground, overlay painted the buried side).
+        fn every_presets_stroke_is_the_same_face_local_on_either_face(f: dwell_world::FaceFrame) {
+            let stone = require("dwell:stone");
+            let a = dwell_world::FaceFrame::A;
+            for p in PRESETS.iter() {
+                let stroke = |fr: dwell_world::FaceFrame| {
+                    let mut w = bumpy_ground(fr);
+                    let mut t = tool();
+                    select(&mut t, p.name);
+                    let target = fr.cell([0, 7, 0]);
+                    t.aim(Some(BlockTarget {
+                        cell: target,
+                        face: fr.cell_face(2) as u8,
+                    }));
+                    let state = w.get_voxel(target[0], target[1], target[2]);
+                    let m = t.materials(stone, state);
+                    let mut local: Vec<([i32; 3], StateId)> = t
+                        .changes(target, m, &mut w)
+                        .unwrap_or_default()
+                        .into_iter()
+                        .map(|(c, s)| (fr.cell(c), fr.state(s)))
+                        .collect();
+                    local.sort();
+                    local
+                };
+                assert_eq!(stroke(f), stroke(a), "{}: {:?}", p.name, f.face);
+            }
+        }
+    );
 }

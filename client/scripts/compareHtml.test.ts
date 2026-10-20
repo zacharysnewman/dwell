@@ -49,7 +49,6 @@ const input: CompareHtmlInput = {
     { name: 'raster', notes: 'The mesher.' },
     { name: 'raster-half', notes: 'Half <res>.' },
   ],
-  skipped: [{ name: 'march', reason: 'this build has no "march" renderer' }],
   scenarios: [scenario],
   mode: 'GPU, unthrottled',
   when: '2026-10-14T00:00:00.000Z',
@@ -85,7 +84,6 @@ describe('compare.html', () => {
     expect(html).toContain('max 60.9');
     // A shot whose diff failed says why.
     expect(html).toContain('<p class="stats error">images differ in size</p>');
-    expect(html).toContain('this build has no &quot;march&quot; renderer');
   });
 
   it('escapes text from scenarios, configurations and errors', () => {

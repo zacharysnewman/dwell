@@ -1,7 +1,7 @@
 {
   "$comment": "Single source of truth for protocol constants (ARCHITECTURE.md §7.4, §8). Run `node shared/protocol/gen.mjs` after editing; CI fails if generated files are stale.",
   "$protocolVersion": "On the half-height branch: 1000 + the version of main it last merged, so a dev build never connects to main's builds (HALF_HEIGHT_GRID.md §2).",
-  "protocolVersion": 1016,
+  "protocolVersion": 1017,
   "simHz": 60,
   "snapshotHz": 20,
   "maxDatagramBytes": 1200,
@@ -111,7 +111,8 @@
     "HostStatus": 78,
     "RegionEdit": 79,
     "BlockRegistry": 80,
-    "EditAck": 81
+    "EditAck": 81,
+    "HeldItem": 82
   },
   "rejectReasons": {
     "ProtocolVersion": 1,
@@ -172,6 +173,15 @@
   },
   "slideFlags": {
     "active": 1
+  },
+  "heldItem": {
+    "blockMask": 32767,
+    "brush": 32768
+  },
+  "swingFlags": {
+    "countMask": 63,
+    "break": 64,
+    "place": 128
   },
   "welcomeFlags": {
     "flight": 1,

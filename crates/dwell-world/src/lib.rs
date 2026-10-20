@@ -6,6 +6,7 @@ pub mod bounds;
 pub mod brush;
 mod cell;
 pub mod edit;
+mod face;
 pub mod fluid;
 pub mod hash;
 pub mod lod;
@@ -16,4 +17,5 @@ mod voxel;
 
 pub use bounds::{BUILD_VOLUME, BoundsShape, BuildVolume, Overlap, inside_build_volume};
 pub use cell::*;
+pub use face::FaceFrame;
 pub use voxel::*;

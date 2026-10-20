@@ -55,6 +55,7 @@ describe('settings JSON', () => {
       water: { quality: 'medium' },
       motion: { speedEffects: false, fovBoost: 0.456, plantSway: false },
       fovDeg: 82.4,
+      showArms: false,
     });
     const parsed = JSON.parse(json) as { fog: unknown; detail: unknown };
     expect(parsed).toEqual({
@@ -66,6 +67,7 @@ describe('settings JSON', () => {
       water: { quality: 'medium' },
       motion: { speedEffects: false, fovBoost: 0.46, plantSway: false },
       fovDeg: 82,
+      showArms: false,
     });
     expect(sanitizeFog(parsed.fog)).toEqual({ distanceM: 11314, density: 0.6, heightM: 1500 });
     expect(sanitizeDetail(parsed.detail, defaultDetail(false))).toEqual({

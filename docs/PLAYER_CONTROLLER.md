@@ -683,6 +683,7 @@ PPC default for voxels.
 | | `steer_rate` / `cooldown_ticks` | 90 °/s / 30 ticks (0.5 s, at most 255: the wire's `u8`) | — | Turning toward the move input; before another slide |
 | `damage` ◆ | `fall_damage_min_speed` / `fall_damage_per_speed` | 12 m/s / 8 per m/s | — | From the `LANDED` event's impact speed |
 | | `crush_speed` / `crush_ticks` | 4 m/s / 6 | — | Phase 20 |
+| `step_view` ◆ | `slope` / `max_slope` / `min_speed` | 0.5 / 1.0 / 1 m/s | (PPC `SmoothSteps`: 4 m/s) | Client camera only (§9, Steps): the virtual ramp the eye follows over a step; never read by the sim |
 | `advanced` | `step_probe_distance` ◆ / `probe_ring_radius` / `wall_check_distance` | 0.05 m / 0.9 / 0.16 m | 0.01 / same / same | The step's top is read this far past its face (§4) |
 | | `step_face_heights` ◆ / `step_footing` ◆ / `step_max_rise` ◆ | [0.05, 0.25] m / 0.01 m / 0.25 m | — | Dwell's step-up (§4): the face rays' heights; the step's edge this far inside the ring after a step; the most the ground rises to a step's foot (`max_step_lift()` = `max_step_height + step_max_rise`) |
 | | `external_absorb_threshold` | 0.01 m/s | same | Far above native↔WASM noise (none measured, §8.3) |
@@ -826,11 +827,39 @@ velocities and states bit-identical over all 600 ticks, so no divergence eats in
   The eye height is computed once per tick from the feet (never the capsule centre, whose height
   changes with crouching) and interpolated between ticks. The sim moves the body in jumps the
   camera must not show, and each is folded into an offset that decays:
-  - **Steps** (PPC `SmoothSteps`, extended to both directions): a grounded feet change of 0.1 m up
+  - **Steps: the virtual ramp** (owner, 2026-10-20: "treat steps like half ramps, so smooth
+    transition between them"; `dwell-game`'s `StepSmoother`). A grounded feet change of 0.1 m up
     to `max_step_lift()` (+ 5 cm) in one tick (the step-up lift, a ramp's rise to the step
-    included, or the ground snap down a stair) decays at 4 m/s plus 6/s of the remaining offset,
-    so it never lags more than one step. `tests/step_up.rs` checks that no step-up lifts further in
-    a tick than this.
+    included, or the ground snap down a stair) becomes an offset that decays **linearly**, at the
+    vertical speed of a walker on a ramp: `max(step_view.min_speed, slope × horizontal speed)`. A
+    lone step's slope is `step_view.slope` (0.5: a ½ m step over 1 m walked, a ½ m ramp; 2.5 m/s
+    walking, 4 m/s running). On a stair (steps the same way within 3 m) the slope is the stair's
+    own, the last two treads' rise over their run, clamped to `slope`…`max_slope` (1.0, 45°), so
+    the eye moves on every tick from the first step to the last like one ramp. Further behind than
+    one step it speeds up by half the excess (a stair steeper than the ramp so far); the offset is
+    clamped to two steps. A jump or fall mid-transition leaves the offset decaying; airborne feet
+    changes are not steps. Standing still, it settles at `min_speed` (1 m/s).
+    **Why the camera, not the body (measured, 2026-10-20).** On 0.20.5, ½ m step stairs (treads
+    0.6/1/2 m, walk and run, up and down) kept 93–100 % of the horizontal speed through every
+    step-up (mean 100 %), with no stall or airborne tick: the body had no hitch. The hitch was the
+    old curve (PPC `SmoothSteps`: 4 m/s + 6/s of the offset), which started each step at 7 m/s in
+    one tick and slowed: a kick per step, a stair climbed in bursts (the eye stood still between
+    steps), up to 0.2 m off a straight ramp going up and 0.34–0.77 m behind it going down. Three
+    approaches were weighed: (a) moving the capsule along a virtual ramp in the sim (the owner's
+    first idea; new controller state in the snapshot, prediction risk, and the capsule must clear
+    the step's edge so it rises early anyway), (b) a discrete body with the camera and the
+    animation hiding the step, and (c) a mix. Shooters do (b): Quake 3 (and the Call of Duty
+    engines built on it) lift the hull in one move (`PM_StepSlideMove`) and lower the view by the
+    step's change decaying linearly over 200 ms (`CG_StepOffset`); Source smooths the view on
+    stairs the same way, and Unreal's `CharacterMovementComponent` steps up discretely and leaves
+    the smoothing to the camera. (b) was chosen: it removes the measured hitch with no change to
+    the sim, the wire or prediction (0 new snapshot fields, the golden trace unchanged), and Dwell's
+    version ties the decay to the walking speed, so the eye's path is the ramp itself rather than
+    a fixed time. A drawn (third-person) body uses the same `StepSmoother` per frame (`follow`:
+    a remote's step-up arrives interpolated, so its drawn feet follow at no more than
+    `max_slope × speed`, slopes up to 45° exactly) with foot IK on the render-side ground
+    (`CHARACTERS.md` §9.2, Steps). `tests/step_up.rs` pins what it relies on: no step-up lifts further in a tick
+    than this, and ½ m stairs keep over 90 % of the speed, on the ground.
   - **Crouch**: the sim's crouch is instant, and in mid-air it moves the feet by the height
     difference (the head stays put). The eye change on the crouch tick, less the tick's own
     vertical motion, decays at 12/s.
@@ -904,7 +933,8 @@ always toward the midplane (y = −2,048), so a face-B player stands upside down
   *mirror image* of the world — heights y → −4,096 − y (voxel rows y → −4,097 − y, the frame the
   face's terrain is generated in), vertical velocities and contact normals negated, shaped blocks
   turned over (`dwell_blocks::mirror`) — where gravity points to −y as ever. `Frame` maps positions,
-  velocities, rows and states, and `FaceQuery` (the voxel queries) and the passes' private
+  velocities, rows, states and shapes, each through `dwell_world::FaceFrame` (the world's one face
+  transform, BIFACIAL_WORLD.md §11), and `FaceQuery` (the voxel queries) and the passes' private
   `pos`/`vel`/`set_pos`/`set_vel` cross the boundary; on face A the maps are the identity, so face A
   plays exactly as the upright controller. `Players::position`, `velocity`, `feet` and `head` stay in
   the world (`feet` is above `head` on face B). The face switches (in `step_input`) when the body

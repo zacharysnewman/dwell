@@ -16,7 +16,7 @@
       "liquid": true, "color": "#3a3016"
     },
     {
-      "$comment": "A block of each render mode by data alone (docs/TRANSPARENT_BLOCKS.md): cutout leaves, translucent glass, and a cross-look reed.",
+      "$comment": "A block of each render mode by data alone (docs/TRANSPARENT_BLOCKS.md): cutout leaves, translucent glass, and a cross-look reed (which keeps to its cell's floor: `sitOnSupport: false`).",
       "name": "hedge", "density": 300, "shape": "full", "render": "cutout", "color": "#3a7a2a", "textures": "tallGrass"
     },
     {
@@ -38,8 +38,9 @@
       "sideUnder": { "dwell:stone": "grassSide" }
     },
     {
-      "name": "reed", "density": 100, "shape": "empty", "look": "cross", "render": "cutout",
-      "cross": { "height": 1.0, "quads": 3 }, "color": "#6a8a3a", "textures": "tallGrass"
+      "$comment": "A cross plant outlined by data alone (`outline: true`; the cross default is off, docs/ART_DIRECTION.md §7.4).",
+      "name": "reed", "density": 100, "shape": "empty", "look": "cross", "render": "cutout", "outline": true,
+      "cross": { "height": 1.0, "quads": 3, "sitOnSupport": false }, "color": "#6a8a3a", "textures": "tallGrass"
     }
   ]
 }

@@ -41,7 +41,27 @@ impl LocalCore {
         storage: Option<impl StorageBackend>,
         entropy: Box<dyn Entropy>,
     ) -> Result<Self, LocalError> {
+        Self::create_on(
+            dwell_world::Face::A,
+            world_seed,
+            generator_version,
+            storage,
+            entropy,
+        )
+    }
+
+    /// [`LocalCore::create`] with a new world's spawn on `face` (the dev link `?spawn=b`: face B's
+    /// spawn point, to play and check face B; a saved world keeps its own spawn).
+    pub fn create_on(
+        face: dwell_world::Face,
+        world_seed: u64,
+        generator_version: u32,
+        storage: Option<impl StorageBackend>,
+        entropy: Box<dyn Entropy>,
+    ) -> Result<Self, LocalError> {
         let mut config = ServerConfig {
+            spawn: (face == dwell_world::Face::B)
+                .then(|| dwell_worldgen::spawn_point_b_for(generator_version, world_seed)),
             world_seed,
             generator_version,
             name: "Local world".into(),

@@ -2,7 +2,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { loadData, loadStyle, loadTextures, PAGE, renderPage } from './gen.mjs';
+import { join } from 'node:path';
+import { loadData, loadStyle, loadTextures, PAGE, renderPage, RUST_DIR, rustOutput, withFixtures } from './gen.mjs';
 import { bounds, chainProblem, chainSegments, compose, crossfade, layer, mirrorName, pivots, sample, validate } from './rig.mjs';
 
 const style = loadStyle();
@@ -296,4 +297,23 @@ test('switching base clips cross-fades every bone either keys', () => {
   }
   assert.deepEqual(crossfade(walk, slide, 0).bones.thigh_l, walk.bones.thigh_l);
   assert.deepEqual(crossfade(walk, slide, 1).root, slide.root ?? [0, 0, 0]);
+});
+
+test("the game's Rust tables and the fixture's are up to date (CHARACTERS.md §9.1)", () => {
+  const textures = loadTextures();
+  for (const [data, fixture] of [[load(), false], [withFixtures(load()), true]]) {
+    const { base, rust, tiles } = rustOutput(validate(data, style), textures, fixture);
+    assert.equal(readFileSync(join(RUST_DIR, `${base}.gen.rs`), 'utf8'), rust, 'run `node shared/characters/gen.mjs`');
+    assert.deepEqual(new Uint8Array(readFileSync(join(RUST_DIR, `${base}.tiles`))), tiles);
+  }
+});
+
+test('a part added by data alone reaches the Rust tables, on its bone, in every look', () => {
+  const textures = loadTextures();
+  const plain = rustOutput(validate(load(), style), textures).rust;
+  const fx = rustOutput(validate(withFixtures(load()), style), textures, true).rust;
+  assert.ok(!plain.includes('test_pauldron_l'));
+  // Mirrored: both sides, once per look of the player (three variants).
+  assert.equal(fx.match(/id: "test_pauldron_l", bone: 4,/g)?.length, 3);
+  assert.equal(fx.match(/id: "test_pauldron_r", bone: 7,/g)?.length, 3);
 });

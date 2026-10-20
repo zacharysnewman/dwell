@@ -10,7 +10,7 @@ materials from the same data files:
 - `shared/textures/materials.json`: the materials, each a stack of painted layers (§3, §4).
 
 **Status.** Owner's brief of 2026-10-20 (the scratchpad brief, summarised in §1). The painterly set is
-behind `?textures=painterly` until the owner approves it; the classic look stays the default. The
+the default since the owner approved it (2026-10-20); `?textures=classic` shows the old look. The
 *content* (which blocks exist) is still prototype (ARCHITECTURE.md §6.1). What this document fixes is
 the style that content will be painted in.
 
@@ -153,3 +153,124 @@ The renderer lights the textures. They are **albedo with painted form, not baked
   `cloud_puff` material is a sky accent for sprites and the editor, not yet drawn by the sky.
 - Larger tiles. The atlas's tiles are 32 texels. A finer brush would need a 64-texel atlas
   (`TILE`), a change to the atlas, not to the style.
+- Whether the world gets an ink outline (§7). It is a preview, off by default.
+
+## 7. The ink outline (preview)
+
+Owner, 2026-10-20: *"I see the Character Lab has edge lines, I like that. What would that look like
+applied to the whole game?"* The Character Lab draws a thin dark outline in the palette's `ink`
+(CHARACTERS.md). This section is the same line drawn over the whole frame, as a screen-space pass.
+It is **off by default**. `?outline=silhouette`, `creases` or `blocks` turns it on for the page, and
+`__dwell.setOutline(name)` switches it live. Players see no change until the owner picks a mode.
+
+### 7.1 Modes are data
+
+`shared/look/outline.json` holds the ink (a palette reference, `"ink"`) and a list of named
+**modes**. `shared/look/outline.mjs` validates the file, resolves the ink from
+`shared/textures/palette.json` and generates `crates/dwell-look/src/outline.gen.rs`. CI fails if the
+generated file is stale. A new mode is one more entry. It might be thicker lines, a softer ink or a
+nearer fade. Each mode has these fields:
+
+| field | meaning |
+| --- | --- |
+| `edges` | which edges it draws: `depth` (silhouettes), `normal` (creases), `block` (block edges) |
+| `widthPx` | the line's width in CSS pixels (× the pixel ratio on the screen) |
+| `fadeStartM`, `fadeEndM` | full strength to the start, none from the end (metres from the eye) |
+| `strength` | the ink's opacity |
+| `depthThreshold`, `creaseThreshold` | where a silhouette and a crease begin (each reaches full strength at twice the value) |
+
+| mode | edges | width | fade | strength |
+| --- | --- | --- | --- | --- |
+| `silhouette` | depth | 1.5 px | 32–128 m | 0.85 |
+| `creases` | depth, normal | 1.5 px | 24–96 m | 0.8 |
+| `blocks` | depth, normal, block | 1 px | 12–48 m | 0.6 |
+
+### 7.2 The edge rule
+
+The composite finds edges in the shared frame's **view depth** alone (the frame has no normal or id
+targets). It reads one sample per tap over a
+3 × 3 grid, with the taps half the line's width apart. Inverse depth is linear across the screen on
+any plane, so a flat face at any angle has no edge.
+
+- **Silhouettes:** the second difference of inverse depth across the pixel is large compared with
+  the nearest tap.
+- **Creases:** the slope of inverse depth changes, along the middle row or column or between the
+  outer ones. The outer comparison is what finds a block's side against the ground it stands on,
+  where the depth barely jumps. The surface's normal turns there, but the frame doesn't store it.
+- **Block edges:** the voxel cell behind the surface changes from the pixel to a neighbour. The
+  position and normal are reconstructed from the depth. These are the frame's stand-in for block
+  ids.
+
+`dwell-look`'s `outline.rs` is the CPU twin of the silhouette and crease rules and the fade. Its tests
+pin that a flat face has no edge, that silhouettes and creases are found, and that **far pixels get
+no outline**.
+
+### 7.3 Keeping the distance clean
+
+Voxel terrain is mostly edges, so the main risk is a horizon of noise. Four measures keep it out:
+
+- The line fades out over the mode's distance. The spyglass multiplies the fade by its
+  magnification, so a zoomed view keeps its lines.
+- The height fog takes the ink toward the sky, as it takes the ground.
+- Each tap reads one sample, never the mean of a pixel's samples. A mean would let a few samples
+  of a blade's tip or a fading plant's dither pull the pixel forward and dot the grass with lines.
+- Pixels past the fade return after one load.
+
+### 7.4 With the rest of the frame
+
+- **Water** writes no view depth, so the frame sees the seabed through it. The ink is dropped below
+  the sea's surface when the eye is above it, so the shore gets a line and the seabed doesn't. Water
+  above sea level (placed water) still shows its bed's edges. The ink isn't drawn while the eye is
+  under water.
+- **Clouds:** the ink goes under the cloud deck where the deck is in front of the edge, and it is
+  gone inside a cloud.
+- **Tall grass** takes no ink (owner, 2026-10-20: *"The grass on creases is mostly black, perhaps
+  don't apply it to the grass."*). Block data **`outline`** (a cross option; `false` by default for
+  the cross plants, `true` for everything else; `shared/blocks/gen.mjs` validates it and the fixture
+  `test:reed` says `true` by data alone) reaches the frame in the cutout mesh's `bare` stream, and
+  the cutout pass flags the pixel's view depth: its lowest bit (`frame_depth`, which every writer of
+  the view depth calls, so the bit is never noise; about 1e-7 of the depth, below anything a reader
+  resolves). No extra target or load: the ink already reads the depth. A flagged pixel gets no ink,
+  and the edge rule treats flagged taps as see-through: such a tap takes what the plane through the
+  pixel and the opposite tap gives (no edge across that pair), or the pixel's own where both are
+  flagged, never nearer than the sky. So the blades, their edges against the ground and against the
+  sky draw nothing, and the terraces and blocks among them keep their lines (dwell-look's
+  `see_through` is the CPU twin, `plants_that_take_no_ink_are_seen_through` its test). A ridge
+  hidden behind a blade loses its line there; the frame has no depth behind a plant.
+- **The brush ghost and the block outline** are drawn after the composite, so they sit over the ink.
+- **The wind** (motion effects) is drawn over the ink, as a later pass over the finished image, so
+  the edge blur's taps carry the ink to the screen's edges (MOTION_EFFECTS.md: post effects that
+  sample neighbours read the finished image; before this fix the lines vanished outside the blur's
+  inner circle when sprinting).
+- **Both texture sets** use the same rule.
+
+### 7.5 Cost
+
+`npm run bench -- --compare idle-spawn fly-high --configs raster,outline-silhouette,outline-creases,outline-blocks`.
+Apple M1, 1280 × 720 at pixel ratio 1, one run each, on a machine shared with other agents.
+GPU means in ms:
+
+| scenario | | off | silhouette | creases | blocks |
+| --- | --- | --- | --- | --- | --- |
+| idle-spawn | `gpu.composite` | 5.38 | 5.95 | 5.88 | 5.70 |
+| idle-spawn | `gpu.frame` | 13.4 | 13.1 | 13.6 | 13.6 |
+| fly-high | `gpu.composite` | 10.5 | 10.7 | 9.05 | 9.11 |
+| fly-high | `gpu.frame` | 14.4 | 14.5 | 12.5 | 12.6 |
+
+The composite costs **+0.3 to +0.6 ms** at the spawn. From the air nearly every pixel is past the
+fade, so the cost is within noise. In both scenarios `gpu.frame` stays within run-to-run noise of
+off, which meets the 0.5 ms target. The first version read four samples per tap and cost about
++2 ms. Reading one sample per tap and returning early past the fade brought it down.
+
+### 7.6 For the owner
+
+The screenshots showed every view off and in each mode, with both texture sets, plus the ray marcher
+(since removed: ADR 0044).
+The views are the ground at the spawn, a hillside, blocks close up, a steep slope, the shore, 600 m
+up, the spyglass and the brush ghost. Questions:
+
+1. Which mode, if any? `creases` gives the storybook contour lines on terraces. `blocks` adds a grid
+   that reads more like a diagram.
+2. ~~Should tall grass be outlined?~~ Answered (2026-10-20): no; block data `outline`, §7.4.
+3. Line width and distance: a thicker line and a shorter fade, or the reverse?
+4. If one stays: a setting in the menu, and a new compatibility line isn't needed (it is a look only).

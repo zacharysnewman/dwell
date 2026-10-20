@@ -1,8 +1,9 @@
 # Water rendering — surface, reflections, refraction, underwater
 
 **Status:** Adopted ([ADR 0030](./adr/0030-fluid-looks-and-water-rendering.md)), 2026-10-14. Built as Phase 26
-of the [implementation plan](./IMPLEMENTATION_PLAN.md) (steps W1–W6; W1 split into W1a, the fluid data,
-and W1b, the water shader). Owner answers in §7.
+of the [implementation plan](./IMPLEMENTATION_PLAN.md) (steps W1–W5; W1 split into W1a, the fluid data,
+and W1b, the water shader; W6, water under ray marching, was dropped with the ray marcher at Phase 25's
+A7, [ADR 0044](./adr/0044-mesher-over-ray-marching.md)). Owner answers in §7.
 
 ## 1. Water today
 
@@ -20,7 +21,8 @@ and W1b, the water shader). Owner answers in §7.
   Fresnel, specular, reflection or refraction.
 - **Why reflections and refraction can't be added today.** The frame renders with 4× MSAA straight
   into the canvas, and depth is render-attachment only with `StoreOp::Discard`. No scene colour or
-  depth can be sampled. This is the main structural change ([`RAY_MARCHED_RENDERER.md`](./RAY_MARCHED_RENDERER.md) step A1).
+  depth can be sampled. This is the main structural change (the shared frame: W2, built as Phase 25's
+  step A1).
 - **Submersion.** Only physics knows (`submerged_fraction`, `crates/dwell-physics/src/query.rs`),
   and it counts the whole cell as wet while the drawn surface is at 0.875. An eye test needs the
   cell at `floor(eye)` to be liquid **and**, when the cell above isn't water, `frac(eye.y) < 0.875`
@@ -67,22 +69,17 @@ or write linear depth to a colour target that resolves.
 
 **Reflections.** Raster: screen-space reflections (McGuire & Mara), faded at screen edges into the
 analytic sky (`dwell_sky(reflect(v, n))`, already available and free). Planar reflection doubles
-opaque draws and only suits one plane (sea level), so it's an Ultra-tier extra at most. Ray marched:
-one reflection ray through the GPU voxel structure — exact, and the recommended path once
-[`RAY_MARCHED_RENDERER.md`](./RAY_MARCHED_RENDERER.md) A3 exists.
+opaque draws and only suits one plane (sea level), so it's an Ultra-tier extra at most. (A
+ray-marched reflection through a GPU voxel structure was the planned exact path; it went with the ray
+marcher, ADR 0044.)
 
 **Underwater.** Eye test into a `Frame` uniform (underwater flag, surface height, fluid id).
 Per-pixel split where the near plane crosses the surface (Crest's "water line"). Per-channel
 absorption fog replaces height fog while submerged. The surface from below (the water mesh is
 already double-sided): outside Snell's window (critical angle `asin(1/ior)`, about 48.6°) total
 internal reflection; inside, refract to the scene above. Caustics projected on opaque fragments
-below the surface by world xz and the sun direction; god rays as a screen-space radial blur (or
-shadow-ray samples under ray marching); a small UV wobble in the composite.
-
-**Under ray marching** water becomes a hit type: reflection and refraction rays through the same
-structure (exact Snell bend), absorption from the refracted ray's length, foam from distance to
-solid, caustics and god rays from shadow rays. No colour copy. Cost moves to divergent secondary
-rays: one bounce, a coarse level, a short max distance ending at the sky.
+below the surface by world xz and the sun direction; god rays as a screen-space radial blur; a small
+UV wobble in the composite.
 
 ## 4. Quality tiers (settings menu, next to `detailSettings.ts`)
 
@@ -91,7 +88,7 @@ rays: one bounce, a coarse level, a short max distance ending at the sky.
 | Low (phone default) | Normal maps, Fresnel, glint, sky-only reflection (no clouds), absorption at constant depth; underwater fog only. No copies |
 | Medium | Colour copy (full-res in W3; half-res in W5): refraction, depth absorption, foam, caustics; a cheap SSR (12 steps) and the clouds reflected (W5a) |
 | High | Plus a finer, farther SSR (28 steps, W5a), the reflected clouds' self-shadow, and god rays |
-| Ultra (desktop) | Full-res SSR; ray-marched reflections when A3 exists |
+| Ultra (desktop) | Full-res SSR |
 
 Copy cost at 1080p (*estimate*): about 25 MB per frame of colour and depth copies, plus the resolve.
 Trivial on desktop; real bandwidth and power on phones' tile GPUs, hence half-res copies there.
@@ -101,11 +98,11 @@ Trivial on desktop; real bandwidth and power on phones' tile GPUs, hence half-re
 | Step | Work | Exit check |
 |---|---|---|
 | **W1** | Fluid data in the registry (§2), a dedicated `water_fs` (normal maps, Fresnel, GGX, sky reflection), the eye-submerged uniform with the 0.875 rule. No new passes | Fixture-fluid test; **regression test for the cell-vs-surface mismatch, seen failing first**; owner look |
-| **W2** | The frame restructure — [`RAY_MARCHED_RENDERER.md`](./RAY_MARCHED_RENDERER.md) A1 (built once, shared) | As A1 |
+| **W2** | The frame restructure (built once, as Phase 25's A1, and kept: the shared frame) | As A1 |
 | **W3** | Refraction with the depth check, Beer–Lambert absorption, shoreline foam; caustics (brought forward from W4) | Screenshots of shore views; bench |
 | **W4** | Underwater: fog, the split line, Snell's window and TIR, distortion, god rays | Named views underwater and half in; owner look |
 | **W5** | SSR and the quality tiers, phone defaults (SSR and the reflected clouds came forward as W5a, §8) | Bench on desktop and a phone |
-| **W6** | Under ray marching (after A3, if marching is kept): reflection and refraction rays replace SSR and the copy on high tiers | Parity against W5's views |
+| ~~**W6**~~ | ~~Under ray marching: reflection and refraction rays replace SSR and the copy on high tiers~~ — dropped with the ray marcher (ADR 0044) | — |
 
 Each step updates `ARCHITECTURE.md` (render, `dwell-look`, `dwell-mesh`); the steps are Phase 26's
 deliverables in the implementation plan, with W1 split into W1a (the fluid data, the mesher reading it
@@ -118,7 +115,7 @@ public API: fluids are rendering data, and the 0.875 surface stays where it is.
 - Phone bandwidth for copies and stored depth.
 - Seams if anyone attempts vertex waves on greedy or LOD water.
 - Per-chunk sorting without depth writes mis-sorts water behind water (waterfalls, if they come).
-- SSR artifacts at screen edges; reflections of offscreen terrain missing until ray marching.
+- SSR artifacts at screen edges; reflections of offscreen terrain missing (screen space).
 - Moving tone mapping into the composite changes the shipped look slightly; needs a side-by-side.
 - MSAA is off on SwiftShader CI, so e2e screenshots differ from GPU runs.
 
@@ -388,7 +385,7 @@ sky alone. W5's screen-space reflections came forward, and so did the cloud deck
 
   The unloaded measurement is outstanding (the plan's W5a exit criteria).
 - **Limits** (screen-space): what is off screen, or hidden behind something nearer on screen, isn't
-  reflected (it fades to the sky). Ray-marched reflections (W6) would remove both.
+  reflected (it fades to the sky).
 
 ### Cost: what the water spends and the fixes (2026-10-19)
 

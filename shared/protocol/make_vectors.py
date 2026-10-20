@@ -24,6 +24,8 @@ CF = c["controllerFlags"]
 SF = c["slideFlags"]
 PF = c["playerFlags"]
 PS = c["playerStates"]
+HI = c["heldItem"]
+SW = c["swingFlags"]
 GK = c["groundKinds"]
 EK = c["playerEventKinds"]
 DC = c["damageCauses"]
@@ -87,8 +89,11 @@ SNAPSHOT = (
     + struct.pack("<B", 2)
     + struct.pack("<H", 3) + posfix(1.0, 2.0, 3.0) + f16s(0.5, -8.0, 0.000061035156)
     + struct.pack("<hhBB", 16384, -8192, PS["Running"], PF["grounded"])
+    # v17: held (a block state, the brush bit) and the last swing (count, break/place).
+    + struct.pack("<HB", HI["brush"] | 300, SW["place"] | 5)
     + struct.pack("<H", 9) + posfix(-1.0, 0.00390625, 8192000.5) + f16s(65504.0, -0.0, 1.0)
     + struct.pack("<hhBB", 0, 0, PS["Swimming"], PF["swimming"] | PF["dead"])
+    + struct.pack("<HB", 0, 0)
 )
 SNAPSHOT_MIN = (
     struct.pack("<BII", T["PhysicsSnapshot"], 3, 0)
@@ -288,6 +293,8 @@ vectors = {
     "chunk_data_explicit_wide": chunk_head(CF_["Explicit"], (1, 1, 1), 3)
     + chunk_voxels(chunk_wide),
     "chunk_data_explicit_solid": PAL1 + varint(N ** 3) + b"\x00",
+    "held_item_brush": struct.pack("<BH", T["HeldItem"], HI["brush"] | 4),
+    "held_item_empty": struct.pack("<BH", T["HeldItem"], 0),
     "host_status_paused": struct.pack("<BB", T["HostStatus"], c["hostStates"]["Paused"]),
     "host_status_resumed": struct.pack("<BB", T["HostStatus"], c["hostStates"]["Resumed"]),
     "reject_server_closing": struct.pack("<BB", T["Reject"], c["rejectReasons"]["ServerClosing"])

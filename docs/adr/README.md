@@ -33,8 +33,8 @@ one's status line. Resolving an item in `ARCHITECTURE.md` Open Decisions require
 | [0025](0025-baseline-world.md) | The baseline world: a 50 km bifacial disc, a 10-layer core, a spherical build volume, six blocks | Accepted (Rapier f64: 0028) |
 | [0026](0026-terrain-definitions.md) | Terrain definitions: terrain as data, evaluated by a fixed vocabulary of node kinds | Accepted (Rust tables: 0028) |
 | [0027](0027-webgpu-renderer.md) | WebGPU renderer: Three's `WebGPURenderer` with TSL materials, a WebGL2 fallback, and a look registry | Superseded by 0028 |
-| [0028](0028-rust-port.md) | One Rust codebase: server, sim core and client, with Rapier physics and a wgpu renderer (WebGPU only) | Accepted (renderer amended by 0029) |
-| [0029](0029-ray-marched-renderer.md) | A ray-marched terrain renderer, built complete beside the mesher and compared side by side | Accepted |
+| [0028](0028-rust-port.md) | One Rust codebase: server, sim core and client, with Rapier physics and a wgpu renderer (WebGPU only) | Accepted (renderer amended by 0029, which 0044 supersedes) |
+| [0029](0029-ray-marched-renderer.md) | A ray-marched terrain renderer, built complete beside the mesher and compared side by side | Superseded by 0044 |
 | [0030](0030-fluid-looks-and-water-rendering.md) | Fluid looks as registry data, and a water shader with refraction, underwater and reflections in quality tiers | Accepted |
 | [0031](0031-data-driven-structures.md) | Data-driven structures, built in an in-game sandbox world | Accepted |
 | [0032](0032-audio.md) | Procedural, data-driven sound effects in plain Web Audio, with events from the Rust game | Accepted |
@@ -49,6 +49,7 @@ one's status line. Resolving an item in `ARCHITECTURE.md` Open Decisions require
 | [0040](0040-painterly-textures.md) | Painterly textures: one data-driven stroke generator, baked at build time, behind a switch | Accepted |
 | [0041](0041-characters.md) | Characters and creatures: rigid chunky parts on a data rig, a separate first-person arms view | Accepted |
 | [0043](0043-structure-placements.md) | Structure placements in world generation, as data: the owner's pines in groves (generator version 17) | Accepted |
+| [0044](0044-mesher-over-ray-marching.md) | The mesher is the terrain renderer; the ray marcher is removed (Phase 25's A7; code in `archive/ray-marcher`) | Accepted |
 
 Phase numbers in ADRs follow the implementation plan as it was then. In ADRs 0001–0010, Phases
 4–7 became 5–8 when the world-LOD phase (Phase 4) was added on 2026-09-29, and then 6–9 when the

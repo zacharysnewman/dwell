@@ -153,6 +153,10 @@ for (const ns of namespaces) {
 // Render mode, cross geometry, wind and the placement rules (docs/TRANSPARENT_BLOCKS.md).
 // A block's render mode: its data's, else translucent for fluids and opaque for the rest.
 const renderOf = (def) => def.render ?? ((def.look ?? 'cube') === 'fluid' ? 'translucent' : 'opaque');
+// Whether the ink outline (docs/ART_DIRECTION.md §7) draws on it: its data's `outline`, else off
+// for the cross plants (a field of blades turns to scribble) and on for the rest. Only the cross
+// geometry carries the flag to the frame, so `outline` is a cross option.
+const outlineOf = (def) => def.outline ?? (def.look ?? 'cube') !== 'cross';
 function validateRender(id, def, look, isAir) {
   const render = renderOf(def);
   if (!RENDER_MODES.includes(render)) fail(`${id}: render must be one of ${RENDER_MODES.join(', ')} (got ${render})`);
@@ -165,10 +169,15 @@ function validateRender(id, def, look, isAir) {
     if (render === 'opaque') fail(`${id}: look cross has gaps: render must be cutout or translucent`);
     if (def.shape !== 'empty') fail(`${id}: look cross needs shape empty (crosses have no collision geometry)`);
   }
+  if (def.outline !== undefined) {
+    if (typeof def.outline !== 'boolean') fail(`${id}: outline must be true or false`);
+    if (look !== 'cross') fail(`${id}: outline needs look cross (only the cross geometry carries the ink flag)`);
+  }
   if (def.cross !== undefined) {
     if (look !== 'cross') fail(`${id}: cross options need look cross`);
-    onlyKeys(id, 'cross', def.cross, ['height', 'quads', 'jitter']);
-    const { height = 1, quads = 2, jitter } = def.cross;
+    onlyKeys(id, 'cross', def.cross, ['height', 'quads', 'jitter', 'sitOnSupport']);
+    const { height = 1, quads = 2, jitter, sitOnSupport = true } = def.cross;
+    if (typeof sitOnSupport !== 'boolean') fail(`${id}: cross.sitOnSupport must be true or false`);
     if (!(isNum(height) && height > 0 && height <= 1)) fail(`${id}: cross.height must be in (0, 1]`);
     if (![2, 3, 4].includes(quads)) fail(`${id}: cross.quads must be 2, 3 or 4`);
     if (jitter !== undefined) {
@@ -615,7 +624,7 @@ if (!fixture) writeFileSync(join(root, 'client/src/world/blocks.gen.ts'), ts.joi
     const c = d.cross ?? {};
     const j = c.jitter ?? {};
     const [lo, hi] = j.height ?? [1, 1];
-    return `Some(Cross { height: ${rf(c.height ?? 1)}, quads: ${c.quads ?? 2}, offset: ${rf(j.offset ?? 0)}, rotation_deg: ${rf(j.rotation ?? 0)}, height_min: ${rf(lo)}, height_max: ${rf(hi)} })`;
+    return `Some(Cross { height: ${rf(c.height ?? 1)}, quads: ${c.quads ?? 2}, offset: ${rf(j.offset ?? 0)}, rotation_deg: ${rf(j.rotation ?? 0)}, height_min: ${rf(lo)}, height_max: ${rf(hi)}, sit_on_support: ${c.sitOnSupport ?? true} })`;
   };
   rs.push(`pub static STATES: [StateInfo; ${states.length}] = [`);
   for (const st of states) {
@@ -648,6 +657,7 @@ if (!fixture) writeFileSync(join(root, 'client/src/world/blocks.gen.ts'), ts.joi
       `cross: ${crossRs(d)}`,
       `wind: ${d.wind ? `Some(Wind { strength: ${rf(d.wind.strength)}, speed: ${rf(d.wind.speed)} })` : 'None'}`,
       `fade: ${d.fade ? `Some(Fade { start: ${rf(d.fade.start)}, end: ${rf(d.fade.end)} })` : 'None'}`,
+      `outline: ${outlineOf(d)}`,
       `selection: ${d.selectionBox ? `Some([${d.selectionBox.map(rf).join(', ')}])` : 'None'}`,
       `place_on: &[${(d.placeOn ?? []).map(rstr).join(', ')}]`,
       `needs_support: Support::${d.needsSupport ? pascal(d.needsSupport) : 'None'}`,

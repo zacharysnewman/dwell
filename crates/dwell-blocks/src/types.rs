@@ -79,7 +79,10 @@ pub enum RenderMode {
 /// The `cross` look's geometry (block data `cross`): `quads` vertical quads through the cell's
 /// centre, evenly turned, `height` tall, each cell's copy jittered from its world position by up
 /// to `offset` (m, in x and z), `rotation_deg` (about y) and a height scale in
-/// [`height_min`, `height_max`].
+/// [`height_min`, `height_max`]. `sit_on_support` (data `sitOnSupport`, default true): the plant
+/// stands on the supporting block's drawn surface under it (an adaptive top resting at half
+/// height, a slope's height at each foot) rather than on its cell's floor
+/// ([`crate::shape::plant_sink`]).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Cross {
     pub height: f32,
@@ -88,6 +91,7 @@ pub struct Cross {
     pub rotation_deg: f32,
     pub height_min: f32,
     pub height_max: f32,
+    pub sit_on_support: bool,
 }
 
 /// Wind sway of a cross's top (block data `wind`): `strength` metres at the top, gusts at `speed`
@@ -162,6 +166,9 @@ pub struct StateInfo {
     pub cross: Option<Cross>,
     pub wind: Option<Wind>,
     pub fade: Option<Fade>,
+    /// Whether the ink outline draws on it (block data `outline`; docs/ART_DIRECTION.md §7.4):
+    /// off by default for the cross plants, on for the rest ([`outline_default`]).
+    pub outline: bool,
     /// A smaller box (min x, y, z, max x, y, z in the cell) for targeting, line of sight and the
     /// outline; none: its shape, or the whole cell for a block without one.
     pub selection: Option<[f32; 6]>,
@@ -264,4 +271,11 @@ impl ShapeInfo {
         min_y: 0.0,
         max_y: 0.0,
     };
+}
+
+/// Whether the ink outline draws on a state of `look` whose data doesn't say (block data
+/// `outline`; shared/blocks/gen.mjs `outlineOf`): not on the cross plants, whose blades would turn
+/// a field to scribble, on everything else.
+pub fn outline_default(look: &str) -> bool {
+    look != "cross"
 }

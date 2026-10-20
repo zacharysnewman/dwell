@@ -30,7 +30,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 10 — Continents from Voronoi plates | 🚧 In progress — built and tested natively (12–13 continents, separation, shape statistics, coast, goldens regenerated for generator v6, the whole-disc inspect image mode, the F4 zoom); `package.json` raised to 0.4.0, the new compatibility line (generator v6); outstanding: the WASM suites and client-module goldens (CI), the F4 zoom in a browser, LOD generation within +10 % at coasts, the owner's review of whole-disc images; **re-scoped by the baseline rework**: to be cut to one island (Phase 15) and replaced by the terrain definition's layout (Phase 17), which drops these outstanding items |
 | 11 — Natural terrain: rivers, mountains, climate & biomes | 🚧 In progress — 11a built (generator v7: valley floor, three river tiers, lakes, terraced water above sea level, `ADR 0018`; `package.json` raised to 0.5.0), the climate moved to continental scale (v8, ADR 0019; 0.6.0) and the level of detail's rivers, water levels and plate edges made to match full detail (ADR 0020), the shores beside distant water drawn at their true height and distant slopes tinted by their step sides; 11b built (generator v9: the derivative-damped ridged cascade, ADR 0021); 11c built (generator v10: continent climate biases and rain shadows, the 19-biome table, wetland ponds, grass and leaves tinted by biome, ADR 0022); all tested natively and in the client's Vitest suites; 11d (stretch) waits for the owner's approval of 11a–c; outstanding: the WASM suites and client-module goldens (CI), generation cost over the whole phase (LOD +30–57 % against version 8, see 11b/11c), the manual river walk and a flight over a range, the owner's review of the map images, a browser look at distant rivers and at the new foliage; **re-scoped by the baseline rework**: rivers, climate, biomes, tints and features are to be cut (Phase 15), which drops these outstanding items |
 | 12 — Sky islands in a dome | ✖ Cancelled by the baseline rework (owner, 2026-10-12: no special terrain features); never started |
-| 13 — Bifacial world: a second face below, gravity toward the midplane | 🚧 In progress — built: ADR 0023, bounds without bedrock, face B's terrain (generator v11) and LOD, protocol v12 (index rows, `faceB` flags), the controller's face frame, flip band (accelerating toward the midplane), `--dwell-face=b` controller suites (native and WASM), face-B chunk/LOD meshing, per-face light, night sky and camera turn-over; `package.json` raised to 0.8.0, the new compatibility line (protocol v12, generator v11); outstanding: a look at it in a browser, client worldgen-module goldens (CI), the owner's manual review; re-scoped by the baseline rework: the 50 km disc, midplane at 0 and 10-layer core (Phase 16), whose exit criteria include the browser look; follow-up built: the LOD bounds cache keyed per column again (near chunks above the first column's height were hidden); the LOD culls the other face and meshes straddling sections for the viewer's face; the camera crossing is a half forward somersault, one sky sphere; `package.json` raised to 0.8.1, a patch release of the 0.8 line (no compatibility change) |
+| 13 — Bifacial world: a second face below, gravity toward the midplane | 🚧 In progress — built: ADR 0023, bounds without bedrock, face B's terrain (generator v11) and LOD, protocol v12 (index rows, `faceB` flags), the controller's face frame, flip band (accelerating toward the midplane), `--dwell-face=b` controller suites (native and WASM), face-B chunk/LOD meshing, per-face light, night sky and camera turn-over; `package.json` raised to 0.8.0, the new compatibility line (protocol v12, generator v11); outstanding: a look at it in a browser, client worldgen-module goldens (CI), the owner's manual review; re-scoped by the baseline rework: the 50 km disc, midplane at 0 and 10-layer core (Phase 16), whose exit criteria include the browser look; follow-up built: the LOD bounds cache keyed per column again (near chunks above the first column's height were hidden); the LOD culls the other face and meshes straddling sections for the viewer's face; the camera crossing is a half forward somersault, one sky sphere; `package.json` raised to 0.8.1, a patch release of the 0.8 line (no compatibility change); follow-up built (2026-10-20, BIFACIAL_WORLD.md §11): face parity — `FaceFrame`, the one world ↔ face-local transform, `both_faces!` tests and parity suites over the mirror world; face-B fixes: a half-height top's target box, brush strokes, copy and paste, plant jitter; the deferred "stray dark slabs" were the face-B day/night scenario's camera inside the rock (the scenario fixed) |
 | 14 — Baseline decisions & ADRs | ✅ Complete — the owner answered D1–D10 (2026-10-12; D3 changed: the build sphere bounds building, not movement; D4 adds the active renderer shown in the settings menu); ADRs 0025–0027 written and 0024 amended, all Accepted |
 | 15 — Cut to the baseline | 🚧 In progress — built and verified locally (native, WASM, Vitest; goldens regenerated; generator version 12, one island; `package.json` 0.9.0, the new compatibility line); e2e passes in CI; outstanding: the owner's look in a browser; follow-up (owner, 2026-10-16): the log and leaves blocks restored as prototype content (appended to the registry, no worldgen placement; a new registry hash, so the 0.13 line) |
 | 24 — Rust port (one Cargo workspace, Rapier, wgpu client; runs after 15, before 16) | 🚧 In progress — 24f (the cutover): 24a–24e built; the C++/TS tree deleted; every Rust suite, the e2e suite and Electron's smoke test pass in CI on the Rust client and `dwell-server`; `package.json` 0.10.0, the new compatibility line (world files are redb now); playtest follow-ups built (2026-10-14): the grey see-through haze on distant ground (atlas mipmaps whose filtering reached past a tile's gutter; checked in a browser), each depth pass draws what reaches its depth range (by distance it could miss terrain toward the sides of the view; suspected, not confirmed, as the cause of gaps seen from high up), replaced meshes never freeing their GPU buffers on the web (the frame rate falling over a session), the LOD's velocity lookahead removed (detail loads by location alone), and named views (`client/views/views.json`: a placed camera, window and settings per view, opened by e2e specs and shot by `scripts/shots.ts`, no flying); the gaps seen from high up not reproduced and not pursued (owner); the dev telemetry and bench (`docs/DEV_TOOLS.md`), and with it the jump onto a block from against it fixed (Rapier's contact clustering hid the body's contacts; also crouching against a wall moving the player back), and the frame time cut about 3.5× idle and flying low (no dropped frames at 60 Hz when flying fast and low; fast hasher, arena-paged meshes with one draw call each, instance-indexed draw data, leaner LOD traversal and chunk padding); the menus redesigned (owner, 2026-10-14: a themed main menu, a full-screen game menu with Settings, Controls and Debug pages, key hints, phones upright and sideways, touch controls no longer taking the menus' taps); `package.json` raised to 0.10.3, a patch release of the 0.10 line (no compatibility change), with the launcher owning the main menu; outstanding: the owner's look at the new menus; the frame-time measurement and the owner's manual check, including a long session's frame rate; `package.json` raised to 0.11.15, a patch release of the 0.11 line |
@@ -38,27 +38,27 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 17 — Terrain definitions (terrain as data) | ⏳ Not started — built in Rust after Phase 24 |
 | 18 — Adaptive natural blocks (formerly 9e) | 🚧 In progress — every deliverable built and tested (natively, WASM, Vitest); protocol v13, a new compatibility line for the owner to raise; outstanding: the two-client e2e, the LOD seam check, the owner's walk; owner decision 2026-10-15: faces steeper than 44° slide (Phase 35); `package.json` raised to 0.12.0, the new compatibility line (protocol 13; adaptive blocks change collision and terrain; the owner's decision, 2026-10-16) |
 | 19 — WebGPU, looks & textures | ⏳ Not started — re-scoped by ADR 0028: WebGPU is done by Phase 24 (wgpu, no fallback); the look registry and textures as data are built on wgpu after it |
-| 20 — Voxel awakening | ⏸ Waits for Phases 6–19 (2026-10-05; the baseline rework, 14–19, added 2026-10-12) and for Phase 25's renderer decision (A7, 2026-10-14: cluster rendering is built once, for the chosen renderer) |
+| 20 — Voxel awakening | ⏸ Waits for Phases 6–19 (2026-10-05; the baseline rework, 14–19, added 2026-10-12); Phase 25's renderer decision is made (A7, 2026-10-20: the mesher), so clusters are drawn as meshes |
 | 21 — Tiered physics | ⏸ Waits for Phases 6–19 (2026-10-05; the baseline rework, 14–19, added 2026-10-12) |
 | 22 — Sleep / re-bake | ⏸ Waits for Phases 6–19 (2026-10-05; the baseline rework, 14–19, added 2026-10-12) |
 | 23 — Dedicated servers & packaging | ⏳ Not started |
-| 25 — Ray-marched renderer comparison | 🚧 In progress — A0 (ADR 0029), A1 (the shared frame and GPU timing; the owner approved its image differences, 2026-10-14, and the e2e suite passes on CI), A2 (the renderer seam, compare mode, bench `--compare`; its exit check done) and A3a (the CPU core: `crates/dwell-march`) built; A3b (the GPU march behind the seam, checked against the reference per pixel; its CI run outstanding) built; A4a (speed: level-rows skip, vectorised march, shade pass, the cone-LOD ring fix) and A5a (render scales 0.5/0.75 with FSR 1 or a bilateral upscale) built; A4b (the beam prepass, and the temporal start with the eye still) built: at 720p on an M1, 8.5 ms at the spawn and 17.5 ms flying (A4a: 21 and 24) against raster's whole GPU frame of 3.6–5.0 ms, and 2.2–6.6 ms at half scale with FSR 1; A4c (the optimization survey; the temporal start while the eye moves, kept unchanged frames, the column search's slope rule) built: marching every frame, 17–31 % off A4b at the spawn, the horizon, looking down, flying high and far away (Chrome, M1, measured under load), and a still, unchanged view costs only its shading (about 1 ms); A4c's three far-case picks (the per-step cost at the LOD levels, a second beam, half-rate marching) built, measured and not kept, none beating the march as it is; the cone LOD's pixel error at 8 px (−24 % flying high) left to the owner as a change of look; next: A3c (overlays over marched terrain, LOD column heights in the bricks, raster ids); outstanding: A4's phone report; A2's edit-to-visible latency and the bench's id/depth agreement (moved to A3); local builds only until the owner's decision (A7); `package.json` raised to 0.11.21, a patch release of the 0.11 line |
-| 26 — Water and fluid looks | 🚧 In progress — W1a (fluid data, the eye-under-fluid uniform) done; W2 built (it is Phase 25's A1, built once there; the owner approved its image differences, 2026-10-14); W1b (the water shader, the underwater fog stub, the water quality setting) built and checked in Chrome on an M1, outstanding: the owner's look; W3 (refraction, depth absorption, shoreline foam, sparkle, and caustics brought forward from W4, above and under the surface) built and checked in Chrome on an M1, outstanding: the owner's look and an unloaded per-tier cost measurement; W5a (reflections of land by screen-space reflection, and of the clouds, brought forward from W5 at the owner's report) built and checked in Chrome on an M1, outstanding: the owner's look and an unloaded cost measurement; water cost work (WATER_RENDERING.md §8, "Cost"): cheaper hashing, noise and caustic tiles, frame pacing against the stalls, Medium the desktop default — Medium +1.6 ms and High +1.7 ms over Low on the shore view before the reflections, which now add the most (outstanding: W5a's reflection cost against the 2/3 ms targets); next: W4; W6 only if marching is kept at A7; `package.json` raised to 0.12.1, a patch release of the 0.11 line; **follow-up (owner, 2026-10-20): shore water** (WATER_RENDERING.md §9) built and tested — the sea floods natural top blocks below sea level (generator version 17, a new compatibility line for the owner to raise, 0.19.0), fluid sides clipped to the surface and to shaped neighbours, side faces' backs seen from the air take the outside look; outstanding: the owner's look |
+| 25 — Ray-marched renderer comparison | ✖ Dropped at A7 by the owner (2026-10-20: "Ray marching is massively slower… Mesher / raster is definitely our way forward"; ADR 0044). A0–A4c and A5a were built and measured (at A4c, marching every frame cost 1.5–3× raster's whole GPU frame); the marcher, compare mode and the renderer switch are removed from main, their code kept as the `archive/ray-marcher` tag and branch. Kept: A1's shared frame and GPU timing (water's W2) and `bench --compare` for raster configurations. Follow-up: the face-B "stray dark slabs" bug, deferred in case marching replaced the mesher, now needs fixing in the mesher |
+| 26 — Water and fluid looks | 🚧 In progress — W1a (fluid data, the eye-under-fluid uniform) done; W2 built (it is Phase 25's A1, built once there; the owner approved its image differences, 2026-10-14); W1b (the water shader, the underwater fog stub, the water quality setting) built and checked in Chrome on an M1, outstanding: the owner's look; W3 (refraction, depth absorption, shoreline foam, sparkle, and caustics brought forward from W4, above and under the surface) built and checked in Chrome on an M1, outstanding: the owner's look and an unloaded per-tier cost measurement; W5a (reflections of land by screen-space reflection, and of the clouds, brought forward from W5 at the owner's report) built and checked in Chrome on an M1, outstanding: the owner's look and an unloaded cost measurement; water cost work (WATER_RENDERING.md §8, "Cost"): cheaper hashing, noise and caustic tiles, frame pacing against the stalls, Medium the desktop default — Medium +1.6 ms and High +1.7 ms over Low on the shore view before the reflections, which now add the most (outstanding: W5a's reflection cost against the 2/3 ms targets); next: W4; W6 dropped with the ray marcher (A7, ADR 0044); `package.json` raised to 0.12.1, a patch release of the 0.11 line; **follow-up (owner, 2026-10-20): shore water** (WATER_RENDERING.md §9) built and tested — the sea floods natural top blocks below sea level (generator version 17, a new compatibility line for the owner to raise, 0.19.0), fluid sides clipped to the surface and to shaped neighbours, side faces' backs seen from the air take the outside look; outstanding: the owner's look |
 | 27 — Structure sandbox | 🚧 In progress — S0 (ADR 0031), S1 (the structure format, `gen.mjs`, the Rust loader, the playground converted), S2a (floor block, sandbox world type), S2b (the structures store: save, load through the region paste, export and import) and S3a (region edits, the region tools) done, S2a's e2e check outstanding; `package.json` raised to 0.11.0, the new compatibility line (S2a's registry change; the owner's decision, 2026-10-14); next: S3b (anchor, touch) and the S3 sandbox e2e outstanding; S4a (worldgen placement as interim data, the owner's pines in groves, generator v18, ADR 0043) built and tested natively and in Chrome on the GPU — it changes the terrain a seed generates, so it needs a new compatibility line (0.20.0), which the owner raises; outstanding: CI and the owner's look; S4b (the rules moved into Phase 17's terrain definitions) waits for Phase 17; `package.json` raised to 0.11.11, a patch release of the 0.11 line |
 | 28 — Sound effects | 🚧 In progress — F0–F6 built and tested (procedural Web Audio, no library; sound data and generator, the registry's `sound` field, Rust sound events, synth, variation, mixer, spatial playback, menu and game-action sounds, volume sliders, offline WAV renders); outstanding: the owner listens to the WAV renders and approves them, and answers `AUDIO.md` §9; `package.json` raised to 0.11.12, a patch release of the 0.11 line |
 | 29 — Motion effects (speed FOV and wind) | 🚧 In progress — built and tested (the FOV widening with the camera's speed for the renderer and the LOD alike, the wind streaks, vignette and edge blur in the shared frame's composite, tunables as data, the settings, bench scenarios and screenshots; fix 2026-10-20: the edge blur keeps the clouds seen from above); outstanding: the owner's look in a browser and approval, CI; `package.json` raised to 0.11.7, a patch release of the 0.11 line |
 | 30 — Tree growth | 🚧 In progress — G-ADR (ADR 0033) and the G0 prototype page built and verified in Chromium; outstanding for G0: publishing the page and the owner's review; next: G1; G2 needs Phase 27 (S2a/S3); G3 is a new compatibility line (the owner decides the bump) and needs Phase 20 for felling and the day/night cycle's day length; `package.json` raised to 0.11.14, a patch release of the 0.11 line |
 | 31 — Sky clouds | 🚧 In progress — C0–C5 built and tested: a 2D cloud deck in the composite's sky (ADR 0034, `CLOUDS.md`), tunables as data (`shared/look/clouds.json`, generator and CI stale check), the Clouds setting (Off / Low / High), the drift on the server's tick, bench scenarios and screenshots, GPU cost measured (about +0.9 ms composite on High at 720p, Apple GPU); the owner approved the look (2026-10-15) and asked for clouds from above (C5, built: the deck over the terrain by the stored depth, sunlit tops, a fogged crossing); outstanding: CI, a phone's frame time; future, not started: weather-driven coverage (C6), cloud shadows on the terrain (C7); `package.json` raised to 0.13.1, a patch release of the 0.11 line |
 | 32 — Day/night cycle | 🚧 In progress — D0–D5 built and tested: world time (the server's tick, no protocol change) drives a keyframed sky, light, fog, exposure and saturation (ADR 0035, `DAY_NIGHT.md`), data in `shared/look/daynight.json` (generator, CI stale check), a limb-darkened sun, a moon with phases and maria, stars, per-face light on both faces, the clouds and the water's glint lit by it, `?time`/`?moon`/`?timespeed`, F3, bench `time`/`timelapse` steps; screenshots and GPU cost (about +0.1 ms composite, 720p, Apple GPU); outstanding: the owner's look and answers to `DAY_NIGHT.md` §8, CI, a phone's frame time; `package.json` raised to 0.11.16, a patch release of the 0.11 line |
-| 33 — Transparent blocks (render modes, cross geometry, tall grass) | 🚧 In progress — render modes as block data and cutout (see-through) ladders shipped on the 0.11 line (0.11.18; no registry-hash change); on `claude/transparent-blocks` for the 0.13.0 line (with wood and leaves): the cross look with wind and fade, placement rules and `medium`, `dwell:tall_grass` grown by world generation (decorations as data, generator version 13; a partial reversal of B10 for plants), the Plant sway setting, the marcher's classes, all tested and checked in a browser (about +0.3 ms GPU for a 150-plant field); outstanding: hillside screenshots of generated grass (T9), the owner's look, the e2e suite on CI; `package.json` raised to 0.13.0, the new compatibility line (new blocks: log, leaves, tall grass; generator v13; the owner's decision, 2026-10-16) |
+| 33 — Transparent blocks (render modes, cross geometry, tall grass) | 🚧 In progress — render modes as block data and cutout (see-through) ladders shipped on the 0.11 line (0.11.18; no registry-hash change); on `claude/transparent-blocks` for the 0.13.0 line (with wood and leaves): the cross look with wind and fade, placement rules and `medium`, `dwell:tall_grass` grown by world generation (decorations as data, generator version 13; a partial reversal of B10 for plants), the Plant sway setting, the marcher's classes, all tested and checked in a browser (about +0.3 ms GPU for a 150-plant field); follow-up 2026-10-20: plants sit on their support's drawn surface (`cross.sitOnSupport`); outstanding: hillside screenshots of generated grass (T9), the owner's look, the e2e suite on CI; `package.json` raised to 0.13.0, the new compatibility line (new blocks: log, leaves, tall grass; generator v13; the owner's decision, 2026-10-16) |
 | 34 — Brushes | 🚧 In progress — B1 built and tested (brushes, performers and sculpt in `dwell-world` `brush.rs`, presets and the per-world-type policy as data, strokes as `KEEP` pastes behind the `brushes` Welcome flag, the brush tool, HUD panel and keys). The owner answered `BRUSHES.md` §5 (2026-10-19); B2 (the rest of VoxelSniper's brushes, §7), B3 (the exact-cell preview) and B4 (predicted strokes and edits, protocol v16: a new compatibility line) built and tested; touch brushes later (owner). Outstanding: the owner's try-out, CI |
-| 35 — Sliding on steep ground (stacks on 18, uses 28) | 🚧 In progress — built and tested natively (controller, netcode, sound events and data, the shell's loop voices, WAV renders) and in a browser (the bench); outstanding: CI (the WASM divergence run and the e2e suite, not run on the branch), the owner's review of the feel and of the slide WAV renders; `package.json` raised to 0.12.0, the new compatibility line (protocol 13; adaptive blocks change collision and terrain; the owner's decision, 2026-10-16) |
+| 35 — Sliding on steep ground (stacks on 18, uses 28) | 🚧 In progress — built and tested natively (controller, netcode, sound events and data, the shell's loop voices, WAV renders) and in a browser (the bench); outstanding: CI (the WASM divergence run and the e2e suite, not run on the branch), the owner's review of the feel and of the slide WAV renders; `package.json` raised to 0.12.0, the new compatibility line (protocol 13; adaptive blocks change collision and terrain; the owner's decision, 2026-10-16) Follow-up fix (2026-10-20): no flicker between sliding and walking at a 45° face's foot (PLAYER_CONTROLLER.md §6.8, "The ramp's foot"). |
 | 36 — Block registry sync | 🚧 In progress — built and tested natively and in Vitest (ADR 0038, `BLOCK_REGISTRY.md` §8): the server's registry sent at join (`BlockRegistry`, protocol 14), ids mapped at the session boundary, the join prompt (no refusals), the fallback look, server-registered blocks, placeholders for unknown states in world files; outstanding: CI, the e2e suite (WebRTC join fixed: parts fit a WebRTC message, larger messages are fragmented), the owner's review of the prompt; ships in the next minor (0.14.0), coordinated with Phase 16's protocol bump |
 | 37 — Sprint slide (stacks on 35) | 🚧 In progress — built and tested natively (controller, predictor, netcode, protocol 15 vectors): crouch while sprinting slides on, crouched, with friction and slopes, limited steering, a jump out and a cooldown (`PLAYER_CONTROLLER.md` §6.9), checked in Chrome (the `sprint-slide` bench); outstanding: CI (the WASM divergence run and the e2e suite), the owner's review; a protocol change (15): the owner raises `package.json` to a new minor |
 | 38 — The spyglass | 🚧 In progress — built and tested natively, in Vitest and on a real GPU (ADR 0039, `SPYGLASS.md`): a toggle key (`` ` ``) and wheel steps from `shared/look/spyglass.json` (generator, CI stale check), the zoomed FOV for the raster renderer, the marcher (its FOV bug fixed) and the LOD, which refines only inside the narrow view (bounded by the detail boost), the vignette, reduced motion, the `spyglass-far` bench scenario; outstanding: CI and the owner's review in a browser; a patch release |
-| 39 — Painterly textures | 🚧 In progress — built and tested natively, in Node and on a real GPU (ADR 0040, `ART_DIRECTION.md`, `PAINTERLY_TEXTURES.md`): the storybook palette and materials as data (`shared/textures`), one stroke generator baked into the atlas (CI stale check, a material added by data alone), `?textures=painterly` on the page and in the meshing workers (the classic set stays the default), the Painterly Texture Lab, the bench's `painterly` configuration (same frame cost); follow-ups: grass_side's skirt made continuous across the tile (owner's review); the skirt on dirt sides under grass (`sideUnder` block data, the `dirtSkirt` tile, in both sets; owner, 2026-10-20); outstanding: CI and the owner's review of the look, then flipping the default; a patch release |
-| 40 — Characters and creatures (design and concept) | 🚧 In progress — C0 built and tested (ADR 0041, `CHARACTERS.md`): the rig vocabulary and validator (`shared/characters/rig.mjs`), the data (the player with three looks, the wolf, the deer; accessories, the block and brush items, clips), the generator and its tests, the Character Lab prototype checked in Chrome and published; stacked on Phase 39's palette and materials; C0b (the owner's first review, 2026-10-20) built and tested: hair composes with hats (`with`), the wolf's and deer's tails are chains checked joined through every clip, the player's clips for every controller state (sprint, crouch, crouch-walk, slide, jump, fall, land, climb, swim, fly; the arms' sprint, slide, jump, fall, land) and the Lab's transitions player; outstanding: the owner's review of the fixes and the rest of `CHARACTERS.md` §10, CI; C1–C3 (in the game) not started; a patch release |
-| 41 — Half-height grid (½ m cells, stored cardinal ramps; branch `claude/half-height-voxels` only) | 🚧 In progress — H0–H4 built and verified locally: one named cell height (H1), the stored cardinal ramps (H2), the generation rule (H3), and the switch to ½ m cells (H4: no block adaptive; face B's LOD mirror and the LOD id fixed). H6: `main` merged in (Phase 16's world, registry sync, sprint slide, spyglass, brushes and predicted edits, steep v16 hills as whole-metre steps with 45° ramps; protocol and generator 1016), native, WASI, clippy and Vitest green locally; main 0.20.0 merged (shore water: ramps below sea level flooded; step-up; the pines at two cells per block; protocol 1016, generator 1018), the touched suites green locally; playtest fix: no flicker at a 45° ramp's foot (§6.8); option A's slopes (generator 1019: no 1 m step snap, the Sobel ramp facing) and the step-up's highest top across a face; then the owner's choice of V2 (generator 1020: the snap off with the old ramp rule; 24.5 cliff edges per 100 columns, 45° slides on ~3.2 % of land tops). Outstanding: CI; the ray marcher, brushes, the fluid surface drop, the vertical view radius and the build sphere left in cells (deviations, for the playtest). Next: H5, the owner's playtest on a dev build. A playtest branch, not for `main` until the owner keeps it; `package.json` not raised on the branch |
+| 39 — Painterly textures | 🚧 In progress — built and tested natively, in Node and on a real GPU (ADR 0040, `ART_DIRECTION.md`, `PAINTERLY_TEXTURES.md`): the storybook palette and materials as data (`shared/textures`), one stroke generator baked into the atlas (CI stale check, a material added by data alone), `?textures=painterly` on the page and in the meshing workers (the default since the owner approved it, 2026-10-20; `?textures=classic` keeps the old set), the Painterly Texture Lab, the bench's `painterly` configuration (same frame cost); follow-ups: grass_side's skirt made continuous across the tile (owner's review); the skirt on dirt sides under grass (`sideUnder` block data, the `dirtSkirt` tile, in both sets; owner, 2026-10-20); the ink outline preview behind `?outline=` (ART_DIRECTION.md §7, off by default), then no ink on tall grass (block data `outline`) and the edge blur moved to its own pass over the finished image so the ink reaches the screen edges at speed (owner, 2026-10-20); outstanding: the owner's pick of an outline mode; CI and the owner's review of the look, then flipping the default; a patch release |
+| 40 — Characters and creatures | 🚧 In progress — C0 built and tested (ADR 0041, `CHARACTERS.md`): the rig vocabulary and validator (`shared/characters/rig.mjs`), the data (the player with three looks, the wolf, the deer; accessories, the block and brush items, clips), the generator and its tests, the Character Lab prototype checked in Chrome and published; stacked on Phase 39's palette and materials; C0b (the owner's first review, 2026-10-20) built and tested: hair composes with hats (`with`), the wolf's and deer's tails are chains checked joined through every clip, the player's clips for every controller state (sprint, crouch, crouch-walk, slide, jump, fall, land, climb, swim, fly; the arms' sprint, slide, jump, fall, land) and the Lab's transitions player; C1 (players in the game) built and tested (2026-10-20): `dwell-characters` (tables generated from the data, part meshes, clips, clip selection), the full body for remote players and your first-person arms in their own pass, the Show your arms setting, the `puppets` dev tool; with C2's held item and swings in snapshots (protocol v17: **a new compatibility line**, the owner raises `package.json`); outstanding: CI, the owner's review in game and of `CHARACTERS.md` §10, C2's looks at join, a step pose (foot IK on steps built with claude/smooth-steps), C3 |
+| 41 — Half-height grid (½ m cells, stored cardinal ramps; branch `claude/half-height-voxels` only) | 🚧 In progress — H0–H4 built and verified locally: one named cell height (H1), the stored cardinal ramps (H2), the generation rule (H3), and the switch to ½ m cells (H4: no block adaptive; face B's LOD mirror and the LOD id fixed). H6: `main` merged in (Phase 16's world, registry sync, sprint slide, spyglass, brushes and predicted edits, steep v16 hills as whole-metre steps with 45° ramps; protocol and generator 1016), native, WASI, clippy and Vitest green locally; main 0.20.0 merged (shore water: ramps below sea level flooded; step-up; the pines at two cells per block; protocol 1016, generator 1018), the touched suites green locally; playtest fix: no flicker at a 45° ramp's foot (§6.8); option A's slopes (generator 1019: no 1 m step snap, the Sobel ramp facing) and the step-up's highest top across a face; then the owner's choice of V2 (generator 1020: the snap off with the old ramp rule; 24.5 cliff edges per 100 columns, 45° slides on ~3.2 % of land tops). Outstanding: CI; the ray marcher, brushes, the fluid surface drop, the vertical view radius and the build sphere left in cells (deviations, for the playtest). H6 again: main 0.21.1 merged (2026-10-20: the characters, protocol 17 and held items, FaceFrame, the ray marcher removed, smooth steps; protocol 1017; FaceFrame continuous heights in metres, the foot ground scaled by CELL_H), the touched suites and the WASM build green locally. Next: H5, the owner's playtest on a dev build. A playtest branch, not for `main` until the owner keeps it; `package.json` not raised on the branch |
 
 Phase numbering: Phase 4 was inserted on 2026-09-29 for the planet-scale world (ADRs 0011, 0012);
 the former Phases 4–7 are now 5–8, and Phase 3's former 3c and 3d are now 3d and 3e.
@@ -92,7 +92,8 @@ On 2026-10-14 the owner adopted three proposals as **Phases 25–27**, numbered 
 phases: **25 — the ray-marched renderer comparison** ([ADR 0029](./adr/0029-ray-marched-renderer.md)),
 **26 — water and fluid looks** ([ADR 0030](./adr/0030-fluid-looks-and-water-rendering.md)) and
 **27 — the structure sandbox** ([ADR 0031](./adr/0031-data-driven-structures.md)). Each needs Phase 24
-only; they can run alongside Phases 16–19. Phase 20 waits for Phase 25's decision (A7). Deliverables
+only; they can run alongside Phases 16–19. Phase 20 waited for Phase 25's decision (A7: the mesher,
+2026-10-20, ADR 0044). Deliverables
 are named by their design docs' step ids (A0–A7, W1a–W6, S0–S4).
 Also on 2026-10-14 the owner adopted the tree-growth proposal as **Phase 30 — tree growth**
 ([ADR 0033](./adr/0033-tree-growth.md), [`TREE_GROWTH.md`](./TREE_GROWTH.md)), numbered after the
@@ -248,6 +249,15 @@ step-up now finds the step's face over the front half circle, checks headroom an
 the step's height a tick and keeps the player's speed (PLAYER_CONTROLLER.md §4, "The step-up");
 `tests/step_up.rs`'s approach matrix went from 564 of 903 approaches failing to none, and a step
 under a low ceiling is no longer climbed into it.
+Later finding (owner, 2026-10-20, fixed): *"treat steps like half ramps, so smooth transition
+between them."* Measured first: through ½ m stairs the body kept 93–100 % of its speed with no
+stall or airborne tick, so the hitch was the camera's step curve (4 m/s + 6/s of the offset: a
+7 m/s kick per step, a stair climbed in bursts). The body still steps in one tick; the eye now
+decays along a virtual ramp, `max(min_speed, slope × horizontal speed)`, the slope a lone step's
+0.5 or a stair's own up to 1.0 (`step_view` in the config, client-only; PLAYER_CONTROLLER.md §9,
+which records the approaches weighed). `dwell-game` `eye.rs`'s ramp tests failed on the old curve
+and pass; `tests/step_up.rs` pins the body (½ m stairs above 90 % of the speed, on the ground; a
+1 m drop falls). No sim, wire or golden-trace change.
 
 | Exit criterion | Result |
 |---|---|
@@ -1802,7 +1812,7 @@ anchored for integrity by position, no bedrock; face B mirrors face A's structur
 (different seed streams) and its own dome of sky islands — so the world is a two-sided, sphere-like
 object. Down is always toward the midplane. Design: [`BIFACIAL_WORLD.md`](./BIFACIAL_WORLD.md).
 
-**Status:** In progress — everything below is built and tested except what is unticked. Follow-up (`FIX_SPEC_LOD_SKY_FLIP.md` item 2, built): the LOD no longer loads or draws the other face beyond 512 m (except near the rim), and level ≥ 7 sections are meshed for the viewer's face alone; manual check in the underworld outstanding. Item 3 (built): crossing the midplane turns the heading by 180° and the camera over in a half forward somersault about its right axis (no view snap); manual check outstanding. Fix (built): the client's LOD bounds cache was keyed by row 0, outside the world at levels ≤ 17 since Phase 13's row numbering, so every column shared the first column's bounds and ground above that column's height read as empty, hiding the streamed chunks there (mountains, then all land above ~62 m on 0.9.0's terrain); now keyed by the column's first row. Depends on Phases 10–12 (face B repeats their terrain and dome). Decided
+**Status:** In progress — everything below is built and tested except what is unticked. Follow-up (`FIX_SPEC_LOD_SKY_FLIP.md` item 2, built): the LOD no longer loads or draws the other face beyond 512 m (except near the rim), and level ≥ 7 sections are meshed for the viewer's face alone; manual check in the underworld outstanding. Item 3 (built): crossing the midplane turns the heading by 180° and the camera over in a half forward somersault about its right axis (no view snap); manual check outstanding. Fix (built): the client's LOD bounds cache was keyed by row 0, outside the world at levels ≤ 17 since Phase 13's row numbering, so every column shared the first column's bounds and ground above that column's height read as empty, hiding the streamed chunks there (mountains, then all land above ~62 m on 0.9.0's terrain); now keyed by the column's first row. Depends on Phases 10–12 (face B repeats their terrain and dome). Decided Face parity (2026-10-20, BIFACIAL_WORLD.md §11): built — `FaceFrame`, `both_faces!` and the mirror-world parity suites (generation, chunk mesher, LOD, targeting, brushes, copy and paste); fixed on face B: the target box of half-height tops, brush strokes, pastes, plant jitter. The "stray dark slabs" were the face-B day/night scenario's camera inside the rock (the scenario fixed, §11).
 (2026-10-05): no crossing routes (dig through or go around the rim), a static sun for face A and a
 counter-angled static moon for face B, spawn on face A, a ~4 km crust, the rim ocean kept, and
 face B reusing face A's generator, biomes, palette and islands (`BIFACIAL_WORLD.md` §9). No open
@@ -2589,10 +2599,10 @@ Exit criteria
 §7.1).
 
 **Status:** Not started. Runs after Phases 6–13 (owner's decision, 2026-10-05); previously on hold
-until Phase 5 (multiplayer ready) was complete (2026-09-30). **Waits for Phase 25's renderer decision
-(A7; ADR 0029, owner 2026-10-14)**, so cluster rendering is built once, for the chosen renderer: greedy
-meshes with a rotation per draw if the mesher stays, brick volumes per body if marching is chosen
-(`RAY_MARCHED_RENDERER.md` §6).
+until Phase 5 (multiplayer ready) was complete (2026-09-30). It waited for Phase 25's renderer
+decision so cluster rendering is built once: the owner kept the mesher (A7, 2026-10-20,
+[ADR 0044](./adr/0044-mesher-over-ray-marching.md)), so clusters are greedy meshes drawn with a
+rotation per draw.
 
 Deliverables
 - [ ] Bifacial world (Phase 13): the core anchor zone around the midplane (positional, diggable;
@@ -2748,20 +2758,20 @@ chunks and every LOD level — beside the mesher, compare the two side by side i
 the owner decide which draws Dwell's terrain ([ADR 0029](./adr/0029-ray-marched-renderer.md),
 [`RAY_MARCHED_RENDERER.md`](./RAY_MARCHED_RENDERER.md)).
 
-**Status:** In progress — A0 (the ADR) and A3a (the CPU core in `crates/dwell-march`: layout,
-builders, pool, reference marcher) done; A2 (the renderer seam, compare mode, bench `--compare`)
-built, its exit check done (compare mode with raster on both sides reports zero difference); A1
-(the shared frame and GPU timing) built, its exit check done: the bench before/after (design doc §7,
-"A1 as built") and the picture differs slightly — antialiased edges, the sea's colour (water now
-blends in linear light), the outline no longer multisampled — which the owner approved (2026-10-14);
-the e2e suite passes on CI. A3b (the GPU march, uploads, brick jobs, telemetry) built, its CI run of
-the per-pixel test outstanding. A4a (the march's speed: each level's occupied rows skipped, a
-vectorised inner loop, shading in its own pass; the cone-LOD switch rule that removes the owner's
-concentric rings) and A5a (render scales with FSR 1 or a bilateral upscale) built, A4's desktop
-exit check done, its phone report outstanding; A4b (the beam prepass, the temporal start with the
-eye still) built and measured on an M1; A4c (survey, the temporal start while moving, kept frames, the column search's slope rule) built and measured on an M1 under load; its three far-case picks measured and not kept; next: A3c (overlays, LOD column heights, raster ids). Needs Phase 24 only. The marcher and compare mode are in local builds only (dev server, local preview, bench)
-until A7; deployed builds keep the mesher throughout and stay shippable after every step. Phase 20
-waits for A7; Phase 26 shares A1 (its W2). No public API change, so no new compatibility line.
+**Status:** ✖ **Dropped at A7 by the owner** (2026-10-20): *"Ray marching is massively slower. We can
+roll it back… Mesher / raster is definitely our way forward."* ([ADR 0044](./adr/0044-mesher-over-ray-marching.md),
+superseding ADR 0029.) A0–A4c and A5a were built and measured; at A4c, marching every frame cost
+1.5–3× raster's whole GPU frame at the spawn, the horizon and flying high, and only a still,
+unchanged view or a view straight down beat raster (the figures are in ADR 0044). The marcher
+(`dwell-march`, `render/march`), compare mode, the renderer switch and the bench's march
+configurations are removed from main; the code is kept as the `archive/ray-marcher` tag and branch
+(commit `8ed481f`, main at 0.20.3), with the design doc in full. **Kept**, since the mesher uses
+them: A1 (the shared frame and GPU timing, Phase 26's W2) and A2's `bench --compare` (raster
+configurations: a scale and page parameters). Unfinished items are dropped with it, not done (they
+stay unticked, marked below). Phase 20 is unblocked.
+
+**Follow-up:** the face-B "stray dark slabs" bug was deferred only in case marching replaced the
+mesher; with the mesher kept, it now needs a fix in the mesher.
 
 Deliverables
 - [x] **A0** — ADR 0029 (a second renderer behind a runtime switch, amending ADR 0028's renderer);
@@ -2789,7 +2799,7 @@ Deliverables
   the bench; compare mode's split (scissored, a draggable divider), blink (F8) and difference (F7
   cycles; coverage, view depth and colour ΔE, counted on the GPU) views and the per-side overlay
   (CPU, GPU, memory, settings), with a placeholder "march" side (`render/march.rs`, magenta).
-- [ ] **A2 follow-ups, moved to A3** (they need the marcher's output): edit-to-visible latency (an
+- [ ] *(dropped at A7)* **A2 follow-ups, moved to A3** (they need the marcher's output): edit-to-visible latency (an
   edit's sequence carried through the remesh to the frame that draws it; `DEV_TOOLS.md` TODO) and
   the bench's image agreement by cell id, face and depth (the renderers' id buffers; the bench
   compares colour only, compare mode's difference view compares coverage and depth in game).
@@ -2810,7 +2820,7 @@ Deliverables
   GPU-against-reference per-pixel test (native and the WebGPU probe); `?marchtest=1`. `march` mode
   draws all terrain with no meshes. Deviation: a buffer that fills is re-created at double size and
   re-filled from the CPU copy (which holds every word), not grown by `copy_buffer_to_buffer`.
-- [ ] **A3c** — The rest of A3: overlays over marched terrain through the `frag_depth` pass
+- [ ] *(dropped at A7)* **A3c** — The rest of A3: overlays over marched terrain through the `frag_depth` pass
   (players, the outline, water); LOD column heights and side tints in the bricks; a raster id target
   so compare mode and the bench compare cell ids and faces; edit-to-visible latency (from A2).
 - [x] **A4a** — Empty-space skipping and the per-step cost on the GPU (design doc "A4 as built"):
@@ -2858,12 +2868,11 @@ Deliverables
   depth- and normal-aware bilateral upscale (`render/march/upscale.rs`), `?scale=` with
   `?upscaler=fsr1|bilateral`, `__dwell.upscalers()`, the bench's `march-half-fsr`, `march-075-fsr`
   and `march-half-bilateral` configurations.
-- [ ] **A5** — The rest of A5: TAA-U (reprojection), and shaped cells as analytic planes.
-- [ ] **A6** — Lighting under both: half-res sun-shadow and AO rays from the G-buffer (march) or
+- [ ] *(dropped at A7)* **A5** — The rest of A5: TAA-U (reprojection), and shaped cells as analytic planes.
+- [ ] *(dropped at A7)* **A6** — Lighting under both: half-res sun-shadow and AO rays from the G-buffer (march) or
   raster's depth (the hybrid), bilateral upsample, temporal accumulation; a quality setting.
-- [ ] **A7** — The decision: the owner decides from the full comparison ("measure all"; design doc
-  §5); ADR 0029's status, `ARCHITECTURE.md` §5 and this plan updated for the chosen path (and
-  Phase 20 unblocked).
+- [x] **A7** — The decision: the owner kept the mesher (2026-10-20) and the marcher is removed
+  (ADR 0044; ADR 0029 superseded; `ARCHITECTURE.md` §5 and this plan updated; Phase 20 unblocked).
 
 Exit criteria
 - [x] A1: bench before/after; raster screenshots match today's, or the owner approves the
@@ -2876,23 +2885,23 @@ Exit criteria
   pass — `crates/dwell-march/tests/march.rs`: against a brute-force DDA on random scenes (with and
   without skipping, exact ties, chunk and LOD levels), chunk and brick borders, 4,000 km from the
   origin (bit-identical), face B as face A mirrored, a state added by data alone.
-- [ ] A3b: the GPU-against-reference per-pixel test passes in CI (SwiftShader). Passes locally on
+- [ ] *(dropped at A7)* A3b: the GPU-against-reference per-pixel test passes in CI (SwiftShader). Passes locally on
   SwiftShader (the same probe CI runs: every record bit-identical) and on an M1's Metal (ids exact,
   `t` within 2 ULP, depth 2.6e-7); CI's run outstanding.
 - [x] A3b: a first comparison report on a desktop (2026-10-15, M1 Mac, `bench --compare idle-spawn
   look-horizon look-down fly-high`: design doc "A3b as built").
-- [ ] A3c: the named views, near and distant, agree with the mesher (over 99.5 % cell-id match where
+- [ ] *(dropped at A7)* A3c: the named views, near and distant, agree with the mesher (over 99.5 % cell-id match where
   both hit) — needs raster ids and LOD column heights in the bricks.
 - [x] A4 (desktop): steps-per-ray p99 down on `look-horizon` and `fly-high` (GPU histogram, seed 7, 1280×720:
   the horizon view's p99 96 → 39, 540 m up 89 → 29; `march_steps`' horizon p95 68 → 22) and a
   comparison report on a desktop (2026-10-15, M1 Mac, `bench --compare idle-spawn look-horizon
   look-down fly-high`: design doc "A4 as built").
-- [ ] A4 (phone): the comparison report on a phone (needs the bench to drive a device).
-- [ ] A5: the full comparison report on every device in the design doc (Mac, Windows integrated and
+- [ ] *(dropped at A7)* A4 (phone): the comparison report on a phone (needs the bench to drive a device).
+- [ ] *(dropped at A7)* A5: the full comparison report on every device in the design doc (Mac, Windows integrated and
   discrete, an iPhone from the last three years, a recent Android flagship; SwiftShader for
   correctness only).
-- [ ] A6: a comparison with lighting on and off; the owner's look.
-- [ ] A7: the owner's decision recorded in ADR 0029.
+- [ ] *(dropped at A7)* A6: a comparison with lighting on and off; the owner's look.
+- [x] A7: the owner's decision recorded (in a new ADR, 0044, which supersedes 0029).
 
 
 Deviations
@@ -2904,6 +2913,8 @@ Deviations
 - Water is its own `Transparent` march class: never occupied for primary rays (it stays a raster
   pass, W6 later), its ids kept in mixed bricks. Level-0 bricks with shaped cells carry the optional
   shape plane as a second fixed size class; the shape hook hits the cell's cube until A5.
+- A7's decision is recorded in ADR 0044 (superseding 0029), not in 0029 itself, so 0029 stays the
+  record of what was tried.
 ---
 
 ## Phase 26 — Water and Fluid Looks
@@ -2923,7 +2934,7 @@ the owner's look and the per-tier cost on an unloaded machine; W5a built (the wa
 by screen-space reflection and the clouds along the reflected ray, on Medium and High, tunables as data;
 WATER_RENDERING.md §8; checked in Chrome on an M1 with `water-reflections`), outstanding: the owner's
 look and the cost on an unloaded machine. Next: W4; W3–W5 build on the shared
-frame (A1); W6 needs A3 and the decision at A7 to keep marching. Fluids are per build, looks only, edited in the
+frame (A1); W6 was dropped with the ray marcher at A7 (ADR 0044). Fluids are per build, looks only, edited in the
 data file; the water surface stays still. No public API change. **Follow-up, shore water (owner,
 2026-10-20; WATER_RENDERING.md §9):** water stood 0.375 m above dry beach blocks in the sea's top row
 and drew flat blue walls at banks; the sea now floods the open part of every natural top block below
@@ -2955,8 +2966,8 @@ Deliverables
   WATER_RENDERING.md §8, W5a).
 - [ ] **W5b** — The rest of W5: half-res copies, the Ultra tier (full-res SSR), the phone defaults
   confirmed; Low the phone default, tentatively (owner).
-- [ ] **W6** — Under ray marching (after A3, and only if marching is kept at A7): reflection and
-  refraction rays replace SSR and the copy on the high tiers.
+- [ ] *(dropped at A7)* **W6** — Under ray marching: reflection and refraction rays replace SSR and
+  the copy on the high tiers. Dropped: the owner kept the mesher (ADR 0044).
 
 Exit criteria
 - [x] W1a: a fixture test adds a second fluid (`test:oil`) by data alone and sees it meshed with its
@@ -3035,7 +3046,7 @@ Deviations (W1a):
 - [ ] W5a: the owner's look, and the cost measured on an unloaded machine.
 - [ ] W5: bench on a desktop and a phone per tier; the owner confirms the phone default after seeing
   it on the two target phones.
-- [ ] W6: parity against W5's views.
+- [ ] *(dropped at A7)* W6: parity against W5's views.
 
 ---
 
@@ -3572,6 +3583,16 @@ Deliverables
 - [x] **T8** — The Plant sway setting (Motion group; append-only motion record; off under
   `prefers-reduced-motion`).
 - [ ] **T9** — Screenshots of a grassy hillside near and far (generated terrain).
+- [x] Follow-up (owner, 2026-10-20: *"Make the grass align (sit down) when over a half block"*):
+  plants sit on their support's drawn surface — `cross.sitOnSupport` (default true), each foot
+  lowered by the support's `plant_sink` in the mesher (per vertex, so it follows slopes; apron
+  supports derived exactly), the selection box sunk with it (and turned for face B) for the
+  outline, the crosshair and the server's line of sight, the targeting ray meeting it in the
+  support's cell. Tests: mesher (level field, apron, slope, cube, a neighbour reshaping the support,
+  face B, the fixture `test:reed` with `sitOnSupport: false`), world (box, ray, line of sight, face
+  B), sync (the flag's optional byte), chunk stream (an edit across a border re-meshes the plant's
+  chunk). No LOD, ray-marcher or brush-ghost change: none draws plants (the marcher's raster pass
+  draws the same cutout mesh). A patch: no save, terrain or protocol format change.
 
 Follow-ups (owner, 2026-10-16; future work, not scheduled)
 - Leaves, glass and ice as `cutout` and `translucent` blocks (data entries on these systems).
@@ -3614,7 +3635,9 @@ Deviations
 
 **Status:** Built and tested natively, in Vitest and in a browser (2026-10-15). Outstanding: CI (the
 `wasm32-wasip1` divergence run and the e2e suite were not run on the branch), the owner's review of
-the feel in game and of the slide WAV renders. Stacks on Phase 18 (the adaptive shapes' 45° faces)
+the feel in game and of the slide WAV renders. Follow-up fix (2026-10-20): walking into a 45°
+face's foot no longer flickers between sliding and walking (PLAYER_CONTROLLER.md §6.8, "The
+ramp's foot"; red → green in `tests/adaptive.rs`). Stacks on Phase 18 (the adaptive shapes' 45° faces)
 and uses Phase 28's sound system.
 
 Owner (2026-10-15): *"Make the player slide on steep >44° slopes, give the player some control, and
@@ -3843,8 +3866,8 @@ Exit criteria
 ## Phase 39 — Painterly Textures
 
 **Status:** Built and tested natively, in Node and Vitest, and in Chrome on the GPU (2026-10-20),
-behind `?textures=painterly`; the classic set stays the default. Outstanding: CI, the owner's
-review of the look (then flipping the default, one line). No change to saves, the protocol or
+and the default since the owner approved it (2026-10-20; `?textures=classic` keeps the old set).
+Outstanding: CI. No change to saves, the protocol or
 terrain: a patch release.
 Follow-up (owner's review, 2026-10-20): grass_side's hanging skirt covered only the left ~60 % of the
 tile (a thin `band` gave the placement grid more columns than strokes), so tiled blocks read as
@@ -3859,7 +3882,15 @@ painter). Built as data: `sideUnder` on a block (`shared/blocks/dwell.json`, val
 `0x8b` in the registry payload (old clients ignore look tags), applied by the chunk mesher, skipped
 where the grass shows a full side of its own. Mesher tests red → green; checked in Chrome on the GPU
 in both sets. Deviation: the classic set changes too (the same rule picks the classic tile); the LOD
-keeps flat dirt side colours. Not in the ray-marched renderer (Phase 25, local builds only).
+keeps flat dirt side colours.
+Follow-up (owner, 2026-10-20: "I see the Character Lab has edge lines, I like that. What would that
+look like applied to the whole game?"): a preview of the **ink outline** (ART_DIRECTION.md §7), a
+screen-space line in the palette's `ink` drawn by the composite from the view depth (silhouettes,
+creases, block edges), its modes as data (`shared/look/outline.json`, `outline.mjs` → `dwell-look`
+`outline.gen.rs`), behind `?outline=silhouette|creases|blocks` (off by default). Built and tested
+(the data's validation, the uniform plumbing, the edge rule's fade, red → green); screenshots of
+every view off and in each mode, painterly and classic, and the ray marcher; cost measured with the
+bench. Outstanding: the owner's pick of a mode (or none), then a setting if it stays.
 
 Owner (2026-10-20, the art brief): *procedural painterly storybook textures for everything* —
 blocks, plants, water, sky accents and characters — from one data-driven generator of brush
@@ -3887,6 +3918,20 @@ Deliverables
 - [x] The bench's `painterly` configuration (`--compare --configs painterly`).
 - [x] Screenshots classic against painterly on a real GPU: ground, blocks close up, a grassy
   hillside, water, from 600 m.
+- [x] Follow-up: the ink outline preview (ART_DIRECTION.md §7): `shared/look/outline.json` (the ink
+  by palette name, three modes: edge kinds, width in CSS pixels, distance fade, strength,
+  thresholds), validated and generated (`outline.mjs`, `outline.test.mjs`, CI stale check); the
+  composite's edge rule over a 3 × 3 of view depths with the distance fade, the height fog and the
+  sea (`ink_outline`, CPU twin `dwell-look` `outline.rs`); `?outline=` and `__dwell.setOutline`;
+  the bench's `outline-*` configurations; screenshots and the cost (§7.5).
+- [x] Follow-up (owner's review, 2026-10-20): no ink on tall grass — block data `outline` (off by
+  default for cross plants, validated, synced as look tag `0x8c`), the cutout mesh's `bare` stream,
+  the view depth's lowest bit as the flag (`frame_depth`), flagged taps seen through by the edge
+  rule (CPU twin `see_through`); and the edge blur as its own pass over the finished image
+  (`finished_fs`, `motion_fs`), so the ink and every later per-pixel effect reach the screen's edges
+  at speed (MOTION_EFFECTS.md, the rule and its cost). Shader-source tests red on the old code;
+  before/after screenshots on a real GPU.
+- [ ] The owner's pick of an outline mode, or none (ART_DIRECTION.md §7.6); a setting if it stays.
 - [ ] Later (not this phase): the sky drawing `cloud_puff`; the fluids' colours from the palette;
   the characters in game (Phase 40); a 64-texel atlas for finer brushes.
 
@@ -3895,7 +3940,7 @@ Exit criteria
   (`gen.test.mjs`).
 - [x] A bad entry fails with a message naming it (`gen.test.mjs`).
 - [x] The default look is unchanged: the classic atlas is built as before and the default set is
-  classic (`the_query_picks_the_set_and_the_default_is_classic`,
+  classic (`the_query_picks_the_set_and_the_default_is_painterly`,
   `the_painterly_atlas_differs_from_the_classic_only_in_painted_tiles`).
 - [x] The frame cost is unchanged (the same atlas, meshes and shaders; `npm run bench --
   --compare --configs painterly`, PAINTERLY_TEXTURES.md §7).
@@ -3907,9 +3952,11 @@ Exit criteria
 shared/characters/gen.test.mjs` passes and the Character Lab was checked in Chrome. C0b (the
 owner's first review's fixes, 2026-10-20) built and tested, the Lab checked in Chrome and
 republished. Outstanding: the owner's review of the fixes and answers to the rest of
-`CHARACTERS.md` §10, CI. C1–C3 are not
-started: the owner asked for a design and concept only. Stacked on Phase 39 (the palette, materials
-and painter it shades with). No change to saves, the protocol or terrain: a patch release.
+`CHARACTERS.md` §10, CI. C1 built and tested (2026-10-20, owner: *"add the player character into the
+game"*), with C2's held item and swings; C2's looks at join and C3 not started. Stacked on Phase 39
+(the palette, materials and painter it shades with). C0 changed no save, protocol or terrain; **C1
+changes the protocol (v17: held items and swings in snapshots, `HeldItem`): a new compatibility
+line**, so the owner raises `package.json` to the next minor.
 
 Owner (2026-10-20): the character design concept, the player's first-person arms and hands holding
 the hotbar's block or the brush with break and place swings, the full body other players see, and
@@ -3979,12 +4026,64 @@ Exit criteria
   fall and land; grounded clips keep the feet on the ground (`gen.test.mjs`).
 - [ ] The owner's review of the fixes.
 
-**C1 — characters in the renderer (later)**: a Rust loader and mesh builder from the same data
-(`characters.gen.rs`), the character shader and outline, remote players drawn as the full body
-(replacing the capsule), the arms pass with its own FOV (`CHARACTERS.md` §9.1–9.2).
+**C1 — characters in the game (2026-10-20)**
 
-**C2 — looks and poses over the network (later; a new compatibility line)**: the look at join, the
-held item, swings without an edit (`CHARACTERS.md` §9.3–9.4).
+Owner: add the player character into the game: a Rust loader and mesh builder from the same data,
+the character shader with the painterly materials and the ink outline, remote players as the full
+body with clips from their controller state and swings, your first-person arms in their own pass
+with their own FOV, the held item over the network, respecting the speed FOV, the spyglass, the
+edge blur, both texture sets, face B and the settings; the cost with 1, 8 and 32 remote players.
+
+Deliverables
+- [x] `shared/characters/gen.mjs` writes `crates/dwell-characters/src/characters.gen.rs` and
+  `characters.tiles` (every look composed, items on their sockets, clips as per-bone channels, the
+  materials and their brush tiles), and the fixture's from `shared/characters/fixtures/` (a mirrored
+  pauldron added by data alone); `gen.test.mjs`: the tables current, the part in the fixture's
+  tables on its bone in every look; CI's stale check (the generators' `git diff`).
+- [x] `dwell-characters`: the types, part meshes (`mesh.rs`: every kind filling its size, wound
+  outward; the arms view only the arm chain), clip sampling, layering, cross-fades and bone
+  transforms (`anim.rs`, checked against rig.mjs's Euler order), the animator (`animator.rs`: the
+  controller state → role, one-shots, cross-fades by `blend`, gait rate, hold and swing layers, the
+  head following pitch) and its tests; `MoveInput::foot_ground`, the hook for foot IK.
+- [x] The renderer (`render/characters.rs`): the character shader (ramp, brush tile at its overlay
+  in the painterly set, rim, the frame's light per face; the held block from the atlas), the ink
+  hull, bodies in the scene passes (face B a half turn, dead on its back, small parts and outline
+  dropped past 64 m), the arms pass over a cleared depth buffer with the data's FOV and a 2 cm near
+  plane, `gpu.arms`; the capsule (`geometry::player_mesh`) removed.
+- [x] The game (`bodies.rs`): an animator per remote player from its interpolated snapshot, your
+  arms from the prediction (swinging on edits and brush strokes), hidden while dead, zoomed, in a
+  placed camera or with **Show your arms** off (settings, the view record); body roles and the arms'
+  role in `__dwell.state()`, character stats in `renderStats()`.
+- [x] Dev tools: `__dwell.puppets` and the bench's `puppets` and `arms` steps (DEV_TOOLS.md).
+- [x] Checked in Chrome on the real GPU with two clients on a native server (first person with the
+  block and swings; B seeing A idle, walk, sprint, slide, crouch, jump), face B, classic against
+  painterly (the session's scratchpad, `character-ingame/`).
+- [x] The cost: 0, 1, 8, 32 bodies (`gpu.frame` within noise; 4 draws and ~23 k triangles a body),
+  the meshes (385–428 KB a look, 55 KB the arms) and 1,280 bytes of uniforms a body a frame
+  (`CHARACTERS.md` §9.6).
+- [x] Foot IK on step-ups (claude/smooth-steps): remote roots on the step view's virtual ramp,
+  feet planted on the render-side ground (`bodies.rs`, `plant_feet`; tests in both).
+- [ ] A step pose on step-ups (the hook, `Bodies::step_started`, is in).
+
+Exit criteria
+- [x] The loader turns data into meshes: a part added by data alone is meshed on its bone and
+  widens the body (`a_part_added_by_data_alone_is_meshed_on_its_bone`).
+- [x] Clip selection from the controller state (`the_controller_state_picks_the_body_clip`,
+  `a_jump_falls_then_lands_then_stands`, `switching_clips_cross_fades_over_the_new_clips_blend`).
+- [x] The arms pass doesn't depth-test against the world
+  (`the_arms_pass_clears_depth_and_draws_over_the_world`); the arms hide in the spyglass and with
+  the setting off (`the_spyglass_narrows_the_view…`).
+- [x] Two clients: B draws A's body with the right clip while A walks, sprints, slides and jumps,
+  and what each holds reaches the other (`game_local`
+  `another_client_sees_your_body_walk_sprint_slide_and_jump_and_what_you_hold`; red with the server
+  not relaying it; e2e `characters.spec.ts` on a native server).
+- [ ] CI green; the owner's review of the characters in game.
+
+**C2 — looks and poses over the network (a new compatibility line)**: the held item and swings
+(even refused edits) are built with C1 (protocol v17: `HeldItem`, each remote's `held` and `swing`
+in snapshots; ARCHITECTURE.md §8.3). Still to do: the look at join (CHARACTERS.md §9.4: chosen from
+the variants, kept in the browser's settings, sent at join and validated by the server); a swing
+for an edit the client never sends (none today).
 
 **C3 — creatures in the world (later)**: spawning, AI, bodies and netcode for the wolf and the deer
 (`CHARACTERS.md` §9.5).

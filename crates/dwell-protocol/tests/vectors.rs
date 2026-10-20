@@ -78,6 +78,27 @@ fn decoded_fields_are_the_vectors_values() {
         (2, slide_flags::ACTIVE, 29)
     );
     assert_eq!(c.ladder, [-5, 64, 1_000_000]);
+    // v17: what each remote holds and its last swing.
+    let r = s.remotes[0];
+    assert_eq!(
+        (
+            r.held & held_item::BLOCK_MASK,
+            r.held & held_item::BRUSH != 0
+        ),
+        (300, true)
+    );
+    assert_eq!(
+        (
+            r.swing & swing_flags::COUNT_MASK,
+            r.swing & swing_flags::PLACE != 0
+        ),
+        (5, true)
+    );
+    assert_eq!((s.remotes[1].held, s.remotes[1].swing), (0, 0));
+    assert_eq!(
+        Message::decode(&get("held_item_brush")),
+        Some(Message::HeldItem(held_item::BRUSH | 4))
+    );
     let Some(Message::ChunkData(c)) = Message::decode(&get("chunk_data_explicit_solid")) else {
         panic!("chunk")
     };

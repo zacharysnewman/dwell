@@ -5,8 +5,12 @@
 //! On face A the maps are the identity, so face A plays exactly as before. Both maps are
 //! involutions.
 
-use dwell_blocks::{StateId, mirror};
-use dwell_world::{MIRROR_M, mirror_y};
+//!
+//! It is the physics view of `dwell_world::FaceFrame` (BIFACIAL_WORLD.md §11): every map here goes
+//! through it.
+
+use dwell_blocks::StateId;
+use dwell_world::FaceFrame;
 
 use crate::physics::{BodyHandle, DVec3, Vec3};
 use crate::query::{Capsule, ProbeHit, VoxelQuery};
@@ -18,35 +22,31 @@ pub struct Frame {
 }
 
 impl Frame {
-    /// The continuous mirror: heights (m) sum to this (voxel rows to `MIRROR_SUM`, one less than
-    /// the mirror in rows).
-    pub const MIRROR: f64 = MIRROR_M;
+    /// The continuous mirror: heights sum to this (voxel rows to one less).
+    pub const MIRROR: f64 = FaceFrame::MIRROR;
 
+    /// The world's face frame for this face.
+    pub fn face_frame(self) -> FaceFrame {
+        if self.b() { FaceFrame::B } else { FaceFrame::A }
+    }
     pub fn b(self) -> bool {
         self.face < 0
     }
     pub fn y(self, y: f64) -> f64 {
-        if self.b() { Self::MIRROR - y } else { y }
+        self.face_frame().y(y)
     }
     pub fn p(self, p: DVec3) -> DVec3 {
-        if self.b() {
-            DVec3::new(p.x, Self::MIRROR - p.y, p.z)
-        } else {
-            p
-        }
+        DVec3::new(p.x, self.y(p.y), p.z)
     }
     pub fn v(self, v: Vec3) -> Vec3 {
-        if self.b() {
-            Vec3::new(v.x, -v.y, v.z)
-        } else {
-            v
-        }
+        let [x, y, z] = self.face_frame().vector_f32([v.x, v.y, v.z]);
+        Vec3::new(x, y, z)
     }
     pub fn row(self, y: i32) -> i32 {
-        if self.b() { mirror_y(y) } else { y }
+        self.face_frame().row(y)
     }
     pub fn m(self, m: StateId) -> StateId {
-        if self.b() { mirror(m) } else { m }
+        self.face_frame().state(m)
     }
     /// The unit vector the player's head points along, in the world.
     pub fn world_up(self) -> Vec3 {
@@ -105,12 +105,7 @@ impl FaceQuery<'_, '_> {
     /// The cell's shape (derived for an adaptive top block) in the local frame: turned over on
     /// face B.
     pub fn shape(&self, x: i32, y: i32, z: i32) -> &'static dwell_blocks::ShapeInfo {
-        let s = self.q.shape(x, self.f.row(y), z);
-        if self.f.b() {
-            dwell_blocks::shape::turned_over(s)
-        } else {
-            s
-        }
+        self.f.face_frame().shape(self.q.shape(x, self.f.row(y), z))
     }
     pub fn material(&self, x: i32, y: i32, z: i32) -> StateId {
         self.f.m(self.q.material(x, self.f.row(y), z))

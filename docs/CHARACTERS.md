@@ -6,10 +6,14 @@ procedurally from data: chunky parts (boxes and rounded shapes) on a small rig, 
 shared palette and materials of [`ART_DIRECTION.md`](./ART_DIRECTION.md). Adopted by
 [ADR 0041](./adr/0041-characters.md); Phase 40 of [`IMPLEMENTATION_PLAN.md`](./IMPLEMENTATION_PLAN.md).
 
-**Status.** A design and a concept only (owner, 2026-10-20): this document, the data file
+**Status.** The design and concept (owner, 2026-10-20): this document, the data file
 (`shared/characters/characters.json`), its validator and tests, and the
-[Character Lab](./prototypes/character-lab.html) prototype page. Nothing is drawn in the game yet;
-§9 is what building it in will take. The characters themselves (their proportions, outfits,
+[Character Lab](./prototypes/character-lab.html) prototype page. **In the game since C1
+(2026-10-20, owner: *"add the player character into the game"*):** other players are drawn as the
+full body, animated from their snapshots, and you see your own first-person arms holding the
+hotbar's block or the brush, with the break and place swings; what each player holds and its swings
+cross the network (protocol v17). §9 describes what is built and what is still to come (looks chosen
+per player, foot IK on steps, the creatures). The characters themselves (their proportions, outfits,
 colours and clips) are the first art direction, still prototype in scope (`ARCHITECTURE.md` §6.1):
 the system is what this phase fixes, and the content grows by data.
 
@@ -258,7 +262,9 @@ clip, the jump's rise drawn as the controller's 1.25 m arc. The death pose is st
   the style and the two modules (`rig.mjs`, and `shared/textures/paint.mjs`, the painter) into the
   Lab page between its generated markers. CI regenerates the page and fails on any diff, so editing
   `characters.json`, the palette or the materials means running `node shared/characters/gen.mjs`.
-  When the game draws characters it also writes the Rust tables (§9.1).
+  It also writes the game's Rust tables (§9.1): `crates/dwell-characters/src/characters.gen.rs` and
+  `characters.tiles`, and the test fixture's (`fixture.gen.rs`, from the data plus
+  `shared/characters/fixtures/*.json`); CI fails on stale output.
 - **`shared/characters/gen.test.mjs`** (`node --test`): the data valid and the page fresh; 36 bad
   entries each failing with its message; a part, an accessory and a variant **added by data alone**
   composed and worn (a mirrored pauldron reaches past the shoulder; a top hat hides the hair and
@@ -286,17 +292,27 @@ parts; or a new rig first).
 ## 8. Data flow
 
 ```
-shared/textures/palette.json, materials.json ─┐
-shared/characters/characters.json ────────────┼─ gen.mjs (rig.mjs validate) ─► docs/prototypes/character-lab.html
-shared/characters/rig.mjs, textures/paint.mjs ┘                              (later: dwell-look characters.gen.rs)
+shared/textures/palette.json, materials.json ─┐                               ┌► docs/prototypes/character-lab.html
+shared/characters/characters.json ────────────┼─ gen.mjs (rig.mjs validate, ─┼► crates/dwell-characters/src/characters.gen.rs, .tiles
+shared/characters/rig.mjs, textures/paint.mjs ┘   compose every look)        └► fixture.gen.rs, .tiles (+ fixtures/*.json; tests)
+dwell-characters (meshes, clips, animator) ─► dwell-client bodies.rs (animators) ─► render/characters.rs (bodies, arms pass)
 ```
 
-## 9. Building it into the game (later)
+## 9. In the game
 
-None of this is built; it is what the next phases need, recorded so the data is shaped for it.
+**[built, C1]** unless marked otherwise. ARCHITECTURE.md §5.3 has the architecture; this section the
+choices.
 
 ### 9.1 Meshes and rendering
 
+- **Built as designed below**, with these specifics: the Rust module is a new crate,
+  `dwell-characters`; `gen.mjs` composes every look in JS (rig.mjs `compose`, the one composer), so
+  the Rust side reads looks as flat parts on bones and only meshes, samples and selects; the brush
+  tiles are baked as luminance over the tile's mean (the Lab's `lum(tile) / uTileLum`); the shader
+  scales the ramp by the frame's light on the fragment's face (`CHARACTER_EXPOSURE` 0.5, tuned by eye)
+  so night and face B's lights reach characters; the outline is drawn always (the owner's §10 Q5 is
+  open), ~6 mm, dropped with the small parts past 64 m; the painterly texture set draws the brush
+  tiles, the classic set the clean ramp; the held block uses its atlas tiles in either set.
 - **Rigid parts, not skinning.** Each part is a rigid mesh on its bone: no weights, no vertex
   skinning, no bind pose. Chunky parts read better rigid (the storybook look has visible joints),
   the data stays a list of primitives a tool can edit, and a character draws as one instanced batch
@@ -308,55 +324,104 @@ None of this is built; it is what the next phases need, recorded so the data is 
   resolves material names against the painterly set (ADR 0040).
 - **Shading.** A character shader in the raster renderer: the ramp shading of §2 with the material's
   tile at its overlay, then the frame's tone mapping and fog like terrain; the outline as a second,
-  back-facing draw. The ray marcher (ADR 0029) draws characters with the raster pass over its depth
-  (as it does other overlays, A3c).
+  back-facing draw.
 - **The arms pass.** After the world and the water, before the HUD: clear depth, draw the arm chain
   with its own projection (`fov`, a 2 cm near plane), the sun turned into view space. Not drawn while
   dead (the body is drawn instead, as today).
 - **Distance.** Past ~64 m a character drops its outline and small parts (eyes, buckles: a size
   threshold, data-free); past the far view it isn't drawn.
 
-### 9.2 Today's remote players
+### 9.2 Remote players
 
-Remote players are drawn now as a capsule with a visor (`render/geometry.rs` `player_mesh`, from
-`PlayerView`: feet, face, yaw, crouched, dead, colour). The full body replaces it: the same
-`PlayerView` plus the look and the pose inputs below. The local player is drawn as the full body only
-when dead (as today) or in a future third-person camera.
+The capsule is gone: `PlayerView` carries the feet, face, yaw, death, the look's name, the pose the
+game animated (`bodies.rs`, one `Animator` per remote player from its interpolated snapshot) and
+what the hand holds. The local player is drawn as the full body only when dead (lying on its back,
+seen from the death camera) or in a future third-person camera. **Face B**: a body there is turned a
+half turn about its forward axis (a proper rotation: the winding and its handedness hold).
+**Steps** **[built, except the step pose]**: a remote body's root is drawn at its feet plus the
+step view's offset (`StepSmoother::follow`: its interpolated step-up followed at no more than a
+45° ramp at its speed, PLAYER_CONTROLLER.md §9), and `MoveInput::foot_ground` (the render-side
+ground under each foot from the last pose's foot positions, within `max_step_lift()`, face-local)
+feeds the animator's `plant_feet`: the body drops by the lower foot's ground when it is below
+the feet, and each leg bends by two-bone IK (thigh forward, shin back, foot level) to lift its
+foot by the rest. `Bodies::step_started` reports a step's start, the hook for a step pose
+[planned].
 
 ### 9.3 Netcode: what poses need
 
-Poses are **not sent**. Each client animates others from what snapshots already carry (§8.3):
-position (velocity for the gait rate), `yaw` and `pitch` (the body turns with yaw; the head and the
-held arm follow pitch, a small additive layer), `state` and `flags` (grounded, crouched, climbing,
-swimming, dead). What is missing:
+Poses are **not sent** **[built]**. Each client animates others from what snapshots already carry
+(§8.3): position (velocity for the gait rate), `yaw` and `pitch` (the body turns with yaw; the head
+60 %, the chest 15 % and the held arm 50 % follow pitch, added on the clips), `state` and `flags`
+(grounded, crouched, climbing, swimming, flying, face B, dead). The clip for a state is §6's table
+(`dwell-characters` `animator::body_role`): fly, swim and climb from their flags, jump while
+airborne and rising faster than 0.5 m/s along the face's up, else fall; the landing one-shot when
+touching down slower than 1.5 m/s (faster goes straight into the gait, so the feet don't slide);
+slide (the steep slide and the sprint slide are both `Sliding`), sprint, walk, crouch and
+crouch-walk by speed (0.4 m/s). The rest, as built:
 
-- **The look**: which character, variant, accessories and slot overrides a player wears, by name.
-  Sent once on join and on change, reliably (a new `PlayerAppearance` message or a field of the
-  player-joined event), validated by the server against its character data (unknown names fall back
-  to the default look, as unknown blocks do in registry sync, ADR 0038).
-- **The held item**: the hotbar's selection (item and block), sent with input when it changes and
-  carried in snapshots (a byte or two per remote player).
-- **Swings**: a break or place shows on others when the edit's `VoxelModification` arrives (the
-  editor's id is on it); a swing that changes nothing (a refused edit, a brush stroke) needs a small
-  `PlayerEvent` kind.
+- **The look** **[planned, C2]**: which character, variant, accessories and slot overrides a player
+  wears, by name. Everyone wears the default look (`wanderer`) for now: sending it is a message, a
+  settings record, a picker and server validation, more than C1 needed. To come: sent once on join and
+  on change, reliably, validated by the server against its character data (unknown names fall back to
+  the default look, as unknown blocks do in registry sync, ADR 0038). The renderer already draws any
+  look by name (`PlayerView::look`).
+- **The held item** **[built, protocol v17]**: a `u16` per remote player in every snapshot (a block
+  state, the server's id, in the low 15 bits; `0x8000` the brush tool painting with it; 0 an empty
+  hand), from a reliable `HeldItem` the client sends when its hand changes (the hotbar's block, the
+  brush tool on or off), mapped between the client's and the server's ids (registry sync). **Chosen
+  over an event on change** (§10 Q9): snapshots are the one per-player stream, so a late joiner sees
+  it at once and a lost datagram costs nothing, for 2 bytes a remote player (32 players × 20 Hz:
+  1.3 KB/s); an event would need its own state sync for joiners.
+- **Swings** **[built, v17]**: `VoxelModification` doesn't name its editor, so a swing rides in the
+  snapshot too: a `u8` per remote player, a count (6 bits) the server steps on every
+  `BlockEditRequest` and `RegionEdit` it receives from that player, refused or not, and whether it
+  broke or placed (`swing_flags`); a client starts the swing when it sees the count change (not on
+  the first value it sees). Brush strokes and region tools swing as a place.
 
-These are protocol changes, so they ship on a new compatibility line (the owner raises
-`package.json`).
+The held item and swings changed the protocol (v17), so they ship on **a new compatibility line**:
+the owner raises `package.json` to the next minor.
 
-### 9.4 Choosing a look
+### 9.4 Choosing a look **[planned, C2]**
 
 Players choose from the data's variants and slot colours (not free authoring). The choice is per
 player, kept in the browser's settings store (append-only, CLAUDE.md) and sent at join. A server's
 character data could add looks the way servers register blocks (ADR 0038); that is a later choice.
 
-### 9.5 Creatures
+### 9.5 Creatures **[planned, C3]**
 
 The wolf and the deer are art only here. Spawning, AI (wander, graze, flee, hunt), their physics
 bodies and netcode (Tier 1 entities, §7.2) are a later phase; the clips are shaped for it (gaits with
 a `cycle` for speed-matched playback, `graze` as a loop an AI can enter and leave at the head-up
 key).
 
+### 9.6 Cost **[measured, C1]**
+
+Chrome on an Apple GPU, 1280 × 720, unthrottled, the machine busy with other agents' builds (so read
+the differences, not the absolutes), `__dwell.puppets` standing in for remote players in view:
+
+| Bodies | `gpu.frame` p50 | `gpu.near` p50 | Draw calls | Triangles |
+| --- | --- | --- | --- | --- |
+| 0 (arms only) | 12.98 ms | 6.15 ms | 1,246 | 1.24 M |
+| 1 | 13.01 ms | 6.56 ms | 1,250 | 1.26 M |
+| 8 | 12.38 ms | 6.03 ms | 1,278 | 1.42 M |
+| 32 | 13.11 ms | 6.65 ms | 1,374 | 1.97 M |
+
+A body is 4 draws (body and item, each with its outline) and ~23 k triangles; 32 are within the
+noise. The CPU's frame stays ~1.2–1.4 ms (`frame.cpu`). Your arms' pass (`gpu.arms`) overlaps the
+others on a tile-based GPU; with it on and off `gpu.frame` moved less than the run-to-run noise.
+GPU memory: one mesh per look (wanderer 385 KB, ranger 420 KB, tinker 428 KB), its far version, the
+arms 55 KB, the block 1 KB and the brush 21 KB: 0.49 MB with everything the run drew. Uploads: 1,280
+bytes of uniforms a body a frame (41 KB at 32 bodies with the arms).
+
 ## 10. Open questions for the owner
+
+**Assumed for C1 until answered** (the Lab's defaults): the proportions as they are (Q1); everyone
+wears the wanderer (Q2, Q8); dot-eye faces (Q3); the ink outline on, as an inverted hull (Q5); the
+arm low on the right with only the right hand (Q6, the data's anchor and its 62° FOV); a held item
+in the right hand only; the death pose is the whole rest pose lying on its back (Q4); the crouched
+body is the crouch clip as drawn, poking above a 1-block crawlspace (Q4); creature scale untouched
+(Q7, no creatures drawn).
+
 
 1. **Proportions.** The player is chunky with a big head (a fifth of 1.8 m) and big hands and boots.
    Keep, or go less stylised (smaller head, longer limbs) or more (a quarter)?

@@ -4,8 +4,7 @@ import { defineConfig } from '@playwright/test';
 
 export default defineConfig({
   testDir: 'e2e-webgpu',
-  // The probe page also runs the GPU marcher's per-pixel check (march.spec.ts): slow on SwiftShader.
-  timeout: 120_000,
+  timeout: 30_000,
   workers: 1,
   reporter: [['list']],
   webServer: {
