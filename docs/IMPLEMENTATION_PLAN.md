@@ -57,6 +57,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 37 — Sprint slide (stacks on 35) | 🚧 In progress — built and tested natively (controller, predictor, netcode, protocol 15 vectors): crouch while sprinting slides on, crouched, with friction and slopes, limited steering, a jump out and a cooldown (`PLAYER_CONTROLLER.md` §6.9), checked in Chrome (the `sprint-slide` bench); outstanding: CI (the WASM divergence run and the e2e suite), the owner's review; a protocol change (15): the owner raises `package.json` to a new minor |
 | 38 — The spyglass | 🚧 In progress — built and tested natively, in Vitest and on a real GPU (ADR 0039, `SPYGLASS.md`): a toggle key (`` ` ``) and wheel steps from `shared/look/spyglass.json` (generator, CI stale check), the zoomed FOV for the raster renderer, the marcher (its FOV bug fixed) and the LOD, which refines only inside the narrow view (bounded by the detail boost), the vignette, reduced motion, the `spyglass-far` bench scenario; outstanding: CI and the owner's review in a browser; a patch release |
 | 39 — Painterly textures | 🚧 In progress — built and tested natively, in Node and on a real GPU (ADR 0040, `ART_DIRECTION.md`, `PAINTERLY_TEXTURES.md`): the storybook palette and materials as data (`shared/textures`), one stroke generator baked into the atlas (CI stale check, a material added by data alone), `?textures=painterly` on the page and in the meshing workers (the classic set stays the default), the Painterly Texture Lab, the bench's `painterly` configuration (same frame cost); outstanding: CI and the owner's review of the look, then flipping the default; a patch release |
+| 40 — Characters and creatures (design and concept) | 🚧 In progress — C0 built and tested (ADR 0041, `CHARACTERS.md`): the rig vocabulary and validator (`shared/characters/rig.mjs`), the data (the player with three looks, the wolf, the deer; accessories, the block and brush items, clips), the generator and its tests, the Character Lab prototype checked in Chrome and published; stacked on Phase 39's palette and materials; outstanding: the owner's review and answers (`CHARACTERS.md` §10), CI; C1–C3 (in the game) not started; a patch release |
 
 Phase numbering: Phase 4 was inserted on 2026-09-29 for the planet-scale world (ADRs 0011, 0012);
 the former Phases 4–7 are now 5–8, and Phase 3's former 3c and 3d are now 3d and 3e.
@@ -3855,3 +3856,56 @@ Exit criteria
 - [x] The frame cost is unchanged (the same atlas, meshes and shaders; `npm run bench --
   --compare --configs painterly`, PAINTERLY_TEXTURES.md §7).
 - [ ] CI green; the owner's review of the look.
+
+## Phase 40 — Characters and Creatures
+
+**Status:** C0 (the design, data and prototype) built and tested (2026-10-20): `node --test
+shared/characters/gen.test.mjs` passes and the Character Lab was checked in Chrome. Outstanding:
+the owner's review and answers to `CHARACTERS.md` §10, CI. C1–C3 are not
+started: the owner asked for a design and concept only. Stacked on Phase 39 (the palette, materials
+and painter it shades with). No change to saves, the protocol or terrain: a patch release.
+
+Owner (2026-10-20): the character design concept, the player's first-person arms and hands holding
+the hotbar's block or the brush with break and place swings, the full body other players see, and
+a wolf and a deer in the same style, *"so we can get a cohesive style together"*; first person
+only; procedural from data, no modelling tool. The answers and the design are in
+[`CHARACTERS.md`](./CHARACTERS.md) and [ADR 0041](./adr/0041-characters.md).
+
+**C0 — design, data and prototype**
+
+Deliverables
+- [x] `docs/CHARACTERS.md` (art direction, the vocabulary, the data format, the first-person arms,
+  poses and clips, building it in, open questions) and ADR 0041; ARCHITECTURE.md §3 and §5.3.
+- [x] `shared/characters/rig.mjs`: the fixed vocabulary (part kinds, joints, easing, layers, spaces,
+  views, places, `$block`), validation with named errors (the rest pose on the ground at its
+  height), composing (sockets, slots, mirrors, accessories, hides, items), sampling and layering.
+- [x] `shared/characters/characters.json`: the `biped` and `quadruped` rigs; the player (wanderer,
+  ranger, tinker), the wolf, the deer (stag, doe); twelve accessories; the block and brush items;
+  clips (idle, walk, hold, break, place; the arms' idle, walk, break, place; the wolf's idle and
+  trot; the deer's idle, walk and graze). Materials named from `shared/textures`.
+- [x] `shared/characters/gen.mjs` (validates; writes the data, the style, `rig.mjs` and `paint.mjs`
+  into the page) and `gen.test.mjs` (26 bad entries, a part, an accessory and a variant added by data
+  alone, the arms sharing the body's parts, clips, feet on the ground); the CI step.
+- [x] `docs/prototypes/character-lab.html`: the player, first person, the wolf, the deer and a group
+  to scale; orbit and turntable; playback and swings; looks, accessories, slots, held items; live part
+  editing; validation; copy the JSON back. Screenshots in the session's scratchpad.
+- [x] Published (https://claude.ai/artifact/YAieiGfJnp5f2FnoR6wQWB, listed in `docs/prototypes/README.md`).
+
+Exit criteria
+- [x] A part, an accessory and a variant added by data alone are composed and worn
+  (`gen.test.mjs`).
+- [x] A bad entry fails with its path named (`gen.test.mjs`, 26 cases).
+- [x] The first-person arms draw every body part on the arm chain (`gen.test.mjs`) and are checked in
+  the Lab with a block and the brush.
+- [ ] The owner's review of the look, and answers to `CHARACTERS.md` §10.
+
+**C1 — characters in the renderer (later)**: a Rust loader and mesh builder from the same data
+(`characters.gen.rs`), the character shader and outline, remote players drawn as the full body
+(replacing the capsule), the arms pass with its own FOV (`CHARACTERS.md` §9.1–9.2).
+
+**C2 — looks and poses over the network (later; a new compatibility line)**: the look at join, the
+held item, swings without an edit (`CHARACTERS.md` §9.3–9.4).
+
+**C3 — creatures in the world (later)**: spawning, AI, bodies and netcode for the wolf and the deer
+(`CHARACTERS.md` §9.5).
+

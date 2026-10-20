@@ -1,0 +1,642 @@
+{
+  "$comment": "Characters and creatures as data (docs/CHARACTERS.md, ADR 0041): rigs (bones and joints), characters (rest proportions, sockets, colour slots, parts, accessory looks, clips by role, the first-person arms), accessories, held items and animation clips. Metres; +y up, +z the way the character faces, +x its left; rotations are Euler XYZ degrees (+x pitches a bone's top toward +z, so a hanging limb swings back). Materials are names from the shared style (shared/textures, ADR 0040): a material, a palette ramp or stop (\"leather.light\"), a swatch (\"ink\"), a slot of the character or accessory, or $block (the held block's own look). Validated by `node shared/characters/gen.mjs`, which also writes this file into docs/prototypes/character-lab.html. Prototype content: the first art direction, not final.",
+  "format": 1,
+  "rigs": {
+    "biped": {
+      "$comment": "Two legs, two arms: the player (and later people).",
+      "bones": [
+        { "name": "root", "parent": null, "joint": "fixed" },
+        { "name": "hips", "parent": "root", "joint": "ball", "limits": { "x": [-30, 30], "y": [-30, 30], "z": [-15, 15] } },
+        { "name": "chest", "parent": "hips", "joint": "ball", "limits": { "x": [-40, 60], "y": [-45, 45], "z": [-30, 30] } },
+        { "name": "head", "parent": "chest", "joint": "ball", "limits": { "x": [-60, 60], "y": [-80, 80], "z": [-30, 30] } },
+        { "name": "arm_l", "parent": "chest", "joint": "ball", "limits": { "x": [-180, 70], "y": [-90, 90], "z": [-30, 180] } },
+        { "name": "forearm_l", "parent": "arm_l", "joint": "hinge", "axis": "x", "limits": [-150, 0] },
+        { "name": "hand_l", "parent": "forearm_l", "joint": "ball", "limits": { "x": [-80, 80], "y": [-60, 60], "z": [-40, 40] } },
+        { "name": "arm_r", "parent": "chest", "joint": "ball", "limits": { "x": [-180, 70], "y": [-90, 90], "z": [-180, 30] } },
+        { "name": "forearm_r", "parent": "arm_r", "joint": "hinge", "axis": "x", "limits": [-150, 0] },
+        { "name": "hand_r", "parent": "forearm_r", "joint": "ball", "limits": { "x": [-80, 80], "y": [-60, 60], "z": [-40, 40] } },
+        { "name": "thigh_l", "parent": "hips", "joint": "ball", "limits": { "x": [-120, 60], "y": [-45, 45], "z": [-20, 60] } },
+        { "name": "shin_l", "parent": "thigh_l", "joint": "hinge", "axis": "x", "limits": [0, 150] },
+        { "name": "foot_l", "parent": "shin_l", "joint": "hinge", "axis": "x", "limits": [-45, 45] },
+        { "name": "thigh_r", "parent": "hips", "joint": "ball", "limits": { "x": [-120, 60], "y": [-45, 45], "z": [-60, 20] } },
+        { "name": "shin_r", "parent": "thigh_r", "joint": "hinge", "axis": "x", "limits": [0, 150] },
+        { "name": "foot_r", "parent": "shin_r", "joint": "hinge", "axis": "x", "limits": [-45, 45] }
+      ]
+    },
+    "quadruped": {
+      "$comment": "Four legs, a neck, ears and a two-bone tail: the wolf and the deer (and later other beasts).",
+      "bones": [
+        { "name": "root", "parent": null, "joint": "fixed" },
+        { "name": "body", "parent": "root", "joint": "ball", "limits": { "x": [-30, 30], "y": [-20, 20], "z": [-20, 20] } },
+        { "name": "chest", "parent": "body", "joint": "ball", "limits": { "x": [-25, 25], "y": [-25, 25], "z": [-15, 15] } },
+        { "name": "neck", "parent": "chest", "joint": "ball", "limits": { "x": [-60, 140], "y": [-50, 50], "z": [-30, 30] } },
+        { "name": "head", "parent": "neck", "joint": "ball", "limits": { "x": [-70, 70], "y": [-60, 60], "z": [-30, 30] } },
+        { "name": "ear_l", "parent": "head", "joint": "ball", "limits": { "x": [-60, 60], "y": [-40, 40], "z": [-60, 60] } },
+        { "name": "ear_r", "parent": "head", "joint": "ball", "limits": { "x": [-60, 60], "y": [-40, 40], "z": [-60, 60] } },
+        { "name": "tail_1", "parent": "body", "joint": "ball", "limits": { "x": [-80, 100], "y": [-60, 60], "z": [-30, 30] } },
+        { "name": "tail_2", "parent": "tail_1", "joint": "ball", "limits": { "x": [-60, 60], "y": [-60, 60], "z": [-30, 30] } },
+        { "name": "front_upper_l", "parent": "chest", "joint": "ball", "limits": { "x": [-70, 70], "y": [-15, 15], "z": [-20, 20] } },
+        { "name": "front_lower_l", "parent": "front_upper_l", "joint": "hinge", "axis": "x", "limits": [-10, 130] },
+        { "name": "front_foot_l", "parent": "front_lower_l", "joint": "hinge", "axis": "x", "limits": [-60, 90] },
+        { "name": "front_upper_r", "parent": "chest", "joint": "ball", "limits": { "x": [-70, 70], "y": [-15, 15], "z": [-20, 20] } },
+        { "name": "front_lower_r", "parent": "front_upper_r", "joint": "hinge", "axis": "x", "limits": [-10, 130] },
+        { "name": "front_foot_r", "parent": "front_lower_r", "joint": "hinge", "axis": "x", "limits": [-60, 90] },
+        { "name": "hind_upper_l", "parent": "body", "joint": "ball", "limits": { "x": [-70, 70], "y": [-15, 15], "z": [-20, 20] } },
+        { "name": "hind_lower_l", "parent": "hind_upper_l", "joint": "hinge", "axis": "x", "limits": [-130, 40] },
+        { "name": "hind_foot_l", "parent": "hind_lower_l", "joint": "hinge", "axis": "x", "limits": [-60, 90] },
+        { "name": "hind_upper_r", "parent": "body", "joint": "ball", "limits": { "x": [-70, 70], "y": [-15, 15], "z": [-20, 20] } },
+        { "name": "hind_lower_r", "parent": "hind_upper_r", "joint": "hinge", "axis": "x", "limits": [-130, 40] },
+        { "name": "hind_foot_r", "parent": "hind_lower_r", "joint": "hinge", "axis": "x", "limits": [-60, 90] }
+      ]
+    }
+  },
+  "characters": {
+    "player": {
+      "name": "dwell:player",
+      "label": "Player",
+      "rig": "biped",
+      "height": 1.8,
+      "bones": {
+        "root": [0, 0, 0],
+        "hips": [0, 0.92, 0],
+        "chest": [0, 0.12, 0],
+        "head": [0, 0.41, 0],
+        "arm_l": [0.25, 0.33, 0],
+        "forearm_l": [0, -0.27, 0],
+        "hand_l": [0, -0.24, 0],
+        "arm_r": [-0.25, 0.33, 0],
+        "forearm_r": [0, -0.27, 0],
+        "hand_r": [0, -0.24, 0],
+        "thigh_l": [0.11, -0.04, 0],
+        "shin_l": [0, -0.4, 0],
+        "foot_l": [0, -0.38, 0],
+        "thigh_r": [-0.11, -0.04, 0],
+        "shin_r": [0, -0.4, 0],
+        "foot_r": [0, -0.38, 0]
+      },
+      "sockets": {
+        "head_top": { "bone": "head", "at": [0, 0.36, 0] },
+        "neck": { "bone": "chest", "at": [0, 0.4, 0] },
+        "back": { "bone": "chest", "at": [0, 0.2, -0.13] },
+        "waist": { "bone": "hips", "at": [0, 0.06, 0] },
+        "glove_l": { "bone": "hand_l", "at": [0, -0.05, 0] },
+        "glove_r": { "bone": "hand_r", "at": [0, -0.05, 0] },
+        "wrist_l": { "bone": "forearm_l", "at": [0, -0.2, 0] },
+        "wrist_r": { "bone": "forearm_r", "at": [0, -0.2, 0] },
+        "grip_r": { "bone": "hand_r", "at": [0, -0.1, 0.02] }
+      },
+      "slots": {
+        "skin": "skin_tan",
+        "hair": "hair_brown",
+        "tunic": "cloth_wool_blue",
+        "trousers": "cloth_canvas",
+        "boots": "leather",
+        "belt": "leather",
+        "buckle": "metal_brass"
+      },
+      "parts": [
+        { "id": "head", "on": "head", "kind": "round_box", "size": [0.36, 0.34, 0.34], "at": [0, 0.17, 0], "round": 0.3, "material": "skin" },
+        { "id": "nose", "on": "head", "kind": "round_box", "size": [0.07, 0.07, 0.06], "at": [0, 0.13, 0.18], "round": 0.4, "material": "skin" },
+        { "id": "eye_l", "on": "head", "kind": "ellipsoid", "size": [0.045, 0.07, 0.02], "at": [0.075, 0.18, 0.168], "material": "ink", "mirror": true },
+        { "id": "brow_l", "on": "head", "kind": "box", "size": [0.08, 0.022, 0.02], "at": [0.078, 0.237, 0.17], "rot": [0, 0, -6], "material": "ink_soft", "mirror": true },
+        { "id": "ear_l", "on": "head", "kind": "ellipsoid", "size": [0.05, 0.09, 0.07], "at": [0.185, 0.16, 0], "material": "skin", "mirror": true },
+        { "id": "hair_top", "on": "head", "kind": "round_box", "size": [0.39, 0.12, 0.37], "at": [0, 0.3, -0.01], "round": 0.35, "material": "hair" },
+        { "id": "hair_back", "on": "head", "kind": "round_box", "size": [0.39, 0.24, 0.12], "at": [0, 0.2, -0.13], "round": 0.35, "material": "hair" },
+        { "id": "hair_fringe", "on": "head", "kind": "round_box", "size": [0.3, 0.065, 0.07], "at": [0.03, 0.272, 0.155], "rot": [0, 0, 8], "round": 0.4, "material": "hair" },
+        { "id": "neck", "on": "chest", "kind": "cylinder", "size": [0.13, 0.08, 0.13], "at": [0, 0.39, 0], "material": "skin" },
+        { "id": "torso", "on": "chest", "kind": "round_box", "size": [0.44, 0.4, 0.26], "at": [0, 0.19, 0], "round": 0.25, "material": "tunic" },
+        { "id": "tunic_hem", "on": "hips", "kind": "round_box", "size": [0.46, 0.22, 0.28], "at": [0, 0.02, 0], "round": 0.3, "material": "tunic" },
+        { "id": "pelvis", "on": "hips", "kind": "round_box", "size": [0.38, 0.14, 0.24], "at": [0, -0.05, 0], "round": 0.3, "material": "trousers" },
+        { "id": "belt", "on": "hips", "kind": "box", "size": [0.47, 0.06, 0.29], "at": [0, 0.06, 0], "material": "belt" },
+        { "id": "buckle", "on": "hips", "kind": "round_box", "size": [0.08, 0.07, 0.03], "at": [0, 0.06, 0.15], "round": 0.3, "material": "buckle" },
+        { "id": "upper_arm_l", "on": "arm_l", "kind": "capsule", "size": [0.15, 0.3, 0.15], "at": [0, -0.12, 0], "material": "tunic", "mirror": true },
+        { "id": "sleeve_hem_l", "on": "arm_l", "kind": "cylinder", "size": [0.16, 0.04, 0.16], "at": [0, -0.24, 0], "material": "tunic", "mirror": true },
+        { "id": "forearm_l", "on": "forearm_l", "kind": "capsule", "size": [0.12, 0.27, 0.12], "at": [0, -0.12, 0], "material": "skin", "mirror": true },
+        { "id": "hand_l", "on": "hand_l", "kind": "round_box", "size": [0.11, 0.13, 0.1], "at": [0, -0.07, 0], "round": 0.35, "material": "skin", "mirror": true },
+        { "id": "thumb_l", "on": "hand_l", "kind": "round_box", "size": [0.045, 0.07, 0.05], "at": [-0.035, -0.04, 0.05], "rot": [-20, 0, 0], "round": 0.4, "material": "skin", "mirror": true },
+        { "id": "knuckles_l", "on": "hand_l", "kind": "round_box", "size": [0.1, 0.03, 0.035], "at": [0, -0.115, 0.03], "round": 0.45, "material": "skin", "view": "arms", "mirror": true },
+        { "id": "thigh_l", "on": "thigh_l", "kind": "capsule", "size": [0.17, 0.42, 0.17], "at": [0, -0.19, 0], "material": "trousers", "mirror": true },
+        { "id": "shin_l", "on": "shin_l", "kind": "capsule", "size": [0.15, 0.36, 0.15], "at": [0, -0.17, 0], "material": "trousers", "mirror": true },
+        { "id": "boot_l", "on": "shin_l", "kind": "round_box", "size": [0.17, 0.22, 0.19], "at": [0, -0.3, 0], "round": 0.3, "material": "boots", "mirror": true },
+        { "id": "boot_cuff_l", "on": "shin_l", "kind": "cylinder", "size": [0.2, 0.06, 0.21], "at": [0, -0.19, 0], "material": "boots", "mirror": true },
+        { "id": "foot_l", "on": "foot_l", "kind": "round_box", "size": [0.16, 0.1, 0.27], "at": [0, -0.05, 0.05], "round": 0.35, "material": "boots", "mirror": true }
+      ],
+      "accessories": ["wide_brim_hat", "backpack", "bedroll", "leather_gloves"],
+      "variants": {
+        "wanderer": {
+          "label": "Wanderer: a wide hat, a pack and a bedroll",
+          "accessories": ["wide_brim_hat", "backpack", "bedroll", "leather_gloves"]
+        },
+        "ranger": {
+          "label": "Ranger: a pointed hood, a cape and bracers",
+          "accessories": ["hood", "cape", "bracers", "satchel"],
+          "slots": { "skin": "skin_deep", "hair": "hair_black", "tunic": "cloth_linen", "trousers": "cloth_wool_blue", "hood": "cloth_wool_red", "cape": "cloth_wool_red" }
+        },
+        "tinker": {
+          "label": "Tinker: chunky braids, a scarf and bright cuffs",
+          "accessories": ["braids", "scarf", "fabric_cuffs", "satchel"],
+          "slots": { "skin": "skin_fair", "hair": "hair_ginger", "tunic": "cloth_wool_red", "trousers": "cloth_canvas", "scarf": "cloth_wool_blue", "cuff": "cloth_wool_blue", "boots": "leather" }
+        }
+      },
+      "clips": {
+        "idle": "biped_idle",
+        "walk": "biped_walk",
+        "hold": "biped_hold",
+        "break": "biped_break",
+        "place": "biped_place"
+      },
+      "firstPerson": {
+        "bones": ["arm_r", "forearm_r", "hand_r"],
+        "anchor": [-0.28, -0.25, 0.02],
+        "fov": 62,
+        "clips": {
+          "idle": "fp_idle",
+          "walk": "fp_walk",
+          "break": "fp_break",
+          "place": "fp_place"
+        }
+      }
+    },
+    "wolf": {
+      "name": "dwell:wolf",
+      "label": "Wolf",
+      "rig": "quadruped",
+      "height": 1.08,
+      "bones": {
+        "root": [0, 0, 0],
+        "body": [0, 0.62, -0.28],
+        "chest": [0, 0.03, 0.4],
+        "neck": [0, 0.07, 0.32],
+        "head": [0, 0.1, 0.17],
+        "ear_l": [0.075, 0.1, -0.02],
+        "ear_r": [-0.075, 0.1, -0.02],
+        "tail_1": [0, 0.08, -0.15],
+        "tail_2": [0, -0.19, -0.19],
+        "front_upper_l": [0.1, -0.1, 0.14],
+        "front_lower_l": [0, -0.25, 0],
+        "front_foot_l": [0, -0.24, 0],
+        "front_upper_r": [-0.1, -0.1, 0.14],
+        "front_lower_r": [0, -0.25, 0],
+        "front_foot_r": [0, -0.24, 0],
+        "hind_upper_l": [0.1, -0.02, 0],
+        "hind_lower_l": [0, -0.26, -0.04],
+        "hind_foot_l": [0, -0.28, 0.03],
+        "hind_upper_r": [-0.1, -0.02, 0],
+        "hind_lower_r": [0, -0.26, -0.04],
+        "hind_foot_r": [0, -0.28, 0.03]
+      },
+      "slots": { "coat": "fur_wolf", "pale": "fur_wolf_belly", "tip": "wolf.shadow" },
+      "parts": [
+        { "id": "haunch", "on": "body", "kind": "round_box", "size": [0.3, 0.3, 0.44], "at": [0, 0, 0.06], "round": 0.4, "material": "coat" },
+        { "id": "barrel", "on": "chest", "kind": "round_box", "size": [0.34, 0.4, 0.44], "at": [0, 0, 0.06], "round": 0.4, "material": "coat" },
+        { "id": "belly", "on": "chest", "kind": "round_box", "size": [0.24, 0.12, 0.4], "at": [0, -0.16, 0], "round": 0.45, "material": "pale" },
+        { "id": "ruff", "on": "chest", "kind": "round_box", "size": [0.4, 0.38, 0.2], "at": [0, 0.06, 0.24], "round": 0.45, "material": "coat" },
+        { "id": "bib", "on": "chest", "kind": "round_box", "size": [0.26, 0.24, 0.1], "at": [0, -0.06, 0.33], "round": 0.45, "material": "pale" },
+        { "id": "neck", "on": "neck", "kind": "round_box", "size": [0.22, 0.26, 0.22], "at": [0, 0.04, 0.06], "rot": [55, 0, 0], "round": 0.45, "material": "coat" },
+        { "id": "skull", "on": "head", "kind": "round_box", "size": [0.24, 0.2, 0.22], "at": [0, 0.02, 0.02], "round": 0.4, "material": "coat" },
+        { "id": "cheek_l", "on": "head", "kind": "round_box", "size": [0.07, 0.1, 0.1], "at": [0.12, -0.02, 0], "round": 0.45, "material": "pale", "mirror": true },
+        { "id": "muzzle", "on": "head", "kind": "round_box", "size": [0.12, 0.085, 0.23], "at": [0, -0.01, 0.2], "round": 0.4, "material": "coat" },
+        { "id": "jaw", "on": "head", "kind": "round_box", "size": [0.1, 0.05, 0.17], "at": [0, -0.065, 0.17], "round": 0.4, "material": "pale" },
+        { "id": "nose", "on": "head", "kind": "round_box", "size": [0.06, 0.045, 0.04], "at": [0, 0.012, 0.315], "round": 0.4, "material": "ink" },
+        { "id": "eye_l", "on": "head", "kind": "ellipsoid", "size": [0.04, 0.022, 0.02], "at": [0.07, 0.045, 0.125], "rot": [0, 0, -22], "material": "ink", "mirror": true },
+        { "id": "ear_l", "on": "ear_l", "kind": "cone", "size": [0.1, 0.16, 0.075], "at": [0, 0.07, 0], "rot": [0, 0, -8], "material": "coat", "mirror": true },
+        { "id": "ear_inner_l", "on": "ear_l", "kind": "cone", "size": [0.06, 0.1, 0.02], "at": [0, 0.055, 0.03], "rot": [0, 0, -8], "material": "pale", "mirror": true },
+        { "id": "tail_base", "on": "tail_1", "kind": "ellipsoid", "size": [0.14, 0.14, 0.32], "at": [0, -0.09, -0.1], "rot": [45, 0, 0], "material": "coat" },
+        { "id": "tail_brush", "on": "tail_2", "kind": "ellipsoid", "size": [0.18, 0.18, 0.32], "at": [0, -0.07, -0.08], "rot": [50, 0, 0], "material": "coat" },
+        { "id": "tail_tip", "on": "tail_2", "kind": "ellipsoid", "size": [0.12, 0.12, 0.13], "at": [0, -0.17, -0.15], "rot": [50, 0, 0], "material": "tip" },
+        { "id": "front_upper_l", "on": "front_upper_l", "kind": "capsule", "size": [0.1, 0.3, 0.11], "at": [0, -0.11, 0], "material": "coat", "mirror": true },
+        { "id": "front_lower_l", "on": "front_lower_l", "kind": "capsule", "size": [0.085, 0.26, 0.085], "at": [0, -0.12, 0], "material": "coat", "mirror": true },
+        { "id": "front_paw_l", "on": "front_foot_l", "kind": "round_box", "size": [0.1, 0.07, 0.13], "at": [0, -0.025, 0.03], "round": 0.4, "material": "pale", "mirror": true },
+        { "id": "hind_thigh_l", "on": "hind_upper_l", "kind": "round_box", "size": [0.13, 0.3, 0.2], "at": [0, -0.09, 0.02], "round": 0.45, "material": "coat", "mirror": true },
+        { "id": "hind_shank_l", "on": "hind_lower_l", "kind": "capsule", "size": [0.085, 0.32, 0.085], "at": [0, -0.14, 0], "rot": [-8, 0, 0], "material": "coat", "mirror": true },
+        { "id": "hind_paw_l", "on": "hind_foot_l", "kind": "round_box", "size": [0.1, 0.07, 0.13], "at": [0, -0.025, 0.03], "round": 0.4, "material": "pale", "mirror": true }
+      ],
+      "clips": { "idle": "wolf_idle", "trot": "wolf_trot" }
+    },
+    "deer": {
+      "name": "dwell:deer",
+      "label": "Deer",
+      "rig": "quadruped",
+      "height": 1.72,
+      "bones": {
+        "root": [0, 0, 0],
+        "body": [0, 0.95, -0.32],
+        "chest": [0, 0.02, 0.44],
+        "neck": [0, 0.12, 0.28],
+        "head": [0, 0.44, 0.13],
+        "ear_l": [0.09, 0.07, -0.04],
+        "ear_r": [-0.09, 0.07, -0.04],
+        "tail_1": [0, 0.1, -0.25],
+        "tail_2": [0, -0.08, -0.02],
+        "front_upper_l": [0.09, -0.14, 0.12],
+        "front_lower_l": [0, -0.32, 0],
+        "front_foot_l": [0, -0.44, 0],
+        "front_upper_r": [-0.09, -0.14, 0.12],
+        "front_lower_r": [0, -0.32, 0],
+        "front_foot_r": [0, -0.44, 0],
+        "hind_upper_l": [0.09, -0.06, 0],
+        "hind_lower_l": [0, -0.32, -0.07],
+        "hind_foot_l": [0, -0.5, 0.04],
+        "hind_upper_r": [-0.09, -0.06, 0],
+        "hind_lower_r": [0, -0.32, -0.07],
+        "hind_foot_r": [0, -0.5, 0.04]
+      },
+      "sockets": {
+        "antler_l": { "bone": "head", "at": [0.05, 0.08, -0.01] },
+        "antler_r": { "bone": "head", "at": [-0.05, 0.08, -0.01] }
+      },
+      "slots": { "coat": "fur_deer", "pale": "fur_deer_cream", "flash": "deer_cream.light", "hoof": "bark.shadow" },
+      "parts": [
+        { "id": "haunch", "on": "body", "kind": "round_box", "size": [0.3, 0.32, 0.46], "at": [0, 0, 0.06], "round": 0.4, "material": "coat" },
+        { "id": "rump", "on": "body", "kind": "round_box", "size": [0.24, 0.22, 0.06], "at": [0, 0.02, -0.17], "round": 0.45, "material": "pale" },
+        { "id": "barrel", "on": "chest", "kind": "round_box", "size": [0.31, 0.36, 0.46], "at": [0, 0, 0.06], "round": 0.4, "material": "coat" },
+        { "id": "belly", "on": "chest", "kind": "round_box", "size": [0.22, 0.1, 0.5], "at": [0, -0.15, -0.04], "round": 0.45, "material": "pale" },
+        { "id": "neck", "on": "neck", "kind": "round_box", "size": [0.16, 0.48, 0.18], "at": [0, 0.2, 0.06], "rot": [17, 0, 0], "round": 0.45, "material": "coat" },
+        { "id": "throat", "on": "neck", "kind": "round_box", "size": [0.11, 0.32, 0.08], "at": [0, 0.15, 0.13], "rot": [17, 0, 0], "round": 0.45, "material": "pale" },
+        { "id": "skull", "on": "head", "kind": "round_box", "size": [0.2, 0.19, 0.24], "at": [0, 0, 0.03], "round": 0.4, "material": "coat" },
+        { "id": "muzzle", "on": "head", "kind": "round_box", "size": [0.1, 0.1, 0.16], "at": [0, -0.04, 0.17], "rot": [12, 0, 0], "round": 0.4, "material": "coat" },
+        { "id": "muzzle_tip", "on": "head", "kind": "round_box", "size": [0.09, 0.05, 0.08], "at": [0, -0.075, 0.21], "rot": [12, 0, 0], "round": 0.45, "material": "pale" },
+        { "id": "nose", "on": "head", "kind": "round_box", "size": [0.06, 0.04, 0.035], "at": [0, -0.04, 0.255], "round": 0.4, "material": "ink" },
+        { "id": "eye_l", "on": "head", "kind": "ellipsoid", "size": [0.04, 0.05, 0.03], "at": [0.094, 0.03, 0.085], "material": "ink", "mirror": true },
+        { "id": "ear_l", "on": "ear_l", "kind": "ellipsoid", "size": [0.06, 0.18, 0.09], "at": [0.074, 0.05, 0], "rot": [0, 0, -55], "material": "coat", "mirror": true },
+        { "id": "ear_inner_l", "on": "ear_l", "kind": "ellipsoid", "size": [0.035, 0.13, 0.03], "at": [0.072, 0.05, 0.03], "rot": [0, 0, -55], "material": "pale", "mirror": true },
+        { "id": "tail", "on": "tail_1", "kind": "ellipsoid", "size": [0.09, 0.14, 0.06], "at": [0, -0.04, -0.02], "material": "coat" },
+        { "id": "tail_flash", "on": "tail_2", "kind": "ellipsoid", "size": [0.075, 0.1, 0.04], "at": [0, -0.01, -0.015], "material": "flash" },
+        { "id": "front_upper_l", "on": "front_upper_l", "kind": "capsule", "size": [0.085, 0.36, 0.1], "at": [0, -0.14, 0], "material": "coat", "mirror": true },
+        { "id": "front_lower_l", "on": "front_lower_l", "kind": "capsule", "size": [0.05, 0.44, 0.05], "at": [0, -0.21, 0], "material": "coat", "mirror": true },
+        { "id": "front_hoof_l", "on": "front_foot_l", "kind": "round_box", "size": [0.06, 0.07, 0.08], "at": [0, -0.035, 0.01], "round": 0.3, "material": "hoof", "mirror": true },
+        { "id": "hind_thigh_l", "on": "hind_upper_l", "kind": "round_box", "size": [0.12, 0.38, 0.22], "at": [0, -0.12, 0], "round": 0.45, "material": "coat", "mirror": true },
+        { "id": "hind_lower_l", "on": "hind_lower_l", "kind": "capsule", "size": [0.05, 0.52, 0.05], "at": [0, -0.25, 0.02], "material": "coat", "mirror": true },
+        { "id": "hind_hoof_l", "on": "hind_foot_l", "kind": "round_box", "size": [0.06, 0.07, 0.08], "at": [0, -0.035, 0.01], "round": 0.3, "material": "hoof", "mirror": true }
+      ],
+      "accessories": ["antlers"],
+      "variants": {
+        "stag": { "label": "Stag: antlers", "accessories": ["antlers"] },
+        "doe": { "label": "Doe: no antlers", "accessories": [] }
+      },
+      "clips": { "idle": "deer_idle", "walk": "deer_walk", "graze": "deer_graze" }
+    }
+  },
+  "accessories": {
+    "wide_brim_hat": {
+      "label": "Wide-brimmed hat",
+      "place": "head",
+      "fits": ["biped"],
+      "slots": { "hat": "leather", "hat_band": "cloth_wool_red" },
+      "hides": ["hair_top"],
+      "parts": [
+        { "id": "hat_brim", "on": "head_top", "kind": "cylinder", "size": [0.64, 0.035, 0.62], "at": [0, -0.035, 0], "rot": [-4, 0, 0], "material": "hat" },
+        { "id": "hat_crown", "on": "head_top", "kind": "round_box", "size": [0.34, 0.2, 0.32], "at": [0, 0.07, -0.01], "round": 0.35, "material": "hat" },
+        { "id": "hat_band", "on": "head_top", "kind": "cylinder", "size": [0.355, 0.05, 0.335], "at": [0, 0.005, -0.01], "material": "hat_band" },
+        { "id": "hat_feather", "on": "head_top", "kind": "cone", "size": [0.05, 0.2, 0.02], "at": [0.16, 0.08, -0.06], "rot": [-20, 0, -30], "material": "brass" }
+      ]
+    },
+    "hood": {
+      "label": "Pointed hood and mantle",
+      "place": "head",
+      "fits": ["biped"],
+      "slots": { "hood": "cloth_wool_red" },
+      "hides": ["hair_top"],
+      "parts": [
+        { "id": "hood_shell", "on": "head", "kind": "round_box", "size": [0.44, 0.41, 0.34], "at": [0, 0.2, -0.07], "round": 0.35, "material": "hood" },
+        { "id": "hood_brow", "on": "head", "kind": "round_box", "size": [0.44, 0.08, 0.1], "at": [0, 0.375, 0.1], "round": 0.45, "material": "hood" },
+        { "id": "hood_cheek_l", "on": "head", "kind": "round_box", "size": [0.06, 0.3, 0.1], "at": [0.2, 0.18, 0.1], "round": 0.45, "material": "hood", "mirror": true },
+        { "id": "hood_point", "on": "head", "kind": "cone", "size": [0.16, 0.24, 0.16], "at": [0, 0.3, -0.27], "rot": [-115, 0, 0], "material": "hood" },
+        { "id": "hood_mantle", "on": "neck", "kind": "round_box", "size": [0.58, 0.12, 0.36], "at": [0, -0.02, -0.01], "round": 0.45, "material": "hood" }
+      ]
+    },
+    "cape": {
+      "label": "Cape",
+      "place": "shoulders",
+      "fits": ["biped"],
+      "slots": { "cape": "cloth_wool_red" },
+      "parts": [
+        { "id": "cape", "on": "chest", "kind": "round_box", "size": [0.52, 0.9, 0.05], "at": [0, 0.0, -0.18], "rot": [7, 0, 0], "round": 0.3, "material": "cape" },
+        { "id": "cape_clasp_l", "on": "chest", "kind": "cylinder", "size": [0.07, 0.025, 0.07], "at": [0.15, 0.36, 0.13], "rot": [90, 0, 0], "material": "metal_brass", "mirror": true }
+      ]
+    },
+    "backpack": {
+      "label": "Backpack",
+      "place": "back",
+      "fits": ["biped"],
+      "slots": { "pack": "cloth_canvas", "strap": "leather" },
+      "parts": [
+        { "id": "pack", "on": "back", "kind": "round_box", "size": [0.34, 0.4, 0.2], "at": [0, -0.02, -0.1], "round": 0.3, "material": "pack" },
+        { "id": "pack_flap", "on": "back", "kind": "round_box", "size": [0.35, 0.14, 0.22], "at": [0, 0.14, -0.1], "round": 0.35, "material": "strap" },
+        { "id": "pack_pocket", "on": "back", "kind": "round_box", "size": [0.22, 0.14, 0.07], "at": [0, -0.1, -0.22], "round": 0.35, "material": "pack" },
+        { "id": "pack_buckle", "on": "back", "kind": "round_box", "size": [0.05, 0.05, 0.02], "at": [0, 0.08, -0.215], "round": 0.3, "material": "metal_brass" },
+        { "id": "strap_l", "on": "chest", "kind": "box", "size": [0.06, 0.36, 0.03], "at": [0.12, 0.2, 0.135], "material": "strap", "mirror": true }
+      ]
+    },
+    "bedroll": {
+      "label": "Bedroll",
+      "place": "back_top",
+      "fits": ["biped"],
+      "slots": { "roll": "cloth_wool_red" },
+      "parts": [
+        { "id": "roll", "on": "back", "kind": "cylinder", "size": [0.15, 0.5, 0.15], "at": [0, 0.27, -0.12], "rot": [0, 0, 90], "material": "roll" },
+        { "id": "roll_tie_l", "on": "back", "kind": "cylinder", "size": [0.165, 0.03, 0.165], "at": [0.14, 0.27, -0.12], "rot": [0, 0, 90], "material": "leather", "mirror": true }
+      ]
+    },
+    "leather_gloves": {
+      "label": "Leather gloves",
+      "place": "hands",
+      "fits": ["biped"],
+      "slots": { "glove": "leather" },
+      "hides": ["hand_l", "hand_r", "thumb_l", "thumb_r", "knuckles_l", "knuckles_r"],
+      "parts": [
+        { "id": "glove_l", "on": "glove_l", "kind": "round_box", "size": [0.125, 0.145, 0.115], "at": [0, -0.02, 0], "round": 0.35, "material": "glove", "mirror": true },
+        { "id": "glove_thumb_l", "on": "glove_l", "kind": "round_box", "size": [0.055, 0.08, 0.06], "at": [-0.035, 0.01, 0.05], "rot": [-20, 0, 0], "round": 0.4, "material": "glove", "mirror": true },
+        { "id": "glove_cuff_l", "on": "glove_l", "kind": "cone", "size": [0.17, 0.09, 0.17], "at": [0, 0.07, 0], "rot": [180, 0, 0], "tip": 0.7, "material": "glove", "mirror": true },
+        { "id": "glove_strap_l", "on": "glove_l", "kind": "box", "size": [0.13, 0.025, 0.12], "at": [0, 0.02, 0], "material": "leather.shadow", "mirror": true },
+        { "id": "glove_knuckles_l", "on": "glove_l", "kind": "round_box", "size": [0.115, 0.035, 0.04], "at": [0, -0.085, 0.035], "round": 0.45, "material": "glove", "view": "arms", "mirror": true }
+      ]
+    },
+    "fabric_cuffs": {
+      "label": "Bright fabric cuffs",
+      "place": "wrists",
+      "fits": ["biped"],
+      "slots": { "cuff": "cloth_wool_red" },
+      "parts": [
+        { "id": "cuff_l", "on": "wrist_l", "kind": "cylinder", "size": [0.15, 0.08, 0.15], "at": [0, 0, 0], "material": "cuff", "mirror": true },
+        { "id": "cuff_trim_l", "on": "wrist_l", "kind": "cylinder", "size": [0.155, 0.018, 0.155], "at": [0, -0.04, 0], "material": "metal_brass", "mirror": true }
+      ]
+    },
+    "bracers": {
+      "label": "Chunky bracers",
+      "place": "wrists",
+      "fits": ["biped"],
+      "slots": { "bracer": "leather" },
+      "parts": [
+        { "id": "bracer_l", "on": "wrist_l", "kind": "round_box", "size": [0.15, 0.17, 0.15], "at": [0, 0.05, 0], "round": 0.3, "material": "bracer", "mirror": true },
+        { "id": "bracer_plate_l", "on": "wrist_l", "kind": "round_box", "size": [0.07, 0.13, 0.03], "at": [0, 0.05, 0.075], "round": 0.3, "material": "metal_iron", "mirror": true },
+        { "id": "bracer_strap_l", "on": "wrist_l", "kind": "cylinder", "size": [0.16, 0.02, 0.16], "at": [0, 0.1, 0], "material": "leather.shadow", "mirror": true }
+      ]
+    },
+    "braids": {
+      "label": "Chunky braids",
+      "place": "hair",
+      "fits": ["biped"],
+      "slots": { "braid_tie": "cloth_wool_blue" },
+      "parts": [
+        { "id": "braid_a_l", "on": "head", "kind": "round_box", "size": [0.085, 0.1, 0.085], "at": [0.16, 0.12, -0.1], "round": 0.45, "material": "hair", "mirror": true },
+        { "id": "braid_b_l", "on": "head", "kind": "round_box", "size": [0.08, 0.1, 0.08], "at": [0.17, 0.03, -0.11], "round": 0.45, "material": "hair", "mirror": true },
+        { "id": "braid_c_l", "on": "head", "kind": "round_box", "size": [0.075, 0.1, 0.075], "at": [0.175, -0.06, -0.11], "round": 0.45, "material": "hair", "mirror": true },
+        { "id": "braid_tie_l", "on": "head", "kind": "cylinder", "size": [0.07, 0.03, 0.07], "at": [0.175, -0.12, -0.11], "material": "braid_tie", "mirror": true },
+        { "id": "braid_tuft_l", "on": "head", "kind": "cone", "size": [0.08, 0.08, 0.08], "at": [0.175, -0.17, -0.11], "rot": [180, 0, 0], "tip": 0.2, "material": "hair", "mirror": true }
+      ]
+    },
+    "scarf": {
+      "label": "Scarf",
+      "place": "neck",
+      "fits": ["biped"],
+      "slots": { "scarf": "cloth_wool_red" },
+      "parts": [
+        { "id": "scarf_wrap", "on": "neck", "kind": "round_box", "size": [0.32, 0.09, 0.27], "at": [0, 0.005, 0], "round": 0.45, "material": "scarf" },
+        { "id": "scarf_tail", "on": "chest", "kind": "round_box", "size": [0.09, 0.26, 0.04], "at": [0.08, 0.24, 0.15], "rot": [-8, 0, -8], "round": 0.3, "material": "scarf" }
+      ]
+    },
+    "satchel": {
+      "label": "Satchel",
+      "place": "waist",
+      "fits": ["biped"],
+      "slots": { "satchel": "leather" },
+      "parts": [
+        { "id": "satchel_bag", "on": "waist", "kind": "round_box", "size": [0.09, 0.17, 0.2], "at": [-0.27, -0.1, 0.02], "round": 0.35, "material": "satchel" },
+        { "id": "satchel_flap", "on": "waist", "kind": "round_box", "size": [0.1, 0.08, 0.21], "at": [-0.275, -0.04, 0.02], "round": 0.4, "material": "leather.shadow" },
+        { "id": "satchel_strap", "on": "chest", "kind": "box", "size": [0.05, 0.64, 0.02], "at": [0, 0.17, 0.14], "rot": [0, 0, 38], "material": "satchel" }
+      ]
+    },
+    "antlers": {
+      "label": "Antlers",
+      "place": "antlers",
+      "fits": ["quadruped"],
+      "parts": [
+        { "id": "antler_burr_l", "on": "antler_l", "kind": "cylinder", "size": [0.06, 0.03, 0.06], "at": [0, 0.01, 0], "rot": [0, 0, -30], "material": "antler.shadow", "mirror": true },
+        { "id": "antler_beam_l", "on": "antler_l", "kind": "capsule", "size": [0.05, 0.22, 0.05], "at": [0.05, 0.09, -0.01], "rot": [-12, 0, -32], "material": "antler", "mirror": true },
+        { "id": "antler_upper_l", "on": "antler_l", "kind": "capsule", "size": [0.045, 0.2, 0.045], "at": [0.13, 0.24, 0.02], "rot": [16, 0, -14], "material": "antler", "mirror": true },
+        { "id": "antler_brow_l", "on": "antler_l", "kind": "cone", "size": [0.045, 0.12, 0.045], "at": [0.05, 0.1, 0.07], "rot": [62, 0, -10], "tip": 0.2, "material": "antler", "mirror": true },
+        { "id": "antler_back_l", "on": "antler_l", "kind": "cone", "size": [0.042, 0.12, 0.042], "at": [0.19, 0.2, -0.04], "rot": [-30, 0, -55], "tip": 0.2, "material": "antler", "mirror": true },
+        { "id": "antler_top_l", "on": "antler_l", "kind": "cone", "size": [0.04, 0.11, 0.04], "at": [0.15, 0.36, 0.05], "rot": [24, 0, -12], "tip": 0.2, "material": "antler", "mirror": true }
+      ]
+    }
+  },
+  "items": {
+    "block": {
+      "label": "The hotbar's block",
+      "on": "grip_r",
+      "parts": [
+        { "id": "held_block", "on": "grip_r", "kind": "box", "size": [0.2, 0.2, 0.2], "at": [0, -0.03, 0.07], "material": "$block" }
+      ]
+    },
+    "brush": {
+      "label": "The brush tool",
+      "on": "grip_r",
+      "parts": [
+        { "id": "brush_handle", "on": "grip_r", "kind": "cylinder", "size": [0.04, 0.32, 0.04], "at": [0, 0.02, 0.06], "rot": [90, 0, 0], "material": "heartwood" },
+        { "id": "brush_pommel", "on": "grip_r", "kind": "ellipsoid", "size": [0.06, 0.06, 0.06], "at": [0, 0.02, -0.1], "material": "metal_brass" },
+        { "id": "brush_ferrule", "on": "grip_r", "kind": "cylinder", "size": [0.058, 0.07, 0.058], "at": [0, 0.02, 0.23], "rot": [90, 0, 0], "material": "metal_brass" },
+        { "id": "brush_tuft", "on": "grip_r", "kind": "cone", "size": [0.1, 0.1, 0.1], "at": [0, 0.02, 0.315], "rot": [90, 0, 0], "tip": 0.55, "material": "$block" },
+        { "id": "brush_tip", "on": "grip_r", "kind": "ellipsoid", "size": [0.058, 0.058, 0.07], "at": [0, 0.02, 0.37], "material": "$block" }
+      ]
+    }
+  },
+  "clips": {
+    "biped_idle": {
+      "rig": "biped",
+      "layer": "base",
+      "duration": 3,
+      "loop": true,
+      "ease": "spline",
+      "keys": [
+        { "t": 0, "root": [0, 0, 0], "bones": { "chest": [0, 0, 0], "head": [0, 0, 0], "arm_l": [0, 0, 6], "arm_r": [0, 0, -6], "forearm_l": [-10, 0, 0], "forearm_r": [-10, 0, 0] } },
+        { "t": 1.5, "root": [0, -0.006, 0], "bones": { "chest": [3, 0, 0], "head": [-3, 4, 0], "arm_l": [0, 0, 8], "arm_r": [0, 0, -8], "forearm_l": [-14, 0, 0], "forearm_r": [-14, 0, 0] } }
+      ]
+    },
+    "biped_walk": {
+      "rig": "biped",
+      "layer": "base",
+      "duration": 1,
+      "loop": true,
+      "ease": "spline",
+      "cycle": 1.6,
+      "keys": [
+        { "t": 0, "root": [0, -0.02, 0], "bones": { "hips": [0, 6, 0], "chest": [4, -6, 0], "thigh_l": [-28, 0, 0], "shin_l": [6, 0, 0], "foot_l": [0, 0, 0], "thigh_r": [20, 0, 0], "shin_r": [25, 0, 0], "foot_r": [15, 0, 0], "arm_l": [22, 0, 6], "arm_r": [-22, 0, -6], "forearm_l": [-12, 0, 0], "forearm_r": [-25, 0, 0] } },
+        { "t": 0.25, "root": [0, 0.03, 0], "bones": { "hips": [0, 0, 0], "chest": [4, 0, 0], "thigh_l": [-2, 0, 0], "shin_l": [4, 0, 0], "foot_l": [0, 0, 0], "thigh_r": [-30, 0, 0], "shin_r": [60, 0, 0], "foot_r": [0, 0, 0], "arm_l": [0, 0, 6], "arm_r": [0, 0, -6], "forearm_l": [-15, 0, 0], "forearm_r": [-15, 0, 0] } },
+        { "t": 0.5, "root": [0, -0.02, 0], "bones": { "hips": [0, -6, 0], "chest": [4, 6, 0], "thigh_r": [-28, 0, 0], "shin_r": [6, 0, 0], "foot_r": [0, 0, 0], "thigh_l": [20, 0, 0], "shin_l": [25, 0, 0], "foot_l": [15, 0, 0], "arm_r": [22, 0, -6], "arm_l": [-22, 0, 6], "forearm_r": [-12, 0, 0], "forearm_l": [-25, 0, 0] } },
+        { "t": 0.75, "root": [0, 0.03, 0], "bones": { "hips": [0, 0, 0], "chest": [4, 0, 0], "thigh_r": [-2, 0, 0], "shin_r": [4, 0, 0], "foot_r": [0, 0, 0], "thigh_l": [-30, 0, 0], "shin_l": [60, 0, 0], "foot_l": [0, 0, 0], "arm_l": [0, 0, 6], "arm_r": [0, 0, -6], "forearm_l": [-15, 0, 0], "forearm_r": [-15, 0, 0] } }
+      ]
+    },
+    "biped_hold": {
+      "$comment": "The right arm holding the hotbar's item in front, over idle or walk.",
+      "rig": "biped",
+      "layer": "hold",
+      "duration": 1,
+      "loop": true,
+      "ease": "step",
+      "keys": [{ "t": 0, "bones": { "arm_r": [-20, 0, -4], "forearm_r": [-65, 0, 0], "hand_r": [0, 0, 0] } }]
+    },
+    "biped_break": {
+      "rig": "biped",
+      "layer": "action",
+      "duration": 0.5,
+      "loop": false,
+      "ease": "smooth",
+      "keys": [
+        { "t": 0, "bones": { "chest": [0, 0, 0], "arm_r": [-20, 0, -4], "forearm_r": [-65, 0, 0] } },
+        { "t": 0.14, "bones": { "chest": [-4, -10, 0], "arm_r": [-125, 0, -10], "forearm_r": [-90, 0, 0] } },
+        { "t": 0.26, "bones": { "chest": [10, 8, 0], "arm_r": [-35, 0, -2], "forearm_r": [-20, 0, 0] } },
+        { "t": 0.5, "bones": { "chest": [0, 0, 0], "arm_r": [-20, 0, -4], "forearm_r": [-65, 0, 0] } }
+      ]
+    },
+    "biped_place": {
+      "rig": "biped",
+      "layer": "action",
+      "duration": 0.36,
+      "loop": false,
+      "ease": "smooth",
+      "keys": [
+        { "t": 0, "bones": { "chest": [0, 0, 0], "arm_r": [-20, 0, -4], "forearm_r": [-65, 0, 0] } },
+        { "t": 0.14, "bones": { "chest": [5, -8, 0], "arm_r": [-72, 0, -2], "forearm_r": [-15, 0, 0] } },
+        { "t": 0.36, "bones": { "chest": [0, 0, 0], "arm_r": [-20, 0, -4], "forearm_r": [-65, 0, 0] } }
+      ]
+    },
+    "fp_idle": {
+      "$comment": "First person: the arm held into view, breathing. Root is the arm's anchor offset in view space.",
+      "rig": "biped",
+      "space": "arms",
+      "layer": "base",
+      "duration": 3,
+      "loop": true,
+      "ease": "spline",
+      "keys": [
+        { "t": 0, "root": [0, 0, 0], "bones": { "arm_r": [-70, 22, 0], "forearm_r": [-40, 0, 0], "hand_r": [10, 0, 0] } },
+        { "t": 1.5, "root": [0, -0.006, 0], "bones": { "arm_r": [-68, 22, 0], "forearm_r": [-43, 0, 0], "hand_r": [8, 0, 0] } }
+      ]
+    },
+    "fp_walk": {
+      "rig": "biped",
+      "space": "arms",
+      "layer": "base",
+      "duration": 1,
+      "loop": true,
+      "ease": "spline",
+      "cycle": 1.6,
+      "keys": [
+        { "t": 0, "root": [0.012, -0.014, 0], "bones": { "arm_r": [-70, 22, 0], "forearm_r": [-40, 0, 0] } },
+        { "t": 0.25, "root": [0, 0.008, 0], "bones": { "arm_r": [-72, 22, 0], "forearm_r": [-38, 0, 0] } },
+        { "t": 0.5, "root": [-0.012, -0.014, 0], "bones": { "arm_r": [-70, 22, 0], "forearm_r": [-40, 0, 0] } },
+        { "t": 0.75, "root": [0, 0.008, 0], "bones": { "arm_r": [-72, 22, 0], "forearm_r": [-38, 0, 0] } }
+      ]
+    },
+    "fp_break": {
+      "rig": "biped",
+      "space": "arms",
+      "layer": "action",
+      "duration": 0.5,
+      "loop": false,
+      "ease": "smooth",
+      "keys": [
+        { "t": 0, "root": [0, 0, 0], "bones": { "arm_r": [-70, 22, 0], "forearm_r": [-40, 0, 0], "hand_r": [10, 0, 0] } },
+        { "t": 0.14, "root": [0.02, 0.03, 0.02], "bones": { "arm_r": [-90, 28, 0], "forearm_r": [-50, 0, 0], "hand_r": [-15, 0, 0] } },
+        { "t": 0.26, "root": [0, -0.01, 0.04], "bones": { "arm_r": [-70, 22, 0], "forearm_r": [-30, 0, 0], "hand_r": [24, 0, 0] } },
+        { "t": 0.5, "root": [0, 0, 0], "bones": { "arm_r": [-70, 22, 0], "forearm_r": [-40, 0, 0], "hand_r": [10, 0, 0] } }
+      ]
+    },
+    "fp_place": {
+      "rig": "biped",
+      "space": "arms",
+      "layer": "action",
+      "duration": 0.36,
+      "loop": false,
+      "ease": "smooth",
+      "keys": [
+        { "t": 0, "root": [0, 0, 0], "bones": { "arm_r": [-70, 22, 0], "forearm_r": [-40, 0, 0] } },
+        { "t": 0.14, "root": [0, 0.015, 0.08], "bones": { "arm_r": [-84, 18, 0], "forearm_r": [-18, 0, 0] } },
+        { "t": 0.36, "root": [0, 0, 0], "bones": { "arm_r": [-70, 22, 0], "forearm_r": [-40, 0, 0] } }
+      ]
+    },
+    "wolf_idle": {
+      "rig": "quadruped",
+      "layer": "base",
+      "duration": 4,
+      "loop": true,
+      "ease": "spline",
+      "keys": [
+        { "t": 0, "root": [0, 0, 0], "bones": { "chest": [0, 0, 0], "neck": [0, 0, 0], "head": [0, 0, 0], "tail_1": [10, 0, 0], "tail_2": [0, 0, 0], "ear_l": [0, 0, 0], "ear_r": [0, 0, 0] } },
+        { "t": 1, "bones": { "tail_1": [10, 8, 0], "head": [0, 12, 0] } },
+        { "t": 2, "root": [0, 0.006, 0], "bones": { "chest": [-2, 0, 0], "neck": [-4, 0, 0], "head": [-4, 16, 0], "tail_2": [0, 10, 0] } },
+        { "t": 2.6, "bones": { "ear_r": [-20, 0, -12] } },
+        { "t": 2.9, "bones": { "ear_r": [0, 0, 0], "tail_1": [10, -8, 0] } },
+        { "t": 3.3, "bones": { "head": [0, 0, 0], "tail_2": [0, -6, 0] } }
+      ]
+    },
+    "wolf_trot": {
+      "$comment": "Diagonal pairs: the left fore with the right hind, then the right fore with the left hind.",
+      "rig": "quadruped",
+      "layer": "base",
+      "duration": 0.56,
+      "loop": true,
+      "ease": "spline",
+      "cycle": 1.4,
+      "keys": [
+        { "t": 0, "root": [0, -0.015, 0], "bones": { "head": [2, 0, 0], "tail_1": [-15, 8, 0], "front_upper_l": [-30, 0, 0], "front_lower_l": [0, 0, 0], "front_foot_l": [-10, 0, 0], "hind_upper_r": [-25, 0, 0], "hind_lower_r": [10, 0, 0], "hind_foot_r": [0, 0, 0], "front_upper_r": [30, 0, 0], "front_lower_r": [10, 0, 0], "front_foot_r": [20, 0, 0], "hind_upper_l": [25, 0, 0], "hind_lower_l": [-10, 0, 0], "hind_foot_l": [20, 0, 0] } },
+        { "t": 0.14, "root": [0, 0.025, 0], "bones": { "head": [-2, 0, 0], "front_upper_l": [0, 0, 0], "front_lower_l": [0, 0, 0], "front_foot_l": [0, 0, 0], "hind_upper_r": [0, 0, 0], "hind_lower_r": [0, 0, 0], "hind_foot_r": [0, 0, 0], "front_upper_r": [-5, 0, 0], "front_lower_r": [80, 0, 0], "front_foot_r": [30, 0, 0], "hind_upper_l": [-10, 0, 0], "hind_lower_l": [-50, 0, 0], "hind_foot_l": [40, 0, 0] } },
+        { "t": 0.28, "root": [0, -0.015, 0], "bones": { "head": [2, 0, 0], "tail_1": [-15, -8, 0], "front_upper_r": [-30, 0, 0], "front_lower_r": [0, 0, 0], "front_foot_r": [-10, 0, 0], "hind_upper_l": [-25, 0, 0], "hind_lower_l": [10, 0, 0], "hind_foot_l": [0, 0, 0], "front_upper_l": [30, 0, 0], "front_lower_l": [10, 0, 0], "front_foot_l": [20, 0, 0], "hind_upper_r": [25, 0, 0], "hind_lower_r": [-10, 0, 0], "hind_foot_r": [20, 0, 0] } },
+        { "t": 0.42, "root": [0, 0.025, 0], "bones": { "head": [-2, 0, 0], "front_upper_r": [0, 0, 0], "front_lower_r": [0, 0, 0], "front_foot_r": [0, 0, 0], "hind_upper_l": [0, 0, 0], "hind_lower_l": [0, 0, 0], "hind_foot_l": [0, 0, 0], "front_upper_l": [-5, 0, 0], "front_lower_l": [80, 0, 0], "front_foot_l": [30, 0, 0], "hind_upper_r": [-10, 0, 0], "hind_lower_r": [-50, 0, 0], "hind_foot_r": [40, 0, 0] } }
+      ]
+    },
+    "deer_idle": {
+      "rig": "quadruped",
+      "layer": "base",
+      "duration": 5,
+      "loop": true,
+      "ease": "spline",
+      "keys": [
+        { "t": 0, "root": [0, 0, 0], "bones": { "neck": [0, 0, 0], "head": [0, 0, 0], "ear_l": [0, 0, 0], "ear_r": [0, 0, 0], "tail_1": [0, 0, 0], "chest": [0, 0, 0] } },
+        { "t": 1.4, "bones": { "neck": [-4, -10, 0], "head": [0, -18, 0] } },
+        { "t": 2, "bones": { "ear_l": [-25, 0, 15] } },
+        { "t": 2.25, "bones": { "ear_l": [0, 0, 0] } },
+        { "t": 2.5, "root": [0, 0.005, 0], "bones": { "chest": [-1.5, 0, 0] } },
+        { "t": 3.2, "bones": { "neck": [0, 0, 0], "head": [0, 0, 0], "tail_1": [0, 0, 0] } },
+        { "t": 3.4, "bones": { "tail_1": [-45, 0, 0] } },
+        { "t": 3.6, "bones": { "tail_1": [0, 0, 0] } }
+      ]
+    },
+    "deer_walk": {
+      "$comment": "Four beats: left hind, left fore, right hind, right fore.",
+      "rig": "quadruped",
+      "layer": "base",
+      "duration": 1.2,
+      "loop": true,
+      "ease": "spline",
+      "cycle": 1.1,
+      "keys": [
+        { "t": 0, "root": [0, 0, 0], "bones": { "neck": [4, 0, 0], "hind_upper_l": [-20, 0, 0], "hind_lower_l": [10, 0, 0], "hind_foot_l": [0, 0, 0], "front_upper_l": [-10, 0, 0], "front_lower_l": [75, 0, 0], "front_foot_l": [30, 0, 0], "hind_upper_r": [22, 0, 0], "hind_lower_r": [-8, 0, 0], "hind_foot_r": [15, 0, 0], "front_upper_r": [0, 0, 0], "front_lower_r": [0, 0, 0], "front_foot_r": [0, 0, 0] } },
+        { "t": 0.3, "root": [0, 0.012, 0], "bones": { "neck": [0, 0, 0], "hind_upper_l": [0, 0, 0], "hind_lower_l": [0, 0, 0], "hind_foot_l": [0, 0, 0], "front_upper_l": [-25, 0, 0], "front_lower_l": [0, 0, 0], "front_foot_l": [-5, 0, 0], "hind_upper_r": [-5, 0, 0], "hind_lower_r": [-55, 0, 0], "hind_foot_r": [40, 0, 0], "front_upper_r": [25, 0, 0], "front_lower_r": [10, 0, 0], "front_foot_r": [15, 0, 0] } },
+        { "t": 0.6, "root": [0, 0, 0], "bones": { "neck": [4, 0, 0], "hind_upper_l": [22, 0, 0], "hind_lower_l": [-8, 0, 0], "hind_foot_l": [15, 0, 0], "front_upper_l": [0, 0, 0], "front_lower_l": [0, 0, 0], "front_foot_l": [0, 0, 0], "hind_upper_r": [-20, 0, 0], "hind_lower_r": [10, 0, 0], "hind_foot_r": [0, 0, 0], "front_upper_r": [-10, 0, 0], "front_lower_r": [75, 0, 0], "front_foot_r": [30, 0, 0] } },
+        { "t": 0.9, "root": [0, 0.012, 0], "bones": { "neck": [0, 0, 0], "hind_upper_l": [-5, 0, 0], "hind_lower_l": [-55, 0, 0], "hind_foot_l": [40, 0, 0], "front_upper_l": [25, 0, 0], "front_lower_l": [10, 0, 0], "front_foot_l": [15, 0, 0], "hind_upper_r": [0, 0, 0], "hind_lower_r": [0, 0, 0], "hind_foot_r": [0, 0, 0], "front_upper_r": [-25, 0, 0], "front_lower_r": [0, 0, 0], "front_foot_r": [-5, 0, 0] } }
+      ]
+    },
+    "deer_graze": {
+      "$comment": "Head down to the grass, nibble, look up and listen, then down again.",
+      "rig": "quadruped",
+      "layer": "base",
+      "duration": 6,
+      "loop": true,
+      "ease": "spline",
+      "keys": [
+        { "t": 0, "bones": { "chest": [0, 0, 0], "neck": [0, 0, 0], "head": [0, 0, 0], "front_upper_l": [0, 0, 0], "front_upper_r": [0, 0, 0], "ear_l": [0, 0, 0], "ear_r": [0, 0, 0], "tail_1": [0, 0, 0] } },
+        { "t": 1.2, "bones": { "chest": [12, 0, 0], "neck": [135, 0, 0], "head": [-60, 0, 0], "front_upper_l": [-20, 0, 0], "front_upper_r": [-16, 0, 0] } },
+        { "t": 1.8, "bones": { "head": [-52, 0, 0] } },
+        { "t": 2.4, "bones": { "head": [-60, 4, 0], "tail_1": [0, 0, 0] } },
+        { "t": 2.6, "bones": { "tail_1": [-40, 0, 0] } },
+        { "t": 2.8, "bones": { "tail_1": [0, 0, 0] } },
+        { "t": 3, "bones": { "head": [-52, -4, 0] } },
+        { "t": 3.6, "bones": { "head": [-60, 0, 0] } },
+        { "t": 4.2, "bones": { "chest": [12, 0, 0], "neck": [135, 0, 0], "front_upper_l": [-20, 0, 0], "front_upper_r": [-16, 0, 0], "ear_l": [0, 0, 0] } },
+        { "t": 5.2, "bones": { "chest": [0, 0, 0], "neck": [-4, 6, 0], "head": [0, 10, 0], "front_upper_l": [0, 0, 0], "front_upper_r": [0, 0, 0], "ear_l": [-30, 0, 15], "ear_r": [-30, 0, -15] } }
+      ]
+    }
+  }
+}
