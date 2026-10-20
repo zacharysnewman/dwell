@@ -10,7 +10,7 @@ materials from the same data files:
 - `shared/textures/materials.json`: the materials, each a stack of painted layers (§3, §4).
 
 **Status.** Owner's brief of 2026-10-20 (the scratchpad brief, summarised in §1). The painterly set is
-behind `?textures=painterly` until the owner approves it; the classic look stays the default. The
+the default since the owner approved it (2026-10-20); `?textures=classic` shows the old look. The
 *content* (which blocks exist) is still prototype (ARCHITECTURE.md §6.1). What this document fixes is
 the style that content will be painted in.
 

@@ -51,7 +51,7 @@ and friend worlds), with a small master server for discovery; there are no offic
 - `docs/ART_DIRECTION.md` — the storybook art direction: the palette (`shared/textures/palette.json`),
   the brush vocabulary, how materials read, the lighting assumptions; shared by the world and characters.
 - `docs/PAINTERLY_TEXTURES.md` — design for Phase 39 (ADR 0040): painterly textures as data, one stroke
-  generator baked at build time, behind `?textures=painterly`.
+  generator baked at build time; the default set (`?textures=classic` keeps the old one).
 - `docs/CHARACTERS.md` — design for Phase 40 (ADR 0041): characters and creatures as rigid chunky parts
   on a data rig (`shared/characters/characters.json`), the first-person arms view, clips; a concept and
   the Character Lab prototype, not in the game yet.
