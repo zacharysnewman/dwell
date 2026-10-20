@@ -226,6 +226,8 @@ pub struct ClientState {
     pub eye_height: f64,
     pub crouch_eye_height: f64,
     pub max_step_height: f64,
+    /// The most one step-up lifts the player (a ramp's rise to the step included).
+    pub max_step_lift: f64,
     pub radius: f64,
     pub standing_height: f64,
 }
@@ -306,6 +308,7 @@ impl ClientState {
             eye_height: f64::from(config.body.eye_height),
             crouch_eye_height: f64::from(config.body.crouch_eye_height),
             max_step_height: f64::from(config.movement.max_step_height),
+            max_step_lift: f64::from(config.max_step_lift()),
             radius: f64::from(config.body.radius),
             standing_height: f64::from(config.body.standing_height),
         }
@@ -321,7 +324,8 @@ impl ClientState {
             face: self.face,
             eye_height: self.eye_height,
             crouch_eye_height: self.crouch_eye_height,
-            max_step_height: self.max_step_height,
+            // The eye smooths every lift a step-up makes.
+            max_step_height: self.max_step_lift,
         }
     }
 }

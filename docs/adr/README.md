@@ -48,6 +48,7 @@ one's status line. Resolving an item in `ARCHITECTURE.md` Open Decisions require
 | [0042](0042-half-height-cells.md) | Half-height cells with stored cardinal ramps, shaped at generation | Accepted for a playtest on a branch |
 | [0040](0040-painterly-textures.md) | Painterly textures: one data-driven stroke generator, baked at build time, behind a switch | Accepted |
 | [0041](0041-characters.md) | Characters and creatures: rigid chunky parts on a data rig, a separate first-person arms view | Accepted |
+| [0043](0043-structure-placements.md) | Structure placements in world generation, as data: the owner's pines in groves (generator version 17) | Accepted |
 
 Phase numbers in ADRs follow the implementation plan as it was then. In ADRs 0001–0010, Phases
 4–7 became 5–8 when the world-LOD phase (Phase 4) was added on 2026-09-29, and then 6–9 when the

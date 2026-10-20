@@ -107,8 +107,11 @@ registry lacks fails generation with a message.
 - **Tall grass** is placed by generation and by players only on a top whose shape is `full`, and
   it is removed if the cell under it stops being full (the existing `needsSupport` rule, extended
   to the shape).
-- **Water.** A ramp piece whose open part lies under the fluid level, or beside fluid in its row,
-  is generated with `flooded=true` and drawn holding the fluid, as Phase 18's shores were.
+- **Water.** Every ramp piece whose cell lies below sea level is generated with `flooded=true` and
+  drawn holding the sea in its open part — a ramp in the sea's top row too, and a 1 m ramp's lower
+  piece when only it is under (owner, 2026-10-20: the ramps stood dry beside the water, which was
+  drawn with flat blue walls against them; `WATER_RENDERING.md` §9). The natural blocks carry
+  `flooded` as on `main` (a flat top below sea level holds water when broken).
 
 ## 6. What changes where
 
@@ -158,8 +161,18 @@ What the switch to ½ m cells did, and what it left for the playtest:
 
 ## 8. After merging `main` (H6, 2026-10-20)
 
-- **Versions:** protocol and generator **1016**, 1000 + the `main` version last merged, so a dev
-  build never joins or loads one of `main`'s.
+- **Versions:** protocol **1016** and generator **1018**, 1000 + the `main` versions last merged
+  (main 0.20.0: protocol 16, generator 18), so a dev build never joins or loads one of `main`'s.
+- **Shore water (main's generator 17, 2026-10-20):** see §5, Water; the fluid side faces and the
+  water shader's fix came with it.
+- **Pines (main's generator 18, ADR 0043):** each structure layer of `pine_tree` and
+  `tall_pine_tree` is two ½ m cells (sizes 5 × 10 × 5 and 7 × 18 × 7), so the trees keep their
+  real 5 m and 9 m; the anchor is the cell over the ground's top cell. Placement heights and the
+  slope stay in metres (the ground's `above_sea` from its top row), rises and the sky test in
+  rows. A pine's whole footprint must be flat grass, so stepped hills keep fewer of their
+  candidates than on `main`.
+- **Step-up (main, every angle):** merged unchanged; the controller suites pass on ½ m cells and
+  the golden trace is re-recorded.
 - **Phase 16's world:** the midplane at row 0; sea level, the flat worlds' top and the core are rows
   (64, 64, 20: 32 m, 32 m, 10 m), with metre twins. The build sphere (`bounds`) is in cells, so it
   reaches 25 km up and down (50 km across); nothing gets near either.

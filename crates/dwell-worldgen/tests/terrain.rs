@@ -30,6 +30,11 @@ fn material(m: StateId) -> StateId {
     }
 }
 
+/// What the generator's structure placements put over the ground (the pines' log and leaves).
+fn placed(m: StateId) -> bool {
+    m == require("dwell:log") || m == require("dwell:leaves")
+}
+
 fn gen_chunk(g: &TerrainGenerator, c: ChunkCoord) -> Chunk {
     let mut chunk = Chunk::default();
     g.generate(c, &mut chunk);
@@ -167,6 +172,10 @@ fn point_queries_agree_with_the_chunk_path() {
         for z in (0..S).step_by(3) {
             for y in (0..S).step_by(2) {
                 for x in (0..S).step_by(3) {
+                    // The point query is the terrain's: placed trees stand over it.
+                    if placed(chunk.get(x, y, z)) {
+                        continue;
+                    }
                     assert_eq!(
                         solid(chunk.get(x, y, z)),
                         g.solid_at(c.x * S + x, c.y * S + y, c.z * S + z),
@@ -379,6 +388,8 @@ fn the_fill_grass_over_dirt_sand_at_the_shore_sea_to_its_level() {
                         let depth = ground - wy;
                         if depth == -1 && wy >= SEA_LEVEL && decoration(m) {
                             decorated += 1;
+                        } else if depth < 0 && wy >= SEA_LEVEL && placed(m) {
+                            // A placed structure's (tests/placements.rs).
                         } else if depth < 0 {
                             assert_eq!(m, if wy < SEA_LEVEL { M.water } else { M.air });
                             water += i32::from(m == M.water);

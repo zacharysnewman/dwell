@@ -29,6 +29,9 @@
 > level, as `decorations.json` says (it had been compared with the face-local top). A test pins it
 > (`the_hills_are_steep_enough_to_slide_and_reach_about_500_m`).
 >
+> **Generator version 18** (owner 2026-10-20): the owner's two pines in groves, placed by data
+> (`shared/worldgen/placements.json`, §2 below, ADR 0043); the height field is unchanged.
+>
 > **Generator version 15** (owner 2026-10-19: "more height from the noise"): the inland rise 130 m,
 > hills ±80 m, 2,048 m, 4 octaves, and bumps ±5 m. Version 14 had hills of ±30 m, bumps of
 > ±2.5 m and a 90 m rise. Over 7 seeds and both faces the land's height standard deviation went
@@ -175,3 +178,59 @@ Optional if cheap: a slight fresnel brightening at grazing angles.
 - **Frame time** within ±5 % of before on the F3 readout (desktop and phone).
 
 ---
+
+## 2. Structure placements: the pines (generator version 18) **[built]**
+
+The owner (2026-10-20): generate the two hand-built pines with the world — "theoretically small
+versions of the conifer in the growth lab" ([`TREE_GROWTH.md`](./TREE_GROWTH.md)). They are
+committed structures (`shared/structures/pine_tree.json`, 5 × 5 × 5, and `tall_pine_tree.json`,
+7 × 9 × 7; [`STRUCTURES.md`](./STRUCTURES.md)), placed by a data-driven layer
+([ADR 0043](./adr/0043-structure-placements.md)). Prototype content (ARCHITECTURE.md §6.1).
+
+**The owner's answers.**
+
+| Question | Answer | In the data |
+|---|---|---|
+| Density | Scattered groves: clustered by a noise field into forest patches with clearings between, sparse elsewhere. Only on grass tops: not sand, not slide-steep faces (> 44°), not under water, not overlapping each other or the shore | `groves` (192 m, 40 % coverage, 6 % kept outside), `density` 0.75 per 7 m `grid` cell, `on` grass, `footprint` "on" (every column under the tree is dry grass, which keeps it off the sand), `maxSlopeDeg` 44, `spacing` 1 |
+| Altitude | More on higher ground, fewer near the shore, none on the highest bare peaks; the decorations' height band (metres above sea level) | `height` [3, 400] (tall grass stops at 400 m too), `rise`: 15 % of the chance at 3 m rising to all of it at 120 m |
+| Variation | A random 90° turn and a mix of the small and tall pine at about 60/40, placed exactly as authored otherwise | `rotate` [0, 90, 180, 270]; `structures` weighted 55/45, which places 60/40 (the wider tall pine loses more overlaps) |
+| What gets added later | More structures and placement entries by data; new conditions as named fields in the validator | the file is a list; `gen.mjs` validates it with named errors |
+
+**How it works** (`dwell-worldgen` `placements.rs`; ARCHITECTURE.md §6.3 step 5). One candidate
+per grid cell, at a hashed point in it; kept when its roll is under the density × the grove factor
+× the height's rise, and the ground takes it: the anchor column one of `on`, dry, in the band, its
+height field's gradient over ±2 m at most tan 44°, and every column under the turned structure one
+of `on` and dry. Of two kept candidates whose boxes come within the spacing, the one with the lower
+priority hash is dropped, whether or not the higher one survives — so the answer needs only the
+neighbours, and a chunk finds every tree reaching into it from the cells around it (the chunk plus
+three reaches and the spacing), the same whichever chunk generates first. The tree's voxels go over
+air and replaceable cells only (tall grass), never into the ground or water. The sky test leaves
+room over the highest ground for the tallest tree; the spawn's level patch is clear of trees.
+
+**Measured** (seed 7 and others; `tests/placements.rs`): about 55 % of the candidates the data's
+chances keep survive the slope, footprint and overlap tests; in groves ~0.28 trees per 49 m² cell
+(about 56 a hectare), outside them ~0.03 (about 7); ground at or above 120 m holds about twice the
+trees per cell of ground below 60 m; 40 % of the trees are tall pines, each quarter turn 25 ± 1 %.
+
+**LOD.** At level 1 (2 m cells) the sections draw the chunks' own trees (`trees_in`, exactly) from
+their voxels, one sample column per cell; at coarser levels a share of the columns as large as the
+trees' cover there (the chance × the mean footprint over a grid cell × the 55 % kept) shows the
+canopy's block (leaves) on its top cell — a tint, not trees. The tint is faint from 600 m: the
+prototype leaves are only a little darker than the grass.
+
+**Persistence.** The trees are plain voxels of the generated chunk, so a chunk is still a pure
+function of the seed; an edited chunk is saved whole as before, and a chopped tree stays chopped.
+This deviates from TREE_GROWTH.md §5a's tree layer (tombstones, `growers`), which is for trees that
+grow: these don't. When G3 builds that layer, procedural trees move into it (their id is already
+`(placement, grid cell)`), with a new generator version.
+
+**Cost** (native, release, seed 7): ground chunks 0.46 → 1.01 ms to generate (the trees' ground is
+computed for the chunk and a 15 m margin), LOD sections of levels 1–4 1.3 → 2.3 ms; around the spawn
+(`--example mesh_cost`) chunk mesh vertices 1.85 M → 2.01 M (+9 %) and LOD section vertices
+2.36 M → 2.77 M (+17 %). In the bench (Chrome, Apple GPU, unthrottled; a shared, busy machine, so
+one noisy run each) `idle-spawn` and `fly-low-fast` stayed within their run-to-run noise
+(`gpu.frame` 13.3 / 14.4 ms with trees against 13.8 / 17.2 ms without).
+
+**Half-height voxels.** On the half-height branch (½ m cells), a 1 m structure maps onto ½ m cells
+by doubling each layer vertically (each 1 m block becomes two ½ m cells, x and z unchanged), so the
+trees keep their real size; recorded with that port.

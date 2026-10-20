@@ -1314,3 +1314,96 @@ fn player_flags_use_the_player_flags_bits_not_the_controllers() {
         player_flags::DEAD
     );
 }
+
+// --- the step-up (PLAYER_CONTROLLER.md §4) --------------------------------------------------------
+
+/// The flat world (its grass field rests at half height, G − ½) with a band of logs (not adaptive)
+/// in its top layer from z = 36 to 44: their tops (G) are a ½ m step above the field.
+fn half_step_generator() -> ChunkGenerator {
+    let base = flat_generator();
+    let log = require("dwell:log");
+    Arc::new(move |coord, chunk| {
+        base(coord, chunk);
+        let voxels = chunk.voxels_mut();
+        let y = G as i32 - 1;
+        for z in 36..44 {
+            for x in 8..56 {
+                let o = [
+                    coord.x * CHUNK_SIZE,
+                    coord.y * CHUNK_SIZE,
+                    coord.z * CHUNK_SIZE,
+                ];
+                let l = [x - o[0], y - o[1], z - o[2]];
+                if l.iter().all(|&v| (0..CHUNK_SIZE).contains(&v)) {
+                    voxels[dwell_world::local_index(l[0], l[1], l[2])] = log;
+                }
+            }
+        }
+    })
+}
+
+/// One client walks and runs from z = 34 onto the step at headings from −60° to 60° off its face's
+/// normal and back off it, five times each way: returns the run after checking every approach
+/// climbed the step.
+fn stepping_up(conditions: LinkConditions) -> NetSim {
+    let mut sim = NetSim::with_world(conditions, half_step_generator(), [32.0, G + 0.1, 34.0]);
+    // Each leg: 60 ticks toward the step at its heading, 60 back to the start.
+    const HEADINGS: [f32; 5] = [0.0, 30.0, -30.0, 60.0, -60.0];
+    let a = sim.join(
+        Some(Box::new(|t, c| {
+            if t < 60 {
+                return Input::default();
+            }
+            let leg = ((t - 60) / 120) as usize;
+            let k = (t - 60) % 120;
+            let heading = HEADINGS[leg % HEADINGS.len()];
+            let run = leg >= HEADINGS.len();
+            if k < 60 {
+                Input {
+                    look_yaw: heading,
+                    move_y: 1.0,
+                    run,
+                    ..Input::default()
+                }
+            } else {
+                steer_to(c, 32.0, 34.0, run)
+            }
+        })),
+        false,
+    );
+    let mut climbed = [false; 10];
+    for t in 0..60 + 120 * 10 {
+        sim.step(1);
+        if t >= 60 {
+            let leg = ((t - 60) / 120) as usize;
+            // The capsule's centre: 0.9 m above feet on the field (G − ½) or on the step (G).
+            climbed[leg] |= sim.clients[a].position().y > G as f32 + 0.85;
+        }
+    }
+    assert!(climbed.iter().all(|&c| c), "climbed {climbed:?}");
+    sim
+}
+
+#[test]
+fn stepping_up_is_predicted_exactly_without_latency() {
+    let sim = stepping_up(LinkConditions::default());
+    let s = sim.clients[0].predictor.stats();
+    assert!(s.replays <= 2, "{s:?}");
+}
+
+#[test]
+fn stepping_up_predicts_without_snaps_at_150_ms_rtt_20_ms_jitter_5_percent_loss() {
+    let sim = stepping_up(lossy());
+    let c = &sim.clients[0];
+    let s = c.predictor.stats();
+    eprintln!(
+        "{} snapshots, {} replays, error at ack p95 {} m, corrections max {} m, snaps {}",
+        s.snapshots,
+        s.replays,
+        percentile(c.ack_errors.clone(), 0.95),
+        percentile(c.corrections.clone(), 1.0),
+        s.snaps
+    );
+    assert_eq!(s.snaps, 0);
+    assert!(percentile(c.ack_errors.clone(), 0.95) < 0.05);
+}

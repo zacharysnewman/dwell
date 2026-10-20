@@ -106,7 +106,7 @@ GitHub Pages only serves static files. Consequences that shape the architecture:
    path: the launcher opens the build the choice needs. Links still open
    directly: an invite, a friend world's join code (`?code=`, Phase 5c, §10.2), or a local world
    by `?local=1`, `?world=` or `?seed=`. Local mode and
-   dedicated servers generate the **procedural terrain** world (generator version 17, §6.3) by
+   dedicated servers generate the **procedural terrain** world (generator version 18, §6.3) by
    default; `?world=flat`, `?world=sandbox` and `?seed=N` (local mode) or `--generator N` and
    `--seed N` (`dwell-server`) pick another generator or seed. (The movement playground, version 1, became a
    test structure file in Phase 15, §6.3; old playground worlds open in their own versions.)
@@ -298,7 +298,7 @@ There are **no official game servers**; players host (ADR 0003, details in §10)
 /shared/sounds       Sound data (dwell.json: sounds, block sound sets, events, gaits, actions, UI,
                      controls) + gen.mjs (→ TS for client/src/audio, Rust for dwell-game) and
                      validate.mjs (also used by shared/blocks/gen.mjs and the client's tests).
-/shared/worldgen     golden/: chunk and LOD-section hashes of generator version 17 (§6.3); terrain.json: the height field's parameters, decorations.json: the terrain's decoration rules, gen.mjs (→ Rust tables for dwell-worldgen) (§6.3).
+/shared/worldgen     golden/: chunk and LOD-section hashes of generator version 18 (§6.3); terrain.json: the height field's parameters, decorations.json: the terrain's decoration rules, placements.json: the structure placements (the pines, ADR 0043), gen.mjs (→ Rust tables for dwell-worldgen) (§6.3).
 /shared/structures   Structure files (*.json; test/ holds fixtures) + gen.mjs (→ Rust tables for
                      dwell-world) and gen.test.mjs; format.mjs, the format's rules, shared by gen.mjs
                      and the client's structures store; playground.json is the movement playground
@@ -888,7 +888,7 @@ sides ([ADR 0023](./adr/0023-bifacial-world.md), [`BIFACIAL_WORLD.md`](./BIFACIA
 *Bifacial world* below). Each phase updates this section, §6.6 and §5 as it lands.
 
 **Built (Phases 3a, 3c, 13, 15; Rust, Phase 24):** the generator (`dwell-worldgen`: `terrain.rs`,
-`island.rs`, `noise.rs`, `bifacial.rs`) is **generator version 17** (Phase 15's interim baseline generator, with Phase 33's decorations (13), Phase 16's resize (14), the larger relief (15, owner 2026-10-19), the steep hills (16, owner 2026-10-19) and the sea flooding the open part of top blocks below sea level (17, owner 2026-10-20, [`WATER_RENDERING.md`](./WATER_RENDERING.md) §9); versions 2–16
+`island.rs`, `noise.rs`, `bifacial.rs`, `decorations.rs`, `placements.rs`) is **generator version 18** (Phase 15's interim baseline generator, with Phase 33's decorations (13), Phase 16's resize (14), the larger relief (15, owner 2026-10-19), the steep hills (16, owner 2026-10-19), the sea flooding the open part of top blocks below sea level (17, owner 2026-10-20, [`WATER_RENDERING.md`](./WATER_RENDERING.md) §9) and the pines placed by data (18, owner 2026-10-20, ADR 0043); versions 2–16
 were the earlier terrains — planet-scale relief, slopes, continents, rivers, climate and biomes, face
 B — and are retired: a world saved with one loads as the flat world; the version launcher opens the
 build that saved it, §2.1). It is announced in Welcome as generator **8** (`GENERATOR_TERRAIN`), the
@@ -1116,7 +1116,7 @@ that subtree (or tombstones the tree); the cut-off part is a Phase 20 body (§7.
 wait for structure placement in worldgen (Open Decision #24).
 
 
-#### Generator pipeline **[built, Phase 15: generator version 12; decorations, Phase 33: 13; Phase 16: 14; the larger relief: 15; the steep hills: 16]**
+#### Generator pipeline **[built, Phase 15: generator version 12; decorations, Phase 33: 13; Phase 16: 14; the larger relief: 15; the steep hills: 16; structure placements: 17]**
 Executed per chunk. Every stage reads only noise of world coordinates, never another chunk's data,
 so chunks can be generated in any order and in parallel. The 2D fields are sampled on a 4-column
 lattice and interpolated bilinearly; the chunk path and the point queries (`column_at`, `solid_at`,
@@ -1130,7 +1130,7 @@ lattice and interpolated bilinearly; the chunk path and the point queries (`colu
    `shared/worldgen/terrain.json` (`HeightField`, generated into `terrain.gen.rs` by
    `shared/worldgen/gen.mjs`, range-checked, stale-checked and node-tested in CI). Heights over the
    island span about 0–500 m above sea level (sea level is face-local 32, over the 10-layer core).
-   **[on the half-height branch]** generator **1016** keeps v16's height field and adds **steps**
+   **[on the half-height branch]** generator **1018** (1016 at the steps; 1017 the flooded shores; 1018 main's pines, two cells per block) keeps v16's height field and adds **steps**
    (`steps` in `terrain.json`): where a 4 m lattice cell rises at least 0.5 m/m, heights snap to
    whole metres, so steep ground is 1 m steps of two ½ m cells that the generation rule tops with
    45° ramps (`HALF_HEIGHT_GRID.md` §8): about 13 % of land tops slide (3 % without the steps).
@@ -1167,8 +1167,9 @@ lattice and interpolated bilinearly; the chunk path and the point queries (`colu
    (`ceil(height) − 1`): stone, under a skin of grass over three of dirt on land, or three of sand
    at the shore (a top voxel less than 2 m above sea level) and under water. Open space below sea
    level is water. There is no 3D density: no overhangs, caves, floating pieces or stability pass,
-   and no ores or features. Chunks more than a cell above every column's height (and above sea
-   level) are air, known without generating them (`is_air_chunk`).
+   and no ores (structures are placed in step 5). Chunks more than the tallest decoration or
+   placed structure's reach above every column's height (one cell without placements, 12 m with the
+   pines) and above sea level are air, known without generating them (`is_air_chunk`).
 4. **Decorations [built, Phase 33: generator version 13].** The air cell over the ground may take a
    decoration (`decorations.rs`), by rules kept as data in `shared/worldgen/decorations.json`
    (generated into `decorations.gen.rs` by `shared/worldgen/gen.mjs`, validated against the block
@@ -1180,6 +1181,26 @@ lattice and interpolated bilinearly; the chunk path and the point queries (`colu
    owner's partial reversal of baseline B10, for plants only; [ADR 0036](./adr/0036-render-modes-and-cross-geometry.md)).
    The LOD doesn't draw them. **[built, Phase 41 H4]** on ½ m cells a plant is one cell (½ m) tall and
    grows only on flat tops (no ramp). The rules move into Phase 17's terrain definitions when those exist.
+5. **Structure placements [built, 2026-10-20: generator version 18; ADR 0043; on the half-height branch, 1018: each structure layer is two ½ m cells, so trees keep their size].** Committed
+   structures (`shared/structures`) stand on the ground by rules kept as data in
+   `shared/worldgen/placements.json` (generated into `placements.gen.rs` by `shared/worldgen/gen.mjs`,
+   validated against the block data and through `shared/structures`' own validator, stale-checked
+   in CI): the structures and their weights, the ground blocks, the footprint rule, a grid (one
+   hashed candidate per cell), the density, a grove noise and the share kept outside groves, the
+   height band (m above sea level) and its rise, the slope limit (degrees, as a squared gradient of
+   the height field over ±2 m), the spacing and the rotations (`placements.rs`). Of two kept
+   candidates whose boxes come within the spacing the lower priority hash is dropped, so a chunk
+   decides every tree reaching into it from the cells around it alone (three reaches and the
+   spacing; the ground for them is the height field over the chunk and a 15 m margin), in any
+   order. A tree's voxels go over air and replaceable cells only. Today one rule: the owner's two
+   pines in groves on grass, at most 400 m up, more on higher ground, a random quarter turn and a
+   60/40 mix ([`WORLD_GENERATION.md`](./WORLD_GENERATION.md) §2). The sky test (step 3) leaves room
+   for the tallest structure over the highest ground; the spawn's level patch is clear of trees.
+   The trees are voxels of the generated chunk — seed terrain, saved whole with the chunk once it
+   is edited, as any edit is — not TREE_GROWTH.md §5a's layer (they don't grow). The LOD draws the
+   chunks' own trees from their voxels at level 1, and at coarser levels a canopy tint: a share of
+   columns as large as the trees' cover shows leaves on its top cell. Cost (native, seed 7): ground
+   chunks 0.46 → 1.01 ms, LOD sections of levels 1–4 1.3 → 2.3 ms.
 
 A chunk took ~0.07 ms to generate natively and a LOD section 0.55–0.85 ms in the C++ build
 (Release), against ~1.05 ms and 0.9–2.1 ms for generator version 11; the Rust generator has not
@@ -1202,10 +1223,10 @@ Server (native), local mode (WASM), and client (WASM) must produce **bit-identic
   axis and the diagonal on both faces and beyond it, and the build sphere's edge (above the centre
   and over the rim); CI runs it natively and under WASM (`wasm32-wasip1` on Node's WASI). The
   hashes were recorded by the C++ generator up to version 12 and re-recorded by the Rust generator
-  for version 17 (the sea's flooded top blocks; the rows holding the ground at the origin and inland are found
+  for version 18 (the pines; 17 was the sea's flooded top blocks; the rows holding the ground at the origin and inland are found
   from the generator, wherever the relief puts them; 16 was the steep hills, 15 the larger relief, 14 Phase 16's new
   geometry, 13 added decorations), with `cargo run -p dwell-worldgen --example goldens`.
-  **[on the half-height branch]** generator version 1016 (½ m cells, generated ramps, main's steep
+  **[on the half-height branch]** generator version 1018 (½ m cells, generated ramps, main's steep
   hills in whole-metre steps) re-recorded them with the same example.
 - `generatorVersion` is bumped for any change that alters output (and the golden hashes are
   regenerated); saved worlds record it.
@@ -2482,7 +2503,7 @@ architectural summary.
 
 | Interaction | Behavior | Authority |
 |---|---|---|
-| Voxel terrain | Collide; step-up ≤ 0.45 m (slabs, debris); full blocks need a jump (optional auto-jump); ladders are climbable materials; water switches to the swim layer | Server; client predicts |
+| Voxel terrain | Collide; step-up ≤ 0.55 m (slabs, debris) from any approach angle, with headroom checked (PLAYER_CONTROLLER.md §4); full blocks need a jump (optional auto-jump); ladders are climbable materials; water switches to the swim layer | Server; client predicts |
 | Player → Tier 1 body | Solver push, capped by contact mass scaling (`maxPushForce`, `pushableMassLimit`) | Server only; client does not predict body motion |
 | Tier 1 body → player | Solver push, absorbed as external velocity and decayed | Server; client corrected via reconciliation |
 | Standing on a Tier 1 body | Carried by the body's linear + angular velocity at the player's position (PPC platform model); camera turns with it | Server; client predicts in the body's frame (§9.4) |
