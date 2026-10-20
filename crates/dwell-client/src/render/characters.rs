@@ -20,6 +20,8 @@ use dwell_characters::anim::{MAX_BONES, Pose, arm_transforms, bone_transforms};
 use dwell_characters::math::Affine;
 use dwell_characters::mesh::{self, Mesh};
 use dwell_characters::{BLOCK_MATERIAL, Character, TABLES, TILE, View};
+use dwell_world::Face;
+use dwell_world::FaceFrame;
 use dwell_world::hash::HashMap;
 
 use super::camera::{Basis, V3};
@@ -359,7 +361,9 @@ pub fn body_frame(d: &BodyDraw, eye: V3) -> Affine {
         d.yaw.to_radians().sin() as f32,
         d.yaw.to_radians().cos() as f32,
     );
-    let f = if d.face < 0.0 { -1.0 } else { 1.0 };
+    // The face's up (FaceFrame): on face B the body's up and left both turn over.
+    let up = FaceFrame::of(if d.face < 0.0 { Face::B } else { Face::A }).up();
+    let f = up[1] as f32;
     let place = Affine {
         m: [[f * c, 0.0, -f * s], [0.0, f, 0.0], [s, 0.0, c]],
         t: std::array::from_fn(|k| (d.feet[k] - eye[k]) as f32),
@@ -981,38 +985,32 @@ mod tests {
         );
     }
 
-    #[test]
-    fn a_body_faces_its_yaw_and_hangs_upside_down_on_face_b() {
-        let mut d = BodyDraw {
-            feet: [10.0, 5.0, 0.0],
-            yaw: 90.0,
-            face: 1.0,
-            dead: false,
-            look: dwell_characters::DEFAULT_LOOK,
-            pose: Pose::REST,
-            held: Held::Empty,
-        };
-        let f = body_frame(&d, [0.0; 3]);
-        // Yaw 90° faces +x; the head is up.
-        let ahead = f.rotate([0.0, 0.0, 1.0]);
-        assert!((ahead[0] - 1.0).abs() < 1e-5, "{ahead:?}");
-        assert!((f.apply([0.0, 1.8, 0.0])[1] - 6.8).abs() < 1e-4);
-        d.face = -1.0;
-        let b = body_frame(&d, [0.0; 3]);
-        assert!(
-            (b.apply([0.0, 1.8, 0.0])[1] - 3.2).abs() < 1e-4,
-            "hangs toward −y"
-        );
-        assert!(
-            (b.rotate([0.0, 0.0, 1.0])[0] - 1.0).abs() < 1e-5,
-            "still faces its yaw"
-        );
-        // A proper rotation (no mirror): the winding stays front-facing.
-        let m = b.m;
-        let det = m[0][0] * (m[1][1] * m[2][2] - m[2][1] * m[1][2])
-            - m[1][0] * (m[0][1] * m[2][2] - m[2][1] * m[0][2])
-            + m[2][0] * (m[0][1] * m[1][2] - m[1][1] * m[0][2]);
-        assert!((det - 1.0).abs() < 1e-5);
+    // A body stands on its face (its head toward the face's up) and faces its yaw on both faces,
+    // as a proper rotation (no mirror), so its winding stays front-facing.
+    dwell_world::both_faces! {
+        fn a_body_stands_on_its_face_and_faces_its_yaw(face: FaceFrame) {
+            let d = BodyDraw {
+                feet: [10.0, 5.0 * face.sign_f64(), 0.0],
+                yaw: 90.0,
+                face: face.sign_f64(),
+                dead: false,
+                look: dwell_characters::DEFAULT_LOOK,
+                pose: Pose::REST,
+                held: Held::Empty,
+            };
+            let f = body_frame(&d, [0.0; 3]);
+            // Yaw 90° faces +x on either face.
+            let ahead = f.rotate([0.0, 0.0, 1.0]);
+            assert!((ahead[0] - 1.0).abs() < 1e-5, "{ahead:?}");
+            // The head is 1.8 m up the face's up.
+            let head = f.apply([0.0, 1.8, 0.0])[1] as f64;
+            assert!((head - (d.feet[1] + 1.8 * face.up()[1])).abs() < 1e-4, "{head}");
+            let m = f.m;
+            let det = m[0][0] * (m[1][1] * m[2][2] - m[2][1] * m[1][2])
+                - m[1][0] * (m[0][1] * m[2][2] - m[2][1] * m[0][2])
+                + m[2][0] * (m[0][1] * m[1][2] - m[1][1] * m[0][2]);
+            assert!((det - 1.0).abs() < 1e-5);
+        }
     }
 
     #[test]
