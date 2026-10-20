@@ -265,8 +265,10 @@ function placements(layer, seed) {
   const [b0, b1] = layer.band ?? [0, 1];
   const h = Math.max((b1 - b0) * TILE, 1e-3);
   const n = layer.count;
-  // A jittered grid: one stroke per cell, so coverage is even and nothing clumps.
-  const cols = Math.max(1, Math.round(Math.sqrt((n * TILE) / h)));
+  // A jittered grid: one stroke per cell, so coverage is even and nothing clumps. A thin band asks
+  // for more columns than strokes; there are never more columns than strokes, so the strokes of a
+  // one-row band span the whole width (an edge fringe), not only its first `count` cells.
+  const cols = Math.min(n, Math.max(1, Math.round(Math.sqrt((n * TILE) / h))));
   const rows = Math.ceil(n / cols);
   const jitter = layer.jitter ?? 1;
   const out = [];

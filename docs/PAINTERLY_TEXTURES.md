@@ -69,7 +69,8 @@ returns a 32 × 32 RGBA tile, row y = 0 (the bottom) first, as the atlas lays ti
 coverage is `clamp(0.5 − d / softness)`, a one-texel anti-aliased edge by default. A cutout's alpha
 is that same distance field, so the shader's alpha test traces the true outline up close, like the
 classic grass blades. Positions come from a jittered grid of `count` cells inside `band` (shares of
-the tile's height), with odd rows shifted half a cell, or from `at` (`[x, y]`, or `[x, y, length]`
+the tile's height), with odd rows shifted half a cell and never more columns than strokes (so a thin
+band, such as the grass side's hanging skirt, spreads its strokes over the whole width), or from `at` (`[x, y]`, or `[x, y, length]`
 for a ring's radius or a fixed length). Random choices use the atlas's int32 hash, seeded per layer,
 so a tile is the same on every run.
 
