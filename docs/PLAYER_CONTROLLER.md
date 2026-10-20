@@ -666,11 +666,12 @@ Owned by the `Predictor` (the same `Physics` settings as the server):
 - **Server** (`dwell-sim`): inputs queue per session ordered by `inputSeq` (§11 validation; see
   ARCHITECTURE §8.3). A **jitter buffer** consumes one input per tick once 2 are queued; when it
   runs dry the last input repeats and the buffer re-primes; when the queue stays above 6 inputs for
-  a whole 30-tick window (its low-water mark), the excess is skipped to bound input latency (a
-  slow client's frame of inputs arrives at once and is not skipped; at most 32 are queued). The
-  client catches up at most 15 ticks a frame (250 ms; `MAX_TICKS_PER_FRAME`), so a device drawing
-  4 fps or more keeps the server's time: one that dropped time would predict fewer ticks than the
-  server simulates, the repeated inputs walking it further than the prediction. The snapshot reports the queue length (`input_buffer`); the client nudges its tick rate
+  a whole 60-tick window (its low-water mark), the excess is skipped to bound input latency (a
+  slow client's frame of inputs arrives at once and is not skipped; at most 96 are queued). The
+  client catches up at most 60 ticks a frame (1 s; `MAX_TICKS_PER_FRAME`), so a device drawing
+  1 fps or more keeps the server's time: one that dropped time would predict fewer ticks than the
+  server simulates, the repeated inputs walking it further than the prediction (or a held jump
+  flying and landing on the server while the client predicted one tick of it). The snapshot reports the queue length (`input_buffer`); the client nudges its tick rate
   ±2 % to keep it between 1 and 4 (clock drift between client and server otherwise starves or
   floods it).
 - **Snapshot (20 Hz):** compared with the stored entry for `ack_input_seq`: position within 1 cm,

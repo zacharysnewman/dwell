@@ -208,11 +208,14 @@ that touches the public API, a release or the workflows:
 Check these before chasing an e2e failure:
 
 - `e2e/touch.spec.ts` "touch controls: stick, look, and jump": the jump peak has read short of the
-  0.5 m bar on CI. On the C++ build it read exactly 0.4158 m on every run. On the Rust build it
-  read 0.455 m on one PR branch (A1, run 38694905876), and it passed on main's runs up to 9a4dc44.
-  Locally on SwiftShader it read 0.11 m before the slow-device fix (`MAX_TICKS_PER_FRAME`,
-  2026-10-15) and passed after. If it recurs, check the page's tick rate (`stats.ticks` against
-  wall time) before widening the wait.
+  0.5 m bar on CI. On 0.15.1's main (run 39359812263) it read 0.1123 m, exactly one tick of a jump,
+  on both attempts: CI drew that phone page at 440–810 ms a frame, past the client's catch-up cap
+  (then 15 ticks, 250 ms), so it dropped time; the starved server repeated the held jump, flew and
+  landed it, and the replays put the player back on the ground. Fixed 2026-10-19 by catching up to
+  60 ticks (1 s, `MAX_TICKS_PER_FRAME`) with the server's input queue and latency window to match
+  (`game_local.rs` `a_device_at_under_two_frames_a_second_…`). The failure message prints the
+  page's tick rate: well under 60 ticks/s means the page is slower than 1 fps and dropping time
+  again; check the frame interval (`__dwell.telemetry().frames.interval`) before widening the wait.
 - CI's software renderer draws the e2e pages at ~5 fps. That is why `play.spec.ts`'s two-client
   test snapped (fixed 2026-10-15: a client that dropped time predicted fewer ticks than the
   server's 60 Hz). A page that predicts far fewer than 60 ticks a second is the first thing to
