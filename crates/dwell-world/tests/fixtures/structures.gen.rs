@@ -3,13 +3,13 @@
 pub static TEST_STRUCTURES: [StructureDef; 1] = [
     StructureDef {
         name: "test:ladder_post",
-        hash: 0xc65964bfda001e7d,
+        hash: 0x19d9132e10ce8b91,
         body: Body::Voxels {
             size: [3, 2, 2],
             anchor: [0, 0, 0],
-            palette: &[('.', None), ('_', Some("dwell:air")), ('d', Some("dwell:dirt")), ('l', Some("dwell:ladder[facing=north,flooded=false]")), ('s', Some("dwell:stone"))],
+            palette: &[('.', None), ('_', Some("dwell:air")), ('d', Some("dwell:dirt[flooded=false]")), ('l', Some("dwell:ladder[facing=north,flooded=false]")), ('s', Some("dwell:stone[flooded=false]"))],
             cells: "sl.ss_s..sd.",
         },
-        variants: &[Variant::Rotate(&[0, 90, 180, 270]), Variant::Mirror(&[Axis::X]), Variant::Choices(&[Choice { key: 'd', options: &[("dwell:dirt", 1), ("dwell:sand", 3)] }])],
+        variants: &[Variant::Rotate(&[0, 90, 180, 270]), Variant::Mirror(&[Axis::X]), Variant::Choices(&[Choice { key: 'd', options: &[("dwell:dirt[flooded=false]", 1), ("dwell:sand[flooded=false]", 3)] }])],
     },
 ];

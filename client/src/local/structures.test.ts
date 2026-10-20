@@ -81,8 +81,8 @@ describe('structures in the client', () => {
       palette: {
         '.': null,
         l: 'dwell:ladder[facing=east,flooded=false]',
-        s: 'dwell:stone',
-        S: 'dwell:sand',
+        s: 'dwell:stone[flooded=false]',
+        S: 'dwell:sand[flooded=false]',
       },
       layers: [
         ['sl.', 'S..'],

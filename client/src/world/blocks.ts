@@ -23,11 +23,17 @@ export const STATE_COUNT = STATE_DEFS.length;
 const BY_STATE = new Map<string, number>(STATE_DEFS.map((s) => [s.state, s.id]));
 const BY_BLOCK = new Map<string, BlockDef>(BLOCK_DEFS.map((b) => [b.id, b]));
 
-/** Runtime state id by name, for code that needs a fixed block (`stateId('dwell:water')`). */
-export function stateId(canonical: string): number {
-  const id = BY_STATE.get(canonical);
-  if (id === undefined) throw new Error(`unknown block state ${canonical}`);
-  return id;
+/**
+ * Runtime state id by name, for code that needs a fixed block (`stateId('dwell:water')`): the
+ * canonical string, or a block's name with properties left out at their defaults (`dwell:sand` is
+ * `dwell:sand[flooded=false]`).
+ */
+export function stateId(name: string): number {
+  const id = BY_STATE.get(name);
+  if (id !== undefined) return id;
+  const parsed = parseState(name);
+  if ('error' in parsed) throw new Error(`unknown block state ${name}`);
+  return parsed.id;
 }
 
 /** The canonical string of a state id (`dwell:stone`); undefined for an unknown id. */
