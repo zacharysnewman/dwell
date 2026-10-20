@@ -750,7 +750,9 @@ velocities and states bit-identical over all 600 ticks, so no divergence eats in
 
 - **Camera** (`dwell-client`'s `game.rs`, eye height in `dwell-game`'s `eye.rs`): first-person at
   the smoothed render position (interpolated between the last two ticks plus the correction
-  offset). **Field of view** (`dwell-lod`'s `base_fov`, re-exported by `dwell-client`'s
+  offset). When the player is placed (joining or respawning) the interpolation and the eye height
+  start afresh at the new position, so no frame draws (or aims the crosshair) from the state
+  before. **Field of view** (`dwell-lod`'s `base_fov`, re-exported by `dwell-client`'s
   `render/camera.rs`): the player's Field of view setting (default 75° vertical, 60–100°); screens
   wider than ≈ 1.55 get a narrower vertical one so the horizontal stays what the setting gives at
   that aspect (100° at the default). An uncapped wide view made forward and backward walking look faster than strafing

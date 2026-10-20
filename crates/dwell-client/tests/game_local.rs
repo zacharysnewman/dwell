@@ -455,6 +455,42 @@ fn joins_streams_walks_and_breaks_a_block() {
     );
 }
 
+/// Regression (e2e touch.spec on CI, 0.17.1): the eye camera kept the height it was given before
+/// the player was placed (the default state at the origin), so the first frames after the spawn
+/// drew the eye from there, inside the ground, and aimed the crosshair from it: on a slow page the
+/// e2e test read the target of that frame (a cell under the stone) and found stone above it.
+#[test]
+fn the_eye_is_at_the_players_head_from_the_first_frame_after_the_spawn() {
+    let mut rig = Rig::new();
+    rig.input.look.pitch = -45.0;
+    let mut checked = 0;
+    for _ in 0..60 * 30 {
+        rig.frame();
+        let Some(game) = rig.game.as_ref() else {
+            continue;
+        };
+        let s = game.debug_state();
+        if !s.active {
+            continue;
+        }
+        let eye = rig.scene.borrow().camera.expect("a camera");
+        let head = s.feet[1] + 1.62;
+        assert!(
+            (eye[1] - head).abs() < 0.6,
+            "frame {checked} after the spawn: the eye at y {:.2}, the head at {head:.2}",
+            eye[1]
+        );
+        checked += 1;
+        if s.terrain_ready && checked > 120 {
+            break;
+        }
+    }
+    assert!(
+        checked > 120,
+        "the player was placed and the terrain arrived"
+    );
+}
+
 #[test]
 fn a_region_fill_comes_back_from_the_server_and_undo_restores_it() {
     let mut rig = Rig::new();

@@ -826,6 +826,13 @@ impl<S: Scene> Game<S> {
                 if !self.current.active {
                     self.current = ClientState::of(&self.predictor);
                     self.flip.tick(self.current.face);
+                    // Placed (joined or respawned): the camera starts where the player is, not
+                    // interpolated from the state before, whose eye was elsewhere (the default
+                    // state's at the origin, inside the ground) and aimed the crosshair from there.
+                    self.previous = None;
+                    self.eye = EyeCamera::new();
+                    self.eye
+                        .tick(&self.current.eye_state(), 1.0 / SIM_HZ as f64);
                 }
             }
             Message::PlayerEvent(e) if e.player_id == self.player_id => match e.kind {
