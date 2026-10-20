@@ -36,7 +36,7 @@ async function touch(
   });
 }
 
-test('touch controls: stick, look, and jump', async ({ page }) => {
+for (let rep = 0; rep < 6; rep++) test(`touch controls: stick, look, and jump ${rep}`, async ({ page }) => { // DIAG
   // CI's software rendering is slow: the steps before the jump alone take ~20 s there.
   test.setTimeout(90_000);
   await page.goto('./?local=1');
@@ -102,9 +102,10 @@ test('touch controls: stick, look, and jump', async ({ page }) => {
   console.log('DIAG', context, 'drawn', drawn - ground, 'ticks', peak - ground, JSON.stringify(await page.evaluate('globalThis.__dwell.telemetry().frames.interval'))); // DIAG
   const fr = await page.evaluate<{ names: string[]; frames: number[][] }>('globalThis.__dwell.telemetryFrames()'); // DIAG
   console.log('DIAG frames', fr.frames.slice(-60).map((f, i, a) => (i ? (f[0] - a[i - 1][0]).toFixed(0) : '')).join(' ')); // DIAG
-  for (const t of (await page.evaluate<any[]>('globalThis.__dwell.ticks()')).filter((t) => t.seq > lastSeq - 5).slice(0, 80)) console.log('DIAG tick', t.seq, t.atMs.toFixed(0), t.feet[1].toFixed(3), t.state, t.jump); // DIAG
+  for (const t of (await page.evaluate<any[]>('globalThis.__dwell.ticks()')).filter((t) => t.jump || t.state === 'jumping').slice(0, 160)) console.log('DIAG tick', t.seq, t.atMs.toFixed(0), t.feet[1].toFixed(3), t.state, t.jump); // DIAG
   expect(peak - ground, context).toBeGreaterThan(0.5);
-});
+}); // DIAG rep
+
 
 test('touch controls: Break/Place toggle, tapping the view edits, tapping the hotbar picks', async ({
   page,
