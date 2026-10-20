@@ -1386,6 +1386,13 @@ body.menu-open #menu-button {
   pointer-events: auto;
 }
 
+/* The spyglass's vignette (ui/spyglass.ts): its gradient and opacity are set as it zooms. */
+#spyglass {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
 #crosshair {
   position: absolute;
   left: 50%;

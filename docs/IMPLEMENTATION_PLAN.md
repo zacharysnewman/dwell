@@ -55,6 +55,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 35 — Sliding on steep ground (stacks on 18, uses 28) | 🚧 In progress — built and tested natively (controller, netcode, sound events and data, the shell's loop voices, WAV renders) and in a browser (the bench); outstanding: CI (the WASM divergence run and the e2e suite, not run on the branch), the owner's review of the feel and of the slide WAV renders; `package.json` raised to 0.12.0, the new compatibility line (protocol 13; adaptive blocks change collision and terrain; the owner's decision, 2026-10-16) |
 | 36 — Block registry sync | 🚧 In progress — built and tested natively and in Vitest (ADR 0038, `BLOCK_REGISTRY.md` §8): the server's registry sent at join (`BlockRegistry`, protocol 14), ids mapped at the session boundary, the join prompt (no refusals), the fallback look, server-registered blocks, placeholders for unknown states in world files; outstanding: CI, the e2e suite (WebRTC join fixed: parts fit a WebRTC message, larger messages are fragmented), the owner's review of the prompt; ships in the next minor (0.14.0), coordinated with Phase 16's protocol bump |
 | 37 — Sprint slide (stacks on 35) | 🚧 In progress — built and tested natively (controller, predictor, netcode, protocol 15 vectors): crouch while sprinting slides on, crouched, with friction and slopes, limited steering, a jump out and a cooldown (`PLAYER_CONTROLLER.md` §6.9), checked in Chrome (the `sprint-slide` bench); outstanding: CI (the WASM divergence run and the e2e suite), the owner's review; a protocol change (15): the owner raises `package.json` to a new minor |
+| 38 — The spyglass | 🚧 In progress — built and tested natively, in Vitest and on a real GPU (ADR 0039, `SPYGLASS.md`): a toggle key (`` ` ``) and wheel steps from `shared/look/spyglass.json` (generator, CI stale check), the zoomed FOV for the raster renderer, the marcher (its FOV bug fixed) and the LOD, which refines only inside the narrow view (bounded by the detail boost), the vignette, reduced motion, the `spyglass-far` bench scenario; outstanding: CI and the owner's review in a browser; a patch release |
 
 Phase numbering: Phase 4 was inserted on 2026-09-29 for the planet-scale world (ADRs 0011, 0012);
 the former Phases 4–7 are now 5–8, and Phase 3's former 3c and 3d are now 3d and 3e.
@@ -3690,3 +3691,48 @@ Deviations:
   takes two new bytes (protocol 15).
 - **No slide from landing** with crouch and run held (Fortnite allows it): the task asked for a
   start on the ground; a possible follow-up.
+
+## Phase 38 — The Spyglass
+
+**Status:** Built and tested natively, in Vitest and in Chrome on the GPU (2026-10-19).
+Outstanding: CI, the owner's review in a browser. No change to saves, the protocol or terrain: a
+patch release.
+
+Owner (2026-10-19): *"a spyglass zoom like feature to see the clarity difference when using
+raymarching vs LODs; this would actually show higher res farther away but in a smaller cone
+essentially."* The owner's answers (who it is for, the toggle key, the narrow view with more detail,
+a data file) and the design are in [`SPYGLASS.md`](./SPYGLASS.md) and
+[ADR 0039](./adr/0039-spyglass.md).
+
+Deliverables
+- [x] `shared/look/spyglass.json` (key, magnification steps, detail boost, transition, vignette),
+  `shared/look/spyglass.mjs` (validation; → `dwell-look` `spyglass.gen.rs` and
+  `client/src/ui/spyglass.gen.ts`), `spyglass.test.mjs` (a step added by data alone), CI stale check.
+- [x] `dwell-look` `spyglass.rs`: `zoom_fov`, the zoom state (toggle, wheel steps, the eased
+  transition, reduced motion), the LOD's detail magnification, the look scale; tests.
+- [x] The frame's FOV narrowed by the zoom (speed boost included), given to the renderer and the
+  LOD camera (`game.rs`); test in `game_local.rs`.
+- [x] `dwell-lod`: `LodCamera.magnification` and `detail_magnification`;
+  `Frustum::pixels_per_radian_for` measures sections inside the view at the detail's pixel size,
+  others at the unzoomed FOV's; tests (red → green: a direction-independent pixel size refined
+  behind the camera too).
+- [x] The marcher draws with the frame's FOV (it used the screen's own: the speed boost was ignored);
+  regression test, red → green.
+- [x] Input (`web/app.rs`): the key while playing, the wheel's steps while zoomed, mouse look scaled
+  by 1/magnification; `setReducedMotion`; `__dwell.spyglass(on, step)`; `state().fov`, `spyglass`.
+- [x] The vignette (`ui/spyglass.ts`, the HUD) and the controls table's *View* group; Vitest.
+- [x] The bench's `spyglass` step and the `spyglass-far` scenario; screenshots raster and march,
+  unzoomed and at both steps.
+- [x] Docs: `SPYGLASS.md`, ADR 0039, ARCHITECTURE.md (`dwell-look`, `render/`, §6.6, §7.4),
+  DEV_TOOLS.md.
+- [ ] Later (not this phase): touch, a zoom sound of its own (it plays the tools' sound).
+
+Exit criteria
+- [x] Zoomed, a far section inside the view refines `log2(detail)` levels finer and one behind the
+  camera does not change (`the_spyglass_refines_far_terrain_inside_its_narrow_view_only`).
+- [x] The raster renderer, the marcher and the LOD all use the zoomed FOV (`game_local.rs`, the
+  render test).
+- [x] A step added by data alone zooms (`spyglass.test.mjs`, `spyglass.rs`).
+- [x] Raster and march compared zoomed on a real GPU (`npm run bench -- spyglass-far --compare
+  --configs march`, 60 fps raster, 37 ms GPU march at 8×).
+- [ ] CI green; the owner's review in a browser.

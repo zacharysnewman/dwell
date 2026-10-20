@@ -1,6 +1,7 @@
 // In-game HUD: health, crosshair, death/respawn message, and the F3 debug overlay
 // (PLAYER_CONTROLLER.md §9). The texts come from the Rust client (`Client.hud()`).
 import { Players } from '../protocol/constants.gen';
+import { type SpyglassHud, spyglassStyle } from './spyglass';
 
 export class Hud {
   private readonly root: HTMLDivElement;
@@ -21,6 +22,8 @@ export class Hud {
   onCloseDebug: (() => void) | null = null;
   private readonly hint: HTMLDivElement;
   private hintTimer = 0;
+  /** The spyglass's vignette (docs/SPYGLASS.md), hidden while unzoomed. */
+  private readonly spyglass: HTMLDivElement;
 
   constructor(parent: HTMLElement) {
     this.root = document.createElement('div');
@@ -91,7 +94,11 @@ export class Hud {
     this.hint = document.createElement('div');
     this.hint.id = 'start-hint';
     this.hint.hidden = true;
+    this.spyglass = document.createElement('div');
+    this.spyglass.id = 'spyglass';
+    this.spyglass.hidden = true;
     this.root.append(
+      this.spyglass,
       crosshair,
       this.health,
       this.message,
@@ -119,6 +126,16 @@ export class Hud {
 
   flashDamage(nowMs: number): void {
     this.damageUntil = nowMs + 400;
+  }
+
+  /** The spyglass's vignette from `Client.hud().spyglass` (null: unzoomed). */
+  setSpyglass(s: SpyglassHud | null): void {
+    this.spyglass.hidden = s === null;
+    if (s === null) return;
+    const style = spyglassStyle(s);
+    if (this.spyglass.style.background !== style.background)
+      this.spyglass.style.background = style.background;
+    this.spyglass.style.opacity = style.opacity;
   }
 
   setMessage(text: string): void {
