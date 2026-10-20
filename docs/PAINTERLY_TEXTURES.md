@@ -49,6 +49,20 @@ The design questions (CLAUDE.md, "Ask before designing"), answered by the owner'
 
 Colours are palette references, never hex (ART_DIRECTION.md §2).
 
+**Side tiles from the block above.** Owner, 2026-10-20: "I want to see the grass skirt fringe on
+dirt that's below sloped grass." On generated hillsides the grass is mostly adaptive slopes, and at
+a two-block step or a cliff the face below a slope's low edge is a dirt block's side. A block's
+`sideUnder` in the registry (`shared/blocks/dwell.json`; BLOCK_REGISTRY.md) maps a block id above
+to the side tile to use: dirt has `{ "dwell:grass": "dirtSkirt" }`. The chunk mesher applies it to
+a side face whose cell above holds that block, whatever shape the block takes (slope, half slope,
+ridge), unless that block shows a full side on the same face itself (a full grass cube already
+hangs its own skirt, so the dirt below it stays plain). Stone or air above: no skirt. On face B,
+"above" is toward its sky. The tile `dirtSkirt` is painted by `dirt_skirt`, which is
+`"like": "grass_side"`: the same soil and the same skirt strokes, so it lines up with a grass side
+beside it and wraps into the next dirt face; it is its own tile so its art can diverge by data. The
+classic set paints it with the grass side's painter. The LOD keeps dirt's flat side colour: a skirt
+band averaged over a coarse LOD cell would tint whole cliffs green.
+
 ## 3. The generator
 
 `shared/textures/paint.mjs` is a pure ES module with no dependencies. The build, the tests, the editor
@@ -114,6 +128,8 @@ must be [min, max] in [0.25, 32]`. The checks cover:
 - Out-of-range numbers, and a layer with both or neither of `count` and `at`.
 - A cycle in `like` or `over`.
 - A tile mapped to a missing or non-block material.
+- In the block data, a `sideUnder` naming an unknown block, a value that is not a tile name, an empty
+  rule set, or a rule on a block without textures (`shared/blocks/faces.test.mjs`).
 - A registry tile neither painted nor kept classic, and a painted tile no block uses.
 
 `shared/textures/gen.test.mjs`:
@@ -137,6 +153,9 @@ must be [min, max] in [0.25, 32]`. The checks cover:
 - The ladder's rails, rungs and gaps, the tall grass's clear top row and sides, and the leaves'
   coverage are as the meshes assume.
 - Painterly averages stay near the classic hues (the far view).
+- A dirt side under a sloped grass block takes `dirtSkirt`, on face A and face B; under air, stone or
+  a full grass cube it stays `dirt`. A fixture block's `sideUnder` (`test:loam`, by data alone) is
+  applied (`mesher_tests.rs`).
 
 ## 6. The switch, and flipping it
 
@@ -152,7 +171,7 @@ must be [min, max] in [0.25, 32]`. The checks cover:
 
 The tiles are baked at build time and uploaded once as the same atlas (same size, same mip chain).
 The shaders, meshes and draw calls are unchanged, so the frame costs the same in either set. Start-up
-copies 11 baked tiles instead of running the noise painters, which is slightly less work.
+copies 12 baked tiles instead of running the noise painters, which is slightly less work.
 
 Measured 2026-10-20 in Chrome on an Apple GPU (Metal), with `npm run bench -- --compare --configs
 painterly` (the `painterly` configuration in `client/bench/configs.json`). Each scenario ran in a

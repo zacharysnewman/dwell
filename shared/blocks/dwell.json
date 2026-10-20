@@ -19,7 +19,9 @@
     },
     {
       "name": "dirt", "sound": "dwell:dirt", "density": 1500, "shape": "full", "placeable": true, "adaptive": true,
-      "color": "#8a5a3a", "textures": "dirt"
+      "color": "#8a5a3a", "textures": "dirt",
+      "$comment": "sideUnder: a dirt side face with grass directly above (a grass slope's low side at a step or cliff) shows the turf's skirt hanging over its top edge (docs/PAINTERLY_TEXTURES.md §2).",
+      "sideUnder": { "dwell:grass": "dirtSkirt" }
     },
     {
       "name": "grass", "sound": "dwell:grass", "density": 1400, "shape": "full", "placeable": true, "adaptive": true,

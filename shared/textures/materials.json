@@ -12,7 +12,8 @@
     "logTop": "log_end",
     "leaves": "leaves",
     "tallGrass": "tall_grass",
-    "ladder": "ladder_wood"
+    "ladder": "ladder_wood",
+    "dirtSkirt": "dirt_skirt"
   },
   "keepClassic": ["grid"],
   "materials": {
@@ -44,6 +45,10 @@
         { "kind": "dab", "count": 5, "band": [0.84, 0.95], "colors": ["@light"], "width": [2, 3], "length": [5, 8], "angle": 0, "angleJitter": 15, "opacity": 0.35 },
         { "kind": "edgeLight", "edge": "top", "color": "@light", "width": 2, "ragged": 0.8, "opacity": 0.6, "seed": 2 }
       ]
+    },
+    "dirt_skirt": {
+      "$comment": "A dirt side with grass directly above it (dirt's sideUnder in shared/blocks/dwell.json): the grass side's skirt, the same strokes, so the turf hangs over the dirt face below a grass slope and lines up with a grass side beside it. Its own tile, so it can diverge by data.",
+      "like": "grass_side"
     },
     "stone": {
       "$comment": "Broad faceted planes, not speckle: a few big flat-ended slabs in the shadow and light of the ramp, and a couple of long crack lines.",

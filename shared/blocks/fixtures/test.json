@@ -33,6 +33,11 @@
       "name": "glow", "density": 1800, "shape": "full", "placeable": true, "color": "#ffd060", "textures": "testGlow"
     },
     {
+      "$comment": "A side-tile rule by data alone: loam's sides show the grass side tile where stone is above it.",
+      "name": "loam", "density": 1500, "shape": "full", "color": "#7a5a3a", "textures": "sand",
+      "sideUnder": { "dwell:stone": "grassSide" }
+    },
+    {
       "name": "reed", "density": 100, "shape": "empty", "look": "cross", "render": "cutout",
       "cross": { "height": 1.0, "quads": 3 }, "color": "#6a8a3a", "textures": "tallGrass"
     }

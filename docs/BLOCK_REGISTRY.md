@@ -84,6 +84,14 @@ hash. The same phase adds the `cross` look's options (`cross`, `wind`, `fade`) a
 rules `placeOn`, `replaceable`, `needsSupport`, `selectionBox` and `medium` (`air` | `water`: what a
 plant may stand in), all validated by `gen.mjs` (TRANSPARENT_BLOCKS.md §4–5).
 
+**Side tiles from the block above** (**built**, 2026-10-20; [`PAINTERLY_TEXTURES.md`](./PAINTERLY_TEXTURES.md) §2):
+`"sideUnder": { "<block id>": "<tile>" }` gives a textured block's side faces another tile where
+that block is directly above (first entry that matches wins). Dirt's
+`{ "dwell:grass": "dirtSkirt" }` hangs the turf's skirt over a dirt face below a grass slope.
+`shared/blocks/faces.mjs` validates it (an unknown block id, a non-tile value, an empty object or a
+block without textures fails, naming the block; `faces.test.mjs`), and `gen.mjs` emits
+`StateInfo::side_under`. A look option: outside the registry hash, synced as look tag `0x8b`.
+
 **Family convention for shaped variants** (**built, Phase 9**, [ADR 0016](./adr/0016-slope-blocks.md); recommended here first): plain
 blocks stay plain (`dwell:stone`), and shaped forms are separate blocks generated per shapeable
 material, carrying only the properties that matter to them — `dwell:stone_slab[half,flooded]`,
