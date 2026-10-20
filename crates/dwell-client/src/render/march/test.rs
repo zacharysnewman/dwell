@@ -91,6 +91,14 @@ fn the_gpu_marcher_matches_the_reference_per_pixel() {
         report.max_depth_error,
         report.max_dir_error
     );
+    eprintln!(
+        "beam: {} rays started late, {} past a hit, {} changed outcome",
+        report.started_late, report.start_past_hit, report.start_changed
+    );
+    assert!(
+        report.started_late > report.pixels / 4,
+        "the beam starts rays late"
+    );
     assert!(
         report.levels_hit & 0b1111 == 0b1111,
         "chunks and three LOD levels hit"

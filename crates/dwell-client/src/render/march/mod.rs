@@ -47,6 +47,8 @@ pub const DEPTH: wgpu::TextureFormat = wgpu::TextureFormat::R32Float;
 pub const ID: wgpu::TextureFormat = wgpu::TextureFormat::R32Uint;
 /// The hit records the shade pass reads (`wgsl::hit_record`).
 pub const HIT: wgpu::TextureFormat = wgpu::TextureFormat::R32Uint;
+/// The beam prepass's start distances, one per `dwell_march::BEAM_TILE`² pixels.
+pub const BEAM: wgpu::TextureFormat = wgpu::TextureFormat::R32Float;
 
 /// What the march is asked for.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -60,6 +62,8 @@ pub struct MarchSettings {
     /// §4.3 items 3 and 4.
     pub columns: bool,
     pub distances: bool,
+    /// §4.3 item 5: the beam prepass gives each tile of pixels a start distance.
+    pub beam: bool,
     /// Every this many frames the steps-per-ray histogram is filled and read back (0: never).
     pub histogram_every: u32,
     /// Profiling switches (`wgsl::DBG_*`, `?marchdbg=`): parts of the per-step work turned off.
@@ -75,6 +79,7 @@ impl Default for MarchSettings {
             max_t: 1.0e6,
             columns: true,
             distances: true,
+            beam: true,
             histogram_every: 30,
             debug: 0,
         }
@@ -117,7 +122,10 @@ pub struct MarchTargets {
     pub depth: (wgpu::Texture, wgpu::TextureView),
     pub id: (wgpu::Texture, wgpu::TextureView),
     pub hit: (wgpu::Texture, wgpu::TextureView),
+    /// The beam prepass's starts (`size` / `BEAM_TILE`, rounded up).
+    pub beam: (wgpu::Texture, wgpu::TextureView),
     out_group: wgpu::BindGroup,
+    beam_group: wgpu::BindGroup,
     shade_group: wgpu::BindGroup,
     /// `frame::scene_layout(_, 1)`: what the composite reads.
     pub scene: wgpu::BindGroup,
@@ -129,6 +137,7 @@ impl Drop for MarchTargets {
         self.depth.0.destroy();
         self.id.0.destroy();
         self.hit.0.destroy();
+        self.beam.0.destroy();
     }
 }
 
@@ -148,7 +157,10 @@ pub struct Marcher {
     pub(crate) workgroup: [u32; 2],
     /// Whether the shade pass runs (profiling: the march alone).
     pub(crate) shade: bool,
+    /// Whether the march pass runs (profiling: the beam prepass alone, with `shade` off).
+    pub(crate) march_pass: bool,
     pipeline: wgpu::ComputePipeline,
+    beam_pipeline: wgpu::ComputePipeline,
     shade_pipeline: wgpu::ComputePipeline,
     /// Kept to rebuild the pipeline from another source (profiling variants, tests).
     #[cfg_attr(not(test), allow(dead_code))]
@@ -157,6 +169,7 @@ pub struct Marcher {
     frame_layout: wgpu::BindGroupLayout,
     data_layout: wgpu::BindGroupLayout,
     out_layout: wgpu::BindGroupLayout,
+    beam_layout: wgpu::BindGroupLayout,
     shade_layout: wgpu::BindGroupLayout,
     scene_layout: wgpu::BindGroupLayout,
     frame_buffer: wgpu::Buffer,
@@ -290,14 +303,6 @@ impl Marcher {
             label: Some("march data"),
             entries: &data_entries,
         });
-        let out_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("march out"),
-            entries: &[
-                storage_texture(0, DEPTH),
-                storage_texture(1, ID),
-                storage_texture(2, HIT),
-            ],
-        });
         let sampled = |binding, sample_type| wgpu::BindGroupLayoutEntry {
             binding,
             visibility: wgpu::ShaderStages::COMPUTE,
@@ -308,6 +313,19 @@ impl Marcher {
             },
             count: None,
         };
+        let out_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("march out"),
+            entries: &[
+                storage_texture(0, DEPTH),
+                storage_texture(1, ID),
+                storage_texture(2, HIT),
+                sampled(3, wgpu::TextureSampleType::Float { filterable: false }),
+            ],
+        });
+        let beam_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("march beam"),
+            entries: &[storage_texture(0, BEAM)],
+        });
         let shade_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("march shade"),
             entries: &[
@@ -322,6 +340,17 @@ impl Marcher {
             immediate_size: 0,
         });
         let pipeline = Self::march_pipeline(&device, &layout, &module, "march_main");
+        let beam_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("march beam"),
+            source: wgpu::ShaderSource::Wgsl(wgsl::beam_source().into()),
+        });
+        let beam_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("march beam"),
+            bind_group_layouts: &[Some(&frame_layout), Some(&data_layout), Some(&beam_layout)],
+            immediate_size: 0,
+        });
+        let beam_pipeline =
+            Self::march_pipeline(&device, &beam_pipeline_layout, &beam_module, "beam_main");
         let shade_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("march shade"),
             source: wgpu::ShaderSource::Wgsl(wgsl::shade_source().into()),
@@ -439,13 +468,16 @@ impl Marcher {
             settings: MarchSettings::default(),
             workgroup: [wgsl::WORKGROUP; 2],
             shade: true,
+            march_pass: true,
             pipeline,
+            beam_pipeline,
             shade_pipeline,
             pipeline_layout: layout,
             composite,
             frame_layout,
             data_layout,
             out_layout,
+            beam_layout,
             shade_layout,
             scene_layout,
             frame_buffer,
@@ -562,7 +594,7 @@ impl Marcher {
 
     /// Targets at `size`.
     pub fn targets(&self, size: (u32, u32)) -> MarchTargets {
-        let make = |format, label| {
+        let make_at = |size: (u32, u32), format, label| {
             let texture = self.device.create_texture(&wgpu::TextureDescriptor {
                 label: Some(label),
                 size: wgpu::Extent3d {
@@ -582,6 +614,13 @@ impl Marcher {
             let view = texture.create_view(&Default::default());
             (texture, view)
         };
+        let make = |format, label| make_at(size, format, label);
+        let tile = dwell_march::BEAM_TILE;
+        let beam = make_at(
+            (size.0.div_ceil(tile), size.1.div_ceil(tile)),
+            BEAM,
+            "march beam",
+        );
         let color = make(COLOR, "march colour");
         let depth = make(DEPTH, "march depth");
         let id = make(ID, "march id");
@@ -595,7 +634,17 @@ impl Marcher {
         let out_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("march out"),
             layout: &self.out_layout,
-            entries: &[view(0, &depth.1), view(1, &id.1), view(2, &hit.1)],
+            entries: &[
+                view(0, &depth.1),
+                view(1, &id.1),
+                view(2, &hit.1),
+                view(3, &beam.1),
+            ],
+        });
+        let beam_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("march beam"),
+            layout: &self.beam_layout,
+            entries: &[view(0, &beam.1)],
         });
         let shade_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("march shade"),
@@ -613,7 +662,9 @@ impl Marcher {
             depth,
             id,
             hit,
+            beam,
             out_group,
+            beam_group,
             shade_group,
             scene,
         }
@@ -642,6 +693,9 @@ impl Marcher {
         }
         if st.distances {
             flags |= wgsl::FLAG_DISTANCES;
+        }
+        if st.beam {
+            flags |= wgsl::FLAG_BEAM;
         }
         if self.pending.is_some() {
             flags |= wgsl::FLAG_HISTOGRAM;
@@ -746,29 +800,43 @@ impl Marcher {
         if self.pending.is_some() || debug {
             encoder.clear_buffer(&self.stats, 0, Some(HIST_WORDS as u64 * 4));
         }
-        // The timestamps begin with the march and end with the shade pass.
-        let (begin, end) = match timestamps {
-            Some(w) if !self.shade => (Some(w), None),
-            Some(w) => (
-                w.beginning_of_pass_write_index
-                    .map(|i| wgpu::ComputePassTimestampWrites {
-                        query_set: w.query_set,
-                        beginning_of_pass_write_index: Some(i),
-                        end_of_pass_write_index: None,
-                    }),
-                w.end_of_pass_write_index
-                    .map(|i| wgpu::ComputePassTimestampWrites {
-                        query_set: w.query_set,
-                        beginning_of_pass_write_index: None,
-                        end_of_pass_write_index: Some(i),
-                    }),
-            ),
-            None => (None, None),
+        // The timestamps begin with the beam prepass (or the march) and end with the shade pass.
+        // Split into a beginning (the first pass) and an end (the last pass).
+        let qs = timestamps.as_ref().map(|w| w.query_set);
+        let mut begin = timestamps.as_ref().and_then(|w| w.beginning_of_pass_write_index);
+        let mut end = timestamps.as_ref().and_then(|w| w.end_of_pass_write_index);
+        let writes = |b: Option<u32>, e: Option<u32>| {
+            qs.filter(|_| b.is_some() || e.is_some())
+                .map(|query_set| wgpu::ComputePassTimestampWrites {
+                    query_set,
+                    beginning_of_pass_write_index: b,
+                    end_of_pass_write_index: e,
+                })
         };
-        {
+        if self.settings.beam {
+            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("march beam"),
+                timestamp_writes: writes(
+                    begin.take(),
+                    if self.march_pass { None } else { end.take() },
+                ),
+            });
+            pass.set_pipeline(&self.beam_pipeline);
+            pass.set_bind_group(0, &self.frame_group, &[]);
+            pass.set_bind_group(1, self.data_group.as_ref(), &[]);
+            pass.set_bind_group(2, &targets.beam_group, &[]);
+            let tile = dwell_march::BEAM_TILE;
+            let g = wgsl::WORKGROUP;
+            pass.dispatch_workgroups(
+                targets.size.0.div_ceil(tile).div_ceil(g),
+                targets.size.1.div_ceil(tile).div_ceil(g),
+                1,
+            );
+        }
+        if self.march_pass {
             let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                 label: Some("march"),
-                timestamp_writes: begin,
+                timestamp_writes: writes(begin.take(), if self.shade { None } else { end.take() }),
             });
             pass.set_pipeline(&self.pipeline);
             pass.set_bind_group(0, &self.frame_group, &[]);
@@ -780,7 +848,7 @@ impl Marcher {
         if self.shade {
             let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                 label: Some("march shade"),
-                timestamp_writes: end,
+                timestamp_writes: writes(None, end.take()),
             });
             pass.set_pipeline(&self.shade_pipeline);
             pass.set_bind_group(0, &self.frame_group, &[]);

@@ -158,7 +158,7 @@ fn march_perf() {
     {
         use dwell_march::layout::{COLUMN_WORDS, GRID_OFFSET, Slot, column_span};
         let sc = &m.gpu.scene;
-        for l in 0..20u32 {
+        for l in 0..dwell_march::layout::LEVEL_COUNT as u32 {
             let Some(info) = sc.level_info(l) else {
                 continue;
             };
@@ -229,6 +229,10 @@ fn march_perf() {
         });
         m.settings.debug = *bits;
         m.shade = env("DWELL_PERF_NOSHADE").is_none() && !variant.starts_with("noshade");
+        m.settings.beam = env("DWELL_PERF_NOBEAM").is_none() && !variant.contains("nobeam");
+        // `beamonly…`: the beam prepass alone.
+        m.march_pass = !variant.starts_with("beamonly");
+        m.shade &= m.march_pass;
         // The workgroup a variant's source declares.
         m.workgroup = match file {
             Some(f) => {

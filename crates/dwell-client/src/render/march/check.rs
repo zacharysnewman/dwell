@@ -2,8 +2,10 @@
 //! "Correctness under both"): small crafted scenes — chunks and LOD sections, both world faces,
 //! near the origin and 4,000 km out — rendered offscreen at 64² from several camera poses, the id,
 //! view depth and per-pixel debug records read back, and every ray marched again on the CPU with
-//! the direction the GPU used. Ids must match exactly and depths within 1e-4 relative; the report
-//! also counts how many rays agree on every field (steps, level, cell, face, `t` to the bit).
+//! the direction the GPU used, from the distance the GPU's beam prepass started it at. Ids must
+//! match exactly and depths within 1e-4 relative; the report also counts how many rays agree on
+//! every field (steps, level, cell, face, `t` to the bit). Every ray is also marched from the eye:
+//! a beam start must never pass that march's hit (`Report::start_past_hit`).
 //!
 //! Shared by the native test (`march/test.rs`, on the machine's GPU when it has one) and the
 //! browser probe (`probeMarch`, headless SwiftShader in CI).
@@ -41,6 +43,12 @@ pub struct Report {
     pub t_ulps_max: u32,
     /// The largest difference between the GPU's ray direction and the CPU's for the same pixel.
     pub max_dir_error: f32,
+    /// Rays the beam prepass started past the hit a march from the eye finds (must be 0).
+    pub start_past_hit: usize,
+    /// Rays the beam started late (start > 0), and those whose outcome from the start differs
+    /// from the march from the eye's (a LOD switch can fall elsewhere; counted, not a failure).
+    pub started_late: usize,
+    pub start_changed: usize,
     /// Levels hit, as a bit set (the views reach LOD sections).
     pub levels_hit: u32,
     /// One line per view: its name and counts.
@@ -56,6 +64,7 @@ impl Report {
             && self.record_mismatches == 0
             && self.max_depth_error <= 1e-4
             && self.max_dir_error < 1e-5
+            && self.start_past_hit == 0
             && self.hits > self.pixels / 4
     }
 }
@@ -312,7 +321,7 @@ pub async fn run(device: &wgpu::Device, queue: &wgpu::Queue) -> Result<Report, S
                 |b: &[u8], i: usize| u32::from_le_bytes(b[4 * i..4 * i + 4].try_into().unwrap());
             let params = m.reference_params(&frame, (SIZE, SIZE));
             let origin = Ray::from_world(eye, frame.forward);
-            let (mut hits, mut id_bad, mut rec_bad) = (0, 0, 0);
+            let (mut hits, mut id_bad, mut rec_bad, mut changed) = (0, 0, 0, 0);
             for y in 0..SIZE {
                 for x in 0..SIZE {
                     let i = (y * SIZE + x) as usize;
@@ -327,7 +336,26 @@ pub async fn run(device: &wgpu::Device, queue: &wgpu::Queue) -> Result<Report, S
                         frac: origin.frac,
                         dir: g.dir,
                     };
-                    let r = m.gpu.scene.march(&ray, &params);
+                    let r = m.gpu.scene.march_from(&ray, &params, g.start);
+                    let full = m.gpu.scene.march(&ray, &params);
+                    if g.start > 0.0 {
+                        report.started_late += 1;
+                    }
+                    if full.outcome != r.outcome {
+                        report.start_changed += 1;
+                        changed += 1;
+                    }
+                    if let Outcome::Hit(h) = full.outcome
+                        && g.start > h.t
+                    {
+                        report.start_past_hit += 1;
+                        if report.examples.len() < 8 {
+                            report.examples.push(format!(
+                                "{scene_name}/{view} ({x},{y}): start {} past the hit at {}",
+                                g.start, h.t
+                            ));
+                        }
+                    }
                     let (kind, want_id) = match r.outcome {
                         Outcome::Hit(h) => (1, wgsl::cell_id(h.level, h.cell, h.face)),
                         Outcome::Miss => (0, 0),
@@ -372,7 +400,7 @@ pub async fn run(device: &wgpu::Device, queue: &wgpu::Queue) -> Result<Report, S
             report.id_mismatches += id_bad;
             report.record_mismatches += rec_bad;
             report.lines.push(format!(
-                "{scene_name}/{view}: {hits} hits, {id_bad} ids differ, {rec_bad} records differ"
+                "{scene_name}/{view}: {hits} hits, {id_bad} ids differ, {rec_bad} records differ, {changed} changed by the beam"
             ));
         }
     }
