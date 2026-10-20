@@ -321,10 +321,10 @@ fn a_worlds_blocks_beyond_the_build_are_in_its_servers_registry() {
             .expect("registers");
         f.join(1, &Client::new(1));
         f.server.step();
-        f.send(1, place([-1, -1, 2], 2, moss));
+        f.send(1, place([-1, G - 1, 2], 2, moss));
         f.server.step();
-        assert_eq!(f.server.world().get_voxel(-1, 0, 2), moss);
-        f.move_to(1, 3.5, 0.0, 4.5);
+        assert_eq!(f.server.world().get_voxel(-1, G, 2), moss);
+        f.move_to(1, 3.5, f64::from(G), 4.5);
         f.server.step();
         f.server.save_now();
         f.server.flush_store();
@@ -335,7 +335,7 @@ fn a_worlds_blocks_beyond_the_build_are_in_its_servers_registry() {
         store: Some(store),
         ..flat()
     });
-    assert_eq!(f.server.world().get_voxel(-1, 0, 2), moss);
+    assert_eq!(f.server.world().get_voxel(-1, G, 2), moss);
     let (payload, _) = f.server.registry();
     let p = dwell_blocks::sync::Payload::decode(&payload).expect("decodes");
     assert!(p.blocks.iter().any(|b| b.name == "mod:moss"));
