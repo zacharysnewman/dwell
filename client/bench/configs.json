@@ -35,6 +35,12 @@
       "params": { "marchmoving": "0" }
     },
     {
+      "name": "march-noreuse",
+      "notes": "Ray-marched at full resolution, marching again even when nothing changed since the last frame (A4c's before).",
+      "renderer": "march",
+      "params": { "marchreuse": "0" }
+    },
+    {
       "name": "march-half-fsr",
       "notes": "Ray-marched at half resolution, FSR 1 upscaling (A4).",
       "renderer": "march",

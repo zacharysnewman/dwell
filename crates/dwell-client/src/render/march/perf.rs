@@ -234,6 +234,12 @@ fn march_perf() {
         m.shade = env("DWELL_PERF_NOSHADE").is_none() && !variant.starts_with("noshade");
         m.settings.beam = env("DWELL_PERF_NOBEAM").is_none() && !variant.contains("nobeam");
         m.settings.temporal = !variant.contains("notemporal");
+        // `…still…`: the temporal start with the eye still only (A4b).
+        m.settings.moving = !variant.contains("still");
+        // The harness draws one view again and again: kept frames only when asked (`…reuse…`).
+        m.settings.reuse = variant.contains("reuse");
+        m.settings.columns = !variant.contains("nocolumns");
+        m.settings.distances = !variant.contains("nodistances");
         // `beamonly…`: the beam prepass alone.
         m.march_pass = !variant.starts_with("beamonly");
         m.shade &= m.march_pass;
