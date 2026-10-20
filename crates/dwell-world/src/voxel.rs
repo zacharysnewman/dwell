@@ -3,6 +3,7 @@
 //! build volume (`bounds.rs`).
 
 use crate::bounds::{BUILD_VOLUME, Overlap};
+use crate::FaceFrame;
 use crate::hash::HashMap;
 use std::sync::{Arc, LazyLock};
 
@@ -287,6 +288,7 @@ const _: () = assert!(
     "the flat worlds' surface lies above the midplane, on a chunk boundary"
 );
 
+// Shorthands for the face frame's maps (crate::FaceFrame, BIFACIAL_WORLD.md §11).
 pub fn face_of_y(y: i64) -> Face {
     if y >= i64::from(MIDPLANE_Y) {
         Face::A
@@ -295,28 +297,23 @@ pub fn face_of_y(y: i64) -> Face {
     }
 }
 pub fn face_of_chunk_y(cy: i32) -> Face {
-    if cy >= MIDPLANE_CHUNK_Y {
-        Face::A
-    } else {
-        Face::B
-    }
+    FaceFrame::at_chunk_y(cy).face
 }
 /// The direction of up for a voxel row: +1 on face A, −1 on face B (its terrain faces −y).
 pub fn up_of_y(y: i32) -> i32 {
-    if y >= MIDPLANE_Y { 1 } else { -1 }
+    FaceFrame::at_row(y).sign()
 }
+/// A voxel row mirrored in the midplane (face B's row ↔ its face-local row).
 pub const fn mirror_y(y: i32) -> i32 {
-    MIRROR_SUM - y
+    FaceFrame::B.row(y)
 }
+/// A chunk row mirrored in the midplane.
 pub const fn mirror_chunk_y(cy: i32) -> i32 {
-    MIRROR_CHUNK_SUM - cy
+    FaceFrame::B.chunk_y(cy)
 }
 /// The face-local chunk a chunk of face B is the flip of (face A's are their own).
 pub fn face_local_chunk(c: ChunkCoord) -> ChunkCoord {
-    match face_of_chunk_y(c.y) {
-        Face::A => c,
-        Face::B => ChunkCoord::new(c.x, mirror_chunk_y(c.y), c.z),
-    }
+    FaceFrame::at_chunk_y(c.y).chunk(c)
 }
 
 /// Chebyshev distance between chunk coordinates.

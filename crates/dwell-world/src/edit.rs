@@ -12,7 +12,7 @@ use dwell_blocks::{
 use dwell_protocol::{BlockEditAction, BlockEditRequest, ChunkChanges, players};
 
 use crate::{
-    ChunkCoord, FaceFrame, M, MIDPLANE_Y, VoxelWorld, inside_build_volume, inside_world_disc, up_of_y,
+    ChunkCoord, FaceFrame, M, VoxelWorld, inside_build_volume, inside_world_disc, up_of_y,
 };
 
 /// Face index → outward direction: 0 +X, 1 −X, 2 +Y, 3 −Y, 4 +Z, 5 −Z.
@@ -176,7 +176,7 @@ pub fn medium_kept(m: StateId) -> StateId {
 
 /// The cell a block stands on: below it toward its face's ground (−y on face A, +y on face B).
 pub fn below(cell: [i32; 3]) -> [i32; 3] {
-    let down = if cell[1] >= MIDPLANE_Y { -1 } else { 1 };
+    let down = -FaceFrame::at_row(cell[1]).sign();
     [cell[0], cell[1] + down, cell[2]]
 }
 
@@ -208,7 +208,7 @@ pub fn unsupported_after(
     let (mut at, mut under) = (cell, material);
     loop {
         // The cell standing on `at`: the one whose `below` is `at`.
-        let up = if at[1] >= MIDPLANE_Y { 1 } else { -1 };
+        let up = FaceFrame::at_row(at[1]).sign();
         let next = [at[0], at[1] + up, at[2]];
         if below(next) != at
             || !inside_build_volume(i64::from(next[0]), i64::from(next[1]), i64::from(next[2]))
