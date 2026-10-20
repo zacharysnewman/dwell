@@ -313,6 +313,8 @@ impl Predictor {
             let matched = self.stats.last_error <= Self::POSITION_TOLERANCE
                 && (e.velocity - server_velocity).length() <= Self::VELOCITY_TOLERANCE
                 && predicted.flags == l.controller.flags
+                && predicted.slide_flags == l.controller.slide_flags
+                && predicted.slide_cooldown == l.controller.slide_cooldown
                 && (predicted.external_x - l.controller.external_x).abs()
                     <= Self::VELOCITY_TOLERANCE
                 && (predicted.external_z - l.controller.external_z).abs()

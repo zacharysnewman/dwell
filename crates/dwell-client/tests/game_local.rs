@@ -17,6 +17,7 @@ use dwell_client::render::seam::{
     ChunkTerrain, Recording, Routed, SectionTerrain, Selection, TerrainKind, TerrainRenderer,
 };
 use dwell_client::render::{Line, PlayerView, RegionBox, StandIn, WindView};
+use dwell_client::telemetry;
 use dwell_game::brush_tool::{BrushAction, BrushOutline};
 use dwell_game::input::{EditAction, KeyboardMouseInput};
 use dwell_game::region_tools::ToolAction;
@@ -329,6 +330,12 @@ impl Rig {
         }
         let Some(game) = &mut self.game else { return };
         while let Some((m, bytes)) = self.session.next_game() {
+            // As the web app does: an edit ack is translated by the session (edit prediction).
+            if let dwell_protocol::Message::EditAck(a) = &m {
+                let done = self.session.edit_results(a);
+                game.on_edit_results(&done);
+                continue;
+            }
             game.on_game_message(m, bytes.len(), now);
         }
         game.frame(now, &mut self.input, None, &mut || 0.0);
@@ -336,8 +343,18 @@ impl Rig {
             match s {
                 Send::Control(m) => self.session.send_control(&m),
                 Send::Datagram(m) => self.session.send_game_datagram(&m),
+                Send::Edit(m, id) => {
+                    self.session.send_edit(&m, id);
+                }
             }
         }
+        let dropped: Vec<(u32, bool)> = self
+            .session
+            .take_dropped_edits()
+            .into_iter()
+            .map(|id| (id, true))
+            .collect();
+        game.on_edit_results(&dropped);
     }
 
     fn run_until(&mut self, max_frames: usize, mut done: impl FnMut(&mut Self) -> bool) -> bool {
@@ -794,12 +811,78 @@ fn sprinting_widens_the_view_for_the_renderer_and_the_lod_alike() {
 }
 
 #[test]
+fn the_spyglass_narrows_the_view_for_the_renderer_and_the_lod_alike() {
+    // The spyglass (docs/SPYGLASS.md): the zoomed FOV is the frame's, the LOD camera has it and
+    // the magnification its detail follows, and zooming out restores both.
+    use dwell_look::spyglass::{SPYGLASS, zoom_fov};
+    let mut rig = Rig::new();
+    assert!(rig.run_until(60 * 30, |r| {
+        r.game
+            .as_ref()
+            .is_some_and(|g| g.debug_state().terrain_ready)
+    }));
+    rig.game
+        .as_mut()
+        .unwrap()
+        .enable_lod(dwell_client::game::LodSettings {
+            pixel_error: 2.0,
+            cache_bytes: 256 << 20,
+            detail_distance_m: None,
+            full_mode: false,
+        });
+    rig.run_until(30, |_| false);
+    let base = rig.scene.borrow().fov.unwrap();
+    let m = SPYGLASS.steps[0].magnification;
+    rig.game.as_mut().unwrap().spyglass.toggle(&SPYGLASS);
+    rig.run_until(2, |_| false);
+    let easing = rig.scene.borrow().fov.unwrap();
+    assert!(
+        easing < base && easing > zoom_fov(base, m),
+        "eases in: {easing}"
+    );
+    rig.run_until(60, |_| false);
+    let zoomed = rig.scene.borrow().fov.unwrap();
+    assert!(
+        (zoomed - zoom_fov(base, m)).abs() < 1e-9,
+        "{zoomed} vs {base}"
+    );
+    let lod = rig.game.as_ref().unwrap().lod_camera().unwrap();
+    assert_eq!(lod.fov_y_deg, zoomed, "the LOD selects with the zoomed FOV");
+    assert!((lod.magnification - m).abs() < 1e-9);
+    assert!((lod.detail_magnification - m.min(SPYGLASS.detail_boost)).abs() < 1e-9);
+
+    // Reduced motion: out at once.
+    rig.game.as_mut().unwrap().reduced_motion = true;
+    rig.game.as_mut().unwrap().spyglass.toggle(&SPYGLASS);
+    rig.run_until(1, |_| false);
+    assert_eq!(rig.scene.borrow().fov.unwrap(), base);
+    let lod = rig.game.as_ref().unwrap().lod_camera().unwrap();
+    assert_eq!((lod.fov_y_deg, lod.magnification), (base, 1.0));
+}
+
+#[test]
 fn a_slow_device_walks_without_snapping() {
     // A device drawing ~5.5 frames a second (CI's software renderer with two pages,
-    // e2e/play.spec.ts): each frame covers 11 of the server's 60 Hz ticks. Its prediction must
-    // keep the server's time, or the server fills the missing ticks by repeating the last input
-    // (walking further than the player did) and the replays drag the player along, snapping it
-    // once a correction passes RECONCILE_SNAP_DISTANCE.
+    // e2e/play.spec.ts): each frame covers 11 of the server's 60 Hz ticks, over a 150 ms round
+    // trip (as the e2e test's B page: `?netsim=150,…`).
+    slow_device_keeps_the_servers_time(11, 5);
+}
+
+#[test]
+fn a_device_at_under_two_frames_a_second_walks_and_jumps_without_snapping() {
+    // CI's software renderer drew e2e/touch.spec.ts's phone page at 440–810 ms a frame
+    // (2026-10-19): up to 48 of the server's ticks a frame, more than the 15 the client used to
+    // catch up. It dropped the rest, the starved server repeated the held input (a held jump flew
+    // and landed there), and the snapshot replays put the player back on the ground one predicted
+    // tick into the jump (the test read a 0.112 m peak).
+    slow_device_keeps_the_servers_time(48, 0);
+}
+
+/// A device whose frames each cover `steps` of the server's 60 Hz ticks walks, then holds jump.
+/// Its prediction must keep the server's time, or the server fills the missing ticks by repeating
+/// the last input (walking further, or jumping earlier, than the player did) and the replays drag
+/// the player along, snapping it once a correction passes RECONCILE_SNAP_DISTANCE.
+fn slow_device_keeps_the_servers_time(steps: usize, latency_steps: u32) {
     let mut rig = Rig::new();
     assert!(
         rig.run_until(60 * 30, |r| r
@@ -808,45 +891,62 @@ fn a_slow_device_walks_without_snapping() {
             .is_some_and(|g| g.debug_state().terrain_ready)),
         "the player is placed and the terrain around them arrives"
     );
-    // Settle on the ground at full speed, then slow down, over a 150 ms round trip (as the e2e
-    // test's B page: `?netsim=150,…`).
+    // Settle on the ground at full speed, then slow down.
     rig.run_until(60, |_| false);
-    rig.latency_steps = 5;
+    rig.latency_steps = latency_steps;
     let stats = |r: &Rig| r.game.as_ref().unwrap().debug_state().stats;
     let mut worst = 0.0f32;
     let mut slow_frames = |rig: &mut Rig, n: usize| {
         for _ in 0..n {
             let replays = stats(rig).replays;
-            rig.slow_frame(11);
+            rig.slow_frame(steps);
             let s = stats(rig);
             if s.replays > replays {
                 worst = worst.max(s.last_correction);
             }
         }
     };
-    slow_frames(&mut rig, 10);
+    // Each phase lasts about a second of frames.
+    let second = 60usize.div_ceil(steps);
+    slow_frames(&mut rig, second.max(10));
     let before = stats(&rig);
     let start = rig.game.as_ref().unwrap().debug_state().feet;
     rig.input.set_key("KeyW", true);
-    slow_frames(&mut rig, 6);
+    slow_frames(&mut rig, second);
     rig.input.set_key("KeyW", false);
-    slow_frames(&mut rig, 10);
-    let after = stats(&rig);
+    slow_frames(&mut rig, second);
     let feet = rig.game.as_ref().unwrap().debug_state().feet;
     let moved = ((feet[0] - start[0]).powi(2) + (feet[2] - start[2]).powi(2)).sqrt();
     assert!(moved > 2.0, "walked {moved} m");
+    // Hold jump through the jump (as the touch button is held), then land: the predicted ticks
+    // rise the whole jump (about 1.2 m), not one tick of it before a replay lands the player.
+    let ground = feet[1];
+    let last = telemetry::with(|t| t.ticks().last().map_or(0, |s| s.seq));
+    rig.input.set_key("Space", true);
+    slow_frames(&mut rig, second);
+    rig.input.set_key("Space", false);
+    slow_frames(&mut rig, second);
+    let peak = telemetry::with(|t| {
+        t.ticks()
+            .filter(|s| s.seq > last)
+            .map(|s| s.feet[1])
+            .fold(ground, f64::max)
+    });
+    assert!(peak - ground > 1.0, "jumped {} m", peak - ground);
+    let after = stats(&rig);
     // The prediction matches the server: no correction to speak of, so no snap.
     assert!(
         worst < 0.2,
         "a {worst} m correction: {before:?} -> {after:?}"
     );
     assert_eq!(after.snaps, before.snaps);
-    // Predicted ticks keep up with the server's (16 frames of 11 ticks).
+    // Predicted ticks keep up with the server's.
+    let frames = 4 * second;
     let predicted = after.ticks - before.ticks;
     assert!(
-        predicted >= 16 * 11 - 11,
+        predicted as usize >= frames * steps - steps,
         "{predicted} ticks predicted for {} of the server's",
-        16 * 11
+        frames * steps
     );
 }
 
@@ -1003,10 +1103,13 @@ fn a_block_only_the_server_has_arrives_by_sync_and_plays_like_any_other() {
     assert_eq!(rig.game.as_mut().unwrap().voxel(x, y, z), glow);
     let now = rig.now + 1000.0;
     assert!(rig.game.as_mut().unwrap().edit(EditAction::Break, now));
+    // Predicted: gone at once; then the server's ack settles it.
+    assert_eq!(rig.game.as_mut().unwrap().voxel(x, y, z), 0);
     assert!(
-        rig.run_until(60, |r| r.game.as_mut().unwrap().voxel(x, y, z) == 0),
-        "the server's modification arrives"
+        rig.run_until(60, |r| r.game.as_ref().unwrap().prediction.pending() == 0),
+        "the server's ack arrives"
     );
+    assert_eq!(rig.game.as_mut().unwrap().voxel(x, y, z), 0);
     assert_eq!(rig.core.server().world().get_voxel(x, y, z), 0);
     assert!(
         rig.run_until(60, |r| r.guest.as_ref().is_some_and(|(_, _, got)| {
@@ -1017,4 +1120,233 @@ fn a_block_only_the_server_has_arrives_by_sync_and_plays_like_any_other() {
         })),
         "the guest sees it broken"
     );
+}
+
+/// A sandbox rig joined with its capabilities set, a guest watching, and `latency` server ticks
+/// each way: edits take a while to come back, as over a network.
+fn predicting_rig(latency: u32) -> Rig {
+    let mut rig = Rig::with_generator(GENERATOR_SANDBOX);
+    assert!(rig.run_until(60 * 30, |r| {
+        r.game
+            .as_ref()
+            .is_some_and(|g| g.debug_state().terrain_ready)
+    }));
+    let SessionState::Joined {
+        region_edits,
+        brushes,
+        generator_version,
+        ..
+    } = rig.session.state().clone()
+    else {
+        panic!("joined")
+    };
+    rig.game
+        .as_mut()
+        .unwrap()
+        .set_capabilities(region_edits, brushes, generator_version);
+    rig.add_guest();
+    // The guest joins (the same registry: no prompt) and asks for explicit chunks.
+    assert!(rig.run_until(120, |r| {
+        r.guest
+            .as_ref()
+            .is_some_and(|(s, _, _)| matches!(s.state(), SessionState::Joined { .. }))
+    }));
+    let (guest, _, _) = rig.guest.as_mut().unwrap();
+    guest.send_control(&dwell_protocol::Message::WorldgenCheck(0));
+    assert!(
+        rig.run_until(300, |r| r.guest.as_ref().is_some_and(|(_, _, got)| got
+            .iter()
+            .any(|m| matches!(m, dwell_protocol::Message::ChunkData(_)))))
+    );
+    rig.run_until(60, |_| false);
+    rig.latency_steps = latency;
+    rig
+}
+
+/// Looks `pitch` down and `yaw` round until a floor or block cell is targeted; returns it.
+fn target_at(rig: &mut Rig, yaw: f64, pitch: f64) -> [i32; 3] {
+    rig.input.look.yaw = yaw;
+    rig.input.look.pitch = pitch;
+    assert!(rig.run_until(30, |r| {
+        r.game.as_ref().unwrap().debug_state().target.is_some()
+    }));
+    rig.game
+        .as_ref()
+        .unwrap()
+        .debug_state()
+        .target
+        .unwrap()
+        .cell
+}
+
+fn host_voxel(rig: &mut Rig, c: [i32; 3]) -> u16 {
+    rig.game.as_mut().unwrap().voxel(c[0], c[1], c[2])
+}
+
+fn server_voxel(rig: &mut Rig, c: [i32; 3]) -> u16 {
+    rig.core.server().world().get_voxel(c[0], c[1], c[2])
+}
+
+/// The guest's view of a cell: the last modification it got that changes it, else air.
+fn guest_voxel(rig: &Rig, c: [i32; 3]) -> u16 {
+    let (_, _, got) = rig.guest.as_ref().unwrap();
+    let mut out = 0;
+    for m in got {
+        if let dwell_protocol::Message::VoxelModification(v) = m {
+            for ch in &v.chunks {
+                for x in &ch.changes {
+                    let i = i32::from(x.index);
+                    let cell = [
+                        ch.coord[0] * 32 + (i & 31),
+                        ch.coord[1] * 32 + ((i >> 5) & 31),
+                        ch.coord[2] * 32 + ((i >> 10) & 31),
+                    ];
+                    if cell == c {
+                        out = x.material;
+                    }
+                }
+            }
+        }
+    }
+    out
+}
+
+#[test]
+fn an_edit_shows_at_once_and_the_servers_ack_settles_it() {
+    let mut rig = predicting_rig(8);
+    let stone = dwell_blocks::require("dwell:stone");
+    rig.game.as_mut().unwrap().interaction.select(0); // stone
+    let floor = target_at(&mut rig, 0.0, -40.0);
+    let p = [floor[0], floor[1] + 1, floor[2]];
+    assert_eq!(host_voxel(&mut rig, p), 0);
+    let now = rig.now + 1000.0;
+    assert!(rig.game.as_mut().unwrap().edit(EditAction::Place, now));
+    // Predicted: on the host at once, before the server has even received it.
+    assert_eq!(host_voxel(&mut rig, p), stone, "shown before the echo");
+    assert_eq!(server_voxel(&mut rig, p), 0);
+    assert_eq!(rig.game.as_ref().unwrap().prediction.pending(), 1);
+    // The ack settles it: the server, the host and the guest agree.
+    assert!(rig.run_until(120, |r| r.game.as_ref().unwrap().prediction.pending() == 0));
+    assert_eq!(server_voxel(&mut rig, p), stone);
+    assert_eq!(host_voxel(&mut rig, p), stone);
+    assert!(
+        rig.run_until(30, |r| guest_voxel(r, p) == stone),
+        "two clients agree"
+    );
+    let stats = rig.game.as_ref().unwrap().prediction.stats;
+    assert_eq!((stats.refused, stats.corrected), (0, 0));
+
+    // A brush stroke shows whole at once, every queued edit of it.
+    let game = rig.game.as_mut().unwrap();
+    game.brush_key(BrushAction::Toggle);
+    let ball = dwell_world::brush::PRESETS
+        .iter()
+        .position(|p| p.name == "ball")
+        .unwrap();
+    game.brush_key(BrushAction::Preset(ball));
+    game.brush.resize(4);
+    // Far enough that the ball misses the player (the server leaves cells in a body alone).
+    rig.input.look.pitch = -10.0;
+    assert!(rig.run_until(30, |r| r.game.as_ref().unwrap().brush.target().is_some()));
+    let t = rig.game.as_ref().unwrap().brush.target().unwrap().cell;
+    let top = [t[0], t[1] + 7, t[2]];
+    let now = rig.now;
+    assert!(rig.game.as_mut().unwrap().brush_apply(false, now));
+    assert_eq!(
+        host_voxel(&mut rig, top),
+        stone,
+        "the whole stroke, at once"
+    );
+    assert_eq!(server_voxel(&mut rig, top), 0);
+    assert!(rig.run_until(600, |r| r.game.as_ref().unwrap().prediction.pending() == 0));
+    assert_eq!(server_voxel(&mut rig, top), stone);
+    assert_eq!(host_voxel(&mut rig, top), stone);
+    assert!(rig.run_until(30, |r| guest_voxel(r, top) == stone));
+    assert_eq!(rig.game.as_ref().unwrap().prediction.stats.corrected, 0);
+}
+
+#[test]
+fn a_refused_edit_rolls_back() {
+    use dwell_sim::server::EditPolicy;
+    let mut rig = predicting_rig(8);
+    let stone = dwell_blocks::require("dwell:stone");
+    // Nobody may edit now; the host's client doesn't know it.
+    let host = rig.key.verifying_key().to_bytes();
+    rig.core
+        .host(4, EditPolicy::Nobody, EditPolicy::Everyone, host);
+    rig.game.as_mut().unwrap().interaction.select(0);
+    let floor = target_at(&mut rig, 0.0, -40.0);
+    let p = [floor[0], floor[1] + 1, floor[2]];
+    let now = rig.now + 1000.0;
+    assert!(rig.game.as_mut().unwrap().edit(EditAction::Place, now));
+    assert_eq!(host_voxel(&mut rig, p), stone, "predicted");
+    assert!(rig.run_until(120, |r| r.game.as_ref().unwrap().prediction.pending() == 0));
+    assert_eq!(host_voxel(&mut rig, p), 0, "rolled back");
+    assert_eq!(server_voxel(&mut rig, p), 0);
+    let stats = rig.game.as_ref().unwrap().prediction.stats;
+    assert_eq!((stats.refused, stats.corrected), (1, 1));
+}
+
+#[test]
+fn rapid_edits_and_a_refusal_reconcile_with_the_server() {
+    use dwell_sim::server::EditPolicy;
+    let mut rig = predicting_rig(8);
+    let stone = dwell_blocks::require("dwell:stone");
+    rig.game.as_mut().unwrap().interaction.select(0);
+    let floor = target_at(&mut rig, 0.0, -40.0);
+    let p = [floor[0], floor[1] + 1, floor[2]];
+    // 1: place P, accepted.
+    let mut now = rig.now + 1000.0;
+    assert!(rig.game.as_mut().unwrap().edit(EditAction::Place, now));
+    assert!(rig.run_until(30, |r| server_voxel(r, p) == stone));
+    assert_eq!(
+        rig.game.as_ref().unwrap().prediction.pending(),
+        1,
+        "its ack is on its way"
+    );
+    // The server stops taking edits; two more go out before the first's ack is back.
+    let host = rig.key.verifying_key().to_bytes();
+    rig.core
+        .host(4, EditPolicy::Nobody, EditPolicy::Everyone, host);
+    // 2: break P (aimed at the predicted block), refused.
+    rig.frame();
+    let aimed = rig
+        .game
+        .as_ref()
+        .unwrap()
+        .debug_state()
+        .target
+        .unwrap()
+        .cell;
+    assert_eq!(aimed, p, "the crosshair sees the predicted block");
+    now += 200.0;
+    assert!(rig.game.as_mut().unwrap().edit(EditAction::Break, now));
+    assert_eq!(host_voxel(&mut rig, p), 0);
+    // 3: place at another cell, refused.
+    let other_floor = target_at(&mut rig, 120.0, -40.0);
+    let q = [other_floor[0], other_floor[1] + 1, other_floor[2]];
+    assert_ne!(q, p);
+    now += 200.0;
+    assert!(rig.game.as_mut().unwrap().edit(EditAction::Place, now));
+    assert_eq!(host_voxel(&mut rig, q), stone);
+    assert!(rig.game.as_ref().unwrap().prediction.pending() >= 2);
+    // All acks back: the host shows exactly what the server has.
+    assert!(rig.run_until(120, |r| r.game.as_ref().unwrap().prediction.pending() == 0));
+    rig.run_until(30, |_| false);
+    for c in [p, q] {
+        assert_eq!(host_voxel(&mut rig, c), server_voxel(&mut rig, c), "{c:?}");
+        assert_eq!(guest_voxel(&rig, c), server_voxel(&mut rig, c), "{c:?}");
+    }
+    assert_eq!(
+        host_voxel(&mut rig, p),
+        stone,
+        "the refused break is undone"
+    );
+    assert_eq!(
+        host_voxel(&mut rig, q),
+        0,
+        "the refused place is taken back"
+    );
+    let stats = rig.game.as_ref().unwrap().prediction.stats;
+    assert_eq!(stats.refused, 2);
 }

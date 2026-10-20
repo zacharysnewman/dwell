@@ -9,6 +9,7 @@ pub mod block_interaction;
 pub mod brush_tool;
 pub mod chunk_diff;
 pub mod chunk_stream;
+pub mod edit_prediction;
 pub mod eye;
 pub mod face_flip;
 pub mod flight;

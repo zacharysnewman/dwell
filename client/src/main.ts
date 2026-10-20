@@ -38,6 +38,8 @@ import { rememberServer } from './ui/recentServers';
 import { prefersTouch, TouchControls } from './ui/touchControls';
 import { Hotbar } from './ui/hotbar';
 import type { BrushPanelState } from './ui/brushPanel';
+import { prefersReducedMotion } from './ui/motionSettings';
+import type { SpyglassHud } from './ui/spyglass';
 import { Hud } from './ui/hud';
 import { MAP_SIZE, MapOverlay } from './ui/mapOverlay';
 import { SettingsMenu } from './ui/settingsMenu';
@@ -86,6 +88,9 @@ export interface GameDebugState {
   timeOfDay: number;
   day: number;
   moonPhase: number;
+  /** The frame's vertical FOV (degrees) and the spyglass's magnification (1: unzoomed). */
+  fov: number;
+  spyglass: number;
 }
 
 interface RenderStats {
@@ -122,6 +127,11 @@ interface DwellDebug {
   fly(on: boolean): void;
   /** Sets the flight speed level, as the slider does. */
   flySpeed(level: number): void;
+  /**
+   * Zooms the spyglass to `step` (0 the least zoom; docs/SPYGLASS.md) or out, as its key and the
+   * wheel do. False before the game has started.
+   */
+  spyglass(on: boolean, step?: number): boolean;
   /**
    * Places the camera at `position` looking along yaw/pitch (degrees): the view and the LOD come
    * from there while the player stays put (e2e/views). False before the game has started.
@@ -403,8 +413,10 @@ function showHud(app: App, now: number): void {
     damaged?: boolean;
     region?: string;
     brush?: BrushPanelState | null;
+    spyglass?: SpyglassHud | null;
   };
   if (h.message === undefined) return;
+  app.hud.setSpyglass(h.spyglass ?? null);
   if (h.damaged) app.hud.flashDamage(now);
   app.hud.setHealth(h.health ?? 0, now);
   app.hud.setMessage(h.message);
@@ -533,6 +545,7 @@ async function start(): Promise<App | null> {
     if (waterDebug) client.setWaterDebug(waterDebug);
     client.setClouds(s.clouds);
     client.setMotion(s.motion.speedEffects, s.motion.fovBoost);
+    client.setReducedMotion(prefersReducedMotion());
     client.setPlants(s.motion.plantSway ? 1 : 0, true);
     client.setFov(s.fovDeg);
     client.setDetail(s.detail.distanceM, s.detail.pixelError, s.detail.memoryMb);
@@ -646,6 +659,7 @@ async function start(): Promise<App | null> {
     flySpeed: (level) => {
       client.flySpeed(level);
     },
+    spyglass: (on, step) => client.spyglass(on, step ?? 0),
     placeCamera: ([x, y, z], yaw, pitch) => client.placeCamera(x, y, z, yaw, pitch),
     releaseCamera: () => {
       client.releaseCamera();

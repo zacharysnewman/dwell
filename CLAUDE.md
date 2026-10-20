@@ -28,6 +28,8 @@ and friend worlds), with a small master server for discovery; there are no offic
   system; built by the baseline rework, Phases 14–19 of the implementation plan.
 - `docs/prototypes/` — saved design prototypes (Adaptive Block Lab, Shape Playground) with their
   published links; republish to the same link after editing.
+- `docs/SPYGLASS.md` — design for Phase 38 (ADR 0039): the spyglass zoom, its data file, and the
+  LOD's detail inside the zoomed cone.
 - `docs/RELEASES.md` — Phase 6: builds as tagged releases loaded by a version launcher,
   version-locked worlds, the license, and the release procedure.
 - `docs/BIFACIAL_WORLD.md` — design for Phase 13: the disc's second face below the midplane, gravity
@@ -208,11 +210,15 @@ that touches the public API, a release or the workflows:
 Check these before chasing an e2e failure:
 
 - `e2e/touch.spec.ts` "touch controls: stick, look, and jump": the jump peak has read short of the
-  0.5 m bar on CI. On the C++ build it read exactly 0.4158 m on every run. On the Rust build it
-  read 0.455 m on one PR branch (A1, run 38694905876), and it passed on main's runs up to 9a4dc44.
-  Locally on SwiftShader it read 0.11 m before the slow-device fix (`MAX_TICKS_PER_FRAME`,
-  2026-10-15) and passed after. If it recurs, check the page's tick rate (`stats.ticks` against
-  wall time) before widening the wait.
+  0.5 m bar on CI, three causes so far. (1) Before 0.15.3 the client caught up at most 250 ms a
+  frame; at CI's 440–810 ms frames it dropped time and the starved server flew and landed the held
+  jump (0.1123 m, one tick; fixed by `MAX_TICKS_PER_FRAME` 60, `game_local.rs`
+  `a_device_at_under_two_frames_a_second_…`). (2) The test read the drawn position, which at
+  300–800 ms frames can miss the whole ~0.7 s arc (0, 0.11 or 0.22 m in half of six CI runs); it
+  now reads the controller's tick trace (`__dwell.ticks()`). (3) On the generated terrain CI drew
+  the page at ~1 fps by the jump (0.8–1.7 s frames), so a frame past the 1 s catch-up still lost
+  it; the test now uses `?world=flat`. The failure message prints ticks/s and the frame p50/max: a
+  max over 1 s during the jump means the page is dropping time again, not a controller bug.
 - CI's software renderer draws the e2e pages at ~5 fps. That is why `play.spec.ts`'s two-client
   test snapped (fixed 2026-10-15: a client that dropped time predicted fewer ticks than the
   server's 60 Hz). A page that predicts far fewer than 60 ticks a second is the first thing to

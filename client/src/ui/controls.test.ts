@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { BRUSH_PRESETS } from './brushes.gen';
+import { SPYGLASS } from './spyglass.gen';
 import { DEBUG_KEYS, KEYBOARD, START_HINT, TOUCH, keyLabel, keysLabel } from './controls';
 
 describe('controls', () => {
@@ -12,6 +13,18 @@ describe('controls', () => {
   it("names compare mode's keys (web/app.rs handles them in compare mode)", () => {
     const keys = DEBUG_KEYS.flatMap((c) => c.keys);
     for (const k of ['F7', 'F8']) expect(keys).toContain(k);
+  });
+
+  it("lists the spyglass with its key from the data, on no other control's key", () => {
+    const view = KEYBOARD.find((g) => g.title === 'View')?.controls ?? [];
+    const zoom = view.find((c) => c.action.startsWith('Spyglass'));
+    expect(zoom?.keys).toEqual([keyLabel(SPYGLASS.key)]);
+    expect(keyLabel('Backquote')).toBe('`');
+    for (const m of SPYGLASS.magnifications) expect(zoom?.when).toContain(`${String(m)}×`);
+    const others = KEYBOARD.flatMap((g) => g.controls)
+      .filter((c) => c !== zoom)
+      .flatMap((c) => c.keys);
+    expect(others).not.toContain(keyLabel(SPYGLASS.key));
   });
 
   it('lists each action once, with keys', () => {

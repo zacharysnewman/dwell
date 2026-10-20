@@ -45,14 +45,17 @@ pub type SessionId = u32;
 pub type TransportBinding = [u8; 32];
 
 const SNAPSHOT_EVERY: u32 = SIM_HZ / SNAPSHOT_HZ; // ticks
-const MAX_QUEUED_INPUTS: usize = 32; // hard cap per session (> a slow client's frame of inputs)
+/// Hard cap per session: above a slow client's frame of inputs (the client's MAX_TICKS_PER_FRAME,
+/// 60), which arrives at once.
+const MAX_QUEUED_INPUTS: usize = 96;
 const INPUT_BUFFER: usize = 2; // jitter buffer depth (ticks)
 /// Inputs queued beyond this for a whole window are skipped, to bound input latency. A window's
 /// low-water mark decides, not the queue at one tick: a client drawing a few frames a second sends
 /// a frame's ticks at once (up to the client's MAX_TICKS_PER_FRAME), and skipping that burst would
-/// drop inputs the client predicted (a correction every frame).
+/// drop inputs the client predicted (a correction every frame). The window is a second, as long as
+/// the slowest frame the client catches up, so it always holds the trough before a burst.
 const MAX_BUFFERED_INPUTS: usize = 6;
-const LATENCY_WINDOW_TICKS: u32 = 30;
+const LATENCY_WINDOW_TICKS: u32 = 60;
 const MAX_SEQ_AHEAD: u32 = 256; // inputs further ahead are rejected
 const INPUT_DATAGRAMS_PER_SECOND: u32 = 2 * SIM_HZ; // §11: SIM_HZ + redundancy
 const PREFETCH_CHUNKS: i32 = 2; // generated ahead around each player (collision reach + 1)
@@ -360,10 +363,15 @@ struct Session {
     last_knockback_seq: u32,
     rate_window_tick: u32,
     rate_window_count: u32,
-    edits: Vec<BlockEditRequest>, // applied at the start of the next step
+    edits: Vec<(u32, BlockEditRequest)>, // applied at the start of the next step, by edit number
     edit_credit: f64,
-    region_edits: Vec<RegionEdit>, // applied after the block edits, in order
-    region_credit: f64,            // cells
+    region_edits: Vec<(u32, RegionEdit)>, // applied after the block edits, in order
+    region_credit: f64,                   // cells
+    /// Edit requests (block and region) that have arrived, numbered from 1 (`EditAck`).
+    edit_seq: u32,
+    /// The last edit number acknowledged, and those refused since.
+    edit_acked: u32,
+    edit_refused: Vec<u32>,
 
     stats: SessionStats,
     // Terrain streaming.
@@ -413,6 +421,9 @@ impl Session {
             edit_credit: 0.0,
             region_edits: Vec::new(),
             region_credit: 0.0,
+            edit_seq: 0,
+            edit_acked: 0,
+            edit_refused: Vec::new(),
             stats: SessionStats::default(),
             chunk_mode: ChunkMode::AwaitingCheck,
             streamed: HashSet::default(),
@@ -951,18 +962,24 @@ impl Server {
                 };
                 self.send_lod_index(id); // §6.6: the modified sections, right after the check
             }
+            // Every edit gets the next number, applied or not: the client's prediction waits for
+            // its `EditAck` (§6.5).
             Message::BlockEditRequest(edit) => {
+                s.edit_seq += 1;
                 if s.edits.len() < MAX_QUEUED_EDITS {
-                    s.edits.push(edit);
+                    s.edits.push((s.edit_seq, edit));
                 } else {
                     s.stats.edits_rejected += 1;
+                    s.edit_refused.push(s.edit_seq);
                 }
             }
             Message::RegionEdit(edit) => {
+                s.edit_seq += 1;
                 if s.region_edits.len() < region_edit::MAX_QUEUED {
-                    s.region_edits.push(edit);
+                    s.region_edits.push((s.edit_seq, edit));
                 } else {
                     s.stats.region_edits_rejected += 1;
+                    s.edit_refused.push(s.edit_seq);
                 }
             }
             Message::ChunkResync(coords) => self.resync(id, &coords),
@@ -1590,9 +1607,10 @@ impl Server {
             let eye = handle.map(|h| self.eye_of(h));
             let s = self.sessions.get_mut(&id).expect("session");
             s.edit_credit = (s.edit_credit + EDITS_PER_TICK).min(EDIT_BURST);
-            for edit in std::mem::take(&mut s.edits) {
+            for (seq, edit) in std::mem::take(&mut s.edits) {
                 let Some(eye) = eye.filter(|_| may_edit && s.edit_credit >= 1.0) else {
                     s.stats.edits_rejected += 1;
+                    s.edit_refused.push(seq);
                     continue;
                 };
                 let outcome =
@@ -1600,6 +1618,7 @@ impl Server {
                 s.stats.last_edit_check = outcome.check;
                 if outcome.check != EditCheck::Ok {
                     s.stats.edits_rejected += 1;
+                    s.edit_refused.push(seq);
                     continue;
                 }
                 s.edit_credit -= 1.0;
@@ -1609,10 +1628,11 @@ impl Server {
             // Region edits (§6.5), after the block edits, in the order they arrived; each costs
             // its box's volume in cells, valid or not (validation reads the whole box).
             s.region_credit = (s.region_credit + REGION_CELLS_PER_TICK).min(REGION_BURST_CELLS);
-            for edit in std::mem::take(&mut s.region_edits) {
+            for (seq, edit) in std::mem::take(&mut s.region_edits) {
                 let cost = edit.volume() as f64;
                 let Some(eye) = eye.filter(|_| may_edit && s.region_credit >= cost) else {
                     s.stats.region_edits_rejected += 1;
+                    s.edit_refused.push(seq);
                     continue;
                 };
                 s.region_credit -= cost;
@@ -1620,6 +1640,7 @@ impl Server {
                 s.stats.last_region_check = outcome.check;
                 if outcome.check != RegionCheck::Ok {
                     s.stats.region_edits_rejected += 1;
+                    s.edit_refused.push(seq);
                     continue;
                 }
                 s.stats.region_edits_applied += 1;
@@ -1646,6 +1667,7 @@ impl Server {
             ..
         } = changes;
         if changed.is_empty() {
+            self.send_edit_acks();
             return;
         }
         for c in &changed {
@@ -1679,6 +1701,44 @@ impl Server {
                     chunks,
                 };
                 self.send_reliable(id, &Message::VoxelModification(m), Channel::World);
+            }
+        }
+        self.send_edit_acks();
+    }
+
+    /// Each session's `EditAck` for the edits that arrived since its last (all of them are
+    /// processed by now), after the tick's `VoxelModification` on the same channel, so a client
+    /// has the changes of the edits it is told are done (edit prediction, §6.5). A long list of
+    /// refusals goes in several acks.
+    fn send_edit_acks(&mut self) {
+        let ids: Vec<SessionId> = self
+            .sessions
+            .iter()
+            .filter(|(_, s)| s.joined() && s.edit_seq > s.edit_acked)
+            .map(|(id, _)| *id)
+            .collect();
+        for id in ids {
+            let s = self.sessions.get_mut(&id).expect("session");
+            let mut refused = std::mem::take(&mut s.edit_refused);
+            refused.sort_unstable();
+            let through = s.edit_seq;
+            s.edit_acked = through;
+            let mut acks: Vec<EditAck> = refused
+                .chunks(limits::MAX_EDIT_ACK_REJECTED)
+                .map(|part| EditAck {
+                    through: *part.last().expect("a chunk"),
+                    rejected: part.to_vec(),
+                })
+                .collect();
+            match acks.last_mut() {
+                Some(last) => last.through = through,
+                None => acks.push(EditAck {
+                    through,
+                    rejected: Vec::new(),
+                }),
+            }
+            for a in acks {
+                self.send_reliable(id, &Message::EditAck(a), Channel::World);
             }
         }
     }

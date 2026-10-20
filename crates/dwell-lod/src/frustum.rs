@@ -56,6 +56,11 @@ pub struct LodCamera {
     pub fov_y_deg: f64,
     pub aspect: f64,
     pub height_px: f64,
+    /// The spyglass (docs/SPYGLASS.md): how many times `fov_y_deg` is magnified (1: not zoomed),
+    /// and how many times finer the sections inside the view refine (1 to `magnification`). Outside
+    /// the view, detail is chosen for the unzoomed FOV, as without the spyglass.
+    pub magnification: f64,
+    pub detail_magnification: f64,
 }
 
 /// The drawing's field of view, aspect and height for LOD selection.
@@ -83,8 +88,11 @@ pub fn lod_viewport(setting_deg: f64, css_width: f64, css_height: f64) -> LodVie
 pub struct Frustum {
     pub camera: LodCamera,
     planes: [Vec3; 5],
-    /// Pixels per metre at 1 m distance: heightPx / (2 tan(fovY / 2)).
+    /// Pixels per metre at 1 m distance inside the view: heightPx / (2 tan(fovY / 2)) for the
+    /// unzoomed FOV, times the spyglass's detail magnification.
     pub pixels_per_radian: f64,
+    /// The same outside the view: the unzoomed FOV's (equal to `pixels_per_radian` unzoomed).
+    pub around_pixels_per_radian: f64,
 }
 
 impl Frustum {
@@ -100,6 +108,10 @@ impl Frustum {
         let r: Vec3 = [-yaw.cos(), 0.0, yaw.sin()];
         let u = cross(r, f);
         let half = (camera.fov_y_deg * std::f64::consts::PI / 360.0).tan();
+        let magnification = sane_magnification(camera.magnification);
+        let detail = sane_magnification(camera.detail_magnification).min(magnification);
+        // The unzoomed view's pixels per radian: the drawn FOV widened back by the magnification.
+        let around = camera.height_px / (2.0 * half * magnification);
         let ty = half * 1.05;
         let tx = ty * camera.aspect;
         let combine = |a: Vec3, sa: f64, b: Vec3, sb: f64| -> Vec3 {
@@ -118,7 +130,18 @@ impl Frustum {
                 combine(f, ty, u, -1.0),
                 f,
             ],
-            pixels_per_radian: camera.height_px / (2.0 * half),
+            pixels_per_radian: around * detail,
+            around_pixels_per_radian: around,
+        }
+    }
+
+    /// Pixels per metre at 1 m for the box [lo, hi]: inside the view the zoomed detail's, outside
+    /// it the unzoomed FOV's, so the spyglass refines only the narrow cone it shows.
+    pub fn pixels_per_radian_for(&self, lo: Vec3, hi: Vec3) -> f64 {
+        if self.pixels_per_radian > self.around_pixels_per_radian && self.intersects(lo, hi) {
+            self.pixels_per_radian
+        } else {
+            self.around_pixels_per_radian
         }
     }
 
@@ -136,6 +159,10 @@ impl Frustum {
     pub fn distance(&self, lo: Vec3, hi: Vec3) -> f64 {
         box_distance(self.camera.position, lo, hi)
     }
+}
+
+fn sane_magnification(m: f64) -> f64 {
+    if m.is_finite() { m.max(1.0) } else { 1.0 }
 }
 
 /// Distance from p to the box [lo, hi] (0 inside it).
@@ -187,9 +214,41 @@ mod tests {
             fov_y_deg: v.fov_y_deg,
             aspect: v.aspect,
             height_px: v.height_px,
+            magnification: 1.0,
+            detail_magnification: 1.0,
         });
         // A 1 m cell 1 km away covers under a CSS pixel there.
         assert!(cell.pixels_per_radian / 1000.0 < 1.0);
+    }
+
+    #[test]
+    fn the_spyglass_measures_pixels_at_its_magnification_inside_the_view_only() {
+        let cam = |fov: f64, m: f64, detail: f64| {
+            Frustum::new(LodCamera {
+                position: [0.0; 3],
+                yaw_deg: 0.0,
+                pitch_deg: 0.0,
+                fov_y_deg: fov,
+                aspect: 16.0 / 9.0,
+                height_px: 900.0,
+                magnification: m,
+                detail_magnification: detail,
+            })
+        };
+        let plain = cam(75.0, 1.0, 1.0);
+        let narrow = 2.0 * ((37.5f64.to_radians()).tan() / 8.0).atan().to_degrees();
+        let zoom = cam(narrow, 8.0, 8.0);
+        let ahead = ([-1.0, -1.0, 999.0], [1.0, 1.0, 1001.0]);
+        let behind = ([-1.0, -1.0, -1001.0], [1.0, 1.0, -999.0]);
+        let ppr = |f: &Frustum, b: ([f64; 3], [f64; 3])| f.pixels_per_radian_for(b.0, b.1);
+        assert!((ppr(&zoom, ahead) / ppr(&plain, ahead) - 8.0).abs() < 1e-9);
+        assert!((ppr(&zoom, behind) - ppr(&plain, behind)).abs() < 1e-9);
+        assert_eq!(ppr(&plain, ahead), ppr(&plain, behind));
+        // The detail stops at the boost, and never exceeds the magnification.
+        assert!((ppr(&cam(narrow, 8.0, 2.0), ahead) / ppr(&plain, ahead) - 2.0).abs() < 1e-9);
+        assert!((ppr(&cam(narrow, 8.0, 50.0), ahead) / ppr(&plain, ahead) - 8.0).abs() < 1e-9);
+        // The narrow FOV without its magnification refines everywhere (what the client must not do).
+        assert!(ppr(&cam(narrow, 1.0, 1.0), behind) > 7.9 * ppr(&plain, behind));
     }
 
     #[test]

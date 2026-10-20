@@ -113,6 +113,7 @@ pub struct ClimbState      { pub climbing: bool, pub ladder: Cell, pub velocity:
                              pub has_released: bool, pub released: Cell }
 pub struct SwimState       { pub swimming: bool, pub submerged: f32, pub velocity: Vec3 }  // Dwell addition
 pub struct FlyState        { pub flying: bool, pub velocity: Vec3 }                        // Dwell addition
+pub struct SprintSlideState { pub active: bool, pub cooldown_ticks: u16 }                  // Dwell addition (§6.9)
 pub struct PlatformState   { pub ground: GroundRef, pub ground_velocity: Vec3,
                              pub base_velocity: Vec3, pub yaw_delta: f32 }
 
@@ -124,11 +125,12 @@ pub struct PlayerController {
     pub horizontal: HorizontalLayer, pub vertical: VerticalLayer,
     pub jump: JumpState, pub crouching: bool,
     pub climb: ClimbState, pub swim: SwimState, pub fly: FlyState,
+    pub sprint_slide: SprintSlideState,
     pub platform: PlatformState,
     pub target_velocity: Vec3,
     pub face: i8,          // +1 face A, −1 face B (§11)
     pub events: u32,       // events:: bits raised this tick (JUMPED, LANDED, CROUCH_CHANGED,
-    pub landed_speed: f32, //   CLIMB/SWIM/FLY_STARTED/ENDED); LANDED's impact speed
+    pub landed_speed: f32, //   CLIMB/SWIM/FLY/SPRINT_SLIDE_STARTED/ENDED); LANDED's impact speed
 }
 ```
 
@@ -156,14 +158,14 @@ The server tick (ARCHITECTURE §4.2) runs, for every player, **before** `Physics
 | 2 | `step_probe` | `PPCProbeSystem` | Ground ring (16 + centre), ceiling ring, 4 axis wall rays via `VoxelQuery` + moving bodies (§5) |
 | 3 | `step_platform` | `PPCPlatformSystem` | Velocity of the ground under the player (`v + ω × r` for Tier 1 bodies; zero for terrain; zero for players unless `carried_by_characters`) |
 | 4 | `step_fly` | — (Dwell) | Exclusive creative-flight layer while `fly` is held (§6.7) |
-| 5 | `step_crouch` | `PPCCrouchSystem` | Hold-to-crouch; shape swap; feet planted when grounded, head kept in the air; stand-up overlap test |
+| 5 | `step_crouch` | `PPCCrouchSystem` | Hold-to-crouch; shape swap; feet planted when grounded, head kept in the air; stand-up overlap test; the sprint slide's cooldown and start (§6.9) |
 | 6 | `step_jump` | `PPCJumpSystem` | Buffer + coyote (in ticks); `accumulated_y = max(accumulated_y, jump_v + platform_y)`; no coyote after a real jump; auto-jump (§6.2) |
 | 7 | `step_climb` | `PPCClimbSystem` | Exclusive layer on climbable voxels (§6.3); not while flying |
 | 8 | `step_swim` | — (Dwell) | Exclusive layer in water voxels (§6.4) and in the flip band (§11); not while climbing or flying |
-| 9 | `step_horizontal` | `PPCMovementLayerSystem` | Absorb external; on ground steeper than 44° the slide (§6.8); else accel/decel/reverse in the platform's frame; air control; step-up; edge guard |
+| 9 | `step_horizontal` | `PPCMovementLayerSystem` | Absorb external; on ground steeper than 44° the slide (§6.8); else during a sprint slide the sprint slide (§6.9); else accel/decel/reverse in the platform's frame; air control; step-up; edge guard |
 | 10 | `step_vertical` | `PPCVerticalLayerSystem` | Gravity; walk-off keeps platform Y; ceiling cancel; launch detection; ground following + snap |
 | 11 | `step_aggregate` | `PPCAggregateSystem` | `target = exclusive ? layer.velocity : horizontal.contribution + (0, vertical.target_y, 0)`; set the body's linear velocity |
-| 12 | `step_state` | `PPCStateSystem` | Priority: Climbing > Swimming > Flying > Sliding (§6.8) > Crouching > Jumping/Falling > Running/Walking/Idle |
+| 12 | `step_state` | `PPCStateSystem` | Priority: Climbing > Swimming > Flying > Sliding (§6.8, §6.9) > Crouching > Jumping/Falling > Running/Walking/Idle |
 | — | *`Physics::step(1/60)`* | Quantum physics step | Contacts resolved; deviations are absorbed next tick |
 
 Each pass's behaviour is exactly the PPC Quantum system's, including its fixes over the Unity
@@ -521,6 +523,62 @@ data (`PlayerControllerConfig::slide`, §7).
   rested on; swimming and climbing override sliding; and a face-B player slides down the stairs
   toward the midplane (world frame). The suite also runs far from the origin and on face B.
 
+### 6.9 The sprint slide (Dwell addition) **[built]**
+Owner (2026-10-19): *"when sprinting, if you crouch, you'll continue to slide forward (could reuse
+some existing 'sliding' mechanics). You should still be in 'crouch' (height etc.) while sliding."*
+Fortnite-style. The numbers below are defaults chosen for this, all data
+(`PlayerControllerConfig::sprint_slide`, §7); the owner may retune them.
+- **Start.** On the tick crouch is **pressed** (the crouch pass's press, so the player crouches the
+  same tick), grounded, run held, the horizontal speed (`current + external`, relative to the
+  ground's carry) at least `min_start_speed` (6.5 m/s: above the walk speed, so a walk, or a sprint
+  not yet up to speed, only crouches), not climbing, swimming or flying, and the cooldown over.
+  The speed gains `start_boost` (1.5 m/s; never above `max_speed` unless already faster), all of it
+  the player's own `current`. `SPRINT_SLIDE_STARTED` is raised.
+- **The crouch.** The slide is a crouch: the crouch capsule (0.9 m) and the crouch eye height
+  throughout; crouch must stay held. Releasing it ends the slide and stands up only where the
+  standing capsule fits, as crouch always does, so under a low ceiling the player stays crouched
+  and crouch-walks out.
+- **Motion** (`sprint_slide()` in `controller.rs`, in the horizontal pass in place of walking). The
+  slide keeps its speed in its direction of travel. Friction takes `friction` (6 m/s²); the ground's
+  horizontal tilt along the slide (`under_normal`'s horizontal part · the direction, > 0 downhill)
+  adds `gravity × slope_gravity × tilt` (`slope_gravity` 1). On flat ground a slide from a sprint
+  (8 → 9.5 m/s) lasts 1.3 s and ~7 m; on a 15° slope downhill gravity (5.2 m/s²) out-pulls friction
+  and the slide speeds up to `max_speed` (14 m/s) and goes on while the slope does; uphill it lasts
+  ~0.7 s. It steps up half steps as walking does (the nudge paid the same way, §4). On ground
+  steeper than `slide.min_angle` the steep slide (§6.8) moves the player instead; the sprint slide
+  stays on and carries on from that momentum where the ground is gentle again.
+- **Steering.** Move input (camera-relative, as walking) turns the slide's direction toward it at
+  up to `steer_rate` (90 °/s), keeping the speed; there is no braking. Angles come from `libm`
+  (`atan2f`, `sinf`, `cosf`), so native and WASM agree.
+- **End.** At or below the crouch speed (1.6 m/s); on releasing crouch; on leaving the ground (a
+  jump, or off an edge); against a wall (the body moved slower than the crouch speed though last
+  tick drove it faster, and no step-up lifted it: the slide ends with the body's real velocity, so no
+  momentum is stored against the wall); or when a ladder, water or flight takes over. Ending splits
+  the velocity as the steep slide does (§6.8): the tick's walking speed is `current`, the rest
+  `external`, which ground friction removes on the ground and nothing removes in the air.
+  `SPRINT_SLIDE_ENDED` is raised and the **cooldown** starts: `cooldown_ticks` (30, 0.5 s) before
+  another slide can start, so release-and-press does not chain slides.
+- **Jumping out.** A jump is a normal jump from the slide; the slide ends on leaving the ground
+  with its speed kept in the air (a 0.7 s jump from a slide covers ~5.5 m, against ~1 m from a
+  crouch-walk).
+- **State.** `State::Sliding` while the slide lasts (the same state as §6.8): the slide's scrape
+  sound (docs/AUDIO.md §5) and the motion effects' sliding gain (docs/MOTION_EFFECTS.md: 1, against
+  crouching's 0.5) follow from it, for other players too.
+- **Netcode.** The slide's state is resumable and on the wire (§8.4: `slideFlags.active` and the
+  cooldown in ticks, capped at 255; protocol v15); the predictor compares both with the server's
+  and replays on a difference. Without latency the netcode suite's sprint-slide run replays only at
+  the spawn; at 150 ms RTT, 20 ms jitter and 5 % loss there are no snaps (corrections ≤ 0.25 m:
+  a tick or two of slide motion when jitter starves the server's input buffer).
+- **Tests:** `tests/sprint_slide.rs` (10; all but the walk guard fail without the slide): a slide
+  from a sprint with the boost; no slide from a walk or before the sprint is up to speed; friction
+  to the crouch speed in the expected time, then crouch-walking; longer downhill and shorter uphill
+  than on flat ground (15° Tier 1 slopes); the crouch capsule held; releasing under a low ceiling
+  stays crouched, standing once clear; a jump out keeps the momentum; the cooldown; limited
+  steering; a wall stops it. `tests/predictor.rs` resumes a slide and a cooldown from a snapshot
+  alone (fails without the wire fields: 51 replays); `dwell-sim` `tests/netcode.rs` runs two
+  clients, one sliding round a square (exact without latency, no snaps when lossy). The suite also
+  runs far from the origin and on face B.
+
 ## 7. Configuration
 
 `PlayerControllerConfig` lives in `crates/dwell-physics/src/config.rs` — both sides compile the
@@ -564,6 +622,9 @@ PPC default for voxels.
 | | `steering` / `steer_speed` | 0.4 × `acceleration` / 5 m/s | — | Across the slope |
 | | `brake` / `brake_deceleration` / `uphill_deceleration` | 0.6 / 10 m/s² / 60 m/s² | — | Up-slope input lowers the terminal speed by up to 60 %; momentum up a steep face dies fast |
 | | `crouch_terminal_factor` / `crouch_friction` | 1.15 / 0.2 | — | A crouched slide |
+| `sprint_slide` ◆ | `min_start_speed` / `start_boost` / `max_speed` | 6.5 m/s / 1.5 m/s / 14 m/s | — | Dwell addition (§6.9): crouch while sprinting; horizontal speeds |
+| | `friction` / `slope_gravity` | 6 m/s² / 1 | — | Deceleration; `gravity × slope_gravity × tilt` along the slide |
+| | `steer_rate` / `cooldown_ticks` | 90 °/s / 30 ticks (0.5 s, at most 255: the wire's `u8`) | — | Turning toward the move input; before another slide |
 | `damage` ◆ | `fall_damage_min_speed` / `fall_damage_per_speed` | 12 m/s / 8 per m/s | — | From the `LANDED` event's impact speed |
 | | `crush_speed` / `crush_ticks` | 4 m/s / 6 | — | Phase 20 |
 | `advanced` | `step_probe_distance` / `probe_ring_radius` / `wall_check_distance` | 0.01 m / 0.9 / 0.16 m | same | |
@@ -605,15 +666,16 @@ Owned by the `Predictor` (the same `Physics` settings as the server):
 - **Server** (`dwell-sim`): inputs queue per session ordered by `inputSeq` (§11 validation; see
   ARCHITECTURE §8.3). A **jitter buffer** consumes one input per tick once 2 are queued; when it
   runs dry the last input repeats and the buffer re-primes; when the queue stays above 6 inputs for
-  a whole 30-tick window (its low-water mark), the excess is skipped to bound input latency (a
-  slow client's frame of inputs arrives at once and is not skipped; at most 32 are queued). The
-  client catches up at most 15 ticks a frame (250 ms; `MAX_TICKS_PER_FRAME`), so a device drawing
-  4 fps or more keeps the server's time: one that dropped time would predict fewer ticks than the
-  server simulates, the repeated inputs walking it further than the prediction. The snapshot reports the queue length (`input_buffer`); the client nudges its tick rate
+  a whole 60-tick window (its low-water mark), the excess is skipped to bound input latency (a
+  slow client's frame of inputs arrives at once and is not skipped; at most 96 are queued). The
+  client catches up at most 60 ticks a frame (1 s; `MAX_TICKS_PER_FRAME`), so a device drawing
+  1 fps or more keeps the server's time: one that dropped time would predict fewer ticks than the
+  server simulates, the repeated inputs walking it further than the prediction (or a held jump
+  flying and landing on the server while the client predicted one tick of it). The snapshot reports the queue length (`input_buffer`); the client nudges its tick rate
   ±2 % to keep it between 1 and 4 (clock drift between client and server otherwise starves or
   floods it).
 - **Snapshot (20 Hz):** compared with the stored entry for `ack_input_seq`: position within 1 cm,
-  velocity within 5 cm/s, controller flags equal, external velocity within 5 cm/s → nothing to do
+  velocity within 5 cm/s, controller flags and the sprint slide's state (§6.9) equal, external velocity within 5 cm/s → nothing to do
   (the common case). Otherwise the server state is restored (resumable controller state from §8.4
   over the stored entry, which supplies the input) and every unacknowledged input is replayed
   (pipeline + prediction-world step).
@@ -642,6 +704,9 @@ simulated links, two clients; Release):
 - Sliding (§6.8; two clients, one sliding off steep stairs and steering, the other running into
   them): without latency no replay but the spawn's; at 150 ms RTT, 20 ms jitter and 5 % loss no
   snaps, ack error p95 < 1 µm, corrections ≤ 0.35 m (one or two ticks of slide motion).
+- Sprint slide (§6.9; two clients, one sprinting round a square and sliding each side, with turns
+  and jumps out): without latency one replay (the spawn); at 150 ms RTT, 20 ms jitter and 5 % loss
+  no snaps, ack error p95 ~1 µm, corrections ≤ 0.25 m.
 - Input takes effect on the next predicted tick.
 
 ### 8.3 Divergence budget **[built]**
@@ -661,11 +726,13 @@ velocities and states bit-identical over all 600 ticks, so no divergence eats in
 - The local player's snapshot block carries the body state (capsule centre `f64×3`, velocity
   `f32`), flags, health, `State`, `input_buffer`, `last_knockback_seq`, and the controller state
   needed to resume simulation exactly (`ControllerState`, `to_net` / `from_net` in `net.rs`;
-  47 bytes, +12 while climbing, +8 after letting go of a ladder): flags (grounded, jumping,
+  49 bytes, +12 while climbing, +8 after letting go of a ladder): flags (grounded, jumping,
   crouching, climbing, hasReleased, swimming, flying, faceB); horizontal `current`, `external`, and
   `contribution` (x, z); vertical `accumulated_y`, `platform_y`, `target_y`; the ground's vertical
   velocity; the ground reference (kind + player id; Tier 1 grounds go on the wire with Phase 20);
-  jump buffer and coyote ticks; step grace; ladder and released cells. Per-tick scratch (inputs,
+  jump buffer and coyote ticks; step grace; the sprint slide (§6.9: `slideFlags` — `active` — and
+  the cooldown in ticks, `u8`; protocol v15: the controller flags byte was full); ladder and
+  released cells. Per-tick scratch (inputs,
   events, probe results, climb, swim and fly velocities) is recomputed.
 - Remote players receive only feet position (`i32×3` at 1/256 m, `posfix`), velocity (`f16`), view
   angles, `State`, and flags.
@@ -750,7 +817,7 @@ launch-pad knockback test is a server-issued knockback.
 | Phase6Climb | `platform_climb_swim.rs`: ladder columns: grab, climb, look-down reversal, strafe, jump-off, climb over the top |
 | CharacterStacking / GroundedConsistency / StepSmoothness | `scenario.rs`: the same scenarios on voxel geometry (standing on heads, half-step stairs, stair corners, ledges) |
 | GoldenTrace | `scenario.rs`: the five-player scenario is identical across repeated runs and matches `tests/golden/scenario.trace` bit for bit in the origin frame (natively and under `wasm32-wasip1`, §8.3); far from the origin and on face B every state must match and positions stay within 1 mm. Re-record with `DWELL_UPDATE_GOLDEN=1` (origin frame only); re-recorded on Rapier in Phase 24 |
-| — (Dwell) | Swim enter/float/dive/exit and shallow water (`platform_climb_swim.rs`); creative flight (`flight.rs`: hover, rise/sink/move, speed growing with height, the terrain-band cap, no ceiling (out through the build sphere), the speed level, flying round the rim to face B, a fast dive stopping on the ground); sliding on steep ground (`slide.rs`, §6.8); auto-jump, edge guard, doorways, crawlspaces, block-under-feet removal, same-tick collision with a placed block, chunk seams (`scenario.rs`); voxel ray casts and flooded cells (`voxel_query.rs`); the bifacial controller (`bifacial.rs`) and Tier 1 bodies across the midplane (`tier1_bifacial.rs`); the predictor against an in-process server (`tests/predictor.rs`: no replays without surprises, knockback replays, the render offset decaying, death, remote proxies). Networked players (`crates/dwell-sim/tests/netcode.rs`, the `NetSim` harness: the real server and per-client predictors over simulated links) — input validation and rate limits, fall damage, death and respawn on every client, reconciliation under latency, jitter and loss, knockback replay, player bumps, block edits, sliding (exact without latency, no snaps at 150 ms RTT), the server's flight policy and fast flight. Later phases: crush and push-force cap (Phase 20) |
+| — (Dwell) | Swim enter/float/dive/exit and shallow water (`platform_climb_swim.rs`); creative flight (`flight.rs`: hover, rise/sink/move, speed growing with height, the terrain-band cap, no ceiling (out through the build sphere), the speed level, flying round the rim to face B, a fast dive stopping on the ground); sliding on steep ground (`slide.rs`, §6.8); the sprint slide (`sprint_slide.rs`, §6.9); auto-jump, edge guard, doorways, crawlspaces, block-under-feet removal, same-tick collision with a placed block, chunk seams (`scenario.rs`); voxel ray casts and flooded cells (`voxel_query.rs`); the bifacial controller (`bifacial.rs`) and Tier 1 bodies across the midplane (`tier1_bifacial.rs`); the predictor against an in-process server (`tests/predictor.rs`: no replays without surprises, knockback replays, the render offset decaying, death, remote proxies, a sprint slide and its cooldown resumed from a snapshot). Networked players (`crates/dwell-sim/tests/netcode.rs`, the `NetSim` harness: the real server and per-client predictors over simulated links) — input validation and rate limits, fall damage, death and respawn on every client, reconciliation under latency, jitter and loss, knockback replay, player bumps, block edits, sliding and the sprint slide (exact without latency, no snaps at 150 ms RTT), the server's flight policy and fast flight. Later phases: crush and push-force cap (Phase 20) |
 
 Performance gate: 64 players' controller passes (excluding the physics step) under 1 ms/tick —
 measured at ~0.48 ms in a Release build with `enhanced-determinism` on, ~0.51 ms ~8,000 km from the

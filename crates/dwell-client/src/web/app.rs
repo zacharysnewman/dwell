@@ -257,6 +257,8 @@ struct Inner {
     menu_open: bool,
     /// The Field of view setting (degrees, vertical).
     fov_setting: f64,
+    /// The browser asks for reduced motion (the spyglass zooms at once).
+    reduced_motion: bool,
 }
 
 fn shell_event(kind: &str, value: impl Into<JsValue>) -> JsValue {
@@ -395,6 +397,7 @@ impl Client {
             motion: Default::default(),
             menu_open: false,
             fov_setting: dwell_lod::frustum::VERTICAL_FOV,
+            reduced_motion: false,
         };
         Ok(Client {
             inner: Rc::new(RefCell::new(inner)),
@@ -503,6 +506,13 @@ impl Client {
         }
         if let (Some(game), Some(session)) = (&mut s.game, &mut s.session) {
             while let Some((m, bytes)) = session.next_game() {
+                // An edit ack names the session's numbers: the game's ids come from the session,
+                // in order with the modifications before it (edit prediction, §6.5).
+                if let dwell_protocol::Message::EditAck(a) = &m {
+                    let done = session.edit_results(a);
+                    game.on_edit_results(&done);
+                    continue;
+                }
                 game.on_game_message(m, bytes.len(), now_ms);
             }
             let stats = session.stats();
@@ -510,6 +520,7 @@ impl Client {
             game.motion_settings = s.motion;
             game.menu_open = s.menu_open;
             game.fov_setting = s.fov_setting;
+            game.reduced_motion = s.reduced_motion;
             let touch = s.touch_used.then_some(s.touch.state);
             let perf = web_sys::window().and_then(|w| w.performance());
             let mut clock = || perf.as_ref().map_or(0.0, |p| p.now());
@@ -518,8 +529,17 @@ impl Client {
                 match out {
                     Send::Control(m) => session.send_control(&m),
                     Send::Datagram(m) => session.send_game_datagram(&m),
+                    Send::Edit(m, id) => {
+                        session.send_edit(&m, id);
+                    }
                 }
             }
+            let dropped: Vec<(u32, bool)> = session
+                .take_dropped_edits()
+                .into_iter()
+                .map(|id| (id, true))
+                .collect();
+            game.on_edit_results(&dropped);
         }
         telemetry::span("net", || s.pump_network(now_ms));
         // The clouds drift by the world's clock once the server's ticks have arrived.
@@ -684,6 +704,21 @@ impl Client {
             }
             return true;
         }
+        // The spyglass (docs/SPYGLASS.md): its key, while playing (the pointer locked).
+        if s.input.pointer_locked
+            && dwell_look::spyglass::is_spyglass_key(
+                &dwell_look::spyglass::SPYGLASS,
+                code,
+                ctrl,
+                meta,
+            )
+        {
+            if !repeat && let Some(g) = s.game.as_mut() {
+                g.spyglass.toggle(&dwell_look::spyglass::SPYGLASS);
+                g.sound(dwell_game::sound::SoundKind::Tool);
+            }
+            return true;
+        }
         let k = s.input.key_down(code, repeat, ctrl, meta);
         for e in k.events {
             s.on_input_event(e, time_stamp_ms);
@@ -707,7 +742,13 @@ impl Client {
     }
     #[wasm_bindgen(js_name = mouseMove)]
     pub fn mouse_move(&self, dx: f64, dy: f64) {
-        self.inner.borrow_mut().input.mouse_move(dx, dy);
+        let mut s = self.inner.borrow_mut();
+        // Zoomed, the view turns as many pixels per movement as unzoomed (docs/SPYGLASS.md).
+        let k = s
+            .game
+            .as_ref()
+            .map_or(1.0, |g| g.spyglass_view().look_scale);
+        s.input.mouse_move(dx * k, dy * k);
     }
     /// A `mousedown`: `alt` is Alt (⌥) held. With the brush tool on, a middle or Alt click picks
     /// the replace target (BRUSHES.md).
@@ -725,9 +766,20 @@ impl Client {
             s.edit(action, now_ms);
         }
     }
-    /// A `wheel` event: the hotbar, or with Alt held and the brush tool on, the brush's size.
+    /// A `wheel` event: the hotbar, or with Alt held and the brush tool on, the brush's size, or
+    /// while the spyglass is zoomed its steps (up zooms in; docs/SPYGLASS.md).
     pub fn wheel(&self, delta_y: f64, alt: bool) {
         let mut s = self.inner.borrow_mut();
+        if !alt
+            && let Some(step) = s.input.wheel(delta_y)
+            && let Some(g) = &mut s.game
+            && g.spyglass.on()
+        {
+            if g.spyglass.cycle(-step, &dwell_look::spyglass::SPYGLASS) {
+                g.sound(dwell_game::sound::SoundKind::Tool);
+            }
+            return;
+        }
         if let Some(step) = s.input.wheel(delta_y)
             && alt
             && let Some(g) = &mut s.game
@@ -1145,6 +1197,20 @@ impl Client {
     pub fn set_fov(&self, degrees: f64) {
         self.inner.borrow_mut().fov_setting = dwell_lod::sanitize_fov_setting(degrees);
     }
+    /// Whether the browser asks for reduced motion: the spyglass then zooms without easing.
+    #[wasm_bindgen(js_name = setReducedMotion)]
+    pub fn set_reduced_motion(&self, reduced: bool) {
+        self.inner.borrow_mut().reduced_motion = reduced;
+    }
+    /// Zooms the spyglass to `step` (0 the least zoom) or out (docs/SPYGLASS.md; dev tools:
+    /// `__dwell.spyglass`). False before the game has started.
+    pub fn spyglass(&self, on: bool, step: u32) -> bool {
+        let mut s = self.inner.borrow_mut();
+        let Some(g) = &mut s.game else { return false };
+        g.spyglass
+            .set(on, step as usize, &dwell_look::spyglass::SPYGLASS);
+        true
+    }
     /// The game menu opened or closed: the motion effects hold still while it is open.
     #[wasm_bindgen(js_name = setMenuOpen)]
     pub fn set_menu_open(&self, open: bool) {
@@ -1430,6 +1496,25 @@ impl Client {
                 None => set(&o, "brush", JsValue::NULL),
             }
             set(&o, "brushes", g.brush.available);
+            // The spyglass's vignette (docs/SPYGLASS.md): null while unzoomed.
+            let v = g.spyglass_view();
+            if v.vignette > 0.0 {
+                let t = &dwell_look::spyglass::SPYGLASS.vignette;
+                let z = Object::new();
+                set(&z, "amount", v.vignette);
+                set(&z, "magnification", v.magnification);
+                set(&z, "innerRadius", t.inner_radius);
+                set(&z, "outerRadius", t.outer_radius);
+                set(&z, "opacity", t.opacity);
+                let rgb = Array::new();
+                for c in t.color {
+                    rgb.push(&JsValue::from(c));
+                }
+                set(&z, "color", rgb);
+                set(&o, "spyglass", z);
+            } else {
+                set(&o, "spyglass", JsValue::NULL);
+            }
         }
         o.into()
     }
@@ -1523,6 +1608,9 @@ impl Client {
             }),
         );
         set(&o, "flying", d.flying);
+        // The frame's vertical FOV and the spyglass's magnification (docs/SPYGLASS.md).
+        set(&o, "fov", g.frame_fov());
+        set(&o, "spyglass", g.spyglass_view().magnification);
         o.into()
     }
 

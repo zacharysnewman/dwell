@@ -126,7 +126,7 @@ tick and each remote player's interpolated state each frame, and turns changes i
 | `enter` / `exit` | the body entering / leaving water | the water | from speed |
 | `crouch_on` / `crouch_off` | the crouch flag changes | — | 1 |
 | `sprint` | entering Running | — | 1 |
-| `slide` | starts a slide's voice: Sliding at ≥ `speed[0]` (0.5 m/s), or onto another surface mid-slide | under the feet | from speed (full at 14 m/s) |
+| `slide` | starts a slide's voice: Sliding (steep ground, PLAYER_CONTROLLER.md §6.8, or a sprint slide, §6.9, which also plays the crouch sound as it starts) at ≥ `speed[0]` (0.5 m/s), or onto another surface mid-slide | under the feet | from speed (full at 14 m/s) |
 | `slide_speed` | the slide's speed changed (at most every 50 ms, by ≥ 0.02); 0 while paused | — | from speed |
 | `slide_end` | not sliding for 0.15 s (`SLIDE_HOLD`: a flicker at a ramp's foot keeps the voice), a teleport, or the player gone from view | the slide's surface (`slide_stop`) | the speed it slid at |
 | `rise` / `dive` | flying, vertical speed passes `speed[0]` | — | from speed |

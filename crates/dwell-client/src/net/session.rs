@@ -100,6 +100,14 @@ pub struct Session {
     pending: Option<Welcome>,
     /// A definitions hash the player said not to ask about again for this server.
     trusted_registry: Option<u64>,
+    /// The game's ids of the edits sent and not yet acknowledged, in the order sent: the server
+    /// numbers them 1, 2, … in that order (`EditAck`, edit prediction).
+    sent_edits: VecDeque<u32>,
+    /// The server's number of the last edit acknowledged.
+    edits_acked: u32,
+    /// The game's ids of edits that were never sent (not joined, or naming a state the server
+    /// lacks): refused here.
+    dropped_edits: Vec<u32>,
 }
 
 impl Session {
@@ -130,6 +138,9 @@ impl Session {
             mapping: None,
             pending: None,
             trusted_registry: None,
+            sent_edits: VecDeque::new(),
+            edits_acked: 0,
+            dropped_edits: Vec::new(),
         }
     }
 
@@ -284,6 +295,50 @@ impl Session {
         }
     }
 
+    /// Sends an edit (a `BlockEditRequest` or `RegionEdit`) the game knows by `id`, for its
+    /// prediction: [`edit_results`](Self::edit_results) reports it when the server's `EditAck`
+    /// covers it. An edit that can't be sent is refused at once
+    /// ([`take_dropped_edits`](Self::take_dropped_edits)). True if it was sent.
+    pub fn send_edit(&mut self, m: &Message, id: u32) -> bool {
+        let mapped = self.joined().then(|| self.to_server(m)).flatten();
+        match mapped {
+            Some(m) => {
+                self.send(&m);
+                self.sent_edits.push_back(id);
+                true
+            }
+            None => {
+                if self.joined() {
+                    self.stats.edits_unmapped += 1;
+                    self.changed = true;
+                }
+                self.dropped_edits.push(id);
+                false
+            }
+        }
+    }
+
+    /// The game's ids of the edits an `EditAck` covers, each with whether the server refused it,
+    /// in the order they were sent. Call it as the ack comes out of [`next_game`](Self::next_game),
+    /// after the modifications before it.
+    pub fn edit_results(&mut self, ack: &EditAck) -> Vec<(u32, bool)> {
+        let mut out = Vec::new();
+        while self.edits_acked < ack.through {
+            let Some(id) = self.sent_edits.pop_front() else {
+                break;
+            };
+            self.edits_acked += 1;
+            out.push((id, ack.rejected.binary_search(&self.edits_acked).is_ok()));
+        }
+        self.edits_acked = self.edits_acked.max(ack.through);
+        out
+    }
+
+    /// The game's ids of edits refused without being sent.
+    pub fn take_dropped_edits(&mut self) -> Vec<u32> {
+        std::mem::take(&mut self.dropped_edits)
+    }
+
     /// An outgoing message with its state ids in the server's terms (ADR 0038); `None` if it
     /// names a state the server does not have (a client-only block), which is not sent.
     fn to_server(&self, m: &Message) -> Option<Message> {
@@ -422,6 +477,7 @@ impl Session {
                     | Message::ChunkData(_)
                     | Message::ChunkUnload(_)
                     | Message::VoxelModification(_)
+                    | Message::EditAck(_)
                     | Message::LodIndex(_)
                     | Message::LodIndexUpdate(_)
                     | Message::LodData(_)
@@ -858,6 +914,51 @@ mod tests {
             material: 0,
         }));
         assert_eq!(sent(&s.take_out()).len(), 1);
+    }
+
+    #[test]
+    fn edit_acks_name_the_games_edits_in_the_order_sent_and_unsent_ones_are_refused() {
+        use dwell_blocks::require;
+        let (payload, _) = ladderless_registry();
+        let mut s = joined_with(&payload);
+        let place = |material| {
+            Message::BlockEditRequest(BlockEditRequest {
+                action: BlockEditAction::Place,
+                cell: [1, 2, 3],
+                face: 2,
+                material,
+            })
+        };
+        // The game's ids need not be in order (a stroke's queued edits were numbered first).
+        assert!(s.send_edit(&place(require("dwell:sand")), 40));
+        assert!(
+            !s.send_edit(&place(require("dwell:ladder")), 41),
+            "client-only: not sent"
+        );
+        assert!(s.send_edit(&place(require("dwell:stone")), 7));
+        assert!(s.send_edit(&place(require("dwell:dirt")), 8));
+        assert_eq!(sent(&s.take_out()).len(), 3);
+        assert_eq!(s.take_dropped_edits(), vec![41]);
+        // The acks reach the game through its message queue, in order with the modifications.
+        s.on_reliable(
+            Channel::World,
+            &Message::EditAck(EditAck {
+                through: 2,
+                rejected: vec![2],
+            })
+            .encode(),
+            1000.0,
+        );
+        let Some((Message::EditAck(a), _)) = s.next_game() else {
+            panic!("queued for the game")
+        };
+        assert_eq!(s.edit_results(&a), vec![(40, false), (7, true)]);
+        let a = EditAck {
+            through: 3,
+            rejected: vec![],
+        };
+        assert_eq!(s.edit_results(&a), vec![(8, false)]);
+        assert!(s.edit_results(&a).is_empty(), "an ack again names nothing");
     }
 
     #[test]
