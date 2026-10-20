@@ -13,6 +13,7 @@ use dwell_blocks::StateId;
 use dwell_game::block_interaction::{BlockInteraction, BlockTarget, TargetSource, view_direction};
 use dwell_game::brush_tool::{BrushAction, BrushOutline, BrushPanel, BrushTool};
 use dwell_game::chunk_stream::{ChunkMessage, ChunkStreamer, Coord, StreamStats, TerrainView};
+use dwell_game::edit_prediction::EditPredictor;
 use dwell_game::eye::{EyeCamera, EyeState};
 use dwell_game::face_flip::FaceFlip;
 use dwell_game::gate::prediction_may_run;
@@ -190,6 +191,9 @@ impl<S: Scene> LodView<SectionTerrain> for View<S> {
 pub enum Send {
     Control(Message),
     Datagram(Message),
+    /// An edit (`BlockEditRequest`, `RegionEdit`) with its prediction id: the session reports it
+    /// done when the server's `EditAck` covers it (`Session::send_edit`, `Game::on_edit_results`).
+    Edit(Message, u32),
 }
 
 pub type Outbox = Rc<RefCell<Vec<Send>>>;
@@ -415,6 +419,8 @@ pub struct Game<S: Scene> {
     pub region: RegionTools,
     /// VoxelSniper-style brushes (BRUSHES.md); `available` where the server announces them.
     pub brush: BrushTool,
+    /// Every edit shown at once and reconciled with the server's acks (§6.5).
+    pub prediction: EditPredictor,
     /// The eye the crosshair targets from (None while not playing).
     target_eye: Option<[f64; 3]>,
     lod: Option<LodSystem>,
@@ -533,6 +539,7 @@ impl<S: Scene> Game<S> {
             interaction: BlockInteraction::new(),
             region: RegionTools::new(),
             brush: BrushTool::new(),
+            prediction: EditPredictor::new(),
             target_eye: None,
             lod: None,
             viewport_css: (1280.0, 720.0),
@@ -742,9 +749,20 @@ impl<S: Scene> Game<S> {
     /// Handles a snapshot, player event, chunk or LOD message from the session.
     pub fn on_game_message(&mut self, m: Message, byte_len: usize, now_ms: f64) {
         match m {
-            Message::ChunkData(d) => self.streamer.on_chunk_data(ChunkMessage::from(d)),
-            Message::ChunkUnload(u) => self.streamer.on_chunk_unload(&u.coords),
-            Message::VoxelModification(v) => {
+            Message::ChunkData(d) => {
+                // The server's data for the chunk: predictions in it are its business now.
+                self.prediction.forget_chunk(d.coord);
+                self.streamer.on_chunk_data(ChunkMessage::from(d))
+            }
+            Message::ChunkUnload(u) => {
+                for &c in &u.coords {
+                    self.prediction.forget_chunk(c);
+                }
+                self.streamer.on_chunk_unload(&u.coords)
+            }
+            Message::VoxelModification(mut v) => {
+                // Cells showing a prediction keep it until their edits' ack (§6.5).
+                self.prediction.filter(&mut v.chunks);
                 if v.reason == dwell_protocol::VoxelModificationReason::Edit {
                     let changes = self.cell_changes(&v.chunks);
                     self.edit_sounds.changes(&changes, now_ms, &mut self.sounds);
@@ -933,8 +951,8 @@ impl<S: Scene> Game<S> {
         }
     }
 
-    /// Breaks or places at the crosshair (§6.5): only while alive and playing. Sounds at once
-    /// (the client does not predict edits); nothing targeted sounds a refusal.
+    /// Breaks or places at the crosshair (§6.5): only while alive and playing. Shown and sounded at
+    /// once (edit prediction); nothing targeted sounds a refusal.
     pub fn edit(&mut self, action: EditAction, now_ms: f64) -> bool {
         if self.dead || !self.terrain_ready() {
             return false;
@@ -958,7 +976,7 @@ impl<S: Scene> Game<S> {
         let placement = self.interaction.placement();
         match self.interaction.act(action, now_ms) {
             Some(m) => {
-                self.outbox.borrow_mut().push(Send::Control(m));
+                // The sound first: the prediction changes the block at once.
                 match (action, placement) {
                     (EditAction::Break, _) => {
                         let [x, y, z] = target.cell;
@@ -972,6 +990,7 @@ impl<S: Scene> Game<S> {
                     }
                     (EditAction::Place, None) => {}
                 }
+                self.send_edit(m, None);
                 true
             }
             None => false,
@@ -1049,11 +1068,87 @@ impl<S: Scene> Game<S> {
         if sent {
             self.sounds.push(sound_event(SoundKind::Tool));
         }
-        // The first edits go out now; the rest as the rate allows (each frame).
-        for m in self.region.pump(now_ms) {
-            self.outbox.borrow_mut().push(Send::Control(m));
-        }
+        // The stroke shows at once; its first edits go out now, the rest as the rate allows (each
+        // frame).
+        self.predict_queued();
+        self.pump_region(now_ms);
         sent
+    }
+
+    /// Sends an edit, shown at once (edit prediction, §6.5): `id` when it was predicted already
+    /// (a queued region edit), else predicted now.
+    fn send_edit(&mut self, m: Message, id: Option<u32>) {
+        let id = id.unwrap_or_else(|| {
+            let id = self.prediction.next_id();
+            if let Some(changes) = self.predicted_changes(&m) {
+                self.prediction.predict(id, &changes, &mut self.streamer);
+            }
+            id
+        });
+        self.outbox.borrow_mut().push(Send::Edit(m, id));
+    }
+
+    /// Queued region edits (a brush stroke, the undo of one) shown at once, before they are sent.
+    fn predict_queued(&mut self) {
+        for (i, edit) in self.region.untagged() {
+            let id = self.prediction.next_id();
+            if let Some(changes) = self.predicted_changes(&Message::RegionEdit(edit)) {
+                self.prediction.predict(id, &changes, &mut self.streamer);
+            }
+            self.region.tag(i, id);
+        }
+    }
+
+    /// The queued region edits the server's rate allows now.
+    fn pump_region(&mut self, now_ms: f64) {
+        for (m, id) in self.region.pump_tagged(now_ms) {
+            self.send_edit(m, id);
+        }
+    }
+
+    /// What an edit will do, by the server's own checks run on the client's world (from the eye
+    /// the crosshair targets from, without the other players' bodies): `None` when it would be
+    /// refused or its box isn't loaded. The server's later changes (blocks left unsupported) come
+    /// with its modification.
+    fn predicted_changes(&mut self, m: &Message) -> Option<Vec<([i32; 3], StateId)>> {
+        use dwell_game::region_tools::BoxSource;
+        let eye = self.target_eye?;
+        match m {
+            Message::BlockEditRequest(e) => {
+                let world = self.streamer.store_mut();
+                let out = dwell_world::edit::check_block_edit(
+                    world,
+                    e,
+                    eye,
+                    &[],
+                    dwell_world::edit::DEFAULT_REACH,
+                );
+                (out.check == dwell_world::edit::EditCheck::Ok)
+                    .then(|| vec![(out.cell, out.material)])
+            }
+            Message::RegionEdit(e) => {
+                // Every chunk of the box loaded (Air ones too), so the client's world reads it right.
+                self.streamer.read_box(e.min, e.size.map(i32::from))?;
+                let reach = self.region.reach + 1.0;
+                let out = dwell_world::region::check_region_edit(
+                    self.streamer.store_mut(),
+                    e,
+                    eye,
+                    &[],
+                    reach,
+                );
+                (out.check == dwell_world::region::RegionCheck::Ok).then_some(out.changes)
+            }
+            _ => None,
+        }
+    }
+
+    /// The server is done with these edits (`(id, refused)`: from its `EditAck` through the session,
+    /// or refused unsent): their cells show the server's state again (§6.5).
+    pub fn on_edit_results(&mut self, results: &[(u32, bool)]) {
+        if !results.is_empty() {
+            self.prediction.resolve(results, &mut self.streamer);
+        }
     }
 
     fn selected_material(&self) -> StateId {
@@ -1178,11 +1273,13 @@ impl<S: Scene> Game<S> {
         // Through the streamer: it knows the Air chunks the client never stores.
         let sent = match self.region.act(action, &ctx, &mut self.streamer) {
             Some(m) => {
-                self.outbox.borrow_mut().push(Send::Control(m));
+                self.send_edit(m, None);
                 true
             }
             None => false,
         };
+        // An undo of a stroke queues its edits: shown at once too.
+        self.predict_queued();
         self.show_region_boxes();
         sent
     }
@@ -1221,9 +1318,7 @@ impl<S: Scene> Game<S> {
         input.brushes = self.brush.available;
         input.brush_active = self.brush.active();
         // Queued region edits (a brush stroke) as the server's cell rate allows.
-        for m in self.region.pump(now_ms) {
-            self.outbox.borrow_mut().push(Send::Control(m));
-        }
+        self.pump_region(now_ms);
         let done = telemetry::span("jobs.poll", || self.pool.borrow_mut().poll());
         telemetry::add("jobs.done", done.len() as f64);
         telemetry::span("jobs.apply", || self.on_jobs(done));

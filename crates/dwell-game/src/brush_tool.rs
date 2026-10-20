@@ -2,8 +2,8 @@
 //! allows brushes): a preset from `shared/brushes/brushes.json`, changed by keys (brush, performer,
 //! size), aimed along the view ray up to the world's brush reach, previewed at the target as a
 //! see-through ghost of the exact cells the stroke would change, and applied as one undo step of
-//! `KEEP` pastes through the region tools. Like every edit, nothing is predicted: the change shows
-//! when the server's VoxelModification arrives.
+//! `KEEP` pastes through the region tools. Like every edit, a stroke is predicted: it shows at once
+//! and is reconciled with the server's acks (`edit_prediction.rs`).
 //!
 //! Left click is VoxelSniper's arrow (the brush centred on the aimed-at block), right click its
 //! gunpowder (centred on the cell in front of it, where a block would be placed); a middle or Alt

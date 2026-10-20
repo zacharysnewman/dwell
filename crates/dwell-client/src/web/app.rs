@@ -506,6 +506,13 @@ impl Client {
         }
         if let (Some(game), Some(session)) = (&mut s.game, &mut s.session) {
             while let Some((m, bytes)) = session.next_game() {
+                // An edit ack names the session's numbers: the game's ids come from the session,
+                // in order with the modifications before it (edit prediction, §6.5).
+                if let dwell_protocol::Message::EditAck(a) = &m {
+                    let done = session.edit_results(a);
+                    game.on_edit_results(&done);
+                    continue;
+                }
                 game.on_game_message(m, bytes.len(), now_ms);
             }
             let stats = session.stats();
@@ -522,8 +529,17 @@ impl Client {
                 match out {
                     Send::Control(m) => session.send_control(&m),
                     Send::Datagram(m) => session.send_game_datagram(&m),
+                    Send::Edit(m, id) => {
+                        session.send_edit(&m, id);
+                    }
                 }
             }
+            let dropped: Vec<(u32, bool)> = session
+                .take_dropped_edits()
+                .into_iter()
+                .map(|id| (id, true))
+                .collect();
+            game.on_edit_results(&dropped);
         }
         telemetry::span("net", || s.pump_network(now_ms));
         // The clouds drift by the world's clock once the server's ticks have arrived.

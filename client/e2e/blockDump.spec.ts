@@ -21,8 +21,9 @@ test('the debug overlay copies the targeted block and its neighbours as JSON', a
   await call(page, 'd.look(0, -45)');
   await expect.poll(() => call(page, 'd.state()?.target ?? null')).not.toBeNull();
   await page.keyboard.press('Digit1');
-  expect(await call<boolean>(page, `d.edit('place')`)).toBe(true);
+  // The target before the edit: placing is predicted, so the next frame already aims at the block.
   const ground = await call<{ cell: Vec3 }>(page, 'd.state().target');
+  expect(await call<boolean>(page, `d.edit('place')`)).toBe(true);
   const placed: Vec3 = [ground.cell[0], ground.cell[1] + 1, ground.cell[2]];
   await expect
     .poll(() => call<number>(page, `d.voxel(${placed.join(',')})`))

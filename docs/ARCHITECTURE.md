@@ -488,9 +488,10 @@ returns. Without WebGPU (no `navigator.gpu`, no adapter or device) the page show
 | `audio/` **[in progress, Phase 28]** | Sound effects (§5.2, [`AUDIO.md`](./AUDIO.md)): `synth.ts` (the vocabulary in plain Web Audio), `mixer.ts` (buses, room reverb, soft limiter), `variation.ts`, `engine.ts` (the AudioContext, unlock on the first gesture, volumes, muting while hidden, spatial plays, the listener), `events.ts` (the Rust events → sounds), `uiSounds.ts` and `page.ts` (delegated menu sounds, on the game page and the main menu), `settings.ts` (the volumes' append-only store), `render.ts`, `renderPlan.ts`, `wav.ts` (offline renders, `npm run sfx:render`), `sounds.gen.ts` (generated). |
 | `debug/`, `world/`, `protocol/`, `version/` **[built]** | The block dump (`debug/blockDump.ts`, §6.3) over the generated TS block tables (`world/blocks.gen.ts`, `blocks.ts`: canonical state strings); the generated protocol constants (`protocol/constants.gen.ts`); the app version's rules (`version/semver.ts`, §10.5). |
 
-The client never mutates the voxel grid on its own authority. Block edits are sent as
-requests; the visual change is applied when the server's reliable delta arrives (an optional
-optimistic "ghost" may be shown meanwhile).
+The client never mutates the voxel grid on its own authority. Edits are sent as requests; the
+client **predicts** them (§6.5, edit prediction): each shows at once, the server's changes to its
+cells are held back until the server acknowledges the edit (`EditAck`), and then the cells show the
+server's state — the prediction confirmed, or rolled back and replaced.
 
 ### 5.1 Threads and workers
 
@@ -1318,10 +1319,32 @@ Players break and place blocks. Server-authoritative like every voxel change
   (`unsupported_after`: the `needsSupport` blocks above the changed cell whose rule no longer holds,
   in a chain upward, each leaving air or, flooded, water), in the same batch; a region edit's cells that need support but stand on nothing that holds them (tall grass filled into the air) are not kept. Accepted edits of a step are batched into one
   `VoxelModification` (one entry per chunk, its revision + 1) sent to each client streaming a
-  changed chunk; clients streaming it later get the chunk Explicit. The client does not predict
-  edits: the change shows when the modification arrives (one RTT), and terrain collision — server
-  and client alike — rebuilds before the next tick's probes (PLAYER_CONTROLLER.md §5). Rejections
-  are counted per session (`SessionStats`), with the last reason.
+  changed chunk; clients streaming it later get the chunk Explicit. The editing client predicted
+  the edit (below); terrain collision — server and client alike — rebuilds before the next tick's
+  probes (PLAYER_CONTROLLER.md §5). Rejections are counted per session (`SessionStats`), with the
+  last reason.
+- **Edit prediction [built, Phase 34 B4; protocol v16]** (`dwell-game` `edit_prediction.rs`,
+  `dwell-client` `game.rs`, `net/session.rs`; [`BRUSHES.md`](./BRUSHES.md) §4): one mechanism for
+  every edit — a break or place, a region tool's edit, each `RegionEdit` of a brush stroke or of its
+  undo. **Server:** every `BlockEditRequest` and `RegionEdit` of a session gets the next number
+  (from 1, in arrival order, together) when it arrives; each is applied or refused in the next
+  step (a full queue refuses at once). After the step's `VoxelModification`s, on the same ordered
+  `world` channel, each session whose edits advanced gets an **`EditAck`**: the number of the last
+  edit processed and the numbers refused (in several acks past `MAX_EDIT_ACK_REJECTED`).
+  **Client:** the game gives every edit an id; the session maps the server's numbers to those ids
+  in the order it sent them (an edit it can't send — not joined, or naming a state the server
+  lacks — is refused at once). Before sending, the game runs the server's own check
+  (`check_block_edit`, `check_region_edit`, from the eye the crosshair targets from, without the
+  other players' bodies) on the client's world and writes the predicted cells at once
+  (`ChunkStreamer::set_local`: loaded chunks, revision unchanged, remeshed); a brush stroke's
+  queued edits are predicted when the stroke is made and sent as the rate allows. An **overlay**
+  keeps, per predicted cell, the server's state and how many predicted edits wait on it: the
+  server's changes to such a cell (any `VoxelModification` reason) update the overlay instead of
+  the world. When an ack covers an edit, its cells wait on one edit fewer; a cell no edit waits on
+  shows the server's state — a confirmed prediction writes nothing, a refused or different one is
+  rolled back and replaced (counted as corrected). `ChunkData` or `ChunkUnload` of a chunk drops
+  its overlays (the new data is the server's). What the server does beyond the check (removing
+  blocks left unsupported, cells in another player's body) shows when the ack settles the edit.
 - **Region edits [built, structure sandbox S3]** (`dwell-world` `region.rs`, `dwell-game`
   `region_tools.rs`; [`STRUCTURES.md`](./STRUCTURES.md) §5): one `RegionEdit`
   (§8.3) edits a box of up to `REGION_EDIT_MAX_SIDE`³ (32³) cells — **Fill** (the hotbar's block, or
@@ -1340,7 +1363,7 @@ Players break and place blocks. Server-authoritative like every voxel change
   (not for pastes, which put down exact states). The changed cells join the step's batch: one
   `VoxelModification` per step with one entry per chunk (revision + 1), dirty for persistence and
   marked for the LOD, exactly as block edits — so other clients, the world file and the whole-world
-  view see them. Not predicted. **Client tools** (keyboard, while the pointer is locked; the keys are
+  view see them. Predicted like block edits (below). **Client tools** (keyboard, while the pointer is locked; the keys are
   in `controls.ts`): B / N set the selection's corners at the targeted block, outlined over the
   terrain with its size on the line above the hotbar; G fills, H hollows, T replaces the targeted
   kind of block with the hotbar's, Delete removes; Ctrl/⌘+C copies the selection from the client's
@@ -1386,7 +1409,7 @@ Players break and place blocks. Server-authoritative like every voxel change
     check is the region edit's.
   - **Pacing and undo.** The client mirrors the server's cell bucket and sends a stroke's edits as
     it allows, with the progress on the HUD; a stroke is one undo step, however many edits it took.
-    Not predicted.
+    The whole stroke shows at once (edit prediction, below), before its edits are sent.
   - **Client.** The tool aims along the view up to the policy's reach and outlines the brush (a
     see-through ghost of the exact cells the stroke would change, coloured by what each becomes, its outer faces only and at most 16,384 of them, else the box of the brush's cells; `\` toggles it; drawn over the composite by its own pipeline, fainter where the scene hides it). Left click centres a stroke on the aimed-at
     block (VoxelSniper's arrow), right click on the cell in front of it (gunpowder), and a middle
@@ -1908,6 +1931,7 @@ in the code yet.
 | `REGION_EDIT_REACH` | 64 m | A region edit's nearest cell from the eye (the server allows 1 m more for latency) |
 | `REGION_EDIT_MAX_QUEUED` | 4 | Region edits queued per session per tick; more are dropped |
 | `REGION_EDIT_KEEP` | 0xFFFF | A paste cell the server leaves as it is (brush strokes; only with the `brushes` Welcome flag) |
+| `MAX_EDIT_ACK_REJECTED` | 1024 | Refused edit numbers one `EditAck` names (edit prediction, §6.5); more go in further acks |
 | Brush reach (data) | 128 m | `shared/brushes/brushes.json` `worldTypes.sandbox.reach`: the brush's aim and the sandbox's region-edit reach (§6.5) |
 | Brush size (data) | 1–16 | A brush's radius in cells (`sizes`); at 16 a stroke spans 33 cells and splits into several region edits |
 | `MAX_RESYNC_CHUNKS` | 64 | Chunks per `ChunkResync` or `ChunkRequest` message |
@@ -2049,7 +2073,7 @@ protocol v5); `LodIndex` 0x13, `LodIndexUpdate` 0x14, `LodData` 0x15, `LodReques
 state and flags, and the wider `pos64` range for creative flight (Phase 4; protocol v7); `ChunkRequest`
 0x4D for full detail beyond the view (Phase 4; protocol v8); the flight speed level in `PlayerInput`'s
 `buttons` (Phase 4; protocol v9); `HostStatus` 0x4E and the `ServerClosing` reject reason
-(Phase 5c; protocol v10); the block registry hash in `Welcome` (Phase 8; protocol v11); the row `j` in `LodIndex` entries and the `faceB` bits of `controllerFlags` and `playerFlags` (Phase 13; protocol v12); `RegionEdit` 0x4F and the `regionEdits` Welcome flag (structure sandbox S3; still protocol v12, an addition within the 0.10 line negotiated by the flag, §10.5); the `KEEP` paste cell and the `brushes` Welcome flag (Phase 34; still protocol v12, negotiated by the flag); `BlockRegistry` 0x50 and the definitions hash in `Welcome` (registry sync, ADR 0038; protocol v14); `slideFlags` and the slide cooldown in the local player's controller state (the sprint slide, Phase 37; protocol v15) — layouts pinned by `shared/protocol/vectors.txt` (made by the independent Python
+(Phase 5c; protocol v10); the block registry hash in `Welcome` (Phase 8; protocol v11); the row `j` in `LodIndex` entries and the `faceB` bits of `controllerFlags` and `playerFlags` (Phase 13; protocol v12); `RegionEdit` 0x4F and the `regionEdits` Welcome flag (structure sandbox S3; still protocol v12, an addition within the 0.10 line negotiated by the flag, §10.5); the `KEEP` paste cell and the `brushes` Welcome flag (Phase 34; still protocol v12, negotiated by the flag); `BlockRegistry` 0x50 and the definitions hash in `Welcome` (registry sync, ADR 0038; protocol v14); `slideFlags` and the slide cooldown in the local player's controller state (the sprint slide, Phase 37; protocol v15); `EditAck` 0x51 (edit prediction, Phase 34 B4; protocol v16) — layouts pinned by `shared/protocol/vectors.txt` (made by the independent Python
 reference encoder, including half floats; the Rust codec, `dwell-protocol`, round-trips every
 vector byte for byte and rejects every malformed one). The Rust port kept protocol v12's layouts. **Protocol v13** (Phase 18) changes no layout: client and server must derive the same adaptive shapes from the same table (§6.1), so a build that shapes differently must not connect. The remaining formats below are drafts, finalized in the
 phase that builds them. Enumerations and bit sets (`inputButtons`, `playerStates`, `playerFlags`,
@@ -2264,6 +2288,16 @@ u32  serverTick
 u16  chunkCount                 // ≥ 1: the changed chunks this client streams
 repeat: i32×3 chunkCoord, u32 newRevision (the chunk's previous revision + 1), u16 changeCount (≥ 1),
         repeat: u16 localIndex (x|y<<5|z<<10, < 32768), u16 material
+```
+
+**Server → Client: `EditAck` (reliable, `world`) [built, Phase 34 B4; protocol v16]** (§6.5, edit
+prediction) — after the step's `VoxelModification`s, to each session whose edits advanced
+```
+u8   type = 0x51
+u32  through                    // the session's edit requests (BlockEditRequest and RegionEdit,
+                                 // numbered together from 1 in arrival order) processed up to here
+u16  rejectedCount              // 0..MAX_EDIT_ACK_REJECTED (1024)
+repeat: u32 rejected            // ascending, each 1..through: the ones refused; the rest applied
 ```
 
 **Server → Client: `PhysicsEvent` (reliable, `world`)**

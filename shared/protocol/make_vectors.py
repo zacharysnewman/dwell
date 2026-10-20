@@ -360,7 +360,18 @@ def block_registry(part, parts, data):
 
 vectors["registry_payload"] = REGISTRY_PAYLOAD
 vectors["block_registry"] = block_registry(0, 1, REGISTRY_PAYLOAD)
+
+
+# EditAck (edit prediction, protocol v16): u32 through, u16 count, count u32 rejected (ascending).
+def edit_ack(through, rejected):
+    return struct.pack("<BIH", T["EditAck"], through, len(rejected)) + b"".join(
+        struct.pack("<I", r) for r in rejected
+    )
+
+
 vectors["block_registry_part"] = block_registry(1, 2, REGISTRY_PAYLOAD[40:])
+vectors["edit_ack"] = edit_ack(7, [])
+vectors["edit_ack_rejected"] = edit_ack(0x01020304, [2, 0x01020303, 0x01020304])
 
 malformed = {
     "!empty": b"",
@@ -403,6 +414,12 @@ malformed = {
     "!block_edit_break_material": block_edit(BA["Break"], (0, 0, 0), 0, 2),
     "!block_edit_place_no_material": block_edit(BA["Place"], (0, 0, 0), 0),
     "!region_edit_bad_op": region_head(0, (0, 0, 0), (1, 1, 1)) + struct.pack("<H", 1),
+    "!edit_ack_past_through": edit_ack(3, [4]),
+    "!edit_ack_zero": edit_ack(3, [0]),
+    "!edit_ack_unsorted": edit_ack(9, [5, 2]),
+    "!edit_ack_truncated": edit_ack(9, [1, 2])[:-2],
+    "!edit_ack_too_many": struct.pack("<BIH", T["EditAck"], 99999, c["limits"]["maxEditAckRejected"] + 1)
+    + b"".join(struct.pack("<I", i + 1) for i in range(c["limits"]["maxEditAckRejected"] + 1)),
     "!region_edit_unknown_op": region_head(5, (0, 0, 0), (1, 1, 1)) + struct.pack("<H", 1),
     "!region_edit_empty_side": region_head(RO["Fill"], (0, 0, 0), (1, 0, 1)) + struct.pack("<H", 1),
     "!region_edit_side_too_long": region_head(RO["Fill"], (0, 0, 0), (1, c["regionEdit"]["maxSide"] + 1, 1))

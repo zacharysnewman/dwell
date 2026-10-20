@@ -330,6 +330,12 @@ impl Rig {
         }
         let Some(game) = &mut self.game else { return };
         while let Some((m, bytes)) = self.session.next_game() {
+            // As the web app does: an edit ack is translated by the session (edit prediction).
+            if let dwell_protocol::Message::EditAck(a) = &m {
+                let done = self.session.edit_results(a);
+                game.on_edit_results(&done);
+                continue;
+            }
             game.on_game_message(m, bytes.len(), now);
         }
         game.frame(now, &mut self.input, None, &mut || 0.0);
@@ -337,8 +343,18 @@ impl Rig {
             match s {
                 Send::Control(m) => self.session.send_control(&m),
                 Send::Datagram(m) => self.session.send_game_datagram(&m),
+                Send::Edit(m, id) => {
+                    self.session.send_edit(&m, id);
+                }
             }
         }
+        let dropped: Vec<(u32, bool)> = self
+            .session
+            .take_dropped_edits()
+            .into_iter()
+            .map(|id| (id, true))
+            .collect();
+        game.on_edit_results(&dropped);
     }
 
     fn run_until(&mut self, max_frames: usize, mut done: impl FnMut(&mut Self) -> bool) -> bool {
@@ -1087,10 +1103,13 @@ fn a_block_only_the_server_has_arrives_by_sync_and_plays_like_any_other() {
     assert_eq!(rig.game.as_mut().unwrap().voxel(x, y, z), glow);
     let now = rig.now + 1000.0;
     assert!(rig.game.as_mut().unwrap().edit(EditAction::Break, now));
+    // Predicted: gone at once; then the server's ack settles it.
+    assert_eq!(rig.game.as_mut().unwrap().voxel(x, y, z), 0);
     assert!(
-        rig.run_until(60, |r| r.game.as_mut().unwrap().voxel(x, y, z) == 0),
-        "the server's modification arrives"
+        rig.run_until(60, |r| r.game.as_ref().unwrap().prediction.pending() == 0),
+        "the server's ack arrives"
     );
+    assert_eq!(rig.game.as_mut().unwrap().voxel(x, y, z), 0);
     assert_eq!(rig.core.server().world().get_voxel(x, y, z), 0);
     assert!(
         rig.run_until(60, |r| r.guest.as_ref().is_some_and(|(_, _, got)| {
@@ -1101,4 +1120,233 @@ fn a_block_only_the_server_has_arrives_by_sync_and_plays_like_any_other() {
         })),
         "the guest sees it broken"
     );
+}
+
+/// A sandbox rig joined with its capabilities set, a guest watching, and `latency` server ticks
+/// each way: edits take a while to come back, as over a network.
+fn predicting_rig(latency: u32) -> Rig {
+    let mut rig = Rig::with_generator(GENERATOR_SANDBOX);
+    assert!(rig.run_until(60 * 30, |r| {
+        r.game
+            .as_ref()
+            .is_some_and(|g| g.debug_state().terrain_ready)
+    }));
+    let SessionState::Joined {
+        region_edits,
+        brushes,
+        generator_version,
+        ..
+    } = rig.session.state().clone()
+    else {
+        panic!("joined")
+    };
+    rig.game
+        .as_mut()
+        .unwrap()
+        .set_capabilities(region_edits, brushes, generator_version);
+    rig.add_guest();
+    // The guest joins (the same registry: no prompt) and asks for explicit chunks.
+    assert!(rig.run_until(120, |r| {
+        r.guest
+            .as_ref()
+            .is_some_and(|(s, _, _)| matches!(s.state(), SessionState::Joined { .. }))
+    }));
+    let (guest, _, _) = rig.guest.as_mut().unwrap();
+    guest.send_control(&dwell_protocol::Message::WorldgenCheck(0));
+    assert!(
+        rig.run_until(300, |r| r.guest.as_ref().is_some_and(|(_, _, got)| got
+            .iter()
+            .any(|m| matches!(m, dwell_protocol::Message::ChunkData(_)))))
+    );
+    rig.run_until(60, |_| false);
+    rig.latency_steps = latency;
+    rig
+}
+
+/// Looks `pitch` down and `yaw` round until a floor or block cell is targeted; returns it.
+fn target_at(rig: &mut Rig, yaw: f64, pitch: f64) -> [i32; 3] {
+    rig.input.look.yaw = yaw;
+    rig.input.look.pitch = pitch;
+    assert!(rig.run_until(30, |r| {
+        r.game.as_ref().unwrap().debug_state().target.is_some()
+    }));
+    rig.game
+        .as_ref()
+        .unwrap()
+        .debug_state()
+        .target
+        .unwrap()
+        .cell
+}
+
+fn host_voxel(rig: &mut Rig, c: [i32; 3]) -> u16 {
+    rig.game.as_mut().unwrap().voxel(c[0], c[1], c[2])
+}
+
+fn server_voxel(rig: &mut Rig, c: [i32; 3]) -> u16 {
+    rig.core.server().world().get_voxel(c[0], c[1], c[2])
+}
+
+/// The guest's view of a cell: the last modification it got that changes it, else air.
+fn guest_voxel(rig: &Rig, c: [i32; 3]) -> u16 {
+    let (_, _, got) = rig.guest.as_ref().unwrap();
+    let mut out = 0;
+    for m in got {
+        if let dwell_protocol::Message::VoxelModification(v) = m {
+            for ch in &v.chunks {
+                for x in &ch.changes {
+                    let i = i32::from(x.index);
+                    let cell = [
+                        ch.coord[0] * 32 + (i & 31),
+                        ch.coord[1] * 32 + ((i >> 5) & 31),
+                        ch.coord[2] * 32 + ((i >> 10) & 31),
+                    ];
+                    if cell == c {
+                        out = x.material;
+                    }
+                }
+            }
+        }
+    }
+    out
+}
+
+#[test]
+fn an_edit_shows_at_once_and_the_servers_ack_settles_it() {
+    let mut rig = predicting_rig(8);
+    let stone = dwell_blocks::require("dwell:stone");
+    rig.game.as_mut().unwrap().interaction.select(0); // stone
+    let floor = target_at(&mut rig, 0.0, -40.0);
+    let p = [floor[0], floor[1] + 1, floor[2]];
+    assert_eq!(host_voxel(&mut rig, p), 0);
+    let now = rig.now + 1000.0;
+    assert!(rig.game.as_mut().unwrap().edit(EditAction::Place, now));
+    // Predicted: on the host at once, before the server has even received it.
+    assert_eq!(host_voxel(&mut rig, p), stone, "shown before the echo");
+    assert_eq!(server_voxel(&mut rig, p), 0);
+    assert_eq!(rig.game.as_ref().unwrap().prediction.pending(), 1);
+    // The ack settles it: the server, the host and the guest agree.
+    assert!(rig.run_until(120, |r| r.game.as_ref().unwrap().prediction.pending() == 0));
+    assert_eq!(server_voxel(&mut rig, p), stone);
+    assert_eq!(host_voxel(&mut rig, p), stone);
+    assert!(
+        rig.run_until(30, |r| guest_voxel(r, p) == stone),
+        "two clients agree"
+    );
+    let stats = rig.game.as_ref().unwrap().prediction.stats;
+    assert_eq!((stats.refused, stats.corrected), (0, 0));
+
+    // A brush stroke shows whole at once, every queued edit of it.
+    let game = rig.game.as_mut().unwrap();
+    game.brush_key(BrushAction::Toggle);
+    let ball = dwell_world::brush::PRESETS
+        .iter()
+        .position(|p| p.name == "ball")
+        .unwrap();
+    game.brush_key(BrushAction::Preset(ball));
+    game.brush.resize(4);
+    // Far enough that the ball misses the player (the server leaves cells in a body alone).
+    rig.input.look.pitch = -10.0;
+    assert!(rig.run_until(30, |r| r.game.as_ref().unwrap().brush.target().is_some()));
+    let t = rig.game.as_ref().unwrap().brush.target().unwrap().cell;
+    let top = [t[0], t[1] + 7, t[2]];
+    let now = rig.now;
+    assert!(rig.game.as_mut().unwrap().brush_apply(false, now));
+    assert_eq!(
+        host_voxel(&mut rig, top),
+        stone,
+        "the whole stroke, at once"
+    );
+    assert_eq!(server_voxel(&mut rig, top), 0);
+    assert!(rig.run_until(600, |r| r.game.as_ref().unwrap().prediction.pending() == 0));
+    assert_eq!(server_voxel(&mut rig, top), stone);
+    assert_eq!(host_voxel(&mut rig, top), stone);
+    assert!(rig.run_until(30, |r| guest_voxel(r, top) == stone));
+    assert_eq!(rig.game.as_ref().unwrap().prediction.stats.corrected, 0);
+}
+
+#[test]
+fn a_refused_edit_rolls_back() {
+    use dwell_sim::server::EditPolicy;
+    let mut rig = predicting_rig(8);
+    let stone = dwell_blocks::require("dwell:stone");
+    // Nobody may edit now; the host's client doesn't know it.
+    let host = rig.key.verifying_key().to_bytes();
+    rig.core
+        .host(4, EditPolicy::Nobody, EditPolicy::Everyone, host);
+    rig.game.as_mut().unwrap().interaction.select(0);
+    let floor = target_at(&mut rig, 0.0, -40.0);
+    let p = [floor[0], floor[1] + 1, floor[2]];
+    let now = rig.now + 1000.0;
+    assert!(rig.game.as_mut().unwrap().edit(EditAction::Place, now));
+    assert_eq!(host_voxel(&mut rig, p), stone, "predicted");
+    assert!(rig.run_until(120, |r| r.game.as_ref().unwrap().prediction.pending() == 0));
+    assert_eq!(host_voxel(&mut rig, p), 0, "rolled back");
+    assert_eq!(server_voxel(&mut rig, p), 0);
+    let stats = rig.game.as_ref().unwrap().prediction.stats;
+    assert_eq!((stats.refused, stats.corrected), (1, 1));
+}
+
+#[test]
+fn rapid_edits_and_a_refusal_reconcile_with_the_server() {
+    use dwell_sim::server::EditPolicy;
+    let mut rig = predicting_rig(8);
+    let stone = dwell_blocks::require("dwell:stone");
+    rig.game.as_mut().unwrap().interaction.select(0);
+    let floor = target_at(&mut rig, 0.0, -40.0);
+    let p = [floor[0], floor[1] + 1, floor[2]];
+    // 1: place P, accepted.
+    let mut now = rig.now + 1000.0;
+    assert!(rig.game.as_mut().unwrap().edit(EditAction::Place, now));
+    assert!(rig.run_until(30, |r| server_voxel(r, p) == stone));
+    assert_eq!(
+        rig.game.as_ref().unwrap().prediction.pending(),
+        1,
+        "its ack is on its way"
+    );
+    // The server stops taking edits; two more go out before the first's ack is back.
+    let host = rig.key.verifying_key().to_bytes();
+    rig.core
+        .host(4, EditPolicy::Nobody, EditPolicy::Everyone, host);
+    // 2: break P (aimed at the predicted block), refused.
+    rig.frame();
+    let aimed = rig
+        .game
+        .as_ref()
+        .unwrap()
+        .debug_state()
+        .target
+        .unwrap()
+        .cell;
+    assert_eq!(aimed, p, "the crosshair sees the predicted block");
+    now += 200.0;
+    assert!(rig.game.as_mut().unwrap().edit(EditAction::Break, now));
+    assert_eq!(host_voxel(&mut rig, p), 0);
+    // 3: place at another cell, refused.
+    let other_floor = target_at(&mut rig, 120.0, -40.0);
+    let q = [other_floor[0], other_floor[1] + 1, other_floor[2]];
+    assert_ne!(q, p);
+    now += 200.0;
+    assert!(rig.game.as_mut().unwrap().edit(EditAction::Place, now));
+    assert_eq!(host_voxel(&mut rig, q), stone);
+    assert!(rig.game.as_ref().unwrap().prediction.pending() >= 2);
+    // All acks back: the host shows exactly what the server has.
+    assert!(rig.run_until(120, |r| r.game.as_ref().unwrap().prediction.pending() == 0));
+    rig.run_until(30, |_| false);
+    for c in [p, q] {
+        assert_eq!(host_voxel(&mut rig, c), server_voxel(&mut rig, c), "{c:?}");
+        assert_eq!(guest_voxel(&rig, c), server_voxel(&mut rig, c), "{c:?}");
+    }
+    assert_eq!(
+        host_voxel(&mut rig, p),
+        stone,
+        "the refused break is undone"
+    );
+    assert_eq!(
+        host_voxel(&mut rig, q),
+        0,
+        "the refused place is taken back"
+    );
+    let stats = rig.game.as_ref().unwrap().prediction.stats;
+    assert_eq!(stats.refused, 2);
 }
