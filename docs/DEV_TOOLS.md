@@ -103,6 +103,7 @@ at the scale; `bilinear` is the browser stretching a scaled canvas, today's `?sc
 | Config | Renderer | Scale | Upscaler |
 | --- | --- | --- | --- |
 | `raster` (baseline) | raster | 1 | none |
+| `painterly` | raster, with `?textures=painterly` (PAINTERLY_TEXTURES.md) | 1 | none |
 | `raster-half` | raster | 0.5 | bilinear |
 | `march` | march | 1 | none |
 | `march-half-fsr` | march | 0.5 | fsr1 |
