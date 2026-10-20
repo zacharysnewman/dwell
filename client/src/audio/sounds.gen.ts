@@ -318,6 +318,12 @@ export const SOUND_DATA: SoundData = {
       "event:place",
       "event:break"
     ],
+    "Spyglass zoom in or out": [
+      "event:tool"
+    ],
+    "Zoom further / back": [
+      "event:tool"
+    ],
     "Brush tool on or off": [
       "event:tool"
     ],

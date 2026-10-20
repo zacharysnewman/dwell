@@ -32,6 +32,27 @@ describe('scenarios', () => {
     expect(viewUrl('./', scenarioView(s))).toBe('./?local=1&seed=7');
   });
 
+  it('zooms the spyglass to a step, or out (docs/SPYGLASS.md)', () => {
+    const [s] = parseScenarios(
+      file([
+        {
+          name: 'z',
+          steps: [
+            { do: 'spyglass', on: true, step: 1 },
+            { do: 'spyglass', on: false },
+          ],
+        },
+      ]),
+    );
+    expect(s.steps).toEqual([
+      { do: 'spyglass', on: true, step: 1 },
+      { do: 'spyglass', on: false },
+    ]);
+    expect(() =>
+      parseScenarios(file([{ name: 'z', steps: [{ do: 'spyglass', on: 'yes' }] }])),
+    ).toThrow(/on/);
+  });
+
   it('a new step entry works by data alone', () => {
     const [s] = parseScenarios(
       file([

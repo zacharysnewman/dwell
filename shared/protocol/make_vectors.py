@@ -21,6 +21,7 @@ def s(text: str) -> bytes:
 
 B = c["inputButtons"]
 CF = c["controllerFlags"]
+SF = c["slideFlags"]
 PF = c["playerFlags"]
 PS = c["playerStates"]
 GK = c["groundKinds"]
@@ -50,10 +51,12 @@ def input_frame(seq, mx, my, buttons, yaw, pitch):
     return struct.pack("<IbbHhh", seq, mx, my, buttons, yaw, pitch)
 
 
-def controller(flags, ladder=None, released=None):
+def controller(flags, ladder=None, released=None, slide=(0, 0)):
     out = struct.pack("<B", flags)
     out += f32s(1.5, -2.25, 0.5, 0.0, 2.0, -2.25, 3.0, 0.0, -1.0, 0.25)
     out += struct.pack("<BHBBB", GK["Player"], 7, 11, 5, 2)
+    # The sprint slide (protocol v15): slideFlags, then the cooldown in ticks.
+    out += struct.pack("<BB", *slide)
     if ladder is not None:
         out += struct.pack("<iii", *ladder)
     if released is not None:
@@ -77,7 +80,8 @@ SNAPSHOT = (
     struct.pack("<BII", T["PhysicsSnapshot"], 603, 42)
     + snapshot_local(
         PF["grounded"] | PF["climbing"], 87, PS["Climbing"],
-        controller(CF["grounded"] | CF["climbing"] | CF["hasReleased"], (-5, 64, 1000000), (-5, 7)),
+        controller(CF["grounded"] | CF["climbing"] | CF["hasReleased"], (-5, 64, 1000000), (-5, 7),
+                   slide=(SF["active"], 29)),
         input_buffer=3, knockback=40,
     )
     + struct.pack("<B", 2)
