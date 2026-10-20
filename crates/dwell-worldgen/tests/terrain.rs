@@ -385,6 +385,8 @@ fn the_fill_grass_over_dirt_sand_at_the_shore_sea_to_its_level() {
                         } else if wy < MIDPLANE_Y + CORE_LAYERS {
                             assert_eq!(m, M.stone); // the core
                         } else if ground < SEA_LEVEL + r(2.0) {
+                            // Under the sea the top holds it (its flooded state; any block).
+                            let m = dwell_blocks::with_property(m, "flooded", "false").unwrap_or(m);
                             assert_eq!(m, if depth < r(3.0) { M.sand } else { M.stone });
                             sand += i32::from(m == M.sand);
                         } else {
@@ -692,8 +694,10 @@ fn meadows_of_tall_grass_grow_on_grass_by_the_decoration_data() {
 #[test]
 fn generated_ramps_follow_the_rule_across_chunk_borders_and_hold_the_sea_at_the_shore() {
     // HALF_HEIGHT_GRID.md §4: each natural top is the rule's answer over its 9 columns' heights,
-    // whichever chunk asks (the strip crosses chunk borders every 32 m), and under the sea a ramp
-    // is flooded. A world generates the chunks; the heights come from the point query.
+    // whichever chunk asks (the strip crosses chunk borders every 32 m), and a ramp whose cell is
+    // below sea level is flooded (WATER_RENDERING.md §9: regression, owner 2026-10-20 — a ramp in
+    // the sea's top row was dry, with the water piled beside it). A world generates the chunks;
+    // the heights come from the point query.
     use dwell_blocks::state_property;
     use dwell_worldgen::ramps::{Around, Top, top_of};
     let seed = 0;
@@ -733,7 +737,7 @@ fn generated_ramps_follow_the_rule_across_chunk_borders_and_hold_the_sea_at_the_
                 }
             }
             if shape.is_some() {
-                let wet = top + 1 < SEA_LEVEL;
+                let wet = top < SEA_LEVEL;
                 assert_eq!(
                     state_property(m, "flooded"),
                     Some(if wet { "true" } else { "false" })
@@ -743,7 +747,7 @@ fn generated_ramps_follow_the_rule_across_chunk_borders_and_hold_the_sea_at_the_
             }
         }
     }
-    // The steep hills (generator 1016's whole-metre steps on steep ground) make 1 m ramps too.
+    // The steep hills (generator 1017's whole-metre steps on steep ground) make 1 m ramps too.
     assert!(
         gentle > 100 && steep > 100 && flooded > 10 && on_borders > 10,
         "{gentle} {steep} {flooded} {on_borders}"
@@ -886,5 +890,132 @@ fn the_hills_are_steep_enough_to_slide_and_reach_about_500_m() {
         assert!((430.0..580.0).contains(&highest), "{at}");
         assert!((15.0..30.0).contains(&slope), "{at}");
         assert!(wet < 0.015, "{at}");
+    }
+}
+
+/// The generated world (face A) and where the island's coast crosses the four axes.
+fn shore_world(seed: u64) -> (VoxelWorld, Vec<(i32, i32)>) {
+    let g = TerrainGenerator::new(seed);
+    let mut coasts = Vec::new();
+    for (dx, dz) in [(1, 0), (0, 1), (-1, 0), (0, -1)] {
+        let mut d = 0;
+        while g
+            .ground_y(d * dx, d * dz)
+            .is_some_and(|t| t >= SEA_LEVEL - 2)
+        {
+            d += 8;
+        }
+        coasts.push((d * dx, d * dz));
+    }
+    let world = VoxelWorld::new(
+        generator_for(GENERATOR_TERRAIN, seed),
+        Some(air_test_for(GENERATOR_TERRAIN, seed)),
+    );
+    (world, coasts)
+}
+
+/// The water's drawn top in the sea's top row (cells): sea level less the surface drop.
+fn drawn_sea_top() -> f64 {
+    let drop = dwell_blocks::require_fluid("dwell:water").surface_drop;
+    f64::from(SEA_LEVEL) - drop
+}
+
+/// A solid cell's shape that leaves part of the cell open: a slope, a ramp or a slab — derived
+/// (main's adaptive tops) or stored (the half-height grid's ramps).
+fn open_shape(s: &dwell_blocks::ShapeInfo) -> bool {
+    s.face_count > 0 && (s.fan || s.corners != [2; 4])
+}
+
+#[test]
+fn the_sea_floods_the_open_part_of_every_shaped_cell_below_sea_level() {
+    //! Regression (owner, 2026-10-20: water piled up against the beach): the generator filled
+    //! only empty cells below sea level, so a shaped top in the sea's top row (a ramp, a slope)
+    //! was dry, its open part air under the water line, with the water beside it standing above
+    //! it. Every solid cell below sea level whose shape leaves part of it open holds the sea there
+    //! now (WATER_RENDERING.md §9).
+    for seed in [0, 7] {
+        let (mut w, coasts) = shore_world(seed);
+        let (mut checked, mut dry) = (0, Vec::new());
+        for &(cx, cz) in &coasts {
+            for z in cz - 24..cz + 24 {
+                for x in cx - 24..cx + 24 {
+                    for y in SEA_LEVEL - 4..SEA_LEVEL {
+                        let m = w.get_voxel(x, y, z);
+                        if !info(m).solid || !open_shape(w.shape_at(x, y, z)) {
+                            continue;
+                        }
+                        checked += 1;
+                        if !w.flooded_at(x, y, z) {
+                            dry.push((x, y, z));
+                        }
+                    }
+                }
+            }
+        }
+        assert!(checked > 200, "seed {seed}: {checked}");
+        assert!(
+            dry.is_empty(),
+            "seed {seed}: {} of {checked} shaped cells below sea level are dry, e.g. {:?}",
+            dry.len(),
+            &dry[..dry.len().min(5)]
+        );
+    }
+}
+
+#[test]
+fn no_shore_column_has_drawn_water_higher_than_the_dry_land_beside_it() {
+    //! The rule of WATER_RENDERING.md §9: wherever drawn water (a water cell's or a flooded
+    //! cell's, in the sea's top row) is beside a dry column, that column's surface on the side
+    //! they share is at or above the water's.
+    let top = drawn_sea_top();
+    for seed in [0, 7] {
+        let (mut w, coasts) = shore_world(seed);
+        let water = require("dwell:water");
+        let (mut pairs, mut piled) = (0, Vec::new());
+        for &(cx, cz) in &coasts {
+            for z in cz - 24..cz + 24 {
+                for x in cx - 24..cx + 24 {
+                    let y = SEA_LEVEL - 1;
+                    let m = w.get_voxel(x, y, z);
+                    let wet = m == water || (m != 0 && w.flooded_at(x, y, z));
+                    if !wet {
+                        continue;
+                    }
+                    for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+                        let (nx, nz) = (x + dx, z + dz);
+                        // The neighbour column's top cell, in this row or above.
+                        let mut ny = y;
+                        while info(w.get_voxel(nx, ny + 1, nz)).solid {
+                            ny += 1;
+                        }
+                        let n = w.get_voxel(nx, ny, nz);
+                        if !info(n).solid || w.flooded_at(nx, ny, nz) {
+                            continue;
+                        }
+                        pairs += 1;
+                        let shape = w.shape_at(nx, ny, nz);
+                        // Its side toward the water (profiles +X −X +Z −Z, in quarters).
+                        let side = match (dx, dz) {
+                            (1, 0) => 1,
+                            (-1, 0) => 0,
+                            (0, 1) => 3,
+                            _ => 2,
+                        };
+                        let low = shape.sides[side].iter().copied().min().unwrap_or(0);
+                        let land = f64::from(ny) + f64::from(low) / 4.0;
+                        if land < top - 1e-6 {
+                            piled.push(((x, z), (nx, ny, nz), land));
+                        }
+                    }
+                }
+            }
+        }
+        assert!(pairs > 100, "seed {seed}: {pairs}");
+        assert!(
+            piled.is_empty(),
+            "seed {seed}: {} of {pairs} shore pairs have the water at {top} above the land, e.g. {:?}",
+            piled.len(),
+            &piled[..piled.len().min(5)]
+        );
     }
 }

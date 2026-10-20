@@ -478,6 +478,8 @@ fn surface(style: &MaterialStyle, axis: usize, sign: i32) -> (u32, TileRect) {
 /// Merge-mask keys: the state + 1 in the low bits, the side rule + 1 (0: none) above them.
 const RULE_SHIFT: u32 = 17;
 const STATE_MASK: i32 = (1 << RULE_SHIFT) - 1;
+/// Merge-mask flag: a fluid's side face in its surface's row, which stops at the drawn surface.
+const SURFACE_BIT: i32 = 1 << 30;
 
 /// The side-tile rule (an index into `k.style.side_under`, block data `sideUnder`) that side face
 /// `face` of the cell at (x, y, z) takes: the first naming the block in the cell above, unless that
@@ -785,13 +787,132 @@ fn shaped_voxel(
     }
 }
 
+/// The height (cells above its floor) a fluid cell's side faces reach: its drawn surface when its
+/// top face shows (nothing of the same fluid, no flooded cell and no solid over it), else the
+/// cell's top.
+fn fluid_side_top(cells: &Cells<'_>, k: &Kind, m: StateId, x: i32, y: i32, z: i32) -> f64 {
+    let ka = cells.kind(x, y + 1, z);
+    let a = cells.state(x, y + 1, z);
+    if hidden(k, &ka, m, a, 2) || (a == m && ka.liquid) {
+        1.0
+    } else {
+        1.0 - k.style.surface_drop
+    }
+}
+
+/// Whether a fluid's side face must be drawn cell by cell ([`fluid_side`]) rather than merged:
+/// against a shaped neighbour, where only its open part shows the fluid.
+fn fluid_side_alone(kn: &Kind) -> bool {
+    kn.shape == Shape::Shaped && cover(kn).is_some()
+}
+
+/// A fluid's side face `face` (not ±Y) of cell (x, y, z), on its plane `plane`: the part of the
+/// side between the cell's floor and `top` (cells) that lies above the solid of the neighbour
+/// `kn` across it — so no fluid face stands behind a neighbour's slope or ramp, or above the
+/// fluid's drawn surface (WATER_RENDERING.md §9). A hanging neighbour is taken as open.
+#[allow(clippy::too_many_arguments)]
+fn fluid_side(
+    b: &mut Builder,
+    style: &MaterialStyle,
+    kn: &Kind,
+    [x, y, z]: [i32; 3],
+    face: usize,
+    plane: f64,
+    top: f64,
+) {
+    let (axis, sign) = FACES[face];
+    // The neighbour's profile on the face it turns toward this cell (quarters of a cell, along
+    // the running coordinate: z on ±X faces, x on ±Z).
+    let profile = match cover(kn) {
+        Some(def) if !def.inverted => {
+            let side = SIDE_OF_TAG[face ^ 1] as usize;
+            def.sides[side].map(|q| f64::from(q) / 4.0)
+        }
+        _ => [0.0; 3],
+    };
+    let run = if axis == 0 { 2 } else { 0 };
+    let (color, tile) = surface(style, axis, sign);
+    let mut normal = [0.0; 3];
+    normal[axis] = f64::from(sign);
+    let tint = face_tint(axis, sign);
+    // A level profile is one piece across the side; else each half has its own line.
+    let halves: &[(f64, f64, f64, f64)] = if profile[0] == profile[1] && profile[1] == profile[2] {
+        &[(0.0, 1.0, profile[0], profile[0])]
+    } else {
+        &[
+            (0.0, 0.5, profile[0], profile[1]),
+            (0.5, 1.0, profile[1], profile[2]),
+        ]
+    };
+    for &(ra, rb, ha, hb) in halves {
+        // The rectangle [ra, rb] × [0, top] clipped to above the profile's line (Sutherland–
+        // Hodgman against one half-plane): a convex polygon in (run, y).
+        let above = |r: f64, h: f64| h - (ha + (hb - ha) * (r - ra) / (rb - ra));
+        let rect = [(ra, 0.0), (rb, 0.0), (rb, top), (ra, top)];
+        let mut poly: Vec<(f64, f64)> = Vec::with_capacity(5);
+        for i in 0..4 {
+            let (p, q) = (rect[i], rect[(i + 1) % 4]);
+            let (fp, fq) = (above(p.0, p.1), above(q.0, q.1));
+            if fp >= 0.0 {
+                poly.push(p);
+            }
+            if (fp >= 0.0) != (fq >= 0.0) {
+                let t = fp / (fp - fq);
+                poly.push((p.0 + (q.0 - p.0) * t, p.1 + (q.1 - p.1) * t));
+            }
+        }
+        poly.dedup_by(|a, b| (a.0 - b.0).abs() < 1e-9 && (a.1 - b.1).abs() < 1e-9);
+        if poly.len() < 3 {
+            continue;
+        }
+        let mut pts: Vec<[f64; 3]> = poly
+            .iter()
+            .map(|&(r, h)| {
+                let mut p = [0.0; 3];
+                p[axis] = plane - f64::from([x, y, z][axis]);
+                p[run] = r;
+                p[1] = h;
+                p
+            })
+            .collect();
+        let n = polygon_normal(&pts);
+        if n[axis] * f64::from(sign) < 0.0 {
+            pts.reverse();
+        }
+        // Too thin to see (a sliver where the profile meets the surface).
+        if polygon_normal(&pts)[axis].abs() < 0.5 {
+            continue;
+        }
+        let at = [f64::from(x), f64::from(y), f64::from(z)];
+        b.polygon(&pts, at, normal, tint, color, &tile, None);
+    }
+    b.tag_fluid(style.fluid);
+}
+
 /// Water in the open part of a flooded shaped cell: its faces, inset so the solid shows through.
 fn flooded_water(b: &mut Builder, cells: &Cells<'_>, x: i32, y: i32, z: i32) {
     let water = cells.kinds.flood();
+    // Its sides reach its drawn surface, unless water or a solid is over it.
+    let ka = cells.kind(x, y + 1, z);
+    let top = if ka.liquid || ka.flooded || face_covered(cube(), 2, cover(&ka)) {
+        1.0
+    } else {
+        1.0 - water.style.surface_drop
+    };
     for (face, &(axis, sign)) in FACES.iter().enumerate() {
         let [nx, ny, nz] = neighbour_of(x, y, z, axis, sign);
         let kn = cells.kind(nx, ny, nz);
         if kn.liquid || kn.flooded || face_covered(cube(), face, cover(&kn)) {
+            continue;
+        }
+        if axis != 1 {
+            let plane = f64::from([x, y, z][axis])
+                + if sign > 0 {
+                    1.0 - FLOOD_INSET
+                } else {
+                    FLOOD_INSET
+                };
+            fluid_side(b, &water.style, &kn, [x, y, z], face, plane, top);
             continue;
         }
         let u = (axis + 1) % 3;
@@ -960,8 +1081,21 @@ fn mesh_cells(kinds: &Kinds, padded: &[u16], origin: [i32; 3]) -> ChunkMeshes {
                     if hidden(&k, &kn, m, cells.state(nx, ny, nz), face) {
                         continue;
                     }
+                    let mut surface_row = 0;
+                    if k.liquid && axis != 1 {
+                        let top = fluid_side_top(&cells, &k, m, cx, cy, cz);
+                        if fluid_side_alone(&kn) {
+                            let plane = f64::from(if sign > 0 { d + 1 } else { d });
+                            fluid_side(&mut transparent, &k.style, &kn, cell, face, plane, top);
+                            continue;
+                        }
+                        if top < 1.0 {
+                            surface_row = SURFACE_BIT;
+                        }
+                    }
                     let rule = side_rule(&cells, &k, cx, cy, cz, face).map_or(0, |r| r as i32 + 1);
-                    mask[i as usize + n * j as usize] = (i32::from(m) + 1) | (rule << RULE_SHIFT);
+                    mask[i as usize + n * j as usize] =
+                        (i32::from(m) + 1) | (rule << RULE_SHIFT) | surface_row;
                     any = true;
                 }
             }
@@ -994,7 +1128,9 @@ fn mesh_cells(kinds: &Kinds, padded: &[u16], origin: [i32; 3]) -> ChunkMeshes {
                         mask[i + n * (j + dv)..i + w + n * (j + dv)].fill(0);
                     }
                     let m = ((key & STATE_MASK) - 1) as StateId;
-                    let rule = (key >> RULE_SHIFT).checked_sub(1).map(|r| r as usize);
+                    let rule = ((key & !SURFACE_BIT) >> RULE_SHIFT)
+                        .checked_sub(1)
+                        .map(|r| r as usize);
                     let style = kinds.of(m).style;
                     let mut plane = f64::from(if sign > 0 { d + 1 } else { d });
                     if style.look == Look::Fluid && face == 2 {
@@ -1007,15 +1143,19 @@ fn mesh_cells(kinds: &Kinds, padded: &[u16], origin: [i32; 3]) -> ChunkMeshes {
                         RenderMode::Cutout => &mut cutout,
                         RenderMode::Translucent => &mut transparent,
                     };
-                    target.quad(
-                        axis,
-                        sign,
-                        plane,
-                        (i as f64, (i + w) as f64),
-                        (j as f64, (j + h) as f64),
-                        color,
-                        &tile,
-                    );
+                    // A fluid's side in its surface's row (one row of cells tall) stops at the
+                    // drawn surface.
+                    let mut us = (i as f64, (i + w) as f64);
+                    let mut vs = (j as f64, (j + h) as f64);
+                    if key & SURFACE_BIT != 0 {
+                        let top = 1.0 - style.surface_drop;
+                        if u == 1 {
+                            us.1 = us.0 + top;
+                        } else if v == 1 {
+                            vs.1 = vs.0 + top;
+                        }
+                    }
+                    target.quad(axis, sign, plane, us, vs, color, &tile);
                     if see_through {
                         target.tag_fluid(style.fluid);
                     }

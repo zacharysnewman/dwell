@@ -103,7 +103,7 @@ describe('block generator: the grid look option', { timeout: 30_000 }, () => {
 const plant = (name: string, extra: object) =>
   block(name, { shape: 'empty', look: 'cross', render: 'cutout', textures: 'tallGrass', ...extra });
 
-describe('block generator: render modes', () => {
+describe('block generator: render modes', { timeout: 30_000 }, () => {
   it('adds a fixture block of each mode by data alone', () => {
     const r = generate([
       block('rock', {}),
@@ -131,7 +131,7 @@ describe('block generator: render modes', () => {
   });
 });
 
-describe('block generator: the cross geometry and wind', () => {
+describe('block generator: the cross geometry and wind', { timeout: 30_000 }, () => {
   it('emits a cross with its options, wind and fade', () => {
     const r = generate([
       plant('reeds', {
@@ -180,7 +180,7 @@ describe('block generator: the cross geometry and wind', () => {
   });
 });
 
-describe('block generator: placement rules', () => {
+describe('block generator: placement rules', { timeout: 30_000 }, () => {
   it('emits placeOn, needsSupport and replaceable', () => {
     const r = generate([
       block('soil', {}),

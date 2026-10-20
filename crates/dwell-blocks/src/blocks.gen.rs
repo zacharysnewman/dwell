@@ -3,13 +3,21 @@
 use crate::types::*;
 
 /// FNV-1a 64 over the canonical state strings (each followed by a newline) in runtime id order.
-pub const REGISTRY_HASH: u64 = 0x031ecccffa6645f2;
+pub const REGISTRY_HASH: u64 = 0xf5e7f576e7cc8dd2;
 
-pub static PROPERTY_VALUES: [&str; 50] = [
+pub static PROPERTY_VALUES: [&str; 58] = [
+    "false",
+    "true",
+    "false",
+    "true",
+    "false",
+    "true",
     "north",
     "east",
     "south",
     "west",
+    "false",
+    "true",
     "false",
     "true",
     "north",
@@ -58,43 +66,47 @@ pub static PROPERTY_VALUES: [&str; 50] = [
     "steep_upper",
 ];
 
-pub static PROPERTIES: [PropertyDef; 18] = [
-    PropertyDef { name: "facing", first_value: 0, value_count: 4 },
+pub static PROPERTIES: [PropertyDef; 22] = [
+    PropertyDef { name: "flooded", first_value: 0, value_count: 2 },
+    PropertyDef { name: "flooded", first_value: 2, value_count: 2 },
     PropertyDef { name: "flooded", first_value: 4, value_count: 2 },
     PropertyDef { name: "facing", first_value: 6, value_count: 4 },
     PropertyDef { name: "flooded", first_value: 10, value_count: 2 },
-    PropertyDef { name: "half", first_value: 12, value_count: 2 },
-    PropertyDef { name: "shape", first_value: 14, value_count: 3 },
-    PropertyDef { name: "facing", first_value: 17, value_count: 4 },
-    PropertyDef { name: "flooded", first_value: 21, value_count: 2 },
-    PropertyDef { name: "half", first_value: 23, value_count: 2 },
-    PropertyDef { name: "shape", first_value: 25, value_count: 3 },
-    PropertyDef { name: "facing", first_value: 28, value_count: 4 },
-    PropertyDef { name: "flooded", first_value: 32, value_count: 2 },
-    PropertyDef { name: "half", first_value: 34, value_count: 2 },
-    PropertyDef { name: "shape", first_value: 36, value_count: 3 },
-    PropertyDef { name: "facing", first_value: 39, value_count: 4 },
-    PropertyDef { name: "flooded", first_value: 43, value_count: 2 },
-    PropertyDef { name: "half", first_value: 45, value_count: 2 },
-    PropertyDef { name: "shape", first_value: 47, value_count: 3 },
+    PropertyDef { name: "flooded", first_value: 12, value_count: 2 },
+    PropertyDef { name: "facing", first_value: 14, value_count: 4 },
+    PropertyDef { name: "flooded", first_value: 18, value_count: 2 },
+    PropertyDef { name: "half", first_value: 20, value_count: 2 },
+    PropertyDef { name: "shape", first_value: 22, value_count: 3 },
+    PropertyDef { name: "facing", first_value: 25, value_count: 4 },
+    PropertyDef { name: "flooded", first_value: 29, value_count: 2 },
+    PropertyDef { name: "half", first_value: 31, value_count: 2 },
+    PropertyDef { name: "shape", first_value: 33, value_count: 3 },
+    PropertyDef { name: "facing", first_value: 36, value_count: 4 },
+    PropertyDef { name: "flooded", first_value: 40, value_count: 2 },
+    PropertyDef { name: "half", first_value: 42, value_count: 2 },
+    PropertyDef { name: "shape", first_value: 44, value_count: 3 },
+    PropertyDef { name: "facing", first_value: 47, value_count: 4 },
+    PropertyDef { name: "flooded", first_value: 51, value_count: 2 },
+    PropertyDef { name: "half", first_value: 53, value_count: 2 },
+    PropertyDef { name: "shape", first_value: 55, value_count: 3 },
 ];
 
 pub static BLOCKS: [BlockDef; 15] = [
     BlockDef { name: "dwell:air", first_state: 0, state_count: 1, first_property: 0, property_count: 0 },
-    BlockDef { name: "dwell:stone", first_state: 1, state_count: 1, first_property: 0, property_count: 0 },
-    BlockDef { name: "dwell:dirt", first_state: 2, state_count: 1, first_property: 0, property_count: 0 },
-    BlockDef { name: "dwell:grass", first_state: 3, state_count: 1, first_property: 0, property_count: 0 },
-    BlockDef { name: "dwell:ladder", first_state: 4, state_count: 8, first_property: 0, property_count: 2 },
-    BlockDef { name: "dwell:water", first_state: 12, state_count: 1, first_property: 2, property_count: 0 },
-    BlockDef { name: "dwell:sand", first_state: 13, state_count: 1, first_property: 2, property_count: 0 },
-    BlockDef { name: "dwell:sandbox_floor", first_state: 14, state_count: 1, first_property: 2, property_count: 0 },
-    BlockDef { name: "dwell:log", first_state: 15, state_count: 1, first_property: 2, property_count: 0 },
-    BlockDef { name: "dwell:leaves", first_state: 16, state_count: 1, first_property: 2, property_count: 0 },
-    BlockDef { name: "dwell:tall_grass", first_state: 17, state_count: 1, first_property: 2, property_count: 0 },
-    BlockDef { name: "dwell:stone_ramp", first_state: 18, state_count: 48, first_property: 2, property_count: 4 },
-    BlockDef { name: "dwell:dirt_ramp", first_state: 66, state_count: 48, first_property: 6, property_count: 4 },
-    BlockDef { name: "dwell:grass_ramp", first_state: 114, state_count: 48, first_property: 10, property_count: 4 },
-    BlockDef { name: "dwell:sand_ramp", first_state: 162, state_count: 48, first_property: 14, property_count: 4 },
+    BlockDef { name: "dwell:stone", first_state: 1, state_count: 2, first_property: 0, property_count: 1 },
+    BlockDef { name: "dwell:dirt", first_state: 3, state_count: 2, first_property: 1, property_count: 1 },
+    BlockDef { name: "dwell:grass", first_state: 5, state_count: 2, first_property: 2, property_count: 1 },
+    BlockDef { name: "dwell:ladder", first_state: 7, state_count: 8, first_property: 3, property_count: 2 },
+    BlockDef { name: "dwell:water", first_state: 15, state_count: 1, first_property: 5, property_count: 0 },
+    BlockDef { name: "dwell:sand", first_state: 16, state_count: 2, first_property: 5, property_count: 1 },
+    BlockDef { name: "dwell:sandbox_floor", first_state: 18, state_count: 1, first_property: 6, property_count: 0 },
+    BlockDef { name: "dwell:log", first_state: 19, state_count: 1, first_property: 6, property_count: 0 },
+    BlockDef { name: "dwell:leaves", first_state: 20, state_count: 1, first_property: 6, property_count: 0 },
+    BlockDef { name: "dwell:tall_grass", first_state: 21, state_count: 1, first_property: 6, property_count: 0 },
+    BlockDef { name: "dwell:stone_ramp", first_state: 22, state_count: 48, first_property: 6, property_count: 4 },
+    BlockDef { name: "dwell:dirt_ramp", first_state: 70, state_count: 48, first_property: 10, property_count: 4 },
+    BlockDef { name: "dwell:grass_ramp", first_state: 118, state_count: 48, first_property: 14, property_count: 4 },
+    BlockDef { name: "dwell:sand_ramp", first_state: 166, state_count: 48, first_property: 18, property_count: 4 },
 ];
 
 pub static SHAPE_FACES: [ShapeFace; 1388] = [
@@ -1700,11 +1712,14 @@ pub static SHAPES: [ShapeInfo; 209] = [
     ShapeInfo { first_face: 1381, face_count: 7, corners: [2, 1, 2, 1], points: [[4, 3, 2], [3, 4, 3], [2, 3, 4]], fan: false, inverted: true, diagonal: 0, convex: true, volume: 0.8333333333333334, sides: [[2, 3, 4], [4, 3, 2], [2, 3, 4], [4, 3, 2]], full_top: true, full_bottom: false, min_y: 0.0, max_y: 1.0 },
 ];
 
-pub static STATES: [StateInfo; 210] = [
+pub static STATES: [StateInfo; 214] = [
     StateInfo { name: "dwell:air", block: 0, density_kg_m3: 0.0, solid: false, indestructible: false, shape: VoxelShape::Empty, shape_index: 0, flooded: false, climbable: false, facing: Facing::None, climb_speed_scale: 1.0, liquid: false, adaptive: false, fluid: None, placeable: false, look: "cube", color: 0x000000, opacity: 0.0, textures: None, side_under: &[], grid: None, render: RenderMode::Opaque, cross: None, wind: None, fade: None, selection: None, place_on: &[], needs_support: Support::None, replaceable: false, medium: Medium::Any },
-    StateInfo { name: "dwell:stone", block: 1, density_kg_m3: 2400.0, solid: true, indestructible: false, shape: VoxelShape::Full, shape_index: 1, flooded: false, climbable: false, facing: Facing::None, climb_speed_scale: 1.0, liquid: false, adaptive: false, fluid: None, placeable: true, look: "cube", color: 0xbbafa6, opacity: 1.0, textures: Some(Textures { top: "stone", side: "stone", bottom: "stone" }), side_under: &[], grid: None, render: RenderMode::Opaque, cross: None, wind: None, fade: None, selection: None, place_on: &[], needs_support: Support::None, replaceable: false, medium: Medium::Any },
-    StateInfo { name: "dwell:dirt", block: 2, density_kg_m3: 1500.0, solid: true, indestructible: false, shape: VoxelShape::Full, shape_index: 1, flooded: false, climbable: false, facing: Facing::None, climb_speed_scale: 1.0, liquid: false, adaptive: false, fluid: None, placeable: true, look: "cube", color: 0x8a5a3a, opacity: 1.0, textures: Some(Textures { top: "dirt", side: "dirt", bottom: "dirt" }), side_under: &[SideUnder { above: "dwell:grass", side: "dirtSkirt" }, SideUnder { above: "dwell:grass_ramp", side: "dirtSkirt" }], grid: None, render: RenderMode::Opaque, cross: None, wind: None, fade: None, selection: None, place_on: &[], needs_support: Support::None, replaceable: false, medium: Medium::Any },
-    StateInfo { name: "dwell:grass", block: 3, density_kg_m3: 1400.0, solid: true, indestructible: false, shape: VoxelShape::Full, shape_index: 1, flooded: false, climbable: false, facing: Facing::None, climb_speed_scale: 1.0, liquid: false, adaptive: false, fluid: None, placeable: true, look: "cube", color: 0x8dbf3f, opacity: 1.0, textures: Some(Textures { top: "grass", side: "grassSide", bottom: "dirt" }), side_under: &[], grid: None, render: RenderMode::Opaque, cross: None, wind: None, fade: None, selection: None, place_on: &[], needs_support: Support::None, replaceable: false, medium: Medium::Any },
+    StateInfo { name: "dwell:stone[flooded=false]", block: 1, density_kg_m3: 2400.0, solid: true, indestructible: false, shape: VoxelShape::Full, shape_index: 1, flooded: false, climbable: false, facing: Facing::None, climb_speed_scale: 1.0, liquid: false, adaptive: false, fluid: None, placeable: true, look: "cube", color: 0xbbafa6, opacity: 1.0, textures: Some(Textures { top: "stone", side: "stone", bottom: "stone" }), side_under: &[], grid: None, render: RenderMode::Opaque, cross: None, wind: None, fade: None, selection: None, place_on: &[], needs_support: Support::None, replaceable: false, medium: Medium::Any },
+    StateInfo { name: "dwell:stone[flooded=true]", block: 1, density_kg_m3: 2400.0, solid: true, indestructible: false, shape: VoxelShape::Full, shape_index: 1, flooded: true, climbable: false, facing: Facing::None, climb_speed_scale: 1.0, liquid: false, adaptive: false, fluid: None, placeable: false, look: "cube", color: 0xbbafa6, opacity: 1.0, textures: Some(Textures { top: "stone", side: "stone", bottom: "stone" }), side_under: &[], grid: None, render: RenderMode::Opaque, cross: None, wind: None, fade: None, selection: None, place_on: &[], needs_support: Support::None, replaceable: false, medium: Medium::Any },
+    StateInfo { name: "dwell:dirt[flooded=false]", block: 2, density_kg_m3: 1500.0, solid: true, indestructible: false, shape: VoxelShape::Full, shape_index: 1, flooded: false, climbable: false, facing: Facing::None, climb_speed_scale: 1.0, liquid: false, adaptive: false, fluid: None, placeable: true, look: "cube", color: 0x8a5a3a, opacity: 1.0, textures: Some(Textures { top: "dirt", side: "dirt", bottom: "dirt" }), side_under: &[SideUnder { above: "dwell:grass", side: "dirtSkirt" }, SideUnder { above: "dwell:grass_ramp", side: "dirtSkirt" }], grid: None, render: RenderMode::Opaque, cross: None, wind: None, fade: None, selection: None, place_on: &[], needs_support: Support::None, replaceable: false, medium: Medium::Any },
+    StateInfo { name: "dwell:dirt[flooded=true]", block: 2, density_kg_m3: 1500.0, solid: true, indestructible: false, shape: VoxelShape::Full, shape_index: 1, flooded: true, climbable: false, facing: Facing::None, climb_speed_scale: 1.0, liquid: false, adaptive: false, fluid: None, placeable: false, look: "cube", color: 0x8a5a3a, opacity: 1.0, textures: Some(Textures { top: "dirt", side: "dirt", bottom: "dirt" }), side_under: &[SideUnder { above: "dwell:grass", side: "dirtSkirt" }, SideUnder { above: "dwell:grass_ramp", side: "dirtSkirt" }], grid: None, render: RenderMode::Opaque, cross: None, wind: None, fade: None, selection: None, place_on: &[], needs_support: Support::None, replaceable: false, medium: Medium::Any },
+    StateInfo { name: "dwell:grass[flooded=false]", block: 3, density_kg_m3: 1400.0, solid: true, indestructible: false, shape: VoxelShape::Full, shape_index: 1, flooded: false, climbable: false, facing: Facing::None, climb_speed_scale: 1.0, liquid: false, adaptive: false, fluid: None, placeable: true, look: "cube", color: 0x8dbf3f, opacity: 1.0, textures: Some(Textures { top: "grass", side: "grassSide", bottom: "dirt" }), side_under: &[], grid: None, render: RenderMode::Opaque, cross: None, wind: None, fade: None, selection: None, place_on: &[], needs_support: Support::None, replaceable: false, medium: Medium::Any },
+    StateInfo { name: "dwell:grass[flooded=true]", block: 3, density_kg_m3: 1400.0, solid: true, indestructible: false, shape: VoxelShape::Full, shape_index: 1, flooded: true, climbable: false, facing: Facing::None, climb_speed_scale: 1.0, liquid: false, adaptive: false, fluid: None, placeable: false, look: "cube", color: 0x8dbf3f, opacity: 1.0, textures: Some(Textures { top: "grass", side: "grassSide", bottom: "dirt" }), side_under: &[], grid: None, render: RenderMode::Opaque, cross: None, wind: None, fade: None, selection: None, place_on: &[], needs_support: Support::None, replaceable: false, medium: Medium::Any },
     StateInfo { name: "dwell:ladder[facing=north,flooded=false]", block: 4, density_kg_m3: 600.0, solid: false, indestructible: false, shape: VoxelShape::Empty, shape_index: 0, flooded: false, climbable: true, facing: Facing::North, climb_speed_scale: 1.0, liquid: false, adaptive: false, fluid: None, placeable: true, look: "ladder", color: 0xa0703a, opacity: 1.0, textures: Some(Textures { top: "ladder", side: "ladder", bottom: "ladder" }), side_under: &[], grid: None, render: RenderMode::Cutout, cross: None, wind: None, fade: None, selection: None, place_on: &[], needs_support: Support::None, replaceable: false, medium: Medium::Any },
     StateInfo { name: "dwell:ladder[facing=north,flooded=true]", block: 4, density_kg_m3: 600.0, solid: false, indestructible: false, shape: VoxelShape::Empty, shape_index: 0, flooded: true, climbable: true, facing: Facing::North, climb_speed_scale: 1.0, liquid: false, adaptive: false, fluid: None, placeable: false, look: "ladder", color: 0xa0703a, opacity: 1.0, textures: Some(Textures { top: "ladder", side: "ladder", bottom: "ladder" }), side_under: &[], grid: None, render: RenderMode::Cutout, cross: None, wind: None, fade: None, selection: None, place_on: &[], needs_support: Support::None, replaceable: false, medium: Medium::Any },
     StateInfo { name: "dwell:ladder[facing=east,flooded=false]", block: 4, density_kg_m3: 600.0, solid: false, indestructible: false, shape: VoxelShape::Empty, shape_index: 0, flooded: false, climbable: true, facing: Facing::East, climb_speed_scale: 1.0, liquid: false, adaptive: false, fluid: None, placeable: true, look: "ladder", color: 0xa0703a, opacity: 1.0, textures: Some(Textures { top: "ladder", side: "ladder", bottom: "ladder" }), side_under: &[], grid: None, render: RenderMode::Cutout, cross: None, wind: None, fade: None, selection: None, place_on: &[], needs_support: Support::None, replaceable: false, medium: Medium::Any },
@@ -1714,7 +1729,8 @@ pub static STATES: [StateInfo; 210] = [
     StateInfo { name: "dwell:ladder[facing=west,flooded=false]", block: 4, density_kg_m3: 600.0, solid: false, indestructible: false, shape: VoxelShape::Empty, shape_index: 0, flooded: false, climbable: true, facing: Facing::West, climb_speed_scale: 1.0, liquid: false, adaptive: false, fluid: None, placeable: true, look: "ladder", color: 0xa0703a, opacity: 1.0, textures: Some(Textures { top: "ladder", side: "ladder", bottom: "ladder" }), side_under: &[], grid: None, render: RenderMode::Cutout, cross: None, wind: None, fade: None, selection: None, place_on: &[], needs_support: Support::None, replaceable: false, medium: Medium::Any },
     StateInfo { name: "dwell:ladder[facing=west,flooded=true]", block: 4, density_kg_m3: 600.0, solid: false, indestructible: false, shape: VoxelShape::Empty, shape_index: 0, flooded: true, climbable: true, facing: Facing::West, climb_speed_scale: 1.0, liquid: false, adaptive: false, fluid: None, placeable: false, look: "ladder", color: 0xa0703a, opacity: 1.0, textures: Some(Textures { top: "ladder", side: "ladder", bottom: "ladder" }), side_under: &[], grid: None, render: RenderMode::Cutout, cross: None, wind: None, fade: None, selection: None, place_on: &[], needs_support: Support::None, replaceable: false, medium: Medium::Any },
     StateInfo { name: "dwell:water", block: 5, density_kg_m3: 1000.0, solid: false, indestructible: false, shape: VoxelShape::Empty, shape_index: 0, flooded: false, climbable: false, facing: Facing::None, climb_speed_scale: 1.0, liquid: true, adaptive: false, fluid: Some(0), placeable: false, look: "fluid", color: 0x2f86e0, opacity: 0.72, textures: Some(Textures { top: "water", side: "water", bottom: "water" }), side_under: &[], grid: None, render: RenderMode::Translucent, cross: None, wind: None, fade: None, selection: None, place_on: &[], needs_support: Support::None, replaceable: false, medium: Medium::Any },
-    StateInfo { name: "dwell:sand", block: 6, density_kg_m3: 1600.0, solid: true, indestructible: false, shape: VoxelShape::Full, shape_index: 1, flooded: false, climbable: false, facing: Facing::None, climb_speed_scale: 1.0, liquid: false, adaptive: false, fluid: None, placeable: true, look: "cube", color: 0xeed9a4, opacity: 1.0, textures: Some(Textures { top: "sand", side: "sand", bottom: "sand" }), side_under: &[], grid: None, render: RenderMode::Opaque, cross: None, wind: None, fade: None, selection: None, place_on: &[], needs_support: Support::None, replaceable: false, medium: Medium::Any },
+    StateInfo { name: "dwell:sand[flooded=false]", block: 6, density_kg_m3: 1600.0, solid: true, indestructible: false, shape: VoxelShape::Full, shape_index: 1, flooded: false, climbable: false, facing: Facing::None, climb_speed_scale: 1.0, liquid: false, adaptive: false, fluid: None, placeable: true, look: "cube", color: 0xeed9a4, opacity: 1.0, textures: Some(Textures { top: "sand", side: "sand", bottom: "sand" }), side_under: &[], grid: None, render: RenderMode::Opaque, cross: None, wind: None, fade: None, selection: None, place_on: &[], needs_support: Support::None, replaceable: false, medium: Medium::Any },
+    StateInfo { name: "dwell:sand[flooded=true]", block: 6, density_kg_m3: 1600.0, solid: true, indestructible: false, shape: VoxelShape::Full, shape_index: 1, flooded: true, climbable: false, facing: Facing::None, climb_speed_scale: 1.0, liquid: false, adaptive: false, fluid: None, placeable: false, look: "cube", color: 0xeed9a4, opacity: 1.0, textures: Some(Textures { top: "sand", side: "sand", bottom: "sand" }), side_under: &[], grid: None, render: RenderMode::Opaque, cross: None, wind: None, fade: None, selection: None, place_on: &[], needs_support: Support::None, replaceable: false, medium: Medium::Any },
     StateInfo { name: "dwell:sandbox_floor", block: 7, density_kg_m3: 2400.0, solid: true, indestructible: true, shape: VoxelShape::Full, shape_index: 1, flooded: false, climbable: false, facing: Facing::None, climb_speed_scale: 1.0, liquid: false, adaptive: false, fluid: None, placeable: false, look: "cube", color: 0xffffff, opacity: 1.0, textures: Some(Textures { top: "grid", side: "grid", bottom: "grid" }), side_under: &[], grid: Some(Grid { every: 8, strength: 0.3 }), render: RenderMode::Opaque, cross: None, wind: None, fade: None, selection: None, place_on: &[], needs_support: Support::None, replaceable: false, medium: Medium::Any },
     StateInfo { name: "dwell:log", block: 8, density_kg_m3: 700.0, solid: true, indestructible: false, shape: VoxelShape::Full, shape_index: 1, flooded: false, climbable: false, facing: Facing::None, climb_speed_scale: 1.0, liquid: false, adaptive: false, fluid: None, placeable: true, look: "cube", color: 0x7a5236, opacity: 1.0, textures: Some(Textures { top: "logTop", side: "logSide", bottom: "logTop" }), side_under: &[], grid: None, render: RenderMode::Opaque, cross: None, wind: None, fade: None, selection: None, place_on: &[], needs_support: Support::None, replaceable: false, medium: Medium::Any },
     StateInfo { name: "dwell:leaves", block: 9, density_kg_m3: 200.0, solid: true, indestructible: false, shape: VoxelShape::Full, shape_index: 1, flooded: false, climbable: false, facing: Facing::None, climb_speed_scale: 1.0, liquid: false, adaptive: false, fluid: None, placeable: true, look: "cube", color: 0x6fa83a, opacity: 1.0, textures: Some(Textures { top: "leaves", side: "leaves", bottom: "leaves" }), side_under: &[], grid: None, render: RenderMode::Cutout, cross: None, wind: None, fade: None, selection: None, place_on: &[], needs_support: Support::None, replaceable: false, medium: Medium::Any },

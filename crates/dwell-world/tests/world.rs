@@ -80,14 +80,14 @@ fn the_palette_is_the_registrys_placeable_states() {
     assert_eq!(
         names,
         [
-            "dwell:stone",
-            "dwell:dirt",
-            "dwell:grass",
+            "dwell:stone[flooded=false]",
+            "dwell:dirt[flooded=false]",
+            "dwell:grass[flooded=false]",
             "dwell:ladder[facing=north,flooded=false]",
             "dwell:ladder[facing=east,flooded=false]",
             "dwell:ladder[facing=south,flooded=false]",
             "dwell:ladder[facing=west,flooded=false]",
-            "dwell:sand",
+            "dwell:sand[flooded=false]",
             "dwell:log",
             "dwell:leaves",
             "dwell:tall_grass"
@@ -496,7 +496,10 @@ fn plants_go_only_into_their_medium() {
     let grass = row("dwell:tall_grass");
     assert!(medium_allows(grass, row("dwell:air")));
     assert!(!medium_allows(grass, row("dwell:water")));
-    assert!(medium_allows(row("dwell:stone"), row("dwell:water")));
+    assert!(medium_allows(
+        row("dwell:stone[flooded=false]"),
+        row("dwell:water")
+    ));
     // An air plant never stays flooded; anything else is kept as it is.
     assert_eq!(medium_kept(tall), tall);
     assert_eq!(

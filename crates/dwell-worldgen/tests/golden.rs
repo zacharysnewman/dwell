@@ -1,8 +1,8 @@
 //! The worldgen goldens: the Rust generator reproduces, hash for hash, the chunks and LOD sections
 //! recorded in shared/worldgen/golden (by the C++ generator up to version 12, by the Rust generator
-//! since; on the half-height branch, generator version 1016: ½ m cells, stored ramps and main's
-//! steep hills in whole-metre steps). The same test runs under wasm32 in CI, so native and WASM
-//! agree too (ADR 0010).
+//! since; on the half-height branch, generator version 1017: ½ m cells, stored ramps, main's
+//! steep hills in whole-metre steps and the sea flooding the open part of ramps below sea level).
+//! The same test runs under wasm32 in CI, so native and WASM agree too (ADR 0010).
 
 use dwell_world::lod::{LodCells, LodCoord, lod_hash};
 use dwell_world::{Chunk, ChunkCoord, chunk_hash};

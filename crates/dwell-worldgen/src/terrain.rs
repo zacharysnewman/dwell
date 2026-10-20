@@ -1,5 +1,5 @@
-//! Procedural terrain, generator version 1016 (ARCHITECTURE.md §6.3; on the half-height branch,
-//! 1000 + main's version 16): the interim baseline of Phase
+//! Procedural terrain, generator version 1017 (ARCHITECTURE.md §6.3; on the half-height branch,
+//! 1000 + main's version 17): the interim baseline of Phase
 //! 15 — one island at the origin, a 2D height field, and the ground filled by depth — and since
 //! version 13 (Phase 33) the decorations of `shared/worldgen/decorations.json` one cell above the
 //! ground (tall grass; `decorations.rs`), and since version 14 (Phase 41, HALF_HEIGHT_GRID.md) ½ m
@@ -10,7 +10,9 @@
 //! Per chunk: (1) layout: the signed distance to the coast; (2) height: the sea floor falling from
 //! the coast, or the land rising inland, plus hills, never below the core; (3) fill: the stone core
 //! (`CORE_LAYERS` from the midplane, never carved), stone up to the surface under grass over dirt
-//! on land, sand at the shore and under water, water in open space below sea level. 2D fields are
+//! on land, sand at the shore and under water, water in open space below sea level — since version
+//! 17 also the open part of a top block below sea level, which takes its `flooded` state
+//! (docs/WATER_RENDERING.md §9). 2D fields are
 //! sampled every 4 columns and interpolated. Heights are face-local, from the midplane (Phase 16:
 //! the midplane at 0, sea level `h` = 32). The height field's parameters are data
 //! (`shared/worldgen/terrain.json`, `HeightField`); the island's layout and the fill depths are
@@ -144,6 +146,23 @@ fn fill(top: i32, depth: i64) -> StateId {
     } else {
         M.stone
     }
+}
+
+/// The state the generator writes for `m` at row `y` of a column's top (its top voxel, or a stored
+/// ramp piece over it): below sea level it holds the sea in its open part (its `flooded` state,
+/// when its block has one; docs/WATER_RENDERING.md §9), so a ramp in the water's rows is under
+/// the water, not dry beside it — on the half-height grid, a 1 m ramp's lower piece too when only
+/// it lies below sea level.
+fn under_sea(m: StateId, y: i32) -> StateId {
+    if y >= SEA_LEVEL {
+        return m;
+    }
+    static FLOODED: std::sync::LazyLock<Vec<StateId>> = std::sync::LazyLock::new(|| {
+        (0..dwell_blocks::STATES.len() as StateId)
+            .map(|id| dwell_blocks::with_property(id, "flooded", "true").unwrap_or(id))
+            .collect()
+    });
+    FLOODED.get(usize::from(m)).copied().unwrap_or(m)
 }
 
 /// The noise fields of a point, before the height is derived from them.
@@ -366,7 +385,8 @@ impl TerrainGenerator {
         }
         let top = top_voxel(col.height);
         if y <= top {
-            fill(top, i64::from(top - y))
+            let m = fill(top, i64::from(top - y));
+            if y == top { under_sea(m, y) } else { m }
         } else if y < SEA_LEVEL {
             M.water
         } else {
@@ -506,8 +526,10 @@ impl TerrainGenerator {
                     }
                     let v = &mut voxels[local_index(x, ly, z)];
                     if y <= top && y >= first_piece {
-                        *v = pieces[(y - first_piece) as usize];
-                    } else if y <= top {
+                        *v = under_sea(pieces[(y - first_piece) as usize], y);
+                    } else if y == top {
+                        *v = under_sea(fill(top, 0), y);
+                    } else if y < top {
                         *v = fill(top, i64::from(top - y));
                     } else if y < SEA_LEVEL {
                         *v = M.water;
@@ -574,9 +596,8 @@ impl TerrainGenerator {
             std::array::from_fn(|c| height(x + c as i32 - 1, z + r as i32 - 1))
         });
         let shape = ramps_rule::top_of(&around, rows_for_m(1.0));
-        // Under water (the cell above the top is sea), the pieces hold it in their open part.
-        let flooded = top + 1 < SEA_LEVEL;
-        let cells = self.ramps.cells(fill(top, 0), shape, flooded);
+        // Dry pieces: `generate` floods each one below sea level (`under_sea`).
+        let cells = self.ramps.cells(fill(top, 0), shape, false);
         // A 1 m ramp needs two cells of ground; a column one cell deep takes none.
         if (cells.len() as i32) > top + 1 - FACE_MIN_Y {
             return &[];
