@@ -926,7 +926,8 @@ always toward the midplane (y = −2,048), so a face-B player stands upside down
   *mirror image* of the world — heights y → −4,096 − y (voxel rows y → −4,097 − y, the frame the
   face's terrain is generated in), vertical velocities and contact normals negated, shaped blocks
   turned over (`dwell_blocks::mirror`) — where gravity points to −y as ever. `Frame` maps positions,
-  velocities, rows and states, and `FaceQuery` (the voxel queries) and the passes' private
+  velocities, rows, states and shapes, each through `dwell_world::FaceFrame` (the world's one face
+  transform, BIFACIAL_WORLD.md §11), and `FaceQuery` (the voxel queries) and the passes' private
   `pos`/`vel`/`set_pos`/`set_vel` cross the boundary; on face A the maps are the identity, so face A
   plays exactly as the upright controller. `Players::position`, `velocity`, `feet` and `head` stay in
   the world (`feet` is above `head` on face B). The face switches (in `step_input`) when the body

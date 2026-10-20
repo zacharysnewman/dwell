@@ -76,6 +76,8 @@ export interface Scenario {
   scale: number;
   /** Near or far view, for `bench --compare`'s split; null: neither. */
   split: Split | null;
+  /** The face the player spawns on (`?spawn=b`, BIFACIAL_WORLD.md §11); default `a`. */
+  face: 'a' | 'b';
   steps: Step[];
 }
 
@@ -293,8 +295,12 @@ function parseScenario(where: string, v: unknown): Scenario {
     'debug',
     'scale',
     'split',
+    'face',
     'steps',
   ]);
+  if (o.face !== undefined && o.face !== 'a' && o.face !== 'b') {
+    throw new ViewError(`${where}.face: expected "a" or "b"`);
+  }
   const n = name(`${where}.name`, o.name);
   const w = o.window === undefined ? {} : obj(`${where}.window`, o.window, ['width', 'height']);
   const settings = (
@@ -335,6 +341,7 @@ function parseScenario(where: string, v: unknown): Scenario {
     debug: bool(`${where}.debug`, o.debug, false),
     scale: num(`${where}.scale`, o.scale, 0.25, 2, 1),
     split: split(`${where}.split`, o.split),
+    face: o.face === 'b' ? 'b' : 'a',
     steps,
   };
 }
@@ -369,6 +376,7 @@ export function scenarioUrl(
   params: Record<string, string> = {},
 ): string {
   const url = new URL(viewUrl(base, scenarioView(s)), 'http://x');
+  if (s.face === 'b') url.searchParams.set('spawn', 'b');
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
   return `${base}${url.search}`;
 }

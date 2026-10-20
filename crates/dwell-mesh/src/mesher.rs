@@ -13,6 +13,7 @@ use dwell_blocks::{
     FLUIDS, FluidInfo, RenderMode, STATES, ShapeInfo, StateId, StateInfo, shape::faces_of,
 };
 use dwell_protocol::CHUNK_SIZE;
+use dwell_world::FaceFrame;
 
 use crate::LengthError;
 use crate::style::{
@@ -1043,7 +1044,10 @@ pub(crate) fn mesh_chunk_with(
         });
     }
     if mirror {
-        let m = mesh_chunk_with(kinds, &mirror_padded(padded), false, origin)?;
+        // Meshed in the face-local frame (BIFACIAL_WORLD.md §11): the mirror image's minimum
+        // corner is the face-local chunk's, so a plant is jittered as its face-A twin is.
+        let local = [origin[0], FaceFrame::B.row(origin[1] + N - 1), origin[2]];
+        let m = mesh_chunk_with(kinds, &mirror_padded(padded), false, local)?;
         return Ok(ChunkMeshes {
             opaque: flip_arrays_y(m.opaque),
             transparent: flip_arrays_y(m.transparent),

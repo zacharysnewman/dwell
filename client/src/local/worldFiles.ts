@@ -8,10 +8,7 @@
 /** Files a world may have used: the database and, from the SQLite build, its journal and WAL. */
 export const WORLD_FILE_SUFFIXES = ['', '-journal', '-wal'] as const;
 
-/** File name (in `dwell/worlds/`) of the local world for a generator and seed. */
-export function localWorldName(generatorVersion: number, worldSeed: number): string {
-  return `local-g${String(generatorVersion)}-s${String(worldSeed)}`;
-}
+export { localWorldName } from './world';
 
 /** `dwell/worlds/` in OPFS (created if missing). Throws where OPFS is unavailable. */
 async function worldsDirectory(): Promise<FileSystemDirectoryHandle> {

@@ -916,7 +916,8 @@ async function connect(app: App): Promise<void> {
     localWorld = parseLocalWorld(location.search);
     // A link to a world file that is already there opens a world saved before versioned releases
     // (ignored); a new one is this build's.
-    const name = localWorldName(localWorld.generatorVersion, localWorld.worldSeed);
+    const name =
+      localWorld.file ?? localWorldName(localWorld.generatorVersion, localWorld.worldSeed);
     const existed = (await listWorldFiles()).includes(name);
     const world = index.adopt(name, Date.now(), existed ? undefined : recordedVersion());
     const access = world ? worldAccess(world, buildInfo.version) : null;

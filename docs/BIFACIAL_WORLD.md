@@ -216,3 +216,100 @@ character of its own.
 - **Not done here:** Tier 1 bodies' gravity scales are built and tested (`dwell-physics`
   `tests/tier1_bifacial.rs`), but clusters arrive in Phase 20;
   the F4 terrain map and the debug overlays show face A.
+
+## 11. Face parity: both faces by construction [built, 2026-10-20]
+
+Face B kept growing bugs of its own (owner, 2026-10-20: "consider how we can handle both world sides
+consistently so we don't have bugs that only affect one side or the other"): a plant's selection box
+not turned over, a half-height top aimed at as a whole cell, brushes and pastes working upside down,
+mirrored targets. Each came from code that was written for face A and then patched for face B in
+place, with its own sign or `if y < MIDPLANE_Y`, and tested on face A only.
+
+**The rule.** Write face-dependent code once, in **face-local coordinates** (+y up, the ground below,
+as on face A), and cross into the world only through **`dwell_world::FaceFrame`**. The test harness
+runs it on both faces.
+
+- `FaceFrame` (`dwell-world` `face.rs`) is the one transform: `FaceFrame::A` is the identity,
+  `FaceFrame::B` the mirror in the midplane, each map its own inverse, so the same call goes world →
+  local and back. It maps heights (`y`), voxel rows (`row`), chunk rows and chunks (`chunk_y`,
+  `chunk`), cells, points and vectors (`cell`, `point`, `vector`), block states and shapes turned
+  over (`state`, `shape`), spans within a cell (`in_cell`), cell-face indices (`cell_face`: ±Y swap),
+  boxes and their cells in layer order (`box_min`, `box_cells`, `box_flags`), and says when a mirror
+  re-winds triangles (`flips_winding`). The frame of a place is `FaceFrame::at_row`, `at_height`,
+  `at_chunk_y` or `of_box`. `dwell_world`'s older helpers (`up_of_y`, `mirror_y`, `mirror_chunk_y`,
+  `face_local_chunk`) are shorthands for it, and `dwell-physics`' controller `Frame` is its physics
+  view (it maps through it).
+- **Mirroring happens at a few boundaries**, each listed in the table below as *boundary*: generation
+  (a face-B chunk or LOD section is the face-local one turned over), the meshers (a face-B chunk or
+  section is meshed as its mirror image and the geometry turned back), the controller (it runs in the
+  mirror image of the world), and the tools (a brush stroke and a paste run face-local). Inside a
+  boundary nothing knows which face it is on.
+- **Tests run on both faces.** `dwell_world::both_faces!(fn name(f: FaceFrame) { … })` declares a
+  test as a module with a test per face (`name::a`, `name::b`), so a face-dependent test is never
+  face A's alone; `FaceFrame::under_test()` gives the faces for a loop, and `DWELL_FACE=a|b` narrows
+  either to one face. The controller suites keep their whole-suite mirror run (`DWELL_FACE=b cargo
+  nextest run -p dwell-physics`, CI's "on face B" step); the `both_faces!` tests need no second run:
+  `cargo nextest run --workspace` runs both faces.
+- **Parity tests compare whole systems across the faces**, in face-local terms, rather than spot
+  checks of face B. The **mirror world** (`BifacialTerrain::mirrored(seed)`, a test tool: face B
+  generated from face A's seed) makes face B face A's exact mirror image, so anything generated,
+  drawn or edited on one face can be compared with the other cell for cell:
+  - generation: every chunk, LOD section and column surface of face B is face A's turned over
+    (`dwell-worldgen` `tests/lod.rs` `the_mirror_worlds_face_b_is_face_as_mirror_image`);
+  - the chunk mesher: a chunk copied onto face B and gathered as the client gathers it meshes to
+    face A's mesh turned over — shapes, skirts, plants (their jitter), trees, water, shores
+    (`dwell-mesh` `a_chunk_meshes_the_same_face_local_on_either_face`);
+  - the LOD: a camera on face B of the mirror world selects, generates and meshes the mirror image of
+    what it does on face A, section for section (`dwell-lod` `the_lod_draws_the_same_face_local_on_either_face`),
+    and asks for the mirrored chunks (`asks_for_the_chunks_around_the_camera_on_either_face`);
+  - targeting: a half-height top's box and ray hit (`dwell-world` `tests/world.rs`);
+  - tools: every brush preset's stroke (`dwell-game` `brush_tool.rs`), and a copy pasted on either
+    face from either face (`region_tools.rs`);
+  - the controller: every scenario mirrored (`DWELL_FACE=b`, PLAYER_CONTROLLER.md §11).
+- **Playing face B.** The dev link `?spawn=b` starts a local world with the player on face B's
+  spawn (`BifacialTerrain::spawn_point_b`, a world file of its own, `…-faceb`), and a bench scenario's
+  `"face": "b"` does the same (`docs/DEV_TOOLS.md`). Real worlds still spawn on face A (§9).
+
+### 11.1 The audit (2026-10-20)
+
+Every place that branches on the face or mirrors coordinates, and how it stands. *Boundary*: one of
+the documented mirroring boundaries. *Frame*: goes through `FaceFrame` (or a shorthand of it).
+*Sign*: a face sign threaded into world-space maths (symmetric by construction, covered by a parity
+test or the mirror suite); these are the ones to move onto `FaceFrame` when their files are next
+reworked (renderer and netcode, being changed by other work as this lands).
+
+| Area | Where | How it handles face B | Status |
+|---|---|---|---|
+| Face of a place | `dwell-world` `voxel.rs` `face_of_y`, `face_of_chunk_y`, `up_of_y`, `mirror_y`, `mirror_chunk_y`, `face_local_chunk` | shorthands | Frame |
+| Worldgen chunks | `dwell-worldgen` `bifacial.rs` `generate`, `solid_at`, air test, sky floor | face-local generator, chunk turned over | Boundary; parity test |
+| Worldgen LOD | `bifacial.rs` `generate_lod` (rows mirrored, `surface_b` face-local), `lod_bounds_at`; `dwell-world` `lod.rs` `mirror_row_bottom`, `row_face`, `first_face_a_row` | face-local section, rows reversed | Boundary; parity test |
+| Trees, pines, structures, decorations | `terrain.rs` `lod_trees`, `placements.rs` | placed by the face-local generator | inside the boundary |
+| Spawn | `spawn_point` (face A, §9), `spawn_point_b` (dev link) | — | Frame |
+| Chunk mesher | `dwell-mesh` `mesher.rs` `mesh_chunk_with(mirror)`: `mirror_padded`, `flip_arrays_y`; the job's flag from `face_of_chunk_y` (`dwell-game` `chunk_stream.rs`) | meshed as the mirror image, turned back | Boundary; parity test. **Fixed:** plants were jittered by the mirror image's world corner (a face-B plant did not look like its face-A twin) |
+| Shapes, the dirt skirt, plants, fluids, flooded shores | `mesher.rs` (`side_rule`, `plant_sink`, `fluid_side`), `dwell-blocks` `adaptive.rs` (`shape_at`, `flooded_at` take `up`) | inside the mesher's boundary; the adaptive rules take the face's up | parity test |
+| LOD meshing | `lod_mesher.rs` `mesh_section(mirror)`: `mirror_rows`, `flip_mesh_y`, ±Y skirts swapped | mirror image, turned back | Boundary; parity test |
+| LOD selection | `dwell-lod` `system.rs` (`view_face`, the other face culled beyond 512 m, `surface_b` for face-B sections, `mirror_section_origin`), `grid.rs` (`is_face_b_section`) | by the camera's face | parity test; straddling sections (levels ≥ 7) are meshed for the viewer's face by design (§10) |
+| Controller | `dwell-physics` `frame.rs` (`Frame`, `FaceQuery`), `controller.rs` (face switch, ladder rows) | runs in the mirror image | Boundary (via FaceFrame); the mirror suite |
+| Gravity, flip band | `physics.rs`, `config.rs` | sign by side of the midplane | Sign; `tests/bifacial.rs` |
+| Terrain collision | `physics` `terrain.rs` (`up_of_y` for derived shapes) | the face's up | Frame |
+| Netcode | `net.rs`, `predictor.rs` (`FACE_B` flags) | a flag on the wire | Sign |
+| Editing | `dwell-world` `edit.rs` `below`, `unsupported_after`, `plant_sink_at`, `target_box`, the raycast's plant-above | the face's up | Frame. **Fixed:** `target_box` outlined and aimed at a face-B half-height top as a whole cell |
+| Targeting | `dwell-game` `block_interaction.rs` `view_direction`; `dwell-client` `render/camera.rs` `view_forward` (the same formula) | pitch toward the face's up | Sign |
+| Brushes and the ghost | `dwell-game` `brush_tool.rs` `stroke_at`, `covered_at` | stroke run face-local | Boundary (via FaceFrame). **Fixed:** strokes ran in world terms on face B (trees grew into the ground, overlay painted the buried side, flatten/raise/lower inverted). Brushes are only enabled in the sandbox (face A) today |
+| Copy and paste | `region_tools.rs` (clipboard face-local, `paste_box`) | face-local clipboard | Boundary (via FaceFrame). **Fixed:** a face-B paste ran from the aimed-at cell into the ground, and a copy from the other face pasted upside down |
+| Eye, camera turn-over | `dwell-game` `eye.rs`, `face_flip.rs`; `dwell-look` `motion.rs` | face sign | Sign; tests on both faces |
+| Sounds | `dwell-game` `sound.rs` (landing impact along the face's up) | face sign | Sign; face-B test |
+| Remote players | `remotes.rs` `is_face_b`, `dwell-client` `game.rs` | drawn upside down | Sign |
+| Fluids under the eye | `dwell-world` `fluid.rs` `eye_fluid` | the face's up | Frame |
+| Light, fog, sky, clouds, water | `dwell-client` `render/shaders.rs` (`own`, `lambert`, `fog_amount`, the water's normals, reflections, caustics), `dwell-look` `lib.rs` (`sky_color`, `light_weight`) | per fragment by its side of the midplane; the sky and fog in the viewer's face frame | Sign |
+| Spyglass | `dwell-look` `spyglass.rs` | face-independent (zoom) | — |
+
+**"Stray dark slabs" (deferred bug, 2026-10-15): the camera was inside face B's rock.** Reported by
+the day/night work from its `day-night-face-b` scenario, whose camera was written as "50 m over face
+B's sea" at y = −4,150 when the midplane was at −2,048. Seed 7's face B stands 402 m high at the origin
+(there is no sea there), and after Phase 16 moved the midplane to 0 the camera was still in the ground:
+what it drew is the inside of the terrain — chunk and section walls seen from within (dark under face
+B's dawn light), leaves and grass floating against the sky. Face A drawn from inside its rock looks the
+same (grey walls by day); no face-B-only geometry is involved, which the parity tests above confirm
+for generation, the chunk mesher and the LOD. Fix: the scenario's camera is now 50 m over face B's
+ground (y = −452). Shots of both (in rock, and over the ground) are in the PR.

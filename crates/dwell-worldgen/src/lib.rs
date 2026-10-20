@@ -72,6 +72,15 @@ pub fn air_test_for(version: u32, world_seed: u64) -> AirChunkTest {
     })
 }
 
+/// Face B's spawn point for the terrain generator (`BifacialTerrain::spawn_point_b`); the face-A
+/// one for the others (they have no face B).
+pub fn spawn_point_b_for(version: u32, world_seed: u64) -> [f64; 3] {
+    if version == GENERATOR_TERRAIN {
+        return BifacialTerrain::new(world_seed).spawn_point_b();
+    }
+    spawn_point_for(version, world_seed)
+}
+
 /// Feet position players spawn at: near the origin, on open level ground.
 pub fn spawn_point_for(version: u32, world_seed: u64) -> [f64; 3] {
     if version == GENERATOR_TERRAIN {

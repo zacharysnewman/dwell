@@ -16,6 +16,8 @@ dwell-world = { path = "../dwell-world" }
 [dev-dependencies]
 # The fly-out scenario (Phase 16): the real controller drives the LOD's camera.
 dwell-physics = { path = "../dwell-physics" }
+# The face-parity suite meshes real terrain (the mirror world).
+dwell-worldgen = { path = "../dwell-worldgen" }
 
 [lints]
 workspace = true
