@@ -1021,19 +1021,12 @@ fn ink_cell(rel: vec3f, n: vec3f) -> vec3i {
     return vec3i(floor(world));
 }
 
-// The view depth the edges are found in: a pixel's farthest sample, and nothing (0) if any sample
-// shows the sky. The composite's mean over the covered samples would let a few samples of a
-// blade's tip or a fading plant's dither pull a pixel forward, which dots lines over the grass.
+// The view depth the edges are found in: one sample of the pixel (the first). One load per tap
+// (the cost; a sample's depth is never a blend), where the composite's mean over the covered
+// samples would let a few samples of a blade's tip or a fading plant's dither pull a pixel
+// forward, which dots lines over the grass.
 fn ink_depth(p: vec2i) -> f32 {
-    var far = 0.0;
-    for (var s = 0; s < SCENE_SAMPLES; s++) {
-        let d = textureLoad(scene_depth, p, s).r;
-        if (d <= 0.0) {
-            return 0.0;
-        }
-        far = max(far, d);
-    }
-    return far;
+    return textureLoad(scene_depth, p, 0).r;
 }
 
 // The outline at pixel `p` (view ray `ray`): its opacity and the edge's view depth (its nearest
@@ -1046,6 +1039,11 @@ fn ink_outline(p: vec2i, ray: vec3f) -> vec2f {
     let r = i32(frame.outline.y);
     let size = textureDimensions(scene_color);
     let dims = vec2i(size);
+    // Ground past the fade has no line of its own: one load and out (most of a distant view).
+    let centre = ink_depth(p);
+    if (centre * length(ray) >= frame.outline.w) {
+        return vec2f(0.0);
+    }
     var w: array<f32, 9>;
     for (var k = 0; k < 9; k++) {
         let o = vec2i(k % 3 - 1, k / 3 - 1) * r;

@@ -11,6 +11,24 @@
       "params": { "textures": "painterly" }
     },
     {
+      "name": "outline-silhouette",
+      "notes": "The mesher with the ink outline's silhouettes (docs/ART_DIRECTION.md §7, shared/look/outline.json): its cost is the composite's.",
+      "renderer": "raster",
+      "params": { "outline": "silhouette" }
+    },
+    {
+      "name": "outline-creases",
+      "notes": "The mesher with the ink outline's silhouettes and creases.",
+      "renderer": "raster",
+      "params": { "outline": "creases" }
+    },
+    {
+      "name": "outline-blocks",
+      "notes": "The mesher with the ink outline's silhouettes, creases and block edges.",
+      "renderer": "raster",
+      "params": { "outline": "blocks" }
+    },
+    {
       "name": "raster-half",
       "notes": "The mesher at half resolution, stretched by the browser (today's ?scale=).",
       "renderer": "raster",
