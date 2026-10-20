@@ -7,6 +7,7 @@ test.use({ ...devices['iPhone 13 landscape'], browserName: 'chromium' });
 interface State {
   active: boolean;
   feet: [number, number, number];
+  stats: { ticks: number };
 }
 const read = (page: Page) =>
   page.evaluate<State | null>('(globalThis.__dwell && globalThis.__dwell.state()) || null');
@@ -32,7 +33,7 @@ async function touch(
 test('touch controls: stick, look, and jump', async ({ page }) => {
   // CI's software rendering is slow: the steps before the jump alone take ~20 s there.
   test.setTimeout(90_000);
-  await page.goto('./?world=flat');
+  await page.goto('./?local=1');
   await expect
     .poll(async () => (await read(page))?.active ?? false, { timeout: 20_000 })
     .toBe(true);
@@ -40,6 +41,7 @@ test('touch controls: stick, look, and jump', async ({ page }) => {
   await expect(page.locator('#touch-jump')).toBeVisible();
   const cdp = await page.context().newCDPSession(page);
   const start = await read(page);
+  const startedAt = Date.now();
 
   // Drag the stick up (forward) from the lower left and hold for a second.
   await touch(cdp, 'touchStart', [{ x: 150, y: 300, id: 1 }]);
@@ -72,16 +74,15 @@ test('touch controls: stick, look, and jump', async ({ page }) => {
   const deadline = Date.now() + 10_000;
   while (peak - ground <= 0.5 && Date.now() < deadline) {
     await page.waitForTimeout(40);
-    const st = (await page.evaluate('globalThis.__dwell.state()')) as any;
-    console.log('DIAG poll', Date.now(), st?.feet?.join(','), JSON.stringify(st?.stats), JSON.stringify(st?.terrain));
     peak = Math.max(peak, (await read(page))?.feet[1] ?? 0);
   }
   await touch(cdp, 'touchEnd', []);
-  console.log('DIAG interval', JSON.stringify((await page.evaluate<any>('globalThis.__dwell.telemetry()')).frames.interval));
-  console.log('DIAG start', JSON.stringify(start?.feet), 'walked', JSON.stringify(walked?.feet), 'ground', ground);
-  for (const t of await page.evaluate<any[]>('globalThis.__dwell.ticks()'))
-    console.log('DIAG tick', t.seq, t.atMs.toFixed(0), t.feet.map((v: number) => v.toFixed(3)).join(','), t.velocity.map((v: number) => v.toFixed(2)).join(','), t.state, t.grounded, t.ceilingBlocked, t.move.join(','), t.jump);
-  expect(peak - ground).toBeGreaterThan(0.5);
+  // A page that predicts far fewer than 60 ticks a second drops time, and the server, filling the
+  // missing ticks with the held input, flies and lands the jump without it (game.rs
+  // MAX_TICKS_PER_FRAME): the rate says whether that is what happened.
+  const ticks = ((await read(page))?.stats.ticks ?? 0) - (start?.stats.ticks ?? 0);
+  const rate = (ticks * 1000) / (Date.now() - startedAt);
+  expect(peak - ground, `jump peak, predicting ${rate.toFixed(1)} ticks/s`).toBeGreaterThan(0.5);
 });
 
 test('touch controls: Break/Place toggle, tapping the view edits, tapping the hotbar picks', async ({

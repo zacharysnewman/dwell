@@ -43,11 +43,14 @@ use crate::render::{Line, PlayerView, RegionBox, StandIn, WindView};
 use crate::telemetry::{self, TickSample};
 
 const TICK_MS: f64 = 1000.0 / SIM_HZ as f64;
-/// Ticks one frame may catch up (250 ms): beyond it time is dropped, so the frame loop can't spiral.
-/// It covers a slow device's frame (down to 4 fps): a client that drops time predicts fewer ticks
+/// Ticks one frame may catch up (1 s): beyond it time is dropped, so the frame loop can't spiral.
+/// It covers a slow device's frame (down to 1 fps): a client that drops time predicts fewer ticks
 /// than the server's 60 Hz, the server fills the missing ones by repeating the last input, and the
-/// replays drag the player (a snap once past RECONCILE_SNAP_DISTANCE; e2e/play.spec.ts on CI).
-const MAX_TICKS_PER_FRAME: f64 = 15.0;
+/// replays drag the player (a snap once past RECONCILE_SNAP_DISTANCE; e2e/play.spec.ts on CI) or
+/// land a held jump one tick into it (e2e/touch.spec.ts at CI's 440–810 ms frames). The server's
+/// input queue and latency window (dwell-sim `MAX_QUEUED_INPUTS`, `LATENCY_WINDOW_TICKS`) hold a
+/// frame of this many inputs.
+const MAX_TICKS_PER_FRAME: f64 = 60.0;
 /// Main-thread time per frame for starting mesh jobs (copying chunks' voxels out of the world).
 const MESH_BUDGET_MS: f64 = 4.0;
 /// Server input buffer outside [LOW, HIGH] nudges the local tick rate by ±RATE_NUDGE.
