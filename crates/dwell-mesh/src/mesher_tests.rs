@@ -204,7 +204,7 @@ fn blocks_of_each_render_mode_added_by_data_alone_go_to_their_meshes() {
         id("test:hedge"),
         id("test:glass"),
         id("test:reed"),
-        id("dwell:stone"),
+        id("dwell:stone[flooded=false]"),
         id("dwell:water"),
     );
     let kinds = Kinds::new(&STATES, &FLUIDS, Some(water));
@@ -835,10 +835,14 @@ fn fluid_side_faces_stand_only_over_the_open_part_beside_them_and_under_the_flui
         }
         sides += 1;
         let centre = [0, 1, 2].map(|i| (a[i] + b[i] + c[i]) / 3.0);
-        let row = centre[1].floor();
+        // The face's own cell: its side stops at the drawn surface unless water is over it.
+        let own = [0, 1, 2].map(|i| (centre[i] - n[i] * 0.01).floor() as i32);
+        let over = |dx: i32, dy: i32, dz: i32| at(own[0] + dx, own[1] + 1 + dy, own[2] + dz);
+        let wet_above = over(0, 0, 0) == water() || dwell_blocks::adaptive::flooded_at(over, 1);
+        let limit = f64::from(own[1]) + if wet_above { 1.0 } else { top };
         for p in [a, b, c] {
             assert!(
-                p[1] <= row + top + 1e-5,
+                p[1] <= limit + 1e-5,
                 "a side face above the water's surface: {a:?} {b:?} {c:?}"
             );
         }
@@ -1009,7 +1013,11 @@ fn a_side_tile_rule_added_by_data_alone_is_applied() {
     // `{ "dwell:stone": "grassSide" }` and nothing else.
     use dwell_blocks::fixture::{FLUIDS, STATES};
     let id = |name: &str| STATES.iter().position(|s| s.name == name).expect(name) as u16;
-    let (loam, stone, water) = (id("test:loam"), id("dwell:stone"), id("dwell:water"));
+    let (loam, stone, water) = (
+        id("test:loam"),
+        id("dwell:stone[flooded=false]"),
+        id("dwell:water"),
+    );
     let kinds = Kinds::new(&STATES, &FLUIDS, Some(water));
     let mesh_of = |cells: &[(i32, i32, i32, u16)]| {
         mesh_chunk_with(&kinds, &voxels(cells), false, [0; 3])

@@ -368,8 +368,14 @@ fn the_fill_grass_over_dirt_sand_at_the_shore_sea_to_its_level() {
                         } else if wy < MIDPLANE_Y + CORE_LAYERS {
                             assert_eq!(m, M.stone); // the core
                         } else if ground < SEA_LEVEL + 2 {
-                            assert_eq!(m, if depth < 3 { M.sand } else { M.stone });
-                            sand += i32::from(m == M.sand);
+                            // The top voxel under the sea holds it (its flooded state).
+                            let sand_here = if depth == 0 && wy < SEA_LEVEL {
+                                require("dwell:sand[flooded=true]")
+                            } else {
+                                M.sand
+                            };
+                            assert_eq!(m, if depth < 3 { sand_here } else { M.stone });
+                            sand += i32::from(m == sand_here);
                         } else {
                             let want = if depth == 0 {
                                 M.grass
@@ -870,7 +876,9 @@ fn the_sea_floods_the_open_part_of_every_natural_top_block_below_sea_level() {
                         let m = w.get_voxel(x, y, z);
                         let top = dwell_blocks::adaptive::fills(m)
                             && !dwell_blocks::adaptive::fills(w.get_voxel(x, y + 1, z));
-                        if !top {
+                        // A one-block pit derives a full cube: no open part to flood.
+                        let s = w.shape_at(x, y, z);
+                        if !top || (!s.fan && s.corners == [2; 4]) {
                             continue;
                         }
                         checked += 1;
