@@ -804,3 +804,135 @@ fn a_level_field_of_natural_blocks_merges_its_flat_tops() {
         assert_eq!(m.positions[v * 3 + 1], 2.5);
     }
 }
+
+/// The tile (u0, v0) of the side faces facing +X at plane `x`, by each cell (y, z) a triangle's
+/// bounds cover (a merged quad covers several).
+fn plus_x_tiles(m: &MeshArrays, x: f32) -> Vec<((i32, i32), [f32; 2])> {
+    let mut out = Vec::new();
+    for t in m.indices.chunks_exact(3) {
+        let v = t[0] as usize;
+        if m.normals[v * 3] != 1.0 {
+            continue;
+        }
+        let at = |i: u32, axis: usize| m.positions[i as usize * 3 + axis];
+        if t.iter().any(|&i| (at(i, 0) - x).abs() > 1e-4) {
+            continue;
+        }
+        let range = |axis: usize| {
+            let lo = t.iter().map(|&i| at(i, axis)).fold(f32::INFINITY, f32::min);
+            let hi = t
+                .iter()
+                .map(|&i| at(i, axis))
+                .fold(f32::NEG_INFINITY, f32::max);
+            lo.floor() as i32..hi.ceil() as i32
+        };
+        let tile = [m.tiles[v * 4], m.tiles[v * 4 + 1]];
+        for y in range(1) {
+            for z in range(2) {
+                if !out.contains(&((y, z), tile)) {
+                    out.push(((y, z), tile));
+                }
+            }
+        }
+    }
+    out.sort_by_key(|e| e.0);
+    out
+}
+
+fn rect_of(name: &str) -> [f32; 2] {
+    let r = tile_rect(name);
+    [r.u0 as f32, r.v0 as f32]
+}
+
+/// A 3 × 5 plateau (x 3..=5, z 3..=7) two cells deep of `body` with `top` on it (and `cap` on the
+/// top if any; 0: none), ending in a cliff at x = 6: the +X faces of its edge column are exposed.
+fn plateau(body: u16, top: u16, cap: u16) -> Vec<(i32, i32, i32, u16)> {
+    let mut cells = Vec::new();
+    for z in 3..=7 {
+        for x in 3..=5 {
+            cells.push((x, 0, z, body));
+            cells.push((x, 1, z, body));
+            if top != 0 {
+                cells.push((x, 2, z, top));
+            }
+            if cap != 0 {
+                cells.push((x, 3, z, cap));
+            }
+        }
+    }
+    cells
+}
+
+#[test]
+fn a_dirt_side_under_sloped_grass_shows_the_turf_skirt_and_not_under_air_or_stone() {
+    // dirt's `sideUnder` (shared/blocks/dwell.json): a dirt side face with grass directly above
+    // takes the `dirtSkirt` tile. At a cliff the grass's edge is a slope down to the dirt's top.
+    let dirt = require("dwell:dirt");
+    let m = mesh(&plateau(dirt, grass(), 0), false).opaque;
+    let faces = plus_x_tiles(&m, 6.0);
+    for z in 3..=7 {
+        assert!(
+            faces.contains(&((1, z), rect_of("dirtSkirt"))),
+            "z {z}: {faces:?}"
+        );
+        assert!(
+            faces.contains(&((0, z), rect_of("dirt"))),
+            "z {z}: {faces:?}"
+        );
+        assert!(
+            !faces.contains(&((1, z), rect_of("dirt"))),
+            "z {z}: {faces:?}"
+        );
+    }
+    // The grass is a slope there: it shows no side of its own above the dirt's face.
+    assert!(faces.iter().all(|e| e.0.0 < 2), "{faces:?}");
+    // Under air (dirt is the top block) and under stone: plain dirt.
+    for (top, what) in [(0, "air"), (stone(), "stone")] {
+        let faces = plus_x_tiles(&mesh(&plateau(dirt, top, 0), false).opaque, 6.0);
+        assert!(!faces.is_empty(), "{what}");
+        assert!(
+            faces.iter().all(|e| e.1 != rect_of("dirtSkirt")),
+            "under {what}: {faces:?}"
+        );
+    }
+    // Under a full grass cube (a block on it), the grass side already hangs its skirt: the dirt
+    // below stays plain, never a second skirt.
+    let faces = plus_x_tiles(&mesh(&plateau(dirt, grass(), stone()), false).opaque, 6.0);
+    assert!(faces.contains(&((2, 5), rect_of("grassSide"))), "{faces:?}");
+    assert!(faces.contains(&((1, 5), rect_of("dirt"))), "{faces:?}");
+    assert!(
+        faces.iter().all(|e| e.1 != rect_of("dirtSkirt")),
+        "{faces:?}"
+    );
+    // Face B (meshed mirrored; its sky is toward −y): the plateau hangs from the chunk's top with
+    // the grass under the dirt, and the skirt hangs from the edge toward its sky.
+    let hanging: Vec<_> = plateau(dirt, grass(), 0)
+        .into_iter()
+        .map(|(x, y, z, m)| (x, N - 1 - y, z, m))
+        .collect();
+    let b = mesh(&hanging, true).opaque;
+    assert!(
+        (0..b.tiles.len() / 4)
+            .any(|v| [b.tiles[v * 4], b.tiles[v * 4 + 1]] == rect_of("dirtSkirt")),
+        "face B"
+    );
+}
+
+#[test]
+fn a_side_tile_rule_added_by_data_alone_is_applied() {
+    // shared/blocks/fixtures/test.json adds `test:loam` (sand tiles) with `sideUnder`
+    // `{ "dwell:stone": "grassSide" }` and nothing else.
+    use dwell_blocks::fixture::{FLUIDS, STATES};
+    let id = |name: &str| STATES.iter().position(|s| s.name == name).expect(name) as u16;
+    let (loam, stone, water) = (id("test:loam"), id("dwell:stone"), id("dwell:water"));
+    let kinds = Kinds::new(&STATES, &FLUIDS, Some(water));
+    let mesh_of = |cells: &[(i32, i32, i32, u16)]| {
+        mesh_chunk_with(&kinds, &voxels(cells), false, [0; 3])
+            .expect("padded volume")
+            .opaque
+    };
+    let faces = plus_x_tiles(&mesh_of(&[(1, 1, 1, loam), (1, 2, 1, stone)]), 2.0);
+    assert!(faces.contains(&((1, 1), rect_of("grassSide"))), "{faces:?}");
+    let faces = plus_x_tiles(&mesh_of(&[(1, 1, 1, loam)]), 2.0);
+    assert_eq!(faces, [((1, 1), rect_of("sand"))]);
+}

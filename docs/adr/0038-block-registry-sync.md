@@ -121,6 +121,7 @@ predicts) and **asks the player** before entering, listing what differs.
    | 0x88 | cross geometry (`f32` height, `u8` quads, `f32` offset, rotation, height min, max) | look |
    | 0x89 | wind (`f32` strength, speed) | look |
    | 0x8a | fade (`f32` start, end) | look |
+   | 0x8b | `sideUnder` (`u8` count, each: block id above `str`, side tile `str`; added 2026-10-20) | look |
 
    An absent field takes the generator's default. Unknown must-understand tags, or a set flag bit
    the client does not know, are ignored and listed in the join prompt (decision 4).

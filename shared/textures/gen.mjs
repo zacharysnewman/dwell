@@ -11,20 +11,17 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { deflateSync } from 'node:zlib';
+import { blockTiles } from '../blocks/faces.mjs';
 import { TILE, imageRows, paintMaterial, validateMaterials, validatePalette } from './paint.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, '..', '..');
 const readJson = (p) => JSON.parse(readFileSync(p, 'utf8'));
 
-/** The texture names the registry's blocks draw with. */
+/** The texture names the registry's blocks draw with (their `sideUnder` tiles too). */
 export function registryTiles(blocks) {
   const out = new Set();
-  for (const b of blocks.blocks) {
-    const t = b.textures;
-    if (t === undefined) continue;
-    for (const name of typeof t === 'string' ? [t] : [t.top, t.side, t.bottom]) out.add(name);
-  }
+  for (const b of blocks.blocks) for (const name of blockTiles(b)) out.add(name);
   return [...out];
 }
 
