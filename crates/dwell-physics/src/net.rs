@@ -4,7 +4,7 @@
 
 use dwell_protocol::{
     ControllerState, GroundKind, InputFrame, controller_flags as cf, input_buttons as ib,
-    player_flags as pf, players,
+    player_flags as pf, players, slide_flags as sf,
 };
 
 use crate::controller::{Cell, Input, PlayerController};
@@ -105,6 +105,8 @@ pub fn to_net(c: &PlayerController, ground_id: impl Fn(GroundRef) -> u16) -> Con
         buffer_ticks: c.jump.buffer_ticks.min(255) as u8,
         coyote_ticks: c.jump.coyote_ticks.min(255) as u8,
         step_grace: c.vertical.step_grace,
+        slide_flags: flag(c.sprint_slide.active, sf::ACTIVE),
+        slide_cooldown: c.sprint_slide.cooldown_ticks.min(255) as u8,
         ladder: [c.climb.ladder.x, c.climb.ladder.y, c.climb.ladder.z],
         released: [c.climb.released.x, c.climb.released.z],
     }
@@ -131,6 +133,8 @@ pub fn from_net(
     c.vertical.platform_y = s.platform_y;
     c.vertical.target_y = s.target_y;
     c.vertical.step_grace = s.step_grace;
+    c.sprint_slide.active = s.slide_flags & sf::ACTIVE != 0;
+    c.sprint_slide.cooldown_ticks = u16::from(s.slide_cooldown);
     c.platform.ground = ground(s.ground_kind, s.ground_id);
     c.platform.ground_velocity = Vec3::new(0.0, s.ground_velocity_y, 0.0);
     c.jump.buffer_ticks = u16::from(s.buffer_ticks);
@@ -211,6 +215,8 @@ mod tests {
         c.climb.has_released = true;
         c.climb.released = Cell { x: 4, y: 9, z: -3 };
         c.platform.ground = GroundRef::Terrain;
+        c.sprint_slide.active = true;
+        c.sprint_slide.cooldown_ticks = 17;
         let s = to_net(&c, |_| 0);
         let mut back = PlayerController::default();
         from_net(
@@ -231,5 +237,6 @@ mod tests {
         assert_eq!(back.jump.coyote_ticks, 255);
         assert_eq!((back.climb.released.x, back.climb.released.z), (4, -3));
         assert_eq!(back.platform.ground, GroundRef::Terrain);
+        assert_eq!(back.sprint_slide, c.sprint_slide);
     }
 }

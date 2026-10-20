@@ -144,6 +144,29 @@ pub struct Slide {
     pub crouch_friction: f32,
 }
 
+/// ◆ The sprint slide (PLAYER_CONTROLLER.md §6.9): pressing crouch while sprinting on the ground
+/// slides on in the direction of travel, crouched, slowing with friction (less downhill, more
+/// uphill). Speeds are horizontal.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SprintSlide {
+    /// m/s: the slowest horizontal speed a crouch press starts a slide from (above the walk speed,
+    /// so only a sprint slides).
+    pub min_start_speed: f32,
+    /// m/s added to the speed when the slide starts.
+    pub start_boost: f32,
+    /// m/s: the fastest a slide goes; downhill speeds it up to this.
+    pub max_speed: f32,
+    /// m/s²: friction's deceleration.
+    pub friction: f32,
+    /// Fraction of gravity along the ground that speeds the slide downhill and slows it uphill:
+    /// `gravity × slope_gravity × (the ground's horizontal tilt along the slide)`.
+    pub slope_gravity: f32,
+    /// °/s: the fastest move input turns the slide.
+    pub steer_rate: f32,
+    /// Ticks after a slide ends before another can start.
+    pub cooldown_ticks: u16,
+}
+
 /// ◆ Dwell addition.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Damage {
@@ -177,6 +200,7 @@ pub struct PlayerControllerConfig {
     pub band: Band,
     pub fly: Fly,
     pub slide: Slide,
+    pub sprint_slide: SprintSlide,
     pub damage: Damage,
     pub advanced: Advanced,
 }
@@ -262,6 +286,15 @@ impl Default for PlayerControllerConfig {
                 uphill_deceleration: 60.0,
                 crouch_terminal_factor: 1.15,
                 crouch_friction: 0.2,
+            },
+            sprint_slide: SprintSlide {
+                min_start_speed: 6.5,
+                start_boost: 1.5,
+                max_speed: 14.0,
+                friction: 6.0,
+                slope_gravity: 1.0,
+                steer_rate: 90.0,
+                cooldown_ticks: 30,
             },
             damage: Damage {
                 fall_damage_min_speed: 12.0,

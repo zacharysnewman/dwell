@@ -292,6 +292,9 @@ async function step(run: Run, s: Step): Promise<void> {
     case 'flySpeed':
       await call(page, `d.flySpeed(${String(s.level)})`);
       return;
+    case 'spyglass':
+      await call(page, `d.spyglass(${String(s.on)}, ${String(s.step ?? 0)})`);
+      return;
     case 'camera': {
       // aroundPlayer: x and z from the player's feet, y absolute.
       const [x, y, z] = s.position;
