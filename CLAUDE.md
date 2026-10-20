@@ -1,5 +1,25 @@
 # CLAUDE.md
 
+## This branch: `claude/half-height-voxels` (an experiment, not for `main`)
+
+This long-lived branch tries **½ m tall cells** (1 × ½ × 1 m) in place of 1 m cubes, for the owner
+to playtest. It reaches `main` only if the owner keeps it after playing it; don't merge it, open a
+PR for it, or raise `package.json` on it.
+
+- **Why:** on 1 m cells, ground shaped by Phase 18's adaptive rules made shapes the owner calls
+  weird (half-and-half, saddles, dimples, ridges), and tall grass floated ½ m above the ground.
+- **What the owner chose (2026-10-19):** "Cardinal ramps only, 1/2m blocks as voxels, 1m on steep
+  ground (still made up of half blocks), and no adaptive blocks (just adaptive at generation time),
+  when you destroy a block the ones around it don't change." Also: 45° ramps slide, a placed
+  natural block is flat, ½ m per click, grass only on flat tops.
+- **Where it stands:** Phase 36 in `docs/IMPLEMENTATION_PLAN.md`: H0–H4 built (½ m cells live,
+  ramps generated, nothing adaptive); next is **H5, the owner's playtest**. The decision is
+  [ADR 0038](docs/adr/0038-half-height-cells.md), the design and the as-built list of what is still
+  in cells (ray marcher, brushes, fluid surface drop, view radius) is `docs/HALF_HEIGHT_GRID.md` §7.
+- On this branch, `docs/ARCHITECTURE.md` and the plan describe the branch. If the owner keeps it,
+  renumber Phase 36 to the next free phase on `main` and remove this section; if not, the branch is
+  abandoned and `main` is unchanged.
+
 ## Project
 
 Dwell is a server-authoritative, multiplayer-first voxel sandbox with large-scale dynamic
