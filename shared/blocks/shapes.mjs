@@ -238,105 +238,12 @@ export function slabShape(values) {
 
 export const cubeShape = () => buildShape([2, 2, 2, 2], false, 0);
 
-// ---- Adaptive natural blocks (docs/ADAPTIVE_BLOCKS.md, Phase 18) --------------------------------
-//
-// The rules of the Shape Playground need 12 more corner shapes, which split along their *higher*
-// diagonal (a crest, not a valley), and 6 shapes that are not corner shapes: half-height ridges
-// whose crest runs to edge midpoints or the centre, given as 3 × 3 surface points (halves; rows
-// north to south, columns west to east) in canonical orientation (facing east). Names and corner
-// heights are the prototypes' (docs/prototypes/shape-playground.html).
-
-export const ADAPTIVE_CORNER_SHAPES = {
-  half_and_half_left: [2, 0, 0, 1],
-  half_and_half_right: [1, 0, 0, 2],
-  tall_half_and_half_left: [2, 2, 1, 0],
-  tall_half_and_half_right: [2, 2, 0, 1],
-  tilt_left: [2, 1, 1, 0],
-  tilt_right: [1, 2, 0, 1],
-  diagonal_slope: [1, 2, 1, 0],
-  dimple: [2, 1, 2, 0],
-  saddle: [2, 0, 2, 0],
-  uneven_saddle: [2, 0, 1, 0],
-  half_saddle: [1, 0, 1, 0],
-  high_half_saddle: [2, 1, 2, 1],
-};
-
-export const RIDGE_SHAPES = {
-  half_pyramid: [
-    [0, 0, 0],
-    [0, 1, 0],
-    [0, 0, 0],
-  ],
-  // Runs east–west; turned once, north–south.
-  half_ridge: [
-    [0, 0, 0],
-    [1, 1, 1],
-    [0, 0, 0],
-  ],
-  // A tent's end: the crest runs from the centre to the edge it faces.
-  half_ridge_end: [
-    [0, 0, 0],
-    [0, 1, 1],
-    [0, 0, 0],
-  ],
-  // The crest turns: to the edge it faces and the next one clockwise.
-  half_ridge_corner: [
-    [0, 0, 0],
-    [0, 1, 1],
-    [0, 1, 0],
-  ],
-  // Crests to three edges; facing east, the open side is south.
-  half_ridge_tee: [
-    [0, 1, 0],
-    [1, 1, 1],
-    [0, 0, 0],
-  ],
-  half_ridge_cross: [
-    [0, 1, 0],
-    [1, 1, 1],
-    [0, 1, 0],
-  ],
-};
-
-/** The Phase 9 corner shapes, the full cube and the slab, by name (canonical orientation). */
-export const GAME_CORNER_SHAPES = { full: [2, 2, 2, 2], slab: [1, 1, 1, 1], ...SLOPE_SHAPES };
-
-/** Every shape name the adaptive rules may name. */
-export const ADAPTIVE_SHAPE_NAMES = [
-  ...Object.keys(GAME_CORNER_SHAPES),
-  ...Object.keys(ADAPTIVE_CORNER_SHAPES),
-  ...Object.keys(RIDGE_SHAPES),
-];
-/** Shapes that look the same at every turn (they take no facing). */
-export const SYMMETRIC_SHAPES = new Set(["full", "slab", "half_pyramid", "half_ridge_cross"]);
-
 /** Rotates a 3 × 3 grid `turns` quarter turns clockwise seen from above. */
 export function rotateGrid(g, turns) {
   let o = g.map((r) => r.slice());
   for (let t = 0; t < ((turns % 4) + 4) % 4; ++t)
     o = o.map((_, r) => o.map((row) => row[r]).reverse());
   return o;
-}
-
-/**
- * Corner heights and split of a named corner shape at `turns`: the Phase 9 shapes split through
- * their special corner (NW–SE, or NE–SW once turned an odd number of times), the adaptive ones
- * along their higher diagonal.
- */
-export function cornerShapeAt(name, turns) {
-  const adaptive = name in ADAPTIVE_CORNER_SHAPES;
-  const base = adaptive ? ADAPTIVE_CORNER_SHAPES[name] : GAME_CORNER_SHAPES[name];
-  if (!base) throw new Error(`unknown corner shape ${name}`);
-  const c = rotateCorners(base, turns);
-  const diagonal = adaptive ? (c[1] + c[3] > c[0] + c[2] ? 1 : 0) : (((turns % 4) + 4) % 4) % 2;
-  return { corners: c, diagonal };
-}
-
-/** The 3 × 3 surface points (halves) of a named shape at `turns`. */
-export function pointsOf(name, turns) {
-  if (name in RIDGE_SHAPES) return rotateGrid(RIDGE_SHAPES[name], turns);
-  return buildShape(cornerShapeAt(name, turns).corners, false, cornerShapeAt(name, turns).diagonal)
-    .points;
 }
 
 const key3 = (p) => `${p[0]},${p[1]},${p[2]}`;
@@ -616,12 +523,4 @@ export function rampShape(values) {
   const points = STEP_POINTS[values.shape];
   if (!points) throw new Error(`unknown ramp shape ${values.shape}`);
   return buildStepShape(rotateGrid(points, turns), inverted);
-}
-
-/** A named shape (corner or ridge) at `turns`, upright or `inverted`: its baked geometry. */
-export function namedShape(name, turns, inverted = false) {
-  if (name in RIDGE_SHAPES)
-    return buildRidgeShape(rotateGrid(RIDGE_SHAPES[name], turns), inverted);
-  const { corners, diagonal } = cornerShapeAt(name, turns);
-  return buildShape(corners, inverted, diagonal);
 }

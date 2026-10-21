@@ -1,5 +1,0 @@
-{
-  "$comment": "The adaptive rule table (docs/ADAPTIVE_BLOCKS.md, ADR 0024): the shape an adaptive block (\"adaptive\": true in dwell.json) takes when nothing solid is above it, from its 8 horizontal neighbours. `rules` names the rule set that fills every neighbourhood (the Shape Playground's five rules); `overrides` replace single neighbourhoods. An override is { \"around\", \"shape\", \"facing\" }: `around` is the 3 × 3 grid, rows north to south, each row west to east, separated by \"/\" — \"+\" higher, \"=\" the same height, \"-\" lower, \".\" the block itself (e.g. \"+==/=.-/===\"); `shape` a shape name (shared/blocks/shapes.mjs: full, slab, the Phase 9 slope shapes, the adaptive corner and ridge shapes); `facing` north, east, south or west (the way a slope descends; a ridge end the way its crest runs; half_ridge east_west or north_south; none for full, slab, half_pyramid and half_ridge_cross). The Shape Playground exports overrides in this form. Run `node shared/blocks/gen.mjs` after editing; it rejects unknown shapes and facings and runs the exhaustive adjacency test.",
-  "rules": "five-rules",
-  "overrides": []
-}

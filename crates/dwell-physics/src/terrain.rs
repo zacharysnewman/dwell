@@ -3,7 +3,7 @@
 //! one — go into one Rapier (Parry) `Voxels` collider: Parry classifies each voxel by its
 //! neighbours, so the capsule slides across voxel edges and chunk borders without catching (the
 //! internal-edge problem the Jolt build solved with per-chunk meshes in regions). Shaped cells —
-//! adaptive top blocks (docs/ADAPTIVE_BLOCKS.md), derived from their neighbours — go into one
+//! the generated ramps (HALF_HEIGHT_GRID.md §3) — go into one
 //! triangle mesh per chunk (`TriMeshFlags::FIX_INTERNAL_EDGES`) of their faces that no neighbour
 //! covers. With f64 positions it is exact anywhere in the world, so it needs no regions or anchors.
 //! Chunks are added on demand, rebuilt when the world changes them or any chunk their shapes read
@@ -12,7 +12,7 @@
 use dwell_world::hash::HashMap;
 
 use dwell_blocks::shape::{SURFACE_TAG, face_covered, faces_of};
-use dwell_blocks::{ShapeInfo, adaptive, info};
+use dwell_blocks::{ShapeInfo, info};
 use dwell_world::{
     CELL, CELL_H, CHUNK_SIZE, CHUNK_VOLUME, ChunkCoord, MAX_CHUNK_Y, MIN_CHUNK_Y, VoxelWorld,
     chunk_of_pos, chunk_origin_m, local_index, up_of_y,
@@ -150,8 +150,7 @@ fn build(world: &mut VoxelWorld, c: ChunkCoord) -> Built {
         world.padded_block(c, PAD)
     };
     let at = |x: i32, y: i32, z: i32| block[padded(x, y, z)];
-    let shape_at =
-        |x: i32, y: i32, z: i32| adaptive::shape_at(|dx, dy, dz| at(x + dx, y + dy, z + dz), up);
+    let shape_at = |x: i32, y: i32, z: i32| dwell_blocks::shape::shape_of(at(x, y, z));
     let voxels = world.read(c).voxels(); // borrowed: a 64 KiB copy overflows a WASM stack
     for (i, &m) in voxels.iter().enumerate() {
         if !info(m).solid {

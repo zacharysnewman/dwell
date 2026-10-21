@@ -93,7 +93,7 @@ export const BLOCK_DEFS: readonly BlockDef[] = [
   { id: 'dwell:sand_ramp', first: 166, count: 48, properties: [{ name: 'facing', values: ['north', 'east', 'south', 'west'] }, { name: 'flooded', values: ['false', 'true'] }, { name: 'half', values: ['bottom', 'top'] }, { name: 'shape', values: ['ramp', 'steep_lower', 'steep_upper'] }], sound: 'dwell:sand' },
 ];
 
-/** The shapes block states use (the adaptive table's derived shapes are in the Rust tables only). */
+/** The shapes block states use. */
 export const SHAPES: readonly ShapeDef[] = [
   { corners: [0, 0, 0, 0], inverted: false, diagonal: 0, convex: true, volume: 0, sides: [[0, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0]], fullTop: false, fullBottom: false, minY: 0, maxY: 0, faces: [] },
   { corners: [2, 2, 2, 2], inverted: false, diagonal: 0, convex: true, volume: 1, sides: [[2, 2, 2], [2, 2, 2], [2, 2, 2], [2, 2, 2]], fullTop: true, fullBottom: true, minY: 0, maxY: 1, faces: [{ tag: 1, pts: [[0, 0, 0], [0, 0, 1], [0, 1, 1], [0, 1, 0]] }, { tag: 0, pts: [[1, 0, 0], [1, 1, 0], [1, 1, 1], [1, 0, 1]] }, { tag: 3, pts: [[0, 0, 0], [1, 0, 0], [1, 0, 1], [0, 0, 1]] }, { tag: 2, pts: [[0, 1, 0], [0, 1, 1], [1, 1, 1], [1, 1, 0]] }, { tag: 5, pts: [[0, 0, 0], [0, 1, 0], [1, 1, 0], [1, 0, 0]] }, { tag: 4, pts: [[0, 0, 1], [1, 0, 1], [1, 1, 1], [0, 1, 1]] }] },

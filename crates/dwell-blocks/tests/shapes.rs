@@ -1,9 +1,9 @@
-//! Geometry of every baked shape (`shared/blocks/shapes.mjs`), the adaptive ones included: each is
+//! Geometry of every baked shape (`shared/blocks/shapes.mjs`): each is
 //! a closed, outward-wound solid whose volume, side coverage and top surface agree with the fields
-//! the meshers, the culling and the probes read. And the adaptive table matches its shared vector.
+//! the meshers, the culling and the probes read.
 
 use dwell_blocks::shape::{SURFACE_TAG, faces_of, ray_enter_shape, solid_span_at};
-use dwell_blocks::{ADAPTIVE_DOWN, ADAPTIVE_UP, SHAPES, ShapeInfo};
+use dwell_blocks::{SHAPES, ShapeInfo};
 
 type V = [f64; 3];
 
@@ -178,53 +178,6 @@ fn the_top_surface_covers_the_footprint_once_at_the_height_the_probes_read() {
             );
         }
     }
-}
-
-#[test]
-fn the_adaptive_table_matches_its_shared_vector() {
-    let text = include_str!("../../../shared/blocks/adaptive_vectors.txt");
-    let mut count = 0;
-    for line in text
-        .lines()
-        .filter(|l| !l.is_empty() && !l.starts_with('#'))
-    {
-        let f: Vec<&str> = line.split(' ').collect();
-        let i: usize = f[0].parse().expect("index");
-        let (up, down): (u16, u16) = (
-            f[f.len() - 2].parse().expect("up"),
-            f[f.len() - 1].parse().expect("down"),
-        );
-        assert_eq!(ADAPTIVE_UP[i], up, "{line}");
-        assert_eq!(ADAPTIVE_DOWN[i], down, "{line}");
-        let (u, d) = (&SHAPES[usize::from(up)], &SHAPES[usize::from(down)]);
-        assert!(!u.inverted && d.inverted && u.points == d.points, "{line}");
-        // The neighbourhood's code at index order k is its around string's k-th symbol.
-        let symbols: Vec<char> = f[1].chars().filter(|c| !matches!(c, '/' | '.')).collect();
-        let mut rest = i;
-        for c in symbols {
-            assert_eq!(c, ['=', '-', '+'][rest % 3], "{line}");
-            rest /= 3;
-        }
-        count += 1;
-    }
-    assert_eq!(count, 6561);
-}
-
-#[test]
-fn ridge_shapes_are_convex_only_without_a_turning_crest() {
-    // Half pyramid, ridge and ridge end are convex; the corner, T and cross are not (Phase 20
-    // splits them). Ridges are the fan shapes whose corners lie on the floor (the 45° halves of the
-    // half-height grid are fan shapes too, with raised corners).
-    let mut seen = std::collections::BTreeSet::new();
-    for (_, s) in shapes().filter(|(_, s)| s.fan && !s.inverted && s.corners == [0; 4]) {
-        let raised = s.points.iter().flatten().filter(|&&q| q > 0).count();
-        // Centre plus 0..4 edge midpoints raised: 1 pyramid, 2 end, 3 ridge or corner, 4 T, 5 cross.
-        let straight = raised == 3 && (s.points[1][0] == s.points[1][2]);
-        let convex_expected = raised <= 2 || straight;
-        assert_eq!(s.convex, convex_expected, "{:?}", s.points);
-        seen.insert(raised);
-    }
-    assert_eq!(seen.into_iter().collect::<Vec<_>>(), vec![1, 2, 3, 4, 5]);
 }
 
 #[test]

@@ -1,33 +1,5 @@
 # CLAUDE.md
 
-## This branch: `claude/half-height-voxels` (an experiment, not for `main`)
-
-This long-lived branch tries **½ m tall cells** (1 × ½ × 1 m) in place of 1 m cubes, for the owner
-to playtest. It reaches `main` only if the owner keeps it after playing it; don't merge it, open a
-PR for it, or raise `package.json` on it.
-
-- **Why:** on 1 m cells, ground shaped by Phase 18's adaptive rules made shapes the owner calls
-  weird (half-and-half, saddles, dimples, ridges), and tall grass floated ½ m above the ground.
-- **What the owner chose (2026-10-19):** "Cardinal ramps only, 1/2m blocks as voxels, 1m on steep
-  ground (still made up of half blocks), and no adaptive blocks (just adaptive at generation time),
-  when you destroy a block the ones around it don't change." Also: 45° ramps slide, a placed
-  natural block is flat, ½ m per click, grass only on flat tops.
-- **Where it stands:** Phase 41 in `docs/IMPLEMENTATION_PLAN.md`: H0–H4 built (½ m cells live,
-  ramps generated, nothing adaptive), and **H6: `main` merged in (2026-10-20)**, with Phase 16's
-  world, registry sync, the sprint slide, the spyglass, brushes and predicted edits, WebRTC
-  fragmentation and main's steep v16 hills, which come out on ½ m cells as whole-metre steps topped
-  by 45° ramps that slide. It ships as **dev builds** (pre-releases, `channel: dev`), never as a
-  release of `main`. Next is **H5, the owner's playtest**. The decision is
-  [ADR 0042](docs/adr/0042-half-height-cells.md) (it was 0038, then 0040; `main`'s branches took
-  those), the design and the as-built list of what is still in cells (ray marcher, brushes, fluid
-  surface drop, view radius, the build sphere) is `docs/HALF_HEIGHT_GRID.md` §7.
-- **Versions:** the protocol and generator versions are **1000 + the version of `main` last merged**
-  (now protocol 1016, generator 1020: two more for the slopes, 1019 option A and 1020 V2, the owner's choice, HALF_HEIGHT_GRID.md §4), so a dev build never joins or loads `main`'s; bump both when merging a `main` that
-  bumped its own.
-- On this branch, `docs/ARCHITECTURE.md` and the plan describe the branch. If the owner keeps it,
-  renumber Phase 41 to the next free phase on `main` and remove this section; if not, the branch is
-  abandoned and `main` is unchanged.
-
 ## Project
 
 Dwell is a server-authoritative, multiplayer-first voxel sandbox with large-scale dynamic
@@ -49,8 +21,10 @@ and friend worlds), with a small master server for discovery; there are no offic
   palettes in world files.
 - `docs/SLOPE_BLOCKS.md` — Phase 9's shape mechanism (shapes, collision, meshing), trimmed in Phase 15
   (the placed slope and slab families, terrain slope shaping and LOD slopes were cut).
+- `docs/HALF_HEIGHT_GRID.md` — design for Phase 41 (ADR 0042, adopted 2026-10-20): ½ m tall cells, the stored
+  cardinal ramps and the generation rule that places them (V2), and the as-built list.
 - `docs/ADAPTIVE_BLOCKS.md` — design for Phase 18 (formerly 9e): natural blocks shaped from their neighbours by
-  five rules (replaces placed slopes and terrain slope shaping for natural materials).
+  five rules; superseded by Phase 41 (ADR 0042): on ½ m cells no block is adaptive.
 - `docs/BASELINE_EVALUATION.md` — the owner's simplified baseline (2026-10-12) compared with what
   is built: what to keep, add and cut, graded on whether each part is an extendable, data-driven
   system; built by the baseline rework, Phases 14–19 of the implementation plan.
