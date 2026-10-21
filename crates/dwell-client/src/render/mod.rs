@@ -3020,9 +3020,15 @@ impl Renderer {
     }
 
     /// This frame's shadow plan (shadows.rs): the setting's cascades around this view, from the
-    /// light over the viewer's face; none when the setting is Off or neither light is up.
-    fn shadow_plan(&self) -> Option<shadows::Plan> {
+    /// light over the viewer's face (in its steps); none when the setting is Off or neither light
+    /// is up.
+    fn shadow_plan(&mut self) -> Option<shadows::Plan> {
         let caster = dwell_look::shadows::caster(&SHADOWS, &self.day, self.face.sign_f64());
+        // The texel grids' anchor: held while the light holds its step (shadows::Cache::anchor).
+        let anchor = caster.map_or(self.eye, |c| {
+            self.shadow_cache
+                .anchor(&SHADOWS, &c, self.day.axis, self.eye)
+        });
         shadows::plan(
             &SHADOWS,
             self.shadows(),
@@ -3030,6 +3036,7 @@ impl Renderer {
             self.eye,
             self.day.axis,
             self.magnification,
+            anchor,
         )
     }
 

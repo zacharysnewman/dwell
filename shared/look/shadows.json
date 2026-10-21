@@ -1,14 +1,15 @@
 {
   "$comment": "Sun and moon shadows by cascaded shadow maps (docs/DAY_NIGHT.md §10): the second layer of the lighting, over the flood-fill sky and block light. Near the eye the shadow map shades the direct sun or moon term only; beyond the last cascade it fades to the first layer's stand-in (direct light × sky light). Run `node shared/look/shadows.mjs` after editing; CI fails if crates/dwell-look/src/shadows.gen.rs is stale.",
   "cascades": {
-    "$comment": "nearM: where the first cascade's range starts (the log split's near; distances from the eye). Every cascade is a box around the eye (ADR 0047: it doesn't change as the camera turns, so a far cascade's map is kept between redraws). radiusStepM: each box's half-size is rounded up to a multiple of this, so a changing distance (the spyglass) changes it in steps. casterReachM: how far toward the light from a box a caster still casts into it (a cliff or a tree well above the view). edgeFade: shadows fade to the stand-in over this last share of the shadow distance. spyglassMaxM: while the spyglass zooms, the shadow distance grows with the magnification, up to this. slack: a far cascade's box is wider than the distance it covers by this share of it, and its map is kept while the eye stays within that margin. lightTurnDeg: a kept map is drawn again once the light has turned this far from where it was drawn.",
+    "$comment": "nearM: where the first cascade's range starts (the log split's near; distances from the eye). Every cascade is a box around the eye (ADR 0047: it doesn't change as the camera turns, so a far cascade's map is kept between redraws). radiusStepM: each box's half-size is rounded up to a multiple of this, so a changing distance (the spyglass) changes it in steps. casterReachM: how far toward the light from a box a caster still casts into it (a cliff or a tree well above the view). edgeFade: shadows fade to the stand-in over this last share of the shadow distance. spyglassMaxM: while the spyglass zooms, the shadow distance grows with the magnification, up to this. slack: a far cascade's box is wider than the distance it covers by this share of it, and its map is kept while the eye stays within that margin. lightTurnDeg: a kept map is drawn again once the light has turned this far from where it was drawn. lightStepDeg: the maps see the light in steps of this along its path (the clock turns it a little every frame; a map whose light turns every frame turns its texel grid every frame, and every shadow edge crawls), and the texel grid turns about the eye at each step, so the shadows near you hold still between steps and barely move at one (0: the light as it is, every frame).",
     "nearM": 0.5,
     "radiusStepM": 1,
     "casterReachM": 120,
     "edgeFade": 0.2,
     "spyglassMaxM": 640,
     "slack": 0.1,
-    "lightTurnDeg": 0.25
+    "lightTurnDeg": 0.25,
+    "lightStepDeg": 0.05
   },
   "bias": {
     "$comment": "Against acne and peter-panning on ½ m steps and ramps. normalOffsetTexels: the receiver's lookup moves this many of its cascade's texels out along its normal. depthBiasM: the compare's constant bias (m along the light). slopeScale: the casters' slope-scaled depth bias (the pipeline's, per unit of depth slope).",

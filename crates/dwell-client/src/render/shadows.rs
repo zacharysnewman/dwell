@@ -1,9 +1,11 @@
 //! Sun and moon shadows by cascaded shadow maps (docs/DAY_NIGHT.md §10; the lighting's second
 //! layer). Each frame the light that casts (dwell-look `shadows::caster`: the sun over the
 //! viewer's face, else the moon) gets up to four orthographic depth maps around the camera, one per
-//! slice of the view's depth. Each cascade is fitted to its slice's bounding sphere (whose radius
-//! doesn't change as the camera turns) and its origin is snapped to whole texels in light space (so
-//! moving doesn't make the edges shimmer). The scene's shaders (`SHADOW_WGSL`) pick a fragment's
+//! slice of the view's depth. Each cascade is a box around the eye (which doesn't change as the
+//! camera turns) and its origin is snapped to whole texels in light space (so moving doesn't make
+//! the edges shimmer). The maps see the light in steps along its path (`stepped`), and their texel
+//! grid turns about the eye at a step (`Cache::anchor`), so the clock turning the light a little
+//! every frame doesn't make every edge crawl. The scene's shaders (`SHADOW_WGSL`) pick a fragment's
 //! cascade, look it up with a soft PCF, normal-offset and biased, and the result multiplies only the
 //! direct sun and moon term (`lambert_lit`'s `shadow`); past the last cascade it fades to the first
 //! layer's stand-in.
@@ -52,6 +54,35 @@ pub fn light_basis(dir: V3, reference: V3) -> LightBasis {
     let x = normalize(cross(r, z));
     let y = cross(z, x);
     LightBasis { x, y, z }
+}
+
+/// The light's direction as the maps see it: `dir` turned about the sky's `axis` (its path's
+/// normal: the sun and the moon turn about it) to the nearest whole `step_deg` of its path, and
+/// that step's number (the light kept on the path, square to the axis, as the sun and moon are).
+/// Between steps the maps' light holds still, so their texel grid does too: a
+/// light that turns every frame (the clock) turns the grid every frame, and with it every shadow
+/// edge's texels, a crawl over the whole view. `step_deg` 0: the light as it is.
+pub fn stepped(dir: V3, axis: V3, step_deg: f64) -> (V3, i64) {
+    if step_deg <= 0.0 {
+        return (dir, 0);
+    }
+    let a = normalize(axis);
+    // Two fixed axes across the sky's axis (not from the light, which turns).
+    let e1 = light_basis(a, [0.0, 1.0, 0.0]).x;
+    let e2 = cross(a, e1);
+    let (x, y) = (dot(dir, e1), dot(dir, e2));
+    if x.hypot(y) < 1e-9 {
+        return (dir, 0);
+    }
+    // On the path (square to the axis): the step's light depends on its number alone, so every
+    // frame of a step gets the very same direction, to the last bit.
+    let step = step_deg.to_radians();
+    let n = (y.atan2(x) / step).round();
+    let (sin, cos) = (n * step).sin_cos();
+    (
+        normalize(std::array::from_fn(|k| cos * e1[k] + sin * e2[k])),
+        n as i64,
+    )
 }
 
 /// The view depths the cascades split at (`count + 1` of them, from `near` to `far`): the
@@ -135,7 +166,9 @@ pub const NO_CASCADE: Mat4 = [
 /// to `radius_step`; its centre the eye snapped to the map's texels across the light, deep enough
 /// to hold casters `reach` metres above it toward the light. It depends on the eye and the light
 /// alone, never on where the camera looks (Minecraft shaderpacks' player-centred shadow map), so
-/// turning leaves a far cascade's map as it is.
+/// turning leaves a far cascade's map as it is. The texel grid runs through `anchor` (world): a
+/// point near the eye that holds while the light does (`Cache::anchor`), so the grid turns about
+/// it when the light steps, and the shadows near the eye stay where they were.
 #[allow(clippy::too_many_arguments)]
 pub fn fit(
     eye: V3,
@@ -146,12 +179,15 @@ pub fn fit(
     resolution: u32,
     radius_step: f64,
     reach: f64,
+    anchor: V3,
 ) -> Cascade {
     let radius = ((far + slack) / radius_step).ceil().max(1.0) * radius_step;
     let texel_m = 2.0 * radius / f64::from(resolution);
-    let snap = |axis: V3| (dot(eye, axis) / texel_m).round() * texel_m;
-    let (u, v, w) = (snap(basis.x), snap(basis.y), dot(eye, basis.z));
-    let origin = std::array::from_fn(|k| basis.x[k] * u + basis.y[k] * v + basis.z[k] * w);
+    let from: V3 = std::array::from_fn(|k| eye[k] - anchor[k]);
+    let snap = |axis: V3| (dot(from, axis) / texel_m).round() * texel_m;
+    let (u, v, w) = (snap(basis.x), snap(basis.y), dot(from, basis.z));
+    let origin =
+        std::array::from_fn(|k| anchor[k] + basis.x[k] * u + basis.y[k] * v + basis.z[k] * w);
     let origin_rel: V3 = std::array::from_fn(|k| origin[k] - eye[k]);
     Cascade {
         near,
@@ -240,7 +276,9 @@ pub struct Plan {
 /// The frame's shadow plan: for `quality` (already `shadows_for` the adapter), the light `caster`
 /// (none when neither light is up), the `eye` (world), the sky's axis (the light's map axes) and
 /// the spyglass's `magnification` (the shadow distance grows with it, so the zoomed view has
-/// shadows where it looks, up to `spyglassMaxM`).
+/// shadows where it looks, up to `spyglassMaxM`). The maps see the light `stepped` along its path
+/// (the plan's `caster.dir`), their texel grids through `anchor` (`Cache::anchor`).
+#[allow(clippy::too_many_arguments)]
 pub fn plan(
     t: &ShadowTunables,
     quality: ShadowQuality,
@@ -248,9 +286,11 @@ pub fn plan(
     eye: V3,
     sky_axis: V3,
     magnification: f64,
+    anchor: V3,
 ) -> Option<Plan> {
     let tier = *t.tier(quality)?;
-    let caster = caster.filter(|c| c.strength > 1e-3)?;
+    let mut caster = caster.filter(|c| c.strength > 1e-3)?;
+    caster.dir = stepped(caster.dir, sky_axis, t.cascades.light_step_deg).0;
     let c = &t.cascades;
     let distance =
         (tier.distance_m * magnification.max(1.0)).min(c.spyglass_max_m.max(tier.distance_m));
@@ -277,6 +317,7 @@ pub fn plan(
                 tier.resolution,
                 c.radius_step_m,
                 c.caster_reach_m,
+                anchor,
             )
         })
         .collect();
@@ -329,6 +370,8 @@ pub struct Frame {
 pub struct Cache {
     pub kept: Vec<Option<Kept>>,
     light: Option<(bool, ShadowTier)>,
+    /// The light's step (moon, `stepped`'s number) the texel grids' anchor is for, and the anchor.
+    step: Option<((bool, i64), V3)>,
 }
 
 impl Cache {
@@ -336,6 +379,35 @@ impl Cache {
     pub fn clear(&mut self) {
         self.kept.clear();
         self.light = None;
+        self.step = None;
+    }
+
+    /// The point (world) this frame's texel grids run through (`fit`'s `anchor`), for the light
+    /// `caster` over the sky's `axis`, seen from `eye`. It holds while the light holds its step,
+    /// so the grids stay put in the world as the eye moves (texel snapping). When the light steps,
+    /// it moves to where the nearest cascade was last drawn: a point of the old grid within half a
+    /// texel of the eye, so the new grid turns about it, and the shadows near the eye keep their
+    /// texels (with the grid anchored far away, at the world's origin say, each step would shift
+    /// it under the eye by that distance times the turn, many texels: every shadow edge would jump
+    /// at every step).
+    pub fn anchor(&mut self, t: &ShadowTunables, caster: &Caster, axis: V3, eye: V3) -> V3 {
+        let key = (
+            caster.moon,
+            stepped(caster.dir, axis, t.cascades.light_step_deg).1,
+        );
+        match self.step {
+            Some((k, at)) if k == key => at,
+            _ => {
+                let at = self
+                    .kept
+                    .first()
+                    .copied()
+                    .flatten()
+                    .map_or(eye, |k| k.cascade.origin);
+                self.step = Some((key, at));
+                at
+            }
+        }
     }
 
     /// Why each far cascade wants drawing again this frame (the nearest is always drawn; its
@@ -811,6 +883,7 @@ mod tests {
             eye,
             noon.axis,
             1.0,
+            [0.0; 3],
         )
         .unwrap()
     }
@@ -847,7 +920,17 @@ mod tests {
         let eye = [1234.5, 80.25, -987.75];
         let d = splits(3, 0.5, 120.0, 0.7);
         for i in 0..3 {
-            let c = fit(eye, basis, d[i], d[i + 1], d[i + 1] * 0.1, 2048, 1.0, 300.0);
+            let c = fit(
+                eye,
+                basis,
+                d[i],
+                d[i + 1],
+                d[i + 1] * 0.1,
+                2048,
+                1.0,
+                300.0,
+                [0.0; 3],
+            );
             assert!(c.holds(eye));
             for p in around(d[i + 1]) {
                 let q = c.project(p);
@@ -877,7 +960,7 @@ mod tests {
     fn a_kept_cascade_holds_its_distance_until_the_eye_leaves_its_slack() {
         let basis = light_basis(normalize([0.2, 0.9, 0.3]), [0.0, 0.0, 1.0]);
         let eye = [100.0, 40.0, -50.0];
-        let c = fit(eye, basis, 20.0, 60.0, 6.0, 2048, 1.0, 120.0);
+        let c = fit(eye, basis, 20.0, 60.0, 6.0, 2048, 1.0, 120.0, [0.0; 3]);
         for step in [0.0, 2.0, 5.0] {
             let moved = [eye[0] + step, eye[1], eye[2]];
             let k = c.rebased(moved);
@@ -904,7 +987,17 @@ mod tests {
         // The sun overhead: a block behind the eye casts too (the box doesn't follow the view),
         // one far off to the side or far under the ground does not.
         let basis = light_basis([0.0, 1.0, 0.0], [0.0, 0.0, 1.0]);
-        let c = fit([0.0, 50.0, 0.0], basis, 0.0, 40.0, 0.0, 1024, 1.0, 300.0);
+        let c = fit(
+            [0.0, 50.0, 0.0],
+            basis,
+            0.0,
+            40.0,
+            0.0,
+            1024,
+            1.0,
+            300.0,
+            [0.0; 3],
+        );
         assert!(c.touches([0.0, -2.0, -20.0], [0.5; 3]));
         assert!(c.touches([0.0, -2.0, 25.0], [0.5; 3]), "behind the eye");
         assert!(c.touches([0.0, 150.0, -20.0], [0.5; 3]), "high above");
@@ -930,7 +1023,7 @@ mod tests {
         let basis = light_basis(normalize([0.4, 0.7, -0.2]), [0.0, 0.0, 1.0]);
         let res = 2048;
         let start = [10_000.25, 72.5, -3_000.75];
-        let c0 = fit(start, basis, 0.0, 12.0, 0.0, res, 1.0, 300.0);
+        let c0 = fit(start, basis, 0.0, 12.0, 0.0, res, 1.0, 300.0, [0.0; 3]);
         let step = c0.texel_m * 0.1;
         let landmark = [10_003.0, 70.0, -3_005.0];
         let grid = texel_of(&c0, start, landmark, f64::from(res));
@@ -941,7 +1034,7 @@ mod tests {
             let eye: V3 = std::array::from_fn(|i| {
                 start[i] + basis.x[i] * step * f64::from(k) + basis.z[i] * 0.37 * f64::from(k)
             });
-            let c = fit(eye, basis, 0.0, 12.0, 0.0, res, 1.0, 300.0);
+            let c = fit(eye, basis, 0.0, 12.0, 0.0, res, 1.0, 300.0, [0.0; 3]);
             let moved: V3 = sub(c.origin, last);
             let across = [dot(moved, basis.x), dot(moved, basis.y)];
             // The origin moves by whole texels across the light, or not at all.
@@ -973,7 +1066,18 @@ mod tests {
         let eye = [0.0, 60.0, 0.0];
         let noon = DAY_NIGHT.state(0.0, Some(0.5), Some(0.5));
         let sun = caster(&SHADOWS, &noon, 1.0);
-        assert!(plan(&SHADOWS, ShadowQuality::Off, sun, eye, noon.axis, 1.0).is_none());
+        assert!(
+            plan(
+                &SHADOWS,
+                ShadowQuality::Off,
+                sun,
+                eye,
+                noon.axis,
+                1.0,
+                [0.0; 3]
+            )
+            .is_none()
+        );
         let high = noon_plan(ShadowQuality::High, eye);
         let low = noon_plan(ShadowQuality::Low, eye);
         assert_eq!(high.cascades.len(), SHADOWS.tiers[1].cascades as usize);
@@ -987,9 +1091,29 @@ mod tests {
             assert!(w[1].radius >= w[1].far * (1.0 + SHADOWS.cascades.slack));
         }
         // No light up: no maps.
-        assert!(plan(&SHADOWS, ShadowQuality::High, None, eye, noon.axis, 1.0).is_none());
+        assert!(
+            plan(
+                &SHADOWS,
+                ShadowQuality::High,
+                None,
+                eye,
+                noon.axis,
+                1.0,
+                [0.0; 3]
+            )
+            .is_none()
+        );
         // The spyglass stretches the distance, up to its cap.
-        let zoomed = plan(&SHADOWS, ShadowQuality::High, sun, eye, noon.axis, 4.0).unwrap();
+        let zoomed = plan(
+            &SHADOWS,
+            ShadowQuality::High,
+            sun,
+            eye,
+            noon.axis,
+            4.0,
+            [0.0; 3],
+        )
+        .unwrap();
         assert_eq!(
             zoomed.distance,
             (SHADOWS.tiers[1].distance_m * 4.0).min(SHADOWS.cascades.spyglass_max_m)
@@ -1022,6 +1146,11 @@ mod tests {
         let f = cache.schedule(p, &wants, eye);
         cache.drew(p, &f, n, sig);
         (wants, f)
+    }
+
+    /// A frame with unchanging casters.
+    fn step_frame(cache: &mut Cache, p: &Plan, eye: V3, n: u64) -> Frame {
+        step(cache, p, eye, n, false, &|_| 1).1
     }
 
     #[test]
@@ -1146,6 +1275,160 @@ mod tests {
         assert_eq!(u[MAX_CASCADES * 16], p.cascades[0].texel_m as f32);
     }
 
+    #[test]
+    fn the_maps_light_holds_between_steps_along_its_path_and_steps_by_the_step() {
+        let noon = DAY_NIGHT.state(0.0, Some(0.5), Some(0.5));
+        let axis = noon.axis;
+        let step = 0.05;
+        let at = |t: f64| DAY_NIGHT.state(0.0, Some(t), Some(0.5)).sun;
+        let mut last = stepped(at(0.5), axis, step);
+        let mut steps = 0;
+        for k in 1..2000 {
+            let dir = at(0.5 + f64::from(k) * 1e-6);
+            let (q, n) = stepped(dir, axis, step);
+            // On the sun's path (square to the axis), unit, and within half a step of the sun.
+            assert!(dot(q, axis).abs() < 1e-9 && (dot(q, q) - 1.0).abs() < 1e-9);
+            let off = dot(q, dir).clamp(-1.0, 1.0).acos().to_degrees();
+            assert!(off <= step * 0.5 + 1e-9, "{off}°");
+            if n == last.1 {
+                assert_eq!(q, last.0, "the same step, the same light");
+            } else {
+                assert_eq!((n - last.1).abs(), 1);
+                let turn = dot(q, last.0).clamp(-1.0, 1.0).acos().to_degrees();
+                assert!((turn - step).abs() < 1e-6, "a step of {turn}°");
+                steps += 1;
+            }
+            last = (q, n);
+        }
+        assert!(steps > 0, "the sun stepped");
+        // 0: the light as it is.
+        assert_eq!(stepped(at(0.5), axis, 0.0).0, at(0.5));
+    }
+
+    dwell_world::both_faces!(
+        /// When the light steps, the texel grid turns about the eye (the anchor moves to where the
+        /// nearest cascade was drawn): a point at your feet keeps its place in the map's texels to a
+        /// small share of one, where a grid anchored at the world's origin, kilometres away, would
+        /// slide many texels under it, and every shadow near you would jump at every step.
+        fn at_a_light_step_the_grid_turns_about_the_eye(f: FaceFrame) {
+            let time = if f.sign_f64() > 0.0 { 0.5 } else { 0.0 };
+            let eye = f.point([10_000.25, 72.5, -3_000.75]);
+            let feet = f.point([10_000.25, 71.5, -3_000.75]);
+            let day = DAY_NIGHT.state(0.0, Some(time), Some(0.5));
+            let sun = caster(&SHADOWS, &day, f.sign_f64()).unwrap();
+            let step = SHADOWS.cascades.light_step_deg;
+            // Twenty steps of the light along its path, as the clock makes them.
+            let mut dirs = vec![stepped(sun.dir, day.axis, step)];
+            let mut k = 0;
+            while dirs.len() < 21 {
+                k += 1;
+                let d = DAY_NIGHT.state(0.0, Some(time + f64::from(k) * 1e-6), Some(0.5));
+                let s = stepped(
+                    caster(&SHADOWS, &d, f.sign_f64()).unwrap().dir,
+                    d.axis,
+                    step,
+                );
+                if s.1 != dirs.last().unwrap().1 {
+                    dirs.push(s);
+                }
+            }
+            let lit = |dir: V3| Caster { dir, ..sun };
+            let res = f64::from(SHADOWS.tiers[1].resolution);
+            let place = |p: &Plan| texel_of(&p.cascades[0], eye, feet, res);
+            let at = |dir: V3, anchor: V3| {
+                plan(
+                    &SHADOWS,
+                    ShadowQuality::High,
+                    Some(lit(dir)),
+                    eye,
+                    day.axis,
+                    1.0,
+                    anchor,
+                )
+                .unwrap()
+            };
+            // The renderer's way: the cache's anchor, frame by frame.
+            let mut cache = Cache::default();
+            let mut n = 0;
+            let mut frame = |dir: V3| {
+                let a = cache.anchor(&SHADOWS, &lit(dir), day.axis, eye);
+                let p = at(dir, a);
+                step_frame(&mut cache, &p, eye, n);
+                n += 1;
+                p
+            };
+            let mut last = frame(dirs[0].0);
+            assert_eq!(
+                last.cascades[0],
+                frame(dirs[0].0).cascades[0],
+                "the light held"
+            );
+            let mut anchored = 0.0f64;
+            for d in &dirs[1..] {
+                let p = frame(d.0);
+                let (a, b) = (place(&last), place(&p));
+                anchored = anchored.max((b[0] - a[0]).abs()).max((b[1] - a[1]).abs());
+                last = p;
+            }
+            eprintln!("ANCH {anchored}");
+            assert!(anchored < 0.1, "the feet moved {anchored} texels at a step");
+            // Anchored at the world's origin, kilometres away, the steps slide the grid under the
+            // feet by a different share of a texel each time.
+            let mut far = 0.0f64;
+            for w in dirs.windows(2) {
+                let (a, b) = (place(&at(w[0].0, [0.0; 3])), place(&at(w[1].0, [0.0; 3])));
+                far = far.max((b[0] - a[0]).abs()).max((b[1] - a[1]).abs());
+            }
+            eprintln!("FAR {far}");
+            assert!(far > 0.3, "anchored far away the grid slid {far} texels");
+        }
+    );
+
+    dwell_world::both_faces!(
+        /// With a still camera far from the world's origin and the clock running (the light
+        /// turning a little every frame, as in play), the nearest cascade, drawn every frame, keeps
+        /// its matrix from frame to frame and changes only in the light's steps: a light turning
+        /// every frame turns the map's texel grid every frame, and every shadow edge crawls.
+        fn a_still_camera_keeps_the_nearest_cascade_while_the_sun_moves_but_in_steps(f: FaceFrame) {
+            // face-a's noon and dusk, and face B's (face A's midnight and its dawn's mirror).
+            let starts = if f.sign_f64() > 0.0 {
+                [0.5, 0.72]
+            } else {
+                [0.0, 0.22]
+            };
+            let eye = f.point([10_000.25, 72.5, -3_000.75]);
+            let day_s = DAY_NIGHT.clock.day_s + DAY_NIGHT.clock.night_s;
+            for start in starts {
+                for q in [ShadowQuality::High, ShadowQuality::Low] {
+                    let at = |k: u32| {
+                        let day = DAY_NIGHT.state(
+                            0.0,
+                            Some(start + f64::from(k) / 60.0 / day_s),
+                            Some(0.5),
+                        );
+                        let c = caster(&SHADOWS, &day, f.sign_f64()).expect("a light is up");
+                        plan(&SHADOWS, q, Some(c), eye, day.axis, 1.0, [0.0; 3]).unwrap()
+                    };
+                    // Ten seconds at 60 frames a second.
+                    let frames: Vec<Plan> = (0..600).map(at).collect();
+                    let first = frames[0].caster.dir;
+                    let last = frames[599].caster.dir;
+                    let turned = dot(first, last).clamp(-1.0, 1.0).acos().to_degrees();
+                    let changes = frames
+                        .windows(2)
+                        .filter(|w| w[0].cascades[0].view_proj != w[1].cascades[0].view_proj)
+                        .count();
+                    let steps = (turned / SHADOWS.cascades.light_step_deg).ceil() as usize + 1;
+                    assert!(
+                        changes <= steps,
+                        "{q:?} from {start}: the nearest cascade changed {changes} times in 600 \
+                         still frames, the light turned {turned:.3}° ({steps} steps)"
+                    );
+                }
+            }
+        }
+    );
+
     dwell_world::both_faces!(
         /// On either face the light over it casts down onto it: a point above the ground (toward
         /// the face's sky) is nearer the light in the map than the ground under it, a caster high
@@ -1158,7 +1441,16 @@ mod tests {
             assert!(!c.moon);
             let up = f.up();
             let eye = f.point([0.0, 60.0, 0.0]);
-            let p = plan(&SHADOWS, ShadowQuality::High, Some(c), eye, day.axis, 1.0).unwrap();
+            let p = plan(
+                &SHADOWS,
+                ShadowQuality::High,
+                Some(c),
+                eye,
+                day.axis,
+                1.0,
+                [0.0; 3],
+            )
+            .unwrap();
             let k = &p.cascades[0];
             let ground = f.vector([0.0, -1.7, -3.0]);
             let above: V3 = std::array::from_fn(|i| ground[i] + up[i] * 2.0);

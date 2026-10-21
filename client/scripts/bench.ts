@@ -303,6 +303,13 @@ async function burst(run: Run, s: Extract<Step, { do: 'burst' }>): Promise<void>
     // The kept maps catch up with the moving light first.
     await sleep(page, 1);
   }
+  // The scene only: the page's overlays (the HUD's fps and tick counters change every frame).
+  // (Set from script: the page's CSP allows no inline style sheet.)
+  await page.evaluate(`(() => {
+    const els = [...document.querySelectorAll('body *')];
+    globalThis.__burstShown = els.map((e) => [e, e.style.visibility]);
+    for (const e of els) e.style.visibility = e.tagName === 'CANVAS' ? 'visible' : 'hidden';
+  })()`);
   const width = Math.max(2, String(s.frames - 1).length);
   const paths: string[] = [];
   for (let i = 0; i < s.frames; i++) {
@@ -310,6 +317,9 @@ async function burst(run: Run, s: Extract<Step, { do: 'burst' }>): Promise<void>
     await page.screenshot({ path });
     paths.push(path);
   }
+  await page.evaluate(
+    'for (const [e, v] of globalThis.__burstShown) e.style.visibility = v; delete globalThis.__burstShown',
+  );
   if (s.clock !== undefined) await page.evaluate('globalThis.__burstClock = false');
   const codec = await page.context().newPage();
   await codec.evaluate(CODEC);
