@@ -2580,6 +2580,54 @@ mod tests {
         }
     }
 
+    /// The LOD z-fighting class (ARCHITECTURE.md §6.6, "Known bug class"): during a swap the two
+    /// levels are drawn over each other, their ground often in one plane, so depth must never be what
+    /// picks between them. The dither does: through the encoding the shaders decode (`fade_discard`:
+    /// t = |w| − 1 in f32, which is not t exactly), at every pixel of every pattern and every
+    /// progress — the pattern's own steps included, where `<` against `>=` decides — the incoming
+    /// level and the outgoing one keep exactly one of the pixel between them, so coincident depths
+    /// with different colours never reach the depth test.
+    #[test]
+    fn the_two_levels_of_a_swap_never_both_draw_a_pixel_through_the_shaders_encoding() {
+        use dwell_lod::fade::Fade;
+        use dwell_look::lod_blend::FadePattern;
+        // The shaders' fade_discard, on the f32 value the draw carries.
+        let shader_keeps = |fade: Fade, n: f32| {
+            let w = fade.shader_value();
+            if w == 0.0 {
+                return true;
+            }
+            let t = w.abs() - 1.0;
+            if w > 0.0 { n < t } else { n >= t }
+        };
+        for pattern in [FadePattern::Bayer4, FadePattern::Bayer8, FadePattern::Noise] {
+            let ns: Vec<f32> = (0..64)
+                .flat_map(|y| (0..64).map(move |x| pattern.threshold(x, y)))
+                .collect();
+            let mut ts: Vec<f32> = (0..=2048).map(|k| k as f32 / 2048.0).collect();
+            // Progress landing on a threshold, and one ulp either side of it.
+            for &n in &ns {
+                ts.extend([
+                    n,
+                    f32::from_bits(n.to_bits() + 1),
+                    f32::from_bits(n.to_bits().max(1) - 1),
+                ]);
+            }
+            for &t in &ts {
+                for &n in &ns {
+                    let kept = [Fade::In(t), Fade::Out(t)]
+                        .iter()
+                        .filter(|f| shader_keeps(**f, n))
+                        .count();
+                    assert_eq!(
+                        kept, 1,
+                        "{pattern:?} t {t} n {n}: {kept} levels draw the pixel"
+                    );
+                }
+            }
+        }
+    }
+
     #[test]
     fn plants_without_ink_are_flagged_in_the_depth_and_seen_through() {
         // Owner's report (2026-10-20, `?outline=creases`): tall grass was mostly black, every
