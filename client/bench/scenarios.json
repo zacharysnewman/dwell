@@ -911,7 +911,7 @@
     },
     {
       "name": "shadows-still",
-      "notes": "Shadow flicker with a still camera (docs/DAY_NIGHT.md §10): hovers over the spawn looking across the pine groves, then shoots bursts of frames back to back at noon and at dusk, with the time of day held and with it running at the world clock's rate (the light moving every frame, as in play), on High, Low and Off. Read each burst's flicker (the share of pixels that change from frame to frame) against the Off burst's (the clouds, water and plants' own motion).",
+      "notes": "Shadow flicker with a still camera (docs/DAY_NIGHT.md §10): hovers over the spawn looking across the pine groves, then shoots bursts of frames back to back at noon and at dusk (and at noon looking down at the ground under you, the nearest cascade's), with the time of day held and with it running at the world clock's rate (the light moving every frame, as in play), on High, Low and Off. Read each burst's flicker (the share of pixels that change from frame to frame) against the Off burst's (the clouds, water and plants' own motion).",
       "settings": { "timeOfDay": 0.5 },
       "steps": [
         { "do": "settle", "maxS": 120 },
@@ -938,7 +938,17 @@
         { "do": "shadows", "quality": "low" },
         { "do": "burst", "name": "dusk-clock-low", "frames": 16, "clock": 0.72 },
         { "do": "shadows", "quality": "off" },
-        { "do": "burst", "name": "dusk-clock-off", "frames": 16, "clock": 0.72 }
+        { "do": "burst", "name": "dusk-clock-off", "frames": 16, "clock": 0.72 },
+        { "do": "shadows", "quality": "high" },
+        { "do": "time", "t": 0.5 },
+        { "do": "look", "yaw": 70, "pitch": -70 },
+        { "do": "wait", "s": 2 },
+        { "do": "shot", "name": "near" },
+        { "do": "burst", "name": "near-clock", "frames": 16, "clock": 0.5 },
+        { "do": "shadows", "quality": "low" },
+        { "do": "burst", "name": "near-clock-low", "frames": 16, "clock": 0.5 },
+        { "do": "shadows", "quality": "off" },
+        { "do": "burst", "name": "near-clock-off", "frames": 16, "clock": 0.5 }
       ]
     },
     {

@@ -148,7 +148,7 @@ export interface Flicker {
  * `threshold` from the frame before, and the mean of that move; averaged over the pairs. A still
  * scene scores 0; shadow edges crawling from frame to frame score the share of the view they cover.
  */
-export function flickerOf(frames: readonly Rgba[], threshold = 8): Flicker {
+export function flickerOf(frames: readonly Rgba[], threshold = 3): Flicker {
   if (frames.length < 2) throw new Error('flicker: needs two frames or more');
   const { width, height } = frames[0];
   const luma = (im: Rgba): Float32Array => {

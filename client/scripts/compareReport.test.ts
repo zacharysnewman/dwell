@@ -122,7 +122,7 @@ describe('compare report math', () => {
 
   it('flicker: the share of pixels that change from frame to frame, and their mean change', () => {
     const still = [image(2, 2, [50, 50, 50]), image(2, 2, [50, 50, 50]), image(2, 2, [50, 50, 50])];
-    expect(flickerOf(still)).toEqual({ frames: 3, changed: 0, meanDelta: 0, threshold: 8 });
+    expect(flickerOf(still)).toEqual({ frames: 3, changed: 0, meanDelta: 0, threshold: 3 });
     // One pixel of four blinks between 50 and 150 every frame: a quarter of the view flickers.
     const blink = still.map((im, i) => {
       const c = { ...im, data: im.data.slice() };
@@ -133,7 +133,7 @@ describe('compare report math', () => {
     expect(f.changed).toBeCloseTo(0.25);
     expect(f.meanDelta).toBeCloseTo(25, 3);
     // A change under the threshold isn't flicker.
-    const faint = [image(1, 1, [50, 50, 50]), image(1, 1, [55, 55, 55])];
+    const faint = [image(1, 1, [50, 50, 50]), image(1, 1, [52, 52, 52])];
     expect(flickerOf(faint).changed).toBe(0);
     expect(() => flickerOf([still[0]])).toThrow(/two frames/);
     expect(() => flickerOf([still[0], image(1, 1, [0, 0, 0])])).toThrow(/sizes differ/);
