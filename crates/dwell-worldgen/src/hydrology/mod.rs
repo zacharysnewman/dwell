@@ -2,7 +2,7 @@
 //! map of one face of the disc, computed once per seed and face — the height field sampled on a
 //! grid (`cell` m, data), eroded by stream power (`erosion.rs`), its remaining depressions made
 //! lakes or removed (`lakes.rs`), the rain routed to the sea and accumulated, and the rivers traced
-//! (`rivers.rs`). **Not wired into chunk generation**: nothing the game generates reads it yet.
+//! (`rivers.rs`). The world map (`worldmap`, ADR 0049) keeps what chunk generation reads of it.
 //!
 //! Face-local: a face's map is computed from that face's generator in its own frame (heights from
 //! its midplane, up away from it), so face B's code is face A's.
@@ -25,7 +25,8 @@ pub mod uplift;
 use dwell_world::{FaceFrame, SEA_LEVEL_M, WORLD_RADIUS};
 
 use crate::BifacialTerrain;
-pub use flood::{Grid, NONE};
+use crate::base::BaseField;
+pub use flood::{Grid, NEIGHBOURS as NEIGHBOURS_D8, NONE};
 
 /// A point of a river's width curve: at `discharge` (m³/s), `width` and `depth` (m).
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -341,7 +342,7 @@ pub fn grid_for(cell: i32) -> (Grid, f64) {
 
 /// One face's map for a world seed (the face's own generator, face-local).
 pub fn generate(world_seed: u64, face: FaceFrame, p: &HydrologyParams) -> HydrologyMap {
-    generate_for(&BifacialTerrain::new(world_seed), face, p)
+    generate_seed(crate::bifacial::face_seed(world_seed, face.face), p)
 }
 
 /// One face's map of a terrain (the mirror world's too, for face parity).
@@ -350,21 +351,24 @@ pub fn generate_for(
     face: FaceFrame,
     p: &HydrologyParams,
 ) -> HydrologyMap {
-    let (grid, x0, h) = sample(terrain, face, p.cell);
-    from_heights(
-        grid,
-        f64::from(p.cell),
-        x0,
-        &h,
-        terrain.local(face.face).seed(),
-        p,
-    )
+    generate_seed(terrain.local(face.face).seed(), p)
 }
 
-/// The face's height field on the grid of `cell` m (m above sea level; −∞ beyond the disc): each
+/// The map of the face whose generator's seed is `seed`.
+pub fn generate_seed(seed: u64, p: &HydrologyParams) -> HydrologyMap {
+    let (grid, x0, h) = sample_seed(seed, p.cell);
+    from_heights(grid, f64::from(p.cell), x0, &h, seed, p)
+}
+
+/// The face's base field on the grid of `cell` m (m above sea level; −∞ beyond the disc): each
 /// cell's centre, with the octaves finer than a cell dropped (the LOD's sampling).
 pub fn sample(terrain: &BifacialTerrain, face: FaceFrame, cell: i32) -> (Grid, f64, Vec<f64>) {
-    let g = terrain.local(face.face);
+    sample_seed(terrain.local(face.face).seed(), cell)
+}
+
+/// [`sample`] for the face whose generator's seed is `seed`.
+pub fn sample_seed(seed: u64, cell: i32) -> (Grid, f64, Vec<f64>) {
+    let g = BaseField::new(seed);
     let (grid, x0) = grid_for(cell);
     let n = grid.n;
     let cell = i64::from(cell);
@@ -374,11 +378,9 @@ pub fn sample(terrain: &BifacialTerrain, face: FaceFrame, cell: i32) -> (Grid, f
         for col in 0..n {
             let x = col as i64 * cell - half;
             let z = row as i64 * cell - half;
-            let column = g.column_lod(x, z, cell);
-            h.push(if column.outside {
-                f64::NEG_INFINITY
-            } else {
-                f64::from(column.height) - SEA_LEVEL_M
+            h.push(match g.height_lod(x, z, cell) {
+                None => f64::NEG_INFINITY,
+                Some(height) => f64::from(height) - SEA_LEVEL_M,
             });
         }
     }

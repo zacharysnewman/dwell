@@ -901,7 +901,7 @@ fn the_hills_are_steep_enough_to_slide_and_reach_about_500_m() {
                 for x in (-30_000..=30_000).step_by(499) {
                     let col = g.column_at(x, z);
                     let h = f64::from(col.height) - SEA_LEVEL_M;
-                    if col.coast > 0.0 {
+                    if g.coast_at(x, z) > 0.0 {
                         island += 1;
                         flooded += usize::from(h <= 0.0);
                     }

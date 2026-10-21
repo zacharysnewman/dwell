@@ -2,6 +2,7 @@
 //! height-field generator of Phase 15 and the bifacial world built from two of them, plus the
 //! generator lookup by version that the server, the client and the tools share.
 
+pub mod base;
 pub mod bifacial;
 pub mod decorations;
 pub mod hydrology;
@@ -11,6 +12,7 @@ pub mod placements;
 pub mod portals;
 pub mod ramps;
 pub mod terrain;
+pub mod worldmap;
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};

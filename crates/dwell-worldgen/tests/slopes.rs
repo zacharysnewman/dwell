@@ -176,7 +176,7 @@ fn hillsides_are_v2_steps_and_ramps() {
                 }
                 let (x, z) = (gx * 1500, gz * 1500);
                 let c = g.column_at(x, z);
-                if c.outside || c.coast < 3000.0 || c.height < SEA_LEVEL_M as f32 + 4.0 {
+                if c.outside || g.coast_at(x, z) < 3000.0 || c.height < SEA_LEVEL_M as f32 + 4.0 {
                     continue;
                 }
                 let sx = (g.column_at(x + 8, z).height - c.height) / 8.0;

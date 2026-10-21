@@ -498,7 +498,7 @@ fn hillsides(seed: u64, count: usize, size: f64, face: Face) -> Vec<Region> {
             }
             let (x, z) = (gx * 1500, gz * 1500);
             let c = g.column_at(x, z);
-            if c.outside || c.coast < 3000.0 || c.height < dwell_world::SEA_LEVEL_M as f32 + 8.0 {
+            if c.outside || g.coast_at(x, z) < 3000.0 || c.height < dwell_world::SEA_LEVEL_M as f32 + 8.0 {
                 continue;
             }
             let d = 16;

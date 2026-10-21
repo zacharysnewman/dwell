@@ -4,7 +4,7 @@
 pub const PAINTERLY_TILE: usize = 32;
 
 /// The atlas tiles the painterly set paints, in the order of their texels in [`PAINTERLY_TEXELS`].
-pub const PAINTERLY_TILES: [&str; 18] = [
+pub const PAINTERLY_TILES: [&str; 23] = [
     "grass",
     "grassSide",
     "dirt",
@@ -18,6 +18,11 @@ pub const PAINTERLY_TILES: [&str; 18] = [
     "tallGrass",
     "ladder",
     "dirtSkirt",
+    "snow",
+    "snowSide",
+    "dirtSnowSkirt",
+    "snowyLeavesTop",
+    "snowyLeavesSide",
     "torch",
     "torchTop",
     "plain",
@@ -26,16 +31,17 @@ pub const PAINTERLY_TILES: [&str; 18] = [
 ];
 
 /// Each tile's glow: how much of its colour it gives off unlit (its material's `emissive`).
-pub const PAINTERLY_EMISSIVE: [f32; 18] = [
-    0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+pub const PAINTERLY_EMISSIVE: [f32; 23] = [
+    0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+    0.0, 0.0, 0.0, 0.0,
 ];
 
 /// Whether each tile hangs from its block's top edge (its material's `hang`): a side face shows
 /// the tile's top on every block, so it never merges up or down; other tiles run in world metres.
-pub const PAINTERLY_HANG: [bool; 18] = [
+pub const PAINTERLY_HANG: [bool; 23] = [
     false, true, false, false, false, false, false, false, false, false, false, false, true, false,
-    false, false, false, false,
+    true, true, false, false, false, false, false, false, false,
 ];
 
 /// Each painterly tile's RGBA8 texels (sRGB), row y = 0 (the tile's bottom) first.
-pub static PAINTERLY_TEXELS: &[u8; 73728] = include_bytes!("painterly.rgba");
+pub static PAINTERLY_TEXELS: &[u8; 94208] = include_bytes!("painterly.rgba");

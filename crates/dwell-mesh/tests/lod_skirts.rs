@@ -64,7 +64,7 @@ fn hillside(t: &BifacialTerrain, f: FaceFrame) -> (i32, i32) {
         for gx in -12..=12 {
             let (x, z) = (gx * 1500, gz * 1500);
             let c = g.column_at(x, z);
-            if c.outside || c.coast < 3000.0 || c.height < dwell_world::SEA_LEVEL_M as f32 + 8.0 {
+            if c.outside || g.coast_at(x, z) < 3000.0 || c.height < dwell_world::SEA_LEVEL_M as f32 + 8.0 {
                 continue;
             }
             let d = 16;

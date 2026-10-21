@@ -222,6 +222,15 @@ export const SOUND_DATA: SoundData = {
       "slide": "dwell:grass_slide",
       "slide_stop": "dwell:grass_slide_stop"
     },
+    "dwell:snow": {
+      "step": "dwell:snow_step",
+      "land": "dwell:snow_land",
+      "break": "dwell:grass_break",
+      "place": "dwell:grass_place",
+      "hit": "dwell:sand_hit",
+      "slide": "dwell:sand_slide",
+      "slide_stop": "dwell:sand_slide_stop"
+    },
     "dwell:sand": {
       "step": "dwell:sand_step",
       "land": "dwell:sand_land",
@@ -1259,6 +1268,181 @@ export const SOUND_DATA: SoundData = {
           "env": {
             "attack": 0.001,
             "decay": 0.02
+          }
+        }
+      ]
+    },
+    "dwell:snow_step": {
+      "gain": 1.902,
+      "reverb": 0.055,
+      "variation": {
+        "pitch": 2,
+        "gain": 1.5,
+        "cutoff": 0.18,
+        "time": 0.18
+      },
+      "layers": [
+        {
+          "source": "noise",
+          "color": "brown",
+          "gain": 0.7,
+          "filters": [
+            {
+              "type": "lowpass",
+              "freq": 272,
+              "q": 0.7
+            }
+          ],
+          "env": {
+            "attack": 0.004,
+            "decay": 0.06
+          }
+        },
+        {
+          "source": "noise",
+          "color": "pink",
+          "gain": 0.35,
+          "filters": [
+            {
+              "type": "bandpass",
+              "freq": 2100,
+              "q": 1.1
+            }
+          ],
+          "env": {
+            "attack": 0.001,
+            "decay": 0.016
+          },
+          "grains": {
+            "count": [
+              6,
+              10
+            ],
+            "spread": 0.096,
+            "gain": [
+              0.35,
+              1
+            ],
+            "pitch": 4
+          }
+        },
+        {
+          "source": "noise",
+          "color": "white",
+          "gain": 0.176,
+          "at": 0.01,
+          "filters": [
+            {
+              "type": "bandpass",
+              "freq": 6900,
+              "q": 0.9
+            },
+            {
+              "type": "lowpass",
+              "freq": 8000
+            }
+          ],
+          "env": {
+            "attack": 0.004,
+            "decay": 0.035
+          },
+          "grains": {
+            "count": [
+              10,
+              18
+            ],
+            "spread": 0.208,
+            "gain": [
+              0.3,
+              1
+            ],
+            "pitch": 5
+          }
+        }
+      ]
+    },
+    "dwell:snow_land": {
+      "gain": 1.095,
+      "reverb": 0.066,
+      "variation": {
+        "pitch": 2,
+        "gain": 1.5,
+        "cutoff": 0.15,
+        "time": 0.12
+      },
+      "intensity": {
+        "gain": [
+          0.35,
+          1
+        ],
+        "cutoff": [
+          0.6,
+          1
+        ],
+        "time": [
+          0.7,
+          1.15
+        ]
+      },
+      "layers": [
+        {
+          "source": "osc",
+          "wave": "sine",
+          "freq": 68,
+          "to": 40,
+          "gain": 0.55,
+          "env": {
+            "attack": 0.004,
+            "decay": 0.17
+          }
+        },
+        {
+          "source": "noise",
+          "color": "brown",
+          "gain": 0.9,
+          "filters": [
+            {
+              "type": "lowpass",
+              "freq": 320,
+              "q": 0.7
+            }
+          ],
+          "env": {
+            "attack": 0.003,
+            "decay": 0.15
+          }
+        },
+        {
+          "source": "noise",
+          "color": "white",
+          "gain": 0.2,
+          "at": 0.01,
+          "filters": [
+            {
+              "type": "bandpass",
+              "freq": 6900,
+              "q": 0.9
+            },
+            {
+              "type": "lowpass",
+              "freq": 8000
+            }
+          ],
+          "env": {
+            "attack": 0.004,
+            "decay": 0.04
+          },
+          "grains": {
+            "count": [
+              16,
+              26
+            ],
+            "spread": 0.32,
+            "gain": [
+              0.25,
+              1
+            ],
+            "pitch": 5
           }
         }
       ]

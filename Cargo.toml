@@ -22,3 +22,7 @@ opt-level = 1
 
 [profile.dev.package."*"]
 opt-level = 3
+
+# The world map (ADR 0049) is computed once per seed and face; tests and dev servers do it too.
+[profile.dev.package.dwell-worldgen]
+opt-level = 3
