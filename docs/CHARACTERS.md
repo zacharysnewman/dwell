@@ -389,7 +389,10 @@ choices.
 
 The capsule is gone: `PlayerView` carries the feet, face, yaw, death, the look's name, the pose the
 game animated (`bodies.rs`, one `Animator` per remote player from its interpolated snapshot) and
-what the hand holds. The local player is drawn as the full body only when dead (lying on its back,
+what the hand holds. A frame samples one moment of the snapshots, so a jump also starts when its
+first Jumping snapshot came since the last frame (`RemoteView::jumped`, `MoveInput::jumped`): at a
+few frames a second the frame can fall past the 0.33 s rise, or past the whole jump, and the body
+would otherwise go straight to the fall or the landing, or miss the jump. The local player is drawn as the full body only when dead (lying on its back,
 seen from the death camera) or in a future third-person camera. **Face B**: a body there is turned a
 half turn about its forward axis (a proper rotation: the winding and its handedness hold).
 **Steps** **[built, except the step pose]**: a remote body's root is drawn at its feet plus the

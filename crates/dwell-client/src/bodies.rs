@@ -27,6 +27,7 @@ pub fn remote_input(v: &RemoteView, holding: bool) -> MoveInput {
         pitch: v.pitch,
         holding,
         foot_ground: [0.0; 2],
+        jumped: v.jumped,
     }
 }
 
@@ -47,6 +48,7 @@ pub fn local_input(
         pitch: 0.0,
         holding: true,
         foot_ground: [0.0; 2],
+        jumped: false,
     }
 }
 
@@ -422,6 +424,7 @@ mod tests {
                         | dwell_physics::net::face_bit(f, player_flags::FACE_B),
                     held: 0,
                     swing: 0,
+                    jumped: false,
                 };
                 let view = bodies.remote(&v, Held::Empty, dt, &mut ground);
                 steps += usize::from(bodies.step_started(1).is_some());
@@ -454,6 +457,7 @@ mod tests {
                 flags: player_flags::GROUNDED,
                 held: 0,
                 swing: 0,
+                jumped: false,
             };
             b.remote(&v, Held::Empty, 1.0 / 60.0, &mut ground);
         };
@@ -515,7 +519,7 @@ mod tests {
                     let mut bodies = Bodies::default();
                     let mut frame = interval * f64::from(phase) / 20.0;
                     let mut tick = 0;
-                    while frame < 3.0 {
+                    while frame < 5.0 {
                         // The snapshots that arrived (30 ms after they were sent) by this frame.
                         while f64::from(tick) * tick_ms + 30.0 <= frame * 1000.0 {
                             let t = f64::from(tick) * tick_ms;

@@ -592,7 +592,9 @@ tests only); CI fails on stale output. Code names characters, looks, items and r
   step; loops wrap), layering (`base`, `hold`, `action`) and cross-fades over every keyed bone.
   Poses are **not sent**: each client animates the others from what their snapshots carry
   (`bodies.rs`). The base role comes from the controller state (`body_role`: fly, swim and climb
-  from the flags, jump or fall from the face-local vertical velocity while airborne, a landing
+  from the flags, jump or fall from the face-local vertical velocity while airborne, or a jump
+  whenever one started at a snapshot since the last frame (`RemoteView::jumped`: a slow page or a
+  long frame past the rise, or past the whole jump, still plays it, then the fall or the landing), a landing
   one-shot under 1.5 m/s, slide, sprint, walk, crouch and crouch-walk by speed), each switch
   cross-faded by the new clip's `blend`; gaits play at speed / `cycle`; the `hold` layer while the
   hand holds something; a break or place swing on the `action` layer when the snapshot's swing
