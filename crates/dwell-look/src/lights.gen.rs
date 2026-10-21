@@ -8,4 +8,5 @@ pub const LIGHTS: LightTunables = LightTunables {
     cull_m: 64.0,
     curve: 3.0,
     wrap: 0.5,
+    glow_peak: 1.0,
 };

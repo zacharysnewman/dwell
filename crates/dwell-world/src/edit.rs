@@ -181,6 +181,117 @@ pub fn below(cell: [i32; 3]) -> [i32; 3] {
     [cell[0], cell[1] + down, cell[2]]
 }
 
+/// The cell over a block: above it toward its face's sky (+y on face A, −y on face B); the
+/// inverse of [`below`].
+pub fn above(cell: [i32; 3]) -> [i32; 3] {
+    let up = FaceFrame::at_row(cell[1]).sign();
+    [cell[0], cell[1] + up, cell[2]]
+}
+
+/// The name of the block a state belongs to ("" for an id outside the table).
+fn block_name(m: StateId) -> &'static str {
+    if usize::from(m) < dwell_blocks::state_count() {
+        block_of(m).name
+    } else {
+        ""
+    }
+}
+
+/// The other cells of the multi-cell block a state at `cell` belongs to (block data `extends`,
+/// `partOf`; BLOCK_REGISTRY.md, Multi-cell blocks): each with the block expected there.
+fn partners(cell: [i32; 3], m: StateId) -> Vec<([i32; 3], &'static str)> {
+    let s = info(m);
+    let mut out = Vec::new();
+    if let Some(up) = s.extends_up {
+        out.push((above(cell), up));
+    }
+    if let Some(of) = s.part_of {
+        out.push((below(cell), of));
+    }
+    out
+}
+
+/// Every write an edit setting `cell` to `material` makes, in order (the server sends them in one
+/// `VoxelModification`; the client predicts the same): the cell; a multi-cell block's other cells
+/// (a placed torch puts its upper part; breaking either part clears the other); and the blocks that
+/// left unsupported (block data `needsSupport`: tall grass on a broken block), each of those with
+/// its own parts. Read against `world` before any of it is applied.
+pub fn edit_writes(
+    world: &mut VoxelWorld,
+    cell: [i32; 3],
+    material: StateId,
+) -> Vec<([i32; 3], StateId)> {
+    let mut out: Vec<([i32; 3], StateId)> = Vec::new();
+    let mut queue = std::collections::VecDeque::from([(cell, material)]);
+    // A write never comes back to a cell (a part cleared, or a cell left unsupported, once).
+    while let Some((c, m)) = queue.pop_front() {
+        if out.iter().any(|(o, _)| *o == c) || out.len() >= 64 {
+            continue;
+        }
+        let current = |world: &mut VoxelWorld, out: &[([i32; 3], StateId)], at: [i32; 3]| {
+            out.iter()
+                .rev()
+                .find(|(o, _)| *o == at)
+                .map_or_else(|| world.get_voxel(at[0], at[1], at[2]), |(_, v)| *v)
+        };
+        let old = current(world, &out, c);
+        out.push((c, m));
+        if old != m {
+            // The parts of what was there go with it.
+            for (p, name) in partners(c, old) {
+                let there = current(world, &out, p);
+                if block_name(there) == name {
+                    let left = if info(there).flooded { M.water } else { M.air };
+                    queue.push_back((p, left));
+                }
+            }
+        }
+        // The parts of what is put there come with it.
+        for (p, name) in partners(c, m) {
+            if let Some(part) = dwell_blocks::state(name)
+                && current(world, &out, p) != part
+            {
+                queue.push_back((p, part));
+            }
+        }
+        // The block standing on it, if this leaves it unsupported.
+        let up = above(c);
+        if below(up) == c
+            && inside_build_volume(i64::from(up[0]), i64::from(up[1]), i64::from(up[2]))
+        {
+            let there = current(world, &out, up);
+            if there != M.air
+                && info(there).needs_support != Support::None
+                && !supported_on(there, m)
+            {
+                let left = if info(there).flooded { M.water } else { M.air };
+                queue.push_back((up, left));
+            }
+        }
+    }
+    out
+}
+
+/// The box a block is aimed at, over every cell of its multi-cell block (a 1 m torch's two cells),
+/// in fractions of `cell` (the other cells' boxes offset by their rows): the outline's box.
+pub fn outline_box(world: &mut VoxelWorld, cell: [i32; 3]) -> ([f32; 3], [f32; 3]) {
+    let (mut lo, mut hi) = target_box(world, cell);
+    let m = world.get_voxel(cell[0], cell[1], cell[2]);
+    for (p, name) in partners(cell, m) {
+        if block_name(world.get_voxel(p[0], p[1], p[2])) != name {
+            continue;
+        }
+        let (plo, phi) = target_box(world, p);
+        let dy = (p[1] - cell[1]) as f32;
+        for k in 0..3 {
+            let off = if k == 1 { dy } else { 0.0 };
+            lo[k] = lo[k].min(plo[k] + off);
+            hi[k] = hi[k].max(phi[k] + off);
+        }
+    }
+    (lo, hi)
+}
+
 /// Whether state `m` may stand on `under` (block data `placeOn`, `needsSupport`): on one of its
 /// `placeOn` blocks if it lists any, else, if it needs support, on a solid block; anything else
 /// stands anywhere.
@@ -557,6 +668,27 @@ pub fn check_block_edit(
     }
     if overlaps_player(material, cell, players) {
         return EditOutcome::fail(EditCheck::IntoPlayer);
+    }
+    // A multi-cell block needs its other cells free too (a 1 m torch's upper cell).
+    for (p, name) in partners(cell, material) {
+        let Some(part) = dwell_blocks::state(name) else {
+            return EditOutcome::fail(EditCheck::NotPlaceable);
+        };
+        if !inside_build_volume(i64::from(p[0]), i64::from(p[1]), i64::from(p[2]))
+            || !inside_world_disc(i64::from(p[0]), i64::from(p[2]))
+        {
+            return EditOutcome::fail(EditCheck::OutOfWorld);
+        }
+        let there = world.get_voxel(p[0], p[1], p[2]);
+        if (targetable(there) && !info(there).replaceable) || unbreakable(there) {
+            return EditOutcome::fail(EditCheck::Occupied);
+        }
+        if !medium_allows(info(part), info(there)) {
+            return EditOutcome::fail(EditCheck::WrongMedium);
+        }
+        if overlaps_player(part, p, players) {
+            return EditOutcome::fail(EditCheck::IntoPlayer);
+        }
     }
     EditOutcome {
         check: EditCheck::Ok,

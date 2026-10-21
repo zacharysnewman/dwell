@@ -19,7 +19,7 @@ function generate(blocks: object[]): { status: number | null; output: string; ru
   mkdirSync(join(here, 'fixtures'), { recursive: true });
   mkdirSync(join(root, 'client/src/world'), { recursive: true });
   mkdirSync(join(root, 'crates/dwell-blocks/src'), { recursive: true });
-  for (const f of ['gen.mjs', 'shapes.mjs', 'fluids.mjs', 'lights.mjs', 'faces.mjs'])
+  for (const f of ['gen.mjs', 'shapes.mjs', 'fluids.mjs', 'lights.mjs', 'parts.mjs', 'faces.mjs'])
     copyFileSync(join(blocksDir, f), join(here, f));
   // The characters' items a block's `held` names (docs/LIGHTS.md).
   mkdirSync(join(root, 'shared/characters'), { recursive: true });

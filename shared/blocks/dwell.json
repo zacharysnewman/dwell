@@ -91,14 +91,25 @@
     { "name": "grass_ramp", "family": "ramp", "of": "grass" },
     { "name": "sand_ramp", "family": "ramp", "of": "sand" },
     {
-      "$comment": "Prototype content (docs/LIGHTS.md): a torch on the floor. Crossed quads of a stick and its flame (drawn cutout; the flame glows by its texture's `emissive`, shared/textures), no collision, standing on the block below and gone with it. Placed, it gives off block light 14 through the flood light (`emits`); its `light` is the smooth light around it, held or placed; a hand holding it shows the `torch` item (shared/characters).",
+      "$comment": "Prototype content (docs/LIGHTS.md): a torch on the floor, 1 m tall over two ½ m cells. This is its lower cell (the stick), placed from the palette; `extends.up` puts `dwell:torch_upper` (the flame) in the cell above, and breaking either cell clears both (BLOCK_REGISTRY.md, Multi-cell blocks). Crossed quads, drawn cutout, no collision, standing on the block below and gone with it. Its `light` is the light a hand holding it gives off; a hand holding it shows the `torch` item (shared/characters).",
       "name": "torch", "sound": "dwell:wood", "density": 600, "shape": "empty", "placeable": true,
       "look": "cross", "render": "cutout",
-      "cross": { "height": 1.0, "quads": 2 },
-      "selectionBox": [0.38, 0, 0.38, 0.62, 0.9, 0.62],
+      "cross": { "height": 1.0, "quads": 2, "sitOnSupport": false },
+      "selectionBox": [0.38, 0, 0.38, 0.62, 1, 0.62],
       "needsSupport": "below", "medium": "air",
-      "emits": 14, "light": "dwell:torch", "held": "torch",
+      "extends": { "up": "dwell:torch_upper" },
+      "light": "dwell:torch", "held": "torch",
       "color": "#ffffff", "textures": "torch"
+    },
+    {
+      "$comment": "The torch's upper cell (docs/LIGHTS.md): the stick's top and the flame, which gives off the block light (`emits` 14, its cell the flame's) and, with Torch shadows (T2), the placed torch's dynamic light. Placed only with its torch (`partOf`).",
+      "name": "torch_upper", "sound": "dwell:wood", "density": 600, "shape": "empty",
+      "look": "cross", "render": "cutout",
+      "cross": { "height": 1.0, "quads": 2, "sitOnSupport": false },
+      "selectionBox": [0.38, 0, 0.38, 0.62, 0.8, 0.62],
+      "medium": "air", "partOf": "dwell:torch",
+      "emits": 14, "light": "dwell:torch",
+      "color": "#ffffff", "textures": "torchTop"
     }
   ]
 }

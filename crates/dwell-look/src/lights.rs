@@ -32,6 +32,9 @@ pub struct LightTunables {
     /// How far round a surface the light wraps: `(n·l + wrap) / (1 + wrap)`, so a surface edge-on
     /// to a flame isn't black.
     pub wrap: f64,
+    /// The most a glowing surface gives off as the tone curve's input (after the exposure): past
+    /// it the glow is scaled down whole, so its hue holds (a flame stays orange, not cream).
+    pub glow_peak: f64,
 }
 
 /// One dynamic light this frame.
@@ -77,6 +80,30 @@ pub fn falloff(d: f64, radius: f64, curve: f64) -> f64 {
     }
     let x = 1.0 - d / radius;
     x / (curve - (curve - 1.0) * x)
+}
+
+/// What a self-lit surface of linear colour `c` (its colour × its `emissive`) gives off, in the
+/// scene's light at `exposure` (the frame's, × the time of day's): the tone curve sees `c` itself
+/// whatever the exposure (the light is the source: owner, 2026-10-21, "the flame should stay
+/// illuminated regardless of brightness"), scaled down whole so its brightest channel is
+/// `LIGHTS.glow_peak` at most, keeping its hue. The shader's `glow` mirrors it.
+pub fn glow(c: [f64; 3], exposure: f64) -> [f64; 3] {
+    let peak = c[0].max(c[1]).max(c[2]);
+    let k = if peak > LIGHTS.glow_peak {
+        LIGHTS.glow_peak / peak
+    } else {
+        1.0
+    };
+    c.map(|v| v * k * 0.6 / exposure.max(1e-6))
+}
+
+/// A surface of albedo `albedo` lit to `lit` (linear) with `emissive` `shine`: its lit colour
+/// replaced by up to all of its self-lit glow (`shine` 1 or more: fully self-lit, unaffected by
+/// the sun, ambient, flood light, corner occlusion and shadows). The shaders' last step for
+/// terrain, cutouts and characters mirrors it.
+pub fn emitted(lit: [f64; 3], albedo: [f64; 3], shine: f64, exposure: f64) -> [f64; 3] {
+    let g = glow(albedo.map(|v| v * shine), exposure);
+    std::array::from_fn(|k| lit[k] * (1.0 - shine.min(1.0)) + g[k])
 }
 
 /// The share of a light reaching a surface at `cos` to it, wrapped by `wrap`.

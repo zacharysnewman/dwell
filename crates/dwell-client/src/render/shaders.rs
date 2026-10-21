@@ -478,7 +478,7 @@ fn terrain_fs(i: TerrainOut, @builtin(front_facing) front: bool) -> SceneOut {
     let alpha = select(draw.tint.a * texel.a, 1.0, draw.tint.a >= 1.0);
     let albedo = i.color * texel.rgb * shade * draw.tint.rgb;
     var o = scene_out(albedo, normalize(n), i.rel, alpha, terrain_light(i.light, i.flood));
-    o.color = vec4f(o.color.rgb + albedo * (tile_glow(i.tile.xy) * alpha), o.color.a);
+    o.color = vec4f(emitted(o.color.rgb, albedo * alpha, tile_glow(i.tile.xy)), o.color.a);
     o.depth = frame_depth(o.depth, fade_inked(draw));
     return o;
 }
@@ -631,8 +631,8 @@ fn cutout_fs(i: CutoutOut, @builtin(front_facing) front: bool) -> CutoutSceneOut
     let albedo = i.color * texel.rgb * draw.tint.rgb;
     let lit = scene_out(albedo, normalize(n), i.rel, 1.0, terrain_light(i.light, i.flood));
     var o: CutoutSceneOut;
-    // A glowing tile (a torch's flame) gives off its colour unlit.
-    o.color = vec4f(lit.color.rgb + albedo * tile_glow(i.tile.xy), lit.color.a);
+    // A glowing tile (a torch's flame) is self-lit: its colour whatever the light.
+    o.color = vec4f(emitted(lit.color.rgb, albedo, tile_glow(i.tile.xy)), lit.color.a);
     // Plants whose look says `outline: false` are flagged in the depth: no ink is drawn on them
     // and the edge rule sees through them (`ink_outline`).
     o.depth = frame_depth(lit.depth, i.bare < 0.5 && fade_inked(draw));

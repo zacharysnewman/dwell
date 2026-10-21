@@ -133,6 +133,14 @@ pub fn held_light(
     })
 }
 
+/// What a character material's fragment shows (linear, before tone mapping), the CPU mirror of
+/// `character_fs`'s last step: its lit ramp `lit` replaced by up to all of its self-lit glow
+/// (`emissive`; dwell_look::lights::emitted).
+pub fn material_out(m: &dwell_characters::Material, lit: [f64; 3], exposure: f64) -> [f64; 3] {
+    let base = dwell_look::hex(m.base).map(dwell_look::srgb_to_linear);
+    dwell_look::lights::emitted(lit, base, f64::from(m.emissive), exposure)
+}
+
 /// A full body to draw.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct BodyDraw {
@@ -384,8 +392,8 @@ fn character_fs(i: CharacterOut, @builtin(front_facing) front: bool) -> SceneOut
         let albedo = inst.block_color.rgb * select(vec3f(1.0), texel.rgb, has);
         var lit = light;
         lit.points = points;
-        let glow = select(0.0, tile_glow(tile.xy), has);
-        o.color = vec4f(lambert_lit(albedo, n, frag_y, lit) + albedo * glow, 1.0);
+        let shine = select(0.0, tile_glow(tile.xy), has);
+        o.color = vec4f(emitted(lambert_lit(albedo, n, frag_y, lit), albedo, shine), 1.0);
         return o;
     }
     let m = materials[mat];
@@ -402,9 +410,9 @@ fn character_fs(i: CharacterOut, @builtin(front_facing) front: bool) -> SceneOut
     c = c + m.light.rgb * rim * 0.14 * smoothstep(0.3, 0.6, w);
     // The key light's ramp and the dynamic lights by the true normal; a glowing material (a
     // flame) gives off its base colour × its glow in place of its share of the lit ramp.
-    let glow = m.extra.z;
+    // A glowing material (a flame) is self-lit by its emissive: its base colour whatever the light.
     let lit = c * (key.level * PI + points) * CHARACTER_EXPOSURE;
-    o.color = vec4f(lit * (1.0 - min(glow, 1.0)) + m.base.rgb * glow, 1.0);
+    o.color = vec4f(emitted(lit, m.base.rgb, m.extra.z), 1.0);
     return o;
 }
 
@@ -1229,7 +1237,10 @@ fn brush_tiles(device: &wgpu::Device, queue: &wgpu::Queue) -> wgpu::TextureView 
 mod tests {
     #[test]
     fn outlines_are_off_for_now_near_and_far() {
-        assert!(!super::outline_for(false), "near characters and the arms draw no outline");
+        assert!(
+            !super::outline_for(false),
+            "near characters and the arms draw no outline"
+        );
         assert!(!super::outline_for(true), "far characters draw no outline");
     }
 
@@ -1313,6 +1324,110 @@ mod tests {
         let up = |v| super::super::camera::dot(v, basis.up);
         assert!(up(r) > up(hand), "over the hand: {r:?}");
         assert!(held_light(ch, stone, &bones, 0).is_none());
+    }
+
+    /// The hue (degrees) and saturation (HSV) of a display colour (0–1, sRGB-encoded).
+    fn hue_sat(c: [f32; 3]) -> (f64, f64) {
+        let enc = |x: f32| {
+            let x = f64::from(x);
+            if x <= 0.003_130_8 {
+                x * 12.92
+            } else {
+                1.055 * x.powf(1.0 / 2.4) - 0.055
+            }
+        };
+        let [r, g, b] = c.map(enc);
+        let (hi, lo) = (r.max(g).max(b), r.min(g).min(b));
+        let d = hi - lo;
+        let h = if d <= 0.0 {
+            0.0
+        } else if hi == r {
+            60.0 * ((g - b) / d).rem_euclid(6.0)
+        } else if hi == g {
+            60.0 * ((b - r) / d + 2.0)
+        } else {
+            60.0 * ((r - g) / d + 4.0)
+        };
+        (h, if hi > 0.0 { d / hi } else { 0.0 })
+    }
+
+    /// A self-lit surface's displayed colour (sRGB-encoded 0–1) under `lit` at `exposure`.
+    fn shown(lit: [f64; 3], albedo: [f64; 3], shine: f64, exposure: f64) -> [f32; 3] {
+        let out = dwell_look::lights::emitted(lit, albedo, shine, exposure).map(|v| v as f32);
+        super::super::water::aces(out, exposure as f32)
+    }
+
+    #[test]
+    fn the_flame_stays_lit_and_orange_by_day_at_night_and_in_a_cave() {
+        // Owner (2026-10-21): the held flame read as "a cream colored blob"; "the flame should stay
+        // illuminated regardless of brightness since it's the source of the light". The held
+        // flame's material and the placed torch's flame texels, through the shaders' last step
+        // (`emitted`) and the tone curve: by day, at midnight, and in a cave at sky light 0 (its
+        // lit colour black), the same orange, saturated, never cream.
+        let flame = TABLES
+            .materials
+            .iter()
+            .find(|m| m.name == "flame")
+            .expect("the flame material");
+        let held = dwell_look::hex(flame.base).map(dwell_look::srgb_to_linear);
+        // The placed torch's flame: the torch_top tile's most saturated texels' mean.
+        let tile = dwell_blocks::info(dwell_blocks::require("dwell:torch_upper"))
+            .textures
+            .expect("textured")
+            .side;
+        let mut sum = [0.0; 3];
+        let mut n = 0.0;
+        for y in 0..dwell_mesh::TILE as i64 {
+            for x in 0..dwell_mesh::TILE as i64 {
+                let t = dwell_mesh::texel_of(tile, x, y);
+                let (hi, lo) = (t[0].max(t[1]).max(t[2]), t[0].min(t[1]).min(t[2]));
+                if t[3] > 128 && hi > 150 && f64::from(hi - lo) / f64::from(hi) > 0.6 {
+                    for k in 0..3 {
+                        sum[k] += dwell_mesh::srgb_to_linear(t[k]);
+                    }
+                    n += 1.0;
+                }
+            }
+        }
+        assert!(n > 20.0, "the tile has a flame");
+        let placed = sum.map(|v| v / n);
+        let shine_placed = f64::from(dwell_mesh::tile_emissive(tile));
+        for (what, albedo, shine) in [
+            ("held", held, f64::from(flame.emissive)),
+            ("placed", placed, shine_placed),
+        ] {
+            assert!(shine >= 1.0, "{what}: fully self-lit");
+            let day = dwell_look::DEFAULT_EXPOSURE
+                * dwell_look::daynight::DAY_NIGHT.sample(60.0).exposure;
+            let night = dwell_look::DEFAULT_EXPOSURE
+                * dwell_look::daynight::DAY_NIGHT.sample(-90.0).exposure;
+            let noon_lit = albedo.map(|v| v * 3.0);
+            let cases = [
+                ("noon", noon_lit, day),
+                ("midnight", albedo.map(|v| v * 0.05), night),
+                ("cave", [0.0; 3], night),
+                ("bright exposure", noon_lit, 2.5),
+            ];
+            let base = shown(cases[0].1, albedo, shine, cases[0].2);
+            for (when, lit, exposure) in cases {
+                let c = shown(lit, albedo, shine, exposure);
+                let (h, sat) = hue_sat(c);
+                assert!(
+                    (18.0..48.0).contains(&h),
+                    "{what} {when}: hue {h:.0}° ({c:?})"
+                );
+                assert!(
+                    sat >= 0.6,
+                    "{what} {when}: saturation {sat:.2}, cream ({c:?})"
+                );
+                for k in 0..3 {
+                    assert!(
+                        (c[k] - base[k]).abs() < 0.02,
+                        "{what} {when}: {c:?} vs noon {base:?}"
+                    );
+                }
+            }
+        }
     }
 
     // A held torch's light sits in its holder's hand, the same face-local height on both faces.

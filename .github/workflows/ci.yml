@@ -66,6 +66,8 @@ jobs:
         run: node --test shared/blocks/faces.test.mjs
       - name: Block data's light sources (LIGHTS.md §2)
         run: node --test shared/blocks/lights.test.mjs
+      - name: Block data's multi-cell blocks (BLOCK_REGISTRY.md)
+        run: node --test shared/blocks/parts.test.mjs
       - name: Structure generator tests
         run: node --test shared/structures/gen.test.mjs
 

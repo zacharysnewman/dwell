@@ -15,6 +15,7 @@
     "ladder": "ladder_wood",
     "dirtSkirt": "dirt_skirt",
     "torch": "torch",
+    "torchTop": "torch_top",
     "plain": "plain",
     "grid": "grid",
     "missing": "missing"
@@ -152,26 +153,39 @@
     },
 
     "torch": {
-      "$comment": "A sprite on crossed quads (docs/LIGHTS.md): a stick of bark rooted on the bottom row with a flame on top. emissive: the flame gives off its colour unlit (the stick, darker, little).",
+      "$comment": "A sprite on crossed quads (docs/LIGHTS.md): the 1 m torch's lower cell, a stick of bark rooted on the bottom row and running out of the top (it goes on in torch_top).",
+      "use": "block", "ramp": "bark", "alpha": "strokes", "wrap": false,
+      "layers": [
+        { "kind": "fill", "color": "@base" },
+        { "kind": "slab", "at": [[16, 16, 34]], "colors": ["@base"], "width": 3.5, "length": 1, "angle": 90, "softness": 0.5 },
+        { "kind": "slab", "at": [[15.2, 16, 34]], "colors": ["@light"], "width": 1, "length": 1, "angle": 90, "opacity": 0.6, "clip": true },
+        { "kind": "slab", "at": [[17.2, 16, 34]], "colors": ["@shadow"], "width": 1, "length": 1, "angle": 90, "opacity": 0.7, "clip": true }
+      ]
+    },
+    "torch_top": {
+      "$comment": "The torch's upper cell: the stick's top in a dark wrap, and a flame of upward tongues (blades), a deep orange rim round an orange body and a yellow core. emissive: it gives off its colour unlit (the stick, darker, little).",
       "use": "block", "ramp": "flame", "alpha": "strokes", "wrap": false, "emissive": 1.0,
       "layers": [
         { "kind": "fill", "color": "bark.base" },
-        { "kind": "slab", "at": [[16, 8, 16]], "colors": ["bark.base"], "width": 3.5, "length": 1, "angle": 90, "softness": 0.5 },
-        { "kind": "slab", "at": [[15.2, 8, 16]], "colors": ["bark.light"], "width": 1, "length": 1, "angle": 90, "opacity": 0.6, "clip": true },
-        { "kind": "slab", "at": [[17.2, 8, 16]], "colors": ["bark.shadow"], "width": 1, "length": 1, "angle": 90, "opacity": 0.7, "clip": true },
-        { "kind": "slab", "at": [[16, 15.5, 3]], "colors": ["heartwood.shadow"], "width": 4.5, "length": 1, "angle": 90, "softness": 0.5 },
-        { "kind": "dab", "at": [[16, 22]], "colors": ["@shadow"], "width": 8, "length": 13, "angle": 90, "softness": 1.5 },
-        { "kind": "dab", "at": [[16, 21]], "colors": ["@base"], "width": 5.5, "length": 9, "angle": 90, "softness": 1.2 },
-        { "kind": "dab", "at": [[16, 20]], "colors": ["@light"], "width": 3, "length": 5, "angle": 90, "softness": 1 }
+        { "kind": "slab", "at": [[16, 4, 9]], "colors": ["bark.base"], "width": 3.5, "length": 1, "angle": 90, "softness": 0.5 },
+        { "kind": "slab", "at": [[15.2, 4, 9]], "colors": ["bark.light"], "width": 1, "length": 1, "angle": 90, "opacity": 0.6, "clip": true },
+        { "kind": "slab", "at": [[16, 8.5, 3]], "colors": ["heartwood.shadow"], "width": 5, "length": 1, "angle": 90, "softness": 0.5 },
+        { "kind": "blade", "at": [[16, 9, 20], [13.5, 10, 13], [18.5, 10, 15]], "colors": ["@shadow"], "width": [7, 9], "length": 1, "angle": 90, "bend": [-2, 2], "softness": 1 },
+        { "kind": "blade", "at": [[16, 9.5, 16], [14.5, 10, 10], [17.5, 10, 11]], "colors": ["@base"], "width": [5, 6], "length": 1, "angle": 90, "bend": [-1.5, 1.5], "softness": 1 },
+        { "kind": "blade", "at": [[16, 10, 10]], "colors": ["@light"], "width": 3.5, "length": 1, "angle": 90, "bend": 0.5, "softness": 1 }
       ]
     },
     "flame": {
-      "$comment": "A held torch's flame (shared/characters items.torch): the flame's ramp, glowing (emissive: on a character an emissive of 1 or more shows its base colour × it, unlit).",
-      "use": "character", "ramp": "flame", "overlay": 0.3, "emissive": 0.75,
+      "$comment": "A held torch's flame (shared/characters items.torch): the flame's ramp, glowing (emissive; on a character, 1 or more shows its base colour × it, unlit, toned so its hue holds).",
+      "use": "character", "ramp": "flame", "overlay": 0.3, "emissive": 1.0,
       "layers": [
-        { "kind": "gradient", "from": "@base", "to": "@light", "direction": "up" },
-        { "kind": "dab", "count": 5, "colors": ["@light"], "width": [4, 6], "length": [8, 12], "angle": 90, "opacity": 0.5 }
+        { "kind": "gradient", "from": "@shadow", "to": "@base", "direction": "up" },
+        { "kind": "blade", "count": 5, "colors": ["@light"], "width": [4, 6], "length": [10, 16], "angle": 90, "opacity": 0.5 }
       ]
+    },
+    "flame_core": {
+      "$comment": "The held flame's yellow core (a smaller cone inside the flame's tip).",
+      "like": "flame", "ramp": "flame_core"
     },
 
     "cloth_canvas": {

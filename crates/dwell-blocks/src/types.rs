@@ -187,6 +187,11 @@ pub struct StateInfo {
     /// The item a hand holding it shows (block data `held`, an item of the characters' data);
     /// none: the block itself.
     pub held: Option<&'static str>,
+    /// A multi-cell block (block data `extends.up`; BLOCK_REGISTRY.md, Multi-cell blocks): the block
+    /// that fills the cell above it (face-local up), placed with it and cleared with it.
+    pub extends_up: Option<&'static str>,
+    /// The block this one is the upper part of (block data `partOf`): cleared with it.
+    pub part_of: Option<&'static str>,
 }
 
 /// A named light source (`lights` in `shared/blocks/*.json`; docs/LIGHTS.md §2): looks only.

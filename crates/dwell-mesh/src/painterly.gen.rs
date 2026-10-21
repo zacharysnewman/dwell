@@ -4,7 +4,7 @@
 pub const PAINTERLY_TILE: usize = 32;
 
 /// The atlas tiles the painterly set paints, in the order of their texels in [`PAINTERLY_TEXELS`].
-pub const PAINTERLY_TILES: [&str; 16] = [
+pub const PAINTERLY_TILES: [&str; 17] = [
     "grass",
     "grassSide",
     "dirt",
@@ -18,15 +18,16 @@ pub const PAINTERLY_TILES: [&str; 16] = [
     "ladder",
     "dirtSkirt",
     "torch",
+    "torchTop",
     "plain",
     "grid",
     "missing",
 ];
 
 /// Each tile's glow: how much of its colour it gives off unlit (its material's `emissive`).
-pub const PAINTERLY_EMISSIVE: [f32; 16] = [
-    0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0,
+pub const PAINTERLY_EMISSIVE: [f32; 17] = [
+    0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0,
 ];
 
 /// Each painterly tile's RGBA8 texels (sRGB), row y = 0 (the tile's bottom) first.
-pub static PAINTERLY_TEXELS: &[u8; 65536] = include_bytes!("painterly.rgba");
+pub static PAINTERLY_TEXELS: &[u8; 69632] = include_bytes!("painterly.rgba");

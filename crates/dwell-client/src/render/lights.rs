@@ -23,6 +23,22 @@ pub fn wgsl() -> String {
 const MAX_POINT_LIGHTS: u32 = {MAX_SHADER_LIGHTS}u;
 const POINT_CURVE: f32 = {:?};
 const POINT_WRAP: f32 = {:?};
+const GLOW_PEAK: f32 = {:?};
+
+// What a self-lit surface of linear colour `c` (colour × emissive) gives off (docs/LIGHTS.md §2):
+// the tone curve sees `c` itself whatever the exposure, its brightest channel GLOW_PEAK at most,
+// so a flame keeps its hue and brightness by day, at night and in a cave
+// (dwell_look::lights::glow).
+fn glow(c: vec3f) -> vec3f {{
+    let peak = max(max(c.r, c.g), c.b);
+    return c * (select(1.0, GLOW_PEAK / peak, peak > GLOW_PEAK) * 0.6 / max(frame.eye.z, 1e-6));
+}}
+
+// A surface lit to `lit` with emissive `shine`: its lit colour replaced by up to all of its glow
+// (dwell_look::lights::emitted).
+fn emitted(lit: vec3f, albedo: vec3f, shine: f32) -> vec3f {{
+    return lit * (1.0 - min(shine, 1.0)) + glow(albedo * shine);
+}}
 struct PointLights {{
     // x the count
     head: vec4f,
@@ -52,6 +68,7 @@ fn point_lights(rel: vec3f, n: vec3f) -> vec3f {{
 ",
         LIGHTS.curve as f32,
         LIGHTS.wrap as f32,
+        LIGHTS.glow_peak as f32,
         MAX_SHADER_LIGHTS * 2
     )
 }

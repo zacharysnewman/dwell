@@ -7,6 +7,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { blockFluid, fluidsRust, readFluids } from './fluids.mjs';
 import { blockHeld, blockLight, lightsRust, readLights } from './lights.mjs';
+import { checkParts } from './parts.mjs';
 import {
   FACINGS as SHAPE_FACINGS,
   RAMP_SHAPES,
@@ -345,6 +346,13 @@ for (const b of blocks) {
     }
   }
 }
+// Multi-cell blocks (parts.mjs): `extends` and `partOf` name each other.
+let parts;
+try {
+  parts = checkParts(blocks);
+} catch (e) {
+  fail(e.message.replace(/^shared\/blocks: /, ''));
+}
 // Sound sets (docs/AUDIO.md): a block's optional `sound` names a set in shared/sounds/*.json.
 checkBlockSounds(blocks.map((b) => ({ id: b.id, sound: b.def.sound })), loadSounds());
 if (states.length > 0xffff) fail('too many states');
@@ -675,6 +683,8 @@ if (!fixture) writeFileSync(join(root, 'client/src/world/blocks.gen.ts'), ts.joi
       `emits: ${d.emits ?? 0}`,
       `light: ${st.block.light === null ? 'None' : `Some(&LIGHTS[${st.block.light}])`}`,
       `held: ${st.block.held === null ? 'None' : `Some(${rstr(st.block.held)})`}`,
+      `extends_up: ${parts.get(st.block.id).extendsUp === null ? 'None' : `Some(${rstr(parts.get(st.block.id).extendsUp)})`}`,
+      `part_of: ${parts.get(st.block.id).partOf === null ? 'None' : `Some(${rstr(parts.get(st.block.id).partOf)})`}`,
     ];
     rs.push(`    StateInfo { ${fields.join(', ')} },`);
   }

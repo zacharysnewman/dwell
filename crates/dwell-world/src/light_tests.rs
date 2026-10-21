@@ -505,26 +505,37 @@ crate::both_faces!(
 );
 
 crate::both_faces!(
-    /// The torch (a build block, docs/LIGHTS.md): placed on a tunnel's floor it lights the tunnel
-    /// through the flood light (its `emits`; it lets the light through, so the cells around it
-    /// take it), and broken it takes its light with it, both as a relight from scratch has it.
+    /// The torch (a build block, docs/LIGHTS.md), 1 m over two cells: placed on a tunnel's floor it
+    /// lights the tunnel through the flood light from its flame (the upper cell's `emits`; both
+    /// cells let the light through), and broken (either cell, both go) it takes its light with it,
+    /// both as a relight from scratch has it.
     fn a_placed_torch_lights_the_tunnel_and_takes_its_light_when_broken(f: FaceFrame) {
         let torch = dwell_blocks::require("dwell:torch");
-        let info = dwell_blocks::info(torch);
-        assert_eq!((info.emits, info.light_filter), (14, 0));
+        let flame = dwell_blocks::info(dwell_blocks::require("dwell:torch_upper"));
+        assert_eq!((flame.emits, flame.light_filter), (14, 0));
+        assert_eq!(dwell_blocks::info(torch).light_filter, 0);
         let mut fx = tunnel(f);
         let chunks = fx.chunks(-1..=1, -1..=1, -1..=1);
         let mut w = fx.lit(&chunks);
         let before = snapshot(&w, &chunks);
         let at = f.cell([22, GROUND, 16]);
-        w.set_voxel(at[0], at[1], at[2], torch);
-        w.light_edited(&[at]);
-        assert_eq!(fx.at(&w, [22, GROUND, 16]).1, 14, "its own cell");
-        assert_eq!(fx.at(&w, [22, GROUND + 1, 16]).1, 13, "over it");
-        assert_eq!(fx.at(&w, [19, GROUND, 16]).1, 11, "3 m along the floor");
+        let put = crate::edit::edit_writes(&mut w, at, torch);
+        assert_eq!(put.len(), 2, "both cells");
+        let cells: Vec<[i32; 3]> = put.iter().map(|(c, _)| *c).collect();
+        for &([x, y, z], m) in &put {
+            w.set_voxel(x, y, z, m);
+        }
+        w.light_edited(&cells);
+        assert_eq!(fx.at(&w, [22, GROUND + 1, 16]).1, 14, "the flame's cell");
+        assert_eq!(fx.at(&w, [22, GROUND, 16]).1, 13, "the stick's, under it");
+        assert_eq!(fx.at(&w, [19, GROUND, 16]).1, 10, "3 m along the floor");
         assert_matches_scratch(&mut w, &chunks, "torch placed");
-        w.set_voxel(at[0], at[1], at[2], 0);
-        w.light_edited(&[at]);
+        let gone = crate::edit::edit_writes(&mut w, at, 0);
+        assert_eq!(gone.len(), 2, "breaking the stick takes the flame");
+        for &([x, y, z], m) in &gone {
+            w.set_voxel(x, y, z, m);
+        }
+        w.light_edited(&cells);
         assert_eq!(snapshot(&w, &chunks), before, "broken: the light as before");
     }
 );

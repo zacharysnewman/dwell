@@ -53,6 +53,9 @@ pub mod tag {
     pub const NEEDS_SUPPORT: u8 = 8;
     /// `u8` medium (0 any, 1 air, 2 water): what the block may be placed into.
     pub const MEDIUM: u8 = 9;
+    /// `str` the block filling the cell above (`StateInfo::extends_up`, "" none), `str` the block
+    /// it is the upper part of (`part_of`, "" none): a multi-cell block, sent only when either is set.
+    pub const PARTS: u8 = 10;
     /// `str`.
     pub const LOOK: u8 = 0x81;
     /// `u32` sRGB, `f32` opacity.
@@ -283,6 +286,13 @@ pub fn state_fields(s: &StateInfo) -> Fields {
             })
         }));
     }
+    if s.extends_up.is_some() || s.part_of.is_some() {
+        out.push(field(tag::PARTS, |w| {
+            w.str(s.extends_up.unwrap_or(""));
+            w.str(s.part_of.unwrap_or(""));
+        }));
+    }
+
     out.push(field(tag::RENDER, |w| {
         w.u8(match s.render {
             RenderMode::Opaque => 0,
@@ -634,6 +644,8 @@ fn default_row(name: &str) -> StateInfo {
         emits: 0,
         light: None,
         held: None,
+        extends_up: None,
+        part_of: None,
     }
 }
 
@@ -655,6 +667,8 @@ fn apply_rules(
     row.place_on = &[];
     row.needs_support = Support::None;
     row.medium = Medium::Any;
+    row.extends_up = None;
+    row.part_of = None;
     for (t, bytes) in fields {
         let mut r = ByteReader::new(bytes);
         match *t {
@@ -702,6 +716,13 @@ fn apply_rules(
                         notes.push(format!("medium {other} not in this version (any)"));
                         Medium::Any
                     }
+                }
+            }
+            tag::PARTS => {
+                let (up, of) = (r.str(MAX_STR), r.str(MAX_STR));
+                if r.ok() {
+                    row.extends_up = (!up.is_empty()).then(|| intern(&up));
+                    row.part_of = (!of.is_empty()).then(|| intern(&of));
                 }
             }
             t if t & tag::LOOK_BIT == 0 => {
@@ -1266,6 +1287,37 @@ mod tests {
         })];
         apply_look(&unknown, &[], &mut row);
         assert_eq!((row.light, row.held), (None, None));
+    }
+
+    #[test]
+    fn a_multi_cell_blocks_parts_travel_as_a_rule() {
+        // BLOCK_REGISTRY.md, Multi-cell blocks: the torch extends up into its upper part, which
+        // names it back; a rule field (the client must honour it to predict the edit).
+        let torch = *crate::info(crate::require("dwell:torch"));
+        let upper = *crate::info(crate::require("dwell:torch_upper"));
+        for (s, want) in [
+            (torch, (Some("dwell:torch_upper"), None)),
+            (upper, (None, Some("dwell:torch"))),
+        ] {
+            let fields = state_fields(&s);
+            let (_, bytes) = fields
+                .iter()
+                .find(|(t, _)| *t == tag::PARTS)
+                .expect("a PARTS field");
+            assert_eq!(tag::PARTS & tag::LOOK_BIT, 0);
+            let mut row = default_row("test:copy");
+            let mut notes = Vec::new();
+            apply_rules(
+                &vec![(tag::PARTS, bytes.clone())],
+                &mut row,
+                &|i| Some(i),
+                &mut notes,
+            );
+            assert_eq!((row.extends_up, row.part_of), want);
+            assert!(notes.is_empty(), "{notes:?}");
+        }
+        let stone = *crate::info(crate::require("dwell:stone"));
+        assert!(!state_fields(&stone).iter().any(|(t, _)| *t == tag::PARTS));
     }
     use super::*;
     use crate::require;

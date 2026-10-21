@@ -27,6 +27,11 @@ fn texel(name: &str, x: i64, y: i64) -> [u8; 4] {
     [t[0], t[1], t[2], t[3]]
 }
 
+/// The baked texel (x, y) of tile `name` (sRGB RGBA8, row 0 the tile's bottom): tests read tiles.
+pub fn texel_of(name: &str, x: i64, y: i64) -> [u8; 4] {
+    texel(name, x, y)
+}
+
 /// Texels per tile edge.
 pub const TILE: usize = 32;
 /// Wrapped texels around each tile.
@@ -38,7 +43,7 @@ pub const ATLAS_SIZE: usize = CELL * ATLAS_CELLS;
 pub const ATLAS_TILES: usize = ATLAS_CELLS * ATLAS_CELLS;
 
 /// The tiles in atlas order (the registry's texture names).
-pub const TILE_ORDER: [&str; 16] = [
+pub const TILE_ORDER: [&str; 17] = [
     "plain",
     "grass",
     "grassSide",
@@ -56,6 +61,7 @@ pub const TILE_ORDER: [&str; 16] = [
     "dirtSkirt",
     // The torch's stick and flame (docs/LIGHTS.md), a sprite that glows (`emissive`).
     "torch",
+    "torchTop",
     // The fallback look of a state whose look or textures this build lacks (synced from a server,
     // ADR 0038): a magenta and black checker, never content.
     MISSING_TILE,
@@ -439,8 +445,8 @@ mod tests {
         let cell = (r.u0 * ATLAS_CELLS as f64).floor() as usize
             + (r.v0 * ATLAS_CELLS as f64).floor() as usize * ATLAS_CELLS;
         assert_eq!(table[cell], [f32::from(g.every), g.strength, 0.0, 0.0]);
-        // The torch's tile glows (its material's `emissive`, docs/LIGHTS.md); stone's doesn't.
-        let torch = dwell_blocks::info(dwell_blocks::require("dwell:torch"));
+        // The torch's flame tile glows (its material's `emissive`, docs/LIGHTS.md); stone's doesn't.
+        let torch = dwell_blocks::info(dwell_blocks::require("dwell:torch_upper"));
         let t = torch.textures.expect("the torch is textured").side;
         assert!(table[TILE_ORDER.iter().position(|n| *n == t).unwrap()][2] > 0.0);
         assert_eq!(

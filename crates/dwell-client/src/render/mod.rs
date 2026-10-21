@@ -4250,9 +4250,16 @@ mod tests {
                     let got = tile_coverage(texels, *size, tile, 1.0);
                     // Within the step a regular pattern (rungs) moves in; at the last levels, a
                     // tile of 2 × 2 texels is all or nothing, and must not be nothing.
-                    if n >= 4 {
+                    if n >= 8 {
                         assert!(
                             (got - want).abs() <= 0.15,
+                            "{name} at mip {level}: {got} vs {want}"
+                        );
+                    } else if n == 4 {
+                        // A feature thinner than a texel of 4 × 4 (the torch's 3½-texel stick,
+                        // centred, so it straddles two) takes one or two whole columns.
+                        assert!(
+                            got > 0.0 && (got - want).abs() <= 0.4,
                             "{name} at mip {level}: {got} vs {want}"
                         );
                     } else {
