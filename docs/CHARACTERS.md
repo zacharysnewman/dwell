@@ -129,7 +129,8 @@ one stop of it (`"brass"`, `"leather.shadow"`), a swatch (`"ink"`), a colour slo
   - `clips`: roles → clip names (`idle`, `walk`, `hold`, `break`, `place`; the wolf's `trot`, the
     deer's `graze`).
   - `firstPerson`: the arm chain (`["arm_r", "forearm_r", "hand_r"]`), its `anchor` in view space
-    (metres from the eye), the arms view's `fov`, and its clips (§5).
+    (metres from the eye: `[-0.65, -0.48, 0.35]`, right, down and ahead), the arms view's `fov`, and
+    its clips (§5).
 - **`accessories`**: `{ label, place, fits (rigs), slots (its own colour slots and defaults), hides
   (body part ids it covers), parts }`. A hat hides the hair's top; gloves hide the hands. An
   accessory's parts may paint with the wearer's slots (`hair`, `skin`), so it can bring a variant of
@@ -139,7 +140,8 @@ one stop of it (`"brass"`, `"leather.shadow"`), a swatch (`"ink"`), a colour slo
 - **`clips`**: `{ rig, space?, layer, duration, loop, ease, cycle?, grounded?, blend?, keys }`. A key is `{ t, bones:
   { bone: [x, y, z] degrees }, root?: [x, y, z] metres }`; each bone interpolates between the keys
   that name it, so a key lists only what moves at that moment. `cycle` is the distance travelled per
-  loop: a gait plays at `speed / cycle` loops a second, so feet don't slide.
+  loop: a gait plays at `speed / cycle` loops a second, so feet don't slide. The arms' gaits have no
+  feet, so their `cycle` sets the hand bob's rate (§5).
 
 A part, from the file:
 
@@ -204,9 +206,13 @@ The arms are a **separate view** of the same character, as first-person games do
   drawn after the world over a cleared depth buffer, with their own FOV (`fov`, 62°) and near plane
   (2 cm), so they never clip into walls and keep their size when the world's FOV changes (the speed
   FOV, the spyglass). The sun is the world's, turned into view space, so the arms are lit like the
-  body would be.
-- **Its own clips.** `fp_idle` (the arm held into view, breathing), `fp_walk` (a bob on the anchor
-  at the walk's cycle), `fp_break` (a wind-up and a chop down-forward, 0.5 s), `fp_place` (a push
+  body would be. The hand and its held block sit in the lower right: at 16:9 and rest, their box
+  is ~0.43 of the screen's height, its centre at (0.60, −0.85) in NDC, its top below the crosshair
+  (owner's playtest, 2026-10-20: was 0.65 high and up to the crosshair; set by moving the anchor
+  out and ahead, the FOV unchanged; `crates/dwell-characters/tests/first_person.rs` pins it).
+- **Its own clips.** `fp_idle` (the arm held into view, breathing), `fp_walk` (a bob on the anchor,
+  two dips a loop at 4 m a loop, not the legs' 1.6 m: ~2.5 Hz at the 5 m/s walk; `fp_sprint` shares
+  the 4 m, so its bob is faster in proportion to the speed, ~4 Hz at the 8 m/s run), `fp_break` (a wind-up and a chop down-forward, 0.5 s), `fp_place` (a push
   forward, 0.36 s). They key the same bones as the body's `hold`, `break` and `place`, so a swing
   seen by others is the same gesture.
 - **Held items.** The hotbar's block (its own painted tile on every face) or the brush tool, on the

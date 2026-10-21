@@ -10,5 +10,9 @@ license-file.workspace = true
 [dependencies]
 dwell-protocol = { path = "../dwell-protocol" }
 
+[dev-dependencies]
+# The controller's walk and run speeds, for the arms' bob rate (tests/first_person.rs).
+dwell-physics = { path = "../dwell-physics" }
+
 [lints]
 workspace = true
