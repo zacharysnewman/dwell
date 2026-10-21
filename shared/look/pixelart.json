@@ -43,7 +43,7 @@
       "edgeDarken": 0.45,
       "edgeFadeM": 48,
       "atlas": "point-mips",
-      "snapCamera": true,
+      "snapCamera": false,
       "snapDepthM": 8
     },
     {
@@ -60,7 +60,7 @@
       "edgeDarken": 0.4,
       "edgeFadeM": 64,
       "atlas": "point-mips",
-      "snapCamera": true,
+      "snapCamera": false,
       "snapDepthM": 8
     },
     {
@@ -77,11 +77,11 @@
       "edgeDarken": 0.4,
       "edgeFadeM": 64,
       "atlas": "point-mips",
-      "snapCamera": true,
+      "snapCamera": false,
       "snapDepthM": 8
     },
     {
-      "name": "270-nosnap",
+      "name": "270-snap",
       "height": 270,
       "fit": "crop",
       "palette": "dwell",
@@ -94,7 +94,7 @@
       "edgeDarken": 0.4,
       "edgeFadeM": 64,
       "atlas": "point-mips",
-      "snapCamera": false,
+      "snapCamera": true,
       "snapDepthM": 8
     },
     {
@@ -111,7 +111,7 @@
       "edgeDarken": 0.4,
       "edgeFadeM": 64,
       "atlas": "point-mips",
-      "snapCamera": true,
+      "snapCamera": false,
       "snapDepthM": 8
     },
     {

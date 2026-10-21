@@ -161,7 +161,7 @@ pub const PIXEL_ART: PixelArtTunables = PixelArtTunables {
             edge_darken: 0.45,
             edge_fade_m: 48.0,
             atlas: AtlasFilter::PointMips,
-            snap_camera: true,
+            snap_camera: false,
             snap_depth_m: 8.0,
         },
         PixelArtPreset {
@@ -178,7 +178,7 @@ pub const PIXEL_ART: PixelArtTunables = PixelArtTunables {
             edge_darken: 0.4,
             edge_fade_m: 64.0,
             atlas: AtlasFilter::PointMips,
-            snap_camera: true,
+            snap_camera: false,
             snap_depth_m: 8.0,
         },
         PixelArtPreset {
@@ -195,11 +195,11 @@ pub const PIXEL_ART: PixelArtTunables = PixelArtTunables {
             edge_darken: 0.4,
             edge_fade_m: 64.0,
             atlas: AtlasFilter::PointMips,
-            snap_camera: true,
+            snap_camera: false,
             snap_depth_m: 8.0,
         },
         PixelArtPreset {
-            name: "270-nosnap",
+            name: "270-snap",
             height: 270,
             fit: Fit::Crop,
             palette: 0,
@@ -212,7 +212,7 @@ pub const PIXEL_ART: PixelArtTunables = PixelArtTunables {
             edge_darken: 0.4,
             edge_fade_m: 64.0,
             atlas: AtlasFilter::PointMips,
-            snap_camera: false,
+            snap_camera: true,
             snap_depth_m: 8.0,
         },
         PixelArtPreset {
@@ -229,7 +229,7 @@ pub const PIXEL_ART: PixelArtTunables = PixelArtTunables {
             edge_darken: 0.4,
             edge_fade_m: 64.0,
             atlas: AtlasFilter::PointMips,
-            snap_camera: true,
+            snap_camera: false,
             snap_depth_m: 8.0,
         },
         PixelArtPreset {

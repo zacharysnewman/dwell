@@ -21,7 +21,7 @@ describe('bench --compare configurations', () => {
       'pixelart-180',
       'pixelart-270',
       'pixelart-270-warm',
-      'pixelart-270-nosnap',
+      'pixelart-270-snap',
       'pixelart-360',
       'shadows-low',
       'shadows-off',
