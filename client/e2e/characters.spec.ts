@@ -2,10 +2,14 @@
 // playing the clip A's controller state calls for while A walks, sprints, crouches and jumps; A sees
 // its own first-person arms. With DWELL_SHOTS=<dir>, both pages' views are saved there too (the
 // in-game check on a real GPU: a copy of playwright.config.ts without the SwiftShader flags).
-import { readFileSync } from 'node:fs';
+//
+// The server is the spec's own, on the flat world: on the suite's generated terrain A ran +X for as
+// long as the slow page took to see each role, and on CI (from 0.22.3, as the frames slowed) it
+// often got as far as the trees ~30 m from the spawn, where a trunk stopped the slide and the leaves
+// 1.5 m up kept it crouched and stopped its jump (`Expected "idle", Received "crouch"`, …).
 import { join } from 'node:path';
 import { expect, test, type BrowserContext, type Page } from '@playwright/test';
-import { INVITE_FILE } from './global-setup';
+import { startServer, type StartedServer } from './global-setup';
 
 type Vec3 = [number, number, number];
 interface Body {
@@ -98,13 +102,23 @@ test('another client sees your body walk, sprint, crouch and jump, and you see y
   browser,
 }) => {
   test.setTimeout(150_000);
+  // A flat world in memory (generator 0): nothing in A's way however far it runs.
+  const server: StartedServer = await startServer([
+    '--port',
+    '0',
+    '--name',
+    'E2E characters',
+    '--world',
+    '',
+    '--generator',
+    '0',
+  ]);
   const contexts: BrowserContext[] = [await browser.newContext(), await browser.newContext()];
   const [a, b] = await Promise.all(contexts.map((c) => c.newPage()));
   try {
     for (const p of [a, b]) await p.setViewportSize({ width: 1280, height: 720 });
-    const invite = readFileSync(INVITE_FILE, 'utf8');
-    await a.goto(`./${invite}`);
-    await b.goto(`./${invite}`);
+    await a.goto(`./${server.query}`);
+    await b.goto(`./${server.query}`);
     for (const p of [a, b]) {
       await expect
         .poll(async () => (await state(p))?.terrainReady ?? false, { timeout: 60_000 })
@@ -183,5 +197,6 @@ test('another client sees your body walk, sprint, crouch and jump, and you see y
     await seesRole(a, b, id, 'idle', since);
   } finally {
     for (const c of contexts) await c.close();
+    server.process.kill();
   }
 });
