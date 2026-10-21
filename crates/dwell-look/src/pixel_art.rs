@@ -37,6 +37,16 @@ pub enum AtlasFilter {
     PointMips,
 }
 
+/// The block texture set drawn while a preset is on (`textures` in `shared/look/pixelart.json`;
+/// docs/PAINTERLY_TEXTURES.md §10).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Textures {
+    /// The painterly set, the normal look's.
+    Painterly,
+    /// The cel style: a few flat tones a tile (`shared/textures/cel.json`).
+    Cel,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Palette {
     pub name: &'static str,
@@ -77,6 +87,8 @@ pub struct PixelArtPreset {
     /// The edge is gone by this distance (m).
     pub edge_fade_m: f64,
     pub atlas: AtlasFilter,
+    /// The block texture set it draws with.
+    pub textures: Textures,
     /// Snap the eye to the low-res pixel grid on the plane `snap_depth_m` ahead.
     pub snap_camera: bool,
     pub snap_depth_m: f64,
@@ -399,6 +411,33 @@ mod tests {
                 Some(p.name)
             );
         }
+    }
+
+    #[test]
+    fn the_cel_presets_select_the_cel_textures_and_change_nothing_else() {
+        // docs/PAINTERLY_TEXTURES.md §10: `270-cel` and `360-cel` are `270` and `360` drawn with
+        // the cel texture set, so a comparison isolates the textures; the rest keep the painterly.
+        for (cel, painterly) in [("270-cel", "270"), ("360-cel", "360")] {
+            let (c, p) = (preset(cel), preset(painterly));
+            assert_eq!(c.textures, Textures::Cel, "{cel}");
+            assert_eq!(p.textures, Textures::Painterly, "{painterly}");
+            assert_eq!(
+                PixelArtPreset {
+                    name: p.name,
+                    textures: p.textures,
+                    ..*c
+                },
+                *p,
+                "{cel} differs from {painterly} only in its textures"
+            );
+        }
+        let cel: Vec<_> = PIXEL_ART
+            .presets
+            .iter()
+            .filter(|p| p.textures == Textures::Cel)
+            .map(|p| p.name)
+            .collect();
+        assert_eq!(cel, ["270-cel", "360-cel"]);
     }
 
     #[test]
