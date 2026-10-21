@@ -114,7 +114,7 @@ impl Portals {
         mirrored: bool,
     ) -> Self {
         let sites = cached_sites(world_seed, rules, mirrored, || {
-            search_sites(world_seed, &rules, a, b)
+            search(world_seed, &rules, a, b)
         });
         Self::with_sites(rules, sites)
     }
@@ -217,7 +217,7 @@ pub fn wanted(world_seed: u64, rules: &PortalRules) -> u32 {
 
 /// The seeded search: points uniform over the `within` disc, each kept when both faces have
 /// suitable ground over its footprint and it is `spacing` from the sites kept before.
-fn search_sites(
+pub fn search(
     world_seed: u64,
     rules: &PortalRules,
     a: &TerrainGenerator,

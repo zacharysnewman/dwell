@@ -1,4 +1,4 @@
-//! Procedural terrain, generator version 19 (ARCHITECTURE.md §6.3; ½ m cells, ADR 0042, with the
+//! Procedural terrain, generator version 20 (ARCHITECTURE.md §6.3; ½ m cells, ADR 0042, with the
 //! slopes of HALF_HEIGHT_GRID.md §4): the interim baseline of Phase
 //! 15 — one island at the origin, a 2D height field, and the ground filled by depth — and since
 //! version 13 (Phase 33) the decorations of `shared/worldgen/decorations.json` one cell above the
@@ -9,7 +9,8 @@
 //!
 //! Per chunk: (1) layout: the signed distance to the coast; (2) height: the sea floor falling from
 //! the coast, or the land rising inland, plus hills, never below the core; (3) fill: the stone core
-//! (`CORE_LAYERS` from the midplane, never carved), stone up to the surface under grass over dirt
+//! (`CORE_LAYERS` from the midplane, never carved but by a portal; since version 20 its first rows
+//! the indestructible bedrock, `shared/worldgen/midplane.json`), stone up to the surface under grass over dirt
 //! on land, sand at the shore and under water, water in open space below sea level — since version
 //! 17 also the open part of a top block below sea level, which takes its `flooded` state
 //! (docs/WATER_RENDERING.md §9). 2D fields are
@@ -17,7 +18,8 @@
 //! the midplane at 0, sea level `h` = 32). The height field's parameters are data
 //! (`shared/worldgen/terrain.json`, `HeightField`); the island's layout and the fill depths are
 //! still code constants. Phase 17 replaces this with an evaluator of terrain definitions (data,
-//! ADR 0026). Nothing is generated outside the build volume.
+//! ADR 0026). Since version 20 the portals between the faces (`portals.rs`) cut their shafts,
+//! ladders and rims into the chunks they reach. Nothing is generated outside the build volume.
 
 use dwell_blocks::StateId;
 use dwell_world::hash::HashMap;
