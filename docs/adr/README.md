@@ -51,6 +51,7 @@ one's status line. Resolving an item in `ARCHITECTURE.md` Open Decisions require
 | [0043](0043-structure-placements.md) | Structure placements in world generation, as data: the owner's pines in groves (generator version 17) | Accepted |
 | [0044](0044-mesher-over-ray-marching.md) | The mesher is the terrain renderer; the ray marcher is removed (Phase 25's A7; code in `archive/ray-marcher`) | Accepted |
 | [0045](0045-flood-light.md) | Flood light: per-cell sky and block light on the client, shading the ambient and standing in for shadows | Accepted |
+| [0046](0046-distant-terrain-shadows.md) | Distant terrain shadows: horizon maps swept from heightmaps of the terrain as drawn, one sample per far fragment | Accepted |
 
 Phase numbers in ADRs follow the implementation plan as it was then. In ADRs 0001–0010, Phases
 4–7 became 5–8 when the world-LOD phase (Phase 4) was added on 2026-09-29, and then 6–9 when the

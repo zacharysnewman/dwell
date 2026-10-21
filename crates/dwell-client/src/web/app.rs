@@ -344,6 +344,8 @@ impl Client {
         renderer.set_lod_level_colors(options.lod_colors);
         // `?outline=<mode>` (docs/ART_DIRECTION.md §7): the ink outline, off without it.
         renderer.set_outline_query(&options.search);
+        // `?lodshadows=off` (docs/DAY_NIGHT.md §12): the distant shadows off, for their cost.
+        renderer.set_lod_shadows_query(&options.search);
         let inner = Inner {
             _instance: instance,
             _adapter: adapter,

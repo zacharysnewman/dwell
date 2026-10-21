@@ -13,6 +13,7 @@ pub mod display;
 pub mod face_shading;
 pub mod frame;
 pub mod geometry;
+pub mod lod_shadows;
 pub mod pacing;
 pub mod reflection;
 pub mod seam;
@@ -29,6 +30,7 @@ use dwell_lod::fade::Fade;
 use dwell_look::clouds::{CLOUDS, CloudQuality, cloud_uniforms};
 use dwell_look::daynight::{DAY_SKY_FLOATS, DayState};
 use dwell_look::fog::{FOG, fog_sigma};
+use dwell_look::lod_shadows::LOD_SHADOWS;
 use dwell_look::motion::{MOTION, vanishing_point};
 use dwell_look::outline::{OUTLINE, OutlineMode, outline_uniforms};
 use dwell_look::reflections::{REFLECTIONS, reflection_uniforms};
@@ -798,6 +800,13 @@ pub struct Renderer {
     /// for the far cascades' turns.
     shadow_prev: Option<shadows::Plan>,
     shadow_frame: u64,
+    /// The distant terrain's shadows (lod_shadows.rs; docs/DAY_NIGHT.md §12): its heightmaps (a
+    /// 1×1 stand-in while off), their fills' turns, the fills' pipelines by (kind, with a fragment
+    /// stage), and the dev switch that turns them off (`?lodshadows=off`).
+    lod_maps: lod_shadows::LodShadowMaps,
+    lod_schedule: lod_shadows::Schedule,
+    height_pipelines: HashMap<(Kind, bool), wgpu::RenderPipeline>,
+    lod_shadows_off: bool,
     draw_buffer: wgpu::Buffer,
     draw_group: wgpu::BindGroup,
     draw_capacity: u64,
@@ -936,11 +945,13 @@ impl Renderer {
                 label: Some("shadow frame"),
                 entries: &frame_entries[..3],
             });
-        // The water's tiles (water_tiles.rs), bindings 5–7; the shadow maps (shadows.rs), 8–10.
+        // The water's tiles (water_tiles.rs), bindings 5–7; the shadow maps (shadows.rs), 8–10;
+        // the distant terrain's heightmaps (lod_shadows.rs), 11–13.
         let frame_entries: Vec<_> = frame_entries
             .into_iter()
             .chain(WaterTiles::layout_entries())
             .chain(shadows::layout_entries())
+            .chain(lod_shadows::layout_entries())
             .collect();
         let frame_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("frame"),
@@ -1226,6 +1237,57 @@ impl Renderer {
             });
             shadow_pipelines.insert((kind, fs), pipeline);
         }
+        // The distant shadows' heightmap fills (lod_shadows.rs): the terrain's vertex stages from
+        // above, depth only, both sides (whichever is up), no bias (the march has its own).
+        let mut height_pipelines = HashMap::default();
+        for (kind, fs) in [
+            (Kind::Terrain, false),
+            (Kind::Flat, false),
+            (Kind::Flat, true),
+        ] {
+            let (vs, entry, a) = match kind {
+                Kind::Terrain => ("terrain_vs", "shadow_terrain_fs", &terrain_attrs),
+                _ => ("flat_vs", "shadow_flat_fs", &flat_attrs),
+            };
+            let buffers = [Some(wgpu::VertexBufferLayout {
+                array_stride: a.0,
+                step_mode: wgpu::VertexStepMode::Vertex,
+                attributes: &a.1,
+            })];
+            let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("lod shadow heights"),
+                layout: Some(&shadow_layout),
+                vertex: wgpu::VertexState {
+                    module: &module,
+                    entry_point: Some(vs),
+                    compilation_options: Default::default(),
+                    buffers: &buffers,
+                },
+                fragment: fs.then(|| wgpu::FragmentState {
+                    module: &module,
+                    entry_point: Some(entry),
+                    compilation_options: Default::default(),
+                    targets: &[],
+                }),
+                primitive: wgpu::PrimitiveState {
+                    topology: wgpu::PrimitiveTopology::TriangleList,
+                    front_face: wgpu::FrontFace::Ccw,
+                    cull_mode: None,
+                    ..Default::default()
+                },
+                depth_stencil: Some(wgpu::DepthStencilState {
+                    format: lod_shadows::HEIGHT_DEPTH,
+                    depth_write_enabled: Some(true),
+                    depth_compare: Some(wgpu::CompareFunction::LessEqual),
+                    stencil: Default::default(),
+                    bias: Default::default(),
+                }),
+                multisample: Default::default(),
+                multiview_mask: None,
+                cache: None,
+            });
+            height_pipelines.insert((kind, fs), pipeline);
+        }
         // The composite: a full-screen triangle into the canvas.
         let composite_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("composite"),
@@ -1315,8 +1377,14 @@ impl Renderer {
         };
         // No maps until the first frame asks for some (`ensure_shadow_maps`): a 1×1 stand-in.
         let shadow_maps = frame_bindings.shadow_maps(&device, (1, 1));
-        let frame_groups =
-            frame_bindings.groups(&device, &frame_buffers, &water_tiles, &shadow_maps);
+        let lod_maps = frame_bindings.lod_maps(&device, None);
+        let frame_groups = frame_bindings.groups(
+            &device,
+            &frame_buffers,
+            &water_tiles,
+            &shadow_maps,
+            &lod_maps,
+        );
         let characters = characters::CharacterRenderer::new(
             &device,
             &queue,
@@ -1361,6 +1429,10 @@ impl Renderer {
             shadow_quality: ShadowQuality::default(),
             shadow_prev: None,
             shadow_frame: 0,
+            lod_maps,
+            lod_schedule: lod_shadows::Schedule::new(1),
+            height_pipelines,
+            lod_shadows_off: false,
             draw_buffer,
             draw_group,
             draw_capacity: 1024,
@@ -1595,16 +1667,48 @@ impl Renderer {
     /// their size or layers change.
     fn ensure_shadow_maps(&mut self) {
         let size = shadows::maps_size(SHADOWS.tier(self.shadows()));
-        if self.shadow_maps.size == size {
+        let lod_tier = self.lod_tier();
+        let lod_size = lod_shadows::maps_size(lod_tier.as_ref());
+        if self.shadow_maps.size == size && self.lod_maps.size == lod_size {
             return;
         }
-        let maps = self.frame_bindings.shadow_maps(&self.device, size);
-        self.frame_groups =
-            self.frame_bindings
-                .groups(&self.device, &self.frame_buffers, &self.water_tiles, &maps);
-        self.shadow_maps = maps;
-        // New maps hold nothing: every cascade is drawn next frame.
-        self.shadow_prev = None;
+        if self.shadow_maps.size != size {
+            self.shadow_maps = self.frame_bindings.shadow_maps(&self.device, size);
+            // New maps hold nothing: every cascade is drawn next frame.
+            self.shadow_prev = None;
+        }
+        if self.lod_maps.size != lod_size {
+            self.lod_maps = self
+                .frame_bindings
+                .lod_maps(&self.device, lod_tier.as_ref());
+            // New heightmaps hold nothing: none is shown until its first fill is whole.
+            self.lod_schedule = lod_shadows::Schedule::new(lod_tier.map_or(1, |t| t.levels));
+        }
+        self.frame_groups = self.frame_bindings.groups(
+            &self.device,
+            &self.frame_buffers,
+            &self.water_tiles,
+            &self.shadow_maps,
+            &self.lod_maps,
+        );
+    }
+    /// The distant shadows this adapter draws (lod_shadows.rs): the Shadows setting's tier, none on
+    /// a CPU adapter or with `?lodshadows=off`.
+    fn lod_tier(&self) -> Option<dwell_look::lod_shadows::LodShadowTier> {
+        if self.lod_shadows_off {
+            return None;
+        }
+        LOD_SHADOWS
+            .tier(lod_shadows::lod_shadows_for(self.adapter, self.shadows()))
+            .copied()
+    }
+    /// The dev switches in the page's query for the distant shadows: `?lodshadows=off` turns
+    /// them off (the bench's `lod-shadows-off`, for their cost).
+    pub fn set_lod_shadows_query(&mut self, search: &str) {
+        self.lod_shadows_off = search
+            .trim_start_matches('?')
+            .split('&')
+            .any(|kv| kv == "lodshadows=off");
     }
     /// Whether a frame may be drawn at `now_ms` (pacing.rs): not while `pacing::MAX_IN_FLIGHT`
     /// frames are still on the GPU.
@@ -2376,6 +2480,32 @@ impl Renderer {
                 self.queue.write_buffer(buffer, 0, floats(&u));
             }
         }
+        // The distant shadows' heightmaps (lod_shadows.rs): while a light casts, this frame's slice
+        // of the map being filled (a fill starts when none is under way), drawn from above.
+        let lod_tier = shadow_plan.as_ref().and(self.lod_tier());
+        let mut lod_batch = None;
+        if let Some(t) = &lod_tier {
+            let now_s = crate::telemetry::now_ms() / 1000.0;
+            let refresh = &LOD_SHADOWS.refresh;
+            if let Some(level) = self.lod_schedule.wants(refresh, self.eye, self.face, now_s) {
+                let place = lod_shadows::place(t, level, self.eye, self.face);
+                let casters = self.collect_heights(&place, level, chunk_fade);
+                self.lod_schedule
+                    .start(level, place, casters, self.eye, now_s);
+            }
+            lod_batch = self.lod_schedule.batch(t.fill_ktris, t.fill_draws);
+        }
+        let heights = lod_batch
+            .as_ref()
+            .map(|b| self.height_draws(b))
+            .unwrap_or_default();
+        if let (Some(b), Some(mut u)) = (&lod_batch, near_uniforms) {
+            let m = lod_shadows::height_matrix(&LOD_SHADOWS, &b.place, self.eye);
+            for (k, col) in m.iter().enumerate() {
+                u[k * 4..k * 4 + 4].copy_from_slice(col);
+            }
+            self.queue.write_buffer(&self.lod_maps.frame, 0, floats(&u));
+        }
         // The characters: other players' bodies in the scene passes, your arms after them with
         // their own projection (characters.rs).
         // Your own body casts whole (a shadow in first person, `set_own_shadow`) and is drawn
@@ -2429,7 +2559,8 @@ impl Renderer {
         // Per-draw uniforms, every pass's in one buffer.
         // The shadow casters' draws follow the scene's.
         let first_caster = draws.iter().map(Vec::len).sum::<usize>() as u64;
-        let total = first_caster + casters.len() as u64;
+        let first_height = first_caster + casters.len() as u64;
+        let total = first_height + heights.len() as u64;
         if total > self.draw_capacity {
             self.draw_capacity = total.next_power_of_two();
             self.draw_buffer.destroy();
@@ -2437,7 +2568,13 @@ impl Renderer {
                 Self::draw_buffer(&self.device, &self.draw_layout, self.draw_capacity);
         }
         let mut data = vec![0.0f32; (total * DRAW_STRIDE / 4) as usize];
-        for (k, d) in draws.iter().flatten().chain(&casters).enumerate() {
+        for (k, d) in draws
+            .iter()
+            .flatten()
+            .chain(&casters)
+            .chain(&heights)
+            .enumerate()
+        {
             let at = k * (DRAW_STRIDE / 4) as usize;
             data[at..at + 4].copy_from_slice(&d.offset);
             if let Some((lo, hi)) = d.clip {
@@ -2496,6 +2633,62 @@ impl Renderer {
             );
             crate::telemetry::sample("shadow.ktris", (triangles - before) as f64 / 1000.0);
         }
+        // The distant shadows' heightmap slice, its mips when the fill is whole; then the maps
+        // shown (the one just made among them) in the uniform block.
+        if let Some(b) = &lod_batch {
+            let query = self
+                .timer
+                .as_mut()
+                .and_then(|t| t.pass(timing::LOD_SHADOWS));
+            let before = triangles;
+            self.record_heights(
+                &mut encoder,
+                b,
+                &heights,
+                first_height,
+                &arena,
+                query,
+                &mut calls,
+                &mut triangles,
+            );
+            if b.last {
+                self.lod_maps.record_mips(&mut encoder, b.layer);
+            }
+            crate::telemetry::sample("lodshadow.ktris", (triangles - before) as f64 / 1000.0);
+            self.lod_schedule.recorded(b);
+        }
+        // Then a band of a horizon sweep, when one is due (the heightmap made again, or the light
+        // turned).
+        if let (Some(t), Some(p)) = (&lod_tier, &shadow_plan) {
+            let dir = lod_shadows::light_dir(self.face, &p.caster);
+            let sweep = self.lod_schedule.sweep(
+                &LOD_SHADOWS.refresh,
+                dir,
+                self.face,
+                t.sweep_rows,
+                t.resolution,
+            );
+            if let Some(b) = sweep {
+                let u = lod_shadows::sweep_uniforms(&LOD_SHADOWS, t, &self.lod_schedule, &b);
+                let query = self.timer.as_mut().and_then(|t| t.pass(timing::LOD_SWEEP));
+                let writes = self.timer.as_ref().and_then(|t| t.writes(query));
+                self.lod_maps
+                    .record_sweep(&self.queue, &mut encoder, &b, &u, writes);
+                self.lod_schedule.swept(&b);
+            }
+        }
+        self.queue.write_buffer(
+            &self.lod_maps.uniform,
+            0,
+            floats(&lod_shadows::uniforms(
+                &LOD_SHADOWS,
+                lod_tier.as_ref(),
+                &self.lod_schedule,
+                self.eye,
+                self.face,
+                shadow_plan.as_ref().map(|p| &p.caster),
+            )),
+        );
         // With water that reads the scene (W3), a pass with water is split: its opaque half
         // (colour resolved, depth kept), a copy of the colour, then its water half, which samples
         // the copy and the view depth.
@@ -2895,6 +3088,208 @@ impl Renderer {
         out
     }
 
+    /// The casters of a distant-shadow heightmap fill at `place` (lod_shadows.rs): the terrain as
+    /// drawn over its square on its face — chunks (the nearest level only: the coarser ones are
+    /// read only past it), LOD sections and stand-ins — each with its triangles.
+    fn collect_heights(
+        &self,
+        place: &lod_shadows::Place,
+        level: u32,
+        chunk_fade: &dyn Fn(ChunkCoord) -> Option<Fade>,
+    ) -> Vec<(lod_shadows::CasterRef, u64)> {
+        use lod_shadows::CasterRef;
+        let over = |lo: V3, hi: V3| {
+            place.touches([lo[0], lo[2]], [hi[0], hi[2]])
+                && FaceFrame::at_height((lo[1] + hi[1]) * 0.5) == place.face
+        };
+        let tris = |m: &GpuMesh| u64::from(m.parts[0].len() as u32 / 3);
+        let mut out = Vec::new();
+        if level == 0 {
+            for (&coord, c) in &self.terrain.chunks {
+                let Some(m) = &c.opaque else { continue };
+                if chunk_fade(coord).is_none_or(|f| f.is_hidden()) {
+                    continue;
+                }
+                let hi = std::array::from_fn(|k| c.origin[k] + CHUNK_EXTENT_M[k]);
+                if over(c.origin, hi) {
+                    out.push((CasterRef::Chunk(coord), tris(m)));
+                }
+            }
+        }
+        for &(id, _, fade) in &self.terrain.shown {
+            if fade.is_hidden() {
+                continue;
+            }
+            let Some(s) = self.terrain.sections.get(&id) else {
+                continue;
+            };
+            let Some(m) = &s.opaque else { continue };
+            let side = s.cell * 32.0;
+            let hi = [
+                s.origin[0] + side,
+                s.origin[1] + side * CELL_H,
+                s.origin[2] + side,
+            ];
+            if over(s.origin, hi) {
+                out.push((CasterRef::Section(id), tris(m)));
+            }
+        }
+        for st in self
+            .terrain
+            .stand_ins
+            .iter()
+            .filter(|s| !s.fade.is_hidden())
+            .take(MAX_STAND_INS)
+        {
+            let Some(m) = self
+                .terrain
+                .sections
+                .get(&st.id)
+                .and_then(|s| s.opaque.as_ref())
+            else {
+                continue;
+            };
+            if over(st.lo, st.hi) {
+                let c = CasterRef::StandIn {
+                    id: st.id,
+                    lo: st.lo,
+                    hi: st.hi,
+                };
+                out.push((c, tris(m)));
+            }
+        }
+        out
+    }
+
+    /// A heightmap slice's draws (those of its casters still held), by pipeline and page.
+    fn height_draws(&self, b: &lod_shadows::Batch) -> Vec<DrawItem> {
+        use lod_shadows::CasterRef;
+        let item = |kind, offset, clip, mesh| DrawItem {
+            kind,
+            water: false,
+            no_depth: false,
+            offset,
+            clip,
+            fade: 0.0,
+            tint: [1.0; 4],
+            rotation: NO_ROTATION,
+            mesh,
+            page: 0,
+            passes: 1,
+            key: 0,
+        };
+        let mut out = Vec::new();
+        for c in &b.casters {
+            match c {
+                CasterRef::Chunk(coord) => {
+                    let Some(ch) = self
+                        .terrain
+                        .chunks
+                        .get(coord)
+                        .filter(|c| c.opaque.is_some())
+                    else {
+                        continue;
+                    };
+                    let r = self.rel(ch.origin);
+                    let mesh = DrawMesh::Chunk(*coord, Part::Opaque);
+                    out.push(item(Kind::Terrain, [r[0], r[1], r[2], 1.0], None, mesh));
+                }
+                CasterRef::Section(id) | CasterRef::StandIn { id, .. } => {
+                    let Some(s) = self.terrain.sections.get(id).filter(|s| s.opaque.is_some())
+                    else {
+                        continue;
+                    };
+                    let r = self.rel(s.origin);
+                    let clip = match c {
+                        CasterRef::StandIn { lo, hi, .. } => Some((self.rel(*lo), self.rel(*hi))),
+                        _ => None,
+                    };
+                    let mesh = DrawMesh::Section(*id, false, 0);
+                    out.push(item(
+                        Kind::Flat,
+                        [r[0], r[1], r[2], s.cell as f32],
+                        clip,
+                        mesh,
+                    ));
+                }
+            }
+        }
+        for d in &mut out {
+            d.page = self.mesh_of(&d.mesh).0.region.page;
+            d.key = (u128::from(d.kind as u8) << 40)
+                | (u128::from(u8::from(d.clip.is_some())) << 32)
+                | (d.page as u128 & 0xffff_ffff);
+        }
+        out.sort_by_key(|d| d.key);
+        out
+    }
+
+    /// Draws a heightmap slice into its layer (cleared first on the fill's first slice): its
+    /// draws from draw-buffer slot `first_slot`, from above (`lod_maps.frame_group`).
+    #[allow(clippy::too_many_arguments)]
+    fn record_heights(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        batch: &lod_shadows::Batch,
+        draws: &[DrawItem],
+        first_slot: u64,
+        arena: &Arena,
+        query: Option<usize>,
+        calls: &mut u32,
+        triangles: &mut u64,
+    ) {
+        let timestamp_writes = self.timer.as_ref().and_then(|t| t.writes(query));
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("lod shadow heights"),
+            color_attachments: &[],
+            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                view: self.lod_maps.target(batch.layer),
+                depth_ops: Some(wgpu::Operations {
+                    load: if batch.clear {
+                        wgpu::LoadOp::Clear(1.0)
+                    } else {
+                        wgpu::LoadOp::Load
+                    },
+                    store: wgpu::StoreOp::Store,
+                }),
+                stencil_ops: None,
+            }),
+            timestamp_writes,
+            ..Default::default()
+        });
+        pass.set_bind_group(0, &self.lod_maps.frame_group, &[]);
+        pass.set_bind_group(1, &self.draw_group, &[]);
+        let mut bound: Option<(Kind, bool)> = None;
+        let mut bound_page: Option<(usize, usize)> = None;
+        for (k, d) in draws.iter().enumerate() {
+            let key = (d.kind, d.clip.is_some());
+            if bound != Some(key) {
+                pass.set_pipeline(&self.height_pipelines[&key]);
+                bound = Some(key);
+            }
+            let (mesh, ranges) = self.mesh_of(&d.mesh);
+            let page = (mesh.region.format, mesh.region.page);
+            if bound_page != Some(page) {
+                let buffer = arena.buffer(page.0, page.1);
+                pass.set_vertex_buffer(0, buffer.slice(..));
+                pass.set_index_buffer(buffer.slice(..), wgpu::IndexFormat::Uint32);
+                bound_page = Some(page);
+            }
+            let instance = (first_slot + k as u64) as u32;
+            // The surface only: the skirts stand under the edges, never over them.
+            if let Some(r) = ranges.first() {
+                *triangles += u64::from(r.len() as u32 / 3);
+                let first = mesh.first_index;
+                pass.draw_indexed(
+                    first + r.start..first + r.end,
+                    mesh.base_vertex,
+                    instance..instance + 1,
+                );
+                *calls += 1;
+            }
+        }
+    }
+
     /// Draws the shadow maps: a depth pass per cascade (into its layer) of the casters that reach
     /// it (`collect_casters`, from draw-buffer slot `first_slot`) and the characters' bodies, timed
     /// as one (`query`: the first pass's start to the last one's end).
@@ -3166,6 +3561,21 @@ impl FrameBindings {
         )
     }
 
+    /// The distant shadows' heightmaps for a tier (none: the 1×1 stand-in).
+    fn lod_maps(
+        &self,
+        device: &wgpu::Device,
+        tier: Option<&dwell_look::lod_shadows::LodShadowTier>,
+    ) -> lod_shadows::LodShadowMaps {
+        lod_shadows::LodShadowMaps::new(
+            device,
+            tier,
+            &self.shadow_layout,
+            (&self.atlas_view, &self.sampler),
+            FRAME_FLOATS as u64 * 4,
+        )
+    }
+
     /// The frame groups of the far, near and arms passes.
     fn groups(
         &self,
@@ -3173,6 +3583,7 @@ impl FrameBindings {
         buffers: &[wgpu::Buffer; 3],
         water_tiles: &WaterTiles,
         maps: &shadows::ShadowMaps,
+        lod_maps: &lod_shadows::LodShadowMaps,
     ) -> [wgpu::BindGroup; 3] {
         std::array::from_fn(|i| {
             let entries = [
@@ -3201,6 +3612,7 @@ impl FrameBindings {
                 .into_iter()
                 .chain(water_tiles.group_entries())
                 .chain(maps.group_entries())
+                .chain(lod_maps.group_entries())
                 .collect();
             device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("frame"),

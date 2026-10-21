@@ -2039,7 +2039,7 @@ fn light_wgsl() -> String {
 /// entry points.
 pub fn lighting_source() -> String {
     format!(
-        "{}{}const SEA_LEVEL: f32 = {:.1};\nconst AMBIENT_FLOOR: f32 = {:?};\n{}const ATLAS_CELLS: u32 = {}u;\nconst ATLAS_TILES: u32 = {}u;\n{}\n{}\n{}\n{FRAME}\n{}\n{}\n{FRAME_DEPTH}\n{COMMON}\n{}\n",
+        "{}{}const SEA_LEVEL: f32 = {:.1};\nconst AMBIENT_FLOOR: f32 = {:?};\n{}const ATLAS_CELLS: u32 = {}u;\nconst ATLAS_TILES: u32 = {}u;\n{}\n{}\n{}\n{FRAME}\n{}\n{}\n{FRAME_DEPTH}\n{COMMON}\n{}\n{}\n",
         dwell_world::FaceFrame::wgsl(),
         super::face_shading::WGSL,
         world::SEA_LEVEL_M,
@@ -2052,6 +2052,7 @@ pub fn lighting_source() -> String {
         super::reflection::wgsl(),
         dwell_look::sky_wgsl(),
         dwell_look::clouds::cloud_wgsl(&dwell_look::clouds::CLOUDS),
+        super::lod_shadows::LOD_SHADOW_WGSL,
         super::shadows::SHADOW_WGSL,
     )
 }
@@ -2144,8 +2145,17 @@ mod tests {
         // The lookup's result is direct light's: past the maps (or with the light faded) it is
         // the stand-in, which the first layer's sky light replaces.
         let look = body("shadow_light");
-        assert!(look.contains("mix(stand_in, shadow_pcf(c, p), w)"));
+        assert!(look.contains("let inside = mix(stand_in, shadow_pcf(c, p), shadows.cfg.y);"));
         assert!(look.contains("return stand_in * cloud_shadow(rel);"));
+        // Past the cascades, the stand-in shaded by the distant terrain (the third layer), and a
+        // blend between (dwell-look `lod_shadows::combine`).
+        assert!(look.contains(
+            "return mix(shadow_past(rel, n, stand_in), inside, near) * cloud_shadow(rel);"
+        ));
+        assert!(
+            body("shadow_past")
+                .contains("return stand_in * (1.0 + shadows.cfg.y * (lod_shadow(rel) - 1.0));")
+        );
     }
 
     #[test]
