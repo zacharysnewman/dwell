@@ -67,45 +67,25 @@ pub fn splits(count: usize, near: f64, far: f64, lambda: f64) -> Vec<f64> {
         .collect()
 }
 
-/// The smallest sphere around the slice of the view between depths `d0` and `d1` (half-angle
-/// tangents `tan_x`, `tan_y`): its centre's view depth and its radius. It depends on the slice's
-/// shape alone, so turning the camera leaves it the same (the stable fit).
-pub fn slice_sphere(d0: f64, d1: f64, tan_x: f64, tan_y: f64) -> (f64, f64) {
-    let k2 = tan_x * tan_x + tan_y * tan_y;
-    // The centre on the axis equidistant from the near and far corners, unless that is past the
-    // far face (a wide slice): then the far face's centre, which holds the near corners too.
-    let z = ((d1 * d1 - d0 * d0) * (1.0 + k2)) / (2.0 * (d1 - d0));
-    if z >= d1 {
-        (d1, d1 * k2.sqrt())
-    } else {
-        let z = z.max(d0);
-        (z, ((d1 - z).powi(2) + d1 * d1 * k2).sqrt())
-    }
-}
-
-/// One cascade this frame.
+/// One cascade: a box around the eye as it was when the map was drawn.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Cascade {
-    /// The slice's view depths.
+    /// The distances from the eye it covers (m): `near` is where the cascade before it ends.
     pub near: f64,
     pub far: f64,
-    /// Its box's half-size across the light (m): the slice's sphere's radius, rounded up.
+    /// Its box's half-size across the light (m): `far` and the slack, rounded up.
     pub radius: f64,
-    /// Its box's centre (world), snapped to whole texels across the light.
+    /// Its box's centre (world): the eye when drawn, snapped to whole texels across the light.
     pub origin: V3,
     /// The box's centre relative to the eye.
     pub origin_rel: V3,
     /// A texel's size (m).
     pub texel_m: f64,
-    /// The box's depth along the light (m): its sphere and the casters' reach above it.
+    /// The box's depth along the light (m): the box and the casters' reach above it.
     pub depth_m: f64,
     pub basis: LightBasis,
     /// Eye-relative points to the map: xy in [−1, 1] (clip space), z in [0, 1] from the light.
     pub view_proj: Mat4,
-    /// What its slice of the view covers in light space (relative to `origin`, m): x and y's
-    /// ranges, and the least height toward the light. Only casters over it can shade the slice, so
-    /// only those are drawn (the sphere's square, which keeps the map stable, is much larger).
-    pub footprint: [f64; 5],
 }
 
 /// The eye-relative point → map transform of a box centred `origin_rel` from the eye: x and y
@@ -142,70 +122,36 @@ fn light_matrix(basis: LightBasis, origin_rel: V3, radius: f64, reach: f64) -> M
     m
 }
 
-/// What a frame's cascades are fitted from.
-#[derive(Clone, Copy, Debug)]
-pub struct View {
-    /// The eye (world).
-    pub eye: V3,
-    /// The camera's view axis, right and up (unit, world).
-    pub forward: V3,
-    pub right: V3,
-    pub up: V3,
-    /// The view's half-angle tangents.
-    pub tan_x: f64,
-    pub tan_y: f64,
-}
+/// A matrix that holds nothing (every point's depth −1): a cascade not drawn yet.
+pub const NO_CASCADE: Mat4 = [
+    [0.0, 0.0, 0.0, 0.0],
+    [0.0, 0.0, 0.0, 0.0],
+    [0.0, 0.0, 0.0, 0.0],
+    [0.0, 0.0, -1.0, 1.0],
+];
 
-/// Fits a cascade to the slice `[near, far]` of `view`: around the slice's sphere (its radius
-/// rounded up to `radius_step`), its centre snapped to the map's texels across the light, deep
-/// enough to hold casters `reach` metres above it toward the light.
+/// Fits a cascade covering everything within `far` of `eye` (world), its box `slack` wider each
+/// way (the eye may move that far before the map must be drawn again) and its half-size rounded up
+/// to `radius_step`; its centre the eye snapped to the map's texels across the light, deep enough
+/// to hold casters `reach` metres above it toward the light. It depends on the eye and the light
+/// alone, never on where the camera looks (Minecraft shaderpacks' player-centred shadow map), so
+/// turning leaves a far cascade's map as it is.
 pub fn fit(
-    view: &View,
+    eye: V3,
     basis: LightBasis,
     near: f64,
     far: f64,
+    slack: f64,
     resolution: u32,
     radius_step: f64,
     reach: f64,
 ) -> Cascade {
-    let (centre_depth, r) = slice_sphere(near, far, view.tan_x, view.tan_y);
-    let radius = (r / radius_step).ceil().max(1.0) * radius_step;
+    let radius = ((far + slack) / radius_step).ceil().max(1.0) * radius_step;
     let texel_m = 2.0 * radius / f64::from(resolution);
-    let centre = std::array::from_fn::<f64, 3, _>(|k| view.eye[k] + view.forward[k] * centre_depth);
-    let snap = |axis: V3| (dot(centre, axis) / texel_m).round() * texel_m;
-    let (u, v, w) = (snap(basis.x), snap(basis.y), dot(centre, basis.z));
+    let snap = |axis: V3| (dot(eye, axis) / texel_m).round() * texel_m;
+    let (u, v, w) = (snap(basis.x), snap(basis.y), dot(eye, basis.z));
     let origin = std::array::from_fn(|k| basis.x[k] * u + basis.y[k] * v + basis.z[k] * w);
-    let origin_rel: V3 = std::array::from_fn(|k| origin[k] - view.eye[k]);
-    let depth_m = 2.0 * radius + reach;
-    let view_proj = light_matrix(basis, origin_rel, radius, reach);
-    // The slice's corners in light space, widened by a few texels for the filter and the
-    // normal offset.
-    let margin = 4.0 * texel_m;
-    let mut footprint = [
-        f64::INFINITY,
-        f64::NEG_INFINITY,
-        f64::INFINITY,
-        f64::NEG_INFINITY,
-        f64::INFINITY,
-    ];
-    for d in [near, far] {
-        for sx in [-1.0, 1.0] {
-            for sy in [-1.0, 1.0] {
-                let c: V3 = std::array::from_fn(|k| {
-                    view.forward[k] * d
-                        + view.right[k] * sx * view.tan_x * d
-                        + view.up[k] * sy * view.tan_y * d
-                        - origin_rel[k]
-                });
-                let (x, y, z) = (dot(c, basis.x), dot(c, basis.y), dot(c, basis.z));
-                footprint[0] = footprint[0].min(x - margin);
-                footprint[1] = footprint[1].max(x + margin);
-                footprint[2] = footprint[2].min(y - margin);
-                footprint[3] = footprint[3].max(y + margin);
-                footprint[4] = footprint[4].min(z - margin);
-            }
-        }
-    }
+    let origin_rel: V3 = std::array::from_fn(|k| origin[k] - eye[k]);
     Cascade {
         near,
         far,
@@ -213,10 +159,9 @@ pub fn fit(
         origin,
         origin_rel,
         texel_m,
-        depth_m,
+        depth_m: 2.0 * radius + reach,
         basis,
-        view_proj,
-        footprint,
+        view_proj: light_matrix(basis, origin_rel, radius, reach),
     }
 }
 
@@ -245,9 +190,23 @@ impl Cascade {
         ]
     }
 
+    /// Whether everything within `far` of `eye` (world) is still inside the box (with the
+    /// filter's few texels): the eye hasn't left the slack.
+    pub fn holds(&self, eye: V3) -> bool {
+        let d: V3 = std::array::from_fn(|k| eye[k] - self.origin[k]);
+        dot(d, d).sqrt() + self.far + 4.0 * self.texel_m <= self.radius
+    }
+
+    /// How far the light has turned since the map was drawn (degrees), toward `dir`.
+    pub fn turned_deg(&self, dir: V3) -> f64 {
+        dot(self.basis.z, normalize(dir))
+            .clamp(-1.0, 1.0)
+            .acos()
+            .to_degrees()
+    }
+
     /// Whether a box (its centre relative to the eye and half-size, axis-aligned) can cast into
-    /// this cascade: it overlaps the cascade's box, which reaches up toward the light, over the
-    /// slice's footprint.
+    /// this cascade: it overlaps the cascade's box, which reaches up toward the light.
     pub fn touches(&self, centre_rel: V3, half: V3) -> bool {
         let d: V3 = std::array::from_fn(|k| centre_rel[k] - self.origin_rel[k]);
         let extent = |a: V3| (0..3).map(|k| a[k].abs() * half[k]).sum::<f64>();
@@ -257,43 +216,35 @@ impl Cascade {
             dot(d, self.basis.y),
             dot(d, self.basis.z),
         );
-        let (ex, ey, ez) = (
-            extent(self.basis.x),
-            extent(self.basis.y),
-            extent(self.basis.z),
-        );
-        let f = &self.footprint;
-        x.abs() <= self.radius + ex
-            && y.abs() <= self.radius + ey
-            && x + ex >= f[0]
-            && x - ex <= f[1]
-            && y + ey >= f[2]
-            && y - ey <= f[3]
-            && z + ez >= f[4].max(-self.radius)
-            && z <= self.radius + reach + ez
+        x.abs() <= self.radius + extent(self.basis.x)
+            && y.abs() <= self.radius + extent(self.basis.y)
+            && z + extent(self.basis.z) >= -self.radius
+            && z - extent(self.basis.z) <= self.radius + reach
     }
 }
 
-/// This frame's shadows: the light, the tier and its cascades (none: no shadows drawn).
+/// This frame's shadows: the light, the tier and its cascades fitted to this frame's eye (none:
+/// no shadows drawn). Which of them are drawn and which are kept from earlier frames is the
+/// schedule's (`Cache::schedule`).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Plan {
     pub caster: Caster,
     pub tier: ShadowTier,
     pub cascades: Vec<Cascade>,
-    /// The shadow distance (m of view depth) and where its fade to the stand-in starts.
+    /// The shadow distance (m from the eye) and where its fade to the stand-in starts.
     pub distance: f64,
     pub fade_start: f64,
 }
 
 /// The frame's shadow plan: for `quality` (already `shadows_for` the adapter), the light `caster`
-/// (none when neither light is up), `view`, the sky's axis (the light's map axes) and the
-/// spyglass's `magnification` (the shadow distance grows with it, so the zoomed view has shadows
-/// where it looks, up to `spyglassMaxM`).
+/// (none when neither light is up), the `eye` (world), the sky's axis (the light's map axes) and
+/// the spyglass's `magnification` (the shadow distance grows with it, so the zoomed view has
+/// shadows where it looks, up to `spyglassMaxM`).
 pub fn plan(
     t: &ShadowTunables,
     quality: ShadowQuality,
     caster: Option<Caster>,
-    view: &View,
+    eye: V3,
     sky_axis: V3,
     magnification: f64,
 ) -> Option<Plan> {
@@ -304,21 +255,24 @@ pub fn plan(
         (tier.distance_m * magnification.max(1.0)).min(c.spyglass_max_m.max(tier.distance_m));
     let count = (tier.cascades as usize).clamp(1, MAX_CASCADES);
     let basis = light_basis(caster.dir, sky_axis);
-    let depths = splits(
+    let d = splits(
         count,
         c.near_m.min(distance * 0.5),
         distance,
         tier.split_lambda,
     );
-    // The first slice reaches back to the eye (the near plane): what is under your feet.
+    // The first reaches back to the eye: what is under your feet. It is drawn every frame, so it
+    // needs no slack.
     let cascades = (0..count)
         .map(|i| {
-            let near = if i == 0 { 0.0 } else { depths[i] };
+            let near = if i == 0 { 0.0 } else { d[i] };
+            let slack = if i == 0 { 0.0 } else { d[i + 1] * c.slack };
             fit(
-                view,
+                eye,
                 basis,
                 near,
-                depths[i + 1],
+                d[i + 1],
+                slack,
                 tier.resolution,
                 c.radius_step_m,
                 c.caster_reach_m,
@@ -334,64 +288,180 @@ pub fn plan(
     })
 }
 
-/// Which cascades a frame draws, and the cascades its receivers use. The first (nearest, the
-/// sharpest and the one the player's own shadow is in) is drawn every frame; the others take turns,
-/// one a frame (`refreshFrames`), and between their turns are read as last drawn (`rebased` to this frame's eye: the
-/// map holds the same world box). That bounds a frame's casters to two cascades' worth; a far
-/// cascade's moving casters (other players) lag by its turn's few frames. Everything is drawn when
-/// there was no earlier frame with these maps, the light changed (sun ↔ moon, the tier) or `all`.
-pub fn stagger(
-    prev: Option<&Plan>,
-    plan: &Plan,
-    eye: V3,
-    frame: u64,
-    all: bool,
-) -> (Vec<Cascade>, u8) {
-    let n = plan.cascades.len();
-    let every = ((1u16 << n) - 1) as u8;
-    let Some(prev) = prev.filter(|p| {
-        !all && p.cascades.len() == n && p.tier == plan.tier && p.caster.moon == plan.caster.moon
-    }) else {
-        return (plan.cascades.clone(), every);
-    };
-    // The far cascades' turns: one slot a frame over `refreshFrames` (at least n − 1) frames.
-    let period = u64::from(plan.tier.refresh_frames).max(n as u64 - 1).max(1);
-    let slot = frame % period;
-    let mask = if n <= 1 {
-        every
-    } else if slot < n as u64 - 1 {
-        1 | 1 << (1 + slot as u8)
-    } else {
-        1
-    };
-    let used = (0..n)
-        .map(|i| {
-            if mask & (1 << i) != 0 {
-                plan.cascades[i]
-            } else {
-                prev.cascades[i].rebased(eye)
+/// Why a far cascade wants drawing again, least urgent first.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Want {
+    /// Its map is right as kept.
+    Nothing,
+    /// Moving casters (other players) are in it and `refreshFrames` have passed.
+    Moving,
+    /// The casters in it changed (a chunk or section drawn, replaced or removed; a fade stepped).
+    Changed,
+    /// The light has turned `lightTurnDeg` since it was drawn.
+    Turned,
+    /// The eye has left its slack: part of what it must cover is outside its box.
+    Moved,
+    /// Never drawn for this light and tier: it holds nothing yet.
+    Missing,
+}
+
+/// A far cascade's map as last drawn.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Kept {
+    pub cascade: Cascade,
+    /// The frame it was drawn in.
+    pub frame: u64,
+    /// The casters it was drawn with (`signature`), to find when they change.
+    pub casters: u64,
+}
+
+/// What a frame draws and reads: per cascade, the box it reads (none: not drawn yet, reads
+/// nothing) and, as a bit per cascade, which it draws this frame.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Frame {
+    pub cascades: Vec<Option<Cascade>>,
+    pub draw: u8,
+}
+
+/// The maps kept between frames, and the light and tier they were drawn for.
+#[derive(Clone, Debug, Default)]
+pub struct Cache {
+    pub kept: Vec<Option<Kept>>,
+    light: Option<(bool, ShadowTier)>,
+}
+
+impl Cache {
+    /// Forgets every map (the maps were made again, or the setting changed).
+    pub fn clear(&mut self) {
+        self.kept.clear();
+        self.light = None;
+    }
+
+    /// Why each far cascade wants drawing again this frame (the nearest is always drawn; its
+    /// entry is `Missing`). `casters(i, kept)` is the signature of the casters touching kept
+    /// cascade `i`'s box now; `moving` whether moving casters (other players) are about.
+    pub fn wants(
+        &self,
+        t: &ShadowTunables,
+        plan: &Plan,
+        eye: V3,
+        frame: u64,
+        moving: bool,
+        casters: &mut dyn FnMut(usize, &Cascade) -> u64,
+    ) -> Vec<Want> {
+        let same = self.light == Some((plan.caster.moon, plan.tier));
+        (0..plan.cascades.len())
+            .map(|i| {
+                let Some(k) = self.kept.get(i).copied().flatten().filter(|_| same && i > 0) else {
+                    return Want::Missing;
+                };
+                let fresh = &plan.cascades[i];
+                if k.cascade.far != fresh.far
+                    || k.cascade.radius != fresh.radius
+                    || !k.cascade.holds(eye)
+                {
+                    Want::Moved
+                } else if k.cascade.turned_deg(plan.caster.dir) > t.cascades.light_turn_deg {
+                    Want::Turned
+                } else if casters(i, &k.cascade.rebased(eye)) != k.casters {
+                    Want::Changed
+                } else if moving && frame >= k.frame + u64::from(plan.tier.refresh_frames) {
+                    Want::Moving
+                } else {
+                    Want::Nothing
+                }
+            })
+            .collect()
+    }
+
+    /// This frame's schedule from `wants`: the nearest cascade drawn every frame, and at most
+    /// `farPerFrame` far ones that want it, the most urgent first (then the longest kept), so no
+    /// frame draws more than that however much has changed (no spikes). The rest are read as
+    /// kept, rebased to this `eye`, even while they want drawing; one never drawn reads nothing.
+    pub fn schedule(&self, plan: &Plan, wants: &[Want], eye: V3) -> Frame {
+        let same = self.light == Some((plan.caster.moon, plan.tier));
+        let kept = |i: usize| self.kept.get(i).copied().flatten().filter(|_| same);
+        let mut order: Vec<usize> = (1..plan.cascades.len())
+            .filter(|&i| wants[i] != Want::Nothing)
+            .collect();
+        order.sort_by_key(|&i| {
+            (
+                std::cmp::Reverse(wants[i]),
+                kept(i).map_or(0, |k| k.frame),
+                i,
+            )
+        });
+        let budget = plan.tier.far_per_frame.max(1) as usize;
+        let mut draw = 1u8;
+        for &i in order.iter().take(budget) {
+            draw |= 1 << i;
+        }
+        let cascades = (0..plan.cascades.len())
+            .map(|i| {
+                if draw & (1 << i) != 0 {
+                    Some(plan.cascades[i])
+                } else {
+                    kept(i).map(|k| k.cascade.rebased(eye))
+                }
+            })
+            .collect();
+        Frame { cascades, draw }
+    }
+
+    /// Records what `frame` (number `n`) drew: `casters(i)` the signature of the casters each drawn
+    /// cascade was drawn with.
+    pub fn drew(&mut self, plan: &Plan, f: &Frame, n: u64, casters: &dyn Fn(usize) -> u64) {
+        if self.light != Some((plan.caster.moon, plan.tier)) {
+            self.kept.clear();
+            self.light = Some((plan.caster.moon, plan.tier));
+        }
+        self.kept.resize(plan.cascades.len(), None);
+        for (i, c) in f.cascades.iter().enumerate() {
+            if f.draw & (1 << i) != 0 {
+                self.kept[i] = c.map(|cascade| Kept {
+                    cascade,
+                    frame: n,
+                    casters: casters(i),
+                });
             }
-        })
-        .collect();
-    (used, mask)
+        }
+    }
+}
+
+/// An order-free signature of a set of casters: each caster's identity hashed, the hashes summed
+/// (so the casters can be visited in any order, and one added, removed or changed changes it).
+pub fn signature(ids: impl IntoIterator<Item = u64>) -> u64 {
+    ids.into_iter()
+        .fold(0u64, |s, id| s.wrapping_add(mix(id)))
+}
+
+/// A 64-bit finaliser (splitmix64's).
+pub fn mix(mut z: u64) -> u64 {
+    z = (z ^ (z >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+    z = (z ^ (z >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+    z ^ (z >> 31)
 }
 
 /// Floats in the shadow uniform block (`Shadows` in `SHADOW_WGSL`).
 pub const UNIFORM_FLOATS: usize = MAX_CASCADES * 16 + MAX_CASCADES * 4 + 8;
 
-/// The shadow uniform block: each cascade's matrix; per cascade its texel (m), the normal offset
-/// (m), the compare's bias (map depth) and the filter's radius (texels); then the cascade count
-/// (0: no shadows), the strength, the fade's start and end (view depth); the filter's taps a
-/// side, the map's size (texels).
-pub fn uniforms(t: &ShadowTunables, plan: Option<&Plan>) -> [f32; UNIFORM_FLOATS] {
+/// The shadow uniform block: each cascade's matrix (`NO_CASCADE` for one not drawn yet); per
+/// cascade its texel (m), the normal offset (m), the compare's bias (map depth) and the filter's
+/// radius (texels); then the cascade count (0: no shadows), the strength, the fade's start and
+/// end (distance from the eye); the filter's taps a side, the map's size (texels).
+pub fn uniforms(t: &ShadowTunables, plan: Option<(&Plan, &Frame)>) -> [f32; UNIFORM_FLOATS] {
     let mut u = [0.0f32; UNIFORM_FLOATS];
-    let Some(p) = plan else {
+    let Some((p, f)) = plan else {
         return u;
     };
-    for (i, c) in p.cascades.iter().enumerate() {
-        for (k, col) in c.view_proj.iter().enumerate() {
+    for (i, c) in f.cascades.iter().enumerate() {
+        // A cascade not drawn yet holds nothing: its fragments take the next one, or the far
+        // shadows past them.
+        let m = c.map_or(NO_CASCADE, |c| c.view_proj);
+        for (k, col) in m.iter().enumerate() {
             u[i * 16 + k * 4..i * 16 + k * 4 + 4].copy_from_slice(col);
         }
+        let Some(c) = c else { continue };
         let at = MAX_CASCADES * 16 + i * 4;
         u[at..at + 4].copy_from_slice(&[
             c.texel_m as f32,
@@ -402,7 +472,7 @@ pub fn uniforms(t: &ShadowTunables, plan: Option<&Plan>) -> [f32; UNIFORM_FLOATS
     }
     let at = MAX_CASCADES * 20;
     u[at..at + 8].copy_from_slice(&[
-        p.cascades.len() as f32,
+        f.cascades.len() as f32,
         p.caster.strength as f32,
         p.fade_start as f32,
         p.distance as f32,
@@ -722,32 +792,13 @@ mod tests {
     use dwell_look::daynight::DAY_NIGHT;
     use dwell_look::shadows::{SHADOWS, caster};
 
-    fn view(eye: V3, forward: V3) -> View {
-        let forward = normalize(forward);
-        let right = normalize(cross(forward, [0.0, 1.0, 0.0]));
-        View {
-            eye,
-            forward,
-            right,
-            up: cross(right, forward),
-            tan_x: 1.3,
-            tan_y: 0.75,
-        }
+    fn sub(a: V3, b: V3) -> V3 {
+        [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
     }
 
-    fn corners(v: &View, d0: f64, d1: f64) -> Vec<V3> {
-        let (f, right, up) = (v.forward, v.right, v.up);
-        let mut out = Vec::new();
-        for d in [d0, d1] {
-            for sx in [-1.0, 1.0] {
-                for sy in [-1.0, 1.0] {
-                    out.push(std::array::from_fn(|k| {
-                        f[k] * d + right[k] * sx * v.tan_x * d + up[k] * sy * v.tan_y * d
-                    }));
-                }
-            }
-        }
-        out
+    fn noon_plan(q: ShadowQuality, eye: V3) -> Plan {
+        let noon = DAY_NIGHT.state(0.0, Some(0.5), Some(0.5));
+        plan(&SHADOWS, q, caster(&SHADOWS, &noon, 1.0), eye, noon.axis, 1.0).unwrap()
     }
 
     #[test]
@@ -763,157 +814,84 @@ mod tests {
         assert!(mid[1] < splits(4, 0.5, 160.0, 0.0)[1] && mid[1] > splits(4, 0.5, 160.0, 1.0)[1]);
     }
 
-    #[test]
-    fn a_slices_sphere_holds_its_corners_and_no_wider_than_it_must() {
-        for (d0, d1) in [(0.0, 8.0), (8.0, 30.0), (30.0, 160.0), (100.0, 101.0)] {
-            let v = view([0.0; 3], [0.0, 0.0, -1.0]);
-            let (z, r) = slice_sphere(d0, d1, v.tan_x, v.tan_y);
-            let centre = [0.0, 0.0, -z];
-            let far: f64 = corners(&v, d0, d1)
-                .iter()
-                .map(|c| dot(sub(*c, centre), sub(*c, centre)).sqrt())
-                .fold(0.0, f64::max);
-            assert!(far <= r + 1e-9, "{d0}–{d1}: corner {far} out of {r}");
-            // Tight: the farthest corner is on the sphere.
-            assert!(far > r - 1e-6, "{d0}–{d1}: {far} well inside {r}");
+    /// Points within `far` of the eye in every direction.
+    fn around(far: f64) -> Vec<V3> {
+        let mut out = Vec::new();
+        for i in 0..64 {
+            let a = i as f64 * 0.7;
+            let y = (i as f64 / 63.0) * 2.0 - 1.0;
+            let r = (1.0 - y * y).sqrt();
+            out.push([r * a.cos() * far, y * far, r * a.sin() * far]);
         }
-    }
-
-    fn sub(a: V3, b: V3) -> V3 {
-        [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
+        out
     }
 
     #[test]
-    fn each_cascade_holds_its_slice_and_the_casters_above_it() {
+    fn each_cascade_holds_everything_within_its_distance_and_the_casters_above_it() {
         let sun = normalize([0.3, 0.8, -0.4]);
         let basis = light_basis(sun, [0.0, 0.0, 1.0]);
-        for forward in [[0.0, 0.0, -1.0], [1.0, -0.6, 0.2], [-0.3, 0.9, 0.1]] {
-            let v = view([1234.5, 80.25, -987.75], forward);
-            let d = splits(3, 0.5, 120.0, 0.7);
-            for i in 0..3 {
-                let c = fit(&v, basis, d[i], d[i + 1], 2048, 1.0, 300.0);
-                for p in corners(&v, d[i], d[i + 1]) {
-                    let q = c.project(p);
-                    assert!(q[0].abs() <= 1.0 && q[1].abs() <= 1.0, "{q:?}");
-                    assert!((0.0..=1.0).contains(&q[2]), "{q:?}");
-                    // A caster 250 m up toward the light still lands in the map's depth.
-                    let up: V3 = std::array::from_fn(|k| p[k] + sun[k] * 250.0);
-                    assert!((0.0..=1.0).contains(&c.project(up)[2]));
-                    assert!(c.touches(up, [0.5; 3]));
-                }
-                // The f32 matrix agrees with the f64 projection.
-                let p = corners(&v, d[i], d[i + 1])[5];
-                let m = c.view_proj;
-                let g: Vec<f64> = (0..3)
-                    .map(|r| {
-                        (0..3).map(|k| f64::from(m[k][r]) * p[k]).sum::<f64>() + f64::from(m[3][r])
-                    })
-                    .collect();
+        let eye = [1234.5, 80.25, -987.75];
+        let d = splits(3, 0.5, 120.0, 0.7);
+        for i in 0..3 {
+            let c = fit(eye, basis, d[i], d[i + 1], d[i + 1] * 0.1, 2048, 1.0, 300.0);
+            assert!(c.holds(eye));
+            for p in around(d[i + 1]) {
                 let q = c.project(p);
-                for k in 0..3 {
-                    assert!((g[k] - q[k]).abs() < 1e-4, "{g:?} vs {q:?}");
-                }
+                assert!(q[0].abs() <= 1.0 && q[1].abs() <= 1.0, "{q:?}");
+                assert!((0.0..=1.0).contains(&q[2]), "{q:?}");
+                // A caster 250 m up toward the light still lands in the map's depth.
+                let up: V3 = std::array::from_fn(|k| p[k] + sun[k] * 250.0);
+                assert!((0.0..=1.0).contains(&c.project(up)[2]));
+                assert!(c.touches(up, [0.5; 3]));
+            }
+            // The f32 matrix agrees with the f64 projection.
+            let p = around(d[i + 1])[5];
+            let m = c.view_proj;
+            let g: Vec<f64> = (0..3)
+                .map(|r| (0..3).map(|k| f64::from(m[k][r]) * p[k]).sum::<f64>() + f64::from(m[3][r]))
+                .collect();
+            let q = c.project(p);
+            for k in 0..3 {
+                assert!((g[k] - q[k]).abs() < 1e-4, "{g:?} vs {q:?}");
             }
         }
     }
 
     #[test]
-    fn the_far_cascades_take_turns_and_keep_their_world_box_between() {
-        let noon = DAY_NIGHT.state(0.0, Some(0.5), Some(0.5));
-        let sun = caster(&SHADOWS, &noon, 1.0);
-        let at = |eye: V3| {
-            plan(
-                &SHADOWS,
-                ShadowQuality::High,
-                sun,
-                &view(eye, [0.0, -0.2, -1.0]),
-                noon.axis,
-                1.0,
-            )
-            .unwrap()
-        };
-        let first = at([0.0, 60.0, 0.0]);
-        let n = first.cascades.len();
-        // No earlier frame: all of them.
-        let (_, all) = stagger(None, &first, [0.0, 60.0, 0.0], 0, false);
-        assert_eq!(all, (1 << n) - 1);
-        // Then the nearest every frame and each other one in turn.
-        let eye = [3.0, 60.5, -2.0];
-        let next = at(eye);
-        let mut seen = 0u8;
-        let period = u64::from(SHADOWS.tiers[1].refresh_frames);
-        for frame in 0..period {
-            let (used, mask) = stagger(Some(&first), &next, eye, frame, false);
-            assert_eq!(mask & 1, 1);
-            assert!(mask.count_ones() <= 2);
-            seen |= mask;
-            for (i, kept) in used.iter().enumerate() {
-                if mask & (1 << i) == 0 {
-                    // Kept as drawn: the same world box, its matrix rebased to the new eye.
-                    assert_eq!(kept.origin, first.cascades[i].origin);
-                    let world: V3 = [10.0, -5.0, -30.0];
-                    let old = first.cascades[i].project(sub(world, [0.0, 60.0, 0.0]));
-                    let new = kept.project(sub(world, eye));
-                    for k in 0..3 {
-                        assert!((old[k] - new[k]).abs() < 1e-9);
-                    }
-                }
-            }
-        }
-        assert_eq!(seen, (1 << n) - 1, "every cascade gets its turn");
-        // The light changed: all again.
-        let mut moon = next.clone();
-        moon.caster.moon = true;
-        assert_eq!(stagger(Some(&first), &moon, eye, 5, false).1, (1 << n) - 1);
-    }
-
-    #[test]
-    fn only_casters_over_the_slice_are_drawn() {
-        // The sun overhead, the camera looking along −z: a block behind the eye casts nowhere
-        // in view, one ahead (or high above the slice) does.
-        let basis = light_basis([0.0, 1.0, 0.0], [0.0, 0.0, 1.0]);
-        let v = view([0.0, 50.0, 0.0], [0.0, -0.1, -1.0]);
-        let c = fit(&v, basis, 0.0, 40.0, 1024, 1.0, 300.0);
-        assert!(c.touches([0.0, -2.0, -20.0], [0.5; 3]));
-        assert!(c.touches([0.0, 150.0, -20.0], [0.5; 3]));
-        assert!(!c.touches([0.0, -2.0, 25.0], [0.5; 3]), "behind the eye");
-        assert!(
-            !c.touches([200.0, -2.0, -20.0], [0.5; 3]),
-            "far off to the side"
-        );
-        // Under the whole slice (farther from the light than any of it): no shadow on it.
-        assert!(!c.touches([0.0, -200.0, -20.0], [0.5; 3]));
-    }
-
-    #[test]
-    fn turning_the_camera_keeps_each_cascades_size() {
+    fn a_kept_cascade_holds_its_distance_until_the_eye_leaves_its_slack() {
         let basis = light_basis(normalize([0.2, 0.9, 0.3]), [0.0, 0.0, 1.0]);
-        let a = fit(
-            &view([5.0, 40.0, 5.0], [0.0, 0.0, -1.0]),
-            basis,
-            10.0,
-            40.0,
-            1024,
-            1.0,
-            200.0,
-        );
-        for f in [[1.0, 0.0, 0.0], [0.3, -0.8, 0.5], [0.0, 1.0, 0.01]] {
-            let b = fit(
-                &view([5.0, 40.0, 5.0], f),
-                basis,
-                10.0,
-                40.0,
-                1024,
-                1.0,
-                200.0,
-            );
-            assert_eq!((a.radius, a.texel_m), (b.radius, b.texel_m));
+        let eye = [100.0, 40.0, -50.0];
+        let c = fit(eye, basis, 20.0, 60.0, 6.0, 2048, 1.0, 120.0);
+        for step in [0.0, 2.0, 5.0] {
+            let moved = [eye[0] + step, eye[1], eye[2]];
+            let k = c.rebased(moved);
+            assert!(k.holds(moved), "moved {step} m");
+            // Everything within its distance of the moved eye is still in the box.
+            for p in around(60.0) {
+                let q = k.project(p);
+                assert!(q[0].abs() <= 1.0 && q[1].abs() <= 1.0 && (0.0..=1.0).contains(&q[2]));
+            }
         }
-        // A radius rounds up to its step: a slightly wider view keeps it.
-        let mut wider = view([5.0, 40.0, 5.0], [0.0, 0.0, -1.0]);
-        wider.tan_x *= 1.001;
-        let w = fit(&wider, basis, 10.0, 40.0, 1024, 1.0, 200.0);
-        assert_eq!(w.radius, a.radius);
+        assert!(!c.holds([eye[0] + 6.5, eye[1], eye[2]]), "out of the slack");
+        assert!(!c.holds([eye[0], eye[1] - 7.0, eye[2]]), "out of the slack along the light");
+        // The light: the angle since it was drawn.
+        assert!(c.turned_deg(basis.z) < 1e-6);
+        let tilted = normalize([basis.z[0] + 0.01, basis.z[1], basis.z[2]]);
+        assert!(c.turned_deg(tilted) > 0.1);
+    }
+
+    #[test]
+    fn casters_all_around_the_eye_cast_but_not_off_the_box_or_under_it() {
+        // The sun overhead: a block behind the eye casts too (the box doesn't follow the view),
+        // one far off to the side or far under the ground does not.
+        let basis = light_basis([0.0, 1.0, 0.0], [0.0, 0.0, 1.0]);
+        let c = fit([0.0, 50.0, 0.0], basis, 0.0, 40.0, 0.0, 1024, 1.0, 300.0);
+        assert!(c.touches([0.0, -2.0, -20.0], [0.5; 3]));
+        assert!(c.touches([0.0, -2.0, 25.0], [0.5; 3]), "behind the eye");
+        assert!(c.touches([0.0, 150.0, -20.0], [0.5; 3]), "high above");
+        assert!(!c.touches([200.0, -2.0, -20.0], [0.5; 3]), "far off to the side");
+        assert!(!c.touches([0.0, -200.0, -20.0], [0.5; 3]), "under the box");
+        assert!(!c.touches([0.0, 400.0, -20.0], [0.5; 3]), "past the reach");
     }
 
     /// A world point's place in the map, in texels.
@@ -930,15 +908,7 @@ mod tests {
         let basis = light_basis(normalize([0.4, 0.7, -0.2]), [0.0, 0.0, 1.0]);
         let res = 2048;
         let start = [10_000.25, 72.5, -3_000.75];
-        let c0 = fit(
-            &view(start, [0.2, -0.3, -1.0]),
-            basis,
-            0.0,
-            12.0,
-            res,
-            1.0,
-            300.0,
-        );
+        let c0 = fit(start, basis, 0.0, 12.0, 0.0, res, 1.0, 300.0);
         let step = c0.texel_m * 0.1;
         let landmark = [10_003.0, 70.0, -3_005.0];
         let grid = texel_of(&c0, start, landmark, f64::from(res));
@@ -949,15 +919,7 @@ mod tests {
             let eye: V3 = std::array::from_fn(|i| {
                 start[i] + basis.x[i] * step * f64::from(k) + basis.z[i] * 0.37 * f64::from(k)
             });
-            let c = fit(
-                &view(eye, [0.2, -0.3, -1.0]),
-                basis,
-                0.0,
-                12.0,
-                res,
-                1.0,
-                300.0,
-            );
+            let c = fit(eye, basis, 0.0, 12.0, 0.0, res, 1.0, 300.0);
             let moved: V3 = sub(c.origin, last);
             let across = [dot(moved, basis.x), dot(moved, basis.y)];
             // The origin moves by whole texels across the light, or not at all.
@@ -978,33 +940,31 @@ mod tests {
                 assert!((d - d.round()).abs() < 1e-4, "{d}");
             }
         }
-        assert!(
-            kept >= 26,
-            "a tenth-texel step kept the origin only {kept} times of 30"
-        );
+        assert!(kept >= 26, "a tenth-texel step kept the origin only {kept} times of 30");
     }
 
     #[test]
     fn the_plan_follows_the_setting_the_light_and_the_spyglass() {
-        let v = view([0.0, 60.0, 0.0], [0.0, -0.2, -1.0]);
+        let eye = [0.0, 60.0, 0.0];
         let noon = DAY_NIGHT.state(0.0, Some(0.5), Some(0.5));
         let sun = caster(&SHADOWS, &noon, 1.0);
-        assert!(plan(&SHADOWS, ShadowQuality::Off, sun, &v, noon.axis, 1.0).is_none());
-        let high = plan(&SHADOWS, ShadowQuality::High, sun, &v, noon.axis, 1.0).unwrap();
-        let low = plan(&SHADOWS, ShadowQuality::Low, sun, &v, noon.axis, 1.0).unwrap();
+        assert!(plan(&SHADOWS, ShadowQuality::Off, sun, eye, noon.axis, 1.0).is_none());
+        let high = noon_plan(ShadowQuality::High, eye);
+        let low = noon_plan(ShadowQuality::Low, eye);
         assert_eq!(high.cascades.len(), SHADOWS.tiers[1].cascades as usize);
         assert_eq!(low.cascades.len(), SHADOWS.tiers[0].cascades as usize);
         assert_eq!(high.distance, SHADOWS.tiers[1].distance_m);
         assert_eq!(high.cascades.last().unwrap().far, high.distance);
         assert_eq!(high.cascades[0].near, 0.0);
-        // The slices tile the view's depth.
+        // The ranges tile the distance, and the far ones have their slack.
         for w in high.cascades.windows(2) {
             assert_eq!(w[0].far, w[1].near);
+            assert!(w[1].radius >= w[1].far * (1.0 + SHADOWS.cascades.slack));
         }
         // No light up: no maps.
-        assert!(plan(&SHADOWS, ShadowQuality::High, None, &v, noon.axis, 1.0).is_none());
+        assert!(plan(&SHADOWS, ShadowQuality::High, None, eye, noon.axis, 1.0).is_none());
         // The spyglass stretches the distance, up to its cap.
-        let zoomed = plan(&SHADOWS, ShadowQuality::High, sun, &v, noon.axis, 4.0).unwrap();
+        let zoomed = plan(&SHADOWS, ShadowQuality::High, sun, eye, noon.axis, 4.0).unwrap();
         assert_eq!(
             zoomed.distance,
             (SHADOWS.tiers[1].distance_m * 4.0).min(SHADOWS.cascades.spyglass_max_m)
@@ -1024,21 +984,131 @@ mod tests {
         );
     }
 
+    /// One frame of the schedule, as the renderer runs it: the wants, the schedule, the record.
+    fn step(
+        cache: &mut Cache,
+        p: &Plan,
+        eye: V3,
+        n: u64,
+        moving: bool,
+        sig: &dyn Fn(usize) -> u64,
+    ) -> (Vec<Want>, Frame) {
+        let wants = cache.wants(&SHADOWS, p, eye, n, moving, &mut |i, _| sig(i));
+        let f = cache.schedule(p, &wants, eye);
+        cache.drew(p, &f, n, sig);
+        (wants, f)
+    }
+
+    #[test]
+    fn the_far_cascades_are_drawn_one_a_frame_then_kept_until_something_changes() {
+        let eye = [0.0, 60.0, 0.0];
+        let p = noon_plan(ShadowQuality::High, eye);
+        let n = p.cascades.len();
+        assert!(n >= 3, "the test wants two far cascades");
+        let budget = p.tier.far_per_frame as usize;
+        let mut cache = Cache::default();
+        let none = |_: usize| 7u64;
+        // The first frames: the nearest and `farPerFrame` far ones a frame, the others reading
+        // nothing until drawn (no frame draws them all at once).
+        let (_, f) = step(&mut cache, &p, eye, 0, false, &none);
+        assert_eq!(f.draw.count_ones() as usize, 1 + budget);
+        assert!(f.cascades.iter().filter(|c| c.is_none()).count() == n - 1 - budget);
+        assert_eq!(
+            uniforms(&SHADOWS, Some((&p, &f)))[(n - 1) * 16..(n - 1) * 16 + 16],
+            NO_CASCADE.concat()[..],
+            "a cascade not drawn yet holds nothing"
+        );
+        let mut frame = 1;
+        while cache.kept.iter().skip(1).any(Option::is_none) {
+            let (_, f) = step(&mut cache, &p, eye, frame, false, &none);
+            assert!(f.draw.count_ones() as usize <= 1 + budget);
+            frame += 1;
+        }
+        // Then only the nearest, frame after frame, while the eye, the light and the casters stay.
+        for k in 0..10 {
+            let (wants, f) = step(&mut cache, &p, eye, frame + k, false, &none);
+            assert_eq!(f.draw, 1, "{wants:?}");
+            assert!(f.cascades.iter().all(Option::is_some));
+        }
+        frame += 10;
+        // The casters in the farthest change: it alone is drawn again.
+        let changed = |i: usize| if i == n - 1 { 8 } else { 7 };
+        let (wants, f) = step(&mut cache, &p, eye, frame, false, &changed);
+        assert_eq!(wants[n - 1], Want::Changed);
+        assert_eq!(f.draw, 1 | 1 << (n - 1));
+        frame += 1;
+        let (_, f) = step(&mut cache, &p, eye, frame, false, &changed);
+        assert_eq!(f.draw, 1);
+        frame += 1;
+        // Moving casters: each far cascade again once every `refreshFrames`, one a frame.
+        let mut drawn = vec![0u32; n];
+        let period = u64::from(p.tier.refresh_frames);
+        for k in 0..period * 4 {
+            let (_, f) = step(&mut cache, &p, eye, frame + k, true, &changed);
+            assert!(f.draw.count_ones() as usize <= 1 + budget);
+            for (i, d) in drawn.iter_mut().enumerate() {
+                *d += u32::from(f.draw & (1 << i) != 0);
+            }
+        }
+        for (i, d) in drawn.iter().enumerate().skip(1) {
+            assert!((3..=5).contains(d), "cascade {i} drawn {d} times in {} frames", period * 4);
+        }
+    }
+
+    #[test]
+    fn moving_out_of_the_slack_or_turning_the_light_draws_again_the_most_urgent_first() {
+        let eye = [0.0, 60.0, 0.0];
+        let p = noon_plan(ShadowQuality::High, eye);
+        let n = p.cascades.len();
+        let mut cache = Cache::default();
+        let sig = |_: usize| 1u64;
+        for k in 0..n as u64 {
+            step(&mut cache, &p, eye, k, false, &sig);
+        }
+        // A step that leaves the nearer far cascade's slack but not the farther one's.
+        let slack1 = p.cascades[1].radius - p.cascades[1].far;
+        let moved = [eye[0] + slack1 * 1.1, eye[1], eye[2]];
+        let q = noon_plan(ShadowQuality::High, moved);
+        let wants = cache.wants(&SHADOWS, &q, moved, 10, false, &mut |_, _| 1);
+        assert_eq!(wants[1], Want::Moved);
+        assert_eq!(wants[n - 1], Want::Nothing);
+        // The light turned past the threshold: every far one wants it, the moved one first.
+        let mut turned = q.clone();
+        let tilt = (SHADOWS.cascades.light_turn_deg * 2.0).to_radians();
+        let d = p.caster.dir;
+        turned.caster.dir = normalize([d[0] + tilt, d[1], d[2]]);
+        let wants = cache.wants(&SHADOWS, &turned, moved, 10, false, &mut |_, _| 1);
+        assert_eq!(wants[1], Want::Moved);
+        assert!(wants[2..].iter().all(|w| *w == Want::Turned), "{wants:?}");
+        let f = cache.schedule(&turned, &wants, moved);
+        assert_eq!(f.draw, 1 | 1 << 1);
+        // The kept ones are read where they were drawn (rebased to this eye).
+        let kept = f.cascades[n - 1].unwrap();
+        assert_eq!(kept.origin, p.cascades[n - 1].origin);
+        // The light changed (the moon) or the tier: nothing kept counts.
+        let mut moon = q.clone();
+        moon.caster.moon = true;
+        let wants = cache.wants(&SHADOWS, &moon, moved, 10, false, &mut |_, _| 1);
+        assert!(wants.iter().all(|w| *w == Want::Missing));
+    }
+
+    #[test]
+    fn signatures_ignore_order_and_see_one_caster_change() {
+        let a = signature([1, 2, 3]);
+        assert_eq!(a, signature([3, 1, 2]));
+        assert_ne!(a, signature([1, 2]));
+        assert_ne!(a, signature([1, 2, 4]));
+    }
+
     #[test]
     fn the_uniform_block_carries_the_cascades_and_none_when_off() {
         assert_eq!(uniforms(&SHADOWS, None), [0.0; UNIFORM_FLOATS]);
-        let v = view([0.0, 60.0, 0.0], [0.0, -0.2, -1.0]);
-        let noon = DAY_NIGHT.state(0.0, Some(0.5), Some(0.5));
-        let p = plan(
-            &SHADOWS,
-            ShadowQuality::Low,
-            caster(&SHADOWS, &noon, 1.0),
-            &v,
-            noon.axis,
-            1.0,
-        )
-        .unwrap();
-        let u = uniforms(&SHADOWS, Some(&p));
+        let p = noon_plan(ShadowQuality::Low, [0.0, 60.0, 0.0]);
+        let f = Frame {
+            cascades: p.cascades.iter().copied().map(Some).collect(),
+            draw: 3,
+        };
+        let u = uniforms(&SHADOWS, Some((&p, &f)));
         let cfg = MAX_CASCADES * 20;
         assert_eq!(u[cfg], p.cascades.len() as f32);
         assert_eq!(u[cfg + 3], p.distance as f32);
@@ -1049,7 +1119,8 @@ mod tests {
 
     dwell_world::both_faces!(
         /// On either face the light over it casts down onto it: a point above the ground (toward
-        /// the face's sky) is nearer the light in the map than the ground under it.
+        /// the face's sky) is nearer the light in the map than the ground under it, a caster high
+        /// over the face casts into the cascades and one deep under its ground does not.
         fn the_light_over_either_face_casts_onto_it(f: FaceFrame) {
             // Face A's noon; face B's noon is face A's midnight.
             let time = if f.sign_f64() > 0.0 { 0.5 } else { 0.0 };
@@ -1058,20 +1129,14 @@ mod tests {
             assert!(!c.moon);
             let up = f.up();
             let eye = f.point([0.0, 60.0, 0.0]);
-            let forward = f.vector([0.0, -0.3, -1.0]);
-            let p = plan(
-                &SHADOWS,
-                ShadowQuality::High,
-                Some(c),
-                &view(eye, forward),
-                day.axis,
-                1.0,
-            )
-            .unwrap();
+            let p = plan(&SHADOWS, ShadowQuality::High, Some(c), eye, day.axis, 1.0).unwrap();
             let k = &p.cascades[0];
-            let ground = [0.0, -1.7 * up[1], -3.0];
+            let ground = f.vector([0.0, -1.7, -3.0]);
             let above: V3 = std::array::from_fn(|i| ground[i] + up[i] * 2.0);
             assert!(k.project(above)[2] < k.project(ground)[2]);
+            let far = p.cascades.last().unwrap();
+            assert!(far.touches(f.vector([10.0, 80.0, -30.0]), [8.0; 3]), "over the face");
+            assert!(!far.touches(f.vector([10.0, -400.0, -30.0]), [8.0; 3]), "under its ground");
         }
     );
 }

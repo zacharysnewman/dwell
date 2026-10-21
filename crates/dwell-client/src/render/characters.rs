@@ -132,6 +132,8 @@ struct Draw {
     passes: u8,
     /// Within the shadow distance: drawn into the shadow maps.
     casts: bool,
+    /// Your own body, drawn into the shadow maps only (into the nearest cascade).
+    cast_only: bool,
 }
 
 /// Per frame stats.
@@ -858,6 +860,7 @@ impl CharacterRenderer {
                 outline: !far,
                 passes: mask,
                 casts,
+                cast_only: d.cast_only,
             });
         }
         if let Some(a) = arms {
@@ -887,6 +890,7 @@ impl CharacterRenderer {
                 outline: true,
                 passes: 0,
                 casts: false,
+                cast_only: false,
             });
         }
         for k in keys {
@@ -962,9 +966,21 @@ impl CharacterRenderer {
     }
 
     /// Draws the bodies within the shadow distance into a shadow map's pass (group 0 bound to its
-    /// cascade's frame; group 1 left bound to the characters' group).
-    pub fn draw_shadows(&self, pass: &mut wgpu::RenderPass<'_>, calls: &mut u32, tris: &mut u64) {
-        for d in self.draws.iter().filter(|d| d.casts) {
+    /// cascade's frame; group 1 left bound to the characters' group). Your own body (`cast_only`)
+    /// casts into the nearest cascade only (`nearest`): it is drawn every frame, while a far
+    /// cascade's map is kept for many and would keep your shadow where you were.
+    pub fn draw_shadows(
+        &self,
+        pass: &mut wgpu::RenderPass<'_>,
+        nearest: bool,
+        calls: &mut u32,
+        tris: &mut u64,
+    ) {
+        for d in self
+            .draws
+            .iter()
+            .filter(|d| d.casts && (nearest || !d.cast_only))
+        {
             pass.set_bind_group(1, &self.group, &[d.instance * INSTANCE_BYTES as u32]);
             pass.set_pipeline(&self.shadow_pipeline);
             for m in [Some(d.body), d.item]
