@@ -830,7 +830,9 @@ that normal's face tint. Crosses need `"shape": "empty"`: no collider. **Placeme
 data too, checked by the server (§6.5): `placeOn` (block ids the block below must be),
 `needsSupport` (`"below"`: removed with what it stands on, in the same modification), `replaceable`
 (placing into its cell replaces it) `selectionBox` (a smaller box in the cell for targeting,
-line of sight and the outline, `dwell_world::edit::target_box`; turned for face B, and sunk with a
+line of sight and the outline, `dwell_world::edit::target_box`; on a block with a `facingProperty`
+written for facing north and turned per facing by `gen.mjs` (the ladder's is its plate, ⅛ m against
+the wall, 2026-10-21); turned for face B, and sunk with a
 plant that sits on its support, the targeting ray meeting it in the support's cell) and `medium` (`air`: refused into a
 liquid, never kept flooded; `water`: placed only into water, drawn inside it as its `flooded` state). The first user is
 **`dwell:tall_grass`** (prototype content, appended to the block list so earlier ids and every
@@ -1608,7 +1610,8 @@ Players break and place blocks. Server-authoritative like every voxel change
   front of the targeted face and a ray to its centre or one of four points near its corners
   reaching the target first (line of sight; on a shape, the sample points lie on the polygons whose
   normal points through the requested face; a block with a `selectionBox` is aimed at and seen
-  by that box); Break — not indestructible (block data; else
+  by that box: a ladder by its plate, so a ray past it goes on to the wall behind or the cell
+  below, and a ladder placed on a ladder's top or bottom takes that ladder's facing); Break — not indestructible (block data; else
   `Unbreakable`), leaving water where a flooded state stood; Place — a placeable state, into an air
   or liquid cell (not an indestructible one: placing would replace it) inside the world's rows and disc (its `flooded` follows the cell), and (solid blocks) not overlapping any
   player's capsule, tested against the shape's true volume. **[built, Phase 33]** Placement rules

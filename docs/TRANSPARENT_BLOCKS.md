@@ -118,7 +118,9 @@ Generic block data, checked by the server's edit validation (`dwell_world::edit:
   server's line-of-sight check and the outline (`dwell_world::edit::target_box`). On face B it is
   turned to stand on that face's ground; a plant that sits on its support (§4) sinks it by the
   support's `plant_sink` under the box's middle, so it may reach into the support's cell, where the
-  targeting ray also meets it.
+  targeting ray also meets it. On a block with a `facingProperty` the box is written for facing
+  north (its back against +Z) and `gen.mjs` turns it about the vertical for each state's facing:
+  the ladder's `[0, 0, 0.875, 1, 1, 1]` is its plate against the wall it is mounted on.
 - `"medium": "air" | "water"` — what the block may stand in. **Air** (tall grass): placing it into
   a liquid is refused (`EditCheck::WrongMedium`), a region edit skips those cells, and an air
   plant that would end up flooded gives way to water in the same batch (water doesn't flow yet,
