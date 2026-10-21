@@ -702,8 +702,9 @@ impl Players {
         physics.set_velocity(p.body, Self::frame(p).v(local).as_dvec3());
     }
 
-    /// Switches the face (mirroring the layers' vertical state) once the body is across.
-    fn update_face(physics: &Physics, p: &mut Player) {
+    /// Switches the face (mirroring the layers' vertical state) once the body is across; true when
+    /// it did.
+    fn update_face(physics: &Physics, p: &mut Player) -> bool {
         let c = &mut p.c;
         // How far the body is past the midplane toward its face's up (negative: across it).
         let over = c.face.y(physics.position(p.body).y) - MIDPLANE_M;
@@ -713,7 +714,7 @@ impl Players {
             c.face
         };
         if face == c.face {
-            return;
+            return false;
         }
         c.vertical.accumulated_y = -c.vertical.accumulated_y;
         c.vertical.platform_y = -c.vertical.platform_y;
@@ -728,6 +729,7 @@ impl Players {
         c.climb.ladder.y = mirror_y(c.climb.ladder.y);
         c.climb.released.y = mirror_y(c.climb.released.y);
         c.face = face;
+        true
     }
 
     // --- the pipeline ---------------------------------------------------------------------------
@@ -804,8 +806,16 @@ impl Players {
         let p = self.pl(i);
         p.c.previous_input = p.c.input;
         p.c.input = p.pending;
-        Self::update_face(physics, p);
+        let crossed = Self::update_face(physics, p);
         let c = &mut p.c;
+        if crossed {
+            // The look was sampled on the face before (the client continues it from the next
+            // tick, BIFACIAL_WORLD.md §6): continue it here too, so this tick's ladder climb and
+            // swim go on the same way rather than back for a tick.
+            let (yaw, pitch) =
+                FaceFrame::look_across(f64::from(c.input.look_yaw), f64::from(c.input.look_pitch));
+            (c.input.look_yaw, c.input.look_pitch) = (yaw as f32, pitch as f32);
+        }
         // A face-B player is upside down: its right is the face-local frame's left.
         c.input.move_x = c.face.handed(f64::from(c.input.move_x)) as f32;
         let length_sq = c.input.move_x * c.input.move_x + c.input.move_y * c.input.move_y;
