@@ -201,15 +201,17 @@ fn light_curve(x: f32, curve: f32) -> f32 {
 
 // A terrain vertex's light: its baked `light` (corner occlusion × sky visibility, dwell-mesh
 // sky.rs) and its flood light (sky and block level as shares of 15, dwell-mesh flood.rs). The
-// hemisphere light takes the sky light's brightness × the baked light, above the floor; the sun
+// hemisphere light takes the sky light's brightness, the baked light shading it as much as the
+// vertex is open to the sky (dwell_look::ambient::open_share), above the floor; the sun
 // and moon the sky light's direct ramp, the shadow stand-in (`direct_shadow`); the block light
 // glows by its own curve.
 fn terrain_light(light: f32, flood: vec2f) -> TerrainLight {
     let sky = light_curve(flood.x, SKY_CURVE);
+    let l = clamp(light, 0.0, 1.0);
     let level = flood.x * 15.0;
     let direct = smoothstep(DIRECT_FROM, DIRECT_FULL, level);
     return TerrainLight(
-        AMBIENT_FLOOR + (1.0 - AMBIENT_FLOOR) * clamp(light, 0.0, 1.0) * sky,
+        AMBIENT_FLOOR + (1.0 - AMBIENT_FLOOR) * sky * (l + (1.0 - l) * (1.0 - sky)),
         direct,
         light_curve(flood.y, BLOCK_CURVE) * BLOCK_STRENGTH,
     );

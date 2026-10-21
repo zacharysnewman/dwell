@@ -1287,12 +1287,18 @@ impl<S: Scene> Game<S> {
     /// Runs a region tool (§6.5) on the crosshair's target and the hotbar's block: only while alive
     /// and playing. True if it sent a region edit.
     pub fn tool(&mut self, action: ToolAction, now_ms: f64) -> bool {
+        self.tool_at(action, None, now_ms)
+    }
+
+    /// [`Self::tool`] as if aimed at world cell `at` (the bench's `region` step, DEV_TOOLS.md;
+    /// None: the crosshair's target).
+    pub fn tool_at(&mut self, action: ToolAction, at: Option<[i32; 3]>, now_ms: f64) -> bool {
         if self.dead || !self.terrain_ready() {
             return false;
         }
         // A click as the tool takes the key; the blocks an edit changes sound as they arrive.
         self.sounds.push(sound_event(SoundKind::Tool));
-        let target = self.interaction.target().map(|t| t.cell);
+        let target = at.or_else(|| self.interaction.target().map(|t| t.cell));
         let target_state =
             target.map_or(0, |c| self.streamer.store_mut().get_voxel(c[0], c[1], c[2]));
         let material = self

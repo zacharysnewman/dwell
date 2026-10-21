@@ -147,8 +147,12 @@ dwell_world::both_faces!(
             "5 m: {five:?}"
         );
         assert!(
-            ten.direct == 0.0 && ten.ambient < AMBIENT.floor + 0.02,
+            ten.direct == 0.0 && ten.ambient < five.ambient,
             "10 m: {ten:?}"
+        );
+        assert!(
+            ten.ambient < AMBIENT.floor + 0.1,
+            "about the floor 10 m in: {ten:?}"
         );
         assert!(
             fifteen.direct == 0.0 && fifteen.ambient == AMBIENT.floor,

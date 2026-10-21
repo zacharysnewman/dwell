@@ -230,12 +230,12 @@ struct GpuMesh {
 /// Bytes per vertex of each `Kind`'s interleaved format (the pipelines' vertex layouts), in the
 /// enum's order: `Kind as usize` indexes it.
 const STRIDES: [u64; 6] = [
-    4 * (3 + 3 + 3 + 2 + 4 + 1), // Terrain: position, normal, colour, uv, tile, light
-    4 * (3 + 3 + 3),             // Flat: position, normal, colour
-    4 * (3 + 3),                 // Line: position, colour
-    4 * (3 + 3),                 // Ghost: the lines' format (triangles)
-    4 * (3 + 3 + 3 + 1),         // Fluid: position, normal, colour, fluid id
-    4 * (3 + 3 + 3 + 2 + 4 + 4 + 1 + 1), // Cutout: the terrain's, plant (sway, wind speed, fade), bare, light
+    4 * (3 + 3 + 3 + 2 + 4 + 1 + 2), // Terrain: position, normal, colour, uv, tile, light, flood
+    4 * (3 + 3 + 3),                 // Flat: position, normal, colour
+    4 * (3 + 3),                     // Line: position, colour
+    4 * (3 + 3),                     // Ghost: the lines' format (triangles)
+    4 * (3 + 3 + 3 + 1),             // Fluid: position, normal, colour, fluid id
+    4 * (3 + 3 + 3 + 2 + 4 + 4 + 1 + 1 + 2), // Cutout: the terrain's, plant (sway, wind speed, fade), bare, light, flood
 ];
 
 fn floats(v: &[f32]) -> &[u8] {
@@ -290,6 +290,37 @@ fn interleave(streams: &[(&[f32], usize)]) -> Vec<f32> {
     out
 }
 
+/// A terrain or cutout mesh's interleaved vertices (`STRIDES`, the pipelines' layouts): position,
+/// normal, colour, uv, tile, (the cutout's plant and bare,) light and flood light.
+fn textured_vertices(m: &MeshArrays, kind: Kind) -> Vec<f32> {
+    let mut streams: Vec<(&[f32], usize)> = vec![
+        (&m.positions, 3),
+        (&m.normals, 3),
+        (&m.colors, 3),
+        (&m.uvs, 2),
+        (&m.tiles, 4),
+    ];
+    // A mesh without baked light (an older mesher's, a hand-made one) is lit as open.
+    let count = m.positions.len() / 3;
+    let light: std::borrow::Cow<'_, [f32]> = if m.light.len() == count {
+        std::borrow::Cow::Borrowed(&m.light)
+    } else {
+        std::borrow::Cow::Owned(vec![1.0; count])
+    };
+    let flood: std::borrow::Cow<'_, [f32]> = if m.flood.len() == 2 * count {
+        std::borrow::Cow::Borrowed(&m.flood)
+    } else {
+        std::borrow::Cow::Owned([1.0, 0.0].repeat(count))
+    };
+    if kind == Kind::Cutout {
+        streams.push((&m.plants, 4));
+        streams.push((&m.bare, 1));
+    }
+    streams.push((&light, 1));
+    streams.push((&flood, 2));
+    interleave(&streams)
+}
+
 impl GpuMesh {
     fn upload(
         arena: &ArenaRef,
@@ -324,32 +355,7 @@ impl GpuMesh {
         if m.indices.is_empty() {
             return None;
         }
-        let mut streams: Vec<(&[f32], usize)> = vec![
-            (&m.positions, 3),
-            (&m.normals, 3),
-            (&m.colors, 3),
-            (&m.uvs, 2),
-            (&m.tiles, 4),
-        ];
-        // A mesh without baked light (an older mesher's, a hand-made one) is lit as open.
-        let count = m.positions.len() / 3;
-        let light: std::borrow::Cow<'_, [f32]> = if m.light.len() == count {
-            std::borrow::Cow::Borrowed(&m.light)
-        } else {
-            std::borrow::Cow::Owned(vec![1.0; count])
-        };
-        let flood: std::borrow::Cow<'_, [f32]> = if m.flood.len() == 2 * count {
-            std::borrow::Cow::Borrowed(&m.flood)
-        } else {
-            std::borrow::Cow::Owned([1.0, 0.0].repeat(count))
-        };
-        if kind == Kind::Cutout {
-            streams.push((&m.plants, 4));
-            streams.push((&m.bare, 1));
-        }
-        streams.push((&light, 1));
-        streams.push((&flood, 2));
-        let vertices = interleave(&streams);
+        let vertices = textured_vertices(m, kind);
         Some(Self::upload(
             arena,
             kind,
@@ -2959,14 +2965,36 @@ mod tests {
     fn every_kind_has_its_own_stride() {
         let line = 4 * (3 + 3);
         for (kind, stride) in [
-            (Kind::Terrain, 4 * (3 + 3 + 3 + 2 + 4 + 1)),
+            (Kind::Terrain, 4 * (3 + 3 + 3 + 2 + 4 + 1 + 2)),
             (Kind::Flat, 4 * (3 + 3 + 3)),
             (Kind::Line, line),
             (Kind::Ghost, line),
             (Kind::Fluid, 4 * (3 + 3 + 3 + 1)),
-            (Kind::Cutout, 4 * (3 + 3 + 3 + 2 + 4 + 4 + 1 + 1)),
+            (Kind::Cutout, 4 * (3 + 3 + 3 + 2 + 4 + 4 + 1 + 1 + 2)),
         ] {
             assert_eq!(STRIDES.get(kind as usize), Some(&stride), "{kind:?}");
+        }
+    }
+
+    /// The terrain and cutout meshes' interleaved vertices are their format's stride (the flood
+    /// light's stream was added to the layouts but not to `STRIDES`: meshes were drawn torn).
+    #[test]
+    fn textured_vertices_are_their_formats_stride() {
+        let stone = dwell_blocks::require("dwell:stone[flooded=false]");
+        let grass = dwell_blocks::require("dwell:tall_grass");
+        let mut padded = vec![0u16; dwell_mesh::PADDED_VOLUME];
+        padded[dwell_mesh::padded_index(1, 1, 1)] = stone;
+        padded[dwell_mesh::padded_index(1, 2, 1)] = grass;
+        let m = dwell_mesh::mesh_chunk(&padded, false).expect("meshed");
+        for (kind, mesh) in [(Kind::Terrain, &m.opaque), (Kind::Cutout, &m.cutout)] {
+            let count = mesh.positions.len() / 3;
+            assert!(count > 0, "{kind:?}");
+            let floats = textured_vertices(mesh, kind).len();
+            assert_eq!(
+                (4 * floats / count) as u64,
+                STRIDES[kind as usize],
+                "{kind:?}"
+            );
         }
     }
 

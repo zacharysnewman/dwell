@@ -6,7 +6,7 @@ use crate::light::LightTunables;
 pub const LIGHT: LightTunables = LightTunables {
     falloff_across: 1,
     falloff_vertical: 1,
-    sky_curve: 3.0,
+    sky_curve: 4.0,
     direct_from: 8,
     direct_full: 15,
     block_curve: 3.0,

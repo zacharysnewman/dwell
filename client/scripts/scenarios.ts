@@ -40,6 +40,12 @@ export type Step =
    */
   | { do: 'brush'; command: string }
   /**
+   * A region edit (the region tools, `__dwell.tool`) of the box between `from` and `to`
+   * (inclusive), offsets in metres from the player's feet, `up` the face's up (1 face A, −1 face
+   * B): `fill` with the selected hotbar block, or `clear` to air. For carving or building a scene.
+   */
+  | { do: 'region'; op: 'fill' | 'clear'; from: Vec3; to: Vec3; up?: number }
+  /**
    * Stand-in players (`__dwell.puppets`, docs/CHARACTERS.md): `count` full bodies ahead of the
    * player (offset `at` from its feet, metres) on `face` (1 or −1), each playing a clip of its
    * own, holding the hotbar's first block when `held`; 0 removes them.
@@ -156,6 +162,7 @@ const STEP_FIELDS: Record<Step['do'], readonly string[]> = {
   edit: ['action'],
   select: ['slot'],
   brush: ['command'],
+  region: ['op', 'from', 'to', 'up'],
   puppets: ['count', 'at', 'face', 'held'],
   arms: ['on'],
   settle: ['maxS'],
@@ -246,6 +253,17 @@ export function parseStep(where: string, v: unknown): Step {
       return { do: d, action: o.action };
     case 'select':
       return { do: d, slot: num(at('slot'), o.slot, 0, 63) };
+    case 'region': {
+      if (o.op !== 'fill' && o.op !== 'clear') throw new ViewError(`${at('op')}: expected "fill" or "clear"`);
+      if (o.up !== undefined && o.up !== 1 && o.up !== -1) throw new ViewError(`${at('up')}: expected 1 or -1`);
+      return {
+        do: d,
+        op: o.op,
+        from: vec3(at('from'), o.from),
+        to: vec3(at('to'), o.to),
+        ...(o.up === undefined ? {} : { up: o.up }),
+      };
+    }
     case 'brush':
       if (typeof o.command !== 'string' || !/^[A-Za-z]+(:[A-Za-z0-9_-]+)?$/.test(o.command)) {
         throw new ViewError(`${at('command')}: expected a brush command (e.g. "preset:cube")`);
