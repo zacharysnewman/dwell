@@ -1232,10 +1232,17 @@ impl Renderer {
                 Kind::Flat => ("flat_vs", "shadow_flat_fs", &flat_attrs),
                 _ => ("cutout_vs", "shadow_cutout_fs", &cutout_attrs),
             };
+            // Drawn in full (no fragment stage): the depth-only vertex stage, which reads the
+            // position alone.
+            let (vs, attributes) = match (kind, fs) {
+                (Kind::Terrain, false) => ("shadow_terrain_vs", vec![a.1[0]]),
+                (Kind::Flat, false) => ("shadow_flat_vs", vec![a.1[0]]),
+                _ => (vs, a.1.clone()),
+            };
             let buffers = [Some(wgpu::VertexBufferLayout {
                 array_stride: a.0,
                 step_mode: wgpu::VertexStepMode::Vertex,
-                attributes: &a.1,
+                attributes: &attributes,
             })];
             let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                 label: Some(if fs { entry } else { vs }),
@@ -3002,10 +3009,7 @@ impl Renderer {
     /// plants, LOD sections and stand-ins (their skirts as shown), each with its box and an
     /// identity that changes when its mesh, its skirts or whether it is fading change (a kept map
     /// is drawn again when the identities in it change, `caster_signature`). Water casts none.
-    fn shadow_candidates(
-        &self,
-        chunk_fade: &dyn Fn(ChunkCoord) -> Option<Fade>,
-    ) -> Vec<Candidate> {
+    fn shadow_candidates(&self, chunk_fade: &dyn Fn(ChunkCoord) -> Option<Fade>) -> Vec<Candidate> {
         let item = |kind, offset, clip, fade, mesh| DrawItem {
             kind,
             water: false,
@@ -3050,7 +3054,8 @@ impl Renderer {
             let r = self.rel(c.origin);
             let offset = [r[0], r[1], r[2], 1.0];
             let fade = fade.shader_value();
-            let tag = shadows::mix(coord.x as u64) ^ shadows::mix(coord.y as u64).rotate_left(21)
+            let tag = shadows::mix(coord.x as u64)
+                ^ shadows::mix(coord.y as u64).rotate_left(21)
                 ^ shadows::mix(coord.z as u64).rotate_left(42);
             if c.opaque.is_some() {
                 let mesh = DrawMesh::Chunk(coord, Part::Opaque);
@@ -3079,7 +3084,11 @@ impl Renderer {
             let offset = [r[0], r[1], r[2], s.cell as f32];
             let mesh = DrawMesh::Section(id, false, mask);
             let tag = shadows::mix(id as u64 ^ 0x5ec7_1000) ^ u64::from(mask) << 8;
-            push(item(Kind::Flat, offset, None, fade.shader_value(), mesh), b, tag);
+            push(
+                item(Kind::Flat, offset, None, fade.shader_value(), mesh),
+                b,
+                tag,
+            );
         }
         for st in self
             .terrain
@@ -3102,7 +3111,11 @@ impl Renderer {
             let clip = Some((self.rel(st.lo), self.rel(st.hi)));
             let mesh = DrawMesh::Section(st.id, false, 0);
             let tag = shadows::mix(st.id as u64 ^ 0x57a2_d000)
-                ^ shadows::mix(st.lo[0].to_bits() ^ st.lo[1].to_bits().rotate_left(20) ^ st.lo[2].to_bits().rotate_left(40));
+                ^ shadows::mix(
+                    st.lo[0].to_bits()
+                        ^ st.lo[1].to_bits().rotate_left(20)
+                        ^ st.lo[2].to_bits().rotate_left(40),
+                );
             push(
                 item(Kind::Flat, offset, clip, st.fade.shader_value(), mesh),
                 b,
@@ -3424,7 +3437,8 @@ impl Renderer {
                     *calls += 1;
                 }
             }
-            self.characters.draw_shadows(&mut pass, i == 0, calls, triangles);
+            self.characters
+                .draw_shadows(&mut pass, i == 0, calls, triangles);
         }
     }
 

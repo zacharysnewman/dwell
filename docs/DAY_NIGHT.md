@@ -264,26 +264,45 @@ maps, `SHADOW_WGSL`), `dwell-look` `shadows.rs` (the setting, the light that cas
   neither is up (`caster`). Its strength fades in with its elevation (`lights.sun` 0° → 8°,
   `lights.moon` 2° → 12°), so the sun's shadows fade out at dusk and the moon's fade in. Face B
   sees the light over it: the same world directions, the other hemisphere (both faces are tested).
-- **Cascades** (`tiers`: Low 2 of 1024² out to 80 m, High 4 of 2048² out to 160 m): the view's
-  depth split by the practical split (`splitLambda` between even and logarithmic, the first slice
-  from the eye), each cascade an orthographic map fitted to its slice's **bounding sphere**. The
-  sphere depends on the slice's shape only, so it doesn't change as the camera turns, and its
-  radius is rounded up to `radiusStepM` so the speed boost's changing FOV changes it in steps. The
-  light's map axes follow the light alone (its y as near the sky's axis as it can be), and each
-  cascade's centre is **snapped to whole texels** across the light (in world f64): moving the eye
+- **Cascades** (`tiers`: Low 2 of 1024² out to 80 m, High 3 of 2048² out to 160 m): the shadow
+  distance split by the practical split (`splitLambda` between even and logarithmic, the first
+  cascade from the eye), each cascade an orthographic map of a **box around the eye** that holds
+  everything within its distance (2026-10-21, the cost pass: before, each was fitted to the bounding
+  sphere of its slice of the view, which turned with the camera). The box depends on the eye and
+  the light alone, never on where the camera looks, as Minecraft shaderpacks (BSL, Complementary,
+  Sildur's) centre their one shadow map on the player; its half-size is rounded up to `radiusStepM`.
+  The light's map axes follow the light alone (its y as near the sky's axis as it can be), and each
+  box's centre is **snapped to whole texels** across the light (in world f64): moving the eye
   moves the map by whole texels, so shadow edges don't shimmer (a test moves the eye in tenth-texel
   steps and checks a fixed world point keeps its place in the texel grid). The box reaches
   `casterReachM` (120 m) toward the light for casters above the view (cliffs, trees). While the
   spyglass zooms the shadow distance grows with its magnification up to `spyglassMaxM` (640 m), so
-  the zoomed view has shadows where it looks.
+  the zoomed view has shadows where it looks. Shadows fade to the stand-in over the last
+  `edgeFade` of the distance from the eye (a sphere, whichever way the camera looks).
+- **Kept maps** (`shadows::Cache`, the cost pass): the nearest cascade is drawn every frame (your
+  own body and other players move in it). A far cascade's box is `slack` (10 %) wider than its
+  distance, and its map is kept, read where it was drawn (rebased to the eye each frame), until it
+  must be drawn again: the eye has left the slack, the light has turned `lightTurnDeg` (0.25°; the
+  sun turns about 0.15° a second), the casters in its box changed (an order-free signature of their
+  mesh identities, skirts and whether they fade: a chunk meshed, replaced or dropped, an LOD swap
+  begun or ended), or other players are about (once every `refreshFrames`). At most `farPerFrame`
+  (1) far cascades are drawn in a frame, the most urgent first and then the longest kept, so a
+  frame never draws them all, whatever changed (no spikes); one not drawn yet for this light holds
+  nothing (`NO_CASCADE`), and its fragments take the next cascade or the far shadows. Standing or
+  walking, a frame draws only the nearest cascade. Tests pin the schedule (one a frame, kept until
+  something changes, the most urgent first, moving casters every `refreshFrames`), the slack and
+  the culling (both faces).
 - **Casters**: chunk terrain and LOD sections (depth only), cutout plants (their texels' alpha; faded
   by the eye's distance as they fade on screen, so a plant's shadow goes with it), pines and leaves
-  (terrain), other players' bodies and **your own** (drawn into the maps only, so you have a shadow
-  in first person). A draw in an LOD cross-fade keeps the map texels its dither keeps, so the two
+  (terrain), other players' bodies and **your own** (drawn into the nearest cascade's map only, so you
+  have a shadow in first person and no kept far map holds where you were). A draw in an LOD cross-fade keeps the map texels its dither keeps, so the two
   levels share the map as they share the screen; a stand-in keeps its clip box. Water casts none.
-  Both sides of every face cast; the casters' pipelines take a slope-scaled depth bias
-  (`bias.slopeScale`).
-- **Receiving**: `scene_out` (terrain, plants, LOD, every opaque scene surface), the characters'
+  Opaque casters draw their faces toward the light, those drawn in full through a depth-only
+  vertex stage that reads the position alone (`shadow_terrain_vs`, `shadow_flat_vs`); plants cast
+  from both sides; a caster is drawn into a cascade when its box overlaps the cascade's box. The
+  casters' pipelines take a slope-scaled depth bias (`bias.slopeScale`).
+- **Receiving**: `scene_out` (terrain, plants, LOD, every opaque scene surface; a face turned
+  away from both lights skips the lookup, `lit_by_direct`, since nothing multiplies it), the characters'
   key light (a body in shade shows its ramp's middle at most) and the water's glint, sparkle,
   in-scatter and foam. A fragment takes the first cascade that holds it, offsets its lookup along
   its normal by `normalOffsetTexels` of that cascade's texels, subtracts `depthBiasM`, and filters

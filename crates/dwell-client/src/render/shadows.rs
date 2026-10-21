@@ -136,6 +136,7 @@ pub const NO_CASCADE: Mat4 = [
 /// to hold casters `reach` metres above it toward the light. It depends on the eye and the light
 /// alone, never on where the camera looks (Minecraft shaderpacks' player-centred shadow map), so
 /// turning leaves a far cascade's map as it is.
+#[allow(clippy::too_many_arguments)]
 pub fn fit(
     eye: V3,
     basis: LightBasis,
@@ -352,7 +353,13 @@ impl Cache {
         let same = self.light == Some((plan.caster.moon, plan.tier));
         (0..plan.cascades.len())
             .map(|i| {
-                let Some(k) = self.kept.get(i).copied().flatten().filter(|_| same && i > 0) else {
+                let Some(k) = self
+                    .kept
+                    .get(i)
+                    .copied()
+                    .flatten()
+                    .filter(|_| same && i > 0)
+                else {
                     return Want::Missing;
                 };
                 let fresh = &plan.cascades[i];
@@ -431,8 +438,7 @@ impl Cache {
 /// An order-free signature of a set of casters: each caster's identity hashed, the hashes summed
 /// (so the casters can be visited in any order, and one added, removed or changed changes it).
 pub fn signature(ids: impl IntoIterator<Item = u64>) -> u64 {
-    ids.into_iter()
-        .fold(0u64, |s, id| s.wrapping_add(mix(id)))
+    ids.into_iter().fold(0u64, |s, id| s.wrapping_add(mix(id)))
 }
 
 /// A 64-bit finaliser (splitmix64's).
@@ -704,7 +710,7 @@ struct Shadows {
     // Per cascade: x its texel (m), y the normal offset (m), z the compare's bias (map depth),
     // w the filter's radius (texels).
     texel: array<vec4f, 4>,
-    // x cascades (0: none), y strength, z the fade to the stand-in's start, w its end (view depth).
+    // x cascades (0: none), y strength, z the fade to the stand-in's start, w its end (distance).
     cfg: vec4f,
     // x the filter's taps a side, y the map's size (texels).
     pcf: vec4f,
@@ -769,8 +775,8 @@ fn shadow_light(rel: vec3f, n: vec3f, stand_in: f32) -> f32 {
     if (shadows.cfg.x < 0.5) {
         return stand_in * cloud_shadow(rel);
     }
-    let depth = view_depth(rel);
-    let near = 1.0 - smoothstep(shadows.cfg.z, shadows.cfg.w, depth);
+    // The cascades cover a sphere around the eye (whichever way it looks): fade by distance.
+    let near = 1.0 - smoothstep(shadows.cfg.z, shadows.cfg.w, length(rel));
     let c = shadow_cascade(rel);
     if (near <= 0.0 || c < 0) {
         return shadow_past(rel, n, stand_in) * cloud_shadow(rel);
@@ -798,7 +804,15 @@ mod tests {
 
     fn noon_plan(q: ShadowQuality, eye: V3) -> Plan {
         let noon = DAY_NIGHT.state(0.0, Some(0.5), Some(0.5));
-        plan(&SHADOWS, q, caster(&SHADOWS, &noon, 1.0), eye, noon.axis, 1.0).unwrap()
+        plan(
+            &SHADOWS,
+            q,
+            caster(&SHADOWS, &noon, 1.0),
+            eye,
+            noon.axis,
+            1.0,
+        )
+        .unwrap()
     }
 
     #[test]
@@ -848,7 +862,9 @@ mod tests {
             let p = around(d[i + 1])[5];
             let m = c.view_proj;
             let g: Vec<f64> = (0..3)
-                .map(|r| (0..3).map(|k| f64::from(m[k][r]) * p[k]).sum::<f64>() + f64::from(m[3][r]))
+                .map(|r| {
+                    (0..3).map(|k| f64::from(m[k][r]) * p[k]).sum::<f64>() + f64::from(m[3][r])
+                })
                 .collect();
             let q = c.project(p);
             for k in 0..3 {
@@ -873,7 +889,10 @@ mod tests {
             }
         }
         assert!(!c.holds([eye[0] + 6.5, eye[1], eye[2]]), "out of the slack");
-        assert!(!c.holds([eye[0], eye[1] - 7.0, eye[2]]), "out of the slack along the light");
+        assert!(
+            !c.holds([eye[0], eye[1] - 7.0, eye[2]]),
+            "out of the slack along the light"
+        );
         // The light: the angle since it was drawn.
         assert!(c.turned_deg(basis.z) < 1e-6);
         let tilted = normalize([basis.z[0] + 0.01, basis.z[1], basis.z[2]]);
@@ -889,7 +908,10 @@ mod tests {
         assert!(c.touches([0.0, -2.0, -20.0], [0.5; 3]));
         assert!(c.touches([0.0, -2.0, 25.0], [0.5; 3]), "behind the eye");
         assert!(c.touches([0.0, 150.0, -20.0], [0.5; 3]), "high above");
-        assert!(!c.touches([200.0, -2.0, -20.0], [0.5; 3]), "far off to the side");
+        assert!(
+            !c.touches([200.0, -2.0, -20.0], [0.5; 3]),
+            "far off to the side"
+        );
         assert!(!c.touches([0.0, -200.0, -20.0], [0.5; 3]), "under the box");
         assert!(!c.touches([0.0, 400.0, -20.0], [0.5; 3]), "past the reach");
     }
@@ -940,7 +962,10 @@ mod tests {
                 assert!((d - d.round()).abs() < 1e-4, "{d}");
             }
         }
-        assert!(kept >= 26, "a tenth-texel step kept the origin only {kept} times of 30");
+        assert!(
+            kept >= 26,
+            "a tenth-texel step kept the origin only {kept} times of 30"
+        );
     }
 
     #[test]
@@ -1051,7 +1076,11 @@ mod tests {
             }
         }
         for (i, d) in drawn.iter().enumerate().skip(1) {
-            assert!((3..=5).contains(d), "cascade {i} drawn {d} times in {} frames", period * 4);
+            assert!(
+                (3..=5).contains(d),
+                "cascade {i} drawn {d} times in {} frames",
+                period * 4
+            );
         }
     }
 
@@ -1135,8 +1164,14 @@ mod tests {
             let above: V3 = std::array::from_fn(|i| ground[i] + up[i] * 2.0);
             assert!(k.project(above)[2] < k.project(ground)[2]);
             let far = p.cascades.last().unwrap();
-            assert!(far.touches(f.vector([10.0, 80.0, -30.0]), [8.0; 3]), "over the face");
-            assert!(!far.touches(f.vector([10.0, -400.0, -30.0]), [8.0; 3]), "under its ground");
+            assert!(
+                far.touches(f.vector([10.0, 80.0, -30.0]), [8.0; 3]),
+                "over the face"
+            );
+            assert!(
+                !far.touches(f.vector([10.0, -400.0, -30.0]), [8.0; 3]),
+                "under its ground"
+            );
         }
     );
 }
