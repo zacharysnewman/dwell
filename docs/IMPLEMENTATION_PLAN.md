@@ -61,7 +61,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 41 — Half-height grid (½ m cells, stored cardinal ramps) | 🚧 In progress — adopted for `main` (owner, 2026-10-20; ADR 0042): H0–H6 built and verified locally (½ m cells, stored ramps, nothing adaptive; the slopes V2; `main` 0.21.4 merged in); H7, the adoption: protocol 18, generator 19, the adaptive blocks removed, the experiment wording gone, `main`'s 1 m work checked on ½ m cells (HALF_HEIGHT_GRID.md §9). Outstanding: CI; the bench numbers against 0.21.x; the owner raises `package.json` to 0.22.0 at the merge (a new compatibility line). Deviations: brushes, a fluid's surface drop, the chunk view sphere and structures stay in cells; the LOD draws natural tops flat |
 | 42 — Smooth LOD transitions | 🚧 In progress — built and tested natively and in Chrome on the GPU: a dithered cross-fade on every LOD swap (`dwell-lod` `fade.rs`; chunks, sections, stand-ins, skirts, water; no ink on the outgoing level) and hysteresis in the selection, both data (`shared/look/lodblend.json`); outstanding: CI, the owner's review in a browser; a patch release |
 | 43 — Ambient light | 🚧 In progress — built and tested natively and in Chrome on the GPU: classic corner AO and baked ray-traced sky visibility per terrain vertex (dwell-mesh `sky.rs`, data `shared/look/ambient.json`), the hemisphere light scaled by it, the twilight and night keyframes retuned; outstanding: CI; a patch release |
-| 44 — Sun and moon shadows (cascaded shadow maps, the lighting's layer 2) | 🚧 In progress — built and tested natively, in Vitest and in Chrome on the GPU: up to four cascades per the Shadows setting (Off / Low / High, data in `shared/look/shadows.json`), texel-snapped sphere fits, casters (terrain, plants, LOD, bodies, your own), a soft PCF on the direct term only, faded by the time of day and past the last cascade to layer 1's stand-in; outstanding: CI, the owner's look, High's cost target (+3–6 ms measured on a busy machine; a follow-up); a patch release |
+| 44 — Sun and moon shadows (cascaded shadow maps, the lighting's layer 2) | 🚧 In progress — built and tested natively, in Vitest and in Chrome on the GPU: up to four cascades per the Shadows setting (Off / Low / High, data in `shared/look/shadows.json`), texel-snapped sphere fits, casters (terrain, plants, LOD, bodies, your own), a soft PCF on the direct term only, faded by the time of day and past the last cascade to layer 1's stand-in; High's cost cut to ≤ 1.2 ms over Off on the M1 (eye-centred boxes, kept far maps, a depth-only casters' stage; High stays the desktop default); outstanding: CI, the owner's look; a patch release |
 | 45 — Flood light | 🚧 In progress — built and tested natively and in Chrome on the GPU (ADR 0045, DAY_NIGHT.md §11): per-cell sky and block light on the client (`dwell_world::light`, data `shared/look/light.json` and the blocks' `lightFilter`/`emits`), relit on edits and predicted edits, the mesher's smooth `flood` stream, ambient and the direct sun and moon scaled by it (carved tunnels no longer lit like day); follow-up: the streaming stalls fixed (coalesced seeded unloads, no cascade under a chunk held over open air, light and mesh budgets of their own that scale on a slow page; flying back to 0.22.8's frames; generation workers refilled between frames, so a slow page's terrain finishes generating, the native-server e2e tests); outstanding: CI, the owner's review; characters (your arms, held items, players) lit by the cells they are in, eased; the shadow maps' stand-in past their last cascade; water and see-through faces take the flood light (dark in caves with Shadows Off; darkness verified with Shadows Off on both faces, DAY_NIGHT.md §11) |
 | 46 — Distant terrain shadows (the lighting's layer 3) | 🚧 In progress — built and tested natively and in Chrome on the GPU (ADR 0046, DAY_NIGHT.md §12): heightmaps of the terrain as drawn, filled a budgeted slice a frame, horizon maps swept from them a band a frame, one horizon sample per far fragment blended into the cascades at their edge, both faces, per the Shadows setting (none on a CPU adapter); data `shared/look/lodshadows.json`. Measured +0.5–0.9 ms GPU a frame on the M1 (busy machine), no main-thread change. Outstanding: CI; the owner's look; a measurement on an idle machine |
 
@@ -4448,7 +4448,8 @@ Deviations
 ## Phase 44 — Sun and Moon Shadows: Cascaded Shadow Maps
 
 **Status:** Built and tested natively, in Vitest and in Chrome on the GPU (2026-10-21).
-Outstanding: CI; the owner's look; High's cost target (a follow-up). No change to saves, the protocol or terrain: a patch release.
+Follow-up (2026-10-21, the cost pass): the cascades became boxes around the eye with kept far maps, and High met its cost target (DAY_NIGHT.md §10, Cost).
+Outstanding: CI; the owner's look. No change to saves, the protocol or terrain: a patch release.
 
 Owner (2026-10-21): real sun and moon shadows with cascaded shadow maps, the lighting plan's layer
 2 over layer 1's flood-fill sky and block light (built on its own branch), replacing layer 1's
@@ -4463,8 +4464,8 @@ Deliverables
   `shadows.gen.rs`) and `shadows.test.mjs`; in CI.
 - [x] `dwell-look` `shadows`: the Shadows setting's levels and tiers, the light that casts (the sun
   over the viewer's face, else the moon) and its strength by elevation.
-- [x] `render/shadows.rs`: the practical split, the slice's bounding-sphere fit (radius rounded to
-  a step), texel snapping in world f64, the cascade matrices, the casters' box test, the uniform
+- [x] `render/shadows.rs`: the practical split, the box fit around the eye (half-size rounded to
+  a step, with the far cascades' slack) and the kept maps' schedule (the cost pass), texel snapping in world f64, the cascade matrices, the casters' box test, the uniform
   block, the maps on the GPU; `shadows_for` (Low at most on a CPU adapter).
 - [x] The shadow passes before the scene's: chunk terrain, LOD sections and stand-ins, cutout
   plants (alpha-tested, distance-faded), the LOD cross-fade's dither, other players' bodies and
@@ -4485,14 +4486,20 @@ Exit criteria
   (shader-source test); the WGSL validates with the new entry points; the setting's data,
   defaults and append-only store (Vitest, `shadows.test.mjs`).
 - [x] Measured on the bench per level (DAY_NIGHT.md §10, Cost; on a busy machine).
-- [ ] The cost targets (High ≤ 3 ms, Low ≤ 1 ms on the M1): Low meets it on the lowest frames;
-  High is +3–6 ms at the spawn and in a grove — moved to a follow-up (coarser far casters), with a
-  measurement on an idle machine.
+- [x] The cost targets (High ≤ 3 ms, Low ≤ 1 ms on the M1; the owner later asked ≤ 1.5 ms for High):
+  after the cost pass (2026-10-21), High is ≈ 0 at the spawn, +1.2 ms in the grove and +0.3 ms
+  climbing fast; Low is ≈ 0, +0.9 and +0.2 ms (gpu.frame p50 over Off, DAY_NIGHT.md §10, Cost).
 - [x] Checked in Chrome on the GPU: noon and morning shadows of terraces, players and pines, your own
   shadow in first person, dusk, midnight under the moon, on face A and face B, at each level
   (shots in the PR).
 
 Deviations
+- The cost pass (2026-10-21) replaced the view-fitted sphere fits with boxes around the eye. Far maps
+  are kept between frames (`shadows::Cache`: redrawn when the eye leaves the slack, the light turns
+  0.25°, their casters change or players move, at most one a frame). High dropped to 3 cascades and
+  a 2×2 PCF. Your own body casts into the nearest cascade only. The fade to the stand-in is by
+  distance from the eye, not view depth. Tests pin the schedule, the slack and the box culling (both
+  faces).
 - Layer 1's stand-in isn't on `main` yet: past the maps the factor is 1 (`scene_out` passes the
   stand-in; layer 1 puts its direct × sky light there when it lands).
 - Clouds' shadows are a hook only (CLOUDS.md lists them as future).

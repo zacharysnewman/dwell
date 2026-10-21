@@ -34,7 +34,7 @@ use dwell_look::lod_shadows::LOD_SHADOWS;
 use dwell_look::motion::{MOTION, vanishing_point};
 use dwell_look::outline::{OUTLINE, OutlineMode, outline_uniforms};
 use dwell_look::reflections::{REFLECTIONS, reflection_uniforms};
-use dwell_look::shadows::{SHADOWS, ShadowQuality};
+use dwell_look::shadows::{SHADOWS, ShadowQuality, ShadowTier};
 use dwell_look::{DEFAULT_EXPOSURE, hex, sanitize_exposure, srgb_to_linear};
 use dwell_mesh::{ChunkMeshes, FlatMesh, MeshArrays, SectionMeshes};
 use dwell_world::fluid::EyeFluid;
@@ -742,6 +742,37 @@ fn shadow_fs(d: &DrawItem) -> bool {
     d.kind == Kind::Cutout || d.fade != 0.0 || d.clip.is_some()
 }
 
+/// A shadow caster this frame (`Renderer::shadow_candidates`): its draw, its box (centre relative
+/// to the eye, half-size) and its identity.
+struct Candidate {
+    draw: DrawItem,
+    centre: V3,
+    half: V3,
+    id: u64,
+}
+
+/// Whether a candidate's kind casts into cascade `i` at all: plants into the nearest
+/// `plantCascades` only (their alpha-tested blades cost the most per texel).
+fn casts_into(c: &Candidate, _cascade: &shadows::Cascade, i: usize, tier: &ShadowTier) -> bool {
+    c.draw.kind != Kind::Cutout || i < tier.plant_cascades as usize
+}
+
+/// The signature of the casters a cascade's box holds (`shadows::signature`): it changes when one
+/// of them comes, goes or changes, and then a kept map is drawn again.
+fn caster_signature(
+    candidates: &[Candidate],
+    cascade: &shadows::Cascade,
+    i: usize,
+    tier: &ShadowTier,
+) -> u64 {
+    shadows::signature(
+        candidates
+            .iter()
+            .filter(|c| casts_into(c, cascade, i, tier) && cascade.touches(c.centre, c.half))
+            .map(|c| c.id),
+    )
+}
+
 /// A fluid draw's `rotation`: no turn, and its origin wrapped for the normal detail.
 fn fluid_rotation(origin: V3) -> [f32; 4] {
     let [x, z] = water::wrapped_origin(origin);
@@ -826,7 +857,7 @@ pub struct Renderer {
     shadow_quality: ShadowQuality,
     /// The last frame's shadow plan (the cascades as drawn: `shadows::stagger`) and a frame count
     /// for the far cascades' turns.
-    shadow_prev: Option<shadows::Plan>,
+    shadow_cache: shadows::Cache,
     shadow_frame: u64,
     /// The distant terrain's shadows (lod_shadows.rs; docs/DAY_NIGHT.md §12): its heightmaps (a
     /// 1×1 stand-in while off), their fills' turns, the fills' pipelines by (kind, with a fragment
@@ -1229,10 +1260,17 @@ impl Renderer {
                 Kind::Flat => ("flat_vs", "shadow_flat_fs", &flat_attrs),
                 _ => ("cutout_vs", "shadow_cutout_fs", &cutout_attrs),
             };
+            // Drawn in full (no fragment stage): the depth-only vertex stage, which reads the
+            // position alone.
+            let (vs, attributes) = match (kind, fs) {
+                (Kind::Terrain, false) => ("shadow_terrain_vs", vec![a.1[0]]),
+                (Kind::Flat, false) => ("shadow_flat_vs", vec![a.1[0]]),
+                _ => (vs, a.1.clone()),
+            };
             let buffers = [Some(wgpu::VertexBufferLayout {
                 array_stride: a.0,
                 step_mode: wgpu::VertexStepMode::Vertex,
-                attributes: &a.1,
+                attributes: &attributes,
             })];
             let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                 label: Some(if fs { entry } else { vs }),
@@ -1455,7 +1493,7 @@ impl Renderer {
             shadow_maps,
             shadow_pipelines,
             shadow_quality: ShadowQuality::default(),
-            shadow_prev: None,
+            shadow_cache: shadows::Cache::default(),
             shadow_frame: 0,
             lod_maps,
             lod_schedule: lod_shadows::Schedule::new(1),
@@ -1703,7 +1741,7 @@ impl Renderer {
         if self.shadow_maps.size != size {
             self.shadow_maps = self.frame_bindings.shadow_maps(&self.device, size);
             // New maps hold nothing: every cascade is drawn next frame.
-            self.shadow_prev = None;
+            self.shadow_cache.clear();
         }
         if self.lod_maps.size != lod_size {
             self.lod_maps = self
@@ -2472,36 +2510,55 @@ impl Renderer {
         // The sun's or moon's shadow maps (shadows.rs): this frame's cascades, their casters, and
         // each cascade's frame (the near pass's, with the cascade's matrix as view_proj).
         self.ensure_shadow_maps();
-        // The near cascade every frame, the others in turn (`shadows::stagger`).
-        let mut shadow_plan = self.shadow_plan(&basis);
-        let mut shadow_mask = 0u8;
-        if let Some(p) = &mut shadow_plan {
-            let (used, mask) = shadows::stagger(
-                self.shadow_prev.as_ref(),
+        // The nearest cascade every frame; a far one only when it must be drawn again, at most
+        // `farPerFrame` a frame (`shadows::Cache`): the others are read as kept.
+        let shadow_plan = self.shadow_plan();
+        let candidates = shadow_plan
+            .as_ref()
+            .map(|_| self.shadow_candidates(chunk_fade))
+            .unwrap_or_default();
+        let shadow_frame = shadow_plan.as_ref().map(|p| {
+            let moving = !self.players.is_empty();
+            let wants = self.shadow_cache.wants(
+                &SHADOWS,
                 p,
                 self.eye,
                 self.shadow_frame,
-                false,
+                moving,
+                &mut |i, c| caster_signature(&candidates, c, i, &p.tier),
             );
-            p.cascades = used;
-            shadow_mask = mask;
+            self.shadow_cache.schedule(p, &wants, self.eye)
+        });
+        if let (Some(p), Some(f)) = (&shadow_plan, &shadow_frame) {
+            let n = self.shadow_frame;
+            self.shadow_cache.drew(p, f, n, &|i| {
+                f.cascades[i].map_or(0, |c| caster_signature(&candidates, &c, i, &p.tier))
+            });
             self.shadow_frame += 1;
+            crate::telemetry::sample("shadow.drawn", f64::from(f.draw.count_ones()));
+        } else {
+            // No light casts (night between the lights, or Off): nothing kept is current.
+            self.shadow_cache.clear();
         }
-        self.shadow_prev = shadow_plan.clone();
+        let shadow_mask = shadow_frame.as_ref().map_or(0, |f| f.draw);
         self.queue.write_buffer(
             &self.shadow_maps.uniform,
             0,
-            floats(&shadows::uniforms(&SHADOWS, shadow_plan.as_ref())),
+            floats(&shadows::uniforms(
+                &SHADOWS,
+                shadow_plan.as_ref().zip(shadow_frame.as_ref()),
+            )),
         );
         let casters = shadow_plan
             .as_ref()
-            .map(|p| self.collect_casters(p, shadow_mask, chunk_fade))
+            .zip(shadow_frame.as_ref())
+            .map(|(p, f)| self.collect_casters(&candidates, p, f))
             .unwrap_or_default();
-        if let (Some(p), Some(mut u)) = (&shadow_plan, near_uniforms) {
-            for (i, (c, buffer)) in p.cascades.iter().zip(&self.shadow_maps.frames).enumerate() {
-                if shadow_mask & (1 << i) == 0 {
+        if let (Some(f), Some(mut u)) = (&shadow_frame, near_uniforms) {
+            for (i, (c, buffer)) in f.cascades.iter().zip(&self.shadow_maps.frames).enumerate() {
+                let Some(c) = c.filter(|_| shadow_mask & (1 << i) != 0) else {
                     continue;
-                }
+                };
                 for (k, col) in c.view_proj.iter().enumerate() {
                     u[k * 4..k * 4 + 4].copy_from_slice(col);
                 }
@@ -2964,51 +3021,24 @@ impl Renderer {
 
     /// This frame's shadow plan (shadows.rs): the setting's cascades around this view, from the
     /// light over the viewer's face; none when the setting is Off or neither light is up.
-    fn shadow_plan(&self, basis: &Basis) -> Option<shadows::Plan> {
-        let aspect = f64::from(self.size.0) / f64::from(self.size.1);
-        let tan_y = (self.frame_fov().to_radians() / 2.0).tan();
-        let view = shadows::View {
-            eye: self.eye,
-            forward: basis.forward(),
-            right: basis.right,
-            up: basis.up,
-            tan_x: tan_y * aspect,
-            tan_y,
-        };
+    fn shadow_plan(&self) -> Option<shadows::Plan> {
         let caster = dwell_look::shadows::caster(&SHADOWS, &self.day, self.face.sign_f64());
         shadows::plan(
             &SHADOWS,
             self.shadows(),
             caster,
-            &view,
+            self.eye,
             self.day.axis,
             self.magnification,
         )
     }
 
-    /// The shadow casters of a plan's cascades: chunk terrain and cutout plants, LOD sections and
-    /// stand-ins (their skirts as shown), each with the cascades it reaches (bit per cascade in
-    /// `passes`), in the order they are drawn (by pipeline, then page). Water casts none. A draw in
-    /// an LOD swap casts with its fade, so the two levels share the map (`shadow_terrain_fs`).
-    fn collect_casters(
-        &self,
-        plan: &shadows::Plan,
-        mask: u8,
-        chunk_fade: &dyn Fn(ChunkCoord) -> Option<Fade>,
-    ) -> Vec<DrawItem> {
-        let bits = |origin: V3, size: V3| -> u8 {
-            let r = self.rel(origin);
-            let half = size.map(|s| s * 0.5);
-            let centre: V3 = std::array::from_fn(|k| f64::from(r[k]) + half[k]);
-            plan.cascades
-                .iter()
-                .enumerate()
-                .filter(|(i, _)| mask & (1 << i) != 0)
-                .fold(0u8, |m, (i, c)| {
-                    m | (u8::from(c.touches(centre, half)) << i)
-                })
-        };
-        let item = |kind, offset, clip, fade, mesh, passes| DrawItem {
+    /// What may cast into the shadow maps this frame (shadows.rs): chunk terrain and cutout
+    /// plants, LOD sections and stand-ins (their skirts as shown), each with its box and an
+    /// identity that changes when its mesh, its skirts or whether it is fading change (a kept map
+    /// is drawn again when the identities in it change, `caster_signature`). Water casts none.
+    fn shadow_candidates(&self, chunk_fade: &dyn Fn(ChunkCoord) -> Option<Fade>) -> Vec<Candidate> {
+        let item = |kind, offset, clip, fade, mesh| DrawItem {
             kind,
             water: false,
             no_depth: false,
@@ -3019,30 +3049,49 @@ impl Renderer {
             rotation: NO_ROTATION,
             mesh,
             page: 0,
-            passes,
+            passes: 0,
             key: 0,
         };
+        let boxed = |origin: V3, size: V3| -> (V3, V3) {
+            let r = self.rel(origin);
+            let half = size.map(|s| s * 0.5);
+            (std::array::from_fn(|k| f64::from(r[k]) + half[k]), half)
+        };
         let mut out = Vec::new();
+        let mut push = |d: DrawItem, (centre, half): (V3, V3), tag: u64| {
+            let (mesh, _) = self.mesh_of(&d.mesh);
+            let id = shadows::mix(tag)
+                ^ shadows::mix(
+                    (u64::from(mesh.first_index) << 32 | u64::from(mesh.base_vertex as u32))
+                        ^ (mesh.region.page as u64) << 56,
+                )
+                ^ u64::from(d.fade != 0.0) << 1
+                ^ u64::from(d.kind == Kind::Cutout);
+            out.push(Candidate {
+                draw: d,
+                centre,
+                half,
+                id,
+            });
+        };
         for (&coord, c) in &self.terrain.chunks {
             let Some(fade) = chunk_fade(coord).filter(|f| !f.is_hidden()) else {
                 continue;
             };
-            let passes = bits(c.origin, CHUNK_EXTENT_M);
-            if passes == 0 {
-                continue;
-            }
+            let b = boxed(c.origin, CHUNK_EXTENT_M);
             let r = self.rel(c.origin);
             let offset = [r[0], r[1], r[2], 1.0];
             let fade = fade.shader_value();
+            let tag = shadows::mix(coord.x as u64)
+                ^ shadows::mix(coord.y as u64).rotate_left(21)
+                ^ shadows::mix(coord.z as u64).rotate_left(42);
             if c.opaque.is_some() {
                 let mesh = DrawMesh::Chunk(coord, Part::Opaque);
-                out.push(item(Kind::Terrain, offset, None, fade, mesh, passes));
+                push(item(Kind::Terrain, offset, None, fade, mesh), b, tag);
             }
-            // Plants cast into the nearest cascades only (`plantCascades`).
-            let plants = passes & ((1u16 << plan.tier.plant_cascades.min(8)) - 1) as u8;
-            if c.cutout.is_some() && self.cutout_shown && plants != 0 {
+            if c.cutout.is_some() && self.cutout_shown {
                 let mesh = DrawMesh::Chunk(coord, Part::Cutout);
-                out.push(item(Kind::Cutout, offset, None, fade, mesh, plants));
+                push(item(Kind::Cutout, offset, None, fade, mesh), b, !tag);
             }
         }
         for &(id, mask, fade) in &self.terrain.shown {
@@ -3058,21 +3107,16 @@ impl Renderer {
                 continue;
             }
             let side = s.cell * 32.0;
-            let passes = bits(s.origin, [side, side * CELL_H, side]);
-            if passes == 0 {
-                continue;
-            }
+            let b = boxed(s.origin, [side, side * CELL_H, side]);
             let r = self.rel(s.origin);
             let offset = [r[0], r[1], r[2], s.cell as f32];
             let mesh = DrawMesh::Section(id, false, mask);
-            out.push(item(
-                Kind::Flat,
-                offset,
-                None,
-                fade.shader_value(),
-                mesh,
-                passes,
-            ));
+            let tag = shadows::mix(id as u64 ^ 0x5ec7_1000) ^ u64::from(mask) << 8;
+            push(
+                item(Kind::Flat, offset, None, fade.shader_value(), mesh),
+                b,
+                tag,
+            );
         }
         for st in self
             .terrain
@@ -3089,23 +3133,56 @@ impl Renderer {
             else {
                 continue;
             };
-            let passes = bits(st.lo, std::array::from_fn(|k| st.hi[k] - st.lo[k]));
-            if passes == 0 {
-                continue;
-            }
+            let b = boxed(st.lo, std::array::from_fn(|k| st.hi[k] - st.lo[k]));
             let r = self.rel(s.origin);
             let offset = [r[0], r[1], r[2], s.cell as f32];
             let clip = Some((self.rel(st.lo), self.rel(st.hi)));
             let mesh = DrawMesh::Section(st.id, false, 0);
-            out.push(item(
-                Kind::Flat,
-                offset,
-                clip,
-                st.fade.shader_value(),
-                mesh,
-                passes,
-            ));
+            let tag = shadows::mix(st.id as u64 ^ 0x57a2_d000)
+                ^ shadows::mix(
+                    st.lo[0].to_bits()
+                        ^ st.lo[1].to_bits().rotate_left(20)
+                        ^ st.lo[2].to_bits().rotate_left(40),
+                );
+            push(
+                item(Kind::Flat, offset, clip, st.fade.shader_value(), mesh),
+                b,
+                tag,
+            );
         }
+        out
+    }
+
+    /// The shadow casters of this frame's drawn cascades (`f.draw`): each candidate with the
+    /// cascades it reaches (a bit per cascade in `passes`; plants into the nearest
+    /// `plantCascades` only), in the order they are drawn (by pipeline, then page). A draw in an
+    /// LOD swap casts with its fade, so the two levels share the map (`shadow_terrain_fs`).
+    fn collect_casters(
+        &self,
+        candidates: &[Candidate],
+        plan: &shadows::Plan,
+        f: &shadows::Frame,
+    ) -> Vec<DrawItem> {
+        let mut out: Vec<DrawItem> = candidates
+            .iter()
+            .filter_map(|c| {
+                let passes = f
+                    .cascades
+                    .iter()
+                    .enumerate()
+                    .filter(|(i, _)| f.draw & (1 << i) != 0)
+                    .fold(0u8, |m, (i, k)| {
+                        let reach = k.is_some_and(|k| {
+                            casts_into(c, &k, i, &plan.tier) && k.touches(c.centre, c.half)
+                        });
+                        m | u8::from(reach) << i
+                    });
+                (passes != 0).then(|| DrawItem {
+                    passes,
+                    ..c.draw.clone()
+                })
+            })
+            .collect();
         for d in &mut out {
             d.page = self.mesh_of(&d.mesh).0.region.page;
             d.key = (u128::from(d.kind as u8) << 40)
@@ -3388,7 +3465,8 @@ impl Renderer {
                     *calls += 1;
                 }
             }
-            self.characters.draw_shadows(&mut pass, calls, triangles);
+            self.characters
+                .draw_shadows(&mut pass, i == 0, calls, triangles);
         }
     }
 

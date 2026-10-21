@@ -235,6 +235,15 @@ fn lambert_lit(albedo: vec3f, n: vec3f, frag_y: f32, l: TerrainLight) -> vec3f {
     return irradiance * albedo / PI;
 }
 
+// Whether `lambert_lit` gives a surface with normal `n` (at world y `frag_y`) any direct sun or
+// moon light: the shadow factor multiplies nothing where it doesn't.
+fn lit_by_direct(n: vec3f, frag_y: f32) -> bool {
+    let face = face_at(frag_y);
+    let d = frame.day;
+    return dot(n, d.sun.xyz) * own(d.sun.xyz, face) > 0.0
+        || dot(n, d.moon.xyz) * own(d.moon.xyz, face) > 0.0;
+}
+
 fn rrt_odt_fit(v: vec3f) -> vec3f {
     let a = v * (v + FIT_A) - FIT_B;
     let b = v * (FIT_C * v + FIT_D) + FIT_E;
@@ -363,7 +372,10 @@ fn scene_out(albedo: vec3f, n: vec3f, rel: vec3f, alpha: f32, light: TerrainLigh
     var o: SceneOut;
     // The shadow maps near the eye, the flood light's direct share beyond their last cascade.
     var l = light;
-    l.direct = shadow_light(rel, n, l.direct);
+    // A face turned away from both lights takes no direct light, so no lookup.
+    if (lit_by_direct(n, frame.eye.x + rel.y)) {
+        l.direct = shadow_light(rel, n, l.direct);
+    }
     o.color = vec4f(lambert_lit(albedo, n, frame.eye.x + rel.y, l), alpha);
     o.depth = frame_depth(view_depth(rel), true);
     return o;
@@ -662,6 +674,24 @@ fn flat_fs(i: FlatOut, @builtin(front_facing) front: bool) -> SceneOut {
 // the map texels its dither keeps, so the two levels share the map as they share the screen (it
 // holds all of one or the other); a stand-in keeps its clip box; plants keep their texels' alpha
 // and fade by their distance from the eye as they do on screen, so their shadows fade with them.
+// Casters drawn in full need only their depth: a vertex stage that reads the position alone
+// (the vertex buffer's first attribute, its stride unchanged) and writes nothing else.
+struct ShadowIn {
+    @location(0) position: vec3f,
+};
+
+@vertex
+fn shadow_terrain_vs(v: ShadowIn, @builtin(instance_index) k: u32) -> @builtin(position) vec4f {
+    let draw = draws[k];
+    return frame.view_proj * vec4f(draw.offset.xyz + v.position * draw.offset.w, 1.0);
+}
+
+@vertex
+fn shadow_flat_vs(v: ShadowIn, @builtin(instance_index) k: u32) -> @builtin(position) vec4f {
+    let draw = draws[k];
+    return frame.view_proj * vec4f(draw.offset.xyz + turn(draw, v.position * draw.offset.w), 1.0);
+}
+
 @fragment
 fn shadow_terrain_fs(i: TerrainOut) {
     if (fade_discard(draws[i.draw], i.clip.xy)) {
@@ -2110,6 +2140,8 @@ mod tests {
                 "tile_vs",
                 "noise_tile_fs",
                 "caustic_tile_fs",
+                "shadow_terrain_vs",
+                "shadow_flat_vs",
                 "shadow_terrain_fs",
                 "shadow_flat_fs",
                 "shadow_cutout_fs",

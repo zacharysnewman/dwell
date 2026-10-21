@@ -265,26 +265,45 @@ maps, `SHADOW_WGSL`), `dwell-look` `shadows.rs` (the setting, the light that cas
   neither is up (`caster`). Its strength fades in with its elevation (`lights.sun` 0° → 8°,
   `lights.moon` 2° → 12°), so the sun's shadows fade out at dusk and the moon's fade in. Face B
   sees the light over it: the same world directions, the other hemisphere (both faces are tested).
-- **Cascades** (`tiers`: Low 2 of 1024² out to 80 m, High 4 of 2048² out to 160 m): the view's
-  depth split by the practical split (`splitLambda` between even and logarithmic, the first slice
-  from the eye), each cascade an orthographic map fitted to its slice's **bounding sphere**. The
-  sphere depends on the slice's shape only, so it doesn't change as the camera turns, and its
-  radius is rounded up to `radiusStepM` so the speed boost's changing FOV changes it in steps. The
-  light's map axes follow the light alone (its y as near the sky's axis as it can be), and each
-  cascade's centre is **snapped to whole texels** across the light (in world f64): moving the eye
+- **Cascades** (`tiers`: Low 2 of 1024² out to 80 m, High 3 of 2048² out to 160 m): the shadow
+  distance split by the practical split (`splitLambda` between even and logarithmic, the first
+  cascade from the eye), each cascade an orthographic map of a **box around the eye** that holds
+  everything within its distance (2026-10-21, the cost pass: before, each was fitted to the bounding
+  sphere of its slice of the view, which turned with the camera). The box depends on the eye and
+  the light alone, never on where the camera looks, as Minecraft shaderpacks (BSL, Complementary,
+  Sildur's) centre their one shadow map on the player; its half-size is rounded up to `radiusStepM`.
+  The light's map axes follow the light alone (its y as near the sky's axis as it can be), and each
+  box's centre is **snapped to whole texels** across the light (in world f64): moving the eye
   moves the map by whole texels, so shadow edges don't shimmer (a test moves the eye in tenth-texel
   steps and checks a fixed world point keeps its place in the texel grid). The box reaches
   `casterReachM` (120 m) toward the light for casters above the view (cliffs, trees). While the
   spyglass zooms the shadow distance grows with its magnification up to `spyglassMaxM` (640 m), so
-  the zoomed view has shadows where it looks.
+  the zoomed view has shadows where it looks. Shadows fade to the stand-in over the last
+  `edgeFade` of the distance from the eye (a sphere, whichever way the camera looks).
+- **Kept maps** (`shadows::Cache`, the cost pass): the nearest cascade is drawn every frame (your
+  own body and other players move in it). A far cascade's box is `slack` (10 %) wider than its
+  distance, and its map is kept, read where it was drawn (rebased to the eye each frame), until it
+  must be drawn again: the eye has left the slack, the light has turned `lightTurnDeg` (0.25°; the
+  sun turns about 0.15° a second), the casters in its box changed (an order-free signature of their
+  mesh identities, skirts and whether they fade: a chunk meshed, replaced or dropped, an LOD swap
+  begun or ended), or other players are about (once every `refreshFrames`). At most `farPerFrame`
+  (1) far cascades are drawn in a frame, the most urgent first and then the longest kept, so a
+  frame never draws them all, whatever changed (no spikes); one not drawn yet for this light holds
+  nothing (`NO_CASCADE`), and its fragments take the next cascade or the far shadows. Standing or
+  walking, a frame draws only the nearest cascade. Tests pin the schedule (one a frame, kept until
+  something changes, the most urgent first, moving casters every `refreshFrames`), the slack and
+  the culling (both faces).
 - **Casters**: chunk terrain and LOD sections (depth only), cutout plants (their texels' alpha; faded
   by the eye's distance as they fade on screen, so a plant's shadow goes with it), pines and leaves
-  (terrain), other players' bodies and **your own** (drawn into the maps only, so you have a shadow
-  in first person). A draw in an LOD cross-fade keeps the map texels its dither keeps, so the two
+  (terrain), other players' bodies and **your own** (drawn into the nearest cascade's map only, so you
+  have a shadow in first person and no kept far map holds where you were). A draw in an LOD cross-fade keeps the map texels its dither keeps, so the two
   levels share the map as they share the screen; a stand-in keeps its clip box. Water casts none.
-  Both sides of every face cast; the casters' pipelines take a slope-scaled depth bias
-  (`bias.slopeScale`).
-- **Receiving**: `scene_out` (terrain, plants, LOD, every opaque scene surface), the characters'
+  Opaque casters draw their faces toward the light, those drawn in full through a depth-only
+  vertex stage that reads the position alone (`shadow_terrain_vs`, `shadow_flat_vs`); plants cast
+  from both sides; a caster is drawn into a cascade when its box overlaps the cascade's box. The
+  casters' pipelines take a slope-scaled depth bias (`bias.slopeScale`).
+- **Receiving**: `scene_out` (terrain, plants, LOD, every opaque scene surface; a face turned
+  away from both lights skips the lookup, `lit_by_direct`, since nothing multiplies it), the characters'
   key light (a body in shade shows its ramp's middle at most) and the water's glint, sparkle,
   in-scatter and foam. A fragment takes the first cascade that holds it, offsets its lookup along
   its normal by `normalOffsetTexels` of that cascade's texels, subtracts `depthBiasM`, and filters
@@ -318,21 +337,45 @@ shadows-low,shadows-off --unthrottled`, the baseline High).
 | fly-low-fast (flight) | 12.0 (6.6) | 11.3 (6.8) | 10.4 (5.6) | +1.6 (+1.0) | +0.9 (+1.1) |
 | fly-high (flight) | 10.1 (5.5) | 10.7 (5.1) | 11.0 (6.4) | ≈ 0 | ≈ 0 |
 
-Triangles drawn into the maps (`shadow.ktris`): idle 331k on High, 487k on Low (Low's second
-cascade covers the whole 80 m slice and is drawn every other frame); grove 186k / 317k; flying
-low 35k / 54k; flying high 20k. The targets (High ≤ 3 ms, Low ≤ 1 ms on the M1) are met by Low on
-the lowest frames, not yet by High at the spawn and in the grove: the casters' triangles dominate
-(the chunk meshes are the scene's own, AO-split and fine), and the plants' alpha-tested blades cost
-most per texel. Already in: casters culled to each slice's light-space footprint, opaque casters
-drawing only their light-facing faces, the far cascades taking turns (`refreshFrames`), plants in
-the nearest cascades only (`plantCascades`), a 120 m caster reach. Next steps for High, a
-follow-up: coarser caster meshes for the far cascades, a lower far resolution, or three cascades;
-measured again on an idle machine.
+**After the cost pass** (2026-10-21: eye-centred boxes, kept far maps, a depth-only vertex stage,
+no lookup on faces turned from the light, High at 3 cascades and a 2×2 PCF). `gpu.frame` p50 (ms)
+on the same machine and settings, one run each, load average 4–8 (the before row above was taken
+the same morning at a load average of 5–18):
 
-**Extending it**: the tiers, the bias, the fades and the distances are data; a tier is a new entry
+| Scenario | High | Low | Off | High − Off | Low − Off | `gpu.shadows` p50 High (before) |
+| --- | --- | --- | --- | --- | --- | --- |
+| idle-spawn | 8.4 | 8.2 | 8.3 | ≈ 0 (was +5.3) | ≈ 0 (was +1.7) | 0.52 (3.83) |
+| shadows-pines | 11.2 | 10.9 | 10.0 | +1.2 (was +3.0) | +0.9 (was +1.3) | 0.37 (1.03) |
+| climb-fast | 4.8 | 4.6 | 4.5 | +0.3 (was +0.8) | +0.2 (was +0.4) | 0.36 (0.45) |
+
+Standing, a frame draws the nearest cascade alone (`shadow.drawn` 1). Climbing at 176 m/s it draws
+at most one far cascade more; the frame interval's max is the same as Off's (32.9 against 32.6 ms),
+so no spikes. High meets its target (≤ 1.5 ms over Off on the M1) and stays the desktop default.
+What is left on High is mostly the receivers' lookup in the near pass (about +1 ms in the grove).
+The look is unchanged in the bench's shots: near shadows, the cascades' far edge and the dusk
+mountains, on both faces.
+
+Minecraft mods' patterns, taken and not taken:
+- *Taken:* the shaderpacks' player-centred shadow box (BSL, Complementary, Sildur's on
+  Iris/OptiFine). Here as cascades, so the map can be kept while the camera turns.
+- *Taken:* the shadow pass draws opaque geometry depth-only, with plants only near and entities
+  only where they matter (Sodium/Iris).
+- *Taken:* Distant Horizons leaves far shadows to cheaper means: the cascades end at 160 m on the
+  horizon maps (§12).
+- *Taken:* caching and staggering, and texel snapping to keep cached maps steady (engine
+  practice, not the mods').
+- *Not taken:* the shaderpacks' single map with a fisheye distortion. Our greedy-merged quads are
+  long, and a nonlinear warp of their vertices bends their shadows. The warp also moves with the
+  player, so the texel grid can't be snapped and edges shimmer as you move.
+- *Not taken:* the camera frustum extruded toward the sun (Iris's shadow culling). It would tie a
+  far map to the view direction, and turning would draw it again; the box test around the eye
+  culls almost as much once the map is kept.
+
+**Extending it**: the tiers, the bias, the fades, the distances and the kept maps' slack, turn and
+budget are data; a tier is a new entry
 of `tiers` with the setting's name added to `ShadowQuality` and the menu's choices (the shader
-takes up to four cascades). The vocabulary in code is small: the split, the sphere fit, the texel
-snap, the PCF grid.
+takes up to four cascades). The vocabulary in code is small: the split, the box around the eye,
+the texel snap, the schedule's reasons, the PCF grid.
 
 ## 11. Flood light: sky and block light per cell
 
