@@ -89,7 +89,7 @@ pub fn prefetch(seeds: &[u64]) {
 /// Installs a map from its bytes (`build_bytes`); returns its seed. Refused when damaged or made
 /// by another build.
 pub fn install(bytes: &[u8]) -> Result<u64, String> {
-    let (_, seed) = codec::peek(bytes)?;
+    let seed = codec::verify(bytes)?;
     let s = slot(seed);
     if s.get().is_some() {
         return Ok(seed);

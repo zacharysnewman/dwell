@@ -1,15 +1,25 @@
 // A job worker (ARCHITECTURE.md §5.1, ADR 0007): its own instance of the Rust client's WASM runs
 // the jobs the main thread's pool posts (generation, LOD sections, the map, meshing), one
 // transferred buffer each way (web/jobs.rs).
-import { JobWorker, loadWasm } from './wasm';
+// The same script builds a world map on its own (`buildMap`, ADR 0049): a worker the page starts
+// for one face's map and ends once it has the bytes.
+import { JobWorker, buildWorldMap, installWorldMap, loadWasm } from './wasm';
+
+type Init = {
+  t: 'init';
+  generatorVersion?: number;
+  worldSeed?: bigint;
+  /** The world's maps (faces A and B), installed before the world's generator is made. */
+  maps?: Uint8Array[];
+};
+type BuildMap = { t: 'buildMap'; seed: bigint; face: number };
 
 interface WorkerScope {
-  postMessage(message: ArrayBuffer | { memory: number }, transfer?: Transferable[]): void;
-  onmessage:
-    | ((
-        e: MessageEvent<ArrayBuffer | { t: 'init'; generatorVersion?: number; worldSeed?: bigint }>,
-      ) => void)
-    | null;
+  postMessage(
+    message: ArrayBuffer | { memory: number } | { map?: Uint8Array; error?: string },
+    transfer?: Transferable[],
+  ): void;
+  onmessage: ((e: MessageEvent<ArrayBuffer | Init | BuildMap>) => void) | null;
 }
 const scope = self as unknown as WorkerScope;
 
@@ -37,8 +47,20 @@ scope.onmessage = (e) => {
     else queued.push(msg);
     return;
   }
+  if (msg.t === 'buildMap') {
+    void loadWasm().then(() => {
+      try {
+        const map = buildWorldMap(msg.seed, msg.face);
+        scope.postMessage({ map }, [map.buffer as ArrayBuffer]);
+      } catch (err) {
+        scope.postMessage({ error: err instanceof Error ? err.message : String(err) });
+      }
+    });
+    return;
+  }
   void loadWasm().then((exports) => {
     memory = (exports as { memory?: WebAssembly.Memory }).memory ?? null;
+    for (const map of msg.maps ?? []) installWorldMap(map);
     const w =
       msg.generatorVersion === undefined || msg.worldSeed === undefined
         ? JobWorker.mesher()

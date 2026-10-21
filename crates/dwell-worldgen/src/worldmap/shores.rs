@@ -74,7 +74,12 @@ impl Shores {
                 {
                     return false;
                 }
-                let (e, w, s, nn) = (lake(i + 1, j), lake(i - 1, j), lake(i, j + 1), lake(i, j - 1));
+                let (e, w, s, nn) = (
+                    lake(i + 1, j),
+                    lake(i - 1, j),
+                    lake(i, j + 1),
+                    lake(i, j - 1),
+                );
                 (e && s) || (s && w) || (w && nn) || (nn && e)
             };
             let mut sdf = Vec::with_capacity((w * h) as usize);
@@ -122,9 +127,8 @@ impl Shores {
             }
             let (i, j) = (fu.floor() as i64, fv.floor() as i64);
             let (tx, tz) = (fu - i as f64, fv - j as f64);
-            let at = |a: i64, b: i64| {
-                f64::from(f.sdf[(b.min(f.h - 1) * f.w + a.min(f.w - 1)) as usize])
-            };
+            let at =
+                |a: i64, b: i64| f64::from(f.sdf[(b.min(f.h - 1) * f.w + a.min(f.w - 1)) as usize]);
             let top = at(i, j) + (at(i + 1, j) - at(i, j)) * tx;
             let bottom = at(i, j + 1) + (at(i + 1, j + 1) - at(i, j + 1)) * tx;
             let sdf = top + (bottom - top) * tz;

@@ -59,6 +59,22 @@ fn gen_world(g: &BifacialTerrain, c: ChunkCoord) -> Chunk {
     chunk
 }
 
+/// The steepest column of a 250 m grid within 12 km of the centre (by its slope over ±4 m).
+fn steepest_near_centre(g: &TerrainGenerator) -> (i32, i32) {
+    let mut best = (0.0f32, (0, 0));
+    for z in (-12_000..=12_000).step_by(250) {
+        for x in (-12_000..=12_000).step_by(250) {
+            let dx = g.column_at(x + 4, z).height - g.column_at(x - 4, z).height;
+            let dz = g.column_at(x, z + 4).height - g.column_at(x, z - 4).height;
+            let slope = dx.hypot(dz) / 8.0;
+            if slope > best.0 {
+                best = (slope, (x, z));
+            }
+        }
+    }
+    best.1
+}
+
 /// Where the island's coast crosses the +x axis (the first sea column, 16 m steps).
 fn coast_on_axis(g: &TerrainGenerator) -> (i32, i32) {
     let mut x = 0;
@@ -131,7 +147,8 @@ fn heights_a_low_shore_land_rising_inland_a_shallow_sea_floor() {
     }
     // Face-local heights from the midplane: sea level 32, the core's top 10.
     let sea = dwell_world::SEA_LEVEL_M as f32;
-    assert!(highest > sea + 300.0 && highest < sea + 650.0, "{highest}");
+    // The world map's mountains (ADR 0049): the uplift layer's ranges, 770–1,000 m.
+    assert!(highest > sea + 600.0 && highest < sea + 1200.0, "{highest}");
     assert!(
         lowest >= (dwell_world::CORE_M as f32) && lowest > sea - 30.0,
         "{lowest}"
@@ -377,12 +394,14 @@ fn the_flat_world_and_retired_versions_are_unchanged_by_the_sandbox() {
 
 #[test]
 fn the_fill_grass_over_dirt_sand_at_the_shore_sea_to_its_level() {
+    use dwell_worldgen::terrain::{Band, bands};
     let g = TerrainGenerator::new(0);
     let (cx, cz) = coast_on_axis(&g);
     let (mut water, mut grass, mut sand, mut decorated) = (0, 0, 0, 0);
     // Depths and the shore in rows of cells.
     let r = |m: f64| rows_for_m(m);
-    for x in (cx - 200..=cx + 200).step_by(40) {
+    // From the coastal plain's grass out over its beach into the sea.
+    for x in (cx - 1600..=cx + 200).step_by(60) {
         let h = g.ground_y(x, cz).expect("inside");
         for cy in [floor_div(h, S) - 1, floor_div(h, S), floor_div(h, S) + 1] {
             let c = chunk_of(x, cy * S, cz);
@@ -390,6 +409,8 @@ fn the_fill_grass_over_dirt_sand_at_the_shore_sea_to_its_level() {
             for z in 0..S {
                 for lx in 0..S {
                     let ground = g.ground_y(c.x * S + lx, c.z * S + z).expect("inside");
+                    let col = g.column_at(c.x * S + lx, c.z * S + z);
+                    let water_row = col.water_row();
                     for y in 0..S {
                         let wy = c.y * S + y;
                         // face-boundary: this test is of face A's generator alone
@@ -399,24 +420,35 @@ fn the_fill_grass_over_dirt_sand_at_the_shore_sea_to_its_level() {
                         // A stored ramp topping a column is its material, shaped.
                         let m = material(chunk.get(lx, y, z));
                         let depth = ground - wy;
-                        if depth == -1 && wy >= SEA_LEVEL && decoration(m) {
+                        if depth == -1 && wy >= water_row && decoration(m) {
                             decorated += 1;
-                        } else if depth < 0 && wy >= SEA_LEVEL && placed(m) {
+                        } else if depth < 0 && wy >= water_row && placed(m) {
                             // A placed structure's (tests/placements.rs).
                         } else if depth < 0 {
-                            assert_eq!(m, if wy < SEA_LEVEL { M.water } else { M.air });
+                            assert_eq!(m, if wy < water_row { M.water } else { M.air });
                             water += i32::from(m == M.water);
                         } else if wy < MIDPLANE_Y + CORE_LAYERS {
                             // face-boundary: face A's core
                             assert_eq!(m, core_at(wy)); // the core, on the bedrock
-                        } else if ground < SEA_LEVEL + r(2.0) {
-                            // Under the sea the top holds it (its flooded state; any block).
+                        } else if col.band == Band::Shore {
+                            // The shore and every bed under water (the top holds the water: its
+                            // flooded state; any block); low shores only by the sea.
+                            assert!(
+                                ground < SEA_LEVEL + r(2.0) || col.water != terrain::Water::None
+                            );
                             let m = dwell_blocks::with_property(m, "flooded", "false").unwrap_or(m);
                             assert_eq!(m, if depth < r(3.0) { M.sand } else { M.stone });
                             sand += i32::from(m == M.sand);
+                        } else if col.band == Band::Rock {
+                            assert_eq!(m, M.stone);
                         } else {
-                            let want = if depth == 0 {
+                            let top = if col.band == Band::Snow {
+                                bands().snow
+                            } else {
                                 M.grass
+                            };
+                            let want = if depth == 0 {
+                                top
                             } else if depth <= r(3.0) {
                                 M.dirt
                             } else {
@@ -431,23 +463,42 @@ fn the_fill_grass_over_dirt_sand_at_the_shore_sea_to_its_level() {
         }
     }
     assert!(
-        water > 1000 && grass > 100 && sand > 100 && decorated > 10,
+        water > 200 && grass > 100 && sand > 100 && decorated > 10,
         "{water} {grass} {sand} {decorated}"
     );
 }
 
 #[test]
-fn players_spawn_on_level_open_ground_near_the_origin() {
+fn players_spawn_on_level_dry_ground_by_a_river_not_on_a_peak() {
+    // terrain.json `spawn` (ADR 0049): level dry land, low (not a peak), by a river when one is
+    // near, the suitable land nearest the disc's centre first.
+    let rule = dwell_worldgen::terrain::SURFACE;
+    let mut by_river = 0;
     for seed in 0..16u64 {
         let s = spawn_point_for(GENERATOR_TERRAIN, seed);
         let mut world = VoxelWorld::new(generator_for(GENERATOR_TERRAIN, seed), None);
         // The feet stand on the top of a level patch's top cell (row g): no ramp tops it.
         let (x, g, z) = (s[0].floor() as i32, row_of_m(s[1]) - 1, s[2].floor() as i32);
         assert_eq!(s[1], m_of_row(g + 1), "seed {seed}: {s:?}");
+        let above = s[1] - SEA_LEVEL_M;
         assert!(
-            x.abs() < 512 && z.abs() < 512 && g >= SEA_LEVEL,
+            x.abs() < 20_000
+                && z.abs() < 20_000
+                && g >= SEA_LEVEL
+                && above <= 2.0 * rule.spawn_max_height,
             "seed {seed}: {s:?}"
         );
+        let col = TerrainGenerator::new(seed).column_at(x, z);
+        assert!(
+            !col.wet() && col.water == terrain::Water::None,
+            "seed {seed}: dry"
+        );
+        let map = worldmap::for_seed(seed);
+        let near = map.rivers.iter().flat_map(|r| &r.path).any(|v| {
+            let (dx, dz) = (f64::from(v.x) - s[0], f64::from(v.z) - s[2]);
+            dx.hypot(dz) <= rule.spawn_near_river + 200.0
+        });
+        by_river += i32::from(near);
         for dz in -4..=4 {
             for dx in -4..=4 {
                 assert!(solid(world.get_voxel(x + dx, g, z + dz)), "seed {seed}");
@@ -467,6 +518,7 @@ fn players_spawn_on_level_open_ground_near_the_origin() {
             "seed {seed}: a level patch's top is a full cell"
         );
     }
+    assert!(by_river >= 12, "{by_river} of 16 spawn by a river");
     // The flat world's grass top is its top layer's.
     assert_eq!(spawn_point_for(GENERATOR_FLAT, 9)[1], FLAT_TOP_M);
 }
@@ -679,7 +731,8 @@ fn the_air_test_knows_face_bs_sky_and_rows_outside_the_world() {
         }
     }
     assert!(sky > 0 && sky < checked);
-    for cy in [-24, -100, MIN_CHUNK_Y] {
+    // Far below face B's highest ground (its mountains reach ~1 km, face-local chunk 63).
+    for cy in [-80, -100, MIN_CHUNK_Y] {
         assert!(air(ChunkCoord::new(0, cy, 0)) && air(ChunkCoord::new(300, cy, -300)));
     }
     assert!(
@@ -753,45 +806,50 @@ fn generated_ramps_follow_the_rule_across_chunk_borders_and_hold_the_sea_at_the_
     let mut world = VoxelWorld::new(generator_for(GENERATOR_TERRAIN, seed), None);
     let (cx, cz) = coast_on_axis(&g);
     let (mut gentle, mut steep, mut flooded, mut on_borders) = (0, 0, 0, 0);
-    // From 3 km inland (hills) out past the coast, across the chunk border at z = 0.
-    for z in cz - 8..cz + 8 {
-        for x in cx - 3000..cx + 40 {
-            let top = g.ground_y(x, z).expect("inside");
-            let around: Around = std::array::from_fn(|r| {
-                std::array::from_fn(|c| {
-                    g.ground_y(x + c as i32 - 1, z + r as i32 - 1)
-                        .expect("inside")
-                        + 1
-                })
-            });
-            let m = world.get_voxel(x, top, z);
-            let shape = state_property(m, "shape");
-            let facing = state_property(m, "facing");
-            match top_of(&around, rows_for_m(1.0)) {
-                Top::Flat => assert_eq!(shape, None, "({x}, {z})"),
-                Top::Gentle(f) => {
+    // From 3 km inland out past the coast, across the chunk border at z = 0; and a strip of
+    // 600 m across the steepest mountainside near the centre (the world map's ranges).
+    let (sx, sz) = steepest_near_centre(&g);
+    let strips = [(cx - 3000, cx + 40, cz), (sx - 300, sx + 300, sz)];
+    for (x0, x1, zc) in strips {
+        for z in zc - 8..zc + 8 {
+            for x in x0..x1 {
+                let top = g.ground_y(x, z).expect("inside");
+                let around: Around = std::array::from_fn(|r| {
+                    std::array::from_fn(|c| {
+                        g.ground_y(x + c as i32 - 1, z + r as i32 - 1)
+                            .expect("inside")
+                            + 1
+                    })
+                });
+                let m = world.get_voxel(x, top, z);
+                let shape = state_property(m, "shape");
+                let facing = state_property(m, "facing");
+                match top_of(&around, rows_for_m(1.0)) {
+                    Top::Flat => assert_eq!(shape, None, "({x}, {z})"),
+                    Top::Gentle(f) => {
+                        assert_eq!(
+                            (shape, facing),
+                            (Some("ramp"), Some(f.name())),
+                            "({x}, {z})"
+                        );
+                        gentle += 1;
+                    }
+                    Top::Steep(f) => {
+                        let below = world.get_voxel(x, top - 1, z);
+                        assert_eq!((shape, facing), (Some("steep_upper"), Some(f.name())));
+                        assert_eq!(state_property(below, "shape"), Some("steep_lower"));
+                        steep += 1;
+                    }
+                }
+                if shape.is_some() {
+                    let wet = top < g.column_at(x, z).flood_row();
                     assert_eq!(
-                        (shape, facing),
-                        (Some("ramp"), Some(f.name())),
-                        "({x}, {z})"
+                        state_property(m, "flooded"),
+                        Some(if wet { "true" } else { "false" })
                     );
-                    gentle += 1;
+                    flooded += i32::from(wet);
+                    on_borders += i32::from(x.rem_euclid(S) == 0 || x.rem_euclid(S) == S - 1);
                 }
-                Top::Steep(f) => {
-                    let below = world.get_voxel(x, top - 1, z);
-                    assert_eq!((shape, facing), (Some("steep_upper"), Some(f.name())));
-                    assert_eq!(state_property(below, "shape"), Some("steep_lower"));
-                    steep += 1;
-                }
-            }
-            if shape.is_some() {
-                let wet = top < SEA_LEVEL;
-                assert_eq!(
-                    state_property(m, "flooded"),
-                    Some(if wet { "true" } else { "false" })
-                );
-                flooded += i32::from(wet);
-                on_borders += i32::from(x.rem_euclid(S) == 0 || x.rem_euclid(S) == S - 1);
             }
         }
     }
@@ -878,7 +936,7 @@ fn the_island_keeps_its_phase_15_size_in_the_50_km_world() {
 }
 
 #[test]
-fn the_hills_are_steep_enough_to_slide_and_reach_about_500_m() {
+fn the_mountains_reach_about_900_m_and_some_ground_is_steep_enough_to_slide() {
     // Owner, 2026-10-19: "I want terrain steep enough to slide on" — about 15 % of the land's
     // surface steeper than the slide's 44° (on the half-height branch, the land columns topped by
     // a 45° ramp, HALF_HEIGHT_GRID.md §4), everywhere, and peaks up to about 500 m above sea level
@@ -890,6 +948,9 @@ fn the_hills_are_steep_enough_to_slide_and_reach_about_500_m() {
     // step snap, the Sobel facing) slides on ~10.6 % (A) where 1018's steps slid on ~12.9 %: the
     // band's floor is 9 % on this branch. Generator 1020 (V2, the owner's choice: the old ramp rule, no 1 m snap) slides on ~3.2 % (A),
     // ~3.0 % (B): the old rule makes few 45° ramps, so the band is 2–5 % on this branch.
+    // Generator 21 (ADR 0049, the world map: eroded mountain ranges, broad valleys and coastal
+    // plains) measured on seed 7's island: ~1.5 % sliding, highest ~860 m, mean slope ~14°, ~2 %
+    // of the base field's island under the sea or lakes; the band is 0.8–5 %, 700–1,100 m.
     use dwell_worldgen::ramps::{Around, Top, top_of};
     for face in [Face::A, Face::B] {
         let (mut highest, mut slope, mut land) = (0.0f64, 0.0f64, 0usize);
@@ -937,10 +998,10 @@ fn the_hills_are_steep_enough_to_slide_and_reach_about_500_m() {
             100.0 * wet
         );
         println!("{at}");
-        assert!((0.02..0.05).contains(&sliding), "{at}");
-        assert!((430.0..580.0).contains(&highest), "{at}");
-        assert!((15.0..30.0).contains(&slope), "{at}");
-        assert!(wet < 0.015, "{at}");
+        assert!((0.008..0.05).contains(&sliding), "{at}");
+        assert!((700.0..1100.0).contains(&highest), "{at}");
+        assert!((8.0..30.0).contains(&slope), "{at}");
+        assert!(wet < 0.04, "{at}");
     }
 }
 
@@ -1061,7 +1122,7 @@ fn no_shore_column_has_drawn_water_higher_than_the_dry_land_beside_it() {
                 }
             }
         }
-        assert!(pairs > 100, "seed {seed}: {pairs}");
+        assert!(pairs > 20, "seed {seed}: {pairs}");
         assert!(
             piled.is_empty(),
             "seed {seed}: {} of {pairs} shore pairs have the water at {top} above the land, e.g. {:?}",

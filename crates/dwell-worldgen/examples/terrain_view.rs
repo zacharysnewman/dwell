@@ -19,7 +19,11 @@ fn arg(args: &[String], name: &str, default: &str) -> String {
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let seed: u64 = arg(&args, "--seed", "7").parse().expect("seed");
-    let face = if arg(&args, "--face", "a") == "b" { Face::B } else { Face::A };
+    let face = if arg(&args, "--face", "a") == "b" {
+        Face::B
+    } else {
+        Face::A
+    };
     let cx: i32 = arg(&args, "--x", "0").parse().expect("x");
     let cz: i32 = arg(&args, "--z", "0").parse().expect("z");
     let size: i32 = arg(&args, "--size", "2048").parse().expect("size");
@@ -41,7 +45,12 @@ fn main() {
         let qb = b.path.last().map_or(0.0, |v| v.discharge);
         qa.total_cmp(&qb)
     }) {
-        for k in [r.path.len() / 4, r.path.len() / 2, 3 * r.path.len() / 4, r.path.len() - 2] {
+        for k in [
+            r.path.len() / 4,
+            r.path.len() / 2,
+            3 * r.path.len() / 4,
+            r.path.len() - 2,
+        ] {
             let v = r.path[k];
             println!(
                 "largest river vertex {k}/{}: ({}, {}) surface {:.1} m, width {:.1} m, {:.1} m³/s, mouth {:?}",
@@ -71,7 +80,9 @@ fn main() {
         for s in 0..k {
             let (x, z) = (px, pz + s * dz);
             let c = g.column_at(x, z);
-            let hit = map.channels.query(f64::from(x), f64::from(z), 0.0, f64::INFINITY);
+            let hit = map
+                .channels
+                .query(f64::from(x), f64::from(z), 0.0, f64::INFINITY);
             let lake = map.shores.query(&map, f64::from(x), f64::from(z));
             let (base, _, _) = map.height_at(f64::from(x), f64::from(z));
             println!(
@@ -133,7 +144,11 @@ fn main() {
                 rgb = match c.water {
                     Water::River => [60.0, 120.0, 230.0],
                     Water::Lake => [40.0, 90.0, 200.0],
-                    _ => [40.0 - 20.0 * depth, 100.0 - 40.0 * depth, 190.0 - 40.0 * depth],
+                    _ => [
+                        40.0 - 20.0 * depth,
+                        100.0 - 40.0 * depth,
+                        190.0 - 40.0 * depth,
+                    ],
                 };
             }
             for k in 0..3 {
@@ -153,7 +168,11 @@ fn main() {
             let ground = g.ground_y(x * 32 + 16, z * 32 + 16).unwrap_or(64) / 32;
             for dy in -1..=1 {
                 let mut chunk = Chunk::default();
-                let y = if face == Face::A { ground + dy } else { -1 - (ground + dy) };
+                let y = if face == Face::A {
+                    ground + dy
+                } else {
+                    -1 - (ground + dy)
+                };
                 terrain.generate(ChunkCoord::new(x, y, z), &mut chunk);
                 count += 1;
             }
@@ -173,7 +192,11 @@ fn write_png(path: &str, w: u32, h: u32, rgb: &[u8]) {
         for &b in data {
             c ^= u32::from(b);
             for _ in 0..8 {
-                c = if c & 1 != 0 { 0xedb8_8320 ^ (c >> 1) } else { c >> 1 };
+                c = if c & 1 != 0 {
+                    0xedb8_8320 ^ (c >> 1)
+                } else {
+                    c >> 1
+                };
             }
         }
         !c

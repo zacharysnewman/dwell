@@ -199,7 +199,19 @@ impl WorldMap {
             n,
             m.cell,
             m.x0,
-            m.height.iter().map(|&h| h.max(FLOOR)).collect(),
+            // Beyond the disc the field has no height: those cells hold the sea floor, so the
+            // bicubic near the rim does not dive.
+            m.height
+                .iter()
+                .zip(&m.original)
+                .map(|(&h, &o)| {
+                    if o < -1000.0 {
+                        crate::terrain::HEIGHT.sea_floor
+                    } else {
+                        h.max(FLOOR)
+                    }
+                })
+                .collect(),
             flags,
             lake,
             m.lakes
@@ -246,9 +258,9 @@ impl WorldMap {
     }
 
     /// The map's digest: equal digests on two targets mean bit-identical maps (the codec's
-    /// checksum over every stored byte).
+    /// checksum over every stored byte but the build's fingerprint, so it is pinned by tests).
     pub fn digest(&self) -> u64 {
-        codec::checksum(&codec::encode(self))
+        codec::checksum(&codec::encode_unsigned(self))
     }
 
     /// The cell index of grid coordinates, clamped to the grid.

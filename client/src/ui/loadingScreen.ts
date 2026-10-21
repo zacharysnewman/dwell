@@ -191,6 +191,16 @@ export class LoadingScreen {
     this.draw(opacity);
   }
 
+  /**
+   * What the page is doing before the client has a readout (shaping a local world's maps, ADR
+   * 0049): shown while waiting without one.
+   */
+  note(text: string): void {
+    if (this.flow.phase !== 'waiting' || this.flow.hud) return;
+    this.shown = null;
+    this.text.textContent = text;
+  }
+
   /** The game did not start (an error, the menu): the screen goes, the page shows what it says. */
   abort(): void {
     this.flow.abort();

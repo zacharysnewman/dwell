@@ -192,13 +192,28 @@ impl Column {
         if self.water == Water::None {
             return top + 1;
         }
-        floor_to_int(self.level / CELL_H as f32 + 0.5).max(top + 1)
+        surface_row(self.level).max(top + 1)
     }
 
-    /// Whether water stands over the ground.
+    /// The row the water's surface lies on (rows below it are under water, the top cell's open
+    /// part too); none when dry.
+    pub fn flood_row(&self) -> i32 {
+        if self.water == Water::None {
+            i32::MIN
+        } else {
+            surface_row(self.level)
+        }
+    }
+
+    /// Whether water stands over the ground (cells of water above its top).
     pub fn wet(&self) -> bool {
         self.water_row() > top_voxel(self.height) + 1
     }
+}
+
+/// The row a water surface (m, face-local) lies on: the rows below it are water.
+fn surface_row(level: f32) -> i32 {
+    floor_to_int(level / CELL_H as f32 + 0.5)
 }
 
 /// A height (m) in rows of cells (HALF_HEIGHT_GRID.md §2); exact at 1 m and ½ m cells.
@@ -479,7 +494,10 @@ impl TerrainGenerator {
         let (nx, nz) = (x + self.offset_x, z + self.offset_z);
         let wx = f64::from(fbm2(seeds[0], nx, nz, wavelength, 2, None));
         let wz = f64::from(fbm2(seeds[1], nx, nz, wavelength, 2, None));
-        (x as f64 + 2.0 * amplitude * wx, z as f64 + 2.0 * amplitude * wz)
+        (
+            x as f64 + 2.0 * amplitude * wx,
+            z as f64 + 2.0 * amplitude * wz,
+        )
     }
 
     /// The column at (x, z) as seen at a cell of `cell` m: 1 for chunks; the LOD's coarser cells
@@ -578,10 +596,14 @@ impl TerrainGenerator {
                 // The channel: its bed below the water, deepest on the centreline.
                 let f = r.d / r.half;
                 let depth = (r.depth * (1.0 - f * f)).max(S.river_min_depth);
-                h = h.min(r.level - depth);
-                if water != Water::Lake || r.level > level {
+                // Below the surface as drawn (its row), so a channel always holds water cells.
+                let drawn =
+                    f64::from(surface_row((SEA_LEVEL_M + r.level) as f32)) * CELL_H - SEA_LEVEL_M;
+                h = h.min(drawn.min(r.level) - depth);
+                // In a lake the lake's flat surface wins (a river running into it ends there).
+                if water != Water::Lake {
                     water = Water::River;
-                    level = level.max(r.level);
+                    level = r.level;
                 }
             } else if water != Water::Lake {
                 // The valley down to the banks, blended back into the land at its reach; the banks
@@ -599,8 +621,10 @@ impl TerrainGenerator {
             water = Water::Sea;
             level = 0.0;
         }
-        let height = (SEA_LEVEL_M + h).max(dwell_world::MIDPLANE_M + dwell_world::CORE_M);
-        let wet = water != Water::None && level > h;
+        let height = ((SEA_LEVEL_M + h).max(dwell_world::MIDPLANE_M + dwell_world::CORE_M)) as f32;
+        let level = (SEA_LEVEL_M + level) as f32;
+        // Water only where its surface's row lies above the top cell's bottom (rows, as drawn).
+        let wet = water != Water::None && surface_row(level) > top_voxel(height);
         if !wet {
             water = Water::None;
         }
@@ -630,8 +654,8 @@ impl TerrainGenerator {
             Band::Ground
         };
         Column {
-            height: height as f32,
-            level: (SEA_LEVEL_M + level) as f32,
+            height,
+            level,
             water,
             band,
             outside: false,
@@ -673,7 +697,11 @@ impl TerrainGenerator {
         let water = col.water_row();
         if y <= top {
             let m = fill(col.band, top, i64::from(top - y));
-            if y == top { under_water(m, y, water) } else { m }
+            if y == top {
+                under_water(m, y, col.flood_row())
+            } else {
+                m
+            }
         } else if y < water {
             M.water
         } else {
@@ -724,12 +752,9 @@ impl TerrainGenerator {
     /// The highest ground or water of the columns inside the disc, in rows, plus what grows on it
     /// (rows).
     fn sky_floor(&self, cols: &[Column]) -> f32 {
-        cols.iter()
-            .filter(|c| !c.outside)
-            .fold(-1e9f32, |top, c| {
-                top.max(rows(c.height)).max(c.water_row() as f32)
-            })
-            + self.rise
+        cols.iter().filter(|c| !c.outside).fold(-1e9f32, |top, c| {
+            top.max(rows(c.height)).max(c.water_row() as f32)
+        }) + self.rise
     }
 
     /// The sky test's height (rows) for a chunk column: chunks with y0 above it (and at or above
@@ -747,7 +772,7 @@ impl TerrainGenerator {
         // The top block as generated: under water it takes its flooded state. Rows of cells for
         // the top; metres for the height band (placements.json's) and the slope.
         let water = col.water_row();
-        let block = under_water(fill(col.band, top, 0), top, water);
+        let block = under_water(fill(col.band, top, 0), top, col.flood_row());
         Some(Ground {
             top,
             above_sea: (m_of_row(top) - SEA_LEVEL_M).floor() as i32,
@@ -840,6 +865,7 @@ impl TerrainGenerator {
                 }
                 let top = top_voxel(col.height);
                 let water = col.water_row();
+                let flood = col.flood_row();
                 let (part, portal) = near
                     .as_ref()
                     .map_or((Part::None, None), |(p, n)| p.locate(n, x0 + x, z0 + z));
@@ -898,9 +924,9 @@ impl TerrainGenerator {
                     {
                         *v = m;
                     } else if y <= top && y >= first_piece {
-                        *v = under_water(pieces[(y - first_piece) as usize], y, water);
+                        *v = under_water(pieces[(y - first_piece) as usize], y, flood);
                     } else if y == top {
-                        *v = under_water(fill(col.band, top, 0), y, water);
+                        *v = under_water(fill(col.band, top, 0), y, flood);
                     } else if y < top {
                         *v = fill(col.band, top, i64::from(top - y));
                     } else if y < water {
@@ -1126,10 +1152,9 @@ impl TerrainGenerator {
             b.any_inside = true;
             // A cell is solid when its bottom voxel lies below the column's height: samples below
             // `lo` are solid, at or above `hi` open.
-            b.hi = b
-                .hi
-                .max(f64::from(rows(col.height)) + 1.0 + rise)
-                .max(f64::from(col.water_row()));
+            b.hi =
+                b.hi.max(f64::from(rows(col.height)) + 1.0 + rise)
+                    .max(f64::from(col.water_row()));
             b.lo = b.lo.min(f64::from(rows(col.height)) - 1.0);
         }
         if !b.any_inside {

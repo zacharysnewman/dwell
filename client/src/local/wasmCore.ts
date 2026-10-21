@@ -41,6 +41,11 @@ export class LocalCore {
    * loaded from and saved to it, and a saved world's seed and generator win over the arguments.
    * Throws if the file is locked to another version (RELEASES.md §6).
    */
+  /** Loads the WASM module (before anything is installed in it). */
+  static async ready(): Promise<void> {
+    await loadWasm();
+  }
+
   static async load(
     worldSeed = 0,
     generatorVersion = 3,

@@ -68,12 +68,13 @@ pub struct WebJobs {
 
 impl WebJobs {
     /// `make_worker` creates a worker running the job worker script; `world` is the generator
-    /// version and seed the generation workers load.
+    /// version and seed the generation workers load, `maps` its world maps' bytes.
     pub fn new(
         make_worker: &Function,
         generators: usize,
         meshers: usize,
         world: (u32, u64),
+        maps: &[Uint8Array],
     ) -> Result<Self, JsValue> {
         let done: Rc<RefCell<VecDeque<Vec<u8>>>> = Rc::default();
         let wake: Waker = Rc::default();
@@ -110,6 +111,13 @@ impl WebJobs {
                         &"worldSeed".into(),
                         &js_sys::BigInt::from(world.1).into(),
                     )?;
+                    // The world's maps (ADR 0049), copied to each worker, which installs them
+                    // before making its generator.
+                    let list = Array::new();
+                    for m in maps {
+                        list.push(m);
+                    }
+                    Reflect::set(&init, &"maps".into(), &list)?;
                 }
                 worker.post_message(&init)?;
                 slots[kind].push(WorkerSlot {

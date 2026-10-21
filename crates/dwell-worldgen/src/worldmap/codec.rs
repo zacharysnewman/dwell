@@ -23,11 +23,20 @@ pub fn checksum(bytes: &[u8]) -> u64 {
 }
 
 pub fn encode(m: &WorldMap) -> Vec<u8> {
+    encode_with(m, super::FINGERPRINT)
+}
+
+/// The bytes with a zero fingerprint (the digest's: the same on every build of the same map).
+pub fn encode_unsigned(m: &WorldMap) -> Vec<u8> {
+    encode_with(m, 0)
+}
+
+fn encode_with(m: &WorldMap, fingerprint: u64) -> Vec<u8> {
     let len = m.n * m.n;
     let mut out = Vec::with_capacity(64 + len * 7 + m.rivers.len() * 64);
     out.extend_from_slice(MAGIC);
     out.extend_from_slice(&FORMAT.to_le_bytes());
-    out.extend_from_slice(&super::FINGERPRINT.to_le_bytes());
+    out.extend_from_slice(&fingerprint.to_le_bytes());
     out.extend_from_slice(&m.seed.to_le_bytes());
     out.extend_from_slice(&(m.n as u32).to_le_bytes());
     out.extend_from_slice(&m.cell.to_le_bytes());
@@ -116,8 +125,8 @@ pub fn peek(bytes: &[u8]) -> Result<(u64, u64), String> {
     Ok((r.u64()?, r.u64()?))
 }
 
-/// A map from its bytes, refused when damaged or made by another build.
-pub fn decode(bytes: &[u8]) -> Result<WorldMap, String> {
+/// Checks a map's bytes (whole, unchanged, this build's) without decoding them; returns its seed.
+pub fn verify(bytes: &[u8]) -> Result<u64, String> {
     if bytes.len() < 8 {
         return Err("the map is truncated".into());
     }
@@ -129,7 +138,17 @@ pub fn decode(bytes: &[u8]) -> Result<WorldMap, String> {
     if fingerprint != super::FINGERPRINT {
         return Err("a world map from another build of the generator".into());
     }
-    let mut r = Reader { b: body, at: 5 + 2 + 8 + 8 };
+    Ok(seed)
+}
+
+/// A map from its bytes, refused when damaged or made by another build.
+pub fn decode(bytes: &[u8]) -> Result<WorldMap, String> {
+    let seed = verify(bytes)?;
+    let body = &bytes[..bytes.len() - 8];
+    let mut r = Reader {
+        b: body,
+        at: 5 + 2 + 8 + 8,
+    };
     let n = r.u32()? as usize;
     if n == 0 || n > 8192 {
         return Err("a world map of an impossible size".into());

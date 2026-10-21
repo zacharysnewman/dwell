@@ -8,7 +8,9 @@ import {
   setWorldFileVersion,
   swatchSize,
   worldFileVersion,
+  worldMapKeys,
 } from './engine/wasm';
+import { IndexedDbMapStore, type MapDeps, workerBuilder, worldMaps } from './world/worldMaps';
 import {
   connectLocal,
   connectToCode,
@@ -457,6 +459,26 @@ function showHud(app: App, now: number): void {
   if (h.debug) app.hud.setDebug(h.debug);
 }
 
+/** A job worker (ARCHITECTURE.md §5.1): generation, meshing, or one world map's build. */
+function makeJobWorker(): Worker {
+  return new Worker(new URL('./engine/jobWorker.ts', import.meta.url), { type: 'module' });
+}
+
+let maps: MapDeps | null = null;
+
+/** How this page gets a terrain world's maps (ADR 0049; `world/worldMaps.ts`). */
+function mapDeps(): MapDeps {
+  maps ??= {
+    keys: (seed) => worldMapKeys(seed),
+    build: workerBuilder(makeJobWorker),
+    store: typeof indexedDB === 'undefined' ? null : new IndexedDbMapStore(),
+    onProgress: (ready, needed) => {
+      if (ready < needed) bootLoading?.note('Shaping the world…');
+    },
+  };
+  return maps;
+}
+
 async function start(): Promise<App | null> {
   const loading = (bootLoading ??= new LoadingScreen(document.body, false, false));
   element('build-info', HTMLDivElement).textContent = formatBuildInfo(buildInfo);
@@ -471,8 +493,10 @@ async function start(): Promise<App | null> {
     client = await Client.create(canvas, {
       displayName: displayName(),
       clientVersion: recordedVersion(),
-      makeWorker: () =>
-        new Worker(new URL('./engine/jobWorker.ts', import.meta.url), { type: 'module' }),
+      makeWorker: makeJobWorker,
+      // A terrain world's maps (ADR 0049): cached, or built in workers, never on this thread.
+      prepareWorld: (seed: bigint, version: number) =>
+        worldMaps(seed, version, mapDeps()) ?? Promise.resolve(null),
       workers: defaultWorkerCount(mobile),
       lod: params.get('lod') !== '0',
       lodColors: params.get('lodcolors') === '1',
@@ -1032,6 +1056,7 @@ async function connect(app: App): Promise<void> {
     clientVersion: recordedVersion(),
     transport: preference,
     ...(localWorld ? { localWorld } : {}),
+    worldMaps: (seed, version) => worldMaps(seed, version, mapDeps()),
   };
   status.textContent = localWorld ? `Starting ${target}…` : `Connecting to ${target}…`;
   const client = app.client;

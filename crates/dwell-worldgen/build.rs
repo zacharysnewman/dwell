@@ -40,9 +40,17 @@ fn main() {
     }
     let mut h: u64 = 0xcbf2_9ce4_8422_2325;
     for f in &all {
-        let name = f.strip_prefix(&root).unwrap_or(f).to_string_lossy().replace('\\', "/");
+        let name = f
+            .strip_prefix(&root)
+            .unwrap_or(f)
+            .to_string_lossy()
+            .replace('\\', "/");
         let text = std::fs::read(f).expect("read input");
-        for b in name.bytes().chain([0u8]).chain(text.into_iter().filter(|&b| b != b'\r')) {
+        for b in name
+            .bytes()
+            .chain([0u8])
+            .chain(text.into_iter().filter(|&b| b != b'\r'))
+        {
             h ^= u64::from(b);
             h = h.wrapping_mul(0x0000_0100_0000_01b3);
         }

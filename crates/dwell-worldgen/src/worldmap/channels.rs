@@ -250,7 +250,8 @@ impl Channels {
     pub fn near(&self, x: f64, z: f64, extra: f64) -> bool {
         let span = (extra / BUCKET).ceil() as i32;
         let (bx, bz) = ((x / BUCKET).floor() as i32, (z / BUCKET).floor() as i32);
-        (-span..=span).any(|dz| (-span..=span).any(|dx| self.buckets.contains_key(&(bx + dx, bz + dz))))
+        (-span..=span)
+            .any(|dz| (-span..=span).any(|dx| self.buckets.contains_key(&(bx + dx, bz + dz))))
     }
 
     /// The nearest channel (by its edge) whose valley reaches face-local (x, z); its half-width at
