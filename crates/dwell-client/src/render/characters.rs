@@ -5,9 +5,8 @@
 //!   generated data, each vertex on one bone (rigid parts, no skinning). A character draws its
 //!   body and its held item: two indexed draws over one block of bone transforms.
 //! - **Shading** (`character_fs`): the material's ramp (shadow → base → light by a half-Lambert
-//!   wrap of the key light), its brush tile at its `overlay` (painterly texture set only; the
-//!   classic set draws the clean ramp), a faint warm rim, all scaled by the frame's light on that
-//!   face so day and night reach characters as they reach terrain. The held block (`$block`) is
+//!   wrap of the key light), its brush tile at its `overlay`, a faint warm rim, all scaled by the
+//!   frame's light on that face so day and night reach characters as they reach terrain. The held block (`$block`) is
 //!   its own atlas tiles lit like terrain. Fragments write the frame's colour and view depth, so
 //!   the composite tone-maps, fogs, inks and edge-blurs them like everything else.
 //! - **Outline**: a second, back-facing draw pushed out along the normals in `ink_soft`
@@ -157,7 +156,7 @@ struct Instance {
     block_side: vec4f,
     block_bottom: vec4f,
     block_color: vec4f,
-    // x the brush strokes (0 or 1, the texture set), y the outline's width (m), z 1 for the arms.
+    // x unused, y the outline's width (m), z 1 for the arms.
     cfg: vec4f,
 };
 struct Material {
@@ -276,7 +275,7 @@ fn character_fs(i: CharacterOut, @builtin(front_facing) front: bool) -> SceneOut
     c = mix(c, m.light.rgb, smoothstep(0.66, 0.98, w) * 0.8);
     c = c * mix(0.9, 1.0, face_rise(frame.eye.y, n) * 0.5 + 0.5);
     let layer = i32(m.extra.y);
-    if (layer >= 0 && inst.cfg.x > 0.5) {
+    if (layer >= 0) {
         c = c * mix(1.0, brush_k(i, layer), m.extra.x);
     }
     let rim = pow(1.0 - max(dot(n, normalize(-i.rel)), 0.0), 3.0);
@@ -638,7 +637,6 @@ impl CharacterRenderer {
         passes: &[(f64, f64)],
         bodies: &[BodyDraw],
         arms: Option<&ArmsDraw>,
-        strokes: bool,
     ) {
         self.draws.clear();
         self.arms = None;
@@ -656,7 +654,7 @@ impl CharacterRenderer {
             }
             let cfg = at + BONE_FLOATS + 16;
             data[cfg..cfg + 4].copy_from_slice(&[
-                f32::from(u8::from(strokes)),
+                0.0,
                 if outline { OUTLINE_WIDTH_M } else { 0.0 },
                 f32::from(u8::from(is_arms)),
                 0.0,

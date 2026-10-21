@@ -5,8 +5,9 @@ One data-driven generator paints every texture in the storybook style of
 and sky accents read by name. Decision record: [ADR 0040](./adr/0040-painterly-textures.md).
 Architecture: [`ARCHITECTURE.md`](./ARCHITECTURE.md) §6.1 (block textures).
 
-**Status: built, the default** (the owner approved it, 2026-10-20). `?textures=classic` shows the
-classic set (§6).
+**Status: built; the game's only texture set.** The owner approved it as the default on 2026-10-20
+and removed the earlier procedural set on 2026-10-21 (ADR 0040), so every atlas tile, the utility
+tiles included, is painted from this data.
 
 ## 1. Brief and answers
 
@@ -23,7 +24,7 @@ The design questions (CLAUDE.md, "Ask before designing"), answered by the owner'
 | Who adds them, with what? | Whoever designs content, by editing `shared/textures/*.json`, live in the Painterly Texture Lab (`docs/prototypes/painterly-texture-lab.html`), which copies the JSON back |
 | Fixed in code | The layer kinds, the stroke shapes and how strokes are placed (§3) |
 | Data | The palette, every material and its layers, which atlas tile each block material paints |
-| Per build, world or player? | Per build: the textures are baked into the build. The set (classic or painterly) is per page load, by the URL, until the default flips |
+| Per build, world or player? | Per build: the textures are baked into the build |
 
 ## 2. Data
 
@@ -42,10 +43,20 @@ The design questions (CLAUDE.md, "Ask before designing"), answered by the owner'
       `cloth_wool_red` with ramp `wool_blue`).
     - `over`: paint another material first (e.g. `grass_side` is painted over `soil`).
     - `layers`: the layers, painted in order (§3).
-  - `tiles`: atlas tile name (the registry's `textures` names, `shared/blocks/dwell.json`) → the
-    block material that paints it in the painterly set.
-  - `keepClassic`: registry tiles that keep the classic painter in both sets (utility tiles:
-    `grid`). The atlas's own `plain` and `missing` tiles are never painted.
+  - `tiles`: atlas tile name → the block material that paints it. Every atlas tile is mapped, and
+    nothing else: the registry's `textures` names (`shared/blocks/dwell.json`) and the engine's
+    utility tiles (`ENGINE_TILES` in `gen.mjs`: `plain` and `missing`).
+
+**Utility tiles.** Three tiles are not content, and their materials (`plain`, `grid`, `missing`)
+use the palette's `chalk` ramp and `missing_*` swatches, outside the content albedo range:
+
+- `plain`: white, which an untextured state's colour tints.
+- `grid`: the sandbox floor. White with a one-texel `chalk.shadow` line along the bottom and left
+  edges (two `edgeLight` layers), so every block edge gets one line; mipmapping fades it with
+  distance, and the terrain shader's `grid` look option rules the larger cells.
+- `missing`: the fallback look of a state whose look or textures this build lacks (synced from a
+  server, ADR 0038): magenta and black squares of 8 texels (hard-edged `slab`s at fixed `at`
+  positions over a black fill), unmistakable for content.
 
 Colours are palette references, never hex (ART_DIRECTION.md §2).
 
@@ -61,7 +72,7 @@ hangs its own skirt, so the dirt below it stays plain). Stone or air above: no s
 "above" is toward its sky. The tile `dirtSkirt` is painted by `dirt_skirt`, which is
 `"like": "grass_side"`: the same soil and the same skirt strokes, so it lines up with a grass side
 beside it and wraps into the next dirt face; it is its own tile so its art can diverge by data. The
-classic set paints it with the grass side's painter. The LOD keeps dirt's flat side colour: a skirt
+LOD keeps dirt's flat side colour: a skirt
 band averaged over a coarse LOD cell would tint whole cliffs green.
 
 ## 3. The generator
@@ -82,8 +93,7 @@ returns a 32 × 32 RGBA tile, row y = 0 (the bottom) first, as the atlas lays ti
 
 **Strokes.** Each stroke is a signed distance field in its own frame (along `angle`, across it). Its
 coverage is `clamp(0.5 − d / softness)`, a one-texel anti-aliased edge by default. A cutout's alpha
-is that same distance field, so the shader's alpha test traces the true outline up close, like the
-classic grass blades. Positions come from a jittered grid of `count` cells inside `band` (shares of
+is that same distance field, so the shader's alpha test traces the true outline up close. Positions come from a jittered grid of `count` cells inside `band` (shares of
 the tile's height), with odd rows shifted half a cell and never more columns than strokes (so a thin
 band, such as the grass side's hanging skirt, spreads its strokes over the whole width), or from `at` (`[x, y]`, or `[x, y, length]`
 for a ring's radius or a fixed length). Random choices use the atlas's int32 hash, seeded per layer,
@@ -98,8 +108,8 @@ colour the gaps, so filtering at an edge adds no fringe.
 
 ## 4. The bake and the atlas
 
-`node shared/textures/gen.mjs` validates the palette and materials against the registry's tile
-names, then paints each `tiles` entry. It writes:
+`node shared/textures/gen.mjs` validates the palette and materials against the atlas's tiles (the
+registry's tile names and the engine's), then paints each `tiles` entry. It writes:
 
 - `crates/dwell-mesh/src/painterly.rgba`: the tiles' RGBA8 texels, in `tiles` order (4 KiB a tile).
 - `crates/dwell-mesh/src/painterly.gen.rs`: `PAINTERLY_TILES` (their names) and `PAINTERLY_TEXELS`
@@ -109,16 +119,12 @@ Both are checked in. CI regenerates them and fails on any diff (the protocol job
 `node --test shared/textures/gen.test.mjs`. `--png <file>` also writes a preview sheet of every
 material.
 
-**In the client** (`dwell-mesh` `textures.rs`): `TextureSet` is `Classic` or `Painterly`. One texel
-lookup serves the atlas (`build_atlas`), cutout detection (`tile_has_alpha`), the tiles' average
-colours (`average_tile_color`, the LOD's flat colours) and the hotbar swatches. A painterly tile
-replaces its classic painter, and any other tile keeps it. The atlas, its mipmaps and their
-coverage-preserving alpha (`render/mod.rs`) are built once at start-up, as before.
-
-**Choosing the set.** `Client.create` reads `?textures=` from the page's query and sets it before
-the atlas is built. Each meshing worker gets the page's set in its init message (`textures`, in
-`web/jobs.rs` and `jobWorker.ts`) and sets it before its first job, so the LOD colours the workers
-bake match the page's atlas. The averages and LOD colour tables are cached per set.
+**In the client** (`dwell-mesh` `textures.rs`): one texel lookup into the baked tiles serves the
+atlas (`build_atlas`), cutout detection (`tile_has_alpha`), the tiles' average colours
+(`average_tile_color`, the LOD's flat colours) and the hotbar swatches; a name the set doesn't paint
+takes the `plain` tile. The atlas, its mipmaps and their coverage-preserving alpha (`render/mod.rs`)
+are built once at start-up; the averages and the LOD colour table once per context (the page and
+each meshing worker), from the same baked texels, so they agree with no message between them.
 
 ## 5. Validation and tests
 
@@ -131,7 +137,7 @@ must be [min, max] in [0.25, 32]`. The checks cover:
 - A tile mapped to a missing or non-block material.
 - In the block data, a `sideUnder` naming an unknown block, a value that is not a tile name, an empty
   rule set, or a rule on a block without textures (`shared/blocks/faces.test.mjs`).
-- A registry tile neither painted nor kept classic, and a painted tile no block uses.
+- An atlas tile not painted, and a painted tile the atlas doesn't have.
 
 `shared/textures/gen.test.mjs`:
 
@@ -142,53 +148,36 @@ must be [min, max] in [0.25, 32]`. The checks cover:
 - Tiles are seamless.
 - Cutouts cover only strokes, and sprites keep clear of the tile's edges.
 - Every bad case above fails with its message.
+- The utility tiles: `plain` white, `grid`'s one-texel edge line, `missing`'s checker.
 - The character materials exist with ramps.
 
 `dwell-mesh` (Rust):
 
-- The query parses, and the default is painterly.
-- Every baked tile is an atlas tile of the atlas's size, and every registry tile but `grid` is
-  painted.
-- The painterly atlas differs from the classic only in painted tiles.
+- Every atlas tile is painted at the atlas's size (the utility tiles too), and nothing else is.
+- The atlas places every tile with its wrapped gutter.
+- The utility tiles: `plain` white, `grid`'s line and near-white average, `missing`'s checker.
 - Opaque blocks stay opaque.
 - The ladder's rails, rungs and gaps, the tall grass's clear top row and sides, and the leaves'
   coverage are as the meshes assume.
-- Painterly averages stay near the classic hues (the far view).
+- The tall grass averages near the grass top (the far view).
 - A dirt side under a sloped grass block takes `dirtSkirt`, on face A and face B; under air, stone or
   a full grass cube it stays `dirt`. A fixture block's `sideUnder` (`test:loam`, by data alone) is
   applied (`mesher_tests.rs`).
 
-## 6. The switch, and flipping it
+## 6. Compatibility
 
-- `?textures=painterly` picks the painterly set; `?textures=classic` or nothing picks the classic.
-- Painterly is the default (`#[default]` on `TextureSet::Painterly` in
-  `crates/dwell-mesh/src/textures.rs`, owner, 2026-10-20); `?textures=classic` keeps the classic set.
-  The test `the_query_picks_the_set_and_the_default_is_painterly` pins it.
-- Textures are not part of the public API. They change no world format, protocol or terrain, so
-  either set works on any server of the line.
+Textures are not part of the public API. They change no world format, protocol or terrain, so a
+change to the data works on any server of the line.
 
 ## 7. Performance
 
-The tiles are baked at build time and uploaded once as the same atlas (same size, same mip chain).
-The shaders, meshes and draw calls are unchanged, so the frame costs the same in either set. Start-up
-copies 12 baked tiles instead of running the noise painters, which is slightly less work.
+The tiles are baked at build time and uploaded once as one atlas with its mip chain. Start-up copies
+the baked tiles; nothing is painted at run time.
 
-Measured 2026-10-20 in Chrome on an Apple GPU (Metal), with `npm run bench -- --compare --configs
-painterly` (the `painterly` configuration in `client/bench/configs.json`). Each scenario ran in a
-fresh page with the same seed and inputs. All numbers are p95, in ms:
-
-| view | config | frame interval | `frame.cpu` | `gpu.frame` |
-| --- | --- | --- | --- | --- |
-| Spawn, looking at the ground | classic | 18.6 | 4.9 | 8.80 |
-| | painterly | 18.6 | 2.1 | 8.49 |
-| 600 m up | classic | 18.6 | 2.2 | 9.32 |
-| | painterly | 18.7 | 1.5 | 9.34 |
-| Over the sea | classic | 18.6 | 2.9 | 11.72 |
-| | painterly | 18.7 | 2.6 | 11.79 |
-
-Both sets run at 60 fps with no dropped frames. The GPU times differ by less than run-to-run noise.
-The painterly CPU times are lower only because the painterly run comes second in each pair, with the
-browser warm.
+Measured 2026-10-20 in Chrome on an Apple GPU (Metal), with `npm run bench -- --compare`, before
+this set became the only one: it ran at 60 fps with no dropped frames, and its GPU times matched the
+procedural set it replaced to within run-to-run noise (p95 `gpu.frame` 8.49 ms at spawn looking at
+the ground, 9.34 ms 600 m up, 11.79 ms over the sea).
 
 ## 8. The editor
 
@@ -201,8 +190,7 @@ into `shared/textures/`.
 
 - Water's surface is drawn by the water shader from its fluid look (`fluids` in
   `shared/blocks/dwell.json`, ADR 0030), not from the atlas. The painterly `water` tile only changes
-  where the tile itself is used (the hotbar, a tile's average), so the sea looks the same in both
-  sets. Taking the fluid's colours from the palette would be a change to the fluid data, and is
+  where the tile itself is used (the hotbar, a tile's average). Taking the fluid's colours from the palette would be a change to the fluid data, and is
   left for later.
 - The sky does not draw `cloud_puff` yet. Clouds are shaded analytically
   ([`CLOUDS.md`](./CLOUDS.md)).

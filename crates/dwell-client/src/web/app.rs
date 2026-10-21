@@ -216,7 +216,7 @@ struct Options {
     netsim: Option<NetConditions>,
     /// `?time=`, `?moon=`, `?timespeed=` (the day/night cycle's dev switches).
     day: DayOverride,
-    /// The page's query, for the dev switches read from it (`?textures=`, `?outline=`).
+    /// The page's query, for the dev switches read from it (`?outline=`).
     search: String,
 }
 
@@ -295,9 +295,6 @@ impl Client {
             day: DayOverride::from_query(&get("search").as_string().unwrap_or_default()),
             search: get("search").as_string().unwrap_or_default(),
         };
-        // `?textures=painterly` (docs/PAINTERLY_TEXTURES.md): chosen before the atlas is built; the
-        // meshing workers get it in their init message (web/jobs.rs).
-        dwell_mesh::set_texture_set(dwell_mesh::TextureSet::from_query(&options.search));
         let (width, height) = (canvas.width().max(1), canvas.height().max(1));
         let mut desc = wgpu::InstanceDescriptor::new_without_display_handle();
         desc.backends = wgpu::Backends::BROWSER_WEBGPU;

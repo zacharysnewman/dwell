@@ -1,5 +1,5 @@
 {
-  "$comment": "The painterly materials (docs/PAINTERLY_TEXTURES.md, ADR 0040; style in docs/ART_DIRECTION.md): each is a stack of layers painted into a 32 × 32 tile by shared/textures/paint.mjs, with colours from shared/textures/palette.json (\"ramp.stop\", a swatch, or \"@stop\" for the material's own ramp). `tiles` maps the block registry's texture names to the materials that paint them in the painterly set (`?textures=painterly`); `keepClassic` lists registry tiles that keep the classic painter (utility tiles, not content). `like` starts from another material's fields (a template); `over` paints another material first. Coordinates are texels, y up (y = 32 is the tile's top); angles in degrees, 0 = +x, 90 = up. Run `node shared/textures/gen.mjs` after editing; CI fails if the baked tiles are stale. Edit live with docs/prototypes/painterly-texture-lab.html. The content is the first art direction, still prototype in scope (ARCHITECTURE.md §6.1).",
+  "$comment": "The painterly materials (docs/PAINTERLY_TEXTURES.md, ADR 0040; style in docs/ART_DIRECTION.md): each is a stack of layers painted into a 32 × 32 tile by shared/textures/paint.mjs, with colours from shared/textures/palette.json (\"ramp.stop\", a swatch, or \"@stop\" for the material's own ramp). `tiles` maps every atlas tile (the block registry's texture names, and the engine's utility tiles `plain` and `missing`) to the material that paints it; the utility tiles (`plain`, `grid`, `missing`) are not content. `like` starts from another material's fields (a template); `over` paints another material first. Coordinates are texels, y up (y = 32 is the tile's top); angles in degrees, 0 = +x, 90 = up. Run `node shared/textures/gen.mjs` after editing; CI fails if the baked tiles are stale. Edit live with docs/prototypes/painterly-texture-lab.html. The content is the first art direction, still prototype in scope (ARCHITECTURE.md §6.1).",
   "tileSize": 32,
   "tiles": {
     "grass": "grass_top",
@@ -13,10 +13,35 @@
     "leaves": "leaves",
     "tallGrass": "tall_grass",
     "ladder": "ladder_wood",
-    "dirtSkirt": "dirt_skirt"
+    "dirtSkirt": "dirt_skirt",
+    "plain": "plain",
+    "grid": "grid",
+    "missing": "missing"
   },
-  "keepClassic": ["grid"],
   "materials": {
+    "plain": {
+      "$comment": "A utility tile, not content: white, which an untextured state's colour tints.",
+      "use": "block", "ramp": "chalk",
+      "layers": [{ "kind": "fill", "color": "@base" }]
+    },
+    "grid": {
+      "$comment": "A utility tile, not content (the sandbox floor): white with a faint one-texel line along the bottom and left edges, so every block edge gets one line from the block on its positive side; mipmapping fades it with distance. The shader's grid look option rules the larger cells.",
+      "use": "block", "ramp": "chalk",
+      "layers": [
+        { "kind": "fill", "color": "@base" },
+        { "kind": "edgeLight", "edge": "bottom", "color": "@shadow", "width": 1 },
+        { "kind": "edgeLight", "edge": "left", "color": "@shadow", "width": 1 }
+      ]
+    },
+    "missing": {
+      "$comment": "A utility tile, never content: the fallback look of a state whose look or textures this build lacks (synced from a server, ADR 0038). Magenta and black squares, 4 × 4 per tile, so it can't be mistaken for anything painted.",
+      "use": "block", "ramp": "chalk", "wrap": false,
+      "layers": [
+        { "kind": "fill", "color": "missing_black" },
+        { "kind": "slab", "colors": ["missing_magenta"], "width": 8, "length": 8, "angle": 0, "softness": 0.25,
+          "at": [[4, 4], [20, 4], [12, 12], [28, 12], [4, 20], [20, 20], [12, 28], [28, 28]] }
+      ]
+    },
     "grass_top": {
       "use": "block", "ramp": "meadow", "overlay": 1,
       "layers": [

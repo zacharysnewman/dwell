@@ -1,5 +1,5 @@
 {
-  "$comment": "Dwell's storybook palette (docs/ART_DIRECTION.md §2): the one source of colour for the painterly textures (shared/textures/materials.json) and the characters (shared/characters). A ramp is three painted values of one material: `shadow` (cooler, toward blue-violet), `base` (the local colour) and `light` (warmer, toward yellow). Reference a ramp stop as \"ramp.stop\" (\"meadow.light\"), a bare ramp name for its base, and a single swatch by its name (\"ink\"). Albedos stay inside about 0.06–0.92 in sRGB so the lights and ACES tone mapping keep them readable. Run `node shared/textures/gen.mjs` after editing.",
+  "$comment": "Dwell's storybook palette (docs/ART_DIRECTION.md §2): the one source of colour for the painterly textures (shared/textures/materials.json) and the characters (shared/characters). A ramp is three painted values of one material: `shadow` (cooler, toward blue-violet), `base` (the local colour) and `light` (warmer, toward yellow). Reference a ramp stop as \"ramp.stop\" (\"meadow.light\"), a bare ramp name for its base, and a single swatch by its name (\"ink\"). Albedos stay inside about 0.06–0.92 in sRGB so the lights and ACES tone mapping keep them readable; the exceptions are the utility tiles' colours (`chalk`, white tinted by a state's colour or ruled as the sandbox grid, and the `missing_*` checker), which are not content. Run `node shared/textures/gen.mjs` after editing.",
   "ramps": {
     "meadow":      { "shadow": "#4a8a45", "base": "#82bd45", "light": "#c8e06a" },
     "leaf":        { "shadow": "#2e6450", "base": "#5f9e3e", "light": "#a6cf52" },
@@ -30,13 +30,16 @@
     "hair_brown":  { "shadow": "#3c2620", "base": "#6b4329", "light": "#9d6c42" },
     "hair_ginger": { "shadow": "#873a26", "base": "#c9652f", "light": "#ee9d55" },
     "hair_blonde": { "shadow": "#ad8848", "base": "#e2bf6c", "light": "#f7e2a4" },
-    "cloud":       { "shadow": "#c6d2ec", "base": "#f2f4fa", "light": "#ffffff" }
+    "cloud":       { "shadow": "#c6d2ec", "base": "#f2f4fa", "light": "#ffffff" },
+    "chalk":       { "shadow": "#e0e0e0", "base": "#ffffff", "light": "#ffffff" }
   },
   "swatches": {
     "ink": "#241c28",
     "ink_soft": "#43354a",
     "foam": "#f0f8f8",
     "sun": "#fff1c2",
-    "star": "#f7f0da"
+    "star": "#f7f0da",
+    "missing_magenta": "#ff00ff",
+    "missing_black": "#000000"
   }
 }

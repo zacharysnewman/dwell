@@ -15,7 +15,6 @@ describe('bench --compare configurations', () => {
     expect(file.baseline).toBe('raster');
     expect(file.configs.map((c) => c.name)).toEqual([
       'raster',
-      'painterly',
       'outline-silhouette',
       'outline-creases',
       'outline-blocks',

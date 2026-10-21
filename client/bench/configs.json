@@ -5,11 +5,6 @@
   "configs": [
     { "name": "raster", "notes": "The mesher at full resolution." },
     {
-      "name": "painterly",
-      "notes": "The mesher with the painterly texture set (docs/PAINTERLY_TEXTURES.md): the same atlas size, meshes and shaders, other texels; the frame cost should match raster's.",
-      "params": { "textures": "painterly" }
-    },
-    {
       "name": "outline-silhouette",
       "notes": "The mesher with the ink outline's silhouettes (docs/ART_DIRECTION.md §7, shared/look/outline.json): its cost is the composite's.",
       "params": { "outline": "silhouette" }

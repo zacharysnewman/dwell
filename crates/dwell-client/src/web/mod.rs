@@ -79,22 +79,6 @@ pub fn hotbar_swatch(slot: usize) -> Vec<u8> {
         .map_or_else(Vec::new, |p| dwell_mesh::swatch(p.material))
 }
 
-/// Chooses this context's texture set by name (`classic`, `painterly`; docs/PAINTERLY_TEXTURES.md):
-/// the page's from `?textures=` (in `Client.create`), each meshing worker's from its init message,
-/// before its first job. False for an unknown name, which leaves the set as it was.
-#[wasm_bindgen(js_name = setTextureSet)]
-pub fn set_texture_set(name: &str) -> bool {
-    dwell_mesh::TextureSet::parse(name)
-        .map(dwell_mesh::set_texture_set)
-        .is_some()
-}
-
-/// The texture set in use in this context (its name).
-#[wasm_bindgen(js_name = textureSet)]
-pub fn texture_set() -> String {
-    dwell_mesh::texture_set().name().into()
-}
-
 /// The hotbar pictures' side, pixels.
 #[wasm_bindgen(js_name = swatchSize)]
 pub fn swatch_size() -> usize {

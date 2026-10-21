@@ -51,8 +51,7 @@ Without MSAA (CPU adapters) it is a plain test.
 
 **Distance.** Averaging alpha down the mips thins a blade a texel wide to half alpha, under the test
 — distant grass would vanish. The atlas mips of tiles with transparent texels are rescaled so each
-level covers the same share of the tile as the full-size tile (coverage-preserving mipmaps), in
-both texture sets. Where the share moves in steps (the last levels, 2 × 2 texels a tile), the nearer
+level covers the same share of the tile as the full-size tile (coverage-preserving mipmaps). Where the share moves in steps (the last levels, 2 × 2 texels a tile), the nearer
 step is taken, but never one that empties the tile: distant ladders stay drawn.
 
 ## 4. The cross geometry

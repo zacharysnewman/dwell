@@ -56,7 +56,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 36 — Block registry sync | 🚧 In progress — built and tested natively and in Vitest (ADR 0038, `BLOCK_REGISTRY.md` §8): the server's registry sent at join (`BlockRegistry`, protocol 14), ids mapped at the session boundary, the join prompt (no refusals), the fallback look, server-registered blocks, placeholders for unknown states in world files; outstanding: CI, the e2e suite (WebRTC join fixed: parts fit a WebRTC message, larger messages are fragmented), the owner's review of the prompt; ships in the next minor (0.14.0), coordinated with Phase 16's protocol bump |
 | 37 — Sprint slide (stacks on 35) | 🚧 In progress — built and tested natively (controller, predictor, netcode, protocol 15 vectors): crouch while sprinting slides on, crouched, with friction and slopes, limited steering, a jump out and a cooldown (`PLAYER_CONTROLLER.md` §6.9), checked in Chrome (the `sprint-slide` bench); outstanding: CI (the WASM divergence run and the e2e suite), the owner's review; a protocol change (15): the owner raises `package.json` to a new minor |
 | 38 — The spyglass | 🚧 In progress — built and tested natively, in Vitest and on a real GPU (ADR 0039, `SPYGLASS.md`): a toggle key (`` ` ``) and wheel steps from `shared/look/spyglass.json` (generator, CI stale check), the zoomed FOV for the raster renderer, the marcher (its FOV bug fixed) and the LOD, which refines only inside the narrow view (bounded by the detail boost), the vignette, reduced motion, the `spyglass-far` bench scenario; outstanding: CI and the owner's review in a browser; a patch release |
-| 39 — Painterly textures | 🚧 In progress — built and tested natively, in Node and on a real GPU (ADR 0040, `ART_DIRECTION.md`, `PAINTERLY_TEXTURES.md`): the storybook palette and materials as data (`shared/textures`), one stroke generator baked into the atlas (CI stale check, a material added by data alone), `?textures=painterly` on the page and in the meshing workers (the default since the owner approved it, 2026-10-20; `?textures=classic` keeps the old set), the Painterly Texture Lab, the bench's `painterly` configuration (same frame cost); follow-ups: grass_side's skirt made continuous across the tile (owner's review); the skirt on dirt sides under grass (`sideUnder` block data, the `dirtSkirt` tile, in both sets; owner, 2026-10-20); the ink outline preview behind `?outline=` (ART_DIRECTION.md §7, off by default), then no ink on tall grass (block data `outline`) and the edge blur moved to its own pass over the finished image so the ink reaches the screen edges at speed (owner, 2026-10-20); outstanding: the owner's pick of an outline mode; CI and the owner's review of the look, then flipping the default; a patch release |
+| 39 — Painterly textures | 🚧 In progress — built and tested natively, in Node and on a real GPU (ADR 0040, `ART_DIRECTION.md`, `PAINTERLY_TEXTURES.md`): the storybook palette and materials as data (`shared/textures`), one stroke generator baked into the atlas (CI stale check, a material added by data alone), the default since the owner approved it (2026-10-20) and the only texture set since the classic one was removed (owner, 2026-10-21: the utility tiles `plain`, `grid`, `missing` painted from the data, `TextureSet` and `?textures=` gone), the Painterly Texture Lab; follow-ups: grass_side's skirt made continuous across the tile (owner's review); the skirt on dirt sides under grass (`sideUnder` block data, the `dirtSkirt` tile, owner, 2026-10-20); the ink outline preview behind `?outline=` (ART_DIRECTION.md §7, off by default), then no ink on tall grass (block data `outline`) and the edge blur moved to its own pass over the finished image so the ink reaches the screen edges at speed (owner, 2026-10-20); outstanding: the owner's pick of an outline mode; CI and the owner's review of the look; a patch release |
 | 40 — Characters and creatures | 🚧 In progress — C0 built and tested (ADR 0041, `CHARACTERS.md`): the rig vocabulary and validator (`shared/characters/rig.mjs`), the data (the player with three looks, the wolf, the deer; accessories, the block and brush items, clips), the generator and its tests, the Character Lab prototype checked in Chrome and published; stacked on Phase 39's palette and materials; C0b (the owner's first review, 2026-10-20) built and tested: hair composes with hats (`with`), the wolf's and deer's tails are chains checked joined through every clip, the player's clips for every controller state (sprint, crouch, crouch-walk, slide, jump, fall, land, climb, swim, fly; the arms' sprint, slide, jump, fall, land) and the Lab's transitions player; C1 (players in the game) built and tested (2026-10-20): `dwell-characters` (tables generated from the data, part meshes, clips, clip selection), the full body for remote players and your first-person arms in their own pass, the Show your arms setting, the `puppets` dev tool; with C2's held item and swings in snapshots (protocol v17: **a new compatibility line**, the owner raises `package.json`); outstanding: CI, the owner's review in game and of `CHARACTERS.md` §10, C2's looks at join, a step pose (foot IK on steps built with claude/smooth-steps), C3 |
 | 41 — Half-height grid (½ m cells, stored cardinal ramps) | 🚧 In progress — adopted for `main` (owner, 2026-10-20; ADR 0042): H0–H6 built and verified locally (½ m cells, stored ramps, nothing adaptive; the slopes V2; `main` 0.21.4 merged in); H7, the adoption: protocol 18, generator 19, the adaptive blocks removed, the experiment wording gone, `main`'s 1 m work checked on ½ m cells (HALF_HEIGHT_GRID.md §9). Outstanding: CI; the bench numbers against 0.21.x; the owner raises `package.json` to 0.22.0 at the merge (a new compatibility line). Deviations: brushes, a fluid's surface drop, the chunk view sphere and structures stay in cells; the LOD draws natural tops flat |
 | 42 — Smooth LOD transitions | 🚧 In progress — built and tested natively and in Chrome on the GPU: a dithered cross-fade on every LOD swap (`dwell-lod` `fade.rs`; chunks, sections, stand-ins, skirts, water; no ink on the outgoing level) and hysteresis in the selection, both data (`shared/look/lodblend.json`); outstanding: CI, the owner's review in a browser; a patch release |
@@ -3867,8 +3867,8 @@ Exit criteria
 ## Phase 39 — Painterly Textures
 
 **Status:** Built and tested natively, in Node and Vitest, and in Chrome on the GPU (2026-10-20),
-and the default since the owner approved it (2026-10-20; `?textures=classic` keeps the old set).
-Outstanding: CI. No change to saves, the protocol or
+the default since the owner approved it (2026-10-20), and the only texture set since the owner
+removed the classic one (2026-10-21, below). Outstanding: CI. No change to saves, the protocol or
 terrain: a patch release.
 Follow-up (owner's review, 2026-10-20): grass_side's hanging skirt covered only the left ~60 % of the
 tile (a thin `band` gave the placement grid more columns than strokes), so tiled blocks read as
@@ -3877,13 +3877,11 @@ inside the turf band, a firmer band edge), with tests that the skirt is continuo
 no other material changed.
 Follow-up (owner, 2026-10-20: "I want to see the grass skirt fringe on dirt that's below sloped
 grass"): a dirt side face with grass directly above (a slope's low side at a step or cliff) takes the
-new `dirtSkirt` tile, the grass side's skirt on soil (`like: grass_side`; classic: the grass side's
-painter). Built as data: `sideUnder` on a block (`shared/blocks/dwell.json`, validated by
+new `dirtSkirt` tile, the grass side's skirt on soil (`like: grass_side`). Built as data: `sideUnder` on a block (`shared/blocks/dwell.json`, validated by
 `shared/blocks/faces.mjs` with `faces.test.mjs` in CI), carried in the registry rows and as look tag
 `0x8b` in the registry payload (old clients ignore look tags), applied by the chunk mesher, skipped
 where the grass shows a full side of its own. Mesher tests red → green; checked in Chrome on the GPU
-in both sets. Deviation: the classic set changes too (the same rule picks the classic tile); the LOD
-keeps flat dirt side colours.
+in both sets of the time. The LOD keeps flat dirt side colours.
 Follow-up (owner, 2026-10-20: "I see the Character Lab has edge lines, I like that. What would that
 look like applied to the whole game?"): a preview of the **ink outline** (ART_DIRECTION.md §7), a
 screen-space line in the palette's `ink` drawn by the composite from the view depth (silhouettes,
@@ -3892,6 +3890,15 @@ creases, block edges), its modes as data (`shared/look/outline.json`, `outline.m
 (the data's validation, the uniform plumbing, the edge rule's fade, red → green); screenshots of
 every view off and in each mode, painterly and classic, and the ray marcher; cost measured with the
 bench. Outstanding: the owner's pick of a mode (or none), then a setting if it stays.
+Follow-up (owner, 2026-10-21: "remove the classic texture set"): the classic set is removed; it stays
+in the commit history. The utility tiles (`plain`, `grid`, `missing`) are painted from
+`materials.json` (a `chalk` ramp and `missing_*` swatches; `keepClassic` dropped; `gen.mjs`
+validates `tiles` against every atlas tile, the registry's and `ENGINE_TILES`), pixel for pixel the
+old ones. Removed: the classic painters and noise, `TextureSet`, `set_texture_set`/`texture_set`/
+`from_query`, `?textures=` on the page and the workers' init field, the per-set caches, the
+characters' clean-ramp path and the bench's `painterly` configuration. The tests that iterated both
+sets (cutout mip coverage, gutter filtering) cover the one set, with every atlas tile still checked.
+A patch: no save, protocol or terrain change.
 
 Owner (2026-10-20, the art brief): *procedural painterly storybook textures for everything* —
 blocks, plants, water, sky accents and characters — from one data-driven generator of brush
@@ -3913,10 +3920,11 @@ Deliverables
   CI stale check and tests.
 - [x] `dwell-mesh` `TextureSet` (classic default, painterly): one texel lookup for the atlas,
   cutout detection, the averages and LOD colours (cached per set) and the hotbar swatches; tests.
+  (Removed 2026-10-21 with the classic set: one set, one lookup.)
 - [x] `?textures=painterly` on the page (`Client.create`) and in the meshing workers (their init
-  message, `jobWorker.ts`), so the LOD colours match the atlas.
+  message, `jobWorker.ts`), so the LOD colours match the atlas. (Removed 2026-10-21.)
 - [x] The Painterly Texture Lab (`docs/prototypes/painterly-texture-lab.html`, published).
-- [x] The bench's `painterly` configuration (`--compare --configs painterly`).
+- [x] The bench's `painterly` configuration (`--compare --configs painterly`). (Removed 2026-10-21.)
 - [x] Screenshots classic against painterly on a real GPU: ground, blocks close up, a grassy
   hillside, water, from 600 m.
 - [x] Follow-up: the ink outline preview (ART_DIRECTION.md §7): `shared/look/outline.json` (the ink
@@ -3932,6 +3940,11 @@ Deliverables
   (`finished_fs`, `motion_fs`), so the ink and every later per-pixel effect reach the screen's edges
   at speed (MOTION_EFFECTS.md, the rule and its cost). Shader-source tests red on the old code;
   before/after screenshots on a real GPU.
+- [x] Follow-up (owner, 2026-10-21): remove the classic texture set — the utility tiles painted
+  from data (`gen.test.mjs` and `textures.rs` pin `plain`, `grid`'s line and `missing`'s checker),
+  the classic painters, `TextureSet` and `?textures=` deleted, the both-set tests narrowed to the
+  one set; checked in Chrome on the GPU (the sandbox grid floor, ladders, grass and leaves at
+  distance).
 - [ ] The owner's pick of an outline mode, or none (ART_DIRECTION.md §7.6); a setting if it stays.
 - [ ] Later (not this phase): the sky drawing `cloud_puff`; the fluids' colours from the palette;
   the characters in game (Phase 40); a 64-texel atlas for finer brushes.
@@ -3942,7 +3955,8 @@ Exit criteria
 - [x] A bad entry fails with a message naming it (`gen.test.mjs`).
 - [x] The default look is unchanged: the classic atlas is built as before and the default set is
   classic (`the_query_picks_the_set_and_the_default_is_painterly`,
-  `the_painterly_atlas_differs_from_the_classic_only_in_painted_tiles`).
+  `the_painterly_atlas_differs_from_the_classic_only_in_painted_tiles`). (Superseded: painterly
+  became the default on 2026-10-20 and the only set on 2026-10-21.)
 - [x] The frame cost is unchanged (the same atlas, meshes and shaders; `npm run bench --
   --compare --configs painterly`, PAINTERLY_TEXTURES.md §7).
 - [ ] CI green; the owner's review of the look.

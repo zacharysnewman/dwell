@@ -5,14 +5,14 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { bake, labPage, registryTiles, rustSource } from './gen.mjs';
+import { ENGINE_TILES, atlasTiles, bake, labPage, rustSource } from './gen.mjs';
 import { TILE, imageRows, materialRamp, paintMaterial, resolveColor, validateMaterials, validatePalette } from './paint.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const readJson = (p) => JSON.parse(readFileSync(p, 'utf8'));
 const palette = readJson(join(here, 'palette.json'));
 const materials = readJson(join(here, 'materials.json'));
-const tiles = registryTiles(readJson(join(here, '..', 'blocks', 'dwell.json')));
+const tiles = atlasTiles(readJson(join(here, '..', 'blocks', 'dwell.json')));
 const clone = (v) => structuredClone(v);
 
 const texel = (tile, x, y) => [...tile.subarray((y * TILE + x) * 4, (y * TILE + x) * 4 + 4)];
@@ -127,8 +127,10 @@ test('bad entries fail with a message naming them', () => {
     [(m) => (m.materials.soil.over = 'grass_side'), /over forms a cycle/],
     [(m) => (m.tiles.stone = 'nothing'), /tiles\.stone: unknown material "nothing"/],
     [(m) => (m.tiles.stone = 'leather'), /tiles\.stone: material "leather" is not a block material/],
-    [(m) => delete m.tiles.sand, /the block registry draws with tile "sand"/],
-    [(m) => (m.tiles.marble = 'stone'), /tiles\.marble: no block in the registry draws with tile "marble"/],
+    [(m) => delete m.tiles.sand, /the atlas has tile "sand", which "tiles" doesn't paint/],
+    [(m) => delete m.tiles.missing, /the atlas has tile "missing", which "tiles" doesn't paint/],
+    [(m) => (m.tiles.marble = 'stone'), /tiles\.marble: the atlas has no tile "marble"/],
+    [(m) => (m.keepClassic = ['grid']), /unknown entry keepClassic/],
     [(m) => (m.tileSize = 64), /tileSize must be 32/],
   ];
   for (const [mutate, message] of cases) {
@@ -205,4 +207,27 @@ test("grass_side's turf skirt is one continuous, uneven hem that wraps across th
   assert.ok(Math.abs(hem[0] - hem[TILE - 1]) <= 3, `the seam: ${hem[0]} vs ${hem[TILE - 1]}`);
   // And it is a painted, uneven hem, not a ruler-straight one.
   assert.ok(Math.max(...hem) - Math.min(...hem) >= 3, `hem lengths ${hem.join(' ')}`);
+});
+
+test("the utility tiles: plain is white, grid is white with a faint edge line, missing is a magenta and black checker", () => {
+  for (const t of ENGINE_TILES) assert.ok(t in materials.tiles, `${t} is painted`);
+  const paint = (tile) => paintMaterial(materials.tiles[tile], materials, palette);
+  const plain = paint('plain');
+  for (let k = 0; k < TILE * TILE; k++) assert.deepEqual([...plain.subarray(k * 4, k * 4 + 4)], [255, 255, 255, 255]);
+  // One texel of line along the bottom and left edges (each block edge once), white elsewhere.
+  const grid = paint('grid');
+  const line = [224, 224, 224, 255];
+  for (let i = 0; i < TILE; i++) {
+    assert.deepEqual(texel(grid, i, 0), line, `bottom ${i}`);
+    assert.deepEqual(texel(grid, 0, i), line, `left ${i}`);
+  }
+  for (const [x, y] of [[1, 1], [TILE - 1, 5], [16, 30], [5, TILE - 1]]) assert.deepEqual(texel(grid, x, y), [255, 255, 255, 255]);
+  // Squares of 8 texels, magenta where (x / 8 + y / 8) is even, with hard edges.
+  const missing = paint('missing');
+  for (let y = 0; y < TILE; y++) {
+    for (let x = 0; x < TILE; x++) {
+      const want = (Math.floor(x / 8) + Math.floor(y / 8)) % 2 === 0 ? [255, 0, 255, 255] : [0, 0, 0, 255];
+      assert.deepEqual(texel(missing, x, y), want, `${x}, ${y}`);
+    }
+  }
 });
