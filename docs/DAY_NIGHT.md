@@ -360,9 +360,17 @@ direct-light stand-in near the player.
   **what emits** (`emits`; no build block yet, the fixture `test:lamp` gives off 14).
 - **Updates**: removal then addition passes (brightest first) on every edit, predicted edits
   included, and on chunk loads and unloads, so the light is the same whatever order chunks came in
-  (tests compare it with a relight from scratch). The streamer lights arriving chunks within its
-  per-frame meshing budget, meshes no chunk while it or a neighbour waits, and re-meshes every chunk
-  whose light changed (a roof darkens the column under it across chunks).
+  (tests compare it with a relight from scratch). The streamer lights arriving chunks nearest the
+  player first within a **light budget of its own** (4 ms a frame, or a tenth of a slow frame's
+  interval up to 25 ms; apart from the 4 ms mesh budget, so lighting doesn't starve the meshing),
+  meshes no chunk while it or a neighbour waits, and re-meshes every chunk whose light changed (a
+  roof darkens the column under it across chunks). **Unloads are one update per batch**
+  (`LightMap::unload_many`): the removal starts from the dropped chunks' own border levels, and a
+  cell next to them lit as brightly some other way (its column's sky, or the open sky now entering
+  where they were) is kept, so nothing below or beside it is relit. In 0.22.9 each dropped chunk
+  cleared and refilled every open-air column beside and below it, one chunk at a time: 1–2 s long
+  tasks when a fast flight dropped a batch (fixed in the release after 0.22.10; a test bounds the
+  cells an unload writes).
 - **Meshing**: each vertex of a cell face averages the sky and block light of the cells it touches
   in the layer the face looks into (smooth lighting; light-blocking cells that hold none are left
   out); shaped faces take the brightest of their cell and the cells they face; plants their cell.
