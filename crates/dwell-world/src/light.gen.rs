@@ -10,7 +10,7 @@ pub const LIGHT: LightTunables = LightTunables {
     direct_from: 8,
     direct_full: 15,
     block_curve: 3.0,
-    block_color: [1.0, 0.721569, 0.470588],
+    block_color: [1.0, 0.603922, 0.321569],
     block_strength: 1.2,
     character_ease_s: 0.25,
 };

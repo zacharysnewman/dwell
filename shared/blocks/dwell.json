@@ -15,7 +15,7 @@
   },
   "$lights": "Light sources (docs/LIGHTS.md §2): the dynamic point lights that blocks reference by name (`light`), held in a hand or placed. color (sRGB), strength (its irradiance at the flame), radiusM (where it ends; a placed torch's block light reaches `emits` metres, so the same radius lights alike), flicker (amount: the share of its strength it takes at most; speed: its noise's cycles a second), shadows (whether it may cast them, the Torch shadows setting's, Phase 47 T2). A placed block's flood light is its `emits`; a held one never touches the flood light.",
   "lights": {
-    "dwell:torch": { "color": "#ffa45c", "strength": 3.8, "radiusM": 14, "flicker": { "amount": 0.16, "speed": 6 }, "shadows": true }
+    "dwell:torch": { "color": "#ff8a3d", "strength": 3.8, "radiusM": 14, "flicker": { "amount": 0.16, "speed": 6 }, "shadows": true }
   },
   "blocks": [
     { "name": "air", "density": 0, "shape": "empty", "look": "cube", "color": "#000000", "opacity": 0 },
