@@ -35,6 +35,7 @@ pub const SHADOWS: ShadowTunables = ShadowTunables {
             split_lambda: 0.6,
             filter_texels: 1.25,
             filter_taps: 2,
+            refresh_frames: 2,
         },
         // high
         ShadowTier {
@@ -44,6 +45,7 @@ pub const SHADOWS: ShadowTunables = ShadowTunables {
             split_lambda: 0.75,
             filter_texels: 1.75,
             filter_taps: 3,
+            refresh_frames: 3,
         },
     ],
 };

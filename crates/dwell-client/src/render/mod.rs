@@ -781,6 +781,10 @@ pub struct Renderer {
     shadow_maps: shadows::ShadowMaps,
     shadow_pipelines: HashMap<(Kind, bool), wgpu::RenderPipeline>,
     shadow_quality: ShadowQuality,
+    /// The last frame's shadow plan (the cascades as drawn: `shadows::stagger`) and a frame count
+    /// for the far cascades' turns.
+    shadow_prev: Option<shadows::Plan>,
+    shadow_frame: u64,
     draw_buffer: wgpu::Buffer,
     draw_group: wgpu::BindGroup,
     draw_capacity: u64,
@@ -1190,11 +1194,13 @@ impl Renderer {
                     compilation_options: Default::default(),
                     targets: &[],
                 }),
-                // Both sides cast: a face seen edge-on by the light still closes its block.
+                // Opaque casters draw the faces toward the light (the light's view keeps the
+                // scene's handedness, so they are its front faces): half the triangles, and a
+                // face's own back never shades it. Plants cast from both sides.
                 primitive: wgpu::PrimitiveState {
                     topology: wgpu::PrimitiveTopology::TriangleList,
                     front_face: wgpu::FrontFace::Ccw,
-                    cull_mode: None,
+                    cull_mode: (kind != Kind::Cutout).then_some(wgpu::Face::Back),
                     ..Default::default()
                 },
                 depth_stencil: Some(shadows::caster_depth(&SHADOWS)),
@@ -1337,6 +1343,8 @@ impl Renderer {
             shadow_maps,
             shadow_pipelines,
             shadow_quality: ShadowQuality::default(),
+            shadow_prev: None,
+            shadow_frame: 0,
             draw_buffer,
             draw_group,
             draw_capacity: 1024,
@@ -1582,6 +1590,8 @@ impl Renderer {
             self.frame_bindings
                 .groups(&self.device, &self.frame_buffers, &self.water_tiles, &maps);
         self.shadow_maps = maps;
+        // New maps hold nothing: every cascade is drawn next frame.
+        self.shadow_prev = None;
     }
     /// Whether a frame may be drawn at `now_ms` (pacing.rs): not while `pacing::MAX_IN_FLIGHT`
     /// frames are still on the GPU.
@@ -2312,7 +2322,17 @@ impl Renderer {
         // The sun's or moon's shadow maps (shadows.rs): this frame's cascades, their casters, and
         // each cascade's frame (the near pass's, with the cascade's matrix as view_proj).
         self.ensure_shadow_maps();
-        let shadow_plan = self.shadow_plan(&basis);
+        // The near cascade every frame, the others in turn (`shadows::stagger`).
+        let mut shadow_plan = self.shadow_plan(&basis);
+        let mut shadow_mask = 0u8;
+        if let Some(p) = &mut shadow_plan {
+            let (used, mask) =
+                shadows::stagger(self.shadow_prev.as_ref(), p, self.eye, self.shadow_frame, false);
+            p.cascades = used;
+            shadow_mask = mask;
+            self.shadow_frame += 1;
+        }
+        self.shadow_prev = shadow_plan.clone();
         self.queue.write_buffer(
             &self.shadow_maps.uniform,
             0,
@@ -2320,10 +2340,13 @@ impl Renderer {
         );
         let casters = shadow_plan
             .as_ref()
-            .map(|p| self.collect_casters(p, chunk_fade))
+            .map(|p| self.collect_casters(p, shadow_mask, chunk_fade))
             .unwrap_or_default();
         if let (Some(p), Some(mut u)) = (&shadow_plan, near_uniforms) {
-            for (c, buffer) in p.cascades.iter().zip(&self.shadow_maps.frames) {
+            for (i, (c, buffer)) in p.cascades.iter().zip(&self.shadow_maps.frames).enumerate() {
+                if shadow_mask & (1 << i) == 0 {
+                    continue;
+                }
                 for (k, col) in c.view_proj.iter().enumerate() {
                     u[k * 4..k * 4 + 4].copy_from_slice(col);
                 }
@@ -2432,9 +2455,11 @@ impl Renderer {
         // The shadow maps first: a pass per cascade, timed as one.
         if let Some(plan) = &shadow_plan {
             let query = self.timer.as_mut().and_then(|t| t.pass(timing::SHADOWS));
+            let before = triangles;
             self.record_shadows(
                 &mut encoder,
                 plan,
+                shadow_mask,
                 &casters,
                 first_caster,
                 &arena,
@@ -2442,6 +2467,7 @@ impl Renderer {
                 &mut calls,
                 &mut triangles,
             );
+            crate::telemetry::sample("shadow.ktris", (triangles - before) as f64 / 1000.0);
         }
         // With water that reads the scene (W3), a pass with water is split: its opaque half
         // (colour resolved, depth kept), a copy of the colour, then its water half, which samples
@@ -2696,6 +2722,8 @@ impl Renderer {
         let view = shadows::View {
             eye: self.eye,
             forward: basis.forward(),
+            right: basis.right,
+            up: basis.up,
             tan_x: tan_y * aspect,
             tan_y,
         };
@@ -2717,6 +2745,7 @@ impl Renderer {
     fn collect_casters(
         &self,
         plan: &shadows::Plan,
+        mask: u8,
         chunk_fade: &dyn Fn(ChunkCoord) -> Option<Fade>,
     ) -> Vec<DrawItem> {
         let bits = |origin: V3, size: V3| -> u8 {
@@ -2726,6 +2755,7 @@ impl Renderer {
             plan.cascades
                 .iter()
                 .enumerate()
+                .filter(|(i, _)| mask & (1 << i) != 0)
                 .fold(0u8, |m, (i, c)| m | (u8::from(c.touches(centre, half)) << i))
         };
         let item = |kind, offset, clip, fade, mesh, passes| DrawItem {
@@ -2818,6 +2848,7 @@ impl Renderer {
         &self,
         encoder: &mut wgpu::CommandEncoder,
         plan: &shadows::Plan,
+        mask: u8,
         casters: &[DrawItem],
         first_slot: u64,
         arena: &Arena,
@@ -2826,11 +2857,12 @@ impl Renderer {
         triangles: &mut u64,
     ) {
         let n = plan.cascades.len().min(self.shadow_maps.layers.len());
-        for i in 0..n {
+        let drawn: Vec<usize> = (0..n).filter(|i| mask & (1 << i) != 0).collect();
+        for (j, &i) in drawn.iter().enumerate() {
             let timestamp_writes = self
                 .timer
                 .as_ref()
-                .and_then(|t| t.writes_span(query, i == 0, i + 1 == n));
+                .and_then(|t| t.writes_span(query, j == 0, j + 1 == drawn.len()));
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("shadow cascade"),
                 color_attachments: &[],

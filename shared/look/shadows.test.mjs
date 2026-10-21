@@ -38,6 +38,7 @@ test('bad entries fail with their path named', () => {
     [(d) => (d.tiers.low.filterTaps = 0), /tiers\.low\.filterTaps must be a number in \[1, 4\]/],
     [(d) => ((d.cascades.nearM = 50), (d.tiers.low.distanceM = 40)), /tiers\.low\.distanceM must be over cascades\.nearM/],
     [(d) => (d.cascades.spyglassMaxM = 10), /cascades\.spyglassMaxM must be at least/],
+    [(d) => (d.tiers.high.refreshFrames = 2), /tiers\.high\.refreshFrames must be at least cascades − 1/],
   ];
   for (const [edit, message] of cases) {
     const d = data();

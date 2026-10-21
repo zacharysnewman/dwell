@@ -58,6 +58,8 @@ pub struct ShadowTier {
     pub filter_texels: f64,
     /// Its taps a side.
     pub filter_taps: u32,
+    /// The far cascades take turns: each is drawn once every this many frames.
+    pub refresh_frames: u32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]

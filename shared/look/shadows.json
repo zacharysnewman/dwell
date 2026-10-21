@@ -20,8 +20,8 @@
     "moon": { "fadeStartDeg": 2, "fadeEndDeg": 12, "strength": 1 }
   },
   "tiers": {
-    "$comment": "Per Shadows setting (Off draws none). cascades: how many (1–4). resolution: each cascade's map (texels a side). distanceM: the shadow distance (view depth). splitLambda: the slices' split, 0 even to 1 logarithmic. filterTexels: the soft PCF's radius (texels). filterTaps: its taps a side (each a 2×2 hardware compare).",
-    "low": { "cascades": 2, "resolution": 1024, "distanceM": 80, "splitLambda": 0.6, "filterTexels": 1.25, "filterTaps": 2 },
-    "high": { "cascades": 4, "resolution": 2048, "distanceM": 160, "splitLambda": 0.75, "filterTexels": 1.75, "filterTaps": 3 }
+    "$comment": "Per Shadows setting (Off draws none). cascades: how many (1–4). resolution: each cascade's map (texels a side). distanceM: the shadow distance (view depth). splitLambda: the slices' split, 0 even to 1 logarithmic. filterTexels: the soft PCF's radius (texels). filterTaps: its taps a side (each a 2×2 hardware compare). refreshFrames: the nearest cascade is drawn every frame; the others take turns, each drawn once every this many frames (at least one fewer than the cascades), read as last drawn between (their casters lag that much).",
+    "low": { "cascades": 2, "resolution": 1024, "distanceM": 80, "splitLambda": 0.6, "filterTexels": 1.25, "filterTaps": 2, "refreshFrames": 2 },
+    "high": { "cascades": 4, "resolution": 2048, "distanceM": 160, "splitLambda": 0.75, "filterTexels": 1.75, "filterTaps": 3, "refreshFrames": 3 }
   }
 }
