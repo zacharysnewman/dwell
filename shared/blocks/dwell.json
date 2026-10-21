@@ -47,8 +47,9 @@
       "palette": [
         { "facing": "north" }, { "facing": "east" }, { "facing": "south" }, { "facing": "west" }
       ],
-      "$comment": "Drawn cutout: the ladder tile's gaps between rails and rungs are transparent.",
-      "render": "cutout", "color": "#a0703a", "textures": "ladder"
+      "$comment": "Drawn cutout: the ladder tile's gaps between rails and rungs are transparent. selectionBox: aimed at by its plate, ⅛ m against the wall it is mounted on (written for facing north and turned per facing), not the whole cell.",
+      "render": "cutout", "color": "#a0703a", "textures": "ladder",
+      "selectionBox": [0, 0, 0.875, 1, 1, 1]
     },
     {
       "name": "water", "sound": "dwell:water", "density": 1000, "shape": "empty", "look": "fluid", "fluid": "dwell:water",

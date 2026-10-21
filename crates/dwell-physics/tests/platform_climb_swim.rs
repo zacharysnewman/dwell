@@ -287,6 +287,74 @@ fn jumping_off_launches_away_and_does_not_re_grab() {
     assert_eq!(w.count(e, ev::CLIMB_STARTED), 1);
 }
 
+/// Off a ladder but still in its cells, a jump grabs it again (owner, 2026-10-21: before, the
+/// column let go of was not re-grabbed until the player left it, jump or not).
+#[test]
+fn a_jump_in_a_ladders_cells_after_getting_off_grabs_it_again() {
+    for hold in [true, false] {
+        let mut w = ladder_world();
+        let e = w.spawn(v(0.5, 0.0, -0.5));
+        // Up, then down to the floor looking down (it lets go there), still pushing into the
+        // ladder or standing, then jump.
+        w.set_input(move |t, _| {
+            let (y, pitch) = if t < 50 {
+                (1.0, 0.0)
+            } else if t < 50 + ticks(1.5) {
+                (1.0, -45.0)
+            } else {
+                (if hold { 1.0 } else { 0.0 }, 0.0)
+            };
+            let jump = (50 + ticks(2.0)..50 + ticks(2.0) + 2).contains(&t);
+            input(0.0, y, false, jump, false, 0.0, pitch)
+        });
+        w.step(50 + ticks(2.0) - 5);
+        assert_eq!(w.count(e, ev::CLIMB_ENDED), 1, "hold {hold}");
+        assert!(!w.c(e).climb.climbing && w.c(e).ground.grounded);
+        assert!(
+            w.pos(e).z > 1.0,
+            "still in the ladder's cells: {:?}",
+            w.pos(e)
+        );
+        // Walking into it doesn't grab it: the column let go of stays let go of.
+        assert_eq!(w.count(e, ev::CLIMB_STARTED), 1);
+        w.step(10);
+        assert_eq!(
+            w.count(e, ev::CLIMB_STARTED),
+            2,
+            "hold {hold}: the jump grabs it"
+        );
+        if hold {
+            w.step(20);
+            assert!(w.c(e).climb.climbing, "and climbs it");
+            assert!(w.feet(e) > 0.5, "{}", w.feet(e));
+        } else {
+            w.step(20);
+            assert!(w.c(e).climb.climbing, "and holds it, standing still");
+        }
+    }
+}
+
+/// A jump off a ladder (pressed while climbing) is not one that grabs it again: tapping jump
+/// again as the player leaves, or on landing, doesn't pull them back on (which could leave them
+/// stuck on it).
+#[test]
+fn jumping_off_near_the_floor_and_tapping_jump_again_does_not_re_grab() {
+    let mut w = ladder_world();
+    let e = w.spawn(v(0.5, 0.0, -0.5));
+    // Grab it at the floor (holding still), jump off, then tap jump every few ticks.
+    w.set_input(|t, _| {
+        let y = if t < 20 { 1.0 } else { 0.0 };
+        let jump = t == 30 || (t > 32 && t % 4 == 0);
+        input(0.0, y, false, jump, false, 0.0, 0.0)
+    });
+    w.step(31);
+    assert!(!w.c(e).climb.climbing);
+    assert_eq!(w.count(e, ev::CLIMB_ENDED), 1);
+    w.step(ticks(1.5));
+    assert_eq!(w.count(e, ev::CLIMB_STARTED), 1, "not re-grabbed");
+    assert!(w.pos(e).z < 1.0, "left the ladder: {:?}", w.pos(e));
+}
+
 #[test]
 fn climbing_down_to_the_floor_lets_go() {
     let mut w = ladder_world();
