@@ -499,6 +499,8 @@ ts.push('  opacity: number;');
 ts.push('  textures?: MaterialTextures;');
 ts.push('  /** Ladders: the face whose side the plate faces (0 +X, 1 −X, 4 +Z, 5 −Z). */');
 ts.push('  ladderFace?: number;');
+ts.push('  /** The box it is aimed at by, when not the whole cell: min x, y, z, max x, y, z in the cell (0..1), turned to its facing. */');
+ts.push('  selection?: readonly [number, number, number, number, number, number];');
 ts.push('  /** Index into SHAPES: the solid\'s geometry in its cell (0 = none). */');
 ts.push('  shape: number;');
 ts.push('  /** Shaped blocks only: water fills the open part of the cell (SLOPE_BLOCKS.md §3.1). */');
@@ -580,6 +582,7 @@ for (let first = 0; first < states.length; first += CHUNK) {
   if (d.look === 'ladder' && d.facingProperty) {
     parts.push(`ladderFace: ${LADDER_FACE[s.values[d.facingProperty]]}`);
   }
+  if (d.selectionBox) parts.push(`selection: [${selectionOf(d, s.values).join(', ')}]`);
   parts.push(`shape: ${s.shapeIndex}`);
   parts.push(`flooded: ${s.flooded}`);
   parts.push(`placeable: ${!!s.placeable}`);

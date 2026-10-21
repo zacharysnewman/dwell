@@ -126,4 +126,14 @@ describe('block registry (docs/BLOCK_REGISTRY.md)', () => {
       expect(recorded, name).toBe(REGISTRY_HASH.toString(16));
     }
   });
+
+  it("gives the shell each state's selection box, turned to its facing", () => {
+    // The e2e tests aim at a block by its box (a ladder is aimed at by its plate, not its cell).
+    const box = (name: string) => STATE_DEFS[stateId(name)]?.selection;
+    expect(box('dwell:ladder[facing=north,flooded=false]')).toEqual([0, 0, 0.875, 1, 1, 1]);
+    expect(box('dwell:ladder[facing=south,flooded=false]')).toEqual([0, 0, 0, 1, 1, 0.125]);
+    expect(box('dwell:ladder[facing=east,flooded=false]')).toEqual([0, 0, 0, 0.125, 1, 1]);
+    expect(box('dwell:ladder[facing=west,flooded=false]')).toEqual([0.875, 0, 0, 1, 1, 1]);
+    expect(box('dwell:stone')).toBeUndefined();
+  });
 });
