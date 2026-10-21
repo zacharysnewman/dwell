@@ -1,5 +1,5 @@
 {
-  "$comment": "Motion effects' tunables (docs/MOTION_EFFECTS.md, Phase 29): the speed FOV and the wind streaks. Speeds are relative to the controller's walk and run speeds (dwell-physics config) except the m/s fields. Run `node shared/look/gen.mjs` after editing; CI fails if crates/dwell-look/src/motion.gen.rs is stale.",
+  "$comment": "Motion effects' tunables (docs/MOTION_EFFECTS.md, Phase 29): the speed FOV, the wind streaks, and the camera's roll upright across the midplane (crossingRollS, seconds: BIFACIAL_WORLD.md §6). Speeds are relative to the controller's walk and run speeds (dwell-physics config) except the m/s fields. Run `node shared/look/gen.mjs` after editing; CI fails if crates/dwell-look/src/motion.gen.rs is stale.",
   "fov": {
     "$comment": "The vertical FOV widens by a percentage of the base (the player's Field of view setting): eased 0 → sprintBoostPct from walk to run speed, then up to flightBoostPct at fullMps on a log scale (75° → 82.5° and 90°). Critically damped spring rates (1/s): widen fast, settle slower.",
     "sprintBoostPct": 10,
@@ -40,5 +40,6 @@
     "swimming": 0.4,
     "flying": 1
   },
-  "teleportM": 24
+  "teleportM": 24,
+  "crossingRollS": 0.8
 }

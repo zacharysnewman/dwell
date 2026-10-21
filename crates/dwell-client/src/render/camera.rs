@@ -56,29 +56,28 @@ impl Basis {
 }
 
 /// Aims the camera along yaw/pitch for the player's `face` (its up, the look by
-/// [`FaceFrame::look`]); `flip` (radians, 0 at rest) then pitches the view over about its own right
-/// axis, nose first: the camera turning over across the midplane. The heading has already turned
-/// by 180°, so a flip of π is the view before.
-pub fn aim(yaw_deg: f64, pitch_deg: f64, face: FaceFrame, flip: f64) -> Basis {
-    let up = face.up();
-    // three's lookAt for cameras: back = eye − target, right = up × back, up = back × right.
+/// [`FaceFrame::look`]); `roll` (radians, 0 at rest) then turns the view about its own forward axis
+/// (rotateZ): the camera rolling upright after a crossing of the midplane, whose look has continued
+/// on the other face pointing the same way (`face_flip.rs`), so a roll of `face_flip::residual()`
+/// (half a turn) is the view before. The forward does not depend on the roll.
+pub fn aim(yaw_deg: f64, pitch_deg: f64, face: FaceFrame, roll: f64) -> Basis {
+    // three's lookAt for cameras: back = eye − target, right = up × back, up = back × right. The
+    // right is the heading's (up × back, normalized, for every pitch short of straight up or
+    // down), so it is the same looking straight along up, where up × back vanishes: a heading of
+    // 0 (+Z) has the player's right at −X, mirrored on face B.
     let back = scale(normalize(face.look(yaw_deg, pitch_deg)), -1.0);
-    let mut right = cross(up, back);
-    if dot(right, right) < 1e-20 {
-        // Looking straight along up: three nudges the back axis.
-        right = cross(up, normalize(add(back, [1e-4, 0.0, 0.0])));
-    }
-    let right = normalize(right);
+    let yaw = yaw_deg.to_radians();
+    let right = [face.handed(-yaw.cos()), 0.0, face.handed(yaw.sin())];
     let up = cross(back, right);
-    if flip == 0.0 {
+    if roll == 0.0 {
         return Basis { right, up, back };
     }
-    // rotateX(flip): a rotation about the local right axis.
-    let (c, s) = (flip.cos(), flip.sin());
+    // rotateZ(roll): a rotation about the local back (forward) axis.
+    let (c, s) = (roll.cos(), roll.sin());
     Basis {
-        right,
-        up: add(scale(up, c), scale(back, s)),
-        back: add(scale(back, c), scale(up, -s)),
+        right: add(scale(right, c), scale(up, s)),
+        up: add(scale(up, c), scale(right, -s)),
+        back,
     }
 }
 
@@ -143,32 +142,61 @@ mod tests {
         assert!(dot(sub(a, b), sub(a, b)).sqrt() < 1e-6, "{a:?} vs {b:?}");
     }
 
-    #[test]
-    fn the_half_forward_somersault_across_the_midplane() {
-        let yaw = 37.0;
-        for pitch in [-80.0, -30.0, 0.0, 45.0] {
-            let b = aim(yaw, pitch, FaceFrame::A, 0.0);
-            // The crossing frame: heading turned by 180°, face −1, a flip of π: the same view.
-            let a = aim(yaw + 180.0, pitch, FaceFrame::B, std::f64::consts::PI);
-            close(a.forward(), b.forward());
-            close(a.up, b.up);
-            // The right vector is the same all the way: the player's own left and right.
-            for flip in [std::f64::consts::PI, std::f64::consts::FRAC_PI_2, 0.0] {
-                close(aim(yaw + 180.0, pitch, FaceFrame::B, flip).right, b.right);
-            }
-            // Halfway the view looks along the old camera's down.
-            close(
-                aim(
-                    yaw + 180.0,
-                    pitch,
-                    FaceFrame::B,
-                    std::f64::consts::FRAC_PI_2,
-                )
-                .forward(),
-                scale(b.up, -1.0),
-            );
-        }
+    use dwell_game::face_flip::{FaceFlip, ROLL_SECONDS};
+
+    fn angle(a: V3, b: V3) -> f64 {
+        dot(a, b).clamp(-1.0, 1.0).acos()
     }
+
+    /// Crosses from face `f` looking at (`yaw`, `pitch`), as the game does: the views drawn from
+    /// the last frame before the crossing to the first at rest, and the look at rest.
+    fn crossing(f: FaceFrame, yaw: f64, pitch: f64) -> (Vec<Basis>, (f64, f64)) {
+        let mut flip = FaceFlip::new();
+        flip.tick(f, yaw, pitch);
+        let mut views = vec![aim(yaw, pitch, f, flip.draw(0.016))];
+        let to = f.other();
+        let look = flip.tick(to, yaw, pitch);
+        let mut dt = 0.0;
+        for _ in 0..=(ROLL_SECONDS / 0.01) as usize + 1 {
+            views.push(aim(look.0, look.1, to, flip.draw(dt)));
+            dt = 0.01;
+        }
+        (views, look)
+    }
+
+    dwell_world::both_faces!(
+        /// The owner (BIFACIAL_WORLD.md §6, 2026-10-21): "whichever method lets you remain looking
+        /// in the same direction". Across the midplane from face `f`, at every heading and pitch,
+        /// the world forward is the same before, through the roll and after; the first frame is
+        /// the old view; the roll alone changes (right and up turn about forward by the same
+        /// angle, monotonically, half a turn in all), ending upright on the other face.
+        fn across_the_midplane_the_view_points_the_same_way_and_only_rolls(f: FaceFrame) {
+            for yaw in (0..360).step_by(30) {
+                for pitch in (-90..=90).step_by(15) {
+                    let (yaw, pitch) = (f64::from(yaw), f64::from(pitch));
+                    let (views, look) = crossing(f, yaw, pitch);
+                    let first = views[0];
+                    close(views[1].right, first.right);
+                    close(views[1].up, first.up);
+                    let mut rolled = 0.0;
+                    for v in &views {
+                        close(v.forward(), first.forward());
+                        let (r, u) = (angle(first.right, v.right), angle(first.up, v.up));
+                        assert!((r - u).abs() < 1e-6, "{yaw} {pitch}: {r} {u}");
+                        assert!(r >= rolled - 1e-9, "monotone");
+                        rolled = r;
+                    }
+                    assert!((rolled - std::f64::consts::PI).abs() < 1e-6, "{rolled}");
+                    let rest = aim(look.0, look.1, f.other(), 0.0);
+                    let last = views.last().expect("views");
+                    close(last.up, rest.up);
+                    close(last.right, rest.right);
+                    // Upright on the other face: its up has the other face's up's sign.
+                    assert!(dot(rest.up, f.other().up()) >= -1e-9);
+                }
+            }
+        }
+    );
 
     dwell_world::both_faces!(
         /// On face `f` the camera looks along the face's look with the face's up: face-local, its

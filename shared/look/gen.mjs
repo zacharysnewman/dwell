@@ -38,6 +38,7 @@ const SCHEMA = {
     blur: [0, 0.25],
   },
   teleportM: [0.1, 1e6],
+  crossingRollS: [0.05, 5],
 };
 
 const camel = (s) => s[0].toLowerCase() + s.slice(1);
@@ -116,6 +117,7 @@ export function motionRust(data, states) {
   rs.push(`    // By controller state id: ${states.join(', ')}.`);
   rs.push(`    state_gain: [${states.map((s) => rf(data.stateGain[camel(s)])).join(', ')}],`);
   rs.push(`    teleport_m: ${rf(data.teleportM)},`);
+  rs.push(`    crossing_roll_s: ${rf(data.crossingRollS)},`);
   rs.push('};');
   rs.push('');
   return rs.join('\n');

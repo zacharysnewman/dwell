@@ -129,7 +129,7 @@ fn dwell_maria(p: vec2f) -> f32 {
 
 // The moon's light toward `dir` (added) and how much of the pixel its disc covers (w). Its frame is
 // built from world vectors (its direction and the sky's axis), so it keeps its face through the
-// camera's turn-over. Lit from the sun's side by its phase: full faces the viewer, new faces away.
+// camera's turn across the midplane. Lit from the sun's side by its phase: full faces the viewer, new faces away.
 fn dwell_moon(dir: vec3f, day: DaySky, px: f32) -> vec4f {
     let z = day.moon.xyz;
     let x = normalize(cross(day.axis.xyz, z));

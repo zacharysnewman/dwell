@@ -66,8 +66,10 @@ is ≈ 123°, at 60° ≈ 84°.
   pixel-error / screen-space size). The block-target ray goes through the screen centre, which the
   FOV does not move.
 - **Resets** (to no boost, no wind): a teleport (the eye moved more than `teleportM` beyond what its
-  velocity explains), death and respawn (the camera is not the player's eyes), a tool camera, the
-  face-B turn-over (the somersault across the midplane), turning the effects off.
+  velocity explains), death and respawn (the camera is not the player's eyes), a tool camera,
+  turning the effects off. Not a crossing of the midplane: the camera keeps pointing the same way
+  there and only rolls (BIFACIAL_WORLD.md §6), so a reset would snap the FOV; the eye's swing
+  across the body is no teleport. The roll's duration (`crossingRollS`) lives in `motion.json`.
 - **Menu open**: nothing changes (the spring and the animation are held).
 
 ## Wind (shader)
@@ -142,8 +144,9 @@ state needs a gain), tested by `node --test shared/look/gen.test.mjs`, stale out
 
 1. **Strengths:** a zoom-out of +10 % at a sprint and +20 % at top flight speed (above), with a
    Field of view setting as the base.
-2. **Face-B turn-over:** the effects keep resetting on it — a zoom during the somersault would be
-   disorienting.
+2. **Face-B turn-over:** the effects kept resetting on it (a zoom during the somersault would be
+   disorienting). *Superseded (owner, 2026-10-21, BIFACIAL_WORLD.md §6): the camera keeps pointing
+   the same way across the midplane, so nothing should snap there; the effects go on through it.*
 3. **Walking speed:** no effect (the FOV boost starts at walk speed, the wind half-way to run).
 4. **Streak tinting:** none for now. Follow-up: underwater gets its own treatment with the water
    work (Phase 26, W4).

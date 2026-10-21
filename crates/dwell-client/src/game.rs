@@ -116,7 +116,7 @@ pub trait Scene: TerrainRenderer {
         yaw_deg: f64,
         pitch_deg: f64,
         face: FaceFrame,
-        flip: f64,
+        roll: f64,
     );
     /// The fluid whose drawn surface the camera's eye is under (`dwell_world::fluid::eye_fluid`).
     fn set_eye_fluid(&mut self, _eye_fluid: Option<dwell_world::fluid::EyeFluid>) {}
@@ -539,8 +539,6 @@ pub struct Game<S: Scene> {
     pub fov_setting: f64,
     /// The controller's walk and run speeds the effects scale to.
     speeds: Speeds,
-    /// The face the last drawn frame's camera was on (a change is the turn-over).
-    motion_face: Option<FaceFrame>,
     /// The vertical FOV of the last drawn frame, given to the renderer and the LOD alike.
     frame_fov: f64,
     /// The spyglass (docs/SPYGLASS.md): its zoom, and the last frame's view of it.
@@ -598,7 +596,7 @@ impl<S: Scene> Game<S> {
         let predictor = Predictor::new(config);
         let current = ClientState::of(&predictor);
         let mut flip = FaceFlip::new();
-        flip.tick(current.face); // joining on face B does not turn the player
+        flip.reset(current.face); // joining on face B does not turn the player
         let mut eye = EyeCamera::new();
         eye.tick(&current.eye_state(), 1.0 / SIM_HZ as f64);
         let mut game = Self {
@@ -658,7 +656,6 @@ impl<S: Scene> Game<S> {
             menu_open: false,
             fov_setting: dwell_lod::frustum::VERTICAL_FOV,
             speeds,
-            motion_face: None,
             frame_fov: dwell_lod::vertical_fov(1280.0 / 720.0),
             spyglass: Spyglass::new(),
             spyglass_view: SpyglassView::NONE,
@@ -1001,7 +998,7 @@ impl<S: Scene> Game<S> {
                     } else if self.current.active {
                         self.loading.skip();
                     }
-                    self.flip.tick(self.current.face);
+                    self.flip.reset(self.current.face);
                     // Placed (joined or respawned): the camera starts where the player is, not
                     // interpolated from the state before, whose eye was elsewhere (the default
                     // state's at the origin, inside the ground) and aimed the crosshair from there.
@@ -1611,11 +1608,11 @@ impl<S: Scene> Game<S> {
             1.0 / SIM_HZ as f64,
         );
         self.mover_sounds.update(&sample, None, &mut self.sounds);
-        // Crossing the midplane turns the heading round (a half somersault, face_flip.rs).
-        let turn = self.flip.tick(self.current.face);
-        if turn != 0.0 {
-            input.look.yaw = (input.look.yaw + turn) % 360.0;
-        }
+        // Across the midplane the body turns over and the look goes on across: the heading kept,
+        // the pitch mirrored, the camera pointing the same way and rolling upright (face_flip.rs).
+        (input.look.yaw, input.look.pitch) =
+            self.flip
+                .tick(self.current.face, input.look.yaw, input.look.pitch);
         self.eye
             .tick(&self.current.eye_state(), 1.0 / SIM_HZ as f64);
         record_tick(&self.current, &frame, self.eye.draw(1.0));
@@ -1628,7 +1625,7 @@ impl<S: Scene> Game<S> {
         let c = self.current;
         let face = c.face;
         let dt = self.last_draw_ms.map_or(0.0, |l| (now_ms - l) / 1000.0);
-        let flip = self.flip.draw(face, dt);
+        let roll = self.flip.draw(dt);
         self.last_draw_ms = Some(now_ms);
         let p = self.previous.unwrap_or(c);
         let alpha = self.accumulator / TICK_MS;
@@ -1795,7 +1792,7 @@ impl<S: Scene> Game<S> {
             camera_eye = eye;
             self.scene
                 .borrow_mut()
-                .set_camera(eye, yaw, pitch, face, flip);
+                .set_camera(eye, yaw, pitch, face, roll);
             self.listener = listener(eye, yaw, pitch, face);
             let ready = self.terrain_ready();
             self.target(ready.then_some(eye), input, now_ms);
@@ -2030,8 +2027,6 @@ impl<S: Scene> Game<S> {
     /// the renderer and, in `update_lod`, to the LOD selection.
     fn update_motion(&mut self, eye: [f64; 3], dt: f64) {
         let c = &self.current;
-        let turned_over = self.motion_face.is_some_and(|f| f != c.face);
-        self.motion_face = Some(c.face);
         let out = self.motion.frame(
             &MotionInput {
                 eye,
@@ -2039,7 +2034,6 @@ impl<S: Scene> Game<S> {
                 state: c.state,
                 dt,
                 first_person: c.active && !self.dead && self.view.is_none(),
-                turned_over,
                 paused: self.menu_open,
             },
             self.motion_settings,
