@@ -1,0 +1,20 @@
+{
+  "$comment": "LOD colour (ARCHITECTURE.md §6.6 'Colour'): what a coarse LOD riser (a vertical face between two columns of different heights) is coloured as. A coarse step stands for the fine slope between the two columns, which faces the viewer with about the same rise, so a riser takes the area-weighted colour of the fine rise it replaces: `top` of it the top material's top tile (the fine slope's ramps), `fringe` its side tile's top band (the top cell of a fine step, its texture hanging from the step's edge: grass's fringe), and the rest the riser's own material's side tile below that band (dirt under grass). Each point is the makeup at the ground's gradient (m per m, the column's, from its neighbours' heights); between points it is interpolated, beyond the ends held. Measured from the generated full-detail terrain (crates/dwell-mesh/tests/lod_colour.rs `measure_fine_rise_makeup`, seed 7 hillsides, generator 1020) up to a gradient of 1.05; steeper points follow a fine riser of `gradient` m per 1 m column showing its ½ m top cell over the material below, as a cliff does. gradientStep: risers' gradients are quantised to it, so equal walls still merge. Run `node shared/look/lodcolour.mjs` after editing; CI fails if crates/dwell-look/src/lodcolour.gen.rs is stale.",
+  "gradientStep": 0.05,
+  "rise": [
+    { "gradient": 0.05, "top": 0.25, "fringe": 0.52 },
+    { "gradient": 0.15, "top": 0.26, "fringe": 0.61 },
+    { "gradient": 0.25, "top": 0.27, "fringe": 0.63 },
+    { "gradient": 0.35, "top": 0.28, "fringe": 0.62 },
+    { "gradient": 0.45, "top": 0.29, "fringe": 0.56 },
+    { "gradient": 0.55, "top": 0.3, "fringe": 0.49 },
+    { "gradient": 0.65, "top": 0.29, "fringe": 0.46 },
+    { "gradient": 0.75, "top": 0.26, "fringe": 0.45 },
+    { "gradient": 0.85, "top": 0.26, "fringe": 0.45 },
+    { "gradient": 0.95, "top": 0.25, "fringe": 0.42 },
+    { "gradient": 1.05, "top": 0.35, "fringe": 0.31 },
+    { "gradient": 2, "top": 0, "fringe": 0.25 },
+    { "gradient": 4, "top": 0, "fringe": 0.125 },
+    { "gradient": 8, "top": 0, "fringe": 0.0625 }
+  ]
+}

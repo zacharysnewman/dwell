@@ -161,9 +161,16 @@ pub fn linear_to_srgb_byte(v: f64) -> u8 {
 }
 
 fn compute_average(name: &str) -> u32 {
+    tile_rows_average(name, 0, TILE)
+}
+
+/// The average colour (`0xRRGGBB`, sRGB, in linear light) of rows `from..to` of tile `name`: row 0
+/// is the tile's bottom edge on a side face, row `TILE − 1` its top (a side's texture hangs from
+/// the face's top edge, so a riser of one ½ m cell shows the top half's rows).
+pub fn tile_rows_average(name: &str, from: usize, to: usize) -> u32 {
     let (mut r, mut g, mut b, mut n) = (0.0, 0.0, 0.0, 0.0);
     // Weighted by coverage: a cutout tile's transparent texels don't count.
-    for y in 0..TILE as i64 {
+    for y in from.min(TILE) as i64..to.min(TILE) as i64 {
         for x in 0..TILE as i64 {
             let [pr, pg, pb, alpha] = texel(name, x, y);
             let a = f64::from(alpha) / 255.0;

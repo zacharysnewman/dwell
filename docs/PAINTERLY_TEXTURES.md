@@ -72,8 +72,9 @@ hangs its own skirt, so the dirt below it stays plain). Stone or air above: no s
 "above" is toward its sky. The tile `dirtSkirt` is painted by `dirt_skirt`, which is
 `"like": "grass_side"`: the same soil and the same skirt strokes, so it lines up with a grass side
 beside it and wraps into the next dirt face; it is its own tile so its art can diverge by data. The
-LOD keeps dirt's flat side colour: a skirt
-band averaged over a coarse LOD cell would tint whole cliffs green.
+LOD draws no skirt tile: a coarse riser takes the fringe band's colour by its share of the fine
+rise it stands for, which is small on a cliff (ARCHITECTURE.md §6.6 "Colour"), so cliffs stay
+dirt and gentle slopes green.
 
 ## 3. The generator
 
