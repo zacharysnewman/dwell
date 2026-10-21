@@ -140,6 +140,12 @@ export interface Flicker {
   /** The mean brightness change per pixel and frame (0–255). */
   meanDelta: number;
   threshold: number;
+  /**
+   * The share of pixels (0–1) whose surface changes colour family from one frame to the next
+   * (`hueFlipsOf`): what a drifting camera's burst measures, where brightness changes everywhere
+   * but a surface that keeps its look keeps its hue.
+   */
+  hueFlips: number;
 }
 
 /**
@@ -173,7 +179,58 @@ export function flickerOf(frames: readonly Rgba[], threshold = 3): Flicker {
     prev = cur;
   }
   const n = (frames.length - 1) * width * height;
-  return { frames: frames.length, changed: changed / n, meanDelta: delta / n, threshold };
+  return {
+    frames: frames.length,
+    changed: changed / n,
+    meanDelta: delta / n,
+    threshold,
+    hueFlips: hueFlipsOf(frames),
+  };
+}
+
+/** Hue (degrees) and saturation (0–1, HSV) of an sRGB colour. */
+function hueSat(r: number, g: number, b: number): [number, number] {
+  const max = Math.max(r, g, b);
+  const c = max - Math.min(r, g, b);
+  if (max === 0 || c === 0) return [0, 0];
+  const h = max === r ? ((g - b) / c + 6) % 6 : max === g ? (b - r) / c + 2 : (r - g) / c + 4;
+  return [h * 60, c / max];
+}
+
+/**
+ * Surface identity flips over a burst (ARCHITECTURE.md §6.6, "Known bug class"): for each frame
+ * after the first, the share of pixels coloured in both frames (saturation ≥ `minSat`) whose hue
+ * moved by more than `minHueDeg` — a pixel that was grass and is now dirt — averaged over the
+ * pairs. Under a camera drifting a few centimetres and a twentieth of a degree a frame, the view
+ * moves under a pixel and its brightness changes along every edge, but a surface keeps its hue
+ * (a riser is its top's colour shaded); only a surface's outline moves, a pixel wide. Surfaces
+ * fighting in depth swap from frame to frame across their whole overlap: that is what it counts.
+ */
+export function hueFlipsOf(frames: readonly Rgba[], minSat = 0.25, minHueDeg = 40): number {
+  if (frames.length < 2) throw new Error('flicker: needs two frames or more');
+  const { width, height } = frames[0];
+  const hues = (im: Rgba): Float32Array => {
+    if (im.width !== width || im.height !== height) throw new Error('flicker: frame sizes differ');
+    const out = new Float32Array(width * height);
+    const d = im.data;
+    for (let i = 0; i < out.length; i++) {
+      const [h, sat] = hueSat(d[i * 4], d[i * 4 + 1], d[i * 4 + 2]);
+      out[i] = sat >= minSat ? h : -1;
+    }
+    return out;
+  };
+  let prev = hues(frames[0]);
+  let flips = 0;
+  for (const im of frames.slice(1)) {
+    const cur = hues(im);
+    for (let i = 0; i < cur.length; i++) {
+      if (cur[i] < 0 || prev[i] < 0) continue;
+      const dh = Math.abs(cur[i] - prev[i]);
+      if (Math.min(dh, 360 - dh) > minHueDeg) flips++;
+    }
+    prev = cur;
+  }
+  return flips / ((frames.length - 1) * width * height);
 }
 
 const LINEAR = Array.from({ length: 256 }, (_, i) => {

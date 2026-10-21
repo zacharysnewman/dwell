@@ -116,6 +116,34 @@ describe('scenarios', () => {
     expect(bad({ do: 'burst', name: 'b', frames: 8, maxFlicker: 2 })).toThrow(/outside 0–1/);
     expect(bad({ do: 'burst', name: 'b', frames: 8, clock: 0.5, wind: 0 })).toThrow(/wind/);
     expect(
+      parseScenarios(
+        file([
+          {
+            name: 'a',
+            steps: [
+              {
+                do: 'burst',
+                name: 'b',
+                frames: 8,
+                drift: { position: [0.03, 0, 0], yaw: 0.05 },
+                maxHueFlips: 0.01,
+              },
+            ],
+          },
+        ]),
+      )[0].steps[0],
+    ).toEqual({
+      do: 'burst',
+      name: 'b',
+      frames: 8,
+      drift: { position: [0.03, 0, 0], yaw: 0.05, pitch: 0 },
+      maxHueFlips: 0.01,
+    });
+    expect(bad({ do: 'burst', name: 'b', frames: 8, drift: { position: [2, 0, 0] } })).toThrow(
+      /over 1 m/,
+    );
+    expect(bad({ do: 'burst', name: 'b', frames: 8, drift: { roll: 1 } })).toThrow(/roll/);
+    expect(
       parseScenarios(file([{ name: 'a', steps: [{ do: 'brush', command: 'preset:cube' }] }]))[0]
         .steps[0],
     ).toEqual({ do: 'brush', command: 'preset:cube' });

@@ -296,6 +296,14 @@ impl Builder {
     }
 }
 
+/// How far (in cells) a section's top skirt is sunk below its top plane (ARCHITECTURE.md §6.6,
+/// "Known bug class"). The top skirt covers the section's top row where the section above is not
+/// drawn at the same level; the ground there lies above the plane — by as little as nothing, where
+/// it crosses the plane — so a skirt on the plane was in the ground's plane and fought it as the
+/// camera moved (dirt showing through the grass). Sunk, it is at least this far under any ground
+/// above the plane, and still closes the hole it is for.
+pub const SKIRT_SINK: f64 = 0.125;
+
 /// Floats per column of a generated section's surface (C++ core::LodSurface): height, material,
 /// flags (1 valid, 2 wet), and where wet the water's level.
 pub const SURFACE_STRIDE: usize = 4;
@@ -486,6 +494,14 @@ fn mesh_section_above(
                     } else {
                         (m, 0)
                     };
+                    // A top skirt stands in for the ground above the section (the column's
+                    // surface, in the section above): it takes the ground's colour, not the top
+                    // row's (dirt a cell or more down), should it ever show.
+                    let m = if hidden && face == 2 && !liquid && special.ground_m[wc] != 0 {
+                        special.ground_m[wc]
+                    } else {
+                        m
+                    };
                     mask[i as usize + NU * j as usize] = face_key(m, top, share, hidden);
                     any = true;
                 }
@@ -526,9 +542,12 @@ fn mesh_section_above(
                     } else {
                         &mut opaque
                     };
-                    // Water's surface where the chunks draw it (water_drop below the cell's top).
+                    // Water's surface where the chunks draw it (water_drop below the cell's top);
+                    // a top skirt sunk under the ground above the plane (SKIRT_SINK).
                     let drop = if axis == 1 && sign > 0 && is_liquid(m) {
                         water_drop
+                    } else if skirt && face == 2 {
+                        SKIRT_SINK
                     } else {
                         0.0
                     };
@@ -591,6 +610,9 @@ struct Surfaces {
     exact: Vec<f32>,
     /// The ground's gradient at the column as a `gradient_step`: what its risers stand for.
     slope: Vec<u8>,
+    /// The column's surface material from the surface data (0: none, or under water): what a top
+    /// skirt under ground above the section shows.
+    ground_m: Vec<u16>,
 }
 
 const NO_SURFACE: i16 = -1000;
@@ -634,6 +656,7 @@ fn find_surfaces(cells: &[u16], surface: Option<&[f32]>) -> Surfaces {
         top: vec![0; n],
         exact: vec![f32::NAN; n],
         slope: vec![0; n],
+        ground_m: vec![0; n],
     };
     let data = surface.filter(|s| s.len() >= n * SURFACE_STRIDE);
     let top = N;
@@ -704,6 +727,10 @@ fn find_surfaces(cells: &[u16], surface: Option<&[f32]>) -> Surfaces {
                 }
                 let h = at(c, 0);
                 out.exact[c] = h as f32;
+                let material = to_uint16(at(c, 1));
+                if flags & SURFACE_WET == 0 && !is_liquid(material) {
+                    out.ground_m[c] = material;
+                }
                 // The topmost solid cell (above it only air or liquid), and it must hold the surface.
                 let mut y = top;
                 while y >= -1 {

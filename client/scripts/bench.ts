@@ -191,6 +191,8 @@ interface Run {
   settles: number[];
   /** Each `burst` step's flicker, by name. */
   bursts: Record<string, Flicker>;
+  /** Where the last `camera` step placed the camera (a drifting burst moves on from it). */
+  camera?: { position: [number, number, number]; yaw: number; pitch: number };
 }
 
 async function record(run: Run, name: string): Promise<void> {
@@ -216,7 +218,7 @@ async function record(run: Run, name: string): Promise<void> {
   summarise(name, data.telemetry, longTasks, (data.now - run.markMs) / 1000);
 }
 
-const f = (v: number): string => v.toFixed(v < 10 ? 2 : 1);
+const f = (v: number, digits = 2): string => v.toFixed(v < 10 ? digits : 1);
 
 function summarise(name: string, t: Telemetry, longTasks: number[][], seconds: number): void {
   const iv = t.frames.interval;
@@ -312,8 +314,19 @@ async function burst(run: Run, s: Extract<Step, { do: 'burst' }>): Promise<void>
   })()`);
   const width = Math.max(2, String(s.frames - 1).length);
   const paths: string[] = [];
+  const from = run.camera;
+  if (s.drift && !from) throw new Error(`burst ${s.name}: a drift needs a camera step before it`);
   for (let i = 0; i < s.frames; i++) {
     const path = join(run.dir, `${s.name}-${String(i).padStart(width, '0')}.png`);
+    if (s.drift && from) {
+      const p = from.position.map((c, k) => c + (s.drift?.position[k] ?? 0) * i);
+      const [yaw, pitch] = [from.yaw + s.drift.yaw * i, from.pitch + s.drift.pitch * i];
+      await call(page, `d.placeCamera(${JSON.stringify(p)}, ${String(yaw)}, ${String(pitch)})`);
+      // Two animation frames: the placed camera drawn.
+      await page.evaluate(
+        'new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))',
+      );
+    }
     await page.screenshot({ path });
     paths.push(path);
   }
@@ -329,8 +342,13 @@ async function burst(run: Run, s: Extract<Step, { do: 'burst' }>): Promise<void>
   const fl = flickerOf(frames);
   run.bursts[s.name] = fl;
   console.log(
-    `  burst ${s.name}: ${String(s.frames)} frames, flicker ${f(fl.changed * 100)} % of pixels, mean Δ ${f(fl.meanDelta)}`,
+    `  burst ${s.name}: ${String(s.frames)} frames, flicker ${f(fl.changed * 100)} % of pixels, mean Δ ${f(fl.meanDelta)}, hue flips ${f(fl.hueFlips * 100, 3)} %`,
   );
+  if (s.maxHueFlips !== undefined && fl.hueFlips > s.maxHueFlips) {
+    throw new Error(
+      `burst ${s.name}: ${f(fl.hueFlips * 100, 3)} % of pixels flip hue, over ${f(s.maxHueFlips * 100, 3)} %`,
+    );
+  }
   if (s.maxFlicker !== undefined && fl.changed > s.maxFlicker) {
     throw new Error(
       `burst ${s.name}: ${f(fl.changed * 100)} % of pixels flicker, over ${f(s.maxFlicker * 100)} %`,
@@ -364,12 +382,17 @@ async function step(run: Run, s: Step): Promise<void> {
       await call(page, `d.spyglass(${String(s.on)}, ${String(s.step ?? 0)})`);
       return;
     case 'camera': {
-      // aroundPlayer: x and z from the player's feet, y absolute.
+      // aroundPlayer: x and z from the player's feet, y absolute (or from the feet, aboveFeet).
       const [x, y, z] = s.position;
       const at = s.aroundPlayer
-        ? `(() => { const f = d.state().feet; return [f[0] + ${String(x)}, ${String(y)}, f[2] + ${String(z)}]; })()`
+        ? `(() => { const f = d.state().feet; return [f[0] + ${String(x)}, ${s.aboveFeet ? `f[1] + ${String(y)}` : String(y)}, f[2] + ${String(z)}]; })()`
         : JSON.stringify(s.position);
       await until(page, `d.placeCamera(${at}, ${String(s.yaw)}, ${String(s.pitch)})`, 30_000);
+      run.camera = {
+        position: await call<[number, number, number]>(page, at),
+        yaw: s.yaw,
+        pitch: s.pitch,
+      };
       return;
     }
     case 'releaseCamera':

@@ -27,7 +27,15 @@ export type Step =
    * position's x and z are offsets from the player's feet (y stays absolute): a view near wherever
    * a flight ended, where the chunks are streamed (e.g. the eye just under the sea's surface).
    */
-  | { do: 'camera'; position: Vec3; yaw: number; pitch: number; aroundPlayer?: boolean }
+  | {
+      do: 'camera';
+      position: Vec3;
+      yaw: number;
+      pitch: number;
+      aroundPlayer?: boolean;
+      /** With `aroundPlayer`, y too is an offset from the feet (a height over the spawn's ground). */
+      aboveFeet?: boolean;
+    }
   | { do: 'releaseCamera' }
   /** The water quality, and/or its cost-isolation switches (`?waterdbg=` names; "" for none). */
   | { do: 'water'; quality?: 'low' | 'medium' | 'high'; debug?: string }
@@ -88,7 +96,21 @@ export type Step =
    * (a share, 0–1). With `clock`, the time of day runs on from `clock` (0–1) at the world clock's
    * rate while it shoots, as it does in play (the bench's time of day is otherwise held still).
    */
-  | { do: 'burst'; name: string; frames: number; clock?: number; maxFlicker?: number }
+  | {
+      do: 'burst';
+      name: string;
+      frames: number;
+      clock?: number;
+      maxFlicker?: number;
+      /**
+       * The camera drifting while it shoots (after a `camera` step): `position` metres, `yaw` and
+       * `pitch` degrees added each frame. Surfaces that fight in depth swap only as the view moves
+       * (the owner: z-fighting stops when the camera does), so a still burst can't see them; a
+       * drifting one counts them as `hueFlips`, failing the run over `maxHueFlips` (a share, 0–1).
+       */
+      drift?: { position: Vec3; yaw: number; pitch: number };
+      maxHueFlips?: number;
+    }
   /** Runs `steps` `times` times (e.g. a burst of edits); no `mark`, `record`, `shot` or traces inside. */
   | { do: 'repeat'; times: number; steps: Step[] };
 
@@ -158,6 +180,21 @@ function vec3(where: string, v: unknown): Vec3 {
   return v.map((x, i) => num(`${where}[${String(i)}]`, x, -1e7, 1e7)) as Vec3;
 }
 
+/** A burst's per-frame camera drift: small, or it is a flight, not a drift. */
+function drift(where: string, v: unknown): { position: Vec3; yaw: number; pitch: number } {
+  const o = obj(where, v, ['position', 'yaw', 'pitch']);
+  const position =
+    o.position === undefined ? ([0, 0, 0] as Vec3) : vec3(`${where}.position`, o.position);
+  for (const [i, c] of position.entries()) {
+    if (Math.abs(c) > 1) throw new ViewError(`${where}.position[${String(i)}]: over 1 m a frame`);
+  }
+  return {
+    position,
+    yaw: num(`${where}.yaw`, o.yaw, -1, 1, 0),
+    pitch: num(`${where}.pitch`, o.pitch, -1, 1, 0),
+  };
+}
+
 const STEP_FIELDS: Record<Step['do'], readonly string[]> = {
   wait: ['s'],
   key: ['code', 'down'],
@@ -166,7 +203,7 @@ const STEP_FIELDS: Record<Step['do'], readonly string[]> = {
   fly: ['on'],
   flySpeed: ['level'],
   spyglass: ['on', 'step'],
-  camera: ['position', 'yaw', 'pitch', 'aroundPlayer'],
+  camera: ['position', 'yaw', 'pitch', 'aroundPlayer', 'aboveFeet'],
   releaseCamera: [],
   water: ['quality', 'debug'],
   shadows: ['quality'],
@@ -185,7 +222,7 @@ const STEP_FIELDS: Record<Step['do'], readonly string[]> = {
   time: ['t', 'moon'],
   waterDebug: ['names'],
   timelapse: ['name', 'frames', 'from', 'to', 'waitS'],
-  burst: ['name', 'frames', 'clock', 'maxFlicker'],
+  burst: ['name', 'frames', 'clock', 'maxFlicker', 'drift', 'maxHueFlips'],
   repeat: ['times', 'steps'],
 };
 
@@ -243,6 +280,7 @@ export function parseStep(where: string, v: unknown): Step {
         ...(o.aroundPlayer === undefined
           ? {}
           : { aroundPlayer: bool(at('aroundPlayer'), o.aroundPlayer) }),
+        ...(o.aboveFeet === undefined ? {} : { aboveFeet: bool(at('aboveFeet'), o.aboveFeet) }),
       };
     case 'shadows': {
       const q = o.quality;
@@ -361,6 +399,10 @@ export function parseStep(where: string, v: unknown): Step {
         ...(o.maxFlicker === undefined
           ? {}
           : { maxFlicker: num(at('maxFlicker'), o.maxFlicker, 0, 1) }),
+        ...(o.drift === undefined ? {} : { drift: drift(at('drift'), o.drift) }),
+        ...(o.maxHueFlips === undefined
+          ? {}
+          : { maxHueFlips: num(at('maxHueFlips'), o.maxHueFlips, 0, 1) }),
       };
   }
 }
