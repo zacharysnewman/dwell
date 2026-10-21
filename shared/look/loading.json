@@ -1,5 +1,13 @@
 {
-  "$comment": "The loading screen on joining a world (and on respawning): it shows until the full-detail chunks of the near ring around the player are generated, lit, meshed and drawn, or for at most timeoutS, and the player does not move until it opens (ARCHITECTURE.md §6.3). radiusChunks: the near ring is the server's view sphere of this radius (chunks c with |c − the player's chunk|² ≤ r² + r, as the server streams them), so it is at most the server's viewRadiusChunks (shared/protocol/constants.json): every chunk it waits for is streamed without being asked for. timeoutS: past this the screen opens whatever has loaded (the game then waits for collision's ±1 chunk as before). Opt out for testing with ?loading=off or the dwell.loading store set to \"off\". Run `node shared/look/loading.mjs` after editing; CI fails if crates/dwell-game/src/loading.gen.rs is stale.",
+  "$comment": "The loading screen on joining a world (and on respawning): it shows until the full-detail chunks of the near ring around the player are generated, lit, meshed and drawn, or for at most timeoutS, and the player does not move until it opens (ARCHITECTURE.md §6.3). radiusChunks: the near ring is the server's view sphere of this radius (chunks c with |c − the player's chunk|² ≤ r² + r, as the server streams them), so it is at most the server's viewRadiusChunks (shared/protocol/constants.json): every chunk it waits for is streamed without being asked for. timeoutS: past this the screen opens whatever has loaded (the game then waits for collision's ±1 chunk as before). Opt out for testing with ?loading=off or the dwell.loading store set to \"off\". fade: when it opens the screen turns to color (bright, near-white) for holdS, then fades out over durationS with an ease-out (opacity (1 − t)^easePower), uncovering the view and the HUD together; on a CPU (software) adapter over cpuDurationS, and with prefers-reduced-motion over reducedMotionDurationS (0: none). Run `node shared/look/loading.mjs` after editing; CI fails if crates/dwell-game/src/loading.gen.rs or client/src/ui/loading.gen.ts is stale.",
   "radiusChunks": 3,
-  "timeoutS": 20
+  "timeoutS": 20,
+  "fade": {
+    "color": "#fffdf6",
+    "holdS": 0.12,
+    "durationS": 0.8,
+    "easePower": 3,
+    "cpuDurationS": 0.2,
+    "reducedMotionDurationS": 0
+  }
 }

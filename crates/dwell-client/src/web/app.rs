@@ -1454,6 +1454,8 @@ impl Client {
                 }
                 None => set(&o, "loading", JsValue::NULL),
             }
+            // How many times it has opened: the shell fades the view in from white on each.
+            set(&o, "loadingOpens", g.loading_gate().opens());
             // The spyglass's vignette (docs/SPYGLASS.md): null while unzoomed.
             let v = g.spyglass_view();
             if v.vignette > 0.0 {
@@ -1634,6 +1636,12 @@ impl Client {
         set(&o, "characterMeshBytes", c.mesh_bytes as f64);
         set(&o, "characterUploadBytes", c.upload_bytes as f64);
         o.into()
+    }
+
+    /// Whether the GPU adapter is a CPU (software) one: the shell's quick loading fade (§6.3).
+    #[wasm_bindgen(js_name = cpuAdapter)]
+    pub fn cpu_adapter(&self) -> bool {
+        self.inner.borrow().renderer.borrow().cpu_adapter()
     }
 
     /// The chunk's revision in the client's world (the F3 diff), or -1.

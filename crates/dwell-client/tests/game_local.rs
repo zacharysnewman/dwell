@@ -637,6 +637,9 @@ fn the_loading_screen_holds_the_player_until_the_terrain_all_round_is_drawn() {
         rig.run_until(60 * 60, |r| {
             let d = r.game.as_ref().unwrap().debug_state();
             if !d.active {
+                // Before the join places the player the screen is already up (no view or HUD
+                // first, owner 2026-10-21).
+                assert!(d.loading.is_some_and(|l| !l.placed), "shown while joining");
                 return false;
             }
             if d.loading.is_some() {

@@ -285,7 +285,7 @@ interface App {
   client: Client;
   touch: TouchControls | null;
   hud: Hud;
-  /** The loading screen over the view on joining (`Client.hud().loading`). */
+  /** The loading screen over the view on joining and respawning (`Client.hud().loading`). */
   loading: LoadingScreen;
   map: MapOverlay;
   hotbar: Hotbar | null;
@@ -437,8 +437,9 @@ function showHud(app: App, now: number): void {
     brush?: BrushPanelState | null;
     spyglass?: SpyglassHud | null;
     loading?: LoadingHud | null;
+    loadingOpens?: number;
   };
-  app.loading.set(h.loading ?? null);
+  app.loading.frame(h, now);
   if (h.message === undefined) return;
   app.hud.setSpyglass(h.spyglass ?? null);
   if (h.damaged) app.hud.flashDamage(now);
@@ -451,6 +452,7 @@ function showHud(app: App, now: number): void {
 }
 
 async function start(): Promise<App | null> {
+  const loading = (bootLoading ??= new LoadingScreen(document.body, false, false));
   element('build-info', HTMLDivElement).textContent = formatBuildInfo(buildInfo);
   const canvas = element('view', HTMLCanvasElement);
   const params = new URLSearchParams(location.search);
@@ -476,6 +478,7 @@ async function start(): Promise<App | null> {
       loadingScreen: loadingScreenEnabled(location.search, storage()),
     });
   } catch (err) {
+    loading.abort();
     showFatal(startupMessage(err, 'gpu' in navigator));
     console.error(err);
     return null;
@@ -490,13 +493,14 @@ async function start(): Promise<App | null> {
   };
   new ResizeObserver(resize).observe(canvas);
   resize();
+  loading.setCpuAdapter(client.cpuAdapter());
 
   const app: App = {
     canvas,
     client,
     touch: null,
     hud: new Hud(document.body),
-    loading: new LoadingScreen(document.body),
+    loading,
     map: new MapOverlay(document.body),
     hotbar: null,
     settings: null,
@@ -750,7 +754,16 @@ function play(app: App, joined: Extract<SessionReport, { phase: 'joined' }>): vo
   app.touch?.setFlight(joined.mayFly, app.client.flying());
   startDebugTools(app);
   document.body.classList.add('in-game');
-  app.hud.showHint(prefersTouch() ? TOUCH_START_HINT : START_HINT);
+  // The start hint once the view is uncovered (at once without the loading screen).
+  const hint = prefersTouch() ? TOUCH_START_HINT : START_HINT;
+  if (app.loading.phase === 'waiting') {
+    app.loading.onOpen = () => {
+      app.loading.onOpen = null;
+      app.hud.showHint(hint);
+    };
+  } else {
+    app.hud.showHint(hint);
+  }
 }
 
 /**
@@ -874,6 +887,7 @@ function servesLauncherPath(): boolean {
  */
 function openMainMenu(app: App | null, message?: string): void {
   if (app?.touch) app.touch.visible = false;
+  bootLoading?.abort();
   if (!servesLauncherPath()) {
     location.replace(launcherHref(location.search, message ? { say: message } : {}));
     return;
@@ -1041,6 +1055,8 @@ async function connect(app: App): Promise<void> {
         hostPaused: false,
       };
       status.textContent = formatStatus(target, s.transport, s, stats, app.fps.fps);
+      // Turned away or cut off: the status line says why, not a loading screen that never opens.
+      if (s.phase === 'rejected' || s.phase === 'closed') app.loading.abort();
       if (s.phase === 'confirming' && !asking) {
         asking = true;
         console.info('Dwell: this server’s blocks differ', s.registry);
@@ -1071,6 +1087,7 @@ async function connect(app: App): Promise<void> {
         return;
       }
     }
+    app.loading.abort();
     status.textContent = `Could not connect to ${target}: ${err instanceof Error ? err.message : String(err)}`;
   }
 }
@@ -1083,6 +1100,9 @@ async function connect(app: App): Promise<void> {
  * reload while the game loads continues the world rather than making another. False: it could not
  * be made, and the menu says why.
  */
+/** The game page's loading screen: up from the page's start (none on the menu page). */
+let bootLoading: LoadingScreen | undefined;
+
 async function routeMadeWorld(): Promise<boolean> {
   const launch = launchOf(location.search);
   if (launch.kind !== 'new' && launch.kind !== 'regenerate') return true;
@@ -1100,6 +1120,12 @@ if (launchOf(location.search).kind === 'menu') {
   openMainMenu(null, new URLSearchParams(location.search).get('say') ?? undefined);
   void loadTools();
 } else {
+  // The loading screen first, before the client starts or anything of the game shows (§6.3).
+  bootLoading = new LoadingScreen(
+    document.body,
+    loadingScreenEnabled(location.search, storage()),
+    prefersReducedMotion(),
+  );
   void routeMadeWorld().then(async (ok) => {
     if (!ok) return;
     const app = await start();

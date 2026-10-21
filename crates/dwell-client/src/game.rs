@@ -958,6 +958,8 @@ impl<S: Scene> Game<S> {
                     // outruns the streaming, gate.rs).
                     if self.current.active && self.current.state != PlayerState::Flying {
                         self.loading.start(now_ms);
+                    } else if self.current.active {
+                        self.loading.skip();
                     }
                     self.flip.tick(self.current.face);
                     // Placed (joined or respawned): the camera starts where the player is, not
