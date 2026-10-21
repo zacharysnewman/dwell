@@ -16,6 +16,7 @@ pub mod geometry;
 pub mod lights;
 pub mod lod_shadows;
 pub mod pacing;
+pub mod pixel_art;
 pub mod point_shadows;
 pub mod reflection;
 pub mod seam;
@@ -35,6 +36,7 @@ use dwell_look::fog::{FOG, fog_sigma};
 use dwell_look::lod_shadows::LOD_SHADOWS;
 use dwell_look::motion::{MOTION, vanishing_point};
 use dwell_look::outline::{OUTLINE, OutlineMode, outline_uniforms};
+use dwell_look::pixel_art::{AtlasFilter, PIXEL_ART, PixelArtPreset};
 use dwell_look::reflections::{REFLECTIONS, reflection_uniforms};
 use dwell_look::shadows::{SHADOWS, ShadowQuality, ShadowTier};
 use dwell_look::{DEFAULT_EXPOSURE, hex, sanitize_exposure, srgb_to_linear};
@@ -129,6 +131,15 @@ pub fn pixel_ratio_for(device_type: wgpu::DeviceType, pixel_ratio: f64) -> f64 {
     } else {
         pixel_ratio
     }
+}
+
+/// The pixel-art preview a frame draws with the preset asked for (`?pixelart=`): none on a CPU
+/// adapter (a preview; the CPU tier keeps its own reduced buffer).
+pub fn pixel_art_for(
+    device_type: wgpu::DeviceType,
+    preset: Option<&'static PixelArtPreset>,
+) -> Option<&'static PixelArtPreset> {
+    preset.filter(|_| !is_cpu(device_type))
 }
 
 /// The frame uniform's `water` vec4 (shaders.rs `Frame`): x 1 when the eye is under a fluid's
@@ -823,8 +834,22 @@ pub struct Renderer {
     device: wgpu::Device,
     queue: wgpu::Queue,
     format: wgpu::TextureFormat,
+    /// The size the frame draws at: the canvas's, or the pixel-art preview's low-res picture.
     size: (u32, u32),
+    /// The drawing buffer's pixels per CSS pixel at `size`.
     pixel_ratio: f64,
+    /// The canvas's size and pixels per CSS pixel (`resize`).
+    canvas: (u32, u32),
+    canvas_ratio: f64,
+    /// The pixel-art preview (`?pixelart=`; docs/proposals/PIXEL_ART_LOOK.md): the preset asked
+    /// for (none by default), its grid on the canvas while it draws, the camera snap's shift this
+    /// frame (low-res pixels), its post pass (made on first use) and the atlas filter the frame
+    /// groups were made with.
+    pixel_art: Option<&'static PixelArtPreset>,
+    pixel_grid: Option<dwell_look::pixel_art::Grid>,
+    pixel_shift: [f64; 2],
+    pixel_pass: Option<pixel_art::PixelPass>,
+    groups_atlas: Option<AtlasFilter>,
     /// The ink outline's mode (`?outline=`; docs/ART_DIRECTION.md §7), none by default.
     ink_outline: Option<&'static OutlineMode>,
     /// The spyglass's magnification this frame (1 unzoomed): the outline's fade follows it.
@@ -1461,6 +1486,21 @@ impl Renderer {
             shadow_layout: shadow_frame_layout,
             atlas_view,
             sampler,
+            point_sampler: device.create_sampler(&wgpu::SamplerDescriptor {
+                label: Some("atlas point"),
+                mag_filter: wgpu::FilterMode::Nearest,
+                min_filter: wgpu::FilterMode::Nearest,
+                mipmap_filter: wgpu::MipmapFilterMode::Nearest,
+                lod_max_clamp: 0.0,
+                ..Default::default()
+            }),
+            point_mips_sampler: device.create_sampler(&wgpu::SamplerDescriptor {
+                label: Some("atlas point mips"),
+                mag_filter: wgpu::FilterMode::Nearest,
+                min_filter: wgpu::FilterMode::Nearest,
+                mipmap_filter: wgpu::MipmapFilterMode::Nearest,
+                ..Default::default()
+            }),
             tile_grid_buffer,
             fluid_buffer,
             light_buffer: lights::buffer(&device),
@@ -1476,6 +1516,7 @@ impl Renderer {
             &shadow_maps,
             &lod_maps,
             &point_maps,
+            None,
         );
         let characters = characters::CharacterRenderer::new(
             &device,
@@ -1494,6 +1535,13 @@ impl Renderer {
             format,
             size: (1, 1),
             pixel_ratio: 1.0,
+            canvas: (1, 1),
+            canvas_ratio: 1.0,
+            pixel_art: None,
+            pixel_grid: None,
+            pixel_shift: [0.0; 2],
+            pixel_pass: None,
+            groups_atlas: None,
             ink_outline: None,
             magnification: 1.0,
             targets: None,
@@ -1651,13 +1699,54 @@ impl Renderer {
 
     /// Resizes the drawing buffer to CSS pixels × device pixel ratio.
     pub fn resize(&mut self, width: u32, height: u32, pixel_ratio: f64) {
-        self.size = (width.max(1), height.max(1));
-        self.pixel_ratio = pixel_ratio;
-        self.targets = None;
-        self.finished = None;
+        self.canvas = (width.max(1), height.max(1));
+        self.canvas_ratio = pixel_ratio;
+        self.apply_size();
     }
+    /// The frame's size: the canvas's, or with the pixel-art preview on its low-res picture's
+    /// (dwell-look `pixel_art::grid`), at that picture's pixels per CSS pixel.
+    fn apply_size(&mut self) {
+        let grid = self
+            .pixel_preset()
+            .map(|p| dwell_look::pixel_art::grid(self.canvas, p.height, p.fit));
+        let (size, ratio) = match &grid {
+            Some(g) => (g.low, self.canvas_ratio / f64::from(g.scale)),
+            None => (self.canvas, self.canvas_ratio),
+        };
+        if size != self.size || grid != self.pixel_grid {
+            self.targets = None;
+            self.finished = None;
+        }
+        (self.size, self.pixel_ratio, self.pixel_grid) = (size, ratio, grid);
+        if grid.is_none()
+            && let Some(p) = &mut self.pixel_pass
+        {
+            p.release();
+        }
+    }
+    /// The canvas's size (`resize`).
     pub fn size(&self) -> (u32, u32) {
-        self.size
+        self.canvas
+    }
+    /// The pixel-art preview's preset this frame draws with (`pixel_art_for`), if any.
+    fn pixel_preset(&self) -> Option<&'static PixelArtPreset> {
+        pixel_art_for(self.adapter, self.pixel_art)
+    }
+    /// The pixel-art preview's preset by name (`shared/look/pixelart.json`), as `?pixelart=` takes
+    /// it; `off` or an unknown name turns it off. True when a preset is on.
+    pub fn set_pixel_art(&mut self, name: &str) -> bool {
+        self.pixel_art = PIXEL_ART.preset(name);
+        self.apply_size();
+        self.pixel_art.is_some()
+    }
+    /// The pixel-art preview from the page's query (`?pixelart=<preset>`); none without it.
+    pub fn set_pixel_art_query(&mut self, search: &str) {
+        self.pixel_art = dwell_look::pixel_art::preset_from_query(&PIXEL_ART, search);
+        self.apply_size();
+    }
+    /// The pixel-art preview's preset (its name), or none.
+    pub fn pixel_art(&self) -> Option<&'static str> {
+        self.pixel_art.map(|p| p.name)
     }
     pub fn device(&self) -> &wgpu::Device {
         &self.device
@@ -1725,6 +1814,7 @@ impl Renderer {
     /// `clouds_for` and its neighbours).
     pub fn set_adapter(&mut self, device_type: wgpu::DeviceType) {
         self.adapter = device_type;
+        self.apply_size();
     }
     pub fn adapter(&self) -> wgpu::DeviceType {
         self.adapter
@@ -1766,9 +1856,11 @@ impl Renderer {
         let lod_tier = self.lod_tier();
         let lod_size = lod_shadows::maps_size(lod_tier.as_ref());
         let torch_tier = self.torch_tier();
+        let atlas = self.pixel_preset().map(|p| p.atlas);
         if self.shadow_maps.size == size
             && self.lod_maps.size == lod_size
             && self.point_maps.tier == torch_tier
+            && self.groups_atlas == atlas
         {
             return;
         }
@@ -1796,7 +1888,9 @@ impl Renderer {
             &self.shadow_maps,
             &self.lod_maps,
             &self.point_maps,
+            atlas,
         );
+        self.groups_atlas = atlas;
     }
     /// The Torch shadows setting (docs/LIGHTS.md §4): Off, Low or High; none on a CPU adapter.
     pub fn set_torch_shadows(&mut self, quality: ShadowQuality) {
@@ -1986,8 +2080,21 @@ impl Renderer {
     }
     /// The vertical FOV this frame draws with.
     pub fn frame_fov(&self) -> f64 {
-        let aspect = f64::from(self.size.0) / f64::from(self.size.1);
-        self.fov.unwrap_or_else(|| vertical_fov(aspect))
+        // The pixel-art preview's picture has a margin past the rows it shows (the camera snap's
+        // room) and a crop: the rows it shows keep the setting's FOV.
+        let shown = self.pixel_grid.map_or(self.canvas, |g| {
+            (g.rect[2] - g.rect[0], g.rect[3] - g.rect[1])
+        });
+        let aspect = f64::from(shown.0) / f64::from(shown.1.max(1));
+        let fov = self.fov.unwrap_or_else(|| vertical_fov(aspect));
+        match &self.pixel_grid {
+            Some(g) => {
+                let shown = f64::from(shown.1) / f64::from(g.scale);
+                let k = f64::from(g.low.1) / shown;
+                (2.0 * ((fov.to_radians() / 2.0).tan() * k).atan()).to_degrees()
+            }
+            None => fov,
+        }
     }
     /// Debug line segments, or `None` to clear.
     pub fn set_debug_lines(&mut self, lines: Option<&[Line]>) {
@@ -2021,7 +2128,7 @@ impl Renderer {
                     } else {
                         0
                     }),
-            pixel_ratio: self.pixel_ratio,
+            pixel_ratio: self.canvas_ratio,
             ..self.stats
         }
     }
@@ -2057,12 +2164,31 @@ impl Renderer {
         for col in &vp {
             put(col);
         }
-        for v in outline_uniforms(
-            &OUTLINE,
-            self.ink_outline,
-            self.pixel_ratio,
-            self.magnification,
-        ) {
+        // The pixel-art preview's edge stands in for the ink outline while it is on: one low-res
+        // pixel, darkening the fill, on the near side only (`outline_cfg.z`).
+        let pixel = self.pixel_preset();
+        let edge = pixel.and_then(dwell_look::pixel_art::edge_mode);
+        let mut ink = match (pixel, &edge) {
+            (Some(_), e) => outline_uniforms(
+                &dwell_look::pixel_art::EDGE_INK,
+                e.as_ref(),
+                self.pixel_ratio,
+                self.magnification,
+            ),
+            (None, _) => outline_uniforms(
+                &OUTLINE,
+                self.ink_outline,
+                self.pixel_ratio,
+                self.magnification,
+            ),
+        };
+        if edge.is_some() {
+            ink[2][2] = 1.0;
+        }
+        for v in ink {
+            put(&v);
+        }
+        for v in dwell_look::pixel_art::light_uniforms(pixel) {
             put(&v);
         }
         let weight_a = self.viewer_weight_a();
@@ -2161,7 +2287,7 @@ impl Renderer {
                 f(t.flow_speed),
             ],
             [
-                if motion_blur_for(self.adapter) {
+                if motion_blur_for(self.adapter) && self.pixel_preset().is_none() {
                     f(t.blur)
                 } else {
                     0.0
@@ -2542,7 +2668,49 @@ impl Renderer {
         target: &wgpu::TextureView,
         chunk_fade: &dyn Fn(ChunkCoord) -> Option<Fade>,
     ) {
+        // The pixel-art preview's camera snap: the frame draws from the eye on the low-res grid
+        // and the upscale shifts the picture by the remainder (dwell-look `snap_eye`).
+        let eye = self.eye;
+        self.pixel_shift = [0.0; 2];
+        if let (Some(p), Some(g)) = (self.pixel_preset(), self.pixel_grid)
+            && p.snap_camera
+        {
+            let basis = aim(self.yaw, self.pitch, self.face, self.flip);
+            let tan_y = (self.frame_fov().to_radians() / 2.0).tan();
+            let (snapped, shift) = dwell_look::pixel_art::snap_eye(
+                eye,
+                basis.right,
+                basis.up,
+                tan_y,
+                g.low.1,
+                p.snap_depth_m,
+            );
+            self.eye = snapped;
+            self.pixel_shift = shift;
+        }
+        self.render_frame(target, chunk_fade);
+        self.eye = eye;
+    }
+
+    fn render_frame(
+        &mut self,
+        target: &wgpu::TextureView,
+        chunk_fade: &dyn Fn(ChunkCoord) -> Option<Fade>,
+    ) {
         self.ensure_targets();
+        // With the pixel-art preview on, the composite and lines draw into its low-res picture and
+        // its post pass draws that on the canvas (render/pixel_art.rs).
+        let low_view = match self.pixel_grid {
+            Some(g) if self.pixel_preset().is_some() => {
+                let (device, format) = (self.device.clone(), self.format);
+                let pass = self
+                    .pixel_pass
+                    .get_or_insert_with(|| pixel_art::PixelPass::new(&device, format));
+                Some(pass.low(&device, format, g.low).view.clone())
+            }
+            _ => None,
+        };
+        let composite_target = low_view.as_ref().unwrap_or(target);
         // GPU pass times of earlier frames the GPU has finished; then whether this one is timed.
         if let Some(timer) = &mut self.timer {
             for (name, ms) in timer.collect() {
@@ -2992,7 +3160,8 @@ impl Renderer {
         let cpu = crate::telemetry::now_ms() - t0 + collect_ms;
         // With the wind on, the composite draws the finished image and the motion pass reads it
         // (docs/MOTION_EFFECTS.md: post effects that sample neighbours read the finished image).
-        let motion = motion_pass(self.wind.intensity);
+        // No wind pass under the pixel-art preview (its blur and streaks are off).
+        let motion = motion_pass(self.wind.intensity) && low_view.is_none();
         if motion && self.finished.is_none() {
             self.finished = Some(frame::Finished::new(
                 &self.device,
@@ -3033,7 +3202,7 @@ impl Renderer {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("composite"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: target,
+                    view: composite_target,
                     depth_slice: None,
                     resolve_target: None,
                     ops: wgpu::Operations {
@@ -3068,6 +3237,16 @@ impl Renderer {
             );
         }
         drop(arena);
+        if let (Some(p), Some(g), Some(pass)) =
+            (self.pixel_preset(), self.pixel_grid, &self.pixel_pass)
+            && low_view.is_some()
+        {
+            let u = dwell_look::pixel_art::post_uniforms(&PIXEL_ART, p, &g, self.pixel_shift);
+            let query = self.timer.as_mut().and_then(|t| t.pass(timing::PIXEL_ART));
+            let writes = self.timer.as_ref().and_then(|t| t.writes(query));
+            pass.draw(&self.queue, &mut encoder, target, &u, writes);
+            calls += 1;
+        }
         if let Some(timer) = &self.timer {
             timer.resolve(&mut encoder);
         }
@@ -3936,6 +4115,9 @@ struct FrameBindings {
     shadow_layout: wgpu::BindGroupLayout,
     atlas_view: wgpu::TextureView,
     sampler: wgpu::Sampler,
+    /// The pixel-art preview's atlas samplers: nearest without mips, nearest within the mip.
+    point_sampler: wgpu::Sampler,
+    point_mips_sampler: wgpu::Sampler,
     tile_grid_buffer: wgpu::Buffer,
     fluid_buffer: wgpu::Buffer,
     /// The dynamic lights' block (lights.rs), written each frame.
@@ -3994,7 +4176,13 @@ impl FrameBindings {
         maps: &shadows::ShadowMaps,
         lod_maps: &lod_shadows::LodShadowMaps,
         point_maps: &point_shadows::PointShadowMaps,
+        atlas: Option<AtlasFilter>,
     ) -> [wgpu::BindGroup; 3] {
+        let sampler = match atlas {
+            None => &self.sampler,
+            Some(AtlasFilter::Point) => &self.point_sampler,
+            Some(AtlasFilter::PointMips) => &self.point_mips_sampler,
+        };
         std::array::from_fn(|i| {
             let entries = [
                 wgpu::BindGroupEntry {
@@ -4007,7 +4195,7 @@ impl FrameBindings {
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: wgpu::BindingResource::Sampler(&self.sampler),
+                    resource: wgpu::BindingResource::Sampler(sampler),
                 },
                 wgpu::BindGroupEntry {
                     binding: 3,
@@ -4070,8 +4258,11 @@ const WIND_PERIOD: f64 = 1024.0;
 /// Floats in the frame uniform block (`Frame` in shaders.rs): a matrix, 22 vec4s (the outline's
 /// three; after `tan` the clouds' three, then the water's, the wind's six, the wrap and the
 /// reflections' two) and the day/night cycle's block.
-pub(crate) const FRAME_FLOATS: usize =
-    16 + dwell_look::outline::OUTLINE_FLOATS + 19 * 4 + DAY_SKY_FLOATS;
+pub(crate) const FRAME_FLOATS: usize = 16
+    + dwell_look::outline::OUTLINE_FLOATS
+    + dwell_look::pixel_art::LIGHT_FLOATS
+    + 19 * 4
+    + DAY_SKY_FLOATS;
 
 /// The atlas and its mipmaps, each with its side in texels: down to the level where a tile's gutter
 /// is one texel wide. Filtering a smaller level at a tile's edge would reach past the gutter into
@@ -4782,6 +4973,76 @@ mod tests {
         ] {
             draws_cleanly(noop_renderer_with(samples, features));
         }
+    }
+
+    #[test]
+    fn frames_draw_cleanly_with_the_pixel_art_preview() {
+        // The low-res picture, the post pass (crop and letterbox) and the point-filtered atlas,
+        // across resizes.
+        for preset in ["180", "270-raw"] {
+            let mut r = noop_renderer_with(4, wgpu::Features::TIMESTAMP_QUERY);
+            assert!(r.set_pixel_art(preset));
+            draws_cleanly(r);
+        }
+    }
+
+    #[test]
+    fn the_pixel_art_preview_draws_a_low_res_frame_and_is_off_by_default() {
+        use dwell_look::pixel_art::{LIGHT_FLOATS, grid};
+        let mut r = noop_renderer();
+        r.resize(2560, 1440, 2.0);
+        let basis = aim(0.0, 0.0, FaceFrame::A, 0.0);
+        let light =
+            |r: &Renderer| r.frame_uniforms(&basis, 1.0, 100.0)[28..28 + LIGHT_FLOATS].to_vec();
+        let fov = r.frame_fov();
+        assert_eq!(
+            (r.pixel_art(), r.size, r.size()),
+            (None, (2560, 1440), (2560, 1440))
+        );
+        assert_eq!(
+            light(&r),
+            vec![0.0; LIGHT_FLOATS],
+            "off: the light is smooth"
+        );
+        r.set_pixel_art_query("?local=1&pixelart=270");
+        let p = PIXEL_ART.preset("270").unwrap();
+        let g = grid((2560, 1440), 270, p.fit);
+        assert_eq!(r.pixel_art(), Some("270"));
+        assert_eq!(
+            r.size, g.low,
+            "the frame draws at the low-res picture's size"
+        );
+        assert_eq!(r.size(), (2560, 1440), "the canvas stays the canvas");
+        assert_eq!(r.pixel_ratio, 2.0 / 5.0);
+        assert_eq!(r.stats().pixel_ratio, 2.0, "the canvas's ratio for the HUD");
+        // The rows that show keep the screen's FOV (the margin draws a little past it).
+        let shown = (r.frame_fov().to_radians() / 2.0).tan() * 1440.0 / 5.0 / f64::from(g.low.1);
+        assert!((shown - (fov.to_radians() / 2.0).tan()).abs() < 1e-9);
+        assert_eq!(
+            light(&r)[..3],
+            [p.bands as f32, p.ambient_bands as f32, p.shadow_hue as f32]
+        );
+        // Its edge stands in for the ink outline: one pixel, black at the darkening, near side.
+        r.set_outline("blocks");
+        let ink = r.frame_uniforms(&basis, 1.0, 100.0)[16..28].to_vec();
+        assert_eq!(ink[0], p.edges as f32);
+        assert_eq!(
+            (ink[1], ink[4..8].to_vec()),
+            (1.0, vec![0.0, 0.0, 0.0, p.edge_darken as f32])
+        );
+        assert_eq!(ink[10], 1.0);
+        // The wind's edge blur is off under it.
+        r.set_wind(WindView {
+            intensity: 1.0,
+            ..Default::default()
+        });
+        assert_eq!(r.wind_uniforms(&basis, 1.0, 1.0)[5][0], 0.0);
+        // A CPU adapter skips it; off turns it off.
+        r.set_adapter(wgpu::DeviceType::Cpu);
+        assert_eq!(r.size, (2560, 1440));
+        r.set_adapter(wgpu::DeviceType::DiscreteGpu);
+        assert!(!r.set_pixel_art("off"));
+        assert_eq!((r.size, r.pixel_ratio), ((2560, 1440), 2.0));
     }
 
     fn draws_cleanly(mut r: Renderer) {

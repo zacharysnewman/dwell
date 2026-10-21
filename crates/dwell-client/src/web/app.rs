@@ -344,6 +344,9 @@ impl Client {
         renderer.set_lod_level_colors(options.lod_colors);
         // `?outline=<mode>` (docs/ART_DIRECTION.md §7): the ink outline, off without it.
         renderer.set_outline_query(&options.search);
+        // `?pixelart=<preset>` (docs/proposals/PIXEL_ART_LOOK.md): the pixel-art preview, off
+        // without it.
+        renderer.set_pixel_art_query(&options.search);
         // `?lodshadows=off` (docs/DAY_NIGHT.md §12): the distant shadows off, for their cost.
         renderer.set_lod_shadows_query(&options.search);
         let inner = Inner {
@@ -1181,6 +1184,28 @@ impl Client {
             .renderer
             .borrow()
             .outline()
+            .unwrap_or("off")
+            .into()
+    }
+    /// The pixel-art preview's preset by name (`shared/look/pixelart.json`;
+    /// docs/proposals/PIXEL_ART_LOOK.md), as `?pixelart=` takes it; `off` or an unknown name turns
+    /// it off. True when a preset is on.
+    #[wasm_bindgen(js_name = setPixelArt)]
+    pub fn set_pixel_art(&self, name: &str) -> bool {
+        self.inner
+            .borrow()
+            .renderer
+            .borrow_mut()
+            .set_pixel_art(name)
+    }
+    /// The pixel-art preview's preset, or `off`.
+    #[wasm_bindgen(js_name = pixelArt)]
+    pub fn pixel_art(&self) -> String {
+        self.inner
+            .borrow()
+            .renderer
+            .borrow()
+            .pixel_art()
             .unwrap_or("off")
             .into()
     }
