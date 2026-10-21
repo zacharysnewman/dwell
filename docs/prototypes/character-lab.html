@@ -2759,9 +2759,9 @@ const DATA = {
      "hand_r"
     ],
     "anchor": [
-     -0.28,
-     -0.25,
-     0.02
+     -0.65,
+     -0.48,
+     0.35
     ],
     "fov": 62,
     "clips": {
@@ -7929,13 +7929,14 @@ const DATA = {
    ]
   },
   "fp_walk": {
+   "$comment": "The hand's bob: two dips a loop, one loop per 4 m walked (not the legs' 1.6 m stride), so ~2.5 Hz at the 5 m/s walk (owner, 2026-10-20: the stride's rate was 2-3x too fast).",
    "rig": "biped",
    "space": "arms",
    "layer": "base",
    "duration": 1,
    "loop": true,
    "ease": "spline",
-   "cycle": 1.6,
+   "cycle": 4,
    "keys": [
     {
      "t": 0,
@@ -8200,14 +8201,14 @@ const DATA = {
    ]
   },
   "fp_sprint": {
-   "$comment": "A bigger, faster bob than the walk and the arm pumping, at the sprint's cycle.",
+   "$comment": "A bigger bob than the walk and the arm pumping; the walk's 4 m a loop, so it bobs faster in proportion to the speed (~4 Hz at the 8 m/s run).",
    "rig": "biped",
    "space": "arms",
    "layer": "base",
    "duration": 0.66,
    "loop": true,
    "ease": "spline",
-   "cycle": 3,
+   "cycle": 4,
    "blend": 0.25,
    "keys": [
     {

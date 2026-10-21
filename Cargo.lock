@@ -613,6 +613,7 @@ dependencies = [
 name = "dwell-characters"
 version = "0.0.0"
 dependencies = [
+ "dwell-physics",
  "dwell-protocol",
 ]
 
