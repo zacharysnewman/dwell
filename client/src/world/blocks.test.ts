@@ -127,7 +127,7 @@ describe('block registry (docs/BLOCK_REGISTRY.md)', () => {
     }
   });
 
-  it('gives the shell each state\'s selection box, turned to its facing', () => {
+  it("gives the shell each state's selection box, turned to its facing", () => {
     // The e2e tests aim at a block by its box (a ladder is aimed at by its plate, not its cell).
     const box = (name: string) => STATE_DEFS[stateId(name)]?.selection;
     expect(box('dwell:ladder[facing=north,flooded=false]')).toEqual([0, 0, 0.875, 1, 1, 1]);
