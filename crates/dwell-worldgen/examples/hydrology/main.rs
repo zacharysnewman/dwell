@@ -77,13 +77,14 @@ fn main() {
         std::fs::create_dir_all(&out).expect("create the output directory");
     }
     println!(
-        "seed face profile grid seconds(sampling) land_km2 lakes lake_km2 rivers river_cells mouths(delta/estuary) max_q_m3s relief_before relief_after"
+        "seed face profile grid seconds(sampling) land_km2 lakes lake_km2 rivers river_cells mouths(delta/estuary) max_q_m3s relief_before relief_after digest"
     );
     for &seed in &seeds {
+        let terrain = dwell_worldgen::BifacialTerrain::new(seed);
         for &face in &faces {
             for p in &profiles {
                 let t = Instant::now();
-                let (grid, x0, h) = hydrology::sample(seed, face, p.cell);
+                let (grid, x0, h) = hydrology::sample(&terrain, face, p.cell);
                 let sampled = t.elapsed().as_secs_f64();
                 let map = hydrology::from_heights(grid, f64::from(p.cell), x0, &h, p);
                 let secs = t.elapsed().as_secs_f64();
@@ -128,11 +129,15 @@ fn stats(seed: u64, face: FaceFrame, profile: &str, m: &HydrologyMap, secs: f64,
     let land = m.sea.iter().filter(|s| !**s).count() as f64 * a;
     let lake_km2: f64 = m.lakes.iter().map(|l| l.area / 1e6).sum();
     let river_cells: usize = m.rivers.iter().map(|r| r.cells.len()).sum();
-    let deltas = m.mouths.iter().filter(|x| x.kind == MouthKind::Delta).count();
+    let deltas = m
+        .mouths
+        .iter()
+        .filter(|x| x.kind == MouthKind::Delta)
+        .count();
     let max_q = m.discharge.iter().fold(0f32, |a, &b| a.max(b));
     let max = |v: &[f32]| v.iter().fold(0f32, |a, &b| a.max(b));
     println!(
-        "{seed} {} {profile} {n}x{n} {secs:.3}({sampled:.3}) {land:.0} {} {lake_km2:.1} {} {river_cells} {}({deltas}/{}) {max_q:.0} {:.0} {:.0}",
+        "{seed} {} {profile} {n}x{n} {secs:.3}({sampled:.3}) {land:.0} {} {lake_km2:.1} {} {river_cells} {}({deltas}/{}) {max_q:.0} {:.0} {:.0} {:016x}",
         if face.is_b() { "b" } else { "a" },
         m.lakes.len(),
         m.rivers.len(),
@@ -140,6 +145,7 @@ fn stats(seed: u64, face: FaceFrame, profile: &str, m: &HydrologyMap, secs: f64,
         m.mouths.len() - deltas,
         max(&m.original),
         max(&m.height),
+        m.digest(),
         n = m.grid.n,
     );
 }
@@ -159,7 +165,10 @@ impl Canvas {
         self.px[(z - self.z0) * self.w + (x - self.x0)] = c;
     }
     fn blend(&mut self, x: f64, z: f64, c: Rgb, a: f32) {
-        let (xi, zi) = (x.floor() as i64 - self.x0 as i64, z.floor() as i64 - self.z0 as i64);
+        let (xi, zi) = (
+            x.floor() as i64 - self.x0 as i64,
+            z.floor() as i64 - self.z0 as i64,
+        );
         if xi < 0 || zi < 0 || xi >= self.w as i64 || zi >= self.h as i64 {
             return;
         }
@@ -265,7 +274,7 @@ fn hillshade(m: &HydrologyMap, h: &[f32], i: usize, exaggerate: f32) -> f32 {
     let dz = (at(x, zd) - at(x, zu)) * exaggerate / (c * (zd - zu) as f32);
     let nrm = [-dx, 1.0, -dz];
     let len = (nrm[0] * nrm[0] + 1.0 + nrm[2] * nrm[2]).sqrt();
-    let l = [-0.5f32, 0.7071, -0.5];
+    let l = [-0.5f32, std::f32::consts::FRAC_1_SQRT_2, -0.5];
     ((nrm[0] * l[0] + nrm[1] * l[1] + nrm[2] * l[2]) / len).clamp(0.0, 1.0)
 }
 
@@ -359,20 +368,30 @@ fn render(m: &HydrologyMap, name: &str) {
             if m.lake_of[i] != NONE {
                 let l = &m.lakes[m.lake_of[i] as usize];
                 let depth = (l.level - f64::from(m.height[i])) as f32;
-                c.put(x, z, lerp3(hex(0x8EC5F0), lake_blue, (depth / 20.0).clamp(0.0, 1.0)));
+                c.put(
+                    x,
+                    z,
+                    lerp3(hex(0x8EC5F0), lake_blue, (depth / 20.0).clamp(0.0, 1.0)),
+                );
             }
         }
         if outlets {
             for l in &m.lakes {
                 if l.outlet != NONE {
                     let o = l.outlet as usize;
-                    c.disc((o % n) as f64 + 0.5, (o / n) as f64 + 0.5, 1.2, hex(0xE0402A));
+                    c.disc(
+                        (o % n) as f64 + 0.5,
+                        (o / n) as f64 + 0.5,
+                        1.2,
+                        hex(0xE0402A),
+                    );
                 }
             }
         }
     };
     let draw_rivers = |c: &mut Canvas, colour: Rgb| {
-        let to_px = |v: &hydrology::Vertex| ((v.x - m.x0) / m.cell + 0.5, (v.z - m.x0) / m.cell + 0.5);
+        let to_px =
+            |v: &hydrology::Vertex| ((v.x - m.x0) / m.cell + 0.5, (v.z - m.x0) / m.cell + 0.5);
         // Widths are exaggerated to read at one pixel per cell: radius ½ px + width ÷ 40 m.
         let radius = |w: f64| 0.3 + w / 40.0;
         for r in &m.rivers {

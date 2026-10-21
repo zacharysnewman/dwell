@@ -43,9 +43,8 @@ pub struct Inputs<'a> {
 pub fn trace(inp: &Inputs, p: &HydrologyParams) -> (Vec<River>, Vec<Mouth>) {
     let len = inp.grid.len();
     let n = inp.grid.n;
-    let river = |i: usize| {
-        !inp.sea[i] && inp.lake_of[i] == NONE && inp.discharge[i] >= p.river_threshold
-    };
+    let river =
+        |i: usize| !inp.sea[i] && inp.lake_of[i] == NONE && inp.discharge[i] >= p.river_threshold;
     // A river cell with a river donor is not a source.
     let mut fed = vec![false; len];
     for i in 0..len {
@@ -62,8 +61,8 @@ pub fn trace(inp: &Inputs, p: &HydrologyParams) -> (Vec<River>, Vec<Mouth>) {
             starts.push((o, Some(id as u32)));
         }
     }
-    for i in 0..len {
-        if river(i) && !fed[i] {
+    for (i, &f) in fed.iter().enumerate() {
+        if river(i) && !f {
             starts.push((i as u32, None));
         }
     }

@@ -69,8 +69,8 @@ pub struct Flood {
 pub fn shore(grid: Grid, sea: &[bool]) -> Vec<(u32, u32)> {
     let mut queued: Vec<bool> = sea.to_vec();
     let mut out = Vec::new();
-    for i in 0..grid.len() {
-        if !sea[i] {
+    for (i, &s) in sea.iter().enumerate() {
+        if !s {
             continue;
         }
         for (j, _) in grid.neighbours(i) {

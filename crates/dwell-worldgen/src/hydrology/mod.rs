@@ -196,14 +196,22 @@ pub fn grid_for(cell: i32) -> (Grid, f64) {
 
 /// One face's map for a world seed (the face's own generator, face-local).
 pub fn generate(world_seed: u64, face: FaceFrame, p: &HydrologyParams) -> HydrologyMap {
-    let (grid, x0, h) = sample(world_seed, face, p.cell);
+    generate_for(&BifacialTerrain::new(world_seed), face, p)
+}
+
+/// One face's map of a terrain (the mirror world's too, for face parity).
+pub fn generate_for(
+    terrain: &BifacialTerrain,
+    face: FaceFrame,
+    p: &HydrologyParams,
+) -> HydrologyMap {
+    let (grid, x0, h) = sample(terrain, face, p.cell);
     from_heights(grid, f64::from(p.cell), x0, &h, p)
 }
 
 /// The face's height field on the grid of `cell` m (m above sea level; −∞ beyond the disc): each
 /// cell's centre, with the octaves finer than a cell dropped (the LOD's sampling).
-pub fn sample(world_seed: u64, face: FaceFrame, cell: i32) -> (Grid, f64, Vec<f64>) {
-    let terrain = BifacialTerrain::new(world_seed);
+pub fn sample(terrain: &BifacialTerrain, face: FaceFrame, cell: i32) -> (Grid, f64, Vec<f64>) {
     let g = terrain.local(face.face);
     let (grid, x0) = grid_for(cell);
     let n = grid.n;
@@ -228,13 +236,25 @@ pub fn sample(world_seed: u64, face: FaceFrame, cell: i32) -> (Grid, f64, Vec<f6
 /// The map of a sampled height field (m above sea level; −∞ beyond the disc). The sea is the
 /// grid's border and every cell at or below sea level connected to it; a hollow below sea level
 /// cut off from it is land (a depression: a lake, or filled).
-pub fn from_heights(grid: Grid, cell: f64, x0: f64, h0: &[f64], p: &HydrologyParams) -> HydrologyMap {
+pub fn from_heights(
+    grid: Grid,
+    cell: f64,
+    x0: f64,
+    h0: &[f64],
+    p: &HydrologyParams,
+) -> HydrologyMap {
     assert_eq!(h0.len(), grid.len());
     let len = grid.len();
     let sea = open_sea(grid, h0);
     let original: Vec<f32> = h0.iter().map(|&v| v.max(-1e4) as f32).collect();
     let mut h: Vec<f64> = (0..len)
-        .map(|i| if sea[i] { h0[i].max(-1e4).min(0.0) } else { h0[i] })
+        .map(|i| {
+            if sea[i] {
+                h0[i].clamp(-1e4, 0.0)
+            } else {
+                h0[i]
+            }
+        })
         .collect();
     let rain: Vec<f64> = match p.rain {
         Rain::Uniform => vec![1.0; len],
@@ -298,9 +318,9 @@ const SECONDS_PER_YEAR: f64 = 365.25 * 86_400.0;
 fn open_sea(grid: Grid, h: &[f64]) -> Vec<bool> {
     let mut sea = vec![false; grid.len()];
     let mut todo = Vec::new();
-    for i in 0..grid.len() {
+    for (i, s) in sea.iter_mut().enumerate() {
         if grid.on_border(i) {
-            sea[i] = true;
+            *s = true;
             todo.push(i);
         }
     }
@@ -321,7 +341,12 @@ impl HydrologyMap {
     pub fn digest(&self) -> u64 {
         let mut h = Fnv(0xcbf2_9ce4_8422_2325);
         h.u64(self.grid.n as u64);
-        for v in self.original.iter().chain(&self.height).chain(&self.surface) {
+        for v in self
+            .original
+            .iter()
+            .chain(&self.height)
+            .chain(&self.surface)
+        {
             h.u64(u64::from(v.to_bits()));
         }
         for v in &self.discharge {

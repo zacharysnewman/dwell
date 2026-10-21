@@ -75,8 +75,6 @@ pub fn erode(
     }
 }
 
-
-
 fn is_diagonal(grid: Grid, a: usize, b: usize) -> bool {
     a % grid.n != b % grid.n && a / grid.n != b / grid.n
 }
