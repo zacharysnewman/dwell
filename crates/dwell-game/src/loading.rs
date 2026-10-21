@@ -116,7 +116,17 @@ impl LoadingGate {
         let Some(start) = self.started_ms else {
             return true;
         };
-        self.progress = progress;
+        // Shown without going back: a chunk the LOD stops showing as chunks for a moment (its
+        // root just became ready, and the level-1 section above it is not yet) counts again soon.
+        let ready = if progress.needed == self.progress.needed {
+            progress.ready.max(self.progress.ready)
+        } else {
+            progress.ready
+        };
+        self.progress = NearProgress {
+            ready,
+            needed: progress.needed,
+        };
         self.elapsed_s = ((now_ms - start) / 1000.0).max(0.0);
         let opened = if progress.complete() {
             Some(Opened::Ready)
@@ -241,5 +251,23 @@ mod tests {
         assert!(!g.update(5_100.0, p(1, 5)));
         assert!(g.update(5_200.0, p(5, 5)));
         assert_eq!(g.last_opened(), Some((Opened::Ready, 0.2)));
+    }
+
+    #[test]
+    fn the_readout_does_not_go_back_but_the_gate_waits_for_the_real_count() {
+        // The bench's first screenshots read 0 / 179 after 21: the LOD's root became ready and hid
+        // the chunks until their level-1 sections were.
+        let mut g = LoadingGate::new(T, true);
+        g.start(0.0);
+        assert!(!g.update(100.0, p(21, 179)));
+        assert!(!g.update(200.0, p(0, 179)));
+        assert_eq!(g.screen().unwrap().progress, p(21, 179));
+        assert!(!g.update(300.0, p(178, 179)));
+        assert!(g.update(400.0, p(179, 179)));
+        // A new ring (the player moved to another chunk) counts afresh.
+        g.start(1000.0);
+        assert!(!g.update(1100.0, p(30, 170)));
+        assert!(!g.update(1200.0, p(5, 179)));
+        assert_eq!(g.screen().unwrap().progress, p(5, 179));
     }
 }
