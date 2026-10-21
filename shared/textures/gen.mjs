@@ -66,11 +66,11 @@ export function bakeCel(cel, materials, palette, pixelPalettes) {
   const n = cel.tileTexels;
   const texels = new Uint8Array(names.length * n * n * 4);
   names.forEach((name, i) => texels.set(paintCel(materials.tiles[name], cel, materials, palette), i * n * n * 4));
-  return { names, n, texels };
+  return { names, n, mips: cel.mips, texels };
 }
 
-/** The cel style's Rust: its tile names (the painterly set's, in order) and texels. */
-export function celRustSource(names, n) {
+/** The cel style's Rust: its tile names (the painterly set's, in order), mips and texels. */
+export function celRustSource(names, n, mips = 'average') {
   const flat = `pub const CEL_TILES: [&str; ${names.length}] = [${names.map((t) => JSON.stringify(t)).join(', ')}];`;
   const list = flat.length <= 100
     ? flat
@@ -79,6 +79,10 @@ export function celRustSource(names, n) {
 
 /// Texels per tile edge the cel style is painted at (each is repeated to fill the atlas's tile).
 pub const CEL_TILE: usize = ${n};
+
+/// Whether the atlas halves the opaque cel tiles by their majority tone for the mips (\`mips\`:
+/// "mode"), keeping their tones, rather than by the average.
+pub const CEL_MODE_MIPS: bool = ${mips === 'mode'};
 
 /// The atlas tiles the cel style paints, in the order of their texels in [\`CEL_TEXELS\`].
 ${list}
@@ -256,7 +260,7 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
     writeFileSync(lab, labPage(readFileSync(lab, 'utf8'), readFileSync(join(here, 'paint.mjs'), 'utf8'), palette, materials));
     const c = bakeCel(cel, materials, palette, loadPixelArt().palettes);
     writeFileSync(join(out, 'cel.rgba'), c.texels);
-    writeFileSync(join(out, 'cel.gen.rs'), celRustSource(c.names, c.n));
+    writeFileSync(join(out, 'cel.gen.rs'), celRustSource(c.names, c.n, cel.mips));
     console.log(`painted ${names.length} atlas tiles (${Object.keys(materials.materials).length} materials), painterly and cel (${c.n} × ${c.n})`);
     const at = process.argv.indexOf('--png');
     if (at > 0) {

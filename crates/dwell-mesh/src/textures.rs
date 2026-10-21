@@ -35,6 +35,17 @@ pub enum TextureSet {
     Cel,
 }
 
+impl TextureSet {
+    /// Whether the set's mips keep its tones (each 2 × 2 of an opaque tile halves to its majority
+    /// tone) rather than averaging: the cel style's (`mips` in `shared/textures/cel.json`).
+    pub fn mode_mips(self) -> bool {
+        match self {
+            TextureSet::Painterly => false,
+            TextureSet::Cel => cel::CEL_MODE_MIPS,
+        }
+    }
+}
+
 /// The texel (x, y) of tile `name` in `set` (sRGB RGBA8; x, y in the atlas tile's `TILE` texels):
 /// a cel tile's texel covers `TILE / CEL_TILE` of them each way. A name the set doesn't paint
 /// takes the `plain` tile's (white).

@@ -1,7 +1,8 @@
 {
-  "$comment": "The cel texture style (docs/PAINTERLY_TEXTURES.md §10): a prototype second atlas for the pixel-art preview (docs/proposals/PIXEL_ART_LOOK.md), chosen by a preset's `textures`; the normal look keeps the painterly set. Each material of materials.json is painted by shared/textures/cel.mjs on a tileTexels × tileTexels grid (one tile per metre, as the atlas lays tiles out), in a few flat tones with hard edges and large flat areas, so a face holds still in motion. A material's recipe is recipes.<material>, else the recipe of the material it is `like`, else defaults.<use>. Layers paint in order; a tone is a palette reference (shared/textures/palette.json: \"ramp.stop\", \"@stop\" for the material's own ramp, a swatch) or \"clear\" (a cutout's gap). Kinds: fill {tone}; edge {tone, edge, width, ragged}; clumps {tone, count, width, height, band, shape rect|blob, light, shadow}; blades {tone, tip, count | at, length, width, root, dir up|down}; bricks {mortar, width, height, light, shadow}; planks {seam, direction, width, light, joints}; bands {tones, direction, width}; ripples {tone, under, count, length, band}; rings {tones, center, step, metric round|square, radius}; rects {tone, at [[x, y, w, h]]}; checker {tone, size}; any layer: clip (paint only covered texels), seed. Sizes are whole texels, y up. Every tile has at most maxTones colours, and every tile but paletteExempt (the utility tiles, not content) paints only colours of the pixel-art palette `palette` (shared/look/pixelart.json), so quantizing a lit-white face changes nothing. Run `node shared/textures/gen.mjs` after editing; CI fails if crates/dwell-mesh/src/cel.rgba is stale.",
+  "$comment": "The cel texture style (docs/PAINTERLY_TEXTURES.md §10): a prototype second atlas for the pixel-art preview (docs/proposals/PIXEL_ART_LOOK.md), chosen by a preset's `textures`; the normal look keeps the painterly set. Each material of materials.json is painted by shared/textures/cel.mjs on a tileTexels × tileTexels grid (one tile per metre, as the atlas lays tiles out), in a few flat tones with hard edges and large flat areas, so a face holds still in motion. A material's recipe is recipes.<material>, else the recipe of the material it is `like`, else defaults.<use>. Layers paint in order; a tone is a palette reference (shared/textures/palette.json: \"ramp.stop\", \"@stop\" for the material's own ramp, a swatch) or \"clear\" (a cutout's gap). Kinds: fill {tone}; edge {tone, edge, width, ragged}; clumps {tone, count, width, height, band, shape rect|blob, light, shadow}; blades {tone, tip, count | at, length, width, root, dir up|down}; bricks {mortar, width, height, light, shadow}; planks {seam, direction, width, light, joints}; bands {tones, direction, width}; ripples {tone, under, count, length, band}; rings {tones, center, step, metric round|square, radius}; rects {tone, at [[x, y, w, h]]}; checker {tone, size}; any layer: clip (paint only covered texels), seed. Sizes are whole texels, y up. mips: how the atlas halves the opaque tiles for their mip levels, 'average' or 'mode' (each 2 × 2 to its majority tone, so a distant face keeps the tile's tones and settles on its main one instead of averaging into colours the palette dithers). Every tile has at most maxTones colours, and every tile but paletteExempt (the utility tiles, not content) paints only colours of the pixel-art palette `palette` (shared/look/pixelart.json), so quantizing a lit-white face changes nothing. Run `node shared/textures/gen.mjs` after editing; CI fails if crates/dwell-mesh/src/cel.rgba is stale.",
   "tileTexels": 16,
   "maxTones": 4,
+  "mips": "mode",
   "palette": "dwell",
   "paletteExempt": ["plain", "grid", "missing"],
   "defaults": {
@@ -47,15 +48,15 @@
       "$comment": "Turf from above: mostly flat base, a few big blocky shadow clumps and small lit tufts.",
       "layers": [
         { "kind": "fill", "tone": "@base" },
-        { "kind": "clumps", "tone": "@shadow", "count": 4, "width": [3, 5], "height": [3, 4], "shape": "blob", "seed": 2 },
-        { "kind": "clumps", "tone": "@light", "count": 5, "width": [2, 2], "height": [1, 2], "seed": 5 }
+        { "kind": "clumps", "tone": "@shadow", "count": 4, "width": [4, 6], "height": [3, 3], "shape": "blob", "seed": 2 },
+        { "kind": "clumps", "tone": "@light", "count": 4, "width": [2, 3], "height": [1, 1], "seed": 5 }
       ]
     },
     "soil": {
       "layers": [
         { "kind": "fill", "tone": "@base" },
-        { "kind": "clumps", "tone": "@shadow", "count": 4, "width": [3, 5], "height": [2, 3], "shape": "blob", "seed": 1 },
-        { "kind": "clumps", "tone": "@light", "count": 4, "width": [2, 2], "height": [1, 1], "seed": 4 }
+        { "kind": "clumps", "tone": "@shadow", "count": 4, "width": [4, 6], "height": [2, 3], "shape": "blob", "seed": 1 },
+        { "kind": "clumps", "tone": "@light", "count": 3, "width": [2, 2], "height": [1, 1], "seed": 9 }
       ]
     },
     "grass_side": {

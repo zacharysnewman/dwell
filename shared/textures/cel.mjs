@@ -17,7 +17,9 @@ export const STYLES = ['painterly', 'cel'];
 /** The cel layer kinds (the fixed vocabulary). */
 export const CEL_KINDS = ['fill', 'edge', 'clumps', 'blades', 'bricks', 'planks', 'bands', 'ripples', 'rings', 'rects', 'checker'];
 
-const ROOT_KEYS = ['$comment', 'tileTexels', 'maxTones', 'palette', 'paletteExempt', 'defaults', 'recipes'];
+const ROOT_KEYS = ['$comment', 'tileTexels', 'maxTones', 'mips', 'palette', 'paletteExempt', 'defaults', 'recipes'];
+/** How the atlas halves a cel tile for its mips: by the average, or by the majority tone. */
+export const MIPS = ['average', 'mode'];
 const RECIPE_KEYS = ['$comment', 'like', 'layers'];
 const COMMON = ['$comment', 'kind', 'clip'];
 const KEYS = {
@@ -206,6 +208,7 @@ export function validateCel(cel, materials, palette, pixelPalette = null) {
   const n = cel.tileTexels;
   if (!isInt(n) || n < 4 || n > TILE || TILE % n !== 0) fail(`tileTexels must divide the atlas's tile (${TILE}) and be at least 4, got ${JSON.stringify(n)}`);
   range('cel.json: maxTones', cel.maxTones, 1, 16);
+  if (!MIPS.includes(cel.mips)) fail(`mips must be one of ${MIPS.join(', ')}, got ${JSON.stringify(cel.mips)}`);
   if (typeof cel.palette !== 'string') fail('palette must name a pixel-art palette (shared/look/pixelart.json)');
   if (!Array.isArray(cel.paletteExempt)) fail('paletteExempt must be a list of atlas tiles');
   for (const t of cel.paletteExempt) if (!(t in (materials.tiles ?? {}))) fail(`paletteExempt: "${t}" is not an atlas tile`);

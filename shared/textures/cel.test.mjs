@@ -27,7 +27,8 @@ test('the checked-in cel data is valid and its baked tiles are current', () => {
   const baked = readFileSync(join(here, '..', '..', 'crates', 'dwell-mesh', 'src', 'cel.rgba'));
   assert.ok(Buffer.from(texels).equals(baked), 'cel.rgba is stale: run node shared/textures/gen.mjs');
   const src = readFileSync(join(here, '..', '..', 'crates', 'dwell-mesh', 'src', 'cel.gen.rs'), 'utf8');
-  assert.equal(src, celRustSource(names, n));
+  assert.equal(src, celRustSource(names, n, cel.mips));
+  assert.match(src, new RegExp(`CEL_MODE_MIPS: bool = ${cel.mips === 'mode'};`));
   assert.deepEqual(STYLES, ['painterly', 'cel']);
 });
 
@@ -183,6 +184,7 @@ test('bad entries fail with their path named', () => {
   const cases = [
     [(c) => (c.bloom = 1), /cel\.json: unknown entry bloom/],
     [(c) => (c.maxTones = 0), /maxTones must be a whole number/],
+    [(c) => (c.mips = 'linear'), /mips must be one of average, mode/],
     [(c) => (c.paletteExempt = ['nope']), /paletteExempt: "nope" is not an atlas tile/],
     [(c) => (c.recipes.nope = { layers: [] }), /recipes\.nope: no material "nope"/],
     [(c) => (c.recipes.stone.layers[1].kind = 'swirl'), /recipes\.stone\.layers\[1\] \(painting stone\)\.kind must be one of fill, edge/],

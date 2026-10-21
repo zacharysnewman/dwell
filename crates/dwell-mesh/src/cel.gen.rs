@@ -3,6 +3,10 @@
 /// Texels per tile edge the cel style is painted at (each is repeated to fill the atlas's tile).
 pub const CEL_TILE: usize = 16;
 
+/// Whether the atlas halves the opaque cel tiles by their majority tone for the mips (`mips`:
+/// "mode"), keeping their tones, rather than by the average.
+pub const CEL_MODE_MIPS: bool = true;
+
 /// The atlas tiles the cel style paints, in the order of their texels in [`CEL_TEXELS`].
 pub const CEL_TILES: [&str; 17] = [
     "grass",

@@ -4380,16 +4380,83 @@ fn write_atlas(queue: &wgpu::Queue, texture: &wgpu::Texture, levels: &[(Vec<u8>,
 /// is one texel wide. Filtering a smaller level at a tile's edge would reach past the gutter into
 /// the neighbouring tiles and the atlas's empty (transparent) space, which a grazing view of
 /// distant ground samples: a grey, see-through grid along the block edges. Painted from `set`
-/// (both sets have the same layout and cutouts, so the same levels).
+/// (both sets have the same layout and cutouts, so the same levels). A set whose mips keep its
+/// tones (`TextureSet::mode_mips`, the cel style) halves its opaque tiles by the majority tone
+/// ([`downsample_mode`]) instead of the average.
 fn atlas_levels(set: dwell_mesh::TextureSet) -> Vec<(Vec<u8>, usize)> {
     let mut levels = vec![(dwell_mesh::build_atlas_of(set), dwell_mesh::ATLAS_SIZE)];
+    let ranks = set.mode_mips().then(|| tone_ranks(&levels[0].0));
     while let Some(&(ref level, s)) = levels.last()
         && s > dwell_mesh::ATLAS_SIZE / dwell_mesh::GUTTER
     {
-        levels.push((downsample(level, s), s / 2));
+        let mut next = downsample(level, s);
+        if let Some(ranks) = &ranks {
+            downsample_mode(level, s, ranks, &mut next);
+        }
+        levels.push((next, s / 2));
     }
     preserve_coverage(&mut levels);
     levels
+}
+
+/// Each opaque tile's tones, most texels first (its full-size texels'), by atlas slot; none for a
+/// cutout tile (its mips average, and keep their coverage).
+fn tone_ranks(atlas: &[u8]) -> Vec<Option<Vec<[u8; 4]>>> {
+    let mut out = vec![None; dwell_mesh::ATLAS_TILES];
+    for (tile, name) in dwell_mesh::TILE_ORDER.iter().enumerate() {
+        if dwell_mesh::tile_has_alpha(name) {
+            continue;
+        }
+        let (x0, y0) = (
+            (tile % dwell_mesh::ATLAS_CELLS) * dwell_mesh::CELL + dwell_mesh::GUTTER,
+            (tile / dwell_mesh::ATLAS_CELLS) * dwell_mesh::CELL + dwell_mesh::GUTTER,
+        );
+        let mut counts: Vec<([u8; 4], usize)> = Vec::new();
+        for y in y0..y0 + dwell_mesh::TILE {
+            for x in x0..x0 + dwell_mesh::TILE {
+                let o = (y * dwell_mesh::ATLAS_SIZE + x) * 4;
+                let c = [atlas[o], atlas[o + 1], atlas[o + 2], atlas[o + 3]];
+                match counts.iter_mut().find(|(k, _)| *k == c) {
+                    Some((_, n)) => *n += 1,
+                    None => counts.push((c, 1)),
+                }
+            }
+        }
+        // Most texels first; a tie by the colour, so the order is the same on every run.
+        counts.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+        out[tile] = Some(counts.into_iter().map(|(c, _)| c).collect());
+    }
+    out
+}
+
+/// Halves the opaque tiles of level (`src`, `size`) into `out` (the averaged level, `downsample`'s)
+/// by the majority tone of each 2 × 2, a tie going to the tone that covers more of the tile: a
+/// tile of a few flat tones keeps exactly those tones down the mips, its small shapes dropping out
+/// level by level until a distant face is its main tone, rather than averaging into in-between
+/// colours that the pixel-art palette dithers (and that crawl as the camera moves). The cel style's
+/// mips (docs/PAINTERLY_TEXTURES.md §10).
+fn downsample_mode(src: &[u8], size: usize, ranks: &[Option<Vec<[u8; 4]>>], out: &mut [u8]) {
+    let half = size / 2;
+    let cell = dwell_mesh::CELL * size / dwell_mesh::ATLAS_SIZE;
+    for y in 0..half {
+        for x in 0..half {
+            let tile = (2 * x / cell) + (2 * y / cell) * dwell_mesh::ATLAS_CELLS;
+            let Some(Some(rank)) = ranks.get(tile) else {
+                continue;
+            };
+            let px: [[u8; 4]; 4] = std::array::from_fn(|i| {
+                let o = ((2 * y + i / 2) * size + 2 * x + i % 2) * 4;
+                [src[o], src[o + 1], src[o + 2], src[o + 3]]
+            });
+            let count = |c: &[u8; 4]| px.iter().filter(|p| *p == c).count();
+            let order = |c: &[u8; 4]| rank.iter().position(|r| r == c).unwrap_or(usize::MAX);
+            let best = px
+                .iter()
+                .max_by(|a, b| count(a).cmp(&count(b)).then(order(b).cmp(&order(a))))
+                .expect("four texels");
+            out[(y * half + x) * 4..][..4].copy_from_slice(best);
+        }
+    }
 }
 
 /// The alpha a cutout texel must reach to be drawn (the shader's edge, 0.5).
@@ -5109,6 +5176,44 @@ mod tests {
             assert!(r.set_pixel_art(preset));
             draws_cleanly(r);
         }
+    }
+
+    #[test]
+    fn the_cel_mips_keep_each_opaque_tiles_tones_and_settle_on_its_main_tone() {
+        // docs/PAINTERLY_TEXTURES.md §10: a cel tile's mips hold only its own tones (no averaged
+        // in-between colour for the palette to dither), and the smallest is its main tone.
+        let set = dwell_mesh::TextureSet::Cel;
+        assert!(set.mode_mips() && !dwell_mesh::TextureSet::Painterly.mode_mips());
+        let levels = atlas_levels(set);
+        let ranks = tone_ranks(&levels[0].0);
+        for (tile, name) in dwell_mesh::TILE_ORDER.iter().enumerate() {
+            let Some(rank) = &ranks[tile] else {
+                assert!(dwell_mesh::tile_has_alpha(name), "{name}");
+                continue;
+            };
+            for (level, (texels, size)) in levels.iter().enumerate() {
+                let k = dwell_mesh::ATLAS_SIZE / size;
+                let (cell, n) = (dwell_mesh::CELL / k, (dwell_mesh::TILE / k).max(1));
+                let (x0, y0) = (
+                    (tile % dwell_mesh::ATLAS_CELLS) * cell + dwell_mesh::GUTTER / k,
+                    (tile / dwell_mesh::ATLAS_CELLS) * cell + dwell_mesh::GUTTER / k,
+                );
+                for y in y0..y0 + n {
+                    for x in x0..x0 + n {
+                        let o = (y * size + x) * 4;
+                        let c = [texels[o], texels[o + 1], texels[o + 2], texels[o + 3]];
+                        assert!(rank.contains(&c), "{name} at mip {level}: {c:?}");
+                        if level == levels.len() - 1 && *name != dwell_mesh::MISSING_TILE {
+                            assert_eq!(c, rank[0], "{name}: its main tone from afar");
+                        }
+                    }
+                }
+            }
+        }
+        // The painterly set's mips average, as before (their colour; the cutouts' alpha is scaled).
+        let p = atlas_levels(dwell_mesh::TextureSet::Painterly);
+        let rgb = |t: &[u8]| -> Vec<u8> { t.chunks(4).flat_map(|c| c[..3].to_vec()).collect() };
+        assert_eq!(rgb(&p[1].0), rgb(&downsample(&p[0].0, p[0].1)));
     }
 
     #[test]
