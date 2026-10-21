@@ -14,11 +14,12 @@
     <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
   </head>
   <body>
-    <main id="launcher">
+    <!-- Plain divs, not main or p elements: iOS Safari otherwise offers or auto-enters Reader. -->
+    <div id="launcher">
       <h1>Dwell</h1>
-      <p id="launcher-status" aria-live="polite">Loading…</p>
+      <div id="launcher-status" role="status" aria-live="polite">Loading…</div>
       <div id="launcher-actions"></div>
-    </main>
+    </div>
     <script type="module" src="./src/main.ts"></script>
   </body>
 </html>
