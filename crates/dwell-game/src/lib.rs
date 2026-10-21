@@ -17,6 +17,7 @@ pub mod flight_speed;
 pub mod gate;
 pub mod hud_text;
 pub mod input;
+pub mod loading;
 pub mod region_tools;
 pub mod remotes;
 pub mod sound;

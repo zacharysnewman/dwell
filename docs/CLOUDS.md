@@ -157,8 +157,14 @@ The owner asked for the deck to be visible from above (answer 2 in §6).
   depth 1 is `|ray|` long, so the hit's view depth is `t / |ray|`. The composite draws the clouds
   over a covered pixel only when that is nearer than the stored view depth (A1's `r32float` target,
   the mean of the covered samples). The view depth has one meaning across the far and near passes,
-  so chunks and LOD sections compare alike. This is `dwell_cloud_in_front`; its twin
-  `cloud_in_front` is tested at chunk and LOD distances. It also puts the deck correctly in front of
+  so chunks and LOD sections compare alike. Seen from above, the deck is also in front of any
+  scene point below its altitude (the ray's face-local rise times the depth is under the deck's
+  height above the eye): the ray crossed the deck to reach it. The hit alone isn't enough there:
+  the sphere sinks below sea level √(2 · curvature · altitude) out (38 km), so from tens of km up
+  the far sea came out in front of it and the clouds showed only in a circle round the eye and over
+  the void past the world's edge (owner, 2026-10-21). This is `dwell_cloud_in_front`, called only
+  through the composite's `cloud_in_front_of`; its twin `cloud_in_front` is tested at chunk and LOD
+  distances and from 40 km up out to the world's edge (bench `clouds-far-above`). It also puts the deck correctly in front of
   a peak seen through it from below. The terrain still fogs toward the clear sky first, and the
   clouds go over that.
 - **Bright tops.** Seen from above with the light over the face, the light reaches the top through

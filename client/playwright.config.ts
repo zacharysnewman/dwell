@@ -24,12 +24,18 @@ export default defineConfig({
     // No clouds: on the software adapter their per-pixel noise slows every frame (to about one a
     // second with two players), and the suite's timings assume the frame rate it had without them.
     // The clouds have their own checks (render tests, the bench's screenshots).
+    // No loading screen on joining (ARCHITECTURE.md §6.3): the suite waits for the terrain itself
+    // (`terrainReady`), and on the software adapter the near ring takes far longer to mesh than a
+    // test needs; `join.spec.ts` turns it back on for its own check.
     storageState: {
       cookies: [],
       origins: [
         {
           origin: 'http://localhost:4173',
-          localStorage: [{ name: 'dwell.clouds', value: '"off"' }],
+          localStorage: [
+            { name: 'dwell.clouds', value: '"off"' },
+            { name: 'dwell.loading', value: '"off"' },
+          ],
         },
       ],
     },

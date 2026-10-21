@@ -189,6 +189,10 @@ interface Run {
   records: Record<string, unknown>;
   /** Each `settle` step's seconds, in order. */
   settles: number[];
+  /** When the page was opened (`Date.now()`): the join's timeline is measured from it. */
+  openedAt: number;
+  /** Each `until` step's seconds since the page was opened (null: not within its maxS). */
+  untils: { what: string; s: number | null }[];
   /** Each `burst` step's flicker, by name. */
   bursts: Record<string, Flicker>;
   /** The scenario's face's up along y (1 face A, −1 face B): `aboveFeet` heights are along it. */
@@ -462,6 +466,30 @@ async function step(run: Run, s: Step): Promise<void> {
       console.log(`  settled in ${f((Date.now() - start) / 1000)} s`);
       return;
     }
+    case 'until': {
+      const key = {
+        behind: 'waitingOffView',
+        nearBehind: 'waitingNearOffView',
+        ahead: 'waitingInView',
+      }[s.what];
+      const start = Date.now();
+      let at: number | null = null;
+      while (Date.now() - start < s.maxS * 1000) {
+        const n = await call<number | null>(page, `d.state()?.lod?.${key} ?? null`);
+        if (n === 0) {
+          at = (Date.now() - run.openedAt) / 1000;
+          break;
+        }
+        await page.waitForTimeout(50);
+      }
+      run.untils.push({ what: s.what, s: at });
+      console.log(
+        at === null
+          ? `  until ${s.what}: still waiting after ${f(s.maxS)} s`
+          : `  until ${s.what}: ${f(at)} s after opening the page`,
+      );
+      return;
+    }
     case 'mark':
       await call(page, 'd.telemetryReset()');
       run.markMs = await page.evaluate<number>('performance.now()');
@@ -550,6 +578,7 @@ async function runScenario(
     viewStorage(scenarioView(sc)),
   );
   const url = scenarioUrl(`${base}/dwell/`, sc, params);
+  const openedAt = Date.now();
   await page.goto(url);
   const gpu = await page.evaluate<unknown>(`(async () => {
     const a = await navigator.gpu?.requestAdapter();
@@ -559,6 +588,15 @@ async function runScenario(
   if (!(await until(page, 'd.state()?.terrainReady === true', 120_000))) {
     throw new Error(`${sc.name}: the game did not start (${errors.join('; ')})`);
   }
+  // The join's timeline (ARCHITECTURE.md §6.3): page opened → playing, and the loading screen's
+  // wait (its near ring drawn, or its timeout).
+  const joined = {
+    playingS: (Date.now() - openedAt) / 1000,
+    loading: await call<Record<string, unknown> | null>(page, 'd.state()?.loading ?? null'),
+  };
+  console.log(
+    `  playing ${f(joined.playingS)} s after opening the page${typeof joined.loading?.openedS === 'number' ? ` (loading screen ${f(joined.loading.openedS)} s${joined.loading.timedOut ? ', timed out' : ''})` : ''}`,
+  );
   const run: Run = {
     page,
     browser,
@@ -566,6 +604,8 @@ async function runScenario(
     markMs: 0,
     records: {},
     settles: [],
+    openedAt,
+    untils: [],
     bursts: {},
     up: sc.face === 'b' ? -1 : 1,
   };
@@ -576,6 +616,8 @@ async function runScenario(
     errors,
     records: run.records,
     settles: run.settles,
+    join: joined,
+    untils: run.untils,
     bursts: run.bursts,
     url,
   };

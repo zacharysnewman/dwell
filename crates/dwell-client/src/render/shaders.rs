@@ -933,6 +933,15 @@ struct Composited {
     deck_t: f32,
 };
 
+// Whether the deck, met `t` along the pixel's unit ray, is in front of the opaque scene at view
+// depth `depth` along `ray` (view depth 1; 0: the sky): its hit nearer, or, seen from above, the
+// scene below the deck's altitude (dwell_cloud_in_front). Every composite test of the deck against
+// the scene goes through here: the deck is a sphere over a flat world, so its hit alone loses
+// the far sea from high up (owner, 2026-10-21: clouds in a circle and past the world's edge).
+fn cloud_in_front_of(t: f32, ray: vec3f, depth: f32) -> bool {
+    return dwell_cloud_in_front(t, length(ray), depth, face_rise(frame.eye.y, ray), frame.cloud_cfg.w);
+}
+
 fn composited(p: vec2i, ndc: vec2f) -> Composited {
     let ray = view_ray(ndc);
     let dir = normalize(ray);
@@ -955,7 +964,7 @@ fn composited(p: vec2i, ndc: vec2f) -> Composited {
         self_lit = scene_self_lit_at(p);
     }
     var front = vec4f(0.0);
-    if (c.a > 0.0 && dwell_cloud_in_front(deck.z, length(ray), depth)) {
+    if (c.a > 0.0 && cloud_in_front_of(deck.z, ray, depth)) {
         front = dwell_cloud_layer(clear, dir, face, deck, fw, frame.clouds, frame.cloud_cfg, lights);
     }
     var s = Composited(vec3f(0.0), ray, clear, back, front, deck.z);
@@ -971,7 +980,7 @@ fn composited_scene(c: vec4f, depth: f32, self_lit: f32, s: Composited) -> vec3f
     var color = s.back;
     if (c.a > 0.0) {
         var shown = mix(scene_display(c, self_lit), s.clear, fog_amount(s.ray * depth));
-        if (dwell_cloud_in_front(s.deck_t, length(s.ray), depth)) {
+        if (cloud_in_front_of(s.deck_t, s.ray, depth)) {
             shown = dwell_cloud_over(shown, s.front);
         }
         color = mix(s.back, shown, min(c.a, 1.0));
@@ -1345,7 +1354,7 @@ fn outlined(s: Composited, p: vec2i) -> vec3f {
     }
     let rel = s.ray * e.y;
     var a = e.x * ink_above_sea(rel) * (1.0 - frame.cloud_inside.x);
-    if (dwell_cloud_in_front(s.deck_t, length(s.ray), e.y)) {
+    if (cloud_in_front_of(s.deck_t, s.ray, e.y)) {
         a *= 1.0 - s.front.a;
     }
     let ink = mix(frame.outline_ink.rgb, s.clear, fog_amount(rel));
@@ -2387,7 +2396,7 @@ mod tests {
         assert!(frame.contains(", s.clear, fog_amount("));
         // Over the scene only where the deck is in front of it, by the stored view depth.
         let front = frame
-            .find("dwell_cloud_in_front(s.deck_t, length(s.ray), depth)")
+            .find("cloud_in_front_of(s.deck_t, s.ray, depth)")
             .expect("test");
         assert!(frame[front..].contains("shown = dwell_cloud_over(shown, s.front)"));
         assert!(frame.contains("color = mix(s.back, shown, min(c.a, 1.0))"));
@@ -2395,7 +2404,7 @@ mod tests {
         // The layer is the clouds hazed toward the clear sky, found where the deck is in front.
         let c = body("composited");
         assert!(c.contains("dwell_cloud_layer(clear, dir,"));
-        assert!(c.contains("dwell_cloud_in_front(deck.z, length(ray), depth)"));
+        assert!(c.contains("cloud_in_front_of(deck.z, ray, depth)"));
         // The deck's footprint is taken before any branch (derivatives need uniform control flow).
         let c = body("composited");
         let deck = c.find("dwell_cloud_deck(").expect("deck");
@@ -2777,6 +2786,34 @@ mod tests {
     }
 
     #[test]
+    fn the_deck_is_over_the_far_flat_world_from_high_above() {
+        // Owner's report (2026-10-21): from tens of km up, the clouds showed in a circle round
+        // the player and over the void past the world's edge, not over the sea between. The
+        // sphere's hit sank behind the flat sea. Every test of the deck against the scene (the
+        // pixel, the scene under it, the ink) goes through `cloud_in_front_of`, which also puts
+        // the deck in front of anything below its altitude seen from above, on the eye's face.
+        for samples in [1, 4] {
+            let src = super::source(samples);
+            let at = src.find("fn cloud_in_front_of(").expect("helper");
+            let helper = &src[at..at + src[at..].find("\n}\n").unwrap()];
+            assert!(helper.contains(
+                "dwell_cloud_in_front(t, length(ray), depth, face_rise(frame.eye.y, ray), frame.cloud_cfg.w)"
+            ));
+            // No other caller: the deck's own fn is the helper's alone.
+            assert_eq!(
+                src.matches("dwell_cloud_in_front(").count(),
+                2,
+                "{samples} samples"
+            );
+            assert_eq!(
+                src.matches("cloud_in_front_of(").count(),
+                4,
+                "{samples} samples"
+            );
+        }
+    }
+
+    #[test]
     fn the_edge_blur_taps_keep_the_clouds_in_front_of_the_scene() {
         // Owner's report (2026-10-20): above the deck, looking down, moving fast, the clouds
         // showed only inside a circle. The blur's taps composited the scene without the deck in
@@ -2789,16 +2826,13 @@ mod tests {
         };
         let scene = body("composited_scene");
         let front = scene
-            .find("dwell_cloud_in_front(s.deck_t, length(s.ray), depth)")
+            .find("cloud_in_front_of(s.deck_t, s.ray, depth)")
             .expect("in front");
         assert!(scene[front..].contains("shown = dwell_cloud_over(shown, s.front)"));
         assert!(scene.contains("dwell_cloud_fog(color, frame.cloud_inside.x"));
         let c = body("composited");
         let layer = c.find("dwell_cloud_layer(").expect("layer");
-        assert!(
-            c[..layer]
-                .contains("if (c.a > 0.0 && dwell_cloud_in_front(deck.z, length(ray), depth))")
-        );
+        assert!(c[..layer].contains("if (c.a > 0.0 && cloud_in_front_of(deck.z, ray, depth))"));
         assert!(body("motion_composite").contains("textureLoad(finished, vec2i(q), 0)"));
         // The layer is the clouds dwell_clouds draws, found once.
         let look = dwell_look::clouds::cloud_wgsl(&dwell_look::clouds::CLOUDS);
