@@ -118,6 +118,7 @@ const VERTEX_BYTES: u64 = (VERTEX_FLOATS * 4) as u64;
 const KIND_GLOW: u32 = 1;
 const KIND_EMBER: u32 = 2;
 /// Vertices a quad.
+#[cfg(test)]
 const QUAD_VERTICES: usize = 6;
 
 /// The time the shader animates with: seconds, wrapped (the noise is not periodic, so it jumps

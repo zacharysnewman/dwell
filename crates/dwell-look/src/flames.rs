@@ -12,6 +12,7 @@
 
 use dwell_world::FaceFrame;
 
+#[rustfmt::skip]
 #[path = "flames.gen.rs"]
 mod generated;
 pub use generated::{FLAME_TUNABLES, FLAMES};

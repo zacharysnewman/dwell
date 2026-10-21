@@ -4600,7 +4600,9 @@ mod tests {
                 }
                 checked += 1;
                 let want = tile_coverage(&levels[0].0, levels[0].1, tile, 1.0);
-                assert!(want > 0.05 && want < 0.95, "{name}: {want}");
+                // The torch's upper tile is only the stick's tip (its flame is the flame effect,
+                // docs/LIGHTS.md §6): a few percent of the tile.
+                assert!(want > 0.02 && want < 0.95, "{name}: {want}");
                 for (level, (texels, size)) in levels.iter().enumerate() {
                     let n = (dwell_mesh::TILE * size / dwell_mesh::ATLAS_SIZE).max(1);
                     let got = tile_coverage(texels, *size, tile, 1.0);

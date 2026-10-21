@@ -64,7 +64,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 44 — Sun and moon shadows (cascaded shadow maps, the lighting's layer 2) | 🚧 In progress — built and tested natively, in Vitest and in Chrome on the GPU: up to four cascades per the Shadows setting (Off / Low / High, data in `shared/look/shadows.json`), texel-snapped sphere fits, casters (terrain, plants, LOD, bodies, your own), a soft PCF on the direct term only, faded by the time of day and past the last cascade to layer 1's stand-in; High's cost cut to ≤ 1.2 ms over Off on the M1 (eye-centred boxes, kept far maps, a depth-only casters' stage; High stays the desktop default); the flicker fix: the light in 0.05° steps with the texel grid turning about the eye, so the shadow edges no longer crawl as the clock turns the sun; outstanding: CI, the owner's look, the far cascades' jump when redrawn after a 0.25° turn; a patch release |
 | 45 — Flood light | 🚧 In progress — built and tested natively and in Chrome on the GPU (ADR 0045, DAY_NIGHT.md §11): per-cell sky and block light on the client (`dwell_world::light`, data `shared/look/light.json` and the blocks' `lightFilter`/`emits`), relit on edits and predicted edits, the mesher's smooth `flood` stream, ambient and the direct sun and moon scaled by it (carved tunnels no longer lit like day); follow-up: the streaming stalls fixed (coalesced seeded unloads, no cascade under a chunk held over open air, light and mesh budgets of their own that scale on a slow page; flying back to 0.22.8's frames; generation workers refilled between frames, so a slow page's terrain finishes generating, the native-server e2e tests); outstanding: CI, the owner's review; characters (your arms, held items, players) lit by the cells they are in, eased; the shadow maps' stand-in past their last cascade; water and see-through faces take the flood light (dark in caves with Shadows Off; darkness verified with Shadows Off on both faces, DAY_NIGHT.md §11) |
 | 46 — Distant terrain shadows (the lighting's layer 3) | 🚧 In progress — built and tested natively and in Chrome on the GPU (ADR 0046, DAY_NIGHT.md §12): heightmaps of the terrain as drawn, filled a budgeted slice a frame, horizon maps swept from them a band a frame, one horizon sample per far fragment blended into the cascades at their edge, both faces, per the Shadows setting (none on a CPU adapter); data `shared/look/lodshadows.json`. Measured +0.5–0.9 ms GPU a frame on the M1 (busy machine), no main-thread change. Outstanding: CI; the owner's look; a measurement on an idle machine |
-| 47 — Torches and dynamic lights | 🚧 In progress — T1 built and tested natively and in Chrome on the GPU ([ADR 0047](./adr/0047-torches-and-dynamic-lights.md), [`LIGHTS.md`](./LIGHTS.md)): light sources as block data (`lights`, `shared/blocks/lights.mjs`), the torch block and held item, placed torches through the flood light, held torches (yours and other players') as unshadowed per-fragment point lights, characters lit by them, flicker, glowing textures (`emissive`). T1b built and tested natively and in Chrome on the GPU: the torch 1 m over two ½ m cells (multi-cell blocks as data, `extends`/`partOf`), a self-lit flame. T2 built and tested natively and in Chrome on the GPU: Torch shadows (cube shadow maps for the nearest torches, kept until their terrain changes; placed torches as shadowed lights over their flood light; the setting). Outstanding: T2's CI and the owner's look |
+| 47 — Torches and dynamic lights | 🚧 In progress — T1 built and tested natively and in Chrome on the GPU ([ADR 0047](./adr/0047-torches-and-dynamic-lights.md), [`LIGHTS.md`](./LIGHTS.md)): light sources as block data (`lights`, `shared/blocks/lights.mjs`), the torch block and held item, placed torches through the flood light, held torches (yours and other players') as unshadowed per-fragment point lights, characters lit by them, flicker, glowing textures (`emissive`). T1b built and tested natively and in Chrome on the GPU: the torch 1 m over two ½ m cells (multi-cell blocks as data, `extends`/`partOf`), a self-lit flame. T2 built and tested natively and in Chrome on the GPU: Torch shadows (cube shadow maps for the nearest torches, kept until their terrain changes; placed torches as shadowed lights over their flood light; the setting). T1c built and tested natively and in Chrome on the GPU: the flame effect (animated painterly billboards from flame looks as data, placed, held and in the arms view). Outstanding: T2's and T1c's CI and the owner's look |
 
 Phase numbering: Phase 4 was inserted on 2026-09-29 for the planet-scale world (ADRs 0011, 0012);
 the former Phases 4–7 are now 5–8, and Phase 3's former 3c and 3d are now 3d and 3e.
@@ -4649,8 +4649,9 @@ Deviations
 
 ## Phase 47 — Torches and Dynamic Lights
 
-**Status:** T1, T1b and T2 built and tested natively and in Chrome on the GPU (2026-10-21; T1 released
-as 0.22.26, T1b as 0.23.0). Outstanding: T2's CI and the owner's look. T1b adds a block and gives
+**Status:** T1, T1b, T2 and T1c (the flame effect) built and tested natively and in Chrome on the GPU
+(2026-10-21; T1 released as 0.22.26, T1b as 0.23.0). Outstanding: T2's and T1c's CI and the owner's
+look. T1b adds a block and gives
 `dwell:torch` the parts rule (a new rule tag a 0.22.26 client notes and ignores): see its
 deviations for the compatibility line.
 
@@ -4774,6 +4775,44 @@ Deviations
   no torch shadows (the torch's sprite would shadow everything round it).
 - A placed torch's dynamic light is drawn at 0.6 of its strength over its flood light, and only with
   a map; without one its flood light alone lights it.
+
+### T1c — the flame effect
+
+Owner (2026-10-21): "That flame looks really bad, please make it look pretty like fire"; "It can be
+a 2D billboard or 2 billboards"; on the placed torch, "flame originated from the base not around
+it". LIGHTS.md §6.
+
+Deliverables
+- [x] Flame looks as data: `shared/look/flames.json` (`flames.mjs`: validation and the generator into
+  `dwell-look` `flames.gen.rs`, CI fails on a stale file; `flames.test.mjs` with a fixture look by
+  data alone), and a light source's optional `flame` naming its look (`shared/blocks/lights.mjs`,
+  `LightInfo::flame`; no block state changed).
+- [x] The flame: two camera-facing billboards per flame (`render/flames.rs`; `dwell-look` `flames`
+  the billboard's axes through `FaceFrame`, the shading's CPU twin, the WGSL): a noise teardrop
+  rising from a narrow base, tongues at its top, a banded ramp, a glow and a few embers; its height
+  and glow on the light's flicker.
+- [x] Where they burn: placed torches (`placed_flames`, from the light-source index), other players'
+  held torches, your own in the arms pass (`held_flames`); the held item's mesh flame and the tiles'
+  painted flame removed (the torch's tiles a plain stick).
+- [x] Self-lit: the flames and embers flag the view depth (self-lit, uninked); a mask before
+  see-through water; `flame_light` with the flames' `peak`; a still flame on the CPU adapter.
+- [x] Cost measured (LIGHTS.md §6: 9 flames, `gpu.frame` within noise of main on the M1);
+  `flames.drawn` telemetry.
+
+Exit criteria
+- [x] Tests: the data (validation, fixture by data alone, the light's reference); the WGSL in both
+  tiers; the CPU twin's warm hues and alpha falloff, its motion, the glow's flicker and the embers'
+  rise; the billboard and a flame's quads on both faces; a placed torch's flame on both faces; the
+  flame at the stick's tip, no wider than it, no flame texels on the tile; the flame lit the same by
+  day, at midnight and in a cave; the flag's entries and pipelines.
+- [x] Checked in Chrome on the GPU (shots in the PR): the held torch at noon, midnight and in a dark
+  cave; a placed torch close up and at 5 m; a row of placed torches at night; face B; a 16-frame
+  burst of the motion.
+
+Deviations
+- The flame's colours are the flames' own look data, not the textures' palette ramps: the noise
+  flame is shaded in the shader, not painted into the atlas.
+- Torch shadows' casters still leave out the torch's own quads; the flame casts no shadow.
 
 ## Cross-Cutting Work (every phase)
 
