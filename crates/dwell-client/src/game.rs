@@ -1530,6 +1530,7 @@ impl<S: Scene> Game<S> {
             let mut scene = self.scene.borrow_mut();
             scene.set_player(u32::from(self.player_id), Some(view));
             scene.set_arms(None);
+            scene.set_own_shadow(None);
             let r = yaw.to_radians();
             let [x, y, z] = self.death_feet;
             camera_eye = [
@@ -1567,6 +1568,13 @@ impl<S: Scene> Game<S> {
                 && self.view.is_none()
                 && self.spyglass_view.magnification <= 1.001;
             self.scene.borrow_mut().set_arms(shown.then_some(arms));
+            // Your body casts a shadow (drawn into the shadow maps only), first person or not.
+            let up = face.up();
+            let feet = std::array::from_fn(|k| center[k] - up[k] * c.half_height);
+            let own = self.bodies.own(feet, yaw, face, &move_input, held, dt);
+            self.scene
+                .borrow_mut()
+                .set_own_shadow(c.active.then_some(own));
         }
         let camera_eye = match self.view {
             Some(v) => {

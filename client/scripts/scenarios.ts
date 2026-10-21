@@ -349,6 +349,7 @@ function parseScenario(where: string, v: unknown): Scenario {
           'clouds',
           'motion',
           'water',
+          'shadows',
           'timeOfDay',
         ])
   ) as View['settings'];
