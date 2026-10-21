@@ -1,6 +1,6 @@
 # 0024. Adaptive natural blocks: shapes derived from neighbours by five rules
 
-- Status: Accepted (2026-10-12, amended: the table as data with overrides)
+- Status: Superseded by [0042](0042-half-height-cells.md) (2026-10-20: ½ m cells with stored ramps; the adaptive machinery removed)
 - Date: 2026-10-08
 - Amended by: [0028](0028-rust-port.md) (the table is read by the Rust crates, `dwell-blocks`, shared by server and client, instead of C++ and TypeScript readers)
 - Amended: 2026-10-12, by the baseline rework ([0025](0025-baseline-world.md),

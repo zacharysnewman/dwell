@@ -1,12 +1,11 @@
 # Dwell — The Half-Height Grid: ½ m Cells and Stored Cardinal Ramps
 
-> **Status: [in progress, Phase 41: H0–H4 and H6 (main merged) built, H5 (playtest) next]** on the long-lived branch `claude/half-height-voxels`, for
-> the owner to playtest before anything reaches `main` ([ADR 0042](./adr/0042-half-height-cells.md)).
+> **Status: [built, Phase 41; adopted for `main` 2026-10-20, 0.22.0]** ([ADR 0042](./adr/0042-half-height-cells.md)):
+> built and playtested on the branch `claude/half-height-voxels`, then adopted (§9).
 > The investigation is [`proposals/HALF_HEIGHT_VOXELS.md`](./proposals/HALF_HEIGHT_VOXELS.md) and
 > the [Half-Height Voxel Lab](./prototypes/half-height-lab.html), whose **Cardinal ramps only**,
 > **½ m blocks only** and **1 m on steep ground** settings preview this design (as 1 m double
-> blocks; here the 1 m ramp is two ½ m cells). On the branch, this file and `ARCHITECTURE.md`
-> describe the branch; on `main` they describe `main`.
+> blocks; here the 1 m ramp is two ½ m cells).
 
 ## 1. The owner's decisions (2026-10-19)
 
@@ -71,8 +70,7 @@ form, keyed by the block's face as the generator already does for face B's terra
 - `half`: `bottom` (face A) or `top` (face B);
 - `flooded`: the open part holds the fluid around it, as ladders do (§5).
 
-`"adaptive"` is turned off for every material, so Phase 18's derivation is unused on the branch
-(kept, not deleted, until the owner decides).
+No block is adaptive: Phase 18's derivation was turned off on the branch and removed at adoption (§9).
 
 ## 4. The generation rule
 
@@ -140,14 +138,14 @@ The plan's Phase 41 lists the steps and their checks. In short:
   in metres and stay. Probes that counted blocks (auto-jump's "one-block obstacle", the ladder
   column, footstep cells) count metres.
 - **Rendering:** chunk and LOD meshes are emitted in metres, so normals of sloped faces stay
-  correct. Textures run in metres, so a 1 m tile spans two cells. The ray marcher steps in cell
-  space with its rays transformed into it (not yet: §7).
+  correct. Textures run in metres, so a 1 m tile spans two cells. (The ray marcher, which still
+  assumed 1 m cells, was removed on `main` in 0.20.5, ADR 0044.)
 - **Worldgen:** terrain heights stay in metres; rows are `ceil(height ÷ cellHeight) − 1`; decoration
   heights are in metres. Generator version bump; chunk and LOD goldens regenerated.
-- **Structures:** authored in cells, so existing content would come out half as tall. The branch
-  doubles each layer of the prototype structures once, by script.
-- **Compatibility:** protocol version bump (cell coordinates change meaning), new registry hash.
-  `package.json` is not raised on the branch (the owner decides at a merge).
+- **Structures:** authored in cells, so existing content would come out half as tall. Each layer of
+  the prototype structures was doubled once, by script.
+- **Compatibility:** protocol version bump (cell coordinates change meaning), new registry hash:
+  the 0.22.0 compatibility line (§9).
 
 ## 7. As built (H4, 2026-10-20)
 
@@ -168,7 +166,6 @@ What the switch to ½ m cells did, and what it left for the playtest:
 - **Found (H4; fixed in H6, §8):** the prototype terrain then never stepped a metre between neighbouring columns, so it
   generates only ½ m ramps; the 45° ramps exist where the ground is steeper (tests build them).
 - **Not converted (deviations, for the playtest to judge):**
-  - the ray marcher (local builds only, A7) still assumes 1 m cells: it draws ½ m cells stretched;
   - brushes stay in cells: radii and heights count cells, so a ball is half as tall as wide;
   - a fluid's `surfaceDrop` stays a fraction of its cell (water's surface 1/16 m below a ½ m cell's
     top instead of 1/8 m);
@@ -179,10 +176,9 @@ What the switch to ½ m cells did, and what it left for the playtest:
 
 ## 8. After merging `main` (H6, 2026-10-20)
 
-- **Versions:** protocol **1016** and generator **1020**: 1000 + the `main` versions last merged
-  (main 0.20.0: protocol 16, generator 18), so a dev build never joins or loads one of `main`'s,
-  and the generator two more for the slopes (§4: 1019 option A, 1020 V2, the owner's choice). The next `main` merge takes the larger of
-  1000 + main's and this + 1.
+- **Versions (on the branch):** protocol 1016 and generator 1020: 1000 + the `main` versions last
+  merged, so a dev build never joined or loaded one of `main`'s, and the generator two more for the
+  slopes (§4: 1019 option A, 1020 V2). At adoption the scheme ended (§9).
 - **Shore water (main's generator 17, 2026-10-20):** see §5, Water; the fluid side faces and the
   water shader's fix came with it.
 - **Pines (main's generator 18, ADR 0043):** each structure layer of `pine_tree` and
@@ -210,3 +206,27 @@ What the switch to ½ m cells did, and what it left for the playtest:
   where the client targets it (on ½ m cells the plant's cell is half as tall, and every sight ray
   crossed it).
 
+## 9. Adopted for `main` (owner, 2026-10-20)
+
+"I like half-height and we're going to stick with it. Update half height and publish it as main, so
+we don't have to diverge branches anymore." The branch merged `main` 0.21.4 (the characters and
+held items, protocol 17; `FaceFrame` everywhere, with its both-faces check; the ray marcher's
+removal; smooth steps) and went to `main` as the **0.22.0** compatibility line:
+
+- **Versions:** protocol **18** and generator **19**, `main`'s next numbers (the 1000+ scheme
+  ended); the chunk and LOD goldens re-recorded; the golden trace unchanged.
+- **Adaptive blocks removed** (they were dormant here): the rule table and its data, the
+  registry's `adaptive` flag (sync bit 64, now unknown and ignored), the meshers' derived shapes and
+  the LOD's adaptive tops. Block data that sets `adaptive` fails generation (ADR 0042 supersedes
+  ADR 0024).
+- **`FaceFrame` in metres:** its continuous heights (`y`, `at_height`, the WGSL frame) use the
+  midplane and mirror in metres (both 0 m at Phase 16's midplane row 0); rows go through `row`.
+- **`main`'s 1 m work, checked on ½ m cells:** plants sitting on their support (#163) keep the
+  mechanism, which a plant over a ramp uses (its tests rewritten on a ramp; level fields are flat
+  cells, so plants stand on their cell's floor); the dirt skirt (#155) applies under grass ramps too
+  (`sideUnder` reaches the ramp family); shore flooding (#158) floods ramps below sea level; the
+  pines' layers are two cells; the ramp-foot fix keeps the branch's version (`tests/ramps.rs`); the
+  smooth-steps foot ground reads rows `CELL_H` tall; the steep-terrain test band is 2–5 %.
+- **Still deviations:** brushes count cells (a ball is half as tall as wide); a fluid's
+  `surfaceDrop` is a fraction of a cell; the chunk view sphere is in chunks; the LOD draws natural
+  tops flat; structures carry no cell height.

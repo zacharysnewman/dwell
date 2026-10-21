@@ -231,6 +231,6 @@ computed for the chunk and a 15 m margin), LOD sections of levels 1–4 1.3 → 
 one noisy run each) `idle-spawn` and `fly-low-fast` stayed within their run-to-run noise
 (`gpu.frame` 13.3 / 14.4 ms with trees against 13.8 / 17.2 ms without).
 
-**Half-height voxels.** On the half-height branch (½ m cells), a 1 m structure maps onto ½ m cells
+**Half-height voxels.** On ½ m cells (Phase 41), a 1 m structure maps onto ½ m cells
 by doubling each layer vertically (each 1 m block becomes two ½ m cells, x and z unchanged), so the
 trees keep their real size; recorded with that port.

@@ -294,7 +294,7 @@ and the check of §11.2 keeps it so.
 | Trees, pines, structures, decorations | `terrain.rs` `lod_trees`, `placements.rs` | placed by the face-local generator | inside the boundary |
 | Spawn | `spawn_point` (face A, §9), `spawn_point_b` (dev link) | — | Frame |
 | Chunk mesher | `dwell-mesh` `mesher.rs` `mesh_chunk_with(mirror)`: `mirror_padded`, `flip_arrays_y`; the job's flag from `face_of_chunk_y` (`dwell-game` `chunk_stream.rs`) | meshed as the mirror image, turned back | Boundary; parity test. **Fixed:** plants were jittered by the mirror image's world corner (a face-B plant did not look like its face-A twin) |
-| Shapes, the dirt skirt, plants, fluids, flooded shores | `mesher.rs` (`side_rule`, `plant_sink`, `fluid_side`), `dwell-blocks` `adaptive.rs` (`shape_at`, `flooded_at` take `up`) | inside the mesher's boundary; the adaptive rules take the face's up | parity test |
+| Shapes, the dirt skirt, plants, fluids, flooded shores | `mesher.rs` (`side_rule`, `plant_sink`, `fluid_side`) | inside the mesher's boundary (a face-B state is stored turned over) | parity test |
 | LOD meshing | `lod_mesher.rs` `mesh_section(mirror)`: `mirror_rows`, `flip_mesh_y`, ±Y skirts swapped | mirror image, turned back | Boundary; parity test |
 | LOD selection | `dwell-lod` `system.rs` (`view_face`, the other face culled beyond 512 m, `surface_b` for face-B sections, `mirror_section_origin`), `grid.rs` (`is_face_b_section`) | by the camera's face | parity test; straddling sections (levels ≥ 7) are meshed for the viewer's face by design (§10) |
 | Controller | `dwell-physics` `frame.rs` (`Frame`, `FaceQuery`), `controller.rs` (face switch, ladder rows) | runs in the mirror image | Boundary (via FaceFrame); the mirror suite |

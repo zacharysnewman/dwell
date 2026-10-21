@@ -36,7 +36,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 24 — Rust port (one Cargo workspace, Rapier, wgpu client; runs after 15, before 16) | 🚧 In progress — 24f (the cutover): 24a–24e built; the C++/TS tree deleted; every Rust suite, the e2e suite and Electron's smoke test pass in CI on the Rust client and `dwell-server`; `package.json` 0.10.0, the new compatibility line (world files are redb now); playtest follow-ups built (2026-10-14): the grey see-through haze on distant ground (atlas mipmaps whose filtering reached past a tile's gutter; checked in a browser), each depth pass draws what reaches its depth range (by distance it could miss terrain toward the sides of the view; suspected, not confirmed, as the cause of gaps seen from high up), replaced meshes never freeing their GPU buffers on the web (the frame rate falling over a session), the LOD's velocity lookahead removed (detail loads by location alone), and named views (`client/views/views.json`: a placed camera, window and settings per view, opened by e2e specs and shot by `scripts/shots.ts`, no flying); the gaps seen from high up not reproduced and not pursued (owner); the dev telemetry and bench (`docs/DEV_TOOLS.md`), and with it the jump onto a block from against it fixed (Rapier's contact clustering hid the body's contacts; also crouching against a wall moving the player back), and the frame time cut about 3.5× idle and flying low (no dropped frames at 60 Hz when flying fast and low; fast hasher, arena-paged meshes with one draw call each, instance-indexed draw data, leaner LOD traversal and chunk padding); the menus redesigned (owner, 2026-10-14: a themed main menu, a full-screen game menu with Settings, Controls and Debug pages, key hints, phones upright and sideways, touch controls no longer taking the menus' taps); `package.json` raised to 0.10.3, a patch release of the 0.10 line (no compatibility change), with the launcher owning the main menu; outstanding: the owner's look at the new menus; the frame-time measurement and the owner's manual check, including a long session's frame rate; `package.json` raised to 0.11.15, a patch release of the 0.11 line |
 | 16 — World shape & build volume (50 km disc, 10-layer core, spherical build volume) | 🚧 In progress — built: the data-driven build volume (sphere) bounding edits, generation, storage, streaming and LOD; the 50 km disc, midplane 0, 10-layer core, sea level 32, LOD root 12, no flight ceiling, the island at its Phase 15 size (data); generator v14, protocol 14; outstanding: CI, the owner's browser look, an e2e edit at the boundary; follow-up (owner, 2026-10-19): more elevation variance — the height field's parameters moved to data (`shared/worldgen/terrain.json`), hills ±30 → ±80 m, bumps ±2.5 → ±5 m, inland rise 90 → 130 m, generator v15, goldens regenerated, a test pins the relief; needs a new compatibility line (0.15.0) for the owner to raise; outstanding: CI and the owner's look; follow-up (owner, 2026-10-19): terrain steep enough to slide on — hills ±225 m over 1 km in five octaves, inland rise 320 m, ~15 % of the land's surface sliding, peaks ~500 m, generator v16, goldens regenerated, a test pins the targets, decorations' height band read above sea level; needs a new compatibility line (0.18.0) for the owner to raise; outstanding: CI and the owner's look |
 | 17 — Terrain definitions (terrain as data) | ⏳ Not started — built in Rust after Phase 24 |
-| 18 — Adaptive natural blocks (formerly 9e) | 🚧 In progress — every deliverable built and tested (natively, WASM, Vitest); protocol v13, a new compatibility line for the owner to raise; outstanding: the two-client e2e, the LOD seam check, the owner's walk; owner decision 2026-10-15: faces steeper than 44° slide (Phase 35); `package.json` raised to 0.12.0, the new compatibility line (protocol 13; adaptive blocks change collision and terrain; the owner's decision, 2026-10-16) |
+| 18 — Adaptive natural blocks (formerly 9e) | ✅ Superseded — built and tested, then removed by Phase 41 (ADR 0042 supersedes ADR 0024, 2026-10-20): natural ground is shaped once, at generation, on ½ m cells; its outstanding checks (the two-client e2e, the LOD seam check, the owner's walk) are dropped with it |
 | 19 — WebGPU, looks & textures | ⏳ Not started — re-scoped by ADR 0028: WebGPU is done by Phase 24 (wgpu, no fallback); the look registry and textures as data are built on wgpu after it |
 | 20 — Voxel awakening | ⏸ Waits for Phases 6–19 (2026-10-05; the baseline rework, 14–19, added 2026-10-12); Phase 25's renderer decision is made (A7, 2026-10-20: the mesher), so clusters are drawn as meshes |
 | 21 — Tiered physics | ⏸ Waits for Phases 6–19 (2026-10-05; the baseline rework, 14–19, added 2026-10-12) |
@@ -58,7 +58,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 38 — The spyglass | 🚧 In progress — built and tested natively, in Vitest and on a real GPU (ADR 0039, `SPYGLASS.md`): a toggle key (`` ` ``) and wheel steps from `shared/look/spyglass.json` (generator, CI stale check), the zoomed FOV for the raster renderer, the marcher (its FOV bug fixed) and the LOD, which refines only inside the narrow view (bounded by the detail boost), the vignette, reduced motion, the `spyglass-far` bench scenario; outstanding: CI and the owner's review in a browser; a patch release |
 | 39 — Painterly textures | 🚧 In progress — built and tested natively, in Node and on a real GPU (ADR 0040, `ART_DIRECTION.md`, `PAINTERLY_TEXTURES.md`): the storybook palette and materials as data (`shared/textures`), one stroke generator baked into the atlas (CI stale check, a material added by data alone), `?textures=painterly` on the page and in the meshing workers (the default since the owner approved it, 2026-10-20; `?textures=classic` keeps the old set), the Painterly Texture Lab, the bench's `painterly` configuration (same frame cost); follow-ups: grass_side's skirt made continuous across the tile (owner's review); the skirt on dirt sides under grass (`sideUnder` block data, the `dirtSkirt` tile, in both sets; owner, 2026-10-20); the ink outline preview behind `?outline=` (ART_DIRECTION.md §7, off by default), then no ink on tall grass (block data `outline`) and the edge blur moved to its own pass over the finished image so the ink reaches the screen edges at speed (owner, 2026-10-20); outstanding: the owner's pick of an outline mode; CI and the owner's review of the look, then flipping the default; a patch release |
 | 40 — Characters and creatures | 🚧 In progress — C0 built and tested (ADR 0041, `CHARACTERS.md`): the rig vocabulary and validator (`shared/characters/rig.mjs`), the data (the player with three looks, the wolf, the deer; accessories, the block and brush items, clips), the generator and its tests, the Character Lab prototype checked in Chrome and published; stacked on Phase 39's palette and materials; C0b (the owner's first review, 2026-10-20) built and tested: hair composes with hats (`with`), the wolf's and deer's tails are chains checked joined through every clip, the player's clips for every controller state (sprint, crouch, crouch-walk, slide, jump, fall, land, climb, swim, fly; the arms' sprint, slide, jump, fall, land) and the Lab's transitions player; C1 (players in the game) built and tested (2026-10-20): `dwell-characters` (tables generated from the data, part meshes, clips, clip selection), the full body for remote players and your first-person arms in their own pass, the Show your arms setting, the `puppets` dev tool; with C2's held item and swings in snapshots (protocol v17: **a new compatibility line**, the owner raises `package.json`); outstanding: CI, the owner's review in game and of `CHARACTERS.md` §10, C2's looks at join, a step pose (foot IK on steps built with claude/smooth-steps), C3 |
-| 41 — Half-height grid (½ m cells, stored cardinal ramps; branch `claude/half-height-voxels` only) | 🚧 In progress — H0–H4 built and verified locally: one named cell height (H1), the stored cardinal ramps (H2), the generation rule (H3), and the switch to ½ m cells (H4: no block adaptive; face B's LOD mirror and the LOD id fixed). H6: `main` merged in (Phase 16's world, registry sync, sprint slide, spyglass, brushes and predicted edits, steep v16 hills as whole-metre steps with 45° ramps; protocol and generator 1016), native, WASI, clippy and Vitest green locally; main 0.20.0 merged (shore water: ramps below sea level flooded; step-up; the pines at two cells per block; protocol 1016, generator 1018), the touched suites green locally; playtest fix: no flicker at a 45° ramp's foot (§6.8); option A's slopes (generator 1019: no 1 m step snap, the Sobel ramp facing) and the step-up's highest top across a face; then the owner's choice of V2 (generator 1020: the snap off with the old ramp rule; 24.5 cliff edges per 100 columns, 45° slides on ~3.2 % of land tops). Outstanding: CI; the ray marcher, brushes, the fluid surface drop, the vertical view radius and the build sphere left in cells (deviations, for the playtest). H6 again: main 0.21.1 merged (2026-10-20: the characters, protocol 17 and held items, FaceFrame, the ray marcher removed, smooth steps; protocol 1017; FaceFrame continuous heights in metres, the foot ground scaled by CELL_H), the touched suites and the WASM build green locally. Next: H5, the owner's playtest on a dev build. A playtest branch, not for `main` until the owner keeps it; `package.json` not raised on the branch |
+| 41 — Half-height grid (½ m cells, stored cardinal ramps) | 🚧 In progress — adopted for `main` (owner, 2026-10-20; ADR 0042): H0–H6 built and verified locally (½ m cells, stored ramps, nothing adaptive; the slopes V2; `main` 0.21.4 merged in); H7, the adoption: protocol 18, generator 19, the adaptive blocks removed, the experiment wording gone, `main`'s 1 m work checked on ½ m cells (HALF_HEIGHT_GRID.md §9). Outstanding: CI; the bench numbers against 0.21.x; the owner raises `package.json` to 0.22.0 at the merge (a new compatibility line). Deviations: brushes, a fluid's surface drop, the chunk view sphere and structures stay in cells; the LOD draws natural tops flat |
 
 Phase numbering: Phase 4 was inserted on 2026-09-29 for the planet-scale world (ADRs 0011, 0012);
 the former Phases 4–7 are now 5–8, and Phase 3's former 3c and 3d are now 3d and 3e.
@@ -2471,7 +2471,7 @@ Exit criteria
 ([`ADAPTIVE_BLOCKS.md`](./ADAPTIVE_BLOCKS.md)), simplified by the baseline (every solid block is
 natural) and with the rule table as data.
 
-**Status:** Built and tested natively, in WASM (wasm32-wasip1) and in Vitest (2026-10-15); every deliverable done. Outstanding: the two-client e2e (not run on the branch: the e2e port is shared by other agents), the LOD seam check against chunks, and the owner's walk. A new compatibility line is needed (0.11.0, the owner raises `client/package.json`): the saved voxels, state strings and generated voxels are unchanged, but collision, spawn height and what a seed's terrain is change; the protocol is raised to v13 so that builds which shape differently never connect. Replaces Phase 9e (its original plan stays under Phase 9 for the record). Owner decision (2026-10-15): faces steeper than 44° slide (45° ramps and ridge flanks, saddles); sliding is Phase 35, which owns the tests of steep faces.
+**Status:** Superseded by Phase 41 (ADR 0042, 2026-10-20): the adaptive blocks were removed when ½ m cells were adopted; the outstanding checks below are dropped. Before that: built and tested natively, in WASM (wasm32-wasip1) and in Vitest (2026-10-15); every deliverable done. Outstanding: the two-client e2e (not run on the branch: the e2e port is shared by other agents), the LOD seam check against chunks, and the owner's walk. A new compatibility line is needed (0.11.0, the owner raises `client/package.json`): the saved voxels, state strings and generated voxels are unchanged, but collision, spawn height and what a seed's terrain is change; the protocol is raised to v13 so that builds which shape differently never connect. Replaces Phase 9e (its original plan stays under Phase 9 for the record). Owner decision (2026-10-15): faces steeper than 44° slide (45° ramps and ridge flanks, saddles); sliding is Phase 35, which owns the tests of steep faces.
 
 Dependencies (checked 2026-10-14): the rework's order puts Phase 18 after Phase 17 (terrain
 definitions, not started) and Phase 16 (not started). Neither blocks the adaptive blocks
@@ -4092,16 +4092,16 @@ for an edit the client never sends (none today).
 
 ## Phase 41 — Half-Height Grid: ½ m Cells and Stored Cardinal Ramps
 
-> **Branch note:** built on the long-lived branch `claude/half-height-voxels` for the owner to
-> playtest; it reaches `main` only if the owner keeps it ([ADR 0042](./adr/0042-half-height-cells.md)).
-> If it is merged, renumber it to the next free phase number on `main`.
+> **Adopted** (owner, 2026-10-20): built on the long-lived branch `claude/half-height-voxels` and
+> playtested there, then kept and taken to `main` as 0.22.0 ([ADR 0042](./adr/0042-half-height-cells.md)).
+> Its number stays 41 (free on `main`).
 
 **Status:** H0 done (2026-10-19); H1–H4 built and verified locally (2026-10-20); H6 (`main` merged
 in, 2026-10-20) built, the native and WASI suites, clippy and Vitest green locally; main 0.20.0 merged
 in too (shore water, step-up at every angle, the pines; generator 1018; HALF_HEIGHT_GRID.md §8), the
-touched crates' suites, clippy and Vitest green locally. Outstanding: CI
-(not run on the branch), the ray marcher (deferred, below). Next: H5, the owner's playtest, on a dev
-build. The design is [`HALF_HEIGHT_GRID.md`](./HALF_HEIGHT_GRID.md) (§7: as built).
+touched crates' suites, clippy and Vitest green locally; H5, the owner's playtest: kept
+(2026-10-20); H7, the adoption for `main` (below), built and verified locally. Outstanding: CI, the
+bench numbers against 0.21.x. The design is [`HALF_HEIGHT_GRID.md`](./HALF_HEIGHT_GRID.md) (§7: as built).
 
 Owner (2026-10-19): *"Cardinal ramps only, 1/2m blocks as voxels, 1m on steep ground (still made up
 of half blocks), and no adaptive blocks (just adaptive at generation time), when you destroy a
@@ -4176,10 +4176,8 @@ first. Earlier the same day: tall grass grows only on flat surfaces (the lab).
   across chunk borders, and flooded under the sea. (The prototype terrain makes no 45° ramps: no
   two neighbouring columns differ by a metre anywhere on the island; the steep case is covered by
   the rule's and the controller's tests.) The LOD draws natural tops flat (deviation below).
-- [ ] The ray marcher (`dwell-march`, `render/march`) in cell space: rays transformed (y ÷ the cell
-  height, not renormalised), hit points and normals back to metres, its cone LOD and column skips
-  checked; deferred from H1 because its internals assume a unit direction. Local builds only until
-  the owner's A7 decision, so the branch may ship without it.
+- Dropped: the ray marcher in cell space (deferred from H1). `main` removed the ray marcher in
+  0.20.5 (ADR 0044), so there is nothing left to convert.
 - [x] Goldens regenerated: chunk and LOD hashes at the same places in metres (each row doubled,
   then the one with the same content kind); the golden trace (same states, positions within
   6e-5 m, then re-recorded with the crawlspace roof raised a cell, below); protocol version 14,
@@ -4215,7 +4213,8 @@ Deviations:
 
 **H5 — Playtest**
 - [ ] Bench numbers against `main` (chunk generation, meshing, memory, frame time).
-- [ ] Manual: the owner plays the branch and decides whether to keep it.
+- [x] Manual: the owner plays the branch and decides whether to keep it: kept (2026-10-20, "I like
+  half-height and we're going to stick with it").
 
 
 **H6 — `main` merged in (2026-10-20)**
@@ -4275,6 +4274,24 @@ Deviations:
 - Deviations: the build sphere stays in cells (it reaches 25 km up and down); brushes stay in cells
   (radii and heights count cells, so a ball is half as tall as wide; reach is metres); the golden
   trace's bound 49 km out is 2 mm (1.3 mm measured; `main` 1 mm).
+
+**H7 — Adoption for `main` (owner, 2026-10-20)**
+- [x] `main` 0.21.4 merged in: the characters and held items (protocol 17; the foot ground in
+  `bodies.rs` reads rows `CELL_H` tall), `FaceFrame` everywhere (its continuous heights in metres,
+  the WGSL frame's midplane in metres; the both-faces check passes), the ray marcher's removal,
+  smooth steps.
+- [x] Protocol 18 and generator 19, `main`'s next numbers (the 1000+ scheme dropped); the chunk
+  and LOD goldens re-recorded, the golden trace unchanged.
+- [x] The adaptive blocks removed (dormant on ½ m cells): the engine, its table and data, the
+  registry's `adaptive` flag and sync bit, the meshers' derived shapes, half-slab tops and LOD
+  adaptive tops, two diagnostic examples; block data with `adaptive` fails with a message.
+- [x] The experiment wording removed: `CLAUDE.md`'s branch section, ADR 0042 (adopted; supersedes
+  0024), `ARCHITECTURE.md` (½ m cells as the architecture), `HALF_HEIGHT_GRID.md` §9, this plan.
+- [x] `main`'s 1 m work checked on ½ m cells (`HALF_HEIGHT_GRID.md` §9): plants on their support
+  (tests rewritten on a ramp), the dirt skirt under grass ramps, flooded shores, the pines, the
+  ramp foot, the steep-terrain band, the face-parity tests in metres.
+- [ ] CI green on the PR, and the e2e specs that assumed 1 m on a real GPU.
+- [ ] `package.json` raised to 0.22.0 by the owner at the merge.
 ---
 
 ## Cross-Cutting Work (every phase)

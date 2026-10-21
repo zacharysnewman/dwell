@@ -1,13 +1,13 @@
 # 0042. Half-height cells with stored cardinal ramps, shaped at generation
 
-- Status: Accepted for a playtest on a long-lived branch (`claude/half-height-voxels`); it
-  reaches `main` only if the owner keeps it after playing it
-- Date: 2026-10-19
+- Status: Accepted; adopted for `main` (owner, 2026-10-20: "I like half-height and we're going to
+  stick with it"), after a playtest on the branch `claude/half-height-voxels`
+- Date: 2026-10-19; adopted 2026-10-20 (0.22.0: protocol 18, generator 19)
 - Design: [`HALF_HEIGHT_GRID.md`](../HALF_HEIGHT_GRID.md); investigation:
   [`proposals/HALF_HEIGHT_VOXELS.md`](../proposals/HALF_HEIGHT_VOXELS.md) (adopted) and the
   [Half-Height Voxel Lab](../prototypes/half-height-lab.html)
-- Supersedes on the branch: [0024](0024-adaptive-natural-blocks.md) (adaptive natural blocks: the
-  shapes are stored, not derived); revisits [0024](0024-adaptive-natural-blocks.md)'s rejected
+- Supersedes: [0024](0024-adaptive-natural-blocks.md) (adaptive natural blocks: the shapes are
+  stored, not derived; the adaptive machinery is removed); revisits [0024](0024-adaptive-natural-blocks.md)'s rejected
   option 3 (finer voxels)
 
 ## Context
@@ -53,7 +53,7 @@ The owner's decisions (2026-10-19), with their answers to the follow-up question
 - **45° ramps slide.** The 44° slide limit (owner, 2026-10-15) stays; ½ m steps and 27° ramps are
   walked.
 - **Tall grass grows only on flat tops.**
-- **It is built on a long-lived branch** and playtested before anything reaches `main`.
+- **It was built on a long-lived branch** and playtested before it reached `main`.
 
 ## Consequences
 
@@ -65,8 +65,15 @@ The owner's decisions (2026-10-19), with their answers to the follow-up question
   dug hole keeps facing the way it did. That is the trade the owner chose.
 - About twice the cells for the same volume: twice the chunk rows, and more data in saves,
   generation, meshing and collision. To be measured with the bench.
-- A breaking change to the world format, the protocol and seed terrain. On `main` it would be a new
-  compatibility line, which only the owner raises. The branch does not raise `package.json`.
-- Phase 18's adaptive machinery (the rule table, overrides, apron derivation) is turned off by data
-  on the branch, not deleted, so that the comparison stays possible until the owner decides.
-- Reversal: drop the branch. If kept, the merge supersedes ADR 0024 on `main`.
+- A breaking change to the world format, the protocol and seed terrain: a new compatibility line,
+  0.22.0 (protocol 18, generator 19), raised by the owner at the merge.
+- Phase 18's adaptive machinery (the rule table, overrides, apron derivation, the registry's
+  `adaptive` flag) is removed; block data that sets `adaptive` fails generation.
+
+## Adoption (owner, 2026-10-20)
+
+After playtesting the branch's dev builds and comparing four slope variants, the owner kept
+½ m cells: "I like half-height and we're going to stick with it. Update half height and publish it
+as main, so we don't have to diverge branches anymore." The slopes are V2 (the 1 m step snap off,
+the ramp rule of `HALF_HEIGHT_GRID.md` §4). The branch's 1000+ version scheme ends: `main` takes
+protocol 18 and generator 19. This ADR supersedes ADR 0024.

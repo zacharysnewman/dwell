@@ -1,6 +1,8 @@
 # Dwell — Adaptive Natural Blocks: Shapes From Neighbours
 
-> **Status: [built, Phase 18]** (formerly 9e) — design agreed with the owner in prototypes on
+> **Status: superseded (2026-10-20) by Phase 41's ½ m cells ([ADR 0042](./adr/0042-half-height-cells.md),
+> [`HALF_HEIGHT_GRID.md`](./HALF_HEIGHT_GRID.md)): the adaptive blocks were removed; this file is kept as
+> the record of the design.** Was: **[built, Phase 18]** (formerly 9e) — design agreed with the owner in prototypes on
 > 2026-10-07/08 ([`prototypes/`](./prototypes/README.md)); decision in
 > [ADR 0024](./adr/0024-adaptive-natural-blocks.md) (as built). The built mechanisms are described
 > in [`ARCHITECTURE.md`](./ARCHITECTURE.md) — §6.1 (the flag, the table as data, the derivation,
