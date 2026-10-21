@@ -78,6 +78,13 @@
       "name": "loading-off",
       "notes": "The game without its loading screen on joining (?loading=off, ARCHITECTURE.md §6.3): the join's timeline as before the screen.",
       "params": { "loading": "off" }
+    },
+    {
+      "name": "respawn-preload-off",
+      "notes": "The respawn preload off (?respawnPreload=off: the server streams the spawn only once the player is there, and the client neither prioritises nor readies its LOD): the respawn as before it (ARCHITECTURE.md §6.3).",
+      "params": {
+        "respawnPreload": "off"
+      }
     }
   ]
 }

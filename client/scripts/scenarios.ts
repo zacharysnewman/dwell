@@ -73,6 +73,12 @@ export type Step =
    * since the page was opened in the report's `untils` (the join's timeline: ARCHITECTURE.md §6.3).
    */
   | { do: 'until'; what: UntilWhat; maxS: number }
+  /**
+   * Kills the local player where it is, waits for its respawn and then (at most `maxS`) until it
+   * is playing again, and saves the respawn → playing seconds in the report's `respawns` (the
+   * respawn's loading screen, ARCHITECTURE.md §6.3).
+   */
+  | { do: 'die'; maxS: number }
   /** Forgets the telemetry so far: the next `record` measures from here. */
   | { do: 'mark' }
   /** Saves the telemetry, the controller ticks and the game's state under `name`. */
@@ -227,6 +233,7 @@ const STEP_FIELDS: Record<Step['do'], readonly string[]> = {
   arms: ['on'],
   settle: ['maxS'],
   until: ['what', 'maxS'],
+  die: ['maxS'],
   mark: [],
   record: ['name'],
   shot: ['name'],
@@ -357,6 +364,7 @@ export function parseStep(where: string, v: unknown): Step {
       };
     }
     case 'settle':
+    case 'die':
       return { do: d, maxS: num(at('maxS'), o.maxS, 0, 3600) };
     case 'until': {
       if (!UNTIL_WHATS.includes(o.what as UntilWhat)) {

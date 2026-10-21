@@ -561,6 +561,8 @@ pub struct Game<S: Scene> {
     near_ring: Vec<Coord>,
     /// The Welcome's verification chunk: the cell under the world's spawn, where a respawn is.
     spawn_chunk: Option<ChunkCoord>,
+    /// The respawn preload's priorities (§6.3; off with `?respawnPreload=off`).
+    respawn_preload_on: bool,
 }
 
 impl<S: Scene> Game<S> {
@@ -668,6 +670,7 @@ impl<S: Scene> Game<S> {
             loading: LoadingGate::new(LOADING, false),
             near_ring: near_ring_offsets(LOADING.radius_chunks),
             spawn_chunk: verification,
+            respawn_preload_on: true,
             bodies: Bodies::default(),
             held_sent: None,
             show_arms: true,
@@ -681,6 +684,11 @@ impl<S: Scene> Game<S> {
             None => game.verify(0),
         }
         game
+    }
+
+    /// The respawn preload's lighting, meshing and LOD priorities (§6.3) on or off.
+    pub fn set_respawn_preload(&mut self, on: bool) {
+        self.respawn_preload_on = on;
     }
 
     /// The loading screen on joining and respawning (off for `?loading=off` and the tests).
@@ -709,7 +717,7 @@ impl<S: Scene> Game<S> {
     /// chunk (the cell under it): the ring is widened by one chunk to cover the body's centre
     /// above it and the players' spread around it.
     fn respawn_preload(&self) -> Option<SecondCentre> {
-        let radius = RESPAWN_PRELOAD_RADIUS_CHUNKS?;
+        let radius = RESPAWN_PRELOAD_RADIUS_CHUNKS.filter(|_| self.respawn_preload_on)?;
         let at = self.spawn_chunk.filter(|_| self.dead)?;
         Some(SecondCentre {
             near: LOADING.radius_chunks,

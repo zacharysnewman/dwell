@@ -2431,6 +2431,14 @@ impl Server {
             ..s.stream_stats
         })
     }
+    /// The player id of a joined session.
+    pub fn player_of_session(&self, id: SessionId) -> Option<u16> {
+        self.sessions
+            .get(&id)
+            .filter(|s| s.joined())
+            .map(|s| s.player_id)
+    }
+
     /// Kills a joined, living player (as a lethal fall would; tools and tests): they respawn after
     /// `RESPAWN_SECONDS`.
     pub fn kill_player(&mut self, player_id: u16) {

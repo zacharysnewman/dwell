@@ -19,6 +19,15 @@ pub struct LoadingTunables {
 
 include!("loading.gen.rs");
 
+/// Whether the respawn preload (§6.3) runs: on unless the page's query has `respawnPreload=off`
+/// (the bench's comparison).
+pub fn respawn_preload_from_query(search: &str) -> bool {
+    !search
+        .trim_start_matches('?')
+        .split('&')
+        .any(|p| p == "respawnPreload=off")
+}
+
 /// The chunk offsets of the near ring of `radius` chunks, nearest first: the server's view sphere
 /// (`dwell-sim` `within_radius`: |offset|² ≤ r² + r), so every one is streamed without a request.
 pub fn near_ring_offsets(radius: i32) -> Vec<[i32; 3]> {
@@ -239,6 +248,15 @@ mod tests {
         let d: Vec<i32> = ring.iter().map(|c| c.iter().map(|v| v * v).sum()).collect();
         assert!(d.windows(2).all(|w| w[0] <= w[1]));
         assert_eq!(near_ring_offsets(0), vec![[0, 0, 0]]);
+    }
+
+    #[test]
+    fn the_respawn_preload_is_off_only_when_asked() {
+        assert!(respawn_preload_from_query(""));
+        assert!(respawn_preload_from_query("?world=flat&loading=off"));
+        assert!(!respawn_preload_from_query("?respawnPreload=off"));
+        assert!(!respawn_preload_from_query("?seed=3&respawnPreload=off"));
+        assert!(respawn_preload_from_query("?respawnPreload=on"));
     }
 
     #[test]
