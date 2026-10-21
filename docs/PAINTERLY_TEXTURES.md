@@ -292,6 +292,12 @@ expect them. The renderer: the coverage and gutter tests over both sets, the cel
 opaque tile's tones and end on its main tone, a cel preset swaps the atlas and `off` swaps it back.
 `dwell-look`: `270-cel` and `360-cel` are `270` and `360` with the cel set, and nothing else.
 
+**Measured** (PIXEL_ART_LOOK.md §8): at the same preset, 10–32 % fewer pixels change frame to frame
+than with the painterly tiles while turning and walking. Sparkle (a pixel that flips and flips back)
+is about the same, since most of it comes from block edges and the dither rather than the textures. A
+denser first pass with averaged mips was worse than painterly, which is why the recipes use few,
+large shapes and the mips go by majority tone.
+
 **Not done (follow-ups).** Characters: their materials have cel tiles (the `character` default), but
 the Character Lab still paints them painterly (the characters are not in the game yet). The
 Painterly Texture Lab edits painterly materials only; a cel tab would be the editor for this file.
