@@ -243,7 +243,8 @@ pre-contact velocity into the surface's normal, `max(0, −v · n)`, on floors, 
 normal), walls and ceilings, once per contact, flight exempt; the config fields renamed
 `impact_damage_min_speed` / `impact_damage_per_speed` (PLAYER_CONTROLLER.md §6.10,
 `tests/impact.rs`). Not a protocol change: the hit is server-side, sent as a `Damage` event with
-cause `Fall`.
+cause `Fall`. Then (owner, 2026-10-21, built): an obstacle the controller could step up (a ½ m
+step) hits as the ramp it stands for, not a wall (`damage.impact_step_as_ramp`, §6.10).
 Later finding: jumping onto a block while holding forward gave a
 burst of speed as the player came down on the edge — the step-up's forward nudge was added on top
 of the tick's movement (also on every slab step, and on slopes every tick); it is now taken out of
