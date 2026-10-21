@@ -97,6 +97,9 @@ pub trait Scene: TerrainRenderer {
     fn set_own_shadow(&mut self, _body: Option<PlayerView>) {}
     /// Your own body drawn in first person from the neck down (docs/CHARACTERS.md §5.1), or none.
     fn set_own_body(&mut self, _body: Option<PlayerView>) {}
+    /// The placed light sources near the eye this frame (a torch's flame; docs/LIGHTS.md §4):
+    /// drawn as shadowed dynamic lights with Torch shadows on.
+    fn set_placed_lights(&mut self, _lights: Vec<crate::render::lights::PlacedLight>) {}
     fn set_camera(
         &mut self,
         eye: [f64; 3],
@@ -1669,6 +1672,14 @@ impl<S: Scene> Game<S> {
             telemetry::add("lod.retiring", f.retiring as f64);
         }
         self.update_day(now_ms);
+        // The placed light sources near the eye (docs/LIGHTS.md §4): Torch shadows draws the
+        // nearest as shadowed lights.
+        let placed = placed_lights(
+            self.streamer.store(),
+            camera_eye,
+            dwell_look::lights::LIGHTS.shadows.placed_m,
+        );
+        self.scene.borrow_mut().set_placed_lights(placed);
 
         self.hud.health = self.health;
         if self.debug_visible {
@@ -2215,4 +2226,73 @@ impl Puppets {
             })
             .collect()
     }
+}
+
+/// The placed light sources within `radius` of `eye` (`VoxelWorld::light_sources_near`), as the
+/// renderer's placed lights: each flame cell's centre, its light source and a flicker phase of
+/// its cell.
+pub fn placed_lights(
+    world: &dwell_world::VoxelWorld,
+    eye: [f64; 3],
+    radius: f64,
+) -> Vec<crate::render::lights::PlacedLight> {
+    world
+        .light_sources_near(eye, radius)
+        .into_iter()
+        .filter_map(|(c, m)| {
+            let source = dwell_blocks::try_info(m)?.light?;
+            let lo = dwell_world::pos_of_cell(c);
+            let pos = std::array::from_fn(|k| lo[k] + 0.5 * dwell_world::CELL[k]);
+            let h = (c[0] as u32).wrapping_mul(0x9e37_79b1)
+                ^ (c[1] as u32).wrapping_mul(0x85eb_ca77)
+                ^ (c[2] as u32).wrapping_mul(0xc2b2_ae3d);
+            Some(crate::render::lights::PlacedLight {
+                pos,
+                source,
+                seed: h,
+            })
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod placed_light_tests {
+    use super::placed_lights;
+
+    dwell_world::both_faces!(
+        /// A placed torch near the eye becomes the renderer's placed light at its flame cell's
+        /// centre (docs/LIGHTS.md §4); none past the radius.
+        fn a_placed_torch_is_a_placed_light_at_its_flame(f: dwell_world::FaceFrame) {
+            let mut w = dwell_world::VoxelWorld::new(dwell_world::empty_generator(), None);
+            w.enable_light();
+            let ground = f.cell([3, 30, 3]);
+            w.set_voxel(
+                ground[0],
+                ground[1],
+                ground[2],
+                dwell_blocks::require("dwell:stone"),
+            );
+            let at = f.cell([3, 31, 3]);
+            let put =
+                dwell_world::edit::edit_writes(&mut w, at, dwell_blocks::require("dwell:torch"));
+            for &([x, y, z], m) in &put {
+                w.set_voxel(x, y, z, m);
+            }
+            // Both cells' chunks (the flame may be in the chunk above).
+            for &([x, y, z], _) in &put {
+                w.light_load(dwell_world::chunk_of(x, y, z));
+            }
+            let flame = dwell_world::edit::above(at);
+            let eye = f.point([3.5, dwell_world::m_of_row(34), 0.5]);
+            let found = placed_lights(&w, eye, 8.0);
+            assert_eq!(found.len(), 1);
+            let lo = dwell_world::pos_of_cell(flame);
+            for (k, l) in lo.iter().enumerate() {
+                let c = l + 0.5 * dwell_world::CELL[k];
+                assert!((found[0].pos[k] - c).abs() < 1e-9, "{:?}", found[0].pos);
+            }
+            assert_eq!(found[0].source.name, "dwell:torch");
+            assert!(placed_lights(&w, eye, 1.0).is_empty());
+        }
+    );
 }

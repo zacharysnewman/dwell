@@ -2141,7 +2141,7 @@ fn light_wgsl() -> String {
 /// entry points.
 pub fn lighting_source() -> String {
     format!(
-        "{}{}const SEA_LEVEL: f32 = {:.1};\nconst AMBIENT_FLOOR: f32 = {:?};\n{}const ATLAS_CELLS: u32 = {}u;\nconst ATLAS_TILES: u32 = {}u;\n{}\n{}\n{}\n{FRAME}\n{}\n{}\n{FRAME_DEPTH}\n{}\n{COMMON}\n{}\n{}\n",
+        "{}{}const SEA_LEVEL: f32 = {:.1};\nconst AMBIENT_FLOOR: f32 = {:?};\n{}const ATLAS_CELLS: u32 = {}u;\nconst ATLAS_TILES: u32 = {}u;\n{}\n{}\n{}\n{FRAME}\n{}\n{}\n{FRAME_DEPTH}\n{}\n{}\n{COMMON}\n{}\n{}\n",
         dwell_world::FaceFrame::wgsl(),
         super::face_shading::WGSL,
         world::SEA_LEVEL_M,
@@ -2155,6 +2155,7 @@ pub fn lighting_source() -> String {
         dwell_look::sky_wgsl(),
         dwell_look::clouds::cloud_wgsl(&dwell_look::clouds::CLOUDS),
         super::lights::wgsl(),
+        super::point_shadows::wgsl(),
         super::lod_shadows::LOD_SHADOW_WGSL,
         super::shadows::SHADOW_WGSL,
     )

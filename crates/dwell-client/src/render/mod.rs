@@ -16,6 +16,7 @@ pub mod geometry;
 pub mod lights;
 pub mod lod_shadows;
 pub mod pacing;
+pub mod point_shadows;
 pub mod reflection;
 pub mod seam;
 pub mod shaders;
@@ -758,6 +759,17 @@ fn casts_into(c: &Candidate, _cascade: &shadows::Cascade, i: usize, tier: &Shado
     c.draw.kind != Kind::Cutout || i < tier.plant_cascades as usize
 }
 
+/// This frame's dynamic lights and torch shadows (`Renderer::torch_frame`).
+#[derive(Default)]
+struct TorchFrame {
+    lights: Vec<dwell_look::lights::PointLight>,
+    /// Each slot's maps as read this frame (none: holds no map for a light drawn now).
+    slots: Vec<Option<point_shadows::SlotMaps>>,
+    /// The casters of the maps drawn now, and per drawn slot its range of them.
+    casters: Vec<DrawItem>,
+    draw: Vec<(usize, std::ops::Range<usize>)>,
+}
+
 /// The signature of the casters a cascade's box holds (`shadows::signature`): it changes when one
 /// of them comes, goes or changes, and then a kept map is drawn again.
 fn caster_signature(
@@ -867,6 +879,13 @@ pub struct Renderer {
     lod_schedule: lod_shadows::Schedule,
     height_pipelines: HashMap<(Kind, bool), wgpu::RenderPipeline>,
     lod_shadows_off: bool,
+    /// Torch shadows (point_shadows.rs; docs/LIGHTS.md §4): the maps (a 1×1 stand-in while Off),
+    /// the setting, which light each slot holds, and this frame's placed lights near the eye
+    /// (`set_placed_lights`).
+    point_maps: point_shadows::PointShadowMaps,
+    torch_shadow_quality: ShadowQuality,
+    torch_cache: dwell_look::lights::TorchShadowCache,
+    placed_lights: Vec<lights::PlacedLight>,
     draw_buffer: wgpu::Buffer,
     draw_group: wgpu::BindGroup,
     draw_capacity: u64,
@@ -1007,13 +1026,14 @@ impl Renderer {
             });
         // The water's tiles (water_tiles.rs), bindings 5–7; the shadow maps (shadows.rs), 8–10;
         // the distant terrain's heightmaps (lod_shadows.rs), 11–13; the dynamic lights (lights.rs),
-        // 14.
+        // 14; the torch shadows (point_shadows.rs), 15–16.
         let frame_entries: Vec<_> = frame_entries
             .into_iter()
             .chain(WaterTiles::layout_entries())
             .chain(shadows::layout_entries())
             .chain(lod_shadows::layout_entries())
             .chain([lights::layout_entry()])
+            .chain(point_shadows::layout_entries())
             .collect();
         let frame_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("frame"),
@@ -1448,12 +1468,14 @@ impl Renderer {
         // No maps until the first frame asks for some (`ensure_shadow_maps`): a 1×1 stand-in.
         let shadow_maps = frame_bindings.shadow_maps(&device, (1, 1));
         let lod_maps = frame_bindings.lod_maps(&device, None);
+        let point_maps = frame_bindings.point_maps(&device, None);
         let frame_groups = frame_bindings.groups(
             &device,
             &frame_buffers,
             &water_tiles,
             &shadow_maps,
             &lod_maps,
+            &point_maps,
         );
         let characters = characters::CharacterRenderer::new(
             &device,
@@ -1503,6 +1525,10 @@ impl Renderer {
             lod_schedule: lod_shadows::Schedule::new(1),
             height_pipelines,
             lod_shadows_off: false,
+            point_maps,
+            torch_shadow_quality: ShadowQuality::Low,
+            torch_cache: Default::default(),
+            placed_lights: Vec::new(),
             draw_buffer,
             draw_group,
             draw_capacity: 1024,
@@ -1739,8 +1765,17 @@ impl Renderer {
         let size = shadows::maps_size(SHADOWS.tier(self.shadows()));
         let lod_tier = self.lod_tier();
         let lod_size = lod_shadows::maps_size(lod_tier.as_ref());
-        if self.shadow_maps.size == size && self.lod_maps.size == lod_size {
+        let torch_tier = self.torch_tier();
+        if self.shadow_maps.size == size
+            && self.lod_maps.size == lod_size
+            && self.point_maps.tier == torch_tier
+        {
             return;
+        }
+        if self.point_maps.tier != torch_tier {
+            self.point_maps = self.frame_bindings.point_maps(&self.device, torch_tier);
+            // New maps hold nothing: each light's are drawn again.
+            self.torch_cache.clear();
         }
         if self.shadow_maps.size != size {
             self.shadow_maps = self.frame_bindings.shadow_maps(&self.device, size);
@@ -1760,7 +1795,26 @@ impl Renderer {
             &self.water_tiles,
             &self.shadow_maps,
             &self.lod_maps,
+            &self.point_maps,
         );
+    }
+    /// The Torch shadows setting (docs/LIGHTS.md §4): Off, Low or High; none on a CPU adapter.
+    pub fn set_torch_shadows(&mut self, quality: ShadowQuality) {
+        self.torch_shadow_quality = quality;
+    }
+    /// The torch shadows this adapter draws (none on a CPU adapter).
+    pub fn torch_shadows(&self) -> ShadowQuality {
+        point_shadows::torch_shadows_for(self.adapter, self.torch_shadow_quality)
+    }
+    fn torch_tier(&self) -> Option<dwell_look::lights::TorchShadowTier> {
+        dwell_look::lights::LIGHTS
+            .shadows
+            .tier(self.torch_shadows())
+    }
+    /// The placed light sources near the eye this frame (the game's, from
+    /// `VoxelWorld::light_sources_near`): drawn as shadowed dynamic lights with Torch shadows on.
+    pub fn set_placed_lights(&mut self, lights: Vec<lights::PlacedLight>) {
+        self.placed_lights = lights;
     }
     /// The distant shadows this adapter draws (lod_shadows.rs): the Shadows setting's tier, none on
     /// a CPU adapter or with `?lodshadows=off`.
@@ -2635,13 +2689,39 @@ impl Renderer {
             &bodies,
             self.arms.as_ref(),
         );
-        // The dynamic lights (docs/LIGHTS.md §3): the held torches, nearest first, flickering by
-        // the frame's clock.
+        // The dynamic lights (docs/LIGHTS.md §3): the held torches and, with Torch shadows on, the
+        // placed ones near the eye, nearest first, flickering by the frame's clock; and the torch
+        // shadows' maps (§4, point_shadows.rs): the nearest lights that may cast take a slot, and
+        // the maps of those new, moved or whose terrain changed are drawn, a budget a frame.
         let seconds = (crate::telemetry::now_ms() - self.start_ms) / 1000.0;
-        let (block, drawn) = lights::frame_block(self.characters.held_lights(), self.eye, seconds);
+        let torch = self.torch_frame(chunk_fade);
+        let (block, drawn) = lights::frame_block(&torch.lights, self.eye, seconds);
         self.queue
             .write_buffer(&self.frame_bindings.light_buffer, 0, floats(&block));
         crate::telemetry::add("lights.drawn", drawn as f64);
+        self.queue.write_buffer(
+            &self.point_maps.uniform,
+            0,
+            floats(&point_shadows::uniforms(
+                self.point_maps.tier.map_or(1, |t| t.resolution),
+                &torch.slots,
+            )),
+        );
+        crate::telemetry::add("torchshadow.drawn", torch.draw.len() as f64);
+        if let Some(mut u) = near_uniforms {
+            for &(slot, _) in &torch.draw {
+                let Some(m) = torch.slots[slot] else { continue };
+                for face in 0..point_shadows::FACES {
+                    let vp = point_shadows::face_view_proj(m.light, face, m.far);
+                    for (k, col) in vp.iter().enumerate() {
+                        u[k * 4..k * 4 + 4].copy_from_slice(col);
+                    }
+                    let layer = slot * point_shadows::FACES + face;
+                    self.queue
+                        .write_buffer(&self.point_maps.maps.frames[layer], 0, floats(&u));
+                }
+            }
+        }
         let arms = self.characters.has_arms();
         if arms {
             let fov = dwell_characters::player()
@@ -2658,7 +2738,8 @@ impl Renderer {
         // The shadow casters' draws follow the scene's.
         let first_caster = draws.iter().map(Vec::len).sum::<usize>() as u64;
         let first_height = first_caster + casters.len() as u64;
-        let total = first_height + heights.len() as u64;
+        let first_torch = first_height + heights.len() as u64;
+        let total = first_torch + torch.casters.len() as u64;
         if total > self.draw_capacity {
             self.draw_capacity = total.next_power_of_two();
             self.draw_buffer.destroy();
@@ -2671,6 +2752,7 @@ impl Renderer {
             .flatten()
             .chain(&casters)
             .chain(&heights)
+            .chain(&torch.casters)
             .enumerate()
         {
             let at = k * (DRAW_STRIDE / 4) as usize;
@@ -2730,6 +2812,22 @@ impl Renderer {
                 &mut triangles,
             );
             crate::telemetry::sample("shadow.ktris", (triangles - before) as f64 / 1000.0);
+        }
+        // The torch shadows' maps drawn this frame: six faces a light, timed as one.
+        if !torch.draw.is_empty() {
+            let query = self
+                .timer
+                .as_mut()
+                .and_then(|t| t.pass(timing::TORCH_SHADOWS));
+            self.record_point_shadows(
+                &mut encoder,
+                &torch,
+                first_torch,
+                &arena,
+                query,
+                &mut calls,
+                &mut triangles,
+            );
         }
         // The distant shadows' heightmap slice, its mips when the fill is whole; then the maps
         // shown (the one just made among them) in the uniform block.
@@ -3415,6 +3513,174 @@ impl Renderer {
         }
     }
 
+    /// This frame's dynamic lights and torch shadows (docs/LIGHTS.md §3–4): the lights (held, and
+    /// placed with Torch shadows on), each shadowed light's slot (`TorchShadowCache::assign`:
+    /// kept until moved or its terrain changes, `redrawsPerFrame` drawn at most), each slot's
+    /// map as read this frame, and the casters of the maps drawn now (the chunks' opaque terrain
+    /// within each light's radius).
+    fn torch_frame(&mut self, chunk_fade: &dyn Fn(ChunkCoord) -> Option<Fade>) -> TorchFrame {
+        let shadows_on = self.torch_tier().is_some();
+        let placed: &[lights::PlacedLight] = if shadows_on { &self.placed_lights } else { &[] };
+        let all = lights::frame_lights(self.characters.held_lights(), placed, self.eye);
+        let slots = if shadows_on {
+            self.point_maps.slots()
+        } else {
+            0
+        };
+        let want = lights::shadowed(&all, slots);
+        if want.is_empty() {
+            self.torch_cache.clear();
+            return TorchFrame {
+                lights: lights::with_slots(all, &[], &[]),
+                ..Default::default()
+            };
+        }
+        let candidates: Vec<Candidate> = self
+            .shadow_candidates(chunk_fade)
+            .into_iter()
+            .filter(|c| c.draw.kind == Kind::Terrain && c.draw.fade == 0.0)
+            .collect();
+        let eye = self.eye;
+        let rel = |p: V3| -> V3 { std::array::from_fn(|k| p[k] - eye[k]) };
+        let reaches = |c: &Candidate, light: V3, r: f64| {
+            let d2: f64 = (0..3)
+                .map(|k| {
+                    ((c.centre[k] - light[k]).abs() - c.half[k])
+                        .max(0.0)
+                        .powi(2)
+                })
+                .sum();
+            d2 <= r * r
+        };
+        let wants: Vec<dwell_look::lights::ShadowWant> = want
+            .iter()
+            .map(|&i| {
+                let l = &all[i];
+                let at = rel(l.pos);
+                dwell_look::lights::ShadowWant {
+                    key: l.key(),
+                    pos: l.pos,
+                    signature: shadows::signature(
+                        candidates
+                            .iter()
+                            .filter(|c| reaches(c, at, l.radius_m))
+                            .map(|c| c.id),
+                    ),
+                }
+            })
+            .collect();
+        let radii: Vec<f64> = want.iter().map(|&i| all[i].radius_m).collect();
+        let f = self.torch_cache.assign(
+            &wants,
+            slots,
+            dwell_look::lights::LIGHTS.shadows.redraws_per_frame,
+        );
+        let maps: Vec<Option<point_shadows::SlotMaps>> = (0..slots)
+            .map(|s| {
+                let kept = self.torch_cache.slots.get(s).copied().flatten()?;
+                let k = f.slot_of.iter().position(|x| *x == Some(s))?;
+                Some(point_shadows::SlotMaps {
+                    light: rel(kept.pos),
+                    far: radii[k],
+                })
+            })
+            .collect();
+        let mut casters = Vec::new();
+        let mut draw = Vec::new();
+        for &slot in &f.draw {
+            let Some(m) = maps[slot] else { continue };
+            let start = casters.len();
+            for c in candidates.iter().filter(|c| reaches(c, m.light, m.far)) {
+                let mut d = c.draw.clone();
+                d.page = self.mesh_of(&d.mesh).0.region.page;
+                d.key = (u128::from(d.kind as u8) << 40)
+                    | (u128::from(u8::from(shadow_fs(&d))) << 32)
+                    | (d.page as u128 & 0xffff_ffff);
+                casters.push(d);
+            }
+            casters[start..].sort_by_key(|d| d.key);
+            draw.push((slot, start..casters.len()));
+        }
+        TorchFrame {
+            lights: lights::with_slots(all, &want, &f.slot_of),
+            slots: maps,
+            casters,
+            draw,
+        }
+    }
+
+    /// Draws the torch shadows' maps of this frame (`t.draw`): per light six depth passes, one a
+    /// face, of the casters within its reach (from draw-buffer slot `first_slot`), timed as one.
+    #[allow(clippy::too_many_arguments)]
+    fn record_point_shadows(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        t: &TorchFrame,
+        first_slot: u64,
+        arena: &Arena,
+        query: Option<usize>,
+        calls: &mut u32,
+        triangles: &mut u64,
+    ) {
+        let passes = t.draw.len() * point_shadows::FACES;
+        let mut j = 0;
+        for (slot, range) in &t.draw {
+            for face in 0..point_shadows::FACES {
+                let layer = slot * point_shadows::FACES + face;
+                let timestamp_writes = self
+                    .timer
+                    .as_ref()
+                    .and_then(|tm| tm.writes_span(query, j == 0, j + 1 == passes));
+                j += 1;
+                let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("torch shadow face"),
+                    color_attachments: &[],
+                    depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                        view: &self.point_maps.maps.layers[layer],
+                        depth_ops: Some(wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(1.0),
+                            store: wgpu::StoreOp::Store,
+                        }),
+                        stencil_ops: None,
+                    }),
+                    timestamp_writes,
+                    ..Default::default()
+                });
+                pass.set_bind_group(0, &self.point_maps.maps.frame_groups[layer], &[]);
+                pass.set_bind_group(1, &self.draw_group, &[]);
+                let mut bound: Option<(Kind, bool)> = None;
+                let mut bound_page: Option<(usize, usize)> = None;
+                for k in range.clone() {
+                    let d = &t.casters[k];
+                    let key = (d.kind, shadow_fs(d));
+                    if bound != Some(key) {
+                        pass.set_pipeline(&self.shadow_pipelines[&key]);
+                        bound = Some(key);
+                    }
+                    let (mesh, ranges) = self.mesh_of(&d.mesh);
+                    let page = (mesh.region.format, mesh.region.page);
+                    if bound_page != Some(page) {
+                        let buffer = arena.buffer(page.0, page.1);
+                        pass.set_vertex_buffer(0, buffer.slice(..));
+                        pass.set_index_buffer(buffer.slice(..), wgpu::IndexFormat::Uint32);
+                        bound_page = Some(page);
+                    }
+                    let instance = (first_slot + k as u64) as u32;
+                    for r in merge_ranges(ranges) {
+                        *triangles += u64::from(r.len() as u32 / 3);
+                        let first = mesh.first_index;
+                        pass.draw_indexed(
+                            first + r.start..first + r.end,
+                            mesh.base_vertex,
+                            instance..instance + 1,
+                        );
+                        *calls += 1;
+                    }
+                }
+            }
+        }
+    }
+
     /// Draws the shadow maps: a depth pass per cascade (into its layer) of the casters that reach
     /// it (`collect_casters`, from draw-buffer slot `first_slot`) and the characters' bodies, timed
     /// as one (`query`: the first pass's start to the last one's end).
@@ -3704,6 +3970,21 @@ impl FrameBindings {
         )
     }
 
+    /// The torch shadows' maps for a tier (none: the 1×1 stand-in).
+    fn point_maps(
+        &self,
+        device: &wgpu::Device,
+        tier: Option<dwell_look::lights::TorchShadowTier>,
+    ) -> point_shadows::PointShadowMaps {
+        point_shadows::PointShadowMaps::new(
+            device,
+            tier,
+            &self.shadow_layout,
+            (&self.atlas_view, &self.sampler),
+            FRAME_FLOATS as u64 * 4,
+        )
+    }
+
     /// The frame groups of the far, near and arms passes.
     fn groups(
         &self,
@@ -3712,6 +3993,7 @@ impl FrameBindings {
         water_tiles: &WaterTiles,
         maps: &shadows::ShadowMaps,
         lod_maps: &lod_shadows::LodShadowMaps,
+        point_maps: &point_shadows::PointShadowMaps,
     ) -> [wgpu::BindGroup; 3] {
         std::array::from_fn(|i| {
             let entries = [
@@ -3745,6 +4027,7 @@ impl FrameBindings {
                 .chain(water_tiles.group_entries())
                 .chain(maps.group_entries())
                 .chain(lod_maps.group_entries())
+                .chain(point_maps.group_entries())
                 .collect();
             device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("frame"),
@@ -3943,6 +4226,9 @@ impl crate::game::Scene for Renderer {
     }
     fn set_arms(&mut self, arms: Option<ArmsView>) {
         Renderer::set_arms(self, arms);
+    }
+    fn set_placed_lights(&mut self, lights: Vec<lights::PlacedLight>) {
+        Renderer::set_placed_lights(self, lights);
     }
     fn set_own_shadow(&mut self, body: Option<PlayerView>) {
         Renderer::set_own_shadow(self, body);

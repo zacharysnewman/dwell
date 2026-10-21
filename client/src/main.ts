@@ -47,7 +47,12 @@ import { StructuresPanel } from './ui/structuresPanel';
 import { opfsStructureDir, StructureStore } from './local/structureStore';
 import { clipboardOf, type Vec3 as Cell } from './local/structures';
 import { waterQualityLevel, type WaterQuality } from './ui/waterSettings';
-import { shadowLevel, shadowsFromQuery, type ShadowQuality } from './ui/shadowSettings';
+import {
+  shadowLevel,
+  shadowsFromQuery,
+  torchShadowsFromQuery,
+  type ShadowQuality,
+} from './ui/shadowSettings';
 import { displayScale } from './ui/displayScale';
 import { FlightSpeedControl } from './ui/flightSpeedControl';
 import { loadFlySpeedLevel, saveFlySpeedLevel } from './predict/flightSpeed';
@@ -533,6 +538,8 @@ async function start(): Promise<App | null> {
     client.setClouds(s.clouds);
     // ?shadows=off|low|high overrides the stored setting (the bench's configurations).
     client.setShadows(shadowLevel(shadowsFromQuery(location.search) ?? s.shadows.quality));
+    // ?torchshadows=off|low|high likewise (docs/LIGHTS.md §4).
+    client.setTorchShadows(shadowLevel(torchShadowsFromQuery(location.search) ?? s.shadows.torch));
     client.setMotion(s.motion.speedEffects, s.motion.fovBoost);
     client.setReducedMotion(prefersReducedMotion());
     client.setPlants(s.motion.plantSway ? 1 : 0, true);

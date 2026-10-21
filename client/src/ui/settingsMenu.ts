@@ -123,7 +123,7 @@ export function settingsJson(s: Settings): string {
     },
     clouds: s.clouds,
     water: { quality: s.water.quality },
-    shadows: { quality: s.shadows.quality },
+    shadows: { quality: s.shadows.quality, torch: s.shadows.torch },
     motion: {
       speedEffects: s.motion.speedEffects,
       fovBoost: Math.round(s.motion.fovBoost * 100) / 100,
@@ -361,12 +361,21 @@ const WATER_CHOICE: ChoiceSpec<WaterQuality> = {
 };
 
 const SHADOW_CHOICE: ChoiceSpec<ShadowQuality> = {
-  label: 'Shadows',
+  label: 'Sun & moon shadows',
   hint: 'Sun and moon shadows near you; Low is lighter on the GPU',
   choices: SHADOW_QUALITIES,
   labels: SHADOW_QUALITY_LABELS,
   get: (s) => s.shadows.quality,
   with: (s, v) => ({ ...s, shadows: { ...s.shadows, quality: v } }),
+};
+
+const TORCH_SHADOW_CHOICE: ChoiceSpec<ShadowQuality> = {
+  label: 'Torch shadows',
+  hint: 'Shadows from the nearest torches, held and placed; High draws more of them, sharper',
+  choices: SHADOW_QUALITIES,
+  labels: SHADOW_QUALITY_LABELS,
+  get: (s) => s.shadows.torch,
+  with: (s, v) => ({ ...s, shadows: { ...s.shadows, torch: v } }),
 };
 
 /** A debug tool as a button in the Debug page (`key` matches an entry of DEBUG_KEYS). */
@@ -677,6 +686,7 @@ export class SettingsMenu {
       if (section.title === 'Look') {
         for (const spec of CHOICES) grid.append(this.choice(spec));
         grid.append(this.choice(SHADOW_CHOICE));
+        grid.append(this.choice(TORCH_SHADOW_CHOICE));
       }
       group.append(grid);
       page.append(group);

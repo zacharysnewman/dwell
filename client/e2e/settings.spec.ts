@@ -28,8 +28,9 @@ test('settings menu: opens from the corner, without fog sliders, and is kept', a
     '256 MB',
     '75°',
     '1.00×',
-    // Clouds and Shadows, then (after the FOV boost) the water quality: rows of buttons, the
-    // pressed one the value.
+    // Clouds, Sun & moon shadows and Torch shadows, then (after the FOV boost) the water
+    // quality: rows of buttons, the pressed one the value.
+    '',
     '',
     '',
     '100%',

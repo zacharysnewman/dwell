@@ -486,6 +486,15 @@ pub struct VoxelWorld {
     /// The flood light of the chunks the holder says are loaded (the client's;
     /// [`Self::enable_light`]).
     light: Option<Box<crate::light::LightMap>>,
+    /// The held chunks' placed light sources (docs/LIGHTS.md §4): the cells whose blocks give off a
+    /// light source and block light (a torch's flame), kept with the flood light.
+    sources: HashMap<ChunkCoord, Vec<[i32; 3]>>,
+}
+
+/// Whether a state is a placed light source: it gives off a light (`light`) and block light (the
+/// cell of its flame).
+pub fn is_light_source(m: StateId) -> bool {
+    m != 0 && dwell_blocks::try_info(m).is_some_and(|s| s.light.is_some() && s.emits > 0)
 }
 
 impl VoxelWorld {
@@ -500,6 +509,7 @@ impl VoxelWorld {
             generated_on_access: 0,
             loaded_saved: 0,
             light: None,
+            sources: HashMap::default(),
         }
     }
 
@@ -528,7 +538,71 @@ impl VoxelWorld {
     pub fn light_load(&mut self, coord: ChunkCoord) {
         if let Some(l) = self.light.as_deref_mut() {
             l.load(&self.chunks, coord);
+            self.index_sources(coord);
         }
+    }
+
+    /// Indexes the chunk's light sources (`is_light_source`).
+    fn index_sources(&mut self, coord: ChunkCoord) {
+        let found: Vec<[i32; 3]> = self.chunks.get(&coord).map_or_else(Vec::new, |c| {
+            c.voxels()
+                .iter()
+                .enumerate()
+                .filter(|&(_, &id)| is_light_source(id))
+                .map(|(i, _)| {
+                    // `local_index`: x | y << 5 | z << 10.
+                    let (x, y, z) = (i as i32 & 31, (i as i32 >> 5) & 31, i as i32 >> 10);
+                    [
+                        coord.x * CHUNK_SIZE + x,
+                        coord.y * CHUNK_SIZE + y,
+                        coord.z * CHUNK_SIZE + z,
+                    ]
+                })
+                .collect()
+        });
+        if found.is_empty() {
+            self.sources.remove(&coord);
+        } else {
+            self.sources.insert(coord, found);
+        }
+    }
+
+    /// The placed light sources within `radius` (m) of `centre` (world metres), nearest first:
+    /// each cell and its state (`is_light_source`; the client's, with the flood light).
+    pub fn light_sources_near(&self, centre: [f64; 3], radius: f64) -> Vec<([i32; 3], StateId)> {
+        let mut out: Vec<(f64, [i32; 3], StateId)> = Vec::new();
+        for (coord, cells) in &self.sources {
+            let lo = crate::pos_of_cell([
+                coord.x * CHUNK_SIZE,
+                coord.y * CHUNK_SIZE,
+                coord.z * CHUNK_SIZE,
+            ]);
+            let hi = crate::pos_of_cell([
+                (coord.x + 1) * CHUNK_SIZE,
+                (coord.y + 1) * CHUNK_SIZE,
+                (coord.z + 1) * CHUNK_SIZE,
+            ]);
+            let gap: f64 = (0..3)
+                .map(|k| {
+                    let (a, b) = (lo[k].min(hi[k]), lo[k].max(hi[k]));
+                    (a - centre[k]).max(centre[k] - b).max(0.0).powi(2)
+                })
+                .sum();
+            if gap > radius * radius {
+                continue;
+            }
+            for &c in cells {
+                let p = crate::pos_of_cell(c);
+                let d2: f64 = (0..3)
+                    .map(|k| (p[k] + 0.5 * crate::CELL[k] - centre[k]).powi(2))
+                    .sum();
+                if d2 <= radius * radius {
+                    out.push((d2, c, self.get_voxel_if_loaded(c)));
+                }
+            }
+        }
+        out.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
+        out.into_iter().map(|(_, c, m)| (c, m)).collect()
     }
 
     /// The chunk is no longer held.
@@ -536,6 +610,7 @@ impl VoxelWorld {
         if let Some(l) = self.light.as_deref_mut() {
             l.unload(&self.chunks, coord);
         }
+        self.sources.remove(&coord);
     }
 
     /// The chunks are no longer held, relit in one update (`LightMap::unload_many`).
@@ -543,12 +618,27 @@ impl VoxelWorld {
         if let Some(l) = self.light.as_deref_mut() {
             l.unload_many(&self.chunks, coords);
         }
+        for c in coords {
+            self.sources.remove(c);
+        }
     }
 
     /// These world cells' blocks changed.
     pub fn light_edited(&mut self, cells: &[[i32; 3]]) {
         if let Some(l) = self.light.as_deref_mut() {
             l.edited(&self.chunks, cells);
+            for &c in cells {
+                let coord = crate::chunk_of(c[0], c[1], c[2]);
+                let source = is_light_source(self.get_voxel_if_loaded(c));
+                let list = self.sources.entry(coord).or_default();
+                list.retain(|&o| o != c);
+                if source {
+                    list.push(c);
+                }
+                if list.is_empty() {
+                    self.sources.remove(&coord);
+                }
+            }
         }
     }
 
@@ -624,6 +714,18 @@ impl VoxelWorld {
             return self.get_or_create(coord);
         }
         self.chunks.get(&coord).map_or(&AIR_CHUNK, |c| c)
+    }
+
+    /// The voxel of a stored chunk (air elsewhere): a read that never generates or loads.
+    pub fn get_voxel_if_loaded(&self, [x, y, z]: [i32; 3]) -> StateId {
+        let c = chunk_of(x, y, z);
+        self.chunks.get(&c).map_or(0, |ch| {
+            ch.get(
+                x - c.x * CHUNK_SIZE,
+                y - c.y * CHUNK_SIZE,
+                z - c.z * CHUNK_SIZE,
+            )
+        })
     }
 
     pub fn get_voxel(&mut self, x: i32, y: i32, z: i32) -> StateId {

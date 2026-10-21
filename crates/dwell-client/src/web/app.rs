@@ -1138,6 +1138,16 @@ impl Client {
             .borrow_mut()
             .set_shadow_quality(dwell_look::shadows::ShadowQuality::from_level(level));
     }
+    /// The Torch shadows setting (0 Off, 1 Low, 2 High; docs/LIGHTS.md §4). A CPU adapter draws
+    /// none.
+    #[wasm_bindgen(js_name = setTorchShadows)]
+    pub fn set_torch_shadows(&self, level: u32) {
+        self.inner
+            .borrow()
+            .renderer
+            .borrow_mut()
+            .set_torch_shadows(dwell_look::shadows::ShadowQuality::from_level(level));
+    }
     /// The water quality (0 Low, 1 Medium, 2 High; WATER_RENDERING.md §4).
     #[wasm_bindgen(js_name = setWaterQuality)]
     pub fn set_water_quality(&self, level: u32) {
