@@ -8,11 +8,12 @@ pub const CEL_TILE: usize = 16;
 pub const CEL_MODE_MIPS: bool = true;
 
 /// The atlas tiles the cel style paints, in the order of their texels in [`CEL_TEXELS`].
-pub const CEL_TILES: [&str; 17] = [
+pub const CEL_TILES: [&str; 18] = [
     "grass",
     "grassSide",
     "dirt",
     "stone",
+    "bedrock",
     "sand",
     "water",
     "logSide",
@@ -29,4 +30,4 @@ pub const CEL_TILES: [&str; 17] = [
 ];
 
 /// Each cel tile's RGBA8 texels (sRGB), row y = 0 (the tile's bottom) first.
-pub static CEL_TEXELS: &[u8; 17408] = include_bytes!("cel.rgba");
+pub static CEL_TEXELS: &[u8; 18432] = include_bytes!("cel.rgba");

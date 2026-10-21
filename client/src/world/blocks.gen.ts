@@ -73,7 +73,7 @@ export interface ShapeDef {
 }
 
 /** FNV-1a 64 over the canonical state strings (each followed by "\n") in id order. */
-export const REGISTRY_HASH = 0x8455f39b7dac3fa7n;
+export const REGISTRY_HASH = 0xf0dc2cb262dfc775n;
 
 export const BLOCK_DEFS: readonly BlockDef[] = [
   { id: 'dwell:air', first: 0, count: 1, properties: [] },
@@ -93,6 +93,7 @@ export const BLOCK_DEFS: readonly BlockDef[] = [
   { id: 'dwell:sand_ramp', first: 166, count: 48, properties: [{ name: 'facing', values: ['north', 'east', 'south', 'west'] }, { name: 'flooded', values: ['false', 'true'] }, { name: 'half', values: ['bottom', 'top'] }, { name: 'shape', values: ['ramp', 'steep_lower', 'steep_upper'] }], sound: 'dwell:sand' },
   { id: 'dwell:torch', first: 214, count: 1, properties: [], sound: 'dwell:torch' },
   { id: 'dwell:torch_upper', first: 215, count: 1, properties: [], sound: 'dwell:torch' },
+  { id: 'dwell:bedrock', first: 216, count: 1, properties: [], sound: 'dwell:stone' },
 ];
 
 /** The shapes block states use. */
@@ -345,6 +346,7 @@ const STATES_1: readonly StateDef[] = [
   { id: 213, state: 'dwell:sand_ramp[facing=west,flooded=true,half=top,shape=steep_upper]', block: 14, values: { facing: 'west', flooded: 'true', half: 'top', shape: 'steep_upper' }, look: 'shaped', render: 'opaque', color: 0xeed9a4, opacity: 1, textures: { top: 'sand', side: 'sand', bottom: 'sand' }, shape: 25, flooded: true, placeable: false },
   { id: 214, state: 'dwell:torch', block: 15, values: {  }, look: 'cross', render: 'cutout', color: 0xffffff, opacity: 1, textures: { top: 'torch', side: 'torch', bottom: 'torch' }, shape: 0, flooded: false, placeable: true },
   { id: 215, state: 'dwell:torch_upper', block: 16, values: {  }, look: 'cross', render: 'cutout', color: 0xffffff, opacity: 1, textures: { top: 'torchTop', side: 'torchTop', bottom: 'torchTop' }, shape: 0, flooded: false, placeable: false },
+  { id: 216, state: 'dwell:bedrock', block: 17, values: {  }, look: 'cube', render: 'opaque', color: 0x4f4a57, opacity: 1, textures: { top: 'bedrock', side: 'bedrock', bottom: 'bedrock' }, shape: 1, flooded: false, placeable: false },
 ];
 
 export const STATE_DEFS: readonly StateDef[] = [

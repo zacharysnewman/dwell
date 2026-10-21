@@ -9,7 +9,10 @@ use dwell_world::{
     local_index, mirror_y,
 };
 
+use std::sync::Arc;
+
 use crate::noise::seed_word;
+use crate::portals::{MIDPLANE, Portal, PortalRules, Portals};
 use crate::terrain::TerrainGenerator;
 
 /// The seed of a face's generator: face A keeps the world seed, face B's is derived from it.
@@ -32,9 +35,30 @@ pub struct BifacialTerrain {
 
 impl BifacialTerrain {
     pub fn new(world_seed: u64) -> Self {
+        Self::with_portal_rules(world_seed, MIDPLANE.portals)
+    }
+
+    /// The world with these portal rules in place of the build's (tests add a fixture by data
+    /// alone).
+    pub fn with_portal_rules(world_seed: u64, rules: PortalRules) -> Self {
+        let a = TerrainGenerator::new(face_seed(world_seed, Face::A));
+        let b = TerrainGenerator::new(face_seed(world_seed, Face::B));
+        Self::joined(world_seed, rules, a, b, false)
+    }
+
+    /// The faces joined by their portals (`portals.rs`): both faces' generators cut the same
+    /// shafts, sited on both faces' ground.
+    fn joined(
+        world_seed: u64,
+        rules: PortalRules,
+        a: TerrainGenerator,
+        b: TerrainGenerator,
+        mirrored: bool,
+    ) -> Self {
+        let portals = Arc::new(Portals::resolve(world_seed, rules, &a, &b, mirrored));
         Self {
-            a: TerrainGenerator::new(face_seed(world_seed, Face::A)),
-            b: TerrainGenerator::new(face_seed(world_seed, Face::B)),
+            a: a.with_portals(portals.clone()),
+            b: b.with_portals(portals),
         }
     }
 
@@ -43,7 +67,17 @@ impl BifacialTerrain {
     /// edited on one face can be compared with the other. Never a real world's generator.
     pub fn mirrored(world_seed: u64) -> Self {
         let a = TerrainGenerator::new(face_seed(world_seed, Face::A));
-        Self { b: a.clone(), a }
+        Self::joined(world_seed, MIDPLANE.portals, a.clone(), a, true)
+    }
+
+    /// The portals between the faces: their sites and how they are built.
+    pub fn portals(&self) -> &Portals {
+        self.a.portals().expect("both faces have the portals")
+    }
+
+    /// The portals' sites (x, z of each shaft's axis column).
+    pub fn portal_sites(&self) -> &[Portal] {
+        &self.portals().sites
     }
 
     /// A face's generator, in face-local coordinates.

@@ -36,6 +36,7 @@ use crate::noise::{
     seed_word, smooth_step,
 };
 use crate::placements::{self, Ground, PLACEMENTS, Planter, Tree};
+use crate::portals::{MIDPLANE, Part, Portal, Portals};
 use crate::ramps as ramps_rule;
 use crate::ramps::Top;
 
@@ -132,10 +133,22 @@ fn top_voxel(h: f32) -> i32 {
     if f as f32 == r { f - 1 } else { f }
 }
 
-/// The material `depth` m below the surface of a column whose top voxel is `top`: the core's stone
-/// below `CORE_LAYERS`.
+/// The bedrock's state (`shared/worldgen/midplane.json`), resolved by name once.
+fn bedrock() -> StateId {
+    static BEDROCK: std::sync::LazyLock<StateId> =
+        std::sync::LazyLock::new(|| dwell_blocks::require(MIDPLANE.bedrock));
+    *BEDROCK
+}
+
+/// The material `depth` rows below the surface of a column whose top voxel is `top`: the bedrock
+/// in the face's first `bedrock_rows` from the midplane, the core's stone over it up to
+/// `CORE_LAYERS`.
 fn fill(top: i32, depth: i64) -> StateId {
-    if i64::from(top) - depth < i64::from(MIDPLANE_Y + CORE_LAYERS) {
+    let y = i64::from(top) - depth;
+    if y < i64::from(MIDPLANE_Y + MIDPLANE.bedrock_rows) {
+        return bedrock();
+    }
+    if y < i64::from(MIDPLANE_Y + CORE_LAYERS) {
         return M.stone;
     }
     if top < SEA_LEVEL + SHORE_HEIGHT {
@@ -189,6 +202,9 @@ pub struct TerrainGenerator {
     ramps: Arc<RampPieces>,
     /// The structure placements (data), resolved for this world.
     planters: Vec<Planter>,
+    /// The portals between the faces (`portals.rs`), shared by both faces' generators; none for a
+    /// face's generator on its own.
+    portals: Option<Arc<Portals>>,
     /// How far above the ground decorations and placed structures reach (rows): the sky test
     /// leaves this much room over the highest ground before a chunk is all air.
     rise: f32,
@@ -254,6 +270,7 @@ impl TerrainGenerator {
             decorations: Placer::resolve(&DECORATIONS, world_seed),
             ramps: Arc::new(RampPieces::resolve()),
             planters: Vec::new(),
+            portals: None,
             rise: DECORATION_RISE as f32,
             world_seed,
         }
@@ -273,7 +290,46 @@ impl TerrainGenerator {
             placements::max_rise(&self.planters) + 1 + reach * rows_for_m(1.0)
         };
         self.rise = DECORATION_RISE.max(rise) as f32;
+        self.raise_for_portals();
         self
+    }
+
+    /// The generator with the world's portals cut into it (`BifacialTerrain` gives both faces the
+    /// same ones).
+    pub fn with_portals(mut self, portals: Arc<Portals>) -> Self {
+        self.portals = Some(portals);
+        self.raise_for_portals();
+        self
+    }
+
+    /// The portals, if this generator has them.
+    pub fn portals(&self) -> Option<&Arc<Portals>> {
+        self.portals.as_ref()
+    }
+
+    /// The sky test leaves room for the rims over the ground too.
+    fn raise_for_portals(&mut self) {
+        if let Some(p) = &self.portals {
+            self.rise = self.rise.max((p.rules.rim_rows + 1) as f32);
+        }
+    }
+
+    /// The portals reaching columns [x0, x1] × [z0, z1], with what resolves them.
+    fn portals_near(&self, lo: (i32, i32), hi: (i32, i32)) -> Option<(&Portals, Vec<Portal>)> {
+        let p = self.portals.as_deref()?;
+        let near = p.near(lo, hi);
+        (!near.is_empty()).then_some((p, near))
+    }
+
+    /// The top row of a portal's ladder on this face: the ground (and rim) of the wall column it
+    /// climbs out onto.
+    pub fn ladder_top(&self, portals: &Portals, portal: Portal) -> i32 {
+        let (wx, wz) = portals.wall_column(portal);
+        let top = top_voxel(self.column_at(wx, wz).height);
+        match portals.part_of(portal, wx, wz) {
+            Part::Rim => top + portals.rules.rim_rows,
+            _ => top,
+        }
     }
 
     /// The structure placements, resolved.
@@ -535,7 +591,15 @@ impl TerrainGenerator {
                 Self::ground_of(&self.column_at(x, z))
             }
         };
-        placements::trees_in(&self.planters, (x0, z0), (x1, z1), &ground)
+        let mut trees = placements::trees_in(&self.planters, (x0, z0), (x1, z1), &ground);
+        // No structure stands over a portal's opening or its clear ground round the rim.
+        if let Some(p) = &self.portals {
+            trees.retain(|t| {
+                let fp = self.planters[t.planter as usize].footprint(t);
+                !p.box_reaches_clear((fp[0], fp[1]), (fp[2], fp[3]))
+            });
+        }
+        trees
     }
 
     /// `is_air_chunk` given `sky_floor_at(coord.x, coord.z)`.
@@ -582,6 +646,7 @@ impl TerrainGenerator {
         if y0 as f32 > self.sky_floor(&cols) && y0 >= SEA_LEVEL {
             return;
         }
+        let near = self.portals_near((x0, z0), (x0 + S - 1, z0 + S - 1));
         let voxels = chunk.voxels_mut();
         for z in 0..S {
             for x in 0..S {
@@ -590,23 +655,61 @@ impl TerrainGenerator {
                     continue;
                 }
                 let top = top_voxel(col.height);
-                // The stored ramp pieces over the top (HALF_HEIGHT_GRID.md §4), from the bottom.
-                let pieces = self.top_pieces(&cols, x0, z0, x, z, top);
-                let first_piece = top + 1 - pieces.len() as i32;
-                for ly in 0..S {
-                    let y = y0 + ly;
-                    if !(FACE_MIN_Y..FACE_MAX_Y).contains(&y)
-                        || (volume == Overlap::Partial
-                            && !BUILD_VOLUME.contains_voxel(
+                let (part, portal) = near
+                    .as_ref()
+                    .map_or((Part::None, None), |(p, n)| p.locate(n, x0 + x, z0 + z));
+                let in_volume = |y: i32| {
+                    (FACE_MIN_Y..FACE_MAX_Y).contains(&y)
+                        && (volume != Overlap::Partial
+                            || BUILD_VOLUME.contains_voxel(
                                 i64::from(x0 + x),
                                 i64::from(y),
                                 i64::from(z0 + z),
                             ))
-                    {
+                };
+                // A portal's shaft: open from the ground to the midplane, the bedrock and core
+                // included, and its ladder up the wall the whole way (portals.rs).
+                if let (Part::Shaft { ladder }, Some((portals, _)), Some(portal)) =
+                    (part, near.as_ref(), portal)
+                {
+                    let ladder_top = if ladder {
+                        self.ladder_top(portals, portal)
+                    } else {
+                        i32::MIN
+                    };
+                    for ly in 0..S {
+                        let y = y0 + ly;
+                        if in_volume(y) {
+                            voxels[local_index(x, ly, z)] =
+                                if y <= ladder_top { portals.ladder } else { M.air };
+                        }
+                    }
+                    continue;
+                }
+                let rim = match (part, near.as_ref()) {
+                    (Part::Rim, Some((portals, _))) => Some((portals.rim, portals.rules.rim_rows)),
+                    _ => None,
+                };
+                // The stored ramp pieces over the top (HALF_HEIGHT_GRID.md §4), from the bottom;
+                // a portal's rim stands on flat ground.
+                let pieces = if rim.is_some() {
+                    &[]
+                } else {
+                    self.top_pieces(&cols, x0, z0, x, z, top)
+                };
+                let first_piece = top + 1 - pieces.len() as i32;
+                for ly in 0..S {
+                    let y = y0 + ly;
+                    if !in_volume(y) {
                         continue;
                     }
                     let v = &mut voxels[local_index(x, ly, z)];
-                    if y <= top && y >= first_piece {
+                    if let Some((m, rows)) = rim
+                        && y > top
+                        && y <= top + rows
+                    {
+                        *v = m;
+                    } else if y <= top && y >= first_piece {
                         *v = under_sea(pieces[(y - first_piece) as usize], y);
                     } else if y == top {
                         *v = under_sea(fill(top, 0), y);
@@ -616,9 +719,11 @@ impl TerrainGenerator {
                         *v = M.water;
                     }
                 }
-                // A decoration in the air cell over the ground, if this chunk holds that cell.
+                // A decoration in the air cell over the ground, if this chunk holds that cell
+                // (none near a portal).
                 let above = top + 1;
-                if (y0..y0 + S).contains(&above)
+                if part == Part::None
+                    && (y0..y0 + S).contains(&above)
                     && above >= SEA_LEVEL
                     && (FACE_MIN_Y..FACE_MAX_Y).contains(&above)
                     && let Some(m) = self.decoration_at(&cols, x0, z0, x, z, top)
@@ -909,11 +1014,33 @@ impl TerrainGenerator {
         }
         let face_min = i64::from(FACE_MIN_Y);
         let sea = i64::from(SEA_LEVEL);
+        // The portals' shafts, at levels whose cells are no wider than a shaft: a column whose
+        // centre lies in one is open down to the midplane, as the chunks are.
+        let half = cell / 2;
+        let shafts = (cell as f32 <= self.portals.as_ref().map_or(0.0, |p| p.rules.radius))
+            .then(|| {
+                let n = i64::from(lod::SECTION_CELLS);
+                let at = |o: i64, i: i64| (o + i * cell + half) as i32;
+                self.portals_near((at(o.x, -1), at(o.z, -1)), (at(o.x, n), at(o.z, n)))
+            })
+            .flatten();
         for z in -1..=lod::SECTION_CELLS {
             for x in -1..=lod::SECTION_CELLS {
                 let col = cols[lod::column_index(x, z)];
                 if col.outside {
                     continue; // beyond the rim: the void
+                }
+                if let Some((p, near)) = &shafts {
+                    let wx = (o.x + i64::from(x) * cell + half) as i32;
+                    let wz = (o.z + i64::from(z) * cell + half) as i32;
+                    if matches!(p.part(near, wx, wz), Part::Shaft { .. }) {
+                        for y in -1..=lod::SECTION_CELLS {
+                            if o.y + i64::from(y) * cell + cell <= face_min {
+                                cells[lod::cell_index(x, y, z)] = M.stone; // the apron
+                            }
+                        }
+                        continue;
+                    }
                 }
                 let top = i64::from(top_voxel(col.height));
                 let is_sea = rows(col.height) < SEA_LEVEL as f32;
@@ -1077,8 +1204,16 @@ impl TerrainGenerator {
                 let level = (-SPAWN_CLEAR..=SPAWN_CLEAR).all(|pz| {
                     (-SPAWN_CLEAR..=SPAWN_CLEAR).all(|px| self.ground_y(x + px, z + pz) == Some(g))
                 });
-                // Never in (or under) a placed structure: the patch is clear of their boxes.
+                // Never in (or under) a placed structure: the patch is clear of their boxes;
+                // nor by a portal's opening.
+                let by_portal = self.portals.as_ref().is_some_and(|p| {
+                    p.box_reaches_clear(
+                        (x - SPAWN_CLEAR, z - SPAWN_CLEAR),
+                        (x + SPAWN_CLEAR, z + SPAWN_CLEAR),
+                    )
+                });
                 if level
+                    && !by_portal
                     && self
                         .trees_in(
                             (x - SPAWN_CLEAR, z - SPAWN_CLEAR),

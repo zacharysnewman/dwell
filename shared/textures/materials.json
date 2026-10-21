@@ -6,6 +6,7 @@
     "grassSide": "grass_side",
     "dirt": "soil",
     "stone": "stone",
+    "bedrock": "bedrock",
     "sand": "sand",
     "water": "water",
     "logSide": "bark",
@@ -77,6 +78,7 @@
       "$comment": "A dirt side with grass directly above it (dirt's sideUnder in shared/blocks/dwell.json): the grass side's skirt, the same strokes, so the turf hangs over the dirt face below a grass slope and lines up with a grass side beside it. Its own tile, so it can diverge by data.",
       "like": "grass_side"
     },
+    "bedrock": { "$comment": "The bedrock between the faces: the stone's slabs and cracks in a dark slate ramp, so it reads as the world's floor, not diggable stone.", "like": "stone", "ramp": "bedrock" },
     "stone": {
       "$comment": "Broad faceted planes, not speckle: a few big flat-ended slabs in the shadow and light of the ramp, and a couple of long crack lines.",
       "use": "block", "ramp": "stone", "overlay": 1,
