@@ -111,6 +111,8 @@ mod tests {
         }
     }
 
+    // face-a-only: a numeric-range check of the fog data at face A's heights (TOP, the
+    // midplane); it tests the formula's finiteness, not any face-dependent behaviour.
     #[test]
     fn stays_finite_over_the_data_ranges_and_is_off_at_zero_density() {
         let mid = world::MIDPLANE_M;
