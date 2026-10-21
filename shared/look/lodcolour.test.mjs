@@ -20,7 +20,7 @@ test('a point and a step added by data alone reach the output', () => {
   d.rise.push({ gradient: 50, top: 0, fringe: 0.01 });
   const rs = lodColourRust(validateLodColour(d));
   assert.match(rs, /gradient_step: 0\.1,/);
-  assert.match(rs, /RisePoint \{ gradient: 50\.0, top: 0\.0, fringe: 0\.01 \},/);
+  assert.match(rs, /gradient: 50\.0,\n {12}top: 0\.0,\n {12}fringe: 0\.01,/);
 });
 
 test('bad entries fail with their path named', () => {

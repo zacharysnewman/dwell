@@ -56,7 +56,11 @@ export function lodColourRust(data) {
   rs.push(`    gradient_step: ${rf(data.gradientStep)},`);
   rs.push('    rise: &[');
   for (const p of data.rise) {
-    rs.push(`        RisePoint { gradient: ${rf(p.gradient)}, top: ${rf(p.top)}, fringe: ${rf(p.fringe)} },`);
+    rs.push('        RisePoint {');
+    rs.push(`            gradient: ${rf(p.gradient)},`);
+    rs.push(`            top: ${rf(p.top)},`);
+    rs.push(`            fringe: ${rf(p.fringe)},`);
+    rs.push('        },');
   }
   rs.push('    ],');
   rs.push('};');

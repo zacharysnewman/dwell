@@ -1,8 +1,9 @@
 //! Greedy mesher for LOD sections (`client/src/mesh/lodMesher.ts`; ARCHITECTURE.md §6.6): a
 //! section's 34³ cells (its 32³ and a one-cell apron, `dwell_world::lod::cell_index` order — the
 //! chunk mesher's padded layout) → flat-coloured geometry in cell units. Every material but air and
-//! liquids is a full cube at LOD; each face has its material's flat colour (the average of its
-//! texture) with the chunk mesher's face shading. Faces on the section's border that the apron
+//! liquids is a full cube at LOD; a top or bottom has its material's flat colour (the average of
+//! its texture), a riser the area-weighted colour of the fine rise it stands for (`riser_color`,
+//! ARCHITECTURE.md §6.6 "Colour"), with the chunk mesher's face shading. Faces on the section's border that the apron
 //! hides go to a per-side *skirt* instead of being dropped: the renderer shows a side's skirt when
 //! the neighbour there is not drawn at the same level, which closes the cracks between levels.
 //!
