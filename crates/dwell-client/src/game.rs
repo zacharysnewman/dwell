@@ -2202,6 +2202,7 @@ impl Puppets {
                     flags: flags | face_b | grounded,
                     held: self.held,
                     swing: 0,
+                    jumped: false,
                 }
             })
             .collect()

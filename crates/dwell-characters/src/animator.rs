@@ -49,6 +49,9 @@ pub struct MoveInput {
     /// ground): foot IK over steps (`plant_feet`). The client reads it under each foot from the
     /// drawn feet, which glide along the step view's virtual ramp (PLAYER_CONTROLLER.md §9).
     pub foot_ground: [f32; 2],
+    /// A jump started since the last frame (a remote's snapshots, `RemoteView::jumped`): the jump
+    /// plays even when this frame comes after its rise, or after the whole jump (a slow page).
+    pub jumped: bool,
 }
 
 impl Default for MoveInput {
@@ -63,6 +66,7 @@ impl Default for MoveInput {
             pitch: 0.0,
             holding: false,
             foot_ground: [0.0; 2],
+            jumped: false,
         }
     }
 }
@@ -97,8 +101,11 @@ pub fn body_role(i: &MoveInput, now: &str) -> &'static str {
     if i.climbing || i.state == PlayerState::Climbing {
         return "climb";
     }
+    if i.jumped || (airborne(i) && up > RISING) {
+        return "jump";
+    }
     if airborne(i) {
-        return if up > RISING { "jump" } else { "fall" };
+        return "fall";
     }
     if matches!(now, "jump" | "fall") && speed < LAND_MAX_SPEED {
         return "land";
@@ -430,6 +437,29 @@ mod tests {
             a.update(&sprint, 1.0 / 60.0);
         }
         assert!(a.from.is_none(), "the fade is over");
+    }
+
+    #[test]
+    fn a_jump_since_the_last_frame_plays_though_the_frame_is_past_its_rise() {
+        use PlayerState::{Falling, Idle};
+        let jumped = |state, v| MoveInput {
+            jumped: true,
+            ..input(state, v)
+        };
+        // Past the rise, or already landed: the jump starts, then the fall or the landing.
+        assert_eq!(
+            body_role(&jumped(Falling, [0.0, -3.0, 0.0]), "idle"),
+            "jump"
+        );
+        assert_eq!(body_role(&jumped(Idle, [0.0; 3]), "idle"), "jump");
+        assert_eq!(arms_role(&jumped(Idle, [0.0; 3]), "idle"), "jump");
+        assert_eq!(body_role(&input(Idle, [0.0; 3]), "jump"), "land");
+        // Not while climbing, swimming or flying.
+        let flying = MoveInput {
+            flying: true,
+            ..jumped(Idle, [0.0; 3])
+        };
+        assert_eq!(body_role(&flying, "idle"), "fly");
     }
 
     #[test]

@@ -22,6 +22,9 @@ pub struct RemoteView {
     pub held: u16,
     /// Its last swing (`swing_flags`; v17).
     pub swing: u8,
+    /// A jump started at a snapshot since the previous `sample`: a frame that comes after the
+    /// jump's rise (a slow page, a long frame) still starts the body's jump (`body_role`).
+    pub jumped: bool,
 }
 
 impl RemoteView {
@@ -77,6 +80,7 @@ fn view(s: &RemotePlayerState) -> RemoteView {
         flags: s.flags,
         held: s.held,
         swing: s.swing,
+        jumped: false,
     }
 }
 
@@ -87,6 +91,8 @@ pub struct RemotePlayers {
     /// Estimated (local clock − server clock) in ms; the smallest seen, i.e. the fastest delivery.
     clock_offset: Option<f64>,
     delay_ms: f64,
+    /// The server time the last `sample` was at (ms): its `jumped` looks at the snapshots since.
+    sampled_ms: Option<f64>,
 }
 
 impl Default for RemotePlayers {
@@ -101,6 +107,7 @@ impl RemotePlayers {
             remotes: Vec::new(),
             clock_offset: None,
             delay_ms,
+            sampled_ms: None,
         }
     }
 
@@ -157,25 +164,40 @@ impl RemotePlayers {
             .collect()
     }
 
-    /// Interpolated views at local time `now_ms` (`INTERP_DELAY_MS` in the past).
-    pub fn sample(&self, now_ms: f64) -> Vec<RemoteView> {
+    /// Interpolated views at local time `now_ms` (`INTERP_DELAY_MS` in the past), each saying
+    /// whether a jump started since the last call (`RemoteView::jumped`).
+    pub fn sample(&mut self, now_ms: f64) -> Vec<RemoteView> {
         let Some(offset) = self.clock_offset else {
             return Vec::new();
         };
         let t = now_ms - offset - self.delay_ms;
+        let since = self.sampled_ms.replace(t);
         let mut out = Vec::with_capacity(self.remotes.len());
         for p in &self.remotes {
             let list = &p.samples;
             if list.is_empty() {
                 continue;
             }
+            // A snapshot in (since, t] that is Jumping after one that was not.
+            let jumped = since.is_some_and(|since| {
+                list.iter().zip(list.iter().skip(1)).any(|(a, b)| {
+                    b.server_ms > since
+                        && b.server_ms <= t
+                        && b.state.state == PlayerState::Jumping
+                        && a.state.state != PlayerState::Jumping
+                })
+            });
             let mut i = list.len() - 1;
             while i > 0 && list[i].server_ms > t {
                 i -= 1;
             }
             let a = &list[i];
             let Some(b) = list.get(i + 1).filter(|_| t > a.server_ms) else {
-                out.push(view(&a.state)); // before the buffer or no newer sample: hold
+                // Before the buffer or no newer sample: hold.
+                out.push(RemoteView {
+                    jumped,
+                    ..view(&a.state)
+                });
                 continue;
             };
             let f = ((t - a.server_ms) / (b.server_ms - a.server_ms)).min(1.0);
@@ -191,6 +213,7 @@ impl RemotePlayers {
                 // Discrete state switches at the midpoint.
                 state: if f < 0.5 { va.state } else { vb.state },
                 flags: if f < 0.5 { va.flags } else { vb.flags },
+                jumped,
                 ..vb
             });
         }
@@ -243,6 +266,41 @@ mod tests {
         assert!(late.is_dead());
         r.push(100, &[], 2000.0);
         assert_eq!(r.ids(), Vec::<u16>::new());
+    }
+
+    #[test]
+    fn a_jump_that_started_since_the_last_sample_is_reported_once() {
+        let mut r = RemotePlayers::new(100.0);
+        let jump = |tick: u32, state| RemotePlayerState {
+            state,
+            ..remote(f64::from(tick), 0)
+        };
+        let at = |tick: u32| f64::from(tick) * TICK_MS + 30.0;
+        // Idle, then Jumping from tick 30 to 72, then Idle: snapshots every 3 ticks.
+        let state = |tick| match tick {
+            30..72 => PlayerState::Jumping,
+            _ => PlayerState::Idle,
+        };
+        let mut jumped = Vec::new();
+        for tick in (0..150).step_by(3) {
+            r.push(tick, &[jump(tick, state(tick))], at(tick));
+            // A frame every 2 snapshots, then one long frame over the whole jump.
+            if tick % 6 == 0 && !(20..90).contains(&tick) {
+                jumped.push((tick, r.sample(at(tick))[0].jumped));
+            }
+        }
+        let seen: Vec<u32> = jumped.iter().filter(|(_, j)| *j).map(|(t, _)| *t).collect();
+        assert_eq!(seen, [90], "{jumped:?}");
+        // At a frame every snapshot, the frame after the jump's start says so, once.
+        let mut r = RemotePlayers::new(100.0);
+        let mut seen = Vec::new();
+        for tick in (0..150).step_by(3) {
+            r.push(tick, &[jump(tick, state(tick))], at(tick));
+            if r.sample(at(tick))[0].jumped {
+                seen.push(tick);
+            }
+        }
+        assert_eq!(seen.len(), 1, "{seen:?}");
     }
 
     #[test]

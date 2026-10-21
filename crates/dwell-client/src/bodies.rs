@@ -27,6 +27,7 @@ pub fn remote_input(v: &RemoteView, holding: bool) -> MoveInput {
         pitch: v.pitch,
         holding,
         foot_ground: [0.0; 2],
+        jumped: v.jumped,
     }
 }
 
@@ -47,6 +48,7 @@ pub fn local_input(
         pitch: 0.0,
         holding: true,
         foot_ground: [0.0; 2],
+        jumped: false,
     }
 }
 
@@ -422,6 +424,7 @@ mod tests {
                         | dwell_physics::net::face_bit(f, player_flags::FACE_B),
                     held: 0,
                     swing: 0,
+                    jumped: false,
                 };
                 let view = bodies.remote(&v, Held::Empty, dt, &mut ground);
                 steps += usize::from(bodies.step_started(1).is_some());
@@ -454,6 +457,7 @@ mod tests {
                 flags: player_flags::GROUNDED,
                 held: 0,
                 swing: 0,
+                jumped: false,
             };
             b.remote(&v, Held::Empty, 1.0 / 60.0, &mut ground);
         };
@@ -476,6 +480,68 @@ mod tests {
         assert_eq!(s.played.last(), Some(&"sprint"));
         assert_eq!(s.plays, 4 + 2 * ROLE_HISTORY as u32);
     }
+
+    dwell_world::both_faces!(
+        /// A remote's jump plays however slow the frames that draw it: a page at a few frames a
+        /// second (CI's software renderer, or a long frame) samples few of the jump's snapshots,
+        /// and a frame that falls past its rise, or after its landing, still starts the jump
+        /// (then the landing).
+        fn a_remote_jump_plays_however_slow_the_frames(f: FaceFrame) {
+            use dwell_game::remotes::RemotePlayers;
+            use dwell_protocol::{PlayerState, RemotePlayerState, SIM_HZ, SNAPSHOT_HZ};
+            // The jump's snapshots: off the ground at 1 s, rising at 7.07 m/s against 20 m/s²
+            // (the 1.25 m jump), landing 0.707 s later.
+            let snapshot = |t: f64| {
+                let air = t - 1.0;
+                let (y, vy, state, flags) = if (0.0..0.707).contains(&air) {
+                    let vy = 7.07 - 20.0 * air;
+                    (7.07 * air - 10.0 * air * air, vy, PlayerState::Jumping, 0)
+                } else {
+                    (0.0, 0.0, PlayerState::Idle, player_flags::GROUNDED)
+                };
+                RemotePlayerState {
+                    player_id: 3,
+                    position: f.point([0.0, 32.0 + y, 0.0]),
+                    velocity: f.vector_f32([0.0, vy as f32, 0.0]),
+                    yaw: 0,
+                    pitch: 0,
+                    state,
+                    flags: flags | dwell_physics::net::face_bit(f, player_flags::FACE_B),
+                    held: 0,
+                    swing: 0,
+                }
+            };
+            let tick_ms = 1000.0 / f64::from(SIM_HZ);
+            let mut ground = |_: FaceFrame, _: [f64; 3]| Some(32.0);
+            for interval in [0.25, 0.5, 0.8, 1.0] {
+                for phase in 0..20 {
+                    let mut remotes = RemotePlayers::default();
+                    let mut bodies = Bodies::default();
+                    let mut frame = interval * f64::from(phase) / 20.0;
+                    let mut tick = 0;
+                    while frame < 5.0 {
+                        // The snapshots that arrived (30 ms after they were sent) by this frame.
+                        while f64::from(tick) * tick_ms + 30.0 <= frame * 1000.0 {
+                            let t = f64::from(tick) * tick_ms;
+                            remotes.push(tick, &[snapshot(t / 1000.0)], t + 30.0);
+                            tick += SIM_HZ / SNAPSHOT_HZ;
+                        }
+                        for v in remotes.sample(frame * 1000.0) {
+                            bodies.remote(&v, Held::Empty, interval, &mut ground);
+                        }
+                        frame += interval;
+                    }
+                    let s = &bodies.roles()[0];
+                    assert!(
+                        s.played.contains(&"jump"),
+                        "frames {interval} s apart, phase {phase}/20: {:?}",
+                        s.played
+                    );
+                    assert_eq!(s.role, "idle", "{interval} s, {phase}/20: {:?}", s.played);
+                }
+            }
+        }
+    );
 
     #[test]
     fn a_changed_swing_count_starts_a_swing_and_the_first_seen_does_not() {
