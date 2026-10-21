@@ -55,24 +55,44 @@ nearest lights and (T2) the shadow maps' kinds.
   itself). Unknown names fail with a message. Registry sync (ADR 0038) carries both as look tags
   (`0x8e` the light's name, `0x8f` the held item), read by name, so a client without a light source
   draws none and a server without these tags is still read.
-- **The torch** (`dwell:torch`, prototype): a cross of two quads (`look: cross`, cutout, no wind or
-  fade), `shape: empty` (no collision), `needsSupport: below` (on any solid block; gone with it),
-  `medium: air`, `emits: 14`, `light: dwell:torch`, `held: torch`, its painterly tile `torch` (a
-  bark stick with a flame of the palette's `flame` ramp, `shared/textures/materials.json`). In the
-  palette: slot 9.
-- **Glow** (`emissive`, 0–4, on a material in `shared/textures/materials.json`): how much of its
-  colour a surface gives off unlit. For blocks it is per atlas tile (`PAINTERLY_EMISSIVE`, generated
-  with the tiles; the frame's `tile_grids` table carries it in `z`, so the vertex carries nothing);
-  for characters per material (`Material::emissive`). On a block it is added to the lit colour
-  (the torch's tile glows 1.0: the flame's bright colour glows, the darker stick little); on a
-  character it replaces up to all of the lit ramp (the held flame, 0.75: three quarters its base colour, a quarter lit).
+- **The torch** (prototype; T1b, owner 2026-10-21: "Make torches a full 1m in height, so two voxels,
+  breaking one destroys the other"): one block over two ½ m cells, a **multi-cell block**
+  (BLOCK_REGISTRY.md, Multi-cell blocks). `dwell:torch` is its lower cell, the stick (the palette's
+  slot 9, `needsSupport: below`, `held: torch`, the held light `light: dwell:torch`, tile `torch`),
+  with `extends: { up: "dwell:torch_upper" }`; `dwell:torch_upper` is the upper cell, the stick's top
+  and the flame (`partOf: dwell:torch`, not placeable on its own, `emits: 14` — the flood light comes
+  from the flame's cell — and `light: dwell:torch` for T2's placed light, tile `torchTop`). Both are
+  crosses of two quads (cutout, no wind, fade or sinking into a ramp, so the halves line up), `shape:
+  empty` (no collision), `medium: air`; their selection boxes join into one 1 m outline
+  (`dwell_world::edit::outline_box`). Placing puts both cells (both must be free, with support
+  below); breaking either cell, or the block it stands on, clears both, in one edit's writes
+  (`edit_writes`), so they replicate together and the client predicts the same. A new block,
+  `torch_upper`, was added rather than a `half` property: `dwell:torch` shipped in 0.22.26.
+- **Glow** (`emissive`, 0–4, on a material in `shared/textures/materials.json`): how much of a
+  surface's lit colour its self-lit colour replaces (1 or more: fully **self-lit**). For blocks it is
+  per atlas tile (`PAINTERLY_EMISSIVE`, generated with the tiles; the frame's `tile_grids` table
+  carries it in `z`, so the vertex carries nothing); for characters per material
+  (`Material::emissive`). The flame's tile (`torch_top`) and the held flame (`flame`, `flame_core`)
+  are 1.0. Owner (T1b): the held flame read as "a cream colored blob", and "the flame should stay
+  illuminated regardless of brightness since it's the source of the light". So a self-lit surface
+  is unaffected by the sun, the ambient, the flood and sky light, corner occlusion and shadows, and
+  the canvas shows it as the tone curve shows its colour at the reference exposure, whatever the
+  frame's exposure (`glow` in `render/lights.rs`; the brightest channel `glowPeak`, 0.7, at most, so
+  its hue holds), and its pixels are flagged in the view depth (`self_lit_depth`, the depth's second
+  bit) so the composite leaves them out of the time of day's desaturation (moonlight's 0.5, which
+  had washed it to cream). The held flame shows sRGB (0.74, 0.41, 0.10) by day, at night and in a
+  cave (a test runs the CPU mirrors, `emitted`, `displayed`, through the tone curve). Its shape is a
+  yellow `flame_core` bulb under an orange cone; the placed flame is painted as upward tongues
+  (blades) of the `flame` ramp round a yellow core. The torch's upper tile is self-lit whole: its
+  short stick top shows its own colour too.
 - **The held torch item** (`items.torch` in `shared/characters/characters.json`): a stick, a wrap and a
-  flame on the right hand's grip, and **`light`**, the point on the item's socket where its light
+  flame (a bulb and a cone) on the right hand's grip, and **`light`**, the point on the item's socket where its light
   sits (the flame), resolved by the generator to a bone and an offset (`Item::light`).
 - **Dynamic-light tunables** (`shared/look/lights.json` → `dwell-look` `lights.gen.rs`;
   `lights.test.mjs`): `maxLights` (8, the most a frame; the shader holds 16), `cullM` (64 m),
-  `curve` (3, the flood light's block-light curve, so a held torch falls off as a placed one) and
-  `wrap` (0.5: a surface edge-on to the flame still takes some).
+  `curve` (3, the flood light's block-light curve, so a held torch falls off as a placed one),
+  `wrap` (0.5: a surface edge-on to the flame still takes some) and `glowPeak` (0.7: a self-lit
+  surface's brightest channel as the tone curve sees it, at most).
 
 ## 3. Held lights (T1)
 
@@ -115,11 +135,12 @@ light, a fragment's loop runs no iteration.
 
 ## 4. Placed lights
 
-**[built, Phase 47 T1]** A placed torch lights through the flood light: its `emits` 14 spreads by
-flood fill on every edit, predicted edits included (`dwell_world::light`, ADR 0045), smoothly
-averaged into each vertex, lit by the block light's warm curve (`light.json` `block`), and breaking
-it takes its light with it (tests: `a_placed_torch_lights_the_tunnel_and_takes_its_light_when_broken`,
-both faces). The torch's own quads glow by their tile's `emissive`.
+**[built, Phase 47 T1, T1b]** A placed torch lights through the flood light: its flame cell's
+`emits` 14 spreads by flood fill on every edit, predicted edits included (`dwell_world::light`, ADR
+0045; the stick's cell under it 13), smoothly averaged into each vertex, lit by the block light's
+warm curve (`light.json` `block`), and breaking it (either cell) takes its light with it (tests:
+`a_placed_torch_lights_the_tunnel_and_takes_its_light_when_broken`, both faces). Its flame is
+self-lit (§2).
 
 **[planned, Phase 47 T2]** With Torch shadows on, a placed torch's `light` (`shadows: true`) is also
 a dynamic, shadowed point light layered on its flood light: point-light shadow maps (cube or

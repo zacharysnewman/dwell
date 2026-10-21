@@ -17,7 +17,10 @@ test('the build has the torch light, and its torch block references it and the t
   const block = dwell.blocks.find((b) => b.name === 'torch');
   assert.equal(lights[blockLight('dwell:torch', block, lights)].name, 'dwell:torch');
   assert.equal(blockHeld('dwell:torch', block, ['block', 'torch']), 'torch');
-  assert.ok(block.emits > 0, 'a placed torch gives off block light');
+  // Its flame, the upper cell, gives off the block light (a 1 m torch over two cells).
+  const flame = dwell.blocks.find((b) => b.name === 'torch_upper');
+  assert.ok(flame.emits > 0, 'a placed torch gives off block light from its flame');
+  assert.equal(lights[blockLight('dwell:torch_upper', flame, lights)].name, 'dwell:torch');
 });
 
 test('a light added by data alone reaches the Rust table (the fixture lantern)', () => {

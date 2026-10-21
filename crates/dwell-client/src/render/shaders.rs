@@ -122,13 +122,26 @@ struct Draw {
 
 /// The view depth as the frame stores it (docs/ART_DIRECTION.md §7.4): its lowest bit is the
 /// ink flag, set where the surface takes no ink outline (block data `outline: false`: the cross
-/// plants). One unit in the last place (about 1e-7 of the depth) is far below anything a reader
+/// plants), and the next the self-lit flag (`self_lit_depth`, docs/LIGHTS.md §2), set where the
+/// surface gives off its own colour (a torch's flame), which the time of day's desaturation leaves
+/// alone. Two units in the last place (about 2e-7 of the depth) are far below anything a reader
 /// resolves, so the readers that don't ask are unchanged. **Every writer of the view depth goes
-/// through `frame_depth`** (a test checks it), or the flag would be its depth's own noise.
+/// through `frame_depth`** (a test checks it), or the flags would be its depth's own noise.
 const FRAME_DEPTH: &str = r"
 fn frame_depth(d: f32, inked: bool) -> f32 {
-    let b = bitcast<u32>(d) & ~1u;
+    let b = bitcast<u32>(d) & ~3u;
     return bitcast<f32>(select(b | 1u, b, inked));
+}
+
+// A stored view depth flagged as a self-lit surface's (or not).
+fn self_lit_depth(d: f32, self_lit: bool) -> f32 {
+    let b = bitcast<u32>(d) & ~2u;
+    return bitcast<f32>(select(b, b | 2u, self_lit));
+}
+
+// Whether a stored view depth is a self-lit surface's.
+fn frame_self_lit(d: f32) -> bool {
+    return (bitcast<u32>(d) & 2u) != 0u;
 }
 
 // Whether a stored view depth takes the ink (nothing drawn, 0, does).
@@ -478,8 +491,9 @@ fn terrain_fs(i: TerrainOut, @builtin(front_facing) front: bool) -> SceneOut {
     let alpha = select(draw.tint.a * texel.a, 1.0, draw.tint.a >= 1.0);
     let albedo = i.color * texel.rgb * shade * draw.tint.rgb;
     var o = scene_out(albedo, normalize(n), i.rel, alpha, terrain_light(i.light, i.flood));
-    o.color = vec4f(o.color.rgb + albedo * (tile_glow(i.tile.xy) * alpha), o.color.a);
-    o.depth = frame_depth(o.depth, fade_inked(draw));
+    let shine = tile_glow(i.tile.xy);
+    o.color = vec4f(emitted(o.color.rgb, albedo * alpha, shine), o.color.a);
+    o.depth = self_lit_depth(frame_depth(o.depth, fade_inked(draw)), shine >= 1.0);
     return o;
 }
 
@@ -631,11 +645,12 @@ fn cutout_fs(i: CutoutOut, @builtin(front_facing) front: bool) -> CutoutSceneOut
     let albedo = i.color * texel.rgb * draw.tint.rgb;
     let lit = scene_out(albedo, normalize(n), i.rel, 1.0, terrain_light(i.light, i.flood));
     var o: CutoutSceneOut;
-    // A glowing tile (a torch's flame) gives off its colour unlit.
-    o.color = vec4f(lit.color.rgb + albedo * tile_glow(i.tile.xy), lit.color.a);
+    // A glowing tile (a torch's flame) is self-lit: its colour whatever the light.
+    let shine = tile_glow(i.tile.xy);
+    o.color = vec4f(emitted(lit.color.rgb, albedo, shine), lit.color.a);
     // Plants whose look says `outline: false` are flagged in the depth: no ink is drawn on them
     // and the edge rule sees through them (`ink_outline`).
-    o.depth = frame_depth(lit.depth, i.bare < 0.5 && fade_inked(draw));
+    o.depth = self_lit_depth(frame_depth(lit.depth, i.bare < 0.5 && fade_inked(draw)), shine >= 1.0);
     o.mask = mask;
     return o;
 }
@@ -842,10 +857,26 @@ fn cloud_lighting() -> CloudLighting {
     return CloudLighting(pole, d.sun.xyz, d.moon.xyz, select(d.sun_b.rgb, d.sun_a.rgb, on_a), select(d.moon_b.rgb, d.moon_a.rgb, on_a), sky, sky);
 }
 
-// The scene's colour as the canvas shows it, at the time of day's saturation.
-fn scene_display(c: vec4f) -> vec3f {
+// The scene's colour as the canvas shows it, at the time of day's saturation, but for the share
+// `self_lit` of its samples that show a self-lit surface (a flame keeps its colour by moonlight).
+fn scene_display(c: vec4f, self_lit: f32) -> vec3f {
     let lit = display(c.rgb / c.a);
-    return mix(vec3f(dot(lit, vec3f(0.2126, 0.7152, 0.0722))), lit, frame.day.horizon.a);
+    let saturation = mix(frame.day.horizon.a, 1.0, self_lit);
+    return mix(vec3f(dot(lit, vec3f(0.2126, 0.7152, 0.0722))), lit, saturation);
+}
+
+// The share of the pixel's drawn samples that show a self-lit surface (`frame_self_lit`).
+fn scene_self_lit_at(p: vec2i) -> f32 {
+    var lit = 0.0;
+    var n = 0.0;
+    for (var s = 0; s < SCENE_SAMPLES; s++) {
+        let d = textureLoad(scene_depth, p, s).r;
+        if (d > 0.0) {
+            n += 1.0;
+            lit += select(0.0, 1.0, frame_self_lit(d));
+        }
+    }
+    return select(0.0, lit / n, n > 0.0);
 }
 
 fn scene_depth_at(p: vec2i) -> vec2f {
@@ -894,15 +925,17 @@ fn composited(p: vec2i, ndc: vec2f) -> Composited {
         back = dwell_clouds(behind, behind, dir, face, deck, fw, frame.clouds, frame.cloud_cfg, lights);
     }
     var depth = 0.0;
+    var self_lit = 0.0;
     if (c.a > 0.0) {
         depth = scene_depth_at(p).x;
+        self_lit = scene_self_lit_at(p);
     }
     var front = vec4f(0.0);
     if (c.a > 0.0 && dwell_cloud_in_front(deck.z, length(ray), depth)) {
         front = dwell_cloud_layer(clear, dir, face, deck, fw, frame.clouds, frame.cloud_cfg, lights);
     }
     var s = Composited(vec3f(0.0), ray, clear, back, front, deck.z);
-    s.color = composited_scene(c, depth, s);
+    s.color = composited_scene(c, depth, self_lit, s);
     return s;
 }
 
@@ -910,10 +943,10 @@ fn composited(p: vec2i, ndc: vec2f) -> Composited {
 // pixel's ray `s.ray`: tone-mapped, encoded and fogged toward its clear sky, under its clouds where
 // the deck is in front of it (its hit nearer than the stored view depth), and over its sky with
 // its clouds by its coverage; last, inside the cloud, the whole view fogs toward the cloud.
-fn composited_scene(c: vec4f, depth: f32, s: Composited) -> vec3f {
+fn composited_scene(c: vec4f, depth: f32, self_lit: f32, s: Composited) -> vec3f {
     var color = s.back;
     if (c.a > 0.0) {
-        var shown = mix(scene_display(c), s.clear, fog_amount(s.ray * depth));
+        var shown = mix(scene_display(c, self_lit), s.clear, fog_amount(s.ray * depth));
         if (dwell_cloud_in_front(s.deck_t, length(s.ray), depth)) {
             shown = dwell_cloud_over(shown, s.front);
         }
@@ -929,7 +962,7 @@ fn composited_of(c: vec4f, depth: f32, ray: vec3f, clear: vec3f, back: vec3f) ->
     if (c.a <= 0.0) {
         return back;
     }
-    let shown = mix(scene_display(c), clear, fog_amount(ray * depth));
+    let shown = mix(scene_display(c, 0.0), clear, fog_amount(ray * depth));
     return mix(back, shown, min(c.a, 1.0));
 }
 
@@ -2521,7 +2554,7 @@ mod tests {
         }
         for entry in ["terrain_fs", "flat_fs"] {
             assert!(
-                body(entry).contains("o.depth = frame_depth(o.depth, fade_inked(draw));"),
+                body(entry).contains("frame_depth(o.depth, fade_inked(draw))"),
                 "{entry}"
             );
         }
@@ -2560,8 +2593,7 @@ mod tests {
         };
         assert!(body("cutout_vs").contains("o.bare = v.bare;"));
         assert!(
-            body("cutout_fs")
-                .contains("o.depth = frame_depth(lit.depth, i.bare < 0.5 && fade_inked(draw));")
+            body("cutout_fs").contains("frame_depth(lit.depth, i.bare < 0.5 && fade_inked(draw))")
         );
         let edge = body("ink_outline");
         assert!(
@@ -2572,11 +2604,35 @@ mod tests {
         assert!(edge.contains("let w = ink_see_through(raw);"));
         let through = body("ink_see_through");
         assert!(through.contains("w[k] = select(raw[4], max(2.0 * raw[4] - o, 0.0), o >= 0.0);"));
-        // The flag is the depth's lowest bit; nothing drawn (0) takes the ink.
+        // The flag is the depth's lowest bit (the next the self-lit flag, cleared with it);
+        // nothing drawn (0) takes the ink.
         let flag = super::FRAME_DEPTH;
-        assert!(flag.contains("let b = bitcast<u32>(d) & ~1u;"));
+        assert!(flag.contains("let b = bitcast<u32>(d) & ~3u;"));
+        assert!(flag.contains("return (bitcast<u32>(d) & 2u) != 0u;"));
         assert!(flag.contains("return bitcast<f32>(select(b | 1u, b, inked));"));
         assert!(flag.contains("return (bitcast<u32>(d) & 1u) == 0u;"));
+    }
+
+    #[test]
+    fn a_self_lit_surface_is_flagged_and_keeps_its_colour_by_moonlight() {
+        // docs/LIGHTS.md §2: a fully glowing tile or material (a flame) flags its pixels in the
+        // view depth, and the composite leaves them out of the time of day's desaturation.
+        let src = super::source(4);
+        let body = |name: &str| {
+            let at = src.find(&format!("fn {name}(")).expect(name);
+            src[at..at + src[at..].find("\n}\n").expect("end")].to_string()
+        };
+        for entry in ["terrain_fs", "cutout_fs"] {
+            assert!(
+                body(entry).contains("self_lit_depth(frame_depth("),
+                "{entry}"
+            );
+            assert!(body(entry).contains("emitted("), "{entry}");
+        }
+        assert!(body("scene_display").contains("mix(frame.day.horizon.a, 1.0, self_lit)"));
+        assert!(body("composited").contains("self_lit = scene_self_lit_at(p);"));
+        let chars = super::super::characters::source();
+        assert!(chars.contains("o.depth = self_lit_depth(o.depth, m.extra.z >= 1.0);"));
     }
 
     #[test]
@@ -2626,7 +2682,9 @@ mod tests {
         let m = body("motion_composite");
         assert!(!m.contains("sky(") && m.contains("textureLoad(finished, vec2i(q), 0)"));
         let c = body("composited");
-        assert!(c.contains("dwell_clouds(") && c.contains("composited_scene(c, depth, s)"));
+        assert!(
+            c.contains("dwell_clouds(") && c.contains("composited_scene(c, depth, self_lit, s)")
+        );
         assert!(body("composited_scene").contains("var color = s.back;"));
         assert!(body("composite_pixel").contains("composited(p, ndc)"));
     }

@@ -20,11 +20,13 @@ test('values changed by data alone are in the output', () => {
   d.cullM = 32;
   d.curve = 1;
   d.wrap = 0.25;
+  d.glowPeak = 0.8;
   const rs = lightsRust(validateLights(d));
   assert.match(rs, /max_lights: 4,/);
   assert.match(rs, /cull_m: 32\.0,/);
   assert.match(rs, /curve: 1\.0,/);
   assert.match(rs, /wrap: 0\.25,/);
+  assert.match(rs, /glow_peak: 0\.8,/);
 });
 
 test('bad entries fail with their path named', () => {

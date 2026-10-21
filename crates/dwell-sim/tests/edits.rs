@@ -193,6 +193,56 @@ fn tall_grass_goes_on_grass_not_stone_and_with_the_block_under_it() {
     assert_eq!(f.server.world().get_voxel(1, G + 1, 2), M.air);
 }
 
+// face-a-only: the flat fixture world is face A's ground; dwell-world's
+// `a_torch_is_one_block_over_two_cells` covers both faces.
+#[test]
+fn a_torch_is_placed_and_broken_as_one_over_two_cells_in_one_modification() {
+    let (torch, upper) = (
+        dwell_blocks::require("dwell:torch"),
+        dwell_blocks::require("dwell:torch_upper"),
+    );
+    let mut f = Fixture::new(flat());
+    join_streaming(&mut f, 1);
+    join_streaming(&mut f, 2);
+    f.server.step();
+    f.take_all();
+    let settle = |f: &mut Fixture| {
+        for _ in 0..12 {
+            f.server.step();
+        }
+        f.take_all()
+    };
+    let changes = |mods: &[VoxelModification]| -> Vec<VoxelChange> {
+        mods.iter()
+            .flat_map(|m| m.chunks.iter().flat_map(|c| c.changes.clone()))
+            .collect()
+    };
+    // Placed on the ground: both cells, in one modification to every client.
+    f.send(1, place([0, G - 1, 2], 2, torch));
+    f.server.step();
+    assert_eq!(f.server.world().get_voxel(0, G, 2), torch);
+    assert_eq!(f.server.world().get_voxel(0, G + 1, 2), upper);
+    let out = f.take_all();
+    for id in [1, 2] {
+        let mods = modifications(&out[&id]);
+        assert_eq!(mods.len(), 1, "session {id}");
+        let mut got: Vec<u16> = changes(&mods).iter().map(|c| c.material).collect();
+        got.sort_unstable();
+        assert_eq!(got, vec![torch, upper], "session {id}");
+    }
+    settle(&mut f);
+    // Breaking the upper cell (the flame) takes the stick too.
+    f.send(1, brk([0, G + 1, 2], 5));
+    f.server.step();
+    assert_eq!(f.server.stats_of(1).unwrap().last_edit_check, EditCheck::Ok);
+    assert_eq!(f.server.world().get_voxel(0, G, 2), M.air);
+    assert_eq!(f.server.world().get_voxel(0, G + 1, 2), M.air);
+    let out = f.take_all();
+    let mods = modifications(&out[&2]);
+    assert_eq!(mods.len(), 1);
+    assert_eq!(changes(&mods).len(), 2);
+}
+
 #[test]
 fn rate_limited_a_burst_of_three_then_one_per_block_edit_interval() {
     let mut f = Fixture::new(flat());

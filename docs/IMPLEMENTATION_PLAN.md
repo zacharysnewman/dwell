@@ -64,7 +64,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 44 — Sun and moon shadows (cascaded shadow maps, the lighting's layer 2) | 🚧 In progress — built and tested natively, in Vitest and in Chrome on the GPU: up to four cascades per the Shadows setting (Off / Low / High, data in `shared/look/shadows.json`), texel-snapped sphere fits, casters (terrain, plants, LOD, bodies, your own), a soft PCF on the direct term only, faded by the time of day and past the last cascade to layer 1's stand-in; High's cost cut to ≤ 1.2 ms over Off on the M1 (eye-centred boxes, kept far maps, a depth-only casters' stage; High stays the desktop default); the flicker fix: the light in 0.05° steps with the texel grid turning about the eye, so the shadow edges no longer crawl as the clock turns the sun; outstanding: CI, the owner's look, the far cascades' jump when redrawn after a 0.25° turn; a patch release |
 | 45 — Flood light | 🚧 In progress — built and tested natively and in Chrome on the GPU (ADR 0045, DAY_NIGHT.md §11): per-cell sky and block light on the client (`dwell_world::light`, data `shared/look/light.json` and the blocks' `lightFilter`/`emits`), relit on edits and predicted edits, the mesher's smooth `flood` stream, ambient and the direct sun and moon scaled by it (carved tunnels no longer lit like day); follow-up: the streaming stalls fixed (coalesced seeded unloads, no cascade under a chunk held over open air, light and mesh budgets of their own that scale on a slow page; flying back to 0.22.8's frames; generation workers refilled between frames, so a slow page's terrain finishes generating, the native-server e2e tests); outstanding: CI, the owner's review; characters (your arms, held items, players) lit by the cells they are in, eased; the shadow maps' stand-in past their last cascade; water and see-through faces take the flood light (dark in caves with Shadows Off; darkness verified with Shadows Off on both faces, DAY_NIGHT.md §11) |
 | 46 — Distant terrain shadows (the lighting's layer 3) | 🚧 In progress — built and tested natively and in Chrome on the GPU (ADR 0046, DAY_NIGHT.md §12): heightmaps of the terrain as drawn, filled a budgeted slice a frame, horizon maps swept from them a band a frame, one horizon sample per far fragment blended into the cascades at their edge, both faces, per the Shadows setting (none on a CPU adapter); data `shared/look/lodshadows.json`. Measured +0.5–0.9 ms GPU a frame on the M1 (busy machine), no main-thread change. Outstanding: CI; the owner's look; a measurement on an idle machine |
-| 47 — Torches and dynamic lights | 🚧 In progress — T1 built and tested natively and in Chrome on the GPU ([ADR 0047](./adr/0047-torches-and-dynamic-lights.md), [`LIGHTS.md`](./LIGHTS.md)): light sources as block data (`lights`, `shared/blocks/lights.mjs`), the torch block and held item, placed torches through the flood light, held torches (yours and other players') as unshadowed per-fragment point lights, characters lit by them, flicker, glowing textures (`emissive`). Outstanding: T1's CI and the owner's look; T2 (Torch shadows: point-light shadow maps, the setting) not started |
+| 47 — Torches and dynamic lights | 🚧 In progress — T1 built and tested natively and in Chrome on the GPU ([ADR 0047](./adr/0047-torches-and-dynamic-lights.md), [`LIGHTS.md`](./LIGHTS.md)): light sources as block data (`lights`, `shared/blocks/lights.mjs`), the torch block and held item, placed torches through the flood light, held torches (yours and other players') as unshadowed per-fragment point lights, characters lit by them, flicker, glowing textures (`emissive`). T1b built and tested natively and in Chrome on the GPU: the torch 1 m over two ½ m cells (multi-cell blocks as data, `extends`/`partOf`), a self-lit flame. Outstanding: T1b's CI and the owner's look; T2 (Torch shadows: point-light shadow maps, the setting) not started |
 
 Phase numbering: Phase 4 was inserted on 2026-09-29 for the planet-scale world (ADRs 0011, 0012);
 the former Phases 4–7 are now 5–8, and Phase 3's former 3c and 3d are now 3d and 3e.
@@ -4649,9 +4649,10 @@ Deviations
 
 ## Phase 47 — Torches and Dynamic Lights
 
-**Status:** T1 built and tested natively and in Chrome on the GPU (2026-10-21). Outstanding: T1's CI
-and the owner's look; T2 not started. T1 adds a block (not breaking, ADR 0038), no protocol,
-save or terrain change: a patch release.
+**Status:** T1 and T1b built and tested natively and in Chrome on the GPU (2026-10-21; T1 released
+as 0.22.26). Outstanding: T1b's CI and the owner's look; T2 not started. T1b adds a block and gives
+`dwell:torch` the parts rule (a new rule tag a 0.22.26 client notes and ignores): see its
+deviations for the compatibility line.
 
 Owner (2026-10-21): a torch, three-fold — it lights its surroundings when held (no block-light
 update), it casts shadows when placed (a setting of its own), and placed it updates the block light.
@@ -4700,6 +4701,47 @@ Deviations
 - Floor torches only (owner: wall torches later, as a state).
 - The torch's glow is its whole tile's (`emissive` × the texel's colour): the flame's bright colour
   glows, the stick's darker one little; no per-texel mask.
+
+### T1b — the 1 m torch, the flame
+
+Owner (2026-10-21, after 0.22.26): "Make torches a full 1m in height, so two voxels, breaking one
+destroys the other"; "the flame part looks bad in those screenshots, just like a cream colored
+blob"; "The flame should stay illuminated regardless of brightness since it's the source of the
+light." LIGHTS.md §2, BLOCK_REGISTRY.md (Multi-cell blocks).
+
+Deliverables
+- [x] Multi-cell blocks as data: `extends: { up }` and `partOf` (`shared/blocks/parts.mjs`, its
+  tests in CI; `StateInfo::extends_up`, `part_of`; registry sync rule tag 10), and the one rule
+  (`dwell_world::edit::edit_writes`: placing puts the parts, which need free cells; changing a cell
+  clears the rest; with what it leaves unsupported) on the server for block and region edits and in
+  the client's prediction; the outline over every cell (`outline_box`).
+- [x] The torch 1 m over two cells: `dwell:torch` (the stick, the palette's) and the new
+  `dwell:torch_upper` (the flame; `emits` 14 from the flame's cell, `light`), new tiles `torch` and
+  `torchTop` (the flame as upward tongues, a saturated `flame` ramp and a `flame_core` one).
+- [x] A self-lit flame: `emissive` ≥ 1 replaces the lit colour by one fixed on screen (`glow`:
+  the tone curve's view at the reference exposure, `glowPeak` 0.7), its pixels flagged in the view
+  depth's second bit so the composite skips the night's desaturation; the held flame a yellow bulb
+  under an orange cone.
+- [x] The bench's `torch-scale-a` scenario.
+
+Exit criteria
+- [x] Red → green: `a_torch_is_one_block_over_two_cells` (both faces; placing put only the lower
+  cell before), `the_flame_stays_lit_and_orange_by_day_at_night_and_in_a_cave` (the 0.22.26 flame
+  showed saturation 0.44 at midnight, cream; with exposure-dependent glow, 0.52 at a bright
+  exposure); the server's one modification for both cells (`dwell-sim` tests/edits.rs); the
+  flood light from the flame's cell, relit when either cell breaks (both faces); the parts' sync
+  tag; the data's validation (`parts.test.mjs`).
+- [x] Checked in Chrome on the GPU (shots in the PR): the placed torch beside a stand-in at noon
+  and midnight, the held flame by day, at night and in a dark tunnel, face B's room.
+
+Deviations
+- `dwell:torch` keeps its name and becomes the lower cell (a new block for the upper, not a `half`
+  property, which would break worlds of 0.22.26); its rules gain the parts (rule tag 10), so a
+  0.22.26 client joining a newer server notes an unknown rule field and predicts a one-cell torch
+  until the server's modification arrives.
+- The torch's upper tile is self-lit whole (its short stick top too); no per-texel mask.
+- The 4 × 4 mip's coverage check allows a centred stick narrower than a texel to take one or two
+  whole columns (render tests).
 
 ### T2 — Torch shadows
 

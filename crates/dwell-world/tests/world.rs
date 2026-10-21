@@ -316,9 +316,9 @@ fn tall_grass_is_placed_only_on_grass_or_dirt() {
 }
 
 #[test]
-fn a_torch_stands_on_the_floor_and_goes_with_it() {
+fn a_torch_stands_on_the_floor() {
     // docs/LIGHTS.md: floor torches first. On any solid block, not on air (the side of a block
-    // with nothing below), and gone when the block under it is broken.
+    // with nothing below).
     let torch = s("dwell:torch");
     let mut world = ground();
     let eye = [0.5, 1.62, 0.5];
@@ -330,11 +330,95 @@ fn a_torch_stands_on_the_floor_and_goes_with_it() {
         EditCheck::NoSupport,
         "against a side with air below"
     );
-    world.set_voxel(0, 31, 2, s("dwell:stone"));
-    world.set_voxel(0, 32, 2, torch);
-    assert_eq!(
-        unsupported_after(&mut world, [0, 31, 2], s("dwell:air")),
-        vec![([0, 32, 2], s("dwell:air"))]
+}
+
+/// Applies an edit's writes (`edit_writes`), as the server does.
+fn apply(world: &mut VoxelWorld, writes: &[([i32; 3], StateId)]) {
+    for &([x, y, z], m) in writes {
+        world.set_voxel(x, y, z, m);
+    }
+}
+
+dwell_world::both_faces!(
+    /// The 1 m torch is one block over two ½ m cells (owner, 2026-10-21; BLOCK_REGISTRY.md,
+    /// Multi-cell blocks): placed, it puts its upper part in the cell above; breaking either cell,
+    /// or the block it stands on, clears both, in one edit's writes.
+    fn a_torch_is_one_block_over_two_cells(f: FaceFrame) {
+        let (torch, upper, air, stone) = (
+            s("dwell:torch"),
+            s("dwell:torch_upper"),
+            s("dwell:air"),
+            s("dwell:stone"),
+        );
+        let ground = f.cell([0, 30, 2]);
+        let lower = f.cell([0, 31, 2]);
+        let top = f.cell([0, 32, 2]);
+        assert_eq!(above(lower), top, "the cell above, face-local");
+        let fresh = || {
+            let mut w = empty();
+            w.set_voxel(ground[0], ground[1], ground[2], stone);
+            w
+        };
+        let mut world = fresh();
+        // Placing the torch puts both cells.
+        let put = edit_writes(&mut world, lower, torch);
+        assert_eq!(put, vec![(lower, torch), (top, upper)]);
+        // Breaking either cell clears both.
+        for target in [lower, top] {
+            let mut w = fresh();
+            apply(&mut w, &put);
+            let gone = edit_writes(&mut w, target, air);
+            let mut cells: Vec<[i32; 3]> = gone.iter().map(|(c, _)| *c).collect();
+            cells.sort_unstable();
+            let mut want = vec![lower, top];
+            want.sort_unstable();
+            assert_eq!(cells, want, "breaking {target:?}");
+            assert!(gone.iter().all(|(_, m)| *m == air));
+            apply(&mut w, &gone);
+            assert_eq!(w.get_voxel(lower[0], lower[1], lower[2]), air);
+            assert_eq!(w.get_voxel(top[0], top[1], top[2]), air);
+        }
+        // Breaking the block under it takes both.
+        apply(&mut world, &put);
+        assert_eq!(
+            edit_writes(&mut world, ground, air),
+            vec![(ground, air), (lower, air), (top, air)]
+        );
+        // A full cell above refuses the place, through the server's check.
+        world = fresh();
+        world.set_voxel(top[0], top[1], top[2], stone);
+        let eye = f.point([0.5, m_of_row(34), 0.5]);
+        let refused = check(
+            &mut world,
+            place(ground, f.cell_face(2) as u8, torch),
+            eye,
+            &[],
+        );
+        assert_eq!(refused.check, EditCheck::Occupied);
+        world.set_voxel(top[0], top[1], top[2], air);
+        let ok = check(
+            &mut world,
+            place(ground, f.cell_face(2) as u8, torch),
+            eye,
+            &[],
+        );
+        assert_eq!((ok.check, ok.cell), (EditCheck::Ok, lower));
+    }
+);
+
+#[test]
+fn a_part_is_only_placed_with_its_block() {
+    // `dwell:torch_upper` is the torch's part: not in the palette, and outlined with its torch.
+    assert!(!placeable(s("dwell:torch_upper")));
+    let mut world = ground();
+    world.set_voxel(0, 0, 2, s("dwell:torch"));
+    world.set_voxel(0, 1, 2, s("dwell:torch_upper"));
+    let (lo, hi) = outline_box(&mut world, [0, 0, 2]);
+    assert!(lo[1] <= 0.0 && hi[1] > 1.5, "both cells: {lo:?}..{hi:?}");
+    let (lo2, hi2) = outline_box(&mut world, [0, 1, 2]);
+    assert!(
+        lo2[1] < -0.9 && hi2[1] > 0.5,
+        "from the upper cell: {lo2:?}..{hi2:?}"
     );
 }
 

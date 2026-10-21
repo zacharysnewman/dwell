@@ -98,8 +98,8 @@ describe('block registry (docs/BLOCK_REGISTRY.md)', () => {
     // Appended: the blocks before it keep their ids (and tall grass, Phase 33, came after it; the
     // torch, Phase 47, after the stored ramps, placed at their own slots).
     expect(data.blocks.findIndex((b) => b.name === 'sandbox_floor')).toBe(7);
-    expect(data.blocks.map((b) => b.name).at(-1)).toBe('torch');
-    expect(STATE_DEFS.at(-1)?.state).toBe('dwell:torch');
+    expect(data.blocks.map((b) => b.name).slice(-2)).toEqual(['torch', 'torch_upper']);
+    expect(STATE_DEFS.at(-1)?.state).toBe('dwell:torch_upper');
     const floor = STATE_DEFS[stateId('dwell:sandbox_floor')];
     expect(floor).toMatchObject({ look: 'cube', color: 0xffffff, placeable: false });
     expect(floor?.textures).toEqual({ top: 'grid', side: 'grid', bottom: 'grid' });

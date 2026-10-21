@@ -1211,8 +1211,15 @@ impl<S: Scene> Game<S> {
                     &[],
                     dwell_world::edit::DEFAULT_REACH,
                 );
-                (out.check == dwell_world::edit::EditCheck::Ok)
-                    .then(|| vec![(out.cell, out.material)])
+                // With a multi-cell block's other cells (a torch's upper part), as the server
+                // writes them.
+                (out.check == dwell_world::edit::EditCheck::Ok).then(|| {
+                    dwell_world::edit::edit_writes(
+                        world,
+                        out.cell,
+                        dwell_world::edit::medium_kept(out.material),
+                    )
+                })
             }
             Message::RegionEdit(e) => {
                 // Every chunk of the box loaded (Air ones too), so the client's world reads it right.
@@ -1859,7 +1866,8 @@ impl<S: Scene> Game<S> {
         // The outline is the box the block is aimed at: a plant's selection box, else its shape's
         // extent (an adaptive block's derived shape is often not a full cell tall).
         // The box is in fractions of the cell; the outline is in metres (HALF_HEIGHT_GRID.md §2).
-        let (lo, hi) = dwell_world::edit::target_box(self.streamer.store_mut(), t.cell);
+        // A multi-cell block (a 1 m torch) is outlined as one, over its cells.
+        let (lo, hi) = dwell_world::edit::outline_box(self.streamer.store_mut(), t.cell);
         let h = dwell_world::CELL_H as f32;
         let bounds = ([lo[0], lo[1] * h, lo[2]], [hi[0], hi[1] * h, hi[2]]);
         self.scene

@@ -28,7 +28,7 @@ function checkNumber(where, v, lo, hi) {
 /** Checks the data; returns it. */
 export function validateLights(data) {
   if (typeof data !== 'object' || data === null || Array.isArray(data)) fail('must be an object');
-  const keys = ['maxLights', 'cullM', 'curve', 'wrap'];
+  const keys = ['maxLights', 'cullM', 'curve', 'wrap', 'glowPeak'];
   for (const k of Object.keys(data)) if (k !== '$comment' && !keys.includes(k)) fail(`unknown entry ${k}`);
   for (const k of keys) if (!(k in data)) fail(`missing entry ${k}`);
   checkNumber('maxLights', data.maxLights, 0, MAX_SHADER_LIGHTS);
@@ -36,6 +36,7 @@ export function validateLights(data) {
   checkNumber('cullM', data.cullM, 1, 512);
   checkNumber('curve', data.curve, 1, 16);
   checkNumber('wrap', data.wrap, 0, 1);
+  checkNumber('glowPeak', data.glowPeak, 0.1, 1e9);
   return data;
 }
 
@@ -54,6 +55,7 @@ export function lightsRust(data) {
     `    cull_m: ${rf(data.cullM)},`,
     `    curve: ${rf(data.curve)},`,
     `    wrap: ${rf(data.wrap)},`,
+    `    glow_peak: ${rf(data.glowPeak)},`,
     '};',
     '',
   ].join('\n');

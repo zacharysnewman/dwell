@@ -32,6 +32,10 @@ pub struct LightTunables {
     /// How far round a surface the light wraps: `(n·l + wrap) / (1 + wrap)`, so a surface edge-on
     /// to a flame isn't black.
     pub wrap: f64,
+    /// The most a self-lit surface's brightest channel is, as the tone curve sees it: past it the
+    /// glow is scaled down whole, so its hue holds (a flame stays orange, not cream);
+    /// `render/lights.rs` `glow`.
+    pub glow_peak: f64,
 }
 
 /// One dynamic light this frame.
