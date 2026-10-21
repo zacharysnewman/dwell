@@ -1,7 +1,7 @@
 //! Flames (docs/LIGHTS.md §6): the animated fire drawn where a light source with a `flame` burns —
 //! a placed torch's top, a torch in a hand. A flame is two camera-facing billboards: the flame
 //! itself, a teardrop cut from rising value noise whose top splits into separate tongues, coloured
-//! along its look's ramp (deep red-orange tips to a pale yellow core) in a few painted bands; and a
+//! along its look's ramp (deep red-orange tips to a yellow core) in a few painted bands; and a
 //! soft glow behind it with a few embers rising from it. Its height and the glow follow the light's
 //! flicker (`lights::flicker`, the same phase), so the light and the flame pulse together.
 //!
@@ -59,6 +59,10 @@ pub struct FlameLook {
     pub width_m: f32,
     /// A placed flame's base over the floor of its cell (m).
     pub base_m: f32,
+    /// A held flame's size over a placed one's.
+    pub held_scale: f32,
+    /// Its width at its base, the stick's tip (m; at most `width_m`).
+    pub base_width_m: f32,
     /// The noise's rise, cycles a second.
     pub speed: f32,
     pub noise_scale: f32,
@@ -75,8 +79,11 @@ pub struct FlameLook {
 pub const MAX_RAMP: usize = 6;
 /// The flame quad's half width over the look's width: room for the noise to bend it sideways.
 pub const QUAD_HALF_WIDTH: f32 = 0.8;
-/// The flame body's half width at its widest, over the quad's half width.
-const BODY: f32 = 0.62;
+/// The flame body's half width at its widest, over the quad's half width (so the body is
+/// `width_m` wide at its widest).
+const BODY: f32 = 0.625;
+/// Where the flame is widest, up its height.
+const WIDEST: f32 = 0.32;
 
 /// A flame look's index by name (its id in the shader).
 pub fn find(name: &str) -> Option<usize> {
@@ -210,12 +217,17 @@ pub fn flame_shade(
         (0.5, 0.0)
     };
     let dx = x - sway * y * y - (n1 - 0.5) * look.distort * y;
-    let base = 0.22;
-    let w = if y < base {
-        (1.0 - ((y - base) / base).powi(2)).clamp(0.0, 1.0).sqrt()
+    // Rising from the stick's tip: `base_width_m` wide at its base, widening a little to its
+    // widest at WIDEST, then tapering to its tongues.
+    let neck = (look.base_width_m / look.width_m).min(1.0);
+    let top = if y > WIDEST {
+        (1.0 - (y - WIDEST) / (1.0 - WIDEST))
+            .clamp(0.0, 1.0)
+            .powf(0.75)
     } else {
-        (1.0 - (y - base) / (1.0 - base)).clamp(0.0, 1.0).powf(0.7)
-    } * BODY;
+        1.0
+    };
+    let w = (neck + (1.0 - neck) * smooth(0.0, WIDEST, y)) * top * BODY;
     let u = dx / w.max(1e-4);
     let tg = if animated {
         noise(u * 1.7 + s, y * 1.7 - ts * 1.27, seed.wrapping_add(11)) * 0.75
@@ -230,7 +242,7 @@ pub fn flame_shade(
             * smooth(0.3, 0.85, y)
             * (0.3 + 0.7 * smooth(0.0, 0.6, u.abs() + y - 0.5))
         - 0.15 * smooth(0.6, 1.0, y);
-    let a = smooth(0.0, 0.12, heat) * (1.0 - smooth(0.9, 1.0, y));
+    let a = smooth(0.0, 0.12, heat) * (1.0 - smooth(0.9, 1.0, y)) * smooth(0.0, 0.03, y);
     let mut k = (heat * 1.1 * (1.0 - 0.5 * y) + 0.1 * (1.0 - y)).clamp(0.0, 1.0);
     if look.bands > 0 {
         let b = look.bands as f32;
@@ -261,24 +273,32 @@ pub fn glow_shade(
     let gc = linear(g.color);
     let mut c = gc.map(|v| v * halo);
     if animated {
-        let e = look.embers;
-        let ec = linear(e.color);
-        for k in 0..e.count {
-            let life = (t * e.speed + hash(k as i32, 3, seed)).fract();
-            let side = (hash(k as i32, 7, seed) - 0.5) * look.width_m * 0.8;
-            let ex = side + (life * 8.17 + k as f32).sin() * look.width_m * 0.25;
-            let ey = height * 0.6 + life * e.rise_m;
-            let d = ((p[0] - ex).powi(2) + (p[1] - ey).powi(2)).sqrt();
-            let v = (1.0 - smooth(e.size_m * 0.3, e.size_m, d))
-                * (1.0 - life)
-                * smooth(0.0, 0.15, life)
-                * 2.0;
-            for (ch, ev) in c.iter_mut().zip(ec) {
-                *ch += ev * v;
-            }
+        let v = embers_shade(look, p, height, t, seed);
+        for (ch, ev) in c.iter_mut().zip(linear(look.embers.color)) {
+            *ch += ev * v;
         }
     }
     c
+}
+
+/// The embers' brightness (0 to about 2) at a point `p` (m from the flame's base) of a flame
+/// `height` tall, at time `t` (s), for the flame `seed`: each one rising from the flame's top,
+/// wavering, fading as it goes.
+pub fn embers_shade(look: &FlameLook, p: [f32; 2], height: f32, t: f32, seed: u32) -> f32 {
+    let e = look.embers;
+    let mut sum = 0.0;
+    for k in 0..e.count {
+        let life = (t * e.speed + hash(k as i32, 3, seed)).fract();
+        let side = (hash(k as i32, 7, seed) - 0.5) * look.width_m * 0.8;
+        let ex = side + (life * 8.17 + k as f32).sin() * look.width_m * 0.25;
+        let ey = height * 0.6 + life * e.rise_m;
+        let d = ((p[0] - ex).powi(2) + (p[1] - ey).powi(2)).sqrt();
+        sum += (1.0 - smooth(e.size_m * 0.3, e.size_m, d))
+            * (1.0 - life)
+            * smooth(0.0, 0.15, life)
+            * 2.0;
+    }
+    sum
 }
 
 /// The glow quad's extent (m) round the flame's base along the billboard: (half width, below,
@@ -306,7 +326,7 @@ pub fn wgsl(animated: bool) -> String {
             ramp.push(v3([0.0; 3]));
         }
         cases.push_str(&format!(
-            "        case {i}u: {{ return FlameLook(array<vec3f, {MAX_RAMP}>({}), {}u, {}u, vec4f({:?}, {:?}, {:?}, {:?}), vec4f({:?}, {:?}, {:?}, 0.0), vec4f({}, {:?}), vec4f({}, {:?}), vec4f({:?}, {:?}, {:?}, {}.0)); }}\n",
+            "        case {i}u: {{ return FlameLook(array<vec3f, {MAX_RAMP}>({}), {}u, {}u, vec4f({:?}, {:?}, {:?}, {:?}), vec4f({:?}, {:?}, {:?}, {:?}), vec4f({}, {:?}), vec4f({}, {:?}), vec4f({:?}, {:?}, {:?}, {}.0)); }}\n",
             ramp.join(", "),
             f.ramp.len(),
             f.bands,
@@ -317,6 +337,7 @@ pub fn wgsl(animated: bool) -> String {
             f.distort,
             f.tongues,
             f.sway,
+            (f.base_width_m / f.width_m).min(1.0),
             v3(linear(f.glow.color)).trim_start_matches("vec3f(").trim_end_matches(')'),
             f.glow.radius_m,
             v3(linear(f.embers.color)).trim_start_matches("vec3f(").trim_end_matches(')'),
@@ -331,9 +352,11 @@ pub fn wgsl(animated: bool) -> String {
         r"
 const FLAME_ANIMATED: bool = {animated};
 const FLAME_BODY: f32 = {BODY:?};
+const FLAME_WIDEST: f32 = {WIDEST:?};
 
 // A flame look (dwell-look flames.rs `FlameLook`): its ramp (linear, tips to core) and its count,
-// its bands; size (height, width), speed and noise scale; distort, tongues and sway; the glow's
+// its bands; size (height, width), speed and noise scale; distort, tongues, sway and the base's
+// share of the width; the glow's
 // colour and radius; the embers' colour and the glow's strength; the embers' size, rise, speed and
 // count.
 struct FlameLook {{
@@ -410,13 +433,11 @@ fn flame_shade(look: FlameLook, x: f32, y: f32, t: f32, seed: u32) -> vec4f {{
         sway = (flame_noise(t * 0.6, s, seed + 5u) - 0.5) * 2.0 * look.bend.z;
     }}
     let dx = x - sway * y * y - (n1 - 0.5) * look.bend.x * y;
-    let base = 0.22;
-    var w = pow(clamp(1.0 - (y - base) / (1.0 - base), 0.0, 1.0), 0.7);
-    if (y < base) {{
-        let q = (y - base) / base;
-        w = sqrt(clamp(1.0 - q * q, 0.0, 1.0));
+    var top = 1.0;
+    if (y > FLAME_WIDEST) {{
+        top = pow(clamp(1.0 - (y - FLAME_WIDEST) / (1.0 - FLAME_WIDEST), 0.0, 1.0), 0.75);
     }}
-    w = w * FLAME_BODY;
+    let w = (look.bend.w + (1.0 - look.bend.w) * smoothstep(0.0, FLAME_WIDEST, y)) * top * FLAME_BODY;
     let u = dx / max(w, 1e-4);
     var tg = 0.0;
     if (FLAME_ANIMATED) {{
@@ -426,7 +447,7 @@ fn flame_shade(look: FlameLook, x: f32, y: f32, t: f32, seed: u32) -> vec4f {{
     let heat = 1.0 - abs(u)
         - smoothstep(0.42, 0.68, tg) * look.bend.y * smoothstep(0.3, 0.85, y) * (0.3 + 0.7 * smoothstep(0.0, 0.6, abs(u) + y - 0.5))
         - 0.15 * smoothstep(0.6, 1.0, y);
-    let a = smoothstep(0.0, 0.12, heat) * (1.0 - smoothstep(0.9, 1.0, y));
+    let a = smoothstep(0.0, 0.12, heat) * (1.0 - smoothstep(0.9, 1.0, y)) * smoothstep(0.0, 0.03, y);
     var k = clamp(heat * 1.1 * (1.0 - 0.5 * y) + 0.1 * (1.0 - y), 0.0, 1.0);
     if (look.bands > 0u) {{
         let b = f32(look.bands);
@@ -437,6 +458,23 @@ fn flame_shade(look: FlameLook, x: f32, y: f32, t: f32, seed: u32) -> vec4f {{
     return vec4f(flame_ramp(look, k), a);
 }}
 
+// The embers' brightness at p (m from the flame's base): `embers_shade` in flames.rs.
+fn flame_embers(look: FlameLook, p: vec2f, height: f32, t: f32, seed: u32) -> f32 {{
+    let count = u32(look.embers.w);
+    let width = look.shape.y;
+    var sum = 0.0;
+    for (var k = 0u; k < count; k++) {{
+        let life = fract(t * look.embers.z + flame_hash(i32(k), 3, seed));
+        let side = (flame_hash(i32(k), 7, seed) - 0.5) * width * 0.8;
+        let ex = side + sin(life * 8.17 + f32(k)) * width * 0.25;
+        let ey = height * 0.6 + life * look.embers.y;
+        let e = length(p - vec2f(ex, ey));
+        let size = look.embers.x;
+        sum += (1.0 - smoothstep(size * 0.3, size, e)) * (1.0 - life) * smoothstep(0.0, 0.15, life) * 2.0;
+    }}
+    return sum;
+}}
+
 // The glow and embers' light (linear) at p (m from the flame's base) of a flame `height` tall
 // with flicker factor `flicker`: `glow_shade` in flames.rs.
 fn flame_glow(look: FlameLook, p: vec2f, height: f32, flicker: f32, t: f32, seed: u32) -> vec3f {{
@@ -445,17 +483,7 @@ fn flame_glow(look: FlameLook, p: vec2f, height: f32, flicker: f32, t: f32, seed
     let halo = exp(-dot(d, d) * 3.0) * look.ember.w * flicker;
     var c = look.glow.rgb * halo;
     if (FLAME_ANIMATED) {{
-        let count = u32(look.embers.w);
-        let width = look.shape.y;
-        for (var k = 0u; k < count; k++) {{
-            let life = fract(t * look.embers.z + flame_hash(i32(k), 3, seed));
-            let side = (flame_hash(i32(k), 7, seed) - 0.5) * width * 0.8;
-            let ex = side + sin(life * 8.17 + f32(k)) * width * 0.25;
-            let ey = height * 0.6 + life * look.embers.y;
-            let e = length(p - vec2f(ex, ey));
-            let size = look.embers.x;
-            c += look.ember.rgb * ((1.0 - smoothstep(size * 0.3, size, e)) * (1.0 - life) * smoothstep(0.0, 0.15, life) * 2.0);
-        }}
+        c += look.ember.rgb * flame_embers(look, p, height, t, seed);
     }}
     return c;
 }}
@@ -559,13 +587,10 @@ mod tests {
                 covered > 24 * 200,
                 "the flame covers its quad's middle ({covered})"
             );
-            // The core near the base is the ramp's pale end, the tips its deep end.
-            let (core, a) = flame_shade(look, 0.0, 0.12, 0.0, 7, animated);
+            // The core low in the flame is the ramp's yellow end.
+            let (core, a) = flame_shade(look, 0.0, 0.2, 0.0, 7, animated);
             assert!(a > 0.99);
-            assert!(
-                core[2] > 0.2 && core[1] > 0.6,
-                "a pale yellow core: {core:?}"
-            );
+            assert!(core[0] > 0.9 && core[1] > 0.5, "a yellow core: {core:?}");
         }
     }
 

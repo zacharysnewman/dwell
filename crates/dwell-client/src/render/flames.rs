@@ -76,6 +76,8 @@ pub struct Flame {
     pub look: usize,
     pub source: &'static dwell_blocks::LightInfo,
     pub seed: u32,
+    /// Its size over the look's (a held flame's `held_scale`).
+    pub scale: f64,
 }
 
 impl Flame {
@@ -83,12 +85,14 @@ impl Flame {
     /// light without a flame.
     pub fn held(h: &HeldLight, eye: [f64; 3]) -> Option<Self> {
         let rel = h.rel.map(f64::from);
+        let look = find(h.source.flame?)?;
         Some(Self {
             rel,
             face: FaceFrame::at_height(eye[1] + rel[1]),
-            look: find(h.source.flame?)?,
+            look,
             source: h.source,
             seed: h.seed,
+            scale: f64::from(FLAMES[look].held_scale),
         })
     }
 
@@ -100,6 +104,7 @@ impl Flame {
             look: find(p.source.flame?)?,
             source: p.source,
             seed: p.seed,
+            scale: 1.0,
         })
     }
 }
@@ -164,8 +169,10 @@ pub fn quads(flames: &[Flame], basis: &Basis, seconds: f64) -> (Vec<f32>, usize)
         );
         let height = look.height_m * height_factor(look, flicker);
         let b = billboard(f.face, basis.forward(), basis.up);
+        // Laid out in the look's metres and scaled (the shading sees the look's own size).
+        let sc = f.scale;
         let at = |x: f64, y: f64| -> [f64; 3] {
-            std::array::from_fn(|k| f.rel[k] + b.right[k] * x + b.up[k] * y)
+            std::array::from_fn(|k| f.rel[k] + (b.right[k] * x + b.up[k] * y) * sc)
         };
         let rest = [t, flicker as f32, height];
         let (half, below, above) = glow_extent(look, height);
@@ -276,14 +283,18 @@ fn flame_scene_fs(i: FlameVary) -> SceneOut {
     return o;
 }
 
-// The mask: where the flame covers enough, the view depth at the flame, flagged self-lit (the time
+// The mask: where the flame (or an ember) covers enough, the view depth at the flame, flagged self-lit (the time
 // of day's desaturation leaves it alone) and uninked (no outline round it). Its colour target is
 // not written.
 @fragment
 fn flame_mask_fs(i: FlameVary) -> SceneOut {
     let look = flame_look(i.info & 0xffu);
-    let s = flame_shade(look, i.uv.x, i.uv.y, i.rest.x, i.seed);
-    if (s.a < 0.35) {
+    if ((i.info >> 8u) == 1u) {
+        // The glow's quad: its embers only (the halo is not flagged).
+        if (!FLAME_ANIMATED || flame_embers(look, i.uv, i.rest.z, i.rest.x, i.seed) < 0.5) {
+            discard;
+        }
+    } else if (flame_shade(look, i.uv.x, i.uv.y, i.rest.x, i.seed).a < 0.35) {
         discard;
     }
     var o: SceneOut;
@@ -493,15 +504,15 @@ impl FlameRenderer {
     }
 
     /// The mask (into a scene pass, after its opaque draws): the view depth flagged self-lit
-    /// where the flames cover.
+    /// where the flames and their embers cover.
     pub fn draw_mask(&self, pass: &mut wgpu::RenderPass<'_>, group: Group, calls: &mut u32) {
-        let (_, bodies) = self.ranges[group as usize].clone();
+        let (glows, bodies) = self.ranges[group as usize].clone();
         if bodies.is_empty() {
             return;
         }
         pass.set_pipeline(&self.mask);
         pass.set_vertex_buffer(0, self.vertices.slice(..));
-        pass.draw(bodies, 0..1);
+        pass.draw(glows.start..bodies.end, 0..1);
         *calls += 1;
     }
 
@@ -649,6 +660,69 @@ mod tests {
         }
     }
 
+    #[test]
+    fn the_placed_flame_rises_from_the_sticks_tip_no_wider_than_it() {
+        // Owner (2026-10-21): "the flame extends sideways beyond the torch base which doesn't look
+        // realistic at all, flame originated from the base not around it". The torch's upper tile
+        // is a plain stick (no flame texels: nothing warm and bright), its tip the top of its
+        // highest opaque row; the flame's base sits at that tip, and its bottom is no wider than
+        // the tip (a small margin), whatever the noise does.
+        let tile = dwell_blocks::info(dwell_blocks::require("dwell:torch_upper"))
+            .textures
+            .expect("textured")
+            .side;
+        let n = dwell_mesh::TILE as i64;
+        let opaque = |x: i64, y: i64| dwell_mesh::texel_of(tile, x, y)[3] > 128;
+        let row = (0..n)
+            .rev()
+            .find(|&y| (0..n).any(|x| opaque(x, y)))
+            .expect("a stick");
+        let px = (0..n).filter(|&x| opaque(x, row)).count();
+        for y in 0..n {
+            for x in 0..n {
+                let t = dwell_mesh::texel_of(tile, x, y);
+                let (hi, lo) = (t[0].max(t[1]).max(t[2]), t[0].min(t[1]).min(t[2]));
+                assert!(
+                    !(t[3] > 128 && hi > 170 && f64::from(hi - lo) > 0.6 * f64::from(hi)),
+                    "a flame texel at ({x}, {y}): {t:?}"
+                );
+            }
+        }
+        // A cross's quad runs corner to corner (√2 m) over the tile's width; the cell's height
+        // over its height (row 0 the bottom).
+        let across = std::f64::consts::SQRT_2 / n as f64;
+        let up = dwell_world::CELL[1] / n as f64;
+        let tip = (row + 1) as f64 * up;
+        let tip_width = px as f64 * across;
+        let look = &FLAMES[find("dwell:torch").expect("the torch's flame")];
+        assert!(
+            (f64::from(look.base_m) - tip).abs() <= 1.5 * up,
+            "the flame's base {} m at the stick's tip {tip} m",
+            look.base_m
+        );
+        let half_quad = f64::from(QUAD_HALF_WIDTH * look.width_m);
+        let mut widest = 0.0f64;
+        for frame in 0..48 {
+            let t = frame as f32 / 24.0;
+            for y in [0.01f32, 0.04, 0.08] {
+                for i in 0..=200 {
+                    let x = i as f32 / 100.0 - 1.0;
+                    if flame_shade(look, x, y, t, 11, true).1 > 0.05 {
+                        widest = widest.max(f64::from(x.abs()) * half_quad * 2.0);
+                    }
+                }
+            }
+        }
+        assert!(
+            widest <= tip_width + 0.02,
+            "the flame's bottom {widest:.3} m wide over the stick's tip {tip_width:.3} m"
+        );
+        assert!(
+            widest > tip_width * 0.4,
+            "it does rise from the tip ({widest:.3} m)"
+        );
+    }
+
     fn basis_of(face: FaceFrame, yaw: f64, pitch: f64) -> Basis {
         super::super::camera::aim(yaw, pitch, face, 0.0)
     }
@@ -662,6 +736,7 @@ mod tests {
                 look: find("dwell:torch").unwrap(),
                 source: torch(),
                 seed: 3,
+                scale: 1.0,
             };
             let (v, glows) = quads(&[flame], &basis, 1.0);
             assert_eq!(v.len() / VERTEX_FLOATS, 12, "two quads");

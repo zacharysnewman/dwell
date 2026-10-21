@@ -42,7 +42,9 @@ const NUMBERS = {
   bands: [0, 8, { whole: true }],
   heightM: [0, 2, { open: true }],
   widthM: [0, 1, { open: true }],
+  baseWidthM: [0, 1, { open: true }],
   baseM: [0, 1],
+  heldScale: [0, 4, { open: true }],
   speed: [0, 10, { open: true }],
   noiseScale: [0.25, 8],
   distort: [0, 2],
@@ -68,6 +70,7 @@ export function checkFlame(name, f) {
   }
   f.ramp.forEach((c, i) => checkColor(`${at}.ramp[${i}]`, c));
   for (const [k, [lo, hi, o]] of Object.entries(NUMBERS)) checkNumber(`${at}.${k}`, f[k], lo, hi, o);
+  if (f.baseWidthM > f.widthM) fail(`${at}.baseWidthM must be at most widthM (the base is no wider than the flame)`);
   checkKeys(`${at}.glow`, f.glow, ['color', ...Object.keys(GLOW)]);
   checkColor(`${at}.glow.color`, f.glow.color);
   for (const [k, [lo, hi, o]] of Object.entries(GLOW)) checkNumber(`${at}.glow.${k}`, f.glow[k], lo, hi, o);
@@ -111,6 +114,8 @@ export function flamesRust(data) {
       `        height_m: ${rf(f.heightM)},`,
       `        width_m: ${rf(f.widthM)},`,
       `        base_m: ${rf(f.baseM)},`,
+      `        held_scale: ${rf(f.heldScale)},`,
+      `        base_width_m: ${rf(f.baseWidthM)},`,
       `        speed: ${rf(f.speed)},`,
       `        noise_scale: ${rf(f.noiseScale)},`,
       `        distort: ${rf(f.distort)},`,
