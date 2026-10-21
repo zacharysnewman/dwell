@@ -10,8 +10,10 @@ describe('offline renders', () => {
     for (const [set, events] of Object.entries(SOUND_DATA.sets)) {
       const local = set.split(':')[1] ?? '';
       for (const [e, sound] of Object.entries(events)) {
+        // A set's burn renders held, faint to full.
+        if (e === 'burn') expect(names).toContain(`burn_${local}_faint_to_full`);
         // A loop sound renders as the surface's slide, slow to fast, ending in its stop.
-        if (SOUND_DATA.sounds[sound]?.loop) {
+        else if (SOUND_DATA.sounds[sound]?.loop) {
           const slide = renderPlan(SOUND_DATA).find(
             (j) => j.name === `slide_${local}_slow_to_fast`,
           );
@@ -24,6 +26,11 @@ describe('offline renders', () => {
     }
     for (const k of Object.keys(SOUND_DATA.ui)) expect(names).toContain(`ui_${k}`);
     for (const k of Object.keys(SOUND_DATA.actions)) expect(names).toContain(`action_${k}`);
+    // An event's own loop (the wind, the night) renders held, faint to full.
+    for (const e of SOUND_DATA.events)
+      if (e.sound && SOUND_DATA.sounds[e.sound]?.loop)
+        expect(names).toContain(`loop_${e.name}_faint_to_full`);
+    expect(names).toContain('loop_wind_faint_to_full');
     expect(new Set(names).size).toBe(names.length);
     const walk = renderPlan(SOUND_DATA).find((j) => j.name === 'steps_stone_walk_x10');
     expect(walk?.plays.length).toBe(10);

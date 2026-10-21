@@ -1,7 +1,8 @@
 // What `npm run sfx:render` renders (docs/AUDIO.md §7), from the sound data alone: every set's
 // every event, every event's, action's and UI sound, a 10-step walk and run per surface, break
-// and place variations per set, landings soft to hard, and each surface's slide from slow to fast
-// ending in its stop. Pure, so the plan is tested.
+// and place variations per set, landings soft to hard, each surface's slide from slow to fast
+// ending in its stop, each set's burn (a torch's crackle) and each event's loop (the wind, the
+// night) held and swelling from faint to full. Pure, so the plan is tested.
 import type { SoundData } from './types';
 
 export interface RenderPlay {
@@ -125,5 +126,22 @@ export function renderPlan(data: SoundData, walkSpeed = 5, runSpeed = 8): Render
       maxSeconds: SLIDE_SECONDS + 1.5,
     });
   }
+  // Every other loop: a set's burn and an event's own loop sound, held from faint to full.
+  const held = (name: string, sound: string): void => {
+    jobs.push({
+      name,
+      plays: [
+        { sound, at: 0.02, bus: 'effects', loop: { seconds: SLIDE_SECONDS, from: 0.1, to: 1 } },
+      ],
+      seconds: SLIDE_SECONDS + TAIL + 1,
+      seed: 5,
+      minSeconds: SLIDE_SECONDS,
+      maxSeconds: SLIDE_SECONDS + 1.5,
+    });
+  };
+  for (const [set, events] of Object.entries(data.sets))
+    if (events.burn) held(`burn_${local(set)}_faint_to_full`, events.burn);
+  for (const e of data.events)
+    if (e.sound && isLoop(e.sound)) held(`loop_${e.name}_faint_to_full`, e.sound);
   return jobs;
 }
