@@ -164,7 +164,7 @@ The owner asked for the deck to be visible from above (answer 2 in §6).
   the far sea came out in front of it and the clouds showed only in a circle round the eye and over
   the void past the world's edge (owner, 2026-10-21). This is `dwell_cloud_in_front`, called only
   through the composite's `cloud_in_front_of`; its twin `cloud_in_front` is tested at chunk and LOD
-  distances and from 40 km up out to the world's edge. It also puts the deck correctly in front of
+  distances and from 40 km up out to the world's edge (bench `clouds-far-above`). It also puts the deck correctly in front of
   a peak seen through it from below. The terrain still fogs toward the clear sky first, and the
   clouds go over that.
 - **Bright tops.** Seen from above with the light over the face, the light reaches the top through
