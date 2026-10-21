@@ -57,9 +57,8 @@ export function choose(manifest: Manifest, req: Request): Choice {
   const pinned = params.get('version');
   if (pinned) {
     const e = manifest.versions.find((b) => b.version === pinned);
-    return e
-      ? open(e, 'pinned')
-      : { kind: 'error', message: `Version ${pinned} is not published.` };
+    if (e) return open(e, 'pinned');
+    return { kind: 'error', message: notOnSite(manifest, pinned) };
   }
 
   // A world from the menu: the newest build that may open it (same line, not older). Regenerating
@@ -94,6 +93,20 @@ export function choose(manifest: Manifest, req: Request): Choice {
   return latest
     ? open(latest, 'latest')
     : { kind: 'error', message: 'No version of Dwell is published yet.' };
+}
+
+/** Where every release stays, including the ones retired from the site (RELEASES.md §4). */
+export const RELEASES_URL = 'https://github.com/zacharysnewman/dwell/releases';
+
+/**
+ * Why a pinned version is not here. The site keeps the newest build of each compatibility line and
+ * retires older patches (RELEASES.md §4): for one of those, name the build that opens its worlds.
+ */
+export function notOnSite(manifest: Manifest, version: string): string {
+  const instead = isVersion(version) ? newest(manifest, (v) => canOpenWorld(v, version)) : null;
+  return instead
+    ? `Dwell ${version} is not on the site any more: older patches are retired. Dwell ${instead.version}, on the same line, opens its worlds.`
+    : `Version ${version} is not published.`;
 }
 
 /** The query to forward to the build: everything but the launcher's own parameters. */

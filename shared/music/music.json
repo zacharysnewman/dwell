@@ -1,0 +1,16 @@
+{
+  "$comment": "Music (docs/AUDIO.md §2a): one entry per track, its file beside this one. shared/music/gen.mjs validates it and emits client/src/audio/music.gen.ts; the build ships each file once per site under media/ (client/vite.config.ts, scripts/site.ts). `when` picks where a track plays (now only \"always\"); the first matching track plays.",
+  "namespace": "dwell",
+  "tracks": {
+    "starry_sunshine": {
+      "title": "Starry Sunshine",
+      "author": "Zachary Newman",
+      "file": "starry-sunshine.mp3",
+      "volume": 0.45,
+      "loop": true,
+      "fadeInS": 4,
+      "fadeOutS": 2,
+      "when": "always"
+    }
+  }
+}

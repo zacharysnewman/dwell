@@ -187,12 +187,48 @@ test('a hydrology profile added by data alone is emitted and can be the default'
   d.profiles.push(p);
   d.default = 'coarse_wet';
   const rs = hydrologyRust(validateHydrology(d));
-  assert.match(rs, /PROFILES: \[HydrologyParams; 4\]/);
+  assert.match(rs, /PROFILES: \[HydrologyParams; 7\]/);
   assert.match(rs, /DEFAULT: &str = "coarse_wet"/);
   assert.match(rs, /name: "coarse_wet",\n        cell: 250,/);
   assert.match(rs, /rainfall: 2\.5,/);
   assert.match(rs, /small_pits: SmallPits::Fill,/);
   assert.match(rs, /RiverPoint \{ discharge: 5000\.0, width: 400\.0, depth: 12\.0 \}/);
+});
+
+test('an uplift layer, rock bands and orographic rain added by data alone are emitted', () => {
+  const d = loadHydrology();
+  const p = structuredClone(d.profiles.find((q) => q.name === 'medium'));
+  p.name = 'two_ranges';
+  p.uplift = {
+    rate: 0.001,
+    baseHeight: 800,
+    keepRelief: 0,
+    plains: 0.2,
+    shelf: { min: 500, max: 500, wavelength: 1000 },
+    ranges: {
+      count: 2,
+      length: { min: 10000, max: 20000 },
+      width: 3000,
+      strength: 1.5,
+      wander: 0.5,
+      warp: { amplitude: 0, wavelength: 1000 },
+      minCoast: 1000,
+      maxCoast: 5000,
+      align: 1,
+    },
+  };
+  p.rockBands = { contrast: 0.4, wavelength: 2000, hardShare: 0.5, warp: { amplitude: 100, wavelength: 1000 } };
+  p.rain = { model: 'orographic', amount: 2, direction: 45, spread: 0, upslope: 3, fetch: 9000, shadow: 0.5, shadowHeight: 300, min: 0.5, max: 2 };
+  p.rivers.mouths.rule = 'coastRelief';
+  d.profiles.push(p);
+  const rs = hydrologyRust(validateHydrology(d));
+  assert.match(rs, /name: "two_ranges",[\s\S]*tectonics: Some\(Tectonics \{\n            rate: 0\.001,\n            base_height: 800\.0,/);
+  assert.match(rs, /ranges: Ranges \{\n                count: 2,\n                length_min: 10000\.0,/);
+  assert.match(rs, /apron_strength: 0\.0,/);
+  assert.match(rs, /plates: Plates \{\n                count: 0,/);
+  assert.match(rs, /rock_bands: Some\(RockBands \{\n            contrast: 0\.4,/);
+  assert.match(rs, /rain: Rain::Orographic\(Orographic \{\n            direction: 45\.0,/);
+  assert.match(rs, /mouth_rule: MouthRule::CoastRelief,/);
 });
 
 test('a bad hydrology profile fails with its name, the key and the problem', () => {
@@ -204,7 +240,9 @@ test('a bad hydrology profile fails with its name, the key and the problem', () 
     [(p) => (p.erosion.lakeFill = 2), /medium: erosion\.lakeFill must be in \[0, 1\]/],
     [(p) => (p.erosion.talus.passes = -1), /medium: erosion\.talus\.passes/],
     [(p) => (p.erosion.speed = 1), /medium: erosion: unknown speed/],
-    [(p) => (p.rain.model = 'orographic'), /medium: rain\.model must be one of uniform/],
+    [(p) => (p.rain.model = 'monsoon'), /medium: rain\.model must be one of uniform, orographic/],
+    [(p) => (p.rain.model = 'orographic'), /medium: rain\.direction must be in/],
+    [(p) => (p.rivers.mouths.rule = 'tides'), /medium: rivers\.mouths\.rule must be one of riverSlope, coastRelief/],
     [(p) => (p.lakes.smallPits = 'drain'), /medium: lakes\.smallPits must be one of fill, breach/],
     [(p) => (p.rivers.threshold = 0), /medium: rivers\.threshold must be in \(0/],
     [(p) => p.rivers.geometry.reverse(), /medium: rivers\.geometry discharges must increase/],
@@ -215,6 +253,23 @@ test('a bad hydrology profile fails with its name, the key and the problem', () 
   for (const [edit, message] of cases) {
     const d = loadHydrology();
     edit(d.profiles.find((p) => p.name === 'medium'));
+    assert.throws(() => validateHydrology(d), message);
+  }
+  const upliftCases = [
+    [(p) => (p.uplift.rate = -1), /uplift: uplift\.rate must be in \[0, 0\.1\]/],
+    [(p) => delete p.uplift.shelf, /uplift: uplift\.shelf must be an object/],
+    [(p) => (p.uplift.shelf.min = 9000), /uplift: uplift\.shelf\.min must not exceed/],
+    [(p) => (p.uplift.ranges.count = 2.5), /uplift: uplift\.ranges\.count must be a whole number/],
+    [(p) => (p.uplift.ranges.length.min = 1e6), /uplift: uplift\.ranges\.length\.min must not exceed its max/],
+    [(p) => (p.uplift.ranges.align = 2), /uplift: uplift\.ranges\.align must be in \[0, 1\]/],
+    [(p) => (p.uplift.ranges.peaks = 3), /uplift: uplift\.ranges: unknown peaks/],
+    [(p) => (p.uplift.apron.width = 0), /uplift: uplift\.apron\.width must be in \(0/],
+    [(p) => (p.uplift.plates = { count: 1, width: 1, strength: 1, rift: 0, warp: { amplitude: 0, wavelength: 100 } }), /plates\.count must be 0 or at least 2/],
+    [(p) => (p.rockBands = { contrast: 1, wavelength: 1, hardShare: 0, warp: { amplitude: 0, wavelength: 100 } }), /uplift: rockBands\.contrast must be in \[0, 0\.99\]/],
+  ];
+  for (const [edit, message] of upliftCases) {
+    const d = loadHydrology();
+    edit(d.profiles.find((p) => p.name === 'uplift'));
     assert.throws(() => validateHydrology(d), message);
   }
   const d = loadHydrology();

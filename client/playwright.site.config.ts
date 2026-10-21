@@ -18,6 +18,16 @@ export default defineConfig({
   },
   use: {
     baseURL: 'http://localhost:4174/dwell/',
+    // No music (docs/AUDIO.md §6a).
+    storageState: {
+      cookies: [],
+      origins: [
+        {
+          origin: 'http://localhost:4174',
+          localStorage: [{ name: 'dwell.music', value: '"off"' }],
+        },
+      ],
+    },
     launchOptions: {
       ...(process.env.DWELL_CHROMIUM ? { executablePath: process.env.DWELL_CHROMIUM } : {}),
       args: ['--enable-unsafe-swiftshader', '--no-proxy-server'],

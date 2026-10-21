@@ -4,7 +4,10 @@ name: Deploy site to GitHub Pages
 # Releases (RELEASES.md §4):
 #   /dwell/index.html          the launcher (client/launcher)
 #   /dwell/versions.json       the manifest of the builds below
-#   /dwell/v/<version>/…       every stable release and the newest dev builds, each unpacked
+#   /dwell/v/<version>/…       the releases the retention policy keeps, each unpacked
+#                              (shared/version/site-retention.json: the newest of every
+#                              compatibility line, the newest few overall, the pins, the newest
+#                              dev builds); the rest stay as GitHub Releases, off the site
 # Called by release.yml after a release is published (or dispatched by it on the default branch,
 # from a run on a tag: the github-pages environment deploys only from main); run by hand to rebuild the site (e.g. after a
 # launcher change, or to re-deploy).
@@ -20,10 +23,6 @@ permissions:
 concurrency:
   group: pages
   cancel-in-progress: false
-
-env:
-  # Dev builds kept on the site and as releases (client/scripts/site.ts).
-  DEV_KEEP: 10
 
 jobs:
   build:
@@ -46,8 +45,10 @@ jobs:
           GH_REPO: ${{ github.repository }}
         working-directory: client
         run: |
+          set -o pipefail # a bad policy or release list must fail the step, not vanish into tee
           gh release list --limit 500 --json tagName > "$RUNNER_TEMP/releases.json"
-          node --experimental-strip-types scripts/site.ts plan "$RUNNER_TEMP/releases.json" "$DEV_KEEP" | tee "$RUNNER_TEMP/plan.json"
+          node --experimental-strip-types scripts/site.ts plan "$RUNNER_TEMP/releases.json" | tee "$RUNNER_TEMP/plan.json"
+          jq -r '"Site: \(.keep | length) builds kept, \(.retired | length) stable releases retired (still on GitHub), \(.prune | length) dev releases deleted"' "$RUNNER_TEMP/plan.json" >> "$GITHUB_STEP_SUMMARY"
       - name: Download the builds
         env:
           GH_TOKEN: ${{ github.token }}
@@ -67,10 +68,13 @@ jobs:
         run: |
           npm run build:launcher
           cp -r dist-launcher/. ../site/
+          node --experimental-strip-types scripts/site.ts media ../site
           node --experimental-strip-types scripts/site.ts manifest ../site
-      - name: Report the site's size against the 1 GB Pages limit
+      # Writes the job summary itself (no tee to hide its exit code): warns over the policy's
+      # sizeBudgetMB, fails the job (no deploy) over Pages' 1 GB.
+      - name: Check the site's size against the budget and the 1 GB Pages limit
         working-directory: client
-        run: node --experimental-strip-types scripts/site.ts size ../site | tee -a "$GITHUB_STEP_SUMMARY"
+        run: node --experimental-strip-types scripts/site.ts size ../site "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site

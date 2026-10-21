@@ -175,6 +175,14 @@ pub struct Damage {
     pub impact_damage_min_speed: f32,
     /// Health points per m/s above the minimum.
     pub impact_damage_per_speed: f32,
+    /// A side contact with an obstacle the controller could step up (its top no more than
+    /// `movement.max_step_height` above the feet: one ½ m cell) hits as the ramp it stands for,
+    /// not as a wall (§6.10): the impact normal is that of a ramp rising the obstacle's height over
+    /// `impact_step_ramp_run`, facing the mover (a ½ m step: the cardinal ½ m ramp's 26.57°).
+    /// Taller obstacles stay walls; up-facing contacts keep their own normal.
+    pub impact_step_as_ramp: bool,
+    /// The run (m) of the ramp a steppable obstacle counts as: one cell's width.
+    pub impact_step_ramp_run: f32,
     pub crush_speed: f32,
     pub crush_ticks: u16,
 }
@@ -328,6 +336,8 @@ impl Default for PlayerControllerConfig {
             damage: Damage {
                 impact_damage_min_speed: 12.0,
                 impact_damage_per_speed: 8.0,
+                impact_step_as_ramp: true,
+                impact_step_ramp_run: 1.0,
                 crush_speed: 4.0,
                 crush_ticks: 6,
             },

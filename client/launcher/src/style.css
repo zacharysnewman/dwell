@@ -103,3 +103,13 @@ body:has(#launcher) {
   color: var(--ink-soft);
   font-size: 13px;
 }
+
+#version-retired {
+  margin: 12px 0 0;
+  color: var(--ink-soft);
+  font-size: 13px;
+}
+
+#version-retired a {
+  color: inherit;
+}

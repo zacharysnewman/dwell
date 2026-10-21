@@ -158,6 +158,8 @@ test('the version page opens by address, with dev builds hidden until asked', as
   await page.goto('./?versions');
   await expect(page.locator('#version-list')).toBeVisible();
   await expect(page.locator('.version-row')).toHaveCount(3);
+  // Retired patches are off the list; the page says where they are (RELEASES.md §4).
+  await expect(page.locator('#version-retired a')).toHaveAttribute('href', /\/releases$/);
   await page.locator('#use-dev-builds').check();
   expect(await page.evaluate(() => localStorage.getItem('dwell.channel'))).toBe('dev');
   await page.locator('#use-dev-builds').uncheck();

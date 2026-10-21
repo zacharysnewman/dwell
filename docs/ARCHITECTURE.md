@@ -151,10 +151,16 @@ GitHub Pages only serves static files. Consequences that shape the architecture:
   each release from `main` — dispatched on `main` by a release run on a tag or another branch,
   since the `github-pages` environment deploys only from `main` — and runnable by hand;
   `client/scripts/site.ts`): `index.html` (the launcher),
-  `versions.json` (generated from each `build.json`) and `v/<version>/` for every stable release and
-  the newest 10 dev builds, each unpacked and immutable; older dev releases and their tags are
-  deleted. It is deployed with `actions/deploy-pages`, and its size is reported against Pages'
-  1 GB limit. Builds are same-origin directories because release assets carry no CORS headers or
+  `versions.json` (generated from each `build.json`), `v/<version>/` for the releases the
+  **retention policy** keeps, each unpacked and immutable, and `media/` (the music's files, once per
+  site: `site.ts media` moves each build's `media/` there, §5.2). The policy is data,
+  `shared/version/site-retention.json`, validated and applied by `site.ts plan` (RELEASES.md §4):
+  the newest release of every compatibility line (so every world still opens: a world opens in the
+  newest build of its line), the 10 newest stable releases, the pinned lines and releases (`0.10`),
+  and the newest 10 dev builds. Retired stable releases stay as GitHub Releases, off the site (a pin
+  brings one back); older dev releases and their tags are deleted. It is deployed with
+  `actions/deploy-pages`; `site.ts size` warns over the policy's 900 MB budget and fails the deploy
+  over Pages' 1 GB limit. Builds are same-origin directories because release assets carry no CORS headers or
   script content types, the CSP is `script-src 'self'` / `worker-src 'self'`, and all versions must
   share the origin's storage.
 - **The launcher** (`client/launcher`, its own small page and Vite build) reads `versions.json`,
@@ -277,13 +283,14 @@ There are **no official game servers**; players host (ADR 0003, details in §10)
 /client              TypeScript shell (Vite): the DOM UI over the Rust client (§5).
   /src/engine        wasm.ts (loads the module, once per context), jobWorker.ts (a job worker).
   /src/audio         Sound effects (§5.2): the synth, mixer, variation, engine, event mapping, UI
-                     sounds, volumes, offline render helpers; sounds.gen.ts from shared/sounds.
+                     sounds, volumes, offline render helpers; sounds.gen.ts from shared/sounds;
+                     the music player (music.ts) and music.gen.ts from shared/music.
   /src/pkg           wasm-bindgen output of `npm run build:wasm` (not committed).
   /e2e               Playwright end-to-end tests against `dwell-server` and the built client
                      (launcher.spec.ts: against a locally assembled site, playwright.site.config.ts).
   /e2e-webgpu        The WebGPU probe and the renderer's smoke scene in Chromium.
   /launcher          The launcher page at /dwell/ (§2.1, Phase 6): versions.json, version choice.
-  /scripts           site.ts (plan, manifest and size of the Pages site), release.ts (what a release
+  /scripts           site.ts (plan, retention, manifest and size of the Pages site), release.ts (what a release
                      run builds), localSite.ts (a local multi-version site for the e2e tests),
                      shots.ts (screenshots of the named views), views.ts (the views' format and
                      checks), bench.ts and scenarios.ts (the dev bench, DEV_TOOLS.md), compare.ts,
@@ -301,6 +308,9 @@ There are **no official game servers**; players host (ADR 0003, details in §10)
 /shared/sounds       Sound data (dwell.json: sounds, block sound sets, events, gaits, actions, UI,
                      controls) + gen.mjs (→ TS for client/src/audio, Rust for dwell-game) and
                      validate.mjs (also used by shared/blocks/gen.mjs and the client's tests).
+/shared/music        Music (music.json: tracks — title, author, file, volume, loop, fades, when —
+                     and their audio files, the owner's Starry Sunshine) + gen.mjs (→ TS
+                     music.gen.ts, each file's published name with its content hash), validate.mjs.
 /shared/worldgen     golden/: chunk and LOD-section hashes of generator version 20 (§6.3); terrain.json: the height field's parameters, decorations.json: the terrain's decoration rules, placements.json: the structure placements (the pines, ADR 0043), midplane.json: the bedrock between the faces and the portals through it, gen.mjs (→ Rust tables for dwell-worldgen) (§6.3).
 /shared/structures   Structure files (*.json; test/ holds fixtures) + gen.mjs (→ Rust tables for
                      dwell-world) and gen.test.mjs; format.mjs, the format's rules, shared by gen.mjs
@@ -569,17 +579,32 @@ update finds not playing (a hidden tab or a context still starting). They are a 
 predicted state and the world, never fed back — and cross to JS once a frame (`takeSounds`, a
 `Float64Array` of 7 numbers per event). The shell (`client/src/audio`) maps each to its sounds, draws
 the play's variation from a seeded RNG (never the same twice in a row), alternates the local
-player's steps left and right, and plays through the mixer: effects and UI buses → master → a soft
+player's steps left and right, and plays through the mixer: effects, UI and music buses → master → a soft
 limiter (a waveshaper, linear to 0.7 and never past full scale), with a small convolution room on
 the effects. Other players' sounds go through a `PannerNode` (HRTF on desktop, equal-power on
 phones; inverse rolloff, dropped past 48 m) with the listener at the camera (`listener`). The
 AudioContext starts on the first pointer, key or touch gesture (autoplay rules, iOS), suspends while
-the tab is hidden, and the volumes (master, effects, interface) are a per-browser append-only store
+the tab is hidden, and the volumes (master, effects, interface, music) are a per-browser append-only store
 (`dwell.audio`). Menu sounds are delegated listeners on the document (installed by the game page
 and by the main menu, which the launcher shows without WASM), so every button sounds alike and new
 ones need no wiring; `data-sound` overrides or silences one. Offline renders
 (`npm run sfx:render`) play every sound through the same synth and mixer in Chromium's
 `OfflineAudioContext`, check them (non-silent, peak < 1.0, sensible length) and write WAVs.
+
+**Music** **[built, Phase 28 F8]** ([`AUDIO.md`](./AUDIO.md) §2a, §6a). The one recorded asset: the
+owner's track *Starry Sunshine*, as data in `shared/music/music.json` (title, author, file, volume,
+loop, fades, `when` — only `always` so far; the first matching track plays), validated and
+generated into `client/src/audio/music.gen.ts` (CI fails on stale output). The shell streams it with
+an `<audio>` element, never decoded whole, routed once the AudioContext runs into the mixer's
+**music** bus (`createMediaElementSource` → gain → music → master); before that it plays straight
+out at the same level. It tries `play()` at once and, if the browser refuses (autoplay rules, iOS),
+starts inside the first pointer, key or touch gesture, resuming the context there, once. It plays
+from the first screen (main menu, loading screen, game), carries its position across the tab's
+page loads (`sessionStorage`), fades in, loops, pauses while the tab is hidden and at Music volume 0
+(the fourth volume in `dwell.audio`), and is off with `?music=off` or `dwell.music` "off" (the e2e
+suite and the bench). The file is served once per site at `/dwell/media/<name>-<hash>.mp3` rather
+than in each version directory: release builds load it from the site root (`__MEDIA_BASE__`,
+`client/scripts/media.ts`), and the Pages workflow moves each build's copy there (`site.ts media`).
 
 ### 5.3 Characters and creatures **[in progress; Phase 40: the design, data and prototype built; players in the game built (C1, C2's held item and swings); looks at join and creatures planned]**
 
@@ -1026,8 +1051,10 @@ position and view) — or shows it to copy by hand where the clipboard is refuse
 regenerated and examined exactly.
 **Built (Phase 3b):** streaming, the verification chunk, and the generation pools (below).
 **[prototype, not wired in]** `dwell-worldgen` also holds a **hydrology prototype**
-(`hydrology/`: a per-seed, per-face map of the height field on a 100 m grid, eroded by stream power,
-with priority-flood lakes and traced rivers; its profiles are data, `shared/worldgen/hydrology.json`,
+(`hydrology/`: a per-seed, per-face map of the height field on a 100 m grid, eroded by stream power
+driven by an uplift layer of mountain ranges, foothills, highlands and plates (`uplift.rs`), with
+optional rock bands and orographic rain, priority-flood lakes and traced rivers; its profiles are
+data, `shared/worldgen/hydrology.json`,
 generated by `shared/worldgen/gen.mjs`) and its image viewer (`examples/hydrology`), for judging river
 and lake layouts. Nothing the game generates reads it; the plan to wire it in is a proposal,
 [`proposals/TERRAIN_HYDROLOGY_AND_VOLUMES.md`](./proposals/TERRAIN_HYDROLOGY_AND_VOLUMES.md).
@@ -2386,6 +2413,7 @@ in the code yet.
 | `sprint_slide.friction` / `slope_gravity` (`config.rs`) | 6 m/s² / 1 | Its deceleration, and the fraction of gravity the ground's tilt along the slide adds (downhill) or takes (uphill): 1.3 s / ~7 m on flat ground from a sprint |
 | `sprint_slide.steer_rate` / `cooldown_ticks` (`config.rs`) | 90 °/s / 30 ticks (0.5 s) | Limited steering toward the move input; the wait after a slide before the next (≤ 255: a `u8` on the wire) |
 | `damage.impact_damage_min_speed` / `impact_damage_per_speed` (`config.rs`) | 12 m/s / 8 per m/s | Impact damage (owner, 2026-10-21; PLAYER_CONTROLLER.md §6.10): a hit hurts by its speed into the surface, `max(0, −v · n)`, above the minimum, this many points per m/s; floors, ramps, walls, ceilings |
+| `damage.impact_step_as_ramp` / `impact_step_ramp_run` (`config.rs`) | true / 1 m | A contact with an obstacle within `movement.max_step_height` of the feet (a ½ m step) hits as a ramp rising its height over the run (a ½ m step: the ½ m ramp's 26.57°), not a wall (owner, 2026-10-21; PLAYER_CONTROLLER.md §6.10). Server damage only |
 | `SLIDE_HOLD` / `SLIDE_UPDATE_EVERY` (*client*, `dwell-game` `sound.rs`) | 0.15 s / 50 ms | A slide's sound: a pause shorter than the hold keeps the same voice; speed updates at most this often (AUDIO.md §5) |
 | `IMPACT_HOLD` / `IMPACT_KEEPS` / `IMPACT_PROBE_M` (*client*, `dwell-game` `sound.rs`) | 70 ms / 0.35 / 0.06 m | An impact sound: the speed toward a surface touching the body (within the probe) dropping in a sample to at most `KEEPS` of its fastest in the last `HOLD`; then quiet that long (AUDIO.md §5) |
 | Impact, hurt (*client*, `shared/sounds` `events`) | `impact` 2 → 25 m/s; `hurt` 0 → 80 health points | Where the impact sound starts and is full; the hurt's intensity by the damage (AUDIO.md §5) |
@@ -2962,7 +2990,9 @@ animated from `State` and flags in snapshots.
 - Health (`MAX_HEALTH` 100) is server-authoritative; damage sources are impacts (built, owner
   2026-10-21: the controller's `IMPACTED` hit, the body's pre-contact velocity into the surface's
   normal, `max(0, −v · n)`, so a glancing hit counts less and a skim nothing; floors, ½ m ramps by
-  their normal, walls and ceilings alike, once per contact, the largest of a tick's; above
+  their normal, walls and ceilings alike, an obstacle the controller could step up (top within
+  `max_step_height` of the feet: a ½ m step) as the ramp it stands for, not a wall
+  (`damage.impact_step_as_ramp`), once per contact, the largest of a tick's; above
   `damage.impact_damage_min_speed` 12 m/s, `impact_damage_per_speed` 8 points per m/s; flight,
   swimming and climbing exempt; sent with cause `Fall`; PLAYER_CONTROLLER.md §6.10; and falling out
   of the world), crush

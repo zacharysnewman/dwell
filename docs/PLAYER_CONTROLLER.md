@@ -665,6 +665,19 @@ and ceilings hurt too. `step_impact` (pass 10a) raises `IMPACTED` with the tick'
 - **The ground layer's contacts are not impacts:** while the player was grounded the tick before,
   an up-facing contact (face-local `n.y > 0.1`) is the ground being followed, stepped onto or slid
   on, or the landing just met: not a hit. Walls still count while grounded.
+- **A steppable obstacle is a ramp, not a wall** (owner, 2026-10-21: *"you don't take damage from
+  the side of half blocks as if they're a wall do you? I'd want them to be treated as ramps"*;
+  `damage.impact_step_as_ramp`, `Players::step_as_ramp`). A contact (not skipped above) whose
+  obstacle's top, read just past the contact as the step-up reads a step's top, is walkable, no
+  more than `movement.max_step_height` above the feet and has room for the capsule on it, hits with
+  the normal of the ramp that step stands for: rising the obstacle's height (from the ground under
+  the body, at most the step height) over `damage.impact_step_ramp_run` (1 m, one cell), facing the
+  mover. A ½ m step is the cardinal ½ m ramp, 26.57°: a horizontal hit counts × 0.447. The feet are
+  where the body met the contact (`Player::contact_at`, read with the contacts), before this tick's
+  step-up lifts it. A contact already flatter than that ramp (the step's edge met from above) keeps
+  its own normal; a taller obstacle (a 1 m block, two ½ m cells) stays a wall. On the ground the
+  step-up takes a ½ m step before its side is a contact, at any speed; the rule matters off the
+  ground (a hop, a launch, a slide over a crest), landing sideways onto a step's edge included.
 - **Exempt:** flight, swimming and climbing (their layers skip the vertical layer, which is where a
   landing was ever raised): flying into a wall is harmless, as flying into the ground was. Water's
   behaviour is unchanged: entering it raises no hit.
@@ -687,13 +700,21 @@ and ceilings hurt too. `step_impact` (pass 10a) raises `IMPACTED` with the tick'
 | Walking / sprinting into a wall | 5 / 8 m/s | 0 |
 | Flying at ~30 m/s into a wall | (exempt) | 0 |
 | A sprint slide at its 14 m/s cap (downhill only) into a wall | 14 m/s | 16 |
+| Running into a ½ m step on the ground, at any speed (5–25 m/s) | (stepped up: no hit) | 0 |
+| 14 m/s off the ground (0.2 m up) into a ½ m step's side | 7.5 m/s (its ramp; a wall: 14.7, 21) | 0 |
+| 25 m/s off the ground into a ½ m step's side, or its edge | 12.1 m/s (its ramp) | 1 |
+| 40 m/s off the ground into a ½ m step's side | 18.8 m/s (its ramp) | 54 |
+| 25 m/s into a 1 m block (two ½ m cells), on or off the ground | 24.5–25 m/s (a wall) | 100–104 |
 
-- **Tests:** `tests/impact.rs` (12, both faces and far from the origin): a 20 m fall onto the flat
+- **Tests:** `tests/impact.rs` (18, both faces and far from the origin): a 20 m fall onto the flat
   deals the 131 it did before; a short drop nothing; onto the ½ m ramp hillside a vertical landing
   by the ramp's normal, a glancing one less and a skim nothing; a launch into a wall hurts once, one
   brushing along it not at all; flying into it not at all; a hard ceiling hit hurts and a jump into
   a low ceiling not; walking and sprinting into a wall, stepping up ½ m, auto-climb and walking the
-  ramp hillside stay under 9 m/s. `dwell-sim` `tests/netcode.rs` damages and kills by falls through
+  ramp hillside stay under 9 m/s; a ½ m step's side off the ground hits as its ramp (14 m/s: none,
+  25 m/s: under 10 points, 40 m/s: the ramp's share), its edge too, and with
+  `impact_step_as_ramp` off as a wall; a 1 m block stays a wall (≥ 100); running into a ½ m step
+  at up to 25 m/s steps up with no hit. `dwell-sim` `tests/netcode.rs` damages and kills by falls through
   the server.
 
 ## 7. Configuration
@@ -743,6 +764,7 @@ PPC default for voxels.
 | | `friction` / `slope_gravity` | 6 m/s² / 1 | — | Deceleration; `gravity × slope_gravity × tilt` along the slide |
 | | `steer_rate` / `cooldown_ticks` | 90 °/s / 30 ticks (0.5 s, at most 255: the wire's `u8`) | — | Turning toward the move input; before another slide |
 | `damage` ◆ | `impact_damage_min_speed` / `impact_damage_per_speed` | 12 m/s / 8 per m/s | — | From the `IMPACTED` event's speed into the surface (§6.10): floors, ramps, walls, ceilings |
+| | `impact_step_as_ramp` / `impact_step_ramp_run` | true / 1 m | — | An obstacle within `max_step_height` of the feet hits as a ramp rising its height over the run (§6.10) |
 | | `crush_speed` / `crush_ticks` | 4 m/s / 6 | — | Phase 20 |
 | `step_view` ◆ | `slope` / `max_slope` / `min_speed` | 0.5 / 1.0 / 1 m/s | (PPC `SmoothSteps`: 4 m/s) | Client camera only (§9, Steps): the virtual ramp the eye follows over a step; never read by the sim |
 | `advanced` | `step_probe_distance` ◆ / `probe_ring_radius` / `wall_check_distance` | 0.05 m / 0.9 / 0.16 m | 0.01 / same / same | The step's top is read this far past its face (§4) |
