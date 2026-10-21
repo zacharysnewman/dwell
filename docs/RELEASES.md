@@ -181,7 +181,14 @@ the site **from the releases** and deploys it with `actions/deploy-pages`, as to
 /dwell/index.html              the launcher
 /dwell/versions.json           the manifest, generated from the releases' build.json files
 /dwell/v/<version>/...         each release's build, unpacked, immutable
+/dwell/media/<name>-<hash>.mp3 the music's files, once per site (AUDIO.md §6a)
 ```
+
+- **Media:** a build's `media/` (the music, 4.9 MB) is not kept in its version directory: release
+  builds load it from `/dwell/media/`, and `site.ts media` (after unpacking, before the manifest)
+  moves every build's copies there, one per name; the names carry the file's content hash, so a
+  name already there is the same file (a size mismatch fails the deploy). The release tarball
+  still carries it (the assembly takes it from there); the launcher's build emits it too.
 
 - **Which releases:** every stable release; the newest `DEV_KEEP` (≈ 10) dev pre-releases. Older
   dev pre-releases and their tags are deleted by the workflow.
