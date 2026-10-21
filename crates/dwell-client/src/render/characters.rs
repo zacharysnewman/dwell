@@ -36,6 +36,16 @@ pub const OUTLINE_M: f64 = 64.0;
 pub const DRAW_M: f64 = 512.0;
 /// Parts smaller than this (m, their largest side) are left out of the far mesh.
 pub const SMALL_PART_M: f32 = 0.06;
+/// Whether characters, your arms and held items draw their ink outline. Off for now (owner,
+/// 2026-10-21): the hull showed through cutout held items (grass, leaves) as dark faces.
+pub const OUTLINES: bool = false;
+
+/// Whether a character's draw takes its outline: never while [`OUTLINES`] is off, and not past
+/// [`OUTLINE_M`].
+fn outline_for(far: bool) -> bool {
+    OUTLINES && !far
+}
+
 /// The outline's width (m) up close; it widens a little with distance to stay about a pixel.
 pub const OUTLINE_WIDTH_M: f32 = 0.006;
 /// The arms pass's near and far planes (m).
@@ -935,7 +945,7 @@ impl CharacterRenderer {
                 instance,
                 body,
                 item,
-                outline: !far,
+                outline: outline_for(far),
                 passes: mask,
                 casts,
                 cast_only: d.cast_only,
@@ -968,7 +978,7 @@ impl CharacterRenderer {
                 instance,
                 body,
                 item,
-                outline: true,
+                outline: outline_for(false),
                 passes: 0,
                 casts: false,
                 cast_only: false,
@@ -1217,6 +1227,12 @@ fn brush_tiles(device: &wgpu::Device, queue: &wgpu::Queue) -> wgpu::TextureView 
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn outlines_are_off_for_now_near_and_far() {
+        assert!(!super::outline_for(false), "near characters and the arms draw no outline");
+        assert!(!super::outline_for(true), "far characters draw no outline");
+    }
+
     use super::*;
 
     #[test]
