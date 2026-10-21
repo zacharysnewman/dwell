@@ -26,7 +26,7 @@ use dwell_world::lod::{
     INDEX_LEVEL, LodBounds, LodCoord, LodKind, MAX_LEVEL, SECTION_CELLS, cell_index, cell_size,
     child, chunk_of_lod, in_world, kind_from_bounds, lod_of_chunk, parent, row_face, section_size,
 };
-use dwell_world::{CHUNK_SIZE, ChunkCoord, Face, FaceFrame, MIDPLANE_Y, WORLD_RADIUS};
+use dwell_world::{CHUNK_SIZE, ChunkCoord, Face, FaceFrame, WORLD_RADIUS};
 
 use crate::frustum::{Frustum, LodCamera, box_distance};
 use crate::grid::{

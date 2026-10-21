@@ -1880,12 +1880,9 @@ pub fn source(samples: u32) -> String {
 /// entry points.
 pub fn lighting_source() -> String {
     format!(
-        "{}const SEA_LEVEL: f32 = {:.1};\nconst ATLAS_CELLS: u32 = {}u;\nconst ATLAS_TILES: u32 = {}u;\n{}\n{}\n{}\n{FRAME}\n{}\n{}\n{FRAME_DEPTH}\n{COMMON}\n",
-        format!(
-            "{}{}",
-            dwell_world::FaceFrame::wgsl(),
-            super::face_shading::WGSL
-        ),
+        "{}{}const SEA_LEVEL: f32 = {:.1};\nconst ATLAS_CELLS: u32 = {}u;\nconst ATLAS_TILES: u32 = {}u;\n{}\n{}\n{}\n{FRAME}\n{}\n{}\n{FRAME_DEPTH}\n{COMMON}\n",
+        dwell_world::FaceFrame::wgsl(),
+        super::face_shading::WGSL,
         world::SEA_LEVEL as f64,
         dwell_mesh::ATLAS_CELLS,
         dwell_mesh::ATLAS_TILES,
