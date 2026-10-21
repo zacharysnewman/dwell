@@ -7,10 +7,7 @@ interface WorkerScope {
   postMessage(message: ArrayBuffer | { memory: number }, transfer?: Transferable[]): void;
   onmessage:
     | ((
-        e: MessageEvent<
-          | ArrayBuffer
-          | { t: 'init'; generatorVersion?: number; worldSeed?: bigint }
-        >,
+        e: MessageEvent<ArrayBuffer | { t: 'init'; generatorVersion?: number; worldSeed?: bigint }>,
       ) => void)
     | null;
 }
