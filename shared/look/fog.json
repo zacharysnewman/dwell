@@ -1,0 +1,6 @@
+{
+  "$comment": "The height fog (ARCHITECTURE.md §6.6): one fixed haze for every client, not a player setting (owner, 2026-10-21: the 0.22.7 defaults made hard). distanceM: at sea level, the distance (m) at which the haze reaches half its maximum. density: the most the haze can hide the far distance, 0 (no fog) to 1. heightM: the scale height (m); the air's haze halves every heightM·ln 2 of height. The time of day's fogDensity (daynight.json) multiplies the density. Run `node shared/look/fog.mjs` after editing; CI fails if crates/dwell-look/src/fog.gen.rs is stale.",
+  "distanceM": 16000,
+  "density": 0.95,
+  "heightM": 1800
+}

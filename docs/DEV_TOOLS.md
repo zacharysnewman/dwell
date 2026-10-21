@@ -54,7 +54,7 @@ Output per scenario, in `OUT/<scenario>/`:
 ```
 
 `seed` (default 7), `window`, `settings` (the settings menu's stored values, as in named views:
-`fog`, `detail`, `exposure`, `clouds`, `water`, `motion` and `timeOfDay` (0–1, 0 midnight: `?time=`) —
+`detail`, `exposure`, `clouds`, `water`, `motion` and `timeOfDay` (0–1, 0 midnight: `?time=`; the fog is fixed look data, not a setting) —
 `{ "speedEffects": false }` turns the motion effects off, for a before/after of their cost in one
 build),
 `debug` (`?debug=1`), `scale`, `split` (`near` or `far`: which part of the view it measures, for

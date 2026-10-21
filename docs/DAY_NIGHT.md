@@ -81,7 +81,7 @@ Each keyframe sets, at one solar angle, everything the time of day changes (colo
 | `band`, `bandStrength` | The warm band along the horizon toward the sun's azimuth |
 | `sunLight`, `sunIntensity`; `moonLight`, `moonIntensity` | The direct lights (the generator requires 0 for a light below the horizon) |
 | `hemiSky`, `hemiGround`, `hemiIntensity` | The hemisphere (ambient) light |
-| `fogDensity` | Multiplies the fog setting's density (denser at dawn and dusk) |
+| `fogDensity` | Multiplies the fog's density (`shared/look/fog.json`; denser at dawn and dusk) |
 | `exposure` | Multiplies the exposure setting |
 | `stars`, `moonGlow` | The stars' visibility; the moon's glow (× its lit share) |
 | `saturation` | The lit scene's saturation (moonlight desaturates: 0.5 at midnight) |

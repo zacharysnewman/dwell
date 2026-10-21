@@ -1,12 +1,11 @@
 // The game menu: a button in the top-left corner (or Esc) opens a full-screen menu over the game
-// with pages — Settings (the height fog, render/fog.ts; the detail settings, lod/detail.ts; the
+// with pages — Settings (the detail settings, lod/detail.ts; the
 // tone-mapping exposure and the sky, render/look.ts; the water quality, ui/waterSettings.ts; the
 // volumes, audio/settings.ts; ARCHITECTURE.md §5, §6.6), Controls (every key
 // and touch control, ui/controls.ts), Debug (the debug tools as buttons, with their keys) and Host
 // (a local world's hosting, ui/hostPanel.ts) — and Resume and Quit to main menu (Phase 5a). The
 // settings are kept in this browser.
 import { defaultDetail, detailLimits, sanitizeDetail, type DetailSettings } from './detailSettings';
-import { DEFAULT_FOG, FOG_LIMITS, sanitizeFog, type FogSettings } from './viewSettings';
 import { DEFAULT_EXPOSURE, EXPOSURE_LIMITS, sanitizeExposure } from './viewSettings';
 import { CLOUD_QUALITIES, defaultClouds, sanitizeClouds, type CloudQuality } from './viewSettings';
 import {
@@ -64,7 +63,6 @@ export function formatMetres(m: number): string {
 }
 
 export interface Settings {
-  fog: FogSettings;
   detail: DetailSettings;
   /** Tone-mapping exposure (dwell-look; the time of day's exposure multiplies it). */
   exposure: number;
@@ -85,7 +83,6 @@ export interface Settings {
 
 export function defaultSettings(mobile: boolean, reducedMotion = false): Settings {
   return {
-    fog: { ...DEFAULT_FOG },
     detail: defaultDetail(mobile),
     exposure: DEFAULT_EXPOSURE,
     audio: { ...DEFAULT_VOLUMES },
@@ -97,14 +94,9 @@ export function defaultSettings(mobile: boolean, reducedMotion = false): Setting
   };
 }
 
-/** The settings as JSON to copy and share (rounded: whole metres, density to 0.01). */
+/** The settings as JSON to copy and share (rounded: whole metres, fractions to 0.01). */
 export function settingsJson(s: Settings): string {
   const rounded: Settings = {
-    fog: {
-      distanceM: Math.round(s.fog.distanceM),
-      density: Math.round(s.fog.density * 100) / 100,
-      heightM: Math.round(s.fog.heightM),
-    },
     detail: {
       distanceM: Math.round(s.detail.distanceM),
       pixelError: Math.round(s.detail.pixelError * 10) / 10,
@@ -129,7 +121,8 @@ export function settingsJson(s: Settings): string {
   return JSON.stringify(rounded, null, 2);
 }
 
-const FOG_KEY = 'dwell.fog';
+// `dwell.fog` (the fog sliders, before the fog was fixed look data: shared/look/fog.json) is no
+// longer read or written. Builds before it still read it; it is left as it is.
 const DETAIL_KEY = 'dwell.detail';
 const EXPOSURE_KEY = 'dwell.exposure';
 // `dwell.skyRotation` (the sky rotation slider before the day/night cycle) is no longer read or
@@ -151,9 +144,7 @@ function load(key: string): unknown {
 /** The settings kept in this browser, or the defaults. */
 export function loadSettings(mobile: boolean): Settings {
   const defaults = defaultSettings(mobile);
-  const fog = load(FOG_KEY);
   return {
-    fog: fog ? sanitizeFog(fog) : defaults.fog,
     detail: sanitizeDetail(load(DETAIL_KEY), defaults.detail, detailLimits(mobile)),
     exposure: sanitizeExposure(load(EXPOSURE_KEY)),
     audio: loadVolumes(),
@@ -167,7 +158,6 @@ export function loadSettings(mobile: boolean): Settings {
 
 export function saveSettings(s: Settings): void {
   try {
-    localStorage.setItem(FOG_KEY, JSON.stringify(s.fog));
     localStorage.setItem(DETAIL_KEY, JSON.stringify(s.detail));
     localStorage.setItem(EXPOSURE_KEY, JSON.stringify(s.exposure));
     localStorage.setItem(CLOUDS_KEY, JSON.stringify(s.clouds));
@@ -214,11 +204,6 @@ interface ToggleSpec {
   with: (s: Settings, v: boolean) => Settings;
 }
 
-const withFog = (key: keyof FogSettings) => (s: Settings, v: number) => ({
-  ...s,
-  fog: { ...s.fog, [key]: v },
-});
-
 /** The menu's sliders; the detail ranges depend on the device (lod/detail.ts). */
 function sections(
   mobile: boolean,
@@ -241,38 +226,6 @@ function sections(
         volume('Master', 'Everything Dwell plays', 'master'),
         volume('Effects', 'Footsteps, blocks, water, other players', 'effects'),
         volume('Interface', 'Menus, buttons and the hotbar', 'ui'),
-      ],
-    },
-    {
-      title: 'Fog',
-      sliders: [
-        {
-          label: 'Distance',
-          hint: 'How far the haze reaches half strength at sea level',
-          ...FOG_LIMITS.distanceM,
-          log: true,
-          format: formatMetres,
-          get: (s) => s.fog.distanceM,
-          with: withFog('distanceM'),
-        },
-        {
-          label: 'Density',
-          hint: 'The most the haze can hide the far distance (0: no fog)',
-          ...FOG_LIMITS.density,
-          log: false,
-          format: (v) => `${String(Math.round(v * 100))}%`,
-          get: (s) => s.fog.density,
-          with: withFog('density'),
-        },
-        {
-          label: 'Height',
-          hint: 'How high the haze reaches: the air thins above it',
-          ...FOG_LIMITS.heightM,
-          log: true,
-          format: formatMetres,
-          get: (s) => s.fog.heightM,
-          with: withFog('heightM'),
-        },
       ],
     },
     {

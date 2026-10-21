@@ -1,5 +1,4 @@
-import { describe, expect, it } from 'vitest';
-import { FOG_LIMITS, sanitizeFog } from './viewSettings';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   DETAIL_LIMITS,
   defaultDetail,
@@ -8,7 +7,10 @@ import {
   sanitizeDetail,
 } from './detailSettings';
 import {
+  defaultSettings,
   formatMetres,
+  loadSettings,
+  saveSettings,
   settingsJson,
   SLIDER_STEPS,
   sliderToValue,
@@ -16,7 +18,9 @@ import {
 } from './settingsMenu';
 
 describe('settings menu sliders', () => {
-  const { min, max } = FOG_LIMITS.distanceM;
+  // A log range as the fog's distance slider had (1 km to the world's diameter).
+  const min = 1000;
+  const max = 100_000;
 
   it('span the whole range, ends included', () => {
     expect(sliderToValue(0, min, max, true)).toBeCloseTo(min);
@@ -47,7 +51,6 @@ describe('settings menu sliders', () => {
 describe('settings JSON', () => {
   it('rounds the settings for sharing, and reads back as the same settings', () => {
     const json = settingsJson({
-      fog: { distanceM: 11313.708, density: 0.6049, heightM: 1499.6 },
       detail: { distanceM: 200.4, pixelError: 2.46, memoryMb: 511.7 },
       exposure: 1.2345,
       audio: { master: 0.8049, effects: 1, ui: 0.333 },
@@ -57,9 +60,8 @@ describe('settings JSON', () => {
       fovDeg: 82.4,
       showArms: false,
     });
-    const parsed = JSON.parse(json) as { fog: unknown; detail: unknown };
+    const parsed = JSON.parse(json) as { detail: unknown };
     expect(parsed).toEqual({
-      fog: { distanceM: 11314, density: 0.6, heightM: 1500 },
       detail: { distanceM: 200, pixelError: 2.5, memoryMb: 512 },
       exposure: 1.23,
       audio: { master: 0.8, effects: 1, ui: 0.33 },
@@ -69,12 +71,37 @@ describe('settings JSON', () => {
       fovDeg: 82,
       showArms: false,
     });
-    expect(sanitizeFog(parsed.fog)).toEqual({ distanceM: 11314, density: 0.6, heightM: 1500 });
     expect(sanitizeDetail(parsed.detail, defaultDetail(false))).toEqual({
       distanceM: 200,
       pixelError: 2.5,
       memoryMb: 512,
     });
+  });
+});
+
+describe('the fog', () => {
+  const store = new Map<string, string>();
+  beforeEach(() => {
+    store.clear();
+    vi.stubGlobal('localStorage', {
+      getItem: (k: string) => store.get(k) ?? null,
+      setItem: (k: string, v: string) => store.set(k, v),
+    });
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("is not a setting: an older build's stored fog is neither read nor shared, and kept", () => {
+    const old = JSON.stringify({ distanceM: 4124, density: 0.73, heightM: 1500 });
+    store.set('dwell.fog', old);
+    const s = loadSettings(false);
+    expect(s).not.toHaveProperty('fog');
+    expect(defaultSettings(true)).not.toHaveProperty('fog');
+    expect(JSON.parse(settingsJson(s))).not.toHaveProperty('fog');
+    saveSettings({ ...s, exposure: 1.5 });
+    expect(store.get('dwell.fog')).toBe(old);
+    expect(store.get('dwell.exposure')).toBe('1.5');
   });
 });
 

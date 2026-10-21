@@ -37,11 +37,6 @@
         "height": 639
       },
       "settings": {
-        "fog": {
-          "distanceM": 4124,
-          "density": 0.73,
-          "heightM": 1500
-        },
         "detail": {
           "distanceM": 96,
           "pixelError": 3,
@@ -65,11 +60,6 @@
         "height": 639
       },
       "settings": {
-        "fog": {
-          "distanceM": 4124,
-          "density": 0.73,
-          "heightM": 1500
-        },
         "detail": {
           "distanceM": 96,
           "pixelError": 3,

@@ -27,7 +27,7 @@ use dwell_game::brush_tool::{BrushOutline, GhostFace, GhostKind};
 use dwell_lod::fade::Fade;
 use dwell_look::clouds::{CLOUDS, CloudQuality, cloud_uniforms};
 use dwell_look::daynight::{DAY_SKY_FLOATS, DayState};
-use dwell_look::fog::{DEFAULT_FOG, FogSettings, fog_sigma};
+use dwell_look::fog::{FOG, fog_sigma};
 use dwell_look::motion::{MOTION, vanishing_point};
 use dwell_look::outline::{OUTLINE, OutlineMode, outline_uniforms};
 use dwell_look::reflections::{REFLECTIONS, reflection_uniforms};
@@ -796,7 +796,6 @@ pub struct Renderer {
     pitch: f64,
     face: FaceFrame,
     flip: f64,
-    fog: FogSettings,
     /// The fluid the eye is under (`set_eye_fluid`), for the frame uniform.
     eye_fluid: Option<EyeFluid>,
     /// The water quality setting (`set_water_quality`).
@@ -1292,7 +1291,6 @@ impl Renderer {
             pitch: -20.0,
             face: FaceFrame::A,
             flip: 0.0,
-            fog: DEFAULT_FOG,
             eye_fluid: None,
             water_quality: WaterQuality::default(),
             water_debug: 0,
@@ -1461,9 +1459,6 @@ impl Renderer {
         } else {
             1.0
         };
-    }
-    pub fn set_fog(&mut self, fog: FogSettings) {
-        self.fog = fog;
     }
     /// The adapter the frames draw on (its kind: a CPU adapter draws the cheapest tiers,
     /// `clouds_for` and its neighbours).
@@ -1722,13 +1717,13 @@ impl Renderer {
             self.eye[1] as f32,
             self.face.sign_f32(),
             (self.exposure * viewer.exposure) as f32,
-            (self.fog.density * viewer.fog_density).min(1.0) as f32,
+            (FOG.density * viewer.fog_density).min(1.0) as f32,
         ]);
         // The water's scroll time, seconds since the renderer started.
         let seconds = (crate::telemetry::now_ms() - self.start_ms) / 1000.0;
         put(&[
-            fog_sigma(self.fog.distance_m) as f32,
-            self.fog.height_m as f32,
+            fog_sigma(FOG.distance_m) as f32,
+            FOG.height_m as f32,
             seconds as f32,
             self.plant_wind as f32,
         ]);
