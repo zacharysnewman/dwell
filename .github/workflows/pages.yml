@@ -67,6 +67,7 @@ jobs:
         run: |
           npm run build:launcher
           cp -r dist-launcher/. ../site/
+          node --experimental-strip-types scripts/site.ts media ../site
           node --experimental-strip-types scripts/site.ts manifest ../site
       - name: Report the site's size against the 1 GB Pages limit
         working-directory: client

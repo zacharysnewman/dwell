@@ -45,7 +45,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 25 — Ray-marched renderer comparison | ✖ Dropped at A7 by the owner (2026-10-20: "Ray marching is massively slower… Mesher / raster is definitely our way forward"; ADR 0044). A0–A4c and A5a were built and measured (at A4c, marching every frame cost 1.5–3× raster's whole GPU frame); the marcher, compare mode and the renderer switch are removed from main, their code kept as the `archive/ray-marcher` tag and branch. Kept: A1's shared frame and GPU timing (water's W2) and `bench --compare` for raster configurations. Follow-up: the face-B "stray dark slabs" bug, deferred in case marching replaced the mesher, now needs fixing in the mesher |
 | 26 — Water and fluid looks | 🚧 In progress — W1a (fluid data, the eye-under-fluid uniform) done; W2 built (it is Phase 25's A1, built once there; the owner approved its image differences, 2026-10-14); W1b (the water shader, the underwater fog stub, the water quality setting) built and checked in Chrome on an M1, outstanding: the owner's look; W3 (refraction, depth absorption, shoreline foam, sparkle, and caustics brought forward from W4, above and under the surface) built and checked in Chrome on an M1, outstanding: the owner's look and an unloaded per-tier cost measurement; W5a (reflections of land by screen-space reflection, and of the clouds, brought forward from W5 at the owner's report) built and checked in Chrome on an M1, outstanding: the owner's look and an unloaded cost measurement; water cost work (WATER_RENDERING.md §8, "Cost"): cheaper hashing, noise and caustic tiles, frame pacing against the stalls, Medium the desktop default — Medium +1.6 ms and High +1.7 ms over Low on the shore view before the reflections, which now add the most (outstanding: W5a's reflection cost against the 2/3 ms targets); next: W4; W6 dropped with the ray marcher (A7, ADR 0044); `package.json` raised to 0.12.1, a patch release of the 0.11 line; **follow-up (owner, 2026-10-20): shore water** (WATER_RENDERING.md §9) built and tested — the sea floods natural top blocks below sea level (generator version 17, a new compatibility line for the owner to raise, 0.19.0), fluid sides clipped to the surface and to shaped neighbours, side faces' backs seen from the air take the outside look; outstanding: the owner's look |
 | 27 — Structure sandbox | 🚧 In progress — S0 (ADR 0031), S1 (the structure format, `gen.mjs`, the Rust loader, the playground converted), S2a (floor block, sandbox world type), S2b (the structures store: save, load through the region paste, export and import) and S3a (region edits, the region tools) done, S2a's e2e check outstanding; `package.json` raised to 0.11.0, the new compatibility line (S2a's registry change; the owner's decision, 2026-10-14); next: S3b (anchor, touch) and the S3 sandbox e2e outstanding; S4a (worldgen placement as interim data, the owner's pines in groves, generator v18, ADR 0043) built and tested natively and in Chrome on the GPU — it changes the terrain a seed generates, so it needs a new compatibility line (0.20.0), which the owner raises; outstanding: CI and the owner's look; S4b (the rules moved into Phase 17's terrain definitions) waits for Phase 17; `package.json` raised to 0.11.11, a patch release of the 0.11 line |
-| 28 — Sound effects | 🚧 In progress — F0–F6 built and tested (procedural Web Audio, no library; sound data and generator, the registry's `sound` field, Rust sound events, synth, variation, mixer, spatial playback, menu and game-action sounds, volume sliders, offline WAV renders); F7 "sounds for everything" built and tested (wall and ceiling impacts, hurt/death/respawn, torch place/break/crackle, wind, night); outstanding: the owner listens to the WAV renders and approves them, answers `AUDIO.md` §9, and F7 is heard in the running game; `package.json` raised to 0.11.12, a patch release of the 0.11 line |
+| 28 — Sound effects | 🚧 In progress — F0–F6 built and tested (procedural Web Audio, no library; sound data and generator, the registry's `sound` field, Rust sound events, synth, variation, mixer, spatial playback, menu and game-action sounds, volume sliders, offline WAV renders); F7 "sounds for everything" built and tested (wall and ceiling impacts, hurt/death/respawn, torch place/break/crackle, wind, night); outstanding: the owner listens to the WAV renders and approves them, answers `AUDIO.md` §9, and F7 is heard in the running game; F8 music (the owner's Starry Sunshine, streamed, started on the first gesture, Music volume) built and tested, the owner to listen and set its level; `package.json` raised to 0.11.12, a patch release of the 0.11 line |
 | 29 — Motion effects (speed FOV and wind) | 🚧 In progress — built and tested (the FOV widening with the camera's speed for the renderer and the LOD alike, the wind streaks, vignette and edge blur in the shared frame's composite, tunables as data, the settings, bench scenarios and screenshots; fix 2026-10-20: the edge blur keeps the clouds seen from above); outstanding: the owner's look in a browser and approval, CI; `package.json` raised to 0.11.7, a patch release of the 0.11 line |
 | 30 — Tree growth | 🚧 In progress — G-ADR (ADR 0033) and the G0 prototype page built and verified in Chromium; outstanding for G0: publishing the page and the owner's review; next: G1; G2 needs Phase 27 (S2a/S3); G3 is a new compatibility line (the owner decides the bump) and needs Phase 20 for felling and the day/night cycle's day length; `package.json` raised to 0.11.14, a patch release of the 0.11 line |
 | 31 — Sky clouds | 🚧 In progress — C0–C5 built and tested: a 2D cloud deck in the composite's sky (ADR 0034, `CLOUDS.md`), tunables as data (`shared/look/clouds.json`, generator and CI stale check), the Clouds setting (Off / Low / High), the drift on the server's tick, bench scenarios and screenshots, GPU cost measured (about +0.9 ms composite on High at 720p, Apple GPU); the owner approved the look (2026-10-15) and asked for clouds from above (C5, built: the deck over the terrain by the stored depth, sunlit tops, a fogged crossing; fix 2026-10-21: from tens of km up the deck covers the whole flat world, not a circle round the eye, bench `clouds-far-above`); outstanding: CI, a phone's frame time; future, not started: weather-driven coverage (C6), cloud shadows on the terrain (C7); `package.json` raised to 0.13.1, a patch release of the 0.11 line |
@@ -3608,7 +3608,8 @@ for other players ([ADR 0032](./adr/0032-audio.md), [`AUDIO.md`](./AUDIO.md)).
 (a local world: footsteps, jump, landing, place, break, refusal, hotbar, game menu and its tabs; the
 menu's hover, click and error). Outstanding: the owner's listening review of the WAV renders and the
 open questions (`AUDIO.md` §9). F7 (sounds for everything, 2026-10-21) built and tested; not yet
-heard in the running game in a browser (unit, controller and offline-render checks only). Needs
+heard in the running game in a browser (unit, controller and offline-render checks only). F8 (music, 2026-10-21: the owner's Starry Sunshine) built and
+tested, checked playing after the first click in Chromium; outstanding: the owner's listen and level. Needs
 Phase 24 only. Defaults chosen without the owner's
 answers (the owner gave the brief directly); open questions in `AUDIO.md` §9.
 
@@ -3639,8 +3640,25 @@ Deliverables
   loop built here was removed afterwards, owner 2026-10-21: too intense); the `crackle` noise colour, loop layers' `pan`, `"fallback": false`, a
   loop stop without a one-shot, the `ambient` tunables; the shell restarts a loop an update finds
   silent. No protocol change.
+- [x] **F8** — Music (owner, 2026-10-21: "Add this music of mine as the ambient music playing …
+  I'm renaming it through to "Starry Sunshine""): the owner's track in `shared/music/` with its
+  data (`music.json`: title, author, file, volume, loop, fades, `when`), validated and generated
+  (`shared/music/gen.mjs` → `client/src/audio/music.gen.ts`, the published name carrying the
+  file's content hash); streamed by an `<audio>` element into a new music bus of the mixer; tried
+  at once and, if the browser refuses, started inside the first gesture; paused while the tab is
+  hidden; a **Music** volume (0 is off) in `dwell.audio`; `?music=off` / `dwell.music` "off" for
+  the e2e suite and the bench; the file shipped once per site under `/dwell/media/`
+  (`scripts/media.ts`, `site.ts media`). Plays from the first screen (the main menu, the loading
+  screen, the game) and carries its position from one page to the next.
 
 Exit criteria
+- [x] F8: the music data validates with messages naming the entry, and a fixture track works by
+  data alone; the unlock (blocked → the first gesture starts it, once), the hidden tab, volume 0,
+  the routing, the fades, the position across pages and `?music=off` (Vitest, mocked element);
+  the Music volume persists append-only (Vitest); the media files move to one `media/` per site
+  (Vitest); checked playing after the first click in Chromium on the GPU.
+- [ ] F8: the owner listens to Starry Sunshine in the game and sets its level (`volume` in
+  `shared/music/music.json`, the Music slider's default 60 %).
 - [x] A new sound set and block mapping work by data alone (Vitest); bad entries fail naming the
   entry.
 - [x] Rust tests: footstep cadence from distance, landing intensity from impact speed, edit events
@@ -3668,6 +3686,12 @@ Deviations
   thud for our own), so it never sounds for a hit the server did not count.
 - F7 skipped (listed in `AUDIO.md` §8): crossing between the faces, knockback, players joining or
   leaving, and ambience beyond the night (water, birds, rain; wind dropped).
+- F8's file is shipped once per site (`/dwell/media/<name>-<hash>.mp3`), not inside every version
+  directory: at 4.9 MB it would have added about 60 % to each build on a site already over Pages'
+  1 GB (1167.8 MB, 140 builds, 2026-10-21). The release tarball still carries it; the site's
+  assembly moves it. F8 was given directly by the owner, without the "ask before designing"
+  questions: the defaults (one ambient track, `when: "always"` as the only condition, the fades and
+  the 60 % default) are in `AUDIO.md` §2a.
 - The limiter is a waveshaper soft clipper, not a `DynamicsCompressorNode`: Chrome's compressor adds
   its own make-up gain, which pushed sequences past full scale in the renders.
 ## Phase 33 — Transparent Blocks: Render Modes, Cross Geometry, Tall Grass

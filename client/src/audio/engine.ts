@@ -7,6 +7,7 @@ import { buildMixer, DEFAULT_VOLUMES, soundInput, type Mixer, type Volumes } fro
 import { SOUND_DATA } from './sounds.gen';
 import { makeNoise, playSound, startLoop, type LoopVoice, type NoiseBank } from './synth';
 import { Variation } from './variation';
+import type { MusicElement } from './music';
 import type { SoundData } from './types';
 
 export type Vec3 = [number, number, number];
@@ -77,6 +78,9 @@ export class AudioEngine {
         if (!Ctx) return;
         const ctx = new Ctx({ latencyHint: 'interactive' });
         this.ctx = ctx;
+        ctx.addEventListener('statechange', () => {
+          this.notifyRunning();
+        });
         this.mixer = buildMixer(ctx, this.volumes);
         this.noise = makeNoise(ctx);
         // iOS starts a context only from a sound played in the gesture: a silent one.
@@ -97,9 +101,53 @@ export class AudioEngine {
     return this.ctx?.state === 'running';
   }
 
+  private readonly whenRunning: (() => void)[] = [];
+
+  /** Calls `fn` each time the context starts running (now, if it runs). */
+  onRunning(fn: () => void): void {
+    this.whenRunning.push(fn);
+    if (this.running) fn();
+  }
+
+  private notifyRunning(): void {
+    if (!this.running) return;
+    for (const fn of this.whenRunning) fn();
+  }
+
+  /**
+   * Routes a media element (the music, AUDIO.md §6a) into the music bus through its own gain;
+   * returns the setter of that gain's level, or null without a context (no gesture yet). Once per
+   * element: the element then sounds only through the context.
+   */
+  connectMusic(el: MusicElement): ((level: number) => void) | null {
+    const { ctx, mixer } = this;
+    if (!ctx || !mixer || ctx.state === 'closed') return null;
+    try {
+      const source = ctx.createMediaElementSource(el as HTMLMediaElement);
+      const gain = ctx.createGain();
+      gain.gain.value = 0;
+      source.connect(gain);
+      gain.connect(mixer.music);
+      return (level) => {
+        gain.gain.setTargetAtTime(level, ctx.currentTime, 0.05);
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  private readonly volumeListeners: ((v: Volumes) => void)[] = [];
+
   setVolumes(v: Volumes): void {
     this.volumes = v;
     this.mixer?.setVolumes(v);
+    for (const fn of this.volumeListeners) fn(v);
+  }
+
+  /** Calls `fn` with the volumes now and on every change (the music player). */
+  onVolumes(fn: (v: Volumes) => void): void {
+    this.volumeListeners.push(fn);
+    fn(this.volumes);
   }
 
   /** The camera: position, forward and up (unit vectors). */

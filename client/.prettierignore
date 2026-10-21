@@ -7,5 +7,6 @@ test-results/
 playwright-report/
 src/world/blocks.gen.ts
 src/audio/sounds.gen.ts
+src/audio/music.gen.ts
 ../docs/
 bench/out/

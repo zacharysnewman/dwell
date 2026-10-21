@@ -1,10 +1,21 @@
 // The site's assembly (RELEASES.md §4), run by the Pages workflow and by `npm run site:fixture`:
 //   site.ts plan RELEASES.json [DEV_KEEP]   which releases the site holds, and which to prune
 //   site.ts manifest SITE_DIR               writes SITE_DIR/versions.json from SITE_DIR/v/*/build.json
+//   site.ts media SITE_DIR                  moves the builds' music to SITE_DIR/media/, once
 //   site.ts size SITE_DIR                   the site's size against Pages' 1 GB limit
 // Runs under Node's type stripping (`node --experimental-strip-types`): erasable TypeScript only,
 // and `.ts` in relative imports.
-import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  rmdirSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { BuildEntry, Manifest } from '../launcher/src/manifest.ts';
@@ -124,6 +135,41 @@ export function directorySize(dir: string): number {
   return total;
 }
 
+/**
+ * Moves every build's `v/<version>/media/*` (the music, scripts/media.ts) to the site's `media/`,
+ * where release builds load it: one copy per site, not per build. Names carry their content hash,
+ * so a name already there is the same file and the build's copy is dropped; a size that differs
+ * means a damaged build, and throws.
+ */
+export function hoistMedia(siteDir: string): { moved: number; shared: number } {
+  const root = join(siteDir, 'v');
+  const into = join(siteDir, 'media');
+  let moved = 0;
+  let shared = 0;
+  if (!existsSync(root)) return { moved, shared };
+  for (const dir of readdirSync(root).sort()) {
+    const media = join(root, dir, 'media');
+    if (!existsSync(media)) continue;
+    mkdirSync(into, { recursive: true });
+    for (const name of readdirSync(media).sort()) {
+      const from = join(media, name);
+      const to = join(into, name);
+      if (existsSync(to)) {
+        if (statSync(to).size !== statSync(from).size) {
+          throw new Error(`${dir}: media/${name} differs from the one already on the site`);
+        }
+        rmSync(from);
+        shared++;
+      } else {
+        renameSync(from, to);
+        moved++;
+      }
+    }
+    rmdirSync(media);
+  }
+  return { moved, shared };
+}
+
 const mb = (bytes: number) => `${(bytes / 1e6).toFixed(1)} MB`;
 
 /** A Markdown line for the job summary: the site's size against Pages' limit. */
@@ -150,6 +196,11 @@ function main(args: string[]): number {
     );
     return 0;
   }
+  if (command === 'media' && arg) {
+    const { moved, shared } = hoistMedia(arg);
+    console.log(`media/: ${String(moved)} files moved, ${String(shared)} shared copies dropped`);
+    return 0;
+  }
   if (command === 'size' && arg) {
     const bytes = directorySize(arg);
     const builds = readBuilds(arg).size;
@@ -160,7 +211,9 @@ function main(args: string[]): number {
     }
     return 0;
   }
-  console.error('usage: site.ts plan RELEASES.json [DEV_KEEP] | manifest SITE_DIR | size SITE_DIR');
+  console.error(
+    'usage: site.ts plan RELEASES.json [DEV_KEEP] | manifest SITE_DIR | media SITE_DIR | size SITE_DIR',
+  );
   return 2;
 }
 
