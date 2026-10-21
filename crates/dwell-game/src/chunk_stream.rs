@@ -92,9 +92,14 @@ pub trait ChunkStore {
     fn mesh_block(&mut self, coord: Coord) -> Vec<u16> {
         self.padded_chunk(coord)
     }
-    /// An all-air chunk is no longer held: nothing is stored for it, but the flood light held it
-    /// (docs/DAY_NIGHT.md §11).
-    fn air_chunk_gone(&mut self, _coord: Coord) {}
+    /// Chunks are no longer held, in one update: `stored` ones are removed, and the flood light
+    /// (docs/DAY_NIGHT.md §11), which held them and the all-air ones (`air`, nothing stored),
+    /// relit once for all of them rather than once a chunk.
+    fn unload_chunks(&mut self, stored: &[Coord], _air: &[Coord]) {
+        for &c in stored {
+            self.remove_chunk(c);
+        }
+    }
     /// Lights a chunk now held (stored, or all air): the streamer calls it within its per-frame
     /// budget, after the chunk arrived ([`ChunkStreamer::mesh_dirty`]).
     fn light_chunk(&mut self, _coord: Coord) {}
@@ -145,8 +150,16 @@ impl ChunkStore for VoxelWorld {
             self.light_edited(&cells);
         }
     }
-    fn air_chunk_gone(&mut self, coord: Coord) {
-        self.light_unload(ChunkCoord::from_array(coord));
+    fn unload_chunks(&mut self, stored: &[Coord], air: &[Coord]) {
+        for &c in stored {
+            self.remove(ChunkCoord::from_array(c));
+        }
+        let all: Vec<ChunkCoord> = stored
+            .iter()
+            .chain(air)
+            .map(|&c| ChunkCoord::from_array(c))
+            .collect();
+        self.light_unload_many(&all);
     }
     fn light_chunk(&mut self, coord: Coord) {
         self.light_load(ChunkCoord::from_array(coord));
@@ -504,15 +517,16 @@ where
     }
 
     pub fn on_chunk_unload(&mut self, coords: &[Coord]) {
+        let (mut stored, mut air) = (Vec::new(), Vec::new());
         for &key in coords {
             self.forget(key);
             self.resyncing.remove(&key);
             self.unlit_set.remove(&key);
             if self.loaded.remove(&key).is_some() {
                 if self.air.remove(&key) {
-                    self.store.air_chunk_gone(key);
+                    air.push(key);
                 } else {
-                    self.store.remove_chunk(key);
+                    stored.push(key);
                 }
             }
             self.dirty.remove(&key);
@@ -520,6 +534,9 @@ where
             if self.meshed.remove(&key) {
                 self.view.set_terrain_chunk(key, [0, 0, 0], None);
             }
+        }
+        if !stored.is_empty() || !air.is_empty() {
+            self.store.unload_chunks(&stored, &air);
         }
         self.relit();
     }
@@ -574,36 +591,48 @@ where
         true
     }
 
-    /// Starts mesh jobs for changed chunks, nearest to `center` first, while the mesher has room and
-    /// for up to `budget_ms` of `now()` (at least one). A chunk waits while a neighbour is still
-    /// being generated, so it is meshed once with its borders known rather than again when each
-    /// neighbour arrives. Returns the number of jobs started.
+    /// Lights chunks that arrived (`ChunkStore::light_chunk`), nearest to `center` first, for up
+    /// to `light_ms` of `now()` (at least one), then starts mesh jobs for changed chunks, nearest
+    /// first, while the mesher has room and for up to `mesh_ms` more (at least one): the light
+    /// has a budget of its own, so lighting doesn't starve the meshing (0.22.9 started 2–4 mesh
+    /// jobs a frame at load where 0.22.8 kept 16 running). A chunk waits while a neighbour is
+    /// still being generated or lit, so it is meshed once with its borders known rather than
+    /// again when each neighbour arrives. Returns the number of jobs started.
     pub fn mesh_dirty(
         &mut self,
         center: [f64; 3],
-        budget_ms: f64,
+        light_ms: f64,
+        mesh_ms: f64,
         mut now: impl FnMut() -> f64,
     ) -> usize {
-        let deadline = now() + budget_ms;
-        // Chunks that arrived are lit first, nearest the arrival order, for as much of the budget
-        // as they take (at least one a call).
-        while let Some(c) = self.unlit.pop_front() {
-            if self.unlit_set.remove(&c) {
-                self.store.light_chunk(c);
-            }
-            if now() >= deadline {
-                break;
-            }
-        }
-        self.relit();
-        let room = self.mesher.capacity().saturating_sub(self.meshing.len());
-        if self.dirty.len() == 0 || room == 0 {
-            return 0;
-        }
         let distance = |c: &Coord| -> f64 {
             let m = dwell_world::chunk_centre_m(ChunkCoord::from_array(*c));
             (0..3).map(|i| (m[i] - center[i]).powi(2)).sum()
         };
+        if !self.unlit.is_empty() {
+            let deadline = now() + light_ms;
+            let mut order: Vec<Coord> = std::mem::take(&mut self.unlit)
+                .into_iter()
+                .filter(|c| self.unlit_set.contains(c))
+                .collect();
+            // Stable: equal distances keep their arrival order.
+            order.sort_by(|a, b| distance(a).total_cmp(&distance(b)));
+            let mut rest = order.into_iter();
+            for c in rest.by_ref() {
+                self.unlit_set.remove(&c);
+                self.store.light_chunk(c);
+                if now() >= deadline {
+                    break;
+                }
+            }
+            self.unlit = rest.collect();
+            self.relit();
+        }
+        let room = self.mesher.capacity().saturating_sub(self.meshing.len());
+        if self.dirty.len() == 0 || room == 0 {
+            return 0;
+        }
+        let deadline = now() + mesh_ms;
         let mut ready: Vec<Coord> = self
             .dirty
             .in_order()
@@ -916,8 +945,28 @@ mod tests {
         chunks: HashMap<Coord, (u32, u16)>,
         edits: Vec<(Coord, u32, Vec<u16>)>,
         meshed_from: Vec<Coord>,
+        /// A flood light whose lighting of a chunk takes 10 ms of this clock.
+        light_clock: Option<Rc<std::cell::Cell<f64>>>,
+        lit: Vec<Coord>,
+        /// Each `unload_chunks` call: (stored, air).
+        unloads: Vec<(Vec<Coord>, Vec<Coord>)>,
     }
     impl ChunkStore for FakeStore {
+        fn keeps_light(&self) -> bool {
+            self.light_clock.is_some()
+        }
+        fn light_chunk(&mut self, coord: Coord) {
+            self.lit.push(coord);
+            if let Some(c) = &self.light_clock {
+                c.set(c.get() + 10.0);
+            }
+        }
+        fn unload_chunks(&mut self, stored: &[Coord], air: &[Coord]) {
+            for c in stored {
+                self.chunks.remove(c);
+            }
+            self.unloads.push((stored.to_vec(), air.to_vec()));
+        }
         fn set_chunk(&mut self, coord: Coord, revision: u32, voxels: &[u16]) {
             self.chunks.insert(coord, (revision, voxels[0]));
         }
@@ -1086,7 +1135,7 @@ mod tests {
                 voxels: Some(voxels),
             });
             s.on_chunk_data(air(sky));
-            s.mesh_dirty([0.0; 3], 100.0, no_clock);
+            s.mesh_dirty([0.0; 3], 100.0, 100.0, no_clock);
             let floor = f.cell([16, row * CHUNK_SIZE + 8, 16]);
             let light_at = |job: &MeshJob, c: [i32; 3]| {
                 let l = [0, 1, 2].map(|a| c[a] - job.coord[a] * CHUNK_SIZE);
@@ -1111,7 +1160,7 @@ mod tests {
                 })
                 .collect();
             assert_eq!(s.set_local(&roof), roof.len());
-            s.mesh_dirty([0.0; 3], 100.0, no_clock);
+            s.mesh_dirty([0.0; 3], 100.0, 100.0, no_clock);
             let job = s
                 .mesher()
                 .jobs
@@ -1126,7 +1175,7 @@ mod tests {
             }
             let gone: Vec<([i32; 3], u16)> = roof.iter().map(|&(c, _)| (c, 0)).collect();
             s.set_local(&gone);
-            s.mesh_dirty([0.0; 3], 100.0, no_clock);
+            s.mesh_dirty([0.0; 3], 100.0, 100.0, no_clock);
             let job = s
                 .mesher()
                 .jobs
@@ -1169,12 +1218,12 @@ mod tests {
         assert_eq!(s.source().pending(), 0);
         assert_eq!(s.store().chunks.len(), 0);
         assert!(s.ready_around([16.0, dwell_world::m_of_row(16), 16.0]));
-        assert_eq!(s.mesh_dirty([0.0; 3], 100.0, no_clock), 0);
+        assert_eq!(s.mesh_dirty([0.0; 3], 100.0, 100.0, no_clock), 0);
         assert_eq!(s.view().chunks.len(), 0);
         // Unloading an Air chunk removes nothing from the store; a stored chunk replaced by Air is
         // dropped from the store and the view.
         s.on_chunk_data(explicit([5, 0, 0], 1, 2));
-        s.mesh_dirty([0.0; 3], 100.0, no_clock);
+        s.mesh_dirty([0.0; 3], 100.0, 100.0, no_clock);
         flush(&mut s);
         assert!(s.view().chunks.contains_key(&[5, 0, 0]));
         s.on_chunk_data(air([5, 0, 0]));
@@ -1204,7 +1253,7 @@ mod tests {
         let (mut s, _) = setup();
         s.on_chunk_data(generated([0, 0, 0]));
         finish(&mut s, [0, 0, 0]);
-        s.mesh_dirty([0.0; 3], 10.0, no_clock);
+        s.mesh_dirty([0.0; 3], 10.0, 10.0, no_clock);
         flush(&mut s);
         assert!(s.view().chunks.contains_key(&[0, 0, 0]));
         s.on_chunk_data(generated([3, 0, 0]));
@@ -1232,6 +1281,49 @@ mod tests {
     }
 
     #[test]
+    fn lighting_has_its_own_budget_goes_nearest_first_and_doesnt_starve_the_meshing() {
+        // 0.22.9: the light took the mesh budget (in arrival order), and a frame that lit one
+        // chunk started one mesh job: 2–4 jobs ran at load where 16 had.
+        let (mut s, _) = setup();
+        let clock = Rc::new(std::cell::Cell::new(0.0));
+        s.store_mut().light_clock = Some(clock.clone());
+        // Arriving farthest first.
+        for c in [[12, 0, 0], [8, 0, 0], [4, 0, 0], [0, 0, 0]] {
+            s.on_chunk_data(generated(c));
+            finish(&mut s, c);
+        }
+        let t = clock.clone();
+        let started = s.mesh_dirty([16.0, 16.0, 16.0], 15.0, 5.0, move || t.get());
+        // Two lit in 15 ms (10 each, at least one), the nearest; both meshed, in the mesh's own
+        // budget (the others wait to be lit).
+        assert_eq!(s.store().lit, vec![[0, 0, 0], [4, 0, 0]]);
+        assert_eq!(started, 2);
+        let t = clock.clone();
+        s.mesh_dirty([16.0, 16.0, 16.0], 100.0, 5.0, move || t.get());
+        assert_eq!(s.store().lit.len(), 4);
+        assert_eq!(sorted(s.store().meshed_from.clone()).len(), 4);
+    }
+
+    #[test]
+    fn chunks_unloaded_together_go_in_one_store_update() {
+        // The flood light relights once for a batch (a relight a chunk was 1–2 s long tasks).
+        let (mut s, _) = setup();
+        for c in [[0, 0, 0], [1, 0, 0]] {
+            s.on_chunk_data(generated(c));
+            finish(&mut s, c);
+        }
+        s.on_chunk_data(air([2, 0, 0]));
+        s.on_chunk_unload(&[[0, 0, 0], [1, 0, 0], [2, 0, 0], [9, 9, 9]]);
+        assert_eq!(
+            s.store().unloads,
+            vec![(vec![[0, 0, 0], [1, 0, 0]], vec![[2, 0, 0]])]
+        );
+        assert!(s.store().chunks.is_empty());
+        s.on_chunk_unload(&[[9, 9, 9]]);
+        assert_eq!(s.store().unloads.len(), 1, "nothing held: no update");
+    }
+
+    #[test]
     fn meshes_nearest_first_within_the_budget_after_neighbours_being_generated_arrive() {
         let (mut s, _) = setup();
         for c in [[0, 0, 0], [4, 0, 0], [8, 0, 0]] {
@@ -1246,15 +1338,15 @@ mod tests {
             t += 10.0;
             t
         };
-        assert_eq!(s.mesh_dirty(center, 5.0, &mut clock), 1);
+        assert_eq!(s.mesh_dirty(center, 5.0, 5.0, &mut clock), 1);
         assert_eq!(s.store().meshed_from, vec![[8, 0, 0]]);
-        assert_eq!(s.mesh_dirty(center, 5.0, &mut clock), 1);
+        assert_eq!(s.mesh_dirty(center, 5.0, 5.0, &mut clock), 1);
         // [4, 0, 0] waits for [5, 0, 0].
         assert_eq!(s.store().meshed_from, vec![[8, 0, 0], [0, 0, 0]]);
-        assert_eq!(s.mesh_dirty(center, 5.0, &mut clock), 0);
+        assert_eq!(s.mesh_dirty(center, 5.0, 5.0, &mut clock), 0);
         finish(&mut s, [5, 0, 0]);
         flush(&mut s);
-        s.mesh_dirty(center, 100.0, no_clock);
+        s.mesh_dirty(center, 100.0, 100.0, no_clock);
         assert_eq!(
             sorted(s.store().meshed_from[2..].to_vec()),
             vec![[4, 0, 0], [5, 0, 0]]
@@ -1266,11 +1358,11 @@ mod tests {
         let (mut s, _) = setup();
         s.on_chunk_data(generated([0, 0, 0]));
         finish(&mut s, [0, 0, 0]);
-        s.mesh_dirty([0.0; 3], 100.0, no_clock);
+        s.mesh_dirty([0.0; 3], 100.0, 100.0, no_clock);
         s.on_chunk_data(generated([0, 1, 0]));
         finish(&mut s, [0, 1, 0]);
         flush(&mut s);
-        s.mesh_dirty([0.0; 3], 100.0, no_clock);
+        s.mesh_dirty([0.0; 3], 100.0, 100.0, no_clock);
         assert_eq!(
             sorted(s.store().meshed_from.clone()),
             vec![[0, 0, 0], [0, 0, 0], [0, 1, 0]]
@@ -1285,12 +1377,12 @@ mod tests {
         let (mut s, _) = setup();
         s.on_chunk_data(explicit([0, 0, 0], 3, 0));
         s.on_chunk_data(explicit([0, 1, 0], 0, 0));
-        s.mesh_dirty([0.0; 3], 100.0, no_clock);
+        s.mesh_dirty([0.0; 3], 100.0, 100.0, no_clock);
         flush(&mut s);
         s.store_mut().meshed_from.clear();
         let beside_support = 6 | (31 << 5) | (5 << 10);
         s.on_voxel_modification(&[modification([0, 0, 0], 4, &[beside_support, 2])]);
-        s.mesh_dirty([0.0; 3], 100.0, no_clock);
+        s.mesh_dirty([0.0; 3], 100.0, 100.0, no_clock);
         assert_eq!(
             sorted(s.store().meshed_from.clone()),
             vec![[0, 0, 0], [0, 1, 0]]
@@ -1312,11 +1404,11 @@ mod tests {
         for x in [0, 2, 4] {
             s.on_chunk_data(explicit([x, 0, 0], 0, 0));
         }
-        assert_eq!(s.mesh_dirty([0.0; 3], 100.0, no_clock), 2);
-        assert_eq!(s.mesh_dirty([0.0; 3], 100.0, no_clock), 0);
+        assert_eq!(s.mesh_dirty([0.0; 3], 100.0, 100.0, no_clock), 2);
+        assert_eq!(s.mesh_dirty([0.0; 3], 100.0, 100.0, no_clock), 0);
         flush(&mut s);
         assert_eq!(s.view().chunks.len(), 2);
-        assert_eq!(s.mesh_dirty([0.0; 3], 100.0, no_clock), 1);
+        assert_eq!(s.mesh_dirty([0.0; 3], 100.0, 100.0, no_clock), 1);
     }
 
     #[test]
@@ -1325,7 +1417,7 @@ mod tests {
         s.on_chunk_data(explicit([0, 0, 0], 3, 0));
         s.on_chunk_data(explicit([1, 0, 0], 0, 0));
         s.on_chunk_data(explicit([0, 1, 0], 0, 0));
-        s.mesh_dirty([0.0; 3], 100.0, no_clock);
+        s.mesh_dirty([0.0; 3], 100.0, 100.0, no_clock);
         flush(&mut s);
         s.store_mut().meshed_from.clear();
         // A voxel on the +X border (x = 31): the chunk and its +X neighbour re-mesh.
@@ -1333,7 +1425,7 @@ mod tests {
         s.on_voxel_modification(&[modification([0, 0, 0], 4, &[border, 2])]);
         assert_eq!(s.store().edits, vec![([0, 0, 0], 4, vec![border, 2])]);
         assert_eq!(s.revision([0, 0, 0]), Some(4));
-        s.mesh_dirty([0.0; 3], 100.0, no_clock);
+        s.mesh_dirty([0.0; 3], 100.0, 100.0, no_clock);
         assert_eq!(
             sorted(s.store().meshed_from.clone()),
             vec![[0, 0, 0], [1, 0, 0]]
@@ -1363,14 +1455,14 @@ mod tests {
         for c in [[0, 0, 0], [1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0]] {
             s.on_chunk_data(explicit(c, 0, 0));
         }
-        s.mesh_dirty([0.0; 3], 100.0, no_clock);
+        s.mesh_dirty([0.0; 3], 100.0, 100.0, no_clock);
         flush(&mut s);
         s.store_mut().meshed_from.clear();
         // Inside the +X apron (not touching the border), low in the chunk: the +X and −Y
         // neighbours' rays reach it, the others' do not.
         let (x, y) = (CHUNK_SIZE - ax, ay - 1);
         s.on_voxel_modification(&[modification([0, 0, 0], 1, &[(x | (y << 5)) as u16, 2])]);
-        s.mesh_dirty([0.0; 3], 100.0, no_clock);
+        s.mesh_dirty([0.0; 3], 100.0, 100.0, no_clock);
         assert_eq!(
             sorted(s.store().meshed_from.clone()),
             vec![[0, -1, 0], [0, 0, 0], [1, 0, 0]]
@@ -1381,7 +1473,7 @@ mod tests {
         s.store_mut().meshed_from.clear();
         let (x, y) = (CHUNK_SIZE - ax - 1, ay);
         s.on_voxel_modification(&[modification([0, 0, 0], 2, &[(x | (y << 5)) as u16, 2])]);
-        s.mesh_dirty([0.0; 3], 100.0, no_clock);
+        s.mesh_dirty([0.0; 3], 100.0, 100.0, no_clock);
         assert_eq!(
             sorted(s.store().meshed_from.clone()),
             vec![[0, 0, 0], [0, 1, 0]]
@@ -1403,7 +1495,7 @@ mod tests {
         s.on_chunk_data(air([0, 5, 0]));
         s.on_voxel_modification(&[modification([0, 5, 0], 1, &[0, 2])]);
         assert_eq!(s.store().chunks.get(&[0, 5, 0]), Some(&(1, 0)));
-        s.mesh_dirty([0.0, 160.0, 0.0], 100.0, no_clock);
+        s.mesh_dirty([0.0, 160.0, 0.0], 100.0, 100.0, no_clock);
         assert!(s.store().meshed_from.contains(&[0, 5, 0]));
     }
 
@@ -1449,10 +1541,10 @@ mod tests {
             FakeView::default(),
         );
         s.on_chunk_data(explicit([3, 0, 4], 1, 2));
-        assert_eq!(s.mesh_dirty([0.0; 3], 100.0, no_clock), 1);
+        assert_eq!(s.mesh_dirty([0.0; 3], 100.0, 100.0, no_clock), 1);
         // A chunk row below the midplane (face B).
         s.on_chunk_data(explicit([3, dwell_world::MIDPLANE_CHUNK_Y - 6, 4], 1, 2));
-        assert_eq!(s.mesh_dirty([0.0; 3], 100.0, no_clock), 1);
+        assert_eq!(s.mesh_dirty([0.0; 3], 100.0, 100.0, no_clock), 1);
         assert_eq!(s.mesher().received, vec![false, true]);
     }
 

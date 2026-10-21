@@ -314,6 +314,75 @@ crate::both_faces!(
 );
 
 crate::both_faces!(
+    /// Unloading relights only the light that came from the chunks that go (the 0.22.9 stalls:
+    /// each dropped chunk cleared and refilled every open-air column beside and below it, a
+    /// 1–2 s long task when a fast flight dropped a batch). The open air over a hill goes one
+    /// chunk at a time from the top (flying down), and a column five chunks tall goes at once
+    /// (flying past): the light agrees with a relight from scratch, and the chunks left, whose
+    /// light doesn't change but where the column's lamp reached, are hardly written.
+    fn unloading_relights_only_what_came_from_the_chunks(f: FaceFrame) {
+        let mut fx = tunnel(f);
+        // A lamp on the hill in the column that goes, its light reaching over the border.
+        fx.fill([33, GROUND + 20, 16], [34, GROUND + 21, 17], lamp());
+        let chunks = fx.chunks(-1..=1, -1..=3, -1..=1);
+        let column = fx.chunks(1..=1, -1..=3, 0..=0);
+        let rest: Vec<ChunkCoord> = chunks
+            .iter()
+            .copied()
+            .filter(|c| !column.contains(c))
+            .collect();
+        // What the lamp lit outside the column, cleared and refilled dark: two writes a cell.
+        let lamp_lit = {
+            let w = fx.lit(&chunks);
+            let l = w.light().expect("lit");
+            snapshot_of(l, &rest)
+                .iter()
+                .filter(|&&v| block_of(v) > 0)
+                .count() as u64
+        };
+        assert!(lamp_lit > 0, "the lamp lights across the border");
+        // Generous: two writes for each cell of the column's four side faces, besides the lamp's.
+        let bound = 2 * lamp_lit + 2 * 4 * 4 * (NC * NC) as u64;
+
+        let mut w = fx.lit(&chunks);
+        let before = w.light().expect("lit").writes();
+        let air = fx.chunks(1..=1, 1..=3, 0..=0);
+        for &c in air.iter().rev() {
+            w.remove(c);
+            w.light_unload(c);
+        }
+        let one_by_one = w.light().expect("lit").writes() - before;
+        let left: Vec<ChunkCoord> = chunks
+            .iter()
+            .copied()
+            .filter(|c| !air.contains(c))
+            .collect();
+        assert_matches_scratch(&mut w, &left, "the air unloaded from the top, one at a time");
+
+        let mut w = fx.lit(&chunks);
+        let before = w.light().expect("lit").writes();
+        for &c in &column {
+            w.remove(c);
+        }
+        w.light_unload_many(&column);
+        let together = w.light().expect("lit").writes() - before;
+        assert_matches_scratch(&mut w, &rest, "the column unloaded at once");
+
+        assert!(
+            one_by_one <= bound && together <= bound,
+            "unloading wrote {one_by_one} cells one at a time and {together} at once \
+             (bound {bound}): the relight cascaded through chunks whose light didn't change"
+        );
+        // And loading the column back gives the light it had.
+        let reference = snapshot(&fx.lit(&chunks), &chunks);
+        for &c in &column {
+            fx.load(&mut w, c);
+        }
+        assert_eq!(snapshot(&w, &chunks), reference, "loaded again");
+    }
+);
+
+crate::both_faces!(
     /// An emitter (the fixture lamp, `emits` by data alone) lights the cells around it, falling
     /// off with distance, through a dark tunnel and across a chunk border.
     fn the_fixture_lamp_lights_its_surroundings(f: FaceFrame) {

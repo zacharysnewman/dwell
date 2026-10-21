@@ -538,6 +538,13 @@ impl VoxelWorld {
         }
     }
 
+    /// The chunks are no longer held, relit in one update (`LightMap::unload_many`).
+    pub fn light_unload_many(&mut self, coords: &[ChunkCoord]) {
+        if let Some(l) = self.light.as_deref_mut() {
+            l.unload_many(&self.chunks, coords);
+        }
+    }
+
     /// These world cells' blocks changed.
     pub fn light_edited(&mut self, cells: &[[i32; 3]]) {
         if let Some(l) = self.light.as_deref_mut() {

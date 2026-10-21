@@ -191,6 +191,8 @@ pub struct LightMap {
     /// Chunks whose meshes may show a light change, since the last [`Self::take_changed`].
     changed: Vec<ChunkCoord>,
     tunables: LightTunables,
+    /// Cell writes since the map was made ([`Self::writes`]).
+    writes: u64,
 }
 
 impl Default for LightMap {
@@ -216,7 +218,15 @@ impl LightMap {
             touched: Vec::new(),
             changed: Vec::new(),
             tunables,
+            writes: 0,
         }
+    }
+
+    /// How many cell writes the updates have made (a cell cleared and refilled is two): the
+    /// measure of an update's work the tests bound (a relight must not cascade through chunks it
+    /// leaves as they were).
+    pub fn writes(&self) -> u64 {
+        self.writes
     }
 
     pub fn tunables(&self) -> &LightTunables {
@@ -435,19 +445,55 @@ impl LightMap {
     /// The chunk is no longer held: what it lit around it is cleared and relit (cells below it
     /// take the open sky again).
     pub fn unload(&mut self, voxels: &Voxels, coord: ChunkCoord) {
-        let Some(&s) = self.index.get(&coord) else {
+        self.unload_many(voxels, &[coord]);
+    }
+
+    /// The chunks are no longer held, in one update: only the light that came from them into the
+    /// chunks still held is cleared and relit. The removal starts from their own border cells'
+    /// levels, so a neighbour's cell lit as brightly some other way (its own column's sky, or the
+    /// open sky that now enters where they were) stays, and nothing below it is touched; chunks
+    /// unloaded together don't relight each other.
+    pub fn unload_many(&mut self, voxels: &Voxels, coords: &[ChunkCoord]) {
+        let mut gone: Vec<u32> = coords
+            .iter()
+            .filter_map(|c| self.index.get(c).copied())
+            .collect();
+        gone.sort_unstable();
+        gone.dedup();
+        if gone.is_empty() {
             return;
-        };
-        let near = self.slots[s as usize].near;
-        self.release(s);
-        let mut cells = Vec::new();
-        for (d, &n) in near.iter().enumerate() {
-            if n != NONE {
-                cells.extend(border(n, opposite(d)));
+        }
+        let is_gone = |slots: &[u32], n: u32| slots.binary_search(&n).is_ok();
+        // Each held cell next to a chunk going, the side it faces it from, and the light (sky,
+        // block) of the cell that goes.
+        let mut seeds: Vec<(P, usize, u8)> = Vec::new();
+        for &s in &gone {
+            for d in 0..6 {
+                let n = self.slots[s as usize].near[d];
+                if n == NONE || is_gone(&gone, n) {
+                    continue;
+                }
+                // Every one, dark ones too: the cell next to it may now take the open sky.
+                for p in border(s, d) {
+                    let v = self.slots[s as usize].get(p.i);
+                    if let Some(q) = self.step(p, d) {
+                        seeds.push((q, d, v));
+                    }
+                }
             }
         }
-        // Over-clearing is safe: what is still lit some other way is refilled.
-        self.run_all(voxels, &cells, &cells);
+        for &s in &gone {
+            self.release(s);
+        }
+        let mut cache = VoxelCache::new(voxels);
+        for ch in [Channel::Sky, Channel::Block] {
+            let from: Vec<(P, usize, u8)> = seeds
+                .iter()
+                .map(|&(q, d, v)| (q, d, (v >> ch.shift()) & 15))
+                .collect();
+            self.run_from(&mut cache, ch, &[], &from, &[]);
+        }
+        self.finish();
     }
 
     /// Cells whose blocks changed (world cells; ones in chunks not held are skipped).
@@ -580,6 +626,7 @@ impl LightMap {
             .cells
             .get_or_insert_with(|| Box::new([uniform; CHUNK_VOLUME]));
         cells[usize::from(p.i)] = new;
+        self.writes += 1;
         let first = slot.changed == 0;
         let l = coords(p.i);
         let mut mask = 1 << 13;
@@ -660,6 +707,20 @@ impl LightMap {
     }
 
     fn run(&mut self, cache: &mut VoxelCache<'_>, ch: Channel, removal: &[P], add: &[P]) {
+        self.run_from(cache, ch, removal, &[], add);
+    }
+
+    /// The removal pass from the cells `removal` (cleared) and from light `ov` that reached cell
+    /// `n` along `DIRS[d]` from a cell no longer held (`from`), then the addition pass from what
+    /// it cleared, what lit it back, and `add`.
+    fn run_from(
+        &mut self,
+        cache: &mut VoxelCache<'_>,
+        ch: Channel,
+        removal: &[P],
+        from: &[(P, usize, u8)],
+        add: &[P],
+    ) {
         let mut readd: Vec<P> = add.to_vec();
         let mut q: VecDeque<(P, u8)> = VecDeque::new();
         for &p in removal {
@@ -669,25 +730,20 @@ impl LightMap {
                 q.push_back((p, v));
             }
         }
+        for &(n, d, ov) in from {
+            // Its own source may have changed (the open sky now enters where the chunk was).
+            readd.push(n);
+            if ov > 0 {
+                self.remove_into(cache, ch, n, d, ov, &mut q, &mut readd);
+            }
+        }
         while let Some((p, ov)) = q.pop_front() {
             readd.push(p);
             for d in 0..6 {
                 let Some(n) = self.step(p, d) else {
                     continue;
                 };
-                let nv = self.level(n, ch);
-                if nv == 0 {
-                    continue;
-                }
-                let (f, _) = self.rules(cache, n);
-                if nv <= self.passed(ch, ov, n, d, f) {
-                    // It may have come from p: cleared, and its own light looked for again.
-                    self.set_level(n, ch, 0);
-                    q.push_back((n, nv));
-                } else {
-                    // Lit more than p could light it: it lights the cleared cells back.
-                    readd.push(n);
-                }
+                self.remove_into(cache, ch, n, d, ov, &mut q, &mut readd);
             }
         }
         // Brightest first (a bucket per level): every cell spreads once, at its final level.
@@ -711,6 +767,11 @@ impl LightMap {
                     let Some(n) = self.step(p, d) else {
                         continue;
                     };
+                    // `passed` never gives more than `level`: a neighbour as bright needs nothing
+                    // (most of them, inside open air), and its block isn't looked up.
+                    if self.level(n, ch) >= level {
+                        continue;
+                    }
                     let (f, _) = self.rules(cache, n);
                     if f >= LIGHT_MAX {
                         continue;
@@ -722,6 +783,36 @@ impl LightMap {
                     }
                 }
             }
+        }
+    }
+
+    /// The removal pass's step into `n` (`DIRS[d]` from a cleared cell that had `ov`): cleared if
+    /// its light may have come from there and it has no source as bright of its own (cleared
+    /// cells queue in `q`), else kept to light the cleared cells back (`readd`).
+    #[allow(clippy::too_many_arguments)]
+    #[inline]
+    fn remove_into(
+        &mut self,
+        cache: &mut VoxelCache<'_>,
+        ch: Channel,
+        n: P,
+        d: usize,
+        ov: u8,
+        q: &mut VecDeque<(P, u8)>,
+        readd: &mut Vec<P>,
+    ) {
+        let nv = self.level(n, ch);
+        if nv == 0 {
+            return;
+        }
+        let (f, _) = self.rules(cache, n);
+        if nv <= self.passed(ch, ov, n, d, f) && self.source(cache, ch, n) < nv {
+            // It may have come from there: cleared, and its own light looked for again.
+            self.set_level(n, ch, 0);
+            q.push_back((n, nv));
+        } else {
+            // Lit more than that could light it, or by itself: it lights the cleared cells back.
+            readd.push(n);
         }
     }
 

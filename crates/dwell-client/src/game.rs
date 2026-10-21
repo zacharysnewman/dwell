@@ -62,6 +62,18 @@ const ARMS_LIGHT: u32 = u32::MAX;
 const MAX_TICKS_PER_FRAME: f64 = 60.0;
 /// Main-thread time per frame for starting mesh jobs (copying chunks' voxels out of the world).
 const MESH_BUDGET_MS: f64 = 4.0;
+/// Main-thread time per frame for lighting chunks that arrived (the flood light,
+/// docs/DAY_NIGHT.md §11), apart from the mesh budget: at least this, or this share of the last
+/// frame's interval on a slow page (whose frames are long anyway: at CI's ~5 fps a fixed 4 ms lit
+/// one chunk a frame and the view took 20 s), up to the cap.
+const LIGHT_BUDGET_MS: f64 = 4.0;
+const LIGHT_FRAME_SHARE: f64 = 0.1;
+const LIGHT_BUDGET_MAX_MS: f64 = 25.0;
+
+/// This frame's light budget (ms) after a frame interval of `frame_ms`.
+pub fn light_budget_ms(frame_ms: f64) -> f64 {
+    (frame_ms * LIGHT_FRAME_SHARE).clamp(LIGHT_BUDGET_MS, LIGHT_BUDGET_MAX_MS)
+}
 /// Server input buffer outside [LOW, HIGH] nudges the local tick rate by ±RATE_NUDGE.
 const BUFFER_LOW: u8 = 1;
 const BUFFER_HIGH: u8 = 4;
@@ -1470,6 +1482,7 @@ impl<S: Scene> Game<S> {
         telemetry::span("mesh_dirty", || {
             self.streamer.mesh_dirty(
                 if c.active { center } else { [0.5, 64.0, 0.5] },
+                light_budget_ms(dt * 1000.0),
                 MESH_BUDGET_MS,
                 &mut *now,
             );
@@ -2079,6 +2092,14 @@ fn probe_lines(center: [f64; 3], c: &ClientState) -> Vec<Line> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_light_budget_is_4_ms_or_a_tenth_of_a_slow_frame() {
+        assert_eq!(light_budget_ms(16.7), 4.0);
+        assert_eq!(light_budget_ms(0.0), 4.0);
+        assert!((light_budget_ms(200.0) - 20.0).abs() < 1e-9, "CI's ~5 fps page");
+        assert_eq!(light_budget_ms(1000.0), 25.0);
+    }
 
     #[test]
     fn the_debug_overlay_shows_state_layers_and_prediction_stats() {
