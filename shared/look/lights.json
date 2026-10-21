@@ -4,5 +4,5 @@
   "cullM": 64,
   "curve": 3,
   "wrap": 0.5,
-  "glowPeak": 1.0
+  "glowPeak": 0.7
 }

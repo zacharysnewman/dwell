@@ -25,17 +25,21 @@ const POINT_CURVE: f32 = {:?};
 const POINT_WRAP: f32 = {:?};
 const GLOW_PEAK: f32 = {:?};
 
-// What a self-lit surface of linear colour `c` (colour × emissive) gives off (docs/LIGHTS.md §2):
-// the tone curve sees `c` itself whatever the exposure, its brightest channel GLOW_PEAK at most,
-// so a flame keeps its hue and brightness by day, at night and in a cave
-// (dwell_look::lights::glow).
+// What a self-lit surface of linear colour `c` (colour × emissive) gives off (docs/LIGHTS.md §2;
+// owner: the flame should stay illuminated regardless of brightness since it is the source of the
+// light): the canvas shows it as the tone curve shows `c` at the reference exposure, its
+// brightest channel GLOW_PEAK at most, whatever the frame's exposure; its pixels are flagged
+// self-lit (`self_lit_depth`), so the time of day's desaturation leaves them alone. So a flame has
+// one hue and brightness by day, at night and in a cave. `glow` below mirrors it.
 fn glow(c: vec3f) -> vec3f {{
     let peak = max(max(c.r, c.g), c.b);
-    return c * (select(1.0, GLOW_PEAK / peak, peak > GLOW_PEAK) * 0.6 / max(frame.eye.z, 1e-6));
+    let v = c * select(1.0, GLOW_PEAK / peak, peak > GLOW_PEAK);
+    return inverse_display(srgb_encode(clamp(ACES_OUTPUT * rrt_odt_fit(ACES_INPUT * v), vec3f(0.0), vec3f(1.0))));
 }}
 
 // A surface lit to `lit` with emissive `shine`: its lit colour replaced by up to all of its glow
-// (dwell_look::lights::emitted).
+// (`shine` 1 or more: fully self-lit, unaffected by the sun, ambient, flood light, corner occlusion
+// and shadows); `emitted` below mirrors it.
 fn emitted(lit: vec3f, albedo: vec3f, shine: f32) -> vec3f {{
     return lit * (1.0 - min(shine, 1.0)) + glow(albedo * shine);
 }}
@@ -71,6 +75,53 @@ fn point_lights(rel: vec3f, n: vec3f) -> vec3f {{
         LIGHTS.glow_peak as f32,
         MAX_SHADER_LIGHTS * 2
     )
+}
+
+fn srgb_encode(x: f32) -> f32 {
+    if x <= 0.003_130_8 {
+        x * 12.92
+    } else {
+        1.055 * x.powf(1.0 / 2.4) - 0.055
+    }
+}
+
+fn srgb_decode(x: f32) -> f32 {
+    if x <= 0.040_45 {
+        x / 12.92
+    } else {
+        ((x.max(0.0) + 0.055) / 1.055).powf(2.4)
+    }
+}
+
+/// The CPU mirror of the shader's `glow`: the scene colour (linear) a self-lit surface of linear
+/// colour `c` writes at `exposure` (the frame's), so the canvas shows it as the tone curve shows
+/// `c` at the reference exposure.
+pub fn glow(c: [f32; 3], exposure: f32) -> [f32; 3] {
+    let peak = c[0].max(c[1]).max(c[2]);
+    let k = if peak > LIGHTS.glow_peak as f32 {
+        LIGHTS.glow_peak as f32 / peak
+    } else {
+        1.0
+    };
+    let shown = super::water::aces(c.map(|v| v * k), 0.6).map(srgb_encode);
+    super::water::inverse_aces(shown.map(srgb_decode), exposure)
+}
+
+/// The CPU mirror of the shader's `emitted`: a surface lit to `lit` (linear) with albedo
+/// `albedo` and emissive `shine`.
+pub fn emitted(lit: [f32; 3], albedo: [f32; 3], shine: f32, exposure: f32) -> [f32; 3] {
+    let g = glow(albedo.map(|v| v * shine), exposure);
+    std::array::from_fn(|k| lit[k] * (1.0 - shine.min(1.0)) + g[k])
+}
+
+/// What the canvas shows for a scene colour (linear) at `exposure` and `saturation`: the tone
+/// curve, the encode and the time of day's saturation, which a self-lit pixel skips
+/// (`scene_display`), 0–1 sRGB.
+pub fn displayed(c: [f32; 3], exposure: f32, saturation: f32, self_lit: bool) -> [f32; 3] {
+    let lit = super::water::aces(c, exposure).map(srgb_encode);
+    let l = 0.2126 * lit[0] + 0.7152 * lit[1] + 0.0722 * lit[2];
+    let s = if self_lit { 1.0 } else { saturation };
+    lit.map(|v| l + (v - l) * s)
 }
 
 /// The block's layout entry (fragments read it).

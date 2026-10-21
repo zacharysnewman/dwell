@@ -185,7 +185,7 @@
     },
     "flame_core": {
       "$comment": "The held flame's yellow core (a smaller cone inside the flame's tip).",
-      "like": "flame", "ramp": "flame_core"
+      "like": "flame", "ramp": "flame_core", "emissive": 1.0
     },
 
     "cloth_canvas": {

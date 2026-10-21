@@ -133,14 +133,6 @@ pub fn held_light(
     })
 }
 
-/// What a character material's fragment shows (linear, before tone mapping), the CPU mirror of
-/// `character_fs`'s last step: its lit ramp `lit` replaced by up to all of its self-lit glow
-/// (`emissive`; dwell_look::lights::emitted).
-pub fn material_out(m: &dwell_characters::Material, lit: [f64; 3], exposure: f64) -> [f64; 3] {
-    let base = dwell_look::hex(m.base).map(dwell_look::srgb_to_linear);
-    dwell_look::lights::emitted(lit, base, f64::from(m.emissive), exposure)
-}
-
 /// A full body to draw.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct BodyDraw {
@@ -394,6 +386,7 @@ fn character_fs(i: CharacterOut, @builtin(front_facing) front: bool) -> SceneOut
         lit.points = points;
         let shine = select(0.0, tile_glow(tile.xy), has);
         o.color = vec4f(emitted(lambert_lit(albedo, n, frag_y, lit), albedo, shine), 1.0);
+        o.depth = self_lit_depth(o.depth, shine >= 1.0);
         return o;
     }
     let m = materials[mat];
@@ -413,6 +406,7 @@ fn character_fs(i: CharacterOut, @builtin(front_facing) front: bool) -> SceneOut
     // A glowing material (a flame) is self-lit by its emissive: its base colour whatever the light.
     let lit = c * (key.level * PI + points) * CHARACTER_EXPOSURE;
     o.color = vec4f(emitted(lit, m.base.rgb, m.extra.z), 1.0);
+    o.depth = self_lit_depth(o.depth, m.extra.z >= 1.0);
     return o;
 }
 
@@ -1328,15 +1322,7 @@ mod tests {
 
     /// The hue (degrees) and saturation (HSV) of a display colour (0–1, sRGB-encoded).
     fn hue_sat(c: [f32; 3]) -> (f64, f64) {
-        let enc = |x: f32| {
-            let x = f64::from(x);
-            if x <= 0.003_130_8 {
-                x * 12.92
-            } else {
-                1.055 * x.powf(1.0 / 2.4) - 0.055
-            }
-        };
-        let [r, g, b] = c.map(enc);
+        let [r, g, b] = c.map(f64::from);
         let (hi, lo) = (r.max(g).max(b), r.min(g).min(b));
         let d = hi - lo;
         let h = if d <= 0.0 {
@@ -1351,31 +1337,28 @@ mod tests {
         (h, if hi > 0.0 { d / hi } else { 0.0 })
     }
 
-    /// A self-lit surface's displayed colour (sRGB-encoded 0–1) under `lit` at `exposure`.
-    fn shown(lit: [f64; 3], albedo: [f64; 3], shine: f64, exposure: f64) -> [f32; 3] {
-        let out = dwell_look::lights::emitted(lit, albedo, shine, exposure).map(|v| v as f32);
-        super::super::water::aces(out, exposure as f32)
-    }
-
     #[test]
     fn the_flame_stays_lit_and_orange_by_day_at_night_and_in_a_cave() {
         // Owner (2026-10-21): the held flame read as "a cream colored blob"; "the flame should stay
         // illuminated regardless of brightness since it's the source of the light". The held
         // flame's material and the placed torch's flame texels, through the shaders' last step
-        // (`emitted`) and the tone curve: by day, at midnight, and in a cave at sky light 0 (its
-        // lit colour black), the same orange, saturated, never cream.
+        // (`emitted`), the tone curve and the time of day's saturation (render/lights.rs's CPU
+        // mirrors): by day, at midnight (moonlight's lower saturation), and in a cave at sky
+        // light 0 (its lit colour black), the same orange, saturated, never cream.
+        use super::super::lights::{displayed, emitted};
         let flame = TABLES
             .materials
             .iter()
             .find(|m| m.name == "flame")
             .expect("the flame material");
-        let held = dwell_look::hex(flame.base).map(dwell_look::srgb_to_linear);
+        let lin = |c: u32| dwell_look::hex(c).map(|v| dwell_look::srgb_to_linear(v) as f32);
+        let held = lin(flame.base);
         // The placed torch's flame: the torch_top tile's most saturated texels' mean.
         let tile = dwell_blocks::info(dwell_blocks::require("dwell:torch_upper"))
             .textures
             .expect("textured")
             .side;
-        let mut sum = [0.0; 3];
+        let mut sum = [0.0f32; 3];
         let mut n = 0.0;
         for y in 0..dwell_mesh::TILE as i64 {
             for x in 0..dwell_mesh::TILE as i64 {
@@ -1383,7 +1366,7 @@ mod tests {
                 let (hi, lo) = (t[0].max(t[1]).max(t[2]), t[0].min(t[1]).min(t[2]));
                 if t[3] > 128 && hi > 150 && f64::from(hi - lo) / f64::from(hi) > 0.6 {
                     for k in 0..3 {
-                        sum[k] += dwell_mesh::srgb_to_linear(t[k]);
+                        sum[k] += dwell_mesh::srgb_to_linear(t[k]) as f32;
                     }
                     n += 1.0;
                 }
@@ -1391,27 +1374,39 @@ mod tests {
         }
         assert!(n > 20.0, "the tile has a flame");
         let placed = sum.map(|v| v / n);
-        let shine_placed = f64::from(dwell_mesh::tile_emissive(tile));
+        let sample = |solar: f64| {
+            let s = dwell_look::daynight::DAY_NIGHT.sample(solar);
+            (
+                (dwell_look::DEFAULT_EXPOSURE * s.exposure) as f32,
+                s.saturation as f32,
+            )
+        };
+        let (day, day_sat) = sample(60.0);
+        let (night, night_sat) = sample(-90.0);
+        assert!(
+            night_sat < 1.0,
+            "moonlight is desaturated (the case that washed it to cream)"
+        );
         for (what, albedo, shine) in [
-            ("held", held, f64::from(flame.emissive)),
-            ("placed", placed, shine_placed),
+            ("held", held, flame.emissive),
+            ("placed", placed, dwell_mesh::tile_emissive(tile)),
         ] {
             assert!(shine >= 1.0, "{what}: fully self-lit");
-            let day = dwell_look::DEFAULT_EXPOSURE
-                * dwell_look::daynight::DAY_NIGHT.sample(60.0).exposure;
-            let night = dwell_look::DEFAULT_EXPOSURE
-                * dwell_look::daynight::DAY_NIGHT.sample(-90.0).exposure;
-            let noon_lit = albedo.map(|v| v * 3.0);
             let cases = [
-                ("noon", noon_lit, day),
-                ("midnight", albedo.map(|v| v * 0.05), night),
-                ("cave", [0.0; 3], night),
-                ("bright exposure", noon_lit, 2.5),
+                ("noon", albedo.map(|v| v * 3.0), day, day_sat),
+                ("midnight", albedo.map(|v| v * 0.05), night, night_sat),
+                ("cave", [0.0; 3], night, night_sat),
+                ("a bright exposure", albedo, 2.5, 1.0),
             ];
-            let base = shown(cases[0].1, albedo, shine, cases[0].2);
-            for (when, lit, exposure) in cases {
-                let c = shown(lit, albedo, shine, exposure);
+            let show = |(_, lit, e, s): (&str, [f32; 3], f32, f32)| {
+                displayed(emitted(lit, albedo, shine, e), e, s, shine >= 1.0)
+            };
+            let base = show(cases[0]);
+            eprintln!("PROBE {what} {base:?} {:?}", hue_sat(base));
+            for case in cases {
+                let c = show(case);
                 let (h, sat) = hue_sat(c);
+                let when = case.0;
                 assert!(
                     (18.0..48.0).contains(&h),
                     "{what} {when}: hue {h:.0}° ({c:?})"

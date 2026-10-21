@@ -3461,6 +3461,105 @@
           "name": "no-torches"
         }
       ]
+    },
+    {
+      "name": "torch-scale-a",
+      "notes": "The 1 m torch (two \u00bd m cells, docs/LIGHTS.md) placed on the ground ahead at noon, a stand-in player beside it for scale, then at midnight; and the held torch's flame (self-lit) by day and at night.",
+      "settings": {
+        "timeOfDay": 0.5
+      },
+      "steps": [
+        {
+          "do": "settle",
+          "maxS": 120
+        },
+        {
+          "do": "select",
+          "slot": 8
+        },
+        {
+          "do": "look",
+          "yaw": 90,
+          "pitch": -55
+        },
+        {
+          "do": "wait",
+          "s": 0.5
+        },
+        {
+          "do": "edit",
+          "action": "place"
+        },
+        {
+          "do": "wait",
+          "s": 1
+        },
+        {
+          "do": "puppets",
+          "count": 1,
+          "at": [11.5, 0, -2.8],
+          "held": true
+        },
+        {
+          "do": "look",
+          "yaw": 90,
+          "pitch": -12
+        },
+        {
+          "do": "hold",
+          "code": "KeyS",
+          "s": 0.5
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "shot",
+          "name": "scale-noon"
+        },
+        {
+          "do": "time",
+          "t": 0.0
+        },
+        {
+          "do": "wait",
+          "s": 1
+        },
+        {
+          "do": "shot",
+          "name": "scale-midnight"
+        },
+        {
+          "do": "puppets",
+          "count": 0
+        },
+        {
+          "do": "look",
+          "yaw": 0,
+          "pitch": 5
+        },
+        {
+          "do": "wait",
+          "s": 0.5
+        },
+        {
+          "do": "shot",
+          "name": "held-midnight"
+        },
+        {
+          "do": "time",
+          "t": 0.5
+        },
+        {
+          "do": "wait",
+          "s": 1
+        },
+        {
+          "do": "shot",
+          "name": "held-noon"
+        }
+      ]
     }
   ]
 }

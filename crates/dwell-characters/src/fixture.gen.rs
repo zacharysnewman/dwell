@@ -931,8 +931,8 @@ pub static CHARACTERS: &[Character] = &[
             Item { name: "torch", light: Some((9, [0.0, -0.08, 0.36])), parts: &[
                 Part { id: "torch_stick", bone: 9, kind: Kind::Cylinder, size: [0.045, 0.38, 0.045], at: [0.0, -0.08, 0.09], rot: [90.0, 0.0, 0.0], round: 0.0, tip: 0.0, view: View::Both, material: 17 },
                 Part { id: "torch_wrap", bone: 9, kind: Kind::Cylinder, size: [0.06, 0.06, 0.06], at: [0.0, -0.08, 0.26], rot: [90.0, 0.0, 0.0], round: 0.0, tip: 0.0, view: View::Both, material: 18 },
-                Part { id: "torch_flame_base", bone: 9, kind: Kind::Ellipsoid, size: [0.06, 0.06, 0.06], at: [0.0, -0.08, 0.31], rot: [0.0, 0.0, 0.0], round: 0.0, tip: 0.0, view: View::Both, material: 19 },
-                Part { id: "torch_flame", bone: 9, kind: Kind::Cone, size: [0.065, 0.13, 0.065], at: [0.0, -0.08, 0.375], rot: [90.0, 0.0, 0.0], round: 0.0, tip: 0.0, view: View::Both, material: 20 },
+                Part { id: "torch_flame_base", bone: 9, kind: Kind::Ellipsoid, size: [0.075, 0.075, 0.07], at: [0.0, -0.08, 0.315], rot: [0.0, 0.0, 0.0], round: 0.0, tip: 0.0, view: View::Both, material: 19 },
+                Part { id: "torch_flame", bone: 9, kind: Kind::Cone, size: [0.07, 0.1, 0.07], at: [0.0, -0.08, 0.37], rot: [90.0, 0.0, 0.0], round: 0.0, tip: 0.1, view: View::Both, material: 20 },
             ] },
             Item { name: "brush", light: None, parts: &[
                 Part { id: "brush_handle", bone: 9, kind: Kind::Cylinder, size: [0.04, 0.32, 0.04], at: [0.0, -0.08, 0.08], rot: [90.0, 0.0, 0.0], round: 0.0, tip: 0.0, view: View::Both, material: 21 },
