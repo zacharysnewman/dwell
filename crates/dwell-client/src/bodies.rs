@@ -92,8 +92,28 @@ pub fn swing_of(last: Option<u8>, now: u8) -> Option<Swing> {
     }
 }
 
+/// How many of a body's latest base roles `Bodies::roles` keeps (tests, telemetry).
+pub const ROLE_HISTORY: usize = 32;
+
+/// A remote body's animation state for tests and telemetry (`__dwell.state().bodies`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BodyState {
+    pub player_id: u16,
+    /// The base role playing now, and the swing.
+    pub role: &'static str,
+    pub action: Option<&'static str>,
+    /// The base roles it started, oldest first: the last `ROLE_HISTORY` of `plays`. A test reads
+    /// what the body played since it looked, however few frames it sampled the role in.
+    pub played: Vec<&'static str>,
+    /// How many base roles it has started since it appeared.
+    pub plays: u32,
+}
+
 struct RemoteBody {
     animator: Animator,
+    /// The latest base roles started (oldest first, at most `ROLE_HISTORY`), and their count.
+    played: std::collections::VecDeque<&'static str>,
+    plays: u32,
     swing: Option<u8>,
     /// The drawn feet over steps: a virtual ramp (PLAYER_CONTROLLER.md §9, the step view).
     steps: StepSmoother,
@@ -188,6 +208,8 @@ impl Bodies {
             .entry(v.player_id)
             .or_insert_with(|| RemoteBody {
                 animator: Animator::new(&TABLES, character, Space::Body),
+                played: std::collections::VecDeque::new(),
+                plays: 0,
                 swing: None,
                 steps: StepSmoother::new(),
                 stepped: None,
@@ -233,6 +255,14 @@ impl Bodies {
             });
         }
         let pose = body.animator.update(&input, dt as f32);
+        let role = body.animator.role();
+        if body.plays == 0 || body.played.back() != Some(&role) {
+            if body.played.len() == ROLE_HISTORY {
+                body.played.pop_front();
+            }
+            body.played.push_back(role);
+            body.plays += 1;
+        }
         let bones = bone_transforms(character, &pose);
         for (k, name) in ["foot_l", "foot_r"].into_iter().enumerate() {
             if let Some(b) = character.bone(name) {
@@ -286,14 +316,20 @@ impl Bodies {
         self.arms.swing(s);
     }
 
-    /// Every remote body's base role and swing, by player id (tests: `__dwell.state().bodies`).
-    pub fn roles(&self) -> Vec<(u16, &'static str, Option<&'static str>)> {
+    /// Every remote body's roles, by player id (tests: `__dwell.state().bodies`).
+    pub fn roles(&self) -> Vec<BodyState> {
         let mut out: Vec<_> = self
             .remotes
             .iter()
-            .map(|(id, b)| (*id, b.animator.role(), b.animator.action()))
+            .map(|(id, b)| BodyState {
+                player_id: *id,
+                role: b.animator.role(),
+                action: b.animator.action(),
+                played: b.played.iter().copied().collect(),
+                plays: b.plays,
+            })
             .collect();
-        out.sort_by_key(|r| r.0);
+        out.sort_by_key(|r| r.player_id);
         out
     }
 
@@ -373,6 +409,47 @@ mod tests {
             assert!((last.unwrap() - 0.5).abs() < 1e-9);
         }
     );
+
+    /// A body keeps the base roles it played, so a test that samples it seldom (a slow page) still
+    /// reads a short one (a slide, a jump) that started and ended between its looks.
+    #[test]
+    fn a_body_keeps_the_roles_it_played_lately() {
+        use dwell_protocol::PlayerState::{Idle, Running, Sliding};
+        let mut bodies = Bodies::default();
+        let mut ground = |_: FaceFrame, _: [f64; 3]| Some(32.0);
+        let mut frame = |b: &mut Bodies, state, speed: f32| {
+            let v = RemoteView {
+                player_id: 7,
+                feet: [0.0, 32.0, 0.0],
+                velocity: [0.0, 0.0, speed],
+                yaw: 0.0,
+                pitch: 0.0,
+                state,
+                flags: player_flags::GROUNDED,
+                held: 0,
+                swing: 0,
+            };
+            b.remote(&v, Held::Empty, 1.0 / 60.0, &mut ground);
+        };
+        frame(&mut bodies, Idle, 0.0);
+        frame(&mut bodies, Running, 7.0);
+        frame(&mut bodies, Sliding, 8.0);
+        frame(&mut bodies, Running, 7.0);
+        frame(&mut bodies, Running, 7.0);
+        let s = &bodies.roles()[0];
+        assert_eq!((s.player_id, s.role), (7, "sprint"));
+        assert_eq!(s.played, ["idle", "sprint", "slide", "sprint"]);
+        assert_eq!(s.plays, 4);
+        // Only the latest ROLE_HISTORY are kept; the count goes on.
+        for _ in 0..ROLE_HISTORY {
+            frame(&mut bodies, Sliding, 8.0);
+            frame(&mut bodies, Running, 7.0);
+        }
+        let s = &bodies.roles()[0];
+        assert_eq!(s.played.len(), ROLE_HISTORY);
+        assert_eq!(s.played.last(), Some(&"sprint"));
+        assert_eq!(s.plays, 4 + 2 * ROLE_HISTORY as u32);
+    }
 
     #[test]
     fn a_changed_swing_count_starts_a_swing_and_the_first_seen_does_not() {

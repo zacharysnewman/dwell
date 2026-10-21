@@ -1447,11 +1447,18 @@ impl Client {
         let bodies: Array = d
             .bodies
             .iter()
-            .map(|&(id, role, action)| {
+            .map(|body| {
                 let b = Object::new();
-                set(&b, "playerId", id);
-                set(&b, "role", role);
-                set(&b, "action", action.map_or(JsValue::NULL, JsValue::from));
+                set(&b, "playerId", body.player_id);
+                set(&b, "role", body.role);
+                set(
+                    &b,
+                    "action",
+                    body.action.map_or(JsValue::NULL, JsValue::from),
+                );
+                let played: Array = body.played.iter().map(|&r| JsValue::from(r)).collect();
+                set(&b, "played", played);
+                set(&b, "plays", body.plays);
                 JsValue::from(b)
             })
             .collect();

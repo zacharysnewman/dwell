@@ -12,6 +12,9 @@ interface Body {
   playerId: number;
   role: string;
   action: string | null;
+  /** The latest base roles it started, oldest first, and how many it has started in all. */
+  played: string[];
+  plays: number;
 }
 interface State {
   playerId: number;
@@ -20,6 +23,7 @@ interface State {
   remotes: { playerId: number; feet: Vec3 }[];
   bodies: Body[];
   arms: { role: string; action: string | null };
+  stats: { ticks: number };
 }
 interface Hooks {
   state(): State | null;
@@ -51,18 +55,44 @@ async function face(b: Page, a: Page): Promise<void> {
   await call(b, `d.look(${String(yaw)}, ${String(pitch)})`);
 }
 
-/** Polls until B draws A playing `role` (keeping B's look on A). */
-async function seesRole(a: Page, b: Page, id: number, role: string): Promise<void> {
+const body = async (b: Page, id: number) =>
+  (await state(b))?.bodies.find((x) => x.playerId === id) ?? null;
+
+/** How many base roles B's body of A has started: a mark for `seesRole`. */
+const mark = async (b: Page, id: number) => (await body(b, id))?.plays ?? 0;
+
+/**
+ * Polls until B draws A playing `role`: playing it now, or having started it since `since` (a
+ * `mark`). B's body keeps the roles it played, so a short one (a slide, a jump) is seen however
+ * seldom the slow page is sampled; `again` runs each poll to start it again (CI's software
+ * renderer draws ~5 frames a second, and a body only takes a role in a frame that sees it).
+ */
+async function seesRole(
+  a: Page,
+  b: Page,
+  id: number,
+  role: string,
+  since: number,
+  again?: () => Promise<void>,
+): Promise<void> {
   await expect
     .poll(
       async () => {
         await face(b, a);
-        return (await state(b))?.bodies.find((x) => x.playerId === id)?.role ?? null;
+        const s = await body(b, id);
+        if (!s) return null;
+        const recent = s.played.slice(Math.max(0, s.played.length - (s.plays - since)));
+        if (s.role === role || recent.includes(role)) return role;
+        await again?.();
+        return s.role;
       },
-      { timeout: 20_000, intervals: [100] },
+      { timeout: 30_000, intervals: [100] },
     )
     .toBe(role);
 }
+
+/** A's own first-person arms' role: what A's controller is doing, as A predicts it. */
+const armsRole = async (a: Page) => (await state(a))?.arms.role ?? null;
 
 test('another client sees your body walk, sprint, crouch and jump, and you see your arms', async ({
   browser,
@@ -94,34 +124,64 @@ test('another client sees your body walk, sprint, crouch and jump, and you see y
       .toBe(true);
     await call(a, 'd.look(0, -20)');
     await shot(a, 'a-first-person');
-    await seesRole(a, b, id, 'idle');
+    await seesRole(a, b, id, 'idle', await mark(b, id));
     await shot(b, 'b-sees-a-idle');
     // Walk away from B, then sprint, crouch, jump.
     await call(a, 'd.look(90, 0)');
+    let since = await mark(b, id);
     await press(a, 'KeyW', true);
-    await seesRole(a, b, id, 'walk');
+    await seesRole(a, b, id, 'walk', since);
     await shot(b, 'b-sees-a-walk');
+    since = await mark(b, id);
     await press(a, 'ShiftLeft', true);
-    await seesRole(a, b, id, 'sprint');
+    await seesRole(a, b, id, 'sprint', since);
     await shot(b, 'b-sees-a-sprint');
-    // Crouch at a sprint: the sprint slide.
+    // Crouch at a sprint: the sprint slide. A slide is short: while B hasn't seen it, A stands up
+    // once it ends and crouches again once its controller is back at a sprint.
+    since = await mark(b, id);
+    let crouched = true;
     await press(a, 'KeyC', true);
-    await seesRole(a, b, id, 'slide');
+    await seesRole(a, b, id, 'slide', since, async () => {
+      const r = await armsRole(a);
+      if (crouched && r !== 'slide' && r !== 'sprint') {
+        crouched = false;
+        await press(a, 'KeyC', false);
+      } else if (!crouched && r === 'sprint') {
+        crouched = true;
+        await press(a, 'KeyC', true);
+      }
+    });
     await shot(b, 'b-sees-a-slide');
     await press(a, 'KeyC', false);
     await press(a, 'ShiftLeft', false);
+    since = await mark(b, id);
     await press(a, 'KeyW', false);
-    await seesRole(a, b, id, 'idle');
+    await seesRole(a, b, id, 'idle', since);
+    since = await mark(b, id);
     await press(a, 'KeyC', true);
-    await seesRole(a, b, id, 'crouch');
+    await seesRole(a, b, id, 'crouch', since);
     await shot(b, 'b-sees-a-crouch');
+    since = await mark(b, id);
     await press(a, 'KeyC', false);
-    await seesRole(a, b, id, 'idle');
+    await seesRole(a, b, id, 'idle', since);
+    // A jump is short too: while B hasn't seen it, A lets go of jump and jumps again once its
+    // controller is back on the ground. The key is held for some ticks of A's either way (a key
+    // pressed and let go between two of A's frames is never seen).
+    since = await mark(b, id);
+    let jumping = true;
+    const ticks = async () => (await state(a))?.stats.ticks ?? 0;
+    let toggled = await ticks();
     await press(a, 'Space', true);
-    await seesRole(a, b, id, 'jump');
+    await seesRole(a, b, id, 'jump', since, async () => {
+      if ((await armsRole(a)) !== 'idle' || (await ticks()) < toggled + 10) return;
+      jumping = !jumping;
+      toggled = await ticks();
+      await press(a, 'Space', jumping);
+    });
     await shot(b, 'b-sees-a-jump');
+    since = await mark(b, id);
     await press(a, 'Space', false);
-    await seesRole(a, b, id, 'idle');
+    await seesRole(a, b, id, 'idle', since);
   } finally {
     for (const c of contexts) await c.close();
   }
