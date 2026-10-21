@@ -72,6 +72,22 @@ rs.push('        }');
 rs.push('    }');
 rs.push('}');
 rs.push('');
+const am = data.ambient;
+const rpair = (p) => `(${rf(p[0])}, ${rf(p[1])})`;
+rs.push('/// The ambient sounds\' tunables (shared/sounds `ambient`).');
+rs.push('pub mod ambient {');
+rs.push('    /// Burning light sources sound within this many metres of the listener ...');
+rs.push(`    pub const FIRE_RADIUS_M: f64 = ${rf(am.fire.radiusM)};`);
+rs.push('    /// ... the nearest this many.');
+rs.push(`    pub const FIRE_MAX: usize = ${am.fire.max};`);
+rs.push('    /// The wind: from the listener\'s height over sea level (m), starting and full ...');
+rs.push(`    pub const WIND_HEIGHT_M: (f64, f64) = ${rpair(am.wind.heightM)};`);
+rs.push('    /// ... or from its speed (m/s), starting and full.');
+rs.push(`    pub const WIND_SPEED: (f64, f64) = ${rpair(am.wind.speed)};`);
+rs.push('    /// The night: from the sky\'s stars (0 by day, 1 by night), starting and full.');
+rs.push(`    pub const NIGHT_STARS: (f64, f64) = ${rpair(am.night.stars)};`);
+rs.push('}');
+rs.push('');
 writeFileSync(join(root, 'crates/dwell-game/src/sound.gen.rs'), rs.join('\n'));
 console.log(
   `sounds: ${Object.keys(data.sounds).length} sounds, ${Object.keys(data.sets).length} sets, ${data.events.length} events`,

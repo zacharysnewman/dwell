@@ -523,9 +523,7 @@ async function start(): Promise<App | null> {
           at: o.at,
           gain: o.gain,
         }),
-      update: (voice, intensity, at) => {
-        sfx.updateLoop(voice, intensity, at);
-      },
+      update: (voice, intensity, at) => sfx.updateLoop(voice, intensity, at),
       stop: (voice) => {
         sfx.stopLoop(voice);
       },

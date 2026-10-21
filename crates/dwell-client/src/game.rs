@@ -21,7 +21,10 @@ use dwell_game::hud_text::{HudTextInput, hud_text};
 use dwell_game::input::{EditAction, KeyboardMouseInput, quantize_input};
 use dwell_game::region_tools::{RegionTools, ToolAction, ToolBoxKind, ToolContext};
 use dwell_game::remotes::RemotePlayers;
-use dwell_game::sound::{CellChange, EditSounds, MoverSample, MoverSounds, SoundEvent, SoundKind};
+use dwell_game::sound::{
+    AmbientInput, AmbientSounds, CellChange, EditSounds, FireSounds, FireSource, ImpactSounds,
+    MoverSample, MoverSounds, SoundEvent, SoundKind, Surroundings, ambient, player_event_sound,
+};
 use dwell_game::touch::TouchState;
 use dwell_lod::fade::Fade;
 use dwell_lod::{LodCamera, LodSystem, LodView, StandInBox, format_lod_stats};
@@ -265,6 +268,7 @@ pub struct ClientState {
     pub step_ramp: StepRamp,
     pub radius: f64,
     pub standing_height: f64,
+    pub crouch_height: f64,
 }
 
 /// The tick's controller state and input, for the telemetry's trace.
@@ -344,6 +348,7 @@ impl ClientState {
             step_ramp: config.step_view.into(),
             radius: f64::from(config.body.radius),
             standing_height: f64::from(config.body.standing_height),
+            crouch_height: f64::from(config.crouch.height),
         }
     }
 
@@ -502,6 +507,15 @@ pub struct Game<S: Scene> {
     sounds: Vec<SoundEvent>,
     mover_sounds: MoverSounds,
     remote_sounds: dwell_world::hash::HashMap<u16, MoverSounds>,
+    /// The crackle of torches near the listener, and the wind and the night (docs/AUDIO.md §5).
+    fire_sounds: FireSounds,
+    ambient_sounds: AmbientSounds,
+    /// Other players' health events, held until their bodies are drawn at that moment (the
+    /// interpolation delay), so a hurt sounds with the hit that caused it: (local ms, event).
+    pending_player_events: Vec<(f64, dwell_protocol::PlayerEvent)>,
+    /// Other players' hits, read from their snapshots (exact positions) and held likewise.
+    remote_impacts: dwell_world::hash::HashMap<u16, ImpactSounds>,
+    pending_sounds: Vec<(f64, SoundEvent)>,
     edit_sounds: EditSounds,
     /// The camera at the last draw: eye, forward, up (the audio listener).
     listener: [f64; 9],
@@ -615,6 +629,11 @@ impl<S: Scene> Game<S> {
             sounds: Vec::new(),
             mover_sounds: MoverSounds::new(),
             remote_sounds: Default::default(),
+            fire_sounds: FireSounds::new(),
+            ambient_sounds: AmbientSounds::new(),
+            pending_player_events: Vec::new(),
+            remote_impacts: Default::default(),
+            pending_sounds: Vec::new(),
             edit_sounds: EditSounds::new(),
             listener: [0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0],
             motion: MotionFx::new(),
@@ -856,7 +875,9 @@ impl<S: Scene> Game<S> {
                 };
                 self.remotes.push(s.server_tick, &s.remotes, now_ms);
                 let mut seen = HashSet::default();
-                for r in self.remotes.latest() {
+                let latest = self.remotes.latest();
+                self.remote_impacts(&latest, now_ms);
+                for r in latest {
                     if r.is_dead() {
                         continue;
                     }
@@ -895,15 +916,25 @@ impl<S: Scene> Game<S> {
                         .tick(&self.current.eye_state(), 1.0 / SIM_HZ as f64);
                 }
             }
-            Message::PlayerEvent(e) if e.player_id == self.player_id => match e.kind {
-                PlayerEventKind::Knockback => {
-                    let v = Vec3::new(e.vector[0], e.vector[1], e.vector[2]);
-                    self.predictor
-                        .on_knockback(self.streamer.store_mut(), e.input_seq, v);
+            Message::PlayerEvent(e) if e.player_id == self.player_id => {
+                // Ours: hurt, death and respawn sound at once, at the listener.
+                self.sounds
+                    .extend(player_event_sound(e.kind, e.amount, None));
+                match e.kind {
+                    PlayerEventKind::Knockback => {
+                        let v = Vec3::new(e.vector[0], e.vector[1], e.vector[2]);
+                        self.predictor
+                            .on_knockback(self.streamer.store_mut(), e.input_seq, v);
+                    }
+                    PlayerEventKind::Damage => self.hud.damaged = true,
+                    _ => {}
                 }
-                PlayerEventKind::Damage => self.hud.damaged = true,
-                _ => {}
-            },
+            }
+            Message::PlayerEvent(e) => {
+                // Another player's: when its body is drawn at that moment.
+                let due = now_ms + players::INTERP_DELAY_MS as f64;
+                self.pending_player_events.push((due, e));
+            }
             _ => {}
         }
     }
@@ -1320,13 +1351,20 @@ impl<S: Scene> Game<S> {
         submerged: Option<f64>,
         dt: f64,
     ) -> MoverSample {
-        // The cell dy metres above the feet (toward the face's up; rows are `CELL_H` tall).
-        let at =
-            |dy: f64| dwell_world::cell_of_pos([feet[0], face.y(face.y(feet[1]) + dy), feet[2]]);
-        let [gx, gy, gz] = at(-0.2);
-        let [bx, by, bz] = at(0.5);
-        let ground = self.voxel(gx, gy, gz);
-        let body = self.voxel(bx, by, bz);
+        let height = if crouched {
+            self.current.crouch_height
+        } else {
+            self.current.standing_height
+        };
+        let store = self.streamer.store_mut();
+        let Surroundings {
+            ground,
+            body,
+            walls,
+            ceiling,
+        } = Surroundings::read(feet, face, self.current.radius, height, |[x, y, z]| {
+            store.get_voxel(x, y, z)
+        });
         let liquid = |id: u16| id != 0 && dwell_blocks::info(id).liquid;
         MoverSample {
             feet,
@@ -1338,6 +1376,8 @@ impl<S: Scene> Game<S> {
             submerged: submerged.unwrap_or(if liquid(body) { 1.0 } else { 0.0 }),
             ground,
             body,
+            walls,
+            ceiling,
             dt,
         }
     }
@@ -1509,14 +1549,7 @@ impl<S: Scene> Game<S> {
         for v in &views {
             drawn.insert(v.player_id);
             if !v.is_dead() {
-                let grounded = matches!(
-                    v.state,
-                    PlayerState::Idle
-                        | PlayerState::Walking
-                        | PlayerState::Running
-                        | PlayerState::Crouching
-                        | PlayerState::Sliding
-                );
+                let grounded = on_ground(v.state);
                 let face = v.face();
                 let sample = self.mover_sample(
                     v.feet,
@@ -1581,6 +1614,32 @@ impl<S: Scene> Game<S> {
         self.character_lights.retain(|id, _| {
             *id == ARMS_LIGHT || *id == u32::from(self.player_id) || drawn.contains(&(*id as u16))
         });
+        // Other players' hits and health events whose moment is drawn now, where they are.
+        let sounds = &mut self.sounds;
+        self.pending_sounds.retain(|(t, e)| {
+            let wait = *t > now_ms;
+            if !wait {
+                sounds.push(*e);
+            }
+            wait
+        });
+        let mut due = std::mem::take(&mut self.pending_player_events);
+        due.retain(|(t, e)| {
+            if *t > now_ms {
+                return true;
+            }
+            let at = views
+                .iter()
+                .find(|v| v.player_id == e.player_id)
+                .map(|v| v.feet)
+                .or((e.kind == PlayerEventKind::Respawn).then_some(e.position));
+            if let Some(at) = at {
+                self.sounds
+                    .extend(player_event_sound(e.kind, e.amount, Some(at)));
+            }
+            false
+        });
+        self.pending_player_events = due;
         // A player gone from view (or dead) stops sounding: its slide's voice ends.
         let sounds = &mut self.sounds;
         self.remote_sounds.retain(|id, m| {
@@ -1677,6 +1736,7 @@ impl<S: Scene> Game<S> {
         let flames = crate::render::flames::placed_flames(self.streamer.store(), camera_eye);
         self.scene.borrow_mut().set_placed_flames(flames);
         self.update_day(now_ms);
+        self.ambient_sounds(&views, dt);
         // The placed light sources near the eye (docs/LIGHTS.md §4): Torch shadows draws the
         // nearest as shadowed lights.
         let placed = placed_lights(
@@ -1732,6 +1792,111 @@ impl<S: Scene> Game<S> {
         self.scene
             .borrow_mut()
             .set_day(&self.day, (now_ms - first) / 1000.0);
+    }
+
+    /// Other players' hits on walls and ceilings (sound.rs `ImpactSounds`), from each snapshot's
+    /// latest states: their positions are exact there (an interpolated body reaches a wall late),
+    /// and they sound when the bodies are drawn at that moment.
+    fn remote_impacts(&mut self, latest: &[dwell_game::remotes::RemoteView], now_ms: f64) {
+        let dt = 1.0 / f64::from(dwell_protocol::SNAPSHOT_HZ);
+        let due = now_ms + players::INTERP_DELAY_MS as f64;
+        let mut out = Vec::new();
+        for r in latest.iter().filter(|r| !r.is_dead()) {
+            let grounded = on_ground(r.state);
+            let sample = self.mover_sample(
+                r.feet,
+                r.velocity.map(f64::from),
+                r.state,
+                grounded,
+                r.is_crouched(),
+                r.face(),
+                None,
+                dt,
+            );
+            self.remote_impacts.entry(r.player_id).or_default().update(
+                &sample,
+                Some(r.feet),
+                &mut out,
+            );
+        }
+        self.remote_impacts
+            .retain(|id, _| latest.iter().any(|r| r.player_id == *id && !r.is_dead()));
+        self.pending_sounds
+            .extend(out.into_iter().map(|e| (due, e)));
+    }
+
+    /// The fires near the listener and the ambience (docs/AUDIO.md §5): burning light sources
+    /// placed in the world, a torch in our hand or another player's, the wind and the night.
+    fn ambient_sounds(&mut self, views: &[dwell_game::remotes::RemoteView], dt: f64) {
+        let eye = [self.listener[0], self.listener[1], self.listener[2]];
+        let mut fires: Vec<FireSource> = self
+            .streamer
+            .store()
+            .light_sources_near(eye, ambient::FIRE_RADIUS_M)
+            .into_iter()
+            .map(|(c, block)| {
+                let lo = dwell_world::pos_of_cell(c);
+                let pos = std::array::from_fn(|k| lo[k] + 0.5 * dwell_world::CELL[k]);
+                FireSource {
+                    key: fire_key(c),
+                    pos,
+                    at: Some(pos),
+                    block,
+                }
+            })
+            .collect();
+        // A torch in a hand: ours at the listener, another player's at its hand.
+        const HAND: u64 = 1 << 63;
+        let held_block = |h: crate::render::characters::Held| match h {
+            crate::render::characters::Held::Block(b) => b,
+            _ => 0,
+        };
+        if self.current.active && !self.dead {
+            fires.push(FireSource {
+                key: HAND | u64::from(self.player_id),
+                pos: eye,
+                at: None,
+                block: held_block(self.held()),
+            });
+        }
+        for v in views.iter().filter(|v| !v.is_dead()) {
+            let registry = &self.registry;
+            let held = crate::bodies::held_from_wire(v.held, |b| match registry {
+                Some(m) => m.client(b),
+                None => Some(b),
+            });
+            let up = v.face().up();
+            let pos = std::array::from_fn(|k| v.feet[k] + 1.2 * up[k]);
+            fires.push(FireSource {
+                key: HAND | u64::from(v.player_id),
+                pos,
+                at: Some(pos),
+                block: held_block(held),
+            });
+        }
+        self.fire_sounds.update(eye, &fires, dt, &mut self.sounds);
+
+        let face = self.current.face;
+        let outdoors = self
+            .streamer
+            .store()
+            .light()
+            .map_or(1.0, |l| f64::from(l.sample(eye)[0]));
+        let stars = self.day.viewer(if face.is_b() { 0.0 } else { 1.0 }).stars;
+        let speed = self
+            .current
+            .velocity
+            .iter()
+            .map(|v| v * v)
+            .sum::<f64>()
+            .sqrt();
+        let input = AmbientInput {
+            height_m: face.y(eye[1]) - dwell_world::SEA_LEVEL_M,
+            speed: if self.current.active { speed } else { 0.0 },
+            outdoors,
+            stars,
+        };
+        self.ambient_sounds.update(&input, dt, &mut self.sounds);
     }
 
     /// The day/night cycle's state at the last frame.
@@ -1984,6 +2149,25 @@ impl<S: Scene> dwell_lod::LodNetwork for LodHost<'_, S> {
             .borrow_mut()
             .push(Send::Control(Message::ChunkRequest(coords)));
     }
+}
+
+/// Whether another player's state is on the ground (its snapshot carries no grounded flag).
+fn on_ground(state: PlayerState) -> bool {
+    matches!(
+        state,
+        PlayerState::Idle
+            | PlayerState::Walking
+            | PlayerState::Running
+            | PlayerState::Crouching
+            | PlayerState::Sliding
+    )
+}
+
+/// A placed fire's key: its cell (stable while it burns there).
+fn fire_key([x, y, z]: [i32; 3]) -> u64 {
+    // 21 bits a coordinate, enough for the world's span (well under ±1M cells).
+    let b = |v: i32| u64::from(v as u32) & 0x1f_ffff;
+    b(x) | (b(y) << 21) | (b(z) << 42)
 }
 
 fn sound_event(kind: SoundKind) -> SoundEvent {

@@ -82,7 +82,7 @@ describe('sound events', () => {
       (sound, o) => calls.push(`play ${sound} ${String(o.intensity)}`),
       {
         start: (voice, sound, o) => calls.push(`start ${voice} ${sound} ${String(o.intensity)}`),
-        update: (voice, i) => calls.push(`update ${voice} ${String(i)}`),
+        update: (voice, i) => calls.push(`update ${voice} ${String(i)}`) > 0,
         stop: (voice) => calls.push(`stop ${voice}`),
       },
     );
@@ -113,6 +113,48 @@ describe('sound events', () => {
       if (set.slide) expect(SOUND_DATA.sounds[set.slide]?.loop).toBe(true);
       if (set.slide_stop) expect(SOUND_DATA.sounds[set.slide_stop]?.loop).toBeUndefined();
     }
+  });
+
+  it('restart a long loop an update finds not playing, and stop a fire without a one-shot', () => {
+    const calls: string[] = [];
+    const playing = new Set<string>();
+    let canStart = false;
+    const player = new EventPlayer(SOUND_DATA, (sound) => calls.push(`play ${sound}`), {
+      start: (voice, sound) => {
+        calls.push(`start ${voice} ${sound}`);
+        if (canStart) playing.add(voice);
+      },
+      update: (voice, i) => {
+        calls.push(`update ${voice} ${String(i)}`);
+        return playing.has(voice);
+      },
+      stop: (voice) => {
+        calls.push(`stop ${voice}`);
+        playing.delete(voice);
+      },
+    });
+    const wind = (name: string, intensity: number): SoundEvent => ({
+      ...event(name, 0),
+      intensity,
+      voice: 0x20000,
+    });
+    // The wind starts while the tab is hidden (the engine cannot start it) ...
+    player.playAll([wind('wind', 0.4)]);
+    canStart = true;
+    // ... and its next update restarts it; later ones only move it.
+    player.playAll([wind('wind_level', 0.5), wind('wind_level', 0.6), wind('wind_end', 0)]);
+    const sound = String(SOUND_DATA.events.find((e) => e.name === 'wind')?.sound);
+    expect(calls).toEqual([
+      `start mover:131072 ${sound}`,
+      'update mover:131072 0.5',
+      `start mover:131072 ${sound}`,
+      'update mover:131072 0.6',
+      'stop mover:131072',
+    ]);
+    // After its stop, an update starts nothing.
+    calls.length = 0;
+    player.playAll([wind('wind_level', 0.3)]);
+    expect(calls).toEqual(['update mover:131072 0.3']);
   });
 
   it("play the set's sound for set events, with the gait's loudness for steps", () => {

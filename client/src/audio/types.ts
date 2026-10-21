@@ -1,7 +1,8 @@
 // The sound data's shape (docs/AUDIO.md §2): what shared/sounds/gen.mjs emits into sounds.gen.ts
 // after validating shared/sounds/*.json (shared/sounds/validate.mjs holds the rules).
 
-export type NoiseColor = 'white' | 'pink' | 'brown';
+/** `crackle`: sparse decaying pops (a fire's crackle). */
+export type NoiseColor = 'white' | 'pink' | 'brown' | 'crackle';
 export type Wave = 'sine' | 'triangle' | 'square' | 'sawtooth';
 export type FilterType = 'lowpass' | 'highpass' | 'bandpass' | 'peaking' | 'notch';
 
@@ -93,7 +94,17 @@ export interface SoundDef {
 }
 
 export type SetEvent =
-  'step' | 'land' | 'break' | 'place' | 'hit' | 'enter' | 'exit' | 'swim' | 'slide' | 'slide_stop';
+  | 'step'
+  | 'land'
+  | 'break'
+  | 'place'
+  | 'hit'
+  | 'enter'
+  | 'exit'
+  | 'swim'
+  | 'slide'
+  | 'slide_stop'
+  | 'burn';
 /** An event's part in a continuous sound: start the mover's voice, update it, stop it. */
 export type LoopPart = 'start' | 'update' | 'stop';
 export type Gait = 'walk' | 'run' | 'crouch' | 'climb' | 'swim';
@@ -108,6 +119,15 @@ export interface EventDef {
   sound?: string;
   speed?: [number, number];
   loop?: LoopPart;
+  /** false: a set without this event's sound plays nothing (not the fallback set's). */
+  fallback?: false;
+}
+
+/** The ambient sounds' tunables (AUDIO.md §2), read by the Rust game. */
+export interface AmbientDef {
+  fire: { radiusM: number; max: number };
+  wind: { heightM: [number, number]; speed: [number, number] };
+  night: { stars: [number, number] };
 }
 
 export type ControlSounds = string[] | { silent: string };
@@ -124,5 +144,6 @@ export interface SoundData {
   actions: Record<string, string>;
   ui: Record<string, string>;
   controls: Record<string, ControlSounds>;
+  ambient: AmbientDef;
   sounds: Record<string, SoundDef>;
 }

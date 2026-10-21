@@ -91,8 +91,8 @@ export const BLOCK_DEFS: readonly BlockDef[] = [
   { id: 'dwell:dirt_ramp', first: 70, count: 48, properties: [{ name: 'facing', values: ['north', 'east', 'south', 'west'] }, { name: 'flooded', values: ['false', 'true'] }, { name: 'half', values: ['bottom', 'top'] }, { name: 'shape', values: ['ramp', 'steep_lower', 'steep_upper'] }], sound: 'dwell:dirt' },
   { id: 'dwell:grass_ramp', first: 118, count: 48, properties: [{ name: 'facing', values: ['north', 'east', 'south', 'west'] }, { name: 'flooded', values: ['false', 'true'] }, { name: 'half', values: ['bottom', 'top'] }, { name: 'shape', values: ['ramp', 'steep_lower', 'steep_upper'] }], sound: 'dwell:grass' },
   { id: 'dwell:sand_ramp', first: 166, count: 48, properties: [{ name: 'facing', values: ['north', 'east', 'south', 'west'] }, { name: 'flooded', values: ['false', 'true'] }, { name: 'half', values: ['bottom', 'top'] }, { name: 'shape', values: ['ramp', 'steep_lower', 'steep_upper'] }], sound: 'dwell:sand' },
-  { id: 'dwell:torch', first: 214, count: 1, properties: [], sound: 'dwell:wood' },
-  { id: 'dwell:torch_upper', first: 215, count: 1, properties: [], sound: 'dwell:wood' },
+  { id: 'dwell:torch', first: 214, count: 1, properties: [], sound: 'dwell:torch' },
+  { id: 'dwell:torch_upper', first: 215, count: 1, properties: [], sound: 'dwell:torch' },
 ];
 
 /** The shapes block states use. */
