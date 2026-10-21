@@ -36,6 +36,50 @@ pub struct LightTunables {
     /// glow is scaled down whole, so its hue holds (a flame stays orange, not cream);
     /// `render/lights.rs` `glow`.
     pub glow_peak: f64,
+    /// The Torch shadows setting's maps (`shadows` in the data; docs/LIGHTS.md §4).
+    pub shadows: TorchShadowTunables,
+}
+
+/// The most lights with shadow maps (the High tier's at most; the shader's array).
+pub const MAX_SHADOWED: usize = 4;
+
+/// One Torch shadows tier: how many lights get a cube of maps, and each map's side in texels.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TorchShadowTier {
+    pub lights: usize,
+    pub resolution: u32,
+}
+
+/// The Torch shadows setting's tunables (`shared/look/lights.json` `shadows`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct TorchShadowTunables {
+    /// Low, High (Off draws none).
+    pub tiers: [TorchShadowTier; 2],
+    /// The most lights whose maps are drawn again in a frame.
+    pub redraws_per_frame: usize,
+    /// Placed lights within this of the eye become shadowed dynamic lights (m).
+    pub placed_m: f64,
+    /// Their strength's share (the flood light lights them already).
+    pub placed_strength: f64,
+    /// The maps' near plane (m).
+    pub near_m: f64,
+    /// The depth a surface must be behind the map's to be in shadow (m).
+    pub bias_m: f64,
+    /// The lookup moved off the surface along its normal (m).
+    pub normal_offset_m: f64,
+    /// Each face's field of view as tan(half angle): a little over 1 (90°).
+    pub face_margin: f64,
+}
+
+impl TorchShadowTunables {
+    /// The maps a setting draws (none for Off).
+    pub fn tier(&self, q: crate::shadows::ShadowQuality) -> Option<TorchShadowTier> {
+        match q {
+            crate::shadows::ShadowQuality::Off => None,
+            crate::shadows::ShadowQuality::Low => Some(self.tiers[0]),
+            crate::shadows::ShadowQuality::High => Some(self.tiers[1]),
+        }
+    }
 }
 
 /// One dynamic light this frame.
@@ -55,6 +99,11 @@ pub struct PointLight {
     pub seed: u32,
     /// May cast shadows (Torch shadows, T2).
     pub shadows: bool,
+    /// A placed block's (drawn only with a shadow map: the flood light lights it otherwise), not
+    /// a hand's.
+    pub placed: bool,
+    /// Its shadow map's slot this frame (`TorchShadowCache::assign`), if it has a drawn one.
+    pub slot: Option<usize>,
 }
 
 impl PointLight {
@@ -69,7 +118,21 @@ impl PointLight {
             flicker_speed: f64::from(source.flicker_speed),
             seed,
             shadows: source.shadows,
+            placed: false,
+            slot: None,
         }
+    }
+
+    /// The same light placed in the world (a torch on the ground): its strength the placed share.
+    pub fn placed(mut self) -> Self {
+        self.placed = true;
+        self.strength *= LIGHTS.shadows.placed_strength;
+        self
+    }
+
+    /// Its identity across frames (the holder's or the cell's seed, and which kind).
+    pub fn key(&self) -> u64 {
+        u64::from(self.seed) | (u64::from(self.placed) << 32)
     }
 }
 
@@ -134,7 +197,8 @@ pub fn pick(lights: &[PointLight], eye: [f64; 3], max: usize, cull_m: f64) -> Ve
 }
 
 /// The uniform block (`PointLights` in the shader): x of the header the count; per light its
-/// position relative to the eye and radius, then its colour × strength × flicker at `t`.
+/// position relative to the eye and radius, then its colour × strength × flicker at `t` and its
+/// shadow map's slot (−1 none).
 pub fn pack(lights: &[PointLight], eye: [f64; 3], t: f64) -> [f32; LIGHT_FLOATS] {
     let mut u = [0.0f32; LIGHT_FLOATS];
     let n = lights.len().min(MAX_SHADER_LIGHTS);
@@ -150,7 +214,7 @@ pub fn pack(lights: &[PointLight], eye: [f64; 3], t: f64) -> [f32; LIGHT_FLOATS]
             (l.color[0] * k) as f32,
             (l.color[1] * k) as f32,
             (l.color[2] * k) as f32,
-            0.0,
+            l.slot.map_or(-1.0, |s| s as f32),
         ]);
     }
     u
@@ -337,4 +401,176 @@ mod tests {
             assert!(e[0] > 0.0);
         }
     );
+}
+
+/// A light that wants a shadow map this frame (`TorchShadowCache::assign`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ShadowWant {
+    pub key: u64,
+    pub pos: [f64; 3],
+    /// An order-free signature of the casters within its radius (a chunk meshed or replaced
+    /// changes it).
+    pub signature: u64,
+}
+
+/// What a slot holds: the light its map was drawn for, and where.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct KeptMap {
+    pub key: u64,
+    pub pos: [f64; 3],
+    pub signature: u64,
+}
+
+/// The Torch shadows maps' slots across frames: which light each holds, so a still placed torch's
+/// map is kept until the blocks near it change and only moving or changed ones are drawn again,
+/// `redraws_per_frame` at most (no frame draws them all).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct TorchShadowCache {
+    pub slots: Vec<Option<KeptMap>>,
+}
+
+/// This frame's slots: per wanted light (in the order given), its slot if its map holds it (kept
+/// or drawn now); and the slots to draw now.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ShadowFrame {
+    pub slot_of: Vec<Option<usize>>,
+    pub draw: Vec<usize>,
+}
+
+/// A light moved this far from where its map was drawn is drawn again (m).
+const MOVED_M: f64 = 0.01;
+
+impl TorchShadowCache {
+    /// Assigns `slots` slots to the wanted lights (nearest first) and picks the maps to draw: new
+    /// ones first, then moved, then those whose casters changed, `budget` at most. A light whose
+    /// map isn't drawn this frame keeps its old one (still its own) or has none.
+    pub fn assign(&mut self, wants: &[ShadowWant], slots: usize, budget: usize) -> ShadowFrame {
+        self.slots.resize(slots, None);
+        self.slots.truncate(slots);
+        let wants = &wants[..wants.len().min(slots)];
+        let mut slot_of: Vec<Option<usize>> = wants
+            .iter()
+            .map(|w| self.slots.iter().position(|s| s.is_some_and(|k| k.key == w.key)))
+            .collect();
+        // The free slots: those no wanted light holds.
+        let mut free: Vec<usize> = (0..slots)
+            .filter(|i| !slot_of.contains(&Some(*i)))
+            .collect();
+        free.reverse();
+        // (priority, wanted index): 0 new, 1 moved, 2 casters changed.
+        let mut need: Vec<(u8, usize)> = Vec::new();
+        for (i, w) in wants.iter().enumerate() {
+            match slot_of[i].and_then(|s| self.slots[s]) {
+                None => {
+                    if let Some(s) = free.pop() {
+                        self.slots[s] = None;
+                        slot_of[i] = Some(s);
+                        need.push((0, i));
+                    }
+                }
+                Some(k) => {
+                    let moved = (0..3).any(|a| (k.pos[a] - w.pos[a]).abs() > MOVED_M);
+                    if moved {
+                        need.push((1, i));
+                    } else if k.signature != w.signature {
+                        need.push((2, i));
+                    }
+                }
+            }
+        }
+        need.sort_by_key(|&(p, i)| (p, i));
+        let mut draw = Vec::new();
+        for &(_, i) in need.iter().take(budget) {
+            let s = slot_of[i].expect("assigned");
+            let w = wants[i];
+            self.slots[s] = Some(KeptMap {
+                key: w.key,
+                pos: w.pos,
+                signature: w.signature,
+            });
+            draw.push(s);
+        }
+        // A slot not drawn yet holds no map: its light has none this frame.
+        let slot_of = slot_of
+            .iter()
+            .map(|s| s.filter(|&s| self.slots[s].is_some()))
+            .collect();
+        ShadowFrame { slot_of, draw }
+    }
+
+    pub fn clear(&mut self) {
+        self.slots.clear();
+    }
+}
+
+#[cfg(test)]
+mod shadow_tests {
+    use super::*;
+
+    fn want(key: u64, x: f64, signature: u64) -> ShadowWant {
+        ShadowWant {
+            key,
+            pos: [x, 0.0, 0.0],
+            signature,
+        }
+    }
+
+    #[test]
+    fn a_still_light_keeps_its_map_until_its_casters_change() {
+        let mut c = TorchShadowCache::default();
+        let f = c.assign(&[want(1, 0.0, 7)], 2, 2);
+        assert_eq!(f.draw.len(), 1, "drawn the first time");
+        assert!(f.slot_of[0].is_some());
+        let f = c.assign(&[want(1, 0.0, 7)], 2, 2);
+        assert!(f.draw.is_empty(), "kept");
+        assert!(f.slot_of[0].is_some(), "and still read");
+        let f = c.assign(&[want(1, 0.0, 8)], 2, 2);
+        assert_eq!(f.draw, f.slot_of.iter().flatten().copied().collect::<Vec<_>>(), "casters changed");
+        let f = c.assign(&[want(1, 0.5, 8)], 2, 2);
+        assert_eq!(f.draw.len(), 1, "moved");
+    }
+
+    #[test]
+    fn no_frame_draws_more_than_the_budget_new_maps_first() {
+        let mut c = TorchShadowCache::default();
+        let wants: Vec<_> = (0..4).map(|k| want(k, f64::from(k as u8), 1)).collect();
+        let f = c.assign(&wants, 4, 2);
+        assert_eq!(f.draw.len(), 2);
+        assert_eq!(f.slot_of.iter().filter(|s| s.is_some()).count(), 2, "two have maps");
+        let f = c.assign(&wants, 4, 2);
+        assert_eq!(f.draw.len(), 2, "the other two now");
+        assert!(f.slot_of.iter().all(|s| s.is_some()));
+        let f = c.assign(&wants, 4, 2);
+        assert!(f.draw.is_empty(), "all kept");
+        // A held torch moves every frame: drawn again each frame; the still ones kept.
+        let mut moving = wants.clone();
+        moving[0].pos[0] = 9.0;
+        let f = c.assign(&moving, 4, 2);
+        assert_eq!(f.draw.len(), 1);
+    }
+
+    #[test]
+    fn a_light_gone_frees_its_slot_for_the_next() {
+        let mut c = TorchShadowCache::default();
+        c.assign(&[want(1, 0.0, 1), want(2, 1.0, 1)], 2, 2);
+        let f = c.assign(&[want(2, 1.0, 1), want(3, 2.0, 1)], 2, 2);
+        assert_eq!(f.draw.len(), 1, "only the new light");
+        assert!(f.slot_of.iter().all(|s| s.is_some()));
+        assert_ne!(f.slot_of[0], f.slot_of[1]);
+        // More lights than slots: the nearest (first) get them.
+        let f = c.assign(&[want(4, 0.0, 1), want(2, 1.0, 1), want(3, 2.0, 1)], 2, 2);
+        assert_eq!(f.slot_of.len(), 2);
+    }
+
+    #[test]
+    fn the_settings_tiers_come_from_the_data() {
+        use crate::shadows::ShadowQuality;
+        assert_eq!(LIGHTS.shadows.tier(ShadowQuality::Off), None);
+        let (low, high) = (
+            LIGHTS.shadows.tier(ShadowQuality::Low).unwrap(),
+            LIGHTS.shadows.tier(ShadowQuality::High).unwrap(),
+        );
+        assert!(low.lights <= high.lights && high.lights <= MAX_SHADOWED);
+        assert!(low.resolution <= high.resolution);
+    }
 }

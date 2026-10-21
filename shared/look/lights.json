@@ -1,8 +1,28 @@
 {
-  "$comment": "Dynamic lights (docs/LIGHTS.md §3, ARCHITECTURE.md §6.1): the smooth point lights of light sources (the blocks' `light`, shared/blocks), held in a hand (yours and other players') and, with Torch shadows on, placed. maxLights: the most drawn a frame, the nearest to the eye first (the shader holds up to 16). cullM: a light farther than this from the eye is left out. curve: the falloff, as the flood light's block light falls over its levels (light.json's block curve, kept equal): a light's share d metres out is x / (curve − (curve − 1)·x) of x = 1 − d / radius, so a held torch lights as a placed one does, 1 at the flame and 0 at its radius. wrap: how far round a surface the light wraps, (n·l + wrap) / (1 + wrap), so a surface edge-on to the flame isn't black. Run `node shared/look/lights.mjs` after editing; CI fails if crates/dwell-look/src/lights.gen.rs is stale. glowPeak: the most a glowing surface (a flame, `emissive`) gives off, as the tone curve's input after the exposure: past it the glow is scaled down whole, so its hue holds instead of blowing out to cream.",
+  "$comment": "Dynamic lights (docs/LIGHTS.md §3, ARCHITECTURE.md §6.1): the smooth point lights of light sources (the blocks' `light`, shared/blocks), held in a hand (yours and other players') and, with Torch shadows on, placed. maxLights: the most drawn a frame, the nearest to the eye first (the shader holds up to 16). cullM: a light farther than this from the eye is left out. curve: the falloff, as the flood light's block light falls over its levels (light.json's block curve, kept equal): a light's share d metres out is x / (curve − (curve − 1)·x) of x = 1 − d / radius, so a held torch lights as a placed one does, 1 at the flame and 0 at its radius. wrap: how far round a surface the light wraps, (n·l + wrap) / (1 + wrap), so a surface edge-on to the flame isn't black. Run `node shared/look/lights.mjs` after editing; CI fails if crates/dwell-look/src/lights.gen.rs is stale. glowPeak: the most a glowing surface (a flame, `emissive`) gives off, as the tone curve's input after the exposure: past it the glow is scaled down whole, so its hue holds instead of blowing out to cream. shadows: the Torch shadows setting's maps (its own $comment).",
   "maxLights": 8,
   "cullM": 64,
   "curve": 3,
   "wrap": 0.5,
-  "glowPeak": 0.7
+  "glowPeak": 0.7,
+  "shadows": {
+    "$comment": "Torch shadows (docs/LIGHTS.md §4, Phase 47 T2): the Torch shadows setting's tiers, Low then High (Off draws none): how many of the nearest lights that may cast shadows (a light source's `shadows`) get a cube of six depth maps, and each map's resolution. redrawsPerFrame: the most lights whose maps are drawn again in a frame (moving held torches first, then placed ones whose casters changed; the rest are kept). placedM: placed torches within this of the eye are drawn as shadowed dynamic lights over their flood light, at placedStrength of their light's strength (only those with a map; the flood light lights the rest). nearM: the maps' near plane. biasM: the depth a surface must be behind the map's to be in shadow; normalOffsetM: the lookup moved off the surface along its normal. faceMargin: each face's field of view as tan(half angle) (1 is 90°), a little wider so the filter's taps stay on its face.",
+    "tiers": [
+      {
+        "lights": 2,
+        "resolution": 256
+      },
+      {
+        "lights": 4,
+        "resolution": 384
+      }
+    ],
+    "redrawsPerFrame": 2,
+    "placedM": 24,
+    "placedStrength": 0.6,
+    "nearM": 0.05,
+    "biasM": 0.06,
+    "normalOffsetM": 0.04,
+    "faceMargin": 1.08
+  }
 }

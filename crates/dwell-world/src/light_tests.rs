@@ -541,6 +541,42 @@ crate::both_faces!(
 );
 
 crate::both_faces!(
+    /// The placed light sources are indexed with the flood light (docs/LIGHTS.md §4): a placed
+    /// torch's flame cell is found near the eye, nearest first, and is gone once broken or its
+    /// chunk unloaded.
+    fn placed_light_sources_are_found_near_the_eye(f: FaceFrame) {
+        let torch = dwell_blocks::require("dwell:torch");
+        let mut fx = tunnel(f);
+        let chunks = fx.chunks(-1..=1, -1..=1, -1..=1);
+        let mut w = fx.lit(&chunks);
+        let at = f.cell([22, GROUND, 16]);
+        let put = crate::edit::edit_writes(&mut w, at, torch);
+        for &([x, y, z], m) in &put {
+            w.set_voxel(x, y, z, m);
+        }
+        let cells: Vec<[i32; 3]> = put.iter().map(|(c, _)| *c).collect();
+        w.light_edited(&cells);
+        let flame = crate::edit::above(at);
+        let eye = crate::pos_of_cell(f.cell([20, GROUND + 3, 16]));
+        let found = w.light_sources_near(eye, 8.0);
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert_eq!(found[0].0, flame, "the flame's cell");
+        assert_eq!(found[0].1, dwell_blocks::require("dwell:torch_upper"));
+        assert!(w.light_sources_near(eye, 1.0).is_empty(), "out of reach");
+        // A chunk loaded with one in it indexes it too.
+        let coord = crate::chunk_of(flame[0], flame[1], flame[2]);
+        w.light_load(coord);
+        assert_eq!(w.light_sources_near(eye, 8.0).len(), 1);
+        let gone = crate::edit::edit_writes(&mut w, flame, 0);
+        for &([x, y, z], m) in &gone {
+            w.set_voxel(x, y, z, m);
+        }
+        w.light_edited(&cells);
+        assert!(w.light_sources_near(eye, 8.0).is_empty(), "broken");
+    }
+);
+
+crate::both_faces!(
     /// Random edits across chunk borders, each followed by the incremental update, always agree
     /// with a relight from scratch.
     fn random_edits_agree_with_a_relight_from_scratch(f: FaceFrame) {
