@@ -264,8 +264,10 @@ export function parseStep(where: string, v: unknown): Step {
     case 'select':
       return { do: d, slot: num(at('slot'), o.slot, 0, 63) };
     case 'region': {
-      if (o.op !== 'fill' && o.op !== 'clear') throw new ViewError(`${at('op')}: expected "fill" or "clear"`);
-      if (o.up !== undefined && o.up !== 1 && o.up !== -1) throw new ViewError(`${at('up')}: expected 1 or -1`);
+      if (o.op !== 'fill' && o.op !== 'clear')
+        throw new ViewError(`${at('op')}: expected "fill" or "clear"`);
+      if (o.up !== undefined && o.up !== 1 && o.up !== -1)
+        throw new ViewError(`${at('up')}: expected 1 or -1`);
       return {
         do: d,
         op: o.op,
