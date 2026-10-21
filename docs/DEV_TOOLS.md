@@ -73,6 +73,7 @@ fields, ranges and names fail with the entry named):
 | `spyglass {on, step?}` | the spyglass zoomed to a step (0 the least, `shared/look/spyglass.json`) or out ([`SPYGLASS.md`](./SPYGLASS.md)); `spyglass-far` shoots far terrain unzoomed and at each step |
 | `camera {position, yaw, pitch, aroundPlayer?}`, `releaseCamera` | places the camera (the player stays), or returns it; with `aroundPlayer`, x and z are offsets from the player's feet (y absolute): a view wherever a flight ended, where the chunks are streamed |
 | `edit {action}`, `select {slot}` | break/place at the crosshair; picks a hotbar slot |
+| `brush {command}` | drives the brush tool as its keys and clicks do (`__dwell.brush`: `toggle`, `preset:<name>`, `size:<n>`, `apply`, …; [`BRUSHES.md`](./BRUSHES.md)), in worlds that allow brushes (sandbox: a `--compare` config with `params: {"world": "sandbox"}`) |
 | `settle {maxS}` | waits until the LOD has had nothing to generate, mesh or ask for, for 1 s |
 | `mark` | forgets the telemetry so far: the next `record` measures from here |
 | `record {name}` | saves everything above under `name` |

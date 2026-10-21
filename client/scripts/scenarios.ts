@@ -35,6 +35,11 @@ export type Step =
   | { do: 'edit'; action: 'break' | 'place' }
   | { do: 'select'; slot: number }
   /**
+   * Drives the brush tool (`__dwell.brush`, docs/BRUSHES.md) as its keys and clicks do:
+   * `toggle`, `preset:<name>`, `size:<n>`, `apply`, … (in worlds that allow brushes: sandbox).
+   */
+  | { do: 'brush'; command: string }
+  /**
    * Stand-in players (`__dwell.puppets`, docs/CHARACTERS.md): `count` full bodies ahead of the
    * player (offset `at` from its feet, metres) on `face` (1 or −1), each playing a clip of its
    * own, holding the hotbar's first block when `held`; 0 removes them.
@@ -150,6 +155,7 @@ const STEP_FIELDS: Record<Step['do'], readonly string[]> = {
   water: ['quality', 'debug'],
   edit: ['action'],
   select: ['slot'],
+  brush: ['command'],
   puppets: ['count', 'at', 'face', 'held'],
   arms: ['on'],
   settle: ['maxS'],
@@ -240,6 +246,11 @@ export function parseStep(where: string, v: unknown): Step {
       return { do: d, action: o.action };
     case 'select':
       return { do: d, slot: num(at('slot'), o.slot, 0, 63) };
+    case 'brush':
+      if (typeof o.command !== 'string' || !/^[A-Za-z]+(:[A-Za-z0-9_-]+)?$/.test(o.command)) {
+        throw new ViewError(`${at('command')}: expected a brush command (e.g. "preset:cube")`);
+      }
+      return { do: d, command: o.command };
     case 'puppets': {
       const count = num(at('count'), o.count, 0, 256);
       if (!Number.isInteger(count)) throw new ViewError(`${at('count')}: expected a whole number`);

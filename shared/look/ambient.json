@@ -4,7 +4,7 @@
     "strength": 0.6
   },
   "sky": {
-    "rays": 12,
+    "rays": 16,
     "lengthM": 4,
     "probeM": 3.5
   },

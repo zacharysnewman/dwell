@@ -5,7 +5,7 @@ use crate::ambient::AmbientTunables;
 /// The ambient lighting (shared/look/ambient.json).
 pub const AMBIENT: AmbientTunables = AmbientTunables {
     ao_strength: 0.6,
-    rays: 12,
+    rays: 16,
     length_m: 4.0,
     probe_m: 3.5,
     floor: 0.08,
