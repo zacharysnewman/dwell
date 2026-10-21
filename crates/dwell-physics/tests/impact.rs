@@ -380,3 +380,138 @@ fn walking_up_and_down_a_ramp_hillside_never_hurts() {
     let fastest = fastest_impact(&mut w, e, ticks(5.0));
     assert!(fastest < 9.0, "{fastest}");
 }
+
+// --- steps --------------------------------------------------------------------------------------
+
+/// A floor and an obstacle `rows` ½ m cells tall across the path, its face at z = 3.
+fn obstacle_ahead(rows: i32) -> PlayerTestWorld {
+    let mut w = PlayerTestWorld::new();
+    w.floor_at(0, 32);
+    for z in 3..=13 {
+        for x in -8..=8 {
+            for row in 0..rows {
+                w.set_cell(x, row, z, cube_block());
+            }
+        }
+    }
+    w
+}
+
+/// What a launch at `speed` m/s (+z, toward the obstacle) from feet `height` m over the floor dealt.
+struct Run {
+    dealt: Vec<(i32, Vec3)>,
+    /// The fastest impact raised (m/s), hurting or not.
+    fastest: f32,
+}
+
+fn launch_into(rows: i32, speed: f32, height: f32) -> Run {
+    let mut w = obstacle_ahead(rows);
+    let e = w.spawn(Vec3::new(0.5, height, 2.0));
+    w.kick(0, e, Vec3::new(0.0, 0.0, speed));
+    let mut out = Run {
+        dealt: Vec::new(),
+        fastest: 0.0,
+    };
+    for _ in 0..ticks(1.0) {
+        w.step(1);
+        let d = hurt(&w, e);
+        if d > 0 {
+            out.dealt.push((d, w.c(e).impact_normal));
+        }
+        if w.c(e).events & events::IMPACTED != 0 {
+            out.fastest = out.fastest.max(w.c(e).impact_speed);
+        }
+    }
+    out
+}
+
+/// The ramp a ½ m step counts as: ½ m over one cell's run, facing the mover (−z).
+fn step_ramp_normal() -> Vec3 {
+    Vec3::new(0.0, 1.0, -0.5).normalize()
+}
+
+/// Launched off the floor (feet 0.2 m up) into a ½ m step's side: its top 0.3 m over the feet, in
+/// step-up reach. (Running along the ground the step-up takes it, at any speed: no hit at all.)
+const HOP: f32 = 0.2;
+
+#[test]
+fn a_14_m_s_slide_into_a_half_metre_step_does_not_hurt() {
+    // The sprint slide's top speed into the side of one ½ m step, off the ground: a ramp's share,
+    // ~6.6 m/s, not a wall's 14.7 (which hurt: 21 points).
+    let r = launch_into(1, 14.0, HOP);
+    assert_eq!(r.dealt, Vec::new(), "fastest {}", r.fastest);
+    assert!(r.fastest < 8.0, "{}", r.fastest);
+}
+
+#[test]
+fn a_25_m_s_launch_into_a_half_metre_step_hurts_as_a_ramp() {
+    // Into the ramp's normal: 25 × sin 26.57° ≈ 11.2 m/s (and the little it fell), under the
+    // 12 m/s threshold, where the 1 m wall below takes 104.
+    let r = launch_into(1, 25.0, HOP);
+    let ramp = -Vec3::new(0.0, 0.0, 25.0).dot(step_ramp_normal());
+    assert!(
+        r.fastest > ramp - 0.5 && r.fastest < ramp + 1.0,
+        "{} vs {ramp}",
+        r.fastest
+    );
+    let worst = r.dealt.iter().map(|d| d.0).max().unwrap_or(0);
+    assert!(worst < 10, "{:?}", r.dealt);
+    // Faster still, it hurts, by the ramp's share of the speed.
+    let r = launch_into(1, 40.0, HOP);
+    let ramp = -Vec3::new(0.0, 0.0, 40.0).dot(step_ramp_normal());
+    let expected = PlayerControllerConfig::default().damage.impact_damage(ramp);
+    assert_eq!(r.dealt.len(), 1, "{:?}", r.dealt);
+    let (dealt, n) = r.dealt[0];
+    assert!(
+        dealt >= expected && dealt <= expected + 8,
+        "{dealt} vs {expected}"
+    );
+    assert!(n.dot(step_ramp_normal()) > 0.999, "the step's ramp: {n}");
+}
+
+#[test]
+fn a_25_m_s_launch_into_a_metre_tall_obstacle_still_hurts_as_a_wall() {
+    // Two ½ m cells (a full 1 m block) are too tall to step: a wall, on the ground or off it.
+    for height in [0.0, HOP] {
+        let r = launch_into(2, 25.0, height);
+        assert_eq!(r.dealt.len(), 1, "{height}: {:?}", r.dealt);
+        assert!(r.dealt[0].0 >= 100, "{height}: {:?}", r.dealt);
+        assert!(approx(r.dealt[0].1.z, -1.0, 1e-3), "{:?}", r.dealt);
+    }
+}
+
+#[test]
+fn hitting_a_step_edge_from_lower_in_the_air_hurts_as_a_ramp() {
+    // Lower over the floor the capsule's base meets the step's top edge (a normal partly up), not
+    // its side: the ramp too.
+    let r = launch_into(1, 25.0, 0.3);
+    let worst = r.dealt.iter().map(|d| d.0).max().unwrap_or(0);
+    assert!(worst < 10, "{:?} (fastest {})", r.dealt, r.fastest);
+}
+
+#[test]
+fn running_into_a_half_metre_step_at_any_speed_steps_up() {
+    // On the ground the step-up takes it (no hit), as before.
+    for speed in [5.0, 8.0, 14.0, 25.0] {
+        let r = launch_into(1, speed, 0.0);
+        assert_eq!(r.fastest, 0.0, "{speed}");
+    }
+}
+
+#[test]
+fn a_step_is_a_wall_when_the_config_says_so() {
+    // The rule is data: off, the ½ m step's side is a wall again.
+    let mut cfg = PlayerControllerConfig::default();
+    cfg.damage.impact_step_as_ramp = false;
+    let mut w = PlayerTestWorld::with_config(cfg);
+    w.floor_at(0, 32);
+    for z in 3..=13 {
+        for x in -8..=8 {
+            w.set_cell(x, 0, z, cube_block());
+        }
+    }
+    let e = w.spawn(Vec3::new(0.5, HOP, 2.0));
+    w.kick(0, e, Vec3::new(0.0, 0.0, 25.0));
+    let dealt = hits_at(&mut w, e, ticks(1.0));
+    assert!(dealt.iter().any(|d| d.0 >= 100), "{dealt:?}");
+}
