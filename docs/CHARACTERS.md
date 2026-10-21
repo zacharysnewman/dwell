@@ -140,7 +140,7 @@ one stop of it (`"brass"`, `"leather.shadow"`), a swatch (`"ink"`), a colour slo
   `torch` (a stick, a wrap and a glowing flame; the hand shows it for a block whose registry entry says
   `"held": "torch"`, [`LIGHTS.md`](./LIGHTS.md)). `light` is the point on the socket where the
   light a held block gives off sits (the flame), resolved by the generator to a bone and an offset
-  (`Item::light`); a material's `emissive` (shared/textures) makes it glow unlit (`Material::emissive`).
+  (`Item::light`); a material's `emissive` (shared/textures) makes it self-lit, its colour whatever the light (`Material::emissive`; the torch's flame, a yellow bulb under an orange cone).
 - **`clips`**: `{ rig, space?, layer, duration, loop, ease, cycle?, grounded?, blend?, keys }`. A key is `{ t, bones:
   { bone: [x, y, z] degrees }, root?: [x, y, z] metres }`; each bone interpolates between the keys
   that name it, so a key lists only what moves at that moment. `cycle` is the distance travelled per

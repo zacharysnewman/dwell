@@ -117,6 +117,20 @@ speed }, shadows }`, validated by `shared/blocks/lights.mjs`, emitted as `LIGHTS
 synced by name as look tags `0x8e` (the light's name) and `0x8f` (the item), sent only when set; a
 light this build lacks reads as none.
 
+**Multi-cell blocks** (**built**, Phase 47 T1b; [`LIGHTS.md`](./LIGHTS.md) §2): a block may fill
+more than one cell. `"extends": { "up": "<ns:name>" }` names the block that fills the cell above it
+(face-local up: toward −y on face B), and that block's `"partOf": "<ns:name>"` names it back; the
+directions are a fixed vocabulary (`up`, for now), one part a block, and a part is one state, not
+placeable on its own. `shared/blocks/parts.mjs` checks both ends (a dangling or mismatched
+partner fails with the block named; `parts.test.mjs` adds a post and lantern by data alone).
+`StateInfo::extends_up` and `part_of`; synced as rule tag `10` (`PARTS`: the two names, "" for
+none), sent only when either is set. The engine's one rule (`dwell_world::edit::edit_writes`, used
+by the server for every block and region edit and by the client's prediction): placing a block puts
+its parts (the server's check refuses it unless their cells are free, like its own), and changing
+a cell clears the other cells of the multi-cell block that was there, in the same
+`VoxelModification`, together with what that leaves unsupported. The targeting outline covers every
+cell (`outline_box`). The 1 m torch (`dwell:torch` with `dwell:torch_upper`) is the first.
+
 **Family convention for shaped variants** (**built, Phase 9**, [ADR 0016](./adr/0016-slope-blocks.md); recommended here first): plain
 blocks stay plain (`dwell:stone`), and shaped forms are separate blocks generated per shapeable
 material, carrying only the properties that matter to them — `dwell:stone_slab[half,flooded]`,

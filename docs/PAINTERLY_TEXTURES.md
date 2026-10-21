@@ -39,10 +39,12 @@ The design questions (CLAUDE.md, "Ask before designing"), answered by the owner'
     - `wrap`: whether the tile is seamless. True by default; false for sprites.
     - `alpha`: `opaque` (the default) or `strokes`. With `strokes`, only strokes cover the tile, which
       makes a cutout.
-    - `emissive`: 0–4, how much of its colour it gives off unlit (a flame's glow, [`LIGHTS.md`](./LIGHTS.md)
-      §2). Written per atlas tile as `PAINTERLY_EMISSIVE` (the terrain and cutout shaders read it from
-      the `tile_grids` table; added to the lit colour) and per character material (`Material::emissive`;
-      in place of up to all of the lit ramp). The torch's tile glows 1.0, the held flame 0.75.
+    - `emissive`: 0–4, how much of the surface's lit colour its self-lit colour replaces (1 or
+      more: fully self-lit, a flame; [`LIGHTS.md`](./LIGHTS.md) §2): unaffected by the scene's
+      light and the exposure, kept out of the night's desaturation. Written per atlas tile as
+      `PAINTERLY_EMISSIVE` (the terrain and cutout shaders read it from the `tile_grids` table) and per
+      character material (`Material::emissive`). The torch's flame tile `torchTop`, the held
+      `flame` and `flame_core` are 1.0.
     - `like`: start from another material's fields (a template; e.g. `cloth_wool_blue` is
       `cloth_wool_red` with ramp `wool_blue`).
     - `over`: paint another material first (e.g. `grass_side` is painted over `soil`).

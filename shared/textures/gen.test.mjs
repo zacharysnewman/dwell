@@ -30,7 +30,7 @@ test("a tile glows by its material's emissive, by data alone (docs/LIGHTS.md)", 
   const m = clone(materials);
   const names = Object.keys(m.tiles);
   assert.equal(tileEmissive(m, names)[names.indexOf('stone')], 0, 'stone gives off nothing');
-  assert.ok(tileEmissive(m, names)[names.indexOf('torch')] > 0, 'the torch glows');
+  assert.ok(tileEmissive(m, names)[names.indexOf('torchTop')] >= 1, "the torch's flame is self-lit");
   m.materials.stone.emissive = 0.5;
   assert.equal(tileEmissive(m, names)[names.indexOf('stone')], 0.5);
   assert.match(rustSource(names, tileEmissive(m, names)), /PAINTERLY_EMISSIVE/);
