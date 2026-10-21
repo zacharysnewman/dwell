@@ -207,10 +207,12 @@ pub struct LodStats {
     pub bytes_per_second: usize,
     /// Swaps cross-fading (fade.rs).
     pub fades: FadeStats,
-    /// What the view still waits for, [in view, out of view]: sections not ready and level-1
-    /// sections whose chunks are not all drawable. Out of view at 0 means turning round shows
-    /// terrain already loaded (the bench's `until offViewLoaded`).
-    pub waiting: [usize; 2],
+    /// What the view still waits for, [in view, out of view, out of view within the near ring]:
+    /// sections not ready and level-1 sections whose chunks are not all drawable. Out of view at 0
+    /// means turning round shows terrain already loaded (the bench's `until behind`); the near
+    /// ring's (the full-detail distance, schedule) means the full detail behind is there
+    /// (`until nearBehind`).
+    pub waiting: [usize; 3],
 }
 
 impl Default for LodStats {
@@ -227,7 +229,7 @@ impl Default for LodStats {
             error_scale: 1.0,
             bytes_per_second: 0,
             fades: FadeStats::default(),
-            waiting: [0, 0],
+            waiting: [0, 0, 0],
         }
     }
 }
@@ -1321,6 +1323,15 @@ impl LodSystem {
         m * self.options.coarsen_ratio.max(1.0)
     }
 
+    /// Within the near ring (`near_ring_m`), by the section's parent's box: a parent splits only
+    /// once all its children are ready, so the children of one in the ring count as in it too.
+    fn in_near_ring(&self, c: LodCoord, frustum: &Frustum, near_ring: f64) -> bool {
+        c.level >= MAX_LEVEL || {
+            let (lo, hi) = section_box(parent(c));
+            self.distance(lo, hi, frustum) <= near_ring
+        }
+    }
+
     /// Out of view, and not close (a section beside the camera can reach into the view).
     fn off_view(&self, id: LodId, frustum: &Frustum, d: f64) -> bool {
         let n = self.n(id);
@@ -1523,10 +1534,7 @@ impl LodSystem {
                 // shows now goes first and the rest is loaded behind. Near is by the parent's
                 // box: a parent splits only once all its children are ready, so the children of
                 // one in the ring load alike too, even those reaching past it.
-                let near = n.coord.level >= MAX_LEVEL || {
-                    let (lo, hi) = section_box(parent(n.coord));
-                    self.distance(lo, hi, frustum) <= near_ring
-                };
+                let near = self.in_near_ring(n.coord, frustum, near_ring);
                 let scale = if !near && self.off_view(id, frustum, d) {
                     OFF_VIEW_PRIORITY
                 } else {
@@ -1826,9 +1834,10 @@ impl LodSystem {
         }
     }
 
-    /// The stats' `waiting`: [in view, out of view].
-    fn waiting(&self, frustum: &Frustum) -> [usize; 2] {
-        let mut out = [0, 0];
+    /// The stats' `waiting`: [in view, out of view, out of view in the near ring].
+    fn waiting(&self, frustum: &Frustum) -> [usize; 3] {
+        let near_ring = self.near_ring_m();
+        let mut out = [0, 0, 0];
         let mut seen = HashSet::default();
         let unready = self.wanted.iter().filter(|&&id| !self.ready(id));
         for &id in unready.chain(&self.waiting_chunks) {
@@ -1836,7 +1845,11 @@ impl LodSystem {
                 continue;
             }
             let n = self.n(id);
-            out[usize::from(!frustum.intersects(n.lo, n.hi))] += 1;
+            let off = !frustum.intersects(n.lo, n.hi);
+            out[usize::from(off)] += 1;
+            if off && self.in_near_ring(n.coord, frustum, near_ring) {
+                out[2] += 1;
+            }
         }
         out
     }

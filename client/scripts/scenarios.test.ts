@@ -207,7 +207,7 @@ describe('scenarios', () => {
     ]);
     expect(() =>
       parseScenarios(file([{ name: 'a', steps: [{ do: 'until', what: 'left', maxS: 1 }] }])),
-    ).toThrow(/what: expected one of behind, ahead/);
+    ).toThrow(/what: expected one of behind, nearBehind, ahead/);
   });
 
   it('sets the water quality and its cost switches mid-run', () => {

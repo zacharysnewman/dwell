@@ -467,7 +467,11 @@ async function step(run: Run, s: Step): Promise<void> {
       return;
     }
     case 'until': {
-      const key = s.what === 'behind' ? 'waitingOffView' : 'waitingInView';
+      const key = {
+        behind: 'waitingOffView',
+        nearBehind: 'waitingNearOffView',
+        ahead: 'waitingInView',
+      }[s.what];
       const start = Date.now();
       let at: number | null = null;
       while (Date.now() - start < s.maxS * 1000) {

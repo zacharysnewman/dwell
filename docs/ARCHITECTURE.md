@@ -1803,9 +1803,9 @@ Each frame the octree is walked from the root around the **camera** (the eye):
   whole view ahead had loaded, or when the player turned round (`dwell-lod` test
   `the_full_detail_behind_the_camera_loads_as_soon_as_the_detail_ahead`: frame 857 against 185
   ahead before, 245 against 244 after). The stats count what the view still waits for in and out of
-  view (`waiting`: unready sections and level-1 sections waiting for their chunks, those whose
-  chunks are past the request radius, up or down, left out as they are drawn as LOD), the F3-free
-  readout the bench's `until behind` / `until ahead` steps time. Level-0 nodes are the streamed chunks: a level-1 section refines into its 8
+  view, and out of view within the near ring (`waiting`: unready sections and level-1 sections waiting for their chunks, those whose
+  chunks are past the request radius, up or down, left out as they are drawn as LOD), the
+  readout the bench's `until nearBehind` / `until behind` / `until ahead` steps time. Level-0 nodes are the streamed chunks: a level-1 section refines into its 8
   chunks as soon as all are loaded and meshed (or air); chunks whose level-1 section is not refined are
   hidden, since LOD draws there (all chunks show until the root is ready). **Full detail beyond
   the view [built, Phase 4]:** the chunks a refined level-1 section needs that the view does not

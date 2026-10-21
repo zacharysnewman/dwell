@@ -1605,6 +1605,7 @@ impl Client {
                 set(&r, "errorScale", l.error_scale);
                 set(&r, "waitingInView", l.waiting[0] as u32);
                 set(&r, "waitingOffView", l.waiting[1] as u32);
+                set(&r, "waitingNearOffView", l.waiting[2] as u32);
                 r.into()
             }),
         );

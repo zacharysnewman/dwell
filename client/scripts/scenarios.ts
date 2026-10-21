@@ -67,7 +67,9 @@ export type Step =
   | { do: 'settle'; maxS: number }
   /**
    * Waits (at most `maxS`) until the view waits for nothing `behind` the camera (out of the view's
-   * frustum: `lod.waitingOffView` 0) or `ahead` of it (`waitingInView` 0), and saves the seconds
+   * frustum: `lod.waitingOffView` 0), `nearBehind` it within the full-detail distance
+   * (`waitingNearOffView` 0: the full detail behind is there) or `ahead` of it (`waitingInView`
+   * 0), and saves the seconds
    * since the page was opened in the report's `untils` (the join's timeline: ARCHITECTURE.md §6.3).
    */
   | { do: 'until'; what: UntilWhat; maxS: number }
@@ -121,8 +123,8 @@ export type Step =
   | { do: 'repeat'; times: number; steps: Step[] };
 
 /** What an `until` step waits for. */
-export type UntilWhat = 'behind' | 'ahead';
-export const UNTIL_WHATS: readonly UntilWhat[] = ['behind', 'ahead'];
+export type UntilWhat = 'behind' | 'nearBehind' | 'ahead';
+export const UNTIL_WHATS: readonly UntilWhat[] = ['behind', 'nearBehind', 'ahead'];
 
 /** Which part of the view a scenario measures, for a comparison report's near/far split. */
 export type Split = 'near' | 'far';

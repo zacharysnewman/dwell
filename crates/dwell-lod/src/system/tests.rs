@@ -754,11 +754,11 @@ fn counts_what_the_view_waits_for_ahead_and_behind_until_both_are_loaded() {
     lod.set_detail_distance(Some(256.0));
     let cam = camera([16.5, 40.0, 16.5], 90.0, 0.0);
     let mut seen_behind = false;
-    let mut last = [usize::MAX; 2];
+    let mut last = [usize::MAX; 3];
     for frame in 1..=5000 {
         lod.update(&cam, f64::from(frame) * 16.0, &mut host);
         last = lod.debug_stats().waiting;
-        seen_behind |= last[1] > 0;
+        seen_behind |= last[1] > 0 && last[2] > 0;
         if host.pending.is_empty() && frame > 10 {
             break;
         }
@@ -768,7 +768,7 @@ fn counts_what_the_view_waits_for_ahead_and_behind_until_both_are_loaded() {
         seen_behind,
         "work behind the camera is counted while it loads"
     );
-    assert_eq!(last, [0, 0], "and nothing is waited for once settled");
+    assert_eq!(last, [0, 0, 0], "and nothing is waited for once settled");
 }
 
 #[test]
@@ -1494,7 +1494,7 @@ fn formats_the_overlay_lines() {
         error_scale: 1.15,
         bytes_per_second: 2048,
         fades: Default::default(),
-        waiting: [0, 0],
+        waiting: [0, 0, 0],
     };
     assert_eq!(
         format_lod_stats(&s),

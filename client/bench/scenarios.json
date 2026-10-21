@@ -6358,7 +6358,7 @@
     },
     {
       "name": "join-behind",
-      "notes": "The join's timeline (ARCHITECTURE.md §6.3, §6.6): looks +X the moment the game starts and shoots ahead and behind (−X), then waits until nothing behind the camera is still loading (until behind: the LOD sections and full-detail chunks out of view), then ahead, then settles and shoots behind again. Formerly the out-of-view LOD ranked as if its cells were 8 times smaller, so the terrain behind loaded only after the whole view ahead (or once the player turned round). Run with --compare --configs raster,loading-off for the loading screen's cost.",
+      "notes": "The join's timeline (ARCHITECTURE.md §6.3, §6.6): looks +X the moment the game starts and shoots ahead and behind (−X), then waits until the full detail behind the camera has loaded (until nearBehind: within the full-detail distance), then nothing behind is still loading (until behind: every LOD section and chunk out of view), then ahead, then settles and shoots behind again. Formerly the out-of-view LOD ranked as if its cells were 8 times smaller, so the terrain behind loaded only after the whole view ahead (or once the player turned round). Run with --compare --configs raster,loading-off for the loading screen's cost.",
       "steps": [
         {
           "do": "look",
@@ -6390,6 +6390,11 @@
           "do": "look",
           "yaw": 90,
           "pitch": 0
+        },
+        {
+          "do": "until",
+          "what": "nearBehind",
+          "maxS": 120
         },
         {
           "do": "until",

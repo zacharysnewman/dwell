@@ -720,7 +720,7 @@ fn with_the_lod_the_loading_screen_opens_on_the_terrain_and_nothing_behind_is_le
     assert!(
         rig.run_until(60 * 120, |r| {
             let l = r.game.as_ref().unwrap().debug_state().lod.unwrap();
-            l.generating == 0 && l.meshing == 0 && l.asking == 0 && l.waiting == [0, 0]
+            l.generating == 0 && l.meshing == 0 && l.asking == 0 && l.waiting == [0, 0, 0]
         }),
         "settles with nothing waited for: {:?}",
         rig.game.as_ref().unwrap().debug_state().lod
