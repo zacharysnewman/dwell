@@ -15,9 +15,9 @@ pub struct FogSettings {
 }
 
 pub const DEFAULT_FOG: FogSettings = FogSettings {
-    distance_m: 4000.0,
-    density: 0.5,
-    height_m: 1500.0,
+    distance_m: 16_000.0,
+    density: 0.95,
+    height_m: 1800.0,
 };
 
 /// Slider ranges (the settings menu): distance up to the world's diameter.
@@ -111,17 +111,21 @@ mod tests {
     }
 
     #[test]
-    fn defaults_haze_the_ground_within_kilometres_and_clear_from_high_above() {
+    fn defaults_keep_nearby_hills_crisp_and_soften_the_far_island() {
+        // Owner, 2026-10-21: a clear day's air (about 100 km visibility): half haze at 16 km, the
+        // cap near 1 so far hills fade into the sky, and real low-lying haze (1.8 km scale height).
         assert_eq!(
             DEFAULT_FOG,
             FogSettings {
-                distance_m: 4000.0,
-                density: 0.5,
-                height_m: 1500.0
+                distance_m: 16_000.0,
+                density: 0.95,
+                height_m: 1800.0
             }
         );
-        assert!((haze_amount(&DEFAULT_FOG, EYE, 0.0, 4000.0) - 0.25).abs() < 0.05);
-        assert!(haze_amount(&DEFAULT_FOG, EYE, 0.0, 50_000.0) > 0.49);
+        // A hill 2.5 mi off stays crisp; the far coast is clearly hazy; 40 mi (a Rainier) is mostly haze.
+        assert!(haze_amount(&DEFAULT_FOG, EYE, 0.0, 4000.0) < 0.2);
+        assert!(haze_amount(&DEFAULT_FOG, EYE, 0.0, 25_000.0) > 0.55);
+        assert!(haze_amount(&DEFAULT_FOG, EYE, 0.0, 64_000.0) > 0.85);
         for r in [0.0, RADIUS / 2.0, RADIUS] {
             assert!(haze_amount(&DEFAULT_FOG, TOP, 0.0, r.hypot(TOP)) < DEFAULT_FOG.density / 3.0);
             assert!(haze_amount(&FOG, TOP, 0.0, r.hypot(TOP)) < 0.05);
