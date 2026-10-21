@@ -4,6 +4,7 @@ import {
   diffImages,
   droppedFrames,
   flickerOf,
+  hueFlipsOf,
   formatTable,
   metricRows,
   metricsOf,
@@ -122,7 +123,13 @@ describe('compare report math', () => {
 
   it('flicker: the share of pixels that change from frame to frame, and their mean change', () => {
     const still = [image(2, 2, [50, 50, 50]), image(2, 2, [50, 50, 50]), image(2, 2, [50, 50, 50])];
-    expect(flickerOf(still)).toEqual({ frames: 3, changed: 0, meanDelta: 0, threshold: 3 });
+    expect(flickerOf(still)).toEqual({
+      frames: 3,
+      changed: 0,
+      meanDelta: 0,
+      threshold: 3,
+      hueFlips: 0,
+    });
     // One pixel of four blinks between 50 and 150 every frame: a quarter of the view flickers.
     const blink = still.map((im, i) => {
       const c = { ...im, data: im.data.slice() };
@@ -137,6 +144,29 @@ describe('compare report math', () => {
     expect(flickerOf(faint).changed).toBe(0);
     expect(() => flickerOf([still[0]])).toThrow(/two frames/);
     expect(() => flickerOf([still[0], image(1, 1, [0, 0, 0])])).toThrow(/sizes differ/);
+  });
+
+  it('hue flips: a surface changing colour family counts, a brightness change or a grey does not', () => {
+    const grass = [110, 160, 60];
+    const dirt = [140, 80, 50];
+    const still = [image(2, 2, grass), image(2, 2, grass), image(2, 2, grass)];
+    expect(hueFlipsOf(still)).toBe(0);
+    // Shaded darker (a riser, or the view moving): the same hue.
+    const shaded = [image(2, 2, grass), image(2, 2, [55, 80, 30])];
+    expect(hueFlipsOf(shaded)).toBe(0);
+    expect(flickerOf(shaded).changed).toBe(1);
+    // One pixel of four swaps between grass and dirt every frame (z-fighting).
+    const fight = still.map((im, i) => {
+      const c = { ...im, data: im.data.slice() };
+      if (i % 2) c.data.set(dirt, 0);
+      return c;
+    });
+    expect(hueFlipsOf(fight)).toBeCloseTo(0.25);
+    expect(flickerOf(fight).hueFlips).toBeCloseTo(0.25);
+    // Near black (a night view's shadows), a hue is noise.
+    expect(hueFlipsOf([image(1, 1, [30, 10, 10]), image(1, 1, [10, 30, 10])])).toBe(0);
+    // Greys (sky haze, ink) have no hue to flip.
+    expect(hueFlipsOf([image(1, 1, [128, 128, 128]), image(1, 1, [128, 140, 128])])).toBe(0);
   });
 
   it('identical images agree everywhere', () => {

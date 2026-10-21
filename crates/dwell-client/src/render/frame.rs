@@ -10,8 +10,15 @@
 //!   between them and holds each pass's own projection. WebGPU can't resolve `r32float`, so it is
 //!   multisampled like the scene and stored; readers load its samples (the composite averages the
 //!   covered ones). The depth buffer itself stays attachment-only and discarded.
-//! - **Depth buffer**: `depth32float`, as before. Stored between a pass's opaque and water halves
-//!   when the water reads the scene.
+//! - **Depth buffer**: `depth32float`, **reversed** (ARCHITECTURE.md §6.6 Depth): the scene's
+//!   projection (`camera::perspective_reversed`) maps the near plane to 1 and the far plane to 0, it
+//!   is cleared to [`DEPTH_CLEAR`] (0, the far plane) and tested with [`DEPTH_COMPARE`]
+//!   (greater-or-equal). A float's precision is densest at 0, which reversed depth puts at the far
+//!   end, so depth is resolved to about 2⁻²³ of the distance at every distance; standard depth
+//!   (near 0, far 1, less-or-equal) resolved the near pass (0.05 m to 1,024 m) to ~0.1 m at 300 m
+//!   and ~1.2 m at 1 km, and surfaces that close fought as the camera moved (dirt showing through
+//!   grass from high up). Stored between a pass's opaque and water halves when the water reads
+//!   the scene. The shadow maps keep their own (standard) depth.
 //! - **Under-water copy** (W3, Medium and High water only): `rgba16float`, single-sample, a copy of
 //!   the resolved colour taken after each scene pass's opaque draws, which that pass's water
 //!   samples (refraction, absorption) while it draws over the colour. With the view depth (read,
@@ -20,6 +27,10 @@
 pub const HDR: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
 pub const VIEW_DEPTH: wgpu::TextureFormat = wgpu::TextureFormat::R32Float;
 pub const DEPTH: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
+/// The scene's depth buffer's clear value: reversed depth's far plane.
+pub const DEPTH_CLEAR: f32 = 0.0;
+/// The scene's depth test: reversed depth, nearer is greater.
+pub const DEPTH_COMPARE: wgpu::CompareFunction = wgpu::CompareFunction::GreaterEqual;
 
 /// How a scene pass treats the colour and view-depth targets.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

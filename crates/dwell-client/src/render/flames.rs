@@ -23,7 +23,7 @@ use dwell_world::FaceFrame;
 
 use super::camera::Basis;
 use super::characters::HeldLight;
-use super::frame::{DEPTH, HDR, VIEW_DEPTH};
+use super::frame::{DEPTH, DEPTH_COMPARE, HDR, VIEW_DEPTH};
 
 /// A placed light source's flame this frame: its base (world), its face, look and flicker.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -494,7 +494,7 @@ impl FlameRenderer {
                 depth_stencil: Some(wgpu::DepthStencilState {
                     format: DEPTH,
                     depth_write_enabled: Some(false),
-                    depth_compare: Some(wgpu::CompareFunction::LessEqual),
+                    depth_compare: Some(DEPTH_COMPARE),
                     stencil: Default::default(),
                     bias: Default::default(),
                 }),
