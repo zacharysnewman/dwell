@@ -1132,7 +1132,8 @@ player on face B stands upside down in the world.
   exactly the same way: the look continues across (heading kept, pitch mirrored; on the crossing
   tick in the controller too), whose world forward is the same, and the upside-down view rolls
   upright about that forward over `crossingRollS` (0.8 s, `shared/look/motion.json`), eased in and
-  out; the eye swings across the body (BIFACIAL_WORLD.md §6, PLAYER_CONTROLLER.md §9).
+  out (0 snaps; the experiment switch `?crossingroll=<s>|snap` overrides it per page, DEV_TOOLS.md);
+  the eye swings across the body (BIFACIAL_WORLD.md §6, PLAYER_CONTROLLER.md §9).
 - **Light and sky [built, Phase 32: the day/night cycle, §6.6].** One sky shared by both faces:
   the sun moves on its path with world time and the moon is always opposite it, so the sun is over
   face B exactly when it is under face A. Each face's look is the day/night keyframes at its own

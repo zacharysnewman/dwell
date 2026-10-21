@@ -38,7 +38,7 @@ const SCHEMA = {
     blur: [0, 0.25],
   },
   teleportM: [0.1, 1e6],
-  crossingRollS: [0.05, 5],
+  crossingRollS: [0, 5],
 };
 
 const camel = (s) => s[0].toLowerCase() + s.slice(1);
