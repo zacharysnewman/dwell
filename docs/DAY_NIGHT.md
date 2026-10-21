@@ -361,16 +361,24 @@ direct-light stand-in near the player.
 - **Updates**: removal then addition passes (brightest first) on every edit, predicted edits
   included, and on chunk loads and unloads, so the light is the same whatever order chunks came in
   (tests compare it with a relight from scratch). The streamer lights arriving chunks nearest the
-  player first within a **light budget of its own** (4 ms a frame, or a tenth of a slow frame's
-  interval up to 25 ms; apart from the 4 ms mesh budget, so lighting doesn't starve the meshing),
+  player first within a **light budget of its own**, apart from the mesh budget so lighting
+  doesn't starve the meshing (each 4 ms a frame, or a tenth of a slow frame's interval up to
+  25 ms, so a slow page still lights and meshes several chunks a frame),
   meshes no chunk while it or a neighbour waits, and re-meshes every chunk whose light changed (a
   roof darkens the column under it across chunks). **Unloads are one update per batch**
   (`LightMap::unload_many`): the removal starts from the dropped chunks' own border levels, and a
   cell next to them lit as brightly some other way (its column's sky, or the open sky now entering
   where they were) is kept, so nothing below or beside it is relit. In 0.22.9 each dropped chunk
   cleared and refilled every open-air column beside and below it, one chunk at a time: 1–2 s long
-  tasks when a fast flight dropped a batch (fixed in the release after 0.22.10; a test bounds the
-  cells an unload writes).
+  tasks when a fast flight dropped a batch (fixed in 0.22.12; a test bounds the cells an unload
+  writes). Only the cells that may change are seeded (one whose light could have come from there,
+  or one under a dropped chunk that may now take more sky). **A chunk held over open air** (the
+  chunks above arrive after the ones below when flying up) is lit first; a cell under it keeps
+  its full sky light when the cell of the chunk over it is at full sky light (full sky light
+  only falls from the top, so it can't have come back up from below), and only the columns it
+  shades are cleared and relit (0.22.12 cleared them all: 5–9 ms native a chunk, 100–150
+  thousand cell writes; a test bounds it). A randomized test of load and unload batches checks the
+  shortcuts against a relight from scratch.
 - **Meshing**: each vertex of a cell face averages the sky and block light of the cells it touches
   in the layer the face looks into (smooth lighting; light-blocking cells that hold none are left
   out); shaped faces take the brightest of their cell and the cells they face; plants their cell.
@@ -401,10 +409,16 @@ direct-light stand-in near the player.
 
 **Cost** (Apple M1, `cargo run --release -p dwell-mesh --example light_cost`, seeds 7, 1, 42, about
 790 chunks per face, measured while other agents loaded the machine, load average 9–46: upper
-bounds): lighting a chunk as it arrives 1.9–2.5 ms; meshing +3–7% with the flood stream (+2 floats
+bounds): lighting a chunk as it arrives 1.2–1.4 ms on average, 4.5 ms the slowest chunk on an idle
+machine (0.22.9–0.22.12: 2.3–2.9 ms, the slowest 13–16 ms); unloading the square's edge (a
+flight's batch) 0.3–0.6 ms; meshing +3–7% with the flood stream (+2 floats
 per vertex); an edit 0.02–0.03 ms (a trench), 0.3–0.4 ms (a 16 m roof placed or taken away); 18 MB
 of light for 790 chunks (568 need an array, 32 KB each; the rest are uniform). In Chrome: one long
 task at load, as 0.22.5; the frame's GPU time unchanged (one more vertex pair, a few ALU ops).
+The bench's `climb-fast`, `fly-high` and `fly-low-fast` (real GPU, M1, load average 41): p99
+frame interval 18.7 ms, the worst 35 ms, no long task over 50 ms, as 0.22.8 (0.22.10: worst
+1.2–1.3 s); at the spawn 50 chunks meshed 0.42 s after the view was generated and 200 at 4.3 s, at
+60 fps (0.22.8: 0.37 s and 4.5–5.9 s).
 
 **Extending it**: the falloffs, curves, ramp and block light are `shared/look/light.json`
 (`node shared/look/light.mjs`; CI fails on a stale `light.gen.rs`; `light.test.mjs` changes values
