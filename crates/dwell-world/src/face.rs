@@ -251,8 +251,9 @@ impl FaceFrame {
 impl FaceFrame {
     /// The frame in WGSL, for the shaders, which carry a frame as its sign (`face: f32`, ±1):
     /// `face_at(y)` is [`FaceFrame::at_height`]'s sign, `face_y(face, y)` is [`FaceFrame::y`] and
-    /// `face_up(face)` is [`FaceFrame::up`] and `face_rise(face, v)` is [`FaceFrame::vector`]'s y
-    /// (a vector's part along the face's up). It needs nothing before it; a module includes it once.
+    /// `face_up(face)` is [`FaceFrame::up`], `face_vector(face, v)` is [`FaceFrame::vector`] and
+    /// `face_rise(face, v)` its y (a vector's part along the face's up). It needs nothing before it;
+    /// a module includes it once.
     pub fn wgsl() -> String {
         format!(
             "// The face frame (dwell_world::FaceFrame, BIFACIAL_WORLD.md §11): a frame is its sign.\n\
@@ -261,7 +262,8 @@ impl FaceFrame {
              fn face_at(y: f32) -> f32 {{ return select(-1.0, 1.0, y >= FACE_MIDPLANE_Y); }}\n\
              fn face_y(face: f32, y: f32) -> f32 {{ return select(FACE_MIRROR - y, y, face > 0.0); }}\n\
              fn face_up(face: f32) -> vec3f {{ return vec3f(0.0, face, 0.0); }}\n\
-             fn face_rise(face: f32, v: vec3f) -> f32 {{ return v.y * face; }}\n",
+             fn face_rise(face: f32, v: vec3f) -> f32 {{ return v.y * face; }}\n\
+             fn face_vector(face: f32, v: vec3f) -> vec3f {{ return vec3f(v.x, v.y * face, v.z); }}\n",
             f64::from(MIDPLANE_Y),
             Self::MIRROR,
         )
