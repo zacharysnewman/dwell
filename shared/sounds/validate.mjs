@@ -7,7 +7,8 @@ const ID = /^[a-z0-9_]+:[a-z0-9_]+$/;
 
 /** The vocabulary the synth understands (client/src/audio/synth.ts). */
 export const SOURCES = ['noise', 'osc', 'modal'];
-export const NOISE_COLORS = ['white', 'pink', 'brown'];
+/** `crackle`: sparse decaying pops (a fire's crackle, a flame's spit). */
+export const NOISE_COLORS = ['white', 'pink', 'brown', 'crackle'];
 export const WAVES = ['sine', 'triangle', 'square', 'sawtooth'];
 export const FILTER_TYPES = ['lowpass', 'highpass', 'bandpass', 'peaking', 'notch'];
 /** Events a block's sound set can name; the first five are required. */
@@ -22,6 +23,7 @@ export const SET_EVENTS = [
   'swim',
   'slide',
   'slide_stop',
+  'burn',
 ];
 /** An event's part in a continuous (looped) sound: start a voice, update it, stop it. */
 export const LOOP_PARTS = ['start', 'update', 'stop'];
@@ -70,6 +72,7 @@ const TOP_KEYS = [
   'actions',
   'ui',
   'controls',
+  'ambient',
   'sounds',
 ];
 
@@ -225,6 +228,31 @@ export function validateSound(where, s) {
   s.layers.forEach((l, i) => validateLayer(`${where}.layers[${i}]`, l, loop));
 }
 
+/**
+ * The ambient sounds' tunables (AUDIO.md §2): `fire` — burning light sources (a placed torch, one
+ * in a hand) crackle within `radiusM`, the nearest `max`; `wind` — its level from the listener's
+ * height over sea level (`heightM`: [starts, full]) or its speed (`speed`: [starts, full], m/s);
+ * `night` — from the sky's stars (0 by day, 1 by night; `stars`: [starts, full]).
+ */
+function validateAmbient(a) {
+  keysIn('ambient', a, ['fire', 'wind', 'night']);
+  keysIn('ambient.fire', a.fire, ['radiusM', 'max']);
+  number('ambient.fire.radiusM', a.fire.radiusM, 1, 48);
+  number('ambient.fire.max', a.fire.max, 0, 16, { integer: true });
+  keysIn('ambient.wind', a.wind, ['heightM', 'speed']);
+  pair('ambient.wind.heightM', a.wind.heightM, -4096, 4096, { ordered: true });
+  pair('ambient.wind.speed', a.wind.speed, 0, 400, { ordered: true });
+  keysIn('ambient.night', a.night, ['stars']);
+  pair('ambient.night.stars', a.night.stars, 0, 1, { ordered: true });
+  for (const [k, v] of [
+    ['wind.heightM', a.wind.heightM],
+    ['wind.speed', a.wind.speed],
+    ['night.stars', a.night.stars],
+  ])
+    if (v[0] === v[1]) fail(`ambient.${k}`, 'starts and is full at the same value');
+  return a;
+}
+
 /** `local` or `ns:local` → `ns:local`. */
 function qualify(ns, name) {
   return name.includes(':') ? name : `${ns}:${name}`;
@@ -243,6 +271,7 @@ export function resolveSounds(files) {
     actions: {},
     ui: {},
     controls: {},
+    ambient: undefined,
     sounds: {},
   };
   const sorted = [...files].sort((a, b) => (a.namespace < b.namespace ? -1 : 1));
@@ -289,12 +318,16 @@ export function resolveSounds(files) {
       const where = `event ${name}`;
       if (!NAME.test(name)) fail(where, 'bad name');
       if (out.events.some((e) => e.name === name)) fail(where, 'defined twice');
-      keysIn(where, def, ['set', 'sound', 'speed', 'loop']);
+      keysIn(where, def, ['set', 'sound', 'speed', 'loop', 'fallback']);
       if (def.loop !== undefined) oneOf(`${where}.loop`, def.loop, LOOP_PARTS);
       const plays = def.set !== undefined || def.sound !== undefined;
       if (def.loop === 'update') {
         if (plays) fail(where, 'a loop update plays nothing of its own');
-      } else if (!plays) fail(where, 'plays no set event or sound');
+      } else if (!plays && def.loop !== 'stop') fail(where, 'plays no set event or sound');
+      if (def.fallback !== undefined) {
+        if (def.fallback !== false) fail(`${where}.fallback`, 'must be false or absent');
+        if (def.set === undefined) fail(`${where}.fallback`, 'is for set events');
+      }
       if (def.set !== undefined) oneOf(`${where}.set`, def.set, SET_EVENTS);
       if (def.speed !== undefined) pair(`${where}.speed`, def.speed, 0, 200, { ordered: true });
       const id = def.sound !== undefined ? sound(`${where}.sound`, ns, def.sound) : undefined;
@@ -309,6 +342,7 @@ export function resolveSounds(files) {
         ...(id !== undefined ? { sound: id } : {}),
         ...(def.speed !== undefined ? { speed: def.speed } : {}),
         ...(def.loop !== undefined ? { loop: def.loop } : {}),
+        ...(def.fallback === false ? { fallback: false } : {}),
       });
     }
     if (file.gaits !== undefined) {
@@ -338,14 +372,19 @@ export function resolveSounds(files) {
     for (const [label, refs] of Object.entries(file.controls ?? {})) {
       out.controls[label] = refs;
     }
+    if (file.ambient !== undefined) {
+      if (out.ambient) fail('ambient', 'given twice');
+      out.ambient = validateAmbient(file.ambient);
+    }
   }
+  if (!out.ambient) fail('ambient', 'missing (the fire, wind and night tunables)');
   if (!out.fallback || !(out.fallback in out.sets)) fail('fallback', `unknown set "${out.fallback}"`);
   // A loop's start plays loop sounds, every other event one-shots; the fallback set has every
   // loop event's set sound, so a set without one still sounds (a loop without a sound would
   // leave its voice silent, and its stop with nothing to play).
   for (const e of out.events) {
     if (e.set === undefined) continue;
-    if (e.loop !== undefined && !(e.set in out.sets[out.fallback]))
+    if (e.loop !== undefined && e.fallback !== false && !(e.set in out.sets[out.fallback]))
       fail(`event ${e.name}`, `the fallback set ${out.fallback} has no "${e.set}" sound`);
     for (const [set, events] of Object.entries(out.sets)) {
       const id = events[e.set];

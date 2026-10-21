@@ -82,7 +82,7 @@ describe('sound events', () => {
       (sound, o) => calls.push(`play ${sound} ${String(o.intensity)}`),
       {
         start: (voice, sound, o) => calls.push(`start ${voice} ${sound} ${String(o.intensity)}`),
-        update: (voice, i) => calls.push(`update ${voice} ${String(i)}`),
+        update: (voice, i) => calls.push(`update ${voice} ${String(i)}`) > 0,
         stop: (voice) => calls.push(`stop ${voice}`),
       },
     );

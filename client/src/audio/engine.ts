@@ -194,12 +194,13 @@ export class AudioEngine {
     return true;
   }
 
-  /** Moves a loop voice's intensity (and position); nothing if it is not playing. */
-  updateLoop(voice: string, intensity: number, at: Vec3 | null = null): void {
+  /** Moves a loop voice's intensity (and position); false if it is not playing. */
+  updateLoop(voice: string, intensity: number, at: Vec3 | null = null): boolean {
     const l = this.loops.get(voice);
-    if (!l || !this.ctx) return;
+    if (!l || !this.ctx) return false;
     l.voice.set(intensity, this.ctx.currentTime);
     if (l.panner && at) setPosition(l.panner, at);
+    return true;
   }
 
   /** Fades a loop voice out. */

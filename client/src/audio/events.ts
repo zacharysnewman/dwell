@@ -72,7 +72,8 @@ export function soundsFor(
   const out: ResolvedPlay[] = [];
   if (def.set) {
     const set = data.sets[setOfState(e.block, data, registry)];
-    const sound = set?.[def.set] ?? data.sets[data.fallback]?.[def.set];
+    const sound =
+      set?.[def.set] ?? (def.fallback === false ? undefined : data.sets[data.fallback]?.[def.set]);
     if (sound) out.push({ sound, gain });
   }
   if (def.sound) out.push({ sound: def.sound, gain: 1 });
@@ -94,8 +95,15 @@ export interface Loops {
     sound: string,
     options: { intensity: number; at: [number, number, number] | null; gain: number },
   ): void;
-  update(voice: string, intensity: number, at: [number, number, number] | null): void;
+  /** False if the voice is not playing (it never started: a suspended or hidden context). */
+  update(voice: string, intensity: number, at: [number, number, number] | null): boolean;
   stop(voice: string): void;
+}
+
+/** A loop voice's start, kept to restart it when an update finds it not playing. */
+interface Started {
+  sound: string;
+  gain: number;
 }
 
 /** The engine's key for an event's voice. */
@@ -109,6 +117,9 @@ export const voiceKey = (voice: number | null): string => `mover:${String(voice 
  */
 export class EventPlayer {
   private foot = 1;
+  /** Loop voices started and not stopped: the long ones (a torch, the wind) outlive a context
+   * that could not start them (hidden, still resuming), so an update restarts them. */
+  private readonly started = new Map<string, Started>();
 
   constructor(
     private readonly data: SoundData,
@@ -123,19 +134,24 @@ export class EventPlayer {
       if (def?.loop) {
         const voice = voiceKey(e.voice);
         if (def.loop === 'update') {
-          this.loops?.update(voice, e.intensity, e.at);
+          const s = this.started.get(voice);
+          if (this.loops && !this.loops.update(voice, e.intensity, e.at) && s)
+            this.loops.start(voice, s.sound, { intensity: e.intensity, at: e.at, gain: s.gain });
           continue;
         }
         if (def.loop === 'start') {
           const first = soundsFor(e, this.data, this.registry)[0];
-          if (first)
+          if (first) {
+            this.started.set(voice, { sound: first.sound, gain: first.gain });
             this.loops?.start(voice, first.sound, {
               intensity: e.intensity,
               at: e.at,
               gain: first.gain,
             });
+          } else this.started.delete(voice);
           continue;
         }
+        this.started.delete(voice);
         this.loops?.stop(voice);
       }
       let pan: number | undefined;
