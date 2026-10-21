@@ -332,18 +332,23 @@ impl GpuMesh {
             (&m.tiles, 4),
         ];
         // A mesh without baked light (an older mesher's, a hand-made one) is lit as open.
-        let light: std::borrow::Cow<'_, [f32]> = if m.light.len() == m.positions.len() / 3 {
+        let count = m.positions.len() / 3;
+        let light: std::borrow::Cow<'_, [f32]> = if m.light.len() == count {
             std::borrow::Cow::Borrowed(&m.light)
         } else {
-            std::borrow::Cow::Owned(vec![1.0; m.positions.len() / 3])
+            std::borrow::Cow::Owned(vec![1.0; count])
+        };
+        let flood: std::borrow::Cow<'_, [f32]> = if m.flood.len() == 2 * count {
+            std::borrow::Cow::Borrowed(&m.flood)
+        } else {
+            std::borrow::Cow::Owned([1.0, 0.0].repeat(count))
         };
         if kind == Kind::Cutout {
             streams.push((&m.plants, 4));
             streams.push((&m.bare, 1));
-            streams.push((&light, 1));
-        } else {
-            streams.push((&light, 1));
         }
+        streams.push((&light, 1));
+        streams.push((&flood, 2));
         let vertices = interleave(&streams);
         Some(Self::upload(
             arena,
@@ -965,7 +970,7 @@ impl Renderer {
                 .collect();
             (offset, attributes)
         };
-        let terrain_attrs = attrs(&[(0, 3), (1, 3), (2, 3), (3, 2), (4, 4), (5, 1)]);
+        let terrain_attrs = attrs(&[(0, 3), (1, 3), (2, 3), (3, 2), (4, 4), (5, 1), (6, 2)]);
         let cutout_attrs = attrs(&[
             (0, 3),
             (1, 3),
@@ -975,6 +980,7 @@ impl Renderer {
             (5, 4),
             (6, 1),
             (7, 1),
+            (8, 2),
         ]);
         let flat_attrs = attrs(&[(0, 3), (1, 3), (2, 3)]);
         let line_attrs = attrs(&[(0, 3), (1, 3)]);

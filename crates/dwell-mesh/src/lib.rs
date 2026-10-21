@@ -54,8 +54,8 @@ pub use lod_mesher::{
     SURFACE_STRIDE, SectionMeshes, lod_color, mesh_section, mirror_rows, section_bytes,
 };
 pub use mesher::{
-    ChunkMeshes, MeshArrays, PAD, PADDED_VOLUME, face_covered, mesh_chunk, mesh_chunk_at, mesh_chunk_lit,
-    mirror_padded, padded_index,
+    ChunkMeshes, MeshArrays, PAD, PADDED_VOLUME, face_covered, mesh_chunk, mesh_chunk_at,
+    mesh_chunk_lit, mirror_padded, padded_index,
 };
 /// The `fluids` stream's value for a see-through face that is not a fluid's.
 pub const NO_FLUID: f32 = 255.0;

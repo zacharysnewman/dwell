@@ -274,7 +274,9 @@ fn corner_keys(
             p[v] = vv;
             rays[slot] = cells.lattice_rays(p, face);
         }
-        let (sky, block) = cells.flood.corner(cells.occ, front, u, 2 * cu - 1, v, 2 * cv - 1);
+        let (sky, block) = cells
+            .flood
+            .corner(cells.occ, front, u, 2 * cu - 1, v, 2 * cv - 1);
         corner_key(level, rays[slot], sky, block)
     })
 }
@@ -519,7 +521,9 @@ impl Builder {
             }
             None => {
                 self.m.light.extend(std::iter::repeat_n(1.0, pts.len()));
-                self.m.flood.extend(std::iter::repeat_n([1.0, 0.0], pts.len()).flatten());
+                self.m
+                    .flood
+                    .extend(std::iter::repeat_n([1.0, 0.0], pts.len()).flatten());
             }
         }
         for i in 1..pts.len().saturating_sub(1) as u32 {
@@ -1201,7 +1205,13 @@ fn mesh_cells(
                                 RenderMode::Cutout => &mut cutout,
                                 RenderMode::Translucent => &mut transparent,
                             };
-                            ladder_face(target, &k.style, cells.flood.cell([cx, cy, cz]), face, cell);
+                            ladder_face(
+                                target,
+                                &k.style,
+                                cells.flood.cell([cx, cy, cz]),
+                                face,
+                                cell,
+                            );
                             if k.style.render == RenderMode::Translucent {
                                 target.tag_fluid(k.style.fluid);
                             }
@@ -1351,7 +1361,14 @@ fn mesh_cells(
                     // light itself).
                     let light = vertex_light(AO_OPEN, cells.lattice_rays([cx, cy, cz], 2));
                     let flood = cells.flood.cell([cx, cy, cz]);
-                    cross_voxel(target, &k.style, world, [cx, cy, cz], support, (light, flood));
+                    cross_voxel(
+                        target,
+                        &k.style,
+                        world,
+                        [cx, cy, cz],
+                        support,
+                        (light, flood),
+                    );
                     if k.style.render == RenderMode::Translucent {
                         target.tag_fluid(k.style.fluid);
                     }

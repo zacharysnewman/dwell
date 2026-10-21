@@ -83,20 +83,12 @@ impl Flood {
         let (s1, s2, corner) = (at(du, 0), at(0, dv), at(du, dv));
         // A cell counts unless it blocks light and holds none (a solid's inside).
         let counts = |c: [i32; 3]| !occ.solid(c) || self.packed(c) != 0;
-        let mut cells = vec![front];
         let (a, b) = (counts(s1), counts(s2));
-        if a {
-            cells.push(s1);
-        }
-        if b {
-            cells.push(s2);
-        }
-        if (a || b) && counts(corner) {
-            cells.push(corner);
-        }
-        let n = cells.len() as u32;
+        let c = (a || b) && counts(corner);
+        let cells = [(front, true), (s1, a), (s2, b), (corner, c)];
+        let n = cells.iter().filter(|(_, on)| *on).count() as u32;
         let (mut sky, mut block) = (0u32, 0u32);
-        for c in cells {
+        for (c, _) in cells.into_iter().filter(|(_, on)| *on) {
             let p = self.packed(c);
             sky += u32::from(sky_of(p));
             block += u32::from(block_of(p));

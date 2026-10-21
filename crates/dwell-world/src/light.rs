@@ -137,7 +137,9 @@ struct Slot {
 
 impl Slot {
     fn get(&self, i: u16) -> u8 {
-        self.cells.as_ref().map_or(self.uniform, |c| c[usize::from(i)])
+        self.cells
+            .as_ref()
+            .map_or(self.uniform, |c| c[usize::from(i)])
     }
 }
 
@@ -279,9 +281,49 @@ impl LightMap {
         // A chunk whose voxels were replaced is cleared first: any cell may have changed.
         let mut removal: Vec<P> = Vec::new();
         let mut add: Vec<P> = Vec::with_capacity(CHUNK_VOLUME + 6 * 1024);
-        add.extend((0..CHUNK_VOLUME as u32).map(|i| P { slot: s, i: i as u16 }));
-        if replaced {
-            removal.extend_from_slice(&add);
+        let kind = if replaced {
+            Kind::Mixed
+        } else {
+            self.kind_of(voxels, s)
+        };
+        match kind {
+            // Open sky through and through: every cell at full sky light, then spread out of
+            // its sides and block light in from the neighbours'.
+            Kind::Sky => {
+                self.slots[s as usize].uniform = pack(LIGHT_MAX, 0);
+                for d in 0..6 {
+                    add.extend(border(s, d));
+                }
+            }
+            // Nothing gets in or out: dark; only the cells below that saw the sky through its
+            // place change.
+            Kind::Shut => {}
+            Kind::Mixed if replaced => {
+                add.extend((0..CHUNK_VOLUME as u32).map(|i| P {
+                    slot: s,
+                    i: i as u16,
+                }));
+                removal.extend_from_slice(&add);
+            }
+            // Its cells start dark: what lights them is the sky entering its top when nothing is
+            // held over it, its emitters and the neighbours' light (their sides, below).
+            Kind::Mixed => {
+                let coord = self.slots[s as usize].coord;
+                let up = if up_of_y(coord.y * N) > 0 { 2 } else { 3 };
+                if self.slots[s as usize].near[up] == NONE {
+                    add.extend(border(s, up));
+                }
+                if let Some(chunk) = voxels.get(&coord) {
+                    for (i, &id) in chunk.voxels().iter().enumerate() {
+                        if id != 0 && table_rules(&mut self.table, id).1 > 0 {
+                            add.push(P {
+                                slot: s,
+                                i: i as u16,
+                            });
+                        }
+                    }
+                }
+            }
         }
         for d in 0..6 {
             let n = self.slots[s as usize].near[d];
@@ -289,13 +331,47 @@ impl LightMap {
                 continue;
             }
             for p in border(n, opposite(d)) {
-                if d >= 2 && d < 4 && self.above_slot(p) == Some(s) {
+                let below = d / 2 == 1 && self.above_slot(p) == Some(s);
+                // An open-sky chunk keeps the full sky the cells under it had.
+                if below && kind != Kind::Sky {
                     removal.push(p);
                 }
-                add.push(p);
+                if below || kind != Kind::Shut {
+                    add.push(p);
+                }
             }
         }
         self.run_all(voxels, &removal, &add);
+    }
+
+    /// What a newly held chunk is, for the fast paths of [`Self::load`].
+    fn kind_of(&mut self, voxels: &Voxels, s: u32) -> Kind {
+        let slot = &self.slots[s as usize];
+        let coord = slot.coord;
+        let up = up_of_y(coord.y * N);
+        let above = slot.near[if up > 0 { 2 } else { 3 }];
+        let open_above = above == NONE || {
+            let a = &self.slots[above as usize];
+            a.cells.is_none() && a.uniform == pack(LIGHT_MAX, 0)
+        };
+        let Some(chunk) = voxels.get(&coord) else {
+            return if open_above { Kind::Sky } else { Kind::Mixed };
+        };
+        let v = chunk.voxels();
+        if v.iter().all(|&id| id == 0) {
+            return if open_above { Kind::Sky } else { Kind::Mixed };
+        }
+        let first = v[0];
+        let shut = |t: &mut Vec<(u8, u8)>, id: StateId| {
+            let (f, e) = table_rules(t, id);
+            f >= LIGHT_MAX && e == 0
+        };
+        if shut(&mut self.table, first)
+            && (v.iter().all(|&id| id == first) || v.iter().all(|&id| shut(&mut self.table, id)))
+        {
+            return Kind::Shut;
+        }
+        Kind::Mixed
     }
 
     /// The chunk is no longer held: what it lit around it is cleared and relit (cells below it
@@ -334,7 +410,10 @@ impl LightMap {
             let slot = &mut self.slots[s as usize];
             slot.cells = None;
             slot.uniform = 0;
-            all.extend((0..CHUNK_VOLUME as u32).map(|i| P { slot: s, i: i as u16 }));
+            all.extend((0..CHUNK_VOLUME as u32).map(|i| P {
+                slot: s,
+                i: i as u16,
+            }));
         }
         self.run_all(voxels, &[], &all);
     }
@@ -392,6 +471,7 @@ impl LightMap {
     }
 
     /// The cell next to `p` along `DIRS[d]`, if held.
+    #[inline]
     fn step(&self, p: P, d: usize) -> Option<P> {
         let mut l = coords(p.i);
         let a = d / 2;
@@ -413,6 +493,7 @@ impl LightMap {
     }
 
     /// The face-local "up" of `p` (+1 on face A, −1 on face B).
+    #[inline]
     fn up(&self, p: P) -> i32 {
         up_of_y(self.slots[p.slot as usize].coord.y * N + coords(p.i)[1])
     }
@@ -423,10 +504,12 @@ impl LightMap {
         self.step(p, d).map(|q| q.slot)
     }
 
+    #[inline]
     fn level(&self, p: P, ch: Channel) -> u8 {
         (self.slots[p.slot as usize].get(p.i) >> ch.shift()) & 15
     }
 
+    #[inline]
     fn set_level(&mut self, p: P, ch: Channel, v: u8) {
         let slot = &mut self.slots[p.slot as usize];
         let old = slot.get(p.i);
@@ -441,11 +524,16 @@ impl LightMap {
         cells[usize::from(p.i)] = new;
         let first = slot.changed == 0;
         let l = coords(p.i);
+        let mut mask = 1 << 13;
+        let border = l.iter().any(|&v| v == 0 || v == N - 1);
         let sides = |a: usize| -> [Option<i32>; 3] {
-            [(l[a] == 0).then_some(-1), Some(0), (l[a] == N - 1).then_some(1)]
+            [
+                (l[a] == 0).then_some(-1),
+                Some(0),
+                (l[a] == N - 1).then_some(1),
+            ]
         };
-        let mut mask = 0;
-        for dz in sides(2).into_iter().flatten() {
+        for dz in sides(2).into_iter().flatten().filter(|_| border) {
             for dy in sides(1).into_iter().flatten() {
                 for dx in sides(0).into_iter().flatten() {
                     mask |= 1 << ((dx + 1) + 3 * (dy + 1) + 9 * (dz + 1));
@@ -469,28 +557,23 @@ impl LightMap {
     }
 
     /// The (filter, emits) of `p`'s block.
+    #[inline]
     fn rules(&mut self, cache: &mut VoxelCache<'_>, p: P) -> (u8, u8) {
         let id = cache.voxel(self.slots[p.slot as usize].coord, p.slot, p.i);
-        let k = usize::from(id);
-        if let Some(&r) = self.table.get(k) {
-            return r;
-        }
-        let old = self.table.len();
-        self.table.resize(k + 1, (0, 0));
-        for (j, r) in self.table.iter_mut().enumerate().skip(old) {
-            *r = dwell_blocks::try_info(j as StateId).map_or((0, 0), |s| {
-                (s.light_filter.min(LIGHT_MAX), s.emits.min(LIGHT_MAX))
-            });
-        }
-        self.table[k]
+        table_rules(&mut self.table, id)
     }
 
     /// The light `v` at `from` gives the neighbour `to` (`DIRS[d]` from it) with filter `f`.
+    #[inline]
     fn passed(&self, ch: Channel, from_v: u8, to: P, d: usize, f: u8) -> u8 {
         let vertical = d / 2 == 1;
         let t = &self.tunables;
         // Sky light falling straight down at full strength through a clear cell keeps it.
-        if ch == Channel::Sky && vertical && from_v == LIGHT_MAX && f == 0 && DIRS[d][1] == -self.up(to)
+        if ch == Channel::Sky
+            && vertical
+            && from_v == LIGHT_MAX
+            && f == 0
+            && DIRS[d][1] == -self.up(to)
         {
             return LIGHT_MAX;
         }
@@ -549,31 +632,36 @@ impl LightMap {
                 }
             }
         }
-        let mut q: VecDeque<P> = VecDeque::with_capacity(readd.len());
+        // Brightest first (a bucket per level): every cell spreads once, at its final level.
+        let mut buckets: [Vec<P>; LIGHT_MAX as usize + 1] = Default::default();
         for p in readd {
             let s = self.source(cache, ch, p);
-            if s > self.level(p, ch) {
-                self.set_level(p, ch, s);
-            }
-            q.push_back(p);
-        }
-        while let Some(p) = q.pop_front() {
             let v = self.level(p, ch);
-            if v == 0 {
-                continue;
+            if s > v {
+                self.set_level(p, ch, s);
+                buckets[usize::from(s)].push(p);
+            } else if v > 0 {
+                buckets[usize::from(v)].push(p);
             }
-            for d in 0..6 {
-                let Some(n) = self.step(p, d) else {
-                    continue;
-                };
-                let (f, _) = self.rules(cache, n);
-                if f >= LIGHT_MAX {
-                    continue;
+        }
+        for level in (1..=LIGHT_MAX).rev() {
+            while let Some(p) = buckets[usize::from(level)].pop() {
+                if self.level(p, ch) != level {
+                    continue; // raised since, and spread from there
                 }
-                let nv = self.passed(ch, v, n, d, f);
-                if nv > self.level(n, ch) {
-                    self.set_level(n, ch, nv);
-                    q.push_back(n);
+                for d in 0..6 {
+                    let Some(n) = self.step(p, d) else {
+                        continue;
+                    };
+                    let (f, _) = self.rules(cache, n);
+                    if f >= LIGHT_MAX {
+                        continue;
+                    }
+                    let nv = self.passed(ch, level, n, d, f);
+                    if nv > self.level(n, ch) {
+                        self.set_level(n, ch, nv);
+                        buckets[usize::from(nv)].push(n);
+                    }
                 }
             }
         }
@@ -594,11 +682,39 @@ impl LightMap {
             for b in 0..27 {
                 if mask & (1 << b) != 0 {
                     let (dx, dy, dz) = (b % 3 - 1, (b / 3) % 3 - 1, b / 9 - 1);
-                    self.changed.push(ChunkCoord::new(c.x + dx, c.y + dy, c.z + dz));
+                    self.changed
+                        .push(ChunkCoord::new(c.x + dx, c.y + dy, c.z + dz));
                 }
             }
         }
     }
+}
+
+/// A newly held chunk, for [`LightMap::load`]'s fast paths.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Kind {
+    /// All air under the open sky (or a chunk all at full sky light).
+    Sky,
+    /// Every cell lets no light in and gives none off.
+    Shut,
+    Mixed,
+}
+
+/// The (filter, emits) of state `id`, looked up in the registry once.
+#[inline]
+fn table_rules(table: &mut Vec<(u8, u8)>, id: StateId) -> (u8, u8) {
+    let k = usize::from(id);
+    if let Some(&r) = table.get(k) {
+        return r;
+    }
+    let old = table.len();
+    table.resize(k + 1, (0, 0));
+    for (j, r) in table.iter_mut().enumerate().skip(old) {
+        *r = dwell_blocks::try_info(j as StateId).map_or((0, 0), |s| {
+            (s.light_filter.min(LIGHT_MAX), s.emits.min(LIGHT_MAX))
+        });
+    }
+    table[k]
 }
 
 const fn opposite(d: usize) -> usize {
@@ -636,6 +752,7 @@ impl<'a> VoxelCache<'a> {
         }
     }
 
+    #[inline]
     fn voxel(&mut self, coord: ChunkCoord, slot: u32, i: u16) -> StateId {
         let s = slot as usize;
         if self.by_slot.len() <= s {

@@ -136,7 +136,11 @@ impl ChunkStore for VoxelWorld {
                 .iter()
                 .map(|v| {
                     let i = i32::from(v.index);
-                    [base[0] + (i & 31), base[1] + ((i >> 5) & 31), base[2] + ((i >> 10) & 31)]
+                    [
+                        base[0] + (i & 31),
+                        base[1] + ((i >> 5) & 31),
+                        base[2] + ((i >> 10) & 31),
+                    ]
                 })
                 .collect();
             self.light_edited(&cells);
@@ -1063,7 +1067,12 @@ mod tests {
                 let l = [0, 1, 2].map(|a| c[a] - job.coord[a] * CHUNK_SIZE);
                 job.light[padded_index(l[0], l[1], l[2])]
             };
-            let job = s.mesher().jobs.iter().find(|j| j.coord == ground).expect("meshed");
+            let job = s
+                .mesher()
+                .jobs
+                .iter()
+                .find(|j| j.coord == ground)
+                .expect("meshed");
             assert_eq!(light_at(job, floor) >> 4, 15, "open sky over the ground");
             let jobs = std::mem::take(&mut s.mesher_mut().jobs);
             for job in jobs {
@@ -1093,7 +1102,12 @@ mod tests {
             let gone: Vec<([i32; 3], u16)> = roof.iter().map(|&(c, _)| (c, 0)).collect();
             s.set_local(&gone);
             s.mesh_dirty([0.0; 3], 100.0, no_clock);
-            let job = s.mesher().jobs.iter().find(|j| j.coord == ground).expect("re-meshed");
+            let job = s
+                .mesher()
+                .jobs
+                .iter()
+                .find(|j| j.coord == ground)
+                .expect("re-meshed");
             assert_eq!(light_at(job, floor) >> 4, 15);
         }
     );

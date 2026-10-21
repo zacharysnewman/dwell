@@ -66,7 +66,12 @@ impl Fixture {
     }
 
     /// The world chunks of face-local chunks x in `xs`, rows ROW + `dys`, z in `zs`.
-    fn chunks(&self, xs: std::ops::RangeInclusive<i32>, dys: std::ops::RangeInclusive<i32>, zs: std::ops::RangeInclusive<i32>) -> Vec<ChunkCoord> {
+    fn chunks(
+        &self,
+        xs: std::ops::RangeInclusive<i32>,
+        dys: std::ops::RangeInclusive<i32>,
+        zs: std::ops::RangeInclusive<i32>,
+    ) -> Vec<ChunkCoord> {
         let mut out = Vec::new();
         for dy in dys {
             for z in zs.clone() {
@@ -114,7 +119,10 @@ fn snapshot_of(l: &LightMap, chunks: &[ChunkCoord]) -> Vec<u8> {
     for c in sorted {
         for i in 0..CHUNK_VOLUME as u16 {
             let [x, y, z] = coords(i);
-            out.push(l.get([c.x * NC + x, c.y * NC + y, c.z * NC + z]).expect("held"));
+            out.push(
+                l.get([c.x * NC + x, c.y * NC + y, c.z * NC + z])
+                    .expect("held"),
+            );
         }
     }
     out
@@ -131,7 +139,10 @@ fn assert_matches_scratch(w: &mut VoxelWorld, chunks: &[ChunkCoord], what: &str)
     fresh.relit_from_scratch(voxels);
     let after = snapshot_of(&fresh, chunks);
     let differ = before.iter().zip(&after).filter(|(x, y)| x != y).count();
-    assert_eq!(differ, 0, "{what}: {differ} cells differ from a relight from scratch");
+    assert_eq!(
+        differ, 0,
+        "{what}: {differ} cells differ from a relight from scratch"
+    );
 }
 
 /// Ground, and a hill from x = 4 on, 10 m over the ground, with a 2 m × 2 m tunnel 20 m into it.
@@ -150,7 +161,11 @@ crate::both_faces!(
         let chunks = fx.chunks(-1..=1, -1..=1, -1..=1);
         let w = fx.lit(&chunks);
         let floor = |x| fx.at(&w, [x, GROUND, 16]).0;
-        assert_eq!(fx.at(&w, [0, GROUND, 16]).0, LIGHT_MAX, "open ground outside");
+        assert_eq!(
+            fx.at(&w, [0, GROUND, 16]).0,
+            LIGHT_MAX,
+            "open ground outside"
+        );
         assert_eq!(floor(4), LIGHT_MAX - 1, "under the mouth's roof");
         for x in 5..=14 {
             assert!(floor(x) < floor(x - 1), "falls off at {x} m: {}", floor(x));
@@ -158,7 +173,10 @@ crate::both_faces!(
         assert!(floor(9) <= 10, "5 m in: {}", floor(9));
         assert!(floor(14) <= 5, "10 m in: {}", floor(14));
         assert_eq!(floor(19), 0, "15 m in");
-        assert!(LIGHT.sky(f64::from(floor(14))) < 0.15, "10 m in is near the floor");
+        assert!(
+            LIGHT.sky(f64::from(floor(14))) < 0.15,
+            "10 m in is near the floor"
+        );
         assert_eq!(LIGHT.direct(f64::from(floor(14))), 0.0, "no sun 10 m in");
         // Its walls and ceiling fall off with it.
         assert_eq!(fx.at(&w, [19, GROUND + 3, 15]).0, 0);
@@ -193,7 +211,9 @@ crate::both_faces!(
         let mut w = fx.lit(&chunks);
         assert_eq!(fx.at(&w, [16, GROUND, 16]).0, 0);
         // A 1 m shaft from the cave's roof to the hill's top.
-        let shaft: Vec<[i32; 3]> = (GROUND + 20..GROUND + 24).map(|y| f.cell([16, y, 16])).collect();
+        let shaft: Vec<[i32; 3]> = (GROUND + 20..GROUND + 24)
+            .map(|y| f.cell([16, y, 16]))
+            .collect();
         for &[x, y, z] in &shaft {
             w.set_voxel(x, y, z, 0);
         }
@@ -246,7 +266,11 @@ crate::both_faces!(
     fn light_is_the_same_whatever_the_load_order(f: FaceFrame) {
         let mut fx = tunnel(f);
         // Leaves over open ground and an emitter in the tunnel, across borders.
-        fx.fill([-6, GROUND + 4, 28], [2, GROUND + 8, 36], dwell_blocks::require("dwell:leaves"));
+        fx.fill(
+            [-6, GROUND + 4, 28],
+            [2, GROUND + 8, 36],
+            dwell_blocks::require("dwell:leaves"),
+        );
         fx.fill([22, GROUND, 16], [23, GROUND + 1, 17], lamp());
         let chunks = fx.chunks(-1..=1, -1..=1, -1..=1);
         let reference = {
@@ -258,7 +282,9 @@ crate::both_faces!(
         for round in 0..4 {
             let mut order = chunks.clone();
             for i in (1..order.len()).rev() {
-                seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+                seed = seed
+                    .wrapping_mul(6364136223846793005)
+                    .wrapping_add(1442695040888963407);
                 order.swap(i, (seed >> 33) as usize % (i + 1));
             }
             if round == 0 {
@@ -274,7 +300,11 @@ crate::both_faces!(
             w.remove(c);
             w.light_unload(c);
         }
-        let rest: Vec<ChunkCoord> = chunks.iter().copied().filter(|c| !above.contains(c)).collect();
+        let rest: Vec<ChunkCoord> = chunks
+            .iter()
+            .copied()
+            .filter(|c| !above.contains(c))
+            .collect();
         assert_matches_scratch(&mut w, &rest, "the row above unloaded");
         for &c in &above {
             fx.load(&mut w, c);
@@ -299,7 +329,11 @@ crate::both_faces!(
         assert_eq!(fx.at(&w, [22, GROUND + 3, 16]).1, 14, "its own cell");
         assert_eq!(fx.at(&w, [22, GROUND + 2, 16]).1, 13, "under it");
         assert_eq!(fx.at(&w, [20, GROUND + 3, 16]).1, 12, "2 m along");
-        assert_eq!(fx.at(&w, [22, GROUND, 16]).1, 11, "the floor under it, 1.5 m down");
+        assert_eq!(
+            fx.at(&w, [22, GROUND, 16]).1,
+            11,
+            "the floor under it, 1.5 m down"
+        );
         assert_eq!(fx.at(&w, [22, GROUND, 16]).0, 0, "no sky there");
         assert_matches_scratch(&mut w, &chunks, "lamp placed");
         w.set_voxel(at[0], at[1], at[2], 0);
@@ -320,7 +354,9 @@ crate::both_faces!(
         let ids = [0, rock(), leaves, lamp, 0, 0];
         let mut seed = 99u64;
         let mut rnd = |n: i32| {
-            seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            seed = seed
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
             ((seed >> 33) % n as u64) as i32
         };
         for step in 0..60 {
@@ -345,8 +381,16 @@ crate::both_faces!(
     fn leaves_and_water_filter_the_sky(f: FaceFrame) {
         let mut fx = Fixture::new(f);
         fx.fill([-40, BASE, -40], [72, GROUND, 72], rock());
-        fx.fill([0, GROUND + 6, 0], [8, GROUND + 7, 8], dwell_blocks::require("dwell:leaves"));
-        fx.fill([16, BASE + 2, 0], [24, GROUND, 8], dwell_blocks::require("dwell:water"));
+        fx.fill(
+            [0, GROUND + 6, 0],
+            [8, GROUND + 7, 8],
+            dwell_blocks::require("dwell:leaves"),
+        );
+        fx.fill(
+            [16, BASE + 2, 0],
+            [24, GROUND, 8],
+            dwell_blocks::require("dwell:water"),
+        );
         let chunks = fx.chunks(-1..=1, -1..=1, -1..=1);
         let w = fx.lit(&chunks);
         let under = fx.at(&w, [4, GROUND, 4]).0;

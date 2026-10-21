@@ -518,8 +518,11 @@ impl<S: Scene> Game<S> {
     ) -> Self {
         let outbox: Outbox = Rc::new(RefCell::new(Vec::new()));
         let resync_out = outbox.clone();
+        // The client keeps the flood light of what it holds (docs/DAY_NIGHT.md §10).
+        let mut world = VoxelWorld::streamed();
+        world.enable_light();
         let streamer = ChunkStreamer::with_resync(
-            VoxelWorld::streamed(),
+            world,
             ChunkJobs(pool.clone()),
             MeshJobs(pool.clone()),
             View(scene.clone()),

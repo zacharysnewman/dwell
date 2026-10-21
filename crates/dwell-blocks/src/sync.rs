@@ -848,7 +848,9 @@ fn apply_look(fields: &Fields, fluids: &[String], row: &mut StateInfo) {
             }
             tag::LIGHT => {
                 let (f, e) = (r.u8(), r.u8());
-                light = r.ok().then_some((f.min(crate::LIGHT_MAX), e.min(crate::LIGHT_MAX)));
+                light = r
+                    .ok()
+                    .then_some((f.min(crate::LIGHT_MAX), e.min(crate::LIGHT_MAX)));
             }
             _ => {}
         }

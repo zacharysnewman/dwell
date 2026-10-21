@@ -548,7 +548,9 @@ impl VoxelWorld {
     /// The chunk's light in the mesher's padded layout (empty without a flood light: meshed as
     /// open sky).
     pub fn padded_light(&self, coord: ChunkCoord) -> Vec<u8> {
-        self.light.as_deref().map_or_else(Vec::new, |l| l.padded(coord))
+        self.light
+            .as_deref()
+            .map_or_else(Vec::new, |l| l.padded(coord))
     }
     pub fn flat() -> Self {
         Self::new(flat_generator(), Some(Arc::new(flat_is_air)))

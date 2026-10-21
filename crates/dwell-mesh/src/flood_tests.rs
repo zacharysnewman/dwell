@@ -142,13 +142,25 @@ dwell_world::both_faces!(
         let floor = |x: f64| fx.shade(&m, [x, g, 16.0], UP);
         let (mouth, five, ten, fifteen) = (floor(4.5), floor(9.0), floor(14.0), floor(19.0));
         assert!(mouth.direct > 0.5, "the mouth: {mouth:?}");
-        assert!(five.direct < mouth.direct && five.ambient < mouth.ambient, "5 m: {five:?}");
-        assert!(ten.direct == 0.0 && ten.ambient < AMBIENT.floor + 0.02, "10 m: {ten:?}");
-        assert!(fifteen.direct == 0.0 && fifteen.ambient == AMBIENT.floor, "15 m: {fifteen:?}");
+        assert!(
+            five.direct < mouth.direct && five.ambient < mouth.ambient,
+            "5 m: {five:?}"
+        );
+        assert!(
+            ten.direct == 0.0 && ten.ambient < AMBIENT.floor + 0.02,
+            "10 m: {ten:?}"
+        );
+        assert!(
+            fifteen.direct == 0.0 && fifteen.ambient == AMBIENT.floor,
+            "15 m: {fifteen:?}"
+        );
         // The walls and ceiling 10 m in, too.
         let wall = fx.shade(&m, [14.0, g + 2.0, 15.0], [0.0, 0.0, 1.0]);
         let roof = fx.shade(&m, [14.0, g + 4.0, 16.0], [0.0, -1.0, 0.0]);
-        assert!(wall.direct == 0.0 && roof.direct == 0.0, "{wall:?} {roof:?}");
+        assert!(
+            wall.direct == 0.0 && roof.direct == 0.0,
+            "{wall:?} {roof:?}"
+        );
     }
 );
 
@@ -179,7 +191,10 @@ dwell_world::both_faces!(
             let m = fx.mesh(cx);
             for x in [cx * 32 + 4, cx * 32 + 20] {
                 let s = fx.shade(&m, [f64::from(x) + 0.5, f64::from(GROUND), 16.0], UP);
-                assert!(s.direct == 0.0 && s.ambient == AMBIENT.floor, "{x} m: {s:?}");
+                assert!(
+                    s.direct == 0.0 && s.ambient == AMBIENT.floor,
+                    "{x} m: {s:?}"
+                );
             }
         }
     }
