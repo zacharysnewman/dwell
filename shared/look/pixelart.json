@@ -1,5 +1,5 @@
 {
-  "$comment": "The 3D pixel-art preview (docs/proposals/PIXEL_ART_LOOK.md): a prototype of the t3ssel8r-style look, off by default; `?pixelart=<preset>` (or `__dwell.setPixelArt`) turns a preset on, `off` or an unknown name turns it off. The scene renders at a fixed low height, a post pass snaps every pixel to a named palette with a 4×4 Bayer ordered dither, and a nearest-neighbour integer upscale draws it on the canvas (the DOM HUD stays at full resolution). palettes: name → a list of ramps, each a list of 2–8 colours from dark to light, a colour being a palette reference (shared/textures/palette.json: \"ramp.stop\", a ramp's name for its base, a swatch) or \"#rrggbb\"; 4–64 colours in all. Quantization is to the nearest palette colour in OKLab. Each preset: name (lower-case letters, digits and '-'; not 'off'); height: the internal picture's height in low-res pixels (the width follows the aspect); fit: 'crop' (the integer scale nearest height, the picture covering the canvas, the overhang cropped) or 'letterbox' (the largest integer scale that fits height pixels, bars around); palette: a palette's name; dither: the ordered dither's strength, 0 (plain nearest colour) to 1 (a full two-colour dither between the nearest two colours); 0.5 dithers only colours in the middle half between two palette colours, so flat areas near a palette colour stay solid and gradients and band edges break into a checker; bands: the direct light's toon bands on N·L × shadow (0 smooth; n ≥ 2: n levels from dark to lit); ambientBands: the same on the ambient light (0 smooth); shadowHue: how far the unlit part of a surface takes shadowTint's hue, 0–1 (hue-shifted shadows); shadowTint: a palette colour (its hue, at the brightness of the surface); edges: the 1-pixel edge's kinds ('depth', 'normal'; [] none), drawn on the near side, darkening the fill by edgeDarken (0–1) rather than in black; edgeFadeM: the edge is gone by this distance (m); atlas: the block textures' sampling while active, 'point' (nearest, no mips: the spec's point filtering) or 'point-mips' (nearest within the mip level, which keeps distant ground from sparkling); textures: the block texture set drawn while active, 'painterly' (the normal look's) or 'cel' (a few flat tones a tile, shared/textures/cel.json, docs/PAINTERLY_TEXTURES.md §10); snapCamera: snap the eye to the low-res pixel grid on the plane snapDepthM metres ahead (in the view's right and up), the remainder shifting the upscaled image (whole canvas pixels). Run `node shared/look/pixelart.mjs` after editing; CI fails if crates/dwell-look/src/pixelart.gen.rs is stale.",
+  "$comment": "The 3D pixel-art preview (docs/proposals/PIXEL_ART_LOOK.md): a prototype of the t3ssel8r-style look, off by default; `?pixelart=<preset>` (or `__dwell.setPixelArt`) turns a preset on, `off` or an unknown name turns it off. The scene renders at a fixed low height, a post pass snaps every pixel to a named palette with a 4×4 Bayer ordered dither, and a nearest-neighbour integer upscale draws it on the canvas (the DOM HUD stays at full resolution). palettes: name → a list of ramps, each a list of 2–8 colours from dark to light, a colour being a palette reference (shared/textures/palette.json: \"ramp.stop\", a ramp's name for its base, a swatch) or \"#rrggbb\"; 4–64 colours in all. Quantization is to the nearest palette colour in OKLab. Each preset: name (lower-case letters, digits and '-'; not 'off'); height: the internal picture's height in low-res pixels (the width follows the aspect); fit: 'crop' (the integer scale nearest height, the picture covering the canvas, the overhang cropped) or 'letterbox' (the largest integer scale that fits height pixels, bars around); palette: a palette's name; dither: the ordered dither's strength, 0 (plain nearest colour) to 1 (a full two-colour dither between the nearest two colours); 0.5 dithers only colours in the middle half between two palette colours, so flat areas near a palette colour stay solid and gradients and band edges break into a checker; bands: the direct light's toon bands on N·L × shadow (0 smooth; n ≥ 2: n levels from dark to lit); ambientBands: the same on the ambient light (0 smooth); shadowHue: how far the unlit part of a surface takes shadowTint's hue, 0–1 (hue-shifted shadows); shadowTint: a palette colour (its hue, at the brightness of the surface); edges: the 1-pixel edge's kinds ('depth', 'normal'; [] none), drawn on the near side, darkening the fill by edgeDarken (0–1) rather than in black; edgeFadeM: the edge is gone by this distance (m); atlas: the block textures' sampling while active, 'point' (nearest, no mips: the spec's point filtering) or 'point-mips' (nearest within the mip level, which keeps distant ground from sparkling); snapCamera: snap the eye to the low-res pixel grid on the plane snapDepthM metres ahead (in the view's right and up), the remainder shifting the upscaled image (whole canvas pixels). Run `node shared/look/pixelart.mjs` after editing; CI fails if crates/dwell-look/src/pixelart.gen.rs is stale.",
   "palettes": {
     "dwell": [
       ["#0e0b14", "ink", "ink_soft", "wolf.shadow"],
@@ -9,7 +9,6 @@
       ["#1e3d3a", "leaf.base", "leaf.light"],
       ["soil.shadow", "soil.base", "soil.light"],
       ["bark.shadow", "bark.base", "bark.light"],
-      ["heartwood.shadow", "heartwood.base", "heartwood.light"],
       ["#57546a", "stone.shadow", "stone.base", "stone.light"],
       ["bedrock.shadow", "bedrock.base", "bedrock.light"],
       ["sand.shadow", "sand.base", "sand.light"],
@@ -45,7 +44,6 @@
       "edgeDarken": 0.45,
       "edgeFadeM": 48,
       "atlas": "point-mips",
-      "textures": "painterly",
       "snapCamera": false,
       "snapDepthM": 8
     },
@@ -63,25 +61,6 @@
       "edgeDarken": 0.4,
       "edgeFadeM": 64,
       "atlas": "point-mips",
-      "textures": "painterly",
-      "snapCamera": false,
-      "snapDepthM": 8
-    },
-    {
-      "name": "270-cel",
-      "height": 270,
-      "fit": "crop",
-      "palette": "dwell",
-      "dither": 0.5,
-      "bands": 3,
-      "ambientBands": 0,
-      "shadowHue": 0.5,
-      "shadowTint": "linen.shadow",
-      "edges": ["depth"],
-      "edgeDarken": 0.4,
-      "edgeFadeM": 64,
-      "atlas": "point-mips",
-      "textures": "cel",
       "snapCamera": false,
       "snapDepthM": 8
     },
@@ -99,7 +78,6 @@
       "edgeDarken": 0.4,
       "edgeFadeM": 64,
       "atlas": "point-mips",
-      "textures": "painterly",
       "snapCamera": false,
       "snapDepthM": 8
     },
@@ -117,7 +95,6 @@
       "edgeDarken": 0.4,
       "edgeFadeM": 64,
       "atlas": "point-mips",
-      "textures": "painterly",
       "snapCamera": true,
       "snapDepthM": 8
     },
@@ -135,25 +112,6 @@
       "edgeDarken": 0.4,
       "edgeFadeM": 64,
       "atlas": "point-mips",
-      "textures": "painterly",
-      "snapCamera": false,
-      "snapDepthM": 8
-    },
-    {
-      "name": "360-cel",
-      "height": 360,
-      "fit": "crop",
-      "palette": "dwell",
-      "dither": 0.35,
-      "bands": 4,
-      "ambientBands": 0,
-      "shadowHue": 0.35,
-      "shadowTint": "linen.shadow",
-      "edges": [],
-      "edgeDarken": 0.4,
-      "edgeFadeM": 64,
-      "atlas": "point-mips",
-      "textures": "cel",
       "snapCamera": false,
       "snapDepthM": 8
     },
@@ -171,7 +129,6 @@
       "edgeDarken": 0.4,
       "edgeFadeM": 64,
       "atlas": "point",
-      "textures": "painterly",
       "snapCamera": false,
       "snapDepthM": 8
     }
