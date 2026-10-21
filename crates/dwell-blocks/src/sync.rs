@@ -1238,6 +1238,35 @@ pub fn parts(payload: &[u8]) -> Vec<&[u8]> {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn a_states_light_source_and_held_item_travel_as_looks() {
+        // docs/LIGHTS.md: the torch's light and held item are look tags (a client may ignore
+        // them), read back by name; a light this build lacks reads as none.
+        let torch = *crate::info(crate::require("dwell:torch"));
+        let fields = state_fields(&torch);
+        for t in [tag::LIGHT_SOURCE, tag::HELD] {
+            assert!(t & tag::LOOK_BIT != 0);
+            assert!(fields.iter().any(|(k, _)| *k == t), "{t:#x}");
+        }
+        let mut row = default_row("test:copy");
+        apply_look(&fields, &[], &mut row);
+        assert_eq!(row.light.map(|l| l.name), Some("dwell:torch"));
+        assert_eq!(row.held, Some("torch"));
+        let stone = *crate::info(crate::require("dwell:stone"));
+        assert!(
+            !state_fields(&stone)
+                .iter()
+                .any(|(k, _)| *k == tag::LIGHT_SOURCE || *k == tag::HELD)
+        );
+        let unknown = vec![(tag::LIGHT_SOURCE, {
+            let mut b = Vec::new();
+            ByteWriter::new(&mut b).str("mod:lantern");
+            b
+        })];
+        apply_look(&unknown, &[], &mut row);
+        assert_eq!((row.light, row.held), (None, None));
+    }
     use super::*;
     use crate::require;
 

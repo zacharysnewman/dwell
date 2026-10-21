@@ -25,22 +25,7 @@ pub const PAINTERLY_TILES: [&str; 16] = [
 
 /// Each tile's glow: how much of its colour it gives off unlit (its material's `emissive`).
 pub const PAINTERLY_EMISSIVE: [f32; 16] = [
-    0.0,
-    0.0,
-    0.0,
-    0.0,
-    0.0,
-    0.0,
-    0.0,
-    0.0,
-    0.0,
-    0.0,
-    0.0,
-    0.0,
-    1.0,
-    0.0,
-    0.0,
-    0.0,
+    0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0,
 ];
 
 /// Each painterly tile's RGBA8 texels (sRGB), row y = 0 (the tile's bottom) first.

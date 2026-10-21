@@ -87,9 +87,9 @@ pub struct Look {
 #[derive(Clone, Copy, Debug)]
 pub struct Item {
     pub name: &'static str,
-    /// Where the light a held block gives off sits, on the item's socket (its frame, metres): a
-    /// torch's flame (docs/LIGHTS.md). None: at the socket.
-    pub light: Option<[f32; 3]>,
+    /// Where the light a held block gives off sits (a torch's flame; docs/LIGHTS.md): a bone and
+    /// the point in its frame (metres), the item's socket resolved. None: no light point.
+    pub light: Option<(usize, [f32; 3])>,
     pub parts: &'static [Part],
 }
 

@@ -181,16 +181,26 @@ fn lambert(albedo: vec3f, n: vec3f, frag_y: f32) -> vec3f {
 }
 
 // How a surface is lit (docs/DAY_NIGHT.md §9–10; dwell_look::ambient::shading mirrors it): the
-// share of the hemisphere light, of the direct sun and moon, and the block light's glow.
+// share of the hemisphere light, of the direct sun and moon, and the block light's glow; and the
+// dynamic lights' irradiance (`point_lights`, docs/LIGHTS.md §3), set where the fragment's place
+// and normal are known (`scene_out`, the water, the characters).
 struct TerrainLight {
     ambient: f32,
     direct: f32,
     glow: f32,
+    points: vec3f,
 };
 
 // A surface open to the sky (LOD sections, players, water's own pieces).
 fn open_light() -> TerrainLight {
-    return TerrainLight(1.0, 1.0, 0.0);
+    return TerrainLight(1.0, 1.0, 0.0, vec3f(0.0));
+}
+
+// How much of its colour the tile at `tile_origin` gives off unlit (its material's `emissive`,
+// docs/LIGHTS.md): a torch's flame.
+fn tile_glow(tile_origin: vec2f) -> f32 {
+    let cell = vec2u(clamp(floor(tile_origin * f32(ATLAS_CELLS)), vec2f(0.0), vec2f(f32(ATLAS_CELLS - 1u))));
+    return tile_grids[cell.x + cell.y * ATLAS_CELLS].z;
 }
 
 // A level's brightness on `curve` (shared/look/light.json): x / (curve − (curve − 1)·x).
@@ -215,11 +225,13 @@ fn terrain_light(light: f32, flood: vec2f) -> TerrainLight {
         AMBIENT_FLOOR + (1.0 - AMBIENT_FLOOR) * sky * (l + (1.0 - l) * (1.0 - sky)),
         direct,
         light_curve(flood.y, BLOCK_CURVE) * BLOCK_STRENGTH,
+        vec3f(0.0),
     );
 }
 
 // `lambert` lit by `l` (`terrain_light`; `open_light()` for surfaces with no baked light): the
-// hemisphere light by `l.ambient`, the sun and moon by `l.direct`, and the block light's warm glow.
+// hemisphere light by `l.ambient`, the sun and moon by `l.direct`, the block light's warm glow and
+// the dynamic lights (`l.points`).
 fn lambert_lit(albedo: vec3f, n: vec3f, frag_y: f32, l: TerrainLight) -> vec3f {
     let face = face_at(frag_y);
     let on_a = face > 0.0;
@@ -231,7 +243,7 @@ fn lambert_lit(albedo: vec3f, n: vec3f, frag_y: f32, l: TerrainLight) -> vec3f {
     var direct = max(dot(n, d.sun.xyz), 0.0) * sun * own(d.sun.xyz, face);
     direct += max(dot(n, d.moon.xyz), 0.0) * moon * own(d.moon.xyz, face);
     let hemi = mix(hemi_ground, hemi_sky, face_rise(face, n) * 0.5 + 0.5) * l.ambient;
-    let irradiance = direct * l.direct + hemi + BLOCK_LIGHT * (PI * l.glow);
+    let irradiance = direct * l.direct + hemi + BLOCK_LIGHT * (PI * l.glow) + l.points;
     return irradiance * albedo / PI;
 }
 
@@ -376,6 +388,8 @@ fn scene_out(albedo: vec3f, n: vec3f, rel: vec3f, alpha: f32, light: TerrainLigh
     if (lit_by_direct(n, frame.eye.x + rel.y)) {
         l.direct = shadow_light(rel, n, l.direct);
     }
+    // The dynamic lights (held torches), unshadowed.
+    l.points = point_lights(rel, n, 0.0);
     o.color = vec4f(lambert_lit(albedo, n, frame.eye.x + rel.y, l), alpha);
     o.depth = frame_depth(view_depth(rel), true);
     return o;
@@ -462,7 +476,9 @@ fn terrain_fs(i: TerrainOut, @builtin(front_facing) front: bool) -> SceneOut {
         discard;
     }
     let alpha = select(draw.tint.a * texel.a, 1.0, draw.tint.a >= 1.0);
-    var o = scene_out(i.color * texel.rgb * shade * draw.tint.rgb, normalize(n), i.rel, alpha, terrain_light(i.light, i.flood));
+    let albedo = i.color * texel.rgb * shade * draw.tint.rgb;
+    var o = scene_out(albedo, normalize(n), i.rel, alpha, terrain_light(i.light, i.flood));
+    o.color = vec4f(o.color.rgb + albedo * (tile_glow(i.tile.xy) * alpha), o.color.a);
     o.depth = frame_depth(o.depth, fade_inked(draw));
     return o;
 }
@@ -612,9 +628,11 @@ fn cutout_fs(i: CutoutOut, @builtin(front_facing) front: bool) -> CutoutSceneOut
         discard;
     }
     let n = select(vec3f(-i.normal.x, i.normal.y, -i.normal.z), i.normal, front);
-    let lit = scene_out(i.color * texel.rgb * draw.tint.rgb, normalize(n), i.rel, 1.0, terrain_light(i.light, i.flood));
+    let albedo = i.color * texel.rgb * draw.tint.rgb;
+    let lit = scene_out(albedo, normalize(n), i.rel, 1.0, terrain_light(i.light, i.flood));
     var o: CutoutSceneOut;
-    o.color = lit.color;
+    // A glowing tile (a torch's flame) gives off its colour unlit.
+    o.color = vec4f(lit.color.rgb + albedo * tile_glow(i.tile.xy), lit.color.a);
     // Plants whose look says `outline: false` are flagged in the depth: no ink is drawn on them
     // and the edge rule sees through them (`ink_outline`).
     o.depth = frame_depth(lit.depth, i.bare < 0.5 && fade_inked(draw));
@@ -1445,6 +1463,7 @@ struct Surface {
 fn see_through_light(i: FluidOut, n: vec3f) -> TerrainLight {
     var l = terrain_light(1.0, i.flood);
     l.direct = shadow_light(i.rel, n, l.direct);
+    l.points = point_lights(i.rel, n, 0.0);
     return l;
 }
 
@@ -1469,9 +1488,10 @@ fn water_surface(i: FluidOut, front: bool, footprint: f32, f: Fluid, draw: Draw)
     }
     s.ndv = clamp(dot(s.n, s.v), 1e-3, 1.0);
     s.light = terrain_light(1.0, i.flood);
+    s.light.points = point_lights(i.rel, face_up(s.up), 0.0);
     s.sky = light_curve(i.flood.x, SKY_CURVE);
     s.shadow = shadow_light(i.rel, face_up(s.up), s.light.direct);
-    s.body = lambert_lit(f.scatter.rgb * draw.tint.rgb, face_up(s.up), s.frag_y, TerrainLight(s.light.ambient, s.shadow, s.light.glow));
+    s.body = lambert_lit(f.scatter.rgb * draw.tint.rgb, face_up(s.up), s.frag_y, TerrainLight(s.light.ambient, s.shadow, s.light.glow, s.light.points));
     return s;
 }
 
@@ -1827,7 +1847,7 @@ fn water_scene_fs(i: FluidOut, @builtin(front_facing) front: bool) -> @location(
         foam = foam_amount(i.wrapped, under, f);
     }
     if (foam > 0.0) {
-        let lit = lambert_lit(f.foam.rgb, vec3f(0.0, s.up, 0.0), s.frag_y, TerrainLight(s.light.ambient, s.shadow, s.light.glow));
+        let lit = lambert_lit(f.foam.rgb, vec3f(0.0, s.up, 0.0), s.frag_y, TerrainLight(s.light.ambient, s.shadow, s.light.glow, s.light.points));
         color = mix(color, lit, foam);
     }
     return vec4f(color, 1.0);
@@ -2088,7 +2108,7 @@ fn light_wgsl() -> String {
 /// entry points.
 pub fn lighting_source() -> String {
     format!(
-        "{}{}const SEA_LEVEL: f32 = {:.1};\nconst AMBIENT_FLOOR: f32 = {:?};\n{}const ATLAS_CELLS: u32 = {}u;\nconst ATLAS_TILES: u32 = {}u;\n{}\n{}\n{}\n{FRAME}\n{}\n{}\n{FRAME_DEPTH}\n{COMMON}\n{}\n{}\n",
+        "{}{}const SEA_LEVEL: f32 = {:.1};\nconst AMBIENT_FLOOR: f32 = {:?};\n{}const ATLAS_CELLS: u32 = {}u;\nconst ATLAS_TILES: u32 = {}u;\n{}\n{}\n{}\n{FRAME}\n{}\n{}\n{FRAME_DEPTH}\n{}\n{COMMON}\n{}\n{}\n",
         dwell_world::FaceFrame::wgsl(),
         super::face_shading::WGSL,
         world::SEA_LEVEL_M,
@@ -2101,6 +2121,7 @@ pub fn lighting_source() -> String {
         super::reflection::wgsl(),
         dwell_look::sky_wgsl(),
         dwell_look::clouds::cloud_wgsl(&dwell_look::clouds::CLOUDS),
+        super::lights::wgsl(),
         super::lod_shadows::LOD_SHADOW_WGSL,
         super::shadows::SHADOW_WGSL,
     )
@@ -2174,7 +2195,10 @@ mod tests {
         // direct share, they don't replace a full one.
         assert!(surface.contains("s.light = terrain_light(1.0, i.flood);"));
         assert!(surface.contains("s.shadow = shadow_light(i.rel, face_up(s.up), s.light.direct);"));
-        assert!(surface.contains("TerrainLight(s.light.ambient, s.shadow, s.light.glow)"));
+        assert!(
+            surface
+                .contains("TerrainLight(s.light.ambient, s.shadow, s.light.glow, s.light.points)")
+        );
         assert!(
             !src.contains("TerrainLight(1.0, s.shadow"),
             "a fluid lit as open sky"
@@ -2204,11 +2228,9 @@ mod tests {
         };
         let lit = body("lambert_lit");
         // The shadow (the maps, or the flood light's stand-in past them) is \`l.direct\`.
-        assert!(
-            lit.contains(
-                "let irradiance = direct * l.direct + hemi + BLOCK_LIGHT * (PI * l.glow);"
-            )
-        );
+        assert!(lit.contains(
+            "let irradiance = direct * l.direct + hemi + BLOCK_LIGHT * (PI * l.glow) + l.points;"
+        ));
         let direct: Vec<&str> = lit.lines().filter(|l| l.contains("direct")).collect();
         assert!(
             direct

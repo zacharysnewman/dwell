@@ -164,8 +164,12 @@ export function rustTables(data, textures, { header, tilesFile }) {
     });
     const itemSrc = items.map((it) => {
       const m = compose(data, style, id, { item: it, accessories: [] });
-      const light = data.items[it].light;
-      return `Item { name: ${str(it)}, light: ${light ? `Some(${v3(light)})` : 'None'}, parts: ${parts(m.parts.filter((p) => p.from === `item:${it}`), bones)} }`;
+      // The light's point resolved through the item's socket to a bone and an offset in its frame.
+      const { on, light } = data.items[it];
+      const so = (ch.sockets ?? {})[on];
+      const at = light && (so ? light.map((v, k) => so.at[k] + v) : light);
+      const bone = bones.indexOf(so ? so.bone : on);
+      return `Item { name: ${str(it)}, light: ${light ? `Some((${bone}, ${v3(at)}))` : 'None'}, parts: ${parts(m.parts.filter((p) => p.from === `item:${it}`), bones)} }`;
     });
     const fb = ch.firstPerson?.body;
     const fpBody = fb
