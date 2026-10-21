@@ -14,7 +14,10 @@ const FLOOR = 0.001;
 
 export type NoiseBank = Record<NoiseColor, AudioBuffer>;
 
-/** Seeded white, pink (Paul Kellet's filter) and brown (leaky integrated) noise for a context. */
+/**
+ * Seeded white, pink (Paul Kellet's filter), brown (leaky integrated) and crackle (sparse pops)
+ * noise for a context.
+ */
 export function makeNoise(ctx: BaseAudioContext, seed = 7): NoiseBank {
   const n = Math.floor(ctx.sampleRate * NOISE_SECONDS);
   const rng = mulberry32(seed);
@@ -55,7 +58,22 @@ export function makeNoise(ctx: BaseAudioContext, seed = 7): NoiseBank {
       o[i] = last * 3.5;
     }
   });
-  return { white, pink, brown };
+  // Crackle: sparse pops (about 30 a second, mostly small, a few loud), each a click that decays
+  // in a millisecond or two; band-passed it is a fire's crackle.
+  const crackle = make((o) => {
+    let level = 0;
+    let decay = 0;
+    for (let i = 0; i < n; i++) {
+      if (rng() < 30 / ctx.sampleRate) {
+        const r = rng();
+        level = (rng() < 0.5 ? -1 : 1) * (0.25 + 0.75 * r * r * r);
+        decay = Math.exp(-1 / (ctx.sampleRate * (0.0006 + 0.0015 * rng())));
+      }
+      o[i] = level * (rng() * 0.6 + 0.4);
+      level *= decay;
+    }
+  });
+  return { white, pink, brown, crackle };
 }
 
 /** Seconds an envelope lasts, times scaled. */
@@ -294,7 +312,13 @@ export function startLoop(
       moved.push([node.frequency, f.freq * p.cutoff * pitch, 'cutoff']);
     });
     chain([...fx, amp]);
-    amp.connect(master);
+    if (layer.pan) {
+      // A layer placed left or right (a loop's crickets either side).
+      const pan = ctx.createStereoPanner();
+      pan.pan.value = Math.max(-1, Math.min(1, layer.pan));
+      amp.connect(pan);
+      pan.connect(master);
+    } else amp.connect(master);
     const head: AudioNode = fx[0] ?? amp;
     if (layer.source === 'noise') {
       const src = ctx.createBufferSource();

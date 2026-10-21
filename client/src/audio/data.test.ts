@@ -176,6 +176,41 @@ describe('sound data', () => {
       /event slide_speed: a loop update plays nothing of its own/,
     ],
     [
+      'a fallback that is not false',
+      (f) => {
+        rec(f, 'events').burn = { set: 'burn', loop: 'start', fallback: true };
+      },
+      /event burn\.fallback: must be false or absent/,
+    ],
+    [
+      'a loop start without a sound',
+      (f) => {
+        rec(f, 'events').wind = { loop: 'start' };
+      },
+      /event wind: plays no set event or sound/,
+    ],
+    [
+      'an unknown noise colour',
+      (f) => {
+        f.sounds.tick = { ...tick, layers: [{ ...layer, color: 'blue' }] };
+      },
+      /color: "blue" is not one of white, pink, brown, crackle/,
+    ],
+    [
+      'ambient tunables out of range',
+      (f) => {
+        (rec(f, 'ambient').fire as Record<string, unknown>).radiusM = 0;
+      },
+      /ambient\.fire\.radiusM: 0 is outside/,
+    ],
+    [
+      'an ambient range that starts where it is full',
+      (f) => {
+        (rec(f, 'ambient').night as Record<string, unknown>).stars = [0.5, 0.5];
+      },
+      /ambient\.night\.stars: starts and is full at the same value/,
+    ],
+    [
       'a fallback set without a slide',
       (f) => {
         delete (sets(f).stone as Record<string, string>).slide;
@@ -190,6 +225,27 @@ describe('sound data', () => {
       expect(() => resolveSounds(fs)).toThrow(message);
     });
   }
+
+  it("plays a set's burn only where the set has one: no fallback for fires", () => {
+    const kind = (name: string): number => SOUND_DATA.events.findIndex((e) => e.name === name);
+    expect(SOUND_DATA.sets[SOUND_DATA.fallback]?.burn).toBeUndefined();
+    const torch = BLOCK_DEFS.find((b) => b.id === 'dwell:torch_upper');
+    expect(torch?.sound).toBe('dwell:torch');
+    const burn = (block: number) => ({
+      kind: kind('burn'),
+      block,
+      intensity: 1,
+      at: null,
+      gait: null,
+      voice: 65536,
+    });
+    expect(soundsFor(burn(torch?.first ?? -1), SOUND_DATA)).toEqual([
+      { sound: SOUND_DATA.sets['dwell:torch']?.burn, gain: 1 },
+    ]);
+    // Stone burns not: its set has no burn, and the fallback's is not borrowed.
+    const stone = BLOCK_DEFS.find((b) => b.id === 'dwell:stone');
+    expect(soundsFor(burn(stone?.first ?? -1), SOUND_DATA)).toEqual([]);
+  });
 
   it('rejects a block naming an unknown set', () => {
     expect(() => {

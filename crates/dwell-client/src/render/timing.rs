@@ -30,6 +30,8 @@ pub const ARMS: &str = "gpu.arms";
 pub const COMPOSITE: &str = "gpu.composite";
 /// The motion pass (the wind's blur and streaks over the finished image), while the wind is on.
 pub const MOTION: &str = "gpu.motion";
+/// The pixel-art preview's post pass (render/pixel_art.rs).
+pub const PIXEL_ART: &str = "gpu.pixelart";
 /// The whole frame on the GPU: the first pass's start to the last one's end.
 pub const FRAME: &str = "gpu.frame";
 /// Readback buffers: the GPU runs a frame or two behind, so three keep one free.

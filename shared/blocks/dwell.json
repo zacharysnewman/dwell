@@ -92,7 +92,7 @@
     { "name": "sand_ramp", "family": "ramp", "of": "sand" },
     {
       "$comment": "Prototype content (docs/LIGHTS.md): a torch on the floor, 1 m tall over two ½ m cells. This is its lower cell (the stick), placed from the palette; `extends.up` puts `dwell:torch_upper` (the flame) in the cell above, and breaking either cell clears both (BLOCK_REGISTRY.md, Multi-cell blocks). Crossed quads, drawn cutout, no collision, standing on the block below and gone with it. Its `light` is the light a hand holding it gives off; a hand holding it shows the `torch` item (shared/characters).",
-      "name": "torch", "sound": "dwell:wood", "density": 600, "shape": "empty", "placeable": true,
+      "name": "torch", "sound": "dwell:torch", "density": 600, "shape": "empty", "placeable": true,
       "look": "cross", "render": "cutout",
       "cross": { "height": 1.0, "quads": 2, "sitOnSupport": false },
       "selectionBox": [0.38, 0, 0.38, 0.62, 1, 0.62],
@@ -103,7 +103,7 @@
     },
     {
       "$comment": "The torch's upper cell (docs/LIGHTS.md): the stick's top and the flame, which gives off the block light (`emits` 14, its cell the flame's) and, with Torch shadows (T2), the placed torch's dynamic light. Placed only with its torch (`partOf`).",
-      "name": "torch_upper", "sound": "dwell:wood", "density": 600, "shape": "empty",
+      "name": "torch_upper", "sound": "dwell:torch", "density": 600, "shape": "empty",
       "look": "cross", "render": "cutout",
       "cross": { "height": 1.0, "quads": 2, "sitOnSupport": false },
       "selectionBox": [0.38, 0, 0.38, 0.62, 0.8, 0.62],

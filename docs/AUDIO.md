@@ -32,7 +32,8 @@ the Rust game). CI regenerates both and fails on a diff, as for the block regist
 
 - **`sounds`** — named sounds. A sound is `{ gain, reverb?, variation, intensity?, layers }`.
   - A **layer** is one *source* through a chain of *filters* under an *envelope*:
-    - `source: "noise"` with `color` `white | pink | brown`;
+    - `source: "noise"` with `color` `white | pink | brown | crackle` (crackle: sparse decaying
+      pops, about 30 a second, mostly small — band-passed, a fire's crackle; it loops too);
     - `source: "osc"` with `wave` (`sine | triangle | square | sawtooth`), `freq` and an optional
       glide `to`;
     - `source: "modal"` with `freq` and `partials: [[ratio, gain, decay], …]`: decaying sine modes
@@ -48,7 +49,8 @@ the Rust game). CI regenerates both and fails on a diff, as for the block regist
       ± `depth` / 2 (a scrape's grit).
   - **`loop: true`**: a continuous sound (the slide's scrape), played on a voice until stopped:
     noise and oscillator layers only, sustained (no `env`, `grains`, `at`, `chance` or sweeps).
-    Its `intensity` (0–1) moves while it plays: `gain`, filter `cutoff` and `pitch` (a factor on
+    A loop layer may have a `pan` (the night's crickets either side). Its `intensity` (0–1) moves
+    while it plays: `gain`, filter `cutoff` and `pitch` (a factor on
     every source's rate and tremolo; loop sounds only), each gliding with a 60 ms time constant;
     below 0.05 the voice fades to silence.
   - **`variation`**: `{ pitch (± semitones), gain (± dB), cutoff (± fraction), time (± fraction) }`,
@@ -57,15 +59,24 @@ the Rust game). CI regenerates both and fails on a diff, as for the block regist
     scales `gain`, filter `cutoff` and envelope `time`, each a `[at 0, at 1]` pair.
 - **`sets`** — a block's sound set (`"sound": "dwell:stone"` on the block): the sound per event
   (`step`, `land`, `break`, `place`, `hit` required; `enter`, `exit`, `swim` for liquids;
-  `slide` — a loop sound — and `slide_stop` for surfaces). A set missing an event falls back to
-  the `fallback` set's, which must have every loop event's sound.
+  `slide` — a loop sound — and `slide_stop` for surfaces; `burn` — a loop sound — for a burning
+  light source: the torch's `dwell:torch` set has the wood's steps and landing, its own place
+  (a wooden tock and the flame catching) and break (a snuff), and `torch_fire`). A set missing an
+  event falls back to the `fallback` set's, which must have every loop event's sound — unless the
+  event says `"fallback": false` (`burn`: a set without its own plays nothing; stone does not
+  burn).
 - **`events`** — the event kinds the Rust game emits, in id order: each plays its set's event
   (`set`) and/or a named sound (`sound`); `speed: [min, full]` gives the speed at which it starts and
   at which its intensity reaches 1. `loop: "start" | "update" | "stop"` makes it part of a
   continuous sound on the mover's voice: `start` plays its (loop) sound on the voice, `update`
   (playing nothing of its own) moves the voice's intensity and position, `stop` fades the voice
-  and plays its one-shot. Validated: a start's sounds are loop sounds, every other event's are
-  not.
+  and plays its one-shot, if it has one (a fire's stop has none). Validated: a start's sounds are
+  loop sounds, every other event's are not. For `hurt` the `speed` range is in health points (the
+  damage taken).
+- **`ambient`** — the ambient sounds' tunables, emitted into `sound.gen.rs` as `ambient::…`:
+  `fire` (`radiusM`: burning light sources crackle within it; `max`: the nearest this many),
+  `wind` (`heightM` and `speed`: [starts, full] over sea level and in m/s), `night` (`stars`:
+  [starts, full] on the sky's stars, 0 by day, 1 by night).
 - **`gaits`** — `walk`, `run`, `crouch`, `climb`, `swim`: footstep `stride` (m between steps) and
   `gain`.
 - **`actions`** — sounds the TS shell plays for game actions it handles (hotbar, flight, the game
@@ -133,12 +144,49 @@ tick and each remote player's interpolated state each frame, and turns changes i
 | `break` / `place` | the local player's edit request (immediately), or another player's edit seen in a `VoxelModification` (spatial) | the broken / placed block | 1 |
 | `hit` | a break of an indestructible block (the server will refuse it) | the block | 1 |
 | `deny` | an edit with nothing targeted | — | 1 |
+| `impact` | a hit on a wall or a ceiling (below): the speed toward a solid block touching the body drops in a sample to ≤ 35 % of its fastest in the last 70 ms | the block hit (its `land`) + a body thud | from that fastest speed (2 → 25 m/s) |
+| `hurt` | the server's `PlayerEvent` Damage, any player's | — | from the damage (0 → 80 points) |
+| `death` / `respawn` | the server's `PlayerEvent` Death / Respawn, any player's | — | 1 |
+| `burn` / `burn_level` / `burn_end` | a burning light source's loop voice starting, moving, stopping (below) | the source's block (its `burn`) | by distance |
+| `wind` / `wind_level` / `wind_end` | the wind's voice (below) | — | by height or speed |
+| `night` / `night_level` / `night_end` | the night's voice (below) | — | by the stars |
+
+**Impacts** (`ImpactSounds`, owner 2026-10-21: "hard hits even sliding into a wall is fair game").
+The controller's `IMPACTED` event (PLAYER_CONTROLLER.md §6.10) is not on the wire, so the hit is
+read from the sampled motion the way landings are: for each face-local direction a body can hit
+(±x, ±z, up; landings are `land`'s), the speed toward it is tracked; when a solid block touches
+the body there (the body probe `Surroundings`: the cell 6 cm past its side at mid-height, or 6 cm
+over its head) and the speed toward it drops in one sample to at most 35 % of its fastest in the
+last 70 ms, that fastest speed is the hit's — the controller's `max(0, −v · n)` for the cell's
+face, so a 25 m/s launch into a wall sounds at full intensity and hurts, and a sprint into it at
+about 7 m/s is a soft thud that does not. Then that direction is quiet for 70 ms (one hit per
+contact; pressing on into the wall is silent). Climbing and swimming hit nothing; flight sounds
+but never hurts. Braking beside a wall is no hit: the probe only sees a wall the body touches.
+Ours are read from the prediction's ticks; another player's from each snapshot's latest state
+(exact positions — an interpolated body reaches the wall late), and held by the interpolation
+delay (`INTERP_DELAY_MS`) so they sound when its body is drawn at the wall. The hurt is not
+predicted: it comes from the server's Damage event (another player's held by the same delay),
+so it never sounds for a hit the server did not count.
+
+**Fires** (`FireSounds`): every frame the burning light sources near the listener — placed ones
+(`VoxelWorld::light_sources_near`, the flame's cell), the torch in our hand (at the listener) and
+in other players' hands (at their hand) — a light with a `flame` (LIGHTS.md §6) burns; the
+nearest `ambient.fire.max` within `ambient.fire.radiusM` each hold a loop voice (`FIRE_VOICE` on)
+while they stay among them, at a level `(1 − (d / r)²)²` (full beside it, 0 at the radius; the
+panner's rolloff on top). A nearer one takes a farther one's voice. **Wind and night**
+(`AmbientSounds`): one voice each at the listener (`WIND_VOICE`, `NIGHT_VOICE`). The wind's level
+is the higher of its height over sea level's and its speed's ramp; the night's the stars' ramp,
+fading as the height's rises (no crickets aloft); both × the sky light at the eye (none in a
+cave). Loops start above 0.03 and stop at 0.01; updates go at most 10 times a second, on a change
+of 0.02 or a move of 0.25 m. The shell remembers each loop's start and restarts a voice an update
+finds not playing (a hidden tab or a context still starting), so the long loops survive both.
 
 The local player's own edits sound at once, on the request (the client does not predict edits); the
 server's echo of them is recognised by cell and not played again. Events cross to JS as compact
 numbers: `takeSounds()` returns a `Float64Array` of 7 numbers per event (`kind, block state,
 intensity, x, y, z, flags`; flags bit 0 = spatial, bits 1–3 the gait + 1, bits 4 and up the voice
-+ 1 — 0 the local player, others their player id). `listener()` returns the
++ 1 — 0 the local player, others their player id, fires from 65536, the wind and the night
+131072 and 131073). `listener()` returns the
 camera's position, forward and up. Audio is a side channel: nothing read back affects the
 simulation, and it reads only the predicted state the game already has.
 
@@ -170,16 +218,26 @@ simulation, and it reads only the predicted state the game already has.
   event decoding and mapping (block → set, gait → gain), the controls coverage, UI delegation (a
   new button gets the click), the settings store.
 - Rust: footstep cadence from distance travelled, landing intensity from impact speed, jump,
-  crouch, splash, edits (immediate, echo suppressed, remote spatial, indestructible → hit).
+  crouch, splash, edits (immediate, echo suppressed, remote spatial, indestructible → hit);
+  impacts (a wall hit at 25 m/s a loud impact plus the server's hurt, at 8 m/s a soft thud and no
+  hurt; every side and the ceiling once; snapshots sound as ticks; no hit stopping in the open,
+  along a wall, swimming or climbing; the body probe on both faces), and the same through the real
+  controller on both faces (`dwell-game/tests/impact_sounds.rs`: launched into a wall at 25 and
+  8 m/s, sprinting into it — the sound as loud as the controller's own impact speed); health
+  events; fires (heard within the radius, capped at `max`, nearest first, a nearer one taking a
+  voice, a held one at the listener, updates throttled); wind and night by height, speed, stars
+  and the sky light.
 - Offline renders (`npm run sfx:render -- --out <dir>`): every sound of every set and every action
   and UI sound rendered in Chromium with `OfflineAudioContext` through the real mixer (the page is
   built from `client/src/audio/render.ts` and served with `vite preview` on port 4178); asserted
   non-silent, peak < 1.0 and a sensible length; written to WAV for listening (`set_<set>_<event>`,
   `event_*`, `action_*`, `ui_*`), with 10-step walk and run sequences per surface
   (`steps_<set>_<gait>_x10`), four break and four place variations per set (`break_<set>_x4`,
-  `place_<set>_x4`), landings soft to hard (`land_<set>_soft_to_hard`) and each surface's slide
+  `place_<set>_x4`), landings soft to hard (`land_<set>_soft_to_hard`), each surface's slide
   from slow to fast for 4 s ending in its stop (`slide_<set>_slow_to_fast`; the intensity moved
-  every 50 ms as the game does), plus `summary.txt`.
+  every 50 ms as the game does), each set's burn and each event's loop held 4 s from faint to full
+  (`burn_<set>_faint_to_full`, `loop_wind_faint_to_full`, `loop_night_faint_to_full`), plus
+  `summary.txt`.
 - Debug hooks: `window.__dwell.sounds()` in a game and `window.__dwellSounds()` on any page with
   sound list the latest sounds played.
 
@@ -187,7 +245,9 @@ simulation, and it reads only the predicted state the game already has.
 
 - Chat and screenshots do not exist yet; when they are added, the controls coverage test asks for
   their sounds.
-- Ambience (wind, water flow, birds) and music are out of scope.
+- Ambience beyond the wind and the night (water flow, birds, rain), and music, are out of scope.
+- No sound of its own: crossing between the faces (its somersault is silent), knockback (a push, not a
+  hit; any damage with it sounds as the hurt), other players joining or leaving.
 
 ## 9. Open questions for the owner
 

@@ -70,6 +70,13 @@ const LADDER_TOP_REACH: f32 = 0.6;
 /// How far past the midplane (m) a body has to be before the face switches.
 const FACE_HYSTERESIS: f64 = 0.05;
 const MAX_CONTACTS: usize = 8;
+/// Two contacts whose normals are this close (cosine) are the same contact (§6.10): a contact
+/// sustained over ticks, or crossing from one collider to the next along a flat surface, counts
+/// as one impact.
+const SAME_CONTACT_DOT: f64 = 0.95;
+/// A contact whose normal's face-local up exceeds this faces up: the ground layer's while the
+/// player was grounded, not an impact (§6.10).
+const FLOOR_MIN_UP: f32 = 0.1;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum State {
@@ -235,7 +242,7 @@ pub struct PlatformState {
 /// Events raised during a tick (bits of `PlayerController::events`).
 pub mod events {
     pub const JUMPED: u32 = 1 << 0;
-    /// Payload: `landed_speed`.
+    /// Grounded again after the air. Its hit, if any, is this tick's `IMPACTED`.
     pub const LANDED: u32 = 1 << 1;
     pub const CROUCH_CHANGED: u32 = 1 << 2;
     pub const CLIMB_STARTED: u32 = 1 << 3;
@@ -247,6 +254,9 @@ pub mod events {
     /// The sprint slide (§6.9).
     pub const SPRINT_SLIDE_STARTED: u32 = 1 << 9;
     pub const SPRINT_SLIDE_ENDED: u32 = 1 << 10;
+    /// A hit (§6.10): a new contact, a landing or a ceiling met at speed into its surface.
+    /// Payload: `impact_speed`, `impact_normal`.
+    pub const IMPACTED: u32 = 1 << 11;
 }
 
 /// Complete controller state: a plain value, copied into history buffers and snapshots.
@@ -269,8 +279,11 @@ pub struct PlayerController {
     /// The face frame the layers' vertical quantities are in.
     pub face: FaceFrame,
     pub events: u32,
-    /// Impact speed of this tick's Landed event.
-    pub landed_speed: f32,
+    /// This tick's `IMPACTED` hit (§6.10): the largest `max(0, −v · n)` over its new contacts, with
+    /// `v` the body's velocity going into the physics step and `n` the surface's normal (m/s).
+    pub impact_speed: f32,
+    /// That hit's surface normal (face-local, out of the surface toward the player).
+    pub impact_normal: Vec3,
 }
 
 impl Default for PlayerController {
@@ -292,7 +305,8 @@ impl Default for PlayerController {
             target_velocity: Vec3::ZERO,
             face: FaceFrame::A,
             events: 0,
-            landed_speed: 0.0,
+            impact_speed: 0.0,
+            impact_normal: Vec3::ZERO,
         }
     }
 }
@@ -396,6 +410,13 @@ struct Player {
     contacts: Vec<DVec3>,
     /// Upward velocity the contacts gave the body by deflecting last tick's horizontal drive.
     drive_lift: f32,
+    /// The body's velocity (world) going into the physics step: what the controller set, plus
+    /// any instant change (knockback) after it. What its contacts in that step were hit at.
+    pre_step: Vec3,
+    /// Last tick's contact normals (world): a contact among them is not a new hit (§6.10).
+    touched: Vec<DVec3>,
+    /// This tick the ceiling probe stopped the rise: the ceiling is met before its contact.
+    ceiling_stop: bool,
 }
 
 /// Ladder frame: facing axis and plate centre of the ladder in a cell.
@@ -507,6 +528,9 @@ impl Players {
             collider,
             contacts: Vec::new(),
             drive_lift: 0.0,
+            pre_step: Vec3::ZERO,
+            touched: Vec::new(),
+            ceiling_stop: false,
         };
         if handle as usize == self.players.len() {
             self.players.push(Some(p));
@@ -604,14 +628,18 @@ impl Players {
         position: DVec3,
         velocity: Vec3,
     ) {
-        let body = self.get(h).body;
+        let p = self.get_mut(h);
+        p.pre_step = velocity;
+        let body = p.body;
         physics.set_position(body, position);
         physics.set_velocity(body, velocity.as_dvec3());
     }
 
     /// Instant velocity change (knockback, explosions): absorbed next tick.
     pub fn add_velocity(&mut self, physics: &mut Physics, h: PlayerHandle, delta: Vec3) {
-        let body = self.get(h).body;
+        let p = self.get_mut(h);
+        p.pre_step += delta;
+        let body = p.body;
         let v = physics.velocity(body).as_vec3() + delta;
         physics.set_velocity(body, v.as_dvec3());
     }
@@ -743,7 +771,7 @@ impl Players {
         }
         // Pass-major, like the PPC's Quantum system group.
         type Pass = fn(&mut Players, usize, &mut VoxelWorld, &mut Physics);
-        const PASSES: [Pass; 12] = [
+        const PASSES: [Pass; 13] = [
             Players::step_input,
             Players::step_probe,
             Players::step_platform,
@@ -754,6 +782,7 @@ impl Players {
             Players::step_swim,
             Players::step_horizontal,
             Players::step_vertical,
+            Players::step_impact,
             Players::step_aggregate,
             Players::step_state,
         ];
@@ -786,7 +815,8 @@ impl Players {
             c.input.move_y /= length;
         }
         c.events = 0;
-        c.landed_speed = 0.0;
+        c.impact_speed = 0.0;
+        c.impact_normal = Vec3::ZERO;
     }
 
     /// Casts the ring of rays (centre plus `RING_RAYS` around it); the closest hit, or any.
@@ -2078,6 +2108,7 @@ impl Players {
         let gravity = -cfg.body.gravity;
         let body_y = Self::vel(physics, p).y;
         let drive_lift = p.drive_lift;
+        p.ceiling_stop = false;
         let c = &mut p.c;
         let v = &mut c.vertical;
         v.step_grace = v.step_grace.saturating_sub(1);
@@ -2090,7 +2121,8 @@ impl Players {
         if was_grounded && !c.ground.grounded && !c.jump.jumped_this_tick {
             v.accumulated_y = v.last_platform_y; // walk-off: keep the platform's vertical motion
         }
-        if c.ground.ceiling_blocked && v.accumulated_y > 0.0 {
+        let ceiling_stop = c.ground.ceiling_blocked && v.accumulated_y > 0.0;
+        if ceiling_stop {
             v.accumulated_y = 0.0;
         }
         if c.ground.grounded {
@@ -2137,9 +2169,53 @@ impl Players {
         }
         if !was_grounded && c.ground.grounded {
             c.events |= events::LANDED;
-            c.landed_speed = (-v.target_y).max(0.0);
         }
         v.target_y = v.accumulated_y;
+        p.ceiling_stop = ceiling_stop;
+    }
+
+    /// Dwell (§6.10): this tick's hit, `max(0, −v · n)` for the body's velocity `v` going into the
+    /// step that met the surface and its normal `n`, the largest over the tick's new contacts,
+    /// its landing (the ground's normal) and a rise the ceiling probe stopped. Flight, swimming and
+    /// climbing are exempt, as they always were from falls.
+    fn step_impact(&mut self, i: usize, _: &mut VoxelWorld, _: &mut Physics) {
+        let p = self.players[i].as_mut().expect("live");
+        let frame = Self::frame(p);
+        let c = &mut p.c;
+        let v = frame.v(p.pre_step);
+        let exempt = c.fly.flying || c.swim.swimming || c.climb.climbing;
+        let mut hit = (0.0f32, Vec3::ZERO);
+        let mut meet = |n: Vec3| {
+            let speed = (-v.dot(n)).max(0.0);
+            if speed > hit.0 {
+                hit = (speed, n);
+            }
+        };
+        if !exempt {
+            // The probes meet the ground and the ceiling before the capsule does: their hits.
+            if c.events & events::LANDED != 0 {
+                meet(c.ground.normal);
+            }
+            if p.ceiling_stop {
+                meet(-Vec3::Y);
+            }
+            for &n in &p.contacts {
+                if p.touched.iter().any(|t| t.dot(n) > SAME_CONTACT_DOT) {
+                    continue; // the same contact as last tick's: hit once
+                }
+                let local = frame.v(n.as_vec3());
+                if local.y > FLOOR_MIN_UP && c.ground.was_grounded {
+                    continue; // the ground followed, stepped or slid on, or the landing just met
+                }
+                meet(local);
+            }
+        }
+        p.touched.clone_from(&p.contacts);
+        if hit.0 > 0.0 {
+            c.events |= events::IMPACTED;
+            c.impact_speed = hit.0;
+            c.impact_normal = hit.1;
+        }
     }
 
     // 10 — PPCAggregateSystem
@@ -2157,6 +2233,7 @@ impl Players {
         };
         c.target_velocity = target;
         Self::set_vel(physics, p, target);
+        p.pre_step = physics.velocity(p.body).as_vec3();
     }
 
     // 11 — PPCStateSystem

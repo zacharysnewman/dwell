@@ -1425,3 +1425,60 @@ fn another_client_sees_your_body_walk_sprint_slide_and_jump_and_what_you_hold() 
     // Your own arms are drawn (first person, nothing zoomed).
     assert!(rig.scene.borrow().arms);
 }
+
+/// Sounds for everything (docs/AUDIO.md §5): the torch in our hand crackles at the listener; one
+/// placed in front of us crackles where it stands, on its own voice; putting the torch away stops
+/// the hand's.
+#[test]
+fn torches_in_the_hand_and_placed_crackle_and_stop() {
+    use dwell_game::sound::{FIRE_VOICE, SoundKind};
+    let mut rig = predicting_rig(0);
+    let torch = rig
+        .game
+        .as_ref()
+        .unwrap()
+        .interaction
+        .palette()
+        .iter()
+        .position(|s| s.block == "dwell:torch")
+        .expect("the torch is in the palette");
+    let floor = target_at(&mut rig, 0.0, -40.0);
+    let sounds = |rig: &mut Rig, frames: usize| {
+        let mut all = Vec::new();
+        for _ in 0..frames {
+            rig.frame();
+            all.extend(rig.game.as_mut().unwrap().take_sounds());
+        }
+        all
+    };
+    sounds(&mut rig, 10);
+    rig.game.as_mut().unwrap().interaction.select(torch as i64);
+    let held = sounds(&mut rig, 10);
+    let hand = held
+        .iter()
+        .find(|e| e.kind == SoundKind::Burn)
+        .unwrap_or_else(|| panic!("the held torch crackles: {held:?}"));
+    assert_eq!(hand.at, None, "at the listener");
+    assert!(hand.voice.is_some_and(|v| v >= FIRE_VOICE));
+    // Placed on the floor ahead: a second fire, where it stands.
+    let now = rig.now + 1000.0;
+    assert!(rig.game.as_mut().unwrap().edit(EditAction::Place, now));
+    let placed = sounds(&mut rig, 60);
+    let at = placed
+        .iter()
+        .filter(|e| e.kind == SoundKind::Burn)
+        .find_map(|e| e.at)
+        .unwrap_or_else(|| panic!("the placed torch crackles: {placed:?}"));
+    let d = ((at[0] - f64::from(floor[0]) - 0.5).powi(2)
+        + (at[2] - f64::from(floor[2]) - 0.5).powi(2))
+    .sqrt();
+    assert!(d < 0.01, "at the torch's cell: {at:?} over {floor:?}");
+    // Back to stone in the hand: the hand's voice stops, the placed one burns on.
+    rig.game.as_mut().unwrap().interaction.select(0);
+    let away = sounds(&mut rig, 10);
+    assert_eq!(
+        away.iter().filter(|e| e.kind == SoundKind::BurnEnd).count(),
+        1,
+        "{away:?}"
+    );
+}

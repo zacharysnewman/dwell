@@ -19,7 +19,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 |---|---|
 | 0 — Repository, tooling & Pages | ✅ Complete |
 | 1 — Server core, protocol, transports, local mode | ✅ Complete |
-| 2 — Physics player controller | ✅ Complete (playtested; follow-up fixes made; 2026-10-20: the step-up reworked, consistent at every approach angle and speed) |
+| 2 — Physics player controller | ✅ Complete (playtested; follow-up fixes made; 2026-10-20: the step-up reworked, consistent at every approach angle and speed; 2026-10-21: fall damage became impact damage by the speed into the surface, walls and ceilings too) |
 | 3 — Terrain generation & streaming | 🚧 In progress — every sub-phase built (3a–3e: 3d block edits and meshing workers, 3e persistence and debug tooling). Outstanding: playtests for the long walk (3b) and walking/jumping/swimming the terrain |
 | 4 — World LOD & whole-world view | 🚧 In progress — 4a, 4b and 4c built, the dev camera replaced by creative flight; playtest follow-ups built: fog off (now a fixed height fog from look data, no sliders), super tall mountains (generator version 4), chunks shown first on slow devices, no popping when turning and matching distant colours, flight/HUD/transport fixes and the distant-water comparison, distant terrain at its true height and tinted distant water, seamless see-through distant water without cracks at section borders, no z-fighting on distant water, height fog with a settings menu and playtested defaults, full-detail chunks beyond the view on request (protocol v8) (its velocity lookahead removed 2026-10-14: it looked bad), a flight speed slider (protocol v9) that is a true minimum near the ground, caves deep underground drawn without requesting buried chunks, an FPS counter, the LOD view held within its cache budget with its pixel error in CSS pixels, one draw call per LOD section, static transforms and GPU-only vertex data, the LOD's pixel error and memory as settings, batched terrain behind `?batch=1` and a `?scale=` resolution switch, a memory readout in F3 and a phone memory budget, clipped ancestor stand-ins for the holes on the forced path to the chunks (chopped mountains, `FIX_SPEC_LOD_SKY_FLIP.md` item 1), flight toggled by a dedicated F key instead of a double-tapped Space or Jump (owner, 2026-10-15; the touch Fly button unchanged), distant colours that match full detail (owner, 2026-10-21: risers coloured by the fine rise they stand for, `shared/look/lodcolour.json`; tops untinted), the dirt z-fighting through the grass from high up (owner, 2026-10-21: reversed scene depth, top skirts off the section plane in the ground's colour, a known bug class with its guards and the `lod-zfight` bench check; the owner's look on a phone outstanding); outstanding: the frame-rate check on a desktop and a mobile device; `package.json` raised to 0.11.13, a patch release of the 0.11 line |
 | 5 — Multiplayer ready (menus, web hosting, master on Cloudflare, lobby list) | 🚧 In progress — every sub-phase built: 5a (main menu, world management, game menu), 5b (master Worker skeleton, signing, CI, deploy workflow; the master runs at `dwell-master.dropkick.workers.dev`), 5c (friend worlds: host from the browser, join by code), 5d (dedicated servers on the master, join by address, On your network), 5e (lobby list, receipts, server browser). Outstanding: the manual phone checks (5a, 5c, 5d) and the TURN key |
@@ -45,7 +45,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 25 — Ray-marched renderer comparison | ✖ Dropped at A7 by the owner (2026-10-20: "Ray marching is massively slower… Mesher / raster is definitely our way forward"; ADR 0044). A0–A4c and A5a were built and measured (at A4c, marching every frame cost 1.5–3× raster's whole GPU frame); the marcher, compare mode and the renderer switch are removed from main, their code kept as the `archive/ray-marcher` tag and branch. Kept: A1's shared frame and GPU timing (water's W2) and `bench --compare` for raster configurations. Follow-up: the face-B "stray dark slabs" bug, deferred in case marching replaced the mesher, now needs fixing in the mesher |
 | 26 — Water and fluid looks | 🚧 In progress — W1a (fluid data, the eye-under-fluid uniform) done; W2 built (it is Phase 25's A1, built once there; the owner approved its image differences, 2026-10-14); W1b (the water shader, the underwater fog stub, the water quality setting) built and checked in Chrome on an M1, outstanding: the owner's look; W3 (refraction, depth absorption, shoreline foam, sparkle, and caustics brought forward from W4, above and under the surface) built and checked in Chrome on an M1, outstanding: the owner's look and an unloaded per-tier cost measurement; W5a (reflections of land by screen-space reflection, and of the clouds, brought forward from W5 at the owner's report) built and checked in Chrome on an M1, outstanding: the owner's look and an unloaded cost measurement; water cost work (WATER_RENDERING.md §8, "Cost"): cheaper hashing, noise and caustic tiles, frame pacing against the stalls, Medium the desktop default — Medium +1.6 ms and High +1.7 ms over Low on the shore view before the reflections, which now add the most (outstanding: W5a's reflection cost against the 2/3 ms targets); next: W4; W6 dropped with the ray marcher (A7, ADR 0044); `package.json` raised to 0.12.1, a patch release of the 0.11 line; **follow-up (owner, 2026-10-20): shore water** (WATER_RENDERING.md §9) built and tested — the sea floods natural top blocks below sea level (generator version 17, a new compatibility line for the owner to raise, 0.19.0), fluid sides clipped to the surface and to shaped neighbours, side faces' backs seen from the air take the outside look; outstanding: the owner's look |
 | 27 — Structure sandbox | 🚧 In progress — S0 (ADR 0031), S1 (the structure format, `gen.mjs`, the Rust loader, the playground converted), S2a (floor block, sandbox world type), S2b (the structures store: save, load through the region paste, export and import) and S3a (region edits, the region tools) done, S2a's e2e check outstanding; `package.json` raised to 0.11.0, the new compatibility line (S2a's registry change; the owner's decision, 2026-10-14); next: S3b (anchor, touch) and the S3 sandbox e2e outstanding; S4a (worldgen placement as interim data, the owner's pines in groves, generator v18, ADR 0043) built and tested natively and in Chrome on the GPU — it changes the terrain a seed generates, so it needs a new compatibility line (0.20.0), which the owner raises; outstanding: CI and the owner's look; S4b (the rules moved into Phase 17's terrain definitions) waits for Phase 17; `package.json` raised to 0.11.11, a patch release of the 0.11 line |
-| 28 — Sound effects | 🚧 In progress — F0–F6 built and tested (procedural Web Audio, no library; sound data and generator, the registry's `sound` field, Rust sound events, synth, variation, mixer, spatial playback, menu and game-action sounds, volume sliders, offline WAV renders); outstanding: the owner listens to the WAV renders and approves them, and answers `AUDIO.md` §9; `package.json` raised to 0.11.12, a patch release of the 0.11 line |
+| 28 — Sound effects | 🚧 In progress — F0–F6 built and tested (procedural Web Audio, no library; sound data and generator, the registry's `sound` field, Rust sound events, synth, variation, mixer, spatial playback, menu and game-action sounds, volume sliders, offline WAV renders); F7 "sounds for everything" built and tested (wall and ceiling impacts, hurt/death/respawn, torch place/break/crackle, wind, night); outstanding: the owner listens to the WAV renders and approves them, answers `AUDIO.md` §9, and F7 is heard in the running game; `package.json` raised to 0.11.12, a patch release of the 0.11 line |
 | 29 — Motion effects (speed FOV and wind) | 🚧 In progress — built and tested (the FOV widening with the camera's speed for the renderer and the LOD alike, the wind streaks, vignette and edge blur in the shared frame's composite, tunables as data, the settings, bench scenarios and screenshots; fix 2026-10-20: the edge blur keeps the clouds seen from above); outstanding: the owner's look in a browser and approval, CI; `package.json` raised to 0.11.7, a patch release of the 0.11 line |
 | 30 — Tree growth | 🚧 In progress — G-ADR (ADR 0033) and the G0 prototype page built and verified in Chromium; outstanding for G0: publishing the page and the owner's review; next: G1; G2 needs Phase 27 (S2a/S3); G3 is a new compatibility line (the owner decides the bump) and needs Phase 20 for felling and the day/night cycle's day length; `package.json` raised to 0.11.14, a patch release of the 0.11 line |
 | 31 — Sky clouds | 🚧 In progress — C0–C5 built and tested: a 2D cloud deck in the composite's sky (ADR 0034, `CLOUDS.md`), tunables as data (`shared/look/clouds.json`, generator and CI stale check), the Clouds setting (Off / Low / High), the drift on the server's tick, bench scenarios and screenshots, GPU cost measured (about +0.9 ms composite on High at 720p, Apple GPU); the owner approved the look (2026-10-15) and asked for clouds from above (C5, built: the deck over the terrain by the stored depth, sunlit tops, a fogged crossing); outstanding: CI, a phone's frame time; future, not started: weather-driven coverage (C6), cloud shadows on the terrain (C7); `package.json` raised to 0.13.1, a patch release of the 0.11 line |
@@ -238,6 +238,12 @@ ragdoll and animation from `State` (Phase 21, see below). Playtested by a human 
 #9): two findings, fixed: forward/back looked faster than
 strafing, which was the camera's wide horizontal field of view rather than the sim (now capped
 at 100°, `client/src/render/fov.ts`), and the touch Crouch button now holds instead of toggling.
+Follow-up (owner, 2026-10-21, built): fall damage became **impact damage** — the body's
+pre-contact velocity into the surface's normal, `max(0, −v · n)`, on floors, ½ m ramps (their
+normal), walls and ceilings, once per contact, flight exempt; the config fields renamed
+`impact_damage_min_speed` / `impact_damage_per_speed` (PLAYER_CONTROLLER.md §6.10,
+`tests/impact.rs`). Not a protocol change: the hit is server-side, sent as a `Damage` event with
+cause `Fall`.
 Later finding: jumping onto a block while holding forward gave a
 burst of speed as the player came down on the edge — the step-up's forward nudge was added on top
 of the tick's movement (also on every slab step, and on slopes every tick); it is now taken out of
@@ -335,7 +341,8 @@ Deliverables
     Tested with a debug launch-pad block.
   - [x] Player-vs-player collision (block/push; standing on heads not carried); remote players as
     interpolated kinematic capsules. (Animation from `State` moved to Phase 21.)
-  - [x] Health, fall damage from `Landed` impact speed, death → respawn. (The cosmetic ragdoll moved
+  - [x] Health, fall damage from `Landed` impact speed (since 2026-10-21 impact damage from
+    `IMPACTED`, PLAYER_CONTROLLER.md §6.10), death → respawn. (The cosmetic ragdoll moved
     to Phase 21; dead players are drawn lying down.)
 - [x] **2i — Divergence measurement.** Jolt built with `JPH_CROSS_PLATFORM_DETERMINISTIC`, no FMA
   contraction; CI runs the scenario suite natively and under WASM (Node) and reports max per-tick
@@ -3537,7 +3544,9 @@ for other players ([ADR 0032](./adr/0032-audio.md), [`AUDIO.md`](./AUDIO.md)).
 `npm run sfx:render`) and the sounds checked playing in the built game and the main menu in Chromium
 (a local world: footsteps, jump, landing, place, break, refusal, hotbar, game menu and its tabs; the
 menu's hover, click and error). Outstanding: the owner's listening review of the WAV renders and the
-open questions (`AUDIO.md` §9). Needs Phase 24 only. Defaults chosen without the owner's
+open questions (`AUDIO.md` §9). F7 (sounds for everything, 2026-10-21) built and tested; not yet
+heard in the running game in a browser (unit, controller and offline-render checks only). Needs
+Phase 24 only. Defaults chosen without the owner's
 answers (the owner gave the brief directly); open questions in `AUDIO.md` §9.
 
 Deliverables
@@ -3558,6 +3567,15 @@ Deliverables
 - [x] **F6** — Offline renders (`npm run sfx:render`): every sound rendered in Chromium, checked
   (non-silent, peak < 1.0, sensible length) and written to WAV, with footstep sequences and
   break/place variations.
+- [x] **F7** — Sounds for everything (owner, 2026-10-21: "hard hits even sliding into a wall is
+  fair game. Sounds for everything!"): impacts on walls and ceilings read from the sampled motion
+  (`ImpactSounds`: ours from the prediction, others' from their snapshots, by the impact speed the
+  damage uses; audible from 2 m/s); hurt, death and respawn from the server's player events, any
+  player's; the torch's own sound set (place, break) and its crackle, a loop per burning light
+  source near the listener (the nearest 4 within 10 m, held torches too); the wind (height, speed)
+  and the night (stars); the `crackle` noise colour, loop layers' `pan`, `"fallback": false`, a
+  loop stop without a one-shot, the `ambient` tunables; the shell restarts a loop an update finds
+  silent. No protocol change.
 
 Exit criteria
 - [x] A new sound set and block mapping work by data alone (Vitest); bad entries fail naming the
@@ -3567,7 +3585,13 @@ Exit criteria
 - [x] Every controls-table action has a sound mapping (Vitest); a new button gets the UI click
   without wiring (Vitest).
 - [x] Every render is non-silent, peaks below 1.0 and has a sensible length.
-- [ ] The owner listens to the WAV renders and approves them.
+- [x] F7: a wall hit at 25 m/s gives a loud impact and the hurt, at 8 m/s a soft thud and no hurt
+  (Rust, synthetic and through the real controller on both faces); a torch loop is heard within its
+  radius and capped at the nearest 4; wind and night by their inputs (Rust); a set without `burn`
+  plays none and a loop restarts (Vitest).
+- [ ] The owner listens to the WAV renders and approves them (F7's new ones too: `event_impact`,
+  `event_hurt`, `event_death`, `event_respawn`, `set_torch_place`, `set_torch_break`,
+  `burn_torch_faint_to_full`, `loop_wind_faint_to_full`, `loop_night_faint_to_full`).
 
 Deviations
 - The levels of the sounds were set by measuring the renders (A-weighted loudness per category:
@@ -3575,6 +3599,12 @@ Deviations
   listening review may retune them in the data.
 - Chat and screenshots do not exist yet, so they have no sounds; the coverage test asks for them
   when they join the controls table.
+- F7 reads impacts from the sampled motion rather than carrying the controller's `IMPACTED`
+  event: no protocol change, and another player's hits sound from the snapshots everyone already
+  gets. The hurt is not predicted: it waits for the server's damage event (a round trip after the
+  thud for our own), so it never sounds for a hit the server did not count.
+- F7 skipped (listed in `AUDIO.md` §8): crossing between the faces, knockback, players joining or
+  leaving, and ambience beyond wind and night (water, birds, rain).
 - The limiter is a waveshaper soft clipper, not a `DynamicsCompressorNode`: Chrome's compressor adds
   its own make-up gain, which pushed sequences past full scale in the renders.
 ## Phase 33 — Transparent Blocks: Render Modes, Cross Geometry, Tall Grass

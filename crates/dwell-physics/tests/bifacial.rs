@@ -84,12 +84,14 @@ fn a_face_b_player_falls_toward_the_midplane_and_lands_on_a_floor_above() {
     }
     assert!(w.c(h).ground.grounded);
     assert_eq!(w.count(h, ev::LANDED), 1);
-    // Free fall of 20 m at 20 m/s²: ~28 m/s on landing, as on face A.
+    // Free fall of 20 m at 20 m/s²: ~28 m/s on landing, as on face A, into the floor's normal.
+    assert_eq!(w.count(h, ev::IMPACTED), 1);
     assert!(
-        approx(w.c(h).landed_speed, (2.0f32 * 20.0 * 20.0).sqrt(), 0.05),
+        approx(w.c(h).impact_speed, (2.0f32 * 20.0 * 20.0).sqrt(), 0.05),
         "{}",
-        w.c(h).landed_speed
+        w.c(h).impact_speed
     );
+    assert!(approx(w.c(h).impact_normal.y, 1.0, 1e-4), "face-local up");
     assert!(close(w.players.feet(&w.physics, h), -3000.0, 1e-4));
 }
 
