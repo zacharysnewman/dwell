@@ -131,6 +131,8 @@ enum Phase {
 struct Entry {
     item: Item,
     phase: Phase,
+    /// The last update whose selection held it.
+    seen: u64,
 }
 
 #[derive(Clone, Debug)]
@@ -161,6 +163,7 @@ pub struct SwapFade {
     entries: HashMap<Key, Entry>,
     swaps: HashMap<u32, Swap>,
     next: u32,
+    frame: u64,
     stats: FadeStats,
 }
 
@@ -251,18 +254,21 @@ impl SwapFade {
             self.finish(g);
         }
         // What changed since the last frame's selection (the items drawn steady or fading in).
-        let mut wanted: HashSet<Key> = HashSet::default();
+        // (One lookup per selected item: this runs for every drawn leaf, every frame.)
+        self.frame += 1;
+        let frame = self.frame;
         let mut changes: Vec<(Item, bool)> = Vec::new(); // (item, incoming)
         for it in selected {
-            let k = it.key();
-            wanted.insert(k);
-            match self.entries.get_mut(&k) {
-                Some(e) if !matches!(e.phase, Phase::Out(_)) => e.item = *it,
+            match self.entries.get_mut(&it.key()) {
+                Some(e) if !matches!(e.phase, Phase::Out(_)) => {
+                    e.item = *it;
+                    e.seen = frame;
+                }
                 _ => changes.push((*it, true)),
             }
         }
-        for (k, e) in &self.entries {
-            if !matches!(e.phase, Phase::Out(_)) && !wanted.contains(k) {
+        for e in self.entries.values() {
+            if !matches!(e.phase, Phase::Out(_)) && e.seen != frame {
                 changes.push((e.item, false));
             }
         }
@@ -277,6 +283,7 @@ impl SwapFade {
                         Entry {
                             item: it,
                             phase: Phase::Steady,
+                            seen: 0,
                         },
                     );
                 } else {
@@ -376,6 +383,7 @@ impl SwapFade {
                         Entry {
                             item: it,
                             phase: Phase::Steady,
+                            seen: 0,
                         },
                     );
                 }
@@ -397,6 +405,7 @@ impl SwapFade {
                     Entry {
                         item: it,
                         phase: Phase::Out(g),
+                        seen: 0,
                     },
                 );
             }
@@ -408,6 +417,7 @@ impl SwapFade {
                     Entry {
                         item: it,
                         phase: Phase::In(g),
+                        seen: 0,
                     },
                 );
             }
@@ -460,6 +470,7 @@ impl SwapFade {
                         Entry {
                             item: it,
                             phase: Phase::Out(g0),
+                            seen: 0,
                         },
                     );
                 }
@@ -474,6 +485,7 @@ impl SwapFade {
                 Entry {
                     item: it,
                     phase: Phase::In(g0),
+                    seen: 0,
                 },
             );
         }

@@ -181,6 +181,7 @@ What is recorded now:
 | `game.draw` | the game's draw step: `mesh_dirty` and `lod` inside it |
 | `mesh_dirty` | starting chunk mesh jobs (copying padded chunks), within its 4 ms budget |
 | `lod` | the whole-world view's update (`LodSystem`): selection, job requests, stand-ins |
+| `lod.fading`, `lod.retiring` (counts) | LOD swaps cross-fading this frame and the outgoing draws they add (`dwell-lod` `fade.rs`, ARCHITECTURE.md §6.6 Swaps) |
 | `draw.acquire`, `draw.render`, `draw.present` | the surface texture, encoding and submitting the frame, presenting |
 | `draw.skipped` (counter) | frames not drawn because two were still on the GPU (`render/pacing.rs`) |
 | `gpu.water.tiles` (samples) | the water's noise tile (once) and caustic layers (each Medium/High frame with water; `render/water_tiles.rs`) |

@@ -78,6 +78,7 @@ impl FadePattern {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::outline::edge_at;
 
     #[test]
     fn the_bayer_patterns_are_the_ordered_dither_and_use_every_step_once_per_tile() {
@@ -110,9 +111,57 @@ mod tests {
         }
     }
 
+    /// The ink over a swap mid-fade (the outline's CPU twin, `edge_at`): two levels of the same
+    /// slope a little apart in depth (a coarse section and its finer children), each pixel showing
+    /// one of them by the pattern. With the outgoing level's pixels flagged as taking no ink (the
+    /// shaders' `fade_inked`), the strongest line anywhere; without, the strongest a pixel gets.
+    fn ink_over_a_fade(pattern: FadePattern, t: f32, flag_outgoing: bool) -> f64 {
+        let m = crate::outline::OUTLINE.mode("creases").expect("creases");
+        let (w, h) = (24u32, 24u32);
+        // Inverse view depths of two planes: the incoming level and, 2% nearer, the outgoing.
+        let fine = |x: u32, y: u32| 0.02 + 0.0004 * x as f64 + 0.0002 * y as f64;
+        let coarse = |x: u32, y: u32| fine(x, y) * 1.02;
+        let incoming = |x: u32, y: u32| pattern.threshold(x, y) < t;
+        let depth = |x: u32, y: u32| {
+            1.0 / if incoming(x, y) {
+                fine(x, y)
+            } else {
+                coarse(x, y)
+            }
+        };
+        let mut strongest: f64 = 0.0;
+        for y in 1..h - 1 {
+            for x in 1..w - 1 {
+                let at = |k: u32| (x + k % 3 - 1, y + k / 3 - 1);
+                let depths: [f64; 9] = std::array::from_fn(|k| {
+                    let (a, b) = at(k as u32);
+                    depth(a, b)
+                });
+                let bare: [bool; 9] = std::array::from_fn(|k| {
+                    let (a, b) = at(k as u32);
+                    flag_outgoing && !incoming(a, b)
+                });
+                strongest = strongest.max(edge_at(depths, bare, 1.0, m).0);
+            }
+        }
+        strongest
+    }
+
+    #[test]
+    fn the_ink_draws_no_lines_along_a_fades_dither() {
+        for pattern in [FadePattern::Bayer4, FadePattern::Bayer8, FadePattern::Noise] {
+            for t in [0.1, 0.3, 0.5, 0.7, 0.9] {
+                // Unflagged, the dither's seams between the levels are creases: the sparkle.
+                assert!(ink_over_a_fade(pattern, t, false) > 0.5, "{pattern:?} {t}");
+                // Flagged, the edges come from the incoming level only: no line.
+                assert_eq!(ink_over_a_fade(pattern, t, true), 0.0, "{pattern:?} {t}");
+            }
+        }
+    }
+
     #[test]
     fn the_checked_in_tunables_are_a_fade_of_under_a_second_and_some_hysteresis() {
-        assert!(LOD_BLEND.fade_s > 0.0 && LOD_BLEND.fade_s < 1.0);
-        assert!(LOD_BLEND.coarsen_ratio > 1.0);
+        const { assert!(LOD_BLEND.fade_s > 0.0 && LOD_BLEND.fade_s < 1.0) };
+        const { assert!(LOD_BLEND.coarsen_ratio > 1.0) };
     }
 }

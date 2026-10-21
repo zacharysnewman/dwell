@@ -24,6 +24,7 @@ pub mod water_tiles;
 use dwell_world::hash::HashMap;
 
 use dwell_game::brush_tool::{BrushOutline, GhostFace, GhostKind};
+use dwell_lod::fade::Fade;
 use dwell_look::clouds::{CLOUDS, CloudQuality, cloud_uniforms};
 use dwell_look::daynight::{DAY_SKY_FLOATS, DayState};
 use dwell_look::fog::{DEFAULT_FOG, FogSettings, fog_sigma};
@@ -210,6 +211,8 @@ pub struct StandIn {
     pub id: i64,
     pub lo: V3,
     pub hi: V3,
+    /// Its share of the pixels while a swap cross-fades it (dwell-lod fade.rs).
+    pub fade: Fade,
 }
 
 /// A mesh in the arena's pages (arena.rs): its vertices with their attributes interleaved (one
@@ -491,7 +494,7 @@ pub struct RasterTerrain {
     arena: ArenaRef,
     chunks: HashMap<ChunkCoord, Chunk>,
     sections: HashMap<i64, Section>,
-    shown: Vec<(i64, u8)>,
+    shown: Vec<(i64, u8, Fade)>,
     stand_ins: Vec<StandIn>,
 }
 
@@ -586,7 +589,7 @@ impl TerrainRenderer for RasterTerrain {
             },
         );
     }
-    fn show_sections(&mut self, visible: &[(i64, u8)]) {
+    fn show_sections(&mut self, visible: &[(i64, u8, Fade)]) {
         self.shown = visible.to_vec();
     }
     fn show_stand_ins(&mut self, stand_ins: &[StandIn]) {
@@ -638,6 +641,8 @@ struct DrawItem {
     no_depth: bool,
     offset: [f32; 4],
     clip: Option<([f32; 3], [f32; 3])>,
+    /// The LOD cross-fade (dwell-lod `Fade::shader_value`: 0 full, 1 + t in, −(1 + t) out).
+    fade: f32,
     tint: [f32; 4],
     /// Turn about +y (cos, sin of the yaw): players face their heading; fluids carry their origin's
     /// x and z wrapped for the normal detail in zw (`water::wrapped_origin`).
@@ -1403,7 +1408,7 @@ impl Renderer {
         self.terrain.set_section(id, origin, cell_size, meshes);
     }
     /// The sections to draw from now on, each with the sides (bit per face) whose skirt shows.
-    pub fn show_lod_sections(&mut self, visible: &[(i64, u8)]) {
+    pub fn show_lod_sections(&mut self, visible: &[(i64, u8, Fade)]) {
         self.terrain.show_sections(visible);
     }
     pub fn show_lod_stand_ins(&mut self, stand_ins: &[StandIn]) {
@@ -1854,7 +1859,7 @@ impl Renderer {
     fn collect(
         &self,
         passes: [(f64, f64); 2],
-        chunk_visible: &dyn Fn(ChunkCoord) -> bool,
+        chunk_fade: &dyn Fn(ChunkCoord) -> Option<Fade>,
     ) -> [Vec<DrawItem>; 3] {
         let mut out = Vec::new();
         let plain = [1.0, 1.0, 1.0, 1.0];
@@ -1867,7 +1872,8 @@ impl Renderer {
                 | u8::from(view.holds_box(origin, size, passes[1].0, passes[1].1)) << 1
         };
         for (&coord, c) in &self.terrain.chunks {
-            let passes = if chunk_visible(coord) {
+            let fade = chunk_fade(coord).filter(|f| !f.is_hidden());
+            let passes = if fade.is_some() {
                 reaches(c.origin, CHUNK_EXTENT_M)
             } else {
                 0
@@ -1875,6 +1881,7 @@ impl Renderer {
             if passes == 0 {
                 continue;
             }
+            let fade = fade.map_or(0.0, Fade::shader_value);
             let r = self.rel(c.origin);
             let offset = [r[0], r[1], r[2], 1.0];
             if c.opaque.is_some() {
@@ -1884,6 +1891,7 @@ impl Renderer {
                     no_depth: false,
                     offset,
                     clip: None,
+                    fade,
                     tint: plain,
                     rotation: NO_ROTATION,
                     page: 0,
@@ -1899,6 +1907,7 @@ impl Renderer {
                     no_depth: false,
                     offset,
                     clip: None,
+                    fade,
                     tint: plain,
                     rotation: NO_ROTATION,
                     page: 0,
@@ -1914,6 +1923,7 @@ impl Renderer {
                     no_depth: false,
                     offset,
                     clip: None,
+                    fade,
                     tint: plain,
                     rotation: fluid_rotation(c.origin),
                     page: 0,
@@ -1931,10 +1941,14 @@ impl Renderer {
             };
             [t[0], t[1], t[2], alpha]
         };
-        for &(id, mask) in &self.terrain.shown {
+        for &(id, mask, fade) in &self.terrain.shown {
             let Some(s) = self.terrain.sections.get(&id) else {
                 continue;
             };
+            if fade.is_hidden() {
+                continue;
+            }
+            let fade = fade.shader_value();
             let side = s.cell * 32.0;
             let passes = reaches(s.origin, [side, side * CELL_H, side]);
             if passes == 0 {
@@ -1949,6 +1963,7 @@ impl Renderer {
                     no_depth: false,
                     offset,
                     clip: None,
+                    fade,
                     tint: level_tint(s, 1.0),
                     rotation: NO_ROTATION,
                     page: 0,
@@ -1964,6 +1979,7 @@ impl Renderer {
                     no_depth: false,
                     offset,
                     clip: None,
+                    fade,
                     tint: level_tint(s, 1.0),
                     rotation: fluid_rotation(s.origin),
                     page: 0,
@@ -1974,7 +1990,13 @@ impl Renderer {
             }
         }
         // Stand-ins: the source section's surface, clipped to the hole's box (its own skirts off).
-        for st in self.terrain.stand_ins.iter().take(MAX_STAND_INS) {
+        for st in self
+            .terrain
+            .stand_ins
+            .iter()
+            .filter(|s| !s.fade.is_hidden())
+            .take(MAX_STAND_INS)
+        {
             let passes = 3;
             let Some(s) = self
                 .terrain
@@ -1992,6 +2014,7 @@ impl Renderer {
                 no_depth: false,
                 offset: [r[0], r[1], r[2], s.cell as f32],
                 clip,
+                fade: st.fade.shader_value(),
                 tint: level_tint(s, 1.0),
                 rotation: NO_ROTATION,
                 page: 0,
@@ -2010,6 +2033,7 @@ impl Renderer {
                 no_depth: false,
                 offset: [r[0], r[1], r[2], 1.0],
                 clip: None,
+                fade: 0.0,
                 tint: [c[0], c[1], c[2], 0.8],
                 rotation: NO_ROTATION,
                 page: 0,
@@ -2032,6 +2056,7 @@ impl Renderer {
                 no_depth: true,
                 offset: [r[0], r[1], r[2], 1.0],
                 clip: None,
+                fade: 0.0,
                 tint: [1.0, 1.0, 1.0, 0.9],
                 rotation: NO_ROTATION,
                 page: 0,
@@ -2058,6 +2083,7 @@ impl Renderer {
                         no_depth: !ghost,
                         offset: [r[0], r[1], r[2], 1.0],
                         clip: None,
+                        fade: 0.0,
                         tint: if ghost {
                             [1.0, 1.0, 1.0, GHOST_ALPHA]
                         } else {
@@ -2082,6 +2108,7 @@ impl Renderer {
                 no_depth: true,
                 offset: [0.0, 0.0, 0.0, 1.0],
                 clip: None,
+                fade: 0.0,
                 tint: [1.0, 1.0, 1.0, 1.0],
                 rotation: NO_ROTATION,
                 page: 0,
@@ -2146,7 +2173,7 @@ impl Renderer {
     pub fn render(
         &mut self,
         target: &wgpu::TextureView,
-        chunk_visible: &dyn Fn(ChunkCoord) -> bool,
+        chunk_fade: &dyn Fn(ChunkCoord) -> Option<Fade>,
     ) {
         self.ensure_targets();
         // GPU pass times of earlier frames the GPU has finished; then whether this one is timed.
@@ -2163,7 +2190,7 @@ impl Renderer {
         let altitude = self.face.y(self.eye[1]) - TERRAIN_TOP_M;
         let far_near = (NEAR_SPLIT * 0.95).max(altitude * 0.8);
         let passes = [(far_near, FAR_PLANE), (NEAR_PLANE, NEAR_SPLIT)];
-        let draws = self.collect(passes, chunk_visible);
+        let draws = self.collect(passes, chunk_fade);
         for (i, (near, far)) in passes.iter().enumerate() {
             let u = self.frame_uniforms(&basis, *near, *far);
             self.queue
@@ -2221,8 +2248,9 @@ impl Renderer {
             data[at..at + 4].copy_from_slice(&d.offset);
             if let Some((lo, hi)) = d.clip {
                 data[at + 4..at + 8].copy_from_slice(&[lo[0], lo[1], lo[2], 1.0]);
-                data[at + 8..at + 12].copy_from_slice(&[hi[0], hi[1], hi[2], 0.0]);
+                data[at + 8..at + 11].copy_from_slice(&hi);
             }
+            data[at + 11] = d.fade;
             data[at + 12..at + 16].copy_from_slice(&d.tint);
             data[at + 16..at + 20].copy_from_slice(&d.rotation);
         }
@@ -2842,7 +2870,7 @@ impl TerrainRenderer for Renderer {
     ) {
         self.terrain.set_section(id, origin, cell_size, payload);
     }
-    fn show_sections(&mut self, visible: &[(i64, u8)]) {
+    fn show_sections(&mut self, visible: &[(i64, u8, Fade)]) {
         self.terrain.show_sections(visible);
     }
     fn show_stand_ins(&mut self, stand_ins: &[StandIn]) {
@@ -2942,6 +2970,7 @@ mod tests {
             no_depth: false,
             offset: [dist, 0.0, 0.0, 1.0],
             clip: None,
+            fade: 0.0,
             tint: [1.0; 4],
             rotation: NO_ROTATION,
             mesh: DrawMesh::Outline,
@@ -3411,7 +3440,7 @@ mod tests {
             skirts: Default::default(),
         };
         r.set_lod_section(7, [0.0; 3], 1.0, Some(&section));
-        r.show_lod_sections(&[(7, 0)]);
+        r.show_lod_sections(&[(7, 0, Fade::Full)]);
         r.set_block_outline(Some([16.0, 0.0, 16.0]), ([0.0; 3], [1.0; 3]));
         r.set_debug_lines(Some(&[Line {
             from: [16.0, 1.0, 16.0],
@@ -3477,7 +3506,7 @@ mod tests {
             for x in 0..=frame {
                 r.set_terrain_chunk(ChunkCoord { x, y: 0, z: 0 }, Some(&meshes));
             }
-            r.render(&view, &|_| true);
+            r.render(&view, &|_| Some(Fade::Full));
             r.device
                 .poll(wgpu::PollType::wait_indefinitely())
                 .expect("polled");
@@ -3512,7 +3541,7 @@ mod tests {
         let view = target.create_view(&Default::default());
         r.resize(8, 8, 1.0);
         for frame in 0..4 * timing::RING {
-            r.render(&view, &|_| true);
+            r.render(&view, &|_| Some(Fade::Full));
             r.device
                 .poll(wgpu::PollType::wait_indefinitely())
                 .expect("polled");
