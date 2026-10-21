@@ -13,11 +13,11 @@ pub mod display;
 pub mod face_shading;
 pub mod frame;
 pub mod geometry;
+pub mod lod_shadows;
 pub mod pacing;
 pub mod reflection;
 pub mod seam;
 pub mod shaders;
-pub mod lod_shadows;
 pub mod shadows;
 pub mod timing;
 pub mod water;
@@ -30,10 +30,10 @@ use dwell_lod::fade::Fade;
 use dwell_look::clouds::{CLOUDS, CloudQuality, cloud_uniforms};
 use dwell_look::daynight::{DAY_SKY_FLOATS, DayState};
 use dwell_look::fog::{FOG, fog_sigma};
+use dwell_look::lod_shadows::LOD_SHADOWS;
 use dwell_look::motion::{MOTION, vanishing_point};
 use dwell_look::outline::{OUTLINE, OutlineMode, outline_uniforms};
 use dwell_look::reflections::{REFLECTIONS, reflection_uniforms};
-use dwell_look::lod_shadows::LOD_SHADOWS;
 use dwell_look::shadows::{SHADOWS, ShadowQuality};
 use dwell_look::{DEFAULT_EXPOSURE, hex, sanitize_exposure, srgb_to_linear};
 use dwell_mesh::{ChunkMeshes, FlatMesh, MeshArrays, SectionMeshes};
@@ -1678,7 +1678,9 @@ impl Renderer {
             self.shadow_prev = None;
         }
         if self.lod_maps.size != lod_size {
-            self.lod_maps = self.frame_bindings.lod_maps(&self.device, lod_tier.as_ref());
+            self.lod_maps = self
+                .frame_bindings
+                .lod_maps(&self.device, lod_tier.as_ref());
             // New heightmaps hold nothing: none is shown until its first fill is whole.
             self.lod_schedule = lod_shadows::Schedule::new(lod_tier.map_or(1, |t| t.levels));
         }
@@ -2488,7 +2490,8 @@ impl Renderer {
             if let Some(level) = self.lod_schedule.wants(refresh, self.eye, self.face, now_s) {
                 let place = lod_shadows::place(t, level, self.eye, self.face);
                 let casters = self.collect_heights(&place, level, chunk_fade);
-                self.lod_schedule.start(level, place, casters, self.eye, now_s);
+                self.lod_schedule
+                    .start(level, place, casters, self.eye, now_s);
             }
             lod_batch = self.lod_schedule.batch(t.fill_ktris, t.fill_draws);
         }
@@ -2501,8 +2504,7 @@ impl Renderer {
             for (k, col) in m.iter().enumerate() {
                 u[k * 4..k * 4 + 4].copy_from_slice(col);
             }
-            self.queue
-                .write_buffer(&self.lod_maps.frame, 0, floats(&u));
+            self.queue.write_buffer(&self.lod_maps.frame, 0, floats(&u));
         }
         // The characters: other players' bodies in the scene passes, your arms after them with
         // their own projection (characters.rs).
@@ -2566,7 +2568,13 @@ impl Renderer {
                 Self::draw_buffer(&self.device, &self.draw_layout, self.draw_capacity);
         }
         let mut data = vec![0.0f32; (total * DRAW_STRIDE / 4) as usize];
-        for (k, d) in draws.iter().flatten().chain(&casters).chain(&heights).enumerate() {
+        for (k, d) in draws
+            .iter()
+            .flatten()
+            .chain(&casters)
+            .chain(&heights)
+            .enumerate()
+        {
             let at = k * (DRAW_STRIDE / 4) as usize;
             data[at..at + 4].copy_from_slice(&d.offset);
             if let Some((lo, hi)) = d.clip {
@@ -2628,7 +2636,10 @@ impl Renderer {
         // The distant shadows' heightmap slice, its mips when the fill is whole; then the maps
         // shown (the one just made among them) in the uniform block.
         if let Some(b) = &lod_batch {
-            let query = self.timer.as_mut().and_then(|t| t.pass(timing::LOD_SHADOWS));
+            let query = self
+                .timer
+                .as_mut()
+                .and_then(|t| t.pass(timing::LOD_SHADOWS));
             let before = triangles;
             self.record_heights(
                 &mut encoder,
@@ -3114,7 +3125,11 @@ impl Renderer {
             };
             let Some(m) = &s.opaque else { continue };
             let side = s.cell * 32.0;
-            let hi = [s.origin[0] + side, s.origin[1] + side * CELL_H, s.origin[2] + side];
+            let hi = [
+                s.origin[0] + side,
+                s.origin[1] + side * CELL_H,
+                s.origin[2] + side,
+            ];
             if over(s.origin, hi) {
                 out.push((CasterRef::Section(id), tris(m)));
             }
@@ -3126,7 +3141,12 @@ impl Renderer {
             .filter(|s| !s.fade.is_hidden())
             .take(MAX_STAND_INS)
         {
-            let Some(m) = self.terrain.sections.get(&st.id).and_then(|s| s.opaque.as_ref()) else {
+            let Some(m) = self
+                .terrain
+                .sections
+                .get(&st.id)
+                .and_then(|s| s.opaque.as_ref())
+            else {
                 continue;
             };
             if over(st.lo, st.hi) {
@@ -3162,7 +3182,11 @@ impl Renderer {
         for c in &b.casters {
             match c {
                 CasterRef::Chunk(coord) => {
-                    let Some(ch) = self.terrain.chunks.get(coord).filter(|c| c.opaque.is_some())
+                    let Some(ch) = self
+                        .terrain
+                        .chunks
+                        .get(coord)
+                        .filter(|c| c.opaque.is_some())
                     else {
                         continue;
                     };
@@ -3181,7 +3205,12 @@ impl Renderer {
                         _ => None,
                     };
                     let mesh = DrawMesh::Section(*id, false, 0);
-                    out.push(item(Kind::Flat, [r[0], r[1], r[2], s.cell as f32], clip, mesh));
+                    out.push(item(
+                        Kind::Flat,
+                        [r[0], r[1], r[2], s.cell as f32],
+                        clip,
+                        mesh,
+                    ));
                 }
             }
         }

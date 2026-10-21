@@ -291,7 +291,11 @@ pub fn visibility(
     if !maps.iter().any(|m| m.holds(p[0], p[2])) {
         return 1.0;
     }
-    shade(t, horizon(t, tier, maps, f, [p[0], p[2]], light), l[1] / horizontal)
+    shade(
+        t,
+        horizon(t, tier, maps, f, [p[0], p[2]], light),
+        l[1] / horizontal,
+    )
 }
 
 /// The shadows fading out toward the outermost map's edge: 1 inside, 0 at the edge, by the
@@ -352,9 +356,13 @@ mod tests {
         (0..tier.levels)
             .map(|l| {
                 let texel = tier.texel(l);
-                HeightMap::from_fn([cx, 0.0], texel, tier.resolution, max_mips(tier.resolution), |x, z| {
-                    ridge(x, z).expect("everywhere")
-                })
+                HeightMap::from_fn(
+                    [cx, 0.0],
+                    texel,
+                    tier.resolution,
+                    max_mips(tier.resolution),
+                    |x, z| ridge(x, z).expect("everywhere"),
+                )
             })
             .collect()
     }
@@ -372,13 +380,21 @@ mod tests {
                 visibility(&T, &tier, &ms, f, p, light(f, elevation))
             };
             // 600 m out from the ridge: the ridge's 200 m stand 15–20° over the valley's horizon.
-            assert!(at(600.0, 8.0) < 0.01, "low sun behind the ridge: {}", at(600.0, 8.0));
+            assert!(
+                at(600.0, 8.0) < 0.01,
+                "low sun behind the ridge: {}",
+                at(600.0, 8.0)
+            );
             assert!(at(600.0, 12.0) < 0.01);
             // A high sun clears it.
             assert!(at(600.0, 45.0) > 0.99, "high sun: {}", at(600.0, 45.0));
             assert!(at(600.0, 80.0) > 0.99);
             // Far out on the plain the low sun clears the ridge: the shadow has an end.
-            assert!(at(4500.0, 8.0) > 0.99, "past the shadow: {}", at(4500.0, 8.0));
+            assert!(
+                at(4500.0, 8.0) > 0.99,
+                "past the shadow: {}",
+                at(4500.0, 8.0)
+            );
             // The sun on the valley's side: no shadow from the ridge behind it.
             let (p, _) = valley_point(f, 600.0);
             let front = f.vector([1.0, 8f64.to_radians().tan(), 0.0]);
@@ -411,8 +427,16 @@ mod tests {
             let (e20, e10) = (end(20.0), end(10.0));
             // A ridge 200 m over the plain casts about 200 / tan(elevation) past its crest's edge.
             let expect = |e: f64| 40.0 + 200.0 / f64::to_radians(e).tan();
-            assert!((e20 - expect(20.0)).abs() < 60.0, "{e20} vs {}", expect(20.0));
-            assert!((e10 - expect(10.0)).abs() < 120.0, "{e10} vs {}", expect(10.0));
+            assert!(
+                (e20 - expect(20.0)).abs() < 60.0,
+                "{e20} vs {}",
+                expect(20.0)
+            );
+            assert!(
+                (e10 - expect(10.0)).abs() < 120.0,
+                "{e10} vs {}",
+                expect(10.0)
+            );
             assert!(e10 > e20);
             // Soft: some point near the end is partly lit.
             let partial = (0..40).any(|i| {
@@ -475,7 +499,8 @@ mod tests {
                         let mut prev = at(start - 1.0);
                         let steps = 2000;
                         for i in 0..=steps {
-                            let d = start - 1.0 + (end - start + 2.0) * f64::from(i) / f64::from(steps);
+                            let d =
+                                start - 1.0 + (end - start + 2.0) * f64::from(i) / f64::from(steps);
                             let v = at(d);
                             assert!((v - prev).abs() < 2e-3, "step at {d}: {prev} → {v}");
                             prev = v;

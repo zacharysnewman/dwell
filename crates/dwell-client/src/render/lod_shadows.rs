@@ -22,7 +22,9 @@
 //! and the uniform blocks are plain code, tested here; the GPU side is [`LodShadowMaps`]. None of
 //! it reads anything back or blocks: the main thread's share is the fill's draws (a budget a frame).
 
-use dwell_look::lod_shadows::{LodShadowTier, LodShadowTunables, MAX_LEVELS, NO_HORIZON, RefreshTunables, max_mips};
+use dwell_look::lod_shadows::{
+    LodShadowTier, LodShadowTunables, MAX_LEVELS, NO_HORIZON, RefreshTunables, max_mips,
+};
 use dwell_look::shadows::{Caster, ShadowQuality};
 use dwell_world::{ChunkCoord, FaceFrame};
 
@@ -91,7 +93,12 @@ pub fn height_matrix(t: &LodShadowTunables, place: &Place, eye: V3) -> Mat4 {
     let rows: [[f64; 4]; 3] = [
         [1.0 / place.half, 0.0, 0.0, -c[0] / place.half],
         [0.0, 0.0, up[2] / place.half, -up[2] * c[1] / place.half],
-        [0.0, -rise / range, 0.0, (t.heights.top_m - f.y(eye[1])) / range],
+        [
+            0.0,
+            -rise / range,
+            0.0,
+            (t.heights.top_m - f.y(eye[1])) / range,
+        ],
     ];
     let mut m = [[0.0f32; 4]; 4];
     for (col, out) in m.iter_mut().enumerate() {
@@ -102,7 +109,6 @@ pub fn height_matrix(t: &LodShadowTunables, place: &Place, eye: V3) -> Mat4 {
     }
     m
 }
-
 
 /// The horizon maps' format (filterable: a fragment reads its column's horizon bilinearly).
 pub const HORIZON_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::R16Float;
@@ -203,7 +209,10 @@ pub struct Schedule {
 
 /// The angle between two unit directions (degrees).
 fn turned_deg(a: [f64; 2], b: [f64; 2]) -> f64 {
-    (a[0] * b[0] + a[1] * b[1]).clamp(-1.0, 1.0).acos().to_degrees()
+    (a[0] * b[0] + a[1] * b[1])
+        .clamp(-1.0, 1.0)
+        .acos()
+        .to_degrees()
 }
 
 impl Schedule {
@@ -240,7 +249,14 @@ impl Schedule {
 
     /// Starts filling `level` at `place` with `casters` (and their triangles), the eye at `eye`
     /// at `now_s`.
-    pub fn start(&mut self, level: u32, place: Place, casters: Vec<(CasterRef, u64)>, eye: V3, now_s: f64) {
+    pub fn start(
+        &mut self,
+        level: u32,
+        place: Place,
+        casters: Vec<(CasterRef, u64)>,
+        eye: V3,
+        now_s: f64,
+    ) {
         self.fill = Some(Fill {
             level,
             place,
@@ -993,7 +1009,11 @@ impl LodShadowMaps {
         uniform: &[f32; SWEEP_FLOATS],
         timestamp_writes: Option<wgpu::RenderPassTimestampWrites<'_>>,
     ) {
-        queue.write_buffer(&self.sweep_uniform, 0, bytemuck::cast_slice(uniform.as_slice()));
+        queue.write_buffer(
+            &self.sweep_uniform,
+            0,
+            bytemuck::cast_slice(uniform.as_slice()),
+        );
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("lod shadow sweep"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -1133,7 +1153,10 @@ mod tests {
             let rel = [world[0] - eye[0], world[1] - eye[1], world[2] - eye[2]];
             let clip = apply(&m, rel);
             let up = map_up(f);
-            let d = [(world[0] - p.centre[0]) / p.half, (world[2] - p.centre[1]) / p.half];
+            let d = [
+                (world[0] - p.centre[0]) / p.half,
+                (world[2] - p.centre[1]) / p.half,
+            ];
             assert!((clip[0] - d[0]).abs() < 1e-5);
             assert!((clip[1] - d[1] * up[2]).abs() < 1e-5);
             // Depth decodes to the face-local height (the shaders' `top − depth × range`).
@@ -1173,13 +1196,18 @@ mod tests {
                 assert!((p.centre[0] - 1000.3).abs() <= p.texel / 2.0);
                 assert_eq!(p.half, t.half_width(level));
                 // Moving less than half a texel keeps the place (refills give the same map).
-                assert_eq!(place(&t, level, [1000.3 + p.texel * 0.1, 50.0, -77.7], f), p);
+                assert_eq!(
+                    place(&t, level, [1000.3 + p.texel * 0.1, 50.0, -77.7], f),
+                    p
+                );
             }
         }
     }
 
     fn casters(n: usize, tris: u64) -> Vec<(CasterRef, u64)> {
-        (0..n).map(|i| (CasterRef::Section(i as i64), tris)).collect()
+        (0..n)
+            .map(|i| (CasterRef::Section(i as i64), tris))
+            .collect()
     }
 
     const EYE: V3 = [0.0, 50.0, 0.0];
@@ -1217,7 +1245,10 @@ mod tests {
                 assert_eq!(b.layer, 0, "the first fill: the first layer");
                 // 35k triangles a frame: three 10k casters.
                 assert!(b.casters.len() <= 3);
-                assert!(s.heights(0, f).is_none(), "nothing used before the fill is whole");
+                assert!(
+                    s.heights(0, f).is_none(),
+                    "nothing used before the fill is whole"
+                );
                 seen.extend(b.casters.clone());
                 s.recorded(&b);
                 frames += 1;
@@ -1226,7 +1257,10 @@ mod tests {
                 }
             }
             assert_eq!(frames, 34);
-            assert_eq!(seen, casters(100, 0).into_iter().map(|c| c.0).collect::<Vec<_>>());
+            assert_eq!(
+                seen,
+                casters(100, 0).into_iter().map(|c| c.0).collect::<Vec<_>>()
+            );
             assert_eq!(s.heights(0, f), Some((at(f, 0), 0)));
             // The other level's turn; then level 0 again only once it is due, into the other
             // layer, the old map used while it fills.
@@ -1260,7 +1294,11 @@ mod tests {
             let near = [EYE[0] + half0 * R.move_share * 0.9, EYE[1], EYE[2]];
             assert_eq!(s.wants(&R, near, f, 1.0), None);
             let far = [EYE[0] + half0 * R.move_share * 1.1, EYE[1], EYE[2]];
-            assert_eq!(s.wants(&R, far, f, 1.0), Some(0), "the near level, not the far one");
+            assert_eq!(
+                s.wants(&R, far, f, 1.0),
+                Some(0),
+                "the near level, not the far one"
+            );
         }
     }
 
@@ -1304,7 +1342,10 @@ mod tests {
         for f in FaceFrame::under_test() {
             let mut s = Schedule::new(2);
             let east = [1.0, 0.0];
-            assert!(s.sweep(&R, Some(east), f, 100, 1024).is_none(), "no heightmap yet");
+            assert!(
+                s.sweep(&R, Some(east), f, 100, 1024).is_none(),
+                "no heightmap yet"
+            );
             fill(&mut s, f, 0, 2, 0.0);
             assert!(s.sweep(&R, None, f, 100, 1024).is_none(), "no light");
             let bands = sweep_all(&mut s, f, east);
@@ -1317,11 +1358,20 @@ mod tests {
             assert!(s.sweep(&R, Some(east), f, 100, 1024).is_none());
             // The light turns a little: still none; past turnDeg: a sweep into the other layer.
             let turn = |deg: f64| [deg.to_radians().cos(), deg.to_radians().sin()];
-            assert!(s.sweep(&R, Some(turn(R.turn_deg * 0.5)), f, 100, 1024).is_none());
-            let b = s.sweep(&R, Some(turn(R.turn_deg * 1.5)), f, 100, 1024).expect("a sweep");
+            assert!(
+                s.sweep(&R, Some(turn(R.turn_deg * 0.5)), f, 100, 1024)
+                    .is_none()
+            );
+            let b = s
+                .sweep(&R, Some(turn(R.turn_deg * 1.5)), f, 100, 1024)
+                .expect("a sweep");
             assert_eq!(b.layer, 1);
             s.swept(&b);
-            assert_eq!(s.horizon(0, f), Some((at(f, 0), 0)), "the old one used meanwhile");
+            assert_eq!(
+                s.horizon(0, f),
+                Some((at(f, 0), 0)),
+                "the old one used meanwhile"
+            );
             sweep_all(&mut s, f, turn(R.turn_deg * 1.5));
             assert_eq!(s.horizon(0, f), Some((at(f, 0), 1)));
             // A refilled heightmap makes its horizon stale; a refill during a sweep restarts it.
@@ -1331,7 +1381,11 @@ mod tests {
             s.swept(&b);
             fill(&mut s, f, 1, 1, 0.0);
             let b = s.sweep(&R, Some(east), f, 100, 1024).expect("again");
-            assert_eq!((b.level, b.rows.start), (1, 0), "restarted from its first row");
+            assert_eq!(
+                (b.level, b.rows.start),
+                (1, 0),
+                "restarted from its first row"
+            );
             assert!(s.horizon(1, f.other()).is_none());
         }
     }
@@ -1363,10 +1417,15 @@ mod tests {
             assert_eq!(uniforms(&T, None, &s, eye, f, Some(&caster))[11], 0.0);
             // The sweep's: the heightmaps relative to the swept one, the march, the light.
             fill(&mut s, f, 1, 1, 0.0);
-            let b = s.sweep(&R, Some([0.6, 0.8]), f, 32, t.resolution).expect("a sweep");
+            let b = s
+                .sweep(&R, Some([0.6, 0.8]), f, 32, t.resolution)
+                .expect("a sweep");
             let w = sweep_uniforms(&T, &t, &s, &b);
             assert_eq!(b.level, 1);
-            assert_eq!((w[0], w[1]), ((at(f, 0).centre[0] - at(f, 1).centre[0]) as f32, 0.0));
+            assert_eq!(
+                (w[0], w[1]),
+                ((at(f, 0).centre[0] - at(f, 1).centre[0]) as f32, 0.0)
+            );
             assert_eq!((w[3], w[7]), (0.0, 2.0));
             assert_eq!(w[10], map_up(f)[2] as f32);
             assert_eq!(w[12], t.steps as f32);
@@ -1378,13 +1437,19 @@ mod tests {
     #[test]
     fn a_cpu_adapter_draws_no_distant_shadows() {
         for q in [ShadowQuality::Off, ShadowQuality::Low, ShadowQuality::High] {
-            assert_eq!(lod_shadows_for(wgpu::DeviceType::Cpu, q), ShadowQuality::Off);
+            assert_eq!(
+                lod_shadows_for(wgpu::DeviceType::Cpu, q),
+                ShadowQuality::Off
+            );
             assert_eq!(lod_shadows_for(wgpu::DeviceType::DiscreteGpu, q), q);
             assert_eq!(lod_shadows_for(wgpu::DeviceType::IntegratedGpu, q), q);
         }
         assert_eq!(maps_size(None), (1, 1, 1));
         let t = tier();
-        assert_eq!(maps_size(Some(&t)), (t.resolution, 2 * t.levels, max_mips(t.resolution)));
+        assert_eq!(
+            maps_size(Some(&t)),
+            (t.resolution, 2 * t.levels, max_mips(t.resolution))
+        );
     }
 
     #[test]
