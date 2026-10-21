@@ -265,11 +265,13 @@ fn lambert_lit(albedo: vec3f, n: vec3f, frag_y: f32, l: TerrainLight) -> vec3f {
     let km = band(max(dot(n, d.moon.xyz), 0.0) * own(d.moon.xyz, face) * l.direct, frame.pixel_art.x);
     let direct = ks * sun + km * moon;
     let ambient = band(l.ambient, frame.pixel_art.y);
-    let hemi = mix(hemi_ground, hemi_sky, face_rise(face, n) * 0.5 + 0.5) * ambient;
-    let irradiance = direct + hemi + BLOCK_LIGHT * (PI * l.glow) + l.points;
-    // The preview's hue-shifted shadows: the part the sun doesn't reach takes the tint's hue.
+    // The preview's hue-shifted shadows: the sky light where the sun doesn't reach takes the
+    // tint's hue (the block light and torches keep theirs).
     let shade = frame.pixel_art.z * (1.0 - clamp(ks, 0.0, 1.0));
-    return irradiance * albedo * mix(vec3f(1.0), frame.pixel_tint.rgb, shade) / PI;
+    let hemi = mix(hemi_ground, hemi_sky, face_rise(face, n) * 0.5 + 0.5) * ambient
+        * mix(vec3f(1.0), frame.pixel_tint.rgb, shade);
+    let irradiance = direct + hemi + BLOCK_LIGHT * (PI * l.glow) + l.points;
+    return irradiance * albedo / PI;
 }
 
 // A light share `x` on `n` toon levels from dark to lit (0 or 1: smooth); dwell-look

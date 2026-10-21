@@ -81,6 +81,23 @@
       "snapDepthM": 8
     },
     {
+      "name": "270-nosnap",
+      "height": 270,
+      "fit": "crop",
+      "palette": "dwell",
+      "dither": 0.5,
+      "bands": 3,
+      "ambientBands": 0,
+      "shadowHue": 0.5,
+      "shadowTint": "linen.shadow",
+      "edges": ["depth"],
+      "edgeDarken": 0.4,
+      "edgeFadeM": 64,
+      "atlas": "point-mips",
+      "snapCamera": false,
+      "snapDepthM": 8
+    },
+    {
       "name": "360",
       "height": 360,
       "fit": "crop",

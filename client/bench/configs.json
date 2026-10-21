@@ -35,6 +35,11 @@
       "params": { "pixelart": "270-warm" }
     },
     {
+      "name": "pixelart-270-nosnap",
+      "notes": "The pixel-art preview's 270 preset without the camera snap: its effect on shimmer.",
+      "params": { "pixelart": "270-nosnap" }
+    },
+    {
       "name": "pixelart-360",
       "notes": "The pixel-art preview's 360 preset: 360 rows, four sun bands, no edges, a lighter dither.",
       "params": { "pixelart": "360" }
