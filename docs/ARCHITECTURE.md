@@ -610,7 +610,8 @@ tests only); CI fails on stale output. Code names characters, looks, items and r
   offset: 24 bones' 3 × 4 transforms to eye-relative world space, the held block's atlas tiles,
   settings) and two indexed draws (body and item), each with an **inverted-hull outline** in
   `ink_soft` (front faces culled, pushed out ~6 mm along the normal, widening a little with
-  distance), dropped past 64 m with the small parts; nothing past 512 m. The shader (after the shared
+  distance; **off for now**, `OUTLINES` false: the owner, 2026-10-21, found it showing through cutout
+  held items as dark faces), dropped past 64 m with the small parts; nothing past 512 m. The shader (after the shared
   lighting) shades a material's ramp by a half-Lambert wrap of the key light (the face's sun, else its
   moon), its brush tile at its `overlay`,
   a faint rim, scaled by the frame's light on the fragment's face (so day, night and face B's own

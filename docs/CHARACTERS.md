@@ -368,8 +368,9 @@ choices.
   the Rust side reads looks as flat parts on bones and only meshes, samples and selects; the brush
   tiles are baked as luminance over the tile's mean (the Lab's `lum(tile) / uTileLum`); the shader
   scales the ramp by the frame's light on the fragment's face (`CHARACTER_EXPOSURE` 0.5, tuned by eye)
-  so night and face B's lights reach characters; the outline is drawn always (the owner's §10 Q5 is
-  open), ~6 mm, dropped with the small parts past 64 m; the shader always draws the brush tiles;
+  so night and face B's lights reach characters; the outline (~6 mm, dropped with the small parts past
+  64 m) is **off for now** (owner, 2026-10-21: the hull showed through cutout held items such as grass
+  as dark faces; `render/characters.rs` `OUTLINES`); the shader always draws the brush tiles;
   the held block uses its atlas tiles.
 - **Rigid parts, not skinning.** Each part is a rigid mesh on its bone: no weights, no vertex
   skinning, no bind pose. Chunky parts read better rigid (the storybook look has visible joints),
