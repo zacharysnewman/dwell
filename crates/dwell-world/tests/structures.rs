@@ -227,7 +227,10 @@ fn a_stale_or_bad_table_entry_fails_naming_the_structure() {
     };
     bad.hash = structure_hash(&canonical_text(&bad));
     let e = Structure::from_def(&bad).expect_err("unknown block");
-    assert!(e.contains("test:bad") && e.contains("dwell:no_such_block"), "{e}");
+    assert!(
+        e.contains("test:bad") && e.contains("dwell:no_such_block"),
+        "{e}"
+    );
 }
 
 /// The old `playground.structure` (`fill x0 y0 z0 x1 y1 z1 <state>`, inclusive boxes, later ones
