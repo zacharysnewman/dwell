@@ -44,18 +44,6 @@ test('a palette and a preset added by data alone are in the output', () => {
   assert.match(rs, /edges: 2,\n {12}edge_darken: [\d.]+,\n {12}edge_fade_m: [\d.]+,\n {12}atlas: AtlasFilter::Point,/);
 });
 
-test("a preset's textures pick the texture set, and the cel presets are their painterly twins", () => {
-  const d = data();
-  const byName = Object.fromEntries(d.presets.map((p) => [p.name, p]));
-  for (const [cel, painterly] of [['270-cel', '270'], ['360-cel', '360']]) {
-    assert.equal(byName[cel].textures, 'cel');
-    assert.deepEqual({ ...byName[cel], name: painterly, textures: 'painterly' }, byName[painterly]);
-  }
-  const rs = pixelArtRust(validatePixelArt(d, palette()));
-  assert.match(rs, /name: "270-cel",(\n.*){12}\n {12}textures: Textures::Cel,/);
-  assert.match(rs, /name: "270",(\n.*){12}\n {12}textures: Textures::Painterly,/);
-});
-
 test('bad entries fail with their path named', () => {
   const cases = [
     [(d) => (d.palettes.dwell[0][0] = 'nope'), /palettes\.dwell\[0\]\[0\]: unknown palette colour "nope"/],
@@ -75,8 +63,6 @@ test('bad entries fail with their path named', () => {
     [(d) => (d.presets[0].shadowTint = 'nope'), /presets\[0\]\.shadowTint: unknown palette colour/],
     [(d) => (d.presets[0].edges = ['block']), /presets\[0\]\.edges\[0\] "block" is not an edge kind/],
     [(d) => (d.presets[0].atlas = 'linear'), /presets\[0\]\.atlas must be one of point, point-mips/],
-    [(d) => (d.presets[0].textures = 'classic'), /presets\[0\]\.textures must be one of painterly, cel/],
-    [(d) => delete d.presets[0].textures, /missing entry presets\[0\]\.textures/],
     [(d) => (d.presets[0].snapCamera = 'yes'), /presets\[0\]\.snapCamera must be true or false/],
     [(d) => delete d.presets[0].snapDepthM, /missing entry presets\[0\]\.snapDepthM/],
     [(d) => (d.presets[0].bloom = 1), /unknown entry presets\[0\]\.bloom/],
