@@ -60,6 +60,8 @@ pub struct ShadowTier {
     pub filter_taps: u32,
     /// The far cascades take turns: each is drawn once every this many frames.
     pub refresh_frames: u32,
+    /// How many of the nearest cascades plants cast into.
+    pub plant_cascades: u32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]

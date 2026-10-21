@@ -2788,9 +2788,11 @@ impl Renderer {
                 let mesh = DrawMesh::Chunk(coord, Part::Opaque);
                 out.push(item(Kind::Terrain, offset, None, fade, mesh, passes));
             }
-            if c.cutout.is_some() && self.cutout_shown {
+            // Plants cast into the nearest cascades only (`plantCascades`).
+            let plants = passes & ((1u16 << plan.tier.plant_cascades.min(8)) - 1) as u8;
+            if c.cutout.is_some() && self.cutout_shown && plants != 0 {
                 let mesh = DrawMesh::Chunk(coord, Part::Cutout);
-                out.push(item(Kind::Cutout, offset, None, fade, mesh, passes));
+                out.push(item(Kind::Cutout, offset, None, fade, mesh, plants));
             }
         }
         for &(id, mask, fade) in &self.terrain.shown {

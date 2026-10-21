@@ -7,7 +7,7 @@ pub const SHADOWS: ShadowTunables = ShadowTunables {
     cascades: CascadeTunables {
         near_m: 0.5,
         radius_step_m: 1.0,
-        caster_reach_m: 320.0,
+        caster_reach_m: 120.0,
         edge_fade: 0.2,
         spyglass_max_m: 640.0,
     },
@@ -36,6 +36,7 @@ pub const SHADOWS: ShadowTunables = ShadowTunables {
             filter_texels: 1.25,
             filter_taps: 2,
             refresh_frames: 2,
+            plant_cascades: 1,
         },
         // high
         ShadowTier {
@@ -46,6 +47,7 @@ pub const SHADOWS: ShadowTunables = ShadowTunables {
             filter_texels: 1.75,
             filter_taps: 3,
             refresh_frames: 3,
+            plant_cascades: 2,
         },
     ],
 };

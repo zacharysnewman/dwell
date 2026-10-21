@@ -272,7 +272,7 @@ maps, `SHADOW_WGSL`), `dwell-look` `shadows.rs` (the setting, the light that cas
   cascade's centre is **snapped to whole texels** across the light (in world f64): moving the eye
   moves the map by whole texels, so shadow edges don't shimmer (a test moves the eye in tenth-texel
   steps and checks a fixed world point keeps its place in the texel grid). The box reaches
-  `casterReachM` (320 m) toward the light for casters above the view (cliffs, trees). While the
+  `casterReachM` (120 m) toward the light for casters above the view (cliffs, trees). While the
   spyglass zooms the shadow distance grows with its magnification up to `spyglassMaxM` (640 m), so
   the zoomed view has shadows where it looks.
 - **Casters**: chunk terrain and LOD sections (depth only), cutout plants (their texels' alpha; faded

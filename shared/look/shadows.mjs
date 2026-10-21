@@ -47,6 +47,7 @@ const TIER = {
   filterTexels: [0, 8],
   filterTaps: ['count', 1, MAX_TAPS],
   refreshFrames: ['count', 1, 16],
+  plantCascades: ['count', 0, MAX_CASCADES],
 };
 
 const snake = (s) => s.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
