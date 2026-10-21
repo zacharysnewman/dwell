@@ -48,6 +48,8 @@ jobs:
           node --test shared/look/ambient.test.mjs
           node shared/look/light.mjs
           node --test shared/look/light.test.mjs
+          node shared/look/lights.mjs
+          node --test shared/look/lights.test.mjs
           node shared/look/daynight.mjs
           node --test shared/look/daynight.test.mjs
           node shared/textures/gen.mjs
@@ -62,6 +64,8 @@ jobs:
           git diff --exit-code
       - name: Block data's face-tile rules (PAINTERLY_TEXTURES.md §2)
         run: node --test shared/blocks/faces.test.mjs
+      - name: Block data's light sources (LIGHTS.md §2)
+        run: node --test shared/blocks/lights.test.mjs
       - name: Structure generator tests
         run: node --test shared/structures/gen.test.mjs
 

@@ -17,6 +17,7 @@
     "leather":     { "shadow": "#4a2c2c", "base": "#8c5636", "light": "#c78d55" },
     "iron":        { "shadow": "#4b536c", "base": "#8f9aae", "light": "#e8eff4" },
     "brass":       { "shadow": "#7a5530", "base": "#c99a40", "light": "#f6dc8c" },
+    "flame":       { "shadow": "#c8582a", "base": "#e8923c", "light": "#ead79a" },
     "wolf":        { "shadow": "#4a5068", "base": "#8b909e", "light": "#c9cbd0" },
     "wolf_pale":   { "shadow": "#b4b2b4", "base": "#e8e3d6", "light": "#faf6ec" },
     "deer":        { "shadow": "#74472f", "base": "#ba7f4b", "light": "#e0b27a" },

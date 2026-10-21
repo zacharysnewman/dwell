@@ -10,6 +10,9 @@
       "caustics": { "strength": 0.2, "scale": 1.5, "depth": 0.5 }, "scattering": 1.0, "refraction": 0.05, "sparkle": 0.0
     }
   },
+  "lights": {
+    "test:lantern": { "color": "#a0c8ff", "strength": 1.5, "radiusM": 6, "flicker": { "amount": 0.0, "speed": 1 }, "shadows": false }
+  },
   "blocks": [
     {
       "name": "oil", "density": 900, "shape": "empty", "look": "fluid", "fluid": "test:oil",
@@ -43,8 +46,8 @@
       "cross": { "height": 1.0, "quads": 3, "sitOnSupport": false }, "color": "#6a8a3a", "textures": "tallGrass"
     },
     {
-      "$comment": "A light emitter by data alone (docs/DAY_NIGHT.md §10): no build block gives off light yet; this one gives off level 14 of block light and lets none through.",
-      "name": "lamp", "density": 1800, "shape": "full", "placeable": true, "emits": 14, "color": "#ffe0a0", "textures": "stone"
+      "$comment": "A light emitter by data alone (docs/DAY_NIGHT.md §10): this one gives off level 14 of block light, lets none through, and draws the `test:lantern` light around it (a light source added by data alone, docs/LIGHTS.md).",
+      "name": "lamp", "density": 1800, "shape": "full", "placeable": true, "emits": 14, "light": "test:lantern", "color": "#ffe0a0", "textures": "stone"
     }
   ]
 }

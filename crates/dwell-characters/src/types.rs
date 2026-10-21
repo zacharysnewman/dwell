@@ -87,6 +87,9 @@ pub struct Look {
 #[derive(Clone, Copy, Debug)]
 pub struct Item {
     pub name: &'static str,
+    /// Where the light a held block gives off sits (a torch's flame; docs/LIGHTS.md): a bone and
+    /// the point in its frame (metres), the item's socket resolved. None: no light point.
+    pub light: Option<(usize, [f32; 3])>,
     pub parts: &'static [Part],
 }
 
@@ -149,6 +152,8 @@ pub struct Material {
     pub light: u32,
     /// How strongly the brush tile shows (0 clean).
     pub overlay: f32,
+    /// How much of its colour it gives off unlit (a flame; shared/textures `emissive`).
+    pub emissive: f32,
     /// Index into `TILES`, or −1.
     pub tile: i32,
 }

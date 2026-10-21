@@ -505,6 +505,31 @@ crate::both_faces!(
 );
 
 crate::both_faces!(
+    /// The torch (a build block, docs/LIGHTS.md): placed on a tunnel's floor it lights the tunnel
+    /// through the flood light (its `emits`; it lets the light through, so the cells around it
+    /// take it), and broken it takes its light with it, both as a relight from scratch has it.
+    fn a_placed_torch_lights_the_tunnel_and_takes_its_light_when_broken(f: FaceFrame) {
+        let torch = dwell_blocks::require("dwell:torch");
+        let info = dwell_blocks::info(torch);
+        assert_eq!((info.emits, info.light_filter), (14, 0));
+        let mut fx = tunnel(f);
+        let chunks = fx.chunks(-1..=1, -1..=1, -1..=1);
+        let mut w = fx.lit(&chunks);
+        let before = snapshot(&w, &chunks);
+        let at = f.cell([22, GROUND, 16]);
+        w.set_voxel(at[0], at[1], at[2], torch);
+        w.light_edited(&[at]);
+        assert_eq!(fx.at(&w, [22, GROUND, 16]).1, 14, "its own cell");
+        assert_eq!(fx.at(&w, [22, GROUND + 1, 16]).1, 13, "over it");
+        assert_eq!(fx.at(&w, [19, GROUND, 16]).1, 11, "3 m along the floor");
+        assert_matches_scratch(&mut w, &chunks, "torch placed");
+        w.set_voxel(at[0], at[1], at[2], 0);
+        w.light_edited(&[at]);
+        assert_eq!(snapshot(&w, &chunks), before, "broken: the light as before");
+    }
+);
+
+crate::both_faces!(
     /// Random edits across chunk borders, each followed by the incremental update, always agree
     /// with a relight from scratch.
     fn random_edits_agree_with_a_relight_from_scratch(f: FaceFrame) {

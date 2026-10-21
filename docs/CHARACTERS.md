@@ -135,8 +135,12 @@ one stop of it (`"brass"`, `"leather.shadow"`), a swatch (`"ink"`), a colour slo
   (body part ids it covers), parts }`. A hat hides the hair's top; gloves hide the hands. An
   accessory's parts may paint with the wearer's slots (`hair`, `skin`), so it can bring a variant of
   what it hides (§4.1).
-- **`items`**: things held in hand: `{ label, on (a socket), parts }`. `block` (a 0.2 m cube of
-  `$block`) and `brush` (a wooden handle, a brass ferrule, a tuft in the selected block's colour).
+- **`items`**: things held in hand: `{ label, on (a socket), light?, parts }`. `block` (a 0.2 m cube of
+  `$block`), `brush` (a wooden handle, a brass ferrule, a tuft in the selected block's colour) and
+  `torch` (a stick, a wrap and a glowing flame; the hand shows it for a block whose registry entry says
+  `"held": "torch"`, [`LIGHTS.md`](./LIGHTS.md)). `light` is the point on the socket where the
+  light a held block gives off sits (the flame), resolved by the generator to a bone and an offset
+  (`Item::light`); a material's `emissive` (shared/textures) makes it glow unlit (`Material::emissive`).
 - **`clips`**: `{ rig, space?, layer, duration, loop, ease, cycle?, grounded?, blend?, keys }`. A key is `{ t, bones:
   { bone: [x, y, z] degrees }, root?: [x, y, z] metres }`; each bone interpolates between the keys
   that name it, so a key lists only what moves at that moment. `cycle` is the distance travelled per

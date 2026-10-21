@@ -38,7 +38,7 @@ pub const ATLAS_SIZE: usize = CELL * ATLAS_CELLS;
 pub const ATLAS_TILES: usize = ATLAS_CELLS * ATLAS_CELLS;
 
 /// The tiles in atlas order (the registry's texture names).
-pub const TILE_ORDER: [&str; 15] = [
+pub const TILE_ORDER: [&str; 16] = [
     "plain",
     "grass",
     "grassSide",
@@ -54,6 +54,8 @@ pub const TILE_ORDER: [&str; 15] = [
     "tallGrass",
     // A dirt side under grass (dirt's `sideUnder`): the turf's skirt over the dirt's top edge.
     "dirtSkirt",
+    // The torch's stick and flame (docs/LIGHTS.md), a sprite that glows (`emissive`).
+    "torch",
     // The fallback look of a state whose look or textures this build lacks (synced from a server,
     // ADR 0038): a magenta and black checker, never content.
     MISSING_TILE,
@@ -97,12 +99,15 @@ pub fn tile_rect(name: &str) -> TileRect {
 }
 
 /// The grid lines of each atlas tile slot (index cx + cy × `ATLAS_CELLS`, `TILE_ORDER` order):
-/// `[every, strength, 0, 0]`, all zero for none. A tile's grid is the registry's `grid` look
+/// `[every, strength, glow, 0]` (zero for none; the glow is [`tile_emissive`]). A tile's grid is the registry's `grid` look
 /// option of the states drawn with it (an untextured state with the `plain` tile); `gen.mjs`
 /// rejects a tile whose states disagree, so the terrain shader can find a face's grid from its
 /// tile rectangle with nothing added to the vertex.
 pub fn tile_grids() -> [[f32; 4]; ATLAS_TILES] {
     let mut out = [[0.0; 4]; ATLAS_TILES];
+    for (i, name) in TILE_ORDER.iter().enumerate() {
+        out[i][2] = tile_emissive(name);
+    }
     for s in &dwell_blocks::STATES {
         let Some(g) = s.grid else { continue };
         let names = s
@@ -110,11 +115,21 @@ pub fn tile_grids() -> [[f32; 4]; ATLAS_TILES] {
             .map_or(["plain"; 3], |t| [t.top, t.side, t.bottom]);
         for name in names {
             if let Some(i) = TILE_ORDER.iter().position(|t| *t == name) {
-                out[i] = [f32::from(g.every), g.strength, 0.0, 0.0];
+                out[i][0] = f32::from(g.every);
+                out[i][1] = g.strength;
             }
         }
     }
     out
+}
+
+/// How much of its colour tile `name` gives off unlit (its material's `emissive`, docs/LIGHTS.md):
+/// a torch's flame; 0 for most.
+pub fn tile_emissive(name: &str) -> f32 {
+    PAINTERLY_TILES
+        .iter()
+        .position(|t| *t == name)
+        .map_or(0.0, |i| painterly::PAINTERLY_EMISSIVE[i])
 }
 
 /// Whether tile `name` has transparent texels (it is drawn cutout or translucent).
@@ -405,10 +420,11 @@ mod tests {
             let names = s
                 .textures
                 .map_or(["plain"; 3], |t| [t.top, t.side, t.bottom]);
-            let want = s
-                .grid
-                .map_or([0.0; 4], |g| [f32::from(g.every), g.strength, 0.0, 0.0]);
             for name in names {
+                let glow = tile_emissive(name);
+                let want = s.grid.map_or([0.0, 0.0, glow, 0.0], |g| {
+                    [f32::from(g.every), g.strength, glow, 0.0]
+                });
                 let i = TILE_ORDER
                     .iter()
                     .position(|t| *t == name)
@@ -423,6 +439,14 @@ mod tests {
         let cell = (r.u0 * ATLAS_CELLS as f64).floor() as usize
             + (r.v0 * ATLAS_CELLS as f64).floor() as usize * ATLAS_CELLS;
         assert_eq!(table[cell], [f32::from(g.every), g.strength, 0.0, 0.0]);
+        // The torch's tile glows (its material's `emissive`, docs/LIGHTS.md); stone's doesn't.
+        let torch = dwell_blocks::info(dwell_blocks::require("dwell:torch"));
+        let t = torch.textures.expect("the torch is textured").side;
+        assert!(table[TILE_ORDER.iter().position(|n| *n == t).unwrap()][2] > 0.0);
+        assert_eq!(
+            table[TILE_ORDER.iter().position(|n| *n == "stone").unwrap()][2],
+            0.0
+        );
         assert_eq!(table[0], [0.0; 4], "plain: no grid");
     }
 }

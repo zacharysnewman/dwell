@@ -14,6 +14,7 @@
     "tallGrass": "tall_grass",
     "ladder": "ladder_wood",
     "dirtSkirt": "dirt_skirt",
+    "torch": "torch",
     "plain": "plain",
     "grid": "grid",
     "missing": "missing"
@@ -147,6 +148,29 @@
         { "kind": "slab", "at": [[16, 2.4, 22], [16, 10.4, 22], [16, 18.4, 22], [16, 26.4, 22]], "colors": ["@shadow"], "width": 1, "length": 1, "angle": 0, "opacity": 0.6, "clip": true },
         { "kind": "streak", "at": [[4.3, 16, 30], [26.3, 16, 30]], "colors": ["@light"], "width": 1.3, "length": 1, "angle": 90, "opacity": 0.6, "clip": true },
         { "kind": "slab", "at": [[6.6, 16, 40], [28.6, 16, 40]], "colors": ["@shadow"], "width": 0.9, "length": 1, "angle": 90, "opacity": 0.5, "clip": true }
+      ]
+    },
+
+    "torch": {
+      "$comment": "A sprite on crossed quads (docs/LIGHTS.md): a stick of bark rooted on the bottom row with a flame on top. emissive: the flame gives off its colour unlit (the stick, darker, little).",
+      "use": "block", "ramp": "flame", "alpha": "strokes", "wrap": false, "emissive": 1.0,
+      "layers": [
+        { "kind": "fill", "color": "bark.base" },
+        { "kind": "slab", "at": [[16, 8, 16]], "colors": ["bark.base"], "width": 3.5, "length": 1, "angle": 90, "softness": 0.5 },
+        { "kind": "slab", "at": [[15.2, 8, 16]], "colors": ["bark.light"], "width": 1, "length": 1, "angle": 90, "opacity": 0.6, "clip": true },
+        { "kind": "slab", "at": [[17.2, 8, 16]], "colors": ["bark.shadow"], "width": 1, "length": 1, "angle": 90, "opacity": 0.7, "clip": true },
+        { "kind": "slab", "at": [[16, 15.5, 3]], "colors": ["heartwood.shadow"], "width": 4.5, "length": 1, "angle": 90, "softness": 0.5 },
+        { "kind": "dab", "at": [[16, 22]], "colors": ["@shadow"], "width": 8, "length": 13, "angle": 90, "softness": 1.5 },
+        { "kind": "dab", "at": [[16, 21]], "colors": ["@base"], "width": 5.5, "length": 9, "angle": 90, "softness": 1.2 },
+        { "kind": "dab", "at": [[16, 20]], "colors": ["@light"], "width": 3, "length": 5, "angle": 90, "softness": 1 }
+      ]
+    },
+    "flame": {
+      "$comment": "A held torch's flame (shared/characters items.torch): the flame's ramp, glowing (emissive: on a character an emissive of 1 or more shows its base colour × it, unlit).",
+      "use": "character", "ramp": "flame", "overlay": 0.3, "emissive": 0.75,
+      "layers": [
+        { "kind": "gradient", "from": "@base", "to": "@light", "direction": "up" },
+        { "kind": "dab", "count": 5, "colors": ["@light"], "width": [4, 6], "length": [8, 12], "angle": 90, "opacity": 0.5 }
       ]
     },
 

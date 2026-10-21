@@ -8,10 +8,12 @@ publish.workspace = true
 license-file.workspace = true
 
 [dependencies]
+dwell-blocks = { path = "../dwell-blocks" }
 dwell-protocol = { path = "../dwell-protocol" }
 dwell-world = { path = "../dwell-world" }
 
 [dev-dependencies]
+dwell-blocks = { path = "../dwell-blocks", features = ["fixture"] }
 naga = { version = "30.0.1", features = ["wgsl-in"] }
 
 [lints]

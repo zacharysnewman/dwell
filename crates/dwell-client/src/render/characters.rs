@@ -61,14 +61,66 @@ pub enum Held {
 }
 
 impl Held {
-    /// The item's name in the data (`block`, `brush`), and its block.
+    /// The item's name in the data (`block`, `brush`, or the block's own `held` item, such as
+    /// `torch`; docs/LIGHTS.md), and its block.
     pub fn item(self) -> Option<(&'static str, u16)> {
         match self {
             Held::Empty => None,
-            Held::Block(b) => Some(("block", b)),
+            Held::Block(b) => Some((
+                dwell_blocks::try_info(b)
+                    .and_then(|i| i.held)
+                    .unwrap_or("block"),
+                b,
+            )),
             Held::Brush(b) => Some(("brush", b)),
         }
     }
+
+    /// The light source a hand holding it gives off (the block's `light`; not the brush's).
+    pub fn light(self) -> Option<&'static dwell_blocks::LightInfo> {
+        match self {
+            Held::Block(b) => dwell_blocks::try_info(b).and_then(|i| i.light),
+            _ => None,
+        }
+    }
+}
+
+/// A light a hand holds this frame (docs/LIGHTS.md §3): where its item's light point is, relative
+/// to the eye, the source and its holder's flicker phase.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct HeldLight {
+    pub rel: [f32; 3],
+    pub source: &'static dwell_blocks::LightInfo,
+    pub seed: u32,
+}
+
+/// The item a hand of `character` shows for `held`: the held block's own (`torch`) where the
+/// character has it, else the block itself.
+pub fn item_shown(character: &Character, held: Held) -> Option<&'static str> {
+    held.item().map(|(name, _)| {
+        if character.item(name).is_some() {
+            name
+        } else {
+            "block"
+        }
+    })
+}
+
+/// The light a hand holding `held` gives off, posed by `bones` (relative to the eye): at its item's
+/// light point (docs/LIGHTS.md §3), with flicker phase `seed`. None without a light or a point.
+pub fn held_light(
+    character: &Character,
+    held: Held,
+    bones: &[Affine; MAX_BONES],
+    seed: u32,
+) -> Option<HeldLight> {
+    let source = held.light()?;
+    let (bone, at) = character.item(item_shown(character, held)?)?.light?;
+    Some(HeldLight {
+        rel: bones.get(bone)?.apply(at),
+        source,
+        seed,
+    })
 }
 
 /// A full body to draw.
@@ -93,6 +145,8 @@ pub struct BodyDraw {
     /// The flood light it stands in (sky and block level / 15, eased; [1, 0] open sky):
     /// `dwell_world::light::LightMap::sample`, docs/DAY_NIGHT.md §11.
     pub light: [f32; 2],
+    /// A stable id (its player's): the phase of a held light's flicker.
+    pub seed: u32,
 }
 
 /// The first-person arms to draw.
@@ -166,6 +220,8 @@ pub struct CharacterRenderer {
     own_meshes: HashMap<&'static str, Mesh>,
     draws: Vec<Draw>,
     arms: Option<Draw>,
+    /// The lights held this frame (`prepare`): other players', and yours once.
+    held_lights: Vec<HeldLight>,
     pub stats: CharacterStats,
 }
 
@@ -191,7 +247,8 @@ struct Material {
     shadow: vec4f,
     base: vec4f,
     light: vec4f,
-    // x overlay, y the brush tile's layer (−1 none)
+    // x overlay, y the brush tile's layer (−1 none), z how much of its base it gives off unlit (a
+    // flame; shared/textures `emissive`)
     extra: vec4f,
 };
 @group(1) @binding(0) var<uniform> inst: Instance;
@@ -301,6 +358,8 @@ fn character_fs(i: CharacterOut, @builtin(front_facing) front: bool) -> SceneOut
     let frag_y = frame.eye.x + i.rel.y;
     let light = character_light(i.rel, n);
     let shadow = light.direct;
+    // The dynamic lights (held torches; docs/LIGHTS.md §3).
+    let points = point_lights(i.rel, n);
     var o: SceneOut;
     o.depth = frame_depth(view_depth(i.rel), true);
     if (mat == BLOCK_MATERIAL) {
@@ -313,7 +372,10 @@ fn character_fs(i: CharacterOut, @builtin(front_facing) front: bool) -> SceneOut
             discard;
         }
         let albedo = inst.block_color.rgb * select(vec3f(1.0), texel.rgb, has);
-        o.color = vec4f(lambert_lit(albedo, n, frag_y, light), 1.0);
+        var lit = light;
+        lit.points = points;
+        let glow = select(0.0, tile_glow(tile.xy), has);
+        o.color = vec4f(lambert_lit(albedo, n, frag_y, lit) + albedo * glow, 1.0);
         return o;
     }
     let m = materials[mat];
@@ -328,7 +390,11 @@ fn character_fs(i: CharacterOut, @builtin(front_facing) front: bool) -> SceneOut
     }
     let rim = pow(1.0 - max(dot(n, normalize(-i.rel)), 0.0), 3.0);
     c = c + m.light.rgb * rim * 0.14 * smoothstep(0.3, 0.6, w);
-    o.color = vec4f(c * key.level * PI * CHARACTER_EXPOSURE, 1.0);
+    // The key light's ramp and the dynamic lights by the true normal; a glowing material (a
+    // flame) gives off its base colour × its glow in place of its share of the lit ramp.
+    let glow = m.extra.z;
+    let lit = c * (key.level * PI + points) * CHARACTER_EXPOSURE;
+    o.color = vec4f(lit * (1.0 - min(glow, 1.0)) + m.base.rgb * glow, 1.0);
     return o;
 }
 
@@ -365,7 +431,7 @@ pub fn source() -> String {
     )
 }
 
-/// A material table row (linear colours, overlay, tile).
+/// A material table row (linear colours, overlay, tile, glow).
 fn material_rows() -> Vec<f32> {
     let lin = |c: u32| dwell_look::hex(c).map(|v| dwell_look::srgb_to_linear(v) as f32);
     let mut out = Vec::new();
@@ -374,7 +440,7 @@ fn material_rows() -> Vec<f32> {
             out.extend(lin(c));
             out.push(1.0);
         }
-        out.extend([m.overlay, m.tile as f32, 0.0, 0.0]);
+        out.extend([m.overlay, m.tile as f32, m.emissive, 0.0]);
     }
     out
 }
@@ -692,6 +758,7 @@ impl CharacterRenderer {
             own_meshes: HashMap::default(),
             draws: Vec::new(),
             arms: None,
+            held_lights: Vec::new(),
             stats: CharacterStats::default(),
         }
     }
@@ -756,6 +823,14 @@ impl CharacterRenderer {
     ) {
         self.draws.clear();
         self.arms = None;
+        self.held_lights.clear();
+        let character = self.character;
+        let item_name = |held: Held| item_shown(character, held);
+        let light_at = |held: Held, bones: &[Affine; MAX_BONES], seed: u32| {
+            held_light(character, held, bones, seed)
+        };
+        // Your own light once: the arms' if they are drawn, else your body's.
+        let mut own_light = None;
         let mut data: Vec<f32> = Vec::new();
         let own_body = self.character.first_person.and_then(|f| f.body);
         let mut push = |bones: &[Affine; MAX_BONES],
@@ -840,11 +915,14 @@ impl CharacterRenderer {
                 far,
                 own: own.is_some(),
             };
-            let item = d
-                .held
-                .item()
+            if d.first_person || d.cast_only {
+                own_light = own_light.or_else(|| light_at(d.held, &bones, d.seed));
+            } else if let Some(l) = light_at(d.held, &bones, d.seed) {
+                self.held_lights.push(l);
+            }
+            let item = item_name(d.held)
                 .filter(|_| own.is_none())
-                .map(|(name, _)| MeshKey {
+                .map(|name| MeshKey {
                     name,
                     item: true,
                     view: View::Body,
@@ -867,6 +945,9 @@ impl CharacterRenderer {
             let frame = arms_frame(basis);
             let bones = arm_transforms(self.character, &a.pose).map(|b| frame.then(&b));
             let instance = push(&bones, a.held, true, true, 0.0, a.light);
+            if let Some(l) = light_at(a.held, &bones, 0) {
+                own_light = Some(l);
+            }
             let body = MeshKey {
                 name: self.look,
                 item: false,
@@ -874,7 +955,7 @@ impl CharacterRenderer {
                 far: false,
                 own: false,
             };
-            let item = a.held.item().map(|(name, _)| MeshKey {
+            let item = item_name(a.held).map(|name| MeshKey {
                 name,
                 item: true,
                 view: View::Arms,
@@ -893,6 +974,7 @@ impl CharacterRenderer {
                 cast_only: false,
             });
         }
+        self.held_lights.extend(own_light);
         for k in keys {
             self.mesh(device, queue, k);
         }
@@ -916,6 +998,11 @@ impl CharacterRenderer {
         self.stats.bodies = self.draws.len() as u32;
         self.stats.arms = self.arms.is_some();
         self.stats.upload_bytes = data.len() as u64 * 4;
+    }
+
+    /// The lights held this frame (`prepare`): docs/LIGHTS.md §3.
+    pub fn held_lights(&self) -> &[HeldLight] {
+        &self.held_lights
     }
 
     /// Whether the arms are drawn this frame (the renderer adds their pass).
@@ -1171,6 +1258,77 @@ mod tests {
         );
     }
 
+    fn torch() -> Held {
+        Held::Block(dwell_blocks::require("dwell:torch"))
+    }
+
+    #[test]
+    fn a_torch_is_held_as_the_torch_item_and_gives_off_its_light() {
+        let ch = dwell_characters::player();
+        assert_eq!(item_shown(ch, torch()), Some("torch"));
+        assert_eq!(torch().light().map(|l| l.name), Some("dwell:torch"));
+        let stone = Held::Block(dwell_blocks::require("dwell:stone"));
+        assert_eq!(item_shown(ch, stone), Some("block"));
+        assert_eq!(stone.light(), None);
+        assert_eq!(
+            Held::Brush(dwell_blocks::require("dwell:torch")).light(),
+            None,
+            "a brush gives off nothing"
+        );
+        // Your arms' torch, held in the arms' idle: in front of the eye, within a metre, the flame
+        // above the hand.
+        let basis = super::super::camera::aim(30.0, -10.0, FaceFrame::A, 0.0);
+        let idle = TABLES
+            .clips
+            .iter()
+            .find(|c| c.name == "fp_idle")
+            .expect("fp_idle");
+        let pose = dwell_characters::anim::sample(idle, 0.0);
+        let bones = arm_transforms(ch, &pose).map(|b| arms_frame(&basis).then(&b));
+        let hand = bones[ch.bone("hand_r").expect("hand_r")].t.map(f64::from);
+        let l = held_light(ch, torch(), &bones, 0).expect("the arms hold the torch's light");
+        let r = l.rel.map(f64::from);
+        let len = (r[0] * r[0] + r[1] * r[1] + r[2] * r[2]).sqrt();
+        assert!(len < 1.0 && len > 0.2, "{r:?}");
+        assert!(
+            super::super::camera::dot(r, basis.forward()) > 0.1,
+            "ahead: {r:?}"
+        );
+        let up = |v| super::super::camera::dot(v, basis.up);
+        assert!(up(r) > up(hand), "over the hand: {r:?}");
+        assert!(held_light(ch, stone, &bones, 0).is_none());
+    }
+
+    // A held torch's light sits in its holder's hand, the same face-local height on both faces.
+    dwell_world::both_faces! {
+        fn a_held_torch_lights_from_its_holders_hand(face: FaceFrame) {
+            let ch = dwell_characters::player();
+            let d = BodyDraw {
+                feet: face.point([10.0, 5.0, 0.0]),
+                yaw: 90.0,
+                face,
+                dead: false,
+                look: dwell_characters::DEFAULT_LOOK,
+                pose: Pose::REST,
+                held: torch(),
+                cast_only: false,
+                first_person: false,
+                light: [1.0, 0.0],
+                seed: 7,
+            };
+            let posed = bone_transforms(ch, &d.pose);
+            let frame = body_frame(&d, [0.0; 3]);
+            let l = held_light(ch, d.held, &posed.map(|b| frame.then(&b)), d.seed).expect("its light");
+            assert_eq!(l.seed, 7);
+            // Face-local height over its feet: in the hand's reach (0.5–1.8 m up), within a metre
+            // across; mirrored on face B.
+            let up = face.y(f64::from(l.rel[1])) - face.y(d.feet[1]);
+            assert!((0.5..1.8).contains(&up), "{up} m up ({l:?})");
+            let across = (f64::from(l.rel[0]) - 10.0).hypot(f64::from(l.rel[2]));
+            assert!(across < 1.0, "{across}");
+        }
+    }
+
     // A body stands on its face (its head toward the face's up) and faces its yaw on both faces,
     // as a proper rotation (no mirror), so its winding stays front-facing.
     dwell_world::both_faces! {
@@ -1186,6 +1344,7 @@ mod tests {
                 cast_only: false,
                 first_person: false,
                 light: [1.0, 0.0],
+                seed: 0,
             };
             let f = body_frame(&d, [0.0; 3]);
             // Yaw 90° faces +x on either face.
@@ -1419,6 +1578,7 @@ mod tests {
                                 cast_only: false,
                                 first_person: true,
                                 light: [1.0, 0.0],
+                                seed: 0,
                             };
                             let r = |v: V3| v.map(|c| c as f32);
                             let (right, up, fwd) = (r(basis.right), r(basis.up), r(basis.forward()));

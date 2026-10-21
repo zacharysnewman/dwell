@@ -90,7 +90,8 @@ fn the_palette_is_the_registrys_placeable_states() {
             "dwell:sand[flooded=false]",
             "dwell:log",
             "dwell:leaves",
-            "dwell:tall_grass"
+            "dwell:tall_grass",
+            "dwell:torch"
         ]
     );
     assert!(!placeable(dwell_blocks::STATES.len() as StateId));
@@ -311,6 +312,29 @@ fn tall_grass_is_placed_only_on_grass_or_dirt() {
         )
         .check,
         EditCheck::Ok
+    );
+}
+
+#[test]
+fn a_torch_stands_on_the_floor_and_goes_with_it() {
+    // docs/LIGHTS.md: floor torches first. On any solid block, not on air (the side of a block
+    // with nothing below), and gone when the block under it is broken.
+    let torch = s("dwell:torch");
+    let mut world = ground();
+    let eye = [0.5, 1.62, 0.5];
+    let on = check(&mut world, place([0, -1, 2], 2, torch), eye, &[]);
+    assert_eq!((on.check, on.cell), (EditCheck::Ok, [0, 0, 2]));
+    world.set_voxel(0, 1, 3, s("dwell:sandbox_floor"));
+    assert_eq!(
+        check(&mut world, place([0, 1, 3], 5, torch), eye, &[]).check,
+        EditCheck::NoSupport,
+        "against a side with air below"
+    );
+    world.set_voxel(0, 31, 2, s("dwell:stone"));
+    world.set_voxel(0, 32, 2, torch);
+    assert_eq!(
+        unsupported_after(&mut world, [0, 31, 2], s("dwell:air")),
+        vec![([0, 32, 2], s("dwell:air"))]
     );
 }
 

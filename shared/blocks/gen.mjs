@@ -6,6 +6,7 @@ import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { blockFluid, fluidsRust, readFluids } from './fluids.mjs';
+import { blockHeld, blockLight, lightsRust, readLights } from './lights.mjs';
 import {
   FACINGS as SHAPE_FACINGS,
   RAMP_SHAPES,
@@ -242,6 +243,10 @@ function validateRender(id, def, look, isAir) {
 }
 
 const fluids = readFluids(namespaces); // fluids.mjs
+// Light sources (lights.mjs, docs/LIGHTS.md): blocks reference them by name; a block's held item
+// names an item of the characters' data.
+const lights = readLights(namespaces);
+const heldItems = Object.keys(JSON.parse(readFileSync(join(root, 'shared/characters/characters.json'), 'utf8')).items);
 const opacityOf = (block) => block.def.opacity ?? fluids[block.fluid]?.opacity ?? 1;
 const blocks = []; // { id, def, props: [{name, values}], first, count, look, fluid }
 const states = []; // { id, block, string, values: {prop: value}, ... }
@@ -285,7 +290,9 @@ for (const ns of namespaces) {
     if (def.adaptive !== undefined) fail(`${id}: adaptive blocks were removed (ADR 0042); natural ground uses rampFamilies`);
     const count = props.reduce((n, p) => n * p.values.length, 1);
     const fluid = blockFluid(id, def, fluids);
-    const block = { id, def, props, first: states.length, count, look, fluid };
+    const light = blockLight(id, def, lights);
+    const held = blockHeld(id, def, heldItems);
+    const block = { id, def, props, first: states.length, count, look, fluid, light, held };
     blocks.push(block);
     // Mixed radix: the last (alphabetically) property varies fastest.
     for (let i = 0; i < count; ++i) {
@@ -666,12 +673,15 @@ if (!fixture) writeFileSync(join(root, 'client/src/world/blocks.gen.ts'), ts.joi
       `medium: Medium::${d.medium ? pascal(d.medium) : 'Any'}`,
       `light_filter: ${lightFilterOf(d)}`,
       `emits: ${d.emits ?? 0}`,
+      `light: ${st.block.light === null ? 'None' : `Some(&LIGHTS[${st.block.light}])`}`,
+      `held: ${st.block.held === null ? 'None' : `Some(${rstr(st.block.held)})`}`,
     ];
     rs.push(`    StateInfo { ${fields.join(', ')} },`);
   }
   rs.push('];');
   rs.push('');
   rs.push(...fluidsRust(fluids, rf));
+  rs.push(...lightsRust(lights, rf));
   const out = fixture ? 'fixture.gen.rs' : 'blocks.gen.rs';
   writeFileSync(join(root, 'crates/dwell-blocks/src', out), rs.join('\n'));
 
@@ -680,7 +690,7 @@ if (!fixture) writeFileSync(join(root, 'client/src/world/blocks.gen.ts'), ts.joi
 // ---- Shared vector: the canonical strings in id order and the hash (both sides' tests read it) -----
 const vec = [`# ${header}`, `hash ${hashHex}`, ...states.map((s) => `${s.id} ${s.string}`), ''];
 if (fixture) {
-  console.log(`fixture blocks: ${blocks.length} blocks, ${states.length} states, ${fluids.length} fluids`);
+  console.log(`fixture blocks: ${blocks.length} blocks, ${states.length} states, ${fluids.length} fluids, ${lights.length} lights`);
 } else {
   writeFileSync(join(here, 'vectors.txt'), vec.join('\n'));
   console.log(`blocks: ${blocks.length} blocks, ${states.length} states, hash ${hashHex}`);

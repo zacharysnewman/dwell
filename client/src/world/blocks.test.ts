@@ -95,9 +95,11 @@ describe('block registry (docs/BLOCK_REGISTRY.md)', () => {
     // Minor lines from its `grid` tile, majors every 8 blocks from the `grid` look option.
     expect(def).toMatchObject({ indestructible: true, grid: { every: 8 } });
     expect(def?.adaptive).toBeUndefined();
-    // Appended: the blocks before it keep their ids (and tall grass, Phase 33, came after it).
+    // Appended: the blocks before it keep their ids (and tall grass, Phase 33, came after it; the
+    // torch, Phase 47, after the stored ramps, placed at their own slots).
     expect(data.blocks.findIndex((b) => b.name === 'sandbox_floor')).toBe(7);
-    expect(data.blocks.map((b) => b.name).at(-1)).toBe('tall_grass');
+    expect(data.blocks.map((b) => b.name).at(-1)).toBe('torch');
+    expect(STATE_DEFS.at(-1)?.state).toBe('dwell:torch');
     const floor = STATE_DEFS[stateId('dwell:sandbox_floor')];
     expect(floor).toMatchObject({ look: 'cube', color: 0xffffff, placeable: false });
     expect(floor?.textures).toEqual({ top: 'grid', side: 'grid', bottom: 'grid' });

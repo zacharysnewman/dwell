@@ -285,7 +285,8 @@ mod tests {
                 "sand",
                 "log",
                 "leaves",
-                "tall_grass"
+                "tall_grass",
+                "torch"
             ]
         );
     }

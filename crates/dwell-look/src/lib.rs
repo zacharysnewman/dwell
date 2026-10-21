@@ -10,6 +10,7 @@ pub mod clouds;
 mod clouds_gen;
 pub mod daynight;
 pub mod fog;
+pub mod lights;
 pub mod lod_blend;
 pub mod lod_colour;
 pub mod lod_shadows;

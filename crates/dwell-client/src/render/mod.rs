@@ -13,6 +13,7 @@ pub mod display;
 pub mod face_shading;
 pub mod frame;
 pub mod geometry;
+pub mod lights;
 pub mod lod_shadows;
 pub mod pacing;
 pub mod reflection;
@@ -1005,12 +1006,14 @@ impl Renderer {
                 entries: &frame_entries[..3],
             });
         // The water's tiles (water_tiles.rs), bindings 5–7; the shadow maps (shadows.rs), 8–10;
-        // the distant terrain's heightmaps (lod_shadows.rs), 11–13.
+        // the distant terrain's heightmaps (lod_shadows.rs), 11–13; the dynamic lights (lights.rs),
+        // 14.
         let frame_entries: Vec<_> = frame_entries
             .into_iter()
             .chain(WaterTiles::layout_entries())
             .chain(shadows::layout_entries())
             .chain(lod_shadows::layout_entries())
+            .chain([lights::layout_entry()])
             .collect();
         let frame_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("frame"),
@@ -1440,6 +1443,7 @@ impl Renderer {
             sampler,
             tile_grid_buffer,
             fluid_buffer,
+            light_buffer: lights::buffer(&device),
         };
         // No maps until the first frame asks for some (`ensure_shadow_maps`): a 1×1 stand-in.
         let shadow_maps = frame_bindings.shadow_maps(&device, (1, 1));
@@ -2595,29 +2599,31 @@ impl Renderer {
         // their own projection (characters.rs).
         // Your own body casts whole (a shadow in first person, `set_own_shadow`) and is drawn
         // from the neck down (`set_own_body`, CHARACTERS.md §5.1).
-        let body = |v: &PlayerView, cast_only: bool, first_person: bool| characters::BodyDraw {
-            feet: v.feet,
-            yaw: v.yaw,
-            face: v.face,
-            dead: v.dead,
-            look: v.look,
-            pose: v.pose,
-            held: v.held,
-            cast_only,
-            first_person,
-            light: v.light,
-        };
+        let body =
+            |seed: u32, v: &PlayerView, cast_only: bool, first_person: bool| characters::BodyDraw {
+                feet: v.feet,
+                yaw: v.yaw,
+                face: v.face,
+                dead: v.dead,
+                look: v.look,
+                pose: v.pose,
+                held: v.held,
+                cast_only,
+                first_person,
+                light: v.light,
+                seed,
+            };
         let bodies: Vec<characters::BodyDraw> = self
             .players
-            .values()
-            .map(|v| body(v, false, false))
+            .iter()
+            .map(|(id, v)| body(*id, v, false, false))
             .chain(
                 self.own_shadow
                     .as_ref()
                     .filter(|_| shadow_plan.is_some())
-                    .map(|v| body(v, true, false)),
+                    .map(|v| body(0, v, true, false)),
             )
-            .chain(self.own_body.as_ref().map(|v| body(v, false, true)))
+            .chain(self.own_body.as_ref().map(|v| body(0, v, false, true)))
             .collect();
         self.characters.prepare(
             &self.device,
@@ -2629,6 +2635,13 @@ impl Renderer {
             &bodies,
             self.arms.as_ref(),
         );
+        // The dynamic lights (docs/LIGHTS.md §3): the held torches, nearest first, flickering by
+        // the frame's clock.
+        let seconds = (crate::telemetry::now_ms() - self.start_ms) / 1000.0;
+        let (block, drawn) = lights::frame_block(self.characters.held_lights(), self.eye, seconds);
+        self.queue
+            .write_buffer(&self.frame_bindings.light_buffer, 0, floats(&block));
+        crate::telemetry::add("lights.drawn", drawn as f64);
         let arms = self.characters.has_arms();
         if arms {
             let fov = dwell_characters::player()
@@ -3659,6 +3672,8 @@ struct FrameBindings {
     sampler: wgpu::Sampler,
     tile_grid_buffer: wgpu::Buffer,
     fluid_buffer: wgpu::Buffer,
+    /// The dynamic lights' block (lights.rs), written each frame.
+    light_buffer: wgpu::Buffer,
 }
 
 impl FrameBindings {
@@ -3719,6 +3734,10 @@ impl FrameBindings {
                 wgpu::BindGroupEntry {
                     binding: 4,
                     resource: self.fluid_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: lights::BINDING,
+                    resource: self.light_buffer.as_entire_binding(),
                 },
             ];
             let entries: Vec<_> = entries
