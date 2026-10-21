@@ -311,8 +311,8 @@ choices.
   tiles are baked as luminance over the tile's mean (the Lab's `lum(tile) / uTileLum`); the shader
   scales the ramp by the frame's light on the fragment's face (`CHARACTER_EXPOSURE` 0.5, tuned by eye)
   so night and face B's lights reach characters; the outline is drawn always (the owner's §10 Q5 is
-  open), ~6 mm, dropped with the small parts past 64 m; the painterly texture set draws the brush
-  tiles, the classic set the clean ramp; the held block uses its atlas tiles in either set.
+  open), ~6 mm, dropped with the small parts past 64 m; the shader always draws the brush tiles;
+  the held block uses its atlas tiles.
 - **Rigid parts, not skinning.** Each part is a rigid mesh on its bone: no weights, no vertex
   skinning, no bind pose. Chunky parts read better rigid (the storybook look has visible joints),
   the data stays a list of primitives a tool can edit, and a character draws as one instanced batch
