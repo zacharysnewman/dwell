@@ -162,14 +162,12 @@ impl FaceFrame {
         ])
     }
     /// A face-local look (yaw, pitch; degrees) continued across the midplane onto the other face
-    /// (BIFACIAL_WORLD.md §6): the heading turned by 180° and the pitch mirrored. In the world its
-    /// direction keeps its vertical part and reverses its horizontal one, and the camera's right
-    /// stays the same, so the view turns about its right axis only, by 2 × (90° − |pitch|): not at
-    /// all looking straight down or up, half a turn looking level. Looking down a ladder through
-    /// the midplane, the same look is up the far side's. The same map either way (an involution);
-    /// the yaw comes back in [0, 360).
+    /// (BIFACIAL_WORLD.md §6): the heading kept and the pitch mirrored, so its world direction is
+    /// the same at every heading and pitch (the mirror reverses the pitch's vertical part back);
+    /// only the camera's up is reversed, which the camera rolls out. Looking down a ladder through
+    /// the midplane, the same look is up the far side's. Its own inverse.
     pub fn look_across(yaw_deg: f64, pitch_deg: f64) -> (f64, f64) {
-        ((yaw_deg + 180.0).rem_euclid(360.0), -pitch_deg)
+        (yaw_deg, -pitch_deg)
     }
     /// A block state, world ↔ face-local: a shaped block (its `half`) turned over on face B.
     pub fn state(self, s: StateId) -> StateId {
@@ -322,18 +320,19 @@ mod tests {
     use super::*;
 
     crate::both_faces!(
-        /// A look continued across the midplane from face `f` keeps its world direction's vertical
-        /// part, reverses its horizontal one, and is its own inverse.
-        fn a_look_across_the_midplane_keeps_its_vertical_part(f: FaceFrame) {
-            for (yaw, pitch) in [(0.0, -90.0), (37.0, -80.0), (200.0, 0.0), (350.0, 45.0)] {
-                let (y2, p2) = FaceFrame::look_across(yaw, pitch);
-                let (before, after) = (f.look(yaw, pitch), f.other().look(y2, p2));
-                assert!((after[1] - before[1]).abs() < 1e-12, "{before:?} {after:?}");
-                assert!(
-                    (after[0] + before[0]).abs() < 1e-12 && (after[2] + before[2]).abs() < 1e-12
-                );
-                let (y3, p3) = FaceFrame::look_across(y2, p2);
-                assert!((y3 - yaw).abs() < 1e-9 && p3 == pitch);
+        /// A look continued across the midplane from face `f` points the same way in the world, at
+        /// every heading and pitch, and is its own inverse.
+        fn a_look_across_the_midplane_points_the_same_way(f: FaceFrame) {
+            for yaw in (0..360).step_by(15) {
+                for pitch in (-90..=90).step_by(10) {
+                    let (yaw, pitch) = (f64::from(yaw), f64::from(pitch));
+                    let (y2, p2) = FaceFrame::look_across(yaw, pitch);
+                    let (before, after) = (f.look(yaw, pitch), f.other().look(y2, p2));
+                    for k in 0..3 {
+                        assert!((after[k] - before[k]).abs() < 1e-12, "{before:?} {after:?}");
+                    }
+                    assert_eq!(FaceFrame::look_across(y2, p2), (yaw, pitch));
+                }
             }
         }
     );

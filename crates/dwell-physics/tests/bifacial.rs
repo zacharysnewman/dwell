@@ -223,7 +223,7 @@ dwell_world::both_faces!(
     /// The owner's ladder (BIFACIAL_WORLD.md §6, 2026-10-21): climbing down a ladder through the
     /// midplane, looking down and holding forward, keeps going the same way in the world. Across
     /// the midplane the body turns over and the client continues the look on the other face
-    /// (`FaceFrame::look_across`: heading turned by 180°, pitch mirrored), so the same look down
+    /// (`FaceFrame::look_across`: the heading kept, the pitch mirrored: the same world direction), so the same look down
     /// now reads as a look up the far side's ladder and forward climbs up it. The crossing tick
     /// itself ran on the look sampled before it: the controller continues it too, or that one tick
     /// climbs back. Starts on face `f` and crosses to the other.

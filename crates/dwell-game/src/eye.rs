@@ -9,14 +9,14 @@
 //! drawn frame. Heights are measured along the player's up (BIFACIAL_WORLD.md §6): on face B the
 //! head points toward −y, so `up height = face × y`; the smoothing is the same either way, and
 //! starts afresh when the player crosses to the other face. There the body turns over, so the eye
-//! goes from above the body's centre to below it: it swings across over the camera's settling
-//! time (`face_flip.rs`) rather than jumping by most of a body height.
+//! goes from above the body's centre to below it: it swings across over the camera's roll
+//! (`face_flip.rs`) rather than jumping by most of a body height.
 
 use dwell_physics::config::StepView;
 use dwell_protocol::controller_flags;
 use dwell_world::FaceFrame;
 
-use crate::face_flip::{FLIP_SECONDS, ease};
+use crate::face_flip::{ROLL_SECONDS, ease};
 
 /// Crouch offset decay rate (1/s).
 const CROUCH_RATE: f64 = 12.0;
@@ -329,7 +329,7 @@ impl EyeCamera {
             // From the eye drawn now (mid-swing, if the body swings back), not a jump.
             self.swing = Some((self.current - fresh, 0.0));
         } else if let Some((offset, t)) = self.swing {
-            self.swing = (t + dt < FLIP_SECONDS).then_some((offset, t + dt));
+            self.swing = (t + dt < ROLL_SECONDS).then_some((offset, t + dt));
         }
         let eye = fresh
             + self
@@ -874,7 +874,7 @@ mod tests {
             // It swings across, never by more than a body height in a tick, and settles where
             // face B's eye is (the feet's up-height 0 + 1.62 below), the smoothing started afresh.
             let mut last = camera.draw(1.0);
-            for _ in 0..(FLIP_SECONDS / DT).ceil() as usize {
+            for _ in 0..(ROLL_SECONDS / DT).ceil() as usize {
                 camera.tick(&mirrored(&state(0.0)), DT);
                 let now = camera.draw(1.0);
                 assert!(now <= last + 1e-9 && last - now < 0.25, "{last} → {now}");

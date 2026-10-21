@@ -955,7 +955,8 @@ pub struct Renderer {
     yaw: f64,
     pitch: f64,
     face: FaceFrame,
-    flip: f64,
+    /// The view's roll about its forward axis (radians; the crossing of the midplane, face_flip.rs).
+    roll: f64,
     /// The fluid the eye is under (`set_eye_fluid`), for the frame uniform.
     eye_fluid: Option<EyeFluid>,
     /// The water quality setting (`set_water_quality`).
@@ -1613,7 +1614,7 @@ impl Renderer {
             yaw: 180.0,
             pitch: -20.0,
             face: FaceFrame::A,
-            flip: 0.0,
+            roll: 0.0,
             eye_fluid: None,
             water_quality: WaterQuality::default(),
             water_debug: 0,
@@ -2042,8 +2043,8 @@ impl Renderer {
             }
         }
     }
-    /// Places the camera at `eye`, looking along yaw/pitch (degrees) for `face`; `flip` turns the
-    /// view over about its right axis across the midplane.
+    /// Places the camera at `eye`, looking along yaw/pitch (degrees) for `face`; `roll` turns the
+    /// view about its forward axis, rolling upright across the midplane.
     /// Your first-person arms this frame, or none (dead, zoomed, hidden).
     pub fn set_arms(&mut self, arms: Option<ArmsView>) {
         self.arms = arms;
@@ -2072,10 +2073,10 @@ impl Renderer {
         yaw_deg: f64,
         pitch_deg: f64,
         face: FaceFrame,
-        flip: f64,
+        roll: f64,
     ) {
-        (self.eye, self.yaw, self.pitch, self.face, self.flip) =
-            (eye, yaw_deg, pitch_deg, face, flip);
+        (self.eye, self.yaw, self.pitch, self.face, self.roll) =
+            (eye, yaw_deg, pitch_deg, face, roll);
     }
     /// The frame's vertical FOV (degrees), as the game chose it for the speed boost and gave the
     /// LOD selection too; `None` draws with the screen's own (`vertical_fov`).
@@ -2390,7 +2391,7 @@ impl Renderer {
         let mut out = Vec::new();
         let plain = [1.0, 1.0, 1.0, 1.0];
         let aspect = f64::from(self.size.0) / f64::from(self.size.1);
-        let forward = aim(self.yaw, self.pitch, self.face, self.flip).forward();
+        let forward = aim(self.yaw, self.pitch, self.face, self.roll).forward();
         let view = PassView::new(self.eye, forward, self.frame_fov(), aspect);
         // Which passes (bit per pass) a box reaches into.
         let reaches = |origin: V3, size: V3| -> u8 {
@@ -2708,7 +2709,7 @@ impl Renderer {
         if let (Some(p), Some(g)) = (self.pixel_preset(), self.pixel_grid)
             && p.snap_camera
         {
-            let basis = aim(self.yaw, self.pitch, self.face, self.flip);
+            let basis = aim(self.yaw, self.pitch, self.face, self.roll);
             let tan_y = (self.frame_fov().to_radians() / 2.0).tan();
             let (snapped, shift) = dwell_look::pixel_art::snap_eye(
                 eye,
@@ -2752,7 +2753,7 @@ impl Renderer {
             timer.begin();
         }
         let collect_start = crate::telemetry::now_ms();
-        let basis = aim(self.yaw, self.pitch, self.face, self.flip);
+        let basis = aim(self.yaw, self.pitch, self.face, self.roll);
         // Two passes (§6.6): the far one beyond the split (its near plane pushed out with altitude,
         // where nothing is closer), then a depth clear and the near one. Heights are face-local.
         let altitude = self.face.y(self.eye[1]) - TERRAIN_TOP_M;
@@ -4505,8 +4506,8 @@ impl crate::game::Scene for Renderer {
     fn set_placed_flames(&mut self, flames: Vec<flames::PlacedFlame>) {
         Renderer::set_placed_flames(self, flames);
     }
-    fn set_camera(&mut self, eye: V3, yaw_deg: f64, pitch_deg: f64, face: FaceFrame, flip: f64) {
-        Renderer::set_camera(self, eye, yaw_deg, pitch_deg, face, flip);
+    fn set_camera(&mut self, eye: V3, yaw_deg: f64, pitch_deg: f64, face: FaceFrame, roll: f64) {
+        Renderer::set_camera(self, eye, yaw_deg, pitch_deg, face, roll);
     }
     fn set_eye_fluid(&mut self, eye_fluid: Option<EyeFluid>) {
         Renderer::set_eye_fluid(self, eye_fluid);

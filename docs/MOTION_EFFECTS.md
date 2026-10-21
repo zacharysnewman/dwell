@@ -68,8 +68,8 @@ is ≈ 123°, at 60° ≈ 84°.
 - **Resets** (to no boost, no wind): a teleport (the eye moved more than `teleportM` beyond what its
   velocity explains), death and respawn (the camera is not the player's eyes), a tool camera,
   turning the effects off. Not a crossing of the midplane: the camera keeps pointing the same way
-  there (BIFACIAL_WORLD.md §6), so a reset would snap the FOV; the eye's swing across the body is
-  no teleport.
+  there and only rolls (BIFACIAL_WORLD.md §6), so a reset would snap the FOV; the eye's swing
+  across the body is no teleport. The roll's duration (`crossingRollS`) lives in `motion.json`.
 - **Menu open**: nothing changes (the spring and the animation are held).
 
 ## Wind (shader)

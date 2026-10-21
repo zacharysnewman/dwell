@@ -56,6 +56,9 @@ pub struct MotionTunables {
     pub state_gain: [f64; 10],
     /// A camera jump this much farther than its velocity explains is a teleport: the effects reset.
     pub teleport_m: f64,
+    /// How long the camera's roll takes across the midplane (s; BIFACIAL_WORLD.md §6): the view
+    /// keeps pointing the same way and turns upright about its forward axis, eased in and out.
+    pub crossing_roll_s: f64,
 }
 
 /// The controller's ground speeds the effects are scaled to (dwell-physics' `movement`).

@@ -116,7 +116,7 @@ pub trait Scene: TerrainRenderer {
         yaw_deg: f64,
         pitch_deg: f64,
         face: FaceFrame,
-        flip: f64,
+        roll: f64,
     );
     /// The fluid whose drawn surface the camera's eye is under (`dwell_world::fluid::eye_fluid`).
     fn set_eye_fluid(&mut self, _eye_fluid: Option<dwell_world::fluid::EyeFluid>) {}
@@ -1608,8 +1608,8 @@ impl<S: Scene> Game<S> {
             1.0 / SIM_HZ as f64,
         );
         self.mover_sounds.update(&sample, None, &mut self.sounds);
-        // Across the midplane the body turns over and the look goes on across: the heading turned
-        // round, the pitch mirrored, the camera pointing the same way (face_flip.rs).
+        // Across the midplane the body turns over and the look goes on across: the heading kept,
+        // the pitch mirrored, the camera pointing the same way and rolling upright (face_flip.rs).
         (input.look.yaw, input.look.pitch) =
             self.flip
                 .tick(self.current.face, input.look.yaw, input.look.pitch);
@@ -1625,7 +1625,7 @@ impl<S: Scene> Game<S> {
         let c = self.current;
         let face = c.face;
         let dt = self.last_draw_ms.map_or(0.0, |l| (now_ms - l) / 1000.0);
-        let flip = self.flip.draw(dt);
+        let roll = self.flip.draw(dt);
         self.last_draw_ms = Some(now_ms);
         let p = self.previous.unwrap_or(c);
         let alpha = self.accumulator / TICK_MS;
@@ -1792,7 +1792,7 @@ impl<S: Scene> Game<S> {
             camera_eye = eye;
             self.scene
                 .borrow_mut()
-                .set_camera(eye, yaw, pitch, face, flip);
+                .set_camera(eye, yaw, pitch, face, roll);
             self.listener = listener(eye, yaw, pitch, face);
             let ready = self.terrain_ready();
             self.target(ready.then_some(eye), input, now_ms);
