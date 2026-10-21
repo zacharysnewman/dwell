@@ -1930,24 +1930,34 @@ Each frame the octree is walked from the root around the **camera** (the eye):
   a still burst shows nothing: the earlier "z-fighting high up, not reproduced" in Phase 4). The
   owner's report (2026-10-21, an iPhone, high over seed 7's grassy hills): dirt specks and short
   dirt strips showing through flat grass in rings around the camera. Causes, each with its guard:
-  1. *Depth precision* — the near pass's standard depth (above); fixed by reversed depth, guarded
-     by the precision test.
+  1. *Depth precision* — the near pass's standard depth (above) left any two surfaces within
+     ~0.1 m at 300 m or ~1 m at 1 km to chance; reversed depth resolves millimetres there,
+     guarded by the precision test. It was not what showed the reported dirt (reversed depth
+     alone left it in place; the next cause did), but it is what turns every near-coplanar pair
+     into a flicker.
   2. *A top skirt in the ground's plane* — a section under the one holding the ground has a solid
      top row under a solid apron, so its top faces are a +Y skirt, shown wherever the section
      above is not drawn at the same level: in a ring around the camera, where the nearer upper
      section has refined and the lower one has not, or under chunks. It lay on the section's top
-     plane, coloured by the top row (dirt), and the ground crossing that plane lay millimetres
-     above it. It is now sunk `SKIRT_SINK` (⅛ cell) under the plane and coloured by the column's
-     ground material (`dwell-mesh` `lod_mesher.rs`); `tests/lod_skirts.rs`
+     plane, in the top row's colour (dirt), millimetres under ground crossing that plane, and
+     showed through wherever the other level drew the ground under the plane (its rounding, or
+     octaves this level drops). It is now sunk `SKIRT_SINK` (a 64th of a cell: far over the depth
+     step, far under a pixel) and coloured by the column's ground material from the surface data,
+     and the side skirts of a column whose ground is above the section mix that material as a
+     riser does (`dwell-mesh` `lod_mesher.rs`). Sinking it under the ground over its whole cell
+     was tried and opened cracks at the rims of the holes it closes. Guards: `tests/lod_skirts.rs`
      `a_top_skirt_lies_under_the_ground_by_a_margin` (seed 7 hillsides, levels 1–4, both faces;
-     failed with a top skirt 5 mm under the ground) and `no_side_skirt_rises_above_the_drawn_surface`
-     (no skirt pokes above what its section draws).
+     failed with a top skirt 5 mm under the ground), `no_side_skirt_rises_above_the_drawn_surface`
+     (no skirt pokes above what its section draws), and `lod_mesher_tests.rs` `top_skirts`
+     (sunk, in grass's colour, side skirts not dirt's; failed on the plane in dirt).
   3. *Two levels in a swap* — not a cause: the cross-fade's dither keeps each pixel in exactly one
      level, through the shaders' f32 encoding of the progress, at every pattern step
      (`render/shaders.rs` `the_two_levels_of_a_swap_never_both_draw_a_pixel_through_the_shaders_encoding`).
-  4. *The bench*: `lod-zfight` (`client/bench/scenarios.json`) drifts the camera by millimetres a
-     frame over seed 7's hills from 120–300 m up and fails over a `maxHueFlips` bar (the share of
-     pixels whose hue flips, grass to dirt, between frames; DEV_TOOLS.md `burst`).
+  4. *The bench*: `lod-zfight` and `lod-zfight-b` (`client/bench/scenarios.json`) drift the camera
+     by millimetres a frame over seed 7's hills from 160–300 m up on either face and fail over a
+     `maxHueFlips` bar (the share of pixels whose hue flips, grass to dirt, between frames;
+     DEV_TOOLS.md `burst`): 0.005–0.013 % before, 0.000–0.002 % after. Cost neutral: no new pass
+     or draw, the same triangles.
   A new LOD surface that is hidden by depth (a skirt, a cover, a stand-in, an overlay) must keep a
   margin from what hides it, not rely on the depth test to break a tie.
 - **Height fog:** a light haze in an exponential atmosphere — extinction
