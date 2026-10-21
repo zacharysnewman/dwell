@@ -16,7 +16,8 @@ use dwell_protocol::CHUNK_SIZE;
 use dwell_world::FaceFrame;
 
 use crate::LengthError;
-use crate::sky::{AO_OPEN, LatticeRays, Occupancy, corner_key, key_light, vertex_light};
+use crate::flood::Flood;
+use crate::sky::{AO_OPEN, LatticeRays, Occupancy, corner_key, key_flood, key_light, vertex_light};
 use crate::style::{
     Look, MaterialStyle, cube, fluid_value, material_style, mirror_material, style_of,
 };
@@ -62,6 +63,11 @@ pub struct MeshArrays {
     /// light, corner occlusion × sky visibility (0–1; 1 open to the sky; `sky.rs`). The shader
     /// multiplies the hemisphere light by it, above the floor (shared/look/ambient.json).
     pub light: Vec<f32>,
+    /// The opaque and cutout meshes (empty in the transparent one): per vertex, the flood light
+    /// (docs/DAY_NIGHT.md §10), sky then block level as a share of 15, averaged over the cells
+    /// the vertex touches (`flood.rs`). The shader turns them into brightness by
+    /// shared/look/light.json's curves.
+    pub flood: Vec<f32>,
     /// The transparent mesh's fluid id per vertex (`crate::NO_FLUID` for a see-through face that
     /// is no fluid's); empty in the opaque mesh.
     pub fluids: Vec<f32>,
@@ -80,6 +86,7 @@ impl MeshArrays {
             + self.plants.len()
             + self.bare.len()
             + self.light.len()
+            + self.flood.len()
             + self.fluids.len()
             + self.indices.len())
     }
@@ -267,7 +274,8 @@ fn corner_keys(
             p[v] = vv;
             rays[slot] = cells.lattice_rays(p, face);
         }
-        corner_key(level, rays[slot])
+        let (sky, block) = cells.flood.corner(cells.occ, front, u, 2 * cu - 1, v, 2 * cv - 1);
+        corner_key(level, rays[slot], sky, block)
     })
 }
 
@@ -297,14 +305,23 @@ struct Cells<'a> {
     shaped_rays: std::cell::RefCell<std::collections::HashMap<ShapedKey, u8>>,
     /// The chunk's minimum corner, face-local world cells (the sky rays' turn).
     origin: [i32; 3],
+    /// The flood light around the chunk, face-local.
+    flood: &'a Flood,
 }
 
 impl<'a> Cells<'a> {
-    fn new(kinds: &'a Kinds, padded: &'a [u16], occ: &'a Occupancy, origin: [i32; 3]) -> Self {
+    fn new(
+        kinds: &'a Kinds,
+        padded: &'a [u16],
+        occ: &'a Occupancy,
+        flood: &'a Flood,
+        origin: [i32; 3],
+    ) -> Self {
         Self {
             kinds,
             padded,
             occ,
+            flood,
             paths: occ.lattice_paths(),
             shaped_rays: Default::default(),
             origin,
@@ -398,6 +415,7 @@ impl Builder {
         color: u32,
         tile: &TileRect,
         light: [f32; 4],
+        flood: [[f32; 2]; 4],
     ) {
         let u = (axis + 1) % 3;
         let v = (axis + 2) % 3;
@@ -435,9 +453,11 @@ impl Builder {
             self.push_tile(tile);
         }
         self.m.light.extend(light);
+        self.m.flood.extend(flood.iter().flatten());
         // e_u × e_v = e_axis: (0, 1, 2) is counter-clockwise seen from +axis. The diagonal joins
         // corners 0 and 2, or 1 and 3 when they are the brighter pair.
-        let k = u32::from(flip_diagonal(light));
+        let lit: [f32; 4] = std::array::from_fn(|i| light[i] * flood[i][0] + flood[i][1]);
+        let k = u32::from(flip_diagonal(lit));
         let c = |i: u32| base + (i + k) % 4;
         if sign > 0 {
             self.m.indices.extend([c(0), c(1), c(2), c(0), c(2), c(3)]);
@@ -460,7 +480,7 @@ impl Builder {
         color: u32,
         tile: &TileRect,
         side_top: Option<SideTop>,
-        light: Option<&[f32]>,
+        light: Option<(&[f32], &[[f32; 2]])>,
     ) {
         let base = self.vertex_count();
         let r = channel(color, 16) * tint[0];
@@ -493,8 +513,14 @@ impl Builder {
             self.push_tile(tile);
         }
         match light {
-            Some(l) => self.m.light.extend(l.iter().copied().take(pts.len())),
-            None => self.m.light.extend(std::iter::repeat_n(1.0, pts.len())),
+            Some((l, f)) => {
+                self.m.light.extend(l.iter().copied().take(pts.len()));
+                self.m.flood.extend(f.iter().take(pts.len()).flatten());
+            }
+            None => {
+                self.m.light.extend(std::iter::repeat_n(1.0, pts.len()));
+                self.m.flood.extend(std::iter::repeat_n([1.0, 0.0], pts.len()).flatten());
+            }
         }
         for i in 1..pts.len().saturating_sub(1) as u32 {
             self.m.indices.extend([base, base + i, base + i + 1]);
@@ -562,7 +588,13 @@ fn side_surface(style: &MaterialStyle, face: usize, rule: Option<usize>) -> (u32
 }
 
 /// A ladder's plate: one quad against the back of its cell.
-fn ladder_face(b: &mut Builder, style: &MaterialStyle, face: usize, x: i32, y: i32, z: i32) {
+fn ladder_face(
+    b: &mut Builder,
+    style: &MaterialStyle,
+    flood: [f32; 2],
+    face: usize,
+    [x, y, z]: [i32; 3],
+) {
     let (axis, sign) = FACES[face];
     let lo = [f64::from(x), f64::from(y), f64::from(z)];
     let hi = [lo[0] + 1.0, lo[1] + 1.0, lo[2] + 1.0];
@@ -584,6 +616,7 @@ fn ladder_face(b: &mut Builder, style: &MaterialStyle, face: usize, x: i32, y: i
         color,
         &tile,
         [1.0; 4],
+        [flood; 4],
     );
 }
 
@@ -622,7 +655,7 @@ fn cross_voxel(
     world: [i64; 3],
     [x, y, z]: [i32; 3],
     support: Option<&ShapeInfo>,
-    light: f32,
+    (light, flood): (f32, [f32; 2]),
 ) {
     let Some(c) = style.cross else { return };
     let sink = |px: f64, pz: f64| match support {
@@ -692,6 +725,7 @@ fn cross_voxel(
                 .extend([s as f32, speed as f32, fade0 as f32, fade1 as f32]);
             b.m.bare.push(bare);
             b.m.light.push(light);
+            b.m.flood.extend(flood);
         }
         b.m.indices
             .extend([base, base + 1, base + 2, base, base + 2, base + 3]);
@@ -805,6 +839,10 @@ fn shaped_voxel(b: &mut Builder, cells: &Cells<'_>, k: &Kind, x: i32, y: i32, z:
             .iter()
             .map(|p| vertex_light(AO_OPEN, cells.sky_rays([x, y, z], *p, n_m, salt)))
             .collect();
+        let flood: Vec<[f32; 2]> = pts
+            .iter()
+            .map(|p| cells.flood.at_point([x, y, z], *p, normal))
+            .collect();
         b.polygon(
             &pts,
             at,
@@ -813,7 +851,7 @@ fn shaped_voxel(b: &mut Builder, cells: &Cells<'_>, k: &Kind, x: i32, y: i32, z:
             color,
             &tile,
             side_top_of(def, tag),
-            Some(&light),
+            Some((&light, &flood)),
         );
     }
 }
@@ -968,6 +1006,7 @@ fn flooded_water(b: &mut Builder, cells: &Cells<'_>, x: i32, y: i32, z: i32) {
             color,
             &tile,
             [1.0; 4],
+            [[1.0, 0.0]; 4],
         );
         b.tag_fluid(water.style.fluid);
     }
@@ -1030,13 +1069,26 @@ pub fn mesh_chunk_at(
     mirror: bool,
     origin: [i32; 3],
 ) -> Result<ChunkMeshes, LengthError> {
-    mesh_chunk_with(Kinds::build(), padded, mirror, origin)
+    mesh_chunk_lit(padded, &[], mirror, origin)
+}
+
+/// [`mesh_chunk_at`] with the chunk's flood light (docs/DAY_NIGHT.md §10): `light` is its
+/// packed sky and block light with a one-cell apron in [`padded_index`] order, world-oriented
+/// (`dwell_world::light::LightMap::padded`); empty (or short) lights it as open sky.
+pub fn mesh_chunk_lit(
+    padded: &[u16],
+    light: &[u8],
+    mirror: bool,
+    origin: [i32; 3],
+) -> Result<ChunkMeshes, LengthError> {
+    mesh_chunk_with(Kinds::build(), padded, light, mirror, origin)
 }
 
 /// [`mesh_chunk_at`] over the registry `kinds` describes.
 pub(crate) fn mesh_chunk_with(
     kinds: &Kinds,
     padded: &[u16],
+    light: &[u8],
     mirror: bool,
     origin: [i32; 3],
 ) -> Result<ChunkMeshes, LengthError> {
@@ -1057,18 +1109,19 @@ pub(crate) fn mesh_chunk_with(
         }
     };
     let occ = Occupancy::new(padded, ext, apron, mirror, |id| kinds.of(id).blocks_light);
+    let flood = Flood::new(light, mirror);
     let m = if mirror {
         // Meshed in the face-local frame (BIFACIAL_WORLD.md §11): the mirror image's minimum
         // corner is the face-local chunk's, so a plant is jittered as its face-A twin is.
         let local = [origin[0], FaceFrame::B.row(origin[1] + N - 1), origin[2]];
-        let m = mesh_cells(kinds, &mirror_padded(&inner), &occ, local);
+        let m = mesh_cells(kinds, &mirror_padded(&inner), &occ, &flood, local);
         ChunkMeshes {
             opaque: flip_arrays_y(m.opaque),
             transparent: flip_arrays_y(m.transparent),
             cutout: flip_arrays_y(m.cutout),
         }
     } else {
-        mesh_cells(kinds, &inner, &occ, origin)
+        mesh_cells(kinds, &inner, &occ, &flood, origin)
     };
     Ok(ChunkMeshes {
         opaque: to_metres(m.opaque),
@@ -1100,10 +1153,16 @@ type ShapedKey = ([i64; 3], [i64; 3]);
 type CornerKeys = [u32; 4];
 
 /// The meshes of a chunk of face A (or a mirrored one), in chunk-local cells.
-fn mesh_cells(kinds: &Kinds, padded: &[u16], occ: &Occupancy, origin: [i32; 3]) -> ChunkMeshes {
+fn mesh_cells(
+    kinds: &Kinds,
+    padded: &[u16],
+    occ: &Occupancy,
+    flood: &Flood,
+    origin: [i32; 3],
+) -> ChunkMeshes {
     let mut opaque = Builder::default();
     let mut transparent = Builder::default();
-    let cells = Cells::new(kinds, padded, occ, origin);
+    let cells = Cells::new(kinds, padded, occ, flood, origin);
     let mut cutout = Builder::default();
     let n = N as usize;
     // Merge mask for one slice: material + 1 of a visible mergeable face, 0 for none.
@@ -1142,7 +1201,7 @@ fn mesh_cells(kinds: &Kinds, padded: &[u16], occ: &Occupancy, origin: [i32; 3]) 
                                 RenderMode::Cutout => &mut cutout,
                                 RenderMode::Translucent => &mut transparent,
                             };
-                            ladder_face(target, &k.style, face, cx, cy, cz);
+                            ladder_face(target, &k.style, cells.flood.cell([cx, cy, cz]), face, cell);
                             if k.style.render == RenderMode::Translucent {
                                 target.tag_fluid(k.style.fluid);
                             }
@@ -1245,7 +1304,17 @@ fn mesh_cells(kinds: &Kinds, padded: &[u16], occ: &Occupancy, origin: [i32; 3]) 
                             vs.1 = vs.0 + top;
                         }
                     }
-                    target.quad(axis, sign, plane, us, vs, color, &tile, lkey.map(key_light));
+                    target.quad(
+                        axis,
+                        sign,
+                        plane,
+                        us,
+                        vs,
+                        color,
+                        &tile,
+                        lkey.map(key_light),
+                        lkey.map(key_flood),
+                    );
                     if see_through {
                         target.tag_fluid(style.fluid);
                     }
@@ -1281,7 +1350,8 @@ fn mesh_cells(kinds: &Kinds, padded: &[u16], occ: &Occupancy, origin: [i32; 3]) 
                     // corner (no corner occlusion: it is not a cell's face, and it blocks no
                     // light itself).
                     let light = vertex_light(AO_OPEN, cells.lattice_rays([cx, cy, cz], 2));
-                    cross_voxel(target, &k.style, world, [cx, cy, cz], support, light);
+                    let flood = cells.flood.cell([cx, cy, cz]);
+                    cross_voxel(target, &k.style, world, [cx, cy, cz], support, (light, flood));
                     if k.style.render == RenderMode::Translucent {
                         target.tag_fluid(k.style.fluid);
                     }
@@ -1298,6 +1368,7 @@ fn mesh_cells(kinds: &Kinds, padded: &[u16], occ: &Occupancy, origin: [i32; 3]) 
     cutout.m.bare.resize(vertices, 0.0);
     // Fluids and see-through faces are lit by their own shader: no baked light.
     transparent.m.light.clear();
+    transparent.m.flood.clear();
     ChunkMeshes {
         opaque: opaque.m,
         transparent: transparent.m,

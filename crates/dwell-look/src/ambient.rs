@@ -45,6 +45,30 @@ impl AmbientTunables {
     }
 }
 
+/// How a terrain vertex is lit (docs/DAY_NIGHT.md §9–10), as the terrain shader computes it
+/// (`terrain_light` in dwell-client's shaders): shares of the hemisphere light, of the direct sun
+/// and moon, and the block light's glow.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Shading {
+    pub ambient: f64,
+    pub direct: f64,
+    pub glow: f64,
+}
+
+/// The shading of a vertex with baked `light` (corner occlusion × sky visibility) and flood
+/// light `sky` and `block` (levels as shares of 15): the hemisphere light by the sky light's
+/// brightness and the baked light, above the floor; the sun and moon by the sky light's direct
+/// ramp (the shadow stand-in); the block light's brightness × its strength.
+pub fn shading(light: f64, sky: f64, block: f64) -> Shading {
+    let l = dwell_world::light::LIGHT;
+    let (sky, block) = (sky * 15.0, block * 15.0);
+    Shading {
+        ambient: AMBIENT.ambient(light.clamp(0.0, 1.0) * l.sky(sky)),
+        direct: l.direct(sky),
+        glow: l.block(block) * l.block_strength,
+    }
+}
+
 const _: () = assert!(
     AMBIENT.fits(SKY_APRON),
     "shared/look/ambient.json: the sky rays reach past dwell_world::SKY_APRON"

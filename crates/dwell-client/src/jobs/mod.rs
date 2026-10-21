@@ -33,6 +33,8 @@ pub enum Job {
     /// (plants are jittered by their world position).
     MeshChunk {
         padded: Vec<u16>,
+        /// Its flood light with a one-cell apron (empty: open sky; docs/DAY_NIGHT.md §10).
+        light: Vec<u8>,
         mirror: bool,
         origin: [i32; 3],
     },
@@ -172,9 +174,10 @@ impl Runner {
             }
             Job::MeshChunk {
                 padded,
+                light,
                 mirror,
                 origin,
-            } => match dwell_mesh::mesh_chunk_at(&padded, mirror, origin) {
+            } => match dwell_mesh::mesh_chunk_lit(&padded, &light, mirror, origin) {
                 Ok(m) => Output::ChunkMesh(Box::new(m)),
                 Err(e) => Output::Failed(format!("{e:?}")),
             },
