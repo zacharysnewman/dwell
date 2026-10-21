@@ -298,6 +298,8 @@ mod tests {
         })
     }
 
+    // both-faces: a point light has no up; its cube's faces are the world's axes on either face
+    // of the world (`face_basis` is a cube face's, not a world face's).
     #[test]
     fn a_point_falls_in_its_faces_view_at_the_depth_the_shader_compares() {
         // For points all round a light, the face `face_of` picks sees the point inside its view
@@ -326,10 +328,10 @@ mod tests {
             assert!((ndc[2] - want).abs() < 1e-4, "{k}: {} vs {want}", ndc[2]);
         }
         // Each face looks along its own axis.
-        for f in 0..FACES {
-            assert_eq!(face_of(DIRS[f]), f);
+        for (f, dir) in DIRS.iter().enumerate() {
+            assert_eq!(face_of(*dir), f);
             let b = face_basis(f);
-            assert!((super::super::camera::dot(b.forward(), DIRS[f]) - 1.0).abs() < 1e-12);
+            assert!((super::super::camera::dot(b.forward(), *dir) - 1.0).abs() < 1e-12);
         }
     }
 

@@ -64,7 +64,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 44 — Sun and moon shadows (cascaded shadow maps, the lighting's layer 2) | 🚧 In progress — built and tested natively, in Vitest and in Chrome on the GPU: up to four cascades per the Shadows setting (Off / Low / High, data in `shared/look/shadows.json`), texel-snapped sphere fits, casters (terrain, plants, LOD, bodies, your own), a soft PCF on the direct term only, faded by the time of day and past the last cascade to layer 1's stand-in; High's cost cut to ≤ 1.2 ms over Off on the M1 (eye-centred boxes, kept far maps, a depth-only casters' stage; High stays the desktop default); the flicker fix: the light in 0.05° steps with the texel grid turning about the eye, so the shadow edges no longer crawl as the clock turns the sun; outstanding: CI, the owner's look, the far cascades' jump when redrawn after a 0.25° turn; a patch release |
 | 45 — Flood light | 🚧 In progress — built and tested natively and in Chrome on the GPU (ADR 0045, DAY_NIGHT.md §11): per-cell sky and block light on the client (`dwell_world::light`, data `shared/look/light.json` and the blocks' `lightFilter`/`emits`), relit on edits and predicted edits, the mesher's smooth `flood` stream, ambient and the direct sun and moon scaled by it (carved tunnels no longer lit like day); follow-up: the streaming stalls fixed (coalesced seeded unloads, no cascade under a chunk held over open air, light and mesh budgets of their own that scale on a slow page; flying back to 0.22.8's frames; generation workers refilled between frames, so a slow page's terrain finishes generating, the native-server e2e tests); outstanding: CI, the owner's review; characters (your arms, held items, players) lit by the cells they are in, eased; the shadow maps' stand-in past their last cascade; water and see-through faces take the flood light (dark in caves with Shadows Off; darkness verified with Shadows Off on both faces, DAY_NIGHT.md §11) |
 | 46 — Distant terrain shadows (the lighting's layer 3) | 🚧 In progress — built and tested natively and in Chrome on the GPU (ADR 0046, DAY_NIGHT.md §12): heightmaps of the terrain as drawn, filled a budgeted slice a frame, horizon maps swept from them a band a frame, one horizon sample per far fragment blended into the cascades at their edge, both faces, per the Shadows setting (none on a CPU adapter); data `shared/look/lodshadows.json`. Measured +0.5–0.9 ms GPU a frame on the M1 (busy machine), no main-thread change. Outstanding: CI; the owner's look; a measurement on an idle machine |
-| 47 — Torches and dynamic lights | 🚧 In progress — T1 built and tested natively and in Chrome on the GPU ([ADR 0047](./adr/0047-torches-and-dynamic-lights.md), [`LIGHTS.md`](./LIGHTS.md)): light sources as block data (`lights`, `shared/blocks/lights.mjs`), the torch block and held item, placed torches through the flood light, held torches (yours and other players') as unshadowed per-fragment point lights, characters lit by them, flicker, glowing textures (`emissive`). T1b built and tested natively and in Chrome on the GPU: the torch 1 m over two ½ m cells (multi-cell blocks as data, `extends`/`partOf`), a self-lit flame. Outstanding: T1b's CI and the owner's look; T2 (Torch shadows: point-light shadow maps, the setting) not started |
+| 47 — Torches and dynamic lights | 🚧 In progress — T1 built and tested natively and in Chrome on the GPU ([ADR 0047](./adr/0047-torches-and-dynamic-lights.md), [`LIGHTS.md`](./LIGHTS.md)): light sources as block data (`lights`, `shared/blocks/lights.mjs`), the torch block and held item, placed torches through the flood light, held torches (yours and other players') as unshadowed per-fragment point lights, characters lit by them, flicker, glowing textures (`emissive`). T1b built and tested natively and in Chrome on the GPU: the torch 1 m over two ½ m cells (multi-cell blocks as data, `extends`/`partOf`), a self-lit flame. T2 built and tested natively and in Chrome on the GPU: Torch shadows (cube shadow maps for the nearest torches, kept until their terrain changes; placed torches as shadowed lights over their flood light; the setting). Outstanding: T2's CI and the owner's look |
 
 Phase numbering: Phase 4 was inserted on 2026-09-29 for the planet-scale world (ADRs 0011, 0012);
 the former Phases 4–7 are now 5–8, and Phase 3's former 3c and 3d are now 3d and 3e.
@@ -4649,8 +4649,8 @@ Deviations
 
 ## Phase 47 — Torches and Dynamic Lights
 
-**Status:** T1 and T1b built and tested natively and in Chrome on the GPU (2026-10-21; T1 released
-as 0.22.26). Outstanding: T1b's CI and the owner's look; T2 not started. T1b adds a block and gives
+**Status:** T1, T1b and T2 built and tested natively and in Chrome on the GPU (2026-10-21; T1 released
+as 0.22.26, T1b as 0.23.0). Outstanding: T2's CI and the owner's look. T1b adds a block and gives
 `dwell:torch` the parts rule (a new rule tag a 0.22.26 client notes and ignores): see its
 deviations for the compatibility line.
 
@@ -4746,16 +4746,34 @@ Deviations
 ### T2 — Torch shadows
 
 Deliverables
-- [ ] Point-light shadows: cube or dual-paraboloid depth maps for the nearest lights per the Torch
-  shadows tier (Off / Low / High: how many lights, what resolution; data).
-- [ ] Placed torches as shadowed dynamic lights on top of their flood light, their maps cached and
-  redrawn only when the blocks near them change; a held torch's every frame, within a budget.
-- [ ] The Torch shadows setting in the settings UI, stored append-only; Off on the CPU adapter.
-- [ ] Cost measured and kept small.
+- [x] Point-light shadows: a cube of six depth maps for the nearest lights per the Torch shadows
+  tier (Off / Low / High: how many lights, what resolution; `shared/look/lights.json` `shadows`,
+  validated and generated, tests in CI), `render/point_shadows.rs`.
+- [x] Placed torches as shadowed dynamic lights on top of their flood light (`VoxelWorld::
+  light_sources_near`, `placed_lights`), their maps kept and redrawn only when the terrain near them
+  changes; a moving held torch's every frame, within `redrawsPerFrame`
+  (`dwell_look::lights::TorchShadowCache`).
+- [x] The Torch shadows setting in the settings UI (beside *Sun & moon shadows*), stored in the
+  append-only `dwell.shadows` record; `?torchshadows=`; Off on the CPU adapter.
+- [x] Cost measured and kept small (LIGHTS.md §4: about +0.5 ms on Low, +0.5–0.7 ms on High, the
+  view filled by a torch's light; the main thread unchanged).
+- [x] The bench's `torch-shadows-a` and `torch-shadows-b` scenarios, `torch-shadows-off` and
+  `torch-shadows-high` configurations, `gpu.torchshadows` and `torchshadow.drawn`.
 
 Exit criteria
-- [ ] Tests on both faces; shots of a placed torch in a room with Torch shadows Off and High, a held
-  torch in a cave, face B; cost on the bench.
+- [x] Tests: the tiers' data and its validation; the cache (kept until casters change, the budget,
+  new maps first, a slot freed); the faces' matrices against the shader's depth and face choice; the
+  uniforms; the CPU adapter Off; placed lights only with a map; the source index and the placed
+  light on both faces; the settings store (append-only, the query); the WGSL validates.
+- [x] Checked in Chrome on the GPU: a placed torch's pillar shadow in a room with Torch shadows Off,
+  Low and High, the torch held too, on face A and face B; the held torch in the dark tunnel (shots
+  in the PR); cost on the bench.
+
+Deviations
+- Casters are the chunks' opaque terrain: plants, ladders, the torch's own quads and characters cast
+  no torch shadows (the torch's sprite would shadow everything round it).
+- A placed torch's dynamic light is drawn at 0.6 of its strength over its flood light, and only with
+  a map; without one its flood light alone lights it.
 
 ## Cross-Cutting Work (every phase)
 

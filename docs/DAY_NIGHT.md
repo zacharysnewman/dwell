@@ -338,7 +338,7 @@ maps, `SHADOW_WGSL`), `dwell-look` `shadows.rs` (the setting, the light that cas
   as the time of day fades the light's shadows, the factor fades to the stand-in (direct × sky
   light from the first layer) shaded by the distant terrain's shadows (§12), so there is no edge. `cloud_shadow` is the hook
   for clouds' shadows on the terrain, a future item (CLOUDS.md §6, Phase 31's C7); it returns 1.
-- **The Shadows setting**: Off / Low / High in Settings → Look, Low on phones and High on desktops
+- **The Shadows setting** (labelled *Sun & moon shadows* since Torch shadows joined it, LIGHTS.md §4): Off / Low / High in Settings → Look, Low on phones and High on desktops
   by default, Low at most on a CPU adapter (`shadows_for`); kept in the browser's append-only
   `dwell.shadows` record (`ui/shadowSettings.ts`). `?shadows=off|low|high` overrides it for the
   bench's configurations (`shadows-low`, `shadows-off`), and the bench has a `shadows` step.
@@ -474,7 +474,7 @@ direct-light stand-in near the player.
   matches; LOD water too (open sea).
 - **Torches** (Phase 47, [`LIGHTS.md`](./LIGHTS.md), ADR 0047): a placed torch (`dwell:torch`, `emits`
   14) lights through this flood light; a held torch is a dynamic point light drawn per fragment and
-  never enters it (LIGHTS.md §3), with Torch shadows a setting of its own (T2).
+  never enters it (LIGHTS.md §3); Torch shadows, a setting of its own beside the Shadows (sun and moon) setting, give the nearest torches cube shadow maps (LIGHTS.md §4).
 - **Characters** (owner, 2026-10-21: "your hand isn't affected... perhaps a blend"): your arms and
   held block, other players' bodies and the items they hold take the flood light where they are —
   your eye, a body's middle a metre over its feet — blended trilinearly between the cell centres

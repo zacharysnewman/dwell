@@ -2258,12 +2258,11 @@ pub fn placed_lights(
 #[cfg(test)]
 mod placed_light_tests {
     use super::placed_lights;
-    use dwell_world::FaceFrame;
 
     dwell_world::both_faces!(
         /// A placed torch near the eye becomes the renderer's placed light at its flame cell's
         /// centre (docs/LIGHTS.md §4); none past the radius.
-        fn a_placed_torch_is_a_placed_light_at_its_flame(f: FaceFrame) {
+        fn a_placed_torch_is_a_placed_light_at_its_flame(f: dwell_world::FaceFrame) {
             let mut w = dwell_world::VoxelWorld::new(dwell_world::empty_generator(), None);
             w.enable_light();
             let ground = f.cell([3, 30, 3]);
@@ -2288,8 +2287,8 @@ mod placed_light_tests {
             let found = placed_lights(&w, eye, 8.0);
             assert_eq!(found.len(), 1);
             let lo = dwell_world::pos_of_cell(flame);
-            for k in 0..3 {
-                let c = lo[k] + 0.5 * dwell_world::CELL[k];
+            for (k, l) in lo.iter().enumerate() {
+                let c = l + 0.5 * dwell_world::CELL[k];
                 assert!((found[0].pos[k] - c).abs() < 1e-9, "{:?}", found[0].pos);
             }
             assert_eq!(found[0].source.name, "dwell:torch");

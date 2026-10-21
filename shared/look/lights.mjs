@@ -81,7 +81,15 @@ export function lightsRust(data) {
     `    wrap: ${rf(data.wrap)},`,
     `    glow_peak: ${rf(data.glowPeak)},`,
     '    shadows: TorchShadowTunables {',
-    `        tiers: [${data.shadows.tiers.map((t) => `TorchShadowTier { lights: ${t.lights}, resolution: ${t.resolution} }`).join(', ')}],`,
+    // As rustfmt lays the tiers out.
+    '        tiers: [',
+    ...data.shadows.tiers.flatMap((t) => [
+      '            TorchShadowTier {',
+      `                lights: ${t.lights},`,
+      `                resolution: ${t.resolution},`,
+      '            },',
+    ]),
+    '        ],',
     `        redraws_per_frame: ${data.shadows.redrawsPerFrame},`,
     `        placed_m: ${rf(data.shadows.placedM)},`,
     `        placed_strength: ${rf(data.shadows.placedStrength)},`,

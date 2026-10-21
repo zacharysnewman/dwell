@@ -142,11 +142,59 @@ warm curve (`light.json` `block`), and breaking it (either cell) takes its light
 `a_placed_torch_lights_the_tunnel_and_takes_its_light_when_broken`, both faces). Its flame is
 self-lit (§2).
 
-**[planned, Phase 47 T2]** With Torch shadows on, a placed torch's `light` (`shadows: true`) is also
-a dynamic, shadowed point light layered on its flood light: point-light shadow maps (cube or
-dual-paraboloid) for the nearest lights per the setting's tier, cached for still placed torches and
-redrawn only when the blocks near them change, a held torch's every frame within a budget; the
-CPU adapter Off; the setting stored append-only.
+**[built, Phase 47 T2]** **Torch shadows.** With the setting on, the nearest lights whose source may
+cast shadows (`shadows: true`) get shadow maps, and a placed torch's `light` is also a dynamic,
+shadowed point light layered on its flood light:
+
+- **The setting** (Settings → Look → *Torch shadows*: Off / Low / High; owner: a setting of its own
+  beside *Sun & moon shadows*): Off on phones and Low on desktops by default, kept in the browser's
+  append-only `dwell.shadows` record as its `torch` field (`ui/shadowSettings.ts`; builds before it
+  keep the field on rewrite), `?torchshadows=` overriding it (the bench's `torch-shadows-off` and
+  `torch-shadows-high` configurations). None on a CPU adapter (`torch_shadows_for`). With Off, a held
+  torch still lights smoothly, unshadowed, and a placed one by its flood light alone.
+- **The tiers** (`shared/look/lights.json` `shadows.tiers`): Low 2 lights at 256², High 4 at 384².
+- **The maps** (`render/point_shadows.rs`): per light a cube of six perspective depth maps
+  (`Depth32Float`, one array of six layers a slot; frame bindings 15–16, the cascades' compare
+  sampler), drawn with the cascades' depth-only pipelines from the light, each face 2·atan(1.08)
+  wide so the filter stays on its face, near 0.05 m, far the light's radius. The same eye-relative
+  matrices draw and read them (rebuilt each frame from where each map was drawn), so no cube
+  orientation has to agree. A fragment picks its face by its direction's largest axis, moves off its
+  surface by `normalOffsetM`, compares its depth along that axis less `biasM` (`map_depth`), four
+  hardware 2 × 2 compares, and the light's contribution in `point_lights` is multiplied by it.
+- **Casters**: the held chunks' opaque terrain within the light's radius. Plants, ladders and the
+  torch's own quads (cutouts) and characters cast none (a torch's own sprite would shadow everything
+  round it; bodies are left for later).
+- **Kept maps** (`dwell_look::lights::TorchShadowCache`): each light keeps its slot frame to frame;
+  its maps are drawn again only when it is new, moved (1 cm) or the terrain within its reach changed
+  (an order-free signature of those chunks' meshes), new ones first, at most `redrawsPerFrame` (2)
+  lights a frame. A still placed torch costs no draws; a walking holder's torch is drawn every frame.
+  A light whose maps aren't drawn yet has none: a held one lights unshadowed that frame, a placed one
+  is left to its flood light.
+- **Placed lights** (`VoxelWorld::light_sources_near`): the client indexes the cells of blocks that
+  give off a light and block light (a torch's flame) as chunks load and edits land; each frame the
+  game hands the renderer those within `placedM` (24 m) of the eye (`placed_lights`), which become
+  dynamic lights at `placedStrength` (0.6) of their strength, drawn only with a map (the nearest
+  shadowed lights, held and placed alike, take the slots).
+- **Both faces**: a point light has no up; the cube's faces are the world's axes on either face, and
+  the placed light and its index are tested on both (`placed_light_sources_are_found_near_the_eye`,
+  `a_placed_torch_is_a_placed_light_at_its_flame`).
+
+**Cost** (Apple M1, Chrome, 1280×720, `npm run bench -- torch-shadows-a --compare --configs
+torch-shadows-off,torch-shadows-high --unthrottled`, one run each, load average 3–5; the baseline
+is Low): a torch placed before a stone pillar in a dark room at midnight, the view filled by its
+light, then the torch held too. `gpu.frame` p50 (ms):
+
+| Record | Off | Low | High |
+| --- | --- | --- | --- |
+| placed | 7.32 | 7.87 (+0.55) | 7.86 (+0.54) |
+| held and placed | 7.42 | 7.92 (+0.50) | 8.16 (+0.74) |
+
+The maps' own passes (`gpu.torchshadows`) take 0.3–0.4 ms on the frames that draw them (3 in 4 s of
+a held torch standing still; none for the placed one once drawn); the rest is the near pass's
+lookups and the placed light itself (Off draws no placed light). The main thread is unchanged
+(`frame.cpu` 2.1–2.5 ms, no long tasks). Face B's run (`torch-shadows-b`) was taken while the
+machine got busier (load 9) and reads +0.1–0.9 ms. A first build copied each slot's six matrices
+per fragment in the shader (`let s = slots[slot]`): +5 ms; it reads the fields it needs now.
 
 ## 5. Both faces
 

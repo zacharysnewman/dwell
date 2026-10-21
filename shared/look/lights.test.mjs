@@ -29,7 +29,7 @@ test('values changed by data alone are in the output', () => {
   assert.match(rs, /curve: 1\.0,/);
   assert.match(rs, /wrap: 0\.25,/);
   assert.match(rs, /glow_peak: 0\.8,/);
-  assert.match(rs, /TorchShadowTier \{ lights: 3, resolution: 384 \}/);
+  assert.match(rs, /TorchShadowTier \{\n\s+lights: 3,\n\s+resolution: 384,/);
   assert.match(rs, /placed_m: 12\.0,/);
 });
 
