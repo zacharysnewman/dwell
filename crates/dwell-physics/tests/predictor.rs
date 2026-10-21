@@ -28,7 +28,7 @@ impl Server {
         let h = players.spawn(
             &mut physics,
             PlayerControllerConfig::default(),
-            DVec3::new(0.5, f64::from(dwell_world::FLAT_TOP_Y), 0.5),
+            DVec3::new(0.5, dwell_world::FLAT_TOP_M, 0.5),
             0.0,
         );
         Self {
@@ -195,7 +195,7 @@ fn a_remote_proxy_blocks_the_local_player() {
     let mut world = VoxelWorld::flat();
     let mut p = Predictor::new(PlayerControllerConfig::default());
     p.on_snapshot(&mut world, &server.snapshot(0));
-    let top = f64::from(dwell_world::FLAT_TOP_Y);
+    let top = dwell_world::FLAT_TOP_M;
     p.set_remote(
         7,
         DVec3::new(0.5, top, 3.0),

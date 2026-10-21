@@ -479,7 +479,8 @@ mod tests {
         let p = Planter::resolve(&PLACEMENTS, 7, (0, 0));
         assert_eq!(p.len(), PLACEMENTS.len());
         assert_eq!(p[0].reach(), 3, "the tall pine reaches 3 m from its trunk");
-        assert_eq!(p[0].rise(), 8);
+        // In cells: the 9 m pine is 18 ½ m cells on the half-height grid, its top 17 over the anchor.
+        assert_eq!(p[0].rise(), 9 * dwell_world::rows_for_m(1.0) - 1);
     }
 
     #[test]

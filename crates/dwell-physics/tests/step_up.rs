@@ -9,7 +9,6 @@
 
 mod common;
 use common::*;
-use dwell_blocks::{StateId, require};
 use dwell_physics::Vec3;
 use dwell_physics::config::PlayerControllerConfig;
 
@@ -215,19 +214,15 @@ fn box_step(w: &mut PlayerTestWorld) {
     w.half_step(-10, 0, 2, 9, 12);
 }
 
-fn grass() -> StateId {
-    require("dwell:grass")
-}
-
-/// A ½ m voxel step: a level grass field (adaptive: it rests at half height, ADAPTIVE_BLOCKS.md) up
-/// to a row of non-adaptive cubes, whose tops are a ½ m above it, face at z = 2.
+/// A ½ m voxel step (half-height cells, ADR 0042: one cell): a floor of cubes whose top is y = 0 and
+/// one row of cells on it from z = 2.
 fn voxel_step(w: &mut PlayerTestWorld) {
-    w.fill(-14, -1, -14, 13, -1, 13, cube_block());
-    w.fill(-12, 0, -12, 11, 0, 1, grass());
-    w.fill(-14, 0, -14, 13, 0, -13, cube_block());
-    w.fill(-14, 0, -14, -13, 0, 13, cube_block());
-    w.fill(12, 0, -14, 13, 0, 13, cube_block());
-    w.fill(-14, 0, 2, 13, 0, 13, cube_block());
+    w.floor_at(0, 16);
+    for z in 2..=13 {
+        for x in -14..=13 {
+            w.set_cell(x, 0, z, cube_block());
+        }
+    }
 }
 
 /// Two ½ m box steps (stairs), faces at z = 2 and z = 2.6.
@@ -296,19 +291,19 @@ fn every_approach_climbs_a_half_box_step() {
 
 #[test]
 fn every_approach_climbs_a_half_voxel_step() {
-    assert_matrix(
-        "voxel step",
-        &Approach {
-            build: voxel_step,
-            face: 2.0,
-            top: 0.5,
-            from: 0.5,
-            cross_x: 0.5,
-            slack: 0.0,
-            ground: None,
-        },
-        &ANGLES,
-    );
+    assert_matrix("voxel step", &voxel(), &ANGLES);
+}
+
+fn voxel() -> Approach {
+    Approach {
+        build: voxel_step,
+        face: 2.0,
+        top: 0.5,
+        from: 0.0,
+        cross_x: 0.5,
+        slack: 0.0,
+        ground: None,
+    }
 }
 
 #[test]
@@ -399,9 +394,14 @@ fn trace_one() {
         "crouch" => Gait::Crouch,
         _ => Gait::Walk,
     };
+    let a = if f.get(3) == Some(&"voxel") {
+        voxel()
+    } else {
+        ramp()
+    };
     eprintln!(
         "{:?}",
-        run(&ramp(), f[1].parse().unwrap(), gait, f[2].parse().unwrap())
+        run(&a, f[1].parse().unwrap(), gait, f[2].parse().unwrap())
     );
 }
 

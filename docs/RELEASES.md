@@ -154,13 +154,13 @@ act, so merging it is the release. Patch releases are manual:
    The run publishes the GitHub Release and, as for a tag, dispatches the Pages workflow on `main`
    (the `github-pages` environment deploys only from `main`); the site is assembled from all
    releases, so that deploy publishes the patch.
-3b. **A dev build of any branch, by hand** (an experiment to try out without merging it, e.g.
-   `claude/half-height-voxels`): run the **Release** workflow on that branch with *channel* `dev`
+3b. **A dev build of any branch, by hand** (an experiment to try out without merging it, as the
+   half-height cells were before their adoption): run the **Release** workflow on that branch with *channel* `dev`
    (leave *version* empty; `release.ts` refuses one). It builds `v<next>-dev.<run>` exactly as a
    push to `main` does — a GitHub pre-release created with `--latest=false`, built for
    `/dwell/v/<version>/`, its `build.json` channel `dev` — so `main`, the stable releases and the
    launcher's latest are untouched. Its title and notes name the branch
-   (`Dwell 0.18.4-dev.123 (dev, claude/half-height-voxels)`, `release.ts releaseNotes`, tested), and
+   (`Dwell 0.18.4-dev.123 (dev, claude/<branch>)`, `release.ts releaseNotes`, tested), and
    the run dispatches the Pages workflow on `main` as a tag run does. The site's assembly reads
    only the releases and their `build.json`, never the branch, so a build whose commit is not on
    `main` is listed with the other dev builds on the version page ("Show dev builds"). It counts

@@ -3,6 +3,7 @@
 // server.
 import { readFileSync } from 'node:fs';
 import { expect, test, type Page } from '@playwright/test';
+import { CELL_HEIGHT } from '../src/protocol/constants.gen';
 import { stateId } from '../src/world/blocks';
 import { INVITE_FILE } from './global-setup';
 
@@ -64,13 +65,14 @@ const EYE_HEIGHT = 1.62;
 const feet = (page: Page) => call<Vec3>(page, 'd.state().feet');
 
 /**
- * Looks at a point of `cell` (`height` up its side, so a slab or a slope's low part is hit too) and
- * waits for the cell to be targeted. On sloped ground a fixed pitch can pass under a block just
- * placed and target the slope below it instead.
+ * Looks at a point of `cell` (`height` of the way up its side, so a ramp's low part is hit too)
+ * and waits for the cell to be targeted. Cells are `CELL_HEIGHT` tall (½ m, HALF_HEIGHT_GRID.md):
+ * a fixed pitch can pass over or under a block just placed.
  */
-async function lookAt(page: Page, cell: Vec3, height = 0.25): Promise<void> {
+async function lookAt(page: Page, cell: Vec3, height = 0.5): Promise<void> {
   const f = await feet(page);
-  const d = [cell[0] + 0.5 - f[0], cell[1] + height - f[1] - EYE_HEIGHT, cell[2] + 0.5 - f[2]];
+  const y = (cell[1] + height) * CELL_HEIGHT;
+  const d = [cell[0] + 0.5 - f[0], y - f[1] - EYE_HEIGHT, cell[2] + 0.5 - f[2]];
   const yaw = (Math.atan2(d[0] ?? 0, d[2] ?? 0) * 180) / Math.PI;
   const pitch = (Math.atan2(d[1] ?? 0, Math.hypot(d[0] ?? 0, d[2] ?? 0)) * 180) / Math.PI;
   await call(page, `d.look(${String(yaw)}, ${String(pitch)})`);

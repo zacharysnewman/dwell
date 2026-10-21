@@ -11,7 +11,7 @@ use dwell_game::eye::{Step, StepRamp, StepSample, StepSmoother};
 use dwell_game::remotes::RemoteView;
 use dwell_protocol::{controller_flags, held_item, player_flags, swing_flags};
 use dwell_world::hash::HashMap;
-use dwell_world::{FaceFrame, VoxelWorld};
+use dwell_world::{CELL_H, FaceFrame, VoxelWorld, m_of_row, row_of_m};
 
 use crate::render::{ArmsView, Held, PlayerView};
 
@@ -145,7 +145,8 @@ pub fn ground_at(
 ) -> Option<f64> {
     let (cx, cz) = (x.floor() as i32, z.floor() as i32);
     let (fx, fz) = ((x - f64::from(cx)) as f32, (z - f64::from(cz)) as f32);
-    for row in ((y - reach).floor() as i32..=(y + reach).floor() as i32).rev() {
+    // Rows are `CELL_H` tall on the half-height branch (HALF_HEIGHT_GRID.md §2): heights are metres.
+    for row in (row_of_m(y - reach)..=row_of_m(y + reach)).rev() {
         let [wx, wy, wz] = f.cell([cx, row, cz]);
         if !info(world.get_voxel(wx, wy, wz)).solid {
             continue;
@@ -155,7 +156,7 @@ pub fn ground_at(
             continue;
         }
         let (_, hi) = f.in_cell(span.lo, span.hi);
-        let top = f64::from(row) + f64::from(hi);
+        let top = m_of_row(row) + f64::from(hi) * CELL_H;
         if top <= y + reach {
             return Some(top);
         }
@@ -320,11 +321,12 @@ mod tests {
             let stone = dwell_blocks::require("dwell:sandbox_floor");
             let [x, y, z] = f.cell([3, 40, 5]);
             w.set_voxel(x, y, z, f.state(stone));
-            // Its top is row 41, face-local.
-            assert_eq!(ground_at(&mut w, f, [3.5, 41.2, 5.5], 0.8), Some(41.0));
-            assert_eq!(ground_at(&mut w, f, [3.5, 40.6, 5.5], 0.8), Some(41.0));
-            assert_eq!(ground_at(&mut w, f, [3.5, 43.0, 5.5], 0.8), None);
-            assert_eq!(ground_at(&mut w, f, [4.5, 41.0, 5.5], 0.8), None);
+            // Its top is row 41's bottom, face-local, in metres (rows are `CELL_H` tall).
+            let top = m_of_row(41);
+            assert_eq!(ground_at(&mut w, f, [3.5, top + 0.2, 5.5], 0.8), Some(top));
+            assert_eq!(ground_at(&mut w, f, [3.5, top - 0.2, 5.5], 0.8), Some(top));
+            assert_eq!(ground_at(&mut w, f, [3.5, top + 2.0, 5.5], 0.8), None);
+            assert_eq!(ground_at(&mut w, f, [4.5, top, 5.5], 0.8), None);
         }
     );
 

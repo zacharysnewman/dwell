@@ -179,7 +179,7 @@ pub fn cloud_in_front(t: f64, ray_len: f64, scene_depth: f64) -> bool {
 
 /// The deck's height above the eye: the eye's height above sea level on its own face.
 pub fn deck_height(t: &CloudTunables, eye_y: f64, face: FaceFrame) -> f64 {
-    t.deck.altitude_m - (face.y(eye_y) - dwell_protocol::world::SEA_LEVEL as f64)
+    t.deck.altitude_m - (face.y(eye_y) - dwell_protocol::world::SEA_LEVEL_M)
 }
 
 fn heading(deg: f64) -> [f64; 2] {
@@ -719,7 +719,7 @@ mod tests {
         // deck itself fades out over the same band (dwell_cloud_deck's cross fade): no pop.
         let mut t = CLOUDS;
         t.shape.coverage = 1.0;
-        let deck = t.deck.altitude_m + dwell_protocol::world::SEA_LEVEL as f64;
+        let deck = t.deck.altitude_m + dwell_protocol::world::SEA_LEVEL_M;
         // An eye position over a cloud (not every point of even full coverage is cloud).
         let x = (0..200)
             .map(|i| f64::from(i) * 97.0)
@@ -801,7 +801,7 @@ mod tests {
         /// is 300 m nearer its deck.
         fn the_deck_is_over_each_faces_own_sea_level(f: FaceFrame) {
             let alt = CLOUDS.deck.altitude_m;
-            let sea = dwell_protocol::world::SEA_LEVEL as f64;
+            let sea = dwell_protocol::world::SEA_LEVEL_M;
             assert_eq!(deck_height(&CLOUDS, f.y(sea), f), alt);
             assert_eq!(deck_height(&CLOUDS, f.y(sea + 300.0), f), alt - 300.0);
         }

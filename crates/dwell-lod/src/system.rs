@@ -26,7 +26,9 @@ use dwell_world::lod::{
     INDEX_LEVEL, LodBounds, LodCoord, LodKind, MAX_LEVEL, SECTION_CELLS, cell_index, cell_size,
     child, chunk_of_lod, in_world, kind_from_bounds, lod_of_chunk, parent, row_face, section_size,
 };
-use dwell_world::{CHUNK_SIZE, ChunkCoord, Face, FaceFrame, WORLD_RADIUS};
+use dwell_world::{
+    CHUNK_EXTENT_M, ChunkCoord, Face, FaceFrame, WORLD_RADIUS, chunk_of_pos, chunk_origin_m,
+};
 
 use crate::frustum::{Frustum, LodCamera, box_distance};
 use crate::grid::{
@@ -255,9 +257,9 @@ const ROOM: f64 = 0.6;
 pub const COARSER_AFTER_MS: f64 = 1000.0;
 pub const FINER_AFTER_MS: f64 = 10_000.0;
 pub const RETRY_FINER_AFTER_M: f64 = 512.0;
-/// How far below a full block the chunks draw water's surface, in metres: the registry's
-/// `surfaceDrop` of `dwell:water` (LOD water is drawn at the same height).
-fn chunk_water_drop_m() -> f64 {
+/// How far below a full block the chunks draw water's surface, in rows (a fraction of a cell):
+/// the registry's `surfaceDrop` of `dwell:water` (LOD water is drawn at the same height).
+fn chunk_water_drop_rows() -> f64 {
     dwell_blocks::require_fluid("dwell:water").surface_drop
 }
 /// LodRequest sections per second by default (under the server's limit).
@@ -585,12 +587,7 @@ impl LodSystem {
         self.near_rim = p[0].hypot(p[2]) > f64::from(WORLD_RADIUS) - RIM_VIEW_M;
         self.position = p;
         let frustum = Frustum::new(*camera);
-        let cs = f64::from(CHUNK_SIZE);
-        self.camera_chunk = ChunkCoord::new(
-            (p[0] / cs).floor() as i32,
-            (p[1] / cs).floor() as i32,
-            (p[2] / cs).floor() as i32,
-        );
+        self.camera_chunk = chunk_of_pos(p);
         self.wanted_chunks.clear();
         self.wanted.clear();
         self.due.clear();
@@ -1086,13 +1083,12 @@ impl LodSystem {
             if self.chunk_asked.contains_key(&c) {
                 continue;
             }
-            let cs = f64::from(CHUNK_SIZE);
-            let lo = [
-                f64::from(c.x) * cs,
-                f64::from(c.y) * cs,
-                f64::from(c.z) * cs,
+            let lo = chunk_origin_m(c);
+            let hi = [
+                lo[0] + CHUNK_EXTENT_M[0],
+                lo[1] + CHUNK_EXTENT_M[1],
+                lo[2] + CHUNK_EXTENT_M[2],
             ];
-            let hi = [lo[0] + cs, lo[1] + cs, lo[2] + cs];
             let d = self.distance(lo, hi, frustum);
             self.wanted_chunks.push((c, d));
         }
@@ -1440,7 +1436,7 @@ impl LodSystem {
             } else {
                 self.surface_in_cells(id)
             },
-            water_drop: chunk_water_drop_m() / cell_size(coord.level) as f64,
+            water_drop: chunk_water_drop_rows() / cell_size(coord.level) as f64,
             // Face B's terrain faces down: meshed as its mirror image, turned back.
             mirror: is_face_b_section(coord),
         };

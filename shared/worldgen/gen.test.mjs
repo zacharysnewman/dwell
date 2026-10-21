@@ -89,6 +89,7 @@ test('a bad height field fails with the key and the problem', () => {
     [(t) => (t.hills.roughness = 1), /hills: unknown roughness/],
     [(t) => (t.mountains = {}), /unknown mountains/],
     [(t) => delete t.seaFloor, /seaFloor must be an object/],
+    [(t) => (t.steps.height = 0.75), /steps\.height must be a whole number of cells/],
   ];
   for (const [edit, message] of cases) {
     const t = loadTerrain();

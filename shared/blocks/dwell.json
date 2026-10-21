@@ -2,6 +2,8 @@
   "$comment": "Block definitions of the built-in `dwell` namespace (docs/BLOCK_REGISTRY.md). Run `node shared/blocks/gen.mjs` after editing; CI fails if the generated files are stale. Blocks take runtime state ids in this order, each block's states in property order (keys alphabetical, the last key varying fastest, values in declared order). Air must come first (id 0). `fluids` are the named fluid looks (docs/BLOCK_REGISTRY.md, 'Fluid looks') that blocks with `\"look\": \"fluid\"` reference by name; a fluid block's opacity is its fluid's. The content is prototype (ARCHITECTURE.md §6.1).",
   "namespace": "dwell",
   "shapeFamilies": [],
+  "$rampFamilies": "Half-height grid (Phase 41, docs/HALF_HEIGHT_GRID.md): each listed natural block gets `<name>_ramp[facing, flooded, half, shape]`, the stored cardinal ramps the generator places (shape ramp, steep_lower, steep_upper). Natural blocks are not adaptive on this grid: shapes are chosen once, at generation. Their `flooded` (as on main) marks a block the sea's water stands in: a ramp below sea level holds it in its open part (WATER_RENDERING.md §9).",
+  "rampFamilies": ["stone", "dirt", "grass", "sand"],
   "fluids": {
     "dwell:water": {
       "opacity": 0.72, "surfaceDrop": 0.125,
@@ -14,19 +16,19 @@
   "blocks": [
     { "name": "air", "density": 0, "shape": "empty", "look": "cube", "color": "#000000", "opacity": 0 },
     {
-      "name": "stone", "sound": "dwell:stone", "density": 2400, "shape": "full", "placeable": true, "adaptive": true,
+      "name": "stone", "sound": "dwell:stone", "density": 2400, "shape": "full", "placeable": true,
       "properties": { "flooded": ["false", "true"] },
       "color": "#bbafa6", "textures": "stone"
     },
     {
-      "name": "dirt", "sound": "dwell:dirt", "density": 1500, "shape": "full", "placeable": true, "adaptive": true,
+      "name": "dirt", "sound": "dwell:dirt", "density": 1500, "shape": "full", "placeable": true,
       "properties": { "flooded": ["false", "true"] },
       "color": "#8a5a3a", "textures": "dirt",
       "$comment": "sideUnder: a dirt side face with grass directly above (a grass slope's low side at a step or cliff) shows the turf's skirt hanging over its top edge (docs/PAINTERLY_TEXTURES.md §2).",
       "sideUnder": { "dwell:grass": "dirtSkirt" }
     },
     {
-      "name": "grass", "sound": "dwell:grass", "density": 1400, "shape": "full", "placeable": true, "adaptive": true,
+      "name": "grass", "sound": "dwell:grass", "density": 1400, "shape": "full", "placeable": true,
       "properties": { "flooded": ["false", "true"] },
       "color": "#8dbf3f",
       "textures": { "top": "grass", "side": "grassSide", "bottom": "dirt" }
@@ -49,7 +51,7 @@
       "liquid": true, "render": "translucent", "color": "#2f86e0", "textures": "water"
     },
     {
-      "name": "sand", "sound": "dwell:sand", "density": 1600, "shape": "full", "placeable": true, "adaptive": true,
+      "name": "sand", "sound": "dwell:sand", "density": 1600, "shape": "full", "placeable": true,
       "properties": { "flooded": ["false", "true"] },
       "color": "#eed9a4", "textures": "sand"
     },

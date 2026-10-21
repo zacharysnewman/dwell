@@ -1245,13 +1245,9 @@ impl<S: Scene> Game<S> {
         submerged: Option<f64>,
         dt: f64,
     ) -> MoverSample {
-        let at = |dy: f64| {
-            [
-                feet[0].floor() as i32,
-                face.y(face.y(feet[1]) + dy).floor() as i32,
-                feet[2].floor() as i32,
-            ]
-        };
+        // The cell dy metres above the feet (toward the face's up; rows are `CELL_H` tall).
+        let at =
+            |dy: f64| dwell_world::cell_of_pos([feet[0], face.y(face.y(feet[1]) + dy), feet[2]]);
         let [gx, gy, gz] = at(-0.2);
         let [bx, by, bz] = at(0.5);
         let ground = self.voxel(gx, gy, gz);
@@ -1316,8 +1312,8 @@ impl<S: Scene> Game<S> {
             .boxes()
             .iter()
             .map(|b| RegionBox {
-                min: b.min.map(f64::from),
-                size: b.size.map(f64::from),
+                min: dwell_world::pos_of_cell(b.min),
+                size: std::array::from_fn(|i| f64::from(b.size[i]) * dwell_world::CELL[i]),
                 color: match b.kind {
                     ToolBoxKind::Selection => REGION_SELECTION_COLOR,
                     ToolBoxKind::Ghost => REGION_GHOST_COLOR,
@@ -1768,10 +1764,13 @@ impl<S: Scene> Game<S> {
         };
         // The outline is the box the block is aimed at: a plant's selection box, else its shape's
         // extent (an adaptive block's derived shape is often not a full cell tall).
-        let bounds = dwell_world::edit::target_box(self.streamer.store_mut(), t.cell);
+        // The box is in fractions of the cell; the outline is in metres (HALF_HEIGHT_GRID.md §2).
+        let (lo, hi) = dwell_world::edit::target_box(self.streamer.store_mut(), t.cell);
+        let h = dwell_world::CELL_H as f32;
+        let bounds = ([lo[0], lo[1] * h, lo[2]], [hi[0], hi[1] * h, hi[2]]);
         self.scene
             .borrow_mut()
-            .set_block_outline(Some(t.cell.map(f64::from)), bounds);
+            .set_block_outline(Some(dwell_world::pos_of_cell(t.cell)), bounds);
     }
 
     /// What your hand holds: the hotbar's block, or the brush painting with it while the brush tool

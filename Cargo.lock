@@ -706,6 +706,7 @@ dependencies = [
  "dwell-blocks",
  "dwell-protocol",
  "dwell-world",
+ "dwell-worldgen",
  "libm",
  "rapier3d-f64",
 ]

@@ -15,8 +15,8 @@ use dwell_protocol::*;
 use dwell_sim::server::ServerConfig;
 use dwell_sim::worldgen_pool::WorldgenPool;
 use dwell_world::{
-    CHUNK_SIZE, Chunk, ChunkCoord, FLAT_TOP_Y, GENERATOR_FLAT, GENERATOR_TERRAIN, M, MAX_CHUNK_Y,
-    MIDPLANE_Y, MIN_CHUNK_Y, WORLD_RADIUS, chunk_hash, chunk_of,
+    CHUNK_SIZE, Chunk, ChunkCoord, FLAT_TOP_M, GENERATOR_FLAT, GENERATOR_TERRAIN, M, MAX_CHUNK_Y,
+    MIN_CHUNK_Y, WORLD_RADIUS, chunk_hash,
 };
 use dwell_worldgen::{TerrainGenerator, air_test_for, generator_for};
 
@@ -53,11 +53,7 @@ fn a_matching_verification_hash_gets_generated_chunks_nearest_first() {
     assert!(!chunks.is_empty());
     // Streaming centres on the player's chunk (players are spread around the spawn point).
     let position = position_of(&mut f, welcome.player_id).expect("a live player");
-    let spawn = chunk_of(
-        position.x.floor() as i32,
-        position.y.floor() as i32,
-        position.z.floor() as i32,
-    );
+    let spawn = dwell_world::chunk_of_pos(position.to_array());
     assert_eq!(coord_of(&chunks[0]), spawn);
     let mut previous = 0;
     let mut ordered = true;
@@ -145,7 +141,9 @@ fn open_sky_costs_nothing_the_view_is_a_sphere_across_the_worlds_rows() {
     // the server neither generates nor stores them.
     let mut f = Fixture::new(ServerConfig {
         world_seed: 99,
-        spawn: Some([0.5, 3000.0, 0.5]),
+        // Near the top of a 16 m chunk (2,992–3,008 m): the body's centre (0.9 m over the feet)
+        // stays in it through the second's fall (10 m).
+        spawn: Some([0.5, 3006.0, 0.5]),
         worldgen_budget: Duration::from_secs(1),
         ..ServerConfig::default()
     });
@@ -218,7 +216,7 @@ fn moving_away_unloads_far_chunks_and_memory_stays_bounded() {
     // Walk (teleporting 1 m per tick) 20 chunks east.
     let (mut max_world, mut max_collision, mut max_streamed) = (0usize, 0usize, 0usize);
     for i in 0..20 * CHUNK_SIZE {
-        f.move_to(1, 0.5 + f64::from(i), f64::from(FLAT_TOP_Y), 0.5);
+        f.move_to(1, 0.5 + f64::from(i), FLAT_TOP_M, 0.5);
         f.chunks(1, 1, Some(&mut unloads));
         max_world = max_world.max(f.server.world().loaded_chunks());
         let collision = f
@@ -262,19 +260,14 @@ fn chunks_are_generated_ahead_of_a_moving_player_never_on_the_tick() {
     // collision never has to generate synchronously (walking streams without hitches).
     let mut f = Fixture::new(ServerConfig {
         generator_version: GENERATOR_FLAT,
-        spawn: Some([0.5, f64::from(FLAT_TOP_Y), 0.5]),
+        spawn: Some([0.5, FLAT_TOP_M, 0.5]),
         worldgen_budget: Duration::from_secs(1),
         ..ServerConfig::default()
     });
     f.join(1, &Client::new(1));
     let before = f.server.world().generated_on_access();
     for i in 0..12 * CHUNK_SIZE {
-        f.move_to(
-            1,
-            0.5 + f64::from(i),
-            f64::from(FLAT_TOP_Y),
-            0.5 + f64::from(i) * 0.4,
-        );
+        f.move_to(1, 0.5 + f64::from(i), FLAT_TOP_M, 0.5 + f64::from(i) * 0.4);
         f.server.step();
         f.server.take_outbox();
     }
@@ -329,7 +322,7 @@ fn world_rim_walking_off_the_edge_of_the_disc_falls_toward_the_midplane_not_into
     let spawn_x = f64::from(WORLD_RADIUS) - 9.5;
     let mut f = Fixture::new(ServerConfig {
         generator_version: GENERATOR_FLAT,
-        spawn: Some([spawn_x, f64::from(FLAT_TOP_Y), 0.5]),
+        spawn: Some([spawn_x, FLAT_TOP_M, 0.5]),
         worldgen_budget: Duration::from_secs(1),
         ..ServerConfig::default()
     });
@@ -372,7 +365,7 @@ fn world_rim_walking_off_the_edge_of_the_disc_falls_toward_the_midplane_not_into
     assert!(f.server.health_of(welcome.player_id) > 0); // not killed: no void
     assert!(last_x > f64::from(WORLD_RADIUS), "{last_x}"); // it went over the edge …
     assert!(crossed); // … and fell through the midplane
-    assert!(lowest < f64::from(MIDPLANE_Y), "{lowest}");
+    assert!(lowest < dwell_world::MIDPLANE_M, "{lowest}");
 }
 
 #[test]
@@ -429,7 +422,7 @@ fn after_fast_flight_the_chunks_around_the_player_all_arrive() {
     f.move_to(1, 4880.0, ground + 2.0, 3500.0);
     pump(&mut f, 600);
     let mut missing = Vec::new();
-    let row = (ground / 32.0).floor() as i32;
+    let row = dwell_world::chunk_of_pos([0.0, ground, 0.0]).y;
     for cy in row - 1..=row + 1 {
         for cz in 108..=110 {
             for cx in 151..=153 {

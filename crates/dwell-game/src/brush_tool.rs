@@ -578,7 +578,7 @@ impl BrushTool {
         world: &mut impl BoxSource,
         cap: usize,
     ) -> BrushOutline {
-        let origin = c.map(|v| f64::from(v) + 0.5);
+        let origin = dwell_world::centre_of_cell(c);
         let rel = |p: [i32; 3]| -> [f32; 3] { std::array::from_fn(|i| (p[i] - c[i]) as f32) };
         let mut segments = Vec::new();
         let mut faces = Vec::new();
@@ -626,6 +626,11 @@ impl BrushTool {
                 cuboid(&mut segments, lo, hi);
             }
         }
+        // Built in cells; the preview is in metres (HALF_HEIGHT_GRID.md §2).
+        let h = dwell_world::CELL_H as f32;
+        let m = |p: [f32; 3]| [p[0], p[1] * h, p[2]];
+        let segments = segments.into_iter().map(|(p, q)| (m(p), m(q))).collect();
+        let faces = faces.into_iter().map(|(q, k)| (q.map(m), k)).collect();
         BrushOutline {
             origin,
             segments,
@@ -1011,7 +1016,7 @@ mod tests {
         // The preview follows the target; nothing shows while the tool is off.
         t.update_preview(t.materials(grass, 0), &mut w, 0.0);
         let o = t.outline().expect("preview");
-        assert_eq!(o.origin, [0.5, 0.5, 0.5]);
+        assert_eq!(o.origin, dwell_world::centre_of_cell([0, 0, 0]));
         assert!(!o.faces.is_empty());
         t.key(BrushAction::Toggle);
         assert_eq!(t.outline(), None);
@@ -1024,11 +1029,14 @@ mod tests {
 
     /// The cells a ghost's faces belong to (each face's centre moved half a cell inward).
     fn ghost_cells(o: &BrushOutline) -> Vec<[i32; 3]> {
-        let c = o.origin.map(|v| (v - 0.5) as i32);
+        // The preview is in metres; its cells are found in cell space (HALF_HEIGHT_GRID.md §2).
+        let c = dwell_world::cell_of_pos(o.origin);
+        let h = dwell_world::CELL_H as f32;
         let mut out: Vec<[i32; 3]> = o
             .faces
             .iter()
             .map(|(q, _)| {
+                let q = q.map(|p| [p[0], p[1] / h, p[2]]);
                 let centre: [f32; 3] = std::array::from_fn(|i| (q[0][i] + q[2][i]) / 2.0);
                 let e1: [f32; 3] = std::array::from_fn(|i| q[1][i] - q[0][i]);
                 let e2: [f32; 3] = std::array::from_fn(|i| q[3][i] - q[0][i]);

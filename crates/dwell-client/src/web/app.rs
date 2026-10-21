@@ -1590,8 +1590,8 @@ impl Client {
     #[wasm_bindgen(js_name = requestDiff)]
     pub fn request_diff(&self) {
         if let Some(g) = &mut self.inner.borrow_mut().game {
-            let f = g.debug_state().feet.map(|v| v.floor() as i32);
-            g.request_diff(f.map(|v| v.div_euclid(dwell_world::CHUNK_SIZE)));
+            let c = dwell_world::chunk_of_pos(g.debug_state().feet);
+            g.request_diff([c.x, c.y, c.z]);
         }
     }
 

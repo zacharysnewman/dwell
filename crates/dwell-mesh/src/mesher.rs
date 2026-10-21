@@ -22,6 +22,7 @@ use crate::style::{
 use crate::textures::{TileRect, tile_rect};
 use dwell_blocks::shape::plant_sink;
 use dwell_look::{face_tint, normal_tint};
+use dwell_world::{CELL_H, normal_to_m};
 
 const N: i32 = CHUNK_SIZE;
 
@@ -243,104 +244,31 @@ fn hidden(km: &Kind, kn: &Kind, m: StateId, n: StateId, face: usize) -> bool {
     face_covered(cube(), face, cover(kn))
 }
 
-/// The cells' kinds where adaptive blocks change them (docs/ADAPTIVE_BLOCKS.md): an adaptive top
-/// block in the chunk takes its derived shape — a cube when the rules say full — and holds water
-/// beside or under a liquid. Apron cells' shapes need voxels beyond the apron, so an adaptive top
-/// block there is taken to cover none of its sides (its neighbour's faces toward it are drawn; any
-/// it does cover lie inside it). The padded block faces up (a face-B chunk is meshed mirrored).
+/// The padded block's cells and their kinds. The padded block faces up (a face-B chunk is meshed
+/// mirrored). Every cell takes its state's own shape: no block is shaped by its neighbours (ADR 0042).
 struct Cells<'a> {
     kinds: &'a Kinds,
     padded: &'a [u16],
-    over: Vec<Option<(u16, bool)>>,
-}
-
-/// The shape an apron's adaptive top block is drawn against: no side covered, the floor full.
-fn apron_shape() -> u16 {
-    // A lone block (every neighbour lower): the half pyramid, whose sides are all zero.
-    dwell_blocks::ADAPTIVE_UP[dwell_blocks::adaptive::index([dwell_blocks::adaptive::LOWER; 8])]
 }
 
 impl<'a> Cells<'a> {
     fn new(kinds: &'a Kinds, padded: &'a [u16]) -> Self {
-        let mut over = vec![None; padded.len()];
-        let p = PAD as i32;
-        let inside = |v: i32| (-1..p - 1).contains(&v);
-        let at = |x: i32, y: i32, z: i32| {
-            if inside(x) && inside(y) && inside(z) {
-                padded[padded_index(x, y, z)]
-            } else {
-                0
-            }
-        };
-        for y in -1..N + 1 {
-            for z in -1..N + 1 {
-                for x in -1..N + 1 {
-                    let m = padded[padded_index(x, y, z)];
-                    if m == 0 || !STATES.get(usize::from(m)).is_some_and(|s| s.adaptive) {
-                        continue;
-                    }
-                    let interior =
-                        (0..N).contains(&x) && (0..N).contains(&y) && (0..N).contains(&z);
-                    let get = |dx: i32, dy: i32, dz: i32| at(x + dx, y + dy, z + dz);
-                    let derived = if interior {
-                        dwell_blocks::adaptive::derive(get, 1)
-                    } else if y < N
-                        && !STATES
-                            .get(usize::from(get(0, 1, 0)))
-                            .is_some_and(|s| s.solid)
-                    {
-                        Some(apron_shape())
-                    } else {
-                        None
-                    };
-                    if let Some(i) = derived {
-                        over[padded_index(x, y, z)] =
-                            Some((i, dwell_blocks::adaptive::flooded_at(get, 1)));
-                    }
-                }
-            }
-        }
-        Self {
-            kinds,
-            padded,
-            over,
-        }
+        Self { kinds, padded }
     }
 
     fn state(&self, x: i32, y: i32, z: i32) -> StateId {
         self.padded[padded_index(x, y, z)]
     }
 
-    /// The solid a plant in the chunk's cell (x, y, z) stands on: the cell below's shape — an
-    /// adaptive top block's derived one, worked out exactly even in the apron's bottom row (its
-    /// neighbours there are all in the padded block) — or none when it has no solid.
+    /// The solid a plant in the chunk's cell (x, y, z) stands on: the cell below's shape, or none
+    /// when it has no solid.
     fn support(&self, x: i32, y: i32, z: i32) -> Option<&'static ShapeInfo> {
-        let sy = y - 1;
-        let k = if sy >= 0 {
-            self.kind(x, y - 1, z)
-        } else {
-            let mut k = self.kinds.of(self.state(x, sy, z));
-            let get = |dx: i32, dy: i32, dz: i32| self.state(x + dx, sy + dy, z + dz);
-            if let Some(i) = dwell_blocks::adaptive::derive(get, 1) {
-                k.shape = Shape::Shaped;
-                k.def = Some(&dwell_blocks::SHAPES[usize::from(i)]);
-            }
-            k
-        };
+        let k = self.kind(x, y - 1, z);
         if k.shape == Shape::Empty { None } else { k.def }
     }
 
     fn kind(&self, x: i32, y: i32, z: i32) -> Kind {
-        let i = padded_index(x, y, z);
-        let mut k = self.kinds.of(self.padded[i]);
-        if let Some((shape, flooded)) = self.over[i] {
-            let def = &dwell_blocks::SHAPES[usize::from(shape)];
-            let full = !def.fan && def.corners == [2, 2, 2, 2];
-            k.shape = if full { Shape::Full } else { Shape::Shaped };
-            k.def = Some(def);
-            k.flooded = flooded && !full;
-        }
-        k
+        self.kinds.of(self.padded[padded_index(x, y, z)])
     }
 }
 
@@ -393,6 +321,10 @@ impl Builder {
         let g = channel(color, 8) * tint[1];
         let b = channel(color, 0) * tint[2];
         let s = f64::from(sign);
+        // A side's texture runs in metres down from the quad's top edge, which sits on a tile
+        // boundary: a 1 m tile spans 1 m, and a block's grass fringe hangs from its top
+        // (HALF_HEIGHT_GRID.md §6).
+        let top = if u == 1 { u1.max(u0) } else { v1.max(v0) };
         for (cu, cv) in [(u0, v0), (u1, v0), (u1, v1), (u0, v1)] {
             let mut p = [0.0; 3];
             p[axis] = plane;
@@ -407,10 +339,11 @@ impl Builder {
             ]);
             self.m.colors.extend([r as f32, g as f32, b as f32]);
             // In blocks: s across, t up the face (world y on sides), tops and bottoms in x/z.
+            let ty = (py - top) * CELL_H + top;
             let (su, sv) = match axis {
                 1 => (px, pz),
-                0 => (pz, py),
-                _ => (px, py),
+                0 => (pz, ty),
+                _ => (px, ty),
             };
             self.m.uvs.extend([su as f32, sv as f32]);
             self.push_tile(tile);
@@ -428,8 +361,9 @@ impl Builder {
     }
 
     /// A convex polygon (counter-clockwise seen from outside) of `pts`, offset by `at`. `normal` is
-    /// its unit normal; uvs project the face along its dominant axis, in blocks. With `side_top` (a
-    /// vertical side face), v runs down from the face's top edge rather than the cell's top.
+    /// its unit normal in cell space, stored in metres (HALF_HEIGHT_GRID.md §2); uvs project the
+    /// face along its dominant axis, in blocks. With `side_top` (a vertical side face), v runs down
+    /// from the face's top edge rather than the cell's top.
     #[allow(clippy::too_many_arguments)]
     fn polygon(
         &mut self,
@@ -445,16 +379,18 @@ impl Builder {
         let r = channel(color, 16) * tint[0];
         let g = channel(color, 8) * tint[1];
         let b = channel(color, 0) * tint[2];
-        let [nx, ny, nz] = normal;
+        let [nx, ny, nz] = normal_to_m(normal);
         for pt in pts {
             let [qx, qy, qz] = *pt;
             let px = qx + x;
             let py = qy + y;
             let pz = qz + z;
-            // Texture height: from the face's top edge down (a side), else the world height.
+            // Texture height in metres (a 1 m tile spans 1 m whatever the cell height,
+            // HALF_HEIGHT_GRID.md §6): from the face's top edge down (a side), the edge on a tile
+            // boundary so the grass fringe hangs from it; else the world height.
             let tv = match side_top {
-                Some(st) => y + qy - st.at(pt) + 1.0,
-                None => py,
+                Some(st) => (qy - st.at(pt)) * CELL_H + y + 1.0,
+                None => py * CELL_H,
             };
             self.m.positions.extend([px as f32, py as f32, pz as f32]);
             self.m.normals.extend([nx as f32, ny as f32, nz as f32]);
@@ -720,76 +656,13 @@ fn neighbour_of(x: i32, y: i32, z: i32, axis: usize, sign: i32) -> [i32; 3] {
     n
 }
 
-/// An upright shape whose top is flat at half height (the adaptive rules' slab).
-fn is_half_slab(s: &ShapeInfo) -> bool {
-    !s.inverted && !s.fan && s.corners == [1, 1, 1, 1]
-}
-
-/// Greedy rectangles of the flat half-height tops in layer `y` (`mask`: material + 1 per
-/// x + N·z), drawn as the shaped mesher draws a top: the top tile, the top's shading.
-fn flat_tops(b: &mut Builder, kinds: &Kinds, mask: &mut [i32], y: i32) {
-    let n = N as usize;
-    for z in 0..n {
-        let mut x = 0;
-        while x < n {
-            let key = mask[x + n * z];
-            if key == 0 {
-                x += 1;
-                continue;
-            }
-            let mut w = 1;
-            while x + w < n && mask[x + w + n * z] == key {
-                w += 1;
-            }
-            let mut h = 1;
-            'grow: while z + h < n {
-                for k in 0..w {
-                    if mask[x + k + n * (z + h)] != key {
-                        break 'grow;
-                    }
-                }
-                h += 1;
-            }
-            for dz in 0..h {
-                mask[x + n * (z + dz)..x + w + n * (z + dz)].fill(0);
-            }
-            let style = kinds.of((key - 1) as StateId).style;
-            let (color, tile) = surface(&style, 1, 1);
-            // Axis y: u = z, v = x.
-            b.quad(
-                1,
-                1,
-                f64::from(y) + 0.5,
-                (z as f64, (z + h) as f64),
-                (x as f64, (x + w) as f64),
-                color,
-                &tile,
-            );
-            x += w;
-        }
-    }
-}
-
 /// A shaped voxel: each polygon of its shape, but the parts of cell faces a neighbour covers.
-/// `merged_top`: its flat top is drawn merged with its neighbours' (`flat_tops`), not here.
-#[allow(clippy::too_many_arguments)]
-fn shaped_voxel(
-    b: &mut Builder,
-    cells: &Cells<'_>,
-    k: &Kind,
-    x: i32,
-    y: i32,
-    z: i32,
-    merged_top: bool,
-) {
+fn shaped_voxel(b: &mut Builder, cells: &Cells<'_>, k: &Kind, x: i32, y: i32, z: i32) {
     let Some(def) = k.def else {
         return;
     };
     for f in faces_of(def) {
         let tag = usize::from(f.tag);
-        if merged_top && f.tag == dwell_blocks::shape::SURFACE_TAG {
-            continue;
-        }
         if tag < 6 {
             let (axis, sign) = FACES[tag];
             let [nx, ny, nz] = neighbour_of(x, y, z, axis, sign);
@@ -806,7 +679,9 @@ fn shaped_voxel(
         let tint = if tag < 6 {
             face_tint(tag / 2, face_sign)
         } else {
-            normal_tint(normal[0], normal[1], normal[2])
+            // Shaded as it stands in metres, not as the cell-space slope.
+            let m = normal_to_m(normal);
+            normal_tint(m[0], m[1], m[2])
         };
         // Sides take the side tile, a sloped surface the top (or, hanging, the bottom) tile.
         let axis = if tag < 6 { tag / 2 } else { 1 };
@@ -996,7 +871,18 @@ pub fn mirror_padded(padded: &[u16]) -> Vec<u16> {
     out
 }
 
-/// A mesh in chunk-local units mirrored in y (about the chunk's middle): re-wound.
+/// A mesh in chunk-local cells scaled to chunk-local metres: y × the cell height
+/// (HALF_HEIGHT_GRID.md §2). Normals are already in metres (`Builder::polygon`); uvs stay in cells.
+fn to_metres(mut m: MeshArrays) -> MeshArrays {
+    if CELL_H != 1.0 {
+        for p in m.positions.iter_mut().skip(1).step_by(3) {
+            *p = (f64::from(*p) * CELL_H) as f32;
+        }
+    }
+    m
+}
+
+/// A mesh in chunk-local cells mirrored in y (about the chunk's middle): re-wound.
 fn flip_arrays_y(mut m: MeshArrays) -> MeshArrays {
     for p in m.positions.iter_mut().skip(1).step_by(3) {
         *p = (f64::from(N) - f64::from(*p)) as f32;
@@ -1011,7 +897,7 @@ fn flip_arrays_y(mut m: MeshArrays) -> MeshArrays {
 }
 
 /// Meshes a chunk from its padded voxels (`PADDED_VOLUME` state ids, [`padded_index`] order).
-/// Positions are chunk-local. A chunk of face B (`mirror`; BIFACIAL_WORLD.md §6) is meshed as its
+/// Positions are chunk-local metres. A chunk of face B (`mirror`; BIFACIAL_WORLD.md §6) is meshed as its
 /// mirror image and the geometry turned back: its faces toward the player's up take the top
 /// texture and shading, and its water surface lies 1/8 above the bottom of its cell. Plants'
 /// jitter is seeded as if the chunk's minimum corner were the world's origin ([`mesh_chunk_at`]).
@@ -1043,17 +929,28 @@ pub(crate) fn mesh_chunk_with(
             got: padded.len(),
         });
     }
-    if mirror {
+    let m = if mirror {
         // Meshed in the face-local frame (BIFACIAL_WORLD.md §11): the mirror image's minimum
         // corner is the face-local chunk's, so a plant is jittered as its face-A twin is.
         let local = [origin[0], FaceFrame::B.row(origin[1] + N - 1), origin[2]];
-        let m = mesh_chunk_with(kinds, &mirror_padded(padded), false, local)?;
-        return Ok(ChunkMeshes {
+        let m = mesh_cells(kinds, &mirror_padded(padded), local);
+        ChunkMeshes {
             opaque: flip_arrays_y(m.opaque),
             transparent: flip_arrays_y(m.transparent),
             cutout: flip_arrays_y(m.cutout),
-        });
-    }
+        }
+    } else {
+        mesh_cells(kinds, padded, origin)
+    };
+    Ok(ChunkMeshes {
+        opaque: to_metres(m.opaque),
+        transparent: to_metres(m.transparent),
+        cutout: to_metres(m.cutout),
+    })
+}
+
+/// The meshes of a chunk of face A (or a mirrored one), in chunk-local cells.
+fn mesh_cells(kinds: &Kinds, padded: &[u16], origin: [i32; 3]) -> ChunkMeshes {
     let mut opaque = Builder::default();
     let mut transparent = Builder::default();
     let cells = Cells::new(kinds, padded);
@@ -1185,11 +1082,8 @@ pub(crate) fn mesh_chunk_with(
             }
         }
     }
-    // Shaped blocks: whole voxels, not slices — but the flat tops of a level run of adaptive
-    // blocks (the rules' slab, half a block up) merge into rectangles like cube faces.
+    // Shaped blocks (the generated ramps): whole voxels, not slices.
     for cy in 0..N {
-        mask.fill(0);
-        let mut any = false;
         for cz in 0..N {
             for cx in 0..N {
                 let m = padded[padded_index(cx, cy, cz)];
@@ -1198,12 +1092,7 @@ pub(crate) fn mesh_chunk_with(
                 }
                 let k = cells.kind(cx, cy, cz);
                 if k.shape == Shape::Shaped {
-                    let flat = k.def.is_some_and(is_half_slab);
-                    if flat {
-                        mask[cx as usize + n * cz as usize] = i32::from(m) + 1;
-                        any = true;
-                    }
-                    shaped_voxel(&mut opaque, &cells, &k, cx, cy, cz, flat);
+                    shaped_voxel(&mut opaque, &cells, &k, cx, cy, cz);
                 }
                 if k.style.look == Look::Cross {
                     let target = match k.style.render {
@@ -1226,19 +1115,16 @@ pub(crate) fn mesh_chunk_with(
                 }
             }
         }
-        if any {
-            flat_tops(&mut opaque, kinds, &mut mask, cy);
-        }
     }
     // Ladders carry no sway or fade, and take the ink.
     let vertices = cutout.m.positions.len() / 3;
     cutout.m.plants.resize(vertices * 4, 0.0);
     cutout.m.bare.resize(vertices, 0.0);
-    Ok(ChunkMeshes {
+    ChunkMeshes {
         opaque: opaque.m,
         transparent: transparent.m,
         cutout: cutout.m,
-    })
+    }
 }
 
 #[cfg(test)]

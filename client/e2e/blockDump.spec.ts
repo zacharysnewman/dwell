@@ -1,6 +1,7 @@
 // The block dump (debug tooling): the debug overlay's button copies the targeted block and its
 // neighbours as JSON, with the world they came from.
 import { expect, test, type Page } from '@playwright/test';
+import { CELL_HEIGHT } from '../src/protocol/constants.gen';
 import { stateId } from '../src/world/blocks';
 
 type Vec3 = [number, number, number];
@@ -28,12 +29,11 @@ test('the debug overlay copies the targeted block and its neighbours as JSON', a
   await expect
     .poll(() => call<number>(page, `d.voxel(${placed.join(',')})`))
     .toBe(stateId('dwell:stone'));
-  // Looked at, as the look straight on would now miss it: a lone natural block is a half pyramid,
-  // and the ground beside it rises to it (ADAPTIVE_BLOCKS.md), so the same look hits that ramp.
+  // Looked at, as the same look may pass over it: a placed block is one ½ m cell (CELL_HEIGHT).
   const feet = await call<Vec3>(page, 'd.state().feet');
   const d: Vec3 = [
     placed[0] + 0.5 - feet[0],
-    placed[1] + 0.25 - feet[1] - EYE_HEIGHT,
+    (placed[1] + 0.5) * CELL_HEIGHT - feet[1] - EYE_HEIGHT,
     placed[2] + 0.5 - feet[2],
   ];
   const yaw = (Math.atan2(d[0], d[2]) * 180) / Math.PI;

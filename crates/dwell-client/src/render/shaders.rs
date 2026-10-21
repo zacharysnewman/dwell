@@ -1883,7 +1883,7 @@ pub fn lighting_source() -> String {
         "{}{}const SEA_LEVEL: f32 = {:.1};\nconst ATLAS_CELLS: u32 = {}u;\nconst ATLAS_TILES: u32 = {}u;\n{}\n{}\n{}\n{FRAME}\n{}\n{}\n{FRAME_DEPTH}\n{COMMON}\n",
         dwell_world::FaceFrame::wgsl(),
         super::face_shading::WGSL,
-        world::SEA_LEVEL as f64,
+        world::SEA_LEVEL_M,
         dwell_mesh::ATLAS_CELLS,
         dwell_mesh::ATLAS_TILES,
         dwell_look::daynight::DAY_SKY_WGSL,

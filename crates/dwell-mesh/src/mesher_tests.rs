@@ -6,6 +6,36 @@ use dwell_world::{ChunkCoord, FaceFrame};
 
 const UNKNOWN: u16 = 65_000;
 
+// The mesher emits chunk-local metres (HALF_HEIGHT_GRID.md §2). These tests are about what is
+// drawn where in the cells, so they read its output back in cells: the entry points below shadow
+// the mesher's, dividing y by the cell height (`emits_metres_one_cell_tall` checks the metres).
+fn in_cells(mut m: ChunkMeshes) -> ChunkMeshes {
+    for a in [&mut m.opaque, &mut m.transparent, &mut m.cutout] {
+        for p in a.positions.iter_mut().skip(1).step_by(3) {
+            *p = (f64::from(*p) / dwell_world::CELL_H) as f32;
+        }
+    }
+    m
+}
+fn mesh_chunk(padded: &[u16], mirror: bool) -> Result<ChunkMeshes, LengthError> {
+    super::mesh_chunk(padded, mirror).map(in_cells)
+}
+fn mesh_chunk_at(
+    padded: &[u16],
+    mirror: bool,
+    origin: [i32; 3],
+) -> Result<ChunkMeshes, LengthError> {
+    super::mesh_chunk_at(padded, mirror, origin).map(in_cells)
+}
+fn mesh_chunk_with(
+    kinds: &Kinds,
+    padded: &[u16],
+    mirror: bool,
+    origin: [i32; 3],
+) -> Result<ChunkMeshes, LengthError> {
+    super::mesh_chunk_with(kinds, padded, mirror, origin).map(in_cells)
+}
+
 fn water() -> u16 {
     require("dwell:water")
 }
@@ -660,10 +690,10 @@ fn solid_on_face(s: &ShapeInfo, face: usize, a: f64, b: f64) -> bool {
 
 #[test]
 fn shape_adjacency_leaves_no_holes_between_any_two_shapes_on_any_side() {
-    // Every shape in the table: the states' and every shape the adaptive rules derive, upright and
-    // hanging, against each other on every side.
+    // Every shape in the table (the cube and the ramp pieces, upright and hanging), against each
+    // other on every side.
     let distinct: Vec<usize> = (1..dwell_blocks::SHAPES.len()).collect();
-    assert!(distinct.len() > 190);
+    assert!(distinct.len() > 4);
     const SAMPLES: usize = 5;
     let mut checked = 0;
     let mut failures = Vec::new();
@@ -724,14 +754,14 @@ fn normal_ys(m: &MeshArrays) -> Vec<i32> {
 }
 
 #[test]
-fn a_lone_grass_block_is_a_half_pyramid_and_a_field_rests_at_half_height() {
+fn a_lone_grass_block_is_a_cube_and_a_field_is_flat_at_its_top() {
+    // Natural blocks are not adaptive on the half-height grid: no half pyramid, no resting at half
+    // height (Phase 18); a lone block is a cube.
     let lone = mesh(&[(5, 3, 5, grass())], false).opaque;
     let ys = normal_ys(&lone);
-    // Four faces sloping at 45° (normal y = cos 45°) over the floor; no vertical side.
-    assert_eq!(ys.iter().filter(|&&y| y == 707).count(), 4, "{ys:?}");
-    assert!(ys.iter().all(|&y| y == 707 || y == -1000), "{ys:?}");
-    assert!(lone.positions.chunks_exact(3).all(|p| p[1] <= 3.5));
-    // The middle of a field: flat at half height, with the grass top tile.
+    assert!(ys.iter().all(|&y| [1000, 0, -1000].contains(&y)), "{ys:?}");
+    assert_eq!(ys.iter().filter(|&&y| y == 1000).count(), 2, "{ys:?}");
+    assert!(lone.positions.chunks_exact(3).any(|p| p[1] == 4.0));
     let mut field = Vec::new();
     for z in 4..7 {
         for x in 4..7 {
@@ -744,7 +774,7 @@ fn a_lone_grass_block_is_a_half_pyramid_and_a_field_rests_at_half_height() {
         .map(|i| m.positions[i * 3 + 1])
         .collect();
     assert!(
-        !flat.is_empty() && flat.iter().all(|&y| y == 3.5),
+        !flat.is_empty() && flat.iter().all(|&y| y == 4.0),
         "{flat:?}"
     );
 }
@@ -758,11 +788,78 @@ fn a_grass_block_with_a_block_on_it_stays_a_cube() {
 }
 
 #[test]
-fn a_shaped_bank_beside_water_holds_water_in_its_open_part() {
-    // Sand at the water's row beside water: shaped, and flooded — its cell's water faces are drawn
-    // (toward the air), and the water beside it draws none against it.
+fn a_level_field_of_natural_blocks_merges_its_flat_tops() {
+    // 10 × 10 grass: natural blocks are not adaptive on the half-height grid (Phase 41), so the
+    // whole field is flat at its cells' top in one rectangle (under Phase 18 the rim sloped and the
+    // inside rested at half height).
+    let mut field = Vec::new();
+    for z in 0..10 {
+        for x in 0..10 {
+            field.push((x, 2, z, grass()));
+        }
+    }
+    let m = mesh(&field, false).opaque;
+    let flat: Vec<usize> = (0..m.normals.len() / 3)
+        .filter(|&v| m.normals[v * 3 + 1] == 1.0)
+        .collect();
+    assert_eq!(flat.len(), 4, "one merged quad");
+    for &v in &flat {
+        assert_eq!(m.positions[v * 3 + 1], 3.0);
+    }
+}
+
+/// A stored ramp state of the half-height grid (Phase 41, docs/HALF_HEIGHT_GRID.md §3).
+fn ramp(material: &str, shape: &str, facing: &str, half: &str, flooded: bool) -> u16 {
+    dwell_blocks::state(&format!(
+        "dwell:{material}_ramp[facing={facing},flooded={flooded},half={half},shape={shape}]"
+    ))
+    .expect("a ramp state")
+}
+
+#[test]
+fn stored_ramp_pieces_mesh_their_own_shape() {
+    // A ½ m ramp descending east: its sloped top rises toward −x; the two 45° halves stacked make
+    // one slope, the upper one open beyond its middle (no floor drawn there).
+    let r = mesh(
+        &[(5, 3, 5, ramp("grass", "ramp", "east", "bottom", false))],
+        false,
+    )
+    .opaque;
+    let ys = normal_ys(&r);
+    assert!(ys.contains(&707), "{ys:?}");
+    let upper = ramp("grass", "steep_upper", "east", "bottom", false);
+    let lower = ramp("grass", "steep_lower", "east", "bottom", false);
+    let m = mesh(&[(5, 3, 5, lower), (5, 4, 5, upper)], false).opaque;
+    // Every sloped triangle of the pair lies in the one plane through (5, 5) and (6, 3) in x–y.
+    for t in m.indices.chunks_exact(3) {
+        let n = normal_of(&m.positions, t[0], t[1], t[2]);
+        if n[0] > 0.0 && n[1] > 0.0 {
+            for &v in t {
+                let p = vertex(&m.positions, v);
+                assert!((p[1] - (5.0 - 2.0 * (p[0] - 5.0))).abs() < 1e-5, "{p:?}");
+            }
+        }
+    }
+    // Nothing is drawn in the upper cell's open half at its floor (y = 4, x > 5.5).
+    let floor_in_open_half = m.indices.chunks_exact(3).any(|t| {
+        t.iter().all(|&v| {
+            let p = vertex(&m.positions, v);
+            (p[1] - 4.0).abs() < 1e-6 && p[0] > 5.5 - 1e-6
+        })
+    });
+    assert!(!floor_in_open_half);
+}
+
+#[test]
+fn a_flooded_ramp_beside_water_holds_water_in_its_open_part() {
+    // A sand ramp descending into water at the water's row, stored flooded (the generator sets it;
+    // HALF_HEIGHT_GRID.md §5): its cell's water faces are drawn (toward the air), and the water
+    // beside it draws none against it.
     let m = mesh(
-        &[(5, 3, 5, require("dwell:sand")), (6, 3, 5, water())],
+        &[
+            (5, 3, 5, ramp("sand", "ramp", "east", "bottom", true)),
+            (6, 3, 5, water()),
+        ],
         false,
     );
     let tops: Vec<f32> = (0..m.transparent.normals.len() / 3)
@@ -840,7 +937,8 @@ fn fluid_side_faces_stand_only_over_the_open_part_beside_them_and_under_the_flui
         // The face's own cell: its side stops at the drawn surface unless water is over it.
         let own = [0, 1, 2].map(|i| (centre[i] - n[i] * 0.01).floor() as i32);
         let over = |dx: i32, dy: i32, dz: i32| at(own[0] + dx, own[1] + 1 + dy, own[2] + dz);
-        let wet_above = over(0, 0, 0) == water() || dwell_blocks::adaptive::flooded_at(over, 1);
+        let wet_above = over(0, 0, 0) == water()
+            || dwell_blocks::try_info(over(0, 0, 0)).is_some_and(|s| s.flooded);
         let limit = f64::from(own[1]) + if wet_above { 1.0 } else { top };
         for p in [a, b, c] {
             assert!(
@@ -851,7 +949,7 @@ fn fluid_side_faces_stand_only_over_the_open_part_beside_them_and_under_the_flui
         // Just across the face: the neighbour cell, which must be open there.
         let q = [0, 1, 2].map(|i| centre[i] + n[i] * 0.01);
         let [qx, qy, qz] = q.map(|v| v.floor() as i32);
-        let shape = dwell_blocks::adaptive::shape_at(|dx, dy, dz| at(qx + dx, qy + dy, qz + dz), 1);
+        let shape = dwell_blocks::shape::shape_of(at(qx, qy, qz));
         let local = [
             q[0] - f64::from(qx),
             q[1] - f64::from(qy),
@@ -869,30 +967,74 @@ fn fluid_side_faces_stand_only_over_the_open_part_beside_them_and_under_the_flui
     );
 }
 
+// face-b-only: a hanging ramp is face B's (face A's upright ramps are tested above)
 #[test]
-fn face_b_shapes_hang_toward_its_sky() {
-    // A lone grass block on face B (meshed mirrored): the pyramid hangs, its slopes face down.
-    let m = mesh(&[(5, 3, 5, grass())], true).opaque;
+fn a_hanging_ramp_on_face_b_faces_its_sky() {
+    // A hanging ramp on face B (meshed mirrored): its slope faces down, toward face B's sky.
+    let m = mesh(
+        &[(5, 3, 5, ramp("grass", "ramp", "east", "top", false))],
+        true,
+    )
+    .opaque;
     let ys = normal_ys(&m);
-    assert_eq!(ys.iter().filter(|&&y| y == -707).count(), 4, "{ys:?}");
+    assert!(ys.contains(&-707), "{ys:?}");
+    assert!(!ys.contains(&707), "{ys:?}");
 }
 
 #[test]
-fn a_level_field_of_natural_blocks_merges_its_flat_tops() {
-    // 10 × 10 grass: the 8 × 8 inside rests at half height in one rectangle; the rim slopes.
-    let mut field = Vec::new();
-    for z in 0..10 {
-        for x in 0..10 {
-            field.push((x, 2, z, grass()));
-        }
-    }
-    let m = mesh(&field, false).opaque;
-    let flat: Vec<usize> = (0..m.normals.len() / 3)
-        .filter(|&v| m.normals[v * 3 + 1] == 1.0)
+fn emits_metres_one_cell_tall() {
+    // A cube spans the cell height in y (HALF_HEIGHT_GRID.md §2), and a ½ m ramp's stored normal
+    // is its slope in metres (26.57°, normal y = cos 26.57° ≈ 0.894), not the cell-space 45°.
+    let m = super::mesh_chunk(&voxels(&[(4, 3, 4, stone())]), false).expect("padded volume");
+    let ys: Vec<f32> = m
+        .opaque
+        .positions
+        .iter()
+        .skip(1)
+        .step_by(3)
+        .copied()
         .collect();
-    assert_eq!(flat.len(), 4, "one merged quad");
-    for &v in &flat {
-        assert_eq!(m.positions[v * 3 + 1], 2.5);
+    let h = dwell_world::CELL_H as f32;
+    assert_eq!(ys.iter().copied().fold(f32::MAX, f32::min), 3.0 * h);
+    assert_eq!(ys.iter().copied().fold(f32::MIN, f32::max), 4.0 * h);
+    let r = super::mesh_chunk(
+        &voxels(&[(4, 3, 4, ramp("grass", "ramp", "east", "bottom", false))]),
+        false,
+    )
+    .expect("padded volume");
+    let slope_y = (0..r.opaque.normals.len() / 3)
+        .map(|v| r.opaque.normals[v * 3 + 1])
+        .filter(|&y| y > 0.1 && y < 0.99)
+        .fold(0.0f32, f32::max);
+    let want = (1.0 / (1.0 + (h as f64).powi(2)).sqrt()) as f32;
+    assert!((slope_y - want).abs() < 1e-3, "{slope_y} vs {want}");
+}
+
+#[test]
+fn a_side_texture_spans_its_metres_and_a_grass_fringe_hangs_from_each_blocks_top() {
+    // A 1 m tile spans 1 m of side whatever the cell height, and v runs down from the side's top
+    // edge, which sits on a tile boundary: a ½ m grass block in any row shows the tile's top half,
+    // the fringe at its top (HALF_HEIGHT_GRID.md §6).
+    for row in [3, 4] {
+        let m = super::mesh_chunk(&voxels(&[(4, row, 4, grass())]), false).expect("padded volume");
+        let side: Vec<f32> = (0..m.opaque.normals.len() / 3)
+            .filter(|&v| m.opaque.normals[v * 3] == 1.0)
+            .map(|v| m.opaque.uvs[v * 2 + 1])
+            .collect();
+        assert_eq!(side.len(), 4, "one side quad");
+        let (lo, hi) = (
+            side.iter().copied().fold(f32::MAX, f32::min),
+            side.iter().copied().fold(f32::MIN, f32::max),
+        );
+        assert_eq!(
+            hi.fract(),
+            0.0,
+            "row {row}: the top edge on a tile boundary"
+        );
+        assert!(
+            ((hi - lo) as f64 - dwell_world::CELL_H).abs() < 1e-6,
+            "row {row}"
+        );
     }
 }
 
@@ -957,9 +1099,17 @@ fn plateau(body: u16, top: u16, cap: u16) -> Vec<(i32, i32, i32, u16)> {
 #[test]
 fn a_dirt_side_under_sloped_grass_shows_the_turf_skirt_and_not_under_air_or_stone() {
     // dirt's `sideUnder` (shared/blocks/dwell.json): a dirt side face with grass directly above
-    // takes the `dirtSkirt` tile. At a cliff the grass's edge is a slope down to the dirt's top.
+    // takes the `dirtSkirt` tile. At a cliff the grass's edge is a slope down to the dirt's top
+    // (on the half-height grid a stored grass ramp descending east, Phase 41).
     let dirt = require("dwell:dirt");
-    let m = mesh(&plateau(dirt, grass(), 0), false).opaque;
+    let edge_ramp = |cells: Vec<(i32, i32, i32, u16)>| -> Vec<(i32, i32, i32, u16)> {
+        let r = ramp("grass", "ramp", "east", "bottom", false);
+        cells
+            .into_iter()
+            .map(|(x, y, z, m)| (x, y, z, if x == 5 && m == grass() { r } else { m }))
+            .collect()
+    };
+    let m = mesh(&edge_ramp(plateau(dirt, grass(), 0)), false).opaque;
     let faces = plus_x_tiles(&m, 6.0);
     for z in 3..=7 {
         assert!(
@@ -997,7 +1147,7 @@ fn a_dirt_side_under_sloped_grass_shows_the_turf_skirt_and_not_under_air_or_ston
     );
     // Face B (meshed mirrored; its sky is toward −y): the plateau hangs from the chunk's top with
     // the grass under the dirt, and the skirt hangs from the edge toward its sky.
-    let hanging: Vec<_> = plateau(dirt, grass(), 0)
+    let hanging: Vec<_> = edge_ramp(plateau(dirt, grass(), 0))
         .into_iter()
         .map(|(x, y, z, m)| (x, N - 1 - y, z, m))
         .collect();
@@ -1012,12 +1162,13 @@ fn a_dirt_side_under_sloped_grass_shows_the_turf_skirt_and_not_under_air_or_ston
 #[test]
 fn a_side_tile_rule_added_by_data_alone_is_applied() {
     // shared/blocks/fixtures/test.json adds `test:loam` (sand tiles) with `sideUnder`
-    // `{ "dwell:stone": "grassSide" }` and nothing else.
+    // `{ "dwell:stone": "grassSide" }` and nothing else. (On the half-height grid the stone over
+    // it is a stored ramp: a full stone cube hangs no skirt, it shows its own side.)
     use dwell_blocks::fixture::{FLUIDS, STATES};
     let id = |name: &str| STATES.iter().position(|s| s.name == name).expect(name) as u16;
     let (loam, stone, water) = (
         id("test:loam"),
-        id("dwell:stone[flooded=false]"),
+        id("dwell:stone_ramp[facing=east,flooded=false,half=bottom,shape=ramp]"),
         id("dwell:water"),
     );
     let kinds = Kinds::new(&STATES, &FLUIDS, Some(water));
@@ -1075,12 +1226,11 @@ fn plant_feet(c: &MeshArrays) -> Vec<[f64; 3]> {
         .collect()
 }
 
-/// The height of the derived surface of the support cell `s` (chunk-local) at world (x, z), as
+/// The height of the surface of the support cell `s` (chunk-local) at world (x, z), as
 /// the terrain's queries see it: `cells` read as the padded voxels.
 fn surface_under(cells: &[(i32, i32, i32, u16)], s: [i32; 3], x: f64, z: f64) -> f64 {
     let padded = voxels(cells);
-    let at = |dx: i32, dy: i32, dz: i32| padded[padded_index(s[0] + dx, s[1] + dy, s[2] + dz)];
-    let shape = dwell_blocks::adaptive::shape_at(at, 1);
+    let shape = dwell_blocks::shape::shape_of(padded[padded_index(s[0], s[1], s[2])]);
     let span = dwell_blocks::shape::solid_span_at(
         shape,
         (x - f64::from(s[0])) as f32,
@@ -1089,62 +1239,26 @@ fn surface_under(cells: &[(i32, i32, i32, u16)], s: [i32; 3], x: f64, z: f64) ->
     f64::from(s[1]) + f64::from(span.hi)
 }
 
-/// A 3 × 3 field of grass at row `y` around (4, 4), the plant at (4, y + 1, 4).
-fn field_with_plant(y: i32) -> Vec<(i32, i32, i32, u16)> {
+/// A plant at (4, 1, 4) on a grass ramp (a ½ m ramp descending east) at (4, 0, 4) in a grass field:
+/// the one shaped support a plant can meet on ½ m cells (`sitOnSupport`, TRANSPARENT_BLOCKS.md §4).
+fn ramp_with_plant(plant: u16) -> Vec<(i32, i32, i32, u16)> {
+    let ramp =
+        dwell_world::ramps::gentle_cell("dwell:grass", dwell_world::ramps::RampFacing::East, false)
+            .expect("a grass ramp on ½ m cells");
     let mut cells: Vec<_> = (3..6)
-        .flat_map(|z| (3..6).map(move |x| (x, y, z, grass())))
+        .flat_map(|z| (3..6).map(move |x| (x, 0, z, grass())))
+        .filter(|&(x, _, z, _)| (x, z) != (4, 4))
         .collect();
-    cells.push((4, y + 1, 4, tall_grass()));
+    cells.push((4, 0, 4, ramp));
+    cells.push((4, 1, 4, plant));
     cells
 }
 
 #[test]
-fn tall_grass_sits_down_on_a_level_fields_half_height_top() {
-    // The owner (2026-10-20): over a level field (resting at half height) the plant's foot is on
-    // the drawn ground, not ½ m above it at the cell's floor.
-    let cells = field_with_plant(0);
-    let c = mesh(&cells, false).cutout;
-    let feet = plant_feet(&c);
+fn tall_grass_over_a_ramp_follows_its_height_under_each_foot() {
+    let cells = ramp_with_plant(tall_grass());
+    let feet = plant_feet(&mesh(&cells, false).cutout);
     assert!(!feet.is_empty());
-    for p in &feet {
-        assert!(
-            (p[1] - 0.5).abs() < 1e-5,
-            "foot at the support's top: {p:?}"
-        );
-    }
-    let lowest = (0..c.positions.len() / 3)
-        .map(|v| c.positions[v * 3 + 1])
-        .fold(f32::INFINITY, f32::min);
-    assert!((lowest - 0.5).abs() < 1e-5, "{lowest}");
-    // Its height above its foot is the data's (the whole plant moves down).
-    let cross = dwell_blocks::info(tall_grass()).cross.expect("cross");
-    let top = (0..c.positions.len() / 3)
-        .map(|v| c.positions[v * 3 + 1])
-        .fold(0.0, f32::max);
-    assert!(
-        top - 0.5 <= cross.height + 1e-5 && top - 0.5 >= cross.height * cross.height_min - 1e-5
-    );
-}
-
-#[test]
-fn tall_grass_over_an_apron_support_sits_on_its_derived_top() {
-    // The plant in the chunk's bottom row: its support lies in the apron, whose shape the mesher
-    // otherwise only approximates. The field rests at half height there too.
-    let cells = field_with_plant(-1);
-    for p in plant_feet(&mesh(&cells, false).cutout) {
-        assert!((p[1] + 0.5).abs() < 1e-5, "{p:?}");
-    }
-}
-
-#[test]
-fn tall_grass_over_a_slope_follows_its_height_under_each_foot() {
-    // A ramp: the field's support rises toward +x (a block on the field's +x side, one higher).
-    let mut cells = field_with_plant(0);
-    for z in 3..6 {
-        cells.push((5, 1, z, grass()));
-    }
-    let c = mesh(&cells, false).cutout;
-    let feet = plant_feet(&c);
     let mut heights = Vec::new();
     for p in &feet {
         let want = surface_under(&cells, [4, 0, 4], p[0], p[2]);
@@ -1153,7 +1267,7 @@ fn tall_grass_over_a_slope_follows_its_height_under_each_foot() {
     }
     assert!(
         heights.iter().any(|&h| (h - heights[0]).abs() > 0.05),
-        "the feet follow the slope: {heights:?}"
+        "the feet follow the ramp: {heights:?}"
     );
 }
 
@@ -1166,60 +1280,22 @@ fn tall_grass_on_a_full_cube_is_unchanged() {
 }
 
 #[test]
-fn tall_grass_follows_its_support_when_a_neighbour_reshapes_it() {
-    // Level field: the foot at half height. A block put beside the support at the plant's row
-    // makes the support a ramp; one on the support's other side too makes it full height there.
-    let mut cells = field_with_plant(0);
-    let flat = plant_feet(&mesh(&cells, false).cutout);
-    assert!(flat.iter().all(|p| (p[1] - 0.5).abs() < 1e-5));
-    cells.push((5, 1, 4, cube_block()));
-    let ramp = plant_feet(&mesh(&cells, false).cutout);
-    assert_ne!(flat, ramp, "re-meshed with the new support");
-    for p in &ramp {
-        let want = surface_under(&cells, [4, 0, 4], p[0], p[2]);
-        assert!((p[1] - want).abs() < 1e-4, "{p:?} want {want}");
-    }
-    assert!(ramp.iter().any(|p| p[1] > 0.5 + 0.05));
-}
-
-#[test]
-fn tall_grass_on_face_b_sits_on_its_support_too() {
-    // Meshed mirrored: the field rests half a cell from its floor toward the plant, and the
-    // plant's foot is there, ½ below the cell's mirrored floor.
-    let mut cells: Vec<_> = (3..6)
-        .flat_map(|z| (3..6).map(move |x| (x, 5, z, grass())))
-        .collect();
-    cells.push((4, 4, 4, tall_grass()));
-    for p in plant_feet(&mesh(&cells, true).cutout) {
-        assert!((p[1] - 5.5).abs() < 1e-5, "{p:?}");
-    }
-}
-
-#[test]
 fn a_plant_that_does_not_sit_on_its_support_keeps_to_its_cells_floor_by_data_alone() {
     // shared/blocks/fixtures/test.json's `test:reed` says `"sitOnSupport": false`; the fixture's
-    // tall grass keeps the default. Both over the same level field.
+    // tall grass keeps the default. Both over the same ramp.
     use dwell_blocks::fixture::{FLUIDS, STATES};
     let id = |name: &str| STATES.iter().position(|s| s.name == name).expect(name) as u16;
-    let (reed, plant, ground, water) = (
-        id("test:reed"),
-        id("dwell:tall_grass"),
-        id("dwell:grass[flooded=false]"),
-        id("dwell:water"),
-    );
-    // The fixture keeps the build's blocks first (adaptive shapes read the build's table).
+    let (reed, plant, water) = (id("test:reed"), id("dwell:tall_grass"), id("dwell:water"));
+    // The fixture keeps the build's blocks first, so the build's ramp states are the fixture's.
+    let ground = id("dwell:grass[flooded=false]");
     assert_eq!(
         STATES[usize::from(ground)].name,
         dwell_blocks::STATES[usize::from(ground)].name
     );
     let kinds = Kinds::new(&STATES, &FLUIDS, Some(water));
     let feet_of = |p: u16| {
-        let mut cells: Vec<_> = (3..6)
-            .flat_map(|z| (3..6).map(move |x| (x, 0, z, ground)))
-            .collect();
-        cells.push((4, 1, 4, p));
         plant_feet(
-            &mesh_chunk_with(&kinds, &voxels(&cells), false, [0; 3])
+            &mesh_chunk_with(&kinds, &voxels(&ramp_with_plant(p)), false, [0; 3])
                 .expect("padded volume")
                 .cutout,
         )
@@ -1230,7 +1306,7 @@ fn a_plant_that_does_not_sit_on_its_support_keeps_to_its_cells_floor_by_data_alo
         reed_feet.iter().all(|p| (p[1] - 1.0).abs() < 1e-6),
         "{reed_feet:?}"
     );
-    assert!(feet_of(plant).iter().all(|p| (p[1] - 0.5).abs() < 1e-5));
+    assert!(feet_of(plant).iter().any(|p| (p[1] - 1.0).abs() > 0.05));
 }
 
 // --- Face parity (BIFACIAL_WORLD.md §11) --------------------------------------------------------
@@ -1286,7 +1362,7 @@ dwell_world::both_faces!(
         let at = |x: f64, y: f64, z: f64| {
             ChunkCoord::new(
                 (x / 32.0).floor() as i32,
-                (y / 32.0).floor() as i32,
+                (y / (32.0 * dwell_world::CELL_H)).floor() as i32,
                 (z / 32.0).floor() as i32,
             )
         };
@@ -1300,14 +1376,10 @@ dwell_world::both_faces!(
         let t = dwell_worldgen::BifacialTerrain::new(7);
         let local = t.local(dwell_world::Face::A);
         let mut x = spawn[0] as i32;
-        while local.column_at(x, spawn[2] as i32).height >= dwell_world::SEA_LEVEL as f32 {
+        while local.column_at(x, spawn[2] as i32).height >= dwell_world::SEA_LEVEL_M as f32 {
             x += 8;
         }
-        chunks.push(at(
-            f64::from(x),
-            f64::from(dwell_world::SEA_LEVEL) - 1.0,
-            spawn[2],
-        ));
+        chunks.push(at(f64::from(x), dwell_world::SEA_LEVEL_M - 0.25, spawn[2]));
         for c in chunks {
             let a = mesh_on_face(&mut source, c, FaceFrame::A);
             let b = mesh_on_face(&mut source, c, f);

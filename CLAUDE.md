@@ -21,8 +21,10 @@ and friend worlds), with a small master server for discovery; there are no offic
   palettes in world files.
 - `docs/SLOPE_BLOCKS.md` — Phase 9's shape mechanism (shapes, collision, meshing), trimmed in Phase 15
   (the placed slope and slab families, terrain slope shaping and LOD slopes were cut).
+- `docs/HALF_HEIGHT_GRID.md` — design for Phase 41 (ADR 0042, adopted 2026-10-20): ½ m tall cells, the stored
+  cardinal ramps and the generation rule that places them (V2), and the as-built list.
 - `docs/ADAPTIVE_BLOCKS.md` — design for Phase 18 (formerly 9e): natural blocks shaped from their neighbours by
-  five rules (replaces placed slopes and terrain slope shaping for natural materials).
+  five rules; superseded by Phase 41 (ADR 0042): on ½ m cells no block is adaptive.
 - `docs/BASELINE_EVALUATION.md` — the owner's simplified baseline (2026-10-12) compared with what
   is built: what to keep, add and cut, graded on whether each part is an extendable, data-driven
   system; built by the baseline rework, Phases 14–19 of the implementation plan.
@@ -48,6 +50,8 @@ and friend worlds), with a small master server for discovery; there are no offic
   the structures store; worldgen placement deferred.
 - `docs/TREE_GROWTH.md` — design for Phase 30 (ADR 0033): hand-built trees grown by a computed skeleton
   reveal, skeleton-jitter variants, and trees as a layer composed at chunk load (tombstones, `growers`).
+- `docs/HALF_HEIGHT_GRID.md` — design for Phase 41 (ADR 0042), on the long-lived branch
+  `claude/half-height-voxels` only: ½ m cells, stored cardinal ramps shaped at generation, no reshaping.
 - `docs/ART_DIRECTION.md` — the storybook art direction: the palette (`shared/textures/palette.json`),
   the brush vocabulary, how materials read, the lighting assumptions; shared by the world and characters.
 - `docs/PAINTERLY_TEXTURES.md` — design for Phase 39 (ADR 0040): painterly textures as data, one stroke

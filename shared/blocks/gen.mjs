@@ -1,15 +1,21 @@
 #!/usr/bin/env node
-// Generates the block registries for TypeScript and Rust from shared/blocks/*.json, and the adaptive
-// rule table from adaptive.json
+// Generates the block registries for TypeScript and Rust from shared/blocks/*.json
 // (docs/BLOCK_REGISTRY.md). Outputs are checked in; CI regenerates and fails on any diff.
 import { execFileSync } from 'node:child_process';
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { blockFluid, fluidsRust, readFluids } from './fluids.mjs';
-import { FACINGS as SHAPE_FACINGS, SLOPE_SHAPES, cubeShape, namedShape, slabShape, slopeShape } from './shapes.mjs';
+import {
+  FACINGS as SHAPE_FACINGS,
+  RAMP_SHAPES,
+  SLOPE_SHAPES,
+  cubeShape,
+  rampShape,
+  slabShape,
+  slopeShape,
+} from './shapes.mjs';
 import { blockTiles, sideUnderRules } from './faces.mjs';
-import { NEIGHBOURHOODS, aroundOf, buildTable, describe, summary } from './adaptive.mjs';
 import { loadSounds } from '../sounds/load.mjs';
 import { checkBlockSounds } from '../sounds/validate.mjs';
 
@@ -23,8 +29,9 @@ const header = process.argv.includes('--fixture')
 // `--fixture`: the build's namespaces plus shared/blocks/fixtures/*.json (test content, e.g. a
 // second fluid), written only as crates/dwell-blocks/src/fixture.gen.rs for tests.
 const fixture = process.argv.includes('--fixture');
-// Every JSON file here is a namespace of blocks but the adaptive table's data and its test fixture.
-const NOT_NAMESPACES = ['adaptive.json', 'playground-export.json'];
+// Every JSON file here is a namespace of blocks but the owner's playground heights (a test terrain,
+// `dwell-physics/tests/ramps.rs`).
+const NOT_NAMESPACES = ['playground-export.json'];
 const jsonIn = (dir) =>
   readdirSync(dir)
     .filter((f) => f.endsWith('.json') && !NOT_NAMESPACES.includes(f))
@@ -82,6 +89,23 @@ const familyBlock = (base, kind, extra = {}) => {
     slopeFamily: kind,
     palette: 'all',
   };
+  if (kind === 'ramp') {
+    // Stored cardinal ramps (docs/HALF_HEIGHT_GRID.md §3): placed by generation only, so not in
+    // the palette; they sound like their base block.
+    return {
+      ...common,
+      name: `${base.name}_ramp`,
+      sound: base.sound,
+      palette: [],
+      properties: {
+        facing: SHAPE_FACINGS,
+        flooded: ['false', 'true'],
+        half: ['bottom', 'top'],
+        shape: RAMP_SHAPES,
+      },
+      ...extra,
+    };
+  }
   return kind === 'slope'
     ? {
         ...common,
@@ -115,6 +139,11 @@ for (const ns of namespaces) {
     for (const kind of ['slope', 'slab']) {
       if (!declared.has(`${m}:${kind}`)) generated.push(familyBlock(base(m), kind));
     }
+  }
+  // `rampFamilies`: `<m>_ramp[facing, flooded, half, shape]` for natural ground on the half-height
+  // grid (Phase 41).
+  for (const m of ns.rampFamilies ?? []) {
+    if (!declared.has(`${m}:ramp`)) generated.push(familyBlock(base(m), 'ramp'));
   }
   ns.blocks = [...ns.blocks, ...generated];
 }
@@ -235,13 +264,9 @@ for (const ns of namespaces) {
       if (!p || p.values.some((v) => !FACINGS.includes(v))) fail(`${id}: facingProperty`);
     }
     if (def.shape === 'shaped' && !def.slopeFamily) fail(`${id}: shaped blocks come from shapeFamilies`);
-    if (def.adaptive !== undefined && typeof def.adaptive !== 'boolean') fail(`${id}: adaptive is true or false`);
-    // An adaptive block's only property may be `flooded` (false, true): the sea's water in its open
-    // part (docs/WATER_RENDERING.md §9). Anything else would be shaped over by its neighbours.
-    const floodedOnly =
-      props.length === 1 && props[0].name === 'flooded' && props[0].values.join() === 'false,true';
-    if (def.adaptive && (def.shape !== 'full' || (props.length && !floodedOnly) || look !== 'cube'))
-      fail(`${id}: only a full cube block, without properties but flooded [false, true], can be adaptive (it is shaped from its neighbours)`);
+    // Adaptive blocks (shaped from their neighbours) were removed with ½ m cells (ADR 0042): natural
+    // ground is shaped once, by the generator's stored ramps.
+    if (def.adaptive !== undefined) fail(`${id}: adaptive blocks were removed (ADR 0042); natural ground uses rampFamilies`);
     const count = props.reduce((n, p) => n * p.values.length, 1);
     const fluid = blockFluid(id, def, fluids);
     const block = { id, def, props, first: states.length, count, look, fluid };
@@ -269,7 +294,14 @@ for (const b of blocks) {
   }
   // Side tiles chosen by the block above (faces.mjs).
   try {
-    b.sideUnder = sideUnderRules(b.id, b.def, blocks.map((o) => o.id));
+    // A rule naming a block also holds under its shape families (the half-height grid's stored
+    // ramps, `<m>_ramp`): sloped grass over dirt is still grass.
+    b.sideUnder = sideUnderRules(b.id, b.def, blocks.map((o) => o.id)).flatMap((r) => [
+      r,
+      ...blocks
+        .filter((o) => o.def.slopeFamily && o.id === `${r.above}_${o.def.slopeFamily}`)
+        .map((o) => ({ ...r, above: o.id })),
+    ]);
   } catch (e) {
     fail(e.message);
   }
@@ -312,16 +344,11 @@ for (const st of states) {
   st.flooded = st.values.flooded === 'true';
   if (d.shape === 'empty') st.shapeIndex = 0;
   else if (d.shape === 'full') st.shapeIndex = shapeIndexOf(cubeShape());
-  else st.shapeIndex = shapeIndexOf((d.slopeFamily === 'slope' ? slopeShape : slabShape)(st.values));
+  else {
+    const of = { slope: slopeShape, slab: slabShape, ramp: rampShape }[d.slopeFamily];
+    st.shapeIndex = shapeIndexOf(of(st.values));
+  }
 }
-const stateShapeCount = shapeTable.length;
-
-// The adaptive rule table (adaptive.json, adaptive.mjs; docs/ADAPTIVE_BLOCKS.md): each
-// neighbourhood's shape upright (face A) and hanging (face B's mirror image), appended to the shape
-// table after the shapes block states use.
-const adaptiveTable = buildTable(JSON.parse(readFileSync(join(here, 'adaptive.json'), 'utf8')));
-const adaptiveUp = adaptiveTable.map((e) => shapeIndexOf(namedShape(e.shape, e.turns, false)));
-const adaptiveDown = adaptiveTable.map((e) => shapeIndexOf(namedShape(e.shape, e.turns, true)));
 if (shapeTable.length > 0xffff) fail('too many shapes');
 
 // Palette (creative inventory) membership: a block's `palette` lists partial property assignments;
@@ -465,9 +492,9 @@ for (const b of blocks) {
 }
 ts.push('];');
 ts.push('');
-ts.push('/** The shapes block states use (the adaptive table\'s derived shapes are in the Rust tables only). */');
+ts.push('/** The shapes block states use. */');
 ts.push('export const SHAPES: readonly ShapeDef[] = [');
-for (const t of shapeTable.slice(0, stateShapeCount)) {
+for (const t of shapeTable) {
   const sh = t.shape;
   if (!sh) {
     ts.push("  { corners: [0, 0, 0, 0], inverted: false, diagonal: 0, convex: true, volume: 0, sides: [[0, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0]], fullTop: false, fullBottom: false, minY: 0, maxY: 0, faces: [] },");
@@ -603,7 +630,6 @@ if (!fixture) writeFileSync(join(root, 'client/src/world/blocks.gen.ts'), ts.joi
       `facing: ${facing}`,
       `climb_speed_scale: ${rf(d.climbSpeedScale ?? 1)}`,
       `liquid: ${!!d.liquid}`,
-      `adaptive: ${!!d.adaptive}`,
       `fluid: ${st.block.fluid === null ? 'None' : `Some(${st.block.fluid})`}`,
       `placeable: ${!!st.placeable}`,
       `look: ${rstr(st.block.look)}`,
@@ -631,35 +657,6 @@ if (!fixture) writeFileSync(join(root, 'client/src/world/blocks.gen.ts'), ts.joi
   const out = fixture ? 'fixture.gen.rs' : 'blocks.gen.rs';
   writeFileSync(join(root, 'crates/dwell-blocks/src', out), rs.join('\n'));
 
-  if (!fixture) {
-  // The adaptive table: shape indices per neighbourhood (adaptive.mjs's index order).
-  const ad = [`// ${header}`, ''];
-  ad.push('/// Per neighbourhood (`adaptive::index`), the derived shape of an upright top block (face A).');
-  ad.push(`pub static ADAPTIVE_UP: [u16; ${NEIGHBOURHOODS}] = [`);
-  for (let i = 0; i < NEIGHBOURHOODS; i += 27) ad.push(`    ${adaptiveUp.slice(i, i + 27).join(', ')},`);
-  ad.push('];');
-  ad.push('');
-  ad.push('/// The same, hanging (a top block of face B, whose up is −y): `ADAPTIVE_UP`\'s shapes turned over.');
-  ad.push(`pub static ADAPTIVE_DOWN: [u16; ${NEIGHBOURHOODS}] = [`);
-  for (let i = 0; i < NEIGHBOURHOODS; i += 27) ad.push(`    ${adaptiveDown.slice(i, i + 27).join(', ')},`);
-  ad.push('];');
-  ad.push('');
-  writeFileSync(join(root, 'crates/dwell-blocks/src/adaptive.gen.rs'), ad.join('\n'));
-
-  // The adaptive table, readable: one line per neighbourhood (index, around, shape and facing, shape
-  // index upright and hanging), for the Rust tests and for reading.
-  const lines = [
-    `# ${header}`,
-    '# index around shape [facing] up down: `around` rows north to south, + higher, = same, - lower.',
-    ...adaptiveTable.map((e, i) => `${i} ${aroundOf(i)} ${describe(e)} ${adaptiveUp[i]} ${adaptiveDown[i]}`),
-    '',
-  ];
-  writeFileSync(join(here, 'adaptive_vectors.txt'), lines.join('\n'));
-  const counts = summary(adaptiveTable);
-  console.log(
-    `adaptive: ${NEIGHBOURHOODS} neighbourhoods (${Object.entries(counts).map(([k, v]) => `${k} ${v}`).join(', ')}; ${counts.override ?? 0} overridden), ${shapeTable.length - stateShapeCount} derived shapes`,
-  );
-  }
 }
 
 // ---- Shared vector: the canonical strings in id order and the hash (both sides' tests read it) -----

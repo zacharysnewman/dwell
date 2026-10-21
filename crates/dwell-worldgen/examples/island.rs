@@ -7,7 +7,7 @@
 
 use std::io::Write;
 
-use dwell_world::{Face, SEA_LEVEL, WORLD_RADIUS};
+use dwell_world::{Face, WORLD_RADIUS};
 use dwell_worldgen::BifacialTerrain;
 
 const HALF: i32 = 50_000;
@@ -25,7 +25,8 @@ fn main() {
         let terrain = BifacialTerrain::new(seed);
         for face in [Face::A, Face::B] {
             let g = terrain.local(face);
-            let land = |x: i32, z: i32| g.column_at(x, z).height > SEA_LEVEL as f32;
+            let land =
+                |x: i32, z: i32| g.column_at(x, z).height > (dwell_world::SEA_LEVEL_M as f32);
             let (mut nearest_sea, mut farthest_land, mut sum) = (f64::MAX, 0f64, 0f64);
             for ray in 0..360 {
                 let a = f64::from(ray).to_radians();
@@ -69,7 +70,7 @@ fn write_map(terrain: &BifacialTerrain, seed: u64, out: &str) {
             let (x, z) = (-HALF + px * step, -HALF + py * step);
             let r = (f64::from(x).hypot(f64::from(z)) - f64::from(WORLD_RADIUS)).abs();
             let col = g.column_at(x, z);
-            let h = col.height - SEA_LEVEL as f32;
+            let h = col.height - (dwell_world::SEA_LEVEL_M as f32);
             let c = if r < f64::from(step) {
                 [255, 40, 40]
             } else if col.outside {

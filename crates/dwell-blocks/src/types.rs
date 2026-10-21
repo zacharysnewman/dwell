@@ -80,8 +80,8 @@ pub enum RenderMode {
 /// centre, evenly turned, `height` tall, each cell's copy jittered from its world position by up
 /// to `offset` (m, in x and z), `rotation_deg` (about y) and a height scale in
 /// [`height_min`, `height_max`]. `sit_on_support` (data `sitOnSupport`, default true): the plant
-/// stands on the supporting block's drawn surface under it (an adaptive top resting at half
-/// height, a slope's height at each foot) rather than on its cell's floor
+/// stands on the supporting block's drawn surface under it (a shaped support's height at each
+/// foot) rather than on its cell's floor
 /// ([`crate::shape::plant_sink`]).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Cross {
@@ -146,9 +146,6 @@ pub struct StateInfo {
     pub facing: Facing,
     pub climb_speed_scale: f32,
     pub liquid: bool,
-    /// Shaped from its neighbours at use (docs/ADAPTIVE_BLOCKS.md): stored as a cube, its shape as
-    /// a top block comes from the adaptive table (`crate::adaptive`).
-    pub adaptive: bool,
     /// Blocks with the `fluid` look: index into `FLUIDS` (their opacity is the fluid's).
     pub fluid: Option<FluidId>,
     pub placeable: bool,

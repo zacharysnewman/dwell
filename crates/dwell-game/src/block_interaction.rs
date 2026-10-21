@@ -452,7 +452,7 @@ mod tests {
         let mut world = VoxelWorld::streamed();
         world.set_voxel(0, top - 1, 0, require("dwell:stone"));
         let mut interaction = BlockInteraction::new();
-        let eye = [0.5, f64::from(top) + 1.5, 0.5];
+        let eye = [0.5, dwell_world::m_of_row(top) + 1.5, 0.5];
         let t = interaction.update(&mut world, Some(eye), 0.0, -90.0, FaceFrame::A);
         assert_eq!(t.map(|t| (t.cell, t.face)), Some(([0, top - 1, 0], 2)));
         assert_eq!(interaction.placement().unwrap().0, [0, top, 0]);
@@ -469,7 +469,9 @@ mod tests {
         // A non-adaptive cube (a lone stone block would be a half pyramid).
         world.set_voxel(3, 0, 4, require("dwell:sandbox_floor"));
         let mut interaction = BlockInteraction::new();
-        let t = interaction.update(&mut world, Some([3.5, 0.5, 0.5]), 0.0, 0.0, FaceFrame::A);
+        // The eye in the middle of row 0 (HALF_HEIGHT_GRID.md §2).
+        let eye = [3.5, 0.5 * dwell_world::CELL_H, 0.5];
+        let t = interaction.update(&mut world, Some(eye), 0.0, 0.0, FaceFrame::A);
         assert_eq!(
             t,
             Some(BlockTarget {

@@ -490,8 +490,7 @@ fn a_region_fill_comes_back_from_the_server_and_undo_restores_it() {
     };
     assert!(region_edits, "the local server announces region edits");
     rig.game.as_mut().unwrap().region.enabled = region_edits;
-    // A cell clear of the player: natural ground rests at half height (ADAPTIVE_BLOCKS.md), so the
-    // top cell right under the feet holds part of the capsule, and filling it is refused.
+    // A cell clear of the player, ahead of the feet.
     rig.input.look.pitch = -40.0;
     assert!(rig.run_until(30, |r| {
         r.game.as_ref().unwrap().debug_state().target.is_some()
@@ -515,7 +514,11 @@ fn a_region_fill_comes_back_from_the_server_and_undo_restores_it() {
         1,
         "the selection is outlined"
     );
-    assert_eq!(rig.scene.borrow().region_boxes[0].size, [1.0; 3]);
+    // One cell: 1 m across, ½ m tall (HALF_HEIGHT_GRID.md).
+    assert_eq!(
+        rig.scene.borrow().region_boxes[0].size,
+        [1.0, dwell_world::CELL_H, 1.0]
+    );
     assert!(game.tool(ToolAction::Fill, rig.now), "the fill is sent");
     assert!(
         rig.run_until(60, |r| r.game.as_mut().unwrap().voxel(x, y, z) == stone),
@@ -938,7 +941,7 @@ fn a_block_only_the_server_has_arrives_by_sync_and_plays_like_any_other() {
     let spawn = rig.core.server().config().spawn.expect("spawn");
     let (sx, sz) = (spawn[0].floor() as i32, spawn[2].floor() as i32);
     let world = rig.core.server().world();
-    let top = (-160..spawn[1].floor() as i32 + 8)
+    let top = (-160..dwell_world::row_of_m(spawn[1]) + 8)
         .rev()
         .find(|&y| dwell_blocks::info(world.get_voxel(sx, y, sz)).solid)
         .expect("ground under the spawn");
@@ -1007,7 +1010,7 @@ fn a_block_only_the_server_has_arrives_by_sync_and_plays_like_any_other() {
     let pid = state.player_id;
     let server_feet = rig.core.server().feet_of(pid).expect("server player");
     assert!(
-        (state.feet[1] - f64::from(top + 1)).abs() < 0.01,
+        (state.feet[1] - dwell_world::m_of_row(top + 1)).abs() < 0.01,
         "stands on the pad: {:?} (top {top})",
         state.feet
     );

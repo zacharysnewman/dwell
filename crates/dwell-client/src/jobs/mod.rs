@@ -162,8 +162,8 @@ impl Runner {
                     for k in 0..n {
                         let c = local.column_at(x0 + k * step, z0 + j * step);
                         // Above sea level (the map's colours): heights count from the midplane.
-                        let h = (c.height - dwell_world::SEA_LEVEL as f32).clamp(-32768.0, 32767.0)
-                            as i16;
+                        let h = (c.height - dwell_world::SEA_LEVEL_M as f32)
+                            .clamp(-32768.0, 32767.0) as i16;
                         out.extend_from_slice(&h.to_le_bytes());
                         out.push(u8::from(c.outside));
                     }
@@ -253,11 +253,8 @@ mod tests {
     fn generates_hashes_and_meshes_a_chunk() {
         let r = Runner::world(GENERATOR_TERRAIN, 1);
         let spawn = dwell_worldgen::spawn_point_for(GENERATOR_TERRAIN, 1);
-        let coord = dwell_world::chunk_of(
-            spawn[0].floor() as i32,
-            (spawn[1] - 1.0).floor() as i32,
-            spawn[2].floor() as i32,
-        );
+        // The chunk of the cell under the feet.
+        let coord = dwell_world::chunk_of_pos([spawn[0], spawn[1] - dwell_world::CELL_H, spawn[2]]);
         let Output::Chunk { voxels, hash } = r.run(Job::Generate { coord }) else {
             panic!()
         };
@@ -311,7 +308,7 @@ mod tests {
         // generator's heights count from the midplane since Phase 16 (sea level 32).
         let t = dwell_worldgen::BifacialTerrain::new(1);
         let want = t.local(dwell_world::Face::A).column_at(-64, -64).height
-            - dwell_world::SEA_LEVEL as f32;
+            - dwell_world::SEA_LEVEL_M as f32;
         assert_eq!(i16::from_le_bytes([bytes[0], bytes[1]]), want as i16);
         let Output::Map(None) = Runner::world(0, 1).run(Job::Map {
             x0: 0,

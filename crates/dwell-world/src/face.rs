@@ -34,16 +34,16 @@ impl Default for FaceFrame {
 impl FaceFrame {
     pub const A: Self = Self { face: Face::A };
     pub const B: Self = Self { face: Face::B };
-    /// Continuous heights of face B sum to this with their face-local height (voxel rows to one
-    /// less: a row spans [y, y + 1), its mirror [MIRROR − y − 1, MIRROR − y)).
-    pub const MIRROR: f64 = (MIRROR_SUM + 1) as f64;
+    /// Continuous heights (m) of face B sum to this with their face-local height (voxel rows to
+    /// `MIRROR_SUM`: on the half-height branch a row is `CELL_H` tall, HALF_HEIGHT_GRID.md §2).
+    pub const MIRROR: f64 = crate::MIRROR_M;
 
     pub const fn of(face: Face) -> Self {
         Self { face }
     }
-    /// The face a continuous world height is on (the midplane itself is face A's).
+    /// The face a continuous world height (m) is on (the midplane itself is face A's).
     pub fn at_height(y: f64) -> Self {
-        Self::of(if y >= f64::from(MIDPLANE_Y) {
+        Self::of(if y >= crate::MIDPLANE_M {
             Face::A
         } else {
             Face::B
@@ -266,14 +266,14 @@ impl FaceFrame {
     pub fn wgsl() -> String {
         format!(
             "// The face frame (dwell_world::FaceFrame, BIFACIAL_WORLD.md §11): a frame is its sign.\n\
-             const FACE_MIDPLANE_Y: f32 = {:.1};\n\
+             const FACE_MIDPLANE_Y: f32 = {:.1}; // metres (½ m cells)\n\
              const FACE_MIRROR: f32 = {:.1};\n\
              fn face_at(y: f32) -> f32 {{ return select(-1.0, 1.0, y >= FACE_MIDPLANE_Y); }}\n\
              fn face_y(face: f32, y: f32) -> f32 {{ return select(FACE_MIRROR - y, y, face > 0.0); }}\n\
              fn face_up(face: f32) -> vec3f {{ return vec3f(0.0, face, 0.0); }}\n\
              fn face_rise(face: f32, v: vec3f) -> f32 {{ return v.y * face; }}\n\
              fn face_vector(face: f32, v: vec3f) -> vec3f {{ return vec3f(v.x, v.y * face, v.z); }}\n",
-            f64::from(MIDPLANE_Y),
+            crate::MIDPLANE_M,
             Self::MIRROR,
         )
     }

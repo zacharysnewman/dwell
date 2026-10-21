@@ -87,9 +87,10 @@ step is taken, but never one that empties the tile: distant ladders stay drawn.
   draws neither on the plant nor on its edges against what is behind it (ART_DIRECTION.md §7.4).
   Per vertex in the cutout mesh's `bare` stream; the cutout pass flags the view depth.
 - **Sitting on the support** (owner, 2026-10-20: *"Make the grass align (sit down) when over a half
-  block"*): `"cross": { "sitOnSupport": true }`, the default. Adaptive natural tops are often lower
-  than their cell's top (a level field rests at half height; slopes and pyramids are lower still
-  under parts of the cell), so a plant at its cell's floor floated up to ½ m above the ground. A
+  block"*): `"cross": { "sitOnSupport": true }`, the default. A shaped support is lower than its
+  cell's top under parts of the cell (on 1 m cells, Phase 18's adaptive tops; on ½ m cells, a ramp
+  piece), so a plant at its cell's floor floated above the ground. (Level ground on ½ m cells is
+  flat cells, where a plant stands on its cell's floor.) A
   plant that sits is drawn on its support's solid: each foot is lowered by
   `dwell_blocks::shape::plant_sink` (the gap between the support cell's top and its solid's top
   under that foot, `solid_span_at(shape, x, z).hi`; on face B the mirror) and the top by the same

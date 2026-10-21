@@ -89,17 +89,16 @@ pub mod flag {
     pub const CLIMBABLE: u32 = 8;
     pub const LIQUID: u32 = 16;
     pub const PLACEABLE: u32 = 32;
-    pub const ADAPTIVE: u32 = 64;
+    // 64 was `adaptive` (blocks shaped from their neighbours), removed with ½ m cells (ADR 0042).
     pub const REPLACEABLE: u32 = 128;
-    pub const KNOWN: u32 = 63 | ADAPTIVE | REPLACEABLE;
-    pub const NAMES: [(u32, &str); 8] = [
+    pub const KNOWN: u32 = 63 | REPLACEABLE;
+    pub const NAMES: [(u32, &str); 7] = [
         (SOLID, "solid"),
         (INDESTRUCTIBLE, "indestructible"),
         (FLOODED, "flooded"),
         (CLIMBABLE, "climbable"),
         (LIQUID, "liquid"),
         (PLACEABLE, "placeable"),
-        (ADAPTIVE, "adaptive"),
         (REPLACEABLE, "replaceable"),
     ];
 }
@@ -217,7 +216,6 @@ pub fn state_fields(s: &StateInfo) -> Fields {
         (flag::CLIMBABLE, s.climbable),
         (flag::LIQUID, s.liquid),
         (flag::PLACEABLE, s.placeable),
-        (flag::ADAPTIVE, s.adaptive),
         (flag::REPLACEABLE, s.replaceable),
     ] {
         if on {
@@ -610,7 +608,6 @@ fn default_row(name: &str) -> StateInfo {
         place_on: &[],
         needs_support: Support::None,
         replaceable: false,
-        adaptive: false,
         medium: Medium::Any,
     }
 }
@@ -696,7 +693,6 @@ fn apply_rules(
     row.liquid = has(flag::LIQUID);
     row.placeable = has(flag::PLACEABLE);
     row.replaceable = has(flag::REPLACEABLE);
-    row.adaptive = has(flag::ADAPTIVE);
     if flags & !flag::KNOWN != 0 {
         notes.push(format!(
             "rule flags {:#x} not in this version (ignored)",
@@ -979,7 +975,6 @@ fn changed_fields(a: &StateInfo, b: &StateInfo) -> Vec<String> {
             flag::CLIMBABLE => s.climbable,
             flag::LIQUID => s.liquid,
             flag::PLACEABLE => s.placeable,
-            flag::ADAPTIVE => s.adaptive,
             _ => s.replaceable,
         };
         if get(a) != get(b) {

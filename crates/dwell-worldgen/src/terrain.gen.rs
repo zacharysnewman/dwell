@@ -16,4 +16,6 @@ pub const HEIGHT: HeightField = HeightField {
     bump_height: 5.0,
     bump_wavelength: 128,
     bump_octaves: 3,
+    step_from_slope: 0.5,
+    step_height: 0.0,
 };

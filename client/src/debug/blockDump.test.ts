@@ -1,3 +1,4 @@
+import { CELL_HEIGHT } from '../protocol/constants.gen';
 import { describe, expect, it } from 'vitest';
 import { stateId } from '../world/blocks';
 import { blockDump, formatBlockDump } from './blockDump';
@@ -37,7 +38,9 @@ describe('block dump', () => {
     expect(d.world).toEqual({ seed: '18446744073709551615', generatorVersion: 6 });
     expect(d.player).toEqual({ feet: [3.5, 11.25, -2.123], yaw: 90, pitch: -30.556 });
     expect(d.target).toBeNull();
-    expect(d.origin).toEqual([2, 9, -4]); // the cell under the feet (3, 10, -3), one each side
+    // The cell under the feet (3, row of 11.25 m − 1, −3), one each side.
+    const under = Math.floor(11.25 / CELL_HEIGHT) - 1;
+    expect(d.origin).toEqual([2, under - 1, -4]);
     expect(d.size).toBe(3);
   });
 

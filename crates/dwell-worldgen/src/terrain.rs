@@ -1,7 +1,9 @@
-//! Procedural terrain, generator version 17 (ARCHITECTURE.md §6.3): the interim baseline of Phase
+//! Procedural terrain, generator version 19 (ARCHITECTURE.md §6.3; ½ m cells, ADR 0042, with the
+//! slopes of HALF_HEIGHT_GRID.md §4): the interim baseline of Phase
 //! 15 — one island at the origin, a 2D height field, and the ground filled by depth — and since
 //! version 13 (Phase 33) the decorations of `shared/worldgen/decorations.json` one cell above the
-//! ground (tall grass; `decorations.rs`). A chunk is a
+//! ground (tall grass; `decorations.rs`), and since version 14 (Phase 41, HALF_HEIGHT_GRID.md) ½ m
+//! cells with natural tops shaped from stored cardinal ramps (`ramps.rs`). A chunk is a
 //! pure function of (world seed, chunk coordinate), so chunks generate in any order, on any thread,
 //! natively or in WASM, bit-identically (noise.rs, ADR 0010).
 //!
@@ -18,11 +20,14 @@
 //! ADR 0026). Nothing is generated outside the build volume.
 
 use dwell_blocks::StateId;
+use dwell_world::hash::HashMap;
 use dwell_world::lod::{self, LodBounds, LodCells, LodCoord, LodKind, LodSurface, LodSurfaces};
+use dwell_world::ramps::{self, RampFacing};
 use dwell_world::{
-    BUILD_VOLUME, CHUNK_SIZE, CORE_LAYERS, Chunk, ChunkCoord, DiscOverlap, M, MIDPLANE_Y, Overlap,
-    SEA_LEVEL, chunk_disc_overlap, inside_world_disc, local_index,
+    BUILD_VOLUME, CELL_H, CHUNK_SIZE, CORE_LAYERS, Chunk, ChunkCoord, DiscOverlap, M, MIDPLANE_Y,
+    Overlap, SEA_LEVEL, chunk_disc_overlap, inside_world_disc, local_index, m_of_row, rows_for_m,
 };
+use std::sync::Arc;
 
 use crate::decorations::{DECORATIONS, Placer};
 use crate::island::{self, IslandLayout};
@@ -31,6 +36,8 @@ use crate::noise::{
     seed_word, smooth_step,
 };
 use crate::placements::{self, Ground, PLACEMENTS, Planter, Tree};
+use crate::ramps as ramps_rule;
+use crate::ramps::Top;
 
 /// A generator works face-locally: its band is [FACE_MIN_Y, FACE_MAX_Y), from the midplane to the
 /// build volume's top (the sphere is symmetric about the midplane, so both faces' bands are equal).
@@ -41,7 +48,7 @@ const _: () = assert!(
     BUILD_VOLUME.y_range().0 + BUILD_VOLUME.y_range().1 == 2 * MIDPLANE_Y as i64,
     "the build volume is symmetric about the midplane"
 );
-/// Lattice spacing of the interpolated 2D fields (voxels).
+/// Lattice spacing of the interpolated 2D fields (columns, m).
 const LATTICE: i32 = 4;
 const LATTICE_STEP: f32 = 0.25;
 /// The height field's parameters (data: `shared/worldgen/terrain.json`, generated into
@@ -67,6 +74,11 @@ pub struct HeightField {
     pub bump_height: f32,
     pub bump_wavelength: i32,
     pub bump_octaves: u32,
+    /// Half-height branch (HALF_HEIGHT_GRID.md §4): where a lattice cell's ground is at least this
+    /// steep (m per m), heights snap to whole multiples of `step_height` (m; 0: off), so steep
+    /// ground is whole steps that the generation rule tops with 45° ramps.
+    pub step_from_slope: f32,
+    pub step_height: f32,
 }
 
 mod table {
@@ -75,11 +87,11 @@ mod table {
 pub use table::HEIGHT;
 
 const H: HeightField = HEIGHT;
-/// Fill by depth (m): sand at the shore (top voxel below SHORE_HEIGHT above sea) to SAND_DEPTH,
-/// else grass over dirt to DIRT_DEPTH; stone below.
-const SHORE_HEIGHT: i32 = 2;
-const SAND_DEPTH: i64 = 3;
-const DIRT_DEPTH: i64 = 3;
+/// Fill by depth: sand at the shore (top voxel below SHORE_HEIGHT above sea) to SAND_DEPTH, else
+/// grass over dirt to DIRT_DEPTH; stone below. In rows, from metres (2 m, 3 m, 3 m).
+const SHORE_HEIGHT: i32 = (2.0 / CELL_H) as i32;
+const SAND_DEPTH: i64 = (3.0 / CELL_H) as i64;
+const DIRT_DEPTH: i64 = (3.0 / CELL_H) as i64;
 
 /// The spawn point's level patch reaches this many columns either side.
 pub const SPAWN_CLEAR: i32 = 4;
@@ -89,16 +101,35 @@ pub const SPAWN_CLEAR: i32 = 4;
 pub struct Column {
     /// Signed distance to the coast (m): > 0 land, < 0 sea.
     pub coast: f32,
-    /// Ground height (m, face-local from the midplane): the top voxel is ceil(height) − 1.
+    /// Ground height (m, face-local from the midplane): the top voxel is the row ceil(height ÷
+    /// cell height) − 1.
     pub height: f32,
     /// Beyond the world's disc: nothing is generated.
     pub outside: bool,
 }
 
-/// The top voxel of a column of height h: ceil(h) − 1.
+/// A height (m) in rows of cells (HALF_HEIGHT_GRID.md §2); exact at 1 m and ½ m cells.
+fn rows(h: f32) -> f32 {
+    h / CELL_H as f32
+}
+
+/// The steepest edge of a lattice cell whose corners' heights (m) are `h` (corner order as
+/// `interp`'s: (0, 0), (1, 0), (0, 1), (1, 1)), in m per m.
+fn lattice_slope(h: [f32; 4]) -> f32 {
+    let d = [h[1] - h[0], h[3] - h[2], h[2] - h[0], h[3] - h[1]];
+    d.iter().fold(0.0f32, |m, v| m.max(v.abs())) / LATTICE as f32
+}
+
+/// A height (m) snapped to the nearest whole step (`step_height`).
+fn snap_to_step(h: f32) -> f32 {
+    (h / H.step_height).round() * H.step_height
+}
+
+/// The top voxel (row) of a column of height h (m): ceil(h in rows) − 1.
 fn top_voxel(h: f32) -> i32 {
-    let f = floor_to_int(h);
-    if f as f32 == h { f - 1 } else { f }
+    let r = rows(h);
+    let f = floor_to_int(r);
+    if f as f32 == r { f - 1 } else { f }
 }
 
 /// The material `depth` m below the surface of a column whose top voxel is `top`: the core's stone
@@ -119,12 +150,13 @@ fn fill(top: i32, depth: i64) -> StateId {
     }
 }
 
-/// The state the generator writes at row `y` of a column whose top voxel is `top`, filled with
-/// `m`: the top voxel below sea level holds the sea in its open part (its `flooded` state, when
-/// its block has one; docs/WATER_RENDERING.md §9), so a natural top block shaped below the water
-/// line is under the water, not dry beside it.
-fn under_sea(m: StateId, top: i32, y: i32) -> StateId {
-    if y != top || y >= SEA_LEVEL {
+/// The state the generator writes for `m` at row `y` of a column's top (its top voxel, or a stored
+/// ramp piece over it): below sea level it holds the sea in its open part (its `flooded` state,
+/// when its block has one; docs/WATER_RENDERING.md §9), so a ramp in the water's rows is under
+/// the water, not dry beside it — on the half-height grid, a 1 m ramp's lower piece too when only
+/// it lies below sea level.
+fn under_sea(m: StateId, y: i32) -> StateId {
+    if y >= SEA_LEVEL {
         return m;
     }
     static FLOODED: std::sync::LazyLock<Vec<StateId>> = std::sync::LazyLock::new(|| {
@@ -152,12 +184,56 @@ pub struct TerrainGenerator {
     island: IslandLayout,
     /// The decorations (data), resolved for this world.
     decorations: Vec<Placer>,
+    /// The stored ramps natural tops are shaped with (HALF_HEIGHT_GRID.md §4); empty (no shaping)
+    /// on 1 m cells.
+    ramps: Arc<RampPieces>,
     /// The structure placements (data), resolved for this world.
     planters: Vec<Planter>,
-    /// How far above the ground decorations and placed structures reach (m): the sky test leaves
-    /// this much room over the highest ground before a chunk is all air.
+    /// How far above the ground decorations and placed structures reach (rows): the sky test
+    /// leaves this much room over the highest ground before a chunk is all air.
     rise: f32,
     world_seed: u64,
+}
+
+/// The ramp pieces of the natural surface materials, resolved by name once: for each material,
+/// facing and whether flooded, a ½ m ramp's cell and a 1 m ramp's cells from the bottom.
+#[derive(Debug, Default)]
+struct RampPieces {
+    by: HashMap<(StateId, RampFacing, bool), (StateId, Vec<StateId>)>,
+}
+
+impl RampPieces {
+    fn resolve() -> Self {
+        let mut by = HashMap::default();
+        for m in [M.grass, M.sand, M.dirt, M.stone] {
+            let base = dwell_blocks::block_of(m).name;
+            for facing in RampFacing::ALL {
+                for flooded in [false, true] {
+                    let gentle = ramps::gentle_cell_flooded(base, facing, flooded);
+                    let steep = ramps::steep_cells_flooded(base, facing, flooded);
+                    if let (Some(g), Some(s)) = (gentle, steep) {
+                        by.insert((m, facing, flooded), (g, s));
+                    }
+                }
+            }
+        }
+        Self { by }
+    }
+
+    /// The cells (from the bottom) that top a column of `material` shaped `top`; empty for a flat
+    /// top, or where the material or the grid has no ramps.
+    fn cells(&self, material: StateId, top: Top, flooded: bool) -> &[StateId] {
+        let (facing, steep) = match top {
+            Top::Flat => return &[],
+            Top::Gentle(f) => (f, false),
+            Top::Steep(f) => (f, true),
+        };
+        match self.by.get(&(material, facing, flooded)) {
+            Some((g, _)) if !steep => std::slice::from_ref(g),
+            Some((_, s)) => s,
+            None => &[],
+        }
+    }
 }
 
 /// How far above the ground decorations reach (one cell).
@@ -176,6 +252,7 @@ impl TerrainGenerator {
             offset_z: noise_offset(seed_word(world_seed, 4)),
             island: IslandLayout::new(world_seed),
             decorations: Placer::resolve(&DECORATIONS, world_seed),
+            ramps: Arc::new(RampPieces::resolve()),
             planters: Vec::new(),
             rise: DECORATION_RISE as f32,
             world_seed,
@@ -187,12 +264,13 @@ impl TerrainGenerator {
     /// data alone).
     pub fn with_placements(mut self, rules: &[placements::Placement]) -> Self {
         self.planters = Planter::resolve(rules, self.world_seed, (self.offset_x, self.offset_z));
-        // A structure anchored beside the chunk on ground up to its reach higher still reaches in.
+        // A structure anchored beside the chunk on ground up to its reach higher still reaches in
+        // (rows: a structure's rise counts cells; ground climbs up to 1 m per column of reach).
         let reach = self.planters.iter().map(Planter::reach).max().unwrap_or(0);
         let rise = if self.planters.is_empty() {
             0
         } else {
-            placements::max_rise(&self.planters) + 1 + reach
+            placements::max_rise(&self.planters) + 1 + reach * rows_for_m(1.0)
         };
         self.rise = DECORATION_RISE.max(rise) as f32;
         self
@@ -271,7 +349,8 @@ impl TerrainGenerator {
         Column {
             coast: c.coast,
             // Never below the core's top.
-            height: (SEA_LEVEL as f32 + relief).max((MIDPLANE_Y + CORE_LAYERS) as f32),
+            height: (dwell_world::SEA_LEVEL_M as f32 + relief)
+                .max((dwell_world::MIDPLANE_M + dwell_world::CORE_M) as f32),
             outside: false,
         }
     }
@@ -286,11 +365,18 @@ impl TerrainGenerator {
                 tz,
             )
         };
-        Self::finish(Corner {
+        let mut col = Self::finish(Corner {
             coast: bi(|c| c.coast),
             hills: bi(|c| c.hills),
             bumps: bi(|c| c.bumps),
-        })
+        });
+        if H.step_height > 0.0 {
+            let h = c.map(|c| Self::finish(c).height);
+            if lattice_slope(h) >= H.step_from_slope {
+                col.height = snap_to_step(col.height);
+            }
+        }
+        col
     }
 
     /// A column with exactly the chunk path's arithmetic (spawn, tools, tests).
@@ -335,7 +421,8 @@ impl TerrainGenerator {
         }
         let top = top_voxel(col.height);
         if y <= top {
-            under_sea(fill(top, i64::from(top - y)), top, y)
+            let m = fill(top, i64::from(top - y));
+            if y == top { under_sea(m, y) } else { m }
         } else if y < SEA_LEVEL {
             M.water
         } else {
@@ -343,20 +430,21 @@ impl TerrainGenerator {
         }
     }
 
-    /// The height of the ground's surface at (x, z) (face-local, inside the disc): the top voxel's
-    /// shape as the adaptive rules derive it (docs/ADAPTIVE_BLOCKS.md), at the column's centre — on
-    /// level ground half a block above the top voxel's floor.
+    /// The height (m) of the ground's surface at the centre of column (x, z) (face-local, inside the
+    /// disc): the top of a flat column, or the middle of the ramp the generation rule tops it with.
     pub fn surface_y_at(&self, x: i32, z: i32) -> Option<f64> {
         let g = self.ground_y(x, z)?;
-        let mut cols = [[None; 3]; 3];
-        let mut get = |dx: i32, dy: i32, dz: i32| {
-            let c = cols[(dz + 1) as usize][(dx + 1) as usize]
-                .get_or_insert_with(|| self.column_at(x + dx, z + dz));
-            Self::state_in(c, g + dy)
-        };
-        let shape = dwell_blocks::adaptive::shape_at(&mut get, 1);
-        let top = dwell_blocks::shape::solid_span_at(shape, 0.5, 0.5).hi;
-        Some(f64::from(g) + f64::from(top))
+        let pieces = self.pieces_with(|nx, nz| self.column_at(nx, nz), x, z, g);
+        let first = g + 1 - pieces.len() as i32;
+        let mut top = m_of_row(g + 1);
+        for (k, &p) in pieces.iter().enumerate() {
+            let span =
+                dwell_blocks::shape::solid_span_at(dwell_blocks::shape::shape_of(p), 0.5, 0.5);
+            if span.hi > span.lo {
+                top = m_of_row(first + k as i32) + f64::from(span.hi) * CELL_H;
+            }
+        }
+        Some(top)
     }
 
     /// The island's coast distance at the point itself (no lattice).
@@ -396,16 +484,17 @@ impl TerrainGenerator {
         cols
     }
 
-    /// The highest ground of the columns inside the disc, plus what grows on it.
+    /// The highest ground of the columns inside the disc, in rows, plus what grows on it (rows).
     fn sky_floor(&self, cols: &[Column]) -> f32 {
-        cols.iter()
-            .filter(|c| !c.outside)
-            .fold(-1e9f32, |top, c| top.max(c.height))
-            + self.rise
+        rows(
+            cols.iter()
+                .filter(|c| !c.outside)
+                .fold(-1e9f32, |top, c| top.max(c.height)),
+        ) + self.rise
     }
 
-    /// The sky test's height for a chunk column: chunks with y0 above it (and at or above sea
-    /// level) are air. Depends only on (cx, cz), so callers cache it per column.
+    /// The sky test's height (rows) for a chunk column: chunks with y0 above it (and at or above
+    /// sea level) are air. Depends only on (cx, cz), so callers cache it per column.
     pub fn sky_floor_at(&self, cx: i32, cz: i32) -> f32 {
         self.sky_floor(&self.chunk_columns(cx * CHUNK_SIZE, cz * CHUNK_SIZE))
     }
@@ -416,11 +505,12 @@ impl TerrainGenerator {
             return None;
         }
         let top = top_voxel(col.height);
-        // The top block as generated: below sea level it takes its flooded state.
-        let block = under_sea(fill(top, 0), top, top);
+        // The top block as generated: below sea level it takes its flooded state. Rows of cells
+        // for the top; metres for the height band (placements.json's) and the slope.
+        let block = under_sea(fill(top, 0), top);
         Some(Ground {
             top,
-            above_sea: top - SEA_LEVEL,
+            above_sea: (m_of_row(top) - dwell_world::SEA_LEVEL_M).floor() as i32,
             height: col.height,
             block,
             dry: top >= SEA_LEVEL && !dwell_blocks::info(block).flooded,
@@ -500,6 +590,9 @@ impl TerrainGenerator {
                     continue;
                 }
                 let top = top_voxel(col.height);
+                // The stored ramp pieces over the top (HALF_HEIGHT_GRID.md §4), from the bottom.
+                let pieces = self.top_pieces(&cols, x0, z0, x, z, top);
+                let first_piece = top + 1 - pieces.len() as i32;
                 for ly in 0..S {
                     let y = y0 + ly;
                     if !(FACE_MIN_Y..FACE_MAX_Y).contains(&y)
@@ -513,8 +606,12 @@ impl TerrainGenerator {
                         continue;
                     }
                     let v = &mut voxels[local_index(x, ly, z)];
-                    if y <= top {
-                        *v = under_sea(fill(top, i64::from(top - y)), top, y);
+                    if y <= top && y >= first_piece {
+                        *v = under_sea(pieces[(y - first_piece) as usize], y);
+                    } else if y == top {
+                        *v = under_sea(fill(top, 0), y);
+                    } else if y < top {
+                        *v = fill(top, i64::from(top - y));
                     } else if y < SEA_LEVEL {
                         *v = M.water;
                     }
@@ -583,6 +680,63 @@ impl TerrainGenerator {
         }
     }
 
+    /// The ramp pieces (from the bottom) that top column (x0 + lx, z0 + lz), whose top is `top`, by
+    /// the generation rule over its neighbours' tops; empty for a flat top. Neighbours beyond the
+    /// chunk's columns come from `column_at`, so the answer doesn't depend on the chunk asking.
+    fn top_pieces(
+        &self,
+        cols: &[Column],
+        x0: i32,
+        z0: i32,
+        lx: i32,
+        lz: i32,
+        top: i32,
+    ) -> &[StateId] {
+        const S: i32 = CHUNK_SIZE;
+        let column = |nx: i32, nz: i32| {
+            let (ix, iz) = (nx - x0, nz - z0);
+            if (0..S).contains(&ix) && (0..S).contains(&iz) {
+                cols[(iz * S + ix) as usize]
+            } else {
+                self.column_at(nx, nz)
+            }
+        };
+        self.pieces_with(column, x0 + lx, z0 + lz, top)
+    }
+
+    /// [`Self::top_pieces`] for column (x, z), its neighbours' columns from `column`.
+    fn pieces_with(
+        &self,
+        column: impl Fn(i32, i32) -> Column,
+        x: i32,
+        z: i32,
+        top: i32,
+    ) -> &[StateId] {
+        if self.ramps.by.is_empty() {
+            return &[];
+        }
+        let height = |nx: i32, nz: i32| {
+            let col = column(nx, nz);
+            // Beyond the rim, nothing: lower than any ground.
+            if col.outside {
+                i32::MIN / 2
+            } else {
+                top_voxel(col.height) + 1
+            }
+        };
+        let around: ramps_rule::Around = std::array::from_fn(|r| {
+            std::array::from_fn(|c| height(x + c as i32 - 1, z + r as i32 - 1))
+        });
+        let shape = ramps_rule::top_of(&around, rows_for_m(1.0));
+        // Dry pieces: `generate` floods each one below sea level (`under_sea`).
+        let cells = self.ramps.cells(fill(top, 0), shape, false);
+        // A 1 m ramp needs two cells of ground; a column one cell deep takes none.
+        if (cells.len() as i32) > top + 1 - FACE_MIN_Y {
+            return &[];
+        }
+        cells
+    }
+
     /// The decoration (if any) over the ground of column (x0 + lx, z0 + lz), whose top is `top`;
     /// `cols` are the chunk's columns, and columns beyond them come from `column_at` (the same
     /// arithmetic), so the answer doesn't depend on the chunk asking.
@@ -596,6 +750,10 @@ impl TerrainGenerator {
         top: i32,
     ) -> Option<StateId> {
         const S: i32 = CHUNK_SIZE;
+        // Plants grow on flat tops only (HALF_HEIGHT_GRID.md §5).
+        if !self.top_pieces(cols, x0, z0, lx, lz, top).is_empty() {
+            return None;
+        }
         let (x, z) = (x0 + lx, z0 + lz);
         let ground = fill(top, 0);
         let neighbour_top = |nx: i32, nz: i32| {
@@ -647,7 +805,7 @@ impl TerrainGenerator {
         cols
     }
 
-    /// How far above its ground a level's sections draw placed structures (m): their full rise
+    /// How far above its ground a level's sections draw placed structures (rows): their full rise
     /// at the levels that draw them as blobs, none where they only tint the ground.
     fn lod_rise(&self, level: i32) -> f64 {
         if lod::cell_size(level) <= LOD_TREE_CELL && !self.planters.is_empty() {
@@ -673,8 +831,8 @@ impl TerrainGenerator {
             b.any_inside = true;
             // A cell is solid when its bottom voxel lies below the column's height: samples below
             // `lo` are solid, at or above `hi` open.
-            b.hi = b.hi.max(f64::from(col.height) + 1.0 + rise);
-            b.lo = b.lo.min(f64::from(col.height) - 1.0);
+            b.hi = b.hi.max(f64::from(rows(col.height)) + 1.0 + rise);
+            b.lo = b.lo.min(f64::from(rows(col.height)) - 1.0);
         }
         if !b.any_inside {
             return b;
@@ -756,7 +914,7 @@ impl TerrainGenerator {
                     continue; // beyond the rim: the void
                 }
                 let top = i64::from(top_voxel(col.height));
-                let is_sea = col.height < SEA_LEVEL as f32;
+                let is_sea = rows(col.height) < SEA_LEVEL as f32;
                 for y in -1..=lod::SECTION_CELLS {
                     let a = o.y + i64::from(y) * cell;
                     let m = &mut cells[lod::cell_index(x, y, z)];
@@ -789,7 +947,7 @@ impl TerrainGenerator {
                         s[lod::column_index(x, z)] = LodSurface {
                             valid: true,
                             wet: is_sea,
-                            height: col.height.min((a + cell) as f32),
+                            height: rows(col.height).min((a + cell) as f32),
                             material: fill(top as i32, 0),
                             water: if is_sea { SEA_LEVEL as f32 } else { 0.0 },
                         };
@@ -911,8 +1069,7 @@ impl TerrainGenerator {
             if let Some(g) = self.ground_y(x, z)
                 && g >= SEA_LEVEL + SHORE_HEIGHT
             {
-                // On the shaped surface (a level patch's top blocks rest at half height).
-                let feet = self.surface_y_at(x, z).unwrap_or(f64::from(g) + 1.0);
+                let feet = self.surface_y_at(x, z).unwrap_or(m_of_row(g + 1));
                 let point = [f64::from(x) + 0.5, feet, f64::from(z) + 0.5];
                 fallback.get_or_insert(point);
                 let level = (-SPAWN_CLEAR..=SPAWN_CLEAR).all(|pz| {
@@ -944,6 +1101,32 @@ impl TerrainGenerator {
                 }
             }
         }
-        fallback.unwrap_or([0.5, f64::from(SEA_LEVEL) + 1.0, 0.5])
+        fallback.unwrap_or([0.5, m_of_row(SEA_LEVEL + 1), 0.5])
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn natural_tops_are_shaped_with_stored_ramps_only_on_half_height_cells() {
+        // HALF_HEIGHT_GRID.md §4: on 1 m cells the generator writes what it always has (its
+        // goldens are unchanged); on ½ m cells every natural surface material has its pieces, a
+        // ½ m ramp in one cell and a 45° ramp in two.
+        let pieces = RampPieces::resolve();
+        if CELL_H == 1.0 {
+            assert!(pieces.by.is_empty());
+            return;
+        }
+        for m in [M.grass, M.sand, M.dirt, M.stone] {
+            for facing in RampFacing::ALL {
+                for flooded in [false, true] {
+                    assert_eq!(pieces.cells(m, Top::Gentle(facing), flooded).len(), 1);
+                    assert_eq!(pieces.cells(m, Top::Steep(facing), flooded).len(), 2);
+                    assert!(pieces.cells(m, Top::Flat, flooded).is_empty());
+                }
+            }
+        }
     }
 }

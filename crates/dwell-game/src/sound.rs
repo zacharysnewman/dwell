@@ -370,7 +370,7 @@ pub struct CellChange {
 }
 
 fn centre(cell: [i32; 3]) -> [f64; 3] {
-    cell.map(|v| f64::from(v) + 0.5)
+    dwell_world::centre_of_cell(cell)
 }
 
 /// Break and place sounds: our own at once (the client does not predict edits), other players'
@@ -923,7 +923,7 @@ mod tests {
         e.local_place([4, 5, 6], require("dwell:dirt"), 10.0, &mut out);
         assert_eq!(kinds(&out), [SoundKind::Break, SoundKind::Place]);
         assert_eq!(out[0].block, stone());
-        assert_eq!(out[0].at, Some([1.5, 2.5, 3.5]));
+        assert_eq!(out[0].at, Some(dwell_world::centre_of_cell([1, 2, 3])));
         let mut echo = Vec::new();
         e.changes(
             &[
@@ -971,7 +971,7 @@ mod tests {
         );
         assert_eq!(kinds(&out), [SoundKind::Break, SoundKind::Place]);
         assert_eq!(out[0].block, require("dwell:sand"));
-        assert_eq!(out[0].at, Some([10.5, 0.5, 0.5]));
+        assert_eq!(out[0].at, Some(dwell_world::centre_of_cell([10, 0, 0])));
         assert_eq!(out[1].block, require("dwell:grass"));
         // A stale pending edit no longer hides a later change in its cell.
         let mut e = EditSounds::new();
