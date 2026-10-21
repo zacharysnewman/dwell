@@ -68,7 +68,8 @@ fn a_player_climbs_down_a_portal_from_face_a_and_up_to_face_b() {
     let length = (m_of_row(top_a) - 2.0) + goal;
     let speed = length / (f64::from(took) / 60.0);
     assert!(
-        (0.8 * f64::from(w.config.climb.speed)..=1.2 * f64::from(w.config.climb.speed)).contains(&speed),
+        (0.8 * f64::from(w.config.climb.speed)..=1.2 * f64::from(w.config.climb.speed))
+            .contains(&speed),
         "{length} m in {took} ticks: {speed} m/s"
     );
     assert!(crossed_at.is_some(), "never crossed the midplane");
@@ -77,5 +78,39 @@ fn a_player_climbs_down_a_portal_from_face_a_and_up_to_face_b() {
         reached,
         "stopped at face B height {} of {goal}",
         FaceFrame::B.y(w.players.feet(&w.physics, h))
+    );
+}
+
+#[test]
+fn walking_off_the_rim_at_the_portal_spawn_takes_hold_of_the_ladder() {
+    // face-a-only: the dev spawn's rim on face A; the ladder and the climb are the face-local
+    // controller's, which the mirror suite runs on face B.
+    let seed = 7;
+    let [x, y, z] =
+        dwell_worldgen::portal_spawn_for(GENERATOR_TERRAIN, seed, Face::A).expect("portals");
+    let g = BifacialTerrain::new(seed);
+    let p = g.portals();
+    let [wx, wz] = p.rules.wall;
+    let mut w = PlayerTestWorld::world_frame_of(
+        dwell_worldgen::generator_for(GENERATOR_TERRAIN, seed),
+        Some(dwell_worldgen::air_test_for(GENERATOR_TERRAIN, seed)),
+    );
+    // Facing the shaft (away from the ladder's wall), looking down.
+    let yaw = f64::from(-wx).atan2(f64::from(-wz)).to_degrees() as f32;
+    let h = w.spawn_at(DVec3::new(x, y, z), yaw);
+    w.set_input(move |_, _| input(0.0, 0.0, false, false, false, yaw, -80.0));
+    w.step(30);
+    assert!(w.c(h).ground.grounded, "standing on the rim");
+    w.set_input(move |_, _| input(0.0, 1.0, false, false, false, yaw, -80.0));
+    w.step(ticks(1.0));
+    assert!(w.c(h).climb.climbing, "the ladder took hold");
+    let before = w.players.feet(&w.physics, h);
+    w.step(ticks(2.0));
+    // Climbing down at the ladder's speed, not falling.
+    let down = before - w.players.feet(&w.physics, h);
+    let speed = f64::from(w.config.climb.speed);
+    assert!(
+        (1.6 * speed..=2.4 * speed).contains(&down),
+        "{down} m in 2 s"
     );
 }

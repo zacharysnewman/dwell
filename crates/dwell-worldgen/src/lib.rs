@@ -84,6 +84,33 @@ pub fn spawn_point_b_for(version: u32, world_seed: u64) -> [f64; 3] {
     spawn_point_for(version, world_seed)
 }
 
+/// A dev spawn by a portal (`?spawn=portal`, BIFACIAL_WORLD.md §6): on face `face`'s rim over the
+/// ladder of the portal nearest the disc's centre, the shaft in front. `None` for a generator
+/// without portals.
+pub fn portal_spawn_for(
+    version: u32,
+    world_seed: u64,
+    face: dwell_world::Face,
+) -> Option<[f64; 3]> {
+    if version != GENERATOR_TERRAIN {
+        return None;
+    }
+    let terrain = BifacialTerrain::new(world_seed);
+    let p = terrain.portals();
+    let portal = *p
+        .sites
+        .iter()
+        .min_by_key(|s| i64::from(s.x).pow(2) + i64::from(s.z).pow(2))?;
+    let (x, z) = p.wall_column(portal);
+    let top = terrain.local(face).ladder_top(p, portal);
+    let feet = dwell_world::m_of_row(top + 1);
+    Some([
+        f64::from(x) + 0.5,
+        dwell_world::FaceFrame::of(face).y(feet),
+        f64::from(z) + 0.5,
+    ])
+}
+
 /// Feet position players spawn at: near the origin, on open level ground.
 pub fn spawn_point_for(version: u32, world_seed: u64) -> [f64; 3] {
     if version == GENERATOR_TERRAIN {

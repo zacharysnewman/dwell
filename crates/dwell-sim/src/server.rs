@@ -1065,13 +1065,9 @@ impl Server {
     /// Where a player (re)spawns without a saved position: around the spawn point, spread by
     /// player id so they don't start inside each other.
     fn respawn_feet(&self, player_id: u16) -> [f64; 3] {
-        let slot = (i32::from(player_id) - 1).rem_euclid(8);
         let at = self.config.spawn.expect("spawn");
-        [
-            at[0] + f64::from(slot % 4) - 1.5,
-            at[1],
-            at[2] + f64::from(slot / 4) * 1.5 - 0.75,
-        ]
+        let [dx, dz] = spawn_spread(player_id);
+        [at[0] + dx, at[1], at[2] + dz]
     }
 
     fn spawn_player(&mut self, id: SessionId, feet: Option<[f64; 3]>) {
@@ -2534,6 +2530,13 @@ impl Server {
             }
         }
     }
+}
+
+/// Where player `player_id` spawns relative to the spawn point (x, z, m): spread over a 4 × 2 grid
+/// by id, so players don't start inside each other.
+pub fn spawn_spread(player_id: u16) -> [f64; 2] {
+    let slot = (i32::from(player_id) - 1).rem_euclid(8);
+    [f64::from(slot % 4) - 1.5, f64::from(slot / 4) * 1.5 - 0.75]
 }
 
 #[cfg(test)]

@@ -33,5 +33,17 @@ describe('local world options', () => {
       spawnFaceB: true,
     });
     expect(parseLocalWorld('?spawn=a').spawnFaceB).toBeUndefined();
+    // By a portal's opening (BIFACIAL_WORLD.md §6), on either face, in a world file of its own.
+    expect(parseLocalWorld('?seed=7&spawn=portal')).toEqual({
+      worldSeed: 7,
+      generatorVersion: GENERATORS.terrain,
+      file: 'local-g8-s7-portal',
+      spawnPortal: true,
+    });
+    expect(parseLocalWorld('?seed=7&spawn=portal-b')).toMatchObject({
+      file: 'local-g8-s7-portal-b',
+      spawnFaceB: true,
+      spawnPortal: true,
+    });
   });
 });

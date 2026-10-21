@@ -47,14 +47,21 @@ fn the_server_refuses_to_break_the_bedrock_and_a_region_edit_leaves_it() {
     f.server.step();
     // In the shaft at the midplane, the wall's bedrock 3 columns west (the rim's column) at row 1.
     let target = [portal.x - 3, 1, portal.z];
-    assert_eq!(f.server.world().get_voxel(target[0], target[1], target[2]), bedrock);
+    assert_eq!(
+        f.server.world().get_voxel(target[0], target[1], target[2]),
+        bedrock
+    );
     assert_eq!(
         f.server.world().get_voxel(portal.x - 2, 1, portal.z),
         M.air,
         "the shaft is open"
     );
     let feet = m_of_row(1);
-    let eye = [f64::from(portal.x) + 0.5, feet + 1.62, f64::from(portal.z) + 0.5];
+    let eye = [
+        f64::from(portal.x) + 0.5,
+        feet + 1.62,
+        f64::from(portal.z) + 0.5,
+    ];
     let request = BlockEditRequest {
         action: BlockEditAction::Break,
         cell: target,
@@ -72,7 +79,10 @@ fn the_server_refuses_to_break_the_bedrock_and_a_region_edit_leaves_it() {
         f.server.stats_of(1).unwrap().last_edit_check,
         EditCheck::Unbreakable
     );
-    assert_eq!(f.server.world().get_voxel(target[0], target[1], target[2]), bedrock);
+    assert_eq!(
+        f.server.world().get_voxel(target[0], target[1], target[2]),
+        bedrock
+    );
     // A region clear over the wall: the bedrock is left as it is.
     f.move_to(w.player_id, eye[0], feet, eye[2]);
     f.send(
@@ -99,5 +109,8 @@ fn the_server_refuses_to_break_the_bedrock_and_a_region_edit_leaves_it() {
     // Face B's bedrock below it is the same block.
     let below = g.local(Face::B).ground_y(portal.x - 3, portal.z);
     assert!(below.is_some());
-    assert_eq!(f.server.world().get_voxel(target[0], -1, target[2]), bedrock);
+    assert_eq!(
+        f.server.world().get_voxel(target[0], -1, target[2]),
+        bedrock
+    );
 }

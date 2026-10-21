@@ -106,7 +106,7 @@ GitHub Pages only serves static files. Consequences that shape the architecture:
    path: the launcher opens the build the choice needs. Links still open
    directly: an invite, a friend world's join code (`?code=`, Phase 5c, §10.2), or a local world
    by `?local=1`, `?world=` or `?seed=`. Local mode and
-   dedicated servers generate the **procedural terrain** world (generator version 19, §6.3) by
+   dedicated servers generate the **procedural terrain** world (generator version 20, §6.3) by
    default; `?world=flat`, `?world=sandbox` and `?seed=N` (local mode) or `--generator N` and
    `--seed N` (`dwell-server`) pick another generator or seed. (The movement playground, version 1, became a
    test structure file in Phase 15, §6.3; old playground worlds open in their own versions.)
@@ -301,7 +301,7 @@ There are **no official game servers**; players host (ADR 0003, details in §10)
 /shared/sounds       Sound data (dwell.json: sounds, block sound sets, events, gaits, actions, UI,
                      controls) + gen.mjs (→ TS for client/src/audio, Rust for dwell-game) and
                      validate.mjs (also used by shared/blocks/gen.mjs and the client's tests).
-/shared/worldgen     golden/: chunk and LOD-section hashes of generator version 19 (§6.3); terrain.json: the height field's parameters, decorations.json: the terrain's decoration rules, placements.json: the structure placements (the pines, ADR 0043), gen.mjs (→ Rust tables for dwell-worldgen) (§6.3).
+/shared/worldgen     golden/: chunk and LOD-section hashes of generator version 20 (§6.3); terrain.json: the height field's parameters, decorations.json: the terrain's decoration rules, placements.json: the structure placements (the pines, ADR 0043), midplane.json: the bedrock between the faces and the portals through it, gen.mjs (→ Rust tables for dwell-worldgen) (§6.3).
 /shared/structures   Structure files (*.json; test/ holds fixtures) + gen.mjs (→ Rust tables for
                      dwell-world) and gen.test.mjs; format.mjs, the format's rules, shared by gen.mjs
                      and the client's structures store; playground.json is the movement playground
@@ -689,11 +689,13 @@ Built (Phases 1–3a; registry Phase 8; cut to the baseline in Phase 15, ADR 002
 blocks — **air, stone, dirt, grass, sand, water and ladders**, exactly (a test lists the placeable ones), since Phase 27 S2a the sandbox floor, and since 2026-10-16 (owner's decision, prototype content restored from before Phase 15) **log** (bark sides, ringed top) and **leaves** (full cube, drawn cutout through gaps in its tile; not adaptive), appended after the floor, and since Phase 33 **tall grass** (`dwell:tall_grass`, below) — where
 each state has a collision **shape** (`Empty`, `Full`, or `Shaped`, below), `climbable` + facing,
 `liquid`, `flooded` and `indestructible` (block data `"indestructible": true`; PLAYER_CONTROLLER.md §6).
-**[built, Phase 27 S2a]** One block is indestructible: `dwell:sandbox_floor` (prototype content:
+**[built, Phase 27 S2a]** Two blocks are indestructible: `dwell:sandbox_floor` (prototype content:
 full, white with grid lines, not in the palette, not adaptive), the structure sandbox's ground — the
 property bedrock had, reused rather than a new flag; it stays what the structural anchor of
-Phase 20 may use. Phase 15 removed
-bedrock, the debug launch pad (and its `launch_speed` property, decision D6), the stone slab and
+Phase 20 may use — and **[built, 2026-10-21]** `dwell:bedrock` again (appended last; dark slate,
+its own painterly tile, not in the palette), the layer either side of the midplane between the
+faces (§6.3, *Bedrock and portals*). Phase 15 removed
+bedrock (restored 2026-10-21, above), the debug launch pad (and its `launch_speed` property, decision D6), the stone slab and
 every slope and slab family, sandstone, gravel, snow, ice, log, leaves and the three ores, with
 their texture tiles. 32³ chunks with revisions (generated chunks start at revision 0);
 `VoxelWorld` (`dwell-world`), generate-on-access with eviction of unmodified chunks on the server, and *streamed*
@@ -789,8 +791,10 @@ The 1 m torch (`dwell:torch` and `dwell:torch_upper`, two ½ m cells) is the fir
 **Unbreakable blocks [built, Phase 27 S2a]** ([ADR 0031](./adr/0031-data-driven-structures.md)). The
 block data's existing `indestructible` property (bedrock's, kept for Phase 20's structural anchor)
 is the flag: no new `breakable` flag was added. The server's edit validation rejects breaking an
-indestructible state, and placing into its cell (which would replace a liquid). The structure
-sandbox's white floor block (`dwell:sandbox_floor`) is the one block that uses it.
+indestructible state, and placing into its cell (which would replace a liquid); region edits and
+brush strokes leave it as it is (`unbreakable`), and the client predicts an edit with the same
+check, so it never shows one broken. The structure sandbox's white floor block
+(`dwell:sandbox_floor`) and the terrain's bedrock (`dwell:bedrock`, §6.3) use it.
 
 **Grid lines [built, Phase 27 S2a]**. Two data-driven parts draw the sandbox floor's grid, both
 usable by any block: the `grid` texture tile (a faint line at every block edge, from the tile; the
@@ -977,7 +981,7 @@ sides ([ADR 0023](./adr/0023-bifacial-world.md), [`BIFACIAL_WORLD.md`](./BIFACIA
 *Bifacial world* below). Each phase updates this section, §6.6 and §5 as it lands.
 
 **Built (Phases 3a, 3c, 13, 15; Rust, Phase 24):** the generator (`dwell-worldgen`: `terrain.rs`,
-`island.rs`, `noise.rs`, `bifacial.rs`, `decorations.rs`, `placements.rs`) is **generator version 19** (Phase 15's interim baseline generator, with Phase 33's decorations (13), Phase 16's resize (14), the larger relief (15, owner 2026-10-19), the steep hills (16, owner 2026-10-19), the sea flooding the open part of top blocks below sea level (17, owner 2026-10-20, [`WATER_RENDERING.md`](./WATER_RENDERING.md) §9) the pines placed by data (18, owner 2026-10-20, ADR 0043) and ½ m cells with stored ramps (19, Phase 41, ADR 0042); versions 2–16
+`island.rs`, `noise.rs`, `bifacial.rs`, `decorations.rs`, `placements.rs`, `portals.rs`) is **generator version 20** (Phase 15's interim baseline generator, with Phase 33's decorations (13), Phase 16's resize (14), the larger relief (15, owner 2026-10-19), the steep hills (16, owner 2026-10-19), the sea flooding the open part of top blocks below sea level (17, owner 2026-10-20, [`WATER_RENDERING.md`](./WATER_RENDERING.md) §9) the pines placed by data (18, owner 2026-10-20, ADR 0043) ½ m cells with stored ramps (19, Phase 41, ADR 0042) and the bedrock between the faces with the portals through it (20, owner 2026-10-21, *Bedrock and portals* below); versions 2–16
 were the earlier terrains — planet-scale relief, slopes, continents, rivers, climate and biomes, face
 B — and are retired: a world saved with one loads as the flat world; the version launcher opens the
 build that saved it, §2.1). It is announced in Welcome as generator **8** (`GENERATOR_TERRAIN`), the
@@ -1041,7 +1045,8 @@ its precision decisions stand):
   terrain are face-local (`h`, from the midplane): sea level `SEA_LEVEL` = 32 m and the stone core of
   `CORE_LAYERS` = 10 m per face (never carved by generation, so the disc is at least 20 m thick;
   on ½ m cells these are rows 64 and 20, with metre twins `SEA_LEVEL_M`, `CORE_M`) are interim constants until Phase 17 moves them into the terrain definition. There is no
-  void below the world and no bedrock (below).
+  void below the world; the core's first rows either side of the midplane are **bedrock** (since
+  generator version 20, below).
 - **The build volume** (`dwell_world::bounds`, `BuildVolume`, `inside_build_volume`): one predicate
   bounds building and storage, driven by data — `bounds` in `shared/protocol/constants.json`,
   `{ "shape": "sphere", "center": [0, 0, 0], "radius": 50000 }` (D2, in cells: on the half-height
@@ -1077,8 +1082,34 @@ its precision decisions stand):
   sea out to the rim. The
   full-detail world is never generated wholesale — distant terrain comes from the LOD system (§6.6).
 
-The terrain has **no bedrock**: the rock at the midplane is ordinary stone and can be dug
-through, in the flat test world too, which has no face B. The flat worlds (the flat test world and
+**Bedrock and portals [built, generator version 20, 2026-10-21]** (owner: "add a few random
+portals to the other side and add bedrock back in between the two faces. So the "portals" are
+holes through the bed rock leading up to the surface on both sides";
+[`BIFACIAL_WORLD.md`](./BIFACIAL_WORLD.md) §12). Data: `shared/worldgen/midplane.json`, validated
+and generated by `shared/worldgen/gen.mjs` into `dwell-worldgen` `midplane.gen.rs`; engine:
+`portals.rs`. The terrain's first `bedrock.thickness` m (1 m: rows 0–1) on each face from the
+midplane are `dwell:bedrock` (indestructible, above), the rest of the core stone, so the faces are
+sealed from each other except at the **portals**: `count` [4, 8] shafts per world (the seed picks
+the number), sited by a seeded search (`attempts` integer-hashed points within `within` 26 km,
+each kept when both faces have land over its whole footprint at least `inland` 150 m from both
+coasts and at most `maxHeight` 40 m above sea level, and at least `spacing` 3 km from the sites
+before), searched once per seed and rules and shared (a small process-wide cache: generators are
+built per chunk by some tools). `BifacialTerrain` gives both faces' generators the same sites. A
+shaft is round (`radius` 2.5 m: columns whose centres lie within it, 5 m across), open from each
+face's ground to the midplane, the bedrock and core cut through; a ladder (`ladder.block`, fixed to
+its `ladder.wall`, south) runs its whole length in the wall-side column, continuous across the
+midplane, to the top of the rim it climbs out onto; a rim of `rim.block` (stone, `rim.width` 1 m,
+`rim.height` ½ m) rings each opening on flat ground; no tree, structure or decoration stands
+within `clear` 4 m of the rim (`trees_in` drops them; decorations skip it), nor does the spawn's
+patch. Every chunk knows from the seed alone what reaches it (the sites, then each column's part:
+shaft, rim, clear ground or none; a ladder's top from the wall column's `column_at`), so chunks
+generate in any order and agree (a test). The sky test leaves room for the rims; the LOD cuts the
+shafts at levels whose cells are no wider than a shaft's radius (levels 0–1) and draws the ground
+over them coarser; the hydrology prototype ignores them (they don't change the height field). A
+dev link `?spawn=portal` (`portal-b`) spawns a new local world's player on the rim over the
+ladder of the portal nearest the centre (`portal_spawn_for`), and bench scenarios take `portal`.
+The rock above the bedrock is ordinary stone and can be dug through, in the flat test world too,
+which has no face B and no bedrock. The flat worlds (the flat test world and
 the structure sandbox) fill the midplane up to `FLAT_TOP_Y` = 32, their surface. The anchor for
 structural integrity (§7.1) is the core zone of `CORE_ANCHOR_LAYERS` (8) either side of the
 midplane, by position (Phase 20); checked against the 10-layer core in Phase 16, it lies within it
@@ -1132,8 +1163,9 @@ player on face B stands upside down in the world.
   across rather than letting it hover, and moving away the pull fades linearly to zero at it. Nothing
   brakes a body, so a fall of the rim's 2 km passes through at speed and gravity (toward the
   midplane on both sides) draws it back: it swings across the midplane (BIFACIAL_WORLD.md §10).
-- **Crossing.** There are no crossing routes: a player digs down through the core or goes over the
-  rim, and the face switches (with 5 cm of hysteresis) when the body is across the midplane; the
+- **Crossing.** A player climbs through a **portal** (a shaft through the bedrock with a ladder the
+  whole way, generated from the seed: *Bedrock and portals* above), digs down through the core's
+  stone to the bedrock, or goes over the rim, and the face switches (with 5 cm of hysteresis) when the body is across the midplane; the
   controller state is mirrored with the frame, the body turns over and the view keeps pointing
   exactly the same way: the look continues across (heading kept, pitch mirrored; on the crossing
   tick in the controller too), whose world forward is the same, and the upside-down view rolls
@@ -2270,9 +2302,10 @@ Triggered when the server registers an explosion, a block removal, or a structur
    server flood-fills (6-connectivity) looking for an **anchor** (the core zone, or any voxel
    flagged as grounded). Components that reach an anchor stay static. Components that do not
    are **detached**.
-   **[Phase 13 decided, built in Phase 20]** The bifacial world has no bedrock: the anchor is a
-   positional core zone of `CORE_ANCHOR_LAYERS` (8) either side of the midplane, whose voxels can be
-   dug — what remains in the zone still holds both faces
+   **[Phase 13 decided, built in Phase 20]** The anchor is a positional core zone of
+   `CORE_ANCHOR_LAYERS` (8) either side of the midplane, whose stone can be dug — what remains in
+   the zone still holds both faces; since generator version 20 its first rows are the
+   indestructible bedrock (§6.3), which the anchor needs no flag for
    ([`BIFACIAL_WORLD.md`](./BIFACIAL_WORLD.md) §2, §7).
    - The search is budgeted (max voxels visited per tick). A component that exceeds the
      budget is treated as anchored for this tick and re-queued, so a single event can never

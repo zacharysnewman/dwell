@@ -147,6 +147,11 @@ export interface Scenario {
   split: Split | null;
   /** The face the player spawns on (`?spawn=b`, BIFACIAL_WORLD.md §11); default `a`. */
   face: 'a' | 'b';
+  /**
+   * The player spawns by a portal's opening on `face` (`?spawn=portal`, `portal-b`;
+   * BIFACIAL_WORLD.md §6); default false.
+   */
+  portal: boolean;
   steps: Step[];
 }
 
@@ -451,6 +456,7 @@ function parseScenario(where: string, v: unknown): Scenario {
     'scale',
     'split',
     'face',
+    'portal',
     'steps',
   ]);
   if (o.face !== undefined && o.face !== 'a' && o.face !== 'b') {
@@ -497,6 +503,7 @@ function parseScenario(where: string, v: unknown): Scenario {
     scale: num(`${where}.scale`, o.scale, 0.25, 2, 1),
     split: split(`${where}.split`, o.split),
     face: o.face === 'b' ? 'b' : 'a',
+    portal: bool(`${where}.portal`, o.portal, false),
     steps,
   };
 }
@@ -531,7 +538,8 @@ export function scenarioUrl(
   params: Record<string, string> = {},
 ): string {
   const url = new URL(viewUrl(base, scenarioView(s)), 'http://x');
-  if (s.face === 'b') url.searchParams.set('spawn', 'b');
+  if (s.portal) url.searchParams.set('spawn', s.face === 'b' ? 'portal-b' : 'portal');
+  else if (s.face === 'b') url.searchParams.set('spawn', 'b');
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
   return `${base}${url.search}`;
 }

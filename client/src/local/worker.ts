@@ -87,13 +87,20 @@ async function start(
   generatorVersion: number,
   file?: string,
   spawnFaceB = false,
+  spawnPortal = false,
 ): Promise<void> {
   // The world file (§6.4): the chosen world's (by default one per generator and seed), in OPFS.
   // Without it the world lives in memory only (no OPFS, or the world is open in another tab).
   const files = await openWorldFile(file ?? localWorldName(generatorVersion, worldSeed));
   if (!files) console.warn('Dwell: this local world will not be saved (no OPFS access).');
   try {
-    core = await LocalCore.load(worldSeed, generatorVersion, files?.handle ?? null, spawnFaceB);
+    core = await LocalCore.load(
+      worldSeed,
+      generatorVersion,
+      files?.handle ?? null,
+      spawnFaceB,
+      spawnPortal,
+    );
   } catch (err) {
     scope.postMessage({
       t: 'error',
@@ -122,6 +129,6 @@ async function start(
 
 scope.onmessage = (e) => {
   const msg = e.data;
-  if (msg.t === 'start') void start(msg.worldSeed, msg.generatorVersion, msg.file, msg.spawnFaceB);
+  if (msg.t === 'start') void start(msg.worldSeed, msg.generatorVersion, msg.file, msg.spawnFaceB, msg.spawnPortal);
   else handle(msg);
 };

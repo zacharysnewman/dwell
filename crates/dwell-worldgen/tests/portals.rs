@@ -66,11 +66,17 @@ fn the_seed_sites_its_count_of_portals_spaced_apart_on_land_on_both_faces() {
             assert!(d <= f64::from(rules.within), "seed {seed} {p:?}");
             for q in &sites[i + 1..] {
                 let s = f64::from(p.x - q.x).hypot(f64::from(p.z - q.z));
-                assert!(s >= f64::from(rules.spacing), "seed {seed}: {p:?} {q:?} {s}");
+                assert!(
+                    s >= f64::from(rules.spacing),
+                    "seed {seed}: {p:?} {q:?} {s}"
+                );
             }
             for f in [Face::A, Face::B] {
                 let t = g.local(f);
-                assert!(t.coast_at(p.x, p.z) >= rules.inland, "seed {seed} {p:?} {f:?}");
+                assert!(
+                    t.coast_at(p.x, p.z) >= rules.inland,
+                    "seed {seed} {p:?} {f:?}"
+                );
                 let above_sea = f64::from(t.column_at(p.x, p.z).height) - SEA_LEVEL_M;
                 // Not under the sea, and the shaft no longer than the rules allow.
                 assert!(
@@ -223,7 +229,10 @@ fn the_fine_lod_shows_a_shafts_opening() {
     let g = BifacialTerrain::new(0);
     let p = g.portals();
     let portal = p.sites[0];
-    let top = g.local(Face::A).ground_y(portal.x, portal.z).expect("inside");
+    let top = g
+        .local(Face::A)
+        .ground_y(portal.x, portal.z)
+        .expect("inside");
     let level = 0;
     let s = lod::section_size(level);
     let at = |v: i64, o: i64| (v - o).div_euclid(s) as i32;
@@ -295,3 +304,31 @@ fn portal_rules_added_by_data_alone_shape_the_world() {
     let again = Portals::with_sites(rules, p.sites.clone());
     assert_eq!(again.part_of(a, a.x, a.z), Part::Shaft { ladder: false });
 }
+
+dwell_world::both_faces!(
+    /// The dev link `?spawn=portal` (`portal-b`): the player stands on face `f`'s rim over the
+    /// ladder of the portal nearest the centre, the ground under its feet and air at its head.
+    fn the_portal_spawn_stands_on_the_rim_over_the_ladder(f: FaceFrame) {
+        let seed = 7;
+        let [x, y, z] =
+            dwell_worldgen::portal_spawn_for(GENERATOR_TERRAIN, seed, f.face).expect("portals");
+        let g = BifacialTerrain::new(seed);
+        let p = g.portals();
+        let near = p
+            .sites
+            .iter()
+            .min_by_key(|s| i64::from(s.x).pow(2) + i64::from(s.z).pow(2))
+            .copied()
+            .expect("a portal");
+        assert_eq!(p.wall_column(near), (x.floor() as i32, z.floor() as i32));
+        let mut v = Voxels::new(&g);
+        let feet = f.row(row_of_m(f.y(y)));
+        let (cx, cz) = (x.floor() as i32, z.floor() as i32);
+        assert!(!info(v.at(cx, feet, cz)).solid, "air at the feet");
+        assert!(
+            info(v.at(cx, f.row(row_of_m(f.y(y)) - 1), cz)).solid,
+            "ground under them"
+        );
+        assert_eq!(f.face, FaceFrame::at_height(y).face);
+    }
+);

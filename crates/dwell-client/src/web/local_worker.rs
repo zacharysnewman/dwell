@@ -130,13 +130,15 @@ pub struct LocalWorld {
 impl LocalWorld {
     /// Starts the world: with `file` (an OPFS sync access handle) it is loaded from and saved to
     /// it, and a saved world's seed and generator win. Throws if the file is locked to another
-    /// version (RELEASES.md §6). With `spawn_face_b` a new world's spawn is on face B (`?spawn=b`).
+    /// version (RELEASES.md §6). With `spawn_face_b` a new world's spawn is on face B (`?spawn=b`);
+    /// with `spawn_portal` by a portal's opening on that face (`?spawn=portal`, `portal-b`).
     #[wasm_bindgen(constructor)]
     pub fn new(
         world_seed: f64,
         generator_version: u32,
         file: Option<FileSystemSyncAccessHandle>,
         spawn_face_b: Option<bool>,
+        spawn_portal: Option<bool>,
     ) -> Result<LocalWorld, JsError> {
         let backend = file.map(OpfsBackend::register);
         let face = if spawn_face_b == Some(true) {
@@ -144,8 +146,9 @@ impl LocalWorld {
         } else {
             dwell_world::Face::A
         };
-        match LocalCore::create_on(
+        match LocalCore::create_spawning(
             face,
+            spawn_portal == Some(true),
             world_seed as u64,
             generator_version,
             backend,

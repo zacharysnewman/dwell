@@ -682,8 +682,11 @@ impl TerrainGenerator {
                     for ly in 0..S {
                         let y = y0 + ly;
                         if in_volume(y) {
-                            voxels[local_index(x, ly, z)] =
-                                if y <= ladder_top { portals.ladder } else { M.air };
+                            voxels[local_index(x, ly, z)] = if y <= ladder_top {
+                                portals.ladder
+                            } else {
+                                M.air
+                            };
                         }
                     }
                     continue;

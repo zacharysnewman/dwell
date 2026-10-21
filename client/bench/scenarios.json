@@ -6698,6 +6698,165 @@
           "name": "after-respawn"
         }
       ]
+    },
+    {
+      "name": "portal-a",
+      "notes": "A portal between the faces (BIFACIAL_WORLD.md §12, shared/worldgen/midplane.json): seed 7's nearest the centre (axis column -4872, 20185), the player on face A's rim over its ladder (?spawn=portal). Shots: the opening from above, the shaft looked down from over its axis, the midplane from inside the shaft, then the climb down the ladder looking down and holding forward: just above the midplane, across it (the look continued: up face B's ladder), and at face B's opening.",
+      "seed": 7,
+      "portal": true,
+      "settings": {
+        "timeOfDay": 0.45
+      },
+      "steps": [
+        {
+          "do": "settle",
+          "maxS": 120
+        },
+        {
+          "do": "camera",
+          "position": [3, 7, 4],
+          "aroundPlayer": true,
+          "aboveFeet": true,
+          "yaw": 205,
+          "pitch": -42
+        },
+        {
+          "do": "wait",
+          "s": 2
+        },
+        {
+          "do": "shot",
+          "name": "a-opening"
+        },
+        {
+          "do": "camera",
+          "position": [0, 1.2, -3],
+          "aroundPlayer": true,
+          "aboveFeet": true,
+          "yaw": 180,
+          "pitch": -89
+        },
+        {
+          "do": "wait",
+          "s": 2
+        },
+        {
+          "do": "shot",
+          "name": "a-down-the-shaft"
+        },
+        {
+          "do": "camera",
+          "position": [-4872.7, 3.0, 20184.0],
+          "yaw": 20,
+          "pitch": -55
+        },
+        {
+          "do": "wait",
+          "s": 2
+        },
+        {
+          "do": "shot",
+          "name": "midplane-bedrock"
+        },
+        {
+          "do": "releaseCamera"
+        },
+        {
+          "do": "look",
+          "yaw": 180,
+          "pitch": -80
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "hold",
+          "code": "KeyW",
+          "s": 19.6
+        },
+        {
+          "do": "shot",
+          "name": "crossing-on-the-ladder"
+        },
+        {
+          "do": "hold",
+          "code": "KeyW",
+          "s": 2.5
+        },
+        {
+          "do": "wait",
+          "s": 0.8
+        },
+        {
+          "do": "shot",
+          "name": "crossed-to-face-b"
+        },
+        {
+          "do": "hold",
+          "code": "KeyW",
+          "s": 12
+        },
+        {
+          "do": "wait",
+          "s": 1
+        },
+        {
+          "do": "shot",
+          "name": "climbed-out-on-face-b"
+        },
+        {
+          "do": "record",
+          "name": "climb"
+        }
+      ]
+    },
+    {
+      "name": "portal-b",
+      "notes": "The same portal's face B opening (seed 7; ?spawn=portal-b): the player on face B's rim over the ladder. Shots: the opening from above (face B's up), the shaft looked down from over its axis.",
+      "seed": 7,
+      "portal": true,
+      "face": "b",
+      "settings": {
+        "timeOfDay": 0.95
+      },
+      "steps": [
+        {
+          "do": "settle",
+          "maxS": 120
+        },
+        {
+          "do": "camera",
+          "position": [3, 7, 4],
+          "aroundPlayer": true,
+          "aboveFeet": true,
+          "yaw": 205,
+          "pitch": -42
+        },
+        {
+          "do": "wait",
+          "s": 2
+        },
+        {
+          "do": "shot",
+          "name": "b-opening"
+        },
+        {
+          "do": "camera",
+          "position": [0, 1.2, -3],
+          "aroundPlayer": true,
+          "aboveFeet": true,
+          "yaw": 180,
+          "pitch": -89
+        },
+        {
+          "do": "wait",
+          "s": 2
+        },
+        {
+          "do": "shot",
+          "name": "b-down-the-shaft"
+        }
+      ]
     }
   ]
 }
