@@ -106,7 +106,56 @@ describe('the launcher', () => {
       version: '0.1.0',
       why: 'pinned',
     });
-    expect(choose(SITE, request('?version=9.9.9'))).toMatchObject({ kind: 'error' });
+    expect(choose(SITE, request('?version=9.9.9'))).toEqual({
+      kind: 'error',
+      message: 'Version 9.9.9 is not published.',
+    });
+  });
+
+  // The site keeps the newest patch of each line and retires the rest (RELEASES.md §4,
+  // shared/version/site-retention.json): worlds and links of a retired patch must still open.
+  describe('with older patches retired from the site', () => {
+    // 0.16.0–0.16.4 retired, 0.16.5 kept as the newest of its line; 0.10 pinned whole.
+    const PRUNED = manifest(['0.17.2', '0.16.5', '0.10.3', '0.10.2', '0.10.1', '0.10.0']);
+
+    it("opens a retired patch's world in the newest kept build of its line", () => {
+      for (const last of ['0.16.0', '0.16.3', '0.16.5']) {
+        expect(choose(PRUNED, request('?play=w', { w: last })), last).toEqual({
+          kind: 'open',
+          version: '0.16.5',
+          why: 'world',
+        });
+      }
+      expect(choose(PRUNED, request('?regenerate=w', { w: '0.16.1' }))).toMatchObject({
+        version: '0.16.5',
+      });
+      // A pinned line keeps every patch, and a world opens in the newest of them as before.
+      expect(choose(PRUNED, request('?play=w', { w: '0.10.1' }))).toMatchObject({
+        version: '0.10.3',
+      });
+    });
+
+    it("joins a host on a retired patch with the newest kept build of the host's line", () => {
+      expect(choose(PRUNED, request('?join=abc&v=0.16.2'))).toMatchObject({
+        kind: 'open',
+        version: '0.16.5',
+        why: 'host',
+      });
+    });
+
+    it('says which build to use for a pinned retired patch', () => {
+      expect(choose(PRUNED, request('?version=0.16.2'))).toEqual({
+        kind: 'error',
+        message:
+          'Dwell 0.16.2 is not on the site any more: older patches are retired. Dwell 0.16.5, on the same line, opens its worlds.',
+      });
+    });
+
+    it("lists a retired patch's worlds under the kept build of its line", () => {
+      const rows = listBuilds(PRUNED, false, [{ name: 'Old', appVersion: '0.16.1' }]);
+      expect(rows.find((r) => r.version === '0.16.5')?.worlds).toEqual(['Old']);
+      expect(rows.map((r) => r.version)).not.toContain('0.16.1');
+    });
   });
 
   it('skips builds that need a newer launcher', () => {

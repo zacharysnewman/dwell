@@ -1,0 +1,8 @@
+{
+  "comment": "Which releases the Pages site holds (docs/RELEASES.md §4; read and validated by client/scripts/site.ts). Release tarballs stay on GitHub: to bring back a retired build, add it to pinned and re-run the Pages workflow.",
+  "newestPerLine": true,
+  "newestOverall": 10,
+  "pinned": ["0.10"],
+  "devKeep": 10,
+  "sizeBudgetMB": 900
+}

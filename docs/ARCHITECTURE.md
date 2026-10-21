@@ -151,11 +151,16 @@ GitHub Pages only serves static files. Consequences that shape the architecture:
   each release from `main` — dispatched on `main` by a release run on a tag or another branch,
   since the `github-pages` environment deploys only from `main` — and runnable by hand;
   `client/scripts/site.ts`): `index.html` (the launcher),
-  `versions.json` (generated from each `build.json`), `v/<version>/` for every stable release and
-  the newest 10 dev builds, each unpacked and immutable, and `media/` (the music's files, once per
-  site: `site.ts media` moves each build's `media/` there, §5.2); older dev releases and their tags are
-  deleted. It is deployed with `actions/deploy-pages`, and its size is reported against Pages'
-  1 GB limit. Builds are same-origin directories because release assets carry no CORS headers or
+  `versions.json` (generated from each `build.json`), `v/<version>/` for the releases the
+  **retention policy** keeps, each unpacked and immutable, and `media/` (the music's files, once per
+  site: `site.ts media` moves each build's `media/` there, §5.2). The policy is data,
+  `shared/version/site-retention.json`, validated and applied by `site.ts plan` (RELEASES.md §4):
+  the newest release of every compatibility line (so every world still opens: a world opens in the
+  newest build of its line), the 10 newest stable releases, the pinned lines and releases (`0.10`),
+  and the newest 10 dev builds. Retired stable releases stay as GitHub Releases, off the site (a pin
+  brings one back); older dev releases and their tags are deleted. It is deployed with
+  `actions/deploy-pages`; `site.ts size` warns over the policy's 900 MB budget and fails the deploy
+  over Pages' 1 GB limit. Builds are same-origin directories because release assets carry no CORS headers or
   script content types, the CSP is `script-src 'self'` / `worker-src 'self'`, and all versions must
   share the origin's storage.
 - **The launcher** (`client/launcher`, its own small page and Vite build) reads `versions.json`,
@@ -285,7 +290,7 @@ There are **no official game servers**; players host (ADR 0003, details in §10)
                      (launcher.spec.ts: against a locally assembled site, playwright.site.config.ts).
   /e2e-webgpu        The WebGPU probe and the renderer's smoke scene in Chromium.
   /launcher          The launcher page at /dwell/ (§2.1, Phase 6): versions.json, version choice.
-  /scripts           site.ts (plan, manifest and size of the Pages site), release.ts (what a release
+  /scripts           site.ts (plan, retention, manifest and size of the Pages site), release.ts (what a release
                      run builds), localSite.ts (a local multi-version site for the e2e tests),
                      shots.ts (screenshots of the named views), views.ts (the views' format and
                      checks), bench.ts and scenarios.ts (the dev bench, DEV_TOOLS.md), compare.ts,
