@@ -5,7 +5,11 @@ Plans for work that has been investigated but **not adopted**. Nothing here is a
 A proposal is adopted by answering its owner questions, writing an ADR and adding phases to the
 implementation plan; the proposal is then folded into the design doc or deleted.
 
-There are no open proposals.
+Open proposals:
+
+| Proposal | What | Status |
+|---|---|---|
+| [`PIXEL_ART_LOOK.md`](./PIXEL_ART_LOOK.md) | The 3D pixel-art look (t3ssel8r style): a low-res frame, toon bands, a palette with ordered dither, an integer upscale; built as an opt-in preview (`?pixelart=<preset>`) to judge the look | Prototype built, off by default; open questions for the owner |
 
 Adopted proposals, and where they went:
 

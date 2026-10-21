@@ -20,6 +20,26 @@
       "params": { "outline": "blocks" }
     },
     {
+      "name": "pixelart-180",
+      "notes": "The pixel-art preview's 180 preset (docs/proposals/PIXEL_ART_LOOK.md, shared/look/pixelart.json): 180 rows, banded light and ambient, the dwell palette, edges.",
+      "params": { "pixelart": "180" }
+    },
+    {
+      "name": "pixelart-270",
+      "notes": "The pixel-art preview's 270 preset: 270 rows (the spec's 480 × 270), banded sun, the dwell palette, silhouette edges.",
+      "params": { "pixelart": "270" }
+    },
+    {
+      "name": "pixelart-270-warm",
+      "notes": "The pixel-art preview's 270-warm preset: as 270 on the warm hearth palette.",
+      "params": { "pixelart": "270-warm" }
+    },
+    {
+      "name": "pixelart-360",
+      "notes": "The pixel-art preview's 360 preset: 360 rows, four sun bands, no edges, a lighter dither.",
+      "params": { "pixelart": "360" }
+    },
+    {
       "name": "shadows-low",
       "notes": "The Shadows setting on Low (docs/DAY_NIGHT.md §10, shared/look/shadows.json); the baseline draws High, the desktop default.",
       "params": { "shadows": "low" }
