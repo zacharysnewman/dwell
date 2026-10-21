@@ -483,6 +483,9 @@ pub struct VoxelWorld {
     next_stamp: u64,
     generated_on_access: u64,
     loaded_saved: u64,
+    /// The flood light of the chunks the holder says are loaded (the client's;
+    /// [`Self::enable_light`]).
+    light: Option<Box<crate::light::LightMap>>,
 }
 
 impl VoxelWorld {
@@ -496,7 +499,55 @@ impl VoxelWorld {
             next_stamp: 1,
             generated_on_access: 0,
             loaded_saved: 0,
+            light: None,
         }
+    }
+
+    /// Keeps a flood light ([`crate::light`]) from now on, of the chunks [`Self::light_load`]
+    /// names (the client's streamer: every chunk it holds, all-air ones included).
+    pub fn enable_light(&mut self) {
+        self.light.get_or_insert_with(Default::default);
+    }
+
+    /// The stored chunks (the flood light reads them).
+    pub(crate) fn chunk_table(&self) -> &crate::light::Voxels {
+        &self.chunks
+    }
+
+    /// The flood light, if kept.
+    pub fn light(&self) -> Option<&crate::light::LightMap> {
+        self.light.as_deref()
+    }
+
+    pub fn light_mut(&mut self) -> Option<&mut crate::light::LightMap> {
+        self.light.as_deref_mut()
+    }
+
+    /// The chunk is held (its voxels stored, or all air): lit, and its surroundings relit.
+    pub fn light_load(&mut self, coord: ChunkCoord) {
+        if let Some(l) = self.light.as_deref_mut() {
+            l.load(&self.chunks, coord);
+        }
+    }
+
+    /// The chunk is no longer held.
+    pub fn light_unload(&mut self, coord: ChunkCoord) {
+        if let Some(l) = self.light.as_deref_mut() {
+            l.unload(&self.chunks, coord);
+        }
+    }
+
+    /// These world cells' blocks changed.
+    pub fn light_edited(&mut self, cells: &[[i32; 3]]) {
+        if let Some(l) = self.light.as_deref_mut() {
+            l.edited(&self.chunks, cells);
+        }
+    }
+
+    /// The chunk's light in the mesher's padded layout (empty without a flood light: meshed as
+    /// open sky).
+    pub fn padded_light(&self, coord: ChunkCoord) -> Vec<u8> {
+        self.light.as_deref().map_or_else(Vec::new, |l| l.padded(coord))
     }
     pub fn flat() -> Self {
         Self::new(flat_generator(), Some(Arc::new(flat_is_air)))
