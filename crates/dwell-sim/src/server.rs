@@ -1376,11 +1376,28 @@ impl Server {
         }
     }
 
+    /// Whether a chunk request is answered: within the render radius of the view's centre, or
+    /// (while dead) within two chunks past the respawn preload's ring (§6.3), which the client's
+    /// LOD asks for to show the level-1 sections the ring straddles as chunks.
+    fn requestable(&self, s: &Session, c: ChunkCoord, center: ChunkCoord) -> bool {
+        within_radius(c, center, self.config.render_radius_chunks)
+            || s.preload_center
+                .zip(self.config.respawn_preload_radius_chunks)
+                .is_some_and(|(p, r)| within_radius(c, p, r + 2))
+    }
+
     fn request_chunks(&mut self, id: SessionId, coords: &[ChunkCoordNet]) {
         let center = self.view_center(&self.sessions[&id]);
-        let render = self.config.render_radius_chunks;
+        let ok_at: Vec<bool> = coords
+            .iter()
+            .map(|&at| {
+                center.is_some_and(|center| {
+                    self.requestable(&self.sessions[&id], ChunkCoord::from_array(at), center)
+                })
+            })
+            .collect();
         let s = self.sessions.get_mut(&id).expect("session");
-        for &at in coords {
+        for (&at, &in_range) in coords.iter().zip(&ok_at) {
             let c = ChunkCoord::from_array(at);
             if s.requested.contains(&c) {
                 continue; // already on its way or there
@@ -1390,7 +1407,7 @@ impl Server {
                 continue;
             }
             let ok = s.chunk_mode != ChunkMode::AwaitingCheck
-                && center.is_some_and(|center| within_radius(c, center, render))
+                && in_range
                 && BUILD_VOLUME.chunk_may_hold(c)
                 && s.chunk_request_credit >= 1.0
                 && s.chunk_requests.len() < MAX_QUEUED_CHUNK_REQUESTS;
@@ -1470,6 +1487,7 @@ impl Server {
             // Then the respawn point's ring (§6.3): the view first (collision needs it).
             self.stream_preload(id, p, &mut sent);
         }
+        let s = &self.sessions[&id];
         let s = &self.sessions[&id];
         if s.stream_complete && (s.preload_complete || s.preload_center.is_none()) {
             // The view first (collision needs it).
@@ -1572,7 +1590,8 @@ impl Server {
                 continue; // the view reached it first
             }
             // Full mode would generate on the server for rendering alone: only what is stored.
-            let message = within_radius(c, center, self.config.render_radius_chunks)
+            let message = self
+                .requestable(&self.sessions[&id], c, center)
                 .then(|| self.chunk_message(id, c, false))
                 .flatten();
             let s = self.sessions.get_mut(&id).expect("session");

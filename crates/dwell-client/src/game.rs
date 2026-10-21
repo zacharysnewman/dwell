@@ -2062,8 +2062,23 @@ impl<S: Scene> Game<S> {
 
     /// The whole-world view around the camera.
     fn update_lod(&mut self, c: &ClientState, now_ms: f64, input: &KeyboardMouseInput) {
-        if !c.active || self.lod.is_none() {
+        // Dead, the view around the body keeps loading, and the respawn's ring is readied.
+        if !(c.active || self.dead) || self.lod.is_none() {
             return;
+        }
+        let second = self.respawn_preload().map(|s| {
+            let at = ChunkCoord::from_array(s.at);
+            let r = s.radius;
+            let lo = dwell_world::chunk_origin_m(ChunkCoord::new(at.x - r, at.y - r, at.z - r));
+            let hi = dwell_world::chunk_origin_m(ChunkCoord::new(
+                at.x + r + 1,
+                at.y + r + 1,
+                at.z + r + 1,
+            ));
+            (lo, hi)
+        });
+        if let Some(lod) = &mut self.lod {
+            lod.set_second_area(second);
         }
         let viewport = self.viewport();
         let (position, yaw_deg, pitch_deg) = match self.view {

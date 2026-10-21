@@ -897,7 +897,9 @@ fn dying_far_away_preloads_the_respawn_so_its_loading_screen_opens_at_once() {
 }
 
 #[test]
-fn with_the_lod_a_preloaded_respawn_opens_its_loading_screen_soon() {
+fn with_the_lod_a_preloaded_respawn_opens_its_loading_screen_at_once() {
+    // The LOD readies the respawn area's sections down to level 1 and asks for the chunks of
+    // those the ring straddles, so the view there refines to its chunks on the first frame.
     let with = respawn_after_dying_far_away(Some(3), true);
     let without = respawn_after_dying_far_away(None, true);
     eprintln!(
@@ -908,7 +910,17 @@ fn with_the_lod_a_preloaded_respawn_opens_its_loading_screen_soon() {
         with.opened.map(|o| o.0),
         Some(dwell_game::loading::Opened::Ready)
     );
-    assert!(with.frames_to_open < without.frames_to_open);
+    assert_eq!(with.ring_drawable_before, with.ring);
+    assert!(
+        with.frames_to_open <= 3,
+        "opened after {} frames",
+        with.frames_to_open
+    );
+    assert!(
+        without.frames_to_open > 3 * with.frames_to_open.max(1),
+        "{} frames",
+        without.frames_to_open
+    );
 }
 
 #[test]
