@@ -1,4 +1,4 @@
-// The terrain data's validation and generation (decorations and the height field) (node --test shared/worldgen/gen.test.mjs).
+// The terrain data's validation and generation (decorations, the height field, placements and the hydrology profiles) (node --test shared/worldgen/gen.test.mjs).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -6,11 +6,13 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   decorationsRust,
+  hydrologyRust,
   placementsRust,
   registryBlocks,
   registryStructures,
   terrainRust,
   validateDecorations,
+  validateHydrology,
   validatePlacements,
   validateTerrain,
 } from './gen.mjs';
@@ -160,4 +162,63 @@ test('a bad placement fails with its name and the problem', () => {
   const d = loadPlacements();
   d.placements.push({ ...d.placements[0] });
   assert.throws(() => validatePlacements(d, blocks, structures), /duplicate name/);
+});
+
+// ---- The hydrology prototype's profiles ----------------------------------------------------------
+
+const loadHydrology = () => JSON.parse(readFileSync(join(here, 'hydrology.json'), 'utf8'));
+
+test('the checked-in hydrology profiles are valid and generate the checked-in Rust', () => {
+  const rs = hydrologyRust(validateHydrology(loadHydrology()));
+  const checkedIn = readFileSync(join(here, '../../crates/dwell-worldgen/src/hydrology/profiles.gen.rs'), 'utf8');
+  assert.equal(rs, checkedIn, 'run `node shared/worldgen/gen.mjs`');
+});
+
+test('a hydrology profile added by data alone is emitted and can be the default', () => {
+  const d = loadHydrology();
+  const p = structuredClone(d.profiles[0]);
+  p.name = 'coarse_wet';
+  p.grid.cell = 250;
+  p.rain.amount = 2.5;
+  p.lakes.smallPits = 'fill';
+  p.rivers.geometry.push({ discharge: 5000, width: 400, depth: 12 });
+  d.profiles.push(p);
+  d.default = 'coarse_wet';
+  const rs = hydrologyRust(validateHydrology(d));
+  assert.match(rs, /PROFILES: \[HydrologyParams; 4\]/);
+  assert.match(rs, /DEFAULT: &str = "coarse_wet"/);
+  assert.match(rs, /name: "coarse_wet",\n        cell: 250,/);
+  assert.match(rs, /rainfall: 2\.5,/);
+  assert.match(rs, /small_pits: SmallPits::Fill,/);
+  assert.match(rs, /RiverPoint \{ discharge: 5000\.0, width: 400\.0, depth: 12\.0 \}/);
+});
+
+test('a bad hydrology profile fails with its name, the key and the problem', () => {
+  const cases = [
+    [(p) => (p.grid.cell = 101), /medium: grid\.cell must be an even number/],
+    [(p) => (p.grid.cell = 10), /medium: grid\.cell must be a whole number in \[25, 2000\]/],
+    [(p) => (p.erosion.iterations = 1.5), /medium: erosion\.iterations must be a whole number/],
+    [(p) => (p.erosion.slopeExponent = 3), /medium: erosion\.slopeExponent must be in \[0\.5, 2\]/],
+    [(p) => (p.erosion.lakeFill = 2), /medium: erosion\.lakeFill must be in \[0, 1\]/],
+    [(p) => (p.erosion.talus.passes = -1), /medium: erosion\.talus\.passes/],
+    [(p) => (p.erosion.speed = 1), /medium: erosion: unknown speed/],
+    [(p) => (p.rain.model = 'orographic'), /medium: rain\.model must be one of uniform/],
+    [(p) => (p.lakes.smallPits = 'drain'), /medium: lakes\.smallPits must be one of fill, breach/],
+    [(p) => (p.rivers.threshold = 0), /medium: rivers\.threshold must be in \(0/],
+    [(p) => p.rivers.geometry.reverse(), /medium: rivers\.geometry discharges must increase/],
+    [(p) => (p.rivers.geometry[1].width = 1), /widths and depths must not decrease/],
+    [(p) => (p.rivers.mouths = {}), /medium: rivers\.mouths\.minDischarge/],
+    [(p) => (p.biomes = []), /medium: unknown biomes/],
+  ];
+  for (const [edit, message] of cases) {
+    const d = loadHydrology();
+    edit(d.profiles.find((p) => p.name === 'medium'));
+    assert.throws(() => validateHydrology(d), message);
+  }
+  const d = loadHydrology();
+  d.default = 'nope';
+  assert.throws(() => validateHydrology(d), /default names no profile \(nope\)/);
+  const e = loadHydrology();
+  e.profiles.push(structuredClone(e.profiles[0]));
+  assert.throws(() => validateHydrology(e), /gentle: duplicate name/);
 });

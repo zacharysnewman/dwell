@@ -1,0 +1,87 @@
+{
+  "$comment": "The world-scale hydrology prototype (docs/proposals/TERRAIN_HYDROLOGY_AND_VOLUMES.md): a coarse per-seed, per-face map of the eroded land, lakes, flow and rivers, computed from the height field (terrain.json). Not wired into chunk generation: changing it changes no worldgen output. Each profile is a full set of tunables, picked by name (`dwell_worldgen::hydrology::profile`); `default` names the one tools use when none is given. Units: metres, years, m³/s; the erodibility is Braun & Willett's K (yr⁻¹ m^(1−2m)) for a drainage area in m² weighted by relative rain. Run `node shared/worldgen/gen.mjs` after editing; CI fails on stale output.",
+  "default": "medium",
+  "profiles": [
+    {
+      "name": "gentle",
+      "grid": { "cell": 100 },
+      "erosion": {
+        "iterations": 10,
+        "timeStep": 25000,
+        "erodibility": 4e-6,
+        "areaExponent": 0.5,
+        "slopeExponent": 1,
+        "uplift": 0.0001,
+        "upliftReference": 300,
+        "lakeFill": 0.1,
+        "talus": { "maxSlope": 0.9, "passes": 1 }
+      },
+      "rain": { "model": "uniform", "amount": 1.0 },
+      "lakes": { "minArea": 0.3, "minDepth": 2, "smallPits": "breach", "maxBreachDepth": 8 },
+      "rivers": {
+        "threshold": 0.4,
+        "geometry": [
+          { "discharge": 0.4, "width": 3, "depth": 0.5 },
+          { "discharge": 5, "width": 12, "depth": 1.2 },
+          { "discharge": 50, "width": 40, "depth": 3 },
+          { "discharge": 500, "width": 120, "depth": 6 }
+        ],
+        "mouths": { "minDischarge": 5, "deltaMaxSlope": 0.01 }
+      }
+    },
+    {
+      "name": "medium",
+      "grid": { "cell": 100 },
+      "erosion": {
+        "iterations": 25,
+        "timeStep": 25000,
+        "erodibility": 4e-6,
+        "areaExponent": 0.5,
+        "slopeExponent": 1,
+        "uplift": 0.0001,
+        "upliftReference": 300,
+        "lakeFill": 0.1,
+        "talus": { "maxSlope": 0.9, "passes": 1 }
+      },
+      "rain": { "model": "uniform", "amount": 1.0 },
+      "lakes": { "minArea": 0.3, "minDepth": 2, "smallPits": "breach", "maxBreachDepth": 8 },
+      "rivers": {
+        "threshold": 0.4,
+        "geometry": [
+          { "discharge": 0.4, "width": 3, "depth": 0.5 },
+          { "discharge": 5, "width": 12, "depth": 1.2 },
+          { "discharge": 50, "width": 40, "depth": 3 },
+          { "discharge": 500, "width": 120, "depth": 6 }
+        ],
+        "mouths": { "minDischarge": 5, "deltaMaxSlope": 0.01 }
+      }
+    },
+    {
+      "name": "strong",
+      "grid": { "cell": 100 },
+      "erosion": {
+        "iterations": 50,
+        "timeStep": 25000,
+        "erodibility": 4e-6,
+        "areaExponent": 0.5,
+        "slopeExponent": 1,
+        "uplift": 0.0001,
+        "upliftReference": 300,
+        "lakeFill": 0.1,
+        "talus": { "maxSlope": 0.9, "passes": 1 }
+      },
+      "rain": { "model": "uniform", "amount": 1.0 },
+      "lakes": { "minArea": 0.3, "minDepth": 2, "smallPits": "breach", "maxBreachDepth": 8 },
+      "rivers": {
+        "threshold": 0.4,
+        "geometry": [
+          { "discharge": 0.4, "width": 3, "depth": 0.5 },
+          { "discharge": 5, "width": 12, "depth": 1.2 },
+          { "discharge": 50, "width": 40, "depth": 3 },
+          { "discharge": 500, "width": 120, "depth": 6 }
+        ],
+        "mouths": { "minDischarge": 5, "deltaMaxSlope": 0.01 }
+      }
+    }
+  ]
+}
