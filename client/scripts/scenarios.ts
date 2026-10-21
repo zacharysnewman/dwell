@@ -81,6 +81,14 @@ export type Step =
    * past midnight when `to` < `from`), waiting `waitS` after each change.
    */
   | { do: 'timelapse'; name: string; frames: number; from: number; to: number; waitS: number }
+  /**
+   * A still camera's burst: `frames` screenshots `<name>-00.png`… back to back, and their
+   * flicker (`compareReport.ts` `flickerOf`: the share of pixels whose brightness changes from
+   * one frame to the next), saved in the report's `bursts` and failing the run over `maxFlicker`
+   * (a share, 0–1). With `clock`, the time of day runs on from `clock` (0–1) at the world clock's
+   * rate while it shoots, as it does in play (the bench's time of day is otherwise held still).
+   */
+  | { do: 'burst'; name: string; frames: number; clock?: number; maxFlicker?: number }
   /** Runs `steps` `times` times (e.g. a burst of edits); no `mark`, `record`, `shot` or traces inside. */
   | { do: 'repeat'; times: number; steps: Step[] };
 
@@ -177,6 +185,7 @@ const STEP_FIELDS: Record<Step['do'], readonly string[]> = {
   time: ['t', 'moon'],
   waterDebug: ['names'],
   timelapse: ['name', 'frames', 'from', 'to', 'waitS'],
+  burst: ['name', 'frames', 'clock', 'maxFlicker'],
   repeat: ['times', 'steps'],
 };
 
@@ -188,6 +197,7 @@ const NOT_REPEATED: readonly Step['do'][] = [
   'traceStart',
   'traceStop',
   'timelapse',
+  'burst',
 ];
 
 export function parseStep(where: string, v: unknown): Step {
@@ -341,6 +351,16 @@ export function parseStep(where: string, v: unknown): Step {
         from: num(at('from'), o.from, 0, 1, 0),
         to: num(at('to'), o.to, 0, 1, 1),
         waitS: num(at('waitS'), o.waitS, 0, 60, 0.3),
+      };
+    case 'burst':
+      return {
+        do: d,
+        name: name(at('name'), o.name),
+        frames: Math.round(num(at('frames'), o.frames, 2, 200)),
+        ...(o.clock === undefined ? {} : { clock: num(at('clock'), o.clock, 0, 1) }),
+        ...(o.maxFlicker === undefined
+          ? {}
+          : { maxFlicker: num(at('maxFlicker'), o.maxFlicker, 0, 1) }),
       };
   }
 }
