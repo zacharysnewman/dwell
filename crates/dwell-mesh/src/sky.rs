@@ -483,14 +483,21 @@ pub(crate) fn vertex_light(level: u8, escaped: u8) -> f32 {
     (AMBIENT.ao_factor(level) * vis) as f32
 }
 
-/// A face corner's merge key: its level and ray count in one byte.
-pub(crate) fn corner_key(level: u8, escaped: u8) -> u32 {
-    u32::from(level) | (u32::from(escaped) << 2)
+/// A face corner's merge key: its occlusion level and ray count (bits 0–7), and its flood light,
+/// sky and block, each in quarter levels (0–60, 6 bits each; `crate::flood`).
+pub(crate) fn corner_key(level: u8, escaped: u8, sky: u8, block: u8) -> u32 {
+    u32::from(level) | (u32::from(escaped) << 2) | (u32::from(sky) << 8) | (u32::from(block) << 14)
+}
+
+/// The flood light of a corner key: sky and block level as shares of 15.
+pub(crate) fn key_flood(key: u32) -> [f32; 2] {
+    let q = |shift: u32| ((key >> shift) & 63) as f32 / crate::flood::QUARTERS;
+    [q(8), q(14)]
 }
 
 /// The light of a corner key.
 pub(crate) fn key_light(key: u32) -> f32 {
-    vertex_light((key & 3) as u8, (key >> 2) as u8)
+    vertex_light((key & 3) as u8, ((key >> 2) & 63) as u8)
 }
 
 #[cfg(test)]

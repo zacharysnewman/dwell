@@ -9,6 +9,7 @@ pub mod edit;
 mod face;
 pub mod fluid;
 pub mod hash;
+pub mod light;
 pub mod lod;
 pub mod ramps;
 pub mod region;

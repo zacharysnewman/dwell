@@ -67,6 +67,7 @@ impl W {
         self.f32s(&m.plants);
         self.f32s(&m.bare);
         self.f32s(&m.light);
+        self.f32s(&m.flood);
         self.u32s(&m.indices);
     }
     fn flat(&mut self, m: &FlatMesh) {
@@ -166,6 +167,7 @@ impl R<'_> {
             plants: self.f32s()?,
             bare: self.f32s()?,
             light: self.f32s()?,
+            flood: self.f32s()?,
             indices: self.u32s()?,
         })
     }
@@ -213,6 +215,7 @@ pub fn encode_job(id: u32, job: &Job) -> Vec<u8> {
         }
         Job::MeshChunk {
             padded,
+            light,
             mirror,
             origin,
         } => {
@@ -220,6 +223,7 @@ pub fn encode_job(id: u32, job: &Job) -> Vec<u8> {
             w.u8(u8::from(*mirror));
             origin.iter().for_each(|v| w.i32(*v));
             w.u16s(padded);
+            w.bytes(light);
         }
         Job::MeshSection {
             cells,
@@ -274,6 +278,7 @@ pub fn decode_job(bytes: &[u8]) -> Result<(u32, Job), DecodeError> {
                 mirror,
                 origin,
                 padded: r.u16s()?,
+                light: r.bytes()?,
             }
         }
         5 => {
@@ -439,6 +444,7 @@ mod tests {
         let mut jobs = jobs.to_vec();
         jobs.push(Job::MeshChunk {
             padded: vec![1; dwell_mesh::PADDED_VOLUME],
+            light: vec![0xf3; dwell_mesh::PADDED_VOLUME],
             mirror: true,
             origin: [-32, 64, 96],
         });
@@ -471,6 +477,7 @@ mod tests {
             1,
             &Job::MeshChunk {
                 padded: vec![0; 100],
+                light: vec![7; 10],
                 mirror: false,
                 origin: [0; 3],
             },

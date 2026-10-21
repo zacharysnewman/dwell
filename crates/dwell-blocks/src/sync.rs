@@ -79,6 +79,10 @@ pub mod tag {
     /// `u8` 0 or 1: whether the ink outline draws on it (`StateInfo::outline`), sent only where
     /// it differs from its look's default (`crate::outline_default`).
     pub const OUTLINE: u8 = 0x8c;
+    /// `u8` light filter, `u8` emitted block light (`StateInfo::light_filter`, `emits`; the
+    /// flood light, docs/DAY_NIGHT.md §11), sent only where either differs from the default
+    /// (`crate::light_filter_default`, no light).
+    pub const LIGHT: u8 = 0x8d;
 }
 
 /// Rule flag bits (tag `FLAGS`).
@@ -308,6 +312,12 @@ pub fn state_fields(s: &StateInfo) -> Fields {
     }
     if s.outline != crate::outline_default(s.look) {
         out.push(field(tag::OUTLINE, |w| w.u8(u8::from(s.outline))));
+    }
+    if s.light_filter != crate::light_filter_default(s.look, s.shape, s.render) || s.emits != 0 {
+        out.push(field(tag::LIGHT, |w| {
+            w.u8(s.light_filter);
+            w.u8(s.emits);
+        }));
     }
     if !s.side_under.is_empty() {
         out.push(field(tag::SIDE_UNDER, |w| {
@@ -609,6 +619,8 @@ fn default_row(name: &str) -> StateInfo {
         needs_support: Support::None,
         replaceable: false,
         medium: Medium::Any,
+        light_filter: 0,
+        emits: 0,
     }
 }
 
@@ -719,6 +731,9 @@ fn apply_rules(
             row.shape_index = cube_shape();
         }
     }
+    if row.light_filter > crate::LIGHT_MAX {
+        row.light_filter = crate::light_filter_default(row.look, row.shape, row.render);
+    }
 }
 
 /// This build's full cube (`SHAPES` index).
@@ -741,6 +756,7 @@ fn apply_look(fields: &Fields, fluids: &[String], row: &mut StateInfo) {
     row.side_under = &[];
     row.render = RenderMode::Opaque;
     let mut outline = None;
+    let mut light = None;
     for (t, bytes) in fields {
         let mut r = ByteReader::new(bytes);
         match *t {
@@ -830,10 +846,18 @@ fn apply_look(fields: &Fields, fluids: &[String], row: &mut StateInfo) {
                 let v = r.u8();
                 outline = r.ok().then_some(v != 0);
             }
+            tag::LIGHT => {
+                let (f, e) = (r.u8(), r.u8());
+                light = r
+                    .ok()
+                    .then_some((f.min(crate::LIGHT_MAX), e.min(crate::LIGHT_MAX)));
+            }
             _ => {}
         }
     }
     row.outline = outline.unwrap_or_else(|| crate::outline_default(row.look));
+    // Absent: the default, which needs the shape: `apply_rules` (after this) fills it in.
+    (row.light_filter, row.emits) = light.unwrap_or((u8::MAX, 0));
 }
 
 /// The client side: maps a server's registry onto this process's table, registering synced

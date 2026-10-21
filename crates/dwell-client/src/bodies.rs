@@ -274,6 +274,7 @@ impl Bodies {
             role: body.animator.role(),
             action: body.animator.action(),
             held,
+            light: [1.0, 0.0],
         }
     }
 
@@ -295,6 +296,7 @@ impl Bodies {
             role: self.own.role(),
             action: None,
             held: Held::Empty,
+            light: [1.0, 0.0],
         }
     }
 
@@ -320,6 +322,7 @@ impl Bodies {
             role: self.own.role(),
             action: self.own.action(),
             held,
+            light: [1.0, 0.0],
         }
     }
 
@@ -328,6 +331,7 @@ impl Bodies {
         ArmsView {
             pose: self.arms.update(input, dt as f32),
             held,
+            light: [1.0, 0.0],
         }
     }
 

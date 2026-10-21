@@ -33,7 +33,7 @@ fn mesh_chunk_with(
     mirror: bool,
     origin: [i32; 3],
 ) -> Result<ChunkMeshes, LengthError> {
-    super::mesh_chunk_with(kinds, padded, mirror, origin).map(in_cells)
+    super::mesh_chunk_with(kinds, padded, &[], mirror, origin).map(in_cells)
 }
 
 fn water() -> u16 {
@@ -576,8 +576,8 @@ fn rejects_a_wrong_voxel_count_and_accounts_bytes() {
         })
     );
     let m = mesh(&[(1, 1, 1, cube_block())], false);
-    // 24 vertices × (3 + 3 + 3 + 2 + 4 + 1 light) floats + 36 indices, 4 bytes each.
-    assert_eq!(m.opaque.byte_len(), 4 * (24 * 16 + 36));
+    // 24 vertices × (3 + 3 + 3 + 2 + 4 + 1 light + 2 flood) floats + 36 indices, 4 bytes each.
+    assert_eq!(m.opaque.byte_len(), 4 * (24 * 18 + 36));
     assert_eq!(m.transparent.byte_len(), 0);
 }
 

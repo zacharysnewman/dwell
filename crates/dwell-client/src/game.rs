@@ -50,6 +50,9 @@ use crate::telemetry::{self, TickSample};
 
 const TICK_MS: f64 = 1000.0 / SIM_HZ as f64;
 /// Ticks one frame may catch up (1 s): beyond it time is dropped, so the frame loop can't spiral.
+/// The key of your first-person arms' light in `Game::character_lights` (not a player id).
+const ARMS_LIGHT: u32 = u32::MAX;
+
 /// It covers a slow device's frame (down to 1 fps): a client that drops time predicts fewer ticks
 /// than the server's 60 Hz, the server fills the missing ones by repeating the last input, and the
 /// replays drag the player (a snap once past RECONCILE_SNAP_DISTANCE; e2e/play.spec.ts on CI) or
@@ -442,6 +445,9 @@ pub struct Game<S: Scene> {
     pub brush: BrushTool,
     /// Every edit shown at once and reconciled with the server's acks (§6.5).
     pub prediction: EditPredictor,
+    /// Each drawn character's eased flood light (`eased_light`), by player id; your arms'
+    /// under `ARMS_LIGHT`.
+    character_lights: std::collections::HashMap<u32, dwell_world::light::EasedLight>,
     /// The characters' animators: the remote players' bodies and your arms (bodies.rs).
     bodies: Bodies,
     /// What you hold as last sent to the server (`Message::HeldItem`, protocol v17).
@@ -520,8 +526,11 @@ impl<S: Scene> Game<S> {
     ) -> Self {
         let outbox: Outbox = Rc::new(RefCell::new(Vec::new()));
         let resync_out = outbox.clone();
+        // The client keeps the flood light of what it holds (docs/DAY_NIGHT.md §11).
+        let mut world = VoxelWorld::streamed();
+        world.enable_light();
         let streamer = ChunkStreamer::with_resync(
-            VoxelWorld::streamed(),
+            world,
             ChunkJobs(pool.clone()),
             MeshJobs(pool.clone()),
             View(scene.clone()),
@@ -569,6 +578,7 @@ impl<S: Scene> Game<S> {
             region: RegionTools::new(),
             brush: BrushTool::new(),
             prediction: EditPredictor::new(),
+            character_lights: Default::default(),
             target_eye: None,
             lod: None,
             viewport_css: (1280.0, 720.0),
@@ -876,6 +886,28 @@ impl<S: Scene> Game<S> {
             },
             _ => {}
         }
+    }
+
+    /// The flood light a character takes at world point `at` (DAY_NIGHT.md §11): blended
+    /// between the cells around it and eased over time per character (`characters.easeS`); open
+    /// sky without a flood light.
+    fn eased_light(&mut self, id: u32, at: [f64; 3], dt: f64) -> [f32; 2] {
+        let target = self
+            .streamer
+            .store()
+            .light()
+            .map_or([1.0, 0.0], |l| l.sample(at));
+        self.character_lights.entry(id).or_default().update(
+            target,
+            dt,
+            dwell_world::light::LIGHT.character_ease_s,
+        )
+    }
+
+    /// [`Self::eased_light`] at a body's middle, a metre over its feet toward its face's up.
+    fn body_light(&mut self, id: u32, feet: [f64; 3], face: FaceFrame, dt: f64) -> [f32; 2] {
+        let up = face.up();
+        self.eased_light(id, std::array::from_fn(|k| feet[k] + up[k]), dt)
     }
 
     /// Applies finished background jobs.
@@ -1286,12 +1318,18 @@ impl<S: Scene> Game<S> {
     /// Runs a region tool (§6.5) on the crosshair's target and the hotbar's block: only while alive
     /// and playing. True if it sent a region edit.
     pub fn tool(&mut self, action: ToolAction, now_ms: f64) -> bool {
+        self.tool_at(action, None, now_ms)
+    }
+
+    /// [`Self::tool`] as if aimed at world cell `at` (the bench's `region` step, DEV_TOOLS.md;
+    /// None: the crosshair's target).
+    pub fn tool_at(&mut self, action: ToolAction, at: Option<[i32; 3]>, now_ms: f64) -> bool {
         if self.dead || !self.terrain_ready() {
             return false;
         }
         // A click as the tool takes the key; the blocks an edit changes sound as they arrive.
         self.sounds.push(sound_event(SoundKind::Tool));
-        let target = self.interaction.target().map(|t| t.cell);
+        let target = at.or_else(|| self.interaction.target().map(|t| t.cell));
         let target_state =
             target.map_or(0, |c| self.streamer.store_mut().get_voxel(c[0], c[1], c[2]));
         let material = self
@@ -1475,9 +1513,10 @@ impl<S: Scene> Game<S> {
             });
             let world = self.streamer.store_mut();
             let reach = self.current.max_step_lift;
-            let view = self.bodies.remote(v, held, dt, &mut |f, p| {
+            let mut view = self.bodies.remote(v, held, dt, &mut |f, p| {
                 crate::bodies::ground_at(world, f, p, reach)
             });
+            view.light = self.body_light(u32::from(v.player_id), view.feet, view.face, dt);
             self.scene
                 .borrow_mut()
                 .set_player(u32::from(v.player_id), Some(view));
@@ -1496,9 +1535,10 @@ impl<S: Scene> Game<S> {
                 let held = crate::bodies::held_from_wire(v.held, Some);
                 let world = self.streamer.store_mut();
                 let reach = self.current.max_step_lift;
-                let view = self.bodies.remote(&v, held, dt, &mut |f, p| {
+                let mut view = self.bodies.remote(&v, held, dt, &mut |f, p| {
                     crate::bodies::ground_at(world, f, p, reach)
                 });
+                view.light = self.body_light(u32::from(v.player_id), view.feet, view.face, dt);
                 self.scene
                     .borrow_mut()
                     .set_player(u32::from(v.player_id), Some(view));
@@ -1510,6 +1550,9 @@ impl<S: Scene> Game<S> {
             }
         }
         self.bodies.retain(|id| drawn.contains(&id));
+        self.character_lights.retain(|id, _| {
+            *id == ARMS_LIGHT || *id == u32::from(self.player_id) || drawn.contains(&(*id as u16))
+        });
         // A player gone from view (or dead) stops sounding: its slide's voice ends.
         let sounds = &mut self.sounds;
         self.remote_sounds.retain(|id, m| {
@@ -1526,7 +1569,8 @@ impl<S: Scene> Game<S> {
         self.send_held(held);
         if self.dead {
             // Third person over the body.
-            let view = self.bodies.own_dead(self.death_feet, yaw, face, dt);
+            let mut view = self.bodies.own_dead(self.death_feet, yaw, face, dt);
+            view.light = self.body_light(u32::from(self.player_id), view.feet, view.face, dt);
             let mut scene = self.scene.borrow_mut();
             scene.set_player(u32::from(self.player_id), Some(view));
             scene.set_arms(None);
@@ -1562,7 +1606,8 @@ impl<S: Scene> Game<S> {
             // a placed camera, or with the setting off.
             let move_input =
                 crate::bodies::local_input(c.state, c.velocity, c.controller_flags, c.face);
-            let arms = self.bodies.arms(&move_input, held, dt);
+            let mut arms = self.bodies.arms(&move_input, held, dt);
+            arms.light = self.eased_light(ARMS_LIGHT, eye, dt);
             let shown = self.show_arms
                 && c.active
                 && self.view.is_none()

@@ -82,6 +82,9 @@ pub struct BodyDraw {
     pub held: Held,
     /// Drawn into the shadow maps only (your own body in first person).
     pub cast_only: bool,
+    /// The flood light it stands in (sky and block level / 15, eased; [1, 0] open sky):
+    /// `dwell_world::light::LightMap::sample`, docs/DAY_NIGHT.md §11.
+    pub light: [f32; 2],
 }
 
 /// The first-person arms to draw.
@@ -89,6 +92,8 @@ pub struct BodyDraw {
 pub struct ArmsDraw {
     pub pose: Pose,
     pub held: Held,
+    /// The flood light at your eye (as `BodyDraw::light`).
+    pub light: [f32; 2],
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -164,6 +169,8 @@ struct Instance {
     block_color: vec4f,
     // x unused, y the outline's width (m), z 1 for the arms.
     cfg: vec4f,
+    // The flood light it stands in: x sky, y block level / 15 (docs/DAY_NIGHT.md §11).
+    light: vec4f,
 };
 struct Material {
     shadow: vec4f,
@@ -235,13 +242,21 @@ struct Key {
     // direct term shaded by `shadow` (`shadow_light`).
     level: vec3f,
 };
-fn key_light(frag_y: f32, shadow: f32) -> Key {
+fn key_light(frag_y: f32, l: TerrainLight) -> Key {
     let face = face_at(frag_y);
     let d = frame.day;
     var k: Key;
     k.dir = select(d.moon.xyz, d.sun.xyz, own(d.sun.xyz, face) > 0.01);
-    k.level = lambert_lit(vec3f(1.0), face_up(face), frag_y, 1.0, shadow);
+    k.level = lambert_lit(vec3f(1.0), face_up(face), frag_y, l);
     return k;
+}
+
+// A character's light: the flood light it stands in (`inst.light`, eased on the CPU) as terrain
+// takes it, its direct share the shadow maps' near the eye and the flood light's beyond.
+fn character_light(rel: vec3f, n: vec3f) -> TerrainLight {
+    var l = terrain_light(1.0, inst.light.xy);
+    l.direct = shadow_light(rel, n, l.direct);
+    return l;
 }
 
 // The ramp's light in shadow: a body in the shade of a tree or a wall shows its ramp's middle at
@@ -266,7 +281,8 @@ fn character_fs(i: CharacterOut, @builtin(front_facing) front: bool) -> SceneOut
     let side = (i.packed >> 8u) & 0xffu;
     let n = normalize(select(-i.normal, i.normal, front));
     let frag_y = frame.eye.x + i.rel.y;
-    let shadow = shadow_light(i.rel, n, 1.0);
+    let light = character_light(i.rel, n);
+    let shadow = light.direct;
     var o: SceneOut;
     o.depth = frame_depth(view_depth(i.rel), true);
     if (mat == BLOCK_MATERIAL) {
@@ -279,11 +295,11 @@ fn character_fs(i: CharacterOut, @builtin(front_facing) front: bool) -> SceneOut
             discard;
         }
         let albedo = inst.block_color.rgb * select(vec3f(1.0), texel.rgb, has);
-        o.color = vec4f(lambert_lit(albedo, n, frag_y, 1.0, shadow), 1.0);
+        o.color = vec4f(lambert_lit(albedo, n, frag_y, light), 1.0);
         return o;
     }
     let m = materials[mat];
-    let key = key_light(frag_y, shadow);
+    let key = key_light(frag_y, light);
     let w = shaded_ramp(dot(n, key.dir) * 0.5 + 0.5, shadow);
     var c = mix(m.shadow.rgb, m.base.rgb, smoothstep(0.16, 0.5, w));
     c = mix(c, m.light.rgb, smoothstep(0.66, 0.98, w) * 0.8);
@@ -302,7 +318,7 @@ fn character_fs(i: CharacterOut, @builtin(front_facing) front: bool) -> SceneOut
 fn character_outline_fs(i: CharacterOut) -> SceneOut {
     var o: SceneOut;
     let frag_y = frame.eye.x + i.rel.y;
-    let level = key_light(frag_y, shadow_light(i.rel, face_up(face_at(frag_y)), 1.0)).level * PI;
+    let level = key_light(frag_y, character_light(i.rel, face_up(face_at(frag_y)))).level * PI;
     o.color = vec4f(INK_SOFT * clamp(dot(level, vec3f(0.33)), 0.1, 1.0), 1.0);
     o.depth = frame_depth(view_depth(i.rel), true);
     return o;
@@ -686,7 +702,11 @@ impl CharacterRenderer {
         self.draws.clear();
         self.arms = None;
         let mut data: Vec<f32> = Vec::new();
-        let mut push = |bones: &[Affine; MAX_BONES], held: Held, outline: bool, is_arms: bool| {
+        let mut push = |bones: &[Affine; MAX_BONES],
+                        held: Held,
+                        outline: bool,
+                        is_arms: bool,
+                        light: [f32; 2]| {
             let at = data.len();
             data.resize(at + INSTANCE_FLOATS, 0.0);
             for (k, b) in bones.iter().enumerate() {
@@ -704,6 +724,8 @@ impl CharacterRenderer {
                 f32::from(u8::from(is_arms)),
                 0.0,
             ]);
+            let l = at + BONE_FLOATS + 20;
+            data[l..l + 4].copy_from_slice(&[light[0], light[1], 0.0, 0.0]);
             (at / INSTANCE_FLOATS) as u32
         };
         let mut keys = Vec::new();
@@ -729,7 +751,7 @@ impl CharacterRenderer {
             let far = dist > OUTLINE_M;
             let frame = body_frame(d, eye);
             let bones = bone_transforms(self.character, &d.pose).map(|b| frame.then(&b));
-            let instance = push(&bones, d.held, !far, false);
+            let instance = push(&bones, d.held, !far, false, d.light);
             let look = if self.character.look(d.look).is_some() {
                 d.look
             } else {
@@ -761,7 +783,7 @@ impl CharacterRenderer {
         if let Some(a) = arms {
             let frame = arms_frame(basis);
             let bones = arm_transforms(self.character, &a.pose).map(|b| frame.then(&b));
-            let instance = push(&bones, a.held, true, true);
+            let instance = push(&bones, a.held, true, true, a.light);
             let body = MeshKey {
                 name: self.look,
                 item: false,
@@ -1064,6 +1086,7 @@ mod tests {
                 pose: Pose::REST,
                 held: Held::Empty,
                 cast_only: false,
+                light: [1.0, 0.0],
             };
             let f = body_frame(&d, [0.0; 3]);
             // Yaw 90° faces +x on either face.

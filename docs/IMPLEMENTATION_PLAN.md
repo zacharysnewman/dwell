@@ -62,6 +62,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 42 — Smooth LOD transitions | 🚧 In progress — built and tested natively and in Chrome on the GPU: a dithered cross-fade on every LOD swap (`dwell-lod` `fade.rs`; chunks, sections, stand-ins, skirts, water; no ink on the outgoing level) and hysteresis in the selection, both data (`shared/look/lodblend.json`); outstanding: CI, the owner's review in a browser; a patch release |
 | 43 — Ambient light | 🚧 In progress — built and tested natively and in Chrome on the GPU: classic corner AO and baked ray-traced sky visibility per terrain vertex (dwell-mesh `sky.rs`, data `shared/look/ambient.json`), the hemisphere light scaled by it, the twilight and night keyframes retuned; outstanding: CI; a patch release |
 | 44 — Sun and moon shadows (cascaded shadow maps, the lighting's layer 2) | 🚧 In progress — built and tested natively, in Vitest and in Chrome on the GPU: up to four cascades per the Shadows setting (Off / Low / High, data in `shared/look/shadows.json`), texel-snapped sphere fits, casters (terrain, plants, LOD, bodies, your own), a soft PCF on the direct term only, faded by the time of day and past the last cascade to layer 1's stand-in; outstanding: CI, the owner's look, High's cost target (+3–6 ms measured on a busy machine; a follow-up); a patch release |
+| 45 — Flood light | 🚧 In progress — built and tested natively and in Chrome on the GPU (ADR 0045, DAY_NIGHT.md §11): per-cell sky and block light on the client (`dwell_world::light`, data `shared/look/light.json` and the blocks' `lightFilter`/`emits`), relit on edits and predicted edits, the mesher's smooth `flood` stream, ambient and the direct sun and moon scaled by it (carved tunnels no longer lit like day); outstanding: CI, the owner's review; characters (your arms, held items, players) lit by the cells they are in, eased; the shadow maps' stand-in past their last cascade |
 
 Phase numbering: Phase 4 was inserted on 2026-09-29 for the planet-scale world (ADRs 0011, 0012);
 the former Phases 4–7 are now 5–8, and Phase 3's former 3c and 3d are now 3d and 3e.
@@ -4459,6 +4460,65 @@ Deviations
 - Layer 1's stand-in isn't on `main` yet: past the maps the factor is 1 (`scene_out` passes the
   stand-in; layer 1 puts its direct × sky light there when it lands).
 - Clouds' shadows are a hook only (CLOUDS.md lists them as future).
+## Phase 45 — Flood Light: Sky and Block Light per Cell
+
+**Status:** Built and tested natively and in Chrome on the GPU (2026-10-21): carved tunnels, tall
+caves and tunnels under hills go dark on both faces; open ground matches 0.22.5. Outstanding: CI;
+the owner's review in a browser. Client-only (not saved, not sent; one optional registry-sync look
+tag): a patch release. Players, your arms and held items take the flood light where they are
+(eased); the shadow maps (Phase 44) shade the direct light near the eye and fade to the flood
+light's stand-in past their last cascade.
+
+Owner (2026-10-21): "I carved a tunnel in 0.22.5 and it was lit up like day." Root causes measured
+on 0.22.5: the direct sun and moon ignored all occlusion (the tunnel's baked sky visibility was
+already 0 two metres in); and the sky rays read a cave roofed more than about 7.5 m up as open sky.
+Redirected by the owner from a stopgap to proper lighting, layer 1: a Minecraft-style flood light.
+What is data: the falloffs, curves, direct ramp and block light (`shared/look/light.json`, per
+build, by hand) and each block's filter and emission (block data); what is code: the 0–15 levels
+and the propagation rules. [`DAY_NIGHT.md`](./DAY_NIGHT.md) §11, [ADR 0045](./adr/0045-flood-light.md),
+ARCHITECTURE.md §2 (`dwell-world::light`, `dwell-game`, `dwell-mesh`, `render/`) and §7.4.
+
+Deliverables
+- [x] Block data `lightFilter` and `emits` (generator, `StateInfo`, registry-sync look tag `0x8d`),
+  leaves 2 and water 1, the fixture emitter `test:lamp`.
+- [x] `shared/look/light.json`, `light.mjs` (validator, generator into `dwell-world`
+  `light.gen.rs`), `light.test.mjs`; in CI.
+- [x] `dwell_world::light::LightMap`: sky and block light, straight-down sky per face, removal and
+  addition passes, load, unload and edit updates, fast paths, changed-chunk tracking, the padded
+  light for meshing.
+- [x] The streamer keeps it (`VoxelWorld::enable_light` on the client): chunks lit within the
+  meshing budget, edits and predicted edits relit at once, every chunk whose light changed
+  re-meshed.
+- [x] The mesher's `flood` stream (smooth per-vertex light, merge keys, shaped faces, plants),
+  through the workers' codec to the terrain and cutout pipelines.
+- [x] The shader: ambient by the flood light shaded by the baked light as much as a vertex is open,
+  the direct sun and moon by the sky light's ramp (the shadow maps' stand-in), block light as glow.
+- [x] The bench's `region {op, from, to, up}` step (to build a hill and carve the tunnel).
+- [x] Characters lit by it (owner, folded in): the light sampled at your eye and at each body,
+  blended between cells and eased (`characters.easeS`), through the same shading as terrain.
+- [x] Merged with Phase 44's shadow maps: they shade the direct light near the eye, the flood
+  light's direct ramp past their last cascade (`shadow_light(rel, n, stand_in)`).
+
+Exit criteria
+- [x] Tests (both faces; fixes seen red first): a carved tunnel falls off with depth, ambient and
+  direct, about the floor 10 m in and dark at 15 m; a tall cave and a 90 m tunnel under a hill are
+  dark; placing a block back restores the light; the light is the same whatever the load order and
+  after unload and reload, and agrees with a relight from scratch after random edits; the fixture
+  lamp lights its surroundings; leaves and water filter; a predicted edit relights and re-meshes
+  with its light (red → green); open terrain keeps the full sky light (red → green: ramp corners);
+  terrain vertices are their format's stride (red → green).
+- [x] Measured (DAY_NIGHT.md §10): about 2 ms native per chunk lit, meshing +3–7%, edits under a
+  millisecond, 18 MB for 790 chunks; in Chrome no new long tasks at load and the GPU frame
+  unchanged.
+- [x] Checked in Chrome on the GPU: the tunnel at noon and midnight at its mouth, 5 m and 15 m in,
+  on face A and face B; a hillside, pines and a cave against 0.22.5.
+
+Deviations
+- Falloff 1 level per cell vertically (½ m) rather than per metre: integer levels can't take half a
+  level; straight-down sky light keeps full strength, so it shows only beside overhangs and in
+  shafts.
+- The sky rays and corner occlusion are kept rather than replaced: they give open ground its
+  0.22.5 look; the flood light takes over as a vertex closes in.
 
 ## Cross-Cutting Work (every phase)
 

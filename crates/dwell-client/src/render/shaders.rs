@@ -177,19 +177,50 @@ fn own(light: vec3f, face: f32) -> f32 {
 // own face (BIFACIAL_WORLD.md §6): its time of day's sun, moon and sky, each direct light weighted
 // by its height over that face's horizon.
 fn lambert(albedo: vec3f, n: vec3f, frag_y: f32) -> vec3f {
-    return lambert_lit(albedo, n, frag_y, 1.0, 1.0);
+    return lambert_lit(albedo, n, frag_y, open_light());
 }
 
-// The hemisphere light's share a terrain vertex's baked light (corner occlusion × sky visibility,
-// dwell-mesh sky.rs) leaves: the floor, and the rest by the light (dwell_look::ambient::ambient).
-fn terrain_ambient(light: f32) -> f32 {
-    return AMBIENT_FLOOR + (1.0 - AMBIENT_FLOOR) * clamp(light, 0.0, 1.0);
+// How a surface is lit (docs/DAY_NIGHT.md §9–10; dwell_look::ambient::shading mirrors it): the
+// share of the hemisphere light, of the direct sun and moon, and the block light's glow.
+struct TerrainLight {
+    ambient: f32,
+    direct: f32,
+    glow: f32,
+};
+
+// A surface open to the sky (LOD sections, players, water's own pieces).
+fn open_light() -> TerrainLight {
+    return TerrainLight(1.0, 1.0, 0.0);
 }
 
-// `lambert` with the hemisphere light scaled by `ambient` (`terrain_ambient`; 1 for surfaces with
-// no baked light) and the direct sun and moon term by `shadow` (`shadow_light`: the shadow maps
-// near the eye, the first layer's stand-in beyond; 1 unshaded). The shadow touches nothing else.
-fn lambert_lit(albedo: vec3f, n: vec3f, frag_y: f32, ambient: f32, shadow: f32) -> vec3f {
+// A level's brightness on `curve` (shared/look/light.json): x / (curve − (curve − 1)·x).
+fn light_curve(x: f32, curve: f32) -> f32 {
+    let c = clamp(x, 0.0, 1.0);
+    return c / (curve - (curve - 1.0) * c);
+}
+
+// A terrain vertex's light: its baked `light` (corner occlusion × sky visibility, dwell-mesh
+// sky.rs) and its flood light (sky and block level as shares of 15, dwell-mesh flood.rs). The
+// hemisphere light takes the sky light's brightness, the baked light shading it as much as the
+// vertex is open to the sky (dwell_look::ambient::open_share), above the floor; the sun
+// and moon the sky light's direct ramp, the shadow maps' stand-in; the block light
+// glows by its own curve. In the scene passes the direct share is the shadow maps' near the eye,
+// fading to this stand-in past their last cascade (`scene_out`, `shadow_light`).
+fn terrain_light(light: f32, flood: vec2f) -> TerrainLight {
+    let sky = light_curve(flood.x, SKY_CURVE);
+    let l = clamp(light, 0.0, 1.0);
+    let level = flood.x * 15.0;
+    let direct = smoothstep(DIRECT_FROM, DIRECT_FULL, level);
+    return TerrainLight(
+        AMBIENT_FLOOR + (1.0 - AMBIENT_FLOOR) * sky * (l + (1.0 - l) * (1.0 - sky)),
+        direct,
+        light_curve(flood.y, BLOCK_CURVE) * BLOCK_STRENGTH,
+    );
+}
+
+// `lambert` lit by `l` (`terrain_light`; `open_light()` for surfaces with no baked light): the
+// hemisphere light by `l.ambient`, the sun and moon by `l.direct`, and the block light's warm glow.
+fn lambert_lit(albedo: vec3f, n: vec3f, frag_y: f32, l: TerrainLight) -> vec3f {
     let face = face_at(frag_y);
     let on_a = face > 0.0;
     let d = frame.day;
@@ -199,8 +230,8 @@ fn lambert_lit(albedo: vec3f, n: vec3f, frag_y: f32, ambient: f32, shadow: f32) 
     let hemi_ground = select(d.ground_b.rgb, d.ground_a.rgb, on_a);
     var direct = max(dot(n, d.sun.xyz), 0.0) * sun * own(d.sun.xyz, face);
     direct += max(dot(n, d.moon.xyz), 0.0) * moon * own(d.moon.xyz, face);
-    let hemi = mix(hemi_ground, hemi_sky, face_rise(face, n) * 0.5 + 0.5) * ambient;
-    let irradiance = direct * shadow + hemi;
+    let hemi = mix(hemi_ground, hemi_sky, face_rise(face, n) * 0.5 + 0.5) * l.ambient;
+    let irradiance = direct * l.direct + hemi + BLOCK_LIGHT * (PI * l.glow);
     return irradiance * albedo / PI;
 }
 
@@ -328,12 +359,12 @@ struct SceneOut {
     @location(1) depth: f32,
 };
 
-// `n` is the unit normal toward the side seen. The shadow's stand-in beyond the maps is 1 until
-// the first layer (the flood-fill sky light) gives its direct × sky light.
-fn scene_out(albedo: vec3f, n: vec3f, rel: vec3f, alpha: f32, ambient: f32) -> SceneOut {
+fn scene_out(albedo: vec3f, n: vec3f, rel: vec3f, alpha: f32, light: TerrainLight) -> SceneOut {
     var o: SceneOut;
-    let shadow = shadow_light(rel, n, 1.0);
-    o.color = vec4f(lambert_lit(albedo, n, frame.eye.x + rel.y, ambient, shadow), alpha);
+    // The shadow maps near the eye, the flood light's direct share beyond their last cascade.
+    var l = light;
+    l.direct = shadow_light(rel, n, l.direct);
+    o.color = vec4f(lambert_lit(albedo, n, frame.eye.x + rel.y, l), alpha);
     o.depth = frame_depth(view_depth(rel), true);
     return o;
 }
@@ -348,6 +379,8 @@ struct TerrainIn {
     @location(4) tile: vec4f,
     // The baked ambient light (dwell-mesh sky.rs): corner occlusion × sky visibility.
     @location(5) light: f32,
+    // The flood light (dwell-mesh flood.rs): sky and block level as shares of 15.
+    @location(6) flood: vec2f,
 };
 struct TerrainOut {
     @builtin(position) clip: vec4f,
@@ -358,6 +391,7 @@ struct TerrainOut {
     @location(4) tile: vec4f,
     @location(5) @interpolate(flat) draw: u32,
     @location(6) light: f32,
+    @location(7) flood: vec2f,
 };
 
 @vertex
@@ -372,6 +406,7 @@ fn terrain_vs(v: TerrainIn, @builtin(instance_index) k: u32) -> TerrainOut {
     o.uv = v.uv;
     o.tile = v.tile;
     o.light = v.light;
+    o.flood = v.flood;
     return o;
 }
 
@@ -415,7 +450,7 @@ fn terrain_fs(i: TerrainOut, @builtin(front_facing) front: bool) -> SceneOut {
         discard;
     }
     let alpha = select(draw.tint.a * texel.a, 1.0, draw.tint.a >= 1.0);
-    var o = scene_out(i.color * texel.rgb * shade * draw.tint.rgb, normalize(n), i.rel, alpha, terrain_ambient(i.light));
+    var o = scene_out(i.color * texel.rgb * shade * draw.tint.rgb, normalize(n), i.rel, alpha, terrain_light(i.light, i.flood));
     o.depth = frame_depth(o.depth, fade_inked(draw));
     return o;
 }
@@ -432,6 +467,7 @@ struct CutoutIn {
     @location(5) plant: vec4f,
     @location(6) bare: f32,
     @location(7) light: f32,
+    @location(8) flood: vec2f,
 };
 struct CutoutOut {
     @builtin(position) clip: vec4f,
@@ -444,6 +480,7 @@ struct CutoutOut {
     @location(6) fade: vec2f,
     @location(7) @interpolate(flat) bare: f32,
     @location(8) light: f32,
+    @location(9) flood: vec2f,
 };
 
 // The gust field: travelling waves whose wavelengths divide WIND_PERIOD, sampled at the world
@@ -489,6 +526,7 @@ fn cutout_vs(v: CutoutIn, @builtin(instance_index) k: u32) -> CutoutOut {
     o.fade = v.plant.zw;
     o.bare = v.bare;
     o.light = v.light;
+    o.flood = v.flood;
     return o;
 }
 
@@ -562,7 +600,7 @@ fn cutout_fs(i: CutoutOut, @builtin(front_facing) front: bool) -> CutoutSceneOut
         discard;
     }
     let n = select(vec3f(-i.normal.x, i.normal.y, -i.normal.z), i.normal, front);
-    let lit = scene_out(i.color * texel.rgb * draw.tint.rgb, normalize(n), i.rel, 1.0, terrain_ambient(i.light));
+    let lit = scene_out(i.color * texel.rgb * draw.tint.rgb, normalize(n), i.rel, 1.0, terrain_light(i.light, i.flood));
     var o: CutoutSceneOut;
     o.color = lit.color;
     // Plants whose look says `outline: false` are flagged in the depth: no ink is drawn on them
@@ -613,7 +651,7 @@ fn flat_fs(i: FlatOut, @builtin(front_facing) front: bool) -> SceneOut {
     }
     let n = select(-i.normal, i.normal, front);
     // No baked light: LOD sections are lit as open to the sky (ARCHITECTURE.md §6.6), players too.
-    var o = scene_out(i.color * draw.tint.rgb, normalize(n), i.rel, draw.tint.a, 1.0);
+    var o = scene_out(i.color * draw.tint.rgb, normalize(n), i.rel, draw.tint.a, open_light());
     o.depth = frame_depth(o.depth, fade_inked(draw));
     return o;
 }
@@ -1384,7 +1422,7 @@ fn water_surface(i: FluidOut, front: bool, footprint: f32, f: Fluid, draw: Draw)
     }
     s.ndv = clamp(dot(s.n, s.v), 1e-3, 1.0);
     s.shadow = shadow_light(i.rel, face_up(s.up), 1.0);
-    s.body = lambert_lit(f.scatter.rgb * draw.tint.rgb, face_up(s.up), s.frag_y, 1.0, s.shadow);
+    s.body = lambert_lit(f.scatter.rgb * draw.tint.rgb, face_up(s.up), s.frag_y, TerrainLight(1.0, s.shadow, 0.0));
     return s;
 }
 
@@ -1740,7 +1778,7 @@ fn water_scene_fs(i: FluidOut, @builtin(front_facing) front: bool) -> @location(
         foam = foam_amount(i.wrapped, under, f);
     }
     if (foam > 0.0) {
-        let lit = lambert_lit(f.foam.rgb, vec3f(0.0, s.up, 0.0), s.frag_y, 1.0, s.shadow);
+        let lit = lambert_lit(f.foam.rgb, vec3f(0.0, s.up, 0.0), s.frag_y, TerrainLight(1.0, s.shadow, 0.0));
         color = mix(color, lit, foam);
     }
     return vec4f(color, 1.0);
@@ -1979,16 +2017,34 @@ pub fn source(samples: u32) -> String {
     )
 }
 
+/// The flood light's shading constants (shared/look/light.json; docs/DAY_NIGHT.md §11).
+fn light_wgsl() -> String {
+    let l = dwell_world::light::LIGHT;
+    let c = l.block_color.map(|v| dwell_look::srgb_to_linear(v) as f32);
+    format!(
+        "const SKY_CURVE: f32 = {:?};\nconst DIRECT_FROM: f32 = {:?};\nconst DIRECT_FULL: f32 = {:?};\nconst BLOCK_CURVE: f32 = {:?};\nconst BLOCK_STRENGTH: f32 = {:?};\nconst BLOCK_LIGHT: vec3f = vec3f({:?}, {:?}, {:?});\n",
+        l.sky_curve as f32,
+        f32::from(l.direct_from),
+        f32::from(l.direct_full),
+        l.block_curve as f32,
+        l.block_strength as f32,
+        c[0],
+        c[1],
+        c[2],
+    )
+}
+
 /// The shared lighting: the constants, the fluids, the frame uniforms (group 0: `frame`, `atlas`,
 /// `atlas_sampler`), the sky, the clouds and the shading functions, without any pass's bindings or
 /// entry points.
 pub fn lighting_source() -> String {
     format!(
-        "{}{}const SEA_LEVEL: f32 = {:.1};\nconst AMBIENT_FLOOR: f32 = {:?};\nconst ATLAS_CELLS: u32 = {}u;\nconst ATLAS_TILES: u32 = {}u;\n{}\n{}\n{}\n{FRAME}\n{}\n{}\n{FRAME_DEPTH}\n{COMMON}\n{}\n",
+        "{}{}const SEA_LEVEL: f32 = {:.1};\nconst AMBIENT_FLOOR: f32 = {:?};\n{}const ATLAS_CELLS: u32 = {}u;\nconst ATLAS_TILES: u32 = {}u;\n{}\n{}\n{}\n{FRAME}\n{}\n{}\n{FRAME_DEPTH}\n{COMMON}\n{}\n",
         dwell_world::FaceFrame::wgsl(),
         super::face_shading::WGSL,
         world::SEA_LEVEL_M,
         dwell_look::ambient::AMBIENT.floor as f32,
+        light_wgsl(),
         dwell_mesh::ATLAS_CELLS,
         dwell_mesh::ATLAS_TILES,
         dwell_look::daynight::DAY_SKY_WGSL,
@@ -2056,12 +2112,12 @@ mod tests {
             src[at..at + src[at..].find("\n}\n").expect("end")].to_string()
         };
         let lit = body("lambert_lit");
-        assert_eq!(
-            lit.matches("shadow").count(),
-            2,
-            "the parameter and one use:\n{lit}"
+        // The shadow (the maps, or the flood light's stand-in past them) is \`l.direct\`.
+        assert!(
+            lit.contains(
+                "let irradiance = direct * l.direct + hemi + BLOCK_LIGHT * (PI * l.glow);"
+            )
         );
-        assert!(lit.contains("let irradiance = direct * shadow + hemi;"));
         let direct: Vec<&str> = lit.lines().filter(|l| l.contains("direct")).collect();
         assert!(
             direct
@@ -2072,10 +2128,14 @@ mod tests {
             .lines()
             .find(|l| l.contains("let hemi ="))
             .expect("hemi");
-        assert!(!hemi.contains("shadow") && hemi.contains("* ambient"));
-        // Every scene surface takes its shadow from the maps (or the stand-in past them).
-        assert!(body("scene_out").contains("shadow_light(rel, n, 1.0)"));
-        assert!(body("lambert").contains("lambert_lit(albedo, n, frag_y, 1.0, 1.0)"));
+        assert!(!hemi.contains("direct") && hemi.contains("* l.ambient"));
+        // Every scene surface takes its shadow from the maps, or past them the flood light's
+        // direct share (docs/DAY_NIGHT.md §11); characters too.
+        assert!(body("scene_out").contains("shadow_light(rel, n, l.direct)"));
+        assert!(
+            super::super::characters::WGSL.contains("l.direct = shadow_light(rel, n, l.direct);")
+        );
+        assert!(body("lambert").contains("lambert_lit(albedo, n, frag_y, open_light())"));
         // The water's glint and sparkle are direct light; its reflection of the sky is not.
         let surface = body("surface_light");
         assert!(surface.contains("(glint + spark) * s.shadow"));

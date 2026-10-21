@@ -1,0 +1,10 @@
+{
+  "$comment": "Flood light (docs/DAY_NIGHT.md §11, ARCHITECTURE.md §6.1): the client's per-cell sky and block light (0–15), propagated Minecraft-style and averaged into each terrain vertex; what blocks it, filters it and gives it off is block data (`lightFilter`, `emits`, shared/blocks). falloff: the levels light loses per cell it spreads into, across (x, z: 1 m cells) and vertical (½ m cells); sky light falling straight down at full strength through cells that filter nothing keeps it. sky.curve and block.curve: the brightness of a level, b = x / (curve − (curve − 1)·x) with x = level / 15 (1 linear; larger keeps the low levels darker). The sky brightness scales the hemisphere (ambient) light, the baked corner occlusion and sky rays (ambient.json) shading it as much as the vertex is open to the sky; sky.direct ramps the sun and moon from none at fromLevel to all at fullLevel, the stand-in for shadows (shadow maps replace it near the player). block: the warm light emitters give off, its colour (sRGB) and strength. characters: players' bodies, your arms and held items take the light around them (blended between cells), eased with time constant easeS seconds as they move. Run `node shared/look/light.mjs` after editing; CI fails if crates/dwell-world/src/light.gen.rs is stale.",
+  "falloff": { "across": 1, "vertical": 1 },
+  "sky": {
+    "curve": 4,
+    "direct": { "fromLevel": 8, "fullLevel": 15 }
+  },
+  "block": { "curve": 3, "color": "#ffb878", "strength": 1.2 },
+  "characters": { "easeS": 0.25 }
+}

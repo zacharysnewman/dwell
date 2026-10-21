@@ -41,6 +41,10 @@
       "$comment": "A cross plant outlined by data alone (`outline: true`; the cross default is off, docs/ART_DIRECTION.md §7.4).",
       "name": "reed", "density": 100, "shape": "empty", "look": "cross", "render": "cutout", "outline": true,
       "cross": { "height": 1.0, "quads": 3, "sitOnSupport": false }, "color": "#6a8a3a", "textures": "tallGrass"
+    },
+    {
+      "$comment": "A light emitter by data alone (docs/DAY_NIGHT.md §10): no build block gives off light yet; this one gives off level 14 of block light and lets none through.",
+      "name": "lamp", "density": 1800, "shape": "full", "placeable": true, "emits": 14, "color": "#ffe0a0", "textures": "stone"
     }
   ]
 }
