@@ -67,22 +67,26 @@ async function atRest(page: Page): Promise<void> {
     .toBe(true);
 }
 
-/** Walks for a moment facing `yaw` and checks the other page saw the player move. */
+/**
+ * Walks facing `yaw` until the walker's own page has moved it, then checks the other page saw the
+ * player move. The walk is held until the walker moved, not for a fixed time: on CI's software
+ * renderer a page with two players draws a frame every few hundred ms, and a key pressed and let go
+ * between two frames moves nobody.
+ */
 async function seenMoving(walker: Page, watcher: Page, yaw: number): Promise<void> {
   await expect.poll(() => other(watcher), { timeout: 15_000 }).not.toBeNull();
   const before = await other(watcher);
+  const start = (await state(walker))?.feet ?? null;
+  const moved = (a: Vec3 | null, b: Vec3 | null) =>
+    a && b ? Math.hypot(a[0] - b[0], a[2] - b[2]) : 0;
   await call(walker, `d.look(${String(yaw)}, 0)`);
   await call(walker, `d.press('KeyW', true)`);
-  await walker.waitForTimeout(800);
+  await expect
+    .poll(async () => moved((await state(walker))?.feet ?? null, start), { timeout: 15_000 })
+    .toBeGreaterThan(2);
   await call(walker, `d.press('KeyW', false)`);
   await expect
-    .poll(
-      async () => {
-        const now = await other(watcher);
-        return now && before ? Math.hypot(now[0] - before[0], now[2] - before[2]) : 0;
-      },
-      { timeout: 5_000 },
-    )
+    .poll(async () => moved(await other(watcher), before), { timeout: 10_000 })
     .toBeGreaterThan(1);
 }
 

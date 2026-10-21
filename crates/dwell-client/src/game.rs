@@ -358,8 +358,8 @@ pub struct DebugState {
     pub target: Option<BlockTarget>,
     pub lod: Option<dwell_lod::LodStats>,
     pub flying: bool,
-    /// The bodies drawn for remote players: (player id, base role, swing) (docs/CHARACTERS.md §6).
-    pub bodies: Vec<(u16, &'static str, Option<&'static str>)>,
+    /// The bodies drawn for remote players: their roles now and lately (docs/CHARACTERS.md §6).
+    pub bodies: Vec<crate::bodies::BodyState>,
     /// Your arms' base role and swing.
     pub arms: (&'static str, Option<&'static str>),
 }
