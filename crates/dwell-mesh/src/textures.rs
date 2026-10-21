@@ -450,7 +450,10 @@ mod tests {
         // stick, its flame the flame effect (§6).
         let torch = dwell_blocks::info(dwell_blocks::require("dwell:torch_upper"));
         let t = torch.textures.expect("the torch is textured").side;
-        assert_eq!(table[TILE_ORDER.iter().position(|n| *n == t).unwrap()][2], 0.0);
+        assert_eq!(
+            table[TILE_ORDER.iter().position(|n| *n == t).unwrap()][2],
+            0.0
+        );
         assert_eq!(
             table[TILE_ORDER.iter().position(|n| *n == "stone").unwrap()][2],
             0.0
