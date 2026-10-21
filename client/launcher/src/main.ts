@@ -163,7 +163,7 @@ function showVersions(manifest: Manifest): void {
       void openBuild(manifest, row.version);
     });
     head.append(name, meta, open);
-    const note = document.createElement('p');
+    const note = document.createElement('div'); // not <p>: keeps Safari's Reader off
     note.className = 'version-worlds';
     note.textContent = row.openable
       ? row.worlds.length
