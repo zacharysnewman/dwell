@@ -24,10 +24,16 @@ struct Frame {
     // The ink outline (dwell-look `outline_uniforms`; docs/ART_DIRECTION.md §7): x the edge kinds
     // (bits: 1 silhouettes, 2 creases, 4 block edges; 0 off), y the taps' distance (px), z and w
     // the distance fade's start and end (m); the ink (sRGB) and its strength; x the silhouette and
-    // y the crease threshold.
+    // y the crease threshold; z 1 to ink only the near side of an edge (the pixel-art preview's
+    // 1-pixel edge).
     outline: vec4f,
     outline_ink: vec4f,
     outline_cfg: vec4f,
+    // The pixel-art preview (dwell-look `pixel_art::light_uniforms`; 0s when off): x the direct
+    // light's toon levels, y the ambient's (0: smooth), z the shadow hue's strength; the shadow
+    // tint (linear, luminance 1).
+    pixel_art: vec4f,
+    pixel_tint: vec4f,
     // x eye height (world y), y face (±1), z exposure (× the time of day's), w fog density (× the
     // time of day's)
     eye: vec4f,
@@ -253,11 +259,29 @@ fn lambert_lit(albedo: vec3f, n: vec3f, frag_y: f32, l: TerrainLight) -> vec3f {
     let moon = select(d.moon_b.rgb, d.moon_a.rgb, on_a);
     let hemi_sky = select(d.sky_b.rgb, d.sky_a.rgb, on_a);
     let hemi_ground = select(d.ground_b.rgb, d.ground_a.rgb, on_a);
-    var direct = max(dot(n, d.sun.xyz), 0.0) * sun * own(d.sun.xyz, face);
-    direct += max(dot(n, d.moon.xyz), 0.0) * moon * own(d.moon.xyz, face);
-    let hemi = mix(hemi_ground, hemi_sky, face_rise(face, n) * 0.5 + 0.5) * l.ambient;
-    let irradiance = direct * l.direct + hemi + BLOCK_LIGHT * (PI * l.glow) + l.points;
+    // The sun's and moon's share (N·L, over the face's horizon, by the shadow), on the pixel-art
+    // preview's toon levels when it is on (`band`; smooth otherwise).
+    let ks = band(max(dot(n, d.sun.xyz), 0.0) * own(d.sun.xyz, face) * l.direct, frame.pixel_art.x);
+    let km = band(max(dot(n, d.moon.xyz), 0.0) * own(d.moon.xyz, face) * l.direct, frame.pixel_art.x);
+    let direct = ks * sun + km * moon;
+    let ambient = band(l.ambient, frame.pixel_art.y);
+    // The preview's hue-shifted shadows: the sky light where the sun doesn't reach takes the
+    // tint's hue (the block light and torches keep theirs).
+    let shade = frame.pixel_art.z * (1.0 - clamp(ks, 0.0, 1.0));
+    let hemi = mix(hemi_ground, hemi_sky, face_rise(face, n) * 0.5 + 0.5) * ambient
+        * mix(vec3f(1.0), frame.pixel_tint.rgb, shade);
+    let irradiance = direct + hemi + BLOCK_LIGHT * (PI * l.glow) + l.points;
     return irradiance * albedo / PI;
+}
+
+// A light share `x` on `n` toon levels from dark to lit (0 or 1: smooth); dwell-look
+// `pixel_art::band`.
+fn band(x: f32, n: f32) -> f32 {
+    if (n < 1.5) {
+        return x;
+    }
+    let k = n - 1.0;
+    return round(clamp(x, 0.0, 1.0) * k) / k;
 }
 
 // Whether `lambert_lit` gives a surface with normal `n` (at world y `frag_y`) any direct sun or
@@ -1264,6 +1288,10 @@ fn ink_outline(p: vec2i, ray: vec3f) -> vec2f {
     if (near <= 0.0) {
         return vec2f(0.0);
     }
+    // The pixel-art preview's edge: only on the near side (the pixel nearest of its taps).
+    if (frame.outline_cfg.z > 0.5 && w[4] < near * 0.97) {
+        return vec2f(0.0);
+    }
     var s = ink_edges(w, edges);
     // Left, right, up and down: their offsets and view depths.
     let q = array(p + vec2i(-r, 0), p + vec2i(r, 0), p + vec2i(0, -r), p + vec2i(0, r));
@@ -2262,9 +2290,18 @@ mod tests {
         };
         let lit = body("lambert_lit");
         // The shadow (the maps, or the flood light's stand-in past them) is \`l.direct\`.
+        // (Its share is on the pixel-art preview's toon levels when that is on: `band`.)
         assert!(lit.contains(
-            "let irradiance = direct * l.direct + hemi + BLOCK_LIGHT * (PI * l.glow) + l.points;"
+            "let ks = band(max(dot(n, d.sun.xyz), 0.0) * own(d.sun.xyz, face) * l.direct"
         ));
+        assert!(lit.contains(
+            "let km = band(max(dot(n, d.moon.xyz), 0.0) * own(d.moon.xyz, face) * l.direct"
+        ));
+        assert!(
+            lit.contains(
+                "let irradiance = direct + hemi + BLOCK_LIGHT * (PI * l.glow) + l.points;"
+            )
+        );
         let direct: Vec<&str> = lit.lines().filter(|l| l.contains("direct")).collect();
         assert!(
             direct
@@ -2275,7 +2312,8 @@ mod tests {
             .lines()
             .find(|l| l.contains("let hemi ="))
             .expect("hemi");
-        assert!(!hemi.contains("direct") && hemi.contains("* l.ambient"));
+        assert!(!hemi.contains("direct") && hemi.contains("* ambient"));
+        assert!(lit.contains("let ambient = band(l.ambient, frame.pixel_art.y);"));
         // Every scene surface takes its shadow from the maps, or past them the flood light's
         // direct share (docs/DAY_NIGHT.md §11); characters too.
         assert!(body("scene_out").contains("shadow_light(rel, n, l.direct)"));
