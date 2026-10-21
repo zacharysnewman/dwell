@@ -12,14 +12,18 @@ use std::rc::Rc;
 use dwell_blocks::StateId;
 use dwell_game::block_interaction::{BlockInteraction, BlockTarget, TargetSource, view_direction};
 use dwell_game::brush_tool::{BrushAction, BrushOutline, BrushPanel, BrushTool};
-use dwell_game::chunk_stream::{ChunkMessage, ChunkStreamer, Coord, StreamStats, TerrainView};
+use dwell_game::chunk_stream::{
+    ChunkMessage, ChunkStreamer, Coord, SecondCentre, StreamStats, TerrainView,
+};
 use dwell_game::edit_prediction::EditPredictor;
 use dwell_game::eye::{EyeCamera, EyeState, StepRamp};
 use dwell_game::face_flip::FaceFlip;
 use dwell_game::gate::prediction_may_run;
 use dwell_game::hud_text::{HudTextInput, hud_text};
 use dwell_game::input::{EditAction, KeyboardMouseInput, quantize_input};
-use dwell_game::loading::{LOADING, LoadingGate, LoadingScreen, near_ring_offsets};
+use dwell_game::loading::{
+    LOADING, LoadingGate, LoadingScreen, RESPAWN_PRELOAD_RADIUS_CHUNKS, near_ring_offsets,
+};
 use dwell_game::region_tools::{RegionTools, ToolAction, ToolBoxKind, ToolContext};
 use dwell_game::remotes::RemotePlayers;
 use dwell_game::sound::{
@@ -555,6 +559,8 @@ pub struct Game<S: Scene> {
     loading: LoadingGate,
     /// Its near ring's chunk offsets, nearest first.
     near_ring: Vec<Coord>,
+    /// The Welcome's verification chunk: the cell under the world's spawn, where a respawn is.
+    spawn_chunk: Option<ChunkCoord>,
 }
 
 impl<S: Scene> Game<S> {
@@ -661,6 +667,7 @@ impl<S: Scene> Game<S> {
             first_draw_ms: None,
             loading: LoadingGate::new(LOADING, false),
             near_ring: near_ring_offsets(LOADING.radius_chunks),
+            spawn_chunk: verification,
             bodies: Bodies::default(),
             held_sent: None,
             show_arms: true,
@@ -694,6 +701,21 @@ impl<S: Scene> Game<S> {
     /// The loading gate's state, for the bench and the tests.
     pub fn loading_gate(&self) -> &LoadingGate {
         &self.loading
+    }
+
+    /// The respawn preload (§6.3): while dead, the server streams the ring around the respawn
+    /// point, and its chunks are lit and meshed right after the near ring around the body. The
+    /// respawn is at the world's spawn, whose chunk is predicted from the Welcome's verification
+    /// chunk (the cell under it): the ring is widened by one chunk to cover the body's centre
+    /// above it and the players' spread around it.
+    fn respawn_preload(&self) -> Option<SecondCentre> {
+        let radius = RESPAWN_PRELOAD_RADIUS_CHUNKS?;
+        let at = self.spawn_chunk.filter(|_| self.dead)?;
+        Some(SecondCentre {
+            near: LOADING.radius_chunks,
+            at: at.to_array(),
+            radius: radius + 1,
+        })
     }
 
     /// Opens the loading gate once the near ring around the player is drawn (in every direction,
@@ -869,6 +891,10 @@ impl<S: Scene> Game<S> {
     pub fn chunk_revision(&self, c: Coord) -> Option<u32> {
         self.streamer.revision(c)
     }
+    /// Loaded and meshed (or all air): drawable as full detail.
+    pub fn chunk_drawable(&self, c: Coord) -> bool {
+        self.streamer.drawable(c)
+    }
     pub fn allow_flight(&mut self, input: &mut KeyboardMouseInput, allowed: bool) {
         input.flight.set_allowed(allowed);
     }
@@ -951,6 +977,12 @@ impl<S: Scene> Game<S> {
                 {
                     self.predictor.remove_remote(id);
                     self.proxies.remove(&id);
+                }
+                if self.current.active && !self.predictor.active() {
+                    // Died: the player is no longer placed, even where the prediction never
+                    // ticked (the terrain around had not arrived), so the respawn is a placement
+                    // the loading screen waits for.
+                    self.current = ClientState::of(&self.predictor);
                 }
                 if !self.current.active {
                     self.current = ClientState::of(&self.predictor);
@@ -1594,9 +1626,17 @@ impl<S: Scene> Game<S> {
             let a = p.position[i] + p.render_offset[i];
             a + (c.position[i] + c.render_offset[i] - a) * alpha
         });
+        self.streamer.set_second_centre(self.respawn_preload());
+        let around = if c.active {
+            center
+        } else if self.dead {
+            self.death_feet // the view around the body
+        } else {
+            [0.5, 64.0, 0.5]
+        };
         telemetry::span("mesh_dirty", || {
             self.streamer.mesh_dirty(
-                if c.active { center } else { [0.5, 64.0, 0.5] },
+                around,
                 stream_budget_ms(dt * 1000.0),
                 stream_budget_ms(dt * 1000.0),
                 &mut *now,

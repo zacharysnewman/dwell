@@ -698,14 +698,7 @@ impl Server {
             .filter(|c| len_sq(c) <= r * r + r)
             .collect();
         // The respawn preload's ring: the same sphere, of its own radius (at most the view's).
-        let p = server
-            .config
-            .respawn_preload_radius_chunks
-            .map_or(-1, |p| p.min(r));
-        server.preload_offsets = cube_offsets(p.max(0))
-            .into_iter()
-            .filter(|c| p >= 0 && len_sq(c) <= p * p + p)
-            .collect();
+        server.set_respawn_preload(server.config.respawn_preload_radius_chunks);
         server
     }
 
@@ -2420,6 +2413,25 @@ impl Server {
             ..s.stream_stats
         })
     }
+    /// Kills a joined, living player (as a lethal fall would; tools and tests): they respawn after
+    /// `RESPAWN_SECONDS`.
+    pub fn kill_player(&mut self, player_id: u16) {
+        if let Some(id) = self.session_of_player(player_id) {
+            self.kill(id, DamageCause::Fall);
+        }
+    }
+
+    /// Turns the respawn preload (§6.3) on with a radius (at most the view's), or off: for deaths
+    /// from now on.
+    pub fn set_respawn_preload(&mut self, radius_chunks: Option<i32>) {
+        self.config.respawn_preload_radius_chunks = radius_chunks;
+        let p = radius_chunks.map_or(-1, |p| p.min(self.config.view_radius_chunks));
+        self.preload_offsets = cube_offsets(p.max(0))
+            .into_iter()
+            .filter(|c| p >= 0 && len_sq(c) <= p * p + p)
+            .collect();
+    }
+
     /// The chunk whose ring is preloaded for a dead player's respawn (§6.3), until the respawn.
     pub fn respawn_preload_of(&self, player_id: u16) -> Option<ChunkCoord> {
         self.by_player(player_id).and_then(|s| s.preload_center)

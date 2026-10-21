@@ -727,6 +727,190 @@ fn with_the_lod_the_loading_screen_opens_on_the_terrain_and_nothing_behind_is_le
     );
 }
 
+/// What a respawn after dying 20 chunks from the spawn costs: whether the respawn point's ring
+/// was drawable before the respawn, and the frames from the respawn to the loading screen opening.
+struct Respawned {
+    ring: usize,
+    ring_drawable_before: usize,
+    frames_to_open: usize,
+    opened: Option<(dwell_game::loading::Opened, f64)>,
+}
+
+fn respawn_after_dying_far_away(preload: Option<i32>, lod: bool) -> Respawned {
+    use dwell_game::loading::{LOADING, near_ring_offsets};
+    let mut rig = Rig::new();
+    rig.loading_screen = true;
+    assert!(rig.run_until(60 * 30, |r| r.game.is_some()));
+    if lod {
+        rig.game
+            .as_mut()
+            .unwrap()
+            .enable_lod(dwell_client::game::LodSettings {
+                pixel_error: 4.0,
+                cache_bytes: 256 << 20,
+                detail_distance_m: Some(256.0),
+                full_mode: false,
+            });
+    }
+    assert!(
+        rig.run_until(60 * 60, |r| r
+            .game
+            .as_ref()
+            .unwrap()
+            .debug_state()
+            .loading_opened
+            .is_some()),
+        "the join's screen opens"
+    );
+    rig.core.server().set_respawn_preload(preload);
+    // Off 20 chunks east (the server's copy; the client follows), the view there loads, then the
+    // player dies there.
+    let feet = rig.game.as_ref().unwrap().debug_state().feet;
+    let far = [feet[0] + 640.0, feet[1] + 40.0, feet[2]];
+    let hover = |rig: &mut Rig| {
+        let server = rig.core.server();
+        let h = server.player_handle_of(1).unwrap();
+        let (_, physics, players) = server.sim();
+        let half = f64::from(players.half_height(h));
+        players.teleport(
+            physics,
+            h,
+            dwell_physics::DVec3::new(far[0], far[1] + half, far[2]),
+            dwell_physics::Vec3::ZERO,
+        );
+    };
+    // Held there for four seconds (a fall would kill it too soon) while the view there streams.
+    for _ in 0..60 * 4 {
+        hover(&mut rig);
+        rig.frame();
+    }
+    rig.core.server().kill_player(1);
+    assert!(rig.run_until(60, |r| r.game.as_ref().unwrap().debug_state().dead));
+    // Four of the five seconds dead.
+    rig.run_until(60 * 4, |_| false);
+    assert!(rig.game.as_ref().unwrap().debug_state().dead, "still dead");
+    let respawn = rig.core.server().config().spawn.unwrap();
+    let at = dwell_world::chunk_of_pos([respawn[0], respawn[1] + 0.9, respawn[2]]);
+    let game = rig.game.as_ref().unwrap();
+    let ring: Vec<[i32; 3]> = near_ring_offsets(LOADING.radius_chunks)
+        .into_iter()
+        .map(|o| [at.x + o[0], at.y + o[1], at.z + o[2]])
+        .filter(|c| dwell_world::BUILD_VOLUME.chunk_may_hold(ChunkCoord::from_array(*c)))
+        .collect();
+    let ring_drawable_before = ring.iter().filter(|c| game.chunk_drawable(**c)).count();
+    // The respawn, then the screen.
+    assert!(rig.run_until(60 * 3, |r| {
+        let d = r.game.as_ref().unwrap().debug_state();
+        !d.dead && d.active
+    }));
+    let mut frames_to_open = 0;
+    rig.run_until(60 * 30, |r| {
+        frames_to_open += 1;
+        r.game.as_ref().unwrap().debug_state().loading.is_none()
+    });
+    Respawned {
+        ring: ring.len(),
+        ring_drawable_before,
+        frames_to_open,
+        opened: rig.game.as_ref().unwrap().debug_state().loading_opened,
+    }
+}
+
+#[test]
+fn dying_before_the_terrain_around_arrived_still_waits_behind_the_loading_screen_on_respawning() {
+    // Found while testing the respawn preload: killed the moment it was moved far away (its
+    // prediction waiting for the terrain there, so never ticking), the player stayed "placed"
+    // while dead, and the respawn did not show the loading screen.
+    let mut rig = Rig::new();
+    rig.loading_screen = true;
+    assert!(rig.run_until(60 * 30, |r| r.game.is_some()));
+    assert!(rig.run_until(60 * 60, |r| {
+        r.game
+            .as_ref()
+            .unwrap()
+            .debug_state()
+            .loading_opened
+            .is_some()
+    }));
+    rig.core.server().set_respawn_preload(None);
+    let feet = rig.game.as_ref().unwrap().debug_state().feet;
+    let server = rig.core.server();
+    let h = server.player_handle_of(1).unwrap();
+    let (_, physics, players) = server.sim();
+    players.teleport(
+        physics,
+        h,
+        dwell_physics::DVec3::new(feet[0] + 640.0, feet[1] + 41.0, feet[2]),
+        dwell_physics::Vec3::ZERO,
+    );
+    rig.frame();
+    rig.core.server().kill_player(1);
+    assert!(rig.run_until(60, |r| r.game.as_ref().unwrap().debug_state().dead));
+    rig.frame();
+    assert!(
+        !rig.game.as_ref().unwrap().debug_state().active,
+        "dead: not placed"
+    );
+    let mut shown = false;
+    assert!(rig.run_until(60 * 30, |r| {
+        let d = r.game.as_ref().unwrap().debug_state();
+        shown |= !d.dead && d.loading.is_some();
+        !d.dead && d.active && d.loading.is_none() && shown
+    }));
+    assert!(shown, "the respawn waited behind the screen");
+}
+
+#[test]
+fn dying_far_away_preloads_the_respawn_so_its_loading_screen_opens_at_once() {
+    // Owner (2026-10-21): "We could preload terrain at spawn once you die too?" Four seconds
+    // into the five-second wait the respawn point's near ring is drawable, and the loading screen
+    // on respawning opens within a few frames; without the preload it waits for the streaming.
+    let with = respawn_after_dying_far_away(Some(3), false);
+    assert_eq!(
+        with.ring_drawable_before, with.ring,
+        "the respawn ring is drawable before the respawn"
+    );
+    assert_eq!(
+        with.opened.map(|o| o.0),
+        Some(dwell_game::loading::Opened::Ready)
+    );
+    assert!(
+        with.frames_to_open <= 3,
+        "opened after {} frames",
+        with.frames_to_open
+    );
+    let without = respawn_after_dying_far_away(None, false);
+    assert!(
+        without.ring_drawable_before < without.ring / 2,
+        "{}",
+        without.ring_drawable_before
+    );
+    assert!(
+        without.frames_to_open > 3 * with.frames_to_open.max(1),
+        "{} frames",
+        without.frames_to_open
+    );
+    eprintln!(
+        "respawn → screen open: {} frames with the preload, {} without",
+        with.frames_to_open, without.frames_to_open
+    );
+}
+
+#[test]
+fn with_the_lod_a_preloaded_respawn_opens_its_loading_screen_soon() {
+    let with = respawn_after_dying_far_away(Some(3), true);
+    let without = respawn_after_dying_far_away(None, true);
+    eprintln!(
+        "with the LOD, respawn → screen open: {} frames with the preload ({} / {} drawable before), {} without",
+        with.frames_to_open, with.ring_drawable_before, with.ring, without.frames_to_open
+    );
+    assert_eq!(
+        with.opened.map(|o| o.0),
+        Some(dwell_game::loading::Opened::Ready)
+    );
+    assert!(with.frames_to_open < without.frames_to_open);
+}
+
 #[test]
 fn the_whole_world_view_generates_and_meshes_sections() {
     let mut rig = Rig::new();
