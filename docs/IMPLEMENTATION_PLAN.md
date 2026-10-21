@@ -62,7 +62,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 42 — Smooth LOD transitions | 🚧 In progress — built and tested natively and in Chrome on the GPU: a dithered cross-fade on every LOD swap (`dwell-lod` `fade.rs`; chunks, sections, stand-ins, skirts, water; no ink on the outgoing level) and hysteresis in the selection, both data (`shared/look/lodblend.json`); outstanding: CI, the owner's review in a browser; a patch release |
 | 43 — Ambient light | 🚧 In progress — built and tested natively and in Chrome on the GPU: classic corner AO and baked ray-traced sky visibility per terrain vertex (dwell-mesh `sky.rs`, data `shared/look/ambient.json`), the hemisphere light scaled by it, the twilight and night keyframes retuned; outstanding: CI; a patch release |
 | 44 — Sun and moon shadows (cascaded shadow maps, the lighting's layer 2) | 🚧 In progress — built and tested natively, in Vitest and in Chrome on the GPU: up to four cascades per the Shadows setting (Off / Low / High, data in `shared/look/shadows.json`), texel-snapped sphere fits, casters (terrain, plants, LOD, bodies, your own), a soft PCF on the direct term only, faded by the time of day and past the last cascade to layer 1's stand-in; High's cost cut to ≤ 1.2 ms over Off on the M1 (eye-centred boxes, kept far maps, a depth-only casters' stage; High stays the desktop default); outstanding: CI, the owner's look; a patch release |
-| 45 — Flood light | 🚧 In progress — built and tested natively and in Chrome on the GPU (ADR 0045, DAY_NIGHT.md §11): per-cell sky and block light on the client (`dwell_world::light`, data `shared/look/light.json` and the blocks' `lightFilter`/`emits`), relit on edits and predicted edits, the mesher's smooth `flood` stream, ambient and the direct sun and moon scaled by it (carved tunnels no longer lit like day); follow-up: the streaming stalls fixed (coalesced seeded unloads, no cascade under a chunk held over open air, light and mesh budgets of their own that scale on a slow page; flying back to 0.22.8's frames; generation workers refilled between frames, so a slow page's terrain finishes generating, the native-server e2e tests); outstanding: CI, the owner's review; characters (your arms, held items, players) lit by the cells they are in, eased; the shadow maps' stand-in past their last cascade |
+| 45 — Flood light | 🚧 In progress — built and tested natively and in Chrome on the GPU (ADR 0045, DAY_NIGHT.md §11): per-cell sky and block light on the client (`dwell_world::light`, data `shared/look/light.json` and the blocks' `lightFilter`/`emits`), relit on edits and predicted edits, the mesher's smooth `flood` stream, ambient and the direct sun and moon scaled by it (carved tunnels no longer lit like day); follow-up: the streaming stalls fixed (coalesced seeded unloads, no cascade under a chunk held over open air, light and mesh budgets of their own that scale on a slow page; flying back to 0.22.8's frames; generation workers refilled between frames, so a slow page's terrain finishes generating, the native-server e2e tests); outstanding: CI, the owner's review; characters (your arms, held items, players) lit by the cells they are in, eased; the shadow maps' stand-in past their last cascade; water and see-through faces take the flood light (dark in caves with Shadows Off; darkness verified with Shadows Off on both faces, DAY_NIGHT.md §11) |
 | 46 — Distant terrain shadows (the lighting's layer 3) | 🚧 In progress — built and tested natively and in Chrome on the GPU (ADR 0046, DAY_NIGHT.md §12): heightmaps of the terrain as drawn, filled a budgeted slice a frame, horizon maps swept from them a band a frame, one horizon sample per far fragment blended into the cascades at their edge, both faces, per the Shadows setting (none on a CPU adapter); data `shared/look/lodshadows.json`. Measured +0.5–0.9 ms GPU a frame on the M1 (busy machine), no main-thread change. Outstanding: CI; the owner's look; a measurement on an idle machine |
 
 Phase numbering: Phase 4 was inserted on 2026-09-29 for the planet-scale world (ADRs 0011, 0012);
@@ -4541,6 +4541,10 @@ Deliverables
   blended between cells and eased (`characters.easeS`), through the same shading as terrain.
 - [x] Merged with Phase 44's shadow maps: they shade the direct light near the eye, the flood
   light's direct ramp past their last cascade (`shadow_light(rel, n, stand_in)`).
+- [x] Water and see-through faces take the flood light (owner, 2026-10-21: "support darkness
+  even with directional shadows off"): the transparent mesh's `flood` stream, the fluid vertex
+  format's flood pair, the water shader's body, foam, glint, sparkle and sky reflection by it
+  (DAY_NIGHT.md §11, with Minecraft's lighting compared).
 
 Exit criteria
 - [x] Tests (both faces; fixes seen red first): a carved tunnel falls off with depth, ambient and
@@ -4555,6 +4559,10 @@ Exit criteria
   unchanged.
 - [x] Checked in Chrome on the GPU: the tunnel at noon and midnight at its mouth, 5 m and 15 m in,
   on face A and face B; a hillside, pines and a cave against 0.22.5.
+- [x] Darkness with Shadows Off (red → green: a pool in a cave is dark on both faces; the water
+  shader takes the flood light): a tunnel, a sealed room, a 31 m roof and a leaf canopy measured
+  on the GPU with Shadows Off, Low and High at noon and midnight on both faces (DAY_NIGHT.md §11's
+  table), and the sea under a roof before and after.
 
 Deviations
 - Falloff 1 level per cell vertically (½ m) rather than per metre: integer levels can't take half a

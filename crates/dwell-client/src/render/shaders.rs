@@ -1280,6 +1280,8 @@ struct FluidIn {
     @location(1) normal: vec3f,
     @location(2) color: vec3f,
     @location(3) fluid: f32,
+    // The flood light (sky, block as shares of 15; dwell-mesh: the cells the face looks into).
+    @location(4) flood: vec2f,
 };
 struct FluidOut {
     @builtin(position) clip: vec4f,
@@ -1291,6 +1293,7 @@ struct FluidOut {
     @location(3) wrapped: vec2f,
     @location(4) @interpolate(flat) fluid: u32,
     @location(5) @interpolate(flat) draw: u32,
+    @location(6) flood: vec2f,
 };
 
 // Fluid meshes: chunk water and LOD water alike (the draw's offset.w scales cells to metres;
@@ -1306,6 +1309,7 @@ fn fluid_vs(v: FluidIn, @builtin(instance_index) k: u32) -> FluidOut {
     o.color = v.color;
     o.wrapped = draw.rotation.zw + v.position.xz * draw.offset.w;
     o.fluid = u32(v.fluid + 0.5);
+    o.flood = v.flood;
     return o;
 }
 
@@ -1426,10 +1430,23 @@ struct Surface {
     frag_y: f32,
     on_a: bool,
     body: vec3f,
-    // The direct light's shadow on the surface (`shadow_light`): it shades the glint, the sparkle
-    // and the body's in-scatter.
+    // How the surface is lit by the flood light (`terrain_light`, no baked light): water in a
+    // cave or under a roof is as dark as the ground beside it, whatever the Shadows setting.
+    light: TerrainLight,
+    // The direct light's shadow on the surface (`shadow_light`, the flood light's direct share as
+    // its stand-in): it shades the glint, the sparkle and the body's in-scatter.
     shadow: f32,
+    // The sky light's brightness at the surface (`light_curve` of its level): the share of the
+    // sky's reflection it sees.
+    sky: f32,
 };
+
+// A see-through face that is no fluid's (glass): lit by its flood light as terrain is.
+fn see_through_light(i: FluidOut, n: vec3f) -> TerrainLight {
+    var l = terrain_light(1.0, i.flood);
+    l.direct = shadow_light(i.rel, n, l.direct);
+    return l;
+}
 
 fn water_surface(i: FluidOut, front: bool, footprint: f32, f: Fluid, draw: Draw) -> Surface {
     var s: Surface;
@@ -1451,8 +1468,10 @@ fn water_surface(i: FluidOut, front: bool, footprint: f32, f: Fluid, draw: Draw)
         s.n = normalize(s.n + max(0.02 - dot(s.n, s.v), 0.0) * s.v);
     }
     s.ndv = clamp(dot(s.n, s.v), 1e-3, 1.0);
-    s.shadow = shadow_light(i.rel, face_up(s.up), 1.0);
-    s.body = lambert_lit(f.scatter.rgb * draw.tint.rgb, face_up(s.up), s.frag_y, TerrainLight(1.0, s.shadow, 0.0));
+    s.light = terrain_light(1.0, i.flood);
+    s.sky = light_curve(i.flood.x, SKY_CURVE);
+    s.shadow = shadow_light(i.rel, face_up(s.up), s.light.direct);
+    s.body = lambert_lit(f.scatter.rgb * draw.tint.rgb, face_up(s.up), s.frag_y, TerrainLight(s.light.ambient, s.shadow, s.light.glow));
     return s;
 }
 
@@ -1699,7 +1718,7 @@ fn water_fs(i: FluidOut, @builtin(front_facing) front: bool) -> SceneOut {
     o.depth = frame_depth(view_depth(i.rel), true);
     if (i.fluid >= count) {
         let n = normalize(i.normal);
-        o.color = vec4f(lambert(i.color * draw.tint.rgb, select(-n, n, front), frame.eye.x + i.rel.y), 0.5);
+        o.color = vec4f(lambert_lit(i.color * draw.tint.rgb, select(-n, n, front), frame.eye.x + i.rel.y, see_through_light(i, n)), 0.5);
         return o;
     }
     let f = fluids[i.fluid];
@@ -1711,7 +1730,7 @@ fn water_fs(i: FluidOut, @builtin(front_facing) front: bool) -> SceneOut {
     let fres = schlick(s.ndv, f.extra.x);
     let t = 1.0 - f.absorption.a;
     let alpha = 1.0 - (1.0 - fres) * t;
-    let refl = vec4f(reflected_env(reflected_dir(s), i.rel, deck_fw), 0.0);
+    let refl = vec4f(reflected_env(reflected_dir(s), i.rel, deck_fw) * s.sky, 0.0);
     o.color = vec4f((surface_light(i, s, f, fres, footprint, refl) + (1.0 - fres) * (1.0 - t) * s.body) / alpha, alpha);
     return o;
 }
@@ -1742,7 +1761,7 @@ fn water_scene_fs(i: FluidOut, @builtin(front_facing) front: bool) -> @location(
     let count = arrayLength(&fluids);
     if (i.fluid >= count) {
         let n = normalize(i.normal);
-        return vec4f(lambert(i.color * draw.tint.rgb, select(-n, n, front), frame.eye.x + i.rel.y), 0.5);
+        return vec4f(lambert_lit(i.color * draw.tint.rgb, select(-n, n, front), frame.eye.x + i.rel.y, see_through_light(i, n)), 0.5);
     }
     if (water_off(DBG_FLAT)) {
         return vec4f(0.02, 0.1, 0.2, 1.0);
@@ -1800,7 +1819,7 @@ fn water_scene_fs(i: FluidOut, @builtin(front_facing) front: bool) -> @location(
     var calm = s;
     calm.n = normalize(mix(vec3f(0.0, sign(s.n.y), 0.0), s.n, SSR_RIPPLE));
     let hit = ssr_trace(i.rel, reflected_dir(calm), size);
-    let refl = ssr_reflected(reflected_env(reflected_dir(s), i.rel, deck_fw), hit, size);
+    let refl = ssr_reflected(reflected_env(reflected_dir(s), i.rel, deck_fw) * s.sky, hit, size);
     var color = surface_light(i, s, f, fres, footprint, refl) + (1.0 - fres) * through;
     // Shoreline foam where the water is thin.
     var foam = 0.0;
@@ -1808,7 +1827,7 @@ fn water_scene_fs(i: FluidOut, @builtin(front_facing) front: bool) -> @location(
         foam = foam_amount(i.wrapped, under, f);
     }
     if (foam > 0.0) {
-        let lit = lambert_lit(f.foam.rgb, vec3f(0.0, s.up, 0.0), s.frag_y, TerrainLight(1.0, s.shadow, 0.0));
+        let lit = lambert_lit(f.foam.rgb, vec3f(0.0, s.up, 0.0), s.frag_y, TerrainLight(s.light.ambient, s.shadow, s.light.glow));
         color = mix(color, lit, foam);
     }
     return vec4f(color, 1.0);
@@ -2133,6 +2152,45 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn water_and_see_through_faces_take_the_flood_light() {
+        // Owner (2026-10-21): darkness from the flood light alone, Shadows Off included
+        // (docs/DAY_NIGHT.md §11). Water under a 31 m roof drew as the open sea with Shadows Off
+        // (33 % of white against 33 %), sun glint and sky reflection included: the water shader
+        // lit every fluid surface as open sky.
+        let src = super::source(4);
+        let body = |name: &str| {
+            let at = src.find(&format!("fn {name}(")).expect(name);
+            src[at..at + src[at..].find("\n}\n").expect("end")].to_string()
+        };
+        let fluid_in = &src[src.find("struct FluidIn").expect("FluidIn")..];
+        assert!(
+            fluid_in[..fluid_in.find("};").expect("end")].contains("@location(4) flood: vec2f")
+        );
+        let surface = body("water_surface");
+        // Its ambient, glow and direct share are the flood light's; the shadow maps shade the
+        // direct share, they don't replace a full one.
+        assert!(surface.contains("s.light = terrain_light(1.0, i.flood);"));
+        assert!(surface.contains("s.shadow = shadow_light(i.rel, face_up(s.up), s.light.direct);"));
+        assert!(surface.contains("TerrainLight(s.light.ambient, s.shadow, s.light.glow)"));
+        assert!(
+            !src.contains("TerrainLight(1.0, s.shadow"),
+            "a fluid lit as open sky"
+        );
+        // The sky's reflection is as bright as the sky light there.
+        assert!(surface.contains("s.sky = light_curve(i.flood.x, SKY_CURVE);"));
+        for entry in ["water_fs", "water_scene_fs"] {
+            let fs = body(entry);
+            assert!(
+                fs.contains("deck_fw) * s.sky"),
+                "{entry}: the sky reflection"
+            );
+            assert!(fs.contains("see_through_light(i, n)"), "{entry}: glass");
+            assert!(!fs.contains("lambert("), "{entry}: lit as open sky");
+        }
+        assert!(body("see_through_light").contains("shadow_light(i.rel, n, l.direct)"));
     }
 
     #[test]

@@ -63,7 +63,7 @@ pub struct MeshArrays {
     /// light, corner occlusion × sky visibility (0–1; 1 open to the sky; `sky.rs`). The shader
     /// multiplies the hemisphere light by it, above the floor (shared/look/ambient.json).
     pub light: Vec<f32>,
-    /// The opaque and cutout meshes (empty in the transparent one): per vertex, the flood light
+    /// Every mesh (the transparent one for the water shader): per vertex, the flood light
     /// (docs/DAY_NIGHT.md §11), sky then block level as a share of 15, averaged over the cells
     /// the vertex touches (`flood.rs`). The shader turns them into brightness by
     /// shared/look/light.json's curves.
@@ -278,6 +278,23 @@ fn corner_keys(
             .flood
             .corner(cells.occ, front, u, 2 * cu - 1, v, 2 * cv - 1);
         corner_key(level, rays[slot], sky, block)
+    })
+}
+
+/// The light keys of a see-through face's corners (fluids, glass): the flood light only, as
+/// terrain's corners average it (`Flood::corner`); no corner occlusion or sky rays (the water
+/// shader takes no baked light). Faces merge only where these match, so a merged quad's corners
+/// carry their cells' flood light.
+fn flood_keys(cells: &Cells<'_>, face: usize, front: [i32; 3]) -> CornerKeys {
+    let axis = FACES[face].0;
+    let u = (axis + 1) % 3;
+    let v = (axis + 2) % 3;
+    let open = dwell_look::ambient::AMBIENT.rays.min(63) as u8;
+    [(0, 0), (1, 0), (1, 1), (0, 1)].map(|(cu, cv)| {
+        let (sky, block) = cells
+            .flood
+            .corner(cells.occ, front, u, 2 * cu - 1, v, 2 * cv - 1);
+        corner_key(AO_OPEN, open, sky, block)
     })
 }
 
@@ -889,6 +906,7 @@ fn fluid_side(
     face: usize,
     plane: f64,
     top: f64,
+    flood: [f32; 2],
 ) {
     let (axis, sign) = FACES[face];
     // The neighbour's profile on the face it turns toward this cell (quarters of a cell, along
@@ -954,7 +972,18 @@ fn fluid_side(
             continue;
         }
         let at = [f64::from(x), f64::from(y), f64::from(z)];
-        b.polygon(&pts, at, normal, tint, color, &tile, None, None);
+        let light = vec![1.0; pts.len()];
+        let lit = vec![flood; pts.len()];
+        b.polygon(
+            &pts,
+            at,
+            normal,
+            tint,
+            color,
+            &tile,
+            None,
+            Some((&light, &lit)),
+        );
     }
     b.tag_fluid(style.fluid);
 }
@@ -982,7 +1011,8 @@ fn flooded_water(b: &mut Builder, cells: &Cells<'_>, x: i32, y: i32, z: i32) {
                 } else {
                     FLOOD_INSET
                 };
-            fluid_side(b, &water.style, &kn, [x, y, z], face, plane, top);
+            let lit = cells.flood.cell([nx, ny, nz]);
+            fluid_side(b, &water.style, &kn, [x, y, z], face, plane, top, lit);
             continue;
         }
         let u = (axis + 1) % 3;
@@ -1007,7 +1037,7 @@ fn flooded_water(b: &mut Builder, cells: &Cells<'_>, x: i32, y: i32, z: i32) {
             color,
             &tile,
             [1.0; 4],
-            [[1.0, 0.0]; 4],
+            [cells.flood.cell([nx, ny, nz]); 4],
         );
         b.tag_fluid(water.style.fluid);
     }
@@ -1228,7 +1258,17 @@ fn mesh_cells(
                         let top = fluid_side_top(&cells, &k, m, cx, cy, cz);
                         if fluid_side_alone(&kn) {
                             let plane = f64::from(if sign > 0 { d + 1 } else { d });
-                            fluid_side(&mut transparent, &k.style, &kn, cell, face, plane, top);
+                            let lit = cells.flood.cell([nx, ny, nz]);
+                            fluid_side(
+                                &mut transparent,
+                                &k.style,
+                                &kn,
+                                cell,
+                                face,
+                                plane,
+                                top,
+                                lit,
+                            );
                             continue;
                         }
                         if top < 1.0 {
@@ -1240,7 +1280,7 @@ fn mesh_cells(
                         (i32::from(m) + 1) | (rule << RULE_SHIFT) | surface_row;
                     light_mask[i as usize + n * j as usize] =
                         if k.style.render == RenderMode::Translucent {
-                            [0; 4]
+                            flood_keys(&cells, face, [nx, ny, nz])
                         } else {
                             corner_keys(
                                 &cells,
@@ -1380,9 +1420,9 @@ fn mesh_cells(
     let vertices = cutout.m.positions.len() / 3;
     cutout.m.plants.resize(vertices * 4, 0.0);
     cutout.m.bare.resize(vertices, 0.0);
-    // Fluids and see-through faces are lit by their own shader: no baked light.
+    // Fluids and see-through faces are lit by their own shader: no baked light, but the flood
+    // light (docs/DAY_NIGHT.md §11), so water in a cave or under a roof is dark.
     transparent.m.light.clear();
-    transparent.m.flood.clear();
     ChunkMeshes {
         opaque: opaque.m,
         transparent: transparent.m,
