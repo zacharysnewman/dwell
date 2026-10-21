@@ -38,6 +38,8 @@ pub type StateId = u16;
 
 /// Air is always state 0 (the generator checks it).
 pub const AIR: StateId = 0;
+/// The brightest flood-light level (sky and block light are 0–15; docs/DAY_NIGHT.md §10).
+pub const LIGHT_MAX: u8 = 15;
 
 /// The state named by `name`: a canonical string (`dwell:ladder[facing=east,flooded=false]`), or
 /// any form [`parse_state`] takes (properties in any order, missing ones at their defaults; a block

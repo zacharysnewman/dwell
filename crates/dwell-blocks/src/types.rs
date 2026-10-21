@@ -175,6 +175,12 @@ pub struct StateInfo {
     /// Placing a block into its cell (or against it) replaces it.
     pub replaceable: bool,
     pub medium: Medium,
+    /// Flood light (docs/DAY_NIGHT.md §10): the levels (0–15) a cell of it takes off the sky and
+    /// block light passing into it; 15 lets none in (block data `lightFilter`, else
+    /// [`light_filter_default`]).
+    pub light_filter: u8,
+    /// The block light (0–15) it gives off (block data `emits`).
+    pub emits: u8,
 }
 
 /// A fluid's index in `FLUIDS`, valid for this build's registry.
@@ -275,4 +281,15 @@ impl ShapeInfo {
 /// a field to scribble, on everything else.
 pub fn outline_default(look: &str) -> bool {
     look != "cross"
+}
+
+/// The flood light's filter of a state whose data doesn't say (block data `lightFilter`;
+/// shared/blocks/gen.mjs `lightFilterOf`): full cubes that are not see-through let no light in,
+/// everything else lets it through.
+pub fn light_filter_default(look: &str, shape: VoxelShape, render: RenderMode) -> u8 {
+    if look == "cube" && shape == VoxelShape::Full && render != RenderMode::Translucent {
+        crate::LIGHT_MAX
+    } else {
+        0
+    }
 }

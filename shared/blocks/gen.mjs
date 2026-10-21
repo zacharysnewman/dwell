@@ -155,6 +155,21 @@ const renderOf = (def) => def.render ?? ((def.look ?? 'cube') === 'fluid' ? 'tra
 // for the cross plants (a field of blades turns to scribble) and on for the rest. Only the cross
 // geometry carries the flag to the frame, so `outline` is a cross option.
 const outlineOf = (def) => def.outline ?? (def.look ?? 'cube') !== 'cross';
+// Flood light (docs/DAY_NIGHT.md §10): how many levels (0–15) a cell of the block takes off the sky
+// and block light passing into it (15: none gets in), its data's `lightFilter`, else 15 for full
+// cubes that are not see-through and 0 for the rest (crates/dwell-blocks `light_filter_default`);
+// and the block light it gives off (`emits`, 0–15, default 0).
+const lightFilterOf = (def) =>
+  def.lightFilter ?? ((def.look ?? 'cube') === 'cube' && def.shape === 'full' && renderOf(def) !== 'translucent' ? 15 : 0);
+const LIGHT_MAX = 15;
+function validateLight(id, def) {
+  for (const k of ['lightFilter', 'emits']) {
+    const v = def[k];
+    if (v !== undefined && !(Number.isInteger(v) && v >= 0 && v <= LIGHT_MAX)) {
+      fail(`${id}: ${k} must be a whole number in [0, ${LIGHT_MAX}] (got ${JSON.stringify(v)})`);
+    }
+  }
+}
 function validateRender(id, def, look, isAir) {
   const render = renderOf(def);
   if (!RENDER_MODES.includes(render)) fail(`${id}: render must be one of ${RENDER_MODES.join(', ')} (got ${render})`);
@@ -259,6 +274,7 @@ for (const ns of namespaces) {
     const look = def.look ?? 'cube';
     if (!LOOKS.includes(look)) fail(`${id}: look ${look}`);
     validateRender(id, def, look, states.length === 0);
+    validateLight(id, def);
     if (def.facingProperty) {
       const p = props.find((q) => q.name === def.facingProperty);
       if (!p || p.values.some((v) => !FACINGS.includes(v))) fail(`${id}: facingProperty`);
@@ -648,6 +664,8 @@ if (!fixture) writeFileSync(join(root, 'client/src/world/blocks.gen.ts'), ts.joi
       `needs_support: Support::${d.needsSupport ? pascal(d.needsSupport) : 'None'}`,
       `replaceable: ${!!d.replaceable}`,
       `medium: Medium::${d.medium ? pascal(d.medium) : 'Any'}`,
+      `light_filter: ${lightFilterOf(d)}`,
+      `emits: ${d.emits ?? 0}`,
     ];
     rs.push(`    StateInfo { ${fields.join(', ')} },`);
   }

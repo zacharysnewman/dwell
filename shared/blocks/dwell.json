@@ -48,7 +48,9 @@
     },
     {
       "name": "water", "sound": "dwell:water", "density": 1000, "shape": "empty", "look": "fluid", "fluid": "dwell:water",
-      "liquid": true, "render": "translucent", "color": "#2f86e0", "textures": "water"
+      "liquid": true, "render": "translucent", "color": "#2f86e0", "textures": "water",
+      "$lightFilter": "Flood light (docs/DAY_NIGHT.md §10): each ½ m of water takes a level off the sky light under it.",
+      "lightFilter": 1
     },
     {
       "name": "sand", "sound": "dwell:sand", "density": 1600, "shape": "full", "placeable": true,
@@ -65,9 +67,9 @@
       "color": "#7a5236", "textures": { "top": "logTop", "side": "logSide", "bottom": "logTop" }
     },
     {
-      "$comment": "Drawn cutout: the leaves tile has transparent gaps between the leaves.",
+      "$comment": "Drawn cutout: the leaves tile has transparent gaps between the leaves. lightFilter: a canopy dims the sky light under it rather than shutting it out (docs/DAY_NIGHT.md §10).",
       "name": "leaves", "sound": "dwell:grass", "density": 200, "shape": "full", "placeable": true,
-      "render": "cutout", "color": "#6fa83a", "textures": "leaves"
+      "render": "cutout", "color": "#6fa83a", "textures": "leaves", "lightFilter": 2
     },
     {
       "$comment": "Prototype content (docs/TRANSPARENT_BLOCKS.md §6): blades of grass, the first plant. No collision; crossed quads drawn cutout, jittered per cell, swaying in the wind and fading out before the LOD; placed by hand only (world generation doesn't grow it), on grass or dirt, replaced by what is placed into it, and gone with the block under it.",
