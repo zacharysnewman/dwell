@@ -9,6 +9,7 @@ license-file.workspace = true
 
 [dependencies]
 dwell-protocol = { path = "../dwell-protocol" }
+dwell-world = { path = "../dwell-world" }
 
 [dev-dependencies]
 naga = { version = "30.0.1", features = ["wgsl-in"] }

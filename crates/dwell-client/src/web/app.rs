@@ -778,14 +778,15 @@ impl Client {
         true
     }
     /// Stand-in players for the dev tools (`__dwell.puppets`): `count` bodies ahead of `x, y, z`
-    /// (feet) on `face` (±1) holding block `held` (0: none); 0 removes them.
+    /// (feet) on `face` (its sign: negative for face B) holding block `held` (0: none); 0 removes
+    /// them.
     pub fn puppets(&self, count: u16, x: f64, y: f64, z: f64, face: f64, held: u16) -> bool {
         let mut s = self.inner.borrow_mut();
         let Some(g) = &mut s.game else { return false };
         g.puppets = (count > 0).then_some(crate::game::Puppets {
             count,
             origin: [x, y, z],
-            face,
+            face: dwell_world::FaceFrame::of_sign(face),
             held,
         });
         true

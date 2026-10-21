@@ -8,12 +8,12 @@ use dwell_protocol::{
     GroundKind, InputFrame, PhysicsSnapshot, controller_flags, player_flags,
     players::RECONCILE_SNAP_DISTANCE,
 };
-use dwell_world::VoxelWorld;
+use dwell_world::{FaceFrame, VoxelWorld};
 use rapier3d_f64::prelude::*;
 
 use crate::config::PlayerControllerConfig;
 use crate::controller::{PlayerController, PlayerHandle, Players};
-use crate::net::{dequantize_input, from_net, to_net};
+use crate::net::{dequantize_input, face_of_flags, from_net, to_net};
 use crate::physics::{BodyHandle, DVec3, Layer, Physics, Vec3, groups};
 use crate::query::GroundRef;
 
@@ -247,13 +247,9 @@ impl Predictor {
         let center = DVec3::from(l.position);
         let h = *self.handle.get_or_insert_with(|| {
             // The capsule's head points away from the midplane: its feet are above the centre on face B.
-            let face = if l.controller.flags & controller_flags::FACE_B != 0 {
-                -1.0
-            } else {
-                1.0
-            };
-            let feet =
-                center - DVec3::new(0.0, face * f64::from(self.config.half_height(false)), 0.0);
+            let face = face_of_flags(l.controller.flags, controller_flags::FACE_B);
+            let up = DVec3::from(face.up());
+            let feet = center - up * f64::from(self.config.half_height(false));
             self.players
                 .spawn(&mut self.physics, self.config, feet, 0.0)
         });
@@ -414,7 +410,7 @@ impl Predictor {
     /// A remote player as a kinematic capsule. `feet` and `velocity` are from a snapshot
     /// `lead_seconds` older than the local player's predicted present; the proxy is extrapolated to
     /// the present and dead-reckoned until the next update (at most `MAX_DEAD_RECKONING`).
-    /// `face_b`: the player is upside down (its feet are above its capsule's centre).
+    /// On `face` B the player is upside down (its feet are above its capsule's centre).
     pub fn set_remote(
         &mut self,
         player_id: u16,
@@ -422,13 +418,11 @@ impl Predictor {
         velocity: Vec3,
         crouched: bool,
         lead_seconds: f32,
-        face_b: bool,
+        face: FaceFrame,
     ) {
-        let half = self.config.half_height(crouched);
+        let half = f64::from(self.config.half_height(crouched));
         let lead = lead_seconds.clamp(0.0, MAX_DEAD_RECKONING);
-        let center = feet
-            + DVec3::new(0.0, f64::from(if face_b { -half } else { half }), 0.0)
-            + (velocity * lead).as_dvec3();
+        let center = feet + DVec3::from(face.up()) * half + (velocity * lead).as_dvec3();
         let shape = self.remote_shape(crouched);
         let r = match self.remotes.get_mut(&player_id) {
             Some(r) => {

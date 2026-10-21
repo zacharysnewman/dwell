@@ -366,7 +366,7 @@ fn world_rim_walking_off_the_edge_of_the_disc_falls_toward_the_midplane_not_into
             let p = players.position(physics, h);
             last_x = p.x;
             lowest = lowest.min(p.y);
-            crossed = crossed || players.controller(h).face < 0;
+            crossed = crossed || players.controller(h).face.is_b();
         }
     }
     assert!(f.server.health_of(welcome.player_id) > 0); // not killed: no void

@@ -360,6 +360,7 @@ fn the_fill_grass_over_dirt_sand_at_the_shore_sea_to_its_level() {
                     let ground = g.ground_y(c.x * S + lx, c.z * S + z).expect("inside");
                     for y in 0..S {
                         let wy = c.y * S + y;
+                        // face-boundary: this test is of face A's generator alone
                         if wy < MIDPLANE_Y {
                             continue; // face B's rows: this is face A's generator
                         }
@@ -373,6 +374,7 @@ fn the_fill_grass_over_dirt_sand_at_the_shore_sea_to_its_level() {
                             assert_eq!(m, if wy < SEA_LEVEL { M.water } else { M.air });
                             water += i32::from(m == M.water);
                         } else if wy < MIDPLANE_Y + CORE_LAYERS {
+                            // face-boundary: face A's core
                             assert_eq!(m, M.stone); // the core
                         } else if ground < SEA_LEVEL + 2 {
                             // The top voxel under the sea holds it (its flooded state).

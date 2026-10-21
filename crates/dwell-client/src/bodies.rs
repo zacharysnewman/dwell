@@ -19,8 +19,7 @@ use crate::render::{ArmsView, Held, PlayerView};
 pub fn remote_input(v: &RemoteView, holding: bool) -> MoveInput {
     MoveInput {
         state: v.state,
-        velocity: v.velocity,
-        face: if v.is_face_b() { -1.0 } else { 1.0 },
+        velocity: v.face().vector_f32(v.velocity),
         crouched: v.is_crouched(),
         climbing: v.flags & player_flags::CLIMBING != 0,
         swimming: v.flags & player_flags::SWIMMING != 0,
@@ -36,12 +35,11 @@ pub fn local_input(
     state: dwell_protocol::PlayerState,
     velocity: [f64; 3],
     controller: u8,
-    face: i32,
+    face: FaceFrame,
 ) -> MoveInput {
     MoveInput {
         state,
-        velocity: velocity.map(|v| v as f32),
-        face: if face < 0 { -1.0 } else { 1.0 },
+        velocity: face.vector(velocity).map(|v| v as f32),
         crouched: controller & controller_flags::CROUCHING != 0,
         climbing: controller & controller_flags::CLIMBING != 0,
         swimming: controller & controller_flags::SWIMMING != 0,
@@ -197,11 +195,7 @@ impl Bodies {
             body.animator.swing(s);
         }
         body.swing = Some(v.swing);
-        let f = if v.is_face_b() {
-            FaceFrame::B
-        } else {
-            FaceFrame::A
-        };
+        let f = v.face();
         let local = f.point(v.feet);
         let grounded = v.flags & player_flags::GROUNDED != 0 && !v.is_dead();
         let [vx, _, vz] = v.velocity;
@@ -241,7 +235,7 @@ impl Bodies {
         }
         PlayerView {
             feet: f.point([local[0], drawn, local[2]]),
-            face: if v.is_face_b() { -1.0 } else { 1.0 },
+            face: f,
             yaw: f64::from(v.yaw),
             dead: v.is_dead(),
             look: dwell_characters::DEFAULT_LOOK,
@@ -258,7 +252,7 @@ impl Bodies {
     }
 
     /// Your body lying where you died.
-    pub fn own_dead(&mut self, feet: [f64; 3], yaw: f64, face: f64, dt: f64) -> PlayerView {
+    pub fn own_dead(&mut self, feet: [f64; 3], yaw: f64, face: FaceFrame, dt: f64) -> PlayerView {
         let pose = self.own.update(&MoveInput::default(), dt as f32);
         PlayerView {
             feet,
@@ -357,7 +351,8 @@ mod tests {
                     yaw: 0.0,
                     pitch: 0.0,
                     state: dwell_protocol::PlayerState::Walking,
-                    flags: player_flags::GROUNDED | if f.is_b() { player_flags::FACE_B } else { 0 },
+                    flags: player_flags::GROUNDED
+                        | dwell_physics::net::face_bit(f, player_flags::FACE_B),
                     held: 0,
                     swing: 0,
                 };

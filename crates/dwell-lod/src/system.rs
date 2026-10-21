@@ -26,7 +26,7 @@ use dwell_world::lod::{
     INDEX_LEVEL, LodBounds, LodCoord, LodKind, MAX_LEVEL, SECTION_CELLS, cell_index, cell_size,
     child, chunk_of_lod, in_world, kind_from_bounds, lod_of_chunk, parent, row_face, section_size,
 };
-use dwell_world::{CHUNK_SIZE, ChunkCoord, Face, MIDPLANE_Y, WORLD_RADIUS};
+use dwell_world::{CHUNK_SIZE, ChunkCoord, Face, FaceFrame, WORLD_RADIUS};
 
 use crate::frustum::{Frustum, LodCamera, box_distance};
 use crate::grid::{
@@ -577,7 +577,7 @@ impl LodSystem {
     pub fn update<P>(&mut self, camera: &LodCamera, now_ms: f64, host: &mut dyn LodHost<P>) {
         self.frame += 1;
         let p = camera.position;
-        let view_face = if p[1] >= f64::from(MIDPLANE_Y) { 1 } else { -1 };
+        let view_face = FaceFrame::at_height(p[1]).sign();
         if view_face != self.view_face {
             self.face_changed();
         }

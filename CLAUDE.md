@@ -178,6 +178,25 @@ When fixing a bug (reported, or found along the way):
 Behaviour changes that are tuning rather than bugs (e.g. a longer coyote time) follow the same
 pattern: a test that pins the new behaviour and fails on the old.
 
+## Requirement: both faces
+
+The world has two faces, and face B is face A's mirror image ([`docs/BIFACIAL_WORLD.md`](docs/BIFACIAL_WORLD.md) §11).
+Anything that depends on which way is up (terrain, meshing, collision, the controller, the camera,
+targeting, tools, sounds, bodies, the sky and the shaders) must work on both:
+
+- **Write it once, face-local** (+y up, the ground below), and cross into the world only through
+  `dwell_world::FaceFrame` (`y`, `row`, `point`, `vector`, `look`, `pitch`, `handed`, `state`, …;
+  in WGSL `FaceFrame::wgsl()`'s `face_at`, `face_y`, `face_up`, `face_vector`, `face_rise`). No
+  `MIDPLANE_Y` comparisons, mirror sums, `2 × MIDPLANE_Y`, hand-made face signs, or raw `FACE_B`
+  bits (the wire's go through `dwell_physics::net::face_of_flags` / `face_bit`).
+- **Test it on both faces**: `dwell_world::both_faces!(fn name(f: FaceFrame) { … })`, ideally a
+  parity test that places a face-local fixture through `f` and compares with face A's result. A test
+  that is one face's on purpose says why: `// face-a-only: <reason>` (or `face-b-only`, or
+  `both-faces` for one that compares or crosses the faces itself).
+- **The check enforces both** (`cargo test -p dwell-world --test both_faces`, §11.2); a genuine
+  mirroring boundary is marked `// face-boundary: <reason>` and listed in §11.1's table.
+- Controller changes also pass the mirror suite: `DWELL_FACE=b cargo nextest run -p dwell-physics`.
+
 ## Requirement: versions and releases
 
 Builds are tagged GitHub Releases behind a launcher at `/dwell/`; worlds are locked to their version's

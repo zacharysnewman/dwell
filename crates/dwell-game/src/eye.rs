@@ -14,8 +14,6 @@ use dwell_physics::config::StepView;
 use dwell_protocol::controller_flags;
 use dwell_world::FaceFrame;
 
-use crate::FaceSign;
-
 /// Crouch offset decay rate (1/s).
 const CROUCH_RATE: f64 = 12.0;
 /// A grounded per-tick feet change larger than this is a step, not riding a lift or a slope.
@@ -258,21 +256,16 @@ pub struct EyeState {
     pub half_height: f64,
     pub velocity: [f64; 3],
     pub controller_flags: u8,
-    pub face: FaceSign,
+    pub face: FaceFrame,
     pub eye_height: f64,
     pub crouch_eye_height: f64,
     pub max_step_height: f64,
     pub ramp: StepRamp,
 }
 
-/// The face frame of a face sign (BIFACIAL_WORLD.md §11): the eye smooths in face-local heights.
-pub fn frame_of(face: FaceSign) -> FaceFrame {
-    if face < 0 { FaceFrame::B } else { FaceFrame::A }
-}
-
 /// Feet height from a state's own half height: the capsule centre moves when crouching.
 pub fn eye_sample_of(s: &EyeState) -> EyeSample {
-    let f = frame_of(s.face);
+    let f = s.face;
     let [px, py, pz] = s.position;
     let [ox, oy, oz] = s.render_offset;
     let at = f.point([px + ox, py + oy, pz + oz]);
@@ -295,7 +288,7 @@ pub struct EyeCamera {
     smoother: EyeSmoother,
     previous: Option<f64>,
     current: f64,
-    face: FaceSign,
+    face: FaceFrame,
 }
 
 impl Default for EyeCamera {
@@ -304,7 +297,7 @@ impl Default for EyeCamera {
             smoother: EyeSmoother::new(),
             previous: None,
             current: 0.0,
-            face: 1,
+            face: FaceFrame::A,
         }
     }
 }
@@ -323,7 +316,7 @@ impl EyeCamera {
             self.face = s.face;
         }
         // Along the player's up, back to a world height.
-        let eye = frame_of(s.face).y(self.smoother.tick(eye_sample_of(s), dt));
+        let eye = s.face.y(self.smoother.tick(eye_sample_of(s), dt));
         self.previous = Some(match self.previous {
             None => eye,
             Some(_) => self.current,
@@ -666,7 +659,7 @@ mod tests {
                 } else {
                     0
                 }),
-                face: 1,
+                face: FaceFrame::A,
                 eye_height: 1.62,
                 crouch_eye_height: 0.8,
                 max_step_height: 0.55,
@@ -691,8 +684,9 @@ mod tests {
                 position: f.point(s.position),
                 render_offset: f.vector(s.render_offset),
                 velocity: f.vector(s.velocity),
-                controller_flags: s.controller_flags | controller_flags::FACE_B,
-                face: -1,
+                controller_flags: s.controller_flags
+                    | dwell_physics::net::face_bit(f, controller_flags::FACE_B),
+                face: FaceFrame::B,
                 ..*s
             }
         }
