@@ -58,7 +58,7 @@ test('settings menu: fog sliders open from the corner and are kept', async ({ pa
   await expect(page.locator('#settings-menu .settings-copy')).toHaveText('Copied');
   const copied = await page.evaluate<string>('navigator.clipboard.readText()');
   expect(JSON.parse(copied)).toEqual({
-    fog: { distanceM: 4000, density: 0.5, heightM: 1500 },
+    fog: { distanceM: 16000, density: 0.95, heightM: 1800 },
     detail: { distanceM: 256, pixelError: 4, memoryMb: 256 },
     exposure: 1,
     audio: { master: 0.8, effects: 1, ui: 0.6 },
