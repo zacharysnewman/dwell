@@ -316,7 +316,7 @@ pub fn light_uniforms(p: Option<&PixelArtPreset>) -> [[f32; 4]; 2] {
 /// at the darkening's strength (`mix(fill, 0, k)`: the fill darkened, its hue kept, then the
 /// palette snaps it to a darker step); none without edges.
 pub fn edge_mode(p: &PixelArtPreset) -> Option<OutlineMode> {
-    (p.edges != 0).then(|| OutlineMode {
+    (p.edges != 0).then_some(OutlineMode {
         name: p.name,
         edges: p.edges,
         width_px: 0.0,

@@ -1725,7 +1725,7 @@ impl Renderer {
         }
     }
     /// The canvas's size (`resize`).
-    pub fn size(&self) -> (u32, u32) {
+    pub fn canvas_size(&self) -> (u32, u32) {
         self.canvas
     }
     /// The pixel-art preview's preset this frame draws with (`pixel_art_for`), if any.
@@ -4168,6 +4168,7 @@ impl FrameBindings {
     }
 
     /// The frame groups of the far, near and arms passes.
+    #[allow(clippy::too_many_arguments)]
     fn groups(
         &self,
         device: &wgpu::Device,
@@ -4996,7 +4997,7 @@ mod tests {
             |r: &Renderer| r.frame_uniforms(&basis, 1.0, 100.0)[28..28 + LIGHT_FLOATS].to_vec();
         let fov = r.frame_fov();
         assert_eq!(
-            (r.pixel_art(), r.size, r.size()),
+            (r.pixel_art(), r.size, r.canvas_size()),
             (None, (2560, 1440), (2560, 1440))
         );
         assert_eq!(
@@ -5012,7 +5013,7 @@ mod tests {
             r.size, g.low,
             "the frame draws at the low-res picture's size"
         );
-        assert_eq!(r.size(), (2560, 1440), "the canvas stays the canvas");
+        assert_eq!(r.canvas_size(), (2560, 1440), "the canvas stays the canvas");
         assert_eq!(r.pixel_ratio, 2.0 / 5.0);
         assert_eq!(r.stats().pixel_ratio, 2.0, "the canvas's ratio for the HUD");
         // The rows that show keep the screen's FOV (the margin draws a little past it).

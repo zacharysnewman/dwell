@@ -1,7 +1,7 @@
-// The pixel-art preview's post pass (dwell-look pixel_art.rs; docs/proposals/PIXEL_ART_LOOK.md):
-// each canvas pixel shows one texel of the low-res picture (a nearest-neighbour integer upscale,
-// bars outside the visible rect), snapped to the palette with a 4 × 4 Bayer ordered dither at the
-// texel's own position (`quantize`, whose CPU twin is pixel_art.rs `quantize`).
+// The pixel-art preview's post passes (dwell-look pixel_art.rs; docs/proposals/PIXEL_ART_LOOK.md):
+// the low-res picture snapped to the palette with a 4 × 4 Bayer ordered dither at each texel
+// (`quantize_fs`; `quantize`'s CPU twin is pixel_art.rs `quantize`), then drawn on the canvas, each
+// canvas pixel one texel (`post_fs`: a nearest-neighbour integer upscale, bars outside the rect).
 
 struct Post {
     // x canvas pixels per texel, yz the low-res target's top-left corner (canvas px), w colours.
@@ -82,6 +82,16 @@ fn quantize(srgb: vec3f, p: vec2u) -> u32 {
     return select(a, b, t > threshold);
 }
 
+// First, at low res: each texel snapped to the palette (`low` is the composite's picture).
+@fragment
+fn quantize_fs(@builtin(position) frag: vec4f) -> @location(0) vec4f {
+    let p = vec2i(frag.xy);
+    let c = textureLoad(low, p, 0).rgb;
+    return vec4f(post.srgb[quantize(c, vec2u(p))].rgb, 1.0);
+}
+
+// Then on the canvas: each canvas pixel one texel of the snapped picture (`low` now holds it),
+// bars outside the rect.
 @fragment
 fn post_fs(@builtin(position) frag: vec4f) -> @location(0) vec4f {
     let q = frag.xy;
@@ -91,6 +101,5 @@ fn post_fs(@builtin(position) frag: vec4f) -> @location(0) vec4f {
     let size = vec2i(textureDimensions(low));
     let t = floor((q - post.grid.yz - post.cfg.yz) / post.grid.x);
     let p = clamp(vec2i(t), vec2i(0), size - 1);
-    let c = textureLoad(low, p, 0).rgb;
-    return vec4f(post.srgb[quantize(c, vec2u(p))].rgb, 1.0);
+    return vec4f(textureLoad(low, p, 0).rgb, 1.0);
 }

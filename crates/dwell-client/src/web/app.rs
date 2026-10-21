@@ -1868,7 +1868,7 @@ impl Inner {
             verification,
             PlayerControllerConfig::default(),
         );
-        let size = self.renderer.borrow().size();
+        let size = self.renderer.borrow().canvas_size();
         let ratio = self.renderer.borrow().stats().pixel_ratio.max(0.01);
         game.viewport_css = (f64::from(size.0) / ratio, f64::from(size.1) / ratio);
         game.debug_visible = self.debug_visible;

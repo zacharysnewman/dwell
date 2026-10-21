@@ -3,7 +3,7 @@
   "palettes": {
     "dwell": [
       ["#0e0b14", "ink", "ink_soft", "wolf.shadow"],
-      ["water.shadow", "water.base", "#5aa8e6", "water.light", "#cfe8f4"],
+      ["water.shadow", "water.base", "#5aa8e6", "#8cc0ea", "water.light", "#b8d8f0", "#dcecf6"],
       ["linen.shadow", "cloud.shadow", "cloud.base", "cloud.light"],
       ["leaf.shadow", "meadow.shadow", "meadow.base", "meadow.light"],
       ["#1e3d3a", "leaf.base", "leaf.light"],
