@@ -243,6 +243,7 @@ impl Mesher for MeshJobs {
             Purpose::ChunkMesh(job.coord, job.token),
             Job::MeshChunk {
                 padded: job.padded,
+                light: job.light,
                 mirror: job.mirror,
                 origin: job.coord.map(|c| c * dwell_world::CHUNK_SIZE),
             },

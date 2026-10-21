@@ -28,6 +28,7 @@ import {
   timelapseTimes,
   type Scenario,
   type Step,
+  type Vec3,
 } from './scenarios.ts';
 import { viewStorage } from './views.ts';
 
@@ -306,6 +307,9 @@ async function step(run: Run, s: Step): Promise<void> {
     case 'releaseCamera':
       await call(page, 'd.releaseCamera()');
       return;
+    case 'shadows':
+      await call(page, `d.setShadows(${JSON.stringify(s.quality)})`);
+      return;
     case 'water':
       await call(
         page,
@@ -321,6 +325,19 @@ async function step(run: Run, s: Step): Promise<void> {
     case 'brush':
       await call(page, `d.brush(${JSON.stringify(s.command)})`);
       return;
+    case 'region': {
+      // Corners as world cells from the feet (x, z in metres, y in ½ m rows; face B's up is −y).
+      const up = s.up ?? 1;
+      const cell = (o: Vec3): string =>
+        `[Math.floor(f[0] + ${String(o[0])}), Math.floor((f[1] + ${String(up * o[1])}) / 0.5), Math.floor(f[2] + ${String(o[2])})]`;
+      const ok = await until(
+        page,
+        `(() => { const f = d.state().feet; d.tool('cornerA@' + ${cell(s.from)}.join(',')); d.tool('cornerB@' + ${cell(s.to)}.join(',')); return d.tool(${JSON.stringify(s.op)}); })()`,
+        30_000,
+      );
+      if (!ok) throw new Error(`region ${s.op}: not sent`);
+      return;
+    }
     case 'arms':
       await call(page, `d.showArms(${String(s.on)})`);
       return;

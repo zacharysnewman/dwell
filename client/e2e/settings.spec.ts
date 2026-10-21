@@ -28,8 +28,9 @@ test('settings menu: opens from the corner, without fog sliders, and is kept', a
     '256 MB',
     '75°',
     '1.00×',
-    // Clouds, then (after the FOV boost) the water quality: rows of buttons, the pressed one the
-    // value.
+    // Clouds and Shadows, then (after the FOV boost) the water quality: rows of buttons, the
+    // pressed one the value.
+    '',
     '',
     '100%',
     '',
@@ -63,6 +64,7 @@ test('settings menu: opens from the corner, without fog sliders, and is kept', a
     audio: { master: 0.8, effects: 1, ui: 0.6 },
     clouds: 'high',
     water: { quality: 'medium' },
+    shadows: { quality: 'high' },
     motion: { speedEffects: true, fovBoost: 1, plantSway: true },
     fovDeg: 75,
     showArms: true,

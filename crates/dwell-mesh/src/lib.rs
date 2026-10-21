@@ -39,6 +39,9 @@
 //! cells (0..32); the `water` mesh adds `fluids` (1 per vertex, as the chunks' transparent mesh). `skirts[f]` holds the border faces the apron hides on face `f` (0 +X, 1 −X, 2 +Y,
 //! 3 −Y, 4 +Z, 5 −Z), shown when the neighbour there is not drawn at the same level.
 
+mod flood;
+#[cfg(test)]
+mod flood_tests;
 mod lod_mesher;
 mod mesher;
 mod sky;
@@ -52,7 +55,7 @@ pub use lod_mesher::{
 };
 pub use mesher::{
     ChunkMeshes, MeshArrays, PAD, PADDED_VOLUME, face_covered, mesh_chunk, mesh_chunk_at,
-    mirror_padded, padded_index,
+    mesh_chunk_lit, mirror_padded, padded_index,
 };
 /// The `fluids` stream's value for a see-through face that is not a fluid's.
 pub const NO_FLUID: f32 = 255.0;

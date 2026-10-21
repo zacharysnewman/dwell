@@ -1,6 +1,7 @@
 // The game menu: a button in the top-left corner (or Esc) opens a full-screen menu over the game
 // with pages — Settings (the detail settings, lod/detail.ts; the
 // tone-mapping exposure and the sky, render/look.ts; the water quality, ui/waterSettings.ts; the
+// sun and moon shadows, ui/shadowSettings.ts; the
 // volumes, audio/settings.ts; ARCHITECTURE.md §5, §6.6), Controls (every key
 // and touch control, ui/controls.ts), Debug (the debug tools as buttons, with their keys) and Host
 // (a local world's hosting, ui/hostPanel.ts) — and Resume and Quit to main menu (Phase 5a). The
@@ -29,6 +30,15 @@ import {
   type WaterQuality,
   type WaterSettings,
 } from './waterSettings';
+import {
+  defaultShadows,
+  sanitizeShadows,
+  SHADOW_QUALITIES,
+  SHADOW_QUALITY_LABELS,
+  shadowRecord,
+  type ShadowQuality,
+  type ShadowSettings,
+} from './shadowSettings';
 import {
   MOTION_KEY,
   defaultMotion,
@@ -73,6 +83,8 @@ export interface Settings {
   clouds: CloudQuality;
   /** The water quality (ui/waterSettings.ts). */
   water: WaterSettings;
+  /** The sun's and moon's shadows (ui/shadowSettings.ts). */
+  shadows: ShadowSettings;
   /** Speed effects: the FOV boost and the wind (docs/MOTION_EFFECTS.md). */
   motion: MotionSettings;
   /** The vertical field of view in degrees (60–100; narrower on wide screens, dwell-lod's base_fov). */
@@ -88,6 +100,7 @@ export function defaultSettings(mobile: boolean, reducedMotion = false): Setting
     audio: { ...DEFAULT_VOLUMES },
     clouds: defaultClouds(mobile),
     water: defaultWater(mobile),
+    shadows: defaultShadows(mobile),
     motion: defaultMotion(reducedMotion),
     fovDeg: DEFAULT_FOV,
     showArms: true,
@@ -110,6 +123,7 @@ export function settingsJson(s: Settings): string {
     },
     clouds: s.clouds,
     water: { quality: s.water.quality },
+    shadows: { quality: s.shadows.quality },
     motion: {
       speedEffects: s.motion.speedEffects,
       fovBoost: Math.round(s.motion.fovBoost * 100) / 100,
@@ -131,6 +145,8 @@ const EXPOSURE_KEY = 'dwell.exposure';
 const CLOUDS_KEY = 'dwell.clouds';
 /** A record, append-only: unknown fields are kept on rewrite (ui/waterSettings.ts). */
 const WATER_KEY = 'dwell.water';
+/** A record, append-only: unknown fields are kept on rewrite (ui/shadowSettings.ts). */
+const SHADOWS_KEY = 'dwell.shadows';
 
 function load(key: string): unknown {
   try {
@@ -150,6 +166,7 @@ export function loadSettings(mobile: boolean): Settings {
     audio: loadVolumes(),
     clouds: sanitizeClouds(load(CLOUDS_KEY), mobile),
     water: sanitizeWater(load(WATER_KEY), defaults.water),
+    shadows: sanitizeShadows(load(SHADOWS_KEY), defaults.shadows),
     motion: sanitizeMotion(load(MOTION_KEY), prefersReducedMotion()),
     fovDeg: sanitizeFovSetting(load(VIEW_KEY)),
     showArms: sanitizeShowArms(load(VIEW_KEY)),
@@ -162,6 +179,7 @@ export function saveSettings(s: Settings): void {
     localStorage.setItem(EXPOSURE_KEY, JSON.stringify(s.exposure));
     localStorage.setItem(CLOUDS_KEY, JSON.stringify(s.clouds));
     localStorage.setItem(WATER_KEY, JSON.stringify(waterRecord(load(WATER_KEY), s.water)));
+    localStorage.setItem(SHADOWS_KEY, JSON.stringify(shadowRecord(load(SHADOWS_KEY), s.shadows)));
     // Append-only: fields a newer build stored are kept.
     localStorage.setItem(MOTION_KEY, JSON.stringify(motionRecord(load(MOTION_KEY), s.motion)));
     localStorage.setItem(
@@ -340,6 +358,15 @@ const WATER_CHOICE: ChoiceSpec<WaterQuality> = {
   labels: WATER_QUALITY_LABELS,
   get: (s) => s.water.quality,
   with: (s, v) => ({ ...s, water: { ...s.water, quality: v } }),
+};
+
+const SHADOW_CHOICE: ChoiceSpec<ShadowQuality> = {
+  label: 'Shadows',
+  hint: 'Sun and moon shadows near you; Low is lighter on the GPU',
+  choices: SHADOW_QUALITIES,
+  labels: SHADOW_QUALITY_LABELS,
+  get: (s) => s.shadows.quality,
+  with: (s, v) => ({ ...s, shadows: { ...s.shadows, quality: v } }),
 };
 
 /** A debug tool as a button in the Debug page (`key` matches an entry of DEBUG_KEYS). */
@@ -647,7 +674,10 @@ export class SettingsMenu {
       const grid = el('div', 'gm-grid');
       for (const spec of section.toggles ?? []) grid.append(this.toggle(spec));
       for (const spec of section.sliders) grid.append(this.slider(spec));
-      if (section.title === 'Look') for (const spec of CHOICES) grid.append(this.choice(spec));
+      if (section.title === 'Look') {
+        for (const spec of CHOICES) grid.append(this.choice(spec));
+        grid.append(this.choice(SHADOW_CHOICE));
+      }
       group.append(grid);
       page.append(group);
     }

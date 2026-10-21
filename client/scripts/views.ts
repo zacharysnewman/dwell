@@ -29,6 +29,8 @@ export interface View {
     clouds?: 'off' | 'low' | 'high';
     /** The water quality (ui/waterSettings.ts). */
     water?: { quality: 'low' | 'medium' | 'high' };
+    /** The Shadows setting (ui/shadowSettings.ts). */
+    shadows?: { quality: 'off' | 'low' | 'high' };
     /** Speed effects (ui/motionSettings.ts): on or off and the FOV boost's strength 0–1. */
     motion?: { speedEffects: boolean; fovBoost: number };
     /** The time of day shown (0–1, 0 midnight, 0.5 noon): `?time=`, this client only. */
@@ -151,6 +153,7 @@ function parseView(index: string, raw: unknown): View {
           'clouds',
           'motion',
           'water',
+          'shadows',
           'timeOfDay',
         ]);
   const settings: View['settings'] = {};
@@ -177,6 +180,13 @@ function parseView(index: string, raw: unknown): View {
       throw new ViewError(`${at}.settings.water.quality: expected "low", "medium" or "high"`);
     }
     settings.water = { quality: w.quality };
+  }
+  if (s.shadows !== undefined) {
+    const w = fields(`${at}.settings.shadows`, s.shadows, ['quality']);
+    if (w.quality !== 'off' && w.quality !== 'low' && w.quality !== 'high') {
+      throw new ViewError(`${at}.settings.shadows.quality: expected "off", "low" or "high"`);
+    }
+    settings.shadows = { quality: w.quality };
   }
   if (s.motion !== undefined) {
     const m = fields(`${at}.settings.motion`, s.motion, ['speedEffects', 'fovBoost']);
@@ -246,6 +256,7 @@ export function viewStorage(view: View): Record<string, string> {
   }
   if (view.settings.clouds) out['dwell.clouds'] = JSON.stringify(view.settings.clouds);
   if (view.settings.water) out['dwell.water'] = JSON.stringify(view.settings.water);
+  if (view.settings.shadows) out['dwell.shadows'] = JSON.stringify(view.settings.shadows);
   if (view.settings.motion) out['dwell.motion'] = JSON.stringify(view.settings.motion);
   return out;
 }

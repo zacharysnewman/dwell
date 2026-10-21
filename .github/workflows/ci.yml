@@ -30,6 +30,8 @@ jobs:
           node --test shared/look/clouds.test.mjs
           node shared/look/reflections.mjs
           node --test shared/look/reflections.test.mjs
+          node shared/look/shadows.mjs
+          node --test shared/look/shadows.test.mjs
           node shared/look/spyglass.mjs
           node --test shared/look/spyglass.test.mjs
           node shared/look/fog.mjs
@@ -42,6 +44,8 @@ jobs:
           node --test shared/look/outline.test.mjs
           node shared/look/ambient.mjs
           node --test shared/look/ambient.test.mjs
+          node shared/look/light.mjs
+          node --test shared/look/light.test.mjs
           node shared/look/daynight.mjs
           node --test shared/look/daynight.test.mjs
           node shared/textures/gen.mjs

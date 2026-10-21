@@ -913,6 +913,18 @@ impl Client {
     /// true if it sent a region edit. For tools and tests (keys need the pointer locked).
     pub fn tool(&self, name: &str, now_ms: f64) -> bool {
         use dwell_game::region_tools::ToolAction as T;
+        // `cornerA@x,y,z`: a corner at that world cell, not the crosshair's (the bench's region
+        // step, docs/DEV_TOOLS.md).
+        let (name, at) = match name.split_once('@') {
+            Some((n, c)) => {
+                let v: Vec<i32> = c.split(',').filter_map(|p| p.trim().parse().ok()).collect();
+                let Ok(cell) = <[i32; 3]>::try_from(v) else {
+                    return false;
+                };
+                (n, Some(cell))
+            }
+            None => (name, None),
+        };
         let tool = match name {
             "cornerA" => T::CornerA,
             "cornerB" => T::CornerB,
@@ -934,7 +946,7 @@ impl Client {
             .borrow_mut()
             .game
             .as_mut()
-            .is_some_and(|g| g.tool(tool, now_ms))
+            .is_some_and(|g| g.tool_at(tool, at, now_ms))
     }
     /// Drives the brush tool (BRUSHES.md) as its keys and clicks would, for tools and tests:
     /// `toggle`, `preset:<name>`, `size:<n>`, `nextBrush`, `nextPerformer`, `apply` (left click),
@@ -1113,6 +1125,16 @@ impl Client {
             .renderer
             .borrow_mut()
             .set_cloud_coverage(coverage);
+    }
+    /// The Shadows setting (0 Off, 1 Low, 2 High; DAY_NIGHT.md §10). A CPU adapter draws Low at
+    /// most.
+    #[wasm_bindgen(js_name = setShadows)]
+    pub fn set_shadows(&self, level: u32) {
+        self.inner
+            .borrow()
+            .renderer
+            .borrow_mut()
+            .set_shadow_quality(dwell_look::shadows::ShadowQuality::from_level(level));
     }
     /// The water quality (0 Low, 1 Medium, 2 High; WATER_RENDERING.md §4).
     #[wasm_bindgen(js_name = setWaterQuality)]

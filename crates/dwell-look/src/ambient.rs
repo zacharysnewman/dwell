@@ -45,6 +45,40 @@ impl AmbientTunables {
     }
 }
 
+/// How a terrain vertex is lit (docs/DAY_NIGHT.md §9–10), as the terrain shader computes it
+/// (`terrain_light` in dwell-client's shaders): shares of the hemisphere light, of the direct sun
+/// and moon, and the block light's glow.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Shading {
+    pub ambient: f64,
+    pub direct: f64,
+    pub glow: f64,
+}
+
+/// The share of the hemisphere light a vertex with baked `light` (corner occlusion × sky
+/// visibility) and sky brightness `sky` (the flood light's, 0–1) keeps: the sky brightness, the
+/// baked light shading it as much as the vertex is open to the sky (open ground: the baked light
+/// alone, as before the flood light; deep in a cave: the flood light alone, whose falloff stands in
+/// for the light bounced in).
+pub fn open_share(light: f64, sky: f64) -> f64 {
+    let (light, sky) = (light.clamp(0.0, 1.0), sky.clamp(0.0, 1.0));
+    sky * (light + (1.0 - light) * (1.0 - sky))
+}
+
+/// The shading of a vertex with baked `light` (corner occlusion × sky visibility) and flood
+/// light `sky` and `block` (levels as shares of 15): the hemisphere light by [`open_share`],
+/// above the floor; the sun and moon by the sky light's direct
+/// ramp (the shadow stand-in); the block light's brightness × its strength.
+pub fn shading(light: f64, sky: f64, block: f64) -> Shading {
+    let l = dwell_world::light::LIGHT;
+    let (sky, block) = (sky * 15.0, block * 15.0);
+    Shading {
+        ambient: AMBIENT.ambient(open_share(light, l.sky(sky))),
+        direct: l.direct(sky),
+        glow: l.block(block) * l.block_strength,
+    }
+}
+
 const _: () = assert!(
     AMBIENT.fits(SKY_APRON),
     "shared/look/ambient.json: the sky rays reach past dwell_world::SKY_APRON"
@@ -73,6 +107,24 @@ mod tests {
         };
         assert_eq!(t.ambient(1.0), 1.0, "open ground is lit as before");
         assert!((t.ambient(0.0) - 0.1).abs() < 1e-12);
+    }
+
+    #[test]
+    fn open_sky_keeps_the_baked_light_and_the_dark_keeps_the_floor() {
+        // The 0.22.5 look on open ground: under the full sky the flood light changes nothing.
+        for l in [0.0, 0.3, 0.75, 1.0] {
+            assert_eq!(open_share(l, 1.0), l);
+            let s = shading(l, 1.0, 0.0);
+            assert_eq!(
+                (s.ambient, s.direct, s.glow),
+                (AMBIENT.ambient(l), 1.0, 0.0)
+            );
+        }
+        // No sky light: the floor, no sun or moon, whatever the rays saw.
+        let s = shading(1.0, 0.0, 0.0);
+        assert_eq!((s.ambient, s.direct), (AMBIENT.floor, 0.0));
+        // Part way: the flood light lifts what the rays shut out.
+        assert!(open_share(0.0, 0.5) > 0.0 && open_share(0.0, 0.5) < open_share(1.0, 0.5));
     }
 
     #[test]
