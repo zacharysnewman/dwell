@@ -105,12 +105,13 @@ fn hand_box(role: &str, t: f32, held: bool) -> ([f32; 2], [f32; 2]) {
 #[test]
 fn the_held_block_and_hand_sit_in_the_lower_right_at_a_modest_size() {
     // Standing: was centre (0.35, −0.72), its top at −0.07 (the screen's middle) and 0.65 of the
-    // screen's height; the owner asked for ~1/1.5 the size, lower and further right.
+    // screen's height; the owner asked for ~1/1.5 the size, lower and further right. That read
+    // too small (0.43), so it is now ~0.55: between the two.
     let (lo, hi) = hand_box("idle", 0.0, true);
     let centre = [(lo[0] + hi[0]) / 2.0, (lo[1] + hi[1]) / 2.0];
     let height = (hi[1] - lo[1]) / 2.0;
     assert!(
-        (0.38..=0.5).contains(&height),
+        (0.5..=0.6).contains(&height),
         "height {height} of the screen"
     );
     assert!(

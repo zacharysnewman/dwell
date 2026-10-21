@@ -157,7 +157,7 @@
       },
       "firstPerson": {
         "bones": ["arm_r", "forearm_r", "hand_r"],
-        "anchor": [-0.65, -0.48, 0.35],
+        "anchor": [-0.47, -0.4, 0.17],
         "fov": 62,
         "clips": {
           "idle": "fp_idle",
