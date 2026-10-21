@@ -5,6 +5,7 @@
     "leaf":        { "shadow": "#2e6450", "base": "#5f9e3e", "light": "#a6cf52" },
     "soil":        { "shadow": "#5b3a3c", "base": "#8e5d3d", "light": "#b98352" },
     "stone":       { "shadow": "#817e8e", "base": "#a9a3a3", "light": "#dcd0b9" },
+    "bedrock":     { "shadow": "#3a3645", "base": "#555060", "light": "#7d7680" },
     "sand":        { "shadow": "#c4a07a", "base": "#ebd39c", "light": "#f8ecc6" },
     "water":       { "shadow": "#1d5ea6", "base": "#2f8fd8", "light": "#96dcf0" },
     "bark":        { "shadow": "#4a3438", "base": "#7c5338", "light": "#a77a4c" },

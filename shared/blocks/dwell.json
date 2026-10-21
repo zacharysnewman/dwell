@@ -111,6 +111,12 @@
       "medium": "air", "partOf": "dwell:torch",
       "emits": 14, "light": "dwell:torch",
       "color": "#ffffff", "textures": "torchTop"
+    },
+    {
+      "$comment": "The bedrock between the faces (docs/BIFACIAL_WORLD.md §2, owner 2026-10-21: \"add bedrock back in between the two faces\"): generated in the layers either side of the midplane (`shared/worldgen/terrain.json` `bedrock`), indestructible so no edit, region tool or brush cuts it; the faces meet only through the portals' shafts (`shared/worldgen/portals.json`). Not placeable.",
+      "name": "bedrock", "sound": "dwell:stone", "density": 3000, "shape": "full",
+      "indestructible": true,
+      "color": "#4f4a57", "textures": "bedrock"
     }
   ]
 }

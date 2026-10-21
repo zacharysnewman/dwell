@@ -7,12 +7,14 @@ import { fileURLToPath } from 'node:url';
 import {
   decorationsRust,
   hydrologyRust,
+  midplaneRust,
   placementsRust,
   registryBlocks,
   registryStructures,
   terrainRust,
   validateDecorations,
   validateHydrology,
+  validateMidplane,
   validatePlacements,
   validateTerrain,
 } from './gen.mjs';
@@ -277,3 +279,52 @@ test('a bad hydrology profile fails with its name, the key and the problem', () 
   e.profiles.push(structuredClone(e.profiles[0]));
   assert.throws(() => validateHydrology(e), /gentle: duplicate name/);
 });
+
+const loadMidplane = () => JSON.parse(readFileSync(join(here, 'midplane.json'), 'utf8'));
+
+test('the checked-in bedrock and portals are valid and generate the checked-in Rust', () => {
+  const rs = midplaneRust(validateMidplane(loadMidplane(), blocks));
+  const checkedIn = readFileSync(join(here, '../../crates/dwell-worldgen/src/midplane.gen.rs'), 'utf8');
+  assert.equal(rs, checkedIn, 'run `node shared/worldgen/gen.mjs`');
+});
+
+test('portal rules changed by data alone are emitted', () => {
+  const m = loadMidplane();
+  m.portals.count = [2, 2];
+  m.portals.radius = 4;
+  m.portals.ladder.wall = 'east';
+  m.portals.rim = { block: 'dwell:sand', width: 2, height: 1 };
+  m.bedrock.thickness = 2.5;
+  const rs = midplaneRust(validateMidplane(m, blocks));
+  assert.match(rs, /count_min: 2,/);
+  assert.match(rs, /radius: 4\.0,/);
+  assert.match(rs, /ladder: "dwell:ladder\[facing=west\]",/);
+  assert.match(rs, /wall: \[1, 0\],/);
+  assert.match(rs, /rim_block: "dwell:sand",/);
+  assert.match(rs, /rim_rows: 2,/);
+  assert.match(rs, /bedrock_rows: 5,/);
+});
+
+test('bad bedrock or portal entries fail with the key and the problem', () => {
+  const cases = [
+    [(m) => (m.bedrock.block = 'dwell:stone'), /bedrock\.block dwell:stone must be indestructible/],
+    [(m) => (m.bedrock.block = 'dwell:nope'), /bedrock\.block dwell:nope is not in the registry/],
+    [(m) => (m.bedrock.thickness = 0.3), /bedrock\.thickness must be a whole number of cells/],
+    [(m) => (m.bedrock.thickness = 10.5), /bedrock\.thickness must be in \[0, 10\]/],
+    [(m) => (m.portals.count = [5, 3]), /portals\.count must be \[min, max\]/],
+    [(m) => (m.portals.radius = 0.5), /portals\.radius must be in \[1, 16\]/],
+    [(m) => (m.portals.ladder.block = 'dwell:stone'), /portals\.ladder\.block dwell:stone must be climbable/],
+    [(m) => (m.portals.ladder.wall = 'up'), /portals\.ladder\.wall must be one of north, east, south, west/],
+    [(m) => (m.portals.rim.block = 'dwell:tall_grass'), /portals\.rim\.block dwell:tall_grass must be a full block/],
+    [(m) => (m.portals.rim.height = 0.3), /portals\.rim\.height must be a whole number of cells/],
+    [(m) => (m.portals.extra = 1), /portals: unknown extra/],
+    [(m) => (m.portals.motes = 'dwell:nope'), /portals\.motes "dwell:nope" is not a look in shared\/look\/motes\.json/],
+    [(m) => (m.other = 1), /unknown other/],
+  ];
+  for (const [change, message] of cases) {
+    const m = loadMidplane();
+    change(m);
+    assert.throws(() => validateMidplane(m, blocks), message);
+  }
+});
+

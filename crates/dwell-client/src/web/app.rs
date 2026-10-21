@@ -1944,6 +1944,7 @@ impl Inner {
         game.viewport_css = (f64::from(size.0) / ratio, f64::from(size.1) / ratio);
         game.debug_visible = self.debug_visible;
         game.set_capabilities(region_edits, brushes, generator_version);
+        game.set_world(generator_version, world_seed);
         game.day_override = self.options.day;
         game.set_loading_screen(self.options.loading_screen);
         game.set_crossing_roll(self.crossing_roll);

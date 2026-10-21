@@ -11,6 +11,7 @@
       ["bark.shadow", "bark.base", "bark.light"],
       ["heartwood.shadow", "heartwood.base", "heartwood.light"],
       ["#57546a", "stone.shadow", "stone.base", "stone.light"],
+      ["bedrock.shadow", "bedrock.base", "bedrock.light"],
       ["sand.shadow", "sand.base", "sand.light"],
       ["flame.shadow", "flame.base", "flame_core.base", "flame_core.light"],
       ["wool_red.shadow", "wool_red.light", "sun"]

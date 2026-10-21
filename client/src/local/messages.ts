@@ -9,6 +9,7 @@ export type ToWorker =
       generatorVersion: number;
       file?: string;
       spawnFaceB?: boolean;
+      spawnPortal?: boolean;
     }
   | { t: 'connect'; session: number; kind: TransportKind; binding: Uint8Array }
   | { t: 'reliable'; session: number; channel: Channel; bytes: Uint8Array }

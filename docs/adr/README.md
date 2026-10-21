@@ -28,7 +28,7 @@ one's status line. Resolving an item in `ARCHITECTURE.md` Open Decisions require
 | [0020](0020-lod-rivers-at-their-width.md) | Level-of-detail rivers at their own width; water drawn at its level | Superseded by 0025 |
 | [0021](0021-mountain-detail-cascade.md) | Mountain detail from a derivative-damped ridged cascade | Superseded by 0025 |
 | [0022](0022-climate-biome-table-vegetation.md) | Climate with continent biases and rain shadows, the biome table, wetland ponds and biome-tinted vegetation | Superseded by 0025 |
-| [0023](0023-bifacial-world.md) | The bifacial world: two faces, gravity toward the midplane | Accepted (amended by 0025) |
+| [0023](0023-bifacial-world.md) | The bifacial world: two faces, gravity toward the midplane | Accepted (amended by 0025, 0048) |
 | [0024](0024-adaptive-natural-blocks.md) | Adaptive natural blocks: shapes derived from neighbours by five rules | Superseded by 0042 |
 | [0025](0025-baseline-world.md) | The baseline world: a 50 km bifacial disc, a 10-layer core, a spherical build volume, six blocks | Accepted (Rapier f64: 0028) |
 | [0026](0026-terrain-definitions.md) | Terrain definitions: terrain as data, evaluated by a fixed vocabulary of node kinds | Accepted (Rust tables: 0028) |
@@ -53,6 +53,7 @@ one's status line. Resolving an item in `ARCHITECTURE.md` Open Decisions require
 | [0045](0045-flood-light.md) | Flood light: per-cell sky and block light on the client, shading the ambient and standing in for shadows | Accepted |
 | [0046](0046-distant-terrain-shadows.md) | Distant terrain shadows: horizon maps swept from heightmaps of the terrain as drawn, one sample per far fragment | Accepted |
 | [0047](0047-torches-and-dynamic-lights.md) | Torches and dynamic lights: light sources as block data, held lights per fragment (never in the flood light), placed ones through the flood light; a Torch shadows setting of its own | Accepted |
+| [0048](0048-bedrock-and-portals.md) | Bedrock between the faces, and seeded portals (shafts with a ladder) through it | Accepted |
 
 Phase numbers in ADRs follow the implementation plan as it was then. In ADRs 0001–0010, Phases
 4–7 became 5–8 when the world-LOD phase (Phase 4) was added on 2026-09-29, and then 6–9 when the

@@ -59,9 +59,32 @@ impl LocalCore {
         storage: Option<impl StorageBackend>,
         entropy: Box<dyn Entropy>,
     ) -> Result<Self, LocalError> {
+        Self::create_spawning(face, false, world_seed, generator_version, storage, entropy)
+    }
+
+    /// [`LocalCore::create_on`], with `portal` by the opening of the portal nearest the centre on
+    /// `face` (the dev link `?spawn=portal`, `portal-b`; BIFACIAL_WORLD.md §6).
+    pub fn create_spawning(
+        face: dwell_world::Face,
+        portal: bool,
+        world_seed: u64,
+        generator_version: u32,
+        storage: Option<impl StorageBackend>,
+        entropy: Box<dyn Entropy>,
+    ) -> Result<Self, LocalError> {
+        // The local player (player 1) lands on the point itself: its spawn spread taken back.
+        let at_portal = portal
+            .then(|| dwell_worldgen::portal_spawn_for(generator_version, world_seed, face))
+            .flatten()
+            .map(|[x, y, z]| {
+                let [dx, dz] = dwell_sim::server::spawn_spread(1);
+                [x - dx, y, z - dz]
+            });
         let mut config = ServerConfig {
-            spawn: (face == dwell_world::Face::B)
-                .then(|| dwell_worldgen::spawn_point_b_for(generator_version, world_seed)),
+            spawn: at_portal.or_else(|| {
+                (face == dwell_world::Face::B)
+                    .then(|| dwell_worldgen::spawn_point_b_for(generator_version, world_seed))
+            }),
             world_seed,
             generator_version,
             name: "Local world".into(),

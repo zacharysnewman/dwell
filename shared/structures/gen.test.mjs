@@ -102,7 +102,7 @@ test('the hash is stable: pinned, and independent of key order, spelling and whi
 });
 
 test('bad entries fail naming the file and the entry', () => {
-  fails((j) => (j.palette.s = 'dwell:bedrock'), 'palette."s"', 'unknown block "dwell:bedrock"');
+  fails((j) => (j.palette.s = 'dwell:no_such_block'), 'palette."s"', 'unknown block "dwell:no_such_block"');
   fails((j) => (j.palette.ab = 'dwell:stone'), 'palette."ab"', 'single printable');
   fails((j) => (j.palette[' '] = 'dwell:stone'), 'palette." "');
   fails((j) => (j.layers[0][0] = 'sx'), 'layers[0][0][1]', '"x" is not in the palette');

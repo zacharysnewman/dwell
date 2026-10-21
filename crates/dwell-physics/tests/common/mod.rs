@@ -213,11 +213,15 @@ impl PlayerTestWorld {
     }
     /// A world in world coordinates: use `world.set_voxel` and `spawn_at` directly.
     pub fn world_frame() -> Self {
+        Self::world_frame_of(empty_generator(), Some(all_air()))
+    }
+    /// A generated world (a real world's terrain) in world coordinates.
+    pub fn world_frame_of(generator: ChunkGenerator, air: Option<AirChunkTest>) -> Self {
         let mut physics = Physics::default();
         let players = Players::new(&mut physics, true);
         Self {
             config: PlayerControllerConfig::default(),
-            world: VoxelWorld::new(empty_generator(), Some(all_air())),
+            world: VoxelWorld::new(generator, air),
             physics,
             players,
             input: None,

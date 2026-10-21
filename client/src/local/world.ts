@@ -28,6 +28,12 @@ export interface LocalWorld {
    * and check face B; it is its own world file (`<name>-faceb`), so the face-A world is untouched.
    */
   spawnFaceB?: boolean;
+  /**
+   * Dev link `?spawn=portal` (`portal-b`: face B's side): a new world spawns its player by the
+   * opening of the portal nearest the centre (BIFACIAL_WORLD.md §6), on the rim over its ladder; its
+   * own world file (`<name>-portal`, `<name>-portal-b`).
+   */
+  spawnPortal?: boolean;
 }
 
 export function parseLocalWorld(search: string): LocalWorld {
@@ -38,7 +44,13 @@ export function parseLocalWorld(search: string): LocalWorld {
   // Seeds are u64 on the wire; local mode accepts integers exactly representable in a double.
   const seed = Number(params.get('seed') ?? '0');
   const worldSeed = Number.isSafeInteger(seed) && seed >= 0 ? seed : 0;
-  if (params.get('spawn') === 'b') {
+  const spawn = params.get('spawn');
+  if (spawn === 'portal' || spawn === 'portal-b') {
+    const file = `${localWorldName(generatorVersion, worldSeed)}-${spawn}`;
+    const faceB = spawn === 'portal-b' ? { spawnFaceB: true } : {};
+    return { worldSeed, generatorVersion, file, ...faceB, spawnPortal: true };
+  }
+  if (spawn === 'b') {
     const file = `${localWorldName(generatorVersion, worldSeed)}-faceb`;
     return { worldSeed, generatorVersion, file, spawnFaceB: true };
   }

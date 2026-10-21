@@ -10,7 +10,7 @@ use dwell_world::lod::{LodCells, LodCoord, lod_hash, section_size};
 use dwell_world::{CHUNK_SIZE, Chunk, ChunkCoord, Face, chunk_hash, mirror_chunk_y};
 use dwell_worldgen::BifacialTerrain;
 
-const VERSION: u32 = 19; // ½ m cells (ADR 0042, HALF_HEIGHT_GRID.md)
+const VERSION: u32 = 20; // the bedrock between the faces and the portals through it (midplane.json)
 const SEEDS: [u64; 2] = [0, 20_260_925];
 
 fn section_at(level: i32, p: [i64; 3]) -> LodCoord {
@@ -103,6 +103,14 @@ fn main() {
         ] {
             chunks.push((seed, c));
         }
+        // The first portal (midplane.json): its shaft's chunks from face B's ground to face A's,
+        // the bedrock at the midplane cut through.
+        let terrain = BifacialTerrain::new(seed);
+        let p = terrain.portal_sites()[0];
+        let (cx, cz) = (p.x.div_euclid(CHUNK_SIZE), p.z.div_euclid(CHUNK_SIZE));
+        for y in ground_rows(seed, cx, cz).into_iter().chain([-1, 0]) {
+            chunks.push((seed, [cx, y, cz]));
+        }
         // The build sphere's edge: above the centre and over the rim (all air, or nothing).
         for c in [
             [0, 1562, 0],
@@ -153,6 +161,16 @@ fn main() {
         ] {
             for level in [1, 4, 8] {
                 sections.push((seed, section_at(level, p)));
+            }
+        }
+        // The first portal's opening on both faces, at the fine levels that draw it.
+        let terrain = BifacialTerrain::new(seed);
+        let p = terrain.portal_sites()[0];
+        for face in [Face::A, Face::B] {
+            let top = terrain.local(face).ground_y(p.x, p.z).expect("inside");
+            let y = i64::from(dwell_world::FaceFrame::of(face).row(top));
+            for level in [0, 1] {
+                sections.push((seed, section_at(level, [i64::from(p.x), y, i64::from(p.z)])));
             }
         }
         // The rim and the sphere's edge over it.

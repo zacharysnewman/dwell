@@ -69,6 +69,13 @@
         { "kind": "edge", "tone": "@light", "edge": "top", "width": 1 }
       ]
     },
+    "bedrock": {
+      "$comment": "The bedrock: stone's rough-cut blocks in the bedrock ramp (its own copy).",
+      "layers": [
+        { "kind": "fill", "tone": "@base" },
+        { "kind": "bricks", "mortar": "@shadow", "light": "@light", "width": [8, 11], "height": [7, 9], "seed": 2 }
+      ]
+    },
     "stone": {
       "$comment": "Big rough-cut blocks, about two a tile each way: shadow mortar outlines, a lit top row on each stone, flat stone between.",
       "layers": [

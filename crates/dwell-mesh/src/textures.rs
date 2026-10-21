@@ -96,7 +96,7 @@ pub const ATLAS_SIZE: usize = CELL * ATLAS_CELLS;
 pub const ATLAS_TILES: usize = ATLAS_CELLS * ATLAS_CELLS;
 
 /// The tiles in atlas order (the registry's texture names).
-pub const TILE_ORDER: [&str; 17] = [
+pub const TILE_ORDER: [&str; 18] = [
     "plain",
     "grass",
     "grassSide",
@@ -115,6 +115,8 @@ pub const TILE_ORDER: [&str; 17] = [
     // The torch's plain stick, its two cells (docs/LIGHTS.md; its flame is the flame effect, §6).
     "torch",
     "torchTop",
+    // The bedrock between the faces (docs/BIFACIAL_WORLD.md §2).
+    "bedrock",
     // The fallback look of a state whose look or textures this build lacks (synced from a server,
     // ADR 0038): a magenta and black checker, never content.
     MISSING_TILE,

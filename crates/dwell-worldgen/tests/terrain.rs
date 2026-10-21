@@ -35,6 +35,18 @@ fn placed(m: StateId) -> bool {
     m == require("dwell:log") || m == require("dwell:leaves")
 }
 
+/// The core's fill at face-local row `y` (from the midplane): the bedrock in its first rows
+/// (`shared/worldgen/midplane.json`), stone over it.
+fn core_at(y: i32) -> StateId {
+    let rows = dwell_worldgen::portals::MIDPLANE.bedrock_rows;
+    // face-boundary: a face-local row's height over the midplane (these tests are face A's)
+    if y - MIDPLANE_Y < rows {
+        require(dwell_worldgen::portals::MIDPLANE.bedrock)
+    } else {
+        M.stone
+    }
+}
+
 fn gen_chunk(g: &TerrainGenerator, c: ChunkCoord) -> Chunk {
     let mut chunk = Chunk::default();
     g.generate(c, &mut chunk);
@@ -197,7 +209,7 @@ fn the_core_is_stone_nothing_below_the_face_or_over_the_build_volume() {
         for z in 0..S {
             for x in 0..S {
                 for y in 0..CORE_LAYERS {
-                    assert_eq!(floor.get(x, y, z), M.stone, "{column:?}");
+                    assert_eq!(floor.get(x, y, z), core_at(y), "{column:?}");
                 }
             }
         }
@@ -238,7 +250,7 @@ fn beyond_the_rim_nothing_is_generated() {
                     if !inn || !inside_build_volume(wx, i64::from(cy * S + y), wz) {
                         assert_eq!(chunk.get(x, y, z), M.air);
                     } else if cy == bottom && y < CORE_LAYERS {
-                        assert_eq!(chunk.get(x, y, z), M.stone);
+                        assert_eq!(chunk.get(x, y, z), core_at(y));
                     }
                 }
             }
@@ -396,7 +408,7 @@ fn the_fill_grass_over_dirt_sand_at_the_shore_sea_to_its_level() {
                             water += i32::from(m == M.water);
                         } else if wy < MIDPLANE_Y + CORE_LAYERS {
                             // face-boundary: face A's core
-                            assert_eq!(m, M.stone); // the core
+                            assert_eq!(m, core_at(wy)); // the core, on the bedrock
                         } else if ground < SEA_LEVEL + r(2.0) {
                             // Under the sea the top holds it (its flooded state; any block).
                             let m = dwell_blocks::with_property(m, "flooded", "false").unwrap_or(m);
@@ -583,12 +595,35 @@ fn face_b_is_its_own_landscape() {
 }
 
 #[test]
-fn no_bedrock_and_the_core_is_rock_across_the_midplane() {
+fn the_bedrock_lies_either_side_of_the_midplane_and_no_edit_breaks_it() {
+    // both-faces: the chunks checked straddle the midplane, each row on its own face.
+    // Owner, 2026-10-21: bedrock back between the faces (midplane.json `bedrock`): its rows on
+    // each face are the indestructible bedrock, the core's stone over them.
+    let rows = dwell_worldgen::portals::MIDPLANE.bedrock_rows;
+    assert!(rows > 0);
+    let bedrock = require(dwell_worldgen::portals::MIDPLANE.bedrock);
+    assert!(info(bedrock).indestructible && dwell_world::edit::unbreakable(bedrock));
     for seed in [0u64, 3] {
         let g = BifacialTerrain::new(seed);
         for c in [(0, 0, 0), (0, -1, 0), (200, 0, -30), (200, -1, -30)] {
             let chunk = gen_world(&g, ChunkCoord::new(c.0, c.1, c.2));
-            assert!(chunk.voxels().iter().all(|&m| !info(m).indestructible));
+            for z in 0..S {
+                for x in 0..S {
+                    for ly in 0..S {
+                        let y = c.1 * S + ly;
+                        // Face-local row from the midplane, on either face.
+                        let h = FaceFrame::at_row(y).row(y) - MIDPLANE_Y;
+                        let want = if h < rows {
+                            bedrock
+                        } else if h < CORE_LAYERS {
+                            M.stone
+                        } else {
+                            continue;
+                        };
+                        assert_eq!(chunk.get(x, ly, z), want, "{c:?} {x} {ly} {z}");
+                    }
+                }
+            }
         }
         for (x, z) in [
             (0, 0),

@@ -62,7 +62,7 @@ fn flat_world_layers_and_revisions() {
     assert_eq!(world.get_voxel(5, top - 1, 5), s("dwell:grass"));
     assert_eq!(world.get_voxel(5, top - 2, 5), s("dwell:dirt"));
     assert_eq!(world.get_voxel(5, top - 10, 5), s("dwell:stone"));
-    assert_eq!(world.get_voxel(5, MIDPLANE_Y, 5), s("dwell:stone")); // the core: stone, no bedrock
+    assert_eq!(world.get_voxel(5, MIDPLANE_Y, 5), s("dwell:stone")); // the core: stone (the flat world has no bedrock: only the terrain's two faces do)
     assert_eq!(world.get_voxel(5, MIDPLANE_Y - 1, 5), s("dwell:air")); // no face B
     let coord = chunk_of(5, top - 1, 5);
     assert_eq!(world.find(coord).expect("generated").revision(), 0);
