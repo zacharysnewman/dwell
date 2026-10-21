@@ -1,0 +1,26 @@
+{
+  "$comment": "Sun and moon shadows on the distant terrain (docs/DAY_NIGHT.md §12, ADR 0046): the lighting's third layer, past the shadow cascades (shadows.json). The renderer draws the terrain as drawn (chunks, LOD sections) from above into heightmaps around the eye, a slice of the casters a frame; a sweep marches each texel's ray toward the light over them into a horizon map (the terrain's highest angle toward the light, a band of rows a frame); the scene's shaders read one horizon sample per far fragment: mountains shade valleys at dusk. It follows the Shadows setting (Off draws none; a CPU adapter draws none). Run `node shared/look/lodshadows.mjs` after editing; CI fails if crates/dwell-look/src/lodshadows.gen.rs is stale.",
+  "heights": {
+    "$comment": "The face-local heights the maps hold (m over the midplane): below bottomM nothing casts; topM is over every terrain and build.",
+    "bottomM": -16,
+    "topM": 1536
+  },
+  "march": {
+    "$comment": "startTexels: the ray's first step from the texel (texels of its map). biasM: the ray starts this far over the texel's height (against a surface shading itself through the map's coarse texels). penumbraDeg: a ray this far under the horizon it meets is wholly in shade, this far over it wholly lit (a painterly soft edge; the sun's disc is about ½°). edgeFade: the shadows fade out over this last share of the outermost map's half-width, so its edge never shows.",
+    "startTexels": 1.5,
+    "biasM": 1.5,
+    "penumbraDeg": 1.5,
+    "edgeFade": 0.2
+  },
+  "refresh": {
+    "$comment": "When the maps are made again (none while nothing changes: no cost standing still). A heightmap is filled again when the eye has moved moveShare of its half-width from where it was filled, or everyS seconds after (edits, LOD swaps, chunks arriving). A horizon map is swept again when its heightmap was filled again or the light has turned more than turnDeg about the face's up from the direction it was swept for.",
+    "moveShare": 0.125,
+    "everyS": 10,
+    "turnDeg": 0.5
+  },
+  "tiers": {
+    "$comment": "Per Shadows setting. resolution: each map's texels a side (a power of two). texelM: the nearest map's texel (m). levels: how many maps (1–2), each next one levelScale times coarser around the same eye. steps, reachM: each texel's march toward the light, from the first step to reachM, geometrically spaced (fine near the texel, coarse far off, each step reading the max mip its length needs). fillKtris, fillDraws: a heightmap fill draws at most this many thousand triangles and draws a frame (one map at a time; it replaces the one in use when it is whole). sweepRows: a horizon sweep marches this many rows of texels a frame. So the cost is spread over frames and never spikes.",
+    "low": { "resolution": 512, "texelM": 8, "levels": 1, "levelScale": 4, "steps": 16, "reachM": 2000, "fillKtris": 60, "fillDraws": 64, "sweepRows": 32 },
+    "high": { "resolution": 1024, "texelM": 4, "levels": 2, "levelScale": 4, "steps": 24, "reachM": 5000, "fillKtris": 80, "fillDraws": 96, "sweepRows": 32 }
+  }
+}

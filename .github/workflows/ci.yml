@@ -32,6 +32,8 @@ jobs:
           node --test shared/look/reflections.test.mjs
           node shared/look/shadows.mjs
           node --test shared/look/shadows.test.mjs
+          node shared/look/lodshadows.mjs
+          node --test shared/look/lodshadows.test.mjs
           node shared/look/spyglass.mjs
           node --test shared/look/spyglass.test.mjs
           node shared/look/fog.mjs

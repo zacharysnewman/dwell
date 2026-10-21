@@ -12,6 +12,7 @@ pub mod daynight;
 pub mod fog;
 pub mod lod_blend;
 pub mod lod_colour;
+pub mod lod_shadows;
 pub mod motion;
 pub mod outline;
 pub mod reflections;

@@ -63,6 +63,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 43 — Ambient light | 🚧 In progress — built and tested natively and in Chrome on the GPU: classic corner AO and baked ray-traced sky visibility per terrain vertex (dwell-mesh `sky.rs`, data `shared/look/ambient.json`), the hemisphere light scaled by it, the twilight and night keyframes retuned; outstanding: CI; a patch release |
 | 44 — Sun and moon shadows (cascaded shadow maps, the lighting's layer 2) | 🚧 In progress — built and tested natively, in Vitest and in Chrome on the GPU: up to four cascades per the Shadows setting (Off / Low / High, data in `shared/look/shadows.json`), texel-snapped sphere fits, casters (terrain, plants, LOD, bodies, your own), a soft PCF on the direct term only, faded by the time of day and past the last cascade to layer 1's stand-in; outstanding: CI, the owner's look, High's cost target (+3–6 ms measured on a busy machine; a follow-up); a patch release |
 | 45 — Flood light | 🚧 In progress — built and tested natively and in Chrome on the GPU (ADR 0045, DAY_NIGHT.md §11): per-cell sky and block light on the client (`dwell_world::light`, data `shared/look/light.json` and the blocks' `lightFilter`/`emits`), relit on edits and predicted edits, the mesher's smooth `flood` stream, ambient and the direct sun and moon scaled by it (carved tunnels no longer lit like day); follow-up: the streaming stalls fixed (coalesced seeded unloads, no cascade under a chunk held over open air, light and mesh budgets of their own that scale on a slow page; flying back to 0.22.8's frames; generation workers refilled between frames, so a slow page's terrain finishes generating, the native-server e2e tests); outstanding: CI, the owner's review; characters (your arms, held items, players) lit by the cells they are in, eased; the shadow maps' stand-in past their last cascade |
+| 46 — Distant terrain shadows (the lighting's layer 3) | 🚧 In progress — built and tested natively and in Chrome on the GPU (ADR 0046, DAY_NIGHT.md §12): heightmaps of the terrain as drawn, filled a budgeted slice a frame, horizon maps swept from them a band a frame, one horizon sample per far fragment blended into the cascades at their edge, both faces, per the Shadows setting (none on a CPU adapter); data `shared/look/lodshadows.json`. Measured +0.5–0.9 ms GPU a frame on the M1 (busy machine), no main-thread change. Outstanding: CI; the owner's look; a measurement on an idle machine |
 
 Phase numbering: Phase 4 was inserted on 2026-09-29 for the planet-scale world (ADRs 0011, 0012);
 the former Phases 4–7 are now 5–8, and Phase 3's former 3c and 3d are now 3d and 3e.
@@ -4577,6 +4578,56 @@ Deviations
   (SwiftShader, two native-server pages, 3× CPU throttle): `job.chunk.wait` p50 1–12 s → 0.08–0.11 s,
   the 179 spawn chunks generated within a frame or two of arriving. The e2e waits print the
   terrain stats on a timeout.
+
+## Phase 46 — Distant Terrain Shadows: Horizon Maps over the LOD
+
+**Status:** Built and tested natively and in Chrome on the GPU (2026-10-21). Outstanding: CI; the
+owner's look; the cost measured again on an idle machine. Client-only, no change to saves, the
+protocol or terrain: a patch release.
+
+Owner (2026-10-21): the lighting plan's layer 3, sun shadows on the distant LOD terrain beyond the
+cascades, from a heightmap: a ray or a horizon angle per texel toward the sun; mountains casting
+shadows across valleys at dusk; a seamless blend into the cascades at their far edge; no
+main-thread work or frame spikes (after a stutter regression), about 1 ms or less on the M1; the
+Shadows setting's tiers, the CPU adapter off; both faces through `FaceFrame`. The heights' range,
+the march, the refresh rules and the tiers are data (`shared/look/lodshadows.json`, per build, by
+hand, validator and generator like the other look files); the fill, the mips, the sweep and the
+shade are code. [`DAY_NIGHT.md`](./DAY_NIGHT.md) §12, [ADR 0046](./adr/0046-distant-terrain-shadows.md),
+ARCHITECTURE.md §2 (`render/`) and §7.4.
+
+Deliverables
+- [x] `shared/look/lodshadows.json`, `lodshadows.mjs` (validator, generator into `dwell-look`
+  `lodshadows.gen.rs`) and `lodshadows.test.mjs`; in CI.
+- [x] `dwell-look` `lod_shadows`: the tunables and tiers by the Shadows setting; the heightmap with
+  max mips, the horizon march, the shade and the blend with the cascades (`combine`) in f64.
+- [x] `render/lod_shadows.rs`: the maps' placing (whole texels), the fill's matrix from above
+  through `FaceFrame`, the fill and sweep scheduling (budgets, refresh on movement, time and the
+  light's turn), the uniform blocks, the GPU maps, the mip and sweep passes, `lod_shadows_for`
+  (none on a CPU adapter).
+- [x] The renderer: the fill's casters (chunks, LOD sections, stand-ins on the viewer's face),
+  zero-bias two-sided depth pipelines, a slice a frame (`gpu.lodshadows`), a sweep band a frame
+  (`gpu.lodsweep`), the horizon maps at frame bindings 11–13; `shadow_light` past the cascades
+  through `shadow_past` and `lod_shadow`.
+- [x] `?lodshadows=off`, the bench's `lod-shadows-off` configuration and the `lod-shadows-dusk` and
+  `lod-shadows-dusk-b` scenarios.
+
+Exit criteria
+- [x] Tests: the data's validation and generation (`lodshadows.test.mjs`); a valley behind a ridge
+  shaded with a low sun and lit with a high one, the shadow's end moving out as the sun sinks with a
+  soft edge, on both faces and alike on both (dwell-look); the cascades' edge blending into the far
+  shadow without a step, and the second layer unchanged with no far shadow; the map's matrix and
+  placing on both faces; the fill and sweep budgets and turns; the uniforms; the sweep's WGSL
+  validates and is the mirror's (render/lod_shadows.rs, shader-source tests).
+- [x] Measured on the bench (DAY_NIGHT.md §12, Cost; busy machine): +0.5–0.9 ms GPU a frame, no
+  change to the frame interval's tail or the main thread.
+- [x] Checked in Chrome on the GPU: a low sun over seed 7's hills from 520 m up, on and off, on
+  face A and face B; the ground-level view across the cascades' edge (shots in the PR).
+
+Deviations
+- A per-fragment march was built first and cost about +20 ms a frame: replaced by the horizon
+  sweep (ADR 0046).
+- A surface under the top of its column takes the column top's horizon (distant terrain is mostly
+  tops).
 
 ## Cross-Cutting Work (every phase)
 
