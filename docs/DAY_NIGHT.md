@@ -401,7 +401,7 @@ direct-light stand-in near the player.
   falloff only matters beside overhangs and in shafts.
 - **What blocks and filters it is block data** (`lightFilter`, default 15 for full cubes that are not
   see-through, 0 otherwise; leaves 2, water 1 — the sea floor goes dark about 7 m down) and
-  **what emits** (`emits`; no build block yet, the fixture `test:lamp` gives off 14).
+  **what emits** (`emits`; the torch gives off 14, LIGHTS.md; the fixture `test:lamp` 14).
 - **Updates**: removal then addition passes (brightest first) on every edit, predicted edits
   included, and on chunk loads and unloads, so the light is the same whatever order chunks came in
   (tests compare it with a relight from scratch). The streamer lights arriving chunks nearest the
@@ -448,6 +448,9 @@ direct-light stand-in near the player.
   is still lit as open sky (W4).
 - **Distant terrain**: LOD sections are lit as open sky, as before, so the seam on open ground
   matches; LOD water too (open sea).
+- **Torches** (Phase 47, [`LIGHTS.md`](./LIGHTS.md), ADR 0047): a placed torch (`dwell:torch`, `emits`
+  14) lights through this flood light; a held torch is a dynamic point light drawn per fragment and
+  never enters it (LIGHTS.md §3), with Torch shadows a setting of its own (T2).
 - **Characters** (owner, 2026-10-21: "your hand isn't affected... perhaps a blend"): your arms and
   held block, other players' bodies and the items they hold take the flood light where they are —
   your eye, a body's middle a metre over its feet — blended trilinearly between the cell centres

@@ -73,7 +73,7 @@ fields, ranges and names fail with the entry named):
 | `spyglass {on, step?}` | the spyglass zoomed to a step (0 the least, `shared/look/spyglass.json`) or out ([`SPYGLASS.md`](./SPYGLASS.md)); `spyglass-far` shoots far terrain unzoomed and at each step |
 | `camera {position, yaw, pitch, aroundPlayer?}`, `releaseCamera` | places the camera (the player stays), or returns it; with `aroundPlayer`, x and z are offsets from the player's feet (y absolute): a view wherever a flight ended, where the chunks are streamed |
 | `edit {action}`, `select {slot}` | break/place at the crosshair; picks a hotbar slot |
-| `region {op, from, to, up?}` | a region edit (the region tools, `__dwell.tool('cornerA@x,y,z')`) of the box between `from` and `to`, offsets in metres from the player's feet (`up` −1 on face B): `fill` with the selected hotbar block or `clear` to air — to build a scene, e.g. `tunnel-a`/`tunnel-b`'s hill and tunnel (DAY_NIGHT.md §11) |
+| `region {op, from, to, up?}` | a region edit (the region tools, `__dwell.tool('cornerA@x,y,z')`) of the box between `from` and `to`, offsets in metres from the player's feet (`up` −1 on face B): `fill` with the selected hotbar block or `clear` to air — to build a scene, e.g. `tunnel-a`/`tunnel-b`'s hill and tunnel (DAY_NIGHT.md §11), and `torch-cave-a`/`torch-cave-b`'s tunnel and room at midnight with the torch held and placed (LIGHTS.md; `torch-night-puppets` records 8 torch-bearing stand-ins against none) |
 | `brush {command}` | drives the brush tool as its keys and clicks do (`__dwell.brush`: `toggle`, `preset:<name>`, `size:<n>`, `apply`, …; [`BRUSHES.md`](./BRUSHES.md)), in worlds that allow brushes (sandbox: a `--compare` config with `params: {"world": "sandbox"}`) |
 | `settle {maxS}` | waits until the LOD has had nothing to generate, mesh or ask for, for 1 s |
 | `mark` | forgets the telemetry so far: the next `record` measures from here |
@@ -184,6 +184,7 @@ What is recorded now:
 | `game.draw` | the game's draw step: `mesh_dirty` and `lod` inside it |
 | `mesh_dirty` | starting chunk mesh jobs (copying padded chunks), within its 4 ms budget |
 | `lod` | the whole-world view's update (`LodSystem`): selection, job requests, stand-ins |
+| `lights.drawn` (count) | Dynamic lights drawn this frame: held torches, yours and other players', the nearest `maxLights` (`render/lights.rs`, [`LIGHTS.md`](./LIGHTS.md) §3) |
 | `lod.fading`, `lod.retiring` (counts) | LOD swaps cross-fading this frame and the outgoing draws they add (`dwell-lod` `fade.rs`, ARCHITECTURE.md §6.6 Swaps) |
 | `draw.acquire`, `draw.render`, `draw.present` | the surface texture, encoding and submitting the frame, presenting |
 | `draw.skipped` (counter) | frames not drawn because two were still on the GPU (`render/pacing.rs`) |

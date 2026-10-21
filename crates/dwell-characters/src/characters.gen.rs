@@ -921,10 +921,10 @@ pub static CHARACTERS: &[Character] = &[
             Item { name: "block", light: None, parts: &[
                 Part { id: "held_block", bone: 9, kind: Kind::Box, size: [0.2, 0.2, 0.2], at: [0.0, -0.13, 0.09], rot: [0.0, 0.0, 0.0], round: 0.0, tip: 0.0, view: View::Both, material: 65535 },
             ] },
-            Item { name: "torch", light: Some((9, [0.0, 0.2, 0.09])), parts: &[
-                Part { id: "torch_stick", bone: 9, kind: Kind::Cylinder, size: [0.045, 0.34, 0.045], at: [0.0, -0.02, 0.09], rot: [0.0, 0.0, 0.0], round: 0.0, tip: 0.0, view: View::Both, material: 17 },
-                Part { id: "torch_wrap", bone: 9, kind: Kind::Cylinder, size: [0.06, 0.06, 0.06], at: [0.0, 0.14, 0.09], rot: [0.0, 0.0, 0.0], round: 0.0, tip: 0.0, view: View::Both, material: 18 },
-                Part { id: "torch_flame", bone: 9, kind: Kind::Ellipsoid, size: [0.08, 0.14, 0.08], at: [0.0, 0.22, 0.09], rot: [0.0, 0.0, 0.0], round: 0.0, tip: 0.0, view: View::Both, material: 19 },
+            Item { name: "torch", light: Some((9, [0.0, -0.08, 0.36])), parts: &[
+                Part { id: "torch_stick", bone: 9, kind: Kind::Cylinder, size: [0.045, 0.38, 0.045], at: [0.0, -0.08, 0.09], rot: [90.0, 0.0, 0.0], round: 0.0, tip: 0.0, view: View::Both, material: 17 },
+                Part { id: "torch_wrap", bone: 9, kind: Kind::Cylinder, size: [0.06, 0.06, 0.06], at: [0.0, -0.08, 0.26], rot: [90.0, 0.0, 0.0], round: 0.0, tip: 0.0, view: View::Both, material: 18 },
+                Part { id: "torch_flame", bone: 9, kind: Kind::Ellipsoid, size: [0.08, 0.08, 0.15], at: [0.0, -0.08, 0.35], rot: [0.0, 0.0, 0.0], round: 0.0, tip: 0.0, view: View::Both, material: 19 },
             ] },
             Item { name: "brush", light: None, parts: &[
                 Part { id: "brush_handle", bone: 9, kind: Kind::Cylinder, size: [0.04, 0.32, 0.04], at: [0.0, -0.08, 0.08], rot: [90.0, 0.0, 0.0], round: 0.0, tip: 0.0, view: View::Both, material: 20 },

@@ -3047,6 +3047,374 @@
         { "do": "wait", "s": 1.5 },
         { "do": "shot", "name": "t870-y298" }
       ]
+    },
+    {
+      "name": "torch-cave-a",
+      "notes": "A hill with a tunnel into a room (as tunnel-a), at midnight: walked into the dark, then holding the torch (slot 9) and placing it on the floor (docs/LIGHTS.md). Shots: dark-no-torch, held-torch, held-torch-wall, placed-torch, placed-torch-room.",
+      "settings": {
+        "timeOfDay": 0.0
+      },
+      "steps": [
+        {
+          "do": "settle",
+          "maxS": 120
+        },
+        {
+          "do": "select",
+          "slot": 0
+        },
+        {
+          "do": "look",
+          "yaw": 90,
+          "pitch": 0
+        },
+        {
+          "do": "region",
+          "op": "fill",
+          "from": [3, -1, -12],
+          "to": [34, 14, 12]
+        },
+        {
+          "do": "wait",
+          "s": 2
+        },
+        {
+          "do": "region",
+          "op": "clear",
+          "from": [3, 0, -1],
+          "to": [23, 1.9, 1]
+        },
+        {
+          "do": "region",
+          "op": "clear",
+          "from": [16, 0, -6],
+          "to": [29, 3.4, 6]
+        },
+        {
+          "do": "wait",
+          "s": 3
+        },
+        {
+          "do": "time",
+          "t": 0.0
+        },
+        {
+          "do": "look",
+          "yaw": 90,
+          "pitch": -5
+        },
+        {
+          "do": "hold",
+          "code": "KeyW",
+          "s": 3.6
+        },
+        {
+          "do": "wait",
+          "s": 0.8
+        },
+        {
+          "do": "shot",
+          "name": "dark-no-torch"
+        },
+        {
+          "do": "select",
+          "slot": 8
+        },
+        {
+          "do": "wait",
+          "s": 0.8
+        },
+        {
+          "do": "shot",
+          "name": "held-torch"
+        },
+        {
+          "do": "look",
+          "yaw": 60,
+          "pitch": -15
+        },
+        {
+          "do": "wait",
+          "s": 0.5
+        },
+        {
+          "do": "shot",
+          "name": "held-torch-wall"
+        },
+        {
+          "do": "look",
+          "yaw": 90,
+          "pitch": -60
+        },
+        {
+          "do": "wait",
+          "s": 0.3
+        },
+        {
+          "do": "edit",
+          "action": "place"
+        },
+        {
+          "do": "select",
+          "slot": 0
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "look",
+          "yaw": 90,
+          "pitch": -25
+        },
+        {
+          "do": "hold",
+          "code": "KeyS",
+          "s": 0.6
+        },
+        {
+          "do": "wait",
+          "s": 1
+        },
+        {
+          "do": "shot",
+          "name": "placed-torch"
+        },
+        {
+          "do": "look",
+          "yaw": 135,
+          "pitch": -15
+        },
+        {
+          "do": "wait",
+          "s": 0.5
+        },
+        {
+          "do": "shot",
+          "name": "placed-torch-room"
+        }
+      ]
+    },
+    {
+      "name": "torch-cave-b",
+      "notes": "A hill with a tunnel into a room (as tunnel-a), at midnight: walked into the dark, then holding the torch (slot 9) and placing it on the floor (docs/LIGHTS.md). Shots: dark-no-torch, held-torch, held-torch-wall, placed-torch, placed-torch-room. On face B (its midnight is time 0.5).",
+      "face": "b",
+      "settings": {
+        "timeOfDay": 0.5
+      },
+      "steps": [
+        {
+          "do": "settle",
+          "maxS": 120
+        },
+        {
+          "do": "select",
+          "slot": 0
+        },
+        {
+          "do": "look",
+          "yaw": 90,
+          "pitch": 0
+        },
+        {
+          "do": "region",
+          "op": "fill",
+          "from": [3, -1, -12],
+          "to": [34, 14, 12],
+          "up": -1
+        },
+        {
+          "do": "wait",
+          "s": 2
+        },
+        {
+          "do": "region",
+          "op": "clear",
+          "from": [3, 0, -1],
+          "to": [23, 1.9, 1],
+          "up": -1
+        },
+        {
+          "do": "region",
+          "op": "clear",
+          "from": [16, 0, -6],
+          "to": [29, 3.4, 6],
+          "up": -1
+        },
+        {
+          "do": "wait",
+          "s": 3
+        },
+        {
+          "do": "time",
+          "t": 0.5
+        },
+        {
+          "do": "look",
+          "yaw": 90,
+          "pitch": -5
+        },
+        {
+          "do": "hold",
+          "code": "KeyW",
+          "s": 3.6
+        },
+        {
+          "do": "wait",
+          "s": 0.8
+        },
+        {
+          "do": "shot",
+          "name": "dark-no-torch"
+        },
+        {
+          "do": "select",
+          "slot": 8
+        },
+        {
+          "do": "wait",
+          "s": 0.8
+        },
+        {
+          "do": "shot",
+          "name": "held-torch"
+        },
+        {
+          "do": "look",
+          "yaw": 60,
+          "pitch": -15
+        },
+        {
+          "do": "wait",
+          "s": 0.5
+        },
+        {
+          "do": "shot",
+          "name": "held-torch-wall"
+        },
+        {
+          "do": "look",
+          "yaw": 90,
+          "pitch": -60
+        },
+        {
+          "do": "wait",
+          "s": 0.3
+        },
+        {
+          "do": "edit",
+          "action": "place"
+        },
+        {
+          "do": "select",
+          "slot": 0
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "look",
+          "yaw": 90,
+          "pitch": -25
+        },
+        {
+          "do": "hold",
+          "code": "KeyS",
+          "s": 0.6
+        },
+        {
+          "do": "wait",
+          "s": 1
+        },
+        {
+          "do": "shot",
+          "name": "placed-torch"
+        },
+        {
+          "do": "look",
+          "yaw": 135,
+          "pitch": -15
+        },
+        {
+          "do": "wait",
+          "s": 0.5
+        },
+        {
+          "do": "shot",
+          "name": "placed-torch-room"
+        }
+      ]
+    },
+    {
+      "name": "torch-night-puppets",
+      "notes": "Midnight in the open (docs/LIGHTS.md): 8 stand-in players holding the hotbar's block, first the torch (slot 9: 8 held lights and yours, the light budget) then stone (no lights). Records torches and no-torches for the cost of the dynamic lights.",
+      "settings": {
+        "timeOfDay": 0.0
+      },
+      "steps": [
+        {
+          "do": "settle",
+          "maxS": 120
+        },
+        {
+          "do": "select",
+          "slot": 8
+        },
+        {
+          "do": "puppets",
+          "count": 8,
+          "at": [0, 0, 4],
+          "held": true
+        },
+        {
+          "do": "look",
+          "yaw": 0,
+          "pitch": -20
+        },
+        {
+          "do": "wait",
+          "s": 3
+        },
+        {
+          "do": "shot",
+          "name": "torches"
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 6
+        },
+        {
+          "do": "record",
+          "name": "torches"
+        },
+        {
+          "do": "select",
+          "slot": 0
+        },
+        {
+          "do": "wait",
+          "s": 1
+        },
+        {
+          "do": "shot",
+          "name": "no-torches"
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 6
+        },
+        {
+          "do": "record",
+          "name": "no-torches"
+        }
+      ]
     }
   ]
 }

@@ -105,8 +105,17 @@ unchanged).
 is how many levels a cell of the block takes off the flood light passing into it (15: none gets
 in); absent, 15 for full cubes that are not see-through and 0 for everything else
 (`light_filter_default`; leaves say 2, water 1). `"emits": 0–15` is the block light it gives off
-(none in the build yet; `test:lamp` in the fixtures, 14). `StateInfo::light_filter`, `emits`; synced
+(the torch 14; `test:lamp` in the fixtures, 14). `StateInfo::light_filter`, `emits`; synced
 as look tag `0x8d` (filter, emits) only where either differs from the default.
+
+**Light sources and held items** (**built**, Phase 47 T1; [`LIGHTS.md`](./LIGHTS.md) §2, ADR 0047): a
+namespace's `lights` table names dynamic point lights (`{ color, strength, radiusM, flicker: { amount,
+speed }, shadows }`, validated by `shared/blocks/lights.mjs`, emitted as `LIGHTS`), and a block's
+`"light": "<ns:name>"` gives off one, held or placed (`StateInfo::light`, a reference into `LIGHTS`);
+`"held": "<item>"` names the item of `shared/characters/characters.json` a hand holding it shows
+(`StateInfo::held`; else the block itself). Unknown names fail with a message. Both are looks,
+synced by name as look tags `0x8e` (the light's name) and `0x8f` (the item), sent only when set; a
+light this build lacks reads as none.
 
 **Family convention for shaped variants** (**built, Phase 9**, [ADR 0016](./adr/0016-slope-blocks.md); recommended here first): plain
 blocks stay plain (`dwell:stone`), and shaped forms are separate blocks generated per shapeable

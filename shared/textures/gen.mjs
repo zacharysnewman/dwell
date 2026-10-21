@@ -60,7 +60,23 @@ export function rustSource(names, emissive = names.map(() => 0)) {
     return flat.length <= 100 ? flat : `${head}\n${items.map((n) => `    ${n},\n`).join('')}];`;
   };
   const list = array(`pub const PAINTERLY_TILES: [&str; ${names.length}] = [`, names.map((n) => JSON.stringify(n)));
-  const glow = array(
+  // Short numbers, as rustfmt packs them: as many to a line as fit in 100 columns.
+  const packed = (head, items) => {
+    const flat = `${head}${items.join(', ')}];`;
+    if (flat.length <= 100) return flat;
+    const lines = [];
+    let line = '   ';
+    for (const it of items) {
+      if (line.length + 1 + it.length + 1 > 100) {
+        lines.push(line);
+        line = '   ';
+      }
+      line += ` ${it},`;
+    }
+    lines.push(line);
+    return `${head}\n${lines.join('\n')}\n];`;
+  };
+  const glow = packed(
     `pub const PAINTERLY_EMISSIVE: [f32; ${names.length}] = [`,
     emissive.map((v) => (Number.isInteger(v) ? `${v}.0` : `${v}`)),
   );

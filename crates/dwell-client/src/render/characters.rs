@@ -1273,9 +1273,17 @@ mod tests {
             None,
             "a brush gives off nothing"
         );
-        // Your arms' torch: in front of the eye, low and to the side, within a metre.
+        // Your arms' torch, held in the arms' idle: in front of the eye, within a metre, the flame
+        // above the hand.
         let basis = super::super::camera::aim(30.0, -10.0, FaceFrame::A, 0.0);
-        let bones = arm_transforms(ch, &Pose::REST).map(|b| arms_frame(&basis).then(&b));
+        let idle = TABLES
+            .clips
+            .iter()
+            .find(|c| c.name == "fp_idle")
+            .expect("fp_idle");
+        let pose = dwell_characters::anim::sample(idle, 0.0);
+        let bones = arm_transforms(ch, &pose).map(|b| arms_frame(&basis).then(&b));
+        let hand = bones[ch.bone("hand_r").expect("hand_r")].t.map(f64::from);
         let l = held_light(ch, torch(), &bones, 0).expect("the arms hold the torch's light");
         let r = l.rel.map(f64::from);
         let len = (r[0] * r[0] + r[1] * r[1] + r[2] * r[2]).sqrt();
@@ -1284,6 +1292,8 @@ mod tests {
             super::super::camera::dot(r, basis.forward()) > 0.1,
             "ahead: {r:?}"
         );
+        let up = |v| super::super::camera::dot(v, basis.up);
+        assert!(up(r) > up(hand), "over the hand: {r:?}");
         assert!(held_light(ch, stone, &bones, 0).is_none());
     }
 
