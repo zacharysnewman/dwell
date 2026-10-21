@@ -92,12 +92,6 @@ impl WebJobs {
                 worker.set_onmessage(Some(onmessage.as_ref().unchecked_ref()));
                 let init = Object::new();
                 Reflect::set(&init, &"t".into(), &"init".into())?;
-                // The page's texture set: the LOD colours the meshers bake are its tiles' averages.
-                Reflect::set(
-                    &init,
-                    &"textures".into(),
-                    &dwell_mesh::texture_set().name().into(),
-                )?;
                 if kind == 0 {
                     Reflect::set(&init, &"generatorVersion".into(), &world.0.into())?;
                     Reflect::set(

@@ -103,9 +103,8 @@ test('another client sees your body walk, sprint, crouch and jump, and you see y
   try {
     for (const p of [a, b]) await p.setViewportSize({ width: 1280, height: 720 });
     const invite = readFileSync(INVITE_FILE, 'utf8');
-    const textures = process.env.DWELL_TEXTURES ? `&textures=${process.env.DWELL_TEXTURES}` : '';
-    await a.goto(`./${invite}${textures}`);
-    await b.goto(`./${invite}${textures}`);
+    await a.goto(`./${invite}`);
+    await b.goto(`./${invite}`);
     for (const p of [a, b]) {
       await expect
         .poll(async () => (await state(p))?.terrainReady ?? false, { timeout: 60_000 })

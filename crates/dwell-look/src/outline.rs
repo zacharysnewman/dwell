@@ -211,7 +211,7 @@ mod tests {
         assert_eq!(mode_from_query(&OUTLINE, "?outline=off"), None);
         assert_eq!(mode_from_query(&OUTLINE, "?outline=nope"), None);
         for name in ["silhouette", "creases", "blocks"] {
-            let q = format!("?local=1&outline={name}&textures=painterly");
+            let q = format!("?local=1&outline={name}&seed=3");
             assert_eq!(mode_from_query(&OUTLINE, &q).map(|m| m.name), Some(name));
         }
     }
