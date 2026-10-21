@@ -11,7 +11,6 @@ use dwell_game::input::{EditAction, FLY_KEY, InputEvent, KeyboardMouseInput};
 use dwell_game::touch::{TouchButton, TouchControls, TouchEvent};
 use dwell_lod::fade::Fade;
 use dwell_look::clouds::CloudQuality;
-use dwell_look::fog::FogSettings;
 use dwell_physics::config::PlayerControllerConfig;
 use dwell_protocol::{Channel, TransportKind};
 use js_sys::{Array, Function, Object, Promise, Reflect, Uint8Array};
@@ -1101,18 +1100,6 @@ impl Client {
 
     // ----- Settings -----
 
-    #[wasm_bindgen(js_name = setFog)]
-    pub fn set_fog(&self, distance_m: f64, density: f64, height_m: f64) {
-        self.inner
-            .borrow()
-            .renderer
-            .borrow_mut()
-            .set_fog(FogSettings {
-                distance_m,
-                density,
-                height_m,
-            });
-    }
     #[wasm_bindgen(js_name = setExposure)]
     pub fn set_exposure(&self, exposure: f64) {
         self.inner

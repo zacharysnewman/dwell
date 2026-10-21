@@ -371,7 +371,6 @@ function parseScenario(where: string, v: unknown): Scenario {
     o.settings === undefined
       ? {}
       : obj(`${where}.settings`, o.settings, [
-          'fog',
           'detail',
           'exposure',
           'clouds',

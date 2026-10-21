@@ -23,7 +23,6 @@ export interface View {
   window: { width: number; height: number };
   /** Settings menu values stored before the page loads (the menu's storage keys); unset: defaults. */
   settings: {
-    fog?: { distanceM: number; density: number; heightM: number };
     detail?: { distanceM: number; pixelError: number; memoryMb: number };
     exposure?: number;
     /** The Clouds setting. */
@@ -149,7 +148,6 @@ function parseView(index: string, raw: unknown): View {
     o.settings === undefined
       ? {}
       : fields(`${at}.settings`, o.settings, [
-          'fog',
           'detail',
           'exposure',
           'clouds',
@@ -159,9 +157,6 @@ function parseView(index: string, raw: unknown): View {
           'timeOfDay',
         ]);
   const settings: View['settings'] = {};
-  if (s.fog !== undefined) {
-    settings.fog = numbers(`${at}.settings.fog`, s.fog, ['distanceM', 'density', 'heightM']);
-  }
   if (s.detail !== undefined) {
     settings.detail = numbers(`${at}.settings.detail`, s.detail, [
       'distanceM',
@@ -255,7 +250,6 @@ export function viewUrl(base: string, view: View): string {
 /** localStorage entries for a view's settings (the settings menu's keys, ui/settingsMenu.ts). */
 export function viewStorage(view: View): Record<string, string> {
   const out: Record<string, string> = {};
-  if (view.settings.fog) out['dwell.fog'] = JSON.stringify(view.settings.fog);
   if (view.settings.detail) out['dwell.detail'] = JSON.stringify(view.settings.detail);
   if (view.settings.exposure !== undefined) {
     out['dwell.exposure'] = JSON.stringify(view.settings.exposure);

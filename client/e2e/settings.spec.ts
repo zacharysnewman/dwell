@@ -1,9 +1,9 @@
-// The settings menu (ui/settingsMenu.ts, local mode): the top-left button opens the sliders (fog,
-// detail), clear of the connection status; a moved slider applies and is kept after a reload, and the
-// settings copy to the clipboard as JSON.
+// The settings menu (ui/settingsMenu.ts, local mode): the top-left button opens the sliders (sound,
+// detail, look; the fog is fixed look data, not a setting), clear of the connection status; a moved
+// slider applies and is kept after a reload, and the settings copy to the clipboard as JSON.
 import { expect, test } from '@playwright/test';
 
-test('settings menu: fog sliders open from the corner and are kept', async ({ page }) => {
+test('settings menu: opens from the corner, without fog sliders, and is kept', async ({ page }) => {
   await page.goto('./?world=flat');
   await expect(page.locator('#net-status')).toContainText('player', { timeout: 20_000 });
   const button = page.locator('#menu-button');
@@ -18,39 +18,40 @@ test('settings menu: fog sliders open from the corner and are kept', async ({ pa
   await expect(menu).toBeHidden();
   await button.click();
   await expect(menu).toBeVisible();
-  // Sound's three volumes first, then the fog's three sliders and the detail's three.
+  // Sound's three volumes first, then the detail's three (no fog sliders: the fog is fixed).
   await expect(menu.locator('.settings-value')).toHaveText([
     '80%',
     '100%',
     '60%',
-    '4.0 km',
-    '50%',
-    '1.5 km',
     '256 m',
     '4.0 px',
     '256 MB',
     '75°',
     '1.00×',
-    // Clouds, then (after the FOV boost) the water quality: rows of buttons, the pressed one the
-    // value.
+    // Clouds and Shadows, then (after the FOV boost) the water quality: rows of buttons, the
+    // pressed one the value.
+    '',
     '',
     '100%',
     '',
   ]);
 
-  // Density to zero (no fog), as a drag would.
-  await menu.locator('input').nth(4).fill('0');
-  await expect(menu.locator('.settings-value').nth(4)).toHaveText('0%');
+  await expect(menu).not.toContainText('Fog');
+  await expect(menu).not.toContainText('Density');
+
+  // The field of view to its narrowest, as a drag would.
+  await menu.locator('input[type=range]').nth(6).fill('0');
+  await expect(menu.locator('.settings-value').nth(6)).toHaveText('60°');
   // The distant view's memory to the most.
-  await menu.locator('input').nth(8).fill('1000');
-  await expect(menu.locator('.settings-value').nth(8)).toHaveText('1024 MB');
+  await menu.locator('input[type=range]').nth(5).fill('1000');
+  await expect(menu.locator('.settings-value').nth(5)).toHaveText('1024 MB');
   await page.reload();
   await page.locator('#menu-button').click();
-  await expect(page.locator('#settings-menu .settings-value').nth(4)).toHaveText('0%');
-  await expect(page.locator('#settings-menu .settings-value').nth(8)).toHaveText('1024 MB');
+  await expect(page.locator('#settings-menu .settings-value').nth(6)).toHaveText('60°');
+  await expect(page.locator('#settings-menu .settings-value').nth(5)).toHaveText('1024 MB');
   await page.locator('#settings-menu .settings-reset').click();
-  await expect(page.locator('#settings-menu .settings-value').nth(4)).toHaveText('50%');
-  await expect(page.locator('#settings-menu .settings-value').nth(8)).toHaveText('256 MB');
+  await expect(page.locator('#settings-menu .settings-value').nth(6)).toHaveText('75°');
+  await expect(page.locator('#settings-menu .settings-value').nth(5)).toHaveText('256 MB');
 
   // Copy JSON puts the settings on the clipboard, to paste elsewhere.
   await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
@@ -58,12 +59,12 @@ test('settings menu: fog sliders open from the corner and are kept', async ({ pa
   await expect(page.locator('#settings-menu .settings-copy')).toHaveText('Copied');
   const copied = await page.evaluate<string>('navigator.clipboard.readText()');
   expect(JSON.parse(copied)).toEqual({
-    fog: { distanceM: 16000, density: 0.95, heightM: 1800 },
     detail: { distanceM: 256, pixelError: 4, memoryMb: 256 },
     exposure: 1,
     audio: { master: 0.8, effects: 1, ui: 0.6 },
     clouds: 'high',
     water: { quality: 'medium' },
+    shadows: { quality: 'high' },
     motion: { speedEffects: true, fovBoost: 1, plantSway: true },
     fovDeg: 75,
     showArms: true,
