@@ -643,41 +643,39 @@ Fortnite-style. The numbers below are defaults chosen for this, all data
 
 ### 6.10 Impacts (Dwell addition) **[built]**
 
-Owner (2026-10-21): fall damage became **impact damage**, by the angle of the surface hit, and walls
-and ceilings hurt too. `step_impact` (pass 10a) raises `IMPACTED` with the tick's hit:
+Owner (2026-10-21): fall damage became **impact damage**, by the angle of the surface hit; then
+(2026-10-21, *"Let's throw out wall and ceiling damage too, just ground"*) only the ground hurts.
+`step_impact` (pass 10a) raises `IMPACTED` with the tick's hit:
 
 - **The speed** is `max(0, −v · n)`: the body's velocity `v` going into the physics step that met
   the surface (`Player::pre_step`: the velocity `step_aggregate` gave the body, plus any instant
   change after it, such as a knockback; not what the collide-and-slide left, nor the layers' wish),
   into the surface's normal `n` (face-local, out of the surface toward the player). Only the part
   into the surface counts; the part along it is kept by sliding and is not damage. A perpendicular
-  hit counts in full, a glancing one less, a skim along a slope nothing.
+  landing counts in full, a glancing one less, a skim along a slope nothing.
 - **The surfaces:** each of the tick's contacts (`Physics::contact_normals`, from the last step)
   that is new; the ground's normal when the tick lands (`LANDED`: the ground probe meets the ground
   before the capsule does, and the ground snap then closes the gap gently); and a rise the ceiling
   probe cancels (normal −y), which likewise stops the body short of the ceiling. Flat ground gives
   the vertical speed, as falls always did; a ½ m ramp gives its own normal (26.57°: × 0.894 of a
   vertical fall).
+- **Ground only** (`damage.impact_surfaces`, default `Ground`): of those, only a normal whose
+  face-local slope is walkable counts, no steeper than `probes.max_slope_angle` (56°, the slope the
+  ground probe stands on: face-local `n.y ≥ cos 56° ≈ 0.56`). Walls, steep faces and ceilings
+  (the ceiling probe's −y) never hit, at any speed. A step's side is a wall like any other, so it
+  needs no rule of its own (0.24.8's step-as-ramp normal, which made it hit as the ramp it stands
+  for, was removed with wall damage: it would have turned harmless wall contacts into ramp hits). A
+  step's top edge met from below by the capsule's base is ground by its own normal when that is
+  walkable. `ImpactSurfaces::All` counts every contact (the rule before, kept as data for a mode
+  that wants it). The wall and ceiling impact *sounds* are unchanged: they are read from the
+  sampled motion, not from `IMPACTED` (AUDIO.md §5); the hurt follows the server's damage.
 - **Once per contact:** a contact whose normal is within `SAME_CONTACT_DOT` (0.95) of one of last
   tick's is the same contact, so a launch that keeps pressing the body into a wall hits once, and
   crossing from one collider to the next along a flat surface is no hit. **Several surfaces** in one
   tick (a corner): the largest.
 - **The ground layer's contacts are not impacts:** while the player was grounded the tick before,
   an up-facing contact (face-local `n.y > 0.1`) is the ground being followed, stepped onto or slid
-  on, or the landing just met: not a hit. Walls still count while grounded.
-- **A steppable obstacle is a ramp, not a wall** (owner, 2026-10-21: *"you don't take damage from
-  the side of half blocks as if they're a wall do you? I'd want them to be treated as ramps"*;
-  `damage.impact_step_as_ramp`, `Players::step_as_ramp`). A contact (not skipped above) whose
-  obstacle's top, read just past the contact as the step-up reads a step's top, is walkable, no
-  more than `movement.max_step_height` above the feet and has room for the capsule on it, hits with
-  the normal of the ramp that step stands for: rising the obstacle's height (from the ground under
-  the body, at most the step height) over `damage.impact_step_ramp_run` (1 m, one cell), facing the
-  mover. A ½ m step is the cardinal ½ m ramp, 26.57°: a horizontal hit counts × 0.447. The feet are
-  where the body met the contact (`Player::contact_at`, read with the contacts), before this tick's
-  step-up lifts it. A contact already flatter than that ramp (the step's edge met from above) keeps
-  its own normal; a taller obstacle (a 1 m block, two ½ m cells) stays a wall. On the ground the
-  step-up takes a ½ m step before its side is a contact, at any speed; the rule matters off the
-  ground (a hop, a launch, a slide over a crest), landing sideways onto a step's edge included.
+  on, or the landing just met: not a hit.
 - **Exempt:** flight, swimming and climbing (their layers skip the vertical layer, which is where a
   landing was ever raised): flying into a wall is harmless, as flying into the ground was. Water's
   behaviour is unchanged: entering it raises no hit.
@@ -694,28 +692,26 @@ and ceilings hurt too. `step_impact` (pass 10a) raises `IMPACTED` with the tick'
 | 25 m/s straight down onto a ½ m ramp | 23.0 m/s | 88 |
 | 25 m/s at 60° / 45° below level, downhill onto it | 14.7 / 9.1 m/s | 21 / 0 |
 | 25 m/s along the ramp (a skim) | 4.2 m/s (gravity) | 0 |
-| Launched at 25 m/s into a wall | 25 m/s, once | 104 |
+| Launched at 25 m/s into a wall | 25 m/s (a wall) | 0 (104 when walls hurt) |
 | Launched at 25 m/s along a wall, 1 m/s into it | < 2 m/s | 0 |
-| Launched up at 25 m/s into a ceiling 2.2 m over the head | ~23 m/s | 91 |
+| Launched up at 25 m/s into a ceiling 2.2 m over the head | ~23 m/s (a ceiling) | 0 (91 when ceilings hurt) |
 | Walking / sprinting into a wall | 5 / 8 m/s | 0 |
 | Flying at ~30 m/s into a wall | (exempt) | 0 |
-| A sprint slide at its 14 m/s cap (downhill only) into a wall | 14 m/s | 16 |
+| A sprint slide at its 14 m/s cap (downhill only) into a wall | 14 m/s (a wall) | 0 |
 | Running into a ½ m step on the ground, at any speed (5–25 m/s) | (stepped up: no hit) | 0 |
-| 14 m/s off the ground (0.2 m up) into a ½ m step's side | 7.5 m/s (its ramp; a wall: 14.7, 21) | 0 |
-| 25 m/s off the ground into a ½ m step's side, or its edge | 12.1 m/s (its ramp) | 1 |
-| 40 m/s off the ground into a ½ m step's side | 18.8 m/s (its ramp) | 54 |
-| 25 m/s into a 1 m block (two ½ m cells), on or off the ground | 24.5–25 m/s (a wall) | 100–104 |
+| 14 / 25 / 40 m/s off the ground (0.2 m up) into a ½ m step's side | (a wall) | 0 |
+| 25 m/s into a 1 m block (two ½ m cells), on or off the ground | (a wall) | 0 |
+| 25 m/s off the ground (0.3 m up) into a ½ m step's top edge | ~1 m/s (its own normal, glancing) | 0 |
 
-- **Tests:** `tests/impact.rs` (18, both faces and far from the origin): a 20 m fall onto the flat
-  deals the 131 it did before; a short drop nothing; onto the ½ m ramp hillside a vertical landing
-  by the ramp's normal, a glancing one less and a skim nothing; a launch into a wall hurts once, one
-  brushing along it not at all; flying into it not at all; a hard ceiling hit hurts and a jump into
-  a low ceiling not; walking and sprinting into a wall, stepping up ½ m, auto-climb and walking the
-  ramp hillside stay under 9 m/s; a ½ m step's side off the ground hits as its ramp (14 m/s: none,
-  25 m/s: under 10 points, 40 m/s: the ramp's share), its edge too, and with
-  `impact_step_as_ramp` off as a wall; a 1 m block stays a wall (≥ 100); running into a ½ m step
-  at up to 25 m/s steps up with no hit. `dwell-sim` `tests/netcode.rs` damages and kills by falls through
-  the server.
+- **Tests:** `tests/impact.rs` (17, both faces and far from the origin): 5, 10, 20 and 30 m falls
+  onto the flat deal the 16 / 64 / 131 / 181 they did before; a short drop nothing; onto the ½ m
+  ramp hillside a vertical landing by the ramp's normal, a glancing one less and a skim nothing; a
+  25 m/s launch into a wall nothing (and with `impact_surfaces: All` the 104 it did), one brushing
+  along it and flying into it nothing; a hard ceiling hit nothing; walking and sprinting into a
+  wall, stepping up ½ m, auto-climb and walking the ramp hillside stay under 9 m/s; launches into a
+  ½ m step's side (14, 25, 40 m/s), a 1 m block and a step's edge nothing; running
+  into a ½ m step at up to 25 m/s steps up with no hit. `dwell-sim` `tests/netcode.rs` damages and
+  kills by falls through the server.
 
 ## 7. Configuration
 
@@ -763,8 +759,8 @@ PPC default for voxels.
 | `sprint_slide` ◆ | `min_start_speed` / `start_boost` / `max_speed` | 6.5 m/s / 1.5 m/s / 14 m/s | — | Dwell addition (§6.9): crouch while sprinting; horizontal speeds |
 | | `friction` / `slope_gravity` | 6 m/s² / 1 | — | Deceleration; `gravity × slope_gravity × tilt` along the slide |
 | | `steer_rate` / `cooldown_ticks` | 90 °/s / 30 ticks (0.5 s, at most 255: the wire's `u8`) | — | Turning toward the move input; before another slide |
-| `damage` ◆ | `impact_damage_min_speed` / `impact_damage_per_speed` | 12 m/s / 8 per m/s | — | From the `IMPACTED` event's speed into the surface (§6.10): floors, ramps, walls, ceilings |
-| | `impact_step_as_ramp` / `impact_step_ramp_run` | true / 1 m | — | An obstacle within `max_step_height` of the feet hits as a ramp rising its height over the run (§6.10) |
+| `damage` ◆ | `impact_damage_min_speed` / `impact_damage_per_speed` | 12 m/s / 8 per m/s | — | From the `IMPACTED` event's speed into the surface (§6.10) |
+| | `impact_surfaces` | `Ground` | — | The contacts that hit (§6.10): `Ground`, a normal no steeper than `probes.max_slope_angle` (landings, ramps); `All`, walls and ceilings too |
 | | `crush_speed` / `crush_ticks` | 4 m/s / 6 | — | Phase 20 |
 | `step_view` ◆ | `slope` / `max_slope` / `min_speed` | 0.5 / 1.0 / 1 m/s | (PPC `SmoothSteps`: 4 m/s) | Client camera only (§9, Steps): the virtual ramp the eye follows over a step; never read by the sim |
 | `advanced` | `step_probe_distance` ◆ / `probe_ring_radius` / `wall_check_distance` | 0.05 m / 0.9 / 0.16 m | 0.01 / same / same | The step's top is read this far past its face (§4) |
@@ -990,7 +986,7 @@ launch-pad knockback test is a server-issued knockback.
 | Phase6Climb | `platform_climb_swim.rs`: ladder columns: grab, climb, look-down reversal, strafe, jump-off, climb over the top |
 | CharacterStacking / GroundedConsistency / StepSmoothness | `scenario.rs`: the same scenarios on voxel geometry (standing on heads, half-step stairs, stair corners, ledges) |
 | GoldenTrace | `scenario.rs`: the five-player scenario is identical across repeated runs and matches `tests/golden/scenario.trace` bit for bit in the origin frame (natively and under `wasm32-wasip1`, §8.3); far from the origin and on face B every state must match and positions stay within 1 mm. Re-record with `DWELL_UPDATE_GOLDEN=1` (origin frame only); re-recorded on Rapier in Phase 24 |
-| — (Dwell) | Swim enter/float/dive/exit and shallow water (`platform_climb_swim.rs`); creative flight (`flight.rs`: hover, rise/sink/move, speed growing with height, the terrain-band cap, no ceiling (out through the build sphere), the speed level, flying round the rim to face B, a fast dive stopping on the ground); sliding on steep ground (`slide.rs`, §6.8); the sprint slide (`sprint_slide.rs`, §6.9); auto-jump, edge guard, doorways, crawlspaces, block-under-feet removal, same-tick collision with a placed block, chunk seams (`scenario.rs`); voxel ray casts and flooded cells (`voxel_query.rs`); impacts on floors, ramps, walls and ceilings (`impact.rs`, §6.10); the bifacial controller (`bifacial.rs`) and Tier 1 bodies across the midplane (`tier1_bifacial.rs`); the predictor against an in-process server (`tests/predictor.rs`: no replays without surprises, knockback replays, the render offset decaying, death, remote proxies, a sprint slide and its cooldown resumed from a snapshot). Networked players (`crates/dwell-sim/tests/netcode.rs`, the `NetSim` harness: the real server and per-client predictors over simulated links) — input validation and rate limits, impact damage from falls, death and respawn on every client, reconciliation under latency, jitter and loss, knockback replay, player bumps, block edits, sliding and the sprint slide (exact without latency, no snaps at 150 ms RTT), the server's flight policy and fast flight. Later phases: crush and push-force cap (Phase 20) |
+| — (Dwell) | Swim enter/float/dive/exit and shallow water (`platform_climb_swim.rs`); creative flight (`flight.rs`: hover, rise/sink/move, speed growing with height, the terrain-band cap, no ceiling (out through the build sphere), the speed level, flying round the rim to face B, a fast dive stopping on the ground); sliding on steep ground (`slide.rs`, §6.8); the sprint slide (`sprint_slide.rs`, §6.9); auto-jump, edge guard, doorways, crawlspaces, block-under-feet removal, same-tick collision with a placed block, chunk seams (`scenario.rs`); voxel ray casts and flooded cells (`voxel_query.rs`); impacts on the ground only: floors and ramps hurt, walls and ceilings not (`impact.rs`, §6.10); the bifacial controller (`bifacial.rs`) and Tier 1 bodies across the midplane (`tier1_bifacial.rs`); the predictor against an in-process server (`tests/predictor.rs`: no replays without surprises, knockback replays, the render offset decaying, death, remote proxies, a sprint slide and its cooldown resumed from a snapshot). Networked players (`crates/dwell-sim/tests/netcode.rs`, the `NetSim` harness: the real server and per-client predictors over simulated links) — input validation and rate limits, impact damage from falls, death and respawn on every client, reconciliation under latency, jitter and loss, knockback replay, player bumps, block edits, sliding and the sprint slide (exact without latency, no snaps at 150 ms RTT), the server's flight policy and fast flight. Later phases: crush and push-force cap (Phase 20) |
 
 Performance gate: 64 players' controller passes (excluding the physics step) under 1 ms/tick —
 measured at ~0.48 ms in a Release build with `enhanced-determinism` on, ~0.51 ms ~8,000 km from the

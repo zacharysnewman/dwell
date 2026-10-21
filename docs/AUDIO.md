@@ -196,8 +196,8 @@ read from the sampled motion the way landings are: for each face-local direction
 the body there (the body probe `Surroundings`: the cell 6 cm past its side at mid-height, or 6 cm
 over its head) and the speed toward it drops in one sample to at most 35 % of its fastest in the
 last 70 ms, that fastest speed is the hit's — the controller's `max(0, −v · n)` for the cell's
-face, so a 25 m/s launch into a wall sounds at full intensity and hurts, and a sprint into it at
-about 7 m/s is a soft thud that does not. Then that direction is quiet for 70 ms (one hit per
+face, so a 25 m/s launch into a wall sounds at full intensity, and a sprint into it at about 7 m/s
+is a soft thud. Neither hurts: only the ground does damage (PLAYER_CONTROLLER.md §6.10). Then that direction is quiet for 70 ms (one hit per
 contact; pressing on into the wall is silent). Climbing and swimming hit nothing; flight sounds
 but never hurts. Braking beside a wall is no hit: the probe only sees a wall the body touches.
 Ours are read from the prediction's ticks; another player's from each snapshot's latest state

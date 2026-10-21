@@ -1,7 +1,8 @@
 //! Impact damage (PLAYER_CONTROLLER.md §6.10, ARCHITECTURE.md §9.6): a hit hurts by the speed into
 //! the surface, `max(0, −v · n)`, with `v` the body's velocity going into the physics step that
-//! met it and `n` the surface's normal (face-local) — floors, ramps, walls and ceilings alike, over
-//! the same thresholds; once per contact, the largest of a tick's. Flight, swimming and climbing are
+//! met it and `n` the surface's normal (face-local) — on the ground only (`impact_surfaces`): a
+//! walkable normal, landings and ramps; walls, steep faces and ceilings never hurt. Once per
+//! contact, the largest of a tick's. Flight, swimming and climbing are
 //! exempt, as falls were. Runs in the local frame like every suite (far from the origin and on face
 //! B too).
 
@@ -85,7 +86,12 @@ fn a_perpendicular_landing_on_flat_ground_damages_as_before() {
 #[test]
 fn drops_of_5_10_20_and_30_m_deal_what_they_did_before_ground_only() {
     // Landings keep the angle rule: pinned from the code before walls and ceilings stopped hurting.
-    for (height, expected) in [(5.0, DROP_5), (10.0, DROP_10), (20.0, DROP_20), (30.0, DROP_30)] {
+    for (height, expected) in [
+        (5.0, DROP_5),
+        (10.0, DROP_10),
+        (20.0, DROP_20),
+        (30.0, DROP_30),
+    ] {
         let mut w = PlayerTestWorld::new();
         w.floor();
         let e = w.spawn(Vec3::new(0.5, height, 0.5));
@@ -241,7 +247,11 @@ fn launched_into_a_wall_at_25_m_s_does_not_hurt() {
     w.kick(0, e, Vec3::new(0.0, 0.0, 25.0));
     let dealt = hits_at(&mut w, e, ticks(1.5));
     assert_eq!(dealt, Vec::new());
-    assert!(w.pos(e).z > 5.0 && w.pos(e).z < 6.0, "met the wall: {}", w.pos(e));
+    assert!(
+        w.pos(e).z > 5.0 && w.pos(e).z < 6.0,
+        "met the wall: {}",
+        w.pos(e)
+    );
 }
 
 #[test]
@@ -471,17 +481,21 @@ fn launches_into_a_half_metre_step_or_a_metre_tall_obstacle_do_not_hurt() {
         (2, 25.0, HOP),
     ] {
         let r = launch_into(rows, speed, height);
-        assert_eq!(r.dealt, Vec::new(), "{rows} rows at {speed} m/s, {height} m up");
+        assert_eq!(
+            r.dealt,
+            Vec::new(),
+            "{rows} rows at {speed} m/s, {height} m up"
+        );
     }
 }
 
 #[test]
-fn hitting_a_step_edge_from_lower_in_the_air_does_not_hurt_much() {
+fn hitting_a_step_edge_from_lower_in_the_air_does_not_hurt() {
     // Lower over the floor the capsule's base meets the step's top edge (a normal partly up), not
-    // its side: ground by its own normal, a glancing share of the speed.
+    // its side: ground only by its own normal where walkable, a glancing share of the speed.
     let r = launch_into(1, 25.0, 0.3);
-    let worst = r.dealt.iter().map(|d| d.0).max().unwrap_or(0);
-    assert!(worst < 10, "{:?} (fastest {})", r.dealt, r.fastest);
+    assert_eq!(r.dealt, Vec::new(), "fastest {}", r.fastest);
+    assert!(r.fastest < 6.0, "{}", r.fastest);
 }
 
 #[test]

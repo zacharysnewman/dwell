@@ -1507,36 +1507,16 @@ mod tests {
         hit_every(DT, dir, speed, stop_over, wall)
     }
 
-    /// What the server deals for an impact at `speed` (dwell-sim `after_controller_tick`).
-    fn damage(speed: f64) -> u8 {
-        let d = dwell_physics::config::PlayerControllerConfig::default().damage;
-        d.impact_damage(speed as f32).clamp(0, 255) as u8
-    }
-
-    /// The sounds a hit at `speed` into a wall makes: its impact, and the hurt of the damage
-    /// event the server sends when it deals any (`player_event_sound`).
-    fn wall_hit_sounds(speed: f64) -> Vec<SoundEvent> {
-        let mut out = hit(2, speed, 1, true);
-        let dealt = damage(speed);
-        if dealt > 0 {
-            out.extend(player_event_sound(PlayerEventKind::Damage, dealt, None));
-        }
-        out
-    }
-
     #[test]
-    fn a_wall_hit_at_25_m_s_is_a_loud_impact_and_hurts_and_at_8_a_soft_thud_that_does_not() {
-        let hard = wall_hit_sounds(25.0);
-        assert_eq!(
-            kinds(&hard),
-            [SoundKind::Impact, SoundKind::Hurt],
-            "{hard:?}"
-        );
+    fn a_wall_hit_at_25_m_s_is_a_loud_impact_and_at_8_a_soft_thud() {
+        // Feedback, not damage: walls never hurt (PLAYER_CONTROLLER.md §6.10), so no hurt follows
+        // either (the hurt is the server's Damage event's, `player_event_sound`).
+        let hard = hit(2, 25.0, 1, true);
+        assert_eq!(kinds(&hard), [SoundKind::Impact], "{hard:?}");
         assert!(hard[0].intensity >= 0.99, "loud: {hard:?}");
         assert_eq!(hard[0].block, stone(), "the wall's sound set");
-        assert!(hard[1].intensity > 0.5, "a hard hurt: {hard:?}");
-        // At sprint speed: a soft thud, under the damage threshold.
-        let soft = wall_hit_sounds(8.0);
+        // At sprint speed: a soft thud.
+        let soft = hit(2, 8.0, 1, true);
         assert_eq!(kinds(&soft), [SoundKind::Impact], "{soft:?}");
         assert!(
             soft[0].intensity > 0.1 && soft[0].intensity < 0.4,
