@@ -31,16 +31,13 @@ pub enum SoundKind {
     Burn = 24,
     BurnLevel = 25,
     BurnEnd = 26,
-    Wind = 27,
-    WindLevel = 28,
-    WindEnd = 29,
-    Night = 30,
-    NightLevel = 31,
-    NightEnd = 32,
+    Night = 27,
+    NightLevel = 28,
+    NightEnd = 29,
 }
 
 impl SoundKind {
-    pub const ALL: [SoundKind; 33] = [
+    pub const ALL: [SoundKind; 30] = [
         SoundKind::Step,
         SoundKind::Climb,
         SoundKind::Land,
@@ -68,9 +65,6 @@ impl SoundKind {
         SoundKind::Burn,
         SoundKind::BurnLevel,
         SoundKind::BurnEnd,
-        SoundKind::Wind,
-        SoundKind::WindLevel,
-        SoundKind::WindEnd,
         SoundKind::Night,
         SoundKind::NightLevel,
         SoundKind::NightEnd,
@@ -106,9 +100,6 @@ impl SoundKind {
             SoundKind::Burn => "burn",
             SoundKind::BurnLevel => "burn_level",
             SoundKind::BurnEnd => "burn_end",
-            SoundKind::Wind => "wind",
-            SoundKind::WindLevel => "wind_level",
-            SoundKind::WindEnd => "wind_end",
             SoundKind::Night => "night",
             SoundKind::NightLevel => "night_level",
             SoundKind::NightEnd => "night_end",
@@ -145,9 +136,6 @@ impl SoundKind {
             SoundKind::Burn => None,
             SoundKind::BurnLevel => None,
             SoundKind::BurnEnd => None,
-            SoundKind::Wind => None,
-            SoundKind::WindLevel => None,
-            SoundKind::WindEnd => None,
             SoundKind::Night => None,
             SoundKind::NightLevel => None,
             SoundKind::NightEnd => None,
@@ -185,10 +173,8 @@ pub mod ambient {
     pub const FIRE_RADIUS_M: f64 = 10.0;
     /// ... the nearest this many.
     pub const FIRE_MAX: usize = 4;
-    /// The wind: from the listener's height over sea level (m), starting and full ...
-    pub const WIND_HEIGHT_M: (f64, f64) = (24.0, 160.0);
-    /// ... or from its speed (m/s), starting and full.
-    pub const WIND_SPEED: (f64, f64) = (9.0, 40.0);
     /// The night: from the sky's stars (0 by day, 1 by night), starting and full.
     pub const NIGHT_STARS: (f64, f64) = (0.15, 0.85);
+    /// ... fading out as the listener rises over sea level (m), starting and gone.
+    pub const NIGHT_ALOFT_M: (f64, f64) = (24.0, 160.0);
 }
