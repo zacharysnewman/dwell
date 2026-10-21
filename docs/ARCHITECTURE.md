@@ -1393,7 +1393,7 @@ Server (native), local mode (WASM), and client (WASM) must produce **bit-identic
   `MAX_CHUNKS_PER_TICK` per tick and within `CHUNK_BYTES_PER_SECOND` (a byte credit refilled each
   tick; one chunk may overdraw it). When the player's chunk changes, chunks beyond the view plus
   `UNLOAD_MARGIN_CHUNKS` (hysteresis) are unloaded (outside the sphere of r + margin). Dead players
-  stream around their body. Beyond the view, the LOD system (§6.6, Phase 4) takes over.
+  stream around their body, and preload their respawn (below, *The respawn preload*). Beyond the view, the LOD system (§6.6, Phase 4) takes over.
 - **Requested chunks** **[built, Phase 4]** (`request_chunks`, `stream_requested`). Beyond
   the view, the client asks for the chunks it will draw at full detail (`ChunkRequest`, from the
   LOD system, §6.6), within `RENDER_RADIUS_CHUNKS` (12, 384 m) of the player's chunk. They are
@@ -1455,6 +1455,41 @@ Server (native), local mode (WASM), and client (WASM) must produce **bit-identic
   `reducedMotionDurationS` (0: no fade, and no hold). The start hint shows once it opens. Data:
   `loading.json`'s `fade`, validated and generated into `client/src/ui/loading.gen.ts` by the same
   `loading.mjs`.
+- **The respawn preload** **[built]** (`dwell-sim` `server.rs`, `dwell-game` `chunk_stream.rs`,
+  `dwell-lod` `system.rs`, `dwell-client` `game.rs`). Owner (2026-10-21): *"We could preload terrain
+  at spawn once you die too?"* From a death until the respawn (`RESPAWN_SECONDS`, 5 s) the
+  respawn's near ring is made ready while the death screen shows, so the loading screen on
+  respawning opens at once. The respawn point is decided on the server: the world's spawn, spread by
+  player id (`respawn_feet`; there are no beds). **Server:** the kill records the chunk the body will
+  be centred in there (`body_centre_chunk`, face-local) as the session's second streaming centre,
+  and the view sphere of `respawnPreload.radiusChunks` (3: the loading screen's near ring, 179
+  chunks) around it is streamed after the view around the body, within the same bandwidth and
+  per-tick budgets (`stream_preload`, counted in `StreamStats::preload_sent`), and generated for
+  full-mode clients and the respawn's collision (`update_worldgen`, kept from eviction). Bounded: one
+  ring, sent once, not a second view; the body's view stays (nothing is unloaded while dead), and
+  chunk requests are answered within two chunks past the ring too (the LOD's, below). The respawn
+  ends it: the centre moves to the spawn, the body's view leaves, the ring is already there and is
+  not sent again. **Protocol:** unchanged. `PlayerEvent`'s fields are per kind on the wire and
+  decoding is strict, so a respawn point on `Death` would break older clients; the client predicts
+  the ring instead, from the Welcome's verification chunk (the cell under the spawn): the server's
+  centre is within a chunk of it, and the client widens its ring by one. **Client:** while dead the
+  streamer lights and meshes the chunks of the near ring around the body first, then the respawn's
+  ring nearest its centre, then the rest (`ChunkStreamer::set_second_centre`, `SecondCentre`); the
+  LOD keeps running from the death camera and readies a **second area**, the box of the respawn's
+  ring (`LodSystem::set_second_area`): the sections over it and their ancestors, down to level 1,
+  wanted and ranked by their distance to it but never drawn (`warm_visit`), and the chunks of its
+  level-1 sections asked for before the view's own requests (asks from before the death are made
+  again: the server drops out-of-range ones without saying). So on the respawn the view there
+  refines to its chunks in the first frame and the gate opens (red → green in `game_local.rs`: 1
+  frame with the preload against 50 without it, and with the LOD 1 against several hundred).
+  Found on the way: a player killed before its prediction ticked (the terrain around it not yet
+  arrived) stayed "placed" while dead, so its respawn skipped the loading screen; a death now
+  always un-places the player. Data: `loading.json`'s `respawnPreload` (`enabled`, `radiusChunks`,
+  at most `viewRadiusChunks`), generated into `loading.gen.rs` and `dwell-sim`'s
+  `respawn_preload.gen.rs` (`ServerConfig::respawn_preload_radius_chunks`'s default; `None`: off).
+  `?respawnPreload=off` turns it off on the page and its local server (the bench's
+  `respawn-preload-off` configuration); the bench's `respawn-far` scenario and `die` step time
+  respawn → playing.
 
 ### 6.4 World Persistence **[built, Phase 3e; LOD cache Phase 4b; block states Phase 8; redb, Phase 24]** (bodies, backups, export UI: later)
 
@@ -1802,6 +1837,12 @@ Every player's builds are therefore visible from anywhere.
 
 **Client** **[built, Phase 4c]** (`dwell-lod` `system.rs`, `dwell-mesh` `lod_mesher.rs`, `dwell-client` `render/`).
 Each frame the octree is walked from the root around the **camera** (the eye):
+- **A second area** **[built]** (`set_second_area`, the respawn preload, §6.3): while the player
+  is dead, after the camera's walk, the sections over the respawn ring's box and their ancestors
+  are walked down to level 1 without drawing (touched, so kept in the cache; wanted while not
+  ready, ranked by their distance to the area, without the off-view penalty), and the chunks of
+  its level-1 sections are asked for ahead of the view's requests. Only that box, not a second
+  view.
 - A node is refined while its cells project larger than `LOD_PIXEL_ERROR` **CSS** pixels, times
   the error scale that keeps the view within the cache (below) (screen-space error; equivalent to
   a log-distance rule at a fixed field of view, and right for altitude and zoom). CSS pixels, not
@@ -2387,6 +2428,7 @@ in the code yet.
 | Water quality (client, `ui/waterSettings.ts`) | High on desktops, Low on phones | Settings menu; W1b: Low one ripple layer, Medium and High three |
 | Spyglass (client, `shared/look/spyglass.json` → `dwell-look` `spyglass.gen.rs`) | Key `` ` ``; steps 4× and 8×; detail boost 4; 0.25 s transition; vignette clear to 0.95, 60 % of #05070a from 1.6 half-heights | The zoom, the LOD's detail inside its cone and its look ([`SPYGLASS.md`](./SPYGLASS.md)) |
 | Loading screen (client, `shared/look/loading.json` → `dwell-game` `loading.gen.rs`) | Near ring: the view sphere of 3 chunks (≤ `VIEW_RADIUS_CHUNKS`); timeout 20 s | How long the join waits behind its loading screen (§6.3) |
+| Respawn preload (`shared/look/loading.json` `respawnPreload` → `loading.gen.rs`, `dwell-sim` `respawn_preload.gen.rs`) | On; the view sphere of 3 chunks around the respawn (≤ `VIEW_RADIUS_CHUNKS`); chunk requests within 2 chunks past it | What a death streams and readies for the respawn (§6.3) |
 | Loading fade (shell, `shared/look/loading.json` `fade` → `client/src/ui/loading.gen.ts`) | `#fffdf6`, hold 0.12 s, 0.8 s ease-out power 3; CPU adapter 0.2 s; reduced motion 0 (none) | The fade in from white when the loading screen opens (§6.3) |
 | `OFF_VIEW_PRIORITY` (client, `dwell-lod` `system.rs`) | 1/8, beyond the full-detail distance only | The LOD's load order outside the view (§6.6) |
 | Water reflections (client, `shared/look/reflections.json` → `dwell-look` `reflections.gen.rs`) | Low: sky only; Medium: 12 march + 4 refine steps, 2 km, 3 cloud octaves; High: 28 + 6, 4 km, 5 octaves with self-shadow; thickness 1.5 m + 3 %, edge fade 12 % of the screen height, distance fade 30 %, the land's ray steered by 0.3 of the ripples' slope | Screen-space reflections of land and the clouds in the water (Phase 26 W5a, `WATER_RENDERING.md` §8) |
