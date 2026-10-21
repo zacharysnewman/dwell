@@ -17,6 +17,7 @@ import {
   latestBuild,
   listBuilds,
   parseWorldIndex,
+  RELEASES_URL,
   VERSIONS_PARAM,
   type Channel,
 } from './select';
@@ -173,9 +174,23 @@ function showVersions(manifest: Manifest): void {
     item.append(head, note);
     list.append(item);
   }
+  // Older patches are retired from the site (RELEASES.md §4); each line's newest opens its worlds.
+  const retired = document.createElement('div');
+  retired.id = 'version-retired';
+  const releases = document.createElement('a');
+  releases.href = RELEASES_URL;
+  releases.target = '_blank';
+  releases.rel = 'noopener';
+  releases.textContent = 'GitHub Releases';
+  retired.append(
+    'Older patches are retired from this list: the newest build of each line opens all of its worlds. Every release stays on ',
+    releases,
+    '.',
+  );
   root.querySelector('#dev-toggle')?.remove();
   root.querySelector('#version-list')?.remove();
-  root.append(label, list);
+  root.querySelector('#version-retired')?.remove();
+  root.append(label, list, retired);
 }
 
 /** Opens a build from the version page, checking first that it is there. */

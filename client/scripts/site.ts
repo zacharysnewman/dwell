@@ -1,11 +1,13 @@
 // The site's assembly (RELEASES.md §4), run by the Pages workflow and by `npm run site:fixture`:
-//   site.ts plan RELEASES.json [DEV_KEEP]   which releases the site holds, and which to prune
+//   site.ts plan RELEASES.json [POLICY]     which releases the site holds, and which to prune
 //   site.ts manifest SITE_DIR               writes SITE_DIR/versions.json from SITE_DIR/v/*/build.json
 //   site.ts media SITE_DIR                  moves the builds' music to SITE_DIR/media/, once
-//   site.ts size SITE_DIR                   the site's size against Pages' 1 GB limit
+//   site.ts size SITE_DIR [SUMMARY]         the site's size against the budget and Pages' 1 GB limit
+// POLICY is the retention policy, shared/version/site-retention.json by default.
 // Runs under Node's type stripping (`node --experimental-strip-types`): erasable TypeScript only,
 // and `.ts` in relative imports.
 import {
+  appendFileSync,
   existsSync,
   mkdirSync,
   readdirSync,
@@ -16,25 +18,114 @@ import {
   statSync,
   writeFileSync,
 } from 'node:fs';
-import { join } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { dirname, join } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import type { BuildEntry, Manifest } from '../launcher/src/manifest.ts';
-import { compareVersionText, isStable, parseVersion, withoutBuild } from '../src/version/semver.ts';
+import {
+  compareVersionText,
+  compatibilityLine,
+  isStable,
+  parseVersion,
+  withoutBuild,
+} from '../src/version/semver.ts';
 
-/** Dev pre-releases kept on the site and as releases; older ones and their tags are pruned. */
-export const DEV_KEEP = 10;
 /** The most a Pages site may hold. */
 export const PAGES_LIMIT_BYTES = 1_000_000_000;
+
+/** The retention policy's file (RELEASES.md §4), relative to this script. */
+export const RETENTION_FILE = join(
+  dirname(fileURLToPath(import.meta.url)),
+  '../../shared/version/site-retention.json',
+);
+
+/**
+ * Which releases the site holds (RELEASES.md §4, `shared/version/site-retention.json`). A stable
+ * release is kept if any rule keeps it; the rest are retired from the site, their releases (and
+ * tarballs) left on GitHub. Dev pre-releases follow `devKeep` alone.
+ */
+export interface RetentionPolicy {
+  /** Keep the newest release of every compatibility line, so every line's worlds still open. */
+  newestPerLine: boolean;
+  /** Keep this many of the newest stable releases. */
+  newestOverall: number;
+  /** Always kept: a compatibility line ("0.10", "1": all of its releases) or an exact release. */
+  pinned: string[];
+  /** Dev pre-releases kept on the site and as releases; older ones and their tags are deleted. */
+  devKeep: number;
+  /** Above this the size check warns loudly (the hard stop is Pages' 1 GB). */
+  sizeBudgetMB: number;
+}
+
+const POLICY_KEYS = ['newestPerLine', 'newestOverall', 'pinned', 'devKeep', 'sizeBudgetMB'];
+/** A compatibility line as a pin names it: `0.MINOR` before 1.0, `MAJOR` after. */
+const LINE_PIN = /^(0\.(0|[1-9]\d*)|[1-9]\d*)$/;
+
+/** Whether `pin` names a compatibility line or an exact stable release; null if neither. */
+export function pinKind(pin: string): 'line' | 'version' | null {
+  if (LINE_PIN.test(pin)) return 'line';
+  const v = parseVersion(pin);
+  return v && isStable(v) && v.build === null ? 'version' : null;
+}
+
+/** The policy in parsed JSON; throws, naming the field, for anything it does not understand. */
+export function parseRetention(json: unknown, source = 'retention policy'): RetentionPolicy {
+  const fail = (message: string): never => {
+    throw new Error(`${source}: ${message}`);
+  };
+  if (typeof json !== 'object' || json === null || Array.isArray(json)) fail('not an object');
+  const p = json as Record<string, unknown>;
+  for (const key of Object.keys(p)) {
+    if (key !== 'comment' && !POLICY_KEYS.includes(key)) fail(`unknown field "${key}"`);
+  }
+  const count = (key: string): number => {
+    const n = p[key];
+    if (typeof n !== 'number' || !Number.isInteger(n) || n < 0) {
+      return fail(`"${key}" must be a whole number of 0 or more`);
+    }
+    return n;
+  };
+  if (typeof p.newestPerLine !== 'boolean') fail('"newestPerLine" must be true or false');
+  if (!Array.isArray(p.pinned)) fail('"pinned" must be a list');
+  const pinned = p.pinned as unknown[];
+  for (const pin of pinned) {
+    if (typeof pin !== 'string' || pinKind(pin) === null) {
+      fail(
+        `pin ${JSON.stringify(pin)} is neither a compatibility line ("0.10", "1") nor a release ("0.17.2")`,
+      );
+    }
+  }
+  const sizeBudgetMB = count('sizeBudgetMB');
+  if (sizeBudgetMB === 0 || sizeBudgetMB * 1e6 > PAGES_LIMIT_BYTES) {
+    fail(
+      `"sizeBudgetMB" must be above 0 and at most Pages' limit (${String(PAGES_LIMIT_BYTES / 1e6)})`,
+    );
+  }
+  return {
+    newestPerLine: p.newestPerLine as boolean,
+    newestOverall: count('newestOverall'),
+    pinned: pinned as string[],
+    devKeep: count('devKeep'),
+    sizeBudgetMB,
+  };
+}
+
+export function loadRetention(file: string = RETENTION_FILE): RetentionPolicy {
+  return parseRetention(JSON.parse(readFileSync(file, 'utf8')), file);
+}
 
 export interface ReleaseInfo {
   tagName: string;
 }
 
 export interface SitePlan {
-  /** Tags whose builds go on the site: every stable release and the newest dev builds. */
+  /** Tags whose builds go on the site, newest first: the stable releases the policy keeps, then the newest dev builds. */
   keep: string[];
-  /** Dev tags beyond `DEV_KEEP`: their releases and tags are deleted. */
+  /** Stable tags the policy leaves off the site; their releases stay on GitHub. */
+  retired: string[];
+  /** Dev tags beyond `devKeep`: their releases and tags are deleted. */
   prune: string[];
+  /** Pins that matched no release (a typo, or a release not made yet). */
+  unmatchedPins: string[];
   /** Tags that are not `v<version>`, left alone. */
   ignored: string[];
 }
@@ -47,7 +138,7 @@ export function tagVersion(tag: string): string | null {
   return parsed && parsed.build === null ? version : null;
 }
 
-export function planSite(releases: ReleaseInfo[], devKeep: number = DEV_KEEP): SitePlan {
+export function planSite(releases: ReleaseInfo[], policy: RetentionPolicy): SitePlan {
   const stable: string[] = [];
   const dev: string[] = [];
   const ignored: string[] = [];
@@ -60,9 +151,27 @@ export function planSite(releases: ReleaseInfo[], devKeep: number = DEV_KEEP): S
   const newestFirst = (a: string, b: string) => compareVersionText(b.slice(1), a.slice(1));
   stable.sort(newestFirst);
   dev.sort(newestFirst);
+
+  const kept = new Set<string>(stable.slice(0, policy.newestOverall));
+  const lines = new Set<string>();
+  const matched = new Set<string>();
+  for (const tag of stable) {
+    const version = tag.slice(1);
+    const line = compatibilityLine(version) ?? version;
+    if (policy.newestPerLine && !lines.has(line)) kept.add(tag); // newest first: the first is the newest
+    lines.add(line);
+    for (const pin of policy.pinned) {
+      if (pin === version || pin === line) {
+        kept.add(tag);
+        matched.add(pin);
+      }
+    }
+  }
   return {
-    keep: [...stable, ...dev.slice(0, devKeep)],
-    prune: dev.slice(devKeep),
+    keep: [...stable.filter((t) => kept.has(t)), ...dev.slice(0, policy.devKeep)],
+    retired: stable.filter((t) => !kept.has(t)),
+    prune: dev.slice(policy.devKeep),
+    unmatchedPins: policy.pinned.filter((p) => !matched.has(p)),
     ignored,
   };
 }
@@ -172,19 +281,34 @@ export function hoistMedia(siteDir: string): { moved: number; shared: number } {
 
 const mb = (bytes: number) => `${(bytes / 1e6).toFixed(1)} MB`;
 
-/** A Markdown line for the job summary: the site's size against Pages' limit. */
-export function sizeReport(bytes: number, builds: number): string {
+/** A Markdown line for the job summary: the site's size against the budget and Pages' limit. */
+export function sizeReport(bytes: number, builds: number, budgetMB: number): string {
   const percent = ((bytes / PAGES_LIMIT_BYTES) * 100).toFixed(1);
-  const warning = bytes > PAGES_LIMIT_BYTES * 0.8 ? ' ⚠️ over 80% of the limit: prune builds' : '';
+  const warning =
+    bytes > PAGES_LIMIT_BYTES
+      ? ' ⛔ over the Pages limit: the deploy is stopped'
+      : bytes > budgetMB * 1e6
+        ? ` ⚠️ over the ${String(budgetMB)} MB budget: lower newestOverall or the pins in shared/version/site-retention.json`
+        : '';
   const each = builds > 0 ? `, about ${mb(bytes / builds)} per build` : '';
-  return `Site: ${mb(bytes)} of ${mb(PAGES_LIMIT_BYTES)} (${percent}%), ${String(builds)} builds${each}${warning}`;
+  return `Site: ${mb(bytes)} of ${mb(PAGES_LIMIT_BYTES)} (${percent}%; budget ${String(budgetMB)} MB), ${String(builds)} builds${each}${warning}`;
+}
+
+/** What the size check does: 'ok', 'warn' over the budget (the deploy goes on), 'fail' over the limit. */
+export function sizeVerdict(bytes: number, budgetMB: number): 'ok' | 'warn' | 'fail' {
+  if (bytes > PAGES_LIMIT_BYTES) return 'fail';
+  return bytes > budgetMB * 1e6 ? 'warn' : 'ok';
 }
 
 function main(args: string[]): number {
   const [command, arg, extra] = args;
   if (command === 'plan' && arg) {
     const releases = JSON.parse(readFileSync(arg, 'utf8')) as ReleaseInfo[];
-    console.log(JSON.stringify(planSite(releases, extra ? Number(extra) : DEV_KEEP), null, 2));
+    const plan = planSite(releases, loadRetention(extra));
+    console.log(JSON.stringify(plan, null, 2));
+    for (const pin of plan.unmatchedPins) {
+      console.error(`::warning::site-retention.json pins ${pin}, which matches no release`);
+    }
     return 0;
   }
   if (command === 'manifest' && arg) {
@@ -202,17 +326,22 @@ function main(args: string[]): number {
     return 0;
   }
   if (command === 'size' && arg) {
+    const { sizeBudgetMB } = loadRetention();
     const bytes = directorySize(arg);
-    const builds = readBuilds(arg).size;
-    console.log(sizeReport(bytes, builds));
-    if (bytes > PAGES_LIMIT_BYTES) {
-      console.error('The site is over the 1 GB Pages limit: prune builds.');
+    const report = sizeReport(bytes, readBuilds(arg).size, sizeBudgetMB);
+    console.log(report);
+    if (extra) appendFileSync(extra, `${report}\n`); // the job summary
+    const verdict = sizeVerdict(bytes, sizeBudgetMB);
+    // GitHub Actions reads these as annotations on the run.
+    if (verdict === 'warn') console.log(`::warning title=Site over budget::${report}`);
+    if (verdict === 'fail') {
+      console.log(`::error title=Site over the Pages limit::${report}`);
       return 1;
     }
     return 0;
   }
   console.error(
-    'usage: site.ts plan RELEASES.json [DEV_KEEP] | manifest SITE_DIR | media SITE_DIR | size SITE_DIR',
+    'usage: site.ts plan RELEASES.json [POLICY] | manifest SITE_DIR | media SITE_DIR | size SITE_DIR [SUMMARY]',
   );
   return 2;
 }
