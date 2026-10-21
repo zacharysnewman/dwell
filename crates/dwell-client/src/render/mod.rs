@@ -240,7 +240,7 @@ const STRIDES: [u64; 6] = [
     4 * (3 + 3 + 3),                 // Flat: position, normal, colour
     4 * (3 + 3),                     // Line: position, colour
     4 * (3 + 3),                     // Ghost: the lines' format (triangles)
-    4 * (3 + 3 + 3 + 1),             // Fluid: position, normal, colour, fluid id
+    4 * (3 + 3 + 3 + 1 + 2),         // Fluid: position, normal, colour, fluid id, flood
     4 * (3 + 3 + 3 + 2 + 4 + 4 + 1 + 1 + 2), // Cutout: the terrain's, plant (sway, wind speed, fade), bare, light, flood
 ];
 
@@ -327,6 +327,33 @@ fn textured_vertices(m: &MeshArrays, kind: Kind) -> Vec<f32> {
     interleave(&streams)
 }
 
+/// A fluid mesh's interleaved vertices (`STRIDES`' Fluid): position, normal, colour, fluid id
+/// and flood light (sky, block as shares of 15). A mesh without the flood stream (an LOD
+/// section's water, which is open sea) is lit as open sky.
+fn fluid_vertices(
+    positions: &[f32],
+    normals: &[f32],
+    colors: &[f32],
+    fluids: &[f32],
+    flood: &[f32],
+) -> Vec<f32> {
+    let count = positions.len() / 3;
+    let mut ids = fluids.to_vec();
+    ids.resize(count, dwell_mesh::NO_FLUID);
+    let flood: std::borrow::Cow<'_, [f32]> = if flood.len() == 2 * count {
+        std::borrow::Cow::Borrowed(flood)
+    } else {
+        std::borrow::Cow::Owned([1.0, 0.0].repeat(count))
+    };
+    interleave(&[
+        (positions, 3),
+        (normals, 3),
+        (colors, 3),
+        (&ids, 1),
+        (&flood, 2),
+    ])
+}
+
 impl GpuMesh {
     fn upload(
         arena: &ArenaRef,
@@ -372,24 +399,23 @@ impl GpuMesh {
         ))
     }
 
-    /// A fluid mesh (a chunk's transparent mesh, a section's water): position, normal, colour and
-    /// fluid id per vertex (`dwell_mesh::NO_FLUID` where the stream is short). The water shader
-    /// draws its ripples procedurally, so the chunks' uvs and tiles are left behind.
+    /// A fluid mesh (a chunk's transparent mesh, a section's water): position, normal, colour,
+    /// fluid id (`dwell_mesh::NO_FLUID` where the stream is short) and flood light per vertex
+    /// (`fluid_vertices`). The water shader draws its ripples procedurally, so the chunks' uvs and
+    /// tiles are left behind.
     fn fluid(
         arena: &ArenaRef,
         positions: &[f32],
         normals: &[f32],
         colors: &[f32],
         fluids: &[f32],
+        flood: &[f32],
         indices: &[u32],
     ) -> Option<Self> {
         if indices.is_empty() {
             return None;
         }
-        let count = positions.len() / 3;
-        let mut ids = fluids.to_vec();
-        ids.resize(count, dwell_mesh::NO_FLUID);
-        let vertices = interleave(&[(positions, 3), (normals, 3), (colors, 3), (&ids, 1)]);
+        let vertices = fluid_vertices(positions, normals, colors, fluids, flood);
         let bytes = 4 * (vertices.len() + indices.len()) as u64;
         Some(Self::upload(
             arena,
@@ -552,6 +578,7 @@ impl TerrainRenderer for RasterTerrain {
                 &t.normals,
                 &t.colors,
                 &t.fluids,
+                &t.flood,
                 &t.indices,
             ),
         );
@@ -595,6 +622,7 @@ impl TerrainRenderer for RasterTerrain {
             &w.normals,
             &w.colors,
             &w.fluids,
+            &[],
             &w.indices,
         );
         crate::telemetry::add("upload.section", crate::telemetry::now_ms() - t0);
@@ -1033,7 +1061,7 @@ impl Renderer {
         ]);
         let flat_attrs = attrs(&[(0, 3), (1, 3), (2, 3)]);
         let line_attrs = attrs(&[(0, 3), (1, 3)]);
-        let fluid_attrs = attrs(&[(0, 3), (1, 3), (2, 3), (3, 1)]);
+        let fluid_attrs = attrs(&[(0, 3), (1, 3), (2, 3), (3, 1), (4, 2)]);
         let mut pipelines = HashMap::default();
         // Opaque terrain, LOD sections and players; lines (depth-tested or over everything); and
         // fluids, the only see-through draws (blended, both sides, no depth writes).
@@ -3860,6 +3888,23 @@ mod tests {
     /// Every `Kind` indexes `STRIDES` (the arena's formats) with its own format's stride: a kind
     /// inserted without its stride shifted the later kinds (fluids read the cutout's stride, and
     /// cutout meshes indexed past the end and panicked in `Arena::upload`).
+    /// A fluid mesh's vertices carry the flood light (the water in a cave is dark, docs/DAY_NIGHT.md
+    /// §11), at the Fluid stride; LOD water, which has none, is lit as open sky.
+    #[test]
+    fn fluid_vertices_carry_the_flood_light() {
+        let p = [0.0f32; 6];
+        let n = [0.0, 1.0, 0.0, 0.0, 1.0, 0.0];
+        let c = [0.5f32; 6];
+        let stride = (STRIDES[Kind::Fluid as usize] / 4) as usize;
+        let lit = fluid_vertices(&p, &n, &c, &[0.0, 0.0], &[0.2, 0.0, 0.4, 0.1]);
+        assert_eq!(lit.len(), 2 * stride);
+        assert_eq!(&lit[stride - 2..stride], &[0.2, 0.0]);
+        assert_eq!(&lit[2 * stride - 2..], &[0.4, 0.1]);
+        let open = fluid_vertices(&p, &n, &c, &[], &[]);
+        assert_eq!(open.len(), 2 * stride);
+        assert_eq!(&open[stride - 3..stride], &[dwell_mesh::NO_FLUID, 1.0, 0.0]);
+    }
+
     #[test]
     fn every_kind_has_its_own_stride() {
         let line = 4 * (3 + 3);
@@ -3868,7 +3913,7 @@ mod tests {
             (Kind::Flat, 4 * (3 + 3 + 3)),
             (Kind::Line, line),
             (Kind::Ghost, line),
-            (Kind::Fluid, 4 * (3 + 3 + 3 + 1)),
+            (Kind::Fluid, 4 * (3 + 3 + 3 + 1 + 2)),
             (Kind::Cutout, 4 * (3 + 3 + 3 + 2 + 4 + 4 + 1 + 1 + 2)),
         ] {
             assert_eq!(STRIDES.get(kind as usize), Some(&stride), "{kind:?}");

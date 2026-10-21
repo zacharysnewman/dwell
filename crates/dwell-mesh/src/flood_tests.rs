@@ -64,6 +64,23 @@ impl Fixture {
 
     /// The opaque mesh of face-local chunk (cx, ROW, 0) with its flood light, and its origin (m).
     fn mesh(&mut self, cx: i32) -> (MeshArrays, [f64; 3]) {
+        let (m, origin) = self.meshes(cx);
+        (m.opaque, origin)
+    }
+
+    /// The transparent (water) mesh of face-local chunk (cx, ROW, 0), as the water shader lights
+    /// it: no baked light (1), its flood light.
+    fn water(&mut self, cx: i32) -> (MeshArrays, [f64; 3]) {
+        let (m, origin) = self.meshes(cx);
+        let mut w = m.transparent;
+        let count = w.positions.len() / 3;
+        assert!(count > 0, "no water drawn");
+        assert_eq!(w.flood.len(), 2 * count, "the water's flood light stream");
+        w.light = vec![1.0; count];
+        (w, origin)
+    }
+
+    fn meshes(&mut self, cx: i32) -> (crate::ChunkMeshes, [f64; 3]) {
         let c = self.f.chunk(ChunkCoord::new(cx, ROW, 0));
         let block = self.src.padded_box(c, SKY_APRON);
         let light = self.lit.padded_light(c);
@@ -74,7 +91,28 @@ impl Fixture {
             f64::from(c.y * N) * CELL_H,
             f64::from(c.z * N),
         ];
-        (m.opaque, origin)
+        (m, origin)
+    }
+
+    /// [`Self::shade`] of the surface facing `n` within a cell below `p` (a fluid's top sits under
+    /// its cell's top).
+    fn shade_near(&self, m: &(MeshArrays, [f64; 3]), p: [f64; 3], n: [f64; 3]) -> Shading {
+        let (mesh, origin) = m;
+        let w = self.f.point([p[0], p[1] * CELL_H, p[2]]);
+        let wn = self.f.vector(n);
+        let axis = (0..3)
+            .max_by(|&a, &b| wn[a].abs().total_cmp(&wn[b].abs()))
+            .expect("axis");
+        let plane = (0..mesh.positions.len() / 3)
+            .filter(|&i| (0..3).all(|a| (f64::from(mesh.normals[i * 3 + a]) - wn[a]).abs() < 1e-4))
+            .map(|i| f64::from(mesh.positions[i * 3 + axis]) + origin[axis])
+            .filter(|&c| (c - w[axis]).abs() <= CELL_H)
+            .min_by(|a, b| (a - w[axis]).abs().total_cmp(&(b - w[axis]).abs()))
+            .expect("a surface near the point");
+        let mut q = w;
+        q[axis] = plane;
+        let local = self.f.point(q);
+        self.shade(m, [local[0], local[1] / CELL_H, local[2]], n)
     }
 
     /// The shading of the surface at face-local point `p` (x, z in metres, y in rows) facing
@@ -219,6 +257,39 @@ dwell_world::both_faces!(
         let far = fx.shade(&m, [10.5, g, 16.0], UP);
         assert!(near.glow > 0.3 && near.direct == 0.0, "under it: {near:?}");
         assert!(far.glow < near.glow, "farther: {far:?}");
+    }
+);
+
+fn water_id() -> u16 {
+    dwell_blocks::require("dwell:water")
+}
+
+dwell_world::both_faces!(
+    /// Water takes the flood light as terrain does (owner, 2026-10-21: darkness with Shadows
+    /// Off): a pool 14 m into the tunnel is dark, its surface and sides, while a pool in the open
+    /// keeps the full sky. Before, the transparent mesh carried no flood light and the water
+    /// shader lit every surface as open sky, sun glint included.
+    fn a_pool_in_a_cave_is_dark(f: FaceFrame) {
+        let mut fx = Fixture::new(f);
+        let w = water_id();
+        fx.fill([-40, BASE, -40], [72, GROUND, 72], rock());
+        fx.fill([4, GROUND, -40], [72, GROUND + 20, 72], rock());
+        fx.fill([4, GROUND, 15], [24, GROUND + 4, 17], 0);
+        // A pool two rows deep in the tunnel's floor, 14 m in, and one in the open.
+        fx.fill([16, GROUND - 2, 15], [20, GROUND, 17], w);
+        fx.fill([-20, GROUND - 2, 4], [-12, GROUND, 12], w);
+        fx.hold(-1..=1, -1..=1);
+        let top = f64::from(GROUND);
+        let open = fx.water(-1);
+        let s = fx.shade_near(&open, [-16.0, top, 8.0], UP);
+        assert_eq!((s.ambient, s.direct), (1.0, 1.0), "the open pool: {s:?}");
+        let cave = fx.water(0);
+        let s = fx.shade_near(&cave, [18.0, top, 16.0], UP);
+        assert!(s.direct == 0.0, "the cave pool takes no sun: {s:?}");
+        assert!(
+            s.ambient < AMBIENT.floor + 0.05,
+            "the cave pool is dark: {s:?}"
+        );
     }
 );
 
