@@ -59,7 +59,7 @@ Output per scenario, in `OUT/<scenario>/`:
 build),
 `debug` (`?debug=1`), `scale`, `split` (`near` or `far`: which part of the view it measures, for
 `--compare`'s split) and `face` (`"b"`: the player spawns on face B, the dev link `?spawn=b` —
-BIFACIAL_WORLD.md §11; default `"a"`) are optional. Steps (`scripts/scenarios.ts`, checked: unknown
+BIFACIAL_WORLD.md §11; default `"a"`) and `portal` (`true`: the player spawns on the rim over the ladder of the portal nearest the centre, on `face`: the dev link `?spawn=portal` or `portal-b`, BIFACIAL_WORLD.md §12; `portal-a`, `portal-b` shoot a portal's openings, its shaft and the climb across the midplane) are optional. Steps (`scripts/scenarios.ts`, checked: unknown
 fields, ranges and names fail with the entry named):
 
 | Step | Does |

@@ -234,3 +234,14 @@ one noisy run each) `idle-spawn` and `fly-low-fast` stayed within their run-to-r
 **Half-height voxels.** On ½ m cells (Phase 41), a 1 m structure maps onto ½ m cells
 by doubling each layer vertically (each 1 m block becomes two ½ m cells, x and z unchanged), so the
 trees keep their real size; recorded with that port.
+
+## 3. Bedrock and portals (generator version 20) **[built]**
+
+The owner (2026-10-21): bedrock back between the two faces, and "a few random portals to the other
+side … holes through the bed rock leading up to the surface on both sides". The bedrock's block and
+thickness and the portals' count, spacing, siting, radius, rim, ladder and clear ground are data,
+`shared/worldgen/midplane.json` (validated by `gen.mjs`, generated into `dwell-worldgen`
+`midplane.gen.rs`); the engine is `portals.rs`. The design, the numbers and the as-built details
+are in [`BIFACIAL_WORLD.md`](./BIFACIAL_WORLD.md) §12 and ARCHITECTURE.md §6.3 (*Bedrock and
+portals*); [ADR 0048](./adr/0048-bedrock-and-portals.md). Prototype content (ARCHITECTURE.md §6.1).
+

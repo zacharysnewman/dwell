@@ -129,6 +129,7 @@ async function start(
 
 scope.onmessage = (e) => {
   const msg = e.data;
-  if (msg.t === 'start') void start(msg.worldSeed, msg.generatorVersion, msg.file, msg.spawnFaceB, msg.spawnPortal);
+  if (msg.t === 'start')
+    void start(msg.worldSeed, msg.generatorVersion, msg.file, msg.spawnFaceB, msg.spawnPortal);
   else handle(msg);
 };
