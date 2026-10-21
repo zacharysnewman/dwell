@@ -296,13 +296,24 @@ impl Builder {
     }
 }
 
-/// How far (in cells) a section's top skirt is sunk below its top plane (ARCHITECTURE.md §6.6,
+/// The least a section's top skirt is sunk below its top plane, in cells (ARCHITECTURE.md §6.6,
 /// "Known bug class"). The top skirt covers the section's top row where the section above is not
-/// drawn at the same level; the ground there lies above the plane — by as little as nothing, where
-/// it crosses the plane — so a skirt on the plane was in the ground's plane and fought it as the
-/// camera moved (dirt showing through the grass). Sunk, it is at least this far under any ground
-/// above the plane, and still closes the hole it is for.
+/// drawn at the same level (a ring around the camera, where the nearer section above has refined
+/// and this one has not, or under chunks); the ground there lies above the plane at the cells'
+/// centres — by as little as nothing where it crosses the plane — and dips under it across a
+/// sloping cell. On the plane, in the top row's colour (dirt), it fought the ground as the camera
+/// moved and showed through it where the other level drew the ground lower: the owner's dirt
+/// specks in flat grass. Each column's skirt is sunk under the lowest ground over its cell
+/// (`skirt_sink`) by `SKIRT_CLEARANCE`, and at least this far; it still closes the hole it is for.
 pub const SKIRT_SINK: f64 = 0.125;
+/// How far (cells) a top skirt stays under the lowest ground over its cell: more than another
+/// level's rounding of that ground (a quarter of a finer cell, an eighth of this one).
+pub const SKIRT_CLEARANCE: f64 = 0.25;
+/// The most a top skirt is sunk (cells): under a tree's or an overhang's cells, where the ground
+/// is far below, it stays among them.
+const SKIRT_MAX_SINK: f64 = 2.0;
+/// Top skirt sinks are drawn in steps of 1/SKIRT_STEPS of a cell (so equal ones still merge).
+const SKIRT_STEPS: f64 = 8.0;
 
 /// Floats per column of a generated section's surface (C++ core::LodSurface): height, material,
 /// flags (1 valid, 2 wet), and where wet the water's level.
@@ -502,6 +513,12 @@ fn mesh_section_above(
                     } else {
                         m
                     };
+                    // A top skirt carries its sink (in SKIRT_STEPS) where risers carry a share.
+                    let share = if hidden && face == 2 {
+                        special.skirt_sink[wc]
+                    } else {
+                        share
+                    };
                     mask[i as usize + NU * j as usize] = face_key(m, top, share, hidden);
                     any = true;
                 }
@@ -547,7 +564,7 @@ fn mesh_section_above(
                     let drop = if axis == 1 && sign > 0 && is_liquid(m) {
                         water_drop
                     } else if skirt && face == 2 {
-                        SKIRT_SINK
+                        f64::from(share) / SKIRT_STEPS
                     } else {
                         0.0
                     };
@@ -613,6 +630,8 @@ struct Surfaces {
     /// The column's surface material from the surface data (0: none, or under water): what a top
     /// skirt under ground above the section shows.
     ground_m: Vec<u16>,
+    /// How far (in 1/SKIRT_STEPS cells) the column's top skirt is sunk under the section's top.
+    skirt_sink: Vec<u8>,
 }
 
 const NO_SURFACE: i16 = -1000;
@@ -657,6 +676,7 @@ fn find_surfaces(cells: &[u16], surface: Option<&[f32]>) -> Surfaces {
         exact: vec![f32::NAN; n],
         slope: vec![0; n],
         ground_m: vec![0; n],
+        skirt_sink: vec![0; n],
     };
     let data = surface.filter(|s| s.len() >= n * SURFACE_STRIDE);
     let top = N;
@@ -842,6 +862,34 @@ fn column_grounds(cells: &[u16], out: &mut Surfaces) {
             };
             let gradient = along((1, 0)).hypot(along((0, 1))) * dwell_world::CELL_H;
             out.slope[col(x, z)] = gradient_step(gradient);
+        }
+    }
+    // Top skirts: under the lowest ground over the column's cell (its centre's, and its corners'
+    // from the four columns about each), by the clearance.
+    let exact = |x: i32, z: i32| {
+        if (-1..=top).contains(&x) && (-1..=top).contains(&z) {
+            f64::from(out.exact[col(x, z)])
+        } else {
+            f64::NAN
+        }
+    };
+    for z in -1..=top {
+        for x in -1..=top {
+            let mut low = exact(x, z);
+            for (dx, dz) in [(-1, -1), (1, -1), (-1, 1), (1, 1)] {
+                let corner =
+                    (exact(x, z) + exact(x + dx, z) + exact(x, z + dz) + exact(x + dx, z + dz))
+                        / 4.0;
+                if !corner.is_nan() {
+                    low = low.min(corner);
+                }
+            }
+            let sink = if low.is_nan() {
+                SKIRT_SINK
+            } else {
+                (f64::from(top) - (low - SKIRT_CLEARANCE)).clamp(SKIRT_SINK, SKIRT_MAX_SINK)
+            };
+            out.skirt_sink[col(x, z)] = (sink * SKIRT_STEPS).ceil() as u8;
         }
     }
 }

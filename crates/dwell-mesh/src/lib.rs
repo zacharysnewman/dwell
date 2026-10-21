@@ -50,8 +50,8 @@ mod textures;
 
 pub use dwell_look::{Rgb, face_tint, normal_tint};
 pub use lod_mesher::{
-    FlatMesh, MeshSectionOptions, SKIRT_SINK, SURFACE_STEPS, SURFACE_STRIDE, SectionMeshes,
-    lod_color, mesh_section, mirror_rows, section_bytes,
+    FlatMesh, MeshSectionOptions, SKIRT_CLEARANCE, SKIRT_SINK, SURFACE_STEPS, SURFACE_STRIDE,
+    SectionMeshes, lod_color, mesh_section, mirror_rows, section_bytes,
 };
 pub use mesher::{
     ChunkMeshes, MeshArrays, PAD, PADDED_VOLUME, face_covered, mesh_chunk, mesh_chunk_at,

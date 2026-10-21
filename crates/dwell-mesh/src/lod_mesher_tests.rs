@@ -997,3 +997,120 @@ mod natural_tops {
         assert_eq!(normal_ys(&b.opaque), [-1000, 0, 1000]);
     }
 }
+
+/// The owner's dirt through the grass from high up (2026-10-21; ARCHITECTURE.md §6.6, "Known bug
+/// class"): a section under the one holding the ground — dirt to its top, the apron above solid,
+/// the grass a little over its top plane — has its top row as a top skirt, shown where the section
+/// above is drawn at another level. It lay on the plane in dirt's colour, where the other level's
+/// ground (a few centimetres up, or rounded under the plane) let it through. It is sunk under the
+/// ground (at least `SKIRT_SINK`, and `SKIRT_CLEARANCE` under the lowest ground over its cell) and
+/// coloured as the ground it stands in for. Both faces: face B meshes the mirror image.
+mod top_skirts {
+    use super::*;
+
+    fn dirt() -> u16 {
+        require("dwell:dirt")
+    }
+
+    /// Dirt filling the section and the apron above it; the generator's ground `h(x)` cells over
+    /// the section's bottom (above its top), grass.
+    fn buried(h: impl Fn(i32) -> f64) -> (Vec<u16>, Vec<f32>) {
+        let mut cells = new_cells();
+        let mut surface = new_surface();
+        for z in -1..=32 {
+            for x in -1..=32 {
+                for y in -1..=32 {
+                    put(&mut cells, x, y, z, dirt());
+                }
+                let c = surface_at(x, z);
+                surface[c..c + 4].copy_from_slice(&[h(x) as f32, f32::from(grass()), 1.0, 0.0]);
+            }
+        }
+        (cells, surface)
+    }
+
+    /// The top skirt's heights (cells) and colours, face-local.
+    fn top_skirt(
+        f: dwell_world::FaceFrame,
+        (cells, surface): (Vec<u16>, Vec<f32>),
+    ) -> (Vec<[f64; 2]>, Vec<[f32; 3]>) {
+        let (cells, mirror) = if f.is_b() {
+            (mirror_rows(&cells), true)
+        } else {
+            (cells, false)
+        };
+        let m = mesh_section(
+            &cells,
+            &MeshSectionOptions {
+                surface: Some(&surface),
+                water_drop: 0.0,
+                mirror,
+            },
+        )
+        .expect("section volume");
+        let skirt = &m.skirts[f.cell_face(2)];
+        // Face-local: face B's mesh is turned back, its y read from the section's top.
+        let ys = skirt
+            .positions
+            .chunks_exact(3)
+            .map(|p| {
+                let y = f64::from(p[1]);
+                [f64::from(p[0]), if f.is_b() { f64::from(N) - y } else { y }]
+            })
+            .collect();
+        let colours = skirt
+            .colors
+            .chunks_exact(3)
+            .map(|c| [c[0], c[1], c[2]])
+            .collect();
+        (ys, colours)
+    }
+
+    dwell_world::both_faces!(
+        fn lies_under_the_ground_it_stands_for_in_the_grounds_colour(f: dwell_world::FaceFrame) {
+            // The grass 2 cm (in cells) over the plane: the skirt is in the grass's plane today.
+            let (ys, colours) = top_skirt(f, buried(|_| 32.02));
+            assert!(!ys.is_empty(), "a top skirt");
+            for &[_, y] in &ys {
+                assert!(
+                    y <= 32.0 - SKIRT_SINK + 1e-6,
+                    "sunk at least SKIRT_SINK: {y}"
+                );
+                assert!(
+                    32.02 - y >= SKIRT_CLEARANCE - 1e-6,
+                    "under the ground by the clearance: {y}"
+                );
+            }
+            let grass = linear_rgb(lod_color(grass(), 0), face_tint(1, 1));
+            for c in &colours {
+                for a in 0..3 {
+                    assert!(
+                        (c[a] - grass[a]).abs() < 1e-6,
+                        "grass's top colour, not dirt's: {c:?} vs {grass:?}"
+                    );
+                }
+            }
+            // On a slope, sunk under the lowest ground over each cell: the ground rises 0.5 cell
+            // per cell from the plane.
+            let (ys, _) = top_skirt(f, buried(|x| 32.0 + 0.5 * f64::from(x + 1)));
+            for q in ys.chunks_exact(4) {
+                // A quad's column (x): its cells' lowest ground is at its low corner, x − ½.
+                let x = (q.iter().map(|p| p[0]).sum::<f64>() / 4.0).floor();
+                let low = 32.0 + 0.5 * (x + 0.5);
+                for &[_, y] in q {
+                    assert!(y <= 32.0 - SKIRT_SINK + 1e-6, "column {x}: {y}");
+                    assert!(
+                        y <= low - SKIRT_CLEARANCE + 1e-6,
+                        "column {x}: {y} over {low}"
+                    );
+                }
+            }
+            // Ground far above: the least sink.
+            let (ys, _) = top_skirt(f, buried(|_| 60.0));
+            assert!(
+                ys.iter().all(|&[_, y]| close(y, 32.0 - SKIRT_SINK, 6)),
+                "{ys:?}"
+            );
+        }
+    );
+}

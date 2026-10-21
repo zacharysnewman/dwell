@@ -161,9 +161,9 @@ fn inside_xz(t: &[V3; 3], x: f64, z: f64) -> bool {
     s.iter().all(|&v| v >= -1e-9) || s.iter().all(|&v| v <= 1e-9)
 }
 
-/// The ground (face-local metres) at the centres of the cells of size `cell` a horizontal
-/// triangle covers.
-fn ground_under(g: &dwell_worldgen::TerrainGenerator, t: &[V3; 3], cell: f64) -> Vec<f64> {
+/// The ground (face-local metres) under the cells of size `cell` a horizontal triangle covers: at
+/// each cell's centre, and the lowest of the centre and the cell's corners (just inside them).
+fn ground_under(g: &dwell_worldgen::TerrainGenerator, t: &[V3; 3], cell: f64) -> Vec<(f64, f64)> {
     let (x0, x1) = (
         t.iter().map(|p| p[0]).fold(f64::MAX, f64::min),
         t.iter().map(|p| p[0]).fold(f64::MIN, f64::max),
@@ -179,9 +179,15 @@ fn ground_under(g: &dwell_worldgen::TerrainGenerator, t: &[V3; 3], cell: f64) ->
         let mut x = x0 + cell / 2.0;
         while x < x1 {
             if inside(x, z) {
-                out.push(f64::from(
-                    g.column_at(x.floor() as i32, z.floor() as i32).height,
-                ));
+                let at = |x: f64, z: f64| {
+                    f64::from(g.column_at(x.floor() as i32, z.floor() as i32).height)
+                };
+                let r = 0.45 * cell;
+                let low = [(-r, -r), (r, -r), (-r, r), (r, r)]
+                    .iter()
+                    .map(|(dx, dz)| at(x + dx, z + dz))
+                    .fold(at(x, z), f64::min);
+                out.push((at(x, z), low));
             }
             x += cell;
         }
@@ -193,14 +199,15 @@ fn ground_under(g: &dwell_worldgen::TerrainGenerator, t: &[V3; 3], cell: f64) ->
 dwell_world::both_faces!(
     /// The fix's invariant: a top skirt (a section's top row under a solid apron, which shows where
     /// the section above is not drawn at the same level) lies at least half of `SKIRT_SINK` (of a
-    /// cell) under the ground at every cell it covers, so it is never in the ground's plane and the
-    /// ground hides it at any depth precision. Before the fix it lay on the section's top plane, at
-    /// most centimetres under ground crossing that plane.
+    /// cell) under the ground at the centre of every cell it covers, so it is never in the
+    /// ground's plane and the ground hides it at any depth precision; and it is sunk under the
+    /// lowest ground over its cell, so few lie above the ground another level draws. Before the
+    /// fix it lay on the section's top plane, millimetres under ground crossing that plane.
     fn a_top_skirt_lies_under_the_ground_by_a_margin(f: FaceFrame) {
         let t = BifacialTerrain::mirrored(7);
         let g = t.local(if f.is_b() { Face::B } else { Face::A });
         let at = hillside(&t, f);
-        let mut checked = 0;
+        let (mut checked, mut poking) = (0, 0);
         for level in 1..=4 {
             for s in sections(&t, f, at, level) {
                 let margin = 0.5 * SKIRT_SINK * s.cell * CELL_H;
@@ -210,18 +217,21 @@ dwell_world::both_faces!(
                         tri.iter().all(|p| (p[1] - y).abs() < 1e-3),
                         "a top skirt is flat"
                     );
-                    for ground in ground_under(g, tri, s.cell) {
-                        // Ground below the plane under a solid top row is a tree's or an
-                        // overhang's cells, not the ground this skirt stands under.
-                        if ground < s.plane - 1e-3 {
+                    for (centre, ground) in ground_under(g, tri, s.cell) {
+                        // Ground below the plane at the centre of a solid top row's cell is a
+                        // tree's or an overhang's cells, not the ground this skirt stands under.
+                        if centre < s.plane - 1e-3 {
                             continue;
                         }
                         checked += 1;
                         assert!(
-                            ground - y >= margin,
-                            "level {level}: a top skirt at {y:.3} m, {:.3} m under the ground at {ground:.3} m (margin {margin:.3} m), {tri:?}",
-                            ground - y
+                            centre - y >= margin,
+                            "level {level}: a top skirt at {y:.3} m, {:.3} m under the ground at its cell's centre {centre:.3} m (margin {margin:.3} m), {tri:?}",
+                            centre - y
                         );
+                        if ground < y {
+                            poking += 1;
+                        }
                     }
                 }
             }
@@ -229,6 +239,12 @@ dwell_world::both_faces!(
         assert!(
             checked > 100,
             "the hillside has top skirts to check ({checked})"
+        );
+        // Sunk under the lowest ground over its cell as this level sees it; full detail's ground
+        // (octaves this level drops) still dips under a few, where its colour hides it (below).
+        assert!(
+            poking * 20 < checked,
+            "{poking} of {checked} top skirts above full detail's ground"
         );
     }
 );
