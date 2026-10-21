@@ -126,8 +126,7 @@ export interface EventDef {
 /** The ambient sounds' tunables (AUDIO.md §2), read by the Rust game. */
 export interface AmbientDef {
   fire: { radiusM: number; max: number };
-  wind: { heightM: [number, number]; speed: [number, number] };
-  night: { stars: [number, number] };
+  night: { stars: [number, number]; aloftM: [number, number] };
 }
 
 export type ControlSounds = string[] | { silent: string };

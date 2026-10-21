@@ -22,8 +22,8 @@ pub struct SoundEvent {
     /// Footsteps: the gait (the shell's loudness per gait).
     pub gait: Option<Gait>,
     /// Continuous sounds: the voice the event starts, updates or stops — a mover's slide
-    /// (`MoverSounds::voice`, its player id), a fire ([`FIRE_VOICE`] on), the wind or the night
-    /// ([`WIND_VOICE`], [`NIGHT_VOICE`]).
+    /// (`MoverSounds::voice`, its player id), a fire ([`FIRE_VOICE`] on) or the night
+    /// ([`NIGHT_VOICE`]).
     pub voice: Option<u32>,
 }
 
@@ -633,8 +633,7 @@ pub fn player_event_sound(
 /// The first voice of the fire loops (one per slot, up to `ambient::FIRE_MAX`); clear of the
 /// movers' voices (player ids, u16).
 pub const FIRE_VOICE: u32 = 0x1_0000;
-/// The wind's and the night's voices.
-pub const WIND_VOICE: u32 = 0x2_0000;
+/// The night's voice.
 pub const NIGHT_VOICE: u32 = 0x2_0001;
 /// Loop updates: at most this often (s), and only for a change of intensity this large or a move
 /// this far (m); the shell glides between them.
@@ -868,22 +867,16 @@ pub struct AmbientInput {
     pub stars: f64,
 }
 
-/// The wind at altitude or speed and the night's crickets: one voice each at the listener.
+/// The night's crickets: one voice at the listener. (The wind at altitude was removed, owner
+/// 2026-10-21: too intense.)
 #[derive(Clone, Debug)]
 pub struct AmbientSounds {
-    wind: LoopTrack,
     night: LoopTrack,
 }
 
 impl Default for AmbientSounds {
     fn default() -> Self {
         Self {
-            wind: LoopTrack::new(
-                SoundKind::Wind,
-                SoundKind::WindLevel,
-                SoundKind::WindEnd,
-                WIND_VOICE,
-            ),
             night: LoopTrack::new(
                 SoundKind::Night,
                 SoundKind::NightLevel,
@@ -899,27 +892,18 @@ impl AmbientSounds {
         Self::default()
     }
 
-    /// The wind's level: the higher of its height's and its speed's, out in the open.
-    pub fn wind_level(i: &AmbientInput) -> f64 {
-        let height = ramp(i.height_m, ambient::WIND_HEIGHT_M);
-        let speed = ramp(i.speed, ambient::WIND_SPEED);
-        height.max(speed) * i.outdoors.clamp(0.0, 1.0)
-    }
-
     /// The night's level: by the stars, out in the open, fading as the ground falls far below.
     pub fn night_level(i: &AmbientInput) -> f64 {
-        let aloft = ramp(i.height_m, ambient::WIND_HEIGHT_M);
+        let aloft = ramp(i.height_m, ambient::NIGHT_ALOFT_M);
         ramp(i.stars, ambient::NIGHT_STARS) * i.outdoors.clamp(0.0, 1.0) * (1.0 - aloft)
     }
 
     pub fn update(&mut self, i: &AmbientInput, dt: f64, out: &mut Vec<SoundEvent>) {
-        self.wind.set(Self::wind_level(i), 0, None, dt, out);
         self.night.set(Self::night_level(i), 0, None, dt, out);
     }
 
-    /// Ends both voices.
+    /// Ends its voice.
     pub fn finish(&mut self, out: &mut Vec<SoundEvent>) {
-        self.wind.end(out);
         self.night.end(out);
     }
 }
@@ -1838,7 +1822,7 @@ mod tests {
     }
 
     #[test]
-    fn the_wind_rises_with_height_and_speed_outdoors_and_the_night_sounds_by_the_stars() {
+    fn no_wind_sounds_aloft_or_at_speed_and_the_night_sounds_by_the_stars() {
         let ground = AmbientInput {
             height_m: 5.0,
             speed: 3.0,
@@ -1850,26 +1834,16 @@ mod tests {
             ambience(&mut a, ground).is_empty(),
             "a still day on the ground is quiet"
         );
-        let high = AmbientInput {
-            height_m: ambient::WIND_HEIGHT_M.1,
+        // The wind was removed (owner, 2026-10-21): high up and fast is still quiet by day.
+        let high_fast = AmbientInput {
+            height_m: 160.0,
+            speed: 40.0,
             ..ground
         };
-        let out = ambience(&mut a, high);
-        assert_eq!(kinds(&out), [SoundKind::Wind]);
-        assert_eq!((out[0].intensity, out[0].voice), (1.0, Some(WIND_VOICE)));
-        let fast = AmbientInput {
-            speed: ambient::WIND_SPEED.1,
-            ..ground
-        };
-        assert_eq!(AmbientSounds::wind_level(&fast), 1.0);
         assert!(
-            AmbientSounds::wind_level(&AmbientInput {
-                outdoors: 0.0,
-                ..high
-            }) == 0.0
+            ambience(&mut a, high_fast).is_empty(),
+            "no wind aloft or at speed"
         );
-        // Back down: the wind stops.
-        assert_eq!(kinds(&ambience(&mut a, ground)), [SoundKind::WindEnd]);
         // Night on the ground outdoors; not in a cave, nor high aloft.
         let night = AmbientInput {
             stars: 1.0,

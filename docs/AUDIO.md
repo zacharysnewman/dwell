@@ -75,8 +75,9 @@ the Rust game). CI regenerates both and fails on a diff, as for the block regist
   damage taken).
 - **`ambient`** — the ambient sounds' tunables, emitted into `sound.gen.rs` as `ambient::…`:
   `fire` (`radiusM`: burning light sources crackle within it; `max`: the nearest this many),
-  `wind` (`heightM` and `speed`: [starts, full] over sea level and in m/s), `night` (`stars`:
-  [starts, full] on the sky's stars, 0 by day, 1 by night).
+  `night` (`stars`: [starts, full] on the sky's stars, 0 by day, 1 by night; `aloftM`: [starts,
+  gone] over sea level, no crickets aloft). There is no wind loop: it was removed (owner,
+  2026-10-21: too intense).
 - **`gaits`** — `walk`, `run`, `crouch`, `climb`, `swim`: footstep `stride` (m between steps) and
   `gain`.
 - **`actions`** — sounds the TS shell plays for game actions it handles (hotbar, flight, the game
@@ -148,7 +149,6 @@ tick and each remote player's interpolated state each frame, and turns changes i
 | `hurt` | the server's `PlayerEvent` Damage, any player's | — | from the damage (0 → 80 points) |
 | `death` / `respawn` | the server's `PlayerEvent` Death / Respawn, any player's | — | 1 |
 | `burn` / `burn_level` / `burn_end` | a burning light source's loop voice starting, moving, stopping (below) | the source's block (its `burn`) | by distance |
-| `wind` / `wind_level` / `wind_end` | the wind's voice (below) | — | by height or speed |
 | `night` / `night_level` / `night_end` | the night's voice (below) | — | by the stars |
 
 **Impacts** (`ImpactSounds`, owner 2026-10-21: "hard hits even sliding into a wall is fair game").
@@ -173,11 +173,10 @@ so it never sounds for a hit the server did not count.
 in other players' hands (at their hand) — a light with a `flame` (LIGHTS.md §6) burns; the
 nearest `ambient.fire.max` within `ambient.fire.radiusM` each hold a loop voice (`FIRE_VOICE` on)
 while they stay among them, at a level `(1 − (d / r)²)²` (full beside it, 0 at the radius; the
-panner's rolloff on top). A nearer one takes a farther one's voice. **Wind and night**
-(`AmbientSounds`): one voice each at the listener (`WIND_VOICE`, `NIGHT_VOICE`). The wind's level
-is the higher of its height over sea level's and its speed's ramp; the night's the stars' ramp,
-fading as the height's rises (no crickets aloft); both × the sky light at the eye (none in a
-cave). Loops start above 0.03 and stop at 0.01; updates go at most 10 times a second, on a change
+panner's rolloff on top). A nearer one takes a farther one's voice. **Night**
+(`AmbientSounds`): one voice at the listener (`NIGHT_VOICE`), its level the stars' ramp, fading as
+the height over sea level rises (`aloftM`; no crickets aloft), × the sky light at the eye (none in
+a cave). Loops start above 0.03 and stop at 0.01; updates go at most 10 times a second, on a change
 of 0.02 or a move of 0.25 m. The shell remembers each loop's start and restarts a voice an update
 finds not playing (a hidden tab or a context still starting), so the long loops survive both.
 
@@ -185,8 +184,8 @@ The local player's own edits sound at once, on the request (the client does not 
 server's echo of them is recognised by cell and not played again. Events cross to JS as compact
 numbers: `takeSounds()` returns a `Float64Array` of 7 numbers per event (`kind, block state,
 intensity, x, y, z, flags`; flags bit 0 = spatial, bits 1–3 the gait + 1, bits 4 and up the voice
-+ 1 — 0 the local player, others their player id, fires from 65536, the wind and the night
-131072 and 131073). `listener()` returns the
++ 1 — 0 the local player, others their player id, fires from 65536, the night
+131073). `listener()` returns the
 camera's position, forward and up. Audio is a side channel: nothing read back affects the
 simulation, and it reads only the predicted state the game already has.
 

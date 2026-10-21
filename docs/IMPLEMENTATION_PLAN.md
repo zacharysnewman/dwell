@@ -3572,8 +3572,8 @@ Deliverables
   (`ImpactSounds`: ours from the prediction, others' from their snapshots, by the impact speed the
   damage uses; audible from 2 m/s); hurt, death and respawn from the server's player events, any
   player's; the torch's own sound set (place, break) and its crackle, a loop per burning light
-  source near the listener (the nearest 4 within 10 m, held torches too); the wind (height, speed)
-  and the night (stars); the `crackle` noise colour, loop layers' `pan`, `"fallback": false`, a
+  source near the listener (the nearest 4 within 10 m, held torches too); the night (stars; the wind
+  loop built here was removed afterwards, owner 2026-10-21: too intense); the `crackle` noise colour, loop layers' `pan`, `"fallback": false`, a
   loop stop without a one-shot, the `ambient` tunables; the shell restarts a loop an update finds
   silent. No protocol change.
 
@@ -3587,7 +3587,7 @@ Exit criteria
 - [x] Every render is non-silent, peaks below 1.0 and has a sensible length.
 - [x] F7: a wall hit at 25 m/s gives a loud impact and the hurt, at 8 m/s a soft thud and no hurt
   (Rust, synthetic and through the real controller on both faces); a torch loop is heard within its
-  radius and capped at the nearest 4; wind and night by their inputs (Rust); a set without `burn`
+  radius and capped at the nearest 4; the night by its inputs, no wind aloft or at speed (Rust); a set without `burn`
   plays none and a loop restarts (Vitest).
 - [ ] The owner listens to the WAV renders and approves them (F7's new ones too: `event_impact`,
   `event_hurt`, `event_death`, `event_respawn`, `set_torch_place`, `set_torch_break`,
@@ -3604,7 +3604,7 @@ Deviations
   gets. The hurt is not predicted: it waits for the server's damage event (a round trip after the
   thud for our own), so it never sounds for a hit the server did not count.
 - F7 skipped (listed in `AUDIO.md` §8): crossing between the faces, knockback, players joining or
-  leaving, and ambience beyond wind and night (water, birds, rain).
+  leaving, and ambience beyond the night (water, birds, rain; wind dropped).
 - The limiter is a waveshaper soft clipper, not a `DynamicsCompressorNode`: Chrome's compressor adds
   its own make-up gain, which pushed sequences past full scale in the renders.
 ## Phase 33 — Transparent Blocks: Render Modes, Cross Geometry, Tall Grass

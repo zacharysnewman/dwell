@@ -133,28 +133,28 @@ describe('sound events', () => {
         playing.delete(voice);
       },
     });
-    const wind = (name: string, intensity: number): SoundEvent => ({
+    const night = (name: string, intensity: number): SoundEvent => ({
       ...event(name, 0),
       intensity,
-      voice: 0x20000,
+      voice: 0x20001,
     });
-    // The wind starts while the tab is hidden (the engine cannot start it) ...
-    player.playAll([wind('wind', 0.4)]);
+    // The night's crickets start while the tab is hidden (the engine cannot start it) ...
+    player.playAll([night('night', 0.4)]);
     canStart = true;
     // ... and its next update restarts it; later ones only move it.
-    player.playAll([wind('wind_level', 0.5), wind('wind_level', 0.6), wind('wind_end', 0)]);
-    const sound = String(SOUND_DATA.events.find((e) => e.name === 'wind')?.sound);
+    player.playAll([night('night_level', 0.5), night('night_level', 0.6), night('night_end', 0)]);
+    const sound = String(SOUND_DATA.events.find((e) => e.name === 'night')?.sound);
     expect(calls).toEqual([
-      `start mover:131072 ${sound}`,
-      'update mover:131072 0.5',
-      `start mover:131072 ${sound}`,
-      'update mover:131072 0.6',
-      'stop mover:131072',
+      `start mover:131073 ${sound}`,
+      'update mover:131073 0.5',
+      `start mover:131073 ${sound}`,
+      'update mover:131073 0.6',
+      'stop mover:131073',
     ]);
     // After its stop, an update starts nothing.
     calls.length = 0;
-    player.playAll([wind('wind_level', 0.3)]);
-    expect(calls).toEqual(['update mover:131072 0.3']);
+    player.playAll([night('night_level', 0.3)]);
+    expect(calls).toEqual(['update mover:131073 0.3']);
   });
 
   it("play the set's sound for set events, with the gait's loudness for steps", () => {

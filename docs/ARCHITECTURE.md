@@ -559,9 +559,9 @@ world) give `hurt` (by the damage taken), `death` and `respawn` — ours at once
 body after the interpolation delay. **Fires**: burning light sources (a light with a flame, placed
 or in a hand) crackle on their own loop voices (the block's set's `burn`), the nearest
 `ambient.fire.max` within `ambient.fire.radiusM`, each at a level falling smoothly to 0 at the
-radius. **Ambience**: the wind (by height over sea level or speed) and the night (by the sky's
-stars, fading aloft), each one voice at the listener, both scaled by the sky light at the eye (none
-in a cave). Loop updates are throttled (10 a second, on a change); the shell restarts a loop an
+radius. **Ambience**: the night (by the sky's stars, fading aloft), one voice at the listener,
+scaled by the sky light at the eye (none in a cave); no wind loop (removed, owner 2026-10-21: too
+intense). Loop updates are throttled (10 a second, on a change); the shell restarts a loop an
 update finds not playing (a hidden tab or a context still starting). They are a side channel — read from the
 predicted state and the world, never fed back — and cross to JS once a frame (`takeSounds`, a
 `Float64Array` of 7 numbers per event). The shell (`client/src/audio`) maps each to its sounds, draws
@@ -2243,7 +2243,7 @@ in the code yet.
 | `SLIDE_HOLD` / `SLIDE_UPDATE_EVERY` (*client*, `dwell-game` `sound.rs`) | 0.15 s / 50 ms | A slide's sound: a pause shorter than the hold keeps the same voice; speed updates at most this often (AUDIO.md §5) |
 | `IMPACT_HOLD` / `IMPACT_KEEPS` / `IMPACT_PROBE_M` (*client*, `dwell-game` `sound.rs`) | 70 ms / 0.35 / 0.06 m | An impact sound: the speed toward a surface touching the body (within the probe) dropping in a sample to at most `KEEPS` of its fastest in the last `HOLD`; then quiet that long (AUDIO.md §5) |
 | Impact, hurt (*client*, `shared/sounds` `events`) | `impact` 2 → 25 m/s; `hurt` 0 → 80 health points | Where the impact sound starts and is full; the hurt's intensity by the damage (AUDIO.md §5) |
-| Ambient sounds (*client*, `shared/sounds` `ambient`) | Fires: 10 m, the nearest 4; wind: 24 → 160 m over sea level or 9 → 40 m/s; night: stars 0.15 → 0.85; loop updates ≤ 10/s, on 0.02 or 0.25 m | Torch crackle, wind and night loops (AUDIO.md §5) |
+| Ambient sounds (*client*, `shared/sounds` `ambient`) | Fires: 10 m, the nearest 4; night: stars 0.15 → 0.85, gone 24 → 160 m over sea level; loop updates ≤ 10/s, on 0.02 or 0.25 m | Torch crackle and night loops (AUDIO.md §5) |
 | Ink outline (*client*, `shared/look/outline.json`; ART_DIRECTION.md §7) | Off by default (`?outline=` picks a mode). `silhouette`: depth edges, 1.5 CSS px, full to 32 m, gone by 128 m, strength 0.85; `creases`: + creases, 1.5 px, 24–96 m, 0.8; `blocks`: + block edges, 1 px, 12–48 m, 0.6. Silhouette threshold 0.04 (relative jump in inverse depth), crease 0.35 (slope change 0–1), each full at twice it; the fade × the spyglass's magnification |
 | Pixel-art preview (*client*, `shared/look/pixelart.json`; proposals/PIXEL_ART_LOOK.md) | Off by default (`?pixelart=` picks a preset). Presets `180`, `270`, `270-warm`, `270-snap`, `360`, `270-raw`: internal height, crop or letterbox, palette (`dwell` 42 colours from the storybook palette, `hearth` 44 warm), dither strength 0–1, sun and ambient toon levels, shadow hue and tint, edge kinds, darkening and fade, atlas filter, camera snap (on in `270-snap` only) and its depth (8 m) |
 | Motion effects (*client*, `shared/look/motion.json`) | FOV zoomed out 10 % at run speed, 20 % at 2000 m/s (75° → ≈ 80.3°, 85.3°); spring 8/s widen, 3.5/s settle; at most 120°; wind 0.35 at run, 1 at 2000 m/s | The speed FOV and wind ([`MOTION_EFFECTS.md`](./MOTION_EFFECTS.md)); generated into dwell-look's `motion.gen.rs` |

@@ -26,11 +26,11 @@ describe('offline renders', () => {
     }
     for (const k of Object.keys(SOUND_DATA.ui)) expect(names).toContain(`ui_${k}`);
     for (const k of Object.keys(SOUND_DATA.actions)) expect(names).toContain(`action_${k}`);
-    // An event's own loop (the wind, the night) renders held, faint to full.
+    // An event's own loop (the night) renders held, faint to full.
     for (const e of SOUND_DATA.events)
       if (e.sound && SOUND_DATA.sounds[e.sound]?.loop)
         expect(names).toContain(`loop_${e.name}_faint_to_full`);
-    expect(names).toContain('loop_wind_faint_to_full');
+    expect(names).toContain('loop_night_faint_to_full');
     expect(new Set(names).size).toBe(names.length);
     const walk = renderPlan(SOUND_DATA).find((j) => j.name === 'steps_stone_walk_x10');
     expect(walk?.plays.length).toBe(10);
