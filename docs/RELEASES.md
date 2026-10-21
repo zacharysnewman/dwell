@@ -164,7 +164,7 @@ act, so merging it is the release. Patch releases are manual:
    the run dispatches the Pages workflow on `main` as a tag run does. The site's assembly reads
    only the releases and their `build.json`, never the branch, so a build whose commit is not on
    `main` is listed with the other dev builds on the version page ("Show dev builds"). It counts
-   among the newest `DEV_KEEP` (10) dev builds (§4): later pushes to `main` prune it like any other.
+   among the newest `devKeep` (10) dev builds (§4): later pushes to `main` prune it like any other.
    The channel defaults to `stable`, the run by hand of step 1.
 4. A change that breaks the public API (§3) raises `package.json`'s version (to the next MINOR,
    before `1.0.0`) in its PR, so the merge releases that version as stable and worlds of the old
@@ -190,11 +190,37 @@ the site **from the releases** and deploys it with `actions/deploy-pages`, as to
   name already there is the same file (a size mismatch fails the deploy). The release tarball
   still carries it (the assembly takes it from there); the launcher's build emits it too.
 
-- **Which releases:** every stable release; the newest `DEV_KEEP` (≈ 10) dev pre-releases. Older
-  dev pre-releases and their tags are deleted by the workflow.
-- **Size:** a Pages site is limited to 1 GB. At ~5–10 MB per build (measure) that is ~100+ builds.
-  When it gets close, drop the oldest stable builds that no world or server uses (§6 counts them
-  through the master).
+- **Which releases: the retention policy (owner, 2026-10-21).** The site had grown to 1,168 MB
+  with 140 builds, over Pages' 1 GB limit. The owner chose: *keep the newest patch of every
+  compatibility line, so every old world still opens, plus the 10 newest builds; keep all of 0.10*.
+  The policy is data, `shared/version/site-retention.json`, which `site.ts plan` validates (an
+  unknown field or a bad pin fails the workflow, naming it) and applies:
+
+  | Field | Value | Keeps |
+  | --- | --- | --- |
+  | `newestPerLine` | `true` | the newest release of every compatibility line (0.16.5, 0.17.2, …) |
+  | `newestOverall` | `10` | the 10 newest stable releases, across lines |
+  | `pinned` | `["0.10"]` | every release of a line (`"0.10"`, `"1"`) or one exact release (`"0.17.1"`) |
+  | `devKeep` | `10` | the newest dev pre-releases; older ones and their tags are **deleted** |
+  | `sizeBudgetMB` | `900` | not a rule: the size check's warning line (below) |
+
+  A stable release is on the site if any rule keeps it; the plan lists the others as `retired`.
+  A retired release is **not deleted**: its GitHub Release and tarball stay, and it can be put back
+  by pinning it and re-running the Pages workflow by hand. The rules never touch dev builds.
+- **Retired builds and the launcher:** patches of a line are compatible (§6), and a world opens in
+  the newest build of its line not older than its last save (§5); the newest of every line is kept,
+  so a world last saved by a retired patch opens in its line's kept build, and a host on a retired
+  patch is joined with it (`select.test.ts`, "with older patches retired from the site"). Retired
+  builds are not in `versions.json`, so the version page does not list them; it says older patches
+  are retired and links to GitHub Releases. A `?version=` link to a retired patch names the kept build
+  of its line.
+- **Size:** a Pages site is limited to 1 GB. A build is ~6.5–9 MB unpacked (the builds before 0.24.5
+  carry their own 4.9 MB copy of the music; from 0.24.5 it is shared, see Media). Under the policy,
+  the site on 2026-10-21 holds 37 builds (27 stable, 10 dev) and measures
+  **320 MB**, assembled from the releases as the workflow does. `site.ts size` writes the size to
+  the job summary; over `sizeBudgetMB` it warns (a `::warning::` annotation on the run), over 1 GB it
+  fails the job, so nothing is deployed. The policy grows by one build per new line; if the warning
+  shows, lower `newestOverall` or the pins.
 - **Caching:** version directories never change; the launcher and the manifest are small and
   short-lived (Pages caches for ~10 minutes).
 - All of this runs in the public repository's free Actions minutes.
