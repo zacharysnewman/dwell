@@ -155,7 +155,9 @@ The bench compares screenshots' colour only.
 Kept scenarios include `idle-spawn`, `fly-low-fast`, `fly-low-faster`, `jump-onto-block`,
 `jump-in-place`, and the motion effects' `sprint-straight` (shots standing, mid-sprint and after) and
 `fly-fast-turn` (shots in fast flight, turning and diving: the wind's vanishing point following the
-travel).
+travel), and `climb-fast` (straight up at about 176 m/s with a trace: the chunks above arriving
+over the ones below and the ones below dropped in batches; read its long tasks and worst frame —
+0.22.9's flood light relights made 1.2–1.6 s long tasks there, 0.22.8 had none over 50 ms).
 
 ## Telemetry (`crates/dwell-client/src/telemetry.rs`)
 
