@@ -166,8 +166,12 @@ export function rustTables(data, textures, { header, tilesFile }) {
       const m = compose(data, style, id, { item: it, accessories: [] });
       return `Item { name: ${str(it)}, parts: ${parts(m.parts.filter((p) => p.from === `item:${it}`), bones)} }`;
     });
+    const fb = ch.firstPerson?.body;
+    const fpBody = fb
+      ? `Some(FirstPersonBody { hide_bones: &[${fb.hideBones.map((b) => bones.indexOf(b)).join(', ')}], hide_parts: &[${fb.hideParts.map(str).join(', ')}], clear: ${f32(fb.clear)}, back: ${f32(fb.back)}, look_down: ${f32(fb.lookDown)}, near: ${f32(fb.near)}, fill: ${f32(fb.fill)} })`
+      : 'None';
     const fp = ch.firstPerson
-      ? `Some(FirstPerson { bones: &[${ch.firstPerson.bones.map((b) => bones.indexOf(b)).join(', ')}], anchor: ${v3(ch.firstPerson.anchor)}, fov: ${f32(ch.firstPerson.fov)}, clips: ${roles(ch.firstPerson.clips)} })`
+      ? `Some(FirstPerson { bones: &[${ch.firstPerson.bones.map((b) => bones.indexOf(b)).join(', ')}], anchor: ${v3(ch.firstPerson.anchor)}, fov: ${f32(ch.firstPerson.fov)}, clips: ${roles(ch.firstPerson.clips)}, body: ${fpBody} })`
       : 'None';
     chars.push(`    Character {
         id: ${str(id)},

@@ -219,6 +219,54 @@ The arms are a **separate view** of the same character, as first-person games do
   `grip_r` socket. Tools come later with an item system: an item is data (`items`), so a pickaxe is
   an entry, and its swing a clip.
 
+### 5.1 Your own body in first person **[built, C1b]**
+
+The owner (2026-10-21): "I want to see legs in first person, particularly when sliding." The
+answers (question tool):
+
+- **Full body, no head.** In first person you see your own body from the neck down, playing the
+  same clips other players see. The first-person arms view stays as it is, drawn on top; the full
+  body's arms are hidden in first person so there are never two pairs.
+- **Always, when in view.** Look down while walking and you see your feet; slide and the legs come
+  into view at the bottom of the screen.
+- **The constraint** (verbatim): "The main thing to watch out for with full body draw is not
+  clipping the camera into the player model." No body geometry may come inside the camera's near
+  plane or fill the view, in any clip or pose, looking fully down or up, on both faces.
+
+**The design** (data: `firstPerson.body` in `characters.json`; code: `dwell-characters` `own.rs`,
+`render/characters.rs` `own_frame`):
+
+- **What it hides.** `hideBones` (the head, so its hair, face and hat; both arm chains, with gloves
+  and cuffs, since the arms view draws your arms) and `hideParts` (the neck, and what is worn round
+  it: the hood's mantle, the scarf's wrap, whose broad faces came within 13 cm of the eye in the
+  sweep). `"view": "arms"` parts are never in it. A part added on a hidden bone is hidden by data
+  alone. The arms view stays on top as it was, holding the item; the body holds nothing.
+- **Where it stands.** On your feet, turned to your look's yaw, and moved back along its own −z:
+  `back` (0.1 m) always, `lookDown` (0.3 m) more looking straight down (by the sine of the downward
+  pitch), and then as much more as keeps every vertex `clear` (0.22 m) of the eye
+  (`own::shift`, per frame from the posed vertices: the crouch, whose clip leans the chest forward to
+  the 0.8 m crouched eye, the slide, a swim stroke, the eye lagging a step low while the step view
+  smooths it). The feet stay on the ground; only the horizontal place moves. It is computed in the
+  body's own frame (+y up, the feet at the origin), so face B is the same.
+- **Safety net.** Fragments within the camera's near plane (5 cm) plus `near` (0.08 m) of the eye
+  are discarded in the shader (`Instance::cfg.x`), for any pose the sweep has not seen.
+- **Shadow.** The whole body, head and all, is still cast into the shadow maps as before
+  (`cast_only`); the drawn one casts nothing.
+- **The test** (`render::characters`'s `your_body_never_comes_near_the_camera_or_fills_the_view`,
+  `both_faces!`): every body clip at six phases, the swings (hold, break, place) on the idle and the
+  walk, every look, the pitch from −90° to 90° in 15° steps, the eye at its height, a step low
+  (`max_step_lift`) on the ground and, crouched, still at the standing eye: no triangle (not just
+  vertex) within 0.13 m of the eye (the nearest 0.146 m), the body over at most `fill` (0.5) of a
+  16:9 screen at the base FOV and 1.25× it (the most 48.5%, swimming looking straight down;
+  standing straight down 24%), the feet in view looking down (−75° and below) and the legs while
+  sliding (−15° and below). With the offsets at 0 it fails: a triangle 4.3 cm from the eye, inside
+  the near plane.
+- **What it does not do.** At a level look while sliding the legs are just below the frame: the
+  crouched eye is 0.8 m up and the feet on the ground ahead, 60° below the horizon, past the 37.5°
+  half FOV; they come in from about 15° down. Showing them level would need a slide camera (lower,
+  or pitched) or a slide clip with the lead leg raised, a question for the owner (§10).
+
+
 ## 6. Poses and animation
 
 Clips are keyed rotations on the rig (and a root offset for bob), sampled and layered:
@@ -450,3 +498,6 @@ body is the crouch clip as drawn, poking above a 1-block crawlspace (Q4); creatu
    may servers add their own looks?
 9. **Netcode cost.** Is a byte or two per remote player in snapshots (held item) acceptable, or send
    it only on change as an event?
+10. **Legs in a level slide** (§5.1). Your legs show sliding from about 15° down; looking level they
+    are just below the frame. Keep, or add a slide camera (lower or pitched a little down) or raise
+    the slide clip's lead leg so they show looking level?
