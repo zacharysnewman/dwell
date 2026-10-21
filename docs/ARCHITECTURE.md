@@ -2378,6 +2378,7 @@ in the code yet.
 | `sprint_slide.friction` / `slope_gravity` (`config.rs`) | 6 m/s² / 1 | Its deceleration, and the fraction of gravity the ground's tilt along the slide adds (downhill) or takes (uphill): 1.3 s / ~7 m on flat ground from a sprint |
 | `sprint_slide.steer_rate` / `cooldown_ticks` (`config.rs`) | 90 °/s / 30 ticks (0.5 s) | Limited steering toward the move input; the wait after a slide before the next (≤ 255: a `u8` on the wire) |
 | `damage.impact_damage_min_speed` / `impact_damage_per_speed` (`config.rs`) | 12 m/s / 8 per m/s | Impact damage (owner, 2026-10-21; PLAYER_CONTROLLER.md §6.10): a hit hurts by its speed into the surface, `max(0, −v · n)`, above the minimum, this many points per m/s; floors, ramps, walls, ceilings |
+| `damage.impact_step_as_ramp` / `impact_step_ramp_run` (`config.rs`) | true / 1 m | A contact with an obstacle within `movement.max_step_height` of the feet (a ½ m step) hits as a ramp rising its height over the run (a ½ m step: the ½ m ramp's 26.57°), not a wall (owner, 2026-10-21; PLAYER_CONTROLLER.md §6.10). Server damage only |
 | `SLIDE_HOLD` / `SLIDE_UPDATE_EVERY` (*client*, `dwell-game` `sound.rs`) | 0.15 s / 50 ms | A slide's sound: a pause shorter than the hold keeps the same voice; speed updates at most this often (AUDIO.md §5) |
 | `IMPACT_HOLD` / `IMPACT_KEEPS` / `IMPACT_PROBE_M` (*client*, `dwell-game` `sound.rs`) | 70 ms / 0.35 / 0.06 m | An impact sound: the speed toward a surface touching the body (within the probe) dropping in a sample to at most `KEEPS` of its fastest in the last `HOLD`; then quiet that long (AUDIO.md §5) |
 | Impact, hurt (*client*, `shared/sounds` `events`) | `impact` 2 → 25 m/s; `hurt` 0 → 80 health points | Where the impact sound starts and is full; the hurt's intensity by the damage (AUDIO.md §5) |
@@ -2951,7 +2952,9 @@ animated from `State` and flags in snapshots.
 - Health (`MAX_HEALTH` 100) is server-authoritative; damage sources are impacts (built, owner
   2026-10-21: the controller's `IMPACTED` hit, the body's pre-contact velocity into the surface's
   normal, `max(0, −v · n)`, so a glancing hit counts less and a skim nothing; floors, ½ m ramps by
-  their normal, walls and ceilings alike, once per contact, the largest of a tick's; above
+  their normal, walls and ceilings alike, an obstacle the controller could step up (top within
+  `max_step_height` of the feet: a ½ m step) as the ramp it stands for, not a wall
+  (`damage.impact_step_as_ramp`), once per contact, the largest of a tick's; above
   `damage.impact_damage_min_speed` 12 m/s, `impact_damage_per_speed` 8 points per m/s; flight,
   swimming and climbing exempt; sent with cause `Fall`; PLAYER_CONTROLLER.md §6.10; and falling out
   of the world), crush
