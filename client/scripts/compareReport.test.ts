@@ -147,8 +147,8 @@ describe('compare report math', () => {
   });
 
   it('hue flips: a surface changing colour family counts, a brightness change or a grey does not', () => {
-    const grass = [110, 160, 60];
-    const dirt = [140, 80, 50];
+    const grass: [number, number, number] = [110, 160, 60];
+    const dirt: [number, number, number] = [140, 80, 50];
     const still = [image(2, 2, grass), image(2, 2, grass), image(2, 2, grass)];
     expect(hueFlipsOf(still)).toBe(0);
     // Shaded darker (a riser, or the view moving): the same hue.
