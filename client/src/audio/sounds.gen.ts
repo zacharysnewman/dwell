@@ -4463,7 +4463,7 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:body_thud": {
-      "gain": 0.9,
+      "gain": 0.6,
       "reverb": 0.08,
       "variation": {
         "pitch": 2,
@@ -4663,7 +4663,7 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:respawn": {
-      "gain": 0.6,
+      "gain": 1.5,
       "reverb": 0.25,
       "variation": {
         "pitch": 0.5,
@@ -4758,7 +4758,7 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:torch_place": {
-      "gain": 0.75,
+      "gain": 1.5,
       "reverb": 0.1,
       "variation": {
         "pitch": 1.5,
@@ -4843,7 +4843,7 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:torch_break": {
-      "gain": 0.9,
+      "gain": 2,
       "reverb": 0.1,
       "variation": {
         "pitch": 2,
@@ -4926,7 +4926,7 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:torch_fire": {
-      "gain": 0.7,
+      "gain": 1,
       "reverb": 0.05,
       "loop": true,
       "variation": {
@@ -5070,7 +5070,7 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:night": {
-      "gain": 0.5,
+      "gain": 1.2,
       "reverb": 0.15,
       "loop": true,
       "variation": {

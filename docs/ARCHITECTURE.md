@@ -527,12 +527,14 @@ each worker keeps two jobs (one running, one waiting). Pool sizes are capped, lo
 
 ([ADR 0032](./adr/0032-audio.md), [`AUDIO.md`](./AUDIO.md).) Every sound is **procedural**,
 synthesised at play time in plain Web Audio (no library, no recorded assets). Sounds are **data**
-(`shared/sounds/*.json`): each a few layers of a fixed vocabulary — noise (white, pink, brown),
-oscillator, modal partials; biquad filters with sweeps; an attack/hold/decay envelope; grains;
+(`shared/sounds/*.json`): each a few layers of a fixed vocabulary — noise (white, pink, brown,
+crackle: sparse pops), oscillator, modal partials; biquad filters with sweeps; an attack/hold/decay envelope; grains;
 round-robin alternatives — with per-sound variation ranges (pitch, gain, cutoff, time, or `"none"`)
 and an intensity mapping. A block names its **sound set** (`"sound": "dwell:stone"`, §6.1); a set
-gives the sound per event (step, land, break, place, hit; enter, exit, swim for liquids); the data
-also holds the event kinds, footstep gaits (stride and loudness), game-action sounds, the menu
+gives the sound per event (step, land, break, place, hit; enter, exit, swim for liquids; slide;
+burn, the loop of a burning light source such as the torch's `dwell:torch` set); the data
+also holds the event kinds, the ambient tunables (`ambient`: the fires' radius and voice cap, the
+wind's height and speed ranges, the night's stars range), footstep gaits (stride and loudness), game-action sounds, the menu
 vocabulary (hover, click, back, tab, toggle on/off, slider, error, success — never varied) and the
 sounds of every control of `ui/controls.ts` (a test fails on an action without one).
 `shared/sounds/gen.mjs` validates it and generates `client/src/audio/sounds.gen.ts` and
@@ -544,7 +546,23 @@ others' spatialised from `VoxelModification`s), refusals, and the **slide**: a c
 per player (`slide` starts it on the surface's set, `slide_speed` moves its intensity with the
 slide's speed, `slide_end` fades it and plays the set's soft stop; the voice id rides in the event
 flags; `"loop": true` sounds are sustained layers whose gain, filter frequencies and rate follow
-intensity, with tremolo). They are a side channel — read from the
+intensity, with tremolo). **Impacts** (`ImpactSounds`): a hit on a wall or a ceiling is read from
+the sampled motion, not carried on the wire — the speed toward a solid block touching the body
+(the body probe `Surroundings`: 6 cm past its side at its middle, or over its head) dropping in a
+sample to at most 35 % of the fastest it went toward it in the last 70 ms; the hit's speed is that
+fastest, as the controller's `max(0, −v · n)` (PLAYER_CONTROLLER.md §6.10), so the sound follows
+the impact the damage uses, audible from 2 m/s (a sprint into a wall is a soft thud) and full at
+25 m/s, on the surface's set (`land`) plus a body thud. Ours are read from the prediction's ticks,
+another player's from its snapshots (exact positions; held by the interpolation delay so they
+sound when its body is drawn there). **Health**: the server's `PlayerEvent`s (broadcast to the
+world) give `hurt` (by the damage taken), `death` and `respawn` — ours at once, others' at their
+body after the interpolation delay. **Fires**: burning light sources (a light with a flame, placed
+or in a hand) crackle on their own loop voices (the block's set's `burn`), the nearest
+`ambient.fire.max` within `ambient.fire.radiusM`, each at a level falling smoothly to 0 at the
+radius. **Ambience**: the wind (by height over sea level or speed) and the night (by the sky's
+stars, fading aloft), each one voice at the listener, both scaled by the sky light at the eye (none
+in a cave). Loop updates are throttled (10 a second, on a change); the shell restarts a loop an
+update finds not playing (a hidden tab or a context still starting). They are a side channel — read from the
 predicted state and the world, never fed back — and cross to JS once a frame (`takeSounds`, a
 `Float64Array` of 7 numbers per event). The shell (`client/src/audio`) maps each to its sounds, draws
 the play's variation from a seeded RNG (never the same twice in a row), alternates the local
@@ -2173,6 +2191,9 @@ in the code yet.
 | `sprint_slide.steer_rate` / `cooldown_ticks` (`config.rs`) | 90 °/s / 30 ticks (0.5 s) | Limited steering toward the move input; the wait after a slide before the next (≤ 255: a `u8` on the wire) |
 | `damage.impact_damage_min_speed` / `impact_damage_per_speed` (`config.rs`) | 12 m/s / 8 per m/s | Impact damage (owner, 2026-10-21; PLAYER_CONTROLLER.md §6.10): a hit hurts by its speed into the surface, `max(0, −v · n)`, above the minimum, this many points per m/s; floors, ramps, walls, ceilings |
 | `SLIDE_HOLD` / `SLIDE_UPDATE_EVERY` (*client*, `dwell-game` `sound.rs`) | 0.15 s / 50 ms | A slide's sound: a pause shorter than the hold keeps the same voice; speed updates at most this often (AUDIO.md §5) |
+| `IMPACT_HOLD` / `IMPACT_KEEPS` / `IMPACT_PROBE_M` (*client*, `dwell-game` `sound.rs`) | 70 ms / 0.35 / 0.06 m | An impact sound: the speed toward a surface touching the body (within the probe) dropping in a sample to at most `KEEPS` of its fastest in the last `HOLD`; then quiet that long (AUDIO.md §5) |
+| Impact, hurt (*client*, `shared/sounds` `events`) | `impact` 2 → 25 m/s; `hurt` 0 → 80 health points | Where the impact sound starts and is full; the hurt's intensity by the damage (AUDIO.md §5) |
+| Ambient sounds (*client*, `shared/sounds` `ambient`) | Fires: 10 m, the nearest 4; wind: 24 → 160 m over sea level or 9 → 40 m/s; night: stars 0.15 → 0.85; loop updates ≤ 10/s, on 0.02 or 0.25 m | Torch crackle, wind and night loops (AUDIO.md §5) |
 | Ink outline (*client*, `shared/look/outline.json`; ART_DIRECTION.md §7) | Off by default (`?outline=` picks a mode). `silhouette`: depth edges, 1.5 CSS px, full to 32 m, gone by 128 m, strength 0.85; `creases`: + creases, 1.5 px, 24–96 m, 0.8; `blocks`: + block edges, 1 px, 12–48 m, 0.6. Silhouette threshold 0.04 (relative jump in inverse depth), crease 0.35 (slope change 0–1), each full at twice it; the fade × the spyglass's magnification |
 | Motion effects (*client*, `shared/look/motion.json`) | FOV zoomed out 10 % at run speed, 20 % at 2000 m/s (75° → ≈ 80.3°, 85.3°); spring 8/s widen, 3.5/s settle; at most 120°; wind 0.35 at run, 1 at 2000 m/s | The speed FOV and wind ([`MOTION_EFFECTS.md`](./MOTION_EFFECTS.md)); generated into dwell-look's `motion.gen.rs` |
 | `TIER1_MIN_BLOCKS` | 4 | Clusters at or above this size are Tier 1 |
