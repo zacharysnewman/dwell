@@ -623,9 +623,11 @@ pub fn caster_depth(t: &ShadowTunables) -> wgpu::DepthStencilState {
 }
 
 /// The shadow lookup the scene's shaders share (group 0, bindings 8–10), after `COMMON`'s
-/// helpers. `shadow_light(rel, n, stand_in)` is the factor on the direct sun and moon term: the
-/// map's visibility near the eye, fading to `stand_in` (the first layer's: direct light × sky
-/// light) past the last cascade and as the light's shadows fade with the time of day.
+/// helpers and the distant terrain's march (`lod_shadows::LOD_SHADOW_WGSL`).
+/// `shadow_light(rel, n, stand_in)` is the factor on the direct sun and moon term: the map's
+/// visibility near the eye, fading past the last cascade to `stand_in` (the first layer's: direct
+/// light × sky light) shaded by the distant terrain, and as the light's shadows fade with the time
+/// of day.
 pub const SHADOW_WGSL: &str = r"
 struct Shadows {
     cascades: array<mat4x4f, 4>,
@@ -682,27 +684,35 @@ fn cloud_shadow(rel: vec3f) -> f32 {
     return 1.0;
 }
 
+// Past the cascades: the stand-in shaded by the distant terrain (`lod_shadow`, the third layer),
+// by the light's strength (dwell-look `lod_shadows::combine`'s `past`).
+fn shadow_past(rel: vec3f, n: vec3f, stand_in: f32) -> f32 {
+    return stand_in * (1.0 + shadows.cfg.y * (lod_shadow(rel, n) - 1.0));
+}
+
 // The factor on the direct sun and moon term at an eye-relative point with normal `n`: the map's
-// visibility near the eye, `stand_in` (the first layer's) beyond the last cascade and where the
-// light's shadows are faded by the time of day, and no visible edge between them.
+// visibility near the eye; past the last cascade `stand_in` (the first layer's) shaded by the
+// distant terrain; between, over the cascades' last `edgeFade`, a blend of the two, so neither
+// edge shows (dwell-look `lod_shadows::combine` is this in f64, tested). The time of day's fade
+// weakens both alike.
 fn shadow_light(rel: vec3f, n: vec3f, stand_in: f32) -> f32 {
     if (shadows.cfg.x < 0.5) {
         return stand_in * cloud_shadow(rel);
     }
     let depth = view_depth(rel);
     let near = 1.0 - smoothstep(shadows.cfg.z, shadows.cfg.w, depth);
-    let w = shadows.cfg.y * near;
-    if (w <= 0.0) {
-        return stand_in * cloud_shadow(rel);
-    }
     let c = shadow_cascade(rel);
-    if (c < 0) {
-        return stand_in * cloud_shadow(rel);
+    if (near <= 0.0 || c < 0) {
+        return shadow_past(rel, n, stand_in) * cloud_shadow(rel);
     }
     // Normal offset: the lookup moves out along the surface's normal by the cascade's texels.
     let at = rel + n * shadows.texel[c].y;
     let p = (shadows.cascades[c] * vec4f(at, 1.0)).xyz;
-    return mix(stand_in, shadow_pcf(c, p), w) * cloud_shadow(rel);
+    let inside = mix(stand_in, shadow_pcf(c, p), shadows.cfg.y);
+    if (near >= 1.0) {
+        return inside * cloud_shadow(rel);
+    }
+    return mix(shadow_past(rel, n, stand_in), inside, near) * cloud_shadow(rel);
 }
 ";
 
