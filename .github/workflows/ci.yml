@@ -50,6 +50,8 @@ jobs:
           node --test shared/look/light.test.mjs
           node shared/look/lights.mjs
           node --test shared/look/lights.test.mjs
+          node shared/look/flames.mjs
+          node --test shared/look/flames.test.mjs
           node shared/look/daynight.mjs
           node --test shared/look/daynight.test.mjs
           node shared/textures/gen.mjs

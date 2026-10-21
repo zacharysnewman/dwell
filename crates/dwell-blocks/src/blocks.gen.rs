@@ -533,5 +533,5 @@ pub static FLUIDS: [FluidInfo; 1] = [
 ];
 
 pub static LIGHTS: [LightInfo; 1] = [
-    LightInfo { name: "dwell:torch", color: 0xff8a3d, strength: 3.8, radius_m: 14.0, flicker: 0.16, flicker_speed: 6.0, shadows: true },
+    LightInfo { name: "dwell:torch", color: 0xff8a3d, strength: 3.8, radius_m: 14.0, flicker: 0.16, flicker_speed: 6.0, shadows: true, flame: Some("dwell:torch") },
 ];

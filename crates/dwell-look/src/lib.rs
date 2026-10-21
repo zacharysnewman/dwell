@@ -9,6 +9,7 @@ pub mod clouds;
 #[path = "clouds.gen.rs"]
 mod clouds_gen;
 pub mod daynight;
+pub mod flames;
 pub mod fog;
 pub mod lights;
 pub mod lod_blend;

@@ -211,6 +211,9 @@ pub struct LightInfo {
     pub flicker_speed: f32,
     /// Whether it may cast shadows (the Torch shadows setting's; Phase 47 T2).
     pub shadows: bool,
+    /// The flame look drawn where it burns (a name in `shared/look/flames.json`, dwell-look
+    /// `flames`; docs/LIGHTS.md §6), or none.
+    pub flame: Option<&'static str>,
 }
 
 /// A fluid's index in `FLUIDS`, valid for this build's registry.

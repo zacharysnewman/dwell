@@ -97,6 +97,8 @@ pub trait Scene: TerrainRenderer {
     fn set_own_shadow(&mut self, _body: Option<PlayerView>) {}
     /// Your own body drawn in first person from the neck down (docs/CHARACTERS.md §5.1), or none.
     fn set_own_body(&mut self, _body: Option<PlayerView>) {}
+    /// The placed light sources' flames near the eye this frame (a torch's; docs/LIGHTS.md §6).
+    fn set_placed_flames(&mut self, _flames: Vec<crate::render::flames::PlacedFlame>) {}
     fn set_camera(
         &mut self,
         eye: [f64; 3],
@@ -1668,6 +1670,9 @@ impl<S: Scene> Game<S> {
             telemetry::add("lod.fading", f.swaps as f64);
             telemetry::add("lod.retiring", f.retiring as f64);
         }
+        // The placed torches' flames near the eye (docs/LIGHTS.md §6).
+        let flames = crate::render::flames::placed_flames(self.streamer.store(), camera_eye);
+        self.scene.borrow_mut().set_placed_flames(flames);
         self.update_day(now_ms);
 
         self.hud.health = self.health;

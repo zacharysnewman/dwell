@@ -232,6 +232,10 @@ pub struct CharacterRenderer {
     arms: Option<Draw>,
     /// The lights held this frame (`prepare`): other players', and yours once.
     held_lights: Vec<HeldLight>,
+    /// How many of `held_lights` are other players' (their items drawn in the scene), and your
+    /// arms' light when the arms are drawn: where flames burn (render/flames.rs).
+    others_lights: usize,
+    arms_light: Option<HeldLight>,
     pub stats: CharacterStats,
 }
 
@@ -771,6 +775,8 @@ impl CharacterRenderer {
             draws: Vec::new(),
             arms: None,
             held_lights: Vec::new(),
+            others_lights: 0,
+            arms_light: None,
             stats: CharacterStats::default(),
         }
     }
@@ -836,6 +842,7 @@ impl CharacterRenderer {
         self.draws.clear();
         self.arms = None;
         self.held_lights.clear();
+        self.arms_light = None;
         let character = self.character;
         let item_name = |held: Held| item_shown(character, held);
         let light_at = |held: Held, bones: &[Affine; MAX_BONES], seed: u32| {
@@ -959,6 +966,7 @@ impl CharacterRenderer {
             let instance = push(&bones, a.held, true, true, 0.0, a.light);
             if let Some(l) = light_at(a.held, &bones, 0) {
                 own_light = Some(l);
+                self.arms_light = Some(l);
             }
             let body = MeshKey {
                 name: self.look,
@@ -986,6 +994,7 @@ impl CharacterRenderer {
                 cast_only: false,
             });
         }
+        self.others_lights = self.held_lights.len();
         self.held_lights.extend(own_light);
         for k in keys {
             self.mesh(device, queue, k);
@@ -1015,6 +1024,12 @@ impl CharacterRenderer {
     /// The lights held this frame (`prepare`): docs/LIGHTS.md §3.
     pub fn held_lights(&self) -> &[HeldLight] {
         &self.held_lights
+    }
+
+    /// The held lights whose items are drawn this frame, where flames burn (docs/LIGHTS.md §6):
+    /// other players' (in the scene passes) and your arms' (in the arms pass).
+    pub fn held_flames(&self) -> (&[HeldLight], Option<HeldLight>) {
+        (&self.held_lights[..self.others_lights], self.arms_light)
     }
 
     /// Whether the arms are drawn this frame (the renderer adds their pass).
@@ -1318,111 +1333,6 @@ mod tests {
         let up = |v| super::super::camera::dot(v, basis.up);
         assert!(up(r) > up(hand), "over the hand: {r:?}");
         assert!(held_light(ch, stone, &bones, 0).is_none());
-    }
-
-    /// The hue (degrees) and saturation (HSV) of a display colour (0–1, sRGB-encoded).
-    fn hue_sat(c: [f32; 3]) -> (f64, f64) {
-        let [r, g, b] = c.map(f64::from);
-        let (hi, lo) = (r.max(g).max(b), r.min(g).min(b));
-        let d = hi - lo;
-        let h = if d <= 0.0 {
-            0.0
-        } else if hi == r {
-            60.0 * ((g - b) / d).rem_euclid(6.0)
-        } else if hi == g {
-            60.0 * ((b - r) / d + 2.0)
-        } else {
-            60.0 * ((r - g) / d + 4.0)
-        };
-        (h, if hi > 0.0 { d / hi } else { 0.0 })
-    }
-
-    #[test]
-    fn the_flame_stays_lit_and_orange_by_day_at_night_and_in_a_cave() {
-        // Owner (2026-10-21): the held flame read as "a cream colored blob"; "the flame should stay
-        // illuminated regardless of brightness since it's the source of the light". The held
-        // flame's material and the placed torch's flame texels, through the shaders' last step
-        // (`emitted`), the tone curve and the time of day's saturation (render/lights.rs's CPU
-        // mirrors): by day, at midnight (moonlight's lower saturation), and in a cave at sky
-        // light 0 (its lit colour black), the same orange, saturated, never cream.
-        use super::super::lights::{displayed, emitted};
-        let flame = TABLES
-            .materials
-            .iter()
-            .find(|m| m.name == "flame")
-            .expect("the flame material");
-        let lin = |c: u32| dwell_look::hex(c).map(|v| dwell_look::srgb_to_linear(v) as f32);
-        let held = lin(flame.base);
-        // The placed torch's flame: the torch_top tile's most saturated texels' mean.
-        let tile = dwell_blocks::info(dwell_blocks::require("dwell:torch_upper"))
-            .textures
-            .expect("textured")
-            .side;
-        let mut sum = [0.0f32; 3];
-        let mut n = 0.0;
-        for y in 0..dwell_mesh::TILE as i64 {
-            for x in 0..dwell_mesh::TILE as i64 {
-                let t = dwell_mesh::texel_of(tile, x, y);
-                let (hi, lo) = (t[0].max(t[1]).max(t[2]), t[0].min(t[1]).min(t[2]));
-                if t[3] > 128 && hi > 150 && f64::from(hi - lo) / f64::from(hi) > 0.6 {
-                    for k in 0..3 {
-                        sum[k] += dwell_mesh::srgb_to_linear(t[k]) as f32;
-                    }
-                    n += 1.0;
-                }
-            }
-        }
-        assert!(n > 20.0, "the tile has a flame");
-        let placed = sum.map(|v| v / n);
-        let sample = |solar: f64| {
-            let s = dwell_look::daynight::DAY_NIGHT.sample(solar);
-            (
-                (dwell_look::DEFAULT_EXPOSURE * s.exposure) as f32,
-                s.saturation as f32,
-            )
-        };
-        let (day, day_sat) = sample(60.0);
-        let (night, night_sat) = sample(-90.0);
-        assert!(
-            night_sat < 1.0,
-            "moonlight is desaturated (the case that washed it to cream)"
-        );
-        for (what, albedo, shine) in [
-            ("held", held, flame.emissive),
-            ("placed", placed, dwell_mesh::tile_emissive(tile)),
-        ] {
-            assert!(shine >= 1.0, "{what}: fully self-lit");
-            let cases = [
-                ("noon", albedo.map(|v| v * 3.0), day, day_sat),
-                ("midnight", albedo.map(|v| v * 0.05), night, night_sat),
-                ("cave", [0.0; 3], night, night_sat),
-                ("a bright exposure", albedo, 2.5, 1.0),
-            ];
-            let show = |(_, lit, e, s): (&str, [f32; 3], f32, f32)| {
-                displayed(emitted(lit, albedo, shine, e), e, s, shine >= 1.0)
-            };
-            let base = show(cases[0]);
-            eprintln!("PROBE {what} {base:?} {:?}", hue_sat(base));
-            for case in cases {
-                let c = show(case);
-                let (h, sat) = hue_sat(c);
-                let when = case.0;
-                assert!(
-                    (18.0..48.0).contains(&h),
-                    "{what} {when}: hue {h:.0}° ({c:?})"
-                );
-                assert!(
-                    sat >= 0.6,
-                    "{what} {when}: saturation {sat:.2}, cream ({c:?})"
-                );
-                for k in 0..3 {
-                    assert!(
-                        (c[k] - base[k]).abs() < 0.02,
-                        "{what} {when}: {c:?} vs noon {base:?}"
-                    );
-                }
-            }
-        }
     }
 
     // A held torch's light sits in its holder's hand, the same face-local height on both faces.

@@ -1,0 +1,22 @@
+{
+  "$comment": "Flame looks (docs/LIGHTS.md §6, ARCHITECTURE.md §6.1): the animated flames drawn on camera-facing billboards where a light source with a `flame` (shared/blocks `lights`) burns: a placed torch's top, a torch in a hand (yours in the arms view, other players'). drawM: flames farther than this from the eye are not drawn; maxFlames: the most drawn a frame, the nearest first. Per flame look, keyed by a namespaced name the light source references: ramp, the colours (sRGB) from the tips' deep red-orange to the core's pale yellow; bands, how many painted steps the ramp is laid in (0: smooth); heightM and widthM, the flame's size; baseM, a placed flame's base over the floor of its cell (the cell that gives off the light; a held flame's base is its item's light point); speed, how fast the noise rises (cycles a second); noiseScale, the noise's cells over the flame; distort, how far the noise bends it sideways; tongues, how deeply the noise splits its top into separate licks; sway, how far its tip leans with a slow noise; sizeFlicker, how much its height follows the light's flicker (× the flicker's dip), so the light and the flame pulse together. glow: the soft halo round it (colour, radius, strength; × the flicker). embers: a few sparks rising from it (count, colour, size, how far they rise, their speed; count 0: none). Run `node shared/look/flames.mjs` after editing; CI fails if crates/dwell-look/src/flames.gen.rs is stale.",
+  "drawM": 48,
+  "maxFlames": 64,
+  "flames": {
+    "dwell:torch": {
+      "ramp": ["#a8261a", "#e2481b", "#ff7a2a", "#ffb243", "#ffe7a3"],
+      "bands": 4,
+      "heightM": 0.36,
+      "widthM": 0.2,
+      "baseM": 0.08,
+      "speed": 1.5,
+      "noiseScale": 2.2,
+      "distort": 0.6,
+      "tongues": 1.1,
+      "sway": 0.22,
+      "sizeFlicker": 0.6,
+      "glow": { "color": "#ff7a33", "radiusM": 0.45, "strength": 0.3 },
+      "embers": { "count": 3, "color": "#ffb04a", "sizeM": 0.012, "riseM": 0.5, "speed": 0.6 }
+    }
+  }
+}
