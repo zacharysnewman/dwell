@@ -2983,15 +2983,33 @@
         { "do": "wait", "s": 1.5 },
         { "do": "shot", "name": "t855-y28" },
         { "do": "time", "t": 0.855 },
-        { "do": "camera", "position": [0, -520, 0], "yaw": 118, "pitch": -14, "aroundPlayer": true },
+        {
+          "do": "camera",
+          "position": [0, -520, 0],
+          "yaw": 118,
+          "pitch": -14,
+          "aroundPlayer": true
+        },
         { "do": "wait", "s": 1.5 },
         { "do": "shot", "name": "t855-y118" },
         { "do": "time", "t": 0.855 },
-        { "do": "camera", "position": [0, -520, 0], "yaw": 208, "pitch": -14, "aroundPlayer": true },
+        {
+          "do": "camera",
+          "position": [0, -520, 0],
+          "yaw": 208,
+          "pitch": -14,
+          "aroundPlayer": true
+        },
         { "do": "wait", "s": 1.5 },
         { "do": "shot", "name": "t855-y208" },
         { "do": "time", "t": 0.855 },
-        { "do": "camera", "position": [0, -520, 0], "yaw": 298, "pitch": -14, "aroundPlayer": true },
+        {
+          "do": "camera",
+          "position": [0, -520, 0],
+          "yaw": 298,
+          "pitch": -14,
+          "aroundPlayer": true
+        },
         { "do": "wait", "s": 1.5 },
         { "do": "shot", "name": "t855-y298" },
         { "do": "time", "t": 0.87 },
@@ -2999,15 +3017,33 @@
         { "do": "wait", "s": 1.5 },
         { "do": "shot", "name": "t870-y28" },
         { "do": "time", "t": 0.87 },
-        { "do": "camera", "position": [0, -520, 0], "yaw": 118, "pitch": -14, "aroundPlayer": true },
+        {
+          "do": "camera",
+          "position": [0, -520, 0],
+          "yaw": 118,
+          "pitch": -14,
+          "aroundPlayer": true
+        },
         { "do": "wait", "s": 1.5 },
         { "do": "shot", "name": "t870-y118" },
         { "do": "time", "t": 0.87 },
-        { "do": "camera", "position": [0, -520, 0], "yaw": 208, "pitch": -14, "aroundPlayer": true },
+        {
+          "do": "camera",
+          "position": [0, -520, 0],
+          "yaw": 208,
+          "pitch": -14,
+          "aroundPlayer": true
+        },
         { "do": "wait", "s": 1.5 },
         { "do": "shot", "name": "t870-y208" },
         { "do": "time", "t": 0.87 },
-        { "do": "camera", "position": [0, -520, 0], "yaw": 298, "pitch": -14, "aroundPlayer": true },
+        {
+          "do": "camera",
+          "position": [0, -520, 0],
+          "yaw": 298,
+          "pitch": -14,
+          "aroundPlayer": true
+        },
         { "do": "wait", "s": 1.5 },
         { "do": "shot", "name": "t870-y298" }
       ]
