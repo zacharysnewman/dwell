@@ -163,6 +163,8 @@ describe('compare report math', () => {
     });
     expect(hueFlipsOf(fight)).toBeCloseTo(0.25);
     expect(flickerOf(fight).hueFlips).toBeCloseTo(0.25);
+    // Near black (a night view's shadows), a hue is noise.
+    expect(hueFlipsOf([image(1, 1, [30, 10, 10]), image(1, 1, [10, 30, 10])])).toBe(0);
     // Greys (sky haze, ink) have no hue to flip.
     expect(hueFlipsOf([image(1, 1, [128, 128, 128]), image(1, 1, [128, 140, 128])])).toBe(0);
   });

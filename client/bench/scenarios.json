@@ -1219,6 +1219,247 @@
       ]
     },
     {
+      "name": "lod-zfight",
+      "notes": "The LOD's z-fighting (ARCHITECTURE.md §6.6, \"Known bug class\"; owner 2026-10-21: dirt showing through the grass from high up, changing as the camera moves): the camera placed 160–300 m over the seed-7 spawn's hills at three pitches with the phone's detail (128 m full detail, 8 px), drifting 2 mm and 0.002° a frame through a 16-frame burst. Fails when over 0.004 % of the pixels flip hue between frames (grass to dirt): 0.005–0.013 % before the fix (top skirts on the section plane in the top row's dirt colour), 0.000–0.002 % after.",
+      "seed": 7,
+      "window": {
+        "width": 1000,
+        "height": 800
+      },
+      "settings": {
+        "timeOfDay": 0.5,
+        "detail": {
+          "distanceM": 128,
+          "pixelError": 8,
+          "memoryMb": 192
+        }
+      },
+      "steps": [
+        {
+          "do": "settle",
+          "maxS": 120
+        },
+        {
+          "do": "arms",
+          "on": false
+        },
+        {
+          "do": "camera",
+          "position": [0, 200, 0],
+          "yaw": 200,
+          "pitch": -25,
+          "aroundPlayer": true,
+          "aboveFeet": true
+        },
+        {
+          "do": "settle",
+          "maxS": 90
+        },
+        {
+          "do": "wait",
+          "s": 2
+        },
+        {
+          "do": "shot",
+          "name": "h200-p25"
+        },
+        {
+          "do": "burst",
+          "name": "h200-p25",
+          "frames": 16,
+          "drift": {
+            "position": [0.002, 0.001, 0.0015],
+            "yaw": 0.002,
+            "pitch": 0.001
+          },
+          "maxHueFlips": 4e-5
+        },
+        {
+          "do": "camera",
+          "position": [0, 160, 0],
+          "yaw": 300,
+          "pitch": -40,
+          "aroundPlayer": true,
+          "aboveFeet": true
+        },
+        {
+          "do": "settle",
+          "maxS": 90
+        },
+        {
+          "do": "wait",
+          "s": 2
+        },
+        {
+          "do": "shot",
+          "name": "h160-p40"
+        },
+        {
+          "do": "burst",
+          "name": "h160-p40",
+          "frames": 16,
+          "drift": {
+            "position": [0.002, 0.001, 0.0015],
+            "yaw": 0.002,
+            "pitch": 0.001
+          },
+          "maxHueFlips": 4e-5
+        },
+        {
+          "do": "camera",
+          "position": [0, 300, 0],
+          "yaw": 120,
+          "pitch": -65,
+          "aroundPlayer": true,
+          "aboveFeet": true
+        },
+        {
+          "do": "settle",
+          "maxS": 90
+        },
+        {
+          "do": "wait",
+          "s": 2
+        },
+        {
+          "do": "shot",
+          "name": "h300-p65"
+        },
+        {
+          "do": "burst",
+          "name": "h300-p65",
+          "frames": 16,
+          "drift": {
+            "position": [0.002, 0.001, 0.0015],
+            "yaw": 0.002,
+            "pitch": 0.001
+          },
+          "maxHueFlips": 4e-5
+        }
+      ]
+    },
+    {
+      "name": "lod-zfight-b",
+      "notes": "lod-zfight on face B (its noon is face A's midnight): the same heights over face B's spawn, along its up.",
+      "seed": 7,
+      "face": "b",
+      "window": {
+        "width": 1000,
+        "height": 800
+      },
+      "settings": {
+        "timeOfDay": 0.0,
+        "detail": {
+          "distanceM": 128,
+          "pixelError": 8,
+          "memoryMb": 192
+        }
+      },
+      "steps": [
+        {
+          "do": "settle",
+          "maxS": 120
+        },
+        {
+          "do": "arms",
+          "on": false
+        },
+        {
+          "do": "camera",
+          "position": [0, 200, 0],
+          "yaw": 200,
+          "pitch": -25,
+          "aroundPlayer": true,
+          "aboveFeet": true
+        },
+        {
+          "do": "settle",
+          "maxS": 90
+        },
+        {
+          "do": "wait",
+          "s": 2
+        },
+        {
+          "do": "shot",
+          "name": "h200-p25"
+        },
+        {
+          "do": "burst",
+          "name": "h200-p25",
+          "frames": 16,
+          "drift": {
+            "position": [0.002, 0.001, 0.0015],
+            "yaw": 0.002,
+            "pitch": 0.001
+          },
+          "maxHueFlips": 4e-5
+        },
+        {
+          "do": "camera",
+          "position": [0, 160, 0],
+          "yaw": 300,
+          "pitch": -40,
+          "aroundPlayer": true,
+          "aboveFeet": true
+        },
+        {
+          "do": "settle",
+          "maxS": 90
+        },
+        {
+          "do": "wait",
+          "s": 2
+        },
+        {
+          "do": "shot",
+          "name": "h160-p40"
+        },
+        {
+          "do": "burst",
+          "name": "h160-p40",
+          "frames": 16,
+          "drift": {
+            "position": [0.002, 0.001, 0.0015],
+            "yaw": 0.002,
+            "pitch": 0.001
+          },
+          "maxHueFlips": 4e-5
+        },
+        {
+          "do": "camera",
+          "position": [0, 300, 0],
+          "yaw": 120,
+          "pitch": -65,
+          "aroundPlayer": true,
+          "aboveFeet": true
+        },
+        {
+          "do": "settle",
+          "maxS": 90
+        },
+        {
+          "do": "wait",
+          "s": 2
+        },
+        {
+          "do": "shot",
+          "name": "h300-p65"
+        },
+        {
+          "do": "burst",
+          "name": "h300-p65",
+          "frames": 16,
+          "drift": {
+            "position": [0.002, 0.001, 0.0015],
+            "yaw": 0.002,
+            "pitch": 0.001
+          },
+          "maxHueFlips": 4e-5
+        }
+      ]
+    },
+    {
       "name": "climb-fast",
       "notes": "Flies straight up at level 8 (about 176 m/s) for 4 s from the settled spawn, then hovers 3 s: the chunks above arrive over the ones below, and the ones below are dropped in batches (the flood light's relights: 0.22.9 had 1.2-1.6 s long tasks here, 0.22.8 none over 50 ms). Read the long tasks and the frame interval's max.",
       "steps": [

@@ -199,14 +199,20 @@ function hueSat(r: number, g: number, b: number): [number, number] {
 
 /**
  * Surface identity flips over a burst (ARCHITECTURE.md §6.6, "Known bug class"): for each frame
- * after the first, the share of pixels coloured in both frames (saturation ≥ `minSat`) whose hue
+ * after the first, the share of pixels coloured in both frames (saturation ≥ `minSat`, and not
+ * near black: a channel ≥ `minValue` of 255) whose hue
  * moved by more than `minHueDeg` — a pixel that was grass and is now dirt — averaged over the
  * pairs. Under a camera drifting a few centimetres and a twentieth of a degree a frame, the view
  * moves under a pixel and its brightness changes along every edge, but a surface keeps its hue
  * (a riser is its top's colour shaded); only a surface's outline moves, a pixel wide. Surfaces
  * fighting in depth swap from frame to frame across their whole overlap: that is what it counts.
  */
-export function hueFlipsOf(frames: readonly Rgba[], minSat = 0.25, minHueDeg = 40): number {
+export function hueFlipsOf(
+  frames: readonly Rgba[],
+  minSat = 0.25,
+  minHueDeg = 40,
+  minValue = 48,
+): number {
   if (frames.length < 2) throw new Error('flicker: needs two frames or more');
   const { width, height } = frames[0];
   const hues = (im: Rgba): Float32Array => {
@@ -215,7 +221,9 @@ export function hueFlipsOf(frames: readonly Rgba[], minSat = 0.25, minHueDeg = 4
     const d = im.data;
     for (let i = 0; i < out.length; i++) {
       const [h, sat] = hueSat(d[i * 4], d[i * 4 + 1], d[i * 4 + 2]);
-      out[i] = sat >= minSat ? h : -1;
+      // Near black, a hue is the noise of a few levels.
+      const bright = Math.max(d[i * 4], d[i * 4 + 1], d[i * 4 + 2]) >= minValue;
+      out[i] = sat >= minSat && bright ? h : -1;
     }
     return out;
   };

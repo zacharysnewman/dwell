@@ -191,6 +191,8 @@ interface Run {
   settles: number[];
   /** Each `burst` step's flicker, by name. */
   bursts: Record<string, Flicker>;
+  /** The scenario's face's up along y (1 face A, −1 face B): `aboveFeet` heights are along it. */
+  up: number;
   /** Where the last `camera` step placed the camera (a drifting burst moves on from it). */
   camera?: { position: [number, number, number]; yaw: number; pitch: number };
 }
@@ -382,10 +384,11 @@ async function step(run: Run, s: Step): Promise<void> {
       await call(page, `d.spyglass(${String(s.on)}, ${String(s.step ?? 0)})`);
       return;
     case 'camera': {
-      // aroundPlayer: x and z from the player's feet, y absolute (or from the feet, aboveFeet).
+      // aroundPlayer: x and z from the player's feet, y absolute (or with aboveFeet a height over
+      // the feet along the scenario's face's up).
       const [x, y, z] = s.position;
       const at = s.aroundPlayer
-        ? `(() => { const f = d.state().feet; return [f[0] + ${String(x)}, ${s.aboveFeet ? `f[1] + ${String(y)}` : String(y)}, f[2] + ${String(z)}]; })()`
+        ? `(() => { const f = d.state().feet; return [f[0] + ${String(x)}, ${s.aboveFeet ? `f[1] + ${String(y * run.up)}` : String(y)}, f[2] + ${String(z)}]; })()`
         : JSON.stringify(s.position);
       await until(page, `d.placeCamera(${at}, ${String(s.yaw)}, ${String(s.pitch)})`, 30_000);
       run.camera = {
@@ -556,7 +559,16 @@ async function runScenario(
   if (!(await until(page, 'd.state()?.terrainReady === true', 120_000))) {
     throw new Error(`${sc.name}: the game did not start (${errors.join('; ')})`);
   }
-  const run: Run = { page, browser, dir, markMs: 0, records: {}, settles: [], bursts: {} };
+  const run: Run = {
+    page,
+    browser,
+    dir,
+    markMs: 0,
+    records: {},
+    settles: [],
+    bursts: {},
+    up: sc.face === 'b' ? -1 : 1,
+  };
   for (const s of sc.steps) await step(run, s);
   const report: ScenarioReport = {
     scenario: sc,
