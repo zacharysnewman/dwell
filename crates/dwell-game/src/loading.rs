@@ -53,6 +53,8 @@ impl NearProgress {
 /// What the loading screen shows: progress while it waits; nothing once open.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct LoadingScreen {
+    /// False until the player is placed (joining): nothing to count yet.
+    pub placed: bool,
     pub progress: NearProgress,
     /// Seconds since it started.
     pub elapsed_s: f64,
@@ -67,18 +69,23 @@ pub enum Opened {
     TimedOut,
 }
 
-/// The loading screen's state: closed (waiting, shown) from `start` until the near ring is ready
-/// or the timeout passes. Disabled, it is always open.
+/// The loading screen's state: closed (shown) from creation until the player is placed (joining:
+/// so the screen is the first thing shown, before the view or the HUD), then from `start` until
+/// the near ring is ready or the timeout passes. Disabled, it is always open.
 #[derive(Clone, Debug)]
 pub struct LoadingGate {
     tunables: LoadingTunables,
     enabled: bool,
+    /// Shown, waiting for the player to be placed (from creation until the join places them).
+    joining: bool,
     /// When the current wait started (ms); None while open.
     started_ms: Option<f64>,
     progress: NearProgress,
     elapsed_s: f64,
     /// How the last wait ended, and after how long (s).
     last: Option<(Opened, f64)>,
+    /// How many times the screen has opened: the shell fades the view in on each (§6.3).
+    opens: u32,
 }
 
 impl LoadingGate {
@@ -86,10 +93,12 @@ impl LoadingGate {
         Self {
             tunables,
             enabled,
+            joining: enabled,
             started_ms: None,
             progress: NearProgress::default(),
             elapsed_s: 0.0,
             last: None,
+            opens: 0,
         }
     }
 
@@ -105,16 +114,27 @@ impl LoadingGate {
     /// screen (opted out) nothing waits.
     pub fn start(&mut self, now_ms: f64) {
         if self.enabled {
+            self.joining = false;
             self.started_ms = Some(now_ms);
             self.elapsed_s = 0.0;
             self.progress = NearProgress::default();
         }
     }
 
+    /// The player was placed where nothing is waited for (in flight, which outruns the
+    /// streaming): a screen still shown for the join opens at once.
+    pub fn skip(&mut self) {
+        if self.joining {
+            self.joining = false;
+            self.last = Some((Opened::Ready, 0.0));
+            self.opens += 1;
+        }
+    }
+
     /// This frame's progress: opens once it is complete or the timeout has passed. True while open.
     pub fn update(&mut self, now_ms: f64, progress: NearProgress) -> bool {
         let Some(start) = self.started_ms else {
-            return true;
+            return self.is_open();
         };
         // Shown without going back: a chunk the LOD stops showing as chunks for a moment (its
         // root just became ready, and the level-1 section above it is not yet) counts again soon.
@@ -138,20 +158,34 @@ impl LoadingGate {
         if let Some(how) = opened {
             self.started_ms = None;
             self.last = Some((how, self.elapsed_s));
+            self.opens += 1;
         }
         self.is_open()
     }
 
     pub fn is_open(&self) -> bool {
-        self.started_ms.is_none()
+        !self.joining && self.started_ms.is_none()
     }
 
-    /// The screen to show, while waiting.
+    /// The screen to show, while waiting (from creation while joining).
     pub fn screen(&self) -> Option<LoadingScreen> {
+        if self.joining {
+            return Some(LoadingScreen {
+                placed: false,
+                progress: NearProgress::default(),
+                elapsed_s: 0.0,
+            });
+        }
         self.started_ms.map(|_| LoadingScreen {
+            placed: true,
             progress: self.progress,
             elapsed_s: self.elapsed_s,
         })
+    }
+
+    /// How many times the screen has opened (the shell's cue to fade the view in).
+    pub fn opens(&self) -> u32 {
+        self.opens
     }
 
     /// How the last wait ended and its length (s): the bench's join-to-gate time.
@@ -160,8 +194,11 @@ impl LoadingGate {
     }
 }
 
-/// The screen's readout: "Loading terrain… 37 / 123".
+/// The screen's readout: "Joining…" until placed, then "Loading terrain… 37 / 123".
 pub fn loading_text(screen: &LoadingScreen) -> String {
+    if !screen.placed {
+        return "Joining…".to_string();
+    }
     format!(
         "Loading terrain… {} / {}",
         screen.progress.ready.min(screen.progress.needed),
@@ -207,10 +244,6 @@ mod tests {
     #[test]
     fn waits_until_the_near_ring_is_ready() {
         let mut g = LoadingGate::new(T, true);
-        assert!(
-            g.is_open(),
-            "nothing to wait for before the player is placed"
-        );
         g.start(1000.0);
         assert!(!g.update(1500.0, p(10, 50)));
         let s = g.screen().expect("shown");
@@ -219,6 +252,7 @@ mod tests {
         assert!(g.update(3000.0, p(50, 50)));
         assert_eq!(g.screen(), None);
         assert_eq!(g.last_opened(), Some((Opened::Ready, 2.0)));
+        assert_eq!(g.opens(), 1);
         // Open stays open.
         assert!(g.update(4000.0, p(0, 50)));
     }
@@ -240,6 +274,36 @@ mod tests {
         assert!(g.update(1.0, p(0, 50)));
         assert_eq!(g.screen(), None);
         assert_eq!(g.last_opened(), None);
+        g.skip();
+        assert_eq!(g.opens(), 0);
+    }
+
+    #[test]
+    fn shows_from_creation_until_the_join_places_the_player() {
+        // Owner (2026-10-21): "you see ingame UI briefly before loading screen appears": the
+        // screen only showed once the player was placed, so the view and the HUD came first.
+        let mut g = LoadingGate::new(T, true);
+        assert!(!g.is_open(), "closed before the player is placed");
+        let s = g.screen().expect("shown from the start");
+        assert!(!s.placed);
+        assert_eq!(loading_text(&s), "Joining…");
+        assert!(!g.update(500.0, p(0, 0)), "nothing placed: still joining");
+        g.start(1000.0);
+        assert!(g.screen().unwrap().placed);
+        assert!(g.update(1100.0, p(5, 5)));
+        assert_eq!(g.opens(), 1);
+    }
+
+    #[test]
+    fn a_join_in_flight_opens_at_once() {
+        let mut g = LoadingGate::new(T, true);
+        g.skip();
+        assert!(g.is_open());
+        assert_eq!(g.screen(), None);
+        assert_eq!(g.opens(), 1);
+        assert_eq!(g.last_opened(), Some((Opened::Ready, 0.0)));
+        g.skip();
+        assert_eq!(g.opens(), 1, "only the join's screen");
     }
 
     #[test]
@@ -251,6 +315,7 @@ mod tests {
         assert!(!g.update(5_100.0, p(1, 5)));
         assert!(g.update(5_200.0, p(5, 5)));
         assert_eq!(g.last_opened(), Some((Opened::Ready, 0.2)));
+        assert_eq!(g.opens(), 2, "each opening fades the view in");
     }
 
     #[test]
