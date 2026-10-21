@@ -176,7 +176,7 @@ mod tests {
     fn the_checked_in_tunables_keep_the_ring_within_the_streamed_view() {
         let view = dwell_protocol::world::VIEW_RADIUS_CHUNKS as i32;
         assert!((0..=view).contains(&LOADING.radius_chunks));
-        assert!(LOADING.timeout_s >= 1.0);
+        const { assert!(LOADING.timeout_s >= 1.0) };
     }
 
     #[test]
