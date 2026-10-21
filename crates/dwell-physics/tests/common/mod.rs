@@ -38,8 +38,7 @@ pub fn origin_x() -> i32 {
 pub fn face_b() -> bool {
     std::env::var("DWELL_FACE").as_deref() == Ok("b")
 }
-/// The continuous mirror (m): face B's height y is face A's `MIRROR − y`.
-pub const MIRROR: f64 = dwell_world::MIRROR_M;
+pub const MIRROR: f64 = dwell_world::FaceFrame::MIRROR; // face-boundary: the mirror harness
 
 pub fn to_world(l: Vec3) -> DVec3 {
     let y = f64::from(l.y) + ORIGIN_M;

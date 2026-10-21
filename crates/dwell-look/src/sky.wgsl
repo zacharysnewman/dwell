@@ -16,7 +16,7 @@ fn dwell_luma(c: vec3f) -> f32 {
 // gradient, the warm horizon band toward the sun, the sun's and the moon's halos. Below the viewer's
 // horizon, the horizon's colour in that azimuth (what far terrain's fog fades to).
 fn dwell_sky(dir: vec3f, face: f32, day: DaySky) -> vec3f {
-    let up = vec3f(0.0, face, 0.0);
+    let up = face_up(face);
     let above = dot(dir, up);
     var d = dir;
     if (above <= 0.0) {
@@ -168,7 +168,7 @@ fn dwell_sun_disc(dir: vec3f, up: vec3f, day: DaySky, px: f32) -> vec4f {
 // The sky behind the world: `base` (its `dwell_sky`) with the stars, the moon and the sun, cut
 // at the viewer's horizon.
 fn dwell_sky_bodies(dir: vec3f, face: f32, day: DaySky, base: vec3f) -> vec3f {
-    let up = vec3f(0.0, face, 0.0);
+    let up = face_up(face);
     let e = dot(dir, up);
     let px = max(day.stars.z, 1e-5);
     let shown = smoothstep(-px, px, e);

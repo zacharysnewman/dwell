@@ -274,7 +274,7 @@ pub fn row_face(c: LodCoord, row: i32) -> Face {
 
 /// The face-local height of the bottom voxel of a face-B row's cell: the mirror of the cell's top.
 pub const fn mirror_row_bottom(bottom: i64, cell: i64) -> i64 {
-    MIRROR_SUM as i64 + 1 - bottom - cell
+    crate::FaceFrame::B.span(bottom, cell)
 }
 
 /// Downsamples a child's 32³ interior (`child_at(x, y, z)`, each 0..31) into the octant of the

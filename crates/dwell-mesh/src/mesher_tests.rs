@@ -967,6 +967,7 @@ fn fluid_side_faces_stand_only_over_the_open_part_beside_them_and_under_the_flui
     );
 }
 
+// face-b-only: a hanging ramp is face B's (face A's upright ramps are tested above)
 #[test]
 fn a_hanging_ramp_on_face_b_faces_its_sky() {
     // A hanging ramp on face B (meshed mirrored): its slope faces down, toward face B's sky.

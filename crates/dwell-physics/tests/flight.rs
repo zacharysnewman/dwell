@@ -67,13 +67,13 @@ fn flying_around_the_outside_through_the_midplane_to_face_b() {
         DVec3::new(f64::from(world_cell_x(0)), MIDPLANE_M + 30.0, 0.0),
         0.0,
     );
-    assert_eq!(w.c(e).face, 1);
+    assert_eq!(w.c(e).face, dwell_world::FaceFrame::A);
     // Down (toward the midplane) until across, then up in the new frame (away from it). The input
     // closure can't see the world, so the face is read between ticks.
     let mut face = w.c(e).face;
     let (mut flips, mut lowest) = (0, MIDPLANE_M);
     for _ in 0..ticks(6.0) {
-        let across = w.c(e).face < 0;
+        let across = w.c(e).face.is_b();
         // Raw world input: `input_for` would mirror x, which this test doesn't use.
         w.set_input(move |_, _| fly(0.0, 0.0, false, across, !across));
         w.step(1);
@@ -86,6 +86,7 @@ fn flying_around_the_outside_through_the_midplane_to_face_b() {
     }
     assert!(flips >= 1);
     assert!(
+        // face-boundary: a crossing, measured against the midplane itself
         lowest < MIDPLANE_M - 30.0,
         "well out onto face B's side: {lowest}"
     );

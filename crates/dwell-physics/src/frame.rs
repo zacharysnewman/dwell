@@ -1,10 +1,8 @@
 //! The controller's face-local frame (BIFACIAL_WORLD.md §6, PLAYER_CONTROLLER.md §11). Down is
 //! always toward the midplane, so a face-B player stands upside down. The controller is written for
-//! an upright player; for face B it runs in the *mirror image* of the world — heights y → −4,096 − y
-//! (voxel rows y → −4,097 − y), vertical velocities and normals negated, shaped blocks turned over.
-//! On face A the maps are the identity, so face A plays exactly as before. Both maps are
-//! involutions.
-
+//! an upright player; for face B it runs in the *mirror image* of the world — heights mirrored in
+//! the midplane, vertical velocities and normals negated, shaped blocks turned over. On face A the
+//! maps are the identity, so face A plays exactly as before. Both maps are involutions.
 //!
 //! It is the physics view of `dwell_world::FaceFrame` (BIFACIAL_WORLD.md §11): every map here goes
 //! through it.
@@ -15,22 +13,19 @@ use dwell_world::FaceFrame;
 use crate::physics::{BodyHandle, DVec3, Vec3};
 use crate::query::{Capsule, ProbeHit, VoxelQuery};
 
+/// A player's face frame in the physics' vector types.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Frame {
-    /// +1 face A, −1 face B.
-    pub face: i8,
+    pub face: FaceFrame,
 }
 
 impl Frame {
-    /// The continuous mirror: heights sum to this (voxel rows to one less).
-    pub const MIRROR: f64 = FaceFrame::MIRROR;
-
     /// The world's face frame for this face.
     pub fn face_frame(self) -> FaceFrame {
-        if self.b() { FaceFrame::B } else { FaceFrame::A }
+        self.face
     }
     pub fn b(self) -> bool {
-        self.face < 0
+        self.face.is_b()
     }
     pub fn y(self, y: f64) -> f64 {
         self.face_frame().y(y)
@@ -50,7 +45,7 @@ impl Frame {
     }
     /// The unit vector the player's head points along, in the world.
     pub fn world_up(self) -> Vec3 {
-        Vec3::new(0.0, f32::from(self.face), 0.0)
+        Vec3::new(0.0, self.face.sign_f32(), 0.0)
     }
 }
 

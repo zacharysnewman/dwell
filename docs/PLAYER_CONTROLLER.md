@@ -128,7 +128,7 @@ pub struct PlayerController {
     pub sprint_slide: SprintSlideState,
     pub platform: PlatformState,
     pub target_velocity: Vec3,
-    pub face: i8,          // +1 face A, −1 face B (§11)
+    pub face: FaceFrame,   // the face frame (§11, BIFACIAL_WORLD.md §11)
     pub events: u32,       // events:: bits raised this tick (JUMPED, LANDED, CROUCH_CHANGED,
     pub landed_speed: f32, //   CLIMB/SWIM/FLY/SPRINT_SLIDE_STARTED/ENDED); LANDED's impact speed
 }

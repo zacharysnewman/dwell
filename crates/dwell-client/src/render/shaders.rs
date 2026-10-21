@@ -145,25 +145,26 @@ const DRAWS: &str = r"
 const COMMON: &str = r"
 const PI: f32 = 3.141592653589793;
 
-fn own(light_up: f32, frag_on_a: bool) -> f32 {
-    let face_up = select(-1.0, 1.0, frag_on_a);
-    return smoothstep(-0.1, 0.1, light_up * face_up);
+// A light's weight on `face` (its frame's sign, `face_at`): its height over that face's horizon,
+// smoothly (dwell_look::light_weight).
+fn own(light: vec3f, face: f32) -> f32 {
+    return smoothstep(-0.1, 0.1, face_rise(face, light));
 }
 
 // three's Lambert: (direct + hemisphere irradiance) × albedo / π, with the lights of the fragment's
 // own face (BIFACIAL_WORLD.md §6): its time of day's sun, moon and sky, each direct light weighted
 // by its height over that face's horizon.
 fn lambert(albedo: vec3f, n: vec3f, frag_y: f32) -> vec3f {
-    let on_a = frag_y >= MIDPLANE_Y;
+    let face = face_at(frag_y);
+    let on_a = face > 0.0;
     let d = frame.day;
-    let face_up = select(-1.0, 1.0, on_a);
     let sun = select(d.sun_b.rgb, d.sun_a.rgb, on_a);
     let moon = select(d.moon_b.rgb, d.moon_a.rgb, on_a);
     let hemi_sky = select(d.sky_b.rgb, d.sky_a.rgb, on_a);
     let hemi_ground = select(d.ground_b.rgb, d.ground_a.rgb, on_a);
-    var irradiance = max(dot(n, d.sun.xyz), 0.0) * sun * own(d.sun.y, on_a);
-    irradiance += max(dot(n, d.moon.xyz), 0.0) * moon * own(d.moon.y, on_a);
-    irradiance += mix(hemi_ground, hemi_sky, n.y * face_up * 0.5 + 0.5);
+    var irradiance = max(dot(n, d.sun.xyz), 0.0) * sun * own(d.sun.xyz, face);
+    irradiance += max(dot(n, d.moon.xyz), 0.0) * moon * own(d.moon.xyz, face);
+    irradiance += mix(hemi_ground, hemi_sky, face_rise(face, n) * 0.5 + 0.5);
     return irradiance * albedo / PI;
 }
 
@@ -251,7 +252,7 @@ fn schlick(cos: f32, f0: f32) -> f32 {
 // lit as the face's up is.
 fn underwater(lin: vec3f, dist: f32, f: Fluid) -> vec3f {
     let t = exp(-(f.absorption.rgb + f.extra.w) * dist);
-    let inscatter = lambert(f.scatter.rgb, vec3f(0.0, frame.eye.y, 0.0), frame.eye.x);
+    let inscatter = lambert(f.scatter.rgb, face_up(frame.eye.y), frame.eye.x);
     return lin * t + inscatter * (1.0 - t);
 }
 
@@ -264,8 +265,8 @@ fn fog_amount(rel: vec3f) -> f32 {
     }
     let face = frame.eye.y;
     let dist = length(rel);
-    let rise = face * rel.y;
-    let cam = select(2.0 * MIDPLANE_Y - frame.eye.x, frame.eye.x, face > 0.0);
+    let rise = face_rise(face, rel);
+    let cam = face_y(face, frame.eye.x);
     let low = min(cam, cam + rise) - SEA_LEVEL;
     let h = frame.fog.y;
     let k = abs(rise) / h;
@@ -420,8 +421,8 @@ fn sway(rel: vec3f, plant: vec4f) -> vec3f {
     let flutter = sin(2.7 * t + dot(p, vec2f(0.73, 0.41))) * 0.25;
     let dir = normalize(vec2f(1.0, 0.35));
     let lean = amount * (0.25 + g + flutter * (0.4 + g));
-    // Swaying shortens the plant a little, as a bent blade does.
-    return rel + vec3f(dir.x * lean, -0.4 * lean * lean / max(plant.x, 1e-3), dir.y * lean);
+    // Swaying shortens the plant a little, as a bent blade does (toward its own ground).
+    return rel + vec3f(dir.x * lean, 0.0, dir.y * lean) + sway_drop(frame.eye.x + rel.y, lean, plant.x);
 }
 
 @vertex
@@ -658,7 +659,7 @@ fn depth_of(d: array<f32, SAMPLE_SLOTS>) -> vec2f {
 fn cloud_lighting() -> CloudLighting {
     let d = frame.day;
     let pole = d.sun.xyz;
-    let on_a = frame.eye.x >= MIDPLANE_Y;
+    let on_a = face_at(frame.eye.x) > 0.0;
     let sky = select(d.sky_b.rgb, d.sky_a.rgb, on_a);
     return CloudLighting(pole, d.sun.xyz, d.moon.xyz, select(d.sun_b.rgb, d.sun_a.rgb, on_a), select(d.moon_b.rgb, d.moon_a.rgb, on_a), sky, sky);
 }
@@ -801,8 +802,8 @@ fn composite_underwater(p: vec2i, ray: vec3f, c: vec4f) -> vec3f {
     let fluid = min(u32(frame.water.y), arrayLength(&fluids) - 1u);
     let f = fluids[fluid];
     let dir = normalize(ray);
-    let rise = dir.y * frame.eye.y;
-    let below = max((frame.water.z - frame.eye.x) * frame.eye.y, 0.0);
+    let rise = face_rise(frame.eye.y, dir);
+    let below = max(face_y(frame.eye.y, frame.water.z) - face_y(frame.eye.y, frame.eye.x), 0.0);
     let to_surface = select(1e6, below / rise, rise > 1e-4);
     let back = display(underwater(sky_radiance(dir), to_surface, f));
     if (c.a <= 0.0) {
@@ -815,7 +816,7 @@ fn composite_underwater(p: vec2i, ray: vec3f, c: vec4f) -> vec3f {
     // anything opaque, before the fog takes its share over the distance to it.
     if (frame.water.w >= 0.5 && depth > 0.0 && !water_off(DBG_UNDER)) {
         let rel = ray * depth;
-        let under = (frame.water.z - (frame.eye.x + rel.y)) * frame.eye.y;
+        let under = face_y(frame.eye.y, frame.water.z) - face_y(frame.eye.y, frame.eye.x + rel.y);
         // Lit by light that came down through the fluid, focused into caustics.
         lit *= exp(-f.absorption.rgb * max(under, 0.0))
             * caustic_light(frame.wrap.xy + rel.xz, under, frame.eye.x + rel.y, pixel_m(p, ray, depth), UNDERWATER_CAUSTICS, f, fluid);
@@ -1091,8 +1092,8 @@ fn ink_outline(p: vec2i, ray: vec3f) -> vec2f {
 // sea is the one water whose surface the composite knows (SEA_LEVEL on the viewer's face).
 fn ink_above_sea(rel: vec3f) -> f32 {
     let face = frame.eye.y;
-    let cam = select(2.0 * MIDPLANE_Y - frame.eye.x, frame.eye.x, face > 0.0);
-    let h = cam + face * rel.y - SEA_LEVEL;
+    let cam = face_y(face, frame.eye.x);
+    let h = cam + face_rise(face, rel) - SEA_LEVEL;
     return select(1.0, smoothstep(-0.3, -0.05, h), cam > SEA_LEVEL);
 }
 
@@ -1260,7 +1261,7 @@ struct Surface {
     w: vec3f,
     v: vec3f,
     ndv: f32,
-    // The face's up (±1) and the fragment's world y.
+    // The fragment's face (its frame's sign, `face_at`) and world y.
     up: f32,
     frag_y: f32,
     on_a: bool,
@@ -1274,20 +1275,20 @@ fn water_surface(i: FluidOut, front: bool, footprint: f32, f: Fluid, draw: Draw)
     // The face's normal toward the eye's side (outward from outside, inward from inside).
     let seen = select(-face_n, face_n, front);
     s.frag_y = frame.eye.x + i.rel.y;
-    s.on_a = s.frag_y >= MIDPLANE_Y;
-    s.up = select(-1.0, 1.0, s.on_a);
+    s.up = face_at(s.frag_y);
+    s.on_a = s.up > 0.0;
     // Ripples on the surface (tops and bottoms; sides stay flat), toward the side seen: on face B
     // the mirrored surface's normal points down, and so does the rippled one.
     s.w = vec3f(0.0);
     s.n = seen;
     if (abs(face_n.y) > 0.5) {
         s.w = water_slope(i.wrapped, f, footprint, select(WAVE_LAYERS, 1, frame.water.w < 0.5));
-        s.n = sign(seen.y) * normalize(vec3f(-s.w.x, 1.0, -s.w.y));
+        s.n = ripple_normal(s.up, seen, s.w.xy);
         // A ripple can't face away from the eye: bend it back.
         s.n = normalize(s.n + max(0.02 - dot(s.n, s.v), 0.0) * s.v);
     }
     s.ndv = clamp(dot(s.n, s.v), 1e-3, 1.0);
-    s.body = lambert(f.scatter.rgb * draw.tint.rgb, vec3f(0.0, s.up, 0.0), s.frag_y);
+    s.body = lambert(f.scatter.rgb * draw.tint.rgb, face_up(s.up), s.frag_y);
     return s;
 }
 
@@ -1309,8 +1310,8 @@ fn surface_light(i: FluidOut, s: Surface, f: Fluid, fres: f32, footprint: f32, r
     let d = frame.day;
     var glint = vec3f(0.0);
     if (!water_off(DBG_GLINT)) {
-        glint = ggx_glint(s.n, s.v, d.sun.xyz, a, f0) * select(d.sun_b.rgb, d.sun_a.rgb, s.on_a) * own(d.sun.y, s.on_a)
-            + ggx_glint(s.n, s.v, d.moon.xyz, a, f0) * select(d.moon_b.rgb, d.moon_a.rgb, s.on_a) * own(d.moon.y, s.on_a);
+        glint = ggx_glint(s.n, s.v, d.sun.xyz, a, f0) * select(d.sun_b.rgb, d.sun_a.rgb, s.on_a) * own(d.sun.xyz, s.up)
+            + ggx_glint(s.n, s.v, d.moon.xyz, a, f0) * select(d.moon_b.rgb, d.moon_a.rgb, s.on_a) * own(d.moon.xyz, s.up);
     }
     var reflected = refl.rgb;
     if (water_off(DBG_SKY)) {
@@ -1335,7 +1336,7 @@ fn reflected_env(r: vec3f, rel: vec3f, fw: f32) -> vec3f {
         let face = frame.eye.y;
         // The deck seen from the surface point, not the eye: its height above it, and the noise
         // point under it.
-        let height = frame.cloud_cfg.w - rel.y * face;
+        let height = frame.cloud_cfg.w - face_rise(face, rel);
         let offsets = vec4f(frame.clouds.xy + rel.xz / CLOUD_SCALE, frame.clouds.zw);
         let deck = dwell_cloud_deck(r, face, offsets, height);
         let cfg = vec4f(frame.cloud_cfg.x, octaves, frame.reflect_sky.y, height);
@@ -1350,10 +1351,10 @@ fn reflected_deck_fw(rel: vec3f) -> f32 {
     if (frame.reflect_sky.x < 0.5 || water_off(DBG_CLOUDS)) {
         return 0.0;
     }
-    let up = select(-1.0, 1.0, frame.eye.x + rel.y >= MIDPLANE_Y);
+    let up = face_at(frame.eye.x + rel.y);
     let d = normalize(rel);
     let r = vec3f(d.x, abs(d.y) * up, d.z);
-    let height = frame.cloud_cfg.w - rel.y * frame.eye.y;
+    let height = frame.cloud_cfg.w - face_rise(frame.eye.y, rel);
     let deck = dwell_cloud_deck(r, frame.eye.y, vec4f(frame.clouds.xy + rel.xz / CLOUD_SCALE, frame.clouds.zw), height);
     return max(fwidth(deck.x), fwidth(deck.y));
 }
@@ -1485,11 +1486,11 @@ fn sparkle(i: FluidOut, s: Surface, f: Fluid, footprint: f32) -> vec3f {
     let shift = vec2f(0.6, 0.8) * (frame.fog.z * f.wave.w * 3.1 / cell);
     let q = mat2x2f(2.0, -1.0, 1.0, 2.0) * (i.wrapped / cell) + (shift - n_cells * floor(shift / n_cells));
     let d = noise_t(q);
-    let n = normalize(s.n + vec3f(-d.y, 0.0, -d.z) * 0.35 * sign(s.n.y));
+    let n = sparkle_normal(s.up, s.n, d.yz);
     let r = reflect(-s.v, n);
     let day = frame.day;
     let lobe = pow(max(dot(r, day.sun.xyz), 0.0), SPARKLE_POWER);
-    return select(day.sun_b.rgb, day.sun_a.rgb, s.on_a) * own(day.sun.y, s.on_a) * (k * fade * lobe * schlick(s.ndv, f.extra.x));
+    return select(day.sun_b.rgb, day.sun_a.rgb, s.on_a) * own(day.sun.xyz, s.up) * (k * fade * lobe * schlick(s.ndv, f.extra.x));
 }
 
 const SPARKLE_WAVELENGTH: f32 = 0.06;
@@ -1683,9 +1684,9 @@ fn caustic_light(xz: vec2f, under: f32, frag_y: f32, footprint: f32, boost: f32,
     if (under <= 0.0 || f.extra.y <= 0.0 || sharp <= 0.0) {
         return 1.0;
     }
-    let up = select(-1.0, 1.0, frag_y >= MIDPLANE_Y);
-    let sun_k = smoothstep(0.0, 0.25, frame.day.sun.y * up);
-    let moon_k = smoothstep(0.0, 0.25, frame.day.moon.y * up) * MOON_CAUSTICS;
+    let up = face_at(frag_y);
+    let sun_k = smoothstep(0.0, 0.25, face_rise(up, frame.day.sun.xyz));
+    let moon_k = smoothstep(0.0, 0.25, face_rise(up, frame.day.moon.xyz)) * MOON_CAUSTICS;
     let k = max(sun_k, moon_k);
     if (k <= 0.0) {
         return 1.0;
@@ -1879,8 +1880,9 @@ pub fn source(samples: u32) -> String {
 /// entry points.
 pub fn lighting_source() -> String {
     format!(
-        "const MIDPLANE_Y: f32 = {:.1};\nconst SEA_LEVEL: f32 = {:.1};\nconst ATLAS_CELLS: u32 = {}u;\nconst ATLAS_TILES: u32 = {}u;\n{}\n{}\n{}\n{FRAME}\n{}\n{}\n{FRAME_DEPTH}\n{COMMON}\n",
-        world::MIDPLANE_M,
+        "{}{}const SEA_LEVEL: f32 = {:.1};\nconst ATLAS_CELLS: u32 = {}u;\nconst ATLAS_TILES: u32 = {}u;\n{}\n{}\n{}\n{FRAME}\n{}\n{}\n{FRAME_DEPTH}\n{COMMON}\n",
+        dwell_world::FaceFrame::wgsl(),
+        super::face_shading::WGSL,
         world::SEA_LEVEL_M,
         dwell_mesh::ATLAS_CELLS,
         dwell_mesh::ATLAS_TILES,

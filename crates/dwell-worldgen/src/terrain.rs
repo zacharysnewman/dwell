@@ -44,6 +44,7 @@ use crate::ramps::Top;
 const FACE_MIN_Y: i32 = MIDPLANE_Y;
 pub const FACE_MAX_Y: i32 = BUILD_VOLUME.y_range().1 as i32;
 const _: () = assert!(
+    // face-boundary: the build volume is the frame's own mirror image
     BUILD_VOLUME.y_range().0 + BUILD_VOLUME.y_range().1 == 2 * MIDPLANE_Y as i64,
     "the build volume is symmetric about the midplane"
 );

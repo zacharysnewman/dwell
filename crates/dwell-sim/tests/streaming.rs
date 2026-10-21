@@ -16,7 +16,7 @@ use dwell_sim::server::ServerConfig;
 use dwell_sim::worldgen_pool::WorldgenPool;
 use dwell_world::{
     CHUNK_SIZE, Chunk, ChunkCoord, FLAT_TOP_M, GENERATOR_FLAT, GENERATOR_TERRAIN, M, MAX_CHUNK_Y,
-    MIDPLANE_Y, MIN_CHUNK_Y, WORLD_RADIUS, chunk_hash,
+    MIN_CHUNK_Y, WORLD_RADIUS, chunk_hash,
 };
 use dwell_worldgen::{TerrainGenerator, air_test_for, generator_for};
 
@@ -359,13 +359,13 @@ fn world_rim_walking_off_the_edge_of_the_disc_falls_toward_the_midplane_not_into
             let p = players.position(physics, h);
             last_x = p.x;
             lowest = lowest.min(p.y);
-            crossed = crossed || players.controller(h).face < 0;
+            crossed = crossed || players.controller(h).face.is_b();
         }
     }
     assert!(f.server.health_of(welcome.player_id) > 0); // not killed: no void
     assert!(last_x > f64::from(WORLD_RADIUS), "{last_x}"); // it went over the edge …
     assert!(crossed); // … and fell through the midplane
-    assert!(lowest < f64::from(MIDPLANE_Y), "{lowest}");
+    assert!(lowest < dwell_world::MIDPLANE_M, "{lowest}");
 }
 
 #[test]

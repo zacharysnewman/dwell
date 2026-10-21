@@ -14,6 +14,7 @@
 
 use crate::Rgb;
 use crate::daynight::DAY_NIGHT;
+use dwell_world::FaceFrame;
 
 /// How far (in the sine of the sun's height) the clouds' twilight reaches either side of the
 /// horizon.
@@ -177,13 +178,8 @@ pub fn cloud_in_front(t: f64, ray_len: f64, scene_depth: f64) -> bool {
 }
 
 /// The deck's height above the eye: the eye's height above sea level on its own face.
-pub fn deck_height(t: &CloudTunables, eye_y: f64, face: f64) -> f64 {
-    let local = if face > 0.0 {
-        eye_y
-    } else {
-        2.0 * crate::MIDPLANE_Y - eye_y
-    };
-    t.deck.altitude_m - (local - dwell_protocol::world::SEA_LEVEL_M)
+pub fn deck_height(t: &CloudTunables, eye_y: f64, face: FaceFrame) -> f64 {
+    t.deck.altitude_m - (face.y(eye_y) - dwell_protocol::world::SEA_LEVEL_M)
 }
 
 fn heading(deg: f64) -> [f64; 2] {
@@ -201,7 +197,7 @@ fn heading(deg: f64) -> [f64; 2] {
 pub fn cloud_uniforms(
     t: &CloudTunables,
     eye: [f64; 3],
-    face: f64,
+    face: FaceFrame,
     seconds: f64,
     quality: CloudQuality,
     coverage: f64,
@@ -209,7 +205,7 @@ pub fn cloud_uniforms(
     let wrap = t.shape.wrap_m;
     let [wx, wz] = heading(t.wind.direction_deg).map(|c| c * t.wind.speed_mps * seconds);
     let [ex, ez] = heading(t.wind.evolve_direction_deg).map(|c| c * t.wind.evolve_mps * seconds);
-    let side = if face < 0.0 { wrap / 2.0 } else { 0.0 };
+    let side = if face.is_b() { wrap / 2.0 } else { 0.0 };
     let cells = |m: f64| m.rem_euclid(wrap) / t.shape.scale_m;
     let under = [cells(eye[0] - wx + side), cells(eye[2] - wz + side)];
     let warp = [cells(wx - ex), cells(wz - ez)];
@@ -467,7 +463,7 @@ fn dwell_cloud_fade(height: f32) -> vec2f {
 // show above the horizon; from above, rays down past the deck's horizon meet its top, faded where
 // they graze it.
 fn dwell_cloud_deck(dir: vec3f, face: f32, offsets: vec4f, height: f32) -> vec4f {
-	let above = dir.y * face;
+	let above = face_rise(face, dir);
 	let e = CLOUD_CURVATURE + CLOUD_ALTITUDE - height;
 	let k = -height * (2.0 * (CLOUD_CURVATURE + CLOUD_ALTITUDE) - height);
 	let ey = e * above;
@@ -557,7 +553,7 @@ fn dwell_cloud_layer(clear: vec3f, dir: vec3f, face: f32, deck: vec4f, fw: f32, 
 	if (d <= 0.0) {
 		return vec4f(0.0);
 	}
-	let up = vec3f(0.0, face, 0.0);
+	let up = face_up(face);
 	// The light: the sun or the moon, whichever is above this face.
 	let sun_up = dot(sun, up);
 	let light = select(moon, sun, sun_up >= dot(moon, up));
@@ -601,7 +597,7 @@ fn dwell_cloud_fog(color: vec3f, amount: f32, face: f32, lights: CloudLighting) 
 	if (amount <= 0.0) {
 		return color;
 	}
-	let up = vec3f(0.0, face, 0.0);
+	let up = face_up(face);
 	let dayness = smoothstep(-CLOUD_TWILIGHT, CLOUD_TWILIGHT, dot(up, lights.day_pole));
 	let day = mix(CLOUD_SHADE * mix(vec3f(1.0), cloud_hue(lights.day_ambient), 0.5), CLOUD_SUNLIT * cloud_hue(lights.sun_color), 0.6);
 	let night = mix(CLOUD_NIGHT_SHADE * mix(vec3f(1.0), cloud_hue(lights.night_ambient), 0.5), CLOUD_NIGHT_LIT * cloud_hue(lights.moon_color), 0.6);
@@ -614,7 +610,8 @@ mod tests {
     use super::*;
 
     fn validate(src: &str) {
-        let module = naga::front::wgsl::parse_str(src).expect("WGSL parses");
+        let src = format!("{}{src}", dwell_world::FaceFrame::wgsl());
+        let module = naga::front::wgsl::parse_str(&src).expect("WGSL parses");
         naga::valid::Validator::new(
             naga::valid::ValidationFlags::all(),
             naga::valid::Capabilities::empty(),
@@ -727,10 +724,20 @@ mod tests {
         let x = (0..200)
             .map(|i| f64::from(i) * 97.0)
             .find(|&x| {
-                cloud_uniforms(&t, [x, deck, 0.0], 1.0, 0.0, CloudQuality::High, 1.0)[2][0] > 0.3
+                cloud_uniforms(
+                    &t,
+                    [x, deck, 0.0],
+                    FaceFrame::A,
+                    0.0,
+                    CloudQuality::High,
+                    1.0,
+                )[2][0]
+                    > 0.3
             })
             .expect("a cloud");
-        let at = |y: f64| cloud_uniforms(&t, [x, y, 0.0], 1.0, 0.0, CloudQuality::High, 1.0)[2][0];
+        let at = |y: f64| {
+            cloud_uniforms(&t, [x, y, 0.0], FaceFrame::A, 0.0, CloudQuality::High, 1.0)[2][0]
+        };
         let full = (t.deck.inside_fog * t.shape.opacity) as f32;
         assert!(at(deck) > 0.0 && at(deck) <= full + 1e-6, "{}", at(deck));
         assert!((at(deck - 100.0) - at(deck + 100.0)).abs() < 0.05);
@@ -738,7 +745,14 @@ mod tests {
         assert_eq!(at(deck - t.deck.cross_fade_m - 1.0), 0.0);
         assert_eq!(at(deck + t.deck.cross_fade_m + 1.0), 0.0);
         assert_eq!(
-            cloud_uniforms(&t, [0.0, deck, 0.0], 1.0, 0.0, CloudQuality::Off, 1.0)[2][0],
+            cloud_uniforms(
+                &t,
+                [0.0, deck, 0.0],
+                FaceFrame::A,
+                0.0,
+                CloudQuality::Off,
+                1.0
+            )[2][0],
             0.0
         );
     }
@@ -782,19 +796,16 @@ mod tests {
         assert!(src.contains("return depth <= 0.0 || t / ray_len < depth;"));
     }
 
-    #[test]
-    fn the_deck_is_over_each_faces_own_sea_level() {
-        let alt = CLOUDS.deck.altitude_m;
-        let sea = dwell_protocol::world::SEA_LEVEL_M;
-        assert_eq!(deck_height(&CLOUDS, sea, 1.0), alt);
-        assert_eq!(deck_height(&CLOUDS, sea + 300.0, 1.0), alt - 300.0);
-        // Face B: the eye 300 m below its sea level's mirror is 300 m up on its own face.
-        let mirror = 2.0 * crate::MIDPLANE_Y;
-        assert_eq!(
-            deck_height(&CLOUDS, mirror - sea - 300.0, -1.0),
-            alt - 300.0
-        );
-    }
+    dwell_world::both_faces!(
+        /// The deck is over each face's own sea level: an eye 300 m over face `f`'s sea (face-local)
+        /// is 300 m nearer its deck.
+        fn the_deck_is_over_each_faces_own_sea_level(f: FaceFrame) {
+            let alt = CLOUDS.deck.altitude_m;
+            let sea = dwell_protocol::world::SEA_LEVEL_M;
+            assert_eq!(deck_height(&CLOUDS, f.y(sea), f), alt);
+            assert_eq!(deck_height(&CLOUDS, f.y(sea + 300.0), f), alt - 300.0);
+        }
+    );
 
     #[test]
     fn the_noise_repeats_seamlessly_every_wrap() {
@@ -862,13 +873,20 @@ mod tests {
         // The uniforms follow the data's coverage and octaves.
         let mut t = CLOUDS;
         t.shape.octaves = 7;
-        let u = cloud_uniforms(&t, [0.0; 3], 1.0, 0.0, CloudQuality::High, t.shape.coverage);
+        let u = cloud_uniforms(
+            &t,
+            [0.0; 3],
+            FaceFrame::A,
+            0.0,
+            CloudQuality::High,
+            t.shape.coverage,
+        );
         assert_eq!(u[1][1], 7.0);
     }
 
     #[test]
     fn the_quality_setting_sets_octaves_and_the_self_shadow() {
-        let u = |q| cloud_uniforms(&CLOUDS, [0.0; 3], 1.0, 0.0, q, 0.4)[1];
+        let u = |q| cloud_uniforms(&CLOUDS, [0.0; 3], FaceFrame::A, 0.0, q, 0.4)[1];
         assert_eq!(u(CloudQuality::Off)[1], 0.0);
         assert_eq!(u(CloudQuality::Low)[1], CLOUDS.shape.low_octaves as f32);
         assert_eq!(u(CloudQuality::High)[1], CLOUDS.shape.octaves as f32);
@@ -891,14 +909,14 @@ mod tests {
         let n = period(&CLOUDS) as f32;
         let far = [7.9e6, 1200.0, -6.3e6];
         for seconds in [0.0, 1e3, 7e7] {
-            let u = cloud_uniforms(&CLOUDS, far, 1.0, seconds, CloudQuality::High, 0.5)[0];
+            let u = cloud_uniforms(&CLOUDS, far, FaceFrame::A, seconds, CloudQuality::High, 0.5)[0];
             assert!(u.iter().all(|&c| (0.0..=n).contains(&c)), "{u:?}");
         }
         // Moving the eye by a metre moves the noise point under it by a metre (in cells).
         let a = cloud_uniforms(
             &CLOUDS,
             [100.0, 0.0, 100.0],
-            1.0,
+            FaceFrame::A,
             0.0,
             CloudQuality::High,
             0.5,
@@ -906,7 +924,7 @@ mod tests {
         let b = cloud_uniforms(
             &CLOUDS,
             [101.0, 0.0, 100.0],
-            1.0,
+            FaceFrame::A,
             0.0,
             CloudQuality::High,
             0.5,
@@ -917,7 +935,7 @@ mod tests {
         let c = cloud_uniforms(
             &CLOUDS,
             [100.0, 0.0, 100.0],
-            1.0,
+            FaceFrame::A,
             1.0,
             CloudQuality::High,
             0.5,
@@ -928,7 +946,7 @@ mod tests {
         let d = cloud_uniforms(
             &CLOUDS,
             [100.0, -5000.0, 100.0],
-            -1.0,
+            FaceFrame::B,
             0.0,
             CloudQuality::High,
             0.5,

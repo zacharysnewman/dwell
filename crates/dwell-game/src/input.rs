@@ -8,6 +8,7 @@ use std::collections::HashSet;
 
 use dwell_physics::controller::Input;
 use dwell_protocol::InputFrame;
+use dwell_world::FaceFrame;
 
 pub use dwell_physics::net::{dequantize_pitch, dequantize_yaw, quantize_pitch, quantize_yaw};
 
@@ -116,9 +117,9 @@ pub struct KeyDown {
 pub struct Look {
     pub yaw: f64,
     pub pitch: f64,
-    /// +1 on face A; −1 on face B, where the player is upside down and turning right is turning the
-    /// other way round in the world (BIFACIAL_WORLD.md §6): the heading's sign is the face's.
-    pub turn_sign: f64,
+    /// The face the player is on: on face B the player is upside down and turning right is turning
+    /// the other way round in the world (BIFACIAL_WORLD.md §6, [`FaceFrame::handed`]).
+    pub face: FaceFrame,
 }
 
 impl Default for Look {
@@ -126,7 +127,7 @@ impl Default for Look {
         Self {
             yaw: 0.0,
             pitch: 0.0,
-            turn_sign: 1.0,
+            face: FaceFrame::A,
         }
     }
 }
@@ -303,7 +304,7 @@ impl KeyboardMouseInput {
         // Right-handed, Y up: facing +Z (yaw 0), right is −X, so turning right decreases yaw (and on
         // face B, with the head down, increases it).
         self.look.yaw =
-            wrap_degrees(self.look.yaw - self.look.turn_sign * movement_x * self.sensitivity);
+            wrap_degrees(self.look.yaw - self.look.face.handed(movement_x * self.sensitivity));
         self.look.pitch = (self.look.pitch - movement_y * self.sensitivity).clamp(-89.0, 89.0);
     }
 }
@@ -559,7 +560,7 @@ mod tests {
         input.mouse_move(100.0, -1000.0);
         assert!((input.look.yaw - 348.0).abs() < 1e-9); // turning right decreases yaw
         assert_eq!(input.look.pitch, 89.0);
-        input.look.turn_sign = -1.0;
+        input.look.face = FaceFrame::B;
         input.mouse_move(100.0, 0.0);
         assert!(input.look.yaw.abs() < 1e-9);
         assert_eq!(input.mouse_down(0), Some(EditAction::Break));

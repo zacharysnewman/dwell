@@ -36,7 +36,9 @@ fn coast_squares(g: &TerrainGenerator) -> Vec<(i32, i32)> {
         let a = f64::from(ray * 30).to_radians();
         let at = |r: f64| ((r * a.cos()) as i32, (r * a.sin()) as i32);
         let mut r = 12_000.0;
-        while g.column_at(at(r).0, at(r).1).height >= SEA_LEVEL as f32 && r < 40_000.0 {
+        while g.column_at(at(r).0, at(r).1).height >= dwell_world::SEA_LEVEL_M as f32
+            && r < 40_000.0
+        {
             r += 16.0;
         }
         for back in [300.0, 600.0, 900.0] {
@@ -144,7 +146,7 @@ fn no_pine_on_sand_water_slides_or_bare_peaks_in_the_chunks() {
         let rule = g.planters()[0].rule();
         // Inland and at the coast on the +x axis.
         let mut coast = 0;
-        while g.column_at(coast, 0).height >= SEA_LEVEL as f32 {
+        while g.column_at(coast, 0).height >= dwell_world::SEA_LEVEL_M as f32 {
             coast += 16;
         }
         for (cx0, cz0) in [(3, -2), (floor_div(coast, S) - 2, -1), (-40, 25)] {

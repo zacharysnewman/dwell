@@ -1033,7 +1033,14 @@ player on face B stands upside down in the world.
   (`DWELL_FACE=a|b` narrows it), and the parity suites compare whole systems across the faces over
   the **mirror world** (`BifacialTerrain::mirrored`, a test tool whose face B is face A's mirror
   image): generation, the chunk mesher, the LOD's selection and meshes, targeting, every brush
-  preset, copy and paste; the controller keeps its whole-suite mirror run. The dev link `?spawn=b`
+  preset, copy and paste; the controller keeps its whole-suite mirror run. No system carries a face
+  sign of its own: the netcode reads and writes the wire's face bit in one place
+  (`dwell-physics` `net.rs` `face_of_flags` / `face_bit`) and carries a `FaceFrame` everywhere else;
+  the eye, camera, look, sounds, bodies, sky and clouds take a `FaceFrame`; the shaders go through
+  its WGSL form (`FaceFrame::wgsl()`), with their face-dependent pieces in
+  `dwell-client` `render/face_shading.rs` (Rust twins tested on both faces). The **both-faces check**
+  (`dwell-world` `tests/both_faces.rs`, §11.2) scans the face-sensitive crates and fails on hand
+  mirroring outside the frame and on plain tests that name a face without running on both. The dev link `?spawn=b`
   (and a bench scenario's `"face": "b"`) starts a local world on face B's spawn
   (`spawn_point_b`, its own world file `…-faceb`); real worlds spawn on face A.
 - **Generation.** `dwell_worldgen::BifacialTerrain` (`bifacial.rs`) holds two `TerrainGenerator`s working

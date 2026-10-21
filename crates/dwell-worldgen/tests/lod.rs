@@ -647,7 +647,7 @@ both_faces!(
         for level in 1..=6 {
             let c = section_at(level, s[0] as i64, s[1] as i64 - 1, s[2] as i64);
             let size = section_size(level);
-            let mirror_y = i64::from(FaceFrame::MIRROR as i32) - section_origin(c).y - size;
+            let mirror_y = FaceFrame::B.span(section_origin(c).y, size);
             let cb = if f.is_b() {
                 section_at(level, s[0] as i64, mirror_y, s[2] as i64)
             } else {

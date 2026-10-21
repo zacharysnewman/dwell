@@ -8,7 +8,7 @@ mod common;
 use common::*;
 use dwell_physics::controller::events as ev;
 use dwell_physics::{DVec3, Vec3};
-use dwell_world::MIDPLANE_M;
+use dwell_world::{FaceFrame, MIDPLANE_M};
 
 /// A player on face B hangs under a slab whose lower face is at y = −4,098.
 const SLAB_BOTTOM: i32 = -4098;
@@ -47,7 +47,7 @@ fn a_face_b_player_stands_upside_down_under_the_ground() {
     let mut w = PlayerTestWorld::world_frame();
     build_slab(&mut w);
     let h = w.spawn_at(DVec3::new(0.5, f64::from(SLAB_BOTTOM), 0.5), 0.0);
-    assert_eq!(w.c(h).face, -1);
+    assert_eq!(w.c(h).face, FaceFrame::B);
     w.step(60);
     assert!(w.c(h).ground.grounded);
     assert_eq!(w.c(h).state, State::Idle);
@@ -73,7 +73,7 @@ fn a_face_b_player_falls_toward_the_midplane_and_lands_on_a_floor_above() {
     }
     let y0 = -3000.0 - 20.0;
     let h = w.spawn_at(DVec3::new(0.5, y0, 0.5), 0.0);
-    assert_eq!(w.c(h).face, -1);
+    assert_eq!(w.c(h).face, FaceFrame::B);
     for _ in 0..240 {
         if w.c(h).ground.grounded {
             break;
@@ -147,7 +147,7 @@ fn the_flip_band_accelerates_a_body_falling_down_a_shaft_across_the_midplane() {
         let mut w = PlayerTestWorld::world_frame();
         build_shaft(&mut w);
         let h = w.spawn_at(DVec3::new(0.5, MID + side * 20.0, 0.5), 0.0);
-        assert_eq!(w.c(h).face, if side > 0.0 { 1 } else { -1 });
+        assert_eq!(w.c(h).face, FaceFrame::of_sign(side));
         let (mut flips, mut face, mut fastest_in_band) = (0, w.c(h).face, 0.0f64);
         for _ in 0..60 * 4 {
             w.step(1);
@@ -173,10 +173,10 @@ fn crossing_the_midplane_by_swimming_switches_the_face() {
     let h = w.spawn_at(DVec3::new(0.5, MID + 6.0, 0.5), 0.0);
     // Press down (crouch: toward the midplane) until across it; on the far side "down" points
     // back, so the player presses up (jump) to go on — away from the midplane.
-    assert_eq!(w.c(h).face, 1);
+    assert_eq!(w.c(h).face, FaceFrame::A);
     let (mut flips, mut face, mut lowest) = (0, w.c(h).face, MID);
     for _ in 0..60 * 3 {
-        let across = w.c(h).face < 0;
+        let across = w.c(h).face.is_b();
         w.set_input(move |_, _| input(0.0, 0.0, false, across, !across, 0.0, 0.0));
         w.step(1);
         if w.c(h).face != face {

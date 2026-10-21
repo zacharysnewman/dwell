@@ -3,7 +3,7 @@
 
 use super::*;
 use crate::grid::{MAX_ALIGNED_LEVEL, is_face_b_section, origin_m};
-use dwell_world::MIDPLANE_M;
+use dwell_world::FaceFrame;
 use dwell_world::inside_build_volume;
 use dwell_world::lod::{PAD, VOLUME, ancestor, mirror_row_bottom, section_origin};
 
@@ -404,7 +404,7 @@ fn point_in_view(cam: &LodCamera, random: &mut dyn FnMut() -> f64, range: f64) -
         p[a] = cam.position[a] + d * (f[a] + sx * r[a] + sy * u[a]);
     }
     let radius = f64::from(dwell_world::WORLD_RADIUS);
-    let inside = p[1] >= dwell_world::MIDPLANE_M
+    let inside = !FaceFrame::at_height(p[1]).is_b()
         && inside_build_volume(
             p[0].floor() as i64,
             dwell_world::row_of_m(p[1]).into(),
@@ -855,7 +855,7 @@ fn far_face_not_generated_or_drawn(viewer_on_a: bool) {
     let y = if viewer_on_a {
         100.0
     } else {
-        2.0 * MIDPLANE_M - 100.0
+        dwell_world::FaceFrame::B.y(100.0)
     };
     let at = [0.5, y, 0.5];
     let (lod, host) = settle_bifacial(at, false);
@@ -891,7 +891,7 @@ fn culls_nothing_near_the_rim_where_the_other_face_shows_past_the_edge() {
 fn meshes_level_7_and_up_sections_for_the_viewers_face_the_other_faces_rows_are_stone() {
     // Regression: such sections hold rows of both faces and were meshed with face A's surfaces
     // only. Seen from face B they are meshed without surfaces (face A's would be wrong there).
-    let at = [0.5, 2.0 * MIDPLANE_M - 100.0, 0.5];
+    let at = [0.5, dwell_world::FaceFrame::B.y(100.0), 0.5];
     let (_, host) = settle_bifacial(at, true);
     let both: Vec<&MeshRecord> = host
         .meshes

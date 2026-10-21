@@ -868,6 +868,7 @@ mod natural_tops {
         assert_eq!(flat_tops, 1);
     }
 
+    // both-faces: meshes the step on face A and its face-B mirror and compares them
     #[test]
     fn a_one_cell_step_is_a_step_and_face_b_mirrors_it() {
         let mut cells = new_cells();

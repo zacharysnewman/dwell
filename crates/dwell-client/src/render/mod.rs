@@ -10,6 +10,7 @@ pub mod arena;
 pub mod camera;
 pub mod characters;
 pub mod display;
+pub mod face_shading;
 pub mod frame;
 pub mod geometry;
 pub mod pacing;
@@ -32,7 +33,7 @@ use dwell_look::reflections::{REFLECTIONS, reflection_uniforms};
 use dwell_look::{DEFAULT_EXPOSURE, hex, sanitize_exposure, srgb_to_linear};
 use dwell_mesh::{ChunkMeshes, FlatMesh, MeshArrays, SectionMeshes};
 use dwell_world::fluid::EyeFluid;
-use dwell_world::{CELL_H, CHUNK_EXTENT_M, ChunkCoord, chunk_of, chunk_origin_m};
+use dwell_world::{CELL_H, CHUNK_EXTENT_M, ChunkCoord, FaceFrame, chunk_of, chunk_origin_m};
 
 use arena::{Arena, ArenaRef, Region};
 use camera::{Basis, V3, aim, mul, perspective, vertical_fov, view_matrix};
@@ -150,8 +151,8 @@ const LEVEL_TINTS: [u32; 20] = [
 pub struct PlayerView {
     /// Feet position.
     pub feet: V3,
-    /// The face the player stands on: −1 draws it upside down.
-    pub face: f64,
+    /// The face the player stands on: face B draws it upside down.
+    pub face: FaceFrame,
     /// Degrees; 0 = +Z.
     pub yaw: f64,
     /// Lying on the ground (cosmetic death pose).
@@ -779,7 +780,7 @@ pub struct Renderer {
     eye: V3,
     yaw: f64,
     pitch: f64,
-    face: f64,
+    face: FaceFrame,
     flip: f64,
     fog: FogSettings,
     /// The fluid the eye is under (`set_eye_fluid`), for the frame uniform.
@@ -1266,7 +1267,7 @@ impl Renderer {
             eye: [0.0, 6.0, 14.0],
             yaw: 180.0,
             pitch: -20.0,
-            face: 1.0,
+            face: FaceFrame::A,
             flip: 0.0,
             fog: DEFAULT_FOG,
             eye_fluid: None,
@@ -1421,7 +1422,9 @@ impl Renderer {
     /// sky's colours don't jump as the camera turns over at the midplane.
     fn viewer_weight_a(&self) -> f64 {
         let band = dwell_protocol::world::FLIP_BAND as f64;
-        let t = ((self.eye[1] - dwell_look::MIDPLANE_Y) / band * 0.5 + 0.5).clamp(0.0, 1.0);
+        // face-boundary: a blend across the midplane, between the two faces' looks.
+        let over = self.eye[1] - dwell_world::MIDPLANE_M;
+        let t = (over / band * 0.5 + 0.5).clamp(0.0, 1.0);
         t * t * (3.0 - 2.0 * t)
     }
     /// The plants' wind scale (block data `wind`): 1 by default, 0 keeps them still (low effects).
@@ -1571,7 +1574,14 @@ impl Renderer {
     pub fn character_stats(&self) -> characters::CharacterStats {
         self.characters.stats
     }
-    pub fn set_camera(&mut self, eye: V3, yaw_deg: f64, pitch_deg: f64, face: f64, flip: f64) {
+    pub fn set_camera(
+        &mut self,
+        eye: V3,
+        yaw_deg: f64,
+        pitch_deg: f64,
+        face: FaceFrame,
+        flip: f64,
+    ) {
         (self.eye, self.yaw, self.pitch, self.face, self.flip) =
             (eye, yaw_deg, pitch_deg, face, flip);
     }
@@ -1687,7 +1697,7 @@ impl Renderer {
         let viewer = self.day.viewer(weight_a);
         put(&[
             self.eye[1] as f32,
-            self.face as f32,
+            self.face.sign_f32(),
             (self.exposure * viewer.exposure) as f32,
             (self.fog.density * viewer.fog_density).min(1.0) as f32,
         ]);
@@ -2150,12 +2160,7 @@ impl Renderer {
         let basis = aim(self.yaw, self.pitch, self.face, self.flip);
         // Two passes (§6.6): the far one beyond the split (its near plane pushed out with altitude,
         // where nothing is closer), then a depth clear and the near one. Heights are face-local.
-        let local_y = if self.face > 0.0 {
-            self.eye[1]
-        } else {
-            2.0 * dwell_look::MIDPLANE_Y - self.eye[1]
-        };
-        let altitude = local_y - TERRAIN_TOP_M;
+        let altitude = self.face.y(self.eye[1]) - TERRAIN_TOP_M;
         let far_near = (NEAR_SPLIT * 0.95).max(altitude * 0.8);
         let passes = [(far_near, FAR_PLANE), (NEAR_PLANE, NEAR_SPLIT)];
         let draws = self.collect(passes, chunk_visible);
@@ -2858,7 +2863,7 @@ impl crate::game::Scene for Renderer {
     fn set_arms(&mut self, arms: Option<ArmsView>) {
         Renderer::set_arms(self, arms);
     }
-    fn set_camera(&mut self, eye: V3, yaw_deg: f64, pitch_deg: f64, face: f64, flip: f64) {
+    fn set_camera(&mut self, eye: V3, yaw_deg: f64, pitch_deg: f64, face: FaceFrame, flip: f64) {
         Renderer::set_camera(self, eye, yaw_deg, pitch_deg, face, flip);
     }
     fn set_eye_fluid(&mut self, eye_fluid: Option<EyeFluid>) {
@@ -3016,13 +3021,13 @@ mod tests {
         let mut r = noop_renderer();
         r.set_adapter(wgpu::DeviceType::Cpu);
         r.set_clouds(CloudQuality::High);
-        let u = r.frame_uniforms(&aim(0.0, 0.0, 1.0, 0.0), 1.0, 100.0);
+        let u = r.frame_uniforms(&aim(0.0, 0.0, FaceFrame::A, 0.0), 1.0, 100.0);
         // The clouds' second vec4 (`cloud_cfg`: coverage, octaves, …) follows `clouds`, after tan.
         // (Then the clouds' third, the water's, the wind's six, the wrap and the reflections' two.)
         let cfg = FRAME_FLOATS - DAY_SKY_FLOATS - 8 - 4 - 6 * 4 - 4 - 4 - 4;
         assert_eq!(u[cfg + 1], 0.0, "no octaves on a CPU adapter");
         r.set_adapter(wgpu::DeviceType::DiscreteGpu);
-        let u = r.frame_uniforms(&aim(0.0, 0.0, 1.0, 0.0), 1.0, 100.0);
+        let u = r.frame_uniforms(&aim(0.0, 0.0, FaceFrame::A, 0.0), 1.0, 100.0);
         assert!(u[cfg + 1] > 0.0, "the setting's octaves on a GPU");
     }
 
@@ -3038,7 +3043,7 @@ mod tests {
             direction: [0.0, 0.0, 1.0],
             time: 1.0,
         });
-        let basis = aim(0.0, 0.0, 1.0, 0.0);
+        let basis = aim(0.0, 0.0, FaceFrame::A, 0.0);
         // After the water's vec4 (w: the quality) come the wind's six (the last's x: the blur),
         // the wrapped eye, the reflections' two and the day sky.
         let water_w = FRAME_FLOATS - DAY_SKY_FLOATS - 8 - 4 - 6 * 4 - 1;
@@ -3061,10 +3066,10 @@ mod tests {
             1.0,
         );
         let stars = FRAME_FLOATS - DAY_SKY_FLOATS + DAY_STARS;
-        let u = r.frame_uniforms(&aim(0.0, 0.0, 1.0, 0.0), 1.0, 100.0);
+        let u = r.frame_uniforms(&aim(0.0, 0.0, FaceFrame::A, 0.0), 1.0, 100.0);
         assert!(u[stars] > 0.0, "stars at midnight on a GPU");
         r.set_adapter(wgpu::DeviceType::Cpu);
-        let u = r.frame_uniforms(&aim(0.0, 0.0, 1.0, 0.0), 1.0, 100.0);
+        let u = r.frame_uniforms(&aim(0.0, 0.0, FaceFrame::A, 0.0), 1.0, 100.0);
         assert_eq!(u[stars], 0.0, "no stars on a CPU adapter");
     }
 
@@ -3413,14 +3418,26 @@ mod tests {
             to: [20.0, 1.0, 20.0],
             color: 0xff0000,
         }]));
-        r.set_camera([16.0, 4.0, 16.0], 0.0, -30.0, 1.0, 0.0);
+        r.set_camera([16.0, 4.0, 16.0], 0.0, -30.0, FaceFrame::A, 0.0);
         // Characters: a body holding the brush, one on face B holding a block, a dead one, and
         // your arms (their own pass).
         let grass = dwell_blocks::require("dwell:grass");
         for (id, feet, face, dead, held) in [
-            (1, [16.0, 1.0, 20.0], 1.0, false, Held::Brush(grass)),
-            (2, [18.0, -3.0, 20.0], -1.0, false, Held::Block(grass)),
-            (3, [14.0, 1.0, 20.0], 1.0, true, Held::Empty),
+            (
+                1,
+                [16.0, 1.0, 20.0],
+                FaceFrame::A,
+                false,
+                Held::Brush(grass),
+            ),
+            (
+                2,
+                [18.0, -3.0, 20.0],
+                FaceFrame::B,
+                false,
+                Held::Block(grass),
+            ),
+            (3, [14.0, 1.0, 20.0], FaceFrame::A, true, Held::Empty),
         ] {
             r.set_player(
                 id,
@@ -3515,7 +3532,7 @@ mod tests {
         assert_eq!(r.frame_fov(), vertical_fov(16.0 / 9.0));
         r.set_fov(Some(80.0));
         assert_eq!(r.frame_fov(), 80.0);
-        let basis = aim(0.0, 0.0, 1.0, 0.0);
+        let basis = aim(0.0, 0.0, FaceFrame::A, 0.0);
         let u = r.frame_uniforms(&basis, 1.0, 100.0);
         let f = 1.0 / (80f64.to_radians() / 2.0).tan();
         assert!((f64::from(u[5]) - f).abs() < 1e-5, "projection's y scale");
@@ -3534,7 +3551,7 @@ mod tests {
     fn the_wind_reaches_the_composite_through_the_frame_block() {
         let mut r = noop_renderer();
         r.resize(1600, 900, 2.0);
-        let basis = aim(0.0, 0.0, 1.0, 0.0);
+        let basis = aim(0.0, 0.0, FaceFrame::A, 0.0);
         let wind = |r: &Renderer| {
             r.frame_uniforms(&basis, 1.0, 100.0)
                 [FRAME_FLOATS - DAY_SKY_FLOATS - 36..FRAME_FLOATS - DAY_SKY_FLOATS - 12]
@@ -3559,7 +3576,7 @@ mod tests {
         use dwell_look::outline::{EDGE_BLOCK, EDGE_DEPTH, EDGE_NORMAL, tap_px};
         let mut r = noop_renderer();
         r.resize(1600, 900, 2.0);
-        let basis = aim(0.0, 0.0, 1.0, 0.0);
+        let basis = aim(0.0, 0.0, FaceFrame::A, 0.0);
         // Right after the matrix: `outline`, `outline_ink`, `outline_cfg`.
         let outline = |r: &Renderer| r.frame_uniforms(&basis, 1.0, 100.0)[16..28].to_vec();
         assert_eq!(r.outline(), None);
@@ -3605,7 +3622,7 @@ mod tests {
     fn the_reflections_follow_the_water_quality_and_the_clouds_setting() {
         let mut r = noop_renderer();
         r.resize(1280, 720, 1.0);
-        let basis = aim(0.0, 0.0, 1.0, 0.0);
+        let basis = aim(0.0, 0.0, FaceFrame::A, 0.0);
         let refl = |r: &Renderer| {
             r.frame_uniforms(&basis, 1.0, 100.0)
                 [FRAME_FLOATS - DAY_SKY_FLOATS - 8..FRAME_FLOATS - DAY_SKY_FLOATS]

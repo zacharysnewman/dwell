@@ -28,7 +28,7 @@ pub const BUILD_TOP_M: f64 = crate::bounds::BUILD_VOLUME.y_range().1 as f64 * CE
 /// Terrain: water fills open space below this (m).
 pub const SEA_LEVEL_M: f64 = world::SEA_LEVEL_M;
 /// Face B's height y (m) is face A's `MIRROR_M − y`: the mirror about the midplane.
-pub const MIRROR_M: f64 = 2.0 * MIDPLANE_M;
+pub const MIRROR_M: f64 = 2.0 * MIDPLANE_M; // face-boundary: the mirror's definition, read by FaceFrame
 
 const _: () = assert!(CELL_H > 0.0 && CELL_H <= 1.0, "a cell is at most 1 m tall");
 const _: () = assert!(
@@ -177,6 +177,7 @@ mod tests {
         assert_eq!(normal_to_m([1.0, 0.0, 0.0]), [1.0, 0.0, 0.0]);
     }
 
+    // both-faces: unit twins of rows and metres, no face's geometry
     #[test]
     fn the_metre_twins_are_the_rows_times_the_cell_height() {
         use crate::voxel::{CORE_LAYERS, FLAT_TOP_Y, MIDPLANE_Y, SEA_LEVEL};

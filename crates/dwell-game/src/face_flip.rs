@@ -5,7 +5,7 @@
 
 use std::f64::consts::PI;
 
-use crate::FaceSign;
+use dwell_world::FaceFrame;
 
 /// How long the camera takes to turn over.
 pub const FLIP_SECONDS: f64 = 0.5;
@@ -17,8 +17,8 @@ fn smoothstep(t: f64) -> f64 {
 
 #[derive(Clone, Debug)]
 pub struct FaceFlip {
-    face: Option<FaceSign>,
-    draw_face: Option<FaceSign>,
+    face: Option<FaceFrame>,
+    draw_face: Option<FaceFrame>,
     /// Seconds since the drawn face last changed (FLIP_SECONDS or more: at rest).
     elapsed: f64,
 }
@@ -39,7 +39,7 @@ impl FaceFlip {
     }
 
     /// Per simulation tick with the predicted face: degrees to add to the heading (0 or 180).
-    pub fn tick(&mut self, face: FaceSign) -> f64 {
+    pub fn tick(&mut self, face: FaceFrame) -> f64 {
         let turn = if self.face.is_some_and(|f| f != face) {
             180.0
         } else {
@@ -50,7 +50,7 @@ impl FaceFlip {
     }
 
     /// Per drawn frame: the camera's pitch-over angle (radians, π … 0) about its right axis.
-    pub fn draw(&mut self, face: FaceSign, dt_seconds: f64) -> f64 {
+    pub fn draw(&mut self, face: FaceFrame, dt_seconds: f64) -> f64 {
         if self.draw_face.is_some_and(|f| f != face) {
             self.elapsed = 0.0;
         }
@@ -64,44 +64,47 @@ impl FaceFlip {
 mod tests {
     use super::*;
 
+    const A: FaceFrame = FaceFrame::A;
+    const B: FaceFrame = FaceFrame::B;
+
     #[test]
     fn draw_rests_at_0_and_starts_at_a_half_turn_when_the_face_changes() {
         let mut flip = FaceFlip::new();
-        assert_eq!(flip.draw(1, 0.016), 0.0);
-        assert_eq!(flip.draw(1, 0.016), 0.0);
+        assert_eq!(flip.draw(A, 0.016), 0.0);
+        assert_eq!(flip.draw(A, 0.016), 0.0);
         // The first frame on the other face: nearly the old orientation (almost π).
-        let first = flip.draw(-1, 0.016);
+        let first = flip.draw(B, 0.016);
         assert!(first > PI * 0.99);
         // Monotone, reaching 0 after FLIP_SECONDS and staying there.
         let mut last = first;
         let mut t = 0.016;
         while t < FLIP_SECONDS {
-            let r = flip.draw(-1, 0.016);
+            let r = flip.draw(B, 0.016);
             assert!(r <= last + 1e-12);
             last = r;
             t += 0.016;
         }
-        assert_eq!(flip.draw(-1, 0.016), 0.0);
-        assert_eq!(flip.draw(-1, 5.0), 0.0);
+        assert_eq!(flip.draw(B, 0.016), 0.0);
+        assert_eq!(flip.draw(B, 5.0), 0.0);
     }
 
     #[test]
     fn draw_turns_over_once_per_crossing_either_way_and_midway_is_a_quarter_turn() {
         let mut flip = FaceFlip::new();
-        flip.draw(-1, 1.0);
-        let half = flip.draw(1, FLIP_SECONDS / 2.0);
+        flip.draw(B, 1.0);
+        let half = flip.draw(A, FLIP_SECONDS / 2.0);
         assert!((half - PI / 2.0).abs() < 5e-7);
-        assert_eq!(flip.draw(1, FLIP_SECONDS), 0.0);
-        assert!(flip.draw(-1, 0.01) > PI * 0.99);
+        assert_eq!(flip.draw(A, FLIP_SECONDS), 0.0);
+        assert!(flip.draw(B, 0.01) > PI * 0.99);
     }
 
     #[test]
     fn tick_turns_the_heading_by_180_on_each_face_change_and_not_on_the_first_call() {
         let mut flip = FaceFlip::new();
-        assert_eq!(flip.tick(-1), 0.0);
-        assert_eq!(flip.tick(-1), 0.0);
-        assert_eq!(flip.tick(1), 180.0);
-        assert_eq!(flip.tick(1), 0.0);
-        assert_eq!(flip.tick(-1), 180.0);
+        assert_eq!(flip.tick(B), 0.0);
+        assert_eq!(flip.tick(B), 0.0);
+        assert_eq!(flip.tick(A), 180.0);
+        assert_eq!(flip.tick(A), 0.0);
+        assert_eq!(flip.tick(B), 180.0);
     }
 }
