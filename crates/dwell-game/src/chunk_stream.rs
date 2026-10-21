@@ -374,6 +374,24 @@ impl DirtySet {
 
 type ResyncFn = Box<dyn FnMut(&[Coord])>;
 
+/// A second place whose chunks are lit and meshed right after the near ring around the player,
+/// before the rest: the respawn preload's ring while the player is dead (ARCHITECTURE.md §6.3).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SecondCentre {
+    /// The near ring around the player that still comes first (chunks, the server's sphere).
+    pub near: i32,
+    /// The second centre's chunk and the radius of its ring (chunks, the server's sphere).
+    pub at: Coord,
+    pub radius: i32,
+}
+
+/// Within the server's view sphere of `r` chunks around `centre` (`|d|² ≤ r² + r`).
+fn in_sphere(c: Coord, centre: Coord, r: i32) -> bool {
+    let d: i64 = (0..3).map(|i| i64::from(c[i] - centre[i]).pow(2)).sum();
+    let r = i64::from(r);
+    d <= r * r + r
+}
+
 /// The client's chunk store and streaming.
 pub struct ChunkStreamer<S, G, M: Mesher, V> {
     store: S,
@@ -402,6 +420,8 @@ pub struct ChunkStreamer<S, G, M: Mesher, V> {
     /// within `mesh_dirty`'s budget, and no chunk is meshed while it or a neighbour waits here.
     unlit: std::collections::VecDeque<Coord>,
     unlit_set: HashSet<Coord>,
+    /// Lit and meshed after the near ring, before the rest (`set_second_centre`).
+    second: Option<SecondCentre>,
     /// First worldgen failure (the workers are unusable).
     pub error: Option<String>,
 }
@@ -443,6 +463,7 @@ where
             token: 0,
             unlit: Default::default(),
             unlit_set: HashSet::default(),
+            second: None,
             error: None,
         }
     }
@@ -470,6 +491,13 @@ where
     }
     pub fn view_mut(&mut self) -> &mut V {
         &mut self.view
+    }
+
+    /// Lights and meshes the ring around a second place right after the near ring around the
+    /// player, before the rest (the respawn preload while dead, §6.3); None: nearest the player
+    /// first, alone.
+    pub fn set_second_centre(&mut self, second: Option<SecondCentre>) {
+        self.second = second;
     }
 
     pub fn on_chunk_data(&mut self, m: ChunkMessage) {
@@ -631,19 +659,36 @@ where
         mesh_ms: f64,
         mut now: impl FnMut() -> f64,
     ) -> usize {
-        let distance = |c: &Coord| -> f64 {
+        let distance_to = |c: &Coord, to: [f64; 3]| -> f64 {
             let m = dwell_world::chunk_centre_m(ChunkCoord::from_array(*c));
-            (0..3).map(|i| (m[i] - center[i]).powi(2)).sum()
+            (0..3).map(|i| (m[i] - to[i]).powi(2)).sum()
         };
+        // Nearest the player first; with a second centre, the near ring around the player, then
+        // the second ring nearest its centre, then the rest.
+        let me = dwell_world::chunk_of_pos(center).to_array();
+        let second = self
+            .second
+            .map(|s| (s, dwell_world::chunk_centre_m(ChunkCoord::from_array(s.at))));
+        let key = |c: &Coord| -> (u8, f64) {
+            match second {
+                Some((s, _)) if in_sphere(*c, me, s.near) => (0, distance_to(c, center)),
+                Some((s, at)) if in_sphere(*c, s.at, s.radius) => (1, distance_to(c, at)),
+                Some(_) => (2, distance_to(c, center)),
+                None => (0, distance_to(c, center)),
+            }
+        };
+        let order_of = |a: &(u8, f64), b: &(u8, f64)| a.0.cmp(&b.0).then(a.1.total_cmp(&b.1));
         if !self.unlit.is_empty() {
             let deadline = now() + light_ms;
-            let mut order: Vec<Coord> = std::mem::take(&mut self.unlit)
+            let order: Vec<Coord> = std::mem::take(&mut self.unlit)
                 .into_iter()
                 .filter(|c| self.unlit_set.contains(c))
                 .collect();
             // Stable: equal distances keep their arrival order.
-            order.sort_by(|a, b| distance(a).total_cmp(&distance(b)));
-            let mut rest = order.into_iter();
+            let mut keyed: Vec<((u8, f64), Coord)> =
+                order.into_iter().map(|c| (key(&c), c)).collect();
+            keyed.sort_by(|a, b| order_of(&a.0, &b.0));
+            let mut rest = keyed.into_iter().map(|(_, c)| c);
             for c in rest.by_ref() {
                 self.unlit_set.remove(&c);
                 self.store.light_chunk(c);
@@ -659,7 +704,7 @@ where
             return 0;
         }
         let deadline = now() + mesh_ms;
-        let mut ready: Vec<Coord> = self
+        let ready: Vec<Coord> = self
             .dirty
             .in_order()
             .into_iter()
@@ -673,9 +718,10 @@ where
             })
             .collect();
         // Stable: equal distances keep their order.
-        ready.sort_by(|a, b| distance(a).total_cmp(&distance(b)));
+        let mut keyed: Vec<((u8, f64), Coord)> = ready.into_iter().map(|c| (key(&c), c)).collect();
+        keyed.sort_by(|a, b| order_of(&a.0, &b.0));
         let mut count = 0;
-        for c in ready {
+        for (_, c) in keyed {
             if count >= room {
                 break;
             }
@@ -1376,6 +1422,42 @@ mod tests {
         assert_eq!(
             sorted(s.store().meshed_from[2..].to_vec()),
             vec![[4, 0, 0], [5, 0, 0]]
+        );
+    }
+
+    #[test]
+    fn a_second_centres_ring_is_meshed_after_the_near_ring_before_the_rest() {
+        // The respawn preload (§6.3): the player at chunk 0, the respawn's ring around chunk 20.
+        // Order: the near ring (chunk 2), then the second ring nearest its centre (20, then 22),
+        // then the rest nearest the player (6, then 12). Without it: nearest the player alone.
+        let chunks = [[12, 0, 0], [22, 0, 0], [6, 0, 0], [20, 0, 0], [2, 0, 0]];
+        let order = |second: Option<SecondCentre>| {
+            let (mut s, _) = setup();
+            s.set_second_centre(second);
+            for c in chunks {
+                s.on_chunk_data(generated(c));
+                finish(&mut s, c);
+            }
+            let mut t = 0.0;
+            let mut clock = || {
+                t += 10.0;
+                t
+            };
+            while s.mesh_dirty([16.0, 16.0, 16.0], 5.0, 5.0, &mut clock) > 0 {}
+            s.store().meshed_from.clone()
+        };
+        let second = SecondCentre {
+            near: 3,
+            at: [20, 0, 0],
+            radius: 3,
+        };
+        assert_eq!(
+            order(Some(second)),
+            vec![[2, 0, 0], [20, 0, 0], [22, 0, 0], [6, 0, 0], [12, 0, 0]]
+        );
+        assert_eq!(
+            order(None),
+            vec![[2, 0, 0], [6, 0, 0], [12, 0, 0], [20, 0, 0], [22, 0, 0]]
         );
     }
 

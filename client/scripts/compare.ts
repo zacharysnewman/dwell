@@ -40,6 +40,9 @@ export interface ScenarioReport {
   join?: { playingS: number; loading: Record<string, unknown> | null };
   /** Each `until` step's seconds since the page was opened (null: not reached). */
   untils?: { what: string; s: number | null }[];
+  /** Each `die` step's respawn → playing seconds (null: not within its maxS), with the loading
+   * screen's state then. */
+  respawns?: { s: number | null; loading: Record<string, unknown> | null }[];
   /** The page address it ran at. */
   url: string;
 }

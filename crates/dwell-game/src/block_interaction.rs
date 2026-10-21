@@ -28,6 +28,11 @@ pub trait TargetSource {
     fn replaceable(&mut self, _cell: [i32; 3]) -> bool {
         false
     }
+    /// The block state in `cell` (0, air, if unknown): a ladder placed on a ladder's top or bottom
+    /// takes its facing.
+    fn state(&mut self, _cell: [i32; 3]) -> StateId {
+        0
+    }
 }
 
 impl TargetSource for VoxelWorld {
@@ -45,6 +50,9 @@ impl TargetSource for VoxelWorld {
     fn replaceable(&mut self, [x, y, z]: [i32; 3]) -> bool {
         let m = self.get_voxel(x, y, z);
         usize::from(m) < STATES.len() && info(m).replaceable && !info(m).indestructible
+    }
+    fn state(&mut self, [x, y, z]: [i32; 3]) -> StateId {
+        self.get_voxel(x, y, z)
     }
 }
 
@@ -143,6 +151,8 @@ pub struct BlockInteraction {
     current: Option<BlockTarget>,
     /// The current target is replaceable: placing goes into its cell.
     into_target: bool,
+    /// The current target's state.
+    target_state: StateId,
     yaw: f64,
     last_edit_ms: f64,
 }
@@ -161,6 +171,7 @@ impl BlockInteraction {
             touch_action: EditAction::Break,
             current: None,
             into_target: false,
+            target_state: 0,
             yaw: 0.0,
             last_edit_ms: f64::NEG_INFINITY,
         }
@@ -191,6 +202,7 @@ impl BlockInteraction {
         let dir = view_direction(yaw_deg, pitch_deg, face).map(|v| v as f32);
         self.current = eye.and_then(|e| world.target(e, dir, players::REACH_DISTANCE));
         self.into_target = self.current.is_some_and(|t| world.replaceable(t.cell));
+        self.target_state = self.current.map_or(0, |t| world.state(t.cell));
         self.current
     }
 
@@ -209,7 +221,15 @@ impl BlockInteraction {
             std::array::from_fn(|i| t.cell[i] + dir[i])
         };
         if slot.ladder {
-            return Some((cell, ladder_for(t.face, self.yaw)));
+            // On a ladder's top or bottom: the next ladder up or down the same wall.
+            let target = dwell_blocks::try_info(self.target_state);
+            let face = match target {
+                Some(s) if s.look == LOOK_LADDER && (t.face == 2 || t.face == 3) => {
+                    ladder_face(s.facing).unwrap_or(t.face)
+                }
+                _ => t.face,
+            };
+            return Some((cell, ladder_for(face, self.yaw)));
         }
         Some((cell, slot.material))
     }
@@ -413,6 +433,48 @@ mod tests {
             "dwell:ladder[facing=north,flooded=false]"
         );
     }
+
+    dwell_world::both_faces!(
+        /// Placing a ladder above or below one (owner, 2026-10-21): aimed at the wall past the
+        /// ladder's end, the ray passes the ladder's cell in front of its plate and builds on the
+        /// wall; aimed at the plate's top or bottom, the new ladder takes the same facing.
+        fn places_ladders_above_and_below_a_ladder(f: FaceFrame) {
+            use dwell_world::{VoxelWorld, empty_generator, m_of_row};
+            let north = require("dwell:ladder[facing=north]");
+            let mut world = VoxelWorld::new(empty_generator(), None);
+            for row in 26..36 {
+                let c = f.cell([0, row, 2]);
+                world.set_voxel(c[0], c[1], c[2], require("dwell:stone"));
+            }
+            let at = f.cell([0, 30, 1]);
+            world.set_voxel(at[0], at[1], at[2], north);
+            let mut interaction = BlockInteraction::new();
+            let ladder = interaction.palette().iter().position(|s| s.ladder).unwrap();
+            interaction.select(ladder as i64);
+            // From the eye (face-local) toward the point (face-local): yaw and pitch.
+            let mut aim = |eye: [f64; 3], to: [f64; 3], yaw: Option<f64>| {
+                let d: [f64; 3] = std::array::from_fn(|k| to[k] - eye[k]);
+                let flat = d[0].hypot(d[2]);
+                let pitch = d[1].atan2(flat).to_degrees();
+                let yaw = yaw.unwrap_or_else(|| d[0].atan2(d[2]).to_degrees());
+                interaction.update(&mut world, Some(f.point(eye)), yaw, pitch, f);
+                interaction.placement().map(|(c, m)| (c, name(m)))
+            };
+            let want = |row: i32| Some((f.cell([0, row, 1]), name(north)));
+            let base = m_of_row(30);
+            // The wall just below the ladder, from above in front of it.
+            let below = aim([0.5, base + 0.45, -1.0], [0.5, base - 0.1, 2.0], None);
+            assert_eq!(below, want(29), "below, by the wall");
+            // The wall just above it, from below in front of it.
+            let above = aim([0.5, base + 0.05, -1.0], [0.5, base + 0.6, 2.0], None);
+            assert_eq!(above, want(31), "above, by the wall");
+            // The plate's top from straight above, looking along +X: still facing north.
+            let top = aim([0.5, base + 2.0, 1.94], [0.5, base, 1.94], Some(90.0));
+            assert_eq!(top, want(31), "above, by its top");
+            let bottom = aim([0.5, base - 1.5, 1.94], [0.5, base, 1.94], Some(90.0));
+            assert_eq!(bottom, want(29), "below, by its bottom");
+        }
+    );
 
     #[test]
     fn selects_slots_by_number_and_scroll_wrapping_around() {

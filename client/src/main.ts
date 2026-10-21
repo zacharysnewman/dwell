@@ -194,6 +194,8 @@ interface DwellDebug {
   ticks(): TickSample[];
   /** The latest sounds played (ids, newest last; docs/AUDIO.md). */
   sounds(): string[];
+  /** Kills the local player (a local world only; false otherwise): the bench's `die` step. */
+  die(): boolean;
   /** Forgets the telemetry so far: measure from here. */
   telemetryReset(): void;
   /**
@@ -701,6 +703,10 @@ async function start(): Promise<App | null> {
       client.telemetryReset();
     },
     sounds: () => [...sfx.recent],
+    die: () => {
+      app.loopback?.postToWorker({ t: 'kill' });
+      return app.loopback !== null;
+    },
     waterDebug: (names) => {
       client.setWaterDebug(names);
     },
@@ -1039,6 +1045,10 @@ async function connect(app: App): Promise<void> {
     } else {
       local = await connectLocal(client, key, options);
       app.loopback = local.loopback;
+      // The respawn preload (§6.3) off for the bench's comparison: the server's part.
+      if (/[?&]respawnPreload=off(&|$)/.test(location.search)) {
+        local.loopback.postToWorker({ t: 'respawnPreload', on: false });
+      }
     }
     enableGameMenu(app, local?.save ?? null);
     app.settings?.setSubtitle(localWorld ? `${target} · this device` : target);

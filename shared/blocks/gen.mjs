@@ -50,6 +50,24 @@ const SHAPES = { empty: 'kEmpty', full: 'kFull', shaped: 'kShaped' };
 const FACINGS = ['north', 'east', 'south', 'west'];
 // The face (mesher axis·2 + sign) a ladder's plate sits against, per facing (0 +X, 1 −X, 4 +Z, 5 −Z).
 const LADDER_FACE = { east: 0, west: 1, south: 4, north: 5 };
+// A `selectionBox` on a block with a `facingProperty` is written for facing north (facing out of
+// −Z, its back against +Z) and turned about the cell's vertical for the others: (x, z) in the
+// cell → the facing's (x, z).
+const TURN = {
+  north: (x, z) => [x, z],
+  east: (x, z) => [1 - z, x],
+  south: (x, z) => [1 - x, 1 - z],
+  west: (x, z) => [z, 1 - x],
+};
+// The state's selection box: the block's, turned to the state's facing.
+function selectionOf(d, values) {
+  const b = d.selectionBox;
+  if (!b || !d.facingProperty) return b;
+  const turn = TURN[values[d.facingProperty]];
+  const [ax, az] = turn(b[0], b[2]);
+  const [bx, bz] = turn(b[3], b[5]);
+  return [Math.min(ax, bx), b[1], Math.min(az, bz), Math.max(ax, bx), b[4], Math.max(az, bz)];
+}
 const LOOKS = ['cube', 'shaped', 'ladder', 'fluid', 'cross'];
 // Render modes (docs/TRANSPARENT_BLOCKS.md): how a look's pixels are drawn. `opaque` covers every
 // pixel it draws; `cutout` is alpha-tested (alpha-to-coverage under MSAA), writes depth and needs
@@ -675,7 +693,7 @@ if (!fixture) writeFileSync(join(root, 'client/src/world/blocks.gen.ts'), ts.joi
       `wind: ${d.wind ? `Some(Wind { strength: ${rf(d.wind.strength)}, speed: ${rf(d.wind.speed)} })` : 'None'}`,
       `fade: ${d.fade ? `Some(Fade { start: ${rf(d.fade.start)}, end: ${rf(d.fade.end)} })` : 'None'}`,
       `outline: ${outlineOf(d)}`,
-      `selection: ${d.selectionBox ? `Some([${d.selectionBox.map(rf).join(', ')}])` : 'None'}`,
+      `selection: ${d.selectionBox ? `Some([${selectionOf(d, st.values).map(rf).join(', ')}])` : 'None'}`,
       `place_on: &[${(d.placeOn ?? []).map(rstr).join(', ')}]`,
       `needs_support: Support::${d.needsSupport ? pascal(d.needsSupport) : 'None'}`,
       `replaceable: ${!!d.replaceable}`,

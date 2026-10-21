@@ -139,7 +139,7 @@ fn the_ray_finds_the_first_targetable_cell_and_its_face() {
 }
 
 #[test]
-fn a_ladder_is_targeted_broken_and_built_against_as_its_whole_cell() {
+fn a_ladder_is_targeted_broken_and_built_against_by_its_plate() {
     for ox in [0, FAR_X] {
         let mut world = empty();
         world.set_voxel(ox, 0, 5, s("dwell:stone"));
@@ -151,8 +151,9 @@ fn a_ladder_is_targeted_broken_and_built_against_as_its_whole_cell() {
             5.0,
         )
         .expect("hit");
+        // `dwell:ladder` faces north: its plate is the cell's last ⅛ m, against +Z.
         assert_eq!((hit.cell, hit.face), ([ox, 0, 3], 5));
-        assert!((hit.distance - 2.5).abs() < 1e-5);
+        assert!((hit.distance - 3.375).abs() < 1e-5);
     }
     let mut world = empty();
     world.set_voxel(0, -1, 2, s("dwell:grass"));
@@ -841,3 +842,63 @@ fn a_plant_on_the_block_does_not_hide_it_from_the_servers_line_of_sight() {
         EditCheck::NoLineOfSight
     );
 }
+
+dwell_world::both_faces!(
+    /// A ladder is aimed at by its visible plate, a thin slab against the side it is mounted on
+    /// (owner, 2026-10-21: the whole cell was far bigger than the ladder and made placing ladders
+    /// above or below one another hard). Rays that miss the slab go on through the cell.
+    fn a_ladder_is_aimed_at_by_its_plate_on_each_facing(f: FaceFrame) {
+        // facing, the way the ladder faces out (x, z), the face that points that way.
+        let facings = [
+            ("north", [0.0, -1.0], 5u8),
+            ("east", [1.0, 0.0], 0),
+            ("south", [0.0, 1.0], 4),
+            ("west", [-1.0, 0.0], 1),
+        ];
+        let cell = f.cell([0, 30, 0]);
+        let mid = m_of_row(30) + 0.5 * CELL_H;
+        for (facing, [ox, oz], out_face) in facings {
+            let ladder = s(&format!("dwell:ladder[facing={facing}]"));
+            let mut world = empty();
+            world.set_voxel(cell[0], cell[1], cell[2], ladder);
+            // Face-local point: `out` metres out from the cell's centre, `side` along the plate.
+            let at = |out: f64, side: f64, up: f64| {
+                f.point([
+                    0.5 + ox * out - oz * side,
+                    mid + up,
+                    0.5 + oz * out + ox * side,
+                ])
+            };
+            let mut ray = |o: [f64; 3], d: [f64; 3]| {
+                let d = f.vector(d).map(|v| v as f32);
+                raycast_block(&mut world, o, d, 6.0)
+            };
+            // From in front: met on the plate's front, 1/8 m in front of the wall.
+            let hit = ray(at(3.0, 0.0, 0.0), [-ox, 0.0, -oz]).expect(facing);
+            assert_eq!((hit.cell, hit.face), (cell, out_face), "{facing}");
+            assert!(
+                (hit.distance - 3.375).abs() < 1e-4,
+                "{facing}: {}",
+                hit.distance
+            );
+            // Across the cell in front of the plate: nothing.
+            assert_eq!(ray(at(0.2, -3.0, 0.0), [-oz, 0.0, ox]), None, "{facing}");
+            // Across the plate itself: the ladder.
+            let side = ray(at(-0.45, -3.0, 0.0), [-oz, 0.0, ox]).expect(facing);
+            assert_eq!(side.cell, cell, "{facing}");
+            // Down through the front of the cell: nothing; down onto the plate's top: its top.
+            assert_eq!(ray(at(0.2, 0.0, 2.0), [0.0, -1.0, 0.0]), None, "{facing}");
+            let top = ray(at(-0.44, 0.0, 2.0), [0.0, -1.0, 0.0]).expect(facing);
+            assert_eq!(
+                (top.cell, top.face),
+                (cell, f.cell_face(2) as u8),
+                "{facing}"
+            );
+            // The outline is the same slab.
+            let (lo, hi) = outline_box(&mut world, cell);
+            let extent: Vec<f32> = (0..3).map(|k| hi[k] - lo[k]).collect();
+            let depth = if ox != 0.0 { extent[0] } else { extent[2] };
+            assert!((depth - 0.125).abs() < 1e-6, "{facing}: {lo:?}..{hi:?}");
+        }
+    }
+);

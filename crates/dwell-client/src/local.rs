@@ -155,6 +155,20 @@ impl LocalCore {
         self.server.take_outbox()
     }
 
+    /// Kills the local player (the bench's `die` step; dev tools).
+    pub fn kill_local_player(&mut self) {
+        if let Some(p) = self.server.player_of_session(LOCAL_SESSION) {
+            self.server.kill_player(p);
+        }
+    }
+
+    /// The respawn preload (ARCHITECTURE.md §6.3) on (its radius from `shared/look/loading.json`)
+    /// or off (`?respawnPreload=off`, the bench's comparison).
+    pub fn set_respawn_preload(&mut self, on: bool) {
+        self.server
+            .set_respawn_preload(dwell_sim::server::RESPAWN_PRELOAD_RADIUS_CHUNKS.filter(|_| on));
+    }
+
     pub fn server(&mut self) -> &mut Server {
         &mut self.server
     }

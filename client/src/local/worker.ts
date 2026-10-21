@@ -60,6 +60,12 @@ function handle(msg: ToWorker): void {
     case 'closeGuests':
       core.closeGuests();
       break;
+    case 'kill':
+      core.kill();
+      break;
+    case 'respawnPreload':
+      core.setRespawnPreload(msg.on);
+      break;
     case 'reliable':
       core.reliable(msg.session, msg.channel, msg.bytes);
       break;

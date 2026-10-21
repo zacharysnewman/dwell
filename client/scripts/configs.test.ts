@@ -30,6 +30,7 @@ describe('bench --compare configurations', () => {
       'lod-shadows-off',
       'raster-half',
       'loading-off',
+      'respawn-preload-off',
     ]);
   });
 

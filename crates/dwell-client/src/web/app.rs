@@ -1919,6 +1919,9 @@ impl Inner {
         game.set_capabilities(region_edits, brushes, generator_version);
         game.day_override = self.options.day;
         game.set_loading_screen(self.options.loading_screen);
+        game.set_respawn_preload(dwell_game::loading::respawn_preload_from_query(
+            &self.options.search,
+        ));
         let mapping = self.session.as_ref().and_then(|s| s.mapping().cloned());
         if let Some(m) = mapping.as_ref().filter(|m| !m.differences.is_empty()) {
             // The console keeps the full lists (the F3 overlay shows the summary).
