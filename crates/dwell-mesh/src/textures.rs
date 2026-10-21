@@ -7,12 +7,65 @@
 //! data (`shared/textures/materials.json`, docs/PAINTERLY_TEXTURES.md) into `painterly.rgba`. It
 //! paints every atlas tile, the utility tiles (`plain`, `grid`, `missing`) included. The materials
 //! are prototype content, like the blocks (ARCHITECTURE.md §6.1).
+//!
+//! A second set, the cel style (docs/PAINTERLY_TEXTURES.md §10, `cel.rgba` from
+//! `shared/textures/cel.json`), paints the same tiles in a few flat tones at a lower resolution
+//! (`CEL_TILE`, each texel repeated to fill the atlas's tile) for the pixel-art preview; a preset
+//! asks for it ([`TextureSet`], [`build_atlas_of`]). Everything else here (the cutouts, the glow, the
+//! hang, the averages the LOD and the hotbar use) reads the painterly set, the normal look's: the
+//! cel tiles keep its cutouts and its averages (tests pin both).
 
 use std::sync::OnceLock;
 
 #[path = "painterly.gen.rs"]
 mod painterly;
 pub use painterly::{PAINTERLY_TILE, PAINTERLY_TILES};
+
+#[path = "cel.gen.rs"]
+mod cel;
+pub use cel::{CEL_TILE, CEL_TILES};
+
+/// A texture set the atlas can be built from.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum TextureSet {
+    /// The painterly set (ADR 0040), the normal look's.
+    #[default]
+    Painterly,
+    /// The cel style (docs/PAINTERLY_TEXTURES.md §10), the pixel-art preview's when a preset asks.
+    Cel,
+}
+
+impl TextureSet {
+    /// Whether the set's mips keep its tones (each 2 × 2 of an opaque tile halves to its majority
+    /// tone) rather than averaging: the cel style's (`mips` in `shared/textures/cel.json`).
+    pub fn mode_mips(self) -> bool {
+        match self {
+            TextureSet::Painterly => false,
+            TextureSet::Cel => cel::CEL_MODE_MIPS,
+        }
+    }
+}
+
+/// The texel (x, y) of tile `name` in `set` (sRGB RGBA8; x, y in the atlas tile's `TILE` texels):
+/// a cel tile's texel covers `TILE / CEL_TILE` of them each way. A name the set doesn't paint
+/// takes the `plain` tile's (white).
+pub fn set_texel(set: TextureSet, name: &str, x: i64, y: i64) -> [u8; 4] {
+    match set {
+        TextureSet::Painterly => texel(name, x, y),
+        TextureSet::Cel => {
+            let i = CEL_TILES
+                .iter()
+                .position(|t| *t == name)
+                .or_else(|| CEL_TILES.iter().position(|t| *t == "plain"))
+                .expect("the cel style paints the plain tile");
+            let k = (TILE / CEL_TILE) as i64;
+            let (cx, cy) = ((x / k) as usize, (y / k) as usize);
+            let o = ((i * CEL_TILE + cy) * CEL_TILE + cx) * 4;
+            let t = &cel::CEL_TEXELS[o..o + 4];
+            [t[0], t[1], t[2], t[3]]
+        }
+    }
+}
 
 /// The baked texel (x, y) of tile `name` (sRGB RGBA8). A name the set doesn't paint takes the
 /// `plain` tile's (white).
@@ -159,6 +212,12 @@ pub fn tile_has_alpha(name: &str) -> bool {
 
 /// The atlas: RGBA8, `ATLAS_SIZE`², row 0 at v = 0 (no vertical flip on upload).
 pub fn build_atlas() -> Vec<u8> {
+    build_atlas_of(TextureSet::Painterly)
+}
+
+/// The atlas painted from `set`, laid out as [`build_atlas`]'s (the same tiles, rectangles and
+/// gutters), so a renderer can swap the texels and keep every mesh.
+pub fn build_atlas_of(set: TextureSet) -> Vec<u8> {
     let mut data = vec![0u8; ATLAS_SIZE * ATLAS_SIZE * 4];
     for (index, name) in TILE_ORDER.iter().enumerate() {
         let ox = (index % ATLAS_CELLS) * CELL;
@@ -168,7 +227,7 @@ pub fn build_atlas() -> Vec<u8> {
                 let tx = (px as i64 - GUTTER as i64).rem_euclid(TILE as i64);
                 let ty = (py as i64 - GUTTER as i64).rem_euclid(TILE as i64);
                 let o = ((oy + py) * ATLAS_SIZE + ox + px) * 4;
-                data[o..o + 4].copy_from_slice(&texel(name, tx, ty));
+                data[o..o + 4].copy_from_slice(&set_texel(set, name, tx, ty));
             }
         }
     }
@@ -473,6 +532,81 @@ mod tests {
             0.0
         );
         assert_eq!(table[0], [0.0; 4], "plain: no grid");
+    }
+}
+
+#[cfg(test)]
+mod cel_tests {
+    //! The cel style (docs/PAINTERLY_TEXTURES.md §10) against the painterly set it stands in for.
+    use super::*;
+
+    fn tiles() -> impl Iterator<Item = &'static str> {
+        TILE_ORDER.into_iter()
+    }
+
+    #[test]
+    fn the_cel_style_paints_every_atlas_tile_at_its_own_resolution() {
+        assert_eq!(
+            CEL_TILES, PAINTERLY_TILES,
+            "the same tiles, in the same order"
+        );
+        assert_eq!(TILE % CEL_TILE, 0);
+        assert_eq!(
+            cel::CEL_TEXELS.len(),
+            CEL_TILES.len() * CEL_TILE * CEL_TILE * 4
+        );
+        // Each cel texel fills a square of the atlas tile's texels.
+        let k = (TILE / CEL_TILE) as i64;
+        for name in tiles() {
+            for (x, y) in [(0, 0), (5, 9), (TILE as i64 - 1, TILE as i64 - 1)] {
+                let c = set_texel(TextureSet::Cel, name, x, y);
+                assert_eq!(
+                    c,
+                    set_texel(TextureSet::Cel, name, x / k * k, y / k * k),
+                    "{name}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn the_cel_atlas_has_the_painterly_layout_and_the_painterly_cutouts() {
+        // Same layout: meshes built against the painterly rectangles draw the cel tiles.
+        let (p, c) = (build_atlas(), build_atlas_of(TextureSet::Cel));
+        assert_eq!(p.len(), c.len());
+        assert_ne!(p, c);
+        let alpha = |set, name, x, y| set_texel(set, name, x, y)[3];
+        for name in tiles() {
+            let has = (0..TILE as i64)
+                .any(|y| (0..TILE as i64).any(|x| alpha(TextureSet::Cel, name, x, y) < 255));
+            assert_eq!(has, tile_has_alpha(name), "{name}: cutout in one set only");
+            for y in 0..TILE as i64 {
+                for x in 0..TILE as i64 {
+                    let a = alpha(TextureSet::Cel, name, x, y);
+                    assert!(a == 0 || a == 255, "{name}: hard-edged alpha");
+                }
+            }
+        }
+        // The ladder's rails, rungs and gaps where the meshes and the painterly test expect them.
+        assert_eq!(alpha(TextureSet::Cel, "ladder", 4, 0), 255, "a rail");
+        assert_eq!(alpha(TextureSet::Cel, "ladder", 15, 3), 255, "a rung");
+        assert_eq!(alpha(TextureSet::Cel, "ladder", 15, 6), 0, "a gap");
+        // The tall grass keeps clear of its top row and side columns (a cross quad shows one copy).
+        for i in 0..TILE as i64 {
+            assert_eq!(alpha(TextureSet::Cel, "tallGrass", 0, i), 0);
+            assert_eq!(alpha(TextureSet::Cel, "tallGrass", TILE as i64 - 1, i), 0);
+            assert_eq!(alpha(TextureSet::Cel, "tallGrass", i, TILE as i64 - 1), 0);
+        }
+        // The missing checker is the same unmistakable checker.
+        for y in 0..TILE as i64 {
+            for x in 0..TILE as i64 {
+                assert_eq!(
+                    set_texel(TextureSet::Cel, MISSING_TILE, x, y),
+                    texel(MISSING_TILE, x, y),
+                    "({x}, {y})"
+                );
+            }
+        }
     }
 }
 

@@ -60,6 +60,7 @@ jobs:
           node --test shared/look/daynight.test.mjs
           node shared/textures/gen.mjs
           node --test shared/textures/gen.test.mjs
+          node --test shared/textures/cel.test.mjs
           node shared/characters/gen.mjs
           node --test shared/characters/gen.test.mjs
           node shared/sounds/gen.mjs
