@@ -62,7 +62,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 42 — Smooth LOD transitions | 🚧 In progress — built and tested natively and in Chrome on the GPU: a dithered cross-fade on every LOD swap (`dwell-lod` `fade.rs`; chunks, sections, stand-ins, skirts, water; no ink on the outgoing level) and hysteresis in the selection, both data (`shared/look/lodblend.json`); outstanding: CI, the owner's review in a browser; a patch release |
 | 43 — Ambient light | 🚧 In progress — built and tested natively and in Chrome on the GPU: classic corner AO and baked ray-traced sky visibility per terrain vertex (dwell-mesh `sky.rs`, data `shared/look/ambient.json`), the hemisphere light scaled by it, the twilight and night keyframes retuned; outstanding: CI; a patch release |
 | 44 — Sun and moon shadows (cascaded shadow maps, the lighting's layer 2) | 🚧 In progress — built and tested natively, in Vitest and in Chrome on the GPU: up to four cascades per the Shadows setting (Off / Low / High, data in `shared/look/shadows.json`), texel-snapped sphere fits, casters (terrain, plants, LOD, bodies, your own), a soft PCF on the direct term only, faded by the time of day and past the last cascade to layer 1's stand-in; outstanding: CI, the owner's look, High's cost target (+3–6 ms measured on a busy machine; a follow-up); a patch release |
-| 45 — Flood light | 🚧 In progress — built and tested natively and in Chrome on the GPU (ADR 0045, DAY_NIGHT.md §11): per-cell sky and block light on the client (`dwell_world::light`, data `shared/look/light.json` and the blocks' `lightFilter`/`emits`), relit on edits and predicted edits, the mesher's smooth `flood` stream, ambient and the direct sun and moon scaled by it (carved tunnels no longer lit like day); follow-up: the streaming stalls fixed (coalesced seeded unloads, no cascade under a chunk held over open air, light and mesh budgets of their own that scale on a slow page; flying back to 0.22.8's frames); outstanding: CI, the owner's review; characters (your arms, held items, players) lit by the cells they are in, eased; the shadow maps' stand-in past their last cascade |
+| 45 — Flood light | 🚧 In progress — built and tested natively and in Chrome on the GPU (ADR 0045, DAY_NIGHT.md §11): per-cell sky and block light on the client (`dwell_world::light`, data `shared/look/light.json` and the blocks' `lightFilter`/`emits`), relit on edits and predicted edits, the mesher's smooth `flood` stream, ambient and the direct sun and moon scaled by it (carved tunnels no longer lit like day); follow-up: the streaming stalls fixed (coalesced seeded unloads, no cascade under a chunk held over open air, light and mesh budgets of their own that scale on a slow page; flying back to 0.22.8's frames; generation workers refilled between frames, so a slow page's terrain finishes generating, the native-server e2e tests); outstanding: CI, the owner's review; characters (your arms, held items, players) lit by the cells they are in, eased; the shadow maps' stand-in past their last cascade |
 
 Phase numbering: Phase 4 was inserted on 2026-09-29 for the planet-scale world (ADRs 0011, 0012);
 the former Phases 4–7 are now 5–8, and Phase 3's former 3c and 3d are now 3d and 3e.
@@ -4564,6 +4564,16 @@ Deviations
   wants on 0.22.12), the bench's `climb-fast` scenario. Measured (M1, load average 41): climb,
   fly-high and fly-low-fast worst frame 35 ms, p99 18.7 ms, no long task over 50 ms (0.22.8's);
   spawn to 50 meshed 0.42 s, to 200 4.3 s at 60 fps. The sky column fast path wasn't needed.
+  Then (after 0.22.15; CI's native-server `play.spec.ts:129` and `edit.spec.ts:204` intermittent
+  from 0.22.12: `generating === 0 && loaded > 100` never held in 30 s): the job pool refilled its
+  workers only at a frame's poll, two jobs per worker a frame, and on CI's software renderer the
+  frames took 2–15 s, so chunks waited 5–17 s for a worker that ran each in ~0.1 s, the LOD's
+  sections sharing the queue (the faster meshing since 0.22.13 drew more per frame, the frames
+  slower still). A result between frames now wakes the pool, which starts the next job at once
+  (`pool.rs` `a_job_finishing_between_frames_starts_the_next_one_at_once`, red → green). Measured
+  (SwiftShader, two native-server pages, 3× CPU throttle): `job.chunk.wait` p50 1–12 s → 0.08–0.11 s,
+  the 179 spawn chunks generated within a frame or two of arriving. The e2e waits print the
+  terrain stats on a timeout.
 
 ## Cross-Cutting Work (every phase)
 
