@@ -1452,3 +1452,120 @@ dwell_world::both_faces!(
         }
     }
 );
+
+// --- Texture phase: a face's uv is its place's, not its merged quad's ----------------------------
+
+/// The uv at face-local point `p` (cells) on the face facing `axis`/`sign` whose plane holds `p`,
+/// interpolated in the triangle that covers it; None where no face is drawn.
+fn uv_at(m: &MeshArrays, axis: usize, sign: f32, p: [f64; 3]) -> Option<[f64; 2]> {
+    let (a, b) = ((axis + 1) % 3, (axis + 2) % 3);
+    for t in m.indices.chunks_exact(3) {
+        let t: [u32; 3] = [t[0], t[1], t[2]];
+        let i = t[0] as usize;
+        if m.normals[i * 3 + axis] != sign {
+            continue;
+        }
+        let q = t.map(|v| vertex(&m.positions, v));
+        if q.iter().any(|q| (q[axis] - p[axis]).abs() > 1e-4) {
+            continue;
+        }
+        // Barycentric coordinates of p in the triangle, in the plane's two axes.
+        let (x0, y0) = (q[0][a], q[0][b]);
+        let (x1, y1) = (q[1][a] - x0, q[1][b] - y0);
+        let (x2, y2) = (q[2][a] - x0, q[2][b] - y0);
+        let (px, py) = (p[a] - x0, p[b] - y0);
+        let det = x1 * y2 - x2 * y1;
+        let l1 = (px * y2 - x2 * py) / det;
+        let l2 = (x1 * py - px * y1) / det;
+        let l0 = 1.0 - l1 - l2;
+        if l0 < -1e-9 || l1 < -1e-9 || l2 < -1e-9 {
+            continue;
+        }
+        let uv = |k: usize| t.map(|v| f64::from(m.uvs[v as usize * 2 + k]));
+        let (u, v) = (uv(0), uv(1));
+        return Some([
+            l0 * u[0] + l1 * u[1] + l2 * u[2],
+            l0 * v[0] + l1 * v[1] + l2 * v[2],
+        ]);
+    }
+    None
+}
+
+dwell_world::both_faces!(
+    /// Breaking a block leaves every other face's texture where it was (owner's playtest,
+    /// 2026-10-21: the wall block beside a broken one changed its tiling). Faces merge into
+    /// rectangles, and an edit changes how they merge, so each face's uv must come from where it
+    /// is (world metres, or a hanging tile's own block top), never from its quad's corner: on ½ m
+    /// cells a quad starting on an odd row shifted a 1 m tile by half. A 9 × 13 × 9 block of dirt
+    /// capped with grass, with a block broken out of each wall and the top in an odd and an even
+    /// row (½ m and 1 m aligned), sampled at four points of every face still drawn.
+    fn breaking_a_block_leaves_the_texture_of_every_other_face_alone(f: FaceFrame) {
+        let dirt = require("dwell:dirt");
+        let (lo, hi, top) = (4, 12, 16);
+        let n = CHUNK_SIZE;
+        let c = ChunkCoord::new(0, 2, 0);
+        let o = [c.x * n, c.y * n, c.z * n];
+        let build = |holes: &[[i32; 3]]| {
+            let mut source = dwell_world::VoxelWorld::new(dwell_world::empty_generator(), None);
+            for y in lo..=top {
+                for z in lo..=hi {
+                    for x in lo..=hi {
+                        if holes.contains(&[x, y, z]) {
+                            continue;
+                        }
+                        let m = if y == top { grass() } else { dirt };
+                        source.set_voxel(o[0] + x, o[1] + y, o[2] + z, m);
+                    }
+                }
+            }
+            let m = mesh_on_face(&mut source, c, f);
+            local_mesh(f, m.opaque)
+        };
+        let before = build(&[]);
+        for row in [9, 10] {
+            let mid = (lo + hi) / 2;
+            let holes = [
+                [hi, row, mid],
+                [lo, row + 1, mid],
+                [mid, row, hi],
+                [mid, row + 1, lo],
+                [mid, top, mid],
+            ];
+            let after = build(&holes);
+            let mut sampled = 0;
+            for (axis, sign) in FACES {
+                let s = sign as f32;
+                let (a, b) = ((axis + 1) % 3, (axis + 2) % 3);
+                // The plane of the block's face facing (axis, sign), in cells.
+                let plane = if sign > 0 {
+                    f64::from(if axis == 1 { top } else { hi } + 1)
+                } else {
+                    f64::from(lo)
+                };
+                for i in 0..n {
+                    for j in 0..n {
+                        for (da, db) in [(0.2, 0.3), (0.7, 0.2), (0.3, 0.8), (0.8, 0.7)] {
+                            let mut p = [0.0; 3];
+                            p[axis] = plane;
+                            p[a] = f64::from(i) + da;
+                            p[b] = f64::from(j) + db;
+                            let (Some(x), Some(y)) =
+                                (uv_at(&before, axis, s, p), uv_at(&after, axis, s, p))
+                            else {
+                                continue;
+                            };
+                            sampled += 1;
+                            assert!(
+                                (x[0] - y[0]).abs() < 1e-4 && (x[1] - y[1]).abs() < 1e-4,
+                                "{:?} row {row}: face ({axis}, {sign}) at {p:?}: uv {x:?} before, \
+                                 {y:?} after",
+                                f.face
+                            );
+                        }
+                    }
+                }
+            }
+            assert!(sampled > 1000, "{sampled} samples");
+        }
+    }
+);

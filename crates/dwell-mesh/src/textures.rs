@@ -82,6 +82,9 @@ pub struct TileRect {
     pub v0: f64,
     pub u1: f64,
     pub v1: f64,
+    /// Whether the tile hangs from its block's top edge ([`tile_hangs`]): a side face then shows the
+    /// tile's top on every block; any other tile's v runs in world metres.
+    pub hang: bool,
 }
 
 /// The rectangle of tile `name`. Like the TS (`indexOf` of −1), an unknown name lands one cell
@@ -101,6 +104,7 @@ pub fn tile_rect(name: &str) -> TileRect {
         v0,
         u1: u0 + TILE as f64 / ATLAS_SIZE as f64,
         v1: v0 + TILE as f64 / ATLAS_SIZE as f64,
+        hang: tile_hangs(name),
     }
 }
 
@@ -136,6 +140,16 @@ pub fn tile_emissive(name: &str) -> f32 {
         .iter()
         .position(|t| *t == name)
         .map_or(0.0, |i| painterly::PAINTERLY_EMISSIVE[i])
+}
+
+/// Whether tile `name` hangs from its block's top edge (its material's `hang`, a turf skirt): a side
+/// face shows the tile's top half on every ½ m block, so it never merges up or down. Every other
+/// tile runs in world metres, whatever quad its face is merged into.
+pub fn tile_hangs(name: &str) -> bool {
+    PAINTERLY_TILES
+        .iter()
+        .position(|t| *t == name)
+        .is_some_and(|i| painterly::PAINTERLY_HANG[i])
 }
 
 /// Whether tile `name` has transparent texels (it is drawn cutout or translucent).
