@@ -169,6 +169,10 @@ interface DwellDebug {
   outline(): string;
   /** Sets the ink outline's mode by name (`off` or an unknown name: off); true when one is on. */
   setOutline(name: string): boolean;
+  /** The pixel-art preview's preset (`shared/look/pixelart.json`, as `?pixelart=` names it), or `off`. */
+  pixelArt(): string;
+  /** Sets the pixel-art preview's preset by name (`off` or an unknown name: off); true when one is on. */
+  setPixelArt(name: string): boolean;
   /** Dev telemetry (docs/DEV_TOOLS.md): per-frame series, event samples and counters, summarised. */
   telemetry(): Telemetry;
   /** The kept frames' raw values: `frames[i]` is `[atMs, ...values in names' order]`. */
@@ -662,6 +666,8 @@ async function start(): Promise<App | null> {
     },
     outline: () => client.outline(),
     setOutline: (name) => client.setOutline(name),
+    pixelArt: () => client.pixelArt(),
+    setPixelArt: (name) => client.setPixelArt(name),
     memory: () => memoryReport(app),
     blockDump: () => blockDumpOf(app),
     telemetry: () => client.telemetry() as Telemetry,
