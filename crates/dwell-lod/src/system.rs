@@ -268,6 +268,8 @@ pub const OTHER_FACE_NEAR_M: f64 = 512.0;
 pub const RIM_VIEW_M: f64 = 16_384.0;
 /// A requested chunk that has not arrived is asked for again after this long (ms).
 pub const CHUNK_REQUEST_RETRY_MS: f64 = 10_000.0;
+/// Subtracted from the second area's chunk requests' distances so they go first.
+const SECOND_AREA_FIRST_M: f64 = 1.0e9;
 /// Chunks are asked for within this many chunks of the camera (the server's radius, less a margin).
 pub const CHUNK_REQUEST_RADIUS: i32 = world::RENDER_RADIUS_CHUNKS as i32 - 1;
 /// The view must fit the cache: while the sections it uses are over the budget, the pixel error
@@ -432,6 +434,12 @@ pub struct LodSystem {
     covered_ancestors: HashSet<LodId>,
     /// When each level-1 section around the camera first had all its chunks drawable (ms).
     drawable_since: HashMap<LodId, f64>,
+    /// A second area readied down to level 1 but not drawn (`set_second_area`), and the sections
+    /// it wanted this frame (ranked by their distance to it).
+    second: Option<(Vec3, Vec3)>,
+    /// When the second area was set (ms; NaN: set since the last frame).
+    second_since_ms: f64,
+    warm: HashSet<LodId>,
     /// Full-detail distance (m): chunks within it, never beyond; None: by pixel error.
     detail_m: Option<f64>,
     /// The face the camera is on (1: A, −1: B), and whether it is near the rim (see culled).
@@ -490,6 +498,9 @@ impl LodSystem {
             covered: HashSet::default(),
             covered_ancestors: HashSet::default(),
             drawable_since: HashMap::default(),
+            second: None,
+            second_since_ms: 0.0,
+            warm: HashSet::default(),
             detail_m: None,
             view_face: 1,
             near_rim: false,
@@ -542,6 +553,18 @@ impl LodSystem {
     }
 
     /// A level-0 chunk is drawn when its level-1 section is refined (or before LOD is ready).
+    /// Readies the sections over a second area (world metres, `lo`..`hi`) down to level 1 without
+    /// drawing them, ranked by their distance to it alongside the view's: the respawn preload's
+    /// ring while the player is dead (ARCHITECTURE.md §6.3), so the view there refines to its
+    /// chunks at once on respawning. Only the sections over the area and their ancestors, not a
+    /// second view. None: the camera's view alone.
+    pub fn set_second_area(&mut self, area: Option<(Vec3, Vec3)>) {
+        if area != self.second {
+            self.second = area;
+            self.second_since_ms = f64::NAN;
+        }
+    }
+
     pub fn chunk_visible(&self, coord: ChunkCoord) -> bool {
         self.chunk_fade(coord).is_some()
     }
@@ -675,6 +698,15 @@ impl LodSystem {
             self.visit(root, &frustum, &mut selection, None, host);
         } else {
             self.wanted.push(root);
+        }
+        self.warm.clear();
+        if self.second_since_ms.is_nan() {
+            self.second_since_ms = now_ms;
+        }
+        if self.active
+            && let Some((lo, hi)) = self.second
+        {
+            self.warm_visit(root, lo, hi);
         }
 
         // Skirts close cracks where the neighbour is not drawn at the same level.
@@ -1002,6 +1034,55 @@ impl LodSystem {
         self.split(id);
         for &kid in kids.as_slice() {
             self.visit(kid, frustum, selection, next, host);
+        }
+    }
+
+    /// The second area's sections (`set_second_area`): touched (kept in the cache, asked for when
+    /// due), wanted while not ready, and descended once ready, down to level 1. Nothing is drawn.
+    fn warm_visit(&mut self, id: LodId, lo: Vec3, hi: Vec3) {
+        self.touch(id);
+        if !self.ready(id) {
+            self.wanted.push(id);
+            self.warm.insert(id);
+            return;
+        }
+        let n = self.n(id);
+        if n.kind != Some(LodKind::Content) {
+            return; // empty or buried: nothing to draw, nor below it
+        }
+        if n.coord.level == 1 {
+            // Its chunks, asked for as the view's are (the server streams the area's ring and
+            // answers requests around it), before the view's: a section refines to its chunks
+            // once all 8 are there.
+            if self.options.request_chunks && !self.full_mode {
+                let (coord, at) = (n.coord, std::array::from_fn(|a| 0.5 * (lo[a] + hi[a])));
+                for o in 0..8 {
+                    let c = chunk_of_lod(child(coord, o));
+                    // Asked since the area was set: asked again otherwise, since an ask from
+                    // before was likely dropped by the server as out of range (it does not say).
+                    match self.chunk_asked.get(&c) {
+                        Some(&t) if t >= self.second_since_ms => continue,
+                        Some(_) => {
+                            self.chunk_asked.remove(&c);
+                        }
+                        None => {}
+                    }
+                    let clo = chunk_origin_m(c);
+                    let chi = std::array::from_fn(|a| clo[a] + CHUNK_EXTENT_M[a]);
+                    // Before the view's own requests (beyond the streamed view, they can wait):
+                    // the area is few chunks, and wanted only until the respawn.
+                    let d = box_distance(at, clo, chi) - SECOND_AREA_FIRST_M;
+                    self.wanted_chunks.push((c, d));
+                }
+            }
+            return;
+        }
+        let kids = self.kids(id);
+        for &kid in kids.as_slice() {
+            let k = self.n(kid);
+            if (0..3).all(|a| k.lo[a] < hi[a] && k.hi[a] > lo[a]) {
+                self.warm_visit(kid, lo, hi);
+            }
         }
     }
 
@@ -1528,6 +1609,14 @@ impl LodSystem {
             .iter()
             .map(|&id| {
                 let n = self.n(id);
+                if self.warm.contains(&id)
+                    && let Some((lo, hi)) = self.second
+                {
+                    // The second area's: by the distance to its centre, in every direction.
+                    let at = std::array::from_fn(|a| 0.5 * (lo[a] + hi[a]));
+                    let d = box_distance(at, n.lo, n.hi).max(1.0);
+                    return (id, cell_size(n.coord.level) as f64 / d);
+                }
                 let d = self.distance(n.lo, n.hi, frustum).max(1.0);
                 // Near the camera every direction loads alike, nearest (coarsest) first, so the
                 // full detail behind it is there without turning round; beyond, what the view

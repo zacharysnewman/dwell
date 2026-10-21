@@ -12,14 +12,18 @@ use std::rc::Rc;
 use dwell_blocks::StateId;
 use dwell_game::block_interaction::{BlockInteraction, BlockTarget, TargetSource, view_direction};
 use dwell_game::brush_tool::{BrushAction, BrushOutline, BrushPanel, BrushTool};
-use dwell_game::chunk_stream::{ChunkMessage, ChunkStreamer, Coord, StreamStats, TerrainView};
+use dwell_game::chunk_stream::{
+    ChunkMessage, ChunkStreamer, Coord, SecondCentre, StreamStats, TerrainView,
+};
 use dwell_game::edit_prediction::EditPredictor;
 use dwell_game::eye::{EyeCamera, EyeState, StepRamp};
 use dwell_game::face_flip::FaceFlip;
 use dwell_game::gate::prediction_may_run;
 use dwell_game::hud_text::{HudTextInput, hud_text};
 use dwell_game::input::{EditAction, KeyboardMouseInput, quantize_input};
-use dwell_game::loading::{LOADING, LoadingGate, LoadingScreen, near_ring_offsets};
+use dwell_game::loading::{
+    LOADING, LoadingGate, LoadingScreen, RESPAWN_PRELOAD_RADIUS_CHUNKS, near_ring_offsets,
+};
 use dwell_game::region_tools::{RegionTools, ToolAction, ToolBoxKind, ToolContext};
 use dwell_game::remotes::RemotePlayers;
 use dwell_game::sound::{
@@ -112,7 +116,7 @@ pub trait Scene: TerrainRenderer {
         yaw_deg: f64,
         pitch_deg: f64,
         face: FaceFrame,
-        flip: f64,
+        roll: f64,
     );
     /// The fluid whose drawn surface the camera's eye is under (`dwell_world::fluid::eye_fluid`).
     fn set_eye_fluid(&mut self, _eye_fluid: Option<dwell_world::fluid::EyeFluid>) {}
@@ -535,8 +539,6 @@ pub struct Game<S: Scene> {
     pub fov_setting: f64,
     /// The controller's walk and run speeds the effects scale to.
     speeds: Speeds,
-    /// The face the last drawn frame's camera was on (a change is the turn-over).
-    motion_face: Option<FaceFrame>,
     /// The vertical FOV of the last drawn frame, given to the renderer and the LOD alike.
     frame_fov: f64,
     /// The spyglass (docs/SPYGLASS.md): its zoom, and the last frame's view of it.
@@ -555,6 +557,10 @@ pub struct Game<S: Scene> {
     loading: LoadingGate,
     /// Its near ring's chunk offsets, nearest first.
     near_ring: Vec<Coord>,
+    /// The Welcome's verification chunk: the cell under the world's spawn, where a respawn is.
+    spawn_chunk: Option<ChunkCoord>,
+    /// The respawn preload's priorities (§6.3; off with `?respawnPreload=off`).
+    respawn_preload_on: bool,
 }
 
 impl<S: Scene> Game<S> {
@@ -590,7 +596,7 @@ impl<S: Scene> Game<S> {
         let predictor = Predictor::new(config);
         let current = ClientState::of(&predictor);
         let mut flip = FaceFlip::new();
-        flip.tick(current.face); // joining on face B does not turn the player
+        flip.reset(current.face); // joining on face B does not turn the player
         let mut eye = EyeCamera::new();
         eye.tick(&current.eye_state(), 1.0 / SIM_HZ as f64);
         let mut game = Self {
@@ -650,7 +656,6 @@ impl<S: Scene> Game<S> {
             menu_open: false,
             fov_setting: dwell_lod::frustum::VERTICAL_FOV,
             speeds,
-            motion_face: None,
             frame_fov: dwell_lod::vertical_fov(1280.0 / 720.0),
             spyglass: Spyglass::new(),
             spyglass_view: SpyglassView::NONE,
@@ -661,6 +666,8 @@ impl<S: Scene> Game<S> {
             first_draw_ms: None,
             loading: LoadingGate::new(LOADING, false),
             near_ring: near_ring_offsets(LOADING.radius_chunks),
+            spawn_chunk: verification,
+            respawn_preload_on: true,
             bodies: Bodies::default(),
             held_sent: None,
             show_arms: true,
@@ -674,6 +681,11 @@ impl<S: Scene> Game<S> {
             None => game.verify(0),
         }
         game
+    }
+
+    /// The respawn preload's lighting, meshing and LOD priorities (§6.3) on or off.
+    pub fn set_respawn_preload(&mut self, on: bool) {
+        self.respawn_preload_on = on;
     }
 
     /// The loading screen on joining and respawning (off for `?loading=off` and the tests).
@@ -694,6 +706,21 @@ impl<S: Scene> Game<S> {
     /// The loading gate's state, for the bench and the tests.
     pub fn loading_gate(&self) -> &LoadingGate {
         &self.loading
+    }
+
+    /// The respawn preload (§6.3): while dead, the server streams the ring around the respawn
+    /// point, and its chunks are lit and meshed right after the near ring around the body. The
+    /// respawn is at the world's spawn, whose chunk is predicted from the Welcome's verification
+    /// chunk (the cell under it): the ring is widened by one chunk to cover the body's centre
+    /// above it and the players' spread around it.
+    fn respawn_preload(&self) -> Option<SecondCentre> {
+        let radius = RESPAWN_PRELOAD_RADIUS_CHUNKS.filter(|_| self.respawn_preload_on)?;
+        let at = self.spawn_chunk.filter(|_| self.dead)?;
+        Some(SecondCentre {
+            near: LOADING.radius_chunks,
+            at: at.to_array(),
+            radius: radius + 1,
+        })
     }
 
     /// Opens the loading gate once the near ring around the player is drawn (in every direction,
@@ -869,6 +896,10 @@ impl<S: Scene> Game<S> {
     pub fn chunk_revision(&self, c: Coord) -> Option<u32> {
         self.streamer.revision(c)
     }
+    /// Loaded and meshed (or all air): drawable as full detail.
+    pub fn chunk_drawable(&self, c: Coord) -> bool {
+        self.streamer.drawable(c)
+    }
     pub fn allow_flight(&mut self, input: &mut KeyboardMouseInput, allowed: bool) {
         input.flight.set_allowed(allowed);
     }
@@ -952,6 +983,12 @@ impl<S: Scene> Game<S> {
                     self.predictor.remove_remote(id);
                     self.proxies.remove(&id);
                 }
+                if self.current.active && !self.predictor.active() {
+                    // Died: the player is no longer placed, even where the prediction never
+                    // ticked (the terrain around had not arrived), so the respawn is a placement
+                    // the loading screen waits for.
+                    self.current = ClientState::of(&self.predictor);
+                }
                 if !self.current.active {
                     self.current = ClientState::of(&self.predictor);
                     // Placed: the loading screen waits for the near ring (not in flight, which
@@ -961,7 +998,7 @@ impl<S: Scene> Game<S> {
                     } else if self.current.active {
                         self.loading.skip();
                     }
-                    self.flip.tick(self.current.face);
+                    self.flip.reset(self.current.face);
                     // Placed (joined or respawned): the camera starts where the player is, not
                     // interpolated from the state before, whose eye was elsewhere (the default
                     // state's at the origin, inside the ground) and aimed the crosshair from there.
@@ -1571,11 +1608,11 @@ impl<S: Scene> Game<S> {
             1.0 / SIM_HZ as f64,
         );
         self.mover_sounds.update(&sample, None, &mut self.sounds);
-        // Crossing the midplane turns the heading round (a half somersault, face_flip.rs).
-        let turn = self.flip.tick(self.current.face);
-        if turn != 0.0 {
-            input.look.yaw = (input.look.yaw + turn) % 360.0;
-        }
+        // Across the midplane the body turns over and the look goes on across: the heading kept,
+        // the pitch mirrored, the camera pointing the same way and rolling upright (face_flip.rs).
+        (input.look.yaw, input.look.pitch) =
+            self.flip
+                .tick(self.current.face, input.look.yaw, input.look.pitch);
         self.eye
             .tick(&self.current.eye_state(), 1.0 / SIM_HZ as f64);
         record_tick(&self.current, &frame, self.eye.draw(1.0));
@@ -1588,7 +1625,7 @@ impl<S: Scene> Game<S> {
         let c = self.current;
         let face = c.face;
         let dt = self.last_draw_ms.map_or(0.0, |l| (now_ms - l) / 1000.0);
-        let flip = self.flip.draw(face, dt);
+        let roll = self.flip.draw(dt);
         self.last_draw_ms = Some(now_ms);
         let p = self.previous.unwrap_or(c);
         let alpha = self.accumulator / TICK_MS;
@@ -1596,9 +1633,17 @@ impl<S: Scene> Game<S> {
             let a = p.position[i] + p.render_offset[i];
             a + (c.position[i] + c.render_offset[i] - a) * alpha
         });
+        self.streamer.set_second_centre(self.respawn_preload());
+        let around = if c.active {
+            center
+        } else if self.dead {
+            self.death_feet // the view around the body
+        } else {
+            [0.5, 64.0, 0.5]
+        };
         telemetry::span("mesh_dirty", || {
             self.streamer.mesh_dirty(
-                if c.active { center } else { [0.5, 64.0, 0.5] },
+                around,
                 stream_budget_ms(dt * 1000.0),
                 stream_budget_ms(dt * 1000.0),
                 &mut *now,
@@ -1747,7 +1792,7 @@ impl<S: Scene> Game<S> {
             camera_eye = eye;
             self.scene
                 .borrow_mut()
-                .set_camera(eye, yaw, pitch, face, flip);
+                .set_camera(eye, yaw, pitch, face, roll);
             self.listener = listener(eye, yaw, pitch, face);
             let ready = self.terrain_ready();
             self.target(ready.then_some(eye), input, now_ms);
@@ -1982,8 +2027,6 @@ impl<S: Scene> Game<S> {
     /// the renderer and, in `update_lod`, to the LOD selection.
     fn update_motion(&mut self, eye: [f64; 3], dt: f64) {
         let c = &self.current;
-        let turned_over = self.motion_face.is_some_and(|f| f != c.face);
-        self.motion_face = Some(c.face);
         let out = self.motion.frame(
             &MotionInput {
                 eye,
@@ -1991,7 +2034,6 @@ impl<S: Scene> Game<S> {
                 state: c.state,
                 dt,
                 first_person: c.active && !self.dead && self.view.is_none(),
-                turned_over,
                 paused: self.menu_open,
             },
             self.motion_settings,
@@ -2024,8 +2066,23 @@ impl<S: Scene> Game<S> {
 
     /// The whole-world view around the camera.
     fn update_lod(&mut self, c: &ClientState, now_ms: f64, input: &KeyboardMouseInput) {
-        if !c.active || self.lod.is_none() {
+        // Dead, the view around the body keeps loading, and the respawn's ring is readied.
+        if !(c.active || self.dead) || self.lod.is_none() {
             return;
+        }
+        let second = self.respawn_preload().map(|s| {
+            let at = ChunkCoord::from_array(s.at);
+            let r = s.radius;
+            let lo = dwell_world::chunk_origin_m(ChunkCoord::new(at.x - r, at.y - r, at.z - r));
+            let hi = dwell_world::chunk_origin_m(ChunkCoord::new(
+                at.x + r + 1,
+                at.y + r + 1,
+                at.z + r + 1,
+            ));
+            (lo, hi)
+        });
+        if let Some(lod) = &mut self.lod {
+            lod.set_second_area(second);
         }
         let viewport = self.viewport();
         let (position, yaw_deg, pitch_deg) = match self.view {

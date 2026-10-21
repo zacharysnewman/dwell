@@ -30,8 +30,8 @@ use dwell_world::edit::{
 use dwell_world::lod::{INDEX_LEVEL, LodCoord, in_world, lod_of_chunk, parent};
 use dwell_world::region::{RegionCheck, check_region_edit, region_reach};
 use dwell_world::{
-    AirChunkTest, BUILD_VOLUME, CHUNK_SIZE, Chunk, ChunkCoord, ChunkGenerator, M, SavedChunks,
-    VoxelWorld, chunk_distance, chunk_hash, chunk_of, local_index,
+    AirChunkTest, BUILD_VOLUME, CHUNK_SIZE, Chunk, ChunkCoord, ChunkGenerator, FaceFrame, M,
+    SavedChunks, VoxelWorld, chunk_distance, chunk_hash, chunk_of, local_index,
 };
 
 use dwell_protocol::auth::verify_ed25519;
@@ -158,6 +158,10 @@ pub struct ServerConfig {
     /// Beyond the view, chunks a client asks for (ChunkRequest, §6.6) are streamed within this.
     pub render_radius_chunks: i32,
     pub chunk_bytes_per_second: u32,
+    /// The respawn preload (§6.3): from a death until the respawn, the view sphere of this radius
+    /// around the respawn point is streamed as a second centre, after the view around the body and
+    /// within the same budgets (None: off). Default from `shared/look/loading.json`.
+    pub respawn_preload_radius_chunks: Option<i32>,
     /// Level of detail (§6.6): propagation threads (`None`: one when worldgen has threads, else
     /// none — then it runs on the tick within `lod_budget`), and the per-client stream budget.
     pub lod_threads: Option<usize>,
@@ -198,6 +202,7 @@ impl Default for ServerConfig {
             view_radius_chunks: wc::VIEW_RADIUS_CHUNKS as i32,
             render_radius_chunks: wc::RENDER_RADIUS_CHUNKS as i32,
             chunk_bytes_per_second: wc::CHUNK_BYTES_PER_SECOND as u32,
+            respawn_preload_radius_chunks: RESPAWN_PRELOAD_RADIUS_CHUNKS,
             lod_threads: None,
             lod_budget: Duration::from_micros(2000),
             lod_bytes_per_second: lod::BYTES_PER_SECOND as u32,
@@ -226,8 +231,19 @@ pub struct StreamStats {
     pub requested_sent: u32,
     /// Over the rate or queue limit, or out of range.
     pub requests_dropped: u32,
+    /// Of the above, sent for the respawn preload (§6.3).
+    pub preload_sent: u32,
     /// Chunks the client currently has.
     pub streamed: usize,
+}
+
+include!("respawn_preload.gen.rs");
+
+/// The chunk the body of a player standing at `feet` is centred in (the view's centre), on either
+/// face: `half_height` up from the feet, face-locally.
+fn body_centre_chunk(feet: [f64; 3], half_height: f64) -> ChunkCoord {
+    let up = FaceFrame::at_height(feet[1]).vector([0.0, half_height, 0.0]);
+    chunk_at(feet[0] + up[0], feet[1] + up[1], feet[2] + up[2])
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -384,7 +400,11 @@ struct Session {
     streamed: HashSet<ChunkCoord>, // sent and not unloaded
     stream_center: Option<ChunkCoord>,
     stream_complete: bool, // everything in view sent (until the center moves)
-    chunk_credit: f64,     // bytes the client may still receive this tick
+    /// The respawn preload (§6.3): while dead, the respawn point's chunk, whose ring is streamed
+    /// after the view; and whether all of it has been sent.
+    preload_center: Option<ChunkCoord>,
+    preload_complete: bool,
+    chunk_credit: f64, // bytes the client may still receive this tick
     stream_stats: StreamStats,
     // Chunks beyond the view the client asked for (§6.6): queued, then streamed (and kept until
     // they leave the render radius) after the view's own chunks.
@@ -436,6 +456,8 @@ impl Session {
             streamed: HashSet::default(),
             stream_center: None,
             stream_complete: false,
+            preload_center: None,
+            preload_complete: false,
             chunk_credit: 0.0,
             stream_stats: StreamStats::default(),
             chunk_requests: VecDeque::new(),
@@ -552,6 +574,7 @@ pub struct Server {
     own_blocks: Vec<dwell_blocks::StateId>,
     view_offsets: Vec<ChunkCoord>, // chunks in view relative to the center, nearest first
     prefetch_offsets: Vec<ChunkCoord>, // generated ahead around each player
+    preload_offsets: Vec<ChunkCoord>, // the respawn preload's ring (§6.3), nearest first
     explicit_wanted: Vec<ChunkCoord>, // full-mode chunks to generate for streaming
     // Persistence: chunks in the world file (revision saved), modified chunks not saved yet, saves
     // in flight (their chunk revisions), and players who left since the last save.
@@ -619,6 +642,7 @@ impl Server {
             own_blocks: Vec::new(),
             view_offsets: Vec::new(),
             prefetch_offsets: cube_offsets(PREFETCH_CHUNKS),
+            preload_offsets: Vec::new(),
             explicit_wanted: Vec::new(),
             saved: Arc::new(Mutex::new(HashMap::default())),
             dirty: HashSet::default(),
@@ -673,6 +697,8 @@ impl Server {
             .into_iter()
             .filter(|c| len_sq(c) <= r * r + r)
             .collect();
+        // The respawn preload's ring: the same sphere, of its own radius (at most the view's).
+        server.set_respawn_preload(server.config.respawn_preload_radius_chunks);
         server
     }
 
@@ -1036,19 +1062,22 @@ impl Server {
     }
 
     /// At the spawn point, or at `feet` (a saved position).
-    fn spawn_player(&mut self, id: SessionId, feet: Option<[f64; 3]>) {
-        let s = self.sessions.get_mut(&id).expect("session");
-        // Spread players around the spawn point so they don't start inside each other.
-        let slot = (i32::from(s.player_id) - 1).rem_euclid(8);
+    /// Where a player (re)spawns without a saved position: around the spawn point, spread by
+    /// player id so they don't start inside each other.
+    fn respawn_feet(&self, player_id: u16) -> [f64; 3] {
+        let slot = (i32::from(player_id) - 1).rem_euclid(8);
         let at = self.config.spawn.expect("spawn");
-        let spawn = match feet {
-            Some(f) => DVec3::from(f),
-            None => DVec3::new(
-                at[0] + f64::from(slot % 4) - 1.5,
-                at[1],
-                at[2] + f64::from(slot / 4) * 1.5 - 0.75,
-            ),
-        };
+        [
+            at[0] + f64::from(slot % 4) - 1.5,
+            at[1],
+            at[2] + f64::from(slot / 4) * 1.5 - 0.75,
+        ]
+    }
+
+    fn spawn_player(&mut self, id: SessionId, feet: Option<[f64; 3]>) {
+        let spawn =
+            DVec3::from(feet.unwrap_or_else(|| self.respawn_feet(self.sessions[&id].player_id)));
+        let s = self.sessions.get_mut(&id).expect("session");
         s.handle =
             Some(
                 self.players
@@ -1108,12 +1137,20 @@ impl Server {
         let death = [p.x, self.feet_y(h), p.z];
         self.players.despawn(&mut self.physics, h);
         let respawn_tick = self.tick + (pc::RESPAWN_SECONDS as u32) * SIM_HZ;
+        let respawn = self.respawn_feet(self.sessions[&id].player_id);
+        let half = f64::from(self.config.player_config.half_height(false));
+        let preload = self
+            .config
+            .respawn_preload_radius_chunks
+            .map(|_| body_centre_chunk(respawn, half));
         let s = self.sessions.get_mut(&id).expect("session");
         s.death_position = death;
         s.handle = None;
         s.health = 0;
         s.inputs.clear();
         s.respawn_tick = respawn_tick;
+        s.preload_center = preload;
+        s.preload_complete = false;
         let mut e = self.event(PlayerEventKind::Death, &self.sessions[&id]);
         e.cause = cause;
         self.broadcast_world(&Message::PlayerEvent(e));
@@ -1225,6 +1262,7 @@ impl Server {
                 continue;
             }
             self.spawn_player(id, None);
+            self.sessions.get_mut(&id).expect("session").preload_center = None;
             let h = self.sessions[&id].handle.expect("spawned");
             let p = self.players.position(&self.physics, h);
             let mut e = self.event(PlayerEventKind::Respawn, &self.sessions[&id]);
@@ -1296,6 +1334,26 @@ impl Server {
                 }
             }
         }
+        // Then the respawn preloads' rings (§6.3), for the respawned players' collision.
+        let preloads: Vec<ChunkCoord> = self
+            .sessions
+            .values()
+            .filter_map(|s| s.preload_center)
+            .collect();
+        if !preloads.is_empty() {
+            for o in &self.preload_offsets {
+                for &center in &preloads {
+                    let c = add(center, *o);
+                    if BUILD_VOLUME.chunk_may_hold(c)
+                        && self.world.find(c).is_none()
+                        && !self.is_saved(c)
+                        && !self.is_air(c)
+                    {
+                        wanted.push(c);
+                    }
+                }
+            }
+        }
         wanted.extend_from_slice(&self.explicit_wanted);
         self.worldgen.set_wanted(&wanted);
 
@@ -1312,16 +1370,34 @@ impl Server {
                 clean
                     && centers
                         .iter()
+                        .chain(&preloads)
                         .all(|&center| chunk_distance(c, center) > KEEP_CHUNKS)
             });
         }
     }
 
+    /// Whether a chunk request is answered: within the render radius of the view's centre, or
+    /// (while dead) within two chunks past the respawn preload's ring (§6.3), which the client's
+    /// LOD asks for to show the level-1 sections the ring straddles as chunks.
+    fn requestable(&self, s: &Session, c: ChunkCoord, center: ChunkCoord) -> bool {
+        within_radius(c, center, self.config.render_radius_chunks)
+            || s.preload_center
+                .zip(self.config.respawn_preload_radius_chunks)
+                .is_some_and(|(p, r)| within_radius(c, p, r + 2))
+    }
+
     fn request_chunks(&mut self, id: SessionId, coords: &[ChunkCoordNet]) {
         let center = self.view_center(&self.sessions[&id]);
-        let render = self.config.render_radius_chunks;
+        let ok_at: Vec<bool> = coords
+            .iter()
+            .map(|&at| {
+                center.is_some_and(|center| {
+                    self.requestable(&self.sessions[&id], ChunkCoord::from_array(at), center)
+                })
+            })
+            .collect();
         let s = self.sessions.get_mut(&id).expect("session");
-        for &at in coords {
+        for (&at, &in_range) in coords.iter().zip(&ok_at) {
             let c = ChunkCoord::from_array(at);
             if s.requested.contains(&c) {
                 continue; // already on its way or there
@@ -1331,7 +1407,7 @@ impl Server {
                 continue;
             }
             let ok = s.chunk_mode != ChunkMode::AwaitingCheck
-                && center.is_some_and(|center| within_radius(c, center, render))
+                && in_range
                 && BUILD_VOLUME.chunk_may_hold(c)
                 && s.chunk_request_credit >= 1.0
                 && s.chunk_requests.len() < MAX_QUEUED_CHUNK_REQUESTS;
@@ -1360,6 +1436,9 @@ impl Server {
         }
         let Some(center) = center else { return };
         s.chunk_credit = (s.chunk_credit + per_tick).min(per_tick);
+        let preload = s
+            .preload_center
+            .zip(self.config.respawn_preload_radius_chunks);
 
         if s.stream_center != Some(center) {
             s.stream_center = Some(center);
@@ -1381,7 +1460,7 @@ impl Server {
                         } else {
                             r
                         },
-                    )
+                    ) && !preload.is_some_and(|(p, pr)| within_radius(*c, p, pr))
                 })
                 .collect();
             unload.sort_by_key(|c| (c.x, c.y, c.z));
@@ -1401,7 +1480,15 @@ impl Server {
         if !self.sessions[&id].stream_complete {
             self.stream_view(id, center, &mut sent);
         }
-        if self.sessions[&id].stream_complete {
+        if self.sessions[&id].stream_complete
+            && let Some((p, _)) = preload
+            && !self.sessions[&id].preload_complete
+        {
+            // Then the respawn point's ring (§6.3): the view first (collision needs it).
+            self.stream_preload(id, p, &mut sent);
+        }
+        let s = &self.sessions[&id];
+        if s.stream_complete && (s.preload_complete || s.preload_center.is_none()) {
             // The view first (collision needs it).
             self.stream_requested(id, center, &mut sent);
         }
@@ -1452,6 +1539,44 @@ impl Server {
         self.sessions.get_mut(&id).expect("session").stream_complete = complete;
     }
 
+    /// The respawn preload's ring around `center` (§6.3), nearest first, within what the view's
+    /// streaming left of the budgets: the server's view sphere of `respawn_preload_radius_chunks`.
+    fn stream_preload(&mut self, id: SessionId, center: ChunkCoord, sent: &mut i64) {
+        let mut complete = true;
+        for i in 0..self.preload_offsets.len() {
+            let c = add(center, self.preload_offsets[i]);
+            let s = &self.sessions[&id];
+            if !BUILD_VOLUME.chunk_may_hold(c) || s.streamed.contains(&c) {
+                continue;
+            }
+            complete = false;
+            if s.chunk_credit <= 0.0 || *sent >= wc::MAX_CHUNKS_PER_TICK {
+                break;
+            }
+            let Some(m) = self.chunk_message(id, c, false) else {
+                // Full mode: generated first (update_worldgen wants the ring).
+                continue;
+            };
+            let form = m.form;
+            let bytes = encode(&Message::ChunkData(m));
+            let s = self.sessions.get_mut(&id).expect("session");
+            s.chunk_credit -= bytes.len() as f64;
+            s.streamed.insert(c);
+            s.stream_stats.preload_sent += 1;
+            Self::count_sent(&mut s.stream_stats, form);
+            self.outbox.push(Outgoing {
+                session: id,
+                kind: OutKind::Reliable(Channel::World),
+                bytes,
+            });
+            *sent += 1;
+        }
+        self.sessions
+            .get_mut(&id)
+            .expect("session")
+            .preload_complete = complete;
+    }
+
     fn stream_requested(&mut self, id: SessionId, center: ChunkCoord, sent: &mut i64) {
         // In the order asked (the client asks nearest first, §6.6), within what the budget leaves.
         for _ in 0..self.sessions[&id].chunk_requests.len() {
@@ -1464,7 +1589,8 @@ impl Server {
                 continue; // the view reached it first
             }
             // Full mode would generate on the server for rendering alone: only what is stored.
-            let message = within_radius(c, center, self.config.render_radius_chunks)
+            let message = self
+                .requestable(&self.sessions[&id], c, center)
                 .then(|| self.chunk_message(id, c, false))
                 .flatten();
             let s = self.sessions.get_mut(&id).expect("session");
@@ -2305,6 +2431,37 @@ impl Server {
             ..s.stream_stats
         })
     }
+    /// The player id of a joined session.
+    pub fn player_of_session(&self, id: SessionId) -> Option<u16> {
+        self.sessions
+            .get(&id)
+            .filter(|s| s.joined())
+            .map(|s| s.player_id)
+    }
+
+    /// Kills a joined, living player (as a lethal fall would; tools and tests): they respawn after
+    /// `RESPAWN_SECONDS`.
+    pub fn kill_player(&mut self, player_id: u16) {
+        if let Some(id) = self.session_of_player(player_id) {
+            self.kill(id, DamageCause::Fall);
+        }
+    }
+
+    /// Turns the respawn preload (§6.3) on with a radius (at most the view's), or off: for deaths
+    /// from now on.
+    pub fn set_respawn_preload(&mut self, radius_chunks: Option<i32>) {
+        self.config.respawn_preload_radius_chunks = radius_chunks;
+        let p = radius_chunks.map_or(-1, |p| p.min(self.config.view_radius_chunks));
+        self.preload_offsets = cube_offsets(p.max(0))
+            .into_iter()
+            .filter(|c| p >= 0 && len_sq(c) <= p * p + p)
+            .collect();
+    }
+
+    /// The chunk whose ring is preloaded for a dead player's respawn (§6.3), until the respawn.
+    pub fn respawn_preload_of(&self, player_id: u16) -> Option<ChunkCoord> {
+        self.by_player(player_id).and_then(|s| s.preload_center)
+    }
     pub fn lod_stats_of(&self, player_id: u16) -> Option<LodStats> {
         self.by_player(player_id).map(|s| s.lod_stats)
     }
@@ -2377,4 +2534,22 @@ impl Server {
             }
         }
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    dwell_world::both_faces!(
+        fn the_respawn_centre_is_the_body_centres_chunk_on_either_face(f: FaceFrame) {
+            // Feet on a chunk's top row boundary (face-locally): the body's centre, 0.9 m up, is in
+            // the chunk above, as the view centres it once the player is there.
+            let top = f64::from(CHUNK_SIZE) * dwell_world::CELL_H * 2.0;
+            let feet = f.point([5.5, top, 7.5]);
+            let c = body_centre_chunk(feet, 0.9);
+            let up = f.point([5.5, top + 0.9, 7.5]);
+            assert_eq!(c, chunk_at(up[0], up[1], up[2]));
+            assert_eq!(c, f.chunk(chunk_at(5.5, top + 0.9, 7.5)));
+        }
+    );
 }

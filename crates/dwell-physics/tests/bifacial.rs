@@ -218,3 +218,64 @@ fn crossing_keeps_the_motion() {
     assert!(before < 0.0 && after < 0.0, "{before} {after}");
     assert!((after - before).abs() < 1.5, "{before} {after}");
 }
+
+dwell_world::both_faces!(
+    /// The owner's ladder (BIFACIAL_WORLD.md §6, 2026-10-21): climbing down a ladder through the
+    /// midplane, looking down and holding forward, keeps going the same way in the world. Across
+    /// the midplane the body turns over and the client continues the look on the other face
+    /// (`FaceFrame::look_across`: the heading kept, the pitch mirrored: the same world direction), so the same look down
+    /// now reads as a look up the far side's ladder and forward climbs up it. The crossing tick
+    /// itself ran on the look sampled before it: the controller continues it too, or that one tick
+    /// climbs back. Starts on face `f` and crosses to the other.
+    fn holding_forward_down_a_ladder_through_the_midplane_keeps_going(f: FaceFrame) {
+        let mut w = PlayerTestWorld::world_frame();
+        let ladder = dwell_blocks::require("dwell:ladder[facing=north]");
+        // A ladder column from 12 m below the midplane to 12 m above it.
+        let mid = MID as i32;
+        for y in mid - 12..mid + 12 {
+            w.set_world(0, y, 1, ladder);
+        }
+        // World down on face A, world up on face B: toward the midplane.
+        let toward = -f.sign_f64();
+        let h = w.spawn_at(DVec3::new(0.5, f.y(MID + 8.0), 0.5), 0.0);
+        assert_eq!(w.c(h).face, f);
+        // Out of the flip band (where the body swims), walk into the ladder (it holds the player), then look down and hold forward.
+        w.set_input(|_, _| mv(0.0, 1.0));
+        w.step(20);
+        assert!(w.c(h).climb.climbing);
+        let (mut yaw, mut pitch, mut face) = (0.0f64, -80.0f64, f);
+        let (mut crossed_at, mut moving) = (None, 0);
+        for t in 0..ticks(5.0) {
+            // The client: across the midplane the look continues on the other face.
+            if w.c(h).face != face {
+                face = w.c(h).face;
+                (yaw, pitch) = FaceFrame::look_across(yaw, pitch);
+            }
+            let (y, p) = (yaw as f32, pitch as f32);
+            w.set_input(move |_, _| input(0.0, 1.0, false, false, false, y, p));
+            let before = w.players.position(&w.physics, h).y;
+            w.step(1);
+            let dy = w.players.position(&w.physics, h).y - before;
+            if w.c(h).face != f && crossed_at.is_none() {
+                crossed_at = Some(t);
+            }
+            if crossed_at.is_some_and(|c| t > c + 30) {
+                break;
+            }
+            if t > 5 {
+                // Every tick, the crossing's included: on toward the midplane and past it.
+                assert!(w.c(h).climb.climbing, "tick {t}: let go");
+                assert!(
+                    dy * toward > 0.02,
+                    "tick {t} (crossed at {crossed_at:?}): {dy}"
+                );
+                moving += 1;
+            }
+        }
+        assert!(crossed_at.is_some(), "never crossed");
+        assert!(moving > 40, "{moving}");
+        // Across: the body is past the midplane on the other side, climbing on.
+        assert_eq!(w.c(h).face, f.other());
+        assert!((w.players.position(&w.physics, h).y - MID) * toward > 1.0);
+    }
+);

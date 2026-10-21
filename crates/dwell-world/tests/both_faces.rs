@@ -317,11 +317,6 @@ const KNOWN: &[(&str, &str, &str)] = &[
         "the job codec's per-face rows",
     ),
     (
-        "dwell-client/src/render/camera.rs",
-        "the_half_forward_somersault_across_the_midplane",
-        "crosses the midplane",
-    ),
-    (
         "dwell-client/src/render/characters.rs",
         "the_arms_sit_ahead_of_the_eye_whatever_the_view",
         "views on both faces",

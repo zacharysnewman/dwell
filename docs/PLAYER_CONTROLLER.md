@@ -404,7 +404,18 @@ openings), **crouch height 0.9** (fits 1-tall crawlspaces with skin to spare).
   and the jump-off direction. The face snap therefore holds the capsule against the wall the
   ladder is mounted on.
 - A contiguous ladder column counts as one ladder for `released` purposes: a ladder you let go of is
-  not re-grabbed until the capsule has left every cell of that column.
+  not re-grabbed until the capsule has left every cell of that column, **or a jump** (Dwell,
+  owner 2026-10-21): `perform_jump` (from the ground, coyote time or auto-jump) clears
+  `has_released`, so a player who got off a ladder but still stands in its cells grabs it again by
+  jumping. A jump *off* a ladder (jump pressed while climbing) never clears it, since the jump layer
+  is skipped while climbing, and it sets `jumping` like any jump, so no coyote jump follows it to
+  pull the player back on. The jump that grabs isn't also read as a jump off that tick, and landing
+  lets go only while climbing down (`vertical < 0`), so a jump-grab from the floor holds on
+  (`a_jump_in_a_ladders_cells_after_getting_off_grabs_it_again`,
+  `jumping_off_near_the_floor_and_tapping_jump_again_does_not_re_grab`).
+- Targeting (§6.5 of the architecture) is not the climb zone: the crosshair meets only the ladder's
+  plate, its `selectionBox` (⅛ m against the wall, turned per facing), while the climb zone stays
+  the whole cell.
 - **Over the top** (voxel adaptation): while climbing, a column's climbable region reaches 0.6 m
   above its top cell, and within 0.3 m of the top, climbing up also moves towards `−facing`
   (without the face snap), so the player gets onto the ledge the ladder leans on. (PPC ladder
@@ -1008,8 +1019,12 @@ always toward the midplane (y = −2,048), so a face-B player stands upside down
   which test world-frame geometry, are skipped). Controller decisions are identical: the five-player
   golden trace matches every state on face B with positions within 1 mm.
 - **Camera and look** (§9): eye height is measured along the player's up; the view's pitch is toward
-  that up; the camera turns over when the face changes: the heading turns by 180° and the view is
-  drawn rotated about the camera's right axis by π, easing to 0 over 0.5 s (a half forward
-  somersault, nose first; `dwell-game`'s `face_flip.rs`, applied by `dwell-client`'s
-  `render/camera.rs`). In the flip band a body can swing across the midplane and back, and each
-  crossing turns the heading round again (no hysteresis).
+  that up; when the face changes the body turns over and the camera keeps pointing the same way
+  (BIFACIAL_WORLD.md §6): the look continues across (`FaceFrame::look_across`, heading kept,
+  pitch mirrored: the same world forward), and the upside-down view is drawn rolled back by half a
+  turn about its forward axis, easing in and out to 0 over `crossingRollS` (0.8 s;
+  `dwell-game`'s `face_flip.rs`, applied by `dwell-client`'s `render/camera.rs` `aim`); the eye
+  swings across the body over the same time (`eye.rs`). The controller continues the crossing tick's look the same way
+  (`step_input`): its input was sampled on the face before, and a look down a ladder must not
+  climb back for that tick. In the flip band a body can swing across the midplane and back, and
+  each crossing continues the look again (no hysteresis).

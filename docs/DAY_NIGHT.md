@@ -131,7 +131,7 @@ and each face's lights). The renderer's frame carries it as `frame.day`; clouds 
   smooth night and twilight gradients don't band.
 - **The viewer's sky across the faces**: the viewer's sky colours, fog density and exposure are
   face A's and face B's samples mixed by the eye's height across the 4 m flip band, so the sky
-  doesn't jump when the camera turns over at the midplane. The sun, moon and stars are world
+  doesn't jump when the player crosses the midplane. The sun, moon and stars are world
   directions, so they stay put while the view turns.
 
 Water's reflection uses `sky()`, which is `dwell_sky` with the frame's `DaySky`, so it follows the

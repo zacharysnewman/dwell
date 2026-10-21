@@ -702,8 +702,9 @@ impl Players {
         physics.set_velocity(p.body, Self::frame(p).v(local).as_dvec3());
     }
 
-    /// Switches the face (mirroring the layers' vertical state) once the body is across.
-    fn update_face(physics: &Physics, p: &mut Player) {
+    /// Switches the face (mirroring the layers' vertical state) once the body is across; true when
+    /// it did.
+    fn update_face(physics: &Physics, p: &mut Player) -> bool {
         let c = &mut p.c;
         // How far the body is past the midplane toward its face's up (negative: across it).
         let over = c.face.y(physics.position(p.body).y) - MIDPLANE_M;
@@ -713,7 +714,7 @@ impl Players {
             c.face
         };
         if face == c.face {
-            return;
+            return false;
         }
         c.vertical.accumulated_y = -c.vertical.accumulated_y;
         c.vertical.platform_y = -c.vertical.platform_y;
@@ -728,6 +729,7 @@ impl Players {
         c.climb.ladder.y = mirror_y(c.climb.ladder.y);
         c.climb.released.y = mirror_y(c.climb.released.y);
         c.face = face;
+        true
     }
 
     // --- the pipeline ---------------------------------------------------------------------------
@@ -804,8 +806,16 @@ impl Players {
         let p = self.pl(i);
         p.c.previous_input = p.c.input;
         p.c.input = p.pending;
-        Self::update_face(physics, p);
+        let crossed = Self::update_face(physics, p);
         let c = &mut p.c;
+        if crossed {
+            // The look was sampled on the face before (the client continues it from the next
+            // tick, BIFACIAL_WORLD.md §6): continue it here too, so this tick's ladder climb and
+            // swim go on the same way rather than back for a tick.
+            let (yaw, pitch) =
+                FaceFrame::look_across(f64::from(c.input.look_yaw), f64::from(c.input.look_pitch));
+            (c.input.look_yaw, c.input.look_pitch) = (yaw as f32, pitch as f32);
+        }
         // A face-B player is upside down: its right is the face-local frame's left.
         c.input.move_x = c.face.handed(f64::from(c.input.move_x)) as f32;
         let length_sq = c.input.move_x * c.input.move_x + c.input.move_y * c.input.move_y;
@@ -1162,6 +1172,9 @@ impl Players {
         c.jump.coyote_ticks = 0;
         c.jump.jumping = true;
         c.jump.jumped_this_tick = true;
+        // A jump (never one off a ladder: climbing, this layer is skipped) grabs again a ladder
+        // let go of while still in its cells (owner, 2026-10-21; PLAYER_CONTROLLER.md §6).
+        c.climb.has_released = false;
         c.events |= events::JUMPED;
     }
 
@@ -1304,11 +1317,14 @@ impl Players {
         if c.fly.flying {
             return;
         }
+        // The jump that grabs a ladder (a jump grabs one let go of again) isn't one off it.
+        let mut grabbed_by_jump = false;
         if !c.climb.climbing {
             let Some(ladder) = found else { return };
             if c.swim.swimming {
                 return;
             }
+            grabbed_by_jump = c.jump.jumped_this_tick;
             c.climb.climbing = true;
             c.climb.ladder = ladder;
             c.horizontal.current = Vec3::ZERO;
@@ -1335,24 +1351,29 @@ impl Players {
                 c.vertical.accumulated_y = cfg.climb.jump_off_up;
                 c.ground.grounded = false;
                 c.jump.jumped_this_tick = true;
+                // A jump: no coyote jump after it, which would grab the ladder again.
+                c.jump.jumping = true;
             }
             c.events |= events::CLIMB_ENDED;
         };
-        if c.jump_pressed() {
+        if c.jump_pressed() && !grabbed_by_jump {
             release(c, true);
             return;
         }
-        let Some(ladder) = found.filter(|_| !c.ground.grounded || c.ground.was_grounded) else {
+        let mut vertical = c.input.move_y;
+        if c.input.look_pitch < -cfg.climb.look_down_threshold {
+            vertical = -vertical;
+        }
+        // Landing while climbing down lets go (onto the floor). Only then: a jump that grabbed
+        // the ladder from the floor lands back on the floor the next tick, and holds on.
+        let landed = c.ground.grounded && !c.ground.was_grounded && vertical < 0.0;
+        let Some(ladder) = found.filter(|_| !landed) else {
             release(c, false);
             return;
         };
         c.climb.ladder = ladder;
         let material = q.material(ladder.x, ladder.y, ladder.z);
         let speed = cfg.climb.speed * info(material).climb_speed_scale;
-        let mut vertical = c.input.move_y;
-        if c.input.look_pitch < -cfg.climb.look_down_threshold {
-            vertical = -vertical;
-        }
         let mut velocity = Vec3::Y * (vertical * speed)
             + camera_right(c.input.look_yaw) * (c.input.move_x * speed);
         // Over the top (Dwell): near the column's top, climbing up also moves onto the ledge.
