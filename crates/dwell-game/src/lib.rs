@@ -1,6 +1,6 @@
 //! Dwell's client game logic (ADR 0028, Phase 24e), ported from `client/src/game`, `predict`,
-//! `interact` and `world`: remote player interpolation, first-person eye smoothing, the camera's
-//! turn-over between the faces, the HUD's text, the prediction gate, creative flight, the
+//! `interact` and `world`: remote player interpolation, first-person eye smoothing, the camera
+//! across the midplane between the faces, the HUD's text, the prediction gate, creative flight, the
 //! keyboard/mouse and touch input state machines, block targeting and edit requests, and the
 //! client's chunk streaming. Platform-free: time is passed in, collaborators (renderer, mesher,
 //! worldgen, network) are traits or callbacks, so it all runs natively under test and in the browser.

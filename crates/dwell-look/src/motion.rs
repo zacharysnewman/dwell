@@ -182,8 +182,6 @@ pub struct MotionInput {
     pub dt: f64,
     /// The player's own eyes are the camera (alive, no tool camera).
     pub first_person: bool,
-    /// The camera is turning over across the midplane this frame (the somersault started).
-    pub turned_over: bool,
     /// The game menu is open: nothing changes.
     pub paused: bool,
 }
@@ -243,7 +241,7 @@ impl MotionFx {
             (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt() > t.teleport_m
         });
         self.last_eye = Some(input.eye);
-        if jumped || input.turned_over || !input.first_person || !settings.enabled {
+        if jumped || !input.first_person || !settings.enabled {
             self.reset();
         }
         if speed > 1e-3 {
@@ -319,7 +317,6 @@ mod tests {
             state,
             dt: 1.0 / 60.0,
             first_person: true,
-            turned_over: false,
             paused: false,
         }
     }
@@ -471,7 +468,7 @@ mod tests {
     }
 
     #[test]
-    fn the_effects_reset_on_a_teleport_a_respawn_and_the_turn_over() {
+    fn the_effects_reset_on_a_teleport_and_a_respawn() {
         let t = &MOTION;
         let settled = || {
             let mut fx = MotionFx::new();
@@ -497,11 +494,29 @@ mod tests {
         i.first_person = false;
         let out = fx.frame(&i, MotionSettings::default(), SPEEDS, t);
         assert!(out.fov_boost_pct < 0.5 && out.wind < 0.05);
-        // The turn-over across the midplane.
-        let (mut fx, mut i) = settled();
-        i.turned_over = true;
-        let out = fx.frame(&i, MotionSettings::default(), SPEEDS, t);
-        assert!(out.fov_boost_pct < 0.5 && out.wind < 0.05);
+    }
+
+    /// Across the midplane the camera keeps pointing the same way (BIFACIAL_WORLD.md §6, owner
+    /// 2026-10-21): the effects go on through it rather than snapping the FOV back, and the eye's
+    /// swing across the body (most of a body height over the settling time) is no teleport.
+    #[test]
+    fn the_effects_go_on_through_a_crossing_of_the_midplane() {
+        let t = &MOTION;
+        let mut fx = MotionFx::new();
+        let mut i = input(SPEEDS.run, PlayerState::Running);
+        run(&mut fx, &mut i, 2.0, t);
+        let boost = fx.fov.value;
+        assert!(boost > 0.9 * t.fov.sprint_boost_pct);
+        for k in 0..30 {
+            i.eye[2] += i.velocity[2] * i.dt;
+            i.eye[1] -= 1.44 / 30.0;
+            let out = fx.frame(&i, MotionSettings::default(), SPEEDS, t);
+            assert!(
+                out.fov_boost_pct > 0.9 * boost,
+                "frame {k}: {}",
+                out.fov_boost_pct
+            );
+        }
     }
 
     #[test]

@@ -126,14 +126,37 @@ Spawn is always on face A (owner, 2026-10-05).
   (±1) threaded through every vertical quantity and probe direction; the voxel queries mirror
   lookups for face B. A **mirror-equivalence suite** proves it: every controller scenario run on
   face A and its mirror image on face B gives mirrored traces bit for bit, natively and in WASM.
-- **Crossing the band** (in a dug shaft, or beside the rim wall): the face sign switches at the midplane;
-  the camera turns over smoothly instead of snapping: a half forward somersault. The heading turns by
-  180° at once (the client only; the server sees the inputs) and the view is drawn rotated about the
-  camera's right axis by π, easing to 0 over 0.5 s, so it starts exactly at the old view, turns over
-  nose first (toward the midplane) and keeps left and right. In the flip band a body can swing back
-  and forth across the midplane, and each crossing turns the heading round again (no hysteresis). The flip is
-  predicted like any other movement; if the local player's state needs a flag for it, it goes in
-  `PhysicsSnapshot` (a protocol bump).
+- **Crossing the band** (in a dug shaft, or beside the rim wall): the face sign switches at the
+  midplane; **the body turns over and the camera keeps pointing the same way** (owner,
+  2026-10-21, replacing the half forward somersault of 0.8.1):
+
+  > "Ideally I'd like the character body to flip but the camera continue pointing in the same
+  > direction, so if you're climbing down a ladder that goes through the world mid point, you
+  > could hold forward (while looking down) and as you pass the mid point your character's body
+  > would flip, but the camera would be pointing the same direction so you could continue holding
+  > forward which would now make you climb up." — and: "Ideally I'd like to avoid the Roll too."
+
+  The rule: the look **continues across** (`FaceFrame::look_across`): a face-local heading h and
+  pitch p on the old face go on as h + 180° and −p on the new one. Face B being face A's mirror,
+  that look's world direction keeps its vertical part and reverses its horizontal one, the
+  camera's right stays the same and its up changes only in its vertical part, so the new view
+  differs from the old **only by a turn about the camera's right axis of 2 × (90° − |p|)**: none
+  looking straight down or up (the owner's ladder: the view does not move), a 20° nod at 80°, half
+  a turn looking level (the old somersault). The view is drawn turned back by exactly that angle
+  (`face_flip::residual`: π + 2p looking down or level, −π + 2p looking up, each the shorter way
+  round), easing to 0 over 0.5 s (`FLIP_SECONDS`), so it starts at the old view; it **never rolls**
+  about its forward axis (keeping the heading and mirroring only the pitch would keep forward but
+  roll the view upside down). The controls follow the look: looking down a ladder before the
+  crossing (forward climbs down) is looking up it after (forward climbs up), the same world way;
+  walking and strafing stay relative to the camera's heading and right. The heading and pitch
+  change on the client only (the server sees the inputs); the controller continues the look the
+  same way on the crossing tick itself, whose input was sampled on the face before, so that tick
+  goes on rather than back (`controller.rs` `step_input`). The eye swings across the body (from
+  above its centre to below) over the same 0.5 s instead of jumping (`eye.rs`), and the motion
+  effects go on through the crossing (they no longer reset there, MOTION_EFFECTS.md). In the flip
+  band a body can swing back and forth across the midplane, and each crossing continues the look
+  again (no hysteresis), the drawn turn going on from the view drawn then. The flip is predicted
+  like any other movement; no flag or protocol change was needed.
 - **Light: a sun and a moon** (owner, 2026-10-05), **static** at rest, and turnable as a unit with
   the sky (below). The sun is Phase 7's
   directional light, lighting face A; the **moon** is a second directional light pointing the
@@ -166,7 +189,7 @@ the zone still holds both faces; bodies that fall off the rim settle in the flip
   face-B chunks and straddling LOD sections, natively and in WASM.
 - Controller: the mirror-equivalence suite (all scenarios, both origins, native and WASM); walking,
   jumping, swimming and climbing on face B; crossing by a dug shaft through the core and by going
-  over the rim, with the face sign and camera turning over once.
+  over the rim, with the face sign switching and the camera continuing once.
 - Gravity: a body falling off the rim is accelerated across the midplane by the flip band; rigid bodies
   on face B fall toward the midplane.
 - Bounds: nothing generated outside the two domes and bands; streaming and LOD reach both domes;
@@ -305,7 +328,7 @@ and the check of §11.2 keeps it so.
 | Targeting, the camera | `dwell-game` `block_interaction.rs` `view_direction` and `dwell-client` `render/camera.rs` `aim` (both `FaceFrame::look`; the duplicate `view_forward` removed), the audio listener (the camera's axes), the LOD camera's pitch (`FaceFrame::pitch`), mouse and touch turns (`FaceFrame::handed`) | a look toward the face's up | Frame; `aim` tested on both faces |
 | Brushes and the ghost | `dwell-game` `brush_tool.rs` `stroke_at`, `covered_at` | stroke run face-local | Boundary (via FaceFrame). **Fixed:** strokes ran in world terms on face B (trees grew into the ground, overlay painted the buried side, flatten/raise/lower inverted). Brushes are only enabled in the sandbox (face A) today |
 | Copy and paste | `region_tools.rs` (clipboard face-local, `paste_box`) | face-local clipboard | Boundary (via FaceFrame). **Fixed:** a face-B paste ran from the aimed-at cell into the ground, and a copy from the other face pasted upside down |
-| Eye, camera turn-over | `dwell-game` `eye.rs` (face-local heights), `face_flip.rs` (a `FaceFrame` per tick); `dwell-look` `motion.rs` (face-independent) | smoothed face-local | Frame; tests on both faces |
+| Eye, camera across the midplane | `dwell-game` `eye.rs` (face-local heights, the eye's swing across), `face_flip.rs` (a `FaceFrame` per tick, the look continued by `FaceFrame::look_across`); `dwell-look` `motion.rs` (face-independent) | smoothed face-local | Frame; tests on both faces |
 | Sounds | `dwell-game` `sound.rs` (`MoverSample.face`: speeds along the face's up); the client's ground and body probes (`mover_sample`) | face-local | Frame; a whole session sounds the same on either face (`both_faces!`) |
 | Remote players, your body and arms | `remotes.rs` `RemoteView::face`; `dwell-client` `bodies.rs` (the animator gets face-local velocities: `dwell-characters` never knows the face), `render/characters.rs` `body_frame` (the frame's up; a proper rotation, not a mirror), the dead view's camera | drawn upside down | Frame; `body_frame` on both faces |
 | Puppets (dev tools) | `game.rs` `Puppets` (a `FaceFrame`; the JS API's sign converted at `web/app.rs`) | on either face | Frame |

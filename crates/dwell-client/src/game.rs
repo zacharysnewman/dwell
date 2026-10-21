@@ -535,8 +535,6 @@ pub struct Game<S: Scene> {
     pub fov_setting: f64,
     /// The controller's walk and run speeds the effects scale to.
     speeds: Speeds,
-    /// The face the last drawn frame's camera was on (a change is the turn-over).
-    motion_face: Option<FaceFrame>,
     /// The vertical FOV of the last drawn frame, given to the renderer and the LOD alike.
     frame_fov: f64,
     /// The spyglass (docs/SPYGLASS.md): its zoom, and the last frame's view of it.
@@ -650,7 +648,6 @@ impl<S: Scene> Game<S> {
             menu_open: false,
             fov_setting: dwell_lod::frustum::VERTICAL_FOV,
             speeds,
-            motion_face: None,
             frame_fov: dwell_lod::vertical_fov(1280.0 / 720.0),
             spyglass: Spyglass::new(),
             spyglass_view: SpyglassView::NONE,
@@ -1982,8 +1979,6 @@ impl<S: Scene> Game<S> {
     /// the renderer and, in `update_lod`, to the LOD selection.
     fn update_motion(&mut self, eye: [f64; 3], dt: f64) {
         let c = &self.current;
-        let turned_over = self.motion_face.is_some_and(|f| f != c.face);
-        self.motion_face = Some(c.face);
         let out = self.motion.frame(
             &MotionInput {
                 eye,
@@ -1991,7 +1986,6 @@ impl<S: Scene> Game<S> {
                 state: c.state,
                 dt,
                 first_person: c.active && !self.dead && self.view.is_none(),
-                turned_over,
                 paused: self.menu_open,
             },
             self.motion_settings,

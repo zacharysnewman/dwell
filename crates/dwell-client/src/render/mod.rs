@@ -1804,7 +1804,7 @@ impl Renderer {
         self.day_seconds = seconds;
     }
     /// How far the viewer is toward face A (1) from face B (0): eased across the flip band so the
-    /// sky's colours don't jump as the camera turns over at the midplane.
+    /// sky's colours don't jump as the player crosses the midplane.
     fn viewer_weight_a(&self) -> f64 {
         let band = dwell_protocol::world::FLIP_BAND as f64;
         // face-boundary: a blend across the midplane, between the two faces' looks.
