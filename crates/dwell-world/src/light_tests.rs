@@ -387,6 +387,95 @@ crate::both_faces!(
 );
 
 crate::both_faces!(
+    /// Random batches of chunks unloaded and loaded again, in random order, over the tunnel, the
+    /// hill, leaves and a lamp: the light after each agrees with a relight from scratch (the
+    /// unload's and the load's shortcuts change nothing).
+    fn random_loads_and_unloads_agree_with_a_relight_from_scratch(f: FaceFrame) {
+        let mut fx = tunnel(f);
+        fx.fill(
+            [-6, GROUND + 4, 28],
+            [2, GROUND + 8, 36],
+            dwell_blocks::require("dwell:leaves"),
+        );
+        fx.fill([33, GROUND + 20, 16], [34, GROUND + 21, 17], lamp());
+        fx.fill([22, GROUND, 16], [23, GROUND + 1, 17], lamp());
+        let all = fx.chunks(-1..=1, -1..=2, -1..=1);
+        let mut w = fx.lit(&all);
+        let mut held = all.clone();
+        let mut out: Vec<ChunkCoord> = Vec::new();
+        let mut seed = 99u64;
+        let mut next = |n: usize| {
+            seed = seed
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            (seed >> 33) as usize % n.max(1)
+        };
+        for round in 0..6 {
+            if round % 2 == 0 || out.is_empty() {
+                let k = 1 + next(6);
+                let batch: Vec<ChunkCoord> = (0..k).map(|_| held[next(held.len())]).collect();
+                for &c in &batch {
+                    w.remove(c);
+                }
+                w.light_unload_many(&batch);
+                held.retain(|c| !batch.contains(c));
+                for c in batch {
+                    if !out.contains(&c) {
+                        out.push(c);
+                    }
+                }
+            } else {
+                for _ in 0..1 + next(out.len()) {
+                    let c = out.swap_remove(next(out.len()));
+                    fx.load(&mut w, c);
+                    held.push(c);
+                }
+            }
+            assert_matches_scratch(&mut w, &held, &format!("round {round}"));
+        }
+    }
+);
+
+crate::both_faces!(
+    /// A chunk held over open air the sky lit (flying up: the chunks above arrive after the ones
+    /// below) relights only the columns it covers: under its overhang, not the open air beside it,
+    /// which kept the sky (0.22.9 cleared and refilled every column under it, 100–150 thousand
+    /// cell writes, 5–9 ms native a chunk). Leaves in it filter the sky under them.
+    fn a_chunk_over_open_air_relights_only_the_columns_it_covers(f: FaceFrame) {
+        let mut fx = Fixture::new(f);
+        fx.fill([-40, BASE, -40], [72, GROUND, 72], rock());
+        // In the row above: an 8 × 8 overhang 4 m thick, and leaves beside it.
+        fx.fill([4, BASE + NC + 2, 4], [12, BASE + NC + 6, 12], rock());
+        fx.fill(
+            [16, BASE + NC + 2, 4],
+            [20, BASE + NC + 4, 8],
+            dwell_blocks::require("dwell:leaves"),
+        );
+        let ground = fx.chunks(-1..=1, 0..=0, -1..=1);
+        let top = f.chunk(ChunkCoord::new(0, ROW + 1, 0));
+        let mut w = fx.lit(&ground);
+        let before = w.light().expect("lit").writes();
+        fx.load(&mut w, top);
+        let writes = w.light().expect("lit").writes() - before;
+        let mut all = ground.clone();
+        all.push(top);
+        assert_matches_scratch(&mut w, &all, "the chunk above loaded last");
+        assert!(
+            fx.at(&w, [8, GROUND, 8]).0 < LIGHT_MAX,
+            "shaded under the overhang"
+        );
+        assert_eq!(fx.at(&w, [24, GROUND, 24]).0, LIGHT_MAX, "open ground");
+        // Its own cells lit once, and the columns it shades (with what spreads beside them).
+        let bound = CHUNK_VOLUME as u64 + 2 * 24 * 24 * (NC as u64);
+        assert!(
+            writes <= bound,
+            "loading the chunk wrote {writes} cells (bound {bound}): the relight cascaded down \
+             the open air under it"
+        );
+    }
+);
+
+crate::both_faces!(
     /// An emitter (the fixture lamp, `emits` by data alone) lights the cells around it, falling
     /// off with distance, through a dark tunnel and across a chunk border.
     fn the_fixture_lamp_lights_its_surroundings(f: FaceFrame) {

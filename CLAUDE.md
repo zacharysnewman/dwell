@@ -266,6 +266,13 @@ Check these before chasing an e2e failure:
   the drawing buffer), and shard 1 went from 8m43s failing to 3m58s passing. A new per-pixel
   visual needs its CPU-adapter tier too. If shard 1 slows again, compare its per-test times with
   that run before widening a timeout.
+- `e2e/characters.spec.ts` (shard 1) failed on 4 of 6 main runs from 0.22.3 to 0.22.12, at a different
+  role each time (`Expected "slide"/"idle"/"jump"`, `Received "sprint"/"crouch"/"idle"`). Not a
+  controller bug: on the suite's generated terrain A ran +X for as long as the slow page took to
+  see each role, and with the slower frames it reached the trees ~30 m out, where a trunk stopped
+  the slide and leaves 1.5 m up held it crouched (a crouched body's arms read `idle`). Fixed
+  2026-10-20: the spec runs its own flat-world server (`--generator 0`). A test that moves a player
+  far should not depend on the suite world's terrain.
 - The hotbar slot count in `e2e/edit.spec.ts` is the palette's length (7); update it when the palette
   changes.
 
