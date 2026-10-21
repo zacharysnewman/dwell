@@ -175,7 +175,7 @@ pub struct StateInfo {
     /// Placing a block into its cell (or against it) replaces it.
     pub replaceable: bool,
     pub medium: Medium,
-    /// Flood light (docs/DAY_NIGHT.md §10): the levels (0–15) a cell of it takes off the sky and
+    /// Flood light (docs/DAY_NIGHT.md §11): the levels (0–15) a cell of it takes off the sky and
     /// block light passing into it; 15 lets none in (block data `lightFilter`, else
     /// [`light_filter_default`]).
     pub light_filter: u8,

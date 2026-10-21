@@ -80,7 +80,7 @@ pub mod tag {
     /// it differs from its look's default (`crate::outline_default`).
     pub const OUTLINE: u8 = 0x8c;
     /// `u8` light filter, `u8` emitted block light (`StateInfo::light_filter`, `emits`; the
-    /// flood light, docs/DAY_NIGHT.md §10), sent only where either differs from the default
+    /// flood light, docs/DAY_NIGHT.md §11), sent only where either differs from the default
     /// (`crate::light_filter_default`, no light).
     pub const LIGHT: u8 = 0x8d;
 }

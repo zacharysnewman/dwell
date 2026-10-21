@@ -49,7 +49,7 @@
     {
       "name": "water", "sound": "dwell:water", "density": 1000, "shape": "empty", "look": "fluid", "fluid": "dwell:water",
       "liquid": true, "render": "translucent", "color": "#2f86e0", "textures": "water",
-      "$lightFilter": "Flood light (docs/DAY_NIGHT.md §10): each ½ m of water takes a level off the sky light under it.",
+      "$lightFilter": "Flood light (docs/DAY_NIGHT.md §11): each ½ m of water takes a level off the sky light under it.",
       "lightFilter": 1
     },
     {
@@ -67,7 +67,7 @@
       "color": "#7a5236", "textures": { "top": "logTop", "side": "logSide", "bottom": "logTop" }
     },
     {
-      "$comment": "Drawn cutout: the leaves tile has transparent gaps between the leaves. lightFilter: a canopy dims the sky light under it rather than shutting it out (docs/DAY_NIGHT.md §10).",
+      "$comment": "Drawn cutout: the leaves tile has transparent gaps between the leaves. lightFilter: a canopy dims the sky light under it rather than shutting it out (docs/DAY_NIGHT.md §11).",
       "name": "leaves", "sound": "dwell:grass", "density": 200, "shape": "full", "placeable": true,
       "render": "cutout", "color": "#6fa83a", "textures": "leaves", "lightFilter": 2
     },

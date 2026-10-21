@@ -1,4 +1,4 @@
-//! The flood light (docs/DAY_NIGHT.md §10): tunnels and caves, edits undone, load order, chunk
+//! The flood light (docs/DAY_NIGHT.md §11): tunnels and caves, edits undone, load order, chunk
 //! borders, emitters, both faces; every incremental update checked against a relight from
 //! scratch.
 
@@ -412,3 +412,45 @@ fn the_brightness_curves_and_the_direct_ramp() {
     assert_eq!(t.direct(f64::from(t.direct_from)), 0.0);
     assert!(t.direct(13.0) > 0.0 && t.direct(13.0) < 1.0);
 }
+
+crate::both_faces!(
+    /// A character's light (your arms, a player's body) follows the cells around it, smoothly as
+    /// it moves, and eases over time: walking into the tunnel fades it rather than popping.
+    fn a_characters_light_follows_the_cells_and_eases(f: FaceFrame) {
+        let mut fx = tunnel(f);
+        let chunks = fx.chunks(-1..=1, -1..=1, -1..=1);
+        let w = fx.lit(&chunks);
+        let l = w.light().expect("lit");
+        // An eye 1.6 m over the tunnel's floor (face-local x metres along it), world metres.
+        let eye = |x: f64| f.point([x, f64::from(GROUND) * crate::CELL_H + 1.6, 16.0]);
+        let outside = l.sample(eye(-4.0));
+        let mouth = l.sample(eye(4.5));
+        let five = l.sample(eye(9.0));
+        let deep = l.sample(eye(19.0));
+        assert_eq!(outside, [1.0, 0.0], "open sky");
+        assert!(mouth[0] < 1.0 && mouth[0] > five[0], "{mouth:?} {five:?}");
+        assert_eq!(deep, [0.0, 0.0], "15 m in");
+        // Smooth: a small step moves it a little.
+        let (a, b) = (l.sample(eye(6.0))[0], l.sample(eye(6.1))[0]);
+        assert!((a - b).abs() < 0.02 && a > b, "{a} {b}");
+        // Eased: from the mouth into the dark, a frame moves it a little, a second most of the way.
+        let mut e = EasedLight::default();
+        assert_eq!(
+            e.update(outside, 1.0 / 60.0, LIGHT.character_ease_s),
+            outside
+        );
+        let one = e.update(deep, 1.0 / 60.0, LIGHT.character_ease_s)[0];
+        assert!(one < 1.0 && one > 0.9, "after a frame: {one}");
+        let mut v = one;
+        for _ in 0..59 {
+            v = e.update(deep, 1.0 / 60.0, LIGHT.character_ease_s)[0];
+        }
+        assert!(v < 0.05, "after a second: {v}");
+        // An emitter's glow reaches it too.
+        let mut w = fx.lit(&chunks);
+        let at = f.cell([19, GROUND + 3, 16]);
+        w.set_voxel(at[0], at[1], at[2], lamp());
+        w.light_edited(&[at]);
+        assert!(w.light().expect("lit").sample(eye(19.0))[1] > 0.7);
+    }
+);

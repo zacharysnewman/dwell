@@ -224,6 +224,7 @@ pub async fn render_scene(device: wgpu::Device, queue: wgpu::Queue) -> Result<Ve
             role: "idle",
             action: None,
             held: render::Held::Empty,
+            light: [1.0, 0.0],
         }),
     );
     // A dead player lying beside it, and one turned to face the camera's right.
@@ -243,6 +244,7 @@ pub async fn render_scene(device: wgpu::Device, queue: wgpu::Queue) -> Result<Ve
                 role: "idle",
                 action: None,
                 held: render::Held::Empty,
+                light: [1.0, 0.0],
             }),
         );
     }

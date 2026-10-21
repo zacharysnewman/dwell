@@ -18,6 +18,8 @@ describe('bench --compare configurations', () => {
       'outline-silhouette',
       'outline-creases',
       'outline-blocks',
+      'shadows-low',
+      'shadows-off',
       'raster-half',
     ]);
   });

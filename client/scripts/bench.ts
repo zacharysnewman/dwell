@@ -307,6 +307,9 @@ async function step(run: Run, s: Step): Promise<void> {
     case 'releaseCamera':
       await call(page, 'd.releaseCamera()');
       return;
+    case 'shadows':
+      await call(page, `d.setShadows(${JSON.stringify(s.quality)})`);
+      return;
     case 'water':
       await call(
         page,

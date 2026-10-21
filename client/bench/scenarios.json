@@ -887,6 +887,29 @@
       ]
     },
     {
+      "name": "shadows-pines",
+      "notes": "Sun shadows in a pine grove (docs/DAY_NIGHT.md §10): mid-morning, rises a little over the spawn and looks across the groves up the hill (recorded: the cost of the maps with many casters), then shoots the pines' shadows on High, Low and Off.",
+      "settings": { "timeOfDay": 0.4 },
+      "steps": [
+        { "do": "settle", "maxS": 120 },
+        { "do": "fly", "on": true },
+        { "do": "flySpeed", "level": 3 },
+        { "do": "hold", "code": "Space", "s": 0.5 },
+        { "do": "look", "yaw": 70, "pitch": -15 },
+        { "do": "settle", "maxS": 60 },
+        { "do": "mark" },
+        { "do": "wait", "s": 5 },
+        { "do": "record", "name": "grove" },
+        { "do": "shot", "name": "grove" },
+        { "do": "shadows", "quality": "low" },
+        { "do": "wait", "s": 1 },
+        { "do": "shot", "name": "grove-low" },
+        { "do": "shadows", "quality": "off" },
+        { "do": "wait", "s": 1 },
+        { "do": "shot", "name": "grove-off" }
+      ]
+    },
+    {
       "name": "fly-high",
       "notes": "Flies up about 540 m (level 8 for 3 s), looks out and down 20\u00b0 and flies +X for 10 s: far terrain, the LOD's distant levels streaming.",
       "split": "far",

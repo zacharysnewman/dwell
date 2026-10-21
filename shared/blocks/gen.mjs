@@ -155,7 +155,7 @@ const renderOf = (def) => def.render ?? ((def.look ?? 'cube') === 'fluid' ? 'tra
 // for the cross plants (a field of blades turns to scribble) and on for the rest. Only the cross
 // geometry carries the flag to the frame, so `outline` is a cross option.
 const outlineOf = (def) => def.outline ?? (def.look ?? 'cube') !== 'cross';
-// Flood light (docs/DAY_NIGHT.md §10): how many levels (0–15) a cell of the block takes off the sky
+// Flood light (docs/DAY_NIGHT.md §11): how many levels (0–15) a cell of the block takes off the sky
 // and block light passing into it (15: none gets in), its data's `lightFilter`, else 15 for full
 // cubes that are not see-through and 0 for the rest (crates/dwell-blocks `light_filter_default`);
 // and the block light it gives off (`emits`, 0–15, default 0).

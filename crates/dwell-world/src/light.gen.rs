@@ -12,4 +12,5 @@ pub const LIGHT: LightTunables = LightTunables {
     block_curve: 3.0,
     block_color: [1.0, 0.721569, 0.470588],
     block_strength: 1.2,
+    character_ease_s: 0.25,
 };

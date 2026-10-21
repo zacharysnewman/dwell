@@ -47,6 +47,7 @@ import { StructuresPanel } from './ui/structuresPanel';
 import { opfsStructureDir, StructureStore } from './local/structureStore';
 import { clipboardOf, type Vec3 as Cell } from './local/structures';
 import { waterQualityLevel, type WaterQuality } from './ui/waterSettings';
+import { shadowLevel, shadowsFromQuery, type ShadowQuality } from './ui/shadowSettings';
 import { displayScale } from './ui/displayScale';
 import { FlightSpeedControl } from './ui/flightSpeedControl';
 import { loadFlySpeedLevel, saveFlySpeedLevel } from './predict/flightSpeed';
@@ -157,6 +158,8 @@ interface DwellDebug {
    * switches (`?waterdbg=` names, comma-separated; "" for none); null leaves either as it is.
    */
   setWater(quality: WaterQuality | null, debug: string | null): void;
+  /** The Shadows setting (as the settings menu sets it, not stored; docs/DAY_NIGHT.md §10). */
+  setShadows(quality: ShadowQuality): void;
   /** The ink outline's mode (`shared/look/outline.json`, as `?outline=` names it), or `off`. */
   outline(): string;
   /** Sets the ink outline's mode by name (`off` or an unknown name: off); true when one is on. */
@@ -529,6 +532,8 @@ async function start(): Promise<App | null> {
     const waterDebug = new URLSearchParams(location.search).get('waterdbg');
     if (waterDebug) client.setWaterDebug(waterDebug);
     client.setClouds(s.clouds);
+    // ?shadows=off|low|high overrides the stored setting (the bench's configurations).
+    client.setShadows(shadowLevel(shadowsFromQuery(location.search) ?? s.shadows.quality));
     client.setMotion(s.motion.speedEffects, s.motion.fovBoost);
     client.setReducedMotion(prefersReducedMotion());
     client.setPlants(s.motion.plantSway ? 1 : 0, true);
@@ -647,6 +652,9 @@ async function start(): Promise<App | null> {
     setWater: (quality, debug) => {
       if (quality !== null) client.setWaterQuality(waterQualityLevel(quality));
       if (debug !== null) client.setWaterDebug(debug);
+    },
+    setShadows: (quality) => {
+      client.setShadows(shadowLevel(quality));
     },
     outline: () => client.outline(),
     setOutline: (name) => client.setOutline(name),

@@ -274,6 +274,7 @@ impl Bodies {
             role: body.animator.role(),
             action: body.animator.action(),
             held,
+            light: [1.0, 0.0],
         }
     }
 
@@ -295,6 +296,33 @@ impl Bodies {
             role: self.own.role(),
             action: None,
             held: Held::Empty,
+            light: [1.0, 0.0],
+        }
+    }
+
+    /// Your own body standing at `feet` this frame, moving as `input` says: cast into the shadow
+    /// maps only, so you have a shadow in first person (docs/DAY_NIGHT.md §10).
+    pub fn own(
+        &mut self,
+        feet: [f64; 3],
+        yaw: f64,
+        face: FaceFrame,
+        input: &MoveInput,
+        held: Held,
+        dt: f64,
+    ) -> PlayerView {
+        let pose = self.own.update(input, dt as f32);
+        PlayerView {
+            feet,
+            face,
+            yaw,
+            dead: false,
+            look: dwell_characters::DEFAULT_LOOK,
+            pose,
+            role: self.own.role(),
+            action: self.own.action(),
+            held,
+            light: [1.0, 0.0],
         }
     }
 
@@ -303,6 +331,7 @@ impl Bodies {
         ArmsView {
             pose: self.arms.update(input, dt as f32),
             held,
+            light: [1.0, 0.0],
         }
     }
 

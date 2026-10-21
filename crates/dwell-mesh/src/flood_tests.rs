@@ -1,4 +1,4 @@
-//! The flood light in the meshes (docs/DAY_NIGHT.md §10): a carved tunnel, a tall cave and a long
+//! The flood light in the meshes (docs/DAY_NIGHT.md §11): a carved tunnel, a tall cave and a long
 //! tunnel under a hill go dark inside, ambient and direct alike; an emitter glows; both faces.
 //! The owner's bug (2026-10-21): "I carved a tunnel in 0.22.5 and it was lit up like day".
 

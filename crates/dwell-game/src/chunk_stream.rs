@@ -93,7 +93,7 @@ pub trait ChunkStore {
         self.padded_chunk(coord)
     }
     /// An all-air chunk is no longer held: nothing is stored for it, but the flood light held it
-    /// (docs/DAY_NIGHT.md §10).
+    /// (docs/DAY_NIGHT.md §11).
     fn air_chunk_gone(&mut self, _coord: Coord) {}
     /// Lights a chunk now held (stored, or all air): the streamer calls it within its per-frame
     /// budget, after the chunk arrived ([`ChunkStreamer::mesh_dirty`]).
@@ -685,7 +685,7 @@ where
         }
     }
 
-    /// Marks the chunks whose flood light changed for meshing (docs/DAY_NIGHT.md §10): light
+    /// Marks the chunks whose flood light changed for meshing (docs/DAY_NIGHT.md §11): light
     /// reaches farther than the neighbours (a roof darkens the column under it all the way down).
     fn relit(&mut self) {
         for c in self.store.light_changed() {

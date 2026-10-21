@@ -1,4 +1,4 @@
-//! Flood light (docs/DAY_NIGHT.md §10; data: shared/look/light.json and the blocks' `lightFilter`
+//! Flood light (docs/DAY_NIGHT.md §11; data: shared/look/light.json and the blocks' `lightFilter`
 //! and `emits`): two channels per cell, each 0–15, packed in a byte (sky light high, block light
 //! low), kept by the client for the chunks it holds and never saved or sent.
 //!
@@ -41,6 +41,8 @@ pub struct LightTunables {
     pub block_curve: f64,
     pub block_color: [f64; 3],
     pub block_strength: f64,
+    /// How fast a character's light follows the cell it is in (s, the ease's time constant).
+    pub character_ease_s: f64,
 }
 
 impl LightTunables {
@@ -67,6 +69,33 @@ impl LightTunables {
     /// How bright a block level glows.
     pub fn block(&self, level: f64) -> f64 {
         Self::brightness(level, self.block_curve)
+    }
+}
+
+/// A character's light eased over time toward what it stands in (`characters.easeS`), so walking
+/// into a tunnel fades a hand down rather than popping.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct EasedLight {
+    value: Option<[f32; 2]>,
+}
+
+impl EasedLight {
+    /// Moves toward `target` over `dt` seconds (exponentially, time constant `ease_s`; the first
+    /// call takes it at once) and returns the value.
+    pub fn update(&mut self, target: [f32; 2], dt: f64, ease_s: f64) -> [f32; 2] {
+        let v = match self.value {
+            None => target,
+            Some(v) => {
+                let k = if ease_s <= 0.0 {
+                    1.0
+                } else {
+                    (1.0 - (-dt.max(0.0) / ease_s).exp()) as f32
+                };
+                [v[0] + (target[0] - v[0]) * k, v[1] + (target[1] - v[1]) * k]
+            }
+        };
+        self.value = Some(v);
+        v
     }
 }
 
@@ -220,6 +249,35 @@ impl LightMap {
         let &s = self.index.get(&coord)?;
         let l = c.map(|v| v.rem_euclid(N));
         Some(self.slots[s as usize].get(local(l[0], l[1], l[2])))
+    }
+
+    /// The light a character at world point `pos` (metres) takes: sky and block level as shares
+    /// of 15, blended trilinearly between the cell centres around it (smooth as it moves), cells
+    /// that hold no light left out (the solid next to it); open sky where nothing is held.
+    pub fn sample(&self, pos: [f64; 3]) -> [f32; 2] {
+        let u = [pos[0] - 0.5, pos[1] / crate::CELL_H - 0.5, pos[2] - 0.5];
+        let base = u.map(|v| v.floor() as i32);
+        let f: [f64; 3] = std::array::from_fn(|a| u[a] - f64::from(base[a]));
+        let (mut w, mut sky, mut block) = (0.0, 0.0, 0.0);
+        for k in 0..8 {
+            let d = [k & 1, (k >> 1) & 1, (k >> 2) & 1];
+            let c: [i32; 3] = std::array::from_fn(|a| base[a] + d[a]);
+            let v = self.get(c).unwrap_or(OPEN);
+            if v == 0 {
+                continue;
+            }
+            let wk: f64 = (0..3)
+                .map(|a| if d[a] == 1 { f[a] } else { 1.0 - f[a] })
+                .product();
+            w += wk;
+            sky += wk * f64::from(sky_of(v));
+            block += wk * f64::from(block_of(v));
+        }
+        if w <= 1e-9 {
+            return [0.0, 0.0];
+        }
+        let max = f64::from(LIGHT_MAX);
+        [(sky / w / max) as f32, (block / w / max) as f32]
     }
 
     /// The chunk's light with a one-cell apron (the mesher's padded layout: x fastest, then z,

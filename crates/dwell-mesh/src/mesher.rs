@@ -64,7 +64,7 @@ pub struct MeshArrays {
     /// multiplies the hemisphere light by it, above the floor (shared/look/ambient.json).
     pub light: Vec<f32>,
     /// The opaque and cutout meshes (empty in the transparent one): per vertex, the flood light
-    /// (docs/DAY_NIGHT.md §10), sky then block level as a share of 15, averaged over the cells
+    /// (docs/DAY_NIGHT.md §11), sky then block level as a share of 15, averaged over the cells
     /// the vertex touches (`flood.rs`). The shader turns them into brightness by
     /// shared/look/light.json's curves.
     pub flood: Vec<f32>,
@@ -1073,7 +1073,7 @@ pub fn mesh_chunk_at(
     mesh_chunk_lit(padded, &[], mirror, origin)
 }
 
-/// [`mesh_chunk_at`] with the chunk's flood light (docs/DAY_NIGHT.md §10): `light` is its
+/// [`mesh_chunk_at`] with the chunk's flood light (docs/DAY_NIGHT.md §11): `light` is its
 /// packed sky and block light with a one-cell apron in [`padded_index`] order, world-oriented
 /// (`dwell_world::light::LightMap::padded`); empty (or short) lights it as open sky.
 pub fn mesh_chunk_lit(

@@ -101,7 +101,7 @@ non-boolean, naming the block. `StateInfo::outline`; a look option outside the r
 synced as look tag `0x8c` only where it differs from the look's default (the build's own payload is
 unchanged).
 
-**Light per block** (**built**, Phase 44; [`DAY_NIGHT.md`](./DAY_NIGHT.md) §10): `"lightFilter": 0–15`
+**Light per block** (**built**, Phase 45; [`DAY_NIGHT.md`](./DAY_NIGHT.md) §11): `"lightFilter": 0–15`
 is how many levels a cell of the block takes off the flood light passing into it (15: none gets
 in); absent, 15 for full cubes that are not see-through and 0 for everything else
 (`light_filter_default`; leaves say 2, water 1). `"emits": 0–15` is the block light it gives off

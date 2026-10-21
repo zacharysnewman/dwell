@@ -1,4 +1,4 @@
-//! The flood light at mesh time (docs/DAY_NIGHT.md §10): each vertex of a cell face takes the
+//! The flood light at mesh time (docs/DAY_NIGHT.md §11): each vertex of a cell face takes the
 //! average sky and block light of the cells it touches in the layer the face looks into (smooth
 //! lighting: the front cell, the two beside it and the corner, as the corner occlusion reads
 //! them), leaving out cells that block light and hold none, and the corner behind two such sides.

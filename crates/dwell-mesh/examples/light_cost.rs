@@ -1,4 +1,4 @@
-//! The flood light's cost around the spawn (docs/DAY_NIGHT.md §10):
+//! The flood light's cost around the spawn (docs/DAY_NIGHT.md §11):
 //! `cargo run --release -p dwell-mesh --example light_cost -- [seeds…]` generates the procedural
 //! terrain's chunks in a 9 × 9 chunk square around each seed's spawn on each face (every row that
 //! holds ground and the row over it), loads them into a lit world nearest first as the streamer

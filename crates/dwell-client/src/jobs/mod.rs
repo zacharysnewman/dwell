@@ -33,7 +33,7 @@ pub enum Job {
     /// (plants are jittered by their world position).
     MeshChunk {
         padded: Vec<u16>,
-        /// Its flood light with a one-cell apron (empty: open sky; docs/DAY_NIGHT.md §10).
+        /// Its flood light with a one-cell apron (empty: open sky; docs/DAY_NIGHT.md §11).
         light: Vec<u8>,
         mirror: bool,
         origin: [i32; 3],

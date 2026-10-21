@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Generates the flood light's tunables (falloff, brightness curves, the direct-light ramp, block
-// light; docs/DAY_NIGHT.md §10) for Rust (crates/dwell-world/src/light.gen.rs) from
+// light; docs/DAY_NIGHT.md §11) for Rust (crates/dwell-world/src/light.gen.rs) from
 // shared/look/light.json, after validating them: an unknown, missing or out-of-range entry fails
 // with its path named. The output is checked in; CI regenerates it and fails on any diff.
 import { readFileSync, writeFileSync } from 'node:fs';
@@ -39,7 +39,7 @@ function checkLevel(where, v, lo) {
 
 /** Checks the light data; returns it. */
 export function validateLight(data) {
-  checkKeys('(root)', data, ['falloff', 'sky', 'block']);
+  checkKeys('(root)', data, ['falloff', 'sky', 'block', 'characters']);
   checkKeys('falloff', data.falloff, ['across', 'vertical']);
   checkLevel('falloff.across', data.falloff.across, 1);
   checkLevel('falloff.vertical', data.falloff.vertical, 1);
@@ -57,6 +57,8 @@ export function validateLight(data) {
     fail(`block.color must be "#rrggbb", got ${JSON.stringify(data.block.color)}`);
   }
   checkNumber('block.strength', data.block.strength, 0, 8);
+  checkKeys('characters', data.characters, ['easeS']);
+  checkNumber('characters.easeS', data.characters.easeS, 0, 5);
   return data;
 }
 
@@ -81,6 +83,7 @@ export function lightRust(data) {
     `    block_curve: ${rf(data.block.curve)},`,
     `    block_color: [${c.join(', ')}],`,
     `    block_strength: ${rf(data.block.strength)},`,
+    `    character_ease_s: ${rf(data.characters.easeS)},`,
     '};',
     '',
   ].join('\n');

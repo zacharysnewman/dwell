@@ -203,8 +203,9 @@ fn light_curve(x: f32, curve: f32) -> f32 {
 // sky.rs) and its flood light (sky and block level as shares of 15, dwell-mesh flood.rs). The
 // hemisphere light takes the sky light's brightness, the baked light shading it as much as the
 // vertex is open to the sky (dwell_look::ambient::open_share), above the floor; the sun
-// and moon the sky light's direct ramp, the shadow stand-in (`direct_shadow`); the block light
-// glows by its own curve.
+// and moon the sky light's direct ramp, the shadow maps' stand-in; the block light
+// glows by its own curve. In the scene passes the direct share is the shadow maps' near the eye,
+// fading to this stand-in past their last cascade (`scene_out`, `shadow_light`).
 fn terrain_light(light: f32, flood: vec2f) -> TerrainLight {
     let sky = light_curve(flood.x, SKY_CURVE);
     let l = clamp(light, 0.0, 1.0);
@@ -217,13 +218,6 @@ fn terrain_light(light: f32, flood: vec2f) -> TerrainLight {
     );
 }
 
-// The share of the direct sun and moon that reaches a fragment at `rel` (eye-relative, m): the
-// flood light's stand-in for now. Shadow maps (layer 2) replace it near the player and fade back
-// to `stand_in` past their last cascade.
-fn direct_shadow(stand_in: f32, rel: vec3f) -> f32 {
-    return stand_in;
-}
-
 // `lambert` lit by `l` (`terrain_light`; `open_light()` for surfaces with no baked light): the
 // hemisphere light by `l.ambient`, the sun and moon by `l.direct`, and the block light's warm glow.
 fn lambert_lit(albedo: vec3f, n: vec3f, frag_y: f32, l: TerrainLight) -> vec3f {
@@ -234,11 +228,10 @@ fn lambert_lit(albedo: vec3f, n: vec3f, frag_y: f32, l: TerrainLight) -> vec3f {
     let moon = select(d.moon_b.rgb, d.moon_a.rgb, on_a);
     let hemi_sky = select(d.sky_b.rgb, d.sky_a.rgb, on_a);
     let hemi_ground = select(d.ground_b.rgb, d.ground_a.rgb, on_a);
-    var irradiance = max(dot(n, d.sun.xyz), 0.0) * sun * own(d.sun.xyz, face);
-    irradiance += max(dot(n, d.moon.xyz), 0.0) * moon * own(d.moon.xyz, face);
-    irradiance *= l.direct;
-    irradiance += mix(hemi_ground, hemi_sky, face_rise(face, n) * 0.5 + 0.5) * l.ambient;
-    irradiance += BLOCK_LIGHT * (PI * l.glow);
+    var direct = max(dot(n, d.sun.xyz), 0.0) * sun * own(d.sun.xyz, face);
+    direct += max(dot(n, d.moon.xyz), 0.0) * moon * own(d.moon.xyz, face);
+    let hemi = mix(hemi_ground, hemi_sky, face_rise(face, n) * 0.5 + 0.5) * l.ambient;
+    let irradiance = direct * l.direct + hemi + BLOCK_LIGHT * (PI * l.glow);
     return irradiance * albedo / PI;
 }
 
@@ -368,8 +361,9 @@ struct SceneOut {
 
 fn scene_out(albedo: vec3f, n: vec3f, rel: vec3f, alpha: f32, light: TerrainLight) -> SceneOut {
     var o: SceneOut;
+    // The shadow maps near the eye, the flood light's direct share beyond their last cascade.
     var l = light;
-    l.direct = direct_shadow(l.direct, rel);
+    l.direct = shadow_light(rel, n, l.direct);
     o.color = vec4f(lambert_lit(albedo, n, frame.eye.x + rel.y, l), alpha);
     o.depth = frame_depth(view_depth(rel), true);
     return o;
@@ -660,6 +654,41 @@ fn flat_fs(i: FlatOut, @builtin(front_facing) front: bool) -> SceneOut {
     var o = scene_out(i.color * draw.tint.rgb, normalize(n), i.rel, draw.tint.a, open_light());
     o.depth = frame_depth(o.depth, fade_inked(draw));
     return o;
+}
+
+// The shadow passes (render/shadows.rs; docs/DAY_NIGHT.md §10): depth only, from the light, with
+// the vertex stages above (the cascade's frame uniform holds its matrix as `view_proj`). Draws
+// that draw in full have no fragment stage; these are for the rest. A draw in an LOD swap keeps
+// the map texels its dither keeps, so the two levels share the map as they share the screen (it
+// holds all of one or the other); a stand-in keeps its clip box; plants keep their texels' alpha
+// and fade by their distance from the eye as they do on screen, so their shadows fade with them.
+@fragment
+fn shadow_terrain_fs(i: TerrainOut) {
+    if (fade_discard(draws[i.draw], i.clip.xy)) {
+        discard;
+    }
+}
+
+@fragment
+fn shadow_flat_fs(i: FlatOut) {
+    let draw = draws[i.draw];
+    if (clipped(draw, i.rel) || fade_discard(draw, i.clip.xy)) {
+        discard;
+    }
+}
+
+@fragment
+fn shadow_cutout_fs(i: CutoutOut) {
+    let draw = draws[i.draw];
+    let atlas_uv = i.tile.xy + fract(i.uv) * i.tile.zw;
+    let alpha = textureSampleLevel(atlas, atlas_sampler, atlas_uv, 0.0).a;
+    var fade = 1.0;
+    if (i.fade.y > 0.0) {
+        fade = 1.0 - smoothstep(i.fade.x, i.fade.y, length(i.rel));
+    }
+    if (alpha < 0.5 || fade <= pixel_noise(i.clip.xy) || fade_discard(draw, i.clip.xy)) {
+        discard;
+    }
 }
 
 struct LineIn {
@@ -1367,6 +1396,9 @@ struct Surface {
     frag_y: f32,
     on_a: bool,
     body: vec3f,
+    // The direct light's shadow on the surface (`shadow_light`): it shades the glint, the sparkle
+    // and the body's in-scatter.
+    shadow: f32,
 };
 
 fn water_surface(i: FluidOut, front: bool, footprint: f32, f: Fluid, draw: Draw) -> Surface {
@@ -1389,7 +1421,8 @@ fn water_surface(i: FluidOut, front: bool, footprint: f32, f: Fluid, draw: Draw)
         s.n = normalize(s.n + max(0.02 - dot(s.n, s.v), 0.0) * s.v);
     }
     s.ndv = clamp(dot(s.n, s.v), 1e-3, 1.0);
-    s.body = lambert(f.scatter.rgb * draw.tint.rgb, face_up(s.up), s.frag_y);
+    s.shadow = shadow_light(i.rel, face_up(s.up), 1.0);
+    s.body = lambert_lit(f.scatter.rgb * draw.tint.rgb, face_up(s.up), s.frag_y, TerrainLight(1.0, s.shadow, 0.0));
     return s;
 }
 
@@ -1422,7 +1455,7 @@ fn surface_light(i: FluidOut, s: Surface, f: Fluid, fres: f32, footprint: f32, r
     if (!water_off(DBG_SPARKLE)) {
         spark = sparkle(i, s, f, footprint);
     }
-    return fres * reflected + (1.0 - refl.a) * (glint + spark);
+    return fres * reflected + (1.0 - refl.a) * (glint + spark) * s.shadow;
 }
 
 // The sky along a reflected ray `r` from the surface point `rel`, with the cloud deck over it on
@@ -1745,7 +1778,7 @@ fn water_scene_fs(i: FluidOut, @builtin(front_facing) front: bool) -> @location(
         foam = foam_amount(i.wrapped, under, f);
     }
     if (foam > 0.0) {
-        let lit = lambert(f.foam.rgb, vec3f(0.0, s.up, 0.0), s.frag_y);
+        let lit = lambert_lit(f.foam.rgb, vec3f(0.0, s.up, 0.0), s.frag_y, TerrainLight(1.0, s.shadow, 0.0));
         color = mix(color, lit, foam);
     }
     return vec4f(color, 1.0);
@@ -1984,7 +2017,7 @@ pub fn source(samples: u32) -> String {
     )
 }
 
-/// The flood light's shading constants (shared/look/light.json; docs/DAY_NIGHT.md §10).
+/// The flood light's shading constants (shared/look/light.json; docs/DAY_NIGHT.md §11).
 fn light_wgsl() -> String {
     let l = dwell_world::light::LIGHT;
     let c = l.block_color.map(|v| dwell_look::srgb_to_linear(v) as f32);
@@ -2006,7 +2039,7 @@ fn light_wgsl() -> String {
 /// entry points.
 pub fn lighting_source() -> String {
     format!(
-        "{}{}const SEA_LEVEL: f32 = {:.1};\nconst AMBIENT_FLOOR: f32 = {:?};\n{}const ATLAS_CELLS: u32 = {}u;\nconst ATLAS_TILES: u32 = {}u;\n{}\n{}\n{}\n{FRAME}\n{}\n{}\n{FRAME_DEPTH}\n{COMMON}\n",
+        "{}{}const SEA_LEVEL: f32 = {:.1};\nconst AMBIENT_FLOOR: f32 = {:?};\n{}const ATLAS_CELLS: u32 = {}u;\nconst ATLAS_TILES: u32 = {}u;\n{}\n{}\n{}\n{FRAME}\n{}\n{}\n{FRAME_DEPTH}\n{COMMON}\n{}\n",
         dwell_world::FaceFrame::wgsl(),
         super::face_shading::WGSL,
         world::SEA_LEVEL_M,
@@ -2019,6 +2052,7 @@ pub fn lighting_source() -> String {
         super::reflection::wgsl(),
         dwell_look::sky_wgsl(),
         dwell_look::clouds::cloud_wgsl(&dwell_look::clouds::CLOUDS),
+        super::shadows::SHADOW_WGSL,
     )
 }
 
@@ -2056,6 +2090,9 @@ mod tests {
                 "tile_vs",
                 "noise_tile_fs",
                 "caustic_tile_fs",
+                "shadow_terrain_fs",
+                "shadow_flat_fs",
+                "shadow_cutout_fs",
             ] {
                 assert!(
                     module.entry_points.iter().any(|e| e.name == entry),
@@ -2063,6 +2100,52 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn the_shadow_multiplies_the_direct_sun_and_moon_term_only() {
+        // docs/DAY_NIGHT.md §10: the shadow factor shades the direct term; the hemisphere light
+        // (the ambient, AO and flood-light driven) never sees it.
+        let src = super::source(4);
+        let body = |name: &str| {
+            let at = src.find(&format!("fn {name}(")).expect(name);
+            src[at..at + src[at..].find("\n}\n").expect("end")].to_string()
+        };
+        let lit = body("lambert_lit");
+        // The shadow (the maps, or the flood light's stand-in past them) is \`l.direct\`.
+        assert!(
+            lit.contains(
+                "let irradiance = direct * l.direct + hemi + BLOCK_LIGHT * (PI * l.glow);"
+            )
+        );
+        let direct: Vec<&str> = lit.lines().filter(|l| l.contains("direct")).collect();
+        assert!(
+            direct
+                .iter()
+                .all(|l| !l.contains("hemi_") && !l.contains("ambient"))
+        );
+        let hemi = lit
+            .lines()
+            .find(|l| l.contains("let hemi ="))
+            .expect("hemi");
+        assert!(!hemi.contains("direct") && hemi.contains("* l.ambient"));
+        // Every scene surface takes its shadow from the maps, or past them the flood light's
+        // direct share (docs/DAY_NIGHT.md §11); characters too.
+        assert!(body("scene_out").contains("shadow_light(rel, n, l.direct)"));
+        assert!(
+            super::super::characters::WGSL.contains("l.direct = shadow_light(rel, n, l.direct);")
+        );
+        assert!(body("lambert").contains("lambert_lit(albedo, n, frag_y, open_light())"));
+        // The water's glint and sparkle are direct light; its reflection of the sky is not.
+        let surface = body("surface_light");
+        assert!(surface.contains("(glint + spark) * s.shadow"));
+        assert!(surface.contains("fres * reflected +"));
+        assert!(!surface.contains("reflected * s.shadow"));
+        // The lookup's result is direct light's: past the maps (or with the light faded) it is
+        // the stand-in, which the first layer's sky light replaces.
+        let look = body("shadow_light");
+        assert!(look.contains("mix(stand_in, shadow_pcf(c, p), w)"));
+        assert!(look.contains("return stand_in * cloud_shadow(rel);"));
     }
 
     #[test]

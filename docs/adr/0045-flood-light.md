@@ -2,7 +2,7 @@
 
 - Status: Accepted (the owner's direction, 2026-10-21)
 - Date: 2026-10-21
-- Design: [`DAY_NIGHT.md`](../DAY_NIGHT.md) §10; plan: Phase 44
+- Design: [`DAY_NIGHT.md`](../DAY_NIGHT.md) §11; plan: Phase 45
 
 ## Context
 
@@ -25,9 +25,9 @@ shadow maps later (built separately).
 - **Meshing averages it per vertex** (smooth lighting) beside the baked corner occlusion and sky
   rays, which are kept: they shade the flood light as much as a vertex is open to the sky, so open
   ground is lit exactly as in 0.22.5 and caves by the flood light alone.
-- **The direct sun and moon take the sky light's ramp** as the shadow stand-in, a separate shader
-  factor (`direct_shadow`) that shadow maps replace near the player and fade back to past their
-  last cascade.
+- **The direct sun and moon take the sky light's ramp** as the shadow stand-in: the shadow maps
+  (Phase 44, `shadow_light(rel, n, stand_in)`) shade them near the eye and fade back to it past
+  their last cascade.
 
 ## Consequences
 
@@ -38,4 +38,5 @@ shadow maps later (built separately).
 - Integer levels on ½ m cells: light reaches 15 m across but 7.5 m vertically.
 - A chunk lit before the chunks above it arrive is relit when they do (the sky enters at the top of
   what is held).
-- Players and held items are still lit as open sky (a follow-up).
+- Players, your arms and held items take the flood light where they are, blended between cells
+  and eased over `characters.easeS` (the owner's request, folded in).
