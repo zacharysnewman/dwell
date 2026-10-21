@@ -33,7 +33,7 @@ const CHARACTER_KEYS = [
 ];
 const PART_KEYS = ['id', 'on', 'kind', 'size', 'at', 'rot', 'material', 'round', 'tip', 'mirror', 'view', 'with'];
 const ACCESSORY_KEYS = ['$comment', 'label', 'place', 'fits', 'slots', 'hides', 'parts'];
-const ITEM_KEYS = ['$comment', 'label', 'on', 'parts'];
+const ITEM_KEYS = ['$comment', 'label', 'on', 'light', 'parts'];
 const VARIANT_KEYS = ['label', 'accessories', 'slots'];
 const CLIP_KEYS = ['$comment', 'rig', 'space', 'layer', 'duration', 'loop', 'ease', 'cycle', 'grounded', 'blend', 'keys'];
 const KEY_KEYS = ['t', 'bones', 'root'];
@@ -80,7 +80,7 @@ export function lookupMaterial(style, ref) {
   if (style.materials?.[ref]) {
     const m = style.materials[ref];
     const ramp = style.ramps?.[m.ramp];
-    return ramp ? { kind: 'material', name: ref, ramp, overlay: m.overlay ?? 0 } : undefined;
+    return ramp ? { kind: 'material', name: ref, ramp, overlay: m.overlay ?? 0, emissive: m.emissive ?? 0 } : undefined;
   }
   if (style.swatches?.[ref]) {
     const c = style.swatches[ref];
@@ -266,6 +266,9 @@ export function validate(data, style) {
     keysOf(it, ITEM_KEYS, w);
     if (typeof it.on !== 'string') fail(`${w}.on`, 'must name a socket');
     if (!Array.isArray(it.parts) || it.parts.length === 0) fail(`${w}.parts`, 'must be a non-empty list');
+    // `light` (docs/LIGHTS.md): where the light a held block gives off sits, on the item's socket
+    // (metres in its frame): a torch's flame.
+    if (it.light !== undefined) vec3(it.light, `${w}.light`);
   }
 
   for (const [id, ch] of Object.entries(data.characters)) {

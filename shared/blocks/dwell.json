@@ -13,6 +13,10 @@
       "caustics": { "strength": 1.3, "scale": 1.4, "depth": 4.0 }, "scattering": 0.3, "refraction": 0.4, "sparkle": 1.5
     }
   },
+  "$lights": "Light sources (docs/LIGHTS.md §2): the dynamic point lights that blocks reference by name (`light`), held in a hand or placed. color (sRGB), strength (its irradiance at 1 m), radiusM (where it ends, smoothly), flicker (amount: the share of its strength it takes at most; speed: its noise's cycles a second), shadows (whether it may cast them, the Torch shadows setting's, Phase 47 T2). A placed block's flood light is its `emits`; a held one never touches the flood light.",
+  "lights": {
+    "dwell:torch": { "color": "#ffa45c", "strength": 2.2, "radiusM": 10, "flicker": { "amount": 0.16, "speed": 6 }, "shadows": true }
+  },
   "blocks": [
     { "name": "air", "density": 0, "shape": "empty", "look": "cube", "color": "#000000", "opacity": 0 },
     {
@@ -81,6 +85,16 @@
       "selectionBox": [0.15, 0, 0.15, 0.85, 0.6, 0.85],
       "placeOn": ["dwell:grass", "dwell:dirt"], "needsSupport": "below", "replaceable": true, "medium": "air",
       "color": "#8dbf3f", "textures": "tallGrass"
+    },
+    {
+      "$comment": "Prototype content (docs/LIGHTS.md): a torch on the floor. Crossed quads of a stick and its flame (drawn cutout; the flame glows by its texture's `emissive`, shared/textures), no collision, standing on the block below and gone with it. Placed, it gives off block light 14 through the flood light (`emits`); its `light` is the smooth light around it, held or placed; a hand holding it shows the `torch` item (shared/characters).",
+      "name": "torch", "sound": "dwell:wood", "density": 600, "shape": "empty", "placeable": true,
+      "look": "cross", "render": "cutout",
+      "cross": { "height": 1.0, "quads": 2 },
+      "selectionBox": [0.38, 0, 0.38, 0.62, 0.9, 0.62],
+      "needsSupport": "below", "medium": "air",
+      "emits": 14, "light": "dwell:torch", "held": "torch",
+      "color": "#ffffff", "textures": "torch"
     }
   ]
 }

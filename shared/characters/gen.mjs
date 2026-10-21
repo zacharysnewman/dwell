@@ -33,7 +33,7 @@ export function styleFrom({ palette, materials }) {
   const mats = {};
   for (const name of Object.keys(materials.materials)) {
     const m = resolveMaterial(materials, name);
-    mats[name] = { ramp: m.ramp, overlay: m.overlay ?? 0, use: m.use };
+    mats[name] = { ramp: m.ramp, overlay: m.overlay ?? 0, use: m.use, emissive: m.emissive ?? 0 };
   }
   return { ramps: palette.ramps, swatches: palette.swatches ?? {}, materials: mats };
 }
@@ -139,7 +139,7 @@ export function rustTables(data, textures, { header, tilesFile }) {
       tiles.push(luminanceTile(ref, textures.materials, textures.palette));
     }
     matIndex.set(ref, materials.length);
-    materials.push({ name: ref, ramp: m.ramp, overlay: m.overlay ?? 0, tile });
+    materials.push({ name: ref, ramp: m.ramp, overlay: m.overlay ?? 0, emissive: m.emissive ?? 0, tile });
     return matIndex.get(ref);
   };
   const clipNames = Object.keys(data.clips);
@@ -164,7 +164,8 @@ export function rustTables(data, textures, { header, tilesFile }) {
     });
     const itemSrc = items.map((it) => {
       const m = compose(data, style, id, { item: it, accessories: [] });
-      return `Item { name: ${str(it)}, parts: ${parts(m.parts.filter((p) => p.from === `item:${it}`), bones)} }`;
+      const light = data.items[it].light;
+      return `Item { name: ${str(it)}, light: ${light ? `Some(${v3(light)})` : 'None'}, parts: ${parts(m.parts.filter((p) => p.from === `item:${it}`), bones)} }`;
     });
     const fb = ch.firstPerson?.body;
     const fpBody = fb
@@ -220,7 +221,7 @@ ${channels}        ],
 `;
   });
   const matSrc = materials.map(
-    (m) => `    Material { name: ${str(m.name)}, shadow: ${hexOf(m.ramp.shadow)}, base: ${hexOf(m.ramp.base)}, light: ${hexOf(m.ramp.light)}, overlay: ${f32(m.overlay)}, tile: ${m.tile} },\n`,
+    (m) => `    Material { name: ${str(m.name)}, shadow: ${hexOf(m.ramp.shadow)}, base: ${hexOf(m.ramp.base)}, light: ${hexOf(m.ramp.light)}, overlay: ${f32(m.overlay)}, emissive: ${f32(m.emissive)}, tile: ${m.tile} },\n`,
   );
   const tileBytes = new Uint8Array(tiles.length * TILE * TILE);
   tiles.forEach((t, i) => tileBytes.set(t, i * TILE * TILE));

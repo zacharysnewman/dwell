@@ -181,6 +181,31 @@ pub struct StateInfo {
     pub light_filter: u8,
     /// The block light (0–15) it gives off (block data `emits`).
     pub emits: u8,
+    /// The dynamic light around it, held or placed (block data `light`, a `LIGHTS` row;
+    /// docs/LIGHTS.md): drawn by the renderer, never in the flood light.
+    pub light: Option<&'static LightInfo>,
+    /// The item a hand holding it shows (block data `held`, an item of the characters' data);
+    /// none: the block itself.
+    pub held: Option<&'static str>,
+}
+
+/// A named light source (`lights` in `shared/blocks/*.json`; docs/LIGHTS.md §2): looks only.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct LightInfo {
+    /// Namespaced name, e.g. `dwell:torch`.
+    pub name: &'static str,
+    /// sRGB `0xRRGGBB`.
+    pub color: u32,
+    /// Its irradiance at 1 m (× the colour, linear).
+    pub strength: f32,
+    /// Where its light ends (a smooth window to 0), metres.
+    pub radius_m: f32,
+    /// The share of its strength a flicker takes at most (0: steady), and how fast (cycles a
+    /// second).
+    pub flicker: f32,
+    pub flicker_speed: f32,
+    /// Whether it may cast shadows (the Torch shadows setting's; Phase 47 T2).
+    pub shadows: bool,
 }
 
 /// A fluid's index in `FLUIDS`, valid for this build's registry.

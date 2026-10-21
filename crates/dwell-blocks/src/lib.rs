@@ -29,7 +29,7 @@ pub use table::{
     intern, is_build_state, register, same_definition, state_count, try_info,
 };
 pub use tables::{
-    BLOCKS, FLUIDS, PROPERTIES, PROPERTY_VALUES, REGISTRY_HASH, SHAPE_FACES, SHAPES, STATES,
+    BLOCKS, FLUIDS, LIGHTS, PROPERTIES, PROPERTY_VALUES, REGISTRY_HASH, SHAPE_FACES, SHAPES, STATES,
 };
 pub use types::*;
 
@@ -76,6 +76,11 @@ pub fn fluid(name: &str) -> Option<FluidId> {
 pub fn require_fluid(name: &str) -> &'static FluidInfo {
     let id = fluid(name).unwrap_or_else(|| panic!("unknown fluid `{name}`"));
     &FLUIDS[usize::from(id)]
+}
+
+/// The light source named `name` (`dwell:torch`; docs/LIGHTS.md).
+pub fn light(name: &str) -> Option<&'static LightInfo> {
+    LIGHTS.iter().find(|l| l.name == name)
 }
 
 /// FNV-1a 64 over the canonical strings (each followed by `\n`), in id order: what the generator

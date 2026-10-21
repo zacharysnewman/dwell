@@ -83,6 +83,11 @@ pub mod tag {
     /// flood light, docs/DAY_NIGHT.md §11), sent only where either differs from the default
     /// (`crate::light_filter_default`, no light).
     pub const LIGHT: u8 = 0x8d;
+    /// `str` the light source's name (`StateInfo::light`, docs/LIGHTS.md), resolved in this
+    /// build's `LIGHTS` (unknown: none), sent only when it has one.
+    pub const LIGHT_SOURCE: u8 = 0x8e;
+    /// `str` the item a hand holding it shows (`StateInfo::held`), sent only when it has one.
+    pub const HELD: u8 = 0x8f;
 }
 
 /// Rule flag bits (tag `FLAGS`).
@@ -318,6 +323,12 @@ pub fn state_fields(s: &StateInfo) -> Fields {
             w.u8(s.light_filter);
             w.u8(s.emits);
         }));
+    }
+    if let Some(l) = s.light {
+        out.push(field(tag::LIGHT_SOURCE, |w| w.str(l.name)));
+    }
+    if let Some(h) = s.held {
+        out.push(field(tag::HELD, |w| w.str(h)));
     }
     if !s.side_under.is_empty() {
         out.push(field(tag::SIDE_UNDER, |w| {
@@ -621,6 +632,8 @@ fn default_row(name: &str) -> StateInfo {
         medium: Medium::Any,
         light_filter: 0,
         emits: 0,
+        light: None,
+        held: None,
     }
 }
 
@@ -755,6 +768,8 @@ fn apply_look(fields: &Fields, fluids: &[String], row: &mut StateInfo) {
     row.fade = None;
     row.side_under = &[];
     row.render = RenderMode::Opaque;
+    row.light = None;
+    row.held = None;
     let mut outline = None;
     let mut light = None;
     for (t, bytes) in fields {
@@ -840,6 +855,18 @@ fn apply_look(fields: &Fields, fluids: &[String], row: &mut StateInfo) {
                     .collect();
                 if r.ok() {
                     row.side_under = Box::leak(rules.into_boxed_slice());
+                }
+            }
+            tag::LIGHT_SOURCE => {
+                let s = r.str(MAX_STR);
+                if r.ok() {
+                    row.light = crate::light(&s);
+                }
+            }
+            tag::HELD => {
+                let s = r.str(MAX_STR);
+                if r.ok() {
+                    row.held = Some(intern(&s));
                 }
             }
             tag::OUTLINE => {
