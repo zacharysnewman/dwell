@@ -206,6 +206,14 @@ sub-0.1 ms phases read 0 or 0.1. Chrome rounds GPU timestamps to 65.536 µs unle
 `--enable-webgpu-developer-features`, which the bench passes (`--enable-features=WebGPUDeveloperFeatures`
 does not lift the rounding).
 
+The midplane crossing's roll (an experiment switch, owner 2026-10-21; BIFACIAL_WORLD.md §6,
+MOTION_EFFECTS.md): `?crossingroll=<seconds>` sets how long the camera rolls upright after crossing
+(0–5 s; the default is `motion.json`'s `crossingRollS`, 0.8 s), and `0` or `?crossingroll=snap`
+snaps it upright on the crossing frame with no frames in between. `__dwell.setCrossingRoll(s)` sets
+it mid-run (false for a value outside 0–5) and `__dwell.crossingRoll()` reads it; a `--compare`
+config can pass it as `params: {"crossingroll": "snap"}`. Only the view's roll changes: the look
+still continues across and the eye still swings across over `crossingRollS`.
+
 Plants (docs/TRANSPARENT_BLOCKS.md): `__dwell.plants(wind, shown)` scales their wind and hides or
 shows every cutout mesh, for an A/B of their cost at one camera pose.
 

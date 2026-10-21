@@ -101,7 +101,7 @@ impl Scene for Recorder {
         _yaw: f64,
         _pitch: f64,
         _face: dwell_world::FaceFrame,
-        _flip: f64,
+        _roll: f64,
     ) {
         self.camera = Some(eye);
     }

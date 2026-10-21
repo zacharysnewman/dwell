@@ -255,6 +255,9 @@ struct Inner {
     reduced_motion: bool,
     /// The Show your arms setting (docs/CHARACTERS.md §5).
     show_arms: bool,
+    /// How long the camera rolls upright across the midplane (s; 0 snaps): `?crossingroll=` or
+    /// `setCrossingRoll`, kept here for a game started later.
+    crossing_roll: f64,
 }
 
 fn shell_event(kind: &str, value: impl Into<JsValue>) -> JsValue {
@@ -353,6 +356,9 @@ impl Client {
         renderer.set_pixel_art_query(&options.search);
         // `?lodshadows=off` (docs/DAY_NIGHT.md §12): the distant shadows off, for their cost.
         renderer.set_lod_shadows_query(&options.search);
+        // `?crossingroll=<s>|snap` (docs/DEV_TOOLS.md): the crossing roll's duration.
+        let crossing_roll = dwell_game::face_flip::roll_seconds_from_query(&options.search)
+            .unwrap_or(dwell_game::face_flip::ROLL_SECONDS);
         let inner = Inner {
             _instance: instance,
             _adapter: adapter,
@@ -383,6 +389,7 @@ impl Client {
             fov_setting: dwell_lod::frustum::VERTICAL_FOV,
             reduced_motion: false,
             show_arms: true,
+            crossing_roll,
         };
         Ok(Client {
             inner: Rc::new(RefCell::new(inner)),
@@ -1191,6 +1198,26 @@ impl Client {
             .unwrap_or("off")
             .into()
     }
+    /// How long the camera rolls upright after crossing the midplane (s; 0 snaps at once), as
+    /// `?crossingroll=` sets it: the experiment switch (docs/DEV_TOOLS.md). False (unchanged) for a
+    /// value outside 0..=5 s.
+    #[wasm_bindgen(js_name = setCrossingRoll)]
+    pub fn set_crossing_roll(&self, seconds: f64) -> bool {
+        let mut s = self.inner.borrow_mut();
+        if dwell_game::face_flip::valid_roll_seconds(seconds).is_none() {
+            return false;
+        }
+        s.crossing_roll = seconds;
+        if let Some(g) = &mut s.game {
+            g.set_crossing_roll(seconds);
+        }
+        true
+    }
+    /// The crossing roll's duration (s).
+    #[wasm_bindgen(js_name = crossingRoll)]
+    pub fn crossing_roll(&self) -> f64 {
+        self.inner.borrow().crossing_roll
+    }
     /// The pixel-art preview's preset by name (`shared/look/pixelart.json`;
     /// docs/proposals/PIXEL_ART_LOOK.md), as `?pixelart=` takes it; `off` or an unknown name turns
     /// it off. True when a preset is on.
@@ -1919,6 +1946,7 @@ impl Inner {
         game.set_capabilities(region_edits, brushes, generator_version);
         game.day_override = self.options.day;
         game.set_loading_screen(self.options.loading_screen);
+        game.set_crossing_roll(self.crossing_roll);
         game.set_respawn_preload(dwell_game::loading::respawn_preload_from_query(
             &self.options.search,
         ));

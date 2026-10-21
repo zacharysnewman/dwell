@@ -8,7 +8,7 @@ toon bands, a limited palette with ordered dither, a nearest-neighbour integer u
 proposal says what was built to judge it, what it shows, and the spec's open questions.
 
 **Try it:** `https://dropkickarcade.com/dwell/?pixelart=270` (presets `180`, `270`, `270-warm`,
-`270-snap`, `360`, `270-raw`; `off` or no parameter is the normal look). In the console,
+`270-snap`, `270-cel`, `360`, `360-cel`, `270-raw`; `off` or no parameter is the normal look). In the console,
 `__dwell.setPixelArt('180')` switches live. The bench has a configuration per preset
 (`npm run bench -- <scenario> --compare --configs pixelart-180,pixelart-270,pixelart-270-warm,pixelart-270-snap,pixelart-360`).
 
@@ -45,7 +45,9 @@ for: the palettes and presets are data, one generator, validation and tests over
      a gradient or a band edge crosses between two colours. This is the "dither only gradients and
      band edges" rule without a gradient detector.
   5. **Atlas:** point filtering while on, `point` (no mips, the spec's rule) or `point-mips` (nearest
-     texel of the nearest mip).
+     texel of the nearest mip); and the preset's texture set (`textures`): the painterly set, or the
+     **cel** style (§8; [`PAINTERLY_TEXTURES.md`](../PAINTERLY_TEXTURES.md) §10), written into the
+     atlas in place when the preset changes.
   6. Motion blur and the wind pass (its edge blur and streaks) are off.
   7. **Camera snap** (optional): the eye moves along the view's right and up onto the grid of
      low-res pixels on a plane `snapDepthM` ahead, and the upscale shifts the picture by the
@@ -57,17 +59,22 @@ for: the palettes and presets are data, one generator, validation and tests over
 
 ## 2. The presets
 
-| Preset | Rows | Fit | Palette | Dither | Sun bands | Ambient bands | Shadow hue | Edge | Atlas | Snap |
-|---|---|---|---|---|---|---|---|---|---|---|
-| `180` | 180 | crop | dwell (42) | 0.5 | 3 | 3 | 0.5 | depth + crease, 45% | point-mips | off |
-| `270` | 270 | crop | dwell | 0.5 | 3 | smooth | 0.5 | depth, 40% | point-mips | off |
-| `270-warm` | 270 | crop | hearth (44) | 0.5 | 3 | smooth | 0.6 | depth, 40% | point-mips | off |
-| `270-snap` | 270 | crop | dwell | 0.5 | 3 | smooth | 0.5 | depth, 40% | point-mips | 8 m |
-| `360` | 360 | crop | dwell | 0.35 | 4 | smooth | 0.35 | none | point-mips | off |
-| `270-raw` | 270 | letterbox | hearth | 1.0 | smooth | smooth | 0 | none | point | off |
+| Preset | Rows | Fit | Palette | Dither | Sun bands | Ambient bands | Shadow hue | Edge | Atlas | Textures | Snap |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| `180` | 180 | crop | dwell (45) | 0.5 | 3 | 3 | 0.5 | depth + crease, 45% | point-mips | painterly | off |
+| `270` | 270 | crop | dwell | 0.5 | 3 | smooth | 0.5 | depth, 40% | point-mips | painterly | off |
+| `270-warm` | 270 | crop | hearth (44) | 0.5 | 3 | smooth | 0.6 | depth, 40% | point-mips | painterly | off |
+| `270-snap` | 270 | crop | dwell | 0.5 | 3 | smooth | 0.5 | depth, 40% | point-mips | painterly | 8 m |
+| `270-cel` | 270 | crop | dwell | 0.5 | 3 | smooth | 0.5 | depth, 40% | point-mips | **cel** | off |
+| `360` | 360 | crop | dwell | 0.35 | 4 | smooth | 0.35 | none | point-mips | painterly | off |
+| `360-cel` | 360 | crop | dwell | 0.35 | 4 | smooth | 0.35 | none | point-mips | **cel** | off |
+| `270-raw` | 270 | letterbox | hearth | 1.0 | smooth | smooth | 0 | none | point | painterly | off |
 
-`dwell` is 42 colours from the storybook palette's ramps and swatches (meadow, leaf, soil, bark,
-stone, sand, water, cloud, flame, the inks) plus a hand-picked sky ramp (7 steps) and a near-black, since
+`270-cel` and `360-cel` are `270` and `360` with the cel textures and nothing else (a test pins it),
+so a comparison isolates the texture set.
+
+`dwell` is 45 colours from the storybook palette's ramps and swatches (meadow, leaf, soil, bark,
+heartwood — added with the cel style, for its wood tones — stone, sand, water, cloud, flame, the inks) plus a hand-picked sky ramp (7 steps) and a near-black, since
 the palette has no sky blues and no darks for night. `hearth` is a hand-made Lospec-style warm palette
 (44 colours in the spec's ramps: sky 5, cloud 4, foliage 6, grass 5, bark 4, earth 4, stone 4, water
 3, warm light 4, dusk 2, shade 3), hue-shifted warm in the light and cool in the shadow.
@@ -126,7 +133,7 @@ session): `/private/tmp/claude-501/-Users-zacknewman-Projects-dwell/dc7bd3b5-fc5
   quantized, each stroke becomes a speckle of two palette colours (grass tops, the held stone).
   The spec wants flat vertex colour with procedural noise; with these textures the look is busier
   than t3ssel8r's. A pixel-art direction would want its own texture set (or none: flat ramp colours
-  by face) — a texture-set question, not a renderer one.
+  by face) — a texture-set question, not a renderer one. A cel set was built to answer it (§8).
 - **The 1-pixel edge** (near-side, darkened) is subtle at 270 and invisible past its fade; the
   white region-tool box and the block outline, drawn into the low-res picture, become 1-pixel white
   lines that dominate dark scenes.
@@ -190,13 +197,100 @@ From the spec, with what the preview suggests:
   swapping at a threshold; or quantizing before the exposure and time-of-day grade.
 - [ ] **First-person shimmer:** is it acceptable for this to be an optional look (a setting) rather
   than the game's look? The crawl on turning is inherent to a first-person camera at low resolution.
-- [ ] **Textures:** would a pixel-art look keep the painterly texture set, or get a flat-colour set
-  of its own (the spec's "vertex colour and procedural noise")?
+- [x] **Textures:** would a pixel-art look keep the painterly texture set, or get a flat-colour set
+  of its own (the spec's "vertex colour and procedural noise")? The owner asked for a cel set; a
+  prototype is built (§8).
+
+## 8. A cel texture set (2026-10-21)
+
+Owner: "I think we need to try out a custom texture set for the pixel art look. It looks like it's
+better to use fewer colors per texture, with more of a cell shaded look to the textures", and "the
+complexity in the textures currently makes them shimmer a lot when moving around." Built as a second
+texture **style**, cel ([`PAINTERLY_TEXTURES.md`](../PAINTERLY_TEXTURES.md) §10): the same materials
+painted from `shared/textures/cel.json` in at most 4 flat tones a tile, all on the `dwell` palette
+(tested), at 16 texels a tile (one per metre, so a texel stays at least a low-res pixel out to about
+11 m at 270 rows), hard-edged shapes from a small vocabulary (clumps, blades, bricks, planks, grain
+bands, ripples, rings), its mips by **majority tone** (so a distant face keeps exactly its tones and
+settles on its main one, rather than averaging into in-between colours that the palette dithers). The
+presets `270-cel` and `360-cel` are `270` and `360` with it; nothing else changes.
+
+**Try it:** `https://dropkickarcade.com/dwell/?pixelart=270-cel` and `?pixelart=360-cel` (and
+`?pixelart=270` for the painterly set in the same look), or `__dwell.setPixelArt('270-cel')` live.
+
+**Screenshots** (the owner's Mac, Chrome on the GPU, 1920 × 1080, seed 7; load average 7–14 during
+the run). Sheets of the current look, `270` (painterly), `270-cel` and `360-cel`, and GIFs of each
+motion burst, in the session's scratchpad (not checked in):
+`/private/tmp/claude-501/-Users-zacknewman-Projects-dwell/dc7bd3b5-fc5f-4b35-a6f4-014a26f2aadb/scratchpad/pixelart/cel/deliverables/`
+(`px-hills-noon.*`, `px-pines.grove`, `px-dusk.*`, `px-torch-cave.*`, `px-water.*`, `px-face-b.*`,
+`px-shimmer.eye`/`.ground`, `shimmer.<burst>.<config>.gif`); tile close-ups (painterly, painterly
+snapped to the palette, cel) in `…/pixelart/cel/tile-closeups.png`.
+
+**Shimmer, measured.** The bench's `burst` with `drift` (the camera placed at eye height over the
+spawn at noon and moved on each frame; 16 frames): turning 0.75° a frame, walking 5 cm a frame
+toward the horizon and looking 35° down, turning while looking down, and a slow creep (1 cm,
+0.05°). *Changed* is the bench's flicker (the share of pixels whose brightness moves over 3/255
+frame to frame); *sparkle* is the share that changes by over 24/255 and changes back the next frame
+(within 8/255): aliasing and dither crawl, rather than an edge passing once.
+
+| Burst | Current: changed / sparkle | `270`: changed / sparkle | `270-cel` | `360-cel` |
+|---|---|---|---|---|
+| Turn | 69.2 % / 1.77 % | 42.2 % / 4.96 % | 37.8 % / 4.51 % | 38.0 % / 4.20 % |
+| Walk | 41.2 / 0.33 | 20.0 / 1.50 | 15.4 / 1.51 | 15.0 / 1.21 |
+| Walk, looking down | 46.0 / 0.31 | 22.2 / 1.46 | 15.1 / 1.88 | 14.0 / 1.64 |
+| Turn, looking down | 50.0 / 0.46 | 25.6 / 2.00 | 18.7 / 2.01 | 17.8 / 1.92 |
+| Creep | 26.4 / 0.12 | 13.1 / 0.92 | 10.3 / 0.76 | 9.9 / 0.56 |
+
+`270`'s numbers repeated to within 0.3 % between two runs. A first cel pass (more, smaller clumps and
+averaged mips) was *worse* than painterly: sparkle 5.13 % turning and 2.38 % walking looking down,
+with 15.6 % of pixels moving over 24/255 against painterly's 7.3 %. Fewer, larger shapes and the
+majority-tone mips brought it to the table's numbers.
+
+**What it shows**
+
+- **Fewer pixels change: 10–32 % fewer than painterly at the same preset** (walking 15 % against 20 %,
+  looking down 15 % against 22 %). The flat areas hold still. In painterly `270` the grass is a field
+  of dither dots between two greens that swims when you move (`shimmer.walk-ground.pixelart-270.gif`);
+  in cel it is one flat green with whole shapes on it (`px-shimmer.ground`).
+- **Sparkle is about the same.** Lower turning (4.5 against 5.0 %) and creeping (0.76 against
+  0.92 %), higher walking looking down (1.9 against 1.5 %). Most of what remains is not the
+  textures: the block edges' stair steps, the screen-fixed dither on lit slopes, tall grass and
+  leaves, and the ½ m risers of every hillside, which are a few pixels tall at 270 rows whatever
+  they are painted with. The current look sparkles least of all (0.1–1.8 %), because nothing is
+  quantized. **The texture set alone does not fix first-person shimmer.** It moves it from the
+  surfaces to the edges.
+- **The changes that are left are bigger.** A cel shape is a whole tone darker than its ground, so a
+  moving edge changes its pixels by more (mean Δ 6.6 against 5.9 looking down). It reads as shapes
+  sliding, not as noise, but it is visible.
+- **It reads as pixel art.** It looks more designed than quantized painterly: the stone's blocks,
+  the bark's grain bands, the log's rings, the turf skirt's drips and the leaves' lit clusters read
+  at 270 rows (`tile-closeups.png`, `px-torch-cave.placed-torch-room`), where painterly quantized
+  becomes soft speckle.
+- **Tile repetition shows.** With so few shapes a tile, the 1 m repeat is plain on flat ground (a
+  grid of the same three dark clumps, `px-shimmer.ground`), and the stone's mortar reads as a tiled
+  floor in the cave. Variants per block (a hash of the position picking one of two or three cel
+  tiles) would break it. Two or three more pattern kinds, and no change to the vocabulary's shape,
+  would cover it.
+- **Hillsides turned from the sun go darker** than in painterly (`px-pines.grove`): the cel tiles'
+  shadow shapes and the toon bands stack. The palette, not the textures, decides night and dusk as
+  before (§4).
+- **360-cel is the calmest** on every burst (sparkle 0.56–4.2 %). The finer grid makes each moving
+  stair step smaller.
+
+**Cost.** The cel texels add 19 KB to the WASM module (6.763 → 6.782 MB) and **442 bytes gzipped**
+(flat tones compress to almost nothing), so they ship in the module rather than loading on demand.
+Switching sets rewrites the atlas's mip chain once (in place, the same texture). The frame cost is
+the same: the same atlas size, the same samplers.
+
+**Open questions for the owner**
+
+- [ ] Keep the cel set as the pixel-art look's textures, with per-block variants to break the
+  repeat? Or go further, to flat ramp colours by face with no texture, which would sparkle least?
+- [ ] Shimmer: the textures are only part of it. The rest needs the edges and dither to hold
+  still (world-space dither, a coarser LOD under the look, or the slower camera §4 describes).
 
 ## 7. If adopted
 
 An ADR and a phase: the palettes as a proper palette design (per time of day), the preset as a
-player setting (an append-only field of the settings record) rather than a query, a texture set for
-it if the owner wants one, the quantize by a 3D lookup table, the edge as a palette step, and
+player setting (an append-only field of the settings record) rather than a query, the cel texture set (§8) or its successor, the quantize by a 3D lookup table, the edge as a palette step, and
 dither in world space if the screen-fixed pattern is judged a problem. Until then this stays a
 preview behind `?pixelart=`, like `?outline=`.

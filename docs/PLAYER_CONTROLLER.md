@@ -1019,8 +1019,12 @@ always toward the midplane (y = −2,048), so a face-B player stands upside down
   which test world-frame geometry, are skipped). Controller decisions are identical: the five-player
   golden trace matches every state on face B with positions within 1 mm.
 - **Camera and look** (§9): eye height is measured along the player's up; the view's pitch is toward
-  that up; the camera turns over when the face changes: the heading turns by 180° and the view is
-  drawn rotated about the camera's right axis by π, easing to 0 over 0.5 s (a half forward
-  somersault, nose first; `dwell-game`'s `face_flip.rs`, applied by `dwell-client`'s
-  `render/camera.rs`). In the flip band a body can swing across the midplane and back, and each
-  crossing turns the heading round again (no hysteresis).
+  that up; when the face changes the body turns over and the camera keeps pointing the same way
+  (BIFACIAL_WORLD.md §6): the look continues across (`FaceFrame::look_across`, heading kept,
+  pitch mirrored: the same world forward), and the upside-down view is drawn rolled back by half a
+  turn about its forward axis, easing in and out to 0 over `crossingRollS` (0.8 s;
+  `dwell-game`'s `face_flip.rs`, applied by `dwell-client`'s `render/camera.rs` `aim`); the eye
+  swings across the body over the same time (`eye.rs`). The controller continues the crossing tick's look the same way
+  (`step_input`): its input was sampled on the face before, and a look down a ladder must not
+  climb back for that tick. In the flip band a body can swing across the midplane and back, and
+  each crossing continues the look again (no hysteresis).

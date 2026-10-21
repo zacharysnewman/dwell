@@ -857,6 +857,8 @@ pub struct Renderer {
     pixel_shift: [f64; 2],
     pixel_pass: Option<pixel_art::PixelPass>,
     groups_atlas: Option<AtlasFilter>,
+    /// The texture set the atlas holds now (the pixel-art preset's `textures`, else painterly).
+    atlas_set: dwell_mesh::TextureSet,
     /// The ink outline's mode (`?outline=`; docs/ART_DIRECTION.md §7), none by default.
     ink_outline: Option<&'static OutlineMode>,
     /// The spyglass's magnification this frame (1 unzoomed): the outline's fade follows it.
@@ -955,7 +957,8 @@ pub struct Renderer {
     yaw: f64,
     pitch: f64,
     face: FaceFrame,
-    flip: f64,
+    /// The view's roll about its forward axis (radians; the crossing of the midplane, face_flip.rs).
+    roll: f64,
     /// The fluid the eye is under (`set_eye_fluid`), for the frame uniform.
     eye_fluid: Option<EyeFluid>,
     /// The water quality setting (`set_water_quality`).
@@ -1474,7 +1477,7 @@ impl Renderer {
         });
         let motion_pipeline = full_screen("motion", &motion_layout, "motion_fs", format.into());
         let timer = GpuTimer::new(&device, &queue);
-        let (atlas_view, sampler) = Self::atlas(&device, &queue);
+        let (atlas_texture, atlas_view, sampler) = Self::atlas(&device, &queue);
         let (tile_grid_buffer, fluid_buffer) = frame_extras(&device, &queue);
         let frame_buffers = std::array::from_fn(|_| {
             device.create_buffer(&wgpu::BufferDescriptor {
@@ -1495,6 +1498,7 @@ impl Renderer {
         let frame_bindings = FrameBindings {
             layout: frame_layout,
             shadow_layout: shadow_frame_layout,
+            atlas_texture,
             atlas_view,
             sampler,
             point_sampler: device.create_sampler(&wgpu::SamplerDescriptor {
@@ -1554,6 +1558,7 @@ impl Renderer {
             pixel_shift: [0.0; 2],
             pixel_pass: None,
             groups_atlas: None,
+            atlas_set: dwell_mesh::TextureSet::Painterly,
             ink_outline: None,
             magnification: 1.0,
             targets: None,
@@ -1613,7 +1618,7 @@ impl Renderer {
             yaw: 180.0,
             pitch: -20.0,
             face: FaceFrame::A,
-            flip: 0.0,
+            roll: 0.0,
             eye_fluid: None,
             water_quality: WaterQuality::default(),
             water_debug: 0,
@@ -1636,9 +1641,9 @@ impl Renderer {
     pub(crate) fn atlas(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-    ) -> (wgpu::TextureView, wgpu::Sampler) {
+    ) -> (wgpu::Texture, wgpu::TextureView, wgpu::Sampler) {
         let size = dwell_mesh::ATLAS_SIZE as u32;
-        let atlas = atlas_levels();
+        let atlas = atlas_levels(dwell_mesh::TextureSet::Painterly);
         let levels = atlas.len() as u32;
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("atlas"),
@@ -1654,27 +1659,7 @@ impl Renderer {
             usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
             view_formats: &[],
         });
-        for (mip, (level, s)) in atlas.iter().enumerate() {
-            queue.write_texture(
-                wgpu::TexelCopyTextureInfo {
-                    texture: &texture,
-                    mip_level: mip as u32,
-                    origin: wgpu::Origin3d::ZERO,
-                    aspect: wgpu::TextureAspect::All,
-                },
-                level,
-                wgpu::TexelCopyBufferLayout {
-                    offset: 0,
-                    bytes_per_row: Some(4 * *s as u32),
-                    rows_per_image: None,
-                },
-                wgpu::Extent3d {
-                    width: *s as u32,
-                    height: *s as u32,
-                    depth_or_array_layers: 1,
-                },
-            );
-        }
+        write_atlas(queue, &texture, &atlas);
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("atlas"),
             mag_filter: wgpu::FilterMode::Nearest,
@@ -1682,7 +1667,32 @@ impl Renderer {
             mipmap_filter: wgpu::MipmapFilterMode::Linear,
             ..Default::default()
         });
-        (texture.create_view(&Default::default()), sampler)
+        let view = texture.create_view(&Default::default());
+        (texture, view, sampler)
+    }
+
+    /// The atlas's texels from the texture set the pixel-art preset asks for (`textures`; the
+    /// painterly set otherwise), written into the same texture (the same layout and mip count, so
+    /// no mesh or bind group changes) when it differs from the one it holds.
+    fn ensure_atlas_set(&mut self) {
+        let want = match self.pixel_preset().map(|p| p.textures) {
+            Some(dwell_look::pixel_art::Textures::Cel) => dwell_mesh::TextureSet::Cel,
+            Some(dwell_look::pixel_art::Textures::Painterly) | None => {
+                dwell_mesh::TextureSet::Painterly
+            }
+        };
+        if want != self.atlas_set {
+            write_atlas(
+                &self.queue,
+                &self.frame_bindings.atlas_texture,
+                &atlas_levels(want),
+            );
+            self.atlas_set = want;
+        }
+    }
+    /// The texture set the atlas holds (`ensure_atlas_set`).
+    pub fn atlas_set(&self) -> dwell_mesh::TextureSet {
+        self.atlas_set
     }
 
     fn draw_buffer(
@@ -1804,7 +1814,7 @@ impl Renderer {
         self.day_seconds = seconds;
     }
     /// How far the viewer is toward face A (1) from face B (0): eased across the flip band so the
-    /// sky's colours don't jump as the camera turns over at the midplane.
+    /// sky's colours don't jump as the player crosses the midplane.
     fn viewer_weight_a(&self) -> f64 {
         let band = dwell_protocol::world::FLIP_BAND as f64;
         // face-boundary: a blend across the midplane, between the two faces' looks.
@@ -2042,8 +2052,8 @@ impl Renderer {
             }
         }
     }
-    /// Places the camera at `eye`, looking along yaw/pitch (degrees) for `face`; `flip` turns the
-    /// view over about its right axis across the midplane.
+    /// Places the camera at `eye`, looking along yaw/pitch (degrees) for `face`; `roll` turns the
+    /// view about its forward axis, rolling upright across the midplane.
     /// Your first-person arms this frame, or none (dead, zoomed, hidden).
     pub fn set_arms(&mut self, arms: Option<ArmsView>) {
         self.arms = arms;
@@ -2072,10 +2082,10 @@ impl Renderer {
         yaw_deg: f64,
         pitch_deg: f64,
         face: FaceFrame,
-        flip: f64,
+        roll: f64,
     ) {
-        (self.eye, self.yaw, self.pitch, self.face, self.flip) =
-            (eye, yaw_deg, pitch_deg, face, flip);
+        (self.eye, self.yaw, self.pitch, self.face, self.roll) =
+            (eye, yaw_deg, pitch_deg, face, roll);
     }
     /// The frame's vertical FOV (degrees), as the game chose it for the speed boost and gave the
     /// LOD selection too; `None` draws with the screen's own (`vertical_fov`).
@@ -2390,7 +2400,7 @@ impl Renderer {
         let mut out = Vec::new();
         let plain = [1.0, 1.0, 1.0, 1.0];
         let aspect = f64::from(self.size.0) / f64::from(self.size.1);
-        let forward = aim(self.yaw, self.pitch, self.face, self.flip).forward();
+        let forward = aim(self.yaw, self.pitch, self.face, self.roll).forward();
         let view = PassView::new(self.eye, forward, self.frame_fov(), aspect);
         // Which passes (bit per pass) a box reaches into.
         let reaches = |origin: V3, size: V3| -> u8 {
@@ -2708,7 +2718,7 @@ impl Renderer {
         if let (Some(p), Some(g)) = (self.pixel_preset(), self.pixel_grid)
             && p.snap_camera
         {
-            let basis = aim(self.yaw, self.pitch, self.face, self.flip);
+            let basis = aim(self.yaw, self.pitch, self.face, self.roll);
             let tan_y = (self.frame_fov().to_radians() / 2.0).tan();
             let (snapped, shift) = dwell_look::pixel_art::snap_eye(
                 eye,
@@ -2752,7 +2762,7 @@ impl Renderer {
             timer.begin();
         }
         let collect_start = crate::telemetry::now_ms();
-        let basis = aim(self.yaw, self.pitch, self.face, self.flip);
+        let basis = aim(self.yaw, self.pitch, self.face, self.roll);
         // Two passes (§6.6): the far one beyond the split (its near plane pushed out with altitude,
         // where nothing is closer), then a depth clear and the near one. Heights are face-local.
         let altitude = self.face.y(self.eye[1]) - TERRAIN_TOP_M;
@@ -2769,6 +2779,7 @@ impl Renderer {
         // The sun's or moon's shadow maps (shadows.rs): this frame's cascades, their casters, and
         // each cascade's frame (the near pass's, with the cascade's matrix as view_proj).
         self.ensure_shadow_maps();
+        self.ensure_atlas_set();
         // The nearest cascade every frame; a far one only when it must be drawn again, at most
         // `farPerFrame` a frame (`shadows::Cache`): the others are read as kept.
         let shadow_plan = self.shadow_plan();
@@ -4187,6 +4198,8 @@ struct FrameBindings {
     layout: wgpu::BindGroupLayout,
     /// The shadow passes' frame layout (the uniform, the atlas and its sampler).
     shadow_layout: wgpu::BindGroupLayout,
+    /// The atlas (its texels are rewritten when the texture set changes, `ensure_atlas_set`).
+    atlas_texture: wgpu::Texture,
     atlas_view: wgpu::TextureView,
     sampler: wgpu::Sampler,
     /// The pixel-art preview's atlas samplers: nearest without mips, nearest within the mip.
@@ -4339,19 +4352,112 @@ pub(crate) const FRAME_FLOATS: usize = 16
     + 19 * 4
     + DAY_SKY_FLOATS;
 
+/// Writes `levels` (`atlas_levels`) into the atlas texture, every mip level.
+fn write_atlas(queue: &wgpu::Queue, texture: &wgpu::Texture, levels: &[(Vec<u8>, usize)]) {
+    for (mip, (level, s)) in levels.iter().enumerate() {
+        queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture,
+                mip_level: mip as u32,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            level,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(4 * *s as u32),
+                rows_per_image: None,
+            },
+            wgpu::Extent3d {
+                width: *s as u32,
+                height: *s as u32,
+                depth_or_array_layers: 1,
+            },
+        );
+    }
+}
+
 /// The atlas and its mipmaps, each with its side in texels: down to the level where a tile's gutter
 /// is one texel wide. Filtering a smaller level at a tile's edge would reach past the gutter into
 /// the neighbouring tiles and the atlas's empty (transparent) space, which a grazing view of
-/// distant ground samples: a grey, see-through grid along the block edges.
-fn atlas_levels() -> Vec<(Vec<u8>, usize)> {
-    let mut levels = vec![(dwell_mesh::build_atlas(), dwell_mesh::ATLAS_SIZE)];
+/// distant ground samples: a grey, see-through grid along the block edges. Painted from `set`
+/// (both sets have the same layout and cutouts, so the same levels). A set whose mips keep its
+/// tones (`TextureSet::mode_mips`, the cel style) halves its opaque tiles by the majority tone
+/// ([`downsample_mode`]) instead of the average.
+fn atlas_levels(set: dwell_mesh::TextureSet) -> Vec<(Vec<u8>, usize)> {
+    let mut levels = vec![(dwell_mesh::build_atlas_of(set), dwell_mesh::ATLAS_SIZE)];
+    let ranks = set.mode_mips().then(|| tone_ranks(&levels[0].0));
     while let Some(&(ref level, s)) = levels.last()
         && s > dwell_mesh::ATLAS_SIZE / dwell_mesh::GUTTER
     {
-        levels.push((downsample(level, s), s / 2));
+        let mut next = downsample(level, s);
+        if let Some(ranks) = &ranks {
+            downsample_mode(level, s, ranks, &mut next);
+        }
+        levels.push((next, s / 2));
     }
     preserve_coverage(&mut levels);
     levels
+}
+
+/// Each opaque tile's tones, most texels first (its full-size texels'), by atlas slot; none for a
+/// cutout tile (its mips average, and keep their coverage).
+fn tone_ranks(atlas: &[u8]) -> Vec<Option<Vec<[u8; 4]>>> {
+    let mut out = vec![None; dwell_mesh::ATLAS_TILES];
+    for (tile, name) in dwell_mesh::TILE_ORDER.iter().enumerate() {
+        if dwell_mesh::tile_has_alpha(name) {
+            continue;
+        }
+        let (x0, y0) = (
+            (tile % dwell_mesh::ATLAS_CELLS) * dwell_mesh::CELL + dwell_mesh::GUTTER,
+            (tile / dwell_mesh::ATLAS_CELLS) * dwell_mesh::CELL + dwell_mesh::GUTTER,
+        );
+        let mut counts: Vec<([u8; 4], usize)> = Vec::new();
+        for y in y0..y0 + dwell_mesh::TILE {
+            for x in x0..x0 + dwell_mesh::TILE {
+                let o = (y * dwell_mesh::ATLAS_SIZE + x) * 4;
+                let c = [atlas[o], atlas[o + 1], atlas[o + 2], atlas[o + 3]];
+                match counts.iter_mut().find(|(k, _)| *k == c) {
+                    Some((_, n)) => *n += 1,
+                    None => counts.push((c, 1)),
+                }
+            }
+        }
+        // Most texels first; a tie by the colour, so the order is the same on every run.
+        counts.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+        out[tile] = Some(counts.into_iter().map(|(c, _)| c).collect());
+    }
+    out
+}
+
+/// Halves the opaque tiles of level (`src`, `size`) into `out` (the averaged level, `downsample`'s)
+/// by the majority tone of each 2 × 2, a tie going to the tone that covers more of the tile: a
+/// tile of a few flat tones keeps exactly those tones down the mips, its small shapes dropping out
+/// level by level until a distant face is its main tone, rather than averaging into in-between
+/// colours that the pixel-art palette dithers (and that crawl as the camera moves). The cel style's
+/// mips (docs/PAINTERLY_TEXTURES.md §10).
+fn downsample_mode(src: &[u8], size: usize, ranks: &[Option<Vec<[u8; 4]>>], out: &mut [u8]) {
+    let half = size / 2;
+    let cell = dwell_mesh::CELL * size / dwell_mesh::ATLAS_SIZE;
+    for y in 0..half {
+        for x in 0..half {
+            let tile = (2 * x / cell) + (2 * y / cell) * dwell_mesh::ATLAS_CELLS;
+            let Some(Some(rank)) = ranks.get(tile) else {
+                continue;
+            };
+            let px: [[u8; 4]; 4] = std::array::from_fn(|i| {
+                let o = ((2 * y + i / 2) * size + 2 * x + i % 2) * 4;
+                [src[o], src[o + 1], src[o + 2], src[o + 3]]
+            });
+            let count = |c: &[u8; 4]| px.iter().filter(|p| *p == c).count();
+            let order = |c: &[u8; 4]| rank.iter().position(|r| r == c).unwrap_or(usize::MAX);
+            let best = px
+                .iter()
+                .max_by(|a, b| count(a).cmp(&count(b)).then(order(b).cmp(&order(a))))
+                .expect("four texels");
+            out[(y * half + x) * 4..][..4].copy_from_slice(best);
+        }
+    }
 }
 
 /// The alpha a cutout texel must reach to be drawn (the shader's edge, 0.5).
@@ -4505,8 +4611,8 @@ impl crate::game::Scene for Renderer {
     fn set_placed_flames(&mut self, flames: Vec<flames::PlacedFlame>) {
         Renderer::set_placed_flames(self, flames);
     }
-    fn set_camera(&mut self, eye: V3, yaw_deg: f64, pitch_deg: f64, face: FaceFrame, flip: f64) {
-        Renderer::set_camera(self, eye, yaw_deg, pitch_deg, face, flip);
+    fn set_camera(&mut self, eye: V3, yaw_deg: f64, pitch_deg: f64, face: FaceFrame, roll: f64) {
+        Renderer::set_camera(self, eye, yaw_deg, pitch_deg, face, roll);
     }
     fn set_eye_fluid(&mut self, eye_fluid: Option<EyeFluid>) {
         Renderer::set_eye_fluid(self, eye_fluid);
@@ -4790,8 +4896,12 @@ mod tests {
         // A cutout tile's share of drawn texels stays the full-size tile's at every level (within a
         // texel's worth at the smallest), so ladders, grass and leaves don't thin out or vanish with
         // distance (the ladder vanished at mip 4, 0.20.6).
-        {
-            let levels = atlas_levels();
+        // Both texture sets (docs/PAINTERLY_TEXTURES.md §10).
+        for set in [
+            dwell_mesh::TextureSet::Painterly,
+            dwell_mesh::TextureSet::Cel,
+        ] {
+            let levels = atlas_levels(set);
             let mut checked = 0;
             for (tile, name) in dwell_mesh::TILE_ORDER.iter().enumerate() {
                 if !dwell_mesh::tile_has_alpha(name) {
@@ -4859,8 +4969,11 @@ mod tests {
         // reaches half a texel past the sample: at every level the gutter must cover that, or
         // distant ground picks up the neighbouring tiles and the atlas's empty space along every
         // block edge (the grey, see-through grid near the horizon, playtest 2026-10-14).
-        {
-            let levels = atlas_levels();
+        for set in [
+            dwell_mesh::TextureSet::Painterly,
+            dwell_mesh::TextureSet::Cel,
+        ] {
+            let levels = atlas_levels(set);
             for (t, name) in dwell_mesh::TILE_ORDER.iter().enumerate() {
                 let r = dwell_mesh::tile_rect(name);
                 let cell = [
@@ -5059,10 +5172,81 @@ mod tests {
     fn frames_draw_cleanly_with_the_pixel_art_preview() {
         // The low-res picture, the post pass (crop and letterbox) and the point-filtered atlas,
         // across resizes.
-        for preset in ["180", "270-raw"] {
+        for preset in ["180", "270-raw", "270-cel"] {
             let mut r = noop_renderer_with(4, wgpu::Features::TIMESTAMP_QUERY);
             assert!(r.set_pixel_art(preset));
             draws_cleanly(r);
+        }
+    }
+
+    #[test]
+    fn the_cel_mips_keep_each_opaque_tiles_tones_and_settle_on_its_main_tone() {
+        // docs/PAINTERLY_TEXTURES.md §10: a cel tile's mips hold only its own tones (no averaged
+        // in-between colour for the palette to dither), and the smallest is its main tone.
+        let set = dwell_mesh::TextureSet::Cel;
+        assert!(set.mode_mips() && !dwell_mesh::TextureSet::Painterly.mode_mips());
+        let levels = atlas_levels(set);
+        let ranks = tone_ranks(&levels[0].0);
+        for (tile, name) in dwell_mesh::TILE_ORDER.iter().enumerate() {
+            let Some(rank) = &ranks[tile] else {
+                assert!(dwell_mesh::tile_has_alpha(name), "{name}");
+                continue;
+            };
+            for (level, (texels, size)) in levels.iter().enumerate() {
+                let k = dwell_mesh::ATLAS_SIZE / size;
+                let (cell, n) = (dwell_mesh::CELL / k, (dwell_mesh::TILE / k).max(1));
+                let (x0, y0) = (
+                    (tile % dwell_mesh::ATLAS_CELLS) * cell + dwell_mesh::GUTTER / k,
+                    (tile / dwell_mesh::ATLAS_CELLS) * cell + dwell_mesh::GUTTER / k,
+                );
+                for y in y0..y0 + n {
+                    for x in x0..x0 + n {
+                        let o = (y * size + x) * 4;
+                        let c = [texels[o], texels[o + 1], texels[o + 2], texels[o + 3]];
+                        assert!(rank.contains(&c), "{name} at mip {level}: {c:?}");
+                        if level == levels.len() - 1 && *name != dwell_mesh::MISSING_TILE {
+                            assert_eq!(c, rank[0], "{name}: its main tone from afar");
+                        }
+                    }
+                }
+            }
+        }
+        // The painterly set's mips average, as before (their colour; the cutouts' alpha is scaled).
+        let p = atlas_levels(dwell_mesh::TextureSet::Painterly);
+        let rgb = |t: &[u8]| -> Vec<u8> { t.chunks(4).flat_map(|c| c[..3].to_vec()).collect() };
+        assert_eq!(rgb(&p[1].0), rgb(&downsample(&p[0].0, p[0].1)));
+    }
+
+    #[test]
+    fn a_cel_preset_swaps_the_atlas_to_the_cel_set_and_off_swaps_it_back() {
+        // docs/PAINTERLY_TEXTURES.md §10: the preset's `textures` picks the atlas's set; the normal
+        // look (and a painterly preset) keeps the painterly set.
+        let mut r = noop_renderer();
+        r.ensure_atlas_set();
+        assert_eq!(
+            r.atlas_set(),
+            dwell_mesh::TextureSet::Painterly,
+            "off by default"
+        );
+        for (preset, want) in [
+            ("270", dwell_mesh::TextureSet::Painterly),
+            ("270-cel", dwell_mesh::TextureSet::Cel),
+            ("360-cel", dwell_mesh::TextureSet::Cel),
+            ("360", dwell_mesh::TextureSet::Painterly),
+            ("360-cel", dwell_mesh::TextureSet::Cel),
+            ("off", dwell_mesh::TextureSet::Painterly),
+        ] {
+            r.set_pixel_art(preset);
+            r.ensure_atlas_set();
+            assert_eq!(r.atlas_set(), want, "{preset}");
+        }
+        let scope = r.device.push_error_scope(wgpu::ErrorFilter::Validation);
+        r.set_pixel_art("270-cel");
+        r.ensure_atlas_set();
+        let mut cx = std::task::Context::from_waker(std::task::Waker::noop());
+        match std::pin::pin!(scope.pop()).as_mut().poll(&mut cx) {
+            std::task::Poll::Ready(e) => assert!(e.is_none(), "the rewrite is valid: {e:?}"),
+            std::task::Poll::Pending => panic!("error scope pending"),
         }
     }
 

@@ -456,7 +456,7 @@ impl Default for DayState {
 
 impl DayState {
     /// The look for a viewer `weight_a` of the way to face A (1 on face A, 0 on face B; the
-    /// renderer eases it across the flip band so the sky doesn't jump when the camera turns over).
+    /// renderer eases it across the flip band so the sky doesn't jump when the player crosses).
     pub fn viewer(&self, weight_a: f64) -> Sample {
         if weight_a >= 1.0 {
             self.a

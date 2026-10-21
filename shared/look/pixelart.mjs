@@ -8,6 +8,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { resolveColor, validatePalette } from '../textures/paint.mjs';
+import { STYLES } from '../textures/cel.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, '..', '..');
@@ -59,6 +60,7 @@ const PRESET_KEYS = [
   'edgeDarken',
   'edgeFadeM',
   'atlas',
+  'textures',
   'snapCamera',
   'snapDepthM',
 ];
@@ -146,6 +148,7 @@ export function validatePixelArt(data, palette) {
     checkNumber(`${at}.edgeDarken`, p.edgeDarken, 0, 1);
     checkNumber(`${at}.edgeFadeM`, p.edgeFadeM, 1, 4096);
     checkOneOf(`${at}.atlas`, p.atlas, ATLAS);
+    checkOneOf(`${at}.textures`, p.textures, STYLES);
     if (typeof p.snapCamera !== 'boolean') fail(`${at}.snapCamera must be true or false`);
     checkNumber(`${at}.snapDepthM`, p.snapDepthM, 0.5, 1024);
     return { ...p, tintRgb: tint };
@@ -194,6 +197,7 @@ export function pixelArtRust(data) {
     rs.push(`            edge_darken: ${rf(p.edgeDarken)},`);
     rs.push(`            edge_fade_m: ${rf(p.edgeFadeM)},`);
     rs.push(`            atlas: AtlasFilter::${pascal(p.atlas)},`);
+    rs.push(`            textures: Textures::${pascal(p.textures)},`);
     rs.push(`            snap_camera: ${p.snapCamera},`);
     rs.push(`            snap_depth_m: ${rf(p.snapDepthM)},`);
     rs.push('        },');
