@@ -2055,7 +2055,10 @@ Each frame the octree is walked from the root around the **camera** (the eye):
   so from high up it reads as a cloud sea. The composite draws the clouds over the sky, and over the
   scene where the deck's hit is nearer than the stored view depth (`dwell_cloud_in_front`: the hit's
   view depth is `t / |ray|`, compared with A1's `r32float` target, so chunks and LOD sections alike
-  are tested). The deck fades out over `crossFadeM` either side of the eye. An in-cloud fog fades in
+  are tested), or, seen from above, where the scene is below the deck's altitude: the deck is a
+  sphere over a flat world and sinks under the sea 38 km out, so from high up its hit alone left the
+  clouds in a circle round the eye and past the world's edge (0.23.9). Every composite test of the
+  deck against the scene goes through `cloud_in_front_of` (a shader-source test). The deck fades out over `crossFadeM` either side of the eye. An in-cloud fog fades in
   instead: the whole view mixes toward the cloud colour by the cloud's density at the eye, which the
   CPU computes once a frame with the noise's twin. So passing through the deck has no pop. The
   terrain's fog still mixes toward the clear sky, so distant ground never takes a cloud's colour.
