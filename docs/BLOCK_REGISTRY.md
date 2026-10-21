@@ -101,6 +101,13 @@ non-boolean, naming the block. `StateInfo::outline`; a look option outside the r
 synced as look tag `0x8c` only where it differs from the look's default (the build's own payload is
 unchanged).
 
+**Light per block** (**built**, Phase 44; [`DAY_NIGHT.md`](./DAY_NIGHT.md) §10): `"lightFilter": 0–15`
+is how many levels a cell of the block takes off the flood light passing into it (15: none gets
+in); absent, 15 for full cubes that are not see-through and 0 for everything else
+(`light_filter_default`; leaves say 2, water 1). `"emits": 0–15` is the block light it gives off
+(none in the build yet; `test:lamp` in the fixtures, 14). `StateInfo::light_filter`, `emits`; synced
+as look tag `0x8d` (filter, emits) only where either differs from the default.
+
 **Family convention for shaped variants** (**built, Phase 9**, [ADR 0016](./adr/0016-slope-blocks.md); recommended here first): plain
 blocks stay plain (`dwell:stone`), and shaped forms are separate blocks generated per shapeable
 material, carrying only the properties that matter to them — `dwell:stone_slab[half,flooded]`,
