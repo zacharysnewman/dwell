@@ -21,6 +21,8 @@ pub const WATER_TILES: &str = "gpu.water.tiles";
 pub const SHADOWS: &str = "gpu.shadows";
 /// The distant shadows' heightmap slice and, when a fill is whole, its mips (lod_shadows.rs).
 pub const LOD_SHADOWS: &str = "gpu.lodshadows";
+/// A band of the distant shadows' horizon sweep (lod_shadows.rs).
+pub const LOD_SWEEP: &str = "gpu.lodsweep";
 /// The first-person arms' pass (docs/CHARACTERS.md §9.1).
 pub const ARMS: &str = "gpu.arms";
 pub const COMPOSITE: &str = "gpu.composite";
@@ -31,7 +33,7 @@ pub const FRAME: &str = "gpu.frame";
 /// Readback buffers: the GPU runs a frame or two behind, so three keep one free.
 pub const RING: usize = 3;
 /// Passes a frame may time (each frame names its own, in order: `GpuTimer::pass`).
-pub const MAX_PASSES: usize = 10;
+pub const MAX_PASSES: usize = 11;
 
 const QUERIES: u32 = 2 * MAX_PASSES as u32;
 const BYTES: u64 = QUERIES as u64 * wgpu::QUERY_SIZE as u64;

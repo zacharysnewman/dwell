@@ -25,10 +25,14 @@ const HEIGHTS = {
 };
 const MARCH = {
   startTexels: [0.5, 16],
-  normalOffsetTexels: [0, 8],
   biasM: [0, 64],
   penumbraDeg: [0.05, 20],
   edgeFade: [0.01, 1],
+};
+const REFRESH = {
+  moveShare: [0.001, 1],
+  everyS: [0.1, 3600],
+  turnDeg: [0.01, 45],
 };
 const TIER = {
   resolution: ['count', 64, 4096],
@@ -39,6 +43,7 @@ const TIER = {
   reachM: [1, 100000],
   fillKtris: [1, 100000],
   fillDraws: ['count', 1, 100000],
+  sweepRows: ['count', 1, 4096],
 };
 
 const snake = (s) => s.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
@@ -69,15 +74,17 @@ function checkSection(where, obj, schema) {
 
 /** Checks the tunables against the schema and each other; returns them. Throws naming the entry. */
 export function validateLodShadows(data) {
-  checkKeys('(root)', data, ['heights', 'march', 'tiers']);
+  checkKeys('(root)', data, ['heights', 'march', 'refresh', 'tiers']);
   checkSection('heights', data.heights, HEIGHTS);
   if (data.heights.topM <= data.heights.bottomM) fail('heights.topM must be over heights.bottomM');
   checkSection('march', data.march, MARCH);
+  checkSection('refresh', data.refresh, REFRESH);
   checkKeys('tiers', data.tiers, TIERS);
   for (const tier of TIERS) {
     const t = data.tiers[tier];
     checkSection(`tiers.${tier}`, t, TIER);
     if ((t.resolution & (t.resolution - 1)) !== 0) fail(`tiers.${tier}.resolution must be a power of two`);
+    if (t.sweepRows > t.resolution) fail(`tiers.${tier}.sweepRows must be at most its resolution`);
     const half = (t.resolution * t.texelM * t.levelScale ** (t.levels - 1)) / 2;
     if (t.reachM > half) fail(`tiers.${tier}.reachM must be at most the outermost map's half-width (${half} m)`);
     if (t.reachM <= t.texelM * data.march.startTexels) {
@@ -103,6 +110,7 @@ export function lodShadowsRust(data) {
   rs.push('pub const LOD_SHADOWS: LodShadowTunables = LodShadowTunables {');
   section(rs, '    ', 'heights', 'HeightRange', data.heights, HEIGHTS);
   section(rs, '    ', 'march', 'MarchTunables', data.march, MARCH);
+  section(rs, '    ', 'refresh', 'RefreshTunables', data.refresh, REFRESH);
   rs.push('    tiers: [');
   for (const tier of TIERS) {
     rs.push(`        // ${tier}`);

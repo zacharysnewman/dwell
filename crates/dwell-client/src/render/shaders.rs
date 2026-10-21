@@ -2151,7 +2151,7 @@ mod tests {
         // blend between (dwell-look `lod_shadows::combine`).
         assert!(look.contains("return mix(shadow_past(rel, n, stand_in), inside, near) * cloud_shadow(rel);"));
         assert!(body("shadow_past").contains(
-            "return stand_in * (1.0 + shadows.cfg.y * (lod_shadow(rel, n) - 1.0));"
+            "return stand_in * (1.0 + shadows.cfg.y * (lod_shadow(rel) - 1.0));"
         ));
     }
 

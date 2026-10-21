@@ -20,6 +20,7 @@ describe('bench --compare configurations', () => {
       'outline-blocks',
       'shadows-low',
       'shadows-off',
+      'lod-shadows-off',
       'raster-half',
     ]);
   });

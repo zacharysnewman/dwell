@@ -20,10 +20,12 @@ test('a tunable changed by data changes the output', () => {
   d.tiers.low.levels = 2;
   d.tiers.high.steps = 40;
   d.march.penumbraDeg = 3;
+  d.refresh.everyS = 4;
   const rs = lodShadowsRust(validateLodShadows(d));
   assert.match(rs, /levels: 2,\n {12}level_scale: 4,\n {12}steps: 16,/);
   assert.match(rs, /steps: 40,/);
   assert.match(rs, /penumbra_deg: 3\.0,/);
+  assert.match(rs, /every_s: 4\.0,/);
   assert.notEqual(rs, lodShadowsRust(validateLodShadows(data())));
 });
 
@@ -38,6 +40,8 @@ test('bad entries fail with their path named', () => {
     [(d) => (d.tiers.low.reachM = 9000), /tiers\.low\.reachM must be at most the outermost map's half-width \(2048 m\)/],
     [(d) => (d.tiers.low.reachM = 10), /tiers\.low\.reachM must be over the first step/],
     [(d) => (d.march.penumbraDeg = 0), /march\.penumbraDeg must be a number in/],
+    [(d) => (d.tiers.low.sweepRows = 1024), /tiers\.low\.sweepRows must be at most its resolution/],
+    [(d) => delete d.refresh.turnDeg, /missing entry refresh\.turnDeg/],
   ];
   for (const [edit, message] of cases) {
     const d = data();

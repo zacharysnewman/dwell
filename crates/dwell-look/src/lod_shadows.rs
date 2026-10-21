@@ -1,12 +1,13 @@
 //! Sun and moon shadows on the distant terrain (docs/DAY_NIGHT.md §12, ADR 0046): the lighting's
 //! third layer, past the shadow cascades. The renderer keeps heightmaps of the terrain as drawn
-//! around the eye (`dwell-client` `render/lod_shadows.rs`) and the scene's shaders march each far
-//! fragment's ray toward the light over them (`LOD_SHADOW_WGSL`). The tunables are data
+//! around the eye (`dwell-client` `render/lod_shadows.rs`), sweeps a horizon map from each (every
+//! texel's march toward the light: the terrain's highest angle that way), and the scene's shaders
+//! shade each far fragment by its horizon (`LOD_SHADOW_WGSL`). The tunables are data
 //! (`shared/look/lodshadows.json`, generated into `lodshadows.gen.rs`).
 //!
-//! [`visibility`] is the march as the shader does it and [`combine`] how its result joins the
-//! cascades' and the first layer's stand-in, in f64 for tests (the shader is their copy; a
-//! shader-source test pins its lines).
+//! [`horizon`] is the sweep's march, [`shade`] the fragment's use of it, and [`combine`] how its
+//! result joins the cascades' and the first layer's stand-in, in f64 for tests (the shaders are
+//! their copy; shader-source tests pin their lines).
 
 use crate::shadows::ShadowQuality;
 use dwell_world::FaceFrame;
@@ -25,16 +26,27 @@ pub struct HeightRange {
 /// The march toward the light.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct MarchTunables {
-    /// The first step (texels of the map read at the fragment).
+    /// The first step (texels of the texel's map).
     pub start_texels: f64,
-    /// The ray starts this many texels out along the surface's normal.
-    pub normal_offset_texels: f64,
-    /// And this far up (m).
+    /// The ray starts this far over the texel's height (m).
     pub bias_m: f64,
     /// The soft edge's half-width (degrees about the horizon a ray meets).
     pub penumbra_deg: f64,
     /// The shadows fade out over this last share of the outermost map's half-width.
     pub edge_fade: f64,
+}
+
+/// When the maps are made again.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct RefreshTunables {
+    /// A heightmap is filled again once the eye is this share of its half-width from where it was
+    /// filled…
+    pub move_share: f64,
+    /// …or this long after (s).
+    pub every_s: f64,
+    /// A horizon map is swept again once the light has turned this far (degrees about the face's
+    /// up) from the direction it was swept for, or its heightmap was filled again.
+    pub turn_deg: f64,
 }
 
 /// One Shadows setting's maps and march (Low, High).
@@ -53,6 +65,8 @@ pub struct LodShadowTier {
     /// Each frame's share of a map's fill: thousands of triangles, draws.
     pub fill_ktris: f64,
     pub fill_draws: u32,
+    /// A horizon sweep's rows of texels a frame.
+    pub sweep_rows: u32,
 }
 
 impl LodShadowTier {
@@ -70,6 +84,7 @@ impl LodShadowTier {
 pub struct LodShadowTunables {
     pub heights: HeightRange,
     pub march: MarchTunables,
+    pub refresh: RefreshTunables,
     /// Low, High.
     pub tiers: [LodShadowTier; 2],
 }
@@ -204,57 +219,79 @@ pub fn step_level(delta: f64, texel: f64, mips: usize) -> usize {
     (l as usize).min(mips.saturating_sub(1))
 }
 
-/// How much of the light at `point` (world) on a surface of normal `normal` (world, unit) on
-/// face `f` the terrain in `maps` (finest first; face-local heights) lets through, 0–1, for a light
-/// toward `light` (world, unit): the shader's march. In face-local terms (both faces alike): from
-/// the point, moved out along its normal by `normalOffsetTexels` of the finest map holding it and
-/// up by the bias, steps toward the light, the first `startTexels` out, then growing geometrically
-/// to `reachM`; each step reads the finest map holding it at the mip level its length needs
-/// (`step_level`). Each step compares the ray's height with the terrain's under it as an angle
-/// over the horizon it meets, in units of the penumbra; the least decides, softly.
+/// The horizon toward a light at a column (world x, z) of the terrain in `maps` (finest first;
+/// face-local heights) on face `f`: the highest tangent of the terrain's elevation seen from the
+/// column's height in its map (plus the bias) in the light's direction about the face's up
+/// (`light`, world; its elevation doesn't matter). The sweep's march: steps from `startTexels`
+/// out, growing geometrically to `reachM`, each reading the finest map holding it at the max mip
+/// its length needs (`step_level`). Below −`NO_HORIZON` (nothing that way): `-NO_HORIZON`.
+pub fn horizon(
+    t: &LodShadowTunables,
+    tier: &LodShadowTier,
+    maps: &[HeightMap],
+    f: FaceFrame,
+    column: [f64; 2],
+    light: [f64; 3],
+) -> f64 {
+    let l = f.vector(light);
+    let horizontal = (l[0] * l[0] + l[2] * l[2]).sqrt();
+    let Some(home) = maps.iter().find(|m| m.holds(column[0], column[1])) else {
+        return -NO_HORIZON;
+    };
+    if horizontal < 1e-6 {
+        return -NO_HORIZON;
+    }
+    let dir = [l[0] / horizontal, l[2] / horizontal];
+    let m = &t.march;
+    let h0 = home.height(column[0], column[1], 0) + m.bias_m;
+    let start = home.texel * m.start_texels;
+    let growth = (tier.reach_m / start).powf(1.0 / f64::from(tier.steps.max(2) - 1));
+    let mut most = -NO_HORIZON;
+    let mut s = start;
+    for _ in 0..tier.steps {
+        let (x, z) = (column[0] + dir[0] * s, column[1] + dir[1] * s);
+        if let Some(map) = maps.iter().find(|m| m.holds(x, z)) {
+            let level = step_level(s * (growth - 1.0), map.texel, map.mips.len());
+            most = most.max((map.height(x, z, level) - h0) / s);
+        }
+        s *= growth;
+    }
+    most.min(NO_HORIZON)
+}
+
+/// The horizon's range (a tangent; the map stores it in half floats).
+pub const NO_HORIZON: f64 = 64.0;
+
+/// The light let through by a horizon of tangent `horizon` to a light whose elevation's tangent is
+/// `rise`, softly over the penumbra: all in shade a penumbra under the horizon, all lit a
+/// penumbra over it.
+pub fn shade(t: &LodShadowTunables, horizon: f64, rise: f64) -> f64 {
+    let cot = 1.0 / t.march.penumbra_deg.to_radians().tan();
+    smoothstep(-1.0, 1.0, (rise - horizon) * cot)
+}
+
+/// How much of the light at `point` (world, on the terrain) on face `f` the terrain in `maps`
+/// lets through toward `light` (world, unit), 0–1: [`shade`] of the [`horizon`] at its column, as
+/// the fragment reads it; 1 with the light under the face's horizon (the direct term is gone
+/// anyway) or straight overhead.
 pub fn visibility(
     t: &LodShadowTunables,
     tier: &LodShadowTier,
     maps: &[HeightMap],
     f: FaceFrame,
     point: [f64; 3],
-    normal: [f64; 3],
     light: [f64; 3],
 ) -> f64 {
-    let p = f.point(point);
-    let n = f.vector(normal);
     let l = f.vector(light);
     let horizontal = (l[0] * l[0] + l[2] * l[2]).sqrt();
     if l[1] <= 0.0 || horizontal < 1e-4 {
         return 1.0;
     }
-    let Some(home) = maps.iter().find(|m| m.holds(p[0], p[2])) else {
+    let p = f.point(point);
+    if !maps.iter().any(|m| m.holds(p[0], p[2])) {
         return 1.0;
-    };
-    let dir = [l[0] / horizontal, l[2] / horizontal];
-    let rise = l[1] / horizontal;
-    let m = &t.march;
-    let texel = home.texel;
-    let o: [f64; 3] = std::array::from_fn(|k| p[k] + n[k] * texel * m.normal_offset_texels);
-    let h0 = o[1] + m.bias_m;
-    let start = texel * m.start_texels;
-    let growth = (tier.reach_m / start).powf(1.0 / f64::from(tier.steps.max(2) - 1));
-    let tan_penumbra = m.penumbra_deg.to_radians().tan();
-    let mut least = 1.0f64;
-    let mut s = start;
-    for _ in 0..tier.steps {
-        let (x, z) = (o[0] + dir[0] * s, o[2] + dir[1] * s);
-        if let Some(map) = maps.iter().find(|m| m.holds(x, z)) {
-            let level = step_level(s * (growth - 1.0), map.texel, map.mips.len());
-            let h = map.height(x, z, level);
-            least = least.min((h0 + s * rise - h) / (s * tan_penumbra));
-        }
-        if least <= -1.0 {
-            break;
-        }
-        s *= growth;
     }
-    smoothstep(-1.0, 1.0, least)
+    shade(t, horizon(t, tier, maps, f, [p[0], p[2]], light), l[1] / horizontal)
 }
 
 /// The shadows fading out toward the outermost map's edge: 1 inside, 0 at the edge, by the
@@ -331,8 +368,8 @@ mod tests {
             let tier = T.tiers[1];
             let ms = maps(&tier, 1000.0);
             let at = |x: f64, elevation: f64| {
-                let (p, n) = valley_point(f, x);
-                visibility(&T, &tier, &ms, f, p, n, light(f, elevation))
+                let (p, _) = valley_point(f, x);
+                visibility(&T, &tier, &ms, f, p, light(f, elevation))
             };
             // 600 m out from the ridge: the ridge's 200 m stand 15–20° over the valley's horizon.
             assert!(at(600.0, 8.0) < 0.01, "low sun behind the ridge: {}", at(600.0, 8.0));
@@ -343,15 +380,15 @@ mod tests {
             // Far out on the plain the low sun clears the ridge: the shadow has an end.
             assert!(at(4500.0, 8.0) > 0.99, "past the shadow: {}", at(4500.0, 8.0));
             // The sun on the valley's side: no shadow from the ridge behind it.
-            let (p, n) = valley_point(f, 600.0);
+            let (p, _) = valley_point(f, 600.0);
             let front = f.vector([1.0, 8f64.to_radians().tan(), 0.0]);
             let len = (front[0] * front[0] + front[1] * front[1]).sqrt();
             let front = front.map(|c| c / len);
-            assert!(visibility(&T, &tier, &ms, f, p, n, front) > 0.99);
+            assert!(visibility(&T, &tier, &ms, f, p, front) > 0.99);
             // The ridge's own crest is lit by the sun behind it (the bias keeps it off itself).
             let crest = f.point([0.0, 240.0, 12.0]);
             assert!(
-                visibility(&T, &tier, &ms, f, crest, n, light(f, 8.0)) > 0.99,
+                visibility(&T, &tier, &ms, f, crest, light(f, 8.0)) > 0.99,
                 "the crest shades itself"
             );
         }
@@ -366,8 +403,8 @@ mod tests {
                 (0..600)
                     .map(|i| 240.0 + f64::from(i) * 10.0)
                     .find(|&x| {
-                        let (p, n) = valley_point(f, x);
-                        visibility(&T, &tier, &ms, f, p, n, light(f, elevation)) > 0.5
+                        let (p, _) = valley_point(f, x);
+                        visibility(&T, &tier, &ms, f, p, light(f, elevation)) > 0.5
                     })
                     .expect("the shadow ends")
             };
@@ -379,8 +416,8 @@ mod tests {
             assert!(e10 > e20);
             // Soft: some point near the end is partly lit.
             let partial = (0..40).any(|i| {
-                let (p, n) = valley_point(f, e20 - 200.0 + f64::from(i) * 10.0);
-                let v = visibility(&T, &tier, &ms, f, p, n, light(f, 20.0));
+                let (p, _) = valley_point(f, e20 - 200.0 + f64::from(i) * 10.0);
+                let v = visibility(&T, &tier, &ms, f, p, light(f, 20.0));
                 v > 0.05 && v < 0.95
             });
             assert!(partial, "a penumbra");
@@ -397,8 +434,8 @@ mod tests {
                 let v: Vec<f64> = [FaceFrame::A, FaceFrame::B]
                     .into_iter()
                     .map(|f| {
-                        let (p, n) = valley_point(f, x);
-                        visibility(&T, &tier, &ms, f, p, n, light(f, e))
+                        let (p, _) = valley_point(f, x);
+                        visibility(&T, &tier, &ms, f, p, light(f, e))
                     })
                     .collect();
                 assert!((v[0] - v[1]).abs() < 1e-9, "x {x} e {e}: {v:?}");
@@ -411,12 +448,12 @@ mod tests {
         let tier = T.tiers[1];
         let ms = maps(&tier, 1000.0);
         for f in FaceFrame::under_test() {
-            let (p, n) = valley_point(f, 600.0);
+            let (p, _) = valley_point(f, 600.0);
             let flat = f.vector([-1.0, 0.0, 0.0]);
-            assert_eq!(visibility(&T, &tier, &ms, f, p, n, flat), 1.0);
+            assert_eq!(visibility(&T, &tier, &ms, f, p, flat), 1.0);
             let below = f.vector([-0.8, -0.6, 0.0]);
-            assert_eq!(visibility(&T, &tier, &ms, f, p, n, below), 1.0);
-            assert_eq!(visibility(&T, &tier, &[], f, p, n, light(f, 5.0)), 1.0);
+            assert_eq!(visibility(&T, &tier, &ms, f, p, below), 1.0);
+            assert_eq!(visibility(&T, &tier, &[], f, p, light(f, 5.0)), 1.0);
         }
     }
 

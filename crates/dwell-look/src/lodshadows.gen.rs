@@ -10,10 +10,14 @@ pub const LOD_SHADOWS: LodShadowTunables = LodShadowTunables {
     },
     march: MarchTunables {
         start_texels: 1.5,
-        normal_offset_texels: 1.0,
         bias_m: 1.5,
         penumbra_deg: 1.5,
         edge_fade: 0.2,
+    },
+    refresh: RefreshTunables {
+        move_share: 0.125,
+        every_s: 10.0,
+        turn_deg: 0.5,
     },
     tiers: [
         // low
@@ -24,8 +28,9 @@ pub const LOD_SHADOWS: LodShadowTunables = LodShadowTunables {
             level_scale: 4,
             steps: 16,
             reach_m: 2000.0,
-            fill_ktris: 150.0,
-            fill_draws: 96,
+            fill_ktris: 60.0,
+            fill_draws: 64,
+            sweep_rows: 32,
         },
         // high
         LodShadowTier {
@@ -35,8 +40,9 @@ pub const LOD_SHADOWS: LodShadowTunables = LodShadowTunables {
             level_scale: 4,
             steps: 24,
             reach_m: 5000.0,
-            fill_ktris: 250.0,
-            fill_draws: 160,
+            fill_ktris: 80.0,
+            fill_draws: 96,
+            sweep_rows: 32,
         },
     ],
 };

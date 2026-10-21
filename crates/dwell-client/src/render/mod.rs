@@ -2475,10 +2475,12 @@ impl Renderer {
         let lod_tier = shadow_plan.as_ref().and(self.lod_tier());
         let mut lod_batch = None;
         if let Some(t) = &lod_tier {
-            if let Some(level) = self.lod_schedule.wants() {
+            let now_s = crate::telemetry::now_ms() / 1000.0;
+            let refresh = &LOD_SHADOWS.refresh;
+            if let Some(level) = self.lod_schedule.wants(refresh, self.eye, self.face, now_s) {
                 let place = lod_shadows::place(t, level, self.eye, self.face);
                 let casters = self.collect_heights(&place, level, chunk_fade);
-                self.lod_schedule.start(level, place, casters);
+                self.lod_schedule.start(level, place, casters, self.eye, now_s);
             }
             lod_batch = self.lod_schedule.batch(t.fill_ktris, t.fill_draws);
         }
@@ -2632,6 +2634,26 @@ impl Renderer {
             }
             crate::telemetry::sample("lodshadow.ktris", (triangles - before) as f64 / 1000.0);
             self.lod_schedule.recorded(b);
+        }
+        // Then a band of a horizon sweep, when one is due (the heightmap made again, or the light
+        // turned).
+        if let (Some(t), Some(p)) = (&lod_tier, &shadow_plan) {
+            let dir = lod_shadows::light_dir(self.face, &p.caster);
+            let sweep = self.lod_schedule.sweep(
+                &LOD_SHADOWS.refresh,
+                dir,
+                self.face,
+                t.sweep_rows,
+                t.resolution,
+            );
+            if let Some(b) = sweep {
+                let u = lod_shadows::sweep_uniforms(&LOD_SHADOWS, t, &self.lod_schedule, &b);
+                let query = self.timer.as_mut().and_then(|t| t.pass(timing::LOD_SWEEP));
+                let writes = self.timer.as_ref().and_then(|t| t.writes(query));
+                self.lod_maps
+                    .record_sweep(&self.queue, &mut encoder, &b, &u, writes);
+                self.lod_schedule.swept(&b);
+            }
         }
         self.queue.write_buffer(
             &self.lod_maps.uniform,

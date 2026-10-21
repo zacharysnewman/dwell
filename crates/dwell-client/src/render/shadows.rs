@@ -687,7 +687,7 @@ fn cloud_shadow(rel: vec3f) -> f32 {
 // Past the cascades: the stand-in shaded by the distant terrain (`lod_shadow`, the third layer),
 // by the light's strength (dwell-look `lod_shadows::combine`'s `past`).
 fn shadow_past(rel: vec3f, n: vec3f, stand_in: f32) -> f32 {
-    return stand_in * (1.0 + shadows.cfg.y * (lod_shadow(rel, n) - 1.0));
+    return stand_in * (1.0 + shadows.cfg.y * (lod_shadow(rel) - 1.0));
 }
 
 // The factor on the direct sun and moon term at an eye-relative point with normal `n`: the map's
