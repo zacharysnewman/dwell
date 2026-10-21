@@ -17,8 +17,11 @@ use dwell_world::lod::{PAD as LOD_PAD, SECTION_CELLS, VOLUME as LOD_VOLUME, cell
 use crate::LengthError;
 use crate::js_round;
 use crate::style::{Look, fluid_value, material_style};
-use crate::textures::{average_tile_color, srgb_to_linear};
+use crate::textures::{
+    TILE, average_tile_color, linear_to_srgb_byte, srgb_to_linear, tile_rows_average,
+};
 use dwell_look::face_tint;
+use dwell_look::lod_colour::LOD_COLOUR;
 
 const N: i32 = SECTION_CELLS;
 const NU: usize = SECTION_CELLS as usize;
@@ -112,30 +115,72 @@ pub fn lod_color(m: StateId, group: usize) -> u32 {
     }
 }
 
-/// Step sides on slopes: full detail shows the side faces of one-block steps on a hillside, about
-/// a third of the gradient as a share of its surface, which a distant cell's smooth top does not
-/// have. Tops are tinted toward the material's side colour by that share, in TINT_STEPS steps (so
-/// equal tops still merge).
-pub const SIDE_SHARE_PER_GRADIENT: f64 = 1.0 / 3.0;
-pub const SIDE_SHARE_MAX: f64 = 0.5;
-const TINT_STEPS: i32 = 8;
+/// Risers' gradients are quantised to `LOD_COLOUR.gradient_step` up to this many steps.
+const MAX_GRADIENT_STEPS: i32 = 255;
 
-/// A material's top colour with `tint` (0..TINT_STEPS) eighths of its side colour mixed in.
-fn lod_top(m: StateId, tint: i32) -> u32 {
-    if tint == 0 {
-        return lod_color(m, 0);
+/// The rows of a side tile a one-cell riser shows (the top `CELL_H` of the 1 m tile) start here.
+const FRINGE_ROW: usize = TILE - (TILE as f64 * dwell_world::CELL_H) as usize;
+
+fn compute_side_bands(m: StateId) -> [u32; 2] {
+    let style = material_style(m);
+    match style.textures {
+        Some(t) => [
+            tile_rows_average(t.side, FRINGE_ROW, TILE),
+            tile_rows_average(t.side, 0, FRINGE_ROW),
+        ],
+        None => [style.color; 2],
     }
-    let a = lod_color(m, 0);
-    let b = lod_color(m, 1);
-    let f = f64::from(tint) / f64::from(TINT_STEPS);
+}
+
+/// A material's side colours (sRGB): [0] the top cell's band a one-cell riser shows, [1] the rest.
+fn side_bands(m: StateId) -> [u32; 2] {
+    static BANDS: OnceLock<Vec<[u32; 2]>> = OnceLock::new();
+    let table = BANDS.get_or_init(|| {
+        (0..STATES.len())
+            .map(|i| compute_side_bands(i as StateId))
+            .collect()
+    });
+    match table.get(usize::from(m)) {
+        Some(&b) => b,
+        None => compute_side_bands(m),
+    }
+}
+
+/// A column's gradient (m per m) as a step of `LOD_COLOUR.gradient_step`.
+fn gradient_step(gradient: f64) -> u8 {
+    if gradient.is_nan() {
+        return 0;
+    }
+    js_round(gradient / LOD_COLOUR.gradient_step).clamp(0.0, f64::from(MAX_GRADIENT_STEPS)) as u8
+}
+
+/// The flat colour (sRGB) of a coarse riser of material `own` in a column topped with `top` whose
+/// ground has gradient step `step`: the area-weighted colour of the fine rise it stands for
+/// (`dwell_look::lod_colour`): the top's top tile, the top's side band a one-cell step shows, and
+/// `own`'s side below that band, by the makeup at that gradient, mixed in linear light as the
+/// screen averages them. The top tile's share is the fine slope's ramps, shaded as the sloped faces
+/// they are (a ½ m ramp, `normal_tint`), not as the vertical wall (`face_tint`) drawing it, so it
+/// is scaled by the ratio of the two for the wall's side.
+fn riser_color(own: StateId, top: StateId, step: u8, axis: usize, sign: i32) -> u32 {
+    let [wt, wf, wr] = LOD_COLOUR.makeup(f64::from(step) * LOD_COLOUR.gradient_step);
+    let colours = [lod_color(top, 0), side_bands(top)[0], side_bands(own)[1]];
+    let ramp = ramp_tint_ratio(axis, sign);
     let mut c = 0;
-    for shift in [16, 8, 0] {
-        let v = js_round(
-            f64::from((a >> shift) & 0xff) * (1.0 - f) + f64::from((b >> shift) & 0xff) * f,
-        );
-        c |= (v as u32) << shift;
+    for (ch, shift) in [16, 8, 0].into_iter().enumerate() {
+        let [a, b, r] = colours.map(|k| srgb_to_linear(((k >> shift) & 0xff) as u8));
+        c |= u32::from(linear_to_srgb_byte(a * ramp[ch] * wt + b * wf + r * wr)) << shift;
     }
     c
+}
+
+/// A ½ m ramp's shading (rising CELL_H over 1 m, facing the wall's side) over the wall's.
+fn ramp_tint_ratio(axis: usize, sign: i32) -> [f64; 3] {
+    let len = (1.0 + dwell_world::CELL_H * dwell_world::CELL_H).sqrt();
+    let h = f64::from(sign) * dwell_world::CELL_H / len;
+    let (nx, nz) = if axis == 0 { (h, 0.0) } else { (0.0, h) };
+    let ramp = dwell_look::normal_tint(nx, 1.0 / len, nz);
+    let wall = face_tint(axis, sign);
+    std::array::from_fn(|i| ramp[i] / wall[i])
 }
 
 fn linear_rgb(color: u32, tint: [f64; 3]) -> [f32; 3] {
@@ -369,8 +414,9 @@ fn mesh_section_above(
     let mut water_mesh = Builder::default();
     let mut skirts: [Builder; 6] = Default::default();
     let special = find_surfaces(cells, options.surface);
-    // Merge key per slice cell: 0 none, else ((material + 1) · 9 + tint) · 2 + (1 for a skirt).
-    let mut mask = vec![0i32; NU * NU];
+    // Merge key per slice cell: 0 none, else face_key (material, a riser's top material and share,
+    // skirt).
+    let mut mask = vec![0u64; NU * NU];
 
     for (face, &(axis, sign)) in FACES.iter().enumerate() {
         let u = (axis + 1) % 3;
@@ -433,14 +479,13 @@ fn mesh_section_above(
                         water_mesh.tag_fluid(m);
                         continue;
                     }
-                    // An exposed top takes its column's tint (tint_slopes).
-                    let tint = if face == 2 && n == 0 && !liquid {
-                        i32::from(special.t[wc])
+                    // A side takes the colour of the fine risers it stands for (riser_color).
+                    let (top, share) = if axis != 1 && !liquid {
+                        (special.top[wc], special.slope[wc])
                     } else {
-                        0
+                        (m, 0)
                     };
-                    mask[i as usize + NU * j as usize] =
-                        ((i32::from(m) + 1) * (TINT_STEPS + 1) + tint) * 2 + i32::from(hidden);
+                    mask[i as usize + NU * j as usize] = face_key(m, top, share, hidden);
                     any = true;
                 }
             }
@@ -471,9 +516,7 @@ fn mesh_section_above(
                     for dv in 0..h {
                         mask[i + NU * (j + dv)..i + w + NU * (j + dv)].fill(0);
                     }
-                    let tint = (key >> 1) % (TINT_STEPS + 1);
-                    let m = ((key >> 1) / (TINT_STEPS + 1) - 1) as StateId;
-                    let skirt = key & 1 == 1;
+                    let (m, top, share, skirt) = parse_key(key);
                     let water = !skirt && is_liquid(m);
                     let target = if skirt {
                         &mut skirts[face]
@@ -488,8 +531,8 @@ fn mesh_section_above(
                     } else {
                         0.0
                     };
-                    let color = if group == 0 && tint > 0 {
-                        lod_top(m, tint)
+                    let color = if group == 1 && !is_liquid(m) {
+                        riser_color(m, top, share, axis, sign)
                     } else {
                         lod_color(m, group)
                     };
@@ -537,8 +580,16 @@ struct Surfaces {
     w: Vec<f32>,
     /// 1 where the column or a neighbour is wet: its ground is drawn at its exact height.
     shore: Vec<u8>,
-    /// The column's top tint toward its side colour, in TINT_STEPS steps.
-    t: Vec<u8>,
+    /// The column's ground height in cells from the section's bottom (its surface, or its topmost
+    /// filled cell's top; a wet column's water surface), NaN for none in the section.
+    g: Vec<f32>,
+    /// The material on top of the column's ground (0: none): what its risers' top band shows.
+    top: Vec<u16>,
+    /// The column's surface height exactly (the generator's, in cells from the section's bottom),
+    /// NaN where the surface data has none.
+    exact: Vec<f32>,
+    /// The ground's gradient at the column as a `gradient_step`: what its risers stand for.
+    slope: Vec<u8>,
 }
 
 const NO_SURFACE: i16 = -1000;
@@ -578,7 +629,10 @@ fn find_surfaces(cells: &[u16], surface: Option<&[f32]>) -> Surfaces {
         wy: vec![NO_SURFACE; n],
         w: vec![0.0; n],
         shore: vec![0; n],
-        t: vec![0; n],
+        g: vec![f32::NAN; n],
+        top: vec![0; n],
+        exact: vec![f32::NAN; n],
+        slope: vec![0; n],
     };
     let data = surface.filter(|s| s.len() >= n * SURFACE_STRIDE);
     let top = N;
@@ -648,6 +702,7 @@ fn find_surfaces(cells: &[u16], surface: Option<&[f32]>) -> Surfaces {
                     continue;
                 }
                 let h = at(c, 0);
+                out.exact[c] = h as f32;
                 // The topmost solid cell (above it only air or liquid), and it must hold the surface.
                 let mut y = top;
                 while y >= -1 {
@@ -698,46 +753,83 @@ fn find_surfaces(cells: &[u16], surface: Option<&[f32]>) -> Surfaces {
             }
         }
     }
-    tint_slopes(cells, &mut out);
+    column_grounds(cells, &mut out);
     out
 }
 
-/// Each dry column's top tint from its gradient: its height against its four neighbours'.
-fn tint_slopes(cells: &[u16], out: &mut Surfaces) {
+/// Each column's ground height and top material (`Surfaces::g`, `top`), which colour its risers.
+fn column_grounds(cells: &[u16], out: &mut Surfaces) {
     let top = N;
-    let mut height = vec![f32::NAN; PADU * PADU];
     for z in -1..=top {
         for x in -1..=top {
             let c = col(x, z);
-            if out.y[c] != NO_SURFACE {
-                height[c] = out.h[c];
-                continue;
-            }
             let y = topmost_filled(cells, x, z);
-            if y < -1 || is_liquid(cell(cells, x, y, z)) {
-                continue; // none, or under water
+            if y < -1 {
+                continue; // none
             }
-            height[c] = (y + 1) as f32;
+            let m = cell(cells, x, y, z);
+            (out.g[c], out.top[c]) = if is_liquid(m) {
+                // Under water: the water's surface, which a bank's riser stands above.
+                let level = if i32::from(out.wy[c]) == y {
+                    out.w[c]
+                } else {
+                    (y + 1) as f32
+                };
+                (level, m)
+            } else if !out.exact[c].is_nan() {
+                (
+                    out.exact[c],
+                    if out.y[c] != NO_SURFACE { out.m[c] } else { m },
+                )
+            } else if out.y[c] != NO_SURFACE {
+                (out.h[c], out.m[c])
+            } else {
+                ((y + 1) as f32, m)
+            };
         }
     }
-    for z in 0..top {
-        for x in 0..top {
-            let c = col(x, z);
-            let h = f64::from(height[c]);
+    // Gradients: central differences, one-sided at the apron or beside a column with no ground.
+    // Heights are in cells, 2^L × CELL_H m tall and 2^L m apart: cells per cell × CELL_H is m per m.
+    let height = |x: i32, z: i32| {
+        if (-1..=top).contains(&x) && (-1..=top).contains(&z) {
+            f64::from(out.g[col(x, z)])
+        } else {
+            f64::NAN
+        }
+    };
+    for z in -1..=top {
+        for x in -1..=top {
+            let h = height(x, z);
             if h.is_nan() {
                 continue;
             }
-            let mut gradient: f64 = 0.0;
-            for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
-                let n = f64::from(height[col(x + dx, z + dz)]);
-                if !n.is_nan() {
-                    gradient = gradient.max((n - h).abs());
+            let along = |(dx, dz): (i32, i32)| {
+                let (a, b) = (height(x + dx, z + dz), height(x - dx, z - dz));
+                match (a.is_nan(), b.is_nan()) {
+                    (false, false) => (a - b) / 2.0,
+                    (false, true) => a - h,
+                    (true, false) => h - b,
+                    (true, true) => 0.0,
                 }
-            }
-            let share = SIDE_SHARE_MAX.min(gradient * SIDE_SHARE_PER_GRADIENT);
-            out.t[c] = js_round(share * f64::from(TINT_STEPS)) as u8;
+            };
+            let gradient = along((1, 0)).hypot(along((0, 1))) * dwell_world::CELL_H;
+            out.slope[col(x, z)] = gradient_step(gradient);
         }
     }
+}
+
+/// A greedy-pass merge key: material, a riser's top material and share, and the skirt bit.
+fn face_key(m: StateId, top: StateId, step: u8, skirt: bool) -> u64 {
+    (u64::from(m) + 1) | u64::from(top) << 17 | u64::from(step) << 34 | u64::from(skirt) << 42
+}
+
+fn parse_key(key: u64) -> (StateId, StateId, u8, bool) {
+    (
+        ((key & 0x1_ffff) - 1) as StateId,
+        ((key >> 17) & 0x1_ffff) as StateId,
+        ((key >> 34) & 0xff) as u8,
+        (key >> 42) & 1 == 1,
+    )
 }
 
 /// Heights (in cells) of a column's top along a side at the side's ends and middle: LOD tops are
@@ -759,6 +851,9 @@ struct Wall {
     lo: [f64; 3],
     hi: [f64; 3],
     material: StateId,
+    /// The top material of the column whose rise this is, and its share (riser_color).
+    top: StateId,
+    share: u8,
 }
 
 impl Wall {
@@ -788,7 +883,7 @@ fn emit_surfaces(
                 continue;
             }
             let at = z as usize + NU * x as usize;
-            top_key[at] = f64::from((i32::from(s.m[c]) + 1) * (TINT_STEPS + 1) + i32::from(s.t[c]));
+            top_key[at] = f64::from(s.m[c]) + 1.0;
             top_h[at] = s.h[c];
         }
     }
@@ -820,15 +915,14 @@ fn emit_surfaces(
                 top_key[z + NU * (x + dx)..z + w + NU * (x + dx)].fill(0.0);
             }
             // The top: axis y, u = z, v = x.
-            let key = key as i32;
-            let material = (key / (TINT_STEPS + 1) - 1) as StateId;
+            let material = (key - 1.0) as StateId;
             opaque.quad(
                 1,
                 1,
                 h,
                 (z as f64, (z + w) as f64),
                 (x as f64, (x + d) as f64),
-                lod_top(material, key % (TINT_STEPS + 1)),
+                lod_color(material, 0),
             );
             z += w;
         }
@@ -932,6 +1026,8 @@ fn emit_surfaces(
                                 && w.lo[0] == r.lo[0]
                                 && w.hi[0] == r.hi[0]
                                 && w.material == r.material
+                                && w.top == r.top
+                                && w.share == r.share
                         }
                         _ => false,
                     };
@@ -965,7 +1061,7 @@ fn emit_surfaces(
                                 s1,
                                 [r.lo[i], r.lo[j]],
                                 [r.hi[i], r.hi[j]],
-                                lod_color(r.material, 1),
+                                riser_color(r.material, r.top, r.share, axis, r.sign),
                             );
                         }
                     }
@@ -1011,6 +1107,7 @@ fn wall_of(
     let material = s.m[c];
     let skirt = face + 1;
     let floor = [yf; 3];
+    let (top, share) = (s.top[c], s.slope[c]);
     if !n_filled {
         // Open.
         return (slot == 0).then_some(Wall {
@@ -1019,6 +1116,8 @@ fn wall_of(
             lo: floor,
             hi: ours,
             material,
+            top,
+            share,
         });
     }
     if n_surface_here {
@@ -1034,6 +1133,8 @@ fn wall_of(
                 lo,
                 hi: ours,
                 material,
+                top,
+                share,
             });
         }
         return (border && lo.iter().any(|&v| v > yf)).then_some(Wall {
@@ -1042,6 +1143,8 @@ fn wall_of(
             lo: floor,
             hi: lo,
             material,
+            top,
+            share,
         });
     }
     // A full neighbour cell stands taller: its face towards us, above our surface (and on the
@@ -1053,6 +1156,8 @@ fn wall_of(
             lo: ours,
             hi: [yf + 1.0; 3],
             material: nm,
+            top: s.top[nc],
+            share: s.slope[nc],
         });
     }
     border.then_some(Wall {
@@ -1061,6 +1166,8 @@ fn wall_of(
         lo: floor,
         hi: ours,
         material,
+        top,
+        share,
     })
 }
 

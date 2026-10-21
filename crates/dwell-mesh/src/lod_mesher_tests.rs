@@ -546,70 +546,174 @@ mod water_above_sea_level {
     }
 }
 
-mod step_sides_on_slopes {
-    //! Regression (playtest on 0.6.1-dev.18: everything turned green grass farther away): tops
-    //! are tinted toward the material's side colour by the column's gradient (SIDE_SHARE).
+mod riser_colours {
+    //! Regression (owner, 2026-10-21: far hills turned olive and brown with each coarser level
+    //! while full detail is green): a coarse riser takes the colour of the fine rise it stands for
+    //! (`dwell_look::lod_colour`): on a gentle slope mostly the grass's fringe and ramps, on a cliff
+    //! mostly the dirt or stone below; tops are their top colour alone, however steep. The levels'
+    //! colours against full detail are measured in `tests/lod_colour.rs`.
     use super::*;
 
-    fn top_colours(gradient: f64) -> Vec<String> {
-        // A ramp along x rising `gradient` cells per cell, grass on stone, surfaces given.
+    fn dirt() -> u16 {
+        require("dwell:dirt")
+    }
+
+    /// Ground of height `h(x)` cells along x: grass over `under`, the generator's exact surface
+    /// given; face A's cells and surface.
+    fn ground(h: impl Fn(i32) -> f64, under: u16) -> (Vec<u16>, Vec<f32>) {
         let mut cells = new_cells();
         let mut surface = new_surface();
         for z in -1..=32 {
             for x in -1..=32 {
-                let h = 4.0 + gradient * f64::from(x + 1);
+                let h = h(x);
                 let top = h.floor() as i32;
                 for y in -1..top {
-                    put(&mut cells, x, y, z, stone());
+                    put(&mut cells, x, y, z, under);
                 }
                 put(&mut cells, x, top, z, grass());
                 let c = surface_at(x, z);
-                surface[c..c + 4].copy_from_slice(&[
-                    h.min(f64::from(top + 1)) as f32,
-                    f32::from(grass()),
-                    1.0,
-                    0.0,
-                ]);
+                surface[c..c + 4].copy_from_slice(&[h as f32, f32::from(grass()), 1.0, 0.0]);
             }
         }
-        let m = mesh_with(&cells, &surface, 0.0);
-        let mut out: Vec<String> = Vec::new();
-        let (n, c) = (&m.opaque.normals, &m.opaque.colors);
-        for v in 0..n.len() / 3 {
-            if n[v * 3 + 1] > 0.5 {
-                let k = [0, 1, 2].map(|k| format!("{:.4}", c[v * 3 + k])).join(",");
-                if !out.contains(&k) {
-                    out.push(k);
-                }
+        (cells, surface)
+    }
+
+    /// A slope rising `rise` cells per cell along x.
+    fn slope(rise: f64, under: u16) -> (Vec<u16>, Vec<f32>) {
+        ground(|x| (1.0 + rise * f64::from(x + 1)).min(31.5), under)
+    }
+
+    /// A 16-cell cliff at x = 16 (a level-L cell is 2^L × ½ m tall and 2^L m wide: 8 m per m).
+    fn cliff(under: u16) -> (Vec<u16>, Vec<f32>) {
+        ground(|x| if x < 16 { 2.5 } else { 18.5 }, under)
+    }
+
+    /// Area-weighted mean linear colour of the drawn faces (not the skirts) with normal `n`.
+    fn mean_colour(m: &SectionMeshes, n: [f32; 3]) -> Option<[f64; 3]> {
+        let f = &m.opaque;
+        let (mut sum, mut total) = ([0.0; 3], 0.0);
+        let p = |i: u32| [0, 1, 2].map(|a| f64::from(f.positions[i as usize * 3 + a]));
+        for t in f.indices.chunks_exact(3) {
+            let v = t[0] as usize;
+            if !(0..3).all(|a| (f.normals[v * 3 + a] - n[a]).abs() < 1e-3) {
+                continue;
             }
+            let (a, b, c) = (p(t[0]), p(t[1]), p(t[2]));
+            let (u, w) = (
+                [0, 1, 2].map(|k| b[k] - a[k]),
+                [0, 1, 2].map(|k| c[k] - a[k]),
+            );
+            let x = [
+                u[1] * w[2] - u[2] * w[1],
+                u[2] * w[0] - u[0] * w[2],
+                u[0] * w[1] - u[1] * w[0],
+            ];
+            let area = (x[0] * x[0] + x[1] * x[1] + x[2] * x[2]).sqrt() / 2.0;
+            for (k, s) in sum.iter_mut().enumerate() {
+                *s += area * f64::from(f.colors[v * 3 + k]);
+            }
+            total += area;
         }
-        out
+        (total > 0.0).then(|| sum.map(|v| v / total))
+    }
+
+    fn tinted(color: u32, axis: usize, sign: i32) -> [f64; 3] {
+        linear_rgb(color, face_tint(axis, sign)).map(f64::from)
+    }
+
+    fn distance(a: [f64; 3], b: [f64; 3]) -> f64 {
+        (0..3).map(|i| (a[i] - b[i]).powi(2)).sum::<f64>().sqrt()
+    }
+
+    /// Both faces: face A's section, and face B's (its mirror image, meshed mirrored), with the
+    /// same surface.
+    fn both_faces((cells, surface): (Vec<u16>, Vec<f32>)) -> [SectionMeshes; 2] {
+        let a = mesh_with(&cells, &surface, 0.0);
+        let b = mesh_section(
+            &mirror_rows(&cells),
+            &MeshSectionOptions {
+                surface: Some(&surface),
+                water_drop: 0.0,
+                mirror: true,
+            },
+        )
+        .expect("section volume");
+        [a, b]
+    }
+
+    /// The risers' mean colour (they face −x: the ground rises along +x), on both faces alike.
+    fn risers(section: (Vec<u16>, Vec<f32>)) -> [f64; 3] {
+        let [a, b] = both_faces(section);
+        let wa = mean_colour(&a, [-1.0, 0.0, 0.0]).expect("risers");
+        let wb = mean_colour(&b, [-1.0, 0.0, 0.0]).expect("face B's risers");
+        assert!(distance(wa, wb) < 1e-6, "both faces alike: {wa:?} {wb:?}");
+        wa
     }
 
     #[test]
-    fn draws_flat_ground_in_the_top_colour_alone() {
-        assert_eq!(top_colours(0.0).len(), 1);
+    fn draws_the_tops_of_any_ground_in_the_top_colour_alone() {
+        let top = tinted(lod_color(grass(), 0), 1, 1);
+        for section in [
+            slope(0.0, dirt()),
+            slope(0.25, dirt()),
+            slope(0.6, dirt()),
+            cliff(dirt()),
+        ] {
+            let [a, b] = both_faces(section);
+            let up = mean_colour(&a, [0.0, 1.0, 0.0]).expect("tops");
+            assert!(distance(up, top) < 1e-6, "{up:?} vs {top:?}");
+            // Face B's ground faces down: its tops are the faces of normal −y, shaded alike.
+            let down = mean_colour(&b, [0.0, -1.0, 0.0]).expect("face B's tops");
+            assert!(distance(down, top) < 1e-6, "face B: {down:?}");
+        }
     }
 
     #[test]
-    fn tints_sloped_ground_toward_the_side_colour_more_where_steeper() {
-        let flat = top_colours(0.0)[0].clone();
-        let gentle = top_colours(0.25);
-        let steep = top_colours(1.0);
-        // On a steep ramp every column steps: no top is drawn in the flat top colour. A gentle one
-        // is terraces (the adaptive rule rests a level run at half height) whose steps are tinted.
-        assert!(gentle.iter().any(|k| *k != flat));
-        assert!(!steep.contains(&flat));
-        // Grass's side (dirt) is redder and less green than its top: steeper, less green.
-        let green = |k: &String| {
-            k.split(',')
-                .nth(1)
-                .and_then(|g| g.parse::<f64>().ok())
-                .unwrap_or(f64::NAN)
-        };
-        let steep_max = steep.iter().map(green).fold(f64::MIN, f64::max);
-        let gentle_min = gentle.iter().map(green).fold(f64::MAX, f64::min);
-        assert!(steep_max < gentle_min);
+    fn colours_a_gentle_slopes_risers_mostly_grass_and_a_cliffs_mostly_what_is_below_it() {
+        let grass_top = tinted(lod_color(grass(), 0), 0, -1);
+        let dirt_side = tinted(lod_color(dirt(), 1), 0, -1);
+        let stone_side = tinted(lod_color(stone(), 1), 0, -1);
+        // Gentle (a quarter cell per cell: 0.125 m per m at any level): green, near the grass.
+        // Before: a riser under grass took grassSide's whole-tile average, half dirt.
+        let gentle = risers(slope(0.25, dirt()));
+        assert!(
+            distance(gentle, grass_top) < distance(gentle, dirt_side) / 3.0,
+            "{gentle:?}"
+        );
+        // A cliff: mostly the dirt or the stone below its fringe, at every level.
+        let earth = risers(cliff(dirt()));
+        assert!(
+            distance(earth, dirt_side) < distance(earth, grass_top) / 3.0,
+            "{earth:?}"
+        );
+        let rock = risers(cliff(stone()));
+        assert!(
+            distance(rock, stone_side) < distance(rock, grass_top) / 3.0,
+            "{rock:?}"
+        );
+    }
+
+    #[test]
+    fn mixes_a_riser_by_the_makeup_at_its_gradient() {
+        // A riser of material m topped by grass at gradient g is the makeup's mix of grass's top
+        // (shaded as a ramp), grass's fringe band and m's lower band.
+        let g = 0.4;
+        let [wt, wf, wr] = LOD_COLOUR.makeup(g);
+        let got = riser_color(dirt(), grass(), gradient_step(g), 2, 1);
+        let ramp = ramp_tint_ratio(2, 1);
+        let parts = [
+            lod_color(grass(), 0),
+            side_bands(grass())[0],
+            side_bands(dirt())[1],
+        ];
+        for (ch, shift) in [16, 8, 0].into_iter().enumerate() {
+            let [a, b, r] = parts.map(|k| srgb_to_linear(((k >> shift) & 0xff) as u8));
+            let want = linear_to_srgb_byte(a * ramp[ch] * wt + b * wf + r * wr);
+            assert_eq!((got >> shift) & 0xff, u32::from(want));
+        }
+        // The fringe band is the side tile's top half: grass's is green, its lower band dirt.
+        let [fringe, lower] = side_bands(grass());
+        assert!((fringe >> 8) & 0xff > (lower >> 8) & 0xff);
     }
 }
 
