@@ -6,10 +6,12 @@
 //! ([`dwell_world::SKY_APRON`] for the client's jobs; the plain one-voxel apron leaves rays past it
 //! open).
 //!
-//! Every vertex's rays are a fixed cosine-weighted set turned about the normal by a hash of the
-//! vertex's face-local world position, and the walk runs on cell-relative coordinates, so a
-//! vertex on a chunk border gets the same value from either chunk (the reach stays inside both
-//! chunks' aprons).
+//! Each vertex's rays are a cosine-weighted set turned about its normal by a hash of its
+//! face-local world position, walked on cell-relative coordinates, so a vertex on a chunk border
+//! gets the same value from either chunk (the reach stays inside both chunks' aprons). The faces of
+//! cells have their vertices on the cell lattice: for them the turn is one of [`TURNS`] and each
+//! ray's cells are walked once per mesh into a list of offsets ([`LatticeRays`]), so a vertex costs
+//! a few table lookups per ray. Shaped faces and plants, off the lattice, walk their rays.
 
 use std::sync::OnceLock;
 
@@ -19,12 +21,25 @@ use dwell_world::CELL_H;
 /// The corner-occlusion level of the open corner (no occluder around it).
 pub(crate) const AO_OPEN: u8 = 3;
 
+/// How many turns of the ray set a lattice vertex picks from (by its hash).
+pub(crate) const TURNS: usize = 16;
+
 /// Which cells block light (solid, non-see-through full cubes), chunk-local cells, face-local.
 pub(crate) struct Occupancy {
     /// The volume's edges and its apron (cells), x, y, z.
     ext: [i32; 3],
     apron: [i32; 3],
     bits: Vec<u64>,
+    /// Per column of the volume (x fastest, then z): the highest light-blocking row (the volume's
+    /// own y) in any column within [`reach`] of it, or −1. A ray above it has nothing left to
+    /// hit, which keeps rays over open ground short.
+    reach_top: Vec<i32>,
+}
+
+/// How far (cells, across) a ray's columns can be from the column it starts in: its length and
+/// the start's nudge.
+fn reach() -> i32 {
+    AMBIENT.length_m.ceil() as i32 + 2
 }
 
 impl Occupancy {
@@ -39,6 +54,7 @@ impl Occupancy {
         blocks: impl Fn(u16) -> bool,
     ) -> Self {
         let len = (ext[0] * ext[1] * ext[2]) as usize;
+        let layer = (ext[0] * ext[2]) as usize;
         let mut bits = vec![0u64; len.div_ceil(64)];
         // Blocking is per state: look each one up once.
         let mut memo: Vec<u8> = Vec::new();
@@ -57,7 +73,6 @@ impl Occupancy {
                 continue;
             }
             let i = if mirror {
-                let layer = (ext[0] * ext[2]) as usize;
                 let (y, rest) = (i / layer, i % layer);
                 (ext[1] as usize - 1 - y) * layer + rest
             } else {
@@ -65,21 +80,84 @@ impl Occupancy {
             };
             bits[i / 64] |= 1 << (i % 64);
         }
-        Self { ext, apron, bits }
+        let mut occ = Self {
+            ext,
+            apron,
+            bits,
+            reach_top: Vec::new(),
+        };
+        occ.reach_top = occ.reach_tops(reach());
+        occ
     }
 
-    /// Whether chunk-local cell `c` blocks light (outside the volume: open).
-    pub(crate) fn solid(&self, c: [i32; 3]) -> bool {
+    fn bit(&self, i: usize) -> bool {
+        self.bits[i / 64] >> (i % 64) & 1 != 0
+    }
+
+    /// `reach_top` for reach `r`: each column's top, then the maximum over the square of
+    /// columns within `r` (along x, then along z).
+    fn reach_tops(&self, r: i32) -> Vec<i32> {
+        let [ex, ey, ez] = self.ext;
+        let mut top = vec![-1; (ex * ez) as usize];
+        for z in 0..ez {
+            for x in 0..ex {
+                if let Some(y) = (0..ey)
+                    .rev()
+                    .find(|&y| self.bit((x + ex * (z + ez * y)) as usize))
+                {
+                    top[(x + ex * z) as usize] = y;
+                }
+            }
+        }
+        let max_along = |src: &[i32], along_x: bool| {
+            let (len, other) = if along_x { (ex, ez) } else { (ez, ex) };
+            let at = |i: i32, o: i32| {
+                if along_x {
+                    (i + ex * o) as usize
+                } else {
+                    (o + ex * i) as usize
+                }
+            };
+            let mut out = vec![-1; src.len()];
+            for o in 0..other {
+                for i in 0..len {
+                    let (lo, hi) = ((i - r).max(0), (i + r).min(len - 1));
+                    out[at(i, o)] = (lo..=hi).map(|k| src[at(k, o)]).max().unwrap_or(-1);
+                }
+            }
+            out
+        };
+        max_along(&max_along(&top, true), false)
+    }
+
+    /// The volume coordinates of chunk-local cell `c`, if inside it.
+    fn inside(&self, c: [i32; 3]) -> Option<[i32; 3]> {
         let p = [
             c[0] + self.apron[0],
             c[1] + self.apron[1],
             c[2] + self.apron[2],
         ];
-        if (0..3).any(|a| p[a] < 0 || p[a] >= self.ext[a]) {
-            return false;
+        (0..3).all(|a| p[a] >= 0 && p[a] < self.ext[a]).then_some(p)
+    }
+
+    fn index(&self, p: [i32; 3]) -> i32 {
+        p[0] + self.ext[0] * (p[2] + self.ext[2] * p[1])
+    }
+
+    /// Whether chunk-local cell `c` blocks light (outside the volume: open).
+    pub(crate) fn solid(&self, c: [i32; 3]) -> bool {
+        self.inside(c)
+            .is_some_and(|p| self.bit(self.index(p) as usize))
+    }
+
+    /// The highest blocking row (volume y) within a ray's reach of chunk-local column (x, z); −1
+    /// past the volume.
+    fn top_near(&self, x: i32, z: i32) -> i32 {
+        let (px, pz) = (x + self.apron[0], z + self.apron[2]);
+        if px < 0 || pz < 0 || px >= self.ext[0] || pz >= self.ext[2] {
+            return -1;
         }
-        let i = (p[0] + self.ext[0] * (p[2] + self.ext[2] * p[1])) as usize;
-        self.bits[i / 64] >> (i % 64) & 1 != 0
+        self.reach_top[(px + self.ext[0] * pz) as usize]
     }
 
     /// The classic corner-occlusion level (0 a full crease … 3 open) of the corner of an
@@ -100,10 +178,10 @@ impl Occupancy {
         }
     }
 
-    /// How many of the sky rays (`AMBIENT.rays`) from the point `cell + frac` (chunk-local
-    /// cells; `frac` in [0, 1] per axis) on a surface with unit normal `n` (metres) escape.
-    /// `world` is the point's face-local world position in eighths of a cell (with the normal's
-    /// own salt), which turns its ray set.
+    /// How many of the sky rays from the point `cell + frac` (chunk-local cells; `frac` in
+    /// [0, 1] per axis) on a surface with unit normal `n` (metres) escape. `world` is the
+    /// point's face-local world position in eighths of a cell, with the surface's salt, which
+    /// turns its ray set.
     pub(crate) fn visible_rays(
         &self,
         cell: [i32; 3],
@@ -111,7 +189,159 @@ impl Occupancy {
         n: [f64; 3],
         world: [i64; 4],
     ) -> u8 {
-        visible_rays_with(self, &AMBIENT, rays(), cell, frac, n, world)
+        let t = &AMBIENT;
+        let ceiling = self.top_near(
+            cell[0] + frac[0].floor() as i32,
+            cell[2] + frac[2].floor() as i32,
+        );
+        let turn = point_noise(world) * std::f64::consts::TAU;
+        let mut escaped = 0u8;
+        for d in rays() {
+            let dir = turned(*d, n, turn);
+            let mut blocked = false;
+            walk(t, frac, n, dir, |r| {
+                let c = [cell[0] + r[0], cell[1] + r[1], cell[2] + r[2]];
+                match self.inside(c) {
+                    // Out of the volume, or above every blocking row within reach: nothing on
+                    // (rays never descend, and an axis never turns back).
+                    None => false,
+                    Some(p) if p[1] > ceiling => false,
+                    Some(p) => {
+                        blocked = self.bit(self.index(p) as usize);
+                        !blocked
+                    }
+                }
+            });
+            escaped += u8::from(!blocked);
+        }
+        escaped
+    }
+
+    /// [`Self::visible_rays`] for a vertex on the cell lattice (chunk-local `at`) of an
+    /// axis-aligned face `face` (0 +X, 1 −X, 2 +Y, 3 −Y, 4 +Z, 5 −Z), its ray set's turn picked by
+    /// `world` (as `visible_rays`'s): the cells of its rays from `paths`.
+    pub(crate) fn lattice_rays(
+        &self,
+        paths: &LatticeRays,
+        at: [i32; 3],
+        face: usize,
+        world: [i64; 4],
+    ) -> u8 {
+        let turn = ((point_noise(world) * TURNS as f64) as usize).min(TURNS - 1);
+        let rays = &paths.rays[face * TURNS + turn];
+        let Some(p) = self.inside(at) else {
+            return rays.len() as u8;
+        };
+        let ceiling = self.top_near(at[0], at[2]);
+        // Inside the volume whatever the ray (the sky apron): the walk needs no bounds checks.
+        let fits = (0..3).all(|a| p[a] - paths.lo[a] >= 0 && p[a] + paths.hi[a] < self.ext[a]);
+        let base = self.index(p);
+        let mut escaped = 0u8;
+        for r in rays {
+            let mut open = true;
+            for s in &paths.steps[r.clone()] {
+                if p[1] + s.dy > ceiling {
+                    break;
+                }
+                let hit = if fits {
+                    self.bit((base + s.delta) as usize)
+                } else {
+                    self.solid([at[0] + s.off[0], at[1] + s.dy, at[2] + s.off[1]])
+                };
+                if hit {
+                    open = false;
+                    break;
+                }
+            }
+            escaped += u8::from(open);
+        }
+        escaped
+    }
+
+    /// The cell lists of the lattice vertices' rays for this volume's layout (walked once per
+    /// layout: the sky volume's and the one-voxel block's).
+    pub(crate) fn lattice_paths(&self) -> &'static LatticeRays {
+        static SKY: OnceLock<LatticeRays> = OnceLock::new();
+        static PADDED: OnceLock<LatticeRays> = OnceLock::new();
+        static OTHER: OnceLock<std::sync::Mutex<Vec<&'static LatticeRays>>> = OnceLock::new();
+        let make = || LatticeRays::new(&AMBIENT, rays(), self.ext);
+        if self.ext == dwell_world::SKY_EXTENT {
+            SKY.get_or_init(make)
+        } else if self.ext == [crate::PAD as i32; 3] {
+            PADDED.get_or_init(make)
+        } else {
+            let mut other = OTHER
+                .get_or_init(Default::default)
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+            if let Some(p) = other.iter().find(|p| p.ext == self.ext) {
+                return p;
+            }
+            let p: &'static LatticeRays = Box::leak(Box::new(make()));
+            other.push(p);
+            p
+        }
+    }
+}
+
+/// One cell of a lattice ray's walk: its offset from the vertex's cell (x, z), its rise, and its
+/// offset in the volume's flat index.
+#[derive(Clone, Copy, Debug)]
+struct Step {
+    off: [i32; 2],
+    dy: i32,
+    delta: i32,
+}
+
+/// Every lattice vertex's rays as cell lists, per face and turn: walked once for a volume layout.
+pub(crate) struct LatticeRays {
+    steps: Vec<Step>,
+    /// Per face × turn, the ranges of `steps` of each ray.
+    rays: Vec<Vec<std::ops::Range<usize>>>,
+    /// How far the lists reach below and above the vertex's cell (cells, x y z).
+    lo: [i32; 3],
+    hi: [i32; 3],
+    /// The volume layout the flat offsets are for.
+    ext: [i32; 3],
+}
+
+impl LatticeRays {
+    fn new(t: &AmbientTunables, set: &[[f64; 3]], ext: [i32; 3]) -> Self {
+        let mut steps = Vec::new();
+        let mut rays = Vec::with_capacity(6 * TURNS);
+        let (mut lo, mut hi) = ([0; 3], [0; 3]);
+        for face in 0..6 {
+            let mut n = [0.0; 3];
+            n[face / 2] = if face % 2 == 0 { 1.0 } else { -1.0 };
+            for k in 0..TURNS {
+                let turn = (k as f64 + 0.5) / TURNS as f64 * std::f64::consts::TAU;
+                let mut list = Vec::with_capacity(set.len());
+                for d in set {
+                    let start = steps.len();
+                    walk(t, [0.0; 3], n, turned(*d, n, turn), |r| {
+                        for a in 0..3 {
+                            lo[a] = lo[a].max(-r[a]);
+                            hi[a] = hi[a].max(r[a]);
+                        }
+                        steps.push(Step {
+                            off: [r[0], r[2]],
+                            dy: r[1],
+                            delta: r[0] + ext[0] * (r[2] + ext[2] * r[1]),
+                        });
+                        true
+                    });
+                    list.push(start..steps.len());
+                }
+                rays.push(list);
+            }
+        }
+        Self {
+            steps,
+            rays,
+            lo,
+            hi,
+            ext,
+        }
     }
 }
 
@@ -160,23 +390,9 @@ fn unit(a: [f64; 3]) -> [f64; 3] {
     [a[0] / l, a[1] / l, a[2] / l]
 }
 
-/// How far the start is nudged off the surface and along the ray (m), so the walk starts in the
-/// cell the ray leaves into.
-const NUDGE: f64 = 1e-3;
-
-pub(crate) fn visible_rays_with(
-    occ: &Occupancy,
-    t: &AmbientTunables,
-    set: &[[f64; 3]],
-    cell: [i32; 3],
-    frac: [f64; 3],
-    n: [f64; 3],
-    world: [i64; 4],
-) -> u8 {
-    if set.is_empty() {
-        return 0;
-    }
-    // A tangent frame about the normal, turned by the point's hash.
+/// Ray `d` of the set (about +z) about the normal `n`, turned by `turn` (radians) and toward the
+/// face's sky: a ray below the face-local horizon is mirrored above it.
+fn turned(d: [f64; 3], n: [f64; 3], turn: f64) -> [f64; 3] {
     let helper = if n[1].abs() < 0.9 {
         [0.0, 1.0, 0.0]
     } else {
@@ -184,35 +400,32 @@ pub(crate) fn visible_rays_with(
     };
     let t1 = unit(cross(helper, n));
     let t2 = cross(n, t1);
-    let turn = point_noise(world) * std::f64::consts::TAU;
     let (c, s) = (turn.cos(), turn.sin());
-    let mut escaped = 0u8;
-    for d in set {
-        let (a, b) = (d[0] * c - d[1] * s, d[0] * s + d[1] * c);
-        let mut dir = [
-            t1[0] * a + t2[0] * b + n[0] * d[2],
-            t1[1] * a + t2[1] * b + n[1] * d[2],
-            t1[2] * a + t2[2] * b + n[2] * d[2],
-        ];
-        // Toward the face's sky: a ray below the face-local horizon is mirrored above it.
-        dir[1] = dir[1].abs();
-        if ray_escapes(occ, t, cell, frac, n, dir) {
-            escaped += 1;
-        }
-    }
-    escaped
+    let (a, b) = (d[0] * c - d[1] * s, d[0] * s + d[1] * c);
+    let mut dir = [
+        t1[0] * a + t2[0] * b + n[0] * d[2],
+        t1[1] * a + t2[1] * b + n[1] * d[2],
+        t1[2] * a + t2[2] * b + n[2] * d[2],
+    ];
+    dir[1] = dir[1].abs();
+    dir
 }
 
-/// Whether a ray from `cell + frac` (cells) along `dir` (unit, metres) runs `length_m` without
-/// entering a cell that blocks light, and nothing blocks the probe above its end.
-fn ray_escapes(
-    occ: &Occupancy,
+/// How far the start is nudged off the surface and along the ray (m), so the walk starts in the
+/// cell the ray leaves into.
+const NUDGE: f64 = 1e-3;
+
+/// Walks a ray from `frac` (cells, relative to its cell) along `dir` (unit, metres, never
+/// descending): every cell it enters within `length_m` (a DDA over cells 1 m × CELL_H × 1 m), then
+/// the probe's cells straight above its end, as offsets from the start's cell, while `visit`
+/// returns true.
+fn walk(
     t: &AmbientTunables,
-    cell: [i32; 3],
     frac: [f64; 3],
     n: [f64; 3],
     dir: [f64; 3],
-) -> bool {
+    mut visit: impl FnMut([i32; 3]) -> bool,
+) {
     let scale = [1.0, 1.0 / CELL_H, 1.0];
     // Per metre along the ray, in cells.
     let dc = [dir[0] * scale[0], dir[1] * scale[1], dir[2] * scale[2]];
@@ -232,10 +445,9 @@ fn ray_escapes(
             t_delta[a] = -1.0 / dc[a];
         }
     }
-    let at = |r: [i32; 3]| [cell[0] + r[0], cell[1] + r[1], cell[2] + r[2]];
     loop {
-        if occ.solid(at(cur)) {
-            return false;
+        if !visit(cur) {
+            return;
         }
         let a = if t_max[0] <= t_max[1] && t_max[0] <= t_max[2] {
             0
@@ -253,17 +465,12 @@ fn ray_escapes(
     // The probe: straight up from the ray's end.
     let end_y = s[1] + dc[1] * t.length_m;
     let top = (end_y + t.probe_m / CELL_H).floor() as i32;
-    let end = [
-        (s[0] + dc[0] * t.length_m).floor() as i32,
-        end_y.floor() as i32,
-        (s[2] + dc[2] * t.length_m).floor() as i32,
-    ];
+    let end = [cur[0], end_y.floor().max(f64::from(cur[1])) as i32, cur[2]];
     for y in end[1] + 1..=top {
-        if occ.solid(at([end[0], y, end[2]])) {
-            return false;
+        if !visit([end[0], y, end[2]]) {
+            return;
         }
     }
-    true
 }
 
 /// A vertex's baked light: its corner-occlusion factor × the share of its rays that escaped.

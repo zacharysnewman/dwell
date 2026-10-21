@@ -85,8 +85,13 @@ pub trait ChunkStore {
     fn remove_chunk(&mut self, coord: Coord);
     /// Applies the changes; the chunk takes their revision.
     fn edit_chunk(&mut self, changes: &ChunkChanges);
-    /// The chunk's voxels with a one-voxel apron (the mesher's layout), for meshing.
+    /// The chunk's voxels with a one-voxel apron (the mesher's layout).
     fn padded_chunk(&mut self, coord: Coord) -> Vec<u16>;
+    /// What a mesh job meshes: the chunk with the sky apron (`dwell_world::SKY_APRON`, for the
+    /// baked ambient light's rays), or the one-voxel padded block (rays past it count as open).
+    fn mesh_block(&mut self, coord: Coord) -> Vec<u16> {
+        self.padded_chunk(coord)
+    }
 }
 
 /// The client sim's voxel world is the store.
@@ -104,6 +109,9 @@ impl ChunkStore for VoxelWorld {
     }
     fn padded_chunk(&mut self, coord: Coord) -> Vec<u16> {
         padded_from_neighbours(self, coord)
+    }
+    fn mesh_block(&mut self, coord: Coord) -> Vec<u16> {
+        self.padded_box(ChunkCoord::from_array(coord), dwell_world::SKY_APRON)
     }
 }
 
@@ -172,7 +180,8 @@ pub trait ChunkSource {
     fn cancel(&mut self, coord: Coord) -> bool;
 }
 
-/// A mesh job: the padded voxels of `coord`, mirrored for face B's chunks.
+/// A mesh job: the voxels of `coord` with their apron ([`ChunkStore::mesh_block`]), meshed
+/// mirrored for face B's chunks.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MeshJob {
     pub coord: Coord,
@@ -536,7 +545,7 @@ where
             self.dirty.remove(&c);
             self.token += 1;
             self.meshing.insert(c, self.token);
-            let padded = self.store.padded_chunk(c);
+            let padded = self.store.mesh_block(c);
             self.mesher.mesh(MeshJob {
                 coord: c,
                 token: self.token,
@@ -666,26 +675,26 @@ where
         self.store.edit_chunk(changes);
         self.loaded.insert(key, changes.revision);
         self.dirty.mark(changes.coord);
-        // Neighbours a changed voxel is next to, diagonals included: their border faces and their
-        // adaptive blocks' shapes (ADAPTIVE_BLOCKS.md: a shape reads the 8 columns around it and
-        // the layer above) may change. In the order first touched.
+        // Neighbours whose mesh block holds a changed voxel, diagonals included: their border
+        // faces, and their baked ambient light, whose sky rays read `SKY_APRON` cells past their
+        // borders (`ChunkStore::mesh_block`), may change. In the order first touched.
+        let apron = dwell_world::SKY_APRON;
         let mut touched: Vec<Coord> = Vec::with_capacity(7);
         for v in &changes.changes {
             let index = i32::from(v.index);
             let local = [index & 31, (index >> 5) & 31, (index >> 10) & 31];
-            let side = |l: i32, d: i32| {
-                if l + d < 0 {
-                    -1
-                } else if l + d >= CHUNK_SIZE {
-                    1
-                } else {
-                    0
-                }
+            // Per axis, the neighbours (−1, 0, +1) whose apron reaches the voxel.
+            let sides = |a: usize| {
+                [
+                    (local[a] < apron[a]).then_some(-1),
+                    Some(0),
+                    (local[a] >= CHUNK_SIZE - apron[a]).then_some(1),
+                ]
             };
-            for dz in -1..=1 {
-                for dy in -1..=1 {
-                    for dx in -1..=1 {
-                        let n = [side(local[0], dx), side(local[1], dy), side(local[2], dz)];
+            for dz in sides(2).into_iter().flatten() {
+                for dy in sides(1).into_iter().flatten() {
+                    for dx in sides(0).into_iter().flatten() {
+                        let n = [dx, dy, dz];
                         if n != [0, 0, 0] && !touched.contains(&n) {
                             touched.push(n);
                         }
@@ -1155,6 +1164,40 @@ mod tests {
         s.on_voxel_modification(&[modification([0, 0, 0], 8, &[0, 3])]);
         assert_eq!(s.store().edits.len(), 2);
         assert_eq!(s.revision([0, 0, 0]), Some(8));
+    }
+
+    #[test]
+    fn an_edit_re_meshes_the_neighbours_whose_sky_rays_reach_it() {
+        // The baked sky visibility's rays reach dwell_world::SKY_APRON cells into the neighbours:
+        // an edit that far from a border changes the light of the chunk across it.
+        let [ax, ay, _] = dwell_world::SKY_APRON;
+        let (mut s, _) = setup();
+        for c in [[0, 0, 0], [1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0]] {
+            s.on_chunk_data(explicit(c, 0, 0));
+        }
+        s.mesh_dirty([0.0; 3], 100.0, no_clock);
+        flush(&mut s);
+        s.store_mut().meshed_from.clear();
+        // Inside the +X apron (not touching the border), low in the chunk: the +X and −Y
+        // neighbours' rays reach it, the others' do not.
+        let (x, y) = (CHUNK_SIZE - ax, ay - 1);
+        s.on_voxel_modification(&[modification([0, 0, 0], 1, &[(x | (y << 5)) as u16, 2])]);
+        s.mesh_dirty([0.0; 3], 100.0, no_clock);
+        assert_eq!(
+            sorted(s.store().meshed_from.clone()),
+            vec![[0, -1, 0], [0, 0, 0], [1, 0, 0]]
+        );
+        // Just outside the X aprons, high in the chunk: the chunk and the +Y neighbour (the
+        // vertical apron is half a chunk: every voxel is in one vertical neighbour's reach).
+        flush(&mut s);
+        s.store_mut().meshed_from.clear();
+        let (x, y) = (CHUNK_SIZE - ax - 1, ay);
+        s.on_voxel_modification(&[modification([0, 0, 0], 2, &[(x | (y << 5)) as u16, 2])]);
+        s.mesh_dirty([0.0; 3], 100.0, no_clock);
+        assert_eq!(
+            sorted(s.store().meshed_from.clone()),
+            vec![[0, 0, 0], [0, 1, 0]]
+        );
     }
 
     #[test]

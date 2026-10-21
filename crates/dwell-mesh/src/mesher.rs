@@ -16,7 +16,7 @@ use dwell_protocol::CHUNK_SIZE;
 use dwell_world::FaceFrame;
 
 use crate::LengthError;
-use crate::sky::{AO_OPEN, Occupancy, corner_key, key_light, vertex_light};
+use crate::sky::{AO_OPEN, LatticeRays, Occupancy, corner_key, key_light, vertex_light};
 use crate::style::{
     Look, MaterialStyle, cube, fluid_value, material_style, mirror_material, style_of,
 };
@@ -245,16 +245,14 @@ fn cover(k: &Kind) -> Option<&'static ShapeInfo> {
 /// looking along `axis` toward `sign`, whose front cell is `front`: each corner's occlusion level
 /// from the three cells around it in the front layer, and its sky rays (shared by the faces
 /// through the vertex, `rays`).
-#[allow(clippy::too_many_arguments)]
 fn corner_keys(
     cells: &Cells<'_>,
     rays: &mut [u8],
-    (axis, _sign, plane): (usize, i32, i32),
+    (face, plane): (usize, i32),
     [i, j]: [i32; 2],
     front: [i32; 3],
-    normal: [f64; 3],
-    salt: i64,
 ) -> CornerKeys {
+    let axis = FACES[face].0;
     let u = (axis + 1) % 3;
     let v = (axis + 2) % 3;
     let stride = N as usize + 1;
@@ -267,7 +265,7 @@ fn corner_keys(
             p[axis] = plane;
             p[u] = vu;
             p[v] = vv;
-            rays[slot] = cells.sky_rays(p, [0.0; 3], normal, salt);
+            rays[slot] = cells.lattice_rays(p, face);
         }
         corner_key(level, rays[slot])
     })
@@ -293,6 +291,10 @@ struct Cells<'a> {
     padded: &'a [u16],
     /// Which cells block the ambient light, over the chunk and its (sky) apron, face-local.
     occ: &'a Occupancy,
+    /// The lattice vertices' rays for `occ`'s layout.
+    paths: &'static LatticeRays,
+    /// The rays cast from shaped faces' vertices, by point (eighths of a cell) and normal.
+    shaped_rays: std::cell::RefCell<std::collections::HashMap<ShapedKey, u8>>,
     /// The chunk's minimum corner, face-local world cells (the sky rays' turn).
     origin: [i32; 3],
 }
@@ -303,18 +305,37 @@ impl<'a> Cells<'a> {
             kinds,
             padded,
             occ,
+            paths: occ.lattice_paths(),
+            shaped_rays: Default::default(),
             origin,
         }
     }
 
+    /// [`Self::sky_rays`] for the lattice vertex `at` of the axis-aligned face `face`.
+    fn lattice_rays(&self, at: [i32; 3], face: usize) -> u8 {
+        let w: [i64; 3] =
+            std::array::from_fn(|a| (i64::from(self.origin[a]) + i64::from(at[a])) * 8);
+        self.occ
+            .lattice_rays(&self.paths, at, face, [w[0], w[1], w[2], face as i64])
+    }
+
     /// How many sky rays escape from chunk-local point `cell + frac` (cells) on a surface with
     /// unit normal `n` (metres); `salt` tells apart surfaces through one point.
+    /// Shaped faces share their vertices with their neighbours': each point and normal is cast
+    /// once (`shaped_rays`).
     fn sky_rays(&self, cell: [i32; 3], frac: [f64; 3], n: [f64; 3], salt: i64) -> u8 {
         let world: [i64; 3] = std::array::from_fn(|a| {
             (i64::from(self.origin[a]) + i64::from(cell[a])) * 8 + (frac[a] * 8.0).round() as i64
         });
-        self.occ
-            .visible_rays(cell, frac, n, [world[0], world[1], world[2], salt])
+        let key = (world, n.map(|c| (c * 1e6).round() as i64));
+        if let Some(&r) = self.shaped_rays.borrow().get(&key) {
+            return r;
+        }
+        let r = self
+            .occ
+            .visible_rays(cell, frac, n, [world[0], world[1], world[2], salt]);
+        self.shaped_rays.borrow_mut().insert(key, r);
+        r
     }
 
     fn state(&self, x: i32, y: i32, z: i32) -> StateId {
@@ -1071,6 +1092,10 @@ fn inner_block(sky: &[u16]) -> Vec<u16> {
     out
 }
 
+/// A shaped vertex's place in the ray cache: its face-local world point in eighths of a cell, and
+/// its normal in millionths.
+type ShapedKey = ([i64; 3], [i64; 3]);
+
 /// The light key of each corner of a face cell (u0v0, u1v0, u1v1, u0v1; `sky::corner_key`).
 type CornerKeys = [u32; 4];
 
@@ -1093,10 +1118,6 @@ fn mesh_cells(kinds: &Kinds, padded: &[u16], occ: &Occupancy, origin: [i32; 3]) 
     for (face, &(axis, sign)) in FACES.iter().enumerate() {
         let u = (axis + 1) % 3;
         let v = (axis + 2) % 3;
-        // The face's salt in the rays' turn, and its normal (metres).
-        let mut normal = [0.0; 3];
-        normal[axis] = f64::from(sign);
-        let salt = face as i64;
         for d in 0..N {
             mask.fill(0);
             vertex_rays.fill(u8::MAX);
@@ -1158,11 +1179,9 @@ fn mesh_cells(kinds: &Kinds, padded: &[u16], occ: &Occupancy, origin: [i32; 3]) 
                             corner_keys(
                                 &cells,
                                 &mut vertex_rays,
-                                (axis, sign, plane),
+                                (face, plane),
                                 [i, j],
                                 [nx, ny, nz],
-                                normal,
-                                salt,
                             )
                         };
                     any = true;
@@ -1258,12 +1277,10 @@ fn mesh_cells(kinds: &Kinds, padded: &[u16], occ: &Occupancy, origin: [i32; 3]) 
                         i64::from(origin[2]) + i64::from(cz),
                     ];
                     let support = cells.support(cx, cy, cz);
-                    // A plant is lit by the sky its foot sees (no corner occlusion: it is not
-                    // a cell's face, and it blocks no light itself).
-                    let light = vertex_light(
-                        AO_OPEN,
-                        cells.sky_rays([cx, cy, cz], [0.5, 0.0, 0.5], [0.0, 1.0, 0.0], 12),
-                    );
+                    // A plant is lit by the sky its ground sees: the ground's top at the cell's
+                    // corner (no corner occlusion: it is not a cell's face, and it blocks no
+                    // light itself).
+                    let light = vertex_light(AO_OPEN, cells.lattice_rays([cx, cy, cz], 2));
                     cross_voxel(target, &k.style, world, [cx, cy, cz], support, light);
                     if k.style.render == RenderMode::Translucent {
                         target.tag_fluid(k.style.fluid);

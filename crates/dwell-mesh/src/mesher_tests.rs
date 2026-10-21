@@ -167,7 +167,11 @@ fn merges_a_floor_of_one_material_into_one_quad_per_side() {
         .iter()
         .find(|&&q| bounds(&opaque, q) == ([1.0, 0.0, 1.0], [31.0, 0.0, 31.0]))
         .expect("the dark inside of the bottom, one quad");
-    assert!(opaque.light[inside * 4..inside * 4 + 4].iter().all(|&l| l == 0.0));
+    assert!(
+        opaque.light[inside * 4..inside * 4 + 4]
+            .iter()
+            .all(|&l| l == 0.0)
+    );
     let area: f32 = bottoms
         .iter()
         .map(|&q| {
@@ -1445,4 +1449,3 @@ dwell_world::both_faces!(
         }
     }
 );
-
