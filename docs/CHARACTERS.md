@@ -219,6 +219,22 @@ The arms are a **separate view** of the same character, as first-person games do
   `grip_r` socket. Tools come later with an item system: an item is data (`items`), so a pickaxe is
   an entry, and its swing a clip.
 
+### 5.1 Your own body in first person **[in progress]**
+
+The owner (2026-10-21): "I want to see legs in first person, particularly when sliding." The
+answers (question tool):
+
+- **Full body, no head.** In first person you see your own body from the neck down, playing the
+  same clips other players see. The first-person arms view stays as it is, drawn on top; the full
+  body's arms are hidden in first person so there are never two pairs.
+- **Always, when in view.** Look down while walking and you see your feet; slide and the legs come
+  into view at the bottom of the screen.
+- **The constraint** (verbatim): "The main thing to watch out for with full body draw is not
+  clipping the camera into the player model." No body geometry may come inside the camera's near
+  plane or fill the view, in any clip or pose, looking fully down or up, on both faces.
+
+(Design: in progress.)
+
 ## 6. Poses and animation
 
 Clips are keyed rotations on the rig (and a root offset for bob), sampled and layered:
