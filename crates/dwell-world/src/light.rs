@@ -497,20 +497,49 @@ impl LightMap {
             return;
         }
         let is_gone = |slots: &[u32], n: u32| slots.binary_search(&n).is_ok();
-        // Each held cell next to a chunk going, the side it faces it from, and the light (sky,
-        // block) of the cell that goes.
-        let mut seeds: Vec<(P, usize, u8)> = Vec::new();
+        // Each held cell next to a chunk going that its going may change, per channel: the side
+        // it faces it from and the light of the cell that goes. One may be cleared only if the
+        // light it has could have come from there; one under the chunk may also take the open
+        // sky now. The rest (most of them: dark ones beside dark ones, and open air beside open
+        // air, which loses a level across) are left out.
+        let t = self.tunables;
+        let mut from: [Vec<(P, usize, u8)>; 2] = [Vec::new(), Vec::new()];
         for &s in &gone {
-            for d in 0..6 {
-                let n = self.slots[s as usize].near[d];
+            let near = self.slots[s as usize].near;
+            for (d, &n) in near.iter().enumerate() {
                 if n == NONE || is_gone(&gone, n) {
                     continue;
                 }
-                // Every one, dark ones too: the cell next to it may now take the open sky.
+                let vertical = d / 2 == 1;
+                let fall = if vertical {
+                    t.falloff_vertical
+                } else {
+                    t.falloff_across
+                };
+                let mut under = None;
                 for p in border(s, d) {
                     let v = self.slots[s as usize].get(p.i);
-                    if let Some(q) = self.step(p, d) {
-                        seeds.push((q, d, v));
+                    let Some(q) = self.step(p, d) else {
+                        continue;
+                    };
+                    let below = *under.get_or_insert_with(|| vertical && DIRS[d][1] == -self.up(q));
+                    let nv = self.slots[q.slot as usize].get(q.i);
+                    for (k, ch) in [Channel::Sky, Channel::Block].into_iter().enumerate() {
+                        let (ov, lv) = ((v >> ch.shift()) & 15, (nv >> ch.shift()) & 15);
+                        // `passed` gives at most `ov − fall`, or the full level straight down.
+                        let reach = if below && ch == Channel::Sky && ov == LIGHT_MAX {
+                            LIGHT_MAX
+                        } else {
+                            ov.saturating_sub(fall)
+                        };
+                        // Full sky light under the chunk (it filters nothing) takes the open sky
+                        // now at the same level.
+                        let stays = below && ch == Channel::Sky && lv == LIGHT_MAX;
+                        let may_clear = lv > 0 && lv <= reach && !stays;
+                        let may_gain = below && ch == Channel::Sky && lv < LIGHT_MAX;
+                        if may_clear || may_gain {
+                            from[k].push((q, d, ov));
+                        }
                     }
                 }
             }
@@ -519,12 +548,8 @@ impl LightMap {
             self.release(s);
         }
         let mut cache = VoxelCache::new(voxels);
-        for ch in [Channel::Sky, Channel::Block] {
-            let from: Vec<(P, usize, u8)> = seeds
-                .iter()
-                .map(|&(q, d, v)| (q, d, (v >> ch.shift()) & 15))
-                .collect();
-            self.run_from(&mut cache, ch, &[], &from, &[]);
+        for (k, ch) in [Channel::Sky, Channel::Block].into_iter().enumerate() {
+            self.run_from(&mut cache, ch, &[], &from[k], &[]);
         }
         self.finish();
     }
