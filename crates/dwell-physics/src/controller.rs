@@ -10,7 +10,7 @@ use dwell_world::{
 };
 use rapier3d_f64::prelude::*;
 
-use crate::config::PlayerControllerConfig;
+use crate::config::{ImpactSurfaces, PlayerControllerConfig};
 use crate::frame::{FaceQuery, Frame};
 use crate::physics::{BodyHandle, DVec3, Layer, Physics, Vec3, groups};
 use crate::query::{Capsule, GroundRef, ProbeHit, VoxelQuery};
@@ -408,9 +408,6 @@ struct Player {
     collider: ColliderHandle,
     /// Push-out normals (toward the player, world) of the body's contacts in the last step.
     contacts: Vec<DVec3>,
-    /// Where the body was (world) and its half height when `contacts` were read: where its contacts
-    /// were met, before this tick's passes move it (a step-up lifts it).
-    contact_at: (DVec3, f32),
     /// Upward velocity the contacts gave the body by deflecting last tick's horizontal drive.
     drive_lift: f32,
     /// The body's velocity (world) going into the physics step: what the controller set, plus
@@ -530,7 +527,6 @@ impl Players {
             body: BodyHandle(body),
             collider,
             contacts: Vec::new(),
-            contact_at: (DVec3::ZERO, 0.0),
             drive_lift: 0.0,
             pre_step: Vec3::ZERO,
             touched: Vec::new(),
@@ -774,7 +770,6 @@ impl Players {
         }
         for p in self.players.iter_mut().flatten() {
             physics.contact_normals(p.body, MAX_CONTACTS, &mut p.contacts);
-            p.contact_at = (physics.position(p.body), p.cfg.half_height(p.c.crouching));
         }
         // Pass-major, like the PPC's Quantum system group.
         type Pass = fn(&mut Players, usize, &mut VoxelWorld, &mut Physics);
@@ -2203,16 +2198,22 @@ impl Players {
     /// Dwell (§6.10): this tick's hit, `max(0, −v · n)` for the body's velocity `v` going into the
     /// step that met the surface and its normal `n`, the largest over the tick's new contacts,
     /// its landing (the ground's normal) and a rise the ceiling probe stopped. Flight, swimming and
-    /// climbing are exempt, as they always were from falls. A contact with an obstacle the
-    /// controller could step up hits as the ramp it stands for (`damage.impact_step_as_ramp`).
-    fn step_impact(&mut self, i: usize, world: &mut VoxelWorld, physics: &mut Physics) {
+    /// climbing are exempt, as they always were from falls. Only the surfaces
+    /// `damage.impact_surfaces` names count: by default the ground, a normal no steeper than
+    /// `probes.max_slope_angle` (walls, steep faces and ceilings never hit).
+    fn step_impact(&mut self, i: usize, _: &mut VoxelWorld, _: &mut Physics) {
         let p = self.players[i].as_mut().expect("live");
         let frame = Self::frame(p);
         let v = frame.v(p.pre_step);
         let c = &p.c;
         let exempt = c.fly.flying || c.swim.swimming || c.climb.climbing;
+        let surfaces = p.cfg.damage.impact_surfaces;
+        let max_slope = p.cfg.probes.max_slope_angle;
         let mut hit = (0.0f32, Vec3::ZERO);
         let mut meet = |n: Vec3| {
+            if surfaces == ImpactSurfaces::Ground && slope_angle(n) > max_slope {
+                return; // a wall, a steep face or a ceiling: not the ground
+            }
             let speed = (-v.dot(n)).max(0.0);
             if speed > hit.0 {
                 hit = (speed, n);
@@ -2226,10 +2227,6 @@ impl Players {
             if p.ceiling_stop {
                 meet(-Vec3::Y);
             }
-            let (at, half_height) = p.contact_at;
-            let center = frame.p(at);
-            let vq = VoxelQuery::new(world, physics);
-            let q = FaceQuery { q: &vq, f: frame };
             for &n in &p.contacts {
                 if p.touched.iter().any(|t| t.dot(n) > SAME_CONTACT_DOT) {
                     continue; // the same contact as last tick's: hit once
@@ -2238,7 +2235,7 @@ impl Players {
                 if local.y > FLOOR_MIN_UP && p.c.ground.was_grounded {
                     continue; // the ground followed, stepped or slid on, or the landing just met
                 }
-                meet(Self::step_as_ramp(&q, p, center, half_height, local).unwrap_or(local));
+                meet(local);
             }
         }
         p.touched.clone_from(&p.contacts);
@@ -2248,66 +2245,6 @@ impl Players {
             c.impact_speed = hit.0;
             c.impact_normal = hit.1;
         }
-    }
-
-    /// The normal a contact `n` (face-local) hits with when its obstacle is one the controller
-    /// could step up (§6.10, `damage.impact_step_as_ramp`): its top, read just past the contact as
-    /// the step-up reads a step's, walkable, no more than `movement.max_step_height` above the feet
-    /// (`center` and `half_height`: the body where it met it), with room for the capsule on it.
-    /// Such an obstacle hits as a ramp rising its height (from the ground under the body, at most
-    /// the step height) over `damage.impact_step_ramp_run`, facing the mover; a contact already
-    /// flatter than that ramp (the step's edge met from above) keeps its own normal. `None`: a wall.
-    fn step_as_ramp(
-        q: &FaceQuery,
-        p: &Player,
-        center: DVec3,
-        half_height: f32,
-        n: Vec3,
-    ) -> Option<Vec3> {
-        let cfg = &p.cfg;
-        let d = &cfg.damage;
-        let step = cfg.movement.max_step_height;
-        let side = flat(n);
-        if !d.impact_step_as_ramp || side.length() < MIN_DIRECTION || d.impact_step_ramp_run <= 0.0
-        {
-            return None;
-        }
-        let side = normalized(side);
-        let feet = center.y - f64::from(half_height);
-        let reach = cfg.body.radius + STEP_FACE_REACH + cfg.advanced.step_probe_distance;
-        let mut probe = center - (side * reach).as_dvec3();
-        probe.y = feet + f64::from(step + STEP_TOP_CLEARANCE);
-        let top = q.cast_ray(
-            probe,
-            -Vec3::Y,
-            step + STEP_TOP_CLEARANCE,
-            Some(p.body),
-            true,
-        )?;
-        let lift = (top.point.y - feet) as f32;
-        if top.distance <= MIN_STEP
-            || lift > step
-            || slope_angle(top.normal) > cfg.probes.max_slope_angle
-            || Self::overlaps_at(
-                q,
-                p,
-                center + DVec3::new(0.0, f64::from(lift.max(0.0)), 0.0),
-            )
-        {
-            return None;
-        }
-        // The obstacle's height: from the ground under the body (in the air, the ground it is
-        // over; none within a step: a full step's).
-        let mut under = center;
-        under.y = top.point.y;
-        let height = q
-            .cast_ray(under, -Vec3::Y, step, Some(p.body), true)
-            .map_or(step, |g| g.distance);
-        if height <= MIN_STEP {
-            return None;
-        }
-        let ramp = normalized(side * height + Vec3::Y * d.impact_step_ramp_run);
-        (ramp.y > n.y).then_some(ramp)
     }
 
     // 10 — PPCAggregateSystem

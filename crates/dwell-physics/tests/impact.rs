@@ -7,11 +7,17 @@
 
 mod common;
 
+/// What 5, 10, 20 and 30 m drops onto flat ground dealt before walls and ceilings stopped hurting.
+const DROP_5: i32 = 16;
+const DROP_10: i32 = 64;
+const DROP_20: i32 = 131;
+const DROP_30: i32 = 181;
+
 use common::*;
 use dwell_blocks::StateId;
 use dwell_blocks::require;
 use dwell_physics::Vec3;
-use dwell_physics::config::PlayerControllerConfig;
+use dwell_physics::config::{ImpactSurfaces, PlayerControllerConfig};
 use dwell_physics::controller::{Input, PlayerHandle, events};
 use dwell_world::ramps::gentle_cell;
 use dwell_world::rows_for_m;
@@ -74,6 +80,18 @@ fn a_perpendicular_landing_on_flat_ground_damages_as_before() {
         approx(n.y, 1.0, 1e-4),
         "the floor's normal, face-local: {n}"
     );
+}
+
+#[test]
+fn drops_of_5_10_20_and_30_m_deal_what_they_did_before_ground_only() {
+    // Landings keep the angle rule: pinned from the code before walls and ceilings stopped hurting.
+    for (height, expected) in [(5.0, DROP_5), (10.0, DROP_10), (20.0, DROP_20), (30.0, DROP_30)] {
+        let mut w = PlayerTestWorld::new();
+        w.floor();
+        let e = w.spawn(Vec3::new(0.5, height, 0.5));
+        let dealt = hits(&mut w, e, ticks(3.0));
+        assert_eq!(dealt, vec![expected], "{height} m");
+    }
 }
 
 #[test]
@@ -215,13 +233,28 @@ fn wall_ahead() -> PlayerTestWorld {
 }
 
 #[test]
-fn launched_into_a_wall_at_25_m_s_hurts_once() {
+fn launched_into_a_wall_at_25_m_s_does_not_hurt() {
+    // Only the ground hurts (owner, 2026-10-21): the wall took 104 when every surface did. The
+    // landing after it, from 3 m, is under the threshold.
     let mut w = wall_ahead();
     let e = w.spawn(Vec3::new(0.5, 3.0, 0.5));
     w.kick(0, e, Vec3::new(0.0, 0.0, 25.0));
     let dealt = hits_at(&mut w, e, ticks(1.5));
-    // (25 − 12) × 8 = 104, less the little the fall turned the velocity: one hit, not one a tick
-    // while the launch keeps pressing the body into the wall.
+    assert_eq!(dealt, Vec::new());
+    assert!(w.pos(e).z > 5.0 && w.pos(e).z < 6.0, "met the wall: {}", w.pos(e));
+}
+
+#[test]
+fn walls_and_ceilings_hurt_again_when_the_config_says_so() {
+    // The rule is data: `impact_surfaces: All` counts every contact, as before.
+    let mut cfg = PlayerControllerConfig::default();
+    cfg.damage.impact_surfaces = ImpactSurfaces::All;
+    let mut w = PlayerTestWorld::with_config(cfg);
+    w.floor_at(0, 32);
+    w.fill(-8, 0, 6, 8, 9, 6, cube_block());
+    let e = w.spawn(Vec3::new(0.5, 3.0, 0.5));
+    w.kick(0, e, Vec3::new(0.0, 0.0, 25.0));
+    let dealt = hits_at(&mut w, e, ticks(1.5));
     assert_eq!(dealt.len(), 1, "{dealt:?}");
     assert!(dealt[0].0 >= 100, "{dealt:?}");
     let n = dealt[0].1;
@@ -274,30 +307,27 @@ fn flying_into_a_wall_does_not_hurt() {
 // --- ceilings -----------------------------------------------------------------------------------
 
 #[test]
-fn a_hard_ceiling_hit_hurts() {
-    // A ceiling 4 m up; launched up at 25 m/s from the floor: ~23 m/s at the ceiling.
+fn a_hard_ceiling_hit_does_not_hurt() {
+    // A ceiling 4 m up; launched up at 25 m/s from the floor: ~23 m/s at the ceiling, which took
+    // ~88 when every surface hurt. Only the ground does now; the fall back is under 4 m.
     let mut w = PlayerTestWorld::new();
     w.floor();
     w.fill(-8, 4, -8, 8, 4, 8, cube_block());
     let e = w.spawn(Vec3::new(0.5, 0.0, 0.5));
     w.step(5);
     w.kick(w.tick, e, Vec3::new(0.0, 25.0, 0.0));
+    let mut top = 0.0f32;
     let mut dealt = Vec::new();
-    let mut normal = Vec3::ZERO;
-    for _ in 0..ticks(0.5) {
+    for _ in 0..ticks(1.5) {
         w.step(1);
+        top = top.max(w.feet(e));
         let d = hurt(&w, e);
         if d > 0 {
             dealt.push(d);
-            normal = w.c(e).impact_normal;
         }
     }
-    assert_eq!(dealt.len(), 1, "{dealt:?}");
-    assert!(dealt[0] > 60, "{dealt:?}");
-    assert!(
-        approx(normal.y, -1.0, 1e-3),
-        "the ceiling's normal: {normal}"
-    );
+    assert!(top > 1.5, "reached the ceiling: {top}");
+    assert_eq!(dealt, Vec::<i32>::new());
 }
 
 #[test]
@@ -425,65 +455,30 @@ fn launch_into(rows: i32, speed: f32, height: f32) -> Run {
     out
 }
 
-/// The ramp a ½ m step counts as: ½ m over one cell's run, facing the mover (−z).
-fn step_ramp_normal() -> Vec3 {
-    Vec3::new(0.0, 1.0, -0.5).normalize()
-}
-
 /// Launched off the floor (feet 0.2 m up) into a ½ m step's side: its top 0.3 m over the feet, in
 /// step-up reach. (Running along the ground the step-up takes it, at any speed: no hit at all.)
 const HOP: f32 = 0.2;
 
 #[test]
-fn a_14_m_s_slide_into_a_half_metre_step_does_not_hurt() {
-    // The sprint slide's top speed into the side of one ½ m step, off the ground: a ramp's share,
-    // ~6.6 m/s, not a wall's 14.7 (which hurt: 21 points).
-    let r = launch_into(1, 14.0, HOP);
-    assert_eq!(r.dealt, Vec::new(), "fastest {}", r.fastest);
-    assert!(r.fastest < 8.0, "{}", r.fastest);
-}
-
-#[test]
-fn a_25_m_s_launch_into_a_half_metre_step_hurts_as_a_ramp() {
-    // Into the ramp's normal: 25 × sin 26.57° ≈ 11.2 m/s (and the little it fell), under the
-    // 12 m/s threshold, where the 1 m wall below takes 104.
-    let r = launch_into(1, 25.0, HOP);
-    let ramp = -Vec3::new(0.0, 0.0, 25.0).dot(step_ramp_normal());
-    assert!(
-        r.fastest > ramp - 0.5 && r.fastest < ramp + 1.0,
-        "{} vs {ramp}",
-        r.fastest
-    );
-    let worst = r.dealt.iter().map(|d| d.0).max().unwrap_or(0);
-    assert!(worst < 10, "{:?}", r.dealt);
-    // Faster still, it hurts, by the ramp's share of the speed.
-    let r = launch_into(1, 40.0, HOP);
-    let ramp = -Vec3::new(0.0, 0.0, 40.0).dot(step_ramp_normal());
-    let expected = PlayerControllerConfig::default().damage.impact_damage(ramp);
-    assert_eq!(r.dealt.len(), 1, "{:?}", r.dealt);
-    let (dealt, n) = r.dealt[0];
-    assert!(
-        dealt >= expected && dealt <= expected + 8,
-        "{dealt} vs {expected}"
-    );
-    assert!(n.dot(step_ramp_normal()) > 0.999, "the step's ramp: {n}");
-}
-
-#[test]
-fn a_25_m_s_launch_into_a_metre_tall_obstacle_still_hurts_as_a_wall() {
-    // Two ½ m cells (a full 1 m block) are too tall to step: a wall, on the ground or off it.
-    for height in [0.0, HOP] {
-        let r = launch_into(2, 25.0, height);
-        assert_eq!(r.dealt.len(), 1, "{height}: {:?}", r.dealt);
-        assert!(r.dealt[0].0 >= 100, "{height}: {:?}", r.dealt);
-        assert!(approx(r.dealt[0].1.z, -1.0, 1e-3), "{:?}", r.dealt);
+fn launches_into_a_half_metre_step_or_a_metre_tall_obstacle_do_not_hurt() {
+    // A step's side is a wall: no damage at any speed (a ½ m step hurt as a ramp, and a 1 m block
+    // as a wall, ≥ 100 at 25 m/s, before only the ground hurt).
+    for (rows, speed, height) in [
+        (1, 14.0, HOP),
+        (1, 25.0, HOP),
+        (1, 40.0, HOP),
+        (2, 25.0, 0.0),
+        (2, 25.0, HOP),
+    ] {
+        let r = launch_into(rows, speed, height);
+        assert_eq!(r.dealt, Vec::new(), "{rows} rows at {speed} m/s, {height} m up");
     }
 }
 
 #[test]
-fn hitting_a_step_edge_from_lower_in_the_air_hurts_as_a_ramp() {
+fn hitting_a_step_edge_from_lower_in_the_air_does_not_hurt_much() {
     // Lower over the floor the capsule's base meets the step's top edge (a normal partly up), not
-    // its side: the ramp too.
+    // its side: ground by its own normal, a glancing share of the speed.
     let r = launch_into(1, 25.0, 0.3);
     let worst = r.dealt.iter().map(|d| d.0).max().unwrap_or(0);
     assert!(worst < 10, "{:?} (fastest {})", r.dealt, r.fastest);
@@ -496,22 +491,4 @@ fn running_into_a_half_metre_step_at_any_speed_steps_up() {
         let r = launch_into(1, speed, 0.0);
         assert_eq!(r.fastest, 0.0, "{speed}");
     }
-}
-
-#[test]
-fn a_step_is_a_wall_when_the_config_says_so() {
-    // The rule is data: off, the ½ m step's side is a wall again.
-    let mut cfg = PlayerControllerConfig::default();
-    cfg.damage.impact_step_as_ramp = false;
-    let mut w = PlayerTestWorld::with_config(cfg);
-    w.floor_at(0, 32);
-    for z in 3..=13 {
-        for x in -8..=8 {
-            w.set_cell(x, 0, z, cube_block());
-        }
-    }
-    let e = w.spawn(Vec3::new(0.5, HOP, 2.0));
-    w.kick(0, e, Vec3::new(0.0, 0.0, 25.0));
-    let dealt = hits_at(&mut w, e, ticks(1.0));
-    assert!(dealt.iter().any(|d| d.0 >= 100), "{dealt:?}");
 }
