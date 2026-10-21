@@ -53,11 +53,26 @@ impl Flood {
         [f32::from(sky_of(p)) / 15.0, f32::from(block_of(p)) / 15.0]
     }
 
-    /// The light at a shaped face's point `p` (in the cell, 0–1) with cell-space normal `n`: the
-    /// cell half a cell out along the normal.
-    pub(crate) fn at_point(&self, cell: [i32; 3], p: [f64; 3], n: [f64; 3]) -> [f32; 2] {
-        let c: [i32; 3] = std::array::from_fn(|a| cell[a] + (p[a] + 0.5 * n[a]).floor() as i32);
-        self.cell(c)
+    /// The light of a shaped face with cell-space normal `n` in cell `cell`: the brightest of the
+    /// cell itself (a shaped block lets light in) and the cells the face looks toward along each
+    /// axis it leans on (a slope's above and in front). A sample at the face's point could land in
+    /// the solid next to a corner on the cell's edge.
+    pub(crate) fn shaped(&self, cell: [i32; 3], n: [f64; 3]) -> [f32; 2] {
+        let mut best = self.packed(cell);
+        for a in 0..3 {
+            if n[a].abs() > 0.3 {
+                let mut c = cell;
+                c[a] += if n[a] > 0.0 { 1 } else { -1 };
+                let p = self.packed(c);
+                if sky_of(p) + block_of(p) > sky_of(best) + block_of(best) {
+                    best = p;
+                }
+            }
+        }
+        [
+            f32::from(sky_of(best)) / 15.0,
+            f32::from(block_of(best)) / 15.0,
+        ]
     }
 
     /// The sky and block light, in quarter levels, of the corner toward `du` along `u` and `dv`

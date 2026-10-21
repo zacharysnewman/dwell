@@ -3,8 +3,8 @@
 //! terrain's chunks in a 9 × 9 chunk square around each seed's spawn on each face (every row that
 //! holds ground and the row over it), loads them into a lit world nearest first as the streamer
 //! does, then meshes them with and without the light, digs a 2 × 2 m tunnel 8 m into the ground at
-//! the spawn and fills it back. Prints per face: chunks held, light ms per chunk loaded, the light
-//! arrays held (MB), mesh ms per chunk unlit and lit, and the edit's update ms (dig, fill).
+//! the spawn and fills it back, and roofs 16 m square over it and takes the roof away. Prints per face: chunks held, light ms per chunk loaded, the light
+//! arrays held (MB), mesh ms per chunk unlit and lit, and the edits' update ms (dig, fill, roof, unroof).
 
 use std::time::Instant;
 
@@ -32,7 +32,7 @@ fn main() {
         seeds = vec![7, 1, 42];
     }
     println!(
-        "face held load_ms_per_chunk light_MB full_arrays mesh_ms_unlit mesh_ms_lit dig_ms fill_ms"
+        "face held load_ms_per_chunk light_MB full_arrays mesh_ms_unlit mesh_ms_lit dig_ms fill_ms roof_ms unroof_ms"
     );
     for face in [Face::A, Face::B] {
         let f = if face == Face::A {
@@ -42,7 +42,7 @@ fn main() {
         };
         let (mut held, mut load_ms, mut bytes, mut full) = (0usize, 0.0, 0usize, 0usize);
         let (mut meshed, mut unlit_ms, mut lit_ms) = (0usize, 0.0, 0.0);
-        let (mut dig_ms, mut fill_ms) = (0.0, 0.0);
+        let (mut dig_ms, mut fill_ms, mut roof_ms, mut unroof_ms) = (0.0, 0.0, 0.0, 0.0);
         for &seed in &seeds {
             let terrain = BifacialTerrain::new(seed);
             let local = terrain.local(face);
@@ -112,11 +112,11 @@ fn main() {
                 lit_ms += t.elapsed().as_secs_f64() * 1000.0;
                 meshed += 1;
             }
-            // A tunnel 8 m long, 2 m wide and tall, from 1 m under the spawn's ground.
+            // A trench into the ground at the spawn, 8 m long, 2 m wide and deep, open to the sky.
             let g = local.ground_y(sx, sz).unwrap_or(0);
             let cells: Vec<[i32; 3]> = (0..8)
                 .flat_map(|x| {
-                    (0..2).flat_map(move |z| (0..4).map(move |y| [sx + x, g - 6 + y, sz + z]))
+                    (0..2).flat_map(move |z| (0..4).map(move |y| [sx + x, g - 3 + y, sz + z]))
                 })
                 .map(|p| f.cell(p))
                 .collect();
@@ -136,16 +136,35 @@ fn main() {
             let t = Instant::now();
             lit.light_edited(&cells);
             fill_ms += t.elapsed().as_secs_f64() * 1000.0;
+            // A 16 m square roof 4 m over the ground, then taken away.
+            let roof: Vec<[i32; 3]> = (0..16 * 16)
+                .map(|i| f.cell([sx - 8 + i % 16, g + 8, sz - 8 + i / 16]))
+                .collect();
+            let rock = dwell_blocks::require("dwell:stone[flooded=false]");
+            for &[x, y, z] in &roof {
+                lit.set_voxel(x, y, z, rock);
+            }
+            let t = Instant::now();
+            lit.light_edited(&roof);
+            roof_ms += t.elapsed().as_secs_f64() * 1000.0;
+            for &[x, y, z] in &roof {
+                lit.set_voxel(x, y, z, 0);
+            }
+            let t = Instant::now();
+            lit.light_edited(&roof);
+            unroof_ms += t.elapsed().as_secs_f64() * 1000.0;
         }
         let k = seeds.len() as f64;
         println!(
-            "{face:?} {held} {:.3} {:.1} {full} {:.2} {:.2} {:.2} {:.2}",
+            "{face:?} {held} {:.3} {:.1} {full} {:.2} {:.2} {:.2} {:.2} {:.2} {:.2}",
             load_ms / held as f64,
             bytes as f64 / 1e6,
             unlit_ms / meshed as f64,
             lit_ms / meshed as f64,
             dig_ms / k,
-            fill_ms / k
+            fill_ms / k,
+            roof_ms / k,
+            unroof_ms / k
         );
     }
 }

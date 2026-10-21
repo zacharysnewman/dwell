@@ -92,9 +92,16 @@ pub trait ChunkStore {
     fn mesh_block(&mut self, coord: Coord) -> Vec<u16> {
         self.padded_chunk(coord)
     }
-    /// An all-air chunk is now held (`held`), or no longer: nothing is stored for it, but the
-    /// flood light holds it (docs/DAY_NIGHT.md §10).
-    fn air_chunk(&mut self, _coord: Coord, _held: bool) {}
+    /// An all-air chunk is no longer held: nothing is stored for it, but the flood light held it
+    /// (docs/DAY_NIGHT.md §10).
+    fn air_chunk_gone(&mut self, _coord: Coord) {}
+    /// Lights a chunk now held (stored, or all air): the streamer calls it within its per-frame
+    /// budget, after the chunk arrived ([`ChunkStreamer::mesh_dirty`]).
+    fn light_chunk(&mut self, _coord: Coord) {}
+    /// Whether it keeps a flood light (chunks then wait to be lit before they are meshed).
+    fn keeps_light(&self) -> bool {
+        false
+    }
     /// The flood light of the chunk with a one-cell apron, the mesher's padded layout (empty: no
     /// flood light, meshed as open sky).
     fn mesh_light(&mut self, _coord: Coord) -> Vec<u8> {
@@ -110,16 +117,8 @@ pub trait ChunkStore {
 /// With [`VoxelWorld::enable_light`] (the client) it keeps the flood light of what it holds.
 impl ChunkStore for VoxelWorld {
     fn set_chunk(&mut self, coord: Coord, revision: u32, voxels: &[u16]) {
-        let c = ChunkCoord::from_array(coord);
-        // An all-air chunk stored to be edited is lit as it was.
-        let still_air = self.find(c).is_none()
-            && self.light().is_some_and(|l| l.holds(c))
-            && voxels.iter().all(|&v| v == 0);
         if let Some(chunk) = Chunk::from_voxels(voxels, revision) {
-            self.put(c, chunk);
-            if !still_air {
-                self.light_load(c);
-            }
+            self.put(ChunkCoord::from_array(coord), chunk);
         }
     }
     fn remove_chunk(&mut self, coord: Coord) {
@@ -146,13 +145,14 @@ impl ChunkStore for VoxelWorld {
             self.light_edited(&cells);
         }
     }
-    fn air_chunk(&mut self, coord: Coord, held: bool) {
-        let c = ChunkCoord::from_array(coord);
-        if held {
-            self.light_load(c);
-        } else {
-            self.light_unload(c);
-        }
+    fn air_chunk_gone(&mut self, coord: Coord) {
+        self.light_unload(ChunkCoord::from_array(coord));
+    }
+    fn light_chunk(&mut self, coord: Coord) {
+        self.light_load(ChunkCoord::from_array(coord));
+    }
+    fn keeps_light(&self) -> bool {
+        self.light().is_some()
     }
     fn mesh_light(&mut self, coord: Coord) -> Vec<u8> {
         self.padded_light(ChunkCoord::from_array(coord))
@@ -385,6 +385,10 @@ pub struct ChunkStreamer<S, G, M: Mesher, V> {
     resyncing: HashSet<Coord>,
     resyncs: u32,
     token: u64,
+    /// Chunks that arrived and are not lit yet (`ChunkStore::light_chunk`), in arrival order: lit
+    /// within `mesh_dirty`'s budget, and no chunk is meshed while it or a neighbour waits here.
+    unlit: std::collections::VecDeque<Coord>,
+    unlit_set: HashSet<Coord>,
     /// First worldgen failure (the workers are unusable).
     pub error: Option<String>,
 }
@@ -424,6 +428,8 @@ where
             resyncing: HashSet::default(),
             resyncs: 0,
             token: 0,
+            unlit: Default::default(),
+            unlit_set: HashSet::default(),
             error: None,
         }
     }
@@ -501,9 +507,10 @@ where
         for &key in coords {
             self.forget(key);
             self.resyncing.remove(&key);
+            self.unlit_set.remove(&key);
             if self.loaded.remove(&key).is_some() {
                 if self.air.remove(&key) {
-                    self.store.air_chunk(key, false);
+                    self.store.air_chunk_gone(key);
                 } else {
                     self.store.remove_chunk(key);
                 }
@@ -577,11 +584,22 @@ where
         budget_ms: f64,
         mut now: impl FnMut() -> f64,
     ) -> usize {
+        let deadline = now() + budget_ms;
+        // Chunks that arrived are lit first, nearest the arrival order, for as much of the budget
+        // as they take (at least one a call).
+        while let Some(c) = self.unlit.pop_front() {
+            if self.unlit_set.remove(&c) {
+                self.store.light_chunk(c);
+            }
+            if now() >= deadline {
+                break;
+            }
+        }
+        self.relit();
         let room = self.mesher.capacity().saturating_sub(self.meshing.len());
         if self.dirty.len() == 0 || room == 0 {
             return 0;
         }
-        let deadline = now() + budget_ms;
         let distance = |c: &Coord| -> f64 {
             let m = dwell_world::chunk_centre_m(ChunkCoord::from_array(*c));
             (0..3).map(|i| (m[i] - center[i]).powi(2)).sum()
@@ -592,9 +610,11 @@ where
             .into_iter()
             .filter(|c| {
                 !self.meshing.contains_key(c)
-                    && !NEIGHBOURS
-                        .iter()
-                        .any(|d| self.generating.contains_key(&add(*c, *d)))
+                    && !self.unlit_set.contains(c)
+                    && !NEIGHBOURS.iter().any(|d| {
+                        let n = add(*c, *d);
+                        self.generating.contains_key(&n) || self.unlit_set.contains(&n)
+                    })
             })
             .collect();
         // Stable: equal distances keep their order.
@@ -655,7 +675,14 @@ where
         self.loaded.insert(key, revision);
         self.dirty.mark(key);
         self.neighbours_changed(key);
-        self.relit();
+        self.queue_light(key);
+    }
+
+    /// The chunk arrived: lit later, within `mesh_dirty`'s budget.
+    fn queue_light(&mut self, key: Coord) {
+        if self.store.keeps_light() && self.unlit_set.insert(key) {
+            self.unlit.push_back(key);
+        }
     }
 
     /// Marks the chunks whose flood light changed for meshing (docs/DAY_NIGHT.md §10): light
@@ -675,9 +702,8 @@ where
             self.store.remove_chunk(key);
         }
         self.loaded.insert(key, 0);
-        let was_air = !self.air.insert(key);
-        if !was_air {
-            self.store.air_chunk(key, true);
+        if self.air.insert(key) {
+            self.queue_light(key);
         }
         self.dirty.remove(&key);
         self.meshing.remove(&key);
@@ -687,7 +713,6 @@ where
         if replaced {
             self.neighbours_changed(key);
         }
-        self.relit();
     }
 
     /// Writes cells on the client alone (edit prediction, §6.5): in loaded chunks only (an Air

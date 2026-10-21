@@ -843,10 +843,7 @@ fn shaped_voxel(b: &mut Builder, cells: &Cells<'_>, k: &Kind, x: i32, y: i32, z:
             .iter()
             .map(|p| vertex_light(AO_OPEN, cells.sky_rays([x, y, z], *p, n_m, salt)))
             .collect();
-        let flood: Vec<[f32; 2]> = pts
-            .iter()
-            .map(|p| cells.flood.at_point([x, y, z], *p, normal))
-            .collect();
+        let flood = vec![cells.flood.shaped([x, y, z], normal); pts.len()];
         b.polygon(
             &pts,
             at,

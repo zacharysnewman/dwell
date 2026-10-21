@@ -244,3 +244,59 @@ fn lamp() -> u16 {
         })
     })
 }
+
+dwell_world::both_faces!(
+    /// Open terrain under the full sky keeps the 0.22.5 look: no up-facing vertex the sky rays see
+    /// takes much less than the full sky light (a level off next to an overhang is real). A ramp's corner on its cell's edge once sampled the solid
+    /// cell beside it and drew a dark wedge on every terrace (red before `Flood::shaped`).
+    fn open_terrain_takes_the_full_sky(f: FaceFrame) {
+        use dwell_world::GENERATOR_TERRAIN;
+        use dwell_worldgen::{air_test_for, generator_for};
+        let seed = 7;
+        let air = air_test_for(GENERATOR_TERRAIN, seed);
+        let mut src = VoxelWorld::new(generator_for(GENERATOR_TERRAIN, seed), Some(air.clone()));
+        let mut lit = VoxelWorld::streamed();
+        lit.enable_light();
+        let terrain = dwell_worldgen::BifacialTerrain::new(seed);
+        let sp = terrain.local(f.face).spawn_point();
+        let local = ChunkCoord::new(
+            (sp[0] as i32).div_euclid(N),
+            ((sp[1] / CELL_H) as i32).div_euclid(N),
+            (sp[2] as i32).div_euclid(N),
+        );
+        let at = |dx: i32, dy: i32, dz: i32| {
+            f.chunk(ChunkCoord::new(local.x + dx, local.y + dy, local.z + dz))
+        };
+        for dy in -2..=2 {
+            for dz in -1..=1 {
+                for dx in -1..=1 {
+                    let c = at(dx, dy, dz);
+                    if !air(c) {
+                        let ch = src.read(c).clone();
+                        lit.put(c, ch);
+                    }
+                    lit.light_load(c);
+                }
+            }
+        }
+        let (mut checked, mut dark) = (0, 0);
+        for dy in -1..=1 {
+            let c = at(0, dy, 0);
+            let block = src.padded_box(c, SKY_APRON);
+            let light = lit.padded_light(c);
+            let m = mesh_chunk_lit(&block, &light, f.is_b(), [c.x * N, c.y * N, c.z * N])
+                .expect("block");
+            for mesh in [&m.opaque, &m.cutout] {
+                for i in 0..mesh.positions.len() / 3 {
+                    let up = f64::from(mesh.normals[i * 3 + 1]) * f.sign_f64();
+                    if up > 0.2 && mesh.light[i] > 0.5 {
+                        checked += 1;
+                        dark += usize::from(mesh.flood[i * 2] < 0.9);
+                    }
+                }
+            }
+        }
+        assert!(checked > 1000, "{checked} vertices");
+        assert_eq!(dark, 0, "of {checked} open up-facing vertices");
+    }
+);
