@@ -260,6 +260,11 @@ impl TerrainGenerator {
         .with_placements(&PLACEMENTS)
     }
 
+    /// The world seed this generator was made from (a face's own seed, `bifacial::face_seed`).
+    pub fn seed(&self) -> u64 {
+        self.world_seed
+    }
+
     /// The generator with these structure placements in place of the build's (tests add one by
     /// data alone).
     pub fn with_placements(mut self, rules: &[placements::Placement]) -> Self {
