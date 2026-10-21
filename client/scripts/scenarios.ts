@@ -31,6 +31,8 @@ export type Step =
   | { do: 'releaseCamera' }
   /** The water quality, and/or its cost-isolation switches (`?waterdbg=` names; "" for none). */
   | { do: 'water'; quality?: 'low' | 'medium' | 'high'; debug?: string }
+  /** The Shadows setting, for this page only (docs/DAY_NIGHT.md §10). */
+  | { do: 'shadows'; quality: 'off' | 'low' | 'high' }
   /** Breaks or places at the crosshair, as a click does; selects a hotbar slot. */
   | { do: 'edit'; action: 'break' | 'place' }
   | { do: 'select'; slot: number }
@@ -153,6 +155,7 @@ const STEP_FIELDS: Record<Step['do'], readonly string[]> = {
   camera: ['position', 'yaw', 'pitch', 'aroundPlayer'],
   releaseCamera: [],
   water: ['quality', 'debug'],
+  shadows: ['quality'],
   edit: ['action'],
   select: ['slot'],
   brush: ['command'],
@@ -224,6 +227,13 @@ export function parseStep(where: string, v: unknown): Step {
           ? {}
           : { aroundPlayer: bool(at('aroundPlayer'), o.aroundPlayer) }),
       };
+    case 'shadows': {
+      const q = o.quality;
+      if (q !== 'off' && q !== 'low' && q !== 'high') {
+        throw new ViewError(`${at('quality')}: expected "off", "low" or "high"`);
+      }
+      return { do: d, quality: q };
+    }
     case 'water': {
       const q = o.quality;
       if (q !== undefined && q !== 'low' && q !== 'medium' && q !== 'high') {
@@ -349,6 +359,7 @@ function parseScenario(where: string, v: unknown): Scenario {
           'clouds',
           'motion',
           'water',
+          'shadows',
           'timeOfDay',
         ])
   ) as View['settings'];

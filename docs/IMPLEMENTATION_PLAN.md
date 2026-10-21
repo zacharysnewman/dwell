@@ -61,6 +61,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 41 — Half-height grid (½ m cells, stored cardinal ramps) | 🚧 In progress — adopted for `main` (owner, 2026-10-20; ADR 0042): H0–H6 built and verified locally (½ m cells, stored ramps, nothing adaptive; the slopes V2; `main` 0.21.4 merged in); H7, the adoption: protocol 18, generator 19, the adaptive blocks removed, the experiment wording gone, `main`'s 1 m work checked on ½ m cells (HALF_HEIGHT_GRID.md §9). Outstanding: CI; the bench numbers against 0.21.x; the owner raises `package.json` to 0.22.0 at the merge (a new compatibility line). Deviations: brushes, a fluid's surface drop, the chunk view sphere and structures stay in cells; the LOD draws natural tops flat |
 | 42 — Smooth LOD transitions | 🚧 In progress — built and tested natively and in Chrome on the GPU: a dithered cross-fade on every LOD swap (`dwell-lod` `fade.rs`; chunks, sections, stand-ins, skirts, water; no ink on the outgoing level) and hysteresis in the selection, both data (`shared/look/lodblend.json`); outstanding: CI, the owner's review in a browser; a patch release |
 | 43 — Ambient light | 🚧 In progress — built and tested natively and in Chrome on the GPU: classic corner AO and baked ray-traced sky visibility per terrain vertex (dwell-mesh `sky.rs`, data `shared/look/ambient.json`), the hemisphere light scaled by it, the twilight and night keyframes retuned; outstanding: CI; a patch release |
+| 44 — Sun and moon shadows (cascaded shadow maps, the lighting's layer 2) | 🚧 In progress — built and tested natively, in Vitest and in Chrome on the GPU: up to four cascades per the Shadows setting (Off / Low / High, data in `shared/look/shadows.json`), texel-snapped sphere fits, casters (terrain, plants, LOD, bodies, your own), a soft PCF on the direct term only, faded by the time of day and past the last cascade to layer 1's stand-in; outstanding: CI, the owner's look, High's cost target (+3–6 ms measured on a busy machine; a follow-up); a patch release |
 
 Phase numbering: Phase 4 was inserted on 2026-09-29 for the planet-scale world (ADRs 0011, 0012);
 the former Phases 4–7 are now 5–8, and Phase 3's former 3c and 3d are now 3d and 3e.
@@ -4406,6 +4407,58 @@ Deviations
   cost the same within the machine's noise.
 - The night keyframes went further than the suggested starting point (midnight `hemiIntensity` 1.9
   rather than 1.3, `hemiGround` #34406a): 1.3 still left walls black on the dark painterly stone.
+
+## Phase 44 — Sun and Moon Shadows: Cascaded Shadow Maps
+
+**Status:** Built and tested natively, in Vitest and in Chrome on the GPU (2026-10-21).
+Outstanding: CI; the owner's look; High's cost target (a follow-up). No change to saves, the protocol or terrain: a patch release.
+
+Owner (2026-10-21): real sun and moon shadows with cascaded shadow maps, the lighting plan's layer
+2 over layer 1's flood-fill sky and block light (built on its own branch), replacing layer 1's
+stand-in (direct × sky light) near the player. Cascades, resolution, distance, filter, bias and the
+time-of-day fades are data (`shared/look/shadows.json`, per build, edited by hand, validator and
+generator like the other look files); the split, the fit, the snap and the PCF are code. The
+setting (Off / Low / High) is per browser. [`DAY_NIGHT.md`](./DAY_NIGHT.md) §10, ARCHITECTURE.md
+§2 (`render/`) and §7.4.
+
+Deliverables
+- [x] `shared/look/shadows.json`, `shadows.mjs` (validator, generator into `dwell-look`
+  `shadows.gen.rs`) and `shadows.test.mjs`; in CI.
+- [x] `dwell-look` `shadows`: the Shadows setting's levels and tiers, the light that casts (the sun
+  over the viewer's face, else the moon) and its strength by elevation.
+- [x] `render/shadows.rs`: the practical split, the slice's bounding-sphere fit (radius rounded to
+  a step), texel snapping in world f64, the cascade matrices, the casters' box test, the uniform
+  block, the maps on the GPU; `shadows_for` (Low at most on a CPU adapter).
+- [x] The shadow passes before the scene's: chunk terrain, LOD sections and stand-ins, cutout
+  plants (alpha-tested, distance-faded), the LOD cross-fade's dither, other players' bodies and
+  your own (cast only); slope-scaled bias; timed as `gpu.shadows`.
+- [x] The receivers: `shadow_light` (cascade pick, normal offset, soft PCF, the fade to the
+  stand-in past the last cascade and by the time of day) multiplying the direct term only, in
+  `scene_out`, the characters' key light and the water's glint, sparkle, in-scatter and foam;
+  `cloud_shadow`, the clouds' hook (returns 1).
+- [x] The Shadows setting in Settings → Look, the append-only `dwell.shadows` record, Low on phones
+  and High on desktops; `?shadows=`, the bench's `shadows` step, `shadows-low` / `shadows-off`
+  configurations and the `shadows-pines` scenario; views' `settings.shadows`.
+
+Exit criteria
+- [x] Tests: the split, the sphere's fit (holds its corners, tight), every cascade holding its slice
+  and the casters above it, the f32 matrix against the f64 projection, turning keeps the size,
+  sub-texel moves keep the light-space origin and the texel grid (render/shadows.rs); the light at
+  noon, midnight and dusk on both faces (dwell-look); the shadow only on the direct term
+  (shader-source test); the WGSL validates with the new entry points; the setting's data,
+  defaults and append-only store (Vitest, `shadows.test.mjs`).
+- [x] Measured on the bench per level (DAY_NIGHT.md §10, Cost; on a busy machine).
+- [ ] The cost targets (High ≤ 3 ms, Low ≤ 1 ms on the M1): Low meets it on the lowest frames;
+  High is +3–6 ms at the spawn and in a grove — moved to a follow-up (coarser far casters), with a
+  measurement on an idle machine.
+- [x] Checked in Chrome on the GPU: noon and morning shadows of terraces, players and pines, your own
+  shadow in first person, dusk, midnight under the moon, on face A and face B, at each level
+  (shots in the PR).
+
+Deviations
+- Layer 1's stand-in isn't on `main` yet: past the maps the factor is 1 (`scene_out` passes the
+  stand-in; layer 1 puts its direct × sky light there when it lands).
+- Clouds' shadows are a hook only (CLOUDS.md lists them as future).
 
 ## Cross-Cutting Work (every phase)
 

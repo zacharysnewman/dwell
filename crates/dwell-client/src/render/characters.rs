@@ -80,6 +80,8 @@ pub struct BodyDraw {
     pub look: &'static str,
     pub pose: Pose,
     pub held: Held,
+    /// Drawn into the shadow maps only (your own body in first person).
+    pub cast_only: bool,
 }
 
 /// The first-person arms to draw.
@@ -113,6 +115,8 @@ struct Draw {
     outline: bool,
     /// Bit per scene pass it is drawn in (far 1, near 2).
     passes: u8,
+    /// Within the shadow distance: drawn into the shadow maps.
+    casts: bool,
 }
 
 /// Per frame stats.
@@ -131,6 +135,8 @@ pub struct CharacterRenderer {
     look: &'static str,
     pipeline: wgpu::RenderPipeline,
     outline_pipeline: wgpu::RenderPipeline,
+    /// The bodies into the shadow maps (depth only, from the light).
+    shadow_pipeline: wgpu::RenderPipeline,
     layout: wgpu::BindGroupLayout,
     materials: wgpu::Buffer,
     tiles: wgpu::TextureView,
@@ -225,16 +231,23 @@ fn character_outline_vs(v: CharacterIn) -> CharacterOut {
 // The key light on the fragment's face: the sun while it is up over that face, else the moon.
 struct Key {
     dir: vec3f,
-    // The light on a surface facing up there, / π (what lambert gives a white top face).
+    // The light on a surface facing up there, / π (what lambert gives a white top face), its
+    // direct term shaded by `shadow` (`shadow_light`).
     level: vec3f,
 };
-fn key_light(frag_y: f32) -> Key {
+fn key_light(frag_y: f32, shadow: f32) -> Key {
     let face = face_at(frag_y);
     let d = frame.day;
     var k: Key;
     k.dir = select(d.moon.xyz, d.sun.xyz, own(d.sun.xyz, face) > 0.01);
-    k.level = lambert(vec3f(1.0), face_up(face), frag_y);
+    k.level = lambert_lit(vec3f(1.0), face_up(face), frag_y, 1.0, shadow);
     return k;
+}
+
+// The ramp's light in shadow: a body in the shade of a tree or a wall shows its ramp's middle at
+// most (the key light's side is shaded as the rest), by the shadow's share.
+fn shaded_ramp(w: f32, shadow: f32) -> f32 {
+    return mix(min(w, 0.45), w, shadow);
 }
 
 fn brush_k(i: CharacterOut, layer: i32) -> f32 {
@@ -253,6 +266,7 @@ fn character_fs(i: CharacterOut, @builtin(front_facing) front: bool) -> SceneOut
     let side = (i.packed >> 8u) & 0xffu;
     let n = normalize(select(-i.normal, i.normal, front));
     let frag_y = frame.eye.x + i.rel.y;
+    let shadow = shadow_light(i.rel, n, 1.0);
     var o: SceneOut;
     o.depth = frame_depth(view_depth(i.rel), true);
     if (mat == BLOCK_MATERIAL) {
@@ -265,12 +279,12 @@ fn character_fs(i: CharacterOut, @builtin(front_facing) front: bool) -> SceneOut
             discard;
         }
         let albedo = inst.block_color.rgb * select(vec3f(1.0), texel.rgb, has);
-        o.color = vec4f(lambert(albedo, n, frag_y), 1.0);
+        o.color = vec4f(lambert_lit(albedo, n, frag_y, 1.0, shadow), 1.0);
         return o;
     }
     let m = materials[mat];
-    let key = key_light(frag_y);
-    let w = dot(n, key.dir) * 0.5 + 0.5;
+    let key = key_light(frag_y, shadow);
+    let w = shaded_ramp(dot(n, key.dir) * 0.5 + 0.5, shadow);
     var c = mix(m.shadow.rgb, m.base.rgb, smoothstep(0.16, 0.5, w));
     c = mix(c, m.light.rgb, smoothstep(0.66, 0.98, w) * 0.8);
     c = c * mix(0.9, 1.0, face_rise(frame.eye.y, n) * 0.5 + 0.5);
@@ -287,7 +301,8 @@ fn character_fs(i: CharacterOut, @builtin(front_facing) front: bool) -> SceneOut
 @fragment
 fn character_outline_fs(i: CharacterOut) -> SceneOut {
     var o: SceneOut;
-    let level = key_light(frame.eye.x + i.rel.y).level * PI;
+    let frag_y = frame.eye.x + i.rel.y;
+    let level = key_light(frag_y, shadow_light(i.rel, face_up(face_at(frag_y)), 1.0)).level * PI;
     o.color = vec4f(INK_SOFT * clamp(dot(level, vec3f(0.33)), 0.1, 1.0), 1.0);
     o.depth = frame_depth(view_depth(i.rel), true);
     return o;
@@ -418,6 +433,7 @@ impl CharacterRenderer {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         frame_layout: &wgpu::BindGroupLayout,
+        shadow_frame_layout: &wgpu::BindGroupLayout,
         samples: u32,
     ) -> Self {
         let character = dwell_characters::player();
@@ -542,6 +558,32 @@ impl CharacterRenderer {
             })
         };
         let pipeline = make("character_vs", "character_fs", wgpu::Face::Back);
+        let shadow_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("character shadows"),
+            bind_group_layouts: &[Some(shadow_frame_layout), Some(&layout)],
+            immediate_size: 0,
+        });
+        let shadow_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("character shadows"),
+            layout: Some(&shadow_layout),
+            vertex: wgpu::VertexState {
+                module: &module,
+                entry_point: Some("character_vs"),
+                compilation_options: Default::default(),
+                buffers: &buffers,
+            },
+            fragment: None,
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: None,
+                ..Default::default()
+            },
+            depth_stencil: Some(super::shadows::caster_depth(&dwell_look::shadows::SHADOWS)),
+            multisample: Default::default(),
+            multiview_mask: None,
+            cache: None,
+        });
         let outline_pipeline = make(
             "character_outline_vs",
             "character_outline_fs",
@@ -572,6 +614,7 @@ impl CharacterRenderer {
             look: dwell_characters::DEFAULT_LOOK,
             pipeline,
             outline_pipeline,
+            shadow_pipeline,
             layout,
             materials,
             tiles,
@@ -626,7 +669,8 @@ impl CharacterRenderer {
     }
 
     /// This frame's characters: the bodies (scene passes `passes`: each one's near and far view
-    /// depth) and the arms. Builds what meshes are new and writes every instance's uniforms.
+    /// depth; the shadow maps those within `cast_m`) and the arms. Builds what meshes are new and
+    /// writes every instance's uniforms.
     #[allow(clippy::too_many_arguments)]
     pub fn prepare(
         &mut self,
@@ -635,6 +679,7 @@ impl CharacterRenderer {
         eye: V3,
         basis: &Basis,
         passes: &[(f64, f64)],
+        cast_m: f64,
         bodies: &[BodyDraw],
         arms: Option<&ArmsDraw>,
     ) {
@@ -672,11 +717,13 @@ impl CharacterRenderer {
             }
             let mut mask = 0u8;
             for (i, (near, far)) in passes.iter().enumerate() {
-                if dist + 3.0 >= *near && dist - 3.0 <= *far {
+                if !d.cast_only && dist + 3.0 >= *near && dist - 3.0 <= *far {
                     mask |= 1 << i;
                 }
             }
-            if mask == 0 {
+            // Out of the view (or your own), a body still casts into it.
+            let casts = dist - 3.0 <= cast_m;
+            if mask == 0 && !casts {
                 continue;
             }
             let far = dist > OUTLINE_M;
@@ -708,6 +755,7 @@ impl CharacterRenderer {
                 item,
                 outline: !far,
                 passes: mask,
+                casts,
             });
         }
         if let Some(a) = arms {
@@ -734,6 +782,7 @@ impl CharacterRenderer {
                 item,
                 outline: true,
                 passes: 0,
+                casts: false,
             });
         }
         for k in keys {
@@ -806,6 +855,27 @@ impl CharacterRenderer {
             any = true;
         }
         any
+    }
+
+    /// Draws the bodies within the shadow distance into a shadow map's pass (group 0 bound to its
+    /// cascade's frame; group 1 left bound to the characters' group).
+    pub fn draw_shadows(&self, pass: &mut wgpu::RenderPass<'_>, calls: &mut u32, tris: &mut u64) {
+        for d in self.draws.iter().filter(|d| d.casts) {
+            pass.set_bind_group(1, &self.group, &[d.instance * INSTANCE_BYTES as u32]);
+            pass.set_pipeline(&self.shadow_pipeline);
+            for m in [Some(d.body), d.item]
+                .into_iter()
+                .flatten()
+                .filter_map(|k| self.meshes.get(&k))
+                .filter(|m| m.count > 0)
+            {
+                pass.set_vertex_buffer(0, m.vertex.slice(..));
+                pass.set_index_buffer(m.index.slice(..), wgpu::IndexFormat::Uint32);
+                pass.draw_indexed(0..m.count, 0, 0..1);
+                *calls += 1;
+                *tris += u64::from(m.count / 3);
+            }
+        }
     }
 
     /// Draws the arms (group 0 bound to the arms' frame, over a cleared depth buffer).
@@ -993,6 +1063,7 @@ mod tests {
                 look: dwell_characters::DEFAULT_LOOK,
                 pose: Pose::REST,
                 held: Held::Empty,
+                cast_only: false,
             };
             let f = body_frame(&d, [0.0; 3]);
             // Yaw 90° faces +x on either face.
