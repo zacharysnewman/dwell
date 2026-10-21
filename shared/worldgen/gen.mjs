@@ -69,7 +69,7 @@ export function validateDecorations(data, blocks) {
       if (!(isNum(p.coverage) && p.coverage > 0 && p.coverage <= 1)) fail(`${at}: patches.coverage must be in (0, 1]`);
     }
     if (!(Number.isInteger(d.maxSlope) && d.maxSlope >= 0 && d.maxSlope <= 16)) {
-      fail(`${at}: maxSlope must be a whole number of blocks in [0, 16]`);
+      fail(`${at}: maxSlope must be a whole number of metres in [0, 16]`);
     }
     const h = d.height;
     if (!(Array.isArray(h) && h.length === 2 && h.every(Number.isInteger) && h[0] <= h[1])) {
@@ -248,6 +248,8 @@ const TERRAIN = {
     fadeTo: [0, 100_000],
   },
   bumps: { amplitude: [0, 100], wavelength: [4, 4096, true], octaves: [1, 8, true] },
+  // Half-height branch: steep ground in whole steps (HALF_HEIGHT_GRID.md §4).
+  steps: { fromSlope: [0, 100], height: [0, 16] },
 };
 
 /** Checks the height field; throws naming the group and key. */
@@ -261,7 +263,7 @@ export function validateTerrain(data) {
   for (const [group, keys] of Object.entries(TERRAIN)) {
     const g = data[group];
     if (typeof g !== 'object' || g === null) fail(`${group} must be an object`);
-    const ge = Object.keys(g).filter((k) => !(k in keys));
+    const ge = Object.keys(g).filter((k) => k !== '$comment' && !(k in keys));
     if (ge.length) fail(`${group}: unknown ${ge.join(', ')}`);
     for (const [key, [min, max, whole]] of Object.entries(keys)) {
       const v = g[key];
@@ -273,6 +275,9 @@ export function validateTerrain(data) {
     }
   }
   if (!(data.hills.fadeTo > data.hills.fadeFrom)) fail('hills.fadeTo must be greater than hills.fadeFrom');
+  // A step is a whole number of cells (constants.json cellHeight).
+  const cell = JSON.parse(readFileSync(join(here, '../protocol/constants.json'), 'utf8')).cellHeight;
+  if (!Number.isInteger(data.steps.height / cell)) fail(`steps.height must be a whole number of cells (${cell} m)`);
   return data;
 }
 
@@ -294,6 +299,8 @@ export function terrainRust(t) {
     ['bump_height', rf(t.bumps.amplitude)],
     ['bump_wavelength', `${t.bumps.wavelength}`],
     ['bump_octaves', `${t.bumps.octaves}`],
+    ['step_from_slope', rf(t.steps.fromSlope)],
+    ['step_height', rf(t.steps.height)],
   ];
   for (const [k, v] of fields) rs.push(`    ${k}: ${v},`);
   rs.push('};');

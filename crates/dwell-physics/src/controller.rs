@@ -4,7 +4,10 @@
 //! and WASM builds agree bit for bit.
 
 use dwell_blocks::{Facing, VoxelShape, info, shape::solid_span_at};
-use dwell_world::{MIDPLANE_Y, SEA_LEVEL, VoxelWorld, chunk_distance, chunk_of, mirror_y};
+use dwell_world::{
+    CELL_H, FaceFrame, MIDPLANE_M, SEA_LEVEL_M, VoxelWorld, centre_of_cell, chunk_distance,
+    chunk_of_pos, m_of_row, mirror_y, row_of_m, rows_for_m,
+};
 use rapier3d_f64::prelude::*;
 
 use crate::config::PlayerControllerConfig;
@@ -263,8 +266,8 @@ pub struct PlayerController {
     pub sprint_slide: SprintSlideState,
     pub platform: PlatformState,
     pub target_velocity: Vec3,
-    /// The face the layers' vertical quantities are in: +1 face A, −1 face B.
-    pub face: i8,
+    /// The face frame the layers' vertical quantities are in.
+    pub face: FaceFrame,
     pub events: u32,
     /// Impact speed of this tick's Landed event.
     pub landed_speed: f32,
@@ -287,7 +290,7 @@ impl Default for PlayerController {
             sprint_slide: SprintSlideState::default(),
             platform: PlatformState::default(),
             target_velocity: Vec3::ZERO,
-            face: 1,
+            face: FaceFrame::A,
             events: 0,
             landed_speed: 0.0,
         }
@@ -403,11 +406,7 @@ struct LadderFrame {
 
 fn frame_of(cell: Cell, material: dwell_blocks::StateId) -> LadderFrame {
     let facing = facing_vector(info(material).facing);
-    let center = DVec3::new(
-        f64::from(cell.x) + 0.5,
-        f64::from(cell.y) + 0.5,
-        f64::from(cell.z) + 0.5,
-    );
+    let center = DVec3::from_array(centre_of_cell([cell.x, cell.y, cell.z]));
     LadderFrame {
         facing,
         plate: center - (facing * (0.5 - LADDER_PLATE_HALF_DEPTH)).as_dvec3(),
@@ -460,15 +459,11 @@ impl Players {
             .unwrap_or(self.players.len()) as PlayerHandle;
         let mut c = PlayerController::default();
         c.input.look_yaw = yaw;
-        c.face = if feet.y >= f64::from(MIDPLANE_Y) {
-            1
-        } else {
-            -1
-        };
+        c.face = FaceFrame::at_height(feet.y);
         let center = feet
             + DVec3::new(
                 0.0,
-                f64::from(c.face) * f64::from(cfg.half_height(false)),
+                c.face.sign_f64() * f64::from(cfg.half_height(false)),
                 0.0,
             );
         // Creative flight at its top speed is far faster than the engine's default limit.
@@ -579,10 +574,10 @@ impl Players {
     }
     /// World height of the feet (a face-B player's feet are above its head).
     pub fn feet(&self, physics: &Physics, h: PlayerHandle) -> f64 {
-        self.position(physics, h).y - f64::from(self.get(h).c.face) * f64::from(self.half_height(h))
+        self.position(physics, h).y - self.get(h).c.face.sign_f64() * f64::from(self.half_height(h))
     }
     pub fn head(&self, physics: &Physics, h: PlayerHandle) -> f64 {
-        self.position(physics, h).y + f64::from(self.get(h).c.face) * f64::from(self.half_height(h))
+        self.position(physics, h).y + self.get(h).c.face.sign_f64() * f64::from(self.half_height(h))
     }
 
     /// Restores a player's full state (controller + body), e.g. from a snapshot before replaying.
@@ -682,13 +677,12 @@ impl Players {
     /// Switches the face (mirroring the layers' vertical state) once the body is across.
     fn update_face(physics: &Physics, p: &mut Player) {
         let c = &mut p.c;
-        let over = physics.position(p.body).y - f64::from(MIDPLANE_Y);
-        let face = if c.face > 0 {
-            if over < -FACE_HYSTERESIS { -1 } else { 1 }
-        } else if over > FACE_HYSTERESIS {
-            1
+        // How far the body is past the midplane toward its face's up (negative: across it).
+        let over = c.face.y(physics.position(p.body).y) - MIDPLANE_M;
+        let face = if over < -FACE_HYSTERESIS {
+            c.face.other()
         } else {
-            -1
+            c.face
         };
         if face == c.face {
             return;
@@ -733,7 +727,7 @@ impl Players {
                     .flatten()
                     .map(|p| {
                         let q = physics.position(p.body);
-                        chunk_of(q.x.floor() as i32, q.y.floor() as i32, q.z.floor() as i32)
+                        chunk_of_pos(q.to_array())
                     })
                     .collect();
                 terrain.retain(physics, |c| {
@@ -784,9 +778,7 @@ impl Players {
         Self::update_face(physics, p);
         let c = &mut p.c;
         // A face-B player is upside down: its right is the face-local frame's left.
-        if c.face < 0 {
-            c.input.move_x = -c.input.move_x;
-        }
+        c.input.move_x = c.face.handed(f64::from(c.input.move_x)) as f32;
         let length_sq = c.input.move_x * c.input.move_x + c.input.move_y * c.input.move_y;
         if length_sq > 1.0 {
             let length = length_sq.sqrt();
@@ -1143,7 +1135,7 @@ impl Players {
         c.events |= events::JUMPED;
     }
 
-    /// Auto-jump (Dwell): moving into a one-block obstacle with two free cells above it.
+    /// Auto-jump (Dwell): moving into an obstacle up to 1 m tall with 2 m free above it.
     fn auto_jump_obstacle(q: &FaceQuery, p: &Player, center: DVec3) -> bool {
         let c = &p.c;
         let cfg = &p.cfg;
@@ -1154,9 +1146,9 @@ impl Players {
         let feet = center.y as f32 - cfg.half_height(c.crouching);
         let probe = center + (safe_normalized(f) * (cfg.body.radius + 0.2)).as_dvec3();
         let (x, z) = (probe.x.floor() as i32, probe.z.floor() as i32);
-        let y = (feet + cfg.movement.max_step_height + 0.05).floor() as i32;
+        let y = row_of_m(f64::from(feet + cfg.movement.max_step_height + 0.05));
         let shape = q.shape(x, y, z);
-        let top = y as f32
+        let top = m_of_row(y) as f32
             + if shape.face_count == 0 {
                 0.0
             } else {
@@ -1165,12 +1157,13 @@ impl Players {
                     (probe.x - f64::from(x)) as f32,
                     (probe.z - f64::from(z)) as f32,
                 )
-                .hi
+                .hi * CELL_H as f32
             };
         if top <= feet + cfg.movement.max_step_height || top > feet + 1.05 {
             return false;
         }
-        (1..=2).all(|above| info(q.material(x, y + above, z)).shape == VoxelShape::Empty)
+        (1..=rows_for_m(2.0))
+            .all(|above| info(q.material(x, y + above, z)).shape == VoxelShape::Empty)
     }
 
     // 5 — PPCJumpSystem (timers in ticks)
@@ -1239,7 +1232,7 @@ impl Players {
         // The top of a column reaches LADDER_TOP_REACH above its last cell, so the climber gets
         // their feet onto the ledge. It only keeps a climb going.
         let feet = center.y as f32 - p.cfg.half_height(c.crouching);
-        let y = (feet - LADDER_TOP_REACH).floor() as i32;
+        let y = row_of_m(f64::from(feet - LADDER_TOP_REACH));
         for z in (center.z - f64::from(r)).floor() as i32..=(center.z + f64::from(r)).floor() as i32
         {
             for x in
@@ -1342,7 +1335,7 @@ impl Players {
         }
         let feet = position.y as f32 - cfg.half_height(c.crouching);
         let frame = frame_of(ladder, material);
-        let over_top = vertical > 0.0 && feet > (top + 1) as f32 - 0.3;
+        let over_top = vertical > 0.0 && feet > m_of_row(top + 1) as f32 - 0.3;
         if over_top {
             velocity -= frame.facing * (vertical * speed);
         }
@@ -1381,7 +1374,7 @@ impl Players {
             return;
         }
         let band_height = dwell_protocol::world::FLIP_BAND as f32;
-        let height = (position.y - f64::from(MIDPLANE_Y)).max(0.0) as f32;
+        let height = (position.y - MIDPLANE_M).max(0.0) as f32;
         let band = height < band_height && !c.ground.grounded;
         if !c.swim.swimming {
             if c.swim.submerged <= cfg.swim.enter_fraction && !band {
@@ -1484,7 +1477,7 @@ impl Players {
             return;
         }
         let feet = position.y - f64::from(cfg.half_height(c.crouching));
-        let above_sea = (feet - f64::from(SEA_LEVEL)).max(0.0) as f32;
+        let above_sea = (feet - SEA_LEVEL_M).max(0.0) as f32;
         let base = cfg.fly.speed * if c.input.run { cfg.fly.run_factor } else { 1.0 };
         // The height-based speed, capped in the terrain band and at the top level's, and the
         // slider's true minimum.
@@ -1650,16 +1643,13 @@ impl Players {
         faces.sort_by(|a, b| a.0.total_cmp(&b.0));
         let up = |h: f32| DVec3::new(0.0, f64::from(h), 0.0);
         let mut tried: Vec<(f32, Vec3)> = Vec::new();
-        for (distance, n, point) in faces {
-            if tried
-                .iter()
-                .any(|&(dd, nn)| nn.dot(n) > 0.99 && (dd - distance).abs() < 0.01)
-            {
-                continue;
-            }
-            tried.push((distance, n));
-            // The step's height is from the ground at its foot: on a ramp up to a step that ground
-            // is above the feet, and the lift is the step plus that rise.
+        let same_face = |(d1, n1): (f32, Vec3), (d2, n2): (f32, Vec3)| {
+            n1.dot(n2) > 0.99 && (d1 - d2).abs() < 0.01
+        };
+        // The step's height is from the ground at its foot: on a ramp up to a step that ground is
+        // above the feet, and the lift is the step plus that rise. Its top is read just past the
+        // face. (The rise, the top) at one of the face's hit points.
+        let top_at = |n: Vec3, point: DVec3| {
             let foot = q
                 .cast_ray(
                     point + (n * STEP_FOOT_OFFSET).as_dvec3(),
@@ -1672,18 +1662,33 @@ impl Players {
                 .max(feet);
             let rise = (foot - feet) as f32;
             if rise > cfg.advanced.step_max_rise {
-                continue;
+                return None;
             }
-            // The step's top, just past its face.
             let mut probe = point - (n * cfg.advanced.step_probe_distance).as_dvec3();
             probe.y = foot + f64::from(m.max_step_height + STEP_TOP_CLEARANCE);
-            let Some(top) = q.cast_ray(
+            q.cast_ray(
                 probe,
                 -Vec3::Y,
                 m.max_step_height + STEP_TOP_CLEARANCE,
                 Some(p.body),
                 bodies,
-            ) else {
+            )
+            .map(|top| (rise, top))
+        };
+        for &(distance, n, _) in &faces {
+            if tried.iter().any(|&t| same_face(t, (distance, n))) {
+                continue;
+            }
+            tried.push((distance, n));
+            // A step's top need not be level (the side of a ½ m ramp beside a lower one rises
+            // along the face, HALF_HEIGHT_GRID.md §4): of the face's hit points, the highest top,
+            // so the lifted capsule clears all of it (the first of equal ones, in ray order).
+            let Some((rise, top)) = faces
+                .iter()
+                .filter(|&&(dd, nn, _)| same_face((dd, nn), (distance, n)))
+                .filter_map(|&(_, _, point)| top_at(n, point))
+                .reduce(|a, b| if b.1.point.y > a.1.point.y { b } else { a })
+            else {
                 continue;
             };
             let lift = (top.point.y - feet) as f32;

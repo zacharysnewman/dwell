@@ -29,7 +29,7 @@ one's status line. Resolving an item in `ARCHITECTURE.md` Open Decisions require
 | [0021](0021-mountain-detail-cascade.md) | Mountain detail from a derivative-damped ridged cascade | Superseded by 0025 |
 | [0022](0022-climate-biome-table-vegetation.md) | Climate with continent biases and rain shadows, the biome table, wetland ponds and biome-tinted vegetation | Superseded by 0025 |
 | [0023](0023-bifacial-world.md) | The bifacial world: two faces, gravity toward the midplane | Accepted (amended by 0025) |
-| [0024](0024-adaptive-natural-blocks.md) | Adaptive natural blocks: shapes derived from neighbours by five rules | Accepted (amended 2026-10-12; Rust readers: 0028) |
+| [0024](0024-adaptive-natural-blocks.md) | Adaptive natural blocks: shapes derived from neighbours by five rules | Superseded by 0042 |
 | [0025](0025-baseline-world.md) | The baseline world: a 50 km bifacial disc, a 10-layer core, a spherical build volume, six blocks | Accepted (Rapier f64: 0028) |
 | [0026](0026-terrain-definitions.md) | Terrain definitions: terrain as data, evaluated by a fixed vocabulary of node kinds | Accepted (Rust tables: 0028) |
 | [0027](0027-webgpu-renderer.md) | WebGPU renderer: Three's `WebGPURenderer` with TSL materials, a WebGL2 fallback, and a look registry | Superseded by 0028 |
@@ -45,6 +45,7 @@ one's status line. Resolving an item in `ARCHITECTURE.md` Open Decisions require
 | [0037](0037-brushes.md) | Brushes: VoxelSniper-style painting and sculpting over region-edit pastes with `KEEP` cells | Accepted |
 | [0038](0038-block-registry-sync.md) | Block registry sync: the server sends its registry at join, the client maps ids at the boundary | Proposed |
 | [0039](0039-spyglass.md) | The spyglass: a data-driven zoom whose detail follows the narrow view | Accepted |
+| [0042](0042-half-height-cells.md) | Half-height cells with stored cardinal ramps, shaped at generation | Accepted (adopted 2026-10-20) |
 | [0040](0040-painterly-textures.md) | Painterly textures: one data-driven stroke generator, baked at build time, behind a switch | Accepted |
 | [0041](0041-characters.md) | Characters and creatures: rigid chunky parts on a data rig, a separate first-person arms view | Accepted |
 | [0043](0043-structure-placements.md) | Structure placements in world generation, as data: the owner's pines in groves (generator version 17) | Accepted |

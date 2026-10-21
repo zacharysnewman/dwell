@@ -7,9 +7,8 @@
 use dwell_blocks::{BLOCKS, Facing, STATES, StateId, info};
 use dwell_protocol::{BlockEditAction, BlockEditRequest, Message, players};
 use dwell_world::edit::{FACE_DIRS, placeable, raycast_block};
-use dwell_world::{VoxelWorld, inside_build_volume};
+use dwell_world::{FaceFrame, VoxelWorld, inside_build_volume};
 
-use crate::FaceSign;
 pub use crate::input::EditAction;
 
 /// A targeted block: its cell and the face the view ray entered through (0 +X, 1 −X, 2 +Y, 3 −Y,
@@ -128,14 +127,9 @@ pub fn ladder_for(face: u8, yaw_deg: f64) -> StateId {
 }
 
 /// Unit view direction for yaw/pitch in degrees (yaw 0 = +Z, pitch toward the player's up > 0), as
-/// the camera looks: on face B up is −y.
-pub fn view_direction(yaw_deg: f64, pitch_deg: f64, face: FaceSign) -> [f64; 3] {
-    let (yaw, pitch) = (yaw_deg.to_radians(), pitch_deg.to_radians());
-    [
-        yaw.sin() * pitch.cos(),
-        f64::from(face) * pitch.sin(),
-        yaw.cos() * pitch.cos(),
-    ]
+/// the camera looks: on face B up is −y ([`FaceFrame::look`]).
+pub fn view_direction(yaw_deg: f64, pitch_deg: f64, face: FaceFrame) -> [f64; 3] {
+    face.look(yaw_deg, pitch_deg)
 }
 
 /// Targeting, the hotbar selection and edit requests.
@@ -191,7 +185,7 @@ impl BlockInteraction {
         eye: Option<[f64; 3]>,
         yaw_deg: f64,
         pitch_deg: f64,
-        face: FaceSign,
+        face: FaceFrame,
     ) -> Option<BlockTarget> {
         self.yaw = yaw_deg;
         let dir = view_direction(yaw_deg, pitch_deg, face).map(|v| v as f32);
@@ -356,11 +350,17 @@ mod tests {
     fn targets_along_the_view_within_reach() {
         let mut world = FakeTarget::default();
         let mut interaction = BlockInteraction::new();
-        interaction.update(&mut world, Some([0.0, 1.6, 0.0]), 90.0, 0.0, 1);
+        interaction.update(&mut world, Some([0.0, 1.6, 0.0]), 90.0, 0.0, FaceFrame::A);
         assert_eq!(round(world.rays[0].0.map(f64::from)), [1.0, 0.0, 0.0]);
         assert_eq!(world.rays[0].1, players::REACH_DISTANCE);
-        assert_eq!(round(view_direction(0.0, 90.0, 1)), [0.0, 1.0, 0.0]);
-        assert_eq!(interaction.update(&mut world, None, 0.0, 0.0, 1), None);
+        assert_eq!(
+            round(view_direction(0.0, 90.0, FaceFrame::A)),
+            [0.0, 1.0, 0.0]
+        );
+        assert_eq!(
+            interaction.update(&mut world, None, 0.0, 0.0, FaceFrame::A),
+            None
+        );
     }
 
     #[test]
@@ -370,7 +370,7 @@ mod tests {
         let interval = players::BLOCK_EDIT_INTERVAL_MS as f64;
         let mut sent = Vec::new();
         assert!(interaction.act(EditAction::Break, 0.0).is_none()); // nothing targeted yet
-        interaction.update(&mut world, Some([0.0, 1.6, 0.0]), 0.0, 0.0, 1);
+        interaction.update(&mut world, Some([0.0, 1.6, 0.0]), 0.0, 0.0, FaceFrame::A);
         sent.extend(interaction.act(EditAction::Break, 1000.0));
         assert_eq!(sent.len(), 1);
         assert!(
@@ -403,7 +403,7 @@ mod tests {
     fn places_the_ladder_that_fits_the_targeted_face() {
         let mut world = FakeTarget::default();
         let mut interaction = BlockInteraction::new();
-        interaction.update(&mut world, Some([0.0, 1.6, 0.0]), 0.0, 0.0, 1);
+        interaction.update(&mut world, Some([0.0, 1.6, 0.0]), 0.0, 0.0, FaceFrame::A);
         let ladder = interaction.palette().iter().position(|s| s.ladder).unwrap();
         interaction.select(ladder as i64);
         let m = interaction.act(EditAction::Place, 0.0).unwrap();
@@ -436,7 +436,7 @@ mod tests {
             .unwrap();
         interaction.select(sand as i64);
         // Looking +Z at the −Z face (5) of cell (3, 0, 4).
-        interaction.update(&mut world, Some([3.5, 1.6, 0.0]), 0.0, 0.0, 1);
+        interaction.update(&mut world, Some([3.5, 1.6, 0.0]), 0.0, 0.0, FaceFrame::A);
         let (cell, material) = interaction.placement().unwrap();
         assert_eq!(cell, [3, 0, 3]);
         assert_eq!(name(material), "dwell:sand[flooded=false]");
@@ -452,8 +452,8 @@ mod tests {
         let mut world = VoxelWorld::streamed();
         world.set_voxel(0, top - 1, 0, require("dwell:stone"));
         let mut interaction = BlockInteraction::new();
-        let eye = [0.5, f64::from(top) + 1.5, 0.5];
-        let t = interaction.update(&mut world, Some(eye), 0.0, -90.0, 1);
+        let eye = [0.5, dwell_world::m_of_row(top) + 1.5, 0.5];
+        let t = interaction.update(&mut world, Some(eye), 0.0, -90.0, FaceFrame::A);
         assert_eq!(t.map(|t| (t.cell, t.face)), Some(([0, top - 1, 0], 2)));
         assert_eq!(interaction.placement().unwrap().0, [0, top, 0]);
         assert_eq!(interaction.act(EditAction::Place, 0.0), None);
@@ -469,7 +469,9 @@ mod tests {
         // A non-adaptive cube (a lone stone block would be a half pyramid).
         world.set_voxel(3, 0, 4, require("dwell:sandbox_floor"));
         let mut interaction = BlockInteraction::new();
-        let t = interaction.update(&mut world, Some([3.5, 0.5, 0.5]), 0.0, 0.0, 1);
+        // The eye in the middle of row 0 (HALF_HEIGHT_GRID.md §2).
+        let eye = [3.5, 0.5 * dwell_world::CELL_H, 0.5];
+        let t = interaction.update(&mut world, Some(eye), 0.0, 0.0, FaceFrame::A);
         assert_eq!(
             t,
             Some(BlockTarget {

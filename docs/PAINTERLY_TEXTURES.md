@@ -50,12 +50,13 @@ The design questions (CLAUDE.md, "Ask before designing"), answered by the owner'
 Colours are palette references, never hex (ART_DIRECTION.md §2).
 
 **Side tiles from the block above.** Owner, 2026-10-20: "I want to see the grass skirt fringe on
-dirt that's below sloped grass." On generated hillsides the grass is mostly adaptive slopes, and at
-a two-block step or a cliff the face below a slope's low edge is a dirt block's side. A block's
+dirt that's below sloped grass." On generated hillsides (½ m cells, Phase 41) the grass tops are
+flat cells and grass ramps, and at a step or a cliff the face below a grass cell or ramp is a dirt
+block's side. A block's
 `sideUnder` in the registry (`shared/blocks/dwell.json`; BLOCK_REGISTRY.md) maps a block id above
-to the side tile to use: dirt has `{ "dwell:grass": "dirtSkirt" }`. The chunk mesher applies it to
-a side face whose cell above holds that block, whatever shape the block takes (slope, half slope,
-ridge), unless that block shows a full side on the same face itself (a full grass cube already
+to the side tile to use: dirt has `{ "dwell:grass": "dirtSkirt" }`, which the generator extends to the grass ramps
+(`dwell:grass_ramp`). The chunk mesher applies it to
+a side face whose cell above holds that block, whatever shape the block takes (a ramp piece), unless that block shows a full side on the same face itself (a full grass cube already
 hangs its own skirt, so the dirt below it stays plain). Stone or air above: no skirt. On face B,
 "above" is toward its sky. The tile `dirtSkirt` is painted by `dirt_skirt`, which is
 `"like": "grass_side"`: the same soil and the same skirt strokes, so it lines up with a grass side

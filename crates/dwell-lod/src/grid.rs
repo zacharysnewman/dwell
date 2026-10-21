@@ -6,12 +6,13 @@ use dwell_world::lod::{
     LodCoord, MAX_LEVEL, ORIGIN_X, ORIGIN_Y, ORIGIN_Z, first_row, last_row, section_origin,
     section_size, sections_across,
 };
-use dwell_world::{MIDPLANE_Y, MIRROR_SUM};
+use dwell_world::{CELL_H, FaceFrame, MIDPLANE_Y, cell_space, metres};
 
 /// World metres, as the client's `Vec3`.
 pub type Vec3 = [f64; 3];
 
-/// The octree's corner (the root's minimum corner, −2¹⁶ m on each axis) in metres.
+/// The octree's corner (the root's minimum corner, −2¹⁶ on each axis) in cell space (x and z in
+/// metres, y in rows).
 pub const ORIGIN: Vec3 = [ORIGIN_X as f64, ORIGIN_Y as f64, ORIGIN_Z as f64];
 
 /// The deepest level whose sections never straddle the midplane: it lies on their boundaries
@@ -56,9 +57,10 @@ pub fn id_of(c: LodCoord) -> LodId {
     lod_id(c.level, c.i, c.j, c.k)
 }
 
-/// The section at `level` holding world point p.
+/// The section at `level` holding world point p (m).
 pub fn section_at(level: i32, p: Vec3) -> LodCoord {
     let s = section_size(level) as f64;
+    let p = cell_space(p);
     let at = |a: usize| ((p[a] - ORIGIN[a]) / s).floor() as i32;
     LodCoord::new(level, at(0), at(1), at(2))
 }
@@ -66,14 +68,14 @@ pub fn section_at(level: i32, p: Vec3) -> LodCoord {
 /// World metres of the section's min corner.
 pub fn origin_m(c: LodCoord) -> Vec3 {
     let o = section_origin(c);
-    [o.x as f64, o.y as f64, o.z as f64]
+    metres([o.x as f64, o.y as f64, o.z as f64])
 }
 
 /// The section's box in world metres.
 pub fn section_box(c: LodCoord) -> (Vec3, Vec3) {
     let lo = origin_m(c);
     let s = section_size(c.level) as f64;
-    (lo, [lo[0] + s, lo[1] + s, lo[2] + s])
+    (lo, [lo[0] + s, lo[1] + s * CELL_H, lo[2] + s])
 }
 
 /// Whether the section lies wholly on face B (levels up to `MAX_ALIGNED_LEVEL` never straddle the
@@ -85,7 +87,7 @@ pub fn is_face_b_section(c: LodCoord) -> bool {
 /// The face-local height of the bottom of the mirror image of a face-B section: row r' of the
 /// mirrored section is row 31 − r' of the section, at this + r' · cell.
 pub fn mirror_section_origin(c: LodCoord) -> i64 {
-    i64::from(MIRROR_SUM) + 1 - section_origin(c).y - section_size(c.level)
+    FaceFrame::B.span(section_origin(c).y, section_size(c.level))
 }
 
 #[cfg(test)]
@@ -110,14 +112,7 @@ mod tests {
         ] {
             let l = lod_of_chunk(c);
             assert_eq!(chunk_of_lod(l), c);
-            assert_eq!(
-                origin_m(l),
-                [
-                    f64::from(c.x * 32),
-                    f64::from(c.y * 32),
-                    f64::from(c.z * 32)
-                ]
-            );
+            assert_eq!(origin_m(l), dwell_world::chunk_origin_m(c));
         }
         assert!(in_world(lc(MAX_LEVEL, 0, 0, 0)));
         assert!(!in_world(lc(MAX_LEVEL, 1, 0, 0)));
@@ -158,11 +153,12 @@ mod tests {
         assert!(!in_world(lc(8, 8, j8 - 1, 8)));
         assert!(!in_world(lc(8, 8, j8 + 14, 8)));
         // Inside the rows but wholly outside the sphere: not in the world (ADR 0025).
-        assert!(!in_world(section_at(4, [30_000.0, 45_000.0, 0.0])));
-        assert!(in_world(section_at(4, [20_000.0, 45_000.0, 0.0])));
+        // (The sphere is in cells: 45,000 rows is 22.5 km up.)
+        assert!(!in_world(section_at(4, [30_000.0, 22_500.0, 0.0])));
+        assert!(in_world(section_at(4, [20_000.0, 22_500.0, 0.0])));
         // Up to level 11 a section lies wholly on one face; only the root holds the midplane.
         assert_eq!(MAX_ALIGNED_LEVEL, 11);
-        let mid = f64::from(MIDPLANE_Y);
+        let mid = dwell_world::MIDPLANE_M;
         for level in 0..=MAX_ALIGNED_LEVEL {
             let s = section_at(level, [0.0, mid, 0.0]);
             assert_eq!(origin_m(s)[1], mid);
@@ -203,7 +199,7 @@ mod tests {
                 [x[0] - pp[0], x[1] - pp[1], x[2] - pp[2]],
                 [
                     f64::from(o & 1) * h,
-                    f64::from((o >> 1) & 1) * h,
+                    f64::from((o >> 1) & 1) * h * dwell_world::CELL_H,
                     f64::from(o >> 2) * h
                 ]
             );
@@ -259,6 +255,6 @@ mod tests {
         assert!(!is_face_b_section(section_at(12, [0.0, -3000.0, 0.0]))); // straddles
         // The mirror of the section's top is the mirrored section's bottom.
         let top = section_origin(b).y + section_size(2);
-        assert_eq!(mirror_section_origin(b), i64::from(MIRROR_SUM) + 1 - top);
+        assert_eq!(mirror_section_origin(b), FaceFrame::B.span(top, 0));
     }
 }

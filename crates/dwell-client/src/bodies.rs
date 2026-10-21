@@ -11,7 +11,7 @@ use dwell_game::eye::{Step, StepRamp, StepSample, StepSmoother};
 use dwell_game::remotes::RemoteView;
 use dwell_protocol::{controller_flags, held_item, player_flags, swing_flags};
 use dwell_world::hash::HashMap;
-use dwell_world::{FaceFrame, VoxelWorld};
+use dwell_world::{CELL_H, FaceFrame, VoxelWorld, m_of_row, row_of_m};
 
 use crate::render::{ArmsView, Held, PlayerView};
 
@@ -19,8 +19,7 @@ use crate::render::{ArmsView, Held, PlayerView};
 pub fn remote_input(v: &RemoteView, holding: bool) -> MoveInput {
     MoveInput {
         state: v.state,
-        velocity: v.velocity,
-        face: if v.is_face_b() { -1.0 } else { 1.0 },
+        velocity: v.face().vector_f32(v.velocity),
         crouched: v.is_crouched(),
         climbing: v.flags & player_flags::CLIMBING != 0,
         swimming: v.flags & player_flags::SWIMMING != 0,
@@ -36,12 +35,11 @@ pub fn local_input(
     state: dwell_protocol::PlayerState,
     velocity: [f64; 3],
     controller: u8,
-    face: i32,
+    face: FaceFrame,
 ) -> MoveInput {
     MoveInput {
         state,
-        velocity: velocity.map(|v| v as f32),
-        face: if face < 0 { -1.0 } else { 1.0 },
+        velocity: face.vector(velocity).map(|v| v as f32),
         crouched: controller & controller_flags::CROUCHING != 0,
         climbing: controller & controller_flags::CLIMBING != 0,
         swimming: controller & controller_flags::SWIMMING != 0,
@@ -167,7 +165,8 @@ pub fn ground_at(
 ) -> Option<f64> {
     let (cx, cz) = (x.floor() as i32, z.floor() as i32);
     let (fx, fz) = ((x - f64::from(cx)) as f32, (z - f64::from(cz)) as f32);
-    for row in ((y - reach).floor() as i32..=(y + reach).floor() as i32).rev() {
+    // Rows are `CELL_H` tall on the half-height branch (HALF_HEIGHT_GRID.md §2): heights are metres.
+    for row in (row_of_m(y - reach)..=row_of_m(y + reach)).rev() {
         let [wx, wy, wz] = f.cell([cx, row, cz]);
         if !info(world.get_voxel(wx, wy, wz)).solid {
             continue;
@@ -177,7 +176,7 @@ pub fn ground_at(
             continue;
         }
         let (_, hi) = f.in_cell(span.lo, span.hi);
-        let top = f64::from(row) + f64::from(hi);
+        let top = m_of_row(row) + f64::from(hi) * CELL_H;
         if top <= y + reach {
             return Some(top);
         }
@@ -219,11 +218,7 @@ impl Bodies {
             body.animator.swing(s);
         }
         body.swing = Some(v.swing);
-        let f = if v.is_face_b() {
-            FaceFrame::B
-        } else {
-            FaceFrame::A
-        };
+        let f = v.face();
         let local = f.point(v.feet);
         let grounded = v.flags & player_flags::GROUNDED != 0 && !v.is_dead();
         let [vx, _, vz] = v.velocity;
@@ -271,7 +266,7 @@ impl Bodies {
         }
         PlayerView {
             feet: f.point([local[0], drawn, local[2]]),
-            face: if v.is_face_b() { -1.0 } else { 1.0 },
+            face: f,
             yaw: f64::from(v.yaw),
             dead: v.is_dead(),
             look: dwell_characters::DEFAULT_LOOK,
@@ -288,7 +283,7 @@ impl Bodies {
     }
 
     /// Your body lying where you died.
-    pub fn own_dead(&mut self, feet: [f64; 3], yaw: f64, face: f64, dt: f64) -> PlayerView {
+    pub fn own_dead(&mut self, feet: [f64; 3], yaw: f64, face: FaceFrame, dt: f64) -> PlayerView {
         let pose = self.own.update(&MoveInput::default(), dt as f32);
         PlayerView {
             feet,
@@ -362,11 +357,12 @@ mod tests {
             let stone = dwell_blocks::require("dwell:sandbox_floor");
             let [x, y, z] = f.cell([3, 40, 5]);
             w.set_voxel(x, y, z, f.state(stone));
-            // Its top is row 41, face-local.
-            assert_eq!(ground_at(&mut w, f, [3.5, 41.2, 5.5], 0.8), Some(41.0));
-            assert_eq!(ground_at(&mut w, f, [3.5, 40.6, 5.5], 0.8), Some(41.0));
-            assert_eq!(ground_at(&mut w, f, [3.5, 43.0, 5.5], 0.8), None);
-            assert_eq!(ground_at(&mut w, f, [4.5, 41.0, 5.5], 0.8), None);
+            // Its top is row 41's bottom, face-local, in metres (rows are `CELL_H` tall).
+            let top = m_of_row(41);
+            assert_eq!(ground_at(&mut w, f, [3.5, top + 0.2, 5.5], 0.8), Some(top));
+            assert_eq!(ground_at(&mut w, f, [3.5, top - 0.2, 5.5], 0.8), Some(top));
+            assert_eq!(ground_at(&mut w, f, [3.5, top + 2.0, 5.5], 0.8), None);
+            assert_eq!(ground_at(&mut w, f, [4.5, top, 5.5], 0.8), None);
         }
     );
 
@@ -393,7 +389,8 @@ mod tests {
                     yaw: 0.0,
                     pitch: 0.0,
                     state: dwell_protocol::PlayerState::Walking,
-                    flags: player_flags::GROUNDED | if f.is_b() { player_flags::FACE_B } else { 0 },
+                    flags: player_flags::GROUNDED
+                        | dwell_physics::net::face_bit(f, player_flags::FACE_B),
                     held: 0,
                     swing: 0,
                 };

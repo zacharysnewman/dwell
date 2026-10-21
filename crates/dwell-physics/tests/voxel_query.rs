@@ -7,12 +7,16 @@ use common::*;
 use dwell_blocks::{VoxelShape, info, require};
 use dwell_physics::query::{ProbeHit, VoxelQuery};
 use dwell_physics::{DVec3, Vec3};
+use dwell_world::CELL_H;
 
 const INF: f32 = f32::INFINITY;
 
 /// The box-based Amanatides–Woo cast: a cell's shape is the box [0,1]×[0,h]×[0,1], h = 1 for a
-/// cube, ½ for a shaped block.
-fn reference_cast(q: &VoxelQuery, origin: DVec3, dir: Vec3, max_distance: f32) -> Option<ProbeHit> {
+/// cube, ½ for a shaped block. It runs in cell space (y in rows): the ray scaled by 1 / CELL_H in
+/// y keeps its parameter, so distances along it stay in metres.
+fn reference_cast(q: &VoxelQuery, at: DVec3, dir: Vec3, max_distance: f32) -> Option<ProbeHit> {
+    let origin = DVec3::new(at.x, at.y / CELL_H, at.z);
+    let d_cells = Vec3::new(dir.x, dir.y / CELL_H as f32, dir.z);
     let base = [
         origin.x.floor() as i32,
         origin.y.floor() as i32,
@@ -23,7 +27,7 @@ fn reference_cast(q: &VoxelQuery, origin: DVec3, dir: Vec3, max_distance: f32) -
         (origin.y - f64::from(base[1])) as f32,
         (origin.z - f64::from(base[2])) as f32,
     ];
-    let d = [dir.x, dir.y, dir.z];
+    let d = [d_cells.x, d_cells.y, d_cells.z];
     let (mut cell, mut step, mut t_max, mut t_delta) = ([0i32; 3], [0i32; 3], [INF; 3], [INF; 3]);
     for i in 0..3 {
         cell[i] = o[i].floor() as i32;
@@ -84,7 +88,7 @@ fn reference_cast(q: &VoxelQuery, origin: DVec3, dir: Vec3, max_distance: f32) -
                     }
                     return Some(ProbeHit {
                         distance: e0,
-                        point: origin + dir.as_dvec3() * f64::from(e0),
+                        point: at + dir.as_dvec3() * f64::from(e0),
                         normal: Vec3::from(n),
                         ..ProbeHit::default()
                     });
@@ -240,14 +244,13 @@ fn the_exact_shape_ray_cast_answers_like_the_box_cast_on_cubes() {
     }
     let mut w = PlayerTestWorld::new();
     let mut rng = Rng(7);
+    // Single cells (½ m tall on the half-height grid), not 1 m blocks.
+    let rows = dwell_world::rows_for_m(1.0);
     for z in -6..=6 {
-        for y in -3..=3 {
+        for row in -3 * rows..=3 * rows {
             for x in -6..=6 {
-                match rng.next() % 8 {
-                    0 => w.set(x, y, z, cube_block()),
-                    1 => w.set(x, y, z, cube_block()),
-                    2 => w.set(x, y, z, cube_block()),
-                    _ => {}
+                if rng.next() % 8 < 3 {
+                    w.set_cell(x, row, z, cube_block());
                 }
             }
         }

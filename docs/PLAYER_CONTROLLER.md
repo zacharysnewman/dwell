@@ -128,7 +128,7 @@ pub struct PlayerController {
     pub sprint_slide: SprintSlideState,
     pub platform: PlatformState,
     pub target_velocity: Vec3,
-    pub face: i8,          // +1 face A, −1 face B (§11)
+    pub face: FaceFrame,   // the face frame (§11, BIFACIAL_WORLD.md §11)
     pub events: u32,       // events:: bits raised this tick (JUMPED, LANDED, CROUCH_CHANGED,
     pub landed_speed: f32, //   CLIMB/SWIM/FLY/SPRINT_SLIDE_STARTED/ENDED); LANDED's impact speed
 }
@@ -235,6 +235,11 @@ WASM builds compute them identically (§8.3).
      `step_probe_distance` (5 cm) past the face, from `max_step_height` + 5 cm above the foot: it
      must be at most `max_step_height` above the foot and no steeper than `slide.min_angle` (never
      onto ground that slides, §6.8). The lift is the top less the feet (the step plus the rise).
+     A face's top need not be level (on ½ m cells the side of a ½ m ramp beside one
+     a row lower rises along the face), so the top is read at each of the face's hit points and
+     the highest is used (the first of equal ones, so level steps are as before). Reading only the
+     first ray's point could take the face's low end, and the lifted capsule then hit the high end:
+     a walker stopped against the side of a ramp (`tests/ramps.rs`, diagonal hillsides).
   4. **Room.** The capsule (slimmed by 2 cm) must fit lifted (a ceiling over the step stops it),
      shifted, and after this tick's and the next tick's move.
   5. **Footing.** The ground ring (radius `0.9 × radius`) must stand on the step after the move,
@@ -305,7 +310,7 @@ Why:
 
 **Terrain collision** (`TerrainCollision`, `terrain.rs`): one static body with one Rapier (Parry)
 `Voxels` collider for the whole world, holding the cells of the chunks around players that collide
-as full cubes (shaped cells — adaptive top blocks — are each chunk's triangle mesh, below). Parry
+as full cubes (shaped cells — the generated ramps — are each chunk's triangle mesh, below). Parry
 classifies each voxel by its neighbours, so the capsule slides across voxel edges and chunk borders
 without catching on internal edges (`walking_across_chunk_seams_in_every_direction_never_loses_the_ground`:
 no loss of ground crossing chunk borders in 8 directions). With `f64` positions it is exact anywhere
@@ -335,46 +340,38 @@ Rules that keep the grid and the physics world consistent:
   `crates/dwell-sim/tests/netcode.rs`).
 - Probes read voxels from the world (`VoxelWorld::read`, generating a chunk if needed), so a probe
   and the collider see the same cells.
-- Non-cube voxel shapes extend the DDA through the block shape table, adaptive blocks through
-  their derived shapes (`VoxelQuery::shape`); the probe interface does not change.
+- Non-cube voxel shapes (the ramp pieces) extend the DDA through the block shape table
+  (`VoxelQuery::shape`); the probe interface does not change.
 
 ---
 
 ## 6. Voxel-specific behaviour
 
-### 6.1 Dimensions tuned to the 1 m grid
+### 6.1 Dimensions tuned to the grid
 The PPC default capsule (radius 0.5, height 2.0) is exactly one block wide and cannot pass
 through a 1-wide, 2-tall doorway. Dwell's defaults (§7): **radius 0.3, height 1.8** (fits 1×2
 openings), **crouch height 0.9** (fits 1-tall crawlspaces with skin to spare).
 
 ### 6.2 Blocks, steps, slopes
-- **Natural ground is shaped** (Phase 18, [`ADAPTIVE_BLOCKS.md`](./ADAPTIVE_BLOCKS.md)): grass,
-  dirt, stone and sand top blocks take their shapes from their neighbours — a level field rests at
-  half height, edges slope 27° to the ground, a 1-block step is one even 27° slope across both
-  blocks (walked up without jumping), one-wide rows are half-height ridges (45° flanks), a one-wide
-  block against a higher one is a 45° ramp, saddles and dimples reach 54.74°. **Faces steeper than
-  44° slide** (owner, 2026-10-15; §6.8): the 45° ramps (so single-block stairs are no longer
-  walked up — a stairs block comes later), ridge and pyramid flanks, saddles and dimples. The
-  probes (§5) read the derived shapes (`VoxelQuery::shape`, `FaceQuery::shape`, turned over on
-  face B), and the terrain collider holds shaped cells as per-chunk triangle meshes (§5). The
-  suites build cube geometry from the non-adaptive `dwell:sandbox_floor` (`cube_block()`), and
-  `tests/adaptive.rs` walks the adaptive shapes: the Shape Playground's 28 situations built as
-  terrain (every shape the rules make), where a player stands still on every block whose ground is
-  gentle, slides off every block whose ground under it is steeper than 44°, and never ends at rest
-  on such ground; walkers along every row and column never launch, hop or jump; a terrace's
-  1-block step up and down; a one-wide ridge stops a walker at its flank and a jump clears it; a
-  grass field across chunk seams (the per-chunk meshes) without losing the ground; a block placed
-  beside a standing player reshaping the ground under it without a launch — at the origin, far out
-  and on face B. Slope logic matters on **Tier 1 bodies** (rotated clusters; ramps in the tests
-  are rotated Tier 1 boxes, `walks_up_and_down_a_20_degree_ramp_staying_grounded` and the 45°
-  ramps of `tests/slide.rs`), and half-height steps (stairs, the scenario's step) are static Tier
-  1 boxes (`PlayerTestWorld::half_step`).
+- **Natural ground is shaped once, at generation** (Phase 41, [`HALF_HEIGHT_GRID.md`](./HALF_HEIGHT_GRID.md)):
+  on ½ m cells the generator tops natural columns with stored cardinal ramps — a ½ m ramp (26.57°,
+  walked) or a 45° ramp of two cells (it slides, §6.8) — and everything else is flat cells: ½ m
+  steps, walked up by the step-up (§4). Nothing reshapes when a block is placed or broken. The
+  probes (§5) read the cells' shapes (`VoxelQuery::shape`, `FaceQuery::shape`, turned over on face
+  B), and the terrain collider holds shaped cells as per-chunk triangle meshes (§5). The suites
+  build cube geometry from `dwell:sandbox_floor` (`cube_block()`), and `tests/ramps.rs` walks
+  generated ground: the playgrounds' columns (standing on every one rests unless it slides), walks
+  along every row and column without a launch, a ½ m rise and a placed ½ m block stepped onto, a
+  grass field across chunk seams, a placed block beside a standing player leaving its ground alone,
+  the 45° ramp's foot, and diagonal hillsides — at the origin, far out and on face B. Slope logic
+  matters on **Tier 1 bodies** (rotated clusters; ramps in the tests are rotated Tier 1 boxes,
+  `walks_up_and_down_a_20_degree_ramp_staying_grounded` and the 45° ramps of `tests/slide.rs`), and
+  half-height steps (stairs, the scenario's step) are static Tier 1 boxes (`PlayerTestWorld::half_step`).
+  (Phase 18's adaptive blocks, shaped from their neighbours at use, were removed with ½ m cells.)
 - `max_slope_angle` is **56°**: the steepest *ground*; steeper faces are walls. Ground steeper
-  than `slide.min_angle` (44°) slides, so the limit must stay above every face the adaptive shapes
-  make — a saddle's or a dimple's, from its raised diagonal down to a floor corner, is arctan √2 ≈
-  54.74° (`every_slope_the_adaptive_table_makes_is_ground_and_the_steep_ones_slide`). At 50° (a
-  short-lived tuning on Phase 18's branch) a player put on a saddle rested on its face ungrounded,
-  in the Falling state: the air's absorption of the contact held it up.
+  than `slide.min_angle` (44°) slides, so the 45° ramps slide and stay ground. (It was set above
+  Phase 18's adaptive saddles' 54.74°; at 50°, a short-lived tuning, a player put on a saddle rested
+  on its face ungrounded.)
 - The bifacial world puts a second face on the disc's underside, where up is −y; the controller
   runs in a face-local frame there (§11, [`BIFACIAL_WORLD.md`](./BIFACIAL_WORLD.md) §6).
 - `max_step_height` 0.55 m (PPC: 0.45): half-height steps (0.5 m) are stepped up without leaving
@@ -536,22 +533,22 @@ data (`PlayerControllerConfig::slide`, §7).
   and the terminal speed × `crouch_terminal_factor` (1.15). The **step-up** never steps onto
   ground steeper than `min_angle`, and a sliding player does not step at all. **Jumping** off a
   slide is a normal jump. **Ladders and water** override sliding (exclusive layers).
-- **The ramp's foot** (found in the half-height branch's playtest, 2026-10-20; the same on the
-  adaptive 45° flanks). Walking into a 45° face from below, the ground ring's highest hit is the
-  face while the centre still stands on gentle ground: the ground following climbed the face (and
-  the solver turned the drive into it into a climb) until the centre crossed onto it, slid back off
-  and walked up again, switching between Sliding and Walking every few ticks. Now, while the player
-  drives into such a face (its own velocity or the move input), the probe's ground is the ground
-  under the centre (`step_probe`: its normal and gap; `GroundInfo::foot_normal` keeps the face's),
-  and the horizontal pass removes the tick's motion into the face's horizontal normal, as a wall
-  would (`current` is kept, so the player walks on along the foot or away at once). The player stops
-  at the foot, its round bottom against the toe, in one state; running into it stops the same way
-  rather than running up its toe and sliding back. Standing still beside a face is unchanged (the
-  ring's face holds the capsule where it rests). Derived from the probe each tick, so it needs
-  nothing on the wire. Tested by `tests/adaptive.rs`
-  (`pressing_into_a_45_degree_flanks_foot_does_not_flicker_between_sliding_and_walking`: a one-wide
-  ridge's flank, walking at 0–60° and running at 0–45° from four starting distances; all flickered
-  before, 44–52 switches in 2.5 s) and the netcode suite's stairs run (B stops at the foot).
+- **The ramp's foot** (the half-height playtest, 2026-10-20). Walking into a 45° face
+  from below, the ground ring's highest hit is the ramp while the centre still stands on the floor:
+  the ground following climbed the ramp's face (and the solver turned the drive into the face into
+  a climb) until the centre crossed onto the toe, ~0.24 m up, slid back off it, and walked up
+  again, switching between Sliding and Walking every few ticks. Now, while the player drives into
+  such a ramp (its own velocity or the move input), the probe's ground is the ground under the
+  centre (`step_probe`: its normal and gap, `GroundInfo::foot_normal` keeps the ramp's), and the
+  horizontal pass removes the tick's motion into the ramp's horizontal normal, as a wall would
+  (`current` is kept, so it walks on along the foot or away at once). The player stops at the
+  foot, its round bottom against the toe (feet at most ~0.3 m up), in one state; running into the
+  ramp stops the same way rather than running up its toe and sliding back. Standing still beside a
+  ramp is unchanged (the ring's ramp holds the capsule where it rests). Derived from the probe each
+  tick, so it needs nothing on the wire. Tested by `tests/ramps.rs`
+  (`pressing_into_a_45_degree_ramps_foot_does_not_flicker_between_sliding_and_walking`: walking
+  and running at 0–60° from four starting distances; all 40 flickered before, 40–56 switches in
+  2.5 s) and the netcode suite's stairs run.
 - **State.** `State::Sliding` (the PPC's state enum always had it; nothing set it before) when
   sliding, above Crouching in `step_state`'s priority: Climbing > Swimming > Flying > Sliding >
   Crouching > Jumping/Falling > Running/Walking/Idle.
@@ -657,7 +654,7 @@ PPC default for voxels.
 | | `max_push_force` ◆ | 800 N | — | Contact limit (Phase 20) |
 | | `pushable_mass_limit` ◆ | 400 kg | — | Heavier clusters are immovable by players (Phase 20) |
 | `probes` | `ground_probe_margin` / `ceiling_probe_margin` | 0.15 / 0.10 m | same | |
-| | `max_slope_angle` | 56° ◆ (the steepest ground: above the adaptive saddle's 54.74°; steeper than `slide.min_angle` slides) | same | |
+| | `max_slope_angle` | 56° ◆ (the steepest ground: above the 45° ramps; steeper than `slide.min_angle` slides) | same | |
 | `jump` | `height` | 1.25 m | same | Clears one block |
 | | `buffer_ticks` / `coyote_ticks` ◆ | 12 / 12 ticks (0.2 / 0.2 s) | 0.2 / 0.1 s | Coyote time doubled: 0.1 s felt stingy next to other games |
 | `crouch` | `height` ◆ | 0.9 m | 1.0 | Fits 1-tall crawlspaces |

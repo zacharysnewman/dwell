@@ -17,6 +17,7 @@ mod reflections_gen;
 pub mod spyglass;
 
 use daynight::{DAY_NIGHT, DayState, Sample};
+use dwell_world::FaceFrame;
 
 pub type Rgb = [f64; 3];
 
@@ -74,9 +75,6 @@ fn smoothstep(a: f64, b: f64, x: f64) -> f64 {
     t * t * (3.0 - 2.0 * t)
 }
 
-/// Fragments below the midplane belong to face B (lit by the lights above face B).
-pub const MIDPLANE_Y: f64 = dwell_protocol::world::MIDPLANE_Y as f64;
-
 /// Tone mapping exposure: 1 leaves the lights as set (the time of day's exposure multiplies it).
 pub const DEFAULT_EXPOSURE: f64 = 1.0;
 pub const EXPOSURE_MIN: f64 = 0.4;
@@ -103,15 +101,15 @@ fn halo(x: f64, bloom: f64, bloom_deg: f64, glow: f64, glow_deg: f64) -> f64 {
     bloom * ((x - 1.0) * gauss_k(bloom_deg)).exp() + glow * ((x - 1.0) * gauss_k(glow_deg)).exp()
 }
 
-/// The sky's colour (sRGB) toward the unit world direction `dir` for a viewer on `face` (+1 A,
-/// −1 B) whose look is `s`, under `day`'s sun and moon: the gradient from the horizon to the zenith,
+/// The sky's colour (sRGB) toward the unit world direction `dir` for a viewer on `face` (its
+/// frame) whose look is `s`, under `day`'s sun and moon: the gradient from the horizon to the zenith,
 /// a warm band along the horizon toward the sun, the sun's bloom and glow and the moon's. Below the
 /// viewer's horizon it is the horizon's colour in that azimuth. The sky behind the world, the haze
 /// far terrain fades into (so the fog is the horizon's colour at every time of day) and the sky
 /// water reflects are all this function; [`sky_wgsl`]'s `dwell_sky` is its shader twin. The sun's
 /// and moon's discs and the stars are drawn over it behind the world only (`dwell_sky_bodies`).
-pub fn sky_color(dir: Rgb, face: f64, s: &Sample, day: &DayState) -> Rgb {
-    let up = [0.0, face, 0.0];
+pub fn sky_color(dir: Rgb, face: FaceFrame, s: &Sample, day: &DayState) -> Rgb {
+    let up = face.up();
     let above = dot(dir, up);
     let mut d = dir;
     if above <= 0.0 {
@@ -222,10 +220,10 @@ pub fn sky_wgsl() -> String {
 /// The sky's shader functions (the constants above come first).
 const SKY_WGSL: &str = include_str!("sky.wgsl");
 
-/// A light's weight for a fragment whose face's up is `face_up` (±1): its height over that face's
+/// A light's weight for a fragment on `face`: its height over that face's
 /// horizon, smoothly (each fragment takes the lights above its own face, BIFACIAL_WORLD.md §6).
-pub fn light_weight(light_up: f64, face_up: f64) -> f64 {
-    smoothstep(-0.1, 0.1, light_up * face_up)
+pub fn light_weight(light_up: f64, face: FaceFrame) -> f64 {
+    smoothstep(-0.1, 0.1, face.vector([0.0, light_up, 0.0])[1])
 }
 
 /// sRGB (0–1) to linear light.
@@ -304,17 +302,18 @@ mod tests {
         // horizon colour.
         for i in 0..240 {
             let day = at(f64::from(i) / 240.0);
-            for face in [1.0, -1.0] {
-                let s = if face > 0.0 { day.a } else { day.b };
+            for face in [FaceFrame::A, FaceFrame::B] {
+                let s = if face.is_b() { day.b } else { day.a };
                 for deg in [0.0, 60.0, 90.0, 135.0, 180.0, 250.0] {
                     let level = around_sun(&day, deg, 0.0);
-                    let below = around_sun(&day, deg, -0.4 * face);
+                    let below = around_sun(&day, deg, -0.4 * face.sign_f64());
                     let c = sky_color(level, face, &s, &day);
                     assert!(dist(sky_color(below, face, &s, &day), c) < 1e-9);
                     if deg == 90.0 {
                         assert!(
                             dist(c, s.sky_horizon) < 0.12,
-                            "t {i}/240 face {face}: {c:?} vs {:?}",
+                            "t {i}/240 face {:?}: {c:?} vs {:?}",
+                            face.face,
                             s.sky_horizon
                         );
                     }
@@ -326,25 +325,30 @@ mod tests {
     #[test]
     fn the_sky_grades_from_the_horizon_to_the_zenith_and_glows_toward_the_sun() {
         let day = at(0.5);
-        let zenith = sky_color([0.0, 1.0, 0.0], 1.0, &day.a, &day);
+        let zenith = sky_color([0.0, 1.0, 0.0], FaceFrame::A, &day.a, &day);
         // Noon is Phase 7's approved sky: cerulean overhead, a pale haze at the horizon.
         assert!(dist(day.a.sky_zenith, hex(0x649ada)) < 1e-3);
         assert!(zenith[2] > zenith[0] + 0.3, "{zenith:?}");
-        let horizon = sky_color(around_sun(&day, 180.0, 0.0), 1.0, &day.a, &day);
+        let horizon = sky_color(around_sun(&day, 180.0, 0.0), FaceFrame::A, &day.a, &day);
         assert!(dist(horizon, hex(0xe5e5e1)) < 0.03, "{horizon:?}");
         let mut last = f64::INFINITY;
         for i in 0..=6 {
             let c = sky_color(
                 around_sun(&day, 180.0, f64::from(i) / 10.0),
-                1.0,
+                FaceFrame::A,
                 &day.a,
                 &day,
             );
             assert!(c[0] <= last + 1e-9);
             last = c[0];
         }
-        let toward = sky_color(day.sun, 1.0, &day.a, &day);
-        let away = sky_color(around_sun(&day, 180.0, day.sun[1]), 1.0, &day.a, &day);
+        let toward = sky_color(day.sun, FaceFrame::A, &day.a, &day);
+        let away = sky_color(
+            around_sun(&day, 180.0, day.sun[1]),
+            FaceFrame::A,
+            &day.a,
+            &day,
+        );
         assert!(toward[0] > away[0] && toward[0] - toward[2] > away[0] - away[2]);
     }
 
@@ -357,8 +361,8 @@ mod tests {
             .expect("a sunset");
         let day = DAY_NIGHT.state(0.0, Some(time_at_solar(t.sun)), None);
         assert!(day.sun[1].abs() < 1e-6);
-        let toward = sky_color(around_sun(&day, 0.0, 0.02), 1.0, &day.a, &day);
-        let away = sky_color(around_sun(&day, 180.0, 0.02), 1.0, &day.a, &day);
+        let toward = sky_color(around_sun(&day, 0.0, 0.02), FaceFrame::A, &day.a, &day);
+        let away = sky_color(around_sun(&day, 180.0, 0.02), FaceFrame::A, &day.a, &day);
         assert!(toward[0] - toward[2] > 0.25, "{toward:?}");
         assert!(toward[0] - toward[2] > away[0] - away[2] + 0.1);
     }
@@ -388,8 +392,8 @@ mod tests {
         let midnight = at(0.0);
         assert!(midnight.b.sun_intensity > 2.0 && midnight.a.sun_intensity == 0.0);
         // A face B viewer at noon sees face B's night sky.
-        let up = sky_color([0.0, -1.0, 0.0], -1.0, &day.b, &day);
-        let a_up = sky_color([0.0, 1.0, 0.0], 1.0, &day.a, &day);
+        let up = sky_color([0.0, -1.0, 0.0], FaceFrame::B, &day.b, &day);
+        let a_up = sky_color([0.0, 1.0, 0.0], FaceFrame::A, &day.a, &day);
         assert!(luma(up) < luma(a_up) * 0.3);
     }
 
@@ -409,14 +413,14 @@ mod tests {
 
     #[test]
     fn light_weights_follow_the_fragments_own_horizon() {
-        assert_eq!(light_weight(0.7, 1.0), 1.0);
-        assert_eq!(light_weight(-0.7, 1.0), 0.0);
-        assert_eq!(light_weight(-0.7, -1.0), 1.0);
-        assert_eq!(light_weight(0.7, -1.0), 0.0);
-        assert!((light_weight(0.0, 1.0) - 0.5).abs() < 1e-12);
+        assert_eq!(light_weight(0.7, FaceFrame::A), 1.0);
+        assert_eq!(light_weight(-0.7, FaceFrame::A), 0.0);
+        assert_eq!(light_weight(-0.7, FaceFrame::B), 1.0);
+        assert_eq!(light_weight(0.7, FaceFrame::B), 0.0);
+        assert!((light_weight(0.0, FaceFrame::A) - 0.5).abs() < 1e-12);
         let mut last = -1.0;
         for i in -30..=30 {
-            let w = light_weight(f64::from(i) / 100.0, 1.0);
+            let w = light_weight(f64::from(i) / 100.0, FaceFrame::A);
             assert!(w >= last);
             last = w;
         }
@@ -434,10 +438,11 @@ mod tests {
     #[test]
     fn the_shader_sky_is_valid_wgsl_with_the_uniform_block() {
         let src = format!(
-            "{}\n@group(0) @binding(0) var<uniform> day: DaySky;\n{}\n\
+            "{}{}\n@group(0) @binding(0) var<uniform> day: DaySky;\n{}\n\
              @fragment fn main(@location(0) d: vec3f) -> @location(0) vec4f {{\n\
              let c = dwell_sky(d, 1.0, day);\n\
              return vec4f(dwell_sky_bodies(d, 1.0, day, c), 1.0);\n}}",
+            FaceFrame::wgsl(),
             daynight::DAY_SKY_WGSL,
             sky_wgsl()
         );

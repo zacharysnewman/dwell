@@ -9,7 +9,7 @@ use dwell_physics::controller::{Input, events as ev, fly_speed_factor};
 use dwell_physics::net::{dequantize_input, quantize_input};
 use dwell_physics::{DVec3, Vec3};
 use dwell_protocol::{InputFrame, input_buttons, players::FLY_SPEED_MAX_LEVEL};
-use dwell_world::MIDPLANE_Y;
+use dwell_world::MIDPLANE_M;
 
 fn fly(x: f32, y: f32, run: bool, up: bool, down: bool) -> Input {
     Input {
@@ -64,20 +64,16 @@ fn jump_rises_crouch_sinks_move_flies_along_the_yaw() {
 fn flying_around_the_outside_through_the_midplane_to_face_b() {
     let mut w = PlayerTestWorld::new();
     let e = w.spawn_at(
-        DVec3::new(
-            f64::from(world_cell_x(0)),
-            f64::from(MIDPLANE_Y) + 30.0,
-            0.0,
-        ),
+        DVec3::new(f64::from(world_cell_x(0)), MIDPLANE_M + 30.0, 0.0),
         0.0,
     );
-    assert_eq!(w.c(e).face, 1);
+    assert_eq!(w.c(e).face, dwell_world::FaceFrame::A);
     // Down (toward the midplane) until across, then up in the new frame (away from it). The input
     // closure can't see the world, so the face is read between ticks.
     let mut face = w.c(e).face;
-    let (mut flips, mut lowest) = (0, f64::from(MIDPLANE_Y));
+    let (mut flips, mut lowest) = (0, MIDPLANE_M);
     for _ in 0..ticks(6.0) {
-        let across = w.c(e).face < 0;
+        let across = w.c(e).face.is_b();
         // Raw world input: `input_for` would mirror x, which this test doesn't use.
         w.set_input(move |_, _| fly(0.0, 0.0, false, across, !across));
         w.step(1);
@@ -90,7 +86,8 @@ fn flying_around_the_outside_through_the_midplane_to_face_b() {
     }
     assert!(flips >= 1);
     assert!(
-        lowest < f64::from(MIDPLANE_Y) - 30.0,
+        // face-boundary: a crossing, measured against the midplane itself
+        lowest < MIDPLANE_M - 30.0,
         "well out onto face B's side: {lowest}"
     );
 }

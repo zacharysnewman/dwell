@@ -1,6 +1,6 @@
 {
   "$comment": "Single source of truth for protocol constants (ARCHITECTURE.md §7.4, §8). Run `node shared/protocol/gen.mjs` after editing; CI fails if generated files are stale.",
-  "protocolVersion": 17,
+  "protocolVersion": 18,
   "simHz": 60,
   "snapshotHz": 20,
   "maxDatagramBytes": 1200,
@@ -8,6 +8,8 @@
   "maxWebrtcMessageBytes": 65536,
   "webrtcFragmentTag": 255,
   "chunkSize": 32,
+  "$cellHeight": "A cell is 1 m × cellHeight × 1 m (HALF_HEIGHT_GRID.md §2). The world's vertical values (midplaneY, coreLayers, seaLevel, flatTopY) are rows of cells; the generator adds metre twins (row × cellHeight). flipBand, islandRadius and worldRadius are metres. The bounds sphere is in cells (cell space), so it reaches half as far up and down in metres. Changing cellHeight changes what every cell coordinate means: bump protocolVersion.",
+  "cellHeight": 0.5,
   "authDomainTag": "dwell-auth-v1",
   "maxInputsPerDatagram": 4,
   "players": {
@@ -23,12 +25,12 @@
   },
   "world": {
     "midplaneY": 0,
-    "coreLayers": 10,
+    "coreLayers": 20,
     "coreAnchorLayers": 8,
     "flipBand": 4,
-    "seaLevel": 32,
+    "seaLevel": 64,
     "islandRadius": 25000,
-    "flatTopY": 32,
+    "flatTopY": 64,
     "worldRadius": 50000,
     "positionFixedScale": 256,
     "viewRadiusChunks": 3,

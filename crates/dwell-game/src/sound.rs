@@ -5,6 +5,7 @@
 
 use dwell_blocks::{StateId, info};
 use dwell_protocol::PlayerState;
+use dwell_world::FaceFrame;
 
 include!("sound.gen.rs");
 
@@ -53,8 +54,8 @@ pub struct MoverSample {
     pub state: PlayerState,
     pub grounded: bool,
     pub crouched: bool,
-    /// +1 face A (up is +y), −1 face B.
-    pub face: f64,
+    /// The face it is on (its up).
+    pub face: FaceFrame,
     /// 0–1: how much of the body is under water.
     pub submerged: f64,
     /// The block just under the feet.
@@ -239,7 +240,8 @@ impl MoverSounds {
         } else {
             self.last_ground
         };
-        let up = |v: [f64; 3], face: f64| v[1] * face;
+        // Speeds along the mover's up (face-local).
+        let up = |v: [f64; 3], face: FaceFrame| face.vector(v)[1];
         let d = [
             s.feet[0] - p.feet[0],
             s.feet[1] - p.feet[1],
@@ -368,7 +370,7 @@ pub struct CellChange {
 }
 
 fn centre(cell: [i32; 3]) -> [f64; 3] {
-    cell.map(|v| f64::from(v) + 0.5)
+    dwell_world::centre_of_cell(cell)
 }
 
 /// Break and place sounds: our own at once (the client does not predict edits), other players'
@@ -496,7 +498,7 @@ mod tests {
             state: PlayerState::Idle,
             grounded: true,
             crouched: false,
-            face: 1.0,
+            face: FaceFrame::A,
             submerged: 0.0,
             ground: stone(),
             body: 0,
@@ -612,19 +614,86 @@ mod tests {
         assert_eq!(soft[0].block, stone());
     }
 
-    #[test]
-    fn landing_on_face_b_reads_impact_toward_its_ground() {
-        let (mut m, mut s) = (MoverSounds::new(), standing());
-        s.face = -1.0;
-        m.update(&s, None, &mut Vec::new());
-        s.grounded = false;
-        s.velocity = [0.0, 10.0, 0.0]; // falling toward the midplane: +y on face B
-        m.update(&s, None, &mut Vec::new());
-        s.grounded = true;
+    /// A face-local session (BIFACIAL_WORLD.md §11): a walk, a jump and a landing, a crouch, a run
+    /// into a slide down a slope, a dive into water and out, a flight up and down.
+    fn session() -> Vec<MoverSample> {
         let mut out = Vec::new();
-        m.update(&s, None, &mut out);
-        assert_eq!(kinds(&out), [SoundKind::Land]);
+        let mut s = standing();
+        let mut push = |s: &mut MoverSample, ticks: usize| {
+            for _ in 0..ticks {
+                for k in 0..3 {
+                    s.feet[k] += s.velocity[k] * DT;
+                }
+                out.push(*s);
+            }
+        };
+        push(&mut s, 1);
+        (s.state, s.velocity) = (PlayerState::Walking, [4.0, 0.0, 0.0]);
+        push(&mut s, 60);
+        (s.state, s.grounded, s.velocity) = (PlayerState::Jumping, false, [4.0, 6.0, 0.0]);
+        push(&mut s, 20);
+        (s.state, s.velocity) = (PlayerState::Falling, [4.0, -12.0, 0.0]);
+        push(&mut s, 10);
+        (s.state, s.grounded, s.velocity) = (PlayerState::Idle, true, [0.0; 3]);
+        push(&mut s, 5);
+        s.crouched = true;
+        push(&mut s, 5);
+        s.crouched = false;
+        (s.state, s.velocity) = (PlayerState::Running, [8.0, 0.0, 0.0]);
+        push(&mut s, 30);
+        (s.state, s.velocity) = (PlayerState::Sliding, [8.0, -5.0, 0.0]);
+        push(&mut s, 30);
+        (s.state, s.grounded, s.velocity) = (PlayerState::Falling, false, [0.0, -9.0, 0.0]);
+        s.ground = 0;
+        push(&mut s, 5);
+        (s.state, s.submerged, s.body) = (PlayerState::Swimming, 1.0, require("dwell:water"));
+        s.velocity = [2.0, -1.0, 0.0];
+        push(&mut s, 40);
+        (s.submerged, s.body, s.state) = (0.0, 0, PlayerState::Flying);
+        s.velocity = [0.0, 12.0, 0.0];
+        push(&mut s, 20);
+        s.velocity = [0.0, -12.0, 0.0];
+        push(&mut s, 20);
+        out
     }
+
+    dwell_world::both_faces!(
+        /// Every sound a face-local session makes, it makes on either face: the session placed on
+        /// face `f` through its frame sounds as it does face-local (a landing is toward the face's
+        /// ground, a rise away from it).
+        fn a_session_sounds_the_same_on_either_face(f: FaceFrame) {
+            let run = |frame: FaceFrame| {
+                let mut m = MoverSounds::new();
+                let mut out = Vec::new();
+                for s in session() {
+                    let placed = MoverSample {
+                        feet: frame.point(s.feet),
+                        velocity: frame.vector(s.velocity),
+                        face: frame,
+                        ..s
+                    };
+                    m.update(&placed, None, &mut out);
+                }
+                out
+            };
+            let local = run(FaceFrame::A);
+            let all = kinds(&local);
+            for k in [
+                SoundKind::Step,
+                SoundKind::Jump,
+                SoundKind::Land,
+                SoundKind::CrouchOn,
+                SoundKind::Sprint,
+                SoundKind::Slide,
+                SoundKind::Enter,
+                SoundKind::Rise,
+                SoundKind::Dive,
+            ] {
+                assert!(all.contains(&k), "the session sounds {k:?}: {all:?}");
+            }
+            assert_eq!(run(f), local, "{:?}", f.face);
+        }
+    );
 
     #[test]
     fn jump_crouch_sprint_and_slide_sound_once_on_their_transitions() {
@@ -854,7 +923,7 @@ mod tests {
         e.local_place([4, 5, 6], require("dwell:dirt"), 10.0, &mut out);
         assert_eq!(kinds(&out), [SoundKind::Break, SoundKind::Place]);
         assert_eq!(out[0].block, stone());
-        assert_eq!(out[0].at, Some([1.5, 2.5, 3.5]));
+        assert_eq!(out[0].at, Some(dwell_world::centre_of_cell([1, 2, 3])));
         let mut echo = Vec::new();
         e.changes(
             &[
@@ -902,7 +971,7 @@ mod tests {
         );
         assert_eq!(kinds(&out), [SoundKind::Break, SoundKind::Place]);
         assert_eq!(out[0].block, require("dwell:sand"));
-        assert_eq!(out[0].at, Some([10.5, 0.5, 0.5]));
+        assert_eq!(out[0].at, Some(dwell_world::centre_of_cell([10, 0, 0])));
         assert_eq!(out[1].block, require("dwell:grass"));
         // A stale pending edit no longer hides a later change in its cell.
         let mut e = EditSounds::new();

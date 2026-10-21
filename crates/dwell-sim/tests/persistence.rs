@@ -16,6 +16,9 @@ use dwell_world::{
     Chunk, ChunkCoord, FLAT_TOP_Y, GENERATOR_FLAT, M, chunk_hash, generate_flat_chunk,
 };
 
+/// The chunk row holding the flat world's surface row (`FLAT_TOP_Y`): 2 on ½ m cells.
+const GC: i32 = dwell_world::FLAT_TOP_Y / dwell_world::CHUNK_SIZE;
+
 /// The flat world's surface: its top voxel is G − 1.
 const G: i32 = FLAT_TOP_Y;
 
@@ -102,7 +105,7 @@ fn an_edited_world_survives_a_server_restart() {
     assert_eq!(
         f.server
             .world()
-            .find(ChunkCoord::new(-1, 1, 0))
+            .find(ChunkCoord::new(-1, GC, 0))
             .unwrap()
             .revision(),
         1
@@ -125,7 +128,7 @@ fn an_edited_world_survives_a_server_restart() {
     let chunks = f.chunks(1, 10, None);
     let edited = chunks
         .iter()
-        .find(|m| m.coord == [-1, 1, 0])
+        .find(|m| m.coord == [-1, GC, 0])
         .expect("the edited chunk streamed");
     assert_eq!(edited.form, ChunkForm::Explicit);
     assert_eq!(edited.revision, 1);
@@ -145,16 +148,16 @@ fn saved_chunks_far_from_players_are_evicted_and_read_back_when_needed() {
     f.server.step();
     f.server.save_now();
     // Walk far away: the saved chunk is evicted, not lost.
-    f.move_to(1, 500.5, f64::from(G), 0.5);
+    f.move_to(1, 500.5, dwell_world::m_of_row(G), 0.5);
     for _ in 0..130 {
         f.server.step();
     }
-    assert!(f.server.world().find(ChunkCoord::new(-1, 1, 0)).is_none());
-    f.move_to(1, 0.5, f64::from(G), 0.5);
+    assert!(f.server.world().find(ChunkCoord::new(-1, GC, 0)).is_none());
+    f.move_to(1, 0.5, dwell_world::m_of_row(G), 0.5);
     for _ in 0..3 {
         f.server.step();
     }
-    assert!(f.server.world().find(ChunkCoord::new(-1, 1, 0)).is_some());
+    assert!(f.server.world().find(ChunkCoord::new(-1, GC, 0)).is_some());
     assert_eq!(f.server.world().get_voxel(-1, G, 2), M.sand);
 }
 

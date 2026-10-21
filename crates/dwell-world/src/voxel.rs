@@ -550,17 +550,15 @@ impl VoxelWorld {
         )
     }
 
-    /// The shape the voxel is drawn, collided and targeted as (docs/ADAPTIVE_BLOCKS.md): an
-    /// adaptive top block's derived shape — hanging on face B, whose up is −y — or its own.
+    /// The shape the voxel is drawn, collided and targeted as: its state's own (no block is shaped
+    /// by its neighbours, ADR 0042; a face-B state is stored turned over).
     pub fn shape_at(&mut self, x: i32, y: i32, z: i32) -> &'static dwell_blocks::ShapeInfo {
-        let up = up_of_y(y);
-        dwell_blocks::adaptive::shape_at(|dx, dy, dz| self.get_voxel(x + dx, y + dy, z + dz), up)
+        dwell_blocks::shape::shape_of(self.get_voxel(x, y, z))
     }
 
-    /// Whether the voxel holds water in its open part (a flooded state or a shaped bank).
+    /// Whether the voxel holds water in its open part: a flooded state (a ramp under the sea).
     pub fn flooded_at(&mut self, x: i32, y: i32, z: i32) -> bool {
-        let up = up_of_y(y);
-        dwell_blocks::adaptive::flooded_at(|dx, dy, dz| self.get_voxel(x + dx, y + dy, z + dz), up)
+        dwell_blocks::try_info(self.get_voxel(x, y, z)).is_some_and(|s| s.flooded)
     }
 
     /// The chunk's voxels with an apron of `pad` (1..=CHUNK_SIZE) voxels from its 26 neighbours,

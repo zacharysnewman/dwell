@@ -463,7 +463,7 @@ fn within_radius(a: ChunkCoord, b: ChunkCoord, r: i32) -> bool {
 }
 
 fn chunk_at(x: f64, y: f64, z: f64) -> ChunkCoord {
-    chunk_of(x.floor() as i32, y.floor() as i32, z.floor() as i32)
+    dwell_world::chunk_of_pos([x, y, z])
 }
 
 fn add(a: ChunkCoord, b: ChunkCoord) -> ChunkCoord {
@@ -611,7 +611,8 @@ impl Server {
             next_player_id: 1,
             worldgen: WorldgenPool::new(generator.clone(), config.worldgen_threads),
             generator,
-            verification_chunk: chunk_at(spawn[0], spawn[1] - 1.0, spawn[2]),
+            // The chunk of the cell under the feet.
+            verification_chunk: chunk_at(spawn[0], spawn[1] - dwell_world::CELL_H, spawn[2]),
             verification_hash: 0,
             registry: (0, Default::default(), 0),
             own_blocks: Vec::new(),
@@ -1095,8 +1096,7 @@ impl Server {
 
     fn feet_y(&self, h: PlayerHandle) -> f64 {
         // Below the capsule's centre on face A, above it on face B.
-        self.players.position(&self.physics, h).y
-            - f64::from(self.players.controller(h).face) * f64::from(self.players.half_height(h))
+        self.players.feet(&self.physics, h)
     }
 
     fn kill(&mut self, id: SessionId, cause: DamageCause) {
@@ -1598,7 +1598,7 @@ impl Server {
         } else {
             body.eye_height
         };
-        let face = f64::from(c.face);
+        let face = c.face.sign_f64();
         [
             p.x,
             p.y - face * f64::from(self.players.half_height(h)) + face * f64::from(eye),

@@ -1,0 +1,1038 @@
+<title>Half-Height Voxel Lab</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: the Adaptive Block Lab's workbench — controls in a left rail (a bottom sheet on phones) — with the stage split
+   into two synced views of the same scene: today's 1 m cells and the proposed 1 × ½ × 1 m cells. */
+:root {
+  --bg: #e9edf1;
+  --panel: #f8fafb;
+  --fg: #1b2330;
+  --muted: #5a6677;
+  --line: #d3dae2;
+  --accent: #17809a;
+  --accent-ink: #ffffff;
+  --accent-soft: #d6eef3;
+  --chip: #eef2f5;
+  --sky-top: #a9cfe8;
+  --sky-bottom: #eef1ea;
+  --warn: #c2412d;
+  --ok: #2f7d4a;
+  --font-display: "Bricolage Grotesque", "Avenir Next", "Segoe UI", sans-serif;
+  --font-body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #10141a; --panel: #161c24; --fg: #e4e9f0; --muted: #94a0b1; --line: #29323e;
+    --accent: #4cbfd6; --accent-ink: #08222a; --accent-soft: #173a44; --chip: #1e2630;
+    --sky-top: #1d3247; --sky-bottom: #3a4250; --warn: #ff8a73; --ok: #7bd39a; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #10141a; --panel: #161c24; --fg: #e4e9f0; --muted: #94a0b1; --line: #29323e;
+  --accent: #4cbfd6; --accent-ink: #08222a; --accent-soft: #173a44; --chip: #1e2630;
+  --sky-top: #1d3247; --sky-bottom: #3a4250; --warn: #ff8a73; --ok: #7bd39a; color-scheme: dark;
+}
+html, body { height: 100%; }
+body { background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 14px; line-height: 1.45; }
+#app { height: 100%; display: grid; grid-template-columns: 340px 1fr; }
+#panel { background: var(--panel); border-right: 1px solid var(--line); overflow-y: auto; padding-block: 20px 24px; padding-left: max(18px, env(safe-area-inset-left, 0px)); padding-right: 18px; display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+#stage { position: relative; min-width: 0; min-height: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--line); }
+#stage[data-layout="m1"] { grid-template-columns: 1fr; }
+#stage[data-layout="half"] { grid-template-columns: 1fr; }
+#stage[data-layout="m1"] #view-half, #stage[data-layout="half"] #view-m1 { display: none; }
+.view { position: relative; min-width: 0; min-height: 0; background: linear-gradient(180deg, var(--sky-top), var(--sky-bottom)); }
+.view canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+.eyebrow { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+h1 { font-family: var(--font-display); font-weight: 700; font-size: 26px; line-height: 1.1; margin: 4px 0 8px; text-wrap: balance; }
+.lede { margin: 0; color: var(--muted); }
+h2 { font-family: var(--font-mono); font-weight: 500; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin: 0 0 8px; }
+section { display: flex; flex-direction: column; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+button { font: inherit; color: inherit; cursor: pointer; }
+button:focus-visible, input:focus-visible + .switch { outline: 2px solid var(--accent); outline-offset: 2px; }
+.chip { background: var(--chip); border: 1px solid var(--line); border-radius: 999px; padding: 5px 11px; font-size: 13px; }
+.chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.seg { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; background: var(--chip); border: 1px solid var(--line); border-radius: 8px; padding: 3px; gap: 3px; }
+.seg button { border: 0; background: transparent; border-radius: 6px; padding: 6px 6px; font-size: 13px; }
+.seg-2 { grid-auto-flow: row; grid-template-columns: 1fr 1fr; }
+.set-list { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 3px; }
+.seg button[aria-pressed="true"] { background: var(--panel); box-shadow: 0 1px 2px rgb(0 0 0 / 0.15); font-weight: 600; }
+.row { display: flex; flex-wrap: wrap; gap: 6px; }
+.btn { background: var(--chip); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; font-size: 13px; }
+.btn:hover { border-color: var(--accent); }
+.palette { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.group-label { grid-column: 1 / -1; font-size: 12px; color: var(--muted); margin-top: 4px; }
+.swatch { display: flex; align-items: center; gap: 8px; background: transparent; border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; text-align: left; font-size: 13px; }
+.swatch[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); font-weight: 600; }
+.swatch i { width: 18px; height: 18px; border-radius: 4px; flex: none; box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.18); }
+.toggle { position: relative; display: flex; align-items: flex-start; gap: 10px; padding: 6px 0; cursor: pointer; }
+.toggle input { position: absolute; opacity: 0; pointer-events: none; }
+.switch { flex: none; width: 32px; height: 18px; border-radius: 999px; background: var(--line); position: relative; margin-top: 1px; transition: background 0.15s; }
+.switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: var(--panel); transition: transform 0.15s; box-shadow: 0 1px 2px rgb(0 0 0 / 0.25); }
+.toggle input:checked + .switch { background: var(--accent); }
+.toggle input:checked + .switch::after { transform: translateX(14px); }
+.toggle small { display: block; color: var(--muted); font-size: 12px; }
+.hint-text { margin: 6px 0 0; font-size: 12px; color: var(--muted); }
+.controls { display: flex; flex-direction: column; gap: 10px; }
+.rule { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+.cmp { width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
+.cmp th, .cmp td { text-align: left; padding: 4px 6px 4px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+.cmp th { font-weight: 600; color: var(--muted); font-size: 11px; }
+.inspect { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.inspect > div { min-width: 0; }
+.inspect h3 { margin: 0 0 4px; font-size: 12px; font-weight: 600; }
+.cells { margin: 0; padding: 0; list-style: none; font-family: var(--font-mono); font-size: 11px; line-height: 1.35; }
+.cells li { display: grid; grid-template-columns: 3.4em 1fr; gap: 4px; padding: 3px 0; border-bottom: 1px dashed var(--line); overflow-wrap: anywhere; }
+.cells li span:first-child { color: var(--muted); }
+.cells .plant { color: var(--ok); }
+.cells .air { color: var(--muted); }
+.keys { font-size: 12px; color: var(--muted); margin: 0; }
+.keys kbd { font-family: var(--font-mono); font-size: 11px; border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
+.badge { position: absolute; top: 10px; left: 10px; right: 10px; display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; pointer-events: none; }
+.badge .name { background: color-mix(in srgb, var(--panel) 90%, transparent); border: 1px solid var(--line); border-radius: 8px; padding: 5px 9px; font-size: 12px; display: flex; flex-wrap: wrap; gap: 4px 12px; }
+.badge b { font-family: var(--font-display); font-weight: 700; font-size: 13px; }
+.badge .stat { font-variant-numeric: tabular-nums; color: var(--muted); }
+.badge .stat strong { color: var(--fg); font-weight: 600; }
+.badge .bad strong { color: var(--warn); }
+.error { position: absolute; inset: 0; display: grid; place-items: center; padding: 24px; text-align: center; color: var(--fg); }
+@media (max-width: 760px) {
+  #app { grid-template-columns: 1fr; grid-template-rows: 58% 42%; }
+  #stage { grid-row: 1; grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; }
+  #stage[data-layout="m1"], #stage[data-layout="half"] { grid-template-rows: 1fr; }
+  #panel { grid-row: 2; border-right: 0; border-top: 1px solid var(--line); padding-block: 14px 20px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+  h1 { font-size: 22px; }
+}
+@media (prefers-reduced-motion: reduce) { .switch, .switch::after { transition: none; } }
+</style>
+
+<div id="app">
+  <aside id="panel">
+    <header>
+      <div class="eyebrow">Dwell · voxel grid prototype</div>
+      <h1>Half-Height Voxel Lab</h1>
+      <p class="lede">The same scene on today's 1 m cells and on 1 × ½ × 1 m cells, side by side. Natural ground shapes itself in both. Plants stand on the ground and grow ½ m at a time.</p>
+    </header>
+
+    <section>
+      <h2>Scene</h2>
+      <div class="chips" id="scenes"></div>
+    </section>
+
+    <section>
+      <h2>Slope shapes (½ m view)</h2>
+      <div class="seg seg-2" id="set">
+        <button type="button" id="set-adaptive" data-v="adaptive">Adaptive (all shapes)</button>
+        <button type="button" id="set-corners" data-v="corners">Cardinal ramps + corners</button>
+        <button type="button" id="set-ramps" data-v="ramps">Cardinal ramps only</button>
+        <button type="button" id="set-none" data-v="none">No slopes</button>
+      </div>
+      <ul class="hint-text set-list">
+        <li><b>Adaptive:</b> every shape the rules make, reshaped from the neighbours on every edit.</li>
+        <li><b>Cardinal ramps + corners:</b> ramps facing north, east, south and west, plus outer and inner corners, at ½ m and 1 m (24 pieces).</li>
+        <li><b>Cardinal ramps only:</b> the 8 straight ramps (4 facings × ½ m and 1 m), no corners.</li>
+        <li><b>No slopes:</b> flat-topped blocks only.</li>
+      </ul>
+      <p class="hint-text">The last three are stored: picked when the scene is built or a block is placed, and not changed when a neighbour is. A shape the set has no piece for, and ground uncovered by digging, is a flat block. The 1 m view always uses today's adaptive rules.</p>
+    </section>
+
+    <section>
+      <h2>Views</h2>
+      <div class="seg" id="layout">
+        <button type="button" id="layout-both" data-v="both">Side by side</button>
+        <button type="button" id="layout-m1" data-v="m1">1 m only</button>
+        <button type="button" id="layout-half" data-v="half">½ m only</button>
+      </div>
+    </section>
+
+    <section>
+      <h2>Tool</h2>
+      <div class="seg" id="tool">
+        <button type="button" id="tool-place" data-v="place">Place</button>
+        <button type="button" id="tool-remove" data-v="remove">Remove</button>
+        <button type="button" id="tool-plant" data-v="plant">Plant</button>
+        <button type="button" id="tool-grow" data-v="grow">Grow</button>
+      </div>
+      <p class="hint-text">Place and Remove change the view you click. Plant and Grow change the same column in both views. Plant puts grass on flat grass or dirt; grass doesn't grow on slopes, and goes when its ground stops being flat. Grow adds ½ m to a plant, up to 2 m.</p>
+    </section>
+
+    <section>
+      <h2>Block</h2>
+      <div class="palette" id="palette"></div>
+      <div id="brush-wrap" style="margin-top:8px">
+        <div class="seg" id="brush">
+          <button type="button" id="brush-half" data-v="1">½ m block</button>
+          <button type="button" id="brush-full" data-v="2">1 m double block</button>
+        </div>
+        <p class="hint-text">What a click places in the ½ m view: a ½ m block (one voxel) or a 1 m double block (two voxels, one block). Remove takes the top block, whichever size. The 1 m view always works in 1 m.</p>
+      </div>
+    </section>
+
+    <section>
+      <h2>Growth</h2>
+      <div class="row">
+        <button type="button" class="btn" id="grow-all">Grow all ½ m</button>
+        <button type="button" class="btn" id="mow">Mow to ½ m</button>
+        <button type="button" class="btn" id="scatter">Scatter grass</button>
+      </div>
+      <label class="toggle"><input type="checkbox" id="opt-auto"><span class="switch"></span>
+        <span>Grow over time<small>A random plant in four grows ½ m about every second, up to 2 m.</small></span></label>
+    </section>
+
+    <section>
+      <h2>Plants and ground</h2>
+      <div class="controls">
+        <div>
+          <div class="seg" id="footing">
+            <button type="button" id="footing-cell" data-v="cell">Cell floor (as built)</button>
+            <button type="button" id="footing-surface" data-v="surface">Sink to surface</button>
+          </div>
+          <p class="hint-text">Where a plant's foot is. The game draws it at the floor of its cell. Sink to surface puts it on the shaped ground under its centre, which needs the ground's shape at the plant.</p>
+        </div>
+        <div>
+          <div class="seg" id="steep">
+            <button type="button" id="steep-off" data-v="off">½ m blocks only</button>
+            <button type="button" id="steep-on" data-v="on">1 m on steep ground</button>
+          </div>
+          <p class="hint-text">½ m view: how scenes are built. With 1 m on steep ground, a column whose ground drops 1 m or more to any of its 8 neighbours gets a 1 m double block on top, which shapes into a 45° ramp. Gentle ground stays ½ m blocks with 27° slopes.</p>
+        </div>
+        <div class="seg" id="mode">
+          <button type="button" id="mode-adaptive" data-v="adaptive">Adaptive</button>
+          <button type="button" id="mode-cubes" data-v="cubes">Cubes</button>
+        </div>
+        <label class="toggle"><input type="checkbox" id="opt-float" checked><span class="switch"></span>
+          <span>Mark floating plants<small>Tints red any plant whose foot is more than 5 cm above the ground under it.</small></span></label>
+        <label class="toggle"><input type="checkbox" id="opt-cells"><span class="switch"></span>
+          <span>Show cells<small>Outlines each column's top ground block (white: one voxel, or both voxels of a double block) and the cells its plant occupies (green).</small></span></label>
+      </div>
+    </section>
+
+    <section>
+      <h2>Cells under the pointer</h2>
+      <div class="inspect">
+        <div><h3>1 m cells</h3><ul class="cells" id="ins-m1"></ul></div>
+        <div><h3>1 × ½ × 1 m cells</h3><ul class="cells" id="ins-half"></ul></div>
+      </div>
+      <p class="hint-text">Point at a column (tap one on a phone) to see what a world would store there, top down, with the top block's derived shape.</p>
+    </section>
+
+    <section>
+      <h2>The rules</h2>
+      <table class="cmp">
+        <thead><tr><th></th><th>1 m (Phase 18)</th><th>½ m tall</th></tr></thead>
+        <tbody>
+          <tr><td>Rules</td><td>Rest, Drop, Rise, One wide, Ramp</td><td>Top, Drop, One wide, Ramp</td></tr>
+          <tr><td>Block heights</td><td>1 m</td><td>½ m, or 1 m (double)</td></tr>
+          <tr><td>Corner heights</td><td>0, ½, 1 of a cell</td><td>floor or top (½ m); floor, middle or top (1 m)</td></tr>
+          <tr><td>Steepest natural slope</td><td>45° (one-wide ramps), 55° (saddles)</td><td>27° (½ m), 45° (1 m)</td></tr>
+          <tr><td>Shapes</td><td>29</td><td>11 for ½ m blocks; 1 m blocks add their own</td></tr>
+          <tr><td>Neighbourhoods</td><td>3⁸ = 6,561</td><td>1,296 (½ m), 20,736 (1 m)</td></tr>
+          <tr><td>Flat ground</td><td>rests ½ m into its top block</td><td>the top of a cell</td></tr>
+          <tr><td>1-wide stairs</td><td>1 m steps: 45° ramps</td><td>½ m steps: 27° ramps; 1 m double blocks: 45° ramps</td></tr>
+          <tr><td>Grass growth</td><td>a height property per stage, a second block above 1 m</td><td>one more voxel per stage</td></tr>
+        </tbody>
+      </table>
+      <ol class="rule" style="margin-top:10px">
+        <li><b>Top.</b> A corner of a natural top block stays at the block's top.</li>
+        <li><b>Drop.</b> If any of the 3 columns around the corner is lower, the corner drops to that column's height, but no lower than the block's floor. A ½ m block drops ½ m; a 1 m double block drops ½ m or 1 m.</li>
+        <li><b>One block wide.</b> When every corner drops, a ridge runs from the centre to each same-height edge neighbour: pyramid, ridge end, ridge, corner, T, cross. It is as tall as the block.</li>
+        <li><b>Ramp up.</b> When every corner drops and exactly one edge neighbour is higher (none the same), the block is a wedge rising to it: 27° for a ½ m block, 45° for a 1 m one.</li>
+      </ol>
+      <p class="hint-text">No Rest or Rise rule: with ½ m cells, flat ground already ends on a cell boundary, so nothing needs to rise into the cell above. The block's own height sets how steep it can get. In the game today, faces steeper than 44° slide, so 45° ramps would slide unless that limit moves.</p>
+    </section>
+    <p class="keys">Click to use the tool, right-click to remove, drag to orbit (both views follow), scroll to zoom. <kbd>1</kbd>–<kbd>6</kbd> block, <kbd>P</kbd> plant, <kbd>G</kbd> grow, <kbd>X</kbd> place/remove.</p>
+  </aside>
+
+  <main id="stage" data-layout="both">
+    <div class="view" id="view-m1">
+      <canvas id="canvas-m1" aria-label="Today's 1 m cells. Click to use the tool."></canvas>
+      <div class="badge"><div class="name"><b>1 m cells (today)</b><span class="stat" id="stats-m1"></span></div></div>
+    </div>
+    <div class="view" id="view-half">
+      <canvas id="canvas-half" aria-label="Proposed 1 by ½ by 1 m cells. Click to use the tool."></canvas>
+      <div class="badge"><div class="name"><b>1 × ½ × 1 m cells</b><span class="stat" id="stats-half"></span></div></div>
+    </div>
+  </main>
+</div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// ---- Blocks (Dwell's prototype palette; content is placeholder).
+const MATS = [
+  { id: 'grass', name: 'Grass', top: 0x8dbf3f, side: 0x7a8f45, natural: true },
+  { id: 'dirt', name: 'Dirt', top: 0x8a5a3a, side: 0x7d5236, natural: true },
+  { id: 'stone', name: 'Stone', top: 0xbbafa6, side: 0xa79c94, natural: true },
+  { id: 'sand', name: 'Sand', top: 0xeed9a4, side: 0xdcc58f, natural: true },
+  { id: 'planks', name: 'Planks', top: 0xc09a62, side: 0xa98552, natural: false },
+  { id: 'cut', name: 'Cut stone', top: 0x9c95a8, side: 0x8a8396, natural: false },
+];
+const MAT = Object.fromEntries(MATS.map((m) => [m.id, m]));
+const BASE_SIDE = 0x4e4858;
+const W = 24, D = 24, MAX_M = 16, MAX_GROWTH = 4; // growth steps of ½ m
+const idx = (x, z) => z * W + x;
+const clampi = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
+
+const state = { layout: 'both', tool: 'place', mat: 'grass', brush: 2, footing: 'cell', steep: 'on', set: 'adaptive', mode: 'adaptive', markFloat: true, cells: false, auto: false, scene: 'meadow' };
+
+// ---- Two worlds. Each is columns of cells, bottom to top (2.5D: no caves), plus a plant per column
+// (growth steps of ½ m). `sy` is the cell height in metres. `part` marks each cell: 0 a block of
+// its own, 1 and 2 the lower and upper cells of a 1 m double block (½ m world only).
+function makeWorld(kind) {
+  return { kind, sy: kind === 'm1' ? 1 : 0.5, cols: Array.from({ length: W * D }, () => []), part: Array.from({ length: W * D }, () => []), plants: new Map(), surf: [], triInfo: [] };
+}
+const worlds = { m1: makeWorld('m1'), half: makeWorld('half') };
+const heightOf = (w, c) => w.cols[c].length; // cells
+const adaptive = (w, c) => state.mode === 'adaptive' && w.cols[c].length > 0 && MAT[w.cols[c][w.cols[c].length - 1]].natural;
+const topMat = (w, c) => { const s = w.cols[c]; return s.length ? s[s.length - 1] : null; };
+// The top block's height in cells: 2 for a double block, else 1.
+const topSize = (w, c) => (w.part[c][w.cols[c].length - 1] === 2 ? 2 : 1);
+
+// ---- Today's rules (Phase 18, ADAPTIVE_BLOCKS.md §2): the Shape Playground's tables.
+// Corner heights in halves of a cell (0 floor, 1 half, 2 top), NW NE SE SW; canonical shapes descend east.
+const PG_GAME = {
+  full: [2, 2, 2, 2], slab: [1, 1, 1, 1], wedge: [2, 0, 0, 2], outer: [2, 0, 0, 0], inner: [2, 2, 0, 2],
+  gentle_low: [1, 0, 0, 1], gentle_high: [2, 1, 1, 2], gentle_outer_low: [1, 0, 0, 0], gentle_outer_high: [2, 1, 1, 1],
+  gentle_inner_low: [1, 1, 0, 1], gentle_inner_high: [2, 2, 1, 2],
+};
+const PG_NEW = {
+  half_and_half_left: [2, 0, 0, 1], half_and_half_right: [1, 0, 0, 2],
+  tall_half_and_half_left: [2, 2, 1, 0], tall_half_and_half_right: [2, 2, 0, 1],
+  tilt_left: [2, 1, 1, 0], tilt_right: [1, 2, 0, 1], diagonal_slope: [1, 2, 1, 0], dimple: [2, 1, 2, 0],
+  saddle: [2, 0, 2, 0], uneven_saddle: [2, 0, 1, 0], half_saddle: [1, 0, 1, 0], high_half_saddle: [2, 1, 2, 1],
+};
+const PG_CORNERED = { ...PG_GAME, ...PG_NEW };
+const RIDGES = {
+  half_pyramid: [[0, 0, 0], [0, 1, 0], [0, 0, 0]],
+  half_ridge: [[0, 0, 0], [1, 1, 1], [0, 0, 0]],
+  half_ridge_end: [[0, 0, 0], [0, 1, 1], [0, 0, 0]],
+  half_ridge_corner: [[0, 0, 0], [0, 1, 1], [0, 1, 0]],
+  half_ridge_tee: [[0, 1, 0], [1, 1, 1], [0, 0, 0]],
+  half_ridge_cross: [[0, 1, 0], [1, 1, 1], [0, 1, 0]],
+};
+const rotC = (h, t) => { let o = h.slice(); for (let i = 0; i < ((t % 4) + 4) % 4; i++) o = [o[3], o[0], o[1], o[2]]; return o; };
+const rotG = (g, t) => { let o = g.map((r) => r.slice()); for (let i = 0; i < ((t % 4) + 4) % 4; i++) o = o.map((_, r) => o.map((row) => row[r]).reverse()); return o; };
+const DIRS = ['east', 'south', 'west', 'north'];
+// The edge neighbours (east, south, west, north) of column (x, z) relative to its height t.
+function edges(w, x, z, t) {
+  const card = [[1, 0], [0, 1], [-1, 0], [0, -1]].map(([dx, dz]) => {
+    const xx = x + dx, zz = z + dz;
+    return xx >= 0 && xx < W && zz >= 0 && zz < D ? heightOf(w, idx(xx, zz)) : null;
+  });
+  const higher = card.map((v) => v !== null && v > t), same = card.map((v) => v === t);
+  return { higher, same, nh: higher.filter(Boolean).length, ns: same.filter(Boolean).length };
+}
+// Rules 4 and 5, shared by both grids: { shape, turns } for a block whose every corner dropped.
+function oneWide(w, x, z, t) {
+  const { higher, same, nh, ns } = edges(w, x, z, t);
+  if (nh === 1 && ns === 0) return { shape: 'wedge', turns: (higher.indexOf(true) + 2) % 4, ramp: higher.indexOf(true) };
+  if (ns === 0) return { shape: 'half_pyramid', turns: 0 };
+  if (ns === 1) return { shape: 'half_ridge_end', turns: same.indexOf(true) };
+  if (ns === 2 && same[0] === same[2]) return { shape: 'half_ridge', turns: same[0] ? 0 : 1 };
+  if (ns === 2) return { shape: 'half_ridge_corner', turns: [0, 1, 2, 3].find((i) => same[i] && same[(i + 1) % 4]) };
+  if (ns === 3) return { shape: 'half_ridge_tee', turns: (same.indexOf(false) + 3) % 4 };
+  return { shape: 'half_ridge_cross', turns: 0 };
+}
+const around = (w, t) => (xx, zz) => (xx < 0 || xx >= W || zz < 0 || zz >= D ? t : heightOf(w, idx(xx, zz)));
+const CORNERS = [[-1, -1], [1, -1], [1, 1], [-1, 1]]; // NW NE SE SW
+
+function shapeM1(w, x, z) {
+  const t = heightOf(w, idx(x, z)), at = around(w, t);
+  const corners = CORNERS.map(([dx, dz]) => {
+    const n = [at(x + dx, z), at(x, z + dz), at(x + dx, z + dz)];
+    const higher = n.some((v) => v > t), lower = n.some((v) => v < t);
+    return higher && !lower ? 2 : lower ? 0 : 1; // rise, drop, rest
+  });
+  if (corners.every((v) => v === 0)) return oneWide(w, x, z, t);
+  for (const shape of Object.keys(PG_CORNERED)) for (let turns = 0; turns < 4; turns++)
+    if (rotC(PG_CORNERED[shape], turns).join() === corners.join()) return { shape, turns };
+  return { shape: 'slab', turns: 0 };
+}
+function pointsM1({ shape, turns }) { // 3 × 3 in halves of a cell
+  if (RIDGES[shape]) return rotG(RIDGES[shape], turns);
+  const [nw, ne, se, sw] = rotC(PG_CORNERED[shape], turns);
+  const split = PG_NEW[shape] ? (ne + sw > nw + se ? 1 : 0) : turns % 2;
+  const centre = split === 0 ? (nw + se) / 2 : (ne + sw) / 2;
+  return [[nw, (nw + ne) / 2, ne], [(nw + sw) / 2, centre, (ne + se) / 2], [sw, (sw + se) / 2, se]];
+}
+
+// ---- The proposed rules on 1 × ½ × 1 m cells. Heights are absolute, in cells.
+// Fill a 3 × 3 from corners: edge midpoints between corners; the centre on the diagonal whose ends
+// differ most (a corner piece folds through its odd corner), ties on the higher one (a crest).
+function fill(nw, ne, se, sw) {
+  const d1 = Math.abs(nw - se), d2 = Math.abs(ne - sw), a1 = (nw + se) / 2, a2 = (ne + sw) / 2;
+  const centre = d1 > d2 ? a1 : d2 > d1 ? a2 : Math.max(a1, a2);
+  return [[nw, (nw + ne) / 2, ne], [(nw + sw) / 2, centre, (ne + se) / 2], [sw, (sw + se) / 2, se]];
+}
+// The top block is ½ m (one cell) or a 1 m double block (two): its corners drop at most to its floor.
+function shapeHalf(w, x, z) {
+  const col = idx(x, z), t = heightOf(w, col), at = around(w, t), d = topSize(w, col);
+  const c = CORNERS.map(([dx, dz]) => {
+    const m = Math.min(at(x + dx, z), at(x, z + dz), at(x + dx, z + dz));
+    return m >= t ? t : Math.max(t - d, m); // top, or drop (rule 2)
+  });
+  const deep = d === 2 ? ' (1 m)' : '';
+  if (c.every((v) => v < t)) {
+    const o = oneWide(w, x, z, t);
+    if (o.ramp !== undefined) { // rule 4: the edge toward the higher neighbour rises to the top
+      const k = [[1, 2], [2, 3], [3, 0], [0, 1]][o.ramp]; // corner indices on the E, S, W, N edge
+      const cc = c.slice(); for (const i of k) cc[i] = t;
+      return { name: 'ramp' + deep, facing: DIRS[(o.ramp + 2) % 4], g: fill(...cc), cc };
+    }
+    const r = rotG(RIDGES[o.shape], o.turns), g = fill(...c);
+    for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) if (r[i][j]) g[i][j] = t;
+    return { cc: c, name: o.shape.replace('half_', '') + deep, facing: o.shape === 'half_ridge' ? (o.turns % 2 ? 'north-south' : 'east-west') : o.shape === 'half_ridge_end' || o.shape === 'half_ridge_corner' || o.shape === 'half_ridge_tee' ? DIRS[o.turns] : '', g };
+  }
+  const up = c.map((v) => v === t), n = up.filter(Boolean).length;
+  let name = 'full';
+  if (n === 3) name = 'inner corner';
+  else if (n === 1) name = 'outer corner';
+  else if (n === 2) name = up[0] === up[2] ? 'saddle' : 'wedge';
+  return { name: name + (n < 4 ? deep : ''), facing: '', g: fill(...c), cc: c };
+}
+
+// ---- Fixed shape sets (½ m view): a small stored set instead of the adaptive table. The rules
+// above pick the corners; the set keeps what it has a piece for and makes everything else a full
+// block. A 1 m block's corner counts as down only when it reaches the block's floor.
+//   corners: cardinal ramps, outer and inner corners, at ½ m (27°) and 1 m (45°), and the full block.
+//   ramps:   cardinal ramps at ½ m and 1 m, and the full block.
+//   none:    the full block only: ½ m (and 1 m) blocks with flat tops.
+const DIAG = ['north-west', 'north-east', 'south-east', 'south-west'];
+function fixedShape(w, x, z) {
+  const col = idx(x, z), t = heightOf(w, col), size = topSize(w, col);
+  const s = shapeHalf(w, x, z), up = s.cc.map((v) => v === t), n = up.filter(Boolean).length;
+  const deep = size === 2 ? ' (1 m)' : '';
+  const piece = (name, facing, corners) => ({ name: name + deep, facing, g: fill(...corners.map((u) => (u ? t : t - size))) });
+  const full = { name: 'full', facing: '', g: fill(t, t, t, t) };
+  if (state.set === 'none') return full;
+  if (n === 2) {
+    const e = [[0, 1], [1, 2], [2, 3], [3, 0]].findIndex(([a, b]) => up[a] && up[b]); // N E S W edge that stays up
+    if (e < 0) return full; // a saddle: no piece for it
+    return piece('ramp', ['south', 'west', 'north', 'east'][e], up);
+  }
+  if (state.set === 'corners' && n === 1) { const i = up.indexOf(true); return piece('outer corner', DIAG[(i + 2) % 4], up); }
+  if (state.set === 'corners' && n === 3) { const i = up.indexOf(false); return piece('inner corner', DIAG[i], up); }
+  return full; // 4 up, or no piece in the set (ridges, pyramids; corners in the ramps-only set)
+}
+// Stored shapes: chosen when the scene is built or a block is placed, never when a neighbour changes.
+// A block uncovered by digging has no stored shape and is a full block.
+function storeAll(w) {
+  w.stored = new Map();
+  if (w.kind !== 'half' || state.set === 'adaptive') return;
+  for (let c = 0; c < W * D; c++) if (adaptive(w, c)) w.stored.set(c, { t: heightOf(w, c), s: fixedShape(w, c % W, Math.floor(c / W)) });
+}
+
+// A column's top surface in metres (3 × 3, rows north to south, entries west to east), and its shape name.
+function columnSurface(w, x, z) {
+  const c = idx(x, z), t = heightOf(w, c);
+  if (!adaptive(w, c)) { const e = t * w.sy; return { g: [[e, e, e], [e, e, e], [e, e, e]], name: t ? 'full' : '' }; }
+  if (w.kind === 'm1') {
+    const s = shapeM1(w, x, z);
+    const label = s.shape === 'slab' ? 'slab (rests at ½)' : RIDGES[s.shape] || ['full', 'slab'].includes(s.shape) ? s.shape : `${s.shape} ${DIRS[s.turns]}`;
+    return { g: pointsM1(s).map((r) => r.map((v) => t - 1 + v / 2)), name: label, key: s.shape };
+  }
+  let s;
+  if (state.set === 'adaptive') s = shapeHalf(w, x, z);
+  else { const st = w.stored?.get(c); s = st && st.t === t ? st.s : { name: 'full', facing: '', g: fill(t, t, t, t) }; }
+  return { g: s.g.map((r) => r.map((v) => v * w.sy)), name: s.name + (s.facing ? ' ' + s.facing : ''), key: s.name };
+}
+// Height of a 3 × 3 surface at (fx, fz) in [0,1]², on the same triangles the mesh draws.
+function sampleSurface(h, fx, fz) {
+  const P = (r, c) => [c / 2, h[r][c], r / 2];
+  const kr = fz < 0.5 ? 0 : 2, kc = fx < 0.5 ? 0 : 2;
+  const C = P(1, 1), K = P(kr, kc), M1 = P(kr, 1), M2 = P(1, kc);
+  const side = (a, b, p) => (b[0] - a[0]) * (p[1] - a[2]) - (b[2] - a[2]) * (p[0] - a[0]);
+  const p = [fx, fz];
+  const tri = Math.sign(side(C, K, p)) === Math.sign(side(C, K, [M1[0], M1[2]])) ? [C, M1, K] : [C, K, M2];
+  const [a, b, c] = tri;
+  const det = (b[2] - c[2]) * (a[0] - c[0]) + (c[0] - b[0]) * (a[2] - c[2]);
+  if (Math.abs(det) < 1e-9) return C[1];
+  const l1 = ((b[2] - c[2]) * (p[0] - c[0]) + (c[0] - b[0]) * (p[1] - c[2])) / det;
+  const l2 = ((c[2] - a[2]) * (p[0] - c[0]) + (a[0] - c[0]) * (p[1] - c[2])) / det;
+  return l1 * a[1] + l2 * b[1] + (1 - l1 - l2) * c[1];
+}
+
+// ---- Plants: per-column crossed quads, jittered by column like the game's cross look.
+function hash2(x, z, seed) { let h = (x * 374761393 + z * 668265263 + seed * 2147483647) | 0; h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967295; }
+function plantGeom(w, c) {
+  const x = c % W, z = Math.floor(c / W), p = w.plants.get(c);
+  const jx = (hash2(x, z, 1) * 2 - 1) * 0.2, jz = (hash2(x, z, 2) * 2 - 1) * 0.2;
+  const fx = 0.5 + jx, fz = 0.5 + jz;
+  const ground = sampleSurface(w.surf[c].g, fx, fz);
+  const cellFloor = heightOf(w, c) * w.sy;
+  const foot = state.footing === 'cell' ? cellFloor : ground;
+  const height = p.shown * 0.5 * (0.84 + 0.14 * hash2(x, z, 4));
+  return { cx: x + fx, cz: z + fz, foot, ground, height, turn: (hash2(x, z, 3) * 2 - 1) * 0.5, float: foot - ground };
+}
+// Cells a plant occupies: one ½ m voxel per growth step, or on 1 m cells one block up to 1 m and a
+// second (its upper part) above that.
+const plantCells = (w, n) => (w.kind === 'half' ? n : Math.ceil(n / 2));
+
+// ---- Mesh building (from the Adaptive Block Lab): tops as 8 triangles around the centre, walls
+// between neighbouring edge profiles, banded per cell so each band takes its cell's colour.
+const linear = (hex, k = 1) => { const c = new THREE.Color(hex); return [c.r * k, c.g * k, c.b * k]; };
+function jitter(n) { let h = (n * 2654435761) >>> 0; h ^= h >>> 15; return 0.97 + (h % 61) / 1000; }
+function clipY(poly, y, keepAbove) {
+  const out = [];
+  for (let i = 0; i < poly.length; i++) {
+    const a = poly[i], b = poly[(i + 1) % poly.length];
+    const ina = keepAbove ? a[1] >= y : a[1] <= y, inb = keepAbove ? b[1] >= y : b[1] <= y;
+    if (ina) out.push(a);
+    if (ina !== inb) { const t = (y - a[1]) / (b[1] - a[1]); out.push([a[0] + (b[0] - a[0]) * t, y]); }
+  }
+  return out;
+}
+function buildGround(w) {
+  const pos = [], colr = [], info = [];
+  const tri = (p0, p1, p2, c, inf, out = [0, 1, 0]) => {
+    const ux = p1[0] - p0[0], uy = p1[1] - p0[1], uz = p1[2] - p0[2], vx = p2[0] - p0[0], vy = p2[1] - p0[1], vz = p2[2] - p0[2];
+    const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+    if (nx * out[0] + ny * out[1] + nz * out[2] < 0) [p1, p2] = [p2, p1];
+    pos.push(...p0, ...p1, ...p2); colr.push(...c, ...c, ...c); info.push(inf);
+  };
+  for (let z = 0; z < D; z++) for (let x = 0; x < W; x++) w.surf[idx(x, z)] = columnSurface(w, x, z);
+  for (let z = 0; z < D; z++) for (let x = 0; x < W; x++) {
+    const col = idx(x, z), s = w.cols[col], h = w.surf[col].g;
+    const color = s.length ? linear(MAT[s[s.length - 1]].top, jitter(col)) : linear(0x6f6a78);
+    const V = (r, c) => [x + c / 2, h[r][c], z + r / 2];
+    const C = V(1, 1);
+    for (const [kr, kc] of [[0, 0], [0, 2], [2, 2], [2, 0]]) {
+      const K = V(kr, kc), M1 = V(kr, 1), M2 = V(1, kc);
+      tri(C, M1, K, color, { kind: 'top', col });
+      tri(C, K, M2, color, { kind: 'top', col });
+    }
+  }
+  const sideColor = (owner, k) => {
+    if (owner < 0 || k < 0) return linear(BASE_SIDE);
+    const s = w.cols[owner];
+    if (!s.length) return linear(BASE_SIDE);
+    const m = s[Math.min(k, s.length - 1)];
+    // A grass block's side is dirt; its grass shows as the skirt along the top edge (below).
+    return linear(MAT[m === 'grass' ? 'dirt' : m].side, jitter(owner * 31 + k) * (k % 2 ? 0.96 : 1));
+  };
+  // The game's grass side texture: dirt with a ragged grass fringe 4–9 px of a 32 px (1 m) tile,
+  // hanging from the face's top edge (the mesher's side_top), so it follows a shaped top down the
+  // slope. Drawn as strips 1/8 m wide just in front of the wall.
+  const SKIRT_MIN = 4 / 32, SKIRT_MAX = 9 / 32;
+  const skirtColor = linear(MAT.grass.top, 0.8);
+  function skirt(P, s0, s1, hiF, loF, owner, facing, out) {
+    const len = Math.hypot(out[0], out[2]) || 1, push = [(out[0] / len) * 0.003, 0, (out[2] / len) * 0.003];
+    const steps = Math.max(1, Math.round((s1 - s0) * 4));
+    for (let i = 0; i < steps; i++) {
+      const sa = s0 + ((s1 - s0) * i) / steps, sb = s0 + ((s1 - s0) * (i + 1)) / steps;
+      const mid = P((sa + sb) / 2, 0);
+      const d = SKIRT_MIN + (SKIRT_MAX - SKIRT_MIN) * hash2(Math.round(mid[0] * 8), Math.round(mid[2] * 8), 5);
+      const bot = (s) => Math.max(loF(s), hiF(s) - d);
+      const q = [[sa, bot(sa)], [sb, bot(sb)], [sb, hiF(sb)], [sa, hiF(sa)]].map(([s, y]) => { const p = P(s, y); return [p[0] + push[0], p[1], p[2] + push[2]]; });
+      tri(q[0], q[1], q[2], skirtColor, { kind: 'wall', owner, facing }, out);
+      tri(q[0], q[2], q[3], skirtColor, { kind: 'wall', owner, facing }, out);
+    }
+  }
+  function wall(P, a0, a1, b0, b1, A, B) {
+    const d0 = a0 - b0, d1 = a1 - b1;
+    const spans = d0 * d1 < 0 ? [[0, d0 / (d0 - d1)], [d0 / (d0 - d1), 1]] : [[0, 1]];
+    for (const [s0, s1] of spans) {
+      const sm = (s0 + s1) / 2, am = a0 + (a1 - a0) * sm, bm = b0 + (b1 - b0) * sm;
+      if (Math.abs(am - bm) < 1e-6) continue;
+      const aHigh = am > bm;
+      const hiF = (s) => (aHigh ? a0 + (a1 - a0) * s : b0 + (b1 - b0) * s), loF = (s) => (aHigh ? b0 + (b1 - b0) * s : a0 + (a1 - a0) * s);
+      const owner = aHigh ? A : B, facing = aHigh ? B : A;
+      const poly = [[s0, loF(s0)], [s1, loF(s1)], [s1, hiF(s1)], [s0, hiF(s0)]];
+      const ymin = Math.floor(Math.min(loF(s0), loF(s1)) / w.sy + 1e-6), ymax = Math.ceil(Math.max(hiF(s0), hiF(s1)) / w.sy - 1e-6);
+      for (let k = ymin; k < ymax; k++) {
+        const band = clipY(clipY(poly, k * w.sy, true), (k + 1) * w.sy, false);
+        if (band.length < 3) continue;
+        const color = sideColor(owner, k), pts = band.map(([s, y]) => P(s, y));
+        const ox = (owner % W) + 0.5, oz = Math.floor(owner / W) + 0.5;
+        const out = [pts[0][0] - ox, 0, pts[0][2] - oz];
+        for (let i = 1; i + 1 < pts.length; i++) tri(pts[0], pts[i], pts[i + 1], color, { kind: 'wall', owner, facing }, out);
+      }
+      if (owner >= 0 && topMat(w, owner) === 'grass') {
+        const ox = (owner % W) + 0.5, oz = Math.floor(owner / W) + 0.5, p = P((s0 + s1) / 2, 0);
+        skirt(P, s0, s1, hiF, loF, owner, facing, [p[0] - ox, 0, p[2] - oz]);
+      }
+    }
+  }
+  const FLAT = [-1, -1, -1];
+  const edge = (P, a, b, A, B) => { wall((s, y) => P(s / 2, y), a[0], a[1], b[0], b[1], A, B); wall((s, y) => P(0.5 + s / 2, y), a[1], a[2], b[1], b[2], A, B); };
+  const colOf = (h, c) => [h[0][c], h[1][c], h[2][c]];
+  for (let z = 0; z < D; z++) for (let x = 0; x < W; x++) {
+    const A = idx(x, z), a = w.surf[A].g;
+    if (x + 1 < W) edge((s, y) => [x + 1, y, z + s], colOf(a, 2), colOf(w.surf[idx(x + 1, z)].g, 0), A, idx(x + 1, z));
+    else edge((s, y) => [W, y, z + s], colOf(a, 2), FLAT, A, -1);
+    if (z + 1 < D) edge((s, y) => [x + s, y, z + 1], a[2], w.surf[idx(x, z + 1)].g[0], A, idx(x, z + 1));
+    else edge((s, y) => [x + s, y, D], a[2], FLAT, A, -1);
+    if (x === 0) edge((s, y) => [0, y, z + s], colOf(a, 0), FLAT, A, -1);
+    if (z === 0) edge((s, y) => [x + s, y, 0], a[0], FLAT, A, -1);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(colr, 3));
+  g.computeVertexNormals();
+  return { g, info };
+}
+
+// A grass-blade texture, drawn once.
+function bladeTexture() {
+  const cv = document.createElement('canvas'); cv.width = 64; cv.height = 128;
+  const x = cv.getContext('2d');
+  let seed = 7; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  for (let i = 0; i < 16; i++) {
+    const bx = 4 + rnd() * 56, top = 4 + rnd() * 40, lean = (rnd() - 0.5) * 22, wdt = 2.5 + rnd() * 3;
+    const shade = 150 + Math.floor(rnd() * 70);
+    x.fillStyle = `rgb(${shade}, ${shade}, ${shade})`; // grey: the vertex colour gives the hue
+    x.beginPath(); x.moveTo(bx - wdt, 128); x.quadraticCurveTo(bx + lean * 0.3, 70, bx + lean, top); x.quadraticCurveTo(bx + lean * 0.3 + 1, 70, bx + wdt, 128); x.fill();
+  }
+  const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; return t;
+}
+// Unlit, lit by a fixed shade in the vertex colour: like the game's leaned normals, a blade reads the same from both sides.
+const plantMaterial = new THREE.MeshBasicMaterial({ map: bladeTexture(), alphaTest: 0.45, side: THREE.DoubleSide, vertexColors: true });
+const HALF_WIDTH = 0.62;
+function buildPlants(w) {
+  const pos = [], nor = [], uv = [], col = [];
+  let floating = 0;
+  for (const c of w.plants.keys()) {
+    const p = plantGeom(w, c);
+    if (p.float > 0.05) floating++;
+    const bad = state.markFloat && p.float > 0.05;
+    const tint = bad ? [0.95, 0.07, 0.04] : [0.2, 0.42, 0.06]; // linear
+    for (let q = 0; q < 2; q++) {
+      const a = Math.PI / 4 + p.turn + q * Math.PI / 2, dx = Math.cos(a), dz = Math.sin(a);
+      const v = [[-HALF_WIDTH, p.foot, 0, 0], [HALF_WIDTH, p.foot, 1, 0], [HALF_WIDTH, p.foot + p.height, 1, 1], [-HALF_WIDTH, p.foot + p.height, 0, 1]];
+      const quad = [v[0], v[1], v[2], v[0], v[2], v[3]];
+      for (const [al, y, u, vv] of quad) { pos.push(p.cx + dx * al, y, p.cz + dz * al); nor.push(0, 1, 0); uv.push(u, vv); col.push(...tint); }
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  return { g, floating };
+}
+function boxEdges(out, x0, y0, z0, x1, y1, z1) {
+  const P = [[x0, y0, z0], [x1, y0, z0], [x1, y0, z1], [x0, y0, z1], [x0, y1, z0], [x1, y1, z0], [x1, y1, z1], [x0, y1, z1]];
+  for (const [a, b] of [[0, 1], [1, 2], [2, 3], [3, 0], [4, 5], [5, 6], [6, 7], [7, 4], [0, 4], [1, 5], [2, 6], [3, 7]]) out.push(...P[a], ...P[b]);
+}
+
+// ---- Views: one renderer, scene and camera per world; the cameras follow each other.
+const views = {};
+function makeView(kind) {
+  const canvas = document.getElementById('canvas-' + kind), el = document.getElementById('view-' + kind);
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.05;
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 500);
+  camera.position.set(W / 2 + 18, 17, D / 2 + 22);
+  const controls = new OrbitControls(camera, canvas);
+  controls.target.set(W / 2, 1.5, D / 2);
+  controls.maxPolarAngle = Math.PI * 0.48; controls.minDistance = 3; controls.maxDistance = 90;
+  scene.add(new THREE.HemisphereLight(0xe2ecf6, 0x6b5a45, 1.3));
+  const sun = new THREE.DirectionalLight(0xfff0d8, 2.4);
+  sun.position.set(W / 2 + 16, 30, D / 2 + 9); sun.target.position.set(W / 2, 0, D / 2); sun.castShadow = true;
+  sun.shadow.mapSize.set(2048, 2048);
+  Object.assign(sun.shadow.camera, { left: -22, right: 22, top: 22, bottom: -22, near: 1, far: 90 });
+  sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.03;
+  scene.add(sun, sun.target);
+  const ground = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.92, metalness: 0 }));
+  ground.castShadow = ground.receiveShadow = true;
+  const plants = new THREE.Mesh(new THREE.BufferGeometry(), plantMaterial);
+  plants.castShadow = true;
+  plants.customDepthMaterial = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, map: plantMaterial.map, alphaTest: 0.45 });
+  const lines = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.7, depthTest: true }));
+  const plantLines = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0x3fd46a, transparent: true, opacity: 0.9 }));
+  const ghost = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1)), new THREE.LineBasicMaterial({ color: 0xffffff, depthTest: false, transparent: true, opacity: 0.95 }));
+  ghost.renderOrder = 10; ghost.visible = false;
+  scene.add(ground, plants, lines, plantLines, ghost);
+  const v = { kind, el, canvas, renderer, scene, camera, controls, ground, plants, lines, plantLines, ghost, world: worlds[kind], floating: 0 };
+  new ResizeObserver(() => {
+    const wd = el.clientWidth, ht = el.clientHeight;
+    if (!wd || !ht) return;
+    renderer.setSize(wd, ht, false); camera.aspect = wd / ht; camera.updateProjectionMatrix();
+  }).observe(el);
+  return v;
+}
+try { views.m1 = makeView('m1'); views.half = makeView('half'); } catch (e) {
+  document.getElementById('stage').insertAdjacentHTML('beforeend', '<div class="error">This prototype needs WebGL, which this browser has turned off.</div>');
+  throw e;
+}
+let syncing = false;
+for (const [a, b] of [['m1', 'half'], ['half', 'm1']]) {
+  views[a].controls.addEventListener('change', () => {
+    if (syncing) return; syncing = true;
+    views[b].camera.position.copy(views[a].camera.position); views[b].controls.target.copy(views[a].controls.target);
+    views[b].controls.update(); syncing = false;
+  });
+}
+
+function rebuildGround(v) {
+  const { g, info } = buildGround(v.world);
+  v.ground.geometry.dispose(); v.ground.geometry = g; v.world.triInfo = info;
+  // Grass needs flat ground under it: a plant whose ground is no longer flat goes, like one whose
+  // ground is dug away.
+  for (const c of [...v.world.plants.keys()]) if (!canPlant(v.world, c)) v.world.plants.delete(c);
+}
+function rebuildPlants(v) {
+  const { g, floating } = buildPlants(v.world);
+  v.plants.geometry.dispose(); v.plants.geometry = g; v.floating = floating;
+}
+function rebuildLines(v) {
+  const w = v.world, lp = [], pp = [];
+  if (state.cells) {
+    for (let c = 0; c < W * D; c++) {
+      const t = heightOf(w, c); if (!t) continue;
+      const x = c % W, z = Math.floor(c / W);
+      boxEdges(lp, x + 0.01, (t - topSize(w, c)) * w.sy + 0.005, z + 0.01, x + 0.99, t * w.sy - 0.005, z + 0.99);
+      const p = w.plants.get(c);
+      if (p) for (let k = 0; k < plantCells(w, p.n); k++) boxEdges(pp, x + 0.03, (t + k) * w.sy + 0.01, z + 0.03, x + 0.97, (t + k + 1) * w.sy - 0.01, z + 0.97);
+    }
+  }
+  for (const [obj, arr] of [[v.lines, lp], [v.plantLines, pp]]) {
+    obj.geometry.dispose(); const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(arr, 3)); obj.geometry = g;
+  }
+}
+function updateStats(v) {
+  const w = v.world;
+  let cells = 0, plantCellsN = 0, doubles = 0, off = 0; const kinds = new Set();
+  const fixed = w.kind === 'half' && state.set !== 'adaptive';
+  for (let c = 0; c < W * D; c++) {
+    cells += w.cols[c].length; doubles += w.part[c].filter((q) => q === 2).length;
+    if (!adaptive(w, c)) continue;
+    kinds.add(w.surf[c].key);
+    // A fixed set's block that differs from what the rules would shape now: no piece for it, or stale.
+    if (fixed && w.surf[c].g.some((row, i) => row.some((h, j) => Math.abs(h - shapeHalf(w, c % W, Math.floor(c / W)).g[i][j] * w.sy) > 1e-6))) off++;
+  }
+  for (const p of w.plants.values()) plantCellsN += plantCells(w, p.n);
+  const n = w.plants.size;
+  const plantStore = w.kind === 'half' ? `${plantCellsN} plant voxels` : `${plantCellsN} plant blocks with a height property`;
+  document.getElementById('stats-' + v.kind).innerHTML =
+    `<span><strong>${cells.toLocaleString()}</strong> ground cells</span>${w.kind === 'half' ? ` · <span><strong>${doubles}</strong> 1 m blocks</span>` : ''}${fixed ? ` · <span class="${off ? 'bad' : ''}"><strong>${off}</strong> blocks off the rules</span>` : ''} · <span><strong>${kinds.size}</strong> shapes in use</span> · ` +
+    `<span>${plantStore}</span> · <span class="${v.floating ? 'bad' : ''}"><strong>${v.floating}</strong> of ${n} plants floating</span>`;
+}
+function refresh(groundToo = true) {
+  for (const v of Object.values(views)) { if (groundToo) rebuildGround(v); rebuildPlants(v); rebuildLines(v); updateStats(v); }
+}
+
+// ---- Scenes: a target surface height S (m) and top material per 1 m column, realised on each grid
+// as the nearest the grid can show: on 1 m cells round(S + ½) blocks (a flat top rests ½ m below
+// the block's top), on ½ m cells round(S / ½) voxels. Plants: growth steps per column.
+let design = [];
+function stack(n, sy, top) {
+  const s = [];
+  for (let y = 0; y < n; y++) {
+    const d = (n - 1 - y) * sy;
+    s.push(y === n - 1 ? top : !MAT[top].natural ? top : top === 'sand' ? (d < 2 ? 'sand' : 'stone') : top === 'stone' ? 'stone' : d < 2 ? 'dirt' : 'stone');
+  }
+  return s;
+}
+// On ½ m cells with "1 m on steep ground", a column at least 1 m above any of its 8 neighbours gets
+// a 1 m double block on top (its top two cells of the top material), so it shapes into 45°. The
+// diagonals count: a ½ m block 1 m above a diagonal neighbour could drop only ½ m at that corner,
+// while its edge neighbours drop to the diagonal's height, and its side would show between them.
+function realise() {
+  for (const w of Object.values(worlds)) {
+    w.plants.clear();
+    const N = design.map(({ S }) => Math.min(Math.round(MAX_M / w.sy) - 4, w.kind === 'm1' ? Math.max(1, Math.round(S + 0.5)) : Math.max(1, Math.round(S / 0.5))));
+    for (let c = 0; c < W * D; c++) {
+      const { top, plant } = design[c], n = N[c], x = c % W, z = Math.floor(c / W);
+      let dbl = false;
+      if (w.kind === 'half' && state.steep === 'on' && n >= 2)
+        for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
+          const xx = x + dx, zz = z + dz;
+          if (xx >= 0 && xx < W && zz >= 0 && zz < D && N[idx(xx, zz)] <= n - 2) dbl = true;
+        }
+      w.cols[c] = stack(n, w.sy, top);
+      w.part[c] = w.cols[c].map(() => 0);
+      if (dbl) { w.cols[c][n - 2] = top; w.part[c][n - 2] = 1; w.part[c][n - 1] = 2; }
+      if (plant && (top === 'grass' || top === 'dirt')) w.plants.set(c, { n: plant, shown: plant });
+    }
+    storeAll(w);
+  }
+}
+function valueNoise(x, z, seed) {
+  const xi = Math.floor(x), zi = Math.floor(z), fx = x - xi, fz = z - zi, sx = fx * fx * (3 - 2 * fx), sz = fz * fz * (3 - 2 * fz);
+  const a = hash2(xi, zi, seed), b = hash2(xi + 1, zi, seed), c = hash2(xi, zi + 1, seed), d = hash2(xi + 1, zi + 1, seed);
+  return a + (b - a) * sx + (c - a) * sz + (a - b - c + d) * sx * sz;
+}
+function fieldScene(S, top, density = 0.35) {
+  design = [];
+  for (let z = 0; z < D; z++) for (let x = 0; x < W; x++) {
+    const s = S(x, z);
+    let steep = 0;
+    for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) steep = Math.max(steep, Math.abs(S(x + dx, z + dz) - s));
+    const t = top(s, steep);
+    const r = hash2(x, z, 91);
+    design.push({ S: s, top: t, plant: t === 'grass' && r < density ? 1 + Math.floor(hash2(x, z, 92) * 2) : 0 });
+  }
+}
+const SCENES = {
+  meadow: { name: 'Meadow', make() { fieldScene(() => 0.5, () => 'grass', 0.5); } },
+  basics: { name: 'Basics', make() {
+    const B = 1.5;
+    design = Array.from({ length: W * D }, () => ({ S: B, top: 'grass', plant: 0 }));
+    const set = (x, z, S, top = 'grass', plant = 0) => { design[idx(x, z)] = { S, top, plant }; };
+    set(3, 3, B + 0.5);                                    // a lone ½ m bump
+    set(7, 3, B + 1);                                      // a lone 1 m block
+    for (let x = 10; x < 15; x++) set(x, 3, B + 0.5);      // a ½ m ridge
+    for (let x = 17; x < 19; x++) for (let z = 3; z < 5; z++) set(x, z, B + 0.5); // 2 × 2 at ½ m
+    for (let x = 3; x < 6; x++) for (let z = 7; z < 10; z++) set(x, z, B + 1, 'grass', 1); // 3 × 3 at 1 m, planted
+    for (let k = 0; k < 8; k++) set(9 + k, 8, B + 0.5 * (k + 1)); // 1-wide stairs of ½ m
+    for (let k = 0; k < 5; k++) set(9 + k, 11, B + (k + 1));      // 1-wide stairs of 1 m
+    set(20, 8, B - 0.5); set(20, 11, B - 1);               // ½ m and 1 m pits
+    for (let z = 14; z < 18; z++) for (let x = 2; x < 22; x++) set(x, z, B + 0.5 * Math.floor((x - 2) / 3), 'grass', (x + z) % 3 === 0 ? 1 : 0); // ½ m terraces
+    for (let z = 19; z < 23; z++) for (let x = 2; x < 22; x++) set(x, z, B + Math.floor((x - 2) / 4), 'grass', (x + z) % 3 === 0 ? 1 : 0);      // 1 m terraces
+  } },
+  hill: { name: 'Hill', make() {
+    fieldScene((x, z) => { const r1 = Math.hypot(x - 9.5, z - 10.5), r2 = Math.hypot(x - 17, z - 16); return 0.5 + 6 * Math.exp(-(r1 * r1) / 40) + 3 * Math.exp(-(r2 * r2) / 14); },
+      (h) => (h >= 5.5 ? 'stone' : h <= 0.8 ? 'sand' : 'grass'), 0.4);
+  } },
+  terrain: { name: 'Terrain', make() {
+    fieldScene((x, z) => { const n = valueNoise(x / 9, z / 9, 7) * 0.65 + valueNoise(x / 4, z / 4, 11) * 0.25 + valueNoise(x / 2, z / 2, 13) * 0.1; return Math.max(0.5, 0.5 + (n - 0.25) * 10); },
+      (h, steep) => (h <= 0.8 ? 'sand' : steep >= 2 ? 'stone' : 'grass'), 0.35);
+  } },
+  garden: { name: 'Growth rows', make() {
+    design = Array.from({ length: W * D }, (_, c) => {
+      const x = c % W, z = Math.floor(c / W);
+      const row = z >= 3 && z <= 20 && x >= 3 && x <= 20 && z % 3 === 0 ? Math.min(MAX_GROWTH, 1 + Math.floor((x - 3) / 4.5)) : 0;
+      return { S: 0.5, top: 'grass', plant: row };
+    });
+  } },
+};
+
+// ---- UI.
+const $ = (id) => document.getElementById(id);
+function pressGroup(container, value) { for (const b of container.querySelectorAll('button')) b.setAttribute('aria-pressed', String(b.dataset.v === String(value))); }
+const scenesEl = $('scenes');
+for (const [key, s] of Object.entries(SCENES)) {
+  const b = document.createElement('button');
+  b.type = 'button'; b.className = 'chip'; b.dataset.v = key; b.id = 'scene-' + key; b.textContent = s.name;
+  b.addEventListener('click', () => loadScene(key));
+  scenesEl.append(b);
+}
+function loadScene(key) { state.scene = key; SCENES[key].make(); realise(); pressGroup(scenesEl, key); refresh(); }
+const paletteEl = $('palette');
+for (const [label, natural] of [['Adapts (natural)', true], ['Always cubes (crafted)', false]]) {
+  const l = document.createElement('div'); l.className = 'group-label'; l.textContent = label; paletteEl.append(l);
+  MATS.forEach((m, i) => {
+    if (m.natural !== natural) return;
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'swatch'; b.dataset.v = m.id; b.id = 'mat-' + m.id;
+    b.innerHTML = `<i style="background:#${m.top.toString(16).padStart(6, '0')}"></i>${m.name}`;
+    b.addEventListener('click', () => setMat(m.id));
+    paletteEl.append(b);
+  });
+}
+function setMat(id) { state.mat = id; pressGroup(paletteEl, id); if (state.tool !== 'place') setTool('place'); }
+function setTool(v) { state.tool = v; pressGroup($('tool'), v); }
+const seg = (id, fn) => $(id).addEventListener('click', (e) => { const v = e.target.closest('button')?.dataset.v; if (v) { fn(v); pressGroup($(id), v); } });
+seg('layout', (v) => { state.layout = v; $('stage').dataset.layout = v; });
+seg('tool', (v) => setTool(v));
+seg('brush', (v) => { state.brush = Number(v); });
+seg('footing', (v) => { state.footing = v; refresh(false); });
+seg('steep', (v) => { state.steep = v; realise(); refresh(); });
+seg('set', (v) => { state.set = v; storeAll(worlds.half); refresh(); replant(); });
+seg('mode', (v) => { state.mode = v; storeAll(worlds.half); refresh(); replant(); });
+$('opt-float').addEventListener('change', (e) => { state.markFloat = e.target.checked; refresh(false); });
+$('opt-cells').addEventListener('change', (e) => { state.cells = e.target.checked; refresh(false); });
+$('opt-auto').addEventListener('change', (e) => { state.auto = e.target.checked; });
+
+// Growth and planting act on a column in both worlds.
+// Grass grows on grass or dirt with a flat top: a full block on the ½ m grid, a level resting top
+// (or a full cube) on the 1 m grid. Slopes, corners and ridges get none.
+function flatTop(w, c) { const g = w.surf[c]?.g; return !!g && g.every((row) => row.every((h) => Math.abs(h - g[0][0]) < 1e-6)); }
+function canPlant(w, c) { const t = topMat(w, c); return (t === 'grass' || t === 'dirt') && flatTop(w, c); }
+// After the shapes change everywhere (shape set, cubes), plant the scene's grass again on what is flat now.
+function replant() {
+  for (const w of Object.values(worlds)) {
+    w.plants.clear();
+    for (let c = 0; c < W * D; c++) if (design[c].plant && canPlant(w, c)) w.plants.set(c, { n: design[c].plant, shown: design[c].plant });
+  }
+  refresh(false);
+}
+function grow(c, by = 1) {
+  for (const w of Object.values(worlds)) {
+    const p = w.plants.get(c);
+    if (p) p.n = clampi(p.n + by, 1, MAX_GROWTH);
+  }
+}
+const plantedCols = () => new Set([...worlds.m1.plants.keys(), ...worlds.half.plants.keys()]);
+$('grow-all').addEventListener('click', () => { for (const c of plantedCols()) grow(c); });
+$('mow').addEventListener('click', () => { for (const w of Object.values(worlds)) for (const p of w.plants.values()) p.n = 1; });
+$('scatter').addEventListener('click', () => {
+  for (let c = 0; c < W * D; c++) if (Math.random() < 0.3) for (const w of Object.values(worlds)) if (canPlant(w, c) && !w.plants.has(c)) w.plants.set(c, { n: 1, shown: 0 });
+  refresh(false);
+});
+
+// ---- Picking and editing.
+const raycaster = new THREE.Raycaster(), ndc = new THREE.Vector2();
+function pick(v, px, py) {
+  const r = v.canvas.getBoundingClientRect();
+  ndc.set(((px - r.left) / r.width) * 2 - 1, -((py - r.top) / r.height) * 2 + 1);
+  raycaster.setFromCamera(ndc, v.camera);
+  const hit = raycaster.intersectObject(v.ground, false)[0];
+  if (!hit) return null;
+  return v.world.triInfo[hit.faceIndex] || null;
+}
+function targetOf(v, inf, remove) {
+  const w = v.world;
+  const k = w.kind === 'half' ? state.brush : 1;
+  if (remove) { // the whole top block, whichever size
+    const col = inf.kind === 'top' ? inf.col : inf.owner;
+    if (col < 0 || !w.cols[col].length) return null;
+    const n = w.cols[col].length;
+    return { col, yb: n - topSize(w, col), yt: n };
+  }
+  const col = inf.kind === 'top' ? inf.col : inf.facing;
+  if (col < 0) return null;
+  const yb = w.cols[col].length;
+  if ((yb + k) * w.sy > MAX_M) return null;
+  return { col, yb, yt: yb + k };
+}
+function apply(v, inf, remove) {
+  const w = v.world, col = inf.kind === 'top' ? inf.col : inf.owner;
+  if (!remove && (state.tool === 'plant' || state.tool === 'grow')) {
+    if (col < 0) return;
+    if (state.tool === 'grow' || worlds.half.plants.has(col) || worlds.m1.plants.has(col)) { grow(col); return; }
+    let any = false;
+    for (const ww of Object.values(worlds)) if (canPlant(ww, col)) { ww.plants.set(col, { n: 1, shown: 0 }); any = true; }
+    if (any) refresh(false);
+    return;
+  }
+  const t = targetOf(v, inf, remove || state.tool === 'remove');
+  if (!t) return;
+  if (remove || state.tool === 'remove') { w.cols[t.col].length = t.yb; w.part[t.col].length = t.yb; }
+  else {
+    const dbl = t.yt - t.yb === 2 && w.kind === 'half';
+    for (let y = t.yb; y < t.yt; y++) { w.cols[t.col].push(state.mat); w.part[t.col].push(dbl ? (y === t.yb ? 1 : 2) : 0); }
+  }
+  // Plants are replaceable and need ground: an edit to their column takes them with it.
+  w.plants.delete(t.col);
+  // A fixed set's shape is picked once, here, for the placed block only; neighbours keep theirs.
+  if (w.kind === 'half' && w.stored) {
+    w.stored.delete(t.col);
+    const x = t.col % W, z = Math.floor(t.col / W);
+    if (state.set !== 'adaptive' && !(remove || state.tool === 'remove') && adaptive(w, t.col)) w.stored.set(t.col, { t: heightOf(w, t.col), s: fixedShape(w, x, z) });
+  }
+  rebuildGround(v); rebuildPlants(v); rebuildLines(v); updateStats(v);
+}
+function showGhost(v, inf) {
+  for (const o of Object.values(views)) o.ghost.visible = false;
+  if (!inf) return;
+  const w = v.world, col = inf.kind === 'top' ? inf.col : (state.tool === 'remove' ? inf.owner : inf.facing);
+  if (col < 0) return;
+  const x = col % W, z = Math.floor(col / W);
+  if (state.tool === 'plant' || state.tool === 'grow') {
+    const p = w.plants.get(col), n = p ? Math.min(MAX_GROWTH, p.n + 1) : 1, cells = plantCells(w, n), t = heightOf(w, col);
+    v.ghost.scale.set(1, cells * w.sy, 1); v.ghost.position.set(x + 0.5, (t + cells / 2) * w.sy, z + 0.5);
+    v.ghost.material.color.set(0x3fd46a); v.ghost.visible = true; return;
+  }
+  const t = targetOf(v, inf, state.tool === 'remove');
+  if (!t) return;
+  v.ghost.scale.set(1, (t.yt - t.yb) * w.sy, 1); v.ghost.position.set(x + 0.5, ((t.yb + t.yt) / 2) * w.sy, z + 0.5);
+  v.ghost.material.color.set(state.tool === 'remove' ? 0xff6b5a : 0xffffff); v.ghost.visible = true;
+}
+
+// The cells a column stores, top down, in both worlds.
+const esc = (s) => String(s).replace(/[&<>]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[ch]));
+function fmtM(v) { return (Math.round(v * 100) / 100).toString(); }
+function inspect(col) {
+  for (const w of Object.values(worlds)) {
+    const el = $('ins-' + w.kind), t = heightOf(w, col), p = w.plants.get(col), rows = [];
+    const pc = p ? plantCells(w, p.n) : 0;
+    rows.push([t + pc, 'air', 'air']);
+    for (let k = pc - 1; k >= 0; k--) {
+      let label = 'tall_grass';
+      if (w.kind === 'm1') label = k === 0 ? `tall_grass {height: ${fmtM(p.n * 0.5)} m}` : 'tall_grass {part: upper}';
+      rows.push([t + k, label, 'plant']);
+    }
+    for (let y = t - 1; y >= Math.max(0, t - 3); y--) {
+      const m = w.cols[col][y], q = w.part[col][y];
+      const top = y >= t - topSize(w, col);
+      const shape = top && adaptive(w, col) ? w.surf[col].name : 'full';
+      const label = q === 2 ? `${m} 1 m block (upper half) · ${shape}` : q === 1 ? `${m} 1 m block (lower half)${top ? '' : ' · full'}` : `${m} · ${shape}`;
+      rows.push([y, label, '']);
+    }
+    el.innerHTML = rows.map(([y, label, cls]) => `<li><span>${fmtM(y * w.sy)} m</span><span class="${cls}">${esc(label)}</span></li>`).join('') +
+      (p ? `<li><span></span><span>foot ${state.footing === 'cell' ? 'at the cell floor' : 'on the surface'}, ${fmtM(Math.max(0, plantGeom(w, col).float))} m above ground</span></li>` : '');
+  }
+}
+
+for (const v of Object.values(views)) {
+  let down = null;
+  v.canvas.addEventListener('pointerdown', (e) => { down = { x: e.clientX, y: e.clientY, t: performance.now(), button: e.button }; });
+  v.canvas.addEventListener('pointermove', (e) => {
+    if (e.buttons) { for (const o of Object.values(views)) o.ghost.visible = false; return; }
+    const inf = pick(v, e.clientX, e.clientY);
+    if (e.pointerType === 'mouse') showGhost(v, inf);
+    if (inf) { const col = inf.kind === 'top' ? inf.col : inf.owner; if (col >= 0) inspect(col); }
+  });
+  v.canvas.addEventListener('pointerleave', () => { v.ghost.visible = false; });
+  v.canvas.addEventListener('pointerup', (e) => {
+    if (!down) return;
+    const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y), quick = performance.now() - down.t < 500;
+    if (moved < 6 && quick) {
+      const inf = pick(v, e.clientX, e.clientY);
+      if (inf) { apply(v, inf, down.button === 2); const col = inf.kind === 'top' ? inf.col : inf.owner; if (col >= 0) inspect(col); }
+      if (e.pointerType === 'mouse') showGhost(v, pick(v, e.clientX, e.clientY));
+    }
+    down = null;
+  });
+  v.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+}
+window.addEventListener('keydown', (e) => {
+  if (e.target.closest('input, textarea')) return;
+  const n = Number(e.key);
+  if (n >= 1 && n <= MATS.length) setMat(MATS[n - 1].id);
+  else if (e.key === 'x' || e.key === 'X') setTool(state.tool === 'remove' ? 'place' : 'remove');
+  else if (e.key === 'p' || e.key === 'P') setTool('plant');
+  else if (e.key === 'g' || e.key === 'G') setTool('grow');
+});
+
+// ---- Loop: plants ease toward their height; growth over time.
+const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+let last = performance.now(), growClock = 0;
+function frame(now) {
+  const dt = Math.min(0.1, (now - last) / 1000); last = now;
+  if (state.auto) {
+    growClock += dt;
+    if (growClock > 1) {
+      growClock = 0;
+      for (const c of plantedCols()) if (Math.random() < 0.25) grow(c);
+    }
+  }
+  let moving = false;
+  for (const w of Object.values(worlds)) for (const p of w.plants.values()) {
+    if (p.shown === p.n) continue;
+    moving = true;
+    p.shown = reduceMotion ? p.n : p.n > p.shown ? Math.min(p.n, p.shown + dt * 2.5) : Math.max(p.n, p.shown - dt * 4);
+  }
+  if (moving) refresh(false);
+  for (const v of Object.values(views)) { v.controls.update(); v.renderer.render(v.scene, v.camera); }
+  requestAnimationFrame(frame);
+}
+
+pressGroup($('layout'), state.layout);
+pressGroup($('tool'), state.tool);
+pressGroup($('brush'), String(state.brush));
+pressGroup($('footing'), state.footing);
+pressGroup($('steep'), state.steep);
+pressGroup($('set'), state.set);
+pressGroup($('mode'), state.mode);
+pressGroup(paletteEl, state.mat);
+loadScene(state.scene);
+requestAnimationFrame(frame);
+</script>

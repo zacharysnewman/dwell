@@ -3,8 +3,9 @@
 
 use super::*;
 use crate::grid::{MAX_ALIGNED_LEVEL, is_face_b_section, origin_m};
+use dwell_world::FaceFrame;
+use dwell_world::inside_build_volume;
 use dwell_world::lod::{PAD, VOLUME, ancestor, mirror_row_bottom, section_origin};
-use dwell_world::{MIDPLANE_Y, inside_build_volume};
 
 /// A deterministic PRNG (mulberry32), as the TS tests use.
 fn rng(seed: u32) -> impl FnMut() -> f64 {
@@ -370,9 +371,9 @@ fn camera(position: Vec3, yaw_deg: f64, pitch_deg: f64) -> LodCamera {
 }
 
 fn contains(c: LodCoord, p: Vec3) -> bool {
-    let o = origin_m(c);
-    let s = section_size(c.level) as f64;
-    (0..3).all(|a| p[a] >= o[a] && p[a] < o[a] + s)
+    // The section's box in metres (its rows are the cell height tall).
+    let (lo, hi) = section_box(c);
+    (0..3).all(|a| p[a] >= lo[a] && p[a] < hi[a])
 }
 
 fn covering(leaves: &[LodCoord], p: Vec3) -> usize {
@@ -403,10 +404,10 @@ fn point_in_view(cam: &LodCamera, random: &mut dyn FnMut() -> f64, range: f64) -
         p[a] = cam.position[a] + d * (f[a] + sx * r[a] + sy * u[a]);
     }
     let radius = f64::from(dwell_world::WORLD_RADIUS);
-    let inside = p[1] >= f64::from(MIDPLANE_Y)
+    let inside = !FaceFrame::at_height(p[1]).is_b()
         && inside_build_volume(
             p[0].floor() as i64,
-            p[1].floor() as i64,
+            dwell_world::row_of_m(p[1]).into(),
             p[2].floor() as i64,
         )
         && p[0] * p[0] + p[2] * p[2] < radius * radius;
@@ -589,10 +590,14 @@ fn draws_the_streamed_chunks_inside_buried_sections_caves_deep_underground() {
     // Regression (phone playtest): the LOD treats rock well below the surface as buried and the
     // walk stopped there, so the streamed chunks of a cave inside it were never drawn. In the flat
     // world everything below y = 0 is buried.
-    let at = cc(0, -12, 0); // 384 m down
+    let at = cc(0, -12, 0); // 384 rows down
     let mut host = Host::with_chunks(move |c| chebyshev(c, at) <= 3);
     let mut lod = system(4.0, 64, 16, 8);
-    let cam = camera([16.5, f64::from(at.y * 32 + 16), 16.5], 30.0, 0.0);
+    let cam = camera(
+        [16.5, dwell_world::m_of_row(at.y * 32 + 16), 16.5],
+        30.0,
+        0.0,
+    );
     for frame in 1..=40 {
         lod.update(&cam, f64::from(frame) * 50.0, &mut host);
         finish(&mut lod, &mut host, &mut zero, 1.0);
@@ -850,7 +855,7 @@ fn far_face_not_generated_or_drawn(viewer_on_a: bool) {
     let y = if viewer_on_a {
         100.0
     } else {
-        2.0 * f64::from(MIDPLANE_Y) - 100.0
+        dwell_world::FaceFrame::B.y(100.0)
     };
     let at = [0.5, y, 0.5];
     let (lod, host) = settle_bifacial(at, false);
@@ -886,7 +891,7 @@ fn culls_nothing_near_the_rim_where_the_other_face_shows_past_the_edge() {
 fn meshes_level_7_and_up_sections_for_the_viewers_face_the_other_faces_rows_are_stone() {
     // Regression: such sections hold rows of both faces and were meshed with face A's surfaces
     // only. Seen from face B they are meshed without surfaces (face A's would be wrong there).
-    let at = [0.5, 2.0 * f64::from(MIDPLANE_Y) - 100.0, 0.5];
+    let at = [0.5, dwell_world::FaceFrame::B.y(100.0), 0.5];
     let (_, host) = settle_bifacial(at, true);
     let both: Vec<&MeshRecord> = host
         .meshes
@@ -1164,11 +1169,7 @@ fn asks_again_with_the_revision_it_holds_when_an_index_entry_changes_unchanged_s
 // --- LOD chunk requests (§6.6) -------------------------------------------------------------------
 
 fn chunk_of(p: Vec3) -> ChunkCoord {
-    cc(
-        (p[0] / 32.0).floor() as i32,
-        (p[1] / 32.0).floor() as i32,
-        (p[2] / 32.0).floor() as i32,
-    )
+    dwell_world::chunk_of_pos(p)
 }
 
 /// A LOD system whose view streams chunks within 3 of `body`; requests arrive a frame later.
@@ -1324,16 +1325,19 @@ fn never_asks_for_buried_chunks_underground_only_the_streamed_view_is_drawn() {
     let ground = 1024.0;
     let surface = [0.5, ground + 1.6, 0.5];
     let mut top = ChunkSetup::new(surface, 4.0);
-    top.host.flat_top = ground as i64;
+    top.host.flat_top = dwell_world::row_of_m(ground).into(); // rows
     top.run(&camera(surface, 0.0, -10.0), 300);
     assert!(top.requested().len() > 20);
     for c in top.requested() {
-        assert!(c.y >= 32 - 2, "{c:?}");
+        assert!(
+            c.y >= dwell_world::chunk_of_pos([0.0, ground, 0.0]).y - 2,
+            "{c:?}"
+        );
     }
 
     let deep = [16.5, ground - 12.0 * 32.0 + 16.0, 16.5];
     let mut below = ChunkSetup::new(deep, 4.0);
-    below.host.flat_top = ground as i64;
+    below.host.flat_top = dwell_world::row_of_m(ground).into();
     below.run(&camera(deep, 30.0, 0.0), 300);
     assert!(below.requested().is_empty());
     // The streamed chunks around the camera are still drawn (caves stay visible).
@@ -1506,7 +1510,7 @@ dwell_world::both_faces!(
 
 /// The LOD on the mirror world (face B is face A's mirror image) seen by a camera standing on
 /// `f`'s face, settled: every face-aligned section's mesh, by its face-local origin, with the mesh
-/// turned face-local (y in cells mirrored, triangles re-wound on B).
+/// turned face-local (y mirrored in metres, a cell `CELL_H` tall; triangles re-wound on B).
 fn mirror_world_lod(f: dwell_world::FaceFrame) -> HashMap<[i64; 4], SectionMeshes> {
     let t = std::sync::Arc::new(dwell_worldgen::BifacialTerrain::mirrored(7));
     let s = t.spawn_point();
@@ -1525,7 +1529,7 @@ fn mirror_world_lod(f: dwell_world::FaceFrame) -> HashMap<[i64; 4], SectionMeshe
     let flip = |mut m: dwell_mesh::FlatMesh| {
         if f.is_b() {
             for p in m.positions.iter_mut().skip(1).step_by(3) {
-                *p = SECTION_CELLS as f32 - *p;
+                *p = SECTION_CELLS as f32 * dwell_world::CELL_H as f32 - *p;
             }
             for n in m.normals.iter_mut().skip(1).step_by(3) {
                 *n = -*n;
@@ -1543,7 +1547,12 @@ fn mirror_world_lod(f: dwell_world::FaceFrame) -> HashMap<[i64; 4], SectionMeshe
             continue; // straddling sections are meshed for the viewer's face (§10)
         }
         let size = f64::from(SECTION_CELLS) * cell;
-        let y = if f.is_b() { f.y(o[1]) - size } else { o[1] };
+        // Sections are `CELL_H` tall a cell (HALF_HEIGHT_GRID.md §2).
+        let y = if f.is_b() {
+            f.y(o[1]) - size * dwell_world::CELL_H
+        } else {
+            o[1]
+        };
         let [s0, s1, s2, s3, s4, s5] = m.skirts;
         // ±Y skirts swap with the mirror.
         let skirts = if f.is_b() {

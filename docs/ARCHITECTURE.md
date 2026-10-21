@@ -106,7 +106,7 @@ GitHub Pages only serves static files. Consequences that shape the architecture:
    path: the launcher opens the build the choice needs. Links still open
    directly: an invite, a friend world's join code (`?code=`, Phase 5c, §10.2), or a local world
    by `?local=1`, `?world=` or `?seed=`. Local mode and
-   dedicated servers generate the **procedural terrain** world (generator version 18, §6.3) by
+   dedicated servers generate the **procedural terrain** world (generator version 19, §6.3) by
    default; `?world=flat`, `?world=sandbox` and `?seed=N` (local mode) or `--generator N` and
    `--seed N` (`dwell-server`) pick another generator or seed. (The movement playground, version 1, became a
    test structure file in Phase 15, §6.3; old playground worlds open in their own versions.)
@@ -300,7 +300,7 @@ There are **no official game servers**; players host (ADR 0003, details in §10)
 /shared/sounds       Sound data (dwell.json: sounds, block sound sets, events, gaits, actions, UI,
                      controls) + gen.mjs (→ TS for client/src/audio, Rust for dwell-game) and
                      validate.mjs (also used by shared/blocks/gen.mjs and the client's tests).
-/shared/worldgen     golden/: chunk and LOD-section hashes of generator version 18 (§6.3); terrain.json: the height field's parameters, decorations.json: the terrain's decoration rules, placements.json: the structure placements (the pines, ADR 0043), gen.mjs (→ Rust tables for dwell-worldgen) (§6.3).
+/shared/worldgen     golden/: chunk and LOD-section hashes of generator version 19 (§6.3); terrain.json: the height field's parameters, decorations.json: the terrain's decoration rules, placements.json: the structure placements (the pines, ADR 0043), gen.mjs (→ Rust tables for dwell-worldgen) (§6.3).
 /shared/structures   Structure files (*.json; test/ holds fixtures) + gen.mjs (→ Rust tables for
                      dwell-world) and gen.test.mjs; format.mjs, the format's rules, shared by gen.mjs
                      and the client's structures store; playground.json is the movement playground
@@ -620,7 +620,7 @@ tests only); CI fails on stale output. Code names characters, looks, items and r
   10 m far): the arms never clip into terrain and keep their size under the speed FOV. Hidden while
   dead, zoomed in the spyglass, in a placed camera, or with the **Show your arms** setting off (the
   view record, append-only). Timed as `gpu.arms`.
-- **Netcode** (protocol v17, §8.3): what each player holds and its last swing ride in the snapshots'
+- **Netcode** (protocol v17, now v18, §8.3): what each player holds and its last swing ride in the snapshots'
   remote blocks (3 bytes a player); the client sends `HeldItem` when its hand changes. Everyone wears
   the default look (`wanderer`); looks chosen per player and sent at join are planned (C2).
 - **Cost** (Apple GPU, Chrome, unthrottled, `__dwell.puppets`): 32 bodies in view add ~730 k
@@ -668,9 +668,9 @@ anchors and there is no seam under a player (PLAYER_CONTROLLER.md §5). Chunks a
 around each player (out to 3 m plus twice a tick's travel, capped), re-synced in the same tick as
 an edit or a streamed chunk, and dropped every 64 ticks when more than 2 chunks from every player;
 a chunk with no solid cell holds nothing, so open sky costs no collision memory. Cells that collide
-as their full cube go into the `Voxels` collider; **shaped cells** — adaptive top blocks (below,
-Phase 18) — go into **one triangle mesh per chunk** (Parry `TriMesh`, `FIX_INTERNAL_EDGES`, placed
-at the chunk's corner) of the faces of their derived shapes that no neighbour covers. A chunk's
+as their full cube go into the `Voxels` collider; **shaped cells** — the generated ramps (below,
+Phase 41) — go into **one triangle mesh per chunk** (Parry `TriMesh`, `FIX_INTERNAL_EDGES`, placed
+at the chunk's corner) of the faces of their shapes that no neighbour covers. A chunk's
 collision reads its voxels with a two-cell apron (a shape reads the columns around it, and its faces
 are culled against its neighbours' shapes), so a chunk with solid cells is rebuilt when any of the
 27 chunks around it changes (watched by stamp and revision; an empty chunk watches only itself),
@@ -778,42 +778,14 @@ needing support, an air plant (`medium`). **World generation grows it** in meado
 decoration rule as data; the owner's partial reversal of B10, for plants only). Adding it changes
 the registry hash: the 0.12 compatibility line.
 
-**Adaptive natural blocks [in progress, Phase 18; formerly 9e]** ([`ADAPTIVE_BLOCKS.md`](./ADAPTIVE_BLOCKS.md),
-[ADR 0024](./adr/0024-adaptive-natural-blocks.md)). A block with `"adaptive": true` in its data
-(grass, dirt, stone and sand; not water, the ladder or the sandbox floor) is stored as a plain cube
-and **shaped at use**: when nothing solid is above it (a *top block*), its shape comes from its 8
-horizontal neighbours, each **higher** (filled one row up), **the same** or **lower** (open in its
-row) — a table of 3⁸ = 6,561 neighbourhoods. Any other adaptive block is a cube. Neighbours are
-compared by occupancy, never by their derived shapes, so nothing iterates and an edit changes the
-shapes of at most the 9 top blocks around and under it. On face B, whose up is −y, the same table
-is read with the rows mirrored and the shape hangs.
-- **The table is data:** `shared/blocks/adaptive.json` names the rule set (`"five-rules"`, the
-  Shape Playground's rules) and holds per-neighbourhood **overrides** (`around` "+==/=.-/===",
-  `shape`, `facing`). `shared/blocks/adaptive.mjs` builds the 6,561 entries, rejects unknown
-  shapes, facings and repeated neighbourhoods with a message naming the entry, and runs the
-  exhaustive adjacency test (every equal-height neighbour pair: the baked side faces match the
-  profiles the meshers cull by, and the two surfaces meet at their shared corners); `gen.mjs`
-  emits `ADAPTIVE_UP` / `ADAPTIVE_DOWN` (shape indices, upright and hanging) in
-  `crates/dwell-blocks/src/adaptive.gen.rs` and the readable `adaptive_vectors.txt`, which the Rust
-  tests check; CI regenerates (stale output fails) and runs `node --test
-  shared/blocks/adaptive.test.mjs` (the owner's 151 hand-shaped playground blocks,
-  `playground-export.json`, are reproduced; an override changes one entry by data alone).
-- **One derivation:** `dwell_blocks::adaptive` (`derive`, `shape_at`, `flooded_at`, over any
-  voxel accessor) and `VoxelWorld::shape_at` / `flooded_at` (world coordinates, face by row).
-  Every user reads it: the chunk mesher (from its padded voxels), the terrain collider (above), the
-  controller's probes (`VoxelQuery::shape`, `FaceQuery::shape`), block targeting and the edit's
-  line of sight (`raycast_block`), the terrain's point queries (`TerrainGenerator::surface_y_at`,
-  spawn) and the LOD mesher (on its cells, §6.6). Server and client hold the same voxels and the
-  same table, so prediction walks the server's shapes.
-- **Water:** an adaptive top block holds water in its open part (it is drawn and swum as flooded)
-  when a liquid is above it or beside it in its row — a shore's shaped bank — or **[built,
-  generator version 17]** when its state is `flooded=true`, unless it is not a top block or the
-  rules make it a full cube. An adaptive block may have one property, `flooded` (false, true), and
-  no other (`shared/blocks/gen.mjs`): the generator writes every top voxel below sea level flooded,
-  so the sea fills the open part of shaped blocks under the water line
-  ([`WATER_RENDERING.md`](./WATER_RENDERING.md) §9); edits follow the flooded rules below.
-- **Not stored:** world files, edits and the wire carry the material (and its `flooded`) alone;
-  the derived shape is not part of a state's string.
+**Natural ground [built, Phase 41]** ([`HALF_HEIGHT_GRID.md`](./HALF_HEIGHT_GRID.md),
+[ADR 0042](./adr/0042-half-height-cells.md)): natural ground is shaped **once, at generation**,
+from stored cardinal ramps (below); placing or breaking a block changes no other cell, and a
+placed natural block is a flat cell. Phase 18's adaptive blocks (shaped from their neighbours at
+use, ADR 0024) were removed when ½ m cells were adopted: no block data may set `adaptive`
+(`gen.mjs` fails with a message), and every cell is drawn, collided and targeted as its own
+state's shape (`VoxelWorld::shape_at`). A cell holds water in its open part when its state is
+`flooded=true` (a ramp under the sea, generator version 17's shores).
 
 **Shapes [built, Phase 9; no shaped block since Phase 15]** ([ADR 0016](./adr/0016-slope-blocks.md),
 [`SLOPE_BLOCKS.md`](./SLOPE_BLOCKS.md)). Every solid state has a **shape**: its top surface is given
@@ -822,12 +794,24 @@ one diagonal, hanging from the floor (upright) or the ceiling (inverted); a cube
 mechanism stays: `shapeFamilies` in the block data generates a material's slope and slab families
 (nine slope shapes in four facings and two halves, and the slab; `flooded` means water fills the
 shape's open part) — but since Phase 15 no block uses it (the list is empty), so the shape table
-held the empty shape and the cube until Phase 18, which appends the shapes the adaptive table
-derives: the 12 adaptive corner shapes (split along their higher diagonal) and 6 **ridge shapes**
-given as 3 × 3 surface points (corners, edge midpoints, centre; the surface is the fan of 8
-triangles around the centre), each in its facings, upright and hanging — 191 more. Every shape
-carries its 3 × 3 points and three-point side profiles (quarters of a cell), and `solid_span_at`
-reads a ridge shape's fan. The geometry is baked once by
+held the empty shape and the cube (Phase 18's adaptive shapes were removed in Phase 41); Phase 41
+appends the ramp pieces. Every shape carries its 3 × 3 points and three-point
+side profiles (quarters of a cell), and `solid_span_at` reads a fan shape's surface. **[built,
+Phase 41 H2]**
+`rampFamilies` in the block data gives each listed natural block `<name>_ramp[facing, flooded,
+half, shape]`: the stored cardinal ramps of the half-height grid (`HALF_HEIGHT_GRID.md` §3) — the
+`ramp` (a wedge), and `steep_lower` and `steep_upper`, the two halves of a 45° ramp that spans two
+½ m cells, given as 3 × 3 points whose zero part is open (the upper half has no floor beyond its
+middle). They are not in the palette: the generator places them. **[built, Phase 41 H3]**
+`dwell-worldgen` `ramps.rs` holds the generation rule (`HALF_HEIGHT_GRID.md` §4), a pure function
+of a column's height and its 8 neighbours' (rows); the generator tops each natural column with its
+pieces (flooded under the sea) and decorates only flat tops. `dwell-world` `ramps.rs` looks them up by name. **[built, Phase 41 H4]** the generated ramps
+are the only shaped natural ground; a placed natural block is a flat cell. **[generator 19]** the
+rule (a ramp needs its downhill neighbour lower, the uphill one not, and both sides and back
+diagonals not lower, or is a one-wide path) runs with the 1 m snap off: V2, the owner's choice
+over option A's Sobel facing (`HALF_HEIGHT_GRID.md` §4); hillsides are ½ m steps and ½ m ramps,
+with 45° ramps where a column stands a metre over its downhill neighbour. The geometry is
+baked once by
 `shared/blocks/shapes.mjs` (`gen.mjs`) into the generated tables: each shape's closed, outward-wound
 polygons tagged with the cell face they lie on (or the sloped surface), its side profiles for
 culling, volume, convexity and extent — one table, so server, client and meshers agree.
@@ -847,12 +831,29 @@ into water: flooded; anywhere else: dry — no water from nothing), breaking a f
 water, and a flooded cell counts as water for swimming. Shape picking in the hotbar (the R key, the
 placement preview) went with the placed families.
 
-- Voxel = 1 m cube; `uint16` block-state ID (0 = air). The registry defines each state's density,
+- Voxel = a cell, 1 m × `CELL_HEIGHT` × 1 m; `uint16` block-state ID (0 = air). **[built, Phase
+  41 H4, adopted 2026-10-20]** cells are 1 × ½ × 1 m, chunks 32³ cells (32 × 16 × 32 m), natural
+  ground shaped once at generation from stored cardinal ramps
+  ([`HALF_HEIGHT_GRID.md`](./HALF_HEIGHT_GRID.md), ADR 0042). Block-sized things in this document
+  (a block, a step, a layer) are cells: ½ m tall.
+  **[built, Phase 41 H1]** one named cell height: `cellHeight` in `shared/protocol/constants.json`
+  (0.5), and every conversion between metres and cells goes through `dwell-world`
+  `cell.rs`. **Cell space** (x and z in metres, y in rows) is the unit of every voxel algorithm:
+  chunk indexing, meshing, shapes as fractions of a cell, the LOD octree, the cell DDA, region and
+  brush boxes. Metres are used at the boundaries: physics (the terrain collider's voxel size is
+  the cell; shaped cells' trimeshes, the voxel queries and the controller's probes convert), the
+  chunk and LOD meshes (emitted in metres, normals converted), the camera, culling and outlines,
+  worldgen heights, fluids, audio, and positions on the wire and in saves. Texture coordinates
+  are metres (a side's v from the cell's top edge), so a ½ m cell shows half a tile and the grass
+  fringe hangs from each grass cell's top. Not converted (Phase 41 deviations): brushes (radii and
+  heights in cells, so a ball is half as tall as wide), and a fluid's `surfaceDrop` (a fraction of
+  a cell). The registry defines each state's density,
   strength, and render properties and is shared by server and client (generated from one data set).
 - Chunk = **32 × 32 × 32** voxels, addressed by `ChunkCoord(int32 x, y, z)`. The grid is 3D in
   every respect — generation, storage, streaming (§6.3) and LOD (§6.6). The build volume (§6.3)
   spans 3,126 chunk rows (−1 563 to 1 562) over the centre, fewer toward the rim; `int32`
-  coordinates reach far beyond the 50 km disc (chunk ±1 563).
+  coordinates reach far beyond the 50 km disc (chunk ±1 563). On ½ m cells a chunk is 16 m tall and
+  the sphere is in cells, so those rows reach ±25 km.
 - Wire / storage encoding **[built]**: per-chunk **palette + run-length encoding**
   (`ChunkData Explicit`, §8.3). Voxels are taken in layer order (x fastest, then z, then y) so
   horizontal strata make long runs; the palette lists materials in order of first appearance; each
@@ -909,7 +910,7 @@ sides ([ADR 0023](./adr/0023-bifacial-world.md), [`BIFACIAL_WORLD.md`](./BIFACIA
 *Bifacial world* below). Each phase updates this section, §6.6 and §5 as it lands.
 
 **Built (Phases 3a, 3c, 13, 15; Rust, Phase 24):** the generator (`dwell-worldgen`: `terrain.rs`,
-`island.rs`, `noise.rs`, `bifacial.rs`, `decorations.rs`, `placements.rs`) is **generator version 18** (Phase 15's interim baseline generator, with Phase 33's decorations (13), Phase 16's resize (14), the larger relief (15, owner 2026-10-19), the steep hills (16, owner 2026-10-19), the sea flooding the open part of top blocks below sea level (17, owner 2026-10-20, [`WATER_RENDERING.md`](./WATER_RENDERING.md) §9) and the pines placed by data (18, owner 2026-10-20, ADR 0043); versions 2–16
+`island.rs`, `noise.rs`, `bifacial.rs`, `decorations.rs`, `placements.rs`) is **generator version 19** (Phase 15's interim baseline generator, with Phase 33's decorations (13), Phase 16's resize (14), the larger relief (15, owner 2026-10-19), the steep hills (16, owner 2026-10-19), the sea flooding the open part of top blocks below sea level (17, owner 2026-10-20, [`WATER_RENDERING.md`](./WATER_RENDERING.md) §9) the pines placed by data (18, owner 2026-10-20, ADR 0043) and ½ m cells with stored ramps (19, Phase 41, ADR 0042); versions 2–16
 were the earlier terrains — planet-scale relief, slopes, continents, rivers, climate and biomes, face
 B — and are retired: a world saved with one loads as the flat world; the version launcher opens the
 build that saved it, §2.1). It is announced in Welcome as generator **8** (`GENERATOR_TERRAIN`), the
@@ -924,9 +925,9 @@ playground** (generator 1 until Phase 15) is now a **structure file**
 the flat world; no world uses it. Players spawn on the first dry, level 9 × 9 patch (top voxels at
 one height, at least 2 m above sea level; `SPAWN_CLEAR`, wide enough for the spread of spawning
 players to build beside themselves) found in an 8 m spiral from the origin, standing on the
-shaped surface (`TerrainGenerator::surface_y_at`: the top voxel's adaptive shape, ADAPTIVE_BLOCKS.md —
-on a level patch half a block above the top voxel's floor). Water is still generated in open cells
-below sea level; a shaped bank beside or under it holds water in its open part (§6.1). Debug tooling: **named
+surface (`TerrainGenerator::surface_y_at`: the top voxel's shape — on a level patch, its top).
+Water is still generated in open cells below sea level; a flooded ramp under it holds water in its
+open part (§6.1). Debug tooling: **named
 views** **[built]** — `client/views/views.json` lists views by name: a seed, a camera (a world
 position and a look, or none for the player's eyes at the spawn), a window size, settings-menu
 values (fog, detail, exposure), the F3 overlay and LOD level tints, a resolution scale and how long
@@ -964,13 +965,14 @@ its precision decisions stand):
   midplane and is carried across it by the flip band (*Bifacial world* below).
 - **The midplane** `MIDPLANE_Y` = 0 (D9): the origin of generation, the disc's halfway plane and
   the build sphere's centre. **Face A** is y ≥ 0, **face B** its mirror image below. Heights in the
-  terrain are face-local (`h`, from the midplane): sea level `SEA_LEVEL` = 32 and the stone core of
-  `CORE_LAYERS` = 10 per face (h 0–9, never carved by generation, so the disc is at least 20 layers
-  thick) are interim constants until Phase 17 moves them into the terrain definition. There is no
+  terrain are face-local (`h`, from the midplane): sea level `SEA_LEVEL` = 32 m and the stone core of
+  `CORE_LAYERS` = 10 m per face (never carved by generation, so the disc is at least 20 m thick;
+  on ½ m cells these are rows 64 and 20, with metre twins `SEA_LEVEL_M`, `CORE_M`) are interim constants until Phase 17 moves them into the terrain definition. There is no
   void below the world and no bedrock (below).
 - **The build volume** (`dwell_world::bounds`, `BuildVolume`, `inside_build_volume`): one predicate
   bounds building and storage, driven by data — `bounds` in `shared/protocol/constants.json`,
-  `{ "shape": "sphere", "center": [0, 0, 0], "radius": 50000 }` (D2), generated into
+  `{ "shape": "sphere", "center": [0, 0, 0], "radius": 50000 }` (D2, in cells: on the half-height
+  branch it reaches 25 km up and down), generated into
   `dwell_protocol::BOUNDS` (and `Bounds` in TS). The shape is a small closed set in code
   (`BoundsShape`: `sphere`; `slab`, rows only, kept for tests and old worlds' bounds); the generator
   (`shared/protocol/gen.mjs`) rejects an unknown shape or a bad parameter with a message. A voxel is
@@ -1031,7 +1033,14 @@ player on face B stands upside down in the world.
   (`DWELL_FACE=a|b` narrows it), and the parity suites compare whole systems across the faces over
   the **mirror world** (`BifacialTerrain::mirrored`, a test tool whose face B is face A's mirror
   image): generation, the chunk mesher, the LOD's selection and meshes, targeting, every brush
-  preset, copy and paste; the controller keeps its whole-suite mirror run. The dev link `?spawn=b`
+  preset, copy and paste; the controller keeps its whole-suite mirror run. No system carries a face
+  sign of its own: the netcode reads and writes the wire's face bit in one place
+  (`dwell-physics` `net.rs` `face_of_flags` / `face_bit`) and carries a `FaceFrame` everywhere else;
+  the eye, camera, look, sounds, bodies, sky and clouds take a `FaceFrame`; the shaders go through
+  its WGSL form (`FaceFrame::wgsl()`), with their face-dependent pieces in
+  `dwell-client` `render/face_shading.rs` (Rust twins tested on both faces). The **both-faces check**
+  (`dwell-world` `tests/both_faces.rs`, §11.2) scans the face-sensitive crates and fails on hand
+  mirroring outside the frame and on plain tests that name a face without running on both. The dev link `?spawn=b`
   (and a bench scenario's `"face": "b"`) starts a local world on face B's spawn
   (`spawn_point_b`, its own world file `…-faceb`); real worlds spawn on face A.
 - **Generation.** `dwell_worldgen::BifacialTerrain` (`bifacial.rs`) holds two `TerrainGenerator`s working
@@ -1166,6 +1175,11 @@ lattice and interpolated bilinearly; the chunk path and the point queries (`colu
    `shared/worldgen/terrain.json` (`HeightField`, generated into `terrain.gen.rs` by
    `shared/worldgen/gen.mjs`, range-checked, stale-checked and node-tested in CI). Heights over the
    island span about 0–500 m above sea level (sea level is face-local 32, over the 10-layer core).
+   **Generator version 19** (½ m cells, ADR 0042, adopted 2026-10-20) keeps v16's height field on ½ m cells, its tops shaped by the stored ramps (`HALF_HEIGHT_GRID.md` §4), with v17's flooded shores and v18's pines (two ½ m cells per structure layer). **Steps**
+   (`steps` in `terrain.json`) can snap heights to whole `height` metres where a 4 m lattice cell
+   rises at least `fromSlope`; `height` is 0 (off), and the generation rule (V2,
+   `HALF_HEIGHT_GRID.md` §4) makes the hillsides ½ m steps and ½ m ramps:
+   about 3.2 % of land tops slide, 24.5 cliff edges ≥ 1 m per 100 land columns (`tests/slopes.rs`).
    **Generator version 16** (owner, 2026-10-19: "terrain steep enough to slide on" — about 15 % of
    the land's surface steeper than the slide's 44°, everywhere, peaks up to ~500 m) made the hills
    steeper rather than adding a noise term: the adaptive blocks turn a column with a higher
@@ -1207,12 +1221,13 @@ lattice and interpolated bilinearly; the chunk path and the point queries (`colu
    (generated into `decorations.gen.rs` by `shared/worldgen/gen.mjs`, validated against the block
    data, stale-checked in CI): the block (an air plant with no collision), the ground blocks it
    stands on, a density inside noise patches, the steepest slope (against the four neighbours'
-   tops, through `column_at`) and the ground's height range (metres above sea level; until
-   generator version 16 it was compared with the face-local top, 32 m off since Phase 16); each cell decided from the seed and its
+   tops, through `column_at`) and the ground's height range (metres above sea level), both whole
+   metres (converted to rows when resolved); each cell decided from the seed and its
    position alone, so chunk borders agree. Today one rule: tall grass in meadows on grass (the
    owner's partial reversal of baseline B10, for plants only; [ADR 0036](./adr/0036-render-modes-and-cross-geometry.md)).
-   The LOD doesn't draw them. The rules move into Phase 17's terrain definitions when those exist.
-5. **Structure placements [built, 2026-10-20: generator version 18; ADR 0043].** Committed
+   The LOD doesn't draw them. **[built, Phase 41 H4]** on ½ m cells a plant is one cell (½ m) tall and
+   grows only on flat tops (no ramp). The rules move into Phase 17's terrain definitions when those exist.
+5. **Structure placements [built, 2026-10-20: generator version 18; ADR 0043; since 19, each structure layer is two ½ m cells, so trees keep their size].** Committed
    structures (`shared/structures`) stand on the ground by rules kept as data in
    `shared/worldgen/placements.json` (generated into `placements.gen.rs` by `shared/worldgen/gen.mjs`,
    validated against the block data and through `shared/structures`' own validator, stale-checked
@@ -1257,6 +1272,8 @@ Server (native), local mode (WASM), and client (WASM) must produce **bit-identic
   for version 18 (the pines; 17 was the sea's flooded top blocks; the rows holding the ground at the origin and inland are found
   from the generator, wherever the relief puts them; 16 was the steep hills, 15 the larger relief, 14 Phase 16's new
   geometry, 13 added decorations), with `cargo run -p dwell-worldgen --example goldens`.
+  Generator version 19 (½ m cells, generated ramps, the steep hills, the 1 m snap off with the
+  ramp rule V2) re-recorded them with the same example.
 - `generatorVersion` is bumped for any change that alters output (and the golden hashes are
   regenerated); saved worlds record it.
 - **[built, Phase 3c]** Planet-scale coordinates (ADR 0011): noise never converts a whole world
@@ -1309,7 +1326,8 @@ Server (native), local mode (WASM), and client (WASM) must produce **bit-identic
   client to drop chunks.
 - **Interest management** (per client, `stream_chunks` in `dwell-sim` `server.rs`). The view is a **sphere** of
   `VIEW_RADIUS_CHUNKS` around the player's chunk (`x² + y² + z² ≤ r² + r`), clipped to the world's
-  rows. Chunks the client lacks are sent nearest first, at most
+  rows. (In chunks: on ½ m cells, where a chunk is 16 m tall, it reaches half as far up and down
+  in metres; the playtest decides whether it should be an ellipsoid.) Chunks the client lacks are sent nearest first, at most
   `MAX_CHUNKS_PER_TICK` per tick and within `CHUNK_BYTES_PER_SECOND` (a byte credit refilled each
   tick; one chunk may overdraw it). When the player's chunk changes, chunks beyond the view plus
   `UNLOAD_MARGIN_CHUNKS` (hysteresis) are unloaded (outside the sphere of r + margin). Dead players
@@ -1437,7 +1455,7 @@ Players break and place blocks. Server-authoritative like every voxel change
 - **Targeting (client):** each frame `raycast_block` (a DDA from the eye along the view,
   `REACH_DISTANCE` long, in float relative to the eye's cell so it is exact anywhere in the world)
   finds the first *targetable* cell — anything but air and liquids — by entering its exact shape
-  (an adaptive block's derived shape, `VoxelWorld::shape_at`: `ray_enter_shape`; a ladder, which has
+  (its state's shape, `VoxelWorld::shape_at`: `ray_enter_shape`; a ladder, which has
   no solid, as its whole cell — the server's line-of-sight check sees it the same way), and the face
   it entered through (a sloped surface counts as
   the face its normal mostly points through, the top on a tie); the renderer outlines the cell. The
@@ -1915,15 +1933,10 @@ Each frame the octree is walked from the root around the **camera** (the eye):
   cracks along section borders, found in a playtest.) The cells themselves — and so the
   server, downsampling, the protocol and the golden hashes — are unchanged; modified sections
   (`Explicit` from the server) carry no surfaces and keep cell tops.
-- **Adaptive tops [built, Phase 18]** (ADAPTIVE_BLOCKS.md §4.4): the LOD mesher applies the
-  adaptive rule table to its cells — a dry column's topmost cell, if a natural block with nothing
-  above it, takes the shape its neighbourhood of cells gives (corner heights in halves of a cell),
-  so near and far terrain follow one rule. A level run's tops (the rule's slab) rest at half a cell
-  and merge as flat tops; sloped tops are drawn polygon by polygon, shaded by their normal; walls
-  between columns follow three-point profiles. Wet columns and shores keep the surface data's exact
-  heights. An apron column's shape needs cells beyond the apron, so walls toward an apron column's
-  adaptive top are drawn down to the row's floor (any part it hides lies inside it). The LOD format
-  and the cells do not change. (Phase 9d's slope pieces went with the placed shapes in Phase 15.)
+- **Natural tops [built, Phase 41]**: no block is shaped by its neighbours (ADR 0042), so the LOD
+  draws natural tops flat at their cells' tops, and the generated ½ m ramps, below a level-1 cell,
+  are not drawn; walls between columns are level. (Phase 18's adaptive tops were removed with the
+  adaptive blocks; Phase 9d's slope pieces went with the placed shapes in Phase 15.)
 - Debug: the F3 overlay shows sections drawn per level, those shown as chunks, nodes, jobs in
   flight (generation, meshing, requests), cache use (and the view's share of it), the pixel
   error's scale and LOD bytes/s, and the frame's draw calls and triangles over both passes;
@@ -2046,7 +2059,7 @@ in the code yet.
 |---|---|---|
 | `SIM_HZ` | 60 | Physics steps per second (server and client prediction) |
 | `SNAPSHOT_HZ` | 20 | Snapshot broadcast rate |
-| `probes.max_slope_angle` (`config.rs`) | 56° | The steepest ground (above the adaptive saddle's 54.74°); steeper faces are walls (PLAYER_CONTROLLER.md §6.2) |
+| `probes.max_slope_angle` (`config.rs`) | 56° | The steepest ground (above the 45° ramps); steeper faces are walls (PLAYER_CONTROLLER.md §6.2) |
 | `slide.min_angle` / `friction` / `terminal_speed` (`config.rs`) | 44° / 0.3 / 14 m/s | Ground under the player steeper than this slides (owner, 2026-10-15), pulled by `g (sin θ − friction cos θ)` up to the terminal speed along the slope (PLAYER_CONTROLLER.md §6.8) |
 | `slide.steering` / `steer_speed` / `brake` / `brake_deceleration` / `uphill_deceleration` (`config.rs`) | 0.4 / 5 m/s / 0.6 / 10 m/s² / 60 m/s² | Control on a slide: steering across it at 0.4 × the walking acceleration; holding up-slope lowers the terminal speed by up to 60 % (never stops, never climbs); momentum carried up a steep face dies fast |
 | `slide.crouch_terminal_factor` / `crouch_friction` (`config.rs`) | 1.15 / 0.2 | A crouched slide: faster and lower |
@@ -2067,6 +2080,7 @@ in the code yet.
 | `INTEGRITY_BUDGET_VOXELS` | 32 768 / tick | Flood-fill budget per tick |
 | `AUTOSAVE_SECONDS` | 30 s | World autosave interval (per-world `autosave_seconds` setting); local mode saves every 5 s (`LOCAL_AUTOSAVE_SECONDS`, `dwell-client` local.rs), and when the page is hidden or closed |
 | `CHUNK_SIZE` | 32 | Voxels per chunk edge |
+| `CELL_HEIGHT` | 0.5 m (Phase 41, ADR 0042) | A cell is 1 m × `CELL_HEIGHT` × 1 m (§6.1): the vertical world values below are rows of cells, with metre twins (`MIDPLANE_M`, `CORE_M`, `SEA_LEVEL_M`, `FLAT_TOP_M`) generated beside them; every metre↔cell conversion goes through `dwell-world` `cell.rs` |
 | **Players (§9)** | | |
 | Controller tuning | see `PLAYER_CONTROLLER.md` §7 | Capsule, speeds, jump, crouch, climb, swim, push, damage |
 | `RECONCILE_SNAP_DISTANCE` | 1.0 m | Correction above this snaps instead of smoothing |
@@ -2089,17 +2103,17 @@ in the code yet.
 | `LOD_MAX_REQUEST_SECTIONS` | 32 | Sections per `LodRequest` |
 | **Terrain (§6.3)** | | |
 | `MIDPLANE_Y` | 0 | The halfway plane: face A starts here, face B's mirror image lies below; the origin of generation and the build sphere's centre (§6.3, Phase 16) |
-| `bounds` | `{ shape: sphere, center: [0, 0, 0], radius: 50 000 }` | The build volume: what bounds building, generation, storage, streaming and LOD requests, not movement (`BuildVolume`, §6.3; shapes `sphere`, `slab`) |
+| `bounds` | `{ shape: sphere, center: [0, 0, 0], radius: 50 000 }` | The build volume, in cells (on ½ m cells it reaches 25 km up and down): what bounds building, generation, storage, streaming and LOD requests, not movement (`BuildVolume`, §6.3; shapes `sphere`, `slab`) |
 | `FLIP_BAND` | 4 m | Distance from the midplane within which a body moving toward it is accelerated and one moving away feels a fading pull (§6.3) |
-| `CORE_LAYERS` | 10 | The stone core's layers per face from the midplane, never carved (interim: the terrain definition's in Phase 17) |
-| `CORE_ANCHOR_LAYERS` | 8 | Layers either side of the midplane that anchor both faces (Phase 20); within `CORE_LAYERS` (checked at compile time) |
+| `CORE_LAYERS` | 20 rows (10 m) | The stone core's rows per face from the midplane, never carved (interim: the terrain definition's in Phase 17); metre twin `CORE_M` |
+| `CORE_ANCHOR_LAYERS` | 8 | Rows (4 m on ½ m cells) either side of the midplane that anchor both faces (Phase 20); within `CORE_LAYERS` (checked at compile time) |
 | `WORLD_RADIUS` | 50 000 m | Radius of the world disc; beyond it, the void |
 | `ISLAND_RADIUS` | 25 000 m | The interim island's mean radius, absolute (owner, 2026-10-15; the terrain definition's layout in Phase 17) |
-| `FLAT_TOP_Y` | 32 | The flat worlds' surface (the flat test world, the structure sandbox) |
+| `FLAT_TOP_Y` | 64 rows (32 m) | The flat worlds' surface (the flat test world, the structure sandbox); metre twin `FLAT_TOP_M` |
 | `POSITION_FIXED_SCALE` | 256 per m | Fixed-point wire positions (`i32`, ±8 388 km at 3.9 mm, §8.3) |
 | `POS64_LIMIT` | 33 554 432 m | Range decoders accept for `pos64` positions (§8.3) |
 | `FLY_SPEED_MAX_LEVEL` / `FLY_SPEED_SHIFT` | 20 / 4 | Flight speed slider: highest level (2^10 × `fly.speed`, 11.3 km/s: the 100 km world in ~9 s; Phase 16, was 39) and its bit position in `PlayerInput.buttons` (§9.1). No flight ceiling (Phase 16, D3; PLAYER_CONTROLLER.md §6.7 has the other flight tunables) |
-| `SEA_LEVEL` | 32 | Water fill height, face-local (interim: the terrain definition's in Phase 17) |
+| `SEA_LEVEL` | 64 rows (32 m) | Water fill height, face-local (interim: the terrain definition's in Phase 17); metre twin `SEA_LEVEL_M` |
 | `VIEW_RADIUS_CHUNKS` | 3 | Radius of the sphere of chunks streamed around each player |
 | `RENDER_RADIUS_CHUNKS` | 12 | Radius within which a client may request chunks to draw at full detail (§6.3, §6.6) |
 | `CHUNK_REQUESTS_PER_SECOND` | 256 | Per-client `ChunkRequest` rate limit (chunks) |
@@ -2223,9 +2237,9 @@ protocol v5); `LodIndex` 0x13, `LodIndexUpdate` 0x14, `LodData` 0x15, `LodReques
 state and flags, and the wider `pos64` range for creative flight (Phase 4; protocol v7); `ChunkRequest`
 0x4D for full detail beyond the view (Phase 4; protocol v8); the flight speed level in `PlayerInput`'s
 `buttons` (Phase 4; protocol v9); `HostStatus` 0x4E and the `ServerClosing` reject reason
-(Phase 5c; protocol v10); the block registry hash in `Welcome` (Phase 8; protocol v11); the row `j` in `LodIndex` entries and the `faceB` bits of `controllerFlags` and `playerFlags` (Phase 13; protocol v12); `RegionEdit` 0x4F and the `regionEdits` Welcome flag (structure sandbox S3; still protocol v12, an addition within the 0.10 line negotiated by the flag, §10.5); the `KEEP` paste cell and the `brushes` Welcome flag (Phase 34; still protocol v12, negotiated by the flag); `BlockRegistry` 0x50 and the definitions hash in `Welcome` (registry sync, ADR 0038; protocol v14); `slideFlags` and the slide cooldown in the local player's controller state (the sprint slide, Phase 37; protocol v15); `EditAck` 0x51 (edit prediction, Phase 34 B4; protocol v16); `HeldItem` 0x52 and each remote player's `held` and `swing` in `PhysicsSnapshot` (characters, Phase 40 C1; protocol v17) — layouts pinned by `shared/protocol/vectors.txt` (made by the independent Python
+(Phase 5c; protocol v10); the block registry hash in `Welcome` (Phase 8; protocol v11); the row `j` in `LodIndex` entries and the `faceB` bits of `controllerFlags` and `playerFlags` (Phase 13; protocol v12); `RegionEdit` 0x4F and the `regionEdits` Welcome flag (structure sandbox S3; still protocol v12, an addition within the 0.10 line negotiated by the flag, §10.5); the `KEEP` paste cell and the `brushes` Welcome flag (Phase 34; still protocol v12, negotiated by the flag); `BlockRegistry` 0x50 and the definitions hash in `Welcome` (registry sync, ADR 0038; protocol v14); `slideFlags` and the slide cooldown in the local player's controller state (the sprint slide, Phase 37; protocol v15); `EditAck` 0x51 (edit prediction, Phase 34 B4; protocol v16); `HeldItem` 0x52 and each remote player's `held` and `swing` in `PhysicsSnapshot` (characters, Phase 40 C1; protocol v17); ½ m cells (Phase 41, ADR 0042; protocol v18: no layout change, but positions, chunk rows and the registry's shapes mean ½ m cells, and the registry's `adaptive` rule flag is gone) — layouts pinned by `shared/protocol/vectors.txt` (made by the independent Python
 reference encoder, including half floats; the Rust codec, `dwell-protocol`, round-trips every
-vector byte for byte and rejects every malformed one). The Rust port kept protocol v12's layouts. **Protocol v13** (Phase 18) changes no layout: client and server must derive the same adaptive shapes from the same table (§6.1), so a build that shapes differently must not connect. The remaining formats below are drafts, finalized in the
+vector byte for byte and rejects every malformed one). The Rust port kept protocol v12's layouts. **Protocol v13** (Phase 18) changed no layout: client and server derived the same adaptive shapes from the same table, so a build that shaped differently could not connect (the adaptive blocks were removed in Phase 41, protocol v18). The remaining formats below are drafts, finalized in the
 phase that builds them. Enumerations and bit sets (`inputButtons`, `playerStates`, `playerFlags`,
 `controllerFlags`, `welcomeFlags`, `groundKinds`, `playerEventKinds`, `damageCauses`, `chunkForms`, `lodForms`,
 `blockEditActions`, `regionEditOps`, `voxelModificationReasons`, `hostStates`, `heldItem`, `swingFlags`) are generated from
@@ -2508,7 +2522,7 @@ architectural summary.
   normals from Rapier's narrow phase after each step (`Physics::contact_normals`). Rapier's
   default 400 m/s speed limit is raised for creative flight.
 - **Sliding** **[built]** (PLAYER_CONTROLLER.md §6.8; owner, 2026-10-15): ground under the player
-  steeper than 44° (the adaptive shapes' 45° ramps, flanks, saddles; steep Tier 1 faces) cannot be
+  steeper than 44° (the generated 45° ramps; steep Tier 1 faces) cannot be
   stood on or walked up: the horizontal layer slides the player down it under gravity less
   friction up to a terminal speed, with steering across the slope, braking that never stops or
   climbs, a faster crouched slide, and the momentum carried onto flat ground or into a jump;

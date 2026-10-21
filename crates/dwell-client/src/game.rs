@@ -36,7 +36,7 @@ use dwell_protocol::{
     GroundKind, InputFrame, MAX_INPUTS_PER_DATAGRAM, Message, PlayerEventKind, PlayerInput,
     PlayerState, SIM_HZ, controller_flags, player_flags, players,
 };
-use dwell_world::{ChunkCoord, VoxelWorld};
+use dwell_world::{ChunkCoord, FaceFrame, VoxelWorld};
 
 use crate::bodies::Bodies;
 use crate::jobs::Output;
@@ -75,7 +75,14 @@ pub trait Scene: TerrainRenderer {
     fn set_player(&mut self, id: u32, view: Option<PlayerView>);
     /// Your first-person arms this frame (docs/CHARACTERS.md §5), or none.
     fn set_arms(&mut self, _arms: Option<ArmsView>) {}
-    fn set_camera(&mut self, eye: [f64; 3], yaw_deg: f64, pitch_deg: f64, face: f64, flip: f64);
+    fn set_camera(
+        &mut self,
+        eye: [f64; 3],
+        yaw_deg: f64,
+        pitch_deg: f64,
+        face: FaceFrame,
+        flip: f64,
+    );
     /// The fluid whose drawn surface the camera's eye is under (`dwell_world::fluid::eye_fluid`).
     fn set_eye_fluid(&mut self, _eye_fluid: Option<dwell_world::fluid::EyeFluid>) {}
     /// Outlines the targeted block: its cell's minimum corner and the box in the cell (min, max
@@ -209,7 +216,7 @@ pub struct ClientState {
     pub half_height: f64,
     pub state: PlayerState,
     pub controller_flags: u8,
-    pub face: i32,
+    pub face: FaceFrame,
     pub platform_yaw_delta: f64,
     pub ground_kind: GroundKind,
     pub ground_gap: f64,
@@ -239,11 +246,7 @@ fn record_tick(c: &ClientState, input: &InputFrame, eye: f64) {
     let sample = TickSample {
         seq: input.seq,
         at_ms: telemetry::now_ms(),
-        feet: [
-            c.position[0],
-            c.position[1] - f64::from(c.face) * c.half_height,
-            c.position[2],
-        ],
+        feet: c.feet(),
         velocity: c.velocity,
         eye,
         state: player_state_name(c.state),
@@ -294,7 +297,7 @@ impl ClientState {
             half_height: f64::from(p.half_height()),
             state: PlayerState::from_u8(c.state as u8).unwrap_or(PlayerState::Idle),
             controller_flags: net.flags,
-            face: i32::from(c.face),
+            face: c.face,
             platform_yaw_delta: f64::from(c.platform.yaw_delta),
             ground_kind: net.ground_kind,
             ground_gap: f64::from(c.ground.gap),
@@ -314,6 +317,12 @@ impl ClientState {
             radius: f64::from(config.body.radius),
             standing_height: f64::from(config.body.standing_height),
         }
+    }
+
+    /// The feet: half a body below the capsule's centre along the face's up.
+    fn feet(&self) -> [f64; 3] {
+        let up = self.face.up();
+        std::array::from_fn(|k| self.position[k] - up[k] * self.half_height)
     }
 
     fn eye_state(&self) -> EyeState {
@@ -379,13 +388,9 @@ pub struct ViewOverride {
 }
 
 impl ViewOverride {
-    /// The face the eye is over (1: A above the midplane, −1: B).
-    fn face(&self) -> f64 {
-        if self.eye[1] >= f64::from(dwell_world::MIDPLANE_Y) {
-            1.0
-        } else {
-            -1.0
-        }
+    /// The face the eye is over.
+    fn face(&self) -> FaceFrame {
+        FaceFrame::at_height(self.eye[1])
     }
 }
 
@@ -481,7 +486,7 @@ pub struct Game<S: Scene> {
     /// The controller's walk and run speeds the effects scale to.
     speeds: Speeds,
     /// The face the last drawn frame's camera was on (a change is the turn-over).
-    motion_face: Option<i32>,
+    motion_face: Option<FaceFrame>,
     /// The vertical FOV of the last drawn frame, given to the renderer and the LOD alike.
     frame_fov: f64,
     /// The spyglass (docs/SPYGLASS.md): its zoom, and the last frame's view of it.
@@ -818,7 +823,7 @@ impl<S: Scene> Game<S> {
                         velocity,
                         r.is_crouched(),
                         0.0,
-                        r.is_face_b(),
+                        r.face(),
                     );
                     self.proxies.insert(r.player_id);
                 }
@@ -945,11 +950,7 @@ impl<S: Scene> Game<S> {
         DebugState {
             player_id: self.player_id,
             active: c.active,
-            feet: [
-                c.position[0],
-                c.position[1] - f64::from(c.face) * c.half_height,
-                c.position[2],
-            ],
+            feet: c.feet(),
             health: self.health,
             dead: self.dead,
             remotes: self
@@ -1240,17 +1241,13 @@ impl<S: Scene> Game<S> {
         state: PlayerState,
         grounded: bool,
         crouched: bool,
-        face: f64,
+        face: FaceFrame,
         submerged: Option<f64>,
         dt: f64,
     ) -> MoverSample {
-        let at = |dy: f64| {
-            [
-                feet[0].floor() as i32,
-                (feet[1] + face * dy).floor() as i32,
-                feet[2].floor() as i32,
-            ]
-        };
+        // The cell dy metres above the feet (toward the face's up; rows are `CELL_H` tall).
+        let at =
+            |dy: f64| dwell_world::cell_of_pos([feet[0], face.y(face.y(feet[1]) + dy), feet[2]]);
         let [gx, gy, gz] = at(-0.2);
         let [bx, by, bz] = at(0.5);
         let ground = self.voxel(gx, gy, gz);
@@ -1315,8 +1312,8 @@ impl<S: Scene> Game<S> {
             .boxes()
             .iter()
             .map(|b| RegionBox {
-                min: b.min.map(f64::from),
-                size: b.size.map(f64::from),
+                min: dwell_world::pos_of_cell(b.min),
+                size: std::array::from_fn(|i| f64::from(b.size[i]) * dwell_world::CELL[i]),
                 color: match b.kind {
                     ToolBoxKind::Selection => REGION_SELECTION_COLOR,
                     ToolBoxKind::Ghost => REGION_GHOST_COLOR,
@@ -1380,18 +1377,13 @@ impl<S: Scene> Game<S> {
         self.previous = Some(self.current);
         self.current = ClientState::of(&self.predictor);
         let c = self.current;
-        let face = f64::from(c.face);
         let sample = self.mover_sample(
-            [
-                c.position[0],
-                c.position[1] - face * c.half_height,
-                c.position[2],
-            ],
+            c.feet(),
             c.velocity,
             c.state,
             c.controller_flags & controller_flags::GROUNDED != 0,
             c.controller_flags & controller_flags::CROUCHING != 0,
-            face,
+            c.face,
             Some(c.submerged),
             1.0 / SIM_HZ as f64,
         );
@@ -1404,7 +1396,7 @@ impl<S: Scene> Game<S> {
         self.eye
             .tick(&self.current.eye_state(), 1.0 / SIM_HZ as f64);
         record_tick(&self.current, &frame, self.eye.draw(1.0));
-        input.look.turn_sign = f64::from(self.current.face);
+        input.look.face = self.current.face;
         // The camera turns with rotating ground (PPC yawDelta).
         input.look.yaw += self.current.platform_yaw_delta;
     }
@@ -1443,7 +1435,7 @@ impl<S: Scene> Game<S> {
                         | PlayerState::Crouching
                         | PlayerState::Sliding
                 );
-                let face = if v.is_face_b() { -1.0 } else { 1.0 };
+                let face = v.face();
                 let sample = self.mover_sample(
                     v.feet,
                     v.velocity.map(f64::from),
@@ -1518,9 +1510,7 @@ impl<S: Scene> Game<S> {
         self.send_held(held);
         if self.dead {
             // Third person over the body.
-            let view = self
-                .bodies
-                .own_dead(self.death_feet, yaw, f64::from(face), dt);
+            let view = self.bodies.own_dead(self.death_feet, yaw, face, dt);
             let mut scene = self.scene.borrow_mut();
             scene.set_player(u32::from(self.player_id), Some(view));
             scene.set_arms(None);
@@ -1528,10 +1518,10 @@ impl<S: Scene> Game<S> {
             let [x, y, z] = self.death_feet;
             camera_eye = [
                 x - r.sin() * 4.0,
-                y + f64::from(face) * 2.5,
+                face.y(face.y(y) + 2.5),
                 z - r.cos() * 4.0,
             ];
-            scene.set_camera(camera_eye, yaw, -25.0, f64::from(face), 0.0);
+            scene.set_camera(camera_eye, yaw, -25.0, face, 0.0);
             drop(scene);
             self.show_hud_text();
             self.target(None, input, now_ms);
@@ -1546,7 +1536,7 @@ impl<S: Scene> Game<S> {
             camera_eye = eye;
             self.scene
                 .borrow_mut()
-                .set_camera(eye, yaw, pitch, f64::from(face), flip);
+                .set_camera(eye, yaw, pitch, face, flip);
             self.listener = listener(eye, yaw, pitch, face);
             let ready = self.terrain_ready();
             self.target(ready.then_some(eye), input, now_ms);
@@ -1695,7 +1685,7 @@ impl<S: Scene> Game<S> {
         }
         let viewport = self.viewport();
         let (position, yaw_deg, pitch_deg) = match self.view {
-            Some(v) => (v.eye, v.yaw_deg, v.face() * v.pitch_deg),
+            Some(v) => (v.eye, v.yaw_deg, v.face().pitch(v.pitch_deg)),
             None => (
                 if self.dead {
                     self.death_feet
@@ -1704,7 +1694,7 @@ impl<S: Scene> Game<S> {
                 },
                 input.look.yaw,
                 // The world pitch: a face-B player's up is −y.
-                f64::from(c.face) * input.look.pitch,
+                c.face.pitch(input.look.pitch),
             ),
         };
         let camera = LodCamera {
@@ -1774,10 +1764,13 @@ impl<S: Scene> Game<S> {
         };
         // The outline is the box the block is aimed at: a plant's selection box, else its shape's
         // extent (an adaptive block's derived shape is often not a full cell tall).
-        let bounds = dwell_world::edit::target_box(self.streamer.store_mut(), t.cell);
+        // The box is in fractions of the cell; the outline is in metres (HALF_HEIGHT_GRID.md §2).
+        let (lo, hi) = dwell_world::edit::target_box(self.streamer.store_mut(), t.cell);
+        let h = dwell_world::CELL_H as f32;
+        let bounds = ([lo[0], lo[1] * h, lo[2]], [hi[0], hi[1] * h, hi[2]]);
         self.scene
             .borrow_mut()
-            .set_block_outline(Some(t.cell.map(f64::from)), bounds);
+            .set_block_outline(Some(dwell_world::pos_of_cell(t.cell)), bounds);
     }
 
     /// What your hand holds: the hotbar's block, or the brush painting with it while the brush tool
@@ -1880,27 +1873,10 @@ fn sound_event(kind: SoundKind) -> SoundEvent {
 }
 
 /// The audio listener at an eye looking along yaw/pitch on `face`: eye, forward, up.
-fn listener(eye: [f64; 3], yaw: f64, pitch: f64, face: i32) -> [f64; 9] {
-    let f = dwell_game::block_interaction::view_direction(yaw, pitch, face);
-    // Up: perpendicular to forward, toward the face's up.
-    let world_up = [0.0, f64::from(face), 0.0];
-    let cross = |a: [f64; 3], b: [f64; 3]| {
-        [
-            a[1] * b[2] - a[2] * b[1],
-            a[2] * b[0] - a[0] * b[2],
-            a[0] * b[1] - a[1] * b[0],
-        ]
-    };
-    let norm = |v: [f64; 3]| {
-        let l = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
-        if l < 1e-9 {
-            [0.0, 0.0, 1.0]
-        } else {
-            v.map(|x| x / l)
-        }
-    };
-    let right = norm(cross(f, world_up));
-    let up = norm(cross(right, f));
+fn listener(eye: [f64; 3], yaw: f64, pitch: f64, face: FaceFrame) -> [f64; 9] {
+    // The camera's axes (its up perpendicular to forward, toward the face's up).
+    let b = crate::render::camera::aim(yaw, pitch, face, 0.0);
+    let (f, up) = (b.forward(), b.up);
     [
         eye[0], eye[1], eye[2], f[0], f[1], f[2], up[0], up[1], up[2],
     ]
@@ -1986,7 +1962,7 @@ fn probe_lines(center: [f64; 3], c: &ClientState) -> Vec<Line> {
     let grounded = c.controller_flags & controller_flags::GROUNDED != 0;
     let ring = c.radius * 0.9;
     let down =
-        f64::from(c.face) * (c.half_height + if grounded { c.max_step_height } else { 0.15 });
+        c.face.sign_f64() * (c.half_height + if grounded { c.max_step_height } else { 0.15 });
     for i in -1..16 {
         let a = f64::from(i) * std::f64::consts::TAU / 16.0;
         let o = if i < 0 {
@@ -2059,8 +2035,8 @@ mod tests {
 pub struct Puppets {
     pub count: u16,
     pub origin: [f64; 3],
-    /// ±1.
-    pub face: f64,
+    /// The face they stand on.
+    pub face: FaceFrame,
     /// A block every puppet holds (0: none).
     pub held: u16,
 }
@@ -2097,7 +2073,7 @@ impl Puppets {
                 } else {
                     0.0
                 };
-                let face_b = if self.face < 0.0 { pf::FACE_B } else { 0 };
+                let face_b = dwell_physics::net::face_bit(self.face, pf::FACE_B);
                 let grounded = if state == PlayerState::Jumping {
                     0
                 } else {
@@ -2112,7 +2088,7 @@ impl Puppets {
                     ],
                     velocity: [
                         (r.sin() * speed) as f32,
-                        (up * self.face) as f32,
+                        (up * self.face.sign_f64()) as f32,
                         (r.cos() * speed) as f32,
                     ],
                     yaw: yaw as f32,

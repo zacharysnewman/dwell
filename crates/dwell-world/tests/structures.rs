@@ -243,7 +243,10 @@ const OLD_PLAYGROUND: [([i32; 3], [i32; 3], &str); 7] = [
     ([12, -2, 6], [15, -1, 9], "dwell:water"),
 ];
 
+/// The old file at cell `p` (y a row): its boxes are in 1 m blocks, each two ½ m rows
+/// (HALF_HEIGHT_GRID.md §2).
 fn old_playground_at(p: [i32; 3]) -> Option<StateId> {
+    let p = [p[0], p[1].div_euclid(dwell_world::rows_for_m(1.0)), p[2]];
     OLD_PLAYGROUND
         .iter()
         .rev()
@@ -258,7 +261,7 @@ fn the_converted_playground_stamps_exactly_as_the_old_fill_file() {
             .expect("the playground")
             .place([0, 0, 0], 0),
     );
-    for y in -4..6 {
+    for y in -8..12 {
         for z in -2..16 {
             for x in -8..18 {
                 assert_eq!(

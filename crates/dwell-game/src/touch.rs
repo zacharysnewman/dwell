@@ -277,7 +277,7 @@ impl TouchControls {
         let (dx, dy) = (x - p.last.0, y - p.last.1);
         p.last = (x, y);
         // Right-handed, Y up: dragging right turns right, which decreases yaw (increases it upside down).
-        look.yaw = wrap_degrees(look.yaw - look.turn_sign * dx * TOUCH_LOOK_SENSITIVITY);
+        look.yaw = wrap_degrees(look.yaw - look.face.handed(dx * TOUCH_LOOK_SENSITIVITY));
         look.pitch = (look.pitch - dy * TOUCH_LOOK_SENSITIVITY).clamp(-89.0, 89.0);
     }
 

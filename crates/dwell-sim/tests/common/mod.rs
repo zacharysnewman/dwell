@@ -162,7 +162,7 @@ impl Fixture {
 pub fn flat() -> ServerConfig {
     ServerConfig {
         generator_version: GENERATOR_FLAT,
-        spawn: Some([0.5, f64::from(dwell_world::FLAT_TOP_Y), 0.5]),
+        spawn: Some([0.5, dwell_world::FLAT_TOP_M, 0.5]),
         ..ServerConfig::default()
     }
 }

@@ -9,11 +9,11 @@
 mod common;
 
 use common::*;
-use dwell_blocks::adaptive;
-use dwell_blocks::shape::solid_span_at;
 use dwell_blocks::{StateId, require};
 use dwell_physics::controller::{State, events};
 use dwell_physics::{DVec3, Vec3};
+use dwell_world::ramps::{RampFacing, ramp_state, steep_pieces};
+use dwell_world::rows_for_m;
 
 fn v(x: f32, y: f32, z: f32) -> Vec3 {
     Vec3::new(x, y, z)
@@ -59,10 +59,11 @@ fn long_ramp_y(z: f32) -> f32 {
     h + (z - (12.0 - h))
 }
 
-/// Situation P of the Shape Playground: one-wide stairs of grass 1, 2, 3, 4, 5 high along +x at
-/// z = 0 on a floor of cubes (top y = 0); each block is a 45° ramp up to the next (ADAPTIVE_BLOCKS.md
-/// rule 5).
-fn stairs_height(x: i32, z: i32) -> i32 {
+/// Situation P of the Shape Playground: one-wide stairs of grass 1, 2, 3, 4, 5 m high along +x at
+/// z = 0 on a floor of cubes (top y = 0), each topped by a stored 45° ramp rising toward +x (the
+/// half-height grid's pieces, HALF_HEIGHT_GRID.md §3; under Phase 18 the rules shaped them): one
+/// even 45° slope.
+fn stairs_height_m(x: i32, z: i32) -> i32 {
     if z == 0 && (0..5).contains(&x) {
         x + 1
     } else {
@@ -70,35 +71,48 @@ fn stairs_height(x: i32, z: i32) -> i32 {
     }
 }
 
+/// The column's cells from the bottom (face-local): grass, its top metre the ramp's pieces (by
+/// name: the caller hangs them on face B).
+fn stairs_column(x: i32) -> Vec<&'static str> {
+    let rows = rows_for_m(f64::from(stairs_height_m(x, 0)));
+    let top = steep_pieces().expect("a cell height with 45° ramps");
+    (0..rows)
+        .map(|y| {
+            let from_top = (rows - 1 - y) as usize;
+            if from_top < top.len() {
+                top[top.len() - 1 - from_top]
+            } else {
+                "full"
+            }
+        })
+        .collect()
+}
+
+fn stairs_state(piece: &str, hanging: bool) -> StateId {
+    if piece == "full" {
+        grass()
+    } else {
+        ramp_state("dwell:grass", piece, RampFacing::West, hanging).expect("grass ramps")
+    }
+}
+
 fn stairs(w: &mut PlayerTestWorld) {
     w.fill(-6, -1, -6, 10, -1, 6, cube_block());
     for x in 0..5 {
-        for y in 0..stairs_height(x, 0) {
-            w.set(x, y, 0, grass());
+        for (y, piece) in stairs_column(x).into_iter().enumerate() {
+            w.set_cell(x, y as i32, 0, stairs_state(piece, false));
         }
     }
 }
 
-/// The stairs' surface height over (x, z) (local frame).
+/// The stairs' surface height over (x, z) (local frame): the step below, plus the rise across.
 fn stairs_surface(x: f32, z: f32) -> f32 {
     let (cx, cz) = (x.floor() as i32, z.floor() as i32);
-    let h = stairs_height(cx, cz);
+    let h = stairs_height_m(cx, cz);
     if h == 0 {
         return 0.0;
     }
-    let (g, cube) = (grass(), cube_block());
-    let at = |dx: i32, dy: i32, dz: i32| {
-        let y = h - 1 + dy;
-        if y < 0 {
-            cube
-        } else if y < stairs_height(cx + dx, cz + dz) {
-            g
-        } else {
-            0
-        }
-    };
-    let s = adaptive::shape_at(at, 1);
-    (h - 1) as f32 + solid_span_at(s, x - cx as f32, z - cz as f32).hi
+    (h - 1) as f32 + (x - cx as f32)
 }
 
 /// Ticks in the air rising (a hop or a launch) and the fastest upward speed.
@@ -439,20 +453,32 @@ fn jumping_off_a_slide_keeps_the_downhill_momentum() {
     assert!(min_ratio > 0.9, "kept the momentum in the air: {min_ratio}");
 }
 
+/// A wide 26.57° ramp (a rotated static Tier 1 slab, as `wide_ramp`): `gentle_y(z)` is its surface.
+fn gentle_ramp(w: &mut PlayerTestWorld) {
+    w.floor_at(0, 24);
+    w.boxed(
+        v(0.5, 0.0, 6.0),
+        v(8.0, 0.5, 4.0),
+        euler(-f64::from(GENTLE_DEG), 0.0, 0.0),
+        Vec3::ZERO,
+        0.0,
+    );
+}
+
+/// arctan ½: half a metre over a metre, the half-height grid's ramp (HALF_HEIGHT_GRID.md §3).
+const GENTLE_DEG: f32 = 26.565_05;
+
+fn gentle_y(z: f32) -> f32 {
+    // The slab's top face passes through its centre + 0.5 m along its normal.
+    let t = GENTLE_DEG.to_radians();
+    0.5 / t.cos() + t.tan() * (z - 6.0)
+}
+
 #[test]
 fn a_27_degree_slope_is_still_walked_up_and_rested_on() {
-    // An adaptive terrace step: one even 27° slope across z = 3 … 5.
-    let height = |_: i32, z: i32| if z < 4 { 1 } else { 2 };
     let mut w = PlayerTestWorld::new();
-    w.fill(-8, -1, -8, 8, -1, 16, cube_block());
-    for z in -6..=14 {
-        for x in -6..=6 {
-            for y in 0..height(x, z) {
-                w.set(x, y, z, grass());
-            }
-        }
-    }
-    let e = w.spawn(v(0.5, 1.2, 4.0));
+    gentle_ramp(&mut w);
+    let e = w.spawn(v(0.5, gentle_y(6.0) + 0.05, 6.0));
     w.step(ticks(0.5));
     let at = w.pos(e);
     w.step(ticks(2.0));
@@ -463,9 +489,15 @@ fn a_27_degree_slope_is_still_walked_up_and_rested_on() {
     );
     assert!(w.c(e).ground.slope_angle > 20.0 && w.c(e).ground.slope_angle < MIN_ANGLE);
     assert_eq!(w.c(e).state, State::Idle);
+    let before = w.feet(e);
     w.set_input(|_, _| mv(0.0, 1.0));
-    w.step(ticks(1.5));
-    assert!(approx(w.feet(e), 1.5, 0.01), "walked up: {}", w.feet(e));
+    w.step(ticks(1.0));
+    assert!(
+        w.feet(e) > before + 0.4,
+        "walked up: {before} → {}",
+        w.feet(e)
+    );
+    assert_ne!(w.c(e).state, State::Sliding);
 }
 
 #[test]
@@ -511,13 +543,14 @@ fn a_face_b_player_slides_down_single_block_stairs_toward_the_midplane() {
         }
     }
     for x in 0..5 {
-        for y in 0..stairs_height(x, 0) {
-            w.world.set_voxel(x, row(y), 0, grass());
+        for (y, piece) in stairs_column(x).into_iter().enumerate() {
+            w.world
+                .set_voxel(x, row(y as i32), 0, stairs_state(piece, true));
         }
     }
     let local_feet = stairs_surface(2.5, 0.5) + 0.05;
     let e = w.spawn_at(DVec3::new(2.5, MIRROR - f64::from(local_feet), 0.5), 90.0);
-    assert_eq!(w.c(e).face, -1);
+    assert_eq!(w.c(e).face, dwell_world::FaceFrame::B);
     let mut slid = 0;
     for _ in 0..ticks(3.0) {
         w.step(1);

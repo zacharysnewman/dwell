@@ -25,7 +25,12 @@ fn downsampled_from_chunks(generate: &ChunkGenerator, c: LodCoord) -> LodCells {
     out
 }
 
-/// The section (at `level`) holding a world point.
+/// The row (cell space) of a height in metres.
+fn row(h: f32) -> i64 {
+    (f64::from(h) / CELL_H).floor() as i64
+}
+
+/// The section (at `level`) holding a world point (x, z in metres, y in rows).
 fn section_at(level: i32, x: i64, y: i64, z: i64) -> LodCoord {
     let s = section_size(level);
     let div = |v: i64, o: i64| (v - o).div_euclid(s) as i32;
@@ -34,7 +39,7 @@ fn section_at(level: i32, x: i64, y: i64, z: i64) -> LodCoord {
 
 fn coast_on_axis(g: &TerrainGenerator) -> (i32, i32) {
     let mut x = 0;
-    while g.column_at(x, 0).height >= SEA_LEVEL as f32 {
+    while g.column_at(x, 0).height >= (dwell_world::SEA_LEVEL_M as f32) {
         x += 16;
     }
     (x, 0)
@@ -79,6 +84,9 @@ fn compare(a: &LodCells, b: &LodCells, face: Face) -> (f64, f64, f64) {
                 }
             }
             within += i32::from((ta - tb).abs() <= 1);
+            if std::env::var("DWELL_DEBUG").is_ok() && x == 16 {
+                eprintln!("z {z}: ta {ta} tb {tb}");
+            }
             total += f64::from((ta - tb).abs());
         }
     }
@@ -356,7 +364,7 @@ fn the_sandbox_lod_is_its_floor_and_equals_the_downsample_of_its_chunks() {
 #[test]
 fn generate_lod_is_pure_and_bounds_decide_empty_and_buried_exactly() {
     let g = BifacialTerrain::new(0);
-    let ground = |x: i32, z: i32| g.local(Face::A).column_at(x, z).height as i64;
+    let ground = |x: i32, z: i32| row(g.local(Face::A).column_at(x, z).height);
     for level in [1, 3, 5, 8] {
         let c = section_at(level, 100, ground(100, -40), -40);
         let (mut first, mut second) = (LodCells::new(), LodCells::new());
@@ -377,7 +385,8 @@ fn generate_lod_is_pure_and_bounds_decide_empty_and_buried_exactly() {
         }
     }
     let mut cells = LodCells::new();
-    // Under the island on both faces, a level-1 section by the midplane is all ground.
+    // Under the island on both faces, a level-1 section by the midplane is all ground. (Rows:
+    // 6,000 rows up is 3 km of sky, 18,000 down 9 km under face B.)
     assert_eq!(
         g.generate_lod(section_at(1, 64, 0, 64), &mut cells, None, None),
         LodKind::Buried
@@ -387,11 +396,11 @@ fn generate_lod_is_pure_and_bounds_decide_empty_and_buried_exactly() {
         LodKind::Buried
     );
     assert_eq!(
-        g.generate_lod(section_at(2, 64, 3000, 64), &mut cells, None, None),
+        g.generate_lod(section_at(2, 64, 6000, 64), &mut cells, None, None),
         LodKind::Empty
     );
     assert_eq!(
-        g.generate_lod(section_at(2, 64, -9000, 64), &mut cells, None, None),
+        g.generate_lod(section_at(2, 64, -18000, 64), &mut cells, None, None),
         LodKind::Empty
     );
 }
@@ -402,7 +411,7 @@ fn a_generated_section_agrees_with_the_downsample_of_chunks() {
     let chunks = generator_for(GENERATOR_TERRAIN, 0);
     let (mut mean_sum, mut count) = (0.0, 0);
     for (name, x, z) in sites(&g) {
-        let h = g.column_at(x, z).height.max(0.0) as i64;
+        let h = row(g.column_at(x, z).height.max(0.0));
         for level in 1..=3 {
             let c = section_at(level, i64::from(x), h.max(-1), i64::from(z));
             let mut generated = LodCells::new();
@@ -425,7 +434,7 @@ fn a_face_b_section_agrees_with_the_downsample_of_its_chunks() {
     let g = BifacialTerrain::new(0);
     let chunks = generator_for(GENERATOR_TERRAIN, 0);
     for (name, x, z) in sites(g.local(Face::B)) {
-        let h = g.local(Face::B).column_at(x, z).height as i32;
+        let h = row(g.local(Face::B).column_at(x, z).height) as i32;
         for level in 1..=2 {
             let c = section_at(level, i64::from(x), i64::from(mirror_y(h)), i64::from(z));
             let mut generated = LodCells::new();
@@ -499,7 +508,7 @@ fn a_sea_shows_its_surface_at_levels_deeper_than_the_sea() {
                         (o.z + i64::from(z) * cs) as i32,
                     )
                     .height
-                        >= SEA_LEVEL as f32 - 10.0
+                        >= (dwell_world::SEA_LEVEL_M as f32) - 10.0
                 {
                     continue;
                 }
@@ -550,7 +559,7 @@ fn column_surfaces_put_distant_land_and_seas_at_their_true_height() {
             let c = section_at(
                 level,
                 i64::from(px),
-                (g.column_at(px, pz).height as i64).max(0),
+                row(g.column_at(px, pz).height).max(0),
                 i64::from(pz),
             );
             let mut cells = LodCells::new();
@@ -586,7 +595,8 @@ fn column_surfaces_put_distant_land_and_seas_at_their_true_height() {
                     } else {
                         assert!(sf.height >= 0.0);
                     }
-                    error_surface += f64::from(sf.height - truth);
+                    // (Surfaces are in rows, the column's height in metres.)
+                    error_surface += f64::from(sf.height) * CELL_H - f64::from(truth);
                 }
             }
         }
@@ -637,7 +647,7 @@ both_faces!(
         for level in 1..=6 {
             let c = section_at(level, s[0] as i64, s[1] as i64 - 1, s[2] as i64);
             let size = section_size(level);
-            let mirror_y = i64::from(FaceFrame::MIRROR as i32) - section_origin(c).y - size;
+            let mirror_y = FaceFrame::B.span(section_origin(c).y, size);
             let cb = if f.is_b() {
                 section_at(level, s[0] as i64, mirror_y, s[2] as i64)
             } else {

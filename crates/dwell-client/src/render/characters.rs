@@ -20,7 +20,6 @@ use dwell_characters::anim::{MAX_BONES, Pose, arm_transforms, bone_transforms};
 use dwell_characters::math::Affine;
 use dwell_characters::mesh::{self, Mesh};
 use dwell_characters::{BLOCK_MATERIAL, Character, TABLES, TILE, View};
-use dwell_world::Face;
 use dwell_world::FaceFrame;
 use dwell_world::hash::HashMap;
 
@@ -74,8 +73,8 @@ pub struct BodyDraw {
     pub feet: V3,
     /// Degrees; 0 faces +z.
     pub yaw: f64,
-    /// ±1: upside down on face B.
-    pub face: f64,
+    /// The face it stands on: upside down on face B.
+    pub face: FaceFrame,
     /// Lies on its back (the death pose).
     pub dead: bool,
     /// The look's name (unknown names draw the default look).
@@ -231,12 +230,11 @@ struct Key {
     level: vec3f,
 };
 fn key_light(frag_y: f32) -> Key {
-    let on_a = frag_y >= MIDPLANE_Y;
+    let face = face_at(frag_y);
     let d = frame.day;
-    let up = vec3f(0.0, select(-1.0, 1.0, on_a), 0.0);
     var k: Key;
-    k.dir = select(d.moon.xyz, d.sun.xyz, own(d.sun.y, on_a) > 0.01);
-    k.level = lambert(vec3f(1.0), up, frag_y);
+    k.dir = select(d.moon.xyz, d.sun.xyz, own(d.sun.xyz, face) > 0.01);
+    k.level = lambert(vec3f(1.0), face_up(face), frag_y);
     return k;
 }
 
@@ -276,7 +274,7 @@ fn character_fs(i: CharacterOut, @builtin(front_facing) front: bool) -> SceneOut
     let w = dot(n, key.dir) * 0.5 + 0.5;
     var c = mix(m.shadow.rgb, m.base.rgb, smoothstep(0.16, 0.5, w));
     c = mix(c, m.light.rgb, smoothstep(0.66, 0.98, w) * 0.8);
-    c = c * mix(0.9, 1.0, n.y * frame.eye.y * 0.5 + 0.5);
+    c = c * mix(0.9, 1.0, face_rise(frame.eye.y, n) * 0.5 + 0.5);
     let layer = i32(m.extra.y);
     if (layer >= 0 && inst.cfg.x > 0.5) {
         c = c * mix(1.0, brush_k(i, layer), m.extra.x);
@@ -362,7 +360,7 @@ pub fn body_frame(d: &BodyDraw, eye: V3) -> Affine {
         d.yaw.to_radians().cos() as f32,
     );
     // The face's up (FaceFrame): on face B the body's up and left both turn over.
-    let up = FaceFrame::of(if d.face < 0.0 { Face::B } else { Face::A }).up();
+    let up = d.face.up();
     let f = up[1] as f32;
     let place = Affine {
         m: [[f * c, 0.0, -f * s], [0.0, f, 0.0], [s, 0.0, c]],
@@ -990,9 +988,9 @@ mod tests {
     dwell_world::both_faces! {
         fn a_body_stands_on_its_face_and_faces_its_yaw(face: FaceFrame) {
             let d = BodyDraw {
-                feet: [10.0, 5.0 * face.sign_f64(), 0.0],
+                feet: face.point([10.0, 5.0, 0.0]),
                 yaw: 90.0,
-                face: face.sign_f64(),
+                face,
                 dead: false,
                 look: dwell_characters::DEFAULT_LOOK,
                 pose: Pose::REST,
@@ -1016,7 +1014,11 @@ mod tests {
     #[test]
     fn the_arms_sit_ahead_of_the_eye_whatever_the_view() {
         let fp = dwell_characters::player().first_person.unwrap();
-        for (yaw, pitch, face) in [(0.0, 0.0, 1.0), (135.0, -40.0, 1.0), (20.0, 30.0, -1.0)] {
+        for (yaw, pitch, face) in [
+            (0.0, 0.0, FaceFrame::A),
+            (135.0, -40.0, FaceFrame::A),
+            (20.0, 30.0, FaceFrame::B),
+        ] {
             let b = super::super::camera::aim(yaw, pitch, face, 0.0);
             let a = arms_frame(&b);
             let p = a.apply(fp.anchor);

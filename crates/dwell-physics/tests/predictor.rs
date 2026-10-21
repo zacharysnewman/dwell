@@ -9,7 +9,7 @@ use dwell_physics::net::{player_flags_of, quantize_input, to_net};
 use dwell_physics::predictor::Predictor;
 use dwell_physics::{DVec3, Physics, Vec3};
 use dwell_protocol::{InputFrame, LocalPlayerState, PhysicsSnapshot, player_flags};
-use dwell_world::VoxelWorld;
+use dwell_world::{FaceFrame, VoxelWorld};
 
 const DT: f64 = 1.0 / 60.0;
 
@@ -28,7 +28,7 @@ impl Server {
         let h = players.spawn(
             &mut physics,
             PlayerControllerConfig::default(),
-            DVec3::new(0.5, f64::from(dwell_world::FLAT_TOP_Y), 0.5),
+            DVec3::new(0.5, dwell_world::FLAT_TOP_M, 0.5),
             0.0,
         );
         Self {
@@ -195,8 +195,15 @@ fn a_remote_proxy_blocks_the_local_player() {
     let mut world = VoxelWorld::flat();
     let mut p = Predictor::new(PlayerControllerConfig::default());
     p.on_snapshot(&mut world, &server.snapshot(0));
-    let top = f64::from(dwell_world::FLAT_TOP_Y);
-    p.set_remote(7, DVec3::new(0.5, top, 3.0), Vec3::ZERO, false, 0.0, false);
+    let top = dwell_world::FLAT_TOP_M;
+    p.set_remote(
+        7,
+        DVec3::new(0.5, top, 3.0),
+        Vec3::ZERO,
+        false,
+        0.0,
+        FaceFrame::A,
+    );
     for seq in 1..=120 {
         p.tick(
             &mut world,

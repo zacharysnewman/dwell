@@ -12,6 +12,9 @@ use dwell_world::{
     Chunk, ChunkCoord, FLAT_TOP_Y, M, chunk_hash, chunk_of, generate_flat_chunk, local_index,
 };
 
+/// The chunk row holding the flat world's surface row (`FLAT_TOP_Y`): 2 on ½ m cells.
+const GC: i32 = dwell_world::FLAT_TOP_Y / dwell_world::CHUNK_SIZE;
+
 /// The flat world's surface: its top voxel is G − 1.
 const G: i32 = FLAT_TOP_Y;
 
@@ -67,7 +70,7 @@ fn a_placed_block_reaches_every_client_streaming_its_chunk_one_revision_each() {
     assert_eq!(
         f.server
             .world()
-            .find(ChunkCoord::new(0, 1, 0))
+            .find(ChunkCoord::new(0, GC, 0))
             .unwrap()
             .revision(),
         1
@@ -75,7 +78,7 @@ fn a_placed_block_reaches_every_client_streaming_its_chunk_one_revision_each() {
     assert_eq!(
         f.server
             .world()
-            .find(ChunkCoord::new(-1, 1, 0))
+            .find(ChunkCoord::new(-1, GC, 0))
             .unwrap()
             .revision(),
         1
@@ -87,7 +90,7 @@ fn a_placed_block_reaches_every_client_streaming_its_chunk_one_revision_each() {
         assert_eq!(mods[0].reason, VoxelModificationReason::Edit);
         // x = −1 lies in chunk −1, x = 0 in chunk 0: one entry per chunk, each at revision 1.
         assert_eq!(mods[0].chunks.len(), 2);
-        assert_eq!(mods[0].chunks[0].coord, [-1, 1, 0]);
+        assert_eq!(mods[0].chunks[0].coord, [-1, GC, 0]);
         assert_eq!(mods[0].chunks[0].revision, 1);
         assert_eq!(
             mods[0].chunks[0].changes,
@@ -96,7 +99,7 @@ fn a_placed_block_reaches_every_client_streaming_its_chunk_one_revision_each() {
                 material: M.stone
             }]
         );
-        assert_eq!(mods[0].chunks[1].coord, [0, 1, 0]);
+        assert_eq!(mods[0].chunks[1].coord, [0, GC, 0]);
         assert_eq!(mods[0].chunks[1].revision, 1);
         assert_eq!(
             mods[0].chunks[1].changes,
@@ -137,14 +140,14 @@ fn tall_grass_goes_on_grass_not_stone_and_with_the_block_under_it() {
         f.take_all()
     };
     // On the flat world's grass: placed. On a stone block: refused (its data's placeOn).
-    f.send(1, place([0, 31, 2], 2, tall));
-    f.send(1, place([-1, 31, 2], 2, M.stone));
+    f.send(1, place([0, G - 1, 2], 2, tall));
+    f.send(1, place([-1, G - 1, 2], 2, M.stone));
     f.server.step();
-    assert_eq!(f.server.world().get_voxel(0, 32, 2), tall);
+    assert_eq!(f.server.world().get_voxel(0, G, 2), tall);
     settle(&mut f);
-    f.send(1, place([-1, 32, 2], 2, tall));
+    f.send(1, place([-1, G, 2], 2, tall));
     f.server.step();
-    assert_eq!(f.server.world().get_voxel(-1, 33, 2), M.air);
+    assert_eq!(f.server.world().get_voxel(-1, G + 1, 2), M.air);
     assert_eq!(
         f.server.stats_of(1).unwrap().last_edit_check,
         EditCheck::NoSupport
@@ -156,7 +159,7 @@ fn tall_grass_goes_on_grass_not_stone_and_with_the_block_under_it() {
         1,
         Message::RegionEdit(RegionEdit {
             op: RegionEditOp::Fill,
-            min: [0, 31, 2],
+            min: [0, G - 1, 2],
             size: [1, 1, 1],
             material: M.air,
             from: 0,
@@ -164,9 +167,9 @@ fn tall_grass_goes_on_grass_not_stone_and_with_the_block_under_it() {
         }),
     );
     f.server.step();
-    assert_eq!(f.server.world().get_voxel(0, 31, 2), M.air);
+    assert_eq!(f.server.world().get_voxel(0, G - 1, 2), M.air);
     assert_eq!(
-        f.server.world().get_voxel(0, 32, 2),
+        f.server.world().get_voxel(0, G, 2),
         M.air,
         "the plant went with it"
     );
@@ -181,13 +184,13 @@ fn tall_grass_goes_on_grass_not_stone_and_with_the_block_under_it() {
     assert_eq!(changes.len(), 2, "{changes:?}");
     assert!(changes.iter().all(|c| c.material == M.air));
     // Placing into a plant replaces it.
-    f.send(1, place([1, 31, 2], 2, tall));
+    f.send(1, place([1, G - 1, 2], 2, tall));
     f.server.step();
     settle(&mut f);
-    f.send(1, place([1, 32, 2], 2, M.sand));
+    f.send(1, place([1, G, 2], 2, M.sand));
     f.server.step();
-    assert_eq!(f.server.world().get_voxel(1, 32, 2), M.sand);
-    assert_eq!(f.server.world().get_voxel(1, 33, 2), M.air);
+    assert_eq!(f.server.world().get_voxel(1, G, 2), M.sand);
+    assert_eq!(f.server.world().get_voxel(1, G + 1, 2), M.air);
 }
 
 #[test]
@@ -249,7 +252,7 @@ fn resync_re_sends_chunks_the_client_has_with_their_current_revision() {
     f.take_all();
     f.send(
         1,
-        Message::ChunkResync(vec![[0, 1, 0], [0, 0, 0], [50, 1, 0]]),
+        Message::ChunkResync(vec![[0, GC, 0], [0, GC - 1, 0], [50, GC, 0]]),
     ); // the last one was never streamed
     let out = f.take_all().remove(&1).unwrap_or_default();
     assert_eq!(out.len(), 2, "{out:?}");
@@ -280,16 +283,16 @@ fn an_edited_chunk_the_air_test_calls_empty_is_kept_and_streamed_explicitly() {
     };
     let x = spawn.x.floor() as i32;
     let z = spawn.z.floor() as i32;
-    let y = 4000; // open sky
+    let y = 4000; // open sky (a row, 2 km up)
     let sky = chunk_of(x, y, z + 2);
-    // A floating block (tests put it directly), then the player next to it breaks it. Another on
-    // it keeps it a cube (alone, a natural block is a half pyramid, with no side to aim at).
+    // A floating 1 m block of two cells (tests put it directly), then the player next to it
+    // breaks its lower cell.
     f.server.world().set_voxel(x, y, z + 2, M.stone);
     f.server.world().set_voxel(x, y + 1, z + 2, M.stone);
     f.move_to(
         w.player_id,
         f64::from(x) + 0.5,
-        f64::from(y) - 1.0,
+        dwell_world::m_of_row(y) - 1.0,
         f64::from(z) + 0.5,
     );
     f.send(1, Message::WorldgenCheck(0)); // full-chunk mode

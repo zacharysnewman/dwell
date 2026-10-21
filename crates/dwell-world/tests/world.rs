@@ -1,6 +1,7 @@
 //! The voxel grid and block edits (ported from the C++ core and block-edit tests); structures are
 //! in `structures.rs`.
 
+use dwell_world::ramps::RampFacing;
 use std::sync::Arc;
 
 use dwell_blocks::{StateId, require};
@@ -10,6 +11,8 @@ use dwell_world::*;
 
 /// ~8,000 km out (tests/test_origin.h): everything must work there as at the origin.
 const FAR_X: i32 = 3906 * 2048;
+/// The middle of row 0 (m).
+const MID_ROW_0: f64 = 0.5 * CELL_H;
 
 fn s(name: &str) -> StateId {
     require(name)
@@ -103,7 +106,8 @@ fn the_ray_finds_the_first_targetable_cell_and_its_face() {
         // A non-adaptive cube (a lone stone block would be a half pyramid: its slopes count as tops).
         world.set_voxel(ox, 0, 5, s("dwell:sandbox_floor"));
         world.set_voxel(ox, 0, 3, s("dwell:water")); // liquids are not targets
-        let eye = [f64::from(ox) + 0.5, 0.5, 0.5];
+        // The middle of row 0 (HALF_HEIGHT_GRID.md §2: rows are the cell height tall).
+        let eye = [f64::from(ox) + 0.5, MID_ROW_0, 0.5];
         let hit = raycast_block(&mut world, eye, [0.0, 0.0, 1.0], 5.0).expect("hit");
         assert_eq!((hit.cell, hit.face), ([ox, 0, 5], 5)); // entered through −Z
         assert!((hit.distance - 4.5).abs() < 1e-5);
@@ -124,7 +128,7 @@ fn the_ray_finds_the_first_targetable_cell_and_its_face() {
         assert!(
             raycast_block(
                 &mut world,
-                [f64::from(ox) + 5.5, 0.5, 0.5],
+                [f64::from(ox) + 5.5, MID_ROW_0, 0.5],
                 [1.0, 0.0, 0.0],
                 3.0
             )
@@ -141,7 +145,7 @@ fn a_ladder_is_targeted_broken_and_built_against_as_its_whole_cell() {
         world.set_voxel(ox, 0, 3, s("dwell:ladder"));
         let hit = raycast_block(
             &mut world,
-            [f64::from(ox) + 0.5, 0.5, 0.5],
+            [f64::from(ox) + 0.5, MID_ROW_0, 0.5],
             [0.0, 0.0, 1.0],
             5.0,
         )
@@ -308,6 +312,25 @@ fn tall_grass_is_placed_only_on_grass_or_dirt() {
         .check,
         EditCheck::Ok
     );
+}
+
+#[test]
+fn tall_grass_is_not_placed_on_a_stored_ramp() {
+    // HALF_HEIGHT_GRID.md §5: plants grow on flat tops only. A grass or dirt ramp piece is its own
+    // block (`dwell:grass_ramp`), which tall grass's `placeOn` does not list.
+    let grass = s("dwell:tall_grass");
+    let mut world = ground();
+    let eye = [0.5, 1.62, 0.5];
+    for base in ["dwell:grass", "dwell:dirt"] {
+        let ramp =
+            dwell_world::ramps::ramp_state(base, "ramp", RampFacing::East, false).expect("a ramp");
+        world.set_voxel(0, -1, 2, ramp);
+        assert_eq!(
+            check(&mut world, place([0, -1, 2], 2, grass), eye, &[]).check,
+            EditCheck::NoSupport,
+            "{base}"
+        );
+    }
 }
 
 #[test]
@@ -569,22 +592,22 @@ fn nothing_is_placed_outside_the_build_volume_or_disc() {
     world.set_voxel(0, top, 2, s("dwell:sandbox_floor")); // a cube: its −Z face is there to aim at
     let r = place([0, top, 2], 2, s("dwell:stone"));
     assert_eq!(
-        check(&mut world, r, [0.5, f64::from(sky) + 0.6, 2.5], &[]).check,
+        check(&mut world, r, [0.5, m_of_row(sky) + 0.6, 2.5], &[]).check,
         EditCheck::OutOfWorld
     );
     let r = place([0, top, 2], 5, s("dwell:stone"));
     assert_eq!(
-        check(&mut world, r, [0.5, f64::from(sky) - 0.5, 0.5], &[]).check,
+        check(&mut world, r, [0.5, m_of_row(top) + 0.5 * CELL_H, 0.5], &[]).check,
         EditCheck::Ok
     );
     let bottom = BUILD_VOLUME.y_range().0 as i32;
     world.set_voxel(0, bottom, 2, s("dwell:sandbox_floor"));
     let r = place([0, bottom, 2], 3, s("dwell:stone"));
     assert_eq!(
-        check(&mut world, r, [0.5, f64::from(bottom) - 0.6, 2.5], &[]).check,
+        check(&mut world, r, [0.5, m_of_row(bottom) - 0.6, 2.5], &[]).check,
         EditCheck::OutOfWorld
     );
-    // 45 km out the sphere is 21.8 km tall: inside below, outside above.
+    // 45 km out the sphere (in cells) is 21,794 rows tall: inside below, outside above.
     let (x, high) = (45_000, 21_793);
     world.set_voxel(x, high - 1, 0, s("dwell:sandbox_floor"));
     let r = place([x, high - 1, 0], 2, s("dwell:stone"));
@@ -592,7 +615,7 @@ fn nothing_is_placed_outside_the_build_volume_or_disc() {
         check(
             &mut world,
             r,
-            [f64::from(x) + 0.5, f64::from(high) + 0.6, 0.5],
+            [f64::from(x) + 0.5, m_of_row(high) + 0.6, 0.5],
             &[]
         )
         .check,
@@ -604,7 +627,7 @@ fn nothing_is_placed_outside_the_build_volume_or_disc() {
     world.set_voxel(rim, 0, 0, s("dwell:sandbox_floor"));
     let r = place([rim, 0, 0], 0, s("dwell:stone"));
     assert_eq!(
-        check(&mut world, r, [f64::from(rim) + 1.5, 0.5, 0.5], &[]).check,
+        check(&mut world, r, [f64::from(rim) + 1.5, MID_ROW_0, 0.5], &[]).check,
         EditCheck::OutOfWorld
     );
 }
@@ -684,109 +707,29 @@ fn chunk_changes_apply_with_the_modifications_revision() {
 }
 
 #[test]
-fn tall_grass_aims_and_outlines_where_it_sits_on_its_support() {
-    // The owner (2026-10-20): over a level field (resting at half height) the plant is drawn on
-    // the ground, so its box (the outline, the crosshair's target and the server's line of
-    // sight) sits down with it. A field at row 4 (face A), the plant at (0, 5, 2).
-    let grass = s("dwell:tall_grass");
-    let b = dwell_blocks::info(grass).selection.expect("a box");
+fn a_plant_on_the_block_does_not_hide_it_from_the_servers_line_of_sight() {
+    // Regression (the local-mode game test after main's steep terrain): the client targeted a
+    // grass block's top beside the tall grass on it, through the gap beside the plant's selection
+    // box, but every one of the server's sight rays to that face ran into the plant, so the break
+    // was refused (NoLineOfSight). Plants don't hide what is behind them.
     let mut world = empty();
-    for x in -4..=4 {
-        for z in -4..=8 {
-            world.set_voxel(x, 4, z, s("dwell:grass"));
+    let grass = s("dwell:grass");
+    for x in -1..=1 {
+        for z in -1..=1 {
+            world.set_voxel(x, 0, z, grass);
         }
     }
-    world.set_voxel(0, 5, 2, grass);
-    let (lo, hi) = target_box(&mut world, [0, 5, 2]);
-    assert_eq!(lo, [b[0], b[1] - 0.5, b[2]]);
-    assert_eq!(hi, [b[3], b[4] - 0.5, b[5]]);
-    // A level ray through the lowered part of the box (in the support's cell, over its top) hits
-    // the plant.
-    let hit = raycast_block(&mut world, [0.5, 4.75, -1.5], [0.0, 0.0, 1.0], 6.0)
-        .expect("the plant's lowered box");
-    assert_eq!((hit.cell, hit.face), ([0, 5, 2], 5));
-    assert!(
-        (hit.distance - (3.5 + b[2])).abs() < 1e-4,
-        "{}",
-        hit.distance
-    );
-    // The server sees it there too.
+    world.set_voxel(0, 1, 0, s("dwell:tall_grass"));
+    // The eye as it was: 1.67 m over the top, at the cell's west edge, 0.875 m north of it.
+    let eye = [0.0, m_of_row(1) + 1.6725, -0.875];
     assert_eq!(
-        check(&mut world, brk([0, 5, 2], 2), [0.5, 6.62, 0.5], &[]).check,
+        check(&mut world, brk([0, 0, 0], 2), eye, &[]).check,
         EditCheck::Ok
     );
-    // The support reshaped by its neighbours (blocks beside it at the plant's row): the box
-    // follows the support's height under the plant's middle.
-    world.set_voxel(1, 5, 2, s("dwell:sandbox_floor"));
-    world.set_voxel(-1, 5, 2, s("dwell:sandbox_floor"));
-    let support = world.shape_at(0, 4, 2);
-    let top = dwell_blocks::shape::solid_span_at(support, 0.5, 0.5).hi;
-    assert!(top > 0.5, "{top}");
-    let (lo, _) = target_box(&mut world, [0, 5, 2]);
-    assert!((lo[1] - (b[1] - (1.0 - top))).abs() < 1e-6, "{lo:?}");
-    // On a full cube: unchanged.
-    let mut world = empty();
-    world.set_voxel(0, 4, 2, s("dwell:sandbox_floor"));
-    world.set_voxel(0, 5, 2, grass);
+    // A solid block on it still hides it.
+    world.set_voxel(0, 1, 0, s("dwell:stone"));
     assert_eq!(
-        target_box(&mut world, [0, 5, 2]),
-        ([b[0], b[1], b[2]], [b[3], b[4], b[5]])
+        check(&mut world, brk([0, 0, 0], 2), eye, &[]).check,
+        EditCheck::NoLineOfSight
     );
 }
-
-#[test]
-fn tall_grass_on_face_b_aims_toward_its_ground() {
-    // On face B the ground is toward the midplane (+y): the box stands down from the cell's top,
-    // sunk into the field's half-height top there.
-    let grass = s("dwell:tall_grass");
-    let b = dwell_blocks::info(grass).selection.expect("a box");
-    let mut world = empty();
-    let y = MIDPLANE_Y - 10;
-    for x in -2..=2 {
-        for z in -2..=2 {
-            world.set_voxel(x, y + 1, z, s("dwell:grass"));
-        }
-    }
-    world.set_voxel(0, y, 0, grass);
-    let (lo, hi) = target_box(&mut world, [0, y, 0]);
-    assert!((lo[1] - (1.0 - b[4] + 0.5)).abs() < 1e-6, "{lo:?}");
-    assert!((hi[1] - (1.0 - b[1] + 0.5)).abs() < 1e-6, "{hi:?}");
-}
-
-/// A box in a cell, world ↔ face-local (y within the cell turned over on face B).
-fn local_box(f: FaceFrame, (lo, hi): ([f32; 3], [f32; 3])) -> ([f32; 3], [f32; 3]) {
-    if f.is_b() {
-        ([lo[0], 1.0 - hi[1], lo[2]], [hi[0], 1.0 - lo[1], hi[2]])
-    } else {
-        (lo, hi)
-    }
-}
-
-both_faces!(
-    /// Regression (face parity audit, 2026-10-20): on face B a level field's half-height top was
-    /// outlined and aimed at as a whole cell (its hanging shape counted as "inverted": full box);
-    /// on either face the box is the shape's face-local extent.
-    fn a_level_fields_top_is_aimed_at_by_its_half_height_box_on_either_face(f: FaceFrame) {
-        let mut world = empty();
-        let row = f.row(20);
-        for x in -2..=2 {
-            for z in -2..=2 {
-                world.set_voxel(x, row, z, s("dwell:grass"));
-                world.set_voxel(x, f.row(19), z, s("dwell:dirt"));
-            }
-        }
-        let (lo, hi) = local_box(f, target_box(&mut world, [0, row, 0]));
-        assert_eq!((lo, hi), ([0.0; 3], [1.0, 0.5, 1.0]), "{:?}", f.face);
-        // Aimed at from above (face-local): the ray stops on the half-height top.
-        let eye = f.point([0.5, 21.6, 0.5]);
-        let down = f.vector_f32([0.0, -1.0, 0.0]);
-        let hit = raycast_block(&mut world, eye, down, 5.0).expect("hit");
-        assert_eq!(hit.cell, [0, row, 0]);
-        assert!(
-            (hit.distance - 1.1).abs() < 1e-4,
-            "{:?}: {}",
-            f.face,
-            hit.distance
-        );
-    }
-);

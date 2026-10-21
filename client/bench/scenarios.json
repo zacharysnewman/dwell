@@ -2764,6 +2764,57 @@
         { "do": "record", "name": "run" },
         { "do": "shot", "name": "end" }
       ]
+    },
+    {
+      "name": "faces-a",
+      "notes": "Face parity's look (BIFACIAL_WORLD.md §11): other players' bodies, your arms, the block outline, the sky and clouds and the spyglass on face A; `faces-b` is the same on face B, to compare shot for shot.",
+      "steps": [
+        { "do": "settle", "maxS": 120 },
+        { "do": "time", "t": 0.35 },
+        { "do": "puppets", "count": 8, "at": [0, 0, 2], "face": 1 },
+        { "do": "look", "yaw": 0, "pitch": -8 },
+        { "do": "wait", "s": 2 },
+        { "do": "shot", "name": "bodies" },
+        { "do": "puppets", "count": 0 },
+        { "do": "arms", "on": true },
+        { "do": "look", "yaw": 90, "pitch": -55 },
+        { "do": "wait", "s": 1 },
+        { "do": "shot", "name": "arms-outline" },
+        { "do": "look", "yaw": 90, "pitch": 35 },
+        { "do": "wait", "s": 1 },
+        { "do": "shot", "name": "sky" },
+        { "do": "look", "yaw": 90, "pitch": -5 },
+        { "do": "spyglass", "on": true, "step": 1 },
+        { "do": "wait", "s": 1 },
+        { "do": "shot", "name": "spyglass" },
+        { "do": "spyglass", "on": false }
+      ]
+    },
+    {
+      "name": "faces-b",
+      "notes": "`faces-a` on face B (the player and the puppets on face B's spawn).",
+      "face": "b",
+      "steps": [
+        { "do": "settle", "maxS": 120 },
+        { "do": "time", "t": 0.85 },
+        { "do": "puppets", "count": 8, "at": [0, 0, 2], "face": -1 },
+        { "do": "look", "yaw": 0, "pitch": -8 },
+        { "do": "wait", "s": 2 },
+        { "do": "shot", "name": "bodies" },
+        { "do": "puppets", "count": 0 },
+        { "do": "arms", "on": true },
+        { "do": "look", "yaw": 90, "pitch": -55 },
+        { "do": "wait", "s": 1 },
+        { "do": "shot", "name": "arms-outline" },
+        { "do": "look", "yaw": 90, "pitch": 35 },
+        { "do": "wait", "s": 1 },
+        { "do": "shot", "name": "sky" },
+        { "do": "look", "yaw": 90, "pitch": -5 },
+        { "do": "spyglass", "on": true, "step": 1 },
+        { "do": "wait", "s": 1 },
+        { "do": "shot", "name": "spyglass" },
+        { "do": "spyglass", "on": false }
+      ]
     }
   ]
 }

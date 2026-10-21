@@ -24,19 +24,26 @@ pub struct FaceFrame {
     pub face: Face,
 }
 
+/// Face A's frame (the identity) by default.
+impl Default for FaceFrame {
+    fn default() -> Self {
+        Self::A
+    }
+}
+
 impl FaceFrame {
     pub const A: Self = Self { face: Face::A };
     pub const B: Self = Self { face: Face::B };
-    /// Continuous heights of face B sum to this with their face-local height (voxel rows to one
-    /// less: a row spans [y, y + 1), its mirror [MIRROR − y − 1, MIRROR − y)).
-    pub const MIRROR: f64 = (MIRROR_SUM + 1) as f64;
+    /// Continuous heights (m) of face B sum to this with their face-local height (voxel rows to
+    /// `MIRROR_SUM`: on the half-height branch a row is `CELL_H` tall, HALF_HEIGHT_GRID.md §2).
+    pub const MIRROR: f64 = crate::MIRROR_M;
 
     pub const fn of(face: Face) -> Self {
         Self { face }
     }
-    /// The face a continuous world height is on (the midplane itself is face A's).
+    /// The face a continuous world height (m) is on (the midplane itself is face A's).
     pub fn at_height(y: f64) -> Self {
-        Self::of(if y >= f64::from(MIDPLANE_Y) {
+        Self::of(if y >= crate::MIDPLANE_M {
             Face::A
         } else {
             Face::B
@@ -66,12 +73,23 @@ impl FaceFrame {
     pub const fn is_b(self) -> bool {
         matches!(self.face, Face::B)
     }
+    /// The other face's frame.
+    pub const fn other(self) -> Self {
+        if self.is_b() { Self::A } else { Self::B }
+    }
     /// The world's y component of up: +1 on face A, −1 on face B.
     pub const fn sign(self) -> i32 {
         if self.is_b() { -1 } else { 1 }
     }
     pub const fn sign_f64(self) -> f64 {
         if self.is_b() { -1.0 } else { 1.0 }
+    }
+    pub const fn sign_f32(self) -> f32 {
+        if self.is_b() { -1.0 } else { 1.0 }
+    }
+    /// The frame of a sign as the shaders and the JS API carry it (negative: face B).
+    pub fn of_sign(sign: f64) -> Self {
+        if sign < 0.0 { Self::B } else { Self::A }
     }
     /// Up in the world.
     pub const fn up(self) -> [f64; 3] {
@@ -123,6 +141,26 @@ impl FaceFrame {
     pub fn vector_f32(self, [x, y, z]: [f32; 3]) -> [f32; 3] {
         [x, if self.is_b() { -y } else { y }, z]
     }
+    /// A pitch (degrees, toward up positive), world ↔ face-local: a look toward the face's up is
+    /// toward −y in the world on face B.
+    pub fn pitch(self, deg: f64) -> f64 {
+        deg * self.sign_f64()
+    }
+    /// A handed quantity (a turn about up as the mouse and the stick turn, a strafe to the right),
+    /// world ↔ face-local: a mirror reverses handedness, so the player's right on face B is the
+    /// face-local frame's left. A heading itself (yaw, in x and z) is the same in both frames.
+    pub fn handed(self, v: f64) -> f64 {
+        v * self.sign_f64()
+    }
+    /// The unit direction of a look (yaw 0 = +Z, pitch toward the face's up, degrees), in the world.
+    pub fn look(self, yaw_deg: f64, pitch_deg: f64) -> [f64; 3] {
+        let (yaw, pitch) = (yaw_deg.to_radians(), pitch_deg.to_radians());
+        self.vector([
+            yaw.sin() * pitch.cos(),
+            pitch.sin(),
+            yaw.cos() * pitch.cos(),
+        ])
+    }
     /// A block state, world ↔ face-local: a shaped block (its `half`) turned over on face B.
     pub fn state(self, s: StateId) -> StateId {
         if self.is_b() {
@@ -155,6 +193,15 @@ impl FaceFrame {
             [min[0], self.row(min[1] + size[1] - 1), min[2]]
         } else {
             min
+        }
+    }
+    /// The bottom row of a span of `size` rows from `bottom` (an LOD cell or section's rows, in
+    /// `i64`), world ↔ face-local: the span's mirror on face B.
+    pub const fn span(self, bottom: i64, size: i64) -> i64 {
+        if self.is_b() {
+            MIRROR_SUM as i64 + 1 - bottom - size
+        } else {
+            bottom
         }
     }
     /// The frame of a box: face B's if it lies wholly on face B, else face A's (a box across the
@@ -207,6 +254,28 @@ impl FaceFrame {
             },
             _ => vec![Self::A, Self::B],
         }
+    }
+}
+
+impl FaceFrame {
+    /// The frame in WGSL, for the shaders, which carry a frame as its sign (`face: f32`, ±1):
+    /// `face_at(y)` is [`FaceFrame::at_height`]'s sign, `face_y(face, y)` is [`FaceFrame::y`] and
+    /// `face_up(face)` is [`FaceFrame::up`], `face_vector(face, v)` is [`FaceFrame::vector`] and
+    /// `face_rise(face, v)` its y (a vector's part along the face's up). It needs nothing before it;
+    /// a module includes it once.
+    pub fn wgsl() -> String {
+        format!(
+            "// The face frame (dwell_world::FaceFrame, BIFACIAL_WORLD.md §11): a frame is its sign.\n\
+             const FACE_MIDPLANE_Y: f32 = {:.1}; // metres (½ m cells)\n\
+             const FACE_MIRROR: f32 = {:.1};\n\
+             fn face_at(y: f32) -> f32 {{ return select(-1.0, 1.0, y >= FACE_MIDPLANE_Y); }}\n\
+             fn face_y(face: f32, y: f32) -> f32 {{ return select(FACE_MIRROR - y, y, face > 0.0); }}\n\
+             fn face_up(face: f32) -> vec3f {{ return vec3f(0.0, face, 0.0); }}\n\
+             fn face_rise(face: f32, v: vec3f) -> f32 {{ return v.y * face; }}\n\
+             fn face_vector(face: f32, v: vec3f) -> vec3f {{ return vec3f(v.x, v.y * face, v.z); }}\n",
+            crate::MIDPLANE_M,
+            Self::MIRROR,
+        )
     }
 }
 
@@ -279,6 +348,23 @@ mod tests {
         assert_eq!(b.cell_face(2), 3);
         assert_eq!(b.cell_face(0), 0);
         assert_eq!(b.up(), [0.0, -1.0, 0.0]);
+    }
+
+    #[test]
+    fn looks_pitches_and_turns_map_like_vectors() {
+        for f in [FaceFrame::A, FaceFrame::B] {
+            assert_eq!(f.vector(f.look(30.0, 20.0)), FaceFrame::A.look(30.0, 20.0));
+            assert_eq!(f.pitch(f.pitch(12.0)), 12.0);
+            assert_eq!(f.handed(f.handed(5.0)), 5.0);
+            assert_eq!(FaceFrame::of_sign(f.sign_f64()), f);
+        }
+        assert_eq!(FaceFrame::B.pitch(10.0), -10.0);
+        assert_eq!(FaceFrame::default(), FaceFrame::A);
+        let w = FaceFrame::wgsl();
+        assert!(
+            w.contains(&format!("FACE_MIRROR: f32 = {:.1};", FaceFrame::MIRROR)),
+            "{w}"
+        );
     }
 
     crate::both_faces!(
