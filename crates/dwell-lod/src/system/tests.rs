@@ -196,7 +196,7 @@ struct Host {
     meshed: HashSet<LodId>,
     /// Every section given a payload, in order.
     set: Vec<LodId>,
-    shown: Vec<(LodId, u8)>,
+    shown: Vec<(LodId, u8, Fade)>,
     stand_ins: Vec<StandInBox>,
     // The chunks: drawable (and loaded) where `drawable` says, or held.
     drawable: Option<Box<dyn Fn(ChunkCoord) -> bool>>,
@@ -271,7 +271,7 @@ impl LodView for Host {
             self.meshed.remove(&id);
         }
     }
-    fn show_lod_sections(&mut self, visible: &[(LodId, u8)]) {
+    fn show_lod_sections(&mut self, visible: &[(LodId, u8, Fade)]) {
         self.shown = visible.to_vec();
     }
     fn show_lod_stand_ins(&mut self, stand_ins: &[StandInBox]) {
@@ -1377,6 +1377,7 @@ fn formats_the_overlay_lines() {
         in_use_bytes: 1_048_576,
         error_scale: 1.15,
         bytes_per_second: 2048,
+        fades: Default::default(),
     };
     assert_eq!(
         format_lod_stats(&s),
@@ -1629,3 +1630,228 @@ dwell_world::both_faces!(
         assert_eq!(missing, 0, "{missing} of {} sections not mirrored", a.len());
     }
 );
+
+// --- smooth swaps (fade.rs) and hysteresis -------------------------------------------------------
+
+/// How many swaps of the drawn sections (a section leaving or joining the selection) happen while
+/// the camera rises and sinks between `low` and `high` m above the flat world, `cycles` times
+/// after settling at both ends, with hysteresis `ratio`.
+fn swaps_while_bobbing(ratio: f64, low: f64, high: f64, cycles: u32) -> usize {
+    let mut host = Host::new();
+    let mut options = LodOptions::new(4.0, 1024 * 1_048_576, 64, 64);
+    options.coarsen_ratio = ratio;
+    let mut lod = LodSystem::new(options);
+    let mut now = 0.0;
+    let at = |h: f64| camera([30.0, h, 30.0], 20.0, -35.0);
+    // Settle at each end (everything the bob needs is loaded and meshed), then bob from the top.
+    for h in [high, low, high] {
+        run_for(&mut lod, &mut host, &mut now, &at(h), 4_000.0);
+    }
+    // The camera's face only: the other face's sections show within OTHER_FACE_NEAR_M of it, a
+    // cull boundary the bob also crosses (not a swap between levels).
+    let face_a = |s: &Selection| -> HashSet<LodCoord> {
+        s.drawn
+            .iter()
+            .copied()
+            .filter(|&c| !is_face_b_section(c))
+            .collect()
+    };
+    let mut last = face_a(lod.last_selection());
+    let mut swaps = 0;
+    for _ in 0..cycles {
+        for step in (0..40).rev().chain(0..40) {
+            let h = low + (high - low) * f64::from(step) / 39.0;
+            lod.update(&at(h), now, &mut host);
+            finish(&mut lod, &mut host, &mut zero, 1.0);
+            now += 16.0;
+            let drawn = face_a(lod.last_selection());
+            swaps += drawn.symmetric_difference(&last).count();
+            last = drawn;
+        }
+    }
+    swaps
+}
+
+#[test]
+fn hysteresis_stops_sections_swapping_back_and_forth_on_a_boundary() {
+    // Bobbing 10% in height: without hysteresis the sections whose boundary lies inside the bob
+    // swap on every pass; with a 1.3× margin the first pass settles them.
+    let without = swaps_while_bobbing(1.0, 200.0, 220.0, 4);
+    let with = swaps_while_bobbing(1.3, 200.0, 220.0, 4);
+    assert!(without > 20, "the bob should cross boundaries: {without}");
+    assert_eq!(with, 0, "{with} swaps with hysteresis ({without} without)");
+}
+
+#[test]
+fn hysteresis_still_coarsens_once_the_camera_is_well_past_the_boundary() {
+    // The margin delays coarsening; it does not stop it: from 200 m up to 2 km the view coarsens.
+    let mut host = Host::new();
+    let mut options = LodOptions::new(4.0, 1024 * 1_048_576, 64, 64);
+    options.coarsen_ratio = 1.3;
+    let mut lod = LodSystem::new(options);
+    let mut now = 0.0;
+    let low = camera([0.0, 200.0, 0.0], 0.0, -90.0);
+    run_for(&mut lod, &mut host, &mut now, &low, 6_000.0);
+    let finest_low = lod.last_selection().drawn.iter().map(|c| c.level).min();
+    let high = camera([0.0, 2_000.0, 0.0], 0.0, -90.0);
+    run_for(&mut lod, &mut host, &mut now, &high, 6_000.0);
+    let finest_high = lod.last_selection().drawn.iter().map(|c| c.level).min();
+    assert!(finest_high > finest_low, "{finest_low:?} → {finest_high:?}");
+}
+
+/// The fades of the drawn items covering `p` this frame: the sections shown, the stand-ins and
+/// the chunk-refined level-1 sections.
+fn drawing(lod: &LodSystem, host: &Host, p: Vec3) -> Vec<Fade> {
+    let sections = host
+        .shown
+        .iter()
+        .filter(|(id, _, _)| contains(lod.nodes[id].coord, p))
+        .map(|s| s.2);
+    let stand_ins = host
+        .stand_ins
+        .iter()
+        .filter(|s| (0..3).all(|a| p[a] >= s.lo[a] && p[a] < s.hi[a]))
+        .map(|s| s.fade);
+    let chunks = lod
+        .chunk_fades
+        .iter()
+        .filter(|(id, _)| contains(lod.nodes[id].coord, p))
+        .map(|(_, f)| *f);
+    sections.chain(stand_ins).chain(chunks).collect()
+}
+
+#[test]
+fn every_swap_cross_fades_and_no_frame_leaves_a_region_undrawn_or_drawn_twice() {
+    // The selection test's walk and turn, a climb (coarsening) and back down (refining), with a
+    // 400 ms fade and 16 ms frames, watched at fixed points around the path. No pixel threshold is
+    // ever kept by two drawn items; and where the selection draws a point, the share of its
+    // thresholds kept never drops by more than one fade step (1/25 of them) from one frame to the
+    // next: the incoming level or the outgoing one keeps each pixel, so a swap never opens a hole.
+    // (Where the finer level is empty the coarse one fades out to nothing, step by step.)
+    let mut random = rng(11);
+    let mut host = Host::with_chunks(|c| chebyshev(c, cc(0, 0, 0)) <= 3);
+    let mut options = LodOptions::new(4.0, 64 * 1_048_576, 16, 8);
+    options.fade_ms = 400.0;
+    options.coarsen_ratio = 1.3;
+    let mut lod = LodSystem::new(options);
+    let mut path = Vec::new();
+    for i in 0..60 {
+        let i = f64::from(i);
+        path.push(camera([0.5 + i * 3.0, 1.6, 0.5], i * 6.0, -10.0));
+    }
+    for i in (0..60).chain((0..60).rev()) {
+        let i = f64::from(i);
+        let alt = 1.6 * (2e4f64 / 1.6).powf(i / 59.0);
+        path.push(camera([180.0, alt, 0.5 + i * 3.0], 30.0, -20.0 - i * 0.7));
+    }
+    // Points on and just under the flat world's ground, out to 4 km, denser near the path.
+    let probes: Vec<Vec3> = (0..1500)
+        .map(|_| {
+            let r = random().powi(2) * 4_000.0;
+            let a = random() * std::f64::consts::TAU;
+            [
+                180.0 + r * a.cos(),
+                -0.5 - random() * 2.0,
+                90.0 + r * a.sin(),
+            ]
+        })
+        .collect();
+    let thresholds: Vec<f32> = (0..16).map(|k| (k as f32 + 0.5) / 16.0).collect();
+    let mut kept_before = vec![0usize; probes.len()];
+    let (mut held, mut fading_frames, mut frames) = (0, 0, 0u32);
+    for cam in &path {
+        for _ in 0..3 {
+            frames += 1;
+            lod.update(cam, f64::from(frames) * 16.0, &mut host);
+            finish(&mut lod, &mut host, &mut random, 0.5);
+            if !lod.active {
+                continue;
+            }
+            if lod.debug_stats().fades.swaps > 0 {
+                fading_frames += 1;
+            }
+            let s = lod.last_selection();
+            let mut filled: Vec<LodCoord> = s.drawn.clone();
+            filled.extend(&s.chunks);
+            filled.extend(s.stand_ins.iter().map(|x| x.hole));
+            for (i, &p) in probes.iter().enumerate() {
+                let fades = drawing(&lod, &host, p);
+                let mut kept = 0;
+                for &n in &thresholds {
+                    let k = fades.iter().filter(|f| f.keeps(n)).count();
+                    assert!(k <= 1, "frame {frames}: {k} items draw {p:?} at {n}");
+                    kept += k;
+                }
+                if covering(&filled, p) > 0 {
+                    assert!(
+                        kept + 1 >= kept_before[i],
+                        "frame {frames}: a hole at {p:?} ({} of 16 kept, then {kept})",
+                        kept_before[i]
+                    );
+                    held += 1;
+                }
+                kept_before[i] = kept;
+            }
+        }
+    }
+    assert!(held > 100_000, "{held}");
+    assert!(
+        fading_frames > 50,
+        "the path should swap often: {fading_frames}"
+    );
+    let stats = lod.debug_stats().fades;
+    assert!(stats.begun > 20, "{stats:?}");
+}
+
+#[test]
+fn a_fade_time_of_zero_draws_only_the_selection_as_before() {
+    let mut random = rng(5);
+    let mut host = Host::new();
+    let mut lod = system(4.0, 64, 16, 8);
+    for i in 0..120 {
+        let alt = 1.6 * (2e4f64 / 1.6).powf(f64::from(i) / 119.0);
+        let cam = camera([0.0, alt, 0.0], 0.0, -45.0);
+        lod.update(&cam, f64::from(i) * 16.0, &mut host);
+        finish(&mut lod, &mut host, &mut random, 0.5);
+        let drawn: HashSet<LodId> = lod
+            .last_selection()
+            .drawn
+            .iter()
+            .map(|&c| id_of(c))
+            .collect();
+        let shown: HashSet<LodId> = host.shown.iter().map(|s| s.0).collect();
+        assert_eq!(shown, drawn);
+        assert!(host.shown.iter().all(|s| s.2 == Fade::Full));
+    }
+}
+
+#[test]
+fn a_section_fading_out_keeps_its_mesh_until_its_fade_ends() {
+    // A tiny cache, so eviction runs every frame: a section fading out is touched each frame of
+    // its fade and so never evicted while it draws; once the fades end nothing extra is held.
+    let mut host = Host::new();
+    host.mesh_bytes = 64 * 1024;
+    let mut options = LodOptions::new(4.0, 1_048_576, 64, 64);
+    options.fade_ms = 400.0;
+    let mut lod = LodSystem::new(options);
+    let mut now = 0.0;
+    let high = camera([0.0, 5_000.0, 0.0], 0.0, -90.0);
+    run_for(&mut lod, &mut host, &mut now, &high, 3_000.0);
+    let low = camera([0.0, 300.0, 0.0], 0.0, -90.0);
+    let mut seen_retiring = false;
+    for _ in 0..200 {
+        lod.update(&low, now, &mut host);
+        // Every section shown, fading out or not, still has its mesh in the renderer.
+        for (id, _, _) in &host.shown {
+            assert!(host.meshed.contains(id), "a shown section lost its mesh");
+        }
+        seen_retiring |= host.shown.iter().any(|s| s.2.is_out());
+        finish(&mut lod, &mut host, &mut zero, 1.0);
+        now += 16.0;
+    }
+    assert!(seen_retiring);
+    run_for(&mut lod, &mut host, &mut now, &low, 2_000.0);
+    lod.update(&low, now, &mut host);
+    assert!(host.shown.iter().all(|s| s.2 == Fade::Full));
+    assert_eq!(lod.debug_stats().fades.retiring, 0);
+}

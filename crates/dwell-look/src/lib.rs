@@ -9,6 +9,7 @@ pub mod clouds;
 mod clouds_gen;
 pub mod daynight;
 pub mod fog;
+pub mod lod_blend;
 pub mod motion;
 pub mod outline;
 pub mod reflections;
