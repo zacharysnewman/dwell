@@ -1,4 +1,4 @@
-// The mixer (docs/AUDIO.md §3): the effects and UI buses into the master gain, a small room
+// The mixer (docs/AUDIO.md §3): the effects, UI and music buses into the master gain, a small room
 // reverb on the effects, and a soft limiter before the output: a waveshaper, linear to 0.7, then
 // a tanh knee that never passes full scale (a DynamicsCompressorNode adds its own make-up gain).
 // Built the same on an AudioContext (the game, the menus) and an OfflineAudioContext (renders and
@@ -9,11 +9,15 @@ export interface Volumes {
   master: number;
   effects: number;
   ui: number;
+  /** The music (AUDIO.md §6a); 0 mutes it. */
+  music: number;
 }
 
 export interface Mixer {
   effects: GainNode;
   ui: GainNode;
+  /** The music bus (dry: no room). */
+  music: GainNode;
   /** Into the room: a sound's `reverb` share goes here. */
   reverb: GainNode;
   master: GainNode;
@@ -79,7 +83,7 @@ function softClipCurve(): Float32Array<ArrayBuffer> {
   return curve;
 }
 
-export const DEFAULT_VOLUMES: Volumes = { master: 0.8, effects: 1, ui: 0.6 };
+export const DEFAULT_VOLUMES: Volumes = { master: 0.8, effects: 1, ui: 0.6, music: 0.6 };
 
 /** Builds the mixer into `ctx.destination`. */
 export function buildMixer(ctx: BaseAudioContext, volumes: Volumes = DEFAULT_VOLUMES): Mixer {
@@ -95,8 +99,10 @@ export function buildMixer(ctx: BaseAudioContext, volumes: Volumes = DEFAULT_VOL
   limiter.connect(ctx.destination);
   const effects = ctx.createGain();
   const ui = ctx.createGain();
+  const music = ctx.createGain();
   effects.connect(master);
   ui.connect(master);
+  music.connect(master);
   const reverb = ctx.createGain();
   const room = ctx.createConvolver();
   room.normalize = false;
@@ -110,9 +116,10 @@ export function buildMixer(ctx: BaseAudioContext, volumes: Volumes = DEFAULT_VOL
     master.gain.value = v.master;
     effects.gain.value = v.effects;
     ui.gain.value = v.ui;
+    music.gain.value = v.music;
   };
   setVolumes(volumes);
-  return { effects, ui, reverb, master, setVolumes };
+  return { effects, ui, music, reverb, master, setVolumes };
 }
 
 /** The node a play goes into: the bus, with a send to the room for its `reverb` share. */

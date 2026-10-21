@@ -20,6 +20,7 @@ describe('volume settings', () => {
       master: 1,
       effects: 0,
       ui: DEFAULT_VOLUMES.ui,
+      music: DEFAULT_VOLUMES.music,
     });
     expect(loadVolumes(memory({ [AUDIO_KEY]: '{not json' }))).toEqual(DEFAULT_VOLUMES);
     expect(loadVolumes(null)).toEqual(DEFAULT_VOLUMES);
@@ -27,21 +28,31 @@ describe('volume settings', () => {
 
   it('round-trip', () => {
     const store = memory();
-    saveVolumes({ master: 0.5, effects: 0.25, ui: 0 }, store);
-    expect(loadVolumes(store)).toEqual({ master: 0.5, effects: 0.25, ui: 0 });
+    saveVolumes({ master: 0.5, effects: 0.25, ui: 0, music: 0.3 }, store);
+    expect(loadVolumes(store)).toEqual({ master: 0.5, effects: 0.25, ui: 0, music: 0.3 });
+  });
+
+  it('keep the music volume, 0 (off) included, and default it for an older record', () => {
+    // A record an older build wrote, without the music: the default, and its fields kept.
+    const old = memory({ [AUDIO_KEY]: JSON.stringify({ master: 0.4, effects: 0.5, ui: 0.2 }) });
+    expect(loadVolumes(old).music).toBe(DEFAULT_VOLUMES.music);
+    saveVolumes({ ...loadVolumes(old), music: 0 }, old);
+    expect(loadVolumes(old)).toEqual({ master: 0.4, effects: 0.5, ui: 0.2, music: 0 });
+    expect(sanitizeVolumes({ music: 3 }).music).toBe(1);
+    expect(sanitizeVolumes({ music: 'loud' }).music).toBe(DEFAULT_VOLUMES.music);
   });
 
   it('are an append-only store: a rewrite keeps fields another version wrote', () => {
-    // A later version's field (e.g. a music volume) survives this version saving its own.
+    // A later version's field survives this version saving its own.
     const store = memory({
       [AUDIO_KEY]: JSON.stringify({ master: 0.3, music: 0.7, future: { a: 1 } }),
     });
-    saveVolumes({ master: 0.9, effects: 1, ui: 0.5 }, store);
+    saveVolumes({ master: 0.9, effects: 1, ui: 0.5, music: 0.2 }, store);
     expect(JSON.parse(store.data[AUDIO_KEY] ?? '{}')).toEqual({
       master: 0.9,
       effects: 1,
       ui: 0.5,
-      music: 0.7,
+      music: 0.2,
       future: { a: 1 },
     });
   });

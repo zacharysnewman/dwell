@@ -53,7 +53,7 @@ describe('settings JSON', () => {
     const json = settingsJson({
       detail: { distanceM: 200.4, pixelError: 2.46, memoryMb: 511.7 },
       exposure: 1.2345,
-      audio: { master: 0.8049, effects: 1, ui: 0.333 },
+      audio: { master: 0.8049, effects: 1, ui: 0.333, music: 0.4567 },
       clouds: 'low',
       water: { quality: 'medium' },
       shadows: { quality: 'low', torch: 'high' },
@@ -65,7 +65,7 @@ describe('settings JSON', () => {
     expect(parsed).toEqual({
       detail: { distanceM: 200, pixelError: 2.5, memoryMb: 512 },
       exposure: 1.23,
-      audio: { master: 0.8, effects: 1, ui: 0.33 },
+      audio: { master: 0.8, effects: 1, ui: 0.33, music: 0.46 },
       clouds: 'low',
       water: { quality: 'medium' },
       shadows: { quality: 'low', torch: 'high' },

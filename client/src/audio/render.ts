@@ -27,7 +27,7 @@ export async function renderJob(job: RenderJob): Promise<RenderResult> {
   const ctx = new OfflineAudioContext(2, Math.ceil(job.seconds * RATE), RATE);
   const mixer = buildMixer(ctx, DEFAULT_VOLUMES);
   // Renders are at full volume, so a check of the peak is a check of the loudest the game plays.
-  mixer.setVolumes({ master: 1, effects: 1, ui: 1 });
+  mixer.setVolumes({ master: 1, effects: 1, ui: 1, music: 1 });
   const noise = makeNoise(ctx);
   const variation = new Variation(job.seed);
   for (const p of job.plays) {

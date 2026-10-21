@@ -35,6 +35,8 @@ export default defineConfig({
           localStorage: [
             { name: 'dwell.clouds', value: '"off"' },
             { name: 'dwell.loading', value: '"off"' },
+            // No music (docs/AUDIO.md §6a): no streaming, decoding or audio noise in the suite.
+            { name: 'dwell.music', value: '"off"' },
           ],
         },
       ],

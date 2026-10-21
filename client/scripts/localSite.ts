@@ -4,7 +4,7 @@
 import { execFileSync } from 'node:child_process';
 import { rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { buildManifest, readBuilds } from './site.ts';
+import { buildManifest, hoistMedia, readBuilds } from './site.ts';
 
 const SITE = 'dist-site';
 const versions = process.argv.length > 2 ? process.argv.slice(2) : ['0.1.0', '0.1.1', '0.2.0'];
@@ -23,6 +23,8 @@ for (const version of versions) {
   vite(['--outDir', join(SITE, 'v', version)], { DWELL_VERSION: version });
   console.log(`built ${version}`);
 }
+// The music once, at the site's root (scripts/media.ts).
+hoistMedia(SITE);
 const manifest = buildManifest(readBuilds(SITE), new Date().toISOString());
 writeFileSync(join(SITE, 'versions.json'), `${JSON.stringify(manifest, null, 2)}\n`);
 console.log(`${SITE}/: ${versions.join(', ')}`);

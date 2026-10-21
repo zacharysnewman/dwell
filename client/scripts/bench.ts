@@ -603,7 +603,8 @@ async function runScenario(
     (entries: Record<string, string>) => {
       for (const [k, v] of Object.entries(entries)) localStorage.setItem(k, v);
     },
-    viewStorage(scenarioView(sc)),
+    // No music (docs/AUDIO.md §6a): its streaming and decoding are not what the bench measures.
+    { ...viewStorage(scenarioView(sc)), 'dwell.music': '"off"' },
   );
   const url = scenarioUrl(`${base}/dwell/`, sc, params);
   const openedAt = Date.now();
