@@ -40,16 +40,6 @@
       "params": { "pixelart": "270-snap" }
     },
     {
-      "name": "pixelart-270-cel",
-      "notes": "The pixel-art preview's 270-cel preset: 270 drawn with the cel texture set (docs/PAINTERLY_TEXTURES.md §10, shared/textures/cel.json).",
-      "params": { "pixelart": "270-cel" }
-    },
-    {
-      "name": "pixelart-360-cel",
-      "notes": "The pixel-art preview's 360-cel preset: 360 drawn with the cel texture set.",
-      "params": { "pixelart": "360-cel" }
-    },
-    {
       "name": "pixelart-360",
       "notes": "The pixel-art preview's 360 preset: 360 rows, four sun bands, no edges, a lighter dither.",
       "params": { "pixelart": "360" }
