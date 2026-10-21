@@ -129,7 +129,7 @@ one stop of it (`"brass"`, `"leather.shadow"`), a swatch (`"ink"`), a colour slo
   - `clips`: roles → clip names (`idle`, `walk`, `hold`, `break`, `place`; the wolf's `trot`, the
     deer's `graze`).
   - `firstPerson`: the arm chain (`["arm_r", "forearm_r", "hand_r"]`), its `anchor` in view space
-    (metres from the eye: `[-0.65, -0.48, 0.35]`, right, down and ahead), the arms view's `fov`, and
+    (metres from the eye: `[-0.47, -0.4, 0.17]`, right, down and ahead), the arms view's `fov`, and
     its clips (§5).
 - **`accessories`**: `{ label, place, fits (rigs), slots (its own colour slots and defaults), hides
   (body part ids it covers), parts }`. A hat hides the hair's top; gloves hide the hands. An
@@ -207,8 +207,8 @@ The arms are a **separate view** of the same character, as first-person games do
   (2 cm), so they never clip into walls and keep their size when the world's FOV changes (the speed
   FOV, the spyglass). The sun is the world's, turned into view space, so the arms are lit like the
   body would be. The hand and its held block sit in the lower right: at 16:9 and rest, their box
-  is ~0.43 of the screen's height, its centre at (0.60, −0.85) in NDC, its top below the crosshair
-  (owner's playtest, 2026-10-20: was 0.65 high and up to the crosshair; set by moving the anchor
+  is ~0.55 of the screen's height, its centre at (0.52, −0.90) in NDC, its top below the crosshair
+  (owner's playtest, 2026-10-20: was 0.65 high and up to the crosshair, then 0.43 read too small; set by moving the anchor
   out and ahead, the FOV unchanged; `crates/dwell-characters/tests/first_person.rs` pins it).
 - **Its own clips.** `fp_idle` (the arm held into view, breathing), `fp_walk` (a bob on the anchor,
   two dips a loop at 4 m a loop, not the legs' 1.6 m: ~2.5 Hz at the 5 m/s walk; `fp_sprint` shares
