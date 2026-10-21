@@ -58,6 +58,7 @@ test('bad entries fail with their path named', () => {
     [(d) => (torch(d).embers.wobble = 1), /unknown entry flames\.dwell:torch\.embers\.wobble/],
     [(d) => (torch(d).smoke = 1), /unknown entry flames\.dwell:torch\.smoke/],
     [(d) => (d.flames.Torch = torch(d)), /flames\.Torch: the name must be/],
+    [(d) => (d.peak = 0), /peak must be a number in \[0\.1, 16\]/],
     [(d) => (d.maxFlames = 0), /maxFlames must be a number in \[1, 256\]/],
     [(d) => (d.flames = {}), /at least one look/],
   ];

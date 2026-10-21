@@ -23,6 +23,9 @@ pub struct FlameTunables {
     pub draw_m: f64,
     /// The most drawn a frame, nearest first.
     pub max_flames: usize,
+    /// The most a flame's brightest channel gives off, as the tone curve's input (the lights'
+    /// `glow_peak` for flames).
+    pub peak: f64,
 }
 
 /// A flame's glow: the soft halo round it.

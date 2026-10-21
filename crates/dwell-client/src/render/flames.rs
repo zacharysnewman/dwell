@@ -209,10 +209,36 @@ pub fn quads(flames: &[Flame], basis: &Basis, seconds: f64) -> (Vec<f32>, usize)
 /// dwell-look's flame shading.
 pub fn source(animated: bool) -> String {
     format!(
-        "{}\n{}\n{WGSL}",
+        "{}\n{}\nconst FLAME_PEAK: f32 = {:?};\n{WGSL}",
         super::shaders::lighting_source(),
-        dwell_look::flames::wgsl(animated)
+        dwell_look::flames::wgsl(animated),
+        FLAME_TUNABLES.peak as f32,
     )
+}
+
+/// The CPU mirror of the shader's `flame_light`: the scene colour (linear) a flame of linear
+/// colour `c` writes at `exposure`, so the canvas shows it as the tone curve shows `c` (its
+/// brightest channel `FLAME_TUNABLES.peak` at most) at the reference exposure.
+pub fn flame_light(c: [f32; 3], exposure: f32) -> [f32; 3] {
+    let peak = c[0].max(c[1]).max(c[2]);
+    let p = FLAME_TUNABLES.peak as f32;
+    let k = if peak > p { p / peak } else { 1.0 };
+    let enc = |x: f32| {
+        if x <= 0.003_130_8 {
+            x * 12.92
+        } else {
+            1.055 * x.powf(1.0 / 2.4) - 0.055
+        }
+    };
+    let dec = |x: f32| {
+        if x <= 0.040_45 {
+            x / 12.92
+        } else {
+            ((x.max(0.0) + 0.055) / 1.055).powf(2.4)
+        }
+    };
+    let shown = super::water::aces(c.map(|v| v * k), 0.6).map(enc);
+    super::water::inverse_aces(shown.map(dec), exposure)
 }
 
 const WGSL: &str = r"
@@ -246,8 +272,16 @@ fn flame_vs(v: FlameIn) -> FlameVary {
     return o;
 }
 
+// What a flame of linear colour `c` gives off: as `glow` (render/lights.rs), its brightest channel
+// FLAME_PEAK at most (`flame_light` in flames.rs mirrors it).
+fn flame_light(c: vec3f) -> vec3f {
+    let peak = max(max(c.r, c.g), c.b);
+    let v = c * select(1.0, FLAME_PEAK / peak, peak > FLAME_PEAK);
+    return inverse_display(srgb_encode(clamp(ACES_OUTPUT * rrt_odt_fit(ACES_INPUT * v), vec3f(0.0), vec3f(1.0))));
+}
+
 // The flame's or the glow's colour, premultiplied: the flame over what is behind it, the glow
-// added (alpha 0). Both give off their colour whatever the light (`glow`, docs/LIGHTS.md §2).
+// added (alpha 0). Both give off their colour whatever the light (`flame_light`, docs/LIGHTS.md §2).
 fn flame_colour(i: FlameVary) -> vec4f {
     let look = flame_look(i.info & 0xffu);
     if ((i.info >> 8u) == 1u) {
@@ -255,13 +289,13 @@ fn flame_colour(i: FlameVary) -> vec4f {
         if (max(max(c.r, c.g), c.b) < 1e-4) {
             discard;
         }
-        return vec4f(glow(c), 0.0);
+        return vec4f(flame_light(c), 0.0);
     }
     let s = flame_shade(look, i.uv.x, i.uv.y, i.rest.x, i.seed);
     if (s.a < 0.004) {
         discard;
     }
-    return vec4f(glow(s.rgb) * s.a, s.a);
+    return vec4f(flame_light(s.rgb) * s.a, s.a);
 }
 
 struct FlameOut {
@@ -615,7 +649,7 @@ mod tests {
         // CPU twin) through `glow`, the tone curve and the time of day's saturation, which a
         // flagged pixel skips (render/lights.rs's mirrors): by day, at midnight and at a bright
         // exposure the same warm, saturated colour, never cream.
-        use super::super::lights::{displayed, glow};
+        use super::super::lights::displayed;
         let look = &FLAMES[find("dwell:torch").expect("the torch's flame")];
         let sample = |solar: f64| {
             let s = dwell_look::daynight::DAY_NIGHT.sample(solar);
@@ -633,7 +667,7 @@ mod tests {
         for (x, y) in [(0.0, 0.12), (0.35, 0.3), (0.0, 0.5)] {
             let (c, a) = flame_shade(look, x, y, 0.0, 7, true);
             assert!(a > 0.9, "({x}, {y}) is in the flame");
-            let show = |e: f32, s: f32| displayed(glow(c, e), e, s, true);
+            let show = |e: f32, s: f32| displayed(flame_light(c, e), e, s, true);
             let base = show(day, day_sat);
             for (when, e, s) in [
                 ("noon", day, day_sat),

@@ -21,12 +21,16 @@ test('values changed by data alone are in the output', () => {
   d.curve = 1;
   d.wrap = 0.25;
   d.glowPeak = 0.8;
+  d.shadows.tiers[1].lights = 3;
+  d.shadows.placedM = 12;
   const rs = lightsRust(validateLights(d));
   assert.match(rs, /max_lights: 4,/);
   assert.match(rs, /cull_m: 32\.0,/);
   assert.match(rs, /curve: 1\.0,/);
   assert.match(rs, /wrap: 0\.25,/);
   assert.match(rs, /glow_peak: 0\.8,/);
+  assert.match(rs, /TorchShadowTier \{\n\s+lights: 3,\n\s+resolution: 384,/);
+  assert.match(rs, /placed_m: 12\.0,/);
 });
 
 test('bad entries fail with their path named', () => {
@@ -37,6 +41,10 @@ test('bad entries fail with their path named', () => {
     [(d) => delete d.curve, /missing entry curve/],
     [(d) => (d.wrap = 2), /wrap must be a number in \[0, 1\]/],
     [(d) => (d.extra = 1), /unknown entry extra/],
+    [(d) => (d.shadows.tiers[0].resolution = 300), /resolution must be one of/],
+    [(d) => (d.shadows.tiers[1].lights = 9), /shadows\.tiers\[1\]\.lights must be a number in \[1, 4\]/],
+    [(d) => delete d.shadows.biasM, /missing entry shadows\.biasM/],
+    [(d) => (d.shadows.faceMargin = 2), /faceMargin must be a number in \[1, 1\.5\]/],
   ];
   for (const [edit, re] of cases) {
     const d = data();

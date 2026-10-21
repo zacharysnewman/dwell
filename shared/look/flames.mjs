@@ -82,9 +82,10 @@ export function checkFlame(name, f) {
 
 /** Checks the data; returns it. */
 export function validateFlames(data) {
-  checkKeys('the file', data, ['drawM', 'maxFlames', 'flames']);
+  checkKeys('the file', data, ['drawM', 'maxFlames', 'peak', 'flames']);
   checkNumber('drawM', data.drawM, 1, 256);
   checkNumber('maxFlames', data.maxFlames, 1, 256, { whole: true });
+  checkNumber('peak', data.peak, 0.1, 16);
   if (typeof data.flames !== 'object' || data.flames === null || Array.isArray(data.flames)) fail('flames must be an object');
   const names = Object.keys(data.flames).filter((k) => k !== '$comment');
   if (names.length === 0) fail('flames must have at least one look');
@@ -136,6 +137,7 @@ export function flamesRust(data) {
     'pub const FLAME_TUNABLES: FlameTunables = FlameTunables {',
     `    draw_m: ${rf(data.drawM)},`,
     `    max_flames: ${data.maxFlames},`,
+    `    peak: ${rf(data.peak)},`,
     '};',
     '',
     '/// The flame looks, in the file\'s order (a look\'s index is its id in the shader).',
