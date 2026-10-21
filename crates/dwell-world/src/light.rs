@@ -349,6 +349,8 @@ impl LightMap {
         // A chunk whose voxels were replaced is cleared first: any cell may have changed.
         let mut removal: Vec<P> = Vec::new();
         let mut add: Vec<P> = Vec::with_capacity(CHUNK_VOLUME + 6 * 1024);
+        // The cells below whose open sky it now covers (see the end).
+        let mut under: Vec<P> = Vec::new();
         let kind = if replaced {
             Kind::Mixed
         } else {
@@ -402,7 +404,11 @@ impl LightMap {
                 let below = d / 2 == 1 && self.above_slot(p) == Some(s);
                 // An open-sky chunk keeps the full sky the cells under it had.
                 if below && kind != Kind::Sky {
-                    removal.push(p);
+                    if replaced {
+                        removal.push(p);
+                    } else {
+                        under.push(p);
+                    }
                 }
                 if below || kind != Kind::Shut {
                     add.push(p);
@@ -410,6 +416,33 @@ impl LightMap {
             }
         }
         self.run_all(voxels, &removal, &add);
+        // The cells below saw the open sky through its place. Lit first, it shows which of them
+        // still do: one at full sky light under a cell of it at full sky light, filtering nothing,
+        // keeps it (full sky light in the chunk only falls from its top, never rises from them),
+        // and the column under it is left alone; the rest are cleared and relit. Clearing them all
+        // first cascaded down every open-air column under a newly held chunk (0.22.9: 5–9 ms a
+        // chunk native, 100–150 thousand cell writes).
+        if !under.is_empty() {
+            let mut cache = VoxelCache::new(voxels);
+            let lost: Vec<P> = under
+                .into_iter()
+                .filter(|&p| !self.keeps_full_sky(&mut cache, p))
+                .collect();
+            if !lost.is_empty() {
+                self.run_all(voxels, &lost, &[]);
+            }
+        }
+    }
+
+    /// Whether held cell `p` is at full sky light under a cell at full sky light and filters
+    /// nothing: straight-down sky that its above gives it whatever else changed.
+    fn keeps_full_sky(&mut self, cache: &mut VoxelCache<'_>, p: P) -> bool {
+        let up = if self.up(p) > 0 { 2 } else { 3 };
+        self.level(p, Channel::Sky) == LIGHT_MAX
+            && self.rules(cache, p).0 == 0
+            && self
+                .step(p, up)
+                .is_some_and(|a| self.level(a, Channel::Sky) == LIGHT_MAX)
     }
 
     /// What a newly held chunk is, for the fast paths of [`Self::load`].
@@ -464,20 +497,49 @@ impl LightMap {
             return;
         }
         let is_gone = |slots: &[u32], n: u32| slots.binary_search(&n).is_ok();
-        // Each held cell next to a chunk going, the side it faces it from, and the light (sky,
-        // block) of the cell that goes.
-        let mut seeds: Vec<(P, usize, u8)> = Vec::new();
+        // Each held cell next to a chunk going that its going may change, per channel: the side
+        // it faces it from and the light of the cell that goes. One may be cleared only if the
+        // light it has could have come from there; one under the chunk may also take the open
+        // sky now. The rest (most of them: dark ones beside dark ones, and open air beside open
+        // air, which loses a level across) are left out.
+        let t = self.tunables;
+        let mut from: [Vec<(P, usize, u8)>; 2] = [Vec::new(), Vec::new()];
         for &s in &gone {
-            for d in 0..6 {
-                let n = self.slots[s as usize].near[d];
+            let near = self.slots[s as usize].near;
+            for (d, &n) in near.iter().enumerate() {
                 if n == NONE || is_gone(&gone, n) {
                     continue;
                 }
-                // Every one, dark ones too: the cell next to it may now take the open sky.
+                let vertical = d / 2 == 1;
+                let fall = if vertical {
+                    t.falloff_vertical
+                } else {
+                    t.falloff_across
+                };
+                let mut under = None;
                 for p in border(s, d) {
                     let v = self.slots[s as usize].get(p.i);
-                    if let Some(q) = self.step(p, d) {
-                        seeds.push((q, d, v));
+                    let Some(q) = self.step(p, d) else {
+                        continue;
+                    };
+                    let below = *under.get_or_insert_with(|| vertical && DIRS[d][1] == -self.up(q));
+                    let nv = self.slots[q.slot as usize].get(q.i);
+                    for (k, ch) in [Channel::Sky, Channel::Block].into_iter().enumerate() {
+                        let (ov, lv) = ((v >> ch.shift()) & 15, (nv >> ch.shift()) & 15);
+                        // `passed` gives at most `ov − fall`, or the full level straight down.
+                        let reach = if below && ch == Channel::Sky && ov == LIGHT_MAX {
+                            LIGHT_MAX
+                        } else {
+                            ov.saturating_sub(fall)
+                        };
+                        // Full sky light under the chunk (it filters nothing) takes the open sky
+                        // now at the same level.
+                        let stays = below && ch == Channel::Sky && lv == LIGHT_MAX;
+                        let may_clear = lv > 0 && lv <= reach && !stays;
+                        let may_gain = below && ch == Channel::Sky && lv < LIGHT_MAX;
+                        if may_clear || may_gain {
+                            from[k].push((q, d, ov));
+                        }
                     }
                 }
             }
@@ -486,12 +548,8 @@ impl LightMap {
             self.release(s);
         }
         let mut cache = VoxelCache::new(voxels);
-        for ch in [Channel::Sky, Channel::Block] {
-            let from: Vec<(P, usize, u8)> = seeds
-                .iter()
-                .map(|&(q, d, v)| (q, d, (v >> ch.shift()) & 15))
-                .collect();
-            self.run_from(&mut cache, ch, &[], &from, &[]);
+        for (k, ch) in [Channel::Sky, Channel::Block].into_iter().enumerate() {
+            self.run_from(&mut cache, ch, &[], &from[k], &[]);
         }
         self.finish();
     }
@@ -731,10 +789,20 @@ impl LightMap {
             }
         }
         for &(n, d, ov) in from {
-            // Its own source may have changed (the open sky now enters where the chunk was).
-            readd.push(n);
-            if ov > 0 {
-                self.remove_into(cache, ch, n, d, ov, &mut q, &mut readd);
+            let nv = self.level(n, ch);
+            if ov > 0 && nv > 0 {
+                let (f, _) = self.rules(cache, n);
+                if nv <= self.passed(ch, ov, n, d, f) && self.source(cache, ch, n) < nv {
+                    self.set_level(n, ch, 0);
+                    q.push_back((n, nv));
+                    continue;
+                }
+            }
+            // Kept: its neighbours held already agree with it (nothing cleared next to it but
+            // what the removal finds), so it spreads again only from a brighter source of its
+            // own (the open sky now entering where the chunk was).
+            if self.source(cache, ch, n) > nv {
+                readd.push(n);
             }
         }
         while let Some((p, ov)) = q.pop_front() {
@@ -749,8 +817,13 @@ impl LightMap {
         // Brightest first (a bucket per level): every cell spreads once, at its final level.
         let mut buckets: [Vec<P>; LIGHT_MAX as usize + 1] = Default::default();
         for p in readd {
-            let s = self.source(cache, ch, p);
             let v = self.level(p, ch);
+            // Nothing is brighter than the full level: its source needn't be looked up.
+            let s = if v == LIGHT_MAX {
+                v
+            } else {
+                self.source(cache, ch, p)
+            };
             if s > v {
                 self.set_level(p, ch, s);
                 buckets[usize::from(s)].push(p);
