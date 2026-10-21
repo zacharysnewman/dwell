@@ -59,7 +59,7 @@ pub const TILE_ORDER: [&str; 17] = [
     "tallGrass",
     // A dirt side under grass (dirt's `sideUnder`): the turf's skirt over the dirt's top edge.
     "dirtSkirt",
-    // The torch's stick and flame (docs/LIGHTS.md), a sprite that glows (`emissive`).
+    // The torch's plain stick, its two cells (docs/LIGHTS.md; its flame is the flame effect, §6).
     "torch",
     "torchTop",
     // The fallback look of a state whose look or textures this build lacks (synced from a server,
@@ -82,6 +82,9 @@ pub struct TileRect {
     pub v0: f64,
     pub u1: f64,
     pub v1: f64,
+    /// Whether the tile hangs from its block's top edge ([`tile_hangs`]): a side face then shows the
+    /// tile's top on every block; any other tile's v runs in world metres.
+    pub hang: bool,
 }
 
 /// The rectangle of tile `name`. Like the TS (`indexOf` of −1), an unknown name lands one cell
@@ -101,6 +104,7 @@ pub fn tile_rect(name: &str) -> TileRect {
         v0,
         u1: u0 + TILE as f64 / ATLAS_SIZE as f64,
         v1: v0 + TILE as f64 / ATLAS_SIZE as f64,
+        hang: tile_hangs(name),
     }
 }
 
@@ -136,6 +140,16 @@ pub fn tile_emissive(name: &str) -> f32 {
         .iter()
         .position(|t| *t == name)
         .map_or(0.0, |i| painterly::PAINTERLY_EMISSIVE[i])
+}
+
+/// Whether tile `name` hangs from its block's top edge (its material's `hang`, a turf skirt): a side
+/// face shows the tile's top half on every ½ m block, so it never merges up or down. Every other
+/// tile runs in world metres, whatever quad its face is merged into.
+pub fn tile_hangs(name: &str) -> bool {
+    PAINTERLY_TILES
+        .iter()
+        .position(|t| *t == name)
+        .is_some_and(|i| painterly::PAINTERLY_HANG[i])
 }
 
 /// Whether tile `name` has transparent texels (it is drawn cutout or translucent).
@@ -445,10 +459,15 @@ mod tests {
         let cell = (r.u0 * ATLAS_CELLS as f64).floor() as usize
             + (r.v0 * ATLAS_CELLS as f64).floor() as usize * ATLAS_CELLS;
         assert_eq!(table[cell], [f32::from(g.every), g.strength, 0.0, 0.0]);
-        // The torch's flame tile glows (its material's `emissive`, docs/LIGHTS.md); stone's doesn't.
+        // A tile's glow is its material's `emissive` (docs/LIGHTS.md §2; by data alone in
+        // shared/textures/gen.test.mjs). None glows in the build: the torch's upper tile is a plain
+        // stick, its flame the flame effect (§6).
         let torch = dwell_blocks::info(dwell_blocks::require("dwell:torch_upper"));
         let t = torch.textures.expect("the torch is textured").side;
-        assert!(table[TILE_ORDER.iter().position(|n| *n == t).unwrap()][2] > 0.0);
+        assert_eq!(
+            table[TILE_ORDER.iter().position(|n| *n == t).unwrap()][2],
+            0.0
+        );
         assert_eq!(
             table[TILE_ORDER.iter().position(|n| *n == "stone").unwrap()][2],
             0.0

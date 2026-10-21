@@ -19,7 +19,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 |---|---|
 | 0 — Repository, tooling & Pages | ✅ Complete |
 | 1 — Server core, protocol, transports, local mode | ✅ Complete |
-| 2 — Physics player controller | ✅ Complete (playtested; follow-up fixes made; 2026-10-20: the step-up reworked, consistent at every approach angle and speed) |
+| 2 — Physics player controller | ✅ Complete (playtested; follow-up fixes made; 2026-10-20: the step-up reworked, consistent at every approach angle and speed; 2026-10-21: fall damage became impact damage by the speed into the surface, walls and ceilings too) |
 | 3 — Terrain generation & streaming | 🚧 In progress — every sub-phase built (3a–3e: 3d block edits and meshing workers, 3e persistence and debug tooling). Outstanding: playtests for the long walk (3b) and walking/jumping/swimming the terrain |
 | 4 — World LOD & whole-world view | 🚧 In progress — 4a, 4b and 4c built, the dev camera replaced by creative flight; playtest follow-ups built: fog off (now a fixed height fog from look data, no sliders), super tall mountains (generator version 4), chunks shown first on slow devices, no popping when turning and matching distant colours, flight/HUD/transport fixes and the distant-water comparison, distant terrain at its true height and tinted distant water, seamless see-through distant water without cracks at section borders, no z-fighting on distant water, height fog with a settings menu and playtested defaults, full-detail chunks beyond the view on request (protocol v8) (its velocity lookahead removed 2026-10-14: it looked bad), a flight speed slider (protocol v9) that is a true minimum near the ground, caves deep underground drawn without requesting buried chunks, an FPS counter, the LOD view held within its cache budget with its pixel error in CSS pixels, one draw call per LOD section, static transforms and GPU-only vertex data, the LOD's pixel error and memory as settings, batched terrain behind `?batch=1` and a `?scale=` resolution switch, a memory readout in F3 and a phone memory budget, clipped ancestor stand-ins for the holes on the forced path to the chunks (chopped mountains, `FIX_SPEC_LOD_SKY_FLIP.md` item 1), flight toggled by a dedicated F key instead of a double-tapped Space or Jump (owner, 2026-10-15; the touch Fly button unchanged), distant colours that match full detail (owner, 2026-10-21: risers coloured by the fine rise they stand for, `shared/look/lodcolour.json`; tops untinted); outstanding: the frame-rate check on a desktop and a mobile device; `package.json` raised to 0.11.13, a patch release of the 0.11 line |
 | 5 — Multiplayer ready (menus, web hosting, master on Cloudflare, lobby list) | 🚧 In progress — every sub-phase built: 5a (main menu, world management, game menu), 5b (master Worker skeleton, signing, CI, deploy workflow; the master runs at `dwell-master.dropkick.workers.dev`), 5c (friend worlds: host from the browser, join by code), 5d (dedicated servers on the master, join by address, On your network), 5e (lobby list, receipts, server browser). Outstanding: the manual phone checks (5a, 5c, 5d) and the TURN key |
@@ -58,13 +58,13 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 38 — The spyglass | 🚧 In progress — built and tested natively, in Vitest and on a real GPU (ADR 0039, `SPYGLASS.md`): a toggle key (`` ` ``) and wheel steps from `shared/look/spyglass.json` (generator, CI stale check), the zoomed FOV for the raster renderer, the marcher (its FOV bug fixed) and the LOD, which refines only inside the narrow view (bounded by the detail boost), the vignette, reduced motion, the `spyglass-far` bench scenario; outstanding: CI and the owner's review in a browser; a patch release |
 | 39 — Painterly textures | 🚧 In progress — built and tested natively, in Node and on a real GPU (ADR 0040, `ART_DIRECTION.md`, `PAINTERLY_TEXTURES.md`): the storybook palette and materials as data (`shared/textures`), one stroke generator baked into the atlas (CI stale check, a material added by data alone), the default since the owner approved it (2026-10-20) and the only texture set since the classic one was removed (owner, 2026-10-21: the utility tiles `plain`, `grid`, `missing` painted from the data, `TextureSet` and `?textures=` gone), the Painterly Texture Lab; follow-ups: grass_side's skirt made continuous across the tile (owner's review); the skirt on dirt sides under grass (`sideUnder` block data, the `dirtSkirt` tile, owner, 2026-10-20); the ink outline preview behind `?outline=` (ART_DIRECTION.md §7, off by default), then no ink on tall grass (block data `outline`) and the edge blur moved to its own pass over the finished image so the ink reaches the screen edges at speed (owner, 2026-10-20); outstanding: the owner's pick of an outline mode; CI and the owner's review of the look; a patch release |
 | 40 — Characters and creatures | 🚧 In progress — C0 built and tested (ADR 0041, `CHARACTERS.md`): the rig vocabulary and validator (`shared/characters/rig.mjs`), the data (the player with three looks, the wolf, the deer; accessories, the block and brush items, clips), the generator and its tests, the Character Lab prototype checked in Chrome and published; stacked on Phase 39's palette and materials; C0b (the owner's first review, 2026-10-20) built and tested: hair composes with hats (`with`), the wolf's and deer's tails are chains checked joined through every clip, the player's clips for every controller state (sprint, crouch, crouch-walk, slide, jump, fall, land, climb, swim, fly; the arms' sprint, slide, jump, fall, land) and the Lab's transitions player; C1 (players in the game) built and tested (2026-10-20): `dwell-characters` (tables generated from the data, part meshes, clips, clip selection), the full body for remote players and your first-person arms in their own pass, the Show your arms setting, the `puppets` dev tool; C1b (2026-10-21): your own body in first person from the neck down (`firstPerson.body`: hidden head, neck and arms, kept clear of the eye; a both-faces sweep of every clip and pitch); fix (2026-10-21): a remote's jump plays when a slow frame falls past its rise or the whole jump (`RemoteView::jumped`; characters.spec's jump flake); playtest tuning of the arms view (2026-10-20: the walk's hand bob 2.5x slower, the hand ~0.55 of the screen's height (was 0.65; 0.43 read too small) in the lower right, `tests/first_person.rs`); with C2's held item and swings in snapshots (protocol v17: **a new compatibility line**, the owner raises `package.json`); outstanding: CI, the owner's review in game and of `CHARACTERS.md` §10, C2's looks at join, a step pose (foot IK on steps built with claude/smooth-steps), C3 |
-| 41 — Half-height grid (½ m cells, stored cardinal ramps) | 🚧 In progress — adopted for `main` (owner, 2026-10-20; ADR 0042): H0–H6 built and verified locally (½ m cells, stored ramps, nothing adaptive; the slopes V2; `main` 0.21.4 merged in); H7, the adoption: protocol 18, generator 19, the adaptive blocks removed, the experiment wording gone, `main`'s 1 m work checked on ½ m cells (HALF_HEIGHT_GRID.md §9). Outstanding: CI; the bench numbers against 0.21.x; the owner raises `package.json` to 0.22.0 at the merge (a new compatibility line). Deviations: brushes, a fluid's surface drop, the chunk view sphere and structures stay in cells; the LOD draws natural tops flat |
+| 41 — Half-height grid (½ m cells, stored cardinal ramps) | 🚧 In progress — adopted for `main` (owner, 2026-10-20; ADR 0042): H0–H6 built and verified locally (½ m cells, stored ramps, nothing adaptive; the slopes V2; `main` 0.21.4 merged in); H7, the adoption: protocol 18, generator 19, the adaptive blocks removed, the experiment wording gone, `main`'s 1 m work checked on ½ m cells (HALF_HEIGHT_GRID.md §9). Outstanding: CI; the bench numbers against 0.21.x; the owner raises `package.json` to 0.22.0 at the merge (a new compatibility line). Deviations: brushes, a fluid's surface drop, the chunk view sphere and structures stay in cells; the LOD draws natural tops flat. Playtest fix (2026-10-21): a face's texture no longer follows the quad it merged into (breaking a block shifted its neighbours' tiling by half a tile); sides run in world metres, only `hang` tiles from each block's top |
 | 42 — Smooth LOD transitions | 🚧 In progress — built and tested natively and in Chrome on the GPU: a dithered cross-fade on every LOD swap (`dwell-lod` `fade.rs`; chunks, sections, stand-ins, skirts, water; no ink on the outgoing level) and hysteresis in the selection, both data (`shared/look/lodblend.json`); outstanding: CI, the owner's review in a browser; a patch release |
 | 43 — Ambient light | 🚧 In progress — built and tested natively and in Chrome on the GPU: classic corner AO and baked ray-traced sky visibility per terrain vertex (dwell-mesh `sky.rs`, data `shared/look/ambient.json`), the hemisphere light scaled by it, the twilight and night keyframes retuned; outstanding: CI; a patch release |
 | 44 — Sun and moon shadows (cascaded shadow maps, the lighting's layer 2) | 🚧 In progress — built and tested natively, in Vitest and in Chrome on the GPU: up to four cascades per the Shadows setting (Off / Low / High, data in `shared/look/shadows.json`), texel-snapped sphere fits, casters (terrain, plants, LOD, bodies, your own), a soft PCF on the direct term only, faded by the time of day and past the last cascade to layer 1's stand-in; High's cost cut to ≤ 1.2 ms over Off on the M1 (eye-centred boxes, kept far maps, a depth-only casters' stage; High stays the desktop default); the flicker fix: the light in 0.05° steps with the texel grid turning about the eye, so the shadow edges no longer crawl as the clock turns the sun; outstanding: CI, the owner's look, the far cascades' jump when redrawn after a 0.25° turn; a patch release |
 | 45 — Flood light | 🚧 In progress — built and tested natively and in Chrome on the GPU (ADR 0045, DAY_NIGHT.md §11): per-cell sky and block light on the client (`dwell_world::light`, data `shared/look/light.json` and the blocks' `lightFilter`/`emits`), relit on edits and predicted edits, the mesher's smooth `flood` stream, ambient and the direct sun and moon scaled by it (carved tunnels no longer lit like day); follow-up: the streaming stalls fixed (coalesced seeded unloads, no cascade under a chunk held over open air, light and mesh budgets of their own that scale on a slow page; flying back to 0.22.8's frames; generation workers refilled between frames, so a slow page's terrain finishes generating, the native-server e2e tests); outstanding: CI, the owner's review; characters (your arms, held items, players) lit by the cells they are in, eased; the shadow maps' stand-in past their last cascade; water and see-through faces take the flood light (dark in caves with Shadows Off; darkness verified with Shadows Off on both faces, DAY_NIGHT.md §11) |
 | 46 — Distant terrain shadows (the lighting's layer 3) | 🚧 In progress — built and tested natively and in Chrome on the GPU (ADR 0046, DAY_NIGHT.md §12): heightmaps of the terrain as drawn, filled a budgeted slice a frame, horizon maps swept from them a band a frame, one horizon sample per far fragment blended into the cascades at their edge, both faces, per the Shadows setting (none on a CPU adapter); data `shared/look/lodshadows.json`. Measured +0.5–0.9 ms GPU a frame on the M1 (busy machine), no main-thread change. Outstanding: CI; the owner's look; a measurement on an idle machine |
-| 47 — Torches and dynamic lights | 🚧 In progress — T1 built and tested natively and in Chrome on the GPU ([ADR 0047](./adr/0047-torches-and-dynamic-lights.md), [`LIGHTS.md`](./LIGHTS.md)): light sources as block data (`lights`, `shared/blocks/lights.mjs`), the torch block and held item, placed torches through the flood light, held torches (yours and other players') as unshadowed per-fragment point lights, characters lit by them, flicker, glowing textures (`emissive`). T1b built and tested natively and in Chrome on the GPU: the torch 1 m over two ½ m cells (multi-cell blocks as data, `extends`/`partOf`), a self-lit flame. T2 built and tested natively and in Chrome on the GPU: Torch shadows (cube shadow maps for the nearest torches, kept until their terrain changes; placed torches as shadowed lights over their flood light; the setting). Outstanding: T2's CI and the owner's look |
+| 47 — Torches and dynamic lights | 🚧 In progress — T1 built and tested natively and in Chrome on the GPU ([ADR 0047](./adr/0047-torches-and-dynamic-lights.md), [`LIGHTS.md`](./LIGHTS.md)): light sources as block data (`lights`, `shared/blocks/lights.mjs`), the torch block and held item, placed torches through the flood light, held torches (yours and other players') as unshadowed per-fragment point lights, characters lit by them, flicker, glowing textures (`emissive`). T1b built and tested natively and in Chrome on the GPU: the torch 1 m over two ½ m cells (multi-cell blocks as data, `extends`/`partOf`), a self-lit flame. T2 built and tested natively and in Chrome on the GPU: Torch shadows (cube shadow maps for the nearest torches, kept until their terrain changes; placed torches as shadowed lights over their flood light; the setting). T1c built and tested natively and in Chrome on the GPU: the flame effect (animated painterly billboards from flame looks as data, placed, held and in the arms view). Outstanding: T2's and T1c's CI and the owner's look |
 
 Phase numbering: Phase 4 was inserted on 2026-09-29 for the planet-scale world (ADRs 0011, 0012);
 the former Phases 4–7 are now 5–8, and Phase 3's former 3c and 3d are now 3d and 3e.
@@ -238,6 +238,12 @@ ragdoll and animation from `State` (Phase 21, see below). Playtested by a human 
 #9): two findings, fixed: forward/back looked faster than
 strafing, which was the camera's wide horizontal field of view rather than the sim (now capped
 at 100°, `client/src/render/fov.ts`), and the touch Crouch button now holds instead of toggling.
+Follow-up (owner, 2026-10-21, built): fall damage became **impact damage** — the body's
+pre-contact velocity into the surface's normal, `max(0, −v · n)`, on floors, ½ m ramps (their
+normal), walls and ceilings, once per contact, flight exempt; the config fields renamed
+`impact_damage_min_speed` / `impact_damage_per_speed` (PLAYER_CONTROLLER.md §6.10,
+`tests/impact.rs`). Not a protocol change: the hit is server-side, sent as a `Damage` event with
+cause `Fall`.
 Later finding: jumping onto a block while holding forward gave a
 burst of speed as the player came down on the edge — the step-up's forward nudge was added on top
 of the tick's movement (also on every slab step, and on slopes every tick); it is now taken out of
@@ -335,7 +341,8 @@ Deliverables
     Tested with a debug launch-pad block.
   - [x] Player-vs-player collision (block/push; standing on heads not carried); remote players as
     interpolated kinematic capsules. (Animation from `State` moved to Phase 21.)
-  - [x] Health, fall damage from `Landed` impact speed, death → respawn. (The cosmetic ragdoll moved
+  - [x] Health, fall damage from `Landed` impact speed (since 2026-10-21 impact damage from
+    `IMPACTED`, PLAYER_CONTROLLER.md §6.10), death → respawn. (The cosmetic ragdoll moved
     to Phase 21; dead players are drawn lying down.)
 - [x] **2i — Divergence measurement.** Jolt built with `JPH_CROSS_PLATFORM_DETERMINISTIC`, no FMA
   contraction; CI runs the scenario suite natively and under WASM (Node) and reports max per-tick
@@ -4649,8 +4656,9 @@ Deviations
 
 ## Phase 47 — Torches and Dynamic Lights
 
-**Status:** T1, T1b and T2 built and tested natively and in Chrome on the GPU (2026-10-21; T1 released
-as 0.22.26, T1b as 0.23.0). Outstanding: T2's CI and the owner's look. T1b adds a block and gives
+**Status:** T1, T1b, T2 and T1c (the flame effect) built and tested natively and in Chrome on the GPU
+(2026-10-21; T1 released as 0.22.26, T1b as 0.23.0). Outstanding: T2's and T1c's CI and the owner's
+look. T1b adds a block and gives
 `dwell:torch` the parts rule (a new rule tag a 0.22.26 client notes and ignores): see its
 deviations for the compatibility line.
 
@@ -4774,6 +4782,44 @@ Deviations
   no torch shadows (the torch's sprite would shadow everything round it).
 - A placed torch's dynamic light is drawn at 0.6 of its strength over its flood light, and only with
   a map; without one its flood light alone lights it.
+
+### T1c — the flame effect
+
+Owner (2026-10-21): "That flame looks really bad, please make it look pretty like fire"; "It can be
+a 2D billboard or 2 billboards"; on the placed torch, "flame originated from the base not around
+it". LIGHTS.md §6.
+
+Deliverables
+- [x] Flame looks as data: `shared/look/flames.json` (`flames.mjs`: validation and the generator into
+  `dwell-look` `flames.gen.rs`, CI fails on a stale file; `flames.test.mjs` with a fixture look by
+  data alone), and a light source's optional `flame` naming its look (`shared/blocks/lights.mjs`,
+  `LightInfo::flame`; no block state changed).
+- [x] The flame: two camera-facing billboards per flame (`render/flames.rs`; `dwell-look` `flames`
+  the billboard's axes through `FaceFrame`, the shading's CPU twin, the WGSL): a noise teardrop
+  rising from a narrow base, tongues at its top, a banded ramp, a glow and a few embers; its height
+  and glow on the light's flicker.
+- [x] Where they burn: placed torches (`placed_flames`, from the light-source index), other players'
+  held torches, your own in the arms pass (`held_flames`); the held item's mesh flame and the tiles'
+  painted flame removed (the torch's tiles a plain stick).
+- [x] Self-lit: the flames and embers flag the view depth (self-lit, uninked); a mask before
+  see-through water; `flame_light` with the flames' `peak`; a still flame on the CPU adapter.
+- [x] Cost measured (LIGHTS.md §6: 9 flames, `gpu.frame` within noise of main on the M1);
+  `flames.drawn` telemetry.
+
+Exit criteria
+- [x] Tests: the data (validation, fixture by data alone, the light's reference); the WGSL in both
+  tiers; the CPU twin's warm hues and alpha falloff, its motion, the glow's flicker and the embers'
+  rise; the billboard and a flame's quads on both faces; a placed torch's flame on both faces; the
+  flame at the stick's tip, no wider than it, no flame texels on the tile; the flame lit the same by
+  day, at midnight and in a cave; the flag's entries and pipelines.
+- [x] Checked in Chrome on the GPU (shots in the PR): the held torch at noon, midnight and in a dark
+  cave; a placed torch close up and at 5 m; a row of placed torches at night; face B; a 16-frame
+  burst of the motion.
+
+Deviations
+- The flame's colours are the flames' own look data, not the textures' palette ramps: the noise
+  flame is shaded in the shader, not painted into the atlas.
+- Torch shadows' casters still leave out the torch's own quads; the flame casts no shadow.
 
 ## Cross-Cutting Work (every phase)
 

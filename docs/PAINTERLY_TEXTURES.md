@@ -37,6 +37,9 @@ The design questions (CLAUDE.md, "Ask before designing"), answered by the owner'
     - `ramp`: the material's ramp.
     - `overlay`: 0–1, how strongly the strokes show over the flat ramp (characters).
     - `wrap`: whether the tile is seamless. True by default; false for sprites.
+    - `hang`: a side tile that hangs from each block's top edge (the turf skirts): every ½ m block
+      shows the tile's top half and its side faces never merge up or down. False by default: a
+      tile then runs in world metres, a 1 m tile across two cells.
     - `alpha`: `opaque` (the default) or `strokes`. With `strokes`, only strokes cover the tile, which
       makes a cutout.
     - `emissive`: 0–4, how much of the surface's lit colour its self-lit colour replaces (1 or

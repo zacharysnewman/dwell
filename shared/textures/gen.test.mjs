@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { ENGINE_TILES, atlasTiles, bake, labPage, rustSource, tileEmissive } from './gen.mjs';
+import { ENGINE_TILES, atlasTiles, bake, labPage, rustSource, tileEmissive, tileHang } from './gen.mjs';
 import { TILE, imageRows, materialRamp, paintMaterial, resolveColor, validateMaterials, validatePalette } from './paint.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -23,19 +23,33 @@ test('the checked-in data is valid and the baked tiles are current', () => {
   const baked = readFileSync(join(here, '..', '..', 'crates', 'dwell-mesh', 'src', 'painterly.rgba'));
   assert.ok(Buffer.from(texels).equals(baked), 'painterly.rgba is stale: run node shared/textures/gen.mjs');
   const src = readFileSync(join(here, '..', '..', 'crates', 'dwell-mesh', 'src', 'painterly.gen.rs'), 'utf8');
-  assert.equal(src, rustSource(names, tileEmissive(materials, names)));
+  assert.equal(src, rustSource(names, tileEmissive(materials, names), tileHang(materials, names)));
 });
 
 test("a tile glows by its material's emissive, by data alone (docs/LIGHTS.md)", () => {
   const m = clone(materials);
   const names = Object.keys(m.tiles);
   assert.equal(tileEmissive(m, names)[names.indexOf('stone')], 0, 'stone gives off nothing');
-  assert.ok(tileEmissive(m, names)[names.indexOf('torchTop')] >= 1, "the torch's flame is self-lit");
+  // The torch's top is a plain stick: its flame is the flame effect (docs/LIGHTS.md §6).
+  assert.equal(tileEmissive(m, names)[names.indexOf('torchTop')], 0, "the torch's stick top gives off nothing");
   m.materials.stone.emissive = 0.5;
   assert.equal(tileEmissive(m, names)[names.indexOf('stone')], 0.5);
   assert.match(rustSource(names, tileEmissive(m, names)), /PAINTERLY_EMISSIVE/);
   m.materials.stone.emissive = 9;
   assert.throws(() => validateMaterials(m, palette), /emissive must be/);
+});
+
+test("a side tile hangs from its block's top by its material's hang, by data alone", () => {
+  const m = clone(materials);
+  const names = Object.keys(m.tiles);
+  assert.equal(tileHang(m, names)[names.indexOf('grassSide')], true, 'the turf skirt hangs');
+  assert.equal(tileHang(m, names)[names.indexOf('dirtSkirt')], true, 'like grass_side');
+  assert.equal(tileHang(m, names)[names.indexOf('stone')], false, 'stone runs in world metres');
+  m.materials.stone.hang = true;
+  assert.equal(tileHang(m, names)[names.indexOf('stone')], true);
+  assert.match(rustSource(names, tileEmissive(m, names), tileHang(m, names)), /PAINTERLY_HANG: \[bool; \d+\] = \[[^\]]*true/);
+  m.materials.stone.hang = 'yes';
+  assert.throws(() => validateMaterials(m, palette), /hang must be true or false/);
 });
 
 test('the editor page embeds the current painter and data, and its painter paints the same', () => {

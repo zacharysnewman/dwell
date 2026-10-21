@@ -44,10 +44,11 @@ nearest lights and (T2) the shadow maps' kinds.
 
 - **Light sources** (`lights` in a namespace of `shared/blocks/*.json`, validated by
   `shared/blocks/lights.mjs`, generated into `dwell-blocks` `LIGHTS`; `lights.test.mjs`): a
-  namespaced name → `{ color, strength, radiusM, flicker: { amount, speed }, shadows }`. `strength`
+  namespaced name → `{ color, strength, radiusM, flicker: { amount, speed }, shadows, flame? }`. `strength`
   is the irradiance at the flame (× the linear colour); the light ends smoothly at `radiusM`; `flicker`
   takes up to `amount` of the strength, wavering at `speed` cycles a second; `shadows` says whether
-  it may cast shadows (T2). The build has `dwell:torch` (#ff8a3d, warmed from #ffa45c by the owner 2026-10-21, 3.8, 14 m, 16 % at 6 Hz, shadows: the flood light's block light at level 14, 1.2 × π, reaching 14 m as a placed torch's does);
+  it may cast shadows (T2); `flame` (optional) names the flame look drawn where it burns (§6, a
+  name in `shared/look/flames.json`; `LightInfo::flame`). The build has `dwell:torch` (#ff8a3d, warmed from #ffa45c by the owner 2026-10-21, 3.8, 14 m, 16 % at 6 Hz, shadows: the flood light's block light at level 14, 1.2 × π, reaching 14 m as a placed torch's does; flame `dwell:torch`);
   the test fixture adds `test:lantern` by data alone, and its `test:lamp` uses it.
 - **Blocks** reference one by name: `"light": "dwell:torch"` (`StateInfo::light`, a reference into
   `LIGHTS`); `emits` (0–15) is the flood light a placed block gives off; `"held": "torch"` names the
@@ -72,22 +73,22 @@ nearest lights and (T2) the shadow maps' kinds.
   surface's lit colour its self-lit colour replaces (1 or more: fully **self-lit**). For blocks it is
   per atlas tile (`PAINTERLY_EMISSIVE`, generated with the tiles; the frame's `tile_grids` table
   carries it in `z`, so the vertex carries nothing); for characters per material
-  (`Material::emissive`). The flame's tile (`torch_top`) and the held flame (`flame`, `flame_core`)
-  are 1.0. Owner (T1b): the held flame read as "a cream colored blob", and "the flame should stay
+  (`Material::emissive`). No tile or material glows in the build now: the torch's flame is the
+  flame effect (§6), which gives off its colour the same way. Owner (T1b): the held flame read as "a cream colored blob", and "the flame should stay
   illuminated regardless of brightness since it's the source of the light". So a self-lit surface
   is unaffected by the sun, the ambient, the flood and sky light, corner occlusion and shadows, and
   the canvas shows it as the tone curve shows its colour at the reference exposure, whatever the
   frame's exposure (`glow` in `render/lights.rs`; the brightest channel `glowPeak`, 0.7, at most, so
   its hue holds), and its pixels are flagged in the view depth (`self_lit_depth`, the depth's second
   bit) so the composite leaves them out of the time of day's desaturation (moonlight's 0.5, which
-  had washed it to cream). The held flame shows sRGB (0.74, 0.41, 0.10) by day, at night and in a
-  cave (a test runs the CPU mirrors, `emitted`, `displayed`, through the tone curve). Its shape is a
-  yellow `flame_core` bulb under an orange cone; the placed flame is painted as upward tongues
-  (blades) of the `flame` ramp round a yellow core. The torch's upper tile is self-lit whole: its
-  short stick top shows its own colour too.
-- **The held torch item** (`items.torch` in `shared/characters/characters.json`): a stick, a wrap and a
-  flame (a bulb and a cone) on the right hand's grip, and **`light`**, the point on the item's socket where its light
-  sits (the flame), resolved by the generator to a bone and an offset (`Item::light`).
+  had washed it to cream). T1b's flames (a yellow bulb under an orange cone on the held item, upward
+  tongues painted on the torch's upper tile) were replaced by the flame effect (§6; owner: "That
+  flame looks really bad, please make it look pretty like fire"); the torch's tiles are a plain
+  stick now.
+- **The held torch item** (`items.torch` in `shared/characters/characters.json`): a stick and a wrap
+  on the right hand's grip, and **`light`**, the point on the item's socket where its light sits and
+  its flame rises from (the wrap's top), resolved by the generator to a bone and an offset
+  (`Item::light`).
 - **Dynamic-light tunables** (`shared/look/lights.json` → `dwell-look` `lights.gen.rs`;
   `lights.test.mjs`): `maxLights` (8, the most a frame; the shader holds 16), `cullM` (64 m),
   `curve` (3, the flood light's block-light curve, so a held torch falls off as a placed one),
@@ -198,13 +199,79 @@ per fragment in the shader (`let s = slots[slot]`): +5 ms; it reads the fields i
 
 ## 5. Both faces
 
+Flames have an up: their billboards rise along the face's up (§6), written face-local and crossed
+into the world through the `FaceFrame` (`dwell_look::flames::billboard`; tests on both faces: the
+billboard's axes, a flame's quads, a placed torch's flame on its stick).
+
 Point lights have no up: a light is placed by its holder's bones, which follow the holder's
 `FaceFrame` (`body_frame`), and shades every surface the same way on either face. Tests: the torch
 lighting the ground under it alike on both faces (`dwell-look` lights), the held light's height over
 its holder's feet on both faces (`render/characters.rs`), the placed torch's flood light on both
 faces (`dwell-world`).
 
-## 6. Compared with Minecraft
+## 6. Flames
+
+**[built, Phase 47 T1c]** Owner (2026-10-21): "That flame looks really bad, please make it look
+pretty like fire"; "It can be a 2D billboard or 2 billboards"; on the placed torch, "flame
+originated from the base not around it". Where a light source with a `flame` burns — a placed
+torch's upper cell, a torch in a hand (yours in the arms view, other players', stand-ins') — the
+renderer draws its flame look (`render/flames.rs`; the platform-free part in `dwell-look`
+`flames`):
+
+- **Data** (`shared/look/flames.json`, validated and generated by `shared/look/flames.mjs` into
+  `dwell-look` `flames.gen.rs`, CI fails on a stale file; `flames.test.mjs` adds a fixture candle
+  by data alone): `drawM` (48 m), `maxFlames` (64, nearest first), `peak` (1.6: a flame's brightest
+  channel as the tone curve sees it, higher than `glowPeak` so the core shines) and per look a
+  `ramp` (2–6 sRGB colours, the tips' deep red-orange to the core's yellow; the torch's warmed with
+  its light, #ff8a3d), `bands` (painted steps of the ramp, 4), `heightM`/`widthM` (0.42 × 0.2 m),
+  `baseWidthM` (0.12 m: its width where it rises from the stick's tip, no wider than the tip),
+  `baseM` (a placed flame's base over its cell's floor: the stick's tip, 0.095 m), `heldScale`
+  (0.42: a hand's flame, close to the eye), `speed`, `noiseScale`, `distort`, `tongues`, `sway`,
+  `sizeFlicker`, a `glow` (colour, radius, strength) and `embers` (count, colour, size, rise,
+  speed). A light source names its look (`"flame": "dwell:torch"`); a lantern or a campfire is a new
+  look and a light that names it. Light sources are matched by name, so this is no registry or
+  block-state change.
+- **Shape**: two camera-facing billboards per flame. The flame's quad: a teardrop cut from rising
+  value noise (`flame_shade`): narrow at its base (`baseWidthM`), widest a third of the way up, then
+  tapering; the noise bends it sideways more toward the top, a slow noise sways its tip, and a
+  second noise, thresholded, splits its top into separate tongues; coloured along the ramp by its
+  heat in soft painted bands, its edge soft. Behind it the glow's quad: a soft halo, added. A few
+  embers rise from its upper part and fade (`ember`, placed on the CPU, each a small added disc).
+  Per flame its seed (a placed torch's cell, a holder's id) offsets the noise, so no two burn alike.
+- **Linked to the light**: its height shrinks with the light's flicker (`sizeFlicker` × the dip,
+  `lights::flicker` at the same seed and clock, so a held torch's light and flame, and a placed
+  torch's flame and its T2 light, pulse together) and the glow follows it.
+- **Up and both faces**: the billboard's up is the face's up projected on the view plane (turning
+  to the camera's up looking straight down), its right across the screen (`billboard`, written
+  face-local).
+- **Drawing**: in the near scene pass after its opaque draws (and the characters), depth-tested,
+  writing no depth: the glows (colour only), then the embers and flames (`flame_lit_fs`), which
+  write the view depth at the flame flagged self-lit and uninked (`self_lit_depth`, `frame_depth`):
+  the time of day's desaturation leaves them alone and the ink draws no outline round them. With
+  see-through water in the pass the flames' mask (the flagged view depth, no colour) draws before
+  the water and their colour after it, in the water's half. Your own torch's flame draws in the arms
+  pass the same way. A flame gives off its colour whatever the light (`flame_light`, as `glow`
+  with `peak`): the same by day, at midnight and in a cave (a test runs the CPU twin through the
+  tone curve and the saturation).
+- **CPU adapter**: a still flame (no noise, no sway or tongues, no embers): the same teardrop
+  gradient (`flames_animated`).
+- **Tests**: the data's validation and a fixture by data alone (`flames.test.mjs`); the light
+  source's reference (`shared/blocks/lights.test.mjs`); the shader's WGSL in both tiers; the CPU
+  twin's colour (warm hues, red ≥ green ≥ blue) and its alpha falling to 0 at the quad's edges; that
+  it moves and two flames differ; the glow's flicker and the embers' rise; the billboard's axes and
+  a flame's quads on both faces; a placed torch's flame on its stick on both faces; the flame's base
+  at the stick's tip and its bottom no wider than the tip, over the noise's frames, and no flame
+  texels left on the tile (`the_placed_flame_rises_from_the_sticks_tip_no_wider_than_it`); the
+  flag set by the entries and pipelines that draw the flame.
+
+**Cost** (Apple M1, Chrome, 1280×720, `npm run bench -- torch-night-puppets --unthrottled`, Shadows
+High, Torch shadows default, load average 3–4): 9 flames (8 stand-ins' torches and yours) against
+main without them: `gpu.frame` p50 9.92 ms against 9.98 (mean 10.43 against 10.47), within the
+run's noise (under 0.1 ms); the `no-torches` record 8.32 against 8.31. The main thread is
+unchanged: a few hundred vertices written a frame. A first build drew a mask then the colour in
+every pass (the noise run twice) and the embers over the whole glow quad: +0.33 ms.
+
+## 7. Compared with Minecraft
 
 Vanilla Minecraft lights a held torch not at all; placed torches are block light in the lightmap.
 The "dynamic lights" mods (LambDynamicLights, OptiFine's Dynamic Lights) light a held torch by

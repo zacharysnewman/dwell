@@ -153,8 +153,7 @@ What the switch to ½ m cells did, and what it left for the playtest:
 
 - **Built:** `cellHeight` 0.5 with the rows doubled (metres kept); protocol version 14; generator
   version 14 (now 1016, §8) with its chunk and LOD goldens re-recorded at the same places in metres; no block
-  adaptive; texture v in metres from each cell's top (the grass fringe hangs from every grass
-  cell); worldgen depths and the shore in metres; the decoration rule's heights and slope in
+  adaptive; texture v in metres from each cell's top (the grass fringe hangs from every grass cell; since 2026-10-21 only a `hang` tile does, and every other side runs in world metres, so re-merging faces after an edit never shifts a texture); worldgen depths and the shore in metres; the decoration rule's heights and slope in
   metres (`decorations.json`); the movement playground's layers doubled. The controller suites
   walk generated ground (`dwell-physics` `tests/ramps.rs`, replacing Phase 18's adaptive suite): ½ m
   ramps and placed ½ m blocks are walked without jumping, 45° ramps slide, and placing a block

@@ -11,6 +11,7 @@ pub mod camera;
 pub mod characters;
 pub mod display;
 pub mod face_shading;
+pub mod flames;
 pub mod frame;
 pub mod geometry;
 pub mod lights;
@@ -112,6 +113,12 @@ pub fn motion_pass(wind_intensity: f64) -> bool {
 
 /// Whether the night sky draws its stars (a hashed grid per pixel): not on a CPU adapter.
 pub fn stars_for(device_type: wgpu::DeviceType) -> bool {
+    !is_cpu(device_type)
+}
+
+/// Whether the flames are animated (docs/LIGHTS.md §6): a CPU adapter draws them still (no noise,
+/// no embers).
+pub fn flames_animated(device_type: wgpu::DeviceType) -> bool {
     !is_cpu(device_type)
 }
 
@@ -924,6 +931,10 @@ pub struct Renderer {
     arms: Option<ArmsView>,
     /// The characters' pipelines, meshes and instances (characters.rs).
     characters: characters::CharacterRenderer,
+    /// The flames' pipelines and vertices (flames.rs), and the placed light sources' flames this
+    /// frame (`set_placed_flames`).
+    flames: flames::FlameRenderer,
+    placed_flames: Vec<flames::PlacedFlame>,
     outline: Option<V3>,
     /// The outline's box in its cell, and its lines.
     outline_box: ([f32; 3], [f32; 3]),
@@ -1525,6 +1536,7 @@ impl Renderer {
             &frame_bindings.shadow_layout,
             samples,
         );
+        let flames = flames::FlameRenderer::new(&device, &frame_bindings.layout, samples, true);
         let (draw_buffer, draw_group) = Self::draw_buffer(&device, &draw_layout, 1024);
         let arena = Arena::new(device.clone(), queue.clone(), &STRIDES);
         let outline_box = ([0.0; 3], [1.0; 3]);
@@ -1586,6 +1598,8 @@ impl Renderer {
             own_body: None,
             arms: None,
             characters,
+            flames,
+            placed_flames: Vec::new(),
             outline: None,
             outline_box,
             outline_mesh,
@@ -1813,6 +1827,14 @@ impl Renderer {
     /// The adapter the frames draw on (its kind: a CPU adapter draws the cheapest tiers,
     /// `clouds_for` and its neighbours).
     pub fn set_adapter(&mut self, device_type: wgpu::DeviceType) {
+        if flames_animated(device_type) != flames_animated(self.adapter) {
+            self.flames = flames::FlameRenderer::new(
+                &self.device,
+                &self.frame_bindings.layout,
+                self.samples,
+                flames_animated(device_type),
+            );
+        }
         self.adapter = device_type;
         self.apply_size();
     }
@@ -2035,6 +2057,10 @@ impl Renderer {
     /// §5.1), or none.
     pub fn set_own_body(&mut self, body: Option<PlayerView>) {
         self.own_body = body;
+    }
+    /// The placed light sources' flames near the eye this frame (flames.rs `placed_flames`).
+    pub fn set_placed_flames(&mut self, flames: Vec<flames::PlacedFlame>) {
+        self.placed_flames = flames;
     }
     /// The characters drawn last frame and their GPU bytes (telemetry, the bench).
     pub fn character_stats(&self) -> characters::CharacterStats {
@@ -2890,6 +2916,29 @@ impl Renderer {
                 }
             }
         }
+        // The flames (flames.rs): the placed light sources' and other players' held ones in the
+        // scene, your own in the arms view.
+        let (others, arms_light) = self.characters.held_flames();
+        let scene_flames: Vec<flames::Flame> = self
+            .placed_flames
+            .iter()
+            .filter_map(|p| flames::Flame::placed(p, self.eye))
+            .chain(
+                others
+                    .iter()
+                    .filter_map(|h| flames::Flame::held(h, self.eye)),
+            )
+            .collect();
+        let arms_flame = arms_light.and_then(|h| flames::Flame::held(&h, self.eye));
+        self.flames.prepare(
+            &self.device,
+            &self.queue,
+            &basis,
+            &scene_flames,
+            arms_flame,
+            seconds,
+        );
+        crate::telemetry::add("flames.drawn", self.flames.drawn as f64);
         let arms = self.characters.has_arms();
         if arms {
             let fov = dwell_characters::player()
@@ -3109,6 +3158,17 @@ impl Renderer {
                     &mut calls,
                     &mut triangles,
                 );
+                // The flames in the near pass (flames.rs): drawn now, or with see-through water
+                // their mask now and their colour after the water.
+                if i + 1 == scene_passes {
+                    if split.is_some() {
+                        self.flames
+                            .draw_mask(&mut pass, flames::Group::Scene, &mut calls);
+                    } else {
+                        self.flames
+                            .draw_colour(&mut pass, flames::Group::Scene, true, &mut calls);
+                    }
+                }
             }
             let (Some(at), Some(water_ops)) = (split, water_ops) else {
                 continue;
@@ -3138,6 +3198,10 @@ impl Renderer {
                 &mut calls,
                 &mut triangles,
             );
+            if i + 1 == scene_passes {
+                self.flames
+                    .draw_colour(&mut pass, flames::Group::Scene, false, &mut calls);
+            }
         }
         // Your arms over the world: the same targets, the depth buffer cleared (characters.rs
         // `arms_pass`), their own projection.
@@ -3156,6 +3220,9 @@ impl Renderer {
             pass.set_bind_group(0, &self.frame_groups[2], &[]);
             self.characters
                 .draw_arms(&mut pass, &mut calls, &mut triangles);
+            // Your own torch's flame over your arms.
+            self.flames
+                .draw_colour(&mut pass, flames::Group::Arms, true, &mut calls);
         }
         let cpu = crate::telemetry::now_ms() - t0 + collect_ms;
         // With the wind on, the composite draws the finished image and the motion pass reads it
@@ -4428,6 +4495,9 @@ impl crate::game::Scene for Renderer {
     fn set_own_body(&mut self, body: Option<PlayerView>) {
         Renderer::set_own_body(self, body);
     }
+    fn set_placed_flames(&mut self, flames: Vec<flames::PlacedFlame>) {
+        Renderer::set_placed_flames(self, flames);
+    }
     fn set_camera(&mut self, eye: V3, yaw_deg: f64, pitch_deg: f64, face: FaceFrame, flip: f64) {
         Renderer::set_camera(self, eye, yaw_deg, pitch_deg, face, flip);
     }
@@ -4722,7 +4792,9 @@ mod tests {
                 }
                 checked += 1;
                 let want = tile_coverage(&levels[0].0, levels[0].1, tile, 1.0);
-                assert!(want > 0.05 && want < 0.95, "{name}: {want}");
+                // The torch's upper tile is only the stick's tip (its flame is the flame effect,
+                // docs/LIGHTS.md §6): a few percent of the tile.
+                assert!(want > 0.02 && want < 0.95, "{name}: {want}");
                 for (level, (texels, size)) in levels.iter().enumerate() {
                     let n = (dwell_mesh::TILE * size / dwell_mesh::ATLAS_SIZE).max(1);
                     let got = tile_coverage(texels, *size, tile, 1.0);

@@ -1,8 +1,9 @@
 //! Greedy chunk mesher (`client/src/mesh/mesher.ts`; ARCHITECTURE.md §5, §6.1): a chunk's voxels,
 //! with a one-voxel apron from its neighbours, into render geometry. Visible faces of full cubes
 //! and water merge into rectangles of one material per slice; shaped blocks (drawn with their true
-//! normals) and ladders are emitted polygon by polygon. Textures repeat once per block across a
-//! merged quad: `uvs` carry positions in blocks and `tiles` the atlas rectangle.
+//! normals) and ladders are emitted polygon by polygon. Textures repeat once per metre across a
+//! merged quad: `uvs` carry world positions (in blocks across, metres up a side, so a face's uv
+//! never depends on the quad it merged into) and `tiles` the atlas rectangle.
 //!
 //! Arithmetic is done in `f64` and stored as `f32`, as the TS computes in doubles and stores into
 //! `Float32Array`s, so the buffers match it value for value.
@@ -444,9 +445,10 @@ impl Builder {
         let g = channel(color, 8) * tint[1];
         let b = channel(color, 0) * tint[2];
         let s = f64::from(sign);
-        // A side's texture runs in metres down from the quad's top edge, which sits on a tile
-        // boundary: a 1 m tile spans 1 m, and a block's grass fringe hangs from its top
-        // (HALF_HEIGHT_GRID.md §6).
+        // A side's texture runs in world metres (a 1 m tile spans 1 m, HALF_HEIGHT_GRID.md §6), so
+        // it stays put however the faces merge. A hanging tile (a turf skirt) runs down from the
+        // quad's top edge instead, on a tile boundary: its quads are one cell tall, so the edge is
+        // the block's own top and the fringe hangs from every block.
         let top = if u == 1 { u1.max(u0) } else { v1.max(v0) };
         for (cu, cv) in [(u0, v0), (u1, v0), (u1, v1), (u0, v1)] {
             let mut p = [0.0; 3];
@@ -462,7 +464,11 @@ impl Builder {
             ]);
             self.m.colors.extend([r as f32, g as f32, b as f32]);
             // In blocks: s across, t up the face (world y on sides), tops and bottoms in x/z.
-            let ty = (py - top) * CELL_H + top;
+            let ty = if tile.hang {
+                (py - top) * CELL_H + top
+            } else {
+                py * CELL_H
+            };
             let (su, sv) = match axis {
                 1 => (px, pz),
                 0 => (pz, ty),
@@ -512,11 +518,12 @@ impl Builder {
             let py = qy + y;
             let pz = qz + z;
             // Texture height in metres (a 1 m tile spans 1 m whatever the cell height,
-            // HALF_HEIGHT_GRID.md §6): from the face's top edge down (a side), the edge on a tile
-            // boundary so the grass fringe hangs from it; else the world height.
+            // HALF_HEIGHT_GRID.md §6): the world height, as on a cube's sides; a hanging tile on
+            // a side, from the face's top edge down, the edge on a tile boundary so the fringe
+            // hangs from it.
             let tv = match side_top {
-                Some(st) => (qy - st.at(pt)) * CELL_H + y + 1.0,
-                None => py * CELL_H,
+                Some(st) if tile.hang => (qy - st.at(pt)) * CELL_H + y + 1.0,
+                _ => py * CELL_H,
             };
             self.m.positions.extend([px as f32, py as f32, pz as f32]);
             self.m.normals.extend([nx as f32, ny as f32, nz as f32]);
@@ -1306,13 +1313,21 @@ fn mesh_cells(
                         continue;
                     }
                     let lkey = light_mask[i + n * j];
+                    let m = ((key & STATE_MASK) - 1) as StateId;
+                    let rule = ((key & !SURFACE_BIT) >> RULE_SHIFT)
+                        .checked_sub(1)
+                        .map(|r| r as usize);
+                    let style = kinds.of(m).style;
+                    let (color, tile) = side_surface(&style, face, rule);
+                    // A hanging tile runs from each block's top: its quads stay one cell tall.
+                    let hang = tile.hang && axis != 1;
                     let same = |at: usize| mask[at] == key && light_mask[at] == lkey;
                     let mut w = 1;
-                    while i + w < n && same(i + w + n * j) {
+                    while i + w < n && !(hang && u == 1) && same(i + w + n * j) {
                         w += 1;
                     }
                     let mut h = 1;
-                    'grow: while j + h < n {
+                    'grow: while j + h < n && !(hang && v == 1) {
                         for k in 0..w {
                             if !same(i + k + n * (j + h)) {
                                 break 'grow;
@@ -1323,16 +1338,10 @@ fn mesh_cells(
                     for dv in 0..h {
                         mask[i + n * (j + dv)..i + w + n * (j + dv)].fill(0);
                     }
-                    let m = ((key & STATE_MASK) - 1) as StateId;
-                    let rule = ((key & !SURFACE_BIT) >> RULE_SHIFT)
-                        .checked_sub(1)
-                        .map(|r| r as usize);
-                    let style = kinds.of(m).style;
                     let mut plane = f64::from(if sign > 0 { d + 1 } else { d });
                     if style.look == Look::Fluid && face == 2 {
                         plane = fluid_top(d, &style);
                     }
-                    let (color, tile) = side_surface(&style, face, rule);
                     let see_through = style.render == RenderMode::Translucent;
                     let target = match style.render {
                         RenderMode::Opaque => &mut opaque,

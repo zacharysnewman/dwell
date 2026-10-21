@@ -100,6 +100,8 @@ pub trait Scene: TerrainRenderer {
     /// The placed light sources near the eye this frame (a torch's flame; docs/LIGHTS.md §4):
     /// drawn as shadowed dynamic lights with Torch shadows on.
     fn set_placed_lights(&mut self, _lights: Vec<crate::render::lights::PlacedLight>) {}
+    /// The placed light sources' flames near the eye this frame (a torch's; docs/LIGHTS.md §6).
+    fn set_placed_flames(&mut self, _flames: Vec<crate::render::flames::PlacedFlame>) {}
     fn set_camera(
         &mut self,
         eye: [f64; 3],
@@ -1671,6 +1673,9 @@ impl<S: Scene> Game<S> {
             telemetry::add("lod.fading", f.swaps as f64);
             telemetry::add("lod.retiring", f.retiring as f64);
         }
+        // The placed torches' flames near the eye (docs/LIGHTS.md §6).
+        let flames = crate::render::flames::placed_flames(self.streamer.store(), camera_eye);
+        self.scene.borrow_mut().set_placed_flames(flames);
         self.update_day(now_ms);
         // The placed light sources near the eye (docs/LIGHTS.md §4): Torch shadows draws the
         // nearest as shadowed lights.

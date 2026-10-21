@@ -26,7 +26,14 @@ pub const PAINTERLY_TILES: [&str; 17] = [
 
 /// Each tile's glow: how much of its colour it gives off unlit (its material's `emissive`).
 pub const PAINTERLY_EMISSIVE: [f32; 17] = [
-    0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0,
+    0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+];
+
+/// Whether each tile hangs from its block's top edge (its material's `hang`): a side face shows
+/// the tile's top on every block, so it never merges up or down; other tiles run in world metres.
+pub const PAINTERLY_HANG: [bool; 17] = [
+    false, true, false, false, false, false, false, false, false, false, false, true, false, false,
+    false, false, false,
 ];
 
 /// Each painterly tile's RGBA8 texels (sRGB), row y = 0 (the tile's bottom) first.

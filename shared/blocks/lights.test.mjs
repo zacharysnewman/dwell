@@ -43,7 +43,7 @@ test("a light added by data alone reaches the Rust table (the fixture lantern)",
   const rs = lightsRust(lights, rf).join("\n");
   assert.match(
     rs,
-    /LightInfo \{ name: "test:lantern", color: 0xa0c8ff, strength: 1\.5, radius_m: 6\.0, flicker: 0\.0, flicker_speed: 1\.0, shadows: false \}/,
+    /LightInfo \{ name: "test:lantern", color: 0xa0c8ff, strength: 1\.5, radius_m: 6\.0, flicker: 0\.0, flicker_speed: 1\.0, shadows: false, flame: None \}/,
   );
   assert.match(rs, /pub static LIGHTS: \[LightInfo; 2\]/);
 });

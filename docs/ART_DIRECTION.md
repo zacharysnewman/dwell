@@ -141,6 +141,11 @@ The renderer lights the textures. They are **albedo with painted form, not baked
   so a meadow reads as one green from afar).
 - **Night.** At night the moon and hemisphere light are dim and blue. The cool shadows of the ramps
   keep materials readable. Nothing in the palette relies on emissive light yet.
+- **Fire.** A flame is self-lit (it shows its own colour whatever the light) and painted, not
+  photographic: a soft teardrop rising from the stick's tip, its colours laid in a few bands from
+  deep red-orange tips through orange to a warm yellow core (no white), the top licking into
+  separate tongues, a faint warm halo and a few sparks. Its look is data (`shared/look/flames.json`,
+  [`LIGHTS.md`](./LIGHTS.md) §6), drawn by the renderer, not a tile.
 - **Characters.** Characters are shaded from their material's ramp (shadow, base and light by the
   light's angle or the part's height) with the stroke tile blended in at its `overlay`. They are
   clean and readable against the terrain, with no extra noise. The first-person arms and the full
