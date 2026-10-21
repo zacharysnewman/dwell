@@ -109,6 +109,22 @@ pub fn perspective(fov_y_deg: f64, aspect: f64, near: f64, far: f64) -> Mat4 {
     ]
 }
 
+/// The scene's projection (ARCHITECTURE.md §6.6 Depth): [`perspective`] with **reversed** depth,
+/// the near plane at 1 and the far plane at 0 (cleared to `frame::DEPTH_CLEAR`, tested with
+/// `frame::DEPTH_COMPARE`). A `depth32float` value is densest near 0, so reversed depth resolves
+/// about 2⁻²³ of the distance at every distance, where standard depth's precision falls with the
+/// distance squared over the near plane (5 cm): two surfaces a metre apart a kilometre off fought.
+pub fn perspective_reversed(fov_y_deg: f64, aspect: f64, near: f64, far: f64) -> Mat4 {
+    let f = 1.0 / (fov_y_deg.to_radians() / 2.0).tan();
+    let range = near / (far - near);
+    [
+        [(f / aspect) as f32, 0.0, 0.0, 0.0],
+        [0.0, f as f32, 0.0, 0.0],
+        [0.0, 0.0, range as f32, -1.0],
+        [0.0, 0.0, (far * range) as f32, 0.0],
+    ]
+}
+
 pub fn mul(a: &Mat4, b: &Mat4) -> Mat4 {
     let mut out = [[0.0f32; 4]; 4];
     for (c, col) in out.iter_mut().enumerate() {
@@ -179,6 +195,49 @@ mod tests {
         }
         for aspect in [4.0 / 3.0, 1.0, 390.0 / 844.0] {
             assert_eq!(vertical_fov(aspect), VERTICAL_FOV);
+        }
+    }
+
+    /// The depth32float value a point at view distance `d` stores under projection `p`, computed as
+    /// the GPU does: the clip coordinates in f32, then the divide.
+    fn stored_depth(p: &Mat4, d: f32) -> f32 {
+        let z = -d;
+        (p[2][2] * z + p[3][2]) / (p[2][3] * z + p[3][3])
+    }
+
+    #[test]
+    fn the_reversed_projection_maps_near_to_one_and_far_to_zero() {
+        let p = perspective_reversed(75.0, 1.5, 0.05, 1024.0);
+        assert!((stored_depth(&p, 0.05) - 1.0).abs() < 1e-5);
+        assert!(stored_depth(&p, 1024.0).abs() < 1e-5);
+        assert!(
+            stored_depth(&p, 10.0) > stored_depth(&p, 10.5),
+            "nearer is greater"
+        );
+    }
+
+    /// The LOD z-fighting class (ARCHITECTURE.md §6.6, "Known bug class: coplanar and near-coplanar
+    /// LOD surfaces"): the near pass spans 5 cm to the split (1,024 m), and from 150–300 m up the
+    /// ground lies 200 m–1 km away. Surfaces a few centimetres apart there (a skirt behind a
+    /// neighbour's top, a level fading out under the one fading in, a riser under a top) must
+    /// store different depths in the right order, or they swap as the camera moves. Standard depth
+    /// gave the same value to surfaces up to ~1.2 m apart at 1 km.
+    #[test]
+    fn the_scene_depth_resolves_centimetres_across_the_near_pass() {
+        let near = super::super::NEAR_PLANE;
+        let far = super::super::NEAR_SPLIT;
+        let p = perspective_reversed(75.0, 1.5, near, far);
+        for d in [10.0f32, 100.0, 300.0, 600.0, 1000.0] {
+            // 2 cm, at any distance in the pass: front strictly greater (the test is ≥).
+            let (front, back) = (stored_depth(&p, d), stored_depth(&p, d + 0.02));
+            assert!(front > back, "at {d} m: {front} vs {back} (2 cm apart)");
+        }
+        // The far pass, its near plane at 0.95 × the split, out to the far plane: 0.1 % of the
+        // distance (a metre at 1 km beyond the split, 1 km at 1,000 km).
+        let p = perspective_reversed(75.0, 1.5, far * 0.95, super::super::FAR_PLANE);
+        for d in [1100.0f32, 5000.0, 50_000.0, 1.0e6] {
+            let (front, back) = (stored_depth(&p, d), stored_depth(&p, d * 1.001));
+            assert!(front > back, "far pass at {d} m: {front} vs {back}");
         }
     }
 

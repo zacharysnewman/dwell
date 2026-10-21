@@ -28,7 +28,7 @@ use dwell_world::FaceFrame;
 use dwell_world::hash::HashMap;
 
 use super::camera::{Basis, V3};
-use super::frame::{DEPTH, HDR, VIEW_DEPTH};
+use super::frame::{DEPTH, DEPTH_CLEAR, DEPTH_COMPARE, HDR, VIEW_DEPTH};
 
 /// Past this (m) a character drops its outline and its small parts.
 pub const OUTLINE_M: f64 = 64.0;
@@ -1134,17 +1134,18 @@ pub struct ArmsPass {
 pub fn arms_pass(world_passes: usize, samples: u32) -> ArmsPass {
     ArmsPass {
         ops: super::frame::scene_pass_ops(world_passes, world_passes + 1, samples),
-        depth: wgpu::LoadOp::Clear(1.0),
+        depth: wgpu::LoadOp::Clear(DEPTH_CLEAR),
     }
 }
 
-/// The characters' depth test (bodies in the scene passes, the arms in theirs): ordinary
-/// less-or-equal with writes; the arms pass starts from a cleared buffer (`arms_pass`).
+/// The characters' depth test (bodies in the scene passes, the arms in theirs): the scene's
+/// (reversed: greater-or-equal, `frame::DEPTH_COMPARE`) with writes; the arms pass starts from a
+/// cleared buffer (`arms_pass`).
 pub fn depth_state() -> wgpu::DepthStencilState {
     wgpu::DepthStencilState {
         format: DEPTH,
         depth_write_enabled: Some(true),
-        depth_compare: Some(wgpu::CompareFunction::LessEqual),
+        depth_compare: Some(DEPTH_COMPARE),
         stencil: Default::default(),
         bias: Default::default(),
     }
@@ -1282,7 +1283,7 @@ mod tests {
         use super::super::frame::scene_pass_ops;
         for samples in [1, 4] {
             let a = arms_pass(2, samples);
-            assert_eq!(a.depth, wgpu::LoadOp::Clear(1.0));
+            assert_eq!(a.depth, wgpu::LoadOp::Clear(DEPTH_CLEAR));
             assert!(!a.ops.clear, "loads the world's colour and view depth");
             assert_eq!(a.ops.resolve, samples > 1);
             let world_last = scene_pass_ops(1, 3, samples);
@@ -1290,7 +1291,7 @@ mod tests {
         }
         assert_eq!(
             depth_state().depth_compare,
-            Some(wgpu::CompareFunction::LessEqual)
+            Some(wgpu::CompareFunction::GreaterEqual)
         );
     }
 

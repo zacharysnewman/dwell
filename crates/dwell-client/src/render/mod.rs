@@ -44,9 +44,9 @@ use dwell_world::fluid::EyeFluid;
 use dwell_world::{CELL_H, CHUNK_EXTENT_M, ChunkCoord, FaceFrame, chunk_of, chunk_origin_m};
 
 use arena::{Arena, ArenaRef, Region};
-use camera::{Basis, V3, aim, mul, perspective, vertical_fov, view_matrix};
+use camera::{Basis, V3, aim, mul, perspective_reversed, vertical_fov, view_matrix};
 pub use display::RenderStats;
-use frame::{DEPTH, HDR, Targets, VIEW_DEPTH};
+use frame::{DEPTH, DEPTH_CLEAR, DEPTH_COMPARE, HDR, Targets, VIEW_DEPTH};
 use seam::TerrainRenderer;
 use timing::GpuTimer;
 use water::WaterQuality;
@@ -1213,7 +1213,7 @@ impl Renderer {
                     depth_compare: Some(if no_depth {
                         wgpu::CompareFunction::Always
                     } else {
-                        wgpu::CompareFunction::LessEqual
+                        DEPTH_COMPARE
                     }),
                     stencil: Default::default(),
                     bias: Default::default(),
@@ -1263,7 +1263,7 @@ impl Renderer {
             depth_stencil: Some(wgpu::DepthStencilState {
                 format: DEPTH,
                 depth_write_enabled: Some(false),
-                depth_compare: Some(wgpu::CompareFunction::LessEqual),
+                depth_compare: Some(DEPTH_COMPARE),
                 stencil: Default::default(),
                 bias: Default::default(),
             }),
@@ -2073,7 +2073,10 @@ impl Renderer {
         fov: f64,
     ) -> [f32; FRAME_FLOATS] {
         let aspect = f64::from(self.size.0) / f64::from(self.size.1);
-        let vp = mul(&perspective(fov, aspect, near, far), &view_matrix(basis));
+        let vp = mul(
+            &perspective_reversed(fov, aspect, near, far),
+            &view_matrix(basis),
+        );
         let mut u = [0.0f32; FRAME_FLOATS];
         let mut i = 0;
         let mut put = |v: &[f32]| {
@@ -3837,7 +3840,7 @@ impl Renderer {
             targets,
             if i == 0 { "far" } else { "near" },
             ops,
-            wgpu::LoadOp::Clear(1.0),
+            wgpu::LoadOp::Clear(DEPTH_CLEAR),
             keep_depth,
             timestamp_writes,
         )
