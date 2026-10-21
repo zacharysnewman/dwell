@@ -18,10 +18,11 @@ test('settings menu: opens from the corner, without fog sliders, and is kept', a
   await expect(menu).toBeHidden();
   await button.click();
   await expect(menu).toBeVisible();
-  // Sound's three volumes first, then the detail's three (no fog sliders: the fog is fixed).
+  // Sound's four volumes first, then the detail's three (no fog sliders: the fog is fixed).
   await expect(menu.locator('.settings-value')).toHaveText([
     '80%',
     '100%',
+    '60%',
     '60%',
     '256 m',
     '4.0 px',
@@ -41,18 +42,18 @@ test('settings menu: opens from the corner, without fog sliders, and is kept', a
   await expect(menu).not.toContainText('Density');
 
   // The field of view to its narrowest, as a drag would.
-  await menu.locator('input[type=range]').nth(6).fill('0');
-  await expect(menu.locator('.settings-value').nth(6)).toHaveText('60°');
+  await menu.locator('input[type=range]').nth(7).fill('0');
+  await expect(menu.locator('.settings-value').nth(7)).toHaveText('60°');
   // The distant view's memory to the most.
-  await menu.locator('input[type=range]').nth(5).fill('1000');
-  await expect(menu.locator('.settings-value').nth(5)).toHaveText('1024 MB');
+  await menu.locator('input[type=range]').nth(6).fill('1000');
+  await expect(menu.locator('.settings-value').nth(6)).toHaveText('1024 MB');
   await page.reload();
   await page.locator('#menu-button').click();
-  await expect(page.locator('#settings-menu .settings-value').nth(6)).toHaveText('60°');
-  await expect(page.locator('#settings-menu .settings-value').nth(5)).toHaveText('1024 MB');
+  await expect(page.locator('#settings-menu .settings-value').nth(7)).toHaveText('60°');
+  await expect(page.locator('#settings-menu .settings-value').nth(6)).toHaveText('1024 MB');
   await page.locator('#settings-menu .settings-reset').click();
-  await expect(page.locator('#settings-menu .settings-value').nth(6)).toHaveText('75°');
-  await expect(page.locator('#settings-menu .settings-value').nth(5)).toHaveText('256 MB');
+  await expect(page.locator('#settings-menu .settings-value').nth(7)).toHaveText('75°');
+  await expect(page.locator('#settings-menu .settings-value').nth(6)).toHaveText('256 MB');
 
   // Copy JSON puts the settings on the clipboard, to paste elsewhere.
   await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
@@ -62,7 +63,7 @@ test('settings menu: opens from the corner, without fog sliders, and is kept', a
   expect(JSON.parse(copied)).toEqual({
     detail: { distanceM: 256, pixelError: 4, memoryMb: 256 },
     exposure: 1,
-    audio: { master: 0.8, effects: 1, ui: 0.6 },
+    audio: { master: 0.8, effects: 1, ui: 0.6, music: 0.6 },
     clouds: 'high',
     water: { quality: 'medium' },
     shadows: { quality: 'high', torch: 'low' },

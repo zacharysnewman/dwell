@@ -1,4 +1,4 @@
-// The volumes (docs/AUDIO.md §6): master, effects and interface, kept per browser in
+// The volumes (docs/AUDIO.md §6): master, effects, interface and music, kept per browser in
 // `dwell.audio`. The key is shared by every app version on the origin (RELEASES.md §6), so the
 // store is append-only: new fields optional, and a rewrite keeps fields it does not know.
 import { DEFAULT_VOLUMES, type Volumes } from './mixer';
@@ -15,6 +15,7 @@ export function sanitizeVolumes(value: unknown): Volumes {
     master: clamp01(v.master, DEFAULT_VOLUMES.master),
     effects: clamp01(v.effects, DEFAULT_VOLUMES.effects),
     ui: clamp01(v.ui, DEFAULT_VOLUMES.ui),
+    music: clamp01(v.music, DEFAULT_VOLUMES.music),
   };
 }
 

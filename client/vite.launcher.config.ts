@@ -1,6 +1,7 @@
 import { execSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { defineConfig } from 'vite';
+import { mediaBase, musicFiles } from './scripts/media.ts';
 
 // The launcher (RELEASES.md §5), built on its own into dist-launcher/ and put at the site's root
 // by the Pages workflow. It is served at https://dropkickarcade.com/dwell/ (ADR 0005). It shows the
@@ -24,7 +25,10 @@ export default defineConfig({
     __BUILD_SHA__: JSON.stringify(sha()),
     __BUILD_TIME__: JSON.stringify(new Date().toISOString()),
     __APP_VERSION__: JSON.stringify(version),
+    // The main menu plays the music too: its files at the site's root (scripts/media.ts).
+    __MEDIA_BASE__: JSON.stringify(mediaBase('/dwell/')),
   },
+  plugins: [musicFiles('/dwell/')],
   build: {
     outDir: '../dist-launcher',
     emptyOutDir: true,

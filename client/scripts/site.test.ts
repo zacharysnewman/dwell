@@ -1,10 +1,11 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   buildManifest,
   directorySize,
+  hoistMedia,
   planSite,
   readBuilds,
   sizeReport,
@@ -141,5 +142,43 @@ describe('the size report', () => {
     );
     expect(sizeReport(900e6, 90)).toContain('⚠️');
     expect(sizeReport(0, 0)).toContain('0 builds');
+  });
+});
+
+describe('the music on the site', () => {
+  it('is moved out of the builds into one media/ at the root, each file once', () => {
+    const site = mkdtempSync(join(tmpdir(), 'dwell-site-'));
+    for (const [v, files] of [
+      ['0.1.0', []],
+      ['0.2.0', ['song-aaaaaaaa.mp3']],
+      ['0.2.1', ['song-aaaaaaaa.mp3', 'other-bbbbbbbb.mp3']],
+    ] as const) {
+      mkdirSync(join(site, 'v', v), { recursive: true });
+      writeFileSync(join(site, 'v', v, 'build.json'), '{}');
+      if (files.length) mkdirSync(join(site, 'v', v, 'media'));
+      for (const f of files) writeFileSync(join(site, 'v', v, 'media', f), `bytes of ${f}`);
+    }
+    expect(hoistMedia(site)).toEqual({ moved: 2, shared: 1 });
+    expect(readdirSync(join(site, 'media')).sort()).toEqual([
+      'other-bbbbbbbb.mp3',
+      'song-aaaaaaaa.mp3',
+    ]);
+    for (const v of ['0.2.0', '0.2.1']) expect(existsSync(join(site, 'v', v, 'media'))).toBe(false);
+    // The launcher's own copy (already at the root) is kept, and the builds' dropped.
+    mkdirSync(join(site, 'v', '0.3.0', 'media'), { recursive: true });
+    writeFileSync(
+      join(site, 'v', '0.3.0', 'media', 'song-aaaaaaaa.mp3'),
+      'bytes of song-aaaaaaaa.mp3',
+    );
+    expect(hoistMedia(site)).toEqual({ moved: 0, shared: 1 });
+  });
+
+  it('refuses a file whose name matches but whose bytes do not', () => {
+    const site = mkdtempSync(join(tmpdir(), 'dwell-site-'));
+    mkdirSync(join(site, 'media'));
+    writeFileSync(join(site, 'media', 'song-aaaaaaaa.mp3'), 'one');
+    mkdirSync(join(site, 'v', '0.2.0', 'media'), { recursive: true });
+    writeFileSync(join(site, 'v', '0.2.0', 'media', 'song-aaaaaaaa.mp3'), 'longer');
+    expect(() => hoistMedia(site)).toThrow(/0\.2\.0: media\/song-aaaaaaaa\.mp3 differs/);
   });
 });

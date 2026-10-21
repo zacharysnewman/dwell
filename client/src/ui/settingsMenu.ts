@@ -77,7 +77,7 @@ export interface Settings {
   /** Tone-mapping exposure (dwell-look; the time of day's exposure multiplies it). */
   exposure: number;
   /** Sky rotation in degrees, 0–360 (dwell-look's sky_frame.rs; this browser only). */
-  /** Master, effects and interface volumes, 0–1 (audio/settings.ts; this browser only). */
+  /** Master, effects, interface and music volumes, 0–1 (audio/settings.ts; this browser only). */
   audio: Volumes;
   /** The sky's clouds: off, low or high (dwell-look's clouds.rs). */
   clouds: CloudQuality;
@@ -120,6 +120,7 @@ export function settingsJson(s: Settings): string {
       master: Math.round(s.audio.master * 100) / 100,
       effects: Math.round(s.audio.effects * 100) / 100,
       ui: Math.round(s.audio.ui * 100) / 100,
+      music: Math.round(s.audio.music * 100) / 100,
     },
     clouds: s.clouds,
     water: { quality: s.water.quality },
@@ -244,6 +245,7 @@ function sections(
         volume('Master', 'Everything Dwell plays', 'master'),
         volume('Effects', 'Footsteps, blocks, water, other players', 'effects'),
         volume('Interface', 'Menus, buttons and the hotbar', 'ui'),
+        volume('Music', 'The music; 0% turns it off', 'music'),
       ],
     },
     {

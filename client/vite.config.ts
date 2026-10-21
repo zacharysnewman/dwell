@@ -2,6 +2,7 @@ import { execSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import type { Plugin } from 'vite';
 import { defineConfig } from 'vitest/config';
+import { mediaBase, musicFiles } from './scripts/media.ts';
 import { GENERATORS } from './src/local/world.ts';
 import { isStable, parseVersion, withoutBuild, type Version } from './src/version/semver.ts';
 
@@ -86,8 +87,10 @@ export default defineConfig({
     __BUILD_SHA__: JSON.stringify(sha),
     __BUILD_TIME__: JSON.stringify(buildTime),
     __APP_VERSION__: JSON.stringify(version),
+    // The music's files, once per site (scripts/media.ts).
+    __MEDIA_BASE__: JSON.stringify(mediaBase(base)),
   },
-  plugins: [releaseFiles()],
+  plugins: [releaseFiles(), musicFiles(base)],
   // Module workers: the job and local-mode workers load the Rust client's WASM module.
   worker: {
     format: 'es',
