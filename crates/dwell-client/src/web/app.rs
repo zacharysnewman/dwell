@@ -604,6 +604,7 @@ impl Client {
                     set(&o, "atMs", k.at_ms);
                     set(&o, "feet", v3(k.feet));
                     set(&o, "velocity", v3(k.velocity));
+                    set(&o, "eye", k.eye);
                     set(&o, "state", k.state);
                     set(&o, "grounded", k.grounded);
                     set(&o, "crouched", k.crouched);

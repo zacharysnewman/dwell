@@ -14,7 +14,7 @@ use dwell_game::block_interaction::{BlockInteraction, BlockTarget, TargetSource,
 use dwell_game::brush_tool::{BrushAction, BrushOutline, BrushPanel, BrushTool};
 use dwell_game::chunk_stream::{ChunkMessage, ChunkStreamer, Coord, StreamStats, TerrainView};
 use dwell_game::edit_prediction::EditPredictor;
-use dwell_game::eye::{EyeCamera, EyeState};
+use dwell_game::eye::{EyeCamera, EyeState, StepRamp};
 use dwell_game::face_flip::FaceFlip;
 use dwell_game::gate::prediction_may_run;
 use dwell_game::hud_text::{HudTextInput, hud_text};
@@ -226,12 +226,14 @@ pub struct ClientState {
     pub max_step_height: f64,
     /// The most one step-up lifts the player (a ramp's rise to the step included).
     pub max_step_lift: f64,
+    /// The camera's virtual ramp over steps (`step_view`).
+    pub step_ramp: StepRamp,
     pub radius: f64,
     pub standing_height: f64,
 }
 
 /// The tick's controller state and input, for the telemetry's trace.
-fn record_tick(c: &ClientState, input: &InputFrame) {
+fn record_tick(c: &ClientState, input: &InputFrame, eye: f64) {
     use dwell_protocol::input_buttons;
     let flag = |f: u8| c.controller_flags & f != 0;
     let sample = TickSample {
@@ -239,6 +241,7 @@ fn record_tick(c: &ClientState, input: &InputFrame) {
         at_ms: telemetry::now_ms(),
         feet: c.feet(),
         velocity: c.velocity,
+        eye,
         state: player_state_name(c.state),
         grounded: flag(controller_flags::GROUNDED),
         crouched: flag(controller_flags::CROUCHING),
@@ -303,6 +306,7 @@ impl ClientState {
             crouch_eye_height: f64::from(config.body.crouch_eye_height),
             max_step_height: f64::from(config.movement.max_step_height),
             max_step_lift: f64::from(config.max_step_lift()),
+            step_ramp: config.step_view.into(),
             radius: f64::from(config.body.radius),
             standing_height: f64::from(config.body.standing_height),
         }
@@ -326,6 +330,7 @@ impl ClientState {
             crouch_eye_height: self.crouch_eye_height,
             // The eye smooths every lift a step-up makes.
             max_step_height: self.max_step_lift,
+            ramp: self.step_ramp,
         }
     }
 }
@@ -1368,7 +1373,6 @@ impl<S: Scene> Game<S> {
             })));
         self.previous = Some(self.current);
         self.current = ClientState::of(&self.predictor);
-        record_tick(&self.current, &frame);
         let c = self.current;
         let sample = self.mover_sample(
             c.feet(),
@@ -1388,6 +1392,7 @@ impl<S: Scene> Game<S> {
         }
         self.eye
             .tick(&self.current.eye_state(), 1.0 / SIM_HZ as f64);
+        record_tick(&self.current, &frame, self.eye.draw(1.0));
         input.look.face = self.current.face;
         // The camera turns with rotating ground (PPC yawDelta).
         input.look.yaw += self.current.platform_yaw_delta;
@@ -1449,7 +1454,11 @@ impl<S: Scene> Game<S> {
                 Some(m) => m.client(b),
                 None => Some(b),
             });
-            let view = self.bodies.remote(v, held, dt);
+            let world = self.streamer.store_mut();
+            let reach = self.current.max_step_lift;
+            let view = self.bodies.remote(v, held, dt, &mut |f, p| {
+                crate::bodies::ground_at(world, f, p, reach)
+            });
             self.scene
                 .borrow_mut()
                 .set_player(u32::from(v.player_id), Some(view));
@@ -1466,7 +1475,11 @@ impl<S: Scene> Game<S> {
             for v in p.views(now_ms / 1000.0) {
                 drawn.insert(v.player_id);
                 let held = crate::bodies::held_from_wire(v.held, Some);
-                let view = self.bodies.remote(&v, held, dt);
+                let world = self.streamer.store_mut();
+                let reach = self.current.max_step_lift;
+                let view = self.bodies.remote(&v, held, dt, &mut |f, p| {
+                    crate::bodies::ground_at(world, f, p, reach)
+                });
                 self.scene
                     .borrow_mut()
                     .set_player(u32::from(v.player_id), Some(view));

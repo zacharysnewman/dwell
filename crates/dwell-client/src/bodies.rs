@@ -2,12 +2,16 @@
 //! remote player, fed by what its snapshots carry, and one for your own first-person arms, fed by
 //! the prediction. Poses are never sent: each client animates the others itself.
 
+use dwell_blocks::info;
+use dwell_blocks::shape::solid_span_at;
+use dwell_characters::anim::bone_transforms;
 use dwell_characters::animator::{Animator, MoveInput, Space, Swing};
 use dwell_characters::{Character, TABLES};
+use dwell_game::eye::{Step, StepRamp, StepSample, StepSmoother};
 use dwell_game::remotes::RemoteView;
 use dwell_protocol::{controller_flags, held_item, player_flags, swing_flags};
-use dwell_world::FaceFrame;
 use dwell_world::hash::HashMap;
+use dwell_world::{FaceFrame, VoxelWorld};
 
 use crate::render::{ArmsView, Held, PlayerView};
 
@@ -89,7 +93,18 @@ pub fn swing_of(last: Option<u8>, now: u8) -> Option<Swing> {
 struct RemoteBody {
     animator: Animator,
     swing: Option<u8>,
+    /// The drawn feet over steps: a virtual ramp (PLAYER_CONTROLLER.md §9, the step view).
+    steps: StepSmoother,
+    /// The step that started this frame, if any (for a step pose).
+    stepped: Option<Step>,
+    /// Each foot's (left, right) position in the character's frame (x left, z ahead) in the last
+    /// pose drawn: where its ground is read.
+    feet_xz: [[f32; 2]; 2],
 }
+
+/// The ground under a point, face-local (BIFACIAL_WORLD.md §11): `(frame, point)` → the height of
+/// the solid top under it within reach, or `None`.
+pub type GroundAt<'a> = dyn FnMut(FaceFrame, [f64; 3]) -> Option<f64> + 'a;
 
 /// Every character the game animates.
 pub struct Bodies {
@@ -98,40 +113,129 @@ pub struct Bodies {
     arms: Animator,
     /// Your own body (drawn only while dead, for the third-person view over it).
     own: Animator,
+    /// The step view's ramp and the most one step lifts (`max_step_lift()`): a foot's ground is
+    /// read within this of the drawn feet.
+    ramp: StepRamp,
+    max_lift: f64,
 }
 
 impl Default for Bodies {
     fn default() -> Self {
         let character = dwell_characters::player();
+        let config = dwell_physics::config::PlayerControllerConfig::default();
         Self {
             character,
             remotes: HashMap::default(),
             arms: Animator::new(&TABLES, character, Space::Arms),
             own: Animator::new(&TABLES, character, Space::Body),
+            ramp: config.step_view.into(),
+            max_lift: f64::from(config.max_step_lift()),
         }
     }
 }
 
+/// The solid top under face-local point `p` (x, z; scanning down from `p.y + reach` to
+/// `p.y − reach`) in `world`, read through `f`: the ground a drawn foot stands on (render-side
+/// only; the sim never reads it).
+pub fn ground_at(
+    world: &mut VoxelWorld,
+    f: FaceFrame,
+    [x, y, z]: [f64; 3],
+    reach: f64,
+) -> Option<f64> {
+    let (cx, cz) = (x.floor() as i32, z.floor() as i32);
+    let (fx, fz) = ((x - f64::from(cx)) as f32, (z - f64::from(cz)) as f32);
+    for row in ((y - reach).floor() as i32..=(y + reach).floor() as i32).rev() {
+        let [wx, wy, wz] = f.cell([cx, row, cz]);
+        if !info(world.get_voxel(wx, wy, wz)).solid {
+            continue;
+        }
+        let span = solid_span_at(world.shape_at(wx, wy, wz), fx, fz);
+        if span.hi <= span.lo {
+            continue;
+        }
+        let (_, hi) = f.in_cell(span.lo, span.hi);
+        let top = f64::from(row) + f64::from(hi);
+        if top <= y + reach {
+            return Some(top);
+        }
+    }
+    None
+}
+
 impl Bodies {
-    /// A remote player's body this frame (`dt` seconds since the last), holding `held`.
-    pub fn remote(&mut self, v: &RemoteView, held: Held, dt: f64) -> PlayerView {
+    /// The step that started on remote player `id`'s drawn body this frame (its height, + up):
+    /// the hook for a step pose.
+    pub fn step_started(&self, id: u16) -> Option<Step> {
+        self.remotes.get(&id).and_then(|b| b.stepped)
+    }
+
+    /// A remote player's body this frame (`dt` seconds since the last), holding `held`: drawn at
+    /// its feet plus the step view's offset, each foot planted on the ground `ground` reads.
+    pub fn remote(
+        &mut self,
+        v: &RemoteView,
+        held: Held,
+        dt: f64,
+        ground: &mut GroundAt,
+    ) -> PlayerView {
         let character = self.character;
+        let (ramp, max_lift) = (self.ramp, self.max_lift);
         let body = self
             .remotes
             .entry(v.player_id)
             .or_insert_with(|| RemoteBody {
                 animator: Animator::new(&TABLES, character, Space::Body),
                 swing: None,
+                steps: StepSmoother::new(),
+                stepped: None,
+                feet_xz: [[0.0; 2]; 2],
             });
         if let Some(s) = swing_of(body.swing, v.swing) {
             body.animator.swing(s);
         }
         body.swing = Some(v.swing);
-        let input = remote_input(v, held != Held::Empty);
+        let f = v.face();
+        let local = f.point(v.feet);
+        let grounded = v.flags & player_flags::GROUNDED != 0 && !v.is_dead();
+        let [vx, _, vz] = v.velocity;
+        body.stepped = body.steps.follow(
+            StepSample {
+                feet: local[1],
+                grounded,
+                speed: f64::from(vx.hypot(vz)),
+                max_step: max_lift + 0.05,
+                ramp,
+            },
+            dt,
+        );
+        let drawn = local[1] + body.steps.offset();
+        let mut input = remote_input(v, held != Held::Empty);
+        if grounded {
+            // Each foot's place in the world: the body's frame (render/characters.rs
+            // `body_frame`: on face B its left turns over).
+            let (s, c) = f64::from(v.yaw).to_radians().sin_cos();
+            let side = f.sign_f64();
+            input.foot_ground = body.feet_xz.map(|[lx, lz]| {
+                let (lx, lz) = (f64::from(lx), f64::from(lz));
+                let at = [
+                    local[0] + side * c * lx + s * lz,
+                    drawn,
+                    local[2] - side * s * lx + c * lz,
+                ];
+                ground(f, at).map_or(0.0, |g| (g - drawn).clamp(-max_lift, max_lift) as f32)
+            });
+        }
         let pose = body.animator.update(&input, dt as f32);
+        let bones = bone_transforms(character, &pose);
+        for (k, name) in ["foot_l", "foot_r"].into_iter().enumerate() {
+            if let Some(b) = character.bone(name) {
+                body.feet_xz[k] = [bones[b].t[0], bones[b].t[2]];
+            }
+        }
         PlayerView {
-            feet: v.feet,
-            face: v.face(),
+            feet: f.point([local[0], drawn, local[2]]),
+            face: f,
             yaw: f64::from(v.yaw),
             dead: v.is_dead(),
             look: dwell_characters::DEFAULT_LOOK,
@@ -208,6 +312,61 @@ mod tests {
         assert_eq!(held_from_wire(held_item::BRUSH | 7, |_| None), Held::Empty);
         assert_eq!(held_to_wire(Held::Block(3), |_| None), 0);
     }
+
+    dwell_world::both_faces!(
+        /// A foot's ground is the solid top under it, face-local, on either face.
+        fn the_ground_under_a_foot_is_read_face_local(f: FaceFrame) {
+            let mut w = VoxelWorld::new(dwell_world::empty_generator(), None);
+            let stone = dwell_blocks::require("dwell:sandbox_floor");
+            let [x, y, z] = f.cell([3, 40, 5]);
+            w.set_voxel(x, y, z, f.state(stone));
+            // Its top is row 41, face-local.
+            assert_eq!(ground_at(&mut w, f, [3.5, 41.2, 5.5], 0.8), Some(41.0));
+            assert_eq!(ground_at(&mut w, f, [3.5, 40.6, 5.5], 0.8), Some(41.0));
+            assert_eq!(ground_at(&mut w, f, [3.5, 43.0, 5.5], 0.8), None);
+            assert_eq!(ground_at(&mut w, f, [4.5, 41.0, 5.5], 0.8), None);
+        }
+    );
+
+    dwell_world::both_faces!(
+        /// PLAYER_CONTROLLER.md §9 (the step view): a remote player's step-up, interpolated over
+        /// a snapshot interval, is drawn along a virtual ramp (no faster than 45° at its speed),
+        /// starts one step, and ends on the step.
+        fn a_remote_step_up_is_drawn_as_a_ramp(f: FaceFrame) {
+            let mut bodies = Bodies::default();
+            let dt = 1.0 / 240.0;
+            let mut ground =
+                |_: FaceFrame, [_, _, z]: [f64; 3]| Some(if z >= 1.0 { 0.5 } else { 0.0 });
+            let mut last: Option<f64> = None;
+            let mut steps = 0;
+            for i in 0..240 {
+                let t = f64::from(i) * dt;
+                let z = 5.0 * t - 0.5;
+                // The interpolated feet: up 0.5 m over 50 ms as the body crosses z = 0.7.
+                let feet = 0.5 * ((t - 0.24) / 0.05).clamp(0.0, 1.0);
+                let v = RemoteView {
+                    player_id: 1,
+                    feet: f.point([0.0, 32.0 + feet, z]),
+                    velocity: f.vector_f32([0.0, 0.0, 5.0]),
+                    yaw: 0.0,
+                    pitch: 0.0,
+                    state: dwell_protocol::PlayerState::Walking,
+                    flags: player_flags::GROUNDED | if f.is_b() { player_flags::FACE_B } else { 0 },
+                    held: 0,
+                    swing: 0,
+                };
+                let view = bodies.remote(&v, Held::Empty, dt, &mut ground);
+                steps += usize::from(bodies.step_started(1).is_some());
+                let drawn = f.y(view.feet[1]) - 32.0;
+                if let Some(l) = last {
+                    assert!((drawn - l) / dt <= 5.0 + 1e-6, "{i}: {l} → {drawn}");
+                }
+                last = Some(drawn);
+            }
+            assert_eq!(steps, 1);
+            assert!((last.unwrap() - 0.5).abs() < 1e-9);
+        }
+    );
 
     #[test]
     fn a_changed_swing_count_starts_a_swing_and_the_first_seen_does_not() {

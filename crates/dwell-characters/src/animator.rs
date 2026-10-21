@@ -46,9 +46,8 @@ pub struct MoveInput {
     /// An item is in hand (the hold layer).
     pub holding: bool,
     /// The ground under each foot (left, right), metres above the feet's height (0 on flat
-    /// ground). A hook for smooth step-ups (foot IK and a hip lift on a step): nothing fills it
-    /// yet and `plant_feet` leaves the pose as the clips made it, until the controller reports the
-    /// step inputs (claude/smooth-steps).
+    /// ground): foot IK over steps (`plant_feet`). The client reads it under each foot from the
+    /// drawn feet, which glide along the step view's virtual ramp (PLAYER_CONTROLLER.md §9).
     pub foot_ground: [f32; 2],
 }
 
@@ -292,9 +291,53 @@ impl Animator {
         pose
     }
 
-    /// Each foot onto the ground under it (`MoveInput::foot_ground`): the place foot IK and a step's
-    /// hip lift go. Not built yet: the step inputs aren't reported, so it changes nothing.
-    fn plant_feet(&self, _pose: &mut Pose, _i: &MoveInput) {}
+    /// Each foot onto the ground under it (`MoveInput::foot_ground`, PLAYER_CONTROLLER.md §9, the
+    /// step view): the body drops by the lower foot's ground (when it is below the feet, as over a
+    /// step down) and each leg bends by two-bone IK to lift its foot by the rest, the thigh forward
+    /// and the shin back, the foot kept level. Additive on the clip's pose; on flat ground (both
+    /// 0) the pose is unchanged.
+    fn plant_feet(&self, pose: &mut Pose, i: &MoveInput) {
+        let [l, r] = i.foot_ground;
+        if l == 0.0 && r == 0.0 {
+            return;
+        }
+        let drop = l.min(r).min(0.0);
+        pose.root[1] += drop;
+        pose.root_keyed = true;
+        for (side, g) in [("l", l), ("r", r)] {
+            let bone = |n: &str| self.character.bone(&format!("{n}_{side}"));
+            let (Some(thigh), Some(shin), Some(foot)) = (bone("thigh"), bone("shin"), bone("foot"))
+            else {
+                continue;
+            };
+            let length = |b: usize| {
+                let [x, y, z] = self.character.bones[b].rest;
+                (x * x + y * y + z * z).sqrt()
+            };
+            let (a, b) = (length(shin), length(foot));
+            if a <= 0.0 || b <= 0.0 {
+                continue;
+            }
+            // The hip-to-ankle distance the lift leaves (at most 60 % of the leg folded away).
+            let lift = (g - drop).clamp(0.0, 0.6 * (a + b));
+            if lift <= 0.0 {
+                continue;
+            }
+            let d = a + b - lift;
+            let cos = |x: f32| x.clamp(-1.0, 1.0);
+            let hip = cos((a * a + d * d - b * b) / (2.0 * a * d))
+                .acos()
+                .to_degrees();
+            let ankle = cos((b * b + d * d - a * a) / (2.0 * b * d))
+                .acos()
+                .to_degrees();
+            // +x swings a hanging limb back: the thigh forward is −, the knee folds the shin back.
+            pose.rot[thigh][0] -= hip;
+            pose.rot[shin][0] += hip + ankle;
+            pose.rot[foot][0] -= ankle;
+            pose.keyed |= (1 << thigh) | (1 << shin) | (1 << foot);
+        }
+    }
 
     /// The head (and a little of the chest, and the held arm) follow the look's pitch, added on the
     /// clips (+x pitches a bone's top forward: looking down).
@@ -440,6 +483,41 @@ mod tests {
         let looking_up = a.update(&up, 0.0).rot[head][0];
         // Looking up tips the head's top back (−x).
         assert!(looking_up < level - 15.0, "{level} {looking_up}");
+    }
+
+    #[test]
+    fn each_foot_is_planted_on_its_own_ground() {
+        // PLAYER_CONTROLLER.md §9 (the step view): over a step the drawn body glides along the
+        // virtual ramp while each foot stands on the ground under it. A foot on higher ground is
+        // lifted by bending its leg (the knee forward); ground below both feet lowers the body.
+        use crate::anim::bone_transforms;
+        let ch = player();
+        let at = |p: &Pose, bone: &str| bone_transforms(ch, p)[ch.bone(bone).unwrap()].t;
+        let pose = |g: [f32; 2]| {
+            let mut a = Animator::new(&TABLES, ch, Space::Body);
+            let i = MoveInput {
+                foot_ground: g,
+                ..input(PlayerState::Idle, [0.0; 3])
+            };
+            a.update(&i, 0.0)
+        };
+        let flat = pose([0.0, 0.0]);
+        for g in [[0.3, 0.0], [0.0, 0.25], [-0.2, 0.1]] {
+            let p = pose(g);
+            for (k, side) in ["l", "r"].into_iter().enumerate() {
+                let foot = format!("foot_{side}");
+                let d = at(&p, &foot)[1] - at(&flat, &foot)[1];
+                assert!((d - g[k]).abs() < 0.02, "{g:?} {side}: {d}");
+                // A lifted leg's knee comes forward (+z), not back.
+                if g[k] > g[0].min(g[1]) {
+                    let shin = format!("shin_{side}");
+                    assert!(
+                        at(&p, &shin)[2] > at(&flat, &shin)[2] + 0.02,
+                        "{g:?} {side}"
+                    );
+                }
+            }
+        }
     }
 
     #[test]

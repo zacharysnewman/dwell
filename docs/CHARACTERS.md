@@ -338,10 +338,14 @@ game animated (`bodies.rs`, one `Animator` per remote player from its interpolat
 what the hand holds. The local player is drawn as the full body only when dead (lying on its back,
 seen from the death camera) or in a future third-person camera. **Face B**: a body there is turned a
 half turn about its forward axis (a proper rotation: the winding and its handedness hold).
-**Steps** **[planned]**: `MoveInput::foot_ground` (the ground under each foot) is the hook for foot
-IK and a hip lift on a step-up, to be fed by the step smoothing (claude/smooth-steps): the root at
-the feet plus the smoothed step offset, each foot planted on the render-side terrain, a step pose on
-a step event.
+**Steps** **[built, except the step pose]**: a remote body's root is drawn at its feet plus the
+step view's offset (`StepSmoother::follow`: its interpolated step-up followed at no more than a
+45° ramp at its speed, PLAYER_CONTROLLER.md §9), and `MoveInput::foot_ground` (the render-side
+ground under each foot from the last pose's foot positions, within `max_step_lift()`, face-local)
+feeds the animator's `plant_feet`: the body drops by the lower foot's ground when it is below
+the feet, and each leg bends by two-bone IK (thigh forward, shin back, foot level) to lift its
+foot by the rest. `Bodies::step_started` reports a step's start, the hook for a step pose
+[planned].
 
 ### 9.3 Netcode: what poses need
 
