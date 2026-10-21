@@ -132,7 +132,10 @@ fn set(p: &mut hydrology::HydrologyParams, key: &str, v: f64) {
         "upliftRate" | "baseHeight" | "keepRelief" | "plains" | "shelfMin" | "shelfMax"
         | "rangeCount" | "rangeWidth" | "rangeLengthMin" | "rangeLengthMax" | "rangeWander"
         | "rangeStrength" | "highlands" | "plateCount" | "plateWidth" | "rift" => {
-            let t = p.tectonics.as_mut().expect("the profile has an uplift layer");
+            let t = p
+                .tectonics
+                .as_mut()
+                .expect("the profile has an uplift layer");
             match key {
                 "upliftRate" => t.rate = v,
                 "baseHeight" => t.base_height = v,
@@ -216,7 +219,10 @@ fn stats(seed: u64, face: FaceFrame, profile: &str, m: &HydrologyMap, secs: f64,
     );
     if std::env::var_os("HYDROLOGY_MOUTHS").is_some() {
         for mo in &m.mouths {
-            println!("  mouth q {:.1} slope {:.4} {:?}", mo.discharge, mo.slope, mo.kind);
+            println!(
+                "  mouth q {:.1} slope {:.4} {:?}",
+                mo.discharge, mo.slope, mo.kind
+            );
         }
     }
 }
@@ -521,7 +527,12 @@ fn render(m: &HydrologyMap, name: &str) {
         segs.sort_by(|a, b| a.1.discharge.total_cmp(&b.1.discharge));
         for (a, b) in segs {
             let r = |w: f64| 0.25 + w / 22.0;
-            c.line(to_px(a), to_px(b), (r(a.width), r(b.width)), colour(b.discharge));
+            c.line(
+                to_px(a),
+                to_px(b),
+                (r(a.width), r(b.width)),
+                colour(b.discharge),
+            );
         }
     }
     c.save(&format!("{name}-widths.png"));
@@ -560,10 +571,18 @@ fn render(m: &HydrologyMap, name: &str) {
         }
     }
     for &(x, z) in &m.plates {
-        c.disc((x - m.x0) / m.cell + 0.5, (z - m.x0) / m.cell + 0.5, 3.0, hex(0xFFFFFF));
+        c.disc(
+            (x - m.x0) / m.cell + 0.5,
+            (z - m.x0) / m.cell + 0.5,
+            3.0,
+            hex(0xFFFFFF),
+        );
     }
     c.save(&format!("{name}-uplift.png"));
-    for (layer, v, lo, hi) in [("rain", &m.rain, 0.3f32, 2.5f32), ("rock", &m.erodibility, 0.0, 0.0)] {
+    for (layer, v, lo, hi) in [
+        ("rain", &m.rain, 0.3f32, 2.5f32),
+        ("rock", &m.erodibility, 0.0, 0.0),
+    ] {
         let (vmin, vmax) = m
             .sea
             .iter()
@@ -581,7 +600,14 @@ fn render(m: &HydrologyMap, name: &str) {
             } else {
                 let t = ((v[i] - lo) / (hi - lo)).clamp(0.0, 1.0);
                 shade(
-                    ramp(&[(0.0, hex(0xC8A26A)), (0.5, hex(0xE8E4D0)), (1.0, hex(0x2E6FB0))], t),
+                    ramp(
+                        &[
+                            (0.0, hex(0xC8A26A)),
+                            (0.5, hex(0xE8E4D0)),
+                            (1.0, hex(0x2E6FB0)),
+                        ],
+                        t,
+                    ),
                     0.4 + 0.5 * hillshade(m, &m.height, i, ex),
                 )
             };

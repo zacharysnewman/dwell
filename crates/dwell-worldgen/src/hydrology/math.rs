@@ -113,7 +113,10 @@ mod tests {
         for i in -40..=40 {
             let x = f64::from(i) * 0.37;
             let (s, c) = sin_cos(x);
-            assert!((s - x.sin()).abs() < 1e-13 && (c - x.cos()).abs() < 1e-13, "{x}");
+            assert!(
+                (s - x.sin()).abs() < 1e-13 && (c - x.cos()).abs() < 1e-13,
+                "{x}"
+            );
         }
     }
 }

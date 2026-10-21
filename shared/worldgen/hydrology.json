@@ -1,6 +1,6 @@
 {
   "$comment": "The world-scale hydrology prototype (docs/proposals/TERRAIN_HYDROLOGY_AND_VOLUMES.md): a coarse per-seed, per-face map of the eroded land, lakes, flow and rivers, computed from the height field (terrain.json). Not wired into chunk generation: changing it changes no worldgen output. Each profile is a full set of tunables, picked by name (`dwell_worldgen::hydrology::profile`); `default` names the one tools use when none is given. Units: metres, years, m³/s; the erodibility is Braun & Willett's K (yr⁻¹ m^(1−2m)) for a drainage area in m² weighted by relative rain. Run `node shared/worldgen/gen.mjs` after editing; CI fails on stale output.",
-  "default": "medium",
+  "default": "uplift",
   "profiles": [
     {
       "name": "gentle",

@@ -7,9 +7,9 @@
 //!
 //! Deterministic: the wind's direction from `math::sin_cos`, bilinear samples in f64.
 
+use super::Orographic;
 use super::flood::Grid;
 use super::math::sin_cos;
-use super::Orographic;
 use crate::noise::{mix32, seed_word};
 
 /// The relative rain per cell (1 at sea).

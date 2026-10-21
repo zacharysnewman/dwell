@@ -6,7 +6,8 @@
 use dwell_world::{FaceFrame, both_faces};
 use dwell_worldgen::BifacialTerrain;
 use dwell_worldgen::hydrology::{
-    self, End, Grid, HydrologyMap, HydrologyParams, NONE, SmallPits, from_heights,
+    self, End, Grid, Highlands, HydrologyMap, HydrologyParams, NONE, Orographic, Plates, Ranges,
+    RockBands, SmallPits, Tectonics, from_heights,
 };
 
 /// The default profile on a coarse grid (400 m cells: 252 × 252), so the tests stay quick.
@@ -115,10 +116,14 @@ fn assert_no_river_flows_uphill(m: &HydrologyMap) {
 }
 
 both_faces!(
-    /// A real map's invariants, on each face's own terrain.
+    /// A real map's invariants, on each face's own terrain, for every profile (the uplift layer's,
+    /// its variants and the height field's).
     fn water_reaches_the_sea_lakes_are_flat_and_rivers_run_downhill(f: FaceFrame) {
-        let p = coarse();
-        for seed in [7, 42] {
+        for (seed, p) in [7, 42]
+            .into_iter()
+            .flat_map(|s| hydrology::PROFILES.iter().map(move |p| (s, p)))
+        {
+            let p = HydrologyParams { cell: 400, ..*p };
             let m = hydrology::generate(seed, f, &p);
             assert!(
                 m.sea.iter().filter(|s| !**s).count() > 5_000,
@@ -152,11 +157,43 @@ both_faces!(
         assert_eq!(m.digest(), hydrology::generate(7, f, &coarse()).digest());
         let pinned = if f.is_b() { DIGEST_7_B } else { DIGEST_7_A };
         assert_eq!(m.digest(), pinned, "{:#018x}", m.digest());
+        // The height-field profile is unchanged by the uplift layer's arrival.
+        let p = HydrologyParams {
+            cell: 400,
+            ..medium()
+        };
+        let pinned = if f.is_b() { MEDIUM_7_B } else { MEDIUM_7_A };
+        let d = hydrology::generate(7, f, &p).digest();
+        assert_eq!(d, pinned, "{d:#018x}");
     }
 );
 
-const DIGEST_7_A: u64 = 0x6088_db94_661b_86c8;
-const DIGEST_7_B: u64 = 0x90f6_3376_cc6c_663a;
+both_faces!(
+    /// The uplift layer's variants (plates and rifts; rock bands and orographic rain) are
+    /// bit-identical everywhere too: they use the general paths the default does not.
+    fn the_uplift_variants_are_bit_identical_everywhere(f: FaceFrame) {
+        for (name, a, b) in [
+            ("uplift_plates", PLATES_7_A, PLATES_7_B),
+            ("uplift_rock_rain", ROCK_RAIN_7_A, ROCK_RAIN_7_B),
+        ] {
+            let p = HydrologyParams {
+                cell: 400,
+                ..*hydrology::profile(name).unwrap()
+            };
+            let d = hydrology::generate(7, f, &p).digest();
+            assert_eq!(d, if f.is_b() { b } else { a }, "{name}: {d:#018x}");
+        }
+    }
+);
+
+const DIGEST_7_A: u64 = 0x2eaf_77bd_5ada_de5d;
+const DIGEST_7_B: u64 = 0x071a_db9f_b176_e651;
+const MEDIUM_7_A: u64 = 0x6088_db94_661b_86c8;
+const MEDIUM_7_B: u64 = 0x90f6_3376_cc6c_663a;
+const PLATES_7_A: u64 = 0x438a_4359_dd82_0c3f;
+const PLATES_7_B: u64 = 0x4a4b_098c_6cdf_563f;
+const ROCK_RAIN_7_A: u64 = 0x3e19_7c5b_353b_21d1;
+const ROCK_RAIN_7_B: u64 = 0x0a5b_5449_a92d_3abf;
 
 /// A synthetic island on a `n` × `n` grid of 100 m cells: a cone rising to `peak` m from the coast
 /// at `radius` cells, plus `extra(x, z)`.
@@ -172,11 +209,16 @@ fn island(n: usize, radius: f64, peak: f64, extra: impl Fn(f64, f64) -> f64) -> 
     (Grid { n }, h)
 }
 
+/// The height-field profile (no uplift layer), for the fixtures of the lake and erosion rules.
+fn medium() -> HydrologyParams {
+    *hydrology::profile("medium").expect("hydrology.json has medium")
+}
+
 fn no_erosion() -> HydrologyParams {
     HydrologyParams {
         cell: 100,
         iterations: 0,
-        ..*hydrology::default_profile()
+        ..medium()
     }
 }
 
@@ -263,7 +305,7 @@ fn erosion_cuts_valleys_along_the_rivers_more_than_elsewhere() {
     let p = HydrologyParams {
         cell: 100,
         river_threshold: 0.05,
-        ..*hydrology::default_profile()
+        ..medium()
     };
     let m = from_heights(grid, 100.0, -8_000.0, &h, 0, &p);
     let river: std::collections::HashSet<u32> = m
@@ -294,7 +336,14 @@ fn erosion_cuts_valleys_along_the_rivers_more_than_elsewhere() {
 #[test]
 fn the_profiles_are_data_and_the_default_is_one_of_them() {
     let names: Vec<&str> = hydrology::PROFILES.iter().map(|p| p.name).collect();
-    for want in ["gentle", "medium", "strong"] {
+    for want in [
+        "gentle",
+        "medium",
+        "strong",
+        "uplift",
+        "uplift_plates",
+        "uplift_rock_rain",
+    ] {
         assert!(names.contains(&want), "{names:?}");
     }
     assert!(hydrology::profile(hydrology::DEFAULT).is_some());
@@ -337,4 +386,165 @@ fn the_general_power_path_is_bit_identical_everywhere() {
     assert_eq!(m.digest(), DIGEST_1234_GENERAL, "{:#018x}", m.digest());
 }
 
-const DIGEST_1234_GENERAL: u64 = 0x79cf_62ae_ac15_4a31;
+const DIGEST_1234_GENERAL: u64 = 0xc5e8_656b_29f8_1ff9;
+
+// ---- The uplift layer ---------------------------------------------------------------------------
+
+/// A profile with the uplift layer from data alone: one range, nothing else, on a fixture.
+fn one_range() -> HydrologyParams {
+    let base = *hydrology::profile("uplift").unwrap();
+    let t = base.tectonics.unwrap();
+    HydrologyParams {
+        cell: 100,
+        rock_bands: None,
+        rain: hydrology::Rain::Uniform,
+        tectonics: Some(Tectonics {
+            plains: 0.05,
+            keep_relief: 0.0,
+            apron_strength: 0.4,
+            apron_width: 6_000.0,
+            shelf_min: 1_000.0,
+            shelf_max: 1_000.0,
+            ranges: Ranges {
+                count: 1,
+                length_min: 6_000.0,
+                length_max: 6_000.0,
+                width: 1_500.0,
+                min_coast: 2_500.0,
+                max_coast: 1e9,
+                align: 0.0,
+                wander: 0.0,
+                warp: 0.0,
+                ..t.ranges
+            },
+            highlands: Highlands {
+                strength: 0.0,
+                ..t.highlands
+            },
+            plates: Plates {
+                count: 0,
+                ..t.plates
+            },
+            ..t
+        }),
+        ..base
+    }
+}
+
+#[test]
+fn a_range_from_data_raises_the_highest_ground_along_its_spine_and_none_at_the_coast() {
+    // A flat island 4 km across (1 m high, 2 m bumps for the water to find): all the relief comes
+    // from the range.
+    let (grid, h) = island(101, 40.0, 1.0, |x, z| {
+        1.0 + ((x * 0.7).sin() * (z * 0.9).cos()).abs()
+    });
+    let p = one_range();
+    let m = from_heights(grid, 100.0, -5_000.0, &h, 3, &p);
+    assert_eq!(m.spines.len(), 1, "a range placed");
+    assert_water_reaches_the_sea(&m);
+    assert_lakes_are_flat_with_one_outflow(&m, &p);
+    assert_no_river_flows_uphill(&m);
+    // The highest ground lies within the range's width of its spine.
+    let top = (0..grid.len())
+        .filter(|&i| !m.sea[i])
+        .max_by(|&a, &b| m.height[a].total_cmp(&m.height[b]))
+        .unwrap();
+    let (x, z) = m.position(top);
+    let spine = &m.spines[0];
+    let near = spine
+        .points
+        .iter()
+        .map(|&(px, pz)| ((px - x).powi(2) + (pz - z).powi(2)).sqrt())
+        .fold(f64::INFINITY, f64::min);
+    assert!(near < spine.width, "the top is {near:.0} m from the spine");
+    assert!(m.height[top] > 100.0, "a mountain: {}", m.height[top]);
+    // No uplift on the shore, the most on the spine.
+    let t = p.tectonics.unwrap();
+    for i in 0..grid.len() {
+        if m.sea[i] {
+            assert_eq!(m.uplift[i], 0.0);
+        } else if m.grid.neighbours(i).any(|(j, _)| m.sea[j]) {
+            assert!(f64::from(m.uplift[i]) < 0.05 * t.rate, "shore cell {i}");
+        }
+        assert!(f64::from(m.uplift[i]) <= t.rate * t.ranges.strength + 1e-12);
+    }
+    // Without the range: only the plains, no mountain.
+    let flat = HydrologyParams {
+        tectonics: Some(Tectonics {
+            ranges: Ranges {
+                count: 0,
+                ..t.ranges
+            },
+            ..t
+        }),
+        ..p
+    };
+    let m0 = from_heights(grid, 100.0, -5_000.0, &h, 3, &flat);
+    let max0 = m0.height.iter().fold(0f32, |a, &b| a.max(b));
+    assert!(max0 < 0.5 * m.height[top], "{max0} without the range");
+}
+
+#[test]
+fn rock_bands_and_orographic_rain_from_data_vary_the_erodibility_and_the_rain() {
+    let (grid, h) = island(101, 40.0, 1.0, |_, _| 1.0);
+    let base = one_range();
+    let p = HydrologyParams {
+        rock_bands: Some(RockBands {
+            contrast: 0.5,
+            wavelength: 1_000.0,
+            hard_share: 0.3,
+            warp: 0.0,
+            warp_wavelength: 1_000,
+        }),
+        rain: hydrology::Rain::Orographic(Orographic {
+            direction: 90.0,
+            spread: 0.0,
+            upslope: 20.0,
+            fetch: 3_000.0,
+            shadow: 0.8,
+            shadow_height: 50.0,
+            min: 0.2,
+            max: 3.0,
+        }),
+        ..base
+    };
+    let m = from_heights(grid, 100.0, -5_000.0, &h, 3, &p);
+    let land: Vec<usize> = (0..grid.len()).filter(|&i| !m.sea[i]).collect();
+    let k = |i: usize| f64::from(m.erodibility[i]) / p.erodibility;
+    let (kmin, kmax) = land.iter().fold((f64::MAX, f64::MIN), |(a, b), &i| {
+        (a.min(k(i)), b.max(k(i)))
+    });
+    assert!(
+        (kmin - 0.5).abs() < 1e-6 && (kmax - 1.0).abs() < 1e-6,
+        "{kmin} {kmax}"
+    );
+    let hard = land.iter().filter(|&&i| k(i) < 0.75).count() as f64 / land.len() as f64;
+    assert!((0.15..0.45).contains(&hard), "hard share {hard}");
+    let (rmin, rmax) = land.iter().fold((f32::MAX, f32::MIN), |(a, b), &i| {
+        (a.min(m.rain[i]), b.max(m.rain[i]))
+    });
+    assert!(
+        rmax > 1.5 && rmin < 0.6,
+        "wet windward, dry lee: {rmin} {rmax}"
+    );
+    assert_water_reaches_the_sea(&m);
+    assert_no_river_flows_uphill(&m);
+}
+
+#[test]
+fn the_uplift_layer_gathers_the_water_into_larger_rivers_than_the_height_field() {
+    // face-a-only: compares two profiles on one face; both faces share the code path.
+    let mut big = 0.0;
+    let mut big0 = 0.0;
+    for seed in [7, 42] {
+        let up = hydrology::generate(seed, FaceFrame::A, hydrology::profile("uplift").unwrap());
+        let hf = hydrology::generate(seed, FaceFrame::A, &medium());
+        big += up.outlets()[0].1;
+        big0 += hf.outlets()[0].1;
+        let stem = up.main_stem(up.outlets()[0].0);
+        assert!(stem.length > 40_000.0, "seed {seed}: {:.0} m", stem.length);
+        let top = |m: &HydrologyMap| m.height.iter().fold(0f32, |a, &b| a.max(b));
+        assert!(top(&up) > top(&hf) + 200.0, "seed {seed}: mountains");
+    }
+    assert!(big > 1.25 * big0, "{big:.1} vs {big0:.1} m³/s");
+}

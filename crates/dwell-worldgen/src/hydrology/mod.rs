@@ -351,7 +351,14 @@ pub fn generate_for(
     p: &HydrologyParams,
 ) -> HydrologyMap {
     let (grid, x0, h) = sample(terrain, face, p.cell);
-    from_heights(grid, f64::from(p.cell), x0, &h, terrain.local(face.face).seed(), p)
+    from_heights(
+        grid,
+        f64::from(p.cell),
+        x0,
+        &h,
+        terrain.local(face.face).seed(),
+        p,
+    )
 }
 
 /// The face's height field on the grid of `cell` m (m above sea level; −∞ beyond the disc): each

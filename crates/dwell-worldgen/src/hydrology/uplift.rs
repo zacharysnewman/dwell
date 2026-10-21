@@ -269,7 +269,10 @@ fn spines(r: &Ranges, seed: u64, reach: f64, coast_at: &dyn Fn(f64, f64) -> f64)
     for _ in 0..r.count {
         let mut found = None;
         for _ in 0..256 {
-            let (x, z) = (reach * (2.0 * d.next() - 1.0), reach * (2.0 * d.next() - 1.0));
+            let (x, z) = (
+                reach * (2.0 * d.next() - 1.0),
+                reach * (2.0 * d.next() - 1.0),
+            );
             let c = coast_at(x, z);
             if c >= r.min_coast && c <= r.max_coast {
                 found = Some((x, z));
@@ -424,7 +427,10 @@ fn plate_strength(p: &Plates, apron: &Apron, plates: &[Plate], x: f64, z: f64) -
     // How fast i moves toward j, in [−1, 1].
     let closing = ((i.vx - j.vx) * nx + (i.vz - j.vz) * nz) / sep * 0.5;
     if closing >= 0.0 {
-        (p.strength * closing * across.max(apron.at(to_boundary)), 0.0)
+        (
+            p.strength * closing * across.max(apron.at(to_boundary)),
+            0.0,
+        )
     } else {
         (0.0, p.rift * closing * across)
     }

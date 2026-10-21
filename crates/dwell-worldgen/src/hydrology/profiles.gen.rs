@@ -7,7 +7,7 @@ use super::{
 };
 
 /// The profile tools use when none is named (hydrology.json `default`).
-pub const DEFAULT: &str = "medium";
+pub const DEFAULT: &str = "uplift";
 
 /// The hydrology profiles (shared/worldgen/hydrology.json), in their file order.
 pub static PROFILES: [HydrologyParams; 6] = [
