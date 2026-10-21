@@ -6,12 +6,24 @@
 //! For each seed, face and profile it computes the map, prints its timing and statistics, and
 //! writes PNG layers named `<seed>-<face>-<profile>-<layer>.png`: `original` (the sampled height
 //! field, hillshaded), `eroded` (hillshaded over a sea-level colour ramp), `flow` (log discharge),
-//! `rivers` (drawn by width over the hillshade), `lakes` and `map` (the composite). Images are
-//! cropped to the face's land, one pixel per grid cell. `--time-only` writes nothing. For tuning,
-//! `--set key=value` overrides a tunable of every profile given after it (`--label NAME` names the
-//! result's files instead of the profile): cell, iterations, timeStep, erodibility, areaExponent,
-//! slopeExponent, uplift, upliftReference, talusSlope, talusPasses, lakeFill, rainfall, riverThreshold,
-//! lakeMinArea (km²), lakeMinDepth, maxBreachDepth.
+//! `rivers` (drawn by width over the hillshade), `widths` (rivers by width, coloured by discharge,
+//! the big ones on top), `lakes`, `uplift` (the uplift rate, with the ranges' spines and the plates'
+//! points), `rain` and `rock` (where they vary) and `map` (the composite). Images are cropped to
+//! the face's land, one pixel per grid cell. `--time-only` writes nothing.
+//!
+//! The statistics after `|`: the largest river system (its outlet's discharge, its main stem's
+//! length from source to sea and the lakes it passes through), the number of systems reaching the
+//! sea with at least 5, 10 and 20 m³/s, the lakes on the main stems of those over 10 m³/s, and the
+//! share of deltas among the mouths. `HYDROLOGY_MOUTHS=1` lists each mouth's measured slope.
+//!
+//! For tuning, `--set key=value` overrides a tunable of every profile given after it (`--label
+//! NAME` names the result's files instead of the profile): cell, iterations, timeStep,
+//! erodibility, areaExponent, slopeExponent, uplift, upliftReference, talusSlope, talusPasses,
+//! lakeFill, rainfall, riverThreshold, lakeMinArea (km²), lakeMinDepth, maxBreachDepth,
+//! mouthMinDischarge, mouthReach, coastRelief (1: the coast-relief rule), deltaMaxSlope; and on a
+//! profile with an uplift layer: upliftRate, baseHeight, keepRelief, plains, shelfMin, shelfMax,
+//! rangeCount, rangeWidth, rangeLengthMin, rangeLengthMax, rangeWander, rangeStrength, highlands,
+//! plateCount, plateWidth, rift.
 
 mod png;
 
@@ -164,7 +176,7 @@ fn set(p: &mut hydrology::HydrologyParams, key: &str, v: f64) {
 fn stats(seed: u64, face: FaceFrame, profile: &str, m: &HydrologyMap, secs: f64, sampled: f64) {
     let a = m.cell * m.cell / 1e6;
     let land = m.sea.iter().filter(|s| !**s).count() as f64 * a;
-    let lake_km2: f64 = m.lakes.iter().map(|l| l.area / 1e6).sum();
+    let lake_km2: f64 = m.lakes.iter().map(|l| l.area / 1e6).sum::<f64>().max(0.0);
     let river_cells: usize = m.rivers.iter().map(|r| r.cells.len()).sum();
     let deltas = m
         .mouths
