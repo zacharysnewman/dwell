@@ -207,6 +207,10 @@ pub struct LodStats {
     pub bytes_per_second: usize,
     /// Swaps cross-fading (fade.rs).
     pub fades: FadeStats,
+    /// What the view still waits for, [in view, out of view]: sections not ready and level-1
+    /// sections whose chunks are not all drawable. Out of view at 0 means turning round shows
+    /// terrain already loaded (the bench's `until offViewLoaded`).
+    pub waiting: [usize; 2],
 }
 
 impl Default for LodStats {
@@ -223,6 +227,7 @@ impl Default for LodStats {
             error_scale: 1.0,
             bytes_per_second: 0,
             fades: FadeStats::default(),
+            waiting: [0, 0],
         }
     }
 }
@@ -437,6 +442,9 @@ pub struct LodSystem {
     // Collected by the traversal each frame.
     wanted_chunks: Vec<(ChunkCoord, f64)>,
     wanted: Vec<LodId>,
+    /// Level-1 sections the view would show as chunks this frame whose chunks are not all
+    /// drawable yet (the stats' `waiting`).
+    waiting_chunks: Vec<LodId>,
     due: Vec<LodId>,
     remeshed: Vec<LodId>,
     stats: Option<LodStats>,
@@ -488,6 +496,7 @@ impl LodSystem {
             last_chunk_request_ms: None,
             wanted_chunks: Vec::new(),
             wanted: Vec::new(),
+            waiting_chunks: Vec::new(),
             due: Vec::new(),
             remeshed: Vec::new(),
             stats: None,
@@ -632,6 +641,7 @@ impl LodSystem {
         self.camera_chunk = chunk_of_pos(p);
         self.wanted_chunks.clear();
         self.wanted.clear();
+        self.waiting_chunks.clear();
         self.due.clear();
         self.remeshed.clear();
         self.in_use = 0;
@@ -680,7 +690,7 @@ impl LodSystem {
         self.send_chunk_requests(now_ms, host);
         self.evict(host);
         self.adapt(p, now_ms);
-        self.stats = Some(self.compute_stats(now_ms));
+        self.stats = Some(self.compute_stats(now_ms, &frustum));
     }
 
     /// Hands the renderer this frame's draws with their fades, and keeps the meshes of the items
@@ -927,9 +937,11 @@ impl LodSystem {
             if refine {
                 self.want_chunks(id, frustum);
             }
-            if (self.covered.contains(&id) && (!ready || refine))
-                || (refine && all_drawable(coord, host))
-            {
+            let drawable = refine && all_drawable(coord, host);
+            if refine && !drawable {
+                self.waiting_chunks.push(id);
+            }
+            if (self.covered.contains(&id) && (!ready || refine)) || drawable {
                 selection.chunks.push(coord);
                 self.split(id);
             } else if ready {
@@ -1728,7 +1740,7 @@ impl LodSystem {
         self.asking.remove(&id);
     }
 
-    fn compute_stats(&mut self, now_ms: f64) -> LodStats {
+    fn compute_stats(&mut self, now_ms: f64, frustum: &Frustum) -> LodStats {
         while self
             .received
             .front()
@@ -1752,7 +1764,23 @@ impl LodSystem {
             error_scale: self.error_scale,
             bytes_per_second: self.received.iter().map(|&(_, b)| b).sum(),
             fades: self.fade.stats(),
+            waiting: self.waiting(frustum),
         }
+    }
+
+    /// The stats' `waiting`: [in view, out of view].
+    fn waiting(&self, frustum: &Frustum) -> [usize; 2] {
+        let mut out = [0, 0];
+        let mut seen = HashSet::default();
+        let unready = self.wanted.iter().filter(|&&id| !self.ready(id));
+        for &id in unready.chain(&self.waiting_chunks) {
+            if !seen.insert(id) {
+                continue;
+            }
+            let n = self.n(id);
+            out[usize::from(!frustum.intersects(n.lo, n.hi))] += 1;
+        }
+        out
     }
 }
 

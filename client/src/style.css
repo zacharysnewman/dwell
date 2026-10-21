@@ -2105,3 +2105,53 @@ body:has(#main-menu) #build-info {
     transition: none !important;
   }
 }
+
+/* The loading screen on joining (ui/loadingScreen.ts, ARCHITECTURE.md §6.3): over the view, under
+   the menus, until the terrain around the player is drawn. */
+#loading-screen:not([hidden]) {
+  position: fixed;
+  inset: 0;
+  z-index: calc(var(--z-menu) - 1);
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: linear-gradient(180deg, var(--sky-deep), var(--haze));
+  color: var(--ink);
+}
+
+.ls-sheet {
+  box-sizing: border-box;
+  width: min(420px, 100%);
+  padding: 22px 24px 24px;
+  border-radius: 20px;
+  background: var(--paper-solid);
+  box-shadow: 0 24px 60px rgb(10 20 35 / 40%);
+  text-align: center;
+}
+
+.ls-title {
+  margin: 0 0 6px;
+  font: 900 28px/1.1 var(--font-display);
+}
+
+.ls-text {
+  margin: 0 0 14px;
+  color: var(--ink-soft);
+  font: 600 14px/1.4 var(--font-body);
+  font-variant-numeric: tabular-nums;
+}
+
+.ls-bar {
+  height: 10px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--line);
+}
+
+.ls-fill {
+  width: 0;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--grass-dark), var(--grass-light));
+  transition: width 120ms linear;
+}

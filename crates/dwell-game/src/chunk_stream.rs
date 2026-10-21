@@ -591,6 +591,32 @@ where
         true
     }
 
+    /// The loading screen's near ring around `position` (`loading::near_ring_offsets`, the chunks
+    /// not wholly outside the build volume): how many are drawable and `shown` (drawn: the LOD
+    /// shows them as chunks) out of those needed. Wherever the camera looks.
+    pub fn near_progress(
+        &self,
+        position: [f64; 3],
+        offsets: &[Coord],
+        mut shown: impl FnMut(Coord) -> bool,
+    ) -> crate::loading::NearProgress {
+        let c = dwell_world::chunk_of_pos(position);
+        let mut p = crate::loading::NearProgress::default();
+        for o in offsets {
+            let k = [c.x + o[0], c.y + o[1], c.z + o[2]];
+            if !(MIN_CHUNK_Y..=MAX_CHUNK_Y).contains(&k[1])
+                || !BUILD_VOLUME.chunk_may_hold(ChunkCoord::from_array(k))
+            {
+                continue;
+            }
+            p.needed += 1;
+            if self.drawable(k) && shown(k) {
+                p.ready += 1;
+            }
+        }
+        p
+    }
+
     /// Lights chunks that arrived (`ChunkStore::light_chunk`), nearest to `center` first, for up
     /// to `light_ms` of `now()` (at least one), then starts mesh jobs for changed chunks, nearest
     /// first, while the mesher has room and for up to `mesh_ms` more (at least one): the light

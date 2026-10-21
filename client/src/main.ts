@@ -59,6 +59,7 @@ import { loadFlySpeedLevel, saveFlySpeedLevel } from './predict/flightSpeed';
 import { formatStatus } from './ui/statusOverlay';
 import { startupMessage } from './ui/startupError';
 import { FpsMeter } from './ui/fps';
+import { type LoadingHud, LoadingScreen, loadingScreenEnabled } from './ui/loadingScreen';
 import { START_HINT, TOUCH_START_HINT } from './ui/controls';
 import { formatMemory, jsHeapBytes, type MemoryReport } from './ui/memory';
 import type { LoopbackTransport } from './net/loopback';
@@ -80,6 +81,18 @@ export interface GameDebugState {
   stats: Record<string, number>;
   terrain: Record<string, number>;
   terrainReady: boolean;
+  /**
+   * The loading screen (ARCHITECTURE.md §6.3): on for this page, shown now with the near ring's
+   * chunks drawn and needed, and how long its last wait took (s) and whether it timed out.
+   */
+  loading: {
+    enabled: boolean;
+    shown: boolean;
+    ready?: number;
+    needed?: number;
+    openedS?: number;
+    timedOut?: boolean;
+  };
   target: BlockTarget | null;
   lod: Record<string, unknown> | null;
   flying: boolean;
@@ -272,6 +285,8 @@ interface App {
   client: Client;
   touch: TouchControls | null;
   hud: Hud;
+  /** The loading screen over the view on joining (`Client.hud().loading`). */
+  loading: LoadingScreen;
   map: MapOverlay;
   hotbar: Hotbar | null;
   settings: SettingsMenu | null;
@@ -421,7 +436,9 @@ function showHud(app: App, now: number): void {
     region?: string;
     brush?: BrushPanelState | null;
     spyglass?: SpyglassHud | null;
+    loading?: LoadingHud | null;
   };
+  app.loading.set(h.loading ?? null);
   if (h.message === undefined) return;
   app.hud.setSpyglass(h.spyglass ?? null);
   if (h.damaged) app.hud.flashDamage(now);
@@ -455,6 +472,8 @@ async function start(): Promise<App | null> {
       fullChunks: params.get('chunks') === 'full',
       netsim: params.get('netsim') ?? undefined,
       search: location.search,
+      // The loading screen on joining; ?loading=off or the dwell.loading store "off" skip it.
+      loadingScreen: loadingScreenEnabled(location.search, storage()),
     });
   } catch (err) {
     showFatal(startupMessage(err, 'gpu' in navigator));
@@ -477,6 +496,7 @@ async function start(): Promise<App | null> {
     client,
     touch: null,
     hud: new Hud(document.body),
+    loading: new LoadingScreen(document.body),
     map: new MapOverlay(document.body),
     hotbar: null,
     settings: null,

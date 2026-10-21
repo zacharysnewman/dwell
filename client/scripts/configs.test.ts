@@ -29,6 +29,7 @@ describe('bench --compare configurations', () => {
       'torch-shadows-high',
       'lod-shadows-off',
       'raster-half',
+      'loading-off',
     ]);
   });
 

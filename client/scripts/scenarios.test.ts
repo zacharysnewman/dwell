@@ -189,6 +189,27 @@ describe('scenarios', () => {
     ).toThrow(/"near" or "far"/);
   });
 
+  it('waits until nothing behind or ahead of the camera is loading (the join timeline)', () => {
+    const [s] = parseScenarios(
+      file([
+        {
+          name: 'a',
+          steps: [
+            { do: 'until', what: 'behind', maxS: 60 },
+            { do: 'until', what: 'ahead', maxS: 5 },
+          ],
+        },
+      ]),
+    );
+    expect(s.steps).toEqual([
+      { do: 'until', what: 'behind', maxS: 60 },
+      { do: 'until', what: 'ahead', maxS: 5 },
+    ]);
+    expect(() =>
+      parseScenarios(file([{ name: 'a', steps: [{ do: 'until', what: 'left', maxS: 1 }] }])),
+    ).toThrow(/what: expected one of behind, ahead/);
+  });
+
   it('sets the water quality and its cost switches mid-run', () => {
     const [s] = parseScenarios(
       file([

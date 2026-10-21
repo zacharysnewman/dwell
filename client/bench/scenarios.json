@@ -6355,6 +6355,74 @@
           "name": "held-and-placed"
         }
       ]
+    },
+    {
+      "name": "join-behind",
+      "notes": "The join's timeline (ARCHITECTURE.md §6.3, §6.6): looks +X the moment the game starts and shoots ahead and behind (−X), then waits until nothing behind the camera is still loading (until behind: the LOD sections and full-detail chunks out of view), then ahead, then settles and shoots behind again. Formerly the out-of-view LOD ranked as if its cells were 8 times smaller, so the terrain behind loaded only after the whole view ahead (or once the player turned round). Run with --compare --configs raster,loading-off for the loading screen's cost.",
+      "steps": [
+        {
+          "do": "look",
+          "yaw": 90,
+          "pitch": 0
+        },
+        {
+          "do": "wait",
+          "s": 0.2
+        },
+        {
+          "do": "shot",
+          "name": "ahead-at-join"
+        },
+        {
+          "do": "look",
+          "yaw": 270,
+          "pitch": 0
+        },
+        {
+          "do": "wait",
+          "s": 0.2
+        },
+        {
+          "do": "shot",
+          "name": "behind-at-join"
+        },
+        {
+          "do": "look",
+          "yaw": 90,
+          "pitch": 0
+        },
+        {
+          "do": "until",
+          "what": "behind",
+          "maxS": 120
+        },
+        {
+          "do": "until",
+          "what": "ahead",
+          "maxS": 120
+        },
+        {
+          "do": "settle",
+          "maxS": 120
+        },
+        {
+          "do": "record",
+          "name": "settled"
+        },
+        {
+          "do": "look",
+          "yaw": 270,
+          "pitch": 0
+        },
+        {
+          "do": "wait",
+          "s": 0.2
+        },
+        {
+          "do": "shot",
+          "name": "behind-settled"
+        }
+      ]
     }
   ]
 }

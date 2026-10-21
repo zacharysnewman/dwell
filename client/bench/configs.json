@@ -73,6 +73,11 @@
       "name": "raster-half",
       "notes": "The mesher at half resolution, stretched by the browser (?scale=).",
       "scale": 0.5
+    },
+    {
+      "name": "loading-off",
+      "notes": "The game without its loading screen on joining (?loading=off, ARCHITECTURE.md §6.3): the join's timeline as before the screen.",
+      "params": { "loading": "off" }
     }
   ]
 }
