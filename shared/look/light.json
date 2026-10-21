@@ -5,6 +5,6 @@
     "curve": 4,
     "direct": { "fromLevel": 8, "fullLevel": 15 }
   },
-  "block": { "curve": 3, "color": "#ffb878", "strength": 1.2 },
+  "block": { "curve": 3, "color": "#ff9a52", "strength": 1.2 },
   "characters": { "easeS": 0.25 }
 }
