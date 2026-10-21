@@ -2121,7 +2121,7 @@ body.loading-wait #brush-panel {
   visibility: hidden;
 }
 
-#loading-screen.ls-fading {
+#loading-screen.ls-fading:not([hidden]) {
   background: var(--ls-fade);
   pointer-events: none;
 }
