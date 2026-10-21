@@ -218,7 +218,8 @@ touched by it: their shadows are §10's, and the flood light (§11) shades them 
 - **What blocks light**: full cubes that are not translucent (leaves do: a pine's canopy darkens
   the ground under it). Glass, fluids, plants, ladders and the ramps don't. **Ramps** (shaped
   faces) take the sky visibility only (no corner occlusion); **plants** take their ground's (the
-  top vertex at the cell's corner); **water** keeps its own lighting (no baked light).
+  top vertex at the cell's corner); **water** takes no baked light (its shader lights it; it takes
+  the flood light, §11).
 - **Both faces**: the occupancy is built face-local (a face-B chunk is meshed mirrored), so face B
   is face A's mirror image, light included (the mirror parity test compares it).
 - **The apron and the cutoff**: mesh jobs carry the chunk with a sky apron of 6 cells across and
@@ -392,8 +393,17 @@ direct-light stand-in near the player.
   - direct sun and moon × the sky level's ramp (`sky.direct`: none at level 8, all at 15) — the
     shadow maps' stand-in: they shade the direct light near the eye and fade to it past their last cascade (`shadow_light(rel, n, stand_in)`, §10).
   - block light: a warm glow (`block.color`, `strength`, its own curve).
+- **Water and see-through faces** (Phase 45 follow-up; owner, 2026-10-21: "support darkness even with
+  directional shadows off"): the transparent mesh carries the flood light too (each face the cells
+  it looks into, the corners averaged as terrain's; corner keys of the flood light alone, so merged
+  water quads break only where it changes), and the water shader lights by it: the body and the
+  foam by `terrain_light(1, flood)`, the glint and sparkle by its direct share (shaded by the
+  shadow maps near the eye, as terrain's), the sky's reflection by the sky light's brightness.
+  Before, every fluid surface was lit as open sky, so with Shadows Off the sea under a 31 m roof
+  drew at 33 % of white, the same as the open sea, sun glint included (High 16 %: the maps took
+  the glint, not the sky's reflection). Underwater fog is still lit as open sky (W4).
 - **Distant terrain**: LOD sections are lit as open sky, as before, so the seam on open ground
-  matches.
+  matches; LOD water too (open sea).
 - **Characters** (owner, 2026-10-21: "your hand isn't affected... perhaps a blend"): your arms and
   held block, other players' bodies and the items they hold take the flood light where they are —
   your eye, a body's middle a metre over its feet — blended trilinearly between the cell centres
@@ -402,6 +412,44 @@ direct-light stand-in near the player.
   a tunnel fades your hand down instead of popping. They are shaded as terrain is (ambient ×
   the sky light, direct × the shadow maps or past them the sky light's ramp, plus the glow;
   `character_light` in `characters.rs`).
+
+**Compared with Minecraft.** Vanilla Minecraft has no directional shadows at all: caves and
+overhangs are dark from the flood light alone. Each block holds a **sky light** (0–15: 15 under
+open sky, falling straight down without loss, −1 per block sideways or through a filter — water and
+leaves take more) and a **block light** (0–15, spread the same way from torches and lava). The
+renderer never relights the world at night: both levels index a 16 × 16 **lightmap texture**, a
+brightness table rebuilt each frame from a gamma curve with a minimum ambient (the darkest level is
+never black, raised by the Brightness setting), whose sky axis is dimmed by the time of day (the
+"sky darken" subtracted from the sky light) and tinted toward blue at night, the block axis warm
+and flickering. **Smooth lighting** averages each vertex's light over the four cells around it in
+the layer the face looks into and adds corner AO. Ours is the same model: the same 0–15 levels,
+straight-down sky light and falloff (cells ½ m tall: 15 m across, 7.5 m up or down), filters and
+emitters as block data, smooth per-vertex averaging and corner AO. Where it differs: the brightness
+of a level is `sky.curve` and `block.curve` on a hemisphere light and a warm glow (no lightmap
+texture; `ambient.json`'s `floor`, 0.08 of the hemisphere light, is the minimum ambient); night is the day/night keyframes' hemisphere and moon light, which the sky level scales
+(the same effect as the sky darken: no relight); the baked sky rays (§9) shade the open part; and
+the sun and moon are a direct light, ramped in by the sky level (`sky.direct`), the stand-in for
+shadows that the shadow maps (§10, §12) sharpen near the eye. So darkness needs no shadow maps:
+with Shadows Off a cave, a sealed room, an overhang and a canopy are as dark as with them (the
+table below), and the maps only add directional shadows on top.
+
+Measured with Shadows Off, High and Low (0.22.21, Apple M1, Chrome, 1280×720; the mean linear
+luminance of the view as % of white, the HUD and the arms left out; scenes built by region edits
+in front of seed 7's spawn):
+
+| Scene (face A, noon) | Off | High | Midnight (Off) |
+| --- | --- | --- | --- |
+| Tunnel 3 m wide, 5 m in | 0.57 % | 0.57 % | 0.30 % |
+| Tunnel 15 m in | 0.48 % | 0.48 % | 0.41 % |
+| Sealed room 13 × 13 m | 0.22 % | 0.22 % | 0.07 % |
+| Under a 31 m roof 5 m up (looking at the ground) | 1.33 % | 1.24 % | 0.08 % |
+| Under a 31 m leaf canopy, 4 m thick | 1.33 % | 1.19 % | 0.08 % |
+| The sea under a 31 m roof, before the water took the flood light | 33.2 % | 16.3 % | — |
+| The sea under a 31 m roof, after | AFTER_OFF | AFTER_HIGH | — |
+| The open sea, for scale | 33.4 % | 34.5 % | — |
+
+Face B's tunnel and room read the same within 0.3 %; the open ground seen past a roof's edge is
+what lifts a view's mean, not the light under it.
 
 **What a carved tunnel looks like now** (both faces): at its mouth the floor takes most of the sun;
 5 m in the sun is gone and the ambient about a third; 10 m in about the floor (0.16 against 0.08);
