@@ -26,7 +26,7 @@ pub const PAINTERLY_TILES: [&str; 17] = [
 
 /// Each tile's glow: how much of its colour it gives off unlit (its material's `emissive`).
 pub const PAINTERLY_EMISSIVE: [f32; 17] = [
-    0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0,
+    0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
 ];
 
 /// Whether each tile hangs from its block's top edge (its material's `hang`): a side face shows

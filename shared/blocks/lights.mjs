@@ -18,6 +18,8 @@ const FLICKER = {
   speed: { min: 0, max: 30, open: 'min' }, // how fast it flickers (the noise's cycles a second)
 };
 const FIELDS = ['color', ...Object.keys(NUMBERS), 'flicker', 'shadows'];
+// Optional: `flame`, the flame look drawn where it burns (a name in shared/look/flames.json).
+const OPTIONAL = ['flame'];
 
 const inRange = (v, { min, max, open }) =>
   typeof v === 'number' &&
@@ -26,8 +28,11 @@ const inRange = (v, { min, max, open }) =>
   (open === 'max' ? v < max : v <= max);
 const range = ({ min, max, open }) => `${open === 'min' ? '(' : '['}${min}, ${max}${open === 'max' ? ')' : ']'}`;
 
-/** One light entry, checked: throws `light <name>: …` naming the bad field. */
-export function checkLight(name, l, namespace) {
+/**
+ * One light entry, checked: throws `light <name>: …` naming the bad field. `flames` lists the
+ * flame looks it may name (shared/look/flames.json; undefined: any name).
+ */
+export function checkLight(name, l, namespace, flames) {
   const fail = (m) => {
     throw new Error(`shared/blocks: light ${name}: ${m}`);
   };
@@ -36,7 +41,9 @@ export function checkLight(name, l, namespace) {
     fail(`declared in namespace ${namespace}, so it must be named ${namespace}:…`);
   }
   if (typeof l !== 'object' || l === null || Array.isArray(l)) fail('must be an object');
-  for (const k of Object.keys(l)) if (k !== '$comment' && !FIELDS.includes(k)) fail(`unknown field ${k}`);
+  for (const k of Object.keys(l)) {
+    if (k !== '$comment' && !FIELDS.includes(k) && !OPTIONAL.includes(k)) fail(`unknown field ${k}`);
+  }
   for (const k of FIELDS) if (l[k] === undefined) fail(`missing ${k}`);
   if (typeof l.color !== 'string' || !COLOR.test(l.color)) fail('color must be #rrggbb');
   for (const [k, r] of Object.entries(NUMBERS)) {
@@ -49,17 +56,28 @@ export function checkLight(name, l, namespace) {
     if (!inRange(f[k], r)) fail(`flicker.${k} ${JSON.stringify(f[k])} is outside ${range(r)}`);
   }
   if (typeof l.shadows !== 'boolean') fail('shadows must be true or false');
-  return { name, color: l.color, strength: l.strength, radiusM: l.radiusM, flicker: { ...f }, shadows: l.shadows };
+  if (l.flame !== undefined && (typeof l.flame !== 'string' || (flames !== undefined && !flames.includes(l.flame)))) {
+    fail(`flame must name a flame look of shared/look/flames.json (one of ${(flames ?? []).join(', ')}; got ${JSON.stringify(l.flame)})`);
+  }
+  return {
+    name,
+    color: l.color,
+    strength: l.strength,
+    radiusM: l.radiusM,
+    flicker: { ...f },
+    shadows: l.shadows,
+    flame: l.flame ?? null,
+  };
 }
 
 /** All namespaces' lights, in id order (namespaces sorted, entries in declared order). */
-export function readLights(namespaces) {
+export function readLights(namespaces, flames) {
   const out = [];
   for (const ns of namespaces) {
     for (const [name, l] of Object.entries(ns.lights ?? {})) {
       if (name === '$comment') continue;
       if (out.some((o) => o.name === name)) throw new Error(`shared/blocks: duplicate light ${name}`);
-      out.push(checkLight(name, l, ns.namespace));
+      out.push(checkLight(name, l, ns.namespace, flames));
     }
   }
   if (out.length > 255) throw new Error('shared/blocks: too many lights');
@@ -96,7 +114,7 @@ const hexNum = (c) => `0x${c.replace('#', '').toLowerCase()}`;
 export function lightsRust(lights, rf) {
   const rows = lights.map(
     (l) =>
-      `    LightInfo { name: ${JSON.stringify(l.name)}, color: ${hexNum(l.color)}, strength: ${rf(l.strength)}, radius_m: ${rf(l.radiusM)}, flicker: ${rf(l.flicker.amount)}, flicker_speed: ${rf(l.flicker.speed)}, shadows: ${l.shadows} },`,
+      `    LightInfo { name: ${JSON.stringify(l.name)}, color: ${hexNum(l.color)}, strength: ${rf(l.strength)}, radius_m: ${rf(l.radiusM)}, flicker: ${rf(l.flicker.amount)}, flicker_speed: ${rf(l.flicker.speed)}, shadows: ${l.shadows}, flame: ${l.flame === null ? 'None' : `Some(${JSON.stringify(l.flame)})`} },`,
   );
   return [`pub static LIGHTS: [LightInfo; ${lights.length}] = [`, ...rows, '];', ''];
 }

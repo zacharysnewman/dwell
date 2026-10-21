@@ -7,6 +7,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { blockFluid, fluidsRust, readFluids } from './fluids.mjs';
 import { blockHeld, blockLight, lightsRust, readLights } from './lights.mjs';
+import { flameNames, loadFlames } from '../look/flames.mjs';
 import { checkParts } from './parts.mjs';
 import {
   FACINGS as SHAPE_FACINGS,
@@ -246,7 +247,7 @@ function validateRender(id, def, look, isAir) {
 const fluids = readFluids(namespaces); // fluids.mjs
 // Light sources (lights.mjs, docs/LIGHTS.md): blocks reference them by name; a block's held item
 // names an item of the characters' data.
-const lights = readLights(namespaces);
+const lights = readLights(namespaces, flameNames(loadFlames()));
 const heldItems = Object.keys(JSON.parse(readFileSync(join(root, 'shared/characters/characters.json'), 'utf8')).items);
 const opacityOf = (block) => block.def.opacity ?? fluids[block.fluid]?.opacity ?? 1;
 const blocks = []; // { id, def, props: [{name, values}], first, count, look, fluid }

@@ -59,7 +59,7 @@ pub const TILE_ORDER: [&str; 17] = [
     "tallGrass",
     // A dirt side under grass (dirt's `sideUnder`): the turf's skirt over the dirt's top edge.
     "dirtSkirt",
-    // The torch's stick and flame (docs/LIGHTS.md), a sprite that glows (`emissive`).
+    // The torch's plain stick, its two cells (docs/LIGHTS.md; its flame is the flame effect, §6).
     "torch",
     "torchTop",
     // The fallback look of a state whose look or textures this build lacks (synced from a server,
@@ -459,10 +459,15 @@ mod tests {
         let cell = (r.u0 * ATLAS_CELLS as f64).floor() as usize
             + (r.v0 * ATLAS_CELLS as f64).floor() as usize * ATLAS_CELLS;
         assert_eq!(table[cell], [f32::from(g.every), g.strength, 0.0, 0.0]);
-        // The torch's flame tile glows (its material's `emissive`, docs/LIGHTS.md); stone's doesn't.
+        // A tile's glow is its material's `emissive` (docs/LIGHTS.md §2; by data alone in
+        // shared/textures/gen.test.mjs). None glows in the build: the torch's upper tile is a plain
+        // stick, its flame the flame effect (§6).
         let torch = dwell_blocks::info(dwell_blocks::require("dwell:torch_upper"));
         let t = torch.textures.expect("the torch is textured").side;
-        assert!(table[TILE_ORDER.iter().position(|n| *n == t).unwrap()][2] > 0.0);
+        assert_eq!(
+            table[TILE_ORDER.iter().position(|n| *n == t).unwrap()][2],
+            0.0
+        );
         assert_eq!(
             table[TILE_ORDER.iter().position(|n| *n == "stone").unwrap()][2],
             0.0
