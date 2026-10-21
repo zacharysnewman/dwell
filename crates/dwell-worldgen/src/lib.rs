@@ -4,6 +4,7 @@
 
 pub mod bifacial;
 pub mod decorations;
+pub mod hydrology;
 pub mod island;
 pub mod noise;
 pub mod placements;

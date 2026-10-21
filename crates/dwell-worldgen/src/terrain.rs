@@ -783,7 +783,9 @@ impl TerrainGenerator {
 
     // --- level of detail (§6.6) -------------------------------------------------------------------
 
-    fn column_lod(&self, x: i64, z: i64, cell: i64) -> Column {
+    /// A column at a coarse cell's resolution: the height field at (x, z) with the octaves finer
+    /// than `cell` m dropped, as the LOD samples it (and the hydrology prototype's grid).
+    pub fn column_lod(&self, x: i64, z: i64, cell: i64) -> Column {
         let mut col = Self::finish(self.sample_lod(x, z, cell));
         col.outside = !inside_world_disc(x, z);
         col
