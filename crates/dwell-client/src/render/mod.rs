@@ -937,6 +937,8 @@ pub struct Renderer {
     /// frame (`set_placed_flames`).
     flames: flames::FlameRenderer,
     placed_flames: Vec<flames::PlacedFlame>,
+    /// The portals near the eye whose motes draw this frame (`set_portal_motes`).
+    portal_motes: Vec<flames::PortalMotes>,
     outline: Option<V3>,
     /// The outline's box in its cell, and its lines.
     outline_box: ([f32; 3], [f32; 3]),
@@ -1605,6 +1607,7 @@ impl Renderer {
             characters,
             flames,
             placed_flames: Vec::new(),
+            portal_motes: Vec::new(),
             outline: None,
             outline_box,
             outline_mesh,
@@ -2071,6 +2074,10 @@ impl Renderer {
     /// The placed light sources' flames near the eye this frame (flames.rs `placed_flames`).
     pub fn set_placed_flames(&mut self, flames: Vec<flames::PlacedFlame>) {
         self.placed_flames = flames;
+    }
+    /// The portals near the eye whose motes draw this frame (flames.rs `portals_near`).
+    pub fn set_portal_motes(&mut self, portals: Vec<flames::PortalMotes>) {
+        self.portal_motes = portals;
     }
     /// The characters drawn last frame and their GPU bytes (telemetry, the bench).
     pub fn character_stats(&self) -> characters::CharacterStats {
@@ -2954,9 +2961,12 @@ impl Renderer {
             &basis,
             &scene_flames,
             arms_flame,
+            &self.portal_motes,
+            self.eye,
             seconds,
         );
         crate::telemetry::add("flames.drawn", self.flames.drawn as f64);
+        crate::telemetry::add("motes.drawn", self.flames.motes_drawn as f64);
         let arms = self.characters.has_arms();
         if arms {
             let fov = dwell_characters::player()
@@ -4610,6 +4620,9 @@ impl crate::game::Scene for Renderer {
     }
     fn set_placed_flames(&mut self, flames: Vec<flames::PlacedFlame>) {
         Renderer::set_placed_flames(self, flames);
+    }
+    fn set_portal_motes(&mut self, portals: Vec<flames::PortalMotes>) {
+        Renderer::set_portal_motes(self, portals);
     }
     fn set_camera(&mut self, eye: V3, yaw_deg: f64, pitch_deg: f64, face: FaceFrame, roll: f64) {
         Renderer::set_camera(self, eye, yaw_deg, pitch_deg, face, roll);

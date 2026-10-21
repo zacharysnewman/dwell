@@ -110,6 +110,8 @@ pub trait Scene: TerrainRenderer {
     fn set_placed_lights(&mut self, _lights: Vec<crate::render::lights::PlacedLight>) {}
     /// The placed light sources' flames near the eye this frame (a torch's; docs/LIGHTS.md §6).
     fn set_placed_flames(&mut self, _flames: Vec<crate::render::flames::PlacedFlame>) {}
+    /// The portals near the eye whose motes draw this frame (BIFACIAL_WORLD.md §12.1).
+    fn set_portal_motes(&mut self, _portals: Vec<crate::render::flames::PortalMotes>) {}
     fn set_camera(
         &mut self,
         eye: [f64; 3],
@@ -448,6 +450,8 @@ pub struct LodSettings {
 
 pub struct Game<S: Scene> {
     pub player_id: u16,
+    /// The world's portals: their axes (world x, z) and mote look (`set_world`).
+    portals: (Vec<[f64; 2]>, &'static str),
     predictor: Predictor,
     streamer: Streamer<S>,
     pool: PoolRef,
@@ -626,6 +630,7 @@ impl<S: Scene> Game<S> {
             interaction: BlockInteraction::new(),
             region: RegionTools::new(),
             brush: BrushTool::new(),
+            portals: (Vec::new(), ""),
             prediction: EditPredictor::new(),
             character_lights: Default::default(),
             target_eye: None,
@@ -1223,6 +1228,12 @@ impl<S: Scene> Game<S> {
 
     /// What the server announced it takes (Welcome flags) in a world of this generator: region
     /// edits, and brush strokes with the world type's brush reach (BRUSHES.md).
+    /// The world's portals (BIFACIAL_WORLD.md §12): their axes and mote look, from the generator
+    /// and seed the server announced, for the motes drawn in their shafts.
+    pub fn set_world(&mut self, generator_version: u32, world_seed: u64) {
+        self.portals = dwell_worldgen::portal_axes_for(generator_version, world_seed);
+    }
+
     pub fn set_capabilities(&mut self, region_edits: bool, brushes: bool, generator_version: u32) {
         let policy = dwell_world::brush::brush_policy(generator_version).filter(|_| brushes);
         self.region.enabled = region_edits;
@@ -1849,6 +1860,10 @@ impl<S: Scene> Game<S> {
         // The placed torches' flames near the eye (docs/LIGHTS.md §6).
         let flames = crate::render::flames::placed_flames(self.streamer.store(), camera_eye);
         self.scene.borrow_mut().set_placed_flames(flames);
+        // The portals' motes near the eye (BIFACIAL_WORLD.md §12.1).
+        let motes =
+            crate::render::flames::portals_near(&self.portals.0, self.portals.1, camera_eye);
+        self.scene.borrow_mut().set_portal_motes(motes);
         self.update_day(now_ms);
         self.ambient_sounds(&views, dt);
         // The placed light sources near the eye (docs/LIGHTS.md §4): Torch shadows draws the

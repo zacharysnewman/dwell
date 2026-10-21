@@ -263,6 +263,7 @@ test('bad bedrock or portal entries fail with the key and the problem', () => {
     [(m) => (m.portals.rim.block = 'dwell:tall_grass'), /portals\.rim\.block dwell:tall_grass must be a full block/],
     [(m) => (m.portals.rim.height = 0.3), /portals\.rim\.height must be a whole number of cells/],
     [(m) => (m.portals.extra = 1), /portals: unknown extra/],
+    [(m) => (m.portals.motes = 'dwell:nope'), /portals\.motes "dwell:nope" is not a look in shared\/look\/motes\.json/],
     [(m) => (m.other = 1), /unknown other/],
   ];
   for (const [change, message] of cases) {

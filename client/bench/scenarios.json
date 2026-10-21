@@ -6857,6 +6857,81 @@
           "name": "b-down-the-shaft"
         }
       ]
+    },
+    {
+      "name": "portal-motes",
+      "notes": "The glowing motes in a portal's shaft round the midplane (BIFACIAL_WORLD.md §12.1, shared/look/motes.json), seed 7's nearest portal (?spawn=portal): from above the midplane, at it (twice, 0.7 s apart: they swirl and pulse), and climbing down the ladder into them. Records motes.drawn.",
+      "seed": 7,
+      "portal": true,
+      "settings": {
+        "timeOfDay": 0.45
+      },
+      "steps": [
+        {
+          "do": "settle",
+          "maxS": 120
+        },
+        {
+          "do": "camera",
+          "position": [-4873.1, 4.0, 20183.9],
+          "yaw": 30,
+          "pitch": -50
+        },
+        {
+          "do": "wait",
+          "s": 2
+        },
+        {
+          "do": "shot",
+          "name": "motes-from-above"
+        },
+        {
+          "do": "camera",
+          "position": [-4873.3, 0.3, 20183.7],
+          "yaw": 45,
+          "pitch": 0
+        },
+        {
+          "do": "wait",
+          "s": 1
+        },
+        {
+          "do": "shot",
+          "name": "motes-at-the-midplane"
+        },
+        {
+          "do": "wait",
+          "s": 0.7
+        },
+        {
+          "do": "shot",
+          "name": "motes-at-the-midplane-later"
+        },
+        {
+          "do": "releaseCamera"
+        },
+        {
+          "do": "look",
+          "yaw": 180,
+          "pitch": -80
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "hold",
+          "code": "KeyW",
+          "s": 19.2
+        },
+        {
+          "do": "shot",
+          "name": "motes-on-the-ladder"
+        },
+        {
+          "do": "record",
+          "name": "climb"
+        }
+      ]
     }
   ]
 }

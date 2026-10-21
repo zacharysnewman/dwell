@@ -84,6 +84,23 @@ pub fn spawn_point_b_for(version: u32, world_seed: u64) -> [f64; 3] {
     spawn_point_for(version, world_seed)
 }
 
+/// The portals' axes (world x, z through each shaft's axis column's centre) and the look their
+/// motes take (`midplane.json` `portals.motes`): none for a generator without portals. The client
+/// draws the motes from these (BIFACIAL_WORLD.md §12.1).
+pub fn portal_axes_for(version: u32, world_seed: u64) -> (Vec<[f64; 2]>, &'static str) {
+    if version != GENERATOR_TERRAIN {
+        return (Vec::new(), "");
+    }
+    let terrain = BifacialTerrain::new(world_seed);
+    let p = terrain.portals();
+    let axes = p
+        .sites
+        .iter()
+        .map(|s| [f64::from(s.x) + 0.5, f64::from(s.z) + 0.5])
+        .collect();
+    (axes, p.rules.motes)
+}
+
 /// A dev spawn by a portal (`?spawn=portal`, BIFACIAL_WORLD.md §6): on face `face`'s rim over the
 /// ladder of the portal nearest the disc's centre, the shaft in front. `None` for a generator
 /// without portals.

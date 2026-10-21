@@ -59,6 +59,9 @@ pub struct PortalRules {
     pub wall: [i32; 2],
     /// No tree or decoration stands within this far of the rim (m).
     pub clear: f32,
+    /// The look of the glowing motes drawn in the shaft round the midplane, by name
+    /// (`shared/look/motes.json`; the client's, not the terrain's).
+    pub motes: &'static str,
 }
 
 mod table {

@@ -65,7 +65,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 45 — Flood light | 🚧 In progress — built and tested natively and in Chrome on the GPU (ADR 0045, DAY_NIGHT.md §11): per-cell sky and block light on the client (`dwell_world::light`, data `shared/look/light.json` and the blocks' `lightFilter`/`emits`), relit on edits and predicted edits, the mesher's smooth `flood` stream, ambient and the direct sun and moon scaled by it (carved tunnels no longer lit like day); follow-up: the streaming stalls fixed (coalesced seeded unloads, no cascade under a chunk held over open air, light and mesh budgets of their own that scale on a slow page; flying back to 0.22.8's frames; generation workers refilled between frames, so a slow page's terrain finishes generating, the native-server e2e tests); outstanding: CI, the owner's review; characters (your arms, held items, players) lit by the cells they are in, eased; the shadow maps' stand-in past their last cascade; water and see-through faces take the flood light (dark in caves with Shadows Off; darkness verified with Shadows Off on both faces, DAY_NIGHT.md §11) |
 | 46 — Distant terrain shadows (the lighting's layer 3) | 🚧 In progress — built and tested natively and in Chrome on the GPU (ADR 0046, DAY_NIGHT.md §12): heightmaps of the terrain as drawn, filled a budgeted slice a frame, horizon maps swept from them a band a frame, one horizon sample per far fragment blended into the cascades at their edge, both faces, per the Shadows setting (none on a CPU adapter); data `shared/look/lodshadows.json`. Measured +0.5–0.9 ms GPU a frame on the M1 (busy machine), no main-thread change. Outstanding: CI; the owner's look; a measurement on an idle machine |
 | 47 — Torches and dynamic lights | 🚧 In progress — T1 built and tested natively and in Chrome on the GPU ([ADR 0047](./adr/0047-torches-and-dynamic-lights.md), [`LIGHTS.md`](./LIGHTS.md)): light sources as block data (`lights`, `shared/blocks/lights.mjs`), the torch block and held item, placed torches through the flood light, held torches (yours and other players') as unshadowed per-fragment point lights, characters lit by them, flicker, glowing textures (`emissive`). T1b built and tested natively and in Chrome on the GPU: the torch 1 m over two ½ m cells (multi-cell blocks as data, `extends`/`partOf`), a self-lit flame. T2 built and tested natively and in Chrome on the GPU: Torch shadows (cube shadow maps for the nearest torches, kept until their terrain changes; placed torches as shadowed lights over their flood light; the setting). T1c built and tested natively and in Chrome on the GPU: the flame effect (animated painterly billboards from flame looks as data, placed, held and in the arms view). Outstanding: T2's and T1c's CI and the owner's look |
-| 48 — Bedrock and portals between the faces | 🚧 In progress — built and tested natively and in Chrome on the GPU (`BIFACIAL_WORLD.md` §12, `shared/worldgen/midplane.json`; generator version 20, a new compatibility line): `dwell:bedrock` either side of the midplane, 4–8 seeded portals with a ladder through, `?spawn=portal`. Outstanding: CI, the owner's look and the compatibility-line bump; the portal particles (owner, 2026-10-21) are a follow-up |
+| 48 — Bedrock and portals between the faces | 🚧 In progress — built and tested natively and in Chrome on the GPU (`BIFACIAL_WORLD.md` §12, `shared/worldgen/midplane.json`; generator version 20, a new compatibility line): `dwell:bedrock` either side of the midplane, 4–8 seeded portals with a ladder through, `?spawn=portal`. Outstanding: CI, the owner's look and the compatibility-line bump. M (2026-10-21): the blue motes at the crossing, built and tested natively and in Chrome on the GPU |
 
 Phase numbering: Phase 4 was inserted on 2026-09-29 for the planet-scale world (ADRs 0011, 0012);
 the former Phases 4–7 are now 5–8, and Phase 3's former 3c and 3d are now 3d and 3e.
@@ -4971,8 +4971,8 @@ Deviations
 
 **Status:** built and tested natively and in Chrome on the GPU (2026-10-21). Outstanding: CI, the
 owner's look, and the new compatibility line (generator version 20 changes the terrain every seed
-generates: the integrator raises `package.json` to the next minor). The blue particles in the
-shafts (owner, 2026-10-21) are a follow-up.
+generates: the integrator raises `package.json` to the next minor). M, the blue motes at the
+crossing (owner, 2026-10-21), built and tested natively and in Chrome on the GPU.
 
 Owner (2026-10-21): "Perhaps for now, let's add a few random portals to the other side and add
 bedrock back in between the two faces. So the "portals" are holes through the bed rock leading up
@@ -5011,4 +5011,27 @@ Deviations
   Alternatives for the owner: a water column, or drag in the band inside a shaft.
 - The LOD cuts the shafts only at levels 0–1 (cells no wider than the shaft's radius); coarser
   levels draw the ground over them. The hydrology prototype ignores them.
+
+### M — the motes at the crossing
+
+Owner (2026-10-21): "As part of the portals add some blue magical particles at the transition
+zone." [`BIFACIAL_WORLD.md`](./BIFACIAL_WORLD.md) §12.1.
+
+Deliverables
+- [x] `shared/look/motes.json` (a mote look: colour, count, CPU count, size, drift, radius, height,
+  glow, pulse), validated and generated by `shared/look/motes.mjs` (CI runs it and its tests, stale
+  output fails); a portal names its look in `midplane.json` (`portals.motes`, checked).
+- [x] `dwell-look` `motes.rs`: the motes' places on both faces through `FaceFrame`, their shading
+  and its WGSL; `dwell-client` draws them in the flames' ember run for the portals near the eye
+  (from the seed's sites), self-lit, none on a CPU adapter; `motes.drawn` telemetry.
+- [x] The bench's `portal-motes` scenario.
+
+Exit criteria
+- [x] Tests: the data (`shared/look/motes.test.mjs`: the checked-in table, a fixture look by data
+  alone, bad entries named; `shared/worldgen/gen.test.mjs`: an unknown look); the motes stay in the
+  shaft round the midplane, half on each face's side, move and pulse, a CPU adapter's count, the
+  disc's shading, the WGSL (`dwell-look`); the portals near the eye on both faces, the quads' kind,
+  the shader's mote branch and mask (`dwell-client` render/flames.rs).
+- [x] Checked in Chrome on the GPU (shots in the PR): the motes from above the midplane, at it, and
+  from the ladder; `motes.drawn` 40 with one portal in view.
 

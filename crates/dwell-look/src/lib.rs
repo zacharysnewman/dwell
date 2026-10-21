@@ -15,6 +15,7 @@ pub mod lights;
 pub mod lod_blend;
 pub mod lod_colour;
 pub mod lod_shadows;
+pub mod motes;
 pub mod motion;
 pub mod outline;
 pub mod pixel_art;

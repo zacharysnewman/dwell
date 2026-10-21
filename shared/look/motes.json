@@ -1,0 +1,22 @@
+{
+  "$comment": "Mote looks (docs/BIFACIAL_WORLD.md §12.1, ARCHITECTURE.md §6.1): soft glowing motes drifting and swirling in a portal's shaft round the midplane crossing (owner, 2026-10-21: \"add some blue magical particles at the transition zone\"), drawn as camera-facing discs that give off their colour whatever the light (self-lit, as the flames' embers). A portal names its look (shared/worldgen/midplane.json `portals.motes`). drawM: a portal's motes are drawn while the eye is within this of the axis's crossing point; maxMotes: the most drawn a frame. Per look, keyed by a namespaced name: color, the motes' colour (sRGB), and core, their centres'; count, how many a portal has (half on each face's side of the midplane); cpuCount, how many a CPU adapter draws (0: none); sizeM, a mote's radius; radiusM, how far from the axis they drift (no wider than the shaft); heightM, how far either side of the midplane; swirl, how fast they circle the axis (turns a second, each mote between half and all of it, half of them the other way); drift, how fast they rise and fall along the shaft (m/s); wobbleM, a slow sideways wander; glow, their brightness (the colour × this); pulseHz and pulseDepth, a gentle pulse in brightness (depth 0: steady, 1: to dark), each mote at its own phase. Run `node shared/look/motes.mjs` after editing; CI fails if crates/dwell-look/src/motes.gen.rs is stale.",
+  "drawM": 64,
+  "maxMotes": 256,
+  "motes": {
+    "dwell:portal": {
+      "color": "#4f9dff",
+      "core": "#d8f0ff",
+      "count": 40,
+      "cpuCount": 0,
+      "sizeM": 0.05,
+      "radiusM": 2.1,
+      "heightM": 3,
+      "swirl": 0.08,
+      "drift": 0.18,
+      "wobbleM": 0.25,
+      "glow": 1.6,
+      "pulseHz": 0.5,
+      "pulseDepth": 0.6
+    }
+  }
+}

@@ -21,5 +21,6 @@ pub const MIDPLANE: Midplane = Midplane {
         ladder: "dwell:ladder[facing=north]",
         wall: [0, 1],
         clear: 4.0,
+        motes: "dwell:portal",
     },
 };

@@ -117,6 +117,82 @@ pub const VERTEX_FLOATS: usize = 10;
 const VERTEX_BYTES: u64 = (VERTEX_FLOATS * 4) as u64;
 const KIND_GLOW: u32 = 1;
 const KIND_EMBER: u32 = 2;
+/// A portal's mote (dwell-look `motes`): its look's index in `MOTES` in the low byte.
+const KIND_MOTE: u32 = 3;
+
+/// A portal near the eye whose motes draw this frame (BIFACIAL_WORLD.md §12.1): its shaft's axis
+/// (world x, z), its mote look (index in `dwell_look::motes::MOTES`) and its seed.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PortalMotes {
+    pub axis: [f64; 2],
+    pub look: usize,
+    pub seed: u32,
+}
+
+/// The portals within `MOTE_TUNABLES.draw_m` of `eye` (each one's crossing point, the axis at the
+/// midplane), nearest first, with their look (by name: `look`) and a seed from their axis.
+pub fn portals_near(axes: &[[f64; 2]], look: &str, eye: [f64; 3]) -> Vec<PortalMotes> {
+    let Some(look) = dwell_look::motes::find(look) else {
+        return Vec::new();
+    };
+    let r = dwell_look::motes::MOTE_TUNABLES.draw_m;
+    let mid = FaceFrame::A.y(dwell_world::MIDPLANE_M);
+    let d2 =
+        |a: &[f64; 2]| (a[0] - eye[0]).powi(2) + (mid - eye[1]).powi(2) + (a[1] - eye[2]).powi(2);
+    let mut near: Vec<&[f64; 2]> = axes.iter().filter(|a| d2(a) <= r * r).collect();
+    near.sort_by(|a, b| d2(a).total_cmp(&d2(b)));
+    near.into_iter()
+        .map(|&axis| PortalMotes {
+            axis,
+            look,
+            seed: cell_seed([axis[0].floor() as i32, 0, axis[1].floor() as i32]),
+        })
+        .collect()
+}
+
+/// The motes' quads at `seconds` (relative to `eye`, facing the camera of `basis`), at most
+/// `MOTE_TUNABLES.max_motes`, a CPU adapter's few when not `animated`. Returns the vertices and
+/// the motes drawn.
+pub fn mote_quads(
+    portals: &[PortalMotes],
+    eye: [f64; 3],
+    basis: &Basis,
+    seconds: f64,
+    animated: bool,
+) -> (Vec<f32>, usize) {
+    let mut out = Vec::new();
+    let mut n = 0;
+    let t = wrapped(seconds);
+    for p in portals {
+        let look = &dwell_look::motes::MOTES[p.look];
+        let size = f64::from(look.size_m);
+        for m in dwell_look::motes::portal_motes(look, p.axis, seconds, animated, p.seed) {
+            if n >= dwell_look::motes::MOTE_TUNABLES.max_motes {
+                return (out, n);
+            }
+            if m.brightness <= 0.01 {
+                continue;
+            }
+            let rel: [f64; 3] = std::array::from_fn(|k| m.at[k] - eye[k]);
+            quad(
+                &mut out,
+                |x, y| {
+                    std::array::from_fn(|k| {
+                        rel[k]
+                            + (basis.right[k] * (2.0 * x - 1.0) + basis.up[k] * (2.0 * y - 1.0))
+                                * size
+                    })
+                },
+                |x, y| [(2.0 * x - 1.0) as f32, (2.0 * y - 1.0) as f32],
+                [t, m.brightness, 0.0],
+                p.look as u32 | KIND_MOTE << 8,
+                p.seed,
+            );
+            n += 1;
+        }
+    }
+    (out, n)
+}
 /// Vertices a quad.
 #[cfg(test)]
 const QUAD_VERTICES: usize = 6;
@@ -235,9 +311,10 @@ pub fn quads(flames: &[Flame], basis: &Basis, seconds: f64) -> (Vec<f32>, usize,
 /// dwell-look's flame shading.
 pub fn source(animated: bool) -> String {
     format!(
-        "{}\n{}\nconst FLAME_PEAK: f32 = {:?};\n{WGSL}",
+        "{}\n{}\n{}\nconst FLAME_PEAK: f32 = {:?};\n{WGSL}",
         super::shaders::lighting_source(),
         dwell_look::flames::wgsl(animated),
+        dwell_look::motes::wgsl(),
         FLAME_TUNABLES.peak as f32,
     )
 }
@@ -326,6 +403,14 @@ fn flame_colour(i: FlameVary) -> vec4f {
         }
         return vec4f(flame_light(c), 0.0);
     }
+    if (kind == 3u) {
+        // A portal's mote (dwell-look motes.rs): added, self-lit, its look's index the low byte.
+        let c = mote_shade(mote_look(i.info & 0xffu), i.uv, i.rest.y);
+        if (max(max(c.r, c.g), c.b) < 0.02) {
+            discard;
+        }
+        return vec4f(flame_light(c), 0.0);
+    }
     let s = flame_shade(look, i.uv.x, i.uv.y, i.rest.x, i.seed);
     if (s.a < 0.004) {
         discard;
@@ -374,7 +459,12 @@ fn flame_lit_fs(i: FlameVary) -> SceneOut {
 @fragment
 fn flame_mask_fs(i: FlameVary) -> SceneOut {
     let look = flame_look(i.info & 0xffu);
-    if ((i.info >> 8u) == 2u) {
+    if ((i.info >> 8u) == 3u) {
+        let c = mote_shade(mote_look(i.info & 0xffu), i.uv, i.rest.y);
+        if (max(max(c.r, c.g), c.b) < 0.1) {
+            discard;
+        }
+    } else if ((i.info >> 8u) == 2u) {
         if (max(flame_ember(look, i.uv, i.rest.y).r, 0.0) < 0.1) {
             discard;
         }
@@ -407,6 +497,10 @@ pub struct FlameRenderer {
     ranges: [(Range<u32>, Range<u32>); 2],
     /// Flames drawn this frame (telemetry).
     pub drawn: usize,
+    /// Portal motes drawn this frame (telemetry).
+    pub motes_drawn: usize,
+    /// Whether the motes move (a CPU adapter draws its few, still: `cpu_count`).
+    animated: bool,
 }
 
 const PREMULTIPLIED: wgpu::BlendState = wgpu::BlendState {
@@ -550,11 +644,14 @@ impl FlameRenderer {
             capacity,
             ranges: [(0..0, 0..0), (0..0, 0..0)],
             drawn: 0,
+            motes_drawn: 0,
+            animated,
         }
     }
 
-    /// This frame's flames: the scene's (`scene`) and your arms' (`arms`), at `seconds`, seen with
-    /// `basis`.
+    /// This frame's flames: the scene's (`scene`) and your arms' (`arms`), and the portals' motes
+    /// (`portals`, drawn with the scene's embers), at `seconds`, seen from `eye` with `basis`.
+    #[allow(clippy::too_many_arguments)]
     pub fn prepare(
         &mut self,
         device: &wgpu::Device,
@@ -562,6 +659,8 @@ impl FlameRenderer {
         basis: &Basis,
         scene: &[Flame],
         arms: Option<Flame>,
+        portals: &[PortalMotes],
+        eye: [f64; 3],
         seconds: f64,
     ) {
         let mut scene: Vec<Flame> = scene.to_vec();
@@ -570,6 +669,9 @@ impl FlameRenderer {
         scene.sort_by(|a, b| d2(a).total_cmp(&d2(b)));
         scene.truncate(FLAME_TUNABLES.max_flames);
         let (mut data, scene_glows, _) = quads(&scene, basis, seconds);
+        let (motes, n) = mote_quads(portals, eye, basis, seconds, self.animated);
+        data.extend(motes);
+        self.motes_drawn = n;
         let scene_end = (data.len() / VERTEX_FLOATS) as u32;
         let (arms_data, arms_glows, _) = quads(arms.as_slice(), basis, seconds);
         data.extend(arms_data);
@@ -652,6 +754,47 @@ mod tests {
 
     fn torch() -> &'static dwell_blocks::LightInfo {
         dwell_blocks::light("dwell:torch").expect("the torch light")
+    }
+
+    fn basis() -> Basis {
+        Basis {
+            right: [1.0, 0.0, 0.0],
+            up: [0.0, 1.0, 0.0],
+            back: [0.0, 0.0, 1.0],
+        }
+    }
+
+    #[test]
+    fn a_portals_motes_draw_near_it_on_either_face_and_a_cpu_adapter_draws_its_few() {
+        // BIFACIAL_WORLD.md §12.1: from a portal's axes and look name (worldgen data), the portals
+        // within the draw distance of the eye, nearest first, on either face's side.
+        let look = dwell_look::motes::MOTES[0];
+        let axes = [[100.5, 200.5], [5000.5, 0.5]];
+        for f in FaceFrame::under_test() {
+            let eye = f.point([100.0, 20.0, 190.0]);
+            let near = portals_near(&axes, look.name, eye);
+            assert_eq!(near.len(), 1);
+            assert_eq!(near[0].axis, axes[0]);
+            let (v, n) = mote_quads(&near, eye, &basis(), 12.0, true);
+            assert!(n > 0 && n <= look.count as usize);
+            assert_eq!(v.len(), n * 6 * VERTEX_FLOATS);
+            // Each a mote: its kind and look in the info.
+            assert_eq!(v[8].to_bits() >> 8, KIND_MOTE);
+            let (_, cpu) = mote_quads(&near, eye, &basis(), 12.0, false);
+            assert!(cpu <= look.cpu_count as usize);
+        }
+        // Far from every portal (or an unknown look): none.
+        assert!(portals_near(&axes, look.name, [0.0, 500.0, 0.0]).is_empty());
+        assert!(portals_near(&axes, "test:none", [100.0, 0.0, 200.0]).is_empty());
+    }
+
+    #[test]
+    fn the_shader_draws_a_mote_self_lit_and_masks_it() {
+        // A mote is the embers' kind of quad: added in the colour, flagged in the mask.
+        let colour = WGSL.split("fn flame_colour").nth(1).expect("the colour");
+        assert!(colour.contains("if (kind == 3u)") && colour.contains("mote_shade(mote_look("));
+        let mask = WGSL.split("fn flame_mask_fs").nth(1).expect("the mask");
+        assert!(mask.contains("== 3u") && mask.contains("mote_shade("));
     }
 
     #[test]

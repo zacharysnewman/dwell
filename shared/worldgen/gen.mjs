@@ -10,6 +10,7 @@ import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { loadDir, registryFromVector } from '../structures/gen.mjs';
+import { loadMotes, moteNames } from '../look/motes.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, '..', '..');
@@ -495,7 +496,8 @@ export function validateMidplane(data, blocks) {
     fail(`bedrock.thickness must lie inside the core (${constants.world.coreLayers * cell} m)`);
   }
   const p = data.portals;
-  checkGroup('portals', p, MIDPLANE.portals, ['count', 'rim', 'ladder']);
+  checkGroup('portals', p, MIDPLANE.portals, ['count', 'rim', 'ladder', 'motes']);
+  if (!moteNames(loadMotes()).includes(p.motes)) fail(`portals.motes ${JSON.stringify(p.motes)} is not a look in shared/look/motes.json`);
   const c = p.count;
   if (!(Array.isArray(c) && c.length === 2 && c.every((n) => Number.isInteger(n) && n >= 0 && n <= 64) && c[0] <= c[1])) {
     fail('portals.count must be [min, max], whole numbers 0–64 with min ≤ max');
@@ -543,6 +545,7 @@ export function midplaneRust(data) {
     ['ladder', JSON.stringify(state)],
     ['wall', `[${{ north: '0, -1', east: '1, 0', south: '0, 1', west: '-1, 0' }[p.ladder.wall]}]`],
     ['clear', rf(p.clear)],
+    ['motes', JSON.stringify(p.motes)],
   ];
   for (const [k, v] of fields) rs.push(`        ${k}: ${v},`);
   rs.push('    },');
