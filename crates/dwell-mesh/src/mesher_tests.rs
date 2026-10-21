@@ -1340,15 +1340,17 @@ fn a_plant_that_does_not_sit_on_its_support_keeps_to_its_cells_floor_by_data_alo
 
 // --- Face parity (BIFACIAL_WORLD.md §11) --------------------------------------------------------
 
-/// A generated face-A chunk and its apron copied onto `f`'s face as the face-local mirror image,
-/// then gathered as the client does (padded from the world) and meshed for that face.
+/// A generated face-A chunk and its sky apron copied onto `f`'s face as the face-local mirror
+/// image, then gathered as the client does (the mesh block from the world) and meshed for that
+/// face.
 fn mesh_on_face(source: &mut dwell_world::VoxelWorld, c: ChunkCoord, f: FaceFrame) -> ChunkMeshes {
     let mut world = dwell_world::VoxelWorld::new(dwell_world::empty_generator(), None);
     let n = CHUNK_SIZE;
     let o = [c.x * n, c.y * n, c.z * n];
-    for y in -1..=n {
-        for z in -1..=n {
-            for x in -1..=n {
+    let [ax, ay, az] = dwell_world::SKY_APRON;
+    for y in -ay..n + ay {
+        for z in -az..n + az {
+            for x in -ax..n + ax {
                 let m = source.get_voxel(o[0] + x, o[1] + y, o[2] + z);
                 let [wx, wy, wz] = f.cell([o[0] + x, o[1] + y, o[2] + z]);
                 world.set_voxel(wx, wy, wz, f.state(m));
@@ -1356,7 +1358,7 @@ fn mesh_on_face(source: &mut dwell_world::VoxelWorld, c: ChunkCoord, f: FaceFram
         }
     }
     let wc = f.chunk(c);
-    let padded = world.padded_block(wc, 1);
+    let padded = world.padded_box(wc, dwell_world::SKY_APRON);
     let mirror = FaceFrame::at_chunk_y(wc.y).is_b();
     assert_eq!(mirror, f.is_b());
     mesh_chunk_at(&padded, mirror, [wc.x * n, wc.y * n, wc.z * n]).expect("padded")
@@ -1381,8 +1383,8 @@ fn local_mesh(f: FaceFrame, mut m: MeshArrays) -> MeshArrays {
 
 dwell_world::both_faces!(
     /// The chunk mesher draws a face-B chunk as the exact mirror image of the face-A chunk it
-    /// mirrors — terrain shapes, grass skirts, plants (their jitter too), trees, water and shores —
-    /// gathered from the world the way the client gathers it.
+    /// mirrors — terrain shapes, grass skirts, plants (their jitter too), trees, water and shores,
+    /// and their baked ambient light — gathered from the world the way the client gathers it.
     fn a_chunk_meshes_the_same_face_local_on_either_face(f: FaceFrame) {
         let g = dwell_worldgen::generator_for(dwell_world::GENERATOR_TERRAIN, 7);
         let air = dwell_worldgen::air_test_for(dwell_world::GENERATOR_TERRAIN, 7);
@@ -1427,6 +1429,7 @@ dwell_world::both_faces!(
                     ("tiles", &mb.tiles, &ma.tiles),
                     ("plants", &mb.plants, &ma.plants),
                     ("bare", &mb.bare, &ma.bare),
+                    ("light", &mb.light, &ma.light),
                     ("fluids", &mb.fluids, &ma.fluids),
                 ] {
                     // To float rounding: the mirror's positions are turned in f64 and back.

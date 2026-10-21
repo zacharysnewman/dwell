@@ -492,3 +492,7 @@ pub(crate) fn corner_key(level: u8, escaped: u8) -> u32 {
 pub(crate) fn key_light(key: u32) -> f32 {
     vertex_light((key & 3) as u8, (key >> 2) as u8)
 }
+
+#[cfg(test)]
+#[path = "sky_tests.rs"]
+mod tests;

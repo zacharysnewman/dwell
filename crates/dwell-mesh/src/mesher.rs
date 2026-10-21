@@ -316,7 +316,7 @@ impl<'a> Cells<'a> {
         let w: [i64; 3] =
             std::array::from_fn(|a| (i64::from(self.origin[a]) + i64::from(at[a])) * 8);
         self.occ
-            .lattice_rays(&self.paths, at, face, [w[0], w[1], w[2], face as i64])
+            .lattice_rays(self.paths, at, face, [w[0], w[1], w[2], face as i64])
     }
 
     /// How many sky rays escape from chunk-local point `cell + frac` (cells) on a surface with
