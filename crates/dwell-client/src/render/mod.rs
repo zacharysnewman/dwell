@@ -32,6 +32,7 @@ use dwell_look::fog::{DEFAULT_FOG, FogSettings, fog_sigma};
 use dwell_look::motion::{MOTION, vanishing_point};
 use dwell_look::outline::{OUTLINE, OutlineMode, outline_uniforms};
 use dwell_look::reflections::{REFLECTIONS, reflection_uniforms};
+use dwell_look::shadows::{SHADOWS, ShadowQuality};
 use dwell_look::{DEFAULT_EXPOSURE, hex, sanitize_exposure, srgb_to_linear};
 use dwell_mesh::{ChunkMeshes, FlatMesh, MeshArrays, SectionMeshes};
 use dwell_world::fluid::EyeFluid;
@@ -692,6 +693,12 @@ fn draw_order(d: &DrawItem) -> u128 {
 /// No turn.
 const NO_ROTATION: [f32; 4] = [1.0, 0.0, 0.0, 0.0];
 
+/// Whether a shadow caster needs the shadow pass's fragment stage: plants (their texels' alpha),
+/// draws in an LOD swap (its dither) and stand-ins (their clip box); the rest draw depth only.
+fn shadow_fs(d: &DrawItem) -> bool {
+    d.kind == Kind::Cutout || d.fade != 0.0 || d.clip.is_some()
+}
+
 /// A fluid draw's `rotation`: no turn, and its origin wrapped for the normal detail.
 fn fluid_rotation(origin: V3) -> [f32; 4] {
     let [x, z] = water::wrapped_origin(origin);
@@ -767,11 +774,20 @@ pub struct Renderer {
     /// projection, characters.rs).
     frame_buffers: [wgpu::Buffer; 3],
     frame_groups: [wgpu::BindGroup; 3],
+    /// What the frame groups are made of besides the frame buffers (made again with new maps).
+    frame_bindings: FrameBindings,
+    /// The sun's or moon's shadow maps (shadows.rs; a 1×1 stand-in while the setting is Off), the
+    /// casters' pipelines by (kind, with a fragment stage), and the Shadows setting.
+    shadow_maps: shadows::ShadowMaps,
+    shadow_pipelines: HashMap<(Kind, bool), wgpu::RenderPipeline>,
+    shadow_quality: ShadowQuality,
     draw_buffer: wgpu::Buffer,
     draw_group: wgpu::BindGroup,
     draw_capacity: u64,
     level_colors: bool,
     players: HashMap<u32, PlayerView>,
+    /// Your own body, drawn into the shadow maps only (a shadow even in first person).
+    own_shadow: Option<PlayerView>,
     /// The first-person arms this frame, if drawn.
     arms: Option<ArmsView>,
     /// The characters' pipelines, meshes and instances (characters.rs).
@@ -895,10 +911,17 @@ impl Renderer {
                 count: None,
             },
         ];
-        // The water's tiles (water_tiles.rs), bindings 5–7.
+        // The shadow passes' frame (shadows.rs): the uniform (the cascade's matrix as view_proj),
+        // the atlas and its sampler, and nothing that reads the maps they draw.
+        let shadow_frame_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("shadow frame"),
+            entries: &frame_entries[..3],
+        });
+        // The water's tiles (water_tiles.rs), bindings 5–7; the shadow maps (shadows.rs), 8–10.
         let frame_entries: Vec<_> = frame_entries
             .into_iter()
             .chain(WaterTiles::layout_entries())
+            .chain(shadows::layout_entries())
             .collect();
         let frame_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("frame"),
@@ -1127,6 +1150,60 @@ impl Renderer {
             multiview_mask: None,
             cache: None,
         });
+        // The shadow passes' casters (shadows.rs): the scene's vertex stages from the light, depth
+        // only; a fragment stage only for what keeps some texels (`shadow_pipeline_key`).
+        let shadow_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("shadows"),
+            bind_group_layouts: &[Some(&shadow_frame_layout), Some(&draw_layout)],
+            immediate_size: 0,
+        });
+        let mut shadow_pipelines = HashMap::default();
+        for (kind, fs) in [
+            (Kind::Terrain, false),
+            (Kind::Terrain, true),
+            (Kind::Flat, false),
+            (Kind::Flat, true),
+            (Kind::Cutout, true),
+        ] {
+            let (vs, entry, a) = match kind {
+                Kind::Terrain => ("terrain_vs", "shadow_terrain_fs", &terrain_attrs),
+                Kind::Flat => ("flat_vs", "shadow_flat_fs", &flat_attrs),
+                _ => ("cutout_vs", "shadow_cutout_fs", &cutout_attrs),
+            };
+            let buffers = [Some(wgpu::VertexBufferLayout {
+                array_stride: a.0,
+                step_mode: wgpu::VertexStepMode::Vertex,
+                attributes: &a.1,
+            })];
+            let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some(if fs { entry } else { vs }),
+                layout: Some(&shadow_layout),
+                vertex: wgpu::VertexState {
+                    module: &module,
+                    entry_point: Some(vs),
+                    compilation_options: Default::default(),
+                    buffers: &buffers,
+                },
+                fragment: fs.then(|| wgpu::FragmentState {
+                    module: &module,
+                    entry_point: Some(entry),
+                    compilation_options: Default::default(),
+                    targets: &[],
+                }),
+                // Both sides cast: a face seen edge-on by the light still closes its block.
+                primitive: wgpu::PrimitiveState {
+                    topology: wgpu::PrimitiveTopology::TriangleList,
+                    front_face: wgpu::FrontFace::Ccw,
+                    cull_mode: None,
+                    ..Default::default()
+                },
+                depth_stencil: Some(shadows::caster_depth(&SHADOWS)),
+                multisample: Default::default(),
+                multiview_mask: None,
+                cache: None,
+            });
+            shadow_pipelines.insert((kind, fs), pipeline);
+        }
         // The composite: a full-screen triangle into the canvas.
         let composite_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("composite"),
@@ -1206,41 +1283,25 @@ impl Renderer {
             &fluid_buffer,
             &dwell_blocks::FLUIDS,
         );
-        let frame_groups = std::array::from_fn(|i| {
-            let entries = [
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: frame_buffers[i].as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::TextureView(&atlas_view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: wgpu::BindingResource::Sampler(&sampler),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 3,
-                    resource: tile_grid_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 4,
-                    resource: fluid_buffer.as_entire_binding(),
-                },
-            ];
-            let entries: Vec<_> = entries
-                .into_iter()
-                .chain(water_tiles.group_entries())
-                .collect();
-            device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("frame"),
-                layout: &frame_layout,
-                entries: &entries,
-            })
-        });
-        let characters =
-            characters::CharacterRenderer::new(&device, &queue, &frame_layout, samples);
+        let frame_bindings = FrameBindings {
+            layout: frame_layout,
+            shadow_layout: shadow_frame_layout,
+            atlas_view,
+            sampler,
+            tile_grid_buffer,
+            fluid_buffer,
+        };
+        // No maps until the first frame asks for some (`ensure_shadow_maps`): a 1×1 stand-in.
+        let shadow_maps = frame_bindings.shadow_maps(&device, (1, 1));
+        let frame_groups =
+            frame_bindings.groups(&device, &frame_buffers, &water_tiles, &shadow_maps);
+        let characters = characters::CharacterRenderer::new(
+            &device,
+            &queue,
+            &frame_bindings.layout,
+            &frame_bindings.shadow_layout,
+            samples,
+        );
         let (draw_buffer, draw_group) = Self::draw_buffer(&device, &draw_layout, 1024);
         let arena = Arena::new(device.clone(), queue.clone(), &STRIDES);
         let outline_box = ([0.0; 3], [1.0; 3]);
@@ -1272,11 +1333,16 @@ impl Renderer {
             timer,
             frame_buffers,
             frame_groups,
+            frame_bindings,
+            shadow_maps,
+            shadow_pipelines,
+            shadow_quality: ShadowQuality::default(),
             draw_buffer,
             draw_group,
             draw_capacity: 1024,
             level_colors: false,
             players: HashMap::default(),
+            own_shadow: None,
             arms: None,
             characters,
             outline: None,
@@ -1496,6 +1562,27 @@ impl Renderer {
     pub fn set_water_quality(&mut self, quality: WaterQuality) {
         self.water_quality = quality;
     }
+    /// The Shadows setting (the settings menu; docs/DAY_NIGHT.md §10).
+    pub fn set_shadow_quality(&mut self, quality: ShadowQuality) {
+        self.shadow_quality = quality;
+    }
+    /// The shadows this adapter draws: the setting's, Low at most on a CPU adapter.
+    pub fn shadows(&self) -> ShadowQuality {
+        shadows::shadows_for(self.adapter, self.shadow_quality)
+    }
+    /// The maps the setting draws with, made again (with the frame groups that bind them) when
+    /// their size or layers change.
+    fn ensure_shadow_maps(&mut self) {
+        let size = shadows::maps_size(SHADOWS.tier(self.shadows()));
+        if self.shadow_maps.size == size {
+            return;
+        }
+        let maps = self.frame_bindings.shadow_maps(&self.device, size);
+        self.frame_groups =
+            self.frame_bindings
+                .groups(&self.device, &self.frame_buffers, &self.water_tiles, &maps);
+        self.shadow_maps = maps;
+    }
     /// Whether a frame may be drawn at `now_ms` (pacing.rs): not while `pacing::MAX_IN_FLIGHT`
     /// frames are still on the GPU.
     pub fn ready_to_draw(&mut self, now_ms: f64) -> bool {
@@ -1593,6 +1680,11 @@ impl Renderer {
     /// Your first-person arms this frame, or none (dead, zoomed, hidden).
     pub fn set_arms(&mut self, arms: Option<ArmsView>) {
         self.arms = arms;
+    }
+    /// Your own body this frame for the shadow maps only (docs/DAY_NIGHT.md §10: a shadow in
+    /// first person), or none.
+    pub fn set_own_shadow(&mut self, body: Option<PlayerView>) {
+        self.own_shadow = body;
     }
     /// The characters drawn last frame and their GPU bytes (telemetry, the bench).
     pub fn character_stats(&self) -> characters::CharacterStats {
@@ -2210,25 +2302,57 @@ impl Renderer {
         let far_near = (NEAR_SPLIT * 0.95).max(altitude * 0.8);
         let passes = [(far_near, FAR_PLANE), (NEAR_PLANE, NEAR_SPLIT)];
         let draws = self.collect(passes, chunk_fade);
+        let mut near_uniforms = None;
         for (i, (near, far)) in passes.iter().enumerate() {
             let u = self.frame_uniforms(&basis, *near, *far);
             self.queue
                 .write_buffer(&self.frame_buffers[i], 0, floats(&u));
+            near_uniforms = Some(u);
+        }
+        // The sun's or moon's shadow maps (shadows.rs): this frame's cascades, their casters, and
+        // each cascade's frame (the near pass's, with the cascade's matrix as view_proj).
+        self.ensure_shadow_maps();
+        let shadow_plan = self.shadow_plan(&basis);
+        self.queue.write_buffer(
+            &self.shadow_maps.uniform,
+            0,
+            floats(&shadows::uniforms(&SHADOWS, shadow_plan.as_ref())),
+        );
+        let casters = shadow_plan
+            .as_ref()
+            .map(|p| self.collect_casters(p, chunk_fade))
+            .unwrap_or_default();
+        if let (Some(p), Some(mut u)) = (&shadow_plan, near_uniforms) {
+            for (c, buffer) in p.cascades.iter().zip(&self.shadow_maps.frames) {
+                for (k, col) in c.view_proj.iter().enumerate() {
+                    u[k * 4..k * 4 + 4].copy_from_slice(col);
+                }
+                self.queue.write_buffer(buffer, 0, floats(&u));
+            }
         }
         // The characters: other players' bodies in the scene passes, your arms after them with
         // their own projection (characters.rs).
+        // Your own body casts only (a shadow in first person, `set_own_shadow`).
+        let body = |v: &PlayerView, cast_only: bool| characters::BodyDraw {
+            feet: v.feet,
+            yaw: v.yaw,
+            face: v.face,
+            dead: v.dead,
+            look: v.look,
+            pose: v.pose,
+            held: v.held,
+            cast_only,
+        };
         let bodies: Vec<characters::BodyDraw> = self
             .players
             .values()
-            .map(|v| characters::BodyDraw {
-                feet: v.feet,
-                yaw: v.yaw,
-                face: v.face,
-                dead: v.dead,
-                look: v.look,
-                pose: v.pose,
-                held: v.held,
-            })
+            .map(|v| body(v, false))
+            .chain(
+                self.own_shadow
+                    .as_ref()
+                    .filter(|_| shadow_plan.is_some())
+                    .map(|v| body(v, true)),
+            )
             .collect();
         self.characters.prepare(
             &self.device,
@@ -2236,6 +2360,7 @@ impl Renderer {
             self.eye,
             &basis,
             &passes,
+            shadow_plan.as_ref().map_or(0.0, |p| p.distance),
             &bodies,
             self.arms.as_ref(),
         );
@@ -2252,7 +2377,9 @@ impl Renderer {
         // With the arms, the world's last pass keeps its colour and the arms' pass resolves.
         let planned = passes.len() + usize::from(arms);
         // Per-draw uniforms, every pass's in one buffer.
-        let total = draws.iter().map(Vec::len).sum::<usize>() as u64;
+        // The shadow casters' draws follow the scene's.
+        let first_caster = draws.iter().map(Vec::len).sum::<usize>() as u64;
+        let total = first_caster + casters.len() as u64;
         if total > self.draw_capacity {
             self.draw_capacity = total.next_power_of_two();
             self.draw_buffer.destroy();
@@ -2260,7 +2387,7 @@ impl Renderer {
                 Self::draw_buffer(&self.device, &self.draw_layout, self.draw_capacity);
         }
         let mut data = vec![0.0f32; (total * DRAW_STRIDE / 4) as usize];
-        for (k, d) in draws.iter().flatten().enumerate() {
+        for (k, d) in draws.iter().flatten().chain(&casters).enumerate() {
             let at = k * (DRAW_STRIDE / 4) as usize;
             data[at..at + 4].copy_from_slice(&d.offset);
             if let Some((lo, hi)) = d.clip {
@@ -2302,6 +2429,20 @@ impl Renderer {
         let scene_passes = passes.len();
         let targets = self.targets.as_ref().expect("ensure_targets made them");
         let t0 = crate::telemetry::now_ms();
+        // The shadow maps first: a pass per cascade, timed as one.
+        if let Some(plan) = &shadow_plan {
+            let query = self.timer.as_mut().and_then(|t| t.pass(timing::SHADOWS));
+            self.record_shadows(
+                &mut encoder,
+                plan,
+                &casters,
+                first_caster,
+                &arena,
+                query,
+                &mut calls,
+                &mut triangles,
+            );
+        }
         // With water that reads the scene (W3), a pass with water is split: its opaque half
         // (colour resolved, depth kept), a copy of the colour, then its water half, which samples
         // the copy and the view depth.
@@ -2547,6 +2688,200 @@ impl Renderer {
         }
     }
 
+    /// This frame's shadow plan (shadows.rs): the setting's cascades around this view, from the
+    /// light over the viewer's face; none when the setting is Off or neither light is up.
+    fn shadow_plan(&self, basis: &Basis) -> Option<shadows::Plan> {
+        let aspect = f64::from(self.size.0) / f64::from(self.size.1);
+        let tan_y = (self.frame_fov().to_radians() / 2.0).tan();
+        let view = shadows::View {
+            eye: self.eye,
+            forward: basis.forward(),
+            tan_x: tan_y * aspect,
+            tan_y,
+        };
+        let caster = dwell_look::shadows::caster(&SHADOWS, &self.day, self.face.sign_f64());
+        shadows::plan(
+            &SHADOWS,
+            self.shadows(),
+            caster,
+            &view,
+            self.day.axis,
+            self.magnification,
+        )
+    }
+
+    /// The shadow casters of a plan's cascades: chunk terrain and cutout plants, LOD sections and
+    /// stand-ins (their skirts as shown), each with the cascades it reaches (bit per cascade in
+    /// `passes`), in the order they are drawn (by pipeline, then page). Water casts none. A draw in
+    /// an LOD swap casts with its fade, so the two levels share the map (`shadow_terrain_fs`).
+    fn collect_casters(
+        &self,
+        plan: &shadows::Plan,
+        chunk_fade: &dyn Fn(ChunkCoord) -> Option<Fade>,
+    ) -> Vec<DrawItem> {
+        let bits = |origin: V3, size: V3| -> u8 {
+            let r = self.rel(origin);
+            let half = size.map(|s| s * 0.5);
+            let centre: V3 = std::array::from_fn(|k| f64::from(r[k]) + half[k]);
+            plan.cascades
+                .iter()
+                .enumerate()
+                .fold(0u8, |m, (i, c)| m | (u8::from(c.touches(centre, half)) << i))
+        };
+        let item = |kind, offset, clip, fade, mesh, passes| DrawItem {
+            kind,
+            water: false,
+            no_depth: false,
+            offset,
+            clip,
+            fade,
+            tint: [1.0; 4],
+            rotation: NO_ROTATION,
+            mesh,
+            page: 0,
+            passes,
+            key: 0,
+        };
+        let mut out = Vec::new();
+        for (&coord, c) in &self.terrain.chunks {
+            let Some(fade) = chunk_fade(coord).filter(|f| !f.is_hidden()) else {
+                continue;
+            };
+            let passes = bits(c.origin, CHUNK_EXTENT_M);
+            if passes == 0 {
+                continue;
+            }
+            let r = self.rel(c.origin);
+            let offset = [r[0], r[1], r[2], 1.0];
+            let fade = fade.shader_value();
+            if c.opaque.is_some() {
+                let mesh = DrawMesh::Chunk(coord, Part::Opaque);
+                out.push(item(Kind::Terrain, offset, None, fade, mesh, passes));
+            }
+            if c.cutout.is_some() && self.cutout_shown {
+                let mesh = DrawMesh::Chunk(coord, Part::Cutout);
+                out.push(item(Kind::Cutout, offset, None, fade, mesh, passes));
+            }
+        }
+        for &(id, mask, fade) in &self.terrain.shown {
+            let Some(s) = self.terrain.sections.get(&id).filter(|s| s.opaque.is_some()) else {
+                continue;
+            };
+            if fade.is_hidden() {
+                continue;
+            }
+            let side = s.cell * 32.0;
+            let passes = bits(s.origin, [side, side * CELL_H, side]);
+            if passes == 0 {
+                continue;
+            }
+            let r = self.rel(s.origin);
+            let offset = [r[0], r[1], r[2], s.cell as f32];
+            let mesh = DrawMesh::Section(id, false, mask);
+            out.push(item(Kind::Flat, offset, None, fade.shader_value(), mesh, passes));
+        }
+        for st in self
+            .terrain
+            .stand_ins
+            .iter()
+            .filter(|s| !s.fade.is_hidden())
+            .take(MAX_STAND_INS)
+        {
+            let Some(s) = self.terrain.sections.get(&st.id).filter(|s| s.opaque.is_some()) else {
+                continue;
+            };
+            let passes = bits(st.lo, std::array::from_fn(|k| st.hi[k] - st.lo[k]));
+            if passes == 0 {
+                continue;
+            }
+            let r = self.rel(s.origin);
+            let offset = [r[0], r[1], r[2], s.cell as f32];
+            let clip = Some((self.rel(st.lo), self.rel(st.hi)));
+            let mesh = DrawMesh::Section(st.id, false, 0);
+            out.push(item(Kind::Flat, offset, clip, st.fade.shader_value(), mesh, passes));
+        }
+        for d in &mut out {
+            d.page = self.mesh_of(&d.mesh).0.region.page;
+            d.key = (u128::from(d.kind as u8) << 40)
+                | (u128::from(u8::from(shadow_fs(d))) << 32)
+                | (d.page as u128 & 0xffff_ffff);
+        }
+        out.sort_by_key(|d| d.key);
+        out
+    }
+
+    /// Draws the shadow maps: a depth pass per cascade (into its layer) of the casters that reach
+    /// it (`collect_casters`, from draw-buffer slot `first_slot`) and the characters' bodies, timed
+    /// as one (`query`: the first pass's start to the last one's end).
+    #[allow(clippy::too_many_arguments)]
+    fn record_shadows(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        plan: &shadows::Plan,
+        casters: &[DrawItem],
+        first_slot: u64,
+        arena: &Arena,
+        query: Option<usize>,
+        calls: &mut u32,
+        triangles: &mut u64,
+    ) {
+        let n = plan.cascades.len().min(self.shadow_maps.layers.len());
+        for i in 0..n {
+            let timestamp_writes = self
+                .timer
+                .as_ref()
+                .and_then(|t| t.writes_span(query, i == 0, i + 1 == n));
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("shadow cascade"),
+                color_attachments: &[],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &self.shadow_maps.layers[i],
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
+                timestamp_writes,
+                ..Default::default()
+            });
+            pass.set_bind_group(0, &self.shadow_maps.frame_groups[i], &[]);
+            pass.set_bind_group(1, &self.draw_group, &[]);
+            let mut bound: Option<(Kind, bool)> = None;
+            let mut bound_page: Option<(usize, usize)> = None;
+            for (k, d) in casters.iter().enumerate() {
+                if d.passes & (1 << i) == 0 {
+                    continue;
+                }
+                let key = (d.kind, shadow_fs(d));
+                if bound != Some(key) {
+                    pass.set_pipeline(&self.shadow_pipelines[&key]);
+                    bound = Some(key);
+                }
+                let (mesh, ranges) = self.mesh_of(&d.mesh);
+                let page = (mesh.region.format, mesh.region.page);
+                if bound_page != Some(page) {
+                    let buffer = arena.buffer(page.0, page.1);
+                    pass.set_vertex_buffer(0, buffer.slice(..));
+                    pass.set_index_buffer(buffer.slice(..), wgpu::IndexFormat::Uint32);
+                    bound_page = Some(page);
+                }
+                let instance = (first_slot + k as u64) as u32;
+                for r in merge_ranges(ranges) {
+                    *triangles += u64::from(r.len() as u32 / 3);
+                    let first = mesh.first_index;
+                    pass.draw_indexed(
+                        first + r.start..first + r.end,
+                        mesh.base_vertex,
+                        instance..instance + 1,
+                    );
+                    *calls += 1;
+                }
+            }
+            self.characters.draw_shadows(&mut pass, calls, triangles);
+        }
+    }
+
     /// A raster scene pass (or a split pass's opaque half, `keep_depth`) into a side's targets.
     fn scene_pass<'a>(
         encoder: &'a mut wgpu::CommandEncoder,
@@ -2716,6 +3051,76 @@ impl PassView {
         }
         // Nothing in the view at depth ≤ far is farther than far × stretch.
         z_lo <= far && z_hi >= near && d2.sqrt() <= far * self.stretch
+    }
+}
+
+/// What the frame groups bind besides the frame uniforms: the atlas, the tile grids, the fluids
+/// (written once) and, changing with the Shadows setting, the shadow maps.
+struct FrameBindings {
+    layout: wgpu::BindGroupLayout,
+    /// The shadow passes' frame layout (the uniform, the atlas and its sampler).
+    shadow_layout: wgpu::BindGroupLayout,
+    atlas_view: wgpu::TextureView,
+    sampler: wgpu::Sampler,
+    tile_grid_buffer: wgpu::Buffer,
+    fluid_buffer: wgpu::Buffer,
+}
+
+impl FrameBindings {
+    /// Shadow maps of `(resolution, layers)`.
+    fn shadow_maps(&self, device: &wgpu::Device, (res, layers): (u32, u32)) -> shadows::ShadowMaps {
+        shadows::ShadowMaps::new(
+            device,
+            res,
+            layers,
+            &self.shadow_layout,
+            (&self.atlas_view, &self.sampler),
+            FRAME_FLOATS as u64 * 4,
+        )
+    }
+
+    /// The frame groups of the far, near and arms passes.
+    fn groups(
+        &self,
+        device: &wgpu::Device,
+        buffers: &[wgpu::Buffer; 3],
+        water_tiles: &WaterTiles,
+        maps: &shadows::ShadowMaps,
+    ) -> [wgpu::BindGroup; 3] {
+        std::array::from_fn(|i| {
+            let entries = [
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: buffers[i].as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(&self.atlas_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::Sampler(&self.sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: self.tile_grid_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: self.fluid_buffer.as_entire_binding(),
+                },
+            ];
+            let entries: Vec<_> = entries
+                .into_iter()
+                .chain(water_tiles.group_entries())
+                .chain(maps.group_entries())
+                .collect();
+            device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("frame"),
+                layout: &self.layout,
+                entries: &entries,
+            })
+        })
     }
 }
 
@@ -2907,6 +3312,9 @@ impl crate::game::Scene for Renderer {
     }
     fn set_arms(&mut self, arms: Option<ArmsView>) {
         Renderer::set_arms(self, arms);
+    }
+    fn set_own_shadow(&mut self, body: Option<PlayerView>) {
+        Renderer::set_own_shadow(self, body);
     }
     fn set_camera(&mut self, eye: V3, yaw_deg: f64, pitch_deg: f64, face: FaceFrame, flip: f64) {
         Renderer::set_camera(self, eye, yaw_deg, pitch_deg, face, flip);

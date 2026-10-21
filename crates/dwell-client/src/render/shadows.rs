@@ -11,7 +11,7 @@
 //! Everything is camera-relative, as the rest of the renderer: a cascade's matrix maps a point
 //! relative to the eye to its map, and only the snapping reads world coordinates (in f64).
 
-use dwell_look::shadows::{Caster, MAX_CASCADES, SHADOWS, ShadowQuality, ShadowTier, ShadowTunables};
+use dwell_look::shadows::{Caster, MAX_CASCADES, ShadowQuality, ShadowTier, ShadowTunables};
 
 use super::camera::{Mat4, V3, cross, dot, normalize};
 
@@ -297,6 +297,212 @@ pub fn uniforms(t: &ShadowTunables, plan: Option<&Plan>) -> [f32; UNIFORM_FLOATS
     u
 }
 
+/// The frame group's shadow entries (bindings 8–10: the uniform block, the maps, the compare
+/// sampler), for the scene's fragment shaders.
+pub fn layout_entries() -> [wgpu::BindGroupLayoutEntry; 3] {
+    [
+        wgpu::BindGroupLayoutEntry {
+            binding: 8,
+            visibility: wgpu::ShaderStages::FRAGMENT,
+            ty: wgpu::BindingType::Buffer {
+                ty: wgpu::BufferBindingType::Uniform,
+                has_dynamic_offset: false,
+                min_binding_size: wgpu::BufferSize::new(UNIFORM_FLOATS as u64 * 4),
+            },
+            count: None,
+        },
+        wgpu::BindGroupLayoutEntry {
+            binding: 9,
+            visibility: wgpu::ShaderStages::FRAGMENT,
+            ty: wgpu::BindingType::Texture {
+                sample_type: wgpu::TextureSampleType::Depth,
+                view_dimension: wgpu::TextureViewDimension::D2Array,
+                multisampled: false,
+            },
+            count: None,
+        },
+        wgpu::BindGroupLayoutEntry {
+            binding: 10,
+            visibility: wgpu::ShaderStages::FRAGMENT,
+            ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Comparison),
+            count: None,
+        },
+    ]
+}
+
+/// The maps on the GPU: a depth array with a layer per cascade (1×1×1 while there are none, so
+/// the frame group always binds one), its views, the compare sampler, the uniform block, and per
+/// cascade a frame uniform (the scene's, with the cascade's matrix as `view_proj`) and its group
+/// for the shadow passes.
+pub struct ShadowMaps {
+    /// The maps' size and layers as made.
+    pub size: (u32, u32),
+    texture: wgpu::Texture,
+    pub array_view: wgpu::TextureView,
+    pub layers: Vec<wgpu::TextureView>,
+    pub sampler: wgpu::Sampler,
+    pub uniform: wgpu::Buffer,
+    pub frames: Vec<wgpu::Buffer>,
+    pub frame_groups: Vec<wgpu::BindGroup>,
+}
+
+impl ShadowMaps {
+    /// Maps of `resolution` texels a side, `layers` deep (≥ 1), with the shadow passes' frame
+    /// groups (`pass_layout`: the frame uniform, the atlas and its sampler; `frame_bytes` each).
+    pub fn new(
+        device: &wgpu::Device,
+        resolution: u32,
+        layers: u32,
+        pass_layout: &wgpu::BindGroupLayout,
+        atlas: (&wgpu::TextureView, &wgpu::Sampler),
+        frame_bytes: u64,
+    ) -> Self {
+        let layers = layers.max(1);
+        let texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("shadow maps"),
+            size: wgpu::Extent3d {
+                width: resolution,
+                height: resolution,
+                depth_or_array_layers: layers,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: SHADOW_DEPTH,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
+        let array_view = texture.create_view(&wgpu::TextureViewDescriptor {
+            label: Some("shadow maps"),
+            dimension: Some(wgpu::TextureViewDimension::D2Array),
+            ..Default::default()
+        });
+        let layer_views = (0..layers)
+            .map(|i| {
+                texture.create_view(&wgpu::TextureViewDescriptor {
+                    label: Some("shadow cascade"),
+                    dimension: Some(wgpu::TextureViewDimension::D2),
+                    base_array_layer: i,
+                    array_layer_count: Some(1),
+                    ..Default::default()
+                })
+            })
+            .collect();
+        // Linear filtering: each compare is a 2×2 PCF in hardware.
+        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("shadow compare"),
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            compare: Some(wgpu::CompareFunction::LessEqual),
+            ..Default::default()
+        });
+        let uniform = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("shadows"),
+            size: UNIFORM_FLOATS as u64 * 4,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let frames: Vec<wgpu::Buffer> = (0..layers)
+            .map(|_| {
+                device.create_buffer(&wgpu::BufferDescriptor {
+                    label: Some("shadow frame"),
+                    size: frame_bytes,
+                    usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                    mapped_at_creation: false,
+                })
+            })
+            .collect();
+        let frame_groups = frames
+            .iter()
+            .map(|b| {
+                device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some("shadow frame"),
+                    layout: pass_layout,
+                    entries: &[
+                        wgpu::BindGroupEntry {
+                            binding: 0,
+                            resource: b.as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 1,
+                            resource: wgpu::BindingResource::TextureView(atlas.0),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 2,
+                            resource: wgpu::BindingResource::Sampler(atlas.1),
+                        },
+                    ],
+                })
+            })
+            .collect();
+        Self {
+            size: (resolution, layers),
+            texture,
+            array_view,
+            layers: layer_views,
+            sampler,
+            uniform,
+            frames,
+            frame_groups,
+        }
+    }
+
+    /// The frame group's entries for the maps (bindings 8–10).
+    pub fn group_entries(&self) -> [wgpu::BindGroupEntry<'_>; 3] {
+        [
+            wgpu::BindGroupEntry {
+                binding: 8,
+                resource: self.uniform.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 9,
+                resource: wgpu::BindingResource::TextureView(&self.array_view),
+            },
+            wgpu::BindGroupEntry {
+                binding: 10,
+                resource: wgpu::BindingResource::Sampler(&self.sampler),
+            },
+        ]
+    }
+
+    /// The maps' GPU bytes.
+    pub fn bytes(&self) -> u64 {
+        u64::from(self.size.0) * u64::from(self.size.0) * u64::from(self.size.1) * 4
+    }
+}
+
+impl Drop for ShadowMaps {
+    fn drop(&mut self) {
+        // wgpu's WebGPU backend frees nothing on drop.
+        self.texture.destroy();
+        self.uniform.destroy();
+        for b in &self.frames {
+            b.destroy();
+        }
+    }
+}
+
+/// The maps' size and layers for a setting's tier (a 1×1 single layer for Off). They follow the
+/// setting, not the time of day: kept through the night, when no light casts and no pass draws.
+pub fn maps_size(tier: Option<&ShadowTier>) -> (u32, u32) {
+    tier.map_or((1, 1), |t| (t.resolution, t.cascades.clamp(1, MAX_CASCADES as u32)))
+}
+
+/// The casters' pipelines' depth state: the slope-scaled bias against acne on ramps.
+pub fn caster_depth(t: &ShadowTunables) -> wgpu::DepthStencilState {
+    wgpu::DepthStencilState {
+        format: SHADOW_DEPTH,
+        depth_write_enabled: Some(true),
+        depth_compare: Some(wgpu::CompareFunction::LessEqual),
+        stencil: Default::default(),
+        bias: wgpu::DepthBiasState {
+            constant: 0,
+            slope_scale: t.bias.slope_scale as f32,
+            clamp: 0.0,
+        },
+    }
+}
+
 /// The shadow lookup the scene's shaders share (group 0, bindings 8–10), after `COMMON`'s
 /// helpers. `shadow_light(rel, n, stand_in)` is the factor on the direct sun and moon term: the
 /// map's visibility near the eye, fading to `stand_in` (the first layer's: direct light × sky
@@ -310,7 +516,7 @@ struct Shadows {
     // x cascades (0: none), y strength, z the fade to the stand-in's start, w its end (view depth).
     cfg: vec4f,
     // x the filter's taps a side, y the map's size (texels).
-    filter: vec4f,
+    pcf: vec4f,
 };
 @group(0) @binding(8) var<uniform> shadows: Shadows;
 @group(0) @binding(9) var shadow_map: texture_depth_2d_array;
@@ -319,10 +525,10 @@ struct Shadows {
 // The map's visibility of an eye-relative point in cascade `c` (1 lit, 0 shadowed): a grid of
 // `taps`² hardware 2×2 compares over the filter's radius, a soft PCF.
 fn shadow_pcf(c: i32, p: vec3f) -> f32 {
-    let size = shadows.filter.y;
+    let size = shadows.pcf.y;
     let uv = vec2f(p.x * 0.5 + 0.5, 0.5 - p.y * 0.5);
     let z = p.z - shadows.texel[c].z;
-    let taps = i32(shadows.filter.x);
+    let taps = i32(shadows.pcf.x);
     let radius = shadows.texel[c].w / size;
     if (taps <= 1) {
         return textureSampleCompareLevel(shadow_map, shadow_sampler, uv, c, z);
@@ -343,7 +549,7 @@ fn shadow_cascade(rel: vec3f) -> i32 {
     let count = i32(shadows.cfg.x);
     for (var c = 0; c < count; c++) {
         let p = shadows.cascades[c] * vec4f(rel, 1.0);
-        let margin = 1.0 - (shadows.texel[c].w + 2.0) * 2.0 / shadows.filter.y;
+        let margin = 1.0 - (shadows.texel[c].w + 2.0) * 2.0 / shadows.pcf.y;
         if (all(abs(p.xy) <= vec2f(margin)) && p.z >= 0.0 && p.z <= 1.0) {
             return c;
         }
@@ -385,7 +591,7 @@ fn shadow_light(rel: vec3f, n: vec3f, stand_in: f32) -> f32 {
 mod tests {
     use super::*;
     use dwell_look::daynight::DAY_NIGHT;
-    use dwell_look::shadows::caster;
+    use dwell_look::shadows::{SHADOWS, caster};
 
     fn view(eye: V3, forward: V3) -> View {
         View {

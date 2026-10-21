@@ -17,6 +17,8 @@ pub const FAR_WATER: &str = "gpu.far.water";
 pub const NEAR_WATER: &str = "gpu.near.water";
 /// The water's tiles (water_tiles.rs): the noise tile once, the caustic layers each frame.
 pub const WATER_TILES: &str = "gpu.water.tiles";
+/// The sun's or moon's shadow maps (shadows.rs): every cascade's pass, timed as one.
+pub const SHADOWS: &str = "gpu.shadows";
 /// The first-person arms' pass (docs/CHARACTERS.md §9.1).
 pub const ARMS: &str = "gpu.arms";
 pub const COMPOSITE: &str = "gpu.composite";
@@ -27,7 +29,7 @@ pub const FRAME: &str = "gpu.frame";
 /// Readback buffers: the GPU runs a frame or two behind, so three keep one free.
 pub const RING: usize = 3;
 /// Passes a frame may time (each frame names its own, in order: `GpuTimer::pass`).
-pub const MAX_PASSES: usize = 8;
+pub const MAX_PASSES: usize = 9;
 
 const QUERIES: u32 = 2 * MAX_PASSES as u32;
 const BYTES: u64 = QUERIES as u64 * wgpu::QUERY_SIZE as u64;
@@ -193,6 +195,22 @@ impl GpuTimer {
             query_set: &self.queries,
             beginning_of_pass_write_index: Some(2 * pass as u32),
             end_of_pass_write_index: Some(2 * pass as u32 + 1),
+        })
+    }
+
+    /// The timestamp writes of a pass that is part of a span timed as pass `pass`: its start
+    /// written by the span's `first` pass, its end by the `last` (one pass can be both).
+    pub fn writes_span(
+        &self,
+        pass: Option<usize>,
+        first: bool,
+        last: bool,
+    ) -> Option<wgpu::RenderPassTimestampWrites<'_>> {
+        let w = self.writes(pass)?;
+        (first || last).then_some(wgpu::RenderPassTimestampWrites {
+            beginning_of_pass_write_index: w.beginning_of_pass_write_index.filter(|_| first),
+            end_of_pass_write_index: w.end_of_pass_write_index.filter(|_| last),
+            ..w
         })
     }
 

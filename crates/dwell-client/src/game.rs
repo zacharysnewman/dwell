@@ -77,6 +77,8 @@ pub trait Scene: TerrainRenderer {
     fn set_player(&mut self, id: u32, view: Option<PlayerView>);
     /// Your first-person arms this frame (docs/CHARACTERS.md §5), or none.
     fn set_arms(&mut self, _arms: Option<ArmsView>) {}
+    /// Your own body this frame, cast into the shadow maps only (none while it is drawn).
+    fn set_own_shadow(&mut self, _body: Option<PlayerView>) {}
     fn set_camera(
         &mut self,
         eye: [f64; 3],
