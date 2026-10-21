@@ -70,7 +70,7 @@ const mark = async (b: Page, id: number) => (await body(b, id))?.plays ?? 0;
  * `mark`). B's body keeps the roles it played, so a short one (a slide, a jump) is seen however
  * seldom the slow page is sampled; `again` runs each poll to start it again (CI's software
  * renderer draws ~5 frames a second, and a body only takes a role in a frame that sees it; a jump
- * that started since B's last frame is the exception, `RemoteView::jumped`, which before 0.22.19
+ * that started since B's last frame is the exception, `RemoteView::jumped`, which until it came
  * left B's slow frames seeing only A's fall or landing, `Expected "jump", Received "idle"`).
  */
 async function seesRole(
