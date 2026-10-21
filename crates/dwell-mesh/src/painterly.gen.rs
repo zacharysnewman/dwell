@@ -4,7 +4,7 @@
 pub const PAINTERLY_TILE: usize = 32;
 
 /// The atlas tiles the painterly set paints, in the order of their texels in [`PAINTERLY_TEXELS`].
-pub const PAINTERLY_TILES: [&str; 12] = [
+pub const PAINTERLY_TILES: [&str; 15] = [
     "grass",
     "grassSide",
     "dirt",
@@ -17,7 +17,10 @@ pub const PAINTERLY_TILES: [&str; 12] = [
     "tallGrass",
     "ladder",
     "dirtSkirt",
+    "plain",
+    "grid",
+    "missing",
 ];
 
 /// Each painterly tile's RGBA8 texels (sRGB), row y = 0 (the tile's bottom) first.
-pub static PAINTERLY_TEXELS: &[u8; 49152] = include_bytes!("painterly.rgba");
+pub static PAINTERLY_TEXELS: &[u8; 61440] = include_bytes!("painterly.rgba");
