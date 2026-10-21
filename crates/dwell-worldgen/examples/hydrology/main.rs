@@ -6,12 +6,24 @@
 //! For each seed, face and profile it computes the map, prints its timing and statistics, and
 //! writes PNG layers named `<seed>-<face>-<profile>-<layer>.png`: `original` (the sampled height
 //! field, hillshaded), `eroded` (hillshaded over a sea-level colour ramp), `flow` (log discharge),
-//! `rivers` (drawn by width over the hillshade), `lakes` and `map` (the composite). Images are
-//! cropped to the face's land, one pixel per grid cell. `--time-only` writes nothing. For tuning,
-//! `--set key=value` overrides a tunable of every profile given after it (`--label NAME` names the
-//! result's files instead of the profile): cell, iterations, timeStep, erodibility, areaExponent,
-//! slopeExponent, uplift, upliftReference, talusSlope, talusPasses, lakeFill, rainfall, riverThreshold,
-//! lakeMinArea (km²), lakeMinDepth, maxBreachDepth.
+//! `rivers` (drawn by width over the hillshade), `widths` (rivers by width, coloured by discharge,
+//! the big ones on top), `lakes`, `uplift` (the uplift rate, with the ranges' spines and the plates'
+//! points), `rain` and `rock` (where they vary) and `map` (the composite). Images are cropped to
+//! the face's land, one pixel per grid cell. `--time-only` writes nothing.
+//!
+//! The statistics after `|`: the largest river system (its outlet's discharge, its main stem's
+//! length from source to sea and the lakes it passes through), the number of systems reaching the
+//! sea with at least 5, 10 and 20 m³/s, the lakes on the main stems of those over 10 m³/s, and the
+//! share of deltas among the mouths. `HYDROLOGY_MOUTHS=1` lists each mouth's measured slope.
+//!
+//! For tuning, `--set key=value` overrides a tunable of every profile given after it (`--label
+//! NAME` names the result's files instead of the profile): cell, iterations, timeStep,
+//! erodibility, areaExponent, slopeExponent, uplift, upliftReference, talusSlope, talusPasses,
+//! lakeFill, rainfall, riverThreshold, lakeMinArea (km²), lakeMinDepth, maxBreachDepth,
+//! mouthMinDischarge, mouthReach, coastRelief (1: the coast-relief rule), deltaMaxSlope; and on a
+//! profile with an uplift layer: upliftRate, baseHeight, keepRelief, plains, shelfMin, shelfMax,
+//! rangeCount, rangeWidth, rangeLengthMin, rangeLengthMax, rangeWander, rangeStrength, highlands,
+//! plateCount, plateWidth, rift.
 
 mod png;
 
@@ -77,7 +89,7 @@ fn main() {
         std::fs::create_dir_all(&out).expect("create the output directory");
     }
     println!(
-        "seed face profile grid seconds(sampling) land_km2 lakes lake_km2 rivers river_cells mouths(delta/estuary) max_q_m3s relief_before relief_after digest"
+        "seed face profile grid seconds(sampling) land_km2 lakes lake_km2 rivers river_cells mouths(delta/estuary) max_q_m3s relief_before relief_after digest | largest: q_m3s length_km lakes_on_stem | systems>=5/>=10/>=20 m3s | big_lakes_on_stems(>=10) | delta_share"
     );
     for &seed in &seeds {
         let terrain = dwell_worldgen::BifacialTerrain::new(seed);
@@ -86,7 +98,8 @@ fn main() {
                 let t = Instant::now();
                 let (grid, x0, h) = hydrology::sample(&terrain, face, p.cell);
                 let sampled = t.elapsed().as_secs_f64();
-                let map = hydrology::from_heights(grid, f64::from(p.cell), x0, &h, p);
+                let seed_of_face = terrain.local(face.face).seed();
+                let map = hydrology::from_heights(grid, f64::from(p.cell), x0, &h, seed_of_face, p);
                 let secs = t.elapsed().as_secs_f64();
                 stats(seed, face, p.name, &map, secs, sampled);
                 if write {
@@ -118,6 +131,42 @@ fn set(p: &mut hydrology::HydrologyParams, key: &str, v: f64) {
         "rainfall" => p.rainfall = v,
         "riverThreshold" => p.river_threshold = v,
         "lakeMinArea" => p.lake_min_area = v * 1e6,
+        "mouthMinDischarge" => p.mouth_min_discharge = v,
+        "mouthReach" => p.mouth_reach = v,
+        "coastRelief" => {
+            p.mouth_rule = if v > 0.0 {
+                hydrology::MouthRule::CoastRelief
+            } else {
+                hydrology::MouthRule::RiverSlope
+            }
+        }
+        "deltaMaxSlope" => p.delta_max_slope = v,
+        "upliftRate" | "baseHeight" | "keepRelief" | "plains" | "shelfMin" | "shelfMax"
+        | "rangeCount" | "rangeWidth" | "rangeLengthMin" | "rangeLengthMax" | "rangeWander"
+        | "rangeStrength" | "highlands" | "plateCount" | "plateWidth" | "rift" => {
+            let t = p
+                .tectonics
+                .as_mut()
+                .expect("the profile has an uplift layer");
+            match key {
+                "upliftRate" => t.rate = v,
+                "baseHeight" => t.base_height = v,
+                "keepRelief" => t.keep_relief = v,
+                "plains" => t.plains = v,
+                "shelfMin" => t.shelf_min = v,
+                "shelfMax" => t.shelf_max = v,
+                "rangeCount" => t.ranges.count = v as u32,
+                "rangeWidth" => t.ranges.width = v,
+                "rangeLengthMin" => t.ranges.length_min = v,
+                "rangeLengthMax" => t.ranges.length_max = v,
+                "rangeWander" => t.ranges.wander = v,
+                "rangeStrength" => t.ranges.strength = v,
+                "highlands" => t.highlands.strength = v,
+                "plateCount" => t.plates.count = v as u32,
+                "plateWidth" => t.plates.width = v,
+                _ => t.plates.rift = v,
+            }
+        }
         "lakeMinDepth" => p.lake_min_depth = v,
         "maxBreachDepth" => p.max_breach_depth = v,
         _ => panic!("unknown tunable {key}"),
@@ -127,7 +176,7 @@ fn set(p: &mut hydrology::HydrologyParams, key: &str, v: f64) {
 fn stats(seed: u64, face: FaceFrame, profile: &str, m: &HydrologyMap, secs: f64, sampled: f64) {
     let a = m.cell * m.cell / 1e6;
     let land = m.sea.iter().filter(|s| !**s).count() as f64 * a;
-    let lake_km2: f64 = m.lakes.iter().map(|l| l.area / 1e6).sum();
+    let lake_km2: f64 = m.lakes.iter().map(|l| l.area / 1e6).sum::<f64>().max(0.0);
     let river_cells: usize = m.rivers.iter().map(|r| r.cells.len()).sum();
     let deltas = m
         .mouths
@@ -136,7 +185,30 @@ fn stats(seed: u64, face: FaceFrame, profile: &str, m: &HydrologyMap, secs: f64,
         .count();
     let max_q = m.discharge.iter().fold(0f32, |a, &b| a.max(b));
     let max = |v: &[f32]| v.iter().fold(0f32, |a, &b| a.max(b));
-    println!(
+    let outlets = m.outlets();
+    let (big, stem) = match outlets.first() {
+        Some(&(c, q)) => (q, m.main_stem(c)),
+        None => (
+            0.0,
+            hydrology::Stem {
+                cells: Vec::new(),
+                length: 0.0,
+                lakes: Vec::new(),
+            },
+        ),
+    };
+    let over = |t: f64| outlets.iter().filter(|o| o.1 >= t).count();
+    let stem_lakes: usize = outlets
+        .iter()
+        .filter(|o| o.1 >= 10.0)
+        .map(|o| m.main_stem(o.0).lakes.len())
+        .sum();
+    let share = if m.mouths.is_empty() {
+        0.0
+    } else {
+        deltas as f64 / m.mouths.len() as f64
+    };
+    print!(
         "{seed} {} {profile} {n}x{n} {secs:.3}({sampled:.3}) {land:.0} {} {lake_km2:.1} {} {river_cells} {}({deltas}/{}) {max_q:.0} {:.0} {:.0} {:016x}",
         if face.is_b() { "b" } else { "a" },
         m.lakes.len(),
@@ -148,6 +220,23 @@ fn stats(seed: u64, face: FaceFrame, profile: &str, m: &HydrologyMap, secs: f64,
         m.digest(),
         n = m.grid.n,
     );
+    println!(
+        " | {big:.1} {:.1} {} | {}/{}/{} | {stem_lakes} | {:.0}%",
+        stem.length / 1000.0,
+        stem.lakes.len(),
+        over(5.0),
+        over(10.0),
+        over(20.0),
+        share * 100.0,
+    );
+    if std::env::var_os("HYDROLOGY_MOUTHS").is_some() {
+        for mo in &m.mouths {
+            println!(
+                "  mouth q {:.1} slope {:.4} {:?}",
+                mo.discharge, mo.slope, mo.kind
+            );
+        }
+    }
 }
 
 type Rgb = [f32; 3];
@@ -420,6 +509,124 @@ fn render(m: &HydrologyMap, name: &str) {
     grey(&mut c);
     draw_rivers(&mut c, river_blue);
     c.save(&format!("{name}-rivers.png"));
+
+    // River widths: every river by its width, coloured by discharge (log), so the big ones stand
+    // out; lakes under them.
+    let mut c = new();
+    grey(&mut c);
+    draw_lakes(&mut c, false);
+    {
+        let to_px =
+            |v: &hydrology::Vertex| ((v.x - m.x0) / m.cell + 0.5, (v.z - m.x0) / m.cell + 0.5);
+        let colour = |q: f64| {
+            let t = ((q.max(0.1).log10() + 0.5) / 2.0).clamp(0.0, 1.0) as f32;
+            ramp(
+                &[
+                    (0.0, hex(0x9CC9E8)),
+                    (0.5, hex(0x2E7FD0)),
+                    (0.8, hex(0x1840A0)),
+                    (1.0, hex(0x9B1D5A)),
+                ],
+                t,
+            )
+        };
+        // Draw small rivers first so the big ones lie on top.
+        let mut segs: Vec<(&hydrology::Vertex, &hydrology::Vertex)> = m
+            .rivers
+            .iter()
+            .flat_map(|r| r.path.windows(2).map(|w| (&w[0], &w[1])))
+            .collect();
+        segs.sort_by(|a, b| a.1.discharge.total_cmp(&b.1.discharge));
+        for (a, b) in segs {
+            let r = |w: f64| 0.25 + w / 22.0;
+            c.line(
+                to_px(a),
+                to_px(b),
+                (r(a.width), r(b.width)),
+                colour(b.discharge),
+            );
+        }
+    }
+    c.save(&format!("{name}-widths.png"));
+
+    // The uplift layer: the uplift rate over the hillshade, with the ranges' spines and the plates'
+    // points; and the rain and the rock where they vary.
+    let umax = m.uplift.iter().fold(1e-12f32, |a, &b| a.max(b));
+    let mut c = new();
+    for (x, z, i) in cells() {
+        let col = if m.sea[i] {
+            hex(0x22303C)
+        } else {
+            let t = (m.uplift[i] / umax).clamp(-1.0, 1.0);
+            let base = if t < 0.0 {
+                lerp3(hex(0x3B6E5A), hex(0x2A4F9E), -t)
+            } else {
+                ramp(
+                    &[
+                        (0.0, hex(0x3B6E5A)),
+                        (0.25, hex(0xA9B55B)),
+                        (0.55, hex(0xD9893B)),
+                        (0.8, hex(0xB8412E)),
+                        (1.0, hex(0xFFF0E0)),
+                    ],
+                    t,
+                )
+            };
+            shade(base, 0.35 + 0.5 * hillshade(m, &m.height, i, ex))
+        };
+        c.put(x, z, col);
+    }
+    for sp in &m.spines {
+        for w in sp.points.windows(2) {
+            let px = |p: (f64, f64)| ((p.0 - m.x0) / m.cell + 0.5, (p.1 - m.x0) / m.cell + 0.5);
+            c.line(px(w[0]), px(w[1]), (0.6, 0.6), hex(0x101010));
+        }
+    }
+    for &(x, z) in &m.plates {
+        c.disc(
+            (x - m.x0) / m.cell + 0.5,
+            (z - m.x0) / m.cell + 0.5,
+            3.0,
+            hex(0xFFFFFF),
+        );
+    }
+    c.save(&format!("{name}-uplift.png"));
+    for (layer, v, lo, hi) in [
+        ("rain", &m.rain, 0.3f32, 2.5f32),
+        ("rock", &m.erodibility, 0.0, 0.0),
+    ] {
+        let (vmin, vmax) = m
+            .sea
+            .iter()
+            .zip(v.iter())
+            .filter(|(s, _)| !**s)
+            .fold((f32::MAX, f32::MIN), |(a, b), (_, &x)| (a.min(x), b.max(x)));
+        if vmax - vmin < 1e-9 {
+            continue;
+        }
+        let (lo, hi) = if lo < hi { (lo, hi) } else { (vmin, vmax) };
+        let mut c = new();
+        for (x, z, i) in cells() {
+            let col = if m.sea[i] {
+                hex(0x22303C)
+            } else {
+                let t = ((v[i] - lo) / (hi - lo)).clamp(0.0, 1.0);
+                shade(
+                    ramp(
+                        &[
+                            (0.0, hex(0xC8A26A)),
+                            (0.5, hex(0xE8E4D0)),
+                            (1.0, hex(0x2E6FB0)),
+                        ],
+                        t,
+                    ),
+                    0.4 + 0.5 * hillshade(m, &m.height, i, ex),
+                )
+            };
+            c.put(x, z, col);
+        }
+        c.save(&format!("{name}-{layer}.png"));
+    }
 
     let mut c = new();
     grey(&mut c);

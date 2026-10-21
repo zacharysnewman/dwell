@@ -68,6 +68,25 @@ pub fn pow(x: f64, y: f64) -> f64 {
     }
 }
 
+/// (sin x, cos x) by Taylor series after reducing x to [−π, π] (whole turns removed with `floor`):
+/// deterministic, accurate to ~1e-15, for directions in data (degrees → a unit vector).
+pub fn sin_cos(x: f64) -> (f64, f64) {
+    let tau = 2.0 * std::f64::consts::PI;
+    let x = x - tau * (x / tau + 0.5).floor();
+    let x2 = x * x;
+    let (mut s, mut c) = (0.0, 0.0);
+    let (mut ts, mut tc) = (x, 1.0);
+    let mut k = 1.0;
+    for _ in 0..16 {
+        s += ts;
+        c += tc;
+        ts *= -x2 / ((k + 1.0) * (k + 2.0));
+        tc *= -x2 / (k * (k + 1.0));
+        k += 2.0;
+    }
+    (s, c)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -87,5 +106,17 @@ mod tests {
         assert_eq!(pow(0.0, 0.5), 0.0);
         assert_eq!(log2(8.0), 3.0);
         assert_eq!(exp2(-3.0), 0.125);
+    }
+
+    #[test]
+    fn sines_and_cosines_match_the_platform_closely() {
+        for i in -40..=40 {
+            let x = f64::from(i) * 0.37;
+            let (s, c) = sin_cos(x);
+            assert!(
+                (s - x.sin()).abs() < 1e-13 && (c - x.cos()).abs() < 1e-13,
+                "{x}"
+            );
+        }
     }
 }
