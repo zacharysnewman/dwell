@@ -38,7 +38,9 @@ fn placed(m: StateId) -> bool {
 /// The core's fill at face-local row `y` (from the midplane): the bedrock in its first rows
 /// (`shared/worldgen/midplane.json`), stone over it.
 fn core_at(y: i32) -> StateId {
-    if y - MIDPLANE_Y < dwell_worldgen::portals::MIDPLANE.bedrock_rows {
+    let rows = dwell_worldgen::portals::MIDPLANE.bedrock_rows;
+    // face-boundary: a face-local row's height over the midplane (these tests are face A's)
+    if y - MIDPLANE_Y < rows {
         require(dwell_worldgen::portals::MIDPLANE.bedrock)
     } else {
         M.stone
@@ -594,6 +596,7 @@ fn face_b_is_its_own_landscape() {
 
 #[test]
 fn the_bedrock_lies_either_side_of_the_midplane_and_no_edit_breaks_it() {
+    // both-faces: the chunks checked straddle the midplane, each row on its own face.
     // Owner, 2026-10-21: bedrock back between the faces (midplane.json `bedrock`): its rows on
     // each face are the indestructible bedrock, the core's stone over them.
     let rows = dwell_worldgen::portals::MIDPLANE.bedrock_rows;

@@ -96,13 +96,24 @@ describe('block registry (docs/BLOCK_REGISTRY.md)', () => {
     expect(def).toMatchObject({ indestructible: true, grid: { every: 8 } });
     expect(def?.adaptive).toBeUndefined();
     // Appended: the blocks before it keep their ids (and tall grass, Phase 33, came after it; the
-    // torch, Phase 47, after the stored ramps, placed at their own slots).
+    // torch, Phase 47, after the stored ramps, placed at their own slots; the bedrock between the
+    // faces after it, 2026-10-21).
     expect(data.blocks.findIndex((b) => b.name === 'sandbox_floor')).toBe(7);
-    expect(data.blocks.map((b) => b.name).slice(-2)).toEqual(['torch', 'torch_upper']);
-    expect(STATE_DEFS.at(-1)?.state).toBe('dwell:torch_upper');
+    expect(data.blocks.map((b) => b.name).slice(-3)).toEqual(['torch', 'torch_upper', 'bedrock']);
+    expect(STATE_DEFS.at(-1)?.state).toBe('dwell:bedrock');
     const floor = STATE_DEFS[stateId('dwell:sandbox_floor')];
     expect(floor).toMatchObject({ look: 'cube', color: 0xffffff, placeable: false });
     expect(floor?.textures).toEqual({ top: 'grid', side: 'grid', bottom: 'grid' });
+  });
+
+  it('has the bedrock between the faces: indestructible, not in the palette', () => {
+    const data = JSON.parse(
+      readFileSync(new URL('../../../shared/blocks/dwell.json', import.meta.url), 'utf8'),
+    ) as { blocks: { name: string; indestructible?: boolean }[] };
+    expect(data.blocks.find((b) => b.name === 'bedrock')).toMatchObject({ indestructible: true });
+    const bedrock = STATE_DEFS[stateId('dwell:bedrock')];
+    expect(bedrock).toMatchObject({ placeable: false });
+    expect(bedrock?.textures).toEqual({ top: 'bedrock', side: 'bedrock', bottom: 'bedrock' });
   });
 
   it('is the registry the determinism goldens were generated with (regenerate them when ids move)', () => {
