@@ -1152,8 +1152,8 @@ impl Server {
         self.broadcast_world(&Message::PlayerEvent(e));
     }
 
-    /// Server-side effects of the controller tick: impact damage (a hit on a floor, ramp, wall or
-    /// ceiling by the speed into it, PLAYER_CONTROLLER.md §6.10), sent as cause `Fall`.
+    /// Server-side effects of the controller tick: impact damage (a hit on the ground, a floor or a
+    /// ramp, by the speed into it; walls and ceilings never hurt, PLAYER_CONTROLLER.md §6.10), sent as cause `Fall`.
     fn after_controller_tick(&mut self, id: SessionId) {
         let Some(h) = self.sessions[&id].handle else {
             return;

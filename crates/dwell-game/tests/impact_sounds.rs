@@ -1,8 +1,8 @@
 //! Impact sounds from the real controller (docs/AUDIO.md §5): a body launched into a wall, its
 //! motion sampled each tick as the client samples its prediction, through the same body probe
-//! (`Surroundings`) and `MoverSounds`. The hit sounds once, as loud as the controller's own impact
-//! speed says, on either face; the hurt comes from the damage the server deals for that impact
-//! (`player_event_sound`).
+//! (`Surroundings`) and `MoverSounds`. The hit sounds once, as loud as its speed says, on either
+//! face. A wall never hurts (PLAYER_CONTROLLER.md §6.10: only the ground does), so the server deals
+//! nothing for it and no hurt follows (`player_event_sound` would sound one for damage dealt).
 
 #[path = "../../dwell-physics/tests/common/mod.rs"]
 mod common;
@@ -111,23 +111,21 @@ fn of(run: &Run, kind: SoundKind) -> Vec<SoundEvent> {
 }
 
 dwell_world::both_faces!(
-    /// Launched into a wall at 25 m/s: one loud impact, as loud as the controller's impact speed,
-    /// on the wall's material, and the hurt; at 8 m/s a soft thud and no hurt.
-    fn a_hard_wall_hit_is_loud_and_hurts_and_a_soft_one_a_thud(f: FaceFrame) {
+    /// Launched into a wall at 25 m/s: one loud impact, as loud as the launch speed, on the wall's
+    /// material, and no damage nor hurt (walls never hurt); at 8 m/s a soft thud.
+    fn a_hard_wall_hit_is_loud_and_does_not_hurt_and_a_soft_one_a_thud(f: FaceFrame) {
         let hard = into_the_wall(f, 25.0, None, 1.5);
         let hits = of(&hard, SoundKind::Impact);
         assert_eq!(hits.len(), 1, "{:?}", hard.sounds);
-        let expected = speed_intensity(SoundKind::Impact, f64::from(hard.impact)).unwrap_or(0.0);
-        assert!(hard.impact > 20.0, "{}", hard.impact);
+        let expected = speed_intensity(SoundKind::Impact, 25.0).unwrap_or(0.0);
         assert!(
             (f64::from(hits[0].intensity) - expected).abs() < 0.05,
-            "{hits:?} vs the controller's {}",
-            hard.impact
+            "{hits:?} vs 25 m/s's {expected}"
         );
         assert!(hits[0].intensity > 0.85, "loud: {hits:?}");
         assert_eq!(hits[0].block, f.state(require("dwell:stone")));
-        assert!(hard.dealt > 0);
-        assert_eq!(of(&hard, SoundKind::Hurt).len(), 1);
+        assert_eq!(hard.dealt, 0, "a wall: impact {}", hard.impact);
+        assert!(of(&hard, SoundKind::Hurt).is_empty());
 
         let soft = into_the_wall(f, 8.0, None, 1.5);
         let hits = of(&soft, SoundKind::Impact);
