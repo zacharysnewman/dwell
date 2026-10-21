@@ -13,6 +13,30 @@ use dwell_protocol::world;
 pub const CHUNK_SIZE: i32 = dwell_protocol::CHUNK_SIZE;
 pub const CHUNK_VOLUME: usize = (CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE) as usize;
 
+/// The apron (cells per side: x, y, z) of the block a chunk is meshed from: deep enough for the
+/// baked sky-visibility rays (ARCHITECTURE.md §6.1, shared/look/ambient.json), whose reach, the
+/// ray plus the probe straight up from its end, must stay inside it (dwell-look checks it). It
+/// stays inside the 26 neighbours, so an edit's re-mesh of those (`neighbours_changed`) refreshes
+/// every chunk whose visibility it can change.
+pub const SKY_APRON: [i32; 3] = [6, 16, 6];
+/// The sky volume's edges (cells): the chunk and [`SKY_APRON`] on each side.
+pub const SKY_EXTENT: [i32; 3] = [
+    CHUNK_SIZE + 2 * SKY_APRON[0],
+    CHUNK_SIZE + 2 * SKY_APRON[1],
+    CHUNK_SIZE + 2 * SKY_APRON[2],
+];
+/// Cells in the sky volume.
+pub const SKY_VOLUME: usize = (SKY_EXTENT[0] * SKY_EXTENT[1] * SKY_EXTENT[2]) as usize;
+const _: () = assert!(
+    SKY_APRON[0] >= 1
+        && SKY_APRON[1] >= 1
+        && SKY_APRON[2] >= 1
+        && SKY_APRON[0] <= CHUNK_SIZE
+        && SKY_APRON[1] <= CHUNK_SIZE
+        && SKY_APRON[2] <= CHUNK_SIZE,
+    "the sky apron lies inside the 26 neighbours"
+);
+
 /// Face A starts here: the halfway plane of the bifacial world (BIFACIAL_WORLD.md), the origin of
 /// generation and the build sphere's centre (ADR 0025).
 pub const MIDPLANE_Y: i32 = world::MIDPLANE_Y as i32;
@@ -566,29 +590,37 @@ impl VoxelWorld {
     /// e = CHUNK_SIZE + 2·pad. Each neighbour is read once (generated if needed; air when missing
     /// from a streamed world).
     pub fn padded_block(&mut self, coord: ChunkCoord, pad: i32) -> Vec<StateId> {
+        self.padded_box(coord, [pad; 3])
+    }
+
+    /// [`Self::padded_block`] with its own apron per axis (`apron[a]` in 1..=CHUNK_SIZE cells):
+    /// the block is `CHUNK_SIZE + 2·apron[a]` cells along axis `a`, x fastest, then z, then y
+    /// (the meshers' sky volume, [`SKY_APRON`]).
+    pub fn padded_box(&mut self, coord: ChunkCoord, apron: [i32; 3]) -> Vec<StateId> {
         let n = CHUNK_SIZE;
-        let e = n + 2 * pad;
-        let mut out = vec![0; (e * e * e) as usize];
+        let [ax, ay, az] = apron;
+        let (ex, ey, ez) = (n + 2 * ax, n + 2 * ay, n + 2 * az);
+        let mut out = vec![0; (ex * ey * ez) as usize];
         for dy in -1..=1 {
             for dz in -1..=1 {
                 for dx in -1..=1 {
                     let c = ChunkCoord::new(coord.x + dx, coord.y + dy, coord.z + dz);
                     let chunk = self.read(c);
                     // The part of this neighbour inside the padded block, in its local coordinates.
-                    let range = |d: i32| match d {
+                    let range = |d: i32, pad: i32| match d {
                         -1 => (n - pad, n),
                         0 => (0, n),
                         _ => (0, pad),
                     };
-                    let (x0, x1) = range(dx);
-                    let (y0, y1) = range(dy);
-                    let (z0, z1) = range(dz);
+                    let (x0, x1) = range(dx, ax);
+                    let (y0, y1) = range(dy, ay);
+                    let (z0, z1) = range(dz, az);
                     for ly in y0..y1 {
-                        let py = ly + dy * n + pad;
+                        let py = ly + dy * n + ay;
                         for lz in z0..z1 {
-                            let pz = lz + dz * n + pad;
-                            let row = (pz + e * py) * e;
-                            let px0 = x0 + dx * n + pad;
+                            let pz = lz + dz * n + az;
+                            let row = (pz + ez * py) * ex;
+                            let px0 = x0 + dx * n + ax;
                             let src = local_index(x0, ly, lz);
                             let len = (x1 - x0) as usize;
                             out[(row + px0) as usize..(row + px0) as usize + len]

@@ -41,6 +41,7 @@
 
 mod lod_mesher;
 mod mesher;
+mod sky;
 mod style;
 mod textures;
 

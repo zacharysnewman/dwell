@@ -85,6 +85,19 @@ fn quads(a: &MeshArrays) -> usize {
     a.indices.len() / 6
 }
 
+/// The cell faces quads cover (their area in cells; merged quads count each cell).
+fn quad_area(a: &MeshArrays) -> f32 {
+    (0..quads(a))
+        .map(|q| {
+            let (lo, hi) = bounds(a, q);
+            (0..3)
+                .map(|i| hi[i] - lo[i])
+                .filter(|e| *e > 0.0)
+                .product::<f32>()
+        })
+        .sum()
+}
+
 /// Bounds of quad `q`'s vertices.
 fn bounds(a: &MeshArrays, q: usize) -> ([f32; 3], [f32; 3]) {
     let mut min = [f32::INFINITY; 3];
@@ -144,14 +157,25 @@ fn merges_a_floor_of_one_material_into_one_quad_per_side() {
         }
     }
     let opaque = mesh(&cells, false).opaque;
-    // Per layer: top or bottom, and one strip per side (the two layers' tops and bottoms hide).
-    assert_eq!(quads(&opaque), 10);
-    let bottom = (0..quads(&opaque))
-        .find(|q| opaque.normals[q * 12 + 1] == -1.0)
-        .expect("a bottom");
-    let (min, max) = bounds(&opaque, bottom);
-    assert_eq!(min, [0.0, 0.0, 0.0]);
-    assert_eq!(max, [32.0, 0.0, 32.0]);
+    // Per layer: the top, and one strip per side (the two layers' tops and bottoms hide), all
+    // open to the sky. The bottom sees none of it: dark inside, its rim lit by the rays that leave
+    // past the edge (each vertex's own turn of the ray set), so it merges where its light is level.
+    let up = |q: usize| opaque.normals[q * 12 + 1] != -1.0;
+    assert_eq!((0..quads(&opaque)).filter(|&q| up(q)).count(), 9);
+    let bottoms: Vec<usize> = (0..quads(&opaque)).filter(|&q| !up(q)).collect();
+    let inside = bottoms
+        .iter()
+        .find(|&&q| bounds(&opaque, q) == ([1.0, 0.0, 1.0], [31.0, 0.0, 31.0]))
+        .expect("the dark inside of the bottom, one quad");
+    assert!(opaque.light[inside * 4..inside * 4 + 4].iter().all(|&l| l == 0.0));
+    let area: f32 = bottoms
+        .iter()
+        .map(|&q| {
+            let (lo, hi) = bounds(&opaque, q);
+            (hi[0] - lo[0]) * (hi[2] - lo[2])
+        })
+        .sum();
+    assert_eq!(area, 32.0 * 32.0);
     // The texture repeats per block: uvs span 32 blocks, the tile stays the stone tile.
     let r = tile_rect("stone");
     assert_eq!(opaque.uvs.iter().copied().fold(f32::MIN, f32::max), 32.0);
@@ -260,10 +284,11 @@ fn blocks_of_each_render_mode_added_by_data_alone_go_to_their_meshes() {
     for b in [leaves, glass] {
         let m = mesh_of(&[(1, 1, 1, b), (2, 1, 1, stone), (1, 1, 2, b)]);
         assert_eq!(quads(&m.opaque), alone, "{}", STATES[usize::from(b)].name);
-        let see = quads(&m.cutout) + quads(&m.transparent);
-        // Two blocks in a row along z: their shared faces skipped, coplanar faces merged (−x, ±y),
-        // the end faces, and the +x face of the one beside stone drawn only for the other.
-        assert_eq!(see, 6, "{}", STATES[usize::from(b)].name);
+        let see = quad_area(&m.cutout) + quad_area(&m.transparent);
+        // Two blocks in a row along z: their shared faces skipped (−x, ±y: two cells each), the
+        // end faces, and the +x face of the one beside stone drawn only for the other. (How they
+        // merge depends on the corner occlusion the stone casts.)
+        assert_eq!(see, 9.0, "{}", STATES[usize::from(b)].name);
     }
     // A water plant (`test:kelp`, `medium: water`) in a pool: drawn inside the water, which shows
     // no hole: its cell draws water like a flooded shape's, its neighbours' faces toward it hidden.
@@ -547,8 +572,8 @@ fn rejects_a_wrong_voxel_count_and_accounts_bytes() {
         })
     );
     let m = mesh(&[(1, 1, 1, cube_block())], false);
-    // 24 vertices × (3 + 3 + 3 + 2 + 4) floats + 36 indices, 4 bytes each.
-    assert_eq!(m.opaque.byte_len(), 4 * (24 * 15 + 36));
+    // 24 vertices × (3 + 3 + 3 + 2 + 4 + 1 light) floats + 36 indices, 4 bytes each.
+    assert_eq!(m.opaque.byte_len(), 4 * (24 * 16 + 36));
     assert_eq!(m.transparent.byte_len(), 0);
 }
 
@@ -1420,3 +1445,4 @@ dwell_world::both_faces!(
         }
     }
 );
+
