@@ -132,6 +132,50 @@ export interface Rgba {
   data: Uint8Array;
 }
 
+/** A burst's flicker (`flickerOf`). */
+export interface Flicker {
+  frames: number;
+  /** The share of pixels (0–1) whose brightness changes by more than `threshold`, per frame. */
+  changed: number;
+  /** The mean brightness change per pixel and frame (0–255). */
+  meanDelta: number;
+  threshold: number;
+}
+
+/**
+ * The temporal noise of a burst of frames from a still camera: for each frame after the first, the
+ * share of pixels whose brightness (Rec. 709 luma of the stored sRGB values, 0–255) moved more than
+ * `threshold` from the frame before, and the mean of that move; averaged over the pairs. A still
+ * scene scores 0; shadow edges crawling from frame to frame score the share of the view they cover.
+ */
+export function flickerOf(frames: readonly Rgba[], threshold = 3): Flicker {
+  if (frames.length < 2) throw new Error('flicker: needs two frames or more');
+  const { width, height } = frames[0];
+  const luma = (im: Rgba): Float32Array => {
+    if (im.width !== width || im.height !== height) throw new Error('flicker: frame sizes differ');
+    const out = new Float32Array(width * height);
+    for (let i = 0; i < out.length; i++) {
+      const d = im.data;
+      out[i] = 0.2126 * d[i * 4] + 0.7152 * d[i * 4 + 1] + 0.0722 * d[i * 4 + 2];
+    }
+    return out;
+  };
+  let prev = luma(frames[0]);
+  let changed = 0;
+  let delta = 0;
+  for (const im of frames.slice(1)) {
+    const cur = luma(im);
+    for (let i = 0; i < cur.length; i++) {
+      const m = Math.abs(cur[i] - prev[i]);
+      delta += m;
+      if (m > threshold) changed++;
+    }
+    prev = cur;
+  }
+  const n = (frames.length - 1) * width * height;
+  return { frames: frames.length, changed: changed / n, meanDelta: delta / n, threshold };
+}
+
 const LINEAR = Array.from({ length: 256 }, (_, i) => {
   const c = i / 255;
   return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;

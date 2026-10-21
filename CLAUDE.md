@@ -273,7 +273,7 @@ Check these before chasing an e2e failure:
   the slide and leaves 1.5 m up held it crouched (a crouched body's arms read `idle`). Fixed
   2026-10-20: the spec runs its own flat-world server (`--generator 0`). A test that moves a player
   far should not depend on the suite world's terrain.
-- The hotbar slot count in `e2e/edit.spec.ts` is the palette's length (7); update it when the palette
+- The hotbar slot count in `e2e/edit.spec.ts` is the palette's length (9); update it when the palette
   changes.
 
 ## Running the browser in a sandbox

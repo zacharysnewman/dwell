@@ -19,7 +19,8 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { chromium, type Browser, type Page } from '@playwright/test';
-import { compare, type ScenarioReport } from './compare.ts';
+import { CODEC, compare, decode, type ScenarioReport } from './compare.ts';
+import { flickerOf, type Flicker } from './compareReport.ts';
 import { formatProfile, profileOf, work } from './profile.ts';
 import {
   parseScenarios,
@@ -188,6 +189,8 @@ interface Run {
   records: Record<string, unknown>;
   /** Each `settle` step's seconds, in order. */
   settles: number[];
+  /** Each `burst` step's flicker, by name. */
+  bursts: Record<string, Flicker>;
 }
 
 async function record(run: Run, name: string): Promise<void> {
@@ -266,6 +269,71 @@ function summarise(name: string, t: Telemetry, longTasks: number[][], seconds: n
     const max = Math.max(...longTasks.map(([, d]) => d));
     console.log(
       `    long tasks: ${String(longTasks.length)}, ${f(total)} ms total, longest ${f(max)} ms`,
+    );
+  }
+}
+
+/** The world clock's day (s): daylight and night (shared/look/daynight.json). */
+const DAY_LENGTH_S = ((c: { dayS: number; nightS: number }) => c.dayS + c.nightS)(
+  (
+    JSON.parse(
+      readFileSync(new URL('../../shared/look/daynight.json', import.meta.url), 'utf8'),
+    ) as { clock: { dayS: number; nightS: number } }
+  ).clock,
+);
+
+/**
+ * A still camera's burst of screenshots and their flicker (`Step` 'burst'). With `clock`, the time
+ * of day runs on from it at the world clock's rate, set every animation frame (the bench holds it
+ * still otherwise), so the light moves between the frames as it does in play.
+ */
+async function burst(run: Run, s: Extract<Step, { do: 'burst' }>): Promise<void> {
+  const { page } = run;
+  if (s.clock !== undefined) {
+    await page.evaluate(`(() => {
+      const d = globalThis.__dwell, t0 = performance.now();
+      globalThis.__burstClock = true;
+      const tick = () => {
+        if (!globalThis.__burstClock) return;
+        d.setTime((${String(s.clock)} + (performance.now() - t0) / 1000 / ${String(DAY_LENGTH_S)}) % 1);
+        requestAnimationFrame(tick);
+      };
+      tick();
+    })()`);
+    // The kept maps catch up with the moving light first.
+    await sleep(page, 1);
+  }
+  // The scene only: the page's overlays (the HUD's fps and tick counters change every frame).
+  // (Set from script: the page's CSP allows no inline style sheet.)
+  await page.evaluate(`(() => {
+    const els = [...document.querySelectorAll('body *')];
+    globalThis.__burstShown = els.map((e) => [e, e.style.visibility]);
+    for (const e of els) e.style.visibility = e.tagName === 'CANVAS' ? 'visible' : 'hidden';
+  })()`);
+  const width = Math.max(2, String(s.frames - 1).length);
+  const paths: string[] = [];
+  for (let i = 0; i < s.frames; i++) {
+    const path = join(run.dir, `${s.name}-${String(i).padStart(width, '0')}.png`);
+    await page.screenshot({ path });
+    paths.push(path);
+  }
+  await page.evaluate(
+    'for (const [e, v] of globalThis.__burstShown) e.style.visibility = v; delete globalThis.__burstShown',
+  );
+  if (s.clock !== undefined) await page.evaluate('globalThis.__burstClock = false');
+  const codec = await page.context().newPage();
+  await codec.evaluate(CODEC);
+  const frames = [];
+  for (const p of paths) frames.push(await decode(codec, p));
+  await codec.close();
+  const fl = flickerOf(frames);
+  run.bursts[s.name] = fl;
+  console.log(
+    `  burst ${s.name}: ${String(s.frames)} frames, flicker ${f(fl.changed * 100)} % of pixels, mean Δ ${f(fl.meanDelta)}`,
+  );
+  if (s.maxFlicker !== undefined && fl.changed > s.maxFlicker) {
+    throw new Error(
+      `burst ${s.name}: ${f(fl.changed * 100)} % of pixels flicker, over ${f(s.maxFlicker * 100)} %`,
     );
   }
 }
@@ -397,6 +465,8 @@ async function step(run: Run, s: Step): Promise<void> {
       }
       return;
     }
+    case 'burst':
+      return burst(run, s);
     case 'traceStart':
       await run.browser.startTracing(page, {
         screenshots: true,
@@ -463,7 +533,7 @@ async function runScenario(
   if (!(await until(page, 'd.state()?.terrainReady === true', 120_000))) {
     throw new Error(`${sc.name}: the game did not start (${errors.join('; ')})`);
   }
-  const run: Run = { page, browser, dir, markMs: 0, records: {}, settles: [] };
+  const run: Run = { page, browser, dir, markMs: 0, records: {}, settles: [], bursts: {} };
   for (const s of sc.steps) await step(run, s);
   const report: ScenarioReport = {
     scenario: sc,
@@ -471,6 +541,7 @@ async function runScenario(
     errors,
     records: run.records,
     settles: run.settles,
+    bursts: run.bursts,
     url,
   };
   writeFileSync(join(dir, 'report.json'), `${JSON.stringify(report, null, 2)}\n`);

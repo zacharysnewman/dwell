@@ -30,6 +30,7 @@ const CASCADES = {
   spyglassMaxM: [1, 10000],
   slack: [0, 1],
   lightTurnDeg: [0, 10],
+  lightStepDeg: [0, 10],
 };
 const BIAS = {
   normalOffsetTexels: [0, 16],
@@ -97,6 +98,9 @@ export function validateShadows(data) {
     if ((t.resolution & (t.resolution - 1)) !== 0) fail(`tiers.${tier}.resolution must be a power of two`);
     if (t.distanceM <= data.cascades.nearM) fail(`tiers.${tier}.distanceM must be over cascades.nearM`);
     if (t.plantCascades > t.cascades) fail(`tiers.${tier}.plantCascades must be at most cascades`);
+  }
+  if (data.cascades.lightStepDeg > data.cascades.lightTurnDeg) {
+    fail('cascades.lightStepDeg must be at most lightTurnDeg');
   }
   if (data.cascades.spyglassMaxM < Math.max(...TIERS.map((t) => data.tiers[t].distanceM))) {
     fail('cascades.spyglassMaxM must be at least every tier\'s distanceM');

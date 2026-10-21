@@ -108,6 +108,14 @@ describe('scenarios', () => {
     expect(bad({ do: 'waterDebug', names: 'ssr; drop' })).toThrow(/switch names/);
     expect(bad({ do: 'timelapse', name: 'x', frames: 1 })).toThrow(/outside 2–1000/);
     expect(
+      parseScenarios(
+        file([{ name: 'a', steps: [{ do: 'burst', name: 'b', frames: 8, clock: 0.5 }] }]),
+      )[0].steps[0],
+    ).toEqual({ do: 'burst', name: 'b', frames: 8, clock: 0.5 });
+    expect(bad({ do: 'burst', name: 'b', frames: 1 })).toThrow(/outside 2–200/);
+    expect(bad({ do: 'burst', name: 'b', frames: 8, maxFlicker: 2 })).toThrow(/outside 0–1/);
+    expect(bad({ do: 'burst', name: 'b', frames: 8, clock: 0.5, wind: 0 })).toThrow(/wind/);
+    expect(
       parseScenarios(file([{ name: 'a', steps: [{ do: 'brush', command: 'preset:cube' }] }]))[0]
         .steps[0],
     ).toEqual({ do: 'brush', command: 'preset:cube' });

@@ -42,6 +42,8 @@ test('bad entries fail with their path named', () => {
     [(d) => (d.tiers.low.farPerFrame = 0), /tiers\.low\.farPerFrame must be a number in \[1, 4\]/],
     [(d) => (d.cascades.slack = 2), /cascades\.slack must be a number in \[0, 1\]/],
     [(d) => delete d.cascades.lightTurnDeg, /missing entry cascades\.lightTurnDeg/],
+    [(d) => delete d.cascades.lightStepDeg, /missing entry cascades\.lightStepDeg/],
+    [(d) => (d.cascades.lightStepDeg = 1), /cascades\.lightStepDeg must be at most lightTurnDeg/],
   ];
   for (const [edit, message] of cases) {
     const d = data();
