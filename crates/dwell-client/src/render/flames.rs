@@ -110,11 +110,15 @@ impl Flame {
 }
 
 /// A vertex: its place relative to the eye, its quad coordinates (the flame's: −1 to 1 across, 0 to
-/// 1 up; the glow's: metres from the base), the time (s), the light's flicker factor, the flame's
-/// height (m), the look | kind << 8 (0 flame, 1 glow) and the flame's seed.
+/// 1 up; the glow's: metres from the base; an ember's: −1 to 1 across its disc), the time (s), the
+/// light's flicker factor (an ember's: its brightness), the flame's height (m), the look | kind
+/// << 8 (0 flame, 1 glow, 2 ember) and the flame's seed.
 pub const VERTEX_FLOATS: usize = 10;
 const VERTEX_BYTES: u64 = (VERTEX_FLOATS * 4) as u64;
 const KIND_GLOW: u32 = 1;
+const KIND_EMBER: u32 = 2;
+/// Vertices a quad.
+const QUAD_VERTICES: usize = 6;
 
 /// The time the shader animates with: seconds, wrapped (the noise is not periodic, so it jumps
 /// once every wrap; f32 keeps its precision).
@@ -149,15 +153,17 @@ fn quad(
     }
 }
 
-/// The flames' quads at `seconds`, seen with `basis`, farthest first: their glows (`glows`, the
-/// vertices' first part) then the flames themselves, so a flame covers its glow and a nearer flame
-/// a farther one.
-pub fn quads(flames: &[Flame], basis: &Basis, seconds: f64) -> (Vec<f32>, usize) {
+/// The flames' quads at `seconds`, seen with `basis`, farthest first, in three runs: the glows
+/// (added, never flagged), then the embers and the flames themselves (both flagged self-lit), so a
+/// flame covers its glow and a nearer flame a farther one. Returns the vertices and the runs'
+/// vertex counts (glows, embers).
+pub fn quads(flames: &[Flame], basis: &Basis, seconds: f64) -> (Vec<f32>, usize, usize) {
     let mut order: Vec<&Flame> = flames.iter().collect();
     let d2 = |f: &Flame| f.rel.iter().map(|v| v * v).sum::<f64>();
     order.sort_by(|a, b| d2(b).total_cmp(&d2(a)).then(a.seed.cmp(&b.seed)));
     let t = wrapped(seconds);
     let mut glows = Vec::new();
+    let mut embers = Vec::new();
     let mut bodies = Vec::new();
     for f in order {
         let look: &FlameLook = &FLAMES[f.look];
@@ -190,6 +196,23 @@ pub fn quads(flames: &[Flame], basis: &Basis, seconds: f64) -> (Vec<f32>, usize)
             f.look as u32 | KIND_GLOW << 8,
             f.seed,
         );
+        // The embers: CPU-placed discs (none on a CPU adapter's still flames: `animated`).
+        let size = f64::from(look.embers.size_m);
+        for k in 0..look.embers.count {
+            let (p, v) = dwell_look::flames::ember(look, k, height, t, f.seed);
+            if v <= 0.01 {
+                continue;
+            }
+            let (cx, cy) = (f64::from(p[0]), f64::from(p[1]));
+            quad(
+                &mut embers,
+                |x, y| at(cx + (2.0 * x - 1.0) * size, cy + (2.0 * y - 1.0) * size),
+                |x, y| [(2.0 * x - 1.0) as f32, (2.0 * y - 1.0) as f32],
+                [t, v, height],
+                f.look as u32 | KIND_EMBER << 8,
+                f.seed,
+            );
+        }
         let w = f64::from(QUAD_HALF_WIDTH * look.width_m);
         quad(
             &mut bodies,
@@ -201,8 +224,10 @@ pub fn quads(flames: &[Flame], basis: &Basis, seconds: f64) -> (Vec<f32>, usize)
         );
     }
     let n = glows.len() / VERTEX_FLOATS;
+    let e = embers.len() / VERTEX_FLOATS;
+    glows.extend(embers);
     glows.extend(bodies);
-    (glows, n)
+    (glows, n, e)
 }
 
 /// The flames' shader: the frame's lighting (`glow`, `frame_depth`, the frame uniforms) and
@@ -280,13 +305,22 @@ fn flame_light(c: vec3f) -> vec3f {
     return inverse_display(srgb_encode(clamp(ACES_OUTPUT * rrt_odt_fit(ACES_INPUT * v), vec3f(0.0), vec3f(1.0))));
 }
 
-// The flame's or the glow's colour, premultiplied: the flame over what is behind it, the glow
-// added (alpha 0). Both give off their colour whatever the light (`flame_light`, docs/LIGHTS.md §2).
+// The flame's, the glow's or an ember's colour, premultiplied: the flame over what is behind it,
+// the glow and the embers added (alpha 0). All give off their colour whatever the light
+// (`flame_light`, docs/LIGHTS.md §2).
 fn flame_colour(i: FlameVary) -> vec4f {
     let look = flame_look(i.info & 0xffu);
-    if ((i.info >> 8u) == 1u) {
-        let c = flame_glow(look, i.uv, i.rest.z, i.rest.y, i.rest.x, i.seed);
+    let kind = i.info >> 8u;
+    if (kind == 1u) {
+        let c = flame_glow(look, i.uv, i.rest.z, i.rest.y);
         if (max(max(c.r, c.g), c.b) < 1e-4) {
+            discard;
+        }
+        return vec4f(flame_light(c), 0.0);
+    }
+    if (kind == 2u) {
+        let c = flame_ember(look, i.uv, i.rest.y);
+        if (max(max(c.r, c.g), c.b) < 0.02) {
             discard;
         }
         return vec4f(flame_light(c), 0.0);
@@ -298,17 +332,24 @@ fn flame_colour(i: FlameVary) -> vec4f {
     return vec4f(flame_light(s.rgb) * s.a, s.a);
 }
 
+// The view depth at a flame's (or an ember's) fragment, flagged self-lit (the time of day's
+// desaturation leaves it alone) and uninked (no outline round it).
+fn flame_depth(i: FlameVary) -> f32 {
+    return self_lit_depth(frame_depth(view_depth(i.rel), false), true);
+}
+
 struct FlameOut {
     @location(0) color: vec4f,
 };
 
-// The colour into a pass with the colour target alone (the see-through water's half).
+// The colour into a pass with the colour target alone (the see-through water's half; the mask
+// flagged the view depth before it).
 @fragment
 fn flame_fs(i: FlameVary) -> FlameOut {
     return FlameOut(flame_colour(i));
 }
 
-// The colour into a scene pass (the view depth's target is not written: its mask is).
+// The colour into a scene pass, the view depth's target not written (the glows).
 @fragment
 fn flame_scene_fs(i: FlameVary) -> SceneOut {
     var o: SceneOut;
@@ -317,15 +358,23 @@ fn flame_scene_fs(i: FlameVary) -> SceneOut {
     return o;
 }
 
-// The mask: where the flame (or an ember) covers enough, the view depth at the flame, flagged self-lit (the time
-// of day's desaturation leaves it alone) and uninked (no outline round it). Its colour target is
-// not written.
+// The colour and the flagged view depth in one (the flames and embers into a scene pass without
+// see-through water, and the arms').
+@fragment
+fn flame_lit_fs(i: FlameVary) -> SceneOut {
+    var o: SceneOut;
+    o.color = flame_colour(i);
+    o.depth = flame_depth(i);
+    return o;
+}
+
+// The mask, before see-through water draws over the pass: where the flame (or an ember) covers
+// enough, the flagged view depth. Its colour target is not written.
 @fragment
 fn flame_mask_fs(i: FlameVary) -> SceneOut {
     let look = flame_look(i.info & 0xffu);
-    if ((i.info >> 8u) == 1u) {
-        // The glow's quad: its embers only (the halo is not flagged).
-        if (!FLAME_ANIMATED || flame_embers(look, i.uv, i.rest.z, i.rest.x, i.seed) < 0.5) {
+    if ((i.info >> 8u) == 2u) {
+        if (max(flame_ember(look, i.uv, i.rest.y).r, 0.0) < 0.1) {
             discard;
         }
     } else if (flame_shade(look, i.uv.x, i.uv.y, i.rest.x, i.seed).a < 0.35) {
@@ -333,7 +382,7 @@ fn flame_mask_fs(i: FlameVary) -> SceneOut {
     }
     var o: SceneOut;
     o.color = vec4f(0.0);
-    o.depth = self_lit_depth(frame_depth(view_depth(i.rel), false), true);
+    o.depth = flame_depth(i);
     return o;
 }
 ";
@@ -349,10 +398,11 @@ pub enum Group {
 pub struct FlameRenderer {
     mask: wgpu::RenderPipeline,
     scene: wgpu::RenderPipeline,
+    lit: wgpu::RenderPipeline,
     colour_only: wgpu::RenderPipeline,
     vertices: wgpu::Buffer,
     capacity: u64,
-    /// Per group, its glows' and flames' vertex ranges.
+    /// Per group, its glows' and its embers' and flames' vertex ranges.
     ranges: [(Range<u32>, Range<u32>); 2],
     /// Flames drawn this frame (telemetry).
     pub drawn: usize,
@@ -483,11 +533,17 @@ impl FlameRenderer {
             "flame_scene_fs",
             &[Some(colour(true)), Some(view_depth(false))],
         );
+        let lit = make(
+            "flames (lit)",
+            "flame_lit_fs",
+            &[Some(colour(true)), Some(view_depth(true))],
+        );
         let colour_only = make("flames (water)", "flame_fs", &[Some(colour(true))]);
         let capacity = 64;
         Self {
             mask,
             scene,
+            lit,
             colour_only,
             vertices: vertex_buffer(device, capacity),
             capacity,
@@ -512,9 +568,9 @@ impl FlameRenderer {
         scene.retain(|f| d2(f) <= FLAME_TUNABLES.draw_m * FLAME_TUNABLES.draw_m);
         scene.sort_by(|a, b| d2(a).total_cmp(&d2(b)));
         scene.truncate(FLAME_TUNABLES.max_flames);
-        let (mut data, scene_glows) = quads(&scene, basis, seconds);
+        let (mut data, scene_glows, _) = quads(&scene, basis, seconds);
         let scene_end = (data.len() / VERTEX_FLOATS) as u32;
-        let (arms_data, arms_glows) = quads(arms.as_slice(), basis, seconds);
+        let (arms_data, arms_glows, _) = quads(arms.as_slice(), basis, seconds);
         data.extend(arms_data);
         let end = (data.len() / VERTEX_FLOATS) as u32;
         let g = scene_glows as u32;
@@ -537,21 +593,22 @@ impl FlameRenderer {
         !self.ranges[group as usize].1.is_empty()
     }
 
-    /// The mask (into a scene pass, after its opaque draws): the view depth flagged self-lit
-    /// where the flames and their embers cover.
+    /// The mask (into a scene pass with see-through water, after its opaque draws): the view
+    /// depth flagged self-lit where the flames and their embers cover.
     pub fn draw_mask(&self, pass: &mut wgpu::RenderPass<'_>, group: Group, calls: &mut u32) {
-        let (glows, bodies) = self.ranges[group as usize].clone();
-        if bodies.is_empty() {
+        let (_, lit) = self.ranges[group as usize].clone();
+        if lit.is_empty() {
             return;
         }
         pass.set_pipeline(&self.mask);
         pass.set_vertex_buffer(0, self.vertices.slice(..));
-        pass.draw(glows.start..bodies.end, 0..1);
+        pass.draw(lit, 0..1);
         *calls += 1;
     }
 
-    /// The colour: the glows then the flames, into a scene pass (`scene`) or the see-through water's
-    /// half (colour target only).
+    /// The colour: the glows then the embers and flames, into a scene pass (`scene`: the flames
+    /// and embers flag the view depth as they draw) or the see-through water's half (colour target
+    /// only, after `draw_mask`).
     pub fn draw_colour(
         &self,
         pass: &mut wgpu::RenderPass<'_>,
@@ -559,18 +616,22 @@ impl FlameRenderer {
         scene: bool,
         calls: &mut u32,
     ) {
-        let (glows, bodies) = self.ranges[group as usize].clone();
-        if bodies.is_empty() {
+        let (glows, lit) = self.ranges[group as usize].clone();
+        if lit.is_empty() {
             return;
         }
-        pass.set_pipeline(if scene {
-            &self.scene
-        } else {
-            &self.colour_only
-        });
         pass.set_vertex_buffer(0, self.vertices.slice(..));
-        pass.draw(glows.start..bodies.end, 0..1);
-        *calls += 1;
+        if scene {
+            pass.set_pipeline(&self.scene);
+            pass.draw(glows, 0..1);
+            pass.set_pipeline(&self.lit);
+            pass.draw(lit, 0..1);
+            *calls += 2;
+        } else {
+            pass.set_pipeline(&self.colour_only);
+            pass.draw(glows.start..lit.end, 0..1);
+            *calls += 1;
+        }
     }
 }
 
@@ -609,14 +670,30 @@ mod tests {
     fn the_mask_flags_the_flame_self_lit_and_uninked() {
         // docs/LIGHTS.md §2, §6: the flame's pixels are flagged in the view depth, so the time of
         // day's desaturation leaves them alone (the composite's `scene_self_lit_at`) and the ink
-        // draws no outline round them; the colour passes never write the view depth.
-        let mask = WGSL
-            .split("fn flame_mask_fs")
+        // draws no outline round them; the glows (`flame_scene_fs`) never write the view depth.
+        let depth = WGSL
+            .split("fn flame_depth")
             .nth(1)
-            .expect("the mask entry");
+            .expect("the flagged depth");
         assert!(
-            mask.contains("o.depth = self_lit_depth(frame_depth(view_depth(i.rel), false), true);")
+            depth.contains("return self_lit_depth(frame_depth(view_depth(i.rel), false), true);")
         );
+        for entry in ["fn flame_mask_fs", "fn flame_lit_fs"] {
+            let body = WGSL.split(entry).nth(1).expect(entry);
+            let body = body.split("@fragment").next().unwrap();
+            assert!(
+                body.contains("o.depth = flame_depth(i);"),
+                "{entry} flags the view depth"
+            );
+        }
+        // The pipelines that run them write the view depth's target; the glows' does not.
+        let src = include_str!("flames.rs");
+        assert!(src.contains(
+            "\"flame_mask_fs\",\n            &[Some(colour(false)), Some(view_depth(true))]"
+        ));
+        assert!(src.contains(
+            "\"flame_lit_fs\",\n            &[Some(colour(true)), Some(view_depth(true))]"
+        ));
         let scene = WGSL
             .split("fn flame_scene_fs")
             .nth(1)
@@ -772,9 +849,15 @@ mod tests {
                 seed: 3,
                 scale: 1.0,
             };
-            let (v, glows) = quads(&[flame], &basis, 1.0);
-            assert_eq!(v.len() / VERTEX_FLOATS, 12, "two quads");
-            assert_eq!(glows, 6);
+            let (v, glows, embers) = quads(&[flame], &basis, 1.0);
+            assert_eq!(glows, QUAD_VERTICES, "one glow");
+            assert_eq!(embers % QUAD_VERTICES, 0);
+            assert_eq!(
+                v.len() / VERTEX_FLOATS,
+                glows + embers + QUAD_VERTICES,
+                "and the flame"
+            );
+            let first = glows + embers;
             let at = |i: usize| -> [f64; 3] {
                 std::array::from_fn(|k| f64::from(v[i * VERTEX_FLOATS + k]))
             };
@@ -783,7 +866,7 @@ mod tests {
             let up = f.up();
             let fwd = basis.forward();
             let dot = |a: [f64; 3], b: [f64; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-            for i in 6..12 {
+            for i in first..first + QUAD_VERTICES {
                 let uv_y = v[i * VERTEX_FLOATS + 4];
                 let p = at(i);
                 let d: [f64; 3] = std::array::from_fn(|k| p[k] - flame.rel[k]);

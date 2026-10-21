@@ -256,70 +256,57 @@ pub fn flame_shade(
     (ramp(look, k), a)
 }
 
-/// The glow and embers' light (linear, added to the scene) at a point `p` (m, on the billboard,
-/// from the flame's base) of a flame `height` tall (m, its flicker's), with the light's flicker
-/// factor `flicker`, at time `t` (s), for the flame `seed`; no embers when not `animated`.
-pub fn glow_shade(
-    look: &FlameLook,
-    p: [f32; 2],
-    height: f32,
-    flicker: f32,
-    t: f32,
-    seed: u32,
-    animated: bool,
-) -> [f32; 3] {
+/// The glow's light (linear, added to the scene) at a point `p` (m, on the billboard, from the
+/// flame's base) of a flame `height` tall (m, its flicker's), with the light's flicker factor
+/// `flicker`: a soft halo round the flame's middle.
+pub fn glow_shade(look: &FlameLook, p: [f32; 2], height: f32, flicker: f32) -> [f32; 3] {
     let g = look.glow;
-    let cy = height * 0.4;
     let dx = p[0] / g.radius_m;
-    let dy = (p[1] - cy) * 0.8 / g.radius_m;
+    let dy = (p[1] - height * 0.4) * 0.8 / g.radius_m;
     let halo = (-(dx * dx + dy * dy) * 3.0).exp() * g.strength * flicker;
-    let gc = linear(g.color);
-    let mut c = gc.map(|v| v * halo);
-    if animated {
-        let v = embers_shade(look, p, height, t, seed);
-        for (ch, ev) in c.iter_mut().zip(linear(look.embers.color)) {
-            *ch += ev * v;
-        }
-    }
-    c
+    linear(g.color).map(|v| v * halo)
 }
 
-/// The embers' brightness (0 to about 2) at a point `p` (m from the flame's base) of a flame
-/// `height` tall, at time `t` (s), for the flame `seed`: each one rising from the flame's top,
-/// wavering, fading as it goes.
-pub fn embers_shade(look: &FlameLook, p: [f32; 2], height: f32, t: f32, seed: u32) -> f32 {
+/// Ember `k` of a flame `height` tall at time `t` (s), for the flame `seed`: where it is (m from
+/// the flame's base, on the billboard) and how bright (0 to 2): each rises from the flame's upper
+/// part, wavering, and fades as it goes. The renderer draws each as a small disc there
+/// ([`ember_disc`]).
+pub fn ember(look: &FlameLook, k: u32, height: f32, t: f32, seed: u32) -> ([f32; 2], f32) {
     let e = look.embers;
-    let mut sum = 0.0;
-    for k in 0..e.count {
-        let life = (t * e.speed + hash(k as i32, 3, seed)).fract();
-        let side = (hash(k as i32, 7, seed) - 0.5) * look.width_m * 0.8;
-        let ex = side + (life * 8.17 + k as f32).sin() * look.width_m * 0.25;
-        let ey = height * 0.6 + life * e.rise_m;
-        let d = ((p[0] - ex).powi(2) + (p[1] - ey).powi(2)).sqrt();
-        sum += (1.0 - smooth(e.size_m * 0.3, e.size_m, d))
-            * (1.0 - life)
-            * smooth(0.0, 0.15, life)
-            * 2.0;
-    }
-    sum
+    let life = (t * e.speed + hash(k as i32, 3, seed)).fract();
+    let side = (hash(k as i32, 7, seed) - 0.5) * look.width_m * 0.8;
+    let ex = side + (life * 8.17 + k as f32).sin() * look.width_m * 0.25;
+    let ey = height * 0.6 + life * e.rise_m;
+    ([ex, ey], (1.0 - life) * smooth(0.0, 0.15, life) * 2.0)
+}
+
+/// An ember's disc at `r` (its distance from the ember's centre over its size): 1 inside, soft
+/// to 0 at its edge.
+pub fn ember_disc(r: f32) -> f32 {
+    1.0 - smooth(0.3, 1.0, r)
+}
+
+/// The embers' brightness at a point `p` (m from the flame's base): every ember's disc there.
+pub fn embers_shade(look: &FlameLook, p: [f32; 2], height: f32, t: f32, seed: u32) -> f32 {
+    (0..look.embers.count)
+        .map(|k| {
+            let (at, v) = ember(look, k, height, t, seed);
+            let d = ((p[0] - at[0]).powi(2) + (p[1] - at[1]).powi(2)).sqrt();
+            ember_disc(d / look.embers.size_m) * v
+        })
+        .sum()
 }
 
 /// The glow quad's extent (m) round the flame's base along the billboard: (half width, below,
-/// above), the halo's and the embers' reach.
+/// above), the halo's reach.
 pub fn glow_extent(look: &FlameLook, height: f32) -> (f32, f32, f32) {
-    let r = look.glow.radius_m;
-    let embers = if look.embers.count > 0 {
-        height * 0.6 + look.embers.rise_m + look.embers.size_m
-    } else {
-        0.0
-    };
-    let above = (height * 0.4 + r * 1.25).max(embers);
-    let half = r.max(look.width_m * 0.65 + look.embers.size_m);
-    (half, (r * 1.25 - height * 0.4).max(0.0), above)
+    // The halo is 1 / 0.8 as tall as it is wide.
+    let (r, v) = (look.glow.radius_m * 1.3, look.glow.radius_m * 1.3 / 0.8);
+    (r, (v - height * 0.4).max(0.0), height * 0.4 + v)
 }
 
 /// The flames' WGSL: the looks (`flame_look`, one case per look), the noise and the shading,
-/// mirroring [`flame_shade`] and [`glow_shade`]. `animated` false is a CPU adapter's still flame.
+/// mirroring [`flame_shade`], [`glow_shade`] and [`ember_disc`]. `animated` false is a CPU adapter's still flame.
 pub fn wgsl(animated: bool) -> String {
     let v3 = |c: [f32; 3]| format!("vec3f({:?}, {:?}, {:?})", c[0], c[1], c[2]);
     let mut cases = String::new();
@@ -461,34 +448,17 @@ fn flame_shade(look: FlameLook, x: f32, y: f32, t: f32, seed: u32) -> vec4f {{
     return vec4f(flame_ramp(look, k), a);
 }}
 
-// The embers' brightness at p (m from the flame's base): `embers_shade` in flames.rs.
-fn flame_embers(look: FlameLook, p: vec2f, height: f32, t: f32, seed: u32) -> f32 {{
-    let count = u32(look.embers.w);
-    let width = look.shape.y;
-    var sum = 0.0;
-    for (var k = 0u; k < count; k++) {{
-        let life = fract(t * look.embers.z + flame_hash(i32(k), 3, seed));
-        let side = (flame_hash(i32(k), 7, seed) - 0.5) * width * 0.8;
-        let ex = side + sin(life * 8.17 + f32(k)) * width * 0.25;
-        let ey = height * 0.6 + life * look.embers.y;
-        let e = length(p - vec2f(ex, ey));
-        let size = look.embers.x;
-        sum += (1.0 - smoothstep(size * 0.3, size, e)) * (1.0 - life) * smoothstep(0.0, 0.15, life) * 2.0;
-    }}
-    return sum;
-}}
-
-// The glow and embers' light (linear) at p (m from the flame's base) of a flame `height` tall
-// with flicker factor `flicker`: `glow_shade` in flames.rs.
-fn flame_glow(look: FlameLook, p: vec2f, height: f32, flicker: f32, t: f32, seed: u32) -> vec3f {{
+// The glow's light (linear) at p (m from the flame's base) of a flame `height` tall with flicker
+// factor `flicker`: `glow_shade` in flames.rs.
+fn flame_glow(look: FlameLook, p: vec2f, height: f32, flicker: f32) -> vec3f {{
     let r = look.glow.w;
     let d = vec2f(p.x / r, (p.y - height * 0.4) * 0.8 / r);
-    let halo = exp(-dot(d, d) * 3.0) * look.ember.w * flicker;
-    var c = look.glow.rgb * halo;
-    if (FLAME_ANIMATED) {{
-        c += look.ember.rgb * flame_embers(look, p, height, t, seed);
-    }}
-    return c;
+    return look.glow.rgb * (exp(-dot(d, d) * 3.0) * look.ember.w * flicker);
+}}
+
+// An ember's light (linear) at `uv` (−1 to 1 across its quad) of brightness `v`: `ember_disc`.
+fn flame_ember(look: FlameLook, uv: vec2f, v: f32) -> vec3f {{
+    return look.ember.rgb * ((1.0 - smoothstep(0.3, 1.0, length(uv))) * v);
 }}
 "
     )
@@ -629,7 +599,7 @@ mod tests {
     #[test]
     fn the_glow_follows_the_flicker_and_embers_rise() {
         let look = torch();
-        let at = |p: [f32; 2], f: f32| glow_shade(look, p, look.height_m, f, 0.0, 7, false);
+        let at = |p: [f32; 2], f: f32| glow_shade(look, p, look.height_m, f);
         let full = at([0.0, look.height_m * 0.4], 1.0);
         let dim = at([0.0, look.height_m * 0.4], 0.84);
         assert!(dim[0] < full[0] && (dim[0] / full[0] - 0.84).abs() < 1e-4);
@@ -637,24 +607,43 @@ mod tests {
             at([look.glow.radius_m * 1.5, 0.0], 1.0)[0] < full[0] * 0.05,
             "the halo is soft and small"
         );
-        // Somewhere above the flame an ember shows over the halo at some time.
-        let (half, _, above) = glow_extent(look, look.height_m);
-        let mut lit = 0.0f32;
-        for f in 0..60 {
-            let t = f as f32 / 30.0;
-            for iy in 0..40 {
-                for ix in 0..20 {
-                    let p = [
-                        (ix as f32 / 10.0 - 1.0) * half,
-                        look.height_m * 0.7 + iy as f32 / 40.0 * (above - look.height_m * 0.7),
-                    ];
-                    let e = glow_shade(look, p, look.height_m, 1.0, t, 7, true)[0]
-                        - glow_shade(look, p, look.height_m, 1.0, t, 7, false)[0];
-                    lit = lit.max(e);
-                }
-            }
+        let (half, below, above) = glow_extent(look, look.height_m);
+        for p in [[half, 0.0], [0.0, -below], [0.0, above]] {
+            assert!(
+                at(p, 1.0)[0] < full[0] * 0.02,
+                "the quad holds the halo: {p:?}"
+            );
         }
-        assert!(lit > 0.3, "an ember rises ({lit})");
+        // Each ember rises from the flame's upper part over its life and fades out.
+        for k in 0..look.embers.count {
+            let (start, _) = ember(look, k, look.height_m, 0.0, 7);
+            let mut highest = start[1];
+            let mut brightest = 0.0f32;
+            for f in 0..60 {
+                let (p, v) = ember(
+                    look,
+                    k,
+                    look.height_m,
+                    f as f32 / 60.0 / look.embers.speed,
+                    7,
+                );
+                assert!(
+                    p[1] >= look.height_m * 0.6 - 1e-6
+                        && p[1] <= look.height_m * 0.6 + look.embers.rise_m + 1e-6
+                );
+                assert!((0.0..=2.0).contains(&v));
+                highest = highest.max(p[1]);
+                brightest = brightest.max(v);
+            }
+            assert!(
+                highest > look.height_m * 0.6 + look.embers.rise_m * 0.8,
+                "ember {k} rises"
+            );
+            assert!(brightest > 1.0, "ember {k} shows");
+        }
+        assert!(ember_disc(0.0) == 1.0 && ember_disc(1.0) == 0.0);
+        let (p, v) = ember(look, 0, look.height_m, 0.3, 7);
+        assert!((embers_shade(look, p, look.height_m, 0.3, 7) - v).abs() < 0.2 + v * 0.01);
     }
 
     #[test]

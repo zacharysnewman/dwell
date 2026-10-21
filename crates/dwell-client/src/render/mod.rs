@@ -2990,12 +2990,13 @@ impl Renderer {
                     &mut calls,
                     &mut triangles,
                 );
-                // The flames in the near pass (flames.rs): the mask after the opaque draws, the
-                // colour now or, with see-through water, after it.
+                // The flames in the near pass (flames.rs): drawn now, or with see-through water
+                // their mask now and their colour after the water.
                 if i + 1 == scene_passes {
-                    self.flames
-                        .draw_mask(&mut pass, flames::Group::Scene, &mut calls);
-                    if split.is_none() {
+                    if split.is_some() {
+                        self.flames
+                            .draw_mask(&mut pass, flames::Group::Scene, &mut calls);
+                    } else {
                         self.flames
                             .draw_colour(&mut pass, flames::Group::Scene, true, &mut calls);
                     }
@@ -3052,8 +3053,6 @@ impl Renderer {
             self.characters
                 .draw_arms(&mut pass, &mut calls, &mut triangles);
             // Your own torch's flame over your arms.
-            self.flames
-                .draw_mask(&mut pass, flames::Group::Arms, &mut calls);
             self.flames
                 .draw_colour(&mut pass, flames::Group::Arms, true, &mut calls);
         }
