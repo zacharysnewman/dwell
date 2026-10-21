@@ -91,3 +91,56 @@ test('?loading=off skips the loading screen', async ({ page }) => {
   expect(s?.loading).toEqual({ enabled: false, shown: false });
   await expect(page.locator('#loading-screen')).toBeHidden();
 });
+
+interface CoverSample {
+  overlay: boolean;
+  fading: boolean;
+  hud: string[];
+}
+
+test('the loading screen is up before anything of the game, then fades in from white', async ({
+  page,
+}) => {
+  // Owner (2026-10-21): "you see ingame UI briefly before loading screen appears". Every frame
+  // from the page's start is sampled: until the fade begins no part of the HUD is visible, and
+  // from the moment any of it exists the screen covers it.
+  await page.addInitScript(() => {
+    localStorage.removeItem('dwell.loading');
+    const samples: CoverSample[] = [];
+    (globalThis as unknown as { __cover: CoverSample[] }).__cover = samples;
+    const ids = ['hud', 'hotbar', 'touch-controls', 'flight-speed', 'net-status'];
+    const sample = () => {
+      const el = document.getElementById('loading-screen');
+      samples.push({
+        overlay: !!el && !el.hidden,
+        fading: !!el?.classList.contains('ls-fading'),
+        hud: ids.filter((id) => {
+          const e = document.getElementById(id);
+          return !!e && e.checkVisibility({ visibilityProperty: true, opacityProperty: true });
+        }),
+      });
+      requestAnimationFrame(sample);
+    };
+    requestAnimationFrame(sample);
+  });
+  await page.goto('./?world=flat');
+  await expect
+    .poll(async () => (await loadingOf(page))?.loading.openedS !== undefined, { timeout: 60_000 })
+    .toBe(true);
+  const samples = await page.evaluate(
+    () => (globalThis as unknown as { __cover: CoverSample[] }).__cover,
+  );
+  // Frames before the page's script runs have no screen, and nothing of the game either.
+  const up = samples.findIndex((s) => s.overlay);
+  expect(up, 'the screen showed').toBeGreaterThanOrEqual(0);
+  const fade = samples.findIndex((s, i) => i > up && (s.fading || !s.overlay));
+  expect(fade, 'the screen opened').toBeGreaterThan(up);
+  const before = samples.slice(0, fade);
+  expect(samples.slice(up, fade).every((s) => s.overlay && !s.fading)).toBe(true);
+  const flashed = before.filter((s) => s.hud.length > 0);
+  expect(flashed, `HUD shown before the screen opened: ${JSON.stringify(flashed[0])}`).toEqual([]);
+  // It turned white and faded (not a cut), then the HUD shows.
+  expect(samples[fade]?.fading).toBe(true);
+  await expect(page.locator('#loading-screen')).toBeHidden();
+  await expect(page.locator('#hotbar')).toBeVisible();
+});

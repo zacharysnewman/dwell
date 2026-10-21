@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 // Generates the loading screen's tunables (ARCHITECTURE.md §6.3) for Rust
-// (crates/dwell-game/src/loading.gen.rs, and the respawn preload's for the server in
-// crates/dwell-sim/src/respawn_preload.gen.rs) from shared/look/loading.json, after validating them: an
+// (crates/dwell-game/src/loading.gen.rs: the near ring, the timeout and the respawn preload),
+// for the server (crates/dwell-sim/src/respawn_preload.gen.rs: the respawn preload) and for the
+// shell (client/src/ui/loading.gen.ts: the fade in from white) from shared/look/loading.json,
+// after validating them: an
 // unknown, missing or out-of-range entry fails with its path named, and the near ring may not reach
 // past the server's streamed view (shared/protocol/constants.json's viewRadiusChunks). The output is
 // checked in; CI regenerates it and fails on any diff.
@@ -25,7 +27,7 @@ const fail = (m) => {
 /** Checks the tunables; returns them. Throws naming the entry. */
 export function validateLoading(data, viewRadius = VIEW_RADIUS_CHUNKS) {
   if (typeof data !== 'object' || data === null || Array.isArray(data)) fail('(root) must be an object');
-  const keys = ['radiusChunks', 'timeoutS', 'respawnPreload'];
+  const keys = ['radiusChunks', 'timeoutS', 'respawnPreload', 'fade'];
   for (const k of Object.keys(data)) if (k !== '$comment' && !keys.includes(k)) fail(`unknown entry ${k}`);
   for (const k of keys) if (!(k in data)) fail(`missing entry ${k}`);
   const r = data.radiusChunks;
@@ -39,6 +41,7 @@ export function validateLoading(data, viewRadius = VIEW_RADIUS_CHUNKS) {
     fail(`timeoutS must be a number in [1, 600], got ${JSON.stringify(t)}`);
   }
   validateRespawnPreload(data.respawnPreload, viewRadius);
+  validateFade(data.fade);
   return data;
 }
 
@@ -54,6 +57,35 @@ function validateRespawnPreload(p, viewRadius) {
     fail(
       `respawnPreload.radiusChunks must be a whole number in [0, ${viewRadius}] (a second view no larger than the first), got ${JSON.stringify(r)}`,
     );
+  }
+}
+
+/** fade's entries: [min, max] seconds or a number range, or 'color' (#rrggbb). */
+const FADE = {
+  color: 'color',
+  holdS: [0, 2],
+  durationS: [0, 5],
+  easePower: [1, 8],
+  cpuDurationS: [0, 5],
+  reducedMotionDurationS: [0, 5],
+};
+
+function validateFade(f) {
+  if (typeof f !== 'object' || f === null || Array.isArray(f)) fail('fade must be an object');
+  for (const k of Object.keys(f)) if (k !== '$comment' && !(k in FADE)) fail(`unknown entry fade.${k}`);
+  for (const [k, spec] of Object.entries(FADE)) {
+    if (!(k in f)) fail(`missing entry fade.${k}`);
+    const v = f[k];
+    if (spec === 'color') {
+      if (typeof v !== 'string' || !/^#[0-9a-fA-F]{6}$/.test(v)) {
+        fail(`fade.${k} must be a #rrggbb colour, got ${JSON.stringify(v)}`);
+      }
+    } else if (typeof v !== 'number' || !Number.isFinite(v) || v < spec[0] || v > spec[1]) {
+      fail(`fade.${k} must be a number in [${spec[0]}, ${spec[1]}], got ${JSON.stringify(v)}`);
+    }
+  }
+  if (f.cpuDurationS > f.durationS || f.reducedMotionDurationS > f.durationS) {
+    fail('fade.cpuDurationS and fade.reducedMotionDurationS must be at most fade.durationS (they are the quick fades)');
   }
 }
 
@@ -92,9 +124,29 @@ export function preloadServerRust(data) {
   ].join('\n');
 }
 
+/** The TypeScript the shell's fade reads (client/src/ui/loadingScreen.ts). */
+export function loadingTs(data) {
+  const f = data.fade;
+  return [
+    `// ${header}`,
+    '',
+    "/** The loading screen's fade in from white when it opens (ARCHITECTURE.md §6.3). */",
+    'export const LOADING_FADE = {',
+    `  color: '${f.color.toLowerCase()}',`,
+    `  holdS: ${f.holdS},`,
+    `  durationS: ${f.durationS},`,
+    `  easePower: ${f.easePower},`,
+    `  cpuDurationS: ${f.cpuDurationS},`,
+    `  reducedMotionDurationS: ${f.reducedMotionDurationS},`,
+    '} as const;',
+    '',
+  ].join('\n');
+}
+
 if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
   const data = validateLoading(JSON.parse(readFileSync(join(here, 'loading.json'), 'utf8')));
   writeFileSync(join(root, 'crates/dwell-game/src/loading.gen.rs'), loadingRust(data));
   writeFileSync(join(root, 'crates/dwell-sim/src/respawn_preload.gen.rs'), preloadServerRust(data));
+  writeFileSync(join(root, 'client/src/ui/loading.gen.ts'), loadingTs(data));
   console.log('look: loading screen tunables generated');
 }

@@ -2142,6 +2142,10 @@ impl Renderer {
             GpuMesh::lines(&self.arena, &pts)
         });
     }
+    /// Whether the adapter is a CPU (software) one, which draws the cheapest tier of everything.
+    pub fn cpu_adapter(&self) -> bool {
+        is_cpu(self.adapter)
+    }
     pub fn stats(&self) -> RenderStats {
         let pixels = u64::from(self.size.0) * u64::from(self.size.1);
         let per_pixel = frame::bytes_per_pixel(self.samples, self.water().reads_scene());

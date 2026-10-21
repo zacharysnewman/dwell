@@ -2106,8 +2106,30 @@ body:has(#main-menu) #build-info {
   }
 }
 
-/* The loading screen on joining (ui/loadingScreen.ts, ARCHITECTURE.md §6.3): over the view, under
-   the menus, until the terrain around the player is drawn. */
+/* The loading screen on joining and respawning (ui/loadingScreen.ts, ARCHITECTURE.md §6.3): the
+   first thing the game page shows, over the view and under the menus, until the terrain around the
+   player is drawn. The HUD is hidden under it while it waits; when it opens it turns white
+   (--ls-fade, shared/look/loading.json) and fades out, uncovering the view and the HUD together. */
+body.loading-wait #hud,
+body.loading-wait #hotbar,
+body.loading-wait #hotbar-label,
+body.loading-wait #hotbar-region,
+body.loading-wait #touch-controls,
+body.loading-wait #flight-speed,
+body.loading-wait #net-status,
+body.loading-wait #brush-panel {
+  visibility: hidden;
+}
+
+#loading-screen.ls-fading:not([hidden]) {
+  background: var(--ls-fade);
+  pointer-events: none;
+}
+
+#loading-screen.ls-fading .ls-sheet {
+  visibility: hidden;
+}
+
 #loading-screen:not([hidden]) {
   position: fixed;
   inset: 0;
