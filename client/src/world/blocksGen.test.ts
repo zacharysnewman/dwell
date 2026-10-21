@@ -27,6 +27,11 @@ function generate(blocks: object[]): { status: number | null; output: string; ru
     join(blocksDir, '../characters/characters.json'),
     join(root, 'shared/characters/characters.json'),
   );
+  // The flame looks a light source's `flame` names (shared/look/flames.json, docs/LIGHTS.md §6).
+  const look = join(root, 'shared/look');
+  mkdirSync(look, { recursive: true });
+  for (const f of ['flames.mjs', 'flames.json'])
+    copyFileSync(join(blocksDir, '../look', f), join(look, f));
   // The sound data the generator checks blocks' `sound` against (shared/sounds).
   const sounds = join(root, 'shared/sounds');
   mkdirSync(sounds, { recursive: true });
