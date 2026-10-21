@@ -401,7 +401,8 @@ direct-light stand-in near the player.
   shadow maps near the eye, as terrain's), the sky's reflection by the sky light's brightness.
   Before, every fluid surface was lit as open sky, so with Shadows Off the sea under a 31 m roof
   drew at 33 % of white, the same as the open sea, sun glint included (High 16 %: the maps took
-  the glint, not the sky's reflection). Underwater fog is still lit as open sky (W4).
+  the glint, not the sky's reflection); now 2 % (median 0.6 %, Off and High alike). Underwater fog
+  is still lit as open sky (W4).
 - **Distant terrain**: LOD sections are lit as open sky, as before, so the seam on open ground
   matches; LOD water too (open sea).
 - **Characters** (owner, 2026-10-21: "your hand isn't affected... perhaps a blend"): your arms and
@@ -444,12 +445,15 @@ in front of seed 7's spawn):
 | Sealed room 13 × 13 m | 0.22 % | 0.22 % | 0.07 % |
 | Under a 31 m roof 5 m up (looking at the ground) | 1.33 % | 1.24 % | 0.08 % |
 | Under a 31 m leaf canopy, 4 m thick | 1.33 % | 1.19 % | 0.08 % |
-| The sea under a 31 m roof, before the water took the flood light | 33.2 % | 16.3 % | — |
-| The sea under a 31 m roof, after | AFTER_OFF | AFTER_HIGH | — |
+| The sea under a 31 m roof, before the water took the flood light | 33.2 % (median 30.8 %) | 16.3 % | — |
+| The sea under a 31 m roof, after | 2.11 % (median 0.58 %) | 1.93 % | — |
 | The open sea, for scale | 33.4 % | 34.5 % | — |
 
-Face B's tunnel and room read the same within 0.3 %; the open ground seen past a roof's edge is
-what lifts a view's mean, not the light under it.
+Face B's tunnel and room read the same within 0.3 %. Face B's roof and canopy views read 9 % because
+their view takes in the open hills past the edge; the ground under them reads 0.34 % (face A 0.25 %;
+the lower part of the view only), so the view's mean rises from what lies beyond the roof, not
+from the light under it (the after shot of the sea keeps the open sea
+beyond the roof in its top third).
 
 **What a carved tunnel looks like now** (both faces): at its mouth the floor takes most of the sun;
 5 m in the sun is gone and the ambient about a third; 10 m in about the floor (0.16 against 0.08);
