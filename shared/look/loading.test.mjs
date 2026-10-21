@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { VIEW_RADIUS_CHUNKS, loadingRust, validateLoading } from './loading.mjs';
+import { VIEW_RADIUS_CHUNKS, loadingRust, preloadServerRust, validateLoading } from './loading.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const data = () => JSON.parse(readFileSync(join(here, 'loading.json'), 'utf8'));
@@ -12,6 +12,7 @@ const checkedIn = (p) => readFileSync(join(here, '../..', p), 'utf8');
 
 test('the checked-in tunables validate and generate the checked-in Rust', () => {
   assert.equal(loadingRust(validateLoading(data())), checkedIn('crates/dwell-game/src/loading.gen.rs'));
+  assert.equal(preloadServerRust(validateLoading(data())), checkedIn('crates/dwell-sim/src/respawn_preload.gen.rs'));
 });
 
 test('a change by data alone is in the output', () => {
@@ -39,10 +40,23 @@ test('bad entries fail with their path named', () => {
     [(d) => (d.timeoutS = '20'), /timeoutS must be a number/],
     [(d) => (d.radius = 2), /unknown entry radius/],
     [(d) => delete d.timeoutS, /missing entry timeoutS/],
+    [(d) => (d.respawnPreload.enabled = 'yes'), /respawnPreload.enabled must be true or false/],
+    [(d) => (d.respawnPreload.radiusChunks = 4), /respawnPreload.radiusChunks must be a whole number in \[0, 3\]/],
+    [(d) => (d.respawnPreload.radius = 2), /unknown entry respawnPreload.radius/],
+    [(d) => delete d.respawnPreload.enabled, /missing entry respawnPreload.enabled/],
   ];
   for (const [edit, message] of cases) {
     const d = data();
     edit(d);
     assert.throws(() => validateLoading(d), message);
   }
+});
+
+test('the respawn preload is data: its radius, or off', () => {
+  const d = data();
+  d.respawnPreload.radiusChunks = 2;
+  assert.match(loadingRust(validateLoading(d)), /RESPAWN_PRELOAD_RADIUS_CHUNKS: Option<i32> = Some\(2\);/);
+  assert.match(preloadServerRust(validateLoading(d)), /RESPAWN_PRELOAD_RADIUS_CHUNKS: Option<i32> = Some\(2\);/);
+  d.respawnPreload.enabled = false;
+  assert.match(preloadServerRust(validateLoading(d)), /RESPAWN_PRELOAD_RADIUS_CHUNKS: Option<i32> = None;/);
 });

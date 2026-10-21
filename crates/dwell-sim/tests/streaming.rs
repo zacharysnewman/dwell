@@ -434,3 +434,179 @@ fn after_fast_flight_the_chunks_around_the_player_all_arrive() {
     }
     assert!(missing.is_empty(), "missing {missing:?}");
 }
+
+// --- the respawn preload (§6.3) ------------------------------------------------------------------
+
+/// What one client holds, and what it was sent, while the server steps.
+#[derive(Default)]
+struct Held {
+    held: BTreeSet<[i32; 3]>,
+    /// Every chunk sent, in order (a chunk sent twice appears twice).
+    sent: Vec<[i32; 3]>,
+    unloaded: Vec<[i32; 3]>,
+    events: Vec<PlayerEvent>,
+}
+
+impl Held {
+    fn pump(&mut self, f: &mut Fixture, ticks: i32) {
+        for _ in 0..ticks {
+            f.server.step();
+            for (m, _) in f.take(1) {
+                match m {
+                    Message::ChunkData(c) => {
+                        self.held.insert(c.coord);
+                        self.sent.push(c.coord);
+                    }
+                    Message::ChunkUnload(u) => {
+                        for c in u.coords {
+                            self.held.remove(&c);
+                            self.unloaded.push(c);
+                        }
+                    }
+                    Message::PlayerEvent(e) => self.events.push(e),
+                    _ => {}
+                }
+            }
+        }
+    }
+    fn event(&self, kind: PlayerEventKind) -> Option<&PlayerEvent> {
+        self.events.iter().find(|e| e.kind == kind)
+    }
+}
+
+/// The view sphere of `r` around `center`, within the rows.
+fn sphere(center: ChunkCoord, r: i32) -> Vec<[i32; 3]> {
+    let mut out = Vec::new();
+    for y in -r..=r {
+        for z in -r..=r {
+            for x in -r..=r {
+                let c = [center.x + x, center.y + y, center.z + z];
+                if x * x + y * y + z * z <= r * r + r && (MIN_CHUNK_Y..=MAX_CHUNK_Y).contains(&c[1])
+                {
+                    out.push(c);
+                }
+            }
+        }
+    }
+    out
+}
+
+/// Joins the flat world, takes its view, then dies by a fall 20 chunks east of the spawn. Returns
+/// the Welcome and the chunk the body lies in.
+fn die_far_from_the_spawn(f: &mut Fixture, h: &mut Held) -> (Welcome, ChunkCoord) {
+    let welcome = f.join(1, &Client::new(1));
+    f.send(1, Message::WorldgenCheck(0));
+    h.pump(f, 90);
+    let x = 0.5 + f64::from(20 * CHUNK_SIZE);
+    // The ground there first (the fall needs its collision), then a lethal drop.
+    for _ in 0..240 {
+        f.move_to(1, x, FLAT_TOP_M + 1.0, 0.5);
+        h.pump(f, 1);
+    }
+    f.move_to(1, x, FLAT_TOP_M + 60.0, 0.5);
+    for _ in 0..600 {
+        h.pump(f, 1);
+        if f.server.health_of(1) == 0 {
+            break;
+        }
+    }
+    assert_eq!(f.server.health_of(1), 0, "the fall kills");
+    (
+        welcome,
+        dwell_world::chunk_of_pos([x, FLAT_TOP_M + 0.5, 0.5]),
+    )
+}
+
+// face-a-only: the flat fixture world is face A's ground; the respawn centre's face is covered by
+// dwell-sim's `the_respawn_centre_is_the_body_centres_chunk_on_either_face`.
+#[test]
+fn a_dead_players_client_gets_the_respawn_ring_and_keeps_the_body_s_view_until_the_respawn() {
+    let mut f = Fixture::new(ServerConfig {
+        respawn_preload_radius_chunks: Some(3),
+        ..flat()
+    });
+    let mut h = Held::default();
+    let (welcome, body) = die_far_from_the_spawn(&mut f, &mut h);
+    // The ring is around the respawn point's chunk: within a chunk of the Welcome's verification
+    // chunk (the cell under the spawn), which is how the client predicts it.
+    let respawn_at = f.server.respawn_preload_of(1).expect("a respawn preload");
+    let v = ChunkCoord::from_array(welcome.verification_chunk);
+    assert!(
+        (respawn_at.x - v.x).abs() <= 1
+            && (respawn_at.y - v.y).abs() <= 1
+            && (respawn_at.z - v.z).abs() <= 1,
+        "{respawn_at:?} vs {v:?}"
+    );
+    // Three seconds into the five-second wait: the ring there and the body's view are both held.
+    let unloaded_before = h.unloaded.len();
+    h.pump(&mut f, 180);
+    assert!(f.server.health_of(1) == 0, "still dead");
+    let ring = sphere(respawn_at, 3);
+    let missing: Vec<_> = ring.iter().filter(|c| !h.held.contains(*c)).collect();
+    assert!(
+        missing.is_empty(),
+        "the respawn ring arrived: missing {missing:?}"
+    );
+    let view = sphere(body, R);
+    assert!(
+        view.iter().all(|c| h.held.contains(c)),
+        "the body's view is kept while dead"
+    );
+    assert_eq!(
+        h.unloaded.len(),
+        unloaded_before,
+        "nothing unloaded while dead"
+    );
+    // Bounded: the ring, once each.
+    let stats = f.server.stream_stats_of(1).unwrap();
+    assert!(
+        stats.preload_sent as usize <= ring.len(),
+        "{} > {}",
+        stats.preload_sent,
+        ring.len()
+    );
+    assert!(stats.preload_sent > 0);
+    // The respawn: the extra stream ends; the body's view leaves; the ring is not sent again.
+    let sent_before = h.sent.len();
+    h.pump(&mut f, 150);
+    assert!(f.server.health_of(1) > 0, "respawned");
+    let respawn = h.event(PlayerEventKind::Respawn).expect("a respawn event");
+    assert_eq!(
+        dwell_world::chunk_of_pos([
+            respawn.position[0],
+            respawn.position[1] + 0.9,
+            respawn.position[2]
+        ]),
+        respawn_at,
+        "respawned in the preloaded chunk"
+    );
+    assert_eq!(f.server.respawn_preload_of(1), None);
+    assert!(
+        view.iter().all(|c| !h.held.contains(c)),
+        "the body's view unloaded"
+    );
+    let resent = h.sent[sent_before..]
+        .iter()
+        .filter(|c| ring.contains(c))
+        .count();
+    assert_eq!(resent, 0, "the ring was already there");
+    let after = f.server.stream_stats_of(1).unwrap().preload_sent;
+    h.pump(&mut f, 60);
+    assert_eq!(f.server.stream_stats_of(1).unwrap().preload_sent, after);
+}
+
+// face-a-only: the flat fixture world is face A's ground.
+#[test]
+fn without_the_preload_the_respawn_ring_streams_only_after_the_respawn() {
+    let mut f = Fixture::new(ServerConfig {
+        respawn_preload_radius_chunks: None,
+        ..flat()
+    });
+    let mut h = Held::default();
+    die_far_from_the_spawn(&mut f, &mut h);
+    assert_eq!(f.server.respawn_preload_of(1), None);
+    let sent_before = h.sent.len();
+    h.pump(&mut f, 180);
+    assert_eq!(h.sent.len(), sent_before, "nothing more while dead");
+    assert_eq!(f.server.stream_stats_of(1).unwrap().preload_sent, 0);
+}
