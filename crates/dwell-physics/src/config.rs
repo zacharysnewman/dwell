@@ -170,9 +170,11 @@ pub struct SprintSlide {
 /// ◆ Dwell addition.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Damage {
-    pub fall_damage_min_speed: f32,
+    /// m/s into a surface (`max(0, −v · n)`, the controller's `impact_speed`) a hit must exceed to
+    /// hurt: floors, ramps, walls and ceilings alike (§6.10).
+    pub impact_damage_min_speed: f32,
     /// Health points per m/s above the minimum.
-    pub fall_damage_per_speed: f32,
+    pub impact_damage_per_speed: f32,
     pub crush_speed: f32,
     pub crush_ticks: u16,
 }
@@ -324,8 +326,8 @@ impl Default for PlayerControllerConfig {
                 cooldown_ticks: 30,
             },
             damage: Damage {
-                fall_damage_min_speed: 12.0,
-                fall_damage_per_speed: 8.0,
+                impact_damage_min_speed: 12.0,
+                impact_damage_per_speed: 8.0,
                 crush_speed: 4.0,
                 crush_ticks: 6,
             },
@@ -344,6 +346,17 @@ impl Default for PlayerControllerConfig {
                 external_absorb_threshold: 0.01,
                 max_platform_yaw_speed: 360.0,
             },
+        }
+    }
+}
+
+impl Damage {
+    /// Health points an impact at `speed` m/s into a surface takes (0 at or under the minimum).
+    pub fn impact_damage(&self, speed: f32) -> i32 {
+        if speed > self.impact_damage_min_speed {
+            ((speed - self.impact_damage_min_speed) * self.impact_damage_per_speed).round() as i32
+        } else {
+            0
         }
     }
 }

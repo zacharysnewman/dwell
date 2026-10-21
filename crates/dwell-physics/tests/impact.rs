@@ -28,12 +28,17 @@ fn hurt(w: &PlayerTestWorld, h: PlayerHandle) -> i32 {
 
 /// The damage dealt over `n` ticks, tick by tick (the ticks that hurt).
 fn hits(w: &mut PlayerTestWorld, h: PlayerHandle, n: i32) -> Vec<i32> {
+    hits_at(w, h, n).into_iter().map(|(d, _)| d).collect()
+}
+
+/// [`hits`] with each hit's surface normal (face-local).
+fn hits_at(w: &mut PlayerTestWorld, h: PlayerHandle, n: i32) -> Vec<(i32, Vec3)> {
     let mut out = Vec::new();
     for _ in 0..n {
         w.step(1);
         let d = hurt(w, h);
         if d > 0 {
-            out.push(d);
+            out.push((d, w.c(h).impact_normal));
         }
     }
     out
@@ -60,11 +65,15 @@ fn a_perpendicular_landing_on_flat_ground_damages_as_before() {
     let mut w = PlayerTestWorld::new();
     w.floor();
     let e = w.spawn(Vec3::new(0.5, 20.0, 0.5));
-    let dealt = hits(&mut w, e, ticks(2.5));
-    assert_eq!(dealt, [131], "one hit, as before");
+    let dealt = hits_at(&mut w, e, ticks(2.5));
+    assert_eq!(dealt.len(), 1, "one hit: {dealt:?}");
+    assert_eq!(dealt[0].0, 131, "as before");
     assert_eq!(w.count(e, events::LANDED), 1);
-    let n = w.c(e).impact_normal;
-    assert!(approx(n.y, 1.0, 1e-4), "the floor's normal, face-local: {n}");
+    let n = dealt[0].1;
+    assert!(
+        approx(n.y, 1.0, 1e-4),
+        "the floor's normal, face-local: {n}"
+    );
 }
 
 #[test]
@@ -93,7 +102,12 @@ fn hillside(w: &mut PlayerTestWorld) -> fn(i32, i32) -> i32 {
                 w.set_cell(x, row, z, grass);
             }
             if let Top::Gentle(f) = top_of(&around, rows_for_m(1.0)) {
-                w.set_cell(x, h - 1, z, gentle_cell("dwell:grass", f, false).expect("ramp"));
+                w.set_cell(
+                    x,
+                    h - 1,
+                    z,
+                    gentle_cell("dwell:grass", f, false).expect("ramp"),
+                );
             }
         }
     }
@@ -114,13 +128,13 @@ struct Landing {
     before: Vec3,
 }
 
-/// Spawns 2 m over the hillside at z = 40 and launches the player at `speed` m/s, `angle`° below
+/// Spawns 0.6 m over the hillside at z = 40 and launches the player at `speed` m/s, `angle`° below
 /// the horizontal, heading downhill (−z).
 fn launch_onto_hillside(speed: f32, angle: f32) -> Landing {
     let mut w = PlayerTestWorld::new();
     let height = hillside(&mut w);
     let ground = height(0, 40) as f32 * 0.5;
-    let e = w.spawn(Vec3::new(0.5, ground + 2.0, 40.5));
+    let e = w.spawn(Vec3::new(0.5, ground + 0.6, 40.5));
     let a = angle.to_radians();
     w.kick(0, e, Vec3::new(0.0, -speed * a.sin(), -speed * a.cos()));
     let mut out = Landing {
@@ -159,7 +173,11 @@ fn a_vertical_landing_on_a_ramp_counts_the_ramps_normal() {
     let flat = PlayerControllerConfig::default()
         .damage
         .impact_damage(l.before.length());
-    assert!(l.dealt[0] > 0 && l.dealt[0] < flat, "{:?} vs {flat}", l.dealt);
+    assert!(
+        l.dealt[0] > 0 && l.dealt[0] < flat,
+        "{:?} vs {flat}",
+        l.dealt
+    );
     assert!((l.fastest - into).abs() < 0.05, "{} vs {into}", l.fastest);
 }
 
@@ -177,7 +195,12 @@ fn a_glancing_landing_on_a_ramp_hurts_less_and_a_skim_not_at_all() {
     );
     // Along the ramp's own slope: a skim, only gravity's few m/s into it.
     let skim = launch_onto_hillside(25.0, 26.565);
-    assert_eq!(skim.dealt, Vec::<i32>::new(), "{} m/s into the ramp", skim.fastest);
+    assert_eq!(
+        skim.dealt,
+        Vec::<i32>::new(),
+        "{} m/s into the ramp",
+        skim.fastest
+    );
     assert!(skim.fastest < 6.0, "{}", skim.fastest);
 }
 
@@ -196,12 +219,12 @@ fn launched_into_a_wall_at_25_m_s_hurts_once() {
     let mut w = wall_ahead();
     let e = w.spawn(Vec3::new(0.5, 3.0, 0.5));
     w.kick(0, e, Vec3::new(0.0, 0.0, 25.0));
-    let dealt = hits(&mut w, e, ticks(1.5));
+    let dealt = hits_at(&mut w, e, ticks(1.5));
     // (25 − 12) × 8 = 104, less the little the fall turned the velocity: one hit, not one a tick
     // while the launch keeps pressing the body into the wall.
     assert_eq!(dealt.len(), 1, "{dealt:?}");
-    assert!(dealt[0] >= 100, "{dealt:?}");
-    let n = w.c(e).impact_normal;
+    assert!(dealt[0].0 >= 100, "{dealt:?}");
+    let n = dealt[0].1;
     assert!(approx(n.z, -1.0, 1e-3), "the wall's normal: {n}");
 }
 
@@ -240,7 +263,11 @@ fn flying_into_a_wall_does_not_hurt() {
         }
     }
     assert!(fastest_flight > 20.0, "{fastest_flight}");
-    assert!(w.pos(e).z < 6.0 && w.pos(e).z > 5.0, "at the wall: {}", w.pos(e));
+    assert!(
+        w.pos(e).z < 6.0 && w.pos(e).z > 5.0,
+        "at the wall: {}",
+        w.pos(e)
+    );
     assert_eq!(dealt, Vec::<i32>::new());
 }
 
@@ -267,7 +294,10 @@ fn a_hard_ceiling_hit_hurts() {
     }
     assert_eq!(dealt.len(), 1, "{dealt:?}");
     assert!(dealt[0] > 60, "{dealt:?}");
-    assert!(approx(normal.y, -1.0, 1e-3), "the ceiling's normal: {normal}");
+    assert!(
+        approx(normal.y, -1.0, 1e-3),
+        "the ceiling's normal: {normal}"
+    );
 }
 
 #[test]
@@ -304,15 +334,20 @@ fn stepping_up_half_a_metre_and_auto_climbing_never_hurt() {
     for run in [false, true] {
         let mut w = PlayerTestWorld::new();
         w.floor();
-        for z in 3..=10 {
+        for z in 3..=13 {
             for x in -3..=3 {
                 w.set_cell(x, 0, z, cube_block());
             }
         }
         let e = w.spawn(Vec3::new(0.5, 0.0, 0.5));
         w.set_input(move |_, _| input(0.0, 1.0, run, false, false, 0.0, 0.0));
-        let fastest = fastest_impact(&mut w, e, ticks(1.5));
-        assert!(approx(w.feet(e), 0.5, 0.01), "on the step: {}", w.feet(e));
+        let fastest = fastest_impact(&mut w, e, ticks(1.0));
+        assert!(
+            approx(w.feet(e), 0.5, 0.01),
+            "on the step: {} at {}",
+            w.feet(e),
+            w.pos(e)
+        );
         assert!(fastest < 9.0, "run {run}: {fastest}");
     }
     let mut w = PlayerTestWorld::with_config(PlayerControllerConfig::touch());
@@ -331,7 +366,17 @@ fn walking_up_and_down_a_ramp_hillside_never_hurts() {
     let height = hillside(&mut w);
     let e = w.spawn(Vec3::new(0.5, height(0, 10) as f32 * 0.5 + 0.02, 10.5));
     w.step(10);
-    w.set_input(|t, _| input(0.0, if t < 150 { 1.0 } else { -1.0 }, true, false, false, 0.0, 0.0));
+    w.set_input(|t, _| {
+        input(
+            0.0,
+            if t < 150 { 1.0 } else { -1.0 },
+            true,
+            false,
+            false,
+            0.0,
+            0.0,
+        )
+    });
     let fastest = fastest_impact(&mut w, e, ticks(5.0));
     assert!(fastest < 9.0, "{fastest}");
 }

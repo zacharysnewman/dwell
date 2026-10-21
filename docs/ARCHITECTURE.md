@@ -395,7 +395,7 @@ request/response latency doesn't wait for a tick), runs the due 60 Hz steps (`Fi
 `dwell-sim`: carries remainders, drops backlogs beyond 8 steps), and sleeps until the next step or
 at most 2 ms. Rapier steps on the tick's thread. **Built (Phase 2):** each `Server::step` takes one
 input per joined player from its jitter-buffered queue (§9.3), runs the player controller pipeline,
-applies its server-side consequences (fall damage; there is no void: a body that leaves the disc
+applies its server-side consequences (impact damage; there is no void: a body that leaves the disc
 falls toward the midplane and is carried across the midplane by the flip band, §6.3), steps
 physics, respawns dead players after `RESPAWN_SECONDS`, and every 3rd tick sends each client a
 `PhysicsSnapshot`. Sessions are kept in id order, so every pass over them is deterministic.
@@ -2171,6 +2171,7 @@ in the code yet.
 | `sprint_slide.min_start_speed` / `start_boost` / `max_speed` (`config.rs`) | 6.5 m/s / 1.5 m/s / 14 m/s | The sprint slide (owner, 2026-10-19; PLAYER_CONTROLLER.md §6.9): crouch pressed at this horizontal speed or more (a sprint, not a walk) slides, with the boost; downhill speeds it up to the maximum |
 | `sprint_slide.friction` / `slope_gravity` (`config.rs`) | 6 m/s² / 1 | Its deceleration, and the fraction of gravity the ground's tilt along the slide adds (downhill) or takes (uphill): 1.3 s / ~7 m on flat ground from a sprint |
 | `sprint_slide.steer_rate` / `cooldown_ticks` (`config.rs`) | 90 °/s / 30 ticks (0.5 s) | Limited steering toward the move input; the wait after a slide before the next (≤ 255: a `u8` on the wire) |
+| `damage.impact_damage_min_speed` / `impact_damage_per_speed` (`config.rs`) | 12 m/s / 8 per m/s | Impact damage (owner, 2026-10-21; PLAYER_CONTROLLER.md §6.10): a hit hurts by its speed into the surface, `max(0, −v · n)`, above the minimum, this many points per m/s; floors, ramps, walls, ceilings |
 | `SLIDE_HOLD` / `SLIDE_UPDATE_EVERY` (*client*, `dwell-game` `sound.rs`) | 0.15 s / 50 ms | A slide's sound: a pause shorter than the hold keeps the same voice; speed updates at most this often (AUDIO.md §5) |
 | Ink outline (*client*, `shared/look/outline.json`; ART_DIRECTION.md §7) | Off by default (`?outline=` picks a mode). `silhouette`: depth edges, 1.5 CSS px, full to 32 m, gone by 128 m, strength 0.85; `creases`: + creases, 1.5 px, 24–96 m, 0.8; `blocks`: + block edges, 1 px, 12–48 m, 0.6. Silhouette threshold 0.04 (relative jump in inverse depth), crease 0.35 (slope change 0–1), each full at twice it; the fade × the spyglass's magnification |
 | Motion effects (*client*, `shared/look/motion.json`) | FOV zoomed out 10 % at run speed, 20 % at 2000 m/s (75° → ≈ 80.3°, 85.3°); spring 8/s widen, 3.5/s settle; at most 120°; wind 0.35 at run, 1 at 2000 m/s | The speed FOV and wind ([`MOTION_EFFECTS.md`](./MOTION_EFFECTS.md)); generated into dwell-look's `motion.gen.rs` |
@@ -2677,7 +2678,7 @@ architectural summary.
 | Other players | Both dynamic: they block and push each other; standing on heads is grounded but not carried by default | Server; remote players are kinematic on the client |
 | Tier 2 debris | Bounces off the local player; never affects player movement | Client only |
 | Explosions | Radial velocity change with falloff and upward bias (PPC `AddExplosion`), plus damage | Server; client replays at event tick (§9.3) |
-| Falling | Fall damage from the controller's `Landed` impact speed | Server |
+| Impacts | Damage from the controller's `IMPACTED` hit: the speed into the surface met, `max(0, −v · n)`, on floors, ramps, walls and ceilings alike (PLAYER_CONTROLLER.md §6.10); flight exempt | Server |
 | Voxel edits | Block removed under feet → normal walk-off; placement into any player capsule is rejected | Server |
 
 ### 9.3 Prediction & reconciliation **[built]**
@@ -2731,9 +2732,14 @@ Remote players are interpolated like Tier 1 bodies (in the ground body's frame w
 `groundEntityId` ≠ 0), exist in the client's physics worlds as kinematic capsules, and are
 animated from `State` and flags in snapshots.
 
-### 9.6 Health, death & respawn **[built: fall damage, death, respawn]**
-- Health (`MAX_HEALTH` 100) is server-authoritative; damage sources are fall (built: from the
-  `Landed` impact speed above 12 m/s, 8 points per m/s, and falling out of the world), crush
+### 9.6 Health, death & respawn **[built: impact damage, death, respawn]**
+- Health (`MAX_HEALTH` 100) is server-authoritative; damage sources are impacts (built, owner
+  2026-10-21: the controller's `IMPACTED` hit, the body's pre-contact velocity into the surface's
+  normal, `max(0, −v · n)`, so a glancing hit counts less and a skim nothing; floors, ½ m ramps by
+  their normal, walls and ceilings alike, once per contact, the largest of a tick's; above
+  `damage.impact_damage_min_speed` 12 m/s, `impact_damage_per_speed` 8 points per m/s; flight,
+  swimming and climbing exempt; sent with cause `Fall`; PLAYER_CONTROLLER.md §6.10; and falling out
+  of the world), crush
   (Phase 20), explosion (Phase 21). `Damage`, `Death`, and `Respawn` are `PlayerEvent`s to every
   client; a dead player's body leaves the physics world, and snapshots mark it `dead` where it
   died. The server respawns the player at the spawn point after `RESPAWN_SECONDS`.
