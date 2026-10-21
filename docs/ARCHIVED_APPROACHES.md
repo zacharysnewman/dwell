@@ -31,6 +31,17 @@ The Sobel rule picks a column's facing from the 3×3 gradient and needs only the
 the facing lower and the opposite one not, which removes the terraces left at every sideways
 contour shift but leaves ½ m wedges on diagonal hillsides (a herringbone look).
 
+## The cel texture style — `archive/cel-textures`
+
+A second texture style for the pixel-art preview (0.24.2): the painterly materials repainted from
+`shared/textures/cel.json` by `cel.mjs` in at most four flat tones a tile on the `dwell` pixel-art
+palette, at 16 texels a tile, baked into `dwell-mesh` `cel.rgba`, with mips by majority tone; the
+presets `270-cel` and `360-cel` swapped the atlas to it. It cut the pixels that change frame to frame
+by 10–32 % against painterly in the same look but not the sparkle, and the 1 m repeat showed. Removed
+by the owner on 2026-10-21: "I think let's throw out the cel shaded ones they're pretty bad."
+PIXEL_ART_LOOK.md §8 keeps the measurements; the code is at `archive/cel-textures` (main 0.25.0,
+1b5eaf95).
+
 ## Smaller experiments
 
 | Tag | Date | What it tried |

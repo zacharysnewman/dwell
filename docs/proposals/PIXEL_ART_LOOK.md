@@ -8,7 +8,7 @@ toon bands, a limited palette with ordered dither, a nearest-neighbour integer u
 proposal says what was built to judge it, what it shows, and the spec's open questions.
 
 **Try it:** `https://dropkickarcade.com/dwell/?pixelart=270` (presets `180`, `270`, `270-warm`,
-`270-snap`, `270-cel`, `360`, `360-cel`, `270-raw`; `off` or no parameter is the normal look). In the console,
+`270-snap`, `360`, `270-raw`; `off` or no parameter is the normal look). In the console,
 `__dwell.setPixelArt('180')` switches live. The bench has a configuration per preset
 (`npm run bench -- <scenario> --compare --configs pixelart-180,pixelart-270,pixelart-270-warm,pixelart-270-snap,pixelart-360`).
 
@@ -45,9 +45,8 @@ for: the palettes and presets are data, one generator, validation and tests over
      a gradient or a band edge crosses between two colours. This is the "dither only gradients and
      band edges" rule without a gradient detector.
   5. **Atlas:** point filtering while on, `point` (no mips, the spec's rule) or `point-mips` (nearest
-     texel of the nearest mip); and the preset's texture set (`textures`): the painterly set, or the
-     **cel** style (§8; [`PAINTERLY_TEXTURES.md`](../PAINTERLY_TEXTURES.md) §10), written into the
-     atlas in place when the preset changes.
+     texel of the nearest mip), over the painterly set. (A cel texture set was tried and removed,
+     §8.)
   6. Motion blur and the wind pass (its edge blur and streaks) are off.
   7. **Camera snap** (optional): the eye moves along the view's right and up onto the grid of
      low-res pixels on a plane `snapDepthM` ahead, and the upscale shifts the picture by the
@@ -59,22 +58,17 @@ for: the palettes and presets are data, one generator, validation and tests over
 
 ## 2. The presets
 
-| Preset | Rows | Fit | Palette | Dither | Sun bands | Ambient bands | Shadow hue | Edge | Atlas | Textures | Snap |
-|---|---|---|---|---|---|---|---|---|---|---|---|
-| `180` | 180 | crop | dwell (45) | 0.5 | 3 | 3 | 0.5 | depth + crease, 45% | point-mips | painterly | off |
-| `270` | 270 | crop | dwell | 0.5 | 3 | smooth | 0.5 | depth, 40% | point-mips | painterly | off |
-| `270-warm` | 270 | crop | hearth (44) | 0.5 | 3 | smooth | 0.6 | depth, 40% | point-mips | painterly | off |
-| `270-snap` | 270 | crop | dwell | 0.5 | 3 | smooth | 0.5 | depth, 40% | point-mips | painterly | 8 m |
-| `270-cel` | 270 | crop | dwell | 0.5 | 3 | smooth | 0.5 | depth, 40% | point-mips | **cel** | off |
-| `360` | 360 | crop | dwell | 0.35 | 4 | smooth | 0.35 | none | point-mips | painterly | off |
-| `360-cel` | 360 | crop | dwell | 0.35 | 4 | smooth | 0.35 | none | point-mips | **cel** | off |
-| `270-raw` | 270 | letterbox | hearth | 1.0 | smooth | smooth | 0 | none | point | painterly | off |
-
-`270-cel` and `360-cel` are `270` and `360` with the cel textures and nothing else (a test pins it),
-so a comparison isolates the texture set.
+| Preset | Rows | Fit | Palette | Dither | Sun bands | Ambient bands | Shadow hue | Edge | Atlas | Snap |
+|---|---|---|---|---|---|---|---|---|---|---|
+| `180` | 180 | crop | dwell (45) | 0.5 | 3 | 3 | 0.5 | depth + crease, 45% | point-mips | off |
+| `270` | 270 | crop | dwell | 0.5 | 3 | smooth | 0.5 | depth, 40% | point-mips | off |
+| `270-warm` | 270 | crop | hearth (44) | 0.5 | 3 | smooth | 0.6 | depth, 40% | point-mips | off |
+| `270-snap` | 270 | crop | dwell | 0.5 | 3 | smooth | 0.5 | depth, 40% | point-mips | 8 m |
+| `360` | 360 | crop | dwell | 0.35 | 4 | smooth | 0.35 | none | point-mips | off |
+| `270-raw` | 270 | letterbox | hearth | 1.0 | smooth | smooth | 0 | none | point | off |
 
 `dwell` is 45 colours from the storybook palette's ramps and swatches (meadow, leaf, soil, bark,
-heartwood — added with the cel style, for its wood tones — stone, sand, water, cloud, flame, the inks) plus a hand-picked sky ramp (7 steps) and a near-black, since
+stone, bedrock, sand, water, cloud, flame, the inks) plus a hand-picked sky ramp (7 steps) and a near-black, since
 the palette has no sky blues and no darks for night. `hearth` is a hand-made Lospec-style warm palette
 (44 colours in the spec's ramps: sky 5, cloud 4, foliage 6, grass 5, bark 4, earth 4, stone 4, water
 3, warm light 4, dusk 2, shade 3), hue-shifted warm in the light and cool in the shadow.
@@ -133,7 +127,7 @@ session): `/private/tmp/claude-501/-Users-zacknewman-Projects-dwell/dc7bd3b5-fc5
   quantized, each stroke becomes a speckle of two palette colours (grass tops, the held stone).
   The spec wants flat vertex colour with procedural noise; with these textures the look is busier
   than t3ssel8r's. A pixel-art direction would want its own texture set (or none: flat ramp colours
-  by face) — a texture-set question, not a renderer one. A cel set was built to answer it (§8).
+  by face) — a texture-set question, not a renderer one. A cel set was built to answer it, and removed (§8).
 - **The 1-pixel edge** (near-side, darkened) is subtle at 270 and invisible past its fade; the
   white region-tool box and the block outline, drawn into the low-res picture, become 1-pixel white
   lines that dominate dark scenes.
@@ -198,24 +192,29 @@ From the spec, with what the preview suggests:
 - [ ] **First-person shimmer:** is it acceptable for this to be an optional look (a setting) rather
   than the game's look? The crawl on turning is inherent to a first-person camera at low resolution.
 - [x] **Textures:** would a pixel-art look keep the painterly texture set, or get a flat-colour set
-  of its own (the spec's "vertex colour and procedural noise")? The owner asked for a cel set; a
-  prototype is built (§8).
+  of its own (the spec's "vertex colour and procedural noise")? The owner asked for a cel set; it
+  was built, measured and removed (§8): the painterly set stays.
 
-## 8. A cel texture set (2026-10-21)
+## 8. A cel texture set (2026-10-21): tried and removed
+
+**Removed (owner, 2026-10-21):** "I think let's throw out the cel shaded ones they're pretty bad."
+The cel style, the `270-cel` and `360-cel` presets, the presets' `textures` field, the renderer's
+atlas swap and majority-tone mips, and the `heartwood` ramp added to `dwell` for it are gone; the
+preview draws the painterly set. The code is kept as the tag `archive/cel-textures`
+([`ARCHIVED_APPROACHES.md`](../ARCHIVED_APPROACHES.md)). What follows is the record of what was built
+and measured.
+
 
 Owner: "I think we need to try out a custom texture set for the pixel art look. It looks like it's
 better to use fewer colors per texture, with more of a cell shaded look to the textures", and "the
 complexity in the textures currently makes them shimmer a lot when moving around." Built as a second
-texture **style**, cel ([`PAINTERLY_TEXTURES.md`](../PAINTERLY_TEXTURES.md) §10): the same materials
+texture **style**, cel: the same materials
 painted from `shared/textures/cel.json` in at most 4 flat tones a tile, all on the `dwell` palette
 (tested), at 16 texels a tile (one per metre, so a texel stays at least a low-res pixel out to about
 11 m at 270 rows), hard-edged shapes from a small vocabulary (clumps, blades, bricks, planks, grain
 bands, ripples, rings), its mips by **majority tone** (so a distant face keeps exactly its tones and
 settles on its main one, rather than averaging into in-between colours that the palette dithers). The
 presets `270-cel` and `360-cel` are `270` and `360` with it; nothing else changes.
-
-**Try it:** `https://dropkickarcade.com/dwell/?pixelart=270-cel` and `?pixelart=360-cel` (and
-`?pixelart=270` for the painterly set in the same look), or `__dwell.setPixelArt('270-cel')` live.
 
 **Screenshots** (the owner's Mac, Chrome on the GPU, 1920 × 1080, seed 7; load average 7–14 during
 the run). Sheets of the current look, `270` (painterly), `270-cel` and `360-cel`, and GIFs of each
@@ -283,14 +282,13 @@ the same: the same atlas size, the same samplers.
 
 **Open questions for the owner**
 
-- [ ] Keep the cel set as the pixel-art look's textures, with per-block variants to break the
-  repeat? Or go further, to flat ramp colours by face with no texture, which would sparkle least?
+- [x] Keep the cel set as the pixel-art look's textures? No: removed (owner, 2026-10-21, above).
 - [ ] Shimmer: the textures are only part of it. The rest needs the edges and dither to hold
   still (world-space dither, a coarser LOD under the look, or the slower camera §4 describes).
 
 ## 7. If adopted
 
 An ADR and a phase: the palettes as a proper palette design (per time of day), the preset as a
-player setting (an append-only field of the settings record) rather than a query, the cel texture set (§8) or its successor, the quantize by a 3D lookup table, the edge as a palette step, and
+player setting (an append-only field of the settings record) rather than a query, the quantize by a 3D lookup table, the edge as a palette step, and
 dither in world space if the screen-fixed pattern is judged a problem. Until then this stays a
 preview behind `?pixelart=`, like `?outline=`.
