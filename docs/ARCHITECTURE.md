@@ -778,45 +778,14 @@ needing support, an air plant (`medium`). **World generation grows it** in meado
 decoration rule as data; the owner's partial reversal of B10, for plants only). Adding it changes
 the registry hash: the 0.12 compatibility line.
 
-**Adaptive natural blocks [in progress, Phase 18; formerly 9e]** ([`ADAPTIVE_BLOCKS.md`](./ADAPTIVE_BLOCKS.md),
-[ADR 0024](./adr/0024-adaptive-natural-blocks.md)). *On the branch `claude/half-height-voxels`
-(Phase 41 H4) no block is adaptive: natural ground is shaped once, at generation, from stored
-ramps (below), and placing or breaking a block changes no other cell. The mechanism stays in the
-code, unused there.* A block with `"adaptive": true` in its data
-(grass, dirt, stone and sand; not water, the ladder or the sandbox floor) is stored as a plain cube
-and **shaped at use**: when nothing solid is above it (a *top block*), its shape comes from its 8
-horizontal neighbours, each **higher** (filled one row up), **the same** or **lower** (open in its
-row) — a table of 3⁸ = 6,561 neighbourhoods. Any other adaptive block is a cube. Neighbours are
-compared by occupancy, never by their derived shapes, so nothing iterates and an edit changes the
-shapes of at most the 9 top blocks around and under it. On face B, whose up is −y, the same table
-is read with the rows mirrored and the shape hangs.
-- **The table is data:** `shared/blocks/adaptive.json` names the rule set (`"five-rules"`, the
-  Shape Playground's rules) and holds per-neighbourhood **overrides** (`around` "+==/=.-/===",
-  `shape`, `facing`). `shared/blocks/adaptive.mjs` builds the 6,561 entries, rejects unknown
-  shapes, facings and repeated neighbourhoods with a message naming the entry, and runs the
-  exhaustive adjacency test (every equal-height neighbour pair: the baked side faces match the
-  profiles the meshers cull by, and the two surfaces meet at their shared corners); `gen.mjs`
-  emits `ADAPTIVE_UP` / `ADAPTIVE_DOWN` (shape indices, upright and hanging) in
-  `crates/dwell-blocks/src/adaptive.gen.rs` and the readable `adaptive_vectors.txt`, which the Rust
-  tests check; CI regenerates (stale output fails) and runs `node --test
-  shared/blocks/adaptive.test.mjs` (the owner's 151 hand-shaped playground blocks,
-  `playground-export.json`, are reproduced; an override changes one entry by data alone).
-- **One derivation:** `dwell_blocks::adaptive` (`derive`, `shape_at`, `flooded_at`, over any
-  voxel accessor) and `VoxelWorld::shape_at` / `flooded_at` (world coordinates, face by row).
-  Every user reads it: the chunk mesher (from its padded voxels), the terrain collider (above), the
-  controller's probes (`VoxelQuery::shape`, `FaceQuery::shape`), block targeting and the edit's
-  line of sight (`raycast_block`), the terrain's point queries (`TerrainGenerator::surface_y_at`,
-  spawn) and the LOD mesher (on its cells, §6.6). Server and client hold the same voxels and the
-  same table, so prediction walks the server's shapes.
-- **Water:** an adaptive top block holds water in its open part (it is drawn and swum as flooded)
-  when a liquid is above it or beside it in its row — a shore's shaped bank — or **[built,
-  generator version 17]** when its state is `flooded=true`, unless it is not a top block or the
-  rules make it a full cube. An adaptive block may have one property, `flooded` (false, true), and
-  no other (`shared/blocks/gen.mjs`): the generator writes every top voxel below sea level flooded,
-  so the sea fills the open part of shaped blocks under the water line
-  ([`WATER_RENDERING.md`](./WATER_RENDERING.md) §9); edits follow the flooded rules below.
-- **Not stored:** world files, edits and the wire carry the material (and its `flooded`) alone;
-  the derived shape is not part of a state's string.
+**Natural ground [built, Phase 41]** ([`HALF_HEIGHT_GRID.md`](./HALF_HEIGHT_GRID.md),
+[ADR 0042](./adr/0042-half-height-cells.md)): natural ground is shaped **once, at generation**,
+from stored cardinal ramps (below); placing or breaking a block changes no other cell, and a
+placed natural block is a flat cell. Phase 18's adaptive blocks (shaped from their neighbours at
+use, ADR 0024) were removed when ½ m cells were adopted: no block data may set `adaptive`
+(`gen.mjs` fails with a message), and every cell is drawn, collided and targeted as its own
+state's shape (`VoxelWorld::shape_at`). A cell holds water in its open part when its state is
+`flooded=true` (a ramp under the sea, generator version 17's shores).
 
 **Shapes [built, Phase 9; no shaped block since Phase 15]** ([ADR 0016](./adr/0016-slope-blocks.md),
 [`SLOPE_BLOCKS.md`](./SLOPE_BLOCKS.md)). Every solid state has a **shape**: its top surface is given
@@ -825,12 +794,10 @@ one diagonal, hanging from the floor (upright) or the ceiling (inverted); a cube
 mechanism stays: `shapeFamilies` in the block data generates a material's slope and slab families
 (nine slope shapes in four facings and two halves, and the slab; `flooded` means water fills the
 shape's open part) — but since Phase 15 no block uses it (the list is empty), so the shape table
-held the empty shape and the cube until Phase 18, which appends the shapes the adaptive table
-derives: the 12 adaptive corner shapes (split along their higher diagonal) and 6 **ridge shapes**
-given as 3 × 3 surface points (corners, edge midpoints, centre; the surface is the fan of 8
-triangles around the centre), each in its facings, upright and hanging — 191 more. Every shape
-carries its 3 × 3 points and three-point side profiles (quarters of a cell), and `solid_span_at`
-reads a ridge shape's fan. **[built, Phase 41 H2, on the branch `claude/half-height-voxels`]**
+held the empty shape and the cube (Phase 18's adaptive shapes were removed in Phase 41); Phase 41
+appends the ramp pieces. Every shape carries its 3 × 3 points and three-point
+side profiles (quarters of a cell), and `solid_span_at` reads a fan shape's surface. **[built,
+Phase 41 H2]**
 `rampFamilies` in the block data gives each listed natural block `<name>_ramp[facing, flooded,
 half, shape]`: the stored cardinal ramps of the half-height grid (`HALF_HEIGHT_GRID.md` §3) — the
 `ramp` (a wedge), and `steep_lower` and `steep_upper`, the two halves of a 45° ramp that spans two
@@ -838,16 +805,12 @@ half, shape]`: the stored cardinal ramps of the half-height grid (`HALF_HEIGHT_G
 middle). They are not in the palette: the generator places them. **[built, Phase 41 H3]**
 `dwell-worldgen` `ramps.rs` holds the generation rule (`HALF_HEIGHT_GRID.md` §4), a pure function
 of a column's height and its 8 neighbours' (rows); the generator tops each natural column with its
-pieces (flooded under the sea) and decorates only flat tops. It is active only where the pieces
-exist for the cell height (½ m cells). `dwell-world` `ramps.rs`
-looks them up by name. **[built, Phase 41 H4]** with ½ m cells no natural block is adaptive
-(`dwell.json` has no `adaptive` flag): the generated ramps are the only shaped natural ground; a
-placed natural block is a flat cell. On today's prototype terrain no two neighbouring columns
-differ by a metre, so only ½ m ramps generate; 45° ramps appear only where the ground steps
-(tests build them). **[on the half-height branch, generator 1020]** the rule is the old one (a ramp
-needs its downhill neighbour lower, the uphill one not, and both sides and back diagonals not
-lower, or is a one-wide path) with the 1 m snap off: V2, the owner's choice over option A's Sobel
-facing (`HALF_HEIGHT_GRID.md` §4). The geometry is
+pieces (flooded under the sea) and decorates only flat tops. `dwell-world` `ramps.rs` looks them up by name. **[built, Phase 41 H4]** the generated ramps
+are the only shaped natural ground; a placed natural block is a flat cell. **[generator 19]** the
+rule (a ramp needs its downhill neighbour lower, the uphill one not, and both sides and back
+diagonals not lower, or is a one-wide path) runs with the 1 m snap off: V2, the owner's choice
+over option A's Sobel facing (`HALF_HEIGHT_GRID.md` §4); hillsides are ½ m steps and ½ m ramps,
+with 45° ramps where a column stands a metre over its downhill neighbour. The geometry is
 baked once by
 `shared/blocks/shapes.mjs` (`gen.mjs`) into the generated tables: each shape's closed, outward-wound
 polygons tagged with the cell face they lie on (or the sloped surface), its side profiles for
@@ -868,13 +831,13 @@ into water: flooded; anywhere else: dry — no water from nothing), breaking a f
 water, and a flooded cell counts as water for swimming. Shape picking in the hotbar (the R key, the
 placement preview) went with the placed families.
 
-- Voxel = a cell, 1 m × `CELL_HEIGHT` × 1 m; `uint16` block-state ID (0 = air). `main` has 1 m
-  cubes. **[built, Phase 41 H4, on the branch `claude/half-height-voxels` only]** cells are
-  1 × ½ × 1 m, chunks 32³ cells (32 × 16 × 32 m), natural ground shaped once at generation from
-  stored cardinal ramps ([`HALF_HEIGHT_GRID.md`](./HALF_HEIGHT_GRID.md), ADR 0042). Block-sized
-  things in this document (a block, a step, a layer) are cells: ½ m tall on the branch.
+- Voxel = a cell, 1 m × `CELL_HEIGHT` × 1 m; `uint16` block-state ID (0 = air). **[built, Phase
+  41 H4, adopted 2026-10-20]** cells are 1 × ½ × 1 m, chunks 32³ cells (32 × 16 × 32 m), natural
+  ground shaped once at generation from stored cardinal ramps
+  ([`HALF_HEIGHT_GRID.md`](./HALF_HEIGHT_GRID.md), ADR 0042). Block-sized things in this document
+  (a block, a step, a layer) are cells: ½ m tall.
   **[built, Phase 41 H1]** one named cell height: `cellHeight` in `shared/protocol/constants.json`
-  (1.0 on `main`, 0.5 on the branch), and every conversion between metres and cells goes through `dwell-world`
+  (0.5), and every conversion between metres and cells goes through `dwell-world`
   `cell.rs`. **Cell space** (x and z in metres, y in rows) is the unit of every voxel algorithm:
   chunk indexing, meshing, shapes as fractions of a cell, the LOD octree, the cell DDA, region and
   brush boxes. Metres are used at the boundaries: physics (the terrain collider's voxel size is
@@ -882,15 +845,15 @@ placement preview) went with the placed families.
   chunk and LOD meshes (emitted in metres, normals converted), the camera, culling and outlines,
   worldgen heights, fluids, audio, and positions on the wire and in saves. Texture coordinates
   are metres (a side's v from the cell's top edge), so a ½ m cell shows half a tile and the grass
-  fringe hangs from each grass cell's top. Not converted on the branch (Phase 41 deviations): the
-  ray marcher (it draws ½ m cells stretched to 1 m), brushes (radii and heights in cells, so a
-  ball is half as tall as wide), and a fluid's `surfaceDrop` (a fraction of a cell). The registry defines each state's density,
+  fringe hangs from each grass cell's top. Not converted (Phase 41 deviations): brushes (radii and
+  heights in cells, so a ball is half as tall as wide), and a fluid's `surfaceDrop` (a fraction of
+  a cell). The registry defines each state's density,
   strength, and render properties and is shared by server and client (generated from one data set).
 - Chunk = **32 × 32 × 32** voxels, addressed by `ChunkCoord(int32 x, y, z)`. The grid is 3D in
   every respect — generation, storage, streaming (§6.3) and LOD (§6.6). The build volume (§6.3)
   spans 3,126 chunk rows (−1 563 to 1 562) over the centre, fewer toward the rim; `int32`
-  coordinates reach far beyond the 50 km disc (chunk ±1 563). On ½ m cells (the half-height branch)
-  a chunk is 16 m tall and the sphere is in cells, so those rows reach ±25 km.
+  coordinates reach far beyond the 50 km disc (chunk ±1 563). On ½ m cells a chunk is 16 m tall and
+  the sphere is in cells, so those rows reach ±25 km.
 - Wire / storage encoding **[built]**: per-chunk **palette + run-length encoding**
   (`ChunkData Explicit`, §8.3). Voxels are taken in layer order (x fastest, then z, then y) so
   horizontal strata make long runs; the palette lists materials in order of first appearance; each
