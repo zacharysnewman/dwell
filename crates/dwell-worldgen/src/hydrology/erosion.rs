@@ -15,12 +15,15 @@ use super::flood::{Grid, NONE, flood, shore};
 use super::math::pow;
 
 /// One erosion run over `h` (m above sea level) where `sea` is false; the sea never changes. `uplift` is the
-/// uplift rate per cell (m/yr), `rain` the relative rain per cell, `cell` the cell size (m).
+/// uplift rate per cell (m/yr), `erodibility` K per cell, `rain` the relative rain per cell, `cell`
+/// the cell size (m).
+#[allow(clippy::too_many_arguments)]
 pub fn erode(
     grid: Grid,
     cell: f64,
     h: &mut [f64],
     uplift: &[f64],
+    erodibility: &[f64],
     rain: &[f64],
     sea: &[bool],
     p: &HydrologyParams,
@@ -65,7 +68,7 @@ pub fn erode(
                 continue;
             }
             let d = if is_diagonal(grid, c, r) { diag } else { cell };
-            let k = p.erodibility * dt * pow(area[c], p.area_exponent) / pow(d, p.slope_exponent);
+            let k = erodibility[c] * dt * pow(area[c], p.area_exponent) / pow(d, p.slope_exponent);
             let rise = raised - base;
             let x = solve(rise, k, p.slope_exponent);
             h[c] = base + x;

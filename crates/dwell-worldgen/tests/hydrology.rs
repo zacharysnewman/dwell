@@ -192,7 +192,7 @@ fn a_crater_is_a_lake_at_its_rims_lowest_point_draining_through_it() {
         river_threshold: 0.005,
         ..no_erosion()
     };
-    let m = from_heights(grid, 100.0, -5_000.0, &h, &p);
+    let m = from_heights(grid, 100.0, -5_000.0, &h, 0, &p);
     assert_eq!(m.lakes.len(), 1, "{:?}", m.lakes);
     let lake = &m.lakes[0];
     assert!(lake.max_depth > 10.0 && lake.area > 1e6, "{lake:?}");
@@ -232,7 +232,7 @@ fn small_pits_are_filled_or_breached_and_not_kept() {
             lake_min_area: 5e6,
             ..no_erosion()
         };
-        let m = from_heights(grid, 100.0, -5_000.0, &h, &p);
+        let m = from_heights(grid, 100.0, -5_000.0, &h, 0, &p);
         assert!(m.lakes.is_empty(), "{pits:?}: {:?}", m.lakes);
         assert_water_reaches_the_sea(&m);
         assert_no_river_flows_uphill(&m);
@@ -265,7 +265,7 @@ fn erosion_cuts_valleys_along_the_rivers_more_than_elsewhere() {
         river_threshold: 0.05,
         ..*hydrology::default_profile()
     };
-    let m = from_heights(grid, 100.0, -8_000.0, &h, &p);
+    let m = from_heights(grid, 100.0, -8_000.0, &h, 0, &p);
     let river: std::collections::HashSet<u32> = m
         .rivers
         .iter()

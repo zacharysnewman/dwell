@@ -2,11 +2,14 @@
 //! each source (a river cell no river flows into, or a lake's outlet) down the receivers to the sea,
 //! a lake or the river it joins. Width and depth come from the discharge through the profile's
 //! curve (`river_geometry`, piecewise linear, held beyond its ends). Where a river of at least
-//! `mouth_min_discharge` meets the sea its mouth is marked: a delta on ground flatter than
-//! `delta_max_slope` over its last cells, an estuary otherwise.
+//! `mouth_min_discharge` meets the sea its mouth is marked: a delta where the slope `mouth_rule`
+//! measures over `mouth_reach` m is at most `delta_max_slope`, an estuary otherwise. The rules: the
+//! river's own fall over its last `mouth_reach` m, or the coast's relief (the highest land within
+//! `mouth_reach` m of the mouth), so a valley cut into a steep coast is an estuary and a mouth on a
+//! low plain a delta.
 
 use super::flood::{Grid, NONE};
-use super::{End, HydrologyParams, Mouth, MouthKind, River, RiverPoint, Vertex};
+use super::{End, HydrologyParams, Mouth, MouthKind, MouthRule, River, RiverPoint, Vertex};
 
 /// Width and depth (m) for a discharge (m³/s) on the curve.
 pub fn geometry(curve: &[RiverPoint], q: f64) -> (f64, f64) {
@@ -125,16 +128,46 @@ pub fn trace(inp: &Inputs, p: &HydrologyParams) -> (Vec<River>, Vec<Mouth>) {
             let last = cells[cells.len() - 1] as usize;
             let q = inp.discharge[last];
             if q >= p.mouth_min_discharge {
-                // The mean fall over the river's last few cells.
-                let k = cells.len().min(5);
-                let from = cells[cells.len() - k] as usize;
-                let run = (k as f64) * inp.cell;
-                let slope = inp.surface[from] / run;
+                let reach = ((p.mouth_reach / inp.cell).round() as usize).max(1);
+                let slope = match p.mouth_rule {
+                    MouthRule::RiverSlope => {
+                        // The mean fall over the river's last `mouth_reach` m.
+                        let k = cells.len().min(reach);
+                        let from = cells[cells.len() - k] as usize;
+                        inp.surface[from] / ((k as f64) * inp.cell)
+                    }
+                    MouthRule::CoastRelief => {
+                        // The highest land within `mouth_reach` m of the mouth, over that distance:
+                        // a valley cut into high ground (a ria) or a low coastal plain.
+                        let r = reach as i64;
+                        let (cx, cz) = ((last % n) as i64, (last / n) as i64);
+                        let mut top = 0.0f64;
+                        for dz in -r..=r {
+                            for dx in -r..=r {
+                                let (x, z) = (cx + dx, cz + dz);
+                                if dx * dx + dz * dz > r * r
+                                    || x < 0
+                                    || z < 0
+                                    || x >= n as i64
+                                    || z >= n as i64
+                                {
+                                    continue;
+                                }
+                                let j = z as usize * n + x as usize;
+                                if !inp.sea[j] {
+                                    top = top.max(inp.surface[j]);
+                                }
+                            }
+                        }
+                        top / p.mouth_reach
+                    }
+                };
                 let (x, z) = at(last);
                 mouths.push(Mouth {
                     x,
                     z,
                     discharge: q,
+                    slope,
                     river: rivers.len() as u32,
                     kind: if slope <= p.delta_max_slope {
                         MouthKind::Delta

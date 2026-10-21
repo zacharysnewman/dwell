@@ -26,7 +26,7 @@
           { "discharge": 50, "width": 40, "depth": 3 },
           { "discharge": 500, "width": 120, "depth": 6 }
         ],
-        "mouths": { "minDischarge": 5, "deltaMaxSlope": 0.01 }
+        "mouths": { "minDischarge": 5, "rule": "riverSlope", "deltaMaxSlope": 0.01, "reach": 500 }
       }
     },
     {
@@ -53,7 +53,7 @@
           { "discharge": 50, "width": 40, "depth": 3 },
           { "discharge": 500, "width": 120, "depth": 6 }
         ],
-        "mouths": { "minDischarge": 5, "deltaMaxSlope": 0.01 }
+        "mouths": { "minDischarge": 5, "rule": "riverSlope", "deltaMaxSlope": 0.01, "reach": 500 }
       }
     },
     {
@@ -80,7 +80,164 @@
           { "discharge": 50, "width": 40, "depth": 3 },
           { "discharge": 500, "width": 120, "depth": 6 }
         ],
-        "mouths": { "minDischarge": 5, "deltaMaxSlope": 0.01 }
+        "mouths": { "minDischarge": 5, "rule": "riverSlope", "deltaMaxSlope": 0.01, "reach": 500 }
+      }
+    },
+    {
+      "name": "uplift",
+      "grid": { "cell": 100 },
+      "erosion": {
+        "iterations": 25,
+        "timeStep": 50000,
+        "erodibility": 4e-6,
+        "areaExponent": 0.5,
+        "slopeExponent": 1,
+        "uplift": 0.0001,
+        "upliftReference": 300,
+        "lakeFill": 0.03,
+        "talus": { "maxSlope": 0.9, "passes": 1 }
+      },
+      "rain": { "model": "uniform", "amount": 1 },
+      "lakes": { "minArea": 0.3, "minDepth": 2, "smallPits": "breach", "maxBreachDepth": 8 },
+      "rivers": {
+        "threshold": 0.4,
+        "geometry": [
+          { "discharge": 0.4, "width": 3, "depth": 0.5 },
+          { "discharge": 5, "width": 12, "depth": 1.2 },
+          { "discharge": 50, "width": 40, "depth": 3 },
+          { "discharge": 500, "width": 120, "depth": 6 }
+        ],
+        "mouths": { "minDischarge": 5, "rule": "coastRelief", "deltaMaxSlope": 0.012, "reach": 2000 }
+      },
+      "uplift": {
+        "$comment": "The uplift layer (uplift.rs): tectonic strength 0 on the shelf, ~1 on a range's spine; the initial ground is keepRelief × the height field + baseHeight × strength, the uplift rate × strength. erosion.uplift and upliftReference are unused while it is present.",
+        "rate": 0.0004,
+        "baseHeight": 500,
+        "keepRelief": 0.15,
+        "plains": 0.1,
+        "shelf": { "min": 1000, "max": 8000, "wavelength": 15000 },
+        "apron": { "strength": 0.4, "width": 35000 },
+        "ranges": {
+          "count": 3,
+          "length": { "min": 25000, "max": 45000 },
+          "width": 6000,
+          "strength": 1,
+          "wander": 0.15,
+          "warp": { "amplitude": 1500, "wavelength": 6000 },
+          "minCoast": 3000,
+          "maxCoast": 9000,
+          "align": 0.8
+        },
+        "highlands": { "strength": 0.4, "wavelength": 14000, "cover": 0.25 }
+      }
+    },
+    {
+      "name": "uplift_plates",
+      "grid": { "cell": 100 },
+      "erosion": {
+        "iterations": 25,
+        "timeStep": 50000,
+        "erodibility": 4e-6,
+        "areaExponent": 0.5,
+        "slopeExponent": 1,
+        "uplift": 0.0001,
+        "upliftReference": 300,
+        "lakeFill": 0.03,
+        "talus": { "maxSlope": 0.9, "passes": 1 }
+      },
+      "rain": { "model": "uniform", "amount": 1 },
+      "lakes": { "minArea": 0.3, "minDepth": 2, "smallPits": "breach", "maxBreachDepth": 8 },
+      "rivers": {
+        "threshold": 0.4,
+        "geometry": [
+          { "discharge": 0.4, "width": 3, "depth": 0.5 },
+          { "discharge": 5, "width": 12, "depth": 1.2 },
+          { "discharge": 50, "width": 40, "depth": 3 },
+          { "discharge": 500, "width": 120, "depth": 6 }
+        ],
+        "mouths": { "minDischarge": 5, "rule": "coastRelief", "deltaMaxSlope": 0.012, "reach": 2000 }
+      },
+      "uplift": {
+        "$comment": "The uplift layer (uplift.rs): tectonic strength 0 on the shelf, ~1 on a range's spine; the initial ground is keepRelief × the height field + baseHeight × strength, the uplift rate × strength. erosion.uplift and upliftReference are unused while it is present.",
+        "rate": 0.0004,
+        "baseHeight": 500,
+        "keepRelief": 0.15,
+        "plains": 0.1,
+        "shelf": { "min": 1000, "max": 8000, "wavelength": 15000 },
+        "apron": { "strength": 0.4, "width": 35000 },
+        "highlands": { "strength": 0.4, "wavelength": 14000, "cover": 0.25 },
+        "plates": {
+          "count": 6,
+          "width": 5000,
+          "strength": 1.2,
+          "rift": 0.3,
+          "warp": { "amplitude": 2000, "wavelength": 8000 }
+        }
+      }
+    },
+    {
+      "name": "uplift_rock_rain",
+      "grid": { "cell": 100 },
+      "erosion": {
+        "iterations": 25,
+        "timeStep": 50000,
+        "erodibility": 4e-6,
+        "areaExponent": 0.5,
+        "slopeExponent": 1,
+        "uplift": 0.0001,
+        "upliftReference": 300,
+        "lakeFill": 0.03,
+        "talus": { "maxSlope": 0.9, "passes": 1 }
+      },
+      "rain": {
+        "model": "orographic",
+        "amount": 1,
+        "direction": 270,
+        "spread": 90,
+        "upslope": 6,
+        "fetch": 15000,
+        "shadow": 0.6,
+        "shadowHeight": 400,
+        "min": 0.3,
+        "max": 2.5
+      },
+      "lakes": { "minArea": 0.3, "minDepth": 2, "smallPits": "breach", "maxBreachDepth": 8 },
+      "rivers": {
+        "threshold": 0.4,
+        "geometry": [
+          { "discharge": 0.4, "width": 3, "depth": 0.5 },
+          { "discharge": 5, "width": 12, "depth": 1.2 },
+          { "discharge": 50, "width": 40, "depth": 3 },
+          { "discharge": 500, "width": 120, "depth": 6 }
+        ],
+        "mouths": { "minDischarge": 5, "rule": "coastRelief", "deltaMaxSlope": 0.012, "reach": 2000 }
+      },
+      "uplift": {
+        "$comment": "The uplift layer (uplift.rs): tectonic strength 0 on the shelf, ~1 on a range's spine; the initial ground is keepRelief × the height field + baseHeight × strength, the uplift rate × strength. erosion.uplift and upliftReference are unused while it is present.",
+        "rate": 0.0004,
+        "baseHeight": 500,
+        "keepRelief": 0.15,
+        "plains": 0.1,
+        "shelf": { "min": 1000, "max": 8000, "wavelength": 15000 },
+        "apron": { "strength": 0.4, "width": 35000 },
+        "ranges": {
+          "count": 3,
+          "length": { "min": 25000, "max": 45000 },
+          "width": 6000,
+          "strength": 1,
+          "wander": 0.15,
+          "warp": { "amplitude": 1500, "wavelength": 6000 },
+          "minCoast": 3000,
+          "maxCoast": 9000,
+          "align": 0.8
+        },
+        "highlands": { "strength": 0.4, "wavelength": 14000, "cover": 0.25 }
+      },
+      "rockBands": {
+        "contrast": 0.6,
+        "wavelength": 3000,
+        "hardShare": 0.3,
+        "warp": { "amplitude": 800, "wavelength": 5000 }
       }
     }
   ]
