@@ -37,7 +37,7 @@ test('bad entries fail with their path named', () => {
     [(d) => (d.sky.rays = 2.5), /sky\.rays must be a whole number/],
     [(d) => (d.sky.lengthM = 0), /sky\.lengthM must be a number/],
     [(d) => (d.sky.probeM = -1), /sky\.probeM must be a number/],
-    [(d) => delete d.floor, /missing entry floor/],
+    [(d) => delete d.floor, /missing entry \(root\)\.floor/],
     [(d) => (d.sky.colour = 1), /unknown entry sky\.colour/],
     [(d) => (d.extra = 1), /unknown entry \(root\)\.extra/],
   ];
