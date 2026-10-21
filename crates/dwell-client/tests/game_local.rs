@@ -72,9 +72,9 @@ impl TerrainRenderer for Recorder {
             self.held.remove(&id);
         }
     }
-    fn show_sections(&mut self, visible: &[(i64, u8)]) {
+    fn show_sections(&mut self, visible: &[(i64, u8, dwell_lod::fade::Fade)]) {
         self.terrain.show_sections(visible);
-        self.shown = visible.iter().map(|&(id, _)| id).collect();
+        self.shown = visible.iter().map(|&(id, _, _)| id).collect();
     }
     fn show_stand_ins(&mut self, _stand_ins: &[StandIn]) {}
     fn clear(&mut self) {

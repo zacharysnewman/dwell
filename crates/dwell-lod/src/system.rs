@@ -30,6 +30,7 @@ use dwell_world::{
     CHUNK_EXTENT_M, ChunkCoord, Face, FaceFrame, WORLD_RADIUS, chunk_of_pos, chunk_origin_m,
 };
 
+use crate::fade::{Fade, FadeStats, Item, ItemKind, SwapFade};
 use crate::frustum::{Frustum, LodCamera, box_distance};
 use crate::grid::{
     LodId, MAX_ALIGNED_LEVEL, Vec3, id_of, is_face_b_section, lod_id, mirror_section_origin,
@@ -84,6 +85,8 @@ pub struct StandInBox {
     pub id: LodId,
     pub lo: Vec3,
     pub hi: Vec3,
+    /// Its share of the pixels while a swap fades it in or out (fade.rs).
+    pub fade: Fade,
 }
 
 /// What a meshing job makes for the renderer (the payload): the mesher's [`SectionMeshes`]. The
@@ -103,8 +106,9 @@ impl SectionPayload for SectionMeshes {
 pub trait LodView<P = SectionMeshes> {
     /// Adds, replaces or (None) removes a section's payload; positions are in cells from `origin`.
     fn set_lod_section(&mut self, id: LodId, origin: Vec3, cell_size: f64, meshes: Option<P>);
-    /// The sections to draw this frame, with the sides (bit per face index) whose skirt shows.
-    fn show_lod_sections(&mut self, visible: &[(LodId, u8)]);
+    /// The sections to draw this frame, with the sides (bit per face index) whose skirt shows and
+    /// their fade (fade.rs: a section leaving or joining the view during a swap draws dithered).
+    fn show_lod_sections(&mut self, visible: &[(LodId, u8, Fade)]);
     /// Ancestor meshes drawn clipped to boxes this frame; empty for none.
     fn show_lod_stand_ins(&mut self, stand_ins: &[StandInBox]);
 }
@@ -154,6 +158,12 @@ pub struct LodOptions {
     pub request_chunks: bool,
     /// Chunk request pacing (per second, under the server's limit).
     pub chunk_requests_per_second: Option<f64>,
+    /// How long a swap between levels cross-fades (ms; 0: in one frame). The client's is
+    /// shared/look/lodblend.json's `fadeS`.
+    pub fade_ms: f64,
+    /// Hysteresis: a refined node coarsens only once its cells project under the pixel error /
+    /// this (and, within the full-detail distance, once it is this × that distance away); 1: none.
+    pub coarsen_ratio: f64,
 }
 
 impl LodOptions {
@@ -172,6 +182,8 @@ impl LodOptions {
             request_timeout_ms: None,
             request_chunks: false,
             chunk_requests_per_second: None,
+            fade_ms: 0.0,
+            coarsen_ratio: 1.0,
         }
     }
 }
@@ -193,6 +205,8 @@ pub struct LodStats {
     pub error_scale: f64,
     /// Bytes per second received on the lod stream (over the last second).
     pub bytes_per_second: usize,
+    /// Swaps cross-fading (fade.rs).
+    pub fades: FadeStats,
 }
 
 impl Default for LodStats {
@@ -208,6 +222,7 @@ impl Default for LodStats {
             in_use_bytes: 0,
             error_scale: 1.0,
             bytes_per_second: 0,
+            fades: FadeStats::default(),
         }
     }
 }
@@ -301,8 +316,14 @@ pub fn format_lod_stats(s: &LodStats) -> String {
         levels.join(" ")
     };
     let mb = |b: usize| b as f64 / 1_048_576.0;
+    // Swaps cross-fading now, and the draws they add (fade.rs), only while there are some.
+    let fading = if s.fades.swaps > 0 {
+        format!(" · fading {} (+{})", s.fades.swaps, s.fades.retiring)
+    } else {
+        String::new()
+    };
     format!(
-        "LOD {levels} · chunks×{} · nodes {}\nLOD jobs gen {} mesh {} ask {} · cache {:.1} MB (view {:.1}) · error ×{:.2} · {:.1} KB/s",
+        "LOD {levels} · chunks×{} · nodes {}{fading}\nLOD jobs gen {} mesh {} ask {} · cache {:.1} MB (view {:.1}) · error ×{:.2} · {:.1} KB/s",
         s.chunk_sections,
         s.nodes,
         s.generating,
@@ -356,6 +377,9 @@ struct Node {
     last_used: u64,
     /// Frame it was last drawn in (skirts: is the neighbour drawn at the same level?).
     drawn_frame: u64,
+    /// Frame it was last refined in (its children, or a level-1 section's chunks, drawn instead):
+    /// the hysteresis keeps it refined a little farther out (`LodOptions::coarsen_ratio`).
+    split_frame: u64,
     /// The latest job's token (generation or meshing): older results are ignored.
     token: u64,
     gen_token: u64,
@@ -389,7 +413,10 @@ pub struct LodSystem {
     last_request_ms: Option<f64>,
     received: VecDeque<(f64, usize)>,
     selection: Selection,
-    refined: HashSet<LodId>,
+    /// Level-1 sections drawn as their chunks this frame (or fading to or from them), and how.
+    chunk_fades: HashMap<LodId, Fade>,
+    /// The swaps cross-fading between levels (fade.rs).
+    fade: SwapFade,
     /// Level-1 sections around the camera whose 8 chunks are drawable, and all their ancestors:
     /// the traversal always reaches them, whatever is still generating above.
     covered: HashSet<LodId>,
@@ -446,7 +473,8 @@ impl LodSystem {
             last_request_ms: None,
             received: VecDeque::new(),
             selection: Selection::default(),
-            refined: HashSet::default(),
+            chunk_fades: HashMap::default(),
+            fade: SwapFade::new(options.fade_ms),
             covered: HashSet::default(),
             covered_ancestors: HashSet::default(),
             drawable_since: HashMap::default(),
@@ -502,10 +530,24 @@ impl LodSystem {
 
     /// A level-0 chunk is drawn when its level-1 section is refined (or before LOD is ready).
     pub fn chunk_visible(&self, coord: ChunkCoord) -> bool {
+        self.chunk_fade(coord).is_some()
+    }
+
+    /// How a chunk is drawn: in full, fading in or out with its level-1 section's swap, or (None)
+    /// not at all, where LOD draws.
+    pub fn chunk_fade(&self, coord: ChunkCoord) -> Option<Fade> {
         if !self.active {
-            return true;
+            return Some(Fade::Full);
         }
-        self.refined.contains(&id_of(parent(lod_of_chunk(coord))))
+        self.chunk_fades
+            .get(&id_of(parent(lod_of_chunk(coord))))
+            .copied()
+    }
+
+    /// The cross-fade's length (ms; 0: swaps in one frame). Swaps under way finish at once.
+    pub fn set_fade_ms(&mut self, fade_ms: f64) {
+        self.options.fade_ms = fade_ms;
+        self.fade.set_fade_ms(fade_ms);
     }
 
     pub fn last_selection(&self) -> &Selection {
@@ -594,7 +636,6 @@ impl LodSystem {
         self.remeshed.clear();
         self.in_use = 0;
         let mut selection = Selection::default();
-        self.refined.clear();
         self.find_covered(p, now_ms, host);
         let root = self.node(ROOT, false);
         self.touch(root);
@@ -617,22 +658,21 @@ impl LodSystem {
                 }
                 mask |= 1 << face;
             }
-            visible.push((id_of(c), mask));
+            visible.push(Item::section(c, mask));
         }
-        host.show_lod_sections(&visible);
-        let stand_ins: Vec<StandInBox> = selection
-            .stand_ins
-            .iter()
-            .map(|s| {
-                let (lo, hi) = section_box(s.hole);
-                StandInBox {
-                    id: id_of(s.from),
-                    lo,
-                    hi,
-                }
-            })
-            .collect();
-        host.show_lod_stand_ins(&stand_ins);
+        if self.active {
+            visible.extend(selection.chunks.iter().map(|&c| Item::chunks(c)));
+            visible.extend(
+                selection
+                    .stand_ins
+                    .iter()
+                    .map(|s| Item::stand_in(s.hole, id_of(s.from))),
+            );
+            self.fade.update(&visible, now_ms);
+        } else {
+            self.fade.clear();
+        }
+        self.show(now_ms, host);
         self.selection = selection;
 
         self.schedule(&frustum, host);
@@ -641,6 +681,54 @@ impl LodSystem {
         self.evict(host);
         self.adapt(p, now_ms);
         self.stats = Some(self.compute_stats(now_ms));
+    }
+
+    /// Hands the renderer this frame's draws with their fades, and keeps the meshes of the items
+    /// still fading out in the cache (touched, so eviction leaves them).
+    fn show<P>(&mut self, now_ms: f64, host: &mut dyn LodHost<P>) {
+        let mut sections = Vec::new();
+        let mut stand_ins = Vec::new();
+        self.chunk_fades.clear();
+        let mut keep = Vec::new();
+        for (it, fade) in self.fade.shown(now_ms) {
+            match it.kind {
+                ItemKind::Section => {
+                    sections.push((id_of(it.area), it.mask, fade));
+                    if fade.is_out() {
+                        keep.push(id_of(it.area));
+                    }
+                }
+                ItemKind::Chunks => {
+                    self.chunk_fades.insert(id_of(it.area), fade);
+                }
+                ItemKind::StandIn => {
+                    let (lo, hi) = section_box(it.area);
+                    stand_ins.push(StandInBox {
+                        id: it.from,
+                        lo,
+                        hi,
+                        fade,
+                    });
+                    if fade.is_out() {
+                        keep.push(it.from);
+                    }
+                }
+            }
+        }
+        for id in keep {
+            if self.nodes.contains_key(&id) {
+                self.touch(id);
+            }
+        }
+        // A stable order (the fade's map has none).
+        sections.sort_unstable_by_key(|s| s.0);
+        stand_ins.sort_unstable_by(|a, b| {
+            (a.id, a.lo)
+                .partial_cmp(&(b.id, b.lo))
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        host.show_lod_sections(&sections);
+        host.show_lod_stand_ins(&stand_ins);
     }
 
     pub fn debug_stats(&self) -> LodStats {
@@ -811,6 +899,7 @@ impl LodSystem {
         // One lookup for the node's fields (this runs for every node in view, every frame).
         let n = self.n(id);
         let (coord, lo, hi, kind, meshed) = (n.coord, n.lo, n.hi, n.kind, n.meshed);
+        let split = n.split_frame + 1 == self.frame;
         let ready = ready_node(n);
         if self.culled_node(n) {
             selection.empty.push(coord);
@@ -842,7 +931,7 @@ impl LodSystem {
                 || (refine && all_drawable(coord, host))
             {
                 selection.chunks.push(coord);
-                self.refined.insert(id);
+                self.split(id);
             } else if ready {
                 self.draw(id, selection);
             } else if let Some(from) = fallback {
@@ -859,7 +948,7 @@ impl LodSystem {
             }
             return;
         }
-        if !self.refine_box(coord, lo, hi, frustum) {
+        if !self.refine_box(coord, lo, hi, frustum, split) {
             self.draw(id, selection);
             return;
         }
@@ -868,6 +957,7 @@ impl LodSystem {
         if !all_ready {
             // Coarse until the children are ready — unless that would hide the player's surroundings.
             if self.covered_ancestors.contains(&id) {
+                self.split(id);
                 for &kid in kids.as_slice() {
                     self.visit(kid, frustum, selection, next, host);
                 }
@@ -876,6 +966,7 @@ impl LodSystem {
             }
             return;
         }
+        self.split(id);
         for &kid in kids.as_slice() {
             self.visit(kid, frustum, selection, next, host);
         }
@@ -938,7 +1029,7 @@ impl LodSystem {
             let refine = self.refine_to_chunks(id, frustum);
             if refine && (self.covered.contains(&id) || all_drawable(coord, host)) {
                 selection.chunks.push(coord);
-                self.refined.insert(id);
+                self.split(id);
             } else {
                 selection.empty.push(coord);
             }
@@ -951,6 +1042,7 @@ impl LodSystem {
         let kids = self.kids(id);
         let all_ready = self.touch_kids(kids.as_slice());
         if all_ready || self.covered_ancestors.contains(&id) {
+            self.split(id);
             for &kid in kids.as_slice() {
                 self.visit(kid, frustum, selection, None, host);
             }
@@ -1033,28 +1125,57 @@ impl LodSystem {
     /// magnification, outside it at the unzoomed FOV's.
     fn refine(&self, id: LodId, frustum: &Frustum) -> bool {
         let n = self.n(id);
-        self.refine_box(n.coord, n.lo, n.hi, frustum)
+        let split = n.split_frame + 1 == self.frame;
+        self.refine_box(n.coord, n.lo, n.hi, frustum, split)
     }
 
-    fn refine_box(&self, coord: LodCoord, lo: Vec3, hi: Vec3, frustum: &Frustum) -> bool {
+    /// Refined this frame: the next frame's hysteresis keeps it so a little farther out.
+    fn split(&mut self, id: LodId) {
+        let frame = self.frame;
+        self.nodes.get_mut(&id).expect("node").split_frame = frame;
+    }
+
+    /// The hysteresis's factor for a node refined last frame (`split`), 1 otherwise.
+    fn hysteresis(&self, split: bool) -> f64 {
+        if split {
+            self.options.coarsen_ratio.max(1.0)
+        } else {
+            1.0
+        }
+    }
+
+    /// With hysteresis (`coarsen_ratio`): a node refined last frame (`split`) stays refined until
+    /// its cells project under the pixel error / the ratio, so one on the boundary does not swap
+    /// back and forth as the camera moves along it (or as the spyglass's detail eases).
+    fn refine_box(
+        &self,
+        coord: LodCoord,
+        lo: Vec3,
+        hi: Vec3,
+        frustum: &Frustum,
+        split: bool,
+    ) -> bool {
+        let ratio = self.hysteresis(split);
         let d = self.distance(lo, hi, frustum).max(1.0);
         // Down to the full-detail distance whatever the pixel error (so level 1 is reached there).
         if let Some(m) = self.detail_m
-            && d < m
+            && d < m * ratio
         {
             return true;
         }
-        cell_size(coord.level) as f64 / d * frustum.pixels_per_radian_for(lo, hi)
+        cell_size(coord.level) as f64 / d * frustum.pixels_per_radian_for(lo, hi) * ratio
             > self.options.pixel_error * self.error_scale
     }
 
-    /// A level-1 section shows as its chunks: within the full-detail distance (if set).
+    /// A level-1 section shows as its chunks: within the full-detail distance (if set; with the
+    /// hysteresis's margin once it does).
     fn refine_to_chunks(&self, id: LodId, frustum: &Frustum) -> bool {
         match self.detail_m {
             None => self.refine(id, frustum),
             Some(m) => {
                 let n = self.n(id);
-                self.distance(n.lo, n.hi, frustum) < m
+                let ratio = self.hysteresis(n.split_frame + 1 == self.frame);
+                self.distance(n.lo, n.hi, frustum) < m * ratio
             }
         }
     }
@@ -1180,6 +1301,7 @@ impl LodSystem {
                     bytes: 0,
                     last_used: self.frame,
                     drawn_frame: 0,
+                    split_frame: 0,
                     token: 0,
                     gen_token: 0,
                     mesh_token: 0,
@@ -1629,6 +1751,7 @@ impl LodSystem {
             in_use_bytes: self.in_use,
             error_scale: self.error_scale,
             bytes_per_second: self.received.iter().map(|&(_, b)| b).sum(),
+            fades: self.fade.stats(),
         }
     }
 }

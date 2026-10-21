@@ -23,8 +23,10 @@ use dwell_game::region_tools::{RegionTools, ToolAction, ToolBoxKind, ToolContext
 use dwell_game::remotes::RemotePlayers;
 use dwell_game::sound::{CellChange, EditSounds, MoverSample, MoverSounds, SoundEvent, SoundKind};
 use dwell_game::touch::TouchState;
+use dwell_lod::fade::Fade;
 use dwell_lod::{LodCamera, LodSystem, LodView, StandInBox, format_lod_stats};
 use dwell_look::daynight::{DAY_NIGHT, DayState};
+use dwell_look::lod_blend::LOD_BLEND;
 use dwell_look::motion::{MOTION, MotionFx, MotionInput, MotionSettings, Speeds, effective_fov};
 use dwell_look::spyglass::{SPYGLASS, Spyglass, SpyglassView, zoom_fov};
 use dwell_mesh::{ChunkMeshes, SectionMeshes};
@@ -175,7 +177,7 @@ impl<S: Scene> LodView<SectionMeshes> for View<S> {
             .borrow_mut()
             .set_section(id, origin, cell_size, meshes.as_ref());
     }
-    fn show_lod_sections(&mut self, visible: &[(i64, u8)]) {
+    fn show_lod_sections(&mut self, visible: &[(i64, u8, Fade)]) {
         self.0.borrow_mut().show_sections(visible);
     }
     fn show_lod_stand_ins(&mut self, stand_ins: &[StandInBox]) {
@@ -185,6 +187,7 @@ impl<S: Scene> LodView<SectionMeshes> for View<S> {
                 id: b.id,
                 lo: b.lo,
                 hi: b.hi,
+                fade: b.fade,
             })
             .collect();
         self.0.borrow_mut().show_stand_ins(&boxes);
@@ -679,6 +682,10 @@ impl<S: Scene> Game<S> {
             2 * pool.capacity(true),
         );
         options.request_chunks = true;
+        // Smooth swaps between levels (shared/look/lodblend.json): the cross-fade and the
+        // selection's hysteresis.
+        options.fade_ms = LOD_BLEND.fade_s * 1000.0;
+        options.coarsen_ratio = LOD_BLEND.coarsen_ratio;
         drop(pool);
         let mut lod = LodSystem::new(options);
         lod.set_full_mode(s.full_mode || hash == 0);
@@ -728,7 +735,14 @@ impl<S: Scene> Game<S> {
     }
     /// Which chunks the renderer draws (the LOD draws instead of the others).
     pub fn chunk_visible(&self, c: ChunkCoord) -> bool {
-        self.lod.as_ref().is_none_or(|l| l.chunk_visible(c))
+        self.chunk_fade(c).is_some()
+    }
+    /// How the renderer draws a chunk: in full, cross-fading with its level-1 section (dwell-lod
+    /// fade.rs), or (None) not at all.
+    pub fn chunk_fade(&self, c: ChunkCoord) -> Option<Fade> {
+        self.lod
+            .as_ref()
+            .map_or(Some(Fade::Full), |l| l.chunk_fade(c))
     }
     pub fn take_outbox(&mut self) -> Vec<Send> {
         std::mem::take(&mut self.outbox.borrow_mut())
@@ -1567,6 +1581,12 @@ impl<S: Scene> Game<S> {
             dwell_world::fluid::eye_fluid(camera_eye, |x, y, z| store.get_voxel(x, y, z));
         self.scene.borrow_mut().set_eye_fluid(eye_fluid);
         telemetry::span("lod", || self.update_lod(&c, now_ms, input));
+        if let Some(lod) = &self.lod {
+            // The cross-fade's extra draws this frame (dwell-lod fade.rs): the bench reads them.
+            let f = lod.debug_stats().fades;
+            telemetry::add("lod.fading", f.swaps as f64);
+            telemetry::add("lod.retiring", f.retiring as f64);
+        }
         self.update_day(now_ms);
 
         self.hud.health = self.health;
@@ -1840,7 +1860,7 @@ impl<S: Scene> LodView<SectionMeshes> for LodHost<'_, S> {
     ) {
         self.view.set_lod_section(id, origin, cell_size, meshes);
     }
-    fn show_lod_sections(&mut self, visible: &[(i64, u8)]) {
+    fn show_lod_sections(&mut self, visible: &[(i64, u8, Fade)]) {
         self.view.show_lod_sections(visible);
     }
     fn show_lod_stand_ins(&mut self, stand_ins: &[StandInBox]) {

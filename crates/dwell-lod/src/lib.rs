@@ -8,6 +8,7 @@
 //! browser and tests natively with fakes.
 
 pub mod detail;
+pub mod fade;
 pub mod frustum;
 pub mod grid;
 pub mod system;

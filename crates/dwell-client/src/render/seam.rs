@@ -4,6 +4,7 @@
 //! code. Platform free (no GPU types), so the game's terrain handling is unit-tested with
 //! [`Recording`].
 
+use dwell_lod::fade::Fade;
 use dwell_mesh::{ChunkMeshes, SectionMeshes};
 use dwell_world::ChunkCoord;
 
@@ -22,8 +23,9 @@ pub trait TerrainRenderer {
         cell_size: f64,
         payload: Option<&SectionMeshes>,
     );
-    /// The sections to draw this frame, with the sides (bit per face) whose skirt shows.
-    fn show_sections(&mut self, visible: &[(i64, u8)]);
+    /// The sections to draw this frame, with the sides (bit per face) whose skirt shows and their
+    /// fade (dwell-lod fade.rs: dithered while a swap between levels cross-fades them).
+    fn show_sections(&mut self, visible: &[(i64, u8, Fade)]);
     /// Ancestor sections drawn clipped to boxes this frame.
     fn show_stand_ins(&mut self, stand_ins: &[StandIn]);
     /// Drops everything it holds.
@@ -37,7 +39,7 @@ pub trait TerrainRenderer {
 pub struct Recording {
     pub chunks: std::collections::BTreeMap<ChunkCoord, ChunkMeshes>,
     pub sections: std::collections::BTreeMap<i64, SectionMeshes>,
-    pub shown: Vec<(i64, u8)>,
+    pub shown: Vec<(i64, u8, Fade)>,
     pub clears: u32,
 }
 
@@ -60,7 +62,7 @@ impl TerrainRenderer for Recording {
             None => self.sections.remove(&id),
         };
     }
-    fn show_sections(&mut self, visible: &[(i64, u8)]) {
+    fn show_sections(&mut self, visible: &[(i64, u8, Fade)]) {
         self.shown = visible.to_vec();
     }
     fn show_stand_ins(&mut self, _stand_ins: &[StandIn]) {}

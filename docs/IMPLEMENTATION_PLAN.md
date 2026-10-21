@@ -59,6 +59,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 39 — Painterly textures | 🚧 In progress — built and tested natively, in Node and on a real GPU (ADR 0040, `ART_DIRECTION.md`, `PAINTERLY_TEXTURES.md`): the storybook palette and materials as data (`shared/textures`), one stroke generator baked into the atlas (CI stale check, a material added by data alone), `?textures=painterly` on the page and in the meshing workers (the default since the owner approved it, 2026-10-20; `?textures=classic` keeps the old set), the Painterly Texture Lab, the bench's `painterly` configuration (same frame cost); follow-ups: grass_side's skirt made continuous across the tile (owner's review); the skirt on dirt sides under grass (`sideUnder` block data, the `dirtSkirt` tile, in both sets; owner, 2026-10-20); the ink outline preview behind `?outline=` (ART_DIRECTION.md §7, off by default), then no ink on tall grass (block data `outline`) and the edge blur moved to its own pass over the finished image so the ink reaches the screen edges at speed (owner, 2026-10-20); outstanding: the owner's pick of an outline mode; CI and the owner's review of the look, then flipping the default; a patch release |
 | 40 — Characters and creatures | 🚧 In progress — C0 built and tested (ADR 0041, `CHARACTERS.md`): the rig vocabulary and validator (`shared/characters/rig.mjs`), the data (the player with three looks, the wolf, the deer; accessories, the block and brush items, clips), the generator and its tests, the Character Lab prototype checked in Chrome and published; stacked on Phase 39's palette and materials; C0b (the owner's first review, 2026-10-20) built and tested: hair composes with hats (`with`), the wolf's and deer's tails are chains checked joined through every clip, the player's clips for every controller state (sprint, crouch, crouch-walk, slide, jump, fall, land, climb, swim, fly; the arms' sprint, slide, jump, fall, land) and the Lab's transitions player; C1 (players in the game) built and tested (2026-10-20): `dwell-characters` (tables generated from the data, part meshes, clips, clip selection), the full body for remote players and your first-person arms in their own pass, the Show your arms setting, the `puppets` dev tool; with C2's held item and swings in snapshots (protocol v17: **a new compatibility line**, the owner raises `package.json`); outstanding: CI, the owner's review in game and of `CHARACTERS.md` §10, C2's looks at join, a step pose (foot IK on steps built with claude/smooth-steps), C3 |
 | 41 — Half-height grid (½ m cells, stored cardinal ramps) | 🚧 In progress — adopted for `main` (owner, 2026-10-20; ADR 0042): H0–H6 built and verified locally (½ m cells, stored ramps, nothing adaptive; the slopes V2; `main` 0.21.4 merged in); H7, the adoption: protocol 18, generator 19, the adaptive blocks removed, the experiment wording gone, `main`'s 1 m work checked on ½ m cells (HALF_HEIGHT_GRID.md §9). Outstanding: CI; the bench numbers against 0.21.x; the owner raises `package.json` to 0.22.0 at the merge (a new compatibility line). Deviations: brushes, a fluid's surface drop, the chunk view sphere and structures stay in cells; the LOD draws natural tops flat |
+| 42 — Smooth LOD transitions | 🚧 In progress — built and tested natively and in Chrome on the GPU: a dithered cross-fade on every LOD swap (`dwell-lod` `fade.rs`; chunks, sections, stand-ins, skirts, water; no ink on the outgoing level) and hysteresis in the selection, both data (`shared/look/lodblend.json`); outstanding: CI, the owner's review in a browser; a patch release |
 
 Phase numbering: Phase 4 was inserted on 2026-09-29 for the planet-scale world (ADRs 0011, 0012);
 the former Phases 4–7 are now 5–8, and Phase 3's former 3c and 3d are now 3d and 3e.
@@ -4292,6 +4293,48 @@ Deviations:
   ramp foot, the steep-terrain band, the face-parity tests in metres.
 - [ ] CI green on the PR, and the e2e specs that assumed 1 m on a real GPU.
 - [ ] `package.json` raised to 0.22.0 by the owner at the merge.
+
+## Phase 42 — Smooth LOD Transitions
+
+**Status:** Built and tested natively and in Chrome on the GPU (2026-10-21). Outstanding: CI, the
+owner's review in a browser. No change to saves, the protocol or terrain: a patch release.
+
+Owner (2026-10-21): swaps between detail levels are abrupt and obvious — a section swaps to its
+children, or back, in one frame once they are ready. The approved plan: a dithered temporal
+cross-fade on every swap, and hysteresis in the selection. Answers recorded: the fade time, the
+pattern and the hysteresis are data (`shared/look/lodblend.json`, one per build, edited by hand,
+with a validator and generator like the other look files); the engine (the swap state machine,
+the shader rule and its three patterns) is code. ARCHITECTURE.md §6.6 Swaps and Hysteresis.
+
+Deliverables
+- [x] `shared/look/lodblend.json` (`fadeS`, `pattern`, `coarsenRatio`), `lodblend.mjs`
+  (validation; → `dwell-look` `lodblend.gen.rs`), `lodblend.test.mjs` (changes by data alone,
+  bad entries named), CI stale check; `dwell-look` `lod_blend.rs` (patterns, CPU twin, WGSL).
+- [x] `dwell-lod` `fade.rs`: the swap state machine (items, swaps, joining, undoing, fading to
+  nothing, `fadeS` 0 as before); `system.rs` hands the renderer each draw's fade, keeps fading
+  meshes out of eviction, and `chunk_fade` for the streamed chunks.
+- [x] Hysteresis in the selection (`LodOptions::coarsen_ratio`, `split_frame`).
+- [x] The renderer: the fade in each draw's uniforms; terrain, cutout, flat (sections, stand-ins)
+  and both water shaders discard by it; a level fading out takes no ink.
+- [x] Telemetry `lod.fading`, `lod.retiring`; the F3 line's `fading`.
+- [x] Docs: ARCHITECTURE.md (§6.6, `render/`, `dwell-look`, §7.4), DEV_TOOLS.md.
+
+Exit criteria
+- [x] A fade completes and the old mesh is freed afterwards
+  (`a_refine_cross_fades_and_frees_the_parent_when_it_ends`,
+  `a_section_fading_out_keeps_its_mesh_until_its_fade_ends`).
+- [x] No frame where neither level draws a region, for refine and coarsen (`fade/tests.rs`;
+  `every_swap_cross_fades_and_no_frame_leaves_a_region_undrawn_or_drawn_twice`).
+- [x] Hysteresis: bobbing across a boundary gives no ping-pong
+  (`hysteresis_stops_sections_swapping_back_and_forth_on_a_boundary`: 80 swaps without, red; 0
+  with), and coarsening still follows (`hysteresis_still_coarsens_once_the_camera_is_well_past_the_boundary`).
+- [x] The outline draws no lines along the dither (`the_ink_draws_no_lines_along_a_fades_dither`;
+  the shader test `every_terrain_draw_cross_fades_and_a_level_fading_out_takes_no_ink`).
+- [x] The cost of many concurrent swaps (`many_concurrent_swaps_cost_little_per_frame`) and on the
+  bench (`fly-high`, `fly-low-fast`, `look-horizon` before and after: GPU within noise).
+- [x] Checked in Chrome on the GPU: walk, sprint, fly, the spyglass, with and without
+  `?outline=creases`, on face A and face B; a swap's screen sequence.
+- [ ] CI green; the owner's review in a browser.
 ---
 
 ## Cross-Cutting Work (every phase)

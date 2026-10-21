@@ -9,6 +9,7 @@ use std::rc::Rc;
 
 use dwell_game::input::{EditAction, FLY_KEY, InputEvent, KeyboardMouseInput};
 use dwell_game::touch::{TouchButton, TouchControls, TouchEvent};
+use dwell_lod::fade::Fade;
 use dwell_look::clouds::CloudQuality;
 use dwell_look::fog::FogSettings;
 use dwell_physics::config::PlayerControllerConfig;
@@ -1890,9 +1891,9 @@ impl Inner {
         let view = frame.texture.create_view(&Default::default());
         let game = &self.game;
         telemetry::span("draw.render", || {
-            self.renderer
-                .borrow_mut()
-                .render(&view, &|c| game.as_ref().is_none_or(|g| g.chunk_visible(c)));
+            self.renderer.borrow_mut().render(&view, &|c| {
+                game.as_ref().map_or(Some(Fade::Full), |g| g.chunk_fade(c))
+            });
         });
         let queue = self.renderer.borrow().queue().clone();
         telemetry::span("draw.present", || queue.present(frame));

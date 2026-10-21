@@ -108,8 +108,8 @@ struct Fluid {
 
 // Per draw (group 1, a storage array indexed by the draw's instance: draw k is drawn as instance k,
 // so a draw needs no bind call of its own): the mesh's origin relative to the eye (xyz) and its scale (w),
-// an optional clip box (relative to the eye; clip_lo.w > 0 enables it), and a tint (rgb) and
-// opacity (a).
+// an optional clip box (relative to the eye; clip_lo.w > 0 enables it), the LOD cross-fade in
+// clip_hi.w (`fade_discard`), and a tint (rgb) and opacity (a).
 struct Draw {
     offset: vec4f,
     clip_lo: vec4f,
@@ -140,6 +140,28 @@ fn frame_inked(d: f32) -> bool {
 /// The per-draw array (group 1): the raster passes'.
 const DRAWS: &str = r"
 @group(1) @binding(0) var<storage, read> draws: array<Draw>;
+";
+
+/// The LOD cross-fade (ARCHITECTURE.md §6.6 "Swaps", dwell-lod fade.rs): a draw's `clip_hi.w` is
+/// 0 when it draws in full, 1 + t while fading in (it keeps the pixels whose `fade_threshold` is
+/// under t) and −(1 + t) while fading out (it keeps the rest), so the two levels of a swap share
+/// the pixels exactly (dwell-lod `Fade::keeps`, `Fade::shader_value`). A pixel of a level fading
+/// out takes no ink (`frame_depth`'s flag): the outline's edges come from the incoming level, and
+/// the dither's seams between the levels' depths never draw as lines.
+const FADE: &str = r"
+fn fade_discard(draw: Draw, p: vec2f) -> bool {
+    let w = draw.clip_hi.w;
+    if (w == 0.0) {
+        return false;
+    }
+    let t = abs(w) - 1.0;
+    let n = fade_threshold(p);
+    return select((n < t), (n >= t), (w > 0.0));
+}
+
+fn fade_inked(draw: Draw) -> bool {
+    return draw.clip_hi.w >= 0.0;
+}
 ";
 
 const COMMON: &str = r"
@@ -368,8 +390,13 @@ fn terrain_fs(i: TerrainOut, @builtin(front_facing) front: bool) -> SceneOut {
     let texel = textureSampleGrad(atlas, atlas_sampler, atlas_uv, dpdx(i.uv) * i.tile.zw, dpdy(i.uv) * i.tile.zw);
     let n = select(-i.normal, i.normal, front);
     let shade = grid_shade(i.uv, tile_grid(i.tile.xy));
+    if (fade_discard(draw, i.clip.xy)) {
+        discard;
+    }
     let alpha = select(draw.tint.a * texel.a, 1.0, draw.tint.a >= 1.0);
-    return scene_out(i.color * texel.rgb * shade * draw.tint.rgb, normalize(n), i.rel, alpha);
+    var o = scene_out(i.color * texel.rgb * shade * draw.tint.rgb, normalize(n), i.rel, alpha);
+    o.depth = frame_depth(o.depth, fade_inked(draw));
+    return o;
 }
 
 // Cutout geometry (docs/TRANSPARENT_BLOCKS.md): the terrain vertex and a `plant` vec4 — how far
@@ -507,13 +534,16 @@ fn cutout_fs(i: CutoutOut, @builtin(front_facing) front: bool) -> CutoutSceneOut
     } else if (cover <= noise) {
         discard;
     }
+    if (fade_discard(draw, i.clip.xy)) {
+        discard;
+    }
     let n = select(vec3f(-i.normal.x, i.normal.y, -i.normal.z), i.normal, front);
     let lit = scene_out(i.color * texel.rgb * draw.tint.rgb, normalize(n), i.rel, 1.0);
     var o: CutoutSceneOut;
     o.color = lit.color;
     // Plants whose look says `outline: false` are flagged in the depth: no ink is drawn on them
     // and the edge rule sees through them (`ink_outline`).
-    o.depth = frame_depth(lit.depth, i.bare < 0.5);
+    o.depth = frame_depth(lit.depth, i.bare < 0.5 && fade_inked(draw));
     o.mask = mask;
     return o;
 }
@@ -554,11 +584,13 @@ fn flat_vs(v: FlatIn, @builtin(instance_index) k: u32) -> FlatOut {
 @fragment
 fn flat_fs(i: FlatOut, @builtin(front_facing) front: bool) -> SceneOut {
     let draw = draws[i.draw];
-    if (clipped(draw, i.rel)) {
+    if (clipped(draw, i.rel) || fade_discard(draw, i.clip.xy)) {
         discard;
     }
     let n = select(-i.normal, i.normal, front);
-    return scene_out(i.color * draw.tint.rgb, normalize(n), i.rel, draw.tint.a);
+    var o = scene_out(i.color * draw.tint.rgb, normalize(n), i.rel, draw.tint.a);
+    o.depth = frame_depth(o.depth, fade_inked(draw));
+    return o;
 }
 
 struct LineIn {
@@ -1526,6 +1558,10 @@ fn water_fs(i: FluidOut, @builtin(front_facing) front: bool) -> SceneOut {
     // deck's footprint in the reflection.
     let footprint = max(length(dpdx(i.wrapped)), length(dpdy(i.wrapped)));
     let deck_fw = reflected_deck_fw(i.rel);
+    // A swap's water fades with its level's surface (the same pixels: neither blends twice).
+    if (fade_discard(draw, i.clip.xy)) {
+        discard;
+    }
     let count = arrayLength(&fluids);
     var o: SceneOut;
     o.depth = frame_depth(view_depth(i.rel), true);
@@ -1568,6 +1604,9 @@ fn water_scene_fs(i: FluidOut, @builtin(front_facing) front: bool) -> @location(
     let draw = draws[i.draw];
     let footprint = max(length(dpdx(i.wrapped)), length(dpdy(i.wrapped)));
     let deck_fw = reflected_deck_fw(i.rel);
+    if (fade_discard(draw, i.clip.xy)) {
+        discard;
+    }
     let count = arrayLength(&fluids);
     if (i.fluid >= count) {
         let n = normalize(i.normal);
@@ -1868,8 +1907,9 @@ fn scene_bindings(samples: u32) -> String {
 /// shading and every entry point.
 pub fn source(samples: u32) -> String {
     format!(
-        "{}{DRAWS}\n{}\n{TERRAIN}\n{MOTION}\n{OUTLINE}\n{WATER}\n{}",
+        "{}{DRAWS}\n{FADE}\n{}\n{}\n{TERRAIN}\n{MOTION}\n{OUTLINE}\n{WATER}\n{}",
         lighting_source(),
+        dwell_look::lod_blend::LOD_BLEND.pattern.wgsl(),
         scene_bindings(samples),
         water_slope()
     )
@@ -2164,6 +2204,56 @@ mod tests {
     }
 
     #[test]
+    fn every_terrain_draw_cross_fades_and_a_level_fading_out_takes_no_ink() {
+        // The LOD cross-fade (dwell-lod fade.rs): chunks, cutouts, sections, stand-ins and water
+        // all discard by the draw's fade, and the opaque ones flag their view depth while fading
+        // out, so the ink's edges come from the incoming level (dwell-look lod_blend.rs tests the
+        // rule: unflagged, the dither's seams draw as lines).
+        let src = super::source(4);
+        let body = |name: &str| {
+            let at = src.find(&format!("fn {name}(")).expect(name);
+            src[at..at + src[at..].find("\n}\n").expect("end")].to_string()
+        };
+        for entry in [
+            "terrain_fs",
+            "cutout_fs",
+            "flat_fs",
+            "water_fs",
+            "water_scene_fs",
+        ] {
+            assert!(
+                body(entry).contains("fade_discard(draw, i.clip.xy)"),
+                "{entry} does not fade"
+            );
+        }
+        for entry in ["terrain_fs", "flat_fs"] {
+            assert!(
+                body(entry).contains("o.depth = frame_depth(o.depth, fade_inked(draw));"),
+                "{entry}"
+            );
+        }
+        assert!(body("cutout_fs").contains("i.bare < 0.5 && fade_inked(draw)"));
+        // The threshold rule is dwell-lod's `Fade::keeps` (in: under t; out: t and over) on its
+        // encoding (`Fade::shader_value`), with the pattern from shared/look/lodblend.json.
+        let rule = body("fade_discard");
+        assert!(rule.contains("let t = abs(w) - 1.0;"));
+        assert!(rule.contains("return select((n < t), (n >= t), (w > 0.0));"));
+        assert!(body("fade_inked").contains("return draw.clip_hi.w >= 0.0;"));
+        assert!(src.contains(&dwell_look::lod_blend::LOD_BLEND.pattern.wgsl()));
+        use dwell_lod::fade::Fade;
+        for (fade, n) in [
+            (Fade::In(0.25), 0.2f32),
+            (Fade::In(0.25), 0.3),
+            (Fade::Out(0.25), 0.2),
+        ] {
+            let w = fade.shader_value();
+            let t = w.abs() - 1.0;
+            let discard = if w > 0.0 { n >= t } else { n < t };
+            assert_eq!(!discard, fade.keeps(n), "{fade:?} {n}");
+        }
+    }
+
+    #[test]
     fn plants_without_ink_are_flagged_in_the_depth_and_seen_through() {
         // Owner's report (2026-10-20, `?outline=creases`): tall grass was mostly black, every
         // blade inked. A cutout whose block says `outline: false` (the cross plants' default)
@@ -2176,7 +2266,10 @@ mod tests {
             src[at..at + src[at..].find("\n}\n").expect("end")].to_string()
         };
         assert!(body("cutout_vs").contains("o.bare = v.bare;"));
-        assert!(body("cutout_fs").contains("o.depth = frame_depth(lit.depth, i.bare < 0.5);"));
+        assert!(
+            body("cutout_fs")
+                .contains("o.depth = frame_depth(lit.depth, i.bare < 0.5 && fade_inked(draw));")
+        );
         let edge = body("ink_outline");
         assert!(
             edge.contains("|| !frame_inked(centre)"),
