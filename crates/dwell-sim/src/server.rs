@@ -1119,19 +1119,20 @@ impl Server {
         self.broadcast_world(&Message::PlayerEvent(e));
     }
 
-    /// Server-side effects of the controller tick: fall damage.
+    /// Server-side effects of the controller tick: impact damage (a hit on a floor, ramp, wall or
+    /// ceiling by the speed into it, PLAYER_CONTROLLER.md §6.10), sent as cause `Fall`.
     fn after_controller_tick(&mut self, id: SessionId) {
         let Some(h) = self.sessions[&id].handle else {
             return;
         };
         let c = self.players.controller(h);
-        if c.events & events::LANDED != 0 {
-            let d = self.config.player_config.damage;
-            if c.landed_speed > d.fall_damage_min_speed {
-                let amount = ((c.landed_speed - d.fall_damage_min_speed) * d.fall_damage_per_speed)
-                    .round() as i32;
-                self.damage(id, amount, DamageCause::Fall);
-            }
+        if c.events & events::IMPACTED != 0 {
+            let amount = self
+                .config
+                .player_config
+                .damage
+                .impact_damage(c.impact_speed);
+            self.damage(id, amount, DamageCause::Fall);
         }
     }
 

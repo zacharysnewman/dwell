@@ -19,7 +19,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 |---|---|
 | 0 — Repository, tooling & Pages | ✅ Complete |
 | 1 — Server core, protocol, transports, local mode | ✅ Complete |
-| 2 — Physics player controller | ✅ Complete (playtested; follow-up fixes made; 2026-10-20: the step-up reworked, consistent at every approach angle and speed) |
+| 2 — Physics player controller | ✅ Complete (playtested; follow-up fixes made; 2026-10-20: the step-up reworked, consistent at every approach angle and speed; 2026-10-21: fall damage became impact damage by the speed into the surface, walls and ceilings too) |
 | 3 — Terrain generation & streaming | 🚧 In progress — every sub-phase built (3a–3e: 3d block edits and meshing workers, 3e persistence and debug tooling). Outstanding: playtests for the long walk (3b) and walking/jumping/swimming the terrain |
 | 4 — World LOD & whole-world view | 🚧 In progress — 4a, 4b and 4c built, the dev camera replaced by creative flight; playtest follow-ups built: fog off (now a fixed height fog from look data, no sliders), super tall mountains (generator version 4), chunks shown first on slow devices, no popping when turning and matching distant colours, flight/HUD/transport fixes and the distant-water comparison, distant terrain at its true height and tinted distant water, seamless see-through distant water without cracks at section borders, no z-fighting on distant water, height fog with a settings menu and playtested defaults, full-detail chunks beyond the view on request (protocol v8) (its velocity lookahead removed 2026-10-14: it looked bad), a flight speed slider (protocol v9) that is a true minimum near the ground, caves deep underground drawn without requesting buried chunks, an FPS counter, the LOD view held within its cache budget with its pixel error in CSS pixels, one draw call per LOD section, static transforms and GPU-only vertex data, the LOD's pixel error and memory as settings, batched terrain behind `?batch=1` and a `?scale=` resolution switch, a memory readout in F3 and a phone memory budget, clipped ancestor stand-ins for the holes on the forced path to the chunks (chopped mountains, `FIX_SPEC_LOD_SKY_FLIP.md` item 1), flight toggled by a dedicated F key instead of a double-tapped Space or Jump (owner, 2026-10-15; the touch Fly button unchanged), distant colours that match full detail (owner, 2026-10-21: risers coloured by the fine rise they stand for, `shared/look/lodcolour.json`; tops untinted); outstanding: the frame-rate check on a desktop and a mobile device; `package.json` raised to 0.11.13, a patch release of the 0.11 line |
 | 5 — Multiplayer ready (menus, web hosting, master on Cloudflare, lobby list) | 🚧 In progress — every sub-phase built: 5a (main menu, world management, game menu), 5b (master Worker skeleton, signing, CI, deploy workflow; the master runs at `dwell-master.dropkick.workers.dev`), 5c (friend worlds: host from the browser, join by code), 5d (dedicated servers on the master, join by address, On your network), 5e (lobby list, receipts, server browser). Outstanding: the manual phone checks (5a, 5c, 5d) and the TURN key |
@@ -238,6 +238,12 @@ ragdoll and animation from `State` (Phase 21, see below). Playtested by a human 
 #9): two findings, fixed: forward/back looked faster than
 strafing, which was the camera's wide horizontal field of view rather than the sim (now capped
 at 100°, `client/src/render/fov.ts`), and the touch Crouch button now holds instead of toggling.
+Follow-up (owner, 2026-10-21, built): fall damage became **impact damage** — the body's
+pre-contact velocity into the surface's normal, `max(0, −v · n)`, on floors, ½ m ramps (their
+normal), walls and ceilings, once per contact, flight exempt; the config fields renamed
+`impact_damage_min_speed` / `impact_damage_per_speed` (PLAYER_CONTROLLER.md §6.10,
+`tests/impact.rs`). Not a protocol change: the hit is server-side, sent as a `Damage` event with
+cause `Fall`.
 Later finding: jumping onto a block while holding forward gave a
 burst of speed as the player came down on the edge — the step-up's forward nudge was added on top
 of the tick's movement (also on every slab step, and on slopes every tick); it is now taken out of
@@ -335,7 +341,8 @@ Deliverables
     Tested with a debug launch-pad block.
   - [x] Player-vs-player collision (block/push; standing on heads not carried); remote players as
     interpolated kinematic capsules. (Animation from `State` moved to Phase 21.)
-  - [x] Health, fall damage from `Landed` impact speed, death → respawn. (The cosmetic ragdoll moved
+  - [x] Health, fall damage from `Landed` impact speed (since 2026-10-21 impact damage from
+    `IMPACTED`, PLAYER_CONTROLLER.md §6.10), death → respawn. (The cosmetic ragdoll moved
     to Phase 21; dead players are drawn lying down.)
 - [x] **2i — Divergence measurement.** Jolt built with `JPH_CROSS_PLATFORM_DETERMINISTIC`, no FMA
   contraction; CI runs the scenario suite natively and under WASM (Node) and reports max per-tick

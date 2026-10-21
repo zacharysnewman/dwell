@@ -66,7 +66,7 @@ stair hops, double jumps).
 | `f.DeltaTime` | Fixed `1 / SIM_HZ` (60 Hz) |
 | `PPCInputBridge` partial hook | `Input` dequantized from the `PlayerInput` datagram (§8, `net.rs`) |
 | `PPCForces.AddVelocity` / `AddExplosion` | `Players::add_velocity()` / `add_explosion()`, called by the server for knockbacks and explosions (ARCHITECTURE §7.2) |
-| Quantum events (`PPCJumped`, `PPCLanded`, …) | `events` bits + `landed_speed` per tick; drives fall damage (server) and audio/animation (client) |
+| Quantum events (`PPCJumped`, `PPCLanded`, …) | `events` bits per tick, with `IMPACTED`'s `impact_speed` and `impact_normal` (§6.10); impacts drive damage (server) |
 | Quantum rollback (full-world determinism) | Server authority + local-player prediction and reconciliation (§8) |
 | Unity's left-handed axes | Right-handed, Y up (Rapier, the wgpu renderer): camera-right at yaw 0 is −X (§9) |
 | `PPCCameraView`, `PPCAnimatorView`, `PPCDebugView` | Client camera, eye smoothing and debug overlay (`dwell-client`, `dwell-game`; §9) |
@@ -129,8 +129,10 @@ pub struct PlayerController {
     pub platform: PlatformState,
     pub target_velocity: Vec3,
     pub face: FaceFrame,   // the face frame (§11, BIFACIAL_WORLD.md §11)
-    pub events: u32,       // events:: bits raised this tick (JUMPED, LANDED, CROUCH_CHANGED,
-    pub landed_speed: f32, //   CLIMB/SWIM/FLY/SPRINT_SLIDE_STARTED/ENDED); LANDED's impact speed
+    pub events: u32,         // events:: bits raised this tick (JUMPED, LANDED, CROUCH_CHANGED,
+                             //   CLIMB/SWIM/FLY/SPRINT_SLIDE_STARTED/ENDED, IMPACTED)
+    pub impact_speed: f32,   // IMPACTED's hit: m/s into the surface (§6.10)
+    pub impact_normal: Vec3, //   and the surface's normal, face-local
 }
 ```
 
@@ -164,6 +166,7 @@ The server tick (ARCHITECTURE §4.2) runs, for every player, **before** `Physics
 | 8 | `step_swim` | — (Dwell) | Exclusive layer in water voxels (§6.4) and in the flip band (§11); not while climbing or flying |
 | 9 | `step_horizontal` | `PPCMovementLayerSystem` | Absorb external; on ground steeper than 44° the slide (§6.8); else during a sprint slide the sprint slide (§6.9); else accel/decel/reverse in the platform's frame; air control; step-up; edge guard |
 | 10 | `step_vertical` | `PPCVerticalLayerSystem` | Gravity; walk-off keeps platform Y; ceiling cancel; launch detection; ground following + snap |
+| 10a | `step_impact` | — (Dwell) | This tick's hit from the new contacts, the landing and a ceiling cancel: `IMPACTED` (§6.10) |
 | 11 | `step_aggregate` | `PPCAggregateSystem` | `target = exclusive ? layer.velocity : horizontal.contribution + (0, vertical.target_y, 0)`; set the body's linear velocity |
 | 12 | `step_state` | `PPCStateSystem` | Priority: Climbing > Swimming > Flying > Sliding (§6.8, §6.9) > Crouching > Jumping/Falling > Running/Walking/Idle |
 | — | *`Physics::step(1/60)`* | Quantum physics step | Contacts resolved; deviations are absorbed next tick |
@@ -488,9 +491,9 @@ layer — so a player can rise from the ground to see the whole world (ARCHITECT
   (`POS64_LIMIT` − 1 km), the velocity clamped to arrive exactly. Spawning a player raises the
   physics world's velocity limit (Rapier's default is 400 m/s) above the fastest flight speed.
 - **Leaving flight** hands back to the normal layers with the current velocity, like leaving
-  water: the player falls, and a hard landing does fall damage. Landing while flying does not end
-  flight (the vertical layer, which reports `LANDED`, is skipped), so flying into the ground is
-  harmless.
+  water: the player falls, and a hard landing does impact damage (§6.10). Landing while flying does
+  not end flight (the vertical layer, which reports `LANDED`, is skipped), and flight is exempt
+  from impacts, so flying into the ground, a wall or a ceiling is harmless.
 - **Prediction.** The client normally waits for the terrain around the player before predicting
   (collision needs it); a flying player keeps predicting, since flight outruns chunk streaming and
   the server's collision corrects any difference (`dwell-game`'s `gate::prediction_may_run`).
@@ -627,6 +630,61 @@ Fortnite-style. The numbers below are defaults chosen for this, all data
   clients, one sliding round a square (exact without latency, no snaps when lossy). The suite also
   runs far from the origin and on face B.
 
+### 6.10 Impacts (Dwell addition) **[built]**
+
+Owner (2026-10-21): fall damage became **impact damage**, by the angle of the surface hit, and walls
+and ceilings hurt too. `step_impact` (pass 10a) raises `IMPACTED` with the tick's hit:
+
+- **The speed** is `max(0, −v · n)`: the body's velocity `v` going into the physics step that met
+  the surface (`Player::pre_step`: the velocity `step_aggregate` gave the body, plus any instant
+  change after it, such as a knockback; not what the collide-and-slide left, nor the layers' wish),
+  into the surface's normal `n` (face-local, out of the surface toward the player). Only the part
+  into the surface counts; the part along it is kept by sliding and is not damage. A perpendicular
+  hit counts in full, a glancing one less, a skim along a slope nothing.
+- **The surfaces:** each of the tick's contacts (`Physics::contact_normals`, from the last step)
+  that is new; the ground's normal when the tick lands (`LANDED`: the ground probe meets the ground
+  before the capsule does, and the ground snap then closes the gap gently); and a rise the ceiling
+  probe cancels (normal −y), which likewise stops the body short of the ceiling. Flat ground gives
+  the vertical speed, as falls always did; a ½ m ramp gives its own normal (26.57°: × 0.894 of a
+  vertical fall).
+- **Once per contact:** a contact whose normal is within `SAME_CONTACT_DOT` (0.95) of one of last
+  tick's is the same contact, so a launch that keeps pressing the body into a wall hits once, and
+  crossing from one collider to the next along a flat surface is no hit. **Several surfaces** in one
+  tick (a corner): the largest.
+- **The ground layer's contacts are not impacts:** while the player was grounded the tick before,
+  an up-facing contact (face-local `n.y > 0.1`) is the ground being followed, stepped onto or slid
+  on, or the landing just met: not a hit. Walls still count while grounded.
+- **Exempt:** flight, swimming and climbing (their layers skip the vertical layer, which is where a
+  landing was ever raised): flying into a wall is harmless, as flying into the ground was. Water's
+  behaviour is unchanged: entering it raises no hit.
+- **Damage** (server, `dwell-sim` `after_controller_tick`): `Damage::impact_damage` of the speed,
+  `(speed − damage.impact_damage_min_speed) × impact_damage_per_speed` above the minimum (12 m/s,
+  8 per m/s), sent as a `Damage` `PlayerEvent` with cause `Fall` (the wire's cause for every impact).
+  The client predicts the event too but nothing reads it there; landing sounds still come from
+  the mover's sampled velocity (`dwell-game` `sound.rs`).
+
+| Case | Speed into the surface | Damage |
+|---|---|---|
+| 3 m drop, flat | 10.7 m/s | 0 |
+| 5 m / 10 m / 20 m / 30 m drop, flat | 14.0 / 20.0 / 28.3 / 34.7 m/s | 16 / 64 / 131 / 181 (as before) |
+| 25 m/s straight down onto a ½ m ramp | 23.0 m/s | 88 |
+| 25 m/s at 60° / 45° below level, downhill onto it | 14.7 / 9.1 m/s | 21 / 0 |
+| 25 m/s along the ramp (a skim) | 4.2 m/s (gravity) | 0 |
+| Launched at 25 m/s into a wall | 25 m/s, once | 104 |
+| Launched at 25 m/s along a wall, 1 m/s into it | < 2 m/s | 0 |
+| Launched up at 25 m/s into a ceiling 2.2 m over the head | ~23 m/s | 91 |
+| Walking / sprinting into a wall | 5 / 8 m/s | 0 |
+| Flying at ~30 m/s into a wall | (exempt) | 0 |
+| A sprint slide at its 14 m/s cap (downhill only) into a wall | 14 m/s | 16 |
+
+- **Tests:** `tests/impact.rs` (12, both faces and far from the origin): a 20 m fall onto the flat
+  deals the 131 it did before; a short drop nothing; onto the ½ m ramp hillside a vertical landing
+  by the ramp's normal, a glancing one less and a skim nothing; a launch into a wall hurts once, one
+  brushing along it not at all; flying into it not at all; a hard ceiling hit hurts and a jump into
+  a low ceiling not; walking and sprinting into a wall, stepping up ½ m, auto-climb and walking the
+  ramp hillside stay under 9 m/s. `dwell-sim` `tests/netcode.rs` damages and kills by falls through
+  the server.
+
 ## 7. Configuration
 
 `PlayerControllerConfig` lives in `crates/dwell-physics/src/config.rs` — both sides compile the
@@ -673,7 +731,7 @@ PPC default for voxels.
 | `sprint_slide` ◆ | `min_start_speed` / `start_boost` / `max_speed` | 6.5 m/s / 1.5 m/s / 14 m/s | — | Dwell addition (§6.9): crouch while sprinting; horizontal speeds |
 | | `friction` / `slope_gravity` | 6 m/s² / 1 | — | Deceleration; `gravity × slope_gravity × tilt` along the slide |
 | | `steer_rate` / `cooldown_ticks` | 90 °/s / 30 ticks (0.5 s, at most 255: the wire's `u8`) | — | Turning toward the move input; before another slide |
-| `damage` ◆ | `fall_damage_min_speed` / `fall_damage_per_speed` | 12 m/s / 8 per m/s | — | From the `LANDED` event's impact speed |
+| `damage` ◆ | `impact_damage_min_speed` / `impact_damage_per_speed` | 12 m/s / 8 per m/s | — | From the `IMPACTED` event's speed into the surface (§6.10): floors, ramps, walls, ceilings |
 | | `crush_speed` / `crush_ticks` | 4 m/s / 6 | — | Phase 20 |
 | `step_view` ◆ | `slope` / `max_slope` / `min_speed` | 0.5 / 1.0 / 1 m/s | (PPC `SmoothSteps`: 4 m/s) | Client camera only (§9, Steps): the virtual ramp the eye follows over a step; never read by the sim |
 | `advanced` | `step_probe_distance` ◆ / `probe_ring_radius` / `wall_check_distance` | 0.05 m / 0.9 / 0.16 m | 0.01 / same / same | The step's top is read this far past its face (§4) |
@@ -899,7 +957,7 @@ launch-pad knockback test is a server-issued knockback.
 | Phase6Climb | `platform_climb_swim.rs`: ladder columns: grab, climb, look-down reversal, strafe, jump-off, climb over the top |
 | CharacterStacking / GroundedConsistency / StepSmoothness | `scenario.rs`: the same scenarios on voxel geometry (standing on heads, half-step stairs, stair corners, ledges) |
 | GoldenTrace | `scenario.rs`: the five-player scenario is identical across repeated runs and matches `tests/golden/scenario.trace` bit for bit in the origin frame (natively and under `wasm32-wasip1`, §8.3); far from the origin and on face B every state must match and positions stay within 1 mm. Re-record with `DWELL_UPDATE_GOLDEN=1` (origin frame only); re-recorded on Rapier in Phase 24 |
-| — (Dwell) | Swim enter/float/dive/exit and shallow water (`platform_climb_swim.rs`); creative flight (`flight.rs`: hover, rise/sink/move, speed growing with height, the terrain-band cap, no ceiling (out through the build sphere), the speed level, flying round the rim to face B, a fast dive stopping on the ground); sliding on steep ground (`slide.rs`, §6.8); the sprint slide (`sprint_slide.rs`, §6.9); auto-jump, edge guard, doorways, crawlspaces, block-under-feet removal, same-tick collision with a placed block, chunk seams (`scenario.rs`); voxel ray casts and flooded cells (`voxel_query.rs`); the bifacial controller (`bifacial.rs`) and Tier 1 bodies across the midplane (`tier1_bifacial.rs`); the predictor against an in-process server (`tests/predictor.rs`: no replays without surprises, knockback replays, the render offset decaying, death, remote proxies, a sprint slide and its cooldown resumed from a snapshot). Networked players (`crates/dwell-sim/tests/netcode.rs`, the `NetSim` harness: the real server and per-client predictors over simulated links) — input validation and rate limits, fall damage, death and respawn on every client, reconciliation under latency, jitter and loss, knockback replay, player bumps, block edits, sliding and the sprint slide (exact without latency, no snaps at 150 ms RTT), the server's flight policy and fast flight. Later phases: crush and push-force cap (Phase 20) |
+| — (Dwell) | Swim enter/float/dive/exit and shallow water (`platform_climb_swim.rs`); creative flight (`flight.rs`: hover, rise/sink/move, speed growing with height, the terrain-band cap, no ceiling (out through the build sphere), the speed level, flying round the rim to face B, a fast dive stopping on the ground); sliding on steep ground (`slide.rs`, §6.8); the sprint slide (`sprint_slide.rs`, §6.9); auto-jump, edge guard, doorways, crawlspaces, block-under-feet removal, same-tick collision with a placed block, chunk seams (`scenario.rs`); voxel ray casts and flooded cells (`voxel_query.rs`); impacts on floors, ramps, walls and ceilings (`impact.rs`, §6.10); the bifacial controller (`bifacial.rs`) and Tier 1 bodies across the midplane (`tier1_bifacial.rs`); the predictor against an in-process server (`tests/predictor.rs`: no replays without surprises, knockback replays, the render offset decaying, death, remote proxies, a sprint slide and its cooldown resumed from a snapshot). Networked players (`crates/dwell-sim/tests/netcode.rs`, the `NetSim` harness: the real server and per-client predictors over simulated links) — input validation and rate limits, impact damage from falls, death and respawn on every client, reconciliation under latency, jitter and loss, knockback replay, player bumps, block edits, sliding and the sprint slide (exact without latency, no snaps at 150 ms RTT), the server's flight policy and fast flight. Later phases: crush and push-force cap (Phase 20) |
 
 Performance gate: 64 players' controller passes (excluding the physics step) under 1 ms/tick —
 measured at ~0.48 ms in a Release build with `enhanced-determinism` on, ~0.51 ms ~8,000 km from the
