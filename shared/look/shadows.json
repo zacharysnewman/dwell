@@ -1,0 +1,27 @@
+{
+  "$comment": "Sun and moon shadows by cascaded shadow maps (docs/DAY_NIGHT.md §10): the second layer of the lighting, over the flood-fill sky and block light. Near the eye the shadow map shades the direct sun or moon term only; beyond the last cascade it fades to the first layer's stand-in (direct light × sky light). Run `node shared/look/shadows.mjs` after editing; CI fails if crates/dwell-look/src/shadows.gen.rs is stale.",
+  "cascades": {
+    "$comment": "nearM: where the first cascade's slice starts (the log split's near). radiusStepM: each cascade's bounding sphere's radius is rounded up to a multiple of this, so a changing FOV (the speed boost) changes it in steps, not every frame (a changing radius changes the texel size, and every shadow edge would shimmer). casterReachM: how far toward the light from a cascade's sphere a caster still casts into it (a cliff or a tree well above the view). edgeFade: shadows fade to the stand-in over this last share of the shadow distance. spyglassMaxM: while the spyglass zooms, the shadow distance grows with the magnification, up to this.",
+    "nearM": 0.5,
+    "radiusStepM": 1,
+    "casterReachM": 320,
+    "edgeFade": 0.2,
+    "spyglassMaxM": 640
+  },
+  "bias": {
+    "$comment": "Against acne and peter-panning on ½ m steps and ramps. normalOffsetTexels: the receiver's lookup moves this many of its cascade's texels out along its normal. depthBiasM: the compare's constant bias (m along the light). slopeScale: the casters' slope-scaled depth bias (the pipeline's, per unit of depth slope).",
+    "normalOffsetTexels": 1.5,
+    "depthBiasM": 0.04,
+    "slopeScale": 1.5
+  },
+  "lights": {
+    "$comment": "The time of day: a light's shadows fade in as it rises over the viewer's face's horizon, from fadeStartDeg to fadeEndDeg of elevation, to `strength` (1: the direct term wholly shaded). The sun casts while it is over the horizon, else the moon; none when neither is up.",
+    "sun": { "fadeStartDeg": 0, "fadeEndDeg": 8, "strength": 1 },
+    "moon": { "fadeStartDeg": 2, "fadeEndDeg": 12, "strength": 1 }
+  },
+  "tiers": {
+    "$comment": "Per Shadows setting (Off draws none). cascades: how many (1–4). resolution: each cascade's map (texels a side). distanceM: the shadow distance (view depth). splitLambda: the slices' split, 0 even to 1 logarithmic. filterTexels: the soft PCF's radius (texels). filterTaps: its taps a side (each a 2×2 hardware compare).",
+    "low": { "cascades": 2, "resolution": 1024, "distanceM": 80, "splitLambda": 0.6, "filterTexels": 1.25, "filterTaps": 2 },
+    "high": { "cascades": 4, "resolution": 2048, "distanceM": 160, "splitLambda": 0.75, "filterTexels": 1.75, "filterTaps": 3 }
+  }
+}

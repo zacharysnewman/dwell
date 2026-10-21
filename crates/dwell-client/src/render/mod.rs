@@ -17,6 +17,7 @@ pub mod pacing;
 pub mod reflection;
 pub mod seam;
 pub mod shaders;
+pub mod shadows;
 pub mod timing;
 pub mod water;
 pub mod water_tiles;
