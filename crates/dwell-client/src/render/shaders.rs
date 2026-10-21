@@ -421,8 +421,8 @@ fn sway(rel: vec3f, plant: vec4f) -> vec3f {
     let flutter = sin(2.7 * t + dot(p, vec2f(0.73, 0.41))) * 0.25;
     let dir = normalize(vec2f(1.0, 0.35));
     let lean = amount * (0.25 + g + flutter * (0.4 + g));
-    // Swaying shortens the plant a little, as a bent blade does.
-    return rel + vec3f(dir.x * lean, -0.4 * lean * lean / max(plant.x, 1e-3), dir.y * lean);
+    // Swaying shortens the plant a little, as a bent blade does (toward its own ground).
+    return rel + vec3f(dir.x * lean, 0.0, dir.y * lean) + sway_drop(frame.eye.x + rel.y, lean, plant.x);
 }
 
 @vertex
@@ -1283,7 +1283,7 @@ fn water_surface(i: FluidOut, front: bool, footprint: f32, f: Fluid, draw: Draw)
     s.n = seen;
     if (abs(face_n.y) > 0.5) {
         s.w = water_slope(i.wrapped, f, footprint, select(WAVE_LAYERS, 1, frame.water.w < 0.5));
-        s.n = sign(seen.y) * normalize(vec3f(-s.w.x, 1.0, -s.w.y));
+        s.n = ripple_normal(s.up, seen, s.w.xy);
         // A ripple can't face away from the eye: bend it back.
         s.n = normalize(s.n + max(0.02 - dot(s.n, s.v), 0.0) * s.v);
     }
@@ -1486,7 +1486,7 @@ fn sparkle(i: FluidOut, s: Surface, f: Fluid, footprint: f32) -> vec3f {
     let shift = vec2f(0.6, 0.8) * (frame.fog.z * f.wave.w * 3.1 / cell);
     let q = mat2x2f(2.0, -1.0, 1.0, 2.0) * (i.wrapped / cell) + (shift - n_cells * floor(shift / n_cells));
     let d = noise_t(q);
-    let n = normalize(s.n + vec3f(-d.y, 0.0, -d.z) * 0.35 * sign(s.n.y));
+    let n = sparkle_normal(s.up, s.n, d.yz);
     let r = reflect(-s.v, n);
     let day = frame.day;
     let lobe = pow(max(dot(r, day.sun.xyz), 0.0), SPARKLE_POWER);
@@ -1881,7 +1881,7 @@ pub fn source(samples: u32) -> String {
 pub fn lighting_source() -> String {
     format!(
         "{}const SEA_LEVEL: f32 = {:.1};\nconst ATLAS_CELLS: u32 = {}u;\nconst ATLAS_TILES: u32 = {}u;\n{}\n{}\n{}\n{FRAME}\n{}\n{}\n{FRAME_DEPTH}\n{COMMON}\n",
-        dwell_world::FaceFrame::wgsl(),
+        format!("{}{}", dwell_world::FaceFrame::wgsl(), super::face_shading::WGSL),
         world::SEA_LEVEL as f64,
         dwell_mesh::ATLAS_CELLS,
         dwell_mesh::ATLAS_TILES,

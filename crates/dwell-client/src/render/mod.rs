@@ -10,6 +10,7 @@ pub mod arena;
 pub mod camera;
 pub mod characters;
 pub mod display;
+pub mod face_shading;
 pub mod frame;
 pub mod geometry;
 pub mod pacing;
