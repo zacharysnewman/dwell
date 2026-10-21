@@ -95,6 +95,8 @@ pub trait Scene: TerrainRenderer {
     fn set_arms(&mut self, _arms: Option<ArmsView>) {}
     /// Your own body this frame, cast into the shadow maps only (none while it is drawn).
     fn set_own_shadow(&mut self, _body: Option<PlayerView>) {}
+    /// Your own body drawn in first person from the neck down (docs/CHARACTERS.md §5.1), or none.
+    fn set_own_body(&mut self, _body: Option<PlayerView>) {}
     fn set_camera(
         &mut self,
         eye: [f64; 3],
@@ -1589,6 +1591,7 @@ impl<S: Scene> Game<S> {
             scene.set_player(u32::from(self.player_id), Some(view));
             scene.set_arms(None);
             scene.set_own_shadow(None);
+            scene.set_own_body(None);
             let r = yaw.to_radians();
             let [x, y, z] = self.death_feet;
             camera_eye = [
@@ -1631,9 +1634,11 @@ impl<S: Scene> Game<S> {
             let up = face.up();
             let feet = std::array::from_fn(|k| center[k] - up[k] * c.half_height);
             let own = self.bodies.own(feet, yaw, face, &move_input, held, dt);
-            self.scene
-                .borrow_mut()
-                .set_own_shadow(c.active.then_some(own));
+            let mut scene = self.scene.borrow_mut();
+            scene.set_own_shadow(c.active.then_some(own));
+            // And you see it from the neck down, in first person (CHARACTERS.md §5.1): not from a
+            // placed camera.
+            scene.set_own_body((c.active && self.view.is_none()).then_some(own));
         }
         let camera_eye = match self.view {
             Some(v) => {

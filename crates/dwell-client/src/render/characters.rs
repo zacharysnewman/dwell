@@ -14,11 +14,16 @@
 //! - **Arms**: drawn after the world's passes into the same targets over a cleared depth buffer,
 //!   with their own projection (the data's FOV, a 2 cm near plane), so they never clip into
 //!   terrain and keep their size under the speed FOV.
+//! - **Your own body** (§5.1): in first person, the full body from the neck down in the scene
+//!   passes (`BodyDraw::first_person`), its own mesh (`dwell_characters::own`: no head, neck or
+//!   arms), moved back from the eye each frame (`own_frame`) so nothing comes near the camera, and
+//!   its fragments within `own_discard_m` of the eye discarded as a safety net. Its shadow is the
+//!   whole body's, cast separately (`cast_only`).
 
 use dwell_characters::anim::{MAX_BONES, Pose, arm_transforms, bone_transforms};
 use dwell_characters::math::Affine;
 use dwell_characters::mesh::{self, Mesh};
-use dwell_characters::{BLOCK_MATERIAL, Character, TABLES, TILE, View};
+use dwell_characters::{BLOCK_MATERIAL, Character, FirstPersonBody, TABLES, TILE, View, own};
 use dwell_world::FaceFrame;
 use dwell_world::hash::HashMap;
 
@@ -82,6 +87,9 @@ pub struct BodyDraw {
     pub held: Held,
     /// Drawn into the shadow maps only (your own body in first person).
     pub cast_only: bool,
+    /// Your own body in first person (CHARACTERS.md §5.1): drawn from the neck down, kept clear of
+    /// the eye, casting no shadow (the `cast_only` body casts it).
+    pub first_person: bool,
     /// The flood light it stands in (sky and block level / 15, eased; [1, 0] open sky):
     /// `dwell_world::light::LightMap::sample`, docs/DAY_NIGHT.md §11.
     pub light: [f32; 2],
@@ -104,6 +112,8 @@ struct MeshKey {
     view: View,
     /// The far mesh (small parts left out).
     far: bool,
+    /// Your own body in first person (`own::build`).
+    own: bool,
 }
 
 struct GpuMesh {
@@ -150,6 +160,8 @@ pub struct CharacterRenderer {
     capacity: u64,
     group: wgpu::BindGroup,
     meshes: HashMap<MeshKey, GpuMesh>,
+    /// Your own body's meshes on the CPU too, by look: `own_frame` reads their vertices.
+    own_meshes: HashMap<&'static str, Mesh>,
     draws: Vec<Draw>,
     arms: Option<Draw>,
     pub stats: CharacterStats,
@@ -167,7 +179,8 @@ struct Instance {
     block_side: vec4f,
     block_bottom: vec4f,
     block_color: vec4f,
-    // x unused, y the outline's width (m), z 1 for the arms.
+    // x the radius (m) about the eye within which fragments are discarded (your own body; 0 none),
+    // y the outline's width (m), z 1 for the arms.
     cfg: vec4f,
     // The flood light it stands in: x sky, y block level / 15 (docs/DAY_NIGHT.md §11).
     light: vec4f,
@@ -277,6 +290,9 @@ fn brush_k(i: CharacterOut, layer: i32) -> f32 {
 
 @fragment
 fn character_fs(i: CharacterOut, @builtin(front_facing) front: bool) -> SceneOut {
+    if (length(i.rel) < inst.cfg.x) {
+        discard;
+    }
     let mat = i.packed >> 16u;
     let side = (i.packed >> 8u) & 0xffu;
     let n = normalize(select(-i.normal, i.normal, front));
@@ -316,6 +332,9 @@ fn character_fs(i: CharacterOut, @builtin(front_facing) front: bool) -> SceneOut
 
 @fragment
 fn character_outline_fs(i: CharacterOut) -> SceneOut {
+    if (length(i.rel) < inst.cfg.x) {
+        discard;
+    }
     var o: SceneOut;
     let frag_y = frame.eye.x + i.rel.y;
     let level = key_light(frag_y, character_light(i.rel, face_up(face_at(frag_y)))).level * PI;
@@ -403,6 +422,35 @@ pub fn body_frame(d: &BodyDraw, eye: V3) -> Affine {
     } else {
         place
     }
+}
+
+/// The camera's near plane the own body is kept clear of (m: the scene's, `super::NEAR_PLANE`).
+pub fn own_discard_m(body: &FirstPersonBody) -> f32 {
+    super::NEAR_PLANE as f32 + body.near
+}
+
+/// Your own body's frame in first person (CHARACTERS.md §5.1): its `body_frame` moved back along its
+/// own −z by `own::shift`, from the eye's place and pitch in the body's frame (the eye is the origin
+/// of eye-relative space). `bones`: the pose's bone transforms in the body's frame; `forward`: the
+/// camera's look. In the body's frame, so the same on both faces.
+pub fn own_frame(
+    d: &BodyDraw,
+    eye: V3,
+    forward: V3,
+    body: &FirstPersonBody,
+    mesh: &Mesh,
+    bones: &[Affine; MAX_BONES],
+) -> Affine {
+    let frame = body_frame(d, eye);
+    // The frame is a rotation and a translation: its inverse is the transpose.
+    let back = |v: [f32; 3]| -> [f32; 3] {
+        std::array::from_fn(|k| (0..3).map(|j| frame.m[k][j] * v[j]).sum())
+    };
+    let eye_local = back(frame.t.map(|t| -t));
+    let look = back(forward.map(|c| c as f32));
+    let pitch = look[1].clamp(-1.0, 1.0).asin().to_degrees();
+    let s = own::shift(body, mesh, bones, eye_local, pitch);
+    frame.then(&Affine::translation([0.0, 0.0, -s]))
 }
 
 /// The arms' frame: view space (+x left, +y up, +z ahead) to eye-relative world space.
@@ -639,6 +687,7 @@ impl CharacterRenderer {
             capacity,
             group,
             meshes: HashMap::default(),
+            own_meshes: HashMap::default(),
             draws: Vec::new(),
             arms: None,
             stats: CharacterStats::default(),
@@ -660,7 +709,11 @@ impl CharacterRenderer {
             .copied()
             .filter(|p| !key.far || p.size.iter().copied().fold(0.0, f32::max) >= SMALL_PART_M)
             .collect();
-        let m = mesh::build(&kept, key.view, chain);
+        let body = self.character.first_person.and_then(|f| f.body);
+        let m = match body {
+            Some(b) if key.own => own::build(&kept, &b),
+            _ => mesh::build(&kept, key.view, chain),
+        };
         let (v, i) = vertex_bytes(&m);
         let buffer = |usage, data: &[u8], label| {
             let b = device.create_buffer(&wgpu::BufferDescriptor {
@@ -702,10 +755,12 @@ impl CharacterRenderer {
         self.draws.clear();
         self.arms = None;
         let mut data: Vec<f32> = Vec::new();
+        let own_body = self.character.first_person.and_then(|f| f.body);
         let mut push = |bones: &[Affine; MAX_BONES],
                         held: Held,
                         outline: bool,
                         is_arms: bool,
+                        discard: f32,
                         light: [f32; 2]| {
             let at = data.len();
             data.resize(at + INSTANCE_FLOATS, 0.0);
@@ -719,7 +774,7 @@ impl CharacterRenderer {
             }
             let cfg = at + BONE_FLOATS + 16;
             data[cfg..cfg + 4].copy_from_slice(&[
-                0.0,
+                discard,
                 if outline { OUTLINE_WIDTH_M } else { 0.0 },
                 f32::from(u8::from(is_arms)),
                 0.0,
@@ -748,27 +803,52 @@ impl CharacterRenderer {
             if mask == 0 && !casts {
                 continue;
             }
-            let far = dist > OUTLINE_M;
-            let frame = body_frame(d, eye);
-            let bones = bone_transforms(self.character, &d.pose).map(|b| frame.then(&b));
-            let instance = push(&bones, d.held, !far, false, d.light);
             let look = if self.character.look(d.look).is_some() {
                 d.look
             } else {
                 self.look
             };
+            // Your own body in first person: its own mesh, moved clear of the eye, no shadow (the
+            // `cast_only` body casts it) and no held item (the arms view holds it).
+            let own = match (d.first_person, own_body) {
+                (false, _) => None,
+                (true, Some(b)) => Some(b),
+                (true, None) => continue,
+            };
+            let casts = casts && own.is_none();
+            let far = dist > OUTLINE_M && own.is_none();
+            let posed = bone_transforms(self.character, &d.pose);
+            let frame = match own {
+                Some(b) => {
+                    let character = self.character;
+                    let m = self.own_meshes.entry(look).or_insert_with(|| {
+                        own::build(character.look(look).map_or(&[][..], |l| l.parts), &b)
+                    });
+                    own_frame(d, eye, basis.forward(), &b, m, &posed)
+                }
+                None => body_frame(d, eye),
+            };
+            let bones = posed.map(|b| frame.then(&b));
+            let discard = own.map_or(0.0, |b| own_discard_m(&b));
+            let instance = push(&bones, d.held, !far, false, discard, d.light);
             let body = MeshKey {
                 name: look,
                 item: false,
                 view: View::Body,
                 far,
+                own: own.is_some(),
             };
-            let item = d.held.item().map(|(name, _)| MeshKey {
-                name,
-                item: true,
-                view: View::Body,
-                far,
-            });
+            let item = d
+                .held
+                .item()
+                .filter(|_| own.is_none())
+                .map(|(name, _)| MeshKey {
+                    name,
+                    item: true,
+                    view: View::Body,
+                    far,
+                    own: false,
+                });
             keys.push(body);
             keys.extend(item);
             self.draws.push(Draw {
@@ -783,18 +863,20 @@ impl CharacterRenderer {
         if let Some(a) = arms {
             let frame = arms_frame(basis);
             let bones = arm_transforms(self.character, &a.pose).map(|b| frame.then(&b));
-            let instance = push(&bones, a.held, true, true, a.light);
+            let instance = push(&bones, a.held, true, true, 0.0, a.light);
             let body = MeshKey {
                 name: self.look,
                 item: false,
                 view: View::Arms,
                 far: false,
+                own: false,
             };
             let item = a.held.item().map(|(name, _)| MeshKey {
                 name,
                 item: true,
                 view: View::Arms,
                 far: false,
+                own: false,
             });
             keys.push(body);
             keys.extend(item);
@@ -1086,6 +1168,7 @@ mod tests {
                 pose: Pose::REST,
                 held: Held::Empty,
                 cast_only: false,
+                first_person: false,
                 light: [1.0, 0.0],
             };
             let f = body_frame(&d, [0.0; 3]);

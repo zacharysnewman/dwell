@@ -37,7 +37,8 @@ const ITEM_KEYS = ['$comment', 'label', 'on', 'parts'];
 const VARIANT_KEYS = ['label', 'accessories', 'slots'];
 const CLIP_KEYS = ['$comment', 'rig', 'space', 'layer', 'duration', 'loop', 'ease', 'cycle', 'grounded', 'blend', 'keys'];
 const KEY_KEYS = ['t', 'bones', 'root'];
-const FP_KEYS = ['bones', 'anchor', 'fov', 'clips'];
+const FP_KEYS = ['bones', 'anchor', 'fov', 'clips', 'body'];
+const FP_BODY_KEYS = ['$comment', 'hideBones', 'hideParts', 'clear', 'back', 'lookDown', 'near', 'fill'];
 /** Rest pose: the body without accessories must reach `height` within this, feet on the ground. */
 export const HEIGHT_TOLERANCE = 0.03;
 /** Chains (a tail): the end of each segment meets the start of the next within this (metres)… */
@@ -365,6 +366,28 @@ export function validate(data, style) {
       });
       vec3(fp.anchor, `${fw}.anchor`, -1, 1);
       if (!isNum(fp.fov) || fp.fov < 30 || fp.fov > 110) fail(`${fw}.fov`, 'must be degrees, 30–110');
+      if (fp.body !== undefined) {
+        // Your own body in first person (CHARACTERS.md §5.1): the parts it hides and how it keeps
+        // clear of the eye.
+        const bw = `${fw}.body`;
+        const b = fp.body;
+        keysOf(b, FP_BODY_KEYS, bw);
+        if (!Array.isArray(b.hideBones)) fail(`${bw}.hideBones`, 'must list bones');
+        for (const x of b.hideBones) if (!bones.has(x)) fail(`${bw}.hideBones`, `"${x}" is not a bone of rig "${ch.rig}"`);
+        const known = new Set(ids);
+        for (const a of Object.keys(data.accessories ?? {})) for (const x of partIds(data.accessories[a].parts ?? [])) known.add(x);
+        if (!Array.isArray(b.hideParts)) fail(`${bw}.hideParts`, 'must list part ids');
+        for (const x of b.hideParts) if (!known.has(x)) fail(`${bw}.hideParts`, `"${x}" is not a part of character "${id}" or an accessory`);
+        const metres = (k, lo, hi) => {
+          if (!isNum(b[k]) || b[k] < lo || b[k] > hi) fail(`${bw}.${k}`, `must be metres, ${lo}–${hi}`);
+        };
+        metres('near', 0, 0.5);
+        metres('clear', 0, 1);
+        metres('back', 0, 1);
+        metres('lookDown', 0, 1);
+        if (b.clear < b.near) fail(`${bw}.clear`, `must be at least near (${b.near} m): the body is kept clear of the eye by more than the margin it is tested at`);
+        if (!isNum(b.fill) || b.fill <= 0 || b.fill > 1) fail(`${bw}.fill`, 'must be a share of the screen, 0–1');
+      }
       for (const [role, c] of Object.entries(fp.clips ?? {})) {
         const clip = clips.get(c);
         if (!clip) fail(`${fw}.clips.${role}`, `clip "${c}" is not defined`);
