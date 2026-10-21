@@ -591,6 +591,32 @@ where
         true
     }
 
+    /// The loading screen's near ring around `position` (`loading::near_ring_offsets`, the chunks
+    /// not wholly outside the build volume): how many are drawable and `shown` (drawn: the LOD
+    /// shows them as chunks) out of those needed. Wherever the camera looks.
+    pub fn near_progress(
+        &self,
+        position: [f64; 3],
+        offsets: &[Coord],
+        mut shown: impl FnMut(Coord) -> bool,
+    ) -> crate::loading::NearProgress {
+        let c = dwell_world::chunk_of_pos(position);
+        let mut p = crate::loading::NearProgress::default();
+        for o in offsets {
+            let k = [c.x + o[0], c.y + o[1], c.z + o[2]];
+            if !(MIN_CHUNK_Y..=MAX_CHUNK_Y).contains(&k[1])
+                || !BUILD_VOLUME.chunk_may_hold(ChunkCoord::from_array(k))
+            {
+                continue;
+            }
+            p.needed += 1;
+            if self.drawable(k) && shown(k) {
+                p.ready += 1;
+            }
+        }
+        p
+    }
+
     /// Lights chunks that arrived (`ChunkStore::light_chunk`), nearest to `center` first, for up
     /// to `light_ms` of `now()` (at least one), then starts mesh jobs for changed chunks, nearest
     /// first, while the mesher has room and for up to `mesh_ms` more (at least one): the light
@@ -1498,6 +1524,51 @@ mod tests {
         s.mesh_dirty([0.0, 160.0, 0.0], 100.0, 100.0, no_clock);
         assert!(s.store().meshed_from.contains(&[0, 5, 0]));
     }
+
+    dwell_world::both_faces!(
+        /// The loading screen's near ring (`loading.rs`): every chunk of the server's view sphere
+        /// around the player counts, behind as much as ahead (the streamer has no view), and is
+        /// ready once drawable: meshed, or air.
+        fn the_near_ring_is_ready_once_every_chunk_round_is_drawn(f: dwell_world::FaceFrame) {
+            let (mut s, _) = setup();
+            let row = dwell_world::MIDPLANE_Y.div_euclid(CHUNK_SIZE) + 4;
+            let at = f.point([16.5, dwell_world::m_of_row(row * CHUNK_SIZE + 8), 16.5]);
+            let me = dwell_world::chunk_of_pos(at).to_array();
+            let ring = crate::loading::near_ring_offsets(2);
+            let all = |_: Coord| true;
+            let p0 = s.near_progress(at, &ring, all);
+            assert_eq!(
+                p0,
+                crate::loading::NearProgress {
+                    ready: 0,
+                    needed: ring.len()
+                }
+            );
+            // Ground below the player's chunk row, air above (face-local).
+            for o in &ring {
+                let c = [me[0] + o[0], me[1] + o[1], me[2] + o[2]];
+                let local = f.chunk(ChunkCoord::from_array(c)).y - row;
+                if local < 0 {
+                    s.on_chunk_data(explicit(c, 0, 1));
+                } else {
+                    s.on_chunk_data(air(c));
+                }
+            }
+            // Loaded but not meshed: only the air is drawable.
+            let loaded = s.near_progress(at, &ring, all);
+            assert!(loaded.ready > 0 && !loaded.complete());
+            while s.mesh_dirty(at, 100.0, 100.0, no_clock) > 0 {
+                flush(&mut s);
+            }
+            let done = s.near_progress(at, &ring, all);
+            assert!(done.complete(), "{done:?}");
+            // Behind (−X) as much as ahead: what the LOD does not show yet is not ready.
+            let behind = s.near_progress(at, &ring, |c| c[0] >= me[0]);
+            let ahead = s.near_progress(at, &ring, |c| c[0] <= me[0]);
+            assert_eq!(behind.ready, ahead.ready);
+            assert!(behind.ready < done.ready);
+        }
+    );
 
     #[test]
     fn is_ready_once_the_chunks_around_the_player_are_loaded() {

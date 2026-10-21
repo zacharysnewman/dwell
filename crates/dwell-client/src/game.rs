@@ -19,6 +19,7 @@ use dwell_game::face_flip::FaceFlip;
 use dwell_game::gate::prediction_may_run;
 use dwell_game::hud_text::{HudTextInput, hud_text};
 use dwell_game::input::{EditAction, KeyboardMouseInput, quantize_input};
+use dwell_game::loading::{LOADING, LoadingGate, LoadingScreen, near_ring_offsets};
 use dwell_game::region_tools::{RegionTools, ToolAction, ToolBoxKind, ToolContext};
 use dwell_game::remotes::RemotePlayers;
 use dwell_game::sound::{
@@ -395,6 +396,10 @@ pub struct DebugState {
     pub bodies: Vec<crate::bodies::BodyState>,
     /// Your arms' base role and swing.
     pub arms: (&'static str, Option<&'static str>),
+    /// The loading screen: whether it is on, what it shows now, how its last wait ended.
+    pub loading_enabled: bool,
+    pub loading: Option<LoadingScreen>,
+    pub loading_opened: Option<(dwell_game::loading::Opened, f64)>,
 }
 
 /// The HUD's contents after a frame (the TS shell draws them).
@@ -546,6 +551,10 @@ pub struct Game<S: Scene> {
     pub day_override: DayOverride,
     day: DayState,
     first_draw_ms: Option<f64>,
+    /// The loading screen (ARCHITECTURE.md §6.3): off unless `set_loading_screen` turns it on.
+    loading: LoadingGate,
+    /// Its near ring's chunk offsets, nearest first.
+    near_ring: Vec<Coord>,
 }
 
 impl<S: Scene> Game<S> {
@@ -650,6 +659,8 @@ impl<S: Scene> Game<S> {
             day_override: DayOverride::default(),
             day: DayState::default(),
             first_draw_ms: None,
+            loading: LoadingGate::new(LOADING, false),
+            near_ring: near_ring_offsets(LOADING.radius_chunks),
             bodies: Bodies::default(),
             held_sent: None,
             show_arms: true,
@@ -663,6 +674,43 @@ impl<S: Scene> Game<S> {
             None => game.verify(0),
         }
         game
+    }
+
+    /// The loading screen on joining and respawning (off for `?loading=off` and the tests).
+    pub fn set_loading_screen(&mut self, enabled: bool) {
+        self.loading = LoadingGate::new(LOADING, enabled);
+    }
+
+    /// The loading screen to show, while the near ring loads.
+    pub fn loading_screen(&self) -> Option<LoadingScreen> {
+        self.loading.screen()
+    }
+
+    /// The player's centre (the prediction's), where the loading screen's near ring is centred.
+    pub fn position(&self) -> [f64; 3] {
+        self.current.position
+    }
+
+    /// The loading gate's state, for the bench and the tests.
+    pub fn loading_gate(&self) -> &LoadingGate {
+        &self.loading
+    }
+
+    /// Opens the loading gate once the near ring around the player is drawn (in every direction,
+    /// wherever the camera looks) or its timeout passes.
+    fn update_loading(&mut self, now_ms: f64) {
+        if self.loading.is_open() || !self.current.active {
+            return;
+        }
+        let lod = self.lod.as_ref();
+        let progress = self
+            .streamer
+            .near_progress(self.current.position, &self.near_ring, |c| {
+                // Drawn as chunks, or where the LOD knows there is nothing to draw (buried rock).
+                let c = ChunkCoord::from_array(c);
+                lod.is_none_or(|l| l.chunk_visible(c) || l.shows_nothing_at(c))
+            });
+        self.loading.update(now_ms, progress);
     }
 
     /// Places the camera (None: back to the player's eyes).
@@ -906,6 +954,11 @@ impl<S: Scene> Game<S> {
                 }
                 if !self.current.active {
                     self.current = ClientState::of(&self.predictor);
+                    // Placed: the loading screen waits for the near ring (not in flight, which
+                    // outruns the streaming, gate.rs).
+                    if self.current.active && self.current.state != PlayerState::Flying {
+                        self.loading.start(now_ms);
+                    }
                     self.flip.tick(self.current.face);
                     // Placed (joined or respawned): the camera starts where the player is, not
                     // interpolated from the state before, whose eye was elsewhere (the default
@@ -1066,6 +1119,9 @@ impl<S: Scene> Game<S> {
             target: self.interaction.target(),
             lod: self.lod.as_ref().map(LodSystem::debug_stats),
             flying: c.state == PlayerState::Flying,
+            loading_enabled: self.loading.enabled(),
+            loading: self.loading.screen(),
+            loading_opened: self.loading.last_opened(),
         }
     }
 
@@ -1444,9 +1500,12 @@ impl<S: Scene> Game<S> {
         self.scene.borrow_mut().set_region_boxes(&boxes);
     }
 
-    /// Prediction waits until the terrain around the player has arrived (collision needs it).
+    /// Prediction waits until the terrain around the player has arrived (collision needs it), and
+    /// while the loading screen shows.
     fn terrain_ready(&self) -> bool {
-        self.current.active && self.streamer.ready_around(self.current.position)
+        self.current.active
+            && self.loading.is_open()
+            && self.streamer.ready_around(self.current.position)
     }
 
     /// One animation frame: run due ticks, then draw. `now` is a clock in ms for budgets.
@@ -1464,6 +1523,7 @@ impl<S: Scene> Game<S> {
         let done = telemetry::span("jobs.poll", || self.pool.borrow_mut().poll());
         telemetry::add("jobs.done", done.len() as f64);
         telemetry::span("jobs.apply", || self.on_jobs(done));
+        self.update_loading(now_ms);
         let elapsed = self.last_frame_ms.map_or(0.0, |l| now_ms - l);
         self.last_frame_ms = Some(now_ms);
         self.accumulator =

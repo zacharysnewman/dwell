@@ -36,3 +36,58 @@ test('a second login with the same device key replaces the first', async ({ cont
   await expectJoined(second, 'WebTransport');
   await expect(first.locator('#net-status')).toContainText('Signed in from another connection');
 });
+
+interface LoadingState {
+  enabled: boolean;
+  shown: boolean;
+  ready?: number;
+  needed?: number;
+  openedS?: number;
+  timedOut?: boolean;
+}
+
+const loadingOf = (page: Page) =>
+  page.evaluate<{ loading: LoadingState; terrainReady: boolean } | null>(
+    '(() => { const s = globalThis.__dwell?.state(); return s ? { loading: s.loading, terrainReady: s.terrainReady } : null; })()',
+  );
+
+test('the loading screen covers the join until the terrain around the player is drawn', async ({
+  page,
+}) => {
+  // The suite's storage turns the screen off (playwright.config.ts): back on for this page.
+  await page.addInitScript(() => {
+    localStorage.removeItem('dwell.loading');
+  });
+  await page.goto('./?world=flat');
+  // Until it opens the player does not move: terrainReady (the prediction gate) stays false.
+  await expect
+    .poll(
+      async () => {
+        const s = await loadingOf(page);
+        if (s?.loading.shown) expect(s.terrainReady).toBe(false);
+        return s?.loading.openedS !== undefined;
+      },
+      { timeout: 60_000 },
+    )
+    .toBe(true);
+  const s = await loadingOf(page);
+  expect(s?.loading.enabled).toBe(true);
+  expect(s?.loading.shown).toBe(false);
+  await expect(page.locator('#loading-screen')).toBeHidden();
+  await expect
+    .poll(async () => (await loadingOf(page))?.terrainReady, { timeout: 30_000 })
+    .toBe(true);
+});
+
+test('?loading=off skips the loading screen', async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.removeItem('dwell.loading');
+  });
+  await page.goto('./?world=flat&loading=off');
+  await expect
+    .poll(async () => (await loadingOf(page))?.terrainReady, { timeout: 30_000 })
+    .toBe(true);
+  const s = await loadingOf(page);
+  expect(s?.loading).toEqual({ enabled: false, shown: false });
+  await expect(page.locator('#loading-screen')).toBeHidden();
+});

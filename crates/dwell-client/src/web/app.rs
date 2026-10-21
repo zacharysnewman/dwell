@@ -217,6 +217,9 @@ struct Options {
     day: DayOverride,
     /// The page's query, for the dev switches read from it (`?outline=`).
     search: String,
+    /// The loading screen on joining (ARCHITECTURE.md §6.3); the shell turns it off for
+    /// `?loading=off` and the `dwell.loading` store.
+    loading_screen: bool,
 }
 
 struct Inner {
@@ -270,7 +273,7 @@ pub struct Client {
 impl Client {
     /// Starts WebGPU on the canvas. Rejects when WebGPU is unavailable (the shell shows its
     /// "unsupported" screen). `options`: `{ displayName, clientVersion, makeWorker() → Worker,
-    /// workers, lod, lodColors, fullChunks, netsim, search }`.
+    /// workers, lod, lodColors, fullChunks, netsim, search, loadingScreen }`.
     pub async fn create(
         canvas: web_sys::HtmlCanvasElement,
         options: JsValue,
@@ -293,6 +296,7 @@ impl Client {
             netsim: parse_net_conditions(get("netsim").as_string().as_deref()),
             day: DayOverride::from_query(&get("search").as_string().unwrap_or_default()),
             search: get("search").as_string().unwrap_or_default(),
+            loading_screen: get("loadingScreen").as_bool().unwrap_or(true),
         };
         let (width, height) = (canvas.width().max(1), canvas.height().max(1));
         let mut desc = wgpu::InstanceDescriptor::new_without_display_handle();
@@ -1435,6 +1439,21 @@ impl Client {
                 None => set(&o, "brush", JsValue::NULL),
             }
             set(&o, "brushes", g.brush.available);
+            // The loading screen (ARCHITECTURE.md §6.3): null once open.
+            match g.loading_screen() {
+                Some(sc) => {
+                    let l = Object::new();
+                    set(&l, "text", dwell_game::loading::loading_text(&sc).as_str());
+                    set(
+                        &l,
+                        "ready",
+                        sc.progress.ready.min(sc.progress.needed) as u32,
+                    );
+                    set(&l, "needed", sc.progress.needed as u32);
+                    set(&o, "loading", l);
+                }
+                None => set(&o, "loading", JsValue::NULL),
+            }
             // The spyglass's vignette (docs/SPYGLASS.md): null while unzoomed.
             let v = g.spyglass_view();
             if v.vignette > 0.0 {
@@ -1535,6 +1554,20 @@ impl Client {
         set(&t, "resyncs", d.terrain.resyncs);
         set(&o, "terrain", t);
         set(&o, "terrainReady", d.terrain_ready);
+        // The loading screen (ARCHITECTURE.md §6.3): null while open; openedS and timedOut once
+        // its last wait ended.
+        let l = Object::new();
+        set(&l, "enabled", d.loading_enabled);
+        set(&l, "shown", d.loading.is_some());
+        if let Some(sc) = d.loading {
+            set(&l, "ready", sc.progress.ready as u32);
+            set(&l, "needed", sc.progress.needed as u32);
+        }
+        if let Some((how, after)) = d.loading_opened {
+            set(&l, "openedS", after);
+            set(&l, "timedOut", how == dwell_game::loading::Opened::TimedOut);
+        }
+        set(&o, "loading", l);
         set(
             &o,
             "target",
@@ -1570,6 +1603,9 @@ impl Client {
                 set(&r, "cacheBytes", l.cache_bytes as f64);
                 set(&r, "inUseBytes", l.in_use_bytes as f64);
                 set(&r, "errorScale", l.error_scale);
+                set(&r, "waitingInView", l.waiting[0] as u32);
+                set(&r, "waitingOffView", l.waiting[1] as u32);
+                set(&r, "waitingNearOffView", l.waiting[2] as u32);
                 r.into()
             }),
         );
@@ -1874,6 +1910,7 @@ impl Inner {
         game.debug_visible = self.debug_visible;
         game.set_capabilities(region_edits, brushes, generator_version);
         game.day_override = self.options.day;
+        game.set_loading_screen(self.options.loading_screen);
         let mapping = self.session.as_ref().and_then(|s| s.mapping().cloned());
         if let Some(m) = mapping.as_ref().filter(|m| !m.differences.is_empty()) {
             // The console keeps the full lists (the F3 overlay shows the summary).

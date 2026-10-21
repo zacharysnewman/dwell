@@ -65,6 +65,14 @@ export type Step =
   | { do: 'arms'; on: boolean }
   /** Waits (at most `maxS`) until the LOD has nothing to generate, mesh or ask for, for 1 s. */
   | { do: 'settle'; maxS: number }
+  /**
+   * Waits (at most `maxS`) until the view waits for nothing `behind` the camera (out of the view's
+   * frustum: `lod.waitingOffView` 0), `nearBehind` it within the full-detail distance
+   * (`waitingNearOffView` 0: the full detail behind is there) or `ahead` of it (`waitingInView`
+   * 0), and saves the seconds
+   * since the page was opened in the report's `untils` (the join's timeline: ARCHITECTURE.md §6.3).
+   */
+  | { do: 'until'; what: UntilWhat; maxS: number }
   /** Forgets the telemetry so far: the next `record` measures from here. */
   | { do: 'mark' }
   /** Saves the telemetry, the controller ticks and the game's state under `name`. */
@@ -113,6 +121,10 @@ export type Step =
     }
   /** Runs `steps` `times` times (e.g. a burst of edits); no `mark`, `record`, `shot` or traces inside. */
   | { do: 'repeat'; times: number; steps: Step[] };
+
+/** What an `until` step waits for. */
+export type UntilWhat = 'behind' | 'nearBehind' | 'ahead';
+export const UNTIL_WHATS: readonly UntilWhat[] = ['behind', 'nearBehind', 'ahead'];
 
 /** Which part of the view a scenario measures, for a comparison report's near/far split. */
 export type Split = 'near' | 'far';
@@ -214,6 +226,7 @@ const STEP_FIELDS: Record<Step['do'], readonly string[]> = {
   puppets: ['count', 'at', 'face', 'held'],
   arms: ['on'],
   settle: ['maxS'],
+  until: ['what', 'maxS'],
   mark: [],
   record: ['name'],
   shot: ['name'],
@@ -345,6 +358,12 @@ export function parseStep(where: string, v: unknown): Step {
     }
     case 'settle':
       return { do: d, maxS: num(at('maxS'), o.maxS, 0, 3600) };
+    case 'until': {
+      if (!UNTIL_WHATS.includes(o.what as UntilWhat)) {
+        throw new ViewError(`${at('what')}: expected one of ${UNTIL_WHATS.join(', ')}`);
+      }
+      return { do: d, what: o.what as UntilWhat, maxS: num(at('maxS'), o.maxS, 0, 3600) };
+    }
     case 'record':
     case 'shot':
     case 'traceStop':

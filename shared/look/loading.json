@@ -1,0 +1,5 @@
+{
+  "$comment": "The loading screen on joining a world (and on respawning): it shows until the full-detail chunks of the near ring around the player are generated, lit, meshed and drawn, or for at most timeoutS, and the player does not move until it opens (ARCHITECTURE.md §6.3). radiusChunks: the near ring is the server's view sphere of this radius (chunks c with |c − the player's chunk|² ≤ r² + r, as the server streams them), so it is at most the server's viewRadiusChunks (shared/protocol/constants.json): every chunk it waits for is streamed without being asked for. timeoutS: past this the screen opens whatever has loaded (the game then waits for collision's ±1 chunk as before). Opt out for testing with ?loading=off or the dwell.loading store set to \"off\". Run `node shared/look/loading.mjs` after editing; CI fails if crates/dwell-game/src/loading.gen.rs is stale.",
+  "radiusChunks": 3,
+  "timeoutS": 20
+}

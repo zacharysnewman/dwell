@@ -36,6 +36,10 @@ export interface ScenarioReport {
   settles: number[];
   /** Each `burst` step's flicker, by name. */
   bursts?: Record<string, Flicker>;
+  /** Page opened → playing (s), and the loading screen's state then (ARCHITECTURE.md §6.3). */
+  join?: { playingS: number; loading: Record<string, unknown> | null };
+  /** Each `until` step's seconds since the page was opened (null: not reached). */
+  untils?: { what: string; s: number | null }[];
   /** The page address it ran at. */
   url: string;
 }
