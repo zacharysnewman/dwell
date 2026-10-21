@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Generates the ambient lighting's tunables (corner AO, the baked sky visibility, the floor;
-// docs/DAY_NIGHT.md §10) for Rust (crates/dwell-look/src/ambient.gen.rs) from
+// docs/DAY_NIGHT.md §9) for Rust (crates/dwell-look/src/ambient.gen.rs) from
 // shared/look/ambient.json, after validating them: an unknown, missing or out-of-range entry fails
 // with its path named. The output is checked in; CI regenerates it and fails on any diff. Whether
 // the rays' reach fits the meshers' apron (dwell_world::SKY_APRON) is checked by the Rust build

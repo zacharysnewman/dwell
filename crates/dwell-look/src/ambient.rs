@@ -1,4 +1,4 @@
-//! Ambient lighting (docs/DAY_NIGHT.md §10): the classic voxel corner occlusion and the baked sky
+//! Ambient lighting (docs/DAY_NIGHT.md §9): the classic voxel corner occlusion and the baked sky
 //! visibility the chunk mesher bakes into every terrain vertex, and the floor the shader keeps for
 //! a fully occluded one. The data is `shared/look/ambient.json`; the mesher (dwell-mesh
 //! `sky.rs`) does the work and the renderer only multiplies the hemisphere light by it.

@@ -1,4 +1,4 @@
-//! The baked ambient light (docs/DAY_NIGHT.md §10): corner occlusion, the diagonal it splits quads
+//! The baked ambient light (docs/DAY_NIGHT.md §9): corner occlusion, the diagonal it splits quads
 //! along, and the sky visibility of open ground, overhangs and caves, across chunk borders, after
 //! edits and on both faces.
 

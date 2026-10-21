@@ -60,6 +60,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 40 — Characters and creatures | 🚧 In progress — C0 built and tested (ADR 0041, `CHARACTERS.md`): the rig vocabulary and validator (`shared/characters/rig.mjs`), the data (the player with three looks, the wolf, the deer; accessories, the block and brush items, clips), the generator and its tests, the Character Lab prototype checked in Chrome and published; stacked on Phase 39's palette and materials; C0b (the owner's first review, 2026-10-20) built and tested: hair composes with hats (`with`), the wolf's and deer's tails are chains checked joined through every clip, the player's clips for every controller state (sprint, crouch, crouch-walk, slide, jump, fall, land, climb, swim, fly; the arms' sprint, slide, jump, fall, land) and the Lab's transitions player; C1 (players in the game) built and tested (2026-10-20): `dwell-characters` (tables generated from the data, part meshes, clips, clip selection), the full body for remote players and your first-person arms in their own pass, the Show your arms setting, the `puppets` dev tool; with C2's held item and swings in snapshots (protocol v17: **a new compatibility line**, the owner raises `package.json`); outstanding: CI, the owner's review in game and of `CHARACTERS.md` §10, C2's looks at join, a step pose (foot IK on steps built with claude/smooth-steps), C3 |
 | 41 — Half-height grid (½ m cells, stored cardinal ramps) | 🚧 In progress — adopted for `main` (owner, 2026-10-20; ADR 0042): H0–H6 built and verified locally (½ m cells, stored ramps, nothing adaptive; the slopes V2; `main` 0.21.4 merged in); H7, the adoption: protocol 18, generator 19, the adaptive blocks removed, the experiment wording gone, `main`'s 1 m work checked on ½ m cells (HALF_HEIGHT_GRID.md §9). Outstanding: CI; the bench numbers against 0.21.x; the owner raises `package.json` to 0.22.0 at the merge (a new compatibility line). Deviations: brushes, a fluid's surface drop, the chunk view sphere and structures stay in cells; the LOD draws natural tops flat |
 | 42 — Smooth LOD transitions | 🚧 In progress — built and tested natively and in Chrome on the GPU: a dithered cross-fade on every LOD swap (`dwell-lod` `fade.rs`; chunks, sections, stand-ins, skirts, water; no ink on the outgoing level) and hysteresis in the selection, both data (`shared/look/lodblend.json`); outstanding: CI, the owner's review in a browser; a patch release |
+| 43 — Ambient light | 🚧 In progress — built and tested natively and in Chrome on the GPU: classic corner AO and baked ray-traced sky visibility per terrain vertex (dwell-mesh `sky.rs`, data `shared/look/ambient.json`), the hemisphere light scaled by it, the twilight and night keyframes retuned; outstanding: CI; a patch release |
 
 Phase numbering: Phase 4 was inserted on 2026-09-29 for the planet-scale world (ADRs 0011, 0012);
 the former Phases 4–7 are now 5–8, and Phase 3's former 3c and 3d are now 3d and 3e.
@@ -4336,6 +4337,57 @@ Exit criteria
   `?outline=creases`, on face A and face B; a swap's screen sequence.
 - [ ] CI green; the owner's review in a browser.
 ---
+
+## Phase 43 — Ambient Light: Corner Occlusion and Sky Visibility
+
+**Status:** Built and tested natively and in Chrome on the GPU (2026-10-21; the owner has seen the
+before/after shots: "It looks good so far!"). Outstanding: CI. No change to saves, the protocol or
+terrain (the vertex stream is the client's): a patch release.
+
+Owner (2026-10-21): there is no ambient occlusion, every face gets the same hemisphere light, and
+nights come out nearly black. Build classic voxel AO and a baked ray-traced sky visibility at mesh
+time, retune the night as data, and keep the frame cost unchanged. The AO strength, ray count and
+length and the floor are data (`shared/look/ambient.json`, per build, edited by hand, with a
+validator and generator like the other look files); the engine (the AO rule, the ray walk, the
+apron) is code. [`DAY_NIGHT.md`](./DAY_NIGHT.md) §9, ARCHITECTURE.md §2 (`dwell-mesh`, `render/`)
+and §7.4.
+
+Deliverables
+- [x] `shared/look/ambient.json` (`ao.strength`, `sky.rays`, `sky.lengthM`, `sky.probeM`,
+  `floor`), `ambient.mjs` (validator, generator into `dwell-look` `ambient.gen.rs`) and
+  `ambient.test.mjs` (the checked-in output, values changed by data alone, bad entries named); in
+  CI. The rays' reach checked against the apron at build time.
+- [x] Corner AO at mesh time (levels 0–3 from side, side, corner), corner keys in the greedy merge,
+  the quad split along its brighter diagonal; ramps, plants, water and both faces handled.
+- [x] Baked sky visibility: a cosine-weighted ray set per vertex, turned by a hash of its
+  face-local world position (16 turns, tabled walks for cell faces), a DDA over ½ m cells and a
+  probe above each ray's end.
+- [x] The sky apron (`dwell_world::SKY_APRON`, `VoxelWorld::padded_box`): mesh jobs carry it
+  (`ChunkStore::mesh_block`); rays past it count as open (documented cutoff).
+- [x] The `light` vertex stream through the workers (codec) to the terrain and cutout shaders;
+  `terrain_ambient` scales the hemisphere light; LOD sections, players and water take 1
+  (documented).
+- [x] Edits re-mesh every neighbour whose apron holds the changed voxel.
+- [x] The twilight and night keyframes retuned (`shared/look/daynight.json`).
+- [x] The bench's `brush {command}` step (to build a cave in a sandbox world for the shots).
+
+Exit criteria
+- [x] Tests: AO levels per corner configuration and the diagonal (`sky_tests.rs`); open ground 1,
+  under an overhang less, a cave floor 0, on both faces; a border vertex's light the same from
+  either chunk (across x and across a chunk row), on both faces; an edit in a neighbour changes the
+  light; a face-B chunk's light is its face-A twin's (mirror parity); an edit inside the apron
+  re-meshes the neighbour (chunk_stream.rs, red → green); the both-faces check passes.
+- [x] Measured: native meshing 2.6 → 5.2 ms per chunk (mesh_cost), load in Chrome settles as fast
+  as before, the steady frame's cost within noise (DAY_NIGHT.md §9).
+- [x] Checked in Chrome on the GPU (painterly; classic is being removed): noon, dusk and midnight
+  on a hillside, a cave built in a sandbox and a pine forest, on face A and face B.
+
+Deviations
+- Ray count tuned to 16 (the owner suggested tuning it): with the ray cells tabled, 8 to 24 rays
+  cost the same within the machine's noise.
+- The night keyframes went further than the suggested starting point (midnight `hemiIntensity` 1.9
+  rather than 1.3, `hemiGround` #34406a): 1.3 still left walls black on the dark painterly stone.
+- Classic textures were not checked (the owner is removing that set).
 
 ## Cross-Cutting Work (every phase)
 

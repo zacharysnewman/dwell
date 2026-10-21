@@ -1,4 +1,4 @@
-//! Ambient occlusion baked at mesh time (docs/DAY_NIGHT.md §10; data: shared/look/ambient.json):
+//! Ambient occlusion baked at mesh time (docs/DAY_NIGHT.md §9; data: shared/look/ambient.json):
 //! the classic voxel corner occlusion (three cells around a face's corner, levels 0–3) and the
 //! sky visibility, the share of short rays from a vertex that escape through the voxel grid.
 //! Both read an [`Occupancy`]: which cells block light, in the chunk's face-local frame (a face-B
