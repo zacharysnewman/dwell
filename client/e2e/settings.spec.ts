@@ -39,10 +39,10 @@ test('settings menu: opens from the corner, without fog sliders, and is kept', a
   await expect(menu).not.toContainText('Density');
 
   // The field of view to its narrowest, as a drag would.
-  await menu.locator('input').nth(6).fill('0');
+  await menu.locator('input[type=range]').nth(6).fill('0');
   await expect(menu.locator('.settings-value').nth(6)).toHaveText('60°');
   // The distant view's memory to the most.
-  await menu.locator('input').nth(5).fill('1000');
+  await menu.locator('input[type=range]').nth(5).fill('1000');
   await expect(menu.locator('.settings-value').nth(5)).toHaveText('1024 MB');
   await page.reload();
   await page.locator('#menu-button').click();
