@@ -4,7 +4,7 @@
 import { readFileSync } from 'node:fs';
 import { expect, test, type Page } from '@playwright/test';
 import { CELL_HEIGHT } from '../src/protocol/constants.gen';
-import { stateId } from '../src/world/blocks';
+import { STATE_DEFS, stateId } from '../src/world/blocks';
 import { INVITE_FILE } from './global-setup';
 
 type Vec3 = [number, number, number];
@@ -71,14 +71,19 @@ const EYE_HEIGHT = 1.62;
 const feet = (page: Page) => call<Vec3>(page, 'd.state().feet');
 
 /**
- * Looks at a point of `cell` (`height` of the way up its side, so a ramp's low part is hit too)
- * and waits for the cell to be targeted. Cells are `CELL_HEIGHT` tall (½ m, HALF_HEIGHT_GRID.md):
- * a fixed pitch can pass over or under a block just placed.
+ * Looks at a point of `cell`'s block, by the box it is aimed at by (`StateDef.selection`, the whole
+ * cell for most blocks; a ladder's plate), `height` of the way up the box's side (so a ramp's low
+ * part is hit too), and waits for the cell to be targeted. Cells are `CELL_HEIGHT` tall (½ m,
+ * HALF_HEIGHT_GRID.md): a fixed pitch can pass over or under a block just placed. Face A (the
+ * tests' worlds): the box is face-local.
  */
 async function lookAt(page: Page, cell: Vec3, height = 0.5): Promise<void> {
   const f = await feet(page);
-  const y = (cell[1] + height) * CELL_HEIGHT;
-  const d = [cell[0] + 0.5 - f[0], y - f[1] - EYE_HEIGHT, cell[2] + 0.5 - f[2]];
+  const [x0, y0, z0, x1, y1, z1] = STATE_DEFS[await voxel(page, cell)]?.selection ?? [
+    0, 0, 0, 1, 1, 1,
+  ];
+  const y = (cell[1] + y0 + (y1 - y0) * height) * CELL_HEIGHT;
+  const d = [cell[0] + (x0 + x1) / 2 - f[0], y - f[1] - EYE_HEIGHT, cell[2] + (z0 + z1) / 2 - f[2]];
   const yaw = (Math.atan2(d[0] ?? 0, d[2] ?? 0) * 180) / Math.PI;
   const pitch = (Math.atan2(d[1] ?? 0, Math.hypot(d[0] ?? 0, d[2] ?? 0)) * 180) / Math.PI;
   await call(page, `d.look(${String(yaw)}, ${String(pitch)})`);
