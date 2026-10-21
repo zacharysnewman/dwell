@@ -590,7 +590,7 @@ impl<S: Scene> Game<S> {
         let predictor = Predictor::new(config);
         let current = ClientState::of(&predictor);
         let mut flip = FaceFlip::new();
-        flip.tick(current.face); // joining on face B does not turn the player
+        flip.reset(current.face); // joining on face B does not turn the player
         let mut eye = EyeCamera::new();
         eye.tick(&current.eye_state(), 1.0 / SIM_HZ as f64);
         let mut game = Self {
@@ -961,7 +961,7 @@ impl<S: Scene> Game<S> {
                     } else if self.current.active {
                         self.loading.skip();
                     }
-                    self.flip.tick(self.current.face);
+                    self.flip.reset(self.current.face);
                     // Placed (joined or respawned): the camera starts where the player is, not
                     // interpolated from the state before, whose eye was elsewhere (the default
                     // state's at the origin, inside the ground) and aimed the crosshair from there.
@@ -1571,11 +1571,11 @@ impl<S: Scene> Game<S> {
             1.0 / SIM_HZ as f64,
         );
         self.mover_sounds.update(&sample, None, &mut self.sounds);
-        // Crossing the midplane turns the heading round (a half somersault, face_flip.rs).
-        let turn = self.flip.tick(self.current.face);
-        if turn != 0.0 {
-            input.look.yaw = (input.look.yaw + turn) % 360.0;
-        }
+        // Across the midplane the body turns over and the look goes on across: the heading turned
+        // round, the pitch mirrored, the camera pointing the same way (face_flip.rs).
+        (input.look.yaw, input.look.pitch) =
+            self.flip
+                .tick(self.current.face, input.look.yaw, input.look.pitch);
         self.eye
             .tick(&self.current.eye_state(), 1.0 / SIM_HZ as f64);
         record_tick(&self.current, &frame, self.eye.draw(1.0));
@@ -1588,7 +1588,7 @@ impl<S: Scene> Game<S> {
         let c = self.current;
         let face = c.face;
         let dt = self.last_draw_ms.map_or(0.0, |l| (now_ms - l) / 1000.0);
-        let flip = self.flip.draw(face, dt);
+        let flip = self.flip.draw(dt);
         self.last_draw_ms = Some(now_ms);
         let p = self.previous.unwrap_or(c);
         let alpha = self.accumulator / TICK_MS;

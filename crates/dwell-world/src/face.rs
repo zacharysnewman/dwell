@@ -329,7 +329,9 @@ mod tests {
                 let (y2, p2) = FaceFrame::look_across(yaw, pitch);
                 let (before, after) = (f.look(yaw, pitch), f.other().look(y2, p2));
                 assert!((after[1] - before[1]).abs() < 1e-12, "{before:?} {after:?}");
-                assert!((after[0] + before[0]).abs() < 1e-12 && (after[2] + before[2]).abs() < 1e-12);
+                assert!(
+                    (after[0] + before[0]).abs() < 1e-12 && (after[2] + before[2]).abs() < 1e-12
+                );
                 let (y3, p3) = FaceFrame::look_across(y2, p2);
                 assert!((y3 - yaw).abs() < 1e-9 && p3 == pitch);
             }

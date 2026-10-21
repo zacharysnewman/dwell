@@ -265,7 +265,10 @@ dwell_world::both_faces!(
             if t > 5 {
                 // Every tick, the crossing's included: on toward the midplane and past it.
                 assert!(w.c(h).climb.climbing, "tick {t}: let go");
-                assert!(dy * toward > 0.02, "tick {t} (crossed at {crossed_at:?}): {dy}");
+                assert!(
+                    dy * toward > 0.02,
+                    "tick {t} (crossed at {crossed_at:?}): {dy}"
+                );
                 moving += 1;
             }
         }

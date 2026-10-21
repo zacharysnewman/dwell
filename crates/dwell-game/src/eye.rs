@@ -8,11 +8,15 @@
 //! sim tick; [`EyeCamera`] feeds it client states and interpolates its last two results for each
 //! drawn frame. Heights are measured along the player's up (BIFACIAL_WORLD.md §6): on face B the
 //! head points toward −y, so `up height = face × y`; the smoothing is the same either way, and
-//! starts afresh when the player crosses to the other face.
+//! starts afresh when the player crosses to the other face. There the body turns over, so the eye
+//! goes from above the body's centre to below it: it swings across over the camera's settling
+//! time (`face_flip.rs`) rather than jumping by most of a body height.
 
 use dwell_physics::config::StepView;
 use dwell_protocol::controller_flags;
 use dwell_world::FaceFrame;
+
+use crate::face_flip::{FLIP_SECONDS, ease};
 
 /// Crouch offset decay rate (1/s).
 const CROUCH_RATE: f64 = 12.0;
@@ -289,6 +293,9 @@ pub struct EyeCamera {
     previous: Option<f64>,
     current: f64,
     face: FaceFrame,
+    /// Across the midplane: the eye's world height then less the new face's eye (m), and the
+    /// seconds since; it eases out with the camera's turn.
+    swing: Option<(f64, f64)>,
 }
 
 impl Default for EyeCamera {
@@ -298,6 +305,7 @@ impl Default for EyeCamera {
             previous: None,
             current: 0.0,
             face: FaceFrame::A,
+            swing: None,
         }
     }
 }
@@ -309,14 +317,24 @@ impl EyeCamera {
 
     /// Advances one sim tick of `dt` seconds with the newly predicted state.
     pub fn tick(&mut self, s: &EyeState, dt: f64) {
-        if s.face != self.face {
+        let crossed = s.face != self.face;
+        if crossed {
             // Across the midplane: heights along the up restart on the other side.
             self.smoother = EyeSmoother::new();
-            self.previous = None;
             self.face = s.face;
         }
         // Along the player's up, back to a world height.
-        let eye = s.face.y(self.smoother.tick(eye_sample_of(s), dt));
+        let fresh = s.face.y(self.smoother.tick(eye_sample_of(s), dt));
+        if crossed && self.previous.is_some() {
+            // From the eye drawn now (mid-swing, if the body swings back), not a jump.
+            self.swing = Some((self.current - fresh, 0.0));
+        } else if let Some((offset, t)) = self.swing {
+            self.swing = (t + dt < FLIP_SECONDS).then_some((offset, t + dt));
+        }
+        let eye = fresh
+            + self
+                .swing
+                .map_or(0.0, |(offset, t)| offset * (1.0 - ease(t)));
         self.previous = Some(match self.previous {
             None => eye,
             Some(_) => self.current,
@@ -841,14 +859,28 @@ mod tests {
             }
         }
 
+        // both-faces: crosses from face A to face B.
         #[test]
-        fn starts_afresh_across_the_midplane() {
+        fn starts_afresh_across_the_midplane_and_the_eye_swings_across() {
             let mut camera = EyeCamera::new();
             camera.tick(&state(0.0), DT);
             camera.tick(&state(0.5), DT); // a step on face A: smoothed
+            let before = camera.draw(1.0);
             camera.tick(&mirrored(&state(0.0)), DT);
-            // The first tick on face B is drawn as it is (the eye at the feet's up-height 0 + 1.62 below).
-            assert_close(camera.draw(0.0), FaceFrame::B.y(1.62), 6);
+            // The first tick on face B is drawn where the eye was: the body turns over, the eye
+            // does not jump to the far side of it.
+            assert_close(camera.draw(0.0), before, 6);
+            assert_close(camera.draw(1.0), before, 6);
+            // It swings across, never by more than a body height in a tick, and settles where
+            // face B's eye is (the feet's up-height 0 + 1.62 below), the smoothing started afresh.
+            let mut last = camera.draw(1.0);
+            for _ in 0..(FLIP_SECONDS / DT).ceil() as usize {
+                camera.tick(&mirrored(&state(0.0)), DT);
+                let now = camera.draw(1.0);
+                assert!(now <= last + 1e-9 && last - now < 0.25, "{last} → {now}");
+                last = now;
+            }
+            assert_close(camera.draw(1.0), FaceFrame::B.y(1.62), 6);
         }
     }
 }
