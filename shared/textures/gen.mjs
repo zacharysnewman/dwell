@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Bakes the painterly texture set (docs/PAINTERLY_TEXTURES.md, ADR 0040): validates
 // shared/textures/palette.json and materials.json against the block registry's texture names
-// (shared/blocks/dwell.json), paints every block tile with paint.mjs and writes the texels for the
+// (shared/blocks/dwell.json) and the engine's utility tiles, paints every atlas tile with paint.mjs and writes the texels for the
 // atlas (crates/dwell-mesh/src/painterly.rgba) with their tile names (painterly.gen.rs). The output
 // is checked in; CI regenerates it and fails on any diff.
 //
@@ -25,7 +25,20 @@ export function registryTiles(blocks) {
   return [...out];
 }
 
-/** Validates and paints: the block tiles in `tiles` order, as { names, texels }. */
+/**
+ * The atlas's utility tiles, which no block's `textures` name but the engine draws with
+ * (crates/dwell-mesh/src/textures.rs `TILE_ORDER`): `plain`, the white tile of an untextured state
+ * (tinted by its colour), and `missing`, the fallback look of a state this build can't draw (ADR
+ * 0038). The registry's `grid` tile is named by the sandbox floor.
+ */
+export const ENGINE_TILES = ['plain', 'missing'];
+
+/** Every atlas tile the texture set must paint: the registry's tiles and the engine's. */
+export function atlasTiles(blocks) {
+  return [...ENGINE_TILES, ...registryTiles(blocks)];
+}
+
+/** Validates and paints: every atlas tile (`tiles`), in `materials.tiles` order, as { names, texels }. */
 export function bake(materials, palette, tiles) {
   validatePalette(palette);
   validateMaterials(materials, palette, tiles);
@@ -146,7 +159,7 @@ export function labPage(html, paintSource, palette, materials) {
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   const palette = readJson(join(here, 'palette.json'));
   const materials = readJson(join(here, 'materials.json'));
-  const tiles = registryTiles(readJson(join(root, 'shared', 'blocks', 'dwell.json')));
+  const tiles = atlasTiles(readJson(join(root, 'shared', 'blocks', 'dwell.json')));
   try {
     const { names, texels } = bake(materials, palette, tiles);
     const out = join(root, 'crates', 'dwell-mesh', 'src');
@@ -154,7 +167,7 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
     writeFileSync(join(out, 'painterly.gen.rs'), rustSource(names));
     const lab = join(root, 'docs', 'prototypes', 'painterly-texture-lab.html');
     writeFileSync(lab, labPage(readFileSync(lab, 'utf8'), readFileSync(join(here, 'paint.mjs'), 'utf8'), palette, materials));
-    console.log(`painted ${names.length} block tiles (${Object.keys(materials.materials).length} materials)`);
+    console.log(`painted ${names.length} atlas tiles (${Object.keys(materials.materials).length} materials)`);
     const at = process.argv.indexOf('--png');
     if (at > 0) {
       const s = sheet(materials, palette);

@@ -104,7 +104,6 @@ stretching a scaled canvas) and page parameters (`params`: dev switches such as 
 | Config | Scale | Params |
 | --- | --- | --- |
 | `raster` (baseline) | 1 | — |
-| `painterly` | 1 | `?textures=painterly` (PAINTERLY_TEXTURES.md) |
 | `outline-silhouette`, `outline-creases`, `outline-blocks` | 1 | `?outline=` (ART_DIRECTION.md §7) |
 | `raster-half` | 0.5 | — |
 

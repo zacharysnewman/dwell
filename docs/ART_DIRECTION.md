@@ -10,7 +10,8 @@ materials from the same data files:
 - `shared/textures/materials.json`: the materials, each a stack of painted layers (§3, §4).
 
 **Status.** Owner's brief of 2026-10-20 (the scratchpad brief, summarised in §1). The painterly set is
-the default since the owner approved it (2026-10-20); `?textures=classic` shows the old look. The
+the game's one texture set: the owner approved it (2026-10-20) and removed the earlier procedural
+set (2026-10-21). The
 *content* (which blocks exist) is still prototype (ARCHITECTURE.md §6.1). What this document fixes is
 the style that content will be painted in.
 
@@ -136,8 +137,8 @@ The renderer lights the textures. They are **albedo with painted form, not baked
   palette (§2).
 - **Fog.** Height fog mixes toward the sky's colour in output space, by the time of day's fog
   colour. Distant ground is its tiles' **average colour** (the LOD's flat colour), so a material
-  must keep one clear hue on average. The generator's tests check the painterly averages stay near
-  the classic ones, so the far view keeps its balance.
+  must keep one clear hue on average (the tests check the tall grass averages near the grass top,
+  so a meadow reads as one green from afar).
 - **Night.** At night the moon and hemisphere light are dim and blue. The cool shadows of the ramps
   keep materials readable. Nothing in the palette relies on emissive light yet.
 - **Characters.** Characters are shaded from their material's ramp (shadow, base and light by the
@@ -242,7 +243,6 @@ Voxel terrain is mostly edges, so the main risk is a horizon of noise. Four meas
   the edge blur's taps carry the ink to the screen's edges (MOTION_EFFECTS.md: post effects that
   sample neighbours read the finished image; before this fix the lines vanished outside the blur's
   inner circle when sprinting).
-- **Both texture sets** use the same rule.
 
 ### 7.5 Cost
 
@@ -264,7 +264,7 @@ off, which meets the 0.5 ms target. The first version read four samples per tap 
 
 ### 7.6 For the owner
 
-The screenshots showed every view off and in each mode, with both texture sets, plus the ray marcher
+The screenshots showed every view off and in each mode, with the texture sets of the time, plus the ray marcher
 (since removed: ADR 0044).
 The views are the ground at the spawn, a hillside, blocks close up, a steep slope, the shore, 600 m
 up, the spyglass and the brush ghost. Questions:

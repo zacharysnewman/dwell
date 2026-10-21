@@ -1310,14 +1310,14 @@ impl Renderer {
         }
     }
 
-    /// Block textures: the tiled-noise atlas, mipmapped (averaged in linear light), sampled crisp
+    /// Block textures: the texture set's atlas, mipmapped (averaged in linear light), sampled crisp
     /// up close and filtered far away.
     pub(crate) fn atlas(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
     ) -> (wgpu::TextureView, wgpu::Sampler) {
         let size = dwell_mesh::ATLAS_SIZE as u32;
-        let atlas = atlas_levels(dwell_mesh::texture_set());
+        let atlas = atlas_levels();
         let levels = atlas.len() as u32;
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("atlas"),
@@ -2229,7 +2229,6 @@ impl Renderer {
                 held: v.held,
             })
             .collect();
-        let strokes = dwell_mesh::texture_set() == dwell_mesh::TextureSet::Painterly;
         self.characters.prepare(
             &self.device,
             &self.queue,
@@ -2238,7 +2237,6 @@ impl Renderer {
             &passes,
             &bodies,
             self.arms.as_ref(),
-            strokes,
         );
         let arms = self.characters.has_arms();
         if arms {
@@ -2759,14 +2757,14 @@ pub(crate) const FRAME_FLOATS: usize =
 /// is one texel wide. Filtering a smaller level at a tile's edge would reach past the gutter into
 /// the neighbouring tiles and the atlas's empty (transparent) space, which a grazing view of
 /// distant ground samples: a grey, see-through grid along the block edges.
-fn atlas_levels(set: dwell_mesh::TextureSet) -> Vec<(Vec<u8>, usize)> {
-    let mut levels = vec![(dwell_mesh::build_atlas_in(set), dwell_mesh::ATLAS_SIZE)];
+fn atlas_levels() -> Vec<(Vec<u8>, usize)> {
+    let mut levels = vec![(dwell_mesh::build_atlas(), dwell_mesh::ATLAS_SIZE)];
     while let Some(&(ref level, s)) = levels.last()
         && s > dwell_mesh::ATLAS_SIZE / dwell_mesh::GUTTER
     {
         levels.push((downsample(level, s), s / 2));
     }
-    preserve_coverage(set, &mut levels);
+    preserve_coverage(&mut levels);
     levels
 }
 
@@ -2798,9 +2796,9 @@ fn tile_coverage(texels: &[u8], size: usize, tile: usize, scale: f64) -> f64 {
 /// alpha and fails the test), so distant grass and ladders would vanish. Each level of a tile with
 /// transparent texels has its alpha scaled so the share it covers matches the full-size tile's
 /// (the coverage-preserving mipmaps of Castaño, 2010); opaque tiles stay untouched.
-fn preserve_coverage(set: dwell_mesh::TextureSet, levels: &mut [(Vec<u8>, usize)]) {
+fn preserve_coverage(levels: &mut [(Vec<u8>, usize)]) {
     for (tile, name) in dwell_mesh::TILE_ORDER.iter().enumerate() {
-        if !dwell_mesh::tile_has_alpha_in(set, name) {
+        if !dwell_mesh::tile_has_alpha(name) {
             continue;
         }
         let want = tile_coverage(&levels[0].0, levels[0].1, tile, 1.0);
@@ -3154,17 +3152,17 @@ mod tests {
     fn cutout_tiles_keep_their_coverage_down_the_mips() {
         // A cutout tile's share of drawn texels stays the full-size tile's at every level (within a
         // texel's worth at the smallest), so ladders, grass and leaves don't thin out or vanish with
-        // distance, in every texture set (the painterly ladder vanished at mip 4, 0.20.6).
-        for set in dwell_mesh::TextureSet::ALL {
-            let levels = atlas_levels(set);
+        // distance (the ladder vanished at mip 4, 0.20.6).
+        {
+            let levels = atlas_levels();
             let mut checked = 0;
             for (tile, name) in dwell_mesh::TILE_ORDER.iter().enumerate() {
-                if !dwell_mesh::tile_has_alpha_in(set, name) {
+                if !dwell_mesh::tile_has_alpha(name) {
                     continue;
                 }
                 checked += 1;
                 let want = tile_coverage(&levels[0].0, levels[0].1, tile, 1.0);
-                assert!(want > 0.05 && want < 0.95, "{set:?} {name}: {want}");
+                assert!(want > 0.05 && want < 0.95, "{name}: {want}");
                 for (level, (texels, size)) in levels.iter().enumerate() {
                     let n = (dwell_mesh::TILE * size / dwell_mesh::ATLAS_SIZE).max(1);
                     let got = tile_coverage(texels, *size, tile, 1.0);
@@ -3173,10 +3171,10 @@ mod tests {
                     if n >= 4 {
                         assert!(
                             (got - want).abs() <= 0.15,
-                            "{set:?} {name} at mip {level}: {got} vs {want}"
+                            "{name} at mip {level}: {got} vs {want}"
                         );
                     } else {
-                        assert!(got > 0.0, "{set:?} {name} vanishes at mip {level}");
+                        assert!(got > 0.0, "{name} vanishes at mip {level}");
                     }
                 }
                 // Plain averaging would have lost a sparse tile (the ladder): the unscaled level 2
@@ -3184,16 +3182,10 @@ mod tests {
                 let plain = downsample(&downsample(&levels[0].0, levels[0].1), levels[0].1 / 2);
                 let lost = tile_coverage(&plain, levels[0].1 / 4, tile, 1.0);
                 if want < 0.5 {
-                    assert!(
-                        lost < want,
-                        "{set:?} {name}: plain mips keep {lost} of {want}"
-                    );
+                    assert!(lost < want, "{name}: plain mips keep {lost} of {want}");
                 }
             }
-            assert!(
-                checked >= 3,
-                "{set:?}: the ladder, grass and leaves are cutout"
-            );
+            assert!(checked >= 3, "the ladder, grass and leaves are cutout");
         }
     }
 
@@ -3221,8 +3213,8 @@ mod tests {
         // reaches half a texel past the sample: at every level the gutter must cover that, or
         // distant ground picks up the neighbouring tiles and the atlas's empty space along every
         // block edge (the grey, see-through grid near the horizon, playtest 2026-10-14).
-        for set in dwell_mesh::TextureSet::ALL {
-            let levels = atlas_levels(set);
+        {
+            let levels = atlas_levels();
             for (t, name) in dwell_mesh::TILE_ORDER.iter().enumerate() {
                 let r = dwell_mesh::tile_rect(name);
                 let cell = [
@@ -3242,8 +3234,8 @@ mod tests {
                             );
                         }
                         let got = bilinear(texels, *size, u, v);
-                        if !dwell_mesh::tile_has_alpha_in(set, name) {
-                            assert_eq!(got[3], 255.0, "{set:?} {name} at mip {level}, ({u}, {v})");
+                        if !dwell_mesh::tile_has_alpha(name) {
+                            assert_eq!(got[3], 255.0, "{name} at mip {level}, ({u}, {v})");
                         }
                     }
                 }

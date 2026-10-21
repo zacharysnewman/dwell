@@ -1,7 +1,7 @@
 # 0040. Painterly textures: one data-driven stroke generator, baked at build time, behind a switch
 
-- Status: Accepted (2026-10-20: the owner's art brief; the painterly set stays behind
-  `?textures=painterly` until the owner approves it as the default)
+- Status: Accepted (2026-10-20: the owner's art brief). Amended 2026-10-21: the switch and the
+  classic set are removed, and the painterly set is the only one (see the note at the end)
 - Date: 2026-10-20
 - Builds on: [0027](0027-webgpu-renderer.md) (the atlas on wgpu), [0036](0036-render-modes-and-cross-geometry.md)
   (cutout tiles, the tall grass sprite), [0038](0038-block-registry-sync.md) (the `missing` tile)
@@ -64,11 +64,10 @@ four octaves also reads as speckle at a distance, the noise the brief asks to av
   the registry's tile names and bakes the block tiles into `crates/dwell-mesh/src/painterly.rgba`
   and `painterly.gen.rs`, checked in. CI regenerates them, fails on a diff and runs
   `gen.test.mjs`, which adds a material by data alone.
-- `dwell-mesh` has a `TextureSet` (`Classic` and `Painterly`, the default since the owner approved it on 2026-10-20). One texel lookup serves
-  the atlas, cutout detection, the tile averages (LOD colours) and the hotbar swatches. Tiles the
-  painterly set does not paint (`plain`, `grid`, `missing`) keep their classic painter.
-- `?textures=painterly` sets it on the page before the atlas is built, and in each meshing worker
-  through its init message, so LOD colours match the atlas.
+- `dwell-mesh` reads the baked tiles: one texel lookup serves the atlas, cutout detection, the
+  tile averages (LOD colours) and the hotbar swatches. The data paints every atlas tile, the utility
+  tiles (`plain`, `grid`, `missing`) included (as amended, 2026-10-21; until then a `TextureSet`
+  chose between the classic painters and this set by `?textures=`).
 - The editor page is `docs/prototypes/painterly-texture-lab.html`.
 - Textures are not public API: no world format, protocol or terrain change, so a patch release.
 
@@ -77,10 +76,21 @@ four octaves also reads as speckle at a distance, the noise the brief asks to av
 - New materials, new colours and retuned strokes are data edits. A new stroke kind is a small
   change to `paint.mjs` and its validator.
 - The characters (0041) read materials and ramps by name from the same files.
-- The classic painters stay in the code until the owner flips the default. After that, they can be
-  removed, with their tests moved to the painterly set, or kept as an option.
 - Tiles stay 32 texels. Finer brushes need a 64-texel atlas (`TILE`), a separate change.
 - The frame cost is unchanged: the same atlas, meshes and shaders. Start-up copies baked tiles
   instead of running noise.
-- Reversal: drop `shared/textures`, the generated files, `TextureSet` and the init field. The
-  classic painters are untouched.
+- Reversal: the classic painters are in the history (before 0.22.4); restoring them is a code
+  change, not a switch.
+
+## Note, 2026-10-21: the classic set is removed
+
+The owner approved the painterly set as the default on 2026-10-20 (0.20.6) and removed the classic
+set on 2026-10-21; it stays in the commit history, with no archive tag. Removed: the classic noise
+painters, `TextureSet` (`set_texture_set`, `texture_set`, `from_query`), `?textures=` on the page,
+the meshing workers' `textures` init field, the per-set caches (the averages, the LOD colour table,
+the shared atlas), the characters' "clean ramp" path (the shader always draws the brush tiles), and
+the `painterly` bench configuration. `materials.json` lost `keepClassic`: it now paints the utility
+tiles too (`plain` white; `grid` white with a one-texel `chalk.shadow` edge line; `missing` the
+magenta and black checker), from a `chalk` ramp and `missing_*` swatches outside the content albedo
+range, and `gen.mjs` validates `tiles` against every atlas tile (the registry's and
+`ENGINE_TILES`). A patch: no world format, protocol or terrain change.

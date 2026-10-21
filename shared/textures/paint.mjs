@@ -200,17 +200,17 @@ function validateLayer(where, layer, palette, ramp) {
 }
 
 /**
- * Checks the materials against the palette; `registryTiles` (optional) are the texture names the
- * block registry draws with, each of which `tiles` must map or `keepClassic` must list. Throws
- * naming the bad entry.
+ * Checks the materials against the palette; `atlasTiles` (optional) are the atlas's tiles (the
+ * texture names the block registry draws with, and the engine's utility tiles), each of which
+ * `tiles` must map, and nothing else. Throws naming the bad entry.
  */
-export function validateMaterials(materials, palette, registryTiles = null) {
+export function validateMaterials(materials, palette, atlasTiles = null) {
   const fail = (m) => {
     throw new Error(`materials.json: ${m}`);
   };
   if (typeof materials !== 'object' || materials === null) fail('must be an object');
   for (const k of Object.keys(materials)) {
-    if (!['$comment', 'tileSize', 'tiles', 'keepClassic', 'materials'].includes(k)) fail(`unknown entry ${k}`);
+    if (!['$comment', 'tileSize', 'tiles', 'materials'].includes(k)) fail(`unknown entry ${k}`);
   }
   if (materials.tileSize !== TILE) fail(`tileSize must be ${TILE} (the atlas's TILE), got ${JSON.stringify(materials.tileSize)}`);
   const all = materials.materials;
@@ -242,17 +242,12 @@ export function validateMaterials(materials, palette, registryTiles = null) {
     if (!all[mat]) fail(`tiles.${tile}: unknown material "${mat}"`);
     if (resolveMaterial(materials, mat).use !== 'block') fail(`tiles.${tile}: material "${mat}" is not a block material`);
   }
-  const keep = materials.keepClassic ?? [];
-  if (!Array.isArray(keep)) fail('keepClassic must be a list of tile names');
-  for (const t of keep) if (t in tiles) fail(`tile "${t}" is both painted (tiles) and kept classic (keepClassic)`);
-  if (registryTiles) {
-    for (const t of registryTiles) {
-      if (!(t in tiles) && !keep.includes(t)) {
-        fail(`the block registry draws with tile "${t}", which neither "tiles" paints nor "keepClassic" lists`);
-      }
+  if (atlasTiles) {
+    for (const t of atlasTiles) {
+      if (!(t in tiles)) fail(`the atlas has tile "${t}", which "tiles" doesn't paint`);
     }
     for (const t of Object.keys(tiles)) {
-      if (!registryTiles.includes(t)) fail(`tiles.${t}: no block in the registry draws with tile "${t}"`);
+      if (!atlasTiles.includes(t)) fail(`tiles.${t}: the atlas has no tile "${t}" (no block in the registry draws with it)`);
     }
   }
 }
