@@ -26,6 +26,10 @@ pub trait Jobs {
     fn memory(&self) -> Vec<f64> {
         Vec::new()
     }
+    /// Sets what to call when a job finishes between frames (Web Workers answer whenever they
+    /// are done): the pool collects the result and starts the next queued job then, so a slow
+    /// page's workers don't sit idle until its next frame.
+    fn on_done(&mut self, _wake: Rc<dyn Fn()>) {}
 }
 
 /// Runs jobs on the calling thread when polled (tests, and a fallback without workers).
@@ -112,20 +116,35 @@ pub struct Pool {
     /// Waiting for room: generation, meshing.
     queued: [VecDeque<(u32, Job)>; 2],
     in_flight: [usize; 2],
+    /// Results collected between frames ([`Jobs::on_done`]), for the next [`Self::poll`].
+    ready: Vec<Done>,
 }
 
 pub type PoolRef = Rc<RefCell<Pool>>;
 
 impl Pool {
     pub fn new(jobs: Box<dyn Jobs>) -> PoolRef {
-        Rc::new(RefCell::new(Self {
+        let pool = Rc::new(RefCell::new(Self {
             jobs,
             next: 1,
             purposes: HashMap::default(),
             times: HashMap::default(),
             queued: Default::default(),
             in_flight: [0; 2],
-        }))
+            ready: Vec::new(),
+        }));
+        let weak = Rc::downgrade(&pool);
+        // A result between frames: collected, and the worker given the next queued job. Never
+        // while the pool is in use (a wake from inside it waits for the next poll).
+        let wake: Rc<dyn Fn()> = Rc::new(move || {
+            if let Some(pool) = weak.upgrade()
+                && let Ok(mut pool) = pool.try_borrow_mut()
+            {
+                pool.collect();
+            }
+        });
+        pool.borrow_mut().jobs.on_done(wake);
+        pool
     }
 
     pub fn capacity(&self, mesh: bool) -> usize {
@@ -177,9 +196,15 @@ impl Pool {
         }
     }
 
-    /// Finished jobs, oldest first; starts queued ones in their place.
+    /// Finished jobs, oldest first (those collected between frames too); starts queued ones in
+    /// their place.
     pub fn poll(&mut self) -> Vec<Done> {
-        let mut out = Vec::new();
+        self.collect();
+        std::mem::take(&mut self.ready)
+    }
+
+    /// Takes the finished jobs' results and starts queued jobs in their place.
+    fn collect(&mut self) {
         for (id, output) in self.jobs.poll() {
             let Some((purpose, mesh)) = self.purposes.remove(&id) else {
                 continue;
@@ -190,10 +215,9 @@ impl Pool {
                 crate::telemetry::sample(wait, started - queued);
                 crate::telemetry::sample(run, crate::telemetry::now_ms() - started);
             }
-            out.push((purpose, output));
+            self.ready.push((purpose, output));
         }
         self.pump();
-        out
     }
 
     /// The workers' memory (bytes).
@@ -282,10 +306,12 @@ impl dwell_lod::SectionMesher for MeshJobs {
 mod tests {
     use super::*;
 
+    #[derive(Default)]
     struct Held {
         cap: usize,
         started: Vec<u32>,
         done: Vec<(u32, Output)>,
+        wake: Option<Rc<dyn Fn()>>,
     }
     impl Jobs for Rc<RefCell<Held>> {
         fn capacity(&self, _mesh: bool) -> usize {
@@ -298,14 +324,77 @@ mod tests {
         fn poll(&mut self) -> Vec<(u32, Output)> {
             std::mem::take(&mut self.borrow_mut().done)
         }
+        fn on_done(&mut self, wake: Rc<dyn Fn()>) {
+            self.borrow_mut().wake = Some(wake);
+        }
+    }
+
+    /// A worker finishing: its result arrives, and the pool is woken as a Web Worker's message
+    /// would wake it.
+    fn finish(held: &Rc<RefCell<Held>>, id: u32) {
+        held.borrow_mut()
+            .done
+            .push((id, Output::Failed("x".into())));
+        let wake = held.borrow().wake.clone();
+        if let Some(w) = wake {
+            w();
+        }
+    }
+
+    #[test]
+    fn a_job_finishing_between_frames_starts_the_next_one_at_once() {
+        // On CI's software renderer frames took 2–15 s, and the workers were refilled only at a
+        // frame's poll: two generation jobs per worker a frame, chunks waited 5–17 s for one
+        // (job.chunk.wait) though each ran in ~0.1 s, and the native-server e2e tests' terrain
+        // never finished generating (play.spec:129, edit.spec:204).
+        let held = Rc::new(RefCell::new(Held {
+            cap: 1,
+            ..Default::default()
+        }));
+        let pool = Pool::new(Box::new(held.clone()));
+        let mut source = ChunkJobs(pool.clone());
+        for (x, token) in [(0, 1), (1, 2), (2, 3)] {
+            source.generate([x, 0, 0], token);
+        }
+        assert_eq!(held.borrow().started, vec![1]);
+        finish(&held, 1);
+        assert_eq!(held.borrow().started, vec![1, 2], "started between frames");
+        finish(&held, 2);
+        assert_eq!(held.borrow().started, vec![1, 2, 3]);
+        // The frame's poll hands over both results, oldest first.
+        let done: Vec<Purpose> = pool.borrow_mut().poll().into_iter().map(|d| d.0).collect();
+        assert_eq!(
+            done,
+            vec![Purpose::Chunk([0, 0, 0], 1), Purpose::Chunk([1, 0, 0], 2)]
+        );
+        assert_eq!(pool.borrow().pending(), [1, 0]);
+        assert!(pool.borrow_mut().poll().is_empty());
+    }
+
+    #[test]
+    fn a_wake_while_the_pool_is_in_use_waits_for_the_next_poll() {
+        let held = Rc::new(RefCell::new(Held {
+            cap: 1,
+            ..Default::default()
+        }));
+        let pool = Pool::new(Box::new(held.clone()));
+        let mut source = ChunkJobs(pool.clone());
+        source.generate([0, 0, 0], 1);
+        source.generate([1, 0, 0], 2);
+        {
+            let _busy = pool.borrow_mut();
+            finish(&held, 1); // no panic: the pool is borrowed
+        }
+        assert_eq!(held.borrow().started, vec![1]);
+        assert_eq!(pool.borrow_mut().poll().len(), 1);
+        assert_eq!(held.borrow().started, vec![1, 2]);
     }
 
     #[test]
     fn keeps_capacity_in_flight_and_cancels_only_queued_chunks() {
         let held = Rc::new(RefCell::new(Held {
             cap: 1,
-            started: vec![],
-            done: vec![],
+            ..Default::default()
         }));
         let pool = Pool::new(Box::new(held.clone()));
         let mut source = ChunkJobs(pool.clone());

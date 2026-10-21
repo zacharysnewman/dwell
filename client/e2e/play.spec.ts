@@ -50,7 +50,13 @@ async function waitTerrain(page: Page): Promise<DebugState> {
       },
       { timeout: 30_000 },
     )
-    .toBeGreaterThan(100);
+    .toBeGreaterThan(100)
+    .catch(async (e: unknown) => {
+      // Which wait it was: the chunks still generating, loaded and meshing.
+      const s = await state(page).catch(() => null);
+      console.log('terrain at the timeout', JSON.stringify(s?.terrain ?? null));
+      throw e;
+    });
   const s = await state(page);
   if (!s) throw new Error('no game state');
   return s;
