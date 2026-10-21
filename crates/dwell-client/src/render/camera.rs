@@ -183,7 +183,7 @@ mod tests {
                         close(v.forward(), first.forward());
                         let (r, u) = (angle(first.right, v.right), angle(first.up, v.up));
                         assert!((r - u).abs() < 1e-6, "{yaw} {pitch}: {r} {u}");
-                        assert!(r >= rolled - 1e-9, "monotone");
+                        assert!(r >= rolled - 1e-9, "monotone {yaw} {pitch}: {r} after {rolled}");
                         rolled = r;
                     }
                     assert!((rolled - std::f64::consts::PI).abs() < 1e-6, "{rolled}");
