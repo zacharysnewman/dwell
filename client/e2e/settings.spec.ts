@@ -65,7 +65,7 @@ test('settings menu: opens from the corner, without fog sliders, and is kept', a
     audio: { master: 0.8, effects: 1, ui: 0.6 },
     clouds: 'high',
     water: { quality: 'medium' },
-    shadows: { quality: 'high' },
+    shadows: { quality: 'high', torch: 'low' },
     motion: { speedEffects: true, fovBoost: 1, plantSway: true },
     fovDeg: 75,
     showArms: true,
