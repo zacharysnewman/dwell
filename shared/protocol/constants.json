@@ -1,7 +1,6 @@
 {
   "$comment": "Single source of truth for protocol constants (ARCHITECTURE.md §7.4, §8). Run `node shared/protocol/gen.mjs` after editing; CI fails if generated files are stale.",
-  "$protocolVersion": "On the half-height branch: 1000 + the version of main it last merged, so a dev build never connects to main's builds (HALF_HEIGHT_GRID.md §2).",
-  "protocolVersion": 1017,
+  "protocolVersion": 18,
   "simHz": 60,
   "snapshotHz": 20,
   "maxDatagramBytes": 1200,
