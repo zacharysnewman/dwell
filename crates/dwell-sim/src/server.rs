@@ -1488,7 +1488,6 @@ impl Server {
             self.stream_preload(id, p, &mut sent);
         }
         let s = &self.sessions[&id];
-        let s = &self.sessions[&id];
         if s.stream_complete && (s.preload_complete || s.preload_center.is_none()) {
             // The view first (collision needs it).
             self.stream_requested(id, center, &mut sent);
