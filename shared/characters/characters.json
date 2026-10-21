@@ -462,11 +462,11 @@
     "torch": {
       "label": "A torch (a block whose registry entry says held: torch; docs/LIGHTS.md)",
       "on": "grip_r",
-      "light": [0, 0.02, 0.34],
+      "light": [0, 0.02, 0.33],
       "parts": [
         { "id": "torch_stick", "on": "grip_r", "kind": "cylinder", "size": [0.045, 0.38, 0.045], "at": [0, 0.02, 0.07], "rot": [90, 0, 0], "material": "bark" },
         { "id": "torch_wrap", "on": "grip_r", "kind": "cylinder", "size": [0.06, 0.06, 0.06], "at": [0, 0.02, 0.24], "rot": [90, 0, 0], "material": "heartwood.shadow" },
-        { "id": "torch_flame", "on": "grip_r", "kind": "ellipsoid", "size": [0.08, 0.08, 0.15], "at": [0, 0.02, 0.33], "material": "flame" }
+        { "id": "torch_flame", "on": "grip_r", "kind": "ellipsoid", "size": [0.065, 0.065, 0.12], "at": [0, 0.02, 0.32], "material": "flame" }
       ]
     },
     "brush": {

@@ -166,8 +166,8 @@
       ]
     },
     "flame": {
-      "$comment": "A held torch's flame (shared/characters items.torch): the flame's ramp, glowing (emissive).",
-      "use": "character", "ramp": "flame", "overlay": 0.3, "emissive": 1.0,
+      "$comment": "A held torch's flame (shared/characters items.torch): the flame's ramp, glowing (emissive: on a character an emissive of 1 or more shows its base colour × it, unlit).",
+      "use": "character", "ramp": "flame", "overlay": 0.3, "emissive": 0.75,
       "layers": [
         { "kind": "gradient", "from": "@base", "to": "@light", "direction": "up" },
         { "kind": "dab", "count": 5, "colors": ["@light"], "width": [4, 6], "length": [8, 12], "angle": 90, "opacity": 0.5 }

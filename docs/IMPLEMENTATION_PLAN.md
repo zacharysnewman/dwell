@@ -4690,7 +4690,9 @@ Exit criteria
   sync tags (dwell-blocks).
 - [x] Checked in Chrome on the GPU (shots in the PR): a held torch in a dark tunnel and a room, a placed
   torch lighting the room, on face A and face B; 8 torch-bearing stand-ins at night.
-- [x] Cost measured (`torch-night-puppets`, below).
+- [x] Cost measured (`torch-night-puppets`; LIGHTS.md §3): with 8 lights covering the whole view at
+  night, `gpu.frame` p50 +0.66 ms on the M1 (8.75 against 8.09), the main thread unchanged, no long
+  tasks.
 
 Deviations
 - Floor torches only (owner: wall torches later, as a state).

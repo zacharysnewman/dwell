@@ -358,8 +358,8 @@ fn character_fs(i: CharacterOut, @builtin(front_facing) front: bool) -> SceneOut
     let frag_y = frame.eye.x + i.rel.y;
     let light = character_light(i.rel, n);
     let shadow = light.direct;
-    // The dynamic lights (held torches; docs/LIGHTS.md §3), softened near the body.
-    let points = point_lights(i.rel, n, CHARACTER_LIGHT_NEAR);
+    // The dynamic lights (held torches; docs/LIGHTS.md §3).
+    let points = point_lights(i.rel, n);
     var o: SceneOut;
     o.depth = frame_depth(view_depth(i.rel), true);
     if (mat == BLOCK_MATERIAL) {
@@ -390,8 +390,11 @@ fn character_fs(i: CharacterOut, @builtin(front_facing) front: bool) -> SceneOut
     }
     let rim = pow(1.0 - max(dot(n, normalize(-i.rel)), 0.0), 3.0);
     c = c + m.light.rgb * rim * 0.14 * smoothstep(0.3, 0.6, w);
-    // The key light's ramp, the dynamic lights by the true normal, and a flame's own glow.
-    o.color = vec4f(c * (key.level * PI + points) * CHARACTER_EXPOSURE + m.base.rgb * m.extra.z, 1.0);
+    // The key light's ramp and the dynamic lights by the true normal; a glowing material (a
+    // flame) gives off its base colour × its glow in place of its share of the lit ramp.
+    let glow = m.extra.z;
+    let lit = c * (key.level * PI + points) * CHARACTER_EXPOSURE;
+    o.color = vec4f(lit * (1.0 - min(glow, 1.0)) + m.base.rgb * glow, 1.0);
     return o;
 }
 
@@ -417,11 +420,10 @@ pub const CHARACTER_EXPOSURE: f32 = 0.5;
 pub fn source() -> String {
     let ink = dwell_look::hex(0x43354a).map(|v| dwell_look::srgb_to_linear(v) as f32);
     format!(
-        "{}\nconst BONE_ROWS: u32 = {}u;\nconst BLOCK_MATERIAL: u32 = {}u;\nconst CHARACTER_LIGHT_NEAR: f32 = {:?};\nconst CHARACTER_EXPOSURE: f32 = {:?};\nconst INK_SOFT: vec3f = vec3f({:?}, {:?}, {:?});\n{WGSL}",
+        "{}\nconst BONE_ROWS: u32 = {}u;\nconst BLOCK_MATERIAL: u32 = {}u;\nconst CHARACTER_EXPOSURE: f32 = {:?};\nconst INK_SOFT: vec3f = vec3f({:?}, {:?}, {:?});\n{WGSL}",
         super::shaders::lighting_source(),
         MAX_BONES * 3,
         BLOCK_MATERIAL,
-        dwell_look::lights::LIGHTS.characters_near_m as f32,
         CHARACTER_EXPOSURE,
         ink[0],
         ink[1],

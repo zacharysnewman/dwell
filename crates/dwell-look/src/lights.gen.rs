@@ -6,6 +6,6 @@ use crate::lights::LightTunables;
 pub const LIGHTS: LightTunables = LightTunables {
     max_lights: 8,
     cull_m: 64.0,
-    near_m: 0.35,
-    characters_near_m: 0.8,
+    curve: 3.0,
+    wrap: 0.5,
 };

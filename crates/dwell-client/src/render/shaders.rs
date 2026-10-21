@@ -389,7 +389,7 @@ fn scene_out(albedo: vec3f, n: vec3f, rel: vec3f, alpha: f32, light: TerrainLigh
         l.direct = shadow_light(rel, n, l.direct);
     }
     // The dynamic lights (held torches), unshadowed.
-    l.points = point_lights(rel, n, 0.0);
+    l.points = point_lights(rel, n);
     o.color = vec4f(lambert_lit(albedo, n, frame.eye.x + rel.y, l), alpha);
     o.depth = frame_depth(view_depth(rel), true);
     return o;
@@ -1463,7 +1463,7 @@ struct Surface {
 fn see_through_light(i: FluidOut, n: vec3f) -> TerrainLight {
     var l = terrain_light(1.0, i.flood);
     l.direct = shadow_light(i.rel, n, l.direct);
-    l.points = point_lights(i.rel, n, 0.0);
+    l.points = point_lights(i.rel, n);
     return l;
 }
 
@@ -1488,7 +1488,7 @@ fn water_surface(i: FluidOut, front: bool, footprint: f32, f: Fluid, draw: Draw)
     }
     s.ndv = clamp(dot(s.n, s.v), 1e-3, 1.0);
     s.light = terrain_light(1.0, i.flood);
-    s.light.points = point_lights(i.rel, face_up(s.up), 0.0);
+    s.light.points = point_lights(i.rel, face_up(s.up));
     s.sky = light_curve(i.flood.x, SKY_CURVE);
     s.shadow = shadow_light(i.rel, face_up(s.up), s.light.direct);
     s.body = lambert_lit(f.scatter.rgb * draw.tint.rgb, face_up(s.up), s.frag_y, TerrainLight(s.light.ambient, s.shadow, s.light.glow, s.light.points));

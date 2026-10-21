@@ -15,23 +15,23 @@ use super::characters::HeldLight;
 pub const BINDING: u32 = 14;
 
 /// The lights' block and `point_lights`: the irradiance (linear) the drawn lights give a surface at
-/// `rel` (relative to the eye) with unit normal `n`, softened within `near_min` metres (0: the
-/// lights' own; characters soften more, so a held torch doesn't burn out the hand holding it).
-/// Mirrors `dwell_look::lights::irradiance`.
+/// `rel` (relative to the eye) with unit normal `n`: the falloff on the flood light's curve, the
+/// wrapped cosine (`shared/look/lights.json`). Mirrors `dwell_look::lights::irradiance`.
 pub fn wgsl() -> String {
     format!(
         r"
 const MAX_POINT_LIGHTS: u32 = {MAX_SHADER_LIGHTS}u;
+const POINT_CURVE: f32 = {:?};
+const POINT_WRAP: f32 = {:?};
 struct PointLights {{
     // x the count
     head: vec4f,
-    // per light: xyz relative to the eye, w the radius (m); rgb colour × strength × flicker, w the
-    // softening distance (m)
+    // per light: xyz relative to the eye, w the radius (m); rgb colour × strength × flicker
     l: array<vec4f, {}>,
 }};
 @group(0) @binding({BINDING}) var<uniform> point_light_block: PointLights;
 
-fn point_lights(rel: vec3f, n: vec3f, near_min: f32) -> vec3f {{
+fn point_lights(rel: vec3f, n: vec3f) -> vec3f {{
     var sum = vec3f(0.0);
     let count = min(u32(point_light_block.head.x), MAX_POINT_LIGHTS);
     for (var i = 0u; i < count; i = i + 1u) {{
@@ -42,16 +42,16 @@ fn point_lights(rel: vec3f, n: vec3f, near_min: f32) -> vec3f {{
         if (d >= a.w) {{
             continue;
         }}
-        let x = d / a.w;
-        let x4 = x * x * x * x;
-        let window = (1.0 - x4) * (1.0 - x4);
-        let near = max(b.w, near_min);
-        let cos = select(1.0, max(dot(to, n) / d, 0.0), d > 1e-4);
-        sum = sum + b.rgb * (cos * window * (1.0 + near * near) / (d * d + near * near));
+        let x = 1.0 - d / a.w;
+        let fall = x / (POINT_CURVE - (POINT_CURVE - 1.0) * x);
+        let cos = select(1.0, max((dot(to, n) / d + POINT_WRAP) / (1.0 + POINT_WRAP), 0.0), d > 1e-4);
+        sum = sum + b.rgb * (cos * fall);
     }}
     return sum;
 }}
 ",
+        LIGHTS.curve as f32,
+        LIGHTS.wrap as f32,
         MAX_SHADER_LIGHTS * 2
     )
 }
@@ -91,7 +91,7 @@ pub fn frame_block(held: &[HeldLight], eye: [f64; 3], t: f64) -> ([f32; LIGHT_FL
         })
         .collect();
     let picked = pick(&all, eye, LIGHTS.max_lights, LIGHTS.cull_m);
-    (pack(&picked, eye, t, LIGHTS.near_m), picked.len())
+    (pack(&picked, eye, t), picked.len())
 }
 
 #[cfg(test)]
@@ -124,9 +124,9 @@ mod tests {
     #[test]
     fn the_wgsl_mirrors_the_look_crates_falloff() {
         let src = wgsl();
-        // The same window and softening as `dwell_look::lights::falloff`.
-        assert!(src.contains("let window = (1.0 - x4) * (1.0 - x4);"));
-        assert!(src.contains("(1.0 + near * near) / (d * d + near * near)"));
+        // The same curve and wrap as `dwell_look::lights::falloff` and `wrapped`.
+        assert!(src.contains("let fall = x / (POINT_CURVE - (POINT_CURVE - 1.0) * x);"));
+        assert!(src.contains("(dot(to, n) / d + POINT_WRAP) / (1.0 + POINT_WRAP)"));
         assert!(src.contains(&format!("@binding({BINDING})")));
     }
 }

@@ -196,7 +196,7 @@ pub struct LightInfo {
     pub name: &'static str,
     /// sRGB `0xRRGGBB`.
     pub color: u32,
-    /// Its irradiance at 1 m (× the colour, linear).
+    /// Its irradiance at the flame (× the colour, linear).
     pub strength: f32,
     /// Where its light ends (a smooth window to 0), metres.
     pub radius_m: f32,

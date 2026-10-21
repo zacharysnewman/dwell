@@ -10,7 +10,7 @@ const COLOR = /^#[0-9a-fA-F]{6}$/;
 
 // Every number, required, with its range (inclusive unless `open`).
 const NUMBERS = {
-  strength: { min: 0, max: 16, open: 'min' }, // the light's irradiance at 1 m (× colour, linear)
+  strength: { min: 0, max: 16, open: 'min' }, // the light's irradiance at the flame (× colour, linear)
   radiusM: { min: 0, max: 32, open: 'min' }, // where its light ends (a smooth window to 0)
 };
 const FLICKER = {

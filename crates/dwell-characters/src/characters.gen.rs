@@ -27,7 +27,7 @@ pub static MATERIALS: &[Material] = &[
     Material { name: "hair_ginger", shadow: 0x873a26, base: 0xc9652f, light: 0xee9d55, overlay: 0.6, emissive: 0.0, tile: 12 },
     Material { name: "bark", shadow: 0x4a3438, base: 0x7c5338, light: 0xa77a4c, overlay: 1.0, emissive: 0.0, tile: 13 },
     Material { name: "heartwood.shadow", shadow: 0x9c7650, base: 0x9c7650, light: 0x9c7650, overlay: 0.0, emissive: 0.0, tile: -1 },
-    Material { name: "flame", shadow: 0xc8582a, base: 0xe8923c, light: 0xead79a, overlay: 0.3, emissive: 1.0, tile: 14 },
+    Material { name: "flame", shadow: 0xc8582a, base: 0xe8923c, light: 0xead79a, overlay: 0.3, emissive: 0.75, tile: 14 },
     Material { name: "heartwood", shadow: 0x9c7650, base: 0xc99f66, light: 0xecc98e, overlay: 0.0, emissive: 0.0, tile: -1 },
     Material { name: "fur_wolf", shadow: 0x4a5068, base: 0x8b909e, light: 0xc9cbd0, overlay: 0.6, emissive: 0.0, tile: 15 },
     Material { name: "fur_wolf_belly", shadow: 0xb4b2b4, base: 0xe8e3d6, light: 0xfaf6ec, overlay: 0.5, emissive: 0.0, tile: 16 },
@@ -921,10 +921,10 @@ pub static CHARACTERS: &[Character] = &[
             Item { name: "block", light: None, parts: &[
                 Part { id: "held_block", bone: 9, kind: Kind::Box, size: [0.2, 0.2, 0.2], at: [0.0, -0.13, 0.09], rot: [0.0, 0.0, 0.0], round: 0.0, tip: 0.0, view: View::Both, material: 65535 },
             ] },
-            Item { name: "torch", light: Some((9, [0.0, -0.08, 0.36])), parts: &[
+            Item { name: "torch", light: Some((9, [0.0, -0.08, 0.35])), parts: &[
                 Part { id: "torch_stick", bone: 9, kind: Kind::Cylinder, size: [0.045, 0.38, 0.045], at: [0.0, -0.08, 0.09], rot: [90.0, 0.0, 0.0], round: 0.0, tip: 0.0, view: View::Both, material: 17 },
                 Part { id: "torch_wrap", bone: 9, kind: Kind::Cylinder, size: [0.06, 0.06, 0.06], at: [0.0, -0.08, 0.26], rot: [90.0, 0.0, 0.0], round: 0.0, tip: 0.0, view: View::Both, material: 18 },
-                Part { id: "torch_flame", bone: 9, kind: Kind::Ellipsoid, size: [0.08, 0.08, 0.15], at: [0.0, -0.08, 0.35], rot: [0.0, 0.0, 0.0], round: 0.0, tip: 0.0, view: View::Both, material: 19 },
+                Part { id: "torch_flame", bone: 9, kind: Kind::Ellipsoid, size: [0.065, 0.065, 0.12], at: [0.0, -0.08, 0.34], rot: [0.0, 0.0, 0.0], round: 0.0, tip: 0.0, view: View::Both, material: 19 },
             ] },
             Item { name: "brush", light: None, parts: &[
                 Part { id: "brush_handle", bone: 9, kind: Kind::Cylinder, size: [0.04, 0.32, 0.04], at: [0.0, -0.08, 0.08], rot: [90.0, 0.0, 0.0], round: 0.0, tip: 0.0, view: View::Both, material: 20 },

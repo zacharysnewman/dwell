@@ -45,9 +45,9 @@ nearest lights and (T2) the shadow maps' kinds.
 - **Light sources** (`lights` in a namespace of `shared/blocks/*.json`, validated by
   `shared/blocks/lights.mjs`, generated into `dwell-blocks` `LIGHTS`; `lights.test.mjs`): a
   namespaced name → `{ color, strength, radiusM, flicker: { amount, speed }, shadows }`. `strength`
-  is the irradiance at 1 m (× the linear colour); the light ends smoothly at `radiusM`; `flicker`
+  is the irradiance at the flame (× the linear colour); the light ends smoothly at `radiusM`; `flicker`
   takes up to `amount` of the strength, wavering at `speed` cycles a second; `shadows` says whether
-  it may cast shadows (T2). The build has `dwell:torch` (#ffa45c, 4.5, 12 m, 16 % at 6 Hz, shadows);
+  it may cast shadows (T2). The build has `dwell:torch` (#ffa45c, 3.8, 14 m, 16 % at 6 Hz, shadows: the flood light's block light at level 14, 1.2 × π, reaching 14 m as a placed torch's does);
   the test fixture adds `test:lantern` by data alone, and its `test:lamp` uses it.
 - **Blocks** reference one by name: `"light": "dwell:torch"` (`StateInfo::light`, a reference into
   `LIGHTS`); `emits` (0–15) is the flood light a placed block gives off; `"held": "torch"` names the
@@ -63,15 +63,16 @@ nearest lights and (T2) the shadow maps' kinds.
 - **Glow** (`emissive`, 0–4, on a material in `shared/textures/materials.json`): how much of its
   colour a surface gives off unlit. For blocks it is per atlas tile (`PAINTERLY_EMISSIVE`, generated
   with the tiles; the frame's `tile_grids` table carries it in `z`, so the vertex carries nothing);
-  for characters per material (`Material::emissive`). The torch's tile and the held flame glow 1.0:
-  the flame's bright colour glows, the darker stick little.
+  for characters per material (`Material::emissive`). On a block it is added to the lit colour
+  (the torch's tile glows 1.0: the flame's bright colour glows, the darker stick little); on a
+  character it replaces up to all of the lit ramp (the held flame, 0.75: three quarters its base colour, a quarter lit).
 - **The held torch item** (`items.torch` in `shared/characters/characters.json`): a stick, a wrap and a
   flame on the right hand's grip, and **`light`**, the point on the item's socket where its light
   sits (the flame), resolved by the generator to a bone and an offset (`Item::light`).
 - **Dynamic-light tunables** (`shared/look/lights.json` → `dwell-look` `lights.gen.rs`;
   `lights.test.mjs`): `maxLights` (8, the most a frame; the shader holds 16), `cullM` (64 m),
-  `nearM` (0.35 m, the falloff's softening) and `charactersNearM` (0.8 m: a torch beside a body
-  lights the hand holding it without burning it out).
+  `curve` (3, the flood light's block-light curve, so a held torch falls off as a placed one) and
+  `wrap` (0.5: a surface edge-on to the flame still takes some).
 
 ## 3. Held lights (T1)
 
@@ -81,15 +82,20 @@ every other player's body (their held item comes in the snapshots; stand-in pupp
 frame the renderer gathers them (`CharacterRenderer::held_lights`), keeps the nearest `maxLights`
 within `cullM` of the eye (`dwell_look::lights::pick`; ties by holder, so the choice is stable) and
 packs them into one uniform block (`pack`: per light its place relative to the eye, radius, colour ×
-strength × flicker, softening; frame binding 14, `render/lights.rs`). The flicker is two octaves of
+strength × flicker; frame binding 14, `render/lights.rs`). The flicker is two octaves of
 smooth value noise per holder (`flicker`, deterministic in time and holder), so a torch wavers.
 
 Every lit surface adds the lights' irradiance to its Lambert sum (`TerrainLight::points`,
-`point_lights(rel, n, near_min)`): `strength × colour × cos × (1 + near²) / (d² + near²) × (1 − (d /
-radius)⁴)²`, so the light is the source's strength at 1 m, finite at the flame and 0 at its radius.
-Terrain, plants, LOD sections, water (body and foam), glass, other players' bodies and the items
-they hold, your arms and your held block all take it (characters by the fragment's own normal,
-softened by `charactersNearM`). The CPU mirror is `dwell_look::lights::irradiance`.
+`point_lights(rel, n)`): `strength × colour × wrapped cos × x / (curve − (curve − 1)·x)` with `x = 1 − d /
+radius` and the cosine wrapped, `(n·l + wrap) / (1 + wrap)`. So the light is the source's strength at the
+flame and 0 at its radius, and falls as the flood light's block light falls over its levels (a level a
+metre): a held torch lights a tunnel as a placed one does, only smoothly and moving with its holder.
+Terrain, plants, LOD sections, water (body and foam), glass, other players' bodies and the items they
+hold, your arms and your held block all take it (characters by the fragment's own normal). The CPU mirror is `dwell_look::lights::irradiance`.
+
+A first build used an inverse-square falloff (strength at 1 m, softened near the flame): beside a
+placed torch's flood light it lit only a small pool at the holder's feet (the first shots), so the
+falloff follows the flood light's curve instead.
 
 The held light **never enters the flood light** (owner): the flood light changes cells, re-meshes
 chunks and spreads over frames, which would lag and step behind a moving torch.
@@ -98,9 +104,14 @@ chunks and spreads over frames, which would lag and step behind a moving torch.
 radius on the other side and facing it. Torch shadows (T2) remove that. A light past `maxLights`
 is dropped, nearest first kept; at 8 that is a crowd of torch bearers.
 
-**Cost.** A fixed uniform block of 528 bytes written once a frame; per fragment a loop over the
-lights drawn (none when nobody holds a light; otherwise a few ALU ops each). See the plan's Phase 47
-for the measured numbers.
+**Cost** (Apple M1, Chrome, 1280×720, `npm run bench -- torch-night-puppets --unthrottled`, Shadows
+High, one run, load average 3–5): midnight in the open with 8 torch-bearing stand-ins and your own
+torch (8 lights drawn, the budget) against the same stand-ins holding stone (none). `gpu.frame` p50
+8.75 ms against 8.09 (+0.66 ms; the near pass +0.6, the far +0.5, the arms' +0.7, overlapping on the
+M1's tiled GPU), with every pixel of the view inside all 8 lights' 14 m; one torch in a tunnel is a
+small share of that. The main thread is unchanged (`frame.cpu` p50 1.8 ms both, no long tasks): the
+block is 528 bytes written once a frame, the choice a sort of a few lights. With nobody holding a
+light, a fragment's loop runs no iteration.
 
 ## 4. Placed lights
 

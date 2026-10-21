@@ -1,7 +1,7 @@
 {
-  "$comment": "Dynamic lights (docs/LIGHTS.md §3, ARCHITECTURE.md §6.1): the smooth point lights of light sources (the blocks' `light`, shared/blocks), held in a hand (yours and other players') and, with Torch shadows on, placed. maxLights: the most drawn a frame, the nearest to the eye first (the shader holds up to 16). cullM: a light farther than this from the eye is left out. nearM: the falloff's softening distance (m): the light at distance d is strength × (1 + nearM²) / (d² + nearM²) × (1 − (d / radius)⁴)², so it is the source's strength at 1 m, ends smoothly at its radius and stays finite at the flame. charactersNearM: the softening on characters (at least this): a torch held beside a body lights its hand without burning it out. Run `node shared/look/lights.mjs` after editing; CI fails if crates/dwell-look/src/lights.gen.rs is stale.",
+  "$comment": "Dynamic lights (docs/LIGHTS.md §3, ARCHITECTURE.md §6.1): the smooth point lights of light sources (the blocks' `light`, shared/blocks), held in a hand (yours and other players') and, with Torch shadows on, placed. maxLights: the most drawn a frame, the nearest to the eye first (the shader holds up to 16). cullM: a light farther than this from the eye is left out. curve: the falloff, as the flood light's block light falls over its levels (light.json's block curve, kept equal): a light's share d metres out is x / (curve − (curve − 1)·x) of x = 1 − d / radius, so a held torch lights as a placed one does, 1 at the flame and 0 at its radius. wrap: how far round a surface the light wraps, (n·l + wrap) / (1 + wrap), so a surface edge-on to the flame isn't black. Run `node shared/look/lights.mjs` after editing; CI fails if crates/dwell-look/src/lights.gen.rs is stale.",
   "maxLights": 8,
   "cullM": 64,
-  "nearM": 0.35,
-  "charactersNearM": 0.8
+  "curve": 3,
+  "wrap": 0.5
 }

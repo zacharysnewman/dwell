@@ -14,14 +14,15 @@ lit the world from a moving source.
 ## Decision
 
 - **Light sources are block data**: a `lights` table in the block registry's namespaces (colour,
-  strength at 1 m, radius, flicker, whether it casts shadows), referenced by name from a block's
+  strength at the flame, radius, flicker, whether it casts shadows), referenced by name from a block's
   `light`. The torch is a block with `emits` (its flood light) and `light: dwell:torch`; its held
   model is a character item named by the block's `held`. Lanterns and the like are data alone.
   Registry sync carries `light` and `held` as look tags, by name.
 - **Held lights are per-fragment point lights, never in the flood light** (owner). The renderer
   gathers the lights in hands this frame (yours and other players', from the held items in the
   snapshots: no protocol change), keeps the nearest few within a distance (`shared/look/lights.json`)
-  and every lit surface adds their irradiance, a smooth windowed falloff. The flood light would lag
+  and every lit surface adds their irradiance, falling off on the flood light's block-light curve
+  (so held and placed torches light alike). The flood light would lag
   and step behind a moving torch and re-mesh chunks as it went.
 - **Placed lights go through the flood light** whatever the settings; with the Torch shadows
   setting on (T2) a placed torch's light is also a shadowed dynamic light on top.

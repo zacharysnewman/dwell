@@ -25,11 +25,13 @@ pub struct LightTunables {
     pub max_lights: usize,
     /// A light farther than this from the eye is left out (m).
     pub cull_m: f64,
-    /// The falloff's softening distance (m).
-    pub near_m: f64,
-    /// The softening on characters, at least (m): a held torch beside a body lights its hand
-    /// without burning it out.
-    pub characters_near_m: f64,
+    /// The falloff's curve: a light's share `d` metres out is `x / (curve − (curve − 1)·x)` of
+    /// `x = 1 − d / radius`, the flood light's block-light curve over its levels (a level a
+    /// metre), so a held torch lights as a placed one does.
+    pub curve: f64,
+    /// How far round a surface the light wraps: `(n·l + wrap) / (1 + wrap)`, so a surface edge-on
+    /// to a flame isn't black.
+    pub wrap: f64,
 }
 
 /// One dynamic light this frame.
@@ -39,7 +41,7 @@ pub struct PointLight {
     pub pos: [f64; 3],
     /// Linear colour.
     pub color: [f64; 3],
-    /// Irradiance at 1 m.
+    /// Irradiance at the flame.
     pub strength: f64,
     pub radius_m: f64,
     /// The share of its strength a flicker takes at most, and its noise's cycles a second.
@@ -67,15 +69,19 @@ impl PointLight {
     }
 }
 
-/// The light's share at distance `d` (m) of a light of `radius`: 1 at 1 m (for a small `near`),
-/// `(1 + near²) / (d² + near²)` windowed by `(1 − (d / radius)⁴)²` to 0 at the radius.
-pub fn falloff(d: f64, radius: f64, near: f64) -> f64 {
+/// The light's share at distance `d` (m) of a light of `radius`: 1 at the flame, 0 at the radius,
+/// `x / (curve − (curve − 1)·x)` of `x = 1 − d / radius` between (the flood light's curve).
+pub fn falloff(d: f64, radius: f64, curve: f64) -> f64 {
     if d >= radius {
         return 0.0;
     }
-    let x = (d / radius).powi(4);
-    let window = (1.0 - x) * (1.0 - x);
-    window * (1.0 + near * near) / (d * d + near * near)
+    let x = 1.0 - d / radius;
+    x / (curve - (curve - 1.0) * x)
+}
+
+/// The share of a light reaching a surface at `cos` to it, wrapped by `wrap`.
+pub fn wrapped(cos: f64, wrap: f64) -> f64 {
+    ((cos + wrap) / (1.0 + wrap)).max(0.0)
 }
 
 fn hash01(seed: u32, i: i64) -> f64 {
@@ -124,9 +130,8 @@ pub fn pick(lights: &[PointLight], eye: [f64; 3], max: usize, cull_m: f64) -> Ve
 }
 
 /// The uniform block (`PointLights` in the shader): x of the header the count; per light its
-/// position relative to the eye and radius, then its colour × strength × flicker at `t` and the
-/// softening distance.
-pub fn pack(lights: &[PointLight], eye: [f64; 3], t: f64, near_m: f64) -> [f32; LIGHT_FLOATS] {
+/// position relative to the eye and radius, then its colour × strength × flicker at `t`.
+pub fn pack(lights: &[PointLight], eye: [f64; 3], t: f64) -> [f32; LIGHT_FLOATS] {
     let mut u = [0.0f32; LIGHT_FLOATS];
     let n = lights.len().min(MAX_SHADER_LIGHTS);
     u[0] = n as f32;
@@ -141,14 +146,15 @@ pub fn pack(lights: &[PointLight], eye: [f64; 3], t: f64, near_m: f64) -> [f32; 
             (l.color[0] * k) as f32,
             (l.color[1] * k) as f32,
             (l.color[2] * k) as f32,
-            near_m as f32,
+            0.0,
         ]);
     }
     u
 }
 
 /// The irradiance (linear RGB) the packed lights give a surface at `rel` (relative to the eye) with
-/// unit normal `n`: Lambert's cosine × the falloff, summed. The shader's `point_lights` mirrors it.
+/// unit normal `n`: the wrapped cosine × the falloff (`LIGHTS`' curve and wrap), summed. The
+/// shader's `point_lights` mirrors it.
 pub fn irradiance(u: &[f32; LIGHT_FLOATS], rel: [f64; 3], n: [f64; 3]) -> [f64; 3] {
     let mut sum = [0.0; 3];
     for i in 0..(u[0] as usize).min(MAX_SHADER_LIGHTS) {
@@ -159,12 +165,15 @@ pub fn irradiance(u: &[f32; LIGHT_FLOATS], rel: [f64; 3], n: [f64; 3]) -> [f64; 
             f64::from(u[o + 2]) - rel[2],
         ];
         let d = (to[0] * to[0] + to[1] * to[1] + to[2] * to[2]).sqrt();
-        let cos = if d > 0.0 {
-            ((to[0] * n[0] + to[1] * n[1] + to[2] * n[2]) / d).max(0.0)
+        let cos = if d > 1e-4 {
+            wrapped(
+                (to[0] * n[0] + to[1] * n[1] + to[2] * n[2]) / d,
+                LIGHTS.wrap,
+            )
         } else {
             1.0
         };
-        let w = cos * falloff(d, f64::from(u[o + 3]), f64::from(u[o + 7]));
+        let w = cos * falloff(d, f64::from(u[o + 3]), LIGHTS.curve);
         for (k, s) in sum.iter_mut().enumerate() {
             *s += f64::from(u[o + 4 + k]) * w;
         }
@@ -182,19 +191,29 @@ mod tests {
     }
 
     #[test]
-    fn the_falloff_is_one_at_a_metre_ends_at_the_radius_and_falls_with_distance() {
-        let near = LIGHTS.near_m;
-        assert!((falloff(1.0, 1e9, near) - 1.0).abs() < 1e-9);
-        assert_eq!(falloff(10.0, 10.0, near), 0.0);
-        assert_eq!(falloff(12.0, 10.0, near), 0.0);
+    fn the_falloff_is_one_at_the_flame_ends_at_the_radius_and_falls_as_the_block_light() {
+        let c = LIGHTS.curve;
+        assert_eq!(falloff(0.0, 10.0, c), 1.0);
+        assert_eq!(falloff(10.0, 10.0, c), 0.0);
+        assert_eq!(falloff(12.0, 10.0, c), 0.0);
         let mut last = f64::INFINITY;
         for k in 0..100 {
-            let f = falloff(f64::from(k) * 0.1, 10.0, near);
-            assert!(f <= last && f.is_finite(), "{k}");
+            let f = falloff(f64::from(k) * 0.1, 10.0, c);
+            assert!(f < last, "{k}");
             last = f;
         }
-        // Finite at the flame.
-        assert!(falloff(0.0, 10.0, near) < 1.0 / (near * near) + 2.0);
+        // A light of radius 15 falls as the flood light's block light from level 15, a level a
+        // metre, on the same curve.
+        let block = dwell_world::light::LIGHT.block_curve;
+        let level = |l: f64| (l / 15.0) / (block - (block - 1.0) * (l / 15.0));
+        for d in [0.0, 3.0, 7.5, 12.0] {
+            assert!((falloff(d, 15.0, block) - level(15.0 - d)).abs() < 1e-12);
+        }
+        assert_eq!(LIGHTS.curve, block, "the data keeps them alike");
+        // Wrapped: edge-on still lit, facing away none.
+        assert!(wrapped(0.0, LIGHTS.wrap) > 0.0);
+        assert_eq!(wrapped(-1.0, LIGHTS.wrap), 0.0);
+        assert_eq!(wrapped(1.0, LIGHTS.wrap), 1.0);
     }
 
     #[test]
@@ -268,7 +287,7 @@ mod tests {
             .expect("the fixture has test:lamp");
         assert_eq!(lamp.light.map(|l| l.name), Some("test:lantern"));
         let l = PointLight::of(lantern, [0.0, 2.0, 0.0], 1);
-        let u = pack(&[l], [0.0; 3], 0.0, LIGHTS.near_m);
+        let u = pack(&[l], [0.0; 3], 0.0);
         let e = irradiance(&u, [0.0; 3], [0.0, 1.0, 0.0]);
         assert!(e[2] > e[0], "bluish: {e:?}");
         assert!(e[2] > 0.1);
@@ -280,7 +299,7 @@ mod tests {
     #[test]
     fn a_surface_facing_away_takes_none_and_the_held_light_never_needs_the_flood_light() {
         let l = PointLight::of(torch(), [0.0, 1.0, 0.0], 3);
-        let u = pack(&[l], [0.0; 3], 0.0, LIGHTS.near_m);
+        let u = pack(&[l], [0.0; 3], 0.0);
         let up = irradiance(&u, [0.0; 3], [0.0, 1.0, 0.0]);
         let down = irradiance(&u, [0.0; 3], [0.0, -1.0, 0.0]);
         assert!(up[0] > 0.5, "{up:?}");
@@ -295,12 +314,7 @@ mod tests {
             let ground = f.point([10.0, 4.0, -3.0]);
             let flame = f.point([10.0, 5.5, 0.0]);
             let eye = f.point([10.0, 5.6, -3.0]);
-            let u = pack(
-                &[PointLight::of(torch(), flame, 1)],
-                eye,
-                2.0,
-                LIGHTS.near_m,
-            );
+            let u = pack(&[PointLight::of(torch(), flame, 1)], eye, 2.0);
             let rel = std::array::from_fn(|k| ground[k] - eye[k]);
             let e = irradiance(&u, rel, f.vector([0.0, 1.0, 0.0]));
             let a = FaceFrame::A;
@@ -310,7 +324,6 @@ mod tests {
                 &[PointLight::of(torch(), a.point([10.0, 5.5, 0.0]), 1)],
                 ea,
                 2.0,
-                LIGHTS.near_m,
             );
             let ra = std::array::from_fn(|k| ga[k] - ea[k]);
             let ref_e = irradiance(&ua, ra, [0.0, 1.0, 0.0]);

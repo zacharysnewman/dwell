@@ -18,13 +18,13 @@ test('values changed by data alone are in the output', () => {
   const d = data();
   d.maxLights = 4;
   d.cullM = 32;
-  d.nearM = 0.5;
-  d.charactersNearM = 1.2;
+  d.curve = 1;
+  d.wrap = 0.25;
   const rs = lightsRust(validateLights(d));
   assert.match(rs, /max_lights: 4,/);
   assert.match(rs, /cull_m: 32\.0,/);
-  assert.match(rs, /near_m: 0\.5,/);
-  assert.match(rs, /characters_near_m: 1\.2,/);
+  assert.match(rs, /curve: 1\.0,/);
+  assert.match(rs, /wrap: 0\.25,/);
 });
 
 test('bad entries fail with their path named', () => {
@@ -32,7 +32,8 @@ test('bad entries fail with their path named', () => {
     [(d) => (d.maxLights = 17), /maxLights must be a number in \[0, 16\]/],
     [(d) => (d.maxLights = 2.5), /maxLights must be a whole number/],
     [(d) => (d.cullM = 0), /cullM must be a number in \[1, 512\]/],
-    [(d) => delete d.nearM, /missing entry nearM/],
+    [(d) => delete d.curve, /missing entry curve/],
+    [(d) => (d.wrap = 2), /wrap must be a number in \[0, 1\]/],
     [(d) => (d.extra = 1), /unknown entry extra/],
   ];
   for (const [edit, re] of cases) {
