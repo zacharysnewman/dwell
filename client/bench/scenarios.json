@@ -3033,6 +3033,227 @@
       ]
     },
     {
+      "name": "clouds-far-above",
+      "notes": "The cloud deck from 3–40 km up over seed 7, by day and by night (owner, 2026-10-21: from high up the clouds showed in a circle round the player and past the world's edge, not over the far sea; CLOUDS.md §7): the deck must cover the whole flat world below its altitude.",
+      "seed": 7,
+      "window": {
+        "width": 1000,
+        "height": 800
+      },
+      "settings": {
+        "clouds": "high"
+      },
+      "steps": [
+        {
+          "do": "settle",
+          "maxS": 120
+        },
+        {
+          "do": "time",
+          "t": 0.5
+        },
+        {
+          "do": "camera",
+          "position": [0, 3000, 0],
+          "yaw": 240,
+          "pitch": -45
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "shot",
+          "name": "day-3000-p45"
+        },
+        {
+          "do": "camera",
+          "position": [0, 15000, 0],
+          "yaw": 240,
+          "pitch": -45
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "shot",
+          "name": "day-15000-p45"
+        },
+        {
+          "do": "camera",
+          "position": [0, 40000, 0],
+          "yaw": 240,
+          "pitch": -50
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "shot",
+          "name": "day-40000-p50"
+        },
+        {
+          "do": "camera",
+          "position": [0, 40000, 0],
+          "yaw": 240,
+          "pitch": -5
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "shot",
+          "name": "day-40000-p5"
+        },
+        {
+          "do": "time",
+          "t": 0.0
+        },
+        {
+          "do": "camera",
+          "position": [0, 3000, 0],
+          "yaw": 240,
+          "pitch": -45
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "shot",
+          "name": "night-3000-p45"
+        },
+        {
+          "do": "camera",
+          "position": [0, 15000, 0],
+          "yaw": 240,
+          "pitch": -45
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "shot",
+          "name": "night-15000-p45"
+        },
+        {
+          "do": "camera",
+          "position": [0, 40000, 0],
+          "yaw": 240,
+          "pitch": -50
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "shot",
+          "name": "night-40000-p50"
+        },
+        {
+          "do": "camera",
+          "position": [0, 40000, 0],
+          "yaw": 240,
+          "pitch": -5
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "shot",
+          "name": "night-40000-p5"
+        }
+      ]
+    },
+    {
+      "name": "clouds-far-above-b",
+      "notes": "clouds-far-above on face B (its noon is face A's midnight): the camera 15 and 40 km out along face B's up.",
+      "seed": 7,
+      "face": "b",
+      "window": {
+        "width": 1000,
+        "height": 800
+      },
+      "settings": {
+        "clouds": "high"
+      },
+      "steps": [
+        {
+          "do": "settle",
+          "maxS": 120
+        },
+        {
+          "do": "time",
+          "t": 0.0
+        },
+        {
+          "do": "camera",
+          "position": [0, -15000, 0],
+          "yaw": 240,
+          "pitch": -45
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "shot",
+          "name": "day-15000-p45"
+        },
+        {
+          "do": "camera",
+          "position": [0, -40000, 0],
+          "yaw": 240,
+          "pitch": -50
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "shot",
+          "name": "day-40000-p50"
+        },
+        {
+          "do": "time",
+          "t": 0.5
+        },
+        {
+          "do": "camera",
+          "position": [0, -15000, 0],
+          "yaw": 240,
+          "pitch": -45
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "shot",
+          "name": "night-15000-p45"
+        },
+        {
+          "do": "camera",
+          "position": [0, -40000, 0],
+          "yaw": 240,
+          "pitch": -50
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "shot",
+          "name": "night-40000-p50"
+        }
+      ]
+    },
+    {
       "name": "clouds-through",
       "notes": "Rising through the deck (1.8 km): the camera at 1.3, 1.65, 1.8, 1.95 and 2.3 km looking 10° down: the deck fades out below it, the in-cloud fog where a cloud is, then the deck's top below. No pop between the shots. At the deck's height also at x = 1.5, 3, 4.5 and 6 km, so some shots are inside a cloud (the in-cloud fog).",
       "settings": {

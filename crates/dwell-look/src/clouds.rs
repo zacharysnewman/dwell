@@ -171,10 +171,14 @@ pub fn deck_band(t: &CloudTunables, height: f64, above: f64) -> (f64, f64) {
 
 /// Whether the deck, met `t` metres along a unit ray, is in front of what the scene drew there: the
 /// view ray scaled to view depth 1 is `ray_len` long, so the hit is at view depth `t / ray_len`;
-/// `scene_depth` is the opaque scene's view depth (0: nothing, the sky). The composite's
-/// `dwell_cloud_in_front` is this.
-pub fn cloud_in_front(t: f64, ray_len: f64, scene_depth: f64) -> bool {
-    scene_depth <= 0.0 || t / ray_len < scene_depth
+/// `scene_depth` is the opaque scene's view depth (0: nothing, the sky). `rise` is how far that
+/// ray (at view depth 1) climbs, face-local, and `height` the deck's height above the eye
+/// (negative: above it). Seen from above, the deck is also in front of any scene point below its
+/// altitude: the ray crossed the deck to reach it. The world is flat and the deck a sphere, which
+/// sinks below sea level √(2·r·altitude) out, so its hit alone would put the far sea in front of
+/// it (owner, 2026-10-21). The composite's `dwell_cloud_in_front` is this.
+pub fn cloud_in_front(t: f64, ray_len: f64, scene_depth: f64, rise: f64, height: f64) -> bool {
+    scene_depth <= 0.0 || t / ray_len < scene_depth || (height < 0.0 && rise * scene_depth < height)
 }
 
 /// The deck's height above the eye: the eye's height above sea level on its own face.
@@ -499,9 +503,11 @@ fn dwell_cloud_band(height: f32, above: f32) -> vec2f {
 }
 
 // Whether the deck point `t` along the unit ray is in front of the opaque scene at view depth
-// `depth` (0: the sky); `ray_len` is the length of the view ray scaled to view depth 1.
-fn dwell_cloud_in_front(t: f32, ray_len: f32, depth: f32) -> bool {
-	return depth <= 0.0 || t / ray_len < depth;
+// `depth` (0: the sky); `ray_len` is the length of the view ray scaled to view depth 1, `rise` how
+// far it climbs (face-local), `height` the deck's height above the eye. From above, the deck is
+// in front of anything below its altitude, however far the sphere has sunk (cloud_in_front).
+fn dwell_cloud_in_front(t: f32, ray_len: f32, depth: f32, rise: f32, height: f32) -> bool {
+	return depth <= 0.0 || t / ray_len < depth || (height < 0.0 && rise * depth < height);
 }
 
 // The light the clouds take, from the renderer's frame (so they follow the sky frame and the
@@ -782,18 +788,46 @@ mod tests {
         let len = 1.0 / 20f64.to_radians().cos();
         let depth_of = |t: f64| t / len;
         // The sky (no depth): always.
-        assert!(cloud_in_front(5000.0, len, 0.0));
+        assert!(cloud_in_front(5000.0, len, 0.0, 0.0, 1800.0));
         // A chunk 50 m away in front of a deck 1.2 km below: the chunk shows.
-        assert!(!cloud_in_front(1200.0, len, depth_of(50.0)));
+        assert!(!cloud_in_front(1200.0, len, depth_of(50.0), 0.0, -1200.0));
         // A full-detail chunk at the edge of its range (352 m), and a LOD section 20 km away,
         // with the deck at 5 km: the chunk shows, the far section is under the cloud.
-        assert!(!cloud_in_front(5000.0, len, depth_of(352.0)));
-        assert!(cloud_in_front(5000.0, len, depth_of(20_000.0)));
+        assert!(!cloud_in_front(5000.0, len, depth_of(352.0), 0.0, 5000.0));
+        assert!(cloud_in_front(5000.0, len, depth_of(20_000.0), 0.0, 5000.0));
         // Exactly at the surface the scene wins (strictly nearer to draw over it).
-        assert!(!cloud_in_front(1000.0, len, depth_of(1000.0)));
+        assert!(!cloud_in_front(1000.0, len, depth_of(1000.0), 0.0, 1000.0));
         // The shader's twin is the same expression.
         let src = cloud_wgsl(&CLOUDS);
-        assert!(src.contains("return depth <= 0.0 || t / ray_len < depth;"));
+        assert!(src.contains(
+            "return depth <= 0.0 || t / ray_len < depth || (height < 0.0 && rise * depth < height);"
+        ));
+    }
+
+    #[test]
+    fn from_high_above_the_deck_covers_the_flat_world_out_to_its_edge() {
+        // Owner, 2026-10-21 (iPhone, flying 2 km/s): from tens of km up the clouds showed in a
+        // circle round the player and over the void past the world's edge, but not over the sea
+        // between. The deck is a sphere under the eye; the world is flat. The sphere sinks below
+        // sea level √(2·r·altitude) (38 km) out, so its hit along a ray to the far sea is behind
+        // the sea, and the depth test hid it. The sea is below the deck's altitude: seen from
+        // above, the ray crossed the deck to reach it, so the deck is in front.
+        let (a, r) = (CLOUDS.deck.altitude_m, CLOUDS.deck.curvature_m);
+        let eye = 40_000.0;
+        let height = a - eye;
+        for out in [5_000.0, 30_000.0, 45_000.0, 49_000.0] {
+            let len = (out * out + eye * eye).sqrt();
+            let above = -eye / len;
+            // The ray along the view axis: view depth is the distance.
+            let t = deck_distance(above, height, a, r).unwrap();
+            assert!(
+                cloud_in_front(t, 1.0, len, above, height),
+                "the sea {out} m out from {eye} m up: deck hit {t} m, sea {len} m"
+            );
+        }
+        // A peak above the deck, seen from above, is not under it; nor is the sea seen from below.
+        assert!(!cloud_in_front(9_000.0, 1.0, 5_000.0, -0.1, -1_000.0));
+        assert!(!cloud_in_front(9_000.0, 1.0, 5_000.0, -0.1, 1_000.0));
     }
 
     dwell_world::both_faces!(
