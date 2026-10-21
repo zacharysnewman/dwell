@@ -22,7 +22,7 @@ export const RAMP_STOPS = ['shadow', 'base', 'light'];
 const DIRECTIONS = ['up', 'down', 'left', 'right', 'radial'];
 const EDGES = ['top', 'bottom', 'left', 'right', 'all'];
 
-const MATERIAL_KEYS = ['$comment', 'use', 'ramp', 'overlay', 'wrap', 'alpha', 'emissive', 'like', 'over', 'layers'];
+const MATERIAL_KEYS = ['$comment', 'use', 'ramp', 'overlay', 'wrap', 'alpha', 'emissive', 'hang', 'like', 'over', 'layers'];
 const COMMON_KEYS = ['$comment', 'kind', 'opacity', 'clip'];
 const LAYER_KEYS = {
   fill: ['color'],
@@ -228,6 +228,8 @@ export function validateMaterials(materials, palette, atlasTiles = null) {
     if (m.wrap !== undefined && typeof m.wrap !== 'boolean') fail(`${where}.wrap must be true or false`);
     // `emissive` (docs/LIGHTS.md): how much of its colour it gives off unlit, a flame's glow.
     if (m.emissive !== undefined) checkRange(`materials.json: ${where}.emissive`, m.emissive, 0, 4);
+    // `hang` (PAINTERLY_TEXTURES.md §1): a side tile that hangs from each block's top edge (a skirt).
+    if (m.hang !== undefined && typeof m.hang !== 'boolean') fail(`${where}.hang must be true or false`);
     if (m.alpha !== undefined && !['opaque', 'strokes'].includes(m.alpha)) fail(`${where}.alpha must be "opaque" or "strokes"`);
     if (m.over !== undefined) {
       const chain = [name];
