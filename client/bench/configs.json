@@ -30,6 +30,16 @@
       "params": { "shadows": "off" }
     },
     {
+      "name": "torch-shadows-off",
+      "notes": "Torch shadows Off (docs/LIGHTS.md §4, shared/look/lights.json `shadows`; `?torchshadows=off`): held torches light unshadowed, placed ones by the flood light alone.",
+      "params": { "torchshadows": "off" }
+    },
+    {
+      "name": "torch-shadows-high",
+      "notes": "Torch shadows on High (the desktop default is Low).",
+      "params": { "torchshadows": "high" }
+    },
+    {
       "name": "lod-shadows-off",
       "notes": "The distant terrain's shadows off (docs/DAY_NIGHT.md §12, shared/look/lodshadows.json; `?lodshadows=off`), the cascades on High: the third layer's cost.",
       "params": { "lodshadows": "off" }

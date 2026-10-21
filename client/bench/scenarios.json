@@ -376,27 +376,77 @@
       "name": "water-shore",
       "notes": "The shore in the water's depth views (Phase 26 W3): flies to the water-views coast, then shoots the beach edge at a low angle, straight down into the shallows over sand, the deep-to-shallow gradient from 20 m up, under the surface in the shallows (the floor and its caustics, along it, up toward the surface) and the far water from 1 km.",
       "steps": [
-        { "do": "settle", "maxS": 120 },
-        { "do": "fly", "on": true },
-        { "do": "flySpeed", "level": 12 },
-        { "do": "hold", "code": "Space", "s": 1.0 },
-        { "do": "look", "yaw": 112.5, "pitch": 0 },
-        { "do": "key", "code": "KeyW", "down": true },
-        { "do": "wait", "s": 28.3 },
-        { "do": "key", "code": "KeyW", "down": false },
-        { "do": "wait", "s": 1 },
-        { "do": "flySpeed", "level": 6 },
-        { "do": "hold", "code": "KeyC", "s": 10 },
-        { "do": "settle", "maxS": 120 },
+        {
+          "do": "settle",
+          "maxS": 120
+        },
+        {
+          "do": "fly",
+          "on": true
+        },
+        {
+          "do": "flySpeed",
+          "level": 12
+        },
+        {
+          "do": "hold",
+          "code": "Space",
+          "s": 1.0
+        },
+        {
+          "do": "look",
+          "yaw": 112.5,
+          "pitch": 0
+        },
+        {
+          "do": "key",
+          "code": "KeyW",
+          "down": true
+        },
+        {
+          "do": "wait",
+          "s": 28.3
+        },
+        {
+          "do": "key",
+          "code": "KeyW",
+          "down": false
+        },
+        {
+          "do": "wait",
+          "s": 1
+        },
+        {
+          "do": "flySpeed",
+          "level": 6
+        },
+        {
+          "do": "hold",
+          "code": "KeyC",
+          "s": 10
+        },
+        {
+          "do": "settle",
+          "maxS": 120
+        },
         {
           "do": "camera",
           "position": [18326, 1.5, -7621],
           "yaw": 292.5,
           "pitch": -10
         },
-        { "do": "settle", "maxS": 60 },
-        { "do": "wait", "s": 2 },
-        { "do": "shot", "name": "beach-edge" },
+        {
+          "do": "settle",
+          "maxS": 60
+        },
+        {
+          "do": "wait",
+          "s": 2
+        },
+        {
+          "do": "shot",
+          "name": "beach-edge"
+        },
         {
           "do": "camera",
           "position": [-100, 10, 0],
@@ -404,8 +454,14 @@
           "pitch": -89,
           "aroundPlayer": true
         },
-        { "do": "wait", "s": 2 },
-        { "do": "shot", "name": "shallows-down" },
+        {
+          "do": "wait",
+          "s": 2
+        },
+        {
+          "do": "shot",
+          "name": "shallows-down"
+        },
         {
           "do": "camera",
           "position": [-60, 20, 0],
@@ -413,8 +469,14 @@
           "pitch": -30,
           "aroundPlayer": true
         },
-        { "do": "wait", "s": 2 },
-        { "do": "shot", "name": "deep-to-shallow" },
+        {
+          "do": "wait",
+          "s": 2
+        },
+        {
+          "do": "shot",
+          "name": "deep-to-shallow"
+        },
         {
           "do": "camera",
           "position": [-95, -0.4, 0],
@@ -422,8 +484,14 @@
           "pitch": -50,
           "aroundPlayer": true
         },
-        { "do": "wait", "s": 2 },
-        { "do": "shot", "name": "under-floor" },
+        {
+          "do": "wait",
+          "s": 2
+        },
+        {
+          "do": "shot",
+          "name": "under-floor"
+        },
         {
           "do": "camera",
           "position": [-95, -0.4, 0],
@@ -431,8 +499,14 @@
           "pitch": -8,
           "aroundPlayer": true
         },
-        { "do": "wait", "s": 2 },
-        { "do": "shot", "name": "under-along" },
+        {
+          "do": "wait",
+          "s": 2
+        },
+        {
+          "do": "shot",
+          "name": "under-along"
+        },
         {
           "do": "camera",
           "position": [-95, -0.4, 0],
@@ -440,8 +514,14 @@
           "pitch": 50,
           "aroundPlayer": true
         },
-        { "do": "wait", "s": 2 },
-        { "do": "shot", "name": "under-up" },
+        {
+          "do": "wait",
+          "s": 2
+        },
+        {
+          "do": "shot",
+          "name": "under-up"
+        },
         {
           "do": "camera",
           "position": [0, 1000, 0],
@@ -449,8 +529,14 @@
           "pitch": -25,
           "aroundPlayer": true
         },
-        { "do": "settle", "maxS": 120 },
-        { "do": "shot", "name": "far-1000" }
+        {
+          "do": "settle",
+          "maxS": 120
+        },
+        {
+          "do": "shot",
+          "name": "far-1000"
+        }
       ]
     },
     {
@@ -765,7 +851,7 @@
     },
     {
       "name": "look-horizon",
-      "notes": "From the player's eyes at the spawn, looking along the ground 3\u00b0 below the horizon (heading +X): a grazing view over near and far terrain.",
+      "notes": "From the player's eyes at the spawn, looking along the ground 3° below the horizon (heading +X): a grazing view over near and far terrain.",
       "split": "far",
       "steps": [
         {
@@ -796,7 +882,7 @@
     },
     {
       "name": "look-down",
-      "notes": "From the player's eyes at the spawn, looking 80\u00b0 down at the ground: near terrain only.",
+      "notes": "From the player's eyes at the spawn, looking 80° down at the ground: near terrain only.",
       "split": "near",
       "steps": [
         {
@@ -889,87 +975,297 @@
     {
       "name": "shadows-pines",
       "notes": "Sun shadows in a pine grove (docs/DAY_NIGHT.md §10): mid-morning, rises a little over the spawn and looks across the groves up the hill (recorded: the cost of the maps with many casters), then shoots the pines' shadows on High, Low and Off.",
-      "settings": { "timeOfDay": 0.4 },
+      "settings": {
+        "timeOfDay": 0.4
+      },
       "steps": [
-        { "do": "settle", "maxS": 120 },
-        { "do": "fly", "on": true },
-        { "do": "flySpeed", "level": 3 },
-        { "do": "hold", "code": "Space", "s": 0.5 },
-        { "do": "look", "yaw": 70, "pitch": -15 },
-        { "do": "settle", "maxS": 60 },
-        { "do": "mark" },
-        { "do": "wait", "s": 5 },
-        { "do": "record", "name": "grove" },
-        { "do": "shot", "name": "grove" },
-        { "do": "shadows", "quality": "low" },
-        { "do": "wait", "s": 1 },
-        { "do": "shot", "name": "grove-low" },
-        { "do": "shadows", "quality": "off" },
-        { "do": "wait", "s": 1 },
-        { "do": "shot", "name": "grove-off" }
+        {
+          "do": "settle",
+          "maxS": 120
+        },
+        {
+          "do": "fly",
+          "on": true
+        },
+        {
+          "do": "flySpeed",
+          "level": 3
+        },
+        {
+          "do": "hold",
+          "code": "Space",
+          "s": 0.5
+        },
+        {
+          "do": "look",
+          "yaw": 70,
+          "pitch": -15
+        },
+        {
+          "do": "settle",
+          "maxS": 60
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 5
+        },
+        {
+          "do": "record",
+          "name": "grove"
+        },
+        {
+          "do": "shot",
+          "name": "grove"
+        },
+        {
+          "do": "shadows",
+          "quality": "low"
+        },
+        {
+          "do": "wait",
+          "s": 1
+        },
+        {
+          "do": "shot",
+          "name": "grove-low"
+        },
+        {
+          "do": "shadows",
+          "quality": "off"
+        },
+        {
+          "do": "wait",
+          "s": 1
+        },
+        {
+          "do": "shot",
+          "name": "grove-off"
+        }
       ]
     },
     {
       "name": "shadows-still",
       "notes": "Shadow flicker with a still camera (docs/DAY_NIGHT.md §10): hovers over the spawn looking across the pine groves, then shoots bursts of frames back to back at noon and at dusk (and at noon looking down at the ground under you, the nearest cascade's), with the time of day held and with it running at the world clock's rate (the light moving every frame, as in play), on High, Low and Off. Read each burst's flicker (the share of pixels that change from frame to frame) against the Off burst's (the clouds, water and plants' own motion).",
-      "settings": { "timeOfDay": 0.5 },
+      "settings": {
+        "timeOfDay": 0.5
+      },
       "steps": [
-        { "do": "settle", "maxS": 120 },
-        { "do": "fly", "on": true },
-        { "do": "flySpeed", "level": 3 },
-        { "do": "hold", "code": "Space", "s": 0.25 },
-        { "do": "arms", "on": false },
-        { "do": "look", "yaw": 70, "pitch": -40 },
-        { "do": "settle", "maxS": 60 },
-        { "do": "wait", "s": 2 },
-        { "do": "shot", "name": "noon" },
-        { "do": "burst", "name": "noon-held", "frames": 16 },
-        { "do": "burst", "name": "noon-clock", "frames": 16, "clock": 0.5 },
-        { "do": "shadows", "quality": "low" },
-        { "do": "burst", "name": "noon-clock-low", "frames": 16, "clock": 0.5 },
-        { "do": "shadows", "quality": "off" },
-        { "do": "burst", "name": "noon-clock-off", "frames": 16, "clock": 0.5 },
-        { "do": "shadows", "quality": "high" },
-        { "do": "time", "t": 0.72 },
-        { "do": "wait", "s": 2 },
-        { "do": "shot", "name": "dusk" },
-        { "do": "burst", "name": "dusk-held", "frames": 16 },
-        { "do": "burst", "name": "dusk-clock", "frames": 16, "clock": 0.72 },
-        { "do": "shadows", "quality": "low" },
-        { "do": "burst", "name": "dusk-clock-low", "frames": 16, "clock": 0.72 },
-        { "do": "shadows", "quality": "off" },
-        { "do": "burst", "name": "dusk-clock-off", "frames": 16, "clock": 0.72 },
-        { "do": "shadows", "quality": "high" },
-        { "do": "time", "t": 0.5 },
-        { "do": "look", "yaw": 70, "pitch": -70 },
-        { "do": "wait", "s": 2 },
-        { "do": "shot", "name": "near" },
-        { "do": "burst", "name": "near-clock", "frames": 16, "clock": 0.5 },
-        { "do": "shadows", "quality": "low" },
-        { "do": "burst", "name": "near-clock-low", "frames": 16, "clock": 0.5 },
-        { "do": "shadows", "quality": "off" },
-        { "do": "burst", "name": "near-clock-off", "frames": 16, "clock": 0.5 }
+        {
+          "do": "settle",
+          "maxS": 120
+        },
+        {
+          "do": "fly",
+          "on": true
+        },
+        {
+          "do": "flySpeed",
+          "level": 3
+        },
+        {
+          "do": "hold",
+          "code": "Space",
+          "s": 0.25
+        },
+        {
+          "do": "arms",
+          "on": false
+        },
+        {
+          "do": "look",
+          "yaw": 70,
+          "pitch": -40
+        },
+        {
+          "do": "settle",
+          "maxS": 60
+        },
+        {
+          "do": "wait",
+          "s": 2
+        },
+        {
+          "do": "shot",
+          "name": "noon"
+        },
+        {
+          "do": "burst",
+          "name": "noon-held",
+          "frames": 16
+        },
+        {
+          "do": "burst",
+          "name": "noon-clock",
+          "frames": 16,
+          "clock": 0.5
+        },
+        {
+          "do": "shadows",
+          "quality": "low"
+        },
+        {
+          "do": "burst",
+          "name": "noon-clock-low",
+          "frames": 16,
+          "clock": 0.5
+        },
+        {
+          "do": "shadows",
+          "quality": "off"
+        },
+        {
+          "do": "burst",
+          "name": "noon-clock-off",
+          "frames": 16,
+          "clock": 0.5
+        },
+        {
+          "do": "shadows",
+          "quality": "high"
+        },
+        {
+          "do": "time",
+          "t": 0.72
+        },
+        {
+          "do": "wait",
+          "s": 2
+        },
+        {
+          "do": "shot",
+          "name": "dusk"
+        },
+        {
+          "do": "burst",
+          "name": "dusk-held",
+          "frames": 16
+        },
+        {
+          "do": "burst",
+          "name": "dusk-clock",
+          "frames": 16,
+          "clock": 0.72
+        },
+        {
+          "do": "shadows",
+          "quality": "low"
+        },
+        {
+          "do": "burst",
+          "name": "dusk-clock-low",
+          "frames": 16,
+          "clock": 0.72
+        },
+        {
+          "do": "shadows",
+          "quality": "off"
+        },
+        {
+          "do": "burst",
+          "name": "dusk-clock-off",
+          "frames": 16,
+          "clock": 0.72
+        },
+        {
+          "do": "shadows",
+          "quality": "high"
+        },
+        {
+          "do": "time",
+          "t": 0.5
+        },
+        {
+          "do": "look",
+          "yaw": 70,
+          "pitch": -70
+        },
+        {
+          "do": "wait",
+          "s": 2
+        },
+        {
+          "do": "shot",
+          "name": "near"
+        },
+        {
+          "do": "burst",
+          "name": "near-clock",
+          "frames": 16,
+          "clock": 0.5
+        },
+        {
+          "do": "shadows",
+          "quality": "low"
+        },
+        {
+          "do": "burst",
+          "name": "near-clock-low",
+          "frames": 16,
+          "clock": 0.5
+        },
+        {
+          "do": "shadows",
+          "quality": "off"
+        },
+        {
+          "do": "burst",
+          "name": "near-clock-off",
+          "frames": 16,
+          "clock": 0.5
+        }
       ]
     },
     {
       "name": "climb-fast",
       "notes": "Flies straight up at level 8 (about 176 m/s) for 4 s from the settled spawn, then hovers 3 s: the chunks above arrive over the ones below, and the ones below are dropped in batches (the flood light's relights: 0.22.9 had 1.2-1.6 s long tasks here, 0.22.8 none over 50 ms). Read the long tasks and the frame interval's max.",
       "steps": [
-        { "do": "settle", "maxS": 120 },
-        { "do": "fly", "on": true },
-        { "do": "flySpeed", "level": 8 },
-        { "do": "mark" },
-        { "do": "traceStart" },
-        { "do": "hold", "code": "Space", "s": 4 },
-        { "do": "wait", "s": 3 },
-        { "do": "traceStop", "name": "climb" },
-        { "do": "record", "name": "climb" },
-        { "do": "shot", "name": "climb-end" }
+        {
+          "do": "settle",
+          "maxS": 120
+        },
+        {
+          "do": "fly",
+          "on": true
+        },
+        {
+          "do": "flySpeed",
+          "level": 8
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "traceStart"
+        },
+        {
+          "do": "hold",
+          "code": "Space",
+          "s": 4
+        },
+        {
+          "do": "wait",
+          "s": 3
+        },
+        {
+          "do": "traceStop",
+          "name": "climb"
+        },
+        {
+          "do": "record",
+          "name": "climb"
+        },
+        {
+          "do": "shot",
+          "name": "climb-end"
+        }
       ]
     },
     {
       "name": "fly-high",
-      "notes": "Flies up about 540 m (level 8 for 3 s), looks out and down 20\u00b0 and flies +X for 10 s: far terrain, the LOD's distant levels streaming.",
+      "notes": "Flies up about 540 m (level 8 for 3 s), looks out and down 20° and flies +X for 10 s: far terrain, the LOD's distant levels streaming.",
       "split": "far",
       "steps": [
         {
@@ -1895,7 +2191,7 @@
     },
     {
       "name": "clouds-high",
-      "notes": "The sky's clouds on High (docs/CLOUDS.md): shots looking up, at the horizon and toward the sun, then 5 s recorded looking 25\u00b0 up (mostly sky). Run with --unthrottled to compare gpu.composite between clouds-high, clouds-low and clouds-off.",
+      "notes": "The sky's clouds on High (docs/CLOUDS.md): shots looking up, at the horizon and toward the sun, then 5 s recorded looking 25° up (mostly sky). Run with --unthrottled to compare gpu.composite between clouds-high, clouds-low and clouds-off.",
       "settings": {
         "clouds": "high"
       },
@@ -2126,7 +2422,7 @@
     },
     {
       "name": "clouds-dusk",
-      "notes": "The clouds with a low sun (golden hour, the sun about 5\u00b0 up toward yaw \u2212152), toward it and away.",
+      "notes": "The clouds with a low sun (golden hour, the sun about 5° up toward yaw −152), toward it and away.",
       "settings": {
         "clouds": "high",
         "timeOfDay": 0.82
@@ -2307,7 +2603,7 @@
     },
     {
       "name": "day-night-face-b",
-      "notes": "The day/night cycle on face B (DAY_NIGHT.md \u00a73): a camera 50 m over face B's ground at the origin (y = −452: seed 7's face B stands 402 m high there; the old −4,150, from before Phase 16's midplane at 0, put the camera inside the rock, the \"stray dark slabs\", BIFACIAL_WORLD.md §11); face A's noon is face B's midnight (the moon overhead), face A's sunset is face B's sunrise.",
+      "notes": "The day/night cycle on face B (DAY_NIGHT.md §3): a camera 50 m over face B's ground at the origin (y = −452: seed 7's face B stands 402 m high there; the old −4,150, from before Phase 16's midplane at 0, put the camera inside the rock, the \"stray dark slabs\", BIFACIAL_WORLD.md §11); face A's noon is face B's midnight (the moon overhead), face A's sunset is face B's sunrise.",
       "steps": [
         {
           "do": "settle",
@@ -2390,485 +2686,1958 @@
     {
       "name": "clouds-above",
       "notes": "The cloud deck (1.8 km up) seen from above (CLOUDS.md §7): the camera 3.5 km up looking down at 40°, then 15 km up (a cloud sea to the deck's horizon), then 5 s recorded 3.5 km up looking down (the deck over the terrain: compare gpu.composite with clouds-off).",
-      "settings": { "clouds": "high" },
+      "settings": {
+        "clouds": "high"
+      },
       "steps": [
-        { "do": "settle", "maxS": 120 },
-        { "do": "camera", "position": [0, 3500, 0], "yaw": 240, "pitch": -40 },
-        { "do": "wait", "s": 3 },
-        { "do": "shot", "name": "above-3500" },
-        { "do": "camera", "position": [0, 15000, 0], "yaw": 240, "pitch": -30 },
-        { "do": "wait", "s": 3 },
-        { "do": "shot", "name": "above-15000" },
-        { "do": "camera", "position": [0, 3500, 0], "yaw": 240, "pitch": -40 },
-        { "do": "wait", "s": 2 },
-        { "do": "settle", "maxS": 60 },
-        { "do": "mark" },
-        { "do": "wait", "s": 5 },
-        { "do": "record", "name": "above" }
+        {
+          "do": "settle",
+          "maxS": 120
+        },
+        {
+          "do": "camera",
+          "position": [0, 3500, 0],
+          "yaw": 240,
+          "pitch": -40
+        },
+        {
+          "do": "wait",
+          "s": 3
+        },
+        {
+          "do": "shot",
+          "name": "above-3500"
+        },
+        {
+          "do": "camera",
+          "position": [0, 15000, 0],
+          "yaw": 240,
+          "pitch": -30
+        },
+        {
+          "do": "wait",
+          "s": 3
+        },
+        {
+          "do": "shot",
+          "name": "above-15000"
+        },
+        {
+          "do": "camera",
+          "position": [0, 3500, 0],
+          "yaw": 240,
+          "pitch": -40
+        },
+        {
+          "do": "wait",
+          "s": 2
+        },
+        {
+          "do": "settle",
+          "maxS": 60
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 5
+        },
+        {
+          "do": "record",
+          "name": "above"
+        }
       ]
     },
     {
       "name": "clouds-above-off",
       "notes": "clouds-above's recorded view with the clouds off: the baseline for the deck's cost from above.",
-      "settings": { "clouds": "off" },
+      "settings": {
+        "clouds": "off"
+      },
       "steps": [
-        { "do": "settle", "maxS": 120 },
-        { "do": "camera", "position": [0, 3500, 0], "yaw": 240, "pitch": -40 },
-        { "do": "wait", "s": 3 },
-        { "do": "settle", "maxS": 60 },
-        { "do": "mark" },
-        { "do": "wait", "s": 5 },
-        { "do": "record", "name": "above" },
-        { "do": "shot", "name": "above-off" }
+        {
+          "do": "settle",
+          "maxS": 120
+        },
+        {
+          "do": "camera",
+          "position": [0, 3500, 0],
+          "yaw": 240,
+          "pitch": -40
+        },
+        {
+          "do": "wait",
+          "s": 3
+        },
+        {
+          "do": "settle",
+          "maxS": 60
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 5
+        },
+        {
+          "do": "record",
+          "name": "above"
+        },
+        {
+          "do": "shot",
+          "name": "above-off"
+        }
       ]
     },
     {
       "name": "clouds-through",
       "notes": "Rising through the deck (1.8 km): the camera at 1.3, 1.65, 1.8, 1.95 and 2.3 km looking 10° down: the deck fades out below it, the in-cloud fog where a cloud is, then the deck's top below. No pop between the shots. At the deck's height also at x = 1.5, 3, 4.5 and 6 km, so some shots are inside a cloud (the in-cloud fog).",
-      "settings": { "clouds": "high" },
+      "settings": {
+        "clouds": "high"
+      },
       "steps": [
-        { "do": "settle", "maxS": 120 },
-        { "do": "camera", "position": [0, 1300, 0], "yaw": 240, "pitch": -10 },
-        { "do": "wait", "s": 1.5 },
-        { "do": "shot", "name": "y1300" },
-        { "do": "camera", "position": [0, 1650, 0], "yaw": 240, "pitch": -10 },
-        { "do": "wait", "s": 1.5 },
-        { "do": "shot", "name": "y1650" },
-        { "do": "camera", "position": [0, 1800, 0], "yaw": 240, "pitch": -10 },
-        { "do": "wait", "s": 1.5 },
-        { "do": "shot", "name": "y1800" },
-        { "do": "camera", "position": [1500, 1800, 0], "yaw": 240, "pitch": -10 },
-        { "do": "wait", "s": 1.5 },
-        { "do": "shot", "name": "y1800-x1500" },
-        { "do": "camera", "position": [3000, 1800, 0], "yaw": 240, "pitch": -10 },
-        { "do": "wait", "s": 1.5 },
-        { "do": "shot", "name": "y1800-x3000" },
-        { "do": "camera", "position": [4500, 1800, 0], "yaw": 240, "pitch": -10 },
-        { "do": "wait", "s": 1.5 },
-        { "do": "shot", "name": "y1800-x4500" },
-        { "do": "camera", "position": [6000, 1800, 0], "yaw": 240, "pitch": -10 },
-        { "do": "wait", "s": 1.5 },
-        { "do": "shot", "name": "y1800-x6000" },
-        { "do": "camera", "position": [0, 1950, 0], "yaw": 240, "pitch": -10 },
-        { "do": "wait", "s": 1.5 },
-        { "do": "shot", "name": "y1950" },
-        { "do": "camera", "position": [0, 2300, 0], "yaw": 240, "pitch": -10 },
-        { "do": "wait", "s": 1.5 },
-        { "do": "shot", "name": "y2300" }
+        {
+          "do": "settle",
+          "maxS": 120
+        },
+        {
+          "do": "camera",
+          "position": [0, 1300, 0],
+          "yaw": 240,
+          "pitch": -10
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "shot",
+          "name": "y1300"
+        },
+        {
+          "do": "camera",
+          "position": [0, 1650, 0],
+          "yaw": 240,
+          "pitch": -10
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "shot",
+          "name": "y1650"
+        },
+        {
+          "do": "camera",
+          "position": [0, 1800, 0],
+          "yaw": 240,
+          "pitch": -10
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "shot",
+          "name": "y1800"
+        },
+        {
+          "do": "camera",
+          "position": [1500, 1800, 0],
+          "yaw": 240,
+          "pitch": -10
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "shot",
+          "name": "y1800-x1500"
+        },
+        {
+          "do": "camera",
+          "position": [3000, 1800, 0],
+          "yaw": 240,
+          "pitch": -10
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "shot",
+          "name": "y1800-x3000"
+        },
+        {
+          "do": "camera",
+          "position": [4500, 1800, 0],
+          "yaw": 240,
+          "pitch": -10
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "shot",
+          "name": "y1800-x4500"
+        },
+        {
+          "do": "camera",
+          "position": [6000, 1800, 0],
+          "yaw": 240,
+          "pitch": -10
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "shot",
+          "name": "y1800-x6000"
+        },
+        {
+          "do": "camera",
+          "position": [0, 1950, 0],
+          "yaw": 240,
+          "pitch": -10
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "shot",
+          "name": "y1950"
+        },
+        {
+          "do": "camera",
+          "position": [0, 2300, 0],
+          "yaw": 240,
+          "pitch": -10
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "shot",
+          "name": "y2300"
+        }
       ]
     },
     {
       "name": "clouds-level",
       "notes": "At the deck's height (1.8 km) looking at the horizon, and 100 m above and below it.",
-      "settings": { "clouds": "high" },
+      "settings": {
+        "clouds": "high"
+      },
       "steps": [
-        { "do": "settle", "maxS": 120 },
-        { "do": "camera", "position": [0, 1800, 0], "yaw": 240, "pitch": 0 },
-        { "do": "wait", "s": 1.5 },
-        { "do": "shot", "name": "level" },
-        { "do": "camera", "position": [0, 1700, 0], "yaw": 240, "pitch": 0 },
-        { "do": "wait", "s": 1.5 },
-        { "do": "shot", "name": "below-100" },
-        { "do": "camera", "position": [0, 1900, 0], "yaw": 240, "pitch": 0 },
-        { "do": "wait", "s": 1.5 },
-        { "do": "shot", "name": "above-100" }
+        {
+          "do": "settle",
+          "maxS": 120
+        },
+        {
+          "do": "camera",
+          "position": [0, 1800, 0],
+          "yaw": 240,
+          "pitch": 0
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "shot",
+          "name": "level"
+        },
+        {
+          "do": "camera",
+          "position": [0, 1700, 0],
+          "yaw": 240,
+          "pitch": 0
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "shot",
+          "name": "below-100"
+        },
+        {
+          "do": "camera",
+          "position": [0, 1900, 0],
+          "yaw": 240,
+          "pitch": 0
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "shot",
+          "name": "above-100"
+        }
       ]
     },
     {
       "name": "clouds-above-night",
       "notes": "The deck from above by moonlight (midnight), 3.5 km up looking down at 30°.",
-      "settings": { "clouds": "high", "timeOfDay": 0.0 },
+      "settings": {
+        "clouds": "high",
+        "timeOfDay": 0.0
+      },
       "steps": [
-        { "do": "settle", "maxS": 120 },
-        { "do": "camera", "position": [0, 3500, 0], "yaw": 240, "pitch": -30 },
-        { "do": "wait", "s": 3 },
-        { "do": "shot", "name": "above-night" }
+        {
+          "do": "settle",
+          "maxS": 120
+        },
+        {
+          "do": "camera",
+          "position": [0, 3500, 0],
+          "yaw": 240,
+          "pitch": -30
+        },
+        {
+          "do": "wait",
+          "s": 3
+        },
+        {
+          "do": "shot",
+          "name": "above-night"
+        }
       ]
     },
     {
       "name": "clouds-above-fast",
       "notes": "The deck from above at speed (owner's report, 2026-10-20: the clouds showed only inside a circle). Climbs at level 10 (at least 352 m/s) above the deck (1.8 km), then flies fast with Run looking 40° and 80° down: the wind's edge blur over the deck where it is in front of the terrain. The clouds must reach the view's edges, as they do flying slowly.",
-      "settings": { "clouds": "high" },
+      "settings": {
+        "clouds": "high"
+      },
       "steps": [
-        { "do": "settle", "maxS": 120 },
-        { "do": "fly", "on": true },
-        { "do": "flySpeed", "level": 10 },
-        { "do": "look", "yaw": 90, "pitch": 0 },
-        { "do": "hold", "code": "Space", "s": 7 },
-        { "do": "look", "yaw": 90, "pitch": -40 },
-        { "do": "wait", "s": 0.5 },
-        { "do": "key", "code": "ShiftLeft", "down": true },
-        { "do": "key", "code": "KeyW", "down": true },
-        { "do": "wait", "s": 1.5 },
-        { "do": "shot", "name": "fast" },
-        { "do": "look", "yaw": 90, "pitch": -80 },
-        { "do": "wait", "s": 0.3 },
-        { "do": "shot", "name": "fast-down" },
-        { "do": "key", "code": "KeyW", "down": false },
-        { "do": "key", "code": "ShiftLeft", "down": false }
+        {
+          "do": "settle",
+          "maxS": 120
+        },
+        {
+          "do": "fly",
+          "on": true
+        },
+        {
+          "do": "flySpeed",
+          "level": 10
+        },
+        {
+          "do": "look",
+          "yaw": 90,
+          "pitch": 0
+        },
+        {
+          "do": "hold",
+          "code": "Space",
+          "s": 7
+        },
+        {
+          "do": "look",
+          "yaw": 90,
+          "pitch": -40
+        },
+        {
+          "do": "wait",
+          "s": 0.5
+        },
+        {
+          "do": "key",
+          "code": "ShiftLeft",
+          "down": true
+        },
+        {
+          "do": "key",
+          "code": "KeyW",
+          "down": true
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "shot",
+          "name": "fast"
+        },
+        {
+          "do": "look",
+          "yaw": 90,
+          "pitch": -80
+        },
+        {
+          "do": "wait",
+          "s": 0.3
+        },
+        {
+          "do": "shot",
+          "name": "fast-down"
+        },
+        {
+          "do": "key",
+          "code": "KeyW",
+          "down": false
+        },
+        {
+          "do": "key",
+          "code": "ShiftLeft",
+          "down": false
+        }
       ]
     },
     {
       "name": "walk-over-a-placed-block",
       "notes": "Places a block in front of the spawn and walks over it without jumping (Phase 18, ADAPTIVE_BLOCKS.md): natural ground shapes itself, so the placed block is a half pyramid (45° faces: a slide, owner 2026-10-15) and the ground under and around it ramps up at 27° — the controller trace shows what the player does on it (no jump, no launch).",
       "steps": [
-        { "do": "settle", "maxS": 120 },
-        { "do": "select", "slot": 0 },
-        { "do": "look", "yaw": 90, "pitch": -50 },
-        { "do": "wait", "s": 0.3 },
-        { "do": "edit", "action": "place" },
-        { "do": "wait", "s": 0.5 },
-        { "do": "shot", "name": "placed" },
-        { "do": "look", "yaw": 90, "pitch": 0 },
-        { "do": "mark" },
-        { "do": "key", "code": "KeyW", "down": true },
-        { "do": "wait", "s": 2 },
-        { "do": "key", "code": "KeyW", "down": false },
-        { "do": "wait", "s": 0.5 },
-        { "do": "record", "name": "walk" }
+        {
+          "do": "settle",
+          "maxS": 120
+        },
+        {
+          "do": "select",
+          "slot": 0
+        },
+        {
+          "do": "look",
+          "yaw": 90,
+          "pitch": -50
+        },
+        {
+          "do": "wait",
+          "s": 0.3
+        },
+        {
+          "do": "edit",
+          "action": "place"
+        },
+        {
+          "do": "wait",
+          "s": 0.5
+        },
+        {
+          "do": "shot",
+          "name": "placed"
+        },
+        {
+          "do": "look",
+          "yaw": 90,
+          "pitch": 0
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "key",
+          "code": "KeyW",
+          "down": true
+        },
+        {
+          "do": "wait",
+          "s": 2
+        },
+        {
+          "do": "key",
+          "code": "KeyW",
+          "down": false
+        },
+        {
+          "do": "wait",
+          "s": 0.5
+        },
+        {
+          "do": "record",
+          "name": "walk"
+        }
       ]
     },
     {
       "name": "slide-off-a-steep-block",
       "notes": "Slides on 45° ground (PLAYER_CONTROLLER.md §6.8, owner 2026-10-15): places a block in front of the spawn (natural ground shapes it into a half pyramid with 45° faces), walks up the 27° ground around it into its 45° face (walking up it fails: the player slides back, braking), steers right along the face mid-slide with forward still held, then lets go and slides off. The controller trace (records.slide.ticks) shows the Sliding state, the speeds and the steer; the sounds (window.__dwell.sounds) the slide's loop and stop.",
       "steps": [
-        { "do": "settle", "maxS": 120 },
-        { "do": "select", "slot": 0 },
-        { "do": "look", "yaw": 90, "pitch": -50 },
-        { "do": "wait", "s": 0.3 },
-        { "do": "edit", "action": "place" },
-        { "do": "wait", "s": 0.5 },
-        { "do": "shot", "name": "placed" },
-        { "do": "look", "yaw": 90, "pitch": -10 },
-        { "do": "mark" },
-        { "do": "key", "code": "KeyW", "down": true },
-        { "do": "wait", "s": 0.8 },
-        { "do": "shot", "name": "on-the-slope" },
-        { "do": "key", "code": "KeyD", "down": true },
-        { "do": "wait", "s": 0.4 },
-        { "do": "key", "code": "KeyD", "down": false },
-        { "do": "key", "code": "KeyW", "down": false },
-        { "do": "wait", "s": 1.0 },
-        { "do": "record", "name": "slide" },
-        { "do": "shot", "name": "after" }
+        {
+          "do": "settle",
+          "maxS": 120
+        },
+        {
+          "do": "select",
+          "slot": 0
+        },
+        {
+          "do": "look",
+          "yaw": 90,
+          "pitch": -50
+        },
+        {
+          "do": "wait",
+          "s": 0.3
+        },
+        {
+          "do": "edit",
+          "action": "place"
+        },
+        {
+          "do": "wait",
+          "s": 0.5
+        },
+        {
+          "do": "shot",
+          "name": "placed"
+        },
+        {
+          "do": "look",
+          "yaw": 90,
+          "pitch": -10
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "key",
+          "code": "KeyW",
+          "down": true
+        },
+        {
+          "do": "wait",
+          "s": 0.8
+        },
+        {
+          "do": "shot",
+          "name": "on-the-slope"
+        },
+        {
+          "do": "key",
+          "code": "KeyD",
+          "down": true
+        },
+        {
+          "do": "wait",
+          "s": 0.4
+        },
+        {
+          "do": "key",
+          "code": "KeyD",
+          "down": false
+        },
+        {
+          "do": "key",
+          "code": "KeyW",
+          "down": false
+        },
+        {
+          "do": "wait",
+          "s": 1.0
+        },
+        {
+          "do": "record",
+          "name": "slide"
+        },
+        {
+          "do": "shot",
+          "name": "after"
+        }
       ]
     },
     {
       "name": "sprint-slide",
       "notes": "The sprint slide (PLAYER_CONTROLLER.md §6.9, owner 2026-10-19): sprints (Shift+W), presses crouch (C) to slide on in the crouch capsule, steers right (D) mid-slide, jumps out (Space) keeping the momentum; then, crouch let go, sprints and slides again after the cooldown and rides it out to the crouch speed. Screenshots through the slide (the lower eye, the FOV widening); the controller trace (records.slide.ticks) shows the Sliding state, the crouch flag, the speed falling with friction and the jump; the sounds the crouch and the slide's scrape.",
       "steps": [
-        { "do": "settle", "maxS": 120 },
-        { "do": "look", "yaw": 90, "pitch": -8 },
-        { "do": "wait", "s": 0.3 },
-        { "do": "shot", "name": "0-standing" },
-        { "do": "mark" },
-        { "do": "key", "code": "ShiftLeft", "down": true },
-        { "do": "key", "code": "KeyW", "down": true },
-        { "do": "wait", "s": 1.0 },
-        { "do": "shot", "name": "1-sprinting" },
-        { "do": "key", "code": "KeyC", "down": true },
-        { "do": "wait", "s": 0.1 },
-        { "do": "shot", "name": "2-slide-start" },
-        { "do": "key", "code": "Space", "down": true },
-        { "do": "wait", "s": 0.05 },
-        { "do": "key", "code": "Space", "down": false },
-        { "do": "shot", "name": "3-jump-out" },
-        { "do": "wait", "s": 0.8 },
-        { "do": "key", "code": "KeyC", "down": false },
-        { "do": "wait", "s": 1.0 },
-        { "do": "shot", "name": "4-sprinting-again" },
-        { "do": "key", "code": "KeyC", "down": true },
-        { "do": "wait", "s": 0.1 },
-        { "do": "shot", "name": "5-second-slide" },
-        { "do": "key", "code": "KeyD", "down": true },
-        { "do": "wait", "s": 0.4 },
-        { "do": "key", "code": "KeyD", "down": false },
-        { "do": "shot", "name": "6-slide-steered" },
-        { "do": "wait", "s": 1.2 },
-        { "do": "shot", "name": "7-slide-over" },
-        { "do": "key", "code": "KeyC", "down": false },
-        { "do": "key", "code": "KeyW", "down": false },
-        { "do": "key", "code": "ShiftLeft", "down": false },
-        { "do": "wait", "s": 0.3 },
-        { "do": "record", "name": "slide" }
+        {
+          "do": "settle",
+          "maxS": 120
+        },
+        {
+          "do": "look",
+          "yaw": 90,
+          "pitch": -8
+        },
+        {
+          "do": "wait",
+          "s": 0.3
+        },
+        {
+          "do": "shot",
+          "name": "0-standing"
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "key",
+          "code": "ShiftLeft",
+          "down": true
+        },
+        {
+          "do": "key",
+          "code": "KeyW",
+          "down": true
+        },
+        {
+          "do": "wait",
+          "s": 1.0
+        },
+        {
+          "do": "shot",
+          "name": "1-sprinting"
+        },
+        {
+          "do": "key",
+          "code": "KeyC",
+          "down": true
+        },
+        {
+          "do": "wait",
+          "s": 0.1
+        },
+        {
+          "do": "shot",
+          "name": "2-slide-start"
+        },
+        {
+          "do": "key",
+          "code": "Space",
+          "down": true
+        },
+        {
+          "do": "wait",
+          "s": 0.05
+        },
+        {
+          "do": "key",
+          "code": "Space",
+          "down": false
+        },
+        {
+          "do": "shot",
+          "name": "3-jump-out"
+        },
+        {
+          "do": "wait",
+          "s": 0.8
+        },
+        {
+          "do": "key",
+          "code": "KeyC",
+          "down": false
+        },
+        {
+          "do": "wait",
+          "s": 1.0
+        },
+        {
+          "do": "shot",
+          "name": "4-sprinting-again"
+        },
+        {
+          "do": "key",
+          "code": "KeyC",
+          "down": true
+        },
+        {
+          "do": "wait",
+          "s": 0.1
+        },
+        {
+          "do": "shot",
+          "name": "5-second-slide"
+        },
+        {
+          "do": "key",
+          "code": "KeyD",
+          "down": true
+        },
+        {
+          "do": "wait",
+          "s": 0.4
+        },
+        {
+          "do": "key",
+          "code": "KeyD",
+          "down": false
+        },
+        {
+          "do": "shot",
+          "name": "6-slide-steered"
+        },
+        {
+          "do": "wait",
+          "s": 1.2
+        },
+        {
+          "do": "shot",
+          "name": "7-slide-over"
+        },
+        {
+          "do": "key",
+          "code": "KeyC",
+          "down": false
+        },
+        {
+          "do": "key",
+          "code": "KeyW",
+          "down": false
+        },
+        {
+          "do": "key",
+          "code": "ShiftLeft",
+          "down": false
+        },
+        {
+          "do": "wait",
+          "s": 0.3
+        },
+        {
+          "do": "record",
+          "name": "slide"
+        }
       ]
     },
     {
       "name": "slopes-near-far",
       "notes": "Natural slopes from the player's eyes, looking down at the ground nearby and out to the horizon (Phase 18): screenshots of the adaptive shapes near (chunks) and far (the LOD's sloped tops), and the steady frame there.",
       "steps": [
-        { "do": "settle", "maxS": 120 },
-        { "do": "look", "yaw": 0, "pitch": -35 },
-        { "do": "wait", "s": 0.5 },
-        { "do": "shot", "name": "near-north" },
-        { "do": "look", "yaw": 135, "pitch": -25 },
-        { "do": "wait", "s": 0.5 },
-        { "do": "shot", "name": "near-southeast" },
-        { "do": "look", "yaw": 90, "pitch": -4 },
-        { "do": "wait", "s": 0.5 },
-        { "do": "mark" },
-        { "do": "wait", "s": 4 },
-        { "do": "record", "name": "steady" },
-        { "do": "shot", "name": "far-east" }
+        {
+          "do": "settle",
+          "maxS": 120
+        },
+        {
+          "do": "look",
+          "yaw": 0,
+          "pitch": -35
+        },
+        {
+          "do": "wait",
+          "s": 0.5
+        },
+        {
+          "do": "shot",
+          "name": "near-north"
+        },
+        {
+          "do": "look",
+          "yaw": 135,
+          "pitch": -25
+        },
+        {
+          "do": "wait",
+          "s": 0.5
+        },
+        {
+          "do": "shot",
+          "name": "near-southeast"
+        },
+        {
+          "do": "look",
+          "yaw": 90,
+          "pitch": -4
+        },
+        {
+          "do": "wait",
+          "s": 0.5
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "record",
+          "name": "steady"
+        },
+        {
+          "do": "shot",
+          "name": "far-east"
+        }
       ]
     },
     {
       "name": "spyglass-far",
-      "notes": "The spyglass (docs/SPYGLASS.md): flies about 180 m up over the seed-7 spawn and looks out over the distant terrain 6\u00b0 down (heading +X), then shoots it unzoomed, zoomed to each step once the LOD has refined inside the narrow view, and unzoomed again.",
+      "notes": "The spyglass (docs/SPYGLASS.md): flies about 180 m up over the seed-7 spawn and looks out over the distant terrain 6° down (heading +X), then shoots it unzoomed, zoomed to each step once the LOD has refined inside the narrow view, and unzoomed again.",
       "split": "far",
       "steps": [
-        { "do": "settle", "maxS": 120 },
-        { "do": "fly", "on": true },
-        { "do": "flySpeed", "level": 8 },
-        { "do": "hold", "code": "Space", "s": 1 },
-        { "do": "look", "yaw": 90, "pitch": -6 },
-        { "do": "settle", "maxS": 120 },
-        { "do": "shot", "name": "unzoomed" },
-        { "do": "spyglass", "on": true, "step": 0 },
-        { "do": "wait", "s": 0.5 },
-        { "do": "settle", "maxS": 120 },
-        { "do": "mark" },
-        { "do": "wait", "s": 2 },
-        { "do": "record", "name": "zoomed" },
-        { "do": "shot", "name": "zoomed-1" },
-        { "do": "spyglass", "on": true, "step": 1 },
-        { "do": "wait", "s": 0.5 },
-        { "do": "settle", "maxS": 120 },
-        { "do": "shot", "name": "zoomed-2" },
-        { "do": "spyglass", "on": false },
-        { "do": "wait", "s": 1 },
-        { "do": "shot", "name": "unzoomed-again" }
+        {
+          "do": "settle",
+          "maxS": 120
+        },
+        {
+          "do": "fly",
+          "on": true
+        },
+        {
+          "do": "flySpeed",
+          "level": 8
+        },
+        {
+          "do": "hold",
+          "code": "Space",
+          "s": 1
+        },
+        {
+          "do": "look",
+          "yaw": 90,
+          "pitch": -6
+        },
+        {
+          "do": "settle",
+          "maxS": 120
+        },
+        {
+          "do": "shot",
+          "name": "unzoomed"
+        },
+        {
+          "do": "spyglass",
+          "on": true,
+          "step": 0
+        },
+        {
+          "do": "wait",
+          "s": 0.5
+        },
+        {
+          "do": "settle",
+          "maxS": 120
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 2
+        },
+        {
+          "do": "record",
+          "name": "zoomed"
+        },
+        {
+          "do": "shot",
+          "name": "zoomed-1"
+        },
+        {
+          "do": "spyglass",
+          "on": true,
+          "step": 1
+        },
+        {
+          "do": "wait",
+          "s": 0.5
+        },
+        {
+          "do": "settle",
+          "maxS": 120
+        },
+        {
+          "do": "shot",
+          "name": "zoomed-2"
+        },
+        {
+          "do": "spyglass",
+          "on": false
+        },
+        {
+          "do": "wait",
+          "s": 1
+        },
+        {
+          "do": "shot",
+          "name": "unzoomed-again"
+        }
       ]
     },
     {
       "name": "step-up-angles",
-      "notes": "The step-up from many angles (PLAYER_CONTROLLER.md \u00a74) on the generated ground: walks, then runs, out and back at 24 headings (every 15\u00b0) from the spawn, 1.2 s each way. The controller traces (records 'walk' and 'run') show each step-up (a grounded feet rise) and any hang-up (forward input held, grounded, the speed near zero).",
+      "notes": "The step-up from many angles (PLAYER_CONTROLLER.md §4) on the generated ground: walks, then runs, out and back at 24 headings (every 15°) from the spawn, 1.2 s each way. The controller traces (records 'walk' and 'run') show each step-up (a grounded feet rise) and any hang-up (forward input held, grounded, the speed near zero).",
       "steps": [
-        { "do": "settle", "maxS": 120 },
-        { "do": "look", "yaw": 0, "pitch": -10 },
-        { "do": "shot", "name": "start" },
-        { "do": "mark" },
-        { "do": "look", "yaw": 0, "pitch": -10 },
-        { "do": "hold", "code": "KeyW", "s": 1.2 },
-        { "do": "hold", "code": "KeyS", "s": 1.2 },
-        { "do": "look", "yaw": 15, "pitch": -10 },
-        { "do": "hold", "code": "KeyW", "s": 1.2 },
-        { "do": "hold", "code": "KeyS", "s": 1.2 },
-        { "do": "look", "yaw": 30, "pitch": -10 },
-        { "do": "hold", "code": "KeyW", "s": 1.2 },
-        { "do": "hold", "code": "KeyS", "s": 1.2 },
-        { "do": "look", "yaw": 45, "pitch": -10 },
-        { "do": "hold", "code": "KeyW", "s": 1.2 },
-        { "do": "hold", "code": "KeyS", "s": 1.2 },
-        { "do": "look", "yaw": 60, "pitch": -10 },
-        { "do": "hold", "code": "KeyW", "s": 1.2 },
-        { "do": "hold", "code": "KeyS", "s": 1.2 },
-        { "do": "look", "yaw": 75, "pitch": -10 },
-        { "do": "hold", "code": "KeyW", "s": 1.2 },
-        { "do": "hold", "code": "KeyS", "s": 1.2 },
-        { "do": "look", "yaw": 90, "pitch": -10 },
-        { "do": "hold", "code": "KeyW", "s": 1.2 },
-        { "do": "hold", "code": "KeyS", "s": 1.2 },
-        { "do": "look", "yaw": 105, "pitch": -10 },
-        { "do": "hold", "code": "KeyW", "s": 1.2 },
-        { "do": "hold", "code": "KeyS", "s": 1.2 },
-        { "do": "look", "yaw": 120, "pitch": -10 },
-        { "do": "hold", "code": "KeyW", "s": 1.2 },
-        { "do": "hold", "code": "KeyS", "s": 1.2 },
-        { "do": "look", "yaw": 135, "pitch": -10 },
-        { "do": "hold", "code": "KeyW", "s": 1.2 },
-        { "do": "hold", "code": "KeyS", "s": 1.2 },
-        { "do": "look", "yaw": 150, "pitch": -10 },
-        { "do": "hold", "code": "KeyW", "s": 1.2 },
-        { "do": "hold", "code": "KeyS", "s": 1.2 },
-        { "do": "look", "yaw": 165, "pitch": -10 },
-        { "do": "hold", "code": "KeyW", "s": 1.2 },
-        { "do": "hold", "code": "KeyS", "s": 1.2 },
-        { "do": "look", "yaw": 180, "pitch": -10 },
-        { "do": "hold", "code": "KeyW", "s": 1.2 },
-        { "do": "hold", "code": "KeyS", "s": 1.2 },
-        { "do": "look", "yaw": 195, "pitch": -10 },
-        { "do": "hold", "code": "KeyW", "s": 1.2 },
-        { "do": "hold", "code": "KeyS", "s": 1.2 },
-        { "do": "look", "yaw": 210, "pitch": -10 },
-        { "do": "hold", "code": "KeyW", "s": 1.2 },
-        { "do": "hold", "code": "KeyS", "s": 1.2 },
-        { "do": "look", "yaw": 225, "pitch": -10 },
-        { "do": "hold", "code": "KeyW", "s": 1.2 },
-        { "do": "hold", "code": "KeyS", "s": 1.2 },
-        { "do": "look", "yaw": 240, "pitch": -10 },
-        { "do": "hold", "code": "KeyW", "s": 1.2 },
-        { "do": "hold", "code": "KeyS", "s": 1.2 },
-        { "do": "look", "yaw": 255, "pitch": -10 },
-        { "do": "hold", "code": "KeyW", "s": 1.2 },
-        { "do": "hold", "code": "KeyS", "s": 1.2 },
-        { "do": "look", "yaw": 270, "pitch": -10 },
-        { "do": "hold", "code": "KeyW", "s": 1.2 },
-        { "do": "hold", "code": "KeyS", "s": 1.2 },
-        { "do": "look", "yaw": 285, "pitch": -10 },
-        { "do": "hold", "code": "KeyW", "s": 1.2 },
-        { "do": "hold", "code": "KeyS", "s": 1.2 },
-        { "do": "look", "yaw": 300, "pitch": -10 },
-        { "do": "hold", "code": "KeyW", "s": 1.2 },
-        { "do": "hold", "code": "KeyS", "s": 1.2 },
-        { "do": "look", "yaw": 315, "pitch": -10 },
-        { "do": "hold", "code": "KeyW", "s": 1.2 },
-        { "do": "hold", "code": "KeyS", "s": 1.2 },
-        { "do": "look", "yaw": 330, "pitch": -10 },
-        { "do": "hold", "code": "KeyW", "s": 1.2 },
-        { "do": "hold", "code": "KeyS", "s": 1.2 },
-        { "do": "look", "yaw": 345, "pitch": -10 },
-        { "do": "hold", "code": "KeyW", "s": 1.2 },
-        { "do": "hold", "code": "KeyS", "s": 1.2 },
-        { "do": "record", "name": "walk" },
-        { "do": "mark" },
-        { "do": "look", "yaw": 0, "pitch": -10 },
-        { "do": "key", "code": "ShiftLeft", "down": true },
-        { "do": "hold", "code": "KeyW", "s": 1.2 },
-        { "do": "hold", "code": "KeyS", "s": 1.2 },
-        { "do": "key", "code": "ShiftLeft", "down": false },
-        { "do": "look", "yaw": 15, "pitch": -10 },
-        { "do": "key", "code": "ShiftLeft", "down": true },
-        { "do": "hold", "code": "KeyW", "s": 1.2 },
-        { "do": "hold", "code": "KeyS", "s": 1.2 },
-        { "do": "key", "code": "ShiftLeft", "down": false },
-        { "do": "look", "yaw": 30, "pitch": -10 },
-        { "do": "key", "code": "ShiftLeft", "down": true },
-        { "do": "hold", "code": "KeyW", "s": 1.2 },
-        { "do": "hold", "code": "KeyS", "s": 1.2 },
-        { "do": "key", "code": "ShiftLeft", "down": false },
-        { "do": "look", "yaw": 45, "pitch": -10 },
-        { "do": "key", "code": "ShiftLeft", "down": true },
-        { "do": "hold", "code": "KeyW", "s": 1.2 },
-        { "do": "hold", "code": "KeyS", "s": 1.2 },
-        { "do": "key", "code": "ShiftLeft", "down": false },
-        { "do": "look", "yaw": 60, "pitch": -10 },
-        { "do": "key", "code": "ShiftLeft", "down": true },
-        { "do": "hold", "code": "KeyW", "s": 1.2 },
-        { "do": "hold", "code": "KeyS", "s": 1.2 },
-        { "do": "key", "code": "ShiftLeft", "down": false },
-        { "do": "look", "yaw": 75, "pitch": -10 },
-        { "do": "key", "code": "ShiftLeft", "down": true },
-        { "do": "hold", "code": "KeyW", "s": 1.2 },
-        { "do": "hold", "code": "KeyS", "s": 1.2 },
-        { "do": "key", "code": "ShiftLeft", "down": false },
-        { "do": "look", "yaw": 90, "pitch": -10 },
-        { "do": "key", "code": "ShiftLeft", "down": true },
-        { "do": "hold", "code": "KeyW", "s": 1.2 },
-        { "do": "hold", "code": "KeyS", "s": 1.2 },
-        { "do": "key", "code": "ShiftLeft", "down": false },
-        { "do": "look", "yaw": 105, "pitch": -10 },
-        { "do": "key", "code": "ShiftLeft", "down": true },
-        { "do": "hold", "code": "KeyW", "s": 1.2 },
-        { "do": "hold", "code": "KeyS", "s": 1.2 },
-        { "do": "key", "code": "ShiftLeft", "down": false },
-        { "do": "look", "yaw": 120, "pitch": -10 },
-        { "do": "key", "code": "ShiftLeft", "down": true },
-        { "do": "hold", "code": "KeyW", "s": 1.2 },
-        { "do": "hold", "code": "KeyS", "s": 1.2 },
-        { "do": "key", "code": "ShiftLeft", "down": false },
-        { "do": "look", "yaw": 135, "pitch": -10 },
-        { "do": "key", "code": "ShiftLeft", "down": true },
-        { "do": "hold", "code": "KeyW", "s": 1.2 },
-        { "do": "hold", "code": "KeyS", "s": 1.2 },
-        { "do": "key", "code": "ShiftLeft", "down": false },
-        { "do": "look", "yaw": 150, "pitch": -10 },
-        { "do": "key", "code": "ShiftLeft", "down": true },
-        { "do": "hold", "code": "KeyW", "s": 1.2 },
-        { "do": "hold", "code": "KeyS", "s": 1.2 },
-        { "do": "key", "code": "ShiftLeft", "down": false },
-        { "do": "look", "yaw": 165, "pitch": -10 },
-        { "do": "key", "code": "ShiftLeft", "down": true },
-        { "do": "hold", "code": "KeyW", "s": 1.2 },
-        { "do": "hold", "code": "KeyS", "s": 1.2 },
-        { "do": "key", "code": "ShiftLeft", "down": false },
-        { "do": "look", "yaw": 180, "pitch": -10 },
-        { "do": "key", "code": "ShiftLeft", "down": true },
-        { "do": "hold", "code": "KeyW", "s": 1.2 },
-        { "do": "hold", "code": "KeyS", "s": 1.2 },
-        { "do": "key", "code": "ShiftLeft", "down": false },
-        { "do": "look", "yaw": 195, "pitch": -10 },
-        { "do": "key", "code": "ShiftLeft", "down": true },
-        { "do": "hold", "code": "KeyW", "s": 1.2 },
-        { "do": "hold", "code": "KeyS", "s": 1.2 },
-        { "do": "key", "code": "ShiftLeft", "down": false },
-        { "do": "look", "yaw": 210, "pitch": -10 },
-        { "do": "key", "code": "ShiftLeft", "down": true },
-        { "do": "hold", "code": "KeyW", "s": 1.2 },
-        { "do": "hold", "code": "KeyS", "s": 1.2 },
-        { "do": "key", "code": "ShiftLeft", "down": false },
-        { "do": "look", "yaw": 225, "pitch": -10 },
-        { "do": "key", "code": "ShiftLeft", "down": true },
-        { "do": "hold", "code": "KeyW", "s": 1.2 },
-        { "do": "hold", "code": "KeyS", "s": 1.2 },
-        { "do": "key", "code": "ShiftLeft", "down": false },
-        { "do": "look", "yaw": 240, "pitch": -10 },
-        { "do": "key", "code": "ShiftLeft", "down": true },
-        { "do": "hold", "code": "KeyW", "s": 1.2 },
-        { "do": "hold", "code": "KeyS", "s": 1.2 },
-        { "do": "key", "code": "ShiftLeft", "down": false },
-        { "do": "look", "yaw": 255, "pitch": -10 },
-        { "do": "key", "code": "ShiftLeft", "down": true },
-        { "do": "hold", "code": "KeyW", "s": 1.2 },
-        { "do": "hold", "code": "KeyS", "s": 1.2 },
-        { "do": "key", "code": "ShiftLeft", "down": false },
-        { "do": "look", "yaw": 270, "pitch": -10 },
-        { "do": "key", "code": "ShiftLeft", "down": true },
-        { "do": "hold", "code": "KeyW", "s": 1.2 },
-        { "do": "hold", "code": "KeyS", "s": 1.2 },
-        { "do": "key", "code": "ShiftLeft", "down": false },
-        { "do": "look", "yaw": 285, "pitch": -10 },
-        { "do": "key", "code": "ShiftLeft", "down": true },
-        { "do": "hold", "code": "KeyW", "s": 1.2 },
-        { "do": "hold", "code": "KeyS", "s": 1.2 },
-        { "do": "key", "code": "ShiftLeft", "down": false },
-        { "do": "look", "yaw": 300, "pitch": -10 },
-        { "do": "key", "code": "ShiftLeft", "down": true },
-        { "do": "hold", "code": "KeyW", "s": 1.2 },
-        { "do": "hold", "code": "KeyS", "s": 1.2 },
-        { "do": "key", "code": "ShiftLeft", "down": false },
-        { "do": "look", "yaw": 315, "pitch": -10 },
-        { "do": "key", "code": "ShiftLeft", "down": true },
-        { "do": "hold", "code": "KeyW", "s": 1.2 },
-        { "do": "hold", "code": "KeyS", "s": 1.2 },
-        { "do": "key", "code": "ShiftLeft", "down": false },
-        { "do": "look", "yaw": 330, "pitch": -10 },
-        { "do": "key", "code": "ShiftLeft", "down": true },
-        { "do": "hold", "code": "KeyW", "s": 1.2 },
-        { "do": "hold", "code": "KeyS", "s": 1.2 },
-        { "do": "key", "code": "ShiftLeft", "down": false },
-        { "do": "look", "yaw": 345, "pitch": -10 },
-        { "do": "key", "code": "ShiftLeft", "down": true },
-        { "do": "hold", "code": "KeyW", "s": 1.2 },
-        { "do": "hold", "code": "KeyS", "s": 1.2 },
-        { "do": "key", "code": "ShiftLeft", "down": false },
-        { "do": "record", "name": "run" },
-        { "do": "shot", "name": "end" }
+        {
+          "do": "settle",
+          "maxS": 120
+        },
+        {
+          "do": "look",
+          "yaw": 0,
+          "pitch": -10
+        },
+        {
+          "do": "shot",
+          "name": "start"
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "look",
+          "yaw": 0,
+          "pitch": -10
+        },
+        {
+          "do": "hold",
+          "code": "KeyW",
+          "s": 1.2
+        },
+        {
+          "do": "hold",
+          "code": "KeyS",
+          "s": 1.2
+        },
+        {
+          "do": "look",
+          "yaw": 15,
+          "pitch": -10
+        },
+        {
+          "do": "hold",
+          "code": "KeyW",
+          "s": 1.2
+        },
+        {
+          "do": "hold",
+          "code": "KeyS",
+          "s": 1.2
+        },
+        {
+          "do": "look",
+          "yaw": 30,
+          "pitch": -10
+        },
+        {
+          "do": "hold",
+          "code": "KeyW",
+          "s": 1.2
+        },
+        {
+          "do": "hold",
+          "code": "KeyS",
+          "s": 1.2
+        },
+        {
+          "do": "look",
+          "yaw": 45,
+          "pitch": -10
+        },
+        {
+          "do": "hold",
+          "code": "KeyW",
+          "s": 1.2
+        },
+        {
+          "do": "hold",
+          "code": "KeyS",
+          "s": 1.2
+        },
+        {
+          "do": "look",
+          "yaw": 60,
+          "pitch": -10
+        },
+        {
+          "do": "hold",
+          "code": "KeyW",
+          "s": 1.2
+        },
+        {
+          "do": "hold",
+          "code": "KeyS",
+          "s": 1.2
+        },
+        {
+          "do": "look",
+          "yaw": 75,
+          "pitch": -10
+        },
+        {
+          "do": "hold",
+          "code": "KeyW",
+          "s": 1.2
+        },
+        {
+          "do": "hold",
+          "code": "KeyS",
+          "s": 1.2
+        },
+        {
+          "do": "look",
+          "yaw": 90,
+          "pitch": -10
+        },
+        {
+          "do": "hold",
+          "code": "KeyW",
+          "s": 1.2
+        },
+        {
+          "do": "hold",
+          "code": "KeyS",
+          "s": 1.2
+        },
+        {
+          "do": "look",
+          "yaw": 105,
+          "pitch": -10
+        },
+        {
+          "do": "hold",
+          "code": "KeyW",
+          "s": 1.2
+        },
+        {
+          "do": "hold",
+          "code": "KeyS",
+          "s": 1.2
+        },
+        {
+          "do": "look",
+          "yaw": 120,
+          "pitch": -10
+        },
+        {
+          "do": "hold",
+          "code": "KeyW",
+          "s": 1.2
+        },
+        {
+          "do": "hold",
+          "code": "KeyS",
+          "s": 1.2
+        },
+        {
+          "do": "look",
+          "yaw": 135,
+          "pitch": -10
+        },
+        {
+          "do": "hold",
+          "code": "KeyW",
+          "s": 1.2
+        },
+        {
+          "do": "hold",
+          "code": "KeyS",
+          "s": 1.2
+        },
+        {
+          "do": "look",
+          "yaw": 150,
+          "pitch": -10
+        },
+        {
+          "do": "hold",
+          "code": "KeyW",
+          "s": 1.2
+        },
+        {
+          "do": "hold",
+          "code": "KeyS",
+          "s": 1.2
+        },
+        {
+          "do": "look",
+          "yaw": 165,
+          "pitch": -10
+        },
+        {
+          "do": "hold",
+          "code": "KeyW",
+          "s": 1.2
+        },
+        {
+          "do": "hold",
+          "code": "KeyS",
+          "s": 1.2
+        },
+        {
+          "do": "look",
+          "yaw": 180,
+          "pitch": -10
+        },
+        {
+          "do": "hold",
+          "code": "KeyW",
+          "s": 1.2
+        },
+        {
+          "do": "hold",
+          "code": "KeyS",
+          "s": 1.2
+        },
+        {
+          "do": "look",
+          "yaw": 195,
+          "pitch": -10
+        },
+        {
+          "do": "hold",
+          "code": "KeyW",
+          "s": 1.2
+        },
+        {
+          "do": "hold",
+          "code": "KeyS",
+          "s": 1.2
+        },
+        {
+          "do": "look",
+          "yaw": 210,
+          "pitch": -10
+        },
+        {
+          "do": "hold",
+          "code": "KeyW",
+          "s": 1.2
+        },
+        {
+          "do": "hold",
+          "code": "KeyS",
+          "s": 1.2
+        },
+        {
+          "do": "look",
+          "yaw": 225,
+          "pitch": -10
+        },
+        {
+          "do": "hold",
+          "code": "KeyW",
+          "s": 1.2
+        },
+        {
+          "do": "hold",
+          "code": "KeyS",
+          "s": 1.2
+        },
+        {
+          "do": "look",
+          "yaw": 240,
+          "pitch": -10
+        },
+        {
+          "do": "hold",
+          "code": "KeyW",
+          "s": 1.2
+        },
+        {
+          "do": "hold",
+          "code": "KeyS",
+          "s": 1.2
+        },
+        {
+          "do": "look",
+          "yaw": 255,
+          "pitch": -10
+        },
+        {
+          "do": "hold",
+          "code": "KeyW",
+          "s": 1.2
+        },
+        {
+          "do": "hold",
+          "code": "KeyS",
+          "s": 1.2
+        },
+        {
+          "do": "look",
+          "yaw": 270,
+          "pitch": -10
+        },
+        {
+          "do": "hold",
+          "code": "KeyW",
+          "s": 1.2
+        },
+        {
+          "do": "hold",
+          "code": "KeyS",
+          "s": 1.2
+        },
+        {
+          "do": "look",
+          "yaw": 285,
+          "pitch": -10
+        },
+        {
+          "do": "hold",
+          "code": "KeyW",
+          "s": 1.2
+        },
+        {
+          "do": "hold",
+          "code": "KeyS",
+          "s": 1.2
+        },
+        {
+          "do": "look",
+          "yaw": 300,
+          "pitch": -10
+        },
+        {
+          "do": "hold",
+          "code": "KeyW",
+          "s": 1.2
+        },
+        {
+          "do": "hold",
+          "code": "KeyS",
+          "s": 1.2
+        },
+        {
+          "do": "look",
+          "yaw": 315,
+          "pitch": -10
+        },
+        {
+          "do": "hold",
+          "code": "KeyW",
+          "s": 1.2
+        },
+        {
+          "do": "hold",
+          "code": "KeyS",
+          "s": 1.2
+        },
+        {
+          "do": "look",
+          "yaw": 330,
+          "pitch": -10
+        },
+        {
+          "do": "hold",
+          "code": "KeyW",
+          "s": 1.2
+        },
+        {
+          "do": "hold",
+          "code": "KeyS",
+          "s": 1.2
+        },
+        {
+          "do": "look",
+          "yaw": 345,
+          "pitch": -10
+        },
+        {
+          "do": "hold",
+          "code": "KeyW",
+          "s": 1.2
+        },
+        {
+          "do": "hold",
+          "code": "KeyS",
+          "s": 1.2
+        },
+        {
+          "do": "record",
+          "name": "walk"
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "look",
+          "yaw": 0,
+          "pitch": -10
+        },
+        {
+          "do": "key",
+          "code": "ShiftLeft",
+          "down": true
+        },
+        {
+          "do": "hold",
+          "code": "KeyW",
+          "s": 1.2
+        },
+        {
+          "do": "hold",
+          "code": "KeyS",
+          "s": 1.2
+        },
+        {
+          "do": "key",
+          "code": "ShiftLeft",
+          "down": false
+        },
+        {
+          "do": "look",
+          "yaw": 15,
+          "pitch": -10
+        },
+        {
+          "do": "key",
+          "code": "ShiftLeft",
+          "down": true
+        },
+        {
+          "do": "hold",
+          "code": "KeyW",
+          "s": 1.2
+        },
+        {
+          "do": "hold",
+          "code": "KeyS",
+          "s": 1.2
+        },
+        {
+          "do": "key",
+          "code": "ShiftLeft",
+          "down": false
+        },
+        {
+          "do": "look",
+          "yaw": 30,
+          "pitch": -10
+        },
+        {
+          "do": "key",
+          "code": "ShiftLeft",
+          "down": true
+        },
+        {
+          "do": "hold",
+          "code": "KeyW",
+          "s": 1.2
+        },
+        {
+          "do": "hold",
+          "code": "KeyS",
+          "s": 1.2
+        },
+        {
+          "do": "key",
+          "code": "ShiftLeft",
+          "down": false
+        },
+        {
+          "do": "look",
+          "yaw": 45,
+          "pitch": -10
+        },
+        {
+          "do": "key",
+          "code": "ShiftLeft",
+          "down": true
+        },
+        {
+          "do": "hold",
+          "code": "KeyW",
+          "s": 1.2
+        },
+        {
+          "do": "hold",
+          "code": "KeyS",
+          "s": 1.2
+        },
+        {
+          "do": "key",
+          "code": "ShiftLeft",
+          "down": false
+        },
+        {
+          "do": "look",
+          "yaw": 60,
+          "pitch": -10
+        },
+        {
+          "do": "key",
+          "code": "ShiftLeft",
+          "down": true
+        },
+        {
+          "do": "hold",
+          "code": "KeyW",
+          "s": 1.2
+        },
+        {
+          "do": "hold",
+          "code": "KeyS",
+          "s": 1.2
+        },
+        {
+          "do": "key",
+          "code": "ShiftLeft",
+          "down": false
+        },
+        {
+          "do": "look",
+          "yaw": 75,
+          "pitch": -10
+        },
+        {
+          "do": "key",
+          "code": "ShiftLeft",
+          "down": true
+        },
+        {
+          "do": "hold",
+          "code": "KeyW",
+          "s": 1.2
+        },
+        {
+          "do": "hold",
+          "code": "KeyS",
+          "s": 1.2
+        },
+        {
+          "do": "key",
+          "code": "ShiftLeft",
+          "down": false
+        },
+        {
+          "do": "look",
+          "yaw": 90,
+          "pitch": -10
+        },
+        {
+          "do": "key",
+          "code": "ShiftLeft",
+          "down": true
+        },
+        {
+          "do": "hold",
+          "code": "KeyW",
+          "s": 1.2
+        },
+        {
+          "do": "hold",
+          "code": "KeyS",
+          "s": 1.2
+        },
+        {
+          "do": "key",
+          "code": "ShiftLeft",
+          "down": false
+        },
+        {
+          "do": "look",
+          "yaw": 105,
+          "pitch": -10
+        },
+        {
+          "do": "key",
+          "code": "ShiftLeft",
+          "down": true
+        },
+        {
+          "do": "hold",
+          "code": "KeyW",
+          "s": 1.2
+        },
+        {
+          "do": "hold",
+          "code": "KeyS",
+          "s": 1.2
+        },
+        {
+          "do": "key",
+          "code": "ShiftLeft",
+          "down": false
+        },
+        {
+          "do": "look",
+          "yaw": 120,
+          "pitch": -10
+        },
+        {
+          "do": "key",
+          "code": "ShiftLeft",
+          "down": true
+        },
+        {
+          "do": "hold",
+          "code": "KeyW",
+          "s": 1.2
+        },
+        {
+          "do": "hold",
+          "code": "KeyS",
+          "s": 1.2
+        },
+        {
+          "do": "key",
+          "code": "ShiftLeft",
+          "down": false
+        },
+        {
+          "do": "look",
+          "yaw": 135,
+          "pitch": -10
+        },
+        {
+          "do": "key",
+          "code": "ShiftLeft",
+          "down": true
+        },
+        {
+          "do": "hold",
+          "code": "KeyW",
+          "s": 1.2
+        },
+        {
+          "do": "hold",
+          "code": "KeyS",
+          "s": 1.2
+        },
+        {
+          "do": "key",
+          "code": "ShiftLeft",
+          "down": false
+        },
+        {
+          "do": "look",
+          "yaw": 150,
+          "pitch": -10
+        },
+        {
+          "do": "key",
+          "code": "ShiftLeft",
+          "down": true
+        },
+        {
+          "do": "hold",
+          "code": "KeyW",
+          "s": 1.2
+        },
+        {
+          "do": "hold",
+          "code": "KeyS",
+          "s": 1.2
+        },
+        {
+          "do": "key",
+          "code": "ShiftLeft",
+          "down": false
+        },
+        {
+          "do": "look",
+          "yaw": 165,
+          "pitch": -10
+        },
+        {
+          "do": "key",
+          "code": "ShiftLeft",
+          "down": true
+        },
+        {
+          "do": "hold",
+          "code": "KeyW",
+          "s": 1.2
+        },
+        {
+          "do": "hold",
+          "code": "KeyS",
+          "s": 1.2
+        },
+        {
+          "do": "key",
+          "code": "ShiftLeft",
+          "down": false
+        },
+        {
+          "do": "look",
+          "yaw": 180,
+          "pitch": -10
+        },
+        {
+          "do": "key",
+          "code": "ShiftLeft",
+          "down": true
+        },
+        {
+          "do": "hold",
+          "code": "KeyW",
+          "s": 1.2
+        },
+        {
+          "do": "hold",
+          "code": "KeyS",
+          "s": 1.2
+        },
+        {
+          "do": "key",
+          "code": "ShiftLeft",
+          "down": false
+        },
+        {
+          "do": "look",
+          "yaw": 195,
+          "pitch": -10
+        },
+        {
+          "do": "key",
+          "code": "ShiftLeft",
+          "down": true
+        },
+        {
+          "do": "hold",
+          "code": "KeyW",
+          "s": 1.2
+        },
+        {
+          "do": "hold",
+          "code": "KeyS",
+          "s": 1.2
+        },
+        {
+          "do": "key",
+          "code": "ShiftLeft",
+          "down": false
+        },
+        {
+          "do": "look",
+          "yaw": 210,
+          "pitch": -10
+        },
+        {
+          "do": "key",
+          "code": "ShiftLeft",
+          "down": true
+        },
+        {
+          "do": "hold",
+          "code": "KeyW",
+          "s": 1.2
+        },
+        {
+          "do": "hold",
+          "code": "KeyS",
+          "s": 1.2
+        },
+        {
+          "do": "key",
+          "code": "ShiftLeft",
+          "down": false
+        },
+        {
+          "do": "look",
+          "yaw": 225,
+          "pitch": -10
+        },
+        {
+          "do": "key",
+          "code": "ShiftLeft",
+          "down": true
+        },
+        {
+          "do": "hold",
+          "code": "KeyW",
+          "s": 1.2
+        },
+        {
+          "do": "hold",
+          "code": "KeyS",
+          "s": 1.2
+        },
+        {
+          "do": "key",
+          "code": "ShiftLeft",
+          "down": false
+        },
+        {
+          "do": "look",
+          "yaw": 240,
+          "pitch": -10
+        },
+        {
+          "do": "key",
+          "code": "ShiftLeft",
+          "down": true
+        },
+        {
+          "do": "hold",
+          "code": "KeyW",
+          "s": 1.2
+        },
+        {
+          "do": "hold",
+          "code": "KeyS",
+          "s": 1.2
+        },
+        {
+          "do": "key",
+          "code": "ShiftLeft",
+          "down": false
+        },
+        {
+          "do": "look",
+          "yaw": 255,
+          "pitch": -10
+        },
+        {
+          "do": "key",
+          "code": "ShiftLeft",
+          "down": true
+        },
+        {
+          "do": "hold",
+          "code": "KeyW",
+          "s": 1.2
+        },
+        {
+          "do": "hold",
+          "code": "KeyS",
+          "s": 1.2
+        },
+        {
+          "do": "key",
+          "code": "ShiftLeft",
+          "down": false
+        },
+        {
+          "do": "look",
+          "yaw": 270,
+          "pitch": -10
+        },
+        {
+          "do": "key",
+          "code": "ShiftLeft",
+          "down": true
+        },
+        {
+          "do": "hold",
+          "code": "KeyW",
+          "s": 1.2
+        },
+        {
+          "do": "hold",
+          "code": "KeyS",
+          "s": 1.2
+        },
+        {
+          "do": "key",
+          "code": "ShiftLeft",
+          "down": false
+        },
+        {
+          "do": "look",
+          "yaw": 285,
+          "pitch": -10
+        },
+        {
+          "do": "key",
+          "code": "ShiftLeft",
+          "down": true
+        },
+        {
+          "do": "hold",
+          "code": "KeyW",
+          "s": 1.2
+        },
+        {
+          "do": "hold",
+          "code": "KeyS",
+          "s": 1.2
+        },
+        {
+          "do": "key",
+          "code": "ShiftLeft",
+          "down": false
+        },
+        {
+          "do": "look",
+          "yaw": 300,
+          "pitch": -10
+        },
+        {
+          "do": "key",
+          "code": "ShiftLeft",
+          "down": true
+        },
+        {
+          "do": "hold",
+          "code": "KeyW",
+          "s": 1.2
+        },
+        {
+          "do": "hold",
+          "code": "KeyS",
+          "s": 1.2
+        },
+        {
+          "do": "key",
+          "code": "ShiftLeft",
+          "down": false
+        },
+        {
+          "do": "look",
+          "yaw": 315,
+          "pitch": -10
+        },
+        {
+          "do": "key",
+          "code": "ShiftLeft",
+          "down": true
+        },
+        {
+          "do": "hold",
+          "code": "KeyW",
+          "s": 1.2
+        },
+        {
+          "do": "hold",
+          "code": "KeyS",
+          "s": 1.2
+        },
+        {
+          "do": "key",
+          "code": "ShiftLeft",
+          "down": false
+        },
+        {
+          "do": "look",
+          "yaw": 330,
+          "pitch": -10
+        },
+        {
+          "do": "key",
+          "code": "ShiftLeft",
+          "down": true
+        },
+        {
+          "do": "hold",
+          "code": "KeyW",
+          "s": 1.2
+        },
+        {
+          "do": "hold",
+          "code": "KeyS",
+          "s": 1.2
+        },
+        {
+          "do": "key",
+          "code": "ShiftLeft",
+          "down": false
+        },
+        {
+          "do": "look",
+          "yaw": 345,
+          "pitch": -10
+        },
+        {
+          "do": "key",
+          "code": "ShiftLeft",
+          "down": true
+        },
+        {
+          "do": "hold",
+          "code": "KeyW",
+          "s": 1.2
+        },
+        {
+          "do": "hold",
+          "code": "KeyS",
+          "s": 1.2
+        },
+        {
+          "do": "key",
+          "code": "ShiftLeft",
+          "down": false
+        },
+        {
+          "do": "record",
+          "name": "run"
+        },
+        {
+          "do": "shot",
+          "name": "end"
+        }
       ]
     },
     {
       "name": "faces-a",
       "notes": "Face parity's look (BIFACIAL_WORLD.md §11): other players' bodies, your arms, the block outline, the sky and clouds and the spyglass on face A; `faces-b` is the same on face B, to compare shot for shot.",
       "steps": [
-        { "do": "settle", "maxS": 120 },
-        { "do": "time", "t": 0.35 },
-        { "do": "puppets", "count": 8, "at": [0, 0, 2], "face": 1 },
-        { "do": "look", "yaw": 0, "pitch": -8 },
-        { "do": "wait", "s": 2 },
-        { "do": "shot", "name": "bodies" },
-        { "do": "puppets", "count": 0 },
-        { "do": "arms", "on": true },
-        { "do": "look", "yaw": 90, "pitch": -55 },
-        { "do": "wait", "s": 1 },
-        { "do": "shot", "name": "arms-outline" },
-        { "do": "look", "yaw": 90, "pitch": 35 },
-        { "do": "wait", "s": 1 },
-        { "do": "shot", "name": "sky" },
-        { "do": "look", "yaw": 90, "pitch": -5 },
-        { "do": "spyglass", "on": true, "step": 1 },
-        { "do": "wait", "s": 1 },
-        { "do": "shot", "name": "spyglass" },
-        { "do": "spyglass", "on": false }
+        {
+          "do": "settle",
+          "maxS": 120
+        },
+        {
+          "do": "time",
+          "t": 0.35
+        },
+        {
+          "do": "puppets",
+          "count": 8,
+          "at": [0, 0, 2],
+          "face": 1
+        },
+        {
+          "do": "look",
+          "yaw": 0,
+          "pitch": -8
+        },
+        {
+          "do": "wait",
+          "s": 2
+        },
+        {
+          "do": "shot",
+          "name": "bodies"
+        },
+        {
+          "do": "puppets",
+          "count": 0
+        },
+        {
+          "do": "arms",
+          "on": true
+        },
+        {
+          "do": "look",
+          "yaw": 90,
+          "pitch": -55
+        },
+        {
+          "do": "wait",
+          "s": 1
+        },
+        {
+          "do": "shot",
+          "name": "arms-outline"
+        },
+        {
+          "do": "look",
+          "yaw": 90,
+          "pitch": 35
+        },
+        {
+          "do": "wait",
+          "s": 1
+        },
+        {
+          "do": "shot",
+          "name": "sky"
+        },
+        {
+          "do": "look",
+          "yaw": 90,
+          "pitch": -5
+        },
+        {
+          "do": "spyglass",
+          "on": true,
+          "step": 1
+        },
+        {
+          "do": "wait",
+          "s": 1
+        },
+        {
+          "do": "shot",
+          "name": "spyglass"
+        },
+        {
+          "do": "spyglass",
+          "on": false
+        }
       ]
     },
     {
@@ -2876,155 +4645,561 @@
       "notes": "`faces-a` on face B (the player and the puppets on face B's spawn).",
       "face": "b",
       "steps": [
-        { "do": "settle", "maxS": 120 },
-        { "do": "time", "t": 0.85 },
-        { "do": "puppets", "count": 8, "at": [0, 0, 2], "face": -1 },
-        { "do": "look", "yaw": 0, "pitch": -8 },
-        { "do": "wait", "s": 2 },
-        { "do": "shot", "name": "bodies" },
-        { "do": "puppets", "count": 0 },
-        { "do": "arms", "on": true },
-        { "do": "look", "yaw": 90, "pitch": -55 },
-        { "do": "wait", "s": 1 },
-        { "do": "shot", "name": "arms-outline" },
-        { "do": "look", "yaw": 90, "pitch": 35 },
-        { "do": "wait", "s": 1 },
-        { "do": "shot", "name": "sky" },
-        { "do": "look", "yaw": 90, "pitch": -5 },
-        { "do": "spyglass", "on": true, "step": 1 },
-        { "do": "wait", "s": 1 },
-        { "do": "shot", "name": "spyglass" },
-        { "do": "spyglass", "on": false }
+        {
+          "do": "settle",
+          "maxS": 120
+        },
+        {
+          "do": "time",
+          "t": 0.85
+        },
+        {
+          "do": "puppets",
+          "count": 8,
+          "at": [0, 0, 2],
+          "face": -1
+        },
+        {
+          "do": "look",
+          "yaw": 0,
+          "pitch": -8
+        },
+        {
+          "do": "wait",
+          "s": 2
+        },
+        {
+          "do": "shot",
+          "name": "bodies"
+        },
+        {
+          "do": "puppets",
+          "count": 0
+        },
+        {
+          "do": "arms",
+          "on": true
+        },
+        {
+          "do": "look",
+          "yaw": 90,
+          "pitch": -55
+        },
+        {
+          "do": "wait",
+          "s": 1
+        },
+        {
+          "do": "shot",
+          "name": "arms-outline"
+        },
+        {
+          "do": "look",
+          "yaw": 90,
+          "pitch": 35
+        },
+        {
+          "do": "wait",
+          "s": 1
+        },
+        {
+          "do": "shot",
+          "name": "sky"
+        },
+        {
+          "do": "look",
+          "yaw": 90,
+          "pitch": -5
+        },
+        {
+          "do": "spyglass",
+          "on": true,
+          "step": 1
+        },
+        {
+          "do": "wait",
+          "s": 1
+        },
+        {
+          "do": "shot",
+          "name": "spyglass"
+        },
+        {
+          "do": "spyglass",
+          "on": false
+        }
       ]
     },
     {
       "name": "tunnel-a",
       "notes": "A hill built in front of the spawn (stone, 32 m long, 15 m tall) with a 3 m wide, 2 m tall tunnel 20 m into it; walked into at noon and at midnight. Owner's bug (2026-10-21, \"lit up like day\"; DAY_NIGHT.md §11): the tunnel goes dark inside, your hand with it.",
-      "settings": { "timeOfDay": 0.5 },
+      "settings": {
+        "timeOfDay": 0.5
+      },
       "steps": [
-        { "do": "settle", "maxS": 120 },
-        { "do": "select", "slot": 0 },
-        { "do": "look", "yaw": 90, "pitch": 0 },
-        { "do": "region", "op": "fill", "from": [3, -1, -12], "to": [34, 14, 12] },
-        { "do": "wait", "s": 2 },
-        { "do": "region", "op": "clear", "from": [3, 0, -1], "to": [23, 1.9, 1] },
-        { "do": "wait", "s": 3 },
-        { "do": "look", "yaw": 90, "pitch": -5 },
-        { "do": "shot", "name": "noon-entrance" },
-        { "do": "time", "t": 0.0 },
-        { "do": "wait", "s": 1 },
-        { "do": "shot", "name": "midnight-entrance" },
-        { "do": "time", "t": 0.5 },
-        { "do": "hold", "code": "KeyW", "s": 1.6 },
-        { "do": "wait", "s": 0.5 },
-        { "do": "shot", "name": "noon-5m" },
-        { "do": "time", "t": 0.0 },
-        { "do": "wait", "s": 1 },
-        { "do": "shot", "name": "midnight-5m" },
-        { "do": "time", "t": 0.5 },
-        { "do": "hold", "code": "KeyW", "s": 2.4 },
-        { "do": "wait", "s": 0.5 },
-        { "do": "shot", "name": "noon-15m" },
-        { "do": "look", "yaw": 270, "pitch": -5 },
-        { "do": "wait", "s": 0.5 },
-        { "do": "shot", "name": "noon-15m-back" },
-        { "do": "time", "t": 0.0 },
-        { "do": "wait", "s": 1 },
-        { "do": "shot", "name": "midnight-15m-back" },
-        { "do": "look", "yaw": 90, "pitch": -5 },
-        { "do": "wait", "s": 0.5 },
-        { "do": "shot", "name": "midnight-15m" }
+        {
+          "do": "settle",
+          "maxS": 120
+        },
+        {
+          "do": "select",
+          "slot": 0
+        },
+        {
+          "do": "look",
+          "yaw": 90,
+          "pitch": 0
+        },
+        {
+          "do": "region",
+          "op": "fill",
+          "from": [3, -1, -12],
+          "to": [34, 14, 12]
+        },
+        {
+          "do": "wait",
+          "s": 2
+        },
+        {
+          "do": "region",
+          "op": "clear",
+          "from": [3, 0, -1],
+          "to": [23, 1.9, 1]
+        },
+        {
+          "do": "wait",
+          "s": 3
+        },
+        {
+          "do": "look",
+          "yaw": 90,
+          "pitch": -5
+        },
+        {
+          "do": "shot",
+          "name": "noon-entrance"
+        },
+        {
+          "do": "time",
+          "t": 0.0
+        },
+        {
+          "do": "wait",
+          "s": 1
+        },
+        {
+          "do": "shot",
+          "name": "midnight-entrance"
+        },
+        {
+          "do": "time",
+          "t": 0.5
+        },
+        {
+          "do": "hold",
+          "code": "KeyW",
+          "s": 1.6
+        },
+        {
+          "do": "wait",
+          "s": 0.5
+        },
+        {
+          "do": "shot",
+          "name": "noon-5m"
+        },
+        {
+          "do": "time",
+          "t": 0.0
+        },
+        {
+          "do": "wait",
+          "s": 1
+        },
+        {
+          "do": "shot",
+          "name": "midnight-5m"
+        },
+        {
+          "do": "time",
+          "t": 0.5
+        },
+        {
+          "do": "hold",
+          "code": "KeyW",
+          "s": 2.4
+        },
+        {
+          "do": "wait",
+          "s": 0.5
+        },
+        {
+          "do": "shot",
+          "name": "noon-15m"
+        },
+        {
+          "do": "look",
+          "yaw": 270,
+          "pitch": -5
+        },
+        {
+          "do": "wait",
+          "s": 0.5
+        },
+        {
+          "do": "shot",
+          "name": "noon-15m-back"
+        },
+        {
+          "do": "time",
+          "t": 0.0
+        },
+        {
+          "do": "wait",
+          "s": 1
+        },
+        {
+          "do": "shot",
+          "name": "midnight-15m-back"
+        },
+        {
+          "do": "look",
+          "yaw": 90,
+          "pitch": -5
+        },
+        {
+          "do": "wait",
+          "s": 0.5
+        },
+        {
+          "do": "shot",
+          "name": "midnight-15m"
+        }
       ]
     },
     {
       "name": "tunnel-b",
       "notes": "tunnel-a on face B (its noon is face A midnight: time 0 is noon here, 0.5 midnight). Owner's bug (2026-10-21, \"lit up like day\"; DAY_NIGHT.md §11): the tunnel goes dark inside, your hand with it.",
       "face": "b",
-      "settings": { "timeOfDay": 0.0 },
+      "settings": {
+        "timeOfDay": 0.0
+      },
       "steps": [
-        { "do": "settle", "maxS": 120 },
-        { "do": "select", "slot": 0 },
-        { "do": "look", "yaw": 90, "pitch": 0 },
-        { "do": "region", "op": "fill", "from": [3, -1, -12], "to": [34, 14, 12], "up": -1 },
-        { "do": "wait", "s": 2 },
-        { "do": "region", "op": "clear", "from": [3, 0, -1], "to": [23, 1.9, 1], "up": -1 },
-        { "do": "wait", "s": 3 },
-        { "do": "look", "yaw": 90, "pitch": -5 },
-        { "do": "shot", "name": "noon-entrance" },
-        { "do": "time", "t": 0.5 },
-        { "do": "wait", "s": 1 },
-        { "do": "shot", "name": "midnight-entrance" },
-        { "do": "time", "t": 0.0 },
-        { "do": "hold", "code": "KeyW", "s": 1.6 },
-        { "do": "wait", "s": 0.5 },
-        { "do": "shot", "name": "noon-5m" },
-        { "do": "time", "t": 0.5 },
-        { "do": "wait", "s": 1 },
-        { "do": "shot", "name": "midnight-5m" },
-        { "do": "time", "t": 0.0 },
-        { "do": "hold", "code": "KeyW", "s": 2.4 },
-        { "do": "wait", "s": 0.5 },
-        { "do": "shot", "name": "noon-15m" },
-        { "do": "look", "yaw": 270, "pitch": -5 },
-        { "do": "wait", "s": 0.5 },
-        { "do": "shot", "name": "noon-15m-back" },
-        { "do": "time", "t": 0.5 },
-        { "do": "wait", "s": 1 },
-        { "do": "shot", "name": "midnight-15m-back" }
+        {
+          "do": "settle",
+          "maxS": 120
+        },
+        {
+          "do": "select",
+          "slot": 0
+        },
+        {
+          "do": "look",
+          "yaw": 90,
+          "pitch": 0
+        },
+        {
+          "do": "region",
+          "op": "fill",
+          "from": [3, -1, -12],
+          "to": [34, 14, 12],
+          "up": -1
+        },
+        {
+          "do": "wait",
+          "s": 2
+        },
+        {
+          "do": "region",
+          "op": "clear",
+          "from": [3, 0, -1],
+          "to": [23, 1.9, 1],
+          "up": -1
+        },
+        {
+          "do": "wait",
+          "s": 3
+        },
+        {
+          "do": "look",
+          "yaw": 90,
+          "pitch": -5
+        },
+        {
+          "do": "shot",
+          "name": "noon-entrance"
+        },
+        {
+          "do": "time",
+          "t": 0.5
+        },
+        {
+          "do": "wait",
+          "s": 1
+        },
+        {
+          "do": "shot",
+          "name": "midnight-entrance"
+        },
+        {
+          "do": "time",
+          "t": 0.0
+        },
+        {
+          "do": "hold",
+          "code": "KeyW",
+          "s": 1.6
+        },
+        {
+          "do": "wait",
+          "s": 0.5
+        },
+        {
+          "do": "shot",
+          "name": "noon-5m"
+        },
+        {
+          "do": "time",
+          "t": 0.5
+        },
+        {
+          "do": "wait",
+          "s": 1
+        },
+        {
+          "do": "shot",
+          "name": "midnight-5m"
+        },
+        {
+          "do": "time",
+          "t": 0.0
+        },
+        {
+          "do": "hold",
+          "code": "KeyW",
+          "s": 2.4
+        },
+        {
+          "do": "wait",
+          "s": 0.5
+        },
+        {
+          "do": "shot",
+          "name": "noon-15m"
+        },
+        {
+          "do": "look",
+          "yaw": 270,
+          "pitch": -5
+        },
+        {
+          "do": "wait",
+          "s": 0.5
+        },
+        {
+          "do": "shot",
+          "name": "noon-15m-back"
+        },
+        {
+          "do": "time",
+          "t": 0.5
+        },
+        {
+          "do": "wait",
+          "s": 1
+        },
+        {
+          "do": "shot",
+          "name": "midnight-15m-back"
+        }
       ]
     },
     {
       "name": "lod-shadows-dusk",
       "notes": "The distant terrain's shadows (docs/DAY_NIGHT.md §12): a camera 520 m up over the seed-7 hills with a low sun (time 0.81, then 0.795), looking away from the sun and across it, past the shadow cascades; records 5 s of the first view (with --compare and lod-shadows-off: the third layer's cost).",
       "split": "far",
-      "settings": { "timeOfDay": 0.81 },
+      "settings": {
+        "timeOfDay": 0.81
+      },
       "steps": [
-        { "do": "settle", "maxS": 120 },
-        { "do": "camera", "position": [0, 520, 0], "yaw": 28, "pitch": -14, "aroundPlayer": true },
-        { "do": "wait", "s": 3 },
-        { "do": "settle", "maxS": 60 },
-        { "do": "wait", "s": 2 },
-        { "do": "mark" },
-        { "do": "wait", "s": 5 },
-        { "do": "record", "name": "dusk" },
-        { "do": "time", "t": 0.81 },
-        { "do": "camera", "position": [0, 520, 0], "yaw": 28, "pitch": -14, "aroundPlayer": true },
-        { "do": "wait", "s": 1.5 },
-        { "do": "shot", "name": "t810-y28" },
-        { "do": "time", "t": 0.81 },
-        { "do": "camera", "position": [0, 520, 0], "yaw": 118, "pitch": -14, "aroundPlayer": true },
-        { "do": "wait", "s": 1.5 },
-        { "do": "shot", "name": "t810-y118" },
-        { "do": "time", "t": 0.795 },
-        { "do": "camera", "position": [0, 520, 0], "yaw": 28, "pitch": -14, "aroundPlayer": true },
-        { "do": "wait", "s": 1.5 },
-        { "do": "shot", "name": "t795-y28" },
-        { "do": "time", "t": 0.795 },
-        { "do": "camera", "position": [0, 520, 0], "yaw": 118, "pitch": -14, "aroundPlayer": true },
-        { "do": "wait", "s": 1.5 },
-        { "do": "shot", "name": "t795-y118" }
+        {
+          "do": "settle",
+          "maxS": 120
+        },
+        {
+          "do": "camera",
+          "position": [0, 520, 0],
+          "yaw": 28,
+          "pitch": -14,
+          "aroundPlayer": true
+        },
+        {
+          "do": "wait",
+          "s": 3
+        },
+        {
+          "do": "settle",
+          "maxS": 60
+        },
+        {
+          "do": "wait",
+          "s": 2
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 5
+        },
+        {
+          "do": "record",
+          "name": "dusk"
+        },
+        {
+          "do": "time",
+          "t": 0.81
+        },
+        {
+          "do": "camera",
+          "position": [0, 520, 0],
+          "yaw": 28,
+          "pitch": -14,
+          "aroundPlayer": true
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "shot",
+          "name": "t810-y28"
+        },
+        {
+          "do": "time",
+          "t": 0.81
+        },
+        {
+          "do": "camera",
+          "position": [0, 520, 0],
+          "yaw": 118,
+          "pitch": -14,
+          "aroundPlayer": true
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "shot",
+          "name": "t810-y118"
+        },
+        {
+          "do": "time",
+          "t": 0.795
+        },
+        {
+          "do": "camera",
+          "position": [0, 520, 0],
+          "yaw": 28,
+          "pitch": -14,
+          "aroundPlayer": true
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "shot",
+          "name": "t795-y28"
+        },
+        {
+          "do": "time",
+          "t": 0.795
+        },
+        {
+          "do": "camera",
+          "position": [0, 520, 0],
+          "yaw": 118,
+          "pitch": -14,
+          "aroundPlayer": true
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "shot",
+          "name": "t795-y118"
+        }
       ]
     },
     {
       "name": "lod-shadows-dusk-b",
       "notes": "lod-shadows-dusk on face B: the camera 520 m under the midplane over face B's hills, its low sun at face A's time 0.855, then 0.87 (just after face A's sunset, face B's sunrise), four headings.",
       "split": "far",
-      "settings": { "timeOfDay": 0.855 },
+      "settings": {
+        "timeOfDay": 0.855
+      },
       "face": "b",
       "steps": [
-        { "do": "settle", "maxS": 120 },
-        { "do": "camera", "position": [0, -520, 0], "yaw": 28, "pitch": -14, "aroundPlayer": true },
-        { "do": "wait", "s": 3 },
-        { "do": "settle", "maxS": 60 },
-        { "do": "wait", "s": 2 },
-        { "do": "mark" },
-        { "do": "wait", "s": 5 },
-        { "do": "record", "name": "dusk" },
-        { "do": "time", "t": 0.855 },
-        { "do": "camera", "position": [0, -520, 0], "yaw": 28, "pitch": -14, "aroundPlayer": true },
-        { "do": "wait", "s": 1.5 },
-        { "do": "shot", "name": "t855-y28" },
-        { "do": "time", "t": 0.855 },
+        {
+          "do": "settle",
+          "maxS": 120
+        },
+        {
+          "do": "camera",
+          "position": [0, -520, 0],
+          "yaw": 28,
+          "pitch": -14,
+          "aroundPlayer": true
+        },
+        {
+          "do": "wait",
+          "s": 3
+        },
+        {
+          "do": "settle",
+          "maxS": 60
+        },
+        {
+          "do": "wait",
+          "s": 2
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 5
+        },
+        {
+          "do": "record",
+          "name": "dusk"
+        },
+        {
+          "do": "time",
+          "t": 0.855
+        },
+        {
+          "do": "camera",
+          "position": [0, -520, 0],
+          "yaw": 28,
+          "pitch": -14,
+          "aroundPlayer": true
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "shot",
+          "name": "t855-y28"
+        },
+        {
+          "do": "time",
+          "t": 0.855
+        },
         {
           "do": "camera",
           "position": [0, -520, 0],
@@ -3032,9 +5207,18 @@
           "pitch": -14,
           "aroundPlayer": true
         },
-        { "do": "wait", "s": 1.5 },
-        { "do": "shot", "name": "t855-y118" },
-        { "do": "time", "t": 0.855 },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "shot",
+          "name": "t855-y118"
+        },
+        {
+          "do": "time",
+          "t": 0.855
+        },
         {
           "do": "camera",
           "position": [0, -520, 0],
@@ -3042,9 +5226,18 @@
           "pitch": -14,
           "aroundPlayer": true
         },
-        { "do": "wait", "s": 1.5 },
-        { "do": "shot", "name": "t855-y208" },
-        { "do": "time", "t": 0.855 },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "shot",
+          "name": "t855-y208"
+        },
+        {
+          "do": "time",
+          "t": 0.855
+        },
         {
           "do": "camera",
           "position": [0, -520, 0],
@@ -3052,13 +5245,37 @@
           "pitch": -14,
           "aroundPlayer": true
         },
-        { "do": "wait", "s": 1.5 },
-        { "do": "shot", "name": "t855-y298" },
-        { "do": "time", "t": 0.87 },
-        { "do": "camera", "position": [0, -520, 0], "yaw": 28, "pitch": -14, "aroundPlayer": true },
-        { "do": "wait", "s": 1.5 },
-        { "do": "shot", "name": "t870-y28" },
-        { "do": "time", "t": 0.87 },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "shot",
+          "name": "t855-y298"
+        },
+        {
+          "do": "time",
+          "t": 0.87
+        },
+        {
+          "do": "camera",
+          "position": [0, -520, 0],
+          "yaw": 28,
+          "pitch": -14,
+          "aroundPlayer": true
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "shot",
+          "name": "t870-y28"
+        },
+        {
+          "do": "time",
+          "t": 0.87
+        },
         {
           "do": "camera",
           "position": [0, -520, 0],
@@ -3066,9 +5283,18 @@
           "pitch": -14,
           "aroundPlayer": true
         },
-        { "do": "wait", "s": 1.5 },
-        { "do": "shot", "name": "t870-y118" },
-        { "do": "time", "t": 0.87 },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "shot",
+          "name": "t870-y118"
+        },
+        {
+          "do": "time",
+          "t": 0.87
+        },
         {
           "do": "camera",
           "position": [0, -520, 0],
@@ -3076,9 +5302,18 @@
           "pitch": -14,
           "aroundPlayer": true
         },
-        { "do": "wait", "s": 1.5 },
-        { "do": "shot", "name": "t870-y208" },
-        { "do": "time", "t": 0.87 },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "shot",
+          "name": "t870-y208"
+        },
+        {
+          "do": "time",
+          "t": 0.87
+        },
         {
           "do": "camera",
           "position": [0, -520, 0],
@@ -3086,8 +5321,14 @@
           "pitch": -14,
           "aroundPlayer": true
         },
-        { "do": "wait", "s": 1.5 },
-        { "do": "shot", "name": "t870-y298" }
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "shot",
+          "name": "t870-y298"
+        }
       ]
     },
     {
@@ -3464,7 +5705,7 @@
     },
     {
       "name": "torch-scale-a",
-      "notes": "The 1 m torch (two \u00bd m cells, docs/LIGHTS.md) placed on the ground ahead at noon, a stand-in player beside it for scale, then at midnight; and the held torch's flame (self-lit) by day and at night.",
+      "notes": "The 1 m torch (two ½ m cells, docs/LIGHTS.md) placed on the ground ahead at noon, a stand-in player beside it for scale, then at midnight; and the held torch's flame (self-lit) by day and at night.",
       "settings": {
         "timeOfDay": 0.5
       },
@@ -3558,6 +5799,319 @@
         {
           "do": "shot",
           "name": "held-noon"
+        }
+      ]
+    },
+    {
+      "name": "torch-shadows-a",
+      "notes": "Torch shadows (docs/LIGHTS.md §4): the tunnel and room of torch-cave-a at midnight with a stone pillar in the room; a torch placed before it (its shadow on the floor and wall behind), then the torch held as well. Records placed and held-and-placed for the maps' cost; run with --configs torch-shadows-off,torch-shadows-high.",
+      "settings": {
+        "timeOfDay": 0.0
+      },
+      "steps": [
+        {
+          "do": "settle",
+          "maxS": 120
+        },
+        {
+          "do": "select",
+          "slot": 0
+        },
+        {
+          "do": "look",
+          "yaw": 90,
+          "pitch": 0
+        },
+        {
+          "do": "region",
+          "op": "fill",
+          "from": [3, -1, -12],
+          "to": [34, 14, 12]
+        },
+        {
+          "do": "wait",
+          "s": 2
+        },
+        {
+          "do": "region",
+          "op": "clear",
+          "from": [3, 0, -1],
+          "to": [23, 1.9, 1]
+        },
+        {
+          "do": "region",
+          "op": "clear",
+          "from": [16, 0, -6],
+          "to": [29, 3.4, 6]
+        },
+        {
+          "do": "region",
+          "op": "fill",
+          "from": [21, 0, -0.5],
+          "to": [21.9, 2.4, 0.4]
+        },
+        {
+          "do": "wait",
+          "s": 3
+        },
+        {
+          "do": "time",
+          "t": 0.0
+        },
+        {
+          "do": "look",
+          "yaw": 90,
+          "pitch": -5
+        },
+        {
+          "do": "hold",
+          "code": "KeyW",
+          "s": 3.6
+        },
+        {
+          "do": "wait",
+          "s": 0.8
+        },
+        {
+          "do": "select",
+          "slot": 8
+        },
+        {
+          "do": "look",
+          "yaw": 90,
+          "pitch": -60
+        },
+        {
+          "do": "wait",
+          "s": 0.3
+        },
+        {
+          "do": "edit",
+          "action": "place"
+        },
+        {
+          "do": "select",
+          "slot": 0
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "look",
+          "yaw": 90,
+          "pitch": -3
+        },
+        {
+          "do": "hold",
+          "code": "KeyS",
+          "s": 0.4
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "record",
+          "name": "placed"
+        },
+        {
+          "do": "shot",
+          "name": "placed-pillar"
+        },
+        {
+          "do": "select",
+          "slot": 8
+        },
+        {
+          "do": "look",
+          "yaw": 75,
+          "pitch": -12
+        },
+        {
+          "do": "wait",
+          "s": 1
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "record",
+          "name": "held-and-placed"
+        },
+        {
+          "do": "shot",
+          "name": "held-and-placed"
+        }
+      ]
+    },
+    {
+      "name": "torch-shadows-b",
+      "notes": "Torch shadows (docs/LIGHTS.md §4): the tunnel and room of torch-cave-a at midnight with a stone pillar in the room; a torch placed before it (its shadow on the floor and wall behind), then the torch held as well. Records placed and held-and-placed for the maps' cost; run with --configs torch-shadows-off,torch-shadows-high. On face B (its midnight is time 0.5).",
+      "face": "b",
+      "settings": {
+        "timeOfDay": 0.5
+      },
+      "steps": [
+        {
+          "do": "settle",
+          "maxS": 120
+        },
+        {
+          "do": "select",
+          "slot": 0
+        },
+        {
+          "do": "look",
+          "yaw": 90,
+          "pitch": 0
+        },
+        {
+          "do": "region",
+          "op": "fill",
+          "from": [3, -1, -12],
+          "to": [34, 14, 12],
+          "up": -1
+        },
+        {
+          "do": "wait",
+          "s": 2
+        },
+        {
+          "do": "region",
+          "op": "clear",
+          "from": [3, 0, -1],
+          "to": [23, 1.9, 1],
+          "up": -1
+        },
+        {
+          "do": "region",
+          "op": "clear",
+          "from": [16, 0, -6],
+          "to": [29, 3.4, 6],
+          "up": -1
+        },
+        {
+          "do": "region",
+          "op": "fill",
+          "from": [21, 0, -0.5],
+          "to": [21.9, 2.4, 0.4],
+          "up": -1
+        },
+        {
+          "do": "wait",
+          "s": 3
+        },
+        {
+          "do": "time",
+          "t": 0.5
+        },
+        {
+          "do": "look",
+          "yaw": 90,
+          "pitch": -5
+        },
+        {
+          "do": "hold",
+          "code": "KeyW",
+          "s": 3.6
+        },
+        {
+          "do": "wait",
+          "s": 0.8
+        },
+        {
+          "do": "select",
+          "slot": 8
+        },
+        {
+          "do": "look",
+          "yaw": 90,
+          "pitch": -60
+        },
+        {
+          "do": "wait",
+          "s": 0.3
+        },
+        {
+          "do": "edit",
+          "action": "place"
+        },
+        {
+          "do": "select",
+          "slot": 0
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "look",
+          "yaw": 90,
+          "pitch": -3
+        },
+        {
+          "do": "hold",
+          "code": "KeyS",
+          "s": 0.4
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "record",
+          "name": "placed"
+        },
+        {
+          "do": "shot",
+          "name": "placed-pillar"
+        },
+        {
+          "do": "select",
+          "slot": 8
+        },
+        {
+          "do": "look",
+          "yaw": 75,
+          "pitch": -12
+        },
+        {
+          "do": "wait",
+          "s": 1
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "record",
+          "name": "held-and-placed"
+        },
+        {
+          "do": "shot",
+          "name": "held-and-placed"
         }
       ]
     }

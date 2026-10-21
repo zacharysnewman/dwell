@@ -494,8 +494,7 @@ pub struct VoxelWorld {
 /// Whether a state is a placed light source: it gives off a light (`light`) and block light (the
 /// cell of its flame).
 pub fn is_light_source(m: StateId) -> bool {
-    m != 0
-        && dwell_blocks::try_info(m).is_some_and(|s| s.light.is_some() && s.emits > 0)
+    m != 0 && dwell_blocks::try_info(m).is_some_and(|s| s.light.is_some() && s.emits > 0)
 }
 
 impl VoxelWorld {
@@ -721,7 +720,11 @@ impl VoxelWorld {
     pub fn get_voxel_if_loaded(&self, [x, y, z]: [i32; 3]) -> StateId {
         let c = chunk_of(x, y, z);
         self.chunks.get(&c).map_or(0, |ch| {
-            ch.get(x - c.x * CHUNK_SIZE, y - c.y * CHUNK_SIZE, z - c.z * CHUNK_SIZE)
+            ch.get(
+                x - c.x * CHUNK_SIZE,
+                y - c.y * CHUNK_SIZE,
+                z - c.z * CHUNK_SIZE,
+            )
         })
     }
 

@@ -10,7 +10,16 @@ pub const LIGHTS: LightTunables = LightTunables {
     wrap: 0.5,
     glow_peak: 0.7,
     shadows: TorchShadowTunables {
-        tiers: [TorchShadowTier { lights: 2, resolution: 256 }, TorchShadowTier { lights: 4, resolution: 384 }],
+        tiers: [
+            TorchShadowTier {
+                lights: 2,
+                resolution: 256,
+            },
+            TorchShadowTier {
+                lights: 4,
+                resolution: 384,
+            },
+        ],
         redraws_per_frame: 2,
         placed_m: 24.0,
         placed_strength: 0.6,

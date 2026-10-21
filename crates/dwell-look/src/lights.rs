@@ -450,7 +450,11 @@ impl TorchShadowCache {
         let wants = &wants[..wants.len().min(slots)];
         let mut slot_of: Vec<Option<usize>> = wants
             .iter()
-            .map(|w| self.slots.iter().position(|s| s.is_some_and(|k| k.key == w.key)))
+            .map(|w| {
+                self.slots
+                    .iter()
+                    .position(|s| s.is_some_and(|k| k.key == w.key))
+            })
             .collect();
         // The free slots: those no wanted light holds.
         let mut free: Vec<usize> = (0..slots)
@@ -525,7 +529,11 @@ mod shadow_tests {
         assert!(f.draw.is_empty(), "kept");
         assert!(f.slot_of[0].is_some(), "and still read");
         let f = c.assign(&[want(1, 0.0, 8)], 2, 2);
-        assert_eq!(f.draw, f.slot_of.iter().flatten().copied().collect::<Vec<_>>(), "casters changed");
+        assert_eq!(
+            f.draw,
+            f.slot_of.iter().flatten().copied().collect::<Vec<_>>(),
+            "casters changed"
+        );
         let f = c.assign(&[want(1, 0.5, 8)], 2, 2);
         assert_eq!(f.draw.len(), 1, "moved");
     }
@@ -536,7 +544,11 @@ mod shadow_tests {
         let wants: Vec<_> = (0..4).map(|k| want(k, f64::from(k as u8), 1)).collect();
         let f = c.assign(&wants, 4, 2);
         assert_eq!(f.draw.len(), 2);
-        assert_eq!(f.slot_of.iter().filter(|s| s.is_some()).count(), 2, "two have maps");
+        assert_eq!(
+            f.slot_of.iter().filter(|s| s.is_some()).count(),
+            2,
+            "two have maps"
+        );
         let f = c.assign(&wants, 4, 2);
         assert_eq!(f.draw.len(), 2, "the other two now");
         assert!(f.slot_of.iter().all(|s| s.is_some()));

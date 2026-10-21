@@ -46,7 +46,8 @@ fn emitted(lit: vec3f, albedo: vec3f, shine: f32) -> vec3f {{
 struct PointLights {{
     // x the count
     head: vec4f,
-    // per light: xyz relative to the eye, w the radius (m); rgb colour × strength × flicker
+    // per light: xyz relative to the eye, w the radius (m); rgb colour × strength × flicker, w its
+    // Torch shadows map's slot (−1 none; render/point_shadows.rs)
     l: array<vec4f, {}>,
 }};
 @group(0) @binding({BINDING}) var<uniform> point_light_block: PointLights;
@@ -65,7 +66,12 @@ fn point_lights(rel: vec3f, n: vec3f) -> vec3f {{
         let x = 1.0 - d / a.w;
         let fall = x / (POINT_CURVE - (POINT_CURVE - 1.0) * x);
         let cos = select(1.0, max((dot(to, n) / d + POINT_WRAP) / (1.0 + POINT_WRAP), 0.0), d > 1e-4);
-        sum = sum + b.rgb * (cos * fall);
+        // Its shadow (Torch shadows), where it has a map.
+        var lit = 1.0;
+        if (b.w >= 0.0) {{
+            lit = point_shadow(u32(b.w), rel, n);
+        }}
+        sum = sum + b.rgb * (cos * fall * lit);
     }}
     return sum;
 }}
@@ -148,18 +154,67 @@ pub fn buffer(device: &wgpu::Device) -> wgpu::Buffer {
     })
 }
 
-/// This frame's lights: the held ones (relative to `eye`) as world lights, the nearest
-/// `LIGHTS.max_lights` within `LIGHTS.cull_m` of the eye, packed at time `t` (s).
-pub fn frame_block(held: &[HeldLight], eye: [f64; 3], t: f64) -> ([f32; LIGHT_FLOATS], usize) {
+/// A light placed in the world this frame (a torch's flame cell; `VoxelWorld::light_sources_near`):
+/// the cell's centre (world), its source and its flicker phase.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PlacedLight {
+    pub pos: [f64; 3],
+    pub source: &'static dwell_blocks::LightInfo,
+    pub seed: u32,
+}
+
+/// This frame's dynamic lights: the held ones (relative to `eye`) and the placed ones (only with
+/// Torch shadows on: `placed` is empty otherwise), as world lights, the nearest
+/// `LIGHTS.max_lights` within `LIGHTS.cull_m` of the eye.
+pub fn frame_lights(held: &[HeldLight], placed: &[PlacedLight], eye: [f64; 3]) -> Vec<PointLight> {
     let all: Vec<PointLight> = held
         .iter()
         .map(|h| {
             let pos = std::array::from_fn(|k| eye[k] + f64::from(h.rel[k]));
             PointLight::of(h.source, pos, h.seed)
         })
+        .chain(
+            placed
+                .iter()
+                .map(|p| PointLight::of(p.source, p.pos, p.seed).placed()),
+        )
         .collect();
-    let picked = pick(&all, eye, LIGHTS.max_lights, LIGHTS.cull_m);
-    (pack(&picked, eye, t), picked.len())
+    pick(&all, eye, LIGHTS.max_lights, LIGHTS.cull_m)
+}
+
+/// The lights (nearest first) that want a shadow map: those whose source may cast one, the
+/// tier's count at most; their indices in `lights`.
+pub fn shadowed(lights: &[PointLight], slots: usize) -> Vec<usize> {
+    lights
+        .iter()
+        .enumerate()
+        .filter(|(_, l)| l.shadows)
+        .map(|(i, _)| i)
+        .take(slots)
+        .collect()
+}
+
+/// The lights drawn this frame, given each shadowed light's slot (`slot_of`, by its index in
+/// `shadowed`): a light with a map takes its slot; a placed light without one is left out (its
+/// flood light lights it).
+pub fn with_slots(
+    mut lights: Vec<PointLight>,
+    shadowed: &[usize],
+    slot_of: &[Option<usize>],
+) -> Vec<PointLight> {
+    for (k, &i) in shadowed.iter().enumerate() {
+        lights[i].slot = slot_of.get(k).copied().flatten();
+    }
+    lights.retain(|l| !l.placed || l.slot.is_some());
+    lights
+}
+
+/// The packed block for `lights` at time `t` (s), and how many.
+pub fn frame_block(lights: &[PointLight], eye: [f64; 3], t: f64) -> ([f32; LIGHT_FLOATS], usize) {
+    (
+        pack(lights, eye, t),
+        lights.len().min(dwell_look::lights::MAX_SHADER_LIGHTS),
+    )
 }
 
 #[cfg(test)]
@@ -180,13 +235,46 @@ mod tests {
                 seed: k,
             })
             .collect();
-        let (u, n) = frame_block(&held, eye, 1.0);
+        let (u, n) = frame_block(&frame_lights(&held, &[], eye), eye, 1.0);
         assert_eq!(n, LIGHTS.max_lights);
         assert_eq!(u[0] as usize, n);
         assert!((u[4] - 0.5).abs() < 1e-5, "the nearest first, eye-relative");
         assert_eq!(u[7], torch().radius_m);
-        let (none, n0) = frame_block(&[], eye, 1.0);
+        let (none, n0) = frame_block(&frame_lights(&[], &[], eye), eye, 1.0);
         assert_eq!((none[0], n0), (0.0, 0));
+    }
+
+    #[test]
+    fn placed_lights_are_drawn_only_with_a_map_held_ones_always() {
+        let eye = [0.0; 3];
+        let held = [HeldLight {
+            rel: [0.5, 0.0, 0.0],
+            source: torch(),
+            seed: 1,
+        }];
+        let placed: Vec<PlacedLight> = (0..3)
+            .map(|k| PlacedLight {
+                pos: [2.0 + f64::from(k), 0.0, 0.0],
+                source: torch(),
+                seed: 10 + k,
+            })
+            .collect();
+        let lights = frame_lights(&held, &placed, eye);
+        assert_eq!(lights.len(), 4);
+        assert!(
+            lights[1].placed && lights[1].strength < lights[0].strength,
+            "the placed share"
+        );
+        let want = shadowed(&lights, 2);
+        assert_eq!(want, vec![0, 1], "the nearest that may cast");
+        // The held light has no map yet, the first placed one has: the others go.
+        let drawn = with_slots(lights, &want, &[None, Some(0)]);
+        assert_eq!(drawn.len(), 2);
+        assert_eq!((drawn[0].placed, drawn[0].slot), (false, None));
+        assert_eq!((drawn[1].placed, drawn[1].slot), (true, Some(0)));
+        let (u, _) = frame_block(&drawn, eye, 0.0);
+        assert_eq!(u[4 + 7], -1.0, "no map: slot −1");
+        assert_eq!(u[4 + 8 + 7], 0.0, "slot 0");
     }
 
     #[test]
