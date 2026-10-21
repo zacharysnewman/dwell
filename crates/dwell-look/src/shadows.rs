@@ -27,6 +27,9 @@ pub struct CascadeTunables {
     /// A kept cascade is drawn again once the light has turned this far from where it was drawn
     /// (degrees).
     pub light_turn_deg: f64,
+    /// The maps see the light in steps of this along its path (degrees; 0: as it is), so the
+    /// clock's turning every frame doesn't turn their texel grid every frame.
+    pub light_step_deg: f64,
 }
 
 /// Against acne and peter-panning.

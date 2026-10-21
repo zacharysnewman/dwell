@@ -24,6 +24,7 @@ import {
 } from './compareReport.ts';
 import { configParams, parseConfigs, selectConfigs, type Config } from './configs.ts';
 import type { Scenario, Step } from './scenarios.ts';
+import type { Flicker } from './compareReport.ts';
 
 /** What bench.ts's run of one scenario saves (its `report.json`). */
 export interface ScenarioReport {
@@ -33,6 +34,8 @@ export interface ScenarioReport {
   records: Record<string, unknown>;
   /** Each `settle` step's seconds, in order. */
   settles: number[];
+  /** Each `burst` step's flicker, by name. */
+  bursts?: Record<string, Flicker>;
   /** The page address it ran at. */
   url: string;
 }
@@ -58,7 +61,7 @@ function shots(steps: readonly Step[]): string[] {
 }
 
 // Decoding and encoding PNGs in a blank page (the browser's codecs; no dependency).
-const CODEC = `
+export const CODEC = `
   globalThis.__decodePng = async (b64) => {
     const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
     const bmp = await createImageBitmap(new Blob([bytes], { type: 'image/png' }),
@@ -86,7 +89,7 @@ interface Codec {
   __encodePng(w: number, h: number, b64: string): Promise<string>;
 }
 
-async function decode(page: Page, path: string): Promise<Rgba> {
+export async function decode(page: Page, path: string): Promise<Rgba> {
   const b64 = readFileSync(path).toString('base64');
   const r = await page.evaluate((x) => (globalThis as unknown as Codec).__decodePng(x), b64);
   return { width: r.width, height: r.height, data: new Uint8Array(Buffer.from(r.b64, 'base64')) };

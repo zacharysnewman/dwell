@@ -3,6 +3,7 @@ import {
   deltaE,
   diffImages,
   droppedFrames,
+  flickerOf,
   formatTable,
   metricRows,
   metricsOf,
@@ -117,6 +118,25 @@ describe('compare report math', () => {
     expect([...heatmap.data.subarray(0, 3)]).toEqual([255, 255, 255]); // far over: white
     expect(heatmap.data[6]).toBeGreaterThan(80); // under: blue
     expect(() => diffImages(a, image(2, 2, [0, 0, 0]), 2.3)).toThrow(/differ in size/);
+  });
+
+  it('flicker: the share of pixels that change from frame to frame, and their mean change', () => {
+    const still = [image(2, 2, [50, 50, 50]), image(2, 2, [50, 50, 50]), image(2, 2, [50, 50, 50])];
+    expect(flickerOf(still)).toEqual({ frames: 3, changed: 0, meanDelta: 0, threshold: 3 });
+    // One pixel of four blinks between 50 and 150 every frame: a quarter of the view flickers.
+    const blink = still.map((im, i) => {
+      const c = { ...im, data: im.data.slice() };
+      if (i % 2) c.data.set([150, 150, 150], 0);
+      return c;
+    });
+    const f = flickerOf(blink);
+    expect(f.changed).toBeCloseTo(0.25);
+    expect(f.meanDelta).toBeCloseTo(25, 3);
+    // A change under the threshold isn't flicker.
+    const faint = [image(1, 1, [50, 50, 50]), image(1, 1, [52, 52, 52])];
+    expect(flickerOf(faint).changed).toBe(0);
+    expect(() => flickerOf([still[0]])).toThrow(/two frames/);
+    expect(() => flickerOf([still[0], image(1, 1, [0, 0, 0])])).toThrow(/sizes differ/);
   });
 
   it('identical images agree everywhere', () => {

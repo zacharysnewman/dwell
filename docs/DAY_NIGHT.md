@@ -280,6 +280,30 @@ maps, `SHADOW_WGSL`), `dwell-look` `shadows.rs` (the setting, the light that cas
   spyglass zooms the shadow distance grows with its magnification up to `spyglassMaxM` (640 m), so
   the zoomed view has shadows where it looks. Shadows fade to the stand-in over the last
   `edgeFade` of the distance from the eye (a sphere, whichever way the camera looks).
+- **The light in steps** (2026-10-21, the shadow flicker fix): the maps see the light in steps of
+  `lightStepDeg` (0.05°) along its path (`shadows::stepped`: turned about the sky's axis to the
+  nearest whole step), and the texel grid runs through an anchor that holds while the light holds
+  its step (`Cache::anchor`). The clock turns the sun about 0.15° a second by day (0.3° by night),
+  a little every frame, and texel snapping holds the grid still only while the light does: before,
+  the nearest cascade, drawn every frame, turned its grid with the light every frame, and with the
+  grid anchored at the world's origin the turn slid it under the eye by kilometres × the turn (a
+  new share of a texel every frame), so every shadow edge's stair-steps crawled, the owner's
+  "constant moving noise" at Low and High. Now the nearest cascade's matrix is the same from frame
+  to frame between steps. At a step the anchor moves to where the nearest cascade was drawn (a
+  point of the old grid at the eye), so the grid turns about the eye: the shadows under you move a
+  twentieth of a texel, those farther off by their distance × the step. Tests: 600 still frames
+  with the clock running change the nearest cascade only at the steps (599 times before), a step
+  moves the grid under the feet under 0.1 texel (0.6–0.9 anchored at the origin), both faces.
+  Measured with the bench's `burst` step (`shadows-still`: 16 frames back to back from a still
+  camera, the clock running, the share of pixels whose brightness moves more than 3 of 255 from one
+  frame to the next, the HUD hidden; Off's is the plants' sway and the sky): looking down at the
+  ground under you, Low went from 1.27 % a frame to 0.20 % (Off 0.13 %), with a 1 % step about
+  every third frame; High from 0.24 % to 0.18 %; across the grove, Low from 0.9 % to 0.16 %. A
+  far cascade redrawn after `lightTurnDeg` still changes 5–9 % of the pixels in one frame every
+  1–2 s, as in 0.22.22–0.22.24 (0.22.21 redrew every cascade every frame: 2–5 % every frame).
+  Redrawing the far ones at every step instead was tried and is worse (2–4 % every few frames:
+  each redraw slides their coarser grid under the middle distance). The cost is unchanged
+  (`gpu.shadows` p50 within 0.1 ms on idle-spawn and shadows-pines).
 - **Kept maps** (`shadows::Cache`, the cost pass): the nearest cascade is drawn every frame (your
   own body and other players move in it). A far cascade's box is `slack` (10 %) wider than its
   distance, and its map is kept, read where it was drawn (rebased to the eye each frame), until it
@@ -371,11 +395,11 @@ Minecraft mods' patterns, taken and not taken:
   far map to the view direction, and turning would draw it again; the box test around the eye
   culls almost as much once the map is kept.
 
-**Extending it**: the tiers, the bias, the fades, the distances and the kept maps' slack, turn and
-budget are data; a tier is a new entry
+**Extending it**: the tiers, the bias, the fades, the distances, the light's step and the kept
+maps' slack, turn and budget are data; a tier is a new entry
 of `tiers` with the setting's name added to `ShadowQuality` and the menu's choices (the shader
 takes up to four cascades). The vocabulary in code is small: the split, the box around the eye,
-the texel snap, the schedule's reasons, the PCF grid.
+the light's steps and the grid's anchor, the texel snap, the schedule's reasons, the PCF grid.
 
 ## 11. Flood light: sky and block light per cell
 

@@ -12,6 +12,7 @@ pub const SHADOWS: ShadowTunables = ShadowTunables {
         spyglass_max_m: 640.0,
         slack: 0.1,
         light_turn_deg: 0.25,
+        light_step_deg: 0.05,
     },
     bias: BiasTunables {
         normal_offset_texels: 1.5,
