@@ -124,7 +124,12 @@ fn light_matrix(basis: LightBasis, origin_rel: V3, radius: f64, reach: f64) -> M
         },
         {
             let a = basis.z.map(|c| -c / depth_m);
-            [a[0], a[1], a[2], (radius + reach + dot(origin_rel, basis.z)) / depth_m]
+            [
+                a[0],
+                a[1],
+                a[2],
+                (radius + reach + dot(origin_rel, basis.z)) / depth_m,
+            ]
         },
     ];
     let mut m = [[0.0f32; 4]; 4];
@@ -176,12 +181,20 @@ pub fn fit(
     // The slice's corners in light space, widened by a few texels for the filter and the
     // normal offset.
     let margin = 4.0 * texel_m;
-    let mut footprint = [f64::INFINITY, f64::NEG_INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::INFINITY];
+    let mut footprint = [
+        f64::INFINITY,
+        f64::NEG_INFINITY,
+        f64::INFINITY,
+        f64::NEG_INFINITY,
+        f64::INFINITY,
+    ];
     for d in [near, far] {
         for sx in [-1.0, 1.0] {
             for sy in [-1.0, 1.0] {
                 let c: V3 = std::array::from_fn(|k| {
-                    view.forward[k] * d + view.right[k] * sx * view.tan_x * d + view.up[k] * sy * view.tan_y * d
+                    view.forward[k] * d
+                        + view.right[k] * sx * view.tan_x * d
+                        + view.up[k] * sy * view.tan_y * d
                         - origin_rel[k]
                 });
                 let (x, y, z) = (dot(c, basis.x), dot(c, basis.y), dot(c, basis.z));
@@ -239,7 +252,11 @@ impl Cascade {
         let d: V3 = std::array::from_fn(|k| centre_rel[k] - self.origin_rel[k]);
         let extent = |a: V3| (0..3).map(|k| a[k].abs() * half[k]).sum::<f64>();
         let reach = self.depth_m - 2.0 * self.radius;
-        let (x, y, z) = (dot(d, self.basis.x), dot(d, self.basis.y), dot(d, self.basis.z));
+        let (x, y, z) = (
+            dot(d, self.basis.x),
+            dot(d, self.basis.y),
+            dot(d, self.basis.z),
+        );
         let (ex, ey, ez) = (
             extent(self.basis.x),
             extent(self.basis.y),
@@ -283,10 +300,16 @@ pub fn plan(
     let tier = *t.tier(quality)?;
     let caster = caster.filter(|c| c.strength > 1e-3)?;
     let c = &t.cascades;
-    let distance = (tier.distance_m * magnification.max(1.0)).min(c.spyglass_max_m.max(tier.distance_m));
+    let distance =
+        (tier.distance_m * magnification.max(1.0)).min(c.spyglass_max_m.max(tier.distance_m));
     let count = (tier.cascades as usize).clamp(1, MAX_CASCADES);
     let basis = light_basis(caster.dir, sky_axis);
-    let depths = splits(count, c.near_m.min(distance * 0.5), distance, tier.split_lambda);
+    let depths = splits(
+        count,
+        c.near_m.min(distance * 0.5),
+        distance,
+        tier.split_lambda,
+    );
     // The first slice reaches back to the eye (the near plane): what is under your feet.
     let cascades = (0..count)
         .map(|i| {
@@ -317,7 +340,13 @@ pub fn plan(
 /// map holds the same world box). That bounds a frame's casters to two cascades' worth; a far
 /// cascade's moving casters (other players) lag by its turn's few frames. Everything is drawn when
 /// there was no earlier frame with these maps, the light changed (sun ↔ moon, the tier) or `all`.
-pub fn stagger(prev: Option<&Plan>, plan: &Plan, eye: V3, frame: u64, all: bool) -> (Vec<Cascade>, u8) {
+pub fn stagger(
+    prev: Option<&Plan>,
+    plan: &Plan,
+    eye: V3,
+    frame: u64,
+    all: bool,
+) -> (Vec<Cascade>, u8) {
     let n = plan.cascades.len();
     let every = ((1u16 << n) - 1) as u8;
     let Some(prev) = prev.filter(|p| {
@@ -573,7 +602,9 @@ impl Drop for ShadowMaps {
 /// The maps' size and layers for a setting's tier (a 1×1 single layer for Off). They follow the
 /// setting, not the time of day: kept through the night, when no light casts and no pass draws.
 pub fn maps_size(tier: Option<&ShadowTier>) -> (u32, u32) {
-    tier.map_or((1, 1), |t| (t.resolution, t.cascades.clamp(1, MAX_CASCADES as u32)))
+    tier.map_or((1, 1), |t| {
+        (t.resolution, t.cascades.clamp(1, MAX_CASCADES as u32))
+    })
 }
 
 /// The casters' pipelines' depth state: the slope-scaled bias against acne on ramps.
@@ -781,8 +812,15 @@ mod tests {
         let noon = DAY_NIGHT.state(0.0, Some(0.5), Some(0.5));
         let sun = caster(&SHADOWS, &noon, 1.0);
         let at = |eye: V3| {
-            plan(&SHADOWS, ShadowQuality::High, sun, &view(eye, [0.0, -0.2, -1.0]), noon.axis, 1.0)
-                .unwrap()
+            plan(
+                &SHADOWS,
+                ShadowQuality::High,
+                sun,
+                &view(eye, [0.0, -0.2, -1.0]),
+                noon.axis,
+                1.0,
+            )
+            .unwrap()
         };
         let first = at([0.0, 60.0, 0.0]);
         let n = first.cascades.len();
@@ -799,14 +837,13 @@ mod tests {
             assert_eq!(mask & 1, 1);
             assert!(mask.count_ones() <= 2);
             seen |= mask;
-            for i in 0..n {
+            for (i, kept) in used.iter().enumerate() {
                 if mask & (1 << i) == 0 {
                     // Kept as drawn: the same world box, its matrix rebased to the new eye.
-                    assert_eq!(used[i].origin, first.cascades[i].origin);
-                    let p = [10.0, -5.0, -30.0];
-                    let world: V3 = std::array::from_fn(|k| p[k] + 0.0);
+                    assert_eq!(kept.origin, first.cascades[i].origin);
+                    let world: V3 = [10.0, -5.0, -30.0];
                     let old = first.cascades[i].project(sub(world, [0.0, 60.0, 0.0]));
-                    let new = used[i].project(sub(world, eye));
+                    let new = kept.project(sub(world, eye));
                     for k in 0..3 {
                         assert!((old[k] - new[k]).abs() < 1e-9);
                     }
@@ -830,7 +867,10 @@ mod tests {
         assert!(c.touches([0.0, -2.0, -20.0], [0.5; 3]));
         assert!(c.touches([0.0, 150.0, -20.0], [0.5; 3]));
         assert!(!c.touches([0.0, -2.0, 25.0], [0.5; 3]), "behind the eye");
-        assert!(!c.touches([200.0, -2.0, -20.0], [0.5; 3]), "far off to the side");
+        assert!(
+            !c.touches([200.0, -2.0, -20.0], [0.5; 3]),
+            "far off to the side"
+        );
         // Under the whole slice (farther from the light than any of it): no shadow on it.
         assert!(!c.touches([0.0, -200.0, -20.0], [0.5; 3]));
     }
@@ -838,9 +878,25 @@ mod tests {
     #[test]
     fn turning_the_camera_keeps_each_cascades_size() {
         let basis = light_basis(normalize([0.2, 0.9, 0.3]), [0.0, 0.0, 1.0]);
-        let a = fit(&view([5.0, 40.0, 5.0], [0.0, 0.0, -1.0]), basis, 10.0, 40.0, 1024, 1.0, 200.0);
+        let a = fit(
+            &view([5.0, 40.0, 5.0], [0.0, 0.0, -1.0]),
+            basis,
+            10.0,
+            40.0,
+            1024,
+            1.0,
+            200.0,
+        );
         for f in [[1.0, 0.0, 0.0], [0.3, -0.8, 0.5], [0.0, 1.0, 0.01]] {
-            let b = fit(&view([5.0, 40.0, 5.0], f), basis, 10.0, 40.0, 1024, 1.0, 200.0);
+            let b = fit(
+                &view([5.0, 40.0, 5.0], f),
+                basis,
+                10.0,
+                40.0,
+                1024,
+                1.0,
+                200.0,
+            );
             assert_eq!((a.radius, a.texel_m), (b.radius, b.texel_m));
         }
         // A radius rounds up to its step: a slightly wider view keeps it.
@@ -853,7 +909,10 @@ mod tests {
     /// A world point's place in the map, in texels.
     fn texel_of(c: &Cascade, eye: V3, world: V3, resolution: f64) -> [f64; 2] {
         let q = c.project(sub(world, eye));
-        [(q[0] * 0.5 + 0.5) * resolution, (0.5 - q[1] * 0.5) * resolution]
+        [
+            (q[0] * 0.5 + 0.5) * resolution,
+            (0.5 - q[1] * 0.5) * resolution,
+        ]
     }
 
     #[test]
@@ -861,7 +920,15 @@ mod tests {
         let basis = light_basis(normalize([0.4, 0.7, -0.2]), [0.0, 0.0, 1.0]);
         let res = 2048;
         let start = [10_000.25, 72.5, -3_000.75];
-        let c0 = fit(&view(start, [0.2, -0.3, -1.0]), basis, 0.0, 12.0, res, 1.0, 300.0);
+        let c0 = fit(
+            &view(start, [0.2, -0.3, -1.0]),
+            basis,
+            0.0,
+            12.0,
+            res,
+            1.0,
+            300.0,
+        );
         let step = c0.texel_m * 0.1;
         let landmark = [10_003.0, 70.0, -3_005.0];
         let grid = texel_of(&c0, start, landmark, f64::from(res));
@@ -872,7 +939,15 @@ mod tests {
             let eye: V3 = std::array::from_fn(|i| {
                 start[i] + basis.x[i] * step * f64::from(k) + basis.z[i] * 0.37 * f64::from(k)
             });
-            let c = fit(&view(eye, [0.2, -0.3, -1.0]), basis, 0.0, 12.0, res, 1.0, 300.0);
+            let c = fit(
+                &view(eye, [0.2, -0.3, -1.0]),
+                basis,
+                0.0,
+                12.0,
+                res,
+                1.0,
+                300.0,
+            );
             let moved: V3 = sub(c.origin, last);
             let across = [dot(moved, basis.x), dot(moved, basis.y)];
             // The origin moves by whole texels across the light, or not at all.
@@ -893,7 +968,10 @@ mod tests {
                 assert!((d - d.round()).abs() < 1e-4, "{d}");
             }
         }
-        assert!(kept >= 26, "a tenth-texel step kept the origin only {kept} times of 30");
+        assert!(
+            kept >= 26,
+            "a tenth-texel step kept the origin only {kept} times of 30"
+        );
     }
 
     #[test]
@@ -922,8 +1000,14 @@ mod tests {
             (SHADOWS.tiers[1].distance_m * 4.0).min(SHADOWS.cascades.spyglass_max_m)
         );
         // A CPU adapter draws Low at most.
-        assert_eq!(shadows_for(wgpu::DeviceType::Cpu, ShadowQuality::High), ShadowQuality::Low);
-        assert_eq!(shadows_for(wgpu::DeviceType::Cpu, ShadowQuality::Off), ShadowQuality::Off);
+        assert_eq!(
+            shadows_for(wgpu::DeviceType::Cpu, ShadowQuality::High),
+            ShadowQuality::Low
+        );
+        assert_eq!(
+            shadows_for(wgpu::DeviceType::Cpu, ShadowQuality::Off),
+            ShadowQuality::Off
+        );
         assert_eq!(
             shadows_for(wgpu::DeviceType::DiscreteGpu, ShadowQuality::High),
             ShadowQuality::High
@@ -935,8 +1019,15 @@ mod tests {
         assert_eq!(uniforms(&SHADOWS, None), [0.0; UNIFORM_FLOATS]);
         let v = view([0.0, 60.0, 0.0], [0.0, -0.2, -1.0]);
         let noon = DAY_NIGHT.state(0.0, Some(0.5), Some(0.5));
-        let p = plan(&SHADOWS, ShadowQuality::Low, caster(&SHADOWS, &noon, 1.0), &v, noon.axis, 1.0)
-            .unwrap();
+        let p = plan(
+            &SHADOWS,
+            ShadowQuality::Low,
+            caster(&SHADOWS, &noon, 1.0),
+            &v,
+            noon.axis,
+            1.0,
+        )
+        .unwrap();
         let u = uniforms(&SHADOWS, Some(&p));
         let cfg = MAX_CASCADES * 20;
         assert_eq!(u[cfg], p.cascades.len() as f32);
@@ -958,8 +1049,15 @@ mod tests {
             let up = f.up();
             let eye = f.point([0.0, 60.0, 0.0]);
             let forward = f.vector([0.0, -0.3, -1.0]);
-            let p = plan(&SHADOWS, ShadowQuality::High, Some(c), &view(eye, forward), day.axis, 1.0)
-                .unwrap();
+            let p = plan(
+                &SHADOWS,
+                ShadowQuality::High,
+                Some(c),
+                &view(eye, forward),
+                day.axis,
+                1.0,
+            )
+            .unwrap();
             let k = &p.cascades[0];
             let ground = [0.0, -1.7 * up[1], -3.0];
             let above: V3 = std::array::from_fn(|i| ground[i] + up[i] * 2.0);

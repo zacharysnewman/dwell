@@ -61,7 +61,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 41 — Half-height grid (½ m cells, stored cardinal ramps) | 🚧 In progress — adopted for `main` (owner, 2026-10-20; ADR 0042): H0–H6 built and verified locally (½ m cells, stored ramps, nothing adaptive; the slopes V2; `main` 0.21.4 merged in); H7, the adoption: protocol 18, generator 19, the adaptive blocks removed, the experiment wording gone, `main`'s 1 m work checked on ½ m cells (HALF_HEIGHT_GRID.md §9). Outstanding: CI; the bench numbers against 0.21.x; the owner raises `package.json` to 0.22.0 at the merge (a new compatibility line). Deviations: brushes, a fluid's surface drop, the chunk view sphere and structures stay in cells; the LOD draws natural tops flat |
 | 42 — Smooth LOD transitions | 🚧 In progress — built and tested natively and in Chrome on the GPU: a dithered cross-fade on every LOD swap (`dwell-lod` `fade.rs`; chunks, sections, stand-ins, skirts, water; no ink on the outgoing level) and hysteresis in the selection, both data (`shared/look/lodblend.json`); outstanding: CI, the owner's review in a browser; a patch release |
 | 43 — Ambient light | 🚧 In progress — built and tested natively and in Chrome on the GPU: classic corner AO and baked ray-traced sky visibility per terrain vertex (dwell-mesh `sky.rs`, data `shared/look/ambient.json`), the hemisphere light scaled by it, the twilight and night keyframes retuned; outstanding: CI; a patch release |
-| 44 — Sun and moon shadows (cascaded shadow maps, the lighting's layer 2) | 🚧 In progress — built and tested natively, in Vitest and in Chrome on the GPU: up to four cascades per the Shadows setting (Off / Low / High, data in `shared/look/shadows.json`), texel-snapped sphere fits, casters (terrain, plants, LOD, bodies, your own), a soft PCF on the direct term only, faded by the time of day and past the last cascade to layer 1's stand-in; outstanding: CI, the owner's look; a patch release |
+| 44 — Sun and moon shadows (cascaded shadow maps, the lighting's layer 2) | 🚧 In progress — built and tested natively, in Vitest and in Chrome on the GPU: up to four cascades per the Shadows setting (Off / Low / High, data in `shared/look/shadows.json`), texel-snapped sphere fits, casters (terrain, plants, LOD, bodies, your own), a soft PCF on the direct term only, faded by the time of day and past the last cascade to layer 1's stand-in; outstanding: CI, the owner's look, High's cost target (+3–6 ms measured on a busy machine; a follow-up); a patch release |
 
 Phase numbering: Phase 4 was inserted on 2026-09-29 for the planet-scale world (ADRs 0011, 0012);
 the former Phases 4–7 are now 5–8, and Phase 3's former 3c and 3d are now 3d and 3e.
@@ -4411,7 +4411,7 @@ Deviations
 ## Phase 44 — Sun and Moon Shadows: Cascaded Shadow Maps
 
 **Status:** Built and tested natively, in Vitest and in Chrome on the GPU (2026-10-21).
-Outstanding: CI; the owner's look. No change to saves, the protocol or terrain: a patch release.
+Outstanding: CI; the owner's look; High's cost target (a follow-up). No change to saves, the protocol or terrain: a patch release.
 
 Owner (2026-10-21): real sun and moon shadows with cascaded shadow maps, the lighting plan's layer
 2 over layer 1's flood-fill sky and block light (built on its own branch), replacing layer 1's
@@ -4447,7 +4447,10 @@ Exit criteria
   noon, midnight and dusk on both faces (dwell-look); the shadow only on the direct term
   (shader-source test); the WGSL validates with the new entry points; the setting's data,
   defaults and append-only store (Vitest, `shadows.test.mjs`).
-- [x] Measured on the bench per level (DAY_NIGHT.md §10, Cost).
+- [x] Measured on the bench per level (DAY_NIGHT.md §10, Cost; on a busy machine).
+- [ ] The cost targets (High ≤ 3 ms, Low ≤ 1 ms on the M1): Low meets it on the lowest frames;
+  High is +3–6 ms at the spawn and in a grove — moved to a follow-up (coarser far casters), with a
+  measurement on an idle machine.
 - [x] Checked in Chrome on the GPU: noon and morning shadows of terraces, players and pines, your own
   shadow in first person, dusk, midnight under the moon, on face A and face B, at each level
   (shots in the PR).

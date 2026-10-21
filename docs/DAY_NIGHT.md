@@ -305,7 +305,27 @@ maps, `SHADOW_WGSL`), `dwell-look` `shadows.rs` (the setting, the light that cas
 **Cost**: see the table below (Apple M1, Chrome, `npm run bench -- … --compare --configs
 shadows-low,shadows-off --unthrottled`, the baseline High).
 
-COST_TABLE
+`gpu.frame` medians (ms; the lowest frame in brackets) for High, Low and Off, one run each, 1280×720.
+**The machine was busy** (other agents' builds and browsers sharing the CPU and GPU; load average
+10–17), so the medians are noisy and the lowest frames are the steadier guide.
+
+| Scenario | High | Low | Off | High − Off | Low − Off |
+| --- | --- | --- | --- | --- | --- |
+| idle-spawn | 17.5 (12.1) | 15.3 (10.1) | 12.7 (8.9) | +4.8 (+3.2) | +2.6 (+1.1) |
+| shadows-pines (grove) | 20.4 (14.1) | 16.0 (10.2) | 14.4 (10.1) | +6.0 (+4.0) | +1.6 (+0.1) |
+| fly-low-fast (flight) | 12.0 (6.6) | 11.3 (6.8) | 10.4 (5.6) | +1.6 (+1.0) | +0.9 (+1.1) |
+| fly-high (flight) | 10.1 (5.5) | 10.7 (5.1) | 11.0 (6.4) | ≈ 0 | ≈ 0 |
+
+Triangles drawn into the maps (`shadow.ktris`): idle 331k on High, 487k on Low (Low's second
+cascade covers the whole 80 m slice and is drawn every other frame); grove 186k / 317k; flying
+low 35k / 54k; flying high 20k. The targets (High ≤ 3 ms, Low ≤ 1 ms on the M1) are met by Low on
+the lowest frames, not yet by High at the spawn and in the grove: the casters' triangles dominate
+(the chunk meshes are the scene's own, AO-split and fine), and the plants' alpha-tested blades cost
+most per texel. Already in: casters culled to each slice's light-space footprint, opaque casters
+drawing only their light-facing faces, the far cascades taking turns (`refreshFrames`), plants in
+the nearest cascades only (`plantCascades`), a 120 m caster reach. Next steps for High, a
+follow-up: coarser caster meshes for the far cascades, a lower far resolution, or three cascades;
+measured again on an idle machine.
 
 **Extending it**: the tiers, the bias, the fades and the distances are data; a tier is a new entry
 of `tiers` with the setting's name added to `ShadowQuality` and the menu's choices (the shader

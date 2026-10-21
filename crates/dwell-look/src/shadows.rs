@@ -197,10 +197,17 @@ mod tests {
                 faded = true;
                 continue;
             }
-            assert!(c.strength <= last + 1e-9, "t {t}: {} after {last}", c.strength);
+            assert!(
+                c.strength <= last + 1e-9,
+                "t {t}: {} after {last}",
+                c.strength
+            );
             last = c.strength;
         }
-        assert!(last < 0.05 || faded, "the sun's shadows fade by sunset ({last})");
+        assert!(
+            last < 0.05 || faded,
+            "the sun's shadows fade by sunset ({last})"
+        );
     }
 
     #[test]

@@ -917,10 +917,11 @@ impl Renderer {
         ];
         // The shadow passes' frame (shadows.rs): the uniform (the cascade's matrix as view_proj),
         // the atlas and its sampler, and nothing that reads the maps they draw.
-        let shadow_frame_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("shadow frame"),
-            entries: &frame_entries[..3],
-        });
+        let shadow_frame_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("shadow frame"),
+                entries: &frame_entries[..3],
+            });
         // The water's tiles (water_tiles.rs), bindings 5–7; the shadow maps (shadows.rs), 8–10.
         let frame_entries: Vec<_> = frame_entries
             .into_iter()
@@ -2326,8 +2327,13 @@ impl Renderer {
         let mut shadow_plan = self.shadow_plan(&basis);
         let mut shadow_mask = 0u8;
         if let Some(p) = &mut shadow_plan {
-            let (used, mask) =
-                shadows::stagger(self.shadow_prev.as_ref(), p, self.eye, self.shadow_frame, false);
+            let (used, mask) = shadows::stagger(
+                self.shadow_prev.as_ref(),
+                p,
+                self.eye,
+                self.shadow_frame,
+                false,
+            );
             p.cascades = used;
             shadow_mask = mask;
             self.shadow_frame += 1;
@@ -2756,7 +2762,9 @@ impl Renderer {
                 .iter()
                 .enumerate()
                 .filter(|(i, _)| mask & (1 << i) != 0)
-                .fold(0u8, |m, (i, c)| m | (u8::from(c.touches(centre, half)) << i))
+                .fold(0u8, |m, (i, c)| {
+                    m | (u8::from(c.touches(centre, half)) << i)
+                })
         };
         let item = |kind, offset, clip, fade, mesh, passes| DrawItem {
             kind,
@@ -2796,7 +2804,12 @@ impl Renderer {
             }
         }
         for &(id, mask, fade) in &self.terrain.shown {
-            let Some(s) = self.terrain.sections.get(&id).filter(|s| s.opaque.is_some()) else {
+            let Some(s) = self
+                .terrain
+                .sections
+                .get(&id)
+                .filter(|s| s.opaque.is_some())
+            else {
                 continue;
             };
             if fade.is_hidden() {
@@ -2810,7 +2823,14 @@ impl Renderer {
             let r = self.rel(s.origin);
             let offset = [r[0], r[1], r[2], s.cell as f32];
             let mesh = DrawMesh::Section(id, false, mask);
-            out.push(item(Kind::Flat, offset, None, fade.shader_value(), mesh, passes));
+            out.push(item(
+                Kind::Flat,
+                offset,
+                None,
+                fade.shader_value(),
+                mesh,
+                passes,
+            ));
         }
         for st in self
             .terrain
@@ -2819,7 +2839,12 @@ impl Renderer {
             .filter(|s| !s.fade.is_hidden())
             .take(MAX_STAND_INS)
         {
-            let Some(s) = self.terrain.sections.get(&st.id).filter(|s| s.opaque.is_some()) else {
+            let Some(s) = self
+                .terrain
+                .sections
+                .get(&st.id)
+                .filter(|s| s.opaque.is_some())
+            else {
                 continue;
             };
             let passes = bits(st.lo, std::array::from_fn(|k| st.hi[k] - st.lo[k]));
@@ -2830,7 +2855,14 @@ impl Renderer {
             let offset = [r[0], r[1], r[2], s.cell as f32];
             let clip = Some((self.rel(st.lo), self.rel(st.hi)));
             let mesh = DrawMesh::Section(st.id, false, 0);
-            out.push(item(Kind::Flat, offset, clip, st.fade.shader_value(), mesh, passes));
+            out.push(item(
+                Kind::Flat,
+                offset,
+                clip,
+                st.fade.shader_value(),
+                mesh,
+                passes,
+            ));
         }
         for d in &mut out {
             d.page = self.mesh_of(&d.mesh).0.region.page;

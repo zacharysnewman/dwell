@@ -2056,11 +2056,22 @@ mod tests {
             src[at..at + src[at..].find("\n}\n").expect("end")].to_string()
         };
         let lit = body("lambert_lit");
-        assert_eq!(lit.matches("shadow").count(), 2, "the parameter and one use:\n{lit}");
+        assert_eq!(
+            lit.matches("shadow").count(),
+            2,
+            "the parameter and one use:\n{lit}"
+        );
         assert!(lit.contains("let irradiance = direct * shadow + hemi;"));
         let direct: Vec<&str> = lit.lines().filter(|l| l.contains("direct")).collect();
-        assert!(direct.iter().all(|l| !l.contains("hemi_") && !l.contains("ambient")));
-        let hemi = lit.lines().find(|l| l.contains("let hemi =")).expect("hemi");
+        assert!(
+            direct
+                .iter()
+                .all(|l| !l.contains("hemi_") && !l.contains("ambient"))
+        );
+        let hemi = lit
+            .lines()
+            .find(|l| l.contains("let hemi ="))
+            .expect("hemi");
         assert!(!hemi.contains("shadow") && hemi.contains("* ambient"));
         // Every scene surface takes its shadow from the maps (or the stand-in past them).
         assert!(body("scene_out").contains("shadow_light(rel, n, 1.0)"));
