@@ -265,18 +265,26 @@ runs it on both faces.
   - targeting: a half-height top's box and ray hit (`dwell-world` `tests/world.rs`);
   - tools: every brush preset's stroke (`dwell-game` `brush_tool.rs`), and a copy pasted on either
     face from either face (`region_tools.rs`);
-  - the controller: every scenario mirrored (`DWELL_FACE=b`, PLAYER_CONTROLLER.md §11).
+  - the controller: every scenario mirrored (`DWELL_FACE=b`, PLAYER_CONTROLLER.md §11);
+  - the eye, the camera's axes, the sounds of a whole session, the cloud deck, and the shaders'
+    face-dependent pieces (`dwell-client` `render/face_shading.rs`: plant sway, water ripples and
+    sparkles, by their Rust twins).
+- **The shaders' face frame.** WGSL carries a frame as its sign (`face: f32`, ±1);
+  `FaceFrame::wgsl()` gives the shaders `face_at(y)`, `face_y(face, y)`, `face_up(face)`,
+  `face_vector(face, v)` and `face_rise(face, v)`, the frame's maps, and every shader goes through
+  them rather than `MIDPLANE_Y`. A face-dependent piece of shading is a function in
+  `render/face_shading.rs` with a Rust twin tested on both faces.
 - **Playing face B.** The dev link `?spawn=b` starts a local world with the player on face B's
   spawn (`BifacialTerrain::spawn_point_b`, a world file of its own, `…-faceb`), and a bench scenario's
   `"face": "b"` does the same (`docs/DEV_TOOLS.md`). Real worlds still spawn on face A (§9).
 
-### 11.1 The audit (2026-10-20)
+### 11.1 The audit (2026-10-20, completed in 0.21.x)
 
 Every place that branches on the face or mirrors coordinates, and how it stands. *Boundary*: one of
-the documented mirroring boundaries. *Frame*: goes through `FaceFrame` (or a shorthand of it).
-*Sign*: a face sign threaded into world-space maths (symmetric by construction, covered by a parity
-test or the mirror suite); these are the ones to move onto `FaceFrame` when their files are next
-reworked (renderer and netcode, being changed by other work as this lands).
+the documented mirroring boundaries. *Frame*: goes through `FaceFrame` (or a shorthand of it, or the
+shaders' WGSL frame). Since the second pass (`claude/face-gaps`) no system carries a face sign of its
+own: the renderer, the netcode, the eye and camera, the sounds and the bodies went onto `FaceFrame`,
+and the check of §11.2 keeps it so.
 
 | Area | Where | How it handles face B | Status |
 |---|---|---|---|
@@ -290,19 +298,22 @@ reworked (renderer and netcode, being changed by other work as this lands).
 | LOD meshing | `lod_mesher.rs` `mesh_section(mirror)`: `mirror_rows`, `flip_mesh_y`, ±Y skirts swapped | mirror image, turned back | Boundary; parity test |
 | LOD selection | `dwell-lod` `system.rs` (`view_face`, the other face culled beyond 512 m, `surface_b` for face-B sections, `mirror_section_origin`), `grid.rs` (`is_face_b_section`) | by the camera's face | parity test; straddling sections (levels ≥ 7) are meshed for the viewer's face by design (§10) |
 | Controller | `dwell-physics` `frame.rs` (`Frame`, `FaceQuery`), `controller.rs` (face switch, ladder rows) | runs in the mirror image | Boundary (via FaceFrame); the mirror suite |
-| Gravity, flip band | `physics.rs`, `config.rs` | sign by side of the midplane | Sign; `tests/bifacial.rs` |
+| Gravity, flip band | `physics.rs` (a body's face by `FaceFrame::at_height`, its depth and motion face-local), `config.rs` | the face's up, faded across the band | Frame; `tests/bifacial.rs` |
 | Terrain collision | `physics` `terrain.rs` (`up_of_y` for derived shapes) | the face's up | Frame |
-| Netcode | `net.rs`, `predictor.rs` (`FACE_B` flags) | a flag on the wire | Sign |
+| Netcode | `dwell-physics` `net.rs` `face_of_flags`, `face_bit` (the only readers and writers of the `FACE_B` bits); the controller's state carries a `FaceFrame`; `predictor.rs` (local reset, remote proxies take a `FaceFrame`) | a bit on the wire, a frame everywhere else | Boundary (the wire); round-trip test |
 | Editing | `dwell-world` `edit.rs` `below`, `unsupported_after`, `plant_sink_at`, `target_box`, the raycast's plant-above | the face's up | Frame. **Fixed:** `target_box` outlined and aimed at a face-B half-height top as a whole cell |
-| Targeting | `dwell-game` `block_interaction.rs` `view_direction`; `dwell-client` `render/camera.rs` `view_forward` (the same formula) | pitch toward the face's up | Sign |
+| Targeting, the camera | `dwell-game` `block_interaction.rs` `view_direction` and `dwell-client` `render/camera.rs` `aim` (both `FaceFrame::look`; the duplicate `view_forward` removed), the audio listener (the camera's axes), the LOD camera's pitch (`FaceFrame::pitch`), mouse and touch turns (`FaceFrame::handed`) | a look toward the face's up | Frame; `aim` tested on both faces |
 | Brushes and the ghost | `dwell-game` `brush_tool.rs` `stroke_at`, `covered_at` | stroke run face-local | Boundary (via FaceFrame). **Fixed:** strokes ran in world terms on face B (trees grew into the ground, overlay painted the buried side, flatten/raise/lower inverted). Brushes are only enabled in the sandbox (face A) today |
 | Copy and paste | `region_tools.rs` (clipboard face-local, `paste_box`) | face-local clipboard | Boundary (via FaceFrame). **Fixed:** a face-B paste ran from the aimed-at cell into the ground, and a copy from the other face pasted upside down |
-| Eye, camera turn-over | `dwell-game` `eye.rs`, `face_flip.rs`; `dwell-look` `motion.rs` | face sign | Sign; tests on both faces |
-| Sounds | `dwell-game` `sound.rs` (landing impact along the face's up) | face sign | Sign; face-B test |
-| Remote players | `remotes.rs` `is_face_b`, `dwell-client` `game.rs` | drawn upside down | Sign |
+| Eye, camera turn-over | `dwell-game` `eye.rs` (face-local heights), `face_flip.rs` (a `FaceFrame` per tick); `dwell-look` `motion.rs` (face-independent) | smoothed face-local | Frame; tests on both faces |
+| Sounds | `dwell-game` `sound.rs` (`MoverSample.face`: speeds along the face's up); the client's ground and body probes (`mover_sample`) | face-local | Frame; a whole session sounds the same on either face (`both_faces!`) |
+| Remote players, your body and arms | `remotes.rs` `RemoteView::face`; `dwell-client` `bodies.rs` (the animator gets face-local velocities: `dwell-characters` never knows the face), `render/characters.rs` `body_frame` (the frame's up; a proper rotation, not a mirror), the dead view's camera | drawn upside down | Frame; `body_frame` on both faces |
+| Puppets (dev tools) | `game.rs` `Puppets` (a `FaceFrame`; the JS API's sign converted at `web/app.rs`) | on either face | Frame |
 | Fluids under the eye | `dwell-world` `fluid.rs` `eye_fluid` | the face's up | Frame |
-| Light, fog, sky, clouds, water | `dwell-client` `render/shaders.rs` (`own`, `lambert`, `fog_amount`, the water's normals, reflections, caustics), `dwell-look` `lib.rs` (`sky_color`, `light_weight`) | per fragment by its side of the midplane; the sky and fog in the viewer's face frame | Sign |
+| Light, fog, sky, clouds, water | `dwell-client` `render/shaders.rs` and `render/characters.rs` (`own`, `lambert`, `key_light`, `fog_amount`, the underwater fog, reflections, caustics, the ink over the sea: all through the WGSL frame), `render/face_shading.rs` (plant sway, ripple and sparkle normals), `dwell-look` `lib.rs` (`sky_color`, `light_weight` take a `FaceFrame`), `sky.wgsl`, `clouds.rs` (`deck_height`, `cloud_uniforms`) | per fragment by its face; the sky, fog and clouds in the viewer's frame | Frame; the deck and face_shading on both faces. **Fixed:** a face-B plant swaying in the wind stretched away from its ground instead of bending toward it, and face-B water's ripples and sparkle facets were not face A's mirror image. Face B's clouds are another part of the noise (by design) |
+| Outline, edge blur, motion | `shaders.rs` (`ink_above_sea` through the frame; the outline and blur are screen-space), `dwell-look` `outline.rs`, `motion.rs` | face-independent but for the sea test | Frame |
 | Spyglass | `dwell-look` `spyglass.rs` | face-independent (zoom) | — |
+| The LOD's row maths | `dwell-world` `lod.rs` `mirror_row_bottom`, `dwell-lod` `grid.rs` `mirror_section_origin` (`FaceFrame::span`), `system.rs` `view_face` | spans mirrored | Frame |
 
 **"Stray dark slabs" (deferred bug, 2026-10-15): the camera was inside face B's rock.** Reported by
 the day/night work from its `day-night-face-b` scenario, whose camera was written as "50 m over face
@@ -313,3 +324,30 @@ B's dawn light), leaves and grass floating against the sky. Face A drawn from in
 same (grey walls by day); no face-B-only geometry is involved, which the parity tests above confirm
 for generation, the chunk mesher and the LOD. Fix: the scenario's camera is now 50 m over face B's
 ground (y = −452). Shots of both (in rock, and over the ground) are in the PR.
+
+### 11.2 The both-faces check [built, 2026-10-20]
+
+A plain `#[test]` can quietly cover face A alone, and new code can mirror by hand again. A test
+scanning the sources keeps both out: `dwell-world` `tests/both_faces.rs`, run by every
+`cargo nextest run --workspace` (CI's test job). It reads the face-sensitive crates (`dwell-worldgen`,
+`dwell-world`, `dwell-mesh`, `dwell-lod`, `dwell-physics`, `dwell-game`, `dwell-look`,
+`dwell-characters`, `dwell-sim`, `dwell-client`) and fails, naming the file and line, when:
+
+1. **code mirrors by hand outside the frame**: the mirror's sums (`MIRROR_SUM`, `MIRROR_CHUNK_SUM`,
+   `FaceFrame::MIRROR`), `2 × MIDPLANE_Y`, a face found by comparing with `MIDPLANE_Y`, a WGSL face
+   sign made with `select(-1.0, 1.0, …)`, or the wire's `FACE_B` bit used outside `net.rs`'s
+   `face_of_flags` / `face_bit`. `face.rs` and `voxel.rs` (the frame itself) are exempt; any other
+   line is allowed only as a documented boundary, marked `// face-boundary: <reason>` on it or next
+   to it;
+2. **a face-dependent test runs on one face**: a plain `#[test]` whose code names face B, the
+   midplane or a mirror (`FaceFrame::B`, `Face::B`, `FACE_B`, `MIDPLANE…`, `MIRROR…`, `mirrored(`,
+   `spawn_point_b`, `face_b`, `.is_b()`, …) must be a `both_faces!` test, loop over
+   `FaceFrame::under_test()`, or carry `// face-a-only: <reason>`, `// face-b-only: <reason>` or
+   `// both-faces: <reason>` (it compares or crosses the faces itself). The tests that named a face
+   when the check arrived are listed with their reasons in the check (`KNOWN`); the list only
+   shrinks. `dwell-physics/tests` is exempt: CI runs that whole suite again on face B.
+
+The check is a heuristic, not a proof: a test that builds only face-A fixtures without naming any
+face is invisible to it. That is why face-dependent systems also get a parity test over the mirror
+world (§11), and why new face-dependent code is written face-local through `FaceFrame`, which the
+first rule enforces. Its own test (`the_check_catches_what_it_is_for`) pins what each rule catches.
