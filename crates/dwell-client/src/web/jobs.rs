@@ -53,12 +53,17 @@ struct WorkerSlot {
     _onmessage: Closure<dyn FnMut(MessageEvent)>,
 }
 
+/// What a worker's result calls, once the pool has set it ([`Jobs::on_done`]).
+type Waker = Rc<RefCell<Option<Rc<dyn Fn()>>>>;
+
 /// Jobs run by two sets of workers: generation (with the world) and meshing.
 pub struct WebJobs {
     slots: [Vec<WorkerSlot>; 2],
     /// Which slot runs each job: (id, kind, slot).
     running: Vec<(u32, usize, usize)>,
     done: Rc<RefCell<VecDeque<Vec<u8>>>>,
+    /// Called after a result arrives ([`Jobs::on_done`]).
+    wake: Waker,
 }
 
 impl WebJobs {
@@ -71,17 +76,23 @@ impl WebJobs {
         world: (u32, u64),
     ) -> Result<Self, JsValue> {
         let done: Rc<RefCell<VecDeque<Vec<u8>>>> = Rc::default();
+        let wake: Waker = Rc::default();
         let mut slots: [Vec<WorkerSlot>; 2] = Default::default();
         for (kind, count) in [(0usize, generators.max(1)), (1, meshers.max(1))] {
             for _ in 0..count {
                 let worker: Worker = make_worker.call0(&JsValue::NULL)?.dyn_into()?;
                 let sink = done.clone();
+                let waker = wake.clone();
                 let memory: Rc<std::cell::Cell<f64>> = Rc::default();
                 let reported = memory.clone();
                 let onmessage = Closure::<dyn FnMut(MessageEvent)>::new(move |e: MessageEvent| {
                     let data = e.data();
                     if data.is_instance_of::<js_sys::ArrayBuffer>() {
                         sink.borrow_mut().push_back(Uint8Array::new(&data).to_vec());
+                        let w = waker.borrow().clone();
+                        if let Some(w) = w {
+                            w();
+                        }
                     } else if let Some(bytes) = Reflect::get(&data, &"memory".into())
                         .ok()
                         .and_then(|m| m.as_f64())
@@ -113,6 +124,7 @@ impl WebJobs {
             slots,
             running: Vec::new(),
             done,
+            wake,
         })
     }
 }
@@ -125,6 +137,9 @@ impl Jobs for WebJobs {
             .flatten()
             .map(|s| s.memory.get())
             .collect()
+    }
+    fn on_done(&mut self, wake: Rc<dyn Fn()>) {
+        *self.wake.borrow_mut() = Some(wake);
     }
     fn capacity(&self, mesh: bool) -> usize {
         // Two per worker: one running, one already there when it finishes.

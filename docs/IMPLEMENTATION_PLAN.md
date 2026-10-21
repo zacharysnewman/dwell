@@ -57,12 +57,12 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 37 — Sprint slide (stacks on 35) | 🚧 In progress — built and tested natively (controller, predictor, netcode, protocol 15 vectors): crouch while sprinting slides on, crouched, with friction and slopes, limited steering, a jump out and a cooldown (`PLAYER_CONTROLLER.md` §6.9), checked in Chrome (the `sprint-slide` bench); outstanding: CI (the WASM divergence run and the e2e suite), the owner's review; a protocol change (15): the owner raises `package.json` to a new minor |
 | 38 — The spyglass | 🚧 In progress — built and tested natively, in Vitest and on a real GPU (ADR 0039, `SPYGLASS.md`): a toggle key (`` ` ``) and wheel steps from `shared/look/spyglass.json` (generator, CI stale check), the zoomed FOV for the raster renderer, the marcher (its FOV bug fixed) and the LOD, which refines only inside the narrow view (bounded by the detail boost), the vignette, reduced motion, the `spyglass-far` bench scenario; outstanding: CI and the owner's review in a browser; a patch release |
 | 39 — Painterly textures | 🚧 In progress — built and tested natively, in Node and on a real GPU (ADR 0040, `ART_DIRECTION.md`, `PAINTERLY_TEXTURES.md`): the storybook palette and materials as data (`shared/textures`), one stroke generator baked into the atlas (CI stale check, a material added by data alone), the default since the owner approved it (2026-10-20) and the only texture set since the classic one was removed (owner, 2026-10-21: the utility tiles `plain`, `grid`, `missing` painted from the data, `TextureSet` and `?textures=` gone), the Painterly Texture Lab; follow-ups: grass_side's skirt made continuous across the tile (owner's review); the skirt on dirt sides under grass (`sideUnder` block data, the `dirtSkirt` tile, owner, 2026-10-20); the ink outline preview behind `?outline=` (ART_DIRECTION.md §7, off by default), then no ink on tall grass (block data `outline`) and the edge blur moved to its own pass over the finished image so the ink reaches the screen edges at speed (owner, 2026-10-20); outstanding: the owner's pick of an outline mode; CI and the owner's review of the look; a patch release |
-| 40 — Characters and creatures | 🚧 In progress — C0 built and tested (ADR 0041, `CHARACTERS.md`): the rig vocabulary and validator (`shared/characters/rig.mjs`), the data (the player with three looks, the wolf, the deer; accessories, the block and brush items, clips), the generator and its tests, the Character Lab prototype checked in Chrome and published; stacked on Phase 39's palette and materials; C0b (the owner's first review, 2026-10-20) built and tested: hair composes with hats (`with`), the wolf's and deer's tails are chains checked joined through every clip, the player's clips for every controller state (sprint, crouch, crouch-walk, slide, jump, fall, land, climb, swim, fly; the arms' sprint, slide, jump, fall, land) and the Lab's transitions player; C1 (players in the game) built and tested (2026-10-20): `dwell-characters` (tables generated from the data, part meshes, clips, clip selection), the full body for remote players and your first-person arms in their own pass, the Show your arms setting, the `puppets` dev tool; playtest tuning of the arms view (2026-10-20: the walk's hand bob 2.5x slower, the hand 1/1.5 the size in the lower right, `tests/first_person.rs`); with C2's held item and swings in snapshots (protocol v17: **a new compatibility line**, the owner raises `package.json`); outstanding: CI, the owner's review in game and of `CHARACTERS.md` §10, C2's looks at join, a step pose (foot IK on steps built with claude/smooth-steps), C3 |
+| 40 — Characters and creatures | 🚧 In progress — C0 built and tested (ADR 0041, `CHARACTERS.md`): the rig vocabulary and validator (`shared/characters/rig.mjs`), the data (the player with three looks, the wolf, the deer; accessories, the block and brush items, clips), the generator and its tests, the Character Lab prototype checked in Chrome and published; stacked on Phase 39's palette and materials; C0b (the owner's first review, 2026-10-20) built and tested: hair composes with hats (`with`), the wolf's and deer's tails are chains checked joined through every clip, the player's clips for every controller state (sprint, crouch, crouch-walk, slide, jump, fall, land, climb, swim, fly; the arms' sprint, slide, jump, fall, land) and the Lab's transitions player; C1 (players in the game) built and tested (2026-10-20): `dwell-characters` (tables generated from the data, part meshes, clips, clip selection), the full body for remote players and your first-person arms in their own pass, the Show your arms setting, the `puppets` dev tool; C1b (2026-10-21): your own body in first person from the neck down (`firstPerson.body`: hidden head, neck and arms, kept clear of the eye; a both-faces sweep of every clip and pitch); playtest tuning of the arms view (2026-10-20: the walk's hand bob 2.5x slower, the hand ~0.55 of the screen's height (was 0.65; 0.43 read too small) in the lower right, `tests/first_person.rs`); with C2's held item and swings in snapshots (protocol v17: **a new compatibility line**, the owner raises `package.json`); outstanding: CI, the owner's review in game and of `CHARACTERS.md` §10, C2's looks at join, a step pose (foot IK on steps built with claude/smooth-steps), C3 |
 | 41 — Half-height grid (½ m cells, stored cardinal ramps) | 🚧 In progress — adopted for `main` (owner, 2026-10-20; ADR 0042): H0–H6 built and verified locally (½ m cells, stored ramps, nothing adaptive; the slopes V2; `main` 0.21.4 merged in); H7, the adoption: protocol 18, generator 19, the adaptive blocks removed, the experiment wording gone, `main`'s 1 m work checked on ½ m cells (HALF_HEIGHT_GRID.md §9). Outstanding: CI; the bench numbers against 0.21.x; the owner raises `package.json` to 0.22.0 at the merge (a new compatibility line). Deviations: brushes, a fluid's surface drop, the chunk view sphere and structures stay in cells; the LOD draws natural tops flat |
 | 42 — Smooth LOD transitions | 🚧 In progress — built and tested natively and in Chrome on the GPU: a dithered cross-fade on every LOD swap (`dwell-lod` `fade.rs`; chunks, sections, stand-ins, skirts, water; no ink on the outgoing level) and hysteresis in the selection, both data (`shared/look/lodblend.json`); outstanding: CI, the owner's review in a browser; a patch release |
 | 43 — Ambient light | 🚧 In progress — built and tested natively and in Chrome on the GPU: classic corner AO and baked ray-traced sky visibility per terrain vertex (dwell-mesh `sky.rs`, data `shared/look/ambient.json`), the hemisphere light scaled by it, the twilight and night keyframes retuned; outstanding: CI; a patch release |
 | 44 — Sun and moon shadows (cascaded shadow maps, the lighting's layer 2) | 🚧 In progress — built and tested natively, in Vitest and in Chrome on the GPU: up to four cascades per the Shadows setting (Off / Low / High, data in `shared/look/shadows.json`), texel-snapped sphere fits, casters (terrain, plants, LOD, bodies, your own), a soft PCF on the direct term only, faded by the time of day and past the last cascade to layer 1's stand-in; outstanding: CI, the owner's look, High's cost target (+3–6 ms measured on a busy machine; a follow-up); a patch release |
-| 45 — Flood light | 🚧 In progress — built and tested natively and in Chrome on the GPU (ADR 0045, DAY_NIGHT.md §11): per-cell sky and block light on the client (`dwell_world::light`, data `shared/look/light.json` and the blocks' `lightFilter`/`emits`), relit on edits and predicted edits, the mesher's smooth `flood` stream, ambient and the direct sun and moon scaled by it (carved tunnels no longer lit like day); follow-up: the streaming stalls fixed (coalesced seeded unloads, no cascade under a chunk held over open air, light and mesh budgets of their own that scale on a slow page; flying back to 0.22.8's frames); outstanding: CI, the owner's review; characters (your arms, held items, players) lit by the cells they are in, eased; the shadow maps' stand-in past their last cascade |
+| 45 — Flood light | 🚧 In progress — built and tested natively and in Chrome on the GPU (ADR 0045, DAY_NIGHT.md §11): per-cell sky and block light on the client (`dwell_world::light`, data `shared/look/light.json` and the blocks' `lightFilter`/`emits`), relit on edits and predicted edits, the mesher's smooth `flood` stream, ambient and the direct sun and moon scaled by it (carved tunnels no longer lit like day); follow-up: the streaming stalls fixed (coalesced seeded unloads, no cascade under a chunk held over open air, light and mesh budgets of their own that scale on a slow page; flying back to 0.22.8's frames; generation workers refilled between frames, so a slow page's terrain finishes generating, the native-server e2e tests); outstanding: CI, the owner's review; characters (your arms, held items, players) lit by the cells they are in, eased; the shadow maps' stand-in past their last cascade |
 
 Phase numbering: Phase 4 was inserted on 2026-09-29 for the planet-scale world (ADRs 0011, 0012);
 the former Phases 4–7 are now 5–8, and Phase 3's former 3c and 3d are now 3d and 3e.
@@ -3983,7 +3983,9 @@ republished. Outstanding: the owner's review of the fixes and answers to the res
 `CHARACTERS.md` §10, CI. C1 built and tested (2026-10-20, owner: *"add the player character into the
 game"*), with C2's held item and swings; C2's looks at join and C3 not started. Follow-up (owner's playtest, 2026-10-20): the arms view tuned in data, the walk's hand bob
 2.5x slower (`fp_walk`/`fp_sprint` `cycle` 4 m) and the hand 1/1.5 the size in the lower right
-(`firstPerson.anchor`), pinned by `crates/dwell-characters/tests/first_person.rs`. Stacked on Phase 39
+(`firstPerson.anchor`), pinned by `crates/dwell-characters/tests/first_person.rs`. C1b (your own
+body in first person, from the neck down, 2026-10-21) built and tested; outstanding: the owner's
+review in game. Stacked on Phase 39
 (the palette, materials and painter it shades with). C0 changed no save, protocol or terrain; **C1
 changes the protocol (v17: held items and swings in snapshots, `HeldItem`): a new compatibility
 line**, so the owner raises `package.json` to the next minor.
@@ -4108,6 +4110,29 @@ Exit criteria
   `another_client_sees_your_body_walk_sprint_slide_and_jump_and_what_you_hold`; red with the server
   not relaying it; e2e `characters.spec.ts` on a native server).
 - [ ] CI green; the owner's review of the characters in game.
+
+**C1b — your own body in first person (2026-10-21)**: owner, *"I want to see legs in first person,
+particularly when sliding"*, and *"the main thing to watch out for with full body draw is not
+clipping the camera into the player model"* (CHARACTERS.md §5.1).
+
+- [x] Data: `firstPerson.body` in `characters.json` (the bones and parts it hides, `clear`, `back`,
+  `lookDown`, `near`, `fill`), validated by `rig.mjs` (`gen.test.mjs`: six bad entries; a part hidden
+  by data alone) and generated into `FirstPersonBody`.
+- [x] `dwell-characters` `own.rs`: the own body's mesh (no head, neck wear or arms) and the per-frame
+  shift back from the eye (`own::shift`), with tests (a part added by data on a hidden bone is hidden).
+- [x] The renderer: your body drawn in the scene passes in first person (`BodyDraw::first_person`,
+  `own_frame`), no held item and no shadow of its own (the whole body still casts), its fragments
+  within the near plane plus `near` of the eye discarded; the game sets it in first person and not
+  from a placed camera or while dead (`Scene::set_own_body`).
+- [x] The sweep (`render::characters` `your_body_never_comes_near_the_camera_or_fills_the_view`,
+  both faces): every body clip and the swings at six phases, every look, pitch −90°…90°, the eye at
+  its height, a step low and (crouched) easing down from standing: no triangle within 0.13 m of the
+  eye (nearest 0.146 m), at most half the screen covered (most 48.5%, swimming looking straight
+  down), the feet in view looking down (≤ −75°) and the legs while sliding (≤ −15°); red with the
+  offsets at 0 (a triangle 0.043 m from the eye, inside the near plane).
+- [x] Screenshots on the real GPU through the bench (straight down standing, crouching, sprinting,
+  mid-slide, straight down on face B).
+- [ ] The owner's review in game.
 
 **C2 — looks and poses over the network (a new compatibility line)**: the held item and swings
 (even refused edits) are built with C1 (protocol v17: `HeldItem`, each remote's `held` and `swing`
@@ -4539,6 +4564,16 @@ Deviations
   wants on 0.22.12), the bench's `climb-fast` scenario. Measured (M1, load average 41): climb,
   fly-high and fly-low-fast worst frame 35 ms, p99 18.7 ms, no long task over 50 ms (0.22.8's);
   spawn to 50 meshed 0.42 s, to 200 4.3 s at 60 fps. The sky column fast path wasn't needed.
+  Then (after 0.22.15; CI's native-server `play.spec.ts:129` and `edit.spec.ts:204` intermittent
+  from 0.22.12: `generating === 0 && loaded > 100` never held in 30 s): the job pool refilled its
+  workers only at a frame's poll, two jobs per worker a frame, and on CI's software renderer the
+  frames took 2–15 s, so chunks waited 5–17 s for a worker that ran each in ~0.1 s, the LOD's
+  sections sharing the queue (the faster meshing since 0.22.13 drew more per frame, the frames
+  slower still). A result between frames now wakes the pool, which starts the next job at once
+  (`pool.rs` `a_job_finishing_between_frames_starts_the_next_one_at_once`, red → green). Measured
+  (SwiftShader, two native-server pages, 3× CPU throttle): `job.chunk.wait` p50 1–12 s → 0.08–0.11 s,
+  the 179 spawn chunks generated within a frame or two of arriving. The e2e waits print the
+  terrain stats on a timeout.
 
 ## Cross-Cutting Work (every phase)
 

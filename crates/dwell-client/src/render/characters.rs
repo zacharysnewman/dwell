@@ -14,11 +14,16 @@
 //! - **Arms**: drawn after the world's passes into the same targets over a cleared depth buffer,
 //!   with their own projection (the data's FOV, a 2 cm near plane), so they never clip into
 //!   terrain and keep their size under the speed FOV.
+//! - **Your own body** (§5.1): in first person, the full body from the neck down in the scene
+//!   passes (`BodyDraw::first_person`), its own mesh (`dwell_characters::own`: no head, neck or
+//!   arms), moved back from the eye each frame (`own_frame`) so nothing comes near the camera, and
+//!   its fragments within `own_discard_m` of the eye discarded as a safety net. Its shadow is the
+//!   whole body's, cast separately (`cast_only`).
 
 use dwell_characters::anim::{MAX_BONES, Pose, arm_transforms, bone_transforms};
 use dwell_characters::math::Affine;
 use dwell_characters::mesh::{self, Mesh};
-use dwell_characters::{BLOCK_MATERIAL, Character, TABLES, TILE, View};
+use dwell_characters::{BLOCK_MATERIAL, Character, FirstPersonBody, TABLES, TILE, View, own};
 use dwell_world::FaceFrame;
 use dwell_world::hash::HashMap;
 
@@ -82,6 +87,9 @@ pub struct BodyDraw {
     pub held: Held,
     /// Drawn into the shadow maps only (your own body in first person).
     pub cast_only: bool,
+    /// Your own body in first person (CHARACTERS.md §5.1): drawn from the neck down, kept clear of
+    /// the eye, casting no shadow (the `cast_only` body casts it).
+    pub first_person: bool,
     /// The flood light it stands in (sky and block level / 15, eased; [1, 0] open sky):
     /// `dwell_world::light::LightMap::sample`, docs/DAY_NIGHT.md §11.
     pub light: [f32; 2],
@@ -104,6 +112,8 @@ struct MeshKey {
     view: View,
     /// The far mesh (small parts left out).
     far: bool,
+    /// Your own body in first person (`own::build`).
+    own: bool,
 }
 
 struct GpuMesh {
@@ -150,6 +160,8 @@ pub struct CharacterRenderer {
     capacity: u64,
     group: wgpu::BindGroup,
     meshes: HashMap<MeshKey, GpuMesh>,
+    /// Your own body's meshes on the CPU too, by look: `own_frame` reads their vertices.
+    own_meshes: HashMap<&'static str, Mesh>,
     draws: Vec<Draw>,
     arms: Option<Draw>,
     pub stats: CharacterStats,
@@ -167,7 +179,8 @@ struct Instance {
     block_side: vec4f,
     block_bottom: vec4f,
     block_color: vec4f,
-    // x unused, y the outline's width (m), z 1 for the arms.
+    // x the radius (m) about the eye within which fragments are discarded (your own body; 0 none),
+    // y the outline's width (m), z 1 for the arms.
     cfg: vec4f,
     // The flood light it stands in: x sky, y block level / 15 (docs/DAY_NIGHT.md §11).
     light: vec4f,
@@ -277,6 +290,9 @@ fn brush_k(i: CharacterOut, layer: i32) -> f32 {
 
 @fragment
 fn character_fs(i: CharacterOut, @builtin(front_facing) front: bool) -> SceneOut {
+    if (length(i.rel) < inst.cfg.x) {
+        discard;
+    }
     let mat = i.packed >> 16u;
     let side = (i.packed >> 8u) & 0xffu;
     let n = normalize(select(-i.normal, i.normal, front));
@@ -316,6 +332,9 @@ fn character_fs(i: CharacterOut, @builtin(front_facing) front: bool) -> SceneOut
 
 @fragment
 fn character_outline_fs(i: CharacterOut) -> SceneOut {
+    if (length(i.rel) < inst.cfg.x) {
+        discard;
+    }
     var o: SceneOut;
     let frag_y = frame.eye.x + i.rel.y;
     let level = key_light(frag_y, character_light(i.rel, face_up(face_at(frag_y)))).level * PI;
@@ -403,6 +422,35 @@ pub fn body_frame(d: &BodyDraw, eye: V3) -> Affine {
     } else {
         place
     }
+}
+
+/// The camera's near plane the own body is kept clear of (m: the scene's, `super::NEAR_PLANE`).
+pub fn own_discard_m(body: &FirstPersonBody) -> f32 {
+    super::NEAR_PLANE as f32 + body.near
+}
+
+/// Your own body's frame in first person (CHARACTERS.md §5.1): its `body_frame` moved back along its
+/// own −z by `own::shift`, from the eye's place and pitch in the body's frame (the eye is the origin
+/// of eye-relative space). `bones`: the pose's bone transforms in the body's frame; `forward`: the
+/// camera's look. In the body's frame, so the same on both faces.
+pub fn own_frame(
+    d: &BodyDraw,
+    eye: V3,
+    forward: V3,
+    body: &FirstPersonBody,
+    mesh: &Mesh,
+    bones: &[Affine; MAX_BONES],
+) -> Affine {
+    let frame = body_frame(d, eye);
+    // The frame is a rotation and a translation: its inverse is the transpose.
+    let back = |v: [f32; 3]| -> [f32; 3] {
+        std::array::from_fn(|k| (0..3).map(|j| frame.m[k][j] * v[j]).sum())
+    };
+    let eye_local = back(frame.t.map(|t| -t));
+    let look = back(forward.map(|c| c as f32));
+    let pitch = look[1].clamp(-1.0, 1.0).asin().to_degrees();
+    let s = own::shift(body, mesh, bones, eye_local, pitch);
+    frame.then(&Affine::translation([0.0, 0.0, -s]))
 }
 
 /// The arms' frame: view space (+x left, +y up, +z ahead) to eye-relative world space.
@@ -639,6 +687,7 @@ impl CharacterRenderer {
             capacity,
             group,
             meshes: HashMap::default(),
+            own_meshes: HashMap::default(),
             draws: Vec::new(),
             arms: None,
             stats: CharacterStats::default(),
@@ -660,7 +709,11 @@ impl CharacterRenderer {
             .copied()
             .filter(|p| !key.far || p.size.iter().copied().fold(0.0, f32::max) >= SMALL_PART_M)
             .collect();
-        let m = mesh::build(&kept, key.view, chain);
+        let body = self.character.first_person.and_then(|f| f.body);
+        let m = match body {
+            Some(b) if key.own => own::build(&kept, &b),
+            _ => mesh::build(&kept, key.view, chain),
+        };
         let (v, i) = vertex_bytes(&m);
         let buffer = |usage, data: &[u8], label| {
             let b = device.create_buffer(&wgpu::BufferDescriptor {
@@ -702,10 +755,12 @@ impl CharacterRenderer {
         self.draws.clear();
         self.arms = None;
         let mut data: Vec<f32> = Vec::new();
+        let own_body = self.character.first_person.and_then(|f| f.body);
         let mut push = |bones: &[Affine; MAX_BONES],
                         held: Held,
                         outline: bool,
                         is_arms: bool,
+                        discard: f32,
                         light: [f32; 2]| {
             let at = data.len();
             data.resize(at + INSTANCE_FLOATS, 0.0);
@@ -719,7 +774,7 @@ impl CharacterRenderer {
             }
             let cfg = at + BONE_FLOATS + 16;
             data[cfg..cfg + 4].copy_from_slice(&[
-                0.0,
+                discard,
                 if outline { OUTLINE_WIDTH_M } else { 0.0 },
                 f32::from(u8::from(is_arms)),
                 0.0,
@@ -748,27 +803,52 @@ impl CharacterRenderer {
             if mask == 0 && !casts {
                 continue;
             }
-            let far = dist > OUTLINE_M;
-            let frame = body_frame(d, eye);
-            let bones = bone_transforms(self.character, &d.pose).map(|b| frame.then(&b));
-            let instance = push(&bones, d.held, !far, false, d.light);
             let look = if self.character.look(d.look).is_some() {
                 d.look
             } else {
                 self.look
             };
+            // Your own body in first person: its own mesh, moved clear of the eye, no shadow (the
+            // `cast_only` body casts it) and no held item (the arms view holds it).
+            let own = match (d.first_person, own_body) {
+                (false, _) => None,
+                (true, Some(b)) => Some(b),
+                (true, None) => continue,
+            };
+            let casts = casts && own.is_none();
+            let far = dist > OUTLINE_M && own.is_none();
+            let posed = bone_transforms(self.character, &d.pose);
+            let frame = match own {
+                Some(b) => {
+                    let character = self.character;
+                    let m = self.own_meshes.entry(look).or_insert_with(|| {
+                        own::build(character.look(look).map_or(&[][..], |l| l.parts), &b)
+                    });
+                    own_frame(d, eye, basis.forward(), &b, m, &posed)
+                }
+                None => body_frame(d, eye),
+            };
+            let bones = posed.map(|b| frame.then(&b));
+            let discard = own.map_or(0.0, |b| own_discard_m(&b));
+            let instance = push(&bones, d.held, !far, false, discard, d.light);
             let body = MeshKey {
                 name: look,
                 item: false,
                 view: View::Body,
                 far,
+                own: own.is_some(),
             };
-            let item = d.held.item().map(|(name, _)| MeshKey {
-                name,
-                item: true,
-                view: View::Body,
-                far,
-            });
+            let item = d
+                .held
+                .item()
+                .filter(|_| own.is_none())
+                .map(|(name, _)| MeshKey {
+                    name,
+                    item: true,
+                    view: View::Body,
+                    far,
+                    own: false,
+                });
             keys.push(body);
             keys.extend(item);
             self.draws.push(Draw {
@@ -783,18 +863,20 @@ impl CharacterRenderer {
         if let Some(a) = arms {
             let frame = arms_frame(basis);
             let bones = arm_transforms(self.character, &a.pose).map(|b| frame.then(&b));
-            let instance = push(&bones, a.held, true, true, a.light);
+            let instance = push(&bones, a.held, true, true, 0.0, a.light);
             let body = MeshKey {
                 name: self.look,
                 item: false,
                 view: View::Arms,
                 far: false,
+                own: false,
             };
             let item = a.held.item().map(|(name, _)| MeshKey {
                 name,
                 item: true,
                 view: View::Arms,
                 far: false,
+                own: false,
             });
             keys.push(body);
             keys.extend(item);
@@ -1086,6 +1168,7 @@ mod tests {
                 pose: Pose::REST,
                 held: Held::Empty,
                 cast_only: false,
+                first_person: false,
                 light: [1.0, 0.0],
             };
             let f = body_frame(&d, [0.0; 3]);
@@ -1111,7 +1194,7 @@ mod tests {
             (135.0, -40.0, FaceFrame::A),
             (20.0, 30.0, FaceFrame::B),
         ] {
-            let b = super::super::camera::aim(yaw, pitch, face, 0.0);
+            let b = crate::render::camera::aim(yaw, pitch, face, 0.0);
             let a = arms_frame(&b);
             let p = a.apply(fp.anchor);
             let f = b.forward();
@@ -1121,6 +1204,267 @@ mod tests {
             let r = b.right;
             let right = p[0] as f64 * r[0] + p[1] as f64 * r[1] + p[2] as f64 * r[2];
             assert!((right + f64::from(fp.anchor[0])).abs() < 1e-5);
+        }
+    }
+
+    /// Your own body in first person never clips the camera (CHARACTERS.md §5.1; the owner: "not
+    /// clipping the camera into the player model"): over every body clip (and the swings layered
+    /// on the idle and the walk), several phases of each, the pitch from straight down to straight
+    /// up, every look, the eye at its height and lagging a step below it (the eye's smoothing), on
+    /// both faces, no drawn triangle comes within the near plane plus `near` of the eye, and the
+    /// body covers at most `fill` of a 16:9 screen at the base FOV and a wide one.
+    mod own_body {
+        use super::*;
+        use dwell_characters::anim::{layer, sample};
+        use dwell_characters::own;
+
+        fn sub(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
+            std::array::from_fn(|k| a[k] - b[k])
+        }
+        fn dot(a: [f32; 3], b: [f32; 3]) -> f32 {
+            a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+        }
+
+        /// The distance from the origin to triangle `abc` (Ericson's closest point on a triangle).
+        fn distance(a: [f32; 3], b: [f32; 3], c: [f32; 3]) -> f32 {
+            let p = [0.0f32; 3];
+            let (ab, ac, ap) = (sub(b, a), sub(c, a), sub(p, a));
+            let at = |u: f32, v: f32| -> f32 {
+                let q: [f32; 3] = std::array::from_fn(|k| a[k] + ab[k] * u + ac[k] * v);
+                dot(q, q).sqrt()
+            };
+            let (d1, d2) = (dot(ab, ap), dot(ac, ap));
+            if d1 <= 0.0 && d2 <= 0.0 {
+                return at(0.0, 0.0);
+            }
+            let bp = sub(p, b);
+            let (d3, d4) = (dot(ab, bp), dot(ac, bp));
+            if d3 >= 0.0 && d4 <= d3 {
+                return at(1.0, 0.0);
+            }
+            let vc = d1 * d4 - d3 * d2;
+            if vc <= 0.0 && d1 >= 0.0 && d3 <= 0.0 {
+                return at(d1 / (d1 - d3), 0.0);
+            }
+            let cp = sub(p, c);
+            let (d5, d6) = (dot(ab, cp), dot(ac, cp));
+            if d6 >= 0.0 && d5 <= d6 {
+                return at(0.0, 1.0);
+            }
+            let vb = d5 * d2 - d1 * d6;
+            if vb <= 0.0 && d2 >= 0.0 && d6 <= 0.0 {
+                return at(0.0, d2 / (d2 - d6));
+            }
+            let va = d3 * d6 - d5 * d4;
+            if va <= 0.0 && d4 - d3 >= 0.0 && d5 - d6 >= 0.0 {
+                let w = (d4 - d3) / ((d4 - d3) + (d5 - d6));
+                return at(1.0 - w, w);
+            }
+            let denom = 1.0 / (va + vb + vc);
+            at(vb * denom, vc * denom)
+        }
+
+        const COLS: usize = 64;
+        const ROWS: usize = 36;
+        const ASPECT: f32 = 16.0 / 9.0;
+
+        /// Marks the cells of a COLS × ROWS screen whose centres a view-space triangle (x right,
+        /// y up, z ahead) covers, clipped to the near plane.
+        fn raster(tri: [[f32; 3]; 3], near: f32, f: f32, cells: &mut [bool]) {
+            let mut poly: Vec<[f32; 3]> = Vec::with_capacity(4);
+            for i in 0..3 {
+                let (a, b) = (tri[i], tri[(i + 1) % 3]);
+                if a[2] >= near {
+                    poly.push(a);
+                }
+                if (a[2] >= near) != (b[2] >= near) {
+                    let t = (near - a[2]) / (b[2] - a[2]);
+                    poly.push(std::array::from_fn(|k| a[k] + (b[k] - a[k]) * t));
+                }
+            }
+            if poly.len() < 3 {
+                return;
+            }
+            let pts: Vec<[f32; 2]> = poly
+                .iter()
+                .map(|v| [v[0] / v[2] * f / ASPECT, v[1] / v[2] * f])
+                .collect();
+            for k in 1..pts.len() - 1 {
+                let [a, b, c] = [pts[0], pts[k], pts[k + 1]];
+                let edge = |p: [f32; 2], q: [f32; 2], r: [f32; 2]| {
+                    (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0])
+                };
+                let area = edge(a, b, c);
+                if area.abs() < 1e-12 {
+                    continue;
+                }
+                let lo = |k: usize| a[k].min(b[k]).min(c[k]).max(-1.0);
+                let hi = |k: usize| a[k].max(b[k]).max(c[k]).min(1.0);
+                if lo(0) > hi(0) || lo(1) > hi(1) {
+                    continue;
+                }
+                let col =
+                    |x: f32| ((x + 1.0) / 2.0 * COLS as f32 - 0.5).clamp(0.0, COLS as f32 - 1.0);
+                let row =
+                    |y: f32| ((y + 1.0) / 2.0 * ROWS as f32 - 0.5).clamp(0.0, ROWS as f32 - 1.0);
+                for r in row(lo(1)).floor() as usize..=row(hi(1)).ceil() as usize {
+                    for q in col(lo(0)).floor() as usize..=col(hi(0)).ceil() as usize {
+                        let p = [
+                            (q as f32 + 0.5) / COLS as f32 * 2.0 - 1.0,
+                            (r as f32 + 0.5) / ROWS as f32 * 2.0 - 1.0,
+                        ];
+                        let (w0, w1, w2) = (edge(b, c, p), edge(c, a, p), edge(a, b, p));
+                        let sg = area.signum();
+                        if w0 * sg >= 0.0 && w1 * sg >= 0.0 && w2 * sg >= 0.0 {
+                            cells[r * COLS + q] = true;
+                        }
+                    }
+                }
+            }
+        }
+
+        /// The poses swept: each base role's clip at six phases, and the swings on the idle and walk
+        /// (named `role phase` and `role+swing phase`), and whether the eye is the crouch's.
+        fn poses() -> Vec<(String, bool, Pose)> {
+            let ch = dwell_characters::player();
+            let crouched = ["crouch", "crouch_walk", "slide"];
+            let mut out = Vec::new();
+            for &(role, c) in ch.clips {
+                let clip = TABLES.clip(c);
+                if clip.layer != dwell_characters::Layer::Base {
+                    continue;
+                }
+                for k in 0..6 {
+                    let t = clip.duration * k as f32 / 6.0;
+                    let base = sample(clip, t);
+                    out.push((format!("{role} {t:.2}s"), crouched.contains(&role), base));
+                    if role == "idle" || role == "walk" {
+                        for swing in ["hold", "break", "place"] {
+                            let Some(sc) = ch.clip(swing) else { continue };
+                            let sc = TABLES.clip(sc);
+                            let mut p = base;
+                            layer(&mut p, &sample(sc, sc.duration * k as f32 / 6.0), 1.0);
+                            out.push((format!("{role}+{swing} {t:.2}s"), false, p));
+                        }
+                    }
+                }
+            }
+            out
+        }
+
+        dwell_world::both_faces! {
+            fn your_body_never_comes_near_the_camera_or_fills_the_view(face: FaceFrame) {
+                let ch = dwell_characters::player();
+                let body = ch.first_person.and_then(|f| f.body).expect("the player draws its body");
+                let cfg = dwell_physics::config::PlayerControllerConfig::default();
+                let lag = f64::from(cfg.max_step_lift());
+                let bar = own_discard_m(&body);
+                let meshes: Vec<(&str, Mesh)> = ch
+                    .looks
+                    .iter()
+                    .map(|l| (l.name, own::build(l.parts, &body)))
+                    .collect();
+                let base_fov = crate::render::camera::vertical_fov(f64::from(ASPECT));
+                let mut worst_near = f32::MAX;
+                let mut worst_fill: (f32, String) = (0.0, String::new());
+                let mut over: Vec<String> = Vec::new();
+                let poses = poses();
+                for (name, crouched, pose) in &poses {
+                    let eye_h = f64::from(if *crouched {
+                        cfg.body.crouch_eye_height
+                    } else {
+                        cfg.body.eye_height
+                    });
+                    let posed = bone_transforms(ch, pose);
+                    // The eye lags a step below its height on the ground (the step smoothing),
+                    // and crouched it eases down from the standing eye (the crouch smoothing).
+                    let role = name.split([' ', '+']).next().unwrap_or("");
+                    let grounded = matches!(role, "idle" | "walk" | "sprint" | "crouch" | "crouch_walk" | "slide" | "land");
+                    let rise = f64::from(cfg.body.crouch_eye_height - cfg.body.eye_height);
+                    let drops: &[f64] = match (grounded, *crouched) {
+                        (true, true) => &[0.0, lag, rise],
+                        (true, false) => &[0.0, lag],
+                        _ => &[0.0],
+                    };
+                    for &drop in drops {
+                        for pitch in (-6..=6).map(|k| f64::from(k) * 15.0) {
+                            let yaw = 30.0;
+                            let feet = face.point([5.5, 10.0, 3.5]);
+                            let eye = face.point([5.5, 10.0 + eye_h - drop, 3.5]);
+                            let basis = crate::render::camera::aim(yaw, pitch, face, 0.0);
+                            let d = BodyDraw {
+                                feet,
+                                yaw,
+                                face,
+                                dead: false,
+                                look: dwell_characters::DEFAULT_LOOK,
+                                pose: *pose,
+                                held: Held::Empty,
+                                cast_only: false,
+                                first_person: true,
+                                light: [1.0, 0.0],
+                            };
+                            let r = |v: V3| v.map(|c| c as f32);
+                            let (right, up, fwd) = (r(basis.right), r(basis.up), r(basis.forward()));
+                            for (look, m) in &meshes {
+                                let frame = own_frame(&d, eye, basis.forward(), &body, m, &posed);
+                                let bones = posed.map(|b| frame.then(&b));
+                                let world: Vec<[f32; 3]> = m
+                                    .positions
+                                    .iter()
+                                    .zip(&m.bones)
+                                    .map(|(p, &b)| bones[usize::from(b)].apply(*p))
+                                    .collect();
+                                let at = format!("{name}, {look}, pitch {pitch}, eye {drop:.2} m lower");
+                                let mut cells = [false; COLS * ROWS];
+                                for t in m.indices.chunks(3) {
+                                    let [a, b, c] = [t[0], t[1], t[2]].map(|i| world[i as usize]);
+                                    let dist = distance(a, b, c);
+                                    worst_near = worst_near.min(dist);
+                                    assert!(dist >= bar, "{at}: a triangle {dist:.3} m from the eye (the bar {bar:.3} m)");
+                                    let view = [a, b, c].map(|v| [dot(v, right), dot(v, up), dot(v, fwd)]);
+                                    for fov in [base_fov, base_fov * 1.25] {
+                                        let f = 1.0 / (fov.to_radians() as f32 / 2.0).tan();
+                                        raster(view, crate::render::NEAR_PLANE as f32, f, &mut cells);
+                                    }
+                                }
+                                let fill = cells.iter().filter(|c| **c).count() as f32 / cells.len() as f32;
+                                // The feet are in view looking down standing or walking, and the
+                                // legs sliding (the owner's ask: "particularly when sliding").
+                                let wants = drop == 0.0
+                                    && ((matches!(role, "idle" | "walk") && pitch <= -75.0)
+                                        || (role == "slide" && pitch <= -15.0));
+                                if wants {
+                                    let f = 1.0 / (base_fov.to_radians() as f32 / 2.0).tan();
+                                    let seen = world.iter().zip(&m.bones).any(|(v, &b)| {
+                                        let bone = ch.bones[usize::from(b)].name;
+                                        let (x, y, z) = (dot(*v, right), dot(*v, up), dot(*v, fwd));
+                                        (bone.starts_with("foot") || (role == "slide" && bone.starts_with("shin")))
+                                            && z > 0.1
+                                            && (x / z * f / ASPECT).abs() < 1.0
+                                            && (y / z * f).abs() < 1.0
+                                    });
+                                    assert!(seen, "{at}: the feet (sliding, the legs) are out of view");
+                                }
+                                if fill > worst_fill.0 {
+                                    worst_fill = (fill, at.clone());
+                                }
+                                if fill > body.fill {
+                                    over.push(format!("{at}: {:.0}%", fill * 100.0));
+                                }
+                            }
+                        }
+                    }
+                }
+                println!("{} poses: nearest triangle {worst_near:.3} m (bar {bar:.3}); most fill {:.1}% at {}", poses.len(), worst_fill.0 * 100.0, worst_fill.1);
+                assert!(
+                    over.is_empty(),
+                    "the body covers more than {:.0}% of the screen in {} views, e.g.\n{}",
+                    body.fill * 100.0,
+                    over.len(),
+                    over.iter().take(40).cloned().collect::<Vec<_>>().join("\n")
+                );
+            }
         }
     }
 }

@@ -100,6 +100,28 @@ pub struct FirstPerson {
     pub fov: f32,
     /// Role → clip index.
     pub clips: &'static [(&'static str, usize)],
+    /// Your own body in first person (CHARACTERS.md §5.1), if the character draws it.
+    pub body: Option<FirstPersonBody>,
+}
+
+/// Your own body in first person (CHARACTERS.md §5.1, `firstPerson.body`): the full body from the
+/// neck down, kept clear of the eye (`own`).
+#[derive(Clone, Copy, Debug)]
+pub struct FirstPersonBody {
+    /// Bones whose parts (and accessories) are left out: the head, the arms (bone indices).
+    pub hide_bones: &'static [usize],
+    /// Parts left out by id (the neck).
+    pub hide_parts: &'static [&'static str],
+    /// No vertex is drawn nearer the eye than this (m): the body moves back until none is.
+    pub clear: f32,
+    /// How far behind the eye the body is drawn (m, along its back).
+    pub back: f32,
+    /// How much further back looking straight down (m, by the sine of the downward pitch).
+    pub look_down: f32,
+    /// The margin past the camera's near plane no part may come within (m).
+    pub near: f32,
+    /// The most of the screen the body may cover (0–1).
+    pub fill: f32,
 }
 
 #[derive(Clone, Copy, Debug)]

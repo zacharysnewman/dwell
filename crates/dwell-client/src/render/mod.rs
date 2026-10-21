@@ -814,6 +814,8 @@ pub struct Renderer {
     players: HashMap<u32, PlayerView>,
     /// Your own body, drawn into the shadow maps only (a shadow even in first person).
     own_shadow: Option<PlayerView>,
+    /// Your own body drawn in first person from the neck down (characters.rs `own_frame`).
+    own_body: Option<PlayerView>,
     /// The first-person arms this frame, if drawn.
     arms: Option<ArmsView>,
     /// The characters' pipelines, meshes and instances (characters.rs).
@@ -1437,6 +1439,7 @@ impl Renderer {
             level_colors: false,
             players: HashMap::default(),
             own_shadow: None,
+            own_body: None,
             arms: None,
             characters,
             outline: None,
@@ -1807,6 +1810,11 @@ impl Renderer {
     /// first person), or none.
     pub fn set_own_shadow(&mut self, body: Option<PlayerView>) {
         self.own_shadow = body;
+    }
+    /// Your own body this frame, drawn in first person from the neck down (docs/CHARACTERS.md
+    /// §5.1), or none.
+    pub fn set_own_body(&mut self, body: Option<PlayerView>) {
+        self.own_body = body;
     }
     /// The characters drawn last frame and their GPU bytes (telemetry, the bench).
     pub fn character_stats(&self) -> characters::CharacterStats {
@@ -2498,8 +2506,9 @@ impl Renderer {
         }
         // The characters: other players' bodies in the scene passes, your arms after them with
         // their own projection (characters.rs).
-        // Your own body casts only (a shadow in first person, `set_own_shadow`).
-        let body = |v: &PlayerView, cast_only: bool| characters::BodyDraw {
+        // Your own body casts whole (a shadow in first person, `set_own_shadow`) and is drawn
+        // from the neck down (`set_own_body`, CHARACTERS.md §5.1).
+        let body = |v: &PlayerView, cast_only: bool, first_person: bool| characters::BodyDraw {
             feet: v.feet,
             yaw: v.yaw,
             face: v.face,
@@ -2508,18 +2517,20 @@ impl Renderer {
             pose: v.pose,
             held: v.held,
             cast_only,
+            first_person,
             light: v.light,
         };
         let bodies: Vec<characters::BodyDraw> = self
             .players
             .values()
-            .map(|v| body(v, false))
+            .map(|v| body(v, false, false))
             .chain(
                 self.own_shadow
                     .as_ref()
                     .filter(|_| shadow_plan.is_some())
-                    .map(|v| body(v, true)),
+                    .map(|v| body(v, true, false)),
             )
+            .chain(self.own_body.as_ref().map(|v| body(v, false, true)))
             .collect();
         self.characters.prepare(
             &self.device,
@@ -3774,6 +3785,9 @@ impl crate::game::Scene for Renderer {
     }
     fn set_own_shadow(&mut self, body: Option<PlayerView>) {
         Renderer::set_own_shadow(self, body);
+    }
+    fn set_own_body(&mut self, body: Option<PlayerView>) {
+        Renderer::set_own_body(self, body);
     }
     fn set_camera(&mut self, eye: V3, yaw_deg: f64, pitch_deg: f64, face: FaceFrame, flip: f64) {
         Renderer::set_camera(self, eye, yaw_deg, pitch_deg, face, flip);

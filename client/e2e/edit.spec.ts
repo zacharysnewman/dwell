@@ -47,7 +47,13 @@ async function ready(page: Page): Promise<void> {
       },
       { timeout: 30_000 },
     )
-    .toBeGreaterThan(100);
+    .toBeGreaterThan(100)
+    .catch(async (e: unknown) => {
+      // Which wait it was: the chunks still generating, loaded and meshing.
+      const s = await state(page).catch(() => null);
+      console.log('terrain at the timeout', JSON.stringify(s?.terrain ?? null));
+      throw e;
+    });
 }
 
 /** Looks down ahead and waits for a block to be targeted. */
