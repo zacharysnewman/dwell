@@ -2097,7 +2097,10 @@ mod tests {
     fn the_light_budget_is_4_ms_or_a_tenth_of_a_slow_frame() {
         assert_eq!(light_budget_ms(16.7), 4.0);
         assert_eq!(light_budget_ms(0.0), 4.0);
-        assert!((light_budget_ms(200.0) - 20.0).abs() < 1e-9, "CI's ~5 fps page");
+        assert!(
+            (light_budget_ms(200.0) - 20.0).abs() < 1e-9,
+            "CI's ~5 fps page"
+        );
         assert_eq!(light_budget_ms(1000.0), 25.0);
     }
 

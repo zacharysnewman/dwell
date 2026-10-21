@@ -62,7 +62,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 42 — Smooth LOD transitions | 🚧 In progress — built and tested natively and in Chrome on the GPU: a dithered cross-fade on every LOD swap (`dwell-lod` `fade.rs`; chunks, sections, stand-ins, skirts, water; no ink on the outgoing level) and hysteresis in the selection, both data (`shared/look/lodblend.json`); outstanding: CI, the owner's review in a browser; a patch release |
 | 43 — Ambient light | 🚧 In progress — built and tested natively and in Chrome on the GPU: classic corner AO and baked ray-traced sky visibility per terrain vertex (dwell-mesh `sky.rs`, data `shared/look/ambient.json`), the hemisphere light scaled by it, the twilight and night keyframes retuned; outstanding: CI; a patch release |
 | 44 — Sun and moon shadows (cascaded shadow maps, the lighting's layer 2) | 🚧 In progress — built and tested natively, in Vitest and in Chrome on the GPU: up to four cascades per the Shadows setting (Off / Low / High, data in `shared/look/shadows.json`), texel-snapped sphere fits, casters (terrain, plants, LOD, bodies, your own), a soft PCF on the direct term only, faded by the time of day and past the last cascade to layer 1's stand-in; outstanding: CI, the owner's look, High's cost target (+3–6 ms measured on a busy machine; a follow-up); a patch release |
-| 45 — Flood light | 🚧 In progress — built and tested natively and in Chrome on the GPU (ADR 0045, DAY_NIGHT.md §11): per-cell sky and block light on the client (`dwell_world::light`, data `shared/look/light.json` and the blocks' `lightFilter`/`emits`), relit on edits and predicted edits, the mesher's smooth `flood` stream, ambient and the direct sun and moon scaled by it (carved tunnels no longer lit like day); outstanding: CI, the owner's review; characters (your arms, held items, players) lit by the cells they are in, eased; the shadow maps' stand-in past their last cascade |
+| 45 — Flood light | 🚧 In progress — built and tested natively and in Chrome on the GPU (ADR 0045, DAY_NIGHT.md §11): per-cell sky and block light on the client (`dwell_world::light`, data `shared/look/light.json` and the blocks' `lightFilter`/`emits`), relit on edits and predicted edits, the mesher's smooth `flood` stream, ambient and the direct sun and moon scaled by it (carved tunnels no longer lit like day); follow-up: unload stalls and the light budget fixed (coalesced seeded unloads, a light budget of its own), the remaining 60–100 ms frames outstanding; outstanding: CI, the owner's review; characters (your arms, held items, players) lit by the cells they are in, eased; the shadow maps' stand-in past their last cascade |
 
 Phase numbering: Phase 4 was inserted on 2026-09-29 for the planet-scale world (ADRs 0011, 0012);
 the former Phases 4–7 are now 5–8, and Phase 3's former 3c and 3d are now 3d and 3e.
@@ -4524,6 +4524,15 @@ Deviations
   shafts.
 - The sky rays and corner occlusion are kept rather than replaced: they give open ground its
   0.22.5 look; the flood light takes over as a vertex closes in.
+- Follow-up (2026-10-21, after 0.22.10; CI's `play.spec.ts:105` and the owner's 1–2 s stalls when
+  flying): 0.22.9 relit every unloaded chunk on its own, synchronously, cascading through the
+  open-air columns beside and below it (a climb: 1.2–1.65 s long tasks, 2.6 s of 7 s in
+  `LightMap::unload`), and lit arriving chunks inside the mesh budget (2–4 mesh jobs at load where
+  0.22.8 ran 16). Fixed: unloads in one seeded update per batch, the light its own budget nearest
+  first. Measured on the bench (real GPU, M1, machine busy): climb worst frame 1283 → 67 ms;
+  fly-low-fast 267 → 52 ms; spawn to 50 chunks meshed 1.4 → 0.43 s (0.22.8: 0.37 s).
+  Outstanding (next change): the remaining 60–100 ms frames (lighting one chunk can overrun the
+  budget: a sky column fast path), a `climb-fast` bench scenario.
 
 ## Cross-Cutting Work (every phase)
 

@@ -357,7 +357,11 @@ crate::both_faces!(
             .copied()
             .filter(|c| !air.contains(c))
             .collect();
-        assert_matches_scratch(&mut w, &left, "the air unloaded from the top, one at a time");
+        assert_matches_scratch(
+            &mut w,
+            &left,
+            "the air unloaded from the top, one at a time",
+        );
 
         let mut w = fx.lit(&chunks);
         let before = w.light().expect("lit").writes();
