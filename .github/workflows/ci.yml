@@ -36,6 +36,8 @@ jobs:
           node --test shared/look/lodblend.test.mjs
           node shared/look/outline.mjs
           node --test shared/look/outline.test.mjs
+          node shared/look/ambient.mjs
+          node --test shared/look/ambient.test.mjs
           node shared/look/daynight.mjs
           node --test shared/look/daynight.test.mjs
           node shared/textures/gen.mjs

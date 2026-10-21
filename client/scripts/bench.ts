@@ -318,6 +318,9 @@ async function step(run: Run, s: Step): Promise<void> {
     case 'select':
       await call(page, `d.select(${String(s.slot)})`);
       return;
+    case 'brush':
+      await call(page, `d.brush(${JSON.stringify(s.command)})`);
+      return;
     case 'arms':
       await call(page, `d.showArms(${String(s.on)})`);
       return;

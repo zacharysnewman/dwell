@@ -230,12 +230,12 @@ struct GpuMesh {
 /// Bytes per vertex of each `Kind`'s interleaved format (the pipelines' vertex layouts), in the
 /// enum's order: `Kind as usize` indexes it.
 const STRIDES: [u64; 6] = [
-    4 * (3 + 3 + 3 + 2 + 4), // Terrain: position, normal, colour, uv, tile
-    4 * (3 + 3 + 3),         // Flat: position, normal, colour
-    4 * (3 + 3),             // Line: position, colour
-    4 * (3 + 3),             // Ghost: the lines' format (triangles)
-    4 * (3 + 3 + 3 + 1),     // Fluid: position, normal, colour, fluid id
-    4 * (3 + 3 + 3 + 2 + 4 + 4 + 1), // Cutout: the terrain's, plant (sway, wind speed, fade), bare
+    4 * (3 + 3 + 3 + 2 + 4 + 1), // Terrain: position, normal, colour, uv, tile, light
+    4 * (3 + 3 + 3),             // Flat: position, normal, colour
+    4 * (3 + 3),                 // Line: position, colour
+    4 * (3 + 3),                 // Ghost: the lines' format (triangles)
+    4 * (3 + 3 + 3 + 1),         // Fluid: position, normal, colour, fluid id
+    4 * (3 + 3 + 3 + 2 + 4 + 4 + 1 + 1), // Cutout: the terrain's, plant (sway, wind speed, fade), bare, light
 ];
 
 fn floats(v: &[f32]) -> &[u8] {
@@ -331,9 +331,18 @@ impl GpuMesh {
             (&m.uvs, 2),
             (&m.tiles, 4),
         ];
+        // A mesh without baked light (an older mesher's, a hand-made one) is lit as open.
+        let light: std::borrow::Cow<'_, [f32]> = if m.light.len() == m.positions.len() / 3 {
+            std::borrow::Cow::Borrowed(&m.light)
+        } else {
+            std::borrow::Cow::Owned(vec![1.0; m.positions.len() / 3])
+        };
         if kind == Kind::Cutout {
             streams.push((&m.plants, 4));
             streams.push((&m.bare, 1));
+            streams.push((&light, 1));
+        } else {
+            streams.push((&light, 1));
         }
         let vertices = interleave(&streams);
         Some(Self::upload(
@@ -956,8 +965,17 @@ impl Renderer {
                 .collect();
             (offset, attributes)
         };
-        let terrain_attrs = attrs(&[(0, 3), (1, 3), (2, 3), (3, 2), (4, 4)]);
-        let cutout_attrs = attrs(&[(0, 3), (1, 3), (2, 3), (3, 2), (4, 4), (5, 4), (6, 1)]);
+        let terrain_attrs = attrs(&[(0, 3), (1, 3), (2, 3), (3, 2), (4, 4), (5, 1)]);
+        let cutout_attrs = attrs(&[
+            (0, 3),
+            (1, 3),
+            (2, 3),
+            (3, 2),
+            (4, 4),
+            (5, 4),
+            (6, 1),
+            (7, 1),
+        ]);
         let flat_attrs = attrs(&[(0, 3), (1, 3), (2, 3)]);
         let line_attrs = attrs(&[(0, 3), (1, 3)]);
         let fluid_attrs = attrs(&[(0, 3), (1, 3), (2, 3), (3, 1)]);
@@ -2935,12 +2953,12 @@ mod tests {
     fn every_kind_has_its_own_stride() {
         let line = 4 * (3 + 3);
         for (kind, stride) in [
-            (Kind::Terrain, 4 * (3 + 3 + 3 + 2 + 4)),
+            (Kind::Terrain, 4 * (3 + 3 + 3 + 2 + 4 + 1)),
             (Kind::Flat, 4 * (3 + 3 + 3)),
             (Kind::Line, line),
             (Kind::Ghost, line),
             (Kind::Fluid, 4 * (3 + 3 + 3 + 1)),
-            (Kind::Cutout, 4 * (3 + 3 + 3 + 2 + 4 + 4 + 1)),
+            (Kind::Cutout, 4 * (3 + 3 + 3 + 2 + 4 + 4 + 1 + 1)),
         ] {
             assert_eq!(STRIDES.get(kind as usize), Some(&stride), "{kind:?}");
         }

@@ -1,7 +1,7 @@
 //! The terrain's meshing cost around the spawn (steep terrain, 2026-10-19):
 //! `cargo run --release -p dwell-mesh --example mesh_cost -- [seeds…]` generates the procedural
 //! terrain's chunks in a 9 × 9 chunk square around each seed's spawn on each face, every row that
-//! holds ground, and meshes them as the client does; then the LOD sections of levels 1–4 in a 5 × 5
+//! holds ground, and meshes them as the client does (with the sky apron, for the baked ambient); then the LOD sections of levels 1–4 in a 5 × 5
 //! square around the spawn, three rows each around the ground, with their column surfaces. Prints
 //! per face the chunks meshed, their vertices, triangles and mesh bytes, and the sections' the same,
 //! with the meshing time.
@@ -84,7 +84,7 @@ fn main() {
                     }
                     for row in lo.div_euclid(CHUNK_SIZE)..=hi.div_euclid(CHUNK_SIZE) {
                         let coord = world_chunk(face, cx, row, cz);
-                        let padded = world.padded_block(coord, 1);
+                        let padded = world.padded_box(coord, dwell_world::SKY_APRON);
                         let t = Instant::now();
                         let m = mesh_chunk_at(
                             &padded,

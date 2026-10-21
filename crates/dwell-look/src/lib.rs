@@ -4,6 +4,7 @@
 //! The sky, the lights and the fog's colour follow the day/night cycle (`daynight`, from
 //! `shared/look/daynight.json`).
 
+pub mod ambient;
 pub mod clouds;
 #[path = "clouds.gen.rs"]
 mod clouds_gen;

@@ -177,6 +177,18 @@ fn own(light: vec3f, face: f32) -> f32 {
 // own face (BIFACIAL_WORLD.md §6): its time of day's sun, moon and sky, each direct light weighted
 // by its height over that face's horizon.
 fn lambert(albedo: vec3f, n: vec3f, frag_y: f32) -> vec3f {
+    return lambert_lit(albedo, n, frag_y, 1.0);
+}
+
+// The hemisphere light's share a terrain vertex's baked light (corner occlusion × sky visibility,
+// dwell-mesh sky.rs) leaves: the floor, and the rest by the light (dwell_look::ambient::ambient).
+fn terrain_ambient(light: f32) -> f32 {
+    return AMBIENT_FLOOR + (1.0 - AMBIENT_FLOOR) * clamp(light, 0.0, 1.0);
+}
+
+// `lambert` with the hemisphere light scaled by `ambient` (`terrain_ambient`; 1 for surfaces with
+// no baked light). The sun and moon are untouched.
+fn lambert_lit(albedo: vec3f, n: vec3f, frag_y: f32, ambient: f32) -> vec3f {
     let face = face_at(frag_y);
     let on_a = face > 0.0;
     let d = frame.day;
@@ -186,7 +198,7 @@ fn lambert(albedo: vec3f, n: vec3f, frag_y: f32) -> vec3f {
     let hemi_ground = select(d.ground_b.rgb, d.ground_a.rgb, on_a);
     var irradiance = max(dot(n, d.sun.xyz), 0.0) * sun * own(d.sun.xyz, face);
     irradiance += max(dot(n, d.moon.xyz), 0.0) * moon * own(d.moon.xyz, face);
-    irradiance += mix(hemi_ground, hemi_sky, face_rise(face, n) * 0.5 + 0.5);
+    irradiance += mix(hemi_ground, hemi_sky, face_rise(face, n) * 0.5 + 0.5) * ambient;
     return irradiance * albedo / PI;
 }
 
@@ -314,9 +326,9 @@ struct SceneOut {
     @location(1) depth: f32,
 };
 
-fn scene_out(albedo: vec3f, n: vec3f, rel: vec3f, alpha: f32) -> SceneOut {
+fn scene_out(albedo: vec3f, n: vec3f, rel: vec3f, alpha: f32, ambient: f32) -> SceneOut {
     var o: SceneOut;
-    o.color = vec4f(lambert(albedo, n, frame.eye.x + rel.y), alpha);
+    o.color = vec4f(lambert_lit(albedo, n, frame.eye.x + rel.y, ambient), alpha);
     o.depth = frame_depth(view_depth(rel), true);
     return o;
 }
@@ -329,6 +341,8 @@ struct TerrainIn {
     @location(2) color: vec3f,
     @location(3) uv: vec2f,
     @location(4) tile: vec4f,
+    // The baked ambient light (dwell-mesh sky.rs): corner occlusion × sky visibility.
+    @location(5) light: f32,
 };
 struct TerrainOut {
     @builtin(position) clip: vec4f,
@@ -338,6 +352,7 @@ struct TerrainOut {
     @location(3) uv: vec2f,
     @location(4) tile: vec4f,
     @location(5) @interpolate(flat) draw: u32,
+    @location(6) light: f32,
 };
 
 @vertex
@@ -351,6 +366,7 @@ fn terrain_vs(v: TerrainIn, @builtin(instance_index) k: u32) -> TerrainOut {
     o.color = v.color;
     o.uv = v.uv;
     o.tile = v.tile;
+    o.light = v.light;
     return o;
 }
 
@@ -394,7 +410,7 @@ fn terrain_fs(i: TerrainOut, @builtin(front_facing) front: bool) -> SceneOut {
         discard;
     }
     let alpha = select(draw.tint.a * texel.a, 1.0, draw.tint.a >= 1.0);
-    var o = scene_out(i.color * texel.rgb * shade * draw.tint.rgb, normalize(n), i.rel, alpha);
+    var o = scene_out(i.color * texel.rgb * shade * draw.tint.rgb, normalize(n), i.rel, alpha, terrain_ambient(i.light));
     o.depth = frame_depth(o.depth, fade_inked(draw));
     return o;
 }
@@ -410,6 +426,7 @@ struct CutoutIn {
     @location(4) tile: vec4f,
     @location(5) plant: vec4f,
     @location(6) bare: f32,
+    @location(7) light: f32,
 };
 struct CutoutOut {
     @builtin(position) clip: vec4f,
@@ -421,6 +438,7 @@ struct CutoutOut {
     @location(5) @interpolate(flat) draw: u32,
     @location(6) fade: vec2f,
     @location(7) @interpolate(flat) bare: f32,
+    @location(8) light: f32,
 };
 
 // The gust field: travelling waves whose wavelengths divide WIND_PERIOD, sampled at the world
@@ -465,6 +483,7 @@ fn cutout_vs(v: CutoutIn, @builtin(instance_index) k: u32) -> CutoutOut {
     o.tile = v.tile;
     o.fade = v.plant.zw;
     o.bare = v.bare;
+    o.light = v.light;
     return o;
 }
 
@@ -538,7 +557,7 @@ fn cutout_fs(i: CutoutOut, @builtin(front_facing) front: bool) -> CutoutSceneOut
         discard;
     }
     let n = select(vec3f(-i.normal.x, i.normal.y, -i.normal.z), i.normal, front);
-    let lit = scene_out(i.color * texel.rgb * draw.tint.rgb, normalize(n), i.rel, 1.0);
+    let lit = scene_out(i.color * texel.rgb * draw.tint.rgb, normalize(n), i.rel, 1.0, terrain_ambient(i.light));
     var o: CutoutSceneOut;
     o.color = lit.color;
     // Plants whose look says `outline: false` are flagged in the depth: no ink is drawn on them
@@ -588,7 +607,8 @@ fn flat_fs(i: FlatOut, @builtin(front_facing) front: bool) -> SceneOut {
         discard;
     }
     let n = select(-i.normal, i.normal, front);
-    var o = scene_out(i.color * draw.tint.rgb, normalize(n), i.rel, draw.tint.a);
+    // No baked light: LOD sections are lit as open to the sky (ARCHITECTURE.md §6.6), players too.
+    var o = scene_out(i.color * draw.tint.rgb, normalize(n), i.rel, draw.tint.a, 1.0);
     o.depth = frame_depth(o.depth, fade_inked(draw));
     return o;
 }
@@ -1920,10 +1940,11 @@ pub fn source(samples: u32) -> String {
 /// entry points.
 pub fn lighting_source() -> String {
     format!(
-        "{}{}const SEA_LEVEL: f32 = {:.1};\nconst ATLAS_CELLS: u32 = {}u;\nconst ATLAS_TILES: u32 = {}u;\n{}\n{}\n{}\n{FRAME}\n{}\n{}\n{FRAME_DEPTH}\n{COMMON}\n",
+        "{}{}const SEA_LEVEL: f32 = {:.1};\nconst AMBIENT_FLOOR: f32 = {:?};\nconst ATLAS_CELLS: u32 = {}u;\nconst ATLAS_TILES: u32 = {}u;\n{}\n{}\n{}\n{FRAME}\n{}\n{}\n{FRAME_DEPTH}\n{COMMON}\n",
         dwell_world::FaceFrame::wgsl(),
         super::face_shading::WGSL,
         world::SEA_LEVEL_M,
+        dwell_look::ambient::AMBIENT.floor as f32,
         dwell_mesh::ATLAS_CELLS,
         dwell_mesh::ATLAS_TILES,
         dwell_look::daynight::DAY_SKY_WGSL,

@@ -107,6 +107,11 @@ describe('scenarios', () => {
     ).toEqual({ do: 'waterDebug', names: 'ssr,clouds' });
     expect(bad({ do: 'waterDebug', names: 'ssr; drop' })).toThrow(/switch names/);
     expect(bad({ do: 'timelapse', name: 'x', frames: 1 })).toThrow(/outside 2–1000/);
+    expect(
+      parseScenarios(file([{ name: 'a', steps: [{ do: 'brush', command: 'preset:cube' }] }]))[0]
+        .steps[0],
+    ).toEqual({ do: 'brush', command: 'preset:cube' });
+    expect(bad({ do: 'brush', command: 'apply; drop' })).toThrow(/expected a brush command/);
   });
 
   it('a timelapse walks the times of day, past midnight when it wraps', () => {
