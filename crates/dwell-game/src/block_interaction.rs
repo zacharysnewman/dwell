@@ -353,8 +353,14 @@ mod tests {
         interaction.update(&mut world, Some([0.0, 1.6, 0.0]), 90.0, 0.0, FaceFrame::A);
         assert_eq!(round(world.rays[0].0.map(f64::from)), [1.0, 0.0, 0.0]);
         assert_eq!(world.rays[0].1, players::REACH_DISTANCE);
-        assert_eq!(round(view_direction(0.0, 90.0, FaceFrame::A)), [0.0, 1.0, 0.0]);
-        assert_eq!(interaction.update(&mut world, None, 0.0, 0.0, FaceFrame::A), None);
+        assert_eq!(
+            round(view_direction(0.0, 90.0, FaceFrame::A)),
+            [0.0, 1.0, 0.0]
+        );
+        assert_eq!(
+            interaction.update(&mut world, None, 0.0, 0.0, FaceFrame::A),
+            None
+        );
     }
 
     #[test]

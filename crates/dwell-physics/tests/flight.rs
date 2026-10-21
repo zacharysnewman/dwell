@@ -90,6 +90,7 @@ fn flying_around_the_outside_through_the_midplane_to_face_b() {
     }
     assert!(flips >= 1);
     assert!(
+        // face-boundary: a crossing, measured against the midplane itself
         lowest < f64::from(MIDPLANE_Y) - 30.0,
         "well out onto face B's side: {lowest}"
     );

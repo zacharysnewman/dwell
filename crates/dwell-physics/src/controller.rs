@@ -4,7 +4,9 @@
 //! and WASM builds agree bit for bit.
 
 use dwell_blocks::{Facing, VoxelShape, info, shape::solid_span_at};
-use dwell_world::{FaceFrame, MIDPLANE_Y, SEA_LEVEL, VoxelWorld, chunk_distance, chunk_of, mirror_y};
+use dwell_world::{
+    FaceFrame, MIDPLANE_Y, SEA_LEVEL, VoxelWorld, chunk_distance, chunk_of, mirror_y,
+};
 use rapier3d_f64::prelude::*;
 
 use crate::config::PlayerControllerConfig;

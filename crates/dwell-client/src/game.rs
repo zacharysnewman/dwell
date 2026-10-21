@@ -75,7 +75,14 @@ pub trait Scene: TerrainRenderer {
     fn set_player(&mut self, id: u32, view: Option<PlayerView>);
     /// Your first-person arms this frame (docs/CHARACTERS.md §5), or none.
     fn set_arms(&mut self, _arms: Option<ArmsView>) {}
-    fn set_camera(&mut self, eye: [f64; 3], yaw_deg: f64, pitch_deg: f64, face: FaceFrame, flip: f64);
+    fn set_camera(
+        &mut self,
+        eye: [f64; 3],
+        yaw_deg: f64,
+        pitch_deg: f64,
+        face: FaceFrame,
+        flip: f64,
+    );
     /// The fluid whose drawn surface the camera's eye is under (`dwell_world::fluid::eye_fluid`).
     fn set_eye_fluid(&mut self, _eye_fluid: Option<dwell_world::fluid::EyeFluid>) {}
     /// Outlines the targeted block: its cell's minimum corner and the box in the cell (min, max
@@ -1507,9 +1514,7 @@ impl<S: Scene> Game<S> {
         self.send_held(held);
         if self.dead {
             // Third person over the body.
-            let view = self
-                .bodies
-                .own_dead(self.death_feet, yaw, face, dt);
+            let view = self.bodies.own_dead(self.death_feet, yaw, face, dt);
             let mut scene = self.scene.borrow_mut();
             scene.set_player(u32::from(self.player_id), Some(view));
             scene.set_arms(None);

@@ -75,7 +75,6 @@ fn smoothstep(a: f64, b: f64, x: f64) -> f64 {
     t * t * (3.0 - 2.0 * t)
 }
 
-
 /// Tone mapping exposure: 1 leaves the lights as set (the time of day's exposure multiplies it).
 pub const DEFAULT_EXPOSURE: f64 = 1.0;
 pub const EXPOSURE_MIN: f64 = 0.4;
@@ -344,7 +343,12 @@ mod tests {
             last = c[0];
         }
         let toward = sky_color(day.sun, FaceFrame::A, &day.a, &day);
-        let away = sky_color(around_sun(&day, 180.0, day.sun[1]), FaceFrame::A, &day.a, &day);
+        let away = sky_color(
+            around_sun(&day, 180.0, day.sun[1]),
+            FaceFrame::A,
+            &day.a,
+            &day,
+        );
         assert!(toward[0] > away[0] && toward[0] - toward[2] > away[0] - away[2]);
     }
 

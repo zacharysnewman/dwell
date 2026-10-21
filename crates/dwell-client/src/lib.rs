@@ -247,7 +247,13 @@ pub async fn render_scene(device: wgpu::Device, queue: wgpu::Queue) -> Result<Ve
         );
     }
     // Looking along −Z from above the chunk's +Z edge, the horizon across the middle.
-    renderer.set_camera([16.0, 11.0, 24.0], 180.0, -12.0, dwell_world::FaceFrame::A, 0.0);
+    renderer.set_camera(
+        [16.0, 11.0, 24.0],
+        180.0,
+        -12.0,
+        dwell_world::FaceFrame::A,
+        0.0,
+    );
     renderer.render(&texture.create_view(&Default::default()), &|_| true);
     read_back(&device, &queue, &texture).await
 }

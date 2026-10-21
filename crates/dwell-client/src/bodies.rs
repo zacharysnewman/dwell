@@ -351,7 +351,8 @@ mod tests {
                     yaw: 0.0,
                     pitch: 0.0,
                     state: dwell_protocol::PlayerState::Walking,
-                    flags: player_flags::GROUNDED | if f.is_b() { player_flags::FACE_B } else { 0 },
+                    flags: player_flags::GROUNDED
+                        | dwell_physics::net::face_bit(f, player_flags::FACE_B),
                     held: 0,
                     swing: 0,
                 };

@@ -142,7 +142,13 @@ mod tests {
             }
             // Halfway the view looks along the old camera's down.
             close(
-                aim(yaw + 180.0, pitch, FaceFrame::B, std::f64::consts::FRAC_PI_2).forward(),
+                aim(
+                    yaw + 180.0,
+                    pitch,
+                    FaceFrame::B,
+                    std::f64::consts::FRAC_PI_2,
+                )
+                .forward(),
                 scale(b.up, -1.0),
             );
         }

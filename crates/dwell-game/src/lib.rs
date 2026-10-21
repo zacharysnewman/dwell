@@ -22,7 +22,6 @@ pub mod remotes;
 pub mod sound;
 pub mod touch;
 
-
 /// Rounds half up, like JavaScript's `Math.round`.
 pub(crate) fn js_round(v: f64) -> f64 {
     (v + 0.5).floor()

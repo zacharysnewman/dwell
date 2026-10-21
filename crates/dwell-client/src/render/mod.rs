@@ -1574,7 +1574,14 @@ impl Renderer {
     pub fn character_stats(&self) -> characters::CharacterStats {
         self.characters.stats
     }
-    pub fn set_camera(&mut self, eye: V3, yaw_deg: f64, pitch_deg: f64, face: FaceFrame, flip: f64) {
+    pub fn set_camera(
+        &mut self,
+        eye: V3,
+        yaw_deg: f64,
+        pitch_deg: f64,
+        face: FaceFrame,
+        flip: f64,
+    ) {
         (self.eye, self.yaw, self.pitch, self.face, self.flip) =
             (eye, yaw_deg, pitch_deg, face, flip);
     }
@@ -3409,8 +3416,20 @@ mod tests {
         // your arms (their own pass).
         let grass = dwell_blocks::require("dwell:grass");
         for (id, feet, face, dead, held) in [
-            (1, [16.0, 1.0, 20.0], FaceFrame::A, false, Held::Brush(grass)),
-            (2, [18.0, -3.0, 20.0], FaceFrame::B, false, Held::Block(grass)),
+            (
+                1,
+                [16.0, 1.0, 20.0],
+                FaceFrame::A,
+                false,
+                Held::Brush(grass),
+            ),
+            (
+                2,
+                [18.0, -3.0, 20.0],
+                FaceFrame::B,
+                false,
+                Held::Block(grass),
+            ),
             (3, [14.0, 1.0, 20.0], FaceFrame::A, true, Held::Empty),
         ] {
             r.set_player(

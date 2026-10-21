@@ -724,10 +724,20 @@ mod tests {
         let x = (0..200)
             .map(|i| f64::from(i) * 97.0)
             .find(|&x| {
-                cloud_uniforms(&t, [x, deck, 0.0], FaceFrame::A, 0.0, CloudQuality::High, 1.0)[2][0] > 0.3
+                cloud_uniforms(
+                    &t,
+                    [x, deck, 0.0],
+                    FaceFrame::A,
+                    0.0,
+                    CloudQuality::High,
+                    1.0,
+                )[2][0]
+                    > 0.3
             })
             .expect("a cloud");
-        let at = |y: f64| cloud_uniforms(&t, [x, y, 0.0], FaceFrame::A, 0.0, CloudQuality::High, 1.0)[2][0];
+        let at = |y: f64| {
+            cloud_uniforms(&t, [x, y, 0.0], FaceFrame::A, 0.0, CloudQuality::High, 1.0)[2][0]
+        };
         let full = (t.deck.inside_fog * t.shape.opacity) as f32;
         assert!(at(deck) > 0.0 && at(deck) <= full + 1e-6, "{}", at(deck));
         assert!((at(deck - 100.0) - at(deck + 100.0)).abs() < 0.05);
@@ -735,7 +745,14 @@ mod tests {
         assert_eq!(at(deck - t.deck.cross_fade_m - 1.0), 0.0);
         assert_eq!(at(deck + t.deck.cross_fade_m + 1.0), 0.0);
         assert_eq!(
-            cloud_uniforms(&t, [0.0, deck, 0.0], FaceFrame::A, 0.0, CloudQuality::Off, 1.0)[2][0],
+            cloud_uniforms(
+                &t,
+                [0.0, deck, 0.0],
+                FaceFrame::A,
+                0.0,
+                CloudQuality::Off,
+                1.0
+            )[2][0],
             0.0
         );
     }
@@ -856,7 +873,14 @@ mod tests {
         // The uniforms follow the data's coverage and octaves.
         let mut t = CLOUDS;
         t.shape.octaves = 7;
-        let u = cloud_uniforms(&t, [0.0; 3], FaceFrame::A, 0.0, CloudQuality::High, t.shape.coverage);
+        let u = cloud_uniforms(
+            &t,
+            [0.0; 3],
+            FaceFrame::A,
+            0.0,
+            CloudQuality::High,
+            t.shape.coverage,
+        );
         assert_eq!(u[1][1], 7.0);
     }
 

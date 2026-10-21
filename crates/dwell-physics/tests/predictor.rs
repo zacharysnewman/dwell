@@ -196,7 +196,14 @@ fn a_remote_proxy_blocks_the_local_player() {
     let mut p = Predictor::new(PlayerControllerConfig::default());
     p.on_snapshot(&mut world, &server.snapshot(0));
     let top = f64::from(dwell_world::FLAT_TOP_Y);
-    p.set_remote(7, DVec3::new(0.5, top, 3.0), Vec3::ZERO, false, 0.0, FaceFrame::A);
+    p.set_remote(
+        7,
+        DVec3::new(0.5, top, 3.0),
+        Vec3::ZERO,
+        false,
+        0.0,
+        FaceFrame::A,
+    );
     for seq in 1..=120 {
         p.tick(
             &mut world,

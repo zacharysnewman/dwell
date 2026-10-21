@@ -14,7 +14,6 @@ use dwell_physics::config::StepView;
 use dwell_protocol::controller_flags;
 use dwell_world::FaceFrame;
 
-
 /// Crouch offset decay rate (1/s).
 const CROUCH_RATE: f64 = 12.0;
 /// A grounded per-tick feet change larger than this is a step, not riding a lift or a slope.
@@ -685,7 +684,8 @@ mod tests {
                 position: f.point(s.position),
                 render_offset: f.vector(s.render_offset),
                 velocity: f.vector(s.velocity),
-                controller_flags: s.controller_flags | controller_flags::FACE_B,
+                controller_flags: s.controller_flags
+                    | dwell_physics::net::face_bit(f, controller_flags::FACE_B),
                 face: FaceFrame::B,
                 ..*s
             }

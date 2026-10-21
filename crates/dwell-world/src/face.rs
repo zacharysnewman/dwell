@@ -195,6 +195,15 @@ impl FaceFrame {
             min
         }
     }
+    /// The bottom row of a span of `size` rows from `bottom` (an LOD cell or section's rows, in
+    /// `i64`), world ↔ face-local: the span's mirror on face B.
+    pub const fn span(self, bottom: i64, size: i64) -> i64 {
+        if self.is_b() {
+            MIRROR_SUM as i64 + 1 - bottom - size
+        } else {
+            bottom
+        }
+    }
     /// The frame of a box: face B's if it lies wholly on face B, else face A's (a box across the
     /// midplane is taken as it is).
     pub const fn of_box(min: [i32; 3], size: [i32; 3]) -> Self {
@@ -352,7 +361,10 @@ mod tests {
         assert_eq!(FaceFrame::B.pitch(10.0), -10.0);
         assert_eq!(FaceFrame::default(), FaceFrame::A);
         let w = FaceFrame::wgsl();
-        assert!(w.contains(&format!("FACE_MIRROR: f32 = {:.1};", FaceFrame::MIRROR)), "{w}");
+        assert!(
+            w.contains(&format!("FACE_MIRROR: f32 = {:.1};", FaceFrame::MIRROR)),
+            "{w}"
+        );
     }
 
     crate::both_faces!(

@@ -6,7 +6,7 @@ use dwell_world::lod::{
     LodCoord, MAX_LEVEL, ORIGIN_X, ORIGIN_Y, ORIGIN_Z, first_row, last_row, section_origin,
     section_size, sections_across,
 };
-use dwell_world::{MIDPLANE_Y, MIRROR_SUM};
+use dwell_world::{FaceFrame, MIDPLANE_Y};
 
 /// World metres, as the client's `Vec3`.
 pub type Vec3 = [f64; 3];
@@ -85,7 +85,7 @@ pub fn is_face_b_section(c: LodCoord) -> bool {
 /// The face-local height of the bottom of the mirror image of a face-B section: row r' of the
 /// mirrored section is row 31 − r' of the section, at this + r' · cell.
 pub fn mirror_section_origin(c: LodCoord) -> i64 {
-    i64::from(MIRROR_SUM) + 1 - section_origin(c).y - section_size(c.level)
+    FaceFrame::B.span(section_origin(c).y, section_size(c.level))
 }
 
 #[cfg(test)]
@@ -259,6 +259,6 @@ mod tests {
         assert!(!is_face_b_section(section_at(12, [0.0, -3000.0, 0.0]))); // straddles
         // The mirror of the section's top is the mirrored section's bottom.
         let top = section_origin(b).y + section_size(2);
-        assert_eq!(mirror_section_origin(b), i64::from(MIRROR_SUM) + 1 - top);
+        assert_eq!(mirror_section_origin(b), FaceFrame::B.span(top, 0));
     }
 }

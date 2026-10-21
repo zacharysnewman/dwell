@@ -20,9 +20,6 @@ pub struct Frame {
 }
 
 impl Frame {
-    /// The continuous mirror: heights sum to this (voxel rows to one less).
-    pub const MIRROR: f64 = FaceFrame::MIRROR;
-
     /// The world's face frame for this face.
     pub fn face_frame(self) -> FaceFrame {
         self.face
