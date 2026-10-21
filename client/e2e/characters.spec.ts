@@ -69,9 +69,11 @@ const mark = async (b: Page, id: number) => (await body(b, id))?.plays ?? 0;
  * Polls until B draws A playing `role`: playing it now, or having started it since `since` (a
  * `mark`). B's body keeps the roles it played, so a short one (a slide, a jump) is seen however
  * seldom the slow page is sampled; `again` runs each poll to start it again (CI's software
- * renderer draws ~5 frames a second, and a body only takes a role in a frame that sees it; a jump
- * that started since B's last frame is the exception, `RemoteView::jumped`, which until it came
- * left B's slow frames seeing only A's fall or landing, `Expected "jump", Received "idle"`).
+ * renderer draws about a frame a second, and a body only takes a role in a frame that sees it; a
+ * jump whose snapshot B read since its last frame is the exception, `RemoteView::jumped`, which
+ * until it came, and then while it went by the snapshots' time rather than their arrival, left
+ * B's slow frames seeing only A's fall or landing, or nothing, `Expected "jump", Received
+ * "idle"`). A miss prints what each poll saw.
  */
 async function seesRole(
   a: Page,
@@ -81,20 +83,57 @@ async function seesRole(
   since: number,
   again?: () => Promise<void>,
 ): Promise<void> {
-  await expect
-    .poll(
-      async () => {
-        await face(b, a);
-        const s = await body(b, id);
-        if (!s) return null;
-        const recent = s.played.slice(Math.max(0, s.played.length - (s.plays - since)));
-        if (s.role === role || recent.includes(role)) return role;
-        await again?.();
-        return s.role;
-      },
-      { timeout: 30_000, intervals: [100] },
-    )
-    .toBe(role);
+  // What each poll saw, for the failure message: B's body of A, and A's own controller.
+  const seen: string[] = [];
+  const t0 = Date.now();
+  try {
+    await expect
+      .poll(
+        async () => {
+          await face(b, a);
+          const s = await body(b, id);
+          seen.push(await polled(a, s, t0));
+          if (!s) return null;
+          const recent = s.played.slice(Math.max(0, s.played.length - (s.plays - since)));
+          if (s.role === role || recent.includes(role)) return role;
+          await again?.();
+          return s.role;
+        },
+        { timeout: 30_000, intervals: [100] },
+      )
+      .toBe(role);
+  } catch (e) {
+    const frames = await Promise.all([a, b].map(frameStats));
+    throw new Error(
+      `B never drew A's ${role} (frames: A ${frames[0]}, B ${frames[1]}); the last polls, ` +
+        `B's body of A (role, latest roles played, plays) | A's arms, ticks and last tick:\n` +
+        seen.slice(-40).join('\n'),
+      { cause: e },
+    );
+  }
+}
+
+/** One poll's line for `seesRole`'s failure message. */
+async function polled(a: Page, s: Body | null, t0: number): Promise<string> {
+  const sa = await state(a);
+  const tk = await a.evaluate<{ state: string; jump: boolean; grounded: boolean }[]>(
+    'globalThis.__dwell ? globalThis.__dwell.ticks() : []',
+  );
+  const k = tk.at(-1);
+  const at = sa ? sa.feet.map((v) => v.toFixed(1)).join(',') : '?';
+  return (
+    `${String(Date.now() - t0)} ms: ${s ? `${s.role} ${s.played.slice(-6).join(',')} ${String(s.plays)}` : 'no body'}` +
+    ` | ${sa?.arms.role ?? '?'} ${String(sa?.stats.ticks ?? '?')} ` +
+    `${k ? `${k.state}${k.grounded ? ' grounded' : ''}${k.jump ? ' jump' : ''}` : '-'} at ${at}`
+  );
+}
+
+/** A page's frame intervals so far: p50 and max (ms). */
+async function frameStats(p: Page): Promise<string> {
+  const f = await p.evaluate<{ p50: number; max: number } | undefined>(
+    'globalThis.__dwell?.telemetry().frames.interval',
+  );
+  return f ? `p50 ${f.p50.toFixed(0)} ms, max ${f.max.toFixed(0)} ms` : '?';
 }
 
 /** A's own first-person arms' role: what A's controller is doing, as A predicts it. */

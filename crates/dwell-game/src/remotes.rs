@@ -22,8 +22,9 @@ pub struct RemoteView {
     pub held: u16,
     /// Its last swing (`swing_flags`; v17).
     pub swing: u8,
-    /// A jump started at a snapshot since the previous `sample`: a frame that comes after the
-    /// jump's rise (a slow page, a long frame) still starts the body's jump (`body_role`).
+    /// A jump whose snapshot arrived since the previous `sample`: a frame that comes after the
+    /// jump's rise (a slow page, a long frame, snapshots read late) still starts the body's jump
+    /// (`body_role`).
     pub jumped: bool,
 }
 
@@ -51,6 +52,9 @@ struct Remote {
     player_id: u16,
     samples: VecDeque<Sample>,
     last_seen: f64,
+    /// The server time of a jump not yet reported: a snapshot that was Jumping after one that was
+    /// not, noted as it arrives (`sample` reports it once the interpolation time reaches it).
+    jump_pending: Option<f64>,
 }
 
 const TICK_MS: f64 = 1000.0 / SIM_HZ as f64;
@@ -91,8 +95,6 @@ pub struct RemotePlayers {
     /// Estimated (local clock − server clock) in ms; the smallest seen, i.e. the fastest delivery.
     clock_offset: Option<f64>,
     delay_ms: f64,
-    /// The server time the last `sample` was at (ms): its `jumped` looks at the snapshots since.
-    sampled_ms: Option<f64>,
 }
 
 impl Default for RemotePlayers {
@@ -107,7 +109,6 @@ impl RemotePlayers {
             remotes: Vec::new(),
             clock_offset: None,
             delay_ms,
-            sampled_ms: None,
         }
     }
 
@@ -128,6 +129,7 @@ impl RemotePlayers {
                         player_id: r.player_id,
                         samples: VecDeque::new(),
                         last_seen: now_ms,
+                        jump_pending: None,
                     });
                     self.remotes.len() - 1
                 }
@@ -139,6 +141,14 @@ impl RemotePlayers {
                 .is_some_and(|s| s.server_ms >= server_ms)
             {
                 continue; // reordered
+            }
+            if r.state == PlayerState::Jumping
+                && entry
+                    .samples
+                    .back()
+                    .is_some_and(|s| s.state.state != PlayerState::Jumping)
+            {
+                entry.jump_pending = Some(server_ms);
             }
             entry.samples.push_back(Sample {
                 server_ms,
@@ -165,28 +175,25 @@ impl RemotePlayers {
     }
 
     /// Interpolated views at local time `now_ms` (`INTERP_DELAY_MS` in the past), each saying
-    /// whether a jump started since the last call (`RemoteView::jumped`).
+    /// whether a jump has started since the last call (`RemoteView::jumped`).
     pub fn sample(&mut self, now_ms: f64) -> Vec<RemoteView> {
         let Some(offset) = self.clock_offset else {
             return Vec::new();
         };
         let t = now_ms - offset - self.delay_ms;
-        let since = self.sampled_ms.replace(t);
         let mut out = Vec::with_capacity(self.remotes.len());
-        for p in &self.remotes {
+        for p in &mut self.remotes {
             let list = &p.samples;
             if list.is_empty() {
                 continue;
             }
-            // A snapshot in (since, t] that is Jumping after one that was not.
-            let jumped = since.is_some_and(|since| {
-                list.iter().zip(list.iter().skip(1)).any(|(a, b)| {
-                    b.server_ms > since
-                        && b.server_ms <= t
-                        && b.state.state == PlayerState::Jumping
-                        && a.state.state != PlayerState::Jumping
-                })
-            });
+            // A jump that arrived since the last call, once its time is drawn: by arrival, not
+            // by its time, since a slow page reads snapshots after the time they were sent has
+            // been passed, and more of them at once than `MAX_SAMPLES`.
+            let jumped = p.jump_pending.is_some_and(|at| at <= t);
+            if jumped {
+                p.jump_pending = None;
+            }
             let mut i = list.len() - 1;
             while i > 0 && list[i].server_ms > t {
                 i -= 1;
@@ -301,6 +308,57 @@ mod tests {
             }
         }
         assert_eq!(seen.len(), 1, "{seen:?}");
+    }
+
+    /// A page that draws a frame a second or slower (CI's software renderer) reads its snapshots
+    /// late: in a burst, and a frame behind (the frames run back to back, and the reads queue
+    /// behind them). The clock offset is the fastest delivery's, so the interpolation time is
+    /// then ahead of every snapshot read, and a jump's arrive after the time they were sent has
+    /// been passed; a long frame also reads more of them than the buffer keeps. Either way the
+    /// jump is reported, once.
+    #[test]
+    fn a_jump_is_reported_however_late_its_snapshots_are_read() {
+        let jump = |tick: u32, state| RemotePlayerState {
+            state,
+            ..remote(f64::from(tick), 0)
+        };
+        let ms = |tick: u32| f64::from(tick) * TICK_MS;
+        for frame_ticks in [60u32, 90, 180] {
+            // The jump (Jumping for 42 ticks) starts at every phase of a frame.
+            for start in (0..frame_ticks).step_by(3) {
+                let jumped_at = 240 + 2 * frame_ticks + start;
+                let state = |tick: u32| match tick.checked_sub(jumped_at) {
+                    Some(0..42) => PlayerState::Jumping,
+                    _ => PlayerState::Idle,
+                };
+                let mut r = RemotePlayers::new(100.0);
+                // A fast page first: each snapshot read 30 ms after it was sent, a frame each.
+                let mut tick = 0;
+                while tick < 240 {
+                    r.push(tick, &[jump(tick, state(tick))], ms(tick) + 30.0);
+                    assert!(!r.sample(ms(tick) + 30.0)[0].jumped);
+                    tick += 3;
+                }
+                // Then a frame every `frame_ticks`, which reads the snapshots sent by the frame
+                // before it.
+                let mut seen = Vec::new();
+                for frame in 1..=7u32 {
+                    let now = ms(240 + frame * frame_ticks) + 30.0;
+                    while tick < 240 + (frame - 1) * frame_ticks {
+                        r.push(tick, &[jump(tick, state(tick))], now);
+                        tick += 3;
+                    }
+                    if r.sample(now)[0].jumped {
+                        seen.push(frame);
+                    }
+                }
+                assert_eq!(
+                    seen.len(),
+                    1,
+                    "frames {frame_ticks} ticks apart, jump at tick {jumped_at}: {seen:?}"
+                );
+            }
+        }
     }
 
     #[test]
