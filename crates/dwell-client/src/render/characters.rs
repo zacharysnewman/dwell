@@ -1303,8 +1303,10 @@ mod tests {
                 if lo(0) > hi(0) || lo(1) > hi(1) {
                     continue;
                 }
-                let col = |x: f32| ((x + 1.0) / 2.0 * COLS as f32 - 0.5).clamp(0.0, COLS as f32 - 1.0);
-                let row = |y: f32| ((y + 1.0) / 2.0 * ROWS as f32 - 0.5).clamp(0.0, ROWS as f32 - 1.0);
+                let col =
+                    |x: f32| ((x + 1.0) / 2.0 * COLS as f32 - 0.5).clamp(0.0, COLS as f32 - 1.0);
+                let row =
+                    |y: f32| ((y + 1.0) / 2.0 * ROWS as f32 - 0.5).clamp(0.0, ROWS as f32 - 1.0);
                 for r in row(lo(1)).floor() as usize..=row(hi(1)).ceil() as usize {
                     for q in col(lo(0)).floor() as usize..=col(hi(0)).ceil() as usize {
                         let p = [
@@ -1321,7 +1323,8 @@ mod tests {
             }
         }
 
-        /// The poses swept: each base role's clip at six phases, and the swings on the idle and walk.
+        /// The poses swept: each base role's clip at six phases, and the swings on the idle and walk
+        /// (named `role phase` and `role+swing phase`), and whether the eye is the crouch's.
         fn poses() -> Vec<(String, bool, Pose)> {
             let ch = dwell_characters::player();
             let crouched = ["crouch", "crouch_walk", "slide"];
@@ -1364,6 +1367,7 @@ mod tests {
                 let base_fov = crate::render::camera::vertical_fov(f64::from(ASPECT));
                 let mut worst_near = f32::MAX;
                 let mut worst_fill: (f32, String) = (0.0, String::new());
+                let mut over: Vec<String> = Vec::new();
                 let poses = poses();
                 for (name, crouched, pose) in &poses {
                     let eye_h = f64::from(if *crouched {
@@ -1372,7 +1376,17 @@ mod tests {
                         cfg.body.eye_height
                     });
                     let posed = bone_transforms(ch, pose);
-                    for drop in [0.0, lag] {
+                    // The eye lags a step below its height on the ground (the step smoothing),
+                    // and crouched it eases down from the standing eye (the crouch smoothing).
+                    let role = name.split([' ', '+']).next().unwrap_or("");
+                    let grounded = matches!(role, "idle" | "walk" | "sprint" | "crouch" | "crouch_walk" | "slide" | "land");
+                    let rise = f64::from(cfg.body.crouch_eye_height - cfg.body.eye_height);
+                    let drops: &[f64] = match (grounded, *crouched) {
+                        (true, true) => &[0.0, lag, rise],
+                        (true, false) => &[0.0, lag],
+                        _ => &[0.0],
+                    };
+                    for &drop in drops {
                         for pitch in (-6..=6).map(|k| f64::from(k) * 15.0) {
                             let yaw = 30.0;
                             let feet = face.point([5.5, 10.0, 3.5]);
@@ -1401,7 +1415,7 @@ mod tests {
                                     .zip(&m.bones)
                                     .map(|(p, &b)| bones[usize::from(b)].apply(*p))
                                     .collect();
-                                let at = format!("{name}, {look}, pitch {pitch}, eye {drop:.2} m low");
+                                let at = format!("{name}, {look}, pitch {pitch}, eye {drop:.2} m lower");
                                 let mut cells = [false; COLS * ROWS];
                                 for t in m.indices.chunks(3) {
                                     let [a, b, c] = [t[0], t[1], t[2]].map(|i| world[i as usize]);
@@ -1415,15 +1429,41 @@ mod tests {
                                     }
                                 }
                                 let fill = cells.iter().filter(|c| **c).count() as f32 / cells.len() as f32;
+                                // The feet are in view looking down standing or walking, and the
+                                // legs sliding (the owner's ask: "particularly when sliding").
+                                let wants = drop == 0.0
+                                    && ((matches!(role, "idle" | "walk") && pitch <= -75.0)
+                                        || (role == "slide" && pitch <= -15.0));
+                                if wants {
+                                    let f = 1.0 / (base_fov.to_radians() as f32 / 2.0).tan();
+                                    let seen = world.iter().zip(&m.bones).any(|(v, &b)| {
+                                        let bone = ch.bones[usize::from(b)].name;
+                                        let (x, y, z) = (dot(*v, right), dot(*v, up), dot(*v, fwd));
+                                        (bone.starts_with("foot") || (role == "slide" && bone.starts_with("shin")))
+                                            && z > 0.1
+                                            && (x / z * f / ASPECT).abs() < 1.0
+                                            && (y / z * f).abs() < 1.0
+                                    });
+                                    assert!(seen, "{at}: the feet (sliding, the legs) are out of view");
+                                }
                                 if fill > worst_fill.0 {
                                     worst_fill = (fill, at.clone());
                                 }
-                                assert!(fill <= body.fill, "{at}: the body covers {:.0}% of the screen (at most {:.0}%)", fill * 100.0, body.fill * 100.0);
+                                if fill > body.fill {
+                                    over.push(format!("{at}: {:.0}%", fill * 100.0));
+                                }
                             }
                         }
                     }
                 }
                 println!("{} poses: nearest triangle {worst_near:.3} m (bar {bar:.3}); most fill {:.1}% at {}", poses.len(), worst_fill.0 * 100.0, worst_fill.1);
+                assert!(
+                    over.is_empty(),
+                    "the body covers more than {:.0}% of the screen in {} views, e.g.\n{}",
+                    body.fill * 100.0,
+                    over.len(),
+                    over.iter().take(40).cloned().collect::<Vec<_>>().join("\n")
+                );
             }
         }
     }

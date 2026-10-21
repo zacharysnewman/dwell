@@ -2788,7 +2788,7 @@ const DATA = {
     ],
     "fov": 62,
     "body": {
-     "$comment": "Your own body in first person (docs/CHARACTERS.md §5.1): drawn from the neck down in the scene, the arms view on top. hideBones and hideParts are left out (the head and its hat, the neck, both arms: the arms view draws yours). The body is drawn `back` m behind the eye, `lookDown` m more looking straight down (by the sine of the pitch), and further back whenever that leaves a vertex within `clear` m of the eye. `near`: the margin past the camera's near plane no part may come within (tested over every clip, and the shader's safety net); `fill`: the most of the screen it may cover.",
+     "$comment": "Your own body in first person (docs/CHARACTERS.md §5.1): drawn from the neck down in the scene, the arms view on top. hideBones and hideParts are left out (the head and its hat, the neck and what is worn round it, both arms: the arms view draws yours). The body is drawn `back` m behind the eye, `lookDown` m more looking straight down (by the sine of the pitch), and further back whenever that leaves a vertex within `clear` m of the eye. `near`: the margin past the camera's near plane no part may come within (tested over every clip, and the shader's safety net); `fill`: the most of the screen it may cover.",
      "hideBones": [
       "head",
       "arm_l",
@@ -2799,13 +2799,15 @@ const DATA = {
       "hand_r"
      ],
      "hideParts": [
-      "neck"
+      "neck",
+      "hood_mantle",
+      "scarf_wrap"
      ],
      "clear": 0.22,
      "back": 0.1,
-     "lookDown": 0.15,
+     "lookDown": 0.3,
      "near": 0.08,
-     "fill": 0.4
+     "fill": 0.5
     },
     "clips": {
      "idle": "fp_idle",

@@ -67,11 +67,26 @@ mod tests {
         for l in ch.looks {
             let m = build(l.parts, &b);
             assert!(!m.parts.is_empty());
-            for name in ["head", "arm_l", "forearm_l", "hand_l", "arm_r", "forearm_r", "hand_r"] {
+            for name in [
+                "head",
+                "arm_l",
+                "forearm_l",
+                "hand_l",
+                "arm_r",
+                "forearm_r",
+                "hand_r",
+            ] {
                 let bone = ch.bone(name).unwrap() as u8;
                 assert!(!m.bones.contains(&bone), "{}: {name}", l.name);
             }
-            for id in ["neck", "head", "hat_brim", "hood_brow", "upper_arm_l", "knuckles_l"] {
+            for id in [
+                "neck",
+                "head",
+                "hat_brim",
+                "hood_brow",
+                "upper_arm_l",
+                "knuckles_l",
+            ] {
                 assert!(!m.parts.contains(&id), "{}: {id}", l.name);
             }
             for id in ["torso", "thigh_l", "foot_r", "belt"] {
@@ -97,7 +112,9 @@ mod tests {
         assert!(s > b.back + 0.1, "{s}");
         for (p, &k) in m.positions.iter().zip(&m.bones) {
             let v = bones[usize::from(k)].apply(*p);
-            let d = (v[0] - chest[0]).hypot(v[1] - chest[1]).hypot(v[2] - s - chest[2]);
+            let d = (v[0] - chest[0])
+                .hypot(v[1] - chest[1])
+                .hypot(v[2] - s - chest[2]);
             assert!(d >= b.clear - 1e-4, "{d}");
         }
     }
