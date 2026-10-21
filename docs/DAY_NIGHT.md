@@ -336,21 +336,45 @@ shadows-low,shadows-off --unthrottled`, the baseline High).
 | fly-low-fast (flight) | 12.0 (6.6) | 11.3 (6.8) | 10.4 (5.6) | +1.6 (+1.0) | +0.9 (+1.1) |
 | fly-high (flight) | 10.1 (5.5) | 10.7 (5.1) | 11.0 (6.4) | ≈ 0 | ≈ 0 |
 
-Triangles drawn into the maps (`shadow.ktris`): idle 331k on High, 487k on Low (Low's second
-cascade covers the whole 80 m slice and is drawn every other frame); grove 186k / 317k; flying
-low 35k / 54k; flying high 20k. The targets (High ≤ 3 ms, Low ≤ 1 ms on the M1) are met by Low on
-the lowest frames, not yet by High at the spawn and in the grove: the casters' triangles dominate
-(the chunk meshes are the scene's own, AO-split and fine), and the plants' alpha-tested blades cost
-most per texel. Already in: casters culled to each slice's light-space footprint, opaque casters
-drawing only their light-facing faces, the far cascades taking turns (`refreshFrames`), plants in
-the nearest cascades only (`plantCascades`), a 120 m caster reach. Next steps for High, a
-follow-up: coarser caster meshes for the far cascades, a lower far resolution, or three cascades;
-measured again on an idle machine.
+**After the cost pass** (2026-10-21: eye-centred boxes, kept far maps, a depth-only vertex stage,
+no lookup on faces turned from the light, High at 3 cascades and a 2×2 PCF). `gpu.frame` p50 (ms)
+on the same machine and settings, one run each, load average 4–8 (the before row above was taken
+the same morning at a load average of 5–18):
 
-**Extending it**: the tiers, the bias, the fades and the distances are data; a tier is a new entry
+| Scenario | High | Low | Off | High − Off | Low − Off | `gpu.shadows` p50 High (before) |
+| --- | --- | --- | --- | --- | --- | --- |
+| idle-spawn | 8.4 | 8.2 | 8.3 | ≈ 0 (was +5.3) | ≈ 0 (was +1.7) | 0.52 (3.83) |
+| shadows-pines | 11.2 | 10.9 | 10.0 | +1.2 (was +3.0) | +0.9 (was +1.3) | 0.37 (1.03) |
+| climb-fast | 4.8 | 4.6 | 4.5 | +0.3 (was +0.8) | +0.2 (was +0.4) | 0.36 (0.45) |
+
+Standing, a frame draws the nearest cascade alone (`shadow.drawn` 1). Climbing at 176 m/s it draws
+at most one far cascade more; the frame interval's max is the same as Off's (32.9 against 32.6 ms),
+so no spikes. High meets its target (≤ 1.5 ms over Off on the M1) and stays the desktop default.
+What is left on High is mostly the receivers' lookup in the near pass (about +1 ms in the grove).
+The look is unchanged in the bench's shots: near shadows, the cascades' far edge and the dusk
+mountains, on both faces.
+
+Minecraft mods' patterns, taken and not taken:
+- *Taken:* the shaderpacks' player-centred shadow box (BSL, Complementary, Sildur's on
+  Iris/OptiFine). Here as cascades, so the map can be kept while the camera turns.
+- *Taken:* the shadow pass draws opaque geometry depth-only, with plants only near and entities
+  only where they matter (Sodium/Iris).
+- *Taken:* Distant Horizons leaves far shadows to cheaper means: the cascades end at 160 m on the
+  horizon maps (§12).
+- *Taken:* caching and staggering, and texel snapping to keep cached maps steady (engine
+  practice, not the mods').
+- *Not taken:* the shaderpacks' single map with a fisheye distortion. Our greedy-merged quads are
+  long, and a nonlinear warp of their vertices bends their shadows. The warp also moves with the
+  player, so the texel grid can't be snapped and edges shimmer as you move.
+- *Not taken:* the camera frustum extruded toward the sun (Iris's shadow culling). It would tie a
+  far map to the view direction, and turning would draw it again; the box test around the eye
+  culls almost as much once the map is kept.
+
+**Extending it**: the tiers, the bias, the fades, the distances and the kept maps' slack, turn and
+budget are data; a tier is a new entry
 of `tiers` with the setting's name added to `ShadowQuality` and the menu's choices (the shader
-takes up to four cascades). The vocabulary in code is small: the split, the sphere fit, the texel
-snap, the PCF grid.
+takes up to four cascades). The vocabulary in code is small: the split, the box around the eye,
+the texel snap, the schedule's reasons, the PCF grid.
 
 ## 11. Flood light: sky and block light per cell
 
