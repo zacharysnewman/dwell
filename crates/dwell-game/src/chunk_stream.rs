@@ -92,20 +92,71 @@ pub trait ChunkStore {
     fn mesh_block(&mut self, coord: Coord) -> Vec<u16> {
         self.padded_chunk(coord)
     }
+    /// An all-air chunk is now held (`held`), or no longer: nothing is stored for it, but the
+    /// flood light holds it (docs/DAY_NIGHT.md §10).
+    fn air_chunk(&mut self, _coord: Coord, _held: bool) {}
+    /// The flood light of the chunk with a one-cell apron, the mesher's padded layout (empty: no
+    /// flood light, meshed as open sky).
+    fn mesh_light(&mut self, _coord: Coord) -> Vec<u8> {
+        Vec::new()
+    }
+    /// The chunks whose meshes show a flood-light change since the last call.
+    fn light_changed(&mut self) -> Vec<Coord> {
+        Vec::new()
+    }
 }
 
 /// The client sim's voxel world is the store.
+/// With [`VoxelWorld::enable_light`] (the client) it keeps the flood light of what it holds.
 impl ChunkStore for VoxelWorld {
     fn set_chunk(&mut self, coord: Coord, revision: u32, voxels: &[u16]) {
+        let c = ChunkCoord::from_array(coord);
+        // An all-air chunk stored to be edited is lit as it was.
+        let still_air = self.find(c).is_none()
+            && self.light().is_some_and(|l| l.holds(c))
+            && voxels.iter().all(|&v| v == 0);
         if let Some(chunk) = Chunk::from_voxels(voxels, revision) {
-            self.put(ChunkCoord::from_array(coord), chunk);
+            self.put(c, chunk);
+            if !still_air {
+                self.light_load(c);
+            }
         }
     }
     fn remove_chunk(&mut self, coord: Coord) {
-        self.remove(ChunkCoord::from_array(coord));
+        let c = ChunkCoord::from_array(coord);
+        self.remove(c);
+        self.light_unload(c);
     }
     fn edit_chunk(&mut self, changes: &ChunkChanges) {
         apply_chunk_changes(self, changes);
+        if self.light().is_some() {
+            let base = changes.coord.map(|v| v * CHUNK_SIZE);
+            let cells: Vec<[i32; 3]> = changes
+                .changes
+                .iter()
+                .map(|v| {
+                    let i = i32::from(v.index);
+                    [base[0] + (i & 31), base[1] + ((i >> 5) & 31), base[2] + ((i >> 10) & 31)]
+                })
+                .collect();
+            self.light_edited(&cells);
+        }
+    }
+    fn air_chunk(&mut self, coord: Coord, held: bool) {
+        let c = ChunkCoord::from_array(coord);
+        if held {
+            self.light_load(c);
+        } else {
+            self.light_unload(c);
+        }
+    }
+    fn mesh_light(&mut self, coord: Coord) -> Vec<u8> {
+        self.padded_light(ChunkCoord::from_array(coord))
+    }
+    fn light_changed(&mut self) -> Vec<Coord> {
+        self.light_mut()
+            .map(|l| l.take_changed().into_iter().map(|c| c.to_array()).collect())
+            .unwrap_or_default()
     }
     fn padded_chunk(&mut self, coord: Coord) -> Vec<u16> {
         padded_from_neighbours(self, coord)
@@ -187,6 +238,8 @@ pub struct MeshJob {
     pub coord: Coord,
     pub token: u64,
     pub padded: Vec<u16>,
+    /// The flood light around it ([`ChunkStore::mesh_light`]; empty: open sky).
+    pub light: Vec<u8>,
     pub mirror: bool,
 }
 
@@ -444,8 +497,12 @@ where
         for &key in coords {
             self.forget(key);
             self.resyncing.remove(&key);
-            if self.loaded.remove(&key).is_some() && !self.air.remove(&key) {
-                self.store.remove_chunk(key);
+            if self.loaded.remove(&key).is_some() {
+                if self.air.remove(&key) {
+                    self.store.air_chunk(key, false);
+                } else {
+                    self.store.remove_chunk(key);
+                }
             }
             self.dirty.remove(&key);
             self.meshing.remove(&key);
@@ -453,6 +510,7 @@ where
                 self.view.set_terrain_chunk(key, [0, 0, 0], None);
             }
         }
+        self.relit();
     }
 
     /// A VoxelModification's chunks (§6.5): applied in revision order.
@@ -546,10 +604,12 @@ where
             self.token += 1;
             self.meshing.insert(c, self.token);
             let padded = self.store.mesh_block(c);
+            let light = self.store.mesh_light(c);
             self.mesher.mesh(MeshJob {
                 coord: c,
                 token: self.token,
                 padded,
+                light,
                 mirror: face_of_chunk_y(c[1]) == Face::B,
             });
             count += 1;
@@ -591,6 +651,17 @@ where
         self.loaded.insert(key, revision);
         self.dirty.mark(key);
         self.neighbours_changed(key);
+        self.relit();
+    }
+
+    /// Marks the chunks whose flood light changed for meshing (docs/DAY_NIGHT.md §10): light
+    /// reaches farther than the neighbours (a roof darkens the column under it all the way down).
+    fn relit(&mut self) {
+        for c in self.store.light_changed() {
+            if self.loaded.contains_key(&c) && !self.air.contains(&c) {
+                self.dirty.mark(c);
+            }
+        }
     }
 
     /// An all-air chunk: the client sim reads a missing chunk as air, so nothing is stored.
@@ -600,7 +671,10 @@ where
             self.store.remove_chunk(key);
         }
         self.loaded.insert(key, 0);
-        self.air.insert(key);
+        let was_air = !self.air.insert(key);
+        if !was_air {
+            self.store.air_chunk(key, true);
+        }
         self.dirty.remove(&key);
         self.meshing.remove(&key);
         if self.meshed.remove(&key) {
@@ -609,6 +683,7 @@ where
         if replaced {
             self.neighbours_changed(key);
         }
+        self.relit();
     }
 
     /// Writes cells on the client alone (edit prediction, §6.5): in loaded chunks only (an Air
@@ -708,6 +783,7 @@ where
                 self.dirty.mark(c);
             }
         }
+        self.relit();
     }
 
     /// Neighbours' border faces may now be hidden (or exposed) by this chunk, and their adaptive
@@ -948,6 +1024,79 @@ mod tests {
         v.sort();
         v
     }
+
+    dwell_world::both_faces!(
+        /// A predicted edit (§6.5) relights at once and remeshes what its light reaches, with the
+        /// light in the jobs: a roof built in the air chunk over the ground, higher than any sky
+        /// ray reaches (no apron rule re-meshes the ground for it), darkens the ground's mesh.
+        fn a_predicted_edit_relights_and_remeshes_with_its_light(f: dwell_world::FaceFrame) {
+            let row = dwell_world::MIDPLANE_Y.div_euclid(CHUNK_SIZE) + 2;
+            let ground = f.chunk(ChunkCoord::new(0, row, 0)).to_array();
+            let sky = f.chunk(ChunkCoord::new(0, row + 1, 0)).to_array();
+            let rock = dwell_blocks::require("dwell:sandbox_floor");
+            // The ground chunk: rock up to face-local row 8.
+            let mut voxels = vec![0u16; CHUNK_VOLUME];
+            for ly in 0..8 {
+                let wy = f.cell([0, row * CHUNK_SIZE + ly, 0])[1] - ground[1] * CHUNK_SIZE;
+                for i in 0..1024 {
+                    voxels[(i & 31) | ((wy as usize) << 5) | ((i >> 5) << 10)] = rock;
+                }
+            }
+            let mut world = VoxelWorld::streamed();
+            world.enable_light();
+            let mut s = ChunkStreamer::new(
+                world,
+                ManualSource::default(),
+                FakeMesher::default(),
+                FakeView::default(),
+            );
+            s.on_chunk_data(ChunkMessage {
+                form: ChunkForm::Explicit,
+                coord: ground,
+                revision: 1,
+                voxels: Some(voxels),
+            });
+            s.on_chunk_data(air(sky));
+            s.mesh_dirty([0.0; 3], 100.0, no_clock);
+            let floor = f.cell([16, row * CHUNK_SIZE + 8, 16]);
+            let light_at = |job: &MeshJob, c: [i32; 3]| {
+                let l = [0, 1, 2].map(|a| c[a] - job.coord[a] * CHUNK_SIZE);
+                job.light[padded_index(l[0], l[1], l[2])]
+            };
+            let job = s.mesher().jobs.iter().find(|j| j.coord == ground).expect("meshed");
+            assert_eq!(light_at(job, floor) >> 4, 15, "open sky over the ground");
+            let jobs = std::mem::take(&mut s.mesher_mut().jobs);
+            for job in jobs {
+                s.on_meshed(job.coord, job.token, ());
+            }
+            // A roof over the whole chunk, 10 m up (face-local row 20 of the chunk above).
+            let roof: Vec<([i32; 3], u16)> = (0..CHUNK_SIZE * CHUNK_SIZE)
+                .map(|i| {
+                    let p = [i % CHUNK_SIZE, (row + 1) * CHUNK_SIZE + 20, i / CHUNK_SIZE];
+                    (f.cell(p), rock)
+                })
+                .collect();
+            assert_eq!(s.set_local(&roof), roof.len());
+            s.mesh_dirty([0.0; 3], 100.0, no_clock);
+            let job = s
+                .mesher()
+                .jobs
+                .iter()
+                .find(|j| j.coord == ground)
+                .expect("the ground re-meshed for its light");
+            assert_eq!(light_at(job, floor) >> 4, 0, "dark under the roof");
+            // Taken away again (the server refused it): lit again.
+            let jobs = std::mem::take(&mut s.mesher_mut().jobs);
+            for job in jobs {
+                s.on_meshed(job.coord, job.token, ());
+            }
+            let gone: Vec<([i32; 3], u16)> = roof.iter().map(|&(c, _)| (c, 0)).collect();
+            s.set_local(&gone);
+            s.mesh_dirty([0.0; 3], 100.0, no_clock);
+            let job = s.mesher().jobs.iter().find(|j| j.coord == ground).expect("re-meshed");
+            assert_eq!(light_at(job, floor) >> 4, 15);
+        }
+    );
 
     /// The region tools and the structures store read a box through the streamer: an Air chunk the
     /// server sent is loaded (all air), though the client never stores it; a chunk not sent is not.

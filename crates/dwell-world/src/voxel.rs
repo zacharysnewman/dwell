@@ -509,7 +509,8 @@ impl VoxelWorld {
         self.light.get_or_insert_with(Default::default);
     }
 
-    /// The stored chunks (the flood light reads them).
+    /// The stored chunks (the flood light's tests read them).
+    #[cfg(test)]
     pub(crate) fn chunk_table(&self) -> &crate::light::Voxels {
         &self.chunks
     }
