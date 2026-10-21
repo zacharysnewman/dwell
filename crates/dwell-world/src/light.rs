@@ -349,6 +349,8 @@ impl LightMap {
         // A chunk whose voxels were replaced is cleared first: any cell may have changed.
         let mut removal: Vec<P> = Vec::new();
         let mut add: Vec<P> = Vec::with_capacity(CHUNK_VOLUME + 6 * 1024);
+        // The cells below whose open sky it now covers (see the end).
+        let mut under: Vec<P> = Vec::new();
         let kind = if replaced {
             Kind::Mixed
         } else {
@@ -402,7 +404,11 @@ impl LightMap {
                 let below = d / 2 == 1 && self.above_slot(p) == Some(s);
                 // An open-sky chunk keeps the full sky the cells under it had.
                 if below && kind != Kind::Sky {
-                    removal.push(p);
+                    if replaced {
+                        removal.push(p);
+                    } else {
+                        under.push(p);
+                    }
                 }
                 if below || kind != Kind::Shut {
                     add.push(p);
@@ -410,6 +416,33 @@ impl LightMap {
             }
         }
         self.run_all(voxels, &removal, &add);
+        // The cells below saw the open sky through its place. Lit first, it shows which of them
+        // still do: one at full sky light under a cell of it at full sky light, filtering nothing,
+        // keeps it (full sky light in the chunk only falls from its top, never rises from them),
+        // and the column under it is left alone; the rest are cleared and relit. Clearing them all
+        // first cascaded down every open-air column under a newly held chunk (0.22.9: 5–9 ms a
+        // chunk native, 100–150 thousand cell writes).
+        if !under.is_empty() {
+            let mut cache = VoxelCache::new(voxels);
+            let lost: Vec<P> = under
+                .into_iter()
+                .filter(|&p| !self.keeps_full_sky(&mut cache, p))
+                .collect();
+            if !lost.is_empty() {
+                self.run_all(voxels, &lost, &[]);
+            }
+        }
+    }
+
+    /// Whether held cell `p` is at full sky light under a cell at full sky light and filters
+    /// nothing: straight-down sky that its above gives it whatever else changed.
+    fn keeps_full_sky(&mut self, cache: &mut VoxelCache<'_>, p: P) -> bool {
+        let up = if self.up(p) > 0 { 2 } else { 3 };
+        self.level(p, Channel::Sky) == LIGHT_MAX
+            && self.rules(cache, p).0 == 0
+            && self
+                .step(p, up)
+                .is_some_and(|a| self.level(a, Channel::Sky) == LIGHT_MAX)
     }
 
     /// What a newly held chunk is, for the fast paths of [`Self::load`].
@@ -731,10 +764,20 @@ impl LightMap {
             }
         }
         for &(n, d, ov) in from {
-            // Its own source may have changed (the open sky now enters where the chunk was).
-            readd.push(n);
-            if ov > 0 {
-                self.remove_into(cache, ch, n, d, ov, &mut q, &mut readd);
+            let nv = self.level(n, ch);
+            if ov > 0 && nv > 0 {
+                let (f, _) = self.rules(cache, n);
+                if nv <= self.passed(ch, ov, n, d, f) && self.source(cache, ch, n) < nv {
+                    self.set_level(n, ch, 0);
+                    q.push_back((n, nv));
+                    continue;
+                }
+            }
+            // Kept: its neighbours held already agree with it (nothing cleared next to it but
+            // what the removal finds), so it spreads again only from a brighter source of its
+            // own (the open sky now entering where the chunk was).
+            if self.source(cache, ch, n) > nv {
+                readd.push(n);
             }
         }
         while let Some((p, ov)) = q.pop_front() {
@@ -749,8 +792,13 @@ impl LightMap {
         // Brightest first (a bucket per level): every cell spreads once, at its final level.
         let mut buckets: [Vec<P>; LIGHT_MAX as usize + 1] = Default::default();
         for p in readd {
-            let s = self.source(cache, ch, p);
             let v = self.level(p, ch);
+            // Nothing is brighter than the full level: its source needn't be looked up.
+            let s = if v == LIGHT_MAX {
+                v
+            } else {
+                self.source(cache, ch, p)
+            };
             if s > v {
                 self.set_level(p, ch, s);
                 buckets[usize::from(s)].push(p);

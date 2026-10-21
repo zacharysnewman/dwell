@@ -4,7 +4,8 @@
 //! holds ground and the row over it), loads them into a lit world nearest first as the streamer
 //! does, then meshes them with and without the light, digs a 2 × 2 m tunnel 8 m into the ground at
 //! the spawn and fills it back, and roofs 16 m square over it and takes the roof away. Prints per face: chunks held, light ms per chunk loaded, the light
-//! arrays held (MB), mesh ms per chunk unlit and lit, and the edits' update ms (dig, fill, roof, unroof).
+//! arrays held (MB), mesh ms per chunk unlit and lit, the edits' update ms (dig, fill, roof, unroof),
+//! the slowest chunk's light ms, and the ms to unload the square's +x edge at once (a flight's batch).
 
 use std::time::Instant;
 
@@ -32,7 +33,7 @@ fn main() {
         seeds = vec![7, 1, 42];
     }
     println!(
-        "face held load_ms_per_chunk light_MB full_arrays mesh_ms_unlit mesh_ms_lit dig_ms fill_ms roof_ms unroof_ms"
+        "face held load_ms_per_chunk light_MB full_arrays mesh_ms_unlit mesh_ms_lit dig_ms fill_ms roof_ms unroof_ms worst_load_ms edge_unload_ms"
     );
     for face in [Face::A, Face::B] {
         let f = if face == Face::A {
@@ -43,6 +44,7 @@ fn main() {
         let (mut held, mut load_ms, mut bytes, mut full) = (0usize, 0.0, 0usize, 0usize);
         let (mut meshed, mut unlit_ms, mut lit_ms) = (0usize, 0.0, 0.0);
         let (mut dig_ms, mut fill_ms, mut roof_ms, mut unroof_ms) = (0.0, 0.0, 0.0, 0.0);
+        let (mut worst_ms, mut edge_ms) = (0.0f64, 0.0);
         for &seed in &seeds {
             let terrain = BifacialTerrain::new(seed);
             let local = terrain.local(face);
@@ -94,7 +96,9 @@ fn main() {
                 }
                 let t = Instant::now();
                 lit.light_load(c);
-                load_ms += t.elapsed().as_secs_f64() * 1000.0;
+                let ms = t.elapsed().as_secs_f64() * 1000.0;
+                load_ms += ms;
+                worst_ms = worst_ms.max(ms);
                 held += 1;
             }
             let (_, n) = lit.light().expect("lit").counts();
@@ -153,10 +157,22 @@ fn main() {
             let t = Instant::now();
             lit.light_edited(&roof);
             unroof_ms += t.elapsed().as_secs_f64() * 1000.0;
+            // The square's +x edge dropped at once, as a flight's ChunkUnload drops it.
+            let edge: Vec<ChunkCoord> = coords
+                .iter()
+                .copied()
+                .filter(|c| c.x == scx + RADIUS)
+                .collect();
+            for &c in &edge {
+                lit.remove(c);
+            }
+            let t = Instant::now();
+            lit.light_unload_many(&edge);
+            edge_ms += t.elapsed().as_secs_f64() * 1000.0;
         }
         let k = seeds.len() as f64;
         println!(
-            "{face:?} {held} {:.3} {:.1} {full} {:.2} {:.2} {:.2} {:.2} {:.2} {:.2}",
+            "{face:?} {held} {:.3} {:.1} {full} {:.2} {:.2} {:.2} {:.2} {:.2} {:.2} {:.2} {:.2}",
             load_ms / held as f64,
             bytes as f64 / 1e6,
             unlit_ms / meshed as f64,
@@ -164,7 +180,9 @@ fn main() {
             dig_ms / k,
             fill_ms / k,
             roof_ms / k,
-            unroof_ms / k
+            unroof_ms / k,
+            worst_ms,
+            edge_ms / k
         );
     }
 }
