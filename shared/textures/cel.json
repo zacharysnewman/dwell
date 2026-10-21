@@ -45,18 +45,18 @@
       ]
     },
     "grass_top": {
-      "$comment": "Turf from above: mostly flat base, a few big blocky shadow clumps and small lit tufts.",
+      "$comment": "Turf from above: mostly flat base, three big blocky shadow clumps and a few small lit tufts (few, large shapes: less to crawl in motion).",
       "layers": [
         { "kind": "fill", "tone": "@base" },
-        { "kind": "clumps", "tone": "@shadow", "count": 4, "width": [4, 6], "height": [3, 3], "shape": "blob", "seed": 2 },
-        { "kind": "clumps", "tone": "@light", "count": 4, "width": [2, 3], "height": [1, 1], "seed": 5 }
+        { "kind": "clumps", "tone": "@shadow", "count": 3, "width": [5, 7], "height": [3, 4], "shape": "blob", "seed": 2 },
+        { "kind": "clumps", "tone": "@light", "count": 3, "width": [2, 3], "height": [1, 1], "seed": 5 }
       ]
     },
     "soil": {
       "layers": [
         { "kind": "fill", "tone": "@base" },
-        { "kind": "clumps", "tone": "@shadow", "count": 4, "width": [4, 6], "height": [2, 3], "shape": "blob", "seed": 1 },
-        { "kind": "clumps", "tone": "@light", "count": 3, "width": [2, 2], "height": [1, 1], "seed": 9 }
+        { "kind": "clumps", "tone": "@shadow", "count": 3, "width": [5, 7], "height": [3, 3], "shape": "blob", "seed": 1 },
+        { "kind": "clumps", "tone": "@light", "count": 2, "width": [2, 3], "height": [1, 1], "band": [0.4, 0.6], "seed": 3 }
       ]
     },
     "grass_side": {
@@ -70,31 +70,31 @@
       ]
     },
     "stone": {
-      "$comment": "Rough-cut blocks: shadow mortar outlines, a lit top row on each stone, flat stone between.",
+      "$comment": "Big rough-cut blocks, about two a tile each way: shadow mortar outlines, a lit top row on each stone, flat stone between.",
       "layers": [
         { "kind": "fill", "tone": "@base" },
-        { "kind": "bricks", "mortar": "@shadow", "light": "@light", "width": [6, 9], "height": [4, 6], "seed": 2 }
+        { "kind": "bricks", "mortar": "@shadow", "light": "@light", "width": [8, 11], "height": [7, 9], "seed": 2 }
       ]
     },
     "sand": {
       "$comment": "Flat sand with a few wind ripples: a lit dash with its shadow under.",
       "layers": [
         { "kind": "fill", "tone": "@base" },
-        { "kind": "ripples", "tone": "@light", "under": "@shadow", "count": 5, "length": [3, 5], "seed": 1 }
+        { "kind": "ripples", "tone": "@light", "under": "@shadow", "count": 3, "length": [4, 6], "seed": 1 }
       ]
     },
     "water": {
       "layers": [
         { "kind": "fill", "tone": "@base" },
-        { "kind": "ripples", "tone": "@light", "count": 4, "length": [3, 5], "seed": 2 },
-        { "kind": "ripples", "tone": "@shadow", "count": 3, "length": [4, 6], "seed": 7 }
+        { "kind": "ripples", "tone": "@light", "count": 3, "length": [4, 6], "seed": 2 },
+        { "kind": "ripples", "tone": "@shadow", "count": 2, "length": [5, 7], "seed": 7 }
       ]
     },
     "bark": {
       "$comment": "Wood grain as vertical bands: wide base, narrow shadow furrows, a rare lit ridge.",
       "layers": [
         { "kind": "fill", "tone": "@base" },
-        { "kind": "bands", "tones": ["@base", "@shadow", "@base", "@light", "@base", "@shadow"], "direction": "vertical", "width": [1, 3], "seed": 3 }
+        { "kind": "bands", "tones": ["@base", "@shadow", "@base", "@light", "@base", "@shadow"], "direction": "vertical", "width": [2, 4], "seed": 3 }
       ]
     },
     "log_end": {

@@ -5,9 +5,10 @@ One data-driven generator paints every texture in the storybook style of
 and sky accents read by name. Decision record: [ADR 0040](./adr/0040-painterly-textures.md).
 Architecture: [`ARCHITECTURE.md`](./ARCHITECTURE.md) §6.1 (block textures).
 
-**Status: built; the game's only texture set.** The owner approved it as the default on 2026-10-20
+**Status: built; the game's texture set.** The owner approved it as the default on 2026-10-20
 and removed the earlier procedural set on 2026-10-21 (ADR 0040), so every atlas tile, the utility
-tiles included, is painted from this data.
+tiles included, is painted from this data. A second **style**, cel (§10), paints the same materials
+in a few flat tones for the pixel-art preview only, as a prototype; the normal look never draws it.
 
 ## 1. Brief and answers
 
@@ -208,3 +209,90 @@ into `shared/textures/`.
   0041).
 - A 64-texel atlas would allow finer brushes up close. That is a change to the atlas's `TILE`, not to
   the data's vocabulary.
+
+## 10. A second style: cel (a prototype for the pixel-art preview)
+
+**Status: prototype, off by default.** Owner, 2026-10-21: "I think we need to try out a custom
+texture set for the pixel art look. It looks like it's better to use fewer colors per texture, with
+more of a cell shaded look to the textures", and "the complexity in the textures currently makes them
+shimmer a lot when moving around." The pixel-art preview ([`proposals/PIXEL_ART_LOOK.md`](./proposals/PIXEL_ART_LOOK.md))
+found that the painterly strokes turn to speckle once quantized; cel is the flat-tone set it
+recommended. Only the preview's `270-cel` and `360-cel` presets draw it (`textures` in a preset,
+`shared/look/pixelart.json`); nothing else changes. It is not adopted: an ADR would adopt it with the
+pixel-art look.
+
+**The design questions** (CLAUDE.md, "Ask before designing"), answered from the brief: what is added
+later is more recipes (one per material, or none: a default per use) and occasionally a pattern kind
+(code, small); whoever designs content adds them in `shared/textures/cel.json`; the pattern kinds
+are code; the style is per build, picked per preset.
+
+**Data: `shared/textures/cel.json`.**
+
+- `tileTexels` (16): texels per tile edge, a divisor of the atlas's `TILE` (32), each cel texel
+  repeated to fill it. Low on purpose: at the 270-row preview (the default 75° FOV) a 1 m face covers about
+  175 / d low-res pixels at d metres, so a 16-texel tile keeps a texel at least a pixel to about 11 m,
+  and the mips (below) take over beyond.
+- `maxTones` (4): the most colours a tile may use; the bake fails over it, naming the tile.
+- `mips`: `mode` (each 2 × 2 of an opaque tile halves to its majority tone, a tie to the tone that
+  covers more of the tile) or `average`. With `mode` a distant face keeps exactly the tile's tones and
+  its small shapes drop out level by level until it is its main tone, rather than averaging into
+  in-between colours that the palette dithers, which crawl as the camera moves. Cutout tiles average
+  (and keep their coverage) as before.
+- `palette` (`dwell`) and `paletteExempt` (the utility tiles): every tone of every other tile must be
+  a colour of that pixel-art palette, so a face lit white quantizes to itself (the bake fails
+  otherwise). The `dwell` palette gained the `heartwood` ramp for the ladder and the log ends.
+- `recipes`: material → `{ like?, layers }`. A material without one takes the recipe of the material
+  it is `like` (`dirt_skirt` → `grass_side`), else `defaults.<use>`; so a material added to
+  `materials.json` has a cel tile at once, and the characters (`defaults.character`: base, a ragged
+  shadow band at the bottom and a lit rim at the top) need no recipe each.
+- Tones are palette references as in §2 (`@stop` is the material's own ramp) or `"clear"`, a
+  cutout's gap (transparent, its colour the material's base so filtering adds no fringe).
+
+**The layer kinds** (`shared/textures/cel.mjs`, the fixed vocabulary; sizes in whole texels, y up,
+every shape hard-edged and wrapped on a wrapping tile):
+
+| kind | fields |
+| --- | --- |
+| `fill` | `tone` |
+| `edge` | `tone`, `edge` (top, bottom, left, right, all), `width`, `ragged` (extra texels per column) |
+| `clumps` | `tone`, `count`, `width`, `height` ([min, max]), `band`, `shape` (rect, blob: corners cut), `light`/`shadow` (the top/bottom row) |
+| `blades` | `tone`, `tip`, `count` or `at` (columns), `length`, `width`, `root` (share of the height), `dir` (up, down) |
+| `bricks` | `mortar`, `width`, `height` (rows and bricks that sum to the tile, so it wraps), `light`, `shadow` |
+| `planks` | `seam`, `direction`, `width`, `light`, `joints` |
+| `bands` | `tones` (cycled), `direction`, `width` (grain) |
+| `ripples` | `tone`, `under` (a dash below, offset), `count`, `length`, `band` |
+| `rings` | `tones`, `center`, `step`, `metric` (round, square), `radius` |
+| `rects` | `tone`, `at` ([[x, y, w, h]]) |
+| `checker` | `tone`, `size` |
+| any | `clip` (paint only covered texels), `seed` |
+
+**The bake.** `node shared/textures/gen.mjs` validates `cel.json` with the materials and paints
+every atlas tile into `crates/dwell-mesh/src/cel.rgba` (16² × 4 bytes a tile, in `materials.tiles`
+order) and `cel.gen.rs` (`CEL_TILE`, `CEL_TILES`, `CEL_MODE_MIPS`, `CEL_TEXELS`); CI regenerates and
+fails on any diff, and runs `node --test shared/textures/cel.test.mjs`. `--cel-png <file>` writes a
+sheet of every material in the style.
+
+**In the client.** `dwell-mesh` `TextureSet` (`Painterly`, `Cel`), `set_texel` and `build_atlas_of`
+build the atlas from either set in the same layout (the same rectangles, gutters and mip count), so
+the renderer swaps the texels of its one atlas texture when the preset's set changes
+(`ensure_atlas_set`; `write_atlas`), and no mesh or bind group changes. Everything else reads the
+painterly set: the cutout classification (the cel tiles keep it, a test pins it), the glow and hang
+(the materials'), the LOD's flat colours and the hotbar's swatches (the cel tiles average within
+16/255 of the painterly ones, a test pins it, so the LOD needs no second table). The cel texels cost
+19 KB of the WASM module (442 bytes gzipped: flat tones compress to almost nothing), so they ship in
+it rather than loading on demand.
+
+**Tests.** `cel.test.mjs`: the bake current; tiles at most `maxTones` colours (and lowering it fails
+the bake); every non-exempt tone a `dwell` palette colour (an off-palette tone fails the bake); the
+averages near the painterly ones; cutouts hard-edged and opaque tiles opaque; a material added by
+data alone painted by the default and by its own recipe; every kind paints, deterministically, and
+wraps (or stops at a sprite's edge); every bad entry fails naming it. `dwell-mesh`: the same tiles at
+`CEL_TILE`, the same layout and cutouts as painterly, the ladder and tall grass where the meshes
+expect them. The renderer: the coverage and gutter tests over both sets, the cel mips keep each
+opaque tile's tones and end on its main tone, a cel preset swaps the atlas and `off` swaps it back.
+`dwell-look`: `270-cel` and `360-cel` are `270` and `360` with the cel set, and nothing else.
+
+**Not done (follow-ups).** Characters: their materials have cel tiles (the `character` default), but
+the Character Lab still paints them painterly (the characters are not in the game yet). The
+Painterly Texture Lab edits painterly materials only; a cel tab would be the editor for this file.
+

@@ -8,7 +8,7 @@ toon bands, a limited palette with ordered dither, a nearest-neighbour integer u
 proposal says what was built to judge it, what it shows, and the spec's open questions.
 
 **Try it:** `https://dropkickarcade.com/dwell/?pixelart=270` (presets `180`, `270`, `270-warm`,
-`270-snap`, `360`, `270-raw`; `off` or no parameter is the normal look). In the console,
+`270-snap`, `270-cel`, `360`, `360-cel`, `270-raw`; `off` or no parameter is the normal look). In the console,
 `__dwell.setPixelArt('180')` switches live. The bench has a configuration per preset
 (`npm run bench -- <scenario> --compare --configs pixelart-180,pixelart-270,pixelart-270-warm,pixelart-270-snap,pixelart-360`).
 
@@ -45,7 +45,9 @@ for: the palettes and presets are data, one generator, validation and tests over
      a gradient or a band edge crosses between two colours. This is the "dither only gradients and
      band edges" rule without a gradient detector.
   5. **Atlas:** point filtering while on, `point` (no mips, the spec's rule) or `point-mips` (nearest
-     texel of the nearest mip).
+     texel of the nearest mip); and the preset's texture set (`textures`): the painterly set, or the
+     **cel** style (§8; [`PAINTERLY_TEXTURES.md`](../PAINTERLY_TEXTURES.md) §10), written into the
+     atlas in place when the preset changes.
   6. Motion blur and the wind pass (its edge blur and streaks) are off.
   7. **Camera snap** (optional): the eye moves along the view's right and up onto the grid of
      low-res pixels on a plane `snapDepthM` ahead, and the upscale shifts the picture by the
@@ -57,17 +59,22 @@ for: the palettes and presets are data, one generator, validation and tests over
 
 ## 2. The presets
 
-| Preset | Rows | Fit | Palette | Dither | Sun bands | Ambient bands | Shadow hue | Edge | Atlas | Snap |
-|---|---|---|---|---|---|---|---|---|---|---|
-| `180` | 180 | crop | dwell (42) | 0.5 | 3 | 3 | 0.5 | depth + crease, 45% | point-mips | off |
-| `270` | 270 | crop | dwell | 0.5 | 3 | smooth | 0.5 | depth, 40% | point-mips | off |
-| `270-warm` | 270 | crop | hearth (44) | 0.5 | 3 | smooth | 0.6 | depth, 40% | point-mips | off |
-| `270-snap` | 270 | crop | dwell | 0.5 | 3 | smooth | 0.5 | depth, 40% | point-mips | 8 m |
-| `360` | 360 | crop | dwell | 0.35 | 4 | smooth | 0.35 | none | point-mips | off |
-| `270-raw` | 270 | letterbox | hearth | 1.0 | smooth | smooth | 0 | none | point | off |
+| Preset | Rows | Fit | Palette | Dither | Sun bands | Ambient bands | Shadow hue | Edge | Atlas | Textures | Snap |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| `180` | 180 | crop | dwell (45) | 0.5 | 3 | 3 | 0.5 | depth + crease, 45% | point-mips | painterly | off |
+| `270` | 270 | crop | dwell | 0.5 | 3 | smooth | 0.5 | depth, 40% | point-mips | painterly | off |
+| `270-warm` | 270 | crop | hearth (44) | 0.5 | 3 | smooth | 0.6 | depth, 40% | point-mips | painterly | off |
+| `270-snap` | 270 | crop | dwell | 0.5 | 3 | smooth | 0.5 | depth, 40% | point-mips | painterly | 8 m |
+| `270-cel` | 270 | crop | dwell | 0.5 | 3 | smooth | 0.5 | depth, 40% | point-mips | **cel** | off |
+| `360` | 360 | crop | dwell | 0.35 | 4 | smooth | 0.35 | none | point-mips | painterly | off |
+| `360-cel` | 360 | crop | dwell | 0.35 | 4 | smooth | 0.35 | none | point-mips | **cel** | off |
+| `270-raw` | 270 | letterbox | hearth | 1.0 | smooth | smooth | 0 | none | point | painterly | off |
 
-`dwell` is 42 colours from the storybook palette's ramps and swatches (meadow, leaf, soil, bark,
-stone, sand, water, cloud, flame, the inks) plus a hand-picked sky ramp (7 steps) and a near-black, since
+`270-cel` and `360-cel` are `270` and `360` with the cel textures and nothing else (a test pins it),
+so a comparison isolates the texture set.
+
+`dwell` is 45 colours from the storybook palette's ramps and swatches (meadow, leaf, soil, bark,
+heartwood — added with the cel style, for its wood tones — stone, sand, water, cloud, flame, the inks) plus a hand-picked sky ramp (7 steps) and a near-black, since
 the palette has no sky blues and no darks for night. `hearth` is a hand-made Lospec-style warm palette
 (44 colours in the spec's ramps: sky 5, cloud 4, foliage 6, grass 5, bark 4, earth 4, stone 4, water
 3, warm light 4, dusk 2, shade 3), hue-shifted warm in the light and cool in the shadow.
