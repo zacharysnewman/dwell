@@ -186,6 +186,10 @@ interface DwellDebug {
   pixelArt(): string;
   /** Sets the pixel-art preview's preset by name (`off` or an unknown name: off); true when one is on. */
   setPixelArt(name: string): boolean;
+  /** How long the camera rolls upright after crossing the midplane (s; `?crossingroll=`). */
+  crossingRoll(): number;
+  /** Sets the crossing roll's duration (s, 0..5; 0 snaps upright at once); false for a value it refuses. */
+  setCrossingRoll(seconds: number): boolean;
   /** Dev telemetry (docs/DEV_TOOLS.md): per-frame series, event samples and counters, summarised. */
   telemetry(): Telemetry;
   /** The kept frames' raw values: `frames[i]` is `[atMs, ...values in names' order]`. */
@@ -694,6 +698,8 @@ async function start(): Promise<App | null> {
     setOutline: (name) => client.setOutline(name),
     pixelArt: () => client.pixelArt(),
     setPixelArt: (name) => client.setPixelArt(name),
+    crossingRoll: () => client.crossingRoll(),
+    setCrossingRoll: (seconds) => client.setCrossingRoll(seconds),
     memory: () => memoryReport(app),
     blockDump: () => blockDumpOf(app),
     telemetry: () => client.telemetry() as Telemetry,

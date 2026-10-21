@@ -683,6 +683,13 @@ impl<S: Scene> Game<S> {
         game
     }
 
+    /// How long the camera rolls upright after crossing the midplane (s; 0 snaps): the
+    /// experiment switch `?crossingroll=` / `__dwell.setCrossingRoll` (face_flip.rs). False for a
+    /// value it refuses.
+    pub fn set_crossing_roll(&mut self, seconds: f64) -> bool {
+        self.flip.set_seconds(seconds)
+    }
+
     /// The respawn preload's lighting, meshing and LOD priorities (§6.3) on or off.
     pub fn set_respawn_preload(&mut self, on: bool) {
         self.respawn_preload_on = on;

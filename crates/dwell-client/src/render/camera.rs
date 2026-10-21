@@ -199,6 +199,33 @@ mod tests {
     );
 
     dwell_world::both_faces!(
+        /// The snap experiment (`?crossingroll=snap`, owner 2026-10-21): with a 0 s roll the view
+        /// drawn on the crossing frame from face `f` is already the upright view on the other face,
+        /// pointing exactly where the view before pointed, at every heading and pitch.
+        fn a_snapped_crossing_draws_upright_pointing_the_same_way(f: FaceFrame) {
+            for yaw in (0..360).step_by(30) {
+                for pitch in (-90..=90).step_by(15) {
+                    let (yaw, pitch) = (f64::from(yaw), f64::from(pitch));
+                    let mut flip = FaceFlip::new();
+                    assert!(flip.set_seconds(0.0));
+                    flip.tick(f, yaw, pitch);
+                    let before = aim(yaw, pitch, f, flip.draw(0.016));
+                    let to = f.other();
+                    let look = flip.tick(to, yaw, pitch);
+                    let roll = flip.draw(0.0);
+                    assert_eq!(roll, 0.0, "{yaw} {pitch}");
+                    let drawn = aim(look.0, look.1, to, roll);
+                    close(drawn.forward(), before.forward());
+                    let rest = aim(look.0, look.1, to, 0.0);
+                    close(drawn.up, rest.up);
+                    close(drawn.right, rest.right);
+                    assert!(dot(drawn.up, to.up()) >= -1e-9, "upright on the other face");
+                }
+            }
+        }
+    );
+
+    dwell_world::both_faces!(
         /// On face `f` the camera looks along the face's look with the face's up: face-local, its
         /// forward and up are face A's, and its right is face A's mirrored (a mirror reverses
         /// handedness, `FaceFrame::handed`): face B's view is face A's upside down.
