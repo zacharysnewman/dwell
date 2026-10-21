@@ -863,7 +863,11 @@ dwell_world::both_faces!(
             world.set_voxel(cell[0], cell[1], cell[2], ladder);
             // Face-local point: `out` metres out from the cell's centre, `side` along the plate.
             let at = |out: f64, side: f64, up: f64| {
-                f.point([0.5 + ox * out - oz * side, mid + up, 0.5 + oz * out + ox * side])
+                f.point([
+                    0.5 + ox * out - oz * side,
+                    mid + up,
+                    0.5 + oz * out + ox * side,
+                ])
             };
             let mut ray = |o: [f64; 3], d: [f64; 3]| {
                 let d = f.vector(d).map(|v| v as f32);
@@ -872,7 +876,11 @@ dwell_world::both_faces!(
             // From in front: met on the plate's front, 1/8 m in front of the wall.
             let hit = ray(at(3.0, 0.0, 0.0), [-ox, 0.0, -oz]).expect(facing);
             assert_eq!((hit.cell, hit.face), (cell, out_face), "{facing}");
-            assert!((hit.distance - 3.375).abs() < 1e-4, "{facing}: {}", hit.distance);
+            assert!(
+                (hit.distance - 3.375).abs() < 1e-4,
+                "{facing}: {}",
+                hit.distance
+            );
             // Across the cell in front of the plate: nothing.
             assert_eq!(ray(at(0.2, -3.0, 0.0), [-oz, 0.0, ox]), None, "{facing}");
             // Across the plate itself: the ladder.
