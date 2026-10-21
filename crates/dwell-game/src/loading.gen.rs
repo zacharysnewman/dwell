@@ -5,3 +5,7 @@ pub const LOADING: LoadingTunables = LoadingTunables {
     radius_chunks: 3,
     timeout_s: 20.0,
 };
+
+/// The respawn preload (shared/look/loading.json `respawnPreload`): the near ring's radius around
+/// the respawn point streamed and meshed from a death until the respawn; None: off.
+pub const RESPAWN_PRELOAD_RADIUS_CHUNKS: Option<i32> = Some(3);

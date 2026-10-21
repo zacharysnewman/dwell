@@ -6649,6 +6649,55 @@
           "name": "behind-settled"
         }
       ]
+    },
+    {
+      "name": "respawn-far",
+      "notes": "The respawn's timeline (ARCHITECTURE.md §6.3, owner 2026-10-21: \"We could preload terrain at spawn once you die too?\"): flies about 700 m east of the seed-7 spawn (level 6, as fly-low-fast), waits there while the view loads (the spawn's chunks leave), dies, and times respawn → playing behind the loading screen (the report's respawns). With the respawn preload the server streams the spawn's ring and the client meshes it and readies its LOD during the five-second death screen. Run with --compare --configs raster,respawn-preload-off for the preload's effect.",
+      "steps": [
+        {
+          "do": "settle",
+          "maxS": 120
+        },
+        {
+          "do": "fly",
+          "on": true
+        },
+        {
+          "do": "hold",
+          "code": "Space",
+          "s": 1.5
+        },
+        {
+          "do": "flySpeed",
+          "level": 6
+        },
+        {
+          "do": "look",
+          "yaw": 90,
+          "pitch": 0
+        },
+        {
+          "do": "hold",
+          "code": "KeyW",
+          "s": 8
+        },
+        {
+          "do": "wait",
+          "s": 6
+        },
+        {
+          "do": "shot",
+          "name": "before-death"
+        },
+        {
+          "do": "die",
+          "maxS": 30
+        },
+        {
+          "do": "shot",
+          "name": "after-respawn"
+        }
+      ]
     }
   ]
 }

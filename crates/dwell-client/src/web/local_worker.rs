@@ -202,6 +202,15 @@ impl LocalWorld {
     pub fn save(&mut self) -> bool {
         self.core.save()
     }
+    /// Kills the local player (the bench's `die` step).
+    pub fn kill(&mut self) {
+        self.core.kill_local_player();
+    }
+    /// The respawn preload on or off (`?respawnPreload=off`).
+    #[wasm_bindgen(js_name = setRespawnPreload)]
+    pub fn set_respawn_preload(&mut self, on: bool) {
+        self.core.set_respawn_preload(on);
+    }
     pub fn advance(&mut self, elapsed_seconds: f64) -> u32 {
         self.core.advance(elapsed_seconds)
     }

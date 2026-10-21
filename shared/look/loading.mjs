@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 // Generates the loading screen's tunables (ARCHITECTURE.md §6.3) for Rust
-// (crates/dwell-game/src/loading.gen.rs: the near ring and the timeout) and for the shell
-// (client/src/ui/loading.gen.ts: the fade in from white) from shared/look/loading.json, after
-// validating them: an
+// (crates/dwell-game/src/loading.gen.rs: the near ring, the timeout and the respawn preload),
+// for the server (crates/dwell-sim/src/respawn_preload.gen.rs: the respawn preload) and for the
+// shell (client/src/ui/loading.gen.ts: the fade in from white) from shared/look/loading.json,
+// after validating them: an
 // unknown, missing or out-of-range entry fails with its path named, and the near ring may not reach
 // past the server's streamed view (shared/protocol/constants.json's viewRadiusChunks). The output is
 // checked in; CI regenerates it and fails on any diff.
@@ -26,7 +27,7 @@ const fail = (m) => {
 /** Checks the tunables; returns them. Throws naming the entry. */
 export function validateLoading(data, viewRadius = VIEW_RADIUS_CHUNKS) {
   if (typeof data !== 'object' || data === null || Array.isArray(data)) fail('(root) must be an object');
-  const keys = ['radiusChunks', 'timeoutS', 'fade'];
+  const keys = ['radiusChunks', 'timeoutS', 'respawnPreload', 'fade'];
   for (const k of Object.keys(data)) if (k !== '$comment' && !keys.includes(k)) fail(`unknown entry ${k}`);
   for (const k of keys) if (!(k in data)) fail(`missing entry ${k}`);
   const r = data.radiusChunks;
@@ -39,8 +40,24 @@ export function validateLoading(data, viewRadius = VIEW_RADIUS_CHUNKS) {
   if (typeof t !== 'number' || !Number.isFinite(t) || t < 1 || t > 600) {
     fail(`timeoutS must be a number in [1, 600], got ${JSON.stringify(t)}`);
   }
+  validateRespawnPreload(data.respawnPreload, viewRadius);
   validateFade(data.fade);
   return data;
+}
+
+/** Checks the respawn preload's entry (`respawnPreload`). Throws naming the entry. */
+function validateRespawnPreload(p, viewRadius) {
+  if (typeof p !== 'object' || p === null || Array.isArray(p)) fail('respawnPreload must be an object');
+  const keys = ['enabled', 'radiusChunks'];
+  for (const k of Object.keys(p)) if (k !== '$comment' && !keys.includes(k)) fail(`unknown entry respawnPreload.${k}`);
+  for (const k of keys) if (!(k in p)) fail(`missing entry respawnPreload.${k}`);
+  if (typeof p.enabled !== 'boolean') fail(`respawnPreload.enabled must be true or false, got ${JSON.stringify(p.enabled)}`);
+  const r = p.radiusChunks;
+  if (!Number.isInteger(r) || r < 0 || r > viewRadius) {
+    fail(
+      `respawnPreload.radiusChunks must be a whole number in [0, ${viewRadius}] (a second view no larger than the first), got ${JSON.stringify(r)}`,
+    );
+  }
 }
 
 /** fade's entries: [min, max] seconds or a number range, or 'color' (#rrggbb). */
@@ -85,6 +102,25 @@ export function loadingRust(data) {
     `    timeout_s: ${rf(data.timeoutS)},`,
     '};',
     '',
+    "/// The respawn preload (shared/look/loading.json `respawnPreload`): the near ring's radius around",
+    '/// the respawn point streamed and meshed from a death until the respawn; None: off.',
+    `pub const RESPAWN_PRELOAD_RADIUS_CHUNKS: Option<i32> = ${preload(data)};`,
+    '',
+  ].join('\n');
+}
+
+const preload = (data) => (data.respawnPreload.enabled ? `Some(${data.respawnPreload.radiusChunks})` : 'None');
+
+/** The server's Rust source (dwell-sim) for validated tunables: the respawn preload's radius. */
+export function preloadServerRust(data) {
+  return [
+    `// ${header}`,
+    '',
+    "/// The respawn preload (shared/look/loading.json `respawnPreload`): from a death until the",
+    "/// respawn, the view sphere of this radius around the respawn point is streamed as a second",
+    '/// centre (`ServerConfig::respawn_preload_radius_chunks`\'s default); None: off.',
+    `pub const RESPAWN_PRELOAD_RADIUS_CHUNKS: Option<i32> = ${preload(data)};`,
+    '',
   ].join('\n');
 }
 
@@ -110,6 +146,7 @@ export function loadingTs(data) {
 if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
   const data = validateLoading(JSON.parse(readFileSync(join(here, 'loading.json'), 'utf8')));
   writeFileSync(join(root, 'crates/dwell-game/src/loading.gen.rs'), loadingRust(data));
+  writeFileSync(join(root, 'crates/dwell-sim/src/respawn_preload.gen.rs'), preloadServerRust(data));
   writeFileSync(join(root, 'client/src/ui/loading.gen.ts'), loadingTs(data));
   console.log('look: loading screen tunables generated');
 }

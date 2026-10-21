@@ -193,6 +193,8 @@ interface Run {
   openedAt: number;
   /** Each `until` step's seconds since the page was opened (null: not within its maxS). */
   untils: { what: string; s: number | null }[];
+  /** Each `die` step's respawn → playing seconds, and the loading screen's state then. */
+  respawns: { s: number | null; loading: Record<string, unknown> | null }[];
   /** Each `burst` step's flicker, by name. */
   bursts: Record<string, Flicker>;
   /** The scenario's face's up along y (1 face A, −1 face B): `aboveFeet` heights are along it. */
@@ -490,6 +492,32 @@ async function step(run: Run, s: Step): Promise<void> {
       );
       return;
     }
+    case 'die': {
+      // The respawn's timeline (ARCHITECTURE.md §6.3): killed, the death screen (the respawn
+      // preload streams the spawn meanwhile), the respawn, then playing behind the loading screen.
+      if ((await call<boolean | null>(page, 'd.die()')) !== true) {
+        throw new Error('die: not a local world');
+      }
+      if (!(await until(page, 'd.state()?.dead === true', 10_000)))
+        throw new Error('die: no death');
+      if (!(await until(page, 'd.state()?.dead === false && d.state()?.active === true', 30_000))) {
+        throw new Error('die: no respawn');
+      }
+      const respawned = Date.now();
+      const playing = await until(page, 'd.state()?.terrainReady === true', s.maxS * 1000);
+      const at = playing ? (Date.now() - respawned) / 1000 : null;
+      const loading = await call<Record<string, unknown> | null>(
+        page,
+        'd.state()?.loading ?? null',
+      );
+      run.respawns.push({ s: at, loading });
+      console.log(
+        at === null
+          ? `  respawn: still not playing after ${f(s.maxS)} s`
+          : `  respawn → playing ${f(at)} s${typeof loading?.openedS === 'number' ? ` (loading screen ${f(loading.openedS)} s${loading.timedOut ? ', timed out' : ''})` : ''}`,
+      );
+      return;
+    }
     case 'mark':
       await call(page, 'd.telemetryReset()');
       run.markMs = await page.evaluate<number>('performance.now()');
@@ -606,6 +634,7 @@ async function runScenario(
     settles: [],
     openedAt,
     untils: [],
+    respawns: [],
     bursts: {},
     up: sc.face === 'b' ? -1 : 1,
   };
@@ -618,6 +647,7 @@ async function runScenario(
     settles: run.settles,
     join: joined,
     untils: run.untils,
+    respawns: run.respawns,
     bursts: run.bursts,
     url,
   };

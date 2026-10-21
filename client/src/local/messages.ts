@@ -27,7 +27,11 @@ export type ToWorker =
   /** The host's page was hidden or shown: pause or resume the world and tell the guests. */
   | { t: 'hostStatus'; state: HostState }
   /** Stop hosting: end the guests' sessions (Reject(ServerClosing)). */
-  | { t: 'closeGuests' };
+  | { t: 'closeGuests' }
+  /** Kill the local player (the bench's `die` step). */
+  | { t: 'kill' }
+  /** The respawn preload (ARCHITECTURE.md §6.3) on or off (`?respawnPreload=off`). */
+  | { t: 'respawnPreload'; on: boolean };
 
 export type FromWorker =
   /** `persisted`: the world is saved in the browser (OPFS, §6.4). */

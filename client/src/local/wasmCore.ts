@@ -80,6 +80,12 @@ export class LocalCore {
   closeGuests(): void {
     this.world.closeGuests();
   }
+  kill(): void {
+    this.world.kill();
+  }
+  setRespawnPreload(on: boolean): void {
+    this.world.setRespawnPreload(on);
+  }
   /** Advances real time; steps the fixed 60 Hz simulation as far as it reaches. */
   advance(elapsedSeconds: number): number {
     return this.world.advance(elapsedSeconds);
