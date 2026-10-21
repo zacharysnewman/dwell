@@ -686,6 +686,11 @@ impl<S: Scene> Game<S> {
         self.loading.screen()
     }
 
+    /// The player's centre (the prediction's), where the loading screen's near ring is centred.
+    pub fn position(&self) -> [f64; 3] {
+        self.current.position
+    }
+
     /// The loading gate's state, for the bench and the tests.
     pub fn loading_gate(&self) -> &LoadingGate {
         &self.loading
@@ -701,7 +706,9 @@ impl<S: Scene> Game<S> {
         let progress = self
             .streamer
             .near_progress(self.current.position, &self.near_ring, |c| {
-                lod.is_none_or(|l| l.chunk_visible(ChunkCoord::from_array(c)))
+                // Drawn as chunks, or where the LOD knows there is nothing to draw (buried rock).
+                let c = ChunkCoord::from_array(c);
+                lod.is_none_or(|l| l.chunk_visible(c) || l.shows_nothing_at(c))
             });
         self.loading.update(now_ms, progress);
     }

@@ -655,6 +655,122 @@ fn turning_around_shows_the_detail_already_loaded_it_does_not_depend_on_the_view
     }
 }
 
+/// The frame at which every chunk of `chunks` is shown as chunks, from a fresh start at `cam`
+/// (jobs finish each frame, a few at a time), or None within `max_frames`.
+fn frames_until_shown(
+    cam: &LodCamera,
+    groups: &[&[ChunkCoord]],
+    max_frames: u32,
+) -> Vec<Option<u32>> {
+    let mut host = Host::with_chunks(|_| true);
+    let mut lod = system(4.0, 256, 4, 4);
+    lod.set_detail_distance(Some(256.0));
+    let mut out = vec![None; groups.len()];
+    for frame in 1..=max_frames {
+        lod.update(cam, f64::from(frame) * 16.0, &mut host);
+        finish(&mut lod, &mut host, &mut zero, 1.0);
+        for (g, chunks) in groups.iter().enumerate() {
+            if lod.active && out[g].is_none() && chunks.iter().all(|&c| lod.chunk_visible(c)) {
+                out[g] = Some(frame);
+            }
+        }
+        if out.iter().all(Option::is_some) {
+            break;
+        }
+    }
+    out
+}
+
+#[test]
+fn the_full_detail_behind_the_camera_loads_as_soon_as_the_detail_ahead() {
+    // Regression (owner, 2026-10-21: "I have to turn around to get them to load in"): work out of
+    // view ranked as if its cells were 8 times smaller (OFF_VIEW_PRIORITY), so the level-1
+    // sections behind the camera, which the chunks within the full-detail distance wait for, came
+    // after every section of the view ahead, out to the horizon: the full detail behind appeared
+    // only once the whole view had loaded, or once the player turned round.
+    // The chunks the LOD shows as chunks once settled (the selection is the same facing any way).
+    let p = [16.5, 40.0, 16.5];
+    let settled = {
+        let mut host = Host::with_chunks(|_| true);
+        let mut lod = system(4.0, 256, 64, 64);
+        lod.set_detail_distance(Some(256.0));
+        let cam = camera(p, 90.0, 0.0);
+        for frame in 1..=3000 {
+            lod.update(&cam, f64::from(frame) * 16.0, &mut host);
+            if host.pending.is_empty() && frame > 100 {
+                break;
+            }
+            finish(&mut lod, &mut host, &mut zero, 1.0);
+        }
+        let mut shown = Vec::new();
+        for x in -7..=7 {
+            for z in -7..=7 {
+                for y in -2..=2 {
+                    if lod.chunk_visible(cc(x, y, z)) {
+                        shown.push(cc(x, y, z));
+                    }
+                }
+            }
+        }
+        shown
+    };
+    // Ahead (+X) and behind (−X), 5 to 7 chunks (160–224 m) out: past the streamed view and the
+    // sections whose chunks are shown whatever the LOD (find_covered), so the LOD asks for them.
+    // Well inside the full-detail distance (its edge is where the hysteresis decides).
+    let inside = |c: &ChunkCoord| {
+        let (lo, hi) = section_box(parent(lod_of_chunk(*c)));
+        box_distance(p, lo, hi) < 200.0
+    };
+    let ahead: Vec<ChunkCoord> = settled
+        .iter()
+        .copied()
+        .filter(|c| c.x >= 5 && inside(c))
+        .collect();
+    let behind: Vec<ChunkCoord> = settled
+        .iter()
+        .copied()
+        .filter(|c| c.x <= -5 && inside(c))
+        .collect();
+    assert!(
+        ahead.len() > 10 && behind.len() > 10,
+        "{} {}",
+        ahead.len(),
+        behind.len()
+    );
+    // Facing +X from the start.
+    let at = frames_until_shown(&camera(p, 90.0, 0.0), &[&ahead, &behind], 20_000);
+    let (ahead_at, behind_at) = (at[0].expect("ahead shown"), at[1].expect("behind shown"));
+    assert!(
+        behind_at <= ahead_at + ahead_at / 2,
+        "the full detail behind showed at frame {behind_at}, ahead at {ahead_at}"
+    );
+}
+
+#[test]
+fn counts_what_the_view_waits_for_ahead_and_behind_until_both_are_loaded() {
+    // The stats' `waiting` (the bench's `until behind` / `until ahead`): [in view, out of view].
+    let mut host = Host::with_chunks(|_| true);
+    let mut lod = system(4.0, 256, 16, 16);
+    lod.set_detail_distance(Some(256.0));
+    let cam = camera([16.5, 40.0, 16.5], 90.0, 0.0);
+    let mut seen_behind = false;
+    let mut last = [usize::MAX; 2];
+    for frame in 1..=5000 {
+        lod.update(&cam, f64::from(frame) * 16.0, &mut host);
+        last = lod.debug_stats().waiting;
+        seen_behind |= last[1] > 0;
+        if host.pending.is_empty() && frame > 10 {
+            break;
+        }
+        finish(&mut lod, &mut host, &mut zero, 1.0);
+    }
+    assert!(
+        seen_behind,
+        "work behind the camera is counted while it loads"
+    );
+    assert_eq!(last, [0, 0], "and nothing is waited for once settled");
+}
+
 #[test]
 fn draws_water_at_every_level_as_see_through_at_the_chunks_water_height() {
     // Regression (playtest: near and coarse water did not join): every level draws see-through
@@ -1378,6 +1494,7 @@ fn formats_the_overlay_lines() {
         error_scale: 1.15,
         bytes_per_second: 2048,
         fades: Default::default(),
+        waiting: [0, 0],
     };
     assert_eq!(
         format_lod_stats(&s),

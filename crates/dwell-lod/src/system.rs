@@ -254,7 +254,9 @@ pub struct StandIn {
 
 // --- tunables ------------------------------------------------------------------------------------
 
-/// Load order: work out of view ranks as if its cells were this much smaller (see schedule).
+/// Load order: work out of view, beyond the near ring (see `near_ring_m`), ranks as if its cells
+/// were this much smaller (see schedule). Within the ring, where the full-detail chunks wait for
+/// their level-1 sections, the view makes no difference.
 const OFF_VIEW_PRIORITY: f64 = 1.0 / 8.0;
 /// Drawable chunks wait at most this long (ms) for the LOD levels above them (see find_covered).
 pub const FORCE_CHUNKS_AFTER_MS: f64 = 1000.0;
@@ -540,6 +542,23 @@ impl LodSystem {
     /// A level-0 chunk is drawn when its level-1 section is refined (or before LOD is ready).
     pub fn chunk_visible(&self, coord: ChunkCoord) -> bool {
         self.chunk_fade(coord).is_some()
+    }
+
+    /// Whether the LOD knows the chunk's level-1 section has nothing to draw (empty or buried rock):
+    /// its chunks are not shown and need not be (the loading screen's near ring, §6.3).
+    /// The deepest section known on the way down decides: an empty or buried one is not descended
+    /// below (sky over the player: its level-1 sections are never made).
+    pub fn shows_nothing_at(&self, coord: ChunkCoord) -> bool {
+        let mut c = parent(lod_of_chunk(coord));
+        loop {
+            if let Some(n) = self.nodes.get(&id_of(c)) {
+                return !n.needs_answer && matches!(n.kind, Some(LodKind::Empty | LodKind::Buried));
+            }
+            if c.level >= MAX_LEVEL {
+                return false;
+            }
+            c = parent(c);
+        }
     }
 
     /// How a chunk is drawn: in full, fading in or out with its level-1 section's swap, or (None)
@@ -938,7 +957,7 @@ impl LodSystem {
                 self.want_chunks(id, frustum);
             }
             let drawable = refine && all_drawable(coord, host);
-            if refine && !drawable {
+            if refine && !drawable && self.chunks_can_arrive(coord, host) {
                 self.waiting_chunks.push(id);
             }
             if (self.covered.contains(&id) && (!ready || refine)) || drawable {
@@ -1198,6 +1217,30 @@ impl LodSystem {
         frustum.distance(lo, hi)
     }
 
+    /// Within `r` chunks of the camera's chunk, as the server measures its radii (|offset|² ≤
+    /// r² + r, in chunks: a chunk is 16 m tall, so the radius reaches less far up and down).
+    fn within_chunks(&self, c: ChunkCoord, r: i32) -> bool {
+        let dx = c.x - self.camera_chunk.x;
+        let dy = c.y - self.camera_chunk.y;
+        let dz = c.z - self.camera_chunk.z;
+        dx * dx + dy * dy + dz * dz <= r * r + r
+    }
+
+    /// Whether the chunks of level-1 section `c` that are not drawable yet will arrive: asked for
+    /// (within the request radius) or streamed (within the server's view). A section refined
+    /// whose chunks never come (up or down past the radius) is drawn as LOD, not waited for.
+    fn chunks_can_arrive<P>(&self, c: LodCoord, host: &dyn LodHost<P>) -> bool {
+        let r = if self.options.request_chunks && !self.full_mode {
+            CHUNK_REQUEST_RADIUS
+        } else {
+            world::VIEW_RADIUS_CHUNKS as i32
+        };
+        (0..8)
+            .map(|o| chunk_of_lod(child(c, o)))
+            .filter(|&k| !host.chunk_drawable(k))
+            .all(|k| self.within_chunks(k, r))
+    }
+
     /// The chunks of a refined level-1 section, to ask the server for (see send_chunk_requests).
     fn want_chunks(&mut self, id: LodId, frustum: &Frustum) {
         if !self.options.request_chunks || self.full_mode {
@@ -1206,11 +1249,7 @@ impl LodSystem {
         let coord = self.n(id).coord;
         for o in 0..8 {
             let c = chunk_of_lod(child(coord, o));
-            let dx = c.x - self.camera_chunk.x;
-            let dy = c.y - self.camera_chunk.y;
-            let dz = c.z - self.camera_chunk.z;
-            let r = CHUNK_REQUEST_RADIUS;
-            if dx * dx + dy * dy + dz * dz > r * r + r {
+            if !self.within_chunks(c, CHUNK_REQUEST_RADIUS) {
                 continue;
             }
             if self.chunk_asked.contains_key(&c) {
@@ -1270,6 +1309,16 @@ impl LodSystem {
             host.request_chunks(batch);
         }
         self.wanted_chunks = wanted;
+    }
+
+    /// The near ring (m): within it the load order ignores the view (schedule). The full-detail
+    /// distance (with the hysteresis's margin), where level-1 sections show as chunks, or without
+    /// one the radius chunks are asked for in.
+    fn near_ring_m(&self) -> f64 {
+        let m = self
+            .detail_m
+            .unwrap_or(f64::from(CHUNK_REQUEST_RADIUS * dwell_world::CHUNK_SIZE));
+        m * self.options.coarsen_ratio.max(1.0)
     }
 
     /// Out of view, and not close (a section beside the camera can reach into the view).
@@ -1463,13 +1512,22 @@ impl LodSystem {
         }
         // Largest projected cells first: coarse before fine and near before far, so the whole view
         // appears coarse at once and sharpens — nearest first. A parent always outranks its children.
+        let near_ring = self.near_ring_m();
         let mut ranked: Vec<(LodId, f64)> = wanted
             .iter()
             .map(|&id| {
                 let n = self.n(id);
                 let d = self.distance(n.lo, n.hi, frustum).max(1.0);
-                // What the view shows now goes first; the ring around it is loaded behind.
-                let scale = if self.off_view(id, frustum, d) {
+                // Near the camera every direction loads alike, nearest (coarsest) first, so the
+                // full detail behind it is there without turning round; beyond, what the view
+                // shows now goes first and the rest is loaded behind. Near is by the parent's
+                // box: a parent splits only once all its children are ready, so the children of
+                // one in the ring load alike too, even those reaching past it.
+                let near = n.coord.level >= MAX_LEVEL || {
+                    let (lo, hi) = section_box(parent(n.coord));
+                    self.distance(lo, hi, frustum) <= near_ring
+                };
+                let scale = if !near && self.off_view(id, frustum, d) {
                     OFF_VIEW_PRIORITY
                 } else {
                     1.0

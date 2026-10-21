@@ -142,6 +142,8 @@ struct Rig {
     down: std::collections::VecDeque<(u32, Option<Channel>, Vec<u8>)>,
     /// A second client, session-level only (no game): its key, and the game messages it got.
     guest: Option<(Session, SigningKey, Vec<dwell_protocol::Message>)>,
+    /// The game's loading screen on joining (ARCHITECTURE.md §6.3; off, as in the e2e suite).
+    loading_screen: bool,
 }
 
 /// The guest's session id on the local core.
@@ -180,6 +182,7 @@ impl Rig {
             up: std::collections::VecDeque::new(),
             down: std::collections::VecDeque::new(),
             guest: None,
+            loading_screen: false,
         }
     }
 
@@ -312,6 +315,7 @@ impl Rig {
                 PlayerControllerConfig::default(),
             );
             game.set_registry(self.session.mapping().cloned());
+            game.set_loading_screen(self.loading_screen);
             self.game = Some(game);
         }
         let Some(game) = &mut self.game else { return };
@@ -613,6 +617,113 @@ fn a_brush_stroke_in_the_sandbox_comes_back_from_the_server_and_undoes_as_one_st
             .voxel(above[0], above[1], above[2])
             == 0),
         "undo takes the stroke back"
+    );
+}
+
+#[test]
+fn the_loading_screen_holds_the_player_until_the_terrain_all_round_is_drawn() {
+    // Owner (2026-10-21): a loading screen until the chunks around the player load on joining,
+    // and terrain that loads without turning round. Facing +X from the start, the chunks at −X
+    // within the near ring are meshed when the screen opens, and the player did not move before.
+    use dwell_game::loading::{LOADING, near_ring_offsets};
+    let mut rig = Rig::new();
+    rig.loading_screen = true;
+    rig.input.look.yaw = 90.0;
+    rig.input.set_key("KeyW", true); // held all along: no step until the screen opens
+    assert!(rig.run_until(60 * 30, |r| r.game.is_some()));
+    let mut placed = None;
+    let mut waited = 0;
+    assert!(
+        rig.run_until(60 * 60, |r| {
+            let d = r.game.as_ref().unwrap().debug_state();
+            if !d.active {
+                return false;
+            }
+            if d.loading.is_some() {
+                waited += 1;
+                assert!(
+                    !d.terrain_ready,
+                    "the prediction waits while the screen shows"
+                );
+                let at = *placed.get_or_insert(d.feet);
+                assert_eq!(
+                    d.feet, at,
+                    "the player does not move before the screen opens"
+                );
+                return false;
+            }
+            true
+        }),
+        "the screen opens"
+    );
+    assert!(waited > 0, "the screen showed");
+    let d = rig.game.as_ref().unwrap().debug_state();
+    assert_eq!(
+        d.loading_opened.map(|o| o.0),
+        Some(dwell_game::loading::Opened::Ready),
+        "opened on the near ring, not the timeout"
+    );
+    // Every chunk of the near ring that holds anything is meshed: behind (−X) as ahead.
+    let me = dwell_world::chunk_of_pos(rig.game.as_ref().unwrap().position());
+    let scene = rig.scene.borrow();
+    let mut behind = 0;
+    for o in near_ring_offsets(LOADING.radius_chunks) {
+        let c = ChunkCoord::new(me.x + o[0], me.y + o[1], me.z + o[2]);
+        let revision = rig.game.as_ref().unwrap().chunk_revision(c.to_array());
+        assert!(revision.is_some(), "{c:?} loaded");
+        if o[0] < 0 && scene.chunks.contains(&c) {
+            behind += 1;
+        }
+    }
+    assert!(behind > 0, "chunks behind the camera are meshed");
+    drop(scene);
+    // Then the held key walks.
+    let start = rig.game.as_ref().unwrap().debug_state().feet;
+    rig.run_until(60, |_| false);
+    let feet = rig.game.as_ref().unwrap().debug_state().feet;
+    assert!(((feet[0] - start[0]).powi(2) + (feet[2] - start[2]).powi(2)).sqrt() > 1.0);
+}
+
+#[test]
+fn with_the_lod_the_loading_screen_opens_on_the_terrain_and_nothing_behind_is_left_waiting() {
+    // The near ring counts as drawn where the LOD shows it as chunks or knows there is nothing to
+    // draw (buried rock), so the screen opens on the terrain, not its timeout (the bench's first
+    // run timed out at 20 s: buried sections straddling the ring never show their chunks). Then
+    // the view waits for nothing behind the camera (stats.waiting[1]) once settled: sections whose
+    // chunks are past the request radius (up or down) are not waited for.
+    let mut rig = Rig::new();
+    rig.loading_screen = true;
+    rig.input.look.yaw = 90.0;
+    assert!(rig.run_until(60 * 30, |r| r.game.is_some()));
+    rig.game
+        .as_mut()
+        .unwrap()
+        .enable_lod(dwell_client::game::LodSettings {
+            pixel_error: 4.0,
+            cache_bytes: 256 << 20,
+            detail_distance_m: Some(256.0),
+            full_mode: false,
+        });
+    assert!(
+        rig.run_until(60 * 60, |r| r
+            .game
+            .as_ref()
+            .unwrap()
+            .debug_state()
+            .loading_opened
+            .is_some()),
+        "the screen opens"
+    );
+    let d = rig.game.as_ref().unwrap().debug_state();
+    let (how, after) = d.loading_opened.unwrap();
+    assert_eq!(how, dwell_game::loading::Opened::Ready, "after {after} s");
+    assert!(
+        rig.run_until(60 * 120, |r| {
+            let l = r.game.as_ref().unwrap().debug_state().lod.unwrap();
+            l.generating == 0 && l.meshing == 0 && l.asking == 0 && l.waiting == [0, 0]
+        }),
+        "settles with nothing waited for: {:?}",
+        rig.game.as_ref().unwrap().debug_state().lod
     );
 }
 

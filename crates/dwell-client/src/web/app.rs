@@ -1444,7 +1444,11 @@ impl Client {
                 Some(sc) => {
                     let l = Object::new();
                     set(&l, "text", dwell_game::loading::loading_text(&sc).as_str());
-                    set(&l, "ready", sc.progress.ready.min(sc.progress.needed) as u32);
+                    set(
+                        &l,
+                        "ready",
+                        sc.progress.ready.min(sc.progress.needed) as u32,
+                    );
                     set(&l, "needed", sc.progress.needed as u32);
                     set(&o, "loading", l);
                 }
@@ -1561,11 +1565,7 @@ impl Client {
         }
         if let Some((how, after)) = d.loading_opened {
             set(&l, "openedS", after);
-            set(
-                &l,
-                "timedOut",
-                how == dwell_game::loading::Opened::TimedOut,
-            );
+            set(&l, "timedOut", how == dwell_game::loading::Opened::TimedOut);
         }
         set(&o, "loading", l);
         set(

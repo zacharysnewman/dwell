@@ -183,10 +183,12 @@ mod tests {
     fn the_near_ring_is_the_servers_view_sphere_nearest_first() {
         let ring = near_ring_offsets(3);
         // |c|² ≤ r² + r = 12: the server's within_radius.
-        assert_eq!(ring.len(), 123);
+        assert_eq!(ring.len(), 179);
         assert_eq!(ring[0], [0, 0, 0]);
         assert!(ring.contains(&[-3, 0, 0]) && ring.contains(&[3, 0, 0]));
-        assert!(ring.contains(&[2, 2, 2]) && !ring.contains(&[3, 1, 1]));
+        assert!(
+            ring.contains(&[2, 2, 2]) && ring.contains(&[3, 1, 1]) && !ring.contains(&[3, 1, 2])
+        );
         let d: Vec<i32> = ring.iter().map(|c| c.iter().map(|v| v * v).sum()).collect();
         assert!(d.windows(2).all(|w| w[0] <= w[1]));
         assert_eq!(near_ring_offsets(0), vec![[0, 0, 0]]);
@@ -195,7 +197,10 @@ mod tests {
     #[test]
     fn waits_until_the_near_ring_is_ready() {
         let mut g = LoadingGate::new(T, true);
-        assert!(g.is_open(), "nothing to wait for before the player is placed");
+        assert!(
+            g.is_open(),
+            "nothing to wait for before the player is placed"
+        );
         g.start(1000.0);
         assert!(!g.update(1500.0, p(10, 50)));
         let s = g.screen().expect("shown");
