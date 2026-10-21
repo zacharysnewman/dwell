@@ -11,16 +11,22 @@ pub use crate::shadows_gen::SHADOWS;
 /// What every tier's cascades share.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct CascadeTunables {
-    /// Where the first slice starts (m of view depth): the log split's near.
+    /// Where the first slice starts (m from the eye): the log split's near.
     pub near_m: f64,
-    /// Each cascade's sphere's radius is rounded up to a multiple of this (m).
+    /// Each cascade's box's half-size is rounded up to a multiple of this (m).
     pub radius_step_m: f64,
-    /// How far toward the light from a cascade's sphere casters still cast into it (m).
+    /// How far toward the light from a cascade's box casters still cast into it (m).
     pub caster_reach_m: f64,
     /// Shadows fade to the stand-in over this last share of the shadow distance.
     pub edge_fade: f64,
     /// The most the spyglass stretches the shadow distance to (m).
     pub spyglass_max_m: f64,
+    /// A far cascade's box is wider than the distance it covers by this share of it, and is kept
+    /// (not drawn again) while the eye stays inside that margin.
+    pub slack: f64,
+    /// A kept cascade is drawn again once the light has turned this far from where it was drawn
+    /// (degrees).
+    pub light_turn_deg: f64,
 }
 
 /// Against acne and peter-panning.
@@ -50,7 +56,7 @@ pub struct ShadowTier {
     pub cascades: u32,
     /// Each cascade's map, texels a side (a power of two).
     pub resolution: u32,
-    /// The shadow distance (m of view depth).
+    /// The shadow distance (m from the eye).
     pub distance_m: f64,
     /// The slices' split: 0 even, 1 logarithmic.
     pub split_lambda: f64,
@@ -58,8 +64,11 @@ pub struct ShadowTier {
     pub filter_texels: f64,
     /// Its taps a side.
     pub filter_taps: u32,
-    /// The far cascades take turns: each is drawn once every this many frames.
+    /// A far cascade with moving casters in it (other players) is drawn again at most once every
+    /// this many frames.
     pub refresh_frames: u32,
+    /// The most far cascades drawn again in one frame (the nearest is drawn every frame).
+    pub far_per_frame: u32,
     /// How many of the nearest cascades plants cast into.
     pub plant_cascades: u32,
 }

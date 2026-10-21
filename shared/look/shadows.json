@@ -1,12 +1,14 @@
 {
   "$comment": "Sun and moon shadows by cascaded shadow maps (docs/DAY_NIGHT.md §10): the second layer of the lighting, over the flood-fill sky and block light. Near the eye the shadow map shades the direct sun or moon term only; beyond the last cascade it fades to the first layer's stand-in (direct light × sky light). Run `node shared/look/shadows.mjs` after editing; CI fails if crates/dwell-look/src/shadows.gen.rs is stale.",
   "cascades": {
-    "$comment": "nearM: where the first cascade's slice starts (the log split's near). radiusStepM: each cascade's bounding sphere's radius is rounded up to a multiple of this, so a changing FOV (the speed boost) changes it in steps, not every frame (a changing radius changes the texel size, and every shadow edge would shimmer). casterReachM: how far toward the light from a cascade's sphere a caster still casts into it (a cliff or a tree well above the view). edgeFade: shadows fade to the stand-in over this last share of the shadow distance. spyglassMaxM: while the spyglass zooms, the shadow distance grows with the magnification, up to this.",
+    "$comment": "nearM: where the first cascade's range starts (the log split's near; distances from the eye). Every cascade is a box around the eye (ADR 0047: it doesn't change as the camera turns, so a far cascade's map is kept between redraws). radiusStepM: each box's half-size is rounded up to a multiple of this, so a changing distance (the spyglass) changes it in steps. casterReachM: how far toward the light from a box a caster still casts into it (a cliff or a tree well above the view). edgeFade: shadows fade to the stand-in over this last share of the shadow distance. spyglassMaxM: while the spyglass zooms, the shadow distance grows with the magnification, up to this. slack: a far cascade's box is wider than the distance it covers by this share of it, and its map is kept while the eye stays within that margin. lightTurnDeg: a kept map is drawn again once the light has turned this far from where it was drawn.",
     "nearM": 0.5,
     "radiusStepM": 1,
     "casterReachM": 120,
     "edgeFade": 0.2,
-    "spyglassMaxM": 640
+    "spyglassMaxM": 640,
+    "slack": 0.1,
+    "lightTurnDeg": 0.25
   },
   "bias": {
     "$comment": "Against acne and peter-panning on ½ m steps and ramps. normalOffsetTexels: the receiver's lookup moves this many of its cascade's texels out along its normal. depthBiasM: the compare's constant bias (m along the light). slopeScale: the casters' slope-scaled depth bias (the pipeline's, per unit of depth slope).",
@@ -20,8 +22,8 @@
     "moon": { "fadeStartDeg": 2, "fadeEndDeg": 12, "strength": 1 }
   },
   "tiers": {
-    "$comment": "Per Shadows setting (Off draws none). cascades: how many (1–4). resolution: each cascade's map (texels a side). distanceM: the shadow distance (view depth). splitLambda: the slices' split, 0 even to 1 logarithmic. filterTexels: the soft PCF's radius (texels). filterTaps: its taps a side (each a 2×2 hardware compare). refreshFrames: the nearest cascade is drawn every frame; the others take turns, each drawn once every this many frames (at least one fewer than the cascades), read as last drawn between (their casters lag that much). plantCascades: how many of the nearest cascades plants cast into (their alpha-tested blades cost the most per texel; beyond those cascades a plant's shadow is too small to see).",
-    "low": { "cascades": 2, "resolution": 1024, "distanceM": 80, "splitLambda": 0.6, "filterTexels": 1.25, "filterTaps": 2, "refreshFrames": 2, "plantCascades": 1 },
-    "high": { "cascades": 4, "resolution": 2048, "distanceM": 160, "splitLambda": 0.75, "filterTexels": 1.75, "filterTaps": 3, "refreshFrames": 3, "plantCascades": 2 }
+    "$comment": "Per Shadows setting (Off draws none). cascades: how many (1–4). resolution: each cascade's map (texels a side). distanceM: the shadow distance (from the eye). splitLambda: the cascades' distances, 0 even to 1 logarithmic. filterTexels: the soft PCF's radius (texels). filterTaps: its taps a side (each a 2×2 hardware compare). The nearest cascade is drawn every frame; a far one is kept until the eye leaves its slack, the light turns lightTurnDeg, or the casters in it change, and at most farPerFrame far cascades are drawn again in a frame (the most urgent first). refreshFrames: a far cascade with moving casters in it (other players) is drawn again at most once every this many frames. plantCascades: how many of the nearest cascades plants cast into (their alpha-tested blades cost the most per texel; beyond those cascades a plant's shadow is too small to see).",
+    "low": { "cascades": 2, "resolution": 1024, "distanceM": 80, "splitLambda": 0.6, "filterTexels": 1.25, "filterTaps": 2, "refreshFrames": 6, "farPerFrame": 1, "plantCascades": 1 },
+    "high": { "cascades": 3, "resolution": 2048, "distanceM": 160, "splitLambda": 0.75, "filterTexels": 1.25, "filterTaps": 2, "refreshFrames": 4, "farPerFrame": 1, "plantCascades": 2 }
   }
 }
