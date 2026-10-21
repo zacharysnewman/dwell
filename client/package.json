@@ -1,6 +1,6 @@
 {
   "name": "@dwell/client",
-  "version": "0.22.14",
+  "version": "0.22.17",
   "private": true,
   "license": "UNLICENSED",
   "type": "module",

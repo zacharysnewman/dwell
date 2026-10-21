@@ -43,6 +43,12 @@ test('a bad entry fails with its path named', () => {
     [(d) => (d.characters.player.clips.walk = 'fp_walk'), /plays on the arms; list it under firstPerson\.clips/],
     [(d) => (d.clips.fp_idle.keys[0].bones.chest = [0, 0, 0]), /keys "chest", which is not in the arm chain/],
     [(d) => d.characters.player.firstPerson.bones.splice(1, 1), /"hand_r"'s parent is not in the chain/],
+    [(d) => d.characters.player.firstPerson.body.hideBones.push('tail_1'), /firstPerson\.body\.hideBones: "tail_1" is not a bone of rig "biped"/],
+    [(d) => d.characters.player.firstPerson.body.hideParts.push('cloak'), /firstPerson\.body\.hideParts: "cloak" is not a part of character "player" or an accessory/],
+    [(d) => (d.characters.player.firstPerson.body.clear = 0.01), /firstPerson\.body\.clear: must be at least near/],
+    [(d) => (d.characters.player.firstPerson.body.back = -0.2), /firstPerson\.body\.back: must be metres, 0–1/],
+    [(d) => (d.characters.player.firstPerson.body.fill = 2), /firstPerson\.body\.fill: must be a share of the screen/],
+    [(d) => (d.characters.player.firstPerson.body.offset = 1), /firstPerson\.body: unknown entry "offset"/],
     [(d) => (d.characters.player.parts[0].with = 'hair_top'), /\(head\)\.with: "hair_top" is not an earlier part of character "player"/],
     [(d) => (d.accessories.hood.parts[0].with = 'hood_brow'), /"with" is for a character's own parts/],
     [(d) => (d.characters.wolf.chains = { tail: { from: 'haunch', parts: ['tail_base'] } }), /characters\.wolf\.chains\.tail\.parts: must list two or more part ids/],
@@ -316,4 +322,17 @@ test('a part added by data alone reaches the Rust tables, on its bone, in every 
   // Mirrored: both sides, once per look of the player (three variants).
   assert.equal(fx.match(/id: "test_pauldron_l", bone: 4,/g)?.length, 3);
   assert.equal(fx.match(/id: "test_pauldron_r", bone: 7,/g)?.length, 3);
+});
+
+test('your own body in first person hides parts named by data alone', () => {
+  const d = load();
+  // An accessory's part (the hood's mantle) and a mirrored part (the left boot) hidden by data.
+  d.characters.player.firstPerson.body.hideParts.push('hood_mantle', 'boot_l');
+  validate(d, style);
+  const { body } = d.characters.player.firstPerson;
+  assert.ok(body.hideParts.includes('hood_mantle') && body.hideParts.includes('boot_l'));
+  const m = compose(d, style, 'player', { variant: 'ranger' });
+  const shown = m.parts.filter((p) => !body.hideBones.includes(p.bone) && !body.hideParts.includes(p.id)).map((p) => p.id);
+  assert.ok(!shown.includes('hood_mantle') && !shown.includes('boot_l') && shown.includes('boot_r'));
+  assert.ok(!shown.includes('head') && !shown.includes('upper_arm_l') && shown.includes('torso'));
 });

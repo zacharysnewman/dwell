@@ -571,7 +571,8 @@ place and socket, with the parts they hide), variants, chains (a tail's segments
 to end and bending smoothly through every clip) and keyframed clips by role (layered `base`, `hold`,
 `action`; one base clip per player controller state, cross-faded by each clip's `blend`). Materials are names from the shared style (the painterly
 set's palette and materials, ADR 0040). The first-person arms are the body's own arm chain, anchored in view space and drawn
-in their own pass and FOV over a cleared depth buffer. `shared/characters/gen.mjs` validates the data
+in their own pass and FOV over a cleared depth buffer; in first person your own body is also drawn from the neck down, kept
+clear of the eye (`firstPerson.body`, Drawing below). `shared/characters/gen.mjs` validates the data
 (`rig.mjs`; the rest pose must stand on the ground at its height) and writes it with the painter
 into the Character Lab prototype page; CI fails on a stale page.
 
@@ -621,6 +622,20 @@ tests only); CI fails on stale output. Code names characters, looks, items and r
   10 m far): the arms never clip into terrain and keep their size under the speed FOV. Hidden while
   dead, zoomed in the spyglass, in a placed camera, or with the **Show your arms** setting off (the
   view record, append-only). Timed as `gpu.arms`.
+- **Your own body in first person** **[built, C1b]** ([`CHARACTERS.md`](./CHARACTERS.md) §5.1): the
+  full body from the neck down, playing the clips others see, drawn in the scene passes under the
+  arms (`BodyDraw::first_person`, set by the game in first person and not from a placed camera or
+  while dead). Data, `firstPerson.body`: the bones and parts it leaves out (the head and its hat,
+  the neck and what is worn round it, both arms: the arms view draws yours), `back` (0.1 m behind
+  the eye), `lookDown` (0.3 m more looking straight down, by the sine of the pitch), `clear` (0.22 m:
+  each frame `dwell_characters::own::shift` moves the body further back, along its own −z, until no
+  vertex is nearer the eye; all in the body's frame, so the same on both faces), `near` (0.08 m past
+  the 5 cm near plane: fragments nearer the eye are discarded, `Instance::cfg.x`, a safety net) and
+  `fill` (half the screen). It draws no held item and casts no shadow of its own: the whole body is
+  still cast into the shadow maps (`cast_only`), head and all. A test sweeps every clip and swing,
+  every look, the pitch −90°…90°, the eye at its height, a step low and easing out of a crouch, on
+  both faces: no triangle within the near plane plus `near`, at most `fill` of the screen covered,
+  the feet in view looking down and the legs while sliding.
 - **Netcode** (protocol v17, now v18, §8.3): what each player holds and its last swing ride in the snapshots'
   remote blocks (3 bytes a player); the client sends `HeldItem` when its hand changes. Everyone wears
   the default look (`wanderer`); looks chosen per player and sent at join are planned (C2).

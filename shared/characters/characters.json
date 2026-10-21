@@ -157,8 +157,18 @@
       },
       "firstPerson": {
         "bones": ["arm_r", "forearm_r", "hand_r"],
-        "anchor": [-0.28, -0.25, 0.02],
+        "anchor": [-0.47, -0.4, 0.17],
         "fov": 62,
+        "body": {
+          "$comment": "Your own body in first person (docs/CHARACTERS.md §5.1): drawn from the neck down in the scene, the arms view on top. hideBones and hideParts are left out (the head and its hat, the neck and what is worn round it, both arms: the arms view draws yours). The body is drawn `back` m behind the eye, `lookDown` m more looking straight down (by the sine of the pitch), and further back whenever that leaves a vertex within `clear` m of the eye. `near`: the margin past the camera's near plane no part may come within (tested over every clip, and the shader's safety net); `fill`: the most of the screen it may cover.",
+          "hideBones": ["head", "arm_l", "forearm_l", "hand_l", "arm_r", "forearm_r", "hand_r"],
+          "hideParts": ["neck", "hood_mantle", "scarf_wrap"],
+          "clear": 0.22,
+          "back": 0.1,
+          "lookDown": 0.3,
+          "near": 0.08,
+          "fill": 0.5
+        },
         "clips": {
           "idle": "fp_idle",
           "walk": "fp_walk",
@@ -679,13 +689,14 @@
       ]
     },
     "fp_walk": {
+      "$comment": "The hand's bob: two dips a loop, one loop per 4 m walked (not the legs' 1.6 m stride), so ~2.5 Hz at the 5 m/s walk (owner, 2026-10-20: the stride's rate was 2-3x too fast).",
       "rig": "biped",
       "space": "arms",
       "layer": "base",
       "duration": 1,
       "loop": true,
       "ease": "spline",
-      "cycle": 1.6,
+      "cycle": 4,
       "keys": [
         { "t": 0, "root": [0.012, -0.014, 0], "bones": { "arm_r": [-70, 22, 0], "forearm_r": [-40, 0, 0] } },
         { "t": 0.25, "root": [0, 0.008, 0], "bones": { "arm_r": [-72, 22, 0], "forearm_r": [-38, 0, 0] } },
@@ -721,14 +732,14 @@
       ]
     },
     "fp_sprint": {
-      "$comment": "A bigger, faster bob than the walk and the arm pumping, at the sprint's cycle.",
+      "$comment": "A bigger bob than the walk and the arm pumping; the walk's 4 m a loop, so it bobs faster in proportion to the speed (~4 Hz at the 8 m/s run).",
       "rig": "biped",
       "space": "arms",
       "layer": "base",
       "duration": 0.66,
       "loop": true,
       "ease": "spline",
-      "cycle": 3,
+      "cycle": 4,
       "blend": 0.25,
       "keys": [
         { "t": 0, "root": [0.026, -0.034, -0.01], "bones": { "arm_r": [-62, 22, 0], "forearm_r": [-48, 0, 0], "hand_r": [12, 0, 0] } },

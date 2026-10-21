@@ -451,7 +451,7 @@ pub static CLIPS: &[Clip] = &[
         duration: 1.0,
         looping: true,
         ease: Ease::Spline,
-        cycle: 1.6,
+        cycle: 4.0,
         grounded: true,
         blend: 0.2,
         channels: &[
@@ -503,7 +503,7 @@ pub static CLIPS: &[Clip] = &[
         duration: 0.66,
         looping: true,
         ease: Ease::Spline,
-        cycle: 3.0,
+        cycle: 4.0,
         grounded: true,
         blend: 0.25,
         channels: &[
@@ -932,7 +932,7 @@ pub static CHARACTERS: &[Character] = &[
                 Part { id: "brush_tip", bone: 9, kind: Kind::Ellipsoid, size: [0.058, 0.058, 0.07], at: [0.0, -0.08, 0.39], rot: [0.0, 0.0, 0.0], round: 0.0, tip: 0.0, view: View::Both, material: 65535 },
             ] },
         ],
-        first_person: Some(FirstPerson { bones: &[7, 8, 9], anchor: [-0.28, -0.25, 0.02], fov: 62.0, clips: &[("idle", 15), ("walk", 16), ("sprint", 19), ("slide", 20), ("jump", 21), ("fall", 22), ("land", 23), ("break", 17), ("place", 18)] }),
+        first_person: Some(FirstPerson { bones: &[7, 8, 9], anchor: [-0.47, -0.4, 0.17], fov: 62.0, clips: &[("idle", 15), ("walk", 16), ("sprint", 19), ("slide", 20), ("jump", 21), ("fall", 22), ("land", 23), ("break", 17), ("place", 18)], body: Some(FirstPersonBody { hide_bones: &[3, 4, 5, 6, 7, 8, 9], hide_parts: &["neck", "hood_mantle", "scarf_wrap"], clear: 0.22, back: 0.1, look_down: 0.3, near: 0.08, fill: 0.5 }) }),
     },
     Character {
         id: "wolf",

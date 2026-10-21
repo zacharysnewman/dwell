@@ -9,11 +9,13 @@
 //! - `anim`: sampling, layering and cross-fading clips (rig.mjs's twin), and the bones' transforms.
 //! - `animator`: which clip plays, from the controller state a remote snapshot carries (§6), with the
 //!   cross-fades, one-shots, swings and the head following the look's pitch; and the arms' twin.
+//! - `own`: your own body in first person, from the neck down, kept clear of the eye.
 
 pub mod anim;
 pub mod animator;
 pub mod math;
 pub mod mesh;
+pub mod own;
 mod types;
 
 pub use types::*;
