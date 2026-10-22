@@ -45,6 +45,16 @@ pub enum Job {
         water_drop: f64,
         mirror: bool,
     },
+    /// A strip of the LOD colour map (`crate::lod_map::raster`): world texels `x0..x0 + w` ×
+    /// `z0..z0 + h` of `texel_m` m on face `face` (0 A, 1 B).
+    LodMap {
+        face: u8,
+        texel_m: i32,
+        x0: i32,
+        z0: i32,
+        w: i32,
+        h: i32,
+    },
     /// The block states the main thread registered at run time (synced from a server, ADR 0038),
     /// as `dwell_blocks::sync::extension_payload`: a worker adds them to its own table, so mesh
     /// jobs naming synced ids read the same rows. Sent to every worker ([`crate::pool::Jobs::broadcast`]).
@@ -76,6 +86,8 @@ pub enum Output {
     },
     /// Height (i16 little-endian) and an outside flag per sample; `None` without a terrain.
     Map(Option<Vec<u8>>),
+    /// A colour map strip's rgba8 sRGB texels, rows of x; `None` without a terrain.
+    LodMap(Option<Vec<u8>>),
     ChunkMesh(Box<ChunkMeshes>),
     SectionMesh(Box<SectionMeshes>),
     Failed(String),
@@ -171,6 +183,38 @@ impl Runner {
                     }
                 }
                 Output::Map(Some(out))
+            }
+            Job::LodMap {
+                face,
+                texel_m,
+                x0,
+                z0,
+                w,
+                h,
+            } => {
+                let Some(t) = &self.terrain else {
+                    return Output::LodMap(None);
+                };
+                if w <= 0 || h <= 0 || i64::from(w) * i64::from(h) > 1 << 22 || texel_m <= 0 {
+                    return Output::LodMap(None);
+                }
+                let local = t.local(if face == 1 {
+                    dwell_world::Face::B
+                } else {
+                    dwell_world::Face::A
+                });
+                let rect = crate::lod_map::Rect {
+                    x0: i64::from(x0),
+                    z0: i64::from(z0),
+                    x1: i64::from(x0) + i64::from(w),
+                    z1: i64::from(z0) + i64::from(h),
+                };
+                Output::LodMap(Some(crate::lod_map::raster(
+                    local,
+                    &dwell_look::lod_map::LOD_MAP,
+                    i64::from(texel_m),
+                    &rect,
+                )))
             }
             Job::MeshChunk {
                 padded,
