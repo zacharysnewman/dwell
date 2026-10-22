@@ -16,8 +16,8 @@ use dwell_worldgen::{BifacialTerrain, TerrainGenerator};
 /// Seed 7's maps, pinned (`WorldMap::digest`): a change to the hydrology, the uplift layer, the base
 /// field or `hydrology.json`'s default changes them. Look at the terrain (`--example
 /// terrain_view`), then update.
-const DIGEST_7_A: u64 = 0x3e71_0234_4c7a_44e9;
-const DIGEST_7_B: u64 = 0x07b7_d908_391e_5130;
+const DIGEST_7_A: u64 = 0x9202_c6e4_7a0f_43cf;
+const DIGEST_7_B: u64 = 0xef3b_c171_825e_c0a3;
 
 fn face_map(seed: u64, f: FaceFrame) -> Arc<WorldMap> {
     worldmap::for_seed(face_seed(seed, f.face))
@@ -297,7 +297,7 @@ fn the_map_covers_the_island_with_mountains_rivers_and_a_sea_round_it() {
     assert_eq!(m.n, 1002);
     assert!(m.is_sea(0) && m.is_sea(m.n * m.n - 1), "the border is sea");
     let highest = m.height.iter().copied().fold(f32::MIN, f32::max);
-    assert!((700.0..1100.0).contains(&highest), "{highest}");
+    assert!((1800.0..3000.0).contains(&highest), "{highest}");
     // Every river ends in the sea, a lake or another river, and flows somewhere.
     for r in &m.rivers {
         assert!(r.path.len() >= 2);

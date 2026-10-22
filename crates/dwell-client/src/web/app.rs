@@ -226,13 +226,16 @@ struct Options {
     prepare_world: Option<Function>,
 }
 
+/// The shell's answer to `prepareWorld`, once it arrives.
+type MapsSlot = Rc<RefCell<Option<Result<Vec<Uint8Array>, String>>>>;
+
 /// The world's maps on the way (ADR 0049): asked of the shell once joined, the game started when
 /// they arrive ("Shaping the world…").
 #[derive(Default)]
 enum Shaping {
     #[default]
     NotAsked,
-    Waiting(Rc<RefCell<Option<Result<Vec<Uint8Array>, String>>>>),
+    Waiting(MapsSlot),
     /// Installed here; the bytes go to the workers.
     Ready(Vec<Uint8Array>),
 }
@@ -2054,7 +2057,7 @@ impl Inner {
             self.shaping = Shaping::Ready(Vec::new());
             return Some(Vec::new());
         };
-        let slot: Rc<RefCell<Option<Result<Vec<Uint8Array>, String>>>> = Rc::default();
+        let slot: MapsSlot = Rc::default();
         let promise = prepare.call2(
             &JsValue::NULL,
             &js_sys::BigInt::from(world_seed).into(),

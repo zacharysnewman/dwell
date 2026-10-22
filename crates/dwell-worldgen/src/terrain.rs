@@ -1454,8 +1454,7 @@ impl TerrainGenerator {
                 near[c]
                     && !map.is_sea(c)
                     && map.lake[c] == worldmap::NO_LAKE
-                    && h >= S.spawn_min_height
-                    && h <= S.spawn_max_height
+                    && (S.spawn_min_height..=S.spawn_max_height).contains(&h)
             })
             .map(|c| {
                 let (x, z) = map.centre(c);

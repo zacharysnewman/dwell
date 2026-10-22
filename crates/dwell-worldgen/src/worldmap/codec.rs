@@ -3,7 +3,8 @@
 //! FNV-1a checksum of everything before it, so a truncated or damaged copy is refused rather than
 //! generating different terrain.
 //!
-//! Layout: magic `DWMAP`, format, fingerprint (the build's, `FINGERPRINT`), seed, n, cell, x0;
+//! Layout: magic `DWMAP`, format, fingerprint (the build's, `FINGERPRINT`), seed, the generation
+//! settings' hash (`SETTINGS_HASH`), n, cell, x0;
 //! the cells' heights (f32), flags (u8) and lakes (u16); the lakes (level, entry, outlet); the
 //! rivers (from-lake, end, mouth, vertices); the checksum (u64).
 
@@ -38,6 +39,7 @@ fn encode_with(m: &WorldMap, fingerprint: u64) -> Vec<u8> {
     out.extend_from_slice(&FORMAT.to_le_bytes());
     out.extend_from_slice(&fingerprint.to_le_bytes());
     out.extend_from_slice(&m.seed.to_le_bytes());
+    out.extend_from_slice(&super::SETTINGS_HASH.to_le_bytes());
     out.extend_from_slice(&(m.n as u32).to_le_bytes());
     out.extend_from_slice(&m.cell.to_le_bytes());
     out.extend_from_slice(&m.x0.to_le_bytes());
@@ -122,7 +124,11 @@ pub fn peek(bytes: &[u8]) -> Result<(u64, u64), String> {
     if r.u16()? != FORMAT {
         return Err("a world map of another format".into());
     }
-    Ok((r.u64()?, r.u64()?))
+    let (fingerprint, seed) = (r.u64()?, r.u64()?);
+    if r.u64()? != super::SETTINGS_HASH {
+        return Err("a world map of other generation settings".into());
+    }
+    Ok((fingerprint, seed))
 }
 
 /// Checks a map's bytes (whole, unchanged, this build's) without decoding them; returns its seed.
@@ -147,7 +153,7 @@ pub fn decode(bytes: &[u8]) -> Result<WorldMap, String> {
     let body = &bytes[..bytes.len() - 8];
     let mut r = Reader {
         b: body,
-        at: 5 + 2 + 8 + 8,
+        at: 5 + 2 + 8 + 8 + 8,
     };
     let n = r.u32()? as usize;
     if n == 0 || n > 8192 {

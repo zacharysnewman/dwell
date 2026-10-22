@@ -31,6 +31,10 @@ pub use shores::Shores;
 /// is only read by the build that wrote it.
 pub const FINGERPRINT: u64 = include!(concat!(env!("OUT_DIR"), "/fingerprint.rs"));
 
+/// The hash of the generation settings a map was made with: a slot in its bytes and cache key for
+/// per-world settings (a later compatibility line); one fixed set of settings until then.
+pub const SETTINGS_HASH: u64 = 0;
+
 /// The flags' sea bit; the low nibble is the flow direction (an index into `NEIGHBOURS_D8`, or
 /// `NO_FLOW`).
 pub const SEA: u8 = 0x80;

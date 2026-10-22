@@ -9,9 +9,9 @@
     "amplitude": 2,
     "wavelength": 128,
     "octaves": 4,
-    "mountainAmplitude": 9,
-    "mountainFrom": 150,
-    "mountainFull": 650,
+    "mountainAmplitude": 14,
+    "mountainFrom": 300,
+    "mountainFull": 1800,
     "waterFade": 30
   },
   "rivers": {
@@ -48,10 +48,10 @@
   },
   "bands": {
     "$comment": "The surface material by height and slope: snow above the snow line (snowLine m, moved ±snowNoise m by a noise of snowWavelength m, raised snowSlopeLift m per unit of slope, so it is not a flat contour), bare rock where the ground is at least rockSlope steep (snow too: steep faces stay rock), the shore block up to shore m above sea level and under water, the ground block elsewhere, with the under block below a top block to underDepth m. Blocks by name.",
-    "snowLine": 560,
-    "snowNoise": 70,
+    "snowLine": 1550,
+    "snowNoise": 150,
     "snowWavelength": 320,
-    "snowSlopeLift": 120,
+    "snowSlopeLift": 350,
     "rockSlope": 1.15,
     "shore": 2,
     "underDepth": 3,

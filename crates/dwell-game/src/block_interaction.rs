@@ -306,7 +306,9 @@ mod tests {
                 "log",
                 "leaves",
                 "tall_grass",
-                "torch"
+                "torch",
+                "snowy_grass",
+                "snowy_leaves"
             ]
         );
     }

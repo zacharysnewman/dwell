@@ -51,6 +51,19 @@ pub struct Placement {
     pub spacing: i32,
     /// Quarter turns about +Y, one picked per placement.
     pub rotations: &'static [u8],
+    /// Block swaps by the anchor's height (the snowy leaves of pines high up).
+    pub variants: &'static [Variant],
+}
+
+/// A swap of a placed structure's blocks by its anchor's height (m above sea level): none at
+/// `from`, every structure from `full`, in proportion between (a hash per structure).
+#[derive(Clone, Copy, Debug)]
+pub struct Variant {
+    pub name: &'static str,
+    /// (from, to) blocks, by id.
+    pub replace: &'static [(&'static str, &'static str)],
+    pub from: i32,
+    pub full: i32,
 }
 
 mod table {
@@ -100,6 +113,8 @@ pub struct Planter {
     /// their crowns cover where every candidate is kept.
     canopy: StateId,
     cover: f32,
+    /// The variants' swaps, resolved by name.
+    variants: Vec<Vec<(StateId, StateId)>>,
 }
 
 /// The share of candidates the slope, footprint and overlap tests keep, as measured over seeds
@@ -123,6 +138,8 @@ pub struct Tree {
     pub quarter_turns: u8,
     /// Drawn from the seed: decides overlaps (higher wins) and the structure's block choices.
     pub priority: u32,
+    /// Its variant (index + 1 into the rule's `variants`), or 0.
+    pub variant: u8,
 }
 
 impl Tree {
@@ -190,6 +207,16 @@ impl Planter {
                 Planter {
                     canopy,
                     cover,
+                    variants: p
+                        .variants
+                        .iter()
+                        .map(|v| {
+                            v.replace
+                                .iter()
+                                .map(|(a, b)| (dwell_blocks::require(a), dwell_blocks::require(b)))
+                                .collect()
+                        })
+                        .collect(),
                     total_weight: shapes.iter().map(|s| s.weight).sum(),
                     shapes,
                     on: p.on.iter().map(|o| dwell_blocks::require(o)).collect(),
@@ -308,6 +335,7 @@ impl Planter {
             shape: shape as u8,
             quarter_turns,
             priority: self.h(gx, gz, 5),
+            variant: self.variant_at(g.above_sea, self.h(gx, gz, 6)),
         };
         if !self.slope_ok(x, z, ground) {
             return None;
@@ -349,16 +377,39 @@ impl Planter {
         ]
     }
 
-    /// A tree's voxels, as placed.
+    /// The variant (index + 1) a structure anchored `above_sea` m above sea level takes by its
+    /// hash `h`: the first whose band takes it.
+    fn variant_at(&self, above_sea: i32, h: u32) -> u8 {
+        let roll = unit(h);
+        for (i, v) in self.rule.variants.iter().enumerate() {
+            let share = if v.full <= v.from {
+                f32::from(u8::from(above_sea >= v.from))
+            } else {
+                clamp01((above_sea - v.from) as f32 / (v.full - v.from) as f32)
+            };
+            if roll < share {
+                return (i + 1) as u8;
+            }
+        }
+        0
+    }
+
+    /// A tree's voxels, as placed (its variant's blocks swapped in).
     pub fn place(&self, t: &Tree) -> Placed {
-        self.shapes[t.shape as usize].structure.place_oriented(
+        let mut placed = self.shapes[t.shape as usize].structure.place_oriented(
             t.anchor,
             Orientation {
                 quarter_turns: t.quarter_turns,
                 mirror: None,
             },
             u64::from(t.priority),
-        )
+        );
+        if let Some(swaps) = self.variants.get(usize::from(t.variant).wrapping_sub(1)) {
+            for &(from, to) in swaps {
+                placed.replace(from, to);
+            }
+        }
+        placed
     }
 
     /// The structure a tree is, by name.
@@ -503,6 +554,7 @@ mod tests {
             max_gradient_sq: 1.0,
             spacing: 0,
             rotations: &[0],
+            variants: &[],
         };
         let p = Planter::resolve(&[rule], 3, (0, 0));
         let dirt = flat("dwell:dirt");

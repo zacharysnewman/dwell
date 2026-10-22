@@ -54,6 +54,7 @@ one's status line. Resolving an item in `ARCHITECTURE.md` Open Decisions require
 | [0046](0046-distant-terrain-shadows.md) | Distant terrain shadows: horizon maps swept from heightmaps of the terrain as drawn, one sample per far fragment | Accepted |
 | [0047](0047-torches-and-dynamic-lights.md) | Torches and dynamic lights: light sources as block data, held lights per fragment (never in the flood light), placed ones through the flood light; a Torch shadows setting of its own | Accepted |
 | [0048](0048-bedrock-and-portals.md) | Bedrock between the faces, and seeded portals (shafts with a ladder) through it | Accepted |
+| [0049](0049-world-map-terrain.md) | The world map terrain: mountains, rivers and lakes from a per-face hydrology map | Accepted |
 
 Phase numbers in ADRs follow the implementation plan as it was then. In ADRs 0001–0010, Phases
 4–7 became 5–8 when the world-LOD phase (Phase 4) was added on 2026-09-29, and then 6–9 when the

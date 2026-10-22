@@ -111,8 +111,8 @@
       },
       "uplift": {
         "$comment": "The uplift layer (uplift.rs): tectonic strength 0 on the shelf, ~1 on a range's spine; the initial ground is keepRelief × the height field + baseHeight × strength, the uplift rate × strength. erosion.uplift and upliftReference are unused while it is present.",
-        "rate": 0.0004,
-        "baseHeight": 500,
+        "rate": 0.00112,
+        "baseHeight": 1400,
         "keepRelief": 0.15,
         "plains": 0.1,
         "shelf": { "min": 1000, "max": 8000, "wavelength": 15000 },
@@ -159,8 +159,8 @@
       },
       "uplift": {
         "$comment": "The uplift layer (uplift.rs): tectonic strength 0 on the shelf, ~1 on a range's spine; the initial ground is keepRelief × the height field + baseHeight × strength, the uplift rate × strength. erosion.uplift and upliftReference are unused while it is present.",
-        "rate": 0.0004,
-        "baseHeight": 500,
+        "rate": 0.00112,
+        "baseHeight": 1400,
         "keepRelief": 0.15,
         "plains": 0.1,
         "shelf": { "min": 1000, "max": 8000, "wavelength": 15000 },
@@ -214,8 +214,8 @@
       },
       "uplift": {
         "$comment": "The uplift layer (uplift.rs): tectonic strength 0 on the shelf, ~1 on a range's spine; the initial ground is keepRelief × the height field + baseHeight × strength, the uplift rate × strength. erosion.uplift and upliftReference are unused while it is present.",
-        "rate": 0.0004,
-        "baseHeight": 500,
+        "rate": 0.00112,
+        "baseHeight": 1400,
         "keepRelief": 0.15,
         "plains": 0.1,
         "shelf": { "min": 1000, "max": 8000, "wavelength": 15000 },

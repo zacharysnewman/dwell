@@ -104,7 +104,7 @@ export function decorationsRust(data) {
 
 const PLACEMENT_KEYS = [
   '$comment', 'name', 'structures', 'on', 'footprint', 'grid', 'density', 'groves', 'height', 'rise',
-  'maxSlopeDeg', 'spacing', 'rotate',
+  'maxSlopeDeg', 'spacing', 'rotate', 'variants',
 ];
 /** What `footprint` may say: "on" (every column under the structure is one of `on`) or "anchor". */
 export const FOOTPRINTS = ['on', 'anchor'];
@@ -190,13 +190,29 @@ export function validatePlacements(data, blocks, structures) {
     if (!(Array.isArray(r) && r.length && r.every((d) => [0, 90, 180, 270].includes(d)) && new Set(r).size === r.length)) {
       fail(`${at}: rotate must be distinct angles from 0, 90, 180, 270`);
     }
+    for (const v of p.variants ?? []) {
+      const vat = `${at}: variant ${v?.name ?? '(unnamed)'}`;
+      const vk = Object.keys(v ?? {}).filter((k) => !['name', 'replace', 'height', '$comment'].includes(k));
+      if (vk.length) fail(`${vat}: unknown ${vk.join(', ')}`);
+      if (!(typeof v.name === 'string' && NAME.test(v.name))) fail(`${vat}: name must be [a-z0-9_]+`);
+      const pairs = Object.entries(v.replace ?? {});
+      if (!pairs.length) fail(`${vat}: replace must map blocks to blocks`);
+      for (const [from, to] of pairs) {
+        if (!blocks.get(from)) fail(`${vat}: replace names unknown block ${from}`);
+        if (!blocks.get(to)) fail(`${vat}: replace names unknown block ${to}`);
+      }
+      const vh = v.height;
+      if (!(Array.isArray(vh) && vh.length === 2 && vh.every(Number.isInteger) && vh[0] <= vh[1])) {
+        fail(`${vat}: height must be [from, full] whole metres above sea level`);
+      }
+    }
   }
   return data;
 }
 
 /** The Rust table for validated placements. The slope limit is emitted as the squared gradient. */
 export function placementsRust(data) {
-  const rs = [`// ${placementsHeader}`, '', 'use crate::placements::Placement;', ''];
+  const rs = [`// ${placementsHeader}`, '', 'use crate::placements::{Placement, Variant};', ''];
   rs.push('/// The structure placements (shared/worldgen/placements.json), in their file order.');
   rs.push(`pub static PLACEMENTS: [Placement; ${data.placements.length}] = [`);
   for (const p of data.placements) {
@@ -231,6 +247,11 @@ export function placementsRust(data) {
     rs.push(`        max_gradient_sq: ${rf(grad)},`);
     rs.push(`        spacing: ${p.spacing},`);
     rs.push(`        rotations: &[${p.rotate.map((d) => d / 90).join(', ')}],`);
+    const vs = (p.variants ?? []).map((v) => {
+      const pairs = Object.entries(v.replace).map(([a, b]) => `(${JSON.stringify(a)}, ${JSON.stringify(b)})`);
+      return `Variant { name: ${JSON.stringify(v.name)}, replace: &[${pairs.join(', ')}], from: ${v.height[0]}, full: ${v.height[1]} }`;
+    });
+    rs.push(`        variants: &[${vs.join(', ')}],`);
     rs.push('    },');
   }
   rs.push('];');

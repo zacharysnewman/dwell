@@ -147,8 +147,11 @@ fn heights_a_low_shore_land_rising_inland_a_shallow_sea_floor() {
     }
     // Face-local heights from the midplane: sea level 32, the core's top 10.
     let sea = dwell_world::SEA_LEVEL_M as f32;
-    // The world map's mountains (ADR 0049): the uplift layer's ranges, 770–1,000 m.
-    assert!(highest > sea + 600.0 && highest < sea + 1200.0, "{highest}");
+    // The world map's mountains (ADR 0049): the uplift layer's ranges, ~2,300–2,600 m.
+    assert!(
+        highest > sea + 1800.0 && highest < sea + 3000.0,
+        "{highest}"
+    );
     assert!(
         lowest >= (dwell_world::CORE_M as f32) && lowest > sea - 30.0,
         "{lowest}"
@@ -463,7 +466,7 @@ fn the_fill_grass_over_dirt_sand_at_the_shore_sea_to_its_level() {
         }
     }
     assert!(
-        water > 200 && grass > 100 && sand > 100 && decorated > 10,
+        water > 100 && grass > 100 && sand > 100 && decorated > 10,
         "{water} {grass} {sand} {decorated}"
     );
 }
@@ -731,8 +734,8 @@ fn the_air_test_knows_face_bs_sky_and_rows_outside_the_world() {
         }
     }
     assert!(sky > 0 && sky < checked);
-    // Far below face B's highest ground (its mountains reach ~1 km, face-local chunk 63).
-    for cy in [-80, -100, MIN_CHUNK_Y] {
+    // Far below face B's highest ground (its mountains reach ~2.6 km, face-local chunk 164).
+    for cy in [-200, -240, MIN_CHUNK_Y] {
         assert!(air(ChunkCoord::new(0, cy, 0)) && air(ChunkCoord::new(300, cy, -300)));
     }
     assert!(
@@ -936,7 +939,7 @@ fn the_island_keeps_its_phase_15_size_in_the_50_km_world() {
 }
 
 #[test]
-fn the_mountains_reach_about_900_m_and_some_ground_is_steep_enough_to_slide() {
+fn the_mountains_reach_about_2400_m_and_some_ground_is_steep_enough_to_slide() {
     // Owner, 2026-10-19: "I want terrain steep enough to slide on" — about 15 % of the land's
     // surface steeper than the slide's 44° (on the half-height branch, the land columns topped by
     // a 45° ramp, HALF_HEIGHT_GRID.md §4), everywhere, and peaks up to about 500 m above sea level
@@ -949,8 +952,9 @@ fn the_mountains_reach_about_900_m_and_some_ground_is_steep_enough_to_slide() {
     // band's floor is 9 % on this branch. Generator 1020 (V2, the owner's choice: the old ramp rule, no 1 m snap) slides on ~3.2 % (A),
     // ~3.0 % (B): the old rule makes few 45° ramps, so the band is 2–5 % on this branch.
     // Generator 21 (ADR 0049, the world map: eroded mountain ranges, broad valleys and coastal
-    // plains) measured on seed 7's island: ~1.5 % sliding, highest ~860 m, mean slope ~14°, ~2 %
-    // of the base field's island under the sea or lakes; the band is 0.8–5 %, 700–1,100 m.
+    // plains, ranges retuned to ~2,400 m, owner 2026-10-21: "up to 8000ft") measured ~5.3 %
+    // sliding, highest ~2,470 m, mean slope ~24°, ~1.4 % of the base field's island under the sea
+    // or lakes; the band is 0.8–10 %, 1,800–3,000 m.
     use dwell_worldgen::ramps::{Around, Top, top_of};
     for face in [Face::A, Face::B] {
         let (mut highest, mut slope, mut land) = (0.0f64, 0.0f64, 0usize);
@@ -998,8 +1002,8 @@ fn the_mountains_reach_about_900_m_and_some_ground_is_steep_enough_to_slide() {
             100.0 * wet
         );
         println!("{at}");
-        assert!((0.008..0.05).contains(&sliding), "{at}");
-        assert!((700.0..1100.0).contains(&highest), "{at}");
+        assert!((0.008..0.1).contains(&sliding), "{at}");
+        assert!((1800.0..3000.0).contains(&highest), "{at}");
         assert!((8.0..30.0).contains(&slope), "{at}");
         assert!(wet < 0.04, "{at}");
     }

@@ -1,6 +1,10 @@
 # Proposal: terrain hydrology and terrain volumes
 
-> **Status: proposal, not adopted.** Nothing here is architecture yet (`docs/proposals/README.md`).
+> **Status: layers 0–1 adopted (ADR 0049, 2026-10-21, generator 21):** the hydrology map is the
+> terrain (ARCHITECTURE.md §6.3, WORLD_GENERATION.md §4). Layer 2 (the volume) is still a proposal.
+> The paragraph below is the prototype's history.
+>
+> **Earlier status: proposal, not adopted.**
 > A **prototype of the hydrology layer is built** (`crates/dwell-worldgen/src/hydrology/`,
 > `shared/worldgen/hydrology.json`, the viewer `cargo run --release -p dwell-worldgen --example
 > hydrology`), with an **uplift layer** (mountain ranges that drive the erosion, §4.1), so river

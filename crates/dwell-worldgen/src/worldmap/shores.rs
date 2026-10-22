@@ -80,7 +80,7 @@ impl Shores {
                     lake(i, j + 1),
                     lake(i, j - 1),
                 );
-                (e && s) || (s && w) || (w && nn) || (nn && e)
+                (e || w) && (s || nn)
             };
             let mut sdf = Vec::with_capacity((w * h) as usize);
             let far = (reach as f64) * map.cell;

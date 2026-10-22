@@ -43,7 +43,7 @@ pub const ATLAS_SIZE: usize = CELL * ATLAS_CELLS;
 pub const ATLAS_TILES: usize = ATLAS_CELLS * ATLAS_CELLS;
 
 /// The tiles in atlas order (the registry's texture names).
-pub const TILE_ORDER: [&str; 18] = [
+pub const TILE_ORDER: [&str; 23] = [
     "plain",
     "grass",
     "grassSide",
@@ -64,6 +64,12 @@ pub const TILE_ORDER: [&str; 18] = [
     "torchTop",
     // The bedrock between the faces (docs/BIFACIAL_WORLD.md §2).
     "bedrock",
+    // Snowy grass (its top, its side's fringe, dirt's skirt under it) and snowy leaves (ADR 0049).
+    "snow",
+    "snowSide",
+    "dirtSnowSkirt",
+    "snowyLeavesTop",
+    "snowyLeavesSide",
     // The fallback look of a state whose look or textures this build lacks (synced from a server,
     // ADR 0038): a magenta and black checker, never content.
     MISSING_TILE,

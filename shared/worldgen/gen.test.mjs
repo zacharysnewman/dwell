@@ -93,7 +93,9 @@ test('a bad height field fails with the key and the problem', () => {
     [(t) => (t.hills.roughness = 1), /hills: unknown roughness/],
     [(t) => (t.mountains = {}), /unknown mountains/],
     [(t) => delete t.seaFloor, /seaFloor must be an object/],
-    [(t) => (t.steps.height = 0.75), /steps\.height must be a whole number of cells/],
+    [(t) => (t.detail.mountainFull = 10), /detail\.mountainFull must be greater than detail\.mountainFrom/],
+    [(t) => (t.bands.snow = 'dwell:moss'), /bands\.snow "dwell:moss" is not in the registry/],
+    [(t) => (t.rivers.valleySlope = 0), /rivers\.valleySlope must be in \(0, 10\]/],
   ];
   for (const [edit, message] of cases) {
     const t = loadTerrain();
@@ -150,11 +152,13 @@ test('a bad placement fails with its name and the problem', () => {
     [(p) => (p.groves.wavelength = 4), /groves\.wavelength/],
     [(p) => (p.groves.outside = -0.1), /groves\.outside must be in \[0, 1\]/],
     [(p) => (p.height = [500, 400]), /height must be \[min, max\]/],
-    [(p) => (p.rise.full = 900), /rise\.full must be a whole number of metres in \(height\[0\], height\[1\]\]/],
+    [(p) => (p.rise.full = 1900), /rise\.full must be a whole number of metres in \(height\[0\], height\[1\]\]/],
     [(p) => (p.maxSlopeDeg = 90), /maxSlopeDeg must be in \(0, 90\) degrees/],
     [(p) => (p.spacing = -1), /spacing must be a whole number of blocks/],
     [(p) => (p.rotate = [0, 45]), /rotate must be distinct angles from 0, 90, 180, 270/],
     [(p) => (p.mirror = ['x']), /pine_groves: unknown mirror/],
+    [(p) => (p.variants[0].replace = { 'dwell:leaves': 'dwell:moss' }), /variant snowy: replace names unknown block dwell:moss/],
+    [(p) => (p.variants[0].height = [900, 800]), /variant snowy: height must be \[from, full\]/],
   ];
   for (const [edit, message] of cases) {
     const d = loadPlacements();

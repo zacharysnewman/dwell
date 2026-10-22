@@ -121,8 +121,8 @@ pub static PROFILES: [HydrologyParams; 6] = [
         uplift: 0.0001,
         uplift_reference: 300.0,
         tectonics: Some(Tectonics {
-            rate: 0.0004,
-            base_height: 500.0,
+            rate: 0.00112,
+            base_height: 1400.0,
             keep_relief: 0.15,
             plains: 0.1,
             shelf_min: 1000.0,
@@ -190,8 +190,8 @@ pub static PROFILES: [HydrologyParams; 6] = [
         uplift: 0.0001,
         uplift_reference: 300.0,
         tectonics: Some(Tectonics {
-            rate: 0.0004,
-            base_height: 500.0,
+            rate: 0.00112,
+            base_height: 1400.0,
             keep_relief: 0.15,
             plains: 0.1,
             shelf_min: 1000.0,
@@ -259,8 +259,8 @@ pub static PROFILES: [HydrologyParams; 6] = [
         uplift: 0.0001,
         uplift_reference: 300.0,
         tectonics: Some(Tectonics {
-            rate: 0.0004,
-            base_height: 500.0,
+            rate: 0.00112,
+            base_height: 1400.0,
             keep_relief: 0.15,
             plains: 0.1,
             shelf_min: 1000.0,

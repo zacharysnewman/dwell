@@ -104,9 +104,12 @@ pub fn build_bytes(seed: u64) -> Vec<u8> {
     codec::encode(&for_seed(seed))
 }
 
-/// The cache key of a seed's map in this build (`<fingerprint>-<seed>`, hex).
+/// The cache key of a seed's map in this build (`<fingerprint>-<settings hash>-<seed>`, hex).
 pub fn key(seed: u64) -> String {
-    format!("{FINGERPRINT:016x}-{seed:016x}")
+    format!(
+        "{FINGERPRINT:016x}-{:016x}-{seed:016x}",
+        super::SETTINGS_HASH
+    )
 }
 
 #[cfg(not(target_family = "wasm"))]
