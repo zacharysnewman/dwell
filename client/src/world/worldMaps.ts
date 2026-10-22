@@ -1,8 +1,9 @@
 // The world maps of a terrain world (ADR 0049, docs/WORLD_GENERATION.md §3): one per face, a pure
-// function of the seed, ~1.3 s each to compute in WASM. This page gets them once per world: from
-// IndexedDB if an earlier visit kept them (keyed by the build's map fingerprint and the face's seed,
-// so a different build never reads them), else computed in two workers at once (never on the page's
-// thread), then kept. Every WASM instance of the world (the page's, each job worker's, the local
+// function of the seed and the world's map settings (WORLD_GENERATION.md §9), ~1.3 s each to compute
+// in WASM. This page gets them once per world: from IndexedDB if an earlier visit kept them (keyed by
+// the build's map fingerprint, the settings' hash and the face's seed, so a different build or other
+// settings never read them), else computed in two workers at once (never on the page's thread),
+// then kept. Every WASM instance of the world (the page's, each job worker's, the local
 // world's) installs the same bytes rather than computing its own.
 
 /** The terrain generator's world version (constants: `GENERATOR_TERRAIN`). */
@@ -19,10 +20,10 @@ export interface MapStore {
 
 /** What the maps need from the build: each face's cache key and a builder (a worker). */
 export interface MapDeps {
-  /** The cache keys of the world's faces A and B (`worldMapKeys`). */
-  keys(seed: bigint): string[];
+  /** The cache keys of the world's faces A and B under its settings (`worldMapKeys`). */
+  keys(seed: bigint, worldgen: string): string[];
   /** Computes face `face`'s map off the page's thread; resolves with its bytes. */
-  build(seed: bigint, face: number): Promise<Uint8Array>;
+  build(seed: bigint, face: number, worldgen: string): Promise<Uint8Array>;
   store: MapStore | null;
   /** Each face's map as it becomes ready (the loading screen's progress). */
   onProgress?: (ready: number, needed: number) => void;
@@ -31,19 +32,21 @@ export interface MapDeps {
 const pending = new Map<string, Promise<Uint8Array[]>>();
 
 /**
- * The maps of world `seed` (faces A and B), or null for a world without terrain. The same promise
- * for every caller of a seed on this page (the local world's start and the client's join share it).
+ * The maps of world `seed` under generation settings `worldgen` (encoded; faces A and B), or null
+ * for a world without terrain. The same promise for every caller of a seed and settings on this page
+ * (the local world's start and the client's join share it).
  */
 export function worldMaps(
   seed: bigint,
   generatorVersion: number,
+  worldgen: string,
   deps: MapDeps,
 ): Promise<Uint8Array[]> | null {
   if (generatorVersion !== GENERATOR_TERRAIN) return null;
-  const id = seed.toString();
+  const id = `${seed.toString()}|${worldgen}`;
   let p = pending.get(id);
   if (!p) {
-    p = fetchMaps(seed, deps);
+    p = fetchMaps(seed, worldgen, deps);
     pending.set(id, p);
     // A failure is not kept: the next join tries again.
     p.catch(() => pending.delete(id));
@@ -56,8 +59,8 @@ export function forgetWorldMaps(): void {
   pending.clear();
 }
 
-async function fetchMaps(seed: bigint, deps: MapDeps): Promise<Uint8Array[]> {
-  const keys = deps.keys(seed);
+async function fetchMaps(seed: bigint, worldgen: string, deps: MapDeps): Promise<Uint8Array[]> {
+  const keys = deps.keys(seed, worldgen);
   let ready = 0;
   deps.onProgress?.(0, keys.length);
   return Promise.all(
@@ -69,7 +72,7 @@ async function fetchMaps(seed: bigint, deps: MapDeps): Promise<Uint8Array[]> {
         bytes = null; // storage blocked or damaged: build it
       }
       if (!bytes) {
-        bytes = await deps.build(seed, face);
+        bytes = await deps.build(seed, face, worldgen);
         try {
           await deps.store?.put(key, bytes);
         } catch {
@@ -163,7 +166,7 @@ function request<T>(req: IDBRequest): Promise<T> {
 
 /** A builder that computes a map in a fresh worker (the job worker script), then ends it. */
 export function workerBuilder(makeWorker: () => Worker): MapDeps['build'] {
-  return (seed, face) =>
+  return (seed, face, worldgen) =>
     new Promise((resolve, reject) => {
       const worker = makeWorker();
       worker.onmessage = (e: MessageEvent<{ map?: Uint8Array; error?: string }>) => {
@@ -175,6 +178,6 @@ export function workerBuilder(makeWorker: () => Worker): MapDeps['build'] {
         worker.terminate();
         reject(new Error(e.message || 'the world map worker failed'));
       };
-      worker.postMessage({ t: 'buildMap', seed, face });
+      worker.postMessage({ t: 'buildMap', seed, face, worldgen });
     });
 }

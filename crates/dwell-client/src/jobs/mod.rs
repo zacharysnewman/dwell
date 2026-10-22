@@ -102,19 +102,30 @@ impl Runner {
         }
     }
 
-    /// A runner for a world (its generator version and seed, from Welcome), meshing included.
-    pub fn world(generator_version: u32, world_seed: u64) -> Self {
+    /// A runner for a world (its generator version, seed and generation settings, from
+    /// Welcome), meshing included.
+    pub fn world(
+        generator_version: u32,
+        world_seed: u64,
+        settings: &dwell_worldgen::WorldSettings,
+    ) -> Self {
         Self {
-            chunks: Some(dwell_worldgen::generator_for(generator_version, world_seed)),
-            terrain: (generator_version == GENERATOR_TERRAIN)
-                .then(|| BifacialTerrain::new(world_seed)),
-            lod: Some(dwell_worldgen::lod_generator_for(
+            chunks: Some(dwell_worldgen::generator_with(
                 generator_version,
                 world_seed,
+                settings,
             )),
-            bounds: Some(dwell_worldgen::lod_bounds_for(
+            terrain: (generator_version == GENERATOR_TERRAIN)
+                .then(|| BifacialTerrain::with_settings(world_seed, settings)),
+            lod: Some(dwell_worldgen::lod_generator_with(
                 generator_version,
                 world_seed,
+                settings,
+            )),
+            bounds: Some(dwell_worldgen::lod_bounds_with(
+                generator_version,
+                world_seed,
+                settings,
             )),
         }
     }
@@ -254,7 +265,7 @@ mod tests {
 
     #[test]
     fn generates_hashes_and_meshes_a_chunk() {
-        let r = Runner::world(GENERATOR_TERRAIN, 1);
+        let r = Runner::world(GENERATOR_TERRAIN, 1, &Default::default());
         let spawn = dwell_worldgen::spawn_point_for(GENERATOR_TERRAIN, 1);
         // The chunk of the cell under the feet.
         let coord = dwell_world::chunk_of_pos([spawn[0], spawn[1] - dwell_world::CELL_H, spawn[2]]);
@@ -272,7 +283,7 @@ mod tests {
 
     #[test]
     fn lod_sections_carry_face_as_surface_where_face_a_has_rows() {
-        let r = Runner::world(GENERATOR_TERRAIN, 1);
+        let r = Runner::world(GENERATOR_TERRAIN, 1, &Default::default());
         let c = dwell_lod::grid::section_at(4, [0.0, 0.0, 0.0]);
         let Output::Lod { cells, surface, .. } = r.run(Job::Lod { coord: c }) else {
             panic!()
@@ -283,7 +294,7 @@ mod tests {
             s.len(),
             (lod::PAD * lod::PAD) as usize * dwell_mesh::SURFACE_STRIDE
         );
-        let flat = Runner::world(0, 1);
+        let flat = Runner::world(0, 1, &Default::default());
         let Output::Lod {
             surface: None,
             surface_b: None,
@@ -296,7 +307,7 @@ mod tests {
 
     #[test]
     fn maps_heights_with_an_outside_flag() {
-        let r = Runner::world(GENERATOR_TERRAIN, 1);
+        let r = Runner::world(GENERATOR_TERRAIN, 1, &Default::default());
         let Output::Map(Some(bytes)) = r.run(Job::Map {
             x0: -64,
             z0: -64,
@@ -313,7 +324,7 @@ mod tests {
         let want = t.local(dwell_world::Face::A).column_at(-64, -64).height
             - dwell_world::SEA_LEVEL_M as f32;
         assert_eq!(i16::from_le_bytes([bytes[0], bytes[1]]), want as i16);
-        let Output::Map(None) = Runner::world(0, 1).run(Job::Map {
+        let Output::Map(None) = Runner::world(0, 1, &Default::default()).run(Job::Map {
             x0: 0,
             z0: 0,
             step: 1,

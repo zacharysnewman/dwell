@@ -24,10 +24,12 @@ pub struct JobWorker {
 
 #[wasm_bindgen]
 impl JobWorker {
-    /// A worker for a world (generation and meshing).
-    pub fn world(generator_version: u32, world_seed: u64) -> JobWorker {
+    /// A worker for a world (generation and meshing) under its generation settings (encoded;
+    /// the session has checked them).
+    pub fn world(generator_version: u32, world_seed: u64, worldgen: &str) -> JobWorker {
+        let settings = dwell_worldgen::WorldSettings::decode(worldgen).unwrap_or_default();
         Self {
-            runner: Runner::world(generator_version, world_seed),
+            runner: Runner::world(generator_version, world_seed, &settings),
         }
     }
     /// A worker that only meshes.
@@ -68,12 +70,13 @@ pub struct WebJobs {
 
 impl WebJobs {
     /// `make_worker` creates a worker running the job worker script; `world` is the generator
-    /// version and seed the generation workers load, `maps` its world maps' bytes.
+    /// version, seed and generation settings (encoded) the generation workers load, `maps` its
+    /// world maps' bytes.
     pub fn new(
         make_worker: &Function,
         generators: usize,
         meshers: usize,
-        world: (u32, u64),
+        world: (u32, u64, String),
         maps: &[Uint8Array],
     ) -> Result<Self, JsValue> {
         let done: Rc<RefCell<VecDeque<Vec<u8>>>> = Rc::default();
@@ -111,6 +114,7 @@ impl WebJobs {
                         &"worldSeed".into(),
                         &js_sys::BigInt::from(world.1).into(),
                     )?;
+                    Reflect::set(&init, &"worldgen".into(), &world.2.as_str().into())?;
                     // The world's maps (ADR 0049), copied to each worker, which installs them
                     // before making its generator.
                     let list = Array::new();

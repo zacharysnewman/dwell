@@ -23,6 +23,8 @@ export type SessionState =
       playerId: number;
       worldSeed: bigint;
       generatorVersion: number;
+      /** The world's generation settings, encoded (WORLD_GENERATION.md §9; empty: the defaults). */
+      worldgen: string;
       /** The server lets this player use creative flight (§8.3). */
       mayFly: boolean;
     }

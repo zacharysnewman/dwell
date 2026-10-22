@@ -6,7 +6,7 @@ use std::path::PathBuf;
 
 use dwell_protocol::{PROTOCOL_VERSION, PublicKey};
 use dwell_sim::app_version::{APP_VERSION, world_version_error};
-use dwell_sim::server::{EditPolicy, ServerConfig};
+use dwell_sim::server::{EditPolicy, ServerConfig, WorldSettings};
 use dwell_storage::{PermissionEntry, PermissionKind, WorldDb, WorldStore};
 
 /// The deployed master server (ARCHITECTURE.md §10.3); `--master` overrides it.
@@ -15,7 +15,8 @@ pub const DEFAULT_MASTER: &str = "https://dwell-master.dropkick.workers.dev";
 pub const USAGE: &str =
     "usage: dwell-server [--world FILE] [--port N] [--rtc-port N] [--advertise IP]
                     [--name NAME] [--motd TEXT] [--max-players N] [--edits POLICY]
-                    [--flight POLICY] [--seed N] [--generator N] [--op KEY] [--ban KEY]
+                    [--flight POLICY] [--seed N] [--generator N] [--preset NAME]
+                    [--worldgen SETTINGS] [--op KEY] [--ban KEY]
                     [--client-url URL] [--master URL] [--visibility public|unlisted|none]
                     [--tags A,B]
   --world FILE    the world file (default world.dwellworld; created if missing; \"\" keeps
@@ -23,6 +24,11 @@ pub const USAGE: &str =
   --advertise IP  address players use to reach this server (invite links, WebRTC)
   --seed N, --generator N  a new world's seed and generator: 8 = procedural terrain
                   (default), 0 = flat (a saved world keeps its own)
+  --preset NAME   a new world's generation preset: default, highlands, archipelago,
+                  lakeCountry (shared/worldgen/settings.json; a saved world keeps its own)
+  --worldgen S    a new world's generation settings, id:value pairs over the preset, e.g.
+                  land:0.8,ranges:5,rain:1.5 (sliders: land, coast, height, ranges, rain,
+                  erosion, lakes, snow, treeline, trees, portals, bedrock)
   --name, --motd, --max-players, --edits everyone|ops|nobody, --flight everyone|ops|nobody
                   saved in the world's settings (--flight: who may use creative flight)
   --op KEY, --ban KEY  grant op or ban a player (hex device public key), saved in the world
@@ -123,6 +129,14 @@ pub fn parse_options(args: &[String]) -> Result<Options, UsageError> {
             "--ban" => o.grants.push((PermissionKind::Ban, v.into())),
             "--seed" => o.server.world_seed = v.parse().map_err(|_| UsageError)?,
             "--generator" => o.server.generator_version = v.parse().map_err(|_| UsageError)?,
+            "--preset" => {
+                let mut preset = WorldSettings::preset(v).ok_or(UsageError)?;
+                preset
+                    .apply_encoded(&o.server.worldgen.encode())
+                    .map_err(|_| UsageError)?;
+                o.server.worldgen = preset;
+            }
+            "--worldgen" => o.server.worldgen.apply_encoded(v).map_err(|_| UsageError)?,
             "--client-url" => o.client_url = v.into(),
             _ => return Err(UsageError),
         }
@@ -242,11 +256,13 @@ pub fn open_world(o: &mut Options) -> Result<Vec<String>, String> {
     }
     let mut lines = Vec::new();
     if let Some(m) = &meta
-        && (m.world_seed != c.world_seed || m.generator_version != c.generator_version)
+        && (m.world_seed != c.world_seed
+            || m.generator_version != c.generator_version
+            || m.worldgen != c.worldgen.encode())
     {
         lines.push(format!(
-            "world: {} keeps its own seed {} and generator {}",
-            o.world, m.world_seed, m.generator_version
+            "world: {} keeps its own seed {}, generator {} and generation settings {:?}",
+            o.world, m.world_seed, m.generator_version, m.worldgen
         ));
     }
     lines.push(format!(

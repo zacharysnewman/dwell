@@ -128,7 +128,15 @@
           "maxCoast": 9000,
           "align": 0.8
         },
-        "highlands": { "strength": 0.4, "wavelength": 14000, "cover": 0.25 }
+        "highlands": { "strength": 0.4, "wavelength": 14000, "cover": 0.25 },
+        "plates": {
+          "$comment": "Off (count 0) by default; the world setting `lakes` (settings.json) turns them on: rift valleys that hold lakes.",
+          "count": 0,
+          "width": 5000,
+          "strength": 1.2,
+          "rift": 0.3,
+          "warp": { "amplitude": 2000, "wavelength": 8000 }
+        }
       }
     },
     {

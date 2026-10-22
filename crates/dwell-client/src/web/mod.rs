@@ -195,28 +195,55 @@ pub fn set_world_file_version(bytes: Vec<u8>, version: &str) -> Result<Vec<u8>, 
     crate::local::with_world_file_version(bytes, version).map_err(|e| JsError::new(&e))
 }
 
-/// The cache keys of a terrain world's maps, faces A then B (ADR 0049): the build's map fingerprint
-/// and each face's seed, so a map kept by another build is never read.
+/// The cache keys of a terrain world's maps, faces A then B (ADR 0049): the build's map
+/// fingerprint, the hash of the world's map settings (`worldgen`, encoded; WORLD_GENERATION.md §9)
+/// and each face's seed, so a map kept by another build or of other settings is never read.
+/// Throws on settings this build can't read.
 #[wasm_bindgen(js_name = worldMapKeys)]
-pub fn world_map_keys(world_seed: u64) -> Vec<String> {
-    [dwell_world::Face::A, dwell_world::Face::B]
+pub fn world_map_keys(world_seed: u64, worldgen: Option<String>) -> Result<Vec<String>, JsError> {
+    let hash = settings_of(worldgen)?.map_hash();
+    Ok([dwell_world::Face::A, dwell_world::Face::B]
         .into_iter()
         .map(|f| {
-            dwell_worldgen::worldmap::cache::key(dwell_worldgen::bifacial::face_seed(world_seed, f))
+            dwell_worldgen::worldmap::cache::key(
+                dwell_worldgen::bifacial::face_seed(world_seed, f),
+                hash,
+            )
         })
-        .collect()
+        .collect())
 }
 
-/// Computes face `face`'s (0: A, 1: B) world map of a terrain world and returns its bytes (a
-/// builder worker's job: ~1.3 s).
+fn settings_of(worldgen: Option<String>) -> Result<dwell_worldgen::WorldSettings, JsError> {
+    dwell_worldgen::WorldSettings::decode(worldgen.as_deref().unwrap_or(""))
+        .map_err(|e| JsError::new(&e))
+}
+
+/// Computes face `face`'s (0: A, 1: B) world map of a terrain world under its generation settings
+/// (encoded) and returns its bytes (a builder worker's job: ~1.3 s).
 #[wasm_bindgen(js_name = buildWorldMap)]
-pub fn build_world_map(world_seed: u64, face: u8) -> Vec<u8> {
+pub fn build_world_map(
+    world_seed: u64,
+    face: u8,
+    worldgen: Option<String>,
+) -> Result<Vec<u8>, JsError> {
     let face = if face == 1 {
         dwell_world::Face::B
     } else {
         dwell_world::Face::A
     };
-    dwell_worldgen::worldmap::build_bytes(dwell_worldgen::bifacial::face_seed(world_seed, face))
+    let t = settings_of(worldgen)?.tunables();
+    Ok(dwell_worldgen::worldmap::build_bytes(
+        dwell_worldgen::bifacial::face_seed(world_seed, face),
+        &t.map,
+    ))
+}
+
+/// The canonical encoding of world generation settings (WORLD_GENERATION.md §9): the shell's
+/// encoder must agree with it (the e2e and vitest suites compare them). Throws on settings this
+/// build can't read.
+#[wasm_bindgen(js_name = canonicalWorldgen)]
+pub fn canonical_worldgen(worldgen: &str) -> Result<String, JsError> {
+    Ok(settings_of(Some(worldgen.to_string()))?.encode())
 }
 
 /// Installs a world map's bytes in this instance, so its generators use it rather than computing

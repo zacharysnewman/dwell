@@ -8,7 +8,7 @@ use dwell_protocol::{Channel, HostState, TransportKind};
 use dwell_sim::app_version::{APP_VERSION, world_version_error};
 use dwell_sim::entropy::Entropy;
 use dwell_sim::fixed_step::FixedStep;
-use dwell_sim::server::{EditPolicy, OutKind, Outgoing, Server, ServerConfig};
+use dwell_sim::server::{EditPolicy, OutKind, Outgoing, Server, ServerConfig, WorldSettings};
 use dwell_storage::{StorageBackend, WorldDb, WorldStore};
 
 /// How often a local world saves (a dedicated server saves less often).
@@ -59,22 +59,34 @@ impl LocalCore {
         storage: Option<impl StorageBackend>,
         entropy: Box<dyn Entropy>,
     ) -> Result<Self, LocalError> {
-        Self::create_spawning(face, false, world_seed, generator_version, storage, entropy)
+        Self::create_spawning(
+            face,
+            false,
+            world_seed,
+            generator_version,
+            WorldSettings::default(),
+            storage,
+            entropy,
+        )
     }
 
     /// [`LocalCore::create_on`], with `portal` by the opening of the portal nearest the centre on
-    /// `face` (the dev link `?spawn=portal`, `portal-b`; BIFACIAL_WORLD.md §6).
+    /// `face` (the dev link `?spawn=portal`, `portal-b`; BIFACIAL_WORLD.md §6), and a new world's
+    /// generation settings (`worldgen`; a saved world keeps its own).
     pub fn create_spawning(
         face: dwell_world::Face,
         portal: bool,
         world_seed: u64,
         generator_version: u32,
+        worldgen: WorldSettings,
         storage: Option<impl StorageBackend>,
         entropy: Box<dyn Entropy>,
     ) -> Result<Self, LocalError> {
         // The local player (player 1) lands on the point itself: its spawn spread taken back.
         let at_portal = portal
-            .then(|| dwell_worldgen::portal_spawn_for(generator_version, world_seed, face))
+            .then(|| {
+                dwell_worldgen::portal_spawn_with(generator_version, world_seed, &worldgen, face)
+            })
             .flatten()
             .map(|[x, y, z]| {
                 let [dx, dz] = dwell_sim::server::spawn_spread(1);
@@ -83,10 +95,13 @@ impl LocalCore {
         let mut config = ServerConfig {
             spawn: at_portal.or_else(|| {
                 (face == dwell_world::Face::B)
-                    .then(|| dwell_worldgen::spawn_point_b_for(generator_version, world_seed))
+                    .then(|| {
+                        dwell_worldgen::spawn_point_b_with(generator_version, world_seed, &worldgen)
+                    })
             }),
             world_seed,
             generator_version,
+            worldgen,
             name: "Local world".into(),
             max_players: 1,
             // Single-threaded in the browser: generation and LOD run on the tick within budgets.

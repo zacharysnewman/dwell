@@ -417,7 +417,7 @@ mod tests {
 
     #[test]
     fn every_job_and_result_round_trips() {
-        let r = Runner::world(GENERATOR_TERRAIN, 7);
+        let r = Runner::world(GENERATOR_TERRAIN, 7, &Default::default());
         let jobs = [
             Job::Generate {
                 coord: ChunkCoord { x: 0, y: -1, z: 0 },

@@ -272,8 +272,10 @@ vectors = {
     "client_hello": struct.pack("<BH", T["ClientHello"], 1) + s("0.1.0") + PK + s("Zack"),
     "challenge": struct.pack("<B", T["Challenge"]) + NONCE,
     "client_auth": struct.pack("<B", T["ClientAuth"]) + SIG,
+    # v19: the world's generation settings (their encoding, WORLD_GENERATION.md §9) after the hash.
     "welcome": struct.pack("<BHQIIiiiBQ", T["Welcome"], 42, 0x0123456789ABCDEF, 7, 123456,
-                           -3, 2, 1000000, c["welcomeFlags"]["flight"], 0x160E5FFD3CC97380),
+                           -3, 2, 1000000, c["welcomeFlags"]["flight"], 0x160E5FFD3CC97380)
+    + s("land:0.85,coast:4"),
     "reject": struct.pack("<BB", T["Reject"], c["rejectReasons"]["ProtocolVersion"])
     + s("Server runs protocol 2"),
     "ping": struct.pack("<BId", T["Ping"], 9, 1000.0),

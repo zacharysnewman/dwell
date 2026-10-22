@@ -52,6 +52,7 @@ fn world_saved_by(path: &str, version: &str) {
         saved_at: 0,
         app_version_created: version.into(),
         app_version_last: version.into(),
+        worldgen: String::new(),
     };
     db.save(&SaveBatch {
         meta: Some(meta),

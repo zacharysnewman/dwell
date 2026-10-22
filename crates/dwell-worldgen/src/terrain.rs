@@ -39,8 +39,9 @@ use std::sync::Arc;
 use crate::base::BaseField;
 use crate::decorations::{DECORATIONS, Placer};
 use crate::noise::{fbm2, floor_to_int, octaves_resolved, seed_word, smooth_step};
-use crate::placements::{self, Ground, PLACEMENTS, Planter, Tree};
+use crate::placements::{self, Ground, Planter, Tree};
 use crate::portals::{MIDPLANE, Part, Portal, Portals};
+use crate::settings::Tunables;
 use crate::ramps as ramps_rule;
 use crate::ramps::Top;
 use crate::worldmap::{self, WorldMap};
@@ -258,10 +259,10 @@ pub fn bands() -> &'static Bands {
 
 /// The material `depth` rows below the surface of a column whose top voxel is `top` and band
 /// `band`: the bedrock in the face's first `bedrock_rows` from the midplane, the core's stone over
-/// it up to `CORE_LAYERS`, then the band's layers.
-fn fill(band: Band, top: i32, depth: i64) -> StateId {
+/// it up to `CORE_LAYERS`, then the band's layers (`under_depth` m of the under block).
+fn fill(bedrock_rows: i32, under_depth: f64, band: Band, top: i32, depth: i64) -> StateId {
     let y = i64::from(top) - depth;
-    if y < i64::from(MIDPLANE_Y + MIDPLANE.bedrock_rows) {
+    if y < i64::from(MIDPLANE_Y + bedrock_rows) {
         return bedrock();
     }
     if y < i64::from(MIDPLANE_Y + CORE_LAYERS) {
@@ -280,7 +281,7 @@ fn fill(band: Band, top: i32, depth: i64) -> StateId {
         Band::Ground | Band::Snow => {
             if depth == 0 {
                 if band == Band::Snow { b.snow } else { b.ground }
-            } else if depth <= (S.under_depth / CELL_H) as i64 {
+            } else if depth <= (under_depth / CELL_H) as i64 {
                 b.under
             } else {
                 M.stone
@@ -309,6 +310,10 @@ fn under_water(m: StateId, y: i32, water_row: i32) -> StateId {
 pub struct TerrainGenerator {
     base: BaseField,
     map: Arc<WorldMap>,
+    /// How columns are shaped from the map, and the bedrock's rows: the world's settings'
+    /// (`settings.rs`; the data files' by default).
+    surface: Surface,
+    bedrock_rows: i32,
     detail_seed: u32,
     meander_seeds: [u32; 2],
     shore_seeds: [u32; 2],
@@ -384,16 +389,28 @@ impl TerrainGenerator {
     /// The face generator for face seed `world_seed`, its world map computed now or taken from
     /// the process's maps (`worldmap::for_seed`).
     pub fn new(world_seed: u64) -> Self {
-        Self::with_map(world_seed, worldmap::for_seed(world_seed))
+        Self::with_tunables(world_seed, &Tunables::default())
+    }
+
+    /// The face generator under a world's settings' tunables (`settings.rs`), its map computed
+    /// now or taken from the process's maps (`worldmap::for_settings`).
+    pub fn with_tunables(world_seed: u64, t: &Tunables) -> Self {
+        Self::with_map_tunables(world_seed, worldmap::for_settings(world_seed, &t.map), t)
     }
 
     /// The face generator over a given map (tests: a fixture map).
     pub fn with_map(world_seed: u64, map: Arc<WorldMap>) -> Self {
-        let base = BaseField::new(world_seed);
+        Self::with_map_tunables(world_seed, map, &Tunables::default())
+    }
+
+    fn with_map_tunables(world_seed: u64, map: Arc<WorldMap>, t: &Tunables) -> Self {
+        let base = BaseField::with(world_seed, t.map.island);
         let (offset_x, offset_z) = base.offset();
         Self {
             base,
             map,
+            surface: t.surface,
+            bedrock_rows: t.midplane.bedrock_rows,
             detail_seed: seed_word(world_seed, 0xD7A1_0001),
             meander_seeds: [
                 seed_word(world_seed, 0xD7A1_0002),
@@ -413,7 +430,17 @@ impl TerrainGenerator {
             rise: DECORATION_RISE as f32,
             world_seed,
         }
-        .with_placements(&PLACEMENTS)
+        .with_placements(&t.placements)
+    }
+
+    /// The material `depth` rows below the top of a column (`fill`), with this world's bedrock.
+    fn fill(&self, band: Band, top: i32, depth: i64) -> StateId {
+        fill(self.bedrock_rows, self.surface.under_depth, band, top, depth)
+    }
+
+    /// The bedrock's rows on each face, from the midplane.
+    pub fn bedrock_rows(&self) -> i32 {
+        self.bedrock_rows
     }
 
     /// The world seed this generator was made from (a face's own seed, `bifacial::face_seed`).
@@ -512,14 +539,14 @@ impl TerrainGenerator {
         let map = &*self.map;
         let (base, gx, gz) = map.height_at(x as f64, z as f64);
         // The fine detail, stronger on mountains.
-        let amplitude = S.detail_amplitude
-            + (S.detail_mountain_amplitude - S.detail_amplitude)
+        let amplitude = self.surface.detail_amplitude
+            + (self.surface.detail_mountain_amplitude - self.surface.detail_amplitude)
                 * f64::from(smooth_step(
-                    S.detail_mountain_from as f32,
-                    S.detail_mountain_full as f32,
+                    self.surface.detail_mountain_from as f32,
+                    self.surface.detail_mountain_full as f32,
                     base as f32,
                 ));
-        let kept = octaves_resolved(S.detail_wavelength, S.detail_octaves, cell);
+        let kept = octaves_resolved(self.surface.detail_wavelength, self.surface.detail_octaves, cell);
         let detail = if kept == 0 {
             0.0
         } else {
@@ -528,16 +555,16 @@ impl TerrainGenerator {
                     self.detail_seed,
                     x + self.offset_x,
                     z + self.offset_z,
-                    S.detail_wavelength,
-                    S.detail_octaves,
+                    self.surface.detail_wavelength,
+                    self.surface.detail_octaves,
                     Some(kept),
                 ))
         };
         // The nearest river channel, through the meander warp (none far from every river).
-        let (min_half, min_width) = if cell > 1 && cell <= S.river_lod_max_cell {
+        let (min_half, min_width) = if cell > 1 && cell <= self.surface.river_lod_max_cell {
             (
-                0.5 * S.river_lod_width * cell as f64,
-                S.river_lod_min_share * cell as f64,
+                0.5 * self.surface.river_lod_width * cell as f64,
+                self.surface.river_lod_min_share * cell as f64,
             )
         } else {
             (0.0, f64::INFINITY)
@@ -547,8 +574,8 @@ impl TerrainGenerator {
                 self.meander_seeds,
                 x,
                 z,
-                S.river_meander,
-                S.river_meander_wavelength,
+                self.surface.river_meander,
+                self.surface.river_meander_wavelength,
             );
             map.channels.query(wx, wz, min_half, min_width)
         } else {
@@ -562,17 +589,17 @@ impl TerrainGenerator {
                 self.shore_seeds,
                 x,
                 z,
-                S.lake_shore_noise,
-                S.lake_shore_wavelength,
+                self.surface.lake_shore_noise,
+                self.surface.lake_shore_wavelength,
             );
             map.shores.query(map, sx, sz)
         };
         let mut fade: f64 = 1.0;
         if let Some(r) = &river {
-            fade = fade.min(smooth01((r.d - r.half) / S.detail_water_fade.max(1e-6)));
+            fade = fade.min(smooth01((r.d - r.half) / self.surface.detail_water_fade.max(1e-6)));
         }
         if let Some(l) = &lake {
-            fade = fade.min(smooth01(-l.sdf / S.detail_water_fade.max(1e-6)));
+            fade = fade.min(smooth01(-l.sdf / self.surface.detail_water_fade.max(1e-6)));
         }
         let mut h = base + detail * fade;
         let mut water = Water::None;
@@ -586,7 +613,7 @@ impl TerrainGenerator {
             } else {
                 // Round the shore: never lower than the bank over the water near it.
                 let out = -l.sdf;
-                let required = l.level + S.lake_bank - (out - 2.0).max(0.0) * 0.25;
+                let required = l.level + self.surface.lake_bank - (out - 2.0).max(0.0) * 0.25;
                 h = h.max(required);
             }
         }
@@ -595,7 +622,7 @@ impl TerrainGenerator {
             if edge < 0.0 {
                 // The channel: its bed below the water, deepest on the centreline.
                 let f = r.d / r.half;
-                let depth = (r.depth * (1.0 - f * f)).max(S.river_min_depth);
+                let depth = (r.depth * (1.0 - f * f)).max(self.surface.river_min_depth);
                 // Below the surface as drawn (its row), so a channel always holds water cells.
                 let drawn =
                     f64::from(surface_row((SEA_LEVEL_M + r.level) as f32)) * CELL_H - SEA_LEVEL_M;
@@ -608,8 +635,8 @@ impl TerrainGenerator {
             } else if water != Water::Lake {
                 // The valley down to the banks, blended back into the land at its reach; the banks
                 // never lower than `bank` over the water (a levee where the land is lower).
-                let bank = r.level + S.river_bank;
-                let valley = bank + edge * S.river_valley_slope;
+                let bank = r.level + self.surface.river_bank;
+                let valley = bank + edge * self.surface.river_valley_slope;
                 let carved = smooth_min(h, valley, 2.0);
                 let t = smooth01(edge / r.valley.max(1e-6));
                 h = carved + (h - carved) * t;
@@ -630,22 +657,22 @@ impl TerrainGenerator {
         }
         // The band: shore (and every bed under water), rock where steep, snow over the snow line.
         let slope = (gx * gx + gz * gz).sqrt();
-        let band = if wet || h < S.shore {
+        let band = if wet || h < self.surface.shore {
             Band::Shore
-        } else if slope >= S.rock_slope {
+        } else if slope >= self.surface.rock_slope {
             Band::Rock
-        } else if h + S.snow_noise >= S.snow_line {
+        } else if h + self.surface.snow_noise >= self.surface.snow_line {
             let noise = 2.0
-                * S.snow_noise
+                * self.surface.snow_noise
                 * f64::from(fbm2(
                     self.snow_seed,
                     x + self.offset_x,
                     z + self.offset_z,
-                    S.snow_wavelength,
+                    self.surface.snow_wavelength,
                     3,
-                    Some(octaves_resolved(S.snow_wavelength, 3, cell)),
+                    Some(octaves_resolved(self.surface.snow_wavelength, 3, cell)),
                 ));
-            if h >= S.snow_line + noise + S.snow_slope_lift * slope {
+            if h >= self.surface.snow_line + noise + self.surface.snow_slope_lift * slope {
                 Band::Snow
             } else {
                 Band::Ground
@@ -686,17 +713,17 @@ impl TerrainGenerator {
     /// The state `generate` puts at (x, y, z) (face-local), from the column alone (no ramps,
     /// decorations, structures or portals).
     pub fn state_at(&self, x: i32, y: i32, z: i32) -> StateId {
-        Self::state_in(&self.column_at(x, z), y)
+        self.state_in(&self.column_at(x, z), y)
     }
 
-    fn state_in(col: &Column, y: i32) -> StateId {
+    fn state_in(&self, col: &Column, y: i32) -> StateId {
         if col.outside || !(FACE_MIN_Y..FACE_MAX_Y).contains(&y) {
             return M.air;
         }
         let top = top_voxel(col.height);
         let water = col.water_row();
         if y <= top {
-            let m = fill(col.band, top, i64::from(top - y));
+            let m = self.fill(col.band, top, i64::from(top - y));
             if y == top {
                 under_water(m, y, col.flood_row())
             } else {
@@ -764,7 +791,7 @@ impl TerrainGenerator {
     }
 
     /// A column's ground as placements see it (`None` beyond the rim).
-    fn ground_of(col: &Column) -> Option<Ground> {
+    fn ground_of(&self, col: &Column) -> Option<Ground> {
         if col.outside {
             return None;
         }
@@ -772,7 +799,7 @@ impl TerrainGenerator {
         // The top block as generated: under water it takes its flooded state. Rows of cells for
         // the top; metres for the height band (placements.json's) and the slope.
         let water = col.water_row();
-        let block = under_water(fill(col.band, top, 0), top, col.flood_row());
+        let block = under_water(self.fill(col.band, top, 0), top, col.flood_row());
         Some(Ground {
             top,
             above_sea: (m_of_row(top) - SEA_LEVEL_M).floor() as i32,
@@ -795,9 +822,9 @@ impl TerrainGenerator {
         let ground = |x: i32, z: i32| {
             let (i, j) = (x - rx, z - rz);
             if (0..w).contains(&i) && (0..l).contains(&j) {
-                Self::ground_of(&cols[(j * w + i) as usize])
+                self.ground_of(&cols[(j * w + i) as usize])
             } else {
-                Self::ground_of(&self.column_at(x, z))
+                self.ground_of(&self.column_at(x, z))
             }
         };
         let mut trees = placements::trees_in(&self.planters, (x0, z0), (x1, z1), &ground);
@@ -926,9 +953,9 @@ impl TerrainGenerator {
                     } else if y <= top && y >= first_piece {
                         *v = under_water(pieces[(y - first_piece) as usize], y, flood);
                     } else if y == top {
-                        *v = under_water(fill(col.band, top, 0), y, flood);
+                        *v = under_water(self.fill(col.band, top, 0), y, flood);
                     } else if y < top {
-                        *v = fill(col.band, top, i64::from(top - y));
+                        *v = self.fill(col.band, top, i64::from(top - y));
                     } else if y < water {
                         *v = M.water;
                     }
@@ -1050,7 +1077,7 @@ impl TerrainGenerator {
         });
         let shape = ramps_rule::top_of(&around, rows_for_m(1.0));
         // Dry pieces: `generate` floods each one under the water (`under_water`).
-        let cells = self.ramps.cells(fill(col.band, top, 0), shape, false);
+        let cells = self.ramps.cells(self.fill(col.band, top, 0), shape, false);
         // A 1 m ramp needs two cells of ground; a column one cell deep takes none.
         if (cells.len() as i32) > top + 1 - FACE_MIN_Y {
             return &[];
@@ -1076,7 +1103,7 @@ impl TerrainGenerator {
             return None;
         }
         let (x, z) = (x0 + lx, z0 + lz);
-        let ground = fill(cols[(lz * S + lx) as usize].band, top, 0);
+        let ground = self.fill(cols[(lz * S + lx) as usize].band, top, 0);
         let neighbour_top = |nx: i32, nz: i32| {
             let (ix, iz) = (nx - x0, nz - z0);
             let col = if (0..S).contains(&ix) && (0..S).contains(&iz) {
@@ -1277,7 +1304,7 @@ impl TerrainGenerator {
                     }
                     let depth = (top - (a + cell - 1)).max(0);
                     if depth > 0 {
-                        *m = fill(col.band, top as i32, depth.min(1000));
+                        *m = self.fill(col.band, top as i32, depth.min(1000));
                         continue;
                     }
                     // The column's top: its surface seen from above. Water no cell sampled shows
@@ -1286,14 +1313,14 @@ impl TerrainGenerator {
                     *m = if wet && !water_above {
                         M.water
                     } else {
-                        fill(col.band, top as i32, 0)
+                        self.fill(col.band, top as i32, 0)
                     };
                     if let Some(s) = surface.as_deref_mut() {
                         s[lod::column_index(x, z)] = LodSurface {
                             valid: true,
                             wet,
                             height: rows(col.height).min((a + cell) as f32),
-                            material: fill(col.band, top as i32, 0),
+                            material: self.fill(col.band, top as i32, 0),
                             water: if wet { water as f32 } else { 0.0 },
                         };
                     }
@@ -1364,7 +1391,7 @@ impl TerrainGenerator {
         for zi in -1..=n {
             for xi in -1..=n {
                 let col = cols[lod::column_index(xi, zi)];
-                let Some(g) = Self::ground_of(&col) else {
+                let Some(g) = self.ground_of(&col) else {
                     continue;
                 };
                 let h = |dx: i32, dz: i32| {
@@ -1428,7 +1455,7 @@ impl TerrainGenerator {
     fn spawn_candidates(&self, most: usize) -> Vec<(i32, i32)> {
         let map = &*self.map;
         let n = map.n as i64;
-        let reach = (S.spawn_near_river / map.cell).ceil() as i64;
+        let reach = (self.surface.spawn_near_river / map.cell).ceil() as i64;
         let mut near = vec![false; map.n * map.n];
         for r in &map.rivers {
             for v in &r.path {
@@ -1440,7 +1467,7 @@ impl TerrainGenerator {
                         if (0..n).contains(&i)
                             && (0..n).contains(&j)
                             && ((di * di + dj * dj) as f64) * map.cell * map.cell
-                                <= S.spawn_near_river * S.spawn_near_river
+                                <= self.surface.spawn_near_river * self.surface.spawn_near_river
                         {
                             near[(j * n + i) as usize] = true;
                         }
@@ -1454,7 +1481,7 @@ impl TerrainGenerator {
                 near[c]
                     && !map.is_sea(c)
                     && map.lake[c] == worldmap::NO_LAKE
-                    && (S.spawn_min_height..=S.spawn_max_height).contains(&h)
+                    && (self.surface.spawn_min_height..=self.surface.spawn_max_height).contains(&h)
             })
             .map(|c| {
                 let (x, z) = map.centre(c);
@@ -1507,7 +1534,7 @@ impl TerrainGenerator {
         }
         let g = top_voxel(col.height);
         let above = m_of_row(g + 1) - SEA_LEVEL_M;
-        if above < S.spawn_min_height.min(1.0) || above > S.spawn_max_height * 2.0 {
+        if above < self.surface.spawn_min_height.min(1.0) || above > self.surface.spawn_max_height * 2.0 {
             return None;
         }
         let level = (-SPAWN_CLEAR..=SPAWN_CLEAR).all(|pz| {

@@ -4,7 +4,7 @@
 //! generating different terrain.
 //!
 //! Layout: magic `DWMAP`, format, fingerprint (the build's, `FINGERPRINT`), seed, the generation
-//! settings' hash (`SETTINGS_HASH`), n, cell, x0;
+//! settings' hash (`WorldMap::settings`), n, cell, x0;
 //! the cells' heights (f32), flags (u8) and lakes (u16); the lakes (level, entry, outlet); the
 //! rivers (from-lake, end, mouth, vertices); the checksum (u64).
 
@@ -39,7 +39,7 @@ fn encode_with(m: &WorldMap, fingerprint: u64) -> Vec<u8> {
     out.extend_from_slice(&FORMAT.to_le_bytes());
     out.extend_from_slice(&fingerprint.to_le_bytes());
     out.extend_from_slice(&m.seed.to_le_bytes());
-    out.extend_from_slice(&super::SETTINGS_HASH.to_le_bytes());
+    out.extend_from_slice(&m.settings.to_le_bytes());
     out.extend_from_slice(&(m.n as u32).to_le_bytes());
     out.extend_from_slice(&m.cell.to_le_bytes());
     out.extend_from_slice(&m.x0.to_le_bytes());
@@ -115,8 +115,8 @@ impl Reader<'_> {
     }
 }
 
-/// The header's (fingerprint, seed), without decoding the rest.
-pub fn peek(bytes: &[u8]) -> Result<(u64, u64), String> {
+/// The header's (fingerprint, seed, settings hash), without decoding the rest.
+pub fn peek(bytes: &[u8]) -> Result<(u64, u64, u64), String> {
     let mut r = Reader { b: bytes, at: 0 };
     if r.take(5)? != MAGIC {
         return Err("not a world map".into());
@@ -124,15 +124,12 @@ pub fn peek(bytes: &[u8]) -> Result<(u64, u64), String> {
     if r.u16()? != FORMAT {
         return Err("a world map of another format".into());
     }
-    let (fingerprint, seed) = (r.u64()?, r.u64()?);
-    if r.u64()? != super::SETTINGS_HASH {
-        return Err("a world map of other generation settings".into());
-    }
-    Ok((fingerprint, seed))
+    Ok((r.u64()?, r.u64()?, r.u64()?))
 }
 
-/// Checks a map's bytes (whole, unchanged, this build's) without decoding them; returns its seed.
-pub fn verify(bytes: &[u8]) -> Result<u64, String> {
+/// Checks a map's bytes (whole, unchanged, this build's) without decoding them; returns its seed
+/// and settings hash.
+pub fn verify(bytes: &[u8]) -> Result<(u64, u64), String> {
     if bytes.len() < 8 {
         return Err("the map is truncated".into());
     }
@@ -140,16 +137,16 @@ pub fn verify(bytes: &[u8]) -> Result<u64, String> {
     if checksum(body) != u64::from_le_bytes(sum.try_into().expect("8")) {
         return Err("the map's checksum does not match".into());
     }
-    let (fingerprint, seed) = peek(body)?;
+    let (fingerprint, seed, settings) = peek(body)?;
     if fingerprint != super::FINGERPRINT {
         return Err("a world map from another build of the generator".into());
     }
-    Ok(seed)
+    Ok((seed, settings))
 }
 
 /// A map from its bytes, refused when damaged or made by another build.
 pub fn decode(bytes: &[u8]) -> Result<WorldMap, String> {
-    let seed = verify(bytes)?;
+    let (seed, settings) = verify(bytes)?;
     let body = &bytes[..bytes.len() - 8];
     let mut r = Reader {
         b: body,
@@ -225,7 +222,7 @@ pub fn decode(bytes: &[u8]) -> Result<WorldMap, String> {
     if r.at != body.len() {
         return Err("trailing bytes after the map".into());
     }
-    Ok(WorldMap::assemble(
-        seed, n, cell, x0, height, flags, lake, lakes, rivers,
-    ))
+    let mut map = WorldMap::assemble(seed, n, cell, x0, height, flags, lake, lakes, rivers);
+    map.settings = settings;
+    Ok(map)
 }

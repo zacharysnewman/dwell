@@ -9,10 +9,12 @@ type Init = {
   t: 'init';
   generatorVersion?: number;
   worldSeed?: bigint;
+  /** The world's generation settings, encoded (WORLD_GENERATION.md §9). */
+  worldgen?: string;
   /** The world's maps (faces A and B), installed before the world's generator is made. */
   maps?: Uint8Array[];
 };
-type BuildMap = { t: 'buildMap'; seed: bigint; face: number };
+type BuildMap = { t: 'buildMap'; seed: bigint; face: number; worldgen?: string };
 
 interface WorkerScope {
   postMessage(
@@ -50,7 +52,7 @@ scope.onmessage = (e) => {
   if (msg.t === 'buildMap') {
     void loadWasm().then(() => {
       try {
-        const map = buildWorldMap(msg.seed, msg.face);
+        const map = buildWorldMap(msg.seed, msg.face, msg.worldgen ?? '');
         scope.postMessage({ map }, [map.buffer as ArrayBuffer]);
       } catch (err) {
         scope.postMessage({ error: err instanceof Error ? err.message : String(err) });
@@ -64,7 +66,7 @@ scope.onmessage = (e) => {
     const w =
       msg.generatorVersion === undefined || msg.worldSeed === undefined
         ? JobWorker.mesher()
-        : JobWorker.world(msg.generatorVersion, msg.worldSeed);
+        : JobWorker.world(msg.generatorVersion, msg.worldSeed, msg.worldgen ?? '');
     worker = w;
     for (const job of queued.splice(0)) run(w, job);
   });
