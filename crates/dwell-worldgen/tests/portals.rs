@@ -332,3 +332,36 @@ dwell_world::both_faces!(
         assert_eq!(f.face, FaceFrame::at_height(y).face);
     }
 );
+
+#[test]
+fn no_portal_opens_in_a_river_or_a_lake() {
+    // both-faces: a site's whole footprint is checked on each face.
+    // Generator 21's world map (ADR 0049) puts rivers and lakes on the lowlands where the portals'
+    // sites lie: a shaft opening under water would drain it down the shaft (and the rim stands in
+    // it), so a site is dry over its footprint on both faces. Seeds 51 and 103 sited one in a
+    // river on face B before the rule asked for dry ground.
+    let rules = MIDPLANE.portals;
+    let foot = f64::from(rules.radius) + f64::from(rules.rim_width);
+    let f = foot.ceil() as i32;
+    for seed in SEEDS.into_iter().chain([51, 103]) {
+        let g = BifacialTerrain::new(seed);
+        for p in g.portal_sites() {
+            for face in [Face::A, Face::B] {
+                let t = g.local(face);
+                for dz in -f..=f {
+                    for dx in -f..=f {
+                        if f64::from(dx * dx + dz * dz) > foot * foot {
+                            continue;
+                        }
+                        let c = t.column_at(p.x + dx, p.z + dz);
+                        assert_eq!(
+                            c.water,
+                            dwell_worldgen::terrain::Water::None,
+                            "seed {seed} {p:?} {face:?} ({dx}, {dz})"
+                        );
+                    }
+                }
+            }
+        }
+    }
+}

@@ -724,14 +724,17 @@ impl<S: Scene> Game<S> {
     /// point, and its chunks are lit and meshed right after the near ring around the body. The
     /// respawn is at the world's spawn, whose chunk is predicted from the Welcome's verification
     /// chunk (the cell under it): the ring is widened by one chunk to cover the body's centre
-    /// above it and the players' spread around it.
+    /// above it and the players' spread around it, and by one more for the LOD: a level-1
+    /// section the near ring straddles is drawn as chunks only once all 8 of its chunks are, and
+    /// they reach a chunk beyond the ring (in a valley under generator 21's mountains those
+    /// sections hold ground, not air, and waited 14 frames for their outer chunks, meshed last).
     fn respawn_preload(&self) -> Option<SecondCentre> {
         let radius = RESPAWN_PRELOAD_RADIUS_CHUNKS.filter(|_| self.respawn_preload_on)?;
         let at = self.spawn_chunk.filter(|_| self.dead)?;
         Some(SecondCentre {
             near: LOADING.radius_chunks,
             at: at.to_array(),
-            radius: radius + 1,
+            radius: radius + 2,
         })
     }
 

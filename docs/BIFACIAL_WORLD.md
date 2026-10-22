@@ -405,7 +405,7 @@ wall, clear ground):
 | `bedrock.block`, `thickness` | `dwell:bedrock`, 1 m | The block in each face's first rows from the midplane (2 rows of ½ m: 2 m in all); must be indestructible and inside the core |
 | `portals.count` | [4, 8] | The seed picks how many (`portals::wanted`) |
 | `spacing`, `within` | 3 km, 26 km | The least distance between portals; the disc they are searched in (the island is 20–30 km in radius) |
-| `attempts`, `inland`, `maxHeight` | 8 000, 150 m, 40 m | Seeded points tried; a site needs land on both faces over its footprint, ≥ 150 m from both coasts, its ground ≤ 40 m above sea level on both (so a shaft is at most ~144 m long, ~48 s of climbing) |
+| `attempts`, `inland`, `maxHeight` | 8 000, 150 m, 40 m | Seeded points tried; a site needs dry land (no river or lake) on both faces over its footprint, ≥ 150 m from both coasts, its ground ≤ 40 m above sea level on both (so a shaft is at most ~144 m long, ~48 s of climbing) |
 | `radius` | 2.5 m | Columns whose centres lie within it are open: 21 columns, 5 m across |
 | `rim` | stone, 1 m wide, ½ m high | A ring round each opening, on flat ground |
 | `ladder` | `dwell:ladder`, wall south | The ladder in the wall-side column, the whole length, to the rim's top |

@@ -256,7 +256,9 @@ pub fn search(
         }
         let ground_ok = |g: &TerrainGenerator, px: i32, pz: i32| {
             let c = g.column_at(px, pz);
+            // Dry: not in a river or a lake (generator 21's world map, ADR 0049).
             !c.outside
+                && c.water == crate::terrain::Water::None
                 && c.height >= (SEA_LEVEL_M + 1.0) as f32
                 && c.height <= SEA_LEVEL_M as f32 + rules.max_height
         };
