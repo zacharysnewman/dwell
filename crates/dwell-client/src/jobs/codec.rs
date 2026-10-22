@@ -241,6 +241,20 @@ pub fn encode_job(id: u32, job: &Job) -> Vec<u8> {
             w.u8(6);
             w.bytes(payload);
         }
+        Job::LodMap {
+            face,
+            texel_m,
+            x0,
+            z0,
+            w: width,
+            h,
+        } => {
+            w.u8(7);
+            w.u8(*face);
+            [*texel_m, *x0, *z0, *width, *h]
+                .into_iter()
+                .for_each(|v| w.i32(v));
+        }
     }
     w.0
 }
@@ -293,6 +307,14 @@ pub fn decode_job(bytes: &[u8]) -> Result<(u32, Job), DecodeError> {
         }
         6 => Job::Registry {
             payload: r.bytes()?,
+        },
+        7 => Job::LodMap {
+            face: r.u8()?,
+            texel_m: r.i32()?,
+            x0: r.i32()?,
+            z0: r.i32()?,
+            w: r.i32()?,
+            h: r.i32()?,
         },
         _ => return Err(DecodeError),
     };
@@ -352,6 +374,16 @@ pub fn encode_output(id: u32, out: &Output) -> Vec<u8> {
             w.str(e);
         }
         Output::Done => w.u8(7),
+        Output::LodMap(bytes) => {
+            w.u8(8);
+            match bytes {
+                Some(b) => {
+                    w.u8(1);
+                    w.bytes(b);
+                }
+                None => w.u8(0),
+            }
+        }
     }
     w.0
 }
@@ -404,6 +436,7 @@ pub fn decode_output(bytes: &[u8]) -> Result<(u32, Output), DecodeError> {
         }
         6 => Output::Failed(String::from_utf8_lossy(&r.bytes()?).into_owned()),
         7 => Output::Done,
+        8 => Output::LodMap(if r.u8()? == 1 { Some(r.bytes()?) } else { None }),
         _ => return Err(DecodeError),
     };
     Ok((id, out))
@@ -439,6 +472,14 @@ mod tests {
             },
             Job::Registry {
                 payload: dwell_blocks::sync::extension_payload(),
+            },
+            Job::LodMap {
+                face: 1,
+                texel_m: 64,
+                x0: -3,
+                z0: 2,
+                w: 5,
+                h: 2,
             },
         ];
         let mut jobs = jobs.to_vec();

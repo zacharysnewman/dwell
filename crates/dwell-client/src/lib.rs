@@ -7,6 +7,7 @@ pub mod bodies;
 pub mod game;
 pub mod jobs;
 pub mod local;
+pub mod lod_map;
 pub mod net;
 pub mod pool;
 pub mod render;
