@@ -75,7 +75,10 @@ fn a_river_narrower_than_a_texel_is_continuous_on_every_ring() {
         let t = ring.texel_m;
         let span = |a: f64, b: f64| ((a / t as f64).floor() as i64, (b / t as f64).ceil() as i64);
         let (x0, x1) = span(-400.0, 400.0);
-        let (z0, z1) = span(river_z(-400.0) - 2.0 * t as f64, river_z(400.0) + 2.0 * t as f64);
+        let (z0, z1) = span(
+            river_z(-400.0) - 2.0 * t as f64,
+            river_z(400.0) + 2.0 * t as f64,
+        );
         let rect = Rect { x0, z0, x1, z1 };
         let px = raster(&g, &LOD_MAP, t, &rect);
         let w = rect.width() as usize;
@@ -91,11 +94,18 @@ fn a_river_narrower_than_a_texel_is_continuous_on_every_ring() {
             // Each column's river touches the last's (8-connected): no gap, no jump.
             let (lo, hi) = (rows[0], rows[rows.len() - 1]);
             if let Some(prev) = last {
-                assert!(lo <= prev + 1 && hi >= prev - 1, "ring {t} m: a gap at column {gx}");
+                assert!(
+                    lo <= prev + 1 && hi >= prev - 1,
+                    "ring {t} m: a gap at column {gx}"
+                );
             }
             last = Some((lo + hi) / 2);
             // Never wider than the minimum width and the anti-aliasing allow.
-            assert!(hi - lo <= 4, "ring {t} m: the river is {} texels wide at {gx}", hi - lo + 1);
+            assert!(
+                hi - lo <= 4,
+                "ring {t} m: the river is {} texels wide at {gx}",
+                hi - lo + 1
+            );
         }
     }
 }

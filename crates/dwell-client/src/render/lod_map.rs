@@ -66,7 +66,11 @@ pub fn uniforms(map: Option<&LodMap>, eye: [f64; 3]) -> Vec<f32> {
         t.blend_from_m as f32,
         t.blend_to_m as f32,
     ]);
-    for (k, v) in ring_uniforms(map, eye).iter().take(2 * MAX_RINGS).enumerate() {
+    for (k, v) in ring_uniforms(map, eye)
+        .iter()
+        .take(2 * MAX_RINGS)
+        .enumerate()
+    {
         u[4 + 4 * k..8 + 4 * k].copy_from_slice(v);
     }
     u
@@ -133,7 +137,11 @@ impl ColorMapGpu {
     /// The stand-in (`full` false: 1×1) or the rings' texture.
     pub fn new(device: &wgpu::Device, full: bool) -> Self {
         let rings = LOD_MAP.rings.len().clamp(1, MAX_RINGS) as u32;
-        let size = if full { LOD_MAP.rings[0].size as u32 } else { 1 };
+        let size = if full {
+            LOD_MAP.rings[0].size as u32
+        } else {
+            1
+        };
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("lod colour map"),
             size: wgpu::Extent3d {

@@ -18,7 +18,7 @@ test('a ring added by data alone reaches the output', () => {
   const d = data();
   d.rings = d.rings.slice(0, 3);
   d.rings.push({ texelM: 512, size: d.rings[0].size });
-  assert.match(lodMapRust(validateLodMap(d)), /LodMapRing \{ texel_m: 512, size: 512 \}/);
+  assert.match(lodMapRust(validateLodMap(d)), /texel_m: 512,\n            size: 512,/);
 });
 
 test('bad entries fail with their path named', () => {

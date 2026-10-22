@@ -83,7 +83,9 @@ export function lodMapRust(data) {
   rs.push("/// The LOD colour map's tunables (shared/look/lodmap.json).");
   rs.push('pub const LOD_MAP: LodMapTunables = LodMapTunables {');
   rs.push('    rings: &[');
-  for (const r of data.rings) rs.push(`        LodMapRing { texel_m: ${r.texelM}, size: ${r.size} },`);
+  for (const r of data.rings) {
+    rs.push('        LodMapRing {', `            texel_m: ${r.texelM},`, `            size: ${r.size},`, '        },');
+  }
   rs.push('    ],');
   rs.push(`    snap_texels: ${data.snapTexels},`);
   rs.push(`    tile_texels: ${data.tileTexels},`);

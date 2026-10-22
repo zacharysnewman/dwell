@@ -2886,7 +2886,8 @@ impl Renderer {
         }
         {
             let u = lod_map::uniforms(self.lod_map.as_ref(), self.eye);
-            self.queue.write_buffer(&self.color_map.uniform, 0, floats(&u));
+            self.queue
+                .write_buffer(&self.color_map.uniform, 0, floats(&u));
         }
         // The characters: other players' bodies in the scene passes, your arms after them with
         // their own projection (characters.rs).

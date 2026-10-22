@@ -128,7 +128,12 @@ fn srgb_byte(v: f64) -> u8 {
 /// Rasterises `rect` (world texels of `texel_m` on the face `terrain` generates) into rgba8 sRGB,
 /// rows of x from `z0`: the column's top colour, water darkened by its depth, rivers drawn over
 /// it from their polylines at least `river_min_texels` wide; alpha 0 beyond the disc.
-pub fn raster(terrain: &TerrainGenerator, t: &LodMapTunables, texel_m: i64, rect: &Rect) -> Vec<u8> {
+pub fn raster(
+    terrain: &TerrainGenerator,
+    t: &LodMapTunables,
+    texel_m: i64,
+    rect: &Rect,
+) -> Vec<u8> {
     let water_state = dwell_blocks::state(t.water_block).unwrap_or(0);
     let water = top_rgb(water_state);
     let shade = |depth: f64| {

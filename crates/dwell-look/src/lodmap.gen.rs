@@ -5,10 +5,22 @@ use crate::lod_map::*;
 /// The LOD colour map's tunables (shared/look/lodmap.json).
 pub const LOD_MAP: LodMapTunables = LodMapTunables {
     rings: &[
-        LodMapRing { texel_m: 4, size: 512 },
-        LodMapRing { texel_m: 16, size: 512 },
-        LodMapRing { texel_m: 64, size: 512 },
-        LodMapRing { texel_m: 256, size: 512 },
+        LodMapRing {
+            texel_m: 4,
+            size: 512,
+        },
+        LodMapRing {
+            texel_m: 16,
+            size: 512,
+        },
+        LodMapRing {
+            texel_m: 64,
+            size: 512,
+        },
+        LodMapRing {
+            texel_m: 256,
+            size: 512,
+        },
     ],
     snap_texels: 16,
     tile_texels: 16384,
