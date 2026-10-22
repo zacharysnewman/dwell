@@ -22,6 +22,7 @@ use dwell_protocol::{
     players as pc, welcome_flags, world as wc,
 };
 use dwell_storage::{PlayerRecord, SaveBatch, SavedLodSection, WorldMeta, WorldStore};
+pub use dwell_worldgen::WorldSettings;
 use dwell_world::brush::brush_policy;
 use dwell_world::edit::{
     DEFAULT_REACH, EditCapsule, EditCheck, below, check_block_edit, edit_writes, medium_kept,
@@ -146,6 +147,9 @@ pub struct ServerConfig {
     pub world_seed: u64,
     /// §6.3; `GENERATOR_FLAT` is the movement playground's flat world.
     pub generator_version: u32,
+    /// The terrain's generation settings (WORLD_GENERATION.md §9): a new world's, from the
+    /// launch options; a saved world's own replace them.
+    pub worldgen: WorldSettings,
     /// Feet position; players spread out around it. Unset: the generator's spawn point.
     pub spawn: Option<[f64; 3]>,
     /// Terrain generation and streaming (§6.3): 0 threads generate on the tick within the budget.
@@ -195,6 +199,7 @@ impl Default for ServerConfig {
             max_players: 16,
             world_seed: 0,
             generator_version: dwell_world::GENERATOR_TERRAIN,
+            worldgen: WorldSettings::default(),
             spawn: None,
             worldgen_threads: 0,
             worldgen_budget: Duration::from_micros(4000),
@@ -600,6 +605,11 @@ impl Server {
         if let Some(meta) = config.store.as_ref().and_then(|s| s.db().load_meta()) {
             config.world_seed = meta.world_seed;
             config.generator_version = meta.generator_version;
+            config.worldgen = WorldSettings::decode(&meta.worldgen).unwrap_or_else(|e| {
+                // A file of this line always holds settings this build reads (RELEASES.md §6).
+                eprintln!("world: its generation settings can't be read ({e}); using the defaults");
+                WorldSettings::default()
+            });
             if meta.spawn.is_some() {
                 config.spawn = meta.spawn;
             }
@@ -607,10 +617,15 @@ impl Server {
         let (generator, air_test) = match &config.generator_override {
             Some(g) => (g.clone(), config.air_test_override.clone()),
             None => (
-                dwell_worldgen::generator_for(config.generator_version, config.world_seed),
-                Some(dwell_worldgen::air_test_for(
+                dwell_worldgen::generator_with(
                     config.generator_version,
                     config.world_seed,
+                    &config.worldgen,
+                ),
+                Some(dwell_worldgen::air_test_with(
+                    config.generator_version,
+                    config.world_seed,
+                    &config.worldgen,
                 )),
             ),
         };
@@ -620,7 +635,11 @@ impl Server {
             .lod_threads
             .unwrap_or(usize::from(config.worldgen_threads > 0));
         let spawn = *config.spawn.get_or_insert_with(|| {
-            dwell_worldgen::spawn_point_for(config.generator_version, config.world_seed)
+            dwell_worldgen::spawn_point_with(
+                config.generator_version,
+                config.world_seed,
+                &config.worldgen,
+            )
         });
         let mut server = Self {
             entropy,
@@ -651,7 +670,11 @@ impl Server {
             next_save_tick: 0,
             save_stats: SaveStats::default(),
             lod: LodPropagation::new(
-                dwell_worldgen::lod_generator_for(config.generator_version, config.world_seed),
+                dwell_worldgen::lod_generator_with(
+                    config.generator_version,
+                    config.world_seed,
+                    &config.worldgen,
+                ),
                 lod_threads,
             ),
             index_updates: BTreeMap::new(),
@@ -924,6 +947,7 @@ impl Server {
                     0
                 },
             registry_hash: self.registry().1,
+            worldgen: self.config.worldgen.encode(),
         };
         // The registry first (ADR 0038): the client maps ids with it when Welcome arrives.
         let (payload, _) = self.registry();
@@ -2262,6 +2286,7 @@ impl Server {
                 saved_at: 0,
                 app_version_created: APP_VERSION.into(),
                 app_version_last: APP_VERSION.into(),
+                worldgen: self.config.worldgen.encode(),
             }),
             ..SaveBatch::default()
         };

@@ -30,7 +30,7 @@ pub static SLIDERS: [Slider; 12] = [
         category: "land",
         toggle: false,
         min: 0.25,
-        max: 2.5,
+        max: 4.0,
         step: 0.05,
         decimals: 2,
         default: 1.0,
@@ -162,6 +162,6 @@ pub static SLIDERS: [Slider; 12] = [
 pub static PRESETS: [Preset; 4] = [
     Preset { id: "default", label: "Default", values: &[] },
     Preset { id: "highlands", label: "Highlands", values: &[("land", 1.15), ("height", 1.4), ("ranges", 5.0), ("rain", 1.25), ("erosion", 0.8), ("snow", 1150.0), ("treeline", 1000.0)] },
-    Preset { id: "archipelago", label: "Archipelago", values: &[("land", 0.7), ("coast", 2.4), ("height", 0.6), ("ranges", 1.0), ("rain", 0.9), ("snow", 2200.0), ("trees", 1.3)] },
+    Preset { id: "archipelago", label: "Archipelago", values: &[("land", 0.85), ("coast", 4.0), ("height", 0.6), ("ranges", 2.0), ("rain", 0.9), ("snow", 2200.0), ("trees", 1.3)] },
     Preset { id: "lakeCountry", label: "Lake Country", values: &[("lakes", 1.0), ("height", 0.8), ("ranges", 2.0), ("rain", 1.6), ("erosion", 0.75), ("coast", 0.7), ("trees", 1.6), ("treeline", 1500.0)] },
 ];

@@ -21,7 +21,8 @@ type Key3 = (i32, i32, i32);
 type Key4 = (i32, i32, i32, i32);
 
 /// Scalars by name: format_version, registry_hash, world_seed, generator_version, world_tick,
-/// created_at, saved_at (little-endian u64/i64), spawn (3 × f64), app versions (UTF-8).
+/// created_at, saved_at (little-endian u64/i64), spawn (3 × f64), app versions and the generation
+/// settings, `worldgen` (UTF-8; absent in files from before 0.27: the defaults).
 const META: TableDefinition<&str, &[u8]> = TableDefinition::new("meta");
 const SETTINGS: TableDefinition<&str, &str> = TableDefinition::new("settings");
 /// (cx, cy, cz) → (revision, generator version, LZ4 palette + RLE of world state ids).
@@ -53,6 +54,9 @@ pub struct WorldMeta {
     /// `created` is kept if the file already has one.
     pub app_version_created: String,
     pub app_version_last: String,
+    /// The world's generation settings, encoded (`dwell_worldgen::settings`, WORLD_GENERATION.md
+    /// §9): chosen at creation and never changed. Empty, or absent in an older file: the defaults.
+    pub worldgen: String,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -211,6 +215,7 @@ fn meta_from(get: impl Fn(&str) -> Option<Vec<u8>>) -> Option<WorldMeta> {
         }),
         app_version_created: text("app_version_created"),
         app_version_last: text("app_version_last"),
+        worldgen: text("worldgen"),
     })
 }
 
@@ -587,6 +592,11 @@ impl WorldDb {
                 if !m.app_version_last.is_empty() {
                     meta.insert("app_version_last", m.app_version_last.as_bytes())
                         .map_err(err)?;
+                }
+                // The settings are the world's from its creation: written when given, never
+                // cleared (an empty one is the defaults, as is a missing one).
+                if !m.worldgen.is_empty() {
+                    meta.insert("worldgen", m.worldgen.as_bytes()).map_err(err)?;
                 }
                 // Kept if present: the world's creation is recorded once.
                 let has_created = meta.get("created_at").map_err(err)?.is_some();

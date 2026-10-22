@@ -132,6 +132,8 @@ impl LocalWorld {
     /// it, and a saved world's seed and generator win. Throws if the file is locked to another
     /// version (RELEASES.md §6). With `spawn_face_b` a new world's spawn is on face B (`?spawn=b`);
     /// with `spawn_portal` by a portal's opening on that face (`?spawn=portal`, `portal-b`).
+    /// `worldgen`: a new world's generation settings, encoded (WORLD_GENERATION.md §9; a saved
+    /// world keeps its own); throws on settings this build can't read.
     #[wasm_bindgen(constructor)]
     pub fn new(
         world_seed: f64,
@@ -139,7 +141,10 @@ impl LocalWorld {
         file: Option<FileSystemSyncAccessHandle>,
         spawn_face_b: Option<bool>,
         spawn_portal: Option<bool>,
+        worldgen: Option<String>,
     ) -> Result<LocalWorld, JsError> {
+        let worldgen = dwell_worldgen::WorldSettings::decode(worldgen.as_deref().unwrap_or(""))
+            .map_err(|e| JsError::new(&e))?;
         let backend = file.map(OpfsBackend::register);
         let face = if spawn_face_b == Some(true) {
             dwell_world::Face::B
@@ -151,6 +156,7 @@ impl LocalWorld {
             spawn_portal == Some(true),
             world_seed as u64,
             generator_version,
+            worldgen,
             backend,
             Box::new(WebEntropy),
         ) {

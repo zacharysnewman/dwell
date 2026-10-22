@@ -36,6 +36,7 @@ fn meta() -> WorldMeta {
         saved_at: 0,
         app_version_created: "0.9.0".into(),
         app_version_last: "0.9.1".into(),
+        worldgen: "land:0.85,coast:4".into(),
     }
 }
 

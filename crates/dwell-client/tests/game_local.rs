@@ -305,6 +305,7 @@ impl Rig {
             let pool = Pool::new(Box::new(InlineJobs::new(Runner::world(
                 self.generator,
                 SEED,
+                &Default::default(),
             ))));
             let c = ChunkCoord::from_array(verification_chunk);
             let mut game = Game::new(

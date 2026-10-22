@@ -69,6 +69,8 @@ fn decoded_fields_are_the_vectors_values() {
     };
     assert_eq!(w.player_id, 42);
     assert_eq!(w.world_seed, 0x0123_4567_89ab_cdef);
+    // v19: the generation settings ride with the seed.
+    assert_eq!(w.worldgen, "land:0.85,coast:4");
     let Some(Message::PhysicsSnapshot(s)) = Message::decode(&get("physics_snapshot")) else {
         panic!("physics_snapshot")
     };

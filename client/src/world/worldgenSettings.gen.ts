@@ -70,7 +70,7 @@ export const SLIDERS: readonly SettingsSlider[] = [
     "category": "land",
     "toggle": false,
     "min": 0.25,
-    "max": 2.5,
+    "max": 4,
     "step": 0.05,
     "decimals": 2,
     "default": 1,
@@ -260,10 +260,10 @@ export const PRESETS: readonly SettingsPreset[] = [
     "label": "Archipelago",
     "description": "A ragged coast broken into islands and inlets, low hills and a warmer climate.",
     "values": {
-      "land": 0.7,
-      "coast": 2.4,
+      "land": 0.85,
+      "coast": 4,
       "height": 0.6,
-      "ranges": 1,
+      "ranges": 2,
       "rain": 0.9,
       "snow": 2200,
       "trees": 1.3

@@ -65,6 +65,9 @@ pub struct Welcome {
     /// The definitions hash: FNV-1a 64 of the registry payload the server sent in its
     /// `BlockRegistry` parts (ADR 0038), for logs and the join prompt's "don't ask again".
     pub registry_hash: u64,
+    /// The world's generation settings, encoded (`dwell_worldgen::settings`, WORLD_GENERATION.md
+    /// §9; empty: the defaults): the client generates its chunks, LOD and world map under them.
+    pub worldgen: String,
 }
 
 /// S→C reliable, control channel, before `Welcome` (ADR 0038): part `part` of `parts` of the
@@ -818,6 +821,7 @@ fn write_body(w: &mut ByteWriter, m: &Message) {
             write_coord(w, &m.verification_chunk);
             w.u8(m.flags);
             w.u64(m.registry_hash);
+            w.str(clamp_str(&m.worldgen, limits::WORLDGEN_SETTINGS_MAX_BYTES));
         }
         M::Reject(m) => {
             w.u8(m.reason as u8);
@@ -1044,6 +1048,7 @@ fn read_body(r: &mut ByteReader, t: MessageType) -> Option<Message> {
             verification_chunk: read_coord(r),
             flags: r.u8(),
             registry_hash: r.u64(),
+            worldgen: r.str(limits::WORLDGEN_SETTINGS_MAX_BYTES),
         }),
         T::Reject => {
             let reason = RejectReason::from_u8(r.u8())?;

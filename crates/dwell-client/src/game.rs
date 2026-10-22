@@ -1230,8 +1230,13 @@ impl<S: Scene> Game<S> {
     /// edits, and brush strokes with the world type's brush reach (BRUSHES.md).
     /// The world's portals (BIFACIAL_WORLD.md §12): their axes and mote look, from the generator
     /// and seed the server announced, for the motes drawn in their shafts.
-    pub fn set_world(&mut self, generator_version: u32, world_seed: u64) {
-        self.portals = dwell_worldgen::portal_axes_for(generator_version, world_seed);
+    pub fn set_world(
+        &mut self,
+        generator_version: u32,
+        world_seed: u64,
+        settings: &dwell_worldgen::WorldSettings,
+    ) {
+        self.portals = dwell_worldgen::portal_axes_with(generator_version, world_seed, settings);
     }
 
     pub fn set_capabilities(&mut self, region_edits: bool, brushes: bool, generator_version: u32) {

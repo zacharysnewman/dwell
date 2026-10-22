@@ -1,6 +1,6 @@
 {
   "$comment": "Single source of truth for protocol constants (ARCHITECTURE.md §7.4, §8). Run `node shared/protocol/gen.mjs` after editing; CI fails if generated files are stale.",
-  "protocolVersion": 18,
+  "protocolVersion": 19,
   "simHz": 60,
   "snapshotHz": 20,
   "maxDatagramBytes": 1200,
@@ -66,7 +66,8 @@
     "rejectMessageMaxBytes": 256,
     "maxResyncChunks": 64,
     "maxLodIndexEntries": 16384,
-    "maxEditAckRejected": 1024
+    "maxEditAckRejected": 1024,
+    "worldgenSettingsMaxBytes": 512
   },
   "regionEdit": {
     "maxSide": 32,

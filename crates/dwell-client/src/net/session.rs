@@ -37,6 +37,9 @@ pub enum SessionState {
         /// The server takes brush strokes in this world: `KEEP` paste cells and the world type's
         /// brush reach (`welcome_flags::BRUSHES`, BRUSHES.md).
         brushes: bool,
+        /// The world's generation settings, canonically encoded (`dwell_worldgen::settings`):
+        /// the client's chunks, LOD and world map are generated under them.
+        worldgen: String,
     },
     Rejected {
         reason: RejectReason,
@@ -177,6 +180,16 @@ impl Session {
     }
 
     fn join(&mut self, w: Welcome) {
+        // Settings this build can't generate would make different terrain: refuse to join.
+        let worldgen = match dwell_worldgen::WorldSettings::decode(&w.worldgen) {
+            Ok(s) => s.encode(),
+            Err(e) => {
+                self.fail(format!(
+                    "This world's generation settings need another version of Dwell ({e})."
+                ));
+                return;
+            }
+        };
         self.stats.server_tick = w.server_tick;
         self.set_state(SessionState::Joined {
             player_id: w.player_id,
@@ -186,6 +199,7 @@ impl Session {
             may_fly: w.flags & welcome_flags::FLIGHT != 0,
             region_edits: w.flags & welcome_flags::REGION_EDITS != 0,
             brushes: w.flags & welcome_flags::BRUSHES != 0,
+            worldgen,
         });
     }
 
@@ -562,6 +576,7 @@ mod tests {
             verification_chunk: [0, 2, 0],
             flags: welcome_flags::FLIGHT,
             registry_hash,
+            worldgen: String::new(),
         })
     }
 
@@ -664,6 +679,7 @@ mod tests {
                 may_fly: true,
                 region_edits: false,
                 brushes: false,
+                worldgen: String::new(),
             }
         );
         // World messages wait for the game, in order.

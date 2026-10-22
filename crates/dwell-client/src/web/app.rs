@@ -1414,12 +1414,14 @@ impl Client {
                 world_seed,
                 generator_version,
                 may_fly,
+                worldgen,
                 ..
             }) => {
                 set(&o, "phase", "joined");
                 set(&o, "playerId", *player_id);
                 set(&o, "worldSeed", js_sys::BigInt::from(*world_seed));
                 set(&o, "generatorVersion", *generator_version);
+                set(&o, "worldgen", worldgen.as_str());
                 set(&o, "mayFly", *may_fly);
             }
             Some(SessionState::Rejected { reason, message }) => {
@@ -1941,11 +1943,12 @@ impl Inner {
             may_fly,
             region_edits,
             brushes,
+            worldgen,
         }) = self.session.as_ref().map(|s| s.state().clone())
         else {
             return;
         };
-        let Some(maps) = self.world_maps(world_seed, generator_version) else {
+        let Some(maps) = self.world_maps(world_seed, generator_version, &worldgen) else {
             return;
         };
         let workers = self.options.workers;
@@ -1953,7 +1956,7 @@ impl Inner {
             &self.options.make_worker,
             workers,
             workers,
-            (generator_version, world_seed),
+            (generator_version, world_seed, worldgen.clone()),
             &maps,
         ) {
             Ok(j) => j,
@@ -1977,7 +1980,11 @@ impl Inner {
         game.viewport_css = (f64::from(size.0) / ratio, f64::from(size.1) / ratio);
         game.debug_visible = self.debug_visible;
         game.set_capabilities(region_edits, brushes, generator_version);
-        game.set_world(generator_version, world_seed);
+        game.set_world(
+            generator_version,
+            world_seed,
+            &dwell_worldgen::WorldSettings::decode(&worldgen).unwrap_or_default(),
+        );
         game.day_override = self.options.day;
         game.set_loading_screen(self.options.loading_screen);
         game.set_crossing_roll(self.crossing_roll);
@@ -2020,7 +2027,12 @@ impl Inner {
     /// The world's maps (ADR 0049), once they are here and installed in this instance: asks the
     /// shell for them the first time, `None` while they are on the way. A world without terrain,
     /// a shell without `prepareWorld` or a failure: no maps (each instance computes its own).
-    fn world_maps(&mut self, world_seed: u64, generator_version: u32) -> Option<Vec<Uint8Array>> {
+    fn world_maps(
+        &mut self,
+        world_seed: u64,
+        generator_version: u32,
+        worldgen: &str,
+    ) -> Option<Vec<Uint8Array>> {
         if generator_version != dwell_world::GENERATOR_TERRAIN {
             return Some(Vec::new());
         }
@@ -2058,10 +2070,11 @@ impl Inner {
             return Some(Vec::new());
         };
         let slot: MapsSlot = Rc::default();
-        let promise = prepare.call2(
+        let promise = prepare.call3(
             &JsValue::NULL,
             &js_sys::BigInt::from(world_seed).into(),
             &generator_version.into(),
+            &worldgen.into(),
         );
         let into = slot.clone();
         spawn_local(async move {

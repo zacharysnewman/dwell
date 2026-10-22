@@ -1,13 +1,15 @@
 //! A top-down view of the terrain as chunks generate it (ADR 0049): a square of columns rendered as
 //! a hillshaded PNG with water, snow, rock and sand, to judge the world map's terrain without the
 //! game. `cargo run --release -p dwell-worldgen --example terrain_view -- --seed 7 --face a
-//! --x 0 --z 0 --size 2048 --step 4 --out FILE.png`, and timings of the map and a few chunks.
+//! --x 0 --z 0 --size 2048 --step 4 --out FILE.png [--preset highlands | --settings land:0.7,…]`,
+//! and timings of the map and a few chunks. With a preset or settings (`settings.json`), the world
+//! is generated under them; the portals' sites are listed.
 
 use std::time::Instant;
 
 use dwell_world::{Chunk, ChunkCoord, Face, SEA_LEVEL_M};
 use dwell_worldgen::terrain::{Band, Water};
-use dwell_worldgen::{BifacialTerrain, bifacial::face_seed};
+use dwell_worldgen::{BifacialTerrain, WorldSettings};
 
 fn arg(args: &[String], name: &str, default: &str) -> String {
     args.iter()
@@ -29,11 +31,19 @@ fn main() {
     let size: i32 = arg(&args, "--size", "2048").parse().expect("size");
     let step: i32 = arg(&args, "--step", "4").parse().expect("step");
     let out = arg(&args, "--out", "terrain.png");
+    let preset = arg(&args, "--preset", "");
+    let settings = if preset.is_empty() {
+        WorldSettings::decode(&arg(&args, "--settings", "")).expect("--settings")
+    } else {
+        WorldSettings::preset(&preset).expect("--preset names a preset of settings.json")
+    };
+    println!("settings {:?} (map hash {:016x})", settings.encode(), settings.map_hash());
     let t0 = Instant::now();
-    let terrain = BifacialTerrain::new(seed);
+    let terrain = BifacialTerrain::with_settings(seed, &settings);
     println!("maps and portals: {:.2} s", t0.elapsed().as_secs_f64());
+    println!("portals {:?}", terrain.portal_sites());
     let g = terrain.local(face);
-    let map = dwell_worldgen::worldmap::for_seed(face_seed(seed, face));
+    let map = g.map().clone();
     println!(
         "map digest {:016x}: {} lakes, {} rivers",
         map.digest(),
