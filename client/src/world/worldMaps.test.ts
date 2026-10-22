@@ -28,9 +28,12 @@ function deps(store: MapStore | null): MapDeps & { builds: string[]; progress: n
   return {
     builds,
     progress,
-    keys: (seed) => [`fp-a-${seed.toString()}`, `fp-b-${seed.toString()}`],
-    build: (seed, face) => {
-      builds.push(`${seed.toString()}/${String(face)}`);
+    keys: (seed, worldgen) => [
+      `fp-a-${worldgen}${seed.toString()}`,
+      `fp-b-${worldgen}${seed.toString()}`,
+    ],
+    build: (seed, face, worldgen) => {
+      builds.push(`${worldgen}${seed.toString()}/${String(face)}`);
       return Promise.resolve(new Uint8Array([Number(seed % 256n), face]));
     },
     store,
@@ -46,7 +49,7 @@ describe('world maps (ADR 0049)', () => {
   it('builds both faces once, keeps them, and reads them back on a later visit', async () => {
     const store = new MemoryStore();
     const first = deps(store);
-    const maps = await worldMaps(7n, GENERATOR_TERRAIN, first);
+    const maps = await worldMaps(7n, GENERATOR_TERRAIN, '', first);
     expect(maps).toEqual([new Uint8Array([7, 0]), new Uint8Array([7, 1])]);
     expect(first.builds).toEqual(['7/0', '7/1']);
     expect([...store.entries.keys()]).toEqual(['fp-a-7', 'fp-b-7']);
@@ -58,29 +61,45 @@ describe('world maps (ADR 0049)', () => {
     // A later page (nothing in memory): from the store, nothing built.
     forgetWorldMaps();
     const later = deps(store);
-    expect(await worldMaps(7n, GENERATOR_TERRAIN, later)).toEqual(maps);
+    expect(await worldMaps(7n, GENERATOR_TERRAIN, '', later)).toEqual(maps);
     expect(later.builds).toEqual([]);
   });
 
   it('shares one promise between the local world and the client on a page', async () => {
     const d = deps(null);
-    const a = worldMaps(3n, GENERATOR_TERRAIN, d);
-    const b = worldMaps(3n, GENERATOR_TERRAIN, d);
+    const a = worldMaps(3n, GENERATOR_TERRAIN, '', d);
+    const b = worldMaps(3n, GENERATOR_TERRAIN, '', d);
     expect(a).toBe(b);
     await a;
     expect(d.builds).toEqual(['3/0', '3/1']);
   });
 
+  it('keeps the maps of other generation settings apart (WORLD_GENERATION.md §9)', async () => {
+    const store = new MemoryStore();
+    const d = deps(store);
+    const plain = worldMaps(4n, GENERATOR_TERRAIN, '', d);
+    const lakes = worldMaps(4n, GENERATOR_TERRAIN, 'lakes:1', d);
+    expect(lakes).not.toBe(plain);
+    await Promise.all([plain, lakes]);
+    expect(d.builds).toEqual(['4/0', '4/1', 'lakes:14/0', 'lakes:14/1']);
+    expect([...store.entries.keys()]).toEqual([
+      'fp-a-4',
+      'fp-b-4',
+      'fp-a-lakes:14',
+      'fp-b-lakes:14',
+    ]);
+  });
+
   it('has no maps for a world without terrain', () => {
-    expect(worldMaps(3n, 0, deps(null))).toBeNull();
-    expect(worldMaps(3n, 100, deps(null))).toBeNull();
+    expect(worldMaps(3n, 0, '', deps(null))).toBeNull();
+    expect(worldMaps(3n, 100, '', deps(null))).toBeNull();
   });
 
   it('builds when the store is blocked, and still answers', async () => {
     const store = new MemoryStore();
     store.failing = true;
     const d = deps(store);
-    expect(await worldMaps(9n, GENERATOR_TERRAIN, d)).toEqual([
+    expect(await worldMaps(9n, GENERATOR_TERRAIN, '', d)).toEqual([
       new Uint8Array([9, 0]),
       new Uint8Array([9, 1]),
     ]);
@@ -91,10 +110,11 @@ describe('world maps (ADR 0049)', () => {
     const d = deps(null);
     let fail = true;
     const build = d.build;
-    d.build = (seed, face) => (fail ? Promise.reject(new Error('no worker')) : build(seed, face));
-    await expect(worldMaps(5n, GENERATOR_TERRAIN, d)).rejects.toThrow('no worker');
+    d.build = (seed, face, worldgen) =>
+      fail ? Promise.reject(new Error('no worker')) : build(seed, face, worldgen);
+    await expect(worldMaps(5n, GENERATOR_TERRAIN, '', d)).rejects.toThrow('no worker');
     fail = false;
-    expect(await worldMaps(5n, GENERATOR_TERRAIN, d)).toHaveLength(2);
+    expect(await worldMaps(5n, GENERATOR_TERRAIN, '', d)).toHaveLength(2);
   });
 
   it('drops the least recently used maps past the limit', () => {

@@ -16,6 +16,8 @@ import type { ListedServer, Lobby, LobbyQuery, Nearby } from '../net/master';
 import { looksLikeAddress, pastedCode, pastedInvite } from './launch';
 import type { RecentServer } from './recentServers';
 import { ServerBrowser } from './serverBrowser';
+import { WorldgenPanel } from './worldgenPanel';
+import { worldgenLabel } from '../world/worldgenSettings';
 import { audio } from '../audio/engine';
 
 export interface MainMenuDeps {
@@ -72,10 +74,14 @@ export function formatPlayed(at: number, now: number): string {
   return `played ${String(days)} day${days === 1 ? '' : 's'} ago`;
 }
 
-/** A world's details line: "Terrain · seed 42 · played 3 h ago · v0.1.0". */
+/**
+ * A world's details line: "Terrain · seed 42 · played 3 h ago · v0.1.0", with its generation preset
+ * after the type when it has settings ("Terrain · Highlands · seed 42 · …", or "Custom").
+ */
 export function worldDetails(world: WorldMeta, now: number): string {
   const version = world.appVersion ? ` · v${world.appVersion}` : '';
-  return `${typeLabel(world.type)} · seed ${String(world.seed)} · ${formatPlayed(world.lastPlayedAt, now)}${version}`;
+  const settings = world.worldgen ? ` · ${worldgenLabel(world.worldgen)}` : '';
+  return `${typeLabel(world.type)}${settings} · seed ${String(world.seed)} · ${formatPlayed(world.lastPlayedAt, now)}${version}`;
 }
 
 function button(label: string, className: string, onClick: () => void): HTMLButtonElement {
@@ -117,6 +123,8 @@ export class MainMenu {
   private readonly list = document.createElement('ul');
   private readonly message = document.createElement('p');
   private readonly form = document.createElement('form');
+  /** The new world's generation settings (terrain worlds only). */
+  readonly worldgen = new WorldgenPanel();
   /** Worlds saved before versioned releases (RELEASES.md §6): listed only to be deleted. */
   private readonly legacy = document.createElement('section');
 
@@ -268,15 +276,24 @@ export class MainMenu {
     const hint = document.createElement('p');
     hint.className = 'menu-hint';
     hint.textContent = 'Seed: a number, or any text. The same seed makes the same world.';
-    f.append(field('Name', name), field('Seed', seed), field('Type', type), hint, submit);
+    // The terrain's generation settings (WORLD_GENERATION.md §9): chosen now, kept for good.
+    const worldgen = this.worldgen.root;
+    const showWorldgen = () => {
+      worldgen.hidden = type.value !== 'terrain';
+    };
+    type.addEventListener('change', showWorldgen);
+    showWorldgen();
+    f.append(field('Name', name), field('Seed', seed), field('Type', type), hint, worldgen, submit);
     f.addEventListener('submit', (e) => {
       e.preventDefault();
       // The build that opens it creates it (its generator, its version).
+      const gen = type.value === 'terrain' ? this.worldgen.encoded() : '';
       this.deps.go({
         new: '1',
         name: cleanName(name.value, 'New world'),
         seed: seed.value.trim(),
         type: type.value,
+        ...(gen ? { gen } : {}),
       });
     });
   }

@@ -25,7 +25,11 @@ export interface ConnectOptions {
    * A terrain world's maps (ADR 0049; `world/worldMaps.ts`): the local world's server installs
    * them rather than computing its own on its thread.
    */
-  worldMaps?: (seed: bigint, generatorVersion: number) => Promise<Uint8Array[]> | null;
+  worldMaps?: (
+    seed: bigint,
+    generatorVersion: number,
+    worldgen: string,
+  ) => Promise<Uint8Array[]> | null;
 }
 
 export class TransportUnavailableError extends Error {
@@ -98,7 +102,11 @@ export async function connectLocal(
   let maps: Uint8Array[] | undefined;
   try {
     maps =
-      (await options.worldMaps?.(BigInt(world.worldSeed), world.generatorVersion)) ?? undefined;
+      (await options.worldMaps?.(
+        BigInt(world.worldSeed),
+        world.generatorVersion,
+        world.worldgen ?? '',
+      )) ?? undefined;
   } catch (err) {
     // The server computes its own (slower to start, the same terrain).
     console.warn('Dwell: the world maps are unavailable', err);

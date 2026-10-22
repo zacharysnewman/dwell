@@ -7,6 +7,8 @@ export type ToWorker =
       t: 'start';
       worldSeed: number;
       generatorVersion: number;
+      /** A new world's generation settings, encoded (a saved world keeps its own). */
+      worldgen?: string;
       file?: string;
       spawnFaceB?: boolean;
       spawnPortal?: boolean;

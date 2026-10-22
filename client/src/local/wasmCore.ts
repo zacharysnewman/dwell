@@ -52,10 +52,18 @@ export class LocalCore {
     file: FileSystemSyncAccessHandle | null = null,
     spawnFaceB = false,
     spawnPortal = false,
+    worldgen = '',
   ): Promise<LocalCore> {
     const exports = (await loadWasm()) as { memory?: WebAssembly.Memory };
     const core = new LocalCore(
-      new LocalWorld(worldSeed, generatorVersion, file ?? undefined, spawnFaceB, spawnPortal),
+      new LocalWorld(
+        worldSeed,
+        generatorVersion,
+        file ?? undefined,
+        spawnFaceB,
+        spawnPortal,
+        worldgen,
+      ),
     );
     core.memory = exports.memory ?? null;
     return core;

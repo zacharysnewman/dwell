@@ -28,6 +28,12 @@ export interface WorldMeta {
    * ignored (the menu offers to delete them).
    */
   appVersion?: string;
+  /**
+   * The world's generation settings, encoded (`world/worldgenSettings.ts`, WORLD_GENERATION.md §9):
+   * chosen when it was created. Absent on worlds from before 0.27, and empty: the defaults. The
+   * world file holds them too and wins; these start a new file and label the menu's row.
+   */
+  worldgen?: string;
 }
 
 /** The part of `Storage` the index uses. */
@@ -43,7 +49,7 @@ export const MAX_NAME_LENGTH = 40;
  * Worlds saved before the index existed, and those opened by `?world=`/`?seed=` links
  * (`localWorldName` in worldFiles.ts).
  */
-const LEGACY_ID = /^local-g(\d+)-s(\d+)$/;
+const LEGACY_ID = /^local-g(\d+)-s(\d+)(?:-w[0-9a-f]{8})?$/;
 
 /** The world type of a generator version (a retired version counts as its type's current one). */
 export function typeOfGenerator(generatorVersion: number): WorldType {
@@ -178,7 +184,7 @@ export class WorldIndex {
 
   /** Creates a new world's entry (its file is created when it is first played). */
   create(
-    options: { name: string; type: CreatableType; seed: number },
+    options: { name: string; type: CreatableType; seed: number; worldgen?: string },
     now: number,
     random: () => number = Math.random,
   ): WorldMeta {
@@ -194,6 +200,7 @@ export class WorldIndex {
       createdAt: now,
       lastPlayedAt: now,
       appVersion: recordedVersion(),
+      ...(options.worldgen ? { worldgen: options.worldgen } : {}),
     };
     this.put(world);
     return world;
@@ -205,7 +212,7 @@ export class WorldIndex {
    * the version to record: this build's for a world the link is creating now, none for a file
    * that was already there (saved before versioned releases, so ignored).
    */
-  adopt(id: string, now: number, appVersion?: string): WorldMeta | null {
+  adopt(id: string, now: number, appVersion?: string, worldgen?: string): WorldMeta | null {
     const existing = this.get(id);
     if (existing) return existing;
     const m = LEGACY_ID.exec(id);
@@ -223,6 +230,7 @@ export class WorldIndex {
       createdAt: now,
       lastPlayedAt: 0,
       ...(appVersion ? { appVersion } : {}),
+      ...(worldgen ? { worldgen } : {}),
     };
     this.put(world);
     return world;

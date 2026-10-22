@@ -32,6 +32,7 @@ import type { SessionReport } from './net/sessionState';
 import { rememberTrust, showRegistryPrompt, trustedHash } from './ui/registryPrompt';
 import { sameLine } from './version/semver';
 import { parseLocalWorld, type LocalWorld } from './local/world';
+import { canonicalWorldgen } from './world/worldgenSettings';
 import { cleanName, creatableType, parseSeed, WorldIndex } from './local/worldIndex';
 import { worldAccess } from './local/worldAccess';
 import { deleteWorldFiles, listWorldFiles, localWorldName } from './local/worldFiles';
@@ -469,7 +470,7 @@ let maps: MapDeps | null = null;
 /** How this page gets a terrain world's maps (ADR 0049; `world/worldMaps.ts`). */
 function mapDeps(): MapDeps {
   maps ??= {
-    keys: (seed) => worldMapKeys(seed),
+    keys: (seed, worldgen) => worldMapKeys(seed, worldgen),
     build: workerBuilder(makeJobWorker),
     store: typeof indexedDB === 'undefined' ? null : new IndexedDbMapStore(),
     onProgress: (ready, needed) => {
@@ -495,8 +496,8 @@ async function start(): Promise<App | null> {
       clientVersion: recordedVersion(),
       makeWorker: makeJobWorker,
       // A terrain world's maps (ADR 0049): cached, or built in workers, never on this thread.
-      prepareWorld: (seed: bigint, version: number) =>
-        worldMaps(seed, version, mapDeps()) ?? Promise.resolve(null),
+      prepareWorld: (seed: bigint, version: number, worldgen: string) =>
+        worldMaps(seed, version, worldgen, mapDeps()) ?? Promise.resolve(null),
       workers: defaultWorkerCount(mobile),
       lod: params.get('lod') !== '0',
       lodColors: params.get('lodcolors') === '1',
@@ -897,8 +898,19 @@ async function makeWorld(
 ): Promise<string | { message: string }> {
   if (launch.kind === 'new') {
     const type = creatableType(launch.type);
+    // Generation settings this build can't read were chosen on another version's menu.
+    const worldgen = canonicalWorldgen(launch.gen);
+    if (worldgen === null) {
+      return { message: 'Those world settings are from another version of Dwell.' };
+    }
     const world = index.create(
-      { name: cleanName(launch.name, 'New world'), type, seed: parseSeed(launch.seed) },
+      {
+        name: cleanName(launch.name, 'New world'),
+        type,
+        seed: parseSeed(launch.seed),
+        // Only the terrain is generated under them.
+        ...(type === 'terrain' && worldgen ? { worldgen } : {}),
+      },
       Date.now(),
     );
     return world.id;
@@ -1016,6 +1028,7 @@ async function connect(app: App): Promise<void> {
       worldSeed: world.seed,
       generatorVersion: world.generatorVersion,
       file: world.id,
+      ...(world.worldgen ? { worldgen: world.worldgen } : {}),
     };
     worldName = world.name;
     index.touch(world.id, Date.now());
@@ -1026,7 +1039,12 @@ async function connect(app: App): Promise<void> {
     const name =
       localWorld.file ?? localWorldName(localWorld.generatorVersion, localWorld.worldSeed);
     const existed = (await listWorldFiles()).includes(name);
-    const world = index.adopt(name, Date.now(), existed ? undefined : recordedVersion());
+    const world = index.adopt(
+      name,
+      Date.now(),
+      existed ? undefined : recordedVersion(),
+      localWorld.worldgen,
+    );
     const access = world ? worldAccess(world, buildInfo.version) : null;
     if (access && !access.ok) {
       openMainMenu(app, access.message);
@@ -1056,7 +1074,7 @@ async function connect(app: App): Promise<void> {
     clientVersion: recordedVersion(),
     transport: preference,
     ...(localWorld ? { localWorld } : {}),
-    worldMaps: (seed, version) => worldMaps(seed, version, mapDeps()),
+    worldMaps: (seed, version, worldgen) => worldMaps(seed, version, worldgen, mapDeps()),
   };
   status.textContent = localWorld ? `Starting ${target}…` : `Connecting to ${target}…`;
   const client = app.client;

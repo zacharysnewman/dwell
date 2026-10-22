@@ -132,14 +132,23 @@ describe('where routes open', () => {
       name: 'Hill',
       seed: '42',
       type: 'flat',
+      gen: '',
+    });
+    // The generation settings ride as `gen` (WORLD_GENERATION.md §9).
+    expect(launchOf('?new=1&name=Isles&seed=7&type=terrain&gen=land:0.85,coast:4')).toEqual({
+      kind: 'new',
+      name: 'Isles',
+      seed: '7',
+      type: 'terrain',
+      gen: 'land:0.85,coast:4',
     });
     // `seed` alone is a world by link; with `new` it is the new world's seed.
     expect(launchOf('?seed=42').kind).toBe('link');
     expect(launchOf('?regenerate=wabc')).toEqual({ kind: 'regenerate', id: 'wabc' });
     // A route replaces another's parameters, keeping debug flags.
-    expect(withRoute('?new=1&name=Hill&seed=1&type=flat&debug=1', { play: 'wabc' })).toBe(
-      '?debug=1&play=wabc',
-    );
+    expect(
+      withRoute('?new=1&name=Hill&seed=1&type=flat&gen=lakes:1&debug=1', { play: 'wabc' }),
+    ).toBe('?debug=1&play=wabc');
     expect(withRoute('?say=gone', {})).toBe('');
   });
 });

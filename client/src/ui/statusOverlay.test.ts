@@ -8,6 +8,7 @@ const joined: SessionState = {
   playerId: 2,
   worldSeed: 0n,
   generatorVersion: 1,
+  worldgen: '',
   mayFly: false,
 };
 const stats = { rttMs: 12.4, datagramRttMs: null, serverTick: 99, hostPaused: false };
