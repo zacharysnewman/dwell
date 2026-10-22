@@ -7,31 +7,16 @@ const raster = { name: 'raster' };
 
 describe('bench --compare configurations', () => {
   it('parses the checked-in file', () => {
-    const file = parseConfigs(
-      JSON.parse(
-        readFileSync(new URL('../bench/configs.json', import.meta.url), 'utf8'),
-      ) as unknown,
-    );
+    // Derived from the file, so a new configuration needs no edit here: every entry parses (a bad
+    // one throws with its name), in the file's order, and the baseline is one of them.
+    const raw = JSON.parse(
+      readFileSync(new URL('../bench/configs.json', import.meta.url), 'utf8'),
+    ) as { baseline: string; configs: { name: string }[] };
+    const file = parseConfigs(raw);
     expect(file.baseline).toBe('raster');
-    expect(file.configs.map((c) => c.name)).toEqual([
-      'raster',
-      'outline-silhouette',
-      'outline-creases',
-      'outline-blocks',
-      'pixelart-180',
-      'pixelart-270',
-      'pixelart-270-warm',
-      'pixelart-270-snap',
-      'pixelart-360',
-      'shadows-low',
-      'shadows-off',
-      'torch-shadows-off',
-      'torch-shadows-high',
-      'lod-shadows-off',
-      'raster-half',
-      'loading-off',
-      'respawn-preload-off',
-    ]);
+    expect(file.configs.map((c) => c.name)).toEqual(raw.configs.map((c) => c.name));
+    expect(file.configs.length).toBeGreaterThan(1);
+    expect(selectConfigs(file, [])[0].name).toBe(file.baseline);
   });
 
   it('a new configuration works by data alone', () => {

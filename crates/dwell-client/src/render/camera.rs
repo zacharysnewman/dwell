@@ -144,8 +144,28 @@ mod tests {
 
     use dwell_game::face_flip::{FaceFlip, ROLL_SECONDS};
 
+    /// The angle between unit vectors `a` and `b`. By atan2 rather than `acos(a·b)`: acos is
+    /// ill-conditioned at ±1, where a·b one ulp off 1 (as libm's sin and cos give on Linux) reads
+    /// as 1.5e-8, so a vector against itself measured a turn larger than the next frame's.
     fn angle(a: V3, b: V3) -> f64 {
-        dot(a, b).clamp(-1.0, 1.0).acos()
+        let c = cross(a, b);
+        dot(c, c).sqrt().atan2(dot(a, b))
+    }
+
+    /// The CI failure (Linux, 0.24.1–0.25.1): the roll test measured the first view against
+    /// itself as 1.49e-8 rad, because acos(a·a) for a unit vector a few ulps short of length 1 is
+    /// not 0. The helper reads exactly 0 and π for such vectors (pure arithmetic: every platform).
+    #[test]
+    fn the_angle_helper_is_exact_for_unit_vectors_a_few_ulps_off() {
+        let mut short = 0;
+        for i in 1..200 {
+            let t = f64::from(i) * 0.37;
+            let v = normalize([t.sin(), 0.3 * t, t.cos() - 0.5]);
+            short += usize::from(dot(v, v) < 1.0);
+            assert_eq!(angle(v, v), 0.0, "{v:?}");
+            assert!((angle(v, v.map(|c| -c)) - std::f64::consts::PI).abs() < 1e-12);
+        }
+        assert!(short > 0, "some vector is short of length 1");
     }
 
     /// Crosses from face `f` looking at (`yaw`, `pitch`), as the game does: the views drawn from
@@ -183,7 +203,10 @@ mod tests {
                         close(v.forward(), first.forward());
                         let (r, u) = (angle(first.right, v.right), angle(first.up, v.up));
                         assert!((r - u).abs() < 1e-6, "{yaw} {pitch}: {r} {u}");
-                        assert!(r >= rolled - 1e-9, "monotone");
+                        assert!(
+                            r >= rolled - 1e-9,
+                            "monotone {yaw} {pitch}: {r} after {rolled}"
+                        );
                         rolled = r;
                     }
                     assert!((rolled - std::f64::consts::PI).abs() < 1e-6, "{rolled}");

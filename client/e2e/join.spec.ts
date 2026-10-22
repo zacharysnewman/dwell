@@ -127,9 +127,22 @@ test('the loading screen is up before anything of the game, then fades in from w
   await expect
     .poll(async () => (await loadingOf(page))?.loading.openedS !== undefined, { timeout: 60_000 })
     .toBe(true);
-  const samples = await page.evaluate(
-    () => (globalThis as unknown as { __cover: CoverSample[] }).__cover,
-  );
+  // The client's state says it opened in the frame that starts the fade, and a call between frames
+  // runs before the next frame samples the screen (at CI's ~5 fps the poll above lands right after
+  // that frame): wait for a sampled frame past the opening.
+  const sampled = () =>
+    page.evaluate(() => (globalThis as unknown as { __cover: CoverSample[] }).__cover);
+  await expect
+    .poll(
+      async () => {
+        const all = await sampled();
+        const shown = all.findIndex((s) => s.overlay);
+        return shown >= 0 && all.slice(shown).some((s) => s.fading || !s.overlay);
+      },
+      { message: 'a frame sampled after the screen opened', timeout: 10_000 },
+    )
+    .toBe(true);
+  const samples = await sampled();
   // Frames before the page's script runs have no screen, and nothing of the game either.
   const up = samples.findIndex((s) => s.overlay);
   expect(up, 'the screen showed').toBeGreaterThanOrEqual(0);
