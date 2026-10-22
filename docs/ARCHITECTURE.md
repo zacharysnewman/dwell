@@ -1560,7 +1560,9 @@ Server (native), local mode (WASM), and client (WASM) must produce **bit-identic
   the ring instead, from the Welcome's verification chunk (the cell under the spawn): the server's
   centre is within a chunk of it, and the client widens its ring by one. **Client:** while dead the
   streamer lights and meshes the chunks of the near ring around the body first, then the respawn's
-  ring nearest its centre, then the rest (`ChunkStreamer::set_second_centre`, `SecondCentre`); the
+  ring nearest its centre (widened by one chunk more: the level-1 sections the ring straddles
+  are drawn as chunks only once all 8 of theirs are, and those reach a chunk past it; under
+  generator 21's valleys they hold ground, and waited 14 frames when meshed with the rest), then the rest (`ChunkStreamer::set_second_centre`, `SecondCentre`); the
   LOD keeps running from the death camera and readies a **second area**, the box of the respawn's
   ring (`LodSystem::set_second_area`): the sections over it and their ancestors, down to level 1,
   wanted and ranked by their distance to it but never drawn (`warm_visit`), and the chunks of its
