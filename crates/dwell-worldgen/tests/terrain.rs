@@ -955,7 +955,7 @@ fn the_mountains_reach_about_2400_m_and_some_ground_is_steep_enough_to_slide() {
     // Generator 21 (ADR 0049, the world map: eroded mountain ranges, broad valleys and coastal
     // plains, ranges retuned to ~2,400 m, owner 2026-10-21: "up to 8000ft") measured ~5.3 %
     // sliding, highest ~2,470 m, mean slope ~24°, ~1.4 % of the base field's island under the sea
-    // or lakes; the band is 0.8–10 %, 1,800–3,000 m.
+    // or lakes (B: ~6.0 %, ~2,450 m, ~25°, ~1.3 %); the band is 3.5–8 %, 2,200–2,800 m, 18–30°.
     use dwell_worldgen::ramps::{Around, Top, top_of};
     for face in [Face::A, Face::B] {
         let (mut highest, mut slope, mut land) = (0.0f64, 0.0f64, 0usize);
@@ -1003,10 +1003,10 @@ fn the_mountains_reach_about_2400_m_and_some_ground_is_steep_enough_to_slide() {
             100.0 * wet
         );
         println!("{at}");
-        assert!((0.008..0.1).contains(&sliding), "{at}");
-        assert!((1800.0..3000.0).contains(&highest), "{at}");
-        assert!((8.0..30.0).contains(&slope), "{at}");
-        assert!(wet < 0.04, "{at}");
+        assert!((0.035..0.08).contains(&sliding), "{at}");
+        assert!((2200.0..2800.0).contains(&highest), "{at}");
+        assert!((18.0..30.0).contains(&slope), "{at}");
+        assert!(wet < 0.025, "{at}");
     }
 }
 
@@ -1127,7 +1127,8 @@ fn no_shore_column_has_drawn_water_higher_than_the_dry_land_beside_it() {
                 }
             }
         }
-        assert!(pairs > 20, "seed {seed}: {pairs}");
+        // Generator 21 measured 116 (seed 0) and 41 (seed 7): fewer flat shores under the ranges.
+        assert!(pairs > 30, "seed {seed}: {pairs}");
         assert!(
             piled.is_empty(),
             "seed {seed}: {} of {pairs} shore pairs have the water at {top} above the land, e.g. {:?}",
