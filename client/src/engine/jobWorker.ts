@@ -11,6 +11,8 @@ type Init = {
   worldSeed?: bigint;
   /** The world's maps (faces A and B), installed before the world's generator is made. */
   maps?: Uint8Array[];
+  /** The LOD colour map's river valleys in this world's LOD sections (`?lodmap=on`). */
+  lodValleys?: boolean;
 };
 type BuildMap = { t: 'buildMap'; seed: bigint; face: number };
 
@@ -64,7 +66,9 @@ scope.onmessage = (e) => {
     const w =
       msg.generatorVersion === undefined || msg.worldSeed === undefined
         ? JobWorker.mesher()
-        : JobWorker.world(msg.generatorVersion, msg.worldSeed);
+        : msg.lodValleys
+          ? JobWorker.worldWithValleys(msg.generatorVersion, msg.worldSeed)
+          : JobWorker.world(msg.generatorVersion, msg.worldSeed);
     worker = w;
     for (const job of queued.splice(0)) run(w, job);
   });

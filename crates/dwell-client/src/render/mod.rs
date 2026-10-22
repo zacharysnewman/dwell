@@ -15,6 +15,7 @@ pub mod flames;
 pub mod frame;
 pub mod geometry;
 pub mod lights;
+pub mod lod_map;
 pub mod lod_shadows;
 pub mod pacing;
 pub mod pixel_art;
@@ -755,6 +756,8 @@ fn draw_order(d: &DrawItem) -> u128 {
 
 /// No turn.
 const NO_ROTATION: [f32; 4] = [1.0, 0.0, 0.0, 0.0];
+/// An LOD section's (or stand-in's) `rotation`: no turn, its tops open to the colour map.
+const LOD_ROTATION: [f32; 4] = [1.0, 0.0, lod_map::LOD_DRAW, 0.0];
 
 /// Whether a shadow caster needs the shadow pass's fragment stage: plants (their texels' alpha),
 /// draws in an LOD swap (its dither) and stand-ins (their clip box); the rest draw depth only.
@@ -908,6 +911,11 @@ pub struct Renderer {
     /// 1×1 stand-in while off), their fills' turns, the fills' pipelines by (kind, with a fragment
     /// stage), and the dev switch that turns them off (`?lodshadows=off`).
     lod_maps: lod_shadows::LodShadowMaps,
+    /// The LOD colour map (lod_map.rs; `?lodmap=on`): its texture (a stand-in until a strip
+    /// arrives), the rings this frame (none: off), and whether the frame groups bind the full one.
+    color_map: lod_map::ColorMapGpu,
+    lod_map: Option<crate::lod_map::LodMap>,
+    lod_map_full: bool,
     lod_schedule: lod_shadows::Schedule,
     height_pipelines: HashMap<(Kind, bool), wgpu::RenderPipeline>,
     lod_shadows_off: bool,
@@ -1073,6 +1081,7 @@ impl Renderer {
             .chain(lod_shadows::layout_entries())
             .chain([lights::layout_entry()])
             .chain(point_shadows::layout_entries())
+            .chain(lod_map::layout_entries())
             .collect();
         let frame_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("frame"),
@@ -1523,6 +1532,7 @@ impl Renderer {
         let shadow_maps = frame_bindings.shadow_maps(&device, (1, 1));
         let lod_maps = frame_bindings.lod_maps(&device, None);
         let point_maps = frame_bindings.point_maps(&device, None);
+        let color_map = lod_map::ColorMapGpu::new(&device, false);
         let frame_groups = frame_bindings.groups(
             &device,
             &frame_buffers,
@@ -1530,6 +1540,7 @@ impl Renderer {
             &shadow_maps,
             &lod_maps,
             &point_maps,
+            &color_map,
             None,
         );
         let characters = characters::CharacterRenderer::new(
@@ -1585,6 +1596,9 @@ impl Renderer {
             shadow_cache: shadows::Cache::default(),
             shadow_frame: 0,
             lod_maps,
+            color_map,
+            lod_map: None,
+            lod_map_full: false,
             lod_schedule: lod_shadows::Schedule::new(1),
             height_pipelines,
             lod_shadows_off: false,
@@ -1867,6 +1881,15 @@ impl Renderer {
     pub fn set_water_quality(&mut self, quality: WaterQuality) {
         self.water_quality = quality;
     }
+    /// Whether this adapter draws the LOD colour map (not a CPU adapter: the cheapest tier of
+    /// everything there).
+    pub fn lod_map_supported(&self) -> bool {
+        self.adapter != wgpu::DeviceType::Cpu
+    }
+    /// GPU bytes of the LOD colour map.
+    pub fn lod_map_bytes(&self) -> u64 {
+        self.color_map.bytes()
+    }
     /// The Shadows setting (the settings menu; docs/DAY_NIGHT.md §10).
     pub fn set_shadow_quality(&mut self, quality: ShadowQuality) {
         self.shadow_quality = quality;
@@ -1885,6 +1908,7 @@ impl Renderer {
         let atlas = self.pixel_preset().map(|p| p.atlas);
         if self.shadow_maps.size == size
             && self.lod_maps.size == lod_size
+            && self.lod_map_full == (self.color_map.size > 1)
             && self.point_maps.tier == torch_tier
             && self.groups_atlas == atlas
         {
@@ -1914,9 +1938,11 @@ impl Renderer {
             &self.shadow_maps,
             &self.lod_maps,
             &self.point_maps,
+            &self.color_map,
             atlas,
         );
         self.groups_atlas = atlas;
+        self.lod_map_full = self.color_map.size > 1;
     }
     /// The Torch shadows setting (docs/LIGHTS.md §4): Off, Low or High; none on a CPU adapter.
     pub fn set_torch_shadows(&mut self, quality: ShadowQuality) {
@@ -2499,7 +2525,7 @@ impl Renderer {
                     clip: None,
                     fade,
                     tint: level_tint(s, 1.0),
-                    rotation: NO_ROTATION,
+                    rotation: LOD_ROTATION,
                     page: 0,
                     passes,
                     key: 0,
@@ -2550,7 +2576,7 @@ impl Renderer {
                 clip,
                 fade: st.fade.shader_value(),
                 tint: level_tint(s, 1.0),
-                rotation: NO_ROTATION,
+                rotation: LOD_ROTATION,
                 page: 0,
                 passes,
                 key: 0,
@@ -2857,6 +2883,10 @@ impl Renderer {
                 u[k * 4..k * 4 + 4].copy_from_slice(col);
             }
             self.queue.write_buffer(&self.lod_maps.frame, 0, floats(&u));
+        }
+        {
+            let u = lod_map::uniforms(self.lod_map.as_ref(), self.eye);
+            self.queue.write_buffer(&self.color_map.uniform, 0, floats(&u));
         }
         // The characters: other players' bodies in the scene passes, your arms after them with
         // their own projection (characters.rs).
@@ -4262,6 +4292,7 @@ impl FrameBindings {
         maps: &shadows::ShadowMaps,
         lod_maps: &lod_shadows::LodShadowMaps,
         point_maps: &point_shadows::PointShadowMaps,
+        color_map: &lod_map::ColorMapGpu,
         atlas: Option<AtlasFilter>,
     ) -> [wgpu::BindGroup; 3] {
         let sampler = match atlas {
@@ -4302,6 +4333,7 @@ impl FrameBindings {
                 .chain(maps.group_entries())
                 .chain(lod_maps.group_entries())
                 .chain(point_maps.group_entries())
+                .chain(color_map.group_entries())
                 .collect();
             device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("frame"),
@@ -4498,6 +4530,20 @@ impl TerrainRenderer for Renderer {
 }
 
 impl crate::game::Scene for Renderer {
+    fn set_lod_map(&mut self, map: Option<&crate::lod_map::LodMap>) {
+        self.lod_map = map.filter(|_| self.lod_map_supported()).cloned();
+    }
+    fn lod_map_tile(&mut self, ring: usize, rect: crate::lod_map::Rect, rgba: &[u8]) {
+        if !self.lod_map_supported() {
+            return;
+        }
+        if self.color_map.size <= 1 {
+            // The first strip: the rings' texture, and the frame groups that bind it.
+            self.color_map = lod_map::ColorMapGpu::new(&self.device, true);
+            self.ensure_shadow_maps();
+        }
+        self.color_map.write(&self.queue, ring, rect, rgba);
+    }
     fn set_player(&mut self, id: u32, view: Option<PlayerView>) {
         Renderer::set_player(self, id, view);
     }

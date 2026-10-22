@@ -719,8 +719,16 @@ fn flat_fs(i: FlatOut, @builtin(front_facing) front: bool) -> SceneOut {
         discard;
     }
     let n = select(-i.normal, i.normal, front);
+    // An LOD top takes the colour map's albedo where it is on (render/lod_map.rs).
+    var albedo = i.color;
+    if (draw.rotation.z > 0.5) {
+        let face = face_at(frame.eye.x + i.rel.y);
+        if (face_rise(face, normalize(n)) > 0.7) {
+            albedo = lod_map_albedo(i.rel, face, i.color);
+        }
+    }
     // No baked light: LOD sections are lit as open to the sky (ARCHITECTURE.md §6.6), players too.
-    var o = scene_out(i.color * draw.tint.rgb, normalize(n), i.rel, draw.tint.a, open_light());
+    var o = scene_out(albedo * draw.tint.rgb, normalize(n), i.rel, draw.tint.a, open_light());
     o.depth = frame_depth(o.depth, fade_inked(draw));
     return o;
 }
@@ -2148,9 +2156,10 @@ fn scene_bindings(samples: u32) -> String {
 /// shading and every entry point.
 pub fn source(samples: u32) -> String {
     format!(
-        "{}{DRAWS}\n{FADE}\n{}\n{}\n{TERRAIN}\n{MOTION}\n{OUTLINE}\n{WATER}\n{}",
+        "{}{DRAWS}\n{FADE}\n{}\n{}\n{}\n{TERRAIN}\n{MOTION}\n{OUTLINE}\n{WATER}\n{}",
         lighting_source(),
         dwell_look::lod_blend::LOD_BLEND.pattern.wgsl(),
+        super::lod_map::wgsl(&dwell_look::lod_map::LOD_MAP),
         scene_bindings(samples),
         water_slope()
     )

@@ -98,7 +98,7 @@ pub enum Output {
 /// Runs jobs for one world (a worker's state).
 pub struct Runner {
     chunks: Option<ChunkGenerator>,
-    terrain: Option<BifacialTerrain>,
+    terrain: Option<std::sync::Arc<BifacialTerrain>>,
     lod: Option<LodGenerator>,
     bounds: Option<lod::LodBoundsFn>,
 }
@@ -116,18 +116,33 @@ impl Runner {
 
     /// A runner for a world (its generator version and seed, from Welcome), meshing included.
     pub fn world(generator_version: u32, world_seed: u64) -> Self {
+        Self::world_with(generator_version, world_seed, None)
+    }
+
+    /// [`Runner::world`] with the LOD colour map's river valleys (`?lodmap=on`: their margin under
+    /// the river's level, m; ARCHITECTURE.md §6.6 "Colour map") in its LOD sections and bounds.
+    pub fn world_with(generator_version: u32, world_seed: u64, valleys: Option<f64>) -> Self {
+        let terrain = (generator_version == GENERATOR_TERRAIN).then(|| {
+            let mut t = BifacialTerrain::new(world_seed);
+            t.set_lod_valleys(valleys);
+            std::sync::Arc::new(t)
+        });
+        let bounds: lod::LodBoundsFn = match (&terrain, valleys) {
+            // The bounds see the same lowered columns the sections are generated from.
+            (Some(t), Some(_)) => {
+                let t = t.clone();
+                std::sync::Arc::new(move |level, i, k| t.lod_bounds_at(level, i, k))
+            }
+            _ => dwell_worldgen::lod_bounds_for(generator_version, world_seed),
+        };
         Self {
             chunks: Some(dwell_worldgen::generator_for(generator_version, world_seed)),
-            terrain: (generator_version == GENERATOR_TERRAIN)
-                .then(|| BifacialTerrain::new(world_seed)),
+            terrain,
             lod: Some(dwell_worldgen::lod_generator_for(
                 generator_version,
                 world_seed,
             )),
-            bounds: Some(dwell_worldgen::lod_bounds_for(
-                generator_version,
-                world_seed,
-            )),
+            bounds: Some(bounds),
         }
     }
 
