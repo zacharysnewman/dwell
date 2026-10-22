@@ -90,7 +90,7 @@ describe('world maps (ADR 0049)', () => {
   it('a failed build is not kept: the next join tries again', async () => {
     const d = deps(null);
     let fail = true;
-    const build = d.build;
+    const build = d.build.bind(d);
     d.build = (seed, face) => (fail ? Promise.reject(new Error('no worker')) : build(seed, face));
     await expect(worldMaps(5n, GENERATOR_TERRAIN, d)).rejects.toThrow('no worker');
     fail = false;

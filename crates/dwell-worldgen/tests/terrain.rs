@@ -940,6 +940,7 @@ fn the_island_keeps_its_phase_15_size_in_the_50_km_world() {
 
 #[test]
 fn the_mountains_reach_about_2400_m_and_some_ground_is_steep_enough_to_slide() {
+    // both-faces: measures each face's terrain in turn, with a band per face.
     // Owner, 2026-10-19: "I want terrain steep enough to slide on" — about 15 % of the land's
     // surface steeper than the slide's 44° (on the half-height branch, the land columns topped by
     // a 45° ramp, HALF_HEIGHT_GRID.md §4), everywhere, and peaks up to about 500 m above sea level
