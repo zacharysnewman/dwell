@@ -419,6 +419,15 @@ impl Placed {
         })
     }
 
+    /// Every cell of state `from` becomes `to` (a placement's variant, e.g. snowy leaves).
+    pub fn replace(&mut self, from: StateId, to: StateId) {
+        for c in self.cells.iter_mut().flatten() {
+            if *c == from {
+                *c = to;
+            }
+        }
+    }
+
     /// The state the placement puts at a voxel (`None` outside it or where it keeps the base).
     pub fn at(&self, p: [i32; 3]) -> Option<StateId> {
         if (0..3).any(|i| p[i] < self.min[i] || p[i] > self.max[i]) {

@@ -220,6 +220,24 @@ struct Options {
     /// The loading screen on joining (ARCHITECTURE.md §6.3); the shell turns it off for
     /// `?loading=off` and the `dwell.loading` store.
     loading_screen: bool,
+    /// `prepareWorld(worldSeed: bigint, generatorVersion) → Promise<Uint8Array[] | null>`: the
+    /// world's maps (ADR 0049), from the shell's cache or built in workers; none: each instance
+    /// computes its own.
+    prepare_world: Option<Function>,
+}
+
+/// The shell's answer to `prepareWorld`, once it arrives.
+type MapsSlot = Rc<RefCell<Option<Result<Vec<Uint8Array>, String>>>>;
+
+/// The world's maps on the way (ADR 0049): asked of the shell once joined, the game started when
+/// they arrive ("Shaping the world…").
+#[derive(Default)]
+enum Shaping {
+    #[default]
+    NotAsked,
+    Waiting(MapsSlot),
+    /// Installed here; the bytes go to the workers.
+    Ready(Vec<Uint8Array>),
 }
 
 struct Inner {
@@ -258,6 +276,8 @@ struct Inner {
     /// How long the camera rolls upright across the midplane (s; 0 snaps): `?crossingroll=` or
     /// `setCrossingRoll`, kept here for a game started later.
     crossing_roll: f64,
+    /// The world's maps, before the game starts.
+    shaping: Shaping,
 }
 
 fn shell_event(kind: &str, value: impl Into<JsValue>) -> JsValue {
@@ -300,6 +320,7 @@ impl Client {
             day: DayOverride::from_query(&get("search").as_string().unwrap_or_default()),
             search: get("search").as_string().unwrap_or_default(),
             loading_screen: get("loadingScreen").as_bool().unwrap_or(true),
+            prepare_world: get("prepareWorld").dyn_into().ok(),
         };
         let (width, height) = (canvas.width().max(1), canvas.height().max(1));
         let mut desc = wgpu::InstanceDescriptor::new_without_display_handle();
@@ -390,6 +411,7 @@ impl Client {
             reduced_motion: false,
             show_arms: true,
             crossing_roll,
+            shaping: Shaping::NotAsked,
         };
         Ok(Client {
             inner: Rc::new(RefCell::new(inner)),
@@ -1502,6 +1524,13 @@ impl Client {
             } else {
                 set(&o, "spyglass", JsValue::NULL);
             }
+        } else if s.shaping_world() && s.options.loading_screen {
+            // Joined, the world's maps on the way (ADR 0049): the loading screen says so.
+            let l = Object::new();
+            set(&l, "text", "Shaping the world…");
+            set(&l, "ready", 0u32);
+            set(&l, "needed", 1u32);
+            set(&o, "loading", l);
         }
         o.into()
     }
@@ -1916,12 +1945,16 @@ impl Inner {
         else {
             return;
         };
+        let Some(maps) = self.world_maps(world_seed, generator_version) else {
+            return;
+        };
         let workers = self.options.workers;
         let jobs = match WebJobs::new(
             &self.options.make_worker,
             workers,
             workers,
             (generator_version, world_seed),
+            &maps,
         ) {
             Ok(j) => j,
             Err(e) => {
@@ -1982,6 +2015,78 @@ impl Inner {
             game.enable_lod(settings);
         }
         self.game = Some(game);
+    }
+
+    /// The world's maps (ADR 0049), once they are here and installed in this instance: asks the
+    /// shell for them the first time, `None` while they are on the way. A world without terrain,
+    /// a shell without `prepareWorld` or a failure: no maps (each instance computes its own).
+    fn world_maps(&mut self, world_seed: u64, generator_version: u32) -> Option<Vec<Uint8Array>> {
+        if generator_version != dwell_world::GENERATOR_TERRAIN {
+            return Some(Vec::new());
+        }
+        match &self.shaping {
+            Shaping::Ready(maps) => return Some(maps.clone()),
+            Shaping::Waiting(slot) => {
+                let done = slot.borrow_mut().take()?;
+                let maps = match done {
+                    Ok(maps) => maps
+                        .into_iter()
+                        .filter(|m| match dwell_worldgen::worldmap::install(&m.to_vec()) {
+                            Ok(_) => true,
+                            Err(e) => {
+                                web_sys::console::warn_1(
+                                    &format!("Dwell: a world map was refused ({e})").into(),
+                                );
+                                false
+                            }
+                        })
+                        .collect(),
+                    Err(e) => {
+                        web_sys::console::warn_1(
+                            &format!("Dwell: the world maps are unavailable ({e})").into(),
+                        );
+                        Vec::new()
+                    }
+                };
+                self.shaping = Shaping::Ready(maps.clone());
+                return Some(maps);
+            }
+            Shaping::NotAsked => {}
+        }
+        let Some(prepare) = &self.options.prepare_world else {
+            self.shaping = Shaping::Ready(Vec::new());
+            return Some(Vec::new());
+        };
+        let slot: MapsSlot = Rc::default();
+        let promise = prepare.call2(
+            &JsValue::NULL,
+            &js_sys::BigInt::from(world_seed).into(),
+            &generator_version.into(),
+        );
+        let into = slot.clone();
+        spawn_local(async move {
+            let result = match promise.map(|p| JsFuture::from(Promise::resolve(&p))) {
+                Ok(f) => f.await.map(|v| {
+                    if v.is_null() || v.is_undefined() {
+                        Vec::new()
+                    } else {
+                        Array::from(&v)
+                            .iter()
+                            .filter_map(|m| m.dyn_into::<Uint8Array>().ok())
+                            .collect()
+                    }
+                }),
+                Err(e) => Err(e),
+            };
+            *into.borrow_mut() = Some(result.map_err(|e| format!("{e:?}")));
+        });
+        self.shaping = Shaping::Waiting(slot);
+        None
+    }
+
+    /// Joined and waiting for the world's maps: the loading screen's phase.
+    fn shaping_world(&self) -> bool {
+        self.game.is_none() && matches!(self.shaping, Shaping::Waiting(_))
     }
 
     fn draw(&mut self) {

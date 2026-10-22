@@ -8,7 +8,7 @@
       "density": 0.55,
       "patches": { "wavelength": 40, "coverage": 0.45 },
       "maxSlope": 1,
-      "height": [3, 400]
+      "height": [3, 1500]
     }
   ]
 }

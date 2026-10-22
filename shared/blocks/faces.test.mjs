@@ -10,7 +10,10 @@ const ids = registry.blocks.map((b) => `${registry.namespace}:${b.name}`);
 const dirt = registry.blocks.find((b) => b.name === 'dirt');
 
 test("dirt's side under grass takes the skirt tile, and the tile is a registry tile", () => {
-  assert.deepEqual(sideUnderRules('dwell:dirt', dirt, ids), [{ above: 'dwell:grass', side: 'dirtSkirt' }]);
+  assert.deepEqual(sideUnderRules('dwell:dirt', dirt, ids), [
+    { above: 'dwell:grass', side: 'dirtSkirt' },
+    { above: 'dwell:snowy_grass', side: 'dirtSnowSkirt' },
+  ]);
   assert.ok(blockTiles(dirt).includes('dirtSkirt'));
   // The texture bake paints it (every registry tile must be painted).
   assert.ok(registryTiles(registry).includes('dirtSkirt'));

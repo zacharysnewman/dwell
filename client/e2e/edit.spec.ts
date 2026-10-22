@@ -122,7 +122,7 @@ test('local mode: every palette block can be picked from the hotbar, placed, and
   await page.goto('./?world=flat');
   await ready(page);
   // The hotbar is built once the page has taken the join, which can be a frame after the terrain.
-  await expect(page.locator('.hotbar-slot')).toHaveCount(9);
+  await expect(page.locator('.hotbar-slot')).toHaveCount(11);
   const slots = await page.locator('.hotbar-slot').count();
   const ground = await aim(page);
   expect(ground.face).toBe(2);

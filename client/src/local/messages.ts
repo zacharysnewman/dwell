@@ -10,6 +10,8 @@ export type ToWorker =
       file?: string;
       spawnFaceB?: boolean;
       spawnPortal?: boolean;
+      /** The world's maps (faces A and B, ADR 0049), installed before the world starts. */
+      maps?: Uint8Array[];
     }
   | { t: 'connect'; session: number; kind: TransportKind; binding: Uint8Array }
   | { t: 'reliable'; session: number; channel: Channel; bytes: Uint8Array }

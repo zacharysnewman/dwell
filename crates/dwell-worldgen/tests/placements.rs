@@ -413,6 +413,7 @@ fn a_placement_added_by_data_alone_stands_its_structure_in_the_chunks() {
         max_gradient_sq: 4.0,
         spacing: 0,
         rotations: &[0],
+        variants: &[],
     };
     let g = TerrainGenerator::new(7).with_placements(&[rule]);
     assert_eq!(

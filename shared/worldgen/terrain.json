@@ -1,12 +1,70 @@
 {
-  "$comment": "The interim terrain's height field (ARCHITECTURE.md §6.3, docs/WORLD_GENERATION.md): how the ground rises inland and falls offshore, and the noise relief over it. Heights in metres above sea level, distances and wavelengths in metres, octaves of a fractal sum whose amplitude is about ±amplitude. Prototype content (§6.1). Changing any value changes the terrain a seed generates: bump the generator version, regenerate the goldens (`cargo run -p dwell-worldgen --example goldens`) and ship it on a new compatibility line. Run `node shared/worldgen/gen.mjs` after editing; CI fails on stale output. Phase 17's terrain definitions (ADR 0026) take this over.",
+  "$comment": "The terrain (ARCHITECTURE.md §6.3, docs/WORLD_GENERATION.md, ADR 0049). Heights in metres above sea level, distances and wavelengths in metres, slopes in m per m. `inland`, `seaFloor`, `hills` and `bumps` are the base height field: the input the world map samples on its 100 m grid before the uplift layer and the erosion (shared/worldgen/hydrology.json); chunks never read it directly. The rest shapes each column from the map: `detail` the fine noise over the map's smooth height, `rivers` the channels carved from the map's river polylines, `mouths` their deltas and estuaries, `lakes` the lake shores, `bands` the surface materials by height and slope (the snow line), `spawn` where players start. Prototype content (§6.1). Changing any value changes the terrain a seed generates: regenerate the goldens (`cargo run -p dwell-worldgen --example goldens`) and ship it on a new compatibility line. Run `node shared/worldgen/gen.mjs` after editing; CI fails on stale output.",
   "inland": { "rise": 320, "halfDistance": 6000 },
   "seaFloor": { "depth": 20, "shelf": 2500 },
   "hills": { "amplitude": 225, "wavelength": 1024, "octaves": 5, "fadeFrom": 500, "fadeTo": 4000 },
   "bumps": { "amplitude": 5, "wavelength": 128, "octaves": 3 },
-  "steps": {
-    "$comment": "Half-height branch (HALF_HEIGHT_GRID.md §4): where the ground is at least fromSlope steep (m per m, across a 4 m lattice cell), heights snap to whole multiples of height (m), so steep ground is 1 m steps of two ½ m cells that the generation rule tops with 45° ramps. height 0 turns it off: off since generator 1019 (owner, 2026-10-20, the slopes investigation; kept off in V2, generator 1020, the owner's choice), so every slope is ½ m cells.",
-    "fromSlope": 0.5,
-    "height": 0
+  "detail": {
+    "$comment": "Fine relief over the map's bicubic height: a fractal sum of `wavelength` and `octaves`, about ±amplitude m in the lowlands, rising to ±mountainAmplitude between mountainFrom and mountainFull m; faded to nothing within waterFade m of a river's channel or a lake's shore.",
+    "amplitude": 2,
+    "wavelength": 128,
+    "octaves": 4,
+    "mountainAmplitude": 14,
+    "mountainFrom": 300,
+    "mountainFull": 1800,
+    "waterFade": 30
+  },
+  "rivers": {
+    "$comment": "Channels from the map's river polylines (smoothed `smooth` times, corner cutting). A column's nearest river by its channel's edge: inside the channel the bed lies depth (the map's width curve) below the water at the centre, at least minDepth; beyond it the ground is cut down to a valley rising valleySlope m per m from bank m over the water, out to reach m plus reachPerWidth × the width, where it meets the land; the banks never lie lower than bank m over the water (levees where the land is lower). Meander: the banks are traced through a warp of about ±meander m at meanderWavelength. The LOD widens a river at least lodMinShare of its cell size wide to lodWidth × its cell size, at cells up to lodMaxCell m, so rivers show from afar.",
+    "smooth": 3,
+    "minDepth": 0.5,
+    "bank": 1,
+    "valleySlope": 0.45,
+    "reach": 30,
+    "reachPerWidth": 2,
+    "meander": 5,
+    "meanderWavelength": 96,
+    "lodWidth": 0.75,
+    "lodMinShare": 0.125,
+    "lodMaxCell": 128
+  },
+  "mouths": {
+    "$comment": "Where a big river meets the sea (the map marks deltas and estuaries): over its last reach m its channel widens, an estuary's to estuaryWiden × its width and estuaryDeepen × its depth (a funnel), a delta's to deltaWiden × its width, and a delta splits into deltaBranches distributaries at deltaSplit m from the sea, spreading deltaSpread degrees either side, each deltaBranchWidth of the river's width.",
+    "reach": 1500,
+    "estuaryWiden": 4,
+    "estuaryDeepen": 1.5,
+    "deltaWiden": 1.6,
+    "deltaBranches": 2,
+    "deltaSplit": 1600,
+    "deltaSpread": 30,
+    "deltaBranchWidth": 0.55
+  },
+  "lakes": {
+    "$comment": "A lake is flat at its level, inside its cells of the map (traced through a warp of ±shoreNoise m at shoreWavelength); round it the ground stands at least bank m over the water for levee m, so the water never stands open beside lower ground.",
+    "bank": 0.5,
+    "levee": 40,
+    "shoreNoise": 15,
+    "shoreWavelength": 160
+  },
+  "bands": {
+    "$comment": "The surface material by height and slope: snow above the snow line (snowLine m, moved ±snowNoise m by a noise of snowWavelength m, raised snowSlopeLift m per unit of slope, so it is not a flat contour), bare rock where the ground is at least rockSlope steep (snow too: steep faces stay rock), the shore block up to shore m above sea level and under water, the ground block elsewhere, with the under block below a top block to underDepth m. Blocks by name.",
+    "snowLine": 1550,
+    "snowNoise": 150,
+    "snowWavelength": 320,
+    "snowSlopeLift": 350,
+    "rockSlope": 1.15,
+    "shore": 2,
+    "underDepth": 3,
+    "ground": "dwell:grass",
+    "under": "dwell:dirt",
+    "snow": "dwell:snowy_grass",
+    "rock": "dwell:stone",
+    "shoreBlock": "dwell:sand"
+  },
+  "spawn": {
+    "$comment": "Players spawn on level dry land between minHeight and maxHeight m above sea level, preferring a river within nearRiver m: the map's cells are ranked by their distance from the disc's centre (the land nearest it first), and the first that suits is searched for a level patch.",
+    "minHeight": 3,
+    "maxHeight": 80,
+    "nearRiver": 400
   }
 }

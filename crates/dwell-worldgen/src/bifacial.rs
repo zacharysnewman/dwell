@@ -41,6 +41,11 @@ impl BifacialTerrain {
     /// The world with these portal rules in place of the build's (tests add a fixture by data
     /// alone).
     pub fn with_portal_rules(world_seed: u64, rules: PortalRules) -> Self {
+        // Both faces' world maps at once (on two threads natively) before either face needs one.
+        crate::worldmap::cache::prefetch(&[
+            face_seed(world_seed, Face::A),
+            face_seed(world_seed, Face::B),
+        ]);
         let a = TerrainGenerator::new(face_seed(world_seed, Face::A));
         let b = TerrainGenerator::new(face_seed(world_seed, Face::B));
         Self::joined(world_seed, rules, a, b, false)

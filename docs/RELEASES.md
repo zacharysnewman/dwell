@@ -76,6 +76,10 @@ by the Vite build and linked from the menu's About screen). Beside the native se
     removing a property renames every state of its block), changing the shapes themselves or the
     adaptive shape rules (code both sides run), changing the terrain a seed generates, and changing
     the registry payload's format.
+  - **The world maps' cache is not part of the contract** (ADR 0049, from 0.26.0): IndexedDB
+    `dwell-world-maps` holds recently built terrain maps keyed by the build's map fingerprint, so a
+    build only reads its own; any build may drop or rebuild it. 0.26.0 changed the terrain every
+    seed generates (generator 21, the world map): a new compatibility line.
   - **From `1.0.0`** (launch): MAJOR for breaking changes, MINOR for compatible new features, PATCH
     for compatible fixes.
   - **Before `1.0.0`** SemVer allows anything to change; Dwell follows the common `0.y.z` convention

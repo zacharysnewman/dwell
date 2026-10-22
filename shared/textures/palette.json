@@ -3,6 +3,7 @@
   "ramps": {
     "meadow":      { "shadow": "#4a8a45", "base": "#82bd45", "light": "#c8e06a" },
     "leaf":        { "shadow": "#2e6450", "base": "#5f9e3e", "light": "#a6cf52" },
+    "snow":        { "shadow": "#b9c9de", "base": "#e9eff6", "light": "#ffffff" },
     "soil":        { "shadow": "#5b3a3c", "base": "#8e5d3d", "light": "#b98352" },
     "stone":       { "shadow": "#817e8e", "base": "#a9a3a3", "light": "#dcd0b9" },
     "bedrock":     { "shadow": "#3a3645", "base": "#555060", "light": "#7d7680" },

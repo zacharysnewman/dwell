@@ -2,6 +2,7 @@
 // protocol bytes with the main thread's LoopbackTransport.
 import { HostState } from '../protocol/constants.gen';
 import type { FromWorker, ToWorker } from './messages';
+import { installWorldMap } from '../engine/wasm';
 import { LocalCore, OutgoingKind } from './wasmCore';
 import { localWorldName, openWorldFile } from './worldFiles';
 
@@ -88,12 +89,22 @@ async function start(
   file?: string,
   spawnFaceB = false,
   spawnPortal = false,
+  maps: Uint8Array[] = [],
 ): Promise<void> {
   // The world file (§6.4): the chosen world's (by default one per generator and seed), in OPFS.
   // Without it the world lives in memory only (no OPFS, or the world is open in another tab).
   const files = await openWorldFile(file ?? localWorldName(generatorVersion, worldSeed));
   if (!files) console.warn('Dwell: this local world will not be saved (no OPFS access).');
   try {
+    // The world's maps first (ADR 0049), so the server's generator need not compute them.
+    if (maps.length) await LocalCore.ready();
+    for (const map of maps) {
+      try {
+        installWorldMap(map);
+      } catch (err) {
+        console.warn('Dwell: a world map was refused', err);
+      }
+    }
     core = await LocalCore.load(
       worldSeed,
       generatorVersion,
@@ -130,6 +141,13 @@ async function start(
 scope.onmessage = (e) => {
   const msg = e.data;
   if (msg.t === 'start')
-    void start(msg.worldSeed, msg.generatorVersion, msg.file, msg.spawnFaceB, msg.spawnPortal);
+    void start(
+      msg.worldSeed,
+      msg.generatorVersion,
+      msg.file,
+      msg.spawnFaceB,
+      msg.spawnPortal,
+      msg.maps,
+    );
   else handle(msg);
 };

@@ -1,6 +1,10 @@
 # Dwell — World Generation: Look
 
-> **Status:** §1 (the art direction and colour, Phase 7) is **[built]** and stands. The rest of this
+> **Status (generator 21, ADR 0049):** the terrain is the world map's — mountains, rivers and
+> lakes (§4). The notes below on the interim height field describe its history; it survives only
+> as the map's input.
+>
+> **Earlier status:** §1 (the art direction and colour, Phase 7) is **[built]** and stands. The rest of this
 > file — continents from Voronoi plates (Phase 10), rivers, mountains, climate and biomes (Phase 11)
 > and sky islands (Phase 12) — was **cut by the baseline rework** (Phase 15,
 > [`BASELINE_EVALUATION.md`](./BASELINE_EVALUATION.md), [ADR 0025](./adr/0025-baseline-world.md)):
@@ -234,6 +238,23 @@ one noisy run each) `idle-spawn` and `fly-low-fast` stayed within their run-to-r
 **Half-height voxels.** On ½ m cells (Phase 41), a 1 m structure maps onto ½ m cells
 by doubling each layer vertically (each 1 m block becomes two ½ m cells, x and z unchanged), so the
 trees keep their real size; recorded with that port.
+
+## 4. Mountains, rivers and lakes: the world map (generator version 21) **[built]**
+
+The owner (2026-10-21): "use that work in progress terrain generator with mountains, elevation,
+rivers, etc … in game", mountains "up to 8000ft", snowy grass and snowy leaves. [ADR
+0049](./adr/0049-world-map-terrain.md); ARCHITECTURE.md §6.3 (*The world map*). The hydrology
+prototype's map (proposal layers 0–1) is the terrain: per face, the base field on a 100 m grid,
+uplifted into ranges and eroded, its lakes and rivers found. Columns take its height (bicubic),
+fine detail (`terrain.json` `detail`), river channels and valleys (`rivers`, `mouths`), flat lakes
+(`lakes`) and their surface bands (`bands`: snow line 1,550 m ± 150 m, raised on slopes; rock from a
+slope of 1.15; sand to 2 m above sea and under water). The pines grow to 1,300 m on grass and snowy
+grass, their leaves snowy from 1,050–1,250 m up (`placements.json` `variants`); meadows to 1,500 m.
+Spawn: level dry lowland (3–80 m) within 400 m of a river, nearest the disc's centre. Measured
+(seeds 1, 7, 42, 1234, both faces): highest ground 2,210–2,650 m, the largest river 11–21 m³/s;
+both faces' maps 1.1–1.2 s natively; a column ~0.2 µs, a chunk 0.5–1.7 ms; a cold browser join
+(maps built) 6.7 s to playing on an M1 under load 15. Deferred: moving water (the flow direction
+is kept per cell), per-world settings, delta and fall polish.
 
 ## 3. Bedrock and portals (generator version 20) **[built]**
 

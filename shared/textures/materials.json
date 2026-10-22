@@ -15,6 +15,11 @@
     "tallGrass": "tall_grass",
     "ladder": "ladder_wood",
     "dirtSkirt": "dirt_skirt",
+    "snow": "snow_top",
+    "snowSide": "snow_side",
+    "dirtSnowSkirt": "dirt_snow_skirt",
+    "snowyLeavesTop": "snowy_leaves_top",
+    "snowyLeavesSide": "snowy_leaves_side",
     "torch": "torch",
     "torchTop": "torch_top",
     "plain": "plain",
@@ -131,6 +136,41 @@
         { "kind": "dab", "count": 12, "colors": ["@shadow", "@base"], "width": [8, 10], "length": [10, 13], "angle": 35, "angleJitter": 40, "softness": 1 },
         { "kind": "dab", "count": 9, "colors": ["@base"], "width": [5, 7], "length": [7, 10], "angle": 40, "angleJitter": 30, "opacity": 0.8, "clip": true, "seed": 1 },
         { "kind": "dab", "count": 7, "colors": ["@light"], "width": [3, 4], "length": [5, 7], "angle": 45, "angleJitter": 20, "opacity": 0.75, "clip": true, "seed": 2 }
+      ]
+    },
+    "snow_top": {
+      "$comment": "Snow lying on the ground (the snowy grass's top): soft cool drifts in shade, wind-smoothed light strokes, a few bright glints.",
+      "use": "block", "ramp": "snow", "overlay": 1,
+      "layers": [
+        { "kind": "fill", "color": "@base" },
+        { "kind": "dab", "count": 6, "colors": ["@shadow"], "width": [8, 12], "length": [12, 18], "angle": 15, "angleJitter": 25, "opacity": 0.3, "softness": 4 },
+        { "kind": "streak", "count": 7, "colors": ["@light"], "width": [2.5, 3.5], "length": [12, 18], "angle": 10, "angleJitter": 10, "bend": [-1.5, 1.5], "opacity": 0.6, "seed": 1 },
+        { "kind": "dab", "count": 6, "colors": ["@light"], "width": [1.2, 1.8], "length": [1.2, 1.8], "angle": 0, "angleJitter": 90, "opacity": 0.9, "seed": 2 }
+      ]
+    },
+    "snow_side": {
+      "$comment": "Soil with a hanging fringe of snow (the snowy grass's side): the grass side's strokes in the snow's ramp, so the snow hangs over the dirt like the turf does.",
+      "like": "grass_side", "ramp": "snow"
+    },
+    "dirt_snow_skirt": {
+      "$comment": "A dirt side with snowy grass directly above it (dirt's sideUnder): the snow side's fringe, so the snow hangs over the dirt face below a snowy slope.",
+      "like": "snow_side"
+    },
+    "snowy_leaves_top": {
+      "$comment": "Leaves under snow, seen from above: the leaves' clusters and gaps (cut out) with snow lying on most of them.",
+      "over": "leaves", "use": "block", "ramp": "snow", "overlay": 1, "alpha": "strokes",
+      "layers": [
+        { "kind": "dab", "count": 11, "colors": ["@base"], "width": [6, 9], "length": [8, 12], "angle": 30, "angleJitter": 40, "opacity": 0.95, "clip": true, "softness": 1, "seed": 5 },
+        { "kind": "dab", "count": 6, "colors": ["@light"], "width": [3, 4], "length": [5, 7], "angle": 40, "angleJitter": 25, "opacity": 0.9, "clip": true, "seed": 6 },
+        { "kind": "dab", "count": 4, "colors": ["@shadow"], "width": [3, 5], "length": [5, 8], "angle": 20, "angleJitter": 30, "opacity": 0.35, "clip": true, "seed": 7 }
+      ]
+    },
+    "snowy_leaves_side": {
+      "$comment": "Leaves under snow, seen from the side: the leaves' clusters (cut out) with snow caught on the top of them, most along the upper edge.",
+      "over": "leaves", "use": "block", "ramp": "snow", "overlay": 1, "alpha": "strokes",
+      "layers": [
+        { "kind": "dab", "count": 7, "band": [0.72, 1.0], "colors": ["@base"], "width": [5, 8], "length": [8, 12], "angle": 0, "angleJitter": 20, "opacity": 0.95, "clip": true, "softness": 1, "seed": 5 },
+        { "kind": "dab", "count": 6, "band": [0.25, 0.7], "colors": ["@base", "@light"], "width": [2.5, 4], "length": [5, 8], "angle": 0, "angleJitter": 25, "opacity": 0.85, "clip": true, "seed": 6 }
       ]
     },
     "tall_grass": {

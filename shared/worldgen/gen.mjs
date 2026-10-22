@@ -104,7 +104,7 @@ export function decorationsRust(data) {
 
 const PLACEMENT_KEYS = [
   '$comment', 'name', 'structures', 'on', 'footprint', 'grid', 'density', 'groves', 'height', 'rise',
-  'maxSlopeDeg', 'spacing', 'rotate',
+  'maxSlopeDeg', 'spacing', 'rotate', 'variants',
 ];
 /** What `footprint` may say: "on" (every column under the structure is one of `on`) or "anchor". */
 export const FOOTPRINTS = ['on', 'anchor'];
@@ -190,13 +190,29 @@ export function validatePlacements(data, blocks, structures) {
     if (!(Array.isArray(r) && r.length && r.every((d) => [0, 90, 180, 270].includes(d)) && new Set(r).size === r.length)) {
       fail(`${at}: rotate must be distinct angles from 0, 90, 180, 270`);
     }
+    for (const v of p.variants ?? []) {
+      const vat = `${at}: variant ${v?.name ?? '(unnamed)'}`;
+      const vk = Object.keys(v ?? {}).filter((k) => !['name', 'replace', 'height', '$comment'].includes(k));
+      if (vk.length) fail(`${vat}: unknown ${vk.join(', ')}`);
+      if (!(typeof v.name === 'string' && NAME.test(v.name))) fail(`${vat}: name must be [a-z0-9_]+`);
+      const pairs = Object.entries(v.replace ?? {});
+      if (!pairs.length) fail(`${vat}: replace must map blocks to blocks`);
+      for (const [from, to] of pairs) {
+        if (!blocks.get(from)) fail(`${vat}: replace names unknown block ${from}`);
+        if (!blocks.get(to)) fail(`${vat}: replace names unknown block ${to}`);
+      }
+      const vh = v.height;
+      if (!(Array.isArray(vh) && vh.length === 2 && vh.every(Number.isInteger) && vh[0] <= vh[1])) {
+        fail(`${vat}: height must be [from, full] whole metres above sea level`);
+      }
+    }
   }
   return data;
 }
 
 /** The Rust table for validated placements. The slope limit is emitted as the squared gradient. */
 export function placementsRust(data) {
-  const rs = [`// ${placementsHeader}`, '', 'use crate::placements::Placement;', ''];
+  const rs = [`// ${placementsHeader}`, '', 'use crate::placements::{Placement, Variant};', ''];
   rs.push('/// The structure placements (shared/worldgen/placements.json), in their file order.');
   rs.push(`pub static PLACEMENTS: [Placement; ${data.placements.length}] = [`);
   for (const p of data.placements) {
@@ -231,6 +247,11 @@ export function placementsRust(data) {
     rs.push(`        max_gradient_sq: ${rf(grad)},`);
     rs.push(`        spacing: ${p.spacing},`);
     rs.push(`        rotations: &[${p.rotate.map((d) => d / 90).join(', ')}],`);
+    const vs = (p.variants ?? []).map((v) => {
+      const pairs = Object.entries(v.replace).map(([a, b]) => `(${JSON.stringify(a)}, ${JSON.stringify(b)})`);
+      return `Variant { name: ${JSON.stringify(v.name)}, replace: &[${pairs.join(', ')}], from: ${v.height[0]}, full: ${v.height[1]} }`;
+    });
+    rs.push(`        variants: &[${vs.join(', ')}],`);
     rs.push('    },');
   }
   rs.push('];');
@@ -238,8 +259,9 @@ export function placementsRust(data) {
   return rs.join('\n');
 }
 
-// The height field's groups, each key's range: [min, max, whole number?]. A minimum given as
-// `{ above: v }` is exclusive.
+// The terrain's groups (terrain.json), each key's range: [min, max, whole number?]. A minimum given
+// as `{ above: v }` is exclusive. The base height field (inland, seaFloor, hills, bumps) is the world
+// map's input; the rest shapes each column from the map (ADR 0049).
 const TERRAIN = {
   inland: { rise: [0, 1000], halfDistance: [{ above: 0 }, 100_000] },
   seaFloor: { depth: [0, 1000], shelf: [{ above: 0 }, 100_000] },
@@ -251,12 +273,60 @@ const TERRAIN = {
     fadeTo: [0, 100_000],
   },
   bumps: { amplitude: [0, 100], wavelength: [4, 4096, true], octaves: [1, 8, true] },
-  // Half-height branch: steep ground in whole steps (HALF_HEIGHT_GRID.md §4).
-  steps: { fromSlope: [0, 100], height: [0, 16] },
+  detail: {
+    amplitude: [0, 100],
+    wavelength: [4, 4096, true],
+    octaves: [1, 8, true],
+    mountainAmplitude: [0, 100],
+    mountainFrom: [0, 10_000],
+    mountainFull: [0, 10_000],
+    waterFade: [0, 1000],
+  },
+  rivers: {
+    smooth: [0, 6, true],
+    minDepth: [0.5, 50],
+    bank: [0, 20],
+    valleySlope: [{ above: 0 }, 10],
+    reach: [0, 1000],
+    reachPerWidth: [0, 50],
+    meander: [0, 100],
+    meanderWavelength: [4, 4096, true],
+    lodWidth: [0, 4],
+    lodMinShare: [0, 1],
+    lodMaxCell: [1, 4096, true],
+  },
+  mouths: {
+    reach: [0, 20_000],
+    estuaryWiden: [1, 20],
+    estuaryDeepen: [1, 10],
+    deltaWiden: [1, 20],
+    deltaBranches: [0, 8, true],
+    deltaSplit: [0, 20_000],
+    deltaSpread: [0, 89],
+    deltaBranchWidth: [{ above: 0 }, 1],
+  },
+  lakes: {
+    bank: [0, 20],
+    levee: [0, 1000],
+    shoreNoise: [0, 200],
+    shoreWavelength: [4, 4096, true],
+  },
+  bands: {
+    snowLine: [0, 100_000],
+    snowNoise: [0, 10_000],
+    snowWavelength: [4, 65_536, true],
+    snowSlopeLift: [0, 10_000],
+    rockSlope: [{ above: 0 }, 100],
+    shore: [0, 100],
+    underDepth: [0, 100],
+  },
+  spawn: { minHeight: [0, 10_000], maxHeight: [0, 10_000], nearRiver: [0, 100_000] },
 };
+/** The bands' blocks, by name: each must be a full block of the registry. */
+const BAND_BLOCKS = ['ground', 'under', 'snow', 'rock', 'shoreBlock'];
 
-/** Checks the height field; throws naming the group and key. */
-export function validateTerrain(data) {
+/** Checks the terrain against `blocks` (id → block data); throws naming the group and key. */
+export function validateTerrain(data, blocks = registryBlocks()) {
   const fail = (m) => {
     throw new Error(`terrain.json: ${m}`);
   };
@@ -266,7 +336,8 @@ export function validateTerrain(data) {
   for (const [group, keys] of Object.entries(TERRAIN)) {
     const g = data[group];
     if (typeof g !== 'object' || g === null) fail(`${group} must be an object`);
-    const ge = Object.keys(g).filter((k) => k !== '$comment' && !(k in keys));
+    const allowed = group === 'bands' ? BAND_BLOCKS : [];
+    const ge = Object.keys(g).filter((k) => k !== '$comment' && !(k in keys) && !allowed.includes(k));
     if (ge.length) fail(`${group}: unknown ${ge.join(', ')}`);
     for (const [key, [min, max, whole]] of Object.entries(keys)) {
       const v = g[key];
@@ -278,16 +349,23 @@ export function validateTerrain(data) {
     }
   }
   if (!(data.hills.fadeTo > data.hills.fadeFrom)) fail('hills.fadeTo must be greater than hills.fadeFrom');
-  // A step is a whole number of cells (constants.json cellHeight).
-  const cell = JSON.parse(readFileSync(join(here, '../protocol/constants.json'), 'utf8')).cellHeight;
-  if (!Number.isInteger(data.steps.height / cell)) fail(`steps.height must be a whole number of cells (${cell} m)`);
+  if (!(data.detail.mountainFull > data.detail.mountainFrom)) {
+    fail('detail.mountainFull must be greater than detail.mountainFrom');
+  }
+  if (!(data.spawn.maxHeight > data.spawn.minHeight)) fail('spawn.maxHeight must be greater than spawn.minHeight');
+  for (const k of BAND_BLOCKS) {
+    const id = data.bands[k];
+    const b = blocks.get(id);
+    if (!b) fail(`bands.${k} ${JSON.stringify(id)} is not in the registry`);
+    if (b.shape !== 'full') fail(`bands.${k} ${id} must be a full block`);
+  }
   return data;
 }
 
-/** The Rust constant for a validated height field. */
+/** The Rust constants for a validated terrain: the base field and the surface. */
 export function terrainRust(t) {
-  const rs = [`// ${terrainHeader}`, '', 'use crate::terrain::HeightField;', ''];
-  rs.push('/// The height field (shared/worldgen/terrain.json).');
+  const rs = [`// ${terrainHeader}`, '', 'use crate::terrain::{HeightField, Surface};', ''];
+  rs.push('/// The base height field, the world map\'s input (shared/worldgen/terrain.json).');
   rs.push('pub const HEIGHT: HeightField = HeightField {');
   const fields = [
     ['inland_rise', rf(t.inland.rise)],
@@ -302,10 +380,61 @@ export function terrainRust(t) {
     ['bump_height', rf(t.bumps.amplitude)],
     ['bump_wavelength', `${t.bumps.wavelength}`],
     ['bump_octaves', `${t.bumps.octaves}`],
-    ['step_from_slope', rf(t.steps.fromSlope)],
-    ['step_height', rf(t.steps.height)],
   ];
   for (const [k, v] of fields) rs.push(`    ${k}: ${v},`);
+  rs.push('};');
+  rs.push('');
+  const { detail: d, rivers: r, mouths: m, lakes: l, bands: b, spawn: s } = t;
+  const surface = [
+    ['detail_amplitude', rf(d.amplitude)],
+    ['detail_wavelength', `${d.wavelength}`],
+    ['detail_octaves', `${d.octaves}`],
+    ['detail_mountain_amplitude', rf(d.mountainAmplitude)],
+    ['detail_mountain_from', rf(d.mountainFrom)],
+    ['detail_mountain_full', rf(d.mountainFull)],
+    ['detail_water_fade', rf(d.waterFade)],
+    ['river_smooth', `${r.smooth}`],
+    ['river_min_depth', rf(r.minDepth)],
+    ['river_bank', rf(r.bank)],
+    ['river_valley_slope', rf(r.valleySlope)],
+    ['river_reach', rf(r.reach)],
+    ['river_reach_per_width', rf(r.reachPerWidth)],
+    ['river_meander', rf(r.meander)],
+    ['river_meander_wavelength', `${r.meanderWavelength}`],
+    ['river_lod_width', rf(r.lodWidth)],
+    ['river_lod_min_share', rf(r.lodMinShare)],
+    ['river_lod_max_cell', `${r.lodMaxCell}`],
+    ['mouth_reach', rf(m.reach)],
+    ['estuary_widen', rf(m.estuaryWiden)],
+    ['estuary_deepen', rf(m.estuaryDeepen)],
+    ['delta_widen', rf(m.deltaWiden)],
+    ['delta_branches', `${m.deltaBranches}`],
+    ['delta_split', rf(m.deltaSplit)],
+    ['delta_spread', rf(m.deltaSpread)],
+    ['delta_branch_width', rf(m.deltaBranchWidth)],
+    ['lake_bank', rf(l.bank)],
+    ['lake_levee', rf(l.levee)],
+    ['lake_shore_noise', rf(l.shoreNoise)],
+    ['lake_shore_wavelength', `${l.shoreWavelength}`],
+    ['snow_line', rf(b.snowLine)],
+    ['snow_noise', rf(b.snowNoise)],
+    ['snow_wavelength', `${b.snowWavelength}`],
+    ['snow_slope_lift', rf(b.snowSlopeLift)],
+    ['rock_slope', rf(b.rockSlope)],
+    ['shore', rf(b.shore)],
+    ['under_depth', rf(b.underDepth)],
+    ['ground', JSON.stringify(b.ground)],
+    ['under', JSON.stringify(b.under)],
+    ['snow', JSON.stringify(b.snow)],
+    ['rock', JSON.stringify(b.rock)],
+    ['shore_block', JSON.stringify(b.shoreBlock)],
+    ['spawn_min_height', rf(s.minHeight)],
+    ['spawn_max_height', rf(s.maxHeight)],
+    ['spawn_near_river', rf(s.nearRiver)],
+  ];
+  rs.push('/// How columns are shaped from the world map (shared/worldgen/terrain.json).');
+  rs.push('pub const SURFACE: Surface = Surface {');
+  for (const [k, v] of surface) rs.push(`    ${k}: ${v},`);
   rs.push('};');
   rs.push('');
   return rs.join('\n');

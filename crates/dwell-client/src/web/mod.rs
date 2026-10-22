@@ -194,3 +194,36 @@ pub fn world_file_version(bytes: Vec<u8>) -> Option<String> {
 pub fn set_world_file_version(bytes: Vec<u8>, version: &str) -> Result<Vec<u8>, JsError> {
     crate::local::with_world_file_version(bytes, version).map_err(|e| JsError::new(&e))
 }
+
+/// The cache keys of a terrain world's maps, faces A then B (ADR 0049): the build's map fingerprint
+/// and each face's seed, so a map kept by another build is never read.
+#[wasm_bindgen(js_name = worldMapKeys)]
+pub fn world_map_keys(world_seed: u64) -> Vec<String> {
+    [dwell_world::Face::A, dwell_world::Face::B]
+        .into_iter()
+        .map(|f| {
+            dwell_worldgen::worldmap::cache::key(dwell_worldgen::bifacial::face_seed(world_seed, f))
+        })
+        .collect()
+}
+
+/// Computes face `face`'s (0: A, 1: B) world map of a terrain world and returns its bytes (a
+/// builder worker's job: ~1.3 s).
+#[wasm_bindgen(js_name = buildWorldMap)]
+pub fn build_world_map(world_seed: u64, face: u8) -> Vec<u8> {
+    let face = if face == 1 {
+        dwell_world::Face::B
+    } else {
+        dwell_world::Face::A
+    };
+    dwell_worldgen::worldmap::build_bytes(dwell_worldgen::bifacial::face_seed(world_seed, face))
+}
+
+/// Installs a world map's bytes in this instance, so its generators use it rather than computing
+/// it; throws when the bytes are damaged or from another build.
+#[wasm_bindgen(js_name = installWorldMap)]
+pub fn install_world_map(bytes: &[u8]) -> Result<(), JsError> {
+    dwell_worldgen::worldmap::install(bytes)
+        .map(|_| ())
+        .map_err(|e| JsError::new(&e))
+}

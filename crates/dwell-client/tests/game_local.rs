@@ -914,8 +914,11 @@ fn with_the_lod_a_preloaded_respawn_opens_its_loading_screen_at_once() {
         Some(dwell_game::loading::Opened::Ready)
     );
     assert_eq!(with.ring_drawable_before, with.ring);
+    // Generator 21 (ADR 0049): the spawn lies in a valley under ~2 km mountains, whose LOD sections
+    // round the ring take a few more frames to refine to their chunks (14 measured; 3 on the old
+    // low hills) though every chunk of the ring is drawable before the respawn.
     assert!(
-        with.frames_to_open <= 3,
+        with.frames_to_open <= 20,
         "opened after {} frames",
         with.frames_to_open
     );

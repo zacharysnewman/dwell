@@ -33,7 +33,10 @@ export class LoopbackTransport implements Transport {
   }
 
   /** Starts the worker and resolves once the WASM core is loaded. */
-  static start(worker: Worker, world: LocalWorld): Promise<LoopbackTransport> {
+  static start(
+    worker: Worker,
+    world: LocalWorld & { maps?: Uint8Array[] },
+  ): Promise<LoopbackTransport> {
     return new Promise((resolve, reject) => {
       worker.onmessage = (e: MessageEvent<FromWorker>) => {
         if (e.data.t === 'ready') {

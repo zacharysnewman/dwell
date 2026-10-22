@@ -66,6 +66,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 46 — Distant terrain shadows (the lighting's layer 3) | 🚧 In progress — built and tested natively and in Chrome on the GPU (ADR 0046, DAY_NIGHT.md §12): heightmaps of the terrain as drawn, filled a budgeted slice a frame, horizon maps swept from them a band a frame, one horizon sample per far fragment blended into the cascades at their edge, both faces, per the Shadows setting (none on a CPU adapter); data `shared/look/lodshadows.json`. Measured +0.5–0.9 ms GPU a frame on the M1 (busy machine), no main-thread change. Outstanding: CI; the owner's look; a measurement on an idle machine |
 | 47 — Torches and dynamic lights | 🚧 In progress — T1 built and tested natively and in Chrome on the GPU ([ADR 0047](./adr/0047-torches-and-dynamic-lights.md), [`LIGHTS.md`](./LIGHTS.md)): light sources as block data (`lights`, `shared/blocks/lights.mjs`), the torch block and held item, placed torches through the flood light, held torches (yours and other players') as unshadowed per-fragment point lights, characters lit by them, flicker, glowing textures (`emissive`). T1b built and tested natively and in Chrome on the GPU: the torch 1 m over two ½ m cells (multi-cell blocks as data, `extends`/`partOf`), a self-lit flame. T2 built and tested natively and in Chrome on the GPU: Torch shadows (cube shadow maps for the nearest torches, kept until their terrain changes; placed torches as shadowed lights over their flood light; the setting). T1c built and tested natively and in Chrome on the GPU: the flame effect (animated painterly billboards from flame looks as data, placed, held and in the arms view). Outstanding: T2's and T1c's CI and the owner's look |
 | 48 — Bedrock and portals between the faces | 🚧 In progress — built and tested natively and in Chrome on the GPU (`BIFACIAL_WORLD.md` §12, `shared/worldgen/midplane.json`; generator version 20, a new compatibility line): `dwell:bedrock` either side of the midplane, 4–8 seeded portals with a ladder through, `?spawn=portal`. Outstanding: CI, the owner's look and the compatibility-line bump. M (2026-10-21): the blue motes at the crossing, built and tested natively and in Chrome on the GPU |
+| 49 — Mountains, rivers and lakes: the world map terrain | 🚧 In progress — built and tested natively, the browser join checked in Chrome on the GPU (ADR 0049; generator version 21, a new compatibility line): the hydrology map per face as the terrain (bicubic heights, river channels, flat lakes, bands with a snow line), ranges ~2,300–2,500 m, `dwell:snowy_grass` and `dwell:snowy_leaves`, maps built in workers and kept in IndexedDB ("Shaping the world…"). Outstanding: CI; the owner's look; the compatibility-line bump; polish (deltas, falls, bench scenarios) in a follow-up |
 
 Phase numbering: Phase 4 was inserted on 2026-09-29 for the planet-scale world (ADRs 0011, 0012);
 the former Phases 4–7 are now 5–8, and Phase 3's former 3c and 3d are now 3d and 3e.
@@ -5073,3 +5074,39 @@ Exit criteria
 - [x] Checked in Chrome on the GPU (shots in the PR): the motes from above the midplane, at it, and
   from the ladder; `motes.drawn` 40 with one portal in view.
 
+
+
+## Phase 49 — Mountains, Rivers and Lakes: the World Map Terrain
+
+**Status:** built and tested natively; the browser path (maps built in workers, IndexedDB, the
+"Shaping the world…" phase) checked in Chrome on the GPU (2026-10-21). Outstanding: CI, the owner's
+look, and the new compatibility line (generator version 21: the integrator raises `package.json` to
+0.26.0). Follow-ups (a later PR): delta and fall polish, foam and moving water (the flow direction
+is kept per map cell), bench scenarios that assumed seed 7's old terrain, per-world generation
+settings (0.27.0).
+
+Owner (2026-10-21): "Can you actually use that work in progress terrain generator with mountains,
+elevation, rivers, etc? And use it in game? No experiment flag required." Design: [ADR
+0049](./adr/0049-world-map-terrain.md), [`WORLD_GENERATION.md`](./WORLD_GENERATION.md) §4,
+ARCHITECTURE.md §6.3 (*The world map*).
+
+Deliverables
+- [x] The world map (`dwell-worldgen` `worldmap/`): the kept map, its lossless codec (checksum, the
+  build's fingerprint, a settings-hash slot), the per-process cache with a native disk copy, the
+  rivers' channels and the lakes' shores derived on load.
+- [x] Columns from the map (`terrain.rs`, data in `terrain.json`): bicubic height, detail, rivers,
+  lakes, the sea, bands (snow line, rock, shore); the spawn by a river in a lowland.
+- [x] Ranges retuned to ~2,300–2,500 m (`hydrology.json`, owner: "up to 8000ft"); treeline and
+  meadows raised; the pines' snowy variant by height (`placements.json` `variants`).
+- [x] `dwell:snowy_grass` (ramps, the dirt skirt under it) and `dwell:snowy_leaves`, painterly
+  tiles, a `dwell:snow` sound set.
+- [x] The browser: maps built in two job workers, kept in IndexedDB, installed in every WASM
+  instance; the loading screen's "Shaping the world…".
+
+Exit criteria
+- [x] Tests: the map's digest pinned on both faces (native and WASM in CI), its bytes round-trip and
+  damaged or foreign bytes are refused; a river added by data alone is carved with water at its
+  level; rivers never rise downstream and hold their water, lakes are flat (both faces); face
+  parity in the mirror world; spawn on dry level land by a river; the worldgen goldens regenerated
+  (version 21); `client/src/world/worldMaps.test.ts` (cache, shared promise, blocked storage).
+- [ ] The owner's look in game.

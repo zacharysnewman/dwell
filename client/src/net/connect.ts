@@ -21,6 +21,11 @@ export interface ConnectOptions {
   transport?: TransportPreference;
   /** Local mode: the world to open (from the menu, or `?world=`, `?seed=`). */
   localWorld?: LocalWorld;
+  /**
+   * A terrain world's maps (ADR 0049; `world/worldMaps.ts`): the local world's server installs
+   * them rather than computing its own on its thread.
+   */
+  worldMaps?: (seed: bigint, generatorVersion: number) => Promise<Uint8Array[]> | null;
 }
 
 export class TransportUnavailableError extends Error {
@@ -90,7 +95,15 @@ export async function connectLocal(
 ): Promise<LocalSession> {
   const worker = new Worker(new URL('../local/worker.ts', import.meta.url), { type: 'module' });
   const world = options.localWorld ?? { worldSeed: 0, generatorVersion: GENERATORS.terrain };
-  const loopback = await LoopbackTransport.start(worker, world);
+  let maps: Uint8Array[] | undefined;
+  try {
+    maps =
+      (await options.worldMaps?.(BigInt(world.worldSeed), world.generatorVersion)) ?? undefined;
+  } catch (err) {
+    // The server computes its own (slower to start, the same terrain).
+    console.warn('Dwell: the world maps are unavailable', err);
+  }
+  const loopback = await LoopbackTransport.start(worker, maps ? { ...world, maps } : world);
   // The world saves every few seconds, and at once when the page is hidden or closed (§6.4).
   const save = () => {
     void loopback.save();

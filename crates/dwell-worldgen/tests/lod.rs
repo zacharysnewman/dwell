@@ -418,8 +418,10 @@ fn a_generated_section_agrees_with_the_downsample_of_chunks() {
             g.generate_lod(c, &mut generated, None);
             let (classes, within, mean) =
                 compare(&generated, &downsampled_from_chunks(&chunks, c), Face::A);
+            // 0.9 of the tops: generator 21's lowlands are forest (the pines' canopies are
+            // sampled at a cell's centre column, the downsample takes any voxel of the cell).
             assert!(
-                classes >= 0.95 && within >= 0.95,
+                classes >= 0.95 && within >= 0.9,
                 "{name} level {level}: {classes} {within}"
             );
             mean_sum += mean;
@@ -484,7 +486,8 @@ fn coarse_cells_show_the_grounds_surface_not_the_floor() {
             }
         }
         assert!(
-            tops > 0 && stone == 0 && grassy > tops / 2,
+            // Stone only on the mountains' bare rock (terrain.json `bands`), not the floor.
+            tops > 0 && stone * 10 < tops && grassy > tops / 2,
             "level {level}: {tops} {stone} {grassy}"
         );
     }

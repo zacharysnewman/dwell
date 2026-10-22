@@ -1,25 +1,29 @@
-//! Procedural terrain, generator version 20 (ARCHITECTURE.md §6.3; ½ m cells, ADR 0042, with the
-//! slopes of HALF_HEIGHT_GRID.md §4): the interim baseline of Phase
-//! 15 — one island at the origin, a 2D height field, and the ground filled by depth — and since
-//! version 13 (Phase 33) the decorations of `shared/worldgen/decorations.json` one cell above the
-//! ground (tall grass; `decorations.rs`), and since version 14 (Phase 41, HALF_HEIGHT_GRID.md) ½ m
-//! cells with natural tops shaped from stored cardinal ramps (`ramps.rs`). A chunk is a
-//! pure function of (world seed, chunk coordinate), so chunks generate in any order, on any thread,
-//! natively or in WASM, bit-identically (noise.rs, ADR 0010).
+//! Procedural terrain, generator version 21 (ARCHITECTURE.md §6.3, ADR 0049): mountains, rivers and
+//! lakes from the world map. Each face's map (`worldmap`: the base field sampled on a 100 m grid,
+//! mountain ranges lifted by the uplift layer, eroded, its lakes and rivers found) is computed once
+//! per face seed; every column is shaped from it here:
 //!
-//! Per chunk: (1) layout: the signed distance to the coast; (2) height: the sea floor falling from
-//! the coast, or the land rising inland, plus hills, never below the core; (3) fill: the stone core
-//! (`CORE_LAYERS` from the midplane, never carved but by a portal; since version 20 its first rows
-//! the indestructible bedrock, `shared/worldgen/midplane.json`), stone up to the surface under grass over dirt
-//! on land, sand at the shore and under water, water in open space below sea level — since version
-//! 17 also the open part of a top block below sea level, which takes its `flooded` state
-//! (docs/WATER_RENDERING.md §9). 2D fields are
-//! sampled every 4 columns and interpolated. Heights are face-local, from the midplane (Phase 16:
-//! the midplane at 0, sea level `h` = 32). The height field's parameters are data
-//! (`shared/worldgen/terrain.json`, `HeightField`); the island's layout and the fill depths are
-//! still code constants. Phase 17 replaces this with an evaluator of terrain definitions (data,
-//! ADR 0026). Since version 20 the portals between the faces (`portals.rs`) cut their shafts,
-//! ladders and rims into the chunks they reach. Nothing is generated outside the build volume.
+//! 1. **Height**: the map's eroded height, Catmull-Rom bicubic between its cells (C1, no creases),
+//!    plus fine detail noise (`terrain.json` `detail`), stronger on mountains and faded out near
+//!    water.
+//! 2. **Lakes**: inside a lake's shore (the map's lake cells, a smooth signed distance) water stands
+//!    flat at its level over the ground below it; outside, the ground stands at least `bank` over
+//!    the level nearby, so the water never stands open beside lower ground.
+//! 3. **Rivers**: the nearest channel (the map's polylines, smoothed, `worldmap::channels`) cuts its
+//!    bed below its water and a valley down to its banks; the water's surface falls along the river
+//!    in ½ m terraces, small falls where it is steep.
+//! 4. **The sea**: open space below sea level is water, as always.
+//! 5. **Materials** by height and slope (`bands`): snow over the snow line, bare rock on steep
+//!    ground, sand at the shore and under water, grass over dirt elsewhere.
+//!
+//! Then, as before (since version 13–20): decorations one cell above the ground
+//! (`decorations.rs`), ½ m cells with natural tops shaped from stored cardinal ramps (`ramps.rs`,
+//! HALF_HEIGHT_GRID.md §4), the stone core and the bedrock under each face, structures
+//! (`placements.rs`) and the portals between the faces (`portals.rs`). A chunk is a pure function of
+//! (world seed, chunk coordinate) given the map, which is a pure function of the seed, so chunks
+//! generate in any order, on any thread, natively or in WASM, bit-identically (ADR 0010). Heights
+//! are face-local, from the midplane (sea level `h` = 32 m). Nothing is generated outside the build
+//! volume.
 
 use dwell_blocks::StateId;
 use dwell_world::hash::HashMap;
@@ -27,20 +31,19 @@ use dwell_world::lod::{self, LodBounds, LodCells, LodCoord, LodKind, LodSurface,
 use dwell_world::ramps::{self, RampFacing};
 use dwell_world::{
     BUILD_VOLUME, CELL_H, CHUNK_SIZE, CORE_LAYERS, Chunk, ChunkCoord, DiscOverlap, M, MIDPLANE_Y,
-    Overlap, SEA_LEVEL, chunk_disc_overlap, inside_world_disc, local_index, m_of_row, rows_for_m,
+    Overlap, SEA_LEVEL, SEA_LEVEL_M, chunk_disc_overlap, inside_world_disc, local_index, m_of_row,
+    rows_for_m,
 };
 use std::sync::Arc;
 
+use crate::base::BaseField;
 use crate::decorations::{DECORATIONS, Placer};
-use crate::island::{self, IslandLayout};
-use crate::noise::{
-    clamp01, fbm2, floor_div, floor_mod, floor_to_int, lerp, noise_offset, octaves_resolved,
-    seed_word, smooth_step,
-};
+use crate::noise::{fbm2, floor_to_int, octaves_resolved, seed_word, smooth_step};
 use crate::placements::{self, Ground, PLACEMENTS, Planter, Tree};
 use crate::portals::{MIDPLANE, Part, Portal, Portals};
 use crate::ramps as ramps_rule;
 use crate::ramps::Top;
+use crate::worldmap::{self, WorldMap};
 
 /// A generator works face-locally: its band is [FACE_MIN_Y, FACE_MAX_Y), from the midplane to the
 /// build volume's top (the sphere is symmetric about the midplane, so both faces' bands are equal).
@@ -51,11 +54,9 @@ const _: () = assert!(
     BUILD_VOLUME.y_range().0 + BUILD_VOLUME.y_range().1 == 2 * MIDPLANE_Y as i64,
     "the build volume is symmetric about the midplane"
 );
-/// Lattice spacing of the interpolated 2D fields (columns, m).
-const LATTICE: i32 = 4;
-const LATTICE_STEP: f32 = 0.25;
-/// The height field's parameters (data: `shared/worldgen/terrain.json`, generated into
-/// `terrain.gen.rs` by `shared/worldgen/gen.mjs`).
+
+/// The base height field's parameters: the world map's input (data: `shared/worldgen/terrain.json`,
+/// generated into `terrain.gen.rs` by `shared/worldgen/gen.mjs`; `base.rs`).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct HeightField {
     /// The land's rise inland (m, approached far inland) and the distance (m) at which it is half
@@ -77,55 +78,147 @@ pub struct HeightField {
     pub bump_height: f32,
     pub bump_wavelength: i32,
     pub bump_octaves: u32,
-    /// Half-height branch (HALF_HEIGHT_GRID.md §4): where a lattice cell's ground is at least this
-    /// steep (m per m), heights snap to whole multiples of `step_height` (m; 0: off), so steep
-    /// ground is whole steps that the generation rule tops with 45° ramps.
-    pub step_from_slope: f32,
-    pub step_height: f32,
+}
+
+/// How columns are shaped from the world map (data: `terrain.json`; its comments give the units
+/// and meanings, the generator's validation the ranges).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Surface {
+    pub detail_amplitude: f64,
+    pub detail_wavelength: i32,
+    pub detail_octaves: u32,
+    pub detail_mountain_amplitude: f64,
+    pub detail_mountain_from: f64,
+    pub detail_mountain_full: f64,
+    pub detail_water_fade: f64,
+    pub river_smooth: u32,
+    pub river_min_depth: f64,
+    pub river_bank: f64,
+    pub river_valley_slope: f64,
+    pub river_reach: f64,
+    pub river_reach_per_width: f64,
+    pub river_meander: f64,
+    pub river_meander_wavelength: i32,
+    pub river_lod_width: f64,
+    pub river_lod_min_share: f64,
+    pub river_lod_max_cell: i64,
+    pub mouth_reach: f64,
+    pub estuary_widen: f64,
+    pub estuary_deepen: f64,
+    pub delta_widen: f64,
+    pub delta_branches: u32,
+    pub delta_split: f64,
+    pub delta_spread: f64,
+    pub delta_branch_width: f64,
+    pub lake_bank: f64,
+    pub lake_levee: f64,
+    pub lake_shore_noise: f64,
+    pub lake_shore_wavelength: i32,
+    pub snow_line: f64,
+    pub snow_noise: f64,
+    pub snow_wavelength: i32,
+    pub snow_slope_lift: f64,
+    pub rock_slope: f64,
+    pub shore: f64,
+    pub under_depth: f64,
+    pub ground: &'static str,
+    pub under: &'static str,
+    pub snow: &'static str,
+    pub rock: &'static str,
+    pub shore_block: &'static str,
+    pub spawn_min_height: f64,
+    pub spawn_max_height: f64,
+    pub spawn_near_river: f64,
 }
 
 mod table {
     include!("terrain.gen.rs");
 }
-pub use table::HEIGHT;
+pub use table::{HEIGHT, SURFACE};
 
-const H: HeightField = HEIGHT;
-/// Fill by depth: sand at the shore (top voxel below SHORE_HEIGHT above sea) to SAND_DEPTH, else
-/// grass over dirt to DIRT_DEPTH; stone below. In rows, from metres (2 m, 3 m, 3 m).
-const SHORE_HEIGHT: i32 = (2.0 / CELL_H) as i32;
+const S: Surface = SURFACE;
+/// Sand at the shore and under water to SAND_DEPTH (rows, from metres).
 const SAND_DEPTH: i64 = (3.0 / CELL_H) as i64;
-const DIRT_DEPTH: i64 = (3.0 / CELL_H) as i64;
+
+/// The deepest a lake's bed is forced below its level near its shore (m): deeper beds are the map's.
+const LAKE_DEPTH: f64 = 6.0;
 
 /// The spawn point's level patch reaches this many columns either side.
 pub const SPAWN_CLEAR: i32 = 4;
 
-/// 2D fields of one column.
+/// What water a column holds.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Water {
+    /// Dry.
+    #[default]
+    None,
+    /// The sea (below sea level).
+    Sea,
+    River,
+    Lake,
+}
+
+/// The block bands of a column's top (resolved from `bands`' names).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Band {
+    #[default]
+    Ground,
+    Snow,
+    Rock,
+    Shore,
+}
+
+/// One column, from the map.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Column {
-    /// Signed distance to the coast (m): > 0 land, < 0 sea.
-    pub coast: f32,
     /// Ground height (m, face-local from the midplane): the top voxel is the row ceil(height ÷
     /// cell height) − 1.
     pub height: f32,
+    /// The water's surface (m, face-local), when `water` is not `None`: the rows below
+    /// `water_row` over the ground are water.
+    pub level: f32,
+    pub water: Water,
+    /// The surface's band.
+    pub band: Band,
     /// Beyond the world's disc: nothing is generated.
     pub outside: bool,
+}
+
+impl Column {
+    /// The first row above the water (rows below it over the ground are water); the ground's top
+    /// + 1 when dry.
+    pub fn water_row(&self) -> i32 {
+        let top = top_voxel(self.height);
+        if self.water == Water::None {
+            return top + 1;
+        }
+        surface_row(self.level).max(top + 1)
+    }
+
+    /// The row the water's surface lies on (rows below it are under water, the top cell's open
+    /// part too); none when dry.
+    pub fn flood_row(&self) -> i32 {
+        if self.water == Water::None {
+            i32::MIN
+        } else {
+            surface_row(self.level)
+        }
+    }
+
+    /// Whether water stands over the ground (cells of water above its top).
+    pub fn wet(&self) -> bool {
+        self.water_row() > top_voxel(self.height) + 1
+    }
+}
+
+/// The row a water surface (m, face-local) lies on: the rows below it are water.
+fn surface_row(level: f32) -> i32 {
+    floor_to_int(level / CELL_H as f32 + 0.5)
 }
 
 /// A height (m) in rows of cells (HALF_HEIGHT_GRID.md §2); exact at 1 m and ½ m cells.
 fn rows(h: f32) -> f32 {
     h / CELL_H as f32
-}
-
-/// The steepest edge of a lattice cell whose corners' heights (m) are `h` (corner order as
-/// `interp`'s: (0, 0), (1, 0), (0, 1), (1, 1)), in m per m.
-fn lattice_slope(h: [f32; 4]) -> f32 {
-    let d = [h[1] - h[0], h[3] - h[2], h[2] - h[0], h[3] - h[1]];
-    d.iter().fold(0.0f32, |m, v| m.max(v.abs())) / LATTICE as f32
-}
-
-/// A height (m) snapped to the nearest whole step (`step_height`).
-fn snap_to_step(h: f32) -> f32 {
-    (h / H.step_height).round() * H.step_height
 }
 
 /// The top voxel (row) of a column of height h (m): ceil(h in rows) − 1.
@@ -142,10 +235,31 @@ fn bedrock() -> StateId {
     *BEDROCK
 }
 
-/// The material `depth` rows below the surface of a column whose top voxel is `top`: the bedrock
-/// in the face's first `bedrock_rows` from the midplane, the core's stone over it up to
-/// `CORE_LAYERS`.
-fn fill(top: i32, depth: i64) -> StateId {
+/// The bands' blocks, resolved by name once.
+#[derive(Clone, Copy, Debug)]
+pub struct Bands {
+    pub ground: StateId,
+    pub under: StateId,
+    pub snow: StateId,
+    pub rock: StateId,
+    pub shore: StateId,
+}
+
+pub fn bands() -> &'static Bands {
+    static BANDS: std::sync::LazyLock<Bands> = std::sync::LazyLock::new(|| Bands {
+        ground: dwell_blocks::require(S.ground),
+        under: dwell_blocks::require(S.under),
+        snow: dwell_blocks::require(S.snow),
+        rock: dwell_blocks::require(S.rock),
+        shore: dwell_blocks::require(S.shore_block),
+    });
+    &BANDS
+}
+
+/// The material `depth` rows below the surface of a column whose top voxel is `top` and band
+/// `band`: the bedrock in the face's first `bedrock_rows` from the midplane, the core's stone over
+/// it up to `CORE_LAYERS`, then the band's layers.
+fn fill(band: Band, top: i32, depth: i64) -> StateId {
     let y = i64::from(top) - depth;
     if y < i64::from(MIDPLANE_Y + MIDPLANE.bedrock_rows) {
         return bedrock();
@@ -153,25 +267,34 @@ fn fill(top: i32, depth: i64) -> StateId {
     if y < i64::from(MIDPLANE_Y + CORE_LAYERS) {
         return M.stone;
     }
-    if top < SEA_LEVEL + SHORE_HEIGHT {
-        return if depth < SAND_DEPTH { M.sand } else { M.stone };
-    }
-    if depth == 0 {
-        M.grass
-    } else if depth <= DIRT_DEPTH {
-        M.dirt
-    } else {
-        M.stone
+    let b = bands();
+    match band {
+        Band::Shore => {
+            if depth < SAND_DEPTH {
+                b.shore
+            } else {
+                M.stone
+            }
+        }
+        Band::Rock => b.rock,
+        Band::Ground | Band::Snow => {
+            if depth == 0 {
+                if band == Band::Snow { b.snow } else { b.ground }
+            } else if depth <= (S.under_depth / CELL_H) as i64 {
+                b.under
+            } else {
+                M.stone
+            }
+        }
     }
 }
 
 /// The state the generator writes for `m` at row `y` of a column's top (its top voxel, or a stored
-/// ramp piece over it): below sea level it holds the sea in its open part (its `flooded` state,
-/// when its block has one; docs/WATER_RENDERING.md §9), so a ramp in the water's rows is under
-/// the water, not dry beside it — on the half-height grid, a 1 m ramp's lower piece too when only
-/// it lies below sea level.
-fn under_sea(m: StateId, y: i32) -> StateId {
-    if y >= SEA_LEVEL {
+/// ramp piece over it): below the column's water it holds the water in its open part (its
+/// `flooded` state, when its block has one; docs/WATER_RENDERING.md §9), so a ramp in the water's
+/// rows is under the water, not dry beside it.
+fn under_water(m: StateId, y: i32, water_row: i32) -> StateId {
+    if y >= water_row {
         return m;
     }
     static FLOODED: std::sync::LazyLock<Vec<StateId>> = std::sync::LazyLock::new(|| {
@@ -182,21 +305,16 @@ fn under_sea(m: StateId, y: i32) -> StateId {
     FLOODED.get(usize::from(m)).copied().unwrap_or(m)
 }
 
-/// The noise fields of a point, before the height is derived from them.
-#[derive(Clone, Copy, Debug, Default)]
-struct Corner {
-    coast: f32,
-    hills: f32,
-    bumps: f32,
-}
-
 #[derive(Clone, Debug)]
 pub struct TerrainGenerator {
-    hills_seed: u32,
-    bumps_seed: u32,
+    base: BaseField,
+    map: Arc<WorldMap>,
+    detail_seed: u32,
+    meander_seeds: [u32; 2],
+    shore_seeds: [u32; 2],
+    snow_seed: u32,
     offset_x: i64,
     offset_z: i64,
-    island: IslandLayout,
     /// The decorations (data), resolved for this world.
     decorations: Vec<Placer>,
     /// The stored ramps natural tops are shaped with (HALF_HEIGHT_GRID.md §4); empty (no shaping)
@@ -223,7 +341,8 @@ struct RampPieces {
 impl RampPieces {
     fn resolve() -> Self {
         let mut by = HashMap::default();
-        for m in [M.grass, M.sand, M.dirt, M.stone] {
+        let b = bands();
+        for m in [b.ground, b.shore, b.under, b.rock, b.snow] {
             let base = dwell_blocks::block_of(m).name;
             for facing in RampFacing::ALL {
                 for flooded in [false, true] {
@@ -262,13 +381,31 @@ const DECORATION_RISE: i32 = 1;
 const LOD_TREE_CELL: i64 = 2;
 
 impl TerrainGenerator {
+    /// The face generator for face seed `world_seed`, its world map computed now or taken from
+    /// the process's maps (`worldmap::for_seed`).
     pub fn new(world_seed: u64) -> Self {
+        Self::with_map(world_seed, worldmap::for_seed(world_seed))
+    }
+
+    /// The face generator over a given map (tests: a fixture map).
+    pub fn with_map(world_seed: u64, map: Arc<WorldMap>) -> Self {
+        let base = BaseField::new(world_seed);
+        let (offset_x, offset_z) = base.offset();
         Self {
-            hills_seed: seed_word(world_seed, 1),
-            bumps_seed: seed_word(world_seed, 2),
-            offset_x: noise_offset(seed_word(world_seed, 3)),
-            offset_z: noise_offset(seed_word(world_seed, 4)),
-            island: IslandLayout::new(world_seed),
+            base,
+            map,
+            detail_seed: seed_word(world_seed, 0xD7A1_0001),
+            meander_seeds: [
+                seed_word(world_seed, 0xD7A1_0002),
+                seed_word(world_seed, 0xD7A1_0003),
+            ],
+            shore_seeds: [
+                seed_word(world_seed, 0xD7A1_0004),
+                seed_word(world_seed, 0xD7A1_0005),
+            ],
+            snow_seed: seed_word(world_seed, 0xD7A1_0006),
+            offset_x,
+            offset_z,
             decorations: Placer::resolve(&DECORATIONS, world_seed),
             ramps: Arc::new(RampPieces::resolve()),
             planters: Vec::new(),
@@ -282,6 +419,11 @@ impl TerrainGenerator {
     /// The world seed this generator was made from (a face's own seed, `bifacial::face_seed`).
     pub fn seed(&self) -> u64 {
         self.world_seed
+    }
+
+    /// This face's world map.
+    pub fn map(&self) -> &Arc<WorldMap> {
+        &self.map
     }
 
     /// The generator with these structure placements in place of the build's (tests add one by
@@ -344,117 +486,185 @@ impl TerrainGenerator {
         &self.planters
     }
 
-    fn sample_corner(&self, lx: i32, lz: i32) -> Corner {
-        let x = i64::from(lx) * i64::from(LATTICE);
-        let z = i64::from(lz) * i64::from(LATTICE);
-        let (nx, nz) = (x + self.offset_x, z + self.offset_z);
-        Corner {
-            coast: self.island.coast_at(x, z, None),
-            hills: fbm2(
-                self.hills_seed,
-                nx,
-                nz,
-                H.hill_wavelength,
-                H.hill_octaves,
-                None,
-            ),
-            bumps: fbm2(
-                self.bumps_seed,
-                nx,
-                nz,
-                H.bump_wavelength,
-                H.bump_octaves,
-                None,
-            ),
+    /// A domain warp of about ±`amplitude` m at `wavelength` (two octaves).
+    fn warp(&self, seeds: [u32; 2], x: i64, z: i64, amplitude: f64, wavelength: i32) -> (f64, f64) {
+        if amplitude <= 0.0 {
+            return (x as f64, z as f64);
         }
+        let (nx, nz) = (x + self.offset_x, z + self.offset_z);
+        let wx = f64::from(fbm2(seeds[0], nx, nz, wavelength, 2, None));
+        let wz = f64::from(fbm2(seeds[1], nx, nz, wavelength, 2, None));
+        (
+            x as f64 + 2.0 * amplitude * wx,
+            z as f64 + 2.0 * amplitude * wz,
+        )
     }
 
-    fn sample_lod(&self, x: i64, z: i64, cell: i64) -> Corner {
-        let (nx, nz) = (x + self.offset_x, z + self.offset_z);
-        Corner {
-            coast: self.island.coast_at(
+    /// The column at (x, z) as seen at a cell of `cell` m: 1 for chunks; the LOD's coarser cells
+    /// drop the detail octaves finer than a cell and widen rivers to show from afar.
+    fn column(&self, x: i64, z: i64, cell: i64) -> Column {
+        if !inside_world_disc(x, z) {
+            return Column {
+                outside: true,
+                ..Column::default()
+            };
+        }
+        let map = &*self.map;
+        let (base, gx, gz) = map.height_at(x as f64, z as f64);
+        // The fine detail, stronger on mountains.
+        let amplitude = S.detail_amplitude
+            + (S.detail_mountain_amplitude - S.detail_amplitude)
+                * f64::from(smooth_step(
+                    S.detail_mountain_from as f32,
+                    S.detail_mountain_full as f32,
+                    base as f32,
+                ));
+        let kept = octaves_resolved(S.detail_wavelength, S.detail_octaves, cell);
+        let detail = if kept == 0 {
+            0.0
+        } else {
+            2.0 * amplitude
+                * f64::from(fbm2(
+                    self.detail_seed,
+                    x + self.offset_x,
+                    z + self.offset_z,
+                    S.detail_wavelength,
+                    S.detail_octaves,
+                    Some(kept),
+                ))
+        };
+        // The nearest river channel, through the meander warp (none far from every river).
+        let (min_half, min_width) = if cell > 1 && cell <= S.river_lod_max_cell {
+            (
+                0.5 * S.river_lod_width * cell as f64,
+                S.river_lod_min_share * cell as f64,
+            )
+        } else {
+            (0.0, f64::INFINITY)
+        };
+        let river = if map.channels.near(x as f64, z as f64, min_half) {
+            let (wx, wz) = self.warp(
+                self.meander_seeds,
                 x,
                 z,
-                Some(octaves_resolved(
-                    island::COAST_WAVELENGTH,
-                    island::COAST_OCTAVES,
-                    cell,
-                )),
-            ),
-            hills: fbm2(
-                self.hills_seed,
-                nx,
-                nz,
-                H.hill_wavelength,
-                H.hill_octaves,
-                Some(octaves_resolved(H.hill_wavelength, H.hill_octaves, cell)),
-            ),
-            bumps: fbm2(
-                self.bumps_seed,
-                nx,
-                nz,
-                H.bump_wavelength,
-                H.bump_octaves,
-                Some(octaves_resolved(H.bump_wavelength, H.bump_octaves, cell)),
-            ),
-        }
-    }
-
-    fn finish(c: Corner) -> Column {
-        // Fractal sums rarely leave ±0.5: × 2 brings the amplitudes to about their nominal values.
-        let base = if c.coast > 0.0 {
-            H.inland_rise * (c.coast / (c.coast + H.rise_half))
+                S.river_meander,
+                S.river_meander_wavelength,
+            );
+            map.channels.query(wx, wz, min_half, min_width)
         } else {
-            H.sea_floor * clamp01(-c.coast * (1.0 / H.shelf))
+            None
         };
-        let land = smooth_step(H.hill_fade_from, H.hill_fade_to, c.coast);
-        let relief = base + land * H.hill_height * 2.0 * c.hills + H.bump_height * 2.0 * c.bumps;
+        // The lake whose shore field covers it, through the shore warp.
+        let lake = if map.shores.fields.is_empty() {
+            None
+        } else {
+            let (sx, sz) = self.warp(
+                self.shore_seeds,
+                x,
+                z,
+                S.lake_shore_noise,
+                S.lake_shore_wavelength,
+            );
+            map.shores.query(map, sx, sz)
+        };
+        let mut fade: f64 = 1.0;
+        if let Some(r) = &river {
+            fade = fade.min(smooth01((r.d - r.half) / S.detail_water_fade.max(1e-6)));
+        }
+        if let Some(l) = &lake {
+            fade = fade.min(smooth01(-l.sdf / S.detail_water_fade.max(1e-6)));
+        }
+        let mut h = base + detail * fade;
+        let mut water = Water::None;
+        let mut level = 0.0f64;
+        if let Some(l) = &lake {
+            if l.sdf > 0.0 {
+                // Inside the shore: a bed below the water, deepening away from the shore.
+                h = h.min(l.level - (0.5 + 0.15 * l.sdf).min(LAKE_DEPTH));
+                water = Water::Lake;
+                level = l.level;
+            } else {
+                // Round the shore: never lower than the bank over the water near it.
+                let out = -l.sdf;
+                let required = l.level + S.lake_bank - (out - 2.0).max(0.0) * 0.25;
+                h = h.max(required);
+            }
+        }
+        if let Some(r) = &river {
+            let edge = r.d - r.half;
+            if edge < 0.0 {
+                // The channel: its bed below the water, deepest on the centreline.
+                let f = r.d / r.half;
+                let depth = (r.depth * (1.0 - f * f)).max(S.river_min_depth);
+                // Below the surface as drawn (its row), so a channel always holds water cells.
+                let drawn =
+                    f64::from(surface_row((SEA_LEVEL_M + r.level) as f32)) * CELL_H - SEA_LEVEL_M;
+                h = h.min(drawn.min(r.level) - depth);
+                // In a lake the lake's flat surface wins (a river running into it ends there).
+                if water != Water::Lake {
+                    water = Water::River;
+                    level = r.level;
+                }
+            } else if water != Water::Lake {
+                // The valley down to the banks, blended back into the land at its reach; the banks
+                // never lower than `bank` over the water (a levee where the land is lower).
+                let bank = r.level + S.river_bank;
+                let valley = bank + edge * S.river_valley_slope;
+                let carved = smooth_min(h, valley, 2.0);
+                let t = smooth01(edge / r.valley.max(1e-6));
+                h = carved + (h - carved) * t;
+                let levee = bank - (edge - 1.0).max(0.0) * 1.5;
+                h = h.max(levee);
+            }
+        }
+        if h < 0.0 && (water == Water::None || level < 0.0) {
+            water = Water::Sea;
+            level = 0.0;
+        }
+        let height = ((SEA_LEVEL_M + h).max(dwell_world::MIDPLANE_M + dwell_world::CORE_M)) as f32;
+        let level = (SEA_LEVEL_M + level) as f32;
+        // Water only where its surface's row lies above the top cell's bottom (rows, as drawn).
+        let wet = water != Water::None && surface_row(level) > top_voxel(height);
+        if !wet {
+            water = Water::None;
+        }
+        // The band: shore (and every bed under water), rock where steep, snow over the snow line.
+        let slope = (gx * gx + gz * gz).sqrt();
+        let band = if wet || h < S.shore {
+            Band::Shore
+        } else if slope >= S.rock_slope {
+            Band::Rock
+        } else if h + S.snow_noise >= S.snow_line {
+            let noise = 2.0
+                * S.snow_noise
+                * f64::from(fbm2(
+                    self.snow_seed,
+                    x + self.offset_x,
+                    z + self.offset_z,
+                    S.snow_wavelength,
+                    3,
+                    Some(octaves_resolved(S.snow_wavelength, 3, cell)),
+                ));
+            if h >= S.snow_line + noise + S.snow_slope_lift * slope {
+                Band::Snow
+            } else {
+                Band::Ground
+            }
+        } else {
+            Band::Ground
+        };
         Column {
-            coast: c.coast,
-            // Never below the core's top.
-            height: (dwell_world::SEA_LEVEL_M as f32 + relief)
-                .max((dwell_world::MIDPLANE_M + dwell_world::CORE_M) as f32),
+            height,
+            level,
+            water,
+            band,
             outside: false,
         }
     }
 
-    fn interp(c: &[Corner; 4], fx: i32, fz: i32) -> Column {
-        let tx = fx as f32 * LATTICE_STEP;
-        let tz = fz as f32 * LATTICE_STEP;
-        let bi = |f: fn(&Corner) -> f32| {
-            lerp(
-                lerp(f(&c[0]), f(&c[1]), tx),
-                lerp(f(&c[2]), f(&c[3]), tx),
-                tz,
-            )
-        };
-        let mut col = Self::finish(Corner {
-            coast: bi(|c| c.coast),
-            hills: bi(|c| c.hills),
-            bumps: bi(|c| c.bumps),
-        });
-        if H.step_height > 0.0 {
-            let h = c.map(|c| Self::finish(c).height);
-            if lattice_slope(h) >= H.step_from_slope {
-                col.height = snap_to_step(col.height);
-            }
-        }
-        col
-    }
-
     /// A column with exactly the chunk path's arithmetic (spawn, tools, tests).
     pub fn column_at(&self, x: i32, z: i32) -> Column {
-        let lx = floor_div(x, LATTICE);
-        let lz = floor_div(z, LATTICE);
-        let c = [
-            self.sample_corner(lx, lz),
-            self.sample_corner(lx + 1, lz),
-            self.sample_corner(lx, lz + 1),
-            self.sample_corner(lx + 1, lz + 1),
-        ];
-        let mut col = Self::interp(&c, floor_mod(x, LATTICE), floor_mod(z, LATTICE));
-        col.outside = !inside_world_disc(i64::from(x), i64::from(z));
-        col
+        self.column(i64::from(x), i64::from(z), 1)
     }
 
     pub fn solid_at(&self, x: i32, y: i32, z: i32) -> bool {
@@ -473,7 +683,8 @@ impl TerrainGenerator {
         (!col.outside).then(|| top_voxel(col.height).clamp(FACE_MIN_Y, FACE_MAX_Y - 1))
     }
 
-    /// The state `generate` puts at (x, y, z) (face-local), from the column alone.
+    /// The state `generate` puts at (x, y, z) (face-local), from the column alone (no ramps,
+    /// decorations, structures or portals).
     pub fn state_at(&self, x: i32, y: i32, z: i32) -> StateId {
         Self::state_in(&self.column_at(x, z), y)
     }
@@ -483,10 +694,15 @@ impl TerrainGenerator {
             return M.air;
         }
         let top = top_voxel(col.height);
+        let water = col.water_row();
         if y <= top {
-            let m = fill(top, i64::from(top - y));
-            if y == top { under_sea(m, y) } else { m }
-        } else if y < SEA_LEVEL {
+            let m = fill(col.band, top, i64::from(top - y));
+            if y == top {
+                under_water(m, y, col.flood_row())
+            } else {
+                m
+            }
+        } else if y < water {
             M.water
         } else {
             M.air
@@ -497,7 +713,8 @@ impl TerrainGenerator {
     /// disc): the top of a flat column, or the middle of the ramp the generation rule tops it with.
     pub fn surface_y_at(&self, x: i32, z: i32) -> Option<f64> {
         let g = self.ground_y(x, z)?;
-        let pieces = self.pieces_with(|nx, nz| self.column_at(nx, nz), x, z, g);
+        let col = self.column_at(x, z);
+        let pieces = self.pieces_with(|nx, nz| self.column_at(nx, nz), x, z, &col, g);
         let first = g + 1 - pieces.len() as i32;
         let mut top = m_of_row(g + 1);
         for (k, &p) in pieces.iter().enumerate() {
@@ -510,9 +727,9 @@ impl TerrainGenerator {
         Some(top)
     }
 
-    /// The island's coast distance at the point itself (no lattice).
+    /// The island's coast distance at the point itself (the base field's: > 0 on its land).
     pub fn coast_at(&self, x: i32, z: i32) -> f32 {
-        self.island.coast_at(i64::from(x), i64::from(z), None)
+        self.base.coast_at(i64::from(x), i64::from(z))
     }
 
     /// Columns of a chunk (S × S, row-major from (x0, z0)).
@@ -521,39 +738,23 @@ impl TerrainGenerator {
     }
 
     /// Columns of a w × l rectangle (row-major from (x0, z0)), with exactly `column_at`'s
-    /// arithmetic: the lattice corners sampled once and interpolated.
+    /// arithmetic.
     fn rect_columns(&self, x0: i32, z0: i32, w: i32, l: i32) -> Vec<Column> {
-        let lx0 = floor_div(x0, LATTICE);
-        let lz0 = floor_div(z0, LATTICE);
-        let nx = floor_div(x0 + w - 1, LATTICE) - lx0 + 2;
-        let nz = floor_div(z0 + l - 1, LATTICE) - lz0 + 2;
-        let mut corners = Vec::with_capacity((nx * nz) as usize);
-        for j in 0..nz {
-            for i in 0..nx {
-                corners.push(self.sample_corner(lx0 + i, lz0 + j));
-            }
-        }
-        let at = |i: i32, j: i32| corners[(j * nx + i) as usize];
         let mut cols = Vec::with_capacity((w * l) as usize);
         for z in z0..z0 + l {
             for x in x0..x0 + w {
-                let (i, j) = (floor_div(x, LATTICE) - lx0, floor_div(z, LATTICE) - lz0);
-                let c = [at(i, j), at(i + 1, j), at(i, j + 1), at(i + 1, j + 1)];
-                let mut col = Self::interp(&c, floor_mod(x, LATTICE), floor_mod(z, LATTICE));
-                col.outside = !inside_world_disc(i64::from(x), i64::from(z));
-                cols.push(col);
+                cols.push(self.column_at(x, z));
             }
         }
         cols
     }
 
-    /// The highest ground of the columns inside the disc, in rows, plus what grows on it (rows).
+    /// The highest ground or water of the columns inside the disc, in rows, plus what grows on it
+    /// (rows).
     fn sky_floor(&self, cols: &[Column]) -> f32 {
-        rows(
-            cols.iter()
-                .filter(|c| !c.outside)
-                .fold(-1e9f32, |top, c| top.max(c.height)),
-        ) + self.rise
+        cols.iter().filter(|c| !c.outside).fold(-1e9f32, |top, c| {
+            top.max(rows(c.height)).max(c.water_row() as f32)
+        }) + self.rise
     }
 
     /// The sky test's height (rows) for a chunk column: chunks with y0 above it (and at or above
@@ -568,15 +769,16 @@ impl TerrainGenerator {
             return None;
         }
         let top = top_voxel(col.height);
-        // The top block as generated: below sea level it takes its flooded state. Rows of cells
-        // for the top; metres for the height band (placements.json's) and the slope.
-        let block = under_sea(fill(top, 0), top);
+        // The top block as generated: under water it takes its flooded state. Rows of cells for
+        // the top; metres for the height band (placements.json's) and the slope.
+        let water = col.water_row();
+        let block = under_water(fill(col.band, top, 0), top, col.flood_row());
         Some(Ground {
             top,
-            above_sea: (m_of_row(top) - dwell_world::SEA_LEVEL_M).floor() as i32,
+            above_sea: (m_of_row(top) - SEA_LEVEL_M).floor() as i32,
             height: col.height,
             block,
-            dry: top >= SEA_LEVEL && !dwell_blocks::info(block).flooded,
+            dry: water <= top + 1 && !dwell_blocks::info(block).flooded,
         })
     }
 
@@ -662,6 +864,8 @@ impl TerrainGenerator {
                     continue;
                 }
                 let top = top_voxel(col.height);
+                let water = col.water_row();
+                let flood = col.flood_row();
                 let (part, portal) = near
                     .as_ref()
                     .map_or((Part::None, None), |(p, n)| p.locate(n, x0 + x, z0 + z));
@@ -720,12 +924,12 @@ impl TerrainGenerator {
                     {
                         *v = m;
                     } else if y <= top && y >= first_piece {
-                        *v = under_sea(pieces[(y - first_piece) as usize], y);
+                        *v = under_water(pieces[(y - first_piece) as usize], y, flood);
                     } else if y == top {
-                        *v = under_sea(fill(top, 0), y);
+                        *v = under_water(fill(col.band, top, 0), y, flood);
                     } else if y < top {
-                        *v = fill(top, i64::from(top - y));
-                    } else if y < SEA_LEVEL {
+                        *v = fill(col.band, top, i64::from(top - y));
+                    } else if y < water {
                         *v = M.water;
                     }
                 }
@@ -734,7 +938,7 @@ impl TerrainGenerator {
                 let above = top + 1;
                 if part == Part::None
                     && (y0..y0 + S).contains(&above)
-                    && above >= SEA_LEVEL
+                    && above >= water
                     && (FACE_MIN_Y..FACE_MAX_Y).contains(&above)
                     && let Some(m) = self.decoration_at(&cols, x0, z0, x, z, top)
                 {
@@ -816,7 +1020,8 @@ impl TerrainGenerator {
                 self.column_at(nx, nz)
             }
         };
-        self.pieces_with(column, x0 + lx, z0 + lz, top)
+        let col = cols[(lz * S + lx) as usize];
+        self.pieces_with(column, x0 + lx, z0 + lz, &col, top)
     }
 
     /// [`Self::top_pieces`] for column (x, z), its neighbours' columns from `column`.
@@ -825,6 +1030,7 @@ impl TerrainGenerator {
         column: impl Fn(i32, i32) -> Column,
         x: i32,
         z: i32,
+        col: &Column,
         top: i32,
     ) -> &[StateId] {
         if self.ramps.by.is_empty() {
@@ -843,8 +1049,8 @@ impl TerrainGenerator {
             std::array::from_fn(|c| height(x + c as i32 - 1, z + r as i32 - 1))
         });
         let shape = ramps_rule::top_of(&around, rows_for_m(1.0));
-        // Dry pieces: `generate` floods each one below sea level (`under_sea`).
-        let cells = self.ramps.cells(fill(top, 0), shape, false);
+        // Dry pieces: `generate` floods each one under the water (`under_water`).
+        let cells = self.ramps.cells(fill(col.band, top, 0), shape, false);
         // A 1 m ramp needs two cells of ground; a column one cell deep takes none.
         if (cells.len() as i32) > top + 1 - FACE_MIN_Y {
             return &[];
@@ -870,7 +1076,7 @@ impl TerrainGenerator {
             return None;
         }
         let (x, z) = (x0 + lx, z0 + lz);
-        let ground = fill(top, 0);
+        let ground = fill(cols[(lz * S + lx) as usize].band, top, 0);
         let neighbour_top = |nx: i32, nz: i32| {
             let (ix, iz) = (nx - x0, nz - z0);
             let col = if (0..S).contains(&ix) && (0..S).contains(&iz) {
@@ -898,12 +1104,10 @@ impl TerrainGenerator {
 
     // --- level of detail (§6.6) -------------------------------------------------------------------
 
-    /// A column at a coarse cell's resolution: the height field at (x, z) with the octaves finer
-    /// than `cell` m dropped, as the LOD samples it (and the hydrology prototype's grid).
+    /// A column at a coarse cell's resolution, as the LOD samples it: the detail octaves finer
+    /// than `cell` m dropped, rivers widened to show (`rivers.lodWidth`).
     pub fn column_lod(&self, x: i64, z: i64, cell: i64) -> Column {
-        let mut col = Self::finish(self.sample_lod(x, z, cell));
-        col.outside = !inside_world_disc(x, z);
-        col
+        self.column(x, z, cell)
     }
 
     fn lod_columns(&self, o: lod::LodOrigin, level: i32) -> Vec<Column> {
@@ -948,7 +1152,9 @@ impl TerrainGenerator {
             b.any_inside = true;
             // A cell is solid when its bottom voxel lies below the column's height: samples below
             // `lo` are solid, at or above `hi` open.
-            b.hi = b.hi.max(f64::from(rows(col.height)) + 1.0 + rise);
+            b.hi =
+                b.hi.max(f64::from(rows(col.height)) + 1.0 + rise)
+                    .max(f64::from(col.water_row()));
             b.lo = b.lo.min(f64::from(rows(col.height)) - 1.0);
         }
         if !b.any_inside {
@@ -1023,7 +1229,6 @@ impl TerrainGenerator {
             LodKind::Content => {}
         }
         let face_min = i64::from(FACE_MIN_Y);
-        let sea = i64::from(SEA_LEVEL);
         // The portals' shafts, at levels whose cells are no wider than a shaft: a column whose
         // centre lies in one is open down to the midplane, as the chunks are.
         let half = cell / 2;
@@ -1053,7 +1258,8 @@ impl TerrainGenerator {
                     }
                 }
                 let top = i64::from(top_voxel(col.height));
-                let is_sea = rows(col.height) < SEA_LEVEL as f32;
+                let water = i64::from(col.water_row());
+                let wet = water > top + 1;
                 for y in -1..=lod::SECTION_CELLS {
                     let a = o.y + i64::from(y) * cell;
                     let m = &mut cells[lod::cell_index(x, y, z)];
@@ -1064,31 +1270,31 @@ impl TerrainGenerator {
                     // A cell reaching below the face samples at the face's lowest voxel.
                     let at = a.max(face_min);
                     if at > top {
-                        if at < sea {
+                        if at < water {
                             *m = M.water;
                         }
                         continue;
                     }
                     let depth = (top - (a + cell - 1)).max(0);
                     if depth > 0 {
-                        *m = fill(top as i32, depth.min(1000));
+                        *m = fill(col.band, top as i32, depth.min(1000));
                         continue;
                     }
-                    // The column's top: its surface seen from above. A sea whose water no cell
-                    // sampled shows its water.
-                    let water_above = a + cell < sea;
-                    *m = if is_sea && !water_above {
+                    // The column's top: its surface seen from above. Water no cell sampled shows
+                    // as the top.
+                    let water_above = a + cell < water;
+                    *m = if wet && !water_above {
                         M.water
                     } else {
-                        fill(top as i32, 0)
+                        fill(col.band, top as i32, 0)
                     };
                     if let Some(s) = surface.as_deref_mut() {
                         s[lod::column_index(x, z)] = LodSurface {
                             valid: true,
-                            wet: is_sea,
+                            wet,
                             height: rows(col.height).min((a + cell) as f32),
-                            material: fill(top as i32, 0),
-                            water: if is_sea { SEA_LEVEL as f32 } else { 0.0 },
+                            material: fill(col.band, top as i32, 0),
+                            water: if wet { water as f32 } else { 0.0 },
                         };
                     }
                 }
@@ -1198,41 +1404,82 @@ impl TerrainGenerator {
         }
     }
 
-    /// Feet position for players: the level dry ground nearest the origin (a square spiral in 8 m
-    /// steps for a patch SPAWN_CLEAR columns either side at one height above the shore).
+    /// Feet position for players (`terrain.json` `spawn`): on level dry land between the spawn
+    /// heights, by a river when one is near: the map's suitable cells nearest the disc's centre
+    /// first, each searched round its centre for a level patch clear of structures and portals.
+    /// Falls back to the level dry ground nearest the origin.
     pub fn spawn_point(&self) -> [f64; 3] {
+        for (x, z) in self.spawn_candidates(48) {
+            if let Some(p) = self.spawn_near(x, z, 12) {
+                return p;
+            }
+        }
         let mut fallback = None;
-        let (mut x, mut z, mut dx, mut dz) = (0i32, 0i32, 1i32, 0i32);
-        let (mut leg, mut walked, mut turns) = (1, 0, 0);
-        for _ in 0..40_000 {
-            if let Some(g) = self.ground_y(x, z)
-                && g >= SEA_LEVEL + SHORE_HEIGHT
-            {
-                let feet = self.surface_y_at(x, z).unwrap_or(m_of_row(g + 1));
-                let point = [f64::from(x) + 0.5, feet, f64::from(z) + 0.5];
-                fallback.get_or_insert(point);
-                let level = (-SPAWN_CLEAR..=SPAWN_CLEAR).all(|pz| {
-                    (-SPAWN_CLEAR..=SPAWN_CLEAR).all(|px| self.ground_y(x + px, z + pz) == Some(g))
-                });
-                // Never in (or under) a placed structure: the patch is clear of their boxes;
-                // nor by a portal's opening.
-                let by_portal = self.portals.as_ref().is_some_and(|p| {
-                    p.box_reaches_clear(
-                        (x - SPAWN_CLEAR, z - SPAWN_CLEAR),
-                        (x + SPAWN_CLEAR, z + SPAWN_CLEAR),
-                    )
-                });
-                if level
-                    && !by_portal
-                    && self
-                        .trees_in(
-                            (x - SPAWN_CLEAR, z - SPAWN_CLEAR),
-                            (x + SPAWN_CLEAR, z + SPAWN_CLEAR),
-                        )
-                        .is_empty()
-                {
-                    return point;
+        self.spawn_near(0, 0, 5000)
+            .or_else(|| {
+                fallback = self.ground_y(0, 0).map(|g| [0.5, m_of_row(g + 1), 0.5]);
+                fallback
+            })
+            .unwrap_or([0.5, m_of_row(SEA_LEVEL + 1), 0.5])
+    }
+
+    /// Up to `most` map cells to look for a spawn in: dry land between the spawn heights, not in
+    /// a lake, within `spawn.nearRiver` m of a river vertex; nearest the disc's centre first.
+    fn spawn_candidates(&self, most: usize) -> Vec<(i32, i32)> {
+        let map = &*self.map;
+        let n = map.n as i64;
+        let reach = (S.spawn_near_river / map.cell).ceil() as i64;
+        let mut near = vec![false; map.n * map.n];
+        for r in &map.rivers {
+            for v in &r.path {
+                let c = map.cell_at(f64::from(v.x), f64::from(v.z));
+                let (ci, cj) = ((c % map.n) as i64, (c / map.n) as i64);
+                for dj in -reach..=reach {
+                    for di in -reach..=reach {
+                        let (i, j) = (ci + di, cj + dj);
+                        if (0..n).contains(&i)
+                            && (0..n).contains(&j)
+                            && ((di * di + dj * dj) as f64) * map.cell * map.cell
+                                <= S.spawn_near_river * S.spawn_near_river
+                        {
+                            near[(j * n + i) as usize] = true;
+                        }
+                    }
                 }
+            }
+        }
+        let mut cells: Vec<(i64, usize)> = (0..map.n * map.n)
+            .filter(|&c| {
+                let h = f64::from(map.height[c]);
+                near[c]
+                    && !map.is_sea(c)
+                    && map.lake[c] == worldmap::NO_LAKE
+                    && (S.spawn_min_height..=S.spawn_max_height).contains(&h)
+            })
+            .map(|c| {
+                let (x, z) = map.centre(c);
+                ((x * x + z * z) as i64, c)
+            })
+            .collect();
+        cells.sort_unstable();
+        cells
+            .into_iter()
+            .take(most)
+            .map(|(_, c)| {
+                let (x, z) = map.centre(c);
+                (x as i32, z as i32)
+            })
+            .collect()
+    }
+
+    /// A spawn on a level dry patch found by a square spiral of 8 m steps round (cx, cz), at most
+    /// `steps` legs out.
+    fn spawn_near(&self, cx: i32, cz: i32, steps: i32) -> Option<[f64; 3]> {
+        let (mut x, mut z, mut dx, mut dz) = (cx, cz, 1i32, 0i32);
+        let (mut leg, mut walked, mut turns) = (1, 0, 0);
+        while leg <= steps {
+            if let Some(p) = self.spawn_patch(x, z) {
+                return Some(p);
             }
             x += dx * 8;
             z += dz * 8;
@@ -1248,8 +1495,57 @@ impl TerrainGenerator {
                 }
             }
         }
-        fallback.unwrap_or([0.5, m_of_row(SEA_LEVEL + 1), 0.5])
+        None
     }
+
+    /// The feet on column (x, z) when it is the centre of a level dry patch SPAWN_CLEAR columns
+    /// either side, between the spawn heights, clear of structures and portals.
+    fn spawn_patch(&self, x: i32, z: i32) -> Option<[f64; 3]> {
+        let col = self.column_at(x, z);
+        if col.outside || col.wet() {
+            return None;
+        }
+        let g = top_voxel(col.height);
+        let above = m_of_row(g + 1) - SEA_LEVEL_M;
+        if above < S.spawn_min_height.min(1.0) || above > S.spawn_max_height * 2.0 {
+            return None;
+        }
+        let level = (-SPAWN_CLEAR..=SPAWN_CLEAR).all(|pz| {
+            (-SPAWN_CLEAR..=SPAWN_CLEAR).all(|px| {
+                let c = self.column_at(x + px, z + pz);
+                !c.outside && !c.wet() && top_voxel(c.height) == g
+            })
+        });
+        if !level {
+            return None;
+        }
+        // Never in (or under) a placed structure: the patch is clear of their boxes; nor by a
+        // portal's opening.
+        let lo = (x - SPAWN_CLEAR, z - SPAWN_CLEAR);
+        let hi = (x + SPAWN_CLEAR, z + SPAWN_CLEAR);
+        if self
+            .portals
+            .as_ref()
+            .is_some_and(|p| p.box_reaches_clear(lo, hi))
+            || !self.trees_in(lo, hi).is_empty()
+        {
+            return None;
+        }
+        let feet = self.surface_y_at(x, z).unwrap_or(m_of_row(g + 1));
+        Some([f64::from(x) + 0.5, feet, f64::from(z) + 0.5])
+    }
+}
+
+/// 0 below 0, 1 above 1, smooth (C1) between.
+fn smooth01(t: f64) -> f64 {
+    let t = t.clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
+}
+
+/// A smooth minimum of a and b, rounding the corner over about `k` m.
+fn smooth_min(a: f64, b: f64, k: f64) -> f64 {
+    let h = (0.5 + 0.5 * (b - a) / k).clamp(0.0, 1.0);
+    b + (a - b) * h - k * h * (1.0 - h)
 }
 
 #[cfg(test)]
@@ -1266,7 +1562,7 @@ mod tests {
             assert!(pieces.by.is_empty());
             return;
         }
-        for m in [M.grass, M.sand, M.dirt, M.stone] {
+        for m in [M.grass, M.sand, M.dirt, M.stone, bands().snow] {
             for facing in RampFacing::ALL {
                 for flooded in [false, true] {
                     assert_eq!(pieces.cells(m, Top::Gentle(facing), flooded).len(), 1);
