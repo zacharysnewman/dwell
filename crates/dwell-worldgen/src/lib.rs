@@ -10,6 +10,7 @@ pub mod island;
 pub mod noise;
 pub mod placements;
 pub mod portals;
+pub mod settings;
 pub mod ramps;
 pub mod terrain;
 pub mod worldmap;
@@ -25,7 +26,13 @@ use dwell_world::{
 };
 
 pub use bifacial::BifacialTerrain;
+pub use settings::WorldSettings;
 pub use terrain::TerrainGenerator;
+
+/// The data files' settings (the `*_for` lookups'; the `*_with` ones take a world's).
+fn default_settings() -> WorldSettings {
+    WorldSettings::default()
+}
 
 /// The block the structure sandbox (`GENERATOR_SANDBOX`) is made of, by name (block data
 /// `"indestructible": true`, so its ground stays to build on).
@@ -39,8 +46,13 @@ pub fn sandbox_layers() -> FlatLayers {
 /// The chunk generator for a generator version; unknown versions fall back to the flat world. The
 /// sandbox has the flat world's shape (its air test, spawn and LOD bounds) in its floor block.
 pub fn generator_for(version: u32, world_seed: u64) -> ChunkGenerator {
+    generator_with(version, world_seed, &default_settings())
+}
+
+/// [`generator_for`] under a world's generation settings (the terrain's; others have none).
+pub fn generator_with(version: u32, world_seed: u64, settings: &WorldSettings) -> ChunkGenerator {
     if version == GENERATOR_TERRAIN {
-        let terrain = Arc::new(BifacialTerrain::new(world_seed));
+        let terrain = Arc::new(BifacialTerrain::with_settings(world_seed, settings));
         return Arc::new(move |coord, chunk| terrain.generate(coord, chunk));
     }
     if version == GENERATOR_SANDBOX {
@@ -52,10 +64,15 @@ pub fn generator_for(version: u32, world_seed: u64) -> ChunkGenerator {
 /// The generator's all-air test. The terrain's caches its sky floors per chunk column and face
 /// (bounded: cleared when large).
 pub fn air_test_for(version: u32, world_seed: u64) -> AirChunkTest {
+    air_test_with(version, world_seed, &default_settings())
+}
+
+/// [`air_test_for`] under a world's generation settings.
+pub fn air_test_with(version: u32, world_seed: u64, settings: &WorldSettings) -> AirChunkTest {
     if version != GENERATOR_TERRAIN {
         return Arc::new(flat_is_air);
     }
-    let terrain = BifacialTerrain::new(world_seed);
+    let terrain = BifacialTerrain::with_settings(world_seed, settings);
     let cache: Mutex<HashMap<(i32, i32, u8), f32>> = Mutex::new(HashMap::new());
     Arc::new(move |coord: ChunkCoord| {
         let face = face_of_chunk_y(coord.y);
@@ -80,20 +97,34 @@ pub fn air_test_for(version: u32, world_seed: u64) -> AirChunkTest {
 /// Face B's spawn point for the terrain generator (`BifacialTerrain::spawn_point_b`); the face-A
 /// one for the others (they have no face B).
 pub fn spawn_point_b_for(version: u32, world_seed: u64) -> [f64; 3] {
+    spawn_point_b_with(version, world_seed, &default_settings())
+}
+
+/// [`spawn_point_b_for`] under a world's generation settings.
+pub fn spawn_point_b_with(version: u32, world_seed: u64, settings: &WorldSettings) -> [f64; 3] {
     if version == GENERATOR_TERRAIN {
-        return BifacialTerrain::new(world_seed).spawn_point_b();
+        return BifacialTerrain::with_settings(world_seed, settings).spawn_point_b();
     }
-    spawn_point_for(version, world_seed)
+    spawn_point_with(version, world_seed, settings)
 }
 
 /// The portals' axes (world x, z through each shaft's axis column's centre) and the look their
 /// motes take (`midplane.json` `portals.motes`): none for a generator without portals. The client
 /// draws the motes from these (BIFACIAL_WORLD.md §12.1).
 pub fn portal_axes_for(version: u32, world_seed: u64) -> (Vec<[f64; 2]>, &'static str) {
+    portal_axes_with(version, world_seed, &default_settings())
+}
+
+/// [`portal_axes_for`] under a world's generation settings.
+pub fn portal_axes_with(
+    version: u32,
+    world_seed: u64,
+    settings: &WorldSettings,
+) -> (Vec<[f64; 2]>, &'static str) {
     if version != GENERATOR_TERRAIN {
         return (Vec::new(), "");
     }
-    let terrain = BifacialTerrain::new(world_seed);
+    let terrain = BifacialTerrain::with_settings(world_seed, settings);
     let p = terrain.portals();
     let axes = p
         .sites
@@ -111,10 +142,20 @@ pub fn portal_spawn_for(
     world_seed: u64,
     face: dwell_world::Face,
 ) -> Option<[f64; 3]> {
+    portal_spawn_with(version, world_seed, &default_settings(), face)
+}
+
+/// [`portal_spawn_for`] under a world's generation settings.
+pub fn portal_spawn_with(
+    version: u32,
+    world_seed: u64,
+    settings: &WorldSettings,
+    face: dwell_world::Face,
+) -> Option<[f64; 3]> {
     if version != GENERATOR_TERRAIN {
         return None;
     }
-    let terrain = BifacialTerrain::new(world_seed);
+    let terrain = BifacialTerrain::with_settings(world_seed, settings);
     let p = terrain.portals();
     let portal = *p
         .sites
@@ -132,14 +173,19 @@ pub fn portal_spawn_for(
 
 /// Feet position players spawn at: near the origin, on open level ground.
 pub fn spawn_point_for(version: u32, world_seed: u64) -> [f64; 3] {
+    spawn_point_with(version, world_seed, &default_settings())
+}
+
+/// [`spawn_point_for`] under a world's generation settings.
+pub fn spawn_point_with(version: u32, world_seed: u64, settings: &WorldSettings) -> [f64; 3] {
     if version == GENERATOR_TERRAIN {
-        return BifacialTerrain::new(world_seed).spawn_point();
+        return BifacialTerrain::with_settings(world_seed, settings).spawn_point();
     }
     // The flat world's (or the sandbox's) surface: the top of its top layer (row FLAT_TOP_Y − 1),
     // as its shape gives it, so the spawn is on the ground, not inside it.
     let mut flat = dwell_world::VoxelWorld::new(
-        generator_for(version, world_seed),
-        Some(air_test_for(version, world_seed)),
+        generator_with(version, world_seed, settings),
+        Some(air_test_with(version, world_seed, settings)),
     );
     let top_y = dwell_world::FLAT_TOP_Y - 1;
     let top = flat.shape_at(0, top_y, 0);
@@ -149,8 +195,13 @@ pub fn spawn_point_for(version: u32, world_seed: u64) -> [f64; 3] {
 }
 
 pub fn lod_generator_for(version: u32, world_seed: u64) -> LodGenerator {
+    lod_generator_with(version, world_seed, &default_settings())
+}
+
+/// [`lod_generator_for`] under a world's generation settings.
+pub fn lod_generator_with(version: u32, world_seed: u64, settings: &WorldSettings) -> LodGenerator {
     if version == GENERATOR_TERRAIN {
-        let terrain = Arc::new(BifacialTerrain::new(world_seed));
+        let terrain = Arc::new(BifacialTerrain::with_settings(world_seed, settings));
         return Arc::new(move |c, cells| terrain.generate_lod(c, cells, None, None));
     }
     if version == GENERATOR_SANDBOX {
@@ -161,8 +212,13 @@ pub fn lod_generator_for(version: u32, world_seed: u64) -> LodGenerator {
 }
 
 pub fn lod_bounds_for(version: u32, world_seed: u64) -> LodBoundsFn {
+    lod_bounds_with(version, world_seed, &default_settings())
+}
+
+/// [`lod_bounds_for`] under a world's generation settings.
+pub fn lod_bounds_with(version: u32, world_seed: u64, settings: &WorldSettings) -> LodBoundsFn {
     if version == GENERATOR_TERRAIN {
-        let terrain = Arc::new(BifacialTerrain::new(world_seed));
+        let terrain = Arc::new(BifacialTerrain::with_settings(world_seed, settings));
         return Arc::new(move |level, i, k| terrain.lod_bounds_at(level, i, k));
     }
     Arc::new(lod::flat_lod_bounds)

@@ -7,7 +7,7 @@
 
 use dwell_world::inside_world_disc;
 
-use crate::island::{self, IslandLayout};
+use crate::island::{self, IslandLayout, IslandParams};
 use crate::noise::{clamp01, fbm2, noise_offset, octaves_resolved, seed_word, smooth_step};
 use crate::terrain::HEIGHT as H;
 
@@ -23,12 +23,17 @@ pub struct BaseField {
 
 impl BaseField {
     pub fn new(seed: u64) -> Self {
+        Self::with(seed, IslandParams::DEFAULT)
+    }
+
+    /// The field with a world's island tunables (`settings.rs`).
+    pub fn with(seed: u64, island: IslandParams) -> Self {
         Self {
             hills_seed: seed_word(seed, 1),
             bumps_seed: seed_word(seed, 2),
             offset_x: noise_offset(seed_word(seed, 3)),
             offset_z: noise_offset(seed_word(seed, 4)),
-            island: IslandLayout::new(seed),
+            island: IslandLayout::with(seed, island),
         }
     }
 

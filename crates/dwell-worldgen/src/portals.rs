@@ -116,7 +116,7 @@ impl Portals {
         b: &TerrainGenerator,
         mirrored: bool,
     ) -> Self {
-        let sites = cached_sites(world_seed, rules, mirrored, || {
+        let sites = cached_sites(world_seed, rules, a.map().settings, mirrored, || {
             search(world_seed, &rules, a, b)
         });
         Self::with_sites(rules, sites)
@@ -280,18 +280,19 @@ pub fn search(
     sites
 }
 
-type SiteKey = (u64, PortalRules, bool);
+type SiteKey = (u64, PortalRules, u64, bool);
 
 /// The sites searched so far, by (seed, rules, mirror world): a generator is built often (per
 /// chunk in some tools), the search once per world.
 fn cached_sites(
     world_seed: u64,
     rules: PortalRules,
+    map_settings: u64,
     mirrored: bool,
     search: impl FnOnce() -> Vec<Portal>,
 ) -> Arc<Vec<Portal>> {
     static CACHE: Mutex<Vec<(SiteKey, Arc<Vec<Portal>>)>> = Mutex::new(Vec::new());
-    let key = (world_seed, rules, mirrored);
+    let key = (world_seed, rules, map_settings, mirrored);
     if let Some((_, s)) = CACHE
         .lock()
         .expect("portal sites")

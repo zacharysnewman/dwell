@@ -23,17 +23,15 @@ pub mod shores;
 
 use crate::hydrology::{self, End, HydrologyMap, MouthKind, NEIGHBOURS_D8, NONE};
 
-pub use cache::{build_bytes, for_seed, install, set_cache_dir};
+pub use cache::{build_bytes, for_seed, for_settings, install, set_cache_dir};
+
+use crate::settings::MapSettings;
 pub use channels::{Channels, Hit};
 pub use shores::Shores;
 
 /// Changes whenever the sources or data a map is computed from change (`build.rs`): a cached map
 /// is only read by the build that wrote it.
 pub const FINGERPRINT: u64 = include!(concat!(env!("OUT_DIR"), "/fingerprint.rs"));
-
-/// The hash of the generation settings a map was made with: a slot in its bytes and cache key for
-/// per-world settings (a later compatibility line); one fixed set of settings until then.
-pub const SETTINGS_HASH: u64 = 0;
 
 /// The flags' sea bit; the low nibble is the flow direction (an index into `NEIGHBOURS_D8`, or
 /// `NO_FLOW`).
@@ -97,6 +95,9 @@ pub struct MapRiver {
 pub struct WorldMap {
     /// The face generator's seed it was computed from.
     pub seed: u64,
+    /// The hash of the world settings it was computed with (`WorldSettings::map_hash`; 0: the
+    /// data files' own): a slot in its bytes and its cache key.
+    pub settings: u64,
     /// `n` × `n` cells of `cell` m; cell (i, j) is centred on face-local (x0 + i·cell, x0 + j·cell).
     pub n: usize,
     pub cell: f64,
@@ -117,8 +118,17 @@ pub struct WorldMap {
 impl WorldMap {
     /// The map of face seed `seed` by the default profile (`hydrology.json`), computed now.
     pub fn compute(seed: u64) -> Self {
-        let p = hydrology::default_profile();
-        Self::from_hydrology(seed, &hydrology::generate_seed(seed, p))
+        Self::compute_with(seed, &MapSettings::default())
+    }
+
+    /// The map of face seed `seed` under a world's settings (`settings.rs`), computed now.
+    pub fn compute_with(seed: u64, s: &MapSettings) -> Self {
+        let mut m = Self::from_hydrology(
+            seed,
+            &hydrology::generate_seed_with(seed, &s.hydrology, s.island),
+        );
+        m.settings = s.hash;
+        m
     }
 
     /// The kept map of a hydrology map.
@@ -245,6 +255,7 @@ impl WorldMap {
     ) -> Self {
         let mut map = Self {
             seed,
+            settings: 0,
             n,
             cell,
             x0,

@@ -13,6 +13,7 @@ use std::sync::Arc;
 
 use crate::noise::seed_word;
 use crate::portals::{MIDPLANE, Portal, PortalRules, Portals};
+use crate::settings::{Tunables, WorldSettings};
 use crate::terrain::TerrainGenerator;
 
 /// The seed of a face's generator: face A keeps the world seed, face B's is derived from it.
@@ -35,19 +36,32 @@ pub struct BifacialTerrain {
 
 impl BifacialTerrain {
     pub fn new(world_seed: u64) -> Self {
-        Self::with_portal_rules(world_seed, MIDPLANE.portals)
+        Self::with_settings(world_seed, &WorldSettings::default())
+    }
+
+    /// The world under its generation settings (`settings.rs`).
+    pub fn with_settings(world_seed: u64, settings: &WorldSettings) -> Self {
+        let t = settings.tunables();
+        Self::with_tunables(world_seed, &t, t.midplane.portals)
     }
 
     /// The world with these portal rules in place of the build's (tests add a fixture by data
     /// alone).
     pub fn with_portal_rules(world_seed: u64, rules: PortalRules) -> Self {
+        Self::with_tunables(world_seed, &Tunables::default(), rules)
+    }
+
+    fn with_tunables(world_seed: u64, t: &Tunables, rules: PortalRules) -> Self {
         // Both faces' world maps at once (on two threads natively) before either face needs one.
-        crate::worldmap::cache::prefetch(&[
-            face_seed(world_seed, Face::A),
-            face_seed(world_seed, Face::B),
-        ]);
-        let a = TerrainGenerator::new(face_seed(world_seed, Face::A));
-        let b = TerrainGenerator::new(face_seed(world_seed, Face::B));
+        crate::worldmap::cache::prefetch(
+            &[
+                face_seed(world_seed, Face::A),
+                face_seed(world_seed, Face::B),
+            ],
+            &t.map,
+        );
+        let a = TerrainGenerator::with_tunables(face_seed(world_seed, Face::A), t);
+        let b = TerrainGenerator::with_tunables(face_seed(world_seed, Face::B), t);
         Self::joined(world_seed, rules, a, b, false)
     }
 

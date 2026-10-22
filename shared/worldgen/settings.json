@@ -1,0 +1,192 @@
+{
+  "$comment": "Per-world generation settings (docs/WORLD_GENERATION.md §9, ADR 0050): the sliders the create-world screen shows, chosen once when a world is created and stored in its file (to change them, regenerate). Each slider drives one or more generator tunables (`drives`), by `target`, a fixed vocabulary the generator understands (gen.mjs `TARGETS`), and `op`: `scale` multiplies the tunable's value in its data file by the slider's (default 1), `set` makes it the slider's value × `factor` (default 1; the default × factor must equal the data file's value), `shift` adds the slider's change from its default, and `choose` (toggles) picks `values[0]` off, `values[1]` on (values[default] must equal the data file's). So every slider at its default is exactly the data files' terrain. `format` is the readout, `{v}` the value. `presets` are named sets of values (a slider not named keeps its default); `default` must be the empty one. Values are encoded per world as `id:value` pairs of the sliders off their defaults (`?gen=` in the create route, the world file, Welcome). Changing a slider's target, op, factor or default changes what a stored setting means: a new compatibility line. Run `node shared/worldgen/gen.mjs` after editing; CI fails on stale output.",
+  "categories": [
+    { "id": "land", "label": "Land & sea" },
+    { "id": "relief", "label": "Mountains & rivers" },
+    { "id": "climate", "label": "Climate & cover" },
+    { "id": "midplane", "label": "Midplane" }
+  ],
+  "sliders": [
+    {
+      "id": "land",
+      "label": "Land size",
+      "category": "land",
+      "min": 0.6,
+      "max": 1.3,
+      "step": 0.05,
+      "default": 1,
+      "format": "×{v}",
+      "hint": "How far the island reaches from the centre of the world.",
+      "drives": [{ "target": "island.radius", "op": "scale" }]
+    },
+    {
+      "id": "coast",
+      "label": "Coastline roughness",
+      "category": "land",
+      "min": 0.25,
+      "max": 2.5,
+      "step": 0.05,
+      "default": 1,
+      "format": "×{v}",
+      "hint": "Smooth shores, or bays, headlands and offshore islands.",
+      "drives": [{ "target": "island.coastAmplitude", "op": "scale" }]
+    },
+    {
+      "id": "height",
+      "label": "Mountain height",
+      "category": "relief",
+      "min": 0.5,
+      "max": 1.5,
+      "step": 0.05,
+      "default": 1,
+      "format": "×{v}",
+      "hint": "How high the ranges are lifted.",
+      "drives": [
+        { "target": "uplift.baseHeight", "op": "scale" },
+        { "target": "uplift.rate", "op": "scale" }
+      ]
+    },
+    {
+      "id": "ranges",
+      "label": "Mountain ranges",
+      "category": "relief",
+      "min": 0,
+      "max": 6,
+      "step": 1,
+      "default": 3,
+      "format": "{v}",
+      "hint": "Long mountain spines on each face.",
+      "drives": [{ "target": "uplift.ranges.count", "op": "set" }]
+    },
+    {
+      "id": "rain",
+      "label": "Rainfall",
+      "category": "relief",
+      "min": 0.5,
+      "max": 2,
+      "step": 0.05,
+      "default": 1,
+      "format": "×{v}",
+      "hint": "More rain: more and bigger rivers.",
+      "drives": [{ "target": "rain.amount", "op": "scale" }]
+    },
+    {
+      "id": "erosion",
+      "label": "Erosion",
+      "category": "relief",
+      "min": 0.5,
+      "max": 2,
+      "step": 0.05,
+      "default": 1,
+      "format": "×{v}",
+      "hint": "How hard the rivers wear the land down: lower, wider valleys.",
+      "drives": [{ "target": "erosion.erodibility", "op": "scale" }]
+    },
+    {
+      "id": "lakes",
+      "label": "Rift lakes",
+      "category": "relief",
+      "toggle": true,
+      "default": 0,
+      "format": "{v}",
+      "labels": ["Off", "On"],
+      "hint": "Plates pull the land apart into rift valleys that fill with lakes.",
+      "drives": [{ "target": "uplift.plates.count", "op": "choose", "values": [0, 6] }]
+    },
+    {
+      "id": "snow",
+      "label": "Snow line",
+      "category": "climate",
+      "min": 800,
+      "max": 2400,
+      "step": 50,
+      "default": 1550,
+      "format": "{v} m",
+      "hint": "Snow lies above this height, and the pines' leaves turn snowy below it.",
+      "drives": [
+        { "target": "bands.snowLine", "op": "set" },
+        { "target": "placements.variantHeight", "op": "shift" }
+      ]
+    },
+    {
+      "id": "treeline",
+      "label": "Treeline",
+      "category": "climate",
+      "min": 400,
+      "max": 2000,
+      "step": 50,
+      "default": 1300,
+      "format": "{v} m",
+      "hint": "No trees grow above this height.",
+      "drives": [{ "target": "placements.maxHeight", "op": "shift" }]
+    },
+    {
+      "id": "trees",
+      "label": "Tree density",
+      "category": "climate",
+      "min": 0,
+      "max": 2,
+      "step": 0.05,
+      "default": 1,
+      "format": "×{v}",
+      "hint": "How thick the groves are, and how many trees stand between them.",
+      "drives": [
+        { "target": "placements.density", "op": "scale" },
+        { "target": "placements.groveOutside", "op": "scale" }
+      ]
+    },
+    {
+      "id": "portals",
+      "label": "Portals",
+      "category": "midplane",
+      "min": 2,
+      "max": 16,
+      "step": 2,
+      "default": 8,
+      "format": "up to {v}",
+      "hint": "Shafts through the midplane between the faces (the seed picks between half and all of them).",
+      "drives": [
+        { "target": "portals.countMax", "op": "set" },
+        { "target": "portals.countMin", "op": "set", "factor": 0.5 }
+      ]
+    },
+    {
+      "id": "bedrock",
+      "label": "Bedrock thickness",
+      "category": "midplane",
+      "min": 0.5,
+      "max": 4,
+      "step": 0.5,
+      "default": 1,
+      "format": "{v} m",
+      "hint": "The unbreakable layer on each side of the midplane.",
+      "drives": [{ "target": "bedrock.thickness", "op": "set" }]
+    }
+  ],
+  "presets": [
+    {
+      "id": "default",
+      "label": "Default",
+      "description": "One large island: three mountain ranges, rivers to the sea, pine groves on the hills.",
+      "values": {}
+    },
+    {
+      "id": "highlands",
+      "label": "Highlands",
+      "description": "A bigger, higher island of many ranges, snow low on the peaks and deep river valleys.",
+      "values": { "land": 1.15, "height": 1.4, "ranges": 5, "rain": 1.25, "erosion": 0.8, "snow": 1150, "treeline": 1000 }
+    },
+    {
+      "id": "archipelago",
+      "label": "Archipelago",
+      "description": "A ragged coast broken into islands and inlets, low hills and a warmer climate.",
+      "values": { "land": 0.7, "coast": 2.4, "height": 0.6, "ranges": 1, "rain": 0.9, "snow": 2200, "trees": 1.3 }
+    },
+    {
+      "id": "lakeCountry",
+      "label": "Lake Country",
+      "description": "Rift valleys full of lakes, gentle ranges, heavy rain and thick forest.",
+      "values": { "lakes": 1, "height": 0.8, "ranges": 2, "rain": 1.6, "erosion": 0.75, "coast": 0.7, "trees": 1.6, "treeline": 1500 }
+    }
+  ]
+}

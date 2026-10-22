@@ -9,6 +9,8 @@ const INPUTS: &[&str] = &[
     "src/noise.rs",
     "src/island.rs",
     "src/terrain.gen.rs",
+    "src/settings.rs",
+    "src/settings.gen.rs",
     "src/hydrology",
     "src/worldmap/codec.rs",
     "src/worldmap/mod.rs",

@@ -26,6 +26,7 @@ use dwell_world::{FaceFrame, SEA_LEVEL_M, WORLD_RADIUS};
 
 use crate::BifacialTerrain;
 use crate::base::BaseField;
+use crate::island::IslandParams;
 pub use flood::{Grid, NEIGHBOURS as NEIGHBOURS_D8, NONE};
 
 /// A point of a river's width curve: at `discharge` (m³/s), `width` and `depth` (m).
@@ -356,7 +357,12 @@ pub fn generate_for(
 
 /// The map of the face whose generator's seed is `seed`.
 pub fn generate_seed(seed: u64, p: &HydrologyParams) -> HydrologyMap {
-    let (grid, x0, h) = sample_seed(seed, p.cell);
+    generate_seed_with(seed, p, IslandParams::DEFAULT)
+}
+
+/// [`generate_seed`] with a world's island tunables (`settings.rs`).
+pub fn generate_seed_with(seed: u64, p: &HydrologyParams, island: IslandParams) -> HydrologyMap {
+    let (grid, x0, h) = sample_seed_with(seed, p.cell, island);
     from_heights(grid, f64::from(p.cell), x0, &h, seed, p)
 }
 
@@ -368,7 +374,12 @@ pub fn sample(terrain: &BifacialTerrain, face: FaceFrame, cell: i32) -> (Grid, f
 
 /// [`sample`] for the face whose generator's seed is `seed`.
 pub fn sample_seed(seed: u64, cell: i32) -> (Grid, f64, Vec<f64>) {
-    let g = BaseField::new(seed);
+    sample_seed_with(seed, cell, IslandParams::DEFAULT)
+}
+
+/// [`sample_seed`] with a world's island tunables.
+pub fn sample_seed_with(seed: u64, cell: i32, island: IslandParams) -> (Grid, f64, Vec<f64>) {
+    let g = BaseField::with(seed, island);
     let (grid, x0) = grid_for(cell);
     let n = grid.n;
     let cell = i64::from(cell);
