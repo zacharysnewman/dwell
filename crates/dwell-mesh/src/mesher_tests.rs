@@ -1569,3 +1569,41 @@ dwell_world::both_faces!(
         }
     }
 );
+
+// face-a-only: a fluid side face of the face-local mesher, which meshes face B's chunks mirrored into the same frame.
+#[test]
+fn a_river_step_down_closes_the_strip_between_the_two_surfaces() {
+    //! docs/BUGS.md 4 (gaps between water at height steps): an upper reach's column (water over
+    //! water) beside a lower reach's last cell (air over it, its surface drawn `surface_drop` below
+    //! its top) culled the face between them as fluid beside the same fluid, leaving an open strip
+    //! from the lower surface up to the upper column's next cell.
+    let st = stone();
+    let mut cells = Vec::new();
+    for x in 4..8 {
+        for z in 4..7 {
+            cells.push((x, 0, z, st));
+        }
+    }
+    cells.push((5, 1, 5, water()));
+    cells.push((5, 2, 5, water()));
+    cells.push((6, 1, 5, water()));
+    let m = mesh(&cells, false).transparent;
+    let top = 1.0 - dwell_blocks::require_fluid("dwell:water").surface_drop;
+    let mut strip = false;
+    for t in m.indices.chunks_exact(3) {
+        let n = m.normals[t[0] as usize * 3];
+        let ps = [t[0], t[1], t[2]].map(|i| vertex(&m.positions, i));
+        if n > 0.5 && ps.iter().all(|p| (p[0] - 6.0).abs() < 1e-6) {
+            let lo = ps.iter().map(|p| p[1]).fold(f64::MAX, f64::min);
+            let hi = ps.iter().map(|p| p[1]).fold(f64::MIN, f64::max);
+            if (lo - (1.0 + top)).abs() < 1e-5 && (hi - 2.0).abs() < 1e-5 {
+                strip = true;
+            }
+        }
+    }
+    assert!(
+        strip,
+        "no face closes the step between the surfaces at y {} and 2",
+        1.0 + top
+    );
+}

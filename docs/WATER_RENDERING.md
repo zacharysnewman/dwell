@@ -508,3 +508,13 @@ All of them failed on the code before this change. This changes the terrain a se
 - Complementary shaders: https://github.com/ComplementaryDevelopment/ComplementaryReimagined
 - Evan Wallace's WebGL water (caustics): https://madebyevan.com/webgl-water/
 - GPU Gems 3 ch. 13, volumetric light scattering: https://developer.nvidia.com/gpugems/gpugems3/part-ii-light-and-shadows/chapter-13-volumetric-light-scattering-post-process
+
+## 10. River steps (2026-10-26)
+
+A river's water steps down in ½ m terraces (generator 21). At a step, the upper reach's column (water
+over water) stands beside the lower reach's last cell, whose surface is drawn `surfaceDrop` below its
+top because air is over it. The face between two cells of the same fluid is normally culled. Here
+that left an open strip from the lower surface up to the upper column's next cell, which showed as a
+gap (docs/BUGS.md 4). Now, beside the same fluid whose drawn surface is lower, a cell draws its side
+face over just that strip, from the neighbour's drawn surface up to its own (`fluid_side` takes a
+bottom as well as a top). Test: dwell-mesh `a_river_step_down_closes_the_strip_between_the_two_surfaces`.

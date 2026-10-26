@@ -901,7 +901,7 @@ fn fluid_side_alone(kn: &Kind) -> bool {
 }
 
 /// A fluid's side face `face` (not ±Y) of cell (x, y, z), on its plane `plane`: the part of the
-/// side between the cell's floor and `top` (cells) that lies above the solid of the neighbour
+/// side between `bottom` and `top` (cells; the floor is 0) that lies above the solid of the neighbour
 /// `kn` across it — so no fluid face stands behind a neighbour's slope or ramp, or above the
 /// fluid's drawn surface (WATER_RENDERING.md §9). A hanging neighbour is taken as open.
 #[allow(clippy::too_many_arguments)]
@@ -912,6 +912,7 @@ fn fluid_side(
     [x, y, z]: [i32; 3],
     face: usize,
     plane: f64,
+    bottom: f64,
     top: f64,
     flood: [f32; 2],
 ) {
@@ -943,7 +944,7 @@ fn fluid_side(
         // The rectangle [ra, rb] × [0, top] clipped to above the profile's line (Sutherland–
         // Hodgman against one half-plane): a convex polygon in (run, y).
         let above = |r: f64, h: f64| h - (ha + (hb - ha) * (r - ra) / (rb - ra));
-        let rect = [(ra, 0.0), (rb, 0.0), (rb, top), (ra, top)];
+        let rect = [(ra, bottom), (rb, bottom), (rb, top), (ra, top)];
         let mut poly: Vec<(f64, f64)> = Vec::with_capacity(5);
         for i in 0..4 {
             let (p, q) = (rect[i], rect[(i + 1) % 4]);
@@ -1019,7 +1020,7 @@ fn flooded_water(b: &mut Builder, cells: &Cells<'_>, x: i32, y: i32, z: i32) {
                     FLOOD_INSET
                 };
             let lit = cells.flood.cell([nx, ny, nz]);
-            fluid_side(b, &water.style, &kn, [x, y, z], face, plane, top, lit);
+            fluid_side(b, &water.style, &kn, [x, y, z], face, plane, 0.0, top, lit);
             continue;
         }
         let u = (axis + 1) % 3;
@@ -1257,6 +1258,30 @@ fn mesh_cells(
                     }
                     let [nx, ny, nz] = neighbour_of(cx, cy, cz, axis, sign);
                     let kn = cells.kind(nx, ny, nz);
+                    // Beside the same fluid whose surface is drawn lower (a river's step down: this
+                    // column goes on up, the next ends here), the strip between the two surfaces
+                    // is this cell's to draw, or the step shows a slit into the water
+                    // (docs/BUGS.md 4).
+                    if k.liquid && axis != 1 && kn.liquid && cells.state(nx, ny, nz) == m {
+                        let own = fluid_side_top(&cells, &k, m, cx, cy, cz);
+                        let theirs = fluid_side_top(&cells, &kn, m, nx, ny, nz);
+                        if own > theirs + 1e-9 {
+                            let plane = f64::from(if sign > 0 { d + 1 } else { d });
+                            let lit = cells.flood.cell([cx, cy, cz]);
+                            fluid_side(
+                                &mut transparent,
+                                &k.style,
+                                &kn,
+                                cell,
+                                face,
+                                plane,
+                                theirs,
+                                own,
+                                lit,
+                            );
+                        }
+                        continue;
+                    }
                     if hidden(&k, &kn, m, cells.state(nx, ny, nz), face) {
                         continue;
                     }
@@ -1273,6 +1298,7 @@ fn mesh_cells(
                                 cell,
                                 face,
                                 plane,
+                                0.0,
                                 top,
                                 lit,
                             );
