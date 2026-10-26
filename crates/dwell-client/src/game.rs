@@ -87,6 +87,18 @@ pub fn stream_budget_ms(frame_ms: f64) -> f64 {
 const BUFFER_LOW: u8 = 1;
 const BUFFER_HIGH: u8 = 4;
 const RATE_NUDGE: f64 = 0.02;
+/// Prediction holds once the server reports this many of our inputs queued, until it reports no more
+/// than `BUFFER_RESUME`: a backlog that size is a server stalled (generating terrain for a fast flyer,
+/// docs/BUGS.md 1), not a slow frame's burst of ticks. Predicting on would only pile up inputs the
+/// server reaches seconds later; past its backstop (`MAX_BUFFERED_INPUTS`, 60) it skips them, and a
+/// skipped input is movement it never simulates, so every later snapshot would snap us back.
+const BUFFER_HOLD: u8 = 30;
+/// ... and resumes here: lower, and the snapshots' lag lets the queue run dry, when the server
+/// repeats our last input (movement we never predicted).
+const BUFFER_RESUME: u8 = 6;
+/// ... and holds, too, while this many of our inputs are unacknowledged: a stalled server sends no
+/// snapshots to report its queue, and a longer burst overflows its queue (96) and input rate limit.
+const UNACKED_HOLD: u32 = 45;
 /// The region tools' outlines: the selection, and where a paste would go.
 const REGION_SELECTION_COLOR: u32 = 0xffffff;
 const REGION_GHOST_COLOR: u32 = 0x6fd3ff;
@@ -471,6 +483,8 @@ pub struct Game<S: Scene> {
     /// drift.
     pub clock: crate::world_clock::WorldClock,
     input_buffer: u8,
+    /// Prediction is holding for the server to drain our queued inputs (`BUFFER_HOLD`).
+    holding: bool,
     tick_rate: f64,
     health: u8,
     dead: bool,
@@ -625,6 +639,7 @@ impl<S: Scene> Game<S> {
             last_snapshot_tick: 0,
             clock: Default::default(),
             input_buffer: 0,
+            holding: false,
             tick_rate: 1.0,
             health: 0,
             dead: false,
@@ -1632,6 +1647,15 @@ impl<S: Scene> Game<S> {
     fn tick(&mut self, input: &mut KeyboardMouseInput, touch: Option<&TouchState>) {
         let c = self.current;
         if !prediction_may_run(c.active, c.state, self.terrain_ready()) {
+            return;
+        }
+        // The server is behind: let it drain our queued inputs first (hysteresis, BUFFER_HOLD).
+        if self.input_buffer >= BUFFER_HOLD {
+            self.holding = true;
+        } else if self.input_buffer <= BUFFER_RESUME {
+            self.holding = false;
+        }
+        if self.holding || self.predictor.unacked() >= UNACKED_HOLD {
             return;
         }
         let frame = quantize_input(&input.sample(touch), self.predictor.next_seq());

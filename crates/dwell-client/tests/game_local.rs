@@ -1795,3 +1795,53 @@ fn torches_in_the_hand_and_placed_crackle_and_stop() {
         "{away:?}"
     );
 }
+
+// face-a-only: a client/server input-queue sync check on the default spawn; nothing in it depends on the face.
+#[test]
+fn a_stalled_server_catches_up_without_dropping_the_players_inputs() {
+    // docs/BUGS.md 1: a server busy generating terrain for a fast flyer falls behind real time; the
+    // client kept predicting, the server's queue grew past MAX_BUFFERED_INPUTS and it skipped the
+    // excess, so its copy fell behind and every snapshot snapped the player back (rubber-banding).
+    let mut rig = Rig::new();
+    assert!(
+        rig.run_until(60 * 20, |r| r
+            .game
+            .as_ref()
+            .is_some_and(|g| g.debug_state().terrain_ready)),
+        "terrain around the spawn loads"
+    );
+    rig.input.flight.set_allowed(true);
+    rig.input.flight.set(true);
+    rig.input.set_key("Space", true);
+    rig.run_until(60, |_| false);
+    rig.input.set_key("Space", false);
+    rig.input.look.pitch = 0.0;
+    rig.input.set_key("KeyW", true);
+    rig.run_until(30, |_| false);
+    let before = rig.game.as_ref().unwrap().debug_state().stats;
+    // The server stalls for 1.5 s three times (its fixed step drops the backlog), the game keeps
+    // running its frames.
+    for _ in 0..3 {
+        for _ in 0..90 {
+            rig.game_frame();
+            rig.now += 1000.0 / 60.0;
+        }
+        rig.run_until(120, |_| false);
+    }
+    rig.input.set_key("KeyW", false);
+    rig.run_until(120, |_| false);
+    let after = rig.game.as_ref().unwrap().debug_state().stats;
+    let pid = rig.game.as_ref().unwrap().debug_state().player_id;
+    let skipped = rig.core.server().stats_of(pid).unwrap().inputs_skipped;
+    assert_eq!(
+        skipped, 0,
+        "the server skipped {skipped} of the player's inputs"
+    );
+    assert_eq!(
+        after.snaps - before.snaps,
+        0,
+        "the player snapped back {} times (last correction {:.1} m)",
+        after.snaps - before.snaps,
+        after.last_correction
+    );
+}

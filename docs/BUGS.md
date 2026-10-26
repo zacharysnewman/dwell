@@ -6,21 +6,6 @@ pins it.
 
 ## Open
 
-### 1. Rubber-banding after a high-speed launch or a fast flight into the ground
-
-*Reported 2026-10-26. Long-lived; not new.*
-
-- **Repro A (launch):** start flying, stand still, then start moving at high flight speed and turn flight off as you speed up.
-  You're launched in that direction (the owner likes the launch itself). Then you're stuck rubber-banding back to where the move
-  started, over and over.
-- **Repro B (into the ground):** fly into the ground at medium-high speed. You're stuck the same way. At the highest speed you may
-  instead clip through the world to the other face.
-- **Observed:** the game isn't frozen (the menu opens). Once in this state you can't move away from that spot. The
-  "Loading terrain…" indicator shows during it and disappears right when you snap back.
-- **Suspects:** the client and server fall out of sync with no recovery. The server may hold or reject the player at a chunk
-  that isn't loaded or generated yet while the client keeps predicting ahead. Tunnelling at high speed may explain the clip to
-  the other face.
-
 ### 2. Sun and moon shadows leak through hills in a grid pattern
 
 *Reported 2026-10-26.*
@@ -81,4 +66,20 @@ The client lets you try to place a block too close to yourself. It flickers in, 
 
 ## Fixed
 
-(None yet.)
+### 1. Rubber-banding after a high-speed launch or a fast flight (fixed in 0.26.4)
+
+*Reported 2026-10-26.* The most common case was a sudden fast speedup in the air.
+
+- **Repro:** in Chrome, hover high up, then hold Shift+W at flight speed 10 or 12. It snapped back
+  about 1 km, and about 10 km at speed 12.
+- **Cause:** the server falls behind real time while it generates terrain for a fast flyer (its
+  fixed step drops the backlog). The client kept predicting, so its inputs piled up in the server's
+  queue. The server then threw inputs away in three places: its latency trim (the queue above 6 for
+  a second), its queue cap (96, oldest dropped) and its input rate limit. Each skipped input is
+  movement the client predicted but the server never simulated, so every snapshot snapped the
+  player back. "Loading terrain…" showed because the client had outrun the streamed terrain.
+- **Fix:** the client holds its prediction while the server reports 30 or more inputs queued
+  (resuming at 6) or while 45 are unacknowledged. The server's trim became a backstop above 60, and
+  it no longer trims a draining queue. Tests: `a_stalled_server_catches_up_without_dropping_the_players_inputs`
+  (dwell-client `game_local`) failed before the fix (183 inputs skipped, then a 10.7 m snap) and
+  passes now; `a_slow_device_walks_without_snapping` still passes.
