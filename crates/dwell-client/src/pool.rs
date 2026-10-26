@@ -85,6 +85,8 @@ pub enum Purpose {
     Map,
     /// The F3 overlay's regenerate-and-diff of a chunk.
     Diff(Coord),
+    /// A strip of the LOD colour map (`crate::lod_map`).
+    LodMap(crate::lod_map::TileJob),
 }
 
 impl Purpose {
@@ -100,6 +102,7 @@ impl Purpose {
             Purpose::Verify => ("job.verify.wait", "job.verify.run"),
             Purpose::Map => ("job.map.wait", "job.map.run"),
             Purpose::Diff(..) => ("job.diff.wait", "job.diff.run"),
+            Purpose::LodMap(..) => ("job.lod_map.wait", "job.lod_map.run"),
         }
     }
 }

@@ -30,6 +30,17 @@ impl JobWorker {
             runner: Runner::world(generator_version, world_seed),
         }
     }
+    /// A worker for a world whose LOD has the colour map's river valleys (`?lodmap=on`).
+    #[wasm_bindgen(js_name = worldWithValleys)]
+    pub fn world_with_valleys(generator_version: u32, world_seed: u64) -> JobWorker {
+        Self {
+            runner: Runner::world_with(
+                generator_version,
+                world_seed,
+                Some(dwell_look::lod_map::LOD_MAP.valley_margin_m),
+            ),
+        }
+    }
     /// A worker that only meshes.
     pub fn mesher() -> JobWorker {
         Self {
@@ -75,6 +86,7 @@ impl WebJobs {
         meshers: usize,
         world: (u32, u64),
         maps: &[Uint8Array],
+        valleys: bool,
     ) -> Result<Self, JsValue> {
         let done: Rc<RefCell<VecDeque<Vec<u8>>>> = Rc::default();
         let wake: Waker = Rc::default();
@@ -118,6 +130,7 @@ impl WebJobs {
                         list.push(m);
                     }
                     Reflect::set(&init, &"maps".into(), &list)?;
+                    Reflect::set(&init, &"lodValleys".into(), &valleys.into())?;
                 }
                 worker.post_message(&init)?;
                 slots[kind].push(WorkerSlot {

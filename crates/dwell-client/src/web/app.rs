@@ -212,6 +212,9 @@ struct Options {
     lod: bool,
     lod_colors: bool,
     full_chunks: bool,
+    /// The LOD colour map preview (`?lodmap=on`; ARCHITECTURE.md §6.6 "Colour map"): its rings on
+    /// from the start, and the river valleys in the workers' LOD sections.
+    lod_map: bool,
     netsim: Option<NetConditions>,
     /// `?time=`, `?moon=`, `?timespeed=` (the day/night cycle's dev switches).
     day: DayOverride,
@@ -316,6 +319,7 @@ impl Client {
             lod: get("lod").as_bool().unwrap_or(true),
             lod_colors: get("lodColors").as_bool().unwrap_or(false),
             full_chunks: get("fullChunks").as_bool().unwrap_or(false),
+            lod_map: lod_map_query(&get("search").as_string().unwrap_or_default()),
             netsim: parse_net_conditions(get("netsim").as_string().as_deref()),
             day: DayOverride::from_query(&get("search").as_string().unwrap_or_default()),
             search: get("search").as_string().unwrap_or_default(),
@@ -1193,6 +1197,17 @@ impl Client {
             .borrow_mut()
             .set_water_quality(crate::render::water::WaterQuality::from_level(level));
     }
+    /// The LOD colour map preview on or off (`__dwell.setLodMap`, the bench; `?lodmap=on` starts
+    /// it on). Off on a CPU adapter. The river valleys follow `?lodmap=on` only (the workers' LOD).
+    #[wasm_bindgen(js_name = setLodMap)]
+    pub fn set_lod_map(&self, on: bool) -> bool {
+        let mut inner = self.inner.borrow_mut();
+        let on = on && inner.lod_map_supported();
+        if let Some(game) = inner.game.as_mut() {
+            game.set_lod_map(on);
+        }
+        on
+    }
     /// The water's cost-isolation switches (`?waterdbg=`, a dev tool): names separated by commas,
     /// each turning one piece of the water's shading off (render/water.rs `DEBUG_SWITCHES`).
     #[wasm_bindgen(js_name = setWaterDebug)]
@@ -1955,6 +1970,7 @@ impl Inner {
             workers,
             (generator_version, world_seed),
             &maps,
+            self.options.lod_map,
         ) {
             Ok(j) => j,
             Err(e) => {
@@ -2014,7 +2030,15 @@ impl Inner {
             settings.full_mode = self.options.full_chunks;
             game.enable_lod(settings);
         }
+        if self.options.lod_map && self.lod_map_supported() {
+            game.set_lod_map(true);
+        }
         self.game = Some(game);
+    }
+
+    /// Whether this adapter draws the LOD colour map (not a CPU adapter: the cheapest tier there).
+    fn lod_map_supported(&self) -> bool {
+        self.renderer.borrow().lod_map_supported()
     }
 
     /// The world's maps (ADR 0049), once they are here and installed in this instance: asks the
@@ -2123,4 +2147,12 @@ impl Inner {
         let queue = self.renderer.borrow().queue().clone();
         telemetry::span("draw.present", || queue.present(frame));
     }
+}
+
+/// Whether the page's query asks for the LOD colour map preview (`lodmap=on`).
+fn lod_map_query(search: &str) -> bool {
+    search
+        .trim_start_matches('?')
+        .split('&')
+        .any(|kv| kv == "lodmap=on" || kv == "lodmap=1")
 }

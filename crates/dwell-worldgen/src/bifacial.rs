@@ -86,6 +86,13 @@ impl BifacialTerrain {
     }
 
     /// A face's generator, in face-local coordinates.
+    /// Turns the LOD colour map's river valleys on or off on both faces
+    /// (`TerrainGenerator::set_lod_valleys`).
+    pub fn set_lod_valleys(&mut self, margin: Option<f64>) {
+        self.a.set_lod_valleys(margin);
+        self.b.set_lod_valleys(margin);
+    }
+
     pub fn local(&self, face: Face) -> &TerrainGenerator {
         match face {
             Face::A => &self.a,

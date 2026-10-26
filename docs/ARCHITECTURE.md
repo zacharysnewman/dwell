@@ -2074,6 +2074,31 @@ Each frame the octree is walked from the root around the **camera** (the eye):
   linear light, per face group, as a mipmapped sRGB texture averages from afar) and face shading,
   written as linear vertex colours like the chunks' decoded texels (sRGB values used directly drew
   distant land paler than the chunks — playtest), in cell units (a group scaled by the cell size).
+  **Colour map [in progress, a preview behind `?lodmap=on`, 2026-10-21]** (owner: narrow rivers
+  average away, or break into blobs, once sections coarsen to 8–256 m cells). Nested **rings** of a
+  minimap-style colour texture centred on the eye on its face (data `shared/look/lodmap.json`,
+  `dwell-look` `lod_map.rs`, generator and CI stale check: 4, 16, 64 and 256 m texels, 512² each,
+  one `rgba8unorm-srgb` array layer per ring, 4 MB), placed in world texels snapped to
+  `snapTexels` and stored toroidally (texel g at g mod size), so a move rasterises only the strips
+  it uncovers (`dwell-client` `lod_map.rs`). Strips are **raster jobs** in the generation workers
+  (`Job::LodMap`, at most `tileTexels` each, `jobsInFlight` at once): each texel is its column's top
+  block's LOD colour by the terrain's own rules (`TerrainGenerator::column_lod`, `top_state`), water
+  darkened by depth, then the **rivers from their polylines** (`river_hit`, through the chunks'
+  meander warp) at least `riverMinTexels` wide and anti-aliased over a texel, so they stay
+  continuous at every ring (`tests/lod_map.rs`). A ring claims only what it holds; until a move's
+  strips are all in, the shader takes the next coarser ring there. **Shading** (`render/lod_map.rs`,
+  bindings 17–18, the water tiles' repeating sampler): an LOD section's or stand-in's top
+  (`rotation.z` = `LOD_DRAW`) takes the finest holding ring's colour × the top face's shading,
+  handed to the next ring over `ringFadeTexels` at its edge and blended in from the vertex colour
+  between `blend.fromM` and `blend.toM` from the eye, so the full-detail chunks' colour meets it
+  without a seam; lighting, shadows and fog unchanged. **River valleys**: with the preview the
+  workers' LOD columns (`column_lod`, sections and bounds alike) whose cell a river crosses are
+  lowered `valleyMarginM` under its water level, so the painted river sits in a valley — a margin,
+  never a tie with the water surfaces beside it (the known bug class below). Off by default and on a
+  CPU adapter; `__dwell.setLodMap` toggles the shading (the valleys follow the URL only). Rings are
+  kept for the eye's face only and restart on a crossing (a deviation from one set per face: the
+  other face's surface is not in view). Forests are not painted yet (the ground's colour shows
+  under them where the vertex colour had the canopy's tint).
   **Colour [built, 2026-10-21]** (owner: distant hills turned olive and brown with each coarser
   level). A coarse step between two columns stands for the fine slope between them, which faces the
   viewer with about the same rise, so a **riser** (any vertical face: a surface cell's wall, or a

@@ -3,71 +3,100 @@
   "baseline": "raster",
   "deltaE": 2.3,
   "configs": [
-    { "name": "raster", "notes": "The mesher at full resolution." },
+    {
+      "name": "raster",
+      "notes": "The mesher at full resolution."
+    },
     {
       "name": "outline-silhouette",
-      "notes": "The mesher with the ink outline's silhouettes (docs/ART_DIRECTION.md §7, shared/look/outline.json): its cost is the composite's.",
-      "params": { "outline": "silhouette" }
+      "notes": "The mesher with the ink outline's silhouettes (docs/ART_DIRECTION.md \u00a77, shared/look/outline.json): its cost is the composite's.",
+      "params": {
+        "outline": "silhouette"
+      }
     },
     {
       "name": "outline-creases",
       "notes": "The mesher with the ink outline's silhouettes and creases.",
-      "params": { "outline": "creases" }
+      "params": {
+        "outline": "creases"
+      }
     },
     {
       "name": "outline-blocks",
       "notes": "The mesher with the ink outline's silhouettes, creases and block edges.",
-      "params": { "outline": "blocks" }
+      "params": {
+        "outline": "blocks"
+      }
     },
     {
       "name": "pixelart-180",
       "notes": "The pixel-art preview's 180 preset (docs/proposals/PIXEL_ART_LOOK.md, shared/look/pixelart.json): 180 rows, banded light and ambient, the dwell palette, edges.",
-      "params": { "pixelart": "180" }
+      "params": {
+        "pixelart": "180"
+      }
     },
     {
       "name": "pixelart-270",
-      "notes": "The pixel-art preview's 270 preset: 270 rows (the spec's 480 × 270), banded sun, the dwell palette, silhouette edges.",
-      "params": { "pixelart": "270" }
+      "notes": "The pixel-art preview's 270 preset: 270 rows (the spec's 480 \u00d7 270), banded sun, the dwell palette, silhouette edges.",
+      "params": {
+        "pixelart": "270"
+      }
     },
     {
       "name": "pixelart-270-warm",
       "notes": "The pixel-art preview's 270-warm preset: as 270 on the warm hearth palette.",
-      "params": { "pixelart": "270-warm" }
+      "params": {
+        "pixelart": "270-warm"
+      }
     },
     {
       "name": "pixelart-270-snap",
       "notes": "The pixel-art preview's 270 preset with the camera snap (snapCamera): its effect on shimmer.",
-      "params": { "pixelart": "270-snap" }
+      "params": {
+        "pixelart": "270-snap"
+      }
     },
     {
       "name": "pixelart-360",
       "notes": "The pixel-art preview's 360 preset: 360 rows, four sun bands, no edges, a lighter dither.",
-      "params": { "pixelart": "360" }
+      "params": {
+        "pixelart": "360"
+      }
     },
     {
       "name": "shadows-low",
-      "notes": "The Shadows setting on Low (docs/DAY_NIGHT.md §10, shared/look/shadows.json); the baseline draws High, the desktop default.",
-      "params": { "shadows": "low" }
+      "notes": "The Shadows setting on Low (docs/DAY_NIGHT.md \u00a710, shared/look/shadows.json); the baseline draws High, the desktop default.",
+      "params": {
+        "shadows": "low"
+      }
     },
     {
       "name": "shadows-off",
       "notes": "The Shadows setting Off: no shadow maps.",
-      "params": { "shadows": "off" }
+      "params": {
+        "shadows": "off"
+      }
     },
     {
       "name": "torch-shadows-off",
-      "notes": "Torch shadows Off (docs/LIGHTS.md §4, shared/look/lights.json `shadows`; `?torchshadows=off`): held torches light unshadowed, placed ones by the flood light alone.",
-      "params": { "torchshadows": "off" }
+      "notes": "Torch shadows Off (docs/LIGHTS.md \u00a74, shared/look/lights.json `shadows`; `?torchshadows=off`): held torches light unshadowed, placed ones by the flood light alone.",
+      "params": {
+        "torchshadows": "off"
+      }
     },
     {
       "name": "torch-shadows-high",
       "notes": "Torch shadows on High (the desktop default is Low).",
-      "params": { "torchshadows": "high" }
+      "params": {
+        "torchshadows": "high"
+      }
     },
     {
       "name": "lod-shadows-off",
-      "notes": "The distant terrain's shadows off (docs/DAY_NIGHT.md §12, shared/look/lodshadows.json; `?lodshadows=off`), the cascades on High: the third layer's cost.",
-      "params": { "lodshadows": "off" }
+      "notes": "The distant terrain's shadows off (docs/DAY_NIGHT.md \u00a712, shared/look/lodshadows.json; `?lodshadows=off`), the cascades on High: the third layer's cost.",
+      "params": {
+        "lodshadows": "off"
+      }
     },
     {
       "name": "raster-half",
@@ -76,14 +105,23 @@
     },
     {
       "name": "loading-off",
-      "notes": "The game without its loading screen on joining (?loading=off, ARCHITECTURE.md §6.3): the join's timeline as before the screen.",
-      "params": { "loading": "off" }
+      "notes": "The game without its loading screen on joining (?loading=off, ARCHITECTURE.md \u00a76.3): the join's timeline as before the screen.",
+      "params": {
+        "loading": "off"
+      }
     },
     {
       "name": "respawn-preload-off",
-      "notes": "The respawn preload off (?respawnPreload=off: the server streams the spawn only once the player is there, and the client neither prioritises nor readies its LOD): the respawn as before it (ARCHITECTURE.md §6.3).",
+      "notes": "The respawn preload off (?respawnPreload=off: the server streams the spawn only once the player is there, and the client neither prioritises nor readies its LOD): the respawn as before it (ARCHITECTURE.md \u00a76.3).",
       "params": {
         "respawnPreload": "off"
+      }
+    },
+    {
+      "name": "lodmap",
+      "notes": "The LOD colour-map preview (?lodmap=on, shared/look/lodmap.json): distant terrain coloured from the world map's clipmap rings; river valleys lowered.",
+      "params": {
+        "lodmap": "on"
       }
     }
   ]

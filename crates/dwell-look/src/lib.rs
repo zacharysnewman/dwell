@@ -14,6 +14,7 @@ pub mod fog;
 pub mod lights;
 pub mod lod_blend;
 pub mod lod_colour;
+pub mod lod_map;
 pub mod lod_shadows;
 pub mod motes;
 pub mod motion;
