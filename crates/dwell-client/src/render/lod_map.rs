@@ -267,11 +267,13 @@ mod tests {
     fn the_block_is_off_without_a_map_and_names_the_rings_face_with_one() {
         let off = uniforms(None, [0.0; 3]);
         assert_eq!(off[0], 0.0);
-        let mut map = LodMap::default();
-        map.update([0.0, 0.0], FaceFrame::B);
-        let on = uniforms(Some(&map), [0.0, FaceFrame::B.y(40.0), 0.0]);
-        assert_eq!((on[0], on[1]), (1.0, -1.0));
-        // Nothing held yet: every ring's rectangle is empty.
-        assert!(on[4] > on[6]);
+        for f in FaceFrame::under_test() {
+            let mut map = LodMap::default();
+            map.update([0.0, 0.0], f);
+            let on = uniforms(Some(&map), [0.0, f.y(40.0), 0.0]);
+            assert_eq!((on[0], on[1]), (1.0, f.sign_f32()));
+            // Nothing held yet: every ring's rectangle is empty.
+            assert!(on[4] > on[6]);
+        }
     }
 }

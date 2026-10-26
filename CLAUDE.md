@@ -59,6 +59,7 @@ and friend worlds), with a small master server for discovery; there are no offic
 - `docs/CHARACTERS.md` — design for Phase 40 (ADR 0041): characters and creatures as rigid chunky parts
   on a data rig (`shared/characters/characters.json`), the first-person arms view, clips; a concept and
   the Character Lab prototype, not in the game yet.
+- `docs/BUGS.md` — the open bugs the owner reported, with repros and suspects; fixed ones move to its Fixed list.
 - `docs/ARCHIVED_APPROACHES.md` — work kept only as `archive/*` tags (the ray marcher, the half-height slope variants, smaller experiments) and how to restore it.
 - `docs/proposals/` — investigated but not yet adopted plans, each with open questions for the owner;
   not architecture until an ADR adopts it (adopted ones move to a design doc; its README lists them).
