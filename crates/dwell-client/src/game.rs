@@ -1393,12 +1393,16 @@ impl<S: Scene> Game<S> {
     }
 
     /// What an edit will do, by the server's own checks run on the client's world (from the eye
-    /// the crosshair targets from, without the other players' bodies): `None` when it would be
+    /// the crosshair targets from, with our own body but not the other players'): `None` when it would be
     /// refused or its box isn't loaded. The server's later changes (blocks left unsupported) come
     /// with its modification.
     fn predicted_changes(&mut self, m: &Message) -> Option<Vec<([i32; 3], StateId)>> {
         use dwell_game::region_tools::BoxSource;
         let eye = self.target_eye?;
+        // Our own body, as the server sees it (its `EditCapsule`s): a block placed into it is
+        // refused there, so predicting it would show it for a moment (docs/BUGS.md 7).
+        let me = self.own_capsule();
+        let players: &[dwell_world::edit::EditCapsule] = me.as_slice();
         match m {
             Message::BlockEditRequest(e) => {
                 let world = self.streamer.store_mut();
@@ -1406,7 +1410,7 @@ impl<S: Scene> Game<S> {
                     world,
                     e,
                     eye,
-                    &[],
+                    players,
                     dwell_world::edit::DEFAULT_REACH,
                 );
                 // With a multi-cell block's other cells (a torch's upper part), as the server
@@ -1427,13 +1431,28 @@ impl<S: Scene> Game<S> {
                     self.streamer.store_mut(),
                     e,
                     eye,
-                    &[],
+                    players,
                     reach,
                 );
                 (out.check == dwell_world::region::RegionCheck::Ok).then_some(out.changes)
             }
             _ => None,
         }
+    }
+
+    /// Our predicted body as an edit capsule (the server builds its players' the same way), or
+    /// none while we have no body (dead, not yet placed).
+    fn own_capsule(&self) -> Option<dwell_world::edit::EditCapsule> {
+        if !self.current.active || self.dead {
+            return None;
+        }
+        let half = self.predictor.half_height();
+        let radius = self.predictor.config().body.radius;
+        Some(dwell_world::edit::EditCapsule {
+            center: self.predictor.position().to_array(),
+            radius,
+            half_cylinder: half - radius,
+        })
     }
 
     /// The server is done with these edits (`(id, refused)`: from its `EditAck` through the session,

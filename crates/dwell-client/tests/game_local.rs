@@ -1845,3 +1845,52 @@ fn a_stalled_server_catches_up_without_dropping_the_players_inputs() {
         after.last_correction
     );
 }
+
+// face-a-only: the edit check's own-body capsule on the default spawn; the overlap rule itself is face-local and tested in dwell-world.
+#[test]
+fn placing_a_block_into_your_own_body_is_not_predicted() {
+    // docs/BUGS.md 7: the client predicted edits without its own body, so a block placed where the
+    // player stands showed until the server refused it (into a player), then vanished.
+    let mut rig = Rig::new();
+    rig.input.look.pitch = -90.0;
+    assert!(
+        rig.run_until(60 * 20, |r| r
+            .game
+            .as_ref()
+            .is_some_and(
+                |g| g.debug_state().terrain_ready && g.debug_state().target.is_some()
+            )),
+        "terrain loads and the crosshair has a target"
+    );
+    rig.run_until(30, |_| false);
+    rig.latency_steps = 20;
+    let target = rig
+        .game
+        .as_ref()
+        .unwrap()
+        .debug_state()
+        .target
+        .expect("the ground below");
+    let feet = rig.game.as_ref().unwrap().debug_state().feet;
+    let [x, _, z] = target.cell;
+    assert_eq!(
+        [x, z],
+        [feet[0].floor() as i32, feet[2].floor() as i32],
+        "aimed at the ground under the player"
+    );
+    let before: Vec<u16> = (0..8)
+        .map(|dy| rig.game.as_mut().unwrap().voxel(x, target.cell[1] + dy, z))
+        .collect();
+    let now = rig.now + 1000.0;
+    rig.game.as_mut().unwrap().edit(EditAction::Place, now);
+    for _ in 0..30 {
+        rig.frame();
+        let shown: Vec<u16> = (0..8)
+            .map(|dy| rig.game.as_mut().unwrap().voxel(x, target.cell[1] + dy, z))
+            .collect();
+        assert_eq!(
+            shown, before,
+            "a block placed into the player's own cell was shown"
+        );
+    }
+}
