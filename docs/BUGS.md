@@ -26,14 +26,6 @@ certain height above them.
 - **Suspects:** the horizon-map shadows (0.22.19) or the cascades' depth range not covering 2 km relief, the casters'
   `casterReachM`, or the LOD or horizon-map heightmap levels clipping.
 
-### 4. Gaps between water blocks at height transitions
-
-*Reported 2026-10-26.*
-
-Where water steps down (the river terraces of 0.26.0), there are gaps between the water surfaces.
-
-- **Suspect:** the fluid mesher doesn't close the vertical step face between water of different levels.
-
 ### 5. Rivers have tall banks and are always shallow
 
 *Reported 2026-10-26.*
@@ -56,6 +48,19 @@ show.
 - The owner's note was cut off ("In addition, I would expect to see …"). Ask what else is expected.
 
 ## Fixed
+
+### 4. Gaps between water blocks at height transitions (fixed in 0.26.7)
+
+*Reported 2026-10-26.* There were gaps between water surfaces where a river steps down.
+
+- **Cause:** at a step, the upper reach's column (water over water) sits beside the lower reach's
+  last cell, which has air over it and its surface drawn ⅛ of a cell below its top. The mesher
+  culled the side face between them as "fluid beside the same fluid", leaving an open strip from the
+  lower surface up to the upper column's next cell.
+- **Fix:** beside the same fluid whose surface is drawn lower, the cell draws that strip, from the
+  neighbour's drawn surface up to its own (`fluid_side` now takes a bottom as well as a top).
+- **Test:** `a_river_step_down_closes_the_strip_between_the_two_surfaces` (dwell-mesh) failed
+  before the fix and passes now.
 
 ### 7. Placing a block too close to yourself flickered (fixed in 0.26.6)
 
