@@ -802,9 +802,15 @@ Owned by the `Predictor` (the same `Physics` settings as the server):
   a `PlayerInput` datagram carrying the newest 4 inputs (`MAX_INPUTS_PER_DATAGRAM`).
 - **Server** (`dwell-sim`): inputs queue per session ordered by `inputSeq` (§11 validation; see
   ARCHITECTURE §8.3). A **jitter buffer** consumes one input per tick once 2 are queued; when it
-  runs dry the last input repeats and the buffer re-primes; when the queue stays above 6 inputs for
-  a whole 60-tick window (its low-water mark), the excess is skipped to bound input latency (a
-  slow client's frame of inputs arrives at once and is not skipped; at most 96 are queued). The
+  runs dry the last input repeats and the buffer re-primes; as a backstop, when the queue stays
+  above 60 inputs for a whole 60-tick window (its low-water mark) and did not shrink over it, the
+  excess is skipped (at most 96 are queued). A skipped input is movement the client predicted and
+  the server never simulates, so every later snapshot snaps the player back: a server stalled
+  generating terrain for a fast flyer once skipped them and rubber-banded the player (docs/BUGS.md 1,
+  fixed 2026-10-26). So the **client holds its prediction** instead, while the server reports 30 or
+  more of its inputs queued (until it reports 6 or fewer) or while 45 of its inputs are
+  unacknowledged (a stalled server sends no snapshots): `BUFFER_HOLD`, `BUFFER_RESUME`,
+  `UNACKED_HOLD` in dwell-client `game.rs`. The
   client catches up at most 60 ticks a frame (1 s; `MAX_TICKS_PER_FRAME`), so a device drawing
   1 fps or more keeps the server's time: one that dropped time would predict fewer ticks than the
   server simulates, the repeated inputs walking it further than the prediction (or a held jump

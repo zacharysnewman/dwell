@@ -53,8 +53,12 @@ const INPUT_BUFFER: usize = 2; // jitter buffer depth (ticks)
 /// low-water mark decides, not the queue at one tick: a client drawing a few frames a second sends
 /// a frame's ticks at once (up to the client's MAX_TICKS_PER_FRAME), and skipping that burst would
 /// drop inputs the client predicted (a correction every frame). The window is a second, as long as
-/// the slowest frame the client catches up, so it always holds the trough before a burst.
-const MAX_BUFFERED_INPUTS: usize = 6;
+/// the slowest frame the client catches up, so it always holds the trough before a burst. It is a
+/// backstop only (docs/BUGS.md 1): a skipped input is movement the client predicted and the server
+/// never simulates, so every later snapshot snaps the player back. The client itself holds its
+/// prediction once we report half a second queued (its `BUFFER_HOLD`, 30) and nudges its tick
+/// rate for smaller drift, so only a client that ignores both reaches this.
+const MAX_BUFFERED_INPUTS: usize = 60;
 const LATENCY_WINDOW_TICKS: u32 = 60;
 const MAX_SEQ_AHEAD: u32 = 256; // inputs further ahead are rejected
 const INPUT_DATAGRAMS_PER_SECOND: u32 = 2 * SIM_HZ; // §11: SIM_HZ + redundancy
@@ -372,6 +376,9 @@ struct Session {
     /// The fewest inputs queued at any tick of this latency window (`MAX_BUFFERED_INPUTS`).
     low_water: usize,
     window_ticks: u32,
+    /// The queue's length when this latency window began: a queue that shrank over the window is
+    /// draining a backlog (a stalled tick loop catching up), not holding steady latency.
+    window_start_len: usize,
     last_processed_seq: u32,
     last_input: Input,
     health: i32,
@@ -434,6 +441,7 @@ impl Session {
             primed: false,
             low_water: usize::MAX,
             window_ticks: 0,
+            window_start_len: 0,
             last_processed_seq: 0,
             last_input: Input::default(),
             health: pc::MAX_HEALTH as i32,
@@ -1196,13 +1204,21 @@ impl Server {
             s.low_water = s.low_water.min(s.inputs.len());
             s.window_ticks += 1;
             if s.window_ticks >= LATENCY_WINDOW_TICKS {
-                let excess = s.low_water.saturating_sub(MAX_BUFFERED_INPUTS);
+                // Only steady excess is trimmed: a draining backlog is movement the client already
+                // predicted, and skipping it would snap the player back (docs/BUGS.md 1).
+                let draining = s.inputs.len() < s.window_start_len;
+                let excess = if draining {
+                    0
+                } else {
+                    s.low_water.saturating_sub(MAX_BUFFERED_INPUTS)
+                };
                 for _ in 0..excess.min(s.inputs.len()) {
                     s.last_processed_seq = s.inputs.pop_front().expect("queued").0;
                     s.stats.inputs_skipped += 1;
                 }
                 s.low_water = usize::MAX;
                 s.window_ticks = 0;
+                s.window_start_len = s.inputs.len();
             }
             // Jitter buffer: after starving, wait until INPUT_BUFFER inputs are queued again.
             if !s.primed && s.inputs.len() >= INPUT_BUFFER {

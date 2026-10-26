@@ -112,6 +112,10 @@ impl Predictor {
     pub fn next_seq(&self) -> u32 {
         self.latest_seq + 1
     }
+    /// Inputs predicted that no snapshot has acknowledged yet.
+    pub fn unacked(&self) -> u32 {
+        self.latest_seq.saturating_sub(self.last_ack)
+    }
     /// Predicted capsule centre.
     pub fn position(&self) -> DVec3 {
         self.handle
