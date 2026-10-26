@@ -112,10 +112,7 @@ test('local mode streams terrain: Generated chunks, or every chunk explicitly on
   page,
 }) => {
   test.setTimeout(90_000);
-  // The second visit opens the same saved world where the first walk stopped, which varies with
-  // how long releasing the key takes. Ahead (+Z) of the spawn of seed 0 the ground only steps down
-  // (1 m at z = 12, 32 and 90), so both walks go ahead: going back, a walk that starts at the foot
-  // of the z = 12 step is blocked by it (a full block needs a jump).
+  // The second visit opens the same saved world where the first walk stopped.
   for (const query of ['./?local=1', './?local=1&chunks=full']) {
     await page.goto(query);
     await waitActive(page);
@@ -124,11 +121,20 @@ test('local mode streams terrain: Generated chunks, or every chunk explicitly on
     await expect
       .poll(async () => (await state(page))?.terrain.meshed ?? 0, { timeout: 20_000 })
       .toBeGreaterThan(50);
-    await walkForward(page, 60);
-    const end = await state(page);
-    expect(
-      Math.hypot((end?.feet[0] ?? 0) - s.feet[0], (end?.feet[2] ?? 0) - s.feet[2]),
-    ).toBeGreaterThan(2);
+    // The spawn sits in a valley (generator 21), so a slope may block one way: walk each way in
+    // turn until one walk moves (the check is that the streamed terrain lets the player walk).
+    let moved = 0;
+    for (const yaw of [0, 90, 180, 270]) {
+      const from = (await state(page))?.feet ?? s.feet;
+      await walkForward(page, 60, yaw);
+      const end = await state(page);
+      moved = Math.max(
+        moved,
+        Math.hypot((end?.feet[0] ?? 0) - from[0], (end?.feet[2] ?? 0) - from[2]),
+      );
+      if (moved > 2) break;
+    }
+    expect(moved).toBeGreaterThan(2);
   }
 });
 
