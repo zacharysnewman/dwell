@@ -209,9 +209,13 @@ impl TerrainCollision {
         let body = physics.w.bodies.insert(RigidBodyBuilder::fixed().build());
         // One voxel per cell: 1 m × the cell height × 1 m.
         let shape = SharedShape::new(Voxels::new(DVec3::from_array(CELL), &[]));
+        // Static terrain has no mass: explicit (zero) mass properties keep rapier from recomputing
+        // them from every voxel of the world each time a chunk's cells change (docs/BUGS.md 1: that
+        // stalled the server's tick for a fast flyer streaming new terrain).
         let collider = ColliderBuilder::new(shape)
             .collision_groups(groups(Layer::Terrain))
             .friction(0.0)
+            .mass_properties(MassProperties::default())
             .build();
         let collider =
             physics
@@ -276,6 +280,7 @@ impl TerrainCollision {
             .translation(origin)
             .collision_groups(groups(Layer::Terrain))
             .friction(0.0)
+            .mass_properties(MassProperties::default())
             .build();
         Some(physics.w.insert_collider(collider, Some(self.body)))
     }
@@ -417,5 +422,51 @@ impl TerrainCollision {
     }
     pub fn is_loaded(&self, c: ChunkCoord) -> bool {
         self.chunks.contains_key(&c)
+    }
+}
+
+#[cfg(test)]
+mod mass_tests {
+    use super::*;
+    use dwell_world::{Chunk, ChunkCoord, VoxelWorld};
+
+    // face-a-only: whether the terrain collider carries mass doesn't depend on the face; one chunk of stone at the origin.
+    #[test]
+    fn terrain_colliders_carry_no_mass_so_loading_chunks_never_recomputes_it() {
+        // docs/BUGS.md 1: with the default density, every chunk loaded made rapier recompute the
+        // world-sized voxel collider's mass properties from all its voxels, stalling the server's tick
+        // while a fast flyer streamed new terrain.
+        let stone = dwell_blocks::find_block("dwell:stone")
+            .expect("stone")
+            .first_state;
+        let generator: dwell_world::ChunkGenerator =
+            std::sync::Arc::new(move |c: ChunkCoord, chunk: &mut Chunk| {
+                if c == ChunkCoord::new(0, 0, 0) {
+                    for x in 0..16 {
+                        for z in 0..16 {
+                            for y in 0..8 {
+                                chunk.set(x, y, z, stone);
+                            }
+                        }
+                    }
+                }
+            });
+        let mut world = VoxelWorld::new(generator, None);
+        let mut physics = Physics::default();
+        let mut terrain = TerrainCollision::new(&mut physics);
+        terrain.ensure_box(
+            &mut physics,
+            &mut world,
+            DVec3::splat(1.0),
+            DVec3::splat(2.0),
+        );
+        physics.step(1.0 / 60.0);
+        let collider = physics.w.colliders.get(terrain.collider).expect("collider");
+        assert_eq!(
+            collider.mass(),
+            0.0,
+            "the terrain collider has mass {}",
+            collider.mass()
+        );
     }
 }
