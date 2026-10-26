@@ -44,6 +44,8 @@ jobs:
           node --test shared/look/lodblend.test.mjs
           node shared/look/lodcolour.mjs
           node --test shared/look/lodcolour.test.mjs
+          node shared/look/lodmap.mjs
+          node --test shared/look/lodmap.test.mjs
           node shared/look/outline.mjs
           node --test shared/look/outline.test.mjs
           node shared/look/pixelart.mjs

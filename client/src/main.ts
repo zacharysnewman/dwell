@@ -188,6 +188,8 @@ interface DwellDebug {
   pixelArt(): string;
   /** Sets the pixel-art preview's preset by name (`off` or an unknown name: off); true when one is on. */
   setPixelArt(name: string): boolean;
+  /** The LOD colour map preview on or off (`?lodmap=on` starts it on; off on a CPU adapter); true when on. */
+  setLodMap(on: boolean): boolean;
   /** How long the camera rolls upright after crossing the midplane (s; `?crossingroll=`). */
   crossingRoll(): number;
   /** Sets the crossing roll's duration (s, 0..5; 0 snaps upright at once); false for a value it refuses. */
@@ -722,6 +724,7 @@ async function start(): Promise<App | null> {
     setOutline: (name) => client.setOutline(name),
     pixelArt: () => client.pixelArt(),
     setPixelArt: (name) => client.setPixelArt(name),
+    setLodMap: (on) => client.setLodMap(on),
     crossingRoll: () => client.crossingRoll(),
     setCrossingRoll: (seconds) => client.setCrossingRoll(seconds),
     memory: () => memoryReport(app),

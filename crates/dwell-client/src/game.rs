@@ -136,6 +136,10 @@ pub trait Scene: TerrainRenderer {
     /// The brush tool's wireframe at its target (BRUSHES.md), or none.
     fn set_brush_outline(&mut self, _outline: Option<&BrushOutline>) {}
     fn set_debug_lines(&mut self, lines: Option<&[Line]>);
+    /// The LOD colour map's rings this frame (ARCHITECTURE.md §6.6 "Colour map"), or none (off).
+    fn set_lod_map(&mut self, _map: Option<&crate::lod_map::LodMap>) {}
+    /// A strip of ring `ring` rasterised: world texels `rect`, rgba8 sRGB rows of x.
+    fn lod_map_tile(&mut self, _ring: usize, _rect: crate::lod_map::Rect, _rgba: &[u8]) {}
     fn stats(&self) -> RenderStats;
     /// The day/night cycle's state this frame, and seconds for the stars' twinkle.
     fn set_day(&mut self, _day: &DayState, _seconds: f64) {}
@@ -498,6 +502,9 @@ pub struct Game<S: Scene> {
     /// The eye the crosshair targets from (None while not playing).
     target_eye: Option<[f64; 3]>,
     lod: Option<LodSystem>,
+    /// The LOD colour map's rings (`?lodmap=on`), once turned on.
+    lod_map: Option<crate::lod_map::LodMap>,
+    lod_map_on: bool,
     /// The drawing's size in CSS pixels, for LOD selection.
     pub viewport_css: (f64, f64),
     /// Extra lines for the debug overlay.
@@ -635,6 +642,8 @@ impl<S: Scene> Game<S> {
             character_lights: Default::default(),
             target_eye: None,
             lod: None,
+            lod_map: None,
+            lod_map_on: false,
             viewport_css: (1280.0, 720.0),
             debug_note: String::new(),
             memory_note: String::new(),
@@ -773,6 +782,18 @@ impl<S: Scene> Game<S> {
     /// The camera the LOD selection last used (tests: it has the frame's FOV).
     pub fn lod_camera(&self) -> Option<LodCamera> {
         self.lod_camera
+    }
+
+    /// Turns the LOD colour map on or off (`?lodmap=on`, `__dwell.setLodMap`; ARCHITECTURE.md §6.6
+    /// "Colour map"). Its rings are kept while off, so turning it back on shows them at once.
+    pub fn set_lod_map(&mut self, on: bool) {
+        if on && self.lod_map.is_none() {
+            self.lod_map = Some(crate::lod_map::LodMap::default());
+        }
+        self.lod_map_on = on;
+        if !on {
+            self.scene.borrow_mut().set_lod_map(None);
+        }
     }
 
     /// Turns the whole-world view on once the verification is known (`?lod=0` leaves it off).
@@ -1103,6 +1124,16 @@ impl<S: Scene> Game<S> {
                         ),
                         _ => String::new(),
                     };
+                }
+                (Purpose::LodMap(job), out) => {
+                    if let Some(map) = &mut self.lod_map
+                        && map.on_done(&job)
+                        && let Output::LodMap(Some(rgba)) = out
+                    {
+                        self.scene
+                            .borrow_mut()
+                            .lod_map_tile(job.ring, job.rect, &rgba);
+                    }
                 }
                 (Purpose::Verify, _) => self.verify(0),
                 (Purpose::Bounds(level, i, k), out) => {
@@ -2146,6 +2177,35 @@ impl<S: Scene> Game<S> {
         };
         if let Some(lod) = &mut self.lod {
             lod.update(&camera, now_ms, &mut host);
+        }
+        self.update_lod_map(position);
+    }
+
+    /// The LOD colour map's rings around the eye (`position`, world): starts the strips its moves
+    /// uncover, within its jobs budget, and hands the rings to the renderer.
+    fn update_lod_map(&mut self, position: [f64; 3]) {
+        let Some(map) = &mut self.lod_map else {
+            return;
+        };
+        let face = FaceFrame::at_height(position[1]);
+        let mut pool = self.pool.borrow_mut();
+        for job in map.update([position[0], position[2]], face) {
+            let r = job.rect;
+            pool.submit(
+                Purpose::LodMap(job),
+                crate::jobs::Job::LodMap {
+                    face: u8::from(face.is_b()),
+                    texel_m: job.texel_m as i32,
+                    x0: r.x0 as i32,
+                    z0: r.z0 as i32,
+                    w: r.width() as i32,
+                    h: r.height() as i32,
+                },
+            );
+        }
+        drop(pool);
+        if self.lod_map_on {
+            self.scene.borrow_mut().set_lod_map(Some(map));
         }
     }
 

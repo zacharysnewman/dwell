@@ -328,6 +328,11 @@ pub struct TerrainGenerator {
     /// How far above the ground decorations and placed structures reach (rows): the sky test
     /// leaves this much room over the highest ground before a chunk is all air.
     rise: f32,
+    /// The LOD colour map's river valleys (a preview, `?lodmap=on`; ARCHITECTURE.md §6.6 "Colour
+    /// map"): where a river crosses an LOD cell too coarse to hold its water, the cell's ground is
+    /// lowered this far (m) under the river's level (`lod_valley`). Off by default; never in
+    /// chunks.
+    lod_valleys: Option<f64>,
     world_seed: u64,
 }
 
@@ -411,6 +416,7 @@ impl TerrainGenerator {
             planters: Vec::new(),
             portals: None,
             rise: DECORATION_RISE as f32,
+            lod_valleys: None,
             world_seed,
         }
         .with_placements(&PLACEMENTS)
@@ -1105,9 +1111,62 @@ impl TerrainGenerator {
     // --- level of detail (§6.6) -------------------------------------------------------------------
 
     /// A column at a coarse cell's resolution, as the LOD samples it: the detail octaves finer
-    /// than `cell` m dropped, rivers widened to show (`rivers.lodWidth`).
+    /// than `cell` m dropped, rivers widened to show (`rivers.lodWidth`), and with the LOD colour
+    /// map's valleys on, lowered under a river crossing the cell (`lod_valley`).
     pub fn column_lod(&self, x: i64, z: i64, cell: i64) -> Column {
-        self.column(x, z, cell)
+        let col = self.column(x, z, cell);
+        if let Some(margin) = self.lod_valleys.filter(|_| cell > 1) {
+            return self.lod_valley(col, x, z, cell, margin);
+        }
+        col
+    }
+
+    /// Turns the LOD colour map's river valleys on, their ground `margin` m under the river's
+    /// level, or off (`column_lod`; LOD sections only).
+    pub fn set_lod_valleys(&mut self, margin: Option<f64>) {
+        self.lod_valleys = margin;
+    }
+
+    /// A dry LOD column whose cell a river crosses (its channel, widened to the cell, within
+    /// 0.6 of a cell of the centre), lowered `valleyMarginM` under the river's water level, so a
+    /// river painted on it sits in a valley rather than on a slope. A margin, not a tie: the
+    /// lowered ground never lies in the plane of a water surface beside it (ARCHITECTURE.md §6.6
+    /// "known bug class").
+    fn lod_valley(&self, mut col: Column, x: i64, z: i64, cell: i64, margin: f64) -> Column {
+        if col.outside || col.water != Water::None {
+            return col;
+        }
+        let Some(r) = self.river_hit(x, z, 0.6 * cell as f64) else {
+            return col;
+        };
+        if r.d > r.half || r.level < 0.0 {
+            return col;
+        }
+        let floor = (SEA_LEVEL_M + r.level - margin) as f32;
+        col.height = col.height.min(floor);
+        col
+    }
+
+    /// The nearest river channel to face-local column (x, z), through the terrain's meander warp
+    /// (what the chunks carve), its half-width at least `min_half` m; `None` far from every river.
+    pub fn river_hit(&self, x: i64, z: i64, min_half: f64) -> Option<worldmap::Hit> {
+        let map = &*self.map;
+        if !map.channels.near(x as f64, z as f64, min_half) {
+            return None;
+        }
+        let (wx, wz) = self.warp(
+            self.meander_seeds,
+            x,
+            z,
+            S.river_meander,
+            S.river_meander_wavelength,
+        );
+        map.channels.query(wx, wz, min_half, 0.0)
+    }
+
+    /// The block on top of a column (dry, as the LOD and the colour map show it).
+    pub fn top_state(col: &Column) -> StateId {
+        fill(col.band, top_voxel(col.height), 0)
     }
 
     fn lod_columns(&self, o: lod::LodOrigin, level: i32) -> Vec<Column> {

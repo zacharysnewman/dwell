@@ -1,0 +1,17 @@
+{
+  "$comment": "The LOD colour map (preview, `?lodmap=on`; ARCHITECTURE.md §6.6 'Colour map'): nested rings of a minimap-style colour texture around the eye, rasterised in the job workers from the world map (the terrain's own column rules for the top block, the lakes and the sea, and the rivers drawn from their polylines), which the LOD sections' tops take their colour from, so narrow rivers stay continuous at every distance. rings: each ring's texel (m, increasing) and its size (texels square, a power of two, the same for every ring: one rgba8 texture array). snapTexels: a ring recentres on the eye in steps of this many texels (each step rasterises the strip it uncovers). tileTexels: the most texels one raster job holds (the budget: a frame starts at most jobsInFlight jobs). riverMinTexels: a river is drawn at least this many texels wide on every ring, anti-aliased. blend: the LOD tops take the map's colour from fromM to toM metres from the eye (the full-detail chunks' colour nearer). ringFadeTexels: a ring hands over to the next coarser one over this many texels at its edge. water: the block whose LOD top colour paints water, darkened toward deepShade over depthM metres of depth. valleyMarginM: where a river crosses an LOD cell too coarse to hold it, the cell's ground is lowered this far under the river's water level (the painted river sits in a valley; a margin, not a tie, against the water surfaces beside it). Run `node shared/look/lodmap.mjs` after editing; CI fails if crates/dwell-look/src/lodmap.gen.rs is stale.",
+  "rings": [
+    { "texelM": 4, "size": 512 },
+    { "texelM": 16, "size": 512 },
+    { "texelM": 64, "size": 512 },
+    { "texelM": 256, "size": 512 }
+  ],
+  "snapTexels": 16,
+  "tileTexels": 16384,
+  "jobsInFlight": 2,
+  "riverMinTexels": 1.0,
+  "blend": { "fromM": 160, "toM": 320 },
+  "ringFadeTexels": 24,
+  "water": { "block": "dwell:water", "depthM": 6, "deepShade": 0.55 },
+  "valleyMarginM": 0.5
+}
