@@ -55,16 +55,18 @@ show.
   probe or environment.
 - The owner's note was cut off ("In addition, I would expect to see …"). Ask what else is expected.
 
-### 7. Placing a block too close to yourself flickers
-
-*Reported 2026-10-26.*
-
-The client lets you try to place a block too close to yourself. It flickers in, then disappears when the server rejects it.
-
-- **Suspect:** the client's placement check doesn't match the server's player-overlap check, e.g. a different body box,
-  ½ m cells, or crouch height. The client should refuse the placement exactly as the server does.
-
 ## Fixed
+
+### 7. Placing a block too close to yourself flickered (fixed in 0.26.6)
+
+*Reported 2026-10-26.* The block flickered in, then disappeared when the server refused it.
+
+- **Cause:** the client predicted edits with the server's own checks, but passed no player bodies.
+  So it showed a block placed into its own body, which the server refuses ("into a player").
+- **Fix:** the client's prediction passes its own predicted capsule, built as the server builds its
+  players'.
+- **Test:** `placing_a_block_into_your_own_body_is_not_predicted` (dwell-client `game_local`)
+  failed before the fix ("a block placed into the player's own cell was shown") and passes now.
 
 ### 1. Rubber-banding after a high-speed launch or a fast flight (fixed in 0.26.4)
 
