@@ -446,6 +446,9 @@ fn capsule_shape(cfg: &PlayerControllerConfig, crouching: bool) -> SharedShape {
 pub struct Players {
     players: Vec<Option<Player>>,
     terrain: Option<TerrainCollision>,
+    /// Boxes (world metres) whose terrain collision other bodies need this tick (falling pieces,
+    /// docs/FELLING.md): loaded with the players', and kept while asked for.
+    terrain_boxes: Vec<(DVec3, DVec3)>,
     ticks: u32,
     ring: [Vec3; RING_RAYS],
 }
@@ -456,6 +459,7 @@ impl Players {
         Self {
             players: Vec::new(),
             terrain: terrain.then(|| TerrainCollision::new(physics)),
+            terrain_boxes: Vec::new(),
             ticks: 0,
             ring: ring(),
         }
@@ -734,9 +738,19 @@ impl Players {
 
     // --- the pipeline ---------------------------------------------------------------------------
 
+    /// The boxes (world metres) whose terrain collision other bodies need from the next tick on
+    /// (each falling piece's, docs/FELLING.md): loaded with the players' and kept while they are
+    /// asked for, so a piece far from every player still meets the ground.
+    pub fn set_terrain_boxes(&mut self, boxes: Vec<(DVec3, DVec3)>) {
+        self.terrain_boxes = boxes;
+    }
+
     /// Runs the pipeline (§4) for every player. Call before the physics step.
     pub fn tick(&mut self, world: &mut VoxelWorld, physics: &mut Physics) {
         if let Some(terrain) = &mut self.terrain {
+            for &(lo, hi) in &self.terrain_boxes {
+                terrain.ensure_box(physics, world, lo, hi);
+            }
             for p in self.players.iter().flatten() {
                 let pos = physics.position(p.body);
                 // Capped: fast flight must not ask for kilometres of collision.
@@ -751,7 +765,7 @@ impl Players {
             }
             self.ticks += 1;
             if self.ticks.is_multiple_of(RETAIN_EVERY_TICKS) {
-                let centers: Vec<_> = self
+                let mut centers: Vec<_> = self
                     .players
                     .iter()
                     .flatten()
@@ -760,6 +774,11 @@ impl Players {
                         chunk_of_pos(q.to_array())
                     })
                     .collect();
+                centers.extend(
+                    self.terrain_boxes
+                        .iter()
+                        .map(|&(lo, hi)| chunk_of_pos(((lo + hi) * 0.5).to_array())),
+                );
                 terrain.retain(physics, |c| {
                     centers
                         .iter()

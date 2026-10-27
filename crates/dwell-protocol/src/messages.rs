@@ -352,6 +352,40 @@ pub struct PhysicsSnapshot {
     pub ack_input_seq: u32,
     pub local: LocalPlayerState,
     pub remotes: Vec<RemotePlayerState>,
+    /// The falling pieces (docs/FELLING.md §3; protocol v20).
+    pub pieces: Vec<PieceState>,
+}
+
+/// A falling piece's pose and motion in a snapshot: its origin (posfix), its rotation (each
+/// component × 32767 as i16), its velocity and spin (f16).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct PieceState {
+    pub id: u32,
+    pub position: [f64; 3],
+    /// A unit quaternion (x, y, z, w).
+    pub rotation: [f32; 4],
+    pub velocity: [f32; 3],
+    pub angular: [f32; 3],
+}
+
+/// One cell of a falling piece: its offset in cells from the piece's reference cell, and its
+/// block state (the server's id).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct PieceCellNet {
+    pub offset: [i16; 3],
+    pub state: u16,
+}
+
+/// A piece that began to fall (S→C, world channel, after the `VoxelModification` that cleared its
+/// cells; docs/FELLING.md §3): its id, its reference cell's centre (pos64) and rotation, and its
+/// cells, carriers first (`carriers` of them).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct EntitySpawn {
+    pub id: u32,
+    pub origin: [f64; 3],
+    pub rotation: [f32; 4],
+    pub carriers: u16,
+    pub cells: Vec<PieceCellNet>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -412,6 +446,10 @@ pub enum Message {
     /// C→S, control channel, sent when it changes: what the player holds (`held_item`; protocol
     /// v17, CHARACTERS.md §9.3). Others see it in snapshots.
     HeldItem(u16),
+    /// S→C, world channel: a piece began to fall (protocol v20, docs/FELLING.md).
+    EntitySpawn(EntitySpawn),
+    /// S→C, world channel: a piece is gone (settled into blocks, after their `VoxelModification`).
+    EntityDespawn(u32),
 }
 
 impl Message {
@@ -448,6 +486,8 @@ impl Message {
             M::BlockRegistry(_) => MessageType::BlockRegistry,
             M::EditAck(_) => MessageType::EditAck,
             M::HeldItem(_) => MessageType::HeldItem,
+            M::EntitySpawn(_) => MessageType::EntitySpawn,
+            M::EntityDespawn(_) => MessageType::EntityDespawn,
         }
     }
 
@@ -886,6 +926,23 @@ fn write_body(w: &mut ByteWriter, m: &Message) {
                 w.u16(p.held);
                 w.u8(p.swing);
             }
+            let count = m.pieces.len().min(255);
+            w.u8(count as u8);
+            for p in &m.pieces[..count] {
+                w.u32(p.id);
+                for v in p.position {
+                    w.i32(to_fixed_position(v));
+                }
+                for v in p.rotation {
+                    w.i16((v.clamp(-1.0, 1.0) * 32767.0).round() as i16);
+                }
+                for v in p.velocity {
+                    w.f16(v);
+                }
+                for v in p.angular {
+                    w.f16(v);
+                }
+            }
         }
         M::PlayerEvent(m) => {
             w.u8(m.kind as u8);
@@ -970,6 +1027,25 @@ fn write_body(w: &mut ByteWriter, m: &Message) {
         }
         M::HostStatus(s) => w.u8(*s as u8),
         M::HeldItem(h) => w.u16(*h),
+        M::EntitySpawn(m) => {
+            w.u32(m.id);
+            for v in m.origin {
+                w.f64(v);
+            }
+            for v in m.rotation {
+                w.f32(v);
+            }
+            w.u16(m.carriers);
+            let count = m.cells.len().min(limits::MAX_PIECE_CELLS);
+            w.u16(count as u16);
+            for c in &m.cells[..count] {
+                for v in c.offset {
+                    w.i16(v);
+                }
+                w.u16(c.state);
+            }
+        }
+        M::EntityDespawn(id) => w.u32(*id),
         M::EditAck(m) => {
             w.u32(m.through);
             w.u16(m.rejected.len() as u16);
@@ -1141,11 +1217,35 @@ fn read_body(r: &mut ByteReader, t: MessageType) -> Option<Message> {
                 r.check(p.flags & !player_flags::ALL == 0);
                 remotes.push(p);
             }
+            let count = r.u8();
+            let mut pieces = Vec::new();
+            for _ in 0..count {
+                if !r.ok() {
+                    break;
+                }
+                let id = r.u32();
+                let position = [
+                    from_fixed_position(r.i32()),
+                    from_fixed_position(r.i32()),
+                    from_fixed_position(r.i32()),
+                ];
+                let rotation = [r.i16(), r.i16(), r.i16(), r.i16()].map(|v| f32::from(v) / 32767.0);
+                let velocity = [r.f16(), r.f16(), r.f16()];
+                let angular = [r.f16(), r.f16(), r.f16()];
+                pieces.push(PieceState {
+                    id,
+                    position,
+                    rotation,
+                    velocity,
+                    angular,
+                });
+            }
             M::PhysicsSnapshot(PhysicsSnapshot {
                 server_tick,
                 ack_input_seq,
                 local,
                 remotes,
+                pieces,
             })
         }
         T::PlayerEvent => {
@@ -1195,6 +1295,33 @@ fn read_body(r: &mut ByteReader, t: MessageType) -> Option<Message> {
         }
         T::HostStatus => M::HostStatus(HostState::from_u8(r.u8())?),
         T::HeldItem => M::HeldItem(r.u16()),
+        T::EntitySpawn => {
+            let id = r.u32();
+            let origin = read_pos64(r);
+            let rotation = [r.f32(), r.f32(), r.f32(), r.f32()];
+            r.check(rotation.iter().all(|v| v.is_finite()));
+            let carriers = r.u16();
+            let count = usize::from(r.u16());
+            r.check(count <= limits::MAX_PIECE_CELLS && usize::from(carriers) <= count);
+            let mut cells = Vec::new();
+            for _ in 0..count {
+                if !r.ok() {
+                    break;
+                }
+                cells.push(PieceCellNet {
+                    offset: [r.i16(), r.i16(), r.i16()],
+                    state: r.u16(),
+                });
+            }
+            M::EntitySpawn(EntitySpawn {
+                id,
+                origin,
+                rotation,
+                carriers,
+                cells,
+            })
+        }
+        T::EntityDespawn => M::EntityDespawn(r.u32()),
         T::EditAck => {
             let through = r.u32();
             let count = usize::from(r.u16());

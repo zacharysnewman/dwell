@@ -90,7 +90,19 @@ pub enum Motion {
     Dynamic,
 }
 
-pub use rapier3d_f64::glamx::DQuat;
+pub use rapier3d_f64::glamx::{DMat3, DQuat};
+
+/// One cell of a falling piece (`Physics::add_piece`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PieceCell {
+    /// The box's centre relative to the piece's origin (m).
+    pub center: DVec3,
+    pub half: DVec3,
+    /// Its mass (kg).
+    pub mass: f64,
+    /// Whether it collides (carriers do; riders only add mass).
+    pub collides: bool,
+}
 
 /// A box body to add (`Physics::add_box`).
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -201,6 +213,48 @@ impl Physics {
             .colliders
             .insert_with_parent(collider.build(), h, &mut self.w.bodies);
         BodyHandle(h)
+    }
+
+    /// A falling piece (docs/FELLING.md §3): one dynamic body at `origin` (world) of boxes, one
+    /// per cell (`cells`: each box's centre relative to `origin`, its half extents, its mass), on
+    /// the Tier 1 layer. A cell that doesn't `collide` (a leaf) adds its mass but touches nothing.
+    /// Continuous collision keeps a fast trunk from tunnelling through the ground.
+    pub fn add_piece(&mut self, origin: DVec3, cells: &[PieceCell]) -> BodyHandle {
+        let body = RigidBodyBuilder::dynamic()
+            .translation(origin)
+            .linear_damping(0.05)
+            .angular_damping(0.2)
+            .can_sleep(false)
+            .ccd_enabled(true)
+            .user_data(TIER1_BODY)
+            .build();
+        let h = self.w.bodies.insert(body);
+        for c in cells {
+            let groups = if c.collides {
+                groups(Layer::Tier1)
+            } else {
+                InteractionGroups::new(TIER1, Group::NONE, InteractionTestMode::And)
+            };
+            let collider = ColliderBuilder::cuboid(c.half.x, c.half.y, c.half.z)
+                .translation(c.center)
+                .mass(c.mass)
+                .friction(0.8)
+                .restitution(0.05)
+                .collision_groups(groups)
+                .build();
+            self.w
+                .colliders
+                .insert_with_parent(collider, h, &mut self.w.bodies);
+        }
+        BodyHandle(h)
+    }
+
+    /// A body's rotation.
+    pub fn rotation(&self, h: BodyHandle) -> DQuat {
+        self.w
+            .bodies
+            .get(h.0)
+            .map_or(DQuat::IDENTITY, |b| *b.rotation())
     }
 
     /// The Rapier world, read-only (tests and tools inspect bodies and colliders).
