@@ -214,7 +214,15 @@ pub struct Column {
     pub band: Band,
     /// Beyond the world's disc: nothing is generated.
     pub outside: bool,
+    /// How far (m) the nearest river channel's edge or lake shore lies: 0 in the water, `FAR_WATER`
+    /// with none near (the terrain volume's `water` input: cliffs keep off the rivers).
+    pub shore: f32,
+    /// The height field's ground height (m, as `height`), before a terrain volume reshaped it.
+    pub base: f32,
 }
+
+/// A column's `shore` with no river valley or lake shore reaching it.
+pub const FAR_WATER: f32 = 1000.0;
 
 impl Column {
     /// The first row above the water (rows below it over the ground are water); the ground's top
@@ -631,7 +639,9 @@ impl TerrainGenerator {
             return base;
         }
         let base_top = top_voxel(base.height);
-        let top = Self::shaped_top(v, &eval, base_top);
+        // Dry ground above the sea is never lowered under its surface (it would stand open beside
+        // the sea's water).
+        let top = Self::shaped_top(v, &eval, base_top).max(base_top.min(Self::sea_top()));
         if top == base_top {
             return base;
         }
@@ -652,6 +662,10 @@ impl TerrainGenerator {
         base: &Column,
     ) -> Option<ColumnEval> {
         let (xi, zi) = (x as i32, z as i32);
+        // Water is never reshaped: a lake, a river or the sea keeps its bed.
+        if base.water != Water::None {
+            return None;
+        }
         if let Some((p, near)) = self.portals_near((xi, zi), (xi, zi))
             && p.locate(&near, xi, zi).0 != Part::None
         {
@@ -674,6 +688,7 @@ impl TerrainGenerator {
             z: zi,
             surface: m_of_row(top_voxel(h) + 1) as f32,
             slope: &slope,
+            water: base.shore,
         }))
     }
 
@@ -687,6 +702,11 @@ impl TerrainGenerator {
         } else {
             v.density(eval, y) > 0.0
         }
+    }
+
+    /// The row under the sea's surface (face-local): the lowest a volume leaves dry ground's top.
+    fn sea_top() -> i32 {
+        top_voxel(SEA_LEVEL_M as f32)
     }
 
     /// The topmost solid row under the volume over a height field topped at `base_top`.
@@ -865,12 +885,24 @@ impl TerrainGenerator {
         } else {
             Band::Ground
         };
+        let mut shore = FAR_WATER;
+        if let Some(r) = &river {
+            shore = shore.min((r.d - r.half).max(0.0) as f32);
+        }
+        if let Some(l) = &lake {
+            shore = shore.min((-l.sdf).max(0.0) as f32);
+        }
+        if water != Water::None {
+            shore = 0.0;
+        }
         Column {
             height,
             level,
             water,
             band,
             outside: false,
+            shore,
+            base: height,
         }
     }
 
@@ -906,17 +938,30 @@ impl TerrainGenerator {
     /// [`soil_rows`] for column (x, z), its neighbours' columns from `column`.
     fn soil_at(&self, x: i32, z: i32, col: &Column, column: impl Fn(i32, i32) -> Column) -> i64 {
         let top = top_voxel(col.height);
-        let lowest = [(1, 0), (-1, 0), (0, 1), (0, -1)]
+        let around: Vec<Column> = [(1, 0), (-1, 0), (0, 1), (0, -1)]
             .iter()
             .map(|(dx, dz)| column(x + dx, z + dz))
             .filter(|c| !c.outside)
+            .collect();
+        let lowest = around
+            .iter()
             .map(|c| top_voxel(c.height))
             .min()
             .unwrap_or(top);
         let rows = soil_rows(top, lowest);
-        // Under a volume's reshaped ground a cliff face shows rock below its soil.
+        // A cliff face the volume made shows rock below its soil: the soil is at most the volume's
+        // `soilDepth`, or the height field's own mantle there where that is deeper (so where the
+        // volume reshapes nothing the soil is the height field's).
         match &self.volume {
-            Some(v) => rows.min(v.soil_rows.max(under_rows())),
+            Some(v) => {
+                let base_top = top_voxel(col.base);
+                let base_lowest = around
+                    .iter()
+                    .map(|c| top_voxel(c.base))
+                    .min()
+                    .unwrap_or(base_top);
+                rows.min(v.soil_rows.max(soil_rows(base_top, base_lowest)))
+            }
             None => rows,
         }
     }
@@ -1293,7 +1338,8 @@ impl TerrainGenerator {
                 };
                 let base_top = top_voxel(base.height);
                 let top = top_voxel(col.height);
-                let floor = base_top - reach;
+                // Nor is dry ground carved under the sea's surface.
+                let floor = (base_top - reach).max(Self::sea_top() + 1).min(top);
                 if y0 + S <= floor || y0 >= top {
                     continue;
                 }
@@ -1320,15 +1366,19 @@ impl TerrainGenerator {
                         continue;
                     }
                     let cell = &mut voxels[local_index(x, ly, z)];
+                    // A ramp piece the fill put under the top stays (a steep ramp's lower half
+                    // over an overhang's mouth): only full cells take a floor or a ceiling.
+                    let full = dwell_blocks::info(*cell).shape_index
+                        == dwell_blocks::info(M.stone).shape_index;
                     if !solid(y) {
                         *cell = if y < water { M.water } else { M.air };
-                    } else if !solid(y + 1) {
+                    } else if full && !solid(y + 1) {
                         *cell = if sky_near(y) {
                             under_water(fill(col.band, y, 0), y, col.flood_row())
                         } else {
                             v.material
                         };
-                    } else if !solid(y - 1) {
+                    } else if full && !solid(y - 1) {
                         *cell = v.material;
                     }
                 }

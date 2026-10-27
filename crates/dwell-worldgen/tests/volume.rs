@@ -1,7 +1,7 @@
-//! The terrain volume prototype (generator 101, world type `cliffs`; `volume.rs`): overhangs on steep
+//! The terrain volume (the cliffs over the height field, the terrain's default; `volume.rs`): overhangs on steep
 //! ground, the height field untouched elsewhere, nothing left standing on air.
 
-use dwell_world::{CHUNK_SIZE, Chunk, ChunkCoord, FaceFrame, GENERATOR_CLIFFS, M, local_index};
+use dwell_world::{CHUNK_SIZE, Chunk, ChunkCoord, FaceFrame, M, local_index};
 use dwell_worldgen::{BifacialTerrain, TerrainGenerator};
 
 /// The first `n` columns, at least 200 m apart, on a 16 m grid round the origin whose ground falls
@@ -65,8 +65,8 @@ dwell_world::both_faces!(
     /// cells (ledges) and removes them (recesses). Over several hillsides: a 600 m field picks which
     /// part of the land has cliffs, so one hillside may have none.
     fn steep_ground_has_overhangs(f: FaceFrame) {
-        let plain = BifacialTerrain::new(7);
-        let cliffs = BifacialTerrain::for_generator(GENERATOR_CLIFFS, 7).expect("terrain");
+        let plain = BifacialTerrain::height_field(7);
+        let cliffs = BifacialTerrain::new(7);
         let (plain, cliffs) = (plain.local(f.face), cliffs.local(f.face));
         let at = steep_columns(plain, 1.1, 6);
         let (mut overhangs, mut added, mut removed) = (0, 0, 0);
@@ -102,8 +102,8 @@ dwell_world::both_faces!(
     /// Away from steep ground the cliffs world is the plain terrain, cell for cell: the volume
     /// only reshapes where its mask is on.
     fn gentle_ground_is_the_plain_terrain(f: FaceFrame) {
-        let plain = BifacialTerrain::new(7);
-        let cliffs = BifacialTerrain::for_generator(GENERATOR_CLIFFS, 7).expect("terrain");
+        let plain = BifacialTerrain::height_field(7);
+        let cliffs = BifacialTerrain::new(7);
         let (plain, cliffs) = (plain.local(f.face), cliffs.local(f.face));
         let spawn = plain
             .ground_y(0, 0)
@@ -134,8 +134,8 @@ dwell_world::both_faces!(
     /// Nothing the generator puts on the ground (grass, flowers) is left over air where the volume
     /// removed the cell under it.
     fn no_decoration_floats_over_a_recess(f: FaceFrame) {
-        let plain = BifacialTerrain::new(7);
-        let cliffs = BifacialTerrain::for_generator(GENERATOR_CLIFFS, 7).expect("terrain");
+        let plain = BifacialTerrain::height_field(7);
+        let cliffs = BifacialTerrain::new(7);
         let (plain, cliffs) = (plain.local(f.face), cliffs.local(f.face));
         let at = steep_column(plain, 0.8);
         for (c, _, b) in chunks_round(plain, cliffs, at) {
@@ -163,8 +163,8 @@ dwell_world::both_faces!(
     /// over its ground, so every recess cut below a hillside's surface had filled with water that
     /// hung on the cliff (seen in Chrome by a lake at seed 7, 2026-10-27).
     fn a_recess_in_dry_ground_is_air(f: FaceFrame) {
-        let plain = BifacialTerrain::new(7);
-        let cliffs = BifacialTerrain::for_generator(GENERATOR_CLIFFS, 7).expect("terrain");
+        let plain = BifacialTerrain::height_field(7);
+        let cliffs = BifacialTerrain::new(7);
         let (plain, cliffs) = (plain.local(f.face), cliffs.local(f.face));
         let mut wrong = 0;
         for at in steep_columns(plain, 1.1, 6) {
@@ -191,8 +191,8 @@ dwell_world::both_faces!(
 /// Each cliffs chunk round six steep hillsides of face `f`, with its column's cells: (coordinate,
 /// the cliffs chunk).
 fn cliff_chunks(f: FaceFrame) -> Vec<(ChunkCoord, Chunk)> {
-    let plain = BifacialTerrain::new(7);
-    let cliffs = BifacialTerrain::for_generator(GENERATOR_CLIFFS, 7).expect("terrain");
+    let plain = BifacialTerrain::height_field(7);
+    let cliffs = BifacialTerrain::new(7);
     let (plain, cliffs) = (plain.local(f.face), cliffs.local(f.face));
     steep_columns(plain, 1.1, 6)
         .into_iter()
@@ -259,8 +259,8 @@ dwell_world::both_faces!(
     /// raises is topped as the land round it: most tops open to the sky over a raised or lowered
     /// column are grass, as on the plain terrain there.
     fn the_reshaped_ground_is_grassed_like_the_land(f: FaceFrame) {
-        let plain = BifacialTerrain::new(7);
-        let cliffs = BifacialTerrain::for_generator(GENERATOR_CLIFFS, 7).expect("terrain");
+        let plain = BifacialTerrain::height_field(7);
+        let cliffs = BifacialTerrain::new(7);
         let (plain, cliffs) = (plain.local(f.face), cliffs.local(f.face));
         let (mut tops, mut grass) = (0, 0);
         for at in steep_columns(plain, 1.1, 6) {
@@ -324,27 +324,39 @@ dwell_world::both_faces!(
 dwell_world::both_faces!(
     /// A cliff face shows rock, not a wall of soil: no dirt cell lies more than the volume's
     /// `soilDepth` under its column's top (the soil mantle followed the lowest neighbour down a
-    /// 14 m face).
+    /// 14 m face), or the height field's own mantle there where that is deeper.
     fn cliff_faces_show_rock_below_the_soil(f: FaceFrame) {
-        let cliffs = BifacialTerrain::for_generator(GENERATOR_CLIFFS, 7).expect("terrain");
+        let cliffs = BifacialTerrain::new(7);
         let g = cliffs.local(f.face);
         let soil = (f64::from(
             dwell_worldgen::volume::find("cliffs")
                 .expect("cliffs")
                 .soil_depth,
         ) / dwell_world::CELL_H) as i32;
+        let plain = BifacialTerrain::height_field(7);
+        let p = plain.local(f.face);
+        // The height field's own soil under a top: down to its lowest neighbour's top.
+        let mantle = |x: i32, z: i32| {
+            let top = p.ground_y(x, z).expect("disc");
+            let lowest = [(1, 0), (-1, 0), (0, 1), (0, -1)]
+                .iter()
+                .filter_map(|(dx, dz)| p.ground_y(x + dx, z + dz))
+                .min()
+                .unwrap_or(top);
+            top - lowest
+        };
         let chunks = cliff_chunks(f);
         let mut deep = 0;
         for (c, ch) in &chunks {
             for z in 0..CHUNK_SIZE {
                 for x in 0..CHUNK_SIZE {
-                    let top = g
-                        .ground_y(c.x * CHUNK_SIZE + x, c.z * CHUNK_SIZE + z)
-                        .expect("disc");
+                    let (wx, wz) = (c.x * CHUNK_SIZE + x, c.z * CHUNK_SIZE + z);
+                    let top = g.ground_y(wx, wz).expect("disc");
+                    let allowed = soil.max(mantle(wx, wz));
                     for y in 0..CHUNK_SIZE {
                         let wy = c.y * CHUNK_SIZE + y;
                         if named(ch.voxels()[local_index(x, y, z)]).starts_with("dwell:dirt")
-                            && top - wy > soil
+                            && top - wy > allowed
                         {
                             deep += 1;
                         }
@@ -404,5 +416,132 @@ dwell_world::both_faces!(
             tunnels.len(),
             &tunnels[..tunnels.len().min(3)]
         );
+    }
+);
+
+/// Columns round seed `seed`'s rivers on face `f` (every 6th course point of the first 60
+/// courses, out to `out` m past the channel), with the plain and the cliffs generators.
+fn river_columns(
+    seed: u64,
+    f: FaceFrame,
+    out: i32,
+    mut each: impl FnMut(&TerrainGenerator, &TerrainGenerator, i32, i32),
+) {
+    let plain = BifacialTerrain::height_field(seed);
+    let cliffs = BifacialTerrain::new(seed);
+    let (p, c) = (plain.local(f.face), cliffs.local(f.face));
+    for course in p.map().channels.courses.iter().take(60) {
+        for pt in course.iter().step_by(6) {
+            let r = (pt.w * 0.5) as i32 + out;
+            for z in pt.z as i32 - r..=pt.z as i32 + r {
+                for x in pt.x as i32 - r..=pt.x as i32 + r {
+                    each(p, c, x, z);
+                }
+            }
+        }
+    }
+}
+
+dwell_world::both_faces!(
+    /// The owner (2026-10-27, 0.34.0): "big edges rising up on sides of river, and drop off edges
+    /// without filling low areas". A river valley's banks are steep, so the cliffs' slope mask put
+    /// walls along them, raised above the water or sunk below it. The cliffs keep off the water:
+    /// within 8 m of a river channel's edge or a lake's shore the ground is the plain terrain's.
+    fn cliffs_keep_off_the_rivers(f: FaceFrame) {
+        let (mut near, mut moved) = (0usize, Vec::new());
+        river_columns(7, f, 10, |p, c, x, z| {
+            let col = p.column_at(x, z);
+            if col.outside || col.shore >= 8.0 {
+                return;
+            }
+            near += 1;
+            if p.ground_y(x, z) != c.ground_y(x, z) {
+                moved.push((x, z));
+            }
+        });
+        assert!(near > 5000, "columns by the water: {near}");
+        assert!(
+            moved.is_empty(),
+            "{} of {near} columns by the water reshaped, e.g. {:?}",
+            moved.len(),
+            moved.first()
+        );
+    }
+);
+
+dwell_world::both_faces!(
+    /// No water stands open beside ground the cliffs lowered: round the rivers, the cliffs world
+    /// has no more water cells beside air (sideways) than the plain terrain.
+    fn no_water_stands_open_beside_lowered_ground(f: FaceFrame) {
+        let open = |g: &TerrainGenerator, x: i32, z: i32| {
+            let col = g.column_at(x, z);
+            if col.outside || col.water == dwell_worldgen::terrain::Water::None {
+                return 0;
+            }
+            let surface = col.water_row();
+            [(1, 0), (-1, 0), (0, 1), (0, -1)]
+                .iter()
+                .filter(|(dx, dz)| {
+                    let n = g.column_at(x + dx, z + dz);
+                    !n.outside
+                        && n.water == dwell_worldgen::terrain::Water::None
+                        && g.ground_y(x + dx, z + dz).is_some_and(|t| t < surface - 1)
+                })
+                .count()
+        };
+        let (mut plain, mut cliffs) = (0usize, 0usize);
+        river_columns(7, f, 6, |p, c, x, z| {
+            plain += open(p, x, z);
+            cliffs += open(c, x, z);
+        });
+        assert!(
+            cliffs <= plain,
+            "open water faces: cliffs {cliffs}, plain {plain}"
+        );
+    }
+);
+
+#[test]
+fn cliffs_keep_off_the_river_at_the_report() {
+    // face-a-only: the owner's report, seed 3764472973 face A near (-3794, 240, -5614) (0.34.0).
+    let plain = BifacialTerrain::height_field(3_764_472_973);
+    let cliffs = BifacialTerrain::new(3_764_472_973);
+    let (p, c) = (
+        plain.local(FaceFrame::A.face),
+        cliffs.local(FaceFrame::A.face),
+    );
+    let (mut near, mut moved) = (0, 0);
+    for z in -5714..=-5514 {
+        for x in -3894..=-3694 {
+            let col = p.column_at(x, z);
+            if col.outside || col.shore >= 8.0 {
+                continue;
+            }
+            near += 1;
+            moved += usize::from(p.ground_y(x, z) != c.ground_y(x, z));
+        }
+    }
+    assert!(near > 100, "columns by the water: {near}");
+    assert_eq!(moved, 0, "of {near} columns by the water");
+}
+
+dwell_world::both_faces!(
+    /// The owner (2026-10-27): the cliffs are the default terrain, configurable ("this will most
+    /// likely be a slider" with biomes). At strength 0 the volume leaves the height field as it is,
+    /// cell for cell, by data alone.
+    fn at_strength_zero_the_terrain_is_the_height_field(f: FaceFrame) {
+        let mut def = *dwell_worldgen::volume::find("cliffs").expect("cliffs");
+        def.strength = 0.0;
+        let none = BifacialTerrain::with_volume(7, Box::leak(Box::new(def)));
+        let plain = BifacialTerrain::height_field(7);
+        let (p, z) = (plain.local(f.face), none.local(f.face));
+        for at in steep_columns(p, 1.1, 2) {
+            for (c, a, b) in chunks_round(p, z, at) {
+                assert!(
+                    a.voxels() == b.voxels(),
+                    "chunk {c:?} differs at strength 0"
+                );
+            }
+        }
     }
 );

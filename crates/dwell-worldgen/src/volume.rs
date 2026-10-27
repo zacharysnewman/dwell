@@ -24,6 +24,11 @@ pub enum Node {
     Depth,
     /// The cell centre's height above sea level (m).
     Height,
+    /// How far (m) the column's nearest river channel edge or lake shore lies (0 in the water,
+    /// 1000 with none near): cliffs fade out beside the water.
+    Water,
+    /// The volume's `strength` (0–1).
+    Strength,
     /// The surface's gradient (rise per run) over ±`radius` m.
     Slope {
         radius: u8,
@@ -63,6 +68,9 @@ pub struct VolumeDef {
     pub material: &'static str,
     pub soil_depth: f32,
     pub floor_grass: f32,
+    /// How strongly it reshapes the ground, 0 (not at all) to 1: the `strength` input, which a
+    /// density multiplies its shaping by (a biome's slider later).
+    pub strength: f32,
     pub nodes: &'static [Node],
 }
 
@@ -74,6 +82,11 @@ pub use data::VOLUMES;
 /// The build's volume named `name`.
 pub fn find(name: &str) -> Option<&'static VolumeDef> {
     VOLUMES.iter().find(|v| v.name == name)
+}
+
+/// The volume the world's terrain is shaped by (`volume.json` `terrain`), if any.
+pub fn terrain_volume() -> Option<&'static VolumeDef> {
+    data::TERRAIN.map(|name| find(name).expect("volume.json's terrain names one of its volumes"))
 }
 
 /// A noise node's lattice, resolved for a world.
@@ -99,6 +112,7 @@ pub struct Volume {
     /// The most soil under a top, and how near open sky a floor grows the top block (cells).
     pub soil_rows: i64,
     pub floor_grass_cells: i32,
+    pub strength: f32,
 }
 
 /// One column's inputs: the height field's surface (m, face-local) and its slope over a radius
@@ -108,6 +122,8 @@ pub struct ColumnInput<'a> {
     pub z: i32,
     pub surface: f32,
     pub slope: &'a dyn Fn(u8) -> f32,
+    /// How far (m) the nearest river channel edge or lake shore lies.
+    pub water: f32,
 }
 
 /// A column's evaluated column-only nodes: each node's value where it is the same for every cell
@@ -178,6 +194,7 @@ impl Volume {
             material: dwell_blocks::require(def.material),
             soil_rows: (f64::from(def.soil_depth) / dwell_world::CELL_H).round() as i64,
             floor_grass_cells: f64::from(def.floor_grass).round() as i32,
+            strength: def.strength,
         }
     }
 
@@ -239,6 +256,8 @@ impl Volume {
             }
             Node::Noise { .. } => None,
             Node::Slope { radius } => Some((input.slope)(radius)),
+            Node::Water => Some(input.water),
+            Node::Strength => Some(self.strength),
             Node::Const(c) => Some(c),
             Node::Mul(kids) => {
                 let mut all = Some(1.0f32);
@@ -334,7 +353,12 @@ impl Volume {
             Node::Abs(k) => kid(k).abs(),
             Node::Clamp { of, min, max } => kid(of).clamp(min, max),
             Node::Smoothstep { of, from, to } => smooth_step(from, to, kid(of)),
-            Node::Depth | Node::Height | Node::Slope { .. } | Node::Noise { .. } => {
+            Node::Depth
+            | Node::Height
+            | Node::Water
+            | Node::Strength
+            | Node::Slope { .. }
+            | Node::Noise { .. } => {
                 unreachable!("inputs are evaluated by their callers")
             }
         }
@@ -359,6 +383,7 @@ mod tests {
             z: -20,
             surface,
             slope,
+            water: 1000.0,
         }
     }
 
@@ -370,6 +395,7 @@ mod tests {
             material: "dwell:stone",
             soil_depth: 2.0,
             floor_grass: 3.0,
+            strength: 1.0,
             nodes: &[Node::Depth],
         };
         let v = Volume::resolve(&DEF, 1);
@@ -389,6 +415,7 @@ mod tests {
             material: "dwell:stone",
             soil_depth: 2.0,
             floor_grass: 3.0,
+            strength: 1.0,
             nodes: &[
                 Node::Depth,
                 Node::Slope { radius: 2 },

@@ -178,8 +178,8 @@ describe('scenarios', () => {
     expect(scenarioUrl('./', b)).toBe('./?local=1&seed=7&spawn=b');
     expect(() => parseScenarios(file([{ ...minimal, face: 'c' }]))).toThrow(/"a" or "b"/);
     // A scenario opens another world type by name (`?world=`); the terrain is the default.
-    const [c] = parseScenarios(file([{ ...minimal, world: 'cliffs' }]));
-    expect(scenarioUrl('./', c)).toBe('./?local=1&seed=7&world=cliffs');
+    const [c] = parseScenarios(file([{ ...minimal, world: 'flat' }]));
+    expect(scenarioUrl('./', c)).toBe('./?local=1&seed=7&world=flat');
     expect(() => parseScenarios(file([{ ...minimal, world: 'caves' }]))).toThrow(/one of terrain/);
     const repeat = (times: number, steps: unknown[]): unknown =>
       file([{ name: 'a', steps: [{ do: 'repeat', times, steps }] }]);
