@@ -6,7 +6,7 @@ use crate::lod_shadows::*;
 pub const LOD_SHADOWS: LodShadowTunables = LodShadowTunables {
     heights: HeightRange {
         bottom_m: -16.0,
-        top_m: 1536.0,
+        top_m: 4096.0,
     },
     march: MarchTunables {
         start_texels: 1.5,

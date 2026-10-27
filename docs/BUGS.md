@@ -16,17 +16,24 @@ leaving a grid pattern.
 - **Suspects:** the shadow casters cull faces (back faces, merged quads, caster distance), or the depth-only pass's bias or
   normal offset is too large for ½ m steps.
 
-### 3. Tall mountains: a permanent shadow band, and shadowed tops vanish from high above
-
-*Reported 2026-10-26.*
-
-Tall mountains have a shadow that stays put at certain heights. Possibly related: the shadowed tops disappear when you fly a
-certain height above them.
-
-- **Suspects:** the horizon-map shadows (0.22.19) or the cascades' depth range not covering 2 km relief, the casters'
-  `casterReachM`, or the LOD or horizon-map heightmap levels clipping.
-
 ## Fixed
+
+### 3. Tall mountains had a permanent shadow band (fixed in 0.27.4)
+
+*Reported 2026-10-26.* Tall mountains had a shadow that stayed put at certain heights. Possibly
+related: the shadowed tops disappeared when flying a certain height above them.
+
+- **Cause:** the distant-terrain shadows (DAY_NIGHT.md §12) draw the terrain from above into
+  heightmaps between `heights.bottomM` and `topM` (`shared/look/lodshadows.json`). `topM` was
+  1,536 m, from before the world map's ranges (generator 21), which reach ~2.6 km. Everything
+  above it was cut from the maps and read as shaded: a flat-edged band at one height on every tall
+  mountain, the peaks in shade at noon too. Seen in Chrome on seed 7's 2.3 km range.
+- **Fix:** `topM` is 4,096 m.
+- **Test:** `the_maps_hold_the_highest_mountains` (render/lod_shadows.rs) samples the highest
+  ground of three seeds and checks it stays 256 m under `topM`. It failed at 1,536 m (ground at
+  2,632 m) and passes now.
+- **To confirm:** the tops "vanishing" from high above was likely the same dark shading. Recheck it
+  in play.
 
 ### 6. Water reflections faded to white at the screen's sides (fixed in 0.27.1)
 
