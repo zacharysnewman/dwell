@@ -10,6 +10,27 @@ None. Report new ones here.
 
 ## Fixed
 
+### 11. River banks walled off the sea, and tall edges where rivers met (fixed in 0.31.0)
+
+*Reported 2026-10-27 (0.30.x, on a phone).* Rivers had "a 1-2 block high, 1-2 block wide edge along
+the whole thing" that blocked "off access to the ocean", and "weird tall edges … where rivers meet".
+
+- **Cause:** two rules of the river columns (`terrain.rs`, `worldmap/channels.rs`). (1) Where the
+  land beside a river was lower than its water the bank was raised ½ m over it, falling 1.5 m per m:
+  a one-cell ridge along every river through low land, and, at the mouths, where the river is at sea
+  level and the land under the sea, a wall of sand out into the sea (119 of 185 levees on a 16 m grid
+  of seed 7). (2) A joining river reached the other's level only at the other's centreline (and was
+  capped at its own level where lower), so across the other's channel its water stood up to 5 m
+  above, or ½ m below, the water beside it: a wall of water.
+- **Fix (generator 25):** a levee falls away gently (`rivers.leveeFall` 0.15 m per m), a broad bank,
+  and none where the river is at sea level. A joining river meets the other at its level across the
+  other's channel (`joinMargin` plus both half-widths), the other's water backing up into it where it
+  lies lower, and falls to it at most `joinSlope` 0.25 m per m upstream.
+- **Tests:** `rivers_meet_at_one_level` (178 and 34 water walls round seed 7's 15 and 9 confluences
+  on faces A and B before, none after) and `river_banks_are_not_ridges` (about 1.6 % of the banks
+  ridges before, under 1 in 10,000 after: a natural beach cell remains), both faces. Checked in
+  Chrome: seed 7's river mouth 16 km north of spawn, sand walls into the sea before, open after.
+
 ### 10. A white patch down a portal after visiting the other face (fixed in 0.28.5)
 
 *Reported 2026-10-26 (0.28.x, on a phone).* After falling down a portal and back up, the middle

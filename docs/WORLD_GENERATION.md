@@ -254,7 +254,16 @@ fine detail (`terrain.json` `detail`), river channels and valleys (`rivers`, `mo
 splotches along the world map's 100 m grid; against a threshold easing from `rockSlope` 0.85 at sea
 level to `rockSlopeHigh` 0.55 at the snow line, as soil thins with height. The soil mantles the
 slopes: under a grass or snow top the dirt reaches at least down to the lowest neighbour's top, so a
-terrace's riser, in chunks and in the LOD's taller cells, shows soil, not stone). The pines grow to 1,300 m on grass and snowy
+terrace's riser, in chunks and in the LOD's taller cells, shows soil, not stone). Rivers (generator
+25, owner 2026-10-27: banks "1-2 block high … block off access to the ocean", "tall edges … where
+rivers meet"): where the land beside a river is lower than its water a levee holds it `bank` ½ m
+over the water and falls away `leveeFall` 0.15 m per m, a broad bank rather than a ridge, and none
+where the river is at sea level (its water is the sea's, so a mouth opens into the sea). A river
+joining another meets it at the other's level `joinMargin` 3 m plus its own half-width outside the
+other's channel (the other's water backing up into it where it lies lower) and falls to it at most
+`joinSlope` 0.25 m per m upstream (a short gorge where it hangs above), so the waters never stand
+side by side at two levels. Planned (owner, the same day): rivers filling the lower land beside them
+into wider stretches, lakes and pools instead of levees, FUTURE.md. The pines grow to 1,300 m on grass and snowy
 grass, their leaves snowy from 1,050–1,250 m up (`placements.json` `variants`); meadows to 1,500 m.
 Spawn: level dry lowland (3–80 m) within 400 m of a river, nearest the disc's centre. Measured
 (seeds 1, 7, 42, 1234, both faces): highest ground 2,210–2,650 m, the largest river 11–21 m³/s;

@@ -1057,7 +1057,9 @@ eroded by stream power, its lakes filled and its rivers traced (`hydrology/`, th
 the sea, each cell's flow direction (D8: for moving water later), the lakes and the river
 polylines; derived on load: the rivers' smoothed channels in a 64 m bucket index and each lake's
 shore distance field. Columns (`terrain.rs`) take the map's height bicubic (C1) plus detail noise,
-carve river channels and valleys (water in ½ m terraces down the river), fill lakes flat to their
+carve river channels and valleys (water in ½ m terraces down the river; broad levees where the land
+is lower, none at sea level; a joining river at the other's level across its channel, generator
+25), fill lakes flat to their
 level inside their shore with banks round them, and pick their surface by `bands` (snow over a
 noisy, slope-aware snow line, rock where the landform is steep over a hillside's window (generator 24), the soil mantling the slopes so terrace risers show dirt, sand at the shore and under water), all data in
 `shared/worldgen/terrain.json`. **Where the map lives:** one per face seed per process

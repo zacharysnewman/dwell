@@ -1264,3 +1264,127 @@ dwell_world::both_faces!(
         );
     }
 );
+
+/// The ends of the rivers of `g`'s map that join another river (on its course), with the joined
+/// course's width there: (x, z, width).
+fn confluences(g: &TerrainGenerator) -> Vec<(i32, i32, f64)> {
+    let ch = &g.map().channels;
+    let mut out = Vec::new();
+    for (k, c) in ch.courses.iter().enumerate() {
+        let Some(last) = c.last() else { continue };
+        let main = ch.courses.iter().enumerate().find_map(|(j, o)| {
+            (j != k)
+                .then(|| {
+                    o.iter()
+                        .find(|p| (p.x - last.x).abs() < 20.0 && (p.z - last.z).abs() < 20.0)
+                })
+                .flatten()
+        });
+        if let Some(m) = main
+            && last.s > 1.0
+        {
+            out.push((last.x as i32, last.z as i32, m.w));
+        }
+    }
+    out
+}
+
+dwell_world::both_faces!(
+    /// The owner (2026-10-27): "weird tall edges … where rivers meet". Where a river joins another,
+    /// the water meets at one level: inside the joined river's channel no column's water stands
+    /// more than one cell above a neighbouring column's water. (The joining river's level fell to
+    /// the other's only at the other's centreline, so across the other's channel it stood metres
+    /// above the water beside it: a wall of water.)
+    fn rivers_meet_at_one_level(f: FaceFrame) {
+        let t = BifacialTerrain::new(7);
+        let g = t.local(f.face);
+        let joins = confluences(g);
+        assert!(
+            joins.len() >= 3,
+            "seed 7 has rivers that meet: {}",
+            joins.len()
+        );
+        let mut walls = Vec::new();
+        for &(x0, z0, w) in &joins {
+            let r = (w * 0.5) as i32 + 4;
+            for z in z0 - r..=z0 + r {
+                for x in x0 - r..=x0 + r {
+                    let c = g.column_at(x, z);
+                    if c.water == terrain::Water::None {
+                        continue;
+                    }
+                    for (dx, dz) in [(1, 0), (0, 1)] {
+                        let n = g.column_at(x + dx, z + dz);
+                        if n.water != terrain::Water::None
+                            && (c.water_row() - n.water_row()).abs() > 1
+                        {
+                            walls.push((x, z, c.water_row() - n.water_row()));
+                        }
+                    }
+                }
+            }
+        }
+        assert!(
+            walls.is_empty(),
+            "{} water walls round {} confluences, e.g. {:?}",
+            walls.len(),
+            joins.len(),
+            &walls[..walls.len().min(5)]
+        );
+    }
+);
+
+dwell_world::both_faces!(
+    /// The owner (2026-10-27): rivers "have a 1-2 block high, 1-2 block wide edge along the whole
+    /// thing and block off access to the ocean". A river's banks are never a ridge: no dry column
+    /// beside a river's water stands a cell above that water with dry ground lower than the
+    /// water, or the sea, on its other side. (Banks were raised ½ m over the water wherever the
+    /// land was lower, out into the sea at the mouths.)
+    fn river_banks_are_not_ridges(f: FaceFrame) {
+        use terrain::Water;
+        let t = BifacialTerrain::new(7);
+        let g = t.local(f.face);
+        let ch = &g.map().channels;
+        let (mut seen, mut ridges) = (0usize, Vec::new());
+        for c in ch.courses.iter().take(60) {
+            for p in c.iter().step_by(6) {
+                let (x0, z0) = (p.x as i32, p.z as i32);
+                let r = (p.w * 0.5) as i32 + 4;
+                for z in z0 - r..=z0 + r {
+                    for x in x0 - r..=x0 + r {
+                        let col = g.column_at(x, z);
+                        if col.outside || col.water != Water::None {
+                            continue;
+                        }
+                        let top = g.ground_y(x, z).expect("inside the disc");
+                        for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+                            let wet = g.column_at(x + dx, z + dz);
+                            if wet.water != Water::River {
+                                continue;
+                            }
+                            seen += 1;
+                            let surface = wet.water_row();
+                            let back = g.column_at(x - dx, z - dz);
+                            // Behind the bank: the sea, or dry ground lower than the water.
+                            let lower = back.water == Water::Sea
+                                || (back.water == Water::None
+                                    && g.ground_y(x - dx, z - dz).is_some_and(|b| b < surface - 1));
+                            if top >= surface && lower {
+                                ridges.push((x, z));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        assert!(seen > 1000, "banks checked: {seen}");
+        // A natural beach cell (land under ½ m over the sea) between a river at sea level and the
+        // sea stays: at most 1 in 10,000 banks (the rule's levees were 1.6 %).
+        assert!(
+            ridges.len() * 10_000 <= seen,
+            "{} of {seen} banks are ridges, e.g. {:?}",
+            ridges.len(),
+            &ridges[..ridges.len().min(5)]
+        );
+    }
+);
