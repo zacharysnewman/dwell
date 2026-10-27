@@ -1,4 +1,4 @@
-# seed level i j k kind fnv1a64(kind, cells) - generator version 25
+# seed level i j k kind fnv1a64(kind, cells) - generator version 26
 # registry 313145a4673967dd
 0 1 1024 1024 1024 1 b0e1fee0d1fc73cc
 0 1 1024 1023 1024 1 b0e1fee0d1fc73cc

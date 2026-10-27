@@ -1388,3 +1388,69 @@ dwell_world::both_faces!(
         );
     }
 );
+
+/// Steps in the dry ground within `r` m of (x0, z0): columns where the height changes by more than
+/// `limit` m against the slope on either side of it (a seam, not a steep hillside), away from any
+/// water (whose banks are steps by design).
+fn ground_steps(g: &TerrainGenerator, (x0, z0): (i32, i32), r: i32, limit: f32) -> Vec<(i32, i32, f32)> {
+    use terrain::Water;
+    let dry = |x: i32, z: i32| {
+        (-3..=3).all(|dz| (-3..=3).all(|dx| g.column_at(x + dx, z + dz).water == Water::None))
+            && !g.column_at(x, z).outside
+    };
+    let h = |x: i32, z: i32| g.column_at(x, z).height;
+    let mut out = Vec::new();
+    for z in z0 - r..=z0 + r {
+        for x in x0 - r..=x0 + r {
+            for (dx, dz) in [(1, 0), (0, 1)] {
+                let step = h(x + dx, z + dz) - h(x, z);
+                let before = h(x, z) - h(x - dx, z - dz);
+                let after = h(x + 2 * dx, z + 2 * dz) - h(x + dx, z + dz);
+                let jump = (step - 0.5 * (before + after)).abs();
+                if jump > limit && dry(x, z) && dry(x + dx, z + dz) {
+                    out.push((x, z, jump));
+                }
+            }
+        }
+    }
+    out
+}
+
+dwell_world::both_faces!(
+    /// The owner (2026-10-27, 0.31.4, a phone): where two rivers' valleys meet, "it's pushing up a
+    /// steep edge at the join point of the terrain, though not by the water, but up the hills
+    /// adjacent". Each column carved its valley toward the nearest channel alone, so where the
+    /// nearest switched from one river to the other the ground jumped by the difference in their
+    /// levels, up the hillsides out to the valleys' reach. Round every confluence of seed 7, no
+    /// dry column steps from its neighbour against the slope either side of it.
+    fn no_seam_where_river_valleys_meet(f: FaceFrame) {
+        let t = BifacialTerrain::new(7);
+        let g = t.local(f.face);
+        let joins = confluences(g);
+        assert!(joins.len() >= 3, "seed 7 has rivers that meet: {}", joins.len());
+        let steps: Vec<_> = joins
+            .iter()
+            .flat_map(|&(x, z, w)| ground_steps(g, (x, z), 30 + (2.0 * w) as i32, 1.0))
+            .collect();
+        assert!(
+            steps.is_empty(),
+            "{} steps round {} confluences, e.g. {:?}",
+            steps.len(),
+            joins.len(),
+            &steps[..steps.len().min(5)]
+        );
+    }
+);
+
+#[test]
+fn no_seam_at_the_reported_meeting_of_valleys() {
+    // face-a-only: the owner's report is a spot on face A of seed 1397629041 (feet at
+    // (-7464, 106, 8376), a block dump from 0.31.4); the edge they looked at stands ~100 m north,
+    // a 12 m step at (-7527, 8451).
+    let t = BifacialTerrain::new(1_397_629_041);
+    let g = t.local(FaceFrame::A.face);
+    let steps = ground_steps(g, (-7467, 8374), 120, 1.0);
+    assert!(steps.is_empty(), "{} steps, e.g. {:?}", steps.len(), &steps[..steps.len().min(5)]);
+}
+
+

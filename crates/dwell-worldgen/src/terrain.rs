@@ -610,7 +610,7 @@ impl TerrainGenerator {
         } else {
             (0.0, f64::INFINITY)
         };
-        let river = if map.channels.near(x as f64, z as f64, min_half) {
+        let (river, warped) = if map.channels.near(x as f64, z as f64, min_half) {
             let (wx, wz) = self.warp(
                 self.meander_seeds,
                 x,
@@ -618,9 +618,9 @@ impl TerrainGenerator {
                 S.river_meander,
                 S.river_meander_wavelength,
             );
-            map.channels.query(wx, wz, min_half, min_width)
+            (map.channels.query(wx, wz, min_half, min_width), (wx, wz))
         } else {
-            None
+            (None, (0.0, 0.0))
         };
         // The lake whose shore field covers it, through the shore warp.
         let lake = if map.shores.fields.is_empty() {
@@ -674,12 +674,21 @@ impl TerrainGenerator {
                     level = r.level;
                 }
             } else if water != Water::Lake {
-                // The valley down to the banks, blended back into the land at its reach.
+                // The valley down to the banks, blended back into the land at its reach: by every
+                // channel whose valley reaches here, the lowest, so where two rivers' valleys meet
+                // the ground never steps where the nearest changes (docs/BUGS.md 14).
+                let valley_of = |r: &worldmap::Hit, h: f64| {
+                    let edge = (r.d - r.half).max(0.0);
+                    let valley = r.level + S.river_bank + edge * S.river_valley_slope;
+                    let carved = smooth_min(h, valley, 2.0);
+                    carved + (h - carved) * smooth01(edge / r.valley.max(1e-6))
+                };
+                let land = h;
+                h = valley_of(r, land);
+                map.channels.each_near(warped.0, warped.1, min_half, min_width, |_, o| {
+                    h = h.min(valley_of(&o, land));
+                });
                 let bank = r.level + S.river_bank;
-                let valley = bank + edge * S.river_valley_slope;
-                let carved = smooth_min(h, valley, 2.0);
-                let t = smooth01(edge / r.valley.max(1e-6));
-                h = carved + (h - carved) * t;
                 // Where the land is lower than the water, a levee `bank` over it so the water
                 // never stands open beside lower ground, falling away gently (`leveeFall`) so it
                 // is a broad bank, never a ridge; none where the river is at the sea's level (its
