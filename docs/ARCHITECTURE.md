@@ -2368,7 +2368,7 @@ flies high above the disc and the whole disc is drawn by the time it arrives.
 
 ### 7.1 Voxel Awakening & Clustering **[in progress: built for felling, 0.37.0]**
 
-**Built for trees** ([`FELLING.md`](./FELLING.md), ADR 0051): the support rule is block data (`support`: ground, carrier, rider; `dwell_world::support::detached_pieces`, budgeted by `max_cells`); after a tick's edits the server (`dwell-sim` `felling.rs`) detaches what lost its support in one `Collapse` modification and makes each piece one Rapier body (`Physics::add_piece`: a box per cell, carriers colliding, riders adding mass only; tipped away from the nearest player), its terrain collision loaded round it (`Players::set_terrain_boxes`); pieces go out as `EntitySpawn` and in snapshots, and clients draw them interpolated (`dwell-client` `pieces.rs`, a quaternion per draw in the renderer) and stand them in as kinematic bodies in the prediction. What follows describes the general pipeline (terrain and builds, Phases 20–21).
+**Built for trees** ([`FELLING.md`](./FELLING.md), ADR 0051): the support rule is block data (`support`: ground, carrier, rider; `dwell_world::support::detached_pieces`, budgeted by `max_cells`); after a tick's edits the server (`dwell-sim` `felling.rs`) detaches what lost its support in one `Collapse` modification and makes each piece one Rapier body (`Physics::add_piece`: a box per cell, carriers colliding, riders adding mass only; tipped away from the nearest player), its terrain collision loaded round it (`Players::set_terrain_boxes`); a hard hit hurts a player (`Felling::hits`, `Crush`), and a piece over `pushableMass` is held from players' pushes while slow (a dominance group); tunables in `shared/physics/felling.json`; pieces go out as `EntitySpawn` and in snapshots, and clients draw them interpolated (`dwell-client` `pieces.rs`, a quaternion per draw in the renderer) and stand them in as kinematic bodies in the prediction. What follows describes the general pipeline (terrain and builds, Phases 20–21).
 
 Triggered when the server registers an explosion, a block removal, or a structural failure.
 
@@ -2458,6 +2458,7 @@ in the code yet.
 | Constant | Default | Meaning |
 |---|---|---|
 | `SIM_HZ` | 60 | Physics steps per second (server and client prediction) |
+| felling tunables (`shared/physics/felling.json`) | see [`FELLING.md`](./FELLING.md) §5 | The support search's reach and bounds, a falling piece's topple spin, sleep and timeouts, hit damage (`hitSpeed` 4 m/s, `hitDamagePerSpeed` 6), the push limit (`pushableMass` 400 kg, held while slower than `heavyHoldSpeed` 1 m/s) **[built, 0.37.1]** |
 | `SNAPSHOT_HZ` | 20 | Snapshot broadcast rate |
 | `probes.max_slope_angle` (`config.rs`) | 56° | The steepest ground (above the 45° ramps); steeper faces are walls (PLAYER_CONTROLLER.md §6.2) |
 | `slide.min_angle` / `friction` / `terminal_speed` (`config.rs`) | 44° / 0.3 / 14 m/s | Ground under the player steeper than this slides (owner, 2026-10-15), pulled by `g (sin θ − friction cos θ)` up to the terminal speed along the slope (PLAYER_CONTROLLER.md §6.8) |

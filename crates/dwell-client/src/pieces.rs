@@ -6,6 +6,7 @@
 use std::collections::VecDeque;
 
 use dwell_blocks::{StateId, info};
+use dwell_game::sound::{SoundEvent, SoundKind, speed_intensity};
 use dwell_mesh::{ChunkMeshes, PADDED_VOLUME, mesh_chunk, padded_index};
 use dwell_physics::{DQuat, DVec3, PieceCell};
 use dwell_protocol::{CHUNK_SIZE, EntitySpawn, PieceState, players};
@@ -14,6 +15,10 @@ use dwell_world::hash::HashMap;
 
 /// How many snapshot poses a piece keeps (the interpolation needs the two round its draw time).
 const KEEP: usize = 8;
+
+/// A piece sounds a landing at most this often (ms): a log rolling to rest knocks a few times, not
+/// at every snapshot.
+const LAND_EVERY_MS: f64 = 250.0;
 
 #[derive(Clone, Copy, Debug)]
 struct Pose {
@@ -26,6 +31,9 @@ struct Pose {
 struct Piece {
     cells: Vec<PieceCell>,
     poses: VecDeque<Pose>,
+    /// The block its landings sound like (its first carrier's; 0: riders only, silent).
+    block: StateId,
+    landed_ms: f64,
 }
 
 /// The pieces falling now.
@@ -46,8 +54,14 @@ fn quat(q: [f32; 4]) -> DQuat {
 
 impl Pieces {
     /// A piece began to fall: kept with its spawn pose; returns its meshes (positions relative to
-    /// its reference cell's centre) and how far they reach (m). Its states are this client's.
-    pub fn spawn(&mut self, e: &EntitySpawn, now_ms: f64) -> (Vec<ChunkMeshes>, f64) {
+    /// its reference cell's centre) and how far they reach (m), and a tree's crack where it went
+    /// (`sounds`). Its states are this client's.
+    pub fn spawn(
+        &mut self,
+        e: &EntitySpawn,
+        now_ms: f64,
+        sounds: &mut Vec<SoundEvent>,
+    ) -> (Vec<ChunkMeshes>, f64) {
         let cells: Vec<([i32; 3], StateId)> = e
             .cells
             .iter()
@@ -69,11 +83,17 @@ impl Pieces {
             rotation: quat(e.rotation),
             velocity: DVec3::ZERO,
         };
+        let block = if e.carriers > 0 { cells[0].1 } else { 0 };
+        if block != 0 {
+            sounds.push(SoundEvent::new(SoundKind::Fell, block, 1.0, Some(e.origin)));
+        }
         self.map.insert(
             e.id,
             Piece {
                 cells: boxes,
                 poses: VecDeque::from([pose]),
+                block,
+                landed_ms: f64::NEG_INFINITY,
             },
         );
         piece_meshes(&cells)
@@ -87,21 +107,45 @@ impl Pieces {
         self.map.keys().copied().collect()
     }
 
-    /// A snapshot's poses (pieces not yet spawned here are skipped).
-    pub fn on_snapshot(&mut self, states: &[PieceState], now_ms: f64) {
+    /// A snapshot's poses (pieces not yet spawned here are skipped), and the landings they show
+    /// (`sounds`): a piece whose velocity changed by more than the `piece_land` sound's lowest
+    /// speed since the last snapshot hit something (gravity alone changes it by under ½ m/s).
+    pub fn on_snapshot(
+        &mut self,
+        states: &[PieceState],
+        now_ms: f64,
+        sounds: &mut Vec<SoundEvent>,
+    ) {
         for s in states {
             let Some(p) = self.map.get_mut(&s.id) else {
                 continue;
             };
+            let velocity = DVec3::new(
+                f64::from(s.velocity[0]),
+                f64::from(s.velocity[1]),
+                f64::from(s.velocity[2]),
+            );
+            let change = p
+                .poses
+                .back()
+                .map_or(0.0, |l| (velocity - l.velocity).length());
+            if p.block != 0
+                && now_ms - p.landed_ms >= LAND_EVERY_MS
+                && let Some(i) = speed_intensity(SoundKind::PieceLand, change)
+            {
+                p.landed_ms = now_ms;
+                sounds.push(SoundEvent::new(
+                    SoundKind::PieceLand,
+                    p.block,
+                    i,
+                    Some(s.position),
+                ));
+            }
             p.poses.push_back(Pose {
                 at_ms: now_ms,
                 position: DVec3::from(s.position),
                 rotation: quat(s.rotation),
-                velocity: DVec3::new(
-                    f64::from(s.velocity[0]),
-                    f64::from(s.velocity[1]),
-                    f64::from(s.velocity[2]),
-                ),
+                velocity,
             });
             while p.poses.len() > KEEP {
                 p.poses.pop_front();
@@ -271,5 +315,61 @@ mod tests {
         assert_eq!(pose_at(&p, -10.0).0.x, 0.0);
         assert_eq!(pose_at(&p, 500.0).0.x, 2.0);
         assert!(delay > 0.0);
+    }
+
+    #[test]
+    fn a_tree_cracks_as_it_goes_and_thuds_as_it_lands_once() {
+        let log = dwell_blocks::parse_state("dwell:log[axis=y]").expect("log");
+        let mut pieces = Pieces::default();
+        let mut sounds = Vec::new();
+        let spawn = EntitySpawn {
+            id: 9,
+            origin: [0.0, 100.0, 0.0],
+            rotation: [0.0, 0.0, 0.0, 1.0],
+            carriers: 2,
+            cells: (0..2)
+                .map(|y| dwell_protocol::PieceCellNet {
+                    offset: [0, y, 0],
+                    state: log,
+                })
+                .collect(),
+        };
+        pieces.spawn(&spawn, 0.0, &mut sounds);
+        assert_eq!(sounds.len(), 1);
+        assert_eq!(sounds[0].kind, SoundKind::Fell);
+        sounds.clear();
+        let state = |vy: f32| PieceState {
+            id: 9,
+            position: [0.0, 99.0, 0.0],
+            rotation: [0.0, 0.0, 0.0, 1.0],
+            velocity: [0.0, vy, 0.0],
+            angular: [0.0; 3],
+        };
+        // Falling: gravity's ½ m/s a snapshot is no landing.
+        for (k, vy) in [-0.5, -1.0, -1.5, -2.0, -2.5, -3.0, -8.0]
+            .into_iter()
+            .enumerate()
+        {
+            pieces.on_snapshot(&[state(vy)], 50.0 * k as f64 + 50.0, &mut sounds);
+        }
+        // -3 to -8 is a shove, not a stop: still a change over 2 m/s, so it sounds (a hit).
+        assert_eq!(
+            sounds.len(),
+            1,
+            "{:?}",
+            sounds.iter().map(|s| s.kind).collect::<Vec<_>>()
+        );
+        sounds.clear();
+        // It hits the ground: -8 → 0, a landing; the bounce right after stays quiet.
+        pieces.on_snapshot(&[state(0.0)], 600.0, &mut sounds);
+        pieces.on_snapshot(&[state(-3.0)], 650.0, &mut sounds);
+        assert_eq!(
+            sounds
+                .iter()
+                .filter(|s| s.kind == SoundKind::PieceLand)
+                .count(),
+            1
+        );
+        assert!(sounds[0].intensity > 0.2);
     }
 }

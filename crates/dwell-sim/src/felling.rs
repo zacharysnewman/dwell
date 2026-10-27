@@ -8,7 +8,31 @@ use dwell_physics::{BodyHandle, DQuat, DVec3, Physics, PieceCell};
 use dwell_world::support::{SupportRules, detached_pieces};
 use dwell_world::{CELL_H, M, VoxelWorld};
 
-/// The felling tunables (docs/FELLING.md §5; ARCHITECTURE.md §7.4's sleep values).
+/// The felling tunables as data (shared/physics/felling.json → `felling.gen.rs`; seconds, m/s).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct FellingData {
+    pub rider_reach: u32,
+    pub max_system_cells: usize,
+    pub max_piece_cells: usize,
+    pub topple_spin: f64,
+    pub sleep_linear: f64,
+    pub sleep_angular: f64,
+    pub sleep_seconds: f64,
+    pub loose_rider_seconds: f64,
+    pub max_seconds: f64,
+    pub max_settles: u8,
+    pub hit_speed: f64,
+    pub hit_damage_per_speed: f64,
+    pub pushable_mass: f64,
+    pub heavy_hold_speed: f64,
+}
+
+#[path = "felling.gen.rs"]
+mod generated;
+pub use generated::FELLING;
+
+/// The felling tunables in the server's units (docs/FELLING.md §5; ARCHITECTURE.md §7.4's sleep
+/// values), from [`FELLING`].
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct FellingRules {
     pub support: SupportRules,
@@ -27,21 +51,50 @@ pub struct FellingRules {
     /// The spin (rad/s) a piece cut by a player starts with, tipping it away from them: a trunk
     /// cut straight through would otherwise balance on its stump.
     pub topple_spin: f64,
+    /// A piece hitting a player faster than this (m/s toward them) hurts, `hit_damage_per_speed`
+    /// points per m/s over it.
+    pub hit_speed: f64,
+    pub hit_damage_per_speed: f64,
+    /// Players push pieces lighter than this (kg); heavier ones they cannot move while slower
+    /// than `heavy_hold_speed` (m/s, at any point): held fast while falling, a heavy piece would
+    /// squeeze a player under it through the ground.
+    pub pushable_mass: f64,
+    pub heavy_hold_speed: f64,
+}
+
+/// The server's ticks a second.
+const TICKS_PER_SECOND: f64 = 60.0;
+
+fn ticks(seconds: f64) -> u32 {
+    (seconds * TICKS_PER_SECOND).round() as u32
+}
+
+impl From<FellingData> for FellingRules {
+    fn from(d: FellingData) -> Self {
+        Self {
+            support: SupportRules {
+                rider_reach: d.rider_reach,
+                max_cells: d.max_system_cells,
+            },
+            sleep_linear: d.sleep_linear,
+            sleep_angular: d.sleep_angular,
+            sleep_ticks: ticks(d.sleep_seconds),
+            loose_rider_ticks: ticks(d.loose_rider_seconds),
+            max_ticks: ticks(d.max_seconds),
+            max_settles: d.max_settles,
+            max_piece_cells: d.max_piece_cells,
+            topple_spin: d.topple_spin,
+            hit_speed: d.hit_speed,
+            hit_damage_per_speed: d.hit_damage_per_speed,
+            pushable_mass: d.pushable_mass,
+            heavy_hold_speed: d.heavy_hold_speed,
+        }
+    }
 }
 
 impl Default for FellingRules {
     fn default() -> Self {
-        Self {
-            support: SupportRules::default(),
-            sleep_linear: 0.05,
-            sleep_angular: 0.05,
-            sleep_ticks: 120,
-            loose_rider_ticks: 90,
-            max_ticks: 60 * 30,
-            max_settles: 3,
-            max_piece_cells: 4096,
-            topple_spin: 0.6,
-        }
+        FELLING.into()
     }
 }
 
@@ -58,6 +111,24 @@ pub struct Falling {
     pub settles: u8,
     still: u32,
     age: u32,
+    /// The players it has hurt (their keys, `hits`), each hurt once by a piece.
+    hurt: Vec<u64>,
+    /// Too heavy for players to push (`pushable_mass`), and whether it is held from them now.
+    heavy: bool,
+    held: bool,
+    /// How far its cells reach from its body's origin (m).
+    reach: f64,
+}
+
+/// A player's body for [`Felling::hits`]: an upright capsule (centre, radius, the half length of
+/// its straight part; world metres) and its velocity, keyed by the caller.
+#[derive(Clone, Copy, Debug)]
+pub struct PlayerBody {
+    pub key: u64,
+    pub center: DVec3,
+    pub radius: f64,
+    pub half_cylinder: f64,
+    pub velocity: DVec3,
 }
 
 /// What a settle (or a timeout) leaves: the cells written and the piece's id.
@@ -138,7 +209,10 @@ impl Felling {
                 cells.push((o, m));
                 clear(world, c, if s.flooded { M.water } else { M.air });
             }
-            let body = physics.add_piece(origin, &boxes);
+            // Too heavy for players to push (docs/FELLING.md §4, `pushableMass`).
+            let mass: f64 = boxes.iter().map(|b| b.mass).sum();
+            let body = physics.add_piece(origin, &boxes, false);
+            let reach = boxes.iter().map(|b| b.center.length()).fold(0.0, f64::max) + 0.9;
             // Tipped away from who cut it: spun about the level axis across the line to them.
             if let Some(from) = away_from.filter(|_| piece.carriers > 0) {
                 let mut d = origin - from;
@@ -157,6 +231,10 @@ impl Felling {
                 settles,
                 still: 0,
                 age: 0,
+                hurt: Vec::new(),
+                heavy: mass >= self.rules.pushable_mass,
+                held: false,
+                reach,
             });
             out.push(self.pieces.len() - 1);
         }
@@ -183,15 +261,76 @@ impl Felling {
             .collect()
     }
 
+    /// The players the falling pieces hit hard this tick, before the physics step resolves the
+    /// contacts (docs/FELLING.md §4): a carrying cell within reach of a player's capsule by the
+    /// next step, closing on it faster than `hit_speed`, hurts `hit_damage_per_speed` points per
+    /// m/s over it; each piece hurts each player once. Returns (key, points), at most one per
+    /// player (the hardest hit).
+    pub fn hits(&mut self, physics: &Physics, players: &[PlayerBody]) -> Vec<(u64, i32)> {
+        let r = self.rules;
+        let dt = 1.0 / f64::from(dwell_protocol::SIM_HZ);
+        let mut out: Vec<(u64, i32)> = Vec::new();
+        for p in &mut self.pieces {
+            if p.carriers == 0 {
+                continue;
+            }
+            let origin = physics.position(p.body);
+            let rotation = physics.rotation(p.body);
+            let v = physics.velocity(p.body);
+            let w = physics.angular_velocity(p.body);
+            let inverse = rotation.inverse();
+            for b in players {
+                if p.hurt.contains(&b.key) {
+                    continue;
+                }
+                let mut hardest = 0.0f64;
+                for &(o, _) in &p.cells[..p.carriers] {
+                    let centre = offset_m(o);
+                    let half = DVec3::new(0.5, 0.5 * CELL_H, 0.5);
+                    // The capsule's axis point nearest the cell, and the cell's point nearest it.
+                    let world_centre = origin + rotation * centre;
+                    let t = (world_centre.y - b.center.y).clamp(-b.half_cylinder, b.half_cylinder);
+                    let axis = b.center + DVec3::Y * t;
+                    let local = inverse * (axis - origin) - centre;
+                    let near = origin + rotation * (centre + local.clamp(-half, half));
+                    let gap = (axis - near).length() - b.radius;
+                    let at = near - origin;
+                    // The piece's speed toward the player, less the player's away from it (a
+                    // player falling onto a still log lands: fall damage, the controller's).
+                    let n = (axis - near).normalize_or_zero();
+                    let closing = (v + w.cross(at)).dot(n) - b.velocity.dot(n).max(0.0);
+                    if closing > 0.0 && gap <= closing * dt + 0.05 {
+                        hardest = hardest.max(closing);
+                    }
+                }
+                if hardest > r.hit_speed {
+                    p.hurt.push(b.key);
+                    let points = ((hardest - r.hit_speed) * r.hit_damage_per_speed).round() as i32;
+                    match out.iter_mut().find(|(k, _)| *k == b.key) {
+                        Some(e) => e.1 = e.1.max(points),
+                        None => out.push((b.key, points)),
+                    }
+                }
+            }
+        }
+        out
+    }
+
     /// Counts each piece's still ticks after a physics step; returns the indices of those to
     /// settle now (at rest, or out of time), last first (so removing them keeps the rest).
-    pub fn step(&mut self, physics: &Physics) -> Vec<usize> {
+    /// And holds the heavy pieces moving slowly from players' pushes, letting the faster go.
+    pub fn step(&mut self, physics: &mut Physics) -> Vec<usize> {
         let r = self.rules;
         let mut due = Vec::new();
         for (i, p) in self.pieces.iter_mut().enumerate() {
             p.age += 1;
             let v = physics.velocity(p.body).length();
             let w = physics.angular_velocity(p.body).length();
+            let held = p.heavy && v + w * p.reach < r.heavy_hold_speed;
+            if held != p.held {
+                physics.set_dominant(p.body, held);
+                p.held = held;
+            }
             if v < r.sleep_linear && w < r.sleep_angular {
                 p.still += 1;
             } else {
@@ -390,6 +529,10 @@ mod tests {
             settles: 0,
             still: 0,
             age: 0,
+            hurt: Vec::new(),
+            heavy: false,
+            held: false,
+            reach: 1.0,
         }
     }
 
@@ -426,5 +569,72 @@ mod tests {
         let mut got = got;
         got.sort_unstable();
         assert_eq!(got, want);
+    }
+
+    /// A 1 m log falling at `speed` m/s onto a standing player's head (capsule 0.3 m round,
+    /// 1.8 m tall, centre 0.9 m up): what it hurts, twice over (a piece hurts each player once).
+    type Hits = Vec<(u64, i32)>;
+
+    fn struck(speed: f64) -> (Hits, Hits) {
+        let mut physics = Physics::default();
+        let mut f = Felling::default();
+        let head = 1.8;
+        let at = DVec3::new(0.0, head + 0.25 + 0.01, 0.0);
+        let cells = [([0, 0, 0], log()), ([0, 1, 0], log())];
+        let boxes: Vec<PieceCell> = cells
+            .iter()
+            .map(|&(o, _)| PieceCell {
+                center: offset_m(o),
+                half: DVec3::new(0.5, 0.25, 0.5),
+                mass: 300.0,
+                collides: true,
+            })
+            .collect();
+        let body = physics.add_piece(at, &boxes, true);
+        physics.set_velocity(body, DVec3::new(0.0, -speed, 0.0));
+        f.pieces.push(Falling {
+            id: 1,
+            body,
+            cells: cells.to_vec(),
+            carriers: 2,
+            settles: 0,
+            still: 0,
+            age: 0,
+            hurt: Vec::new(),
+            heavy: false,
+            held: false,
+            reach: 1.0,
+        });
+        let player = PlayerBody {
+            key: 7,
+            center: DVec3::new(0.2, 0.9, 0.1),
+            radius: 0.3,
+            half_cylinder: 0.6,
+            velocity: DVec3::ZERO,
+        };
+        let first = f.hits(&physics, &[player]);
+        (first, f.hits(&physics, &[player]))
+    }
+
+    #[test]
+    fn a_log_falling_fast_on_a_player_hurts_once_and_a_slow_one_not() {
+        let r = FellingRules::default();
+        let (first, again) = struck(10.0);
+        let points = ((10.0 - r.hit_speed) * r.hit_damage_per_speed).round() as i32;
+        assert_eq!(first, vec![(7, points)]);
+        assert!(again.is_empty(), "hurt once: {again:?}");
+        assert!(struck(r.hit_speed * 0.5).0.is_empty());
+        // Moving away from the player: no hit, however fast.
+        assert!(struck(-10.0).0.is_empty());
+    }
+
+    #[test]
+    fn the_tunables_come_from_the_data_file() {
+        // shared/physics/felling.json, in ticks at 60 Hz.
+        let r = FellingRules::default();
+        assert_eq!(r.sleep_ticks, (FELLING.sleep_seconds * 60.0).round() as u32);
+        assert_eq!(r.max_ticks, (FELLING.max_seconds * 60.0).round() as u32);
+        assert_eq!(r.support.rider_reach, FELLING.rider_reach);
+        assert_eq!(r.pushable_mass, FELLING.pushable_mass);
     }
 }

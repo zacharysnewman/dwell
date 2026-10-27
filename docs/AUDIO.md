@@ -184,6 +184,8 @@ tick and each remote player's interpolated state each frame, and turns changes i
 | `hit` | a break of an indestructible block (the server will refuse it) | the block | 1 |
 | `deny` | an edit with nothing targeted | — | 1 |
 | `impact` | a hit on a wall or a ceiling (below): the speed toward a solid block touching the body drops in a sample to ≤ 35 % of its fastest in the last 70 ms | the block hit (its `land`) + a body thud | from that fastest speed (2 → 25 m/s) |
+| `fell` | a tree begins to fall: a carrying piece spawns (`EntitySpawn`, [`FELLING.md`](./FELLING.md)), at its origin | `fell_crack` | — |
+| `piece_land` | a falling piece hits something: its velocity changes by over 2 m/s between snapshots, at most every 250 ms (`dwell-client` `pieces.rs`) | its first log's `land` + a body thud | from that change (2 → 20 m/s) |
 | `hurt` | the server's `PlayerEvent` Damage, any player's | — | from the damage (0 → 80 points) |
 | `death` / `respawn` | the server's `PlayerEvent` Death / Respawn, any player's | — | 1 |
 | `burn` / `burn_level` / `burn_end` | a burning light source's loop voice starting, moving, stopping (below) | the source's block (its `burn`) | by distance |

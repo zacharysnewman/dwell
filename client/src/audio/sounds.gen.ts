@@ -151,6 +151,19 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     {
+      "name": "fell",
+      "sound": "dwell:fell_crack"
+    },
+    {
+      "name": "piece_land",
+      "set": "land",
+      "sound": "dwell:body_thud",
+      "speed": [
+        2,
+        20
+      ]
+    },
+    {
       "name": "hurt",
       "sound": "dwell:hurt",
       "speed": [
@@ -4624,6 +4637,104 @@ export const SOUND_DATA: SoundData = {
               0.06
             ]
           ]
+        }
+      ]
+    },
+    "dwell:fell_crack": {
+      "gain": 1.2,
+      "reverb": 0.25,
+      "variation": {
+        "pitch": 2,
+        "gain": 1,
+        "cutoff": 0.1,
+        "time": 0.12
+      },
+      "layers": [
+        {
+          "source": "noise",
+          "color": "white",
+          "gain": 0.5,
+          "filters": [
+            {
+              "type": "bandpass",
+              "freq": 2600,
+              "q": 1.4
+            }
+          ],
+          "env": {
+            "attack": 0.0005,
+            "decay": 0.05
+          }
+        },
+        {
+          "source": "modal",
+          "freq": 180,
+          "gain": 0.3,
+          "partials": [
+            [
+              1,
+              1,
+              0.35
+            ],
+            [
+              2.3,
+              0.6,
+              0.2
+            ],
+            [
+              4.4,
+              0.3,
+              0.1
+            ]
+          ]
+        },
+        {
+          "source": "modal",
+          "freq": 900,
+          "gain": 0.14,
+          "at": 0.02,
+          "partials": [
+            [
+              1,
+              1,
+              0.05
+            ],
+            [
+              2.6,
+              0.5,
+              0.03
+            ]
+          ],
+          "grains": {
+            "count": [
+              8,
+              13
+            ],
+            "spread": 0.6,
+            "gain": [
+              0.3,
+              1
+            ],
+            "pitch": 8
+          }
+        },
+        {
+          "source": "noise",
+          "color": "brown",
+          "gain": 0.5,
+          "filters": [
+            {
+              "type": "lowpass",
+              "freq": 500,
+              "q": 0.9,
+              "to": 220
+            }
+          ],
+          "env": {
+            "attack": 0.01,
+            "hold": 0.2,
+            "decay": 0.6
+          }
         }
       ]
     },

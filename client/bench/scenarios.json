@@ -6932,6 +6932,204 @@
           "name": "climb"
         }
       ]
+    },
+    {
+      "name": "felling",
+      "notes": "Felling (docs/FELLING.md): on the flat world, a log trunk (slot 6) with a leaf crown (slot 7) built before the player, its trunk broken near the base: it tips away, falls and settles as logs lying on the ground. Shots: tree, fall-a, fall-b, fall-c, settled.",
+      "world": "flat",
+      "steps": [
+        {
+          "do": "settle",
+          "maxS": 60
+        },
+        {
+          "do": "time",
+          "t": 0.45
+        },
+        {
+          "do": "look",
+          "yaw": 0,
+          "pitch": 0
+        },
+        {
+          "do": "select",
+          "slot": 5
+        },
+        {
+          "do": "region",
+          "op": "fill",
+          "from": [
+            0,
+            0,
+            3
+          ],
+          "to": [
+            0,
+            9,
+            3
+          ]
+        },
+        {
+          "do": "wait",
+          "s": 2
+        },
+        {
+          "do": "select",
+          "slot": 6
+        },
+        {
+          "do": "region",
+          "op": "fill",
+          "from": [
+            -1,
+            7,
+            2
+          ],
+          "to": [
+            -1,
+            9,
+            4
+          ]
+        },
+        {
+          "do": "wait",
+          "s": 2
+        },
+        {
+          "do": "region",
+          "op": "fill",
+          "from": [
+            1,
+            7,
+            2
+          ],
+          "to": [
+            1,
+            9,
+            4
+          ]
+        },
+        {
+          "do": "wait",
+          "s": 2
+        },
+        {
+          "do": "region",
+          "op": "fill",
+          "from": [
+            0,
+            7,
+            2
+          ],
+          "to": [
+            0,
+            9,
+            2
+          ]
+        },
+        {
+          "do": "wait",
+          "s": 2
+        },
+        {
+          "do": "region",
+          "op": "fill",
+          "from": [
+            0,
+            7,
+            4
+          ],
+          "to": [
+            0,
+            9,
+            4
+          ]
+        },
+        {
+          "do": "wait",
+          "s": 2
+        },
+        {
+          "do": "camera",
+          "position": [
+            -7,
+            4,
+            -3
+          ],
+          "yaw": 50,
+          "pitch": -8,
+          "aroundPlayer": true,
+          "aboveFeet": true
+        },
+        {
+          "do": "wait",
+          "s": 1
+        },
+        {
+          "do": "shot",
+          "name": "tree"
+        },
+        {
+          "do": "releaseCamera"
+        },
+        {
+          "do": "look",
+          "yaw": 0,
+          "pitch": -20
+        },
+        {
+          "do": "wait",
+          "s": 0.5
+        },
+        {
+          "do": "edit",
+          "action": "break"
+        },
+        {
+          "do": "camera",
+          "position": [
+            -9,
+            4,
+            -2
+          ],
+          "yaw": 55,
+          "pitch": -8,
+          "aroundPlayer": true,
+          "aboveFeet": true
+        },
+        {
+          "do": "wait",
+          "s": 0.7
+        },
+        {
+          "do": "shot",
+          "name": "fall-a"
+        },
+        {
+          "do": "wait",
+          "s": 0.6
+        },
+        {
+          "do": "shot",
+          "name": "fall-b"
+        },
+        {
+          "do": "wait",
+          "s": 0.8
+        },
+        {
+          "do": "shot",
+          "name": "fall-c"
+        },
+        {
+          "do": "wait",
+          "s": 5
+        },
+        {
+          "do": "shot",
+          "name": "settled"
+        }
+      ]
     }
   ]
 }

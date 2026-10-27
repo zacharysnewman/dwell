@@ -219,13 +219,16 @@ impl Physics {
     /// per cell (`cells`: each box's centre relative to `origin`, its half extents, its mass), on
     /// the Tier 1 layer. A cell that doesn't `collide` (a leaf) adds its mass but touches nothing.
     /// Continuous collision keeps a fast trunk from tunnelling through the ground.
-    pub fn add_piece(&mut self, origin: DVec3, cells: &[PieceCell]) -> BodyHandle {
+    pub fn add_piece(&mut self, origin: DVec3, cells: &[PieceCell], dominant: bool) -> BodyHandle {
         let body = RigidBodyBuilder::dynamic()
             .translation(origin)
             .linear_damping(0.05)
             .angular_damping(0.2)
             .can_sleep(false)
             .ccd_enabled(true)
+            // Too heavy for players to push (`dominant`): players' contacts move it no more than
+            // the terrain's do, while it still pushes them.
+            .dominance_group(i8::from(dominant))
             .user_data(TIER1_BODY)
             .build();
         let h = self.w.bodies.insert(body);
@@ -283,6 +286,14 @@ impl Physics {
     pub fn set_kinematic_pose(&mut self, h: BodyHandle, position: DVec3, rotation: DQuat) {
         if let Some(b) = self.w.bodies.get_mut(h.0) {
             b.set_next_kinematic_position(Pose::from_parts(position, rotation));
+        }
+    }
+
+    /// Whether a body is held from lighter bodies' pushes (players'; Rapier's dominance groups):
+    /// a piece too heavy to push (docs/FELLING.md §4).
+    pub fn set_dominant(&mut self, h: BodyHandle, dominant: bool) {
+        if let Some(b) = self.w.bodies.get_mut(h.0) {
+            b.set_dominance_group(i8::from(dominant));
         }
     }
 

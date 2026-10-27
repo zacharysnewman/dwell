@@ -266,3 +266,49 @@ fn prediction_resumes_a_sprint_slide_and_its_cooldown_from_the_wire() {
         assert_eq!(p.stats().replays, 0, "joined at {join}: {:?}", p.stats());
     }
 }
+
+#[test]
+fn the_local_player_rides_a_falling_pieces_stand_in() {
+    // docs/FELLING.md §3: a log lying under the player (a 5 × 1 m slab, its top 1 m over the floor)
+    // sliding +x at 2 m/s, its pose from the snapshots each tick: the predicted player standing
+    // on it, without input, goes with it.
+    // face-a-only: the predictor's face handling is the remote proxies' (tested above); the slab
+    // is placed in world coordinates.
+    let server = Server::new();
+    let mut world = VoxelWorld::flat();
+    let mut p = Predictor::new(PlayerControllerConfig::default());
+    let mut s = server.snapshot(0);
+    s.local.position[1] += 1.0;
+    p.on_snapshot(&mut world, &s);
+    let top = dwell_world::FLAT_TOP_M;
+    let cells: Vec<dwell_physics::PieceCell> = (-2..=2)
+        .map(|x| dwell_physics::PieceCell {
+            center: DVec3::new(f64::from(x), 0.0, 0.0),
+            half: DVec3::new(0.5, 0.5, 2.0),
+            mass: 300.0,
+            collides: true,
+        })
+        .collect();
+    let start = DVec3::new(0.5, top + 0.5, 0.5);
+    let speed = 2.0;
+    let x0 = p.position().x;
+    for seq in 1..=90u32 {
+        let at = start + DVec3::X * speed * f64::from(seq) * DT;
+        p.set_piece(
+            3,
+            &cells,
+            at,
+            dwell_physics::DQuat::IDENTITY,
+            Vec3::new(speed as f32, 0.0, 0.0),
+        );
+        p.tick(&mut world, &quantize_input(&Input::default(), seq));
+    }
+    let moved = p.position().x - x0;
+    assert!(
+        (moved - speed * 1.5).abs() < 0.4,
+        "rode {moved} m of the slab's {}",
+        speed * 1.5
+    );
+    assert!(p.position().y > top + 1.5, "on it: {}", p.position());
+    p.remove_piece(3);
+}

@@ -44,6 +44,8 @@ jobs:
           node --test shared/look/loading.test.mjs
           node shared/look/fog.mjs
           node --test shared/look/fog.test.mjs
+          node shared/physics/gen.mjs
+          node --test shared/physics/gen.test.mjs
           node shared/look/lodblend.mjs
           node --test shared/look/lodblend.test.mjs
           node shared/look/lodcolour.mjs

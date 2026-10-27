@@ -148,3 +148,57 @@ fn fell_and_settle(walk_away: bool) {
     assert_eq!(high, 0, "nothing left standing in the air");
     assert!(lying >= 5, "the trunk lies along x or z: {lying} cells");
 }
+
+#[test]
+fn a_falling_trunk_hurts_a_player_it_lands_on_and_not_the_one_who_cut_it() {
+    // face-a-only: as above (the hit test has no up: dwell-sim felling.rs's unit tests).
+    let mut f = Fixture::new(flat());
+    join_streaming(&mut f, 1);
+    join_streaming(&mut f, 2);
+    f.server.step();
+    f.take_all();
+    // A trunk 16 rows (8 m) tall at (1, 1), cut on its −x face by player 1, standing at −x: it
+    // tips toward +x, onto player 2 standing 4 m out under it.
+    let (x, z) = (1, 1);
+    for y in G..G + 16 {
+        f.server.world().set_voxel(x, y, z, log());
+    }
+    let feet = f64::from(G) * dwell_world::CELL_H;
+    f.move_to(1, -1.0, feet, 1.5);
+    f.move_to(2, 5.5, feet, 1.5);
+    f.server.step();
+    let full = f.server.health_of(1);
+    assert_eq!(f.server.health_of(2), full);
+    f.send(
+        1,
+        Message::BlockEditRequest(BlockEditRequest {
+            action: BlockEditAction::Break,
+            cell: [x, G + 1, z],
+            face: 1,
+            material: 0,
+            rows: 1,
+            down: false,
+        }),
+    );
+    let mut hurt = false;
+    for _ in 0..(60 * 6) {
+        f.server.step();
+        for o in f.server.take_outbox() {
+            if let Some(Message::PlayerEvent(e)) = Message::decode(&o.bytes)
+                && e.kind == PlayerEventKind::Damage
+                && e.cause == DamageCause::Crush
+            {
+                assert_eq!(e.player_id, 2, "only the player it lands on");
+                hurt = true;
+            }
+        }
+    }
+    assert!(hurt, "player 2 was hit: health {}", f.server.health_of(2));
+    assert!(f.server.health_of(2) < full);
+    assert_eq!(f.server.health_of(1), full);
+    // Hit, not crushed through the floor: a heavy piece is held from players' pushes only while
+    // it is slow (a falling log held fast pressed player 2 through the ground to a deadly fall).
+    assert!(f.server.health_of(2) > 0, "alive");
+    let y = f.server.feet_of(2).expect("player 2")[1];
+    assert!(y > feet - 0.1, "on the floor: feet at {y}, floor {feet}");
+}

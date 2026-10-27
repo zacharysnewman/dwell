@@ -788,6 +788,19 @@ struct Candidate {
     id: u64,
 }
 
+/// A falling piece's part's shadow-caster identity (`Renderer::shadow_candidates`): its id, part
+/// and pose, so it changes whenever the piece moves or turns.
+fn piece_shadow_tag(id: u32, part: usize, origin: V3, quat: [f32; 4]) -> u64 {
+    let mut t = shadows::mix(u64::from(id) ^ 0x9ec3_0000_0000 ^ (part as u64) << 32);
+    for (k, v) in origin.iter().enumerate() {
+        t ^= shadows::mix(v.to_bits()).rotate_left(k as u32 * 13 + 1);
+    }
+    for (k, q) in quat.iter().enumerate() {
+        t ^= shadows::mix(u64::from(q.to_bits()) ^ (k as u64) << 40).rotate_left(k as u32 * 7 + 3);
+    }
+    t
+}
+
 /// Whether a candidate's kind casts into cascade `i` at all: plants into the nearest
 /// `plantCascades` only (their alpha-tested blades cost the most per texel).
 fn casts_into(c: &Candidate, _cascade: &shadows::Cascade, i: usize, tier: &ShadowTier) -> bool {
@@ -2946,7 +2959,7 @@ impl Renderer {
             .map(|_| self.shadow_candidates(chunk_fade))
             .unwrap_or_default();
         let shadow_frame = shadow_plan.as_ref().map(|p| {
-            let moving = !self.players.is_empty();
+            let moving = !self.players.is_empty() || !self.piece_poses.is_empty();
             let wants = self.shadow_cache.wants(
                 &SHADOWS,
                 p,
@@ -3642,6 +3655,34 @@ impl Renderer {
             if c.cutout.is_some() && self.cutout_shown {
                 let mesh = DrawMesh::Chunk(coord, Part::Cutout);
                 push(item(Kind::Cutout, offset, None, fade, mesh), b, !tag);
+            }
+        }
+        // The falling pieces, each with its pose in its identity: a kept map holding one is drawn
+        // again as it moves (docs/FELLING.md §3).
+        for &(id, origin, quat) in &self.piece_poses {
+            let Some(p) = self.terrain.pieces.get(&id) else {
+                continue;
+            };
+            let r = p.radius;
+            let b = boxed(
+                [origin[0] - r, origin[1] - r, origin[2] - r],
+                [2.0 * r, 2.0 * r, 2.0 * r],
+            );
+            let rel = self.rel(origin);
+            let offset = [rel[0], rel[1], rel[2], 1.0];
+            for (k, (opaque, _)) in p.parts.iter().enumerate() {
+                if opaque.is_none() {
+                    continue;
+                }
+                let mut d = item(
+                    Kind::Terrain,
+                    offset,
+                    None,
+                    0.0,
+                    DrawMesh::Piece(id, k, Part::Opaque),
+                );
+                d.quat = quat;
+                push(d, b, piece_shadow_tag(id, k, origin, quat));
             }
         }
         for &(id, mask, fade) in &self.terrain.shown {
@@ -4749,6 +4790,22 @@ impl crate::game::Scene for Renderer {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_falling_pieces_shadow_identity_changes_as_it_moves_or_turns() {
+        // docs/FELLING.md §3: a kept shadow map is drawn again when its casters' identities change;
+        // a piece's must change with its pose, or its shadow would stay where it began to fall.
+        let q = IDENTITY_QUAT;
+        let a = piece_shadow_tag(4, 0, [10.0, 200.0, -3.0], q);
+        assert_eq!(a, piece_shadow_tag(4, 0, [10.0, 200.0, -3.0], q));
+        assert_ne!(a, piece_shadow_tag(4, 0, [10.0, 199.9, -3.0], q));
+        assert_ne!(
+            a,
+            piece_shadow_tag(4, 0, [10.0, 200.0, -3.0], [0.0, 0.0, 0.1, 0.995])
+        );
+        assert_ne!(a, piece_shadow_tag(4, 1, [10.0, 200.0, -3.0], q));
+        assert_ne!(a, piece_shadow_tag(5, 0, [10.0, 200.0, -3.0], q));
+    }
 
     /// Every `Kind` indexes `STRIDES` (the arena's formats) with its own format's stride: a kind
     /// inserted without its stride shifted the later kinds (fluids read the cutout's stride, and
