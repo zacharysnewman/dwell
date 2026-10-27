@@ -6,6 +6,27 @@ pins it.
 
 ## Open
 
+None. Report new ones here.
+
+## Fixed
+
+### 2. Sun and moon shadows leaked through hills in a grid pattern (fixed in 0.27.6)
+
+*Reported 2026-10-26.* Light leaked through hills in a grid pattern.
+
+- **Cause:** inside the shadow cascades (160 m on High) the factor was the cascades' alone, and
+  their casters are front faces within `casterReachM` (120 m) toward the light. With a low sun, the
+  light's ray to a step on a hill's shaded side passes through the hill and leaves through its
+  sun-facing side, often farther than 120 m away. So no caster shaded the step: each step's top
+  was lit and its riser dark, a grid down the shaded slope near the player. Past the cascades the
+  same slope was in the hill's shadow (the distant-terrain layer). Seen in Chrome on seed 7's range
+  at 0.82 (the sun 5° up).
+- **Fix:** inside the cascades the distant terrain's shadow multiplies theirs
+  (`lod_shadows::combine`, the shader's `shadow_light`), so a hill beyond the casters' reach shades
+  there too.
+- **Test:** `a_hill_beyond_the_casters_reach_still_shades_inside_the_cascades` (dwell-look) failed
+  on the old `combine` (lit at 1.0) and passes now.
+
 ### 3. Tall mountains had a permanent shadow band (fixed in 0.27.4)
 
 *Reported 2026-10-26.* Tall mountains had a shadow that stayed put at certain heights. Possibly
