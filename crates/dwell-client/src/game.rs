@@ -1419,13 +1419,8 @@ impl<S: Scene> Game<S> {
                 );
                 // With a multi-cell block's other cells (a torch's upper part), as the server
                 // writes them.
-                (out.check == dwell_world::edit::EditCheck::Ok).then(|| {
-                    dwell_world::edit::edit_writes(
-                        world,
-                        out.cell,
-                        dwell_world::edit::medium_kept(out.material),
-                    )
-                })
+                (out.check == dwell_world::edit::EditCheck::Ok)
+                    .then(|| out.writes(world, dwell_world::edit::medium_kept))
             }
             Message::RegionEdit(e) => {
                 // Every chunk of the box loaded (Air ones too), so the client's world reads it right.

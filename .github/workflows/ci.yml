@@ -26,6 +26,8 @@ jobs:
           node shared/look/gen.mjs
           node shared/brushes/gen.mjs
           node shared/input/gen.mjs
+          node shared/items/gen.mjs
+          node --test shared/items/gen.test.mjs
           node --test shared/input/gen.test.mjs
           node --test shared/look/gen.test.mjs
           node shared/look/clouds.mjs

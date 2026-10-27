@@ -28,6 +28,8 @@ fn brk(cell: [i32; 3], face: u8) -> BlockEditRequest {
         cell,
         face,
         material: 0,
+        rows: 1,
+        down: false,
     }
 }
 fn place(cell: [i32; 3], face: u8, material: StateId) -> BlockEditRequest {
@@ -36,6 +38,8 @@ fn place(cell: [i32; 3], face: u8, material: StateId) -> BlockEditRequest {
         cell,
         face,
         material,
+        rows: 1,
+        down: false,
     }
 }
 fn check(
@@ -426,9 +430,10 @@ fn a_part_is_only_placed_with_its_block() {
 }
 
 #[test]
-fn tall_grass_is_not_placed_on_a_stored_ramp() {
-    // HALF_HEIGHT_GRID.md §5: plants grow on flat tops only. A grass or dirt ramp piece is its own
-    // block (`dwell:grass_ramp`), which tall grass's `placeOn` does not list.
+fn tall_grass_is_placed_on_a_grass_or_dirt_slope() {
+    // docs/ITEMS.md (owner, 2026-10-26): plants are the blocks that may stand on a slope's top
+    // (`onSlopes`); tall grass's `placeOn` lists the grass and dirt ramps. (HALF_HEIGHT_GRID.md §5
+    // kept plants to flat tops before.)
     let grass = s("dwell:tall_grass");
     let mut world = ground();
     let eye = [0.5, 1.62, 0.5];
@@ -438,7 +443,7 @@ fn tall_grass_is_not_placed_on_a_stored_ramp() {
         world.set_voxel(0, -1, 2, ramp);
         assert_eq!(
             check(&mut world, place([0, -1, 2], 2, grass), eye, &[]).check,
-            EditCheck::NoSupport,
+            EditCheck::Ok,
             "{base}"
         );
     }
@@ -643,10 +648,12 @@ fn placing_into_water_is_allowed_into_players_rejected() {
         .check,
         EditCheck::IntoPlayer
     );
+    // A ladder (not solid) may go into a player: hung on a stone's north face.
+    world.set_voxel(-1, 0, 3, s("dwell:stone"));
     assert_eq!(
         check(
             &mut world,
-            place([-1, -1, 2], 2, s("dwell:ladder")),
+            place([-1, 0, 3], 5, s("dwell:ladder[facing=north]")),
             eye,
             &player
         )
@@ -674,16 +681,22 @@ fn placing_into_water_is_allowed_into_players_rejected() {
 fn flooded_blocks_follow_their_cell_and_leave_water() {
     let mut world = ground();
     let eye = [0.5, 1.62, 0.5];
-    let dry = s("dwell:ladder[facing=south]");
-    let wet = s("dwell:ladder[facing=south,flooded=true]");
-    let r = check(&mut world, place([0, -1, 2], 2, dry), eye, &[]);
-    assert_eq!((r.check, r.material), (EditCheck::Ok, dry));
+    // Ladders hang on a wall (docs/ITEMS.md): on the north face of a stone in front of the eye.
+    let dry = s("dwell:ladder[facing=north]");
+    let wet = s("dwell:ladder[facing=north,flooded=true]");
+    world.set_voxel(0, 0, 3, s("dwell:stone"));
+    let r = check(&mut world, place([0, 0, 3], 5, dry), eye, &[]);
     assert_eq!(
-        check(&mut world, place([0, -1, 2], 2, wet), eye, &[]).check,
+        (r.check, r.material, r.cell),
+        (EditCheck::Ok, dry, [0, 0, 2])
+    );
+    assert_eq!(
+        check(&mut world, place([0, 0, 3], 5, wet), eye, &[]).check,
         EditCheck::NotPlaceable
     );
+    world.set_voxel(-2, 0, 1, s("dwell:stone"));
     world.set_voxel(-2, 0, 0, s("dwell:water"));
-    let r = check(&mut world, place([-2, -1, 0], 2, dry), eye, &[]);
+    let r = check(&mut world, place([-2, 0, 1], 5, dry), eye, &[]);
     assert_eq!((r.check, r.material), (EditCheck::Ok, wet));
     world.set_voxel(1, 0, 2, wet);
     world.set_voxel(-1, 0, 2, dry);

@@ -234,6 +234,8 @@ fn an_edit_reaches_a_far_client_index_update_then_explicit_only_where_it_changed
             cell: [-1, dwell_world::FLAT_TOP_Y - 1, 2],
             face: 2,
             material: M.sand,
+            rows: 1,
+            down: false,
         }),
     );
     let edit_tick = f.server.tick();
@@ -319,6 +321,8 @@ fn an_edit_reaches_a_far_client_index_update_then_explicit_only_where_it_changed
             cell: [-5001, dwell_world::FLAT_TOP_Y - 1, 2],
             face: 2,
             material: M.sand,
+            rows: 1,
+            down: false,
         }),
     );
     for _ in 0..120 {

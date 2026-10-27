@@ -67,6 +67,8 @@ fn the_server_refuses_to_break_the_bedrock_and_a_region_edit_leaves_it() {
         cell: target,
         face: 0, // its +x face, toward the shaft
         material: 0,
+        rows: 1,
+        down: false,
     };
     // The client's prediction: the server's check from the eye, refused.
     let out = check_block_edit(f.server.world(), &request, eye, &[], DEFAULT_REACH);

@@ -1488,7 +1488,12 @@ fn guest_voxel(rig: &Rig, c: [i32; 3]) -> u16 {
 fn an_edit_shows_at_once_and_the_servers_ack_settles_it() {
     let mut rig = predicting_rig(8);
     let stone = dwell_blocks::require("dwell:stone");
-    rig.game.as_mut().unwrap().interaction.select(0); // stone
+    // The ½ m stone: one cell an edit (docs/ITEMS.md).
+    let half = dwell_game::block_interaction::palette()
+        .iter()
+        .position(|s| s.item == "dwell:stone_half")
+        .expect("a ½ m stone");
+    rig.game.as_mut().unwrap().interaction.select(half as i64); // stone
     let floor = target_at(&mut rig, 0.0, -40.0);
     let p = [floor[0], floor[1] + 1, floor[2]];
     assert_eq!(host_voxel(&mut rig, p), 0);
@@ -1547,7 +1552,12 @@ fn a_refused_edit_rolls_back() {
     let host = rig.key.verifying_key().to_bytes();
     rig.core
         .host(4, EditPolicy::Nobody, EditPolicy::Everyone, host);
-    rig.game.as_mut().unwrap().interaction.select(0);
+    // The ½ m stone: one cell an edit (docs/ITEMS.md).
+    let half = dwell_game::block_interaction::palette()
+        .iter()
+        .position(|s| s.item == "dwell:stone_half")
+        .expect("a ½ m stone");
+    rig.game.as_mut().unwrap().interaction.select(half as i64);
     let floor = target_at(&mut rig, 0.0, -40.0);
     let p = [floor[0], floor[1] + 1, floor[2]];
     let now = rig.now + 1000.0;
@@ -1565,7 +1575,12 @@ fn rapid_edits_and_a_refusal_reconcile_with_the_server() {
     use dwell_sim::server::EditPolicy;
     let mut rig = predicting_rig(8);
     let stone = dwell_blocks::require("dwell:stone");
-    rig.game.as_mut().unwrap().interaction.select(0);
+    // The ½ m stone: one cell an edit (docs/ITEMS.md).
+    let half = dwell_game::block_interaction::palette()
+        .iter()
+        .position(|s| s.item == "dwell:stone_half")
+        .expect("a ½ m stone");
+    rig.game.as_mut().unwrap().interaction.select(half as i64);
     let floor = target_at(&mut rig, 0.0, -40.0);
     let p = [floor[0], floor[1] + 1, floor[2]];
     // 1: place P, accepted.
@@ -1707,7 +1722,12 @@ fn another_client_sees_your_body_walk_sprint_slide_and_jump_and_what_you_hold() 
         guest_body(r).is_some_and(|v| v.held == dwell_client::render::Held::Brush(stone))
     }));
     // And what B holds reaches A: the host's game sends its hotbar block when it changes.
-    rig.game.as_mut().unwrap().interaction.select(0);
+    // The ½ m stone: one cell an edit (docs/ITEMS.md).
+    let half = dwell_game::block_interaction::palette()
+        .iter()
+        .position(|s| s.item == "dwell:stone_half")
+        .expect("a ½ m stone");
+    rig.game.as_mut().unwrap().interaction.select(half as i64);
     let want = rig.game.as_ref().unwrap().held();
     let dwell_client::render::Held::Block(block) = want else {
         panic!("the hotbar's first slot holds a block: {want:?}")
@@ -1730,6 +1750,8 @@ fn another_client_sees_your_body_walk_sprint_slide_and_jump_and_what_you_hold() 
             cell: [1000, 0, 1000],
             face: 0,
             material: 0,
+            rows: 1,
+            down: false,
         },
     ));
     assert!(rig.run_until(60, |r| {
@@ -1787,7 +1809,12 @@ fn torches_in_the_hand_and_placed_crackle_and_stop() {
     .sqrt();
     assert!(d < 0.01, "at the torch's cell: {at:?} over {floor:?}");
     // Back to stone in the hand: the hand's voice stops, the placed one burns on.
-    rig.game.as_mut().unwrap().interaction.select(0);
+    // The ½ m stone: one cell an edit (docs/ITEMS.md).
+    let half = dwell_game::block_interaction::palette()
+        .iter()
+        .position(|s| s.item == "dwell:stone_half")
+        .expect("a ½ m stone");
+    rig.game.as_mut().unwrap().interaction.select(half as i64);
     let away = sounds(&mut rig, 10);
     assert_eq!(
         away.iter().filter(|e| e.kind == SoundKind::BurnEnd).count(),

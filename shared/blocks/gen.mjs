@@ -73,8 +73,12 @@ const LOOKS = ['cube', 'shaped', 'ladder', 'fluid', 'cross'];
 // pixel it draws; `cutout` is alpha-tested (alpha-to-coverage under MSAA), writes depth and needs
 // no sorting; `translucent` is alpha-blended without depth writes, sorted far to near.
 const RENDER_MODES = ['opaque', 'cutout', 'translucent'];
-// Which neighbour a `needsSupport` block stands on ("below": toward its face's ground).
-const SUPPORTS = ['below'];
+// Which neighbour a `needsSupport` block stands on ("below": toward its face's ground; "behind":
+// the cell opposite its facing, a ladder's wall, docs/ITEMS.md).
+const SUPPORTS = ['below', 'behind'];
+// The natural, moldable material groups (`moldable`; docs/ITEMS.md): building with one of a group
+// onto a slope of the same group replaces the slope.
+const MOLD_GROUP = /^[a-z][a-z0-9_]*$/;
 // What a block may stand in (`medium`): only air (put into water, refused), or only water (drawn
 // inside it, its `flooded` property true). Absent: anything.
 const MEDIUMS = ['air', 'water'];
@@ -109,6 +113,8 @@ const familyBlock = (base, kind, extra = {}) => {
     shape: 'shaped',
     slopeFamily: kind,
     palette: 'all',
+    // A slope is of its block's moldable material (dirt's ramp is dirt).
+    ...(base.moldable === undefined ? {} : { moldable: base.moldable }),
   };
   if (kind === 'ramp') {
     // Stored cardinal ramps (docs/HALF_HEIGHT_GRID.md §3): placed by generation only, so not in
@@ -253,6 +259,11 @@ function validateRender(id, def, look, isAir) {
     fail(`${id}: needsSupport must be one of ${SUPPORTS.join(', ')}`);
   }
   if (def.replaceable !== undefined && typeof def.replaceable !== 'boolean') fail(`${id}: replaceable must be true or false`);
+  if (def.needsSupport === 'behind' && !def.facingProperty) fail(`${id}: needsSupport behind needs a facingProperty (what is behind it)`);
+  if (def.onSlopes !== undefined && typeof def.onSlopes !== 'boolean') fail(`${id}: onSlopes must be true or false`);
+  if (def.moldable !== undefined && !(typeof def.moldable === 'string' && MOLD_GROUP.test(def.moldable))) {
+    fail(`${id}: moldable must name a material group (lowercase letters, digits, _)`);
+  }
   if (def.medium !== undefined) {
     if (!MEDIUMS.includes(def.medium)) fail(`${id}: medium must be one of ${MEDIUMS.join(', ')}`);
     const f = def.properties?.flooded;
@@ -700,6 +711,8 @@ if (!fixture) writeFileSync(join(root, 'client/src/world/blocks.gen.ts'), ts.joi
       `place_on: &[${(d.placeOn ?? []).map(rstr).join(', ')}]`,
       `needs_support: Support::${d.needsSupport ? pascal(d.needsSupport) : 'None'}`,
       `replaceable: ${!!d.replaceable}`,
+      `on_slopes: ${!!d.onSlopes}`,
+      `moldable: ${d.moldable === undefined ? 'None' : `Some(${rstr(d.moldable)})`}`,
       `medium: Medium::${d.medium ? pascal(d.medium) : 'Any'}`,
       `light_filter: ${lightFilterOf(d)}`,
       `emits: ${d.emits ?? 0}`,

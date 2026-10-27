@@ -115,14 +115,22 @@ pub struct ChunkUnload {
 }
 
 /// C→S: break the targeted cell, or place `material` against its `face` (0 +X, 1 −X, 2 +Y, 3 −Y,
-/// 4 +Z, 5 −Z).
+/// 4 +Z, 5 −Z), as a piece `rows` cells tall (the held item's height: 2 a 1 m block, 1 a ½ m one;
+/// docs/ITEMS.md). A placed piece goes on from the placed cell away from the face; a broken one
+/// into the block from the face. Against a side, up from the cell, or down with `down` (the piece
+/// lined up with what is aimed at).
 #[derive(Clone, Debug, PartialEq)]
 pub struct BlockEditRequest {
     pub action: BlockEditAction,
     pub cell: [i32; 3],
     pub face: u8,
     pub material: u16,
+    pub rows: u8,
+    pub down: bool,
 }
+
+/// The tallest piece a place request may ask for (cells).
+pub const MAX_PIECE_ROWS: u8 = 2;
 
 /// C→S: one edit of a box of cells (§6.5) — `size` cells from the `min` corner, each side
 /// 1..=`region_edit::MAX_SIDE`. Fill and Hollow set `material` (Hollow: the box's shell, air
@@ -911,6 +919,8 @@ fn write_body(w: &mut ByteWriter, m: &Message) {
             if m.action == BlockEditAction::Place {
                 w.u16(m.material);
             }
+            // The piece: rows in the low bits, `down` the top bit.
+            w.u8(m.rows | if m.down { 0x80 } else { 0 });
         }
         M::VoxelModification(m) => {
             w.u8(m.reason as u8);
@@ -1260,11 +1270,17 @@ fn read_body(r: &mut ByteReader, t: MessageType) -> Option<Message> {
             } else {
                 0
             };
+            let piece = r.u8();
+            let rows = piece & 0x7f;
+            r.check((1..=MAX_PIECE_ROWS).contains(&rows));
+            let down = piece & 0x80 != 0;
             M::BlockEditRequest(BlockEditRequest {
                 action,
                 cell,
                 face,
                 material,
+                rows,
+                down,
             })
         }
         T::VoxelModification => {

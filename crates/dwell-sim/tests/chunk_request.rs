@@ -92,6 +92,8 @@ fn a_modified_chunk_arrives_explicitly_and_its_edits_follow() {
             cell: [6 * 32, FLAT_TOP_Y - 1, 2],
             face: 2,
             material: M.stone,
+            rows: 1,
+            down: false,
         }),
     );
     f.server.step();
@@ -113,6 +115,8 @@ fn a_modified_chunk_arrives_explicitly_and_its_edits_follow() {
             cell: [6 * 32 + 1, FLAT_TOP_Y - 1, 2],
             face: 2,
             material: M.sand,
+            rows: 1,
+            down: false,
         }),
     );
     f.server.step();

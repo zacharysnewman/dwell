@@ -69,6 +69,18 @@ fn decoded_fields_are_the_vectors_values() {
     };
     assert_eq!(w.player_id, 42);
     assert_eq!(w.world_seed, 0x0123_4567_89ab_cdef);
+    // A 1 m piece placed down from its cell (docs/ITEMS.md).
+    let Some(Message::BlockEditRequest(e)) = Message::decode(&get("block_edit_place_piece")) else {
+        panic!("block_edit_place_piece")
+    };
+    assert_eq!(
+        (e.cell, e.face, e.material, e.rows, e.down),
+        ([5, -3, 9], 0, 16, 2, true)
+    );
+    let Some(Message::BlockEditRequest(e)) = Message::decode(&get("block_edit_place")) else {
+        panic!("block_edit_place")
+    };
+    assert_eq!((e.rows, e.down), (1, false));
     let Some(Message::PhysicsSnapshot(s)) = Message::decode(&get("physics_snapshot")) else {
         panic!("physics_snapshot")
     };

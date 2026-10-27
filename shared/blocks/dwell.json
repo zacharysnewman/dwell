@@ -3,134 +3,419 @@
   "namespace": "dwell",
   "shapeFamilies": [],
   "$rampFamilies": "Half-height grid (Phase 41, docs/HALF_HEIGHT_GRID.md): each listed natural block gets `<name>_ramp[facing, flooded, half, shape]`, the stored cardinal ramps the generator places (shape ramp, steep_lower, steep_upper). Natural blocks are not adaptive on this grid: shapes are chosen once, at generation. Their `flooded` (as on main) marks a block the sea's water stands in: a ramp below sea level holds it in its open part (WATER_RENDERING.md §9).",
-  "rampFamilies": ["stone", "dirt", "grass", "sand", "snowy_grass"],
+  "rampFamilies": [
+    "stone",
+    "dirt",
+    "grass",
+    "sand",
+    "snowy_grass"
+  ],
   "fluids": {
     "dwell:water": {
-      "opacity": 0.72, "surfaceDrop": 0.125,
-      "absorption": [1.0, 0.16, 0.045], "scatter": "#1496e0", "roughness": 0.08, "ior": 1.333,
-      "normalScale": 1.0, "waveScale": 2.0, "flowSpeed": 0.03,
-      "foam": { "depth": 0.5, "color": "#eef6f8" },
-      "caustics": { "strength": 1.3, "scale": 1.4, "depth": 4.0 }, "scattering": 0.3, "refraction": 0.4, "sparkle": 1.5
+      "opacity": 0.72,
+      "surfaceDrop": 0.125,
+      "absorption": [
+        1.0,
+        0.16,
+        0.045
+      ],
+      "scatter": "#1496e0",
+      "roughness": 0.08,
+      "ior": 1.333,
+      "normalScale": 1.0,
+      "waveScale": 2.0,
+      "flowSpeed": 0.03,
+      "foam": {
+        "depth": 0.5,
+        "color": "#eef6f8"
+      },
+      "caustics": {
+        "strength": 1.3,
+        "scale": 1.4,
+        "depth": 4.0
+      },
+      "scattering": 0.3,
+      "refraction": 0.4,
+      "sparkle": 1.5
     }
   },
   "$lights": "Light sources (docs/LIGHTS.md §2): the dynamic point lights that blocks reference by name (`light`), held in a hand or placed. color (sRGB), strength (its irradiance at the flame), radiusM (where it ends; a placed torch's block light reaches `emits` metres, so the same radius lights alike), flicker (amount: the share of its strength it takes at most; speed: its noise's cycles a second), shadows (whether it may cast them, the Torch shadows setting's, Phase 47 T2), flame (optional: the flame look drawn where it burns, a name in shared/look/flames.json; docs/LIGHTS.md §6). A placed block's flood light is its `emits`; a held one never touches the flood light.",
   "lights": {
-    "dwell:torch": { "color": "#ff8a3d", "strength": 3.8, "radiusM": 14, "flicker": { "amount": 0.16, "speed": 6 }, "shadows": true, "flame": "dwell:torch" }
+    "dwell:torch": {
+      "color": "#ff8a3d",
+      "strength": 3.8,
+      "radiusM": 14,
+      "flicker": {
+        "amount": 0.16,
+        "speed": 6
+      },
+      "shadows": true,
+      "flame": "dwell:torch"
+    }
   },
   "blocks": [
-    { "name": "air", "density": 0, "shape": "empty", "look": "cube", "color": "#000000", "opacity": 0 },
     {
-      "name": "stone", "sound": "dwell:stone", "density": 2400, "shape": "full", "placeable": true,
-      "properties": { "flooded": ["false", "true"] },
-      "color": "#bbafa6", "textures": "stone"
+      "name": "air",
+      "density": 0,
+      "shape": "empty",
+      "look": "cube",
+      "color": "#000000",
+      "opacity": 0
     },
     {
-      "name": "dirt", "sound": "dwell:dirt", "density": 1500, "shape": "full", "placeable": true,
-      "properties": { "flooded": ["false", "true"] },
-      "color": "#8a5a3a", "textures": "dirt",
+      "name": "stone",
+      "sound": "dwell:stone",
+      "density": 2400,
+      "shape": "full",
+      "placeable": true,
+      "properties": {
+        "flooded": [
+          "false",
+          "true"
+        ]
+      },
+      "color": "#bbafa6",
+      "textures": "stone"
+    },
+    {
+      "name": "dirt",
+      "sound": "dwell:dirt",
+      "density": 1500,
+      "shape": "full",
+      "placeable": true,
+      "properties": {
+        "flooded": [
+          "false",
+          "true"
+        ]
+      },
+      "color": "#8a5a3a",
+      "textures": "dirt",
       "$comment": "sideUnder: a dirt side face with grass (or snowy grass) directly above (a slope's low side at a step or cliff) shows the turf's (or the snow's) skirt hanging over its top edge (docs/PAINTERLY_TEXTURES.md §2).",
-      "sideUnder": { "dwell:grass": "dirtSkirt", "dwell:snowy_grass": "dirtSnowSkirt" }
+      "sideUnder": {
+        "dwell:grass": "dirtSkirt",
+        "dwell:snowy_grass": "dirtSnowSkirt"
+      },
+      "moldable": "dirt"
     },
     {
-      "name": "grass", "sound": "dwell:grass", "density": 1400, "shape": "full", "placeable": true,
-      "properties": { "flooded": ["false", "true"] },
+      "name": "grass",
+      "sound": "dwell:grass",
+      "density": 1400,
+      "shape": "full",
+      "placeable": true,
+      "properties": {
+        "flooded": [
+          "false",
+          "true"
+        ]
+      },
       "color": "#8dbf3f",
-      "textures": { "top": "grass", "side": "grassSide", "bottom": "dirt" }
+      "textures": {
+        "top": "grass",
+        "side": "grassSide",
+        "bottom": "dirt"
+      },
+      "moldable": "dirt"
     },
     {
-      "name": "ladder", "sound": "dwell:wood", "density": 600, "shape": "empty", "look": "ladder", "climbable": true,
+      "name": "ladder",
+      "sound": "dwell:wood",
+      "density": 600,
+      "shape": "empty",
+      "look": "ladder",
+      "climbable": true,
       "facingProperty": "facing",
       "properties": {
-        "facing": ["north", "east", "south", "west"],
-        "flooded": ["false", "true"]
+        "facing": [
+          "north",
+          "east",
+          "south",
+          "west"
+        ],
+        "flooded": [
+          "false",
+          "true"
+        ]
       },
       "palette": [
-        { "facing": "north" }, { "facing": "east" }, { "facing": "south" }, { "facing": "west" }
+        {
+          "facing": "north"
+        },
+        {
+          "facing": "east"
+        },
+        {
+          "facing": "south"
+        },
+        {
+          "facing": "west"
+        }
       ],
       "$comment": "Drawn cutout: the ladder tile's gaps between rails and rungs are transparent. selectionBox: aimed at by its plate, ⅛ m against the wall it is mounted on (written for facing north and turned per facing), not the whole cell.",
-      "render": "cutout", "color": "#a0703a", "textures": "ladder",
-      "selectionBox": [0, 0, 0.875, 1, 1, 1]
+      "render": "cutout",
+      "color": "#a0703a",
+      "textures": "ladder",
+      "selectionBox": [
+        0,
+        0,
+        0.875,
+        1,
+        1,
+        1
+      ],
+      "needsSupport": "behind"
     },
     {
-      "name": "water", "sound": "dwell:water", "density": 1000, "shape": "empty", "look": "fluid", "fluid": "dwell:water",
-      "liquid": true, "render": "translucent", "color": "#2f86e0", "textures": "water",
+      "name": "water",
+      "sound": "dwell:water",
+      "density": 1000,
+      "shape": "empty",
+      "look": "fluid",
+      "fluid": "dwell:water",
+      "liquid": true,
+      "render": "translucent",
+      "color": "#2f86e0",
+      "textures": "water",
       "$lightFilter": "Flood light (docs/DAY_NIGHT.md §11): each ½ m of water takes a level off the sky light under it.",
       "lightFilter": 1
     },
     {
-      "name": "sand", "sound": "dwell:sand", "density": 1600, "shape": "full", "placeable": true,
-      "properties": { "flooded": ["false", "true"] },
-      "color": "#eed9a4", "textures": "sand"
+      "name": "sand",
+      "sound": "dwell:sand",
+      "density": 1600,
+      "shape": "full",
+      "placeable": true,
+      "properties": {
+        "flooded": [
+          "false",
+          "true"
+        ]
+      },
+      "color": "#eed9a4",
+      "textures": "sand",
+      "moldable": "sand"
     },
     {
       "$comment": "The structure sandbox's ground (prototype, docs/STRUCTURES.md §7.6): white with a faint line at every block edge (the `grid` tile) and a stronger one every 8 blocks (the `grid` look option), not in the palette, and indestructible so it can always be built on. Not adaptive: it stays flat cubes.",
-      "name": "sandbox_floor", "sound": "dwell:stone", "density": 2400, "shape": "full", "indestructible": true,
-      "color": "#ffffff", "textures": "grid", "grid": { "every": 8, "strength": 0.3 }
+      "name": "sandbox_floor",
+      "sound": "dwell:stone",
+      "density": 2400,
+      "shape": "full",
+      "indestructible": true,
+      "color": "#ffffff",
+      "textures": "grid",
+      "grid": {
+        "every": 8,
+        "strength": 0.3
+      }
     },
     {
-      "name": "log", "sound": "dwell:wood", "density": 700, "shape": "full", "placeable": true,
-      "color": "#7a5236", "textures": { "top": "logTop", "side": "logSide", "bottom": "logTop" }
+      "name": "log",
+      "sound": "dwell:wood",
+      "density": 700,
+      "shape": "full",
+      "placeable": true,
+      "color": "#7a5236",
+      "textures": {
+        "top": "logTop",
+        "side": "logSide",
+        "bottom": "logTop"
+      }
     },
     {
       "$comment": "Drawn cutout: the leaves tile has transparent gaps between the leaves. lightFilter: a canopy dims the sky light under it rather than shutting it out (docs/DAY_NIGHT.md §11).",
-      "name": "leaves", "sound": "dwell:grass", "density": 200, "shape": "full", "placeable": true,
-      "render": "cutout", "color": "#6fa83a", "textures": "leaves", "lightFilter": 2
+      "name": "leaves",
+      "sound": "dwell:grass",
+      "density": 200,
+      "shape": "full",
+      "placeable": true,
+      "render": "cutout",
+      "color": "#6fa83a",
+      "textures": "leaves",
+      "lightFilter": 2
     },
     {
       "$comment": "Prototype content (docs/TRANSPARENT_BLOCKS.md §6): blades of grass, the first plant. No collision; crossed quads drawn cutout, jittered per cell, swaying in the wind and fading out before the LOD; placed by hand only (world generation doesn't grow it), on grass or dirt, replaced by what is placed into it, and gone with the block under it.",
-      "name": "tall_grass", "sound": "dwell:grass", "density": 200, "shape": "empty", "placeable": true,
-      "look": "cross", "render": "cutout",
-      "cross": { "height": 0.85, "quads": 2, "jitter": { "offset": 0.22, "rotation": 30, "height": [0.75, 1.0] } },
-      "wind": { "strength": 0.09, "speed": 1.0 },
-      "fade": { "start": 48, "end": 88 },
-      "selectionBox": [0.15, 0, 0.15, 0.85, 0.6, 0.85],
-      "placeOn": ["dwell:grass", "dwell:dirt"], "needsSupport": "below", "replaceable": true, "medium": "air",
-      "color": "#8dbf3f", "textures": "tallGrass"
+      "name": "tall_grass",
+      "sound": "dwell:grass",
+      "density": 200,
+      "shape": "empty",
+      "placeable": true,
+      "look": "cross",
+      "render": "cutout",
+      "cross": {
+        "height": 0.85,
+        "quads": 2,
+        "jitter": {
+          "offset": 0.22,
+          "rotation": 30,
+          "height": [
+            0.75,
+            1.0
+          ]
+        }
+      },
+      "wind": {
+        "strength": 0.09,
+        "speed": 1.0
+      },
+      "fade": {
+        "start": 48,
+        "end": 88
+      },
+      "selectionBox": [
+        0.15,
+        0,
+        0.15,
+        0.85,
+        0.6,
+        0.85
+      ],
+      "placeOn": [
+        "dwell:grass",
+        "dwell:dirt",
+        "dwell:grass_ramp",
+        "dwell:dirt_ramp"
+      ],
+      "needsSupport": "below",
+      "replaceable": true,
+      "medium": "air",
+      "color": "#8dbf3f",
+      "textures": "tallGrass",
+      "onSlopes": true
     },
-    { "$comment": "The stored ramps (rampFamilies) at their own slots, as generated before the torch was added: blocks added after them keep every earlier state id (the worldgen goldens hash ids).", "name": "stone_ramp", "family": "ramp", "of": "stone" },
-    { "name": "dirt_ramp", "family": "ramp", "of": "dirt" },
-    { "name": "grass_ramp", "family": "ramp", "of": "grass" },
-    { "name": "sand_ramp", "family": "ramp", "of": "sand" },
+    {
+      "$comment": "The stored ramps (rampFamilies) at their own slots, as generated before the torch was added: blocks added after them keep every earlier state id (the worldgen goldens hash ids).",
+      "name": "stone_ramp",
+      "family": "ramp",
+      "of": "stone"
+    },
+    {
+      "name": "dirt_ramp",
+      "family": "ramp",
+      "of": "dirt"
+    },
+    {
+      "name": "grass_ramp",
+      "family": "ramp",
+      "of": "grass"
+    },
+    {
+      "name": "sand_ramp",
+      "family": "ramp",
+      "of": "sand"
+    },
     {
       "$comment": "Prototype content (docs/LIGHTS.md): a torch on the floor, 1 m tall over two ½ m cells. This is its lower cell (the stick), placed from the palette; `extends.up` puts `dwell:torch_upper` (the flame) in the cell above, and breaking either cell clears both (BLOCK_REGISTRY.md, Multi-cell blocks). Crossed quads, drawn cutout, no collision, standing on the block below and gone with it. Its `light` is the light a hand holding it gives off; a hand holding it shows the `torch` item (shared/characters).",
-      "name": "torch", "sound": "dwell:torch", "density": 600, "shape": "empty", "placeable": true,
-      "look": "cross", "render": "cutout",
-      "cross": { "height": 1.0, "quads": 2, "sitOnSupport": false },
-      "selectionBox": [0.38, 0, 0.38, 0.62, 1, 0.62],
-      "needsSupport": "below", "medium": "air",
-      "extends": { "up": "dwell:torch_upper" },
-      "light": "dwell:torch", "held": "torch",
-      "color": "#ffffff", "textures": "torch"
+      "name": "torch",
+      "sound": "dwell:torch",
+      "density": 600,
+      "shape": "empty",
+      "placeable": true,
+      "look": "cross",
+      "render": "cutout",
+      "cross": {
+        "height": 1.0,
+        "quads": 2,
+        "sitOnSupport": false
+      },
+      "selectionBox": [
+        0.38,
+        0,
+        0.38,
+        0.62,
+        1,
+        0.62
+      ],
+      "needsSupport": "below",
+      "medium": "air",
+      "extends": {
+        "up": "dwell:torch_upper"
+      },
+      "light": "dwell:torch",
+      "held": "torch",
+      "color": "#ffffff",
+      "textures": "torch"
     },
     {
       "$comment": "The torch's upper cell (docs/LIGHTS.md): the stick's top and the flame, which gives off the block light (`emits` 14, its cell the flame's) and, with Torch shadows (T2), the placed torch's dynamic light. Placed only with its torch (`partOf`).",
-      "name": "torch_upper", "sound": "dwell:torch", "density": 600, "shape": "empty",
-      "look": "cross", "render": "cutout",
-      "cross": { "height": 1.0, "quads": 2, "sitOnSupport": false },
-      "selectionBox": [0.38, 0, 0.38, 0.62, 0.8, 0.62],
-      "medium": "air", "partOf": "dwell:torch",
-      "emits": 14, "light": "dwell:torch",
-      "color": "#ffffff", "textures": "torchTop"
+      "name": "torch_upper",
+      "sound": "dwell:torch",
+      "density": 600,
+      "shape": "empty",
+      "look": "cross",
+      "render": "cutout",
+      "cross": {
+        "height": 1.0,
+        "quads": 2,
+        "sitOnSupport": false
+      },
+      "selectionBox": [
+        0.38,
+        0,
+        0.38,
+        0.62,
+        0.8,
+        0.62
+      ],
+      "medium": "air",
+      "partOf": "dwell:torch",
+      "emits": 14,
+      "light": "dwell:torch",
+      "color": "#ffffff",
+      "textures": "torchTop"
     },
     {
       "$comment": "The bedrock between the faces (docs/BIFACIAL_WORLD.md §2, owner 2026-10-21: \"add bedrock back in between the two faces\"): generated in the layers either side of the midplane (`shared/worldgen/terrain.json` `bedrock`), indestructible so no edit, region tool or brush cuts it; the faces meet only through the portals' shafts (`shared/worldgen/portals.json`). Not placeable.",
-      "name": "bedrock", "sound": "dwell:stone", "density": 3000, "shape": "full",
+      "name": "bedrock",
+      "sound": "dwell:stone",
+      "density": 3000,
+      "shape": "full",
       "indestructible": true,
-      "color": "#4f4a57", "textures": "bedrock"
+      "color": "#4f4a57",
+      "textures": "bedrock"
     },
     {
       "$comment": "Snow lying on turf (owner, 2026-10-21: \"add snow 'grass' block\"): grass's counterpart on high ground, which the terrain generator tops columns with above the snow line (shared/worldgen/terrain.json `bands`). A white snow top, a side with the snow's fringe hanging over the dirt (the `hang` tile, as grass's turf), dirt below; dirt under it shows the fringe as its skirt (`sideUnder`). Its ramps are stored like grass's (`rampFamilies`).",
-      "name": "snowy_grass", "sound": "dwell:snow", "density": 1300, "shape": "full", "placeable": true,
-      "properties": { "flooded": ["false", "true"] },
+      "name": "snowy_grass",
+      "sound": "dwell:snow",
+      "density": 1300,
+      "shape": "full",
+      "placeable": true,
+      "properties": {
+        "flooded": [
+          "false",
+          "true"
+        ]
+      },
       "color": "#e9eff6",
-      "textures": { "top": "snow", "side": "snowSide", "bottom": "dirt" }
+      "textures": {
+        "top": "snow",
+        "side": "snowSide",
+        "bottom": "dirt"
+      },
+      "moldable": "dirt"
     },
-    { "name": "snowy_grass_ramp", "family": "ramp", "of": "snowy_grass" },
+    {
+      "name": "snowy_grass_ramp",
+      "family": "ramp",
+      "of": "snowy_grass"
+    },
     {
       "$comment": "Leaves under snow (owner, 2026-10-21: \"snow leaves\"): the leaves' cutout canopy and light filter with snow on the top face and caught on the sides. Trees growing high up take it for their leaves (shared/worldgen/placements.json `variants`).",
-      "name": "snowy_leaves", "sound": "dwell:snow", "density": 220, "shape": "full", "placeable": true,
-      "render": "cutout", "color": "#c9dccb",
-      "textures": { "top": "snowyLeavesTop", "side": "snowyLeavesSide", "bottom": "leaves" },
+      "name": "snowy_leaves",
+      "sound": "dwell:snow",
+      "density": 220,
+      "shape": "full",
+      "placeable": true,
+      "render": "cutout",
+      "color": "#c9dccb",
+      "textures": {
+        "top": "snowyLeavesTop",
+        "side": "snowyLeavesSide",
+        "bottom": "leaves"
+      },
       "lightFilter": 2
     }
   ]

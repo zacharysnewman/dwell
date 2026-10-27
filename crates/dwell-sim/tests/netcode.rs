@@ -1169,6 +1169,8 @@ fn a_block_placed_by_one_player_blocks_another_on_the_server_and_in_its_predicti
                 cell: [world_cell_x(x), y, 3],
                 face: 2,
                 material: stone,
+                rows: 1,
+                down: false,
             };
             sim.send(a, Message::BlockEditRequest(edit));
             sim.step(8);

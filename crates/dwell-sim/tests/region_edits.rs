@@ -367,6 +367,8 @@ fn every_edit_is_acknowledged_after_its_changes_with_the_refused_ones_named() {
             cell,
             face: 2,
             material: 0,
+            rows: 1,
+            down: false,
         })
     };
     f.send(1, fill([3, G, 3], [2, 1, 1], M.stone)); // 1: applied

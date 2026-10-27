@@ -49,13 +49,15 @@ pub mod tag {
     pub const SELECTION: u8 = 6;
     /// `u8` count, `str` block ids: the blocks it may be placed on.
     pub const PLACE_ON: u8 = 7;
-    /// `u8` (0 none, 1 below): the neighbour it needs to stay.
+    /// `u8` (0 none, 1 below, 2 behind): the neighbour it needs to stay.
     pub const NEEDS_SUPPORT: u8 = 8;
     /// `u8` medium (0 any, 1 air, 2 water): what the block may be placed into.
     pub const MEDIUM: u8 = 9;
     /// `str` the block filling the cell above (`StateInfo::extends_up`, "" none), `str` the block
     /// it is the upper part of (`part_of`, "" none): a multi-cell block, sent only when either is set.
     pub const PARTS: u8 = 10;
+    /// `str` the natural material group it is of (`StateInfo::moldable`, docs/ITEMS.md).
+    pub const MOLDABLE: u8 = 11;
     /// `str`.
     pub const LOOK: u8 = 0x81;
     /// `u32` sRGB, `f32` opacity.
@@ -103,8 +105,10 @@ pub mod flag {
     pub const PLACEABLE: u32 = 32;
     // 64 was `adaptive` (blocks shaped from their neighbours), removed with ½ m cells (ADR 0042).
     pub const REPLACEABLE: u32 = 128;
-    pub const KNOWN: u32 = 63 | REPLACEABLE;
-    pub const NAMES: [(u32, &str); 7] = [
+    /// Placeable on a slope's top (`StateInfo::on_slopes`, docs/ITEMS.md).
+    pub const ON_SLOPES: u32 = 256;
+    pub const KNOWN: u32 = 63 | REPLACEABLE | ON_SLOPES;
+    pub const NAMES: [(u32, &str); 8] = [
         (SOLID, "solid"),
         (INDESTRUCTIBLE, "indestructible"),
         (FLOODED, "flooded"),
@@ -112,6 +116,7 @@ pub mod flag {
         (LIQUID, "liquid"),
         (PLACEABLE, "placeable"),
         (REPLACEABLE, "replaceable"),
+        (ON_SLOPES, "on slopes"),
     ];
 }
 
@@ -229,6 +234,7 @@ pub fn state_fields(s: &StateInfo) -> Fields {
         (flag::LIQUID, s.liquid),
         (flag::PLACEABLE, s.placeable),
         (flag::REPLACEABLE, s.replaceable),
+        (flag::ON_SLOPES, s.on_slopes),
     ] {
         if on {
             flags |= bit;
@@ -275,7 +281,13 @@ pub fn state_fields(s: &StateInfo) -> Fields {
         }));
     }
     if s.needs_support != Support::None {
-        out.push(field(tag::NEEDS_SUPPORT, |w| w.u8(1)));
+        out.push(field(tag::NEEDS_SUPPORT, |w| {
+            w.u8(match s.needs_support {
+                Support::None => 0,
+                Support::Below => 1,
+                Support::Behind => 2,
+            })
+        }));
     }
     if s.medium != Medium::Any {
         out.push(field(tag::MEDIUM, |w| {
@@ -291,6 +303,9 @@ pub fn state_fields(s: &StateInfo) -> Fields {
             w.str(s.extends_up.unwrap_or(""));
             w.str(s.part_of.unwrap_or(""));
         }));
+    }
+    if let Some(m) = s.moldable {
+        out.push(field(tag::MOLDABLE, |w| w.str(m)));
     }
 
     out.push(field(tag::RENDER, |w| {
@@ -639,6 +654,8 @@ fn default_row(name: &str) -> StateInfo {
         place_on: &[],
         needs_support: Support::None,
         replaceable: false,
+        on_slopes: false,
+        moldable: None,
         medium: Medium::Any,
         light_filter: 0,
         emits: 0,
@@ -669,6 +686,7 @@ fn apply_rules(
     row.medium = Medium::Any;
     row.extends_up = None;
     row.part_of = None;
+    row.moldable = None;
     for (t, bytes) in fields {
         let mut r = ByteReader::new(bytes);
         match *t {
@@ -701,6 +719,7 @@ fn apply_rules(
                 row.needs_support = match r.u8() {
                     0 => Support::None,
                     1 => Support::Below,
+                    2 => Support::Behind,
                     other => {
                         notes.push(format!("support {other} not in this version (none)"));
                         Support::None
@@ -725,6 +744,12 @@ fn apply_rules(
                     row.part_of = (!of.is_empty()).then(|| intern(&of));
                 }
             }
+            tag::MOLDABLE => {
+                let m = r.str(MAX_STR);
+                if r.ok() && !m.is_empty() {
+                    row.moldable = Some(intern(&m));
+                }
+            }
             t if t & tag::LOOK_BIT == 0 => {
                 notes.push(format!("rule field {t} not in this version (ignored)"));
             }
@@ -739,6 +764,7 @@ fn apply_rules(
     row.liquid = has(flag::LIQUID);
     row.placeable = has(flag::PLACEABLE);
     row.replaceable = has(flag::REPLACEABLE);
+    row.on_slopes = has(flag::ON_SLOPES);
     if flags & !flag::KNOWN != 0 {
         notes.push(format!(
             "rule flags {:#x} not in this version (ignored)",
@@ -1073,6 +1099,12 @@ fn changed_fields(a: &StateInfo, b: &StateInfo) -> Vec<String> {
     }
     if a.needs_support != b.needs_support {
         out.push("needs support".into());
+    }
+    if a.on_slopes != b.on_slopes {
+        out.push("on slopes".into());
+    }
+    if a.moldable != b.moldable {
+        out.push("moldable".into());
     }
     if a.medium != b.medium {
         out.push("medium".into());
