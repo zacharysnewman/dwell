@@ -274,7 +274,14 @@ impl Channels {
     /// Calls `f` with every channel segment whose valley reaches (x, z), each with its id and its
     /// hit as [`Channels::query`] measures it: where two rivers' valleys meet, the terrain carves
     /// by all of them (`terrain.rs`), so the ground never steps where the nearest one changes.
-    pub fn each_near(&self, x: f64, z: f64, min_half: f64, min_width: f64, mut f: impl FnMut(u32, Hit)) {
+    pub fn each_near(
+        &self,
+        x: f64,
+        z: f64,
+        min_half: f64,
+        min_width: f64,
+        mut f: impl FnMut(u32, Hit),
+    ) {
         let span = (min_half / BUCKET).ceil() as i32;
         let (bx, bz) = ((x / BUCKET).floor() as i32, (z / BUCKET).floor() as i32);
         let mut seen: Vec<u32> = Vec::new();

@@ -1392,7 +1392,12 @@ dwell_world::both_faces!(
 /// Steps in the dry ground within `r` m of (x0, z0): columns where the height changes by more than
 /// `limit` m against the slope on either side of it (a seam, not a steep hillside), away from any
 /// water (whose banks are steps by design).
-fn ground_steps(g: &TerrainGenerator, (x0, z0): (i32, i32), r: i32, limit: f32) -> Vec<(i32, i32, f32)> {
+fn ground_steps(
+    g: &TerrainGenerator,
+    (x0, z0): (i32, i32),
+    r: i32,
+    limit: f32,
+) -> Vec<(i32, i32, f32)> {
     use terrain::Water;
     let dry = |x: i32, z: i32| {
         (-3..=3).all(|dz| (-3..=3).all(|dx| g.column_at(x + dx, z + dz).water == Water::None))
@@ -1427,7 +1432,11 @@ dwell_world::both_faces!(
         let t = BifacialTerrain::new(7);
         let g = t.local(f.face);
         let joins = confluences(g);
-        assert!(joins.len() >= 3, "seed 7 has rivers that meet: {}", joins.len());
+        assert!(
+            joins.len() >= 3,
+            "seed 7 has rivers that meet: {}",
+            joins.len()
+        );
         let steps: Vec<_> = joins
             .iter()
             .flat_map(|&(x, z, w)| ground_steps(g, (x, z), 30 + (2.0 * w) as i32, 1.0))
@@ -1450,7 +1459,10 @@ fn no_seam_at_the_reported_meeting_of_valleys() {
     let t = BifacialTerrain::new(1_397_629_041);
     let g = t.local(FaceFrame::A.face);
     let steps = ground_steps(g, (-7467, 8374), 120, 1.0);
-    assert!(steps.is_empty(), "{} steps, e.g. {:?}", steps.len(), &steps[..steps.len().min(5)]);
+    assert!(
+        steps.is_empty(),
+        "{} steps, e.g. {:?}",
+        steps.len(),
+        &steps[..steps.len().min(5)]
+    );
 }
-
-

@@ -685,9 +685,10 @@ impl TerrainGenerator {
                 };
                 let land = h;
                 h = valley_of(r, land);
-                map.channels.each_near(warped.0, warped.1, min_half, min_width, |_, o| {
-                    h = h.min(valley_of(&o, land));
-                });
+                map.channels
+                    .each_near(warped.0, warped.1, min_half, min_width, |_, o| {
+                        h = h.min(valley_of(&o, land));
+                    });
                 let bank = r.level + S.river_bank;
                 // Where the land is lower than the water, a levee `bank` over it so the water
                 // never stands open beside lower ground, falling away gently (`leveeFall`) so it
