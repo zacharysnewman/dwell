@@ -43,6 +43,7 @@ use crate::placements::{self, Ground, PLACEMENTS, Planter, Tree};
 use crate::portals::{MIDPLANE, Part, Portal, Portals};
 use crate::ramps as ramps_rule;
 use crate::ramps::Top;
+use crate::volume::{ColumnInput, Volume, VolumeDef};
 use crate::worldmap::{self, WorldMap};
 use dwell_world::structure::Placed;
 
@@ -358,6 +359,9 @@ pub struct TerrainGenerator {
     /// lowered this far (m) under the river's level (`lod_valley`). Off by default; never in
     /// chunks.
     lod_valleys: Option<f64>,
+    /// The terrain volume over the height field (`volume.rs`, a prototype: world type `cliffs`);
+    /// none for the plain terrain. Chunks only: the LOD draws the height field's top.
+    volume: Option<Arc<Volume>>,
     world_seed: u64,
 }
 
@@ -442,6 +446,7 @@ impl TerrainGenerator {
             portals: None,
             rise: DECORATION_RISE as f32,
             lod_valleys: None,
+            volume: None,
             world_seed,
         }
         .with_placements(&PLACEMENTS)
@@ -479,6 +484,15 @@ impl TerrainGenerator {
     pub fn with_portals(mut self, portals: Arc<Portals>) -> Self {
         self.portals = Some(portals);
         self.raise_for_portals();
+        self
+    }
+
+    /// The generator with a terrain volume shaping its chunks (`volume.rs`); the sky test leaves
+    /// room for what it adds over the ground.
+    pub fn with_volume(mut self, def: &'static VolumeDef) -> Self {
+        let v = Volume::resolve(def, self.world_seed);
+        self.rise = self.rise.max((v.reach_rows + 1) as f32);
+        self.volume = Some(Arc::new(v));
         self
     }
 
@@ -1054,8 +1068,126 @@ impl TerrainGenerator {
                 }
             }
         }
+        if let Some(v) = &self.volume {
+            self.shape_volume(v, coord, &cols, volume, near.as_ref(), chunk);
+        }
         self.stamp_trees(coord, &cols, volume, chunk);
         self.stamp_monuments(coord, volume, chunk);
+    }
+
+    /// Reshapes a generated chunk by the terrain volume: within its reach of the height field's
+    /// surface a cell is solid where the density is above zero. Cells it adds are its material
+    /// (over air, water and decorations); cells it removes become air, or water below the column's
+    /// water. A decoration left over air goes. Portals' columns and the core are left alone.
+    fn shape_volume(
+        &self,
+        v: &Volume,
+        coord: ChunkCoord,
+        cols: &[Column],
+        overlap: Overlap,
+        near: Option<&(&Portals, Vec<Portal>)>,
+        chunk: &mut Chunk,
+    ) {
+        const S: i32 = CHUNK_SIZE;
+        let (x0, y0, z0) = (coord.x * S, coord.y * S, coord.z * S);
+        let reach = v.reach_rows;
+        let (mut lo, mut hi) = (i32::MAX, i32::MIN);
+        for c in cols.iter().filter(|c| !c.outside) {
+            let top = top_voxel(c.height);
+            lo = lo.min(top);
+            hi = hi.max(top);
+        }
+        // One row more below: the cell under the chunk's bottom row decides its decorations.
+        if lo == i32::MAX || y0 + S <= lo - reach - 1 || y0 > hi + reach {
+            return;
+        }
+        // The columns around the chunk out to the widest slope radius.
+        let m = v.margin();
+        let w = S + 2 * m;
+        let ext = if m == 0 {
+            cols.to_vec()
+        } else {
+            self.rect_columns(x0 - m, z0 - m, w, w)
+        };
+        let height_at = |lx: i32, lz: i32, own: f32| {
+            let c = ext[((lz + m) * w + lx + m) as usize];
+            if c.outside { own } else { c.height }
+        };
+        let floor = MIDPLANE_Y + CORE_LAYERS;
+        let voxels = chunk.voxels_mut();
+        let mut slopes = vec![0.0f32; v.radii().len()];
+        for z in 0..S {
+            for x in 0..S {
+                let col = cols[(z * S + x) as usize];
+                if col.outside {
+                    continue;
+                }
+                if let Some((p, n)) = near
+                    && p.locate(n, x0 + x, z0 + z).0 != Part::None
+                {
+                    continue;
+                }
+                let top = top_voxel(col.height);
+                if y0 + S <= top - reach - 1 || y0 > top + reach {
+                    continue;
+                }
+                for (k, &r) in v.radii().iter().enumerate() {
+                    let r = i32::from(r);
+                    let h = col.height;
+                    let sx = (height_at(x + r, z, h) - height_at(x - r, z, h)) / (2 * r) as f32;
+                    let sz = (height_at(x, z + r, h) - height_at(x, z - r, h)) / (2 * r) as f32;
+                    slopes[k] = (sx * sx + sz * sz).sqrt();
+                }
+                let eval = v.column(&ColumnInput {
+                    x: x0 + x,
+                    z: z0 + z,
+                    surface: m_of_row(top + 1) as f32,
+                    slopes: &slopes,
+                });
+                let solid = |y: i32| {
+                    if y < floor || (y - top).abs() > reach {
+                        y <= top
+                    } else {
+                        v.density(&eval, y) > 0.0
+                    }
+                };
+                let water = col.water_row();
+                let in_volume = |y: i32| {
+                    (FACE_MIN_Y..FACE_MAX_Y).contains(&y)
+                        && (overlap != Overlap::Partial
+                            || BUILD_VOLUME.contains_voxel(
+                                i64::from(x0 + x),
+                                i64::from(y),
+                                i64::from(z0 + z),
+                            ))
+                };
+                let mut below = solid(y0 - 1);
+                for ly in 0..S {
+                    let y = y0 + ly;
+                    let here = solid(y);
+                    if in_volume(y) {
+                        let cell = &mut voxels[local_index(x, ly, z)];
+                        if here != (y <= top) {
+                            *cell = if here {
+                                v.material
+                            } else if y < water {
+                                M.water
+                            } else {
+                                M.air
+                            };
+                        } else if !here
+                            && !below
+                            && *cell != M.air
+                            && *cell != M.water
+                            && dwell_blocks::info(*cell).replaceable
+                        {
+                            *cell = M.air;
+                        }
+                    }
+                    below = here;
+                }
+            }
+        }
     }
 
     /// Stands the portals' monuments reaching this chunk in it, over air and replaceable cells

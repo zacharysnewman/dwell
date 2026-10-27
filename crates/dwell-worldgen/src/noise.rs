@@ -182,3 +182,66 @@ pub const fn octaves_resolved(wavelength: i32, octaves: u32, cell: i64) -> u32 {
     }
     n
 }
+
+/// Twelve unnormalised directions: the cube's edge midpoints (3D gradient noise).
+fn grad3(h: u32, x: f32, y: f32, z: f32) -> f32 {
+    match h % 12 {
+        0 => x + y,
+        1 => -x + y,
+        2 => x - y,
+        3 => -x - y,
+        4 => x + z,
+        5 => -x + z,
+        6 => x - z,
+        7 => -x - z,
+        8 => y + z,
+        9 => -y + z,
+        10 => y - z,
+        _ => -y - z,
+    }
+}
+
+/// 3D gradient noise, roughly in [−1, 1], zero at lattice points.
+pub fn perlin3(seed: u32, x: LatticeCoord, y: LatticeCoord, z: LatticeCoord) -> f32 {
+    let (fx, fy, fz) = (x.frac, y.frac, z.frac);
+    let (u, v, w) = (fade(fx), fade(fy), fade(fz));
+    let corner = |dx: i32, dy: i32, dz: i32| {
+        let h = hash3(
+            seed,
+            x.cell.wrapping_add(dx),
+            y.cell.wrapping_add(dy),
+            z.cell.wrapping_add(dz),
+        );
+        grad3(h, fx - dx as f32, fy - dy as f32, fz - dz as f32)
+    };
+    let y0 = lerp(
+        lerp(corner(0, 0, 0), corner(1, 0, 0), u),
+        lerp(corner(0, 0, 1), corner(1, 0, 1), u),
+        w,
+    );
+    let y1 = lerp(
+        lerp(corner(0, 1, 0), corner(1, 1, 0), u),
+        lerp(corner(0, 1, 1), corner(1, 1, 1), u),
+        w,
+    );
+    lerp(y0, y1, v)
+}
+
+/// [`fbm2`]'s fractal sum in 3D: x and z (m) on lattices of `wavelength`, y (rows) on one of
+/// `wavelength_y` rows, each octave twice as fine.
+pub fn fbm3(seed: u32, (x, y, z): (i64, i64, i64), wavelength: i32, wavelength_y: i32, octaves: u32) -> f32 {
+    let mut sum = 0.0f32;
+    let mut norm = 0.0f32;
+    let mut amplitude = 1.0f32;
+    for o in 0..octaves {
+        sum += perlin3(
+            octave_seed(seed, o),
+            lattice(x, wavelength, o),
+            lattice(y, wavelength_y, o),
+            lattice(z, wavelength, o),
+        ) * amplitude;
+        norm += amplitude;
+        amplitude *= 0.5;
+    }
+    sum / norm
+}
