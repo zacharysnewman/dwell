@@ -99,12 +99,17 @@ impl<'a> VoxelQuery<'a> {
         )
     }
 
-    /// The shape of a voxel as it collides: an adaptive top block's derived shape, or its own.
+    /// The shape of a voxel as it collides: its own, or none for a passable block (leaves:
+    /// players pass through them, docs/FELLING.md).
     pub fn shape(&self, x: i32, y: i32, z: i32) -> &'static ShapeInfo {
         if let Some(&s) = self.shapes.borrow().get(&[x, y, z]) {
             return s;
         }
-        let s = self.world.borrow_mut().shape_at(x, y, z);
+        let s = if info(self.material(x, y, z)).passable {
+            dwell_blocks::shape::shape_of(dwell_world::M.air)
+        } else {
+            self.world.borrow_mut().shape_at(x, y, z)
+        };
         self.shapes.borrow_mut().insert([x, y, z], s);
         s
     }

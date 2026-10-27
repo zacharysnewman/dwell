@@ -1607,3 +1607,44 @@ fn a_river_step_down_closes_the_strip_between_the_two_surfaces() {
         1.0 + top
     );
 }
+
+#[test]
+fn a_log_lying_along_x_shows_its_end_grain_on_its_ends_and_its_bark_along_it() {
+    // docs/FELLING.md: a felled trunk settles lying along x or z (the log's `axis`). Its ends (±x)
+    // take the end-grain tiles; its top and sides the bark, turned so the grain runs along x.
+    let log =
+        |axis: &str| dwell_blocks::parse_state(&format!("dwell:log[axis={axis}]")).expect("log");
+    let rect = |name: &str| {
+        let r = tile_rect(name);
+        [r.u0 as f32, r.v0 as f32]
+    };
+    for (axis, end_normal) in [("y", 1usize), ("x", 0), ("z", 2)] {
+        let m = mesh(&[(4, 4, 4, log(axis))], false).opaque;
+        for q in 0..quads(&m) {
+            let n = [0, 1, 2].map(|k| m.normals[q * 12 + k]);
+            let along = n
+                .iter()
+                .position(|c| c.abs() == 1.0)
+                .expect("an axis normal");
+            let tile = [m.tiles[q * 16], m.tiles[q * 16 + 1]];
+            let want = if along == end_normal {
+                "logTop"
+            } else {
+                "logSide"
+            };
+            assert_eq!(tile, rect(want), "axis {axis}, face normal {n:?}");
+            if along != end_normal {
+                // The bark's v runs along the log: over the face, v spans the log's own length
+                // (1 m along x or z, a ½ m cell along y), u the other way.
+                let vs: Vec<f32> = (0..4).map(|c| m.uvs[q * 8 + c * 2 + 1]).collect();
+                let span = vs.iter().fold(f32::MIN, |a, &b| a.max(b))
+                    - vs.iter().fold(f32::MAX, |a, &b| a.min(b));
+                let length = if end_normal == 1 { 0.5 } else { 1.0 };
+                assert!(
+                    (span - length).abs() < 1e-6,
+                    "axis {axis}, normal {n:?}: v spans {span}"
+                );
+            }
+        }
+    }
+}

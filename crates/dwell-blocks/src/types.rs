@@ -109,6 +109,26 @@ pub struct Fade {
     pub end: f32,
 }
 
+/// What a block counts as for holding things up (block data `support`; docs/FELLING.md §2).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SupportRole {
+    /// Anchors what touches it; never falls (terrain, builds).
+    Ground,
+    /// Stands while a path of carriers reaches a `Ground` block; holds up its riders (logs).
+    Carrier,
+    /// Holds nothing up; stays while a carrier it belongs to stands (leaves).
+    Rider,
+}
+
+/// The axis a block's ends lie along (block data `axisProperty`): a log's `top` and `bottom` tiles
+/// on the faces across it, its `side` tile turned to run along it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Axis {
+    X,
+    Y,
+    Z,
+}
+
 /// Which neighbour a block needs to stay (block data `needsSupport`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Support {
@@ -201,6 +221,16 @@ pub struct StateInfo {
     pub extends_up: Option<&'static str>,
     /// The block this one is the upper part of (block data `partOf`): cleared with it.
     pub part_of: Option<&'static str>,
+    /// What it counts as for holding things up (block data `support`; docs/FELLING.md).
+    pub support_role: SupportRole,
+    /// Players and falling pieces pass through it (block data `passable`: leaves); targeting
+    /// still hits it.
+    pub passable: bool,
+    /// The axis its ends lie along (block data `axisProperty`; `Y` for most).
+    pub axis: Axis,
+    /// How close to the eye (m) its faces dissolve (block data `nearFade`; 0 never): leaves, so a
+    /// canopy the eye is inside shows round it without faces against the lens (docs/FELLING.md).
+    pub near_fade: f32,
 }
 
 /// A named light source (`lights` in `shared/blocks/*.json`; docs/LIGHTS.md §2): looks only.

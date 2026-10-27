@@ -262,6 +262,36 @@ fn a_voxel_wall_blocks_movement() {
 }
 
 #[test]
+fn a_wall_of_leaves_is_walked_through() {
+    // docs/FELLING.md (owner, 2026-10-27): "leaves should no longer be solid to a player". The
+    // same wall as `a_voxel_wall_blocks_movement`, of leaves: the player walks on through it, and
+    // a canopy under the feet holds no one up.
+    let leaves = dwell_blocks::require("dwell:leaves");
+    let mut w = PlayerTestWorld::new();
+    w.floor();
+    w.fill(-3, 0, 3, 3, 3, 3, leaves);
+    let e = w.spawn(v(0.5, 0.0, 0.0));
+    w.set_input(|_, _| mv(0.0, 1.0));
+    w.step(ticks(2.0));
+    assert!(
+        w.pos(e).z > 4.0,
+        "walked through the leaves: {}",
+        w.pos(e).z
+    );
+    let mut w = PlayerTestWorld::new();
+    w.floor();
+    w.fill(-3, 4, -3, 3, 4, 3, leaves); // a canopy 4 m up
+    let e = w.spawn(v(0.5, 5.0, 0.5));
+    w.step(ticks(2.0));
+    // `pos` is the capsule's centre, 0.9 m over the feet: on the floor, not on the canopy at 5 m.
+    assert!(
+        w.pos(e).y < 1.5,
+        "fell through the canopy to the floor: {}",
+        w.pos(e).y
+    );
+}
+
+#[test]
 fn diagonal_input_is_not_faster() {
     let mut w = PlayerTestWorld::new();
     w.floor();

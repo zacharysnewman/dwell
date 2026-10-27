@@ -87,7 +87,8 @@ struct Frame {
 @group(0) @binding(1) var atlas: texture_2d<f32>;
 @group(0) @binding(2) var atlas_sampler: sampler;
 // Per atlas tile (index cx + cy × ATLAS_CELLS): its grid lines (x every, y strength; 0 for none),
-// from the registry's `grid` look option of the blocks that use the tile (dwell-mesh tile_grids).
+// from the registry's `grid` look option of the blocks that use the tile, z its glow, w how close
+// to the eye (m) its faces dissolve (block data `nearFade`: leaves; dwell-mesh tile_grids).
 @group(0) @binding(3) var<uniform> tile_grids: array<vec4f, ATLAS_TILES>;
 
 // A fluid's look (render/water.rs `pack_fluids`; the registry's `fluids`), indexed by fluid id.
@@ -217,6 +218,13 @@ struct TerrainLight {
 // A surface open to the sky (LOD sections, players, water's own pieces).
 fn open_light() -> TerrainLight {
     return TerrainLight(1.0, 1.0, 0.0, vec3f(0.0));
+}
+
+// How close to the eye (m) faces with the tile at `tile_origin` dissolve (0: never): leaves, so a
+// canopy round the eye shows without faces against the lens (docs/FELLING.md).
+fn tile_near_fade(tile_origin: vec2f) -> f32 {
+    let cell = vec2u(clamp(floor(tile_origin * f32(ATLAS_CELLS)), vec2f(0.0), vec2f(f32(ATLAS_CELLS - 1u))));
+    return tile_grids[cell.x + cell.y * ATLAS_CELLS].w;
 }
 
 // How much of its colour the tile at `tile_origin` gives off unlit (its material's `emissive`,
@@ -657,6 +665,14 @@ fn cutout_fs(i: CutoutOut, @builtin(front_facing) front: bool) -> CutoutSceneOut
     if (i.fade.y > 0.0) {
         fade = 1.0 - smoothstep(i.fade.x, i.fade.y, length(i.rel));
         cover *= fade;
+    }
+    // Near the eye a leaf's faces dissolve (dithered, as a fading plant), from a third of its
+    // tile's near fade to all of it.
+    let near = tile_near_fade(i.tile.xy);
+    if (near > 0.0) {
+        let k = smoothstep(near * 0.33, near, length(i.rel));
+        cover *= k;
+        fade = min(fade, k);
     }
     let noise = pixel_noise(i.clip.xy);
     var mask = 0xffffffffu;

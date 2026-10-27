@@ -76,6 +76,9 @@ const RENDER_MODES = ['opaque', 'cutout', 'translucent'];
 // Which neighbour a `needsSupport` block stands on ("below": toward its face's ground; "behind":
 // the cell opposite its facing, a ladder's wall, docs/ITEMS.md).
 const SUPPORTS = ['below', 'behind'];
+// What a block counts as for holding things up (docs/FELLING.md §2); absent: ground.
+const SUPPORT_ROLES = ['ground', 'carrier', 'rider'];
+const AXES = ['x', 'y', 'z'];
 // The natural, moldable material groups (`moldable`; docs/ITEMS.md): building with one of a group
 // onto a slope of the same group replaces the slope.
 const MOLD_GROUP = /^[a-z][a-z0-9_]*$/;
@@ -261,6 +264,13 @@ function validateRender(id, def, look, isAir) {
   if (def.replaceable !== undefined && typeof def.replaceable !== 'boolean') fail(`${id}: replaceable must be true or false`);
   if (def.needsSupport === 'behind' && !def.facingProperty) fail(`${id}: needsSupport behind needs a facingProperty (what is behind it)`);
   if (def.onSlopes !== undefined && typeof def.onSlopes !== 'boolean') fail(`${id}: onSlopes must be true or false`);
+  if (def.support !== undefined && !SUPPORT_ROLES.includes(def.support)) {
+    fail(`${id}: support must be one of ${SUPPORT_ROLES.join(', ')}`);
+  }
+  if (def.passable !== undefined && typeof def.passable !== 'boolean') fail(`${id}: passable must be true or false`);
+  if (def.nearFade !== undefined && !(isNum(def.nearFade) && def.nearFade > 0 && def.nearFade <= 4)) {
+    fail(`${id}: nearFade must be in (0, 4] metres (how close to the eye its faces dissolve)`);
+  }
   if (def.moldable !== undefined && !(typeof def.moldable === 'string' && MOLD_GROUP.test(def.moldable))) {
     fail(`${id}: moldable must name a material group (lowercase letters, digits, _)`);
   }
@@ -314,6 +324,10 @@ for (const ns of namespaces) {
     if (def.facingProperty) {
       const p = props.find((q) => q.name === def.facingProperty);
       if (!p || p.values.some((v) => !FACINGS.includes(v))) fail(`${id}: facingProperty`);
+    }
+    if (def.axisProperty) {
+      const p = props.find((q) => q.name === def.axisProperty);
+      if (!p || p.values.some((v) => !AXES.includes(v))) fail(`${id}: axisProperty must name a property of x, y, z`);
     }
     if (def.shape === 'shaped' && !def.slopeFamily) fail(`${id}: shaped blocks come from shapeFamilies`);
     // Adaptive blocks (shaped from their neighbours) were removed with ½ m cells (ADR 0042): natural
@@ -720,6 +734,10 @@ if (!fixture) writeFileSync(join(root, 'client/src/world/blocks.gen.ts'), ts.joi
       `held: ${st.block.held === null ? 'None' : `Some(${rstr(st.block.held)})`}`,
       `extends_up: ${parts.get(st.block.id).extendsUp === null ? 'None' : `Some(${rstr(parts.get(st.block.id).extendsUp)})`}`,
       `part_of: ${parts.get(st.block.id).partOf === null ? 'None' : `Some(${rstr(parts.get(st.block.id).partOf)})`}`,
+      `support_role: SupportRole::${pascal(d.support ?? 'ground')}`,
+      `passable: ${!!d.passable}`,
+      `axis: Axis::${d.axisProperty ? st.values[d.axisProperty].toUpperCase() : 'Y'}`,
+      `near_fade: ${rf(d.nearFade ?? 0)}`,
     ];
     rs.push(`    StateInfo { ${fields.join(', ')} },`);
   }

@@ -474,6 +474,7 @@ impl Builder {
                 0 => (pz, ty),
                 _ => (px, ty),
             };
+            let (su, sv) = if tile.turn { (sv, su) } else { (su, sv) };
             self.m.uvs.extend([su as f32, sv as f32]);
             self.push_tile(tile);
         }
@@ -563,18 +564,20 @@ pub(crate) fn flip_diagonal(l: [f32; 4]) -> bool {
 }
 
 /// Vertex colour and texture tile of a face: textured faces take their colour from the texture.
+/// The faces along the block's axis (`style.axis`: up for most, a felled log's length) take its top
+/// and bottom tiles, the rest its side tile, turned where the face's v doesn't run along the axis
+/// (a side's v runs up, a top's along z), so a log's grain follows it.
 fn surface(style: &MaterialStyle, axis: usize, sign: i32) -> (u32, TileRect) {
     match style.textures {
         None => (style.color, tile_rect("plain")),
         Some(t) => {
-            let name = if axis != 1 {
-                t.side
-            } else if sign > 0 {
-                t.top
-            } else {
-                t.bottom
-            };
-            (0xffffff, tile_rect(name))
+            if axis == style.axis {
+                return (0xffffff, tile_rect(if sign > 0 { t.top } else { t.bottom }));
+            }
+            let v = if axis == 1 { 2 } else { 1 };
+            let mut tile = tile_rect(t.side);
+            tile.turn = v != style.axis;
+            (0xffffff, tile)
         }
     }
 }

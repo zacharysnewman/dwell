@@ -119,6 +119,12 @@ impl Built {
     }
 }
 
+/// Whether a cell stops players and bodies: solid, and not passable (leaves, docs/FELLING.md).
+fn collides(m: dwell_blocks::StateId) -> bool {
+    let s = info(m);
+    s.solid && !s.passable
+}
+
 fn build(world: &mut VoxelWorld, c: ChunkCoord) -> Built {
     let n = CHUNK_SIZE;
     let mut out = Built {
@@ -131,8 +137,8 @@ fn build(world: &mut VoxelWorld, c: ChunkCoord) -> Built {
     let (any_solid, all_solid) = {
         let v = world.read(c).voxels();
         (
-            v.iter().any(|&m| info(m).solid),
-            v.iter().all(|&m| info(m).solid),
+            v.iter().any(|&m| collides(m)),
+            v.iter().all(|&m| collides(m)),
         )
     };
     if !any_solid {
@@ -142,7 +148,7 @@ fn build(world: &mut VoxelWorld, c: ChunkCoord) -> Built {
     let buried = all_solid && {
         let above = world.read(ChunkCoord::new(c.x, c.y + up, c.z)).voxels();
         let row = if up > 0 { 0 } else { n - 1 };
-        (0..n).all(|z| (0..n).all(|x| info(above[local_index(x, row, z)]).solid))
+        (0..n).all(|z| (0..n).all(|x| collides(above[local_index(x, row, z)])))
     };
     let block = if buried {
         Vec::new()
@@ -150,10 +156,14 @@ fn build(world: &mut VoxelWorld, c: ChunkCoord) -> Built {
         world.padded_block(c, PAD)
     };
     let at = |x: i32, y: i32, z: i32| block[padded(x, y, z)];
-    let shape_at = |x: i32, y: i32, z: i32| dwell_blocks::shape::shape_of(at(x, y, z));
+    // A passable neighbour covers nothing: the face beside it is collided with.
+    let shape_at = |x: i32, y: i32, z: i32| {
+        let m = at(x, y, z);
+        dwell_blocks::shape::shape_of(if collides(m) { m } else { dwell_world::M.air })
+    };
     let voxels = world.read(c).voxels(); // borrowed: a 64 KiB copy overflows a WASM stack
     for (i, &m) in voxels.iter().enumerate() {
-        if !info(m).solid {
+        if !collides(m) {
             continue;
         }
         let (x, y, z) = ((i & 31) as i32, ((i >> 5) & 31) as i32, (i >> 10) as i32);

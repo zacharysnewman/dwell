@@ -19,9 +19,9 @@
 use dwell_protocol::bytes::{ByteReader, ByteWriter};
 
 use crate::{
-    AIR, Cross, FLUIDS, Facing, Fade, Grid, Medium, NewBlock, Origin, RenderMode, SHAPES, STATES,
-    ShapeInfo, SideUnder, StateId, StateInfo, Support, Textures, VoxelShape, Wind, blocks,
-    build_state, info, intern, register, shape::faces_of, state_count,
+    AIR, Axis, Cross, FLUIDS, Facing, Fade, Grid, Medium, NewBlock, Origin, RenderMode, SHAPES,
+    STATES, ShapeInfo, SideUnder, StateId, StateInfo, Support, SupportRole, Textures, VoxelShape,
+    Wind, blocks, build_state, info, intern, register, shape::faces_of, state_count,
 };
 
 /// The payload format this build reads and writes.
@@ -58,6 +58,9 @@ pub mod tag {
     pub const PARTS: u8 = 10;
     /// `str` the natural material group it is of (`StateInfo::moldable`, docs/ITEMS.md).
     pub const MOLDABLE: u8 = 11;
+    /// `u8` (0 ground, 1 carrier, 2 rider): what it counts as for holding things up
+    /// (`StateInfo::support_role`, docs/FELLING.md), sent only when not ground.
+    pub const SUPPORT_ROLE: u8 = 12;
     /// `str`.
     pub const LOOK: u8 = 0x81;
     /// `u32` sRGB, `f32` opacity.
@@ -93,6 +96,10 @@ pub mod tag {
     pub const LIGHT_SOURCE: u8 = 0x8e;
     /// `str` the item a hand holding it shows (`StateInfo::held`), sent only when it has one.
     pub const HELD: u8 = 0x8f;
+    /// `u8` (0 y, 1 x, 2 z): the axis its ends lie along (`StateInfo::axis`), sent only when not y.
+    pub const AXIS: u8 = 0x90;
+    /// `f32` m: how close to the eye its faces dissolve (`StateInfo::near_fade`), sent only when set.
+    pub const NEAR_FADE: u8 = 0x91;
 }
 
 /// Rule flag bits (tag `FLAGS`).
@@ -107,8 +114,10 @@ pub mod flag {
     pub const REPLACEABLE: u32 = 128;
     /// Placeable on a slope's top (`StateInfo::on_slopes`, docs/ITEMS.md).
     pub const ON_SLOPES: u32 = 256;
-    pub const KNOWN: u32 = 63 | REPLACEABLE | ON_SLOPES;
-    pub const NAMES: [(u32, &str); 8] = [
+    /// Players and falling pieces pass through it (`StateInfo::passable`, docs/FELLING.md).
+    pub const PASSABLE: u32 = 512;
+    pub const KNOWN: u32 = 63 | REPLACEABLE | ON_SLOPES | PASSABLE;
+    pub const NAMES: [(u32, &str); 9] = [
         (SOLID, "solid"),
         (INDESTRUCTIBLE, "indestructible"),
         (FLOODED, "flooded"),
@@ -117,6 +126,7 @@ pub mod flag {
         (PLACEABLE, "placeable"),
         (REPLACEABLE, "replaceable"),
         (ON_SLOPES, "on slopes"),
+        (PASSABLE, "passable"),
     ];
 }
 
@@ -235,6 +245,7 @@ pub fn state_fields(s: &StateInfo) -> Fields {
         (flag::PLACEABLE, s.placeable),
         (flag::REPLACEABLE, s.replaceable),
         (flag::ON_SLOPES, s.on_slopes),
+        (flag::PASSABLE, s.passable),
     ] {
         if on {
             flags |= bit;
@@ -306,6 +317,27 @@ pub fn state_fields(s: &StateInfo) -> Fields {
     }
     if let Some(m) = s.moldable {
         out.push(field(tag::MOLDABLE, |w| w.str(m)));
+    }
+    if s.support_role != SupportRole::Ground {
+        out.push(field(tag::SUPPORT_ROLE, |w| {
+            w.u8(match s.support_role {
+                SupportRole::Ground => 0,
+                SupportRole::Carrier => 1,
+                SupportRole::Rider => 2,
+            })
+        }));
+    }
+    if s.near_fade > 0.0 {
+        out.push(field(tag::NEAR_FADE, |w| w.f32(s.near_fade)));
+    }
+    if s.axis != Axis::Y {
+        out.push(field(tag::AXIS, |w| {
+            w.u8(match s.axis {
+                Axis::Y => 0,
+                Axis::X => 1,
+                Axis::Z => 2,
+            })
+        }));
     }
 
     out.push(field(tag::RENDER, |w| {
@@ -663,6 +695,10 @@ fn default_row(name: &str) -> StateInfo {
         held: None,
         extends_up: None,
         part_of: None,
+        support_role: SupportRole::Ground,
+        passable: false,
+        axis: Axis::Y,
+        near_fade: 0.0,
     }
 }
 
@@ -687,6 +723,7 @@ fn apply_rules(
     row.extends_up = None;
     row.part_of = None;
     row.moldable = None;
+    row.support_role = SupportRole::Ground;
     for (t, bytes) in fields {
         let mut r = ByteReader::new(bytes);
         match *t {
@@ -750,6 +787,17 @@ fn apply_rules(
                     row.moldable = Some(intern(&m));
                 }
             }
+            tag::SUPPORT_ROLE => {
+                row.support_role = match r.u8() {
+                    0 => SupportRole::Ground,
+                    1 => SupportRole::Carrier,
+                    2 => SupportRole::Rider,
+                    other => {
+                        notes.push(format!("support role {other} not in this version (ground)"));
+                        SupportRole::Ground
+                    }
+                }
+            }
             t if t & tag::LOOK_BIT == 0 => {
                 notes.push(format!("rule field {t} not in this version (ignored)"));
             }
@@ -765,6 +813,7 @@ fn apply_rules(
     row.placeable = has(flag::PLACEABLE);
     row.replaceable = has(flag::REPLACEABLE);
     row.on_slopes = has(flag::ON_SLOPES);
+    row.passable = has(flag::PASSABLE);
     if flags & !flag::KNOWN != 0 {
         notes.push(format!(
             "rule flags {:#x} not in this version (ignored)",
@@ -817,6 +866,8 @@ fn apply_look(fields: &Fields, fluids: &[String], row: &mut StateInfo) {
     row.render = RenderMode::Opaque;
     row.light = None;
     row.held = None;
+    row.axis = Axis::Y;
+    row.near_fade = 0.0;
     let mut outline = None;
     let mut light = None;
     for (t, bytes) in fields {
@@ -915,6 +966,19 @@ fn apply_look(fields: &Fields, fluids: &[String], row: &mut StateInfo) {
                 if r.ok() {
                     row.held = Some(intern(&s));
                 }
+            }
+            tag::NEAR_FADE => {
+                let v = r.f32();
+                if r.ok() && v.is_finite() {
+                    row.near_fade = v.clamp(0.0, 4.0);
+                }
+            }
+            tag::AXIS => {
+                row.axis = match r.u8() {
+                    1 => Axis::X,
+                    2 => Axis::Z,
+                    _ => Axis::Y,
+                };
             }
             tag::OUTLINE => {
                 let v = r.u8();
@@ -1291,6 +1355,44 @@ pub fn parts(payload: &[u8]) -> Vec<&[u8]> {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn a_states_support_passable_and_axis_travel() {
+        // docs/FELLING.md: what a block counts as for holding things up and whether players pass
+        // through it are rules (a client must honour them); a log's axis is a look.
+        let log = *crate::info(crate::parse_state("dwell:log[axis=x]").expect("a log along x"));
+        let leaves = *crate::info(crate::require("dwell:leaves"));
+        assert_eq!(
+            (log.support_role, log.passable, log.axis),
+            (SupportRole::Carrier, false, Axis::X)
+        );
+        assert_eq!(
+            (leaves.support_role, leaves.passable),
+            (SupportRole::Rider, true)
+        );
+        for s in [log, leaves] {
+            let fields = state_fields(&s);
+            let row = row_from_fields("test:copy", &fields, &[]);
+            assert_eq!(
+                (row.support_role, row.passable, row.axis),
+                (s.support_role, s.passable, s.axis),
+                "{}",
+                s.name
+            );
+        }
+        const { assert!(tag::SUPPORT_ROLE & tag::LOOK_BIT == 0 && tag::AXIS & tag::LOOK_BIT != 0) };
+        // The leaves' near fade (a look) travels too.
+        let mut row = default_row("test:leaves");
+        apply_look(&state_fields(&leaves), &[], &mut row);
+        assert!(leaves.near_fade > 0.0 && row.near_fade == leaves.near_fade);
+        // Stone sends neither: the defaults (ground, solid to players, upright).
+        let stone = state_fields(crate::info(crate::require("dwell:stone")));
+        assert!(
+            !stone
+                .iter()
+                .any(|(k, _)| *k == tag::SUPPORT_ROLE || *k == tag::AXIS)
+        );
+    }
 
     #[test]
     fn a_states_light_source_and_held_item_travel_as_looks() {

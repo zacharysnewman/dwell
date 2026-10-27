@@ -240,7 +240,7 @@ dwell_world::both_faces!(
                                 // Its own steep ramp's upper half, or a tree standing on it.
                                 solid(m)
                                     && !n.starts_with("dwell:grass")
-                                    && n != "dwell:log"
+                                    && !n.starts_with("dwell:log")
                                     && n != "dwell:leaves"
                             })
                         {
@@ -297,11 +297,11 @@ dwell_world::both_faces!(
             for z in 0..CHUNK_SIZE {
                 for x in 0..CHUNK_SIZE {
                     for y in 0..CHUNK_SIZE {
-                        if named(ch.voxels()[local_index(x, y, z)]) != "dwell:log" {
+                        if !named(ch.voxels()[local_index(x, y, z)]).starts_with("dwell:log") {
                             continue;
                         }
                         let below = cell(&chunks, *c, x, y - 1, z);
-                        if below.is_some_and(|m| named(m) != "dwell:log") {
+                        if below.is_some_and(|m| !named(m).starts_with("dwell:log")) {
                             trunks += 1;
                             if !below.is_some_and(solid) {
                                 floating.push((*c, x, y, z));
@@ -386,7 +386,7 @@ dwell_world::both_faces!(
                         let m = ch.voxels()[local_index(x, y, z)];
                         // The ground: rock, soil and water, not a tree's canopy over the air.
                         let ground = (solid(m)
-                            && !matches!(named(m), "dwell:log" | "dwell:leaves"))
+                            && !(named(m).starts_with("dwell:log") || named(m) == "dwell:leaves"))
                             || m == M.water;
                         s.push((c.y * CHUNK_SIZE + y, ground));
                     }
@@ -580,7 +580,8 @@ dwell_world::both_faces!(
                             for y in 1..SECTION_CELLS {
                                 let m = cells[cell_index(x, y, z)];
                                 let below = cells[cell_index(x, y - 1, z)];
-                                let tree = matches!(named(m), "dwell:log" | "dwell:leaves");
+                                let tree =
+                                    named(m).starts_with("dwell:log") || named(m) == "dwell:leaves";
                                 if solid(m) && !tree && below == M.air {
                                     under[k] += 1;
                                 }
