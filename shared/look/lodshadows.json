@@ -1,9 +1,9 @@
 {
   "$comment": "Sun and moon shadows on the distant terrain (docs/DAY_NIGHT.md §12, ADR 0046): the lighting's third layer, past the shadow cascades (shadows.json). The renderer draws the terrain as drawn (chunks, LOD sections) from above into heightmaps around the eye, a slice of the casters a frame; a sweep marches each texel's ray toward the light over them into a horizon map (the terrain's highest angle toward the light, a band of rows a frame); the scene's shaders read one horizon sample per far fragment: mountains shade valleys at dusk. It follows the Shadows setting (Off draws none; a CPU adapter draws none). Run `node shared/look/lodshadows.mjs` after editing; CI fails if crates/dwell-look/src/lodshadows.gen.rs is stale.",
   "heights": {
-    "$comment": "The face-local heights the maps hold (m over the midplane): below bottomM nothing casts; topM is over every terrain and build.",
+    "$comment": "The face-local heights the maps hold (m over the midplane): below bottomM nothing casts; topM is over every terrain (the world map's ranges reach ~2.6 km; a test in render/lod_shadows.rs checks the highest ground stays 256 m under it) and build on it. It was 1536 until 2026-10-26: everything above it was cut from the maps and read as shaded (docs/BUGS.md 3).",
     "bottomM": -16,
-    "topM": 1536
+    "topM": 4096
   },
   "march": {
     "$comment": "startTexels: the ray's first step from the texel (texels of its map). biasM: the ray starts this far over the texel's height (against a surface shading itself through the map's coarse texels). penumbraDeg: a ray this far under the horizon it meets is wholly in shade, this far over it wholly lit (a painterly soft edge; the sun's disc is about ½°). edgeFade: the shadows fade out over this last share of the outermost map's half-width, so its edge never shows.",

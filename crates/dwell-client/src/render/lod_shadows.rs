@@ -1490,4 +1490,26 @@ mod tests {
         // Face-local through the face frame's helpers only.
         assert!(w.contains("face_vector(face, lod_shadows.light.xyz)"));
     }
+
+    #[test]
+    fn the_maps_hold_the_highest_mountains() {
+        // docs/BUGS.md 3: the maps' top was 1,536 m while the world map's ranges reach ~2.4 km, so
+        // everything above it was cut from the heightmaps and read as shaded: a band at one height
+        // on every tall mountain, in shade at noon too. The highest ground of a few seeds (a
+        // 500 m grid over 60 km), with room for trees and building on the peaks, stays under the top.
+        let mut highest = f32::MIN;
+        for seed in [0u64, 7, 42] {
+            let g = dwell_worldgen::TerrainGenerator::new(seed);
+            for z in (-30_000..=30_000).step_by(500) {
+                for x in (-30_000..=30_000).step_by(500) {
+                    highest = highest.max(g.column_at(x, z).height);
+                }
+            }
+        }
+        assert!(
+            f64::from(highest) + 256.0 <= T.heights.top_m,
+            "the highest ground {highest} m, the maps' top {} m",
+            T.heights.top_m
+        );
+    }
 }
