@@ -370,4 +370,42 @@ mod tests {
         assert!(hit.px[0] <= 1.0, "at the left edge: {:?}", hit.px);
         assert!(hit.weight > 0.5, "{}", hit.weight);
     }
+
+    /// A tier's march from the data (as `reflection_uniforms` gives the shader).
+    fn tier_ssr(level: usize) -> Ssr {
+        let t = &dwell_look::reflections::REFLECTIONS;
+        let [m, s] = dwell_look::reflections::reflection_uniforms(t, level, 8, true);
+        Ssr {
+            steps: m[0] as u32,
+            refine: m[1] as u32,
+            reach: m[2],
+            fade_from: m[3],
+            edge_fade: s[2],
+            thickness: s[3],
+            thickness_rel: t.ssr.thickness_rel as f32,
+        }
+    }
+
+    #[test]
+    fn far_mountains_are_reflected_and_near_banks_still_are() {
+        // The owner (2026-10-26): tall mountains farther away didn't show in the water. A range
+        // 12 km off, 1.5 km tall, seen over the water 200 m ahead: Medium and High reflect it.
+        let v = view(0.12);
+        for level in [1, 2] {
+            let ssr = tier_ssr(level);
+            let far = lake(v, 12_000.0, 1_500.0);
+            let (p, r) = surface(&v, 200.0);
+            let hit = trace(&v, p, r, &ssr, &far);
+            assert!(
+                hit.is_some_and(|h| h.weight > 0.5),
+                "tier {level}: the range is reflected: {hit:?}"
+            );
+            // The longer reach still finds a bank close by.
+            let near = lake(v, 40.0, 10.0);
+            let (p, r) = surface(&v, 20.0);
+            let hit = trace(&v, p, r, &ssr, &near).expect("the near bank");
+            let at = ray(&v, hit.px);
+            assert!((at[1] * 40.0 / at[2]).abs() < 0.5, "tier {level}: {hit:?}");
+        }
+    }
 }
