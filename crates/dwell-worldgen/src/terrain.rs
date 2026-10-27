@@ -44,6 +44,7 @@ use crate::portals::{MIDPLANE, Part, Portal, Portals};
 use crate::ramps as ramps_rule;
 use crate::ramps::Top;
 use crate::worldmap::{self, WorldMap};
+use dwell_world::structure::Placed;
 
 /// A generator works face-locally: its band is [FACE_MIN_Y, FACE_MAX_Y), from the midplane to the
 /// build volume's top (the sphere is symmetric about the midplane, so both faces' bands are equal).
@@ -757,16 +758,52 @@ impl TerrainGenerator {
 
     /// The highest ground or water of the columns inside the disc, in rows, plus what grows on it
     /// (rows).
-    fn sky_floor(&self, cols: &[Column]) -> f32 {
-        cols.iter().filter(|c| !c.outside).fold(-1e9f32, |top, c| {
+    fn sky_floor(&self, cols: &[Column], (x0, z0): (i32, i32)) -> f32 {
+        let ground = cols.iter().filter(|c| !c.outside).fold(-1e9f32, |top, c| {
             top.max(rows(c.height)).max(c.water_row() as f32)
-        }) + self.rise
+        }) + self.rise;
+        let s = CHUNK_SIZE;
+        ground.max(self.monuments_top((x0, z0), (x0 + s - 1, z0 + s - 1)) as f32)
+    }
+
+    /// A portal's monument on this face: its anchor on the axis, its bottom row on the lowest
+    /// ground under its bottom layer (`None` without one).
+    pub fn monument(&self, portals: &Portals, portal: Portal) -> Option<Placed> {
+        let base = portals
+            .monument_feet(portal)
+            .into_iter()
+            .map(|(x, z)| top_voxel(self.column_at(x, z).height))
+            .min()?;
+        portals.monument_at(portal, base + 1)
+    }
+
+    /// The monuments reaching columns [x0, x1] × [z0, z1], placed.
+    fn monuments_near(&self, lo: (i32, i32), hi: (i32, i32)) -> Vec<Placed> {
+        let Some((portals, near)) = self.portals_near(lo, hi) else {
+            return Vec::new();
+        };
+        near.into_iter()
+            .filter_map(|p| self.monument(portals, p))
+            .filter(|m| {
+                m.max[0] >= lo.0 && m.min[0] <= hi.0 && m.max[2] >= lo.1 && m.min[2] <= hi.1
+            })
+            .collect()
+    }
+
+    /// The row over the highest monument cell reaching the columns (a very low row for none).
+    fn monuments_top(&self, lo: (i32, i32), hi: (i32, i32)) -> i32 {
+        self.monuments_near(lo, hi)
+            .iter()
+            .map(|m| m.max[1] + 1)
+            .max()
+            .unwrap_or(i32::MIN / 2)
     }
 
     /// The sky test's height (rows) for a chunk column: chunks with y0 above it (and at or above
     /// sea level) are air. Depends only on (cx, cz), so callers cache it per column.
     pub fn sky_floor_at(&self, cx: i32, cz: i32) -> f32 {
-        self.sky_floor(&self.chunk_columns(cx * CHUNK_SIZE, cz * CHUNK_SIZE))
+        let (x0, z0) = (cx * CHUNK_SIZE, cz * CHUNK_SIZE);
+        self.sky_floor(&self.chunk_columns(x0, z0), (x0, z0))
     }
 
     /// A column's ground as placements see it (`None` beyond the rim).
@@ -858,7 +895,7 @@ impl TerrainGenerator {
         }
         let cols = self.chunk_columns(x0, z0);
         // Sky above all ground and sea: all air (`is_air_chunk` is this same test).
-        if y0 as f32 > self.sky_floor(&cols) && y0 >= SEA_LEVEL {
+        if y0 as f32 > self.sky_floor(&cols, (x0, z0)) && y0 >= SEA_LEVEL {
             return;
         }
         let near = self.portals_near((x0, z0), (x0 + S - 1, z0 + S - 1));
@@ -953,6 +990,41 @@ impl TerrainGenerator {
             }
         }
         self.stamp_trees(coord, &cols, volume, chunk);
+        self.stamp_monuments(coord, volume, chunk);
+    }
+
+    /// Stands the portals' monuments reaching this chunk in it, over air and replaceable cells
+    /// only (the ground they stand on stays; a higher ground under a pillar holds it).
+    fn stamp_monuments(&self, coord: ChunkCoord, volume: Overlap, chunk: &mut Chunk) {
+        const S: i32 = CHUNK_SIZE;
+        let (x0, y0, z0) = (coord.x * S, coord.y * S, coord.z * S);
+        let monuments = self.monuments_near((x0, z0), (x0 + S - 1, z0 + S - 1));
+        if monuments.is_empty() {
+            return;
+        }
+        let voxels = chunk.voxels_mut();
+        for m in monuments.iter().filter(|m| !m.misses(coord)) {
+            for (p, state) in m.cells() {
+                let (lx, ly, lz) = (p[0] - x0, p[1] - y0, p[2] - z0);
+                let inside = (0..S).contains(&lx)
+                    && (0..S).contains(&ly)
+                    && (0..S).contains(&lz)
+                    && (FACE_MIN_Y..FACE_MAX_Y).contains(&p[1])
+                    && (volume != Overlap::Partial
+                        || BUILD_VOLUME.contains_voxel(
+                            i64::from(p[0]),
+                            i64::from(p[1]),
+                            i64::from(p[2]),
+                        ));
+                if !inside {
+                    continue;
+                }
+                let v = &mut voxels[local_index(lx, ly, lz)];
+                if *v == M.air || dwell_blocks::info(*v).replaceable {
+                    *v = state;
+                }
+            }
+        }
     }
 
     /// Stands the placed structures reaching this chunk in it, over air and replaceable cells
@@ -1229,7 +1301,9 @@ impl TerrainGenerator {
     /// The column bounds sections are classified by (`lod::kind_from_bounds`).
     pub fn lod_bounds_at(&self, level: i32, i: i32, k: i32) -> LodBounds {
         let o = lod::section_origin(LodCoord::new(level, i, 0, k));
-        Self::lod_bounds_of(&self.lod_columns(o, level), self.lod_rise(level))
+        let mut b = Self::lod_bounds_of(&self.lod_columns(o, level), self.lod_rise(level));
+        self.raise_for_monuments(&mut b, o, level);
+        b
     }
 
     /// A section evaluated at its cells' resolution: each cell samples the height field at its
@@ -1273,7 +1347,8 @@ impl TerrainGenerator {
         o.y = origin_y;
         let cell = lod::cell_size(c.level);
         let cols = self.lod_columns(o, c.level);
-        let bounds = Self::lod_bounds_of(&cols, self.lod_rise(c.level));
+        let mut bounds = Self::lod_bounds_of(&cols, self.lod_rise(c.level));
+        self.raise_for_monuments(&mut bounds, o, c.level);
         let kind = if bounds.any_inside {
             lod::kind_of_face(c.level, origin_y, bounds.lo, bounds.hi)
         } else {
@@ -1360,7 +1435,53 @@ impl TerrainGenerator {
             }
         }
         self.lod_trees(c.level, o, &cols, cells, surface);
+        self.lod_monuments(c.level, o, cells);
         (kind, bounds)
+    }
+
+    /// The monuments the LOD draws at `level` reaching a section from `o`: at levels whose cells
+    /// are at most `monument_lod_cell` m.
+    fn lod_monuments_near(&self, o: lod::LodOrigin, level: i32) -> Vec<Placed> {
+        let cell = lod::cell_size(level);
+        match &self.portals {
+            Some(p) if p.monument.is_some() && cell <= p.rules.monument_lod_cell => {}
+            _ => return Vec::new(),
+        }
+        let n = i64::from(lod::SECTION_CELLS);
+        let lo = ((o.x - cell) as i32, (o.z - cell) as i32);
+        let hi = ((o.x + (n + 1) * cell) as i32, (o.z + (n + 1) * cell) as i32);
+        self.monuments_near(lo, hi)
+    }
+
+    /// Lifts a section's open bound over the monuments it draws, so a section holding only a
+    /// monument's top isn't sky.
+    fn raise_for_monuments(&self, b: &mut LodBounds, o: lod::LodOrigin, level: i32) {
+        if !b.any_inside {
+            return;
+        }
+        for m in self.lod_monuments_near(o, level) {
+            b.hi = b.hi.max(f64::from(m.max[1] + 1));
+        }
+    }
+
+    /// The monuments in a section: a cell holding any of a monument's cells shows it (the first
+    /// one met), over air only, so a pillar narrower than a cell still reads from afar.
+    fn lod_monuments(&self, level: i32, o: lod::LodOrigin, cells: &mut LodCells) {
+        let cell = lod::cell_size(level);
+        let n = i64::from(lod::SECTION_CELLS);
+        for m in self.lod_monuments_near(o, level) {
+            for (p, state) in m.cells() {
+                let at = |p: i32, o: i64| (i64::from(p) - o).div_euclid(cell);
+                let (xi, yi, zi) = (at(p[0], o.x), at(p[1], o.y), at(p[2], o.z));
+                if [xi, yi, zi].iter().any(|&i| !(-1..=n).contains(&i)) {
+                    continue;
+                }
+                let c = &mut cells[lod::cell_index(xi as i32, yi as i32, zi as i32)];
+                if *c == M.air {
+                    *c = state;
+                }
+            }
+        }
     }
 
     /// The placed structures in a section: at levels of cells up to `LOD_TREE_CELL`, each tree

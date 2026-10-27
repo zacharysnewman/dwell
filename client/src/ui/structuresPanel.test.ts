@@ -50,7 +50,7 @@ describe('structures page', () => {
       size: [3, 3, 1],
     });
     expect(saveBox('corners', deps(), ['0 0 0', '32 0 0'])).toEqual({
-      error: 'That is 33 × 1 × 1: a structure is at most 32 a side.',
+      error: 'That is 33 × 1 × 1: a structure is at most 32 across and 64 tall.',
     });
   });
 

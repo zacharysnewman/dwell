@@ -5,6 +5,8 @@
 // the committed ones look.
 import {
   MAX_EDGE,
+  MAX_HEIGHT,
+  maxEdge,
   registryFromBlockDefs,
   TOP_LEVEL,
   validate,
@@ -13,7 +15,7 @@ import {
 } from '../../../shared/structures/format.mjs';
 import { BLOCK_DEFS, STATE_DEFS, stateId } from '../world/blocks';
 
-export { MAX_EDGE, type ValidStructure };
+export { MAX_EDGE, MAX_HEIGHT, maxEdge, type ValidStructure };
 
 export type Vec3 = [number, number, number];
 
@@ -234,9 +236,9 @@ export function structureFromVoxels(options: {
 }): StructureJson {
   const { name, size, cells } = options;
   const [sx, sy, sz] = size;
-  if (size.some((n) => !Number.isInteger(n) || n < 1 || n > MAX_EDGE)) {
+  if (size.some((n, i) => !Number.isInteger(n) || n < 1 || n > maxEdge(i))) {
     throw new Error(
-      `A structure is at most ${String(MAX_EDGE)} blocks on each side, not ${sizeLabel(size)}.`,
+      `A structure is at most ${String(MAX_EDGE)} blocks across and ${String(MAX_HEIGHT)} tall, not ${sizeLabel(size)}.`,
     );
   }
   if (cells.length !== sx * sy * sz) throw new Error('The cells do not fill the box.');

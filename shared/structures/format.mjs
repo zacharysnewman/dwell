@@ -4,8 +4,13 @@
 
 /** The format version this generator reads (a file's `"format"`). */
 export const FORMAT = 1;
-/** The largest edge of a hand-built (`"voxels"`) structure, in voxels (owner, 2026-10-14). */
+/** The largest horizontal edge of a hand-built (`"voxels"`) structure, in voxels (owner, 2026-10-14). */
 export const MAX_EDGE = 32;
+/** Its largest height, in rows of ½ m cells: 32 m, the owner's 32 at 1 m cells (2026-10-26, the
+ * 30 m portal arch). */
+export const MAX_HEIGHT = 64;
+/** The largest edge along axis `i` (0 x, 1 y, 2 z). */
+export const maxEdge = (i) => (i === 1 ? MAX_HEIGHT : MAX_EDGE);
 /** Structure kinds: an open list; each needs its validator here and its body in the Rust loader. */
 export const KINDS = ['voxels'];
 /** Variant operations, in the canonical order they apply: an open list, as for kinds. */
@@ -94,8 +99,8 @@ export function validate(json, file, registry) {
 
   // kind "voxels": size, anchor, palette, layers.
   const { size, anchor } = json;
-  if (!isTriple(size) || size.some((n) => n < 1 || n > MAX_EDGE)) {
-    fail('size', `must be [x, y, z], each 1..${MAX_EDGE}, not ${JSON.stringify(size)}`);
+  if (!isTriple(size) || size.some((n, i) => n < 1 || n > maxEdge(i))) {
+    fail('size', `must be [x, y, z], x and z 1..${MAX_EDGE}, y 1..${MAX_HEIGHT}, not ${JSON.stringify(size)}`);
   }
   if (!isTriple(anchor) || anchor.some((n, i) => n < 0 || n >= size[i])) {
     fail('anchor', `must be [x, y, z] inside the size ${JSON.stringify(size)}, not ${JSON.stringify(anchor)}`);

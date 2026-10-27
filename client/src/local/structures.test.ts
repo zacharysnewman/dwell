@@ -129,7 +129,7 @@ describe('structures in the client', () => {
         'palette."s": unknown block "dwell:nope"',
         { ...good, palette: { '.': null, s: 'dwell:nope', l: 'dwell:ladder', S: 'dwell:sand' } },
       ],
-      ['size: must be [x, y, z], each 1..32', { ...good, size: [33, 2, 2] }],
+      ['size: must be [x, y, z], x and z 1..32, y 1..64', { ...good, size: [33, 2, 2] }],
       ['anchor: must be [x, y, z] inside the size', { ...good, anchor: [3, 0, 0] }],
       [
         'layers[0][1][0]: "?" is not in the palette',
