@@ -1793,7 +1793,10 @@ impl Server {
                 }
                 s.edit_credit -= 1.0;
                 s.stats.edits_applied += 1;
-                changes.set_and_unsupport(&mut self.world, outcome.cell, outcome.material);
+                // Every cell of the piece (a 1 m block's two; docs/ITEMS.md) in one set of writes.
+                for (at, m) in outcome.writes(&mut self.world, medium_kept) {
+                    changes.set(&mut self.world, at, m);
+                }
             }
             // Region edits (§6.5), after the block edits, in the order they arrived; each costs
             // its box's volume in cells, valid or not (validation reads the whole box).

@@ -6,10 +6,10 @@ use dwell_blocks::shape::{
     faces_of, plant_sink, ray_enter_shape, shape_of, vertical_segment_distance_sq,
 };
 use dwell_blocks::{
-    Medium, ShapeFace, ShapeInfo, StateId, StateInfo, Support, VoxelShape, block_of, info,
+    Facing, Medium, ShapeFace, ShapeInfo, StateId, StateInfo, Support, VoxelShape, block_of, info,
     state_property, with_property,
 };
-use dwell_protocol::{BlockEditAction, BlockEditRequest, ChunkChanges, players};
+use dwell_protocol::{BlockEditAction, BlockEditRequest, ChunkChanges, MAX_PIECE_ROWS, players};
 
 use crate::{
     CELL, CELL_H, ChunkCoord, FaceFrame, M, VoxelWorld, cell_dir, cell_space, inside_build_volume,
@@ -188,6 +188,28 @@ pub fn above(cell: [i32; 3]) -> [i32; 3] {
     [cell[0], cell[1] + up, cell[2]]
 }
 
+/// The four horizontal directions.
+const SIDES: [[i32; 3]; 4] = [[1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1]];
+
+/// The cell a `needsSupport: behind` block at `cell` hangs on: opposite its facing (a ladder
+/// facing north hangs on the block to its south). None for a block without a facing.
+pub fn behind(cell: [i32; 3], m: StateId) -> Option<[i32; 3]> {
+    let d = match info(m).facing {
+        Facing::North => [0, 0, 1],
+        Facing::South => [0, 0, -1],
+        Facing::East => [-1, 0, 0],
+        Facing::West => [1, 0, 0],
+        Facing::None => return None,
+    };
+    Some([cell[0] + d[0], cell[1], cell[2] + d[2]])
+}
+
+/// Whether a block can hold one hung on its side (a ladder): a full, solid block.
+pub fn holds_behind(m: StateId) -> bool {
+    let s = info(m);
+    s.solid && s.shape == VoxelShape::Full
+}
+
 /// The name of the block a state belongs to ("" for an id outside the table).
 fn block_name(m: StateId) -> &'static str {
     if usize::from(m) < dwell_blocks::state_count() {
@@ -221,8 +243,18 @@ pub fn edit_writes(
     cell: [i32; 3],
     material: StateId,
 ) -> Vec<([i32; 3], StateId)> {
+    edit_writes_all(world, &[(cell, material)])
+}
+
+/// [`edit_writes`] for several cells set at once (a 1 m piece's two cells; docs/ITEMS.md), each
+/// with what it brings and what it leaves unsupported, read against `world` before any is applied.
+pub fn edit_writes_all(
+    world: &mut VoxelWorld,
+    cells: &[([i32; 3], StateId)],
+) -> Vec<([i32; 3], StateId)> {
     let mut out: Vec<([i32; 3], StateId)> = Vec::new();
-    let mut queue = std::collections::VecDeque::from([(cell, material)]);
+    let mut queue: std::collections::VecDeque<([i32; 3], StateId)> =
+        cells.iter().copied().collect();
     // A write never comes back to a cell (a part cleared, or a cell left unsupported, once).
     while let Some((c, m)) = queue.pop_front() {
         if out.iter().any(|(o, _)| *o == c) || out.len() >= 64 {
@@ -252,6 +284,18 @@ pub fn edit_writes(
                 && current(world, &out, p) != part
             {
                 queue.push_back((p, part));
+            }
+        }
+        // A block hung on it (a ladder: `needsSupport` behind), if this leaves it nothing to
+        // hang on.
+        if !holds_behind(m) {
+            for d in SIDES {
+                let n = [c[0] + d[0], c[1], c[2] + d[2]];
+                let there = current(world, &out, n);
+                if info(there).needs_support == Support::Behind && behind(n, there) == Some(c) {
+                    let left = if info(there).flooded { M.water } else { M.air };
+                    queue.push_back((n, left));
+                }
             }
         }
         // The block standing on it, if this leaves it unsupported.
@@ -483,6 +527,9 @@ pub enum EditCheck {
     /// Place: the cell's medium isn't the block's (block data `medium`: an air plant into water, a
     /// water plant into air).
     WrongMedium,
+    /// Place: onto a slope's top, by a block that may not stand there (only `onSlopes` blocks, and
+    /// a moldable material of the slope's own, which replaces it; docs/ITEMS.md).
+    OnSlope,
 }
 
 /// Extra reach the server allows over `REACH_DISTANCE`: its view of the player lags the client's.
@@ -495,6 +542,8 @@ pub struct EditOutcome {
     /// The cell that changes (Place: next to the target).
     pub cell: [i32; 3],
     pub material: StateId,
+    /// A 1 m piece's second cell (docs/ITEMS.md), set to `material` too.
+    pub also: Option<[i32; 3]>,
 }
 
 impl EditOutcome {
@@ -503,7 +552,25 @@ impl EditOutcome {
             check,
             cell: [0; 3],
             material: M.air,
+            also: None,
         }
+    }
+
+    /// Every cell the edit sets to `material`, the placed cell first.
+    pub fn cells(&self) -> impl Iterator<Item = [i32; 3]> + '_ {
+        std::iter::once(self.cell).chain(self.also)
+    }
+
+    /// The writes the edit makes ([`edit_writes_all`] of its cells), `keep` applied to the
+    /// material first (the server's `medium_kept`).
+    pub fn writes(
+        &self,
+        world: &mut VoxelWorld,
+        keep: impl Fn(StateId) -> StateId,
+    ) -> Vec<([i32; 3], StateId)> {
+        let m = keep(self.material);
+        let cells: Vec<([i32; 3], StateId)> = self.cells().map(|c| (c, m)).collect();
+        edit_writes_all(world, &cells)
     }
 }
 
@@ -628,46 +695,125 @@ pub fn check_block_edit(
         }
         // A flooded shape leaves the water that filled its open part.
         let material = if info(target).flooded { M.water } else { M.air };
+        // A 1 m piece takes the next cell into the block too (down from a top face, up from a
+        // bottom one; against a side, up, or down with `down`), if it holds something breakable
+        // that leaves the same (docs/ITEMS.md).
+        let also = (request.rows > 1)
+            .then(|| {
+                let up = FaceFrame::at_row(c[1]).sign();
+                let dy = match request.face {
+                    2 => -1,
+                    3 => 1,
+                    _ if request.down => -up,
+                    _ => up,
+                };
+                [c[0], c[1] + dy, c[2]]
+            })
+            .filter(|p| {
+                let there = world.get_voxel(p[0], p[1], p[2]);
+                targetable(there)
+                    && !unbreakable(there)
+                    && info(there).flooded == info(target).flooded
+            });
         return EditOutcome {
             check: EditCheck::Ok,
             cell: c,
             material,
+            also,
         };
     }
     if !placeable(request.material) {
         return EditOutcome::fail(EditCheck::NotPlaceable);
     }
-    // A replaceable target (tall grass) is placed into; anything else is placed against.
+    let placed = info(request.material);
+    let rows = request.rows.clamp(1, MAX_PIECE_ROWS);
+    // A multi-cell block (a torch) brings its own other cells: it is one cell's piece.
+    if rows > 1 && placed.extends_up.is_some() {
+        return EditOutcome::fail(EditCheck::NotPlaceable);
+    }
+    let t = info(target);
+    // A slope (a stored ramp) is built on by plants only (`onSlopes`); a moldable material of the
+    // slope's own group replaces it instead (docs/ITEMS.md).
+    let molds = |there: StateId| {
+        let s = info(there);
+        s.shape == VoxelShape::Shaped && s.moldable.is_some() && s.moldable == placed.moldable
+    };
+    let face_up = request.face == if FaceFrame::at_row(c[1]).is_b() { 3 } else { 2 };
+    if t.shape == VoxelShape::Shaped && !molds(target) && !placed.on_slopes && face_up {
+        return EditOutcome::fail(EditCheck::OnSlope);
+    }
+    // A replaceable target (tall grass) or a slope being molded is placed into; anything else is
+    // placed against.
     let n = FACE_DIRS[usize::from(request.face)];
-    let cell = if info(target).replaceable && !info(target).indestructible {
+    let cell = if (t.replaceable && !t.indestructible) || molds(target) {
         c
     } else {
         [c[0] + n[0], c[1] + n[1], c[2] + n[2]]
     };
-    // The build volume bounds building (ADR 0025); the disc, the terrain's columns.
-    if !inside_build_volume(i64::from(cell[0]), i64::from(cell[1]), i64::from(cell[2]))
-        || !inside_world_disc(i64::from(cell[0]), i64::from(cell[2]))
+    // A 1 m piece's second cell: away from a top or bottom face; up from a side face (toward the
+    // face's sky), or down with `down`, so it lines up with what was aimed at.
+    let also = (rows > 1).then(|| {
+        let up = FaceFrame::at_row(cell[1]).sign();
+        let dy = match request.face {
+            2 => 1,
+            3 => -1,
+            _ if request.down => -up,
+            _ => up,
+        };
+        [cell[0], cell[1] + dy, cell[2]]
+    });
+    let mut material = request.material;
+    for (i, p) in std::iter::once(cell).chain(also).enumerate() {
+        // The build volume bounds building (ADR 0025); the disc, the terrain's columns.
+        if !inside_build_volume(i64::from(p[0]), i64::from(p[1]), i64::from(p[2]))
+            || !inside_world_disc(i64::from(p[0]), i64::from(p[2]))
+        {
+            return EditOutcome::fail(EditCheck::OutOfWorld);
+        }
+        let existing = world.get_voxel(p[0], p[1], p[2]);
+        if targetable(existing) && !info(existing).replaceable && !molds(existing) {
+            return EditOutcome::fail(EditCheck::Occupied);
+        }
+        // Placing into a liquid replaces it: not one the data marks indestructible.
+        if unbreakable(existing) {
+            return EditOutcome::fail(EditCheck::Unbreakable);
+        }
+        if !medium_allows(placed, info(existing)) {
+            return EditOutcome::fail(EditCheck::WrongMedium);
+        }
+        let m = flooded_for(request.material, existing);
+        if i == 0 {
+            material = m;
+        }
+        if overlaps_player(m, p, players) {
+            return EditOutcome::fail(EditCheck::IntoPlayer);
+        }
+        // Hung on a wall (a ladder): on the block it was placed against, which must hold it.
+        if placed.needs_support == Support::Behind {
+            let wall = behind(p, m);
+            let held = wall.is_some_and(|w| {
+                let there = if w == c {
+                    target
+                } else {
+                    world.get_voxel(w[0], w[1], w[2])
+                };
+                holds_behind(there)
+            });
+            if !held || (i == 0 && wall != Some(c)) {
+                return EditOutcome::fail(EditCheck::NoSupport);
+            }
+        }
+    }
+    // It stands on what is under its lowest cell.
+    let lowest = match also {
+        Some(a) if below(cell) == a => a,
+        _ => cell,
+    };
+    let under = below(lowest);
+    if placed.needs_support != Support::Behind
+        && !supported_on(material, world.get_voxel(under[0], under[1], under[2]))
     {
-        return EditOutcome::fail(EditCheck::OutOfWorld);
-    }
-    let existing = world.get_voxel(cell[0], cell[1], cell[2]);
-    if targetable(existing) && !info(existing).replaceable {
-        return EditOutcome::fail(EditCheck::Occupied);
-    }
-    // Placing into a liquid replaces it: not one the data marks indestructible.
-    if unbreakable(existing) {
-        return EditOutcome::fail(EditCheck::Unbreakable);
-    }
-    if !medium_allows(info(request.material), info(existing)) {
-        return EditOutcome::fail(EditCheck::WrongMedium);
-    }
-    let material = flooded_for(request.material, existing);
-    let under = below(cell);
-    if !supported_on(material, world.get_voxel(under[0], under[1], under[2])) {
         return EditOutcome::fail(EditCheck::NoSupport);
-    }
-    if overlaps_player(material, cell, players) {
-        return EditOutcome::fail(EditCheck::IntoPlayer);
     }
     // A multi-cell block needs its other cells free too (a 1 m torch's upper cell).
     for (p, name) in partners(cell, material) {
@@ -694,6 +840,7 @@ pub fn check_block_edit(
         check: EditCheck::Ok,
         cell,
         material,
+        also,
     }
 }
 

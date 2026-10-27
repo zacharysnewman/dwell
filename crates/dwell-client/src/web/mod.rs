@@ -70,13 +70,26 @@ pub async fn probe_scene() -> Result<Vec<u8>, JsError> {
         .map_err(|e| JsError::new(&e))
 }
 
-/// The hotbar picture of palette slot `slot` (TILE × TILE RGBA8).
+/// The hotbar picture of palette slot `slot` (TILE × TILE RGBA8): a ½ m piece of a full block
+/// shows its lower half only (docs/ITEMS.md).
 #[wasm_bindgen(js_name = hotbarSwatch)]
 pub fn hotbar_swatch(slot: usize) -> Vec<u8> {
     let palette = dwell_game::block_interaction::palette();
-    palette
-        .get(slot)
-        .map_or_else(Vec::new, |p| dwell_mesh::swatch(p.material))
+    palette.get(slot).map_or_else(Vec::new, |p| {
+        let mut px = dwell_mesh::swatch(p.material);
+        let full = dwell_blocks::info(p.material).shape == dwell_blocks::VoxelShape::Full;
+        if p.rows == 1 && full {
+            half_swatch(&mut px, dwell_mesh::TILE);
+        }
+        px
+    })
+}
+
+/// Clears a `tile` × `tile` RGBA8 picture's upper half (a ½ m piece's swatch).
+pub fn half_swatch(px: &mut [u8], tile: usize) {
+    for b in px.iter_mut().take(tile * 4 * (tile / 2)).skip(3).step_by(4) {
+        *b = 0;
+    }
 }
 
 /// The hotbar pictures' side, pixels.

@@ -60,6 +60,8 @@ fn place(cell: [i32; 3], face: u8, m: u16) -> Message {
         cell,
         face,
         material: m,
+        rows: 1,
+        down: false,
     })
 }
 

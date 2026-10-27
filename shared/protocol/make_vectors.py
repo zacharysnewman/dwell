@@ -156,9 +156,12 @@ BA = c["blockEditActions"]
 VR = c["voxelModificationReasons"]
 
 
-def block_edit(action, cell, face, material=None):
+def block_edit(action, cell, face, material=None, rows=1, down=False, piece=True):
     out = struct.pack("<BBiiiB", T["BlockEditRequest"], action, *cell, face)
-    return out + (struct.pack("<H", material) if material is not None else b"")
+    if material is not None:
+        out += struct.pack("<H", material)
+    # The piece (docs/ITEMS.md): rows in the low bits, down the top bit.
+    return out + (struct.pack("<B", rows | (0x80 if down else 0)) if piece else b"")
 
 
 def voxel_modification(reason, tick, chunks):
@@ -303,6 +306,7 @@ vectors = {
     + struct.pack("<iiiiii", 1, 2, 3, -4, -5, 2000000),
     "block_edit_break": block_edit(BA["Break"], (8191999, -2048, -12), 3),
     "block_edit_place": block_edit(BA["Place"], (-7, 64, 3), 4, 16),
+    "block_edit_place_piece": block_edit(BA["Place"], (5, -3, 9), 0, 16, rows=2, down=True),
     "region_edit_fill": region_head(RO["Fill"], (-8191999, -2048, 12), (32, 1, 7))
     + struct.pack("<H", 3),
     "region_edit_hollow": region_head(RO["Hollow"], (0, 5, -1), (3, 4, 5)) + struct.pack("<H", 0),
@@ -420,6 +424,9 @@ malformed = {
     "!block_edit_bad_face": block_edit(BA["Break"], (0, 0, 0), 6),
     "!block_edit_break_material": block_edit(BA["Break"], (0, 0, 0), 0, 2),
     "!block_edit_place_no_material": block_edit(BA["Place"], (0, 0, 0), 0),
+    "!block_edit_no_piece": block_edit(BA["Break"], (0, 0, 0), 0, piece=False),
+    "!block_edit_place_no_rows": block_edit(BA["Place"], (0, 0, 0), 0, 16, rows=0),
+    "!block_edit_place_too_tall": block_edit(BA["Place"], (0, 0, 0), 0, 16, rows=3),
     "!region_edit_bad_op": region_head(0, (0, 0, 0), (1, 1, 1)) + struct.pack("<H", 1),
     "!edit_ack_past_through": edit_ack(3, [4]),
     "!edit_ack_zero": edit_ack(3, [0]),

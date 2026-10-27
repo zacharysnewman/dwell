@@ -122,7 +122,8 @@ test('local mode: every palette block can be picked from the hotbar, placed, and
   await page.goto('./?world=flat');
   await ready(page);
   // The hotbar is built once the page has taken the join, which can be a frame after the terrain.
-  await expect(page.locator('.hotbar-slot')).toHaveCount(11);
+  // One slot per item (shared/items/items.json, docs/ITEMS.md).
+  await expect(page.locator('.hotbar-slot')).toHaveCount(16);
   const slots = await page.locator('.hotbar-slot').count();
   const ground = await aim(page);
   expect(ground.face).toBe(2);
@@ -134,6 +135,12 @@ test('local mode: every palette block can be picked from the hotbar, placed, and
     if (slot < 10) await page.keyboard.press(`Digit${String((slot + 1) % 10)}`);
     else await page.locator(`.hotbar-slot[data-slot="${String(slot)}"]`).click();
     await expect(page.locator('.hotbar-slot.selected')).toHaveAttribute('data-slot', String(slot));
+    // A ladder hangs on a block's side, never on the ground's top (docs/ITEMS.md; the placement
+    // rules' tests, dwell-world tests/placement.rs, hang it).
+    const title = await page
+      .locator(`.hotbar-slot[data-slot="${String(slot)}"]`)
+      .getAttribute('title');
+    if (title === 'Ladder') continue;
 
     // Back to the ground cell, and wait until it is the target: the target is the previous look's
     // (aimed at the block just broken, so past it now) until the next frame re-targets.

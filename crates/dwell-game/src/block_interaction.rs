@@ -4,7 +4,7 @@
 //! goes through [`TargetSource`], which the client's voxel world implements with
 //! `dwell_world::edit::raycast_block`.
 
-use dwell_blocks::{BLOCKS, Facing, STATES, StateId, info};
+use dwell_blocks::{Facing, STATES, StateId, info};
 use dwell_protocol::{BlockEditAction, BlockEditRequest, Message, players};
 use dwell_world::edit::{FACE_DIRS, placeable, raycast_block};
 use dwell_world::{FaceFrame, VoxelWorld, inside_build_volume};
@@ -13,10 +13,14 @@ pub use crate::input::EditAction;
 
 /// A targeted block: its cell and the face the view ray entered through (0 +X, 1 −X, 2 +Y, 3 −Y,
 /// 4 +Z, 5 −Z).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct BlockTarget {
     pub cell: [i32; 3],
     pub face: u8,
+    /// Where the aim meets the cell, face-locally up its height (0 its bottom, 1 its top): a 1 m
+    /// piece placed against a side goes down from the placed cell when it is under ½, so the piece
+    /// is centred on the aim (docs/ITEMS.md).
+    pub aim_up: f32,
 }
 
 /// What the interaction needs from the client sim: the block along a view ray (unit `dir`).
@@ -42,9 +46,19 @@ impl TargetSource for VoxelWorld {
         dir: [f32; 3],
         max_distance: f32,
     ) -> Option<BlockTarget> {
-        raycast_block(self, origin, dir, max_distance).map(|h| BlockTarget {
-            cell: h.cell,
-            face: h.face,
+        raycast_block(self, origin, dir, max_distance).map(|h| {
+            let y = origin[1] + f64::from(dir[1]) * f64::from(h.distance);
+            let rows = y / dwell_world::CELL_H - f64::from(h.cell[1]);
+            let up = if FaceFrame::at_row(h.cell[1]).is_b() {
+                1.0 - rows
+            } else {
+                rows
+            };
+            BlockTarget {
+                cell: h.cell,
+                face: h.face,
+                aim_up: up.clamp(0.0, 1.0) as f32,
+            }
         })
     }
     fn replaceable(&mut self, [x, y, z]: [i32; 3]) -> bool {
@@ -56,45 +70,44 @@ impl TargetSource for VoxelWorld {
     }
 }
 
-/// A hotbar slot: one placeable block, or every ladder (the facing follows the placement).
+/// A hotbar slot: an item (docs/ITEMS.md) — its block at a height; a ladder's facing follows the
+/// placement.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PaletteSlot {
-    /// The block id without its namespace, e.g. `stone`.
+    /// What the hotbar calls it (the item's label), e.g. `Stone, ½ m`.
     pub name: String,
+    /// The item, e.g. `dwell:stone_half`.
+    pub item: &'static str,
     /// Namespaced block id, e.g. `dwell:stone`.
     pub block: &'static str,
     /// State shown and placed (for ladders: the first placeable one).
     pub material: StateId,
     pub ladder: bool,
+    /// Its height in ½ m cells (2: a 1 m block).
+    pub rows: u8,
 }
 
 const LOOK_LADDER: &str = "ladder";
-const LOOK_SHAPED: &str = "shaped";
 
-/// The palette (§6.5): one slot per placeable block (its first placeable state), ladders as one,
-/// from the block registry's data.
+/// The palette (§6.5): the items' slots (`shared/items/items.json`), each its block's first
+/// placeable state; an item whose block this registry can't place is left out.
 pub fn palette() -> Vec<PaletteSlot> {
-    let mut out = Vec::new();
-    let mut previous_block = None;
-    for (id, s) in STATES.iter().enumerate() {
-        let Ok(id) = StateId::try_from(id) else { break };
-        if !placeable(id) {
-            continue;
-        }
-        let same_block = previous_block == Some(s.block);
-        previous_block = Some(s.block);
-        if s.look == LOOK_SHAPED || same_block {
-            continue;
-        }
-        let block = BLOCKS[s.block].name;
-        out.push(PaletteSlot {
-            name: block[block.find(':').map_or(0, |i| i + 1)..].to_owned(),
-            block,
-            material: id,
-            ladder: s.look == LOOK_LADDER,
-        });
-    }
-    out
+    crate::items::ITEMS
+        .iter()
+        .filter_map(|it| {
+            let block = dwell_blocks::find_block(it.block)?;
+            let material = (block.first_state..block.first_state + block.state_count)
+                .find(|&id| placeable(id))?;
+            Some(PaletteSlot {
+                name: it.label.to_owned(),
+                item: it.name,
+                block: it.block,
+                material,
+                ladder: info(material).look == LOOK_LADDER,
+                rows: it.rows,
+            })
+        })
+        .collect()
 }
 
 /// The face a ladder's plate faces out of (0 +X, 1 −X, 4 +Z, 5 −Z): north is −Z, east +X.
@@ -270,11 +283,16 @@ impl BlockInteraction {
             }
         };
         self.last_edit_ms = now_ms;
+        // A break takes as much as the held item is tall (a 1 m block breaks 1 m; docs/ITEMS.md).
+        let rows = self.palette.get(self.selected).map_or(1, |s| s.rows);
         Some(Message::BlockEditRequest(BlockEditRequest {
             action,
             cell: t.cell,
             face: t.face,
             material,
+            rows,
+            // Against a side, centred on the aim: down when it is in the cell's lower half.
+            down: rows > 1 && t.face != 2 && t.face != 3 && t.aim_up < 0.5,
         }))
     }
 }
@@ -293,24 +311,19 @@ mod tests {
     }
 
     #[test]
-    fn offers_every_placeable_material_once_ladders_as_one_slot() {
-        let names: Vec<_> = palette().into_iter().map(|s| s.name).collect();
+    fn offers_the_items_in_order_1_m_by_default_and_half_pieces_as_their_own_slots() {
+        // docs/ITEMS.md: the hotbar is the items' data (shared/items/items.json).
+        let slots = palette();
+        let names: Vec<_> = slots.iter().map(|s| s.name.as_str()).collect();
+        let want: Vec<_> = crate::items::ITEMS.iter().map(|i| i.label).collect();
+        assert_eq!(names, want);
+        let stone = slots.iter().find(|s| s.item == "dwell:stone").unwrap();
+        let half = slots.iter().find(|s| s.item == "dwell:stone_half").unwrap();
         assert_eq!(
-            names,
-            [
-                "stone",
-                "dirt",
-                "grass",
-                "ladder",
-                "sand",
-                "log",
-                "leaves",
-                "tall_grass",
-                "torch",
-                "snowy_grass",
-                "snowy_leaves"
-            ]
+            (stone.rows, half.rows, stone.material),
+            (2, 1, half.material)
         );
+        assert!(slots.iter().any(|s| s.ladder));
     }
 
     #[test]
@@ -358,6 +371,7 @@ mod tests {
             Some(BlockTarget {
                 cell: [3, 0, 4],
                 face: 5,
+                aim_up: 0.5,
             })
         }
     }
@@ -411,12 +425,16 @@ mod tests {
                     cell: [3, 0, 4],
                     face: 5,
                     material: 0,
+                    rows: 2,
+                    down: false,
                 }),
                 Message::BlockEditRequest(BlockEditRequest {
                     action: BlockEditAction::Place,
                     cell: [3, 0, 4],
                     face: 5,
                     material: require("dwell:dirt"),
+                    rows: 2,
+                    down: false,
                 }),
             ]
         );
@@ -497,7 +515,7 @@ mod tests {
         let sand = interaction
             .palette()
             .iter()
-            .position(|s| s.name == "sand")
+            .position(|s| s.item == "dwell:sand")
             .unwrap();
         interaction.select(sand as i64);
         // Looking +Z at the −Z face (5) of cell (3, 0, 4).
@@ -541,7 +559,8 @@ mod tests {
             t,
             Some(BlockTarget {
                 cell: [3, 0, 4],
-                face: 5
+                face: 5,
+                aim_up: 0.5,
             })
         );
     }

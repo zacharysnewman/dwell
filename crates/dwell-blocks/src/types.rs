@@ -115,6 +115,9 @@ pub enum Support {
     None,
     /// The cell below it, toward its face's ground (−y on face A, +y on face B).
     Below,
+    /// The cell behind it, opposite its facing (a ladder's wall): it is placed only against that
+    /// cell's side and goes with it (docs/ITEMS.md).
+    Behind,
 }
 
 /// What a block may stand in (block data `medium`).
@@ -174,6 +177,12 @@ pub struct StateInfo {
     pub needs_support: Support,
     /// Placing a block into its cell (or against it) replaces it.
     pub replaceable: bool,
+    /// It may be placed on a slope's top (block data `onSlopes`: plants); no other block may.
+    pub on_slopes: bool,
+    /// The natural, moldable material it is of (block data `moldable`: "dirt" for dirt, grass and
+    /// snowy grass, "sand"; a ramp takes its block's): building one of the same group onto a slope
+    /// replaces the slope instead of being refused (docs/ITEMS.md).
+    pub moldable: Option<&'static str>,
     pub medium: Medium,
     /// Flood light (docs/DAY_NIGHT.md §11): the levels (0–15) a cell of it takes off the sky and
     /// block light passing into it; 15 lets none in (block data `lightFilter`, else

@@ -822,6 +822,7 @@ mod tests {
         t.aim(Some(BlockTarget {
             cell: [0, 0, 0],
             face: 2,
+            aim_up: 0.5,
         }));
         assert!(t.apply(true, &ctx(stone, 0.0), &mut r, &mut w));
         let sent = r.pump(0.0);
@@ -870,6 +871,7 @@ mod tests {
             t.aim(Some(BlockTarget {
                 cell: [i * 40 - 80, 10, 0],
                 face: 2,
+                aim_up: 0.5,
             }));
             let now = f64::from(i) * 10.0;
             if !t.apply(false, &ctx(stone, now), &mut r, &mut w) {
@@ -897,6 +899,7 @@ mod tests {
         t.aim(Some(BlockTarget {
             cell: [200, 0, 0],
             face: 2,
+            aim_up: 0.5,
         }));
         assert!(!t.apply(false, &ctx(stone, 0.0), &mut r, &mut w));
         assert!(t.note().contains("Too far"), "{}", t.note());
@@ -906,6 +909,7 @@ mod tests {
         t.aim(Some(BlockTarget {
             cell: [5, 0, 0],
             face: 2,
+            aim_up: 0.5,
         }));
         assert!(!t.apply(false, &ctx(stone, 0.0), &mut old, &mut w));
         assert!(t.note().contains("doesn't take brushes"), "{}", t.note());
@@ -916,6 +920,7 @@ mod tests {
         t.aim(Some(BlockTarget {
             cell: [5, 0, 10],
             face: 2,
+            aim_up: 0.5,
         }));
         assert!(t.apply(false, &ctx(stone, 0.0), &mut r, &mut w));
         apply_all(&mut w, r.pump(0.0));
@@ -961,7 +966,11 @@ mod tests {
         let mut r = region();
         select(&mut t, "triangle");
         let click = |t: &mut BrushTool, r: &mut RegionTools, w: &mut VoxelWorld, c: [i32; 3]| {
-            t.aim(Some(BlockTarget { cell: c, face: 2 }));
+            t.aim(Some(BlockTarget {
+                cell: c,
+                face: 2,
+                aim_up: 0.5,
+            }));
             t.apply(false, &ctx(stone, 0.0), r, w)
         };
         assert!(!click(&mut t, &mut r, &mut w, [0, 0, 0]));
@@ -1004,6 +1013,7 @@ mod tests {
         t.aim(Some(BlockTarget {
             cell: [0, 0, 0],
             face: 2,
+            aim_up: 0.5,
         }));
         assert!(t.apply(false, &ctx(grass, 0.0), &mut r, &mut w));
         apply_all(&mut w, r.pump(0.0));
@@ -1055,7 +1065,11 @@ mod tests {
     }
 
     fn aim_at(t: &mut BrushTool, cell: [i32; 3]) {
-        t.aim(Some(BlockTarget { cell, face: 2 }));
+        t.aim(Some(BlockTarget {
+            cell,
+            face: 2,
+            aim_up: 0.5,
+        }));
     }
 
     #[test]
@@ -1199,6 +1213,7 @@ mod tests {
                     t.aim(Some(BlockTarget {
                         cell: target,
                         face: fr.cell_face(2) as u8,
+                        aim_up: 0.5,
                     }));
                     let state = w.get_voxel(target[0], target[1], target[2]);
                     let m = t.materials(stone, state);

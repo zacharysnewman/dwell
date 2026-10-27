@@ -872,6 +872,8 @@ mod tests {
                 cell: [1, 2, 3],
                 face: 2,
                 material,
+                rows: 1,
+                down: false,
             })
         };
         s.send_control(&place(require("dwell:sand")));
@@ -921,6 +923,8 @@ mod tests {
             cell: [1, 2, 3],
             face: 2,
             material: 0,
+            rows: 1,
+            down: false,
         }));
         assert_eq!(sent(&s.take_out()).len(), 1);
     }
@@ -936,6 +940,8 @@ mod tests {
                 cell: [1, 2, 3],
                 face: 2,
                 material,
+                rows: 1,
+                down: false,
             })
         };
         // The game's ids need not be in order (a stroke's queued edits were numbered first).
