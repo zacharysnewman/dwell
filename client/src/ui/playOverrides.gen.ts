@@ -20,6 +20,10 @@ export const OVERRIDE_FIELDS: readonly OverrideField[] = [
       {
         "value": "sandbox",
         "label": "Sandbox"
+      },
+      {
+        "value": "cliffs",
+        "label": "Cliffs (prototype)"
       }
     ]
   },

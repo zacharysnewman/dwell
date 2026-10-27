@@ -1163,7 +1163,13 @@ impl TerrainGenerator {
                         v.density(&eval, y) > 0.0
                     }
                 };
-                let water = col.water_row();
+                // Carved cells under the column's water are water; in a dry column the water row
+                // is just over the ground, so there they are air.
+                let water = if col.water == Water::None {
+                    i32::MIN
+                } else {
+                    col.water_row()
+                };
                 let in_volume = |y: i32| {
                     (FACE_MIN_Y..FACE_MAX_Y).contains(&y)
                         && (overlap != Overlap::Partial

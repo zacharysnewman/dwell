@@ -229,7 +229,13 @@ pub fn perlin3(seed: u32, x: LatticeCoord, y: LatticeCoord, z: LatticeCoord) -> 
 
 /// [`fbm2`]'s fractal sum in 3D: x and z (m) on lattices of `wavelength`, y (rows) on one of
 /// `wavelength_y` rows, each octave twice as fine.
-pub fn fbm3(seed: u32, (x, y, z): (i64, i64, i64), wavelength: i32, wavelength_y: i32, octaves: u32) -> f32 {
+pub fn fbm3(
+    seed: u32,
+    (x, y, z): (i64, i64, i64),
+    wavelength: i32,
+    wavelength_y: i32,
+    octaves: u32,
+) -> f32 {
     let mut sum = 0.0f32;
     let mut norm = 0.0f32;
     let mut amplitude = 1.0f32;

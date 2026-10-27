@@ -25,7 +25,9 @@ pub enum Node {
     /// The cell centre's height above sea level (m).
     Height,
     /// The surface's gradient (rise per run) over ±`radius` m.
-    Slope { radius: u8 },
+    Slope {
+        radius: u8,
+    },
     /// 3D gradient noise in [−1, 1]: `wavelength` m across, its vertical frequency `stretch_y`
     /// times the horizontal one (0: a 2D field, the same at every height), seeded by `stream`.
     Noise {
@@ -39,8 +41,16 @@ pub enum Node {
     Min(&'static [u16]),
     Max(&'static [u16]),
     Abs(u16),
-    Clamp { of: u16, min: f32, max: f32 },
-    Smoothstep { of: u16, from: f32, to: f32 },
+    Clamp {
+        of: u16,
+        min: f32,
+        max: f32,
+    },
+    Smoothstep {
+        of: u16,
+        from: f32,
+        to: f32,
+    },
 }
 
 /// A volume as data: its density tree, how far from the surface it reaches (m), and what its added
@@ -189,7 +199,11 @@ impl Volume {
     fn eval_fixed(&self, i: usize, input: &ColumnInput<'_>, values: &[f32]) -> f32 {
         match self.nodes[i] {
             Node::Slope { radius } => {
-                let k = self.radii.iter().position(|&r| r == radius).expect("a radius");
+                let k = self
+                    .radii
+                    .iter()
+                    .position(|&r| r == radius)
+                    .expect("a radius");
                 input.slopes[k]
             }
             Node::Noise {
@@ -198,10 +212,7 @@ impl Volume {
                 ..
             } => {
                 let n = self.noise[i].expect("noise resolved");
-                let (x, z) = (
-                    i64::from(input.x) + n.offset,
-                    i64::from(input.z) + n.offset,
-                );
+                let (x, z) = (i64::from(input.x) + n.offset, i64::from(input.z) + n.offset);
                 // A 2D field: the noise's y lattice at a fixed row.
                 fbm3(n.seed, (x, 0, z), wavelength, 1, octaves)
             }
@@ -352,7 +363,10 @@ mod tests {
         let a = Volume::resolve(def, 7);
         let b = Volume::resolve(def, 7);
         let slopes = vec![1.2; a.radii().len()];
-        let (ca, cb) = (a.column(&input(60.0, &slopes)), b.column(&input(60.0, &slopes)));
+        let (ca, cb) = (
+            a.column(&input(60.0, &slopes)),
+            b.column(&input(60.0, &slopes)),
+        );
         for row in 100..140 {
             assert_eq!(a.density(&ca, row).to_bits(), b.density(&cb, row).to_bits());
         }
