@@ -133,6 +133,15 @@ and each face's lights). The renderer's frame carries it as `frame.day`; clouds 
   face A's and face B's samples mixed by the eye's height across the 4 m flip band, so the sky
   doesn't jump when the player crosses the midplane. The sun, moon and stars are world
   directions, so they stay put while the view turns.
+- **The sky below the viewer's horizon** **[built, 0.28.5]**: behind the world (nothing drawn
+  there), a ray below the viewer's horizon can only be seeing the other face's sky (down a portal's
+  shaft, or past the rim), so the composite draws that face's sky and its sun, moon and stars
+  (`dwell_sky_behind`: the frame's `DaySky` carries the other face's colours, `other_*`, the
+  viewer's blend mirrored, so they meet across the flip band; a pixel's width of blend at the
+  horizon). The fog still fades to the viewer's horizon colour (`sky()`), and so do the
+  reflections. Before, it was the viewer's horizon colour: from face A at noon, face B's night
+  through a portal showed as a white patch (docs/BUGS.md 10). The broader goal, sky, fog and light
+  by the sun's height over each point's face, is in FUTURE.md.
 
 Water's reflection uses `sky()`, which is `dwell_sky` with the frame's `DaySky`, so it follows the
 cycle; its glint takes the face's sun and moon light from the block too. The clouds (Phase 31) take their light from the same block (`cloud_lighting`: the viewer's

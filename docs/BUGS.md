@@ -6,17 +6,28 @@ pins it.
 
 ## Open
 
-### 10. After falling through a portal and back, the shaft's middle chunks go missing
-
-*Reported 2026-10-26 (0.28.x, on a phone).* After falling down a portal and back up, the chunks in
-the middle (round the midplane) seem to unload: a white, see-through patch shows looking down the
-shaft (toward the night side). Queued after controller support.
-
-- **Suspects:** the streamed sphere's re-centring as the player crosses the midplane (both faces'
-  chunks near it), the unload of the far face's chunks, or the motes' or the sky's draw in the
-  shaft.
+None. Report new ones here.
 
 ## Fixed
+
+### 10. A white patch down a portal after visiting the other face (fixed in 0.28.5)
+
+*Reported 2026-10-26 (0.28.x, on a phone).* After falling down a portal and back up, the middle
+seemed to unload: a white, see-through patch showed looking down the shaft (toward the night side).
+
+- **Cause:** not unloaded chunks. The sky behind the world was the viewer's: below the horizon,
+  face A's horizon colour (pale at noon, navy at midnight). Fresh, face B's chunks round the far
+  opening weren't loaded and the shaft ended in black; once the visit had loaded them, the far
+  opening framed face B's night sky drawn in face A's daytime colour, with B's grass and a tree in
+  silhouette round it. Found in Chrome on seed 7's portal (x 1779, z 20690) with the LOD off
+  (`?lod=off`, added for it) and at both noon and midnight.
+- **Fix:** below the viewer's horizon the sky behind the world is the other face's, with its sun,
+  moon and stars (`dwell_sky_behind`; the frame's `DaySky` carries the other face's sky colours).
+  The fog and the reflections keep the viewer's horizon colour (DAY_NIGHT.md §5).
+- **Tests:** `the_block_carries_the_other_faces_sky_for_below_the_horizon` (dwell-look; the old
+  block has no such colours, out of bounds) and
+  `the_sky_behind_the_world_takes_the_other_faces_below_the_horizon` (the composite uses it).
+  Checked in Chrome: from face A at noon, face B's midnight sky with its stars shows down the shaft.
 
 ### 8. Dark blue rectangles in rows across lakes and the sea (fixed in 0.28.1)
 
