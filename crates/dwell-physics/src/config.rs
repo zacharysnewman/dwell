@@ -100,17 +100,11 @@ pub struct Band {
 /// ◆ Creative flight (PLAYER_CONTROLLER.md §6.7).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Fly {
-    /// m/s near the ground, walking.
+    /// m/s at the slider's level 0, walking (the same at every height).
     pub speed: f32,
     pub run_factor: f32,
-    /// m above sea level per extra ×1 of speed (ascent is exponential).
-    pub boost_height: f32,
     /// 1/s: how quickly velocity follows the wish.
     pub drag: f32,
-    /// Limit on the height-based speed below `terrain_band`; the speed slider overrides it.
-    pub terrain_speed: f32,
-    /// Feet height (m) below which the height-based speed is capped at `terrain_speed`.
-    pub terrain_band: f32,
     /// |x|, |y|, |z| (m): flight is not bounded by the world (ADR 0025 D3), only held inside the
     /// wire format's position range (`POS64_LIMIT`).
     pub position_limit: f32,
@@ -308,12 +302,9 @@ impl Default for PlayerControllerConfig {
                 boost_gravities: 2.0,
             },
             fly: Fly {
-                speed: 11.0,
+                speed: 8.0,
                 run_factor: 2.5,
-                boost_height: 32.0,
                 drag: 8.0,
-                terrain_speed: 400.0,
-                terrain_band: 6_144.0,
                 position_limit: (dwell_protocol::world::POS64_LIMIT - 1_024) as f32,
             },
             slide: Slide {

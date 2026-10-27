@@ -193,14 +193,14 @@ mod tests {
             look_pitch: -30.0,
             run: true,
             fly: true,
-            fly_speed: 17,
+            fly_speed: 7,
             ..Input::default()
         };
         let back = dequantize_input(&quantize_input(&i, 7));
         assert!((back.move_x - 0.6).abs() < 0.01 && (back.move_y + 0.8).abs() < 0.01);
         assert!((back.look_yaw - 90.0).abs() < 0.01 && (back.look_pitch + 30.0).abs() < 0.01);
         assert!(back.run && back.fly && !back.jump);
-        assert_eq!(back.fly_speed, 17);
+        assert_eq!(back.fly_speed, 7);
         // Longer move vectors are clamped; levels above the maximum count as it.
         let f = quantize_input(
             &Input {

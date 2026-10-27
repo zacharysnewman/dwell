@@ -1,6 +1,5 @@
 //! The flight speed slider (PLAYER_CONTROLLER.md §6.7): a level carried in every input frame
-//! (`input_buttons::FLY_SPEED`). Level 0 flies at the height-based speed alone; level L flies at
-//! least fly.speed × 2^(L/2) — also in the terrain band (below fly.terrainBand), where only the height-based speed is capped.
+//! (`input_buttons::FLY_SPEED`). Level L flies at fly.speed × 2^(L/2), the same at every height.
 //! The controller applies it (`dwell-physics`); this module only mirrors it for display. Keeping the
 //! chosen level between sessions is the shell's job: [`fly_speed_level_from_stored`] and
 //! [`fly_speed_level_to_stored`] turn it to and from the stored text.
@@ -21,11 +20,6 @@ pub fn fly_base_speed() -> f64 {
     f64::from(PlayerControllerConfig::default().fly.speed)
 }
 
-/// fly.terrainSpeed: the height-based speed's cap in the terrain band (m/s).
-pub fn fly_terrain_speed() -> f64 {
-    f64::from(PlayerControllerConfig::default().fly.terrain_speed)
-}
-
 /// Rounds to the nearest level in range; NaN and infinities are level 0.
 pub fn clamp_fly_speed_level(level: f64) -> u8 {
     if level.is_finite() {
@@ -41,7 +35,7 @@ pub fn fly_speed_factor(level: f64) -> f64 {
     (if l % 2 == 1 { SQRT_2 } else { 1.0 }) * 2f64.powi(l / 2)
 }
 
-/// The slowest the chosen level flies (without Run), in m/s.
+/// The speed the chosen level flies (without Run), in m/s.
 pub fn fly_speed_floor(level: f64) -> f64 {
     fly_base_speed() * fly_speed_factor(level)
 }
@@ -105,11 +99,7 @@ pub fn format_speed(mps: f64) -> String {
 
 /// The slider's caption for a level.
 pub fn fly_speed_label(level: f64) -> String {
-    let l = clamp_fly_speed_level(level);
-    if l == 0 {
-        return "Normal (faster with height)".into();
-    }
-    format!("At least {}", format_speed(fly_speed_floor(f64::from(l))))
+    format_speed(fly_speed_floor(f64::from(clamp_fly_speed_level(level))))
 }
 
 /// The level from its stored text (0 if none or unreadable), as `Number(text)` reads it.
@@ -140,17 +130,17 @@ mod tests {
         assert_eq!(fly_speed_factor(0.0), 1.0);
         assert_eq!(fly_speed_factor(1.0), SQRT_2);
         assert_eq!(fly_speed_factor(2.0), 2.0);
-        assert_eq!(fly_speed_factor(20.0), 1024.0);
-        assert_eq!(fly_speed_factor(MAX), 1024.0);
+        assert_eq!(fly_speed_factor(11.0), 32.0 * SQRT_2);
+        assert_eq!(fly_speed_factor(20.0), fly_speed_factor(MAX));
     }
 
     #[test]
-    fn cross_the_50_km_world_in_seconds_at_the_top() {
-        // Phase 16: level 20, 11 m/s × 2^10 = 11.3 km/s, crosses the 100 km disc in ~9 s.
-        assert_eq!(MAX, 20.0);
-        assert_close(fly_speed_floor(MAX), fly_base_speed() * 1024.0, -2);
-        let across = 2.0 * dwell_protocol::world::WORLD_RADIUS as f64;
-        assert!(across / fly_speed_floor(MAX) < 10.0);
+    fn the_top_level_is_one_terrain_can_stream_for() {
+        // Level 11, 8 m/s × 2^5.5 = 362 m/s (905 m/s running): level 12 outran terrain
+        // generation (owner, 2026-10-26).
+        assert_eq!(MAX, 11.0);
+        assert_close(fly_speed_floor(MAX), fly_base_speed() * 32.0 * SQRT_2, -2);
+        assert!(fly_speed_floor(MAX) < 400.0);
     }
 
     #[test]
@@ -166,8 +156,8 @@ mod tests {
         assert_eq!(format_speed(44.6), "45 m/s");
         assert_eq!(format_speed(1234.0), "1.2 km/s");
         assert_eq!(format_speed(8_156_007.0), "8,156 km/s");
-        assert_eq!(fly_speed_label(0.0), "Normal (faster with height)");
-        assert_eq!(fly_speed_label(8.0), "At least 176 m/s");
+        assert_eq!(fly_speed_label(0.0), "8 m/s");
+        assert_eq!(fly_speed_label(8.0), "128 m/s");
     }
 
     // Beyond the TS suite: the JS number formatting this mirrors, and the stored level.
@@ -176,8 +166,7 @@ mod tests {
         assert_eq!(to_fixed(1.25, 1), "1.3"); // an exact tie rounds up, as toFixed does
         assert_eq!(to_fixed(9.96, 1), "10.0");
         assert_eq!(format_speed(1_000_000_000.0), "1,000,000 km/s");
-        assert_eq!(fly_base_speed(), 11.0);
-        assert_eq!(fly_terrain_speed(), 400.0);
+        assert_eq!(fly_base_speed(), 8.0);
     }
 
     #[test]

@@ -292,6 +292,7 @@ fn flying_into_a_wall_does_not_hurt() {
     w.set_input(|_, _| Input {
         fly: true,
         run: true,
+        fly_speed: 2,
         move_y: 1.0,
         ..Input::default()
     });

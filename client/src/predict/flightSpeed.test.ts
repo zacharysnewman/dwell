@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import { World } from '../protocol/constants.gen';
 import {
   clampFlySpeedLevel,
   FLY_BASE_SPEED,
@@ -15,14 +14,14 @@ describe('flight speed levels (mirror dwell-physics fly_speed_factor)', () => {
     expect(flySpeedFactor(0)).toBe(1);
     expect(flySpeedFactor(1)).toBe(Math.SQRT2);
     expect(flySpeedFactor(2)).toBe(2);
-    expect(flySpeedFactor(20)).toBe(1024);
-    expect(flySpeedFactor(MAX_FLY_SPEED_LEVEL)).toBe(1024);
+    expect(flySpeedFactor(11)).toBe(32 * Math.SQRT2);
+    expect(flySpeedFactor(20)).toBe(flySpeedFactor(MAX_FLY_SPEED_LEVEL));
   });
 
-  it('cross the 50 km world in seconds at the top (Phase 16)', () => {
-    expect(MAX_FLY_SPEED_LEVEL).toBe(20);
-    expect(flySpeedFloor(MAX_FLY_SPEED_LEVEL)).toBe(FLY_BASE_SPEED * 1024);
-    expect((2 * World.worldRadius) / flySpeedFloor(MAX_FLY_SPEED_LEVEL)).toBeLessThan(10);
+  it('the top level is one terrain can stream for (owner, 2026-10-26)', () => {
+    expect(MAX_FLY_SPEED_LEVEL).toBe(11);
+    expect(flySpeedFloor(MAX_FLY_SPEED_LEVEL)).toBe(FLY_BASE_SPEED * 32 * Math.SQRT2);
+    expect(flySpeedFloor(MAX_FLY_SPEED_LEVEL)).toBeLessThan(400);
   });
 
   it('clamp levels', () => {
@@ -36,7 +35,7 @@ describe('flight speed levels (mirror dwell-physics fly_speed_factor)', () => {
     expect(formatSpeed(44.6)).toBe('45 m/s');
     expect(formatSpeed(1234)).toBe('1.2 km/s');
     expect(formatSpeed(8_156_007)).toBe('8,156 km/s');
-    expect(flySpeedLabel(0)).toBe('Normal (faster with height)');
-    expect(flySpeedLabel(8)).toBe('At least 176 m/s');
+    expect(flySpeedLabel(0)).toBe('8 m/s');
+    expect(flySpeedLabel(8)).toBe('128 m/s');
   });
 });
