@@ -1294,6 +1294,15 @@ impl Client {
             .borrow_mut()
             .set_water_quality(crate::render::water::WaterQuality::from_level(level));
     }
+    /// The distant terrain (LOD) drawn or not, a debug switch (`?lod=off`, `__dwell.setLod`): the
+    /// full-detail chunks alone show what they hold. True when in a world.
+    #[wasm_bindgen(js_name = setLod)]
+    pub fn set_lod(&self, on: bool) -> bool {
+        let mut s = self.inner.borrow_mut();
+        let Some(g) = &mut s.game else { return false };
+        g.lod_drawn = on;
+        true
+    }
     /// The LOD colour map preview on or off (`__dwell.setLodMap`, the bench; `?lodmap=on` starts
     /// it on). Off on a CPU adapter. The river valleys follow `?lodmap=on` only (the workers' LOD).
     #[wasm_bindgen(js_name = setLodMap)]

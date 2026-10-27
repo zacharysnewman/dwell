@@ -441,6 +441,9 @@ async function step(run: Run, s: Step): Promise<void> {
     case 'arms':
       await call(page, `d.showArms(${String(s.on)})`);
       return;
+    case 'lod':
+      await call(page, `d.setLod(${String(s.on)})`);
+      return;
     case 'puppets': {
       const [x, y, z] = s.at ?? [0, 0, 0];
       const held = s.held ? '65535' : '0';

@@ -19,6 +19,7 @@ export type Step =
   | { do: 'look'; yaw: number; pitch: number }
   /** Creative flight on or off; its speed level. */
   | { do: 'fly'; on: boolean }
+  | { do: 'lod'; on: boolean }
   | { do: 'flySpeed'; level: number }
   /** The spyglass zoomed to `step` (0 the least zoom, shared/look/spyglass.json) or out. */
   | { do: 'spyglass'; on: boolean; step?: number }
@@ -224,6 +225,7 @@ const STEP_FIELDS: Record<Step['do'], readonly string[]> = {
   hold: ['code', 's'],
   look: ['yaw', 'pitch'],
   fly: ['on'],
+  lod: ['on'],
   flySpeed: ['level'],
   spyglass: ['on', 'step'],
   camera: ['position', 'yaw', 'pitch', 'aroundPlayer', 'aboveFeet'],
@@ -286,6 +288,7 @@ export function parseStep(where: string, v: unknown): Step {
         pitch: num(at('pitch'), o.pitch, -90, 90),
       };
     case 'fly':
+    case 'lod':
     case 'arms':
       return { do: d, on: bool(at('on'), o.on) };
     case 'flySpeed':

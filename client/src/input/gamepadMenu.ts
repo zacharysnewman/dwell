@@ -43,8 +43,8 @@ export class Repeat {
   private since: number | null = null;
   private last = 0;
   constructor(
-    private readonly delayMs = GAMEPAD.tunables.menuRepeatDelayMs,
-    private readonly everyMs = GAMEPAD.tunables.menuRepeatMs,
+    private readonly delayMs: number = GAMEPAD.tunables.menuRepeatDelayMs,
+    private readonly everyMs: number = GAMEPAD.tunables.menuRepeatMs,
   ) {}
 
   step(down: boolean, now: number): boolean {

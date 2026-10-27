@@ -513,6 +513,9 @@ pub struct Game<S: Scene> {
     /// Stand-in players for the dev tools (`__dwell.puppets`): the frame cost of N bodies and
     /// their clips without N clients.
     pub puppets: Option<Puppets>,
+    /// The distant terrain is drawn (a debug switch: `?lod=off`, `__dwell.setLod`; the sections
+    /// still stream, so it comes back at once).
+    pub lod_drawn: bool,
     /// The eye the crosshair targets from (None while not playing).
     target_eye: Option<[f64; 3]>,
     lod: Option<LodSystem>,
@@ -700,6 +703,7 @@ impl<S: Scene> Game<S> {
             bodies: Bodies::default(),
             held_sent: None,
             show_arms: true,
+            lod_drawn: true,
             puppets: None,
         };
         match verification {
@@ -2220,6 +2224,11 @@ impl<S: Scene> Game<S> {
         };
         if let Some(lod) = &mut self.lod {
             lod.update(&camera, now_ms, &mut host);
+        }
+        if !self.lod_drawn {
+            let mut view = View(self.scene.clone());
+            LodView::<SectionMeshes>::show_lod_sections(&mut view, &[]);
+            LodView::<SectionMeshes>::show_lod_stand_ins(&mut view, &[]);
         }
         self.update_lod_map(position);
     }
