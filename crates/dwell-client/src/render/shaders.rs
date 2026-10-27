@@ -962,7 +962,7 @@ fn composited(p: vec2i, ndc: vec2f) -> Composited {
     let c = textureLoad(scene_color, p, 0);
     var back = clear;
     if (c.a < 1.0) {
-        let behind = dwell_sky_bodies(dir, face, frame.day, clear);
+        let behind = dwell_sky_behind(dir, face, frame.day, clear);
         back = dwell_clouds(behind, behind, dir, face, deck, fw, frame.clouds, frame.cloud_cfg, lights);
     }
     var depth = 0.0;
@@ -2238,6 +2238,16 @@ pub fn lighting_source() -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn the_sky_behind_the_world_takes_the_other_faces_below_the_horizon() {
+        // docs/BUGS.md 10: the composite's sky behind the world is `dwell_sky_behind` (the other
+        // face's sky below the viewer's horizon), while the fog still fades to `sky()`.
+        let src = super::source(1);
+        assert!(src.contains("let behind = dwell_sky_behind(dir, face, frame.day, clear);"));
+        assert!(src.contains("fn dwell_sky_behind("));
+        assert!(src.contains("let clear = sky(dir);"));
+    }
+
     #[test]
     fn the_shader_module_parses_and_validates() {
         // With and without multisampling (the scene depth's texture type differs).

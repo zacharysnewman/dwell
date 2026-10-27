@@ -188,3 +188,36 @@ fn dwell_sky_bodies(dir: vec3f, face: f32, day: DaySky, base: vec3f) -> vec3f {
     c = mix(c, max(c, sun.rgb), sun.w);
     return mix(base, min(c, vec3f(1.0)), shown);
 }
+
+// The day block with the other face's sky in the viewer's place (its sun, moon and stars are the
+// same world directions).
+fn dwell_other_day(day: DaySky) -> DaySky {
+    var o = day;
+    o.zenith = day.other_zenith;
+    o.horizon = day.other_horizon;
+    o.glow = day.other_glow;
+    o.band = day.other_band;
+    o.disc = day.other_disc;
+    o.stars.x = day.other_stars.x;
+    return o;
+}
+
+// The sky behind the world toward `dir` for a viewer on `face`, its sun, moon and stars over it
+// (`clear`: the viewer's `dwell_sky`): above the viewer's horizon the viewer's; below it, where the
+// sky shows only through a shaft or past the rim, the other face's, as seen from there (a pixel's
+// width of blend at the horizon; docs/BUGS.md 10). The fog keeps the viewer's horizon colour.
+fn dwell_sky_behind(dir: vec3f, face: f32, day: DaySky, clear: vec3f) -> vec3f {
+    let e = dot(dir, face_up(face));
+    let px = max(day.stars.z, 1e-5);
+    let below = smoothstep(px, -px, e);
+    var c = clear;
+    if (below < 1.0) {
+        c = dwell_sky_bodies(dir, face, day, clear);
+    }
+    if (below > 0.0) {
+        let o = dwell_other_day(day);
+        let other = dwell_sky_bodies(dir, -face, o, dwell_sky(dir, -face, o));
+        c = mix(c, other, below);
+    }
+    return c;
+}
