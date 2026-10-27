@@ -14,6 +14,7 @@ pub mod eye;
 pub mod face_flip;
 pub mod flight;
 pub mod flight_speed;
+pub mod gamepad;
 pub mod gate;
 pub mod hud_text;
 pub mod input;

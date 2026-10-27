@@ -69,6 +69,14 @@ import { audio } from './audio/engine';
 import { decodeSounds, EventPlayer } from './audio/events';
 import { installPageSounds } from './audio/page';
 import { SOUND_DATA } from './audio/sounds.gen';
+import { GamepadInput } from './input/gamepad';
+import { PLAY_ACTIONS } from './input/gamepad.gen';
+import {
+  loadGamepadSettings,
+  saveGamepadSettings,
+  type GamepadSettings,
+} from './input/gamepadSettings';
+import { ControllerPanel } from './ui/controllerPanel';
 
 type Vec3 = [number, number, number];
 
@@ -613,6 +621,48 @@ async function start(): Promise<App | null> {
     // The speed effects hold still while the menu is open.
     client.setMenuOpen(open);
   };
+  // The controller (docs/GAMEPAD.md): polled every frame; Menu opens the game menu, and in it the
+  // D-pad moves, A presses, B and Menu close it. Settings → Controller rebinds it.
+  const pad = new GamepadInput({
+    client,
+    menuOpen: () => settings.isOpen,
+    openMenu: () => {
+      settings.setOpen(true);
+    },
+    closeMenu: () => {
+      settings.setOpen(false);
+    },
+    back: () => {
+      settings.setOpen(false);
+    },
+  });
+  const applyPad = (s: GamepadSettings): void => {
+    client.resetGamepadBindings();
+    for (const a of PLAY_ACTIONS) client.setGamepadBinding(a, s.bindings[a]);
+    client.setGamepadLook(s.lookSpeed, s.invertY);
+  };
+  const padSettings = loadGamepadSettings();
+  applyPad(padSettings);
+  const controller = new ControllerPanel({
+    settings: padSettings,
+    apply: (s) => {
+      applyPad(s);
+      saveGamepadSettings(s);
+    },
+    capture: (done) => {
+      pad.capture = done;
+    },
+    connected: () => pad.active,
+  });
+  settings.addControllerPanel(
+    controller.element,
+    () => {
+      controller.refresh();
+    },
+    () => {
+      controller.cancel();
+    },
+  );
   settings.setFootnote(formatBuildInfo(buildInfo));
   settings.addDebugTools([
     {
@@ -751,6 +801,7 @@ async function start(): Promise<App | null> {
 
   const frame = (now: number): void => {
     app.fps.frame(now);
+    pad.poll(now);
     client.frame(now);
     handleEvents(app);
     playSounds(app, sounds);
