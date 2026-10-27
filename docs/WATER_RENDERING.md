@@ -36,7 +36,7 @@ A named fluid look in the block registry, referenced by name:
 ```json
 "fluids": { "dwell:water": {
   "absorption": [0.45, 0.09, 0.06], "scatter": "#1d6f8a", "roughness": 0.08, "ior": 1.333,
-  "normalScale": 1.0, "waveScale": 2.0, "flowSpeed": 0.03,
+  "normalScale": 1.0, "waveScale": 2.0, "flowSpeed": 0.3,
   "foam": { "depth": 0.4, "color": "#eef6f8" }, "caustics": 1.0, "surfaceDrop": 0.125 } }
 ```
 
@@ -155,7 +155,7 @@ public API: fluids are rendering data, and the 0.875 surface stays where it is.
 - **`water_fs`:**
   - **Ripples:** three layers of quintic gradient noise with analytic derivatives, at 1, 0.43 and
     0.17 × the fluid's `waveScale`, each on an integer-turned lattice. Each layer scrolls along its
-    own heading at `flowSpeed` × 1, 1.7 and 2.6. They are summed as height slopes, scaled by
+    own heading at `flowSpeed` × 1, 1.7 and 2.6 (`flowSpeed` 0.3 m/s since 0.29.1: the largest ripple crosses its 2 m in under 7 s; at 0.03 it took 67 s and hardly seemed to move, owner 2026-10-26; `the_ripples_visibly_move` pins it; the caustics keep their earlier pace). They are summed as height slopes, scaled by
     `normalScale`.
   - **Wrap:** each wavelength is rounded to divide 1,024 m. The vertex shader takes a per-draw
     origin wrapped to that period, so the detail stays exact anywhere on the disc.

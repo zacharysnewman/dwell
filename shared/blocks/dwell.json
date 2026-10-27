@@ -24,7 +24,7 @@
       "ior": 1.333,
       "normalScale": 1.0,
       "waveScale": 2.0,
-      "flowSpeed": 0.03,
+      "flowSpeed": 0.3,
       "foam": {
         "depth": 0.5,
         "color": "#eef6f8"

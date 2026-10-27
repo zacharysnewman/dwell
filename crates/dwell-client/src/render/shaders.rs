@@ -2033,7 +2033,8 @@ const CAUSTIC_MEAN: f32 = 0.2;
 
 // The caustic layers' time: each fluid's own (its flow speed), the coarse layer's and the fine's.
 fn caustic_times(f: Fluid) -> vec2f {
-    let t = frame.fog.z * (0.5 + 12.0 * f.wave.w);
+    // The caustics' drift (their pace from before the ripples were sped up, 0.29.1).
+    let t = frame.fog.z * (0.5 + 1.2 * f.wave.w);
     return vec2f(t, 1.31 * t + 2.0);
 }
 

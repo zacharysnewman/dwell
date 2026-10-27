@@ -515,7 +515,7 @@ mod tests {
         assert_eq!(water[7], 0.08);
         // ior, normal scale, wave scale, flow speed
         assert_eq!(&oil[8..12], &[1.47, 0.4, 4.0, 0.005]);
-        assert_eq!(&water[8..12], &[1.333, 1.0, 2.0, 0.03]);
+        assert_eq!(&water[8..12], &[1.333, 1.0, 2.0, 0.3]);
         // foam colour (linear), depth
         assert_eq!(oil[15], 0.0);
         assert_eq!(
@@ -745,5 +745,19 @@ mod tests {
         // W3: Medium and High read the scene behind; Low keeps W1b's look, with no copies.
         assert!(!WaterQuality::Low.reads_scene());
         assert!(WaterQuality::Medium.reads_scene() && WaterQuality::High.reads_scene());
+    }
+
+    #[test]
+    fn the_ripples_visibly_move() {
+        // The owner (2026-10-26): the water's shading moved so slowly it hardly seemed to. Each
+        // layer crosses its own wavelength in a few seconds (a breeze's ripples), the largest in
+        // under 10 s.
+        let water = dwell_blocks::require_fluid("dwell:water");
+        for l in LAYERS {
+            let wavelength = l.wavelength * water.wave_scale;
+            let seconds = wavelength / (water.flow_speed * l.speed);
+            assert!(seconds < 10.0, "{l:?}: {seconds} s a wavelength");
+            assert!(seconds > 0.25, "{l:?}: {seconds} s, no blur of motion");
+        }
     }
 }
