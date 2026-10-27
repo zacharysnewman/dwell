@@ -3,7 +3,7 @@
   "volumes": [
     {
       "name": "cliffs",
-      "$comment": "Cliffs and overhangs: in the part of the land a 600 m field picks (listed first: a product stops at a zero factor, so the slope is measured only there), on hillsides (slope 0.3 to 0.8 over \u00b14 m), a thresholded 3D noise (40 m across, ~27 m tall) lifts the ground 14 m or sinks it 14 m with a sharp edge between: rock walls with ledges on top, leaning where the edge leans (overhangs).",
+      "$comment": "Cliffs and overhangs: in the part of the land a 600 m field picks (listed first: a product stops at a zero factor, so the slope is measured only there), on hillsides (slope 0.3 to 0.8 over \u00b14 m), a 2D noise (40 m across) thresholded sharply (\u00b10.02: under a metre) lifts the ground 14 m or sinks it 14 m, a wall between: rock walls with ledges on top. The lean: a slow 3D noise (40 m across and tall, times 0.5: the one to tune; on seed 7's hillsides ~6% of columns overhang, none tunnelled) shifts where each wall stands with height, so walls lean out over their foot (overhangs) or back; too slow to layer rock and air (no tunnels; owner 2026-10-27).",
       "reach": 16,
       "material": "dwell:stone",
       "soilDepth": 3,
@@ -47,15 +47,32 @@
                       {
                         "smoothstep": {
                           "of": {
-                            "noise": {
-                              "wavelength": 40,
-                              "octaves": 2,
-                              "stretchY": 1.5,
-                              "stream": 2
-                            }
+                            "add": [
+                              {
+                                "noise": {
+                                  "wavelength": 40,
+                                  "octaves": 2,
+                                  "stretchY": 0,
+                                  "stream": 2
+                                }
+                              },
+                              {
+                                "mul": [
+                                  0.5,
+                                  {
+                                    "noise": {
+                                      "wavelength": 40,
+                                      "octaves": 1,
+                                      "stretchY": 1.0,
+                                      "stream": 3
+                                    }
+                                  }
+                                ]
+                              }
+                            ]
                           },
-                          "from": -0.12,
-                          "to": 0.12
+                          "from": -0.02,
+                          "to": 0.02
                         }
                       }
                     ]
