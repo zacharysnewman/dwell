@@ -209,22 +209,49 @@ fn dwell_behind_share(e: f32) -> f32 {
     return smoothstep(-BEHIND_FROM, -BEHIND_TO, e);
 }
 
-// The sky behind the world toward `dir` for a viewer on `face`, its sun, moon and stars over it
-// (`clear`: the viewer's `dwell_sky`): above the viewer's horizon the viewer's; below it, where the
-// sky shows only through a shaft or past the rim, the viewer's horizon haze giving way to the
-// other face's sky, as seen from there, as the view turns down (docs/BUGS.md 10, 12). The fog keeps
-// the viewer's horizon colour.
-fn dwell_sky_behind(dir: vec3f, face: f32, day: DaySky, clear: vec3f) -> vec3f {
+// The height fog over `dist` metres from face-local height `cam_y` to `point_y`, in air of fog
+// density `density` (dwell-look `haze_amount`; the composite's `fog_amount` is this along a view ray).
+fn dwell_haze(cam_y: f32, point_y: f32, dist: f32, density: f32) -> f32 {
+    if (density <= 0.0) {
+        return 0.0;
+    }
+    let low = min(cam_y, point_y) - SKY_SEA_LEVEL;
+    let k = abs(point_y - cam_y) / SKY_FOG_HEIGHT;
+    let base = exp(min(SKY_MAX_EXPONENT, -low / SKY_FOG_HEIGHT));
+    let along = select((1.0 - exp(-k)) / k, 1.0 - k * 0.5, k < 1e-4);
+    return density * (1.0 - exp(-SKY_FOG_SIGMA * dist * base * along));
+}
+
+// The viewer's face's haze over the other face's sky along a ray leaving its air below the horizon
+// (elevation sine `e` < 0) from an eye `height` m above the midplane, in air of fog density
+// `density` (`behind_haze` in dwell-look): the fog over the path to the midplane, and near the
+// horizon the viewer's horizon haze, fading out for an eye near the midplane, so a ray looks the
+// same from either side of it (docs/DAY_NIGHT.md §13).
+fn dwell_behind_haze(e: f32, height: f32, density: f32) -> f32 {
+    let h = max(height, 0.0);
+    let mid = face_y(1.0, FACE_MIDPLANE_Y);
+    let path = dwell_haze(mid + h, mid, h / max(-e, 1e-6), density);
+    let grazing = (1.0 - dwell_behind_share(e)) * smoothstep(0.0, BEHIND_HEIGHT, h);
+    return 1.0 - (1.0 - path) * (1.0 - grazing);
+}
+
+// The other face's sky toward `dir` for a viewer on `face`, its sun, moon and stars over it, as seen
+// from its own air: what a ray that crosses the midplane leaves by.
+fn dwell_sky_other(dir: vec3f, face: f32, day: DaySky) -> vec3f {
+    let o = dwell_other_day(day);
+    return dwell_sky_bodies(dir, -face, o, dwell_sky(dir, -face, o));
+}
+
+// The sky behind the world toward `dir` for a viewer on `face` `height` m above the midplane, in air
+// of fog density `density`, its sun, moon and stars over it (`clear`: the viewer's `dwell_sky`): the
+// world's, not the viewer's (docs/DAY_NIGHT.md §13). Above the viewer's horizon the viewer's face's
+// sky; below it the ray leaves by the other face's air, so its sky, under the viewer's face's haze
+// over the path to the midplane (`dwell_behind_haze`; docs/BUGS.md 10, 12, 13). The composite puts
+// each face's clouds between the two.
+fn dwell_sky_behind(dir: vec3f, face: f32, day: DaySky, clear: vec3f, height: f32, density: f32) -> vec3f {
     let e = dot(dir, face_up(face));
-    let below = dwell_behind_share(e);
-    var c = clear;
-    if (below < 1.0) {
-        c = dwell_sky_bodies(dir, face, day, clear);
+    if (e >= 0.0) {
+        return dwell_sky_bodies(dir, face, day, clear);
     }
-    if (below > 0.0) {
-        let o = dwell_other_day(day);
-        let other = dwell_sky_bodies(dir, -face, o, dwell_sky(dir, -face, o));
-        c = mix(c, other, below);
-    }
-    return c;
+    return mix(dwell_sky_other(dir, face, day), clear, dwell_behind_haze(e, height, density));
 }

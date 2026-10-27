@@ -10,6 +10,23 @@ None. Report new ones here.
 
 ## Fixed
 
+### 13. Crossing the midplane swapped the clouds, the fog and the light (fixed in 0.31.2)
+
+*Reported 2026-10-27 (0.31.1).* "It's still an abrupt transition between the two world sides when you
+move between them. Clouds disappear from one side, appear on the other, lighting changes (I think),
+and a white fog band switches sides. So a clear cloudless night sky turns into cloudy, and cloudy blue
+sky turns into vague foggy white."
+
+- **Cause:** the sky's colours, the fog's colour and density, the exposure and the cloud deck were the
+  viewer's face's, swapped across the 4 m flip band: only the viewer's deck was drawn, and the other
+  face's sky below the horizon was hazed in the viewer's colours.
+- **Fix:** the world owns its look (DAY_NIGHT.md §13, ADR 0050): each ray takes the sky, clouds and fog
+  of the air it passes through; both decks are drawn, each lit by its own face; the exposure and
+  saturation ease over `eye.adaptS`.
+- **Test:** `the_sky_behind_is_the_same_from_either_side_of_the_midplane` (dwell-look: every ray 0.3 m
+  above and below the midplane; 0.77 apart on 0.31.1, under 0.02 now), with the shader tests in
+  DAY_NIGHT.md §13. Checked in Chrome at seed 7's portal axis, before and after.
+
 ### 12. A hard dark (day) or white (night) band past the rim of the world (fixed in 0.31.1)
 
 *Reported 2026-10-27 (0.30.x, on a phone).* The 0.28.5 fix for bug 10 "looks really bad on the

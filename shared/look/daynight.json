@@ -47,12 +47,17 @@
     "horizonFade": 0.18
   },
   "sky": {
-    "$comment": "The gradient from horizon to zenith (colour = mix(horizon, zenith, elevation^gradientPower)); the warm band along the horizon toward the sun (its height as an elevation sine, and how tightly it gathers toward the sun's azimuth). Below the horizon, the sky behind the world (past the rim, down a portal) is the viewer's horizon haze near the horizon, a ray there crossing the viewer's face's air to the rim, giving way to the other face's sky from behindFrom to behindTo (elevation sines below the horizon: ~1° to ~27°), so there is no hard edge where the two faces' skies meet (docs/BUGS.md 12).",
+    "$comment": "The gradient from horizon to zenith (colour = mix(horizon, zenith, elevation^gradientPower)); the warm band along the horizon toward the sun (its height as an elevation sine, and how tightly it gathers toward the sun's azimuth). The world owns its look (docs/DAY_NIGHT.md \u00a713): a ray that leaves the viewer's face's air below the horizon (past the rim, down a portal) shows the other face's sky and clouds, hazed by the viewer's face's fog over its path to the midplane, and near the horizon by the viewer's horizon haze, which gives way to the other face's sky from behindFrom to behindTo (elevation sines below the horizon: ~1\u00b0 to ~27\u00b0) for an eye behindHeightM or more above the midplane and fades out nearer it, so the view is the same from either side of the midplane (docs/BUGS.md 12, 13).",
     "gradientPower": 0.5,
     "bandHeight": 0.3,
     "bandSpread": 3,
     "behindFrom": 0.02,
-    "behindTo": 0.45
+    "behindTo": 0.45,
+    "behindHeightM": 24
+  },
+  "eye": {
+    "$comment": "The eye's adaptation: the exposure and the scene's saturation follow the face the eye is on, easing toward it with this time constant (s) when the eye crosses the midplane, as eyes adjust going from day into night (docs/DAY_NIGHT.md \u00a713). 0 switches at once.",
+    "adaptS": 1.5
   },
   "keyframes": [
     {

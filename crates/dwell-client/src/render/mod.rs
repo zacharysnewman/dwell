@@ -983,6 +983,10 @@ pub struct Renderer {
     /// The day/night cycle's state (the game sets it each frame) and seconds for the stars' twinkle.
     day: DayState,
     day_seconds: f64,
+    /// The eye's adaptation to its face (docs/DAY_NIGHT.md §13), stepped once a frame, and when.
+    adapt: dwell_look::daynight::EyeAdaptation,
+    adapted_a: f64,
+    adapt_ms: Option<f64>,
     /// The sky's clouds: the setting, the coverage (the data's, or a weather system's) and their
     /// clock (s).
     clouds: CloudQuality,
@@ -1641,6 +1645,9 @@ impl Renderer {
             exposure: DEFAULT_EXPOSURE,
             day: DayState::default(),
             day_seconds: 0.0,
+            adapt: Default::default(),
+            adapted_a: 1.0,
+            adapt_ms: None,
             clouds: CloudQuality::High,
             adapter: wgpu::DeviceType::Other,
             cloud_coverage: CLOUDS.shape.coverage,
@@ -1821,14 +1828,21 @@ impl Renderer {
         self.day = *day;
         self.day_seconds = seconds;
     }
-    /// How far the viewer is toward face A (1) from face B (0): eased across the flip band so the
-    /// sky's colours don't jump as the player crosses the midplane.
+    /// How far the viewer is toward face A (1) from face B (0), eased across the flip band: what
+    /// the eye adapts toward (`adapt_eye`).
     fn viewer_weight_a(&self) -> f64 {
         let band = dwell_protocol::world::FLIP_BAND as f64;
         // face-boundary: a blend across the midplane, between the two faces' looks.
         let over = self.eye[1] - dwell_world::MIDPLANE_M;
         let t = (over / band * 0.5 + 0.5).clamp(0.0, 1.0);
         t * t * (3.0 - 2.0 * t)
+    }
+    /// Steps the eye's adaptation to the face it is on to `now_ms` (once a frame): the exposure and
+    /// the scene's saturation ease across the midplane instead of switching (docs/DAY_NIGHT.md §13).
+    fn adapt_eye(&mut self, now_ms: f64) {
+        let dt = self.adapt_ms.map_or(0.0, |last| (now_ms - last) / 1000.0);
+        self.adapt_ms = Some(now_ms);
+        self.adapted_a = self.adapt.step(self.viewer_weight_a(), dt);
     }
     /// The plants' wind scale (block data `wind`): 1 by default, 0 keeps them still (low effects).
     /// Draws the cutout meshes or not (dev tools: `__dwell.plants`, measuring what they cost).
@@ -2258,13 +2272,14 @@ impl Renderer {
         for v in dwell_look::pixel_art::light_uniforms(pixel) {
             put(&v);
         }
-        let weight_a = self.viewer_weight_a();
-        let viewer = self.day.viewer(weight_a);
+        // The exposure follows the eye's adaptation; the fog is the air's the eye is in (the other
+        // face's rides in the day block, for rays that cross the midplane: docs/DAY_NIGHT.md §13).
+        let adapted = self.day.viewer(self.adapted_a);
         put(&[
             self.eye[1] as f32,
             self.face.sign_f32(),
-            (self.exposure * viewer.exposure) as f32,
-            (FOG.density * viewer.fog_density).min(1.0) as f32,
+            (self.exposure * adapted.exposure) as f32,
+            dwell_look::daynight::fog_density(self.day.of(self.face)) as f32,
         ]);
         // The water's scroll time, seconds since the renderer started.
         let seconds = (crate::telemetry::now_ms() - self.start_ms) / 1000.0;
@@ -2296,6 +2311,17 @@ impl Renderer {
         put(&clouds[0]);
         put(&clouds[1]);
         put(&clouds[2]);
+        // The other face's deck, for the rays that cross into its air (docs/DAY_NIGHT.md §13).
+        let other = cloud_uniforms(
+            &CLOUDS,
+            self.eye,
+            self.face.other(),
+            self.cloud_seconds,
+            clouds_for(self.adapter, self.clouds),
+            self.cloud_coverage,
+        );
+        put(&other[0]);
+        put(&other[1]);
         put(&water_uniform(self.eye_fluid, self.water()));
         for v in self.wind_uniforms(basis, aspect, tan_y) {
             put(&v);
@@ -2314,7 +2340,9 @@ impl Renderer {
             put(&v);
         }
         let pixel_angle = 2.0 * tan_y / f64::from(self.size.1.max(1));
-        let mut day = self.day.pack(weight_a, self.day_seconds, pixel_angle);
+        let mut day = self
+            .day
+            .pack(self.face, self.adapted_a, self.day_seconds, pixel_angle);
         if !stars_for(self.adapter) {
             day[DAY_STARS] = 0.0;
         }
@@ -2739,6 +2767,7 @@ impl Renderer {
         // and the upscale shifts the picture by the remainder (dwell-look `snap_eye`).
         let eye = self.eye;
         self.pixel_shift = [0.0; 2];
+        self.adapt_eye(crate::telemetry::now_ms());
         if let (Some(p), Some(g)) = (self.pixel_preset(), self.pixel_grid)
             && p.snap_camera
         {
@@ -4374,13 +4403,14 @@ pub(crate) fn frame_extras(
 /// position is passed modulo it.
 const WIND_PERIOD: f64 = 1024.0;
 
-/// Floats in the frame uniform block (`Frame` in shaders.rs): a matrix, 22 vec4s (the outline's
-/// three; after `tan` the clouds' three, then the water's, the wind's six, the wrap and the
-/// reflections' two) and the day/night cycle's block.
+/// Floats in the frame uniform block (`Frame` in shaders.rs): a matrix, the outline's and the
+/// pixel-art preview's vec4s, 21 more (after `tan` the clouds' three and the other face's deck's
+/// two, then the water's, the wind's six, the wrap and the reflections' two) and the day/night
+/// cycle's block.
 pub(crate) const FRAME_FLOATS: usize = 16
     + dwell_look::outline::OUTLINE_FLOATS
     + dwell_look::pixel_art::LIGHT_FLOATS
-    + 19 * 4
+    + 21 * 4
     + DAY_SKY_FLOATS;
 
 /// The atlas and its mipmaps, each with its side in texels: down to the level where a tile's gutter
@@ -4766,8 +4796,9 @@ mod tests {
         r.set_clouds(CloudQuality::High);
         let u = r.frame_uniforms(&aim(0.0, 0.0, FaceFrame::A, 0.0), 1.0, 100.0);
         // The clouds' second vec4 (`cloud_cfg`: coverage, octaves, …) follows `clouds`, after tan.
-        // (Then the clouds' third, the water's, the wind's six, the wrap and the reflections' two.)
-        let cfg = FRAME_FLOATS - DAY_SKY_FLOATS - 8 - 4 - 6 * 4 - 4 - 4 - 4;
+        // (Then the clouds' third, the other deck's two, the water's, the wind's six, the wrap and
+        // the reflections' two.)
+        let cfg = FRAME_FLOATS - DAY_SKY_FLOATS - 8 - 4 - 6 * 4 - 4 - 8 - 4 - 4;
         assert_eq!(u[cfg + 1], 0.0, "no octaves on a CPU adapter");
         r.set_adapter(wgpu::DeviceType::DiscreteGpu);
         let u = r.frame_uniforms(&aim(0.0, 0.0, FaceFrame::A, 0.0), 1.0, 100.0);
@@ -5354,9 +5385,9 @@ mod tests {
         let u = r.frame_uniforms(&basis, 1.0, 100.0);
         let f = 1.0 / (80f64.to_radians() / 2.0).tan();
         assert!((f64::from(u[5]) - f).abs() < 1e-5, "projection's y scale");
-        // `tan` is the vec4 before the clouds' three, the water's, the wind's six, the wrap and the
-        // reflections' two (then the day's block).
-        let tan_y = f64::from(u[FRAME_FLOATS - DAY_SKY_FLOATS - 13 * 4 - 3]);
+        // `tan` is the vec4 before the clouds' three, the other deck's two, the water's, the wind's
+        // six, the wrap and the reflections' two (then the day's block).
+        let tan_y = f64::from(u[FRAME_FLOATS - DAY_SKY_FLOATS - 15 * 4 - 3]);
         assert!((tan_y - 1.0 / f).abs() < 1e-5, "the sky's rays");
         // The culling's corner stretch widens with the view.
         let aspect = 16.0 / 9.0;

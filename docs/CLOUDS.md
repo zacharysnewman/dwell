@@ -20,7 +20,8 @@ defaults were chosen and are open to change (§6):
 
 ## 2. The model
 
-- **The deck.** The deck is a thin layer `altitudeM` (1.8 km) above the viewer's face's sea level. It
+- **The deck.** Each face has its deck, a thin layer `altitudeM` (1.8 km) above that face's sea level; both
+  are drawn, and a ray takes the deck of the air it passes through (DAY_NIGHT.md §13). It
   lies on a sphere about a centre `curvatureM` (400 km; 120 km before C5, raised so that from high up the deck reaches far toward the flat world's horizon) below sea level, under the eye. From an eye
   at sea level, a sky pixel's view ray `d` meets it at distance `t = c / (r·y + √(r²y² + c))`, with
   `c = 2rh + h²`, `y = d·up` and `h` the deck's height above the eye (§7 has the general form, from
@@ -46,8 +47,8 @@ defaults were chosen and are open to change (§6):
   the server's tick from its snapshots (`world_clock.rs`: the largest server-minus-local offset seen,
   reset when a server starts over), or the local clock before the first snapshot.
 - **Light.** It comes from the day/night cycle (Phase 32, [`DAY_NIGHT.md`](./DAY_NIGHT.md)): the
-  renderer's `cloud_lighting` reads the frame's `DaySky` block for the viewer's face:
-  - The light is the sun or the moon, whichever is over the viewer's face.
+  renderer's `cloud_lighting_for` reads the frame's `DaySky` block for the deck's own face:
+  - The light is the sun or the moon, whichever is over the deck's face.
   - The data's `sunlit`, `shade`, `nightLit` and `nightShade` colours tint the hues of the sun's,
     the day sky's ambient, the moon's and the night sky's ambient lights.
   - Day or night by the sun's height over the face (the cycle has one time of day all round the
@@ -63,6 +64,9 @@ defaults were chosen and are open to change (§6):
   terrain's fog still mixes toward the clear sky, so distant ground never takes a cloud's colour.
 - **Face B.** Up is `(0, face, 0)` and the deck height is face-local, so B's clouds are over B's own
   horizon. B samples the noise half a period away, so its clouds aren't A's above the same spot.
+  The other face's deck rides in the frame as `clouds_o` and `cloud_cfg_o` (its noise point and its
+  height above the eye in its own frame), drawn below the eye's horizon under the eye's haze
+  (`sky_behind_with_clouds`), so the clouds stay put as the player crosses the midplane.
   View rays are world directions from the same basis as the terrain, so the camera's turn-over
   needs nothing of its own (checked in a browser, §5).
 
