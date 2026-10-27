@@ -1695,8 +1695,19 @@ impl TerrainGenerator {
     /// The column bounds sections are classified by (`lod::kind_from_bounds`).
     pub fn lod_bounds_at(&self, level: i32, i: i32, k: i32) -> LodBounds {
         let o = lod::section_origin(LodCoord::new(level, i, 0, k));
-        let mut b = Self::lod_bounds_of(&self.lod_columns(o, level), self.lod_rise(level));
+        let mut b = self.lod_bounds_with(&self.lod_columns(o, level), level);
         self.raise_for_monuments(&mut b, o, level);
+        b
+    }
+
+    /// [`Self::lod_bounds_of`] for this generator at `level`: under a terrain volume a section below
+    /// every top may still hold carved air (an overhang's underside), so it is buried only below
+    /// the volume's reach under them.
+    fn lod_bounds_with(&self, cols: &[Column], level: i32) -> LodBounds {
+        let mut b = Self::lod_bounds_of(cols, self.lod_rise(level));
+        if let Some(v) = &self.volume {
+            b.lo -= f64::from(2 * v.reach_rows);
+        }
         b
     }
 
@@ -1741,7 +1752,7 @@ impl TerrainGenerator {
         o.y = origin_y;
         let cell = lod::cell_size(c.level);
         let cols = self.lod_columns(o, c.level);
-        let mut bounds = Self::lod_bounds_of(&cols, self.lod_rise(c.level));
+        let mut bounds = self.lod_bounds_with(&cols, c.level);
         self.raise_for_monuments(&mut bounds, o, c.level);
         let kind = if bounds.any_inside {
             lod::kind_of_face(c.level, origin_y, bounds.lo, bounds.hi)
@@ -1788,18 +1799,53 @@ impl TerrainGenerator {
                 let top = i64::from(top_voxel(col.height));
                 let water = i64::from(col.water_row());
                 let wet = water > top + 1;
+                // The terrain volume's density at this column's sample point, where it reshapes:
+                // the cells it leaves empty under the top are air, as in the chunks, so the
+                // LOD draws an overhang's underside (WORLD_GENERATION.md §5).
+                let carved = self.volume.as_deref().and_then(|v| {
+                    let wx = o.x + i64::from(x) * cell + half;
+                    let wz = o.z + i64::from(z) * cell + half;
+                    let base = self.base_column(wx, wz, cell);
+                    let eval = self
+                        .volume_eval(v, wx, wz, cell, &base)
+                        .filter(|e| !e.plain)?;
+                    Some((v, eval, top_voxel(base.height)))
+                });
+                // Whether the volume leaves the cell from row `a` empty (sampled at its middle row).
+                let empty = |a: i64| {
+                    carved.as_ref().is_some_and(|(v, e, base_top)| {
+                        !Self::volume_solid(v, e, *base_top, (a + cell / 2) as i32)
+                    })
+                };
                 // The soil as the chunks mantle it: down to the lowest neighbouring cell's top.
+                // Under a terrain volume, as `soil_at`: at most its `soilDepth` where it changed the
+                // neighbours, so a cliff face reads as rock from afar too.
                 let lod_soil = |x: i32, z: i32| {
                     let n = lod::SECTION_CELLS;
-                    let lowest = [(1, 0), (-1, 0), (0, 1), (0, -1)]
+                    let around: Vec<Column> = [(1, 0), (-1, 0), (0, 1), (0, -1)]
                         .iter()
                         .map(|(dx, dz)| ((x + dx).clamp(-1, n), (z + dz).clamp(-1, n)))
                         .map(|(nx, nz)| cols[lod::column_index(nx, nz)])
                         .filter(|c| !c.outside)
+                        .collect();
+                    let lowest = around
+                        .iter()
                         .map(|c| top_voxel(c.height))
                         .min()
                         .unwrap_or(top as i32);
-                    soil_rows(top as i32, lowest)
+                    let rows = soil_rows(top as i32, lowest);
+                    match &self.volume {
+                        Some(v) => {
+                            let base_top = top_voxel(col.base);
+                            let base_lowest = around
+                                .iter()
+                                .map(|c| top_voxel(c.base))
+                                .min()
+                                .unwrap_or(base_top);
+                            rows.min(v.soil_rows.max(soil_rows(base_top, base_lowest)))
+                        }
+                        None => rows,
+                    }
                 };
                 for y in -1..=lod::SECTION_CELLS {
                     let a = o.y + i64::from(y) * cell;
@@ -1818,7 +1864,15 @@ impl TerrainGenerator {
                     }
                     let depth = (top - (a + cell - 1)).max(0);
                     if depth > 0 {
-                        *m = fill_soil(col.band, top as i32, depth.min(1000), lod_soil(x, z));
+                        if empty(a) {
+                            continue;
+                        }
+                        // A ceiling over carved air is rock, as in the chunks.
+                        *m = if empty(a - cell) {
+                            M.stone
+                        } else {
+                            fill_soil(col.band, top as i32, depth.min(1000), lod_soil(x, z))
+                        };
                         continue;
                     }
                     // The column's top: its surface seen from above. Water no cell sampled shows

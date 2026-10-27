@@ -545,3 +545,54 @@ dwell_world::both_faces!(
         }
     }
 );
+
+dwell_world::both_faces!(
+    /// The owner (2026-10-27): "did we work in rendering undersides in cliffs LODs? If not that
+    /// should be the priority." The LOD's sections filled each column solid up to its top, so an
+    /// overhang read as a solid bank from afar. They take the volume's carving too: round steep
+    /// hillsides, sections at the near levels hold rock over air (an underside to draw).
+    fn lod_sections_hold_the_overhangs_undersides(f: FaceFrame) {
+        use dwell_world::lod::{
+            LodCells, LodCoord, LodKind, ORIGIN_X, ORIGIN_Y, ORIGIN_Z, SECTION_CELLS, cell_index,
+            section_size,
+        };
+        let plain = BifacialTerrain::height_field(7);
+        let terrain = BifacialTerrain::new(7);
+        let (p, g) = (plain.local(f.face), terrain.local(f.face));
+        let section = |level: i32, x: i64, y: i64, z: i64| {
+            let s = section_size(level);
+            let at = |v: i64, o: i64| (v - o).div_euclid(s) as i32;
+            LodCoord::new(level, at(x, ORIGIN_X), at(y, ORIGIN_Y), at(z, ORIGIN_Z))
+        };
+        let mut under = [0usize; 3];
+        for at in steep_columns(p, 1.1, 6) {
+            let ground = i64::from(g.ground_y(at.0, at.1).expect("disc"));
+            for (k, level) in [1, 2, 3].into_iter().enumerate() {
+                let s = section_size(level);
+                for dy in -1..=1 {
+                    let c = section(level, i64::from(at.0), ground + dy * s, i64::from(at.1));
+                    let mut cells = LodCells::new();
+                    if g.generate_lod(c, &mut cells, None) != LodKind::Content {
+                        continue;
+                    }
+                    for z in 0..SECTION_CELLS {
+                        for x in 0..SECTION_CELLS {
+                            for y in 1..SECTION_CELLS {
+                                let m = cells[cell_index(x, y, z)];
+                                let below = cells[cell_index(x, y - 1, z)];
+                                let tree = matches!(named(m), "dwell:log" | "dwell:leaves");
+                                if solid(m) && !tree && below == M.air {
+                                    under[k] += 1;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        assert!(
+            under[0] > 20 && under[1] > 5,
+            "undersides at levels 1, 2, 3: {under:?}"
+        );
+    }
+);
