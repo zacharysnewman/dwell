@@ -26,18 +26,21 @@ certain height above them.
 - **Suspects:** the horizon-map shadows (0.22.19) or the cascades' depth range not covering 2 km relief, the casters'
   `casterReachM`, or the LOD or horizon-map heightmap levels clipping.
 
-### 6. Water reflections fade to white at the screen's sides
-
-*Reported 2026-10-26.*
-
-On water, the reflection fades to a white gradient toward the left and right of the screen, where the reflected world should
-show.
-
-- **Suspect:** the screen-space reflection running off screen and falling back to a sky or white colour instead of the sky
-  probe or environment.
-- The owner's note was cut off ("In addition, I would expect to see …"). Ask what else is expected.
-
 ## Fixed
+
+### 6. Water reflections faded to white at the screen's sides (fixed in 0.27.1)
+
+*Reported 2026-10-26.* Toward the left and right of the screen, reflections faded to a white gradient
+where the reflected world should show. The owner's note continued "In addition, I would expect to
+see …" and was cut off; still to ask.
+
+- **Cause:** the screen-space reflection faded every hit near any screen edge into the sky fallback
+  (`edge_weight`, `ssr_edge`). A ray leaving through a side with no hit also took the sky. Low over
+  land, the sky's horizon haze is near white.
+- **Fix:** hits fade only near the top and bottom edges. A ray leaving through a side takes the drawn
+  scene at its exit pixel (an edge clamp), where that pixel is not sky. This is in both the Rust twin
+  (`render/reflection.rs`) and the shader.
+- **Test:** `the_sides_keep_the_scene_not_a_fade_into_the_sky` failed on the old logic and passes now.
 
 ### 5. Rivers had tall banks and were always shallow (fixed in 0.27.0)
 
