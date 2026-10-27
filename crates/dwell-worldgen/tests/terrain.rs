@@ -1203,3 +1203,64 @@ dwell_world::both_faces!(
         );
     }
 );
+
+dwell_world::both_faces!(
+    /// The owner (2026-10-26): rock in whole faces, not random splotches. Bare rock is where the
+    /// landform is steep (its slope over a hillside's window, the soil thinner higher up), so it
+    /// comes in large connected areas: patches under 50 × 50 m hold under 1 % of it, over seed 7's
+    /// mountains (8 × 4 km, every 8 m).
+    fn rock_comes_in_whole_faces_not_splotches(f: FaceFrame) {
+        use dwell_worldgen::terrain::Band;
+        let g = BifacialTerrain::new(7);
+        let g = g.local(f.face);
+        // A mountainous square of this face: the first point of a 1 km grid with rock round it.
+        let (cx, cz) = (-20..=20)
+            .flat_map(|j| (-20..=20).map(move |i| (i * 1000, j * 1000)))
+            .find(|&(x, z)| {
+                (0..16)
+                    .filter(|k| {
+                        g.column_at(x + (k % 4) * 500, z + (k / 4) * 250).band == Band::Rock
+                    })
+                    .count()
+                    >= 6
+            })
+            .expect("mountains on this face");
+        let (x0, z0, step, w, l) = (cx - 2000, cz - 1000, 8, 1000, 500);
+        let grid: Vec<bool> = (0..l)
+            .flat_map(|j| (0..w).map(move |i| (i, j)))
+            .map(|(i, j)| g.column_at(x0 + i * step, z0 + j * step).band == Band::Rock)
+            .collect();
+        let mut seen = vec![false; grid.len()];
+        let (mut total, mut small) = (0usize, 0usize);
+        for s in 0..grid.len() {
+            if !grid[s] || seen[s] {
+                continue;
+            }
+            let (mut stack, mut n) = (vec![s], 0usize);
+            seen[s] = true;
+            while let Some(c) = stack.pop() {
+                n += 1;
+                let (i, j) = ((c as i32) % w, (c as i32) / w);
+                for (di, dj) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+                    let (a, b) = (i + di, j + dj);
+                    if a >= 0 && b >= 0 && a < w && b < l {
+                        let k = (b * w + a) as usize;
+                        if grid[k] && !seen[k] {
+                            seen[k] = true;
+                            stack.push(k);
+                        }
+                    }
+                }
+            }
+            total += n;
+            if (n as i32) * step * step < 50 * 50 {
+                small += n;
+            }
+        }
+        assert!(total > 1000, "the mountains have rock: {total}");
+        assert!(
+            (small as f64) < 0.01 * total as f64,
+            "{small} of {total} rock samples in patches under 50 × 50 m"
+        );
+    }
+);
