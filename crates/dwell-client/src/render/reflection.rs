@@ -89,7 +89,10 @@ pub fn trace(
     let px_at = |t: f32| [a[0] + delta[0] * t, a[1] + delta[1] * t];
     let (mut prev_t, mut prev_d) = (0.0, da);
     for i in 1..=ssr.steps {
-        let t = t_end * i as f32 / ssr.steps as f32;
+        // Steps closer near the surface and wider far out (squared): a reach of kilometres to the
+        // mountains keeps the banks close by (docs/BUGS.md 6).
+        let s = i as f32 / ssr.steps as f32;
+        let t = t_end * s * s;
         let d = depth_at_t(t);
         if hits(ssr, depth_at(px_at(t)), d, prev_d) {
             let (mut lo, mut hi) = (prev_t, t);

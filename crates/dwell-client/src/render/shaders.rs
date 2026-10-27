@@ -1693,7 +1693,9 @@ fn ssr_trace(p: vec3f, r: vec3f, size: vec2f) -> vec3f {
     var prev_t = 0.0;
     var prev_d = a.z;
     for (var i = 1; i <= steps; i++) {
-        let t = t_end * f32(i) / f32(steps);
+        // Closer near the surface, wider far out (render/reflection.rs `trace`).
+        let s = f32(i) / f32(steps);
+        let t = t_end * s * s;
         let d = 1.0 / mix(k0, k1, t);
         if (ssr_hits(ssr_depth(a.xy + delta * t), d, prev_d)) {
             var t_lo = prev_t;
