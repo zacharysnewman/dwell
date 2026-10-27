@@ -9,7 +9,7 @@ use dwell_mesh::MeshSectionOptions;
 
 use dwell_mesh::{ChunkMeshes, SectionMeshes};
 use dwell_world::lod::{self, LodBounds, LodCoord, LodGenerator, LodSurfaces};
-use dwell_world::{Chunk, ChunkCoord, ChunkGenerator, GENERATOR_TERRAIN, chunk_hash};
+use dwell_world::{Chunk, ChunkCoord, ChunkGenerator, chunk_hash};
 use dwell_worldgen::BifacialTerrain;
 
 /// One unit of background work.
@@ -122,8 +122,7 @@ impl Runner {
     /// [`Runner::world`] with the LOD colour map's river valleys (`?lodmap=on`: their margin under
     /// the river's level, m; ARCHITECTURE.md §6.6 "Colour map") in its LOD sections and bounds.
     pub fn world_with(generator_version: u32, world_seed: u64, valleys: Option<f64>) -> Self {
-        let terrain = (generator_version == GENERATOR_TERRAIN).then(|| {
-            let mut t = BifacialTerrain::new(world_seed);
+        let terrain = BifacialTerrain::for_generator(generator_version, world_seed).map(|mut t| {
             t.set_lod_valleys(valleys);
             std::sync::Arc::new(t)
         });
