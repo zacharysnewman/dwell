@@ -63,9 +63,18 @@ fn a_standing_tree_holds_and_a_cut_trunk_fells_its_crown() {
     assert_eq!(pieces.len(), 1, "{pieces:?}");
     let p = &pieces[0];
     assert_eq!(p.carriers, 6);
-    assert!(p.cells[..6].iter().all(|c| c[0] == 0 && c[2] == 0 && c[1] >= 3));
+    assert!(
+        p.cells[..6]
+            .iter()
+            .all(|c| c[0] == 0 && c[2] == 0 && c[1] >= 3)
+    );
     // Three rows of eight round the trunk and the cap, less the broken one.
-    assert_eq!(p.cells.len() - p.carriers, 3 * 8 + 1 - 1, "leaves: {:?}", &p.cells[6..]);
+    assert_eq!(
+        p.cells.len() - p.carriers,
+        3 * 8 + 1 - 1,
+        "leaves: {:?}",
+        &p.cells[6..]
+    );
     // The stump (row 1, on the floor) was never part of it.
     assert!(!p.cells.contains(&[0, 1, 0]));
 }
@@ -81,7 +90,11 @@ fn leaves_never_hold_up_a_neighbours_crown() {
     assert_eq!(pieces.len(), 1, "{pieces:?}");
     let p = &pieces[0];
     assert_eq!(p.carriers, 7);
-    assert!(p.cells.iter().all(|c| c[0] <= 1), "only the cut tree's side: {:?}", p.cells);
+    assert!(
+        p.cells.iter().all(|c| c[0] <= 1),
+        "only the cut tree's side: {:?}",
+        p.cells
+    );
     // The other tree's trunk is all there.
     assert!((1..=8).all(|y| w.get_voxel(3, y, 0) == log()));
 }
@@ -120,7 +133,13 @@ fn leaves_with_no_log_in_reach_fall_on_their_own() {
     }
     w.set_voxel(-1, 6, 5, M.stone);
     let pieces = cut(&mut w, [3, 6, 5]);
-    assert_eq!(pieces, vec![Piece { cells: vec![[0, 6, 5], [1, 6, 5], [2, 6, 5]], carriers: 0 }]);
+    assert_eq!(
+        pieces,
+        vec![Piece {
+            cells: vec![[0, 6, 5], [1, 6, 5], [2, 6, 5]],
+            carriers: 0
+        }]
+    );
     // A leaf farther than the reach from every log falls on its own when the change reaches it.
     let mut w = world();
     tree(&mut w, 0, 0, 8);
@@ -132,7 +151,8 @@ fn leaves_with_no_log_in_reach_fall_on_their_own() {
     w.set_voxel(1, 8, 0, leaves());
     let pieces = detached_pieces(&mut w, &[[reach + 2, 8, 0]], SupportRules::default());
     assert!(
-        pieces.iter().all(|p| p.carriers == 0) && pieces.iter().any(|p| p.cells.contains(&[reach + 2, 8, 0])),
+        pieces.iter().all(|p| p.carriers == 0)
+            && pieces.iter().any(|p| p.cells.contains(&[reach + 2, 8, 0])),
         "{pieces:?}"
     );
 }
@@ -148,7 +168,10 @@ fn a_system_larger_than_the_bound_is_left_standing() {
     w.set_voxel(0, 1, 0, M.air);
     assert!(detached_pieces(&mut w, &[[0, 1, 0]], rules).is_empty());
     // Within the bound it falls.
-    assert_eq!(detached_pieces(&mut w, &[[0, 1, 0]], SupportRules::default()).len(), 1);
+    assert_eq!(
+        detached_pieces(&mut w, &[[0, 1, 0]], SupportRules::default()).len(),
+        1
+    );
 }
 
 #[test]

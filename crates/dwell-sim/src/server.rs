@@ -24,8 +24,8 @@ use dwell_protocol::{
 use dwell_storage::{PlayerRecord, SaveBatch, SavedLodSection, WorldMeta, WorldStore};
 use dwell_world::brush::brush_policy;
 use dwell_world::edit::{
-    DEFAULT_REACH, EditCapsule, EditCheck, below, check_block_edit, edit_writes, medium_kept, overlaps_player,
-    supported_on,
+    DEFAULT_REACH, EditCapsule, EditCheck, below, check_block_edit, edit_writes, medium_kept,
+    overlaps_player, supported_on,
 };
 use dwell_world::lod::{INDEX_LEVEL, LodCoord, in_world, lod_of_chunk, parent};
 use dwell_world::region::{RegionCheck, check_region_edit, region_reach};
@@ -1978,7 +1978,9 @@ impl Server {
                 let s = info(m);
                 !(m == M.air || s.liquid || s.replaceable) || overlaps_player(M.stone, c, &capsules)
             };
-            let settled = self.felling.settle(&mut self.world, &mut self.physics, i, &taken);
+            let settled = self
+                .felling
+                .settle(&mut self.world, &mut self.physics, i, &taken);
             for &(c, m) in &settled.cells {
                 rebake.set(&mut self.world, c, m);
                 placed.push((c, settled.settles));

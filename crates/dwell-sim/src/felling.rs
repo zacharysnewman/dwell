@@ -123,7 +123,11 @@ impl Felling {
             let mut boxes = Vec::with_capacity(piece.cells.len());
             for (k, &c) in piece.cells.iter().enumerate() {
                 let m = world.get_voxel(c[0], c[1], c[2]);
-                let o = [c[0] - reference[0], c[1] - reference[1], c[2] - reference[2]];
+                let o = [
+                    c[0] - reference[0],
+                    c[1] - reference[1],
+                    c[2] - reference[2],
+                ];
                 let s = info(m);
                 boxes.push(PieceCell {
                     center: offset_m(o),

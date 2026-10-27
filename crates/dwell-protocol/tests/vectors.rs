@@ -110,13 +110,18 @@ fn decoded_fields_are_the_vectors_values() {
     // v20: a falling piece's pose (docs/FELLING.md).
     let p = s.pieces[0];
     assert_eq!((p.id, p.position), (7, [10.5, 40.25, -3.5]));
-    assert!((p.rotation[3] - 23170.0 / 32767.0).abs() < 1e-6 && (p.velocity[1] + 9.75).abs() < 1e-3);
+    assert!(
+        (p.rotation[3] - 23170.0 / 32767.0).abs() < 1e-6 && (p.velocity[1] + 9.75).abs() < 1e-3
+    );
     let Some(Message::EntitySpawn(e)) = Message::decode(&get("entity_spawn")) else {
         panic!("entity_spawn")
     };
     assert_eq!((e.id, e.carriers, e.cells.len()), (7, 2, 3));
     assert_eq!((e.cells[2].offset, e.cells[2].state), ([-1, 1, 2], 21));
-    assert_eq!(Message::decode(&get("entity_despawn")), Some(Message::EntityDespawn(7)));
+    assert_eq!(
+        Message::decode(&get("entity_despawn")),
+        Some(Message::EntityDespawn(7))
+    );
     assert_eq!(
         Message::decode(&get("held_item_brush")),
         Some(Message::HeldItem(held_item::BRUSH | 4))

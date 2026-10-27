@@ -1,6 +1,6 @@
 # Felling: pieces that lose their support fall, tip and settle
 
-**Status: F1 built (0.36.0); F2 next** ([ADR 0051](./adr/0051-felling.md)). The first use of the
+**Status: F1 built (0.36.0); F2 built (0.37.0); F3 next** ([ADR 0051](./adr/0051-felling.md)). The first use of the
 collapse pipeline planned in ARCHITECTURE.md §7.1–7.3 (Phases 20 and 22), for trees, on a general
 rule. Trees as unique things that grow over time stay [`TREE_GROWTH.md`](./TREE_GROWTH.md)'s.
 
@@ -94,11 +94,21 @@ threshold and scale, `maxPieceCells` (a bound on one piece), and the §7.4 sleep
   owner asking "we'll likely need to do some kind of new rendering for when your camera is inside
   leaf blocks", leaves' faces dissolve within `nearFade` (1.2 m) of the eye, dithered, so a canopy
   the eye is in shows round it without faces against the lens (checked in Chrome). No falling yet.
-- **F2 — The loop:** integrity on removal; pieces as server bodies; the protocol messages; client
-  rendering, interpolation and kinematic proxies; settling. Cutting a trunk fells the tree, in
-  multiplayer.
-- **F3 — Players and polish:** push limits, hit damage, riding checked on falling and rolling logs;
-  sounds (a crack, the thud of landing); the bench and e2e scenarios.
+- **F2 — The loop** **[built, 0.37.0]:** integrity on removal (`dwell_world::support`, tests on
+  crafted trees: a cut trunk, touching canopies, branches, loose leaves, the bound); pieces as
+  server bodies (`dwell-sim` `felling.rs`), tipped away from the nearest player (`topple_spin`
+  0.6 rad/s: a trunk cut straight through otherwise balanced on its stump), with terrain collision
+  loaded round them (a piece far from every player fell through the world: test red without it);
+  the protocol messages (v20); client meshing in chunk-sized blocks, interpolation `INTERP_DELAY_MS`
+  behind and kinematic stand-ins in the prediction (`dwell-client` `pieces.rs`; a quaternion per
+  draw in the renderer); settling by resampling onto the grid (`an_upright_trunk_tipped_onto_its_side_lies_as_logs_along_x`).
+  Server tests: a cut trunk lies on the ground as logs along x or z. Checked in Chrome on the flat
+  world: a tree with a crown tips, falls, its leaves through the ground, and settles. Deviation:
+  the felling tunables are still Rust defaults (`FellingRules`), moved to data in F3.
+- **F3 — Players and polish:** push limits, hit damage, riding checked on falling and rolling logs
+  (the snapshot's ground id for a piece); the felling tunables as data (`shared/physics/felling.json`);
+  shadows of falling pieces (the shadow cache keys casters by mesh, not pose); sounds (a crack, the
+  thud of landing); the bench and e2e scenarios.
 
 ## 7. Not in this design
 

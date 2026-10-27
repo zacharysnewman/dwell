@@ -387,6 +387,12 @@ impl Session {
         match m {
             Message::ChunkData(c) => map.to_client_ids(&mut c.voxels),
             Message::LodData(l) => map.to_client_ids(&mut l.cells),
+            Message::EntitySpawn(e) => e.cells.iter_mut().all(|c| {
+                let mut one = [c.state];
+                let ok = map.to_client_ids(&mut one);
+                c.state = one[0];
+                ok
+            }),
             Message::VoxelModification(v) => v.chunks.iter_mut().all(|c| {
                 c.changes.iter_mut().all(|ch| {
                     let mut one = [ch.material];
@@ -477,6 +483,8 @@ impl Session {
                     | Message::ChunkData(_)
                     | Message::ChunkUnload(_)
                     | Message::VoxelModification(_)
+                    | Message::EntitySpawn(_)
+                    | Message::EntityDespawn(_)
                     | Message::EditAck(_)
                     | Message::LodIndex(_)
                     | Message::LodIndexUpdate(_)

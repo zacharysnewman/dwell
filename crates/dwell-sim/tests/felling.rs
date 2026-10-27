@@ -54,7 +54,12 @@ fn fell_and_settle(walk_away: bool) {
         }
         w.set_voxel(x + 1, G + 13, z, log());
         for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
-            w.set_voxel(x + dx, G + 12, z + dz, dwell_blocks::require("dwell:leaves"));
+            w.set_voxel(
+                x + dx,
+                G + 12,
+                z + dz,
+                dwell_blocks::require("dwell:leaves"),
+            );
         }
     }
     // Player 1 (at (−1, ·, −0.25)) breaks the trunk one row above the ground, on its −x face.
@@ -79,13 +84,19 @@ fn fell_and_settle(walk_away: bool) {
         })
         .collect();
     assert_eq!(spawns.len(), 1, "one piece falls");
-    assert_eq!(spawns[0].carriers, 13, "the trunk over the cut and its branch");
+    assert_eq!(
+        spawns[0].carriers, 13,
+        "the trunk over the cut and its branch"
+    );
     let collapse = out[&1].iter().any(|m| {
         matches!(m, Message::VoxelModification(v) if v.reason == VoxelModificationReason::Collapse)
     });
     assert!(collapse, "its cells cleared");
     assert_eq!(f.server.world().get_voxel(x, G + 5, z), M.air);
-    assert!(is_log(f.server.world().get_voxel(x, G, z)), "the stump stands");
+    assert!(
+        is_log(f.server.world().get_voxel(x, G, z)),
+        "the stump stands"
+    );
     if walk_away {
         f.move_to(1, -200.0, f64::from(G) * dwell_world::CELL_H, -200.0);
     }
@@ -95,7 +106,12 @@ fn fell_and_settle(walk_away: bool) {
     for _ in 0..(60 * 15) {
         f.server.step();
         // Datagrams too (the snapshots): the whole outbox.
-        for o in f.server.take_outbox().into_iter().filter(|o| o.session == 1) {
+        for o in f
+            .server
+            .take_outbox()
+            .into_iter()
+            .filter(|o| o.session == 1)
+        {
             match Message::decode(&o.bytes) {
                 Some(Message::PhysicsSnapshot(s)) if !s.pieces.is_empty() => posed = true,
                 Some(Message::EntityDespawn(id)) if id == spawns[0].id => despawned = true,

@@ -249,6 +249,43 @@ impl Physics {
         BodyHandle(h)
     }
 
+    /// A falling piece's stand-in in a client's prediction (docs/FELLING.md §3): a kinematic body
+    /// moved to the server's pose (`set_kinematic_pose`), its colliding cells' boxes, so the local
+    /// player is pushed by it and can stand on it (its velocity follows its moves).
+    pub fn add_kinematic_piece(
+        &mut self,
+        origin: DVec3,
+        rotation: DQuat,
+        cells: &[PieceCell],
+    ) -> BodyHandle {
+        let body = RigidBodyBuilder::kinematic_position_based()
+            .translation(origin)
+            .rotation(rotation.to_scaled_axis())
+            .can_sleep(false)
+            .user_data(TIER1_BODY)
+            .build();
+        let h = self.w.bodies.insert(body);
+        for c in cells.iter().filter(|c| c.collides) {
+            let collider = ColliderBuilder::cuboid(c.half.x, c.half.y, c.half.z)
+                .translation(c.center)
+                .friction(0.8)
+                .collision_groups(groups(Layer::Tier1))
+                .build();
+            self.w
+                .colliders
+                .insert_with_parent(collider, h, &mut self.w.bodies);
+        }
+        BodyHandle(h)
+    }
+
+    /// Moves a position-based kinematic body (`add_kinematic_piece`) to this pose over the next
+    /// step.
+    pub fn set_kinematic_pose(&mut self, h: BodyHandle, position: DVec3, rotation: DQuat) {
+        if let Some(b) = self.w.bodies.get_mut(h.0) {
+            b.set_next_kinematic_position(Pose::from_parts(position, rotation));
+        }
+    }
+
     /// A body's rotation.
     pub fn rotation(&self, h: BodyHandle) -> DQuat {
         self.w

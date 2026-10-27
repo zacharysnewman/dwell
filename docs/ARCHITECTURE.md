@@ -2366,7 +2366,9 @@ flies high above the disc and the whole disc is drawn by the time it arrives.
 
 ## 7. Physics Pipeline
 
-### 7.1 Voxel Awakening & Clustering **[planned]**
+### 7.1 Voxel Awakening & Clustering **[in progress: built for felling, 0.37.0]**
+
+**Built for trees** ([`FELLING.md`](./FELLING.md), ADR 0051): the support rule is block data (`support`: ground, carrier, rider; `dwell_world::support::detached_pieces`, budgeted by `max_cells`); after a tick's edits the server (`dwell-sim` `felling.rs`) detaches what lost its support in one `Collapse` modification and makes each piece one Rapier body (`Physics::add_piece`: a box per cell, carriers colliding, riders adding mass only; tipped away from the nearest player), its terrain collision loaded round it (`Players::set_terrain_boxes`); pieces go out as `EntitySpawn` and in snapshots, and clients draw them interpolated (`dwell-client` `pieces.rs`, a quaternion per draw in the renderer) and stand them in as kinematic bodies in the prediction. What follows describes the general pipeline (terrain and builds, Phases 20–21).
 
 Triggered when the server registers an explosion, a block removal, or a structural failure.
 
@@ -2420,7 +2422,9 @@ Triggered when the server registers an explosion, a block removal, or a structur
   local debris world, applies the explosive impulse, and simulates locally. The server ignores
   these bodies entirely; they have no gameplay effect and may differ between clients.
 
-### 7.3 Voxel Sleeping & Re-baking **[planned]**
+### 7.3 Voxel Sleeping & Re-baking **[in progress: built for felling, 0.37.0]**
+
+**Built for falling pieces** (`felling.rs` `settle`): still for `sleep_ticks` (2 s), out of time, or lost past the world's rows; the rotation snapped to the nearest of the 24 axis-aligned ones, the piece moved under half a cell onto the grid and resampled (each grid cell taking the piece cell its centre lies in, half-open; logs' `axis` turned), riders in taken cells destroyed, a carrier's taken cell lifting the piece up to two rows, players' cells taken; one `Rebake` modification and `EntityDespawn`, then the support rule over what it placed (three unanchored settles and it stays).
 
 1. **Sleep detection.** For each Tier 1 body, if `|v| < SLEEP_LINEAR_THRESHOLD` and
    `|ω| < SLEEP_ANGULAR_THRESHOLD` continuously for `SLEEP_SECONDS`, it enters the re-bake
@@ -2655,7 +2659,7 @@ protocol v5); `LodIndex` 0x13, `LodIndexUpdate` 0x14, `LodData` 0x15, `LodReques
 state and flags, and the wider `pos64` range for creative flight (Phase 4; protocol v7); `ChunkRequest`
 0x4D for full detail beyond the view (Phase 4; protocol v8); the flight speed level in `PlayerInput`'s
 `buttons` (Phase 4; protocol v9); `HostStatus` 0x4E and the `ServerClosing` reject reason
-(Phase 5c; protocol v10); the block registry hash in `Welcome` (Phase 8; protocol v11); the row `j` in `LodIndex` entries and the `faceB` bits of `controllerFlags` and `playerFlags` (Phase 13; protocol v12); `RegionEdit` 0x4F and the `regionEdits` Welcome flag (structure sandbox S3; still protocol v12, an addition within the 0.10 line negotiated by the flag, §10.5); the `KEEP` paste cell and the `brushes` Welcome flag (Phase 34; still protocol v12, negotiated by the flag); `BlockRegistry` 0x50 and the definitions hash in `Welcome` (registry sync, ADR 0038; protocol v14); `slideFlags` and the slide cooldown in the local player's controller state (the sprint slide, Phase 37; protocol v15); `EditAck` 0x51 (edit prediction, Phase 34 B4; protocol v16); `HeldItem` 0x52 and each remote player's `held` and `swing` in `PhysicsSnapshot` (characters, Phase 40 C1; protocol v17); ½ m cells (Phase 41, ADR 0042; protocol v18: no layout change, but positions, chunk rows and the registry's shapes mean ½ m cells, and the registry's `adaptive` rule flag is gone); the piece byte (`rows`, `down`) on every `BlockEditRequest` and the registry's `onSlopes` flag, `moldable` field and `behind` support (items and placement rules, 0.29.0, [`ITEMS.md`](./ITEMS.md); protocol v19) — layouts pinned by `shared/protocol/vectors.txt` (made by the independent Python
+(Phase 5c; protocol v10); the block registry hash in `Welcome` (Phase 8; protocol v11); the row `j` in `LodIndex` entries and the `faceB` bits of `controllerFlags` and `playerFlags` (Phase 13; protocol v12); `RegionEdit` 0x4F and the `regionEdits` Welcome flag (structure sandbox S3; still protocol v12, an addition within the 0.10 line negotiated by the flag, §10.5); the `KEEP` paste cell and the `brushes` Welcome flag (Phase 34; still protocol v12, negotiated by the flag); `BlockRegistry` 0x50 and the definitions hash in `Welcome` (registry sync, ADR 0038; protocol v14); `slideFlags` and the slide cooldown in the local player's controller state (the sprint slide, Phase 37; protocol v15); `EditAck` 0x51 (edit prediction, Phase 34 B4; protocol v16); `HeldItem` 0x52 and each remote player's `held` and `swing` in `PhysicsSnapshot` (characters, Phase 40 C1; protocol v17); ½ m cells (Phase 41, ADR 0042; protocol v18: no layout change, but positions, chunk rows and the registry's shapes mean ½ m cells, and the registry's `adaptive` rule flag is gone); the piece byte (`rows`, `down`) on every `BlockEditRequest` and the registry's `onSlopes` flag, `moldable` field and `behind` support (items and placement rules, 0.29.0, [`ITEMS.md`](./ITEMS.md); protocol v19); `EntitySpawn` 0x16, `EntityDespawn` 0x17 and the pieces in `PhysicsSnapshot` (falling pieces, 0.37.0, [`FELLING.md`](./FELLING.md); protocol v20) — layouts pinned by `shared/protocol/vectors.txt` (made by the independent Python
 reference encoder, including half floats; the Rust codec, `dwell-protocol`, round-trips every
 vector byte for byte and rejects every malformed one). The Rust port kept protocol v12's layouts. **Protocol v13** (Phase 18) changed no layout: client and server derived the same adaptive shapes from the same table, so a build that shaped differently could not connect (the adaptive blocks were removed in Phase 41, protocol v18). The remaining formats below are drafts, finalized in the
 phase that builds them. Enumerations and bit sets (`inputButtons`, `playerStates`, `playerFlags`,
@@ -2717,6 +2721,11 @@ repeat remotePlayerCount:
                                 //   hand) in the low 15 bits, 0x8000 the brush tool painting with it
   u8   swing                    // v17: SwingFlags — a count (6 bits) stepping with each edit the
                                 //   server takes from it, refused or not; 0x40 break, 0x80 place
+u8   pieceCount                 // [built, protocol v20] the falling pieces (docs/FELLING.md), nearest
+                                 // first, in the room the remotes leave
+repeat pieceCount:
+  u32 id, i32×3 position (posfix: the piece's reference cell's centre),
+  i16×4 rotation (unit quaternion x, y, z, w, each × 32767), f16×3 velocity, f16×3 spin
 ```
 **Client → Server: `HeldItem` (reliable, `control`) [built, Phase 40 C1; protocol v17]** — `u16 held`
 (as above, the client's block mapped to the server's id): sent when the hand changes (the hotbar's
@@ -2901,8 +2910,15 @@ u8   kind                       // Explosion = 1
 i32×3 origin (posfix), f32 force, f32 radius
 ```
 
-**Server → Client: `EntitySpawn` / `EntityDespawn` (reliable, `world`)** — `NetworkEntityID`,
-initial transform, and (spawn only) the cluster voxel layout (local offsets + materials).
+**Server → Client: `EntitySpawn` 0x16 / `EntityDespawn` 0x17 (reliable, `world`) [built, protocol v20,
+for falling pieces: docs/FELLING.md]**
+```
+S→C EntitySpawn 0x16   u32 id, f64×3 origin (pos64: its reference cell's centre), f32×4 rotation,
+                       u16 carriers, u16 cellCount (≤ MAX_PIECE_CELLS 4096, ≥ carriers),
+                       repeat: i16×3 offset (cells from the reference cell), u16 state
+                       // after the Collapse VoxelModification that cleared its cells; carriers first
+S→C EntityDespawn 0x17 u32 id // after the Rebake VoxelModification of the blocks it settled into
+```
 
 ---
 
