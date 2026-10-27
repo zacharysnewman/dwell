@@ -6,7 +6,15 @@ pins it.
 
 ## Open
 
-None. Report new ones here.
+### 10. After falling through a portal and back, the shaft's middle chunks go missing
+
+*Reported 2026-10-26 (0.28.x, on a phone).* After falling down a portal and back up, the chunks in
+the middle (round the midplane) seem to unload: a white, see-through patch shows looking down the
+shaft (toward the night side). Queued after controller support.
+
+- **Suspects:** the streamed sphere's re-centring as the player crosses the midplane (both faces'
+  chunks near it), the unload of the far face's chunks, or the motes' or the sky's draw in the
+  shaft.
 
 ## Fixed
 

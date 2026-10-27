@@ -270,6 +270,8 @@ struct Inner {
     /// The motion effects' settings and whether the game menu is open (docs/MOTION_EFFECTS.md).
     motion: dwell_look::motion::MotionSettings,
     menu_open: bool,
+    /// The last controller frame's time (ms), for its look's dt.
+    gamepad_ms: Option<f64>,
     /// The Field of view setting (degrees, vertical).
     fov_setting: f64,
     /// The browser asks for reduced motion (the spyglass zooms at once).
@@ -411,6 +413,7 @@ impl Client {
             debug_visible: false,
             motion: Default::default(),
             menu_open: false,
+            gamepad_ms: None,
             fov_setting: dwell_lod::frustum::VERTICAL_FOV,
             reduced_motion: false,
             show_arms: true,
@@ -796,6 +799,100 @@ impl Client {
             s.shell_events.push(shell_event("slot", slot as u32));
         }
     }
+    /// A controller frame (docs/GAMEPAD.md): the standard mapping's button values and axes, read
+    /// by the shell from `navigator.getGamepads()` every animation frame. While playing (in a world,
+    /// no menu open) its sticks move and turn and its presses act; returns the names of the actions
+    /// pressed this frame that are the shell's to do (`pause`).
+    pub fn gamepad(&self, buttons: &[f32], axes: &[f32], now_ms: f64) -> Vec<String> {
+        use dwell_game::gamepad::PlayAction as A;
+        let mut s = self.inner.borrow_mut();
+        // A long gap (the tab hidden, the first frame) turns nothing.
+        let dt = s
+            .gamepad_ms
+            .map_or(0.0, |t| ((now_ms - t) / 1000.0).clamp(0.0, 0.1));
+        s.gamepad_ms = Some(now_ms);
+        let playing = s.game.is_some() && !s.menu_open;
+        let scale = s
+            .game
+            .as_ref()
+            .map_or(1.0, |g| g.spyglass_view().look_scale);
+        let actions = s.input.gamepad_frame(buttons, axes, dt, playing, scale);
+        let mut shell = Vec::new();
+        for a in actions {
+            match a {
+                A::Break => {
+                    s.edit(EditAction::Break, now_ms);
+                }
+                A::Place => {
+                    s.edit(EditAction::Place, now_ms);
+                }
+                A::HotbarNext | A::HotbarPrev => {
+                    let step = if a == A::HotbarNext { 1 } else { -1 };
+                    if let Some(g) = &mut s.game
+                        && let Some(slot) = g.interaction.scroll(step)
+                    {
+                        s.shell_events.push(shell_event("slot", slot as u32));
+                    }
+                }
+                A::Fly => {
+                    if let Some(on) = s.input.flight.toggle() {
+                        s.on_input_event(InputEvent::FlightChanged(on), now_ms);
+                    }
+                }
+                A::FlyFaster | A::FlySlower => {
+                    let step = if a == A::FlyFaster { 1.0 } else { -1.0 };
+                    let level = f64::from(s.input.flight.speed_level()) + step;
+                    if s.input.flight.flying()
+                        && let Some(l) = s.input.flight.set_speed_level(level)
+                    {
+                        s.shell_events.push(shell_event("flySpeed", l));
+                    }
+                }
+                A::Spyglass => {
+                    if let Some(g) = s.game.as_mut() {
+                        g.spyglass.toggle(&dwell_look::spyglass::SPYGLASS);
+                        g.sound(dwell_game::sound::SoundKind::Tool);
+                    }
+                }
+                A::Map => s.on_input_event(InputEvent::Toggle("F4".into()), now_ms),
+                A::Pause => shell.push(a.name().to_owned()),
+                A::Jump | A::Crouch | A::Run => {}
+            }
+        }
+        shell
+    }
+    /// The controller went away: nothing it held is held.
+    #[wasm_bindgen(js_name = gamepadDisconnected)]
+    pub fn gamepad_disconnected(&self) {
+        let mut s = self.inner.borrow_mut();
+        s.input.gamepad.disconnect();
+        s.gamepad_ms = None;
+    }
+    /// Puts a play action on a button (Settings → Controller; names from shared/input/gamepad.json):
+    /// the action that had the button takes the old one. False for an unknown name.
+    #[wasm_bindgen(js_name = setGamepadBinding)]
+    pub fn set_gamepad_binding(&self, action: &str, button: &str) -> bool {
+        self.inner.borrow_mut().input.gamepad.bind(action, button)
+    }
+    /// Every play action back on its default button.
+    #[wasm_bindgen(js_name = resetGamepadBindings)]
+    pub fn reset_gamepad_bindings(&self) {
+        self.inner.borrow_mut().input.gamepad.reset_bindings();
+    }
+    /// The player's look speed (× the data's) and whether up on the stick looks down.
+    #[wasm_bindgen(js_name = setGamepadLook)]
+    pub fn set_gamepad_look(&self, speed: f64, invert_y: bool) {
+        let mut s = self.inner.borrow_mut();
+        s.input.gamepad.look_speed = speed.clamp(0.1, 4.0);
+        s.input.gamepad.invert_y = invert_y;
+    }
+    /// The button a play action is on (its name), for Settings.
+    #[wasm_bindgen(js_name = gamepadBinding)]
+    pub fn gamepad_binding(&self, action: &str) -> Option<String> {
+        let a = dwell_game::gamepad::PlayAction::by_name(action)?;
+        Some(self.inner.borrow().input.gamepad.binding(a).name.to_owned())
+    }
+
     /// Sets the view (degrees).
     #[wasm_bindgen(js_name = setLook)]
     pub fn set_look(&self, yaw: f64, pitch: f64) {

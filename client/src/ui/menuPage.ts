@@ -9,6 +9,7 @@ import { configuredMasterUrl, MasterClient, serverInvite } from '../net/master';
 import { MainMenu, type MainMenuDeps } from './mainMenu';
 import { loadRecent } from './recentServers';
 import { installPageSounds } from '../audio/page';
+import { startMenuGamepad } from '../input/gamepad';
 
 /** Most time a lobby ping may take, connecting included (§8.3). */
 export const PING_TIMEOUT_MS = 5000;
@@ -78,6 +79,12 @@ function menuMaster(ping: MenuPageOptions['ping']): MainMenuDeps['master'] {
 export function showMenu(options: MenuPageOptions): MainMenu {
   // Its buttons sound (docs/AUDIO.md §6), in plain TS: the launcher has no WASM.
   installPageSounds();
+  // A controller moves through it too (docs/GAMEPAD.md); B is Esc.
+  startMenuGamepad(document, () => {
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }),
+    );
+  });
   const master = menuMaster(options.ping);
   return new MainMenu(document.body, {
     index: new WorldIndex(storage()),

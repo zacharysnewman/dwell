@@ -388,10 +388,11 @@ export interface DebugTool {
   on?: () => boolean;
 }
 
-type Page = 'settings' | 'controls' | 'structures' | 'debug' | 'host';
+type Page = 'settings' | 'controller' | 'controls' | 'structures' | 'debug' | 'host';
 
 const PAGE_TITLES: Record<Page, string> = {
   settings: 'Settings',
+  controller: 'Controller',
   controls: 'Controls',
   structures: 'Structures',
   debug: 'Debug',
@@ -530,6 +531,7 @@ export class SettingsMenu {
     this.button.setAttribute('aria-expanded', String(open));
     document.body.classList.toggle('menu-open', open);
     if (open) this.refreshDebug();
+    else this.leaveController?.();
     this.onOpenChange?.(open);
   }
 
@@ -562,6 +564,18 @@ export class SettingsMenu {
     const actions = el('div', 'menu-actions');
     actions.append(quit, resume);
     this.footer.prepend(actions);
+  }
+
+  /**
+   * Adds the Controller page (ui/controllerPanel.ts): `onShow` runs each time it is opened,
+   * `onLeave` when another page is shown or the menu closes.
+   */
+  addControllerPanel(panel: HTMLElement, onShow: () => void, onLeave: () => void): void {
+    this.addPage('controller', panel);
+    const entry = this.pages.get('controller');
+    entry?.tab.setAttribute('id', 'menu-controller');
+    entry?.tab.addEventListener('click', onShow);
+    this.leaveController = onLeave;
   }
 
   /** Adds the Host page (local worlds, Phase 5c): `panel` is ui/hostPanel.ts's. */
@@ -642,7 +656,7 @@ export class SettingsMenu {
   }
 
   private addPage(name: Page, page: HTMLElement): void {
-    const order: Page[] = ['settings', 'controls', 'structures', 'debug', 'host'];
+    const order: Page[] = ['settings', 'controller', 'controls', 'structures', 'debug', 'host'];
     const tab = el('button', 'gm-tab', PAGE_TITLES[name]);
     tab.type = 'button';
     tab.setAttribute('role', 'tab');
@@ -669,7 +683,10 @@ export class SettingsMenu {
     tab.setAttribute('aria-selected', String(!shown));
   }
 
+  private leaveController: (() => void) | null = null;
+
   private show(name: Page): void {
+    if (name !== 'controller') this.leaveController?.();
     for (const [n, { tab, page }] of this.pages) {
       page.hidden = n !== name;
       tab.setAttribute('aria-selected', String(n === name));

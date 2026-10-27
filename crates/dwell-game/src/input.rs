@@ -15,6 +15,7 @@ pub use dwell_physics::net::{dequantize_pitch, dequantize_yaw, quantize_pitch, q
 use crate::brush_tool::{BrushAction, brush_key};
 use crate::flight::FlightToggle;
 use crate::flight_speed::clamp_fly_speed_level;
+use crate::gamepad::Gamepad;
 use crate::region_tools::{ToolAction, tool_for_key};
 use crate::touch::TouchState;
 use crate::wrap_degrees;
@@ -148,6 +149,9 @@ pub struct KeyboardMouseInput {
     /// The world allows brushes (V turns the tool on), and the tool is on (its keys are live).
     pub brushes: bool,
     pub brush_active: bool,
+    /// The controller (docs/GAMEPAD.md): its move stick and held buttons join the keys in
+    /// [`Self::sample`].
+    pub gamepad: Gamepad,
 }
 
 impl Default for KeyboardMouseInput {
@@ -160,6 +164,7 @@ impl Default for KeyboardMouseInput {
             pointer_locked: false,
             brushes: false,
             brush_active: false,
+            gamepad: Gamepad::new(),
         }
     }
 }
@@ -182,20 +187,25 @@ impl KeyboardMouseInput {
         self.keys.contains(code)
     }
 
-    /// This tick's input, with the on-screen touch controls (if any) merged in.
+    /// This tick's input, with the on-screen touch controls (if any) and the controller merged in.
     pub fn sample(&self, touch: Option<&TouchState>) -> PlayerInputState {
         let k = |code: &str| self.keys.contains(code);
         let b = |v: bool| if v { 1.0 } else { 0.0 };
+        let pad = &self.gamepad;
+        let [pad_x, pad_y] = pad.move_xy();
         PlayerInputState {
-            move_x: (b(k("KeyD")) - b(k("KeyA")) + touch.map_or(0.0, |t| t.move_x))
+            move_x: (b(k("KeyD")) - b(k("KeyA")) + touch.map_or(0.0, |t| t.move_x) + pad_x)
                 .clamp(-1.0, 1.0),
-            move_y: (b(k("KeyW")) - b(k("KeyS")) + touch.map_or(0.0, |t| t.move_y))
+            move_y: (b(k("KeyW")) - b(k("KeyS")) + touch.map_or(0.0, |t| t.move_y) + pad_y)
                 .clamp(-1.0, 1.0),
             yaw: self.look.yaw,
             pitch: self.look.pitch,
-            jump: k("Space") || touch.is_some_and(|t| t.jump),
-            run: k("ShiftLeft") || k("ShiftRight") || touch.is_some_and(|t| t.run),
-            crouch: k("KeyC") || k("ControlLeft") || touch.is_some_and(|t| t.crouch),
+            jump: k("Space") || touch.is_some_and(|t| t.jump) || pad.jump(),
+            run: k("ShiftLeft") || k("ShiftRight") || touch.is_some_and(|t| t.run) || pad.run(),
+            crouch: k("KeyC")
+                || k("ControlLeft")
+                || touch.is_some_and(|t| t.crouch)
+                || pad.crouch(),
             fly: self.flight.flying(),
             fly_speed: f64::from(self.flight.speed_level()),
         }
@@ -276,6 +286,19 @@ impl KeyboardMouseInput {
     /// The window lost focus: every key is released.
     pub fn blur(&mut self) {
         self.keys.clear();
+    }
+
+    /// A controller frame (`Gamepad::frame`) turning this input's view; the actions it pressed.
+    pub fn gamepad_frame(
+        &mut self,
+        buttons: &[f32],
+        axes: &[f32],
+        dt: f64,
+        playing: bool,
+        look_scale: f64,
+    ) -> Vec<crate::gamepad::PlayAction> {
+        self.gamepad
+            .frame(buttons, axes, dt, playing, &mut self.look, look_scale)
     }
 
     /// A `mousedown` (`MouseEvent.button`). The first click only locks the pointer (the shell
@@ -566,5 +589,25 @@ mod tests {
         assert_eq!(input.mouse_down(0), Some(EditAction::Break));
         assert_eq!(input.mouse_down(2), Some(EditAction::Place));
         assert_eq!(input.wheel(-0.5), Some(-1));
+    }
+
+    #[test]
+    fn the_controller_joins_the_keys_and_touch_in_the_sample() {
+        use crate::gamepad::{PlayAction, button};
+        let mut input = KeyboardMouseInput::new();
+        let mut b = vec![0.0; 17];
+        let jump = input.gamepad.binding(PlayAction::Jump).name;
+        b[usize::from(button(jump).unwrap().index)] = 1.0;
+        input.gamepad_frame(&b, &[0.0, -1.0, 0.0, 0.0], 0.016, true, 1.0);
+        let s = input.sample(None);
+        assert!(s.jump && (s.move_y - 1.0).abs() < 1e-9, "{s:?}");
+        // With the keys too, the move stays on the unit square's range.
+        input.set_key("KeyW", true);
+        assert_eq!(input.sample(None).move_y, 1.0);
+        // While a menu is open the controller holds nothing.
+        input.set_key("KeyW", false);
+        input.gamepad_frame(&b, &[0.0, -1.0, 0.0, 0.0], 0.016, false, 1.0);
+        let s = input.sample(None);
+        assert!(!s.jump && s.move_y == 0.0);
     }
 }
