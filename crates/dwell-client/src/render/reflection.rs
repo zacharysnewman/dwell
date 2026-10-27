@@ -138,17 +138,35 @@ pub fn trace(
     // pixel stands over the surface (land: a mountain running off the screen), it stands in, so the
     // reflection goes on to the edge instead of cutting to the sky's white haze (docs/BUGS.md 9).
     // The floor seen through open water lies under the surface: a miss, else it drew streaks.
+    // The march goes on past the side with its pixel held in the edge column (the scene taken to
+    // go on beyond the edge as it is there), meeting only land: a mountain running off the screen
+    // is reflected to the edge, not cut to the sky's white haze (docs/BUGS.md 9). The floor seen
+    // through open water lies under the surface and is never met (it drew streaks).
     let exit = px_at(t_end);
     let side = exit[0] <= 0.5 + 1e-3 || exit[0] >= view.size[0] - 0.5 - 1e-3;
     if t_end < 1.0 && side {
-        let depth = depth_at(exit);
-        let ray = view.ray(exit);
-        if depth > 0.0 && ray[1] * depth > p[1] + SIDE_LAND_M {
-            let fade = 1.0 - smoothstep(ssr.fade_from, ssr.reach, t_end * len);
-            return Some(Hit {
-                px: exit,
-                weight: edge_weight(view, exit, ssr.edge_fade) * fade,
-            });
+        let clamp_x = |px: [f32; 2]| [exit[0], px[1].clamp(0.5, view.size[1] - 0.5)];
+        let land =
+            |px: [f32; 2], depth: f32| depth > 0.0 && view.ray(px)[1] * depth > p[1] + SIDE_LAND_M;
+        let mut prev_d = depth_at_t(t_end);
+        for i in 1..=ssr.steps {
+            let t = t_end + (1.0 - t_end) * i as f32 / ssr.steps as f32;
+            let d = depth_at_t(t);
+            let at = clamp_x(px_at(t));
+            let scene = depth_at(at);
+            if hits(ssr, scene, d, prev_d) && land(at, scene) {
+                let u = if (db - da).abs() > 1e-3 * da {
+                    (scene.clamp(da.min(db), da.max(db)) - da) / (db - da)
+                } else {
+                    t
+                };
+                let fade = 1.0 - smoothstep(ssr.fade_from, ssr.reach, u * len);
+                return Some(Hit {
+                    px: at,
+                    weight: edge_weight(view, at, ssr.edge_fade) * fade,
+                });
+            }
+            prev_d = d;
         }
     }
     None
@@ -388,7 +406,7 @@ mod tests {
         let mountain = |px: [f32; 2]| {
             let d = ray(&v, px);
             if px[0] < 2.0 && d[1] > -0.01 {
-                900.0
+                100.0
             } else {
                 land(px)
             }
