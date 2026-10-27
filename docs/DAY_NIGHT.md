@@ -576,15 +576,20 @@ WGSL), `dwell-look` `lod_shadows.rs` (the tunables, the march and the blend in f
   from the texel's height plus `biasM`. 32 rows a frame; it replaces the map in use when whole. A
   level is swept again when its heightmap was refilled or the light has turned `turnDeg` (0.5°)
   about the face's up; the light's elevation needs no sweep (the fragment compares it).
-- **Receiving**: a fragment past the cascades reads its column's horizon (bilinear, the finest
+- **Receiving**: every fragment on the face (inside the cascades too, below) reads its column's horizon (bilinear, the finest
   level holding it) and takes `smoothstep(−1, 1, (tan elevation − horizon) / tan penumbra)` of the
   light (`penumbraDeg` 1.5°: a painterly soft edge), faded out over the outermost map's last
   `edgeFade` (20 %). Only fragments on the viewer's face, and only while a light casts.
 - **Composition**: `shadow_light`'s factor is `combine(stand_in, pcf, near, strength, far)`:
-  inside the cascades `mix(stand_in, pcf, strength)` as before; past them `stand_in × mix(1, far,
+  inside the cascades `mix(stand_in, pcf × far, strength)`; past them `stand_in × mix(1, far,
   strength)`; over the cascades' last `edgeFade` the two blended by the same weight, so the factor
   is continuous across the edge (a test steps through the band) and equals the second layer's alone
-  when `far` is 1. The time of day's fade weakens both alike.
+  when `far` is 1. The time of day's fade weakens both alike. Inside the cascades the far shadow
+  multiplies theirs (2026-10-26, docs/BUGS.md 2): the cascades' casters are front faces within
+  `casterReachM` (120 m) toward the light. A low sun's ray to a step on a hill's shaded side leaves
+  the hill through its sun-facing side, often farther than that, so nothing cast into the cascades
+  there. Each step's top was lit and each riser dark (a grid down the shaded slope), while past the
+  cascades the same slope was in the hill's shadow. Seen in Chrome on seed 7 at 0.82.
 - **Settings**: the Shadows setting's tier (Off draws none); none on a CPU adapter (CI's
   SwiftShader), whatever the setting. `?lodshadows=off` turns it off for the bench
   (configuration `lod-shadows-off`); scenarios `lod-shadows-dusk` and `lod-shadows-dusk-b` (face B)

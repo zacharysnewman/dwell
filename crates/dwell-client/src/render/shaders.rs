@@ -2349,7 +2349,9 @@ mod tests {
         // The lookup's result is direct light's: past the maps (or with the light faded) it is
         // the stand-in, which the first layer's sky light replaces.
         let look = body("shadow_light");
-        assert!(look.contains("let inside = mix(stand_in, shadow_pcf(c, p), shadows.cfg.y);"));
+        assert!(look.contains(
+            "let inside = mix(stand_in, shadow_pcf(c, p) * lod_shadow(rel), shadows.cfg.y);"
+        ));
         assert!(look.contains("return stand_in * cloud_shadow(rel);"));
         // Past the cascades, the stand-in shaded by the distant terrain (the third layer), and a
         // blend between (dwell-look `lod_shadows::combine`).

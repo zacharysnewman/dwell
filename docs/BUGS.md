@@ -6,18 +6,6 @@ pins it.
 
 ## Open
 
-### 2. Sun and moon shadows leak through hills in a grid pattern
-
-*Reported 2026-10-26.*
-
-A hill between you and a low sun or moon doesn't fully block the light. Some block faces are lit and others are shadowed,
-leaving a grid pattern.
-
-- **Suspects:** the shadow casters cull faces (back faces, merged quads, caster distance), or the depth-only pass's bias or
-  normal offset is too large for ½ m steps.
-
-## Fixed
-
 ### 3. Tall mountains had a permanent shadow band (fixed in 0.27.4)
 
 *Reported 2026-10-26.* Tall mountains had a shadow that stayed put at certain heights. Possibly
