@@ -324,7 +324,14 @@ only." Shipped to iterate on (owner: "Deploy as a release and we'll iterate on i
   4. *Trees* stand on the final tops (only over air, so their trunks' base is always on solid
      ground: owner, "as long as the trunk base is on a solid block that's fine").
   5. *The LOD* samples the same columns, so it draws the final top surface (owner: "switch to final
-     top surface"); undersides remain the final version's.
+     top surface"), and **[0.35.1]** its sections are carved by the same density: each cell under a
+     column's top samples it at its middle row, empty where the chunks are, a ceiling over carved air
+     rock, so an overhang's underside shows from afar (owner: "did we work in rendering undersides in
+     cliffs LODs? If not that should be the priority"); a section is buried only below the volume's
+     reach under every top (`lod_bounds_with`), and the soil is capped on cliff faces as in chunks, so
+     far walls read as rock. Tested: round seed 7's hillsides sections at levels 1–3 hold hundreds of
+     rock-over-air cells (none on 0.35.0). A wall or overhang thinner than a level's cell is lost at
+     that level.
 - **Cost:** a column whose density is the height field's alone (the 600 m field or the slope mask
   zero; the mask is listed first so the slope is measured only where it can matter) skips the scan;
   reshaped columns are kept per thread (`SHAPED`, a cache keyed by generator). Measured natively on
