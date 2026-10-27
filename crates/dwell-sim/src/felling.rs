@@ -75,6 +75,14 @@ pub struct Felling {
     pub rules: FellingRules,
 }
 
+/// Whether height `y` (m) lies within the world's chunk rows (a piece past them is lost).
+fn in_world_rows(y: f64) -> bool {
+    let n = dwell_world::CHUNK_SIZE;
+    let lo = dwell_world::m_of_row(dwell_world::MIN_CHUNK_Y * n);
+    let hi = dwell_world::m_of_row((dwell_world::MAX_CHUNK_Y + 1) * n);
+    (lo..=hi).contains(&y)
+}
+
 /// The centre of world cell `c` (m).
 pub fn cell_centre(c: [i32; 3]) -> DVec3 {
     DVec3::new(
@@ -187,9 +195,7 @@ impl Felling {
             }
             // Riders alone fall a while and are gone; anything past the world's rows is lost.
             let y = physics.position(p.body).y;
-            let lost = !(dwell_world::m_of_row(dwell_world::FACE_MIN_Y)
-                ..=dwell_world::m_of_row(dwell_world::FACE_MAX_Y))
-                .contains(&y);
+            let lost = !in_world_rows(y);
             let loose = lost || (p.carriers == 0 && p.age >= r.loose_rider_ticks);
             if p.still >= r.sleep_ticks || p.age >= r.max_ticks || loose {
                 due.push(i);
@@ -222,9 +228,7 @@ impl Felling {
             settles: p.settles + 1,
         };
         let y = origin.y;
-        let lost = !(dwell_world::m_of_row(dwell_world::FACE_MIN_Y)
-            ..=dwell_world::m_of_row(dwell_world::FACE_MAX_Y))
-            .contains(&y);
+        let lost = !in_world_rows(y);
         if p.carriers == 0 || lost {
             return out;
         }
