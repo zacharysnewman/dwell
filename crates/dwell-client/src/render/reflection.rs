@@ -89,10 +89,7 @@ pub fn trace(
     let px_at = |t: f32| [a[0] + delta[0] * t, a[1] + delta[1] * t];
     let (mut prev_t, mut prev_d) = (0.0, da);
     for i in 1..=ssr.steps {
-        // Steps closer near the surface and wider far out (squared): a reach of kilometres to the
-        // mountains keeps the banks close by (docs/BUGS.md 6).
-        let s = i as f32 / ssr.steps as f32;
-        let t = t_end * s * s;
+        let t = t_end * i as f32 / ssr.steps as f32;
         let d = depth_at_t(t);
         if hits(ssr, depth_at(px_at(t)), d, prev_d) {
             let (mut lo, mut hi) = (prev_t, t);
@@ -106,8 +103,10 @@ pub fn trace(
                 }
             }
             let px = px_at(hi);
-            let dh = depth_at_t(hi);
-            // How far along the ray in 3D: view depth is linear along it.
+            // How far along the ray in 3D (view depth is linear along it), at the scene's depth
+            // where it was hit: the march's own depth at the end of a step can lie far beyond it,
+            // since a long reach squeezes kilometres into the last pixels (docs/BUGS.md 6).
+            let dh = depth_at(px).clamp(da.min(db), da.max(db));
             let u = if (db - da).abs() > 1e-3 * da {
                 (dh - da) / (db - da)
             } else {

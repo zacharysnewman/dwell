@@ -11,7 +11,7 @@
   "tiers": {
     "$comment": "Per water quality. ssrSteps: march steps along the reflected ray on screen (0: no land reflected; Low reads no copy of the scene, so it must be 0 there). refineSteps: binary steps that pin a hit between the last two. maxDistanceM: how far the ray reaches. cloudOctaves: the cloud deck's noise octaves in reflections (0: sky only; also capped by the Clouds setting). cloudShadow: the deck's self-shadow in reflections (while the Clouds setting draws it).",
     "low": { "ssrSteps": 0, "refineSteps": 0, "maxDistanceM": 0, "cloudOctaves": 0, "cloudShadow": false },
-    "medium": { "ssrSteps": 12, "refineSteps": 4, "maxDistanceM": 24000, "cloudOctaves": 3, "cloudShadow": false },
-    "high": { "ssrSteps": 28, "refineSteps": 6, "maxDistanceM": 48000, "cloudOctaves": 5, "cloudShadow": true }
+    "medium": { "ssrSteps": 12, "refineSteps": 8, "maxDistanceM": 24000, "cloudOctaves": 3, "cloudShadow": false },
+    "high": { "ssrSteps": 28, "refineSteps": 10, "maxDistanceM": 48000, "cloudOctaves": 5, "cloudShadow": true }
   }
 }
