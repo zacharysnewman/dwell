@@ -35,6 +35,7 @@ const ROUTE_PARAMS = [
   'local',
   'world',
   'seed',
+  'spawn',
   'v',
   'new',
   'name',
@@ -70,7 +71,8 @@ export function launchOf(search: string): Launch {
   if (regenerate) return { kind: 'regenerate', id: regenerate };
   const play = params.get('play');
   if (play) return { kind: 'play', id: play };
-  if (params.has('world') || params.has('seed')) return { kind: 'link' };
+  // A world link; the dev spawn links (`?spawn=portal`, `b`) alone open one too (seed 0).
+  if (params.has('world') || params.has('seed') || params.has('spawn')) return { kind: 'link' };
   return { kind: 'menu' };
 }
 
