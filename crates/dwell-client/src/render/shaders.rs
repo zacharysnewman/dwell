@@ -34,8 +34,8 @@ struct Frame {
     // tint (linear, luminance 1).
     pixel_art: vec4f,
     pixel_tint: vec4f,
-    // x eye height (world y), y face (±1), z exposure (× the time of day's), w fog density (× the
-    // time of day's)
+    // x eye height (world y), y face (±1), z exposure (× the eye's adaptation's), w the eye's face's
+    // fog density (× its time of day's; the other face's is day.other_stars.y)
     eye: vec4f,
     // x fog sigma, y fog scale height, z seconds (the water's scroll, the plants' wind), w the
     // plants' wind scale (0: still)
@@ -52,6 +52,10 @@ struct Frame {
     clouds: vec4f,
     cloud_cfg: vec4f,
     cloud_inside: vec4f,
+    // The other face's deck (as `clouds` and `cloud_cfg`, in its frame): what a ray that crosses
+    // the midplane meets (docs/DAY_NIGHT.md §13).
+    clouds_o: vec4f,
+    cloud_cfg_o: vec4f,
     // The eye under a fluid's drawn surface: x 1 (else 0), y fluid id, z the surface's world y;
     // w the water quality (0 Low, 1 Medium, 2 High).
     water: vec4f,
@@ -381,24 +385,33 @@ fn underwater(lin: vec3f, dist: f32, f: Fluid) -> vec3f {
     return lin * t + inscatter * (1.0 - t);
 }
 
-// The height fog (dwell-look's haze_amount, per pixel): how much of the sky behind to mix in, in
-// output colour. `rel` is the point relative to the eye.
+// The height fog (dwell-look's haze_amount, per pixel) in the eye's face's air: how much of the
+// sky behind to mix in, in output colour. `rel` is the point relative to the eye.
 fn fog_amount(rel: vec3f) -> f32 {
-    let density = frame.eye.w;
-    if (density <= 0.0) {
-        return 0.0;
-    }
     let face = frame.eye.y;
-    let dist = length(rel);
-    let rise = face_rise(face, rel);
     let cam = face_y(face, frame.eye.x);
-    let low = min(cam, cam + rise) - SEA_LEVEL;
-    let h = frame.fog.y;
-    let k = abs(rise) / h;
-    let base = exp(min(80.0, -low / h));
-    let along = select((1.0 - exp(-k)) / k, 1.0 - k * 0.5, k < 1e-4);
-    let depth = frame.fog.x * dist * base * along;
-    return density * (1.0 - exp(-depth));
+    return dwell_haze(cam, cam + face_rise(face, rel), length(rel), frame.eye.w);
+}
+
+// `c` (output colour) at `rel` from the eye, fogged as the world is, not the viewer
+// (docs/DAY_NIGHT.md §13): toward the eye's face's clear sky `clear` by its fog over the part of
+// the ray in its air, and where the ray crosses the midplane (a point seen down a shaft or past the
+// rim) first toward the other face's sky by the other face's fog over the part in its air.
+fn fogged(c: vec3f, rel: vec3f, clear: vec3f) -> vec3f {
+    let face = frame.eye.y;
+    let cam = face_y(face, frame.eye.x);
+    let mid = face_y(face, FACE_MIDPLANE_Y);
+    let rise = face_rise(face, rel);
+    if (cam + rise >= mid || rise >= 0.0) {
+        return mix(c, clear, fog_amount(rel));
+    }
+    let dist = length(rel);
+    let near = clamp((cam - mid) / -rise, 0.0, 1.0);
+    let own = dwell_haze(cam, mid, dist * near, frame.eye.w);
+    let o = -face;
+    let far = dwell_haze(face_y(o, FACE_MIDPLANE_Y), face_y(o, frame.eye.x + rel.y), dist * (1.0 - near), frame.day.other_stars.y);
+    let other_clear = dwell_sky(normalize(rel), o, dwell_other_day(frame.day));
+    return mix(mix(c, other_clear, far), clear, own);
 }
 
 fn clipped(draw: Draw, rel: vec3f) -> bool {
@@ -882,9 +895,15 @@ fn depth_of(d: array<f32, SAMPLE_SLOTS>) -> vec2f {
 // The day/night cycle's light for the viewer's face: its sun, moon and sky light; the day pole is
 // the sun (its height over the horizon sets day or night).
 fn cloud_lighting() -> CloudLighting {
+    return cloud_lighting_for(frame.eye.y);
+}
+
+// The clouds' light over face `face` (±1): its own sun, moon and sky light, whichever face the
+// viewer is on (each deck is lit by its own face's: docs/DAY_NIGHT.md §13).
+fn cloud_lighting_for(face: f32) -> CloudLighting {
     let d = frame.day;
     let pole = d.sun.xyz;
-    let on_a = face_at(frame.eye.x) > 0.0;
+    let on_a = face > 0.0;
     let sky = select(d.sky_b.rgb, d.sky_a.rgb, on_a);
     return CloudLighting(pole, d.sun.xyz, d.moon.xyz, select(d.sun_b.rgb, d.sun_a.rgb, on_a), select(d.moon_b.rgb, d.moon_a.rgb, on_a), sky, sky);
 }
@@ -954,16 +973,17 @@ fn composited(p: vec2i, ndc: vec2f) -> Composited {
     let ray = view_ray(ndc);
     let dir = normalize(ray);
     let face = frame.eye.y;
-    // In uniform control flow, for the pixel's footprint on the deck.
+    // In uniform control flow, for the pixel's footprint on each face's deck.
     let deck = dwell_cloud_deck(dir, face, frame.clouds, frame.cloud_cfg.w);
     let fw = max(fwidth(deck.x), fwidth(deck.y));
+    let deck_o = dwell_cloud_deck(dir, -face, frame.clouds_o, frame.cloud_cfg_o.w);
+    let fw_o = max(fwidth(deck_o.x), fwidth(deck_o.y));
     let clear = sky(dir);
     let lights = cloud_lighting();
     let c = textureLoad(scene_color, p, 0);
     var back = clear;
     if (c.a < 1.0) {
-        let behind = dwell_sky_behind(dir, face, frame.day, clear);
-        back = dwell_clouds(behind, behind, dir, face, deck, fw, frame.clouds, frame.cloud_cfg, lights);
+        back = sky_behind_with_clouds(dir, clear, deck, fw, deck_o, fw_o);
     }
     var depth = 0.0;
     var self_lit = 0.0;
@@ -980,6 +1000,29 @@ fn composited(p: vec2i, ndc: vec2f) -> Composited {
     return s;
 }
 
+// The sky behind the world toward `dir` with both faces' clouds, the world's and not the viewer's
+// (docs/DAY_NIGHT.md §13): a ray above the eye's horizon shows its face's sky and deck; one below it
+// leaves by the other face's air, so shows the other face's sky under the other face's deck (lit by
+// its own sun and moon), hazed by the eye's face's air over the path to the midplane; the eye's own
+// deck, seen from above, goes over either. `deck`/`fw` and `deck_o`/`fw_o` are the two decks' hits
+// and footprints along the ray.
+fn sky_behind_with_clouds(dir: vec3f, clear: vec3f, deck: vec4f, fw: f32, deck_o: vec4f, fw_o: f32) -> vec3f {
+    let face = frame.eye.y;
+    let e = face_rise(face, dir);
+    var behind: vec3f;
+    if (e >= 0.0) {
+        behind = dwell_sky_bodies(dir, face, frame.day, clear);
+    } else {
+        let o = dwell_other_day(frame.day);
+        let other_clear = dwell_sky(dir, -face, o);
+        var other = dwell_sky_bodies(dir, -face, o, other_clear);
+        other = dwell_clouds(other, other_clear, dir, -face, deck_o, fw_o, frame.clouds_o, frame.cloud_cfg_o, cloud_lighting_for(-face));
+        let height = face_y(face, frame.eye.x) - face_y(face, FACE_MIDPLANE_Y);
+        behind = mix(other, clear, dwell_behind_haze(e, height, frame.eye.w));
+    }
+    return dwell_clouds(behind, behind, dir, face, deck, fw, frame.clouds, frame.cloud_cfg, cloud_lighting());
+}
+
 // A scene colour `c` (premultiplied by coverage) at view depth `depth`, composited along the
 // pixel's ray `s.ray`: tone-mapped, encoded and fogged toward its clear sky, under its clouds where
 // the deck is in front of it (its hit nearer than the stored view depth), and over its sky with
@@ -987,7 +1030,7 @@ fn composited(p: vec2i, ndc: vec2f) -> Composited {
 fn composited_scene(c: vec4f, depth: f32, self_lit: f32, s: Composited) -> vec3f {
     var color = s.back;
     if (c.a > 0.0) {
-        var shown = mix(scene_display(c, self_lit), s.clear, fog_amount(s.ray * depth));
+        var shown = fogged(scene_display(c, self_lit), s.ray * depth, s.clear);
         if (cloud_in_front_of(s.deck_t, s.ray, depth)) {
             shown = dwell_cloud_over(shown, s.front);
         }
@@ -2241,12 +2284,36 @@ pub fn lighting_source() -> String {
 mod tests {
     #[test]
     fn the_sky_behind_the_world_takes_the_other_faces_below_the_horizon() {
-        // docs/BUGS.md 10: the composite's sky behind the world is `dwell_sky_behind` (the other
-        // face's sky below the viewer's horizon), while the fog still fades to `sky()`.
+        // docs/BUGS.md 10 and 13: the composite's sky behind the world is the other face's below
+        // the viewer's horizon, under the other face's deck and the eye's face's haze over the path
+        // to the midplane (`sky_behind_with_clouds`); the eye's face's fog fades to `sky()`.
         let src = super::source(1);
-        assert!(src.contains("let behind = dwell_sky_behind(dir, face, frame.day, clear);"));
-        assert!(src.contains("fn dwell_sky_behind("));
+        let body = |name: &str| {
+            let at = src.find(&format!("fn {name}(")).expect(name);
+            src[at..at + src[at..].find("\n}\n").expect("end")].to_string()
+        };
+        let b = body("sky_behind_with_clouds");
+        assert!(b.contains("dwell_sky_bodies(dir, -face, o, other_clear)"));
+        assert!(b.contains("frame.clouds_o, frame.cloud_cfg_o, cloud_lighting_for(-face)"));
+        assert!(b.contains("dwell_behind_haze(e, height, frame.eye.w)"));
+        assert!(
+            body("composited")
+                .contains("sky_behind_with_clouds(dir, clear, deck, fw, deck_o, fw_o)")
+        );
         assert!(src.contains("let clear = sky(dir);"));
+    }
+
+    #[test]
+    fn a_point_across_the_midplane_fogs_by_each_faces_air() {
+        // docs/BUGS.md 13: a point seen down a shaft took the eye's face's fog colour over its whole
+        // path. The part of the ray in the other face's air fogs toward that face's sky first.
+        let src = super::source(1);
+        let at = src.find("fn fogged(").expect("fogged");
+        let b = &src[at..at + src[at..].find("\n}\n").expect("end")];
+        assert!(b.contains("frame.day.other_stars.y"));
+        assert!(b.contains("return mix(mix(c, other_clear, far), clear, own);"));
+        let at = src.find("fn composited_scene(").expect("composited_scene");
+        assert!(src[at..].contains("fogged(scene_display(c, self_lit), s.ray * depth, s.clear)"));
     }
 
     #[test]
@@ -2421,10 +2488,12 @@ mod tests {
         let c = body("composited_of");
         assert!(c.contains("display(") && c.contains("fog_amount("));
         let c = body("composited_scene");
-        assert!(c.contains("display(") && c.contains("fog_amount("));
+        assert!(c.contains("display(") && c.contains("fogged("));
         let c = body("composited");
         assert!(
-            c.contains("sky(") && c.contains("dwell_clouds(") && c.contains("dwell_cloud_deck(")
+            c.contains("sky(")
+                && c.contains("sky_behind_with_clouds(")
+                && c.contains("dwell_cloud_deck(")
         );
         assert!(body("composite_pixel").contains("composited("));
     }
@@ -2443,8 +2512,8 @@ mod tests {
         assert!(of.contains(", clear, fog_amount("));
         assert!(of.contains("mix(back, shown,"));
         let frame = body("composited_scene");
-        assert_eq!(frame.matches("fog_amount(").count(), 1);
-        assert!(frame.contains(", s.clear, fog_amount("));
+        assert_eq!(frame.matches("fogged(").count(), 1);
+        assert!(frame.contains(", s.ray * depth, s.clear)"));
         // Over the scene only where the deck is in front of it, by the stored view depth.
         let front = frame
             .find("cloud_in_front_of(s.deck_t, s.ray, depth)")
@@ -2830,7 +2899,9 @@ mod tests {
         assert!(!m.contains("sky(") && m.contains("textureLoad(finished, vec2i(q), 0)"));
         let c = body("composited");
         assert!(
-            c.contains("dwell_clouds(") && c.contains("composited_scene(c, depth, self_lit, s)")
+            c.contains("sky_behind_with_clouds(")
+                && body("sky_behind_with_clouds").contains("dwell_clouds(")
+                && c.contains("composited_scene(c, depth, self_lit, s)")
         );
         assert!(body("composited_scene").contains("var color = s.back;"));
         assert!(body("composite_pixel").contains("composited(p, ndc)"));

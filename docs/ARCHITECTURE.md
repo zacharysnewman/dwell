@@ -1228,11 +1228,11 @@ player on face B stands upside down in the world.
   solar angle (face B's is face A's + 180°: noon on face A is midnight on face B). Each fragment
   takes its own face's sun, moon and hemisphere light, each direct light weighted by its height
   over that face's horizon (smooth, `own` in the renderer's WGSL), so a ceiling is not lit by the
-  other face's light (§5). The sky is drawn in the viewer's face-local frame (the gradient, the
-  horizon haze and band, the sun, moon and stars cut at the viewer's horizon); the viewer's sky
-  colours are face A's and face B's mixed by the eye's height across the flip band, so the sky
-  doesn't jump as the player crosses, and the sun, moon and stars are world directions, so they
-  stay put while the view turns. The meshers' baked face shading (warm tops, cool sides) does not
+  other face's light (§5). The world owns the sky, the fog and the clouds (DAY_NIGHT.md §13, ADR
+  0050): each ray takes those of the air it passes through (above the midplane face A's, below it
+  face B's), so a view is the same from either side of the midplane; only the exposure and the
+  saturation follow the eye, easing over `eye.adaptS` (1.5 s) as it crosses. The sun, moon and stars
+  are world directions, so they stay put while the view turns. The meshers' baked face shading (warm tops, cool sides) does not
   follow the sun: moving the sun and moon separately is phase 2 (`FUTURE.md`).
 
 #### Interim island layout **[built, Phase 15; replaced by the terrain definition's layout in Phase 17]**
@@ -2237,8 +2237,8 @@ Each frame the octree is walked from the root around the **camera** (the eye):
   (hour angle `2πu + k·sin 2πu`); the sun on its great circle, the moon opposite, the stars turning
   about the path's axis; the moon's phase over `cycleDays` (8) in-game days; each face's sample,
   a monotone cubic through the keyframes over the angle (cyclic, no overshoot), colours in Oklab;
-  and the `DaySky` uniform block (17 vec4: the directions, the viewer's sky, each face's lights,
-  linear × intensity) the renderer's frame carries as `frame.day`. The shader sky (`sky.wgsl`):
+  and the `DaySky` uniform block (23 vec4: the directions, the viewer's face's sky, each face's lights,
+  linear × intensity, the other face's sky and fog density; the eye's adaptation, `EyeAdaptation`) the renderer's frame carries as `frame.day`. The shader sky (`sky.wgsl`):
   `dwell_sky` (gradient, band, halos; the glow capped below the disc) is the sky's, the fog's and
   water's reflections' colour (the water's glint takes the face's sun and moon light from the block); `dwell_sky_bodies` draws, behind the world and under the clouds, the
   sun (limb-darkened, ×`horizonScale` near the horizon), the moon (lit from the sun's side by its
@@ -2263,8 +2263,8 @@ Each frame the octree is walked from the root around the **camera** (the eye):
   Each octave fades to its mean once a pixel's footprint spans it (`fwidth` of the deck point,
   taken in uniform control flow), so the far deck doesn't shimmer. Coverage remaps the noise with a
   soft edge; it is one parameter, a frame uniform, which a weather system can set. The light comes
-  from the day/night cycle (`cloud_lighting` reads the frame's `DaySky`: the viewer's face's sun,
-  moon and sky light): the sun or the moon, whichever is over the face, and day or night by the
+  from the day/night cycle (`cloud_lighting_for` reads the frame's `DaySky`: the deck's own face's sun,
+  moon and sky light; both faces' decks are drawn, the other's below the eye's horizon): the sun or the moon, whichever is over the face, and day or night by the
   sun's height. The data's
   colours tint the lights' hues. High adds a self-shadow sample a step toward the light. There is a
   silver lining near the light, a warm tint from a low sun, and a mix toward the clear sky with

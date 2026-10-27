@@ -75,19 +75,6 @@ only (`dwell-look` `sky_frame.rs`).
 meshers' baked face shading (warm tops, cool sides, blue undersides) moves into the shader so it
 follows the light; and the angle comes from the server's tick, so every player shares it.
 
-## Sky, fog and light by the sun's position (owner, 2026-10-26)
-
-**Today:** the sun, moon and stars are world directions, but the sky's colours, the fog and the light
-are the viewer's face's (blended across the flip band; DAY_NIGHT.md §5), and each face's geometry is
-lit by its own face's light. So what one sees of the other face (through a portal, past the rim) is
-coloured by one's own face's time of day, except the sky behind the world below the horizon, which
-takes the other face's sky since 0.28.5 (docs/BUGS.md 10).
-
-**Goal:** the sky, the fog and the lighting worked out per point from the sun's height above that
-point's face (its face-local horizon), so every look across the faces matches where the sun is.
-Needs a design pass: what the fog and the sky colour are along a ray that crosses the midplane, and
-what that costs per pixel.
-
 ## World upgrades across app versions
 
 **Today (planned, Phase 6):** a world records the app version that saved it and opens only in

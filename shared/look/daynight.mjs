@@ -53,7 +53,9 @@ const SCHEMA = {
     bandSpread: [0, 32],
     behindFrom: [0, 1],
     behindTo: [0.01, 1],
+    behindHeightM: [0, 1000],
   },
+  eye: { adaptS: [0, 10] },
 };
 
 const KEYFRAME = {
@@ -171,6 +173,7 @@ export function dayNightRust(data) {
     moon: 'MoonLook',
     stars: 'StarLook',
     sky: 'SkyShape',
+    eye: 'EyeLook',
   };
   for (const [section, fields] of Object.entries(SCHEMA)) {
     rs.push(`    ${snake(section)}: ${struct[section]} {`);

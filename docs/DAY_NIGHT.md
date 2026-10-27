@@ -106,8 +106,8 @@ colour to keep in step. The keyframes vary only the fog's density.
 
 `dwell-look` evaluates the cycle on the CPU each frame (`DayNight::state`: the time of day, the
 sun, moon and axis, the moon's phase, and each face's keyframe sample) and packs it into the
-`DaySky` uniform block (`daynight::DAY_SKY_WGSL`, 17 vec4: the directions, the viewer's sky colours,
-and each face's lights). The renderer's frame carries it as `frame.day`; clouds and water read it.
+`DaySky` uniform block (`daynight::DAY_SKY_WGSL`, 23 vec4: the directions, the viewer's face's sky
+colours, each face's lights, and the other face's sky colours and fog density). The renderer's frame carries it as `frame.day`; clouds and water read it.
 
 - **The sky** (`sky.wgsl` `dwell_sky`): the gradient, the horizon band toward the sun, the sun's
   bloom and glow (Gaussians sized in degrees by data; the glow is capped so the disc stays brighter
@@ -129,26 +129,23 @@ and each face's lights). The renderer's frame carries it as `frame.day`; clouds 
 - **The composite** applies the keyframe's saturation to the lit scene, fogs it toward the sky, lays
   it over the sky behind and **dithers** the 8-bit output (triangular noise, half a step), so the
   smooth night and twilight gradients don't band.
-- **The viewer's sky across the faces**: the viewer's sky colours, fog density and exposure are
-  face A's and face B's samples mixed by the eye's height across the 4 m flip band, so the sky
-  doesn't jump when the player crosses the midplane. The sun, moon and stars are world
-  directions, so they stay put while the view turns.
-- **The sky below the viewer's horizon** **[built, 0.28.5; blend 0.31.1]**: behind the world
-  (nothing drawn there), a ray below the viewer's horizon is seeing past the rim or down a portal's
-  shaft. As through an atmosphere round the disc: just below the horizon the ray crosses the
-  viewer's face's air out to the rim, so it shows the viewer's horizon haze; looking more steeply
-  down the other face's sky, with its sun, moon and stars, takes over (`dwell_sky_behind`, weighted
-  by `dwell_behind_share` from `daynight.json` `sky.behindFrom` 0.02 to `behindTo` 0.45, elevation
-  sines ~1° to ~27° below; the frame's `DaySky` carries the other face's colours, `other_*`, the
-  viewer's blend mirrored). 0.28.5 switched within a pixel of the horizon, a hard dark band past
-  the rim by day and a white one by night (docs/BUGS.md 12). The fog still fades to the viewer's horizon colour (`sky()`), and so do the
-  reflections. Before, it was the viewer's horizon colour: from face A at noon, face B's night
-  through a portal showed as a white patch (docs/BUGS.md 10). The broader goal, sky, fog and light
-  by the sun's height over each point's face, is in FUTURE.md.
+- **The world owns its look** **[built, 0.31.2]** (§13): each face's sky, fog and cloud deck
+  belong to the world, and each ray takes the ones of the air it passes through, so a view looks the
+  same from either side of the midplane. Only the eye's adaptation (exposure, saturation) follows the
+  viewer. The sun, moon and stars are world directions, so they stay put while the view turns.
+- **The sky below the viewer's horizon** **[built, 0.28.5; blend 0.31.1; by path 0.31.2]**: behind
+  the world (nothing drawn there), a ray below the viewer's horizon is seeing past the rim or down a
+  portal's shaft, so it leaves by the other face's air and shows the other face's sky, with its sun,
+  moon, stars and cloud deck, under the viewer's face's haze over the ray's path to the midplane
+  (§13). Before 0.28.5 it was the viewer's horizon colour (a white patch down a portal, docs/BUGS.md
+  10); 0.28.5 switched within a pixel of the horizon (a hard band past the rim, docs/BUGS.md 12);
+  0.31.1 blended by the elevation alone, which was the viewer's and swapped as they crossed
+  (docs/BUGS.md 13).
 
 Water's reflection uses `sky()`, which is `dwell_sky` with the frame's `DaySky`, so it follows the
-cycle; its glint takes the face's sun and moon light from the block too. The clouds (Phase 31) take their light from the same block (`cloud_lighting`: the viewer's
-face's sun, moon and sky light; day or night by the sun's height).
+cycle; its glint takes the face's sun and moon light from the block too. The clouds (Phase 31) take
+their light from the same block (`cloud_lighting_for`: the deck's own face's sun, moon and sky light;
+day or night by the sun's height over that face).
 
 ## 6. Dev controls
 
@@ -634,3 +631,52 @@ Low.
 **Extending it**: the heights' range, the march, the refresh rules and the tiers are data; a tier is
 a new entry of `tiers` with its Shadows setting. The vocabulary in code is small: the fill from
 above, the max mips, the sweep's march and the fragment's shade.
+
+## 13. The world owns its look: the same view from either side of the midplane
+
+**[built, 0.31.2]** (ADR 0050; docs/BUGS.md 13). *Owner, 2026-10-27:* "It's still an abrupt transition
+between the two world sides when you move between them. Clouds disappear from one side, appear on the
+other, lighting changes (I think), and a white fog band switches sides … How do we support it looking
+correct on both sides? Regardless of viewing side?"
+
+**The rule.** The world is two halves of one atmosphere: face A's air above the midplane, face B's
+below, each with its own time of day, fog and cloud deck. What a ray shows depends only on where it
+goes, never on which face the viewer is on:
+
+| Part | What a ray takes | Where |
+|---|---|---|
+| Sky | Above the eye's horizon its face's sky. Below it the ray leaves by the other face's air, so the other face's sky, sun, moon and stars, under the eye's face's haze over the path to the midplane. | `sky.wgsl` `dwell_sky_behind`, `dwell_behind_haze`; dwell-look `sky_behind`, `behind_haze` |
+| Clouds | Both decks always exist, each in its face's frame (`cloud_uniforms` for the eye's face and for the other: the frame's `clouds`/`cloud_cfg` and `clouds_o`/`cloud_cfg_o`), each lit by its own face's sun and moon (`cloud_lighting_for`). A ray below the eye's horizon draws the other deck under the haze; the eye's deck, seen from above, goes over either. | `shaders.rs` `sky_behind_with_clouds` |
+| Fog | Split where the ray crosses the midplane: the part in the other face's air fogs toward the other face's sky by its fog density (`DaySky.other_stars.y`), then the part in the eye's face's air toward its sky by its density. | `shaders.rs` `fogged`, `sky.wgsl` `dwell_haze` |
+| Geometry light | Each fragment its own face's sun, moon and sky light (unchanged, §5). | |
+| Exposure, saturation | The eye's: they ease toward the eye's face's over `eye.adaptS` (1.5 s) as it crosses, like eyes adjusting from day into night. | dwell-look `EyeAdaptation`, `render/mod.rs` `adapt_eye` |
+
+**The haze over the other face's sky** (`behind_haze`) is the height fog over the ray's path from the
+eye to the midplane (the same integral the terrain's fog uses), and near the horizon the viewer's
+horizon haze (`sky.behindFrom` to `behindTo`, 0.31.1's shape), faded out for an eye nearer the
+midplane than `sky.behindHeightM` (24 m). Both vanish at the midplane, so in a portal's shaft the
+view up is face A's sky and the view down face B's from either side. From high above, past the rim,
+the viewer's haze still gives way to the other face's sky as the view turns down (docs/BUGS.md 12).
+
+**What changed from 0.31.1.** The viewer's sky colours, fog colour, fog density and exposure were
+face A's and face B's mixed by the eye's height across the 4 m flip band, and only the viewer's
+deck was drawn: crossing swapped the clouds, hazed the other face's view in the viewer's colours (a
+white band by day) and jumped the light. The flip band now only eases what the eye adapts toward.
+
+**Cost.** The other deck's hit is found for every pixel (a ray–sphere test, in uniform control flow
+for its footprint); its noise is evaluated only for sky pixels below the eye's horizon (down a shaft,
+past the rim). The fog's split costs a second `dwell_haze` and `dwell_sky` only for points across
+the midplane. Every tier draws the same rule; a CPU adapter's clouds are off for both decks
+(`clouds_for`).
+
+**Tests.** dwell-look: `the_sky_behind_is_the_same_from_either_side_of_the_midplane` (every ray
+0.3 m above and below the midplane; red on 0.31.1 at 0.77, green), `the_haze_past_the_rim_follows_the_path_and_is_gone_at_the_midplane`,
+`the_skies_are_the_faces_own_not_a_blend_by_the_eye`, `the_eye_adapts_to_its_face_over_the_datas_time`;
+dwell-client: `the_sky_behind_the_world_takes_the_other_faces_below_the_horizon`,
+`a_point_across_the_midplane_fogs_by_each_faces_air`. Checked in Chrome on seed 7 at a portal's axis
+0.6 m either side of the midplane at 10:48 (face A's morning, face B's night): world-up and world-down
+each the same sky and clouds from both sides.
+
+**Not covered.** The water's reflections and the ink's fog keep the eye's face's sky (a lake on the
+other face seen down a shaft reflects the eye's face's sky); the inside-the-cloud fog is the eye's
+deck's only.

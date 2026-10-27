@@ -13,6 +13,7 @@
 //!   in Oklab. A face's look is the keyframes at its own solar angle.
 
 use crate::{Rgb, srgb_to_linear};
+use dwell_world::FaceFrame;
 
 #[rustfmt::skip]
 #[allow(clippy::all)]
@@ -84,8 +85,17 @@ pub struct SkyShape {
     pub band_spread: f64,
     /// Below the horizon, the other face's sky fades in from this elevation sine…
     pub behind_from: f64,
-    /// …to this one (fully the other face's from here down).
+    /// …to this one (fully the other face's from here down), for an eye this high (m) or more
+    /// above the midplane; nearer it the viewer's horizon haze fades out (docs/DAY_NIGHT.md §13).
     pub behind_to: f64,
+    pub behind_height_m: f64,
+}
+
+/// The eye's adaptation to the face it is on (docs/DAY_NIGHT.md §13).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct EyeLook {
+    /// The time constant (s) the exposure and saturation ease toward the eye's face with.
+    pub adapt_s: f64,
 }
 
 /// The look at one solar angle (colours sRGB).
@@ -124,6 +134,7 @@ pub struct DayNight {
     pub moon: MoonLook,
     pub stars: StarLook,
     pub sky: SkyShape,
+    pub eye: EyeLook,
     pub keyframes: &'static [Keyframe],
 }
 
@@ -496,11 +507,26 @@ impl DayState {
         )
     }
 
-    /// The `DaySky` uniform block (`DAY_SKY_WGSL`) for a viewer on `face` (±1) `weight_a` of the way
-    /// to face A, `seconds` into the session (the twinkle), with pixels `pixel_angle` radians
-    /// across.
-    pub fn pack(&self, weight_a: f64, seconds: f64, pixel_angle: f64) -> [f32; DAY_SKY_FLOATS] {
-        let v = self.viewer(weight_a);
+    /// Face `face`'s look.
+    pub fn of(&self, face: FaceFrame) -> &Sample {
+        if face.is_b() { &self.b } else { &self.a }
+    }
+
+    /// The `DaySky` uniform block (`DAY_SKY_WGSL`) for a viewer on `face`: that face's sky in the
+    /// viewer's slots and the other face's in `other_*`, which the shaders choose between per ray by
+    /// the air it crosses, not by the viewer (docs/DAY_NIGHT.md §13); the scene's saturation
+    /// `adapted_a` of the way to face A's (the eye's adaptation, [`EyeAdaptation`]); `seconds` into
+    /// the session (the twinkle), with pixels `pixel_angle` radians across.
+    pub fn pack(
+        &self,
+        face: FaceFrame,
+        adapted_a: f64,
+        seconds: f64,
+        pixel_angle: f64,
+    ) -> [f32; DAY_SKY_FLOATS] {
+        let v = self.of(face);
+        let o = self.of(face.other());
+        let saturation = self.viewer(adapted_a).saturation;
         let moon_light =
             DAY_NIGHT.moon.new_moon_light + (1.0 - DAY_NIGHT.moon.new_moon_light) * self.moon_lit;
         let mut u = [0.0f32; DAY_SKY_FLOATS];
@@ -520,7 +546,7 @@ impl DayState {
         put(with(self.moon, self.moon_phase));
         put(with(self.axis, self.solar_deg.to_radians()));
         put(with(v.sky_zenith, 0.0));
-        put(with(v.sky_horizon, v.saturation));
+        put(with(v.sky_horizon, saturation));
         put(with(v.glow, v.glow_strength));
         put(with(v.band, v.band_strength));
         put(with(v.sun_disc, v.moon_glow * self.moon_lit.max(0.25)));
@@ -536,16 +562,45 @@ impl DayState {
             put(lit(s.hemi_sky, s.hemi_intensity));
             put(lit(s.hemi_ground, s.hemi_intensity));
         }
-        // The other face's sky (the viewer's blend mirrored: they meet across the flip band), for
-        // the sky seen below the viewer's horizon: through a shaft, or past the rim (docs/BUGS.md 10).
-        let o = self.viewer(1.0 - weight_a);
+        // The other face's sky, for the rays that cross into its air: down a shaft, or past the
+        // rim (docs/BUGS.md 10, 13); y its fog density (× the fog data's).
         put(with(o.sky_zenith, 0.0));
         put(with(o.sky_horizon, o.saturation));
         put(with(o.glow, o.glow_strength));
         put(with(o.band, o.band_strength));
         put(with(o.sun_disc, o.moon_glow * self.moon_lit.max(0.25)));
-        put([o.stars, 0.0, 0.0, 0.0]);
+        put([o.stars, fog_density(o), 0.0, 0.0]);
         u
+    }
+}
+
+/// A face's fog density this moment: the fog data's, times its time of day's (at most 1).
+pub fn fog_density(s: &Sample) -> f64 {
+    (crate::fog::FOG.density * s.fog_density).min(1.0)
+}
+
+/// The eye's adaptation to the face it is on (docs/DAY_NIGHT.md §13): how far toward face A's
+/// exposure and saturation it is (1 face A's, 0 face B's), easing toward its face's with the
+/// data's time constant (`eye.adaptS`) as it crosses the midplane, instead of switching there.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct EyeAdaptation {
+    weight_a: Option<f64>,
+}
+
+impl EyeAdaptation {
+    /// Steps `dt_s` seconds toward `target_a` (the eye's face: 1 face A, 0 face B, between across
+    /// the flip band) and returns the weight. The first step takes the target as it is.
+    pub fn step(&mut self, target_a: f64, dt_s: f64) -> f64 {
+        let target = target_a.clamp(0.0, 1.0);
+        let tau = DAY_NIGHT.eye.adapt_s;
+        let w = match self.weight_a {
+            Some(w) if tau > 0.0 && dt_s.is_finite() => {
+                w + (target - w) * -(-dt_s.max(0.0) / tau).exp_m1()
+            }
+            _ => target,
+        };
+        self.weight_a = Some(w);
+        w
     }
 }
 
@@ -563,7 +618,7 @@ struct DaySky {
     moon: vec4f,
     // xyz the sky's turning axis; w the stars' turn (rad)
     axis: vec4f,
-    // The viewer's sky (sRGB): the zenith and horizon colours (horizon.a: the scene's saturation), the sun's glow and the horizon band
+    // The viewer's face's sky (sRGB): the zenith and horizon colours (horizon.a: the scene's saturation, the eye's adaptation's), the sun's glow and the horizon band
     // toward it (rgb, a strength), the sun's disc (rgb; a the moon's glow strength).
     zenith: vec4f,
     horizon: vec4f,
@@ -581,8 +636,8 @@ struct DaySky {
     moon_b: vec4f,
     sky_b: vec4f,
     ground_b: vec4f,
-    // The other face's sky (as zenith … disc above; other_stars.x its stars' visibility): what the
-    // sky is below the viewer's horizon, seen through a shaft or past the rim.
+    // The other face's sky (as zenith … disc above; other_stars.x its stars' visibility, y its fog
+    // density): what a ray that crosses into its air shows, through a shaft or past the rim.
     other_zenith: vec4f,
     other_horizon: vec4f,
     other_glow: vec4f,
@@ -617,10 +672,11 @@ mod tests {
 
     #[test]
     fn the_block_carries_the_other_faces_sky_for_below_the_horizon() {
+        // both-faces: packs for each face and compares their slots.
         // docs/BUGS.md 10: from face A at noon, face B's night seen through a portal was drawn in
         // face A's daytime colours (a white patch). The block carries the other face's sky.
         let day = D.state(0.0, Some(0.5), Some(0.5));
-        let u = day.pack(1.0, 0.0, 0.001);
+        let u = day.pack(FaceFrame::A, 1.0, 0.0, 0.001);
         let other = 17 * 4;
         let zenith = &u[other..other + 3];
         for (k, z) in zenith.iter().enumerate() {
@@ -635,9 +691,64 @@ mod tests {
             u[other + 20]
         );
         assert!(day.a.stars < 0.5, "and face A's don't at noon");
-        // Halfway across the flip band the viewer's and the other's are the same blend.
-        let h = day.pack(0.5, 0.0, 0.001);
-        assert_eq!(&h[3 * 4..3 * 4 + 3], &h[other..other + 3]);
+        // From face B the slots swap: its own sky in the viewer's, face A's in the other's.
+        let b = day.pack(FaceFrame::B, 0.0, 0.0, 0.001);
+        assert_eq!(&b[3 * 4..3 * 4 + 3], &u[other..other + 3]);
+        assert_eq!(&b[other..other + 3], &u[3 * 4..3 * 4 + 3]);
+    }
+
+    #[test]
+    fn the_skies_are_the_faces_own_not_a_blend_by_the_eye() {
+        // docs/BUGS.md 13 (owner, 2026-10-27): crossing the midplane swapped the sky's colours as
+        // the eye's flip-band weight moved, so the same ray looked different from either side of
+        // it. Each face's sky is now its own whatever the eye's adaptation; only the saturation
+        // (horizon.a) follows the eye.
+        let day = D.state(0.0, Some(0.45), Some(0.5));
+        let other = 17 * 4;
+        for adapted in [0.0, 0.3, 0.5, 1.0] {
+            let u = day.pack(FaceFrame::A, adapted, 0.0, 0.001);
+            for k in 0..3 {
+                near(f64::from(u[3 * 4 + k]), day.a.sky_zenith[k], 1e-6);
+                near(f64::from(u[other + k]), day.b.sky_zenith[k], 1e-6);
+            }
+            near(
+                f64::from(u[4 * 4 + 3]),
+                day.viewer(adapted).saturation,
+                1e-6,
+            );
+        }
+        // The other face's fog density rides in other_stars.y.
+        let u = day.pack(FaceFrame::A, 1.0, 0.0, 0.001);
+        near(f64::from(u[other + 5 * 4 + 1]), fog_density(&day.b), 1e-6);
+    }
+
+    #[test]
+    fn the_eye_adapts_to_its_face_over_the_datas_time() {
+        // docs/BUGS.md 13: the exposure jumped at the midplane. It eases over eye.adaptS.
+        let tau = D.eye.adapt_s;
+        assert!(tau > 0.0);
+        let mut eye = EyeAdaptation::default();
+        assert_eq!(
+            eye.step(1.0, 0.016),
+            1.0,
+            "the first frame takes its face as it is"
+        );
+        let mut w = 1.0;
+        let mut t = 0.0;
+        while t < tau - 1e-9 {
+            let next = eye.step(0.0, 0.01);
+            assert!(next <= w, "it only eases one way: {next} after {w}");
+            w = next;
+            t += 0.01;
+        }
+        near(w, (-1.0f64).exp(), 0.01);
+        for _ in 0..1000 {
+            w = eye.step(0.0, 0.01);
+        }
+        assert!(w < 1e-3, "and arrives: {w}");
+        // A hidden tab's long frame lands; nothing goes past the target.
+        assert_eq!(eye.step(1.0, 1e9), 1.0);
+        assert_eq!(eye.step(0.0, f64::NAN), 0.0);
     }
 
     #[test]
@@ -815,7 +926,7 @@ mod tests {
     #[test]
     fn the_pack_fills_the_uniform_block() {
         let day = D.state(0.0, Some(0.5), None);
-        let u = day.pack(1.0, 12.0, 0.002);
+        let u = day.pack(FaceFrame::A, 1.0, 12.0, 0.002);
         assert_eq!(u.len(), DAY_SKY_FLOATS);
         assert_eq!(&u[0..3], &day.sun.map(|v| v as f32));
         // The viewer's sky; face A's sun light (linear × intensity), face B's none.

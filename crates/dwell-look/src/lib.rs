@@ -188,6 +188,43 @@ pub fn behind_share(e: f64) -> f64 {
     smoothstep(-s.behind_from, -s.behind_to.max(s.behind_from + 1e-3), e)
 }
 
+/// How much of the viewer's face's haze lies over the other face's sky along a ray that leaves its
+/// air below the horizon (elevation sine `e` < 0) from an eye `height` m above the midplane, in air
+/// of fog density `density` (docs/DAY_NIGHT.md §13): the height fog over the ray's path to the
+/// midplane ([`fog::haze_amount`]), and near the horizon the viewer's horizon haze
+/// ([`behind_share`]'s complement), faded out for an eye nearer the midplane than
+/// `sky.behindHeightM`. Both vanish as the eye reaches the midplane, so a ray looks the same from
+/// either side of it. `dwell_behind_haze` in `sky.wgsl`.
+pub fn behind_haze(e: f64, height: f64, density: f64) -> f64 {
+    let h = height.max(0.0);
+    let fog = fog::FogSettings {
+        density,
+        ..fog::FOG
+    };
+    let mid = FaceFrame::A.y(dwell_world::MIDPLANE_M);
+    let path = fog::haze_amount(&fog, mid + h, mid, h / (-e).max(1e-6));
+    let grazing =
+        (1.0 - behind_share(e)) * smoothstep(0.0, DAY_NIGHT.sky.behind_height_m.max(1e-3), h);
+    1.0 - (1.0 - path) * (1.0 - grazing)
+}
+
+/// The sky behind the world toward the unit world direction `dir` from an eye at world height
+/// `eye_y`, without the sun's and moon's discs, the stars and the clouds: `dwell_sky_behind`'s
+/// colour. The world owns it (docs/DAY_NIGHT.md §13): the sky of the face whose air the ray leaves
+/// by, under the eye's face's haze over the path to the midplane ([`behind_haze`]).
+pub fn sky_behind(dir: Rgb, eye_y: f64, day: &DayState) -> Rgb {
+    let face = FaceFrame::at_height(eye_y);
+    let clear = sky_color(dir, face, day.of(face), day);
+    let e = dot(dir, face.up());
+    if e >= 0.0 {
+        return clear;
+    }
+    let other = sky_color(dir, face.other(), day.of(face.other()), day);
+    let height = face.y(eye_y) - face.y(dwell_world::MIDPLANE_M);
+    let haze = behind_haze(e, height, daynight::fog_density(day.of(face)));
+    mix(other, clear, haze)
+}
+
 /// The sky for shaders, generated from the day/night data's fixed shape (the keyframed values come
 /// in the `DaySky` uniform block, [`daynight::DAY_SKY_WGSL`], which this needs before it):
 ///
@@ -205,6 +242,11 @@ pub fn sky_wgsl() -> String {
         ("BAND_SPREAD", d.sky.band_spread),
         ("BEHIND_FROM", d.sky.behind_from),
         ("BEHIND_TO", d.sky.behind_to.max(d.sky.behind_from + 1e-3)),
+        ("BEHIND_HEIGHT", d.sky.behind_height_m.max(1e-3)),
+        ("SKY_FOG_SIGMA", fog::fog_sigma(fog::FOG.distance_m)),
+        ("SKY_FOG_HEIGHT", fog::FOG.height_m),
+        ("SKY_SEA_LEVEL", dwell_world::SEA_LEVEL_M),
+        ("SKY_MAX_EXPONENT", fog::MAX_EXPONENT),
         ("SUN_RADIUS", d.sun.radius_deg.to_radians()),
         ("SUN_HORIZON_SCALE", d.sun.horizon_scale),
         ("SUN_LIMB", d.sun.limb_darkening),
@@ -464,7 +506,7 @@ mod tests {
             "{}{}\n@group(0) @binding(0) var<uniform> day: DaySky;\n{}\n\
              @fragment fn main(@location(0) d: vec3f) -> @location(0) vec4f {{\n\
              let c = dwell_sky(d, 1.0, day);\n\
-             return vec4f(dwell_sky_bodies(d, 1.0, day, c), 1.0);\n}}",
+             return vec4f(dwell_sky_bodies(d, 1.0, day, c) + dwell_sky_behind(d, 1.0, day, c, 10.0, 0.5), 1.0);\n}}",
             FaceFrame::wgsl(),
             daynight::DAY_SKY_WGSL,
             sky_wgsl()
@@ -512,6 +554,43 @@ mod tests {
     }
 
     #[test]
+    fn the_sky_behind_is_the_same_from_either_side_of_the_midplane() {
+        // both-faces: compares the two faces' views of one ray across the midplane.
+        // docs/BUGS.md 13 (owner, 2026-10-27): crossing the midplane in a portal swapped the sky,
+        // a cloudy blue day sky turning foggy white and a clear night turning cloudy. Every ray
+        // from just above the midplane looks as it does from just below it.
+        let day = DAY_NIGHT.state(0.0, Some(0.45), Some(0.5));
+        let mid = dwell_world::MIDPLANE_M;
+        let mut worst = 0.0f64;
+        // Every 5° from straight down to straight up, off the level ray, which lies in the
+        // midplane itself.
+        for i in 0..36 {
+            let pitch = (f64::from(i) * 5.0 - 87.5).to_radians();
+            for yaw in [0.0f64, 70.0, 200.0] {
+                let y = yaw.to_radians();
+                let dir = [pitch.cos() * y.sin(), pitch.sin(), pitch.cos() * y.cos()];
+                let above = sky_behind(dir, mid + 0.3, &day);
+                let below = sky_behind(dir, mid - 0.3, &day);
+                worst = worst.max(dist(above, below));
+            }
+        }
+        assert!(
+            worst < 0.02,
+            "the same ray differs by {worst} across the midplane"
+        );
+        // And it is each face's own sky where the ray goes into that face's air.
+        let up = sky_behind([0.0, 1.0, 0.0], mid - 0.3, &day);
+        assert!(dist(up, sky_color([0.0, 1.0, 0.0], FaceFrame::A, &day.a, &day)) < 0.02);
+        let down = sky_behind([0.0, -1.0, 0.0], mid + 0.3, &day);
+        assert!(
+            dist(
+                down,
+                sky_color([0.0, -1.0, 0.0], FaceFrame::B, &day.b, &day)
+            ) < 0.02
+        );
+    }
+
+    #[test]
     fn the_other_faces_sky_fades_in_below_the_horizon_not_at_it() {
         // docs/BUGS.md 12 (owner, 2026-10-27): the other face's sky switched in within a pixel of
         // the horizon, a hard dark band past the rim by day (a white one by night). Just below the
@@ -536,7 +615,46 @@ mod tests {
         assert!(steepest < 0.01, "steepest step per 0.1°: {steepest}");
         // The shader uses the same weight from the same data.
         let wgsl = sky_wgsl();
-        assert!(wgsl.contains("let below = dwell_behind_share(e);"));
+        assert!(wgsl.contains("(1.0 - dwell_behind_share(e))"));
         assert!(wgsl.contains("const BEHIND_FROM: f32"));
+    }
+
+    #[test]
+    fn the_haze_past_the_rim_follows_the_path_and_is_gone_at_the_midplane() {
+        // docs/BUGS.md 12 and 13: past the rim the viewer's haze gives way to the other face's sky
+        // as the view turns down; at the midplane there is no haze between the faces at all.
+        let density = daynight::fog_density(&DAY_NIGHT.state(0.0, Some(0.5), None).a);
+        let deg = |a: f64| -a.to_radians().sin();
+        for height in [30.0, 3600.0] {
+            let near_horizon = behind_haze(deg(1.0), height, density);
+            assert!(
+                near_horizon > 0.85,
+                "{height} m, 1° below: haze {near_horizon}"
+            );
+            let down = behind_haze(deg(89.0), height, density);
+            assert!(down < 0.2, "{height} m, straight down: haze {down}");
+            let mut last = behind_haze(-1.0, height, density);
+            for i in (1..900).rev() {
+                let h = behind_haze(deg(f64::from(i) / 10.0), height, density);
+                assert!(h + 1e-9 >= last, "more haze nearer the horizon");
+                assert!(
+                    h - last < 0.02,
+                    "no edge: {last} → {h} at {}°",
+                    f64::from(i) / 10.0
+                );
+                last = h;
+            }
+        }
+        for e in [deg(1.0), deg(10.0), deg(60.0)] {
+            assert!(behind_haze(e, 0.0, density) < 1e-9);
+            assert!(
+                behind_haze(e, 0.3, density) < 0.02,
+                "a step off the midplane"
+            );
+        }
+        // The shader's is the same from the same data.
+        let wgsl = sky_wgsl();
+        assert!(wgsl.contains("fn dwell_behind_haze("));
+        assert!(wgsl.contains("const BEHIND_HEIGHT: f32"));
     }
 }
