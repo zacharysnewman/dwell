@@ -119,6 +119,24 @@ pub fn trace(
         prev_t = t;
         prev_d = d;
     }
+    // Out through a side of the screen with no hit: what lies past that side is unknown, and the
+    // sky is the worst guess low over land (docs/BUGS.md 6: a white haze at the sides). Where the
+    // scene at the exit pixel is drawn (not sky), it stands in (an edge clamp), faded by the reach.
+    let side_exit = t_end < 1.0 && {
+        let e = px_at(t_end);
+        e[0] <= 0.5 + 1e-3 || e[0] >= view.size[0] - 0.5 - 1e-3
+    };
+    if side_exit {
+        let px = px_at(t_end);
+        if depth_at(px) > 0.0 {
+            let u = t_end;
+            let fade = 1.0 - smoothstep(ssr.fade_from, ssr.reach, u * len);
+            return Some(Hit {
+                px,
+                weight: edge_weight(view, px, ssr.edge_fade) * fade,
+            });
+        }
+    }
     None
 }
 
@@ -146,13 +164,12 @@ fn smoothstep(e0: f32, e1: f32, x: f32) -> f32 {
     t * t * (3.0 - 2.0 * t)
 }
 
-/// How much of a hit at `px` survives the screen-edge fade (within `edge_fade` of the screen
-/// height from any edge, the reflection fades into the sky, so it doesn't pop at the edge).
+/// How much of a hit at `px` survives the screen-edge fade: within `edge_fade` of the screen
+/// height from the top or bottom edge, the reflection fades into the sky, so it doesn't pop there.
+/// Not at the sides: a ray leaving there is clamped to the edge's scene instead (`trace`), and
+/// fading a hit there into the sky drew a white haze down both sides (docs/BUGS.md 6).
 pub fn edge_weight(view: &View, px: [f32; 2], edge_fade: f32) -> f32 {
-    let e = px[0]
-        .min(view.size[0] - px[0])
-        .min(px[1])
-        .min(view.size[1] - px[1]);
+    let e = px[1].min(view.size[1] - px[1]);
     smoothstep(0.0, 1.0, e / (edge_fade * view.size[1]))
 }
 
@@ -326,5 +343,31 @@ mod tests {
         assert!(near_edge < 0.2 && edge_weight(&v, mid.px, MEDIUM.edge_fade) > 0.9);
         let none = Ssr { steps: 0, ..MEDIUM };
         assert_eq!(trace(&v, p, r, &none, &depth), None);
+    }
+
+    #[test]
+    fn the_sides_keep_the_scene_not_a_fade_into_the_sky() {
+        // docs/BUGS.md 6: a hit near a side faded into the sky, and a ray leaving through a side
+        // with no hit took the sky: a white haze down both sides of the screen.
+        let v = view(0.12);
+        let depth = lake(v, 40.0, 10.0);
+        let (p, r) = surface(&v, 20.0);
+        let mid = trace(&v, p, r, &MEDIUM, &depth).expect("hit");
+        assert!(
+            edge_weight(&v, [4.0, mid.px[1]], MEDIUM.edge_fade) > 0.9,
+            "a hit at the left edge keeps the scene"
+        );
+        assert!(
+            edge_weight(&v, [v.size[0] - 4.0, mid.px[1]], MEDIUM.edge_fade) > 0.9,
+            "and at the right"
+        );
+        // Land far beyond everywhere (drawn, never met within the reach): a ray off the left side
+        // takes the scene at its exit pixel, not the sky.
+        let land = |_: [f32; 2]| 1.0e4f32;
+        let (q, _) = surface(&v, 20.0);
+        let left = norm([-1.0, 0.15, 0.3]);
+        let hit = trace(&v, q, left, &MEDIUM, land).expect("an edge-clamped hit");
+        assert!(hit.px[0] <= 1.0, "at the left edge: {:?}", hit.px);
+        assert!(hit.weight > 0.5, "{}", hit.weight);
     }
 }
