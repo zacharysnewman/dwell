@@ -9,6 +9,8 @@ import {
   bottomCentre,
   KEPT_ON_SAVE,
   MAX_EDGE,
+  MAX_HEIGHT,
+  maxEdge,
   parseStructure,
   scanBuilt,
   sizeLabel,
@@ -86,9 +88,9 @@ export function saveBox(
     );
     if (!box) return { error: 'Nothing built near you yet.' };
   }
-  if (box.size.some((n) => n > MAX_EDGE)) {
+  if (box.size.some((n, i) => n > maxEdge(i))) {
     return {
-      error: `That is ${sizeLabel(box.size)}: a structure is at most ${String(MAX_EDGE)} a side.`,
+      error: `That is ${sizeLabel(box.size)}: a structure is at most ${String(MAX_EDGE)} across and ${String(MAX_HEIGHT)} tall.`,
     };
   }
   return box;

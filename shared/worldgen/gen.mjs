@@ -739,7 +739,7 @@ const MIDPLANE = {
 };
 
 /** Checks the bedrock and portals against `blocks` (id → block data); throws naming the key. */
-export function validateMidplane(data, blocks) {
+export function validateMidplane(data, blocks, structures = registryStructures()) {
   const fail = (m) => {
     throw new Error(`midplane.json: ${m}`);
   };
@@ -775,7 +775,7 @@ export function validateMidplane(data, blocks) {
     fail(`bedrock.thickness must lie inside the core (${constants.world.coreLayers * cell} m)`);
   }
   const p = data.portals;
-  checkGroup('portals', p, MIDPLANE.portals, ['count', 'rim', 'ladder', 'motes']);
+  checkGroup('portals', p, MIDPLANE.portals, ['count', 'rim', 'ladder', 'motes', 'monument']);
   if (!moteNames(loadMotes()).includes(p.motes)) fail(`portals.motes ${JSON.stringify(p.motes)} is not a look in shared/look/motes.json`);
   const c = p.count;
   if (!(Array.isArray(c) && c.length === 2 && c.every((n) => Number.isInteger(n) && n >= 0 && n <= 64) && c[0] <= c[1])) {
@@ -793,6 +793,31 @@ export function validateMidplane(data, blocks) {
   const facing = ladder.facingProperty;
   if (!(facing && ladder.properties?.[facing]?.includes(LADDER_WALLS[p.ladder.wall]))) {
     fail(`portals.ladder.block ${p.ladder.block} has no ${facing ?? 'facing'}=${LADDER_WALLS[p.ladder.wall]} state`);
+  }
+  const mo = p.monument;
+  if (typeof mo !== 'object' || mo === null || Array.isArray(mo)) fail('portals.monument must be an object');
+  const me = Object.keys(mo).filter((k) => !['$comment', 'structure', 'lodCellM'].includes(k));
+  if (me.length) fail(`portals.monument: unknown ${me.join(', ')}`);
+  const cellOk = Number.isInteger(mo.lodCellM) && mo.lodCellM >= 1 && mo.lodCellM <= 64 && (mo.lodCellM & (mo.lodCellM - 1)) === 0;
+  if (!cellOk) fail('portals.monument.lodCellM must be a power of two in [1, 64]');
+  if (mo.structure !== null) {
+    const s = structures.get(mo.structure);
+    if (!s) fail(`portals.monument.structure ${JSON.stringify(mo.structure)} is not in shared/structures`);
+    // It stands on the clear ground: every cell it fills within the clear radius of the axis
+    // (cells x fastest, then z, then y; a palette character mapped to null keeps what is there).
+    const reach = p.radius + p.rim.width + p.clear;
+    const [sx, , sz] = s.size;
+    const [ax, , az] = s.anchor;
+    let far = 0;
+    for (let i = 0; i < s.cells.length; i++) {
+      if (s.palette.get(s.cells[i]) == null) continue;
+      const x = (i % sx) - ax;
+      const z = (Math.floor(i / sx) % sz) - az;
+      far = Math.max(far, Math.hypot(x, z));
+    }
+    if (far > reach) {
+      fail(`portals.monument.structure ${mo.structure} reaches ${far.toFixed(1)} m from the axis, past the clear ground (${reach} m)`);
+    }
   }
   return data;
 }
@@ -824,6 +849,8 @@ export function midplaneRust(data) {
     ['ladder', JSON.stringify(state)],
     ['wall', `[${{ north: '0, -1', east: '1, 0', south: '0, 1', west: '-1, 0' }[p.ladder.wall]}]`],
     ['clear', rf(p.clear)],
+    ['monument', p.monument.structure === null ? 'None' : `Some(${JSON.stringify(p.monument.structure)})`],
+    ['monument_lod_cell', `${p.monument.lodCellM}`],
     ['motes', JSON.stringify(p.motes)],
   ];
   for (const [k, v] of fields) rs.push(`        ${k}: ${v},`);

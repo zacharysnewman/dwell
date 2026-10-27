@@ -22,6 +22,8 @@ export interface ValidStructure {
 
 export const FORMAT: number;
 export const MAX_EDGE: number;
+export const MAX_HEIGHT: number;
+export function maxEdge(axis: number): number;
 export const KINDS: readonly string[];
 export const VARIANT_OPS: readonly string[];
 export const TOP_LEVEL: readonly string[];

@@ -15,6 +15,7 @@ use std::sync::{Arc, Mutex};
 
 use dwell_blocks::StateId;
 use dwell_world::SEA_LEVEL_M;
+use dwell_world::structure::{Orientation, Placed, Structure};
 
 use crate::noise::seed_word;
 use crate::terrain::TerrainGenerator;
@@ -59,6 +60,11 @@ pub struct PortalRules {
     pub wall: [i32; 2],
     /// No tree or decoration stands within this far of the rim (m).
     pub clear: f32,
+    /// The landmark standing round every opening, by structure name (`shared/structures`), its
+    /// anchor on the axis and its bottom row on the lowest ground under its bottom layer.
+    pub monument: Option<&'static str>,
+    /// The LOD draws it at levels whose cells are at most this many metres.
+    pub monument_lod_cell: i64,
     /// The look of the glowing motes drawn in the shaft round the midplane, by name
     /// (`shared/look/motes.json`; the client's, not the terrain's).
     pub motes: &'static str,
@@ -96,6 +102,8 @@ pub struct Portals {
     pub sites: Arc<Vec<Portal>>,
     pub rim: StateId,
     pub ladder: StateId,
+    /// The landmark round each opening (`rules.monument`), loaded.
+    pub monument: Option<Arc<Structure>>,
     /// Squared radii (m²) of the shaft, the rim's outer edge and the clear ground's.
     shaft2: f64,
     rim2: f64,
@@ -136,6 +144,9 @@ impl Portals {
             sites,
             rim: dwell_blocks::require(rules.rim_block),
             ladder: dwell_blocks::require(rules.ladder),
+            monument: rules.monument.map(|name| {
+                Arc::new(dwell_world::structure::load(name).unwrap_or_else(|e| panic!("{e}")))
+            }),
             shaft2: r * r,
             rim2: rim * rim,
             clear2: clear * clear,
@@ -200,6 +211,25 @@ impl Portals {
     pub fn ladder_column(&self, portal: Portal) -> (i32, i32) {
         let [wx, wz] = self.rules.wall;
         (portal.x + wx * self.ladder_k, portal.z + wz * self.ladder_k)
+    }
+
+    /// `portal`'s monument placed with its anchor on the axis and its bottom row at `base_row`
+    /// (unturned: the data's validation keeps it on the clear ground as built).
+    pub fn monument_at(&self, portal: Portal, base_row: i32) -> Option<Placed> {
+        let s = self.monument.as_ref()?;
+        Some(s.place_oriented([portal.x, base_row, portal.z], Orientation::default(), 0))
+    }
+
+    /// The columns (x, z) under the monument's bottom layer at `portal`: where it stands.
+    pub fn monument_feet(&self, portal: Portal) -> Vec<(i32, i32)> {
+        let Some(probe) = self.monument_at(portal, 0) else {
+            return Vec::new();
+        };
+        probe
+            .cells()
+            .filter(|(p, _)| p[1] == probe.min[1])
+            .map(|(p, _)| (p[0], p[2]))
+            .collect()
     }
 
     /// True when the box [x0, x1] × [z0, z1] reaches any portal's clear ground.

@@ -103,6 +103,10 @@ dwell_world::both_faces!(
             for &portal in p.sites.iter().take(2) {
                 let r = p.reach();
                 let ladder_top = t.ladder_top(p, portal);
+                // The monument's columns (its own test checks them).
+                let monument = t.monument(p, portal).expect("the build's rules stand one");
+                let under: std::collections::HashSet<(i32, i32)> =
+                    monument.cells().map(|(c, _)| (c[0], c[2])).collect();
                 let mut checked = (0, 0, 0);
                 for dz in -r..=r {
                     for dx in -r..=r {
@@ -130,6 +134,7 @@ dwell_world::both_faces!(
                                 assert_eq!(v.at(x, f.row(MIDPLANE_Y), z), bedrock);
                                 checked.1 += 1;
                             }
+                            Part::Clear if under.contains(&(x, z)) => {}
                             Part::Clear => {
                                 // Bare ground: no decoration or tree over it.
                                 for h in top + 1..=top + 24 {
@@ -364,4 +369,129 @@ fn no_portal_opens_in_a_river_or_a_lake() {
             }
         }
     }
+}
+
+dwell_world::both_faces!(
+    /// Owner, 2026-10-26: pillars round every portal's opening, so the portals are found. Face
+    /// `f`'s monument stands with its anchor on the axis and its bottom row on the lowest ground
+    /// under it: every cell it fills is in the world (where the ground there is lower), up to its
+    /// top 30 m over the ground, which the sky test doesn't skip.
+    fn every_portal_stands_its_monument_on_its_ground(f: FaceFrame) {
+        for seed in [0u64, 7] {
+            let g = BifacialTerrain::new(seed);
+            let p = g.portals();
+            let t = g.local(f.face);
+            let mut v = Voxels::new(&g);
+            for &portal in p.sites.iter().take(2) {
+                let m = t.monument(p, portal).expect("the build's rules stand one");
+                let feet = p.monument_feet(portal);
+                let lowest = feet
+                    .iter()
+                    .map(|&(x, z)| t.ground_y(x, z).expect("inside"))
+                    .min()
+                    .expect("it has feet");
+                assert_eq!(m.min[1], lowest + 1, "seed {seed} {portal:?}");
+                assert_eq!(m.max[1] - m.min[1] + 1, 60, "30 m of ½ m rows");
+                assert_eq!(
+                    (m.min[0] + m.max[0], m.min[2] + m.max[2]),
+                    (2 * portal.x, 2 * portal.z)
+                );
+                let mut placed = 0;
+                for (c, state) in m.cells() {
+                    let ground = t.ground_y(c[0], c[2]).expect("inside");
+                    if c[1] <= ground {
+                        continue; // the ground there is higher: it holds the pillar
+                    }
+                    assert_eq!(v.at(c[0], f.row(c[1]), c[2]), f.state(state), "{c:?}");
+                    placed += 1;
+                }
+                assert!(placed > 2000, "{placed}");
+                // Over the crown, air: nothing else stands there.
+                assert_eq!(v.at(portal.x, f.row(m.max[1] + 1), portal.z), M.air);
+                assert_ne!(
+                    v.at(portal.x, f.row(m.max[1]), portal.z),
+                    M.air,
+                    "the crown"
+                );
+            }
+        }
+    }
+);
+
+#[test]
+fn the_lod_shows_a_monument_from_afar() {
+    // face-a-only: the LOD's monument is the same code on both faces (generate_lod_at); this checks
+    // the crown that a 16 m level of face A draws.
+    let g = BifacialTerrain::new(0);
+    let p = g.portals();
+    let portal = p.sites[0];
+    let m = g.local(Face::A).monument(p, portal).expect("one");
+    let level = (0..12)
+        .find(|&l| lod::cell_size(l) == p.rules.monument_lod_cell)
+        .expect("a level of that cell");
+    let s = lod::section_size(level);
+    let at = |v: i64, o: i64| (v - o).div_euclid(s) as i32;
+    let crown = [portal.x, m.max[1], portal.z];
+    let c = LodCoord::new(
+        level,
+        at(i64::from(crown[0]), lod::ORIGIN_X),
+        at(i64::from(crown[1]), lod::ORIGIN_Y),
+        at(i64::from(crown[2]), lod::ORIGIN_Z),
+    );
+    let mut cells = LodCells::new();
+    g.generate_lod(c, &mut cells, None, None);
+    let o = lod::section_origin(c);
+    let i = |v: i32, o: i64| (i64::from(v) - o).div_euclid(lod::cell_size(level)) as i32;
+    let got = cells[lod::cell_index(i(crown[0], o.x), i(crown[1], o.y), i(crown[2], o.z))];
+    assert_eq!(got, require("dwell:stone"), "the crown's cell");
+    // A level coarser than the data's draws none (the ground's own cells only).
+    let coarse = level + 1;
+    let cs = lod::section_size(coarse);
+    let at = |v: i64, o: i64| (v - o).div_euclid(cs) as i32;
+    let c = LodCoord::new(
+        coarse,
+        at(i64::from(crown[0]), lod::ORIGIN_X),
+        at(i64::from(crown[1]), lod::ORIGIN_Y),
+        at(i64::from(crown[2]), lod::ORIGIN_Z),
+    );
+    g.generate_lod(c, &mut cells, None, None);
+    let o = lod::section_origin(c);
+    let i = |v: i32, o: i64| (i64::from(v) - o).div_euclid(lod::cell_size(coarse)) as i32;
+    if cells.len() == lod::VOLUME {
+        let got = cells[lod::cell_index(i(crown[0], o.x), i(crown[1], o.y), i(crown[2], o.z))];
+        assert_eq!(got, M.air, "no crown past lodCellM");
+    }
+}
+
+#[test]
+fn a_portal_monument_is_named_by_data_alone() {
+    // both-faces: a fixture's monument stands on both faces, and none stands without one.
+    let rules = PortalRules {
+        monument: Some("dwell:proto_rock"),
+        ..MIDPLANE.portals
+    };
+    let g = BifacialTerrain::with_portal_rules(5, rules);
+    let p = g.portals();
+    let a = p.sites[0];
+    let mut v = Voxels::new(&g);
+    for f in FaceFrame::under_test() {
+        let t = g.local(f.face);
+        let m = t.monument(p, a).expect("the fixture's");
+        assert_eq!(m.max[1] - m.min[1] + 1, 3, "proto_rock is 3 rows tall");
+        let (c, state) = m
+            .cells()
+            .find(|(c, _)| c[1] > t.ground_y(c[0], c[2]).expect("inside"))
+            .expect("a cell over the ground");
+        assert_eq!(v.at(c[0], f.row(c[1]), c[2]), f.state(state));
+    }
+    let none = BifacialTerrain::with_portal_rules(
+        5,
+        PortalRules {
+            monument: None,
+            ..rules
+        },
+    );
+    let p = none.portals();
+    assert!(none.local(Face::A).monument(p, p.sites[0]).is_none());
+    assert!(p.monument_feet(p.sites[0]).is_empty());
 }

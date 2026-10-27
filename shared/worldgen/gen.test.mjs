@@ -324,11 +324,25 @@ test('bad bedrock or portal entries fail with the key and the problem', () => {
     [(m) => (m.portals.extra = 1), /portals: unknown extra/],
     [(m) => (m.portals.motes = 'dwell:nope'), /portals\.motes "dwell:nope" is not a look in shared\/look\/motes\.json/],
     [(m) => (m.other = 1), /unknown other/],
+    [(m) => (m.portals.monument.structure = 'dwell:nope'), /portals\.monument\.structure "dwell:nope" is not in shared\/structures/],
+    [(m) => (m.portals.clear = 1), /portals\.monument\.structure dwell:portal_arch reaches 7\.1 m from the axis, past the clear ground \(4\.5 m\)/],
+    [(m) => (m.portals.monument.lodCellM = 3), /portals\.monument\.lodCellM must be a power of two in \[1, 64\]/],
+    [(m) => (m.portals.monument.extra = 1), /portals\.monument: unknown extra/],
   ];
   for (const [change, message] of cases) {
     const m = loadMidplane();
     change(m);
     assert.throws(() => validateMidplane(m, blocks), message);
   }
+});
+
+test('a portal monument is named by data: another structure, or none', () => {
+  const m = loadMidplane();
+  m.portals.monument = { structure: 'dwell:proto_rock', lodCellM: 4 };
+  const rs = midplaneRust(validateMidplane(m, blocks));
+  assert.match(rs, /monument: Some\("dwell:proto_rock"\),/);
+  assert.match(rs, /monument_lod_cell: 4,/);
+  m.portals.monument.structure = null;
+  assert.match(midplaneRust(validateMidplane(m, blocks)), /monument: None,/);
 });
 
