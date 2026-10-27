@@ -17,8 +17,8 @@
   "rivers": {
     "$comment": "Channels from the map's river polylines (smoothed `smooth` times, corner cutting). A column's nearest river by its channel's edge: inside the channel the bed lies depth (the map's width curve) below the water at the centre, at least minDepth; beyond it the ground is cut down to a valley rising valleySlope m per m from bank m over the water, out to reach m plus reachPerWidth × the width, where it meets the land; the banks never lie lower than bank m over the water (levees where the land is lower). Meander: the banks are traced through a warp of about ±meander m at meanderWavelength. The LOD widens a river at least lodMinShare of its cell size wide to lodWidth × its cell size, at cells up to lodMaxCell m, so rivers show from afar.",
     "smooth": 3,
-    "minDepth": 0.5,
-    "bank": 1,
+    "minDepth": 1,
+    "bank": 0.5,
     "valleySlope": 0.45,
     "reach": 30,
     "reachPerWidth": 2,

@@ -21,10 +21,10 @@
       "rivers": {
         "threshold": 0.4,
         "geometry": [
-          { "discharge": 0.4, "width": 3, "depth": 0.5 },
-          { "discharge": 5, "width": 12, "depth": 1.2 },
-          { "discharge": 50, "width": 40, "depth": 3 },
-          { "discharge": 500, "width": 120, "depth": 6 }
+          { "discharge": 0.4, "width": 3, "depth": 0.8 },
+          { "discharge": 5, "width": 12, "depth": 2 },
+          { "discharge": 50, "width": 40, "depth": 4.5 },
+          { "discharge": 500, "width": 120, "depth": 9 }
         ],
         "mouths": { "minDischarge": 5, "rule": "riverSlope", "deltaMaxSlope": 0.01, "reach": 500 }
       }
@@ -48,10 +48,10 @@
       "rivers": {
         "threshold": 0.4,
         "geometry": [
-          { "discharge": 0.4, "width": 3, "depth": 0.5 },
-          { "discharge": 5, "width": 12, "depth": 1.2 },
-          { "discharge": 50, "width": 40, "depth": 3 },
-          { "discharge": 500, "width": 120, "depth": 6 }
+          { "discharge": 0.4, "width": 3, "depth": 0.8 },
+          { "discharge": 5, "width": 12, "depth": 2 },
+          { "discharge": 50, "width": 40, "depth": 4.5 },
+          { "discharge": 500, "width": 120, "depth": 9 }
         ],
         "mouths": { "minDischarge": 5, "rule": "riverSlope", "deltaMaxSlope": 0.01, "reach": 500 }
       }
@@ -75,10 +75,10 @@
       "rivers": {
         "threshold": 0.4,
         "geometry": [
-          { "discharge": 0.4, "width": 3, "depth": 0.5 },
-          { "discharge": 5, "width": 12, "depth": 1.2 },
-          { "discharge": 50, "width": 40, "depth": 3 },
-          { "discharge": 500, "width": 120, "depth": 6 }
+          { "discharge": 0.4, "width": 3, "depth": 0.8 },
+          { "discharge": 5, "width": 12, "depth": 2 },
+          { "discharge": 50, "width": 40, "depth": 4.5 },
+          { "discharge": 500, "width": 120, "depth": 9 }
         ],
         "mouths": { "minDischarge": 5, "rule": "riverSlope", "deltaMaxSlope": 0.01, "reach": 500 }
       }
@@ -102,10 +102,10 @@
       "rivers": {
         "threshold": 0.4,
         "geometry": [
-          { "discharge": 0.4, "width": 3, "depth": 0.5 },
-          { "discharge": 5, "width": 12, "depth": 1.2 },
-          { "discharge": 50, "width": 40, "depth": 3 },
-          { "discharge": 500, "width": 120, "depth": 6 }
+          { "discharge": 0.4, "width": 3, "depth": 0.8 },
+          { "discharge": 5, "width": 12, "depth": 2 },
+          { "discharge": 50, "width": 40, "depth": 4.5 },
+          { "discharge": 500, "width": 120, "depth": 9 }
         ],
         "mouths": { "minDischarge": 5, "rule": "coastRelief", "deltaMaxSlope": 0.012, "reach": 2000 }
       },
@@ -150,10 +150,10 @@
       "rivers": {
         "threshold": 0.4,
         "geometry": [
-          { "discharge": 0.4, "width": 3, "depth": 0.5 },
-          { "discharge": 5, "width": 12, "depth": 1.2 },
-          { "discharge": 50, "width": 40, "depth": 3 },
-          { "discharge": 500, "width": 120, "depth": 6 }
+          { "discharge": 0.4, "width": 3, "depth": 0.8 },
+          { "discharge": 5, "width": 12, "depth": 2 },
+          { "discharge": 50, "width": 40, "depth": 4.5 },
+          { "discharge": 500, "width": 120, "depth": 9 }
         ],
         "mouths": { "minDischarge": 5, "rule": "coastRelief", "deltaMaxSlope": 0.012, "reach": 2000 }
       },
@@ -205,10 +205,10 @@
       "rivers": {
         "threshold": 0.4,
         "geometry": [
-          { "discharge": 0.4, "width": 3, "depth": 0.5 },
-          { "discharge": 5, "width": 12, "depth": 1.2 },
-          { "discharge": 50, "width": 40, "depth": 3 },
-          { "discharge": 500, "width": 120, "depth": 6 }
+          { "discharge": 0.4, "width": 3, "depth": 0.8 },
+          { "discharge": 5, "width": 12, "depth": 2 },
+          { "discharge": 50, "width": 40, "depth": 4.5 },
+          { "discharge": 500, "width": 120, "depth": 9 }
         ],
         "mouths": { "minDischarge": 5, "rule": "coastRelief", "deltaMaxSlope": 0.012, "reach": 2000 }
       },

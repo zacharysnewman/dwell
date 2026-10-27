@@ -16,8 +16,8 @@ use dwell_worldgen::{BifacialTerrain, TerrainGenerator};
 /// Seed 7's maps, pinned (`WorldMap::digest`): a change to the hydrology, the uplift layer, the base
 /// field or `hydrology.json`'s default changes them. Look at the terrain (`--example
 /// terrain_view`), then update.
-const DIGEST_7_A: u64 = 0x9202_c6e4_7a0f_43cf;
-const DIGEST_7_B: u64 = 0xef3b_c171_825e_c0a3;
+const DIGEST_7_A: u64 = 0xe315_373b_9381_4428;
+const DIGEST_7_B: u64 = 0xf606_8c1b_dfa4_2a33;
 
 fn face_map(seed: u64, f: FaceFrame) -> Arc<WorldMap> {
     worldmap::for_seed(face_seed(seed, f.face))
@@ -308,3 +308,46 @@ fn the_map_covers_the_island_with_mountains_rivers_and_a_sea_round_it() {
     assert!(land.clone().count() > 100_000);
     assert!(land.clone().all(|c| m.flow(c).is_some()));
 }
+
+both_faces!(
+    /// docs/BUGS.md 5 (tall borders along rivers, even across their mouths): a river's surface stood
+    /// above the land along its banks, so the columns raised levees there. Every vertex's surface now
+    /// lies at least the bank height under the lowest dry ground round it, never rises downstream,
+    /// and never falls below the sea.
+    fn rivers_run_below_their_banks_and_down_to_the_sea(f: FaceFrame) {
+        let m = face_map(7, f);
+        let bank = f64::from(dwell_worldgen::terrain::SURFACE.river_bank as f32);
+        let mut over = 0;
+        for r in &m.rivers {
+            let mut prev = f32::INFINITY;
+            for v in &r.path {
+                assert!(v.surface <= prev + 1e-4, "a river rises downstream");
+                assert!(v.surface >= 0.0, "a river below the sea");
+                prev = v.surface;
+                let c = m.cell_at(f64::from(v.x), f64::from(v.z));
+                let (ci, cj) = ((c % m.n) as i64, (c / m.n) as i64);
+                for dj in -1..=1i64 {
+                    for di in -1..=1i64 {
+                        let (a, b) = (ci + di, cj + dj);
+                        if a < 0 || b < 0 || a as usize >= m.n || b as usize >= m.n {
+                            continue;
+                        }
+                        let q = b as usize * m.n + a as usize;
+                        if m.is_sea(q) || m.lake[q] != worldmap::NO_LAKE {
+                            continue;
+                        }
+                        if f64::from(v.surface) > f64::from(m.height[q]) - bank + 1e-3
+                            && v.surface > 0.0
+                        {
+                            over += 1;
+                        }
+                    }
+                }
+            }
+        }
+        assert_eq!(
+            over, 0,
+            "{over} river vertices stand less than the bank under dry ground round them"
+        );
+    }
+);

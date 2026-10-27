@@ -23,6 +23,10 @@ pub mod shores;
 
 use crate::hydrology::{self, End, HydrologyMap, MouthKind, NEIGHBOURS_D8, NONE};
 
+/// How far under its bank height (`river_bank` over the water) a river's surface stays below the
+/// lowest dry ground round it, so the coarse map's bicubic between its cells doesn't dip under it.
+const BANK_MARGIN: f64 = 0.5;
+
 pub use cache::{build_bytes, for_seed, install, set_cache_dir};
 pub use channels::{Channels, Hit};
 pub use shores::Shores;
@@ -184,18 +188,46 @@ impl WorldMap {
                     }
                 },
                 mouth: mouth_of(k),
-                path: r
-                    .path
-                    .iter()
-                    .map(|v| MapVertex {
-                        x: v.x as f32,
-                        z: v.z as f32,
-                        surface: v.surface as f32,
-                        width: v.width as f32,
-                        depth: v.depth as f32,
-                        discharge: v.discharge as f32,
-                    })
-                    .collect(),
+                path: {
+                    // The water never stands above the land along its banks: each vertex's
+                    // surface at most `river_bank` + `BANK_MARGIN` under the lowest dry ground of
+                    // the cells round it, never rising downstream, and a river to the sea at sea
+                    // level or above (docs/BUGS.md 5: the columns raised levees where the land
+                    // was lower than the water, walls along the banks and across mouths).
+                    let mut prev = f64::INFINITY;
+                    r.path
+                        .iter()
+                        .map(|v| {
+                            let c = cell_of(v.x, v.z);
+                            let (ci, cj) = ((c % n) as i64, (c / n) as i64);
+                            let mut low = f64::INFINITY;
+                            for dj in -1..=1 {
+                                for di in -1..=1 {
+                                    let (a, b) = (ci + di, cj + dj);
+                                    if a < 0 || b < 0 || a as usize >= n || b as usize >= n {
+                                        continue;
+                                    }
+                                    let q = b as usize * n + a as usize;
+                                    if !m.sea[q] && m.lake_of[q] == NONE {
+                                        low = low.min(f64::from(m.height[q]));
+                                    }
+                                }
+                            }
+                            let below_banks =
+                                low - crate::terrain::SURFACE.river_bank - BANK_MARGIN;
+                            let surface = v.surface.min(below_banks).min(prev).max(0.0);
+                            prev = surface;
+                            MapVertex {
+                                x: v.x as f32,
+                                z: v.z as f32,
+                                surface: surface as f32,
+                                width: v.width as f32,
+                                depth: v.depth as f32,
+                                discharge: v.discharge as f32,
+                            }
+                        })
+                        .collect()
+                },
             })
             .collect();
         Self::assemble(
