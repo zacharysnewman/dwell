@@ -160,8 +160,8 @@ fn water_uniform(eye_fluid: Option<EyeFluid>, quality: WaterQuality) -> [f32; 4]
     }
 }
 /// Draw uniforms live at this stride (WebGPU's minimum uniform offset alignment).
-/// Bytes per draw in the draws storage array (`Draw` in the shaders: five vec4f).
-const DRAW_STRIDE: u64 = 80;
+/// Bytes per draw in the draws storage array (`Draw` in the shaders: six vec4f).
+const DRAW_STRIDE: u64 = 96;
 const MAX_STAND_INS: usize = 64;
 /// Debug tints of LOD levels (setLodLevelColors), sRGB.
 const LEVEL_TINTS: [u32; 20] = [
@@ -722,6 +722,9 @@ struct DrawItem {
     /// Turn about +y (cos, sin of the yaw): players face their heading; fluids carry their origin's
     /// x and z wrapped for the normal detail in zw (`water::wrapped_origin`).
     rotation: [f32; 4],
+    /// The draw's own rotation, a unit quaternion (x, y, z, w) about its offset: a falling piece's
+    /// (docs/FELLING.md); [`IDENTITY_QUAT`] for the rest.
+    quat: [f32; 4],
     mesh: DrawMesh,
     /// The arena page the mesh is in (filled in by `collect`): draws from a page bind it once.
     page: usize,
@@ -756,6 +759,8 @@ fn draw_order(d: &DrawItem) -> u128 {
 
 /// No turn.
 const NO_ROTATION: [f32; 4] = [1.0, 0.0, 0.0, 0.0];
+/// No rotation as a quaternion (a draw's `quat`).
+const IDENTITY_QUAT: [f32; 4] = [0.0, 0.0, 0.0, 1.0];
 /// An LOD section's (or stand-in's) `rotation`: no turn, its tops open to the colour map.
 const LOD_ROTATION: [f32; 4] = [1.0, 0.0, lod_map::LOD_DRAW, 0.0];
 
@@ -2482,6 +2487,7 @@ impl Renderer {
                     fade,
                     tint: plain,
                     rotation: NO_ROTATION,
+                    quat: IDENTITY_QUAT,
                     page: 0,
                     passes,
                     key: 0,
@@ -2498,6 +2504,7 @@ impl Renderer {
                     fade,
                     tint: plain,
                     rotation: NO_ROTATION,
+                    quat: IDENTITY_QUAT,
                     page: 0,
                     passes,
                     key: 0,
@@ -2514,6 +2521,7 @@ impl Renderer {
                     fade,
                     tint: plain,
                     rotation: fluid_rotation(c.origin),
+                    quat: IDENTITY_QUAT,
                     page: 0,
                     passes,
                     key: 0,
@@ -2554,6 +2562,7 @@ impl Renderer {
                     fade,
                     tint: level_tint(s, 1.0),
                     rotation: LOD_ROTATION,
+                    quat: IDENTITY_QUAT,
                     page: 0,
                     passes,
                     key: 0,
@@ -2570,6 +2579,7 @@ impl Renderer {
                     fade,
                     tint: level_tint(s, 1.0),
                     rotation: fluid_rotation(s.origin),
+                    quat: IDENTITY_QUAT,
                     page: 0,
                     passes,
                     key: 0,
@@ -2605,6 +2615,7 @@ impl Renderer {
                 fade: st.fade.shader_value(),
                 tint: level_tint(s, 1.0),
                 rotation: LOD_ROTATION,
+                quat: IDENTITY_QUAT,
                 page: 0,
                 passes,
                 key: 0,
@@ -2624,6 +2635,7 @@ impl Renderer {
                 fade: 0.0,
                 tint: [c[0], c[1], c[2], 0.8],
                 rotation: NO_ROTATION,
+                quat: IDENTITY_QUAT,
                 page: 0,
                 passes,
                 key: 0,
@@ -2647,6 +2659,7 @@ impl Renderer {
                 fade: 0.0,
                 tint: [1.0, 1.0, 1.0, 0.9],
                 rotation: NO_ROTATION,
+                quat: IDENTITY_QUAT,
                 page: 0,
                 passes,
                 key: 0,
@@ -2678,6 +2691,7 @@ impl Renderer {
                             [1.0, 1.0, 1.0, 0.95]
                         },
                         rotation: NO_ROTATION,
+                        quat: IDENTITY_QUAT,
                         page: 0,
                         passes,
                         key: 0,
@@ -2699,6 +2713,7 @@ impl Renderer {
                 fade: 0.0,
                 tint: [1.0, 1.0, 1.0, 1.0],
                 rotation: NO_ROTATION,
+                quat: IDENTITY_QUAT,
                 page: 0,
                 passes,
                 key: 0,
@@ -3059,6 +3074,7 @@ impl Renderer {
             data[at + 11] = d.fade;
             data[at + 12..at + 16].copy_from_slice(&d.tint);
             data[at + 16..at + 20].copy_from_slice(&d.rotation);
+            data[at + 20..at + 24].copy_from_slice(&d.quat);
         }
         if !data.is_empty() {
             self.queue.write_buffer(&self.draw_buffer, 0, floats(&data));
@@ -3489,6 +3505,7 @@ impl Renderer {
             fade,
             tint: [1.0; 4],
             rotation: NO_ROTATION,
+            quat: IDENTITY_QUAT,
             mesh,
             page: 0,
             passes: 0,
@@ -3720,6 +3737,7 @@ impl Renderer {
             fade: 0.0,
             tint: [1.0; 4],
             rotation: NO_ROTATION,
+            quat: IDENTITY_QUAT,
             mesh,
             page: 0,
             passes: 1,
@@ -4717,6 +4735,7 @@ mod tests {
             fade: 0.0,
             tint: [1.0; 4],
             rotation: NO_ROTATION,
+            quat: IDENTITY_QUAT,
             mesh: DrawMesh::Outline,
             page,
             passes: 1,

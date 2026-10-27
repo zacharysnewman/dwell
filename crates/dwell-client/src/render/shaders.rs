@@ -128,7 +128,16 @@ struct Draw {
     tint: vec4f,
     // x, y: cos and sin of a turn about +y (players' yaw); identity (1, 0) otherwise.
     rotation: vec4f,
+    // The draw's own rotation about its offset, a unit quaternion (x, y, z, w): a falling piece's
+    // (docs/FELLING.md); (0, 0, 0, 1) for the rest.
+    quat: vec4f,
 };
+
+// `v` turned by the unit quaternion `q`.
+fn qrot(q: vec4f, v: vec3f) -> vec3f {
+    let t = 2.0 * cross(q.xyz, v);
+    return v + q.w * t + cross(q.xyz, t);
+}
 ";
 
 /// The view depth as the frame stores it (docs/ART_DIRECTION.md §7.4): its lowest bit is the
@@ -483,9 +492,9 @@ fn terrain_vs(v: TerrainIn, @builtin(instance_index) k: u32) -> TerrainOut {
     let draw = draws[k];
     var o: TerrainOut;
     o.draw = k;
-    o.rel = draw.offset.xyz + v.position * draw.offset.w;
+    o.rel = draw.offset.xyz + qrot(draw.quat, v.position * draw.offset.w);
     o.clip = frame.view_proj * vec4f(o.rel, 1.0);
-    o.normal = v.normal;
+    o.normal = qrot(draw.quat, v.normal);
     o.color = v.color;
     o.uv = v.uv;
     o.tile = v.tile;
@@ -604,9 +613,9 @@ fn cutout_vs(v: CutoutIn, @builtin(instance_index) k: u32) -> CutoutOut {
     let draw = draws[k];
     var o: CutoutOut;
     o.draw = k;
-    o.rel = sway(draw.offset.xyz + v.position * draw.offset.w, v.plant);
+    o.rel = sway(draw.offset.xyz + qrot(draw.quat, v.position * draw.offset.w), v.plant);
     o.clip = frame.view_proj * vec4f(o.rel, 1.0);
-    o.normal = v.normal;
+    o.normal = qrot(draw.quat, v.normal);
     o.color = v.color;
     o.uv = v.uv;
     o.tile = v.tile;
@@ -777,7 +786,7 @@ struct ShadowIn {
 @vertex
 fn shadow_terrain_vs(v: ShadowIn, @builtin(instance_index) k: u32) -> @builtin(position) vec4f {
     let draw = draws[k];
-    return frame.view_proj * vec4f(draw.offset.xyz + v.position * draw.offset.w, 1.0);
+    return frame.view_proj * vec4f(draw.offset.xyz + qrot(draw.quat, v.position * draw.offset.w), 1.0);
 }
 
 @vertex
