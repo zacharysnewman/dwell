@@ -302,18 +302,39 @@ only." Shipped to iterate on (owner: "Deploy as a release and we'll iterate on i
   stretch, stream), `add`, `mul`, `min`, `max`, `abs`, `clamp`, `smoothstep` — with a `reach` (only
   cells that near the surface are evaluated) and the `material` added cells take. Solid where the
   density is above 0.
-- **The pass** (`terrain.rs` `shape_volume`, after the column fill): column-constant nodes once per
-  column, the rest per cell; cells it adds take the material, cells it removes become air, or water
-  under the column's own water (a lake, river or the sea; never in a dry column). Decorations left
-  over air are removed; portal columns and the core are never touched. Both faces, face-local.
+- **The order: shape first, then the surface** **[0.33.0]** (owner, 2026-10-27: "this should be
+  applied before grass/dirt and trees … Grass/dirt wouldn't apply inside of caves (overhung land)"):
+  1. *Shape.* A column's top is the reshaped ground's topmost solid cell (`terrain.rs` `column` →
+     `shaped`: the density scanned within `reach` of the height field), so everything that stands on
+     a column stands on the final surface.
+  2. *Surface.* The column is filled from that top as from the height field: the band's top block
+     (grass, snow, sand or rock), at most `soilDepth` m of soil under it (never less than the
+     terrain's `underDepth`, so a cliff face shows rock), stone below; ramps and decorations from
+     the final tops.
+  3. *Carve* (`carve_volume`). Under the top, the cells the density leaves empty become air, or
+     water under the column's own water (never in a dry column). A floor left under rock is the top
+     block where open sky lies within `floorGrass` m (3 m: an overhang's mouth; owner: "floors near
+     opening get grass"), else the volume's `material` (stone), as is a ceiling.
+  4. *Trees* stand on the final tops (only over air, so their trunks' base is always on solid
+     ground: owner, "as long as the trunk base is on a solid block that's fine").
+  5. *The LOD* samples the same columns, so it draws the final top surface (owner: "switch to final
+     top surface"); undersides remain the final version's.
+- **Cost:** a column whose density is the height field's alone (the 600 m field or the slope mask
+  zero; the mask is listed first so the slope is measured only where it can matter) skips the scan;
+  reshaped columns are kept per thread (`SHAPED`, a cache keyed by generator). Measured natively on
+  seed 7: a chunk 6.9 ms on ordinary ground (plain terrain 1.0 ms), 13 ms on cliff hillsides (2.2
+  ms); in the browser, chunk jobs p50 31 ms (13 ms plain) and a settled view in 17.5 s (7 s). A
+  coarse lattice for the 3D noise is the next saving.
 - **The cliffs volume:** on hillsides (slope 0.3–0.8 over ±4 m) in the part of the land a 600 m
   field picks, a thresholded 3D noise lifts or sinks the ground up to 14 m: rock walls, ledges,
   arches and overhangs.
 - **Tests** (`tests/volume.rs`, both faces): overhangs, added and removed cells on steep ground over
   six hillsides; gentle ground is the plain terrain cell for cell; no decoration over a recess; a
-  recess in dry ground is air (red on the first build: 210,834 water cells in dry ground on face A).
-  Checked in Chrome at seed 7 near the spawn (~(1840, 7015)).
-- **Known gaps, to iterate on:** added rock is bare stone (the original surface's grass and dirt
-  show as stripes across walls); the LOD shows the plain height field, so cliffs appear only within
-  the full-detail distance; the density is evaluated per cell (no coarse lattice yet), cost not yet
-  measured; ramps follow the height field, not the reshaped surface.
+  recess in dry ground is air (red on the first build: 210,834 water cells in dry ground on face A);
+  no grass buried in rock, reshaped tops grassed like the land, trunks on solid ground, no soil
+  deeper than `soilDepth` (all four red on 0.32.0's order: 17,329 buried grass cells and 27 of 48
+  trunks over air on face A). Checked in Chrome at seed 7 near the spawn (~(1840, 7015)), near and
+  from 250 m up.
+- **Known gaps, to iterate on:** a 3 m soil band shows under each grass lip on a cliff face (the
+  terrain's soil depth; `soilDepth` can't go below `underDepth`); the LOD has no undersides;
+  overhangs have no ramps under them; caves and floating islands are not started.

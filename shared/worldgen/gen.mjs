@@ -973,12 +973,16 @@ export function validateVolume(data, blocks = registryBlocks()) {
     const at = vol?.name ?? '(unnamed)';
     const vf = (m) => fail(`${at}: ${m}`);
     if (typeof vol !== 'object' || vol === null) fail('a volume must be an object');
-    const ve = Object.keys(vol).filter((k) => !['$comment', 'name', 'reach', 'material', 'density'].includes(k));
+    const ve = Object.keys(vol).filter(
+      (k) => !['$comment', 'name', 'reach', 'material', 'soilDepth', 'floorGrass', 'density'].includes(k),
+    );
     if (ve.length) vf(`unknown ${ve.join(', ')}`);
     if (!(typeof vol.name === 'string' && NAME.test(vol.name))) vf('name must be [a-z0-9_]+');
     if (names.has(vol.name)) vf('duplicate name');
     names.add(vol.name);
     if (!(isNum(vol.reach) && vol.reach > 0 && vol.reach <= 64)) vf('reach must be in (0, 64] m');
+    if (!(isNum(vol.soilDepth) && vol.soilDepth >= 0 && vol.soilDepth <= 16)) vf('soilDepth must be in [0, 16] m');
+    if (!(isNum(vol.floorGrass) && vol.floorGrass >= 0 && vol.floorGrass <= 32)) vf('floorGrass must be in [0, 32] m');
     const b = blocks.get(vol.material);
     if (!b) vf(`material ${JSON.stringify(vol.material)} is not in the registry`);
     if (b.shape !== 'full') vf(`material ${vol.material} must be a full block`);
@@ -1025,6 +1029,8 @@ export function volumeRust(data) {
     rs.push(`        name: "${vol.name}",`);
     rs.push(`        reach: ${rf(vol.reach)},`);
     rs.push(`        material: "${vol.material}",`);
+    rs.push(`        soil_depth: ${rf(vol.soilDepth)},`);
+    rs.push(`        floor_grass: ${rf(vol.floorGrass)},`);
     rs.push('        nodes: &[');
     for (const n of nodes) rs.push(`            ${nodeRust(n)},`);
     rs.push('        ],');

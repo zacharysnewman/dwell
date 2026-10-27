@@ -53,13 +53,16 @@ pub enum Node {
     },
 }
 
-/// A volume as data: its density tree, how far from the surface it reaches (m), and what its added
-/// cells are made of (a block by name).
+/// A volume as data: its density tree, how far from the surface it reaches (m), the block its
+/// carved floors and ceilings show (by name), the most soil under a top (m), and how near open sky
+/// a floor under rock grows the top block (m).
 #[derive(Clone, Copy, Debug)]
 pub struct VolumeDef {
     pub name: &'static str,
     pub reach: f32,
     pub material: &'static str,
+    pub soil_depth: f32,
+    pub floor_grass: f32,
     pub nodes: &'static [Node],
 }
 
@@ -93,23 +96,30 @@ pub struct Volume {
     radii: Vec<u8>,
     pub reach_rows: i32,
     pub material: StateId,
+    /// The most soil under a top, and how near open sky a floor grows the top block (cells).
+    pub soil_rows: i64,
+    pub floor_grass_cells: i32,
 }
 
-/// One column's inputs: the height field's surface (m, face-local) and its slopes.
+/// One column's inputs: the height field's surface (m, face-local) and its slope over a radius
+/// (asked only where a slope node is reached: a product stops at a zero factor).
 pub struct ColumnInput<'a> {
     pub x: i32,
     pub z: i32,
     pub surface: f32,
-    /// The slope over each of [`Volume::radii`], in that order.
-    pub slopes: &'a [f32],
+    pub slope: &'a dyn Fn(u8) -> f32,
 }
 
-/// A column's evaluated column-only nodes.
+/// A column's evaluated column-only nodes: each node's value where it is the same for every cell
+/// of the column (a product with a zero factor among them), else none.
 pub struct ColumnEval {
     x: i32,
     z: i32,
     surface: f32,
-    values: Vec<f32>,
+    known: Vec<Option<f32>>,
+    /// The density is the height field's alone here (`depth` plus nothing): the volume leaves the
+    /// column as it is.
+    pub plain: bool,
 }
 
 impl Volume {
@@ -166,6 +176,8 @@ impl Volume {
             radii,
             reach_rows: rows_for_m(f64::from(def.reach)),
             material: dwell_blocks::require(def.material),
+            soil_rows: (f64::from(def.soil_depth) / dwell_world::CELL_H).round() as i64,
+            floor_grass_cells: f64::from(def.floor_grass).round() as i32,
         }
     }
 
@@ -179,45 +191,94 @@ impl Volume {
         self.radii.iter().copied().max().map_or(0, i32::from)
     }
 
-    /// The column-only nodes of one column.
+    /// The column-only nodes of one column, from the root down: a product's factors in order,
+    /// stopping at a zero one (so a mask listed first spares the rest), each node once.
     pub fn column(&self, input: &ColumnInput<'_>) -> ColumnEval {
-        let mut values = vec![0.0f32; self.nodes.len()];
-        for i in 0..self.nodes.len() {
-            if !self.varying[i] {
-                values[i] = self.eval_fixed(i, input, &values);
-            }
-        }
+        let n = self.nodes.len();
+        let mut known: Vec<Option<f32>> = vec![None; n];
+        let mut done = vec![false; n];
+        self.fix(n - 1, input, &mut known, &mut done);
+        let root = n - 1;
+        let is_depth = |i: usize| matches!(self.nodes[i], Node::Depth);
+        let plain = is_depth(root)
+            || matches!(self.nodes[root], Node::Add(kids) if kids.iter().filter(|&&k| is_depth(usize::from(k))).count() == 1
+                && kids.iter().all(|&k| is_depth(usize::from(k)) || known[usize::from(k)] == Some(0.0)));
         ColumnEval {
             x: input.x,
             z: input.z,
             surface: input.surface,
-            values,
+            known,
+            plain,
         }
     }
 
-    /// Column-only node `i`, its children already in `values`.
-    fn eval_fixed(&self, i: usize, input: &ColumnInput<'_>, values: &[f32]) -> f32 {
-        match self.nodes[i] {
-            Node::Slope { radius } => {
-                let k = self
-                    .radii
-                    .iter()
-                    .position(|&r| r == radius)
-                    .expect("a radius");
-                input.slopes[k]
-            }
+    /// Fixes node `i`'s column value if it has one (and every column-only node under it the cells
+    /// will need), memoised in `known` / `done`.
+    fn fix(
+        &self,
+        i: usize,
+        input: &ColumnInput<'_>,
+        known: &mut [Option<f32>],
+        done: &mut [bool],
+    ) -> Option<f32> {
+        if done[i] {
+            return known[i];
+        }
+        done[i] = true;
+        let v = match self.nodes[i] {
+            Node::Depth | Node::Height => None,
             Node::Noise {
                 wavelength,
                 octaves,
                 ..
-            } => {
+            } if !self.varying[i] => {
                 let n = self.noise[i].expect("noise resolved");
                 let (x, z) = (i64::from(input.x) + n.offset, i64::from(input.z) + n.offset);
                 // A 2D field: the noise's y lattice at a fixed row.
-                fbm3(n.seed, (x, 0, z), wavelength, 1, octaves)
+                Some(fbm3(n.seed, (x, 0, z), wavelength, 1, octaves))
             }
-            _ => self.combine(i, |k| values[usize::from(k)]),
-        }
+            Node::Noise { .. } => None,
+            Node::Slope { radius } => Some((input.slope)(radius)),
+            Node::Const(c) => Some(c),
+            Node::Mul(kids) => {
+                let mut all = Some(1.0f32);
+                for &k in kids {
+                    match self.fix(usize::from(k), input, known, done) {
+                        Some(0.0) => {
+                            all = Some(0.0);
+                            break;
+                        }
+                        Some(v) => all = all.map(|a| a * v),
+                        None => all = None,
+                    }
+                }
+                // A zero factor fixes the product; otherwise it varies if any factor does.
+                if all == Some(0.0) {
+                    Some(0.0)
+                } else if kids.iter().all(|&k| known[usize::from(k)].is_some()) {
+                    all
+                } else {
+                    None
+                }
+            }
+            _ => {
+                let kids = children(&self.nodes[i]);
+                let vals: Vec<Option<f32>> = kids
+                    .iter()
+                    .map(|&k| self.fix(usize::from(k), input, known, done))
+                    .collect();
+                if vals.iter().all(Option::is_some) {
+                    Some(self.combine(i, |k| {
+                        let at = kids.iter().position(|&c| c == k).expect("a child");
+                        vals[at].expect("fixed")
+                    }))
+                } else {
+                    None
+                }
+            }
+        };
+        known[i] = v;
+        v
     }
 
     /// The density of the cell at `row` (face-local) of column `col`: solid when above zero.
@@ -226,8 +287,8 @@ impl Volume {
     }
 
     fn eval(&self, i: usize, col: &ColumnEval, row: i32) -> f32 {
-        if !self.varying[i] {
-            return col.values[i];
+        if let Some(v) = col.known[i] {
+            return v;
         }
         match self.nodes[i] {
             Node::Depth => col.surface - (m_of_row(row) + CELL_H / 2.0) as f32,
@@ -292,12 +353,12 @@ fn children(n: &Node) -> Vec<u16> {
 mod tests {
     use super::*;
 
-    fn input(surface: f32, slopes: &[f32]) -> ColumnInput<'_> {
+    fn input(surface: f32, slope: &dyn Fn(u8) -> f32) -> ColumnInput<'_> {
         ColumnInput {
             x: 10,
             z: -20,
             surface,
-            slopes,
+            slope,
         }
     }
 
@@ -307,10 +368,13 @@ mod tests {
             name: "plain",
             reach: 4.0,
             material: "dwell:stone",
+            soil_depth: 2.0,
+            floor_grass: 3.0,
             nodes: &[Node::Depth],
         };
         let v = Volume::resolve(&DEF, 1);
-        let c = v.column(&input(40.0, &[]));
+        let c = v.column(&input(40.0, &|_| 0.0));
+        assert!(c.plain);
         // Row 79 is 39.5..40 m: its centre is under the surface; row 80 is above it.
         assert!(v.density(&c, 79) > 0.0);
         assert!(v.density(&c, 80) < 0.0);
@@ -323,6 +387,8 @@ mod tests {
             name: "masked",
             reach: 8.0,
             material: "dwell:stone",
+            soil_depth: 2.0,
+            floor_grass: 3.0,
             nodes: &[
                 Node::Depth,
                 Node::Slope { radius: 2 },
@@ -344,8 +410,12 @@ mod tests {
         };
         let v = Volume::resolve(&DEF, 9);
         assert_eq!(v.radii(), &[2]);
-        let flat = v.column(&input(40.0, &[0.1]));
-        let steep = v.column(&input(40.0, &[1.5]));
+        let flat = v.column(&input(40.0, &|_| 0.1));
+        let steep = v.column(&input(40.0, &|_| 1.5));
+        assert!(
+            flat.plain && !steep.plain,
+            "a zero mask leaves the column plain"
+        );
         let mut differs = 0;
         for row in 64..96 {
             let plain = 40.0 - (m_of_row(row) + CELL_H / 2.0) as f32;
@@ -362,10 +432,9 @@ mod tests {
         let def = find("cliffs").expect("the cliffs volume");
         let a = Volume::resolve(def, 7);
         let b = Volume::resolve(def, 7);
-        let slopes = vec![1.2; a.radii().len()];
         let (ca, cb) = (
-            a.column(&input(60.0, &slopes)),
-            b.column(&input(60.0, &slopes)),
+            a.column(&input(60.0, &|_| 1.2)),
+            b.column(&input(60.0, &|_| 1.2)),
         );
         for row in 100..140 {
             assert_eq!(a.density(&ca, row).to_bits(), b.density(&cb, row).to_bits());

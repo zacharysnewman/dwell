@@ -1,7 +1,7 @@
 //! The terrain volume prototype (generator 101, world type `cliffs`; `volume.rs`): overhangs on steep
 //! ground, the height field untouched elsewhere, nothing left standing on air.
 
-use dwell_world::{CHUNK_SIZE, Chunk, ChunkCoord, GENERATOR_CLIFFS, M, local_index};
+use dwell_world::{CHUNK_SIZE, Chunk, ChunkCoord, FaceFrame, GENERATOR_CLIFFS, M, local_index};
 use dwell_worldgen::{BifacialTerrain, TerrainGenerator};
 
 /// The first `n` columns, at least 200 m apart, on a 16 m grid round the origin whose ground falls
@@ -185,5 +185,173 @@ dwell_world::both_faces!(
             }
         }
         assert_eq!(wrong, 0, "water cells carved into dry ground");
+    }
+);
+
+/// Each cliffs chunk round six steep hillsides of face `f`, with its column's cells: (coordinate,
+/// the cliffs chunk).
+fn cliff_chunks(f: FaceFrame) -> Vec<(ChunkCoord, Chunk)> {
+    let plain = BifacialTerrain::new(7);
+    let cliffs = BifacialTerrain::for_generator(GENERATOR_CLIFFS, 7).expect("terrain");
+    let (plain, cliffs) = (plain.local(f.face), cliffs.local(f.face));
+    steep_columns(plain, 1.1, 6)
+        .into_iter()
+        .flat_map(|c| chunks_round(plain, cliffs, c))
+        .map(|(c, _, b)| (c, b))
+        .collect()
+}
+
+/// The cell at chunk-local (x, y, z) of `chunks`' column stack, `y` past the chunk's bottom or top
+/// read from the chunk below or above (`None` past the stack).
+fn cell(
+    chunks: &[(ChunkCoord, Chunk)],
+    c: ChunkCoord,
+    x: i32,
+    y: i32,
+    z: i32,
+) -> Option<dwell_blocks::StateId> {
+    let cy = c.y + y.div_euclid(CHUNK_SIZE);
+    let ly = y.rem_euclid(CHUNK_SIZE);
+    chunks
+        .iter()
+        .find(|(k, _)| k.x == c.x && k.z == c.z && k.y == cy)
+        .map(|(_, ch)| ch.voxels()[local_index(x, ly, z)])
+}
+
+fn named(m: dwell_blocks::StateId) -> &'static str {
+    dwell_blocks::info(m).name
+}
+
+dwell_world::both_faces!(
+    /// The owner (2026-10-27): the cliffs were applied after the grass, the dirt and the trees, so
+    /// the old surface showed as a stripe of grass and dirt inside the rock. No grass lies buried:
+    /// every grass cell of the reshaped ground has air, a plant, a tree or the upper half of its own
+    /// steep ramp over it.
+    fn no_grass_is_buried_in_the_rock(f: FaceFrame) {
+        let chunks = cliff_chunks(f);
+        let mut buried = 0;
+        for (c, ch) in &chunks {
+            for z in 0..CHUNK_SIZE {
+                for x in 0..CHUNK_SIZE {
+                    for y in 0..CHUNK_SIZE {
+                        if named(ch.voxels()[local_index(x, y, z)]).starts_with("dwell:grass")
+                            && cell(&chunks, *c, x, y + 1, z).is_some_and(|m| {
+                                let n = named(m);
+                                // Its own steep ramp's upper half, or a tree standing on it.
+                                solid(m)
+                                    && !n.starts_with("dwell:grass")
+                                    && n != "dwell:log"
+                                    && n != "dwell:leaves"
+                            })
+                        {
+                            buried += 1;
+                        }
+                    }
+                }
+            }
+        }
+        assert_eq!(buried, 0, "grass cells under solid ground");
+    }
+);
+
+dwell_world::both_faces!(
+    /// The owner: "mostly stone at the surface now, instead of grass". The ground the volume
+    /// raises is topped as the land round it: most tops open to the sky over a raised or lowered
+    /// column are grass, as on the plain terrain there.
+    fn the_reshaped_ground_is_grassed_like_the_land(f: FaceFrame) {
+        let plain = BifacialTerrain::new(7);
+        let cliffs = BifacialTerrain::for_generator(GENERATOR_CLIFFS, 7).expect("terrain");
+        let (plain, cliffs) = (plain.local(f.face), cliffs.local(f.face));
+        let (mut tops, mut grass) = (0, 0);
+        for at in steep_columns(plain, 1.1, 6) {
+            for dz in -24..=24 {
+                for dx in -24..=24 {
+                    let (x, z) = (at.0 + dx, at.1 + dz);
+                    let (Some(a), Some(b)) = (plain.ground_y(x, z), cliffs.ground_y(x, z)) else {
+                        continue;
+                    };
+                    if a == b || !named(plain.state_at(x, a, z)).starts_with("dwell:grass") {
+                        continue;
+                    }
+                    tops += 1;
+                    grass +=
+                        usize::from(named(cliffs.state_at(x, b, z)).starts_with("dwell:grass"));
+                }
+            }
+        }
+        assert!(tops > 200, "reshaped grass columns: {tops}");
+        assert!(
+            grass * 10 >= tops * 9,
+            "{grass} of {tops} reshaped tops are grass"
+        );
+    }
+);
+
+dwell_world::both_faces!(
+    /// The owner: floating trees. A tree's trunk stands on solid ground: no log cell has air
+    /// under it unless another log or the tree's own block is there.
+    fn trees_stand_on_the_reshaped_ground(f: FaceFrame) {
+        let chunks = cliff_chunks(f);
+        let (mut trunks, mut floating) = (0, Vec::new());
+        for (c, ch) in &chunks {
+            for z in 0..CHUNK_SIZE {
+                for x in 0..CHUNK_SIZE {
+                    for y in 0..CHUNK_SIZE {
+                        if named(ch.voxels()[local_index(x, y, z)]) != "dwell:log" {
+                            continue;
+                        }
+                        let below = cell(&chunks, *c, x, y - 1, z);
+                        if below.is_some_and(|m| named(m) != "dwell:log") {
+                            trunks += 1;
+                            if !below.is_some_and(solid) {
+                                floating.push((*c, x, y, z));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        assert!(trunks > 5, "trunks round the hillsides: {trunks}");
+        assert!(
+            floating.is_empty(),
+            "{} of {trunks} trunks over air, e.g. {:?}",
+            floating.len(),
+            floating.first()
+        );
+    }
+);
+
+dwell_world::both_faces!(
+    /// A cliff face shows rock, not a wall of soil: no dirt cell lies more than the volume's
+    /// `soilDepth` under its column's top (the soil mantle followed the lowest neighbour down a
+    /// 14 m face).
+    fn cliff_faces_show_rock_below_the_soil(f: FaceFrame) {
+        let cliffs = BifacialTerrain::for_generator(GENERATOR_CLIFFS, 7).expect("terrain");
+        let g = cliffs.local(f.face);
+        let soil = (f64::from(
+            dwell_worldgen::volume::find("cliffs")
+                .expect("cliffs")
+                .soil_depth,
+        ) / dwell_world::CELL_H) as i32;
+        let chunks = cliff_chunks(f);
+        let mut deep = 0;
+        for (c, ch) in &chunks {
+            for z in 0..CHUNK_SIZE {
+                for x in 0..CHUNK_SIZE {
+                    let top = g
+                        .ground_y(c.x * CHUNK_SIZE + x, c.z * CHUNK_SIZE + z)
+                        .expect("disc");
+                    for y in 0..CHUNK_SIZE {
+                        let wy = c.y * CHUNK_SIZE + y;
+                        if named(ch.voxels()[local_index(x, y, z)]).starts_with("dwell:dirt")
+                            && top - wy > soil
+                        {
+                            deep += 1;
+                        }
+                    }
+                }
+            }
+        }
+        assert_eq!(deep, 0, "dirt cells deeper than the soil under a top");
     }
 );
