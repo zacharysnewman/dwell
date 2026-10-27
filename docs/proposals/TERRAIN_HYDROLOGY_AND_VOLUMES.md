@@ -1,7 +1,9 @@
 # Proposal: terrain hydrology and terrain volumes
 
 > **Status: layers 0–1 adopted (ADR 0049, 2026-10-21, generator 21):** the hydrology map is the
-> terrain (ARCHITECTURE.md §6.3, WORLD_GENERATION.md §4). Layer 2 (the volume) is still a proposal.
+> terrain (ARCHITECTURE.md §6.3, WORLD_GENERATION.md §4). Layer 2 (the volume) is prototyped as the opt-in
+> world type `cliffs` (generator 101, 0.31.4; WORLD_GENERATION.md §5): cliffs and overhangs only, the LOD the
+> top surface only; the rest of §7 is still a proposal.
 > The paragraph below is the prototype's history.
 >
 > **Earlier status: proposal, not adopted.**

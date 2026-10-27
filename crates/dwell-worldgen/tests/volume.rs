@@ -1,4 +1,4 @@
-//! The terrain volume prototype (generator 9, world type `cliffs`; `volume.rs`): overhangs on steep
+//! The terrain volume prototype (generator 101, world type `cliffs`; `volume.rs`): overhangs on steep
 //! ground, the height field untouched elsewhere, nothing left standing on air.
 
 use dwell_world::{CHUNK_SIZE, Chunk, ChunkCoord, GENERATOR_CLIFFS, M, local_index};

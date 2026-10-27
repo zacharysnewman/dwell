@@ -281,3 +281,36 @@ thickness and the portals' count, spacing, siting, radius, rim, ladder and clear
 are in [`BIFACIAL_WORLD.md`](./BIFACIAL_WORLD.md) §12 and ARCHITECTURE.md §6.3 (*Bedrock and
 portals*); [ADR 0048](./adr/0048-bedrock-and-portals.md). Prototype content (ARCHITECTURE.md §6.1).
 
+## 5. Terrain volumes: the cliffs prototype (generator 101) **[built, prototype, 0.31.4]**
+
+The proposal's layer 2 ([`proposals/TERRAIN_HYDROLOGY_AND_VOLUMES.md`](./proposals/TERRAIN_HYDROLOGY_AND_VOLUMES.md)
+§3, §7): a 3D density per cell over the height field, as an opt-in world type to iterate on. The
+owner's answers (2026-10-27): **an opt-in world type** ("Cliffs (prototype)" in New world and Play
+advanced; the default terrain is unchanged); **cliffs and overhangs only** (no caves or floating
+islands yet); **a node graph in JSON**; **the LOD draws the height field's top surface only** for
+the prototype — a recorded deviation: "We definitely would want the full under area rendered not
+just the top surface in the final version, but for the prototype let's render the top surface
+only." Shipped to iterate on (owner: "Deploy as a release and we'll iterate on it").
+
+- **Data** (`shared/worldgen/volume.json`, generated into `dwell-worldgen` `volume.gen.rs` by
+  `shared/worldgen/gen.mjs`, validated, CI stale check): named volumes, each a `density` tree over a
+  fixed vocabulary — constants, `depth` (below the height field's surface), `height` (above sea
+  level), `slope` (the surface's gradient over a radius), 3D `noise` (wavelength, octaves, vertical
+  stretch, stream), `add`, `mul`, `min`, `max`, `abs`, `clamp`, `smoothstep` — with a `reach` (only
+  cells that near the surface are evaluated) and the `material` added cells take. Solid where the
+  density is above 0.
+- **The pass** (`terrain.rs` `shape_volume`, after the column fill): column-constant nodes once per
+  column, the rest per cell; cells it adds take the material, cells it removes become air, or water
+  under the column's own water (a lake, river or the sea; never in a dry column). Decorations left
+  over air are removed; portal columns and the core are never touched. Both faces, face-local.
+- **The cliffs volume:** on hillsides (slope 0.3–0.8 over ±4 m) in the part of the land a 600 m
+  field picks, a thresholded 3D noise lifts or sinks the ground up to 14 m: rock walls, ledges,
+  arches and overhangs.
+- **Tests** (`tests/volume.rs`, both faces): overhangs, added and removed cells on steep ground over
+  six hillsides; gentle ground is the plain terrain cell for cell; no decoration over a recess; a
+  recess in dry ground is air (red on the first build: 210,834 water cells in dry ground on face A).
+  Checked in Chrome at seed 7 near the spawn (~(1840, 7015)).
+- **Known gaps, to iterate on:** added rock is bare stone (the original surface's grass and dirt
+  show as stripes across walls); the LOD shows the plain height field, so cliffs appear only within
+  the full-detail distance; the density is evaluated per cell (no coarse lattice yet), cost not yet
+  measured; ramps follow the height field, not the reshaped surface.

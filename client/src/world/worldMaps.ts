@@ -8,7 +8,7 @@
 /** The terrain generator's world version (constants: `GENERATOR_TERRAIN`). */
 export const GENERATOR_TERRAIN = 8;
 /** The terrain with the cliffs volume over it (`GENERATOR_CLIFFS`): the same maps. */
-export const GENERATOR_CLIFFS = 9;
+export const GENERATOR_CLIFFS = 101;
 
 /** How many maps the cache keeps (two per world): the most recently used. */
 export const KEEP_MAPS = 8;

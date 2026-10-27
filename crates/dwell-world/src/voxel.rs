@@ -187,13 +187,13 @@ pub type ChunkGenerator = Arc<dyn Fn(ChunkCoord, &mut Chunk) + Send + Sync>;
 pub type AirChunkTest = Arc<dyn Fn(ChunkCoord) -> bool + Send + Sync>;
 
 /// Generator versions announced in Welcome (§6.3): 0 the flat test world, 8 procedural terrain,
-/// 9 the terrain with the `cliffs` volume over it (a prototype of the terrain volumes,
-/// `dwell_worldgen::volume`), 100 the structure sandbox (the flat world in its floor block;
-/// numbered away from the terrain's versions, which grow). 1–7 are retired and load as the flat
-/// world, as any unknown version does.
+/// 100 the structure sandbox (the flat world in its floor block) and 101 the terrain with the
+/// `cliffs` volume over it (a prototype of the terrain volumes, `dwell_worldgen::volume`), both
+/// numbered away from the terrain's versions, which grow. 1–7 and 9 onward were earlier terrain
+/// versions, retired; they load as the flat world, as any unknown version does.
 pub const GENERATOR_FLAT: u32 = 0;
 pub const GENERATOR_TERRAIN: u32 = 8;
-pub const GENERATOR_CLIFFS: u32 = 9;
+pub const GENERATOR_CLIFFS: u32 = 101;
 pub const GENERATOR_SANDBOX: u32 = 100;
 
 /// Whether a generator version is the procedural terrain (plain or with a volume over it): it has
