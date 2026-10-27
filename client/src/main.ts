@@ -198,6 +198,8 @@ interface DwellDebug {
   setPixelArt(name: string): boolean;
   /** The LOD colour map preview on or off (`?lodmap=on` starts it on; off on a CPU adapter); true when on. */
   setLodMap(on: boolean): boolean;
+  /** Draws the distant terrain (LOD) or not, live (a debug switch); true in a world. */
+  setLod(on: boolean): boolean;
   /** How long the camera rolls upright after crossing the midplane (s; `?crossingroll=`). */
   crossingRoll(): number;
   /** Sets the crossing roll's duration (s, 0..5; 0 snaps upright at once); false for a value it refuses. */
@@ -508,7 +510,8 @@ async function start(): Promise<App | null> {
       prepareWorld: (seed: bigint, version: number) =>
         worldMaps(seed, version, mapDeps()) ?? Promise.resolve(null),
       workers: defaultWorkerCount(mobile),
-      lod: params.get('lod') !== '0',
+      // ?lod=0 or ?lod=off: no distant terrain at all (a debug switch; __dwell.setLod hides it live).
+      lod: params.get('lod') !== '0' && params.get('lod') !== 'off',
       lodColors: params.get('lodcolors') === '1',
       // ?chunks=full asks the server to send every chunk explicitly (full-chunk mode).
       fullChunks: params.get('chunks') === 'full',
@@ -775,6 +778,7 @@ async function start(): Promise<App | null> {
     pixelArt: () => client.pixelArt(),
     setPixelArt: (name) => client.setPixelArt(name),
     setLodMap: (on) => client.setLodMap(on),
+    setLod: (on) => client.setLod(on),
     crossingRoll: () => client.crossingRoll(),
     setCrossingRoll: (seconds) => client.setCrossingRoll(seconds),
     memory: () => memoryReport(app),
