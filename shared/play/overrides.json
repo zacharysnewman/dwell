@@ -1,0 +1,42 @@
+{
+  "$comment": "Play advanced (docs/DEV_TOOLS.md, Play advanced): the main menu's alternate Play, opening a one-off local world by link (?local=1) with these overrides. Each entry is one URL parameter the game already reads; the menu shows a field per entry, in order, and passes only the fields the player set. Nothing is saved: the overrides leave the address when the player goes anywhere else. Kinds: choice (options, each a value and a label; or optionsFrom, the names in a look data file: outline or pixelart), integer (min, max), number (min, max, step), clock (a 24-hour time, passed as the share of the day: 0 midnight, 0.5 noon). A field left empty (or a choice's \"\" option) passes nothing, and the game's default stands. Run `node shared/play/gen.mjs` after editing; CI fails if client/src/ui/playOverrides.gen.ts is stale.",
+  "overrides": [
+    {
+      "param": "world",
+      "label": "World type",
+      "kind": "choice",
+      "options": [
+        { "value": "", "label": "Terrain" },
+        { "value": "flat", "label": "Flat" },
+        { "value": "sandbox", "label": "Sandbox" }
+      ]
+    },
+    { "param": "seed", "label": "Seed", "kind": "integer", "min": 0, "max": 9007199254740991, "hint": "Empty for seed 0." },
+    {
+      "param": "spawn",
+      "label": "Spawn",
+      "kind": "choice",
+      "options": [
+        { "value": "", "label": "Face A" },
+        { "value": "b", "label": "Face B" },
+        { "value": "portal", "label": "Portal, face A side" },
+        { "value": "portal-b", "label": "Portal, face B side" }
+      ],
+      "hint": "Each spawn is its own world file, so the others are untouched."
+    },
+    { "param": "time", "label": "Time of day", "kind": "clock", "hint": "The sky stays at this time (the clock stops). Face A's clock; face B's is 12 hours on." },
+    { "param": "moon", "label": "Moon phase", "kind": "number", "min": 0, "max": 1, "step": 0.05, "hint": "0 new, 0.5 full." },
+    { "param": "timespeed", "label": "Clock speed", "kind": "number", "min": 0.1, "max": 10000, "step": 0.1, "hint": "1 is normal; 60 makes a minute an hour. Only without a time of day." },
+    { "param": "outline", "label": "Ink outline", "kind": "choice", "optionsFrom": "outline" },
+    { "param": "pixelart", "label": "Pixel art", "kind": "choice", "optionsFrom": "pixelart" },
+    {
+      "param": "lod",
+      "label": "Distant terrain",
+      "kind": "choice",
+      "options": [
+        { "value": "", "label": "On" },
+        { "value": "off", "label": "Off" }
+      ]
+    }
+  ]
+}

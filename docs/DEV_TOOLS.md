@@ -248,6 +248,26 @@ then without `--base` into `B`, and compare the two `report.json` files' `teleme
 (and the screenshots, pixel by pixel). A worktree needs its own `target/`: cargo names a path
 crate's artifacts the same wherever it is, so sharing one directory mixes the two builds.
 
+## Play advanced (the main menu)
+
+The main menu's **Play advanced** (beside New world) opens a one-off local world by link with
+overrides, for anyone: the world type, seed, spawn (face A, face B, either side of the portal),
+time of day, moon phase, clock speed, ink outline, pixel art and distant terrain. Each is a URL
+parameter the game already reads (`?world=`, `?seed=`, `?spawn=`, `?time=`, `?moon=`,
+`?timespeed=`, `?outline=`, `?pixelart=`, `?lod=`), so the panel only builds the address
+(`client/src/ui/playAdvanced.ts`, e.g. `?local=1&spawn=portal&time=0.7708`). Only the fields set are
+passed; a field left empty keeps the game's default. A time of day holds the sky at that time (the
+clock stops on this client, `?time=`), so the clock speed only matters without one. Nothing is
+saved: every route drops them (`ui/launch.ts` `ROUTE_PARAMS`), so the next Play from the menu
+starts clean.
+
+The fields are data: `shared/play/overrides.json`, one entry per parameter (kinds `choice`,
+`integer`, `number`, `clock`; a choice's `optionsFrom` takes its options from a look data file's
+names, `outline` or `pixelart`, so a new mode there shows with no edit). `node shared/play/gen.mjs`
+validates it and writes `client/src/ui/playOverrides.gen.ts`; CI fails on stale output, and a
+parameter that chooses what the page opens (`play`, `join`, …) is refused. To add an override,
+add an entry for a parameter the game reads.
+
 ## Water cost isolation (`?waterdbg=`)
 
 `?waterdbg=caustics,foam` (names from `render/water.rs` `DEBUG_SWITCHES`: `ripple0`–`ripple2`, `glint`, `sky`,

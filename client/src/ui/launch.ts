@@ -4,6 +4,7 @@
 import { LAUNCHER_PATH } from '../launcherPath';
 import { parseInvite } from '../net/invite';
 import { normalizeCode } from '../net/joinCode';
+import { OVERRIDE_PARAMS } from './playAdvanced';
 
 export type Launch =
   /** No world or server in the address: the main menu. */
@@ -43,6 +44,8 @@ const ROUTE_PARAMS = [
   'regenerate',
   // A message for the menu (the launcher's): why it came up instead of a game.
   'say',
+  // Play advanced's overrides (ui/playAdvanced.ts): one-off, so they never ride into the next route.
+  ...OVERRIDE_PARAMS,
 ];
 /**
  * What an invite link carries; `v` is the host's app version (RELEASES.md §5), which the launcher

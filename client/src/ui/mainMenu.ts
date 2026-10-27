@@ -16,6 +16,7 @@ import type { ListedServer, Lobby, LobbyQuery, Nearby } from '../net/master';
 import { looksLikeAddress, pastedCode, pastedInvite } from './launch';
 import type { RecentServer } from './recentServers';
 import { ServerBrowser } from './serverBrowser';
+import { playAdvancedPanel } from './playAdvanced';
 import { audio } from '../audio/engine';
 
 export interface MainMenuDeps {
@@ -157,11 +158,25 @@ export class MainMenu {
       if (!this.form.hidden) this.form.querySelector('input')?.focus();
     });
     create.id = 'new-world';
-    worldsHead.append(worldsTitle, create);
+    // Play advanced: a one-off world by link with overrides (ui/playAdvanced.ts).
+    const advanced = playAdvancedPanel((route) => {
+      this.deps.go(route);
+    });
+    const advancedButton = button('Play advanced', 'quiet-button', () => {
+      advanced.hidden = !advanced.hidden;
+      advancedButton.setAttribute('aria-expanded', String(!advanced.hidden));
+    });
+    advancedButton.id = 'play-advanced-toggle';
+    advancedButton.setAttribute('aria-controls', advanced.id);
+    advancedButton.setAttribute('aria-expanded', 'false');
+    const headActions = document.createElement('div');
+    headActions.className = 'mm-card-actions';
+    headActions.append(advancedButton, create);
+    worldsHead.append(worldsTitle, headActions);
     this.list.id = 'world-list';
     this.buildForm();
     this.legacy.id = 'legacy-worlds';
-    worlds.append(worldsHead, this.form, this.list, this.legacy);
+    worlds.append(worldsHead, advanced, this.form, this.list, this.legacy);
 
     // Play with others: join by code, address or link; games nearby; recent servers; the lobby.
     const online = document.createElement('section');

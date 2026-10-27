@@ -9,5 +9,6 @@ src/world/blocks.gen.ts
 src/audio/sounds.gen.ts
 src/audio/music.gen.ts
 src/input/gamepad.gen.ts
+src/ui/playOverrides.gen.ts
 ../docs/
 bench/out/

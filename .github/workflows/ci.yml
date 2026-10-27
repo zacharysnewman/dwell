@@ -73,6 +73,8 @@ jobs:
           node shared/sounds/gen.mjs
           node shared/music/gen.mjs
           node shared/worldgen/gen.mjs
+          node shared/play/gen.mjs
+          node --test shared/play/gen.test.mjs
           node --test shared/worldgen/gen.test.mjs
           python3 shared/protocol/make_vectors.py
           node shared/master/make_vectors.mjs
