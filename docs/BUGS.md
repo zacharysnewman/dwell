@@ -32,7 +32,7 @@ certain height above them.
 
 *Reported 2026-10-26.* Toward the left and right of the screen, reflections faded to a white gradient
 where the reflected world should show. The owner's note continued "In addition, I would expect to
-see …" and was cut off; still to ask.
+see …" and was cut off (see the rest below).
 
 - **Cause:** the screen-space reflection faded every hit near any screen edge into the sky fallback
   (`edge_weight`, `ssr_edge`). A ray leaving through a side with no hit also took the sky. Low over
@@ -41,6 +41,12 @@ see …" and was cut off; still to ask.
   scene at its exit pixel (an edge clamp), where that pixel is not sky. This is in both the Rust twin
   (`render/reflection.rs`) and the shader.
 - **Test:** `the_sides_keep_the_scene_not_a_fade_into_the_sky` failed on the old logic and passes now.
+- **The rest (fixed in 0.27.3):** the cut-off note was likely that tall mountains farther off didn't
+  show in the water (owner, 2026-10-26). The reflection's reach was 2 km (Medium) and 4 km (High),
+  so a ray toward a farther range found nothing and took the sky. The reach is now 24 km and 48 km.
+  A hit's fade is measured at the scene's depth where it hit, since the march's own depth at the end
+  of a step lay far beyond it on a long reach. Test: `far_mountains_are_reflected_and_near_banks_still_are`
+  failed with the 2 km reach (no hit on a range 12 km off) and passes now.
 
 ### 5. Rivers had tall banks and were always shallow (fixed in 0.27.0)
 
