@@ -1709,7 +1709,8 @@ fn ssr_trace(p: vec3f, r: vec3f, size: vec2f) -> vec3f {
                 }
             }
             let px = a.xy + delta * t_hi;
-            let dh = 1.0 / mix(k0, k1, t_hi);
+            // At the scene's depth where it was hit, not the step's (render/reflection.rs `trace`).
+            let dh = clamp(ssr_depth(px), min(a.z, b.z), max(a.z, b.z));
             // How far along the ray in 3D: view depth is linear along it.
             let u = select(t_hi, (dh - a.z) / (b.z - a.z), abs(b.z - a.z) > 1e-3 * a.z);
             let w = ssr_edge(px, size) * (1.0 - smoothstep(frame.reflect.w, frame.reflect.z, u * len));

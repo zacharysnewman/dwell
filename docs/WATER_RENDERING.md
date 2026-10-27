@@ -330,14 +330,20 @@ sky alone. W5's screen-space reflections came forward, and so did the cloud deck
   - **A hit** is a step that lands behind the scene's surface where that surface lies within the
     step, give or take a thickness (1.5 m + 3 % of its depth). A ray that passes behind something
     much nearer keeps going.
-  - Binary refine steps pin the hit between the last two steps.
+  - Binary refine steps pin the hit between the last two steps. The hit's distance (for the fade
+    below) is the scene's depth at the hit pixel, not the march's depth at the step's end: on a long
+    reach the far kilometres squeeze into the last pixels of the ray, and the step's end can lie far
+    beyond what it met (a mountain 12 km off read as 24 km and faded out, docs/BUGS.md 6).
   - **Water writes no depth**, so a ray over flat water can't hit the water or the floor seen
     through it: the ray stays in front of both (a test pins it).
   - **What it shows** (`ssr_reflected`): the under-water copy (W3's) at the hit, filtered, and fogged
     by the composite's height fog over the hit's distance. It is mixed over the sky and clouds by
     the hit's weight and coverage.
-  - **The fades.** The weight fades within 12 % of the screen height of any edge, so reflections
-    don't pop at the edge, and over the last 30 % of the reach. A miss is the sky and clouds.
+  - **The fades.** The weight fades within 12 % of the screen height of the top and bottom edges, so
+    reflections don't pop there, and over the last 30 % of the reach. At the sides it doesn't fade:
+    a ray that leaves through a side takes the drawn scene at its exit pixel (an edge clamp), unless
+    that pixel is sky (2026-10-26, docs/BUGS.md 6: fading into the sky drew a white haze down both
+    sides). A miss is the sky and clouds.
   - **Fresnel and the sun.** The reflection is Fresnel-weighted like the sky's (Schlick, F0 0.02), so
     a grazing view shows the shore strongly and a steep one hardly at all. Where the scene hides the
     sky, it hides the sun's and moon's glint and the sparkle too.
@@ -349,8 +355,8 @@ sky alone. W5's screen-space reflections came forward, and so did the cloud deck
   | Tier | March steps | Refine | Reach | Cloud octaves | Cloud self-shadow |
   |---|---|---|---|---|---|
   | Low | 0 (must be: no copy) | 0 | — | 0 (the sky alone) | no |
-  | Medium | 12 | 4 | 2 km | 3 | no |
-  | High | 28 | 6 | 4 km | 5 | yes (with the Clouds setting's) |
+  | Medium | 12 | 8 | 24 km | 3 | no |
+  | High | 28 | 10 | 48 km | 5 | yes (with the Clouds setting's) |
 
   The values reach the shader in the frame uniform's `reflect` and `reflect_sky` (dwell-look
   `reflection_uniforms`). The thickness, edge fade, distance fade and `rippleScale` are shared by the tiers.
@@ -359,6 +365,9 @@ sky alone. W5's screen-space reflections came forward, and so did the cloud deck
     across the near water (seen in Chrome). The sky and clouds take the full ripple.
   - **The reach** was 600 m and 1.5 km at first. That missed the treeline across the lagoon, seen
     near the horizon. The reach costs nothing: the steps are spread over the ray's length on screen.
+    It was 2 km and 4 km until 2026-10-26, when tall mountains farther off didn't show in the water
+    (docs/BUGS.md 6); now 24 km and 48 km, with more refine steps (8 and 10, were 4 and 6) to pin far
+    hits.
 - **Cost switches:** `?waterdbg=ssr` and `?waterdbg=clouds` turn each part off (render/water.rs
   `DEBUG_SWITCHES`).
 - **Tests:** `render::reflection`:
