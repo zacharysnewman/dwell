@@ -1661,7 +1661,8 @@ fn ssr_hits(scene: f32, d: f32, prev: f32) -> bool {
 // How much of a hit at `px` survives the fade at the screen's edges (render/reflection.rs
 // `edge_weight`).
 fn ssr_edge(px: vec2f, size: vec2f) -> f32 {
-    let e = min(min(px.x, size.x - px.x), min(px.y, size.y - px.y));
+    // Top and bottom only: at the sides a ray is clamped to the edge's scene (ssr_trace).
+    let e = min(px.y, size.y - px.y);
     return smoothstep(0.0, 1.0, e / (frame.reflect_sky.z * size.y));
 }
 
@@ -1716,6 +1717,13 @@ fn ssr_trace(p: vec3f, r: vec3f, size: vec2f) -> vec3f {
         }
         prev_t = t;
         prev_d = d;
+    }
+    // Out through a side with no hit: the drawn scene at the exit pixel stands in (an edge clamp,
+    // render/reflection.rs `trace`), not the sky.
+    let exit = a.xy + delta * t_end;
+    if (t_end < 1.0 && (exit.x <= 0.5 + 1e-3 || exit.x >= size.x - 0.5 - 1e-3) && ssr_depth(exit) > 0.0) {
+        let w = ssr_edge(exit, size) * (1.0 - smoothstep(frame.reflect.w, frame.reflect.z, t_end * len));
+        return vec3f(exit, w);
     }
     return vec3f(0.0);
 }
