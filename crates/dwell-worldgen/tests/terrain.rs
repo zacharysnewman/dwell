@@ -292,7 +292,8 @@ fn beyond_the_rim_nothing_is_generated() {
 #[test]
 fn chunks_the_air_test_calls_air_generate_as_air() {
     for seed in [0u64, 20_260_925] {
-        let g = TerrainGenerator::new(seed);
+        let g = TerrainGenerator::new(seed)
+            .with_volume(dwell_worldgen::volume::terrain_volume().expect("the terrain's volume"));
         let air = air_test_for(GENERATOR_TERRAIN, seed);
         let (mut sky, mut checked) = (0, 0);
         for (cx, cz) in [
@@ -592,7 +593,7 @@ fn the_mirror_maps_voxels_and_chunks_and_is_its_own_inverse() {
 #[test]
 fn a_chunk_of_face_b_is_the_flip_of_its_face_local_chunk() {
     for seed in [0u64, 20_260_925] {
-        let g = BifacialTerrain::new(seed);
+        let g = BifacialTerrain::height_field(seed);
         for c in [
             (0, -1, 0),
             (4, -2, -7),
@@ -622,7 +623,7 @@ fn a_chunk_of_face_b_is_the_flip_of_its_face_local_chunk() {
 #[test]
 fn face_b_is_its_own_landscape() {
     for seed in [0u64, 5] {
-        let g = BifacialTerrain::new(seed);
+        let g = BifacialTerrain::height_field(seed);
         assert_ne!(
             bifacial::face_seed(seed, Face::A),
             bifacial::face_seed(seed, Face::B)
@@ -659,7 +660,7 @@ fn the_bedrock_lies_either_side_of_the_midplane_and_no_edit_breaks_it() {
     let bedrock = require(dwell_worldgen::portals::MIDPLANE.bedrock);
     assert!(info(bedrock).indestructible && dwell_world::edit::unbreakable(bedrock));
     for seed in [0u64, 3] {
-        let g = BifacialTerrain::new(seed);
+        let g = BifacialTerrain::height_field(seed);
         for c in [(0, 0, 0), (0, -1, 0), (200, 0, -30), (200, -1, -30)] {
             let chunk = gen_world(&g, ChunkCoord::new(c.0, c.1, c.2));
             for z in 0..S {
@@ -692,7 +693,7 @@ fn the_bedrock_lies_either_side_of_the_midplane_and_no_edit_breaks_it() {
 
 #[test]
 fn point_queries_by_face_agree_with_the_chunk_path() {
-    let g = BifacialTerrain::new(11);
+    let g = BifacialTerrain::height_field(11);
     for c in [(0, -2, 0), (5, -1, 5), (0, -3, 0), (0, -4, 0), (780, -1, 0)] {
         let c = ChunkCoord::new(c.0, c.1, c.2);
         let chunk = gen_world(&g, c);
@@ -805,7 +806,8 @@ fn generated_ramps_follow_the_rule_across_chunk_borders_and_hold_the_sea_at_the_
     use dwell_blocks::state_property;
     use dwell_worldgen::ramps::{Around, Top, top_of};
     let seed = 0;
-    let g = TerrainGenerator::new(seed);
+    let g = TerrainGenerator::new(seed)
+        .with_volume(dwell_worldgen::volume::terrain_volume().expect("the terrain's volume"));
     let mut world = VoxelWorld::new(generator_for(GENERATOR_TERRAIN, seed), None);
     let (cx, cz) = coast_on_axis(&g);
     let (mut gentle, mut steep, mut flooded, mut on_borders) = (0, 0, 0, 0);
@@ -961,7 +963,7 @@ fn the_mountains_reach_about_2400_m_and_some_ground_is_steep_enough_to_slide() {
         let (mut highest, mut slope, mut land) = (0.0f64, 0.0f64, 0usize);
         let (mut samples, mut slides, mut island, mut flooded) = (0usize, 0usize, 0usize, 0usize);
         for seed in [1u64, 42, 12345] {
-            let terrain = BifacialTerrain::new(seed);
+            let terrain = BifacialTerrain::height_field(seed);
             let g = terrain.local(face);
             for z in (-30_000..=30_000).step_by(499) {
                 for x in (-30_000..=30_000).step_by(499) {
@@ -1145,7 +1147,7 @@ dwell_world::both_faces!(
     /// cells reach deeper than `underDepth` under a column's top, and its risers took the stone.)
     fn lod_risers_show_soil_not_stone(f: FaceFrame) {
         use dwell_world::lod::{self, LodCells, LodCoord};
-        let t = BifacialTerrain::new(7);
+        let t = BifacialTerrain::height_field(7);
         let g = t.local(f.face);
         let stone = require("dwell:stone");
         let (mut risers, mut bad) = (0, 0);
@@ -1211,7 +1213,7 @@ dwell_world::both_faces!(
     /// mountains (8 × 4 km, every 8 m).
     fn rock_comes_in_whole_faces_not_splotches(f: FaceFrame) {
         use dwell_worldgen::terrain::Band;
-        let g = BifacialTerrain::new(7);
+        let g = BifacialTerrain::height_field(7);
         let g = g.local(f.face);
         // A mountainous square of this face: the first point of a 1 km grid with rock round it.
         let (cx, cz) = (-20..=20)
@@ -1296,7 +1298,7 @@ dwell_world::both_faces!(
     /// the other's only at the other's centreline, so across the other's channel it stood metres
     /// above the water beside it: a wall of water.)
     fn rivers_meet_at_one_level(f: FaceFrame) {
-        let t = BifacialTerrain::new(7);
+        let t = BifacialTerrain::height_field(7);
         let g = t.local(f.face);
         let joins = confluences(g);
         assert!(
@@ -1342,7 +1344,7 @@ dwell_world::both_faces!(
     /// land was lower, out into the sea at the mouths.)
     fn river_banks_are_not_ridges(f: FaceFrame) {
         use terrain::Water;
-        let t = BifacialTerrain::new(7);
+        let t = BifacialTerrain::height_field(7);
         let g = t.local(f.face);
         let ch = &g.map().channels;
         let (mut seen, mut ridges) = (0usize, Vec::new());
@@ -1429,7 +1431,7 @@ dwell_world::both_faces!(
     /// levels, up the hillsides out to the valleys' reach. Round every confluence of seed 7, no
     /// dry column steps from its neighbour against the slope either side of it.
     fn no_seam_where_river_valleys_meet(f: FaceFrame) {
-        let t = BifacialTerrain::new(7);
+        let t = BifacialTerrain::height_field(7);
         let g = t.local(f.face);
         let joins = confluences(g);
         assert!(
@@ -1456,7 +1458,7 @@ fn no_seam_at_the_reported_meeting_of_valleys() {
     // face-a-only: the owner's report is a spot on face A of seed 1397629041 (feet at
     // (-7464, 106, 8376), a block dump from 0.31.4); the edge they looked at stands ~100 m north,
     // a 12 m step at (-7527, 8451).
-    let t = BifacialTerrain::new(1_397_629_041);
+    let t = BifacialTerrain::height_field(1_397_629_041);
     let g = t.local(FaceFrame::A.face);
     let steps = ground_steps(g, (-7467, 8374), 120, 1.0);
     assert!(

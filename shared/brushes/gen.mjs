@@ -45,7 +45,7 @@ const blockName = (v) => {
   }
 };
 /** World types a policy may name (client/src/local/worldIndex.ts WORLD_TYPES; dwell-world `world_type`). */
-const WORLD_TYPES = ['terrain', 'cliffs', 'flat', 'sandbox'];
+const WORLD_TYPES = ['terrain', 'flat', 'sandbox'];
 /** Keys a preset may take while the brush tool is on: none of the game's other bindings
  * (client/src/ui/controls.ts) nor the brush tool's own (V, Q, E, P, Z, [, ]). */
 const PRESET_KEYS = ['KeyU', 'KeyI', 'KeyO', 'KeyJ', 'KeyK', 'KeyL', 'KeyY', 'Semicolon', 'Quote', 'Comma', 'Period', 'Slash'];

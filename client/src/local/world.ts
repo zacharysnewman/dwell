@@ -1,4 +1,4 @@
-// Which world local mode generates (ARCHITECTURE.md §6.3): `?world=terrain|cliffs|flat|sandbox` picks
+// Which world local mode generates (ARCHITECTURE.md §6.3): `?world=terrain|flat|sandbox` picks
 // the generator (procedural terrain by default) and `?seed=N` the world seed.
 
 /**
@@ -6,7 +6,7 @@
  * The sandbox (the flat world in its indestructible white floor block, for building structures) is
  * numbered away from the terrain's versions, which grow.
  */
-export const GENERATORS = { flat: 0, terrain: 8, sandbox: 100, cliffs: 101 } as const;
+export const GENERATORS = { flat: 0, terrain: 8, sandbox: 100 } as const;
 /** The retired movement playground (now a test structure, Phase 15): old worlds only. */
 export const RETIRED_PLAYGROUND = 1;
 

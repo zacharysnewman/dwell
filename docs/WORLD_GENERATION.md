@@ -284,10 +284,16 @@ thickness and the portals' count, spacing, siting, radius, rim, ladder and clear
 are in [`BIFACIAL_WORLD.md`](./BIFACIAL_WORLD.md) §12 and ARCHITECTURE.md §6.3 (*Bedrock and
 portals*); [ADR 0048](./adr/0048-bedrock-and-portals.md). Prototype content (ARCHITECTURE.md §6.1).
 
-## 5. Terrain volumes: the cliffs prototype (generator 101) **[built, prototype, 0.31.4]**
+## 5. Terrain volumes: the cliffs (the terrain's default since 0.35.0) **[built]**
 
 The proposal's layer 2 ([`proposals/TERRAIN_HYDROLOGY_AND_VOLUMES.md`](./proposals/TERRAIN_HYDROLOGY_AND_VOLUMES.md)
-§3, §7): a 3D density per cell over the height field, as an opt-in world type to iterate on. The
+§3, §7): a 3D density per cell over the height field, first as an opt-in world type to iterate on
+(0.31.4–0.34.0, generator 101), the terrain's default since 0.35.0 (owner, 2026-10-27: "Let's make
+cliffs the default (replace terrain) but ensure it's configurable, we'll implement some kind of
+biomes later on and this will most likely be a slider"): `volume.json` `terrain` names the volume
+(null for the height field alone), and each volume's `strength` (0–1, the `strength` input its
+density multiplies its shaping by) is the slider; at 0 the terrain is the height field cell for cell
+(tested). The
 owner's answers (2026-10-27): **an opt-in world type** ("Cliffs (prototype)" in New world and Play
 advanced; the default terrain is unchanged); **cliffs and overhangs only** (no caves or floating
 islands yet); **a node graph in JSON**; **the LOD draws the height field's top surface only** for
@@ -325,6 +331,13 @@ only." Shipped to iterate on (owner: "Deploy as a release and we'll iterate on i
   seed 7: a chunk 6.9 ms on ordinary ground (plain terrain 1.0 ms), 13 ms on cliff hillsides (2.2
   ms); in the browser, chunk jobs p50 31 ms (13 ms plain) and a settled view in 17.5 s (7 s). A
   coarse lattice for the 3D noise is the next saving.
+- **Off the water** **[0.35.0]** (owner, 2026-10-27, on 0.34.0: "big edges rising up on sides of
+  river, and drop off edges without filling low areas"; docs/BUGS.md 15): a river valley's banks are
+  steep, so the slope mask stood walls along them, raised over the water or sunk under it with the
+  water open beside them. Water columns (rivers, lakes, the sea) are never reshaped; dry ground is
+  never lowered or carved under the sea's surface; and the cliffs fade in from 8 to 30 m from a
+  river channel's edge or a lake's shore (the `water` input, the column's `shore`). Waterfalls,
+  where a river would fall over a cliff on purpose, wait for moving water (FUTURE.md).
 - **The cliffs volume** **[0.34.0: walls]:** in the part of the land a 600 m field picks, on hillsides
   (slope 0.3–0.8 over ±4 m), a 2D noise thresholded sharply (±0.02) lifts or sinks the ground up to
   14 m: vertical rock walls with grass ledges on top. A slow 3D noise (40 m across and tall, × 0.5:

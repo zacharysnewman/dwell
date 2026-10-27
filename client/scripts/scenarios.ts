@@ -159,7 +159,7 @@ export interface Scenario {
 }
 
 /** The world types a scenario may open. */
-const WORLDS = ['terrain', 'cliffs', 'flat', 'sandbox'] as const;
+const WORLDS = ['terrain', 'flat', 'sandbox'] as const;
 type World = (typeof WORLDS)[number];
 
 const NAME = /^[a-z0-9]+(-[a-z0-9]+)*$/;

@@ -10,6 +10,22 @@ None. Report new ones here.
 
 ## Fixed
 
+### 15. Cliffs walled the rivers in, and water stood open beside them (fixed in 0.35.0)
+
+*Reported 2026-10-27 (0.34.0, the cliffs world, seed 3764472973 face A near (-3794, 240, -5614)).*
+"Seeing issues with rivers in the cliff environment: big edges rising up on sides of river, and
+drop off edges without filling low areas."
+
+- **Cause:** the cliffs' slope mask read a river valley's steep banks as a hillside, so it raised
+  walls along the water and sank the ground beside it below the water's level (and reshaped wet
+  columns themselves).
+- **Fix:** water columns are never reshaped; dry ground is never lowered or carved under the sea's
+  surface; the cliffs fade in 8–30 m from a river or lake (`volume.json`'s new `water` input).
+- **Test:** `cliffs_keep_off_the_rivers` and `no_water_stands_open_beside_lowered_ground` (seed 7,
+  both faces: 53,731 / 44,935 open water faces on 0.34.0, none on the plain terrain or now) and
+  `cliffs_keep_off_the_river_at_the_report` (4,945 of 5,930 columns by the water reshaped; none now).
+  Checked in Chrome at the report's spot, before and after.
+
 ### 14. A steep edge up the hills where two river valleys meet (fixed in 0.32.0)
 
 *Reported 2026-10-27 (0.31.4, a phone; seed 1397629041, face A, feet at (-7464, 106, 8376)).* "There's

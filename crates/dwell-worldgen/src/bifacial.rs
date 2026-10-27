@@ -34,27 +34,31 @@ pub struct BifacialTerrain {
 }
 
 impl BifacialTerrain {
+    /// The world's terrain: both faces' height fields with the terrain's volume over them
+    /// (`volume.json` `terrain`: the cliffs; WORLD_GENERATION.md §5).
     pub fn new(world_seed: u64) -> Self {
+        match crate::volume::terrain_volume() {
+            Some(def) => Self::with_volume(world_seed, def),
+            None => Self::height_field(world_seed),
+        }
+    }
+
+    /// The height fields alone, without the terrain's volume (the layers under it, for tests and
+    /// tools that look at the hills and the rivers by themselves).
+    pub fn height_field(world_seed: u64) -> Self {
         Self::with_portal_rules(world_seed, MIDPLANE.portals)
     }
 
-    /// The terrain of a terrain generator version (`dwell_world::has_terrain`): the plain terrain,
-    /// or with its volume over both faces; none for the other versions.
+    /// The terrain of a terrain generator version (`dwell_world::has_terrain`); none for the
+    /// other versions.
     pub fn for_generator(version: u32, world_seed: u64) -> Option<Self> {
-        match version {
-            dwell_world::GENERATOR_TERRAIN => Some(Self::new(world_seed)),
-            dwell_world::GENERATOR_CLIFFS => Some(Self::with_volume(
-                world_seed,
-                crate::volume::find("cliffs").expect("volume.json has the cliffs volume"),
-            )),
-            _ => None,
-        }
+        (version == dwell_world::GENERATOR_TERRAIN).then(|| Self::new(world_seed))
     }
 
     /// The world with a terrain volume over both faces' height fields (`volume.rs`), each face
     /// its own noise. The portals are sited on the height field, as on the plain terrain.
     pub fn with_volume(world_seed: u64, def: &'static crate::volume::VolumeDef) -> Self {
-        let t = Self::new(world_seed);
+        let t = Self::height_field(world_seed);
         Self {
             a: t.a.with_volume(def),
             b: t.b.with_volume(def),

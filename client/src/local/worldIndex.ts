@@ -10,7 +10,7 @@ import { GENERATORS, RETIRED_PLAYGROUND } from './world';
 export type CreatableType = keyof typeof GENERATORS;
 /** Types in the index: `playground` only on worlds of versions before 0.9 (append-only store). */
 export type WorldType = CreatableType | 'playground';
-export const WORLD_TYPES: readonly CreatableType[] = ['terrain', 'cliffs', 'flat', 'sandbox'];
+export const WORLD_TYPES: readonly CreatableType[] = ['terrain', 'flat', 'sandbox'];
 const STORED_TYPES: readonly WorldType[] = [...WORLD_TYPES, 'playground'];
 
 export interface WorldMeta {
@@ -49,7 +49,6 @@ const LEGACY_ID = /^local-g(\d+)-s(\d+)$/;
 export function typeOfGenerator(generatorVersion: number): WorldType {
   if (generatorVersion === GENERATORS.flat) return 'flat';
   if (generatorVersion === GENERATORS.sandbox) return 'sandbox';
-  if (generatorVersion === GENERATORS.cliffs) return 'cliffs';
   if (generatorVersion === RETIRED_PLAYGROUND) return 'playground';
   return 'terrain';
 }
@@ -57,7 +56,6 @@ export function typeOfGenerator(generatorVersion: number): WorldType {
 export function typeLabel(type: WorldType): string {
   return {
     terrain: 'Terrain',
-    cliffs: 'Cliffs (prototype)',
     playground: 'Playground',
     flat: 'Flat',
     sandbox: 'Sandbox',

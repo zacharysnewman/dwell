@@ -67,7 +67,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 47 — Torches and dynamic lights | 🚧 In progress — T1 built and tested natively and in Chrome on the GPU ([ADR 0047](./adr/0047-torches-and-dynamic-lights.md), [`LIGHTS.md`](./LIGHTS.md)): light sources as block data (`lights`, `shared/blocks/lights.mjs`), the torch block and held item, placed torches through the flood light, held torches (yours and other players') as unshadowed per-fragment point lights, characters lit by them, flicker, glowing textures (`emissive`). T1b built and tested natively and in Chrome on the GPU: the torch 1 m over two ½ m cells (multi-cell blocks as data, `extends`/`partOf`), a self-lit flame. T2 built and tested natively and in Chrome on the GPU: Torch shadows (cube shadow maps for the nearest torches, kept until their terrain changes; placed torches as shadowed lights over their flood light; the setting). T1c built and tested natively and in Chrome on the GPU: the flame effect (animated painterly billboards from flame looks as data, placed, held and in the arms view). Outstanding: T2's and T1c's CI and the owner's look |
 | 48 — Bedrock and portals between the faces | 🚧 In progress — built and tested natively and in Chrome on the GPU (`BIFACIAL_WORLD.md` §12, `shared/worldgen/midplane.json`; generator version 20, a new compatibility line): `dwell:bedrock` either side of the midplane, 4–8 seeded portals with a ladder through, `?spawn=portal`. Outstanding: CI, the owner's look and the compatibility-line bump. M (2026-10-21): the blue motes at the crossing, built and tested natively and in Chrome on the GPU. 2026-10-26: a 30 m monument round each opening (generator 23, §12.2), built and tested |
 | 49 — Mountains, rivers and lakes: the world map terrain | 🚧 In progress — built and tested natively, the browser join checked in Chrome on the GPU (ADR 0049; generator version 21, a new compatibility line): the hydrology map per face as the terrain (bicubic heights, river channels, flat lakes, bands with a snow line), ranges ~2,300–2,500 m, `dwell:snowy_grass` and `dwell:snowy_leaves`, maps built in workers and kept in IndexedDB ("Shaping the world…"). Outstanding: CI; the owner's look; the compatibility-line bump; polish (deltas, falls, bench scenarios) in a follow-up | Follow-up (2026-10-21): the LOD colour map preview (`?lodmap=on`, ARCHITECTURE.md §6.6 "Colour map"): rivers painted continuous on clipmap rings and valleys lowered in the LOD; outstanding: the owner's look, CI
-| 50 — Terrain volumes (prototype: cliffs) | 🚧 In progress — the opt-in world type `cliffs` (generator 101) built and tested natively and in Chrome on the GPU (WORLD_GENERATION.md §5): a density node graph as data (`shared/worldgen/volume.json`), the chunk pass, cliffs and overhangs. 0.33.0: shaped first, then the surface (grass on ledges, trees on the final ground, the LOD's top surface). Outstanding: the owner's iteration; the LOD's undersides (the final version); a coarse lattice; caves and floating islands not started |
+| 50 — Terrain volumes (the cliffs) | 🚧 In progress — the cliffs are the terrain's default since 0.35.0 (WORLD_GENERATION.md §5): a density node graph as data (`shared/worldgen/volume.json`, `strength` 0–1 the slider for biomes later), shaped first then the surface, walls that lean, kept off the water. Outstanding: the LOD's undersides (next, the owner's priority); a coarse lattice; waterfalls (with moving water); caves and floating islands not started |
 
 Phase numbering: Phase 4 was inserted on 2026-09-29 for the planet-scale world (ADRs 0011, 0012);
 the former Phases 4–7 are now 5–8, and Phase 3's former 3c and 3d are now 3d and 3e.
@@ -5115,11 +5115,11 @@ Exit criteria
   (version 21); `client/src/world/worldMaps.test.ts` (cache, shared promise, blocked storage).
 - [ ] The owner's look in game.
 
-## Phase 50 — Terrain Volumes (prototype: cliffs)
+## Phase 50 — Terrain Volumes (the cliffs)
 
-**Status:** the prototype is built and tested natively and in Chrome on the GPU, shipped as an
-opt-in world type to iterate on (0.31.4). Outstanding: the owner's iteration, and everything under
-"Later" below.
+**Status:** built and tested natively and in Chrome on the GPU; an opt-in world type from 0.31.4,
+the terrain's default since 0.35.0 (owner: "make cliffs the default (replace terrain) but ensure
+it's configurable"). Outstanding: everything under "Later" below, the LOD's undersides first.
 
 Owner (2026-10-27): "Go ahead and prototype this feature"; an opt-in world type, cliffs and
 overhangs, a node graph in JSON, the LOD the top surface only for now; "Deploy as a release and we'll
@@ -5136,7 +5136,9 @@ Later (not in the prototype)
 - [x] Shape first, then the surface (0.33.0): the reshaped ground's top for the fill, the soil, the
   ramps, the decorations, the trees and the LOD; floors under rock grassed near open sky; the cost
   measured (WORLD_GENERATION.md §5).
-- [ ] The LOD's undersides: the full 3D shape from afar (the owner's final version).
+- [x] The cliffs as the terrain's default, with `strength` (0–1) to configure them, kept off rivers,
+  lakes and the sea (0.35.0).
+- [ ] The LOD's undersides: the full 3D shape from afar (the owner's final version; next).
 - [ ] A coarse lattice for the 3D noise (chunk jobs ~2.4× plain terrain's).
 - [ ] Caves and floating islands; ramps under overhangs.
 
