@@ -26,16 +26,6 @@ certain height above them.
 - **Suspects:** the horizon-map shadows (0.22.19) or the cascades' depth range not covering 2 km relief, the casters'
   `casterReachM`, or the LOD or horizon-map heightmap levels clipping.
 
-### 5. Rivers have tall banks and are always shallow
-
-*Reported 2026-10-26.*
-
-Rivers have a tall border along their edges, which even blocks the way to the ocean. They are also always very shallow.
-
-- **Owner's idea:** the generator may be carving too much, instead of filling low regions and then continuing to flow.
-- **Suspects:** the generator 21 channel and levee shaping in `terrain.rs` (lake levees?), and the river depth curve in
-  `hydrology.json`.
-
 ### 6. Water reflections fade to white at the screen's sides
 
 *Reported 2026-10-26.*
@@ -48,6 +38,27 @@ show.
 - The owner's note was cut off ("In addition, I would expect to see …"). Ask what else is expected.
 
 ## Fixed
+
+### 5. Rivers had tall banks and were always shallow (fixed in 0.27.0)
+
+*Reported 2026-10-26.* Rivers had a tall border along their edges, even blocking the way to the
+ocean, and were always very shallow.
+
+- **Cause:** a river's surface on the map often stood above the land along its banks (the coarse
+  map's heights round the channel, and flat coasts). The columns then raised a levee to water + 1 m,
+  tapering 1.5 m per m, so the water never stood open beside lower ground. That made walls along the
+  banks and across the mouths. The depth came straight from the map's width curve (0.5–6 m, at least
+  0.5 m).
+- **Fix:**
+  - Each river vertex's surface now lies at least the bank height (+ 0.5 m) under the lowest dry
+    ground of the map cells round it. It never rises downstream and never drops below the sea, so
+    levees are rarely needed.
+  - The bank is 0.5 m (was 1 m).
+  - Rivers are deeper: the depth curve is 0.8, 2, 4.5 and 9 m (was 0.5, 1.2, 3 and 6), at least 1 m.
+  - A new compatibility line: worldgen changed.
+- **Test:** `rivers_run_below_their_banks_and_down_to_the_sea` (dwell-worldgen `worldmap`, both
+  faces) failed before the fix (7,188 and 6,621 river vertices too high) and passes now. The goldens
+  and pinned digests are regenerated as generator 22.
 
 ### 4. Gaps between water blocks at height transitions (fixed in 0.26.7)
 

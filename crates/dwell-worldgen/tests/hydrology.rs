@@ -186,14 +186,14 @@ both_faces!(
     }
 );
 
-const DIGEST_7_A: u64 = 0x7fb0_059c_1336_389a;
-const DIGEST_7_B: u64 = 0xcfa0_2dc2_ffb7_ad4a;
-const MEDIUM_7_A: u64 = 0x6088_db94_661b_86c8;
-const MEDIUM_7_B: u64 = 0x90f6_3376_cc6c_663a;
-const PLATES_7_A: u64 = 0x628a_a138_8a69_80aa;
-const PLATES_7_B: u64 = 0xbeec_9936_1db4_758c;
-const ROCK_RAIN_7_A: u64 = 0x24a6_d877_6d0c_6479;
-const ROCK_RAIN_7_B: u64 = 0x2f27_6e2e_3990_e515;
+const DIGEST_7_A: u64 = 0x2ee6_ff17_8ed3_2416;
+const DIGEST_7_B: u64 = 0x05ad_7136_5044_8386;
+const MEDIUM_7_A: u64 = 0x52f6_394b_2c58_eb19;
+const MEDIUM_7_B: u64 = 0x0a90_09ef_73a6_611f;
+const PLATES_7_A: u64 = 0x8079_0a7d_6060_4b0c;
+const PLATES_7_B: u64 = 0x00bf_8fcb_fd75_5466;
+const ROCK_RAIN_7_A: u64 = 0x2868_cbf1_35ab_39a0;
+const ROCK_RAIN_7_B: u64 = 0xc5ff_467f_d0f3_169a;
 
 /// A synthetic island on a `n` × `n` grid of 100 m cells: a cone rising to `peak` m from the coast
 /// at `radius` cells, plus `extra(x, z)`.
@@ -386,7 +386,7 @@ fn the_general_power_path_is_bit_identical_everywhere() {
     assert_eq!(m.digest(), DIGEST_1234_GENERAL, "{:#018x}", m.digest());
 }
 
-const DIGEST_1234_GENERAL: u64 = 0x5d2c_80da_7413_5a1c;
+const DIGEST_1234_GENERAL: u64 = 0xca1c_1290_2106_1026;
 
 // ---- The uplift layer ---------------------------------------------------------------------------
 

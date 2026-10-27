@@ -1,4 +1,4 @@
-# seed chunk_x chunk_y chunk_z fnv1a64(voxels) - generator version 21
+# seed chunk_x chunk_y chunk_z fnv1a64(voxels) - generator version 22
 # registry 313145a4673967dd
 0 0 -5 0 66deee2beeac2325
 0 0 -4 0 66deee2beeac2325
@@ -27,8 +27,8 @@
 0 5 3 -3 66deee2beeac2325
 0 5 4 -3 66deee2beeac2325
 0 5 6 -3 66deee2beeac2325
-0 5 19 -3 d52406972f4ac0b6
-0 5 20 -3 f4d1b36da1385bd7
+0 5 19 -3 8eee3887e2eef3da
+0 5 20 -3 d4e84f084737e224
 0 5 21 -3 eb05052ea5b62325
 0 5 -21 -3 e75a0737bc47329f
 0 5 -22 -3 8a02b6d268fb9997
