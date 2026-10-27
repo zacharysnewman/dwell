@@ -325,14 +325,19 @@ only." Shipped to iterate on (owner: "Deploy as a release and we'll iterate on i
   seed 7: a chunk 6.9 ms on ordinary ground (plain terrain 1.0 ms), 13 ms on cliff hillsides (2.2
   ms); in the browser, chunk jobs p50 31 ms (13 ms plain) and a settled view in 17.5 s (7 s). A
   coarse lattice for the 3D noise is the next saving.
-- **The cliffs volume:** on hillsides (slope 0.3–0.8 over ±4 m) in the part of the land a 600 m
-  field picks, a thresholded 3D noise lifts or sinks the ground up to 14 m: rock walls, ledges,
-  arches and overhangs.
+- **The cliffs volume** **[0.34.0: walls]:** in the part of the land a 600 m field picks, on hillsides
+  (slope 0.3–0.8 over ±4 m), a 2D noise thresholded sharply (±0.02) lifts or sinks the ground up to
+  14 m: vertical rock walls with grass ledges on top. A slow 3D noise (40 m across and tall, × 0.5:
+  the one to tune) shifts each wall's place with height, so walls lean out over their foot
+  (overhangs) or back. 0.31.4–0.33.0 thresholded a 3D noise varying faster up than across, which
+  layered rock and air through the band: shallow caves and tunnels rather than walls (owner,
+  2026-10-27: "the overhangs are forming shallow caves and tunnels"). On seed 7's hillsides: 0
+  columns with two gaps of air (133 before), ~6% overhanging, 1,641 steps over 4 m (906 before).
 - **Tests** (`tests/volume.rs`, both faces): overhangs, added and removed cells on steep ground over
   six hillsides; gentle ground is the plain terrain cell for cell; no decoration over a recess; a
   recess in dry ground is air (red on the first build: 210,834 water cells in dry ground on face A);
   no grass buried in rock, reshaped tops grassed like the land, trunks on solid ground, no soil
-  deeper than `soilDepth` (all four red on 0.32.0's order: 17,329 buried grass cells and 27 of 48
+  deeper than `soilDepth`, walls not tunnels (no column with two gaps of air: red on 0.33.0's shape) (all four red on 0.32.0's order: 17,329 buried grass cells and 27 of 48
   trunks over air on face A). Checked in Chrome at seed 7 near the spawn (~(1840, 7015)), near and
   from 250 m up.
 - **Known gaps, to iterate on:** a 3 m soil band shows under each grass lip on a cliff face (the

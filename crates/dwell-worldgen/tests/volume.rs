@@ -355,3 +355,54 @@ dwell_world::both_faces!(
         assert_eq!(deep, 0, "dirt cells deeper than the soil under a top");
     }
 );
+
+dwell_world::both_faces!(
+    /// The owner (2026-10-27): "the overhangs are forming shallow caves and tunnels". A 3D noise
+    /// varying faster up than across layered rock and air through the cliffs' band; walls come from
+    /// a 2D switch now, leaned by a slow 3D term, so a column under its top has at most one gap of
+    /// air (an overhang over its foot), never rock, air, rock and air again (a tunnel in the face).
+    fn cliffs_are_walls_not_tunnels(f: FaceFrame) {
+        let chunks = cliff_chunks(f);
+        let mut stacks = std::collections::HashMap::<(i32, i32), Vec<(i32, bool)>>::new();
+        for (c, ch) in &chunks {
+            for z in 0..CHUNK_SIZE {
+                for x in 0..CHUNK_SIZE {
+                    let s = stacks
+                        .entry((c.x * CHUNK_SIZE + x, c.z * CHUNK_SIZE + z))
+                        .or_default();
+                    for y in 0..CHUNK_SIZE {
+                        let m = ch.voxels()[local_index(x, y, z)];
+                        // The ground: rock, soil and water, not a tree's canopy over the air.
+                        let ground = (solid(m)
+                            && !matches!(named(m), "dwell:log" | "dwell:leaves"))
+                            || m == M.water;
+                        s.push((c.y * CHUNK_SIZE + y, ground));
+                    }
+                }
+            }
+        }
+        let (mut columns, mut tunnels) = (0usize, Vec::new());
+        for (at, mut s) in stacks {
+            s.sort_by_key(|&(y, _)| std::cmp::Reverse(y));
+            // Gaps of air under the first solid cell, going down.
+            let mut gaps = 0;
+            let mut seen_solid = false;
+            for w in s.windows(2) {
+                let ((_, a), (_, b)) = (w[0], w[1]);
+                seen_solid |= a;
+                gaps += usize::from(seen_solid && a && !b);
+            }
+            columns += 1;
+            if gaps > 1 {
+                tunnels.push(at);
+            }
+        }
+        assert!(columns > 1000, "columns checked: {columns}");
+        assert!(
+            tunnels.len() * 1000 <= columns,
+            "{} of {columns} columns hold more than one gap of air, e.g. {:?}",
+            tunnels.len(),
+            &tunnels[..tunnels.len().min(3)]
+        );
+    }
+);
