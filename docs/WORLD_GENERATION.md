@@ -262,7 +262,10 @@ where the river is at sea level (its water is the sea's, so a mouth opens into t
 joining another meets it at the other's level `joinMargin` 3 m plus its own half-width outside the
 other's channel (the other's water backing up into it where it lies lower) and falls to it at most
 `joinSlope` 0.25 m per m upstream (a short gorge where it hangs above), so the waters never stand
-side by side at two levels. Planned (owner, the same day): rivers filling the lower land beside them
+side by side at two levels. A valley is carved by every channel whose valley reaches the column,
+the lowest (generator 26, docs/BUGS.md 14: carved toward the nearest channel alone, the ground
+stepped by the two rivers' difference in level where the nearest changed, a wall up the hills
+between two valleys). Planned (owner, the same day): rivers filling the lower land beside them
 into wider stretches, lakes and pools instead of levees, FUTURE.md. The pines grow to 1,300 m on grass and snowy
 grass, their leaves snowy from 1,050–1,250 m up (`placements.json` `variants`); meadows to 1,500 m.
 Spawn: level dry lowland (3–80 m) within 400 m of a river, nearest the disc's centre. Measured

@@ -261,17 +261,42 @@ impl Channels {
     /// The nearest channel (by its edge) whose valley reaches face-local (x, z); its half-width at
     /// least `min_half` m (the LOD's widening, with `min_width`: only rivers at least that wide).
     pub fn query(&self, x: f64, z: f64, min_half: f64, min_width: f64) -> Option<Hit> {
+        let mut best: Option<(f64, u32, Hit)> = None;
+        self.each_near(x, z, min_half, min_width, |id, hit| {
+            let key = hit.d - hit.half;
+            if !best.is_some_and(|(bk, bid, _)| bk < key || (bk == key && bid < id)) {
+                best = Some((key, id, hit));
+            }
+        });
+        best.map(|(_, _, h)| h)
+    }
+
+    /// Calls `f` with every channel segment whose valley reaches (x, z), each with its id and its
+    /// hit as [`Channels::query`] measures it: where two rivers' valleys meet, the terrain carves
+    /// by all of them (`terrain.rs`), so the ground never steps where the nearest one changes.
+    pub fn each_near(
+        &self,
+        x: f64,
+        z: f64,
+        min_half: f64,
+        min_width: f64,
+        mut f: impl FnMut(u32, Hit),
+    ) {
         let span = (min_half / BUCKET).ceil() as i32;
         let (bx, bz) = ((x / BUCKET).floor() as i32, (z / BUCKET).floor() as i32);
-        let mut best: Option<(f64, u32, Hit)> = None;
+        let mut seen: Vec<u32> = Vec::new();
         for dz in -span..=span {
             for dx in -span..=span {
                 let Some(list) = self.buckets.get(&(bx + dx, bz + dz)) else {
                     continue;
                 };
                 for &id in list {
-                    if best.is_some_and(|(_, bid, _)| bid == id) {
-                        continue;
+                    if span > 0 {
+                        // A segment is listed in every bucket it crosses: once each.
+                        if seen.contains(&id) {
+                            continue;
+                        }
+                        seen.push(id);
                     }
                     let s = &self.segs[id as usize];
                     let (ex, ez) = (s.b.x - s.a.x, s.b.z - s.a.z);
@@ -287,13 +312,8 @@ impl Channels {
                     if d >= half + valley {
                         continue;
                     }
-                    let key = d - half;
-                    if best.is_some_and(|(bk, bid, _)| bk < key || (bk == key && bid < id)) {
-                        continue;
-                    }
                     let l = l2.sqrt();
-                    best = Some((
-                        key,
+                    f(
                         id,
                         Hit {
                             d,
@@ -304,11 +324,10 @@ impl Channels {
                             dir: (ex / l, ez / l),
                             river: s.river,
                         },
-                    ));
+                    );
                 }
             }
         }
-        best.map(|(_, _, h)| h)
     }
 }
 

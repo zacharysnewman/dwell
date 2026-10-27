@@ -10,6 +10,23 @@ None. Report new ones here.
 
 ## Fixed
 
+### 14. A steep edge up the hills where two river valleys meet (fixed in 0.32.0)
+
+*Reported 2026-10-27 (0.31.4, a phone; seed 1397629041, face A, feet at (-7464, 106, 8376)).* "There's
+still a bug with river valley meetups … It's pushing up a steep edge at the join point of the
+terrain, though not by the water, but up the hills adjacent."
+
+- **Cause:** each column carved its valley toward the nearest river channel alone (`terrain.rs`
+  `column`). Where two rivers' valleys overlapped, the nearest switched from one to the other along
+  a line, and the ground jumped there by the difference in their levels, out to the valleys' reach
+  (12 m, ~100 m north of the report).
+- **Fix:** the valley is carved by every channel whose valley reaches the column, the lowest
+  (`Channels::each_near`), which cannot step. Generator 26, a new compatibility line.
+- **Test:** `no_seam_where_river_valleys_meet` (round every confluence of seed 7, both faces: 600 and
+  64 steps against the slope on the old rule, none now) and
+  `no_seam_at_the_reported_meeting_of_valleys` (the report's spot: 297 steps, none now). Checked in
+  Chrome from the report's viewpoint, before and after.
+
 ### 13. Crossing the midplane swapped the clouds, the fog and the light (fixed in 0.31.2)
 
 *Reported 2026-10-27 (0.31.1).* "It's still an abrupt transition between the two world sides when you
