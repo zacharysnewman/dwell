@@ -308,15 +308,17 @@ pub fn edge_weight(t: &LodShadowTunables, half_width: f64, offset: f64) -> f64 {
 /// (direct × the sky light's ramp), `cascade` the shadow maps' PCF where a cascade holds the
 /// point, `near` 1 inside the cascades fading to 0 over their last `edgeFade` (the view depth's
 /// smoothstep), `strength` the light's (the time of day's fade), `far` this layer's visibility
-/// (1 where it doesn't reach). Inside the cascades it is theirs, past them the stand-in shaded by
-/// the far shadow, and between a blend of the two by `near`, so neither edge shows; with `far` 1
-/// it is the second layer's alone (`mix(stand_in, pcf, strength × near)`).
+/// (1 where it doesn't reach). Inside the cascades it is theirs times the far shadow (a hill whose
+/// sun-facing side lies beyond their `casterReachM` casts into them only through this layer:
+/// docs/BUGS.md 2), past them the stand-in shaded by the far shadow, and between a blend of the
+/// two by `near`, so neither edge shows; with `far` 1 it is the second layer's alone
+/// (`mix(stand_in, pcf, strength × near)`).
 pub fn combine(stand_in: f64, cascade: Option<f64>, near: f64, strength: f64, far: f64) -> f64 {
     let past = stand_in * (1.0 + strength * (far - 1.0));
     match cascade {
         None => past,
         Some(pcf) => {
-            let inside = stand_in + strength * (pcf - stand_in);
+            let inside = stand_in + strength * (pcf * far - stand_in);
             past + near * (inside - past)
         }
     }
@@ -506,7 +508,7 @@ mod tests {
                             prev = v;
                         }
                         // The ends are each layer's alone.
-                        let inside = stand_in + strength * (pcf - stand_in);
+                        let inside = stand_in + strength * (pcf * far - stand_in);
                         assert!((at(start - 1.0) - inside).abs() < 1e-12);
                         let past = stand_in * (1.0 + strength * (far - 1.0));
                         assert!((at(end + 1.0) - past).abs() < 1e-12);
@@ -516,6 +518,30 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn a_hill_beyond_the_casters_reach_still_shades_inside_the_cascades() {
+        // docs/BUGS.md 2: inside the cascades the factor was theirs alone. A low sun's ray to a
+        // step on a hill's far side leaves the hill (its sun-facing side, the only casters: front
+        // faces) beyond the cascades' casterReachM, so no caster shaded it: each step's top was
+        // lit, a grid down the shaded slope. The far shadow (this layer, which sees the hill)
+        // shades it there too.
+        let (stand_in, near, strength) = (1.0, 1.0, 1.0);
+        let unshaded_by_the_cascades = Some(1.0);
+        let behind_the_hill = 0.0;
+        assert!(
+            combine(
+                stand_in,
+                unshaded_by_the_cascades,
+                near,
+                strength,
+                behind_the_hill
+            ) < 1e-9
+        );
+        // In the cascades' own shadow it stays shaded, and with neither it is lit.
+        assert_eq!(combine(stand_in, Some(0.0), near, strength, 1.0), 0.0);
+        assert_eq!(combine(stand_in, Some(1.0), near, strength, 1.0), 1.0);
     }
 
     #[test]

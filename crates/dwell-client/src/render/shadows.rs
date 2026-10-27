@@ -856,7 +856,9 @@ fn shadow_light(rel: vec3f, n: vec3f, stand_in: f32) -> f32 {
     // Normal offset: the lookup moves out along the surface's normal by the cascade's texels.
     let at = rel + n * shadows.texel[c].y;
     let p = (shadows.cascades[c] * vec4f(at, 1.0)).xyz;
-    let inside = mix(stand_in, shadow_pcf(c, p), shadows.cfg.y);
+    // Times the distant terrain's: a hill beyond the casters' reach shades here only through it
+    // (docs/BUGS.md 2).
+    let inside = mix(stand_in, shadow_pcf(c, p) * lod_shadow(rel), shadows.cfg.y);
     if (near >= 1.0) {
         return inside * cloud_shadow(rel);
     }
