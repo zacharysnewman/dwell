@@ -202,14 +202,21 @@ fn dwell_other_day(day: DaySky) -> DaySky {
     return o;
 }
 
+// How much of the sky behind the world toward elevation sine `e` is the other face's (`behind_share`
+// in dwell-look): none just below the horizon, where a ray crosses the viewer's face's air to the
+// rim and shows its haze, all of it looking steeply down.
+fn dwell_behind_share(e: f32) -> f32 {
+    return smoothstep(-BEHIND_FROM, -BEHIND_TO, e);
+}
+
 // The sky behind the world toward `dir` for a viewer on `face`, its sun, moon and stars over it
 // (`clear`: the viewer's `dwell_sky`): above the viewer's horizon the viewer's; below it, where the
-// sky shows only through a shaft or past the rim, the other face's, as seen from there (a pixel's
-// width of blend at the horizon; docs/BUGS.md 10). The fog keeps the viewer's horizon colour.
+// sky shows only through a shaft or past the rim, the viewer's horizon haze giving way to the
+// other face's sky, as seen from there, as the view turns down (docs/BUGS.md 10, 12). The fog keeps
+// the viewer's horizon colour.
 fn dwell_sky_behind(dir: vec3f, face: f32, day: DaySky, clear: vec3f) -> vec3f {
     let e = dot(dir, face_up(face));
-    let px = max(day.stars.z, 1e-5);
-    let below = smoothstep(px, -px, e);
+    let below = dwell_behind_share(e);
     var c = clear;
     if (below < 1.0) {
         c = dwell_sky_bodies(dir, face, day, clear);

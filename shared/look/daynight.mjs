@@ -47,7 +47,13 @@ const SCHEMA = {
     twinkleHz: [0, 20],
     horizonFade: [0, 1],
   },
-  sky: { gradientPower: [0.05, 4], bandHeight: [0.01, 1], bandSpread: [0, 32] },
+  sky: {
+    gradientPower: [0.05, 4],
+    bandHeight: [0.01, 1],
+    bandSpread: [0, 32],
+    behindFrom: [0, 1],
+    behindTo: [0.01, 1],
+  },
 };
 
 const KEYFRAME = {
