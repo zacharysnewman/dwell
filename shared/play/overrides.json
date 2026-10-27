@@ -8,7 +8,8 @@
       "options": [
         { "value": "", "label": "Terrain" },
         { "value": "flat", "label": "Flat" },
-        { "value": "sandbox", "label": "Sandbox" }
+        { "value": "sandbox", "label": "Sandbox" },
+        { "value": "cliffs", "label": "Cliffs (prototype)" }
       ]
     },
     { "param": "seed", "label": "Seed", "kind": "integer", "min": 0, "max": 9007199254740991, "hint": "Empty for seed 0." },

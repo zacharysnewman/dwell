@@ -2151,7 +2151,7 @@ impl Inner {
     /// shell for them the first time, `None` while they are on the way. A world without terrain,
     /// a shell without `prepareWorld` or a failure: no maps (each instance computes its own).
     fn world_maps(&mut self, world_seed: u64, generator_version: u32) -> Option<Vec<Uint8Array>> {
-        if generator_version != dwell_world::GENERATOR_TERRAIN {
+        if !dwell_world::has_terrain(generator_version) {
             return Some(Vec::new());
         }
         match &self.shaping {

@@ -153,8 +153,14 @@ export interface Scenario {
    * BIFACIAL_WORLD.md §6); default false.
    */
   portal: boolean;
+  /** The local world's type (`?world=`, local/world.ts `GENERATORS`); default `terrain`. */
+  world: World;
   steps: Step[];
 }
+
+/** The world types a scenario may open. */
+const WORLDS = ['terrain', 'cliffs', 'flat', 'sandbox'] as const;
+type World = (typeof WORLDS)[number];
 
 const NAME = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 type Obj = Record<string, unknown>;
@@ -460,8 +466,12 @@ function parseScenario(where: string, v: unknown): Scenario {
     'split',
     'face',
     'portal',
+    'world',
     'steps',
   ]);
+  if (o.world !== undefined && !(WORLDS as readonly unknown[]).includes(o.world)) {
+    throw new ViewError(`${where}.world: expected one of ${WORLDS.join(', ')}`);
+  }
   if (o.face !== undefined && o.face !== 'a' && o.face !== 'b') {
     throw new ViewError(`${where}.face: expected "a" or "b"`);
   }
@@ -507,6 +517,7 @@ function parseScenario(where: string, v: unknown): Scenario {
     split: split(`${where}.split`, o.split),
     face: o.face === 'b' ? 'b' : 'a',
     portal: bool(`${where}.portal`, o.portal, false),
+    world: (o.world as World | undefined) ?? 'terrain',
     steps,
   };
 }
@@ -543,6 +554,7 @@ export function scenarioUrl(
   const url = new URL(viewUrl(base, scenarioView(s)), 'http://x');
   if (s.portal) url.searchParams.set('spawn', s.face === 'b' ? 'portal-b' : 'portal');
   else if (s.face === 'b') url.searchParams.set('spawn', 'b');
+  if (s.world !== 'terrain') url.searchParams.set('world', s.world);
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
   return `${base}${url.search}`;
 }

@@ -38,6 +38,29 @@ impl BifacialTerrain {
         Self::with_portal_rules(world_seed, MIDPLANE.portals)
     }
 
+    /// The terrain of a terrain generator version (`dwell_world::has_terrain`): the plain terrain,
+    /// or with its volume over both faces; none for the other versions.
+    pub fn for_generator(version: u32, world_seed: u64) -> Option<Self> {
+        match version {
+            dwell_world::GENERATOR_TERRAIN => Some(Self::new(world_seed)),
+            dwell_world::GENERATOR_CLIFFS => Some(Self::with_volume(
+                world_seed,
+                crate::volume::find("cliffs").expect("volume.json has the cliffs volume"),
+            )),
+            _ => None,
+        }
+    }
+
+    /// The world with a terrain volume over both faces' height fields (`volume.rs`), each face
+    /// its own noise. The portals are sited on the height field, as on the plain terrain.
+    pub fn with_volume(world_seed: u64, def: &'static crate::volume::VolumeDef) -> Self {
+        let t = Self::new(world_seed);
+        Self {
+            a: t.a.with_volume(def),
+            b: t.b.with_volume(def),
+        }
+    }
+
     /// The world with these portal rules in place of the build's (tests add a fixture by data
     /// alone).
     pub fn with_portal_rules(world_seed: u64, rules: PortalRules) -> Self {
