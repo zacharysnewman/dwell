@@ -44,10 +44,14 @@ see …" and was cut off (see the rest below).
 - **Cause:** the screen-space reflection faded every hit near any screen edge into the sky fallback
   (`edge_weight`, `ssr_edge`). A ray leaving through a side with no hit also took the sky. Low over
   land, the sky's horizon haze is near white.
-- **Fix:** hits fade only near the top and bottom edges. A ray leaving through a side takes the drawn
-  scene at its exit pixel (an edge clamp), where that pixel is not sky. This is in both the Rust twin
+- **Fix:** hits fade only near the top and bottom edges, in both the Rust twin
   (`render/reflection.rs`) and the shader.
 - **Test:** `the_sides_keep_the_scene_not_a_fade_into_the_sky` failed on the old logic and passes now.
+- **Regression (0.27.1, fixed in 0.27.5):** 0.27.1 also took the scene at a side's exit pixel for a
+  ray leaving through that side. Over open water that pixel shows the floor through the water
+  (water writes no depth), so it drew streaks fanning along the sides. The clamp is removed: such a
+  ray is a miss (the sky). The same test now also checks that a low ray leaving over open water is
+  a miss. It failed with the clamp (a full-weight hit at the left edge) and passes now.
 - **The rest (fixed in 0.27.3):** the cut-off note was likely that tall mountains farther off didn't
   show in the water (owner, 2026-10-26). The reflection's reach was 2 km (Medium) and 4 km (High),
   so a ray toward a farther range found nothing and took the sky. The reach is now 24 km and 48 km.
