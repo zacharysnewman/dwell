@@ -535,8 +535,10 @@ impl TerrainGenerator {
     /// `rock_window` m (central differences of the map's smooth height: a hillside's, not a map
     /// cell's) past a threshold easing from `rock_slope` at the sea to `rock_slope_high` at the
     /// snow line, as the soil thins with height (owner, 2026-10-26: structured, rooted in realism).
-    fn rock_at(&self, map: &crate::worldmap::WorldMap, x: f64, z: f64, h: f64) -> bool {
-        let w = S.rock_window;
+    /// A cell of `cell` m (the LOD's coarser ones) takes the slope over at least its own width,
+    /// so a rock face narrower than a cell is not drawn as a dotted line of single cells.
+    fn rock_at(&self, map: &crate::worldmap::WorldMap, x: f64, z: f64, h: f64, cell: i64) -> bool {
+        let w = S.rock_window.max(cell as f64);
         let hx = map.height_at(x + w, z).0 - map.height_at(x - w, z).0;
         let hz = map.height_at(x, z + w).0 - map.height_at(x, z - w).0;
         let slope = hx.hypot(hz) / (2.0 * w);
@@ -677,7 +679,7 @@ impl TerrainGenerator {
         let slope = (gx * gx + gz * gz).sqrt();
         let band = if wet || h < S.shore {
             Band::Shore
-        } else if self.rock_at(map, x as f64, z as f64, h) {
+        } else if self.rock_at(map, x as f64, z as f64, h, cell) {
             Band::Rock
         } else if h + S.snow_noise >= S.snow_line {
             let noise = 2.0
