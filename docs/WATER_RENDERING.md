@@ -341,10 +341,13 @@ sky alone. W5's screen-space reflections came forward, and so did the cloud deck
     the hit's weight and coverage.
   - **The fades.** The weight fades within 12 % of the screen height of the top and bottom edges, so
     reflections don't pop there, and over the last 30 % of the reach. At the sides it doesn't fade
-    (2026-10-26, docs/BUGS.md 6: fading into the sky drew a white haze down both sides). A miss,
-    including a ray leaving through a side, is the sky and clouds. (0.27.1 to 0.27.4 took the
-    scene at a side's exit pixel instead. Over open water that pixel is the floor seen through the
-    water, since water writes no depth, and it drew streaks fanning along the sides.)
+    (2026-10-26, docs/BUGS.md 6: fading into the sky drew a white haze down both sides). A miss
+    is the sky and clouds. A ray leaving through a side marches on with its pixel held in the edge
+    column (an edge clamp: the scene taken to go on beyond the edge as it is there) and meets only
+    land, a scene point over the reflecting surface by `SIDE_LAND_M` (0.25 m), so a mountain running
+    off the screen is reflected to the edge (0.28.1, docs/BUGS.md 9). The floor seen through open
+    water lies under the surface and is never met: 0.27.1–0.27.4 took the scene at the exit pixel
+    whatever it was, and over open water that drew streaks along the sides.
   - **Fresnel and the sun.** The reflection is Fresnel-weighted like the sky's (Schlick, F0 0.02), so
     a grazing view shows the shore strongly and a steep one hardly at all. Where the scene hides the
     sky, it hides the sun's and moon's glint and the sparkle too.

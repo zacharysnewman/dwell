@@ -10,6 +10,41 @@ None. Report new ones here.
 
 ## Fixed
 
+### 8. Dark blue rectangles in rows across lakes and the sea (fixed in 0.28.1)
+
+*Reported 2026-10-26 (0.27.7).* Some water rendered its side solid through the water: darker
+blue rectangles and triangles in rows across a lake.
+
+- **Cause:** at the edge of the streamed view a chunk's horizontal neighbours aren't loaded, and
+  the mesh apron (`VoxelWorld::padded_box`, and `padded_from_neighbours`) read them as air. So a
+  chunk of water meshed its side there as a wall, and the walls of the outermost ring showed through
+  the surface in rows at fixed distances (seen in Chrome over seed 7's sea). Not the 0.26.7 strip:
+  the rectangles stayed with it reverted.
+- **Fix:** where a horizontal neighbour is missing and the chunk's own edge column holds a fluid
+  (water or a flooded block), the apron goes on with it. Everything else stays air as before (the
+  ground's border, and the open surface where no chunk is above). A neighbour's arrival meshes the
+  chunk again with its real voxels.
+- **Tests:** `the_apron_goes_on_with_the_water_where_no_neighbour_is_loaded` (dwell-world) and
+  `a_water_chunk_at_the_streamed_edge_has_no_wall_into_the_unknown` (dwell-game) failed with the
+  air apron and pass now.
+
+### 9. A white edge at the sides of the water's reflection, the mountain's cut off (fixed in 0.28.1)
+
+*Reported 2026-10-26 (0.27.7).* A white edge on the left of the reflection, where the mountain's
+reflection was cut off.
+
+- **Cause:** since 0.27.5 a reflected ray leaving through a side of the screen took the sky, so a
+  mountain whose mirror image ran off the screen ended in a hard white band (0.27.1's clamp to the
+  exit pixel was removed for its streaks over open water, bug 6).
+- **Fix:** past the side the march goes on with its pixel held in the edge column (the scene taken
+  to go on beyond the edge as it is there), and meets only land: a scene point standing over the
+  reflecting surface (`SIDE_LAND_M`, 0.25 m). The floor seen through open water lies under it and
+  is never met, so no streaks. In the Rust twin and the shader.
+- **Tests:** `the_sides_keep_the_scene_not_a_fade_into_the_sky` checks that land past the left side
+  is reflected to the edge (failed with the sky fallback) and that a low ray over open water is
+  still a miss; `the_shaders_side_margin_is_this_one` pins the shader's margin. Checked in Chrome on
+  seed 7: the range is mirrored to both edges, and the open sea shows no streaks.
+
 ### 2. Sun and moon shadows leaked through hills in a grid pattern (fixed in 0.27.6)
 
 *Reported 2026-10-26.* Light leaked through hills in a grid pattern.

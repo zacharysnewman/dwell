@@ -793,7 +793,68 @@ impl VoxelWorld {
                 }
             }
         }
+        self.continue_fluids_into_missing(coord, apron, &mut out);
         out
+    }
+
+    /// In a streamed world (no generator), where a horizontal neighbour of `coord` isn't loaded
+    /// (beyond the streamed sphere, or not arrived yet) and the chunk's own edge column holds a
+    /// fluid (water, or a flooded block), the apron goes on with that voxel, so the water's side
+    /// isn't meshed as a wall into the unknown: rows of dark blue rectangles at the streamed view's
+    /// edge (docs/BUGS.md 8). Everything else stays air, as before. A neighbour's arrival meshes the
+    /// chunk again with its real voxels.
+    fn continue_fluids_into_missing(
+        &self,
+        coord: ChunkCoord,
+        apron: [i32; 3],
+        out: &mut [StateId],
+    ) {
+        if self.generator.is_some() {
+            return;
+        }
+        let n = CHUNK_SIZE;
+        let [ax, ay, az] = apron;
+        let (ex, ey, ez) = (n + 2 * ax, n + 2 * ay, n + 2 * az);
+        let at =
+            |dx: i32, dy: i32, dz: i32| ChunkCoord::new(coord.x + dx, coord.y + dy, coord.z + dz);
+        let missing = |dx: i32, dy: i32, dz: i32| {
+            (dx, dz) != (0, 0) && !self.chunks.contains_key(&at(dx, dy, dz))
+        };
+        if !(-1..=1).any(|dy| (-1..=1).any(|dz| (-1..=1).any(|dx| missing(dx, dy, dz)))) {
+            return;
+        }
+        let side = |v: i32| -> i32 {
+            if v < 0 {
+                -1
+            } else if v >= n {
+                1
+            } else {
+                0
+            }
+        };
+        for py in 0..ey {
+            let y = py - ay;
+            let dy = side(y);
+            let Some(own) = self.chunks.get(&at(0, dy, 0)) else {
+                continue;
+            };
+            let ly = y - dy * n;
+            for pz in 0..ez {
+                let z = pz - az;
+                for px in 0..ex {
+                    let x = px - ax;
+                    let (dx, dz) = (side(x), side(z));
+                    if !missing(dx, dy, dz) {
+                        continue;
+                    }
+                    let v = own.voxels()[local_index(x.clamp(0, n - 1), ly, z.clamp(0, n - 1))];
+                    let info = dwell_blocks::info(v);
+                    if info.liquid || info.flooded {
+                        out[((pz + ez * py) * ex + px) as usize] = v;
+                    }
+                }
+            }
+        }
     }
 
     pub fn set_voxel(&mut self, x: i32, y: i32, z: i32, m: StateId) {

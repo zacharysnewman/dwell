@@ -1670,6 +1670,9 @@ fn ssr_edge(px: vec2f, size: vec2f) -> f32 {
 // from the surface point `p` marched on screen through the scene's view depth, in even steps to
 // the screen's edge or the reach, a hit pinned by binary steps. Where it meets the scene (xy, in
 // pixels) and how much of the reflection that gives (z; 0: missed).
+// render/reflection.rs `SIDE_LAND_M` (a test pins them equal).
+const SIDE_LAND_M: f32 = 0.25;
+
 fn ssr_trace(p: vec3f, r: vec3f, size: vec2f) -> vec3f {
     let steps = i32(frame.reflect.x);
     let d0 = dot(p, frame.forward.xyz);
@@ -1718,6 +1721,30 @@ fn ssr_trace(p: vec3f, r: vec3f, size: vec2f) -> vec3f {
         }
         prev_t = t;
         prev_d = d;
+    }
+    // Out through a side with no hit: the scene at the exit pixel stands in where it stands over
+    // the surface (land), not the floor seen through the water (render/reflection.rs `trace`).
+    // On past the side, the pixel held in the edge column, meeting land only (render/reflection.rs
+    // `trace`).
+    let exit = a.xy + delta * t_end;
+    if (t_end < 1.0 && (exit.x <= 0.5 + 1e-3 || exit.x >= size.x - 0.5 - 1e-3)) {
+        var prev_e = 1.0 / mix(k0, k1, t_end);
+        for (var i = 1; i <= steps; i++) {
+            let t = t_end + (1.0 - t_end) * f32(i) / f32(steps);
+            let d = 1.0 / mix(k0, k1, t);
+            let px = a.xy + delta * t;
+            let at = vec2f(exit.x, clamp(px.y, 0.5, size.y - 0.5));
+            let scene = ssr_depth(at);
+            let ndc = vec2f(at.x / size.x * 2.0 - 1.0, 1.0 - at.y / size.y * 2.0);
+            let land = scene > 0.0
+                && face_rise(frame.eye.y, view_ray(ndc) * scene) > face_rise(frame.eye.y, p) + SIDE_LAND_M;
+            if (ssr_hits(scene, d, prev_e) && land) {
+                let u = select(t, (clamp(scene, min(a.z, b.z), max(a.z, b.z)) - a.z) / (b.z - a.z), abs(b.z - a.z) > 1e-3 * a.z);
+                let w = ssr_edge(at, size) * (1.0 - smoothstep(frame.reflect.w, frame.reflect.z, u * len));
+                return vec3f(at, w);
+            }
+            prev_e = d;
+        }
     }
     return vec3f(0.0);
 }
