@@ -214,7 +214,13 @@ pub struct Column {
     pub band: Band,
     /// Beyond the world's disc: nothing is generated.
     pub outside: bool,
+    /// How far (m) the nearest river channel's edge or lake shore lies: 0 in the water, `FAR_WATER`
+    /// with none near (the terrain volume's `water` input: cliffs keep off the rivers).
+    pub shore: f32,
 }
+
+/// A column's `shore` with no river valley or lake shore reaching it.
+pub const FAR_WATER: f32 = 1000.0;
 
 impl Column {
     /// The first row above the water (rows below it over the ground are water); the ground's top
@@ -631,7 +637,9 @@ impl TerrainGenerator {
             return base;
         }
         let base_top = top_voxel(base.height);
-        let top = Self::shaped_top(v, &eval, base_top);
+        // Dry ground above the sea is never lowered under its surface (it would stand open beside
+        // the sea's water).
+        let top = Self::shaped_top(v, &eval, base_top).max(base_top.min(Self::sea_top()));
         if top == base_top {
             return base;
         }
@@ -652,6 +660,10 @@ impl TerrainGenerator {
         base: &Column,
     ) -> Option<ColumnEval> {
         let (xi, zi) = (x as i32, z as i32);
+        // Water is never reshaped: a lake, a river or the sea keeps its bed.
+        if base.water != Water::None {
+            return None;
+        }
         if let Some((p, near)) = self.portals_near((xi, zi), (xi, zi))
             && p.locate(&near, xi, zi).0 != Part::None
         {
@@ -674,6 +686,7 @@ impl TerrainGenerator {
             z: zi,
             surface: m_of_row(top_voxel(h) + 1) as f32,
             slope: &slope,
+            water: base.shore,
         }))
     }
 
@@ -687,6 +700,11 @@ impl TerrainGenerator {
         } else {
             v.density(eval, y) > 0.0
         }
+    }
+
+    /// The row under the sea's surface (face-local): the lowest a volume leaves dry ground's top.
+    fn sea_top() -> i32 {
+        top_voxel(SEA_LEVEL_M as f32)
     }
 
     /// The topmost solid row under the volume over a height field topped at `base_top`.
@@ -865,12 +883,23 @@ impl TerrainGenerator {
         } else {
             Band::Ground
         };
+        let mut shore = FAR_WATER;
+        if let Some(r) = &river {
+            shore = shore.min((r.d - r.half).max(0.0) as f32);
+        }
+        if let Some(l) = &lake {
+            shore = shore.min((-l.sdf).max(0.0) as f32);
+        }
+        if water != Water::None {
+            shore = 0.0;
+        }
         Column {
             height,
             level,
             water,
             band,
             outside: false,
+            shore,
         }
     }
 
@@ -1293,7 +1322,8 @@ impl TerrainGenerator {
                 };
                 let base_top = top_voxel(base.height);
                 let top = top_voxel(col.height);
-                let floor = base_top - reach;
+                // Nor is dry ground carved under the sea's surface.
+                let floor = (base_top - reach).max(Self::sea_top() + 1).min(top);
                 if y0 + S <= floor || y0 >= top {
                     continue;
                 }

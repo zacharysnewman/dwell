@@ -24,6 +24,9 @@ pub enum Node {
     Depth,
     /// The cell centre's height above sea level (m).
     Height,
+    /// How far (m) the column's nearest river channel edge or lake shore lies (0 in the water,
+    /// 1000 with none near): cliffs fade out beside the water.
+    Water,
     /// The surface's gradient (rise per run) over ±`radius` m.
     Slope {
         radius: u8,
@@ -108,6 +111,8 @@ pub struct ColumnInput<'a> {
     pub z: i32,
     pub surface: f32,
     pub slope: &'a dyn Fn(u8) -> f32,
+    /// How far (m) the nearest river channel edge or lake shore lies.
+    pub water: f32,
 }
 
 /// A column's evaluated column-only nodes: each node's value where it is the same for every cell
@@ -239,6 +244,7 @@ impl Volume {
             }
             Node::Noise { .. } => None,
             Node::Slope { radius } => Some((input.slope)(radius)),
+            Node::Water => Some(input.water),
             Node::Const(c) => Some(c),
             Node::Mul(kids) => {
                 let mut all = Some(1.0f32);
@@ -334,7 +340,7 @@ impl Volume {
             Node::Abs(k) => kid(k).abs(),
             Node::Clamp { of, min, max } => kid(of).clamp(min, max),
             Node::Smoothstep { of, from, to } => smooth_step(from, to, kid(of)),
-            Node::Depth | Node::Height | Node::Slope { .. } | Node::Noise { .. } => {
+            Node::Depth | Node::Height | Node::Water | Node::Slope { .. } | Node::Noise { .. } => {
                 unreachable!("inputs are evaluated by their callers")
             }
         }
@@ -359,6 +365,7 @@ mod tests {
             z: -20,
             surface,
             slope,
+            water: 1000.0,
         }
     }
 

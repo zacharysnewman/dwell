@@ -406,3 +406,109 @@ dwell_world::both_faces!(
         );
     }
 );
+
+/// Columns round seed `seed`'s rivers on face `f` (every 6th course point of the first 60
+/// courses, out to `out` m past the channel), with the plain and the cliffs generators.
+fn river_columns(
+    seed: u64,
+    f: FaceFrame,
+    out: i32,
+    mut each: impl FnMut(&TerrainGenerator, &TerrainGenerator, i32, i32),
+) {
+    let plain = BifacialTerrain::new(seed);
+    let cliffs = BifacialTerrain::for_generator(GENERATOR_CLIFFS, seed).expect("terrain");
+    let (p, c) = (plain.local(f.face), cliffs.local(f.face));
+    for course in p.map().channels.courses.iter().take(60) {
+        for pt in course.iter().step_by(6) {
+            let r = (pt.w * 0.5) as i32 + out;
+            for z in pt.z as i32 - r..=pt.z as i32 + r {
+                for x in pt.x as i32 - r..=pt.x as i32 + r {
+                    each(p, c, x, z);
+                }
+            }
+        }
+    }
+}
+
+dwell_world::both_faces!(
+    /// The owner (2026-10-27, 0.34.0): "big edges rising up on sides of river, and drop off edges
+    /// without filling low areas". A river valley's banks are steep, so the cliffs' slope mask put
+    /// walls along them, raised above the water or sunk below it. The cliffs keep off the water:
+    /// within 8 m of a river channel's edge or a lake's shore the ground is the plain terrain's.
+    fn cliffs_keep_off_the_rivers(f: FaceFrame) {
+        let (mut near, mut moved) = (0usize, Vec::new());
+        river_columns(7, f, 10, |p, c, x, z| {
+            let col = p.column_at(x, z);
+            if col.outside || col.shore >= 8.0 {
+                return;
+            }
+            near += 1;
+            if p.ground_y(x, z) != c.ground_y(x, z) {
+                moved.push((x, z));
+            }
+        });
+        assert!(near > 5000, "columns by the water: {near}");
+        assert!(
+            moved.is_empty(),
+            "{} of {near} columns by the water reshaped, e.g. {:?}",
+            moved.len(),
+            moved.first()
+        );
+    }
+);
+
+dwell_world::both_faces!(
+    /// No water stands open beside ground the cliffs lowered: round the rivers, the cliffs world
+    /// has no more water cells beside air (sideways) than the plain terrain.
+    fn no_water_stands_open_beside_lowered_ground(f: FaceFrame) {
+        let open = |g: &TerrainGenerator, x: i32, z: i32| {
+            let col = g.column_at(x, z);
+            if col.outside || col.water == dwell_worldgen::terrain::Water::None {
+                return 0;
+            }
+            let surface = col.water_row();
+            [(1, 0), (-1, 0), (0, 1), (0, -1)]
+                .iter()
+                .filter(|(dx, dz)| {
+                    let n = g.column_at(x + dx, z + dz);
+                    !n.outside
+                        && n.water == dwell_worldgen::terrain::Water::None
+                        && g.ground_y(x + dx, z + dz).is_some_and(|t| t < surface - 1)
+                })
+                .count()
+        };
+        let (mut plain, mut cliffs) = (0usize, 0usize);
+        river_columns(7, f, 6, |p, c, x, z| {
+            plain += open(p, x, z);
+            cliffs += open(c, x, z);
+        });
+        assert!(
+            cliffs <= plain,
+            "open water faces: cliffs {cliffs}, plain {plain}"
+        );
+    }
+);
+
+#[test]
+fn cliffs_keep_off_the_river_at_the_report() {
+    // face-a-only: the owner's report, seed 3764472973 face A near (-3794, 240, -5614) (0.34.0).
+    let plain = BifacialTerrain::new(3_764_472_973);
+    let cliffs = BifacialTerrain::for_generator(GENERATOR_CLIFFS, 3_764_472_973).expect("terrain");
+    let (p, c) = (
+        plain.local(FaceFrame::A.face),
+        cliffs.local(FaceFrame::A.face),
+    );
+    let (mut near, mut moved) = (0, 0);
+    for z in -5714..=-5514 {
+        for x in -3894..=-3694 {
+            let col = p.column_at(x, z);
+            if col.outside || col.shore >= 8.0 {
+                continue;
+            }
+            near += 1;
+            moved += usize::from(p.ground_y(x, z) != c.ground_y(x, z));
+        }
+    }
+    assert!(near > 100, "columns by the water: {near}");
+    assert_eq!(moved, 0, "of {near} columns by the water");
+}
