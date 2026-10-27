@@ -1,6 +1,6 @@
 # Felling: pieces that lose their support fall, tip and settle
 
-**Status: F1 built (0.36.0); F2 built (0.37.0); F3 next** ([ADR 0051](./adr/0051-felling.md)). The first use of the
+**Status: F1 built (0.36.0); F2 built (0.37.0); F3 built (0.37.1)** ([ADR 0051](./adr/0051-felling.md)). The first use of the
 collapse pipeline planned in ARCHITECTURE.md §7.1–7.3 (Phases 20 and 22), for trees, on a general
 rule. Trees as unique things that grow over time stay [`TREE_GROWTH.md`](./TREE_GROWTH.md)'s.
 
@@ -53,10 +53,16 @@ carriers and riders around the change, budgeted per tick (`INTEGRITY_BUDGET_VOXE
 - **What it hits:** terrain, other pieces, players. Its riders don't collide (the owner: falling
   leaves pass through terrain). A leaves-only piece has no collider at all: it falls for
   `looseRiderSeconds` and is removed (leaves falling away), never settling inside the ground.
-- **Players:** pushed by it (as by any Tier 1 body, PLAYER_CONTROLLER.md §6.6), with players
-  pushing back only up to `max_push_force` and not at all past `pushable_mass_limit`; hurt by it
-  (its speed into the player past a threshold, as impact damage); and able to stand on and ride it
-  (`step_platform`, built).
+- **Players:** pushed by it (as by any Tier 1 body, PLAYER_CONTROLLER.md §6.6); pushing it back
+  only while it is lighter than `pushableMass` — a heavier piece is held from players' pushes
+  (Rapier's dominance group) while it moves slower than `heavyHoldSpeed` (held while falling fast,
+  it squeezed a player under it through the ground, `a_falling_trunk_hurts_…`); hurt by it: a
+  carrying cell closing on a player faster than `hitSpeed` (its speed toward them, less theirs away;
+  a player falling onto a still log takes fall damage instead) does `hitDamagePerSpeed` points per
+  m/s over it, `Crush`, once per piece and player (`Felling::hits`, before the physics step); and
+  able to stand on and ride it (`step_platform`, on the server; in the prediction its kinematic
+  stand-in carries the player the same way). The wire's ground kind stays `None` for a body: the
+  prediction finds the stand-in under the player by its own query each tick.
 - **Network (new messages, a new protocol version):** reliable `EntitySpawn` (id, the piece's cells
   and states, its pose) and `EntityDespawn`; its pose and velocities in the snapshot datagrams at the
   snapshot rate; clients interpolate it (`INTERP_DELAY_MS`) and insert it as a kinematic body so
@@ -82,8 +88,14 @@ When a piece has moved less than `SLEEP_LINEAR_THRESHOLD` / `SLEEP_ANGULAR_THRES
 
 Block data: `support` (`ground` | `carrier` | `rider`), `passable`, `density` (exists), log `axis`
 (`y` | `x` | `z`, its texture turned by it). Felling tunables (`shared/physics/felling.json`,
-generated, validated): `riderReach` (cells, 6), `looseRiderSeconds` (1.5), the hit damage's speed
-threshold and scale, `maxPieceCells` (a bound on one piece), and the §7.4 sleep values.
+generated into `crates/dwell-sim/src/felling.gen.rs` by `shared/physics/gen.mjs`, validated, CI
+failing on stale output): `riderReach` (cells, 6), `maxSystemCells` (16384), `maxPieceCells`
+(4096), `toppleSpin` (0.6 rad/s), `sleepLinear` / `sleepAngular` (0.05), `sleepSeconds` (2),
+`looseRiderSeconds` (1.5), `maxSeconds` (30), `maxSettles` (3), `hitSpeed` (4 m/s),
+`hitDamagePerSpeed` (6), `pushableMass` (400 kg), `heavyHoldSpeed` (1 m/s). Sounds
+(`shared/sounds/dwell.json`): `fell` (the crack, `fell_crack`, as a carrying piece spawns) and
+`piece_land` (the block's `land` sound when a piece's velocity changes by over 2 m/s between
+snapshots, at most every 250 ms).
 
 ## 6. Stages (each its own release)
 
@@ -103,12 +115,17 @@ threshold and scale, `maxPieceCells` (a bound on one piece), and the §7.4 sleep
   behind and kinematic stand-ins in the prediction (`dwell-client` `pieces.rs`; a quaternion per
   draw in the renderer); settling by resampling onto the grid (`an_upright_trunk_tipped_onto_its_side_lies_as_logs_along_x`).
   Server tests: a cut trunk lies on the ground as logs along x or z. Checked in Chrome on the flat
-  world: a tree with a crown tips, falls, its leaves through the ground, and settles. Deviation:
-  the felling tunables are still Rust defaults (`FellingRules`), moved to data in F3.
-- **F3 — Players and polish:** push limits, hit damage, riding checked on falling and rolling logs
-  (the snapshot's ground id for a piece); the felling tunables as data (`shared/physics/felling.json`);
-  shadows of falling pieces (the shadow cache keys casters by mesh, not pose); sounds (a crack, the
-  thud of landing); the bench and e2e scenarios.
+  world: a tree with a crown tips, falls, its leaves through the ground, and settles. (The
+  tunables were Rust defaults in F2; data since F3.)
+- **F3 — Players and polish** **[built, 0.37.1]:** the tunables as data (`shared/physics/felling.json`,
+  generator tests); push limits (`dwell-physics` `tests/pieces.rs`: a light log pushed, a 1.5 t one
+  not — red without the dominance, on both faces); hit damage (unit tests, and a server test: a
+  trunk falling on a second player hurts them once, not the cutter, and leaves them alive on the
+  floor); riding (a player on a sliding piece goes with it, both faces; the prediction rides a
+  piece's stand-in); falling pieces cast shadows (their pose in their caster identity, so a kept
+  cascade is drawn again as they move; unit test, checked in Chrome); sounds (`fell`, `piece_land`,
+  unit test); the bench scenario `felling`. Deviation: no e2e spec — main's e2e has failed since
+  before this work (PR #236), and the server tests cover the loop end to end.
 
 ## 7. Not in this design
 

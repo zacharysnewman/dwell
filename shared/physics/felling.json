@@ -1,0 +1,17 @@
+{
+  "$comment": "Felling (docs/FELLING.md §5): what loses its support falls as a body, tips and settles back into blocks. riderReach: how far (cells, through leaves) a leaf belongs to the log nearest it. maxSystemCells: the most logs and leaves one support search looks at (a larger tree stands). maxPieceCells: the most cells one falling piece may have. toppleSpin: the spin (rad/s) a piece cut by a player starts with, tipping it away from them. sleepLinear / sleepAngular: a piece slower than these (m/s, rad/s) for sleepSeconds settles. looseRiderSeconds: leaves with no log fall this long, then are gone. maxSeconds: a piece still moving after this settles where it is. maxSettles: a piece that settles unanchored this many times stays where it is. hitSpeed: a piece hitting a player faster than this (m/s, its speed toward them) hurts, hitDamagePerSpeed points per m/s over it. pushableMass: players push pieces lighter than this (kg); heavier ones they cannot move while slower than heavyHoldSpeed (m/s) (faster, a heavy piece moves as the physics says: held fast, it would squeeze players through the ground). Run `node shared/physics/gen.mjs` after editing; CI fails if crates/dwell-sim/src/felling.gen.rs is stale.",
+  "riderReach": 6,
+  "maxSystemCells": 16384,
+  "maxPieceCells": 4096,
+  "toppleSpin": 0.6,
+  "sleepLinear": 0.05,
+  "sleepAngular": 0.05,
+  "sleepSeconds": 2,
+  "looseRiderSeconds": 1.5,
+  "maxSeconds": 30,
+  "maxSettles": 3,
+  "hitSpeed": 4,
+  "hitDamagePerSpeed": 6,
+  "pushableMass": 400,
+  "heavyHoldSpeed": 1
+}

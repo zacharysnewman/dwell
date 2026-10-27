@@ -1287,7 +1287,9 @@ impl Server {
             self.broadcast_world(&Message::PlayerEvent(e));
         }
 
-        // 4. Physics, then the falling pieces at rest settle (docs/FELLING.md §4).
+        // 4. The falling pieces' hard hits hurt (before the step resolves them), physics, then the
+        // pieces at rest settle (docs/FELLING.md §4).
+        self.piece_hits();
         self.physics.step(1.0 / f64::from(SIM_HZ));
         self.tick += 1;
         self.settle_pieces();
@@ -1963,8 +1965,31 @@ impl Server {
     /// The pieces at rest (or out of time) become blocks again (docs/FELLING.md §4): their cells
     /// in one `Rebake` modification, each piece's `EntityDespawn` after it, then what they placed
     /// passes through the support rule again.
+    /// The players the falling pieces hit hard this tick are hurt (`DamageCause::Crush`).
+    fn piece_hits(&mut self) {
+        if self.felling.pieces.is_empty() {
+            return;
+        }
+        let radius = self.config.player_config.body.radius;
+        let bodies: Vec<crate::felling::PlayerBody> = self
+            .sessions
+            .iter()
+            .filter_map(|(&id, s)| Some((id, s.handle?)))
+            .map(|(id, h)| crate::felling::PlayerBody {
+                key: u64::from(id),
+                center: self.players.position(&self.physics, h),
+                radius: f64::from(radius),
+                half_cylinder: f64::from(self.players.half_height(h) - radius),
+                velocity: self.players.velocity(&self.physics, h).as_dvec3(),
+            })
+            .collect();
+        for (key, points) in self.felling.hits(&self.physics, &bodies) {
+            self.damage(key as SessionId, points, DamageCause::Crush);
+        }
+    }
+
     fn settle_pieces(&mut self) {
-        let due = self.felling.step(&self.physics);
+        let due = self.felling.step(&mut self.physics);
         if due.is_empty() {
             return;
         }
