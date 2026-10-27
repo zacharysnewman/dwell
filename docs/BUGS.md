@@ -10,6 +10,24 @@ None. Report new ones here.
 
 ## Fixed
 
+### 12. A hard dark (day) or white (night) band past the rim of the world (fixed in 0.31.1)
+
+*Reported 2026-10-27 (0.30.x, on a phone).* The 0.28.5 fix for bug 10 "looks really bad on the
+horizon … a very harsh transition between the two and you can see a black edge during the day and
+a white edge during the night"; "If you can look down off the edge of the world, I don't mind if you
+can see a pretty transition."
+
+- **Cause:** below the viewer's horizon the sky behind the world switched to the other face's within
+  a pixel. Flying high, the gap between the rim and the horizon showed the other face's sky at the
+  opposite time of day: night's navy at noon, the day's pale horizon at midnight.
+- **Fix:** as through an atmosphere round the disc, a ray just below the horizon shows the viewer's
+  horizon haze (it crosses the viewer's face's air to the rim) and the other face's sky fades in as
+  the view turns down, fully from ~27° (`daynight.json` `sky.behindFrom`, `behindTo`;
+  `dwell_behind_share`), so a portal's shaft still shows the other face's sky.
+- **Test:** `the_other_faces_sky_fades_in_below_the_horizon_not_at_it` (dwell-look: the weight is
+  ~0 a degree below the horizon, 1 looking straight down, never a step; the old shader had no such
+  weight). Checked in Chrome 3.6 km over seed 7, past the rim, at noon and midnight: the band gone.
+
 ### 11. River banks walled off the sea, and tall edges where rivers met (fixed in 0.31.0)
 
 *Reported 2026-10-27 (0.30.x, on a phone).* Rivers had "a 1-2 block high, 1-2 block wide edge along

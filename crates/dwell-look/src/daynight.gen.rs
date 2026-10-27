@@ -49,6 +49,8 @@ pub const DAY_NIGHT: DayNight = DayNight {
         gradient_power: 0.5,
         band_height: 0.3,
         band_spread: 3.0,
+        behind_from: 0.02,
+        behind_to: 0.45,
     },
     keyframes: &[
         Keyframe {

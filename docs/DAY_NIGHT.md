@@ -133,12 +133,15 @@ and each face's lights). The renderer's frame carries it as `frame.day`; clouds 
   face A's and face B's samples mixed by the eye's height across the 4 m flip band, so the sky
   doesn't jump when the player crosses the midplane. The sun, moon and stars are world
   directions, so they stay put while the view turns.
-- **The sky below the viewer's horizon** **[built, 0.28.5]**: behind the world (nothing drawn
-  there), a ray below the viewer's horizon can only be seeing the other face's sky (down a portal's
-  shaft, or past the rim), so the composite draws that face's sky and its sun, moon and stars
-  (`dwell_sky_behind`: the frame's `DaySky` carries the other face's colours, `other_*`, the
-  viewer's blend mirrored, so they meet across the flip band; a pixel's width of blend at the
-  horizon). The fog still fades to the viewer's horizon colour (`sky()`), and so do the
+- **The sky below the viewer's horizon** **[built, 0.28.5; blend 0.31.1]**: behind the world
+  (nothing drawn there), a ray below the viewer's horizon is seeing past the rim or down a portal's
+  shaft. As through an atmosphere round the disc: just below the horizon the ray crosses the
+  viewer's face's air out to the rim, so it shows the viewer's horizon haze; looking more steeply
+  down the other face's sky, with its sun, moon and stars, takes over (`dwell_sky_behind`, weighted
+  by `dwell_behind_share` from `daynight.json` `sky.behindFrom` 0.02 to `behindTo` 0.45, elevation
+  sines ~1° to ~27° below; the frame's `DaySky` carries the other face's colours, `other_*`, the
+  viewer's blend mirrored). 0.28.5 switched within a pixel of the horizon, a hard dark band past
+  the rim by day and a white one by night (docs/BUGS.md 12). The fog still fades to the viewer's horizon colour (`sky()`), and so do the
   reflections. Before, it was the viewer's horizon colour: from face A at noon, face B's night
   through a portal showed as a white patch (docs/BUGS.md 10). The broader goal, sky, fog and light
   by the sun's height over each point's face, is in FUTURE.md.

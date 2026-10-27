@@ -47,10 +47,12 @@
     "horizonFade": 0.18
   },
   "sky": {
-    "$comment": "The gradient from horizon to zenith (colour = mix(horizon, zenith, elevation^gradientPower)); the warm band along the horizon toward the sun (its height as an elevation sine, and how tightly it gathers toward the sun's azimuth).",
+    "$comment": "The gradient from horizon to zenith (colour = mix(horizon, zenith, elevation^gradientPower)); the warm band along the horizon toward the sun (its height as an elevation sine, and how tightly it gathers toward the sun's azimuth). Below the horizon, the sky behind the world (past the rim, down a portal) is the viewer's horizon haze near the horizon, a ray there crossing the viewer's face's air to the rim, giving way to the other face's sky from behindFrom to behindTo (elevation sines below the horizon: ~1° to ~27°), so there is no hard edge where the two faces' skies meet (docs/BUGS.md 12).",
     "gradientPower": 0.5,
     "bandHeight": 0.3,
-    "bandSpread": 3
+    "bandSpread": 3,
+    "behindFrom": 0.02,
+    "behindTo": 0.45
   },
   "keyframes": [
     {

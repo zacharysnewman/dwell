@@ -82,6 +82,10 @@ pub struct SkyShape {
     pub gradient_power: f64,
     pub band_height: f64,
     pub band_spread: f64,
+    /// Below the horizon, the other face's sky fades in from this elevation sine…
+    pub behind_from: f64,
+    /// …to this one (fully the other face's from here down).
+    pub behind_to: f64,
 }
 
 /// The look at one solar angle (colours sRGB).

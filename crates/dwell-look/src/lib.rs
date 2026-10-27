@@ -179,6 +179,15 @@ fn vec3(c: Rgb) -> String {
     format!("vec3f({}, {}, {})", f(c[0]), f(c[1]), f(c[2]))
 }
 
+/// How much of the sky behind the world toward elevation sine `e` (on the viewer's face) is the
+/// other face's: none above the horizon and just below it, where a ray crosses the viewer's face's
+/// air out past the rim and shows its horizon haze, all of it looking steeply down (a portal's
+/// shaft): `sky.behindFrom` to `behindTo` below the horizon. `dwell_behind_share` in `sky.wgsl`.
+pub fn behind_share(e: f64) -> f64 {
+    let s = &DAY_NIGHT.sky;
+    smoothstep(-s.behind_from, -s.behind_to.max(s.behind_from + 1e-3), e)
+}
+
 /// The sky for shaders, generated from the day/night data's fixed shape (the keyframed values come
 /// in the `DaySky` uniform block, [`daynight::DAY_SKY_WGSL`], which this needs before it):
 ///
@@ -194,6 +203,8 @@ pub fn sky_wgsl() -> String {
         ("GLOW_CAP", GLOW_CAP),
         ("BAND_HEIGHT", d.sky.band_height),
         ("BAND_SPREAD", d.sky.band_spread),
+        ("BEHIND_FROM", d.sky.behind_from),
+        ("BEHIND_TO", d.sky.behind_to.max(d.sky.behind_from + 1e-3)),
         ("SUN_RADIUS", d.sun.radius_deg.to_radians()),
         ("SUN_HORIZON_SCALE", d.sun.horizon_scale),
         ("SUN_LIMB", d.sun.limb_darkening),
@@ -498,5 +509,34 @@ mod tests {
                 DAY_NIGHT.sample(before).sky_zenith
             ) < 1e-9
         );
+    }
+
+    #[test]
+    fn the_other_faces_sky_fades_in_below_the_horizon_not_at_it() {
+        // docs/BUGS.md 12 (owner, 2026-10-27): the other face's sky switched in within a pixel of
+        // the horizon, a hard dark band past the rim by day (a white one by night). Just below the
+        // horizon the viewer's haze stands; the other face's sky takes over looking steeply down.
+        let deg = |a: f64| -a.to_radians().sin();
+        assert_eq!(behind_share(0.05), 0.0, "above the horizon");
+        assert!(behind_share(deg(1.0)) < 0.01, "1° below: the viewer's haze");
+        assert!(behind_share(deg(5.0)) < 0.1, "5° below: still mostly haze");
+        let mid = behind_share(deg(13.0));
+        assert!(mid > 0.25 && mid < 0.75, "13° below: between, {mid}");
+        assert!(
+            behind_share(deg(30.0)) > 0.99,
+            "30° below: the other face's"
+        );
+        assert_eq!(behind_share(-1.0), 1.0, "straight down a portal");
+        // Never steeper than a tenth of the range per degree: no edge.
+        let steepest = (0..900)
+            .map(|i| {
+                behind_share(deg(f64::from(i + 1) / 10.0)) - behind_share(deg(f64::from(i) / 10.0))
+            })
+            .fold(0.0f64, f64::max);
+        assert!(steepest < 0.01, "steepest step per 0.1°: {steepest}");
+        // The shader uses the same weight from the same data.
+        let wgsl = sky_wgsl();
+        assert!(wgsl.contains("let below = dwell_behind_share(e);"));
+        assert!(wgsl.contains("const BEHIND_FROM: f32"));
     }
 }
