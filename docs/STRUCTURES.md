@@ -134,7 +134,7 @@ e.g. `shared/structures/x.json: palette."s": unknown block "dwell:nope"`):
   a name (`dwell:` unless a namespace is typed; `test:` is refused) and takes an anchor, the bottom
   centre by default. The states are read from the client's world (`Client.voxels`, refused where a
   chunk isn't loaded); air and the floor become kept cells (`null`, written `.`), every other state
-  gets a palette character (its block's initial where free). Over 32 a side, or with a name taken
+  gets a palette character (its block's initial where free). Over 32 across or 64 rows (32 m) tall, or with a name taken
   (asks to replace), it says so.
 - **Load** puts the structure on the region tools' clipboard in paste mode (`Client.loadStructure`):
   the ghost box follows the crosshair, R and M turn and mirror it, and a right click pastes it as one

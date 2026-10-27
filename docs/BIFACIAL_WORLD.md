@@ -444,6 +444,35 @@ the portal nearest the centre, on face A (B); the bench's `portal-a` and `portal
 **Compatibility.** Generator version 20 changes the terrain every seed generates (the bedrock, the
 portals) and the block registry gains a block: a new compatibility line (RELEASES.md §3).
 
+### 12.2 The monument round each opening **[built, generator 23]**
+
+Owner (2026-10-26): "Add ~4 30m tall pillars that meet in the middle around each portal hole. To
+make them more visible in the world, I have yet to find one." Chosen with the owner: upright
+pillars with an arched top; the design a structure file (editable in the sandbox like the trees),
+named by the portal rules.
+
+- **Data:** `midplane.json` `portals.monument`: `structure` (a name in `shared/structures`, or
+  `null` for none) and `lodCellM` (16). The build's is `dwell:portal_arch` (15 × 60 rows × 15):
+  four 3 m stone pillars 6 m from the axis (north, east, south, west; a 1.5 m walk round the rim,
+  so the ladder's exit onto the south rim isn't blocked), 23 m tall, joined by two arches of 5–7 m
+  radius crossing over the opening, 30 m in all. Prototype content.
+- **Validation** (`gen.mjs`): the structure exists; every cell it fills lies within the clear
+  ground (`radius + rim.width + clear`); `lodCellM` is a power of two in [1, 64].
+- **Placing** (`Portals::monument_at`, `TerrainGenerator::monument`): unturned, its anchor on the
+  axis, its bottom row on the lowest ground under its bottom layer (a higher ground under a pillar
+  holds it), on both faces (face-local, mirrored on B as everything is), over air and replaceable
+  cells only. The sky test (`sky_floor`) and the LOD's section bounds (`raise_for_monuments`) rise
+  over it only near a portal, so the rest of the world generates as before.
+- **LOD:** at levels whose cells are at most `lodCellM`, a cell holding any of its cells shows it
+  (`lod_monuments`), so a 3 m pillar reads in 16 m cells; coarser levels don't draw it.
+- **Structure size:** the format's height limit is 64 rows (32 m, `MAX_HEIGHT`), its width still
+  32 (`MAX_EDGE`): the owner's 32 at 1 m cells, kept in metres on ½ m cells (STRUCTURES.md §3).
+- **Tests** (`tests/portals.rs`): `every_portal_stands_its_monument_on_its_ground` (both faces),
+  `the_lod_shows_a_monument_from_afar`, `a_portal_monument_is_named_by_data_alone` (a fixture names
+  `dwell:proto_rock`, and none); `gen.test.mjs` checks the data's validation.
+- **Compatibility:** it changes the terrain every seed generates (generator 23): a new
+  compatibility line (0.28.0).
+
 ### 12.1 The motes at the crossing **[built, Phase 48 M]**
 
 Owner (2026-10-21): "As part of the portals add some blue magical particles at the transition

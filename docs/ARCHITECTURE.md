@@ -311,7 +311,7 @@ There are **no official game servers**; players host (ADR 0003, details in §10)
 /shared/music        Music (music.json: tracks — title, author, file, volume, loop, fades, when —
                      and their audio files, the owner's Starry Sunshine) + gen.mjs (→ TS
                      music.gen.ts, each file's published name with its content hash), validate.mjs.
-/shared/worldgen     golden/: chunk and LOD-section hashes of generator version 20 (§6.3); terrain.json: the height field's parameters, decorations.json: the terrain's decoration rules, placements.json: the structure placements (the pines, ADR 0043), midplane.json: the bedrock between the faces and the portals through it, gen.mjs (→ Rust tables for dwell-worldgen) (§6.3).
+/shared/worldgen     golden/: chunk and LOD-section hashes of generator version 23 (§6.3); terrain.json: the height field's parameters, decorations.json: the terrain's decoration rules, placements.json: the structure placements (the pines, ADR 0043), midplane.json: the bedrock between the faces and the portals through it, gen.mjs (→ Rust tables for dwell-worldgen) (§6.3).
 /shared/structures   Structure files (*.json; test/ holds fixtures) + gen.mjs (→ Rust tables for
                      dwell-world) and gen.test.mjs; format.mjs, the format's rules, shared by gen.mjs
                      and the client's structures store; playground.json is the movement playground
@@ -1003,7 +1003,7 @@ sides ([ADR 0023](./adr/0023-bifacial-world.md), [`BIFACIAL_WORLD.md`](./BIFACIA
 *Bifacial world* below). Each phase updates this section, §6.6 and §5 as it lands.
 
 **Built (Phases 3a, 3c, 13, 15; Rust, Phase 24):** the generator (`dwell-worldgen`: `terrain.rs`,
-`island.rs`, `noise.rs`, `bifacial.rs`, `decorations.rs`, `placements.rs`, `portals.rs`, `base.rs`, `worldmap/`, `hydrology/`) is **generator version 21**: since 21 (owner 2026-10-21, [ADR 0049](./adr/0049-world-map-terrain.md), *The world map* below) mountains, rivers and lakes from a per-face world map; before it (Phase 15's interim baseline generator, with Phase 33's decorations (13), Phase 16's resize (14), the larger relief (15, owner 2026-10-19), the steep hills (16, owner 2026-10-19), the sea flooding the open part of top blocks below sea level (17, owner 2026-10-20, [`WATER_RENDERING.md`](./WATER_RENDERING.md) §9) the pines placed by data (18, owner 2026-10-20, ADR 0043) ½ m cells with stored ramps (19, Phase 41, ADR 0042) and the bedrock between the faces with the portals through it (20, owner 2026-10-21, *Bedrock and portals* below); versions 2–16
+`island.rs`, `noise.rs`, `bifacial.rs`, `decorations.rs`, `placements.rs`, `portals.rs`, `base.rs`, `worldmap/`, `hydrology/`) is **generator version 23**: 23 (owner 2026-10-26) stands a monument round every portal (*Bedrock and portals* below), 22 (2026-10-26) runs rivers below their banks and deeper (docs/BUGS.md 5); since 21 (owner 2026-10-21, [ADR 0049](./adr/0049-world-map-terrain.md), *The world map* below) mountains, rivers and lakes from a per-face world map; before it (Phase 15's interim baseline generator, with Phase 33's decorations (13), Phase 16's resize (14), the larger relief (15, owner 2026-10-19), the steep hills (16, owner 2026-10-19), the sea flooding the open part of top blocks below sea level (17, owner 2026-10-20, [`WATER_RENDERING.md`](./WATER_RENDERING.md) §9) the pines placed by data (18, owner 2026-10-20, ADR 0043) ½ m cells with stored ramps (19, Phase 41, ADR 0042) and the bedrock between the faces with the portals through it (20, owner 2026-10-21, *Bedrock and portals* below); versions 2–16
 were the earlier terrains — planet-scale relief, slopes, continents, rivers, climate and biomes, face
 B — and are retired: a world saved with one loads as the flat world; the version launcher opens the
 build that saved it, §2.1). It is announced in Welcome as generator **8** (`GENERATOR_TERRAIN`), the
@@ -1142,7 +1142,16 @@ midplane, to the top of the rim it climbs out onto; a rim of `rim.block` (stone,
 within `clear` 4 m of the rim (`trees_in` drops them; decorations skip it), nor does the spawn's
 patch. Every chunk knows from the seed alone what reaches it (the sites, then each column's part:
 shaft, rim, clear ground or none; a ladder's top from the wall column's `column_at`), so chunks
-generate in any order and agree (a test). The sky test leaves room for the rims; the LOD cuts the
+generate in any order and agree (a test). A **monument** (generator 23, owner 2026-10-26: "~4 30m
+tall pillars that meet in the middle around each portal hole, to make them more visible"):
+`portals.monument.structure` names a structure (`shared/structures/portal_arch.json`: four 3 m
+stone pillars 6 m out north, east, south and west, two arches crossing over the opening, 30 m in
+all; or `null`), stood unturned with its anchor on the axis and its bottom row on the lowest ground
+under its bottom layer, over air and replaceable cells only; the data's validation keeps every
+cell it fills on the clear ground. The sky test and the LOD's section bounds rise over it near a
+portal only, and the LOD draws it at levels whose cells are at most `monument.lodCellM` (16 m): a
+cell holding any of its cells shows it, so a pillar narrower than a cell still reads from afar.
+The sky test leaves room for the rims; the LOD cuts the
 shafts at levels whose cells are no wider than a shaft's radius (levels 0–1) and draws the ground
 over them coarser; the hydrology prototype ignores them (they don't change the height field). A
 dev link `?spawn=portal` (`portal-b`) spawns a new local world's player on the rim over the
