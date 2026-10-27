@@ -120,6 +120,12 @@ pub struct Surface {
     pub snow_wavelength: i32,
     pub snow_slope_lift: f64,
     pub rock_slope: f64,
+    /// The rock band's slope threshold at the snow line (soil thins with height): it eases from
+    /// `rock_slope` at sea level to this.
+    pub rock_slope_high: f64,
+    /// The landform's slope for the rock band is taken over ± this many metres (a hillside, not
+    /// a map cell), so rock comes in whole faces, not along the map's grid.
+    pub rock_window: f64,
     pub shore: f64,
     pub under_depth: f64,
     pub ground: &'static str,
@@ -525,6 +531,20 @@ impl TerrainGenerator {
         )
     }
 
+    /// Whether the ground at (x, z), `h` m over the sea, is bare rock: the landform's slope over ±
+    /// `rock_window` m (central differences of the map's smooth height: a hillside's, not a map
+    /// cell's) past a threshold easing from `rock_slope` at the sea to `rock_slope_high` at the
+    /// snow line, as the soil thins with height (owner, 2026-10-26: structured, rooted in realism).
+    fn rock_at(&self, map: &crate::worldmap::WorldMap, x: f64, z: f64, h: f64) -> bool {
+        let w = S.rock_window;
+        let hx = map.height_at(x + w, z).0 - map.height_at(x - w, z).0;
+        let hz = map.height_at(x, z + w).0 - map.height_at(x, z - w).0;
+        let slope = hx.hypot(hz) / (2.0 * w);
+        let t = (h / S.snow_line).clamp(0.0, 1.0);
+        let threshold = S.rock_slope + (S.rock_slope_high - S.rock_slope) * t * t * (3.0 - 2.0 * t);
+        slope >= threshold
+    }
+
     /// The column at (x, z) as seen at a cell of `cell` m: 1 for chunks; the LOD's coarser cells
     /// drop the detail octaves finer than a cell and widen rivers to show from afar.
     fn column(&self, x: i64, z: i64, cell: i64) -> Column {
@@ -657,7 +677,7 @@ impl TerrainGenerator {
         let slope = (gx * gx + gz * gz).sqrt();
         let band = if wet || h < S.shore {
             Band::Shore
-        } else if slope >= S.rock_slope {
+        } else if self.rock_at(map, x as f64, z as f64, h) {
             Band::Rock
         } else if h + S.snow_noise >= S.snow_line {
             let noise = 2.0

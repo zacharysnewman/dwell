@@ -1,9 +1,25 @@
 {
   "$comment": "The terrain (ARCHITECTURE.md §6.3, docs/WORLD_GENERATION.md, ADR 0049). Heights in metres above sea level, distances and wavelengths in metres, slopes in m per m. `inland`, `seaFloor`, `hills` and `bumps` are the base height field: the input the world map samples on its 100 m grid before the uplift layer and the erosion (shared/worldgen/hydrology.json); chunks never read it directly. The rest shapes each column from the map: `detail` the fine noise over the map's smooth height, `rivers` the channels carved from the map's river polylines, `mouths` their deltas and estuaries, `lakes` the lake shores, `bands` the surface materials by height and slope (the snow line), `spawn` where players start. Prototype content (§6.1). Changing any value changes the terrain a seed generates: regenerate the goldens (`cargo run -p dwell-worldgen --example goldens`) and ship it on a new compatibility line. Run `node shared/worldgen/gen.mjs` after editing; CI fails on stale output.",
-  "inland": { "rise": 320, "halfDistance": 6000 },
-  "seaFloor": { "depth": 20, "shelf": 2500 },
-  "hills": { "amplitude": 225, "wavelength": 1024, "octaves": 5, "fadeFrom": 500, "fadeTo": 4000 },
-  "bumps": { "amplitude": 5, "wavelength": 128, "octaves": 3 },
+  "inland": {
+    "rise": 320,
+    "halfDistance": 6000
+  },
+  "seaFloor": {
+    "depth": 20,
+    "shelf": 2500
+  },
+  "hills": {
+    "amplitude": 225,
+    "wavelength": 1024,
+    "octaves": 5,
+    "fadeFrom": 500,
+    "fadeTo": 4000
+  },
+  "bumps": {
+    "amplitude": 5,
+    "wavelength": 128,
+    "octaves": 3
+  },
   "detail": {
     "$comment": "Fine relief over the map's bicubic height: a fractal sum of `wavelength` and `octaves`, about ±amplitude m in the lowlands, rising to ±mountainAmplitude between mountainFrom and mountainFull m; faded to nothing within waterFade m of a river's channel or a lake's shore.",
     "amplitude": 2,
@@ -47,12 +63,14 @@
     "shoreWavelength": 160
   },
   "bands": {
-    "$comment": "The surface material by height and slope: snow above the snow line (snowLine m, moved ±snowNoise m by a noise of snowWavelength m, raised snowSlopeLift m per unit of slope, so it is not a flat contour), bare rock where the ground is at least rockSlope steep (snow too: steep faces stay rock), the shore block up to shore m above sea level and under water, the ground block elsewhere, with the under block below a top block to underDepth m. Blocks by name.",
+    "$comment": "The surface material by height and slope: snow above the snow line (snowLine m, moved ±snowNoise m by a noise of snowWavelength m, raised snowSlopeLift m per unit of slope, so it is not a flat contour), bare rock where the landform is steep (snow too: steep faces stay rock): its slope taken over ± rockWindow m (a hillside's, not a map cell's, so rock comes as whole faces and cliff bands, not splotches along the map's grid; owner 2026-10-26), against a threshold easing from rockSlope at sea level to rockSlopeHigh at the snow line (the soil thins with height, so the upper slopes go bare first), the shore block up to shore m above sea level and under water, the ground block elsewhere, with the under block below a top block to underDepth m. Blocks by name.",
     "snowLine": 1550,
     "snowNoise": 150,
     "snowWavelength": 320,
     "snowSlopeLift": 350,
-    "rockSlope": 1.15,
+    "rockSlope": 1.0,
+    "rockSlopeHigh": 0.6,
+    "rockWindow": 60,
     "shore": 2,
     "underDepth": 3,
     "ground": "dwell:grass",
