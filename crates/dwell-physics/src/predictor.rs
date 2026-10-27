@@ -54,6 +54,15 @@ struct Entry {
     touched: bool,
 }
 
+/// A falling piece's stand-in in the prediction (docs/FELLING.md §3).
+struct PieceProxy {
+    body: BodyHandle,
+    target: DVec3,
+    rotation: crate::DQuat,
+    velocity: Vec3,
+    dead_reckoning_ticks: i32,
+}
+
 struct Remote {
     body: BodyHandle,
     target: DVec3,
@@ -74,6 +83,8 @@ pub struct Predictor {
     last_knockback_seq: u32,
     knockbacks: HashMap<u32, Vec3>,
     remotes: HashMap<u16, Remote>,
+    /// The falling pieces' stand-ins (docs/FELLING.md §3).
+    pieces: HashMap<u32, PieceProxy>,
     offset: Vec3,
     stats: PredictorStats,
 }
@@ -99,6 +110,7 @@ impl Predictor {
             last_knockback_seq: 0,
             knockbacks: HashMap::default(),
             remotes: HashMap::default(),
+            pieces: HashMap::default(),
             offset: Vec3::ZERO,
             stats: PredictorStats::default(),
         }
@@ -168,6 +180,14 @@ impl Predictor {
                 }
                 r.dead_reckoning_ticks += 1;
                 self.physics.move_kinematic(r.body, r.target, f64::from(DT));
+            }
+            for p in self.pieces.values_mut() {
+                if p.dead_reckoning_ticks < max_ticks {
+                    p.target += (p.velocity * DT).as_dvec3();
+                }
+                p.dead_reckoning_ticks += 1;
+                self.physics
+                    .set_kinematic_pose(p.body, p.target, p.rotation);
             }
         }
         self.players.set_input(h, dequantize_input(input));
@@ -465,6 +485,35 @@ impl Predictor {
         r.target = center;
         r.velocity = velocity;
         r.dead_reckoning_ticks = (lead / DT) as i32;
+    }
+
+    /// A falling piece's stand-in (docs/FELLING.md §3), at the server's latest pose and moving on
+    /// by its velocity (dead reckoning, as remote players): created on first sight with `cells`.
+    pub fn set_piece(
+        &mut self,
+        id: u32,
+        cells: &[crate::PieceCell],
+        position: DVec3,
+        rotation: crate::DQuat,
+        velocity: Vec3,
+    ) {
+        let p = self.pieces.entry(id).or_insert_with(|| PieceProxy {
+            body: self.physics.add_kinematic_piece(position, rotation, cells),
+            target: position,
+            rotation,
+            velocity,
+            dead_reckoning_ticks: 0,
+        });
+        p.target = position;
+        p.rotation = rotation;
+        p.velocity = velocity;
+        p.dead_reckoning_ticks = 0;
+    }
+
+    pub fn remove_piece(&mut self, id: u32) {
+        if let Some(p) = self.pieces.remove(&id) {
+            self.physics.remove_body(p.body);
+        }
     }
 
     pub fn remove_remote(&mut self, player_id: u16) {

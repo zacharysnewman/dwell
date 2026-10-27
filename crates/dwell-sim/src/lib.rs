@@ -5,6 +5,7 @@
 pub mod app_version;
 pub mod clock;
 pub mod entropy;
+pub mod felling;
 pub mod fixed_step;
 pub mod lod_propagation;
 pub mod server;

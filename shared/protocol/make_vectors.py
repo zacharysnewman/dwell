@@ -94,11 +94,28 @@ SNAPSHOT = (
     + struct.pack("<H", 9) + posfix(-1.0, 0.00390625, 8192000.5) + f16s(65504.0, -0.0, 1.0)
     + struct.pack("<hhBB", 0, 0, PS["Swimming"], PF["swimming"] | PF["dead"])
     + struct.pack("<HB", 0, 0)
+    # v20: the falling pieces: id, posfix, rotation (each × 32767 as i16), velocity and spin (f16).
+    + struct.pack("<B", 1)
+    + struct.pack("<I", 7) + posfix(10.5, 40.25, -3.5)
+    + struct.pack("<hhhh", 0, 0, -23170, 23170)
+    + f16s(0.5, -9.75, 0.0) + f16s(0.0, 0.0, 1.5)
 )
 SNAPSHOT_MIN = (
     struct.pack("<BII", T["PhysicsSnapshot"], 3, 0)
     + snapshot_local(0, 100, PS["Idle"], controller(0))
     + struct.pack("<B", 0)
+    + struct.pack("<B", 0)
+)
+# v20 (docs/FELLING.md): a piece begins to fall: id, origin (pos64), rotation (f32 × 4), carriers,
+# its cells (offset i16 × 3, state u16), carriers first.
+ENTITY_SPAWN = (
+    struct.pack("<BI", T["EntitySpawn"], 7)
+    + f64s(10.5, 40.25, -3.5)
+    + f32s(0.0, 0.0, 0.0, 1.0)
+    + struct.pack("<HH", 2, 3)
+    + struct.pack("<hhhH", 0, 0, 0, 20)
+    + struct.pack("<hhhH", 0, 1, 0, 20)
+    + struct.pack("<hhhH", -1, 1, 2, 21)
 )
 EVENT_HEAD = lambda kind: struct.pack("<BBHII", T["PlayerEvent"], kind, 5, 1200, 77)
 
@@ -285,6 +302,8 @@ vectors = {
     "player_input": PLAYER_INPUT,
     "physics_snapshot": SNAPSHOT,
     "physics_snapshot_min": SNAPSHOT_MIN,
+    "entity_spawn": ENTITY_SPAWN,
+    "entity_despawn": struct.pack("<BI", T["EntityDespawn"], 7),
     "player_event_knockback": EVENT_HEAD(EK["Knockback"]) + f32s(0.0, 14.0, -0.5),
     "player_event_damage": EVENT_HEAD(EK["Damage"]) + struct.pack("<BB", 17, DC["Fall"]),
     "player_event_death": EVENT_HEAD(EK["Death"]) + struct.pack("<B", DC["Crush"]),
@@ -401,6 +420,9 @@ malformed = {
     + input_frame(1, 0, 0, 0x400, 0, 0),  # the first bit past flySpeed
     "!snapshot_bad_state": SNAPSHOT_MIN[:9 + 38] + b"\x63" + SNAPSHOT_MIN[9 + 39:],
     "!snapshot_truncated_remote": SNAPSHOT[:-1],
+    "!snapshot_no_pieces_count": SNAPSHOT_MIN[:-1],
+    "!entity_spawn_truncated": ENTITY_SPAWN[:-1],
+    "!entity_spawn_too_many_carriers": ENTITY_SPAWN[:1 + 4 + 24 + 16] + struct.pack("<HH", 4, 3) + ENTITY_SPAWN[1 + 4 + 24 + 16 + 4:],
     "!snapshot_missing_ladder": SNAPSHOT_MIN[:9 + 44] + bytes([CF["climbing"]]) + SNAPSHOT_MIN[9 + 45:],
     "!snapshot_position_nan": SNAPSHOT_MIN[:9] + f64s(float("nan")) + SNAPSHOT_MIN[9 + 8:],
     "!respawn_out_of_range": EVENT_HEAD(EK["Respawn"]) + f64s(4e7, 0.0, 0.0),

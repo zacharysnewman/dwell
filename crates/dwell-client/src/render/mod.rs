@@ -160,8 +160,8 @@ fn water_uniform(eye_fluid: Option<EyeFluid>, quality: WaterQuality) -> [f32; 4]
     }
 }
 /// Draw uniforms live at this stride (WebGPU's minimum uniform offset alignment).
-/// Bytes per draw in the draws storage array (`Draw` in the shaders: five vec4f).
-const DRAW_STRIDE: u64 = 80;
+/// Bytes per draw in the draws storage array (`Draw` in the shaders: six vec4f).
+const DRAW_STRIDE: u64 = 96;
 const MAX_STAND_INS: usize = 64;
 /// Debug tints of LOD levels (setLodLevelColors), sRGB.
 const LEVEL_TINTS: [u32; 20] = [
@@ -553,6 +553,13 @@ enum Part {
     Cutout,
 }
 
+/// A falling piece's meshes (docs/FELLING.md §3): blocks of its cells, opaque and cutout, their
+/// positions relative to its reference cell's centre, and how far they reach from it (m).
+struct PieceMeshes {
+    parts: Vec<(Option<GpuMesh>, Option<GpuMesh>)>,
+    radius: f64,
+}
+
 struct Section {
     origin: V3,
     cell: f64,
@@ -567,6 +574,7 @@ pub struct RasterTerrain {
     arena: ArenaRef,
     chunks: HashMap<ChunkCoord, Chunk>,
     sections: HashMap<i64, Section>,
+    pieces: HashMap<u32, PieceMeshes>,
     shown: Vec<(i64, u8, Fade)>,
     stand_ins: Vec<StandIn>,
 }
@@ -577,6 +585,7 @@ impl RasterTerrain {
             arena,
             chunks: HashMap::default(),
             sections: HashMap::default(),
+            pieces: HashMap::default(),
             shown: Vec::new(),
             stand_ins: Vec::new(),
         }
@@ -722,6 +731,9 @@ struct DrawItem {
     /// Turn about +y (cos, sin of the yaw): players face their heading; fluids carry their origin's
     /// x and z wrapped for the normal detail in zw (`water::wrapped_origin`).
     rotation: [f32; 4],
+    /// The draw's own rotation, a unit quaternion (x, y, z, w) about its offset: a falling piece's
+    /// (docs/FELLING.md); [`IDENTITY_QUAT`] for the rest.
+    quat: [f32; 4],
     mesh: DrawMesh,
     /// The arena page the mesh is in (filled in by `collect`): draws from a page bind it once.
     page: usize,
@@ -756,6 +768,8 @@ fn draw_order(d: &DrawItem) -> u128 {
 
 /// No turn.
 const NO_ROTATION: [f32; 4] = [1.0, 0.0, 0.0, 0.0];
+/// No rotation as a quaternion (a draw's `quat`).
+const IDENTITY_QUAT: [f32; 4] = [0.0, 0.0, 0.0, 1.0];
 /// An LOD section's (or stand-in's) `rotation`: no turn, its tops open to the colour map.
 const LOD_ROTATION: [f32; 4] = [1.0, 0.0, lod_map::LOD_DRAW, 0.0];
 
@@ -816,6 +830,8 @@ fn fluid_rotation(origin: V3) -> [f32; 4] {
 #[derive(Clone)]
 enum DrawMesh {
     Chunk(ChunkCoord, Part),
+    /// A falling piece's block `usize`, opaque or cutout.
+    Piece(u32, usize, Part),
     Section(i64, bool, u8),
     Outline,
     Debug,
@@ -961,6 +977,8 @@ pub struct Renderer {
     plant_wind: f64,
     /// Whether the cutout meshes (ladders, plants) are drawn (the bench's A/B of their cost).
     cutout_shown: bool,
+    /// The falling pieces shown this frame (`show_pieces`).
+    piece_poses: Vec<(u32, V3, [f32; 4])>,
     eye: V3,
     yaw: f64,
     pitch: f64,
@@ -1099,7 +1117,7 @@ impl Renderer {
                 ty: wgpu::BindingType::Buffer {
                     ty: wgpu::BufferBindingType::Storage { read_only: true },
                     has_dynamic_offset: false,
-                    min_binding_size: wgpu::BufferSize::new(80),
+                    min_binding_size: wgpu::BufferSize::new(DRAW_STRIDE),
                 },
                 count: None,
             }],
@@ -1631,6 +1649,7 @@ impl Renderer {
             arena,
             plant_wind: 1.0,
             cutout_shown: true,
+            piece_poses: Vec::new(),
             eye: [0.0, 6.0, 14.0],
             yaw: 180.0,
             pitch: -20.0,
@@ -1800,6 +1819,33 @@ impl Renderer {
     /// Replaces (or, with `None`, removes) a raster terrain chunk; meshes are chunk-local.
     pub fn set_terrain_chunk(&mut self, coord: ChunkCoord, meshes: Option<&ChunkMeshes>) {
         self.terrain.set_chunk(coord, meshes);
+    }
+    /// A falling piece's meshes (docs/FELLING.md §3), their positions relative to its reference
+    /// cell's centre, reaching `radius` m from it; `None` removes it. Drawn where `show_pieces`
+    /// puts it.
+    pub fn set_piece(&mut self, id: u32, meshes: Option<(&[ChunkMeshes], f64)>) {
+        self.terrain.pieces.remove(&id);
+        let Some((parts, radius)) = meshes else {
+            return;
+        };
+        let arena = &self.terrain.arena;
+        let parts = parts
+            .iter()
+            .map(|m| {
+                (
+                    GpuMesh::textured(arena, &m.opaque),
+                    GpuMesh::cutout(arena, &m.cutout),
+                )
+            })
+            .collect();
+        self.terrain
+            .pieces
+            .insert(id, PieceMeshes { parts, radius });
+    }
+    /// Where the falling pieces are this frame: id, its reference cell's centre (world m) and its
+    /// rotation (a unit quaternion x, y, z, w).
+    pub fn show_pieces(&mut self, poses: Vec<(u32, V3, [f32; 4])>) {
+        self.piece_poses = poses;
     }
     /// LOD sections' raster meshes (§6.6), in cells from `origin` scaled by `cell_size`. Nothing
     /// shows until `show_lod_sections` lists it.
@@ -2398,6 +2444,15 @@ impl Renderer {
     /// A draw's mesh and the index ranges it draws (a section's surface and its shown skirts).
     fn mesh_of(&self, m: &DrawMesh) -> (&GpuMesh, Vec<std::ops::Range<u32>>) {
         match m {
+            DrawMesh::Piece(id, k, part) => {
+                let (opaque, cutout) = &self.terrain.pieces[id].parts[*k];
+                let m = match part {
+                    Part::Cutout => cutout.as_ref(),
+                    _ => opaque.as_ref(),
+                }
+                .expect("collected");
+                (m, vec![m.parts[0].clone()])
+            }
             DrawMesh::Chunk(c, part) => {
                 let chunk = &self.terrain.chunks[c];
                 let m = match part {
@@ -2482,6 +2537,7 @@ impl Renderer {
                     fade,
                     tint: plain,
                     rotation: NO_ROTATION,
+                    quat: IDENTITY_QUAT,
                     page: 0,
                     passes,
                     key: 0,
@@ -2498,6 +2554,7 @@ impl Renderer {
                     fade,
                     tint: plain,
                     rotation: NO_ROTATION,
+                    quat: IDENTITY_QUAT,
                     page: 0,
                     passes,
                     key: 0,
@@ -2514,11 +2571,53 @@ impl Renderer {
                     fade,
                     tint: plain,
                     rotation: fluid_rotation(c.origin),
+                    quat: IDENTITY_QUAT,
                     page: 0,
                     passes,
                     key: 0,
                     mesh: DrawMesh::Chunk(coord, Part::Water),
                 });
+            }
+        }
+        // The falling pieces, each at its pose (docs/FELLING.md §3).
+        for &(id, origin, quat) in &self.piece_poses {
+            let Some(p) = self.terrain.pieces.get(&id) else {
+                continue;
+            };
+            let r = p.radius;
+            let passes = reaches(
+                [origin[0] - r, origin[1] - r, origin[2] - r],
+                [2.0 * r, 2.0 * r, 2.0 * r],
+            );
+            if passes == 0 {
+                continue;
+            }
+            let rel = self.rel(origin);
+            let offset = [rel[0], rel[1], rel[2], 1.0];
+            for (k, (opaque, cutout)) in p.parts.iter().enumerate() {
+                for (part, mesh, kind) in [
+                    (Part::Opaque, opaque, Kind::Terrain),
+                    (Part::Cutout, cutout, Kind::Cutout),
+                ] {
+                    if mesh.is_none() {
+                        continue;
+                    }
+                    out.push(DrawItem {
+                        kind,
+                        water: false,
+                        no_depth: false,
+                        offset,
+                        clip: None,
+                        fade: 0.0,
+                        tint: plain,
+                        rotation: NO_ROTATION,
+                        quat,
+                        page: 0,
+                        passes,
+                        key: 0,
+                        mesh: DrawMesh::Piece(id, k, part),
+                    });
+                }
             }
         }
         let level_tint = |s: &Section, alpha: f32| {
@@ -2554,6 +2653,7 @@ impl Renderer {
                     fade,
                     tint: level_tint(s, 1.0),
                     rotation: LOD_ROTATION,
+                    quat: IDENTITY_QUAT,
                     page: 0,
                     passes,
                     key: 0,
@@ -2570,6 +2670,7 @@ impl Renderer {
                     fade,
                     tint: level_tint(s, 1.0),
                     rotation: fluid_rotation(s.origin),
+                    quat: IDENTITY_QUAT,
                     page: 0,
                     passes,
                     key: 0,
@@ -2605,6 +2706,7 @@ impl Renderer {
                 fade: st.fade.shader_value(),
                 tint: level_tint(s, 1.0),
                 rotation: LOD_ROTATION,
+                quat: IDENTITY_QUAT,
                 page: 0,
                 passes,
                 key: 0,
@@ -2624,6 +2726,7 @@ impl Renderer {
                 fade: 0.0,
                 tint: [c[0], c[1], c[2], 0.8],
                 rotation: NO_ROTATION,
+                quat: IDENTITY_QUAT,
                 page: 0,
                 passes,
                 key: 0,
@@ -2647,6 +2750,7 @@ impl Renderer {
                 fade: 0.0,
                 tint: [1.0, 1.0, 1.0, 0.9],
                 rotation: NO_ROTATION,
+                quat: IDENTITY_QUAT,
                 page: 0,
                 passes,
                 key: 0,
@@ -2678,6 +2782,7 @@ impl Renderer {
                             [1.0, 1.0, 1.0, 0.95]
                         },
                         rotation: NO_ROTATION,
+                        quat: IDENTITY_QUAT,
                         page: 0,
                         passes,
                         key: 0,
@@ -2699,6 +2804,7 @@ impl Renderer {
                 fade: 0.0,
                 tint: [1.0, 1.0, 1.0, 1.0],
                 rotation: NO_ROTATION,
+                quat: IDENTITY_QUAT,
                 page: 0,
                 passes,
                 key: 0,
@@ -3059,6 +3165,7 @@ impl Renderer {
             data[at + 11] = d.fade;
             data[at + 12..at + 16].copy_from_slice(&d.tint);
             data[at + 16..at + 20].copy_from_slice(&d.rotation);
+            data[at + 20..at + 24].copy_from_slice(&d.quat);
         }
         if !data.is_empty() {
             self.queue.write_buffer(&self.draw_buffer, 0, floats(&data));
@@ -3489,6 +3596,7 @@ impl Renderer {
             fade,
             tint: [1.0; 4],
             rotation: NO_ROTATION,
+            quat: IDENTITY_QUAT,
             mesh,
             page: 0,
             passes: 0,
@@ -3720,6 +3828,7 @@ impl Renderer {
             fade: 0.0,
             tint: [1.0; 4],
             rotation: NO_ROTATION,
+            quat: IDENTITY_QUAT,
             mesh,
             page: 0,
             passes: 1,
@@ -4561,6 +4670,12 @@ impl TerrainRenderer for Renderer {
 }
 
 impl crate::game::Scene for Renderer {
+    fn set_piece(&mut self, id: u32, meshes: Option<(&[ChunkMeshes], f64)>) {
+        Renderer::set_piece(self, id, meshes);
+    }
+    fn show_pieces(&mut self, poses: Vec<(u32, [f64; 3], [f32; 4])>) {
+        Renderer::show_pieces(self, poses);
+    }
     fn set_lod_map(&mut self, map: Option<&crate::lod_map::LodMap>) {
         self.lod_map = map.filter(|_| self.lod_map_supported()).cloned();
     }
@@ -4717,6 +4832,7 @@ mod tests {
             fade: 0.0,
             tint: [1.0; 4],
             rotation: NO_ROTATION,
+            quat: IDENTITY_QUAT,
             mesh: DrawMesh::Outline,
             page,
             passes: 1,

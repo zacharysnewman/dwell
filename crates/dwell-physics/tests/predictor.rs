@@ -63,6 +63,7 @@ impl Server {
                 ..LocalPlayerState::default()
             },
             remotes: Vec::new(),
+            pieces: Vec::new(),
         }
     }
 }

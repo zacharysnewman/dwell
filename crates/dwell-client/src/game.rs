@@ -124,6 +124,11 @@ pub trait Scene: TerrainRenderer {
     fn set_placed_flames(&mut self, _flames: Vec<crate::render::flames::PlacedFlame>) {}
     /// The portals near the eye whose motes draw this frame (BIFACIAL_WORLD.md §12.1).
     fn set_portal_motes(&mut self, _portals: Vec<crate::render::flames::PortalMotes>) {}
+    /// A falling piece's meshes (docs/FELLING.md §3), relative to its reference cell's centre,
+    /// reaching that far (m); `None` removes it.
+    fn set_piece(&mut self, _id: u32, _meshes: Option<(&[dwell_mesh::ChunkMeshes], f64)>) {}
+    /// Where the falling pieces are this frame: id, reference cell's centre, rotation (x, y, z, w).
+    fn show_pieces(&mut self, _poses: Vec<(u32, [f64; 3], [f32; 4])>) {}
     fn set_camera(
         &mut self,
         eye: [f64; 3],
@@ -475,6 +480,8 @@ pub struct Game<S: Scene> {
     outbox: Outbox,
     remotes: RemotePlayers,
     proxies: HashSet<u16>,
+    /// The falling pieces (docs/FELLING.md §3).
+    pieces: crate::pieces::Pieces,
     recent: VecDeque<InputFrame>,
     accumulator: f64,
     last_frame_ms: Option<f64>,
@@ -636,6 +643,7 @@ impl<S: Scene> Game<S> {
             outbox,
             remotes: RemotePlayers::default(),
             proxies: HashSet::default(),
+            pieces: crate::pieces::Pieces::default(),
             recent: VecDeque::new(),
             accumulator: 0.0,
             last_frame_ms: None,
@@ -1008,6 +1016,13 @@ impl<S: Scene> Game<S> {
                     1.0
                 };
                 self.remotes.push(s.server_tick, &s.remotes, now_ms);
+                // The falling pieces' poses: drawn interpolated, and stood in for in the prediction
+                // at their latest (docs/FELLING.md §3).
+                self.pieces.on_snapshot(&s.pieces, now_ms);
+                for (id, cells, position, rotation, velocity) in self.pieces.latest() {
+                    self.predictor
+                        .set_piece(id, cells, position, rotation, velocity.as_vec3());
+                }
                 let mut seen = HashSet::default();
                 let latest = self.remotes.latest();
                 self.remote_impacts(&latest, now_ms);
@@ -1062,6 +1077,17 @@ impl<S: Scene> Game<S> {
                     self.eye
                         .tick(&self.current.eye_state(), 1.0 / SIM_HZ as f64);
                 }
+            }
+            Message::EntitySpawn(e) => {
+                let (meshes, radius) = self.pieces.spawn(&e, now_ms);
+                self.scene
+                    .borrow_mut()
+                    .set_piece(e.id, Some((&meshes, radius)));
+            }
+            Message::EntityDespawn(id) => {
+                self.pieces.despawn(id);
+                self.predictor.remove_piece(id);
+                self.scene.borrow_mut().set_piece(id, None);
             }
             Message::PlayerEvent(e) if e.player_id == self.player_id => {
                 // Ours: hurt, death and respawn sound at once, at the listener.
@@ -1940,6 +1966,9 @@ impl<S: Scene> Game<S> {
         let motes =
             crate::render::flames::portals_near(&self.portals.0, self.portals.1, camera_eye);
         self.scene.borrow_mut().set_portal_motes(motes);
+        // The falling pieces, where they are now (interpolated).
+        let poses = self.pieces.poses(now_ms);
+        self.scene.borrow_mut().show_pieces(poses);
         self.update_day(now_ms);
         self.ambient_sounds(&views, dt);
         // The placed light sources near the eye (docs/LIGHTS.md §4): Torch shadows draws the

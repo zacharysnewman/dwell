@@ -14,6 +14,7 @@ pub mod lod;
 pub mod ramps;
 pub mod region;
 pub mod structure;
+pub mod support;
 mod voxel;
 
 pub use bounds::{BUILD_VOLUME, BoundsShape, BuildVolume, Overlap, inside_build_volume};

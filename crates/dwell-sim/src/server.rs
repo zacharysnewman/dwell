@@ -25,7 +25,7 @@ use dwell_storage::{PlayerRecord, SaveBatch, SavedLodSection, WorldMeta, WorldSt
 use dwell_world::brush::brush_policy;
 use dwell_world::edit::{
     DEFAULT_REACH, EditCapsule, EditCheck, below, check_block_edit, edit_writes, medium_kept,
-    supported_on,
+    overlaps_player, supported_on,
 };
 use dwell_world::lod::{INDEX_LEVEL, LodCoord, in_world, lod_of_chunk, parent};
 use dwell_world::region::{RegionCheck, check_region_edit, region_reach};
@@ -81,6 +81,9 @@ const LOD_REQUESTS_PER_TICK: f64 = lod::REQUESTS_PER_SECOND as f64 / SIM_HZ as f
 const MAX_QUEUED_CHUNK_REQUESTS: usize = 1024;
 const CHUNK_REQUESTS_PER_TICK: f64 = wc::CHUNK_REQUESTS_PER_SECOND as f64 / SIM_HZ as f64;
 
+/// A falling piece's bytes in a snapshot: id, posfix × 3, rotation i16 × 4, velocity and spin f16 × 3.
+const PIECE_STATE_BYTES: usize = 4 + 12 + 8 + 6 + 6;
+
 /// One tick's voxel changes per chunk (the next VoxelModification), in the order chunks and cells
 /// were first touched; a cell changed twice keeps its last state.
 #[derive(Default)]
@@ -101,6 +104,23 @@ impl TickChanges {
         for (at, m) in edit_writes(world, cell, material) {
             self.set(world, at, m);
         }
+    }
+
+    /// Every changed cell (world cells), in the order they were first changed.
+    fn cells(&self) -> Vec<[i32; 3]> {
+        let mut out = Vec::new();
+        for c in &self.chunks {
+            for ch in &c.changes {
+                let i = i32::from(ch.index);
+                let n = CHUNK_SIZE;
+                out.push([
+                    c.coord[0] * n + (i & 31),
+                    c.coord[1] * n + ((i >> 5) & 31),
+                    c.coord[2] * n + (i >> 10),
+                ]);
+            }
+        }
+        out
     }
 
     /// Sets the cell in the world and records the change.
@@ -567,6 +587,8 @@ pub struct Server {
     sessions: BTreeMap<SessionId, Session>,
     outbox: Vec<Outgoing>,
     knockbacks: Vec<(u16, Vec3)>, // applied in the next step
+    /// The falling pieces (docs/FELLING.md).
+    felling: crate::felling::Felling,
     tick: u32,
     next_player_id: u16,
     worldgen: WorldgenPool,
@@ -639,6 +661,7 @@ impl Server {
             sessions: BTreeMap::new(),
             outbox: Vec::new(),
             knockbacks: Vec::new(),
+            felling: crate::felling::Felling::default(),
             tick: 0,
             next_player_id: 1,
             worldgen: WorldgenPool::new(generator.clone(), config.worldgen_threads),
@@ -1238,7 +1261,10 @@ impl Server {
             self.players.set_input(h, s.last_input);
         }
 
-        // 3. Controller pipeline (PLAYER_CONTROLLER.md §4), then its server-side consequences.
+        // 3. Controller pipeline (PLAYER_CONTROLLER.md §4), then its server-side consequences. The
+        // falling pieces' terrain collision loads with the players' (docs/FELLING.md §3).
+        let boxes = self.felling.terrain_boxes(&self.physics);
+        self.players.set_terrain_boxes(boxes);
         self.players.tick(&mut self.world, &mut self.physics);
         let ids: Vec<SessionId> = self.sessions.keys().copied().collect();
         for &id in &ids {
@@ -1261,9 +1287,10 @@ impl Server {
             self.broadcast_world(&Message::PlayerEvent(e));
         }
 
-        // 4. Physics.
+        // 4. Physics, then the falling pieces at rest settle (docs/FELLING.md §4).
         self.physics.step(1.0 / f64::from(SIM_HZ));
         self.tick += 1;
+        self.settle_pieces();
 
         // 5. Respawns, then snapshots at SNAPSHOT_HZ.
         for &id in &ids {
@@ -1835,12 +1862,29 @@ impl Server {
                 }
             }
         }
+        let edited = changes.cells();
+        self.broadcast_changes(changes, VoxelModificationReason::Edit);
+        // What the edits left without support falls (docs/FELLING.md §2), tipped away from the
+        // nearest player (who cut it, as a rule).
+        let near = edited.first().and_then(|&c| {
+            let at = crate::felling::cell_centre(c);
+            capsules
+                .iter()
+                .map(|p| DVec3::from(p.center))
+                .min_by(|a, b| (*a - at).length().total_cmp(&(*b - at).length()))
+        });
+        self.fell(&edited, 0, near);
+        self.send_edit_acks();
+    }
+
+    /// Sends a tick's voxel changes (`reason`) to every client streaming their chunks, one revision
+    /// per chunk, and marks the chunks dirty for saving and the LOD.
+    fn broadcast_changes(&mut self, changes: TickChanges, reason: VoxelModificationReason) {
         let TickChanges {
             chunks: mut changed,
             ..
         } = changes;
         if changed.is_empty() {
-            self.send_edit_acks();
             return;
         }
         for c in &changed {
@@ -1869,14 +1913,109 @@ impl Server {
                 .collect();
             if !chunks.is_empty() {
                 let m = VoxelModification {
-                    reason: VoxelModificationReason::Edit,
+                    reason,
                     server_tick: self.tick,
                     chunks,
                 };
                 self.send_reliable(id, &Message::VoxelModification(m), Channel::World);
             }
         }
-        self.send_edit_acks();
+    }
+
+    /// Detaches what the cells `changed` left without support (docs/FELLING.md §2): the pieces'
+    /// cells are cleared in one `Collapse` modification, then each piece's `EntitySpawn` goes to
+    /// every joined client. `settles` counts how often these cells settled unanchored before.
+    fn fell(&mut self, changed: &[[i32; 3]], settles: u8, away_from: Option<DVec3>) {
+        if changed.is_empty() {
+            return;
+        }
+        let mut collapse = TickChanges::default();
+        let new = self.felling.detach(
+            &mut self.world,
+            &mut self.physics,
+            changed,
+            settles,
+            away_from,
+            &mut |world, cell, m| collapse.set(world, cell, m),
+        );
+        self.broadcast_changes(collapse, VoxelModificationReason::Collapse);
+        for i in new {
+            let p = &self.felling.pieces[i];
+            let origin = self.physics.position(p.body);
+            let m = Message::EntitySpawn(EntitySpawn {
+                id: p.id,
+                origin: origin.to_array(),
+                rotation: [0.0, 0.0, 0.0, 1.0],
+                carriers: p.carriers as u16,
+                cells: p
+                    .cells
+                    .iter()
+                    .map(|&(o, state)| PieceCellNet {
+                        offset: o.map(|v| v as i16),
+                        state,
+                    })
+                    .collect(),
+            });
+            self.broadcast_world(&m);
+        }
+    }
+
+    /// The pieces at rest (or out of time) become blocks again (docs/FELLING.md §4): their cells
+    /// in one `Rebake` modification, each piece's `EntityDespawn` after it, then what they placed
+    /// passes through the support rule again.
+    fn settle_pieces(&mut self) {
+        let due = self.felling.step(&self.physics);
+        if due.is_empty() {
+            return;
+        }
+        let capsules = self.player_capsules();
+        let mut rebake = TickChanges::default();
+        let mut gone = Vec::new();
+        let mut placed: Vec<([i32; 3], u8)> = Vec::new();
+        for i in due {
+            let taken = |world: &mut VoxelWorld, c: [i32; 3]| {
+                let m = world.get_voxel(c[0], c[1], c[2]);
+                let s = info(m);
+                !(m == M.air || s.liquid || s.replaceable) || overlaps_player(M.stone, c, &capsules)
+            };
+            let settled = self
+                .felling
+                .settle(&mut self.world, &mut self.physics, i, &taken);
+            for &(c, m) in &settled.cells {
+                rebake.set(&mut self.world, c, m);
+                placed.push((c, settled.settles));
+            }
+            gone.push(settled.id);
+        }
+        self.broadcast_changes(rebake, VoxelModificationReason::Rebake);
+        for id in gone {
+            self.broadcast_world(&Message::EntityDespawn(id));
+        }
+        // What settled may itself stand on nothing (a trunk resting on leaves): judged again,
+        // counting the settles so a piece that never finds an anchor stays put.
+        let settles = placed.iter().map(|&(_, n)| n).max().unwrap_or(0);
+        let cells: Vec<[i32; 3]> = placed.into_iter().map(|(c, _)| c).collect();
+        self.fell(&cells, settles, None);
+    }
+
+    /// The players' capsules (cells overlapping one are taken).
+    fn player_capsules(&self) -> Vec<EditCapsule> {
+        self.sessions
+            .values()
+            .filter_map(|s| s.handle)
+            .map(|h| {
+                let c = self.players.position(&self.physics, h);
+                let (half, radius) = (
+                    self.players.half_height(h),
+                    self.config.player_config.body.radius,
+                );
+                EditCapsule {
+                    center: c.to_array(),
+                    radius,
+                    half_cylinder: half - radius,
+                }
+            })
+            .collect()
     }
 
     /// Each session's `EditAck` for the edits that arrived since its last (all of them are
@@ -1925,6 +2064,26 @@ impl Server {
     }
 
     fn send_snapshots(&mut self) {
+        // The falling pieces' poses (the same for every client).
+        let pieces: Vec<PieceState> = self
+            .felling
+            .pieces
+            .iter()
+            .map(|p| {
+                let q = self.physics.rotation(p.body);
+                PieceState {
+                    id: p.id,
+                    position: self.physics.position(p.body).to_array(),
+                    rotation: [q.x as f32, q.y as f32, q.z as f32, q.w as f32],
+                    velocity: self.physics.velocity(p.body).to_array().map(|v| v as f32),
+                    angular: self
+                        .physics
+                        .angular_velocity(p.body)
+                        .to_array()
+                        .map(|v| v as f32),
+                }
+            })
+            .collect();
         // Remote view of every joined player (dead ones where they died).
         let mut views: Vec<RemotePlayerState> = Vec::new();
         for s in self.sessions.values().filter(|s| s.joined()) {
@@ -1975,6 +2134,7 @@ impl Server {
                 ack_input_seq: s.last_processed_seq,
                 local: l,
                 remotes: Vec::new(),
+                pieces: Vec::new(),
             };
             // Remote players, nearest first, as many as fit in one datagram.
             let distance = |r: &RemotePlayerState| {
@@ -1999,6 +2159,17 @@ impl Server {
                 remotes.truncate((MAX_DATAGRAM_BYTES - base) / each);
             }
             snap.remotes = remotes;
+            // The falling pieces, nearest first, in what room is left (docs/FELLING.md §3).
+            let mut pieces = pieces.clone();
+            let near = |p: &PieceState| {
+                (0..3)
+                    .map(|i| (p.position[i] - l.position[i]).powi(2))
+                    .sum::<f64>()
+            };
+            pieces.sort_by(|a, b| near(a).total_cmp(&near(b)).then(a.id.cmp(&b.id)));
+            let used = encode(&Message::PhysicsSnapshot(snap.clone())).len();
+            pieces.truncate(MAX_DATAGRAM_BYTES.saturating_sub(used) / PIECE_STATE_BYTES);
+            snap.pieces = pieces;
             out.push((id, Message::PhysicsSnapshot(snap)));
         }
         for (id, m) in out {
