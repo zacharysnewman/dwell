@@ -2505,7 +2505,7 @@ in the code yet.
 | `FLAT_TOP_Y` | 64 rows (32 m) | The flat worlds' surface (the flat test world, the structure sandbox); metre twin `FLAT_TOP_M` |
 | `POSITION_FIXED_SCALE` | 256 per m | Fixed-point wire positions (`i32`, ±8 388 km at 3.9 mm, §8.3) |
 | `POS64_LIMIT` | 33 554 432 m | Range decoders accept for `pos64` positions (§8.3) |
-| `FLY_SPEED_MAX_LEVEL` / `FLY_SPEED_SHIFT` | 20 / 4 | Flight speed slider: highest level (2^10 × `fly.speed`, 11.3 km/s: the 100 km world in ~9 s; Phase 16, was 39) and its bit position in `PlayerInput.buttons` (§9.1). No flight ceiling (Phase 16, D3; PLAYER_CONTROLLER.md §6.7 has the other flight tunables) |
+| `FLY_SPEED_MAX_LEVEL` / `FLY_SPEED_SHIFT` | 11 / 4 | Flight speed slider: highest level (2^5.5 × `fly.speed`, 362 m/s; 2026-10-26, was 20: terrain generation couldn't keep up from level 12) and its bit position in `PlayerInput.buttons` (§9.1). No flight ceiling (Phase 16, D3; PLAYER_CONTROLLER.md §6.7 has the other flight tunables) |
 | `SEA_LEVEL` | 64 rows (32 m) | Water fill height, face-local (interim: the terrain definition's in Phase 17); metre twin `SEA_LEVEL_M` |
 | `VIEW_RADIUS_CHUNKS` | 3 | Radius of the sphere of chunks streamed around each player |
 | `RENDER_RADIUS_CHUNKS` | 12 | Radius within which a client may request chunks to draw at full detail (§6.3, §6.6) |
@@ -2947,13 +2947,12 @@ architectural summary.
   (§7.4).
 - **Creative flight** **[built, Phase 4]** (PLAYER_CONTROLLER.md §6.7): an exclusive layer while
   the input's `fly` mode bit is set — no gravity, move along the view's yaw, jump up, crouch down,
-  speed growing with height above the sea, with no ceiling (Phase 16, D3: held only inside the wire
+  at a speed the slider alone sets (the same at every height), with no ceiling (Phase 16, D3: held only inside the wire
   format's range). A **flight speed slider**
   (top right while flying; the − / = keys; `ui/flightSpeedControl.ts`, kept in local storage) sets
-  a level carried in every input (protocol v9) that raises the speed to at least 11 m/s × 2^(L/2),
-  up to level 20 (11.3 km/s) — a true minimum: the 400 m/s cap in the terrain band (below
-  `fly.terrain_band`, 6,144 m) limits only the height-based speed, which never exceeds the top
-  level's. The
+  a level carried in every input (protocol v9) that sets the speed, 8 m/s × 2^(L/2), up to level
+  11 (362 m/s, 905 m/s running; the top was 20 until 2026-10-26, when terrain generation could not
+  keep up from level 12). The
   client toggles flight (the F key, or the touch Fly button); the server's flight policy (`--flight`, told to the
   client in `Welcome`) decides who may, clearing the bit for anyone else. While flying the client
   keeps predicting even where the streamed terrain has not arrived yet.

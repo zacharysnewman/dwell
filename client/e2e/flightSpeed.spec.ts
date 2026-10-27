@@ -37,19 +37,19 @@ test('flight speed: the slider shows while flying and raises the speed', async (
 
   await call(page, 'd.fly(true)');
   await expect(control).toBeVisible();
-  await expect(control.locator('.flight-speed-value')).toHaveText('Normal (faster with height)');
+  await expect(control.locator('.flight-speed-value')).toHaveText('8 m/s');
   const normal = await flyForward(page, 1000);
 
-  await control.locator('input').fill('20'); // at least 11 m/s × 2^10 (capped at 400 m/s here)
-  await expect(control.locator('.flight-speed-value')).toHaveText('At least 11 km/s');
+  await control.locator('input').fill('11'); // the top level: 8 m/s × 2^5.5
+  await expect(control.locator('.flight-speed-value')).toHaveText('362 m/s');
   const fast = await flyForward(page, 1000);
   expect(normal).toBeLessThan(40);
   expect(fast).toBeGreaterThan(5 * normal);
 
   // The − key steps it down; the level is kept for the next visit.
   await page.keyboard.press('Minus');
-  await expect(control.locator('.flight-speed-value')).toHaveText('At least 8.0 km/s');
-  expect(await page.evaluate(() => localStorage.getItem('dwell.flySpeed'))).toBe('19');
+  await expect(control.locator('.flight-speed-value')).toHaveText('256 m/s');
+  expect(await page.evaluate(() => localStorage.getItem('dwell.flySpeed'))).toBe('10');
 
   await call(page, 'd.fly(false)');
   await expect(control).toBeHidden();

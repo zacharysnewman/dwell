@@ -5,8 +5,8 @@
 
 use dwell_blocks::{Facing, VoxelShape, info, shape::solid_span_at};
 use dwell_world::{
-    CELL_H, FaceFrame, MIDPLANE_M, SEA_LEVEL_M, VoxelWorld, centre_of_cell, chunk_distance,
-    chunk_of_pos, m_of_row, mirror_y, row_of_m, rows_for_m,
+    CELL_H, FaceFrame, MIDPLANE_M, VoxelWorld, centre_of_cell, chunk_distance, chunk_of_pos,
+    m_of_row, mirror_y, row_of_m, rows_for_m,
 };
 use rapier3d_f64::prelude::*;
 
@@ -1527,18 +1527,9 @@ impl Players {
             c.events |= events::FLY_ENDED;
             return;
         }
-        let feet = position.y - f64::from(cfg.half_height(c.crouching));
-        let above_sea = (feet - SEA_LEVEL_M).max(0.0) as f32;
+        // The slider's level sets the speed, the same at every height.
         let base = cfg.fly.speed * if c.input.run { cfg.fly.run_factor } else { 1.0 };
-        // The height-based speed, capped in the terrain band and at the top level's, and the
-        // slider's true minimum.
-        let mut speed = base * (1.0 + above_sea / cfg.fly.boost_height);
-        if feet < f64::from(cfg.fly.terrain_band) {
-            speed = speed.min(cfg.fly.terrain_speed);
-        }
-        speed = speed
-            .min(base * fly_speed_factor(u8::MAX))
-            .max(base * fly_speed_factor(c.input.fly_speed));
+        let speed = base * fly_speed_factor(c.input.fly_speed);
         let mut wish = move_direction(&c.input) * speed;
         wish.y = (f32::from(u8::from(c.input.jump)) - f32::from(u8::from(c.input.crouch))) * speed;
         let mut velocity =

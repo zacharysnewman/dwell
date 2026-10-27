@@ -21,7 +21,7 @@ export const Players = {
   reachDistance: 5,
   blockEditIntervalMs: 100,
   flySpeedShift: 4,
-  flySpeedMaxLevel: 20,
+  flySpeedMaxLevel: 11,
 } as const;
 
 export const World = {

@@ -28,7 +28,7 @@
     },
     {
       "name": "fly-low-fast",
-      "notes": "Flying fast (level 6, at least 88 m/s) about 15 m over the terrain (owner, 2026-10-14: the hitch seen when flying low): full-detail chunks streaming in as fast as the player moves. Heading +X (yaw 90) from the seed-7 spawn: a clear 1.7 km (flying is stopped by any ledge it hits: low enough to stream full-detail chunks, high enough not to snag).",
+      "notes": "Flying fast (level 6, 64 m/s) about 15 m over the terrain (owner, 2026-10-14: the hitch seen when flying low): full-detail chunks streaming in as fast as the player moves. Heading +X (yaw 90) from the seed-7 spawn: a clear 1.7 km (flying is stopped by any ledge it hits: low enough to stream full-detail chunks, high enough not to snag).",
       "steps": [
         {
           "do": "settle",
@@ -99,7 +99,7 @@
     },
     {
       "name": "fly-low-faster",
-      "notes": "Flying fast (level 8, at least 176 m/s) about 15 m over the terrain (owner, 2026-10-14: the hitch seen when flying low): full-detail chunks streaming in as fast as the player moves. Heading +X (yaw 90) from the seed-7 spawn: a clear 1.7 km (flying is stopped by any ledge it hits: low enough to stream full-detail chunks, high enough not to snag).",
+      "notes": "Flying fast (level 8, 128 m/s) about 15 m over the terrain (owner, 2026-10-14: the hitch seen when flying low): full-detail chunks streaming in as fast as the player moves. Heading +X (yaw 90) from the seed-7 spawn: a clear 1.7 km (flying is stopped by any ledge it hits: low enough to stream full-detail chunks, high enough not to snag).",
       "steps": [
         {
           "do": "settle",
@@ -256,7 +256,7 @@
         },
         {
           "do": "flySpeed",
-          "level": 12
+          "level": 11
         },
         {
           "do": "hold",
@@ -386,7 +386,7 @@
         },
         {
           "do": "flySpeed",
-          "level": 12
+          "level": 11
         },
         {
           "do": "hold",
@@ -560,7 +560,7 @@
         },
         {
           "do": "flySpeed",
-          "level": 12
+          "level": 11
         },
         {
           "do": "hold",
@@ -1568,7 +1568,7 @@
     },
     {
       "name": "thermal-10min",
-      "notes": "Phone-oriented: ten minutes of flight 60 m up at level 4 (at least 44 m/s) round a 660 m square, for thermal throttling: the last minute's frame intervals against the first's. Run it on a phone (or with the device's own heat in mind); it takes over ten minutes.",
+      "notes": "Phone-oriented: ten minutes of flight 60 m up at level 4 (32 m/s) round a 660 m square, for thermal throttling: the last minute's frame intervals against the first's. Run it on a phone (or with the device's own heat in mind); it takes over ten minutes.",
       "steps": [
         {
           "do": "settle",
@@ -2703,7 +2703,7 @@
     },
     {
       "name": "clouds-fly",
-      "notes": "Flying fast (level 10, at least 352 m/s) climbing toward the cloud deck: the clouds move past with parallax and drift; shots every few seconds, the last looking up from near the deck as the clouds fade.",
+      "notes": "Flying fast (level 10, 256 m/s) climbing toward the cloud deck: the clouds move past with parallax and drift; shots every few seconds, the last looking up from near the deck as the clouds fade.",
       "settings": {
         "clouds": "high"
       },
@@ -3477,7 +3477,7 @@
     },
     {
       "name": "clouds-above-fast",
-      "notes": "The deck from above at speed (owner's report, 2026-10-20: the clouds showed only inside a circle). Climbs at level 10 (at least 352 m/s) above the deck (1.8 km), then flies fast with Run looking 40° and 80° down: the wind's edge blur over the deck where it is in front of the terrain. The clouds must reach the view's edges, as they do flying slowly.",
+      "notes": "The deck from above at speed (owner's report, 2026-10-20: the clouds showed only inside a circle). Climbs at level 10 (256 m/s) above the deck (1.8 km), then flies fast with Run looking 40° and 80° down: the wind's edge blur over the deck where it is in front of the terrain. The clouds must reach the view's edges, as they do flying slowly.",
       "settings": {
         "clouds": "high"
       },

@@ -22,7 +22,7 @@ pub mod players {
     pub const REACH_DISTANCE: f32 = 5.0;
     pub const BLOCK_EDIT_INTERVAL_MS: i64 = 100;
     pub const FLY_SPEED_SHIFT: i64 = 4;
-    pub const FLY_SPEED_MAX_LEVEL: i64 = 20;
+    pub const FLY_SPEED_MAX_LEVEL: i64 = 11;
 }
 
 pub mod world {

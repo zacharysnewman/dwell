@@ -1,14 +1,10 @@
 // The flight speed slider (PLAYER_CONTROLLER.md §6.7): a level carried in every input frame
-// (InputButtons.flySpeed). Level 0 flies at the height-based speed alone; level L flies at least
-// fly.speed × 2^(L/2) — also in the terrain band (below fly.terrainBand), where only the
-// height-based speed is capped. The server and the client's WASM prediction apply it (dwell-physics fly_speed_factor); this file only mirrors it for display.
+// (InputButtons.flySpeed). Level L flies at fly.speed × 2^(L/2), the same at every height. The server and the client's WASM prediction apply it (dwell-physics fly_speed_factor); this file only mirrors it for display.
 import { Players } from '../protocol/constants.gen';
 
 export const MAX_FLY_SPEED_LEVEL = Players.flySpeedMaxLevel;
 /** fly.speed in PlayerControllerConfig (m/s), for showing speeds. */
-export const FLY_BASE_SPEED = 11;
-/** fly.terrainSpeed: the height-based speed's cap in the terrain band (m/s). */
-export const FLY_TERRAIN_SPEED = 400;
+export const FLY_BASE_SPEED = 8;
 
 export function clampFlySpeedLevel(level: number): number {
   return Number.isFinite(level) ? Math.min(MAX_FLY_SPEED_LEVEL, Math.max(0, Math.round(level))) : 0;
@@ -20,7 +16,7 @@ export function flySpeedFactor(level: number): number {
   return (l % 2 === 1 ? Math.SQRT2 : 1) * 2 ** Math.floor(l / 2);
 }
 
-/** The slowest the chosen level flies (without Run), in m/s. */
+/** The speed the chosen level flies (without Run), in m/s. */
 export function flySpeedFloor(level: number): number {
   return FLY_BASE_SPEED * flySpeedFactor(level);
 }
@@ -35,9 +31,7 @@ export function formatSpeed(mps: number): string {
 
 /** The slider's caption for a level. */
 export function flySpeedLabel(level: number): string {
-  const l = clampFlySpeedLevel(level);
-  if (l === 0) return 'Normal (faster with height)';
-  return `At least ${formatSpeed(flySpeedFloor(l))}`;
+  return formatSpeed(flySpeedFloor(clampFlySpeedLevel(level)));
 }
 
 const KEY = 'dwell.flySpeed';

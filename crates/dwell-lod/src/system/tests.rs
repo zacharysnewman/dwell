@@ -1341,8 +1341,9 @@ fn flying_out_through_the_build_sphere_asks_for_nothing_outside_it() {
     let mut physics = Physics::default();
     let mut players = Players::new(&mut physics, true);
     let config = PlayerControllerConfig::default();
-    // Over the rim, low: up and out, past the sphere's surface ~9 km above (and the rim beside).
-    let start = DVec3::new(49_000.0, 100.0, 0.5);
+    // Over the rim, under the sphere's surface (~10 km above here): up and out, past it (and the
+    // rim beside), at the top level running.
+    let start = DVec3::new(49_000.0, 9_000.0, 0.5);
     let h = players.spawn(&mut physics, config, start, 90.0);
     let mut setup = ChunkSetup::new([start.x, start.y + 1.6, start.z], 4.0);
     setup.host.bifacial = true;
@@ -1353,6 +1354,7 @@ fn flying_out_through_the_build_sphere_asks_for_nothing_outside_it() {
             Input {
                 fly: true,
                 fly_speed: FLY_SPEED_MAX_LEVEL as u8,
+                run: true,
                 jump: true,
                 move_y: 1.0,
                 look_yaw: 90.0,

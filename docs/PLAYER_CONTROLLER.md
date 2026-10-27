@@ -478,21 +478,16 @@ layer — so a player can rise from the ground to see the whole world (ARCHITECT
   crouched player up (the exclusive rule of `step_crouch`). While flying there is no gravity: the
   body's velocity is eased towards the wish with exponential `fly.drag` — horizontal from the move
   input along the camera's yaw, up with jump, down with crouch — at
-  `max(min(fly.speed × run × (1 + max(0, feet − SEA_LEVEL) / fly.boost_height), cap),
-  fly.speed × run × fly_speed_factor(input.fly_speed))` (run = `fly.run_factor` while running, else
-  1; cap = `fly.terrain_speed` below `fly.terrain_band`, else the top level's speed,
-  `fly.speed × run × fly_speed_factor(FLY_SPEED_MAX_LEVEL)`), so speed grows with height and the
-  climb is exponential up to the top level's speed (reached ~33 km above the sea).
-  `input.fly_speed` is the **speed slider's level** (0–`FLY_SPEED_MAX_LEVEL` = 20, carried in bits
-  4–9 of the input's `buttons`, protocol v9): `fly_speed_factor(L) = 2^(L/2)` — computed with
-  `libm::ldexpf` and the correctly rounded `sqrt(2)`, so native and WASM agree exactly — is a true
-  minimum speed; level 0 (factor 1) is the height-based speed alone, and level 20 (2^10, 11.3 km/s
-  walking, 28 km/s running) crosses the 100 km world in ~9 s (Phase 16 re-checked the levels for
-  the 50 km world: 39 levels, to 2^19.5, were for the 8,192 km disc). Below `fly.terrain_band`
-  the height-based speed is capped at `fly.terrain_speed`: collision
+  `fly.speed × run × fly_speed_factor(input.fly_speed)` (run = `fly.run_factor` while running,
+  else 1), the same at every height (owner, 2026-10-26: the speed-up with height was removed).
+  `input.fly_speed` is the **speed slider's level** (0–`FLY_SPEED_MAX_LEVEL` = 11, carried in bits
+  4–9 of the input's `buttons`, protocol v9): `fly_speed_factor(L) = 2^(L/2)`, computed with
+  `libm::ldexpf` and the correctly rounded `sqrt(2)` so native and WASM agree exactly. Level 0 is
+  8 m/s walking (20 m/s running); level 11 (2^5.5) is 362 m/s walking, 905 m/s running. The top
+  was 20 until 2026-10-26: from level 12 the server could not generate terrain as fast as the
+  player crossed it (`docs/BUGS.md` 1). At speed, collision
   around the player is built a couple of ticks ahead (its reach is capped at 64 m of travel), and
-  the server has to generate the chunks being flown through. The slider's minimum overrides the cap
-  (a playtest request): faster than about 64 m per tick near the terrain, the player may pass
+  the server has to generate the chunks being flown through. Faster than about 64 m per tick near the terrain, the player may pass
   through ground whose collision is not built yet, and the view runs ahead of streaming. Collision
   is unchanged — the player body's continuous collision detection (Rapier CCD) keeps a fast dive
   from tunnelling into the ground (`diving_at_the_bands_top_speed_stops_on_the_ground`).
@@ -750,8 +745,8 @@ PPC default for voxels.
 | `swim` ◆ | `speed` / `enter_fraction` / `exit_fraction` | 3 m/s / 0.6 / 0.4 | — | Dwell addition |
 | | `buoyancy` / `drag` / `float_fraction` | 12 m/s² / 2 /s / 0.7 | — | |
 | `band` ◆ | `boost_gravities` | 2 | — | The flip band (§11) |
-| `fly` ◆ | `speed` / `run_factor` / `boost_height` / `drag` | 11 m/s / 2.5 / 32 m / 8 /s | — | Dwell addition (§6.7): speed × max(1 + height above sea / boost_height, 2^(speed level / 2)) |
-| | `terrain_speed` / `terrain_band` / `position_limit` | 400 m/s / 6,144 m / 33,553 km | — | The height-based speed's cap / feet height it applies below / \|x\|, \|y\|, \|z\| (the wire range; no world limit, Phase 16) |
+| `fly` ◆ | `speed` / `run_factor` / `drag` | 8 m/s / 2.5 / 8 /s | — | Dwell addition (§6.7): speed × 2^(speed level / 2), the same at every height (11 m/s with a speed-up by height until 2026-10-26) |
+| | `position_limit` | 33,553 km | — | \|x\|, \|y\|, \|z\| (the wire range; no world limit, Phase 16) |
 | `slide` ◆ | `min_angle` / `friction` / `terminal_speed` | 44° / 0.3 / 14 m/s | — | Dwell addition (§6.8): ground steeper than `min_angle` slides; pull `g (sin θ − friction cos θ)`; speed along the slope |
 | | `steering` / `steer_speed` | 0.4 × `acceleration` / 5 m/s | — | Across the slope |
 | | `brake` / `brake_deceleration` / `uphill_deceleration` | 0.6 / 10 m/s² / 60 m/s² | — | Up-slope input lowers the terminal speed by up to 60 %; momentum up a steep face dies fast |

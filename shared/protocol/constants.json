@@ -21,7 +21,7 @@
     "reachDistance": 5,
     "blockEditIntervalMs": 100,
     "flySpeedShift": 4,
-    "flySpeedMaxLevel": 20
+    "flySpeedMaxLevel": 11
   },
   "world": {
     "midplaneY": 0,

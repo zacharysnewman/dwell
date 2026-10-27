@@ -48,15 +48,15 @@ fn jump_rises_crouch_sinks_move_flies_along_the_yaw() {
     let e = w.spawn(Vec3::new(0.0, 8.0, 0.0));
     w.set_input(|_, _| fly(0.0, 0.0, false, true, false));
     w.step(ticks(1.0));
-    assert!(w.feet(e) > 15.0, "{}", w.feet(e));
+    assert!(w.feet(e) > 13.0, "{}", w.feet(e));
     assert!(!w.c(e).crouching, "flight keeps the standing shape");
     w.set_input(|_, _| fly(0.0, 0.0, false, false, true));
     let top = w.feet(e);
     w.step(ticks(0.5));
-    assert!(w.feet(e) < top - 3.0);
+    assert!(w.feet(e) < top - 2.0, "{} {top}", w.feet(e));
     w.set_input(|_, _| fly(0.0, 1.0, false, false, false)); // yaw 0: +Z
     w.step(ticks(1.0));
-    assert!(w.vel(e).z > 10.0, "{}", w.vel(e));
+    assert!(w.vel(e).z > 7.0, "{}", w.vel(e));
     assert!(w.vel(e).y.abs() < 0.5, "{}", w.vel(e));
 }
 
@@ -75,7 +75,10 @@ fn flying_around_the_outside_through_the_midplane_to_face_b() {
     for _ in 0..ticks(6.0) {
         let across = w.c(e).face.is_b();
         // Raw world input: `input_for` would mirror x, which this test doesn't use.
-        w.set_input(move |_, _| fly(0.0, 0.0, false, across, !across));
+        w.set_input(move |_, _| Input {
+            fly_speed: 6,
+            ..fly(0.0, 0.0, false, across, !across)
+        });
         w.step(1);
         if w.c(e).face != face {
             flips += 1;
@@ -104,28 +107,15 @@ fn speed_at(feet: f32, level: u8, run: bool) -> f32 {
 }
 
 #[test]
-fn speed_grows_with_height_with_a_terrain_cap_up_to_the_top_levels() {
+fn the_speed_is_the_same_at_every_height() {
+    // Owner, 2026-10-26: no speed-up with height; the slider alone sets the speed.
     let f = PlayerControllerConfig::default().fly;
-    let low = speed_at(4.0, 0, true);
-    assert!(
-        approx(
-            low,
-            f.speed * f.run_factor * (1.0 + 4.0 / f.boost_height),
-            0.05
-        ),
-        "{low}"
-    );
-    let band = speed_at(3000.0, 0, true);
-    assert!(approx(band, f.terrain_speed, 0.02), "{band}");
-    assert!(
-        speed_at(20000.0, 0, true) > 10_000.0,
-        "above the terrain: exponential climb"
-    );
-    // Far above the world the height-based speed is the top level's (the body's speed limit is
-    // set from that).
-    let top = f.speed * f.run_factor * fly_speed_factor(FLY_SPEED_MAX_LEVEL as u8);
-    let high = speed_at(200_000.0, 0, true);
-    assert!(approx(high, top, 0.02), "{high} {top}");
+    for feet in [4.0, 3000.0, 20_000.0, 200_000.0] {
+        let walk = speed_at(feet, 0, false);
+        assert!(approx(walk, f.speed, 0.05), "{feet} m: {walk}");
+        let run = speed_at(feet, 0, true);
+        assert!(approx(run, f.speed * f.run_factor, 0.05), "{feet} m: {run}");
+    }
 }
 
 #[test]
@@ -133,56 +123,54 @@ fn flight_is_not_bounded_by_the_build_sphere() {
     // ADR 0025 D3: the sphere bounds building, not movement. Up through its top (50 km over the
     // centre) and on: no ceiling holds the player.
     let mut w = PlayerTestWorld::new();
-    let e = w.spawn(Vec3::new(0.0, 49_000.0, 0.0));
-    w.set_input(|_, _| fly(0.0, 0.0, false, true, false));
+    let top = FLY_SPEED_MAX_LEVEL as u8;
+    let e = w.spawn(Vec3::new(0.0, 49_500.0, 0.0));
+    w.set_input(move |_, _| Input {
+        fly_speed: top,
+        ..fly(0.0, 0.0, true, true, false)
+    });
     w.step(ticks(3.0));
     assert!(w.c(e).fly.flying);
-    assert!(w.feet(e) > 60_000.0, "{}", w.feet(e));
+    assert!(w.feet(e) > 51_000.0, "{}", w.feet(e));
     // Sideways past the rim too.
-    let e = w.spawn(Vec3::new(49_000.0, 1_000.0, 0.0));
-    w.set_input(|_, _| Input {
-        fly_speed: FLY_SPEED_MAX_LEVEL as u8,
-        ..fly(1.0, 0.0, false, false, false)
+    let e = w.spawn(Vec3::new(49_500.0, 1_000.0, 0.0));
+    w.set_input(move |_, _| Input {
+        fly_speed: top,
+        ..fly(1.0, 0.0, true, false, false)
     });
     w.step(ticks(3.0));
     let x = w.pos(e).x;
-    assert!(!(38_000.0..=60_000.0).contains(&x), "{x}");
+    assert!(!(48_000.0..=51_000.0).contains(&x), "{x}");
 }
 
 #[test]
-fn the_speed_level_is_a_true_minimum_speed() {
+fn the_speed_level_sets_the_speed_up_to_level_11() {
     let f = PlayerControllerConfig::default().fly;
     assert_eq!(fly_speed_factor(0), 1.0);
     assert_eq!(fly_speed_factor(1), 2.0f32.sqrt());
-    assert_eq!(fly_speed_factor(20), 1024.0);
-    // The top level crosses the 100 km world in about 9 s (Phase 16: re-checked for 50 km).
+    // Level 11 is the top (owner, 2026-10-26: terrain generation can't keep up at 12).
     let top = fly_speed_factor(FLY_SPEED_MAX_LEVEL as u8);
-    assert_eq!((FLY_SPEED_MAX_LEVEL, top), (20, 1024.0));
+    assert_eq!((FLY_SPEED_MAX_LEVEL, top), (11, 32.0 * 2.0f32.sqrt()));
     assert_eq!(fly_speed_factor(255), top);
-    assert!(100_000.0 / (f.speed * top) < 10.0);
-
-    // A level slower than the height gives changes nothing (level 0 is the old behaviour).
-    assert_eq!(speed_at(20000.0, 10, false), speed_at(20000.0, 0, false));
-    // Above the terrain band a higher level flies faster: level 20 is 11 m/s × 2^10.
-    assert!(approx(speed_at(20000.0, 20, false), f.speed * 1024.0, 0.05));
-    // Near the ground a low level helps: level 8 is 11 m/s × 16.
-    assert!(approx(speed_at(4.0, 8, false), f.speed * 16.0, 0.05));
-    // The band's cap limits only the height-based speed: the level's minimum holds there too...
-    assert!(approx(speed_at(100.0, 20, false), f.speed * 1024.0, 0.05));
-    assert!(approx(speed_at(3000.0, 20, false), f.speed * 1024.0, 0.05));
-    // ...while a level under the cap leaves the capped height-based speed as it was.
-    assert!(approx(speed_at(3000.0, 8, false), f.terrain_speed, 0.02));
+    // Level 8 is 8 m/s × 16, near the ground and high up alike.
+    for feet in [4.0, 20_000.0] {
+        assert!(
+            approx(speed_at(feet, 8, false), f.speed * 16.0, 0.05),
+            "{feet}"
+        );
+    }
+    assert!(approx(speed_at(100.0, 11, false), f.speed * top, 0.05));
 }
 
 #[test]
 fn the_speed_level_travels_in_the_buttons_and_is_capped() {
     let mut i = Input {
         fly: true,
-        fly_speed: 17,
+        fly_speed: 7,
         ..Input::default()
     };
     let back = dequantize_input(&quantize_input(&i, 1));
-    assert_eq!(back.fly_speed, 17);
+    assert_eq!(back.fly_speed, 7);
     assert!(back.fly);
     i.fly_speed = 200;
     assert_eq!(
@@ -201,7 +189,10 @@ fn diving_at_the_bands_top_speed_stops_on_the_ground() {
     let mut w = PlayerTestWorld::new();
     w.floor();
     let e = w.spawn(Vec3::new(0.0, 600.0, 0.0));
-    w.set_input(|_, _| fly(0.0, 0.0, true, false, true));
+    w.set_input(|_, _| Input {
+        fly_speed: FLY_SPEED_MAX_LEVEL as u8,
+        ..fly(0.0, 0.0, true, false, true)
+    });
     w.step(ticks(4.0));
     assert!(w.feet(e).abs() < 0.05, "{}", w.feet(e));
     assert!(w.c(e).fly.flying);

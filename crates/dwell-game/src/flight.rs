@@ -127,7 +127,7 @@ mod tests {
                 >> players::FLY_SPEED_SHIFT
         };
         assert_eq!(level(0.0), 0);
-        assert_eq!(level(17.0), 17);
+        assert_eq!(level(7.0), 7);
         assert_eq!(level(99.0), players::FLY_SPEED_MAX_LEVEL);
         assert_eq!(level(-4.0), 0);
         assert_eq!(
