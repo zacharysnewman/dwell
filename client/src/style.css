@@ -418,7 +418,8 @@ kbd.phrase {
   line-height: 1.4;
 }
 
-#create-world {
+#create-world,
+#play-advanced {
   display: grid;
   gap: 10px;
   margin: 12px 0 4px;
@@ -428,7 +429,31 @@ kbd.phrase {
   background: rgb(255 255 255 / 70%);
 }
 
-#create-world[hidden] {
+#create-world[hidden],
+#play-advanced[hidden] {
+  display: none;
+}
+
+.mm-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* Play advanced's fields (ui/playAdvanced.ts): longer labels than the create form's. */
+#play-advanced .menu-field {
+  grid-template-columns: minmax(96px, 128px) 1fr;
+}
+
+#play-advanced .menu-field small {
+  grid-column: 2;
+  margin-top: -6px;
+  color: var(--ink-soft);
+  font: 400 12px var(--font-body);
+}
+
+#play-advanced .play-advanced-problem:empty {
   display: none;
 }
 
