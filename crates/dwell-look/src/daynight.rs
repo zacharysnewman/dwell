@@ -532,12 +532,21 @@ impl DayState {
             put(lit(s.hemi_sky, s.hemi_intensity));
             put(lit(s.hemi_ground, s.hemi_intensity));
         }
+        // The other face's sky (the viewer's blend mirrored: they meet across the flip band), for
+        // the sky seen below the viewer's horizon: through a shaft, or past the rim (docs/BUGS.md 10).
+        let o = self.viewer(1.0 - weight_a);
+        put(with(o.sky_zenith, 0.0));
+        put(with(o.sky_horizon, o.saturation));
+        put(with(o.glow, o.glow_strength));
+        put(with(o.band, o.band_strength));
+        put(with(o.sun_disc, o.moon_glow * self.moon_lit.max(0.25)));
+        put([o.stars, 0.0, 0.0, 0.0]);
         u
     }
 }
 
 /// Floats in the `DaySky` uniform block.
-pub const DAY_SKY_FLOATS: usize = 17 * 4;
+pub const DAY_SKY_FLOATS: usize = 23 * 4;
 
 /// The uniform block the renderer's frame carries (`frame.day`): the cycle's state for this frame.
 /// Sky colours are sRGB (the sky is drawn in output colour); lights are linear × intensity. Clouds
@@ -568,6 +577,14 @@ struct DaySky {
     moon_b: vec4f,
     sky_b: vec4f,
     ground_b: vec4f,
+    // The other face's sky (as zenith … disc above; other_stars.x its stars' visibility): what the
+    // sky is below the viewer's horizon, seen through a shaft or past the rim.
+    other_zenith: vec4f,
+    other_horizon: vec4f,
+    other_glow: vec4f,
+    other_band: vec4f,
+    other_disc: vec4f,
+    other_stars: vec4f,
 };
 ";
 
@@ -592,6 +609,31 @@ mod tests {
         (0..CHANNELS)
             .map(|i| (ca[i] - cb[i]).abs())
             .fold(0.0, f64::max)
+    }
+
+    #[test]
+    fn the_block_carries_the_other_faces_sky_for_below_the_horizon() {
+        // docs/BUGS.md 10: from face A at noon, face B's night seen through a portal was drawn in
+        // face A's daytime colours (a white patch). The block carries the other face's sky.
+        let day = D.state(0.0, Some(0.5), Some(0.5));
+        let u = day.pack(1.0, 0.0, 0.001);
+        let other = 17 * 4;
+        let zenith = &u[other..other + 3];
+        for (k, z) in zenith.iter().enumerate() {
+            assert!(
+                (f64::from(*z) - day.b.sky_zenith[k]).abs() < 1e-6,
+                "{zenith:?}"
+            );
+        }
+        assert!(
+            f64::from(u[other + 5 * 4]) > 0.5,
+            "face B's stars show: {}",
+            u[other + 20]
+        );
+        assert!(day.a.stars < 0.5, "and face A's don't at noon");
+        // Halfway across the flip band the viewer's and the other's are the same blend.
+        let h = day.pack(0.5, 0.0, 0.001);
+        assert_eq!(&h[3 * 4..3 * 4 + 3], &h[other..other + 3]);
     }
 
     #[test]
