@@ -1059,7 +1059,7 @@ polylines; derived on load: the rivers' smoothed channels in a 64 m bucket index
 shore distance field. Columns (`terrain.rs`) take the map's height bicubic (C1) plus detail noise,
 carve river channels and valleys (water in ½ m terraces down the river), fill lakes flat to their
 level inside their shore with banks round them, and pick their surface by `bands` (snow over a
-noisy, slope-aware snow line, rock on steep ground, sand at the shore and under water), all data in
+noisy, slope-aware snow line, rock where the landform is steep over a hillside's window (generator 24), the soil mantling the slopes so terrace risers show dirt, sand at the shore and under water), all data in
 `shared/worldgen/terrain.json`. **Where the map lives:** one per face seed per process
 (`worldmap::cache`); natively computed on two threads (~1.2 s for both faces) and kept on disk
 (`$DWELL_MAP_CACHE`, else the temp directory); in the browser built in two job workers

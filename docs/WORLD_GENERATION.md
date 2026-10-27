@@ -247,8 +247,14 @@ rivers, etc … in game", mountains "up to 8000ft", snowy grass and snowy leaves
 prototype's map (proposal layers 0–1) is the terrain: per face, the base field on a 100 m grid,
 uplifted into ranges and eroded, its lakes and rivers found. Columns take its height (bicubic),
 fine detail (`terrain.json` `detail`), river channels and valleys (`rivers`, `mouths`), flat lakes
-(`lakes`) and their surface bands (`bands`: snow line 1,550 m ± 150 m, raised on slopes; rock from a
-slope of 1.15; sand to 2 m above sea and under water). The pines grow to 1,300 m on grass and snowy
+(`lakes`) and their surface bands (`bands`: snow line 1,550 m ± 150 m, raised on slopes; sand to
+2 m above sea and under water; rock where the landform is steep — generator 24, owner 2026-10-26:
+"no random splotchy stone … structured random systems rooted in realism": the slope over ±
+`rockWindow` 150 m, never less than an LOD cell's width, so rock comes as whole faces, not as
+splotches along the world map's 100 m grid; against a threshold easing from `rockSlope` 0.85 at sea
+level to `rockSlopeHigh` 0.55 at the snow line, as soil thins with height. The soil mantles the
+slopes: under a grass or snow top the dirt reaches at least down to the lowest neighbour's top, so a
+terrace's riser, in chunks and in the LOD's taller cells, shows soil, not stone). The pines grow to 1,300 m on grass and snowy
 grass, their leaves snowy from 1,050–1,250 m up (`placements.json` `variants`); meadows to 1,500 m.
 Spawn: level dry lowland (3–80 m) within 400 m of a river, nearest the disc's centre. Measured
 (seeds 1, 7, 42, 1234, both faces): highest ground 2,210–2,650 m, the largest river 11–21 m³/s;

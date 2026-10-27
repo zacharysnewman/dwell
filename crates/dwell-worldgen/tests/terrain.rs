@@ -1137,3 +1137,130 @@ fn no_shore_column_has_drawn_water_higher_than_the_dry_land_beside_it() {
         );
     }
 }
+
+dwell_world::both_faces!(
+    /// The owner (2026-10-26): no random splotches of stone. Where a grass or snow column of the
+    /// distant terrain (LOD cells of 2–16 m) stands higher than a neighbour, the cells its step
+    /// shows are soil, never stone: stone shows on its own only where the rock band is. (The LOD's
+    /// cells reach deeper than `underDepth` under a column's top, and its risers took the stone.)
+    fn lod_risers_show_soil_not_stone(f: FaceFrame) {
+        use dwell_world::lod::{self, LodCells, LodCoord};
+        let t = BifacialTerrain::new(7);
+        let g = t.local(f.face);
+        let stone = require("dwell:stone");
+        let (mut risers, mut bad) = (0, 0);
+        for level in 1..=4 {
+            let s = lod::section_size(level);
+            let cell = lod::cell_size(level);
+            for (x, z) in [(23_700i64, 2_300i64), (21_300, 2_700), (6_400, 21_100)] {
+                let h = i64::from(g.ground_y(x as i32, z as i32).unwrap_or(0));
+                let at = |v: i64, o: i64| (v - o).div_euclid(s) as i32;
+                let c = LodCoord::new(
+                    level,
+                    at(x, lod::ORIGIN_X),
+                    at(h, lod::ORIGIN_Y),
+                    at(z, lod::ORIGIN_Z),
+                );
+                let mut cells = LodCells::new();
+                g.generate_lod(c, &mut cells, None);
+                if cells.len() != lod::VOLUME {
+                    continue;
+                }
+                let n = lod::SECTION_CELLS;
+                let top = |x: i32, z: i32| {
+                    (-1..=n).rev().find(|&y| {
+                        cells[lod::cell_index(x, y, z)] != M.air
+                            && cells[lod::cell_index(x, y, z)] != M.water
+                    })
+                };
+                for zi in 0..n {
+                    for xi in 0..n {
+                        let Some(ty) = top(xi, zi) else { continue };
+                        let m = cells[lod::cell_index(xi, ty, zi)];
+                        if m == stone || ty >= n {
+                            continue; // a rock column, or its top past the section
+                        }
+                        let lowest = [(1, 0), (-1, 0), (0, 1), (0, -1)]
+                            .iter()
+                            .filter_map(|(dx, dz)| top(xi + dx, zi + dz))
+                            .min()
+                            .unwrap_or(ty);
+                        for y in (lowest + 1).max(-1)..ty {
+                            risers += 1;
+                            if cells[lod::cell_index(xi, y, zi)] == stone {
+                                bad += 1;
+                            }
+                        }
+                    }
+                }
+                let _ = cell;
+            }
+        }
+        assert!(risers > 50, "risers checked: {risers}");
+        assert_eq!(
+            bad, 0,
+            "{bad} of {risers} LOD riser cells under a soil top are stone"
+        );
+    }
+);
+
+dwell_world::both_faces!(
+    /// The owner (2026-10-26): rock in whole faces, not random splotches. Bare rock is where the
+    /// landform is steep (its slope over a hillside's window, the soil thinner higher up), so it
+    /// comes in large connected areas: patches under 50 × 50 m hold under 1 % of it, over seed 7's
+    /// mountains (8 × 4 km, every 8 m).
+    fn rock_comes_in_whole_faces_not_splotches(f: FaceFrame) {
+        use dwell_worldgen::terrain::Band;
+        let g = BifacialTerrain::new(7);
+        let g = g.local(f.face);
+        // A mountainous square of this face: the first point of a 1 km grid with rock round it.
+        let (cx, cz) = (-20..=20)
+            .flat_map(|j| (-20..=20).map(move |i| (i * 1000, j * 1000)))
+            .find(|&(x, z)| {
+                (0..16)
+                    .filter(|k| {
+                        g.column_at(x + (k % 4) * 500, z + (k / 4) * 250).band == Band::Rock
+                    })
+                    .count()
+                    >= 6
+            })
+            .expect("mountains on this face");
+        let (x0, z0, step, w, l) = (cx - 2000, cz - 1000, 8, 1000, 500);
+        let grid: Vec<bool> = (0..l)
+            .flat_map(|j| (0..w).map(move |i| (i, j)))
+            .map(|(i, j)| g.column_at(x0 + i * step, z0 + j * step).band == Band::Rock)
+            .collect();
+        let mut seen = vec![false; grid.len()];
+        let (mut total, mut small) = (0usize, 0usize);
+        for s in 0..grid.len() {
+            if !grid[s] || seen[s] {
+                continue;
+            }
+            let (mut stack, mut n) = (vec![s], 0usize);
+            seen[s] = true;
+            while let Some(c) = stack.pop() {
+                n += 1;
+                let (i, j) = ((c as i32) % w, (c as i32) / w);
+                for (di, dj) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+                    let (a, b) = (i + di, j + dj);
+                    if a >= 0 && b >= 0 && a < w && b < l {
+                        let k = (b * w + a) as usize;
+                        if grid[k] && !seen[k] {
+                            seen[k] = true;
+                            stack.push(k);
+                        }
+                    }
+                }
+            }
+            total += n;
+            if (n as i32) * step * step < 50 * 50 {
+                small += n;
+            }
+        }
+        assert!(total > 1000, "the mountains have rock: {total}");
+        assert!(
+            (small as f64) < 0.01 * total as f64,
+            "{small} of {total} rock samples in patches under 50 × 50 m"
+        );
+    }
+);

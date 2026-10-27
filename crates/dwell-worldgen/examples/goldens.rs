@@ -10,7 +10,7 @@ use dwell_world::lod::{LodCells, LodCoord, lod_hash, section_size};
 use dwell_world::{CHUNK_SIZE, Chunk, ChunkCoord, Face, chunk_hash, mirror_chunk_y};
 use dwell_worldgen::BifacialTerrain;
 
-const VERSION: u32 = 23; // portal monuments (BIFACIAL_WORLD.md §12.2); 22: rivers below their banks; 21: the world map (ADR 0049)
+const VERSION: u32 = 24; // the soil mantles the slopes (terrace risers soil, not stone); 23: portal monuments (BIFACIAL_WORLD.md §12.2); 22: rivers below their banks; 21: the world map (ADR 0049)
 const SEEDS: [u64; 2] = [0, 20_260_925];
 
 fn section_at(level: i32, p: [i64; 3]) -> LodCoord {
