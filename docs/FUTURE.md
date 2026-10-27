@@ -8,6 +8,16 @@ Each entry notes what the current architecture already does to keep the option o
 
 ---
 
+## Rivers filling the lower land beside them (owner, 2026-10-27)
+
+*"Rivers should fill adjacent 'lower' valleys, creating wider rivers/lakes/pools."* Today a river's
+water stays in its channel and the generator raises a levee where the land beside it is lower than
+the water (WORLD_GENERATION.md §4, generator 25). Instead the water would spread over that land at
+the river's level: wider stretches, backwaters and pools along the river. It needs a design pass
+before building (questions for the owner first): how far the water may spread, whether it is decided
+on the world map (a flood of each river's level over its cells, like the lakes) or per column, how it
+stays a pure function of the chunk, and how the LOD shows it. A new compatibility line when built.
+
 ## Friend-world host migration
 
 **Today:** a friend world lives only while its host plays; when the host leaves, the session ends

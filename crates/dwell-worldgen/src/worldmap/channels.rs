@@ -175,7 +175,8 @@ impl Channels {
         for c in &mut courses {
             lower_into_land(map, c);
         }
-        // A river joining another ends on the other's smoothed course, never above it.
+        // A river joining another ends on the other's smoothed course, at its level: the other's
+        // water backs up into it where it lies lower, and it falls to it gradually where higher.
         for k in 0..rivers.len() {
             let RiverEnd::Joins(j) = rivers[k].end else {
                 continue;
@@ -187,13 +188,16 @@ impl Channels {
             let last = courses[k][courses[k].len() - 1];
             if let Some(p) = project(&courses[j], last.x, last.z) {
                 let n = courses[k].len();
-                let prev = courses[k][n - 2].s;
-                courses[k][n - 1] = Point {
+                let end = Point {
                     x: p.x,
                     z: p.z,
-                    s: p.s.min(prev),
+                    s: p.s,
                     ..last
                 };
+                courses[k][n - 1] = end;
+                let reach = 0.5 * (p.w + last.w) + S.river_join_margin;
+                let bank = meet_at_bank(&mut courses[k], end.s, reach);
+                ease_fall(&mut courses[k][..=bank], S.river_join_slope);
             }
         }
         let mut river_of: Vec<u32> = (0..courses.len() as u32).collect();
@@ -320,6 +324,56 @@ fn lower_into_land(map: &WorldMap, course: &mut [Point]) {
         }
         p.s = p.s.min(prev);
         prev = p.s;
+    }
+}
+
+/// Sets the end of a joining river's course to the joined river's level `s` over its last
+/// `reach` m (both channels' half-widths and a margin: the joining channel's side reaches into
+/// the joined one beside its centreline), a point added where that stretch
+/// begins, so inside the joined channel both waters stand at one level; upstream of it, where the
+/// joining river lies lower than `s`, the joined river's water backs up into it at `s` (levels
+/// never rise downstream). Returns the index of the stretch's first point.
+fn meet_at_bank(course: &mut Vec<Point>, s: f64, reach: f64) -> usize {
+    let mut i = course.len() - 1;
+    let mut along = 0.0;
+    let bank = loop {
+        if i == 0 {
+            break 0;
+        }
+        let (a, b) = (course[i - 1], course[i]);
+        let l = ((b.x - a.x).powi(2) + (b.z - a.z).powi(2)).sqrt();
+        if along + l > reach {
+            let t = 1.0 - (reach - along) / l;
+            let mut at = Point::lerp(a, b, t);
+            at.s = s;
+            course.insert(i, at);
+            break i;
+        }
+        along += l;
+        course[i - 1].s = s;
+        i -= 1;
+    };
+    for p in course[..bank].iter_mut().rev() {
+        if p.s >= s {
+            break;
+        }
+        p.s = s;
+    }
+    bank
+}
+
+/// Lowers a course from its end upstream until it falls no more than `slope` m per m: a river
+/// hanging above the one it joins cuts down to it gradually instead of standing over it. Stops at
+/// the first stretch already that gentle.
+fn ease_fall(course: &mut [Point], slope: f64) {
+    for i in (1..course.len()).rev() {
+        let (a, b) = (course[i - 1], course[i]);
+        let l = ((b.x - a.x).powi(2) + (b.z - a.z).powi(2)).sqrt();
+        let most = b.s + slope * l;
+        if a.s <= most {
+            return;
+        }
+        course[i - 1].s = most;
     }
 }
 

@@ -96,6 +96,13 @@ pub struct Surface {
     pub river_min_depth: f64,
     pub river_bank: f64,
     pub river_valley_slope: f64,
+    /// A joining river is at the joined one's level this far (and its own half-width) beyond the
+    /// joined one's channel (m).
+    pub river_join_margin: f64,
+    /// How fast a levee falls away from the bank to the lower land (m per m).
+    pub river_levee_fall: f64,
+    /// The steepest a joining river falls to the river it joins (m per m).
+    pub river_join_slope: f64,
     pub river_reach: f64,
     pub river_reach_per_width: f64,
     pub river_meander: f64,
@@ -653,15 +660,20 @@ impl TerrainGenerator {
                     level = r.level;
                 }
             } else if water != Water::Lake {
-                // The valley down to the banks, blended back into the land at its reach; the banks
-                // never lower than `bank` over the water (a levee where the land is lower).
+                // The valley down to the banks, blended back into the land at its reach.
                 let bank = r.level + S.river_bank;
                 let valley = bank + edge * S.river_valley_slope;
                 let carved = smooth_min(h, valley, 2.0);
                 let t = smooth01(edge / r.valley.max(1e-6));
                 h = carved + (h - carved) * t;
-                let levee = bank - (edge - 1.0).max(0.0) * 1.5;
-                h = h.max(levee);
+                // Where the land is lower than the water, a levee `bank` over it so the water
+                // never stands open beside lower ground, falling away gently (`leveeFall`) so it
+                // is a broad bank, never a ridge; none where the river is at the sea's level (its
+                // water is the sea's: the land beside it is a shore, open to both).
+                if r.level > CELL_H {
+                    let levee = bank - (edge - 1.0).max(0.0) * S.river_levee_fall;
+                    h = h.max(levee);
+                }
             }
         }
         if h < 0.0 && (water == Water::None || level < 0.0) {

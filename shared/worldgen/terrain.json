@@ -31,11 +31,14 @@
     "waterFade": 30
   },
   "rivers": {
-    "$comment": "Channels from the map's river polylines (smoothed `smooth` times, corner cutting). A column's nearest river by its channel's edge: inside the channel the bed lies depth (the map's width curve) below the water at the centre, at least minDepth; beyond it the ground is cut down to a valley rising valleySlope m per m from bank m over the water, out to reach m plus reachPerWidth × the width, where it meets the land; the banks never lie lower than bank m over the water (levees where the land is lower). Meander: the banks are traced through a warp of about ±meander m at meanderWavelength. The LOD widens a river at least lodMinShare of its cell size wide to lodWidth × its cell size, at cells up to lodMaxCell m, so rivers show from afar.",
+    "$comment": "Channels from the map's river polylines (smoothed `smooth` times, corner cutting). A column's nearest river by its channel's edge: inside the channel the bed lies depth (the map's width curve) below the water at the centre, at least minDepth; beyond it the ground is cut down to a valley rising valleySlope m per m from bank m over the water, out to reach m plus reachPerWidth × the width, where it meets the land; where the land is lower than the water the banks are raised to bank m over it (levees), falling away leveeFall m per m to the land, a broad bank rather than a ridge; none where the river is at sea level (its water is the sea's). Where a river joins another it reaches the other's level joinMargin m plus its own half-width outside the other's channel, and falls to it at most joinSlope m per m upstream of there (a short gorge where it hangs above the other). Meander: the banks are traced through a warp of about ±meander m at meanderWavelength. The LOD widens a river at least lodMinShare of its cell size wide to lodWidth × its cell size, at cells up to lodMaxCell m, so rivers show from afar.",
     "smooth": 3,
     "minDepth": 1,
     "bank": 0.5,
     "valleySlope": 0.45,
+    "joinMargin": 3,
+    "leveeFall": 0.15,
+    "joinSlope": 0.25,
     "reach": 30,
     "reachPerWidth": 2,
     "meander": 5,
