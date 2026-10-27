@@ -23,6 +23,9 @@ describe('what the page opens', () => {
     expect(launchOf('?play=wabc')).toEqual({ kind: 'play', id: 'wabc' });
     expect(launchOf('?world=flat')).toEqual({ kind: 'link' });
     expect(launchOf('?seed=7')).toEqual({ kind: 'link' });
+    // The dev spawn links open a world on their own too (seed 0 by default), not the menu.
+    expect(launchOf('?spawn=portal')).toEqual({ kind: 'link' });
+    expect(launchOf('?spawn=b')).toEqual({ kind: 'link' });
     // ?local=1 wins over an invite, as before the menu existed.
     expect(launchOf(`?local=1&join=1.2.3.4:4433&cert=${CERT}`)).toEqual({ kind: 'link' });
   });

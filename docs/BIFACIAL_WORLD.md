@@ -439,7 +439,8 @@ cells are no wider than the radius (levels 0–1) and draws the ground over them
 hydrology prototype ignores them (they don't change the height field). Edits, region tools and
 brushes leave the bedrock (`indestructible`; the client predicts with the server's check). Dev
 aids: `?spawn=portal` (`portal-b`) spawns a new local world's player on the rim over the ladder of
-the portal nearest the centre, on face A (B); the bench's `portal-a` and `portal-b` scenarios.
+the portal nearest the centre, on face A (B), with `?seed=` or alone (seed 0; it opened the menu alone
+before 0.28.2), never for a world played or regenerated from the menu; the bench's `portal-a` and `portal-b` scenarios.
 
 **Compatibility.** Generator version 20 changes the terrain every seed generates (the bedrock, the
 portals) and the block registry gains a block: a new compatibility line (RELEASES.md §3).
