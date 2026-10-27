@@ -38,7 +38,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 17 — Terrain definitions (terrain as data) | ⏳ Not started — built in Rust after Phase 24 |
 | 18 — Adaptive natural blocks (formerly 9e) | ✅ Superseded — built and tested, then removed by Phase 41 (ADR 0042 supersedes ADR 0024, 2026-10-20): natural ground is shaped once, at generation, on ½ m cells; its outstanding checks (the two-client e2e, the LOD seam check, the owner's walk) are dropped with it |
 | 19 — WebGPU, looks & textures | ⏳ Not started — re-scoped by ADR 0028: WebGPU is done by Phase 24 (wgpu, no fallback); the look registry and textures as data are built on wgpu after it |
-| 20 — Voxel awakening | ⏸ Waits for Phases 6–19 (2026-10-05; the baseline rework, 14–19, added 2026-10-12); Phase 25's renderer decision is made (A7, 2026-10-20: the mesher), so clusters are drawn as meshes |
+| 20 — Voxel awakening | 🚧 In progress — started with trees (owner, 2026-10-27; [`FELLING.md`](./FELLING.md), ADR 0051): F1 built (0.36.0: support roles, passable leaves, the log's axis as block data); next F2 (integrity, pieces as server bodies, settling), then F3 (players: push, hurt, ride). The general Phase 20 (terrain and builds falling, large structures across ticks, crush) follows by data |
 | 21 — Tiered physics | ⏸ Waits for Phases 6–19 (2026-10-05; the baseline rework, 14–19, added 2026-10-12) |
 | 22 — Sleep / re-bake | ⏸ Waits for Phases 6–19 (2026-10-05; the baseline rework, 14–19, added 2026-10-12) |
 | 23 — Dedicated servers & packaging | ⏳ Not started |

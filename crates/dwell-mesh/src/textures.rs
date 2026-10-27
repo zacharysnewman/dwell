@@ -93,6 +93,9 @@ pub struct TileRect {
     /// Whether the tile hangs from its block's top edge ([`tile_hangs`]): a side face then shows the
     /// tile's top on every block; any other tile's v runs in world metres.
     pub hang: bool,
+    /// The tile is turned a quarter on this face (its u and v swapped): a log lying along x or z
+    /// shows its bark's grain along its length (`surface` in the mesher).
+    pub turn: bool,
 }
 
 /// The rectangle of tile `name`. Like the TS (`indexOf` of −1), an unknown name lands one cell
@@ -113,6 +116,7 @@ pub fn tile_rect(name: &str) -> TileRect {
         u1: u0 + TILE as f64 / ATLAS_SIZE as f64,
         v1: v0 + TILE as f64 / ATLAS_SIZE as f64,
         hang: tile_hangs(name),
+        turn: false,
     }
 }
 
@@ -127,14 +131,17 @@ pub fn tile_grids() -> [[f32; 4]; ATLAS_TILES] {
         out[i][2] = tile_emissive(name);
     }
     for s in &dwell_blocks::STATES {
-        let Some(g) = s.grid else { continue };
         let names = s
             .textures
             .map_or(["plain"; 3], |t| [t.top, t.side, t.bottom]);
         for name in names {
             if let Some(i) = TILE_ORDER.iter().position(|t| *t == name) {
-                out[i][0] = f32::from(g.every);
-                out[i][1] = g.strength;
+                if let Some(g) = s.grid {
+                    out[i][0] = f32::from(g.every);
+                    out[i][1] = g.strength;
+                }
+                // How close to the eye its faces dissolve (block data `nearFade`: leaves).
+                out[i][3] = out[i][3].max(s.near_fade);
             }
         }
     }
@@ -450,8 +457,14 @@ mod tests {
                 .map_or(["plain"; 3], |t| [t.top, t.side, t.bottom]);
             for name in names {
                 let glow = tile_emissive(name);
-                let want = s.grid.map_or([0.0, 0.0, glow, 0.0], |g| {
-                    [f32::from(g.every), g.strength, glow, 0.0]
+                let near = table[TILE_ORDER.iter().position(|t| *t == name).expect("tile")][3];
+                assert!(
+                    near >= s.near_fade,
+                    "{} on {name}: near fade {near}",
+                    s.name
+                );
+                let want = s.grid.map_or([0.0, 0.0, glow, near], |g| {
+                    [f32::from(g.every), g.strength, glow, near]
                 });
                 let i = TILE_ORDER
                     .iter()

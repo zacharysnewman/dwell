@@ -51,6 +51,9 @@ pub(crate) struct MaterialStyle {
     pub surface_drop: f64,
     /// The fluid whose look it is drawn with (an index into the registry's fluid table).
     pub fluid: Option<FluidId>,
+    /// The axis its ends lie along (0 x, 1 y, 2 z; block data `axisProperty`): its top and bottom
+    /// tiles face along it.
+    pub axis: usize,
 }
 
 /// The per-vertex fluid id of see-through faces that are not a fluid's ([`crate::NO_FLUID`]), or
@@ -116,6 +119,11 @@ pub(crate) fn style_of(s: &StateInfo, fluids: &[FluidInfo]) -> MaterialStyle {
             .and_then(|f| fluids.get(usize::from(f)))
             .map_or(0.0, |f| f.surface_drop),
         fluid: s.fluid,
+        axis: match s.axis {
+            dwell_blocks::Axis::X => 0,
+            dwell_blocks::Axis::Y => 1,
+            dwell_blocks::Axis::Z => 2,
+        },
     }
 }
 
@@ -167,6 +175,7 @@ fn fallback_style(shape: usize, flooded: bool) -> MaterialStyle {
         outline: true,
         surface_drop: 0.0,
         fluid: None,
+        axis: 1,
     }
 }
 

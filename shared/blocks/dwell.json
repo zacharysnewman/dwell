@@ -211,11 +211,17 @@
       }
     },
     {
+      "$comment": "A trunk or branch (docs/FELLING.md): a carrier, holding up the leaves on it while a path of logs reaches the ground, and falling when cut off. Its axis turns its end grain (top, bottom) to face along it, so a felled trunk lies along x or z.",
       "name": "log",
       "sound": "dwell:wood",
       "density": 700,
       "shape": "full",
       "placeable": true,
+      "support": "carrier",
+      "axisProperty": "axis",
+      "properties": {
+        "axis": ["y", "x", "z"]
+      },
       "color": "#7a5236",
       "textures": {
         "top": "logTop",
@@ -224,12 +230,15 @@
       }
     },
     {
-      "$comment": "Drawn cutout: the leaves tile has transparent gaps between the leaves. lightFilter: a canopy dims the sky light under it rather than shutting it out (docs/DAY_NIGHT.md §11).",
+      "$comment": "Drawn cutout: the leaves tile has transparent gaps between the leaves. lightFilter: a canopy dims the sky light under it rather than shutting it out (docs/DAY_NIGHT.md §11). A rider (docs/FELLING.md): held up by the logs it belongs to, holding nothing; passable: players walk through it (owner, 2026-10-27).",
       "name": "leaves",
       "sound": "dwell:grass",
       "density": 200,
       "shape": "full",
       "placeable": true,
+      "support": "rider",
+      "passable": true,
+      "nearFade": 1.2,
       "render": "cutout",
       "color": "#6fa83a",
       "textures": "leaves",
@@ -409,6 +418,9 @@
       "density": 220,
       "shape": "full",
       "placeable": true,
+      "support": "rider",
+      "passable": true,
+      "nearFade": 1.2,
       "render": "cutout",
       "color": "#c9dccb",
       "textures": {

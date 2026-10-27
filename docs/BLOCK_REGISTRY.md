@@ -101,6 +101,17 @@ non-boolean, naming the block. `StateInfo::outline`; a look option outside the r
 synced as look tag `0x8c` only where it differs from the look's default (the build's own payload is
 unchanged).
 
+**Support, passing through, axis and near fade** (**built**, 0.36.0; [`FELLING.md`](./FELLING.md)):
+`"support": "ground" | "carrier" | "rider"` (absent: ground) is what a block counts as for holding
+things up (logs carry, leaves ride; the felling pass of F2 reads it), synced as rule tag 12 where
+not ground; `"passable": true` lets players (and falling pieces) through it while targeting still
+hits it (leaves; rule flag 512), out of the terrain collider and the controller's probes;
+`"axisProperty"` names a property of `x`, `y`, `z` along which the block's top and bottom tiles face,
+its side tile turned to run along it (the log's `axis`; look tag `0x90` where not y); `"nearFade"`
+(m) dissolves its faces near the eye (leaves 1.2 m, so a canopy the eye is in shows round it), per
+atlas tile in the shader's tile table (look tag `0x91`). `StateInfo::support_role`, `passable`,
+`axis`, `near_fade`.
+
 **Light per block** (**built**, Phase 45; [`DAY_NIGHT.md`](./DAY_NIGHT.md) §11): `"lightFilter": 0–15`
 is how many levels a cell of the block takes off the flood light passing into it (15: none gets
 in); absent, 15 for full cubes that are not see-through and 0 for everything else

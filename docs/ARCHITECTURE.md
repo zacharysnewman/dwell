@@ -857,7 +857,7 @@ field's half-height top and follows a slope; sent as an optional last byte of th
 field, only when false). Normals lean up (0.8) so plants are lit like the ground from every side; the tint is
 that normal's face tint. Crosses need `"shape": "empty"`: no collider. **Placement rules** are block
 data too, checked by the server (§6.5): `placeOn` (block ids the block below must be),
-`needsSupport` (`"below"`: removed with what it stands on, in the same modification), `replaceable`
+`needsSupport` (`"below"`: removed with what it stands on, in the same modification), **[built, 0.36.0]** `support` and `passable` (what a block counts as for holding things up — logs carry, leaves ride — and players passing through it: leaves; BLOCK_REGISTRY.md, [`FELLING.md`](./FELLING.md)), `replaceable`
 (placing into its cell replaces it) `selectionBox` (a smaller box in the cell for targeting,
 line of sight and the outline, `dwell_world::edit::target_box`; on a block with a `facingProperty`
 written for facing north and turned per facing by `gen.mjs` (the ladder's is its plate, ⅛ m against

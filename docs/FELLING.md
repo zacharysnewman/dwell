@@ -1,0 +1,107 @@
+# Felling: pieces that lose their support fall, tip and settle
+
+**Status: F1 built (0.36.0); F2 next** ([ADR 0051](./adr/0051-felling.md)). The first use of the
+collapse pipeline planned in ARCHITECTURE.md §7.1–7.3 (Phases 20 and 22), for trees, on a general
+rule. Trees as unique things that grow over time stay [`TREE_GROWTH.md`](./TREE_GROWTH.md)'s.
+
+## 1. Brief and the owner's answers (2026-10-27)
+
+> "I want trees to be unique things, eventually they'll grow over time, for now though I want to be
+> able to 'cut' them down. Any piece should become a separate entity when disconnected from their
+> root, fall, tipping over, and then settling back to a static block."
+
+| Question | Answer |
+|---|---|
+| What can fall? | **Trees first, as a general rule in block data**: what each block counts as for support. Logs and leaves opt in now; terrain and player builds can opt in later by data alone. |
+| What holds a tree up? | **Logs carry, leaves ride.** A tree stands while its logs connect down to the ground; leaves hold nothing up and fall with their logs. *Falling* leaves don't collide with terrain, and when a piece settles, a leaf that would land inside another block is destroyed. |
+| Leaves and players | "Leaves should no longer be solid to a player with this update": players pass through leaves, standing or falling. |
+| Multiplayer | **Server-run**, as ARCHITECTURE.md §7 plans: the server simulates each falling piece and replicates it; every client sees the same fall and the same blocks after. |
+| Players and falling pieces | **All three:** a falling piece pushes players, can hurt them, and can be stood on and ridden. |
+
+## 2. Support as block data
+
+Each block has a `support` role (`shared/blocks/dwell.json`, generated like the rest of the block
+data; a bad value fails generation):
+
+| Role | Meaning | Blocks today |
+|---|---|---|
+| `ground` (default) | Anchors whatever touches it; never falls. | Every block not listed below: terrain, player builds. |
+| `carrier` | Stands while a path of carriers leads to a `ground` block it touches; holds up the riders on it. | `dwell:log` |
+| `rider` | Holds nothing up; stays while a carrier it belongs to stands. | `dwell:leaves`, `dwell:snowy_leaves` |
+
+And `passable: true` (leaves): players and falling pieces pass through it; targeting still hits it,
+so it can be broken and built on.
+
+**The rule (integrity).** When a block is removed (or a piece settles), the server looks at the
+carriers and riders around the change, budgeted per tick (`INTEGRITY_BUDGET_VOXELS`, §7.4):
+
+1. The carriers connected to the change through carriers (face neighbours) are flood-filled into
+   components; a component is **anchored** if any of its carriers touches a `ground` block.
+2. Each rider nearby belongs to the carrier nearest it through riders (a multi-source search from the
+   carriers, at most `riderReach` cells), so two trees' touching canopies split between their own
+   trunks and leaves never hold up a neighbour's crown.
+3. Each unanchored component, with its riders, becomes one **piece**: its cells leave the grid in the
+   same reliable change (reason `Collapse`) and it becomes a body. Riders that belong to no carrier
+   within reach fall alone (a leaves-only piece, §3).
+
+## 3. The falling piece
+
+- **Body:** one dynamic Rapier body per piece (`dwell-physics`), a compound of one box per carrier
+  cell (1 × ½ × 1 m), its mass, centre of mass and inertia from every cell's `density` (riders add
+  mass but no collider). Gravity is its face's (toward the midplane, through the flip band as
+  bodies already do). A trunk cut low tips over because its centre of mass is over the cut.
+- **What it hits:** terrain, other pieces, players. Its riders don't collide (the owner: falling
+  leaves pass through terrain). A leaves-only piece has no collider at all: it falls for
+  `looseRiderSeconds` and is removed (leaves falling away), never settling inside the ground.
+- **Players:** pushed by it (as by any Tier 1 body, PLAYER_CONTROLLER.md §6.6), with players
+  pushing back only up to `max_push_force` and not at all past `pushable_mass_limit`; hurt by it
+  (its speed into the player past a threshold, as impact damage); and able to stand on and ride it
+  (`step_platform`, built).
+- **Network (new messages, a new protocol version):** reliable `EntitySpawn` (id, the piece's cells
+  and states, its pose) and `EntityDespawn`; its pose and velocities in the snapshot datagrams at the
+  snapshot rate; clients interpolate it (`INTERP_DELAY_MS`) and insert it as a kinematic body so
+  their own player collides with and rides it. Drawn as a greedy mesh of its cells with the body's
+  transform (ADR 0044).
+
+## 4. Settling
+
+When a piece has moved less than `SLEEP_LINEAR_THRESHOLD` / `SLEEP_ANGULAR_THRESHOLD` for
+`SLEEP_SECONDS` (§7.3) it becomes blocks again:
+
+1. Its rotation snaps to the nearest of the 24 axis-aligned orientations and its position to the
+   grid; each cell maps to a world cell, its state turned with it (a log's `axis`: a felled trunk
+   lies along x or z).
+2. A rider whose cell is taken (by terrain, a player or another piece's cell) is destroyed (the
+   owner). A carrier whose cell is taken tries one cell up, then sideways; else it is destroyed.
+   Cells overlapping a player count as taken, so nobody is buried.
+3. The cells are written in one reliable change (reason `Rebake`) with `EntityDespawn`; the placed
+   carriers then pass through integrity again (a log left resting only on leaves falls again; a
+   piece that settles three times without anchoring stays where it is).
+
+## 5. Data and tunables
+
+Block data: `support` (`ground` | `carrier` | `rider`), `passable`, `density` (exists), log `axis`
+(`y` | `x` | `z`, its texture turned by it). Felling tunables (`shared/physics/felling.json`,
+generated, validated): `riderReach` (cells, 6), `looseRiderSeconds` (1.5), the hit damage's speed
+threshold and scale, `maxPieceCells` (a bound on one piece), and the §7.4 sleep values.
+
+## 6. Stages (each its own release)
+
+- **F1 — Data and leaves** **[built, 0.36.0]:** `support`, `passable` and the log's `axis` as block
+  data, generated, validated and synced; leaves passable to players (out of the terrain collider and
+  the controller's probes; `a_wall_of_leaves_is_walked_through`, both faces, red on 0.35.1); logs drawn
+  along their axis (end grain on the ends, the bark turned; mesher test red on 0.35.1); and, the
+  owner asking "we'll likely need to do some kind of new rendering for when your camera is inside
+  leaf blocks", leaves' faces dissolve within `nearFade` (1.2 m) of the eye, dithered, so a canopy
+  the eye is in shows round it without faces against the lens (checked in Chrome). No falling yet.
+- **F2 — The loop:** integrity on removal; pieces as server bodies; the protocol messages; client
+  rendering, interpolation and kinematic proxies; settling. Cutting a trunk fells the tree, in
+  multiplayer.
+- **F3 — Players and polish:** push limits, hit damage, riding checked on falling and rolling logs;
+  sounds (a crack, the thud of landing); the bench and e2e scenarios.
+
+## 7. Not in this design
+
+Trees as records that grow (TREE_GROWTH.md §5); terrain and builds falling (opt in by data later,
+with Phase 20's remaining exit criteria: large structures across ticks, crush); explosions and
+Tier 2 debris (Phase 21).
