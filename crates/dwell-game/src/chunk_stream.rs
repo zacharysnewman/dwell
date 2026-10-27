@@ -237,7 +237,59 @@ pub fn padded_from_neighbours(world: &mut VoxelWorld, coord: Coord) -> Vec<u16> 
             }
         }
     }
+    continue_fluids_into_missing(&mut out, &near, n);
     out
+}
+
+/// Where a horizontal neighbour is missing (beyond the streamed sphere, or not arrived yet) and the
+/// chunk's own edge column holds a fluid (water, or a flooded block), the apron goes on with that
+/// voxel: the water's side isn't drawn as a wall into the unknown, which showed as dark blue
+/// rectangles in rows at the streamed view's edge (docs/BUGS.md 8). Everything else stays air, as
+/// before (the ground's border faces, and the open water surface where no chunk is above). When the
+/// neighbour arrives the chunk is meshed again with its real voxels.
+fn continue_fluids_into_missing(
+    out: &mut [u16],
+    near: &[Option<&[u16; CHUNK_VOLUME]>; 27],
+    n: i32,
+) {
+    let key = |dx: i32, dy: i32, dz: i32| ((dx + 1) + 3 * (dy + 1) + 9 * (dz + 1)) as usize;
+    let missing = |dx: i32, dy: i32, dz: i32| (dx, dz) != (0, 0) && near[key(dx, dy, dz)].is_none();
+    if !(-1..=1).any(|dy| (-1..=1).any(|dz| (-1..=1).any(|dx| missing(dx, dy, dz)))) {
+        return;
+    }
+    let split = |v: i32| -> (i32, i32) {
+        if v < 0 {
+            (-1, v + n)
+        } else if v >= n {
+            (1, v - n)
+        } else {
+            (0, v)
+        }
+    };
+    let edge = [-1, n];
+    for y in -1..=n {
+        let (dy, ly) = split(y);
+        let Some(own) = near[key(0, dy, 0)] else {
+            continue;
+        };
+        for z in -1..=n {
+            let (dz, _) = split(z);
+            for x in -1..=n {
+                if !edge.contains(&x) && !edge.contains(&z) {
+                    continue;
+                }
+                let (dx, _) = split(x);
+                if !missing(dx, dy, dz) {
+                    continue;
+                }
+                let v = own[local_index(x.clamp(0, n - 1), ly, z.clamp(0, n - 1))];
+                let info = dwell_blocks::info(v);
+                if info.liquid || info.flooded {
+                    out[padded_index(x, y, z)] = v;
+                }
+            }
+        }
+    }
 }
 
 /// The worldgen workers: generate a Generated chunk's voxels.
@@ -970,16 +1022,83 @@ mod tests {
         check_padding(&mut streamed, [0, 0, 0]);
     }
 
+    #[test]
+    fn a_water_chunk_at_the_streamed_edge_has_no_wall_into_the_unknown() {
+        // docs/BUGS.md 8: a chunk of water whose horizontal neighbours aren't loaded (beyond the
+        // streamed sphere) read air beyond its border and meshed the water's side there: rows of
+        // dark blue rectangles across lakes and the sea. Its apron goes on with the water instead;
+        // the ground and the air over the water stay as they were.
+        let water = dwell_blocks::require("dwell:water");
+        let stone = dwell_blocks::require("dwell:stone");
+        let n = CHUNK_SIZE;
+        let mut chunk = Chunk::default();
+        for y in 0..n {
+            for z in 0..n {
+                for x in 0..n {
+                    let v = if y < 4 {
+                        stone
+                    } else if y < 20 {
+                        water
+                    } else {
+                        0
+                    };
+                    chunk.set_at(local_index(x, y, z), v);
+                }
+            }
+        }
+        let mut streamed = VoxelWorld::streamed();
+        streamed.put(ChunkCoord::new(0, 0, 0), chunk);
+        let padded = padded_from_neighbours(&mut streamed, [0, 0, 0]);
+        for (x, z) in [(-1, 5), (n, 5), (7, -1), (7, n), (-1, -1), (n, n)] {
+            assert_eq!(
+                padded[padded_index(x, 10, z)],
+                water,
+                "water beside at ({x}, {z})"
+            );
+            assert_eq!(
+                padded[padded_index(x, 2, z)],
+                0,
+                "the ground's border as before"
+            );
+            assert_eq!(padded[padded_index(x, 25, z)], 0, "air over the water");
+        }
+        // Over and under (no chunk there), air as before: the surface is drawn.
+        assert_eq!(padded[padded_index(5, n, 5)], 0);
+        assert_eq!(padded[padded_index(5, -1, 5)], 0);
+    }
+
     fn check_padding(world: &mut VoxelWorld, coord: Coord) {
         let fast = padded_from_neighbours(world, coord);
         let origin = coord.map(|c| c * CHUNK_SIZE);
         let p = PAD as i32;
+        let n = CHUNK_SIZE;
         for y in -1..p - 1 {
             for z in -1..p - 1 {
                 for x in -1..p - 1 {
+                    let mut at = |x: i32, y: i32, z: i32| {
+                        let c = [origin[0] + x, origin[1] + y, origin[2] + z];
+                        (
+                            world
+                                .find(dwell_world::chunk_of(c[0], c[1], c[2]))
+                                .is_some(),
+                            world.get_voxel(c[0], c[1], c[2]),
+                        )
+                    };
+                    let (loaded, v) = at(x, y, z);
+                    // Where the chunk is missing beside the chunk's own column, a fluid at its
+                    // edge goes on (continue_fluids_into_missing); else it reads as each voxel.
+                    let (own_loaded, edge) = at(x.clamp(0, n - 1), y, z.clamp(0, n - 1));
+                    let fluid =
+                        |s: u16| dwell_blocks::info(s).liquid || dwell_blocks::info(s).flooded;
+                    let horizontal = !(0..n).contains(&x) || !(0..n).contains(&z);
+                    let want = if !loaded && horizontal && own_loaded && fluid(edge) {
+                        edge
+                    } else {
+                        v
+                    };
                     assert_eq!(
                         fast[padded_index(x, y, z)],
-                        world.get_voxel(origin[0] + x, origin[1] + y, origin[2] + z),
+                        want,
                         "{coord:?} at {x},{y},{z}"
                     );
                 }

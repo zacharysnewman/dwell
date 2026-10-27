@@ -35,7 +35,20 @@ impl View {
             d,
         )
     }
+
+    /// The ray through a pixel, scaled to view depth 1 (the shader's `view_ray`).
+    pub fn ray(&self, px: [f32; 2]) -> [f32; 3] {
+        let nx = px[0] / self.size[0] * 2.0 - 1.0;
+        let ny = 1.0 - px[1] / self.size[1] * 2.0;
+        std::array::from_fn(|i| {
+            self.forward[i] + nx * self.tan[0] * self.right[i] + ny * self.tan[1] * self.up[i]
+        })
+    }
 }
+
+/// How far over the reflecting surface (m, along the face's up) the scene at a side's exit pixel
+/// must stand to stand in for what lies past the side.
+pub const SIDE_LAND_M: f32 = 0.25;
 
 /// One tier's march (dwell-look `reflection_uniforms`).
 #[derive(Clone, Copy, Debug)]
@@ -120,6 +133,23 @@ pub fn trace(
         }
         prev_t = t;
         prev_d = d;
+    }
+    // Out through a side with no hit: what lies past it is unknown. Where the scene at the exit
+    // pixel stands over the surface (land: a mountain running off the screen), it stands in, so the
+    // reflection goes on to the edge instead of cutting to the sky's white haze (docs/BUGS.md 9).
+    // The floor seen through open water lies under the surface: a miss, else it drew streaks.
+    let exit = px_at(t_end);
+    let side = exit[0] <= 0.5 + 1e-3 || exit[0] >= view.size[0] - 0.5 - 1e-3;
+    if t_end < 1.0 && side {
+        let depth = depth_at(exit);
+        let ray = view.ray(exit);
+        if depth > 0.0 && ray[1] * depth > p[1] + SIDE_LAND_M {
+            let fade = 1.0 - smoothstep(ssr.fade_from, ssr.reach, t_end * len);
+            return Some(Hit {
+                px: exit,
+                weight: edge_weight(view, exit, ssr.edge_fade) * fade,
+            });
+        }
     }
     None
 }
@@ -352,6 +382,21 @@ mod tests {
         let (q, _) = surface(&v, 5.0);
         let left = norm([-1.0, 0.01, 0.05]);
         assert_eq!(trace(&v, q, left, &MEDIUM, &floor), None);
+        // docs/BUGS.md 9: land past the left side (a mountain running off the screen) is met by
+        // no step; the scene at the exit pixel stands over the surface, so it stands in there.
+        let land = lake(v, 1e6, 3000.0);
+        let mountain = |px: [f32; 2]| {
+            let d = ray(&v, px);
+            if px[0] < 2.0 && d[1] > -0.01 {
+                900.0
+            } else {
+                land(px)
+            }
+        };
+        let (q, _) = surface(&v, 20.0);
+        let left = norm([-1.0, 0.05, 0.3]);
+        let hit = trace(&v, q, left, &MEDIUM, mountain).expect("the edge's land stands in");
+        assert!(hit.px[0] <= 1.0 && hit.weight > 0.5, "{hit:?}");
     }
 
     /// A tier's march from the data (as `reflection_uniforms` gives the shader).
@@ -390,5 +435,11 @@ mod tests {
             let at = ray(&v, hit.px);
             assert!((at[1] * 40.0 / at[2]).abs() < 0.5, "tier {level}: {hit:?}");
         }
+    }
+
+    #[test]
+    fn the_shaders_side_margin_is_this_one() {
+        let wgsl = crate::render::shaders::source(1);
+        assert!(wgsl.contains(&format!("const SIDE_LAND_M: f32 = {SIDE_LAND_M:?};")));
     }
 }

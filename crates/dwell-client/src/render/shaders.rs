@@ -1670,6 +1670,9 @@ fn ssr_edge(px: vec2f, size: vec2f) -> f32 {
 // from the surface point `p` marched on screen through the scene's view depth, in even steps to
 // the screen's edge or the reach, a hit pinned by binary steps. Where it meets the scene (xy, in
 // pixels) and how much of the reflection that gives (z; 0: missed).
+// render/reflection.rs `SIDE_LAND_M` (a test pins them equal).
+const SIDE_LAND_M: f32 = 0.25;
+
 fn ssr_trace(p: vec3f, r: vec3f, size: vec2f) -> vec3f {
     let steps = i32(frame.reflect.x);
     let d0 = dot(p, frame.forward.xyz);
@@ -1718,6 +1721,18 @@ fn ssr_trace(p: vec3f, r: vec3f, size: vec2f) -> vec3f {
         }
         prev_t = t;
         prev_d = d;
+    }
+    // Out through a side with no hit: the scene at the exit pixel stands in where it stands over
+    // the surface (land), not the floor seen through the water (render/reflection.rs `trace`).
+    let exit = a.xy + delta * t_end;
+    if (t_end < 1.0 && (exit.x <= 0.5 + 1e-3 || exit.x >= size.x - 0.5 - 1e-3)) {
+        let depth = ssr_depth(exit);
+        let ndc = vec2f(exit.x / size.x * 2.0 - 1.0, 1.0 - exit.y / size.y * 2.0);
+        let at = view_ray(ndc) * depth;
+        if (depth > 0.0 && face_rise(frame.eye.y, at) > face_rise(frame.eye.y, p) + SIDE_LAND_M) {
+            let w = ssr_edge(exit, size) * (1.0 - smoothstep(frame.reflect.w, frame.reflect.z, t_end * len));
+            return vec3f(exit, w);
+        }
     }
     return vec3f(0.0);
 }
