@@ -261,6 +261,24 @@ pub fn bands() -> &'static Bands {
 /// `band`: the bedrock in the face's first `bedrock_rows` from the midplane, the core's stone over
 /// it up to `CORE_LAYERS`, then the band's layers.
 fn fill(band: Band, top: i32, depth: i64) -> StateId {
+    fill_soil(band, top, depth, under_rows())
+}
+
+/// The `under` block's least depth under a top block (rows): `underDepth` m.
+fn under_rows() -> i64 {
+    (S.under_depth / CELL_H) as i64
+}
+
+/// The soil under a column's top (rows): `underDepth`, or down to its lowest horizontal
+/// neighbour's top, whichever is deeper, so the side a terrace's step shows is soil, never stone:
+/// on grass and snow the soil mantles the hillside, and bare stone shows only where the rock band
+/// is (steep faces), as whole areas, not as stray risers speckling a slope (owner, 2026-10-26).
+pub fn soil_rows(top: i32, lowest_neighbour_top: i32) -> i64 {
+    under_rows().max(i64::from(top - lowest_neighbour_top))
+}
+
+/// [`fill`] with `soil` rows of the `under` block under a ground or snow top.
+fn fill_soil(band: Band, top: i32, depth: i64, soil: i64) -> StateId {
     let y = i64::from(top) - depth;
     if y < i64::from(MIDPLANE_Y + MIDPLANE.bedrock_rows) {
         return bedrock();
@@ -281,7 +299,7 @@ fn fill(band: Band, top: i32, depth: i64) -> StateId {
         Band::Ground | Band::Snow => {
             if depth == 0 {
                 if band == Band::Snow { b.snow } else { b.ground }
-            } else if depth <= (S.under_depth / CELL_H) as i64 {
+            } else if depth <= soil {
                 b.under
             } else {
                 M.stone
@@ -693,17 +711,32 @@ impl TerrainGenerator {
     /// The state `generate` puts at (x, y, z) (face-local), from the column alone (no ramps,
     /// decorations, structures or portals).
     pub fn state_at(&self, x: i32, y: i32, z: i32) -> StateId {
-        Self::state_in(&self.column_at(x, z), y)
+        let col = self.column_at(x, z);
+        let soil = self.soil_at(x, z, &col, |nx, nz| self.column_at(nx, nz));
+        Self::state_in(&col, y, soil)
     }
 
-    fn state_in(col: &Column, y: i32) -> StateId {
+    /// [`soil_rows`] for column (x, z), its neighbours' columns from `column`.
+    fn soil_at(&self, x: i32, z: i32, col: &Column, column: impl Fn(i32, i32) -> Column) -> i64 {
+        let top = top_voxel(col.height);
+        let lowest = [(1, 0), (-1, 0), (0, 1), (0, -1)]
+            .iter()
+            .map(|(dx, dz)| column(x + dx, z + dz))
+            .filter(|c| !c.outside)
+            .map(|c| top_voxel(c.height))
+            .min()
+            .unwrap_or(top);
+        soil_rows(top, lowest)
+    }
+
+    fn state_in(col: &Column, y: i32, soil: i64) -> StateId {
         if col.outside || !(FACE_MIN_Y..FACE_MAX_Y).contains(&y) {
             return M.air;
         }
         let top = top_voxel(col.height);
         let water = col.water_row();
         if y <= top {
-            let m = fill(col.band, top, i64::from(top - y));
+            let m = fill_soil(col.band, top, i64::from(top - y), soil);
             if y == top {
                 under_water(m, y, col.flood_row())
             } else {
@@ -955,6 +988,16 @@ impl TerrainGenerator {
                     self.top_pieces(&cols, x0, z0, x, z, top)
                 };
                 let first_piece = top + 1 - pieces.len() as i32;
+                // The soil down to the lowest neighbour's top (neighbours past the chunk from
+                // `column_at`, so the answer doesn't depend on the chunk asking).
+                let soil = self.soil_at(x0 + x, z0 + z, &col, |nx, nz| {
+                    let (ix, iz) = (nx - x0, nz - z0);
+                    if (0..S).contains(&ix) && (0..S).contains(&iz) {
+                        cols[(iz * S + ix) as usize]
+                    } else {
+                        self.column_at(nx, nz)
+                    }
+                });
                 for ly in 0..S {
                     let y = y0 + ly;
                     if !in_volume(y) {
@@ -971,7 +1014,7 @@ impl TerrainGenerator {
                     } else if y == top {
                         *v = under_water(fill(col.band, top, 0), y, flood);
                     } else if y < top {
-                        *v = fill(col.band, top, i64::from(top - y));
+                        *v = fill_soil(col.band, top, i64::from(top - y), soil);
                     } else if y < water {
                         *v = M.water;
                     }
@@ -1394,6 +1437,19 @@ impl TerrainGenerator {
                 let top = i64::from(top_voxel(col.height));
                 let water = i64::from(col.water_row());
                 let wet = water > top + 1;
+                // The soil as the chunks mantle it: down to the lowest neighbouring cell's top.
+                let lod_soil = |x: i32, z: i32| {
+                    let n = lod::SECTION_CELLS;
+                    let lowest = [(1, 0), (-1, 0), (0, 1), (0, -1)]
+                        .iter()
+                        .map(|(dx, dz)| ((x + dx).clamp(-1, n), (z + dz).clamp(-1, n)))
+                        .map(|(nx, nz)| cols[lod::column_index(nx, nz)])
+                        .filter(|c| !c.outside)
+                        .map(|c| top_voxel(c.height))
+                        .min()
+                        .unwrap_or(top as i32);
+                    soil_rows(top as i32, lowest)
+                };
                 for y in -1..=lod::SECTION_CELLS {
                     let a = o.y + i64::from(y) * cell;
                     let m = &mut cells[lod::cell_index(x, y, z)];
@@ -1411,7 +1467,7 @@ impl TerrainGenerator {
                     }
                     let depth = (top - (a + cell - 1)).max(0);
                     if depth > 0 {
-                        *m = fill(col.band, top as i32, depth.min(1000));
+                        *m = fill_soil(col.band, top as i32, depth.min(1000), lod_soil(x, z));
                         continue;
                     }
                     // The column's top: its surface seen from above. Water no cell sampled shows

@@ -1137,3 +1137,69 @@ fn no_shore_column_has_drawn_water_higher_than_the_dry_land_beside_it() {
         );
     }
 }
+
+dwell_world::both_faces!(
+    /// The owner (2026-10-26): no random splotches of stone. Where a grass or snow column of the
+    /// distant terrain (LOD cells of 2–16 m) stands higher than a neighbour, the cells its step
+    /// shows are soil, never stone: stone shows on its own only where the rock band is. (The LOD's
+    /// cells reach deeper than `underDepth` under a column's top, and its risers took the stone.)
+    fn lod_risers_show_soil_not_stone(f: FaceFrame) {
+        use dwell_world::lod::{self, LodCells, LodCoord};
+        let t = BifacialTerrain::new(7);
+        let g = t.local(f.face);
+        let stone = require("dwell:stone");
+        let (mut risers, mut bad) = (0, 0);
+        for level in 1..=4 {
+            let s = lod::section_size(level);
+            let cell = lod::cell_size(level);
+            for (x, z) in [(23_700i64, 2_300i64), (21_300, 2_700), (6_400, 21_100)] {
+                let h = i64::from(g.ground_y(x as i32, z as i32).unwrap_or(0));
+                let at = |v: i64, o: i64| (v - o).div_euclid(s) as i32;
+                let c = LodCoord::new(
+                    level,
+                    at(x, lod::ORIGIN_X),
+                    at(h, lod::ORIGIN_Y),
+                    at(z, lod::ORIGIN_Z),
+                );
+                let mut cells = LodCells::new();
+                g.generate_lod(c, &mut cells, None);
+                if cells.len() != lod::VOLUME {
+                    continue;
+                }
+                let n = lod::SECTION_CELLS;
+                let top = |x: i32, z: i32| {
+                    (-1..=n).rev().find(|&y| {
+                        cells[lod::cell_index(x, y, z)] != M.air
+                            && cells[lod::cell_index(x, y, z)] != M.water
+                    })
+                };
+                for zi in 0..n {
+                    for xi in 0..n {
+                        let Some(ty) = top(xi, zi) else { continue };
+                        let m = cells[lod::cell_index(xi, ty, zi)];
+                        if m == stone || ty >= n {
+                            continue; // a rock column, or its top past the section
+                        }
+                        let lowest = [(1, 0), (-1, 0), (0, 1), (0, -1)]
+                            .iter()
+                            .filter_map(|(dx, dz)| top(xi + dx, zi + dz))
+                            .min()
+                            .unwrap_or(ty);
+                        for y in (lowest + 1).max(-1)..ty {
+                            risers += 1;
+                            if cells[lod::cell_index(xi, y, zi)] == stone {
+                                bad += 1;
+                            }
+                        }
+                    }
+                }
+                let _ = cell;
+            }
+        }
+        assert!(risers > 50, "risers checked: {risers}");
+        assert_eq!(
+            bad, 0,
+            "{bad} of {risers} LOD riser cells under a soil top are stone"
+        );
+    }
+);
