@@ -504,6 +504,8 @@ pub struct Game<S: Scene> {
     pub interaction: BlockInteraction,
     /// Holding Place builds on in the build mode (docs/ITEMS.md §5).
     pub drag: dwell_game::build_drag::BuildDrag,
+    /// The look's unit direction at the last frame (bridging help's aim).
+    view_dir: [f64; 3],
     /// Drag fills sent and not yet answered (prediction id → the fill and its tries so far).
     drag_sent: std::collections::HashMap<u32, (dwell_protocol::RegionEdit, u8)>,
     /// Box select, fill, copy/paste, undo (§6.5); `enabled` once the server announces region edits.
@@ -666,6 +668,7 @@ impl<S: Scene> Game<S> {
             eye,
             interaction: BlockInteraction::new(),
             drag: dwell_game::build_drag::BuildDrag::new(),
+            view_dir: [0.0, 0.0, 1.0],
             drag_sent: std::collections::HashMap::new(),
             region: RegionTools::new(),
             brush: BrushTool::new(),
@@ -1381,12 +1384,13 @@ impl<S: Scene> Game<S> {
                 request,
                 dir,
                 material,
+                pressed_ms: now_ms,
             });
             return self.drag.waiting().is_some() || self.edit(action, now_ms);
         }
         let placed = self.edit(action, now_ms);
         if placed && let Some(cells) = piece {
-            self.drag.start(holder, &cells, dir, material, drag);
+            self.drag.start(holder, &cells, dir, material, drag, now_ms);
         }
         placed
     }
@@ -1396,39 +1400,13 @@ impl<S: Scene> Game<S> {
     /// builds on from there. A region fill: the server refuses a place against a face the eye
     /// can't see, as the side of the block underfoot is. Plain blocks only (`build_drag::drags`).
     fn edge_place(&mut self, holder: Option<dwell_game::build_drag::Holder>, now_ms: f64) -> bool {
-        use dwell_game::build_drag::{DragWorld, drags, edge_target};
-        let Some(slot) = self.interaction.palette().get(self.interaction.selected()) else {
+        let Some((cells, dir, material)) = self.edge_spot() else {
             return false;
         };
-        let (material, rows) = (slot.material, i32::from(slot.rows));
-        if !self.region.enabled || !drags(material) {
-            return false;
-        }
-        let Some(body) = self.own_capsule() else {
-            return false;
-        };
-        let feet = self.current.feet();
-        let yaw = self.interaction.yaw();
-        let me = self.drag_body();
-        let mut world = DragCells {
-            world: self.streamer.store_mut(),
-            me,
-        };
-        let Some((under, dir)) = edge_target(feet, f64::from(body.radius), yaw, &mut world) else {
-            return false;
-        };
-        // Level with the block stood on: its top cell's row and down from it (a 1 m piece lines up
-        // with a 1 m block underfoot; up would be where the body is).
-        let up = dwell_world::FaceFrame::at_row(under[1]).sign();
-        let cells: Vec<[i32; 3]> = (0..rows)
-            .map(|r| [under[0] + dir[0], under[1] - r * up, under[2] + dir[2]])
-            .collect();
-        if !cells.iter().all(|&c| world.free(c)) {
-            return false;
-        }
+        let rows = cells.len();
         let min = [
             cells[0][0],
-            cells.iter().map(|c| c[1]).min().unwrap_or(under[1]),
+            cells.iter().map(|c| c[1]).min().unwrap_or(cells[0][1]),
             cells[0][2],
         ];
         let fill = dwell_protocol::RegionEdit {
@@ -1451,9 +1429,61 @@ impl<S: Scene> Game<S> {
                 dir,
                 material,
                 dwell_game::items::ItemDrag::Modes,
+                now_ms,
             );
         }
         true
+    }
+
+    /// Where bridging help would build now (`build_drag::edge_target`: the edge looked toward, at
+    /// the level stood on): the piece's cells (its top cell level with the block stood on, down
+    /// from it), its direction out from the platform and the block; None when it wouldn't (no
+    /// plain block selected, nothing under the body, no edge in reach).
+    fn edge_spot(&mut self) -> Option<(Vec<[i32; 3]>, [i32; 3], StateId)> {
+        use dwell_game::build_drag::{DragWorld, drags, edge_target};
+        let slot = self
+            .interaction
+            .palette()
+            .get(self.interaction.selected())?;
+        let (material, rows) = (slot.material, i32::from(slot.rows));
+        if !self.region.enabled
+            || !drags(material)
+            || slot.drag != dwell_game::items::ItemDrag::Modes
+            || self.brush.active()
+            || self.region.pasting()
+        {
+            return None;
+        }
+        let body = self.own_capsule()?;
+        let eye = self.target_eye?;
+        let feet = self.current.feet();
+        let view = self.view_dir;
+        let me = self.drag_body();
+        let settled = self.drag_sent.is_empty();
+        let mut world = DragCells {
+            world: self.streamer.store_mut(),
+            me,
+            settled,
+        };
+        let reach = f64::from(dwell_protocol::players::REACH_DISTANCE);
+        let (cell, dir) = edge_target(
+            feet,
+            f64::from(body.radius),
+            eye,
+            view,
+            reach,
+            material,
+            &mut world,
+        )?;
+        // Level with the block stood on: down from it (up would be where the body is).
+        let up = dwell_world::FaceFrame::at_row(cell[1]).sign();
+        let cells: Vec<[i32; 3]> = (0..rows)
+            .map(|r| [cell[0], cell[1] - r * up, cell[2]])
+            .collect();
+        cells
+            .iter()
+            .all(|&c| world.free(c, material))
+            .then_some((cells, dir, material))
     }
 
     /// `holder` let go of Place: its drag stroke ends.
@@ -1478,11 +1508,16 @@ impl<S: Scene> Game<S> {
         if let Some(w) = self.drag.waiting() {
             let m = Message::BlockEditRequest(w.request.clone());
             let me = self.drag_body();
+            let material = w.material;
             let clear = |world: &mut dwell_world::VoxelWorld, cells: &[[i32; 3]]| {
-                let mut free = DragCells { world, me };
+                let mut free = DragCells {
+                    world,
+                    me,
+                    settled: true,
+                };
                 cells
                     .iter()
-                    .all(|&c| dwell_game::build_drag::DragWorld::free(&mut free, c))
+                    .all(|&c| dwell_game::build_drag::DragWorld::free(&mut free, c, material))
             };
             if let Some(changes) = self.predicted_changes(&m)
                 && clear(
@@ -1505,16 +1540,20 @@ impl<S: Scene> Game<S> {
                     w.dir,
                     w.material,
                     dwell_game::items::ItemDrag::Modes,
+                    w.pressed_ms,
                 );
             }
         }
+        // It builds on once Place has been held a moment (a click places one block).
         if let Some(eye) = eye
-            && self.drag.active()
+            && self.drag.armed(now_ms)
         {
             let me = self.drag_body();
+            let settled = self.drag_sent.is_empty();
             let mut world = DragCells {
                 world: self.streamer.store_mut(),
                 me,
+                settled,
             };
             self.drag.aim(
                 eye,
@@ -1752,25 +1791,36 @@ impl<S: Scene> Game<S> {
         if !results.is_empty() {
             self.prediction.resolve(results, &mut self.streamer);
         }
-        // A refused drag fill goes again while its cells are still free (docs/ITEMS.md §5).
+        // A drag fill the server refused, or took but left as it was (it skips a cell its view of
+        // the body is in without refusing; the prediction then shows the server's state): a line
+        // goes back to it; any other goes again while its cells are still free (docs/ITEMS.md §5).
         for &(id, refused) in results {
-            if let Some((fill, tries)) = self.drag_sent.remove(&id)
-                && refused
-            {
-                let me = self.drag_body();
-                let mut world = DragCells {
-                    world: self.streamer.store_mut(),
-                    me,
-                };
-                let free = (0..i32::from(fill.size[1])).all(|r| {
-                    dwell_game::build_drag::DragWorld::free(
-                        &mut world,
-                        [fill.min[0], fill.min[1] + r, fill.min[2]],
-                    )
-                });
-                if free {
-                    self.drag.retry(fill, tries + 1);
-                }
+            let Some((fill, tries)) = self.drag_sent.remove(&id) else {
+                continue;
+            };
+            let missing = (0..i32::from(fill.size[1])).any(|r| {
+                let [x, y, z] = [fill.min[0], fill.min[1] + r, fill.min[2]];
+                self.streamer.store_mut().get_voxel(x, y, z) != fill.material
+            });
+            if !(refused || missing) || self.drag.refused(&fill) {
+                continue;
+            }
+            let me = self.drag_body();
+            let settled = self.drag_sent.is_empty();
+            let mut world = DragCells {
+                world: self.streamer.store_mut(),
+                me,
+                settled,
+            };
+            let free = (0..i32::from(fill.size[1])).all(|r| {
+                dwell_game::build_drag::DragWorld::free(
+                    &mut world,
+                    [fill.min[0], fill.min[1] + r, fill.min[2]],
+                    fill.material,
+                )
+            });
+            if free {
+                self.drag.retry(fill, tries + 1);
             }
         }
     }
@@ -2584,6 +2634,7 @@ impl<S: Scene> Game<S> {
         );
         self.target_eye = eye;
         let dir = view_direction(input.look.yaw, input.look.pitch, face);
+        self.view_dir = dir;
         self.drag_build(eye, dir, now_ms);
         self.region
             .aim(self.interaction.placement().map(|(c, _)| c));
@@ -2610,7 +2661,18 @@ impl<S: Scene> Game<S> {
             .borrow_mut()
             .set_brush_outline(self.brush.outline());
         let Some(t) = t else {
-            self.scene.borrow_mut().set_block_outline(None, FULL_CELL);
+            // Bridging help's ghost: where Place would build, the edge looked toward.
+            let ghost = self.edge_spot().map(|(cells, _, _)| {
+                let lowest = cells
+                    .iter()
+                    .copied()
+                    .min_by_key(|c| c[1])
+                    .unwrap_or(cells[0]);
+                let h = dwell_world::CELL_H as f32 * cells.len() as f32;
+                (dwell_world::pos_of_cell(lowest), ([0.0; 3], [1.0, h, 1.0]))
+            });
+            let (at, bounds) = ghost.map_or((None, FULL_CELL), |(p, b)| (Some(p), b));
+            self.scene.borrow_mut().set_block_outline(at, bounds);
             return;
         };
         // The outline is the box the block is aimed at: a plant's selection box, else its shape's
@@ -2992,26 +3054,28 @@ impl Puppets {
 struct DragCells<'a> {
     world: &'a mut dwell_world::VoxelWorld,
     me: Vec<dwell_world::edit::EditCapsule>,
-}
-
-/// A block may go into a cell holding `m`: air, a replaceable plant or water (an unknown id: no).
-fn open_cell(m: StateId) -> bool {
-    dwell_blocks::try_info(m).is_some_and(|s| {
-        m == dwell_world::M.air || (s.replaceable && !s.indestructible) || s.liquid
-    })
+    /// No drag fill awaits the server's answer.
+    settled: bool,
 }
 
 impl dwell_game::build_drag::DragWorld for DragCells<'_> {
     fn occupied(&mut self, [x, y, z]: [i32; 3]) -> bool {
-        !open_cell(self.world.get_voxel(x, y, z))
+        !dwell_game::build_drag::open_cell(self.world.get_voxel(x, y, z))
     }
     fn holds(&mut self, cell: [i32; 3], material: StateId) -> bool {
         dwell_world::edit::held_in_place(self.world, cell, material)
     }
+    fn settled(&mut self) -> bool {
+        self.settled
+    }
 
-    fn free(&mut self, [x, y, z]: [i32; 3]) -> bool {
-        open_cell(self.world.get_voxel(x, y, z))
-            && !dwell_world::edit::overlaps_player(dwell_world::M.stone, [x, y, z], &self.me)
+    fn free(&mut self, [x, y, z]: [i32; 3], material: StateId) -> bool {
+        dwell_game::build_drag::cell_free(
+            self.world.get_voxel(x, y, z),
+            material,
+            [x, y, z],
+            &self.me,
+        )
     }
 }
 

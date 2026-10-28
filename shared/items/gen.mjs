@@ -70,10 +70,11 @@ export function validateItems(data, blocks) {
 /** Checks the build modes (what holding Place does). */
 function validateBuildModes(m) {
   if (typeof m !== 'object' || m === null || Array.isArray(m)) fail('buildModes must be an object');
-  const extra = Object.keys(m).filter((k) => !['$comment', 'key', 'clearance', 'modes'].includes(k));
+  const extra = Object.keys(m).filter((k) => !['$comment', 'key', 'clearance', 'holdMs', 'modes'].includes(k));
   if (extra.length) fail(`buildModes: unknown ${extra.join(', ')}`);
   if (typeof m.key !== 'string' || !KEY_CODE.test(m.key)) fail('buildModes.key must be a KeyboardEvent.code, e.g. KeyL');
   if (typeof m.clearance !== 'number' || !(m.clearance >= 0 && m.clearance <= 0.5)) fail('buildModes.clearance must be 0..0.5 (m)');
+  if (!Number.isInteger(m.holdMs) || m.holdMs < 0 || m.holdMs > 2000) fail('buildModes.holdMs must be 0..2000 (ms)');
   if (!Array.isArray(m.modes) || m.modes.length === 0) fail('buildModes.modes must be a non-empty list');
   const names = new Set();
   m.modes.forEach((mode, i) => {
@@ -101,6 +102,8 @@ export function itemsRust(data) {
   const m = data.buildModes;
   rs.push('/// The key that cycles the build modes (`KeyboardEvent.code`).');
   rs.push(`pub const BUILD_MODE_KEY: &str = ${JSON.stringify(m.key)};`, '');
+  rs.push('/// How long (ms) Place is held before it builds on, so a click places one block.');
+  rs.push(`pub const BUILD_HOLD_MS: f64 = ${m.holdMs}.0;`, '');
   rs.push('/// How far (m) the player\'s own body must be clear of a cell before a block goes in it.');
   rs.push(`pub const BUILD_CLEARANCE: f64 = ${Number.isInteger(m.clearance) ? `${m.clearance}.0` : m.clearance};`, '');
   rs.push('/// What holding Place does after the first block, in the order the key cycles them.');

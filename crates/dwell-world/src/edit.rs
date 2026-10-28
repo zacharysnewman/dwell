@@ -349,7 +349,9 @@ pub fn supported_on(m: StateId, under: StateId) -> bool {
         };
         return s.place_on.contains(&name);
     }
-    s.needs_support == Support::None || info(under).solid
+    // Only what stands on the cell under it needs that cell: a ladder hangs on its wall (owner,
+    // 2026-10-28: breaking what was under a ladder took the ladders above it).
+    s.needs_support != Support::Below || info(under).solid
 }
 
 /// Whether `m` in `cell` is held where it is: a block hung on a wall (`needsSupport: behind`, a

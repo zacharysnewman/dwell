@@ -46,6 +46,7 @@ test('bad items fail with the entry and the problem', () => {
     [(d) => (d.buildModes.key = 'l'), /buildModes\.key must be a KeyboardEvent\.code/],
     [(d) => (d.buildModes.modes = []), /buildModes\.modes must be a non-empty list/],
     [(d) => (d.buildModes.clearance = 2), /buildModes\.clearance must be 0\.\.0\.5/],
+    [(d) => (d.buildModes.holdMs = -1), /buildModes\.holdMs must be 0\.\.2000/],
   ];
   for (const [change, message] of cases) {
     const d = loadItems();

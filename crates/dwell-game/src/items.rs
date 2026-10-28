@@ -30,7 +30,7 @@ pub struct ItemDef {
 mod table {
     include!("items.gen.rs");
 }
-pub use table::{BUILD_CLEARANCE, BUILD_MODE_KEY, BUILD_MODES, ITEMS};
+pub use table::{BUILD_CLEARANCE, BUILD_HOLD_MS, BUILD_MODE_KEY, BUILD_MODES, ITEMS};
 
 /// The item named `name`.
 pub fn item(name: &str) -> Option<&'static ItemDef> {

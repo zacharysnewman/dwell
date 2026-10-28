@@ -255,3 +255,61 @@ test('a held ladder climbs the wall it is hung on, and stops where the wall ends
   await page.waitForTimeout(500);
   expect(await isLadder(y + 6)).toBe(false);
 });
+
+test('crouch-jumping a tower builds under the feet, with no gap and nothing over the head', async ({
+  page,
+}) => {
+  // Regression (owner, 2026-10-28): crouching and jumping rapidly while holding Place built over
+  // blocks the server skipped (its view of the body still in them), then above the player's head.
+  test.setTimeout(120_000);
+  await start(page);
+  await call(page, 'd.look(0, -89)');
+  const f0 = (await state(page))?.feet ?? [0, 0, 0];
+  const [x, z] = [Math.floor(f0[0]), Math.floor(f0[2])];
+  const under = [x, Math.round(f0[1] / CELL_HEIGHT) - 1, z].join();
+  await expect.poll(async () => (await state(page))?.target?.cell.join() ?? '').toBe(under);
+  expect(await call<boolean>(page, 'd.holdPlace(true)')).toBe(true);
+  for (let i = 0; i < 10; i++) {
+    await call(page, 'd.press("KeyC", true)');
+    await call(page, 'd.press("Space", true)');
+    await page.waitForTimeout(120);
+    await call(page, 'd.press("Space", false)');
+    await call(page, 'd.press("KeyC", false)');
+    await page.waitForTimeout(180);
+  }
+  await call(page, 'd.holdPlace(false)');
+  await page.waitForTimeout(1_500);
+  const feetRow = Math.round(((await state(page))?.feet[1] ?? 0) / CELL_HEIGHT);
+  const ground = Math.round(f0[1] / CELL_HEIGHT);
+  expect(feetRow).toBeGreaterThan(ground + 4);
+  const column: string[] = [];
+  for (let row = ground; row < feetRow + 6; row++)
+    column.push((await voxel(page, [x, row, z])) !== 0 ? '#' : '.');
+  // Solid from the ground to the feet, clear from the feet up.
+  expect(column.join('')).toBe('#'.repeat(feetRow - ground) + '.'.repeat(6));
+});
+
+test('bridging help builds at the edge looked toward, not just the one stood on, and a click is one block', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  const [x, y, z] = await start(page);
+  const stone = stateId('dwell:stone');
+  // A pit past the ground two cells ahead, too deep and wide to aim at: its near edge is cell z + 1.
+  for (const t of [
+    `cornerA@${String(x - 3)},${String(y - 14)},${String(z + 2)}`,
+    `cornerB@${String(x + 3)},${String(y)},${String(z + 10)}`,
+    'clear',
+  ])
+    expect(await call<boolean>(page, `d.tool('${t}')`)).toBe(t.startsWith('corner') ? false : true);
+  await expect.poll(() => voxel(page, [x, y, z + 2]), { timeout: 10_000 }).toBe(0);
+  // Looking past that edge, at the ground's level, from a block or two back: nothing targeted.
+  await lookAtPoint(page, [x + 0.5, (y + 0.5) * CELL_HEIGHT, z + 3.2]);
+  await expect.poll(async () => (await state(page))?.target ?? null).toBeNull();
+  // A click (released before the hold starts): one block, on the outside of the edge.
+  expect(await call<boolean>(page, 'd.holdPlace(true)')).toBe(true);
+  await call(page, 'd.holdPlace(false)');
+  await expect.poll(() => voxel(page, [x, y, z + 2]), { timeout: 10_000 }).toBe(stone);
+  await page.waitForTimeout(800);
+  expect(await voxel(page, [x, y, z + 3])).toBe(0);
+});

@@ -21,6 +21,9 @@ pub const ITEMS: [ItemDef; 11] = [
 /// The key that cycles the build modes (`KeyboardEvent.code`).
 pub const BUILD_MODE_KEY: &str = "KeyL";
 
+/// How long (ms) Place is held before it builds on, so a click places one block.
+pub const BUILD_HOLD_MS: f64 = 200.0;
+
 /// How far (m) the player's own body must be clear of a cell before a block goes in it.
 pub const BUILD_CLEARANCE: f64 = 0.15;
 
