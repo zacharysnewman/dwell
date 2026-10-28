@@ -373,6 +373,57 @@ kbd.phrase {
   }
 }
 
+/* Versions (owner, 2026-10-28: first class, not a footer link): this build and what changed. */
+.mm-versions {
+  grid-column: 1 / -1;
+}
+
+.mm-version-current {
+  color: var(--ink);
+  font: 700 15px var(--font-body);
+}
+
+.mm-version-label {
+  margin: 12px 0 2px;
+  color: var(--ink-soft);
+  font: 800 12px var(--font-body);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* What changed in a build (ui/changesView.ts): the menu's Versions card and the version page. */
+.version-changes {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.version-changes li + li {
+  margin-top: 3px;
+}
+
+.version-earlier {
+  margin-top: 6px;
+  color: var(--ink-soft);
+  font-size: 13px;
+}
+
+.version-earlier summary {
+  cursor: pointer;
+}
+
+.version-earlier-name {
+  margin-top: 8px;
+  color: var(--ink-soft);
+  font-weight: 700;
+}
+
+.version-earlier .version-changes {
+  font-size: 13px;
+}
+
 .mm-card {
   min-width: 0;
   padding: 18px 20px 20px;

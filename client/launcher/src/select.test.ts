@@ -224,6 +224,29 @@ describe('the version page', () => {
     { name: 'Before versions', appVersion: null },
   ];
 
+  it("a row shows what changed: its own, and its line's retired patches since the next older row", () => {
+    const changes = [
+      { version: '0.3.0', changes: ['three'] },
+      { version: '0.2.1', changes: ['two one'] },
+      { version: '0.2.0', changes: ['two'] },
+      { version: '0.1.0', changes: ['one'] },
+    ];
+    // 0.2.0 is retired from the site: 0.2.1 lists it.
+    const rows = listBuilds(
+      manifest(['0.3.0', '0.2.1', '0.1.0', '0.3.1-dev.1']),
+      true,
+      [],
+      changes,
+    );
+    const by = Object.fromEntries(rows.map((r) => [r.version, r.changes.map((c) => c.version)]));
+    expect(by).toEqual({
+      '0.3.1-dev.1': [],
+      '0.3.0': ['0.3.0'],
+      '0.2.1': ['0.2.1', '0.2.0'],
+      '0.1.0': ['0.1.0'],
+    });
+  });
+
   it('lists stable builds newest first, marking the latest stable one', () => {
     const rows = listBuilds(SITE, false, []);
     expect(rows.map((r) => r.version)).toEqual(['0.2.0', '0.1.1', '0.1.0']);

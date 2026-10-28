@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
 import {
+  hasChanges,
   latestStable,
   nextVersion,
   publishAction,
@@ -10,6 +12,37 @@ import {
 
 const SHA = 'ab12cd34ef56ab12cd34ef56ab12cd34ef56ab12';
 const base = { run: 42, sha: SHA, packageVersion: '0.2.0', latestStable: null };
+
+describe('what changed (RELEASES.md §3)', () => {
+  const changes = { versions: [{ version: '0.3.0', changes: ['A thing'] }] };
+  const push = { ...base, packageVersion: '0.3.0', latestStable: '0.2.0' };
+
+  it('a stable release needs its entry in shared/releases/changes.json', () => {
+    const plan = releasePlan({ ...push, event: 'push', ref: 'refs/heads/main', changes });
+    expect(plan.version).toBe('0.3.0');
+    expect(() =>
+      releasePlan({ ...push, event: 'push', ref: 'refs/heads/main', changes: { versions: [] } }),
+    ).toThrow(/0.3.0 has no entry in shared\/releases\/changes.json/);
+    expect(hasChanges({ versions: [{ version: '0.3.0', changes: [' '] }] }, '0.3.0')).toBe(false);
+  });
+
+  it('a dev build needs none', () => {
+    const plan = releasePlan({
+      ...push,
+      packageVersion: '0.2.0',
+      event: 'push',
+      ref: 'refs/heads/main',
+      changes: { versions: [] },
+    });
+    expect(plan.channel).toBe('dev');
+  });
+
+  it("the build's own version has its entry", () => {
+    const pkg = JSON.parse(readFileSync('package.json', 'utf8')) as { version: string };
+    const data = JSON.parse(readFileSync('../shared/releases/changes.json', 'utf8')) as unknown;
+    expect(hasChanges(data, pkg.version)).toBe(true);
+  });
+});
 
 describe('what a release run builds', () => {
   it('builds a dev pre-release of the next version for a push to main', () => {

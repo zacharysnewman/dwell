@@ -113,6 +113,20 @@ by the Vite build and linked from the menu's About screen). Beside the native se
   versioned separately and deployed with the site. Each build's `build.json` carries `minLauncher`,
   the launcher it needs; the launcher skips builds that ask for a newer one.
 
+### What changed (`shared/releases/changes.json`) **[built, 0.38.7]**
+
+Owner (2026-10-28): "Can you add a short 'changes' section for each build in the versions list …
+requiring this metadata for all future builds." Every stable version has an entry in
+`shared/releases/changes.json`: one to six short lines saying what changed, newest first. The main
+menu's Versions card shows the build's own; the version page shows each listed build's, with its
+line's retired patches since the next older listed build folded under "Earlier". Required: a client
+test fails when `client/package.json`'s version has no entry (`src/version/changes.test.ts`, which
+also checks every entry: a stable version, newest first, each once, lines of text up to 240
+characters), and `release.ts` refuses to publish a stable release without one (`hasChanges`). So the
+PR that raises `package.json` adds its version's entry in the same change. The entries before 0.38.7
+were drafted from the merged pull requests' titles (0.1.0 and 0.10.0, which gathered dozens, are
+summarised by hand).
+
 ### Releasing
 
 The next version is computed by `client/scripts/release.ts` from the published releases and
