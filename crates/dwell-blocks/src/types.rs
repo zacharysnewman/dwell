@@ -197,7 +197,8 @@ pub struct StateInfo {
     pub needs_support: Support,
     /// Placing a block into its cell (or against it) replaces it.
     pub replaceable: bool,
-    /// It may be placed on a slope's top (block data `onSlopes`: plants); no other block may.
+    /// Block data `onSlopes` (plants). No rule since 0.39.0: any block may be placed on a slope's
+    /// top (docs/ITEMS.md §3); kept in the data and the registry sync.
     pub on_slopes: bool,
     /// The natural, moldable material it is of (block data `moldable`: "dirt" for dirt, grass and
     /// snowy grass, "sand"; a ramp takes its block's): building one of the same group onto a slope

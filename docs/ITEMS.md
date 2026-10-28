@@ -44,8 +44,8 @@ prediction alike.
 | `replaceable` | Placing into or against it replaces it (tall grass) — already built |
 | `placeOn` | The blocks it may stand on — already built (tall grass: grass, dirt and their ramps) |
 | `needsSupport` | `below`: stands on the cell under it and goes with it (tall grass, torch); `behind` (new): hangs on the cell opposite its facing, a full solid block, placed only against that block's side, and goes with it (ladder; each cell of a 1 m ladder needs its block) |
-| `onSlopes` (new) | It may be placed on a slope's top (tall grass); nothing else may (`EditCheck::OnSlope`) |
-| `moldable` (new) | Its natural material group (`dirt`: dirt, grass, snowy grass; `sand`); a ramp takes its block's. Building with a block of the slope's group onto the slope replaces the slope with the block, not refused |
+| `onSlopes` | Since 0.39.0 (owner, 2026-10-28: "make it so we can build on slopes again") no rule: any block may be placed on a slope's top, in the cell above it, the slope staying under it. Kept in the data and the registry sync (`flag::ON_SLOPES`) |
+| `moldable` (new) | Its natural material group (`dirt`: dirt, grass, snowy grass; `sand`); a ramp takes its block's. Building with a block of the slope's group onto the slope replaces the slope with the block; any other block goes on top of it |
 
 The engine is `dwell_world::edit::check_block_edit`; the registry sync carries the new fields
 (`flag::ON_SLOPES`, `tag::MOLDABLE`, support value 2 `behind`), so a client maps them by name.
@@ -53,7 +53,7 @@ The engine is `dwell_world::edit::check_block_edit`; the registry sync carries t
 ## 4. Tests
 
 `dwell-world` `tests/placement.rs` (both faces): pieces of one or two cells against the face, up or
-down a side, refused when the second cell is taken, written together; slopes take plants only and are
+down a side, refused when the second cell is taken, written together; slopes are built on (the block above them) and
 molded by their own group; ladders hang on a block's side (not a top, not a ramp; a 1 m ladder needs
 both blocks) and go with their block, and stay when what is under them breaks (0.38.9, red before:
 the ladders above went too); a break takes one cell whatever the piece. `tests/world.rs`: tall grass on

@@ -540,9 +540,6 @@ pub enum EditCheck {
     /// Place: the cell's medium isn't the block's (block data `medium`: an air plant into water, a
     /// water plant into air).
     WrongMedium,
-    /// Place: onto a slope's top, by a block that may not stand there (only `onSlopes` blocks, and
-    /// a moldable material of the slope's own, which replaces it; docs/ITEMS.md).
-    OnSlope,
 }
 
 /// Extra reach the server allows over `REACH_DISTANCE`: its view of the player lags the client's.
@@ -726,16 +723,13 @@ pub fn check_block_edit(
         return EditOutcome::fail(EditCheck::NotPlaceable);
     }
     let t = info(target);
-    // A slope (a stored ramp) is built on by plants only (`onSlopes`); a moldable material of the
-    // slope's own group replaces it instead (docs/ITEMS.md).
+    // A slope (a stored ramp) is built on like any block, the placed one going in the cell above
+    // it (owner, 2026-10-28); a moldable material of the slope's own group replaces it instead
+    // (docs/ITEMS.md).
     let molds = |there: StateId| {
         let s = info(there);
         s.shape == VoxelShape::Shaped && s.moldable.is_some() && s.moldable == placed.moldable
     };
-    let face_up = request.face == if FaceFrame::at_row(c[1]).is_b() { 3 } else { 2 };
-    if t.shape == VoxelShape::Shaped && !molds(target) && !placed.on_slopes && face_up {
-        return EditOutcome::fail(EditCheck::OnSlope);
-    }
     // A replaceable target (tall grass) or a slope being molded is placed into; anything else is
     // placed against.
     let n = FACE_DIRS[usize::from(request.face)];
