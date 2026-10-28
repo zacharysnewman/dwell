@@ -1,6 +1,7 @@
 //! Background jobs in Web Workers (ARCHITECTURE.md §5.1, ADR 0007): each worker loads this same
-//! WASM module and runs a [`JobWorker`]; the main thread's [`WebJobs`] posts encoded jobs to the
-//! least busy worker of their kind and collects the encoded results. No `SharedArrayBuffer`:
+//! WASM module and runs a [`JobWorker`]; the main thread's [`WebJobs`] posts encoded jobs to a
+//! worker of their kind (a generation job to its column's, `dwell_world::affinity`, else the least
+//! busy) and collects the encoded results. No `SharedArrayBuffer`:
 //! every job and result is one transferred buffer.
 
 use std::cell::RefCell;
@@ -15,6 +16,7 @@ use web_sys::{MessageEvent, Worker};
 use crate::jobs::codec::{decode_job, decode_output, encode_job, encode_output};
 use crate::jobs::{Job, Output, Runner};
 use crate::pool::Jobs;
+use dwell_world::affinity;
 
 /// A worker's job runner (called by the worker script).
 #[wasm_bindgen]
@@ -168,13 +170,18 @@ impl Jobs for WebJobs {
     }
     fn submit(&mut self, id: u32, job: Job) {
         let kind = usize::from(job.is_mesh());
-        let Some((at, slot)) = self.slots[kind]
-            .iter_mut()
-            .enumerate()
-            .min_by_key(|(_, s)| s.busy)
-        else {
+        let slots = &mut self.slots[kind];
+        if slots.is_empty() {
             return;
-        };
+        }
+        // A column's generation jobs to one worker, which keeps the columns it works out
+        // (`dwell_world::affinity`), unless that one has its two already; else the least busy.
+        let busy: Vec<usize> = slots.iter().map(|s| s.busy).collect();
+        let own = job
+            .column()
+            .map(|(level, x, z)| affinity::worker_for(level, x, z, slots.len()));
+        let at = affinity::pick_worker(&busy, own, 2);
+        let slot = &mut slots[at];
         slot.busy += 1;
         self.running.push((id, kind, at));
         let bytes = Uint8Array::from(&encode_job(id, &job)[..]);

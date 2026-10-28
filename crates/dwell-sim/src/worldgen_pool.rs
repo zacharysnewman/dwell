@@ -1,5 +1,6 @@
 //! Off-tick chunk generation (ARCHITECTURE.md §6.3, ADR 0007). The server says which chunks it
-//! wants next (nearest first); worker threads generate them and the tick collects the results.
+//! wants next (nearest first); worker threads generate them and the tick collects the results, each
+//! taking the chunks of its own blocks of columns first (`dwell_world::affinity`).
 //! With zero threads (the browser's single-threaded local mode) `collect` generates on the calling
 //! thread instead, within a time budget, so a tick never stalls on a burst of new terrain.
 
@@ -8,7 +9,7 @@ use std::sync::{Arc, Condvar, Mutex};
 use std::thread::JoinHandle;
 use std::time::Duration;
 
-use dwell_world::{Chunk, ChunkCoord, ChunkGenerator};
+use dwell_world::{Chunk, ChunkCoord, ChunkGenerator, affinity};
 
 use crate::clock::Deadline;
 
@@ -49,9 +50,9 @@ impl WorldgenPool {
             idle: Condvar::new(),
         });
         let workers = (0..threads)
-            .map(|_| {
+            .map(|k| {
                 let (shared, generator) = (shared.clone(), generator.clone());
-                std::thread::spawn(move || Self::work(&shared, &generator))
+                std::thread::spawn(move || Self::work(&shared, &generator, k, threads))
             })
             .collect();
         Self {
@@ -127,7 +128,9 @@ impl WorldgenPool {
         out.append(&mut s.done);
     }
 
-    fn work(shared: &Shared, generator: &ChunkGenerator) {
+    /// Thread `worker` of `workers`: the queue's first chunk of its own blocks of columns, else
+    /// its first (`dwell_world::affinity`: a column's chunks on one thread share its cache).
+    fn work(shared: &Shared, generator: &ChunkGenerator, worker: usize, workers: usize) {
         let mut s = shared.state.lock().expect("worldgen lock");
         loop {
             s = shared
@@ -137,7 +140,9 @@ impl WorldgenPool {
             if s.stop {
                 return;
             }
-            let c = s.queue.pop_front().expect("queued");
+            let at =
+                affinity::next_for(s.queue.make_contiguous(), worker, workers).expect("queued");
+            let c = s.queue.remove(at).expect("queued");
             s.in_flight.insert(c);
             drop(s);
             let chunk = generate(generator, c);
