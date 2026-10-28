@@ -156,17 +156,18 @@ test('touch controls: Break/Place toggle, tapping the view edits, tapping the ho
     .poll(() => page.evaluate<number>(above), { timeout: 5_000 })
     .toBe(stateId('dwell:dirt'));
 
-  // Back to Break: a tap removes it again, once the new block is the one targeted (on a slow
-  // runner the target could still be the ground below, which the tap would break instead). Dirt
-  // is a 1 m block, two ½ m cells (CELL_HEIGHT; docs/ITEMS.md): the crosshair is turned onto its
-  // upper cell, low on the side facing the player, so the break takes the cell under it too.
+  // Back to Break: a tap removes the cell aimed at, once the new block is the one targeted (on a
+  // slow runner the target could still be the ground below, which the tap would break instead).
+  // Dirt is a 1 m block, two ½ m cells (CELL_HEIGHT; docs/ITEMS.md); a break takes the one cell
+  // (docs/ITEMS.md §2): the crosshair is turned onto the upper cell, which goes, and the lower stays.
   await tap(edit.x, edit.y, 7);
   await expect(page.locator('#touch-edit')).toHaveText('Break');
   const feet = (await read(page))?.feet ?? [0, 0, 0];
-  let [px, pz] = [x + 0.5, z + 0.5];
-  if (Math.abs(px - feet[0]) > Math.abs(pz - feet[2])) px = px > feet[0] ? x + 0.02 : x + 0.98;
-  else pz = pz > feet[2] ? z + 0.02 : z + 0.98;
-  const d = [px - feet[0], (y + 2.25) * CELL_HEIGHT - feet[1] - 1.62, pz - feet[2]] as const; // eye 1.62 m
+  const d = [
+    x + 0.5 - feet[0],
+    (y + 2.5) * CELL_HEIGHT - feet[1] - 1.62,
+    z + 0.5 - feet[2],
+  ] as const; // eye 1.62 m
   const lookYaw = (Math.atan2(d[0], d[2]) * 180) / Math.PI;
   const lookPitch = (Math.atan2(d[1], Math.hypot(d[0], d[2])) * 180) / Math.PI;
   await page.evaluate(`globalThis.__dwell.look(${String(lookYaw)}, ${String(lookPitch)})`);
@@ -175,7 +176,9 @@ test('touch controls: Break/Place toggle, tapping the view edits, tapping the ho
     .toBe([x, y + 2, z].join());
   await page.waitForTimeout(150); // BLOCK_EDIT_INTERVAL_MS
   await tap(600, 150, 8);
-  await expect.poll(() => page.evaluate<number>(above), { timeout: 5_000 }).toBe(0);
+  const upper = `globalThis.__dwell.voxel(${String(x)}, ${String(y + 2)}, ${String(z)})`;
+  await expect.poll(() => page.evaluate<number>(upper), { timeout: 5_000 }).toBe(0);
+  expect(await page.evaluate<number>(above)).toBe(stateId('dwell:dirt'));
 });
 
 test('on a phone the hotbar, connection status, debug overlay and buttons do not overlap', async ({

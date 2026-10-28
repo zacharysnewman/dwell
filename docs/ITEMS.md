@@ -26,8 +26,9 @@ a ½ m piece of a full block shows its swatch's lower half. A block that brings 
 `BlockEditRequest` carries the piece (protocol 19): `rows` (1–`MAX_PIECE_ROWS` 2) and `down`. A place
 fills `rows` cells from the placed cell: away from a top or bottom face; against a side, up toward the
 face's sky, or down with `down` (the client sets it when the aim is in the lower half of the cell, so
-the piece is centred on the aim). A break takes as much as the held item is tall: the next cell into
-the block too, if it holds something breakable. `EditOutcome::also` is the second cell;
+the piece is centred on the aim). A break takes the one cell aimed at, whatever the held item (owner,
+2026-10-28: the 1 m break, which took a 1 m piece's second cell too, is gone; the server ignores a
+break's `rows`). `EditOutcome::also` is a place's second cell;
 `EditOutcome::writes` (`edit_writes_all`) makes every write, on the server and in the client's
 prediction alike.
 
@@ -49,7 +50,7 @@ The engine is `dwell_world::edit::check_block_edit`; the registry sync carries t
 `dwell-world` `tests/placement.rs` (both faces): pieces of one or two cells against the face, up or
 down a side, refused when the second cell is taken, written together; slopes take plants only and are
 molded by their own group; ladders hang on a block's side (not a top, not a ramp; a 1 m ladder needs
-both blocks) and go with their block; breaking takes a piece's height. `tests/world.rs`: tall grass on
+both blocks) and go with their block; a break takes one cell whatever the piece. `tests/world.rs`: tall grass on
 a grass or dirt slope. `dwell-game`: the palette is the items, 1 m by default. `shared/items/gen.test.mjs`:
 the data's validation; an item added by data alone. Protocol vectors: the piece byte.
 

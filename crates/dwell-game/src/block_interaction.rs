@@ -283,8 +283,11 @@ impl BlockInteraction {
             }
         };
         self.last_edit_ms = now_ms;
-        // A break takes as much as the held item is tall (a 1 m block breaks 1 m; docs/ITEMS.md).
-        let rows = self.palette.get(self.selected).map_or(1, |s| s.rows);
+        // A place fills as much as the held item is tall; a break takes one cell (docs/ITEMS.md).
+        let rows = match action {
+            BlockEditAction::Break => 1,
+            _ => self.palette.get(self.selected).map_or(1, |s| s.rows),
+        };
         Some(Message::BlockEditRequest(BlockEditRequest {
             action,
             cell: t.cell,
@@ -425,7 +428,7 @@ mod tests {
                     cell: [3, 0, 4],
                     face: 5,
                     material: 0,
-                    rows: 2,
+                    rows: 1,
                     down: false,
                 }),
                 Message::BlockEditRequest(BlockEditRequest {
