@@ -304,7 +304,8 @@ only." Shipped to iterate on (owner: "Deploy as a release and we'll iterate on i
 - **Data** (`shared/worldgen/volume.json`, generated into `dwell-worldgen` `volume.gen.rs` by
   `shared/worldgen/gen.mjs`, validated, CI stale check): named volumes, each a `density` tree over a
   fixed vocabulary — constants, `depth` (below the height field's surface), `height` (above sea
-  level), `slope` (the surface's gradient over a radius), 3D `noise` (wavelength, octaves, vertical
+  level), `surface` (the height field's surface above sea level, per column), `terrace` (a value
+  stepped into uneven levels, as an offset: **[0.38.0]**), `slope` (the surface's gradient over a radius), 3D `noise` (wavelength, octaves, vertical
   stretch, stream), `add`, `mul`, `min`, `max`, `abs`, `clamp`, `smoothstep` — with a `reach` (only
   cells that near the surface are evaluated) and the `material` added cells take. Solid where the
   density is above 0.
@@ -345,15 +346,26 @@ only." Shipped to iterate on (owner: "Deploy as a release and we'll iterate on i
   never lowered or carved under the sea's surface; and the cliffs fade in from 8 to 30 m from a
   river channel's edge or a lake's shore (the `water` input, the column's `shore`). Waterfalls,
   where a river would fall over a cliff on purpose, wait for moving water (FUTURE.md).
-- **The cliffs volume** **[0.34.0: walls]:** in the part of the land a 600 m field picks, on hillsides
-  (slope 0.3–0.8 over ±4 m), a 2D noise thresholded sharply (±0.02) lifts or sinks the ground up to
-  14 m: vertical rock walls with grass ledges on top. A slow 3D noise (40 m across and tall, × 0.5:
-  the one to tune) shifts each wall's place with height, so walls lean out over their foot
-  (overhangs) or back. 0.31.4–0.33.0 thresholded a 3D noise varying faster up than across, which
-  layered rock and air through the band: shallow caves and tunnels rather than walls (owner,
-  2026-10-27: "the overhangs are forming shallow caves and tunnels"). On seed 7's hillsides: 0
-  columns with two gaps of air (133 before), ~6% overhanging, 1,641 steps over 4 m (906 before).
-- **Tests** (`tests/volume.rs`, both faces): overhangs, added and removed cells on steep ground over
+- **The cliffs volume** **[0.38.0: terraces]** (owner, 2026-10-27, on 0.37.x: "they kind of look like
+  a huge worm dug around the surface of the terrain or like an ant farm from the side … Redesign to
+  look more like real cliffs"). 0.34.0–0.37.x stood a wall wherever a 2D noise crossed zero and
+  lifted one side 14 m and sank the other 14 m: the zero lines wound across the hill in any
+  direction, so the sunk sides were trenches and pits (56–64% of the walls on six of seed 7's
+  hillsides had the uphill side high, about chance), and the 3D lean undercut them. The terraces
+  step the height field's surface instead (the `terrace` node over the `surface` input), so the
+  walls follow the hill's contours and a hillside only ever steps down. The owner's answers:
+  **both forms, by region** (a 900 m field, leaning to the second in the mountains): stepped
+  country, levels about 7 m apart (±60% per level: walls about 3–10 m), flat on top; and
+  escarpments, levels about 22 m apart (±35%: walls about 10–21 m), whose treads keep 30% of the
+  hill's slope; **walls of varied 4–20 m**; **a few slight overhangs** (a 24 m 3D noise moves a
+  wall ±0.7 m with height: a lip, never air under rock in a column); **on steep ground, more in the
+  mountains** (slope 0.3–0.7 over ±4 m, in the 600 m field's part of the land or anywhere 250–900 m
+  up; off the water as before). The levels are warped ±3 m by a 90 m noise so they wander, and
+  each level's thickness is hashed per level, like strata. Reach 14 m.
+- **Tests** (`tests/volume.rs`, both faces): **[0.38.0]** every 4 m+ wall has its uphill side high on six
+  steep hillsides (`cliffs_step_down_the_hill`, red on 0.37's data, kept as the fixture `OVERHANGS`,
+  which also keeps the LOD's underside test on big overhangs); the terrace is monotone with uneven
+  levels (`volume.rs` unit tests); overhangs, added and removed cells on steep ground over
   six hillsides; gentle ground is the plain terrain cell for cell; no decoration over a recess; a
   recess in dry ground is air (red on the first build: 210,834 water cells in dry ground on face A);
   no grass buried in rock, reshaped tops grassed like the land, trunks on solid ground, no soil

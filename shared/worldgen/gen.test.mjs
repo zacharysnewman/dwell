@@ -17,6 +17,8 @@ import {
   validateMidplane,
   validatePlacements,
   validateTerrain,
+  validateVolume,
+  volumeRust,
 } from './gen.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -346,3 +348,44 @@ test('a portal monument is named by data: another structure, or none', () => {
   assert.match(midplaneRust(validateMidplane(m, blocks)), /monument: None,/);
 });
 
+test('the checked-in volumes are valid and generate the checked-in Rust', () => {
+  const data = validateVolume(JSON.parse(readFileSync(join(here, 'volume.json'), 'utf8')));
+  const rust = readFileSync(join(here, '../../crates/dwell-worldgen/src/volume.gen.rs'), 'utf8');
+  assert.equal(volumeRust(data), rust);
+});
+
+test('a terrace over the surface is emitted by data alone', () => {
+  const data = {
+    terrain: 'steps',
+    volumes: [
+      {
+        name: 'steps',
+        reach: 8,
+        material: 'dwell:stone',
+        soilDepth: 3,
+        floorGrass: 3,
+        strength: 1,
+        density: {
+          add: ['depth', { terrace: { of: 'surface', step: 6, jitter: 0.5, flat: 1, riser: 0.05, stream: 9 } }],
+        },
+      },
+    ],
+  };
+  const rust = volumeRust(validateVolume(data));
+  assert.match(rust, /Node::Surface/);
+  assert.match(rust, /Node::Terrace \{ of: 1, step: 6\.0, jitter: 0\.5, flat: 1\.0, riser: 0\.05, stream: 9 \}/);
+});
+
+test('a bad terrace fails with its path and the problem', () => {
+  const vol = (terrace) => ({
+    terrain: null,
+    volumes: [
+      { name: 'v', reach: 8, material: 'dwell:stone', soilDepth: 3, floorGrass: 3, strength: 1, density: { terrace } },
+    ],
+  });
+  const ok = { of: 'surface', step: 6, jitter: 0.5, flat: 1, riser: 0.05, stream: 1 };
+  assert.throws(() => validateVolume(vol({ ...ok, jitter: 1 })), /density: terrace.jitter must be in \[0, 0.9\]/);
+  assert.throws(() => validateVolume(vol({ ...ok, riser: 0 })), /terrace.riser must be in/);
+  const { stream: _, ...missing } = ok;
+  assert.throws(() => validateVolume(vol(missing)), /terrace: missing stream/);
+});
