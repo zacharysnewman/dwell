@@ -13,7 +13,9 @@
 use dwell_blocks::StateId;
 use dwell_world::{CELL_H, SEA_LEVEL_M, m_of_row, rows_for_m};
 
-use crate::noise::{fbm3, floor_to_int, hash2, noise_offset, seed_word, smooth_step, unit};
+use crate::noise::{
+    ColumnFbm3, fbm3, floor_to_int, hash2, noise_offset, seed_word, smooth_step, unit,
+};
 
 /// One node of a density tree. Children are indices of earlier nodes (the generator emits the tree
 /// children first, its root last).
@@ -146,13 +148,17 @@ pub struct ColumnInput<'a> {
 /// A column's evaluated column-only nodes: each node's value where it is the same for every cell
 /// of the column (a product with a zero factor among them), else none.
 pub struct ColumnEval {
-    x: i32,
-    z: i32,
     surface: f32,
     known: Vec<Option<f32>>,
     /// The density is the height field's alone here (`depth` plus nothing): the volume leaves the
     /// column as it is.
     pub plain: bool,
+    /// The nodes a cell computes, children first (`Volume::density`).
+    program: Vec<u16>,
+    /// Every node's value: the column values, and the cell's last computed.
+    vals: std::cell::RefCell<Vec<f32>>,
+    /// The per-cell noise nodes down this column, by place in `program`.
+    columns: std::cell::RefCell<Vec<Option<ColumnFbm3>>>,
 }
 
 impl Volume {
@@ -243,13 +249,54 @@ impl Volume {
         let plain = is_depth(root)
             || matches!(self.nodes[root], Node::Add(kids) if kids.iter().filter(|&&k| is_depth(usize::from(k))).count() == 1
                 && kids.iter().all(|&k| is_depth(usize::from(k)) || known[usize::from(k)] == Some(0.0)));
+        // The nodes each cell computes, children first: those under the root with no column
+        // value (`done` reused to mark them).
+        let mut program = Vec::new();
+        done.fill(false);
+        self.collect(root, &known, &mut done, &mut program);
+        let vals = known.iter().map(|k| k.unwrap_or(0.0)).collect();
+        // The per-cell noises, each down this column, beside their place in the program.
+        let columns = program
+            .iter()
+            .map(|&i| match self.nodes[usize::from(i)] {
+                Node::Noise {
+                    wavelength,
+                    octaves,
+                    ..
+                } => {
+                    let n = self.noise[usize::from(i)].expect("noise resolved");
+                    Some(ColumnFbm3::new(
+                        n.seed,
+                        i64::from(input.x) + n.offset,
+                        i64::from(input.z) + n.offset,
+                        wavelength,
+                        n.wavelength_y,
+                        octaves,
+                    ))
+                }
+                _ => None,
+            })
+            .collect();
         ColumnEval {
-            x: input.x,
-            z: input.z,
             surface: input.surface,
             known,
             plain,
+            program,
+            vals: std::cell::RefCell::new(vals),
+            columns: std::cell::RefCell::new(columns),
         }
+    }
+
+    /// Lists node `i` and the nodes under it with no column value, children first, each once.
+    fn collect(&self, i: usize, known: &[Option<f32>], seen: &mut [bool], out: &mut Vec<u16>) {
+        if known[i].is_some() || seen[i] {
+            return;
+        }
+        seen[i] = true;
+        for &k in children(&self.nodes[i]) {
+            self.collect(usize::from(k), known, seen, out);
+        }
+        out.push(i as u16);
     }
 
     /// Fixes node `i`'s column value if it has one (and every column-only node under it the cells
@@ -305,16 +352,12 @@ impl Volume {
                 }
             }
             _ => {
-                let kids = children(&self.nodes[i]);
-                let vals: Vec<Option<f32>> = kids
-                    .iter()
-                    .map(|&k| self.fix(usize::from(k), input, known, done))
-                    .collect();
-                if vals.iter().all(Option::is_some) {
-                    Some(self.combine(i, |k| {
-                        let at = kids.iter().position(|&c| c == k).expect("a child");
-                        vals[at].expect("fixed")
-                    }))
+                let mut all = true;
+                for &k in children(&self.nodes[i]) {
+                    all &= self.fix(usize::from(k), input, known, done).is_some();
+                }
+                if all {
+                    Some(self.combine(i, |k| known[usize::from(k)].expect("fixed")))
                 } else {
                     None
                 }
@@ -324,43 +367,81 @@ impl Volume {
         v
     }
 
-    /// The density of the cell at `row` (face-local) of column `col`: solid when above zero.
+    /// The density of the cell at `row` (face-local) of column `col`: solid when above zero. The
+    /// column's per-cell nodes are computed in order over its column values (a product still
+    /// stopping at its first zero factor), as a walk of the tree from the root would.
     pub fn density(&self, col: &ColumnEval, row: i32) -> f32 {
-        self.eval(self.nodes.len() - 1, col, row)
-    }
-
-    fn eval(&self, i: usize, col: &ColumnEval, row: i32) -> f32 {
-        if let Some(v) = col.known[i] {
+        let root = self.nodes.len() - 1;
+        if let Some(v) = col.known[root] {
             return v;
         }
+        let mut vals = col.vals.borrow_mut();
+        let mut columns = col.columns.borrow_mut();
+        self.cell(col, row, &mut vals, &mut columns)
+    }
+
+    /// Calls `out(row, density)` for each row of `rows` in turn (as [`Volume::density`] would give).
+    pub fn densities(
+        &self,
+        col: &ColumnEval,
+        rows: std::ops::RangeInclusive<i32>,
+        mut out: impl FnMut(i32, f32),
+    ) {
+        let root = self.nodes.len() - 1;
+        if let Some(v) = col.known[root] {
+            rows.for_each(|r| out(r, v));
+            return;
+        }
+        let mut vals = col.vals.borrow_mut();
+        let mut columns = col.columns.borrow_mut();
+        for row in rows {
+            out(row, self.cell(col, row, &mut vals, &mut columns));
+        }
+    }
+
+    /// The root's value at `row`: the program run over `vals`.
+    fn cell(
+        &self,
+        col: &ColumnEval,
+        row: i32,
+        vals: &mut [f32],
+        columns: &mut [Option<ColumnFbm3>],
+    ) -> f32 {
+        for (at, &i) in col.program.iter().enumerate() {
+            let i = usize::from(i);
+            vals[i] = self.cell_value(i, col, row, vals, columns[at].as_mut());
+        }
+        vals[self.nodes.len() - 1]
+    }
+
+    /// Node `i`'s value at `row` of column `col`, its children's in `vals`.
+    fn cell_value(
+        &self,
+        i: usize,
+        col: &ColumnEval,
+        row: i32,
+        vals: &[f32],
+        noise: Option<&mut ColumnFbm3>,
+    ) -> f32 {
         match self.nodes[i] {
             Node::Depth => col.surface - (m_of_row(row) + CELL_H / 2.0) as f32,
             Node::Height => (m_of_row(row) + CELL_H / 2.0 - SEA_LEVEL_M) as f32,
             Node::Surface => col.surface - SEA_LEVEL_M as f32,
-            Node::Noise {
-                wavelength,
-                octaves,
-                ..
-            } => {
+            Node::Noise { .. } => {
                 let n = self.noise[i].expect("noise resolved");
-                let p = (
-                    i64::from(col.x) + n.offset,
-                    i64::from(row) + n.offset,
-                    i64::from(col.z) + n.offset,
-                );
-                fbm3(n.seed, p, wavelength, n.wavelength_y, octaves)
+                noise.expect("a column noise").at(i64::from(row) + n.offset)
             }
             Node::Mul(kids) => {
                 let mut v = 1.0f32;
                 for &k in kids {
-                    v *= self.eval(usize::from(k), col, row);
+                    v *= vals[usize::from(k)];
                     if v == 0.0 {
                         break;
                     }
                 }
                 v
             }
-            _ => self.combine(i, |k| self.eval(usize::from(k), col, row)),
+            _ => self.combine(i, |k| vals[usize::from(k)]),
         }
     }
 
@@ -423,14 +504,14 @@ fn terrace(v: f32, seed: u32, step: f32, jitter: f32, flat: f32, riser: f32) -> 
     stepped - v + flat * step / 2.0
 }
 
-fn children(n: &Node) -> Vec<u16> {
-    match *n {
-        Node::Add(k) | Node::Mul(k) | Node::Min(k) | Node::Max(k) => k.to_vec(),
+fn children(n: &'static Node) -> &'static [u16] {
+    match n {
+        Node::Add(k) | Node::Mul(k) | Node::Min(k) | Node::Max(k) => k,
         Node::Abs(k)
         | Node::Clamp { of: k, .. }
         | Node::Smoothstep { of: k, .. }
-        | Node::Terrace { of: k, .. } => vec![k],
-        _ => Vec::new(),
+        | Node::Terrace { of: k, .. } => std::slice::from_ref(k),
+        _ => &[],
     }
 }
 

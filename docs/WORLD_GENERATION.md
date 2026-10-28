@@ -335,10 +335,20 @@ only." Shipped to iterate on (owner: "Deploy as a release and we'll iterate on i
      that level.
 - **Cost:** a column whose density is the height field's alone (the 600 m field or the slope mask
   zero; the mask is listed first so the slope is measured only where it can matter) skips the scan;
-  reshaped columns are kept per thread (`SHAPED`, a cache keyed by generator). Measured natively on
-  seed 7: a chunk 6.9 ms on ordinary ground (plain terrain 1.0 ms), 13 ms on cliff hillsides (2.2
-  ms); in the browser, chunk jobs p50 31 ms (13 ms plain) and a settled view in 17.5 s (7 s). A
-  coarse lattice for the 3D noise is the next saving.
+  reshaped columns are kept per thread (`SHAPED`, a cache keyed by generator). **[0.38.1]** (owner,
+  2026-10-27: "Go ahead and work on optimizing cliffs speed"), the same cells, bit for bit (the
+  goldens unchanged): a reshaped column keeps which of its rows within the reach are solid, worked
+  out once in one pass, so the carving and the LOD read bits instead of evaluating again (the
+  carving rebuilt each column's slope and evaluated each row up to three times); the cells run a
+  flat list of the column's per-cell nodes over its column values (`ColumnEval::program`) instead
+  of walking the tree from the root, with no allocation per node; a per-cell noise runs down its
+  column (`noise::ColumnFbm3`: each lattice cell's corner hashes and x/z gradient parts kept, tested
+  bit for bit against `fbm3`); the generator shares identical subtrees (the cliffs: 50 nodes → 34);
+  the slope's height-field columns are kept per thread too (`BASE`); and the caches hash cheaply.
+  Measured natively, 867 chunks round seed 7's terraced hillside (~1430, 6830): 1.77 s → 0.95 s
+  (plain terrain 0.40 s); round seed 0's spawn: 2.32 s → 1.02 s (0.80 s). In Chrome on the GPU, the
+  seed-0 spawn view settled in 17.3–19.3 s (20.3–22.2 s before), three runs each. A coarse lattice
+  for the 3D noise would change the terrain (a new compatibility line).
 - **Off the water** **[0.35.0]** (owner, 2026-10-27, on 0.34.0: "big edges rising up on sides of
   river, and drop off edges without filling low areas"; docs/BUGS.md 15): a river valley's banks are
   steep, so the slope mask stood walls along them, raised over the water or sunk under it with the
