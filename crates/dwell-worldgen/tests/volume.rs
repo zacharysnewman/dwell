@@ -2,6 +2,7 @@
 //! ground, the height field untouched elsewhere, nothing left standing on air.
 
 use dwell_world::{CHUNK_SIZE, Chunk, ChunkCoord, FaceFrame, M, local_index};
+use dwell_worldgen::volume::{Node, VolumeDef};
 use dwell_worldgen::{BifacialTerrain, TerrainGenerator};
 
 /// The first `n` columns, at least 200 m apart, on a 16 m grid round the origin whose ground falls
@@ -54,6 +55,71 @@ fn chunks_round(
     }
     out
 }
+
+/// A volume with big overhangs, by data: 0.34–0.37's cliffs, walls on a 2D noise's zero line
+/// leaned by a 3D noise, so they hang far out over their foot.
+static OVERHANGS: VolumeDef = VolumeDef {
+    name: "overhangs",
+    reach: 16.0,
+    material: "dwell:stone",
+    soil_depth: 3.0,
+    floor_grass: 3.0,
+    strength: 1.0,
+    nodes: &[
+        Node::Depth,
+        Node::Strength,
+        Node::Noise {
+            wavelength: 600,
+            octaves: 2,
+            stretch_y: 0.0,
+            stream: 1,
+        },
+        Node::Smoothstep {
+            of: 2,
+            from: -0.2,
+            to: 0.1,
+        },
+        Node::Water,
+        Node::Smoothstep {
+            of: 4,
+            from: 8.0,
+            to: 30.0,
+        },
+        Node::Slope { radius: 4 },
+        Node::Smoothstep {
+            of: 6,
+            from: 0.3,
+            to: 0.8,
+        },
+        Node::Const(14.0),
+        Node::Const(2.0),
+        Node::Noise {
+            wavelength: 40,
+            octaves: 2,
+            stretch_y: 0.0,
+            stream: 2,
+        },
+        Node::Const(0.5),
+        Node::Noise {
+            wavelength: 40,
+            octaves: 1,
+            stretch_y: 1.0,
+            stream: 3,
+        },
+        Node::Mul(&[11, 12]),
+        Node::Add(&[10, 13]),
+        Node::Smoothstep {
+            of: 14,
+            from: -0.02,
+            to: 0.02,
+        },
+        Node::Mul(&[9, 15]),
+        Node::Const(-1.0),
+        Node::Add(&[16, 17]),
+        Node::Mul(&[1, 3, 5, 7, 8, 18]),
+        Node::Add(&[0, 19]),
+    ],
+};
 
 fn solid(m: dwell_blocks::StateId) -> bool {
     m != M.air && m != M.water && !dwell_blocks::info(m).replaceable
@@ -550,14 +616,16 @@ dwell_world::both_faces!(
     /// The owner (2026-10-27): "did we work in rendering undersides in cliffs LODs? If not that
     /// should be the priority." The LOD's sections filled each column solid up to its top, so an
     /// overhang read as a solid bank from afar. They take the volume's carving too: round steep
-    /// hillsides, sections at the near levels hold rock over air (an underside to draw).
+    /// hillsides, sections at the near levels hold rock over air (an underside to draw). The
+    /// cliffs' own overhangs are slight since 0.38.0 (under a metre, thinner than these levels'
+    /// cells), so a volume with big ones is given by data here.
     fn lod_sections_hold_the_overhangs_undersides(f: FaceFrame) {
         use dwell_world::lod::{
             LodCells, LodCoord, LodKind, ORIGIN_X, ORIGIN_Y, ORIGIN_Z, SECTION_CELLS, cell_index,
             section_size,
         };
         let plain = BifacialTerrain::height_field(7);
-        let terrain = BifacialTerrain::new(7);
+        let terrain = BifacialTerrain::with_volume(7, &OVERHANGS);
         let (p, g) = (plain.local(f.face), terrain.local(f.face));
         let section = |level: i32, x: i64, y: i64, z: i64| {
             let s = section_size(level);
@@ -594,6 +662,55 @@ dwell_world::both_faces!(
         assert!(
             under[0] > 20 && under[1] > 5,
             "undersides at levels 1, 2, 3: {under:?}"
+        );
+    }
+);
+
+/// Over 64 m squares round six steep hillsides of `cliffs` (face-local, either face): the steps of
+/// 4 m or more between neighbouring columns, and how many of them have the uphill side (on the
+/// height field) high. A wall with its downhill side high is a trench's or a pit's side.
+fn walls_facing_downhill(f: FaceFrame, cliffs: &BifacialTerrain) -> (usize, usize) {
+    let plain = BifacialTerrain::height_field(7);
+    let (p, g) = (plain.local(f.face), cliffs.local(f.face));
+    let (mut walls, mut downhill) = (0, 0);
+    for (cx, cz) in steep_columns(p, 1.1, 6) {
+        for z in cz - 32..cz + 32 {
+            for x in cx - 32..cx + 32 {
+                let top = |x, z| g.column_at(x, z).height;
+                let base = |x, z| p.column_at(x, z).height;
+                for (dx, dz) in [(1, 0), (0, 1)] {
+                    let (a, b) = (top(x, z), top(x + dx, z + dz));
+                    if (a - b).abs() >= 4.0 {
+                        walls += 1;
+                        if (b > a) == (base(x + dx, z + dz) > base(x, z)) {
+                            downhill += 1;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    (walls, downhill)
+}
+
+dwell_world::both_faces!(
+    /// The owner (2026-10-27): the cliffs "kind of look like a huge worm dug around the surface of
+    /// the terrain or like an ant farm from the side"; "redesign to look more like real cliffs".
+    /// 0.34–0.37's walls stood on a noise's zero line, winding across the hill and sinking
+    /// trenches (56–64% of their walls had the uphill side high, about chance); the terraces step
+    /// the hill down along its contours. Red on 0.37's cliffs (`OVERHANGS`, the same data).
+    fn cliffs_step_down_the_hill(f: FaceFrame) {
+        let (walls, downhill) = walls_facing_downhill(f, &BifacialTerrain::new(7));
+        assert!(walls > 200, "walls: {walls}");
+        assert!(
+            downhill * 100 >= walls * 98,
+            "{downhill} of {walls} walls face downhill"
+        );
+        let (walls, downhill) =
+            walls_facing_downhill(f, &BifacialTerrain::with_volume(7, &OVERHANGS));
+        assert!(
+            downhill * 100 < walls * 80,
+            "0.37's cliffs: {downhill} of {walls}"
         );
     }
 );

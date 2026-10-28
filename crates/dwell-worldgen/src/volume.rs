@@ -13,7 +13,7 @@
 use dwell_blocks::StateId;
 use dwell_world::{CELL_H, SEA_LEVEL_M, m_of_row, rows_for_m};
 
-use crate::noise::{fbm3, noise_offset, seed_word, smooth_step};
+use crate::noise::{fbm3, floor_to_int, hash2, noise_offset, seed_word, smooth_step, unit};
 
 /// One node of a density tree. Children are indices of earlier nodes (the generator emits the tree
 /// children first, its root last).
@@ -24,6 +24,8 @@ pub enum Node {
     Depth,
     /// The cell centre's height above sea level (m).
     Height,
+    /// The height field's surface above sea level (m): the same for every cell of a column.
+    Surface,
     /// How far (m) the column's nearest river channel edge or lake shore lies (0 in the water,
     /// 1000 with none near): cliffs fade out beside the water.
     Water,
@@ -55,6 +57,19 @@ pub enum Node {
         of: u16,
         from: f32,
         to: f32,
+    },
+    /// How far (m) `of` stepped into terraces lies from `of` itself: levels about `step` m apart,
+    /// each level's bottom moved by up to ±`jitter`/2 of a step (seeded by `stream`, so the levels
+    /// are uneven like rock strata), a share `flat` of each level's rise flattened into its tread
+    /// and stood up as a riser over the last `riser` of it. Centred (`flat` × `step` / 2 added), so
+    /// it raises and lowers alike; monotone in `of`: a hillside steps down, never back up.
+    Terrace {
+        of: u16,
+        step: f32,
+        jitter: f32,
+        flat: f32,
+        riser: f32,
+        stream: u32,
     },
 }
 
@@ -105,6 +120,8 @@ pub struct Volume {
     /// Per node: whether it depends on the cell's height (else it is computed once per column).
     varying: Vec<bool>,
     noise: Vec<Option<NoiseAt>>,
+    /// The terrace nodes' level seeds, by node index.
+    level_seed: Vec<(usize, u32)>,
     /// The slope radii the nodes ask for, distinct.
     radii: Vec<u8>,
     pub reach_rows: i32,
@@ -145,6 +162,7 @@ impl Volume {
         let mut varying = Vec::with_capacity(def.nodes.len());
         let mut noise = Vec::with_capacity(def.nodes.len());
         let mut radii = Vec::new();
+        let mut level_seed = Vec::new();
         for (i, n) in def.nodes.iter().enumerate() {
             let kids = children(n);
             assert!(
@@ -154,6 +172,10 @@ impl Volume {
             );
             let own = match *n {
                 Node::Depth | Node::Height => true,
+                Node::Terrace { stream, .. } => {
+                    level_seed.push((i, seed_word(world_seed, 0x7E44_0000 ^ stream)));
+                    false
+                }
                 Node::Noise { stretch_y, .. } => stretch_y > 0.0,
                 _ => false,
             };
@@ -189,6 +211,7 @@ impl Volume {
             nodes: def.nodes,
             varying,
             noise,
+            level_seed,
             radii,
             reach_rows: rows_for_m(f64::from(def.reach)),
             material: dwell_blocks::require(def.material),
@@ -244,6 +267,7 @@ impl Volume {
         done[i] = true;
         let v = match self.nodes[i] {
             Node::Depth | Node::Height => None,
+            Node::Surface => Some(input.surface - SEA_LEVEL_M as f32),
             Node::Noise {
                 wavelength,
                 octaves,
@@ -312,6 +336,7 @@ impl Volume {
         match self.nodes[i] {
             Node::Depth => col.surface - (m_of_row(row) + CELL_H / 2.0) as f32,
             Node::Height => (m_of_row(row) + CELL_H / 2.0 - SEA_LEVEL_M) as f32,
+            Node::Surface => col.surface - SEA_LEVEL_M as f32,
             Node::Noise {
                 wavelength,
                 octaves,
@@ -353,8 +378,25 @@ impl Volume {
             Node::Abs(k) => kid(k).abs(),
             Node::Clamp { of, min, max } => kid(of).clamp(min, max),
             Node::Smoothstep { of, from, to } => smooth_step(from, to, kid(of)),
+            Node::Terrace {
+                of,
+                step,
+                jitter,
+                flat,
+                riser,
+                ..
+            } => {
+                let seed = self
+                    .level_seed
+                    .iter()
+                    .find(|&&(n, _)| n == i)
+                    .map(|&(_, s)| s)
+                    .expect("terrace seeded");
+                terrace(kid(of), seed, step, jitter, flat, riser)
+            }
             Node::Depth
             | Node::Height
+            | Node::Surface
             | Node::Water
             | Node::Strength
             | Node::Slope { .. }
@@ -365,10 +407,29 @@ impl Volume {
     }
 }
 
+/// The terrace offset of `v` (`Node::Terrace`): level k's bottom is (k + jitter × (u_k − ½)) ×
+/// step, u_k a hash of the level, so levels stay ordered (jitter < 1) and vary in thickness.
+fn terrace(v: f32, seed: u32, step: f32, jitter: f32, flat: f32, riser: f32) -> f32 {
+    let bottom = |k: i32| (k as f32 + jitter * (unit(hash2(seed, k, 0)) - 0.5)) * step;
+    let mut k = floor_to_int(v / step);
+    if v < bottom(k) {
+        k -= 1;
+    } else if v >= bottom(k + 1) {
+        k += 1;
+    }
+    let (lo, hi) = (bottom(k), bottom(k + 1));
+    let t = (v - lo) / (hi - lo);
+    let stepped = lo + (hi - lo) * (t * (1.0 - flat) + flat * smooth_step(1.0 - riser, 1.0, t));
+    stepped - v + flat * step / 2.0
+}
+
 fn children(n: &Node) -> Vec<u16> {
     match *n {
         Node::Add(k) | Node::Mul(k) | Node::Min(k) | Node::Max(k) => k.to_vec(),
-        Node::Abs(k) | Node::Clamp { of: k, .. } | Node::Smoothstep { of: k, .. } => vec![k],
+        Node::Abs(k)
+        | Node::Clamp { of: k, .. }
+        | Node::Smoothstep { of: k, .. }
+        | Node::Terrace { of: k, .. } => vec![k],
         _ => Vec::new(),
     }
 }
@@ -376,6 +437,62 @@ fn children(n: &Node) -> Vec<u16> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_terrace_steps_up_and_never_back_down() {
+        // The cliffs' shape (owner, 2026-10-27: "look more like real cliffs"): a hillside stepped
+        // into flat treads and steep risers, every level higher than the last, uneven like strata.
+        let (step, jitter, flat, riser) = (7.0, 0.6, 1.0, 0.06);
+        let stepped = |v: f32| v + terrace(v, 12345, step, jitter, flat, riser) - flat * step / 2.0;
+        let mut last = f32::NEG_INFINITY;
+        let (mut treads, mut risers) = (0, 0);
+        // The wall heights: from one tread's level to the next.
+        let mut heights = Vec::new();
+        let mut tread: Option<f32> = None;
+        for i in 0..20_000 {
+            let v = -50.0 + i as f32 * 0.01;
+            let s = stepped(v);
+            assert!(s >= last - 1e-4, "steps down at {v}: {s} after {last}");
+            let rise = s - last;
+            if last.is_finite() {
+                if rise < 1e-3 {
+                    treads += 1;
+                    if let Some(t) = tread
+                        && s - t > 0.5
+                    {
+                        heights.push(s - t);
+                    }
+                    if tread.is_none_or(|t| s - t > 0.5) {
+                        tread = Some(s);
+                    }
+                } else if rise > 0.05 {
+                    risers += 1;
+                }
+            }
+            last = s;
+        }
+        // Mostly flat, a short steep riser per level.
+        assert!(
+            treads > 15_000 && risers > 0,
+            "{treads} treads, {risers} risers"
+        );
+        let (lo, hi) = heights
+            .iter()
+            .fold((f32::MAX, f32::MIN), |(a, b), &h| (a.min(h), b.max(h)));
+        assert!(
+            lo > step * (1.0 - jitter) * 0.9 && hi < step * (1.0 + jitter) * 1.05,
+            "{heights:?}"
+        );
+        assert!(hi - lo > 1.0, "levels of different heights: {heights:?}");
+    }
+
+    #[test]
+    fn a_terrace_with_no_flat_leaves_the_value() {
+        for i in 0..1000 {
+            let v = i as f32 * 0.37 - 100.0;
+            assert!(terrace(v, 7, 9.0, 0.5, 0.0, 0.1).abs() < 1e-4);
+        }
+    }
 
     fn input(surface: f32, slope: &dyn Fn(u8) -> f32) -> ColumnInput<'_> {
         ColumnInput {

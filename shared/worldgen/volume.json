@@ -1,11 +1,11 @@
 {
-  "$comment": "Terrain volumes (docs/proposals/TERRAIN_HYDROLOGY_AND_VOLUMES.md \u00a73 layer 2; ARCHITECTURE.md \u00a76.3): a 3D density per cell over the height field, solid where it is above 0. A volume's `density` is a tree of nodes from a fixed vocabulary: a number (a constant); \"depth\" (m from the cell's centre down from the height field's surface: > 0 below it); \"height\" (m above sea level); \"strength\" (the volume's `strength`, 0 to 1: how strongly it reshapes, a biome's slider later); \"water\" (m from the column to the nearest river channel edge or lake shore: 0 in the water, 1000 with none near); {\"slope\": {\"radius\"}} (the surface's gradient over \u00b1radius m, rise per run); {\"noise\": {\"wavelength\", \"octaves\", \"stretchY\", \"stream\"}} (3D gradient noise in [-1, 1], its vertical frequency stretchY times the horizontal one, 0 a 2D field); {\"add\" | \"mul\" | \"min\" | \"max\": [nodes]}; {\"abs\": node}; {\"clamp\": {\"of\", \"min\", \"max\"}}; {\"smoothstep\": {\"of\", \"from\", \"to\"}}. Only cells within `reach` m of the surface are evaluated; beyond it the height field stands. Water columns (rivers, lakes, the sea) are never reshaped, and dry ground is never lowered or carved under the sea's surface. The reshaped ground's topmost solid cell is each column's top (docs/WORLD_GENERATION.md \u00a75): the ground is filled, ramped, decorated and planted from it as from the height field, with at most `soilDepth` m of soil under a top (never less than the terrain's `underDepth`; so a cliff face shows rock); the cells the density removes under it become air, or water under the column's own water; a floor left under rock is the top block where open sky lies within `floorGrass` m of it, else `material`, as is a ceiling. `terrain` names the volume the world's terrain is shaped by (null: the height field alone); the LOD draws the reshaped ground's top surface.",
+  "$comment": "Terrain volumes (docs/proposals/TERRAIN_HYDROLOGY_AND_VOLUMES.md §3 layer 2; ARCHITECTURE.md §6.3): a 3D density per cell over the height field, solid where it is above 0. A volume's `density` is a tree of nodes from a fixed vocabulary: a number (a constant); \"depth\" (m from the cell's centre down from the height field's surface: > 0 below it); \"height\" (m above sea level); \"surface\" (the height field's surface, m above sea level: the same for every cell of a column); \"strength\" (the volume's `strength`, 0 to 1: how strongly it reshapes, a biome's slider later); \"water\" (m from the column to the nearest river channel edge or lake shore: 0 in the water, 1000 with none near); {\"slope\": {\"radius\"}} (the surface's gradient over ±radius m, rise per run); {\"noise\": {\"wavelength\", \"octaves\", \"stretchY\", \"stream\"}} (3D gradient noise in [-1, 1], its vertical frequency stretchY times the horizontal one, 0 a 2D field); {\"add\" | \"mul\" | \"min\" | \"max\": [nodes]}; {\"abs\": node}; {\"clamp\": {\"of\", \"min\", \"max\"}}; {\"smoothstep\": {\"of\", \"from\", \"to\"}}; {\"terrace\": {\"of\", \"step\", \"jitter\", \"flat\", \"riser\", \"stream\"}} (how far `of` stepped into levels about `step` m apart lies from `of`: each level's bottom moved by up to ±jitter/2 of a step, seeded by `stream`, so levels are uneven like strata; a share `flat` of each level's rise made flat, stood up as a riser over the last `riser` of it; centred, so it raises and lowers alike, and never steps back down). Only cells within `reach` m of the surface are evaluated; beyond it the height field stands. Water columns (rivers, lakes, the sea) are never reshaped, and dry ground is never lowered or carved under the sea's surface. The reshaped ground's topmost solid cell is each column's top (docs/WORLD_GENERATION.md §5): the ground is filled, ramped, decorated and planted from it as from the height field, with at most `soilDepth` m of soil under a top (never less than the terrain's `underDepth`; so a cliff face shows rock); the cells the density removes under it become air, or water under the column's own water; a floor left under rock is the top block where open sky lies within `floorGrass` m of it, else `material`, as is a ceiling. `terrain` names the volume the world's terrain is shaped by (null: the height field alone); the LOD draws the reshaped ground's top surface.",
   "terrain": "cliffs",
   "volumes": [
     {
-      "$comment": "Cliffs and overhangs, scaled by `strength` (owner, 2026-10-27: the terrain's default, configurable \u2014 a biome's slider later): in the part of the land a 600 m field picks (listed first: a product stops at a zero factor, so the slope is measured only there), fading in from 8 to 30 m from a river or lake (its valley's steep banks are no cliff: owner 2026-10-27), on hillsides (slope 0.3 to 0.8 over \u00b14 m), a 2D noise (40 m across) thresholded sharply (\u00b10.02: under a metre) lifts the ground 14 m or sinks it 14 m, a wall between: rock walls with ledges on top. The lean: a slow 3D noise (40 m across and tall, times 0.5: the one to tune; on seed 7's hillsides ~6% of columns overhang, none tunnelled) shifts where each wall stands with height, so walls lean out over their foot (overhangs) or back; too slow to layer rock and air (no tunnels; owner 2026-10-27).",
+      "$comment": "Cliffs as terraces along the hill (owner, 2026-10-27: \"look more like real cliffs\"; the walls of 0.34–0.37 stood on a noise's zero line, winding across hillsides and sinking trenches: \"like a huge worm dug around the surface\"). The owner's answers: both forms by region, walls of varied 4–20 m, a few slight overhangs, on steep ground and more in the mountains. Where: steep hillsides (slope 0.3 to 0.7 over ±4 m) in the part of the land a 600 m field picks, and every steep mountainside (250 to 900 m up); fading in from 8 to 30 m from a river or lake. Shape: the height field's surface, warped ±3 m by a 90 m noise so the levels wander, stepped into terraces that follow the hill's contours, so a hillside only ever steps down. Two kinds, blended by a 900 m field (and toward the second in the mountains): stepped country, levels about 7 m apart (±60%: walls about 3 to 10 m) all but flat on top; and escarpments, levels about 22 m apart (±35%: walls about 10 to 21 m) whose treads keep 30% of the hill's slope. Overhangs: a slow 3D noise (24 m, ±0.7 m) shifts each wall a little with height, so a wall's top can lip out; it varies too slowly up a column to leave air under rock.",
       "name": "cliffs",
-      "reach": 16,
+      "reach": 14,
       "material": "dwell:stone",
       "soilDepth": 3,
       "floorGrass": 3,
@@ -17,18 +17,29 @@
             "mul": [
               "strength",
               {
-                "smoothstep": {
-                  "of": {
-                    "noise": {
-                      "wavelength": 600,
-                      "octaves": 2,
-                      "stretchY": 0,
-                      "stream": 1
+                "max": [
+                  {
+                    "smoothstep": {
+                      "of": {
+                        "noise": {
+                          "wavelength": 600,
+                          "octaves": 2,
+                          "stretchY": 0,
+                          "stream": 1
+                        }
+                      },
+                      "from": -0.2,
+                      "to": 0.1
                     }
                   },
-                  "from": -0.2,
-                  "to": 0.1
-                }
+                  {
+                    "smoothstep": {
+                      "of": "surface",
+                      "from": 250,
+                      "to": 900
+                    }
+                  }
+                ]
               },
               {
                 "smoothstep": {
@@ -45,49 +56,160 @@
                     }
                   },
                   "from": 0.3,
-                  "to": 0.8
+                  "to": 0.7
                 }
               },
-              14,
               {
                 "add": [
                   {
-                    "mul": [
-                      2,
+                    "add": [
                       {
-                        "smoothstep": {
-                          "of": {
+                        "mul": [
+                          {
                             "add": [
+                              1,
                               {
-                                "noise": {
-                                  "wavelength": 40,
-                                  "octaves": 2,
-                                  "stretchY": 0,
-                                  "stream": 2
+                                "mul": [
+                                  -1,
+                                  {
+                                    "max": [
+                                      {
+                                        "smoothstep": {
+                                          "of": {
+                                            "noise": {
+                                              "wavelength": 900,
+                                              "octaves": 2,
+                                              "stretchY": 0,
+                                              "stream": 5
+                                            }
+                                          },
+                                          "from": -0.3,
+                                          "to": 0.3
+                                        }
+                                      },
+                                      {
+                                        "mul": [
+                                          0.7,
+                                          {
+                                            "smoothstep": {
+                                              "of": "surface",
+                                              "from": 250,
+                                              "to": 900
+                                            }
+                                          }
+                                        ]
+                                      }
+                                    ]
+                                  }
+                                ]
+                              }
+                            ]
+                          },
+                          {
+                            "terrace": {
+                              "of": {
+                                "add": [
+                                  "surface",
+                                  {
+                                    "mul": [
+                                      3,
+                                      {
+                                        "noise": {
+                                          "wavelength": 90,
+                                          "octaves": 2,
+                                          "stretchY": 0,
+                                          "stream": 4
+                                        }
+                                      }
+                                    ]
+                                  }
+                                ]
+                              },
+                              "step": 7,
+                              "jitter": 0.6,
+                              "flat": 0.95,
+                              "riser": 0.06,
+                              "stream": 1
+                            }
+                          }
+                        ]
+                      },
+                      {
+                        "mul": [
+                          {
+                            "max": [
+                              {
+                                "smoothstep": {
+                                  "of": {
+                                    "noise": {
+                                      "wavelength": 900,
+                                      "octaves": 2,
+                                      "stretchY": 0,
+                                      "stream": 5
+                                    }
+                                  },
+                                  "from": -0.3,
+                                  "to": 0.3
                                 }
                               },
                               {
                                 "mul": [
-                                  0.5,
+                                  0.7,
                                   {
-                                    "noise": {
-                                      "wavelength": 40,
-                                      "octaves": 1,
-                                      "stretchY": 1.0,
-                                      "stream": 3
+                                    "smoothstep": {
+                                      "of": "surface",
+                                      "from": 250,
+                                      "to": 900
                                     }
                                   }
                                 ]
                               }
                             ]
                           },
-                          "from": -0.02,
-                          "to": 0.02
-                        }
+                          {
+                            "terrace": {
+                              "of": {
+                                "add": [
+                                  "surface",
+                                  {
+                                    "mul": [
+                                      3,
+                                      {
+                                        "noise": {
+                                          "wavelength": 90,
+                                          "octaves": 2,
+                                          "stretchY": 0,
+                                          "stream": 4
+                                        }
+                                      }
+                                    ]
+                                  }
+                                ]
+                              },
+                              "step": 22,
+                              "jitter": 0.35,
+                              "flat": 0.7,
+                              "riser": 0.04,
+                              "stream": 2
+                            }
+                          }
+                        ]
                       }
                     ]
                   },
-                  -1
+                  {
+                    "mul": [
+                      0.7,
+                      {
+                        "noise": {
+                          "wavelength": 24,
+                          "octaves": 1,
+                          "stretchY": 1.0,
+                          "stream": 3
+                        }
+                      }
+                    ]
+                  }
                 ]
               }
             ]
