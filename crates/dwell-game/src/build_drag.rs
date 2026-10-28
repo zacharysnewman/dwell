@@ -18,7 +18,7 @@ use dwell_protocol::{BlockEditRequest, RegionEdit, RegionEditOp, SIM_HZ, region_
 use dwell_world::region::{box_distance_sq, box_in_world};
 use dwell_world::{CELL, pos_of_cell};
 
-pub use crate::items::{BUILD_CLEARANCE, BUILD_MODE_KEY, BUILD_MODES};
+pub use crate::items::{BUILD_CLEARANCE, BUILD_MODE_KEY, BUILD_MODES, ItemDrag};
 
 /// How a build mode builds on (the engine's vocabulary; data names it).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -27,6 +27,9 @@ pub enum DragKind {
     Line,
     /// The cells the aim sweeps over, at the first block's level.
     Level,
+    /// Straight up or down from the first piece, whichever way the aim goes first: an item's own
+    /// (`drag: vertical`, ladders), whatever the build mode.
+    Vertical,
 }
 
 /// A build mode (data).
@@ -55,6 +58,11 @@ pub trait DragWorld {
     /// A block is in the cell (not air, a replaceable plant or water): what a floor joins onto and
     /// what the player stands on.
     fn occupied(&mut self, cell: [i32; 3]) -> bool;
+    /// `material` would be held in `cell` (a ladder by the wall behind it); a region fill runs no
+    /// place rules, so the drag checks it.
+    fn holds(&mut self, _cell: [i32; 3], _material: StateId) -> bool {
+        true
+    }
 }
 
 /// Pieces a line keeps built ahead of the player walking along it (bridging).
@@ -181,7 +189,10 @@ impl Stroke {
     fn fits(&self, min: [i32; 3], eye: [f64; 3], reach: f64, world: &mut impl DragWorld) -> bool {
         box_in_world(min, self.size())
             && box_distance_sq(min, self.size(), eye) <= reach * reach
-            && (0..self.rows).all(|r| world.free([min[0], min[1] + r, min[2]]))
+            && (0..self.rows).all(|r| {
+                let c = [min[0], min[1] + r, min[2]];
+                world.free(c) && world.holds(c, self.material)
+            })
     }
 
     /// The first piece's centre (m).
@@ -255,9 +266,16 @@ impl BuildDrag {
     }
 
     /// The first block was placed (`cells`, as predicted: one column of one piece) against face
-    /// direction `dir`, held by `holder`: dragging builds on from it. Nothing for a block that
-    /// doesn't drag ([`drags`]).
-    pub fn start(&mut self, holder: Holder, cells: &[[i32; 3]], dir: [i32; 3], material: StateId) {
+    /// direction `dir`, held by `holder`: dragging builds on from it, as the item's `drag` says.
+    /// Nothing for an item that doesn't drag, or a block that can't in the modes ([`drags`]).
+    pub fn start(
+        &mut self,
+        holder: Holder,
+        cells: &[[i32; 3]],
+        dir: [i32; 3],
+        material: StateId,
+        drag: ItemDrag,
+    ) {
         self.stroke = None;
         let Some(&first) = cells.first() else {
             return;
@@ -266,11 +284,17 @@ impl BuildDrag {
         let lowest = cells.iter().map(|c| c[1]).min().unwrap_or(first[1]);
         let rows = cells.len() as i32;
         let contiguous = cells.iter().map(|c| c[1]).max() == Some(lowest + rows - 1);
-        if !drags(material) || !column || !contiguous {
+        if !column || !contiguous {
             return;
         }
+        let (kind, dir) = match drag {
+            ItemDrag::None => return,
+            ItemDrag::Modes if !drags(material) => return,
+            ItemDrag::Modes => (self.mode().kind, dir),
+            // Up or down: decided by the aim (`vertical`).
+            ItemDrag::Vertical => (DragKind::Vertical, [0; 3]),
+        };
         let base = [first[0], lowest, first[2]];
-        let kind = self.mode().kind;
         self.stroke = Some(Stroke {
             kind,
             holder,
@@ -327,6 +351,7 @@ impl BuildDrag {
         let new = match s.kind {
             DragKind::Line => line(s, eye, dir, reach, world),
             DragKind::Level => level(s, eye, dir, reach, world),
+            DragKind::Vertical => vertical(s, eye, dir, reach, world),
         };
         self.pending.extend(new.into_iter().map(|e| (e, 0)));
     }
@@ -415,6 +440,33 @@ fn line(
         Some(want) => build_on(s, want, cells, eye, reach, world),
         None => Vec::new(),
     }
+}
+
+/// A vertical line's new pieces: up or down, whichever way the aim first goes half a piece along
+/// the first piece's column (the line nearest the aim), then on as a line.
+fn vertical(
+    s: &mut Stroke,
+    eye: [f64; 3],
+    dir: [f64; 3],
+    reach: f64,
+    world: &mut impl DragWorld,
+) -> Vec<RegionEdit> {
+    if s.dir == [0; 3] {
+        let a = s.centre();
+        let w: [f64; 3] = std::array::from_fn(|i| a[i] - eye[i]);
+        let b = dir[1];
+        let denom = 1.0 - b * b;
+        if denom < 1e-6 {
+            return Vec::new();
+        }
+        let e = dir[0] * w[0] + dir[1] * w[1] + dir[2] * w[2];
+        let sigma = (b * e - w[1]) / denom;
+        if sigma.abs() < 0.5 * f64::from(s.rows) * CELL[1] {
+            return Vec::new();
+        }
+        s.dir = [0, sigma.signum() as i32, 0];
+    }
+    line(s, eye, dir, reach, world)
 }
 
 /// The line's pieces from the next through `want`, `cells` apart, while they fit.
@@ -512,9 +564,12 @@ mod tests {
 
     /// A world of air with some solid cells, and cells the body is in (world cells).
     #[derive(Default)]
-    struct Fake(HashSet<[i32; 3]>, HashSet<[i32; 3]>);
+    struct Fake(HashSet<[i32; 3]>, HashSet<[i32; 3]>, HashSet<[i32; 3]>);
 
     impl DragWorld for Fake {
+        fn holds(&mut self, cell: [i32; 3], _material: StateId) -> bool {
+            !self.2.contains(&cell)
+        }
         fn free(&mut self, cell: [i32; 3]) -> bool {
             !self.0.contains(&cell) && !self.1.contains(&cell)
         }
@@ -555,7 +610,13 @@ mod tests {
             f.cell([lowest[0], lowest[1] + 1, lowest[2]]),
         ];
         let world_dir = [dir[0], dir[1] * if f.is_b() { -1 } else { 1 }, dir[2]];
-        d.start(Holder::Mouse, &piece, world_dir, require("dwell:stone"));
+        d.start(
+            Holder::Mouse,
+            &piece,
+            world_dir,
+            require("dwell:stone"),
+            ItemDrag::Modes,
+        );
         assert!(d.active());
         d
     }
@@ -819,6 +880,56 @@ mod tests {
         assert!(d.pump_tries(10_000.0).is_empty(), "given up");
     }
 
+    dwell_world::both_faces!(
+        /// Ladders (`drag: vertical`): up or down the wall, whichever way the aim goes, a cell at
+        /// a time while the wall holds them, whatever the build mode.
+        fn a_ladder_builds_up_or_down_while_the_wall_holds_it(f: FaceFrame) {
+            let ladder = (0..dwell_blocks::STATES.len() as StateId)
+                .find(|&id| info(id).look == "ladder")
+                .expect("a ladder");
+            let start = |d: &mut BuildDrag| {
+                // Placed against a wall's −Z side at row 4, z = 0.
+                d.start(
+                    Holder::Mouse,
+                    &[f.cell([0, 4, 0])],
+                    [0, 0, -1],
+                    ladder,
+                    ItemDrag::Vertical,
+                );
+                assert!(d.active());
+            };
+            let mut w = Fake::default();
+            // Row 8 has no wall behind it.
+            w.2.insert(f.cell([0, 8, 0]));
+            let eye = [0.5, 3.0, -3.0];
+            for kind in [DragKind::Line, DragKind::Level] {
+                let mut d = BuildDrag::new();
+                while d.mode().kind != kind {
+                    d.cycle();
+                }
+                start(&mut d);
+                // Up the wall to 4 m (row 8): rows 5–7, held; row 8 isn't.
+                d.aim(f.point(eye), towards(f, eye, [0.5, 4.1, 0.5]), 5.0, &mut w);
+                assert_eq!(
+                    cells(f, &sent(&mut d)),
+                    vec![[0, 5, 0], [0, 6, 0], [0, 7, 0]],
+                    "{kind:?}"
+                );
+                // Once up, the aim going down builds nothing below.
+                d.aim(f.point(eye), towards(f, eye, [0.5, 0.6, 0.5]), 5.0, &mut w);
+                assert!(sent(&mut d).is_empty());
+            }
+            // Aimed down first: down.
+            let mut d = BuildDrag::new();
+            start(&mut d);
+            d.aim(f.point(eye), towards(f, eye, [0.5, 0.8, 0.5]), 5.0, &mut w);
+            assert_eq!(
+                cells(f, &sent(&mut d)),
+                vec![[0, 1, 0], [0, 2, 0], [0, 3, 0]]
+            );
+        }
+    );
+
     #[test]
     fn only_plain_blocks_drag() {
         assert!(drags(require("dwell:stone")));
@@ -828,7 +939,7 @@ mod tests {
         for m in [ladder, require("dwell:torch"), require("dwell:tall_grass")] {
             assert!(!drags(m), "{}", info(m).name);
             let mut d = BuildDrag::new();
-            d.start(Holder::Mouse, &[[0, 1, 0]], [0, 1, 0], m);
+            d.start(Holder::Mouse, &[[0, 1, 0]], [0, 1, 0], m, ItemDrag::Modes);
             assert!(!d.active(), "{}", info(m).name);
         }
     }

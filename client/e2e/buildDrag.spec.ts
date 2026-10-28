@@ -30,7 +30,7 @@ async function lookAtPoint(page: Page, p: Vec3): Promise<void> {
   await call(page, `d.look(${String(yaw)}, ${String(pitch)})`);
 }
 
-/** The flat world, ready, with stone (a 1 m block, two cells) selected; the ground cell ahead. */
+/** The flat world, ready, with stone (a ½ m block, one cell) selected; the ground cell ahead. */
 async function start(page: Page): Promise<Vec3> {
   await page.goto('./?world=flat');
   await expect
@@ -51,17 +51,17 @@ test('held Place builds a line straight up out of the top face, and stops when l
   const [x, y, z] = await start(page);
   const stone = stateId('dwell:stone');
   expect(await call<boolean>(page, 'd.holdPlace(true)')).toBe(true);
-  // The first piece is rows y+1, y+2; looking up the column to the third piece's middle builds
-  // the second and third.
+  // The first piece is row y+1; looking up the column to the fifth piece's middle builds the
+  // second to the fifth.
   const top = (y + 1) * CELL_HEIGHT;
-  await lookAtPoint(page, [x + 0.5, top + 2.5, z + 0.5]);
-  for (const row of [y + 3, y + 4, y + 5, y + 6])
+  await lookAtPoint(page, [x + 0.5, top + 2.25, z + 0.5]);
+  for (const row of [y + 2, y + 3, y + 4, y + 5])
     await expect.poll(() => voxel(page, [x, row, z]), { timeout: 10_000 }).toBe(stone);
   // Let go: aiming further up builds nothing more.
   await call(page, 'd.holdPlace(false)');
-  await lookAtPoint(page, [x + 0.5, top + 3.5, z + 0.5]);
+  await lookAtPoint(page, [x + 0.5, top + 3.25, z + 0.5]);
   await page.waitForTimeout(1_000);
-  expect(await voxel(page, [x, y + 7, z])).toBe(0);
+  expect(await voxel(page, [x, y + 6, z])).toBe(0);
 });
 
 test('in Flat mode held Place paints the cells the aim sweeps over at the first level', async ({
@@ -73,16 +73,15 @@ test('in Flat mode held Place paints the cells the aim sweeps over at the first 
   expect(await call<string>(page, 'd.buildMode()')).toBe('Flat');
   await expect(page.locator('#hotbar-build')).toHaveText('Flat');
   expect(await call<boolean>(page, 'd.holdPlace(true)')).toBe(true);
-  // The level's plane is the first piece's middle, 0.5 m over the ground: sweep the aim along it
+  // The level's plane is the first piece's middle, 0.25 m over the ground: sweep the aim along it
   // two cells to each side.
-  const plane = (y + 1) * CELL_HEIGHT + 0.5;
+  const plane = (y + 1) * CELL_HEIGHT + 0.25;
   for (const dx of [1, 2, -1, -2]) {
     await lookAtPoint(page, [x + dx + 0.5, plane, z + 0.5]);
-    for (const row of [y + 1, y + 2])
-      await expect.poll(() => voxel(page, [x + dx, row, z]), { timeout: 10_000 }).toBe(stone);
+    await expect.poll(() => voxel(page, [x + dx, y + 1, z]), { timeout: 10_000 }).toBe(stone);
   }
   // At the level only: nothing above it.
-  expect(await voxel(page, [x + 2, y + 3, z])).toBe(0);
+  expect(await voxel(page, [x + 2, y + 2, z])).toBe(0);
   await call(page, 'd.holdPlace(false)');
 });
 
@@ -108,7 +107,7 @@ test('towering: held Place while standing on the spot builds a block under the f
   // On the ground the block would go where the body is: the press waits, held, for the jump.
   expect(await call<boolean>(page, 'd.holdPlace(true)')).toBe(true);
   for (let i = 0; i < 4; i++) await jump(page);
-  // A 1 m block a jump (the jump clears 1.25 m), stood on each time.
+  // A metre a jump (the jump clears 1.25 m: two ½ m blocks), stood on each time.
   await expect.poll(async () => (await state(page))?.feet[1] ?? 0).toBeGreaterThan(feet0 + 3.99);
   await call(page, 'd.holdPlace(false)');
   await jump(page);
@@ -191,8 +190,8 @@ test('bridging help in Flat mode paints the floor at the level stood on, joined 
   await expect.poll(async () => (await state(page))?.target ?? null).toBeNull();
   expect(await call<boolean>(page, 'd.holdPlace(true)')).toBe(true);
   // Swept along the level a few cells out, side to side.
-  // The level's plane: the middle of the 1 m piece, its top cell the row stood on.
-  const level = row * CELL_HEIGHT;
+  // The level's plane: the middle of the ½ m piece, level with the cell stood on.
+  const level = (row + 0.5) * CELL_HEIGHT;
   for (const [dx, dz] of [
     [0, 3],
     [1, 3],
@@ -215,4 +214,44 @@ test('bridging help in Flat mode paints the floor at the level stood on, joined 
         timeout: 10_000,
       })
       .toBe(stone);
+});
+
+test('a held ladder climbs the wall it is hung on, and stops where the wall ends', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  const [x, y, z] = await start(page);
+  const stone = stateId('dwell:stone');
+  // A stone pillar five cells up (Line out of the ground's top), then a step back from it.
+  expect(await call<boolean>(page, 'd.holdPlace(true)')).toBe(true);
+  const top = (y + 1) * CELL_HEIGHT;
+  await lookAtPoint(page, [x + 0.5, top + 2.25, z + 0.5]);
+  await expect.poll(() => voxel(page, [x, y + 5, z]), { timeout: 10_000 }).toBe(stone);
+  await call(page, 'd.holdPlace(false)');
+  await call(page, 'd.press("KeyS", true)');
+  await page.waitForTimeout(300);
+  await call(page, 'd.press("KeyS", false)');
+  await page.waitForTimeout(300);
+  // The ladder (its own drag: up or down only, whatever the mode) on the pillar's near side.
+  await page.locator('.hotbar-slot[title="Ladder"]').click();
+  await lookAtPoint(page, [x + 0.5, (y + 2.5) * CELL_HEIGHT, z + 0.02]);
+  await expect.poll(async () => (await state(page))?.target?.face ?? -1).toBe(5);
+  await page.waitForTimeout(150); // BLOCK_EDIT_INTERVAL_MS
+  expect(await call<boolean>(page, 'd.holdPlace(true)')).toBe(true);
+  const isLadder = async (row: number) => {
+    const m = await voxel(page, [x, row, z - 1]);
+    return m !== 0 && m !== stone;
+  };
+  await expect.poll(() => isLadder(y + 2)).toBe(true);
+  // Up the ladder's column, past the pillar's top.
+  for (const h of [3.5, 4.5, 5.5, 7.5]) {
+    await lookAtPoint(page, [x + 0.5, (y + h) * CELL_HEIGHT, z - 0.5]);
+    await page.waitForTimeout(300);
+  }
+  await call(page, 'd.holdPlace(false)');
+  for (const row of [y + 3, y + 4, y + 5])
+    await expect.poll(() => isLadder(row), { message: `ladder at ${String(row)}` }).toBe(true);
+  // No wall behind the cell over the pillar: none there.
+  await page.waitForTimeout(500);
+  expect(await isLadder(y + 6)).toBe(false);
 });

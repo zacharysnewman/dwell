@@ -158,14 +158,13 @@ test('touch controls: Break/Place toggle, tapping the view edits, tapping the ho
 
   // Back to Break: a tap removes the cell aimed at, once the new block is the one targeted (on a
   // slow runner the target could still be the ground below, which the tap would break instead).
-  // Dirt is a 1 m block, two ½ m cells (CELL_HEIGHT; docs/ITEMS.md); a break takes the one cell
-  // (docs/ITEMS.md §2): the crosshair is turned onto the upper cell, which goes, and the lower stays.
+  // Dirt is a ½ m block, one cell (CELL_HEIGHT; docs/ITEMS.md): the crosshair is turned onto it.
   await tap(edit.x, edit.y, 7);
   await expect(page.locator('#touch-edit')).toHaveText('Break');
   const feet = (await read(page))?.feet ?? [0, 0, 0];
   const d = [
     x + 0.5 - feet[0],
-    (y + 2.5) * CELL_HEIGHT - feet[1] - 1.62,
+    (y + 1.5) * CELL_HEIGHT - feet[1] - 1.62,
     z + 0.5 - feet[2],
   ] as const; // eye 1.62 m
   const lookYaw = (Math.atan2(d[0], d[2]) * 180) / Math.PI;
@@ -173,12 +172,10 @@ test('touch controls: Break/Place toggle, tapping the view edits, tapping the ho
   await page.evaluate(`globalThis.__dwell.look(${String(lookYaw)}, ${String(lookPitch)})`);
   await expect
     .poll(() => page.evaluate<string>('globalThis.__dwell.state()?.target?.cell.join() ?? ""'))
-    .toBe([x, y + 2, z].join());
+    .toBe([x, y + 1, z].join());
   await page.waitForTimeout(150); // BLOCK_EDIT_INTERVAL_MS
   await tap(600, 150, 8);
-  const upper = `globalThis.__dwell.voxel(${String(x)}, ${String(y + 2)}, ${String(z)})`;
-  await expect.poll(() => page.evaluate<number>(upper), { timeout: 5_000 }).toBe(0);
-  expect(await page.evaluate<number>(above)).toBe(stateId('dwell:dirt'));
+  await expect.poll(() => page.evaluate<number>(above), { timeout: 5_000 }).toBe(0);
 });
 
 test('on a phone the hotbar, connection status, debug overlay and buttons do not overlap', async ({

@@ -352,6 +352,17 @@ pub fn supported_on(m: StateId, under: StateId) -> bool {
     s.needs_support == Support::None || info(under).solid
 }
 
+/// Whether `m` in `cell` is held where it is: a block hung on a wall (`needsSupport: behind`, a
+/// ladder) by the full block behind it, anything else by what is under it ([`supported_on`]). What
+/// a region edit keeps of what it put down (ARCHITECTURE.md §6.5).
+pub fn held_in_place(world: &mut VoxelWorld, cell: [i32; 3], m: StateId) -> bool {
+    if info(m).needs_support == Support::Behind {
+        return behind(cell, m).is_some_and(|[x, y, z]| holds_behind(world.get_voxel(x, y, z)));
+    }
+    let [x, y, z] = below(cell);
+    supported_on(m, world.get_voxel(x, y, z))
+}
+
 /// What the world loses after `cell` becomes `material` (block data `needsSupport`): the blocks
 /// above it that no longer stand on what is under them, each with what it leaves (air, or water if
 /// it was flooded), in order upward — the server sends them in the same `VoxelModification`.

@@ -85,6 +85,8 @@ pub struct PaletteSlot {
     pub ladder: bool,
     /// Its height in ½ m cells (2: a 1 m block).
     pub rows: u8,
+    /// What holding Place does with it (docs/ITEMS.md §5).
+    pub drag: crate::items::ItemDrag,
 }
 
 const LOOK_LADDER: &str = "ladder";
@@ -105,6 +107,7 @@ pub fn palette() -> Vec<PaletteSlot> {
                 material,
                 ladder: info(material).look == LOOK_LADDER,
                 rows: it.rows,
+                drag: it.drag,
             })
         })
         .collect()
@@ -319,19 +322,16 @@ mod tests {
     }
 
     #[test]
-    fn offers_the_items_in_order_1_m_by_default_and_half_pieces_as_their_own_slots() {
-        // docs/ITEMS.md: the hotbar is the items' data (shared/items/items.json).
+    fn offers_the_items_in_order_as_half_metre_pieces() {
+        // docs/ITEMS.md: the hotbar is the items' data (shared/items/items.json); owner,
+        // 2026-10-28: ½ m blocks only.
         let slots = palette();
         let names: Vec<_> = slots.iter().map(|s| s.name.as_str()).collect();
         let want: Vec<_> = crate::items::ITEMS.iter().map(|i| i.label).collect();
         assert_eq!(names, want);
-        let stone = slots.iter().find(|s| s.item == "dwell:stone").unwrap();
-        let half = slots.iter().find(|s| s.item == "dwell:stone_half").unwrap();
-        assert_eq!(
-            (stone.rows, half.rows, stone.material),
-            (2, 1, half.material)
-        );
-        assert!(slots.iter().any(|s| s.ladder));
+        assert!(slots.iter().all(|s| s.rows == 1));
+        let ladder = slots.iter().find(|s| s.ladder).expect("a ladder slot");
+        assert_eq!(ladder.drag, crate::items::ItemDrag::Vertical);
     }
 
     #[test]
@@ -441,7 +441,7 @@ mod tests {
                     cell: [3, 0, 4],
                     face: 5,
                     material: require("dwell:dirt"),
-                    rows: 2,
+                    rows: 1,
                     down: false,
                 }),
             ]

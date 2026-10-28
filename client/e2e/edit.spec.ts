@@ -101,9 +101,9 @@ async function lookAt(page: Page, cell: Vec3, height = 0.5): Promise<void> {
 const EDIT_ARRIVES_MS = 20_000;
 
 /**
- * Breaks the block placed at `cell`: a break takes one ½ m cell (docs/ITEMS.md §2), so a 1 m block
- * (the hotbar's blocks are two cells) goes in two breaks, its upper cell first (a look from above
- * meets it first). Each waits until `pages` all show the cell empty.
+ * Breaks the block placed at `cell`: a break takes one ½ m cell (docs/ITEMS.md §2), so a taller
+ * piece (an item of two cells, none on the hotbar today) goes in two breaks, its upper cell first
+ * (a look from above meets it first). Each waits until `pages` all show the cell empty.
  */
 async function breakBlock(page: Page, cell: Vec3, pages: Page[] = [page]): Promise<void> {
   const upper: Vec3 = [cell[0], cell[1] + 1, cell[2]];
@@ -151,7 +151,7 @@ test('local mode: every palette block can be picked from the hotbar, placed, and
   await ready(page);
   // The hotbar is built once the page has taken the join, which can be a frame after the terrain.
   // One slot per item (shared/items/items.json, docs/ITEMS.md).
-  await expect(page.locator('.hotbar-slot')).toHaveCount(16);
+  await expect(page.locator('.hotbar-slot')).toHaveCount(11);
   const slots = await page.locator('.hotbar-slot').count();
   const ground = await aim(page);
   expect(ground.face).toBe(2);

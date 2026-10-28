@@ -1491,7 +1491,7 @@ fn an_edit_shows_at_once_and_the_servers_ack_settles_it() {
     // The ½ m stone: one cell an edit (docs/ITEMS.md).
     let half = dwell_game::block_interaction::palette()
         .iter()
-        .position(|s| s.item == "dwell:stone_half")
+        .position(|s| s.item == "dwell:stone")
         .expect("a ½ m stone");
     rig.game.as_mut().unwrap().interaction.select(half as i64); // stone
     let floor = target_at(&mut rig, 0.0, -40.0);
@@ -1555,7 +1555,7 @@ fn a_refused_edit_rolls_back() {
     // The ½ m stone: one cell an edit (docs/ITEMS.md).
     let half = dwell_game::block_interaction::palette()
         .iter()
-        .position(|s| s.item == "dwell:stone_half")
+        .position(|s| s.item == "dwell:stone")
         .expect("a ½ m stone");
     rig.game.as_mut().unwrap().interaction.select(half as i64);
     let floor = target_at(&mut rig, 0.0, -40.0);
@@ -1578,7 +1578,7 @@ fn rapid_edits_and_a_refusal_reconcile_with_the_server() {
     // The ½ m stone: one cell an edit (docs/ITEMS.md).
     let half = dwell_game::block_interaction::palette()
         .iter()
-        .position(|s| s.item == "dwell:stone_half")
+        .position(|s| s.item == "dwell:stone")
         .expect("a ½ m stone");
     rig.game.as_mut().unwrap().interaction.select(half as i64);
     let floor = target_at(&mut rig, 0.0, -40.0);
@@ -1725,7 +1725,7 @@ fn another_client_sees_your_body_walk_sprint_slide_and_jump_and_what_you_hold() 
     // The ½ m stone: one cell an edit (docs/ITEMS.md).
     let half = dwell_game::block_interaction::palette()
         .iter()
-        .position(|s| s.item == "dwell:stone_half")
+        .position(|s| s.item == "dwell:stone")
         .expect("a ½ m stone");
     rig.game.as_mut().unwrap().interaction.select(half as i64);
     let want = rig.game.as_ref().unwrap().held();
@@ -1812,7 +1812,7 @@ fn torches_in_the_hand_and_placed_crackle_and_stop() {
     // The ½ m stone: one cell an edit (docs/ITEMS.md).
     let half = dwell_game::block_interaction::palette()
         .iter()
-        .position(|s| s.item == "dwell:stone_half")
+        .position(|s| s.item == "dwell:stone")
         .expect("a ½ m stone");
     rig.game.as_mut().unwrap().interaction.select(half as i64);
     let away = sounds(&mut rig, 10);
