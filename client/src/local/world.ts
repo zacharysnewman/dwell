@@ -34,6 +34,28 @@ export interface LocalWorld {
    * own world file (`<name>-portal`, `<name>-portal-b`).
    */
   spawnPortal?: boolean;
+  /**
+   * A spawn link (`?spawn=`) on a world file that is already there: its player starts at that
+   * spawn too, not where it left the world (owner, 2026-10-27). A menu world's chosen spawn is its
+   * first one only.
+   */
+  spawnOnOpen?: boolean;
+}
+
+/** The spawns a world can start at (`?spawn=`, a new world's Spawn): "" is face A's usual one. */
+export const SPAWNS = ['', 'b', 'portal', 'portal-b'] as const;
+export type Spawn = (typeof SPAWNS)[number];
+
+export function isSpawn(v: unknown): v is Spawn {
+  return (SPAWNS as readonly unknown[]).includes(v);
+}
+
+/** The local world's options for a spawn. */
+export function spawnOptions(spawn: Spawn): Pick<LocalWorld, 'spawnFaceB' | 'spawnPortal'> {
+  return {
+    ...(spawn === 'b' || spawn === 'portal-b' ? { spawnFaceB: true } : {}),
+    ...(spawn === 'portal' || spawn === 'portal-b' ? { spawnPortal: true } : {}),
+  };
 }
 
 export function parseLocalWorld(search: string): LocalWorld {
@@ -45,14 +67,10 @@ export function parseLocalWorld(search: string): LocalWorld {
   const seed = Number(params.get('seed') ?? '0');
   const worldSeed = Number.isSafeInteger(seed) && seed >= 0 ? seed : 0;
   const spawn = params.get('spawn');
-  if (spawn === 'portal' || spawn === 'portal-b') {
-    const file = `${localWorldName(generatorVersion, worldSeed)}-${spawn}`;
-    const faceB = spawn === 'portal-b' ? { spawnFaceB: true } : {};
-    return { worldSeed, generatorVersion, file, ...faceB, spawnPortal: true };
-  }
-  if (spawn === 'b') {
-    const file = `${localWorldName(generatorVersion, worldSeed)}-faceb`;
-    return { worldSeed, generatorVersion, file, spawnFaceB: true };
+  if (spawn !== '' && isSpawn(spawn)) {
+    // Each spawn is its own world file, so the others are untouched.
+    const file = `${localWorldName(generatorVersion, worldSeed)}-${spawn === 'b' ? 'faceb' : spawn}`;
+    return { worldSeed, generatorVersion, file, ...spawnOptions(spawn), spawnOnOpen: true };
   }
   return { worldSeed, generatorVersion };
 }

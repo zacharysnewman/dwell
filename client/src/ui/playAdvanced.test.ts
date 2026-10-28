@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { GENERATORS, parseLocalWorld } from '../local/world';
 import { launchOf, withRoute } from './launch';
-import { advancedRoute, clockShare, OVERRIDE_PARAMS, type OverrideField } from './playAdvanced';
+import {
+  advancedRoute,
+  clockShare,
+  OVERRIDE_PARAMS,
+  spawnChoices,
+  type OverrideField,
+} from './playAdvanced';
 import { OVERRIDE_FIELDS } from './playOverrides.gen';
 
 const field = (param: string): OverrideField => {
@@ -82,5 +88,9 @@ describe('Play advanced', () => {
       withRoute('?local=1&seed=3&time=0.5&moon=0.2&outline=creases&debug=1', { play: 'wabc' }),
     ).toBe('?debug=1&play=wabc');
     expect(withRoute('?local=1&time=0.5&timespeed=60', {})).toBe('');
+  });
+
+  it('offers its spawns to the New world form too', () => {
+    expect(spawnChoices().map((o) => o.value)).toEqual(['', 'b', 'portal', 'portal-b']);
   });
 });

@@ -1,8 +1,10 @@
 // Play advanced (docs/DEV_TOOLS.md, Play advanced): the main menu's alternate Play. It opens a
-// one-off local world by link (`?local=1`) with overrides the game already reads from the address —
-// the world type, seed, spawn, time of day, … — one field per entry of shared/play/overrides.json
-// (generated into playOverrides.gen.ts). Only the fields the player set are passed; nothing is
-// saved, and the overrides leave the address on the next route (ui/launch.ts ROUTE_PARAMS).
+// local world by link (`?local=1`; one world file per type, seed and spawn) with overrides the game
+// already reads from the address — the world type, seed, spawn, time of day, … — one field per
+// entry of shared/play/overrides.json (generated into playOverrides.gen.ts). Only the fields the
+// player set are passed; a spawn puts the player at it on every open; the overrides are not saved,
+// and they leave the address on the next route (ui/launch.ts ROUTE_PARAMS).
+import { isSpawn } from '../local/world';
 import { OVERRIDE_FIELDS } from './playOverrides.gen';
 
 export interface OverrideOption {
@@ -17,6 +19,15 @@ export type OverrideField = { param: string; label: string; hint?: string } & (
   | { kind: 'number'; min: number; max: number; step: number }
   | { kind: 'clock' }
 );
+
+/**
+ * The spawns a world can start at, labelled: Play advanced's Spawn choice (shared/play/overrides.json),
+ * which the New world form offers too.
+ */
+export function spawnChoices(): OverrideOption[] {
+  const field = OVERRIDE_FIELDS.find((f) => f.param === 'spawn');
+  return field?.kind === 'choice' ? field.options.filter((o) => isSpawn(o.value)) : [];
+}
 
 /** Every parameter Play advanced may set (ui/launch.ts drops them on the next route). */
 export const OVERRIDE_PARAMS: readonly string[] = OVERRIDE_FIELDS.map((f) => f.param);

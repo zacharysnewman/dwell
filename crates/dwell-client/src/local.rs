@@ -59,14 +59,24 @@ impl LocalCore {
         storage: Option<impl StorageBackend>,
         entropy: Box<dyn Entropy>,
     ) -> Result<Self, LocalError> {
-        Self::create_spawning(face, false, world_seed, generator_version, storage, entropy)
+        Self::create_spawning(
+            face,
+            false,
+            false,
+            world_seed,
+            generator_version,
+            storage,
+            entropy,
+        )
     }
 
     /// [`LocalCore::create_on`], with `portal` by the opening of the portal nearest the centre on
-    /// `face` (the dev link `?spawn=portal`, `portal-b`; BIFACIAL_WORLD.md §6).
+    /// `face` (the dev link `?spawn=portal`, `portal-b`; BIFACIAL_WORLD.md §6), and with `at_spawn`
+    /// a saved world's player starting at that spawn, not where it left (a spawn link).
     pub fn create_spawning(
         face: dwell_world::Face,
         portal: bool,
+        at_spawn: bool,
         world_seed: u64,
         generator_version: u32,
         storage: Option<impl StorageBackend>,
@@ -85,6 +95,8 @@ impl LocalCore {
                 (face == dwell_world::Face::B)
                     .then(|| dwell_worldgen::spawn_point_b_for(generator_version, world_seed))
             }),
+            // A spawn link on a saved world: its player starts at the spawn (ServerConfig).
+            join_at_spawn: at_spawn,
             world_seed,
             generator_version,
             name: "Local world".into(),

@@ -312,8 +312,10 @@ runs it on both faces.
   them rather than `MIDPLANE_Y`. A face-dependent piece of shading is a function in
   `render/face_shading.rs` with a Rust twin tested on both faces.
 - **Playing face B.** The dev link `?spawn=b` starts a local world with the player on face B's
-  spawn (`BifacialTerrain::spawn_point_b`, a world file of its own, `…-faceb`), and a bench scenario's
-  `"face": "b"` does the same (`docs/DEV_TOOLS.md`). Real worlds still spawn on face A (§9).
+  spawn (`BifacialTerrain::spawn_point_b`, a world file of its own, `…-faceb`; every open puts the
+  player there), and a bench scenario's `"face": "b"` does the same (`docs/DEV_TOOLS.md`). A new
+  world from the menu spawns on face B when New world's Spawn says so; otherwise worlds spawn on
+  face A (§9).
 
 ### 11.1 The audit (2026-10-20, completed in 0.21.x)
 
@@ -438,9 +440,11 @@ drag in the flip band inside a shaft.
 cells are no wider than the radius (levels 0–1) and draws the ground over them coarser; the
 hydrology prototype ignores them (they don't change the height field). Edits, region tools and
 brushes leave the bedrock (`indestructible`; the client predicts with the server's check). Dev
-aids: `?spawn=portal` (`portal-b`) spawns a new local world's player on the rim over the ladder of
+aids: `?spawn=portal` (`portal-b`) spawns a local world's player on the rim over the ladder of
 the portal nearest the centre, on face A (B), with `?seed=` or alone (seed 0; it opened the menu alone
-before 0.28.2), never for a world played or regenerated from the menu; the bench's `portal-a` and `portal-b` scenarios.
+before 0.28.2), every time it opens that world file (since 0.37.3; before, only when the file was
+new, and a reopened world put the player where it left); a world from the menu starts there when
+New world's Spawn chose it (its first spawn only); the bench's `portal-a` and `portal-b` scenarios.
 
 **Compatibility.** Generator version 20 changes the terrain every seed generates (the bedrock, the
 portals) and the block registry gains a block: a new compatibility line (RELEASES.md §3).

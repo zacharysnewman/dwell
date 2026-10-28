@@ -89,6 +89,7 @@ async function start(
   file?: string,
   spawnFaceB = false,
   spawnPortal = false,
+  spawnOnOpen = false,
   maps: Uint8Array[] = [],
 ): Promise<void> {
   // The world file (§6.4): the chosen world's (by default one per generator and seed), in OPFS.
@@ -111,6 +112,7 @@ async function start(
       files?.handle ?? null,
       spawnFaceB,
       spawnPortal,
+      spawnOnOpen,
     );
   } catch (err) {
     scope.postMessage({
@@ -147,6 +149,7 @@ scope.onmessage = (e) => {
       msg.file,
       msg.spawnFaceB,
       msg.spawnPortal,
+      msg.spawnOnOpen,
       msg.maps,
     );
   else handle(msg);

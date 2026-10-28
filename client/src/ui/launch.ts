@@ -16,10 +16,10 @@ export type Launch =
   /** A world from the menu (`?play=<world id>`). */
   | { kind: 'play'; id: string }
   /**
-   * A new world from the menu (`?new=1&name=…&seed=…&type=…`): created by the build that opens it,
+   * A new world from the menu (`?new=1&name=…&seed=…&type=…&spawn=…`): created by the build that opens it,
    * which records its own generator and version (RELEASES.md §5: the launcher owns the menu).
    */
-  | { kind: 'new'; name: string; seed: string; type: string }
+  | { kind: 'new'; name: string; seed: string; type: string; spawn: string }
   /** A world regenerated from its seed by the build that opens it (`?regenerate=<world id>`). */
   | { kind: 'regenerate'; id: string }
   /** A local world by link (`?local=1`, `?world=`, `?seed=`): one per generator and seed. */
@@ -68,6 +68,7 @@ export function launchOf(search: string): Launch {
       name: params.get('name') ?? '',
       seed: params.get('seed') ?? '',
       type: params.get('type') ?? '',
+      spawn: params.get('spawn') ?? '',
     };
   }
   const regenerate = params.get('regenerate');

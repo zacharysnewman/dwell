@@ -172,6 +172,10 @@ pub struct ServerConfig {
     pub generator_version: u32,
     /// Feet position; players spread out around it. Unset: the generator's spawn point.
     pub spawn: Option<[f64; 3]>,
+    /// The launch's spawn wins over a saved world's, and returning players start at it, not where
+    /// they left the world: a local world opened by a spawn link (`?spawn=portal`, `b`; owner,
+    /// 2026-10-27). Off, a saved world keeps its own spawn and players continue where they were.
+    pub join_at_spawn: bool,
     /// Terrain generation and streaming (§6.3): 0 threads generate on the tick within the budget.
     pub worldgen_threads: usize,
     pub worldgen_budget: Duration,
@@ -220,6 +224,7 @@ impl Default for ServerConfig {
             world_seed: 0,
             generator_version: dwell_world::GENERATOR_TERRAIN,
             spawn: None,
+            join_at_spawn: false,
             worldgen_threads: 0,
             worldgen_budget: Duration::from_micros(4000),
             pregen_radius_chunks: 2,
@@ -626,11 +631,12 @@ pub struct Server {
 
 impl Server {
     pub fn new(mut config: ServerConfig, entropy: Box<dyn Entropy>) -> Self {
-        // A saved world keeps its own seed, generator and spawn (launch options apply to new worlds).
+        // A saved world keeps its own seed, generator and spawn (launch options apply to new worlds),
+        // unless the launch puts its players at its own spawn.
         if let Some(meta) = config.store.as_ref().and_then(|s| s.db().load_meta()) {
             config.world_seed = meta.world_seed;
             config.generator_version = meta.generator_version;
-            if meta.spawn.is_some() {
+            if meta.spawn.is_some() && !(config.join_at_spawn && config.spawn.is_some()) {
                 config.spawn = meta.spawn;
             }
         }
@@ -968,7 +974,8 @@ impl Server {
             self.send_reliable(id, &m, Channel::Control);
         }
         self.send_reliable(id, &Message::Welcome(welcome), Channel::Control);
-        // A returning player continues where it left the world (§6.4), unless it was dead.
+        // A returning player continues where it left the world (§6.4), unless it was dead, or the
+        // launch puts players at its spawn (keeping their health).
         let saved = self
             .config
             .store
@@ -976,7 +983,8 @@ impl Server {
             .and_then(|st| st.db().load_player(&key));
         match saved {
             Some(p) if p.health > 0 => {
-                self.spawn_player(id, Some(p.feet));
+                let feet = (!self.config.join_at_spawn).then_some(p.feet);
+                self.spawn_player(id, feet);
                 self.sessions.get_mut(&id).expect("session").health = p.health;
             }
             _ => self.spawn_player(id, None),

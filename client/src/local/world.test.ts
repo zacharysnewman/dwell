@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { GENERATORS, parseLocalWorld } from './world';
+import { GENERATORS, parseLocalWorld, spawnOptions } from './world';
 
 describe('local world options', () => {
   it('defaults to procedural terrain with seed 0', () => {
@@ -31,6 +31,7 @@ describe('local world options', () => {
       generatorVersion: GENERATORS.terrain,
       file: 'local-g8-s7-faceb',
       spawnFaceB: true,
+      spawnOnOpen: true,
     });
     expect(parseLocalWorld('?spawn=a').spawnFaceB).toBeUndefined();
     // By a portal's opening (BIFACIAL_WORLD.md §6), on either face, in a world file of its own.
@@ -39,11 +40,27 @@ describe('local world options', () => {
       generatorVersion: GENERATORS.terrain,
       file: 'local-g8-s7-portal',
       spawnPortal: true,
+      spawnOnOpen: true,
     });
     expect(parseLocalWorld('?seed=7&spawn=portal-b')).toMatchObject({
       file: 'local-g8-s7-portal-b',
       spawnFaceB: true,
       spawnPortal: true,
     });
+  });
+
+  it('a spawn link puts the player at its spawn on every open, a plain link does not', () => {
+    // Owner, 2026-10-27: a saved world opened by a spawn link moves its player to the spawn.
+    expect(parseLocalWorld('?spawn=portal').spawnOnOpen).toBe(true);
+    expect(parseLocalWorld('?spawn=b').spawnOnOpen).toBe(true);
+    expect(parseLocalWorld('?seed=3').spawnOnOpen).toBeUndefined();
+    expect(parseLocalWorld('?spawn=').spawnOnOpen).toBeUndefined();
+  });
+
+  it("gives a spawn's options", () => {
+    expect(spawnOptions('')).toEqual({});
+    expect(spawnOptions('b')).toEqual({ spawnFaceB: true });
+    expect(spawnOptions('portal')).toEqual({ spawnPortal: true });
+    expect(spawnOptions('portal-b')).toEqual({ spawnFaceB: true, spawnPortal: true });
   });
 });

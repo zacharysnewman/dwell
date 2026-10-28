@@ -16,7 +16,7 @@ import type { ListedServer, Lobby, LobbyQuery, Nearby } from '../net/master';
 import { looksLikeAddress, pastedCode, pastedInvite } from './launch';
 import type { RecentServer } from './recentServers';
 import { ServerBrowser } from './serverBrowser';
-import { playAdvancedPanel } from './playAdvanced';
+import { playAdvancedPanel, spawnChoices } from './playAdvanced';
 import { audio } from '../audio/engine';
 
 export interface MainMenuDeps {
@@ -276,6 +276,15 @@ export class MainMenu {
       option.textContent = typeLabel(t);
       type.append(option);
     }
+    // Where the world's first spawn is (Play advanced's Spawn choices, shared/play/overrides.json).
+    const spawn = document.createElement('select');
+    spawn.id = 'world-spawn';
+    for (const s of spawnChoices()) {
+      const option = document.createElement('option');
+      option.value = s.value;
+      option.textContent = s.label;
+      spawn.append(option);
+    }
     const submit = document.createElement('button');
     submit.type = 'submit';
     submit.className = 'block-button';
@@ -283,7 +292,14 @@ export class MainMenu {
     const hint = document.createElement('p');
     hint.className = 'menu-hint';
     hint.textContent = 'Seed: a number, or any text. The same seed makes the same world.';
-    f.append(field('Name', name), field('Seed', seed), field('Type', type), hint, submit);
+    f.append(
+      field('Name', name),
+      field('Seed', seed),
+      field('Type', type),
+      field('Spawn', spawn),
+      hint,
+      submit,
+    );
     f.addEventListener('submit', (e) => {
       e.preventDefault();
       // The build that opens it creates it (its generator, its version).
@@ -292,6 +308,7 @@ export class MainMenu {
         name: cleanName(name.value, 'New world'),
         seed: seed.value.trim(),
         type: type.value,
+        ...(spawn.value ? { spawn: spawn.value } : {}),
       });
     });
   }
