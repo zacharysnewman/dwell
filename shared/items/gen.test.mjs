@@ -41,6 +41,7 @@ test('bad items fail with the entry and the problem', () => {
     [(d) => (d.buildModes.modes[1].name = 'dwell:line'), /buildModes\.modes\[1\]\.name dwell:line is listed twice/],
     [(d) => (d.buildModes.key = 'l'), /buildModes\.key must be a KeyboardEvent\.code/],
     [(d) => (d.buildModes.modes = []), /buildModes\.modes must be a non-empty list/],
+    [(d) => (d.buildModes.clearance = 2), /buildModes\.clearance must be 0\.\.0\.5/],
   ];
   for (const [change, message] of cases) {
     const d = loadItems();

@@ -26,6 +26,9 @@ pub const ITEMS: [ItemDef; 16] = [
 /// The key that cycles the build modes (`KeyboardEvent.code`).
 pub const BUILD_MODE_KEY: &str = "KeyL";
 
+/// How far (m) the player's own body must be clear of a cell before a block goes in it.
+pub const BUILD_CLEARANCE: f64 = 0.15;
+
 /// What holding Place does after the first block, in the order the key cycles them.
 pub const BUILD_MODES: [BuildModeDef; 2] = [
     BuildModeDef { name: "dwell:line", label: "Line", kind: DragKind::Line },

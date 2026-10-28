@@ -19,8 +19,9 @@
     { "name": "dwell:log_half", "label": "Log, ½ m", "block": "dwell:log", "rows": 1 }
   ],
   "buildModes": {
-    "$comment": "What holding Place does after the first block (docs/ITEMS.md §5; owner, 2026-10-28): keep building as the aim moves, in the mode chosen. `key` (KeyboardEvent.code) cycles the modes, as does the controller's buildMode button (shared/input/gamepad.json) and the touch Build button; the first is the default. Kinds (the engine's vocabulary, crates/dwell-game/src/build_drag.rs): `line` builds on in a straight line out of the face first clicked, as far as the aim reaches along it; `level` paints the cells the aim sweeps over at the first block's level (floors and ceilings).",
+    "$comment": "What holding Place does after the first block (docs/ITEMS.md §5; owner, 2026-10-28): keep building as the aim moves, in the mode chosen. `key` (KeyboardEvent.code) cycles the modes, as does the controller's buildMode button (shared/input/gamepad.json) and the touch Build button; the first is the default. Kinds (the engine's vocabulary, crates/dwell-game/src/build_drag.rs): `line` builds on in a straight line out of the face first clicked, as far as the aim reaches along it; `level` paints the cells the aim sweeps over at the first block's level (floors and ceilings). `clearance` (m): how far the player's own body must be clear of a cell before a block goes in it (above it, jumping, when towering): the server sees the body a little later, and refuses a block placed into it.",
     "key": "KeyL",
+    "clearance": 0.15,
     "modes": [
       { "name": "dwell:line", "label": "Line", "kind": "line" },
       { "name": "dwell:flat", "label": "Flat", "kind": "level" }

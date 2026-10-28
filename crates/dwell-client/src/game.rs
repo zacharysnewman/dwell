@@ -1341,18 +1341,33 @@ impl<S: Scene> Game<S> {
                 rows,
                 down: rows > 1 && t.face != 2 && t.face != 3 && t.aim_up < 0.5,
             });
-            let cells: Vec<[i32; 3]> = self
-                .predicted_changes(&m)?
-                .iter()
-                .map(|(c, _)| *c)
-                .collect();
+            let cells: Option<Vec<[i32; 3]>> = self
+                .predicted_changes(&m)
+                .map(|c| c.iter().map(|(c, _)| *c).collect());
             let dir = dwell_world::edit::FACE_DIRS
                 .get(usize::from(t.face))
                 .copied()?;
-            Some((cells, dir, material))
+            Some((m, cells, dir, material))
         });
+        let Some((m, piece, dir, material)) = piece else {
+            return self.edit(action, now_ms);
+        };
+        // Standing where the block goes (towering): it waits, held, until a jump lifts the body
+        // clear (docs/ITEMS.md §5).
+        if piece.is_none()
+            && self.predicted_changes_with(&m, false).is_some()
+            && let Message::BlockEditRequest(request) = m
+        {
+            self.drag.wait(dwell_game::build_drag::Waiting {
+                holder,
+                request,
+                dir,
+                material,
+            });
+            return self.drag.waiting().is_some() || self.edit(action, now_ms);
+        }
         let placed = self.edit(action, now_ms);
-        if placed && let Some((cells, dir, material)) = piece {
+        if placed && let Some(cells) = piece {
             self.drag.start(holder, &cells, dir, material);
         }
         placed
@@ -1376,10 +1391,38 @@ impl<S: Scene> Game<S> {
         if self.dead || !self.region.enabled {
             self.drag.cancel();
         }
+        // A first place waiting for the body: it goes once the body is clear of it.
+        if let Some(w) = self.drag.waiting() {
+            let m = Message::BlockEditRequest(w.request.clone());
+            let me = self.drag_body();
+            let clear = |world: &mut dwell_world::VoxelWorld, cells: &[[i32; 3]]| {
+                let mut free = DragCells { world, me };
+                cells
+                    .iter()
+                    .all(|&c| dwell_game::build_drag::DragWorld::free(&mut free, c))
+            };
+            if let Some(changes) = self.predicted_changes(&m)
+                && clear(
+                    self.streamer.store_mut(),
+                    &changes.iter().map(|(c, _)| *c).collect::<Vec<_>>(),
+                )
+                && let Some(w) = self.drag.take_waiting()
+            {
+                let cells: Vec<[i32; 3]> = changes.iter().map(|(c, _)| *c).collect();
+                if let Some(&at) = cells.first() {
+                    self.edit_sounds
+                        .local_place(at, w.material, now_ms, &mut self.sounds);
+                }
+                self.bodies
+                    .swing_arms(dwell_characters::animator::Swing::Place);
+                self.send_edit(m, None);
+                self.drag.start(w.holder, &cells, w.dir, w.material);
+            }
+        }
         if let Some(eye) = eye
             && self.drag.active()
         {
-            let me = self.own_capsule();
+            let me = self.drag_body();
             let mut world = DragCells {
                 world: self.streamer.store_mut(),
                 me,
@@ -1522,11 +1565,21 @@ impl<S: Scene> Game<S> {
     /// refused or its box isn't loaded. The server's later changes (blocks left unsupported) come
     /// with its modification.
     fn predicted_changes(&mut self, m: &Message) -> Option<Vec<([i32; 3], StateId)>> {
+        self.predicted_changes_with(m, true)
+    }
+
+    /// [`predicted_changes`](Self::predicted_changes), without our own body (`body` false): what
+    /// the edit would do were we out of the way.
+    fn predicted_changes_with(
+        &mut self,
+        m: &Message,
+        body: bool,
+    ) -> Option<Vec<([i32; 3], StateId)>> {
         use dwell_game::region_tools::BoxSource;
         let eye = self.target_eye?;
         // Our own body, as the server sees it (its `EditCapsule`s): a block placed into it is
         // refused there, so predicting it would show it for a moment (docs/BUGS.md 7).
-        let me = self.own_capsule();
+        let me = self.own_capsule().filter(|_| body);
         let players: &[dwell_world::edit::EditCapsule] = me.as_slice();
         match m {
             Message::BlockEditRequest(e) => {
@@ -1558,6 +1611,18 @@ impl<S: Scene> Game<S> {
             }
             _ => None,
         }
+    }
+
+    /// Our body as drag building keeps clear of it: grown by `build_drag::body_margin` for our speed
+    /// and round trip, as the server's view of it lags (docs/ITEMS.md §5).
+    fn drag_body(&self) -> Option<dwell_world::edit::EditCapsule> {
+        let c = self.own_capsule()?;
+        let speed = f64::from(self.predictor.velocity().length());
+        let margin = dwell_game::build_drag::body_margin(speed, self.rtt_ms) as f32;
+        Some(dwell_world::edit::EditCapsule {
+            radius: c.radius + margin,
+            ..c
+        })
     }
 
     /// Our predicted body as an edit capsule (the server builds its players' the same way), or
@@ -2795,7 +2860,8 @@ impl Puppets {
 }
 
 /// The client's world as drag building reads it (docs/ITEMS.md §5): a cell is free for air, a
-/// replaceable plant or water, unless our own body is in it (the server leaves such a cell).
+/// replaceable plant or water, unless it is in `me`, our body grown by the margin it must be clear
+/// by (`Game::drag_body`).
 struct DragCells<'a> {
     world: &'a mut dwell_world::VoxelWorld,
     me: Option<dwell_world::edit::EditCapsule>,

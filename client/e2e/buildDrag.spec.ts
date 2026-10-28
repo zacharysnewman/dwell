@@ -85,3 +85,53 @@ test('in Flat mode held Place paints the cells the aim sweeps over at the first 
   expect(await voxel(page, [x + 2, y + 3, z])).toBe(0);
   await call(page, 'd.holdPlace(false)');
 });
+
+/** A jump: Space held briefly, then the time to rise and land. */
+async function jump(page: Page): Promise<void> {
+  await call(page, 'd.press("Space", true)');
+  await page.waitForTimeout(150);
+  await call(page, 'd.press("Space", false)');
+  await page.waitForTimeout(750);
+}
+
+test('towering: held Place while standing on the spot builds a block under the feet each jump', async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  await start(page);
+  await call(page, 'd.look(0, -89)');
+  // The ground cell under the feet (the look before aimed at the ground ahead).
+  const f = (await state(page))?.feet ?? [0, 0, 0];
+  const under = [Math.floor(f[0]), Math.round(f[1] / CELL_HEIGHT) - 1, Math.floor(f[2])].join();
+  await expect.poll(async () => (await state(page))?.target?.cell.join() ?? '').toBe(under);
+  const feet0 = f[1];
+  // On the ground the block would go where the body is: the press waits, held, for the jump.
+  expect(await call<boolean>(page, 'd.holdPlace(true)')).toBe(true);
+  for (let i = 0; i < 4; i++) await jump(page);
+  // A 1 m block a jump (the jump clears 1.25 m), stood on each time.
+  await expect.poll(async () => (await state(page))?.feet[1] ?? 0).toBeGreaterThan(feet0 + 3.99);
+  await call(page, 'd.holdPlace(false)');
+  await jump(page);
+  expect((await state(page))?.feet[1] ?? 0).toBeLessThan(feet0 + 4.5);
+});
+
+test('walking back while holding Place in Line mode builds the line toward the player', async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  const [x, y, z] = await start(page);
+  const stone = stateId('dwell:stone');
+  expect(await call<boolean>(page, `d.edit('place')`)).toBe(true);
+  await expect.poll(() => voxel(page, [x, y + 1, z])).toBe(stone);
+  // Aimed at the block's near side (−Z, the player's), low on its lower cell, and held: the line
+  // runs out of that face toward the player as they walk back, the body kept clear of it.
+  await lookAtPoint(page, [x + 0.5, (y + 1) * CELL_HEIGHT + 0.25, z + 0.02]);
+  await expect.poll(async () => (await state(page))?.target?.face ?? -1).toBe(5);
+  expect(await call<boolean>(page, 'd.holdPlace(true)')).toBe(true);
+  await call(page, 'd.press("KeyS", true)');
+  await page.waitForTimeout(1_500);
+  await call(page, 'd.press("KeyS", false)');
+  for (const dz of [1, 2, 3, 4])
+    await expect.poll(() => voxel(page, [x, y + 1, z - dz]), { timeout: 10_000 }).toBe(stone);
+  await call(page, 'd.holdPlace(false)');
+});
