@@ -2,6 +2,7 @@
 //! world's two faces, LOD sections, structure files and block edits. Blocks are referred to by name
 //! (`dwell-blocks`); built-in ones the engine needs are resolved once into [`M`].
 
+pub mod affinity;
 pub mod bounds;
 pub mod brush;
 mod cell;

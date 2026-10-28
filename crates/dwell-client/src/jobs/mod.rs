@@ -66,6 +66,18 @@ impl Job {
     pub fn is_mesh(&self) -> bool {
         matches!(self, Job::MeshChunk { .. } | Job::MeshSection { .. })
     }
+
+    /// The column of terrain a generation job works on, as (level, x, z): a chunk's column (level
+    /// −1) or an LOD section's; none for the others. The workers that generate keep the columns
+    /// they work out, so a column's jobs go to one of them (`dwell_world::affinity`).
+    pub fn column(&self) -> Option<(i32, i32, i32)> {
+        match *self {
+            Job::Generate { coord } => Some((-1, coord.x, coord.z)),
+            Job::Lod { coord } => Some((coord.level, coord.i, coord.k)),
+            Job::LodBounds { level, i, k } => Some((level, i, k)),
+            _ => None,
+        }
+    }
 }
 
 /// A job's result.
@@ -307,6 +319,32 @@ pub fn surface_floats(s: &LodSurfaces) -> Vec<f32> {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn a_generation_job_names_its_column_and_meshing_none() {
+        // face-a-only: columns have no up.
+        let c = dwell_world::ChunkCoord::new(3, -2, 9);
+        assert_eq!(Job::Generate { coord: c }.column(), Some((-1, 3, 9)));
+        let l = dwell_world::lod::LodCoord::new(2, 5, 1, -4);
+        assert_eq!(Job::Lod { coord: l }.column(), Some((2, 5, -4)));
+        assert_eq!(
+            Job::LodBounds {
+                level: 2,
+                i: 5,
+                k: -4
+            }
+            .column(),
+            Some((2, 5, -4))
+        );
+        let mesh = Job::MeshSection {
+            cells: Vec::new(),
+            surface: None,
+            water_drop: 0.0,
+            mirror: false,
+        };
+        assert_eq!(mesh.column(), None);
+    }
+
     use super::*;
     use dwell_world::GENERATOR_TERRAIN;
 
