@@ -73,9 +73,10 @@ test('controller: the stick walks, Menu opens the menu, the D-pad moves, B close
   await pad(page, [9], [0, 0, 0, 0]);
   await expect(menu).toBeVisible();
   await pad(page, [], [0, 0, 0, 0]);
-  // D-pad down (13) focuses a control in it.
+  // D-pad down (13) focuses a control in it: held for several frames, as CI's software renderer
+  // draws ~5 a second and the pad is read once a frame.
   await pad(page, [13], [0, 0, 0, 0]);
-  await page.waitForTimeout(100);
+  await page.waitForTimeout(1000);
   await pad(page, [], [0, 0, 0, 0]);
   await expect
     .poll(() => page.evaluate(() => document.activeElement?.closest('#settings-menu') !== null))
