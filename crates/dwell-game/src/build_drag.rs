@@ -14,11 +14,11 @@
 use std::collections::{HashSet, VecDeque};
 
 use dwell_blocks::{Facing, StateId, Support, info};
-use dwell_protocol::{RegionEdit, RegionEditOp, SIM_HZ, region_edit};
+use dwell_protocol::{BlockEditRequest, RegionEdit, RegionEditOp, SIM_HZ, region_edit};
 use dwell_world::region::{box_distance_sq, box_in_world};
 use dwell_world::{CELL, pos_of_cell};
 
-pub use crate::items::{BUILD_MODE_KEY, BUILD_MODES};
+pub use crate::items::{BUILD_CLEARANCE, BUILD_MODE_KEY, BUILD_MODES};
 
 /// How a build mode builds on (the engine's vocabulary; data names it).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -49,7 +49,8 @@ pub enum Holder {
 
 /// What drag building reads from the client's world.
 pub trait DragWorld {
-    /// The cell may be filled: air, a replaceable plant or water, and not in the player's body.
+    /// The cell may be filled: air, a replaceable plant or water, and the player's body clear of it
+    /// by [`BUILD_CLEARANCE`].
     fn free(&mut self, cell: [i32; 3]) -> bool;
 }
 
@@ -58,6 +59,20 @@ pub trait DragWorld {
 const PER_TICK: f64 = region_edit::MAX_QUEUED as f64 / 2.0;
 /// Columns a level's sweep fills between two frames' aims at most (a jump further is not a sweep).
 const MAX_SWEEP: i32 = 64;
+
+/// Server ticks an input waits for on the server beyond half the round trip (its input buffer),
+/// in [`body_margin`].
+const INPUT_TICKS: f64 = 2.0;
+
+/// How far (m) the player's own body must be clear of a cell before a block goes in it, moving at
+/// `speed` (m/s) with `rtt_ms` to the server: [`BUILD_CLEARANCE`], plus how far the body moves while
+/// the server's view of it catches up (half the round trip and its input buffer). The server
+/// leaves a cell its view of the body is in; towering and walking back while building both place
+/// just behind the moving body.
+pub fn body_margin(speed: f64, rtt_ms: Option<f64>) -> f64 {
+    let lag_s = (rtt_ms.unwrap_or(0.0) / 2.0) / 1000.0 + INPUT_TICKS / f64::from(SIM_HZ);
+    BUILD_CLEARANCE + speed.abs() * lag_s
+}
 
 /// Whether a block is built on by dragging: a plain block. A region fill runs none of the place
 /// rules, so a block with a facing (a ladder), other cells (a torch's flame), something to stand on
@@ -122,11 +137,23 @@ impl Stroke {
     }
 }
 
+/// A first place held down that the player's own body is in the way of (standing where it goes):
+/// it is placed, and the stroke starts, once a jump lifts the body clear.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Waiting {
+    pub holder: Holder,
+    pub request: BlockEditRequest,
+    /// The face's direction, and the block placed.
+    pub dir: [i32; 3],
+    pub material: StateId,
+}
+
 /// The build mode and the stroke being dragged, with its fills waiting to go out.
 #[derive(Clone, Debug)]
 pub struct BuildDrag {
     mode: usize,
     stroke: Option<Stroke>,
+    waiting: Option<Waiting>,
     pending: VecDeque<RegionEdit>,
     credit: f64,
     credit_ms: f64,
@@ -137,6 +164,7 @@ impl Default for BuildDrag {
         Self {
             mode: 0,
             stroke: None,
+            waiting: None,
             pending: VecDeque::new(),
             credit: PER_TICK,
             credit_ms: f64::NAN,
@@ -158,6 +186,7 @@ impl BuildDrag {
     pub fn cycle(&mut self) -> &'static BuildModeDef {
         self.mode = (self.mode + 1) % BUILD_MODES.len();
         self.stroke = None;
+        self.waiting = None;
         self.mode()
     }
 
@@ -196,16 +225,38 @@ impl BuildDrag {
         });
     }
 
-    /// `holder` let go of Place: its stroke ends (the fills already made still go out).
+    /// `holder` let go of Place: its stroke ends (the fills already made still go out), and a
+    /// first place still waiting for the body is dropped.
     pub fn release(&mut self, holder: Holder) {
         if self.stroke.as_ref().is_some_and(|s| s.holder == holder) {
             self.stroke = None;
+        }
+        if self.waiting.as_ref().is_some_and(|w| w.holder == holder) {
+            self.waiting = None;
         }
     }
 
     /// Ends the stroke, whoever holds it (the player died, a menu opened).
     pub fn cancel(&mut self) {
         self.stroke = None;
+        self.waiting = None;
+    }
+
+    /// Holds a first place the body is in the way of until it can go ([`Waiting`]); only a block
+    /// that drags.
+    pub fn wait(&mut self, waiting: Waiting) {
+        self.stroke = None;
+        self.waiting = drags(waiting.material).then_some(waiting);
+    }
+
+    /// The first place waiting for the body, if any.
+    pub fn waiting(&self) -> Option<&Waiting> {
+        self.waiting.as_ref()
+    }
+
+    /// Takes the waiting first place (it goes now).
+    pub fn take_waiting(&mut self) -> Option<Waiting> {
+        self.waiting.take()
     }
 
     /// The aim moved: from `eye` (m) along unit `dir`, building no farther than `reach` (m) from
@@ -253,6 +304,18 @@ fn line(
     let a = s.centre();
     let w: [f64; 3] = std::array::from_fn(|i| a[i] - eye[i]);
     let dot = |p: [f64; 3], q: [f64; 3]| p[0] * q[0] + p[1] * q[1] + p[2] * q[2];
+    // A step is a piece: a cell across, the piece's height up or down.
+    let axis = s.dir.iter().position(|&v| v != 0).unwrap_or(0);
+    let cells = if axis == 1 { s.rows } else { 1 };
+    // Towering: a line up toward the eye with the eye over its column (standing on it) builds on
+    // whatever the aim, each piece as soon as the body is clear of it (`DragWorld::free`), so each
+    // jump puts one under the feet.
+    let corner = pos_of_cell(s.base);
+    let over = (eye[0] - corner[0]).clamp(0.0, CELL[0]) == eye[0] - corner[0]
+        && (eye[2] - corner[2]).clamp(0.0, CELL[2]) == eye[2] - corner[2];
+    if axis == 1 && over && dot(u, w) < 0.0 {
+        return build_on(s, i32::MAX, cells, eye, reach, world);
+    }
     // The nearest points of the line a + σu and the ray eye + τ·dir (both unit).
     let b = dot(u, dir);
     let denom = 1.0 - b * b;
@@ -265,11 +328,20 @@ fn line(
     if tau <= 0.0 {
         return Vec::new();
     }
-    // A step is a piece: a cell across, the piece's height up or down.
-    let axis = s.dir.iter().position(|&v| v != 0).unwrap_or(0);
-    let cells = if axis == 1 { s.rows } else { 1 };
     let step = f64::from(cells) * CELL[axis];
     let want = (sigma / step + 0.5).floor() as i32;
+    build_on(s, want, cells, eye, reach, world)
+}
+
+/// The line's pieces from the next through `want`, `cells` apart, while they fit.
+fn build_on(
+    s: &mut Stroke,
+    want: i32,
+    cells: i32,
+    eye: [f64; 3],
+    reach: f64,
+    world: &mut impl DragWorld,
+) -> Vec<RegionEdit> {
     let mut out = Vec::new();
     while s.next <= want {
         let k = s.next * cells;
@@ -441,6 +513,41 @@ mod tests {
     );
 
     dwell_world::both_faces!(
+        /// Towering (owner, 2026-10-28): standing on the line's column and looking down, each jump
+        /// that lifts the body clear of the next piece builds it under the feet, whatever the aim.
+        fn a_line_up_under_the_player_builds_as_each_jump_clears_it(f: FaceFrame) {
+            let mut d = started(f, DragKind::Line, [0, 1, 0], [0, 1, 0]);
+            // The body (1.8 m) over the column from `feet` (m), as the cells it is in.
+            let body = |feet: f64| {
+                let mut w = Fake::default();
+                let (lo, hi) = (
+                    (feet / 0.5).floor() as i32,
+                    ((feet + 1.8) / 0.5).ceil() as i32,
+                );
+                for row in lo..hi {
+                    w.0.insert(f.cell([0, row, 0]));
+                }
+                w
+            };
+            let down = f.vector([0.0, -1.0, 0.0]);
+            let aim = |d: &mut BuildDrag, feet: f64| {
+                let eye = f.point([0.5, feet + 1.62, 0.5]);
+                d.aim(eye, down, 5.0, &mut body(feet));
+                cells(f, &sent(d))
+            };
+            // Stood on the first piece (its top 1.5 m up): the next is in the body.
+            assert!(aim(&mut d, 1.5).is_empty());
+            // Half way up a jump: still in it.
+            assert!(aim(&mut d, 2.0).is_empty());
+            // Clear of it (rows 3–4 end at 2.5 m): built.
+            assert_eq!(aim(&mut d, 2.6), vec![[0, 3, 0], [0, 4, 0]]);
+            // Landed on it and jumped again: the next.
+            assert!(aim(&mut d, 2.5).is_empty());
+            assert_eq!(aim(&mut d, 3.6), vec![[0, 5, 0], [0, 6, 0]]);
+        }
+    );
+
+    dwell_world::both_faces!(
         /// Placed against a side and held, the line runs out of that face one cell at a time,
         /// toward the player as they back away, as far as the reach.
         fn a_line_out_of_a_side_runs_across(f: FaceFrame) {
@@ -539,6 +646,54 @@ mod tests {
             d.start(Holder::Mouse, &[[0, 1, 0]], [0, 1, 0], m);
             assert!(!d.active(), "{}", info(m).name);
         }
+    }
+
+    #[test]
+    fn a_first_place_waits_for_the_body_until_let_go() {
+        // face-a-only: who holds the button has no up.
+        let request = BlockEditRequest {
+            action: dwell_protocol::BlockEditAction::Place,
+            cell: [0, 0, 0],
+            face: 2,
+            material: require("dwell:stone"),
+            rows: 2,
+            down: false,
+        };
+        let waiting = |holder, material| Waiting {
+            holder,
+            request: BlockEditRequest {
+                material,
+                ..request.clone()
+            },
+            dir: [0, 1, 0],
+            material,
+        };
+        let mut d = BuildDrag::new();
+        d.wait(waiting(Holder::Touch, require("dwell:stone")));
+        assert!(d.waiting().is_some());
+        d.release(Holder::Mouse);
+        assert!(d.waiting().is_some(), "another holder");
+        d.release(Holder::Touch);
+        assert!(d.waiting().is_none());
+        d.wait(waiting(Holder::Mouse, require("dwell:torch")));
+        assert!(d.waiting().is_none(), "only a block that drags waits");
+        d.wait(waiting(Holder::Mouse, require("dwell:stone")));
+        assert_eq!(d.take_waiting().map(|w| w.holder), Some(Holder::Mouse));
+        assert!(d.waiting().is_none());
+    }
+
+    #[test]
+    fn the_body_margin_grows_with_speed_and_lag() {
+        // face-a-only: a distance, no up.
+        assert_eq!(
+            body_margin(0.0, Some(200.0)),
+            BUILD_CLEARANCE,
+            "at rest: the clearance"
+        );
+        let walking = body_margin(5.0, Some(30.0));
+        assert!((walking - (BUILD_CLEARANCE + 5.0 * (0.015 + 2.0 / 60.0))).abs() < 1e-9);
+        assert!(body_margin(5.0, Some(200.0)) > walking);
+        assert!(body_margin(-5.0, None) > BUILD_CLEARANCE);
     }
 
     #[test]

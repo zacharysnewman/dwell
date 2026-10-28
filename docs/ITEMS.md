@@ -54,7 +54,7 @@ both blocks) and go with their block; a break takes one cell whatever the piece.
 a grass or dirt slope. `dwell-game`: the palette is the items, 1 m by default. `shared/items/gen.test.mjs`:
 the data's validation; an item added by data alone. Protocol vectors: the piece byte.
 
-## 5. Drag building **[built, 0.38.4]**
+## 5. Drag building **[built, 0.38.4; towering 0.38.5]**
 
 Owner (2026-10-28): "When building you can build quickly in straight lines, if you place and hold
 place on any side and then move or visually drag, it'll keep building in that direction (sort of
@@ -70,10 +70,19 @@ controller button and a touch button switch the modes; mouse, controller and tou
 - **Kinds** (the engine's vocabulary, `dwell-game` `build_drag.rs`): `line` — from the first piece,
   straight along the clicked face's direction, up to the point of that line nearest the aim (the
   nearest points of the line and the view ray), a piece at a time (a cell across, the piece's height
-  up or down), stopping at the first piece that doesn't fit; `level` — the cells where the view ray
+  up or down), stopping at the first piece that doesn't fit. Walking while holding builds on too: the
+  aim's nearest point moves with the eye, so backing away from a line out of a side face builds it
+  toward you. **Towering** (owner, 2026-10-28): a line up out of a top face with the eye over its
+  column (standing on it) builds on whatever the aim, each piece as soon as the body is clear of
+  it, so each jump puts a block under the feet. `level` — the cells where the view ray
   crosses the first piece's mid-height plane, joined to the last frame's by a 4-connected walk so a
   fast sweep leaves no gap, each filled once. Within `REACH_DISTANCE` of the eye; only free cells
   (air, a replaceable plant, water, not the player's own body), so nothing is overwritten.
+- **The body**: a cell is free only with the player's body clear of it by `build_drag::body_margin`:
+  `buildModes.clearance` (0.15 m, data) plus the body's speed × how long the server's view of it
+  lags (half the round trip and two ticks of its input buffer), as the server leaves a cell its view
+  of the body is in. A first place the body is in the way of (held on the ground, towering) waits,
+  held, until a jump or a step clears it (`build_drag::Waiting`), then goes and starts the stroke.
 - **Holding**: the first block is the ordinary place; a stroke starts from the cells it filled and
   lasts until whoever started it lets go: the right button (`mouseUp`, or the window losing focus or
   the pointer lock), the controller's place button (`Gamepad::down`), or, on touch in Place mode, a
@@ -90,7 +99,11 @@ controller button and a touch button switch the modes; mouse, controller and tou
   each once; the pacing; plain blocks only; the holder), `input.rs` (the key while playing, on no
   other key), `touch.rs` (the hold), `gen.test.mjs` (the data, a mode added by data alone), Vitest
   (the controls list), `e2e/buildDrag.spec.ts` (a line up a top face, stopping when let go; a flat
-  sweep at the level only).
+  sweep at the level only; towering, a block a jump from a press held on the ground; walking back
+  building a line toward the player, without a gap). Towering was red on 0.38.4 (the first press
+  went into the body, and a look down the column built nothing more): `build_drag.rs`
+  `a_line_up_under_the_player_builds_as_each_jump_clears_it` and the e2e. Walking back left the
+  first block out until the margin counted the body's speed (the server, a moment behind, refused it).
 
 ## 6. Not yet
 
