@@ -9,16 +9,20 @@ function call<T>(page: Page, expr: string): Promise<T> {
 }
 const feet = (page: Page) => call<Vec3>(page, 'd.state().feet');
 
-/** Metres flown forward (+Z) in `ms` at the current speed level. */
-async function flyForward(page: Page, ms: number): Promise<number> {
+/**
+ * Metres climbed in `ms` at the current speed level (Space). Up into the air, not along the
+ * ground: at the top level a second's flight crosses 362 m, past the terrain streamed round the
+ * player, and on CI's slow runners the player is held at its edge (0 m flown, 0.38.0's main).
+ */
+async function flyUp(page: Page, ms: number): Promise<number> {
   const start = await feet(page);
-  await call(page, "d.press('KeyW', true)");
+  await call(page, "d.press('Space', true)");
   await page.waitForTimeout(ms);
-  await call(page, "d.press('KeyW', false)");
+  await call(page, "d.press('Space', false)");
   const end = await feet(page);
   // Let the flight's drag bring the player to rest before the next measurement.
   await page.waitForTimeout(500);
-  return Math.hypot(end[0] - start[0], end[2] - start[2]);
+  return end[1] - start[1];
 }
 
 test('flight speed: the slider shows while flying and raises the speed', async ({ page }) => {
@@ -38,11 +42,11 @@ test('flight speed: the slider shows while flying and raises the speed', async (
   await call(page, 'd.fly(true)');
   await expect(control).toBeVisible();
   await expect(control.locator('.flight-speed-value')).toHaveText('8 m/s');
-  const normal = await flyForward(page, 1000);
+  const normal = await flyUp(page, 1000);
 
   await control.locator('input').fill('11'); // the top level: 8 m/s × 2^5.5
   await expect(control.locator('.flight-speed-value')).toHaveText('362 m/s');
-  const fast = await flyForward(page, 1000);
+  const fast = await flyUp(page, 1000);
   expect(normal).toBeLessThan(40);
   expect(fast).toBeGreaterThan(5 * normal);
 
