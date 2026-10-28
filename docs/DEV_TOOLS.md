@@ -250,16 +250,19 @@ crate's artifacts the same wherever it is, so sharing one directory mixes the tw
 
 ## Play advanced (the main menu)
 
-The main menu's **Play advanced** (beside New world) opens a one-off local world by link with
+The main menu's **Play advanced** (beside New world) opens a local world by link with
 overrides, for anyone: the world type, seed, spawn (face A, face B, either side of the portal),
 time of day, moon phase, clock speed, ink outline, pixel art and distant terrain. Each is a URL
 parameter the game already reads (`?world=`, `?seed=`, `?spawn=`, `?time=`, `?moon=`,
 `?timespeed=`, `?outline=`, `?pixelart=`, `?lod=`), so the panel only builds the address
 (`client/src/ui/playAdvanced.ts`, e.g. `?local=1&spawn=portal&time=0.7708`). Only the fields set are
 passed; a field left empty keeps the game's default. A time of day holds the sky at that time (the
-clock stops on this client, `?time=`), so the clock speed only matters without one. Nothing is
-saved: every route drops them (`ui/launch.ts` `ROUTE_PARAMS`), so the next Play from the menu
-starts clean.
+clock stops on this client, `?time=`), so the clock speed only matters without one. The world is
+one file per type, seed and spawn (`local/world.ts` `parseLocalWorld`), saved like any other; a
+spawn puts the player at it every time it opens, not where it left (owner, 2026-10-27). The
+overrides themselves are not saved: every route drops them (`ui/launch.ts` `ROUTE_PARAMS`), so the
+next Play from the menu starts clean. New world offers the same Spawn choices (`spawnChoices`) as
+the world's first spawn.
 
 The fields are data: `shared/play/overrides.json`, one entry per parameter (kinds `choice`,
 `integer`, `number`, `clock`; a choice's `optionsFrom` takes its options from a look data file's

@@ -31,7 +31,7 @@ import { regenerateWorld } from './local/regenerate';
 import type { SessionReport } from './net/sessionState';
 import { rememberTrust, showRegistryPrompt, trustedHash } from './ui/registryPrompt';
 import { sameLine } from './version/semver';
-import { parseLocalWorld, type LocalWorld } from './local/world';
+import { isSpawn, parseLocalWorld, spawnOptions, type LocalWorld } from './local/world';
 import { cleanName, creatableType, parseSeed, WorldIndex } from './local/worldIndex';
 import { worldAccess } from './local/worldAccess';
 import { deleteWorldFiles, listWorldFiles, localWorldName } from './local/worldFiles';
@@ -956,7 +956,12 @@ async function makeWorld(
   if (launch.kind === 'new') {
     const type = creatableType(launch.type);
     const world = index.create(
-      { name: cleanName(launch.name, 'New world'), type, seed: parseSeed(launch.seed) },
+      {
+        name: cleanName(launch.name, 'New world'),
+        type,
+        seed: parseSeed(launch.seed),
+        ...(launch.spawn !== '' && isSpawn(launch.spawn) ? { spawn: launch.spawn } : {}),
+      },
       Date.now(),
     );
     return world.id;
@@ -1070,10 +1075,12 @@ async function connect(app: App): Promise<void> {
       openMainMenu(app, access.message);
       return;
     }
+    // The world's chosen spawn is its first one: read only when its file is created.
     localWorld = {
       worldSeed: world.seed,
       generatorVersion: world.generatorVersion,
       file: world.id,
+      ...(isSpawn(world.spawn) ? spawnOptions(world.spawn) : {}),
     };
     worldName = world.name;
     index.touch(world.id, Date.now());

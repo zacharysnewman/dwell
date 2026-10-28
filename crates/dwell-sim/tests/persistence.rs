@@ -345,3 +345,56 @@ fn a_worlds_blocks_beyond_the_build_are_in_its_servers_registry() {
     let p = dwell_blocks::sync::Payload::decode(&payload).expect("decodes");
     assert!(p.blocks.iter().any(|b| b.name == "mod:moss"));
 }
+
+#[test]
+fn a_world_opened_at_a_spawn_puts_a_returning_player_there() {
+    // A local world opened by a spawn link (`?spawn=portal`, `b`) on a file that is already there:
+    // the link's spawn wins over the saved one, and the returning player starts at it, not where
+    // it left the world (owner, 2026-10-27).
+    // face-a-only: the spawn is a point the launch gives; which face it is on is the worldgen's.
+    let scratch = Scratch::new("spawn-on-open");
+    let path = scratch.world("spawn-on-open");
+    {
+        let mut f = Fixture::new(ServerConfig {
+            store: Some(open_store(&path)),
+            ..flat()
+        });
+        f.join(1, &Client::new(1));
+        f.server.step();
+        f.move_to(1, 3.5, f64::from(G) * dwell_world::CELL_H, 4.5);
+        f.server.step();
+        f.server.save_now();
+        f.server.flush_store();
+    }
+    let feet = |f: &mut Fixture, id| {
+        let h = f.server.player_handle_of(id).unwrap();
+        let (_, physics, players) = f.server.sim();
+        players.position(physics, h)
+    };
+    let at = [10.5, f64::from(G) * dwell_world::CELL_H, -6.5];
+    let mut f = Fixture::new(ServerConfig {
+        store: Some(open_store(&path)),
+        spawn: Some(at),
+        join_at_spawn: true,
+        ..flat()
+    });
+    let w = f.join(1, &Client::new(1));
+    let p = feet(&mut f, w.player_id);
+    let [dx, dz] = dwell_sim::server::spawn_spread(w.player_id);
+    assert!(
+        (p.x - (at[0] + dx)).abs() < 1e-4 && (p.z - (at[2] + dz)).abs() < 1e-4,
+        "at the spawn: {p:?}"
+    );
+    // Without the link, the saved place again.
+    drop(f);
+    let mut f = Fixture::new(ServerConfig {
+        store: Some(open_store(&path)),
+        ..flat()
+    });
+    let w = f.join(1, &Client::new(1));
+    let p = feet(&mut f, w.player_id);
+    assert!(
+        (p.x - 3.5).abs() < 1e-4 && (p.z - 4.5).abs() < 1e-4,
+        "{p:?}"
+    );
+}

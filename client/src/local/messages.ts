@@ -10,6 +10,8 @@ export type ToWorker =
       file?: string;
       spawnFaceB?: boolean;
       spawnPortal?: boolean;
+      /** A spawn link: a saved world's player starts at the spawn too (local/world.ts). */
+      spawnOnOpen?: boolean;
       /** The world's maps (faces A and B, ADR 0049), installed before the world starts. */
       maps?: Uint8Array[];
     }

@@ -70,6 +70,15 @@ describe('world index', () => {
     expect(index.list().map((w) => w.name)).toEqual(['Alpha', 'Beta']);
   });
 
+  it('keeps a new world’s chosen spawn, and none for the usual one', () => {
+    const store = memoryStore();
+    const index = new WorldIndex(store);
+    const portal = index.create({ name: 'P', type: 'terrain', seed: 1, spawn: 'portal' }, 1);
+    const plain = index.create({ name: 'A', type: 'terrain', seed: 1 }, 2);
+    expect(new WorldIndex(store).get(portal.id)?.spawn).toBe('portal');
+    expect(new WorldIndex(store).get(plain.id)).not.toHaveProperty('spawn');
+  });
+
   it('never reuses an id', () => {
     const index = new WorldIndex(memoryStore());
     const first = index.create({ name: 'A', type: 'terrain', seed: 1 }, 1, sequence(0.5));

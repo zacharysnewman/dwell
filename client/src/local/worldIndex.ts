@@ -4,7 +4,7 @@
 // the index is what the main menu shows.
 import { recordedVersion } from '../buildInfo';
 import { isVersion } from '../version/semver';
-import { GENERATORS, RETIRED_PLAYGROUND } from './world';
+import { GENERATORS, RETIRED_PLAYGROUND, type Spawn } from './world';
 
 /** The types a new world can have. */
 export type CreatableType = keyof typeof GENERATORS;
@@ -28,6 +28,11 @@ export interface WorldMeta {
    * ignored (the menu offers to delete them).
    */
   appVersion?: string;
+  /**
+   * Where the world's first spawn is (the New world form's Spawn: `b`, `portal`, `portal-b`):
+   * read only when its file is created. Absent: face A's usual spawn.
+   */
+  spawn?: Spawn;
 }
 
 /** The part of `Storage` the index uses. */
@@ -183,7 +188,7 @@ export class WorldIndex {
 
   /** Creates a new world's entry (its file is created when it is first played). */
   create(
-    options: { name: string; type: CreatableType; seed: number },
+    options: { name: string; type: CreatableType; seed: number; spawn?: Spawn },
     now: number,
     random: () => number = Math.random,
   ): WorldMeta {
@@ -199,6 +204,7 @@ export class WorldIndex {
       createdAt: now,
       lastPlayedAt: now,
       appVersion: recordedVersion(),
+      ...(options.spawn ? { spawn: options.spawn } : {}),
     };
     this.put(world);
     return world;
