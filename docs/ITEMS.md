@@ -54,7 +54,45 @@ both blocks) and go with their block; a break takes one cell whatever the piece.
 a grass or dirt slope. `dwell-game`: the palette is the items, 1 m by default. `shared/items/gen.test.mjs`:
 the data's validation; an item added by data alone. Protocol vectors: the piece byte.
 
-## 5. Not yet
+## 5. Drag building **[built, 0.38.4]**
+
+Owner (2026-10-28): "When building you can build quickly in straight lines, if you place and hold
+place on any side and then move or visually drag, it'll keep building in that direction (sort of
+locked in that direction). Perhaps have a toggle to a flat surface version of that too where it's
+locked on the Y axis, only building at that level (easy floors or ceilings)." Chosen with the owner:
+the line runs straight out of the face clicked; flat paints the cells under the crosshair; a key, a
+controller button and a touch button switch the modes; mouse, controller and touch all build on.
+
+- **Data** (`shared/items/items.json` `buildModes`, the same generator: `items.gen.rs`
+  `BUILD_MODES`, `BUILD_MODE_KEY`, and `client/src/ui/buildModes.gen.ts` for the controls list and
+  the HUD): the key that cycles the modes (`KeyL`) and the modes in order, the first the default,
+  each a name, a label and a kind. Adding a mode of a known kind is a new entry.
+- **Kinds** (the engine's vocabulary, `dwell-game` `build_drag.rs`): `line` — from the first piece,
+  straight along the clicked face's direction, up to the point of that line nearest the aim (the
+  nearest points of the line and the view ray), a piece at a time (a cell across, the piece's height
+  up or down), stopping at the first piece that doesn't fit; `level` — the cells where the view ray
+  crosses the first piece's mid-height plane, joined to the last frame's by a 4-connected walk so a
+  fast sweep leaves no gap, each filled once. Within `REACH_DISTANCE` of the eye; only free cells
+  (air, a replaceable plant, water, not the player's own body), so nothing is overwritten.
+- **Holding**: the first block is the ordinary place; a stroke starts from the cells it filled and
+  lasts until whoever started it lets go: the right button (`mouseUp`, or the window losing focus or
+  the pointer lock), the controller's place button (`Gamepad::down`), or, on touch in Place mode, a
+  still press on the view held `HOLD_MS` (350 ms), which then turns the view as it drags and is no tap
+  when it lifts. Switching: `L`, the controller's `buildMode` (D-pad right, `shared/input/gamepad.json`),
+  the touch Build button; the mode shows beside the block's name over the hotbar.
+- **On the wire**: the pieces after the first are `RegionEdit` Fills of one piece each (no protocol
+  change). A `BlockEditRequest` is refused against a face the eye can't see (line of sight), which a
+  floor reaching away or a line past the eye needs; region edits are checked for reach and the world
+  only. They go out at half the server's region queue a tick (`MAX_QUEUED` 4 → 2 a tick), predicted
+  at once. Only plain blocks drag (`build_drag::drags`): a region fill runs no place rules, so a
+  ladder (facing, support), a torch (other cells) or tall grass (`placeOn`) is placed a click at a time.
+- **Tests**: `build_drag.rs` (both faces: a line up and across, a level's swept cells around a block,
+  each once; the pacing; plain blocks only; the holder), `input.rs` (the key while playing, on no
+  other key), `touch.rs` (the hold), `gen.test.mjs` (the data, a mode added by data alone), Vitest
+  (the controls list), `e2e/buildDrag.spec.ts` (a line up a top face, stopping when let go; a flat
+  sweep at the level only).
+
+## 6. Not yet
 
 The held item in the hand shows a whole block for a ½ m piece; the region tools and brushes still
 work in cells; no survival inventory (creative only).

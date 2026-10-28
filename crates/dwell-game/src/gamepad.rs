@@ -59,6 +59,7 @@ pub enum PlayAction {
     Run,
     Break,
     Place,
+    BuildMode,
     HotbarNext,
     HotbarPrev,
     Fly,
@@ -71,12 +72,13 @@ pub enum PlayAction {
 
 impl PlayAction {
     /// Every action, in the data's order (`gamepad.gen.rs` `PLAY`).
-    pub const ALL: [PlayAction; 13] = [
+    pub const ALL: [PlayAction; 14] = [
         Self::Jump,
         Self::Crouch,
         Self::Run,
         Self::Break,
         Self::Place,
+        Self::BuildMode,
         Self::HotbarNext,
         Self::HotbarPrev,
         Self::Fly,
@@ -177,6 +179,11 @@ impl Gamepad {
             .copied()
             .find(|b| b.index == i)
             .unwrap_or(BUTTONS[0])
+    }
+
+    /// Whether `action`'s button was down at the last frame (Place held builds on, docs/ITEMS.md §5).
+    pub fn down(&self, action: PlayAction) -> bool {
+        self.down & (1 << self.bindings[action as usize]) != 0
     }
 
     /// The controller went away: nothing is held.

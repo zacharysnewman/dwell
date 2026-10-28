@@ -7,6 +7,7 @@
 
 pub mod block_interaction;
 pub mod brush_tool;
+pub mod build_drag;
 pub mod chunk_diff;
 pub mod chunk_stream;
 pub mod edit_prediction;

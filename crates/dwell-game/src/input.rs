@@ -104,6 +104,8 @@ pub enum InputEvent {
     Tool(ToolAction),
     /// A brush tool's key (`brush_tool::brush_key`).
     Brush(BrushAction),
+    /// The build mode key (`build_drag::BUILD_MODE_KEY`, data): the next mode.
+    BuildMode,
 }
 
 /// A key press's results: whether the shell should `preventDefault()` it, and what it asks for.
@@ -242,6 +244,18 @@ impl KeyboardMouseInput {
                     Vec::new()
                 } else {
                     vec![InputEvent::Brush(action)]
+                },
+            };
+        }
+        // The build mode (docs/ITEMS.md §5), while playing; with the brush tool on its keys come
+        // first (they are live only then).
+        if self.pointer_locked && code == crate::build_drag::BUILD_MODE_KEY && !ctrl && !meta {
+            return KeyDown {
+                prevent_default: true,
+                events: if repeat {
+                    Vec::new()
+                } else {
+                    vec![InputEvent::BuildMode]
                 },
             };
         }
@@ -571,6 +585,37 @@ mod tests {
         // Walking still walks.
         input.key_down("KeyW", false, false, false);
         assert!(input.sample(None).move_y > 0.0);
+    }
+
+    #[test]
+    fn the_build_mode_key_cycles_while_playing_and_takes_no_other_keys_binding() {
+        let mut input = KeyboardMouseInput::new();
+        let key = crate::build_drag::BUILD_MODE_KEY;
+        assert!(input.key_down(key, false, false, false).events.is_empty());
+        input.blur();
+        input.pointer_locked = true;
+        assert_eq!(
+            input.key_down(key, false, false, false).events,
+            vec![InputEvent::BuildMode]
+        );
+        assert!(
+            input.key_down(key, true, false, false).events.is_empty(),
+            "a repeat"
+        );
+        assert!(!input.key_held(key));
+        // Not a key anything else takes while playing.
+        assert!(
+            tool_for_key(key, false, false).is_none() && tool_for_key(key, false, true).is_none()
+        );
+        for taken in [
+            FLY_KEY, "KeyW", "KeyA", "KeyS", "KeyD", "KeyC", "Space", "F3", "F4", "F6",
+        ] {
+            assert_ne!(key, taken);
+        }
+        assert!(
+            crate::brush_tool::brush_key(key, false, false).is_none(),
+            "V's only"
+        );
     }
 
     #[test]

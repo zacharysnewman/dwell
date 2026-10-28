@@ -502,6 +502,8 @@ pub struct Game<S: Scene> {
     last_draw_ms: Option<f64>,
     eye: EyeCamera,
     pub interaction: BlockInteraction,
+    /// Holding Place builds on in the build mode (docs/ITEMS.md §5).
+    pub drag: dwell_game::build_drag::BuildDrag,
     /// Box select, fill, copy/paste, undo (§6.5); `enabled` once the server announces region edits.
     pub region: RegionTools,
     /// VoxelSniper-style brushes (BRUSHES.md); `available` where the server announces them.
@@ -661,6 +663,7 @@ impl<S: Scene> Game<S> {
             last_draw_ms: None,
             eye,
             interaction: BlockInteraction::new(),
+            drag: dwell_game::build_drag::BuildDrag::new(),
             region: RegionTools::new(),
             brush: BrushTool::new(),
             portals: (Vec::new(), ""),
@@ -1302,6 +1305,98 @@ impl<S: Scene> Game<S> {
                 true
             }
             None => false,
+        }
+    }
+
+    /// Breaks or places as [`edit`](Self::edit), with the button held by `holder`: a place
+    /// starts a drag stroke from the block placed (docs/ITEMS.md §5), built on each frame until
+    /// `holder` lets go ([`release_place`](Self::release_place)).
+    pub fn edit_held(
+        &mut self,
+        action: EditAction,
+        holder: dwell_game::build_drag::Holder,
+        now_ms: f64,
+    ) -> bool {
+        let start = (action == EditAction::Place
+            && self.region.enabled
+            && !self.brush.active()
+            && !self.region.pasting())
+        .then(|| {
+            let t = self.interaction.target()?;
+            let (_, material) = self.interaction.placement()?;
+            let slot = self
+                .interaction
+                .palette()
+                .get(self.interaction.selected())?;
+            Some((t, material, slot.rows))
+        })
+        .flatten();
+        // The piece the place will fill, as predicted, before the edit predicts it.
+        let piece = start.and_then(|(t, material, rows)| {
+            let m = Message::BlockEditRequest(dwell_protocol::BlockEditRequest {
+                action: dwell_protocol::BlockEditAction::Place,
+                cell: t.cell,
+                face: t.face,
+                material,
+                rows,
+                down: rows > 1 && t.face != 2 && t.face != 3 && t.aim_up < 0.5,
+            });
+            let cells: Vec<[i32; 3]> = self
+                .predicted_changes(&m)?
+                .iter()
+                .map(|(c, _)| *c)
+                .collect();
+            let dir = dwell_world::edit::FACE_DIRS
+                .get(usize::from(t.face))
+                .copied()?;
+            Some((cells, dir, material))
+        });
+        let placed = self.edit(action, now_ms);
+        if placed && let Some((cells, dir, material)) = piece {
+            self.drag.start(holder, &cells, dir, material);
+        }
+        placed
+    }
+
+    /// `holder` let go of Place: its drag stroke ends.
+    pub fn release_place(&mut self, holder: dwell_game::build_drag::Holder) {
+        self.drag.release(holder);
+    }
+
+    /// The next build mode (the key, the controller's button, the touch Build button): its label,
+    /// for the HUD.
+    pub fn cycle_build_mode(&mut self) -> &'static str {
+        self.sounds.push(sound_event(SoundKind::Tool));
+        self.drag.cycle().label
+    }
+
+    /// A drag stroke's next pieces at the aim from `eye` along `dir`, and the fills the server's
+    /// rate takes now, shown at once (edit prediction).
+    fn drag_build(&mut self, eye: Option<[f64; 3]>, dir: [f64; 3], now_ms: f64) {
+        if self.dead || !self.region.enabled {
+            self.drag.cancel();
+        }
+        if let Some(eye) = eye
+            && self.drag.active()
+        {
+            let me = self.own_capsule();
+            let mut world = DragCells {
+                world: self.streamer.store_mut(),
+                me,
+            };
+            self.drag.aim(
+                eye,
+                dir,
+                f64::from(dwell_protocol::players::REACH_DISTANCE),
+                &mut world,
+            );
+        }
+        for fill in self.drag.pump(now_ms) {
+            let at = fill.min;
+            let material = fill.material;
+            self.send_edit(Message::RegionEdit(fill), None);
+            self.edit_sounds
+                .local_place(at, material, now_ms, &mut self.sounds);
         }
     }
 
@@ -2296,6 +2391,8 @@ impl<S: Scene> Game<S> {
             face,
         );
         self.target_eye = eye;
+        let dir = view_direction(input.look.yaw, input.look.pitch, face);
+        self.drag_build(eye, dir, now_ms);
         self.region
             .aim(self.interaction.placement().map(|(c, _)| c));
         self.show_region_boxes();
@@ -2694,6 +2791,26 @@ impl Puppets {
                 }
             })
             .collect()
+    }
+}
+
+/// The client's world as drag building reads it (docs/ITEMS.md §5): a cell is free for air, a
+/// replaceable plant or water, unless our own body is in it (the server leaves such a cell).
+struct DragCells<'a> {
+    world: &'a mut dwell_world::VoxelWorld,
+    me: Option<dwell_world::edit::EditCapsule>,
+}
+
+impl dwell_game::build_drag::DragWorld for DragCells<'_> {
+    fn free(&mut self, [x, y, z]: [i32; 3]) -> bool {
+        let m = self.world.get_voxel(x, y, z);
+        let Some(s) = dwell_blocks::try_info(m) else {
+            return false;
+        };
+        let open = m == dwell_world::M.air || (s.replaceable && !s.indestructible) || s.liquid;
+        open && !self.me.is_some_and(|c| {
+            dwell_world::edit::overlaps_player(dwell_world::M.stone, [x, y, z], &[c])
+        })
     }
 }
 

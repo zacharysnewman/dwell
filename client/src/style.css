@@ -1684,6 +1684,24 @@ body:has(#main-menu) #build-info {
   text-transform: capitalize;
 }
 
+/* The block's name with the build mode beside it (what holding Place builds, docs/ITEMS.md §5). */
+.hotbar-head {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+#hotbar-build {
+  padding: 1px 7px;
+  border: 1px solid var(--glass-line);
+  border-radius: 6px;
+  background: var(--glass);
+  font: 700 11px var(--font-body);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  text-shadow: 0 1px 3px rgb(0 0 0 / 60%);
+}
+
 /* The region tools' line: selection size, paste mode, the last tool's message. */
 #hotbar-region {
   max-width: min(90vw, 640px);
@@ -2092,8 +2110,9 @@ body:has(#main-menu) #build-info {
     display: grid;
     grid-template-columns: repeat(2, 58px);
     grid-template-areas:
-      'edit fly'
-      'run crouch'
+      'edit build'
+      'fly run'
+      'crouch crouch'
       'jump jump';
     gap: 10px;
     justify-items: center;
@@ -2107,6 +2126,10 @@ body:has(#main-menu) #build-info {
 
   #touch-edit {
     grid-area: edit;
+  }
+
+  #touch-build {
+    grid-area: build;
   }
 
   #touch-fly {
@@ -2155,6 +2178,7 @@ body:has(#main-menu) #build-info {
 body.loading-wait #hud,
 body.loading-wait #hotbar,
 body.loading-wait #hotbar-label,
+body.loading-wait #hotbar-build,
 body.loading-wait #hotbar-region,
 body.loading-wait #touch-controls,
 body.loading-wait #flight-speed,

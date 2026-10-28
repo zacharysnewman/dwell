@@ -18,6 +18,7 @@ export const PLAY_ACTIONS = [
   'run',
   'break',
   'place',
+  'buildMode',
   'hotbarNext',
   'hotbarPrev',
   'fly',

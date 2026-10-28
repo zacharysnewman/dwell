@@ -1,13 +1,16 @@
 // Touch controls for phones and tablets (iOS Safari, Android, Capacitor): a floating joystick on the
-// left half of the screen, drag-to-look on the right half, and Break/Place, Fly, Run, Crouch and
-// Jump buttons. The DOM is here; what the pointers mean (stick deflection, taps, latched buttons)
+// left half of the screen, drag-to-look on the right half, and Break/Place, build mode, Fly, Run,
+// Crouch and Jump buttons. The DOM is here; what the pointers mean (stick deflection, taps, latched buttons)
 // is the Rust client's (dwell-game's touch.rs), which these elements forward their events to.
 import { audio } from '../audio/engine';
 import type { Client } from '../engine/wasm';
+import { BUILD_MODES } from './buildModes.gen';
 
 /** The on-screen buttons (touch.rs `TouchButton`), left to right; `debug` sits top right. */
 const BUTTONS = [
   { name: 'edit', label: 'Break', id: 'touch-edit' },
+  // The build mode (docs/ITEMS.md §5): what holding the view in Place mode builds.
+  { name: 'build', label: BUILD_MODES.modes[0].label, id: 'touch-build' },
   { name: 'fly', label: 'Fly', id: 'touch-fly' },
   { name: 'run', label: 'Run', id: 'touch-run' },
   { name: 'crouch', label: 'Crouch', id: 'touch-crouch' },
@@ -24,6 +27,7 @@ export class TouchControls {
   private readonly stickBase: HTMLDivElement;
   private readonly stickKnob: HTMLDivElement;
   private readonly flyButton: HTMLButtonElement;
+  private readonly buildButton: HTMLButtonElement;
 
   constructor(
     parent: HTMLElement,
@@ -43,7 +47,11 @@ export class TouchControls {
     const buttons = document.createElement('div');
     buttons.className = 'touch-buttons';
     const made = BUTTONS.map((spec) => this.button(spec.name, spec.label, spec.id));
-    this.flyButton = made[1] as HTMLButtonElement;
+    const named = (name: string) =>
+      made[BUTTONS.findIndex((b) => b.name === name)] as HTMLButtonElement;
+    this.flyButton = named('fly');
+    this.buildButton = named('build');
+    this.buildButton.setAttribute('aria-label', `Build mode: ${BUILD_MODES.modes[0].label}`);
     buttons.append(...made);
     const debug = this.button('debug', 'i', 'touch-debug');
     debug.setAttribute('aria-label', 'Debug overlay');
@@ -92,6 +100,12 @@ export class TouchControls {
 
   set visible(v: boolean) {
     this.root.hidden = !v;
+  }
+
+  /** The build mode's label on its button (a `buildMode` event). */
+  setBuildMode(label: string): void {
+    this.buildButton.textContent = label;
+    this.buildButton.setAttribute('aria-label', `Build mode: ${label}`);
   }
 
   /** Shows whether the player is flying, and hides the Fly button where flight is not allowed. */
