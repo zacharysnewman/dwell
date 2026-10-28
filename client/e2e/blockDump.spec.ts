@@ -25,11 +25,16 @@ test('the debug overlay copies the targeted block and its neighbours as JSON', a
   // The target before the edit: placing is predicted, so the next frame already aims at the block.
   const ground = await call<{ cell: Vec3 }>(page, 'd.state().target');
   expect(await call<boolean>(page, `d.edit('place')`)).toBe(true);
-  const placed: Vec3 = [ground.cell[0], ground.cell[1] + 1, ground.cell[2]];
-  await expect
-    .poll(() => call<number>(page, `d.voxel(${placed.join(',')})`))
-    .toBe(stateId('dwell:stone'));
-  // Looked at, as the same look may pass over it: a placed block is one ½ m cell (CELL_HEIGHT).
+  // Slot 1 places a 1 m block (two ½ m cells, shared/items/items.json): the dump is taken at its
+  // top cell, the one a look from above meets first.
+  const placed: Vec3 = [ground.cell[0], ground.cell[1] + 2, ground.cell[2]];
+  for (const y of [placed[1] - 1, placed[1]])
+    await expect
+      .poll(() =>
+        call<number>(page, `d.voxel(${String(placed[0])},${String(y)},${String(placed[2])})`),
+      )
+      .toBe(stateId('dwell:stone'));
+  // Looked at, as the same look may pass over it: a cell is ½ m tall (CELL_HEIGHT).
   const feet = await call<Vec3>(page, 'd.state().feet');
   const d: Vec3 = [
     placed[0] + 0.5 - feet[0],

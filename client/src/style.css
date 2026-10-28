@@ -2026,10 +2026,27 @@ body:has(#main-menu) #build-info {
 @media (pointer: coarse) {
   /* The hotbar takes the top centre; the connection pill goes below it, the debug overlay below
      that, across the screen. */
+  /* Between the corner buttons (44 px, 8 px clear of each): the slots shrink to fit, then the row
+     scrolls. */
   #hotbar {
     top: var(--safe-top);
     bottom: auto;
     flex-direction: column-reverse;
+    max-width: calc(100vw - var(--safe-left) - var(--safe-right) - 2 * 52px);
+  }
+
+  .hotbar-slots {
+    box-sizing: border-box;
+    max-width: 100%;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .hotbar-slot {
+    flex: 0 1 40px;
+    min-width: 30px;
+    height: auto;
+    aspect-ratio: 1;
   }
 
   .hotbar-key {
