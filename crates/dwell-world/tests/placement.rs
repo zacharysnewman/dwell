@@ -204,3 +204,33 @@ dwell_world::both_faces!(
         }
     }
 );
+
+dwell_world::both_faces!(
+    /// Regression (owner, 2026-10-28): breaking the block under a ladder — the ground, or the
+    /// ladder below — took every ladder above it. A ladder hangs on its wall, not on what is under
+    /// it: they stay. Red before: the cascade asked each ladder to stand on the cell under it.
+    fn a_ladder_stays_when_what_is_under_it_breaks(f: FaceFrame) {
+        let ladder = s("dwell:ladder[facing=north]");
+        let mut w = ground(f);
+        // A wall at z = 3 and a ladder column on it, rows 0–3, the lowest on the ground.
+        for row in 0..4 {
+            set(&mut w, f, [0, row, 3], s("dwell:stone"));
+            set(&mut w, f, [0, row, 2], ladder);
+        }
+        // The ground under the column broken: only that cell changes.
+        let ground_gone = edit_writes(&mut w, f.cell([0, -1, 2]), s("dwell:air"));
+        assert_eq!(ground_gone, vec![(f.cell([0, -1, 2]), s("dwell:air"))]);
+        // The lowest ladder broken: the ones above stay.
+        let ladder_gone = edit_writes(&mut w, f.cell([0, 0, 2]), s("dwell:air"));
+        assert_eq!(ladder_gone, vec![(f.cell([0, 0, 2]), s("dwell:air"))]);
+        // Its wall broken: that ladder goes (and only it: the others keep their walls).
+        let wall_gone = edit_writes(&mut w, f.cell([0, 2, 3]), s("dwell:air"));
+        assert_eq!(
+            wall_gone,
+            vec![
+                (f.cell([0, 2, 3]), s("dwell:air")),
+                (f.cell([0, 2, 2]), s("dwell:air"))
+            ]
+        );
+    }
+);

@@ -18,7 +18,7 @@ use dwell_protocol::{BlockEditRequest, RegionEdit, RegionEditOp, SIM_HZ, region_
 use dwell_world::region::{box_distance_sq, box_in_world};
 use dwell_world::{CELL, pos_of_cell};
 
-pub use crate::items::{BUILD_CLEARANCE, BUILD_MODE_KEY, BUILD_MODES, ItemDrag};
+pub use crate::items::{BUILD_CLEARANCE, BUILD_HOLD_MS, BUILD_MODE_KEY, BUILD_MODES, ItemDrag};
 
 /// How a build mode builds on (the engine's vocabulary; data names it).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -52,9 +52,10 @@ pub enum Holder {
 
 /// What drag building reads from the client's world.
 pub trait DragWorld {
-    /// The cell may be filled: air, a replaceable plant or water, and clear of the player's body,
-    /// where it is and where the server may still see it ([`lagged_offset`]).
-    fn free(&mut self, cell: [i32; 3]) -> bool;
+    /// `material` may go in the cell: air, a replaceable plant or water there, and clear of the
+    /// player's body, where it is and where the server may still see it ([`lagged_offset`]),
+    /// unless it doesn't block a body ([`cell_free`]).
+    fn free(&mut self, cell: [i32; 3], material: StateId) -> bool;
     /// A block is in the cell (not air, a replaceable plant or water): what a floor joins onto and
     /// what the player stands on.
     fn occupied(&mut self, cell: [i32; 3]) -> bool;
@@ -63,20 +64,57 @@ pub trait DragWorld {
     fn holds(&mut self, _cell: [i32; 3], _material: StateId) -> bool {
         true
     }
+    /// The server has answered every fill of the stroke sent so far: a line builds its next
+    /// piece only then, so it never runs on past one the server refused (owner, 2026-10-28: a
+    /// crouch-jump tower built over a refused block, above the player's head).
+    fn settled(&mut self) -> bool {
+        true
+    }
 }
+
+/// A block may go into a cell holding `m`: air, a replaceable plant or water (an unknown id: no).
+pub fn open_cell(m: StateId) -> bool {
+    dwell_blocks::try_info(m).is_some_and(|s| {
+        m == dwell_world::M.air || (s.replaceable && !s.indestructible) || s.liquid
+    })
+}
+
+/// [`DragWorld::free`]'s rule: `material` may go in `cell`, which holds `there`, with the player's
+/// body as `bodies` (where it is and where the server may still see it): the cell open, and the
+/// block clear of the body unless it doesn't block one (a ladder, a plant: not solid), as the
+/// server's own check (`dwell_world::edit::overlaps_player`). Regression (owner, 2026-10-28): every
+/// block was checked as stone, so a ladder never built where the player stood on the ladder.
+pub fn cell_free(
+    there: StateId,
+    material: StateId,
+    cell: [i32; 3],
+    bodies: &[dwell_world::edit::EditCapsule],
+) -> bool {
+    open_cell(there) && !dwell_world::edit::overlaps_player(material, cell, bodies)
+}
+
+/// How far (m) under the eye a tower's next piece's top must be: under the feet of a crouched body
+/// (its eye about 1.2 m up), so the piece goes under the player, not over their head.
+const TOWER_FEET: f64 = 1.0;
 
 /// Pieces a line keeps built ahead of the player walking along it (bridging).
 const LEAD: i32 = 1;
 
-/// Bridging help (owner, 2026-10-28, as Minecraft Bedrock's): Place with nothing targeted builds
-/// off the block the player stands on, against its side they face. The block under `feet` (m,
-/// world) — under the body's centre, else the nearest under the body (`radius`, m) — and the
-/// side's direction, the horizontal look (`yaw_deg`) to the nearest of the four. None with nothing
-/// under the body.
+/// Bridging help (owner, 2026-10-28, as Minecraft Bedrock's; aimed, 2026-10-28): Place with
+/// nothing targeted builds at the edge you look toward, at the level of the block you stand on.
+/// The level: the block under `feet` (m, world) — under the body's centre, else the nearest under
+/// the body (`radius`, m). The spot: where the view ray (`eye`, unit `dir`) crosses that level's
+/// middle (looking level or up, or past `reach`: `reach` out along the look, level), then back along
+/// the way to you to the first free cell beside a block of that level, within `reach` of the eye.
+/// The cell, and its direction out from the block it is beside; None with nothing under the body
+/// or no such cell.
 pub fn edge_target(
     feet: [f64; 3],
     radius: f64,
-    yaw_deg: f64,
+    eye: [f64; 3],
+    dir: [f64; 3],
+    reach: f64,
+    material: StateId,
     world: &mut impl DragWorld,
 ) -> Option<([i32; 3], [i32; 3])> {
     let face = dwell_world::FaceFrame::at_height(feet[1]);
@@ -102,14 +140,69 @@ pub fn edge_target(
             }
         }
     }
-    let (cell, _) = under?;
-    let look = face.look(yaw_deg, 0.0);
-    let dir = if look[0].abs() > look[2].abs() {
-        [look[0].signum() as i32, 0, 0]
+    let (under, _) = under?;
+    let level = pos_of_cell(under)[1] + 0.5 * CELL[1];
+    let t = (level - eye[1]) / dir[1];
+    let point = if dir[1].abs() > 1e-6 && t > 0.0 && t <= reach {
+        std::array::from_fn(|i| eye[i] + t * dir[i])
     } else {
-        [0, 0, look[2].signum() as i32]
+        // Looking level, up, or down past reach: reach out along the look, level.
+        let h = dir[0].hypot(dir[2]).max(1e-9);
+        [
+            eye[0] + dir[0] / h * reach,
+            level,
+            eye[2] + dir[2] / h * reach,
+        ]
     };
-    Some((cell, dir))
+    let aimed = (
+        point[0].div_euclid(CELL[0]) as i32,
+        point[2].div_euclid(CELL[2]) as i32,
+    );
+    let size = [1, 1, 1];
+    // From the aimed column back toward the block stood on.
+    let mut path = walk4((under[0], under[2]), aimed);
+    path.reverse();
+    for (i, &(x, z)) in path.iter().enumerate() {
+        let cell = [x, under[1], z];
+        if !world.free(cell, material) || box_distance_sq(cell, size, eye) > reach * reach {
+            continue;
+        }
+        // Beside a block of the level: the one toward you first, then any.
+        let toward = path.get(i + 1).copied().unwrap_or((under[0], under[2]));
+        let sides = [(1, 0), (-1, 0), (0, 1), (0, -1)].map(|(ox, oz)| (x + ox, z + oz));
+        let next = std::iter::once(toward)
+            .chain(sides)
+            .filter(|n| (n.0 - x).abs() + (n.1 - z).abs() == 1)
+            .find(|n| world.occupied([n.0, under[1], n.1]));
+        if let Some(n) = next {
+            return Some((cell, [x - n.0, 0, z - n.1]));
+        }
+    }
+    None
+}
+
+/// The columns of a 4-connected walk from `from` (not included) to `to`, toward whichever axis's
+/// next crossing comes first along the segment; a walk of more than `MAX_SWEEP` is just `to`.
+fn walk4(from: (i32, i32), to: (i32, i32)) -> Vec<(i32, i32)> {
+    let (dx, dz) = (to.0 - from.0, to.1 - from.1);
+    if dx.abs() + dz.abs() > MAX_SWEEP {
+        return vec![to];
+    }
+    let (mut x, mut z) = from;
+    let (ax, az) = (dx.abs(), dz.abs());
+    let (mut ix, mut iz) = (0, 0);
+    let mut out = Vec::new();
+    while ix < ax || iz < az {
+        if f64::from(2 * ix + 1) * f64::from(az) < f64::from(2 * iz + 1) * f64::from(ax) {
+            x += dx.signum();
+            ix += 1;
+        } else {
+            z += dz.signum();
+            iz += 1;
+        }
+        out.push((x, z));
+    }
+    out
 }
 
 /// Region edits sent per server tick at most: a quarter of the server's per-tick queue
@@ -156,6 +249,8 @@ pub fn drags(m: StateId) -> bool {
 struct Stroke {
     kind: DragKind,
     holder: Holder,
+    /// When Place was pressed (ms): it builds on only once held `BUILD_HOLD_MS` ([`BuildDrag::armed`]).
+    pressed_ms: f64,
     material: StateId,
     /// The first piece: its lowest cell and its height in cells.
     base: [i32; 3],
@@ -191,7 +286,7 @@ impl Stroke {
             && box_distance_sq(min, self.size(), eye) <= reach * reach
             && (0..self.rows).all(|r| {
                 let c = [min[0], min[1] + r, min[2]];
-                world.free(c) && world.holds(c, self.material)
+                world.free(c, self.material) && world.holds(c, self.material)
             })
     }
 
@@ -215,6 +310,8 @@ pub struct Waiting {
     /// The face's direction, and the block placed.
     pub dir: [i32; 3],
     pub material: StateId,
+    /// When Place was pressed (ms).
+    pub pressed_ms: f64,
 }
 
 /// The build mode and the stroke being dragged, with its fills waiting to go out.
@@ -265,6 +362,14 @@ impl BuildDrag {
         self.stroke.is_some()
     }
 
+    /// The stroke builds on (owner, 2026-10-28: a click still places one block): once Place has
+    /// been held [`BUILD_HOLD_MS`]. A touch hold has waited its own `HOLD_MS` already.
+    pub fn armed(&self, now_ms: f64) -> bool {
+        self.stroke
+            .as_ref()
+            .is_some_and(|s| s.holder == Holder::Touch || now_ms - s.pressed_ms >= BUILD_HOLD_MS)
+    }
+
     /// The first block was placed (`cells`, as predicted: one column of one piece) against face
     /// direction `dir`, held by `holder`: dragging builds on from it, as the item's `drag` says.
     /// Nothing for an item that doesn't drag, or a block that can't in the modes ([`drags`]).
@@ -275,6 +380,7 @@ impl BuildDrag {
         dir: [i32; 3],
         material: StateId,
         drag: ItemDrag,
+        pressed_ms: f64,
     ) {
         self.stroke = None;
         let Some(&first) = cells.first() else {
@@ -298,6 +404,7 @@ impl BuildDrag {
         self.stroke = Some(Stroke {
             kind,
             holder,
+            pressed_ms,
             material,
             base,
             rows,
@@ -356,6 +463,31 @@ impl BuildDrag {
         self.pending.extend(new.into_iter().map(|e| (e, 0)));
     }
 
+    /// The server refused `fill`. A line's piece: the line goes back to it, building it again when
+    /// it fits (true: nothing to retry); a level's: its column may be filled again (false: retry it,
+    /// [`retry`](Self::retry)).
+    pub fn refused(&mut self, fill: &RegionEdit) -> bool {
+        let Some(s) = self.stroke.as_mut() else {
+            return false;
+        };
+        if s.kind == DragKind::Level {
+            s.filled.remove(&(fill.min[0], fill.min[2]));
+            return false;
+        }
+        let axis = s.dir.iter().position(|&v| v != 0);
+        let Some(axis) = axis else {
+            return false;
+        };
+        let cells = if axis == 1 { s.rows } else { 1 };
+        let along = (fill.min[axis] - s.base[axis]) * s.dir[axis];
+        let on_line = (0..3).all(|i| i == axis || fill.min[i] == s.base[i]);
+        if on_line && along > 0 && along % cells == 0 {
+            s.next = s.next.min(along / cells);
+            return true;
+        }
+        false
+    }
+
     /// A fill the server refused, `tries` times now: it goes again first, up to [`RETRIES`] times.
     pub fn retry(&mut self, fill: RegionEdit, tries: u8) {
         if tries <= RETRIES {
@@ -399,6 +531,9 @@ fn line(
     reach: f64,
     world: &mut impl DragWorld,
 ) -> Vec<RegionEdit> {
+    if !world.settled() {
+        return Vec::new();
+    }
     let u = s.dir.map(f64::from);
     let a = s.centre();
     let w: [f64; 3] = std::array::from_fn(|i| a[i] - eye[i]);
@@ -413,6 +548,19 @@ fn line(
     let over = (eye[0] - corner[0]).clamp(0.0, CELL[0]) == eye[0] - corner[0]
         && (eye[2] - corner[2]).clamp(0.0, CELL[2]) == eye[2] - corner[2];
     if axis == 1 && over && dot(u, w) < 0.0 {
+        // Under the feet only, never past them (owner, 2026-10-28: a crouch-jump tower built
+        // above the player's head, where the body was clear too): the next piece's top at most
+        // TOWER_FEET under the eye.
+        let k = s.next * cells;
+        let top = pos_of_cell([0, s.base[1] + k * s.dir[1], 0])[1]
+            + if s.dir[1] > 0 {
+                f64::from(s.rows) * CELL[1]
+            } else {
+                0.0
+            };
+        if (eye[1] - top) * f64::from(s.dir[1]) < TOWER_FEET {
+            return Vec::new();
+        }
         return build_on(s, i32::MAX, cells, eye, reach, world);
     }
     let step = f64::from(cells) * CELL[axis];
@@ -428,14 +576,23 @@ fn line(
         && (eye[side] - a[side]).abs() <= CELL[side]
         && on < s.next)
         .then_some(on + LEAD);
-    // The nearest points of the line a + σu and the ray eye + τ·dir (both unit).
+    // Where the aim is along the line: across, where the view ray crosses the line's middle height
+    // (the spot looked at, so it never builds past it; owner, 2026-10-28), unless the line is
+    // about level with the eye or the look about level; else (and up or down) the nearest points
+    // of the line a + σu and the ray eye + τ·dir (both unit).
+    let t = (a[1] - eye[1]) / dir[1];
+    let crossing = (axis != 1 && dir[1].abs() > 0.02 && (a[1] - eye[1]).abs() > 0.3 && t > 0.0)
+        .then(|| -dot(u, std::array::from_fn(|i| a[i] - (eye[i] + t * dir[i]))));
     let b = dot(u, dir);
     let denom = 1.0 - b * b;
     let (d, e) = (dot(u, w), dot(dir, w));
-    let aimed = (denom >= 1e-6) // looking along the line: no point of it is aimed at
+    let nearest = (denom >= 1e-6) // looking along the line: no point of it is aimed at
         .then(|| ((b * e - d) / denom, (e - b * d) / denom))
         .filter(|&(_, tau)| tau > 0.0)
-        .map(|(sigma, _)| (sigma / step + 0.5).floor() as i32);
+        .map(|(sigma, _)| sigma);
+    let aimed = crossing
+        .or(nearest)
+        .map(|sigma| (sigma / step + 0.5).floor() as i32);
     match aimed.max(walk) {
         Some(want) => build_on(s, want, cells, eye, reach, world),
         None => Vec::new(),
@@ -469,7 +626,8 @@ fn vertical(
     line(s, eye, dir, reach, world)
 }
 
-/// The line's pieces from the next through `want`, `cells` apart, while they fit.
+/// The line's next piece, if the next is at most `want` and fits: one a frame (owner,
+/// 2026-10-28: a fast sweep fills in step by step, not in a burst).
 fn build_on(
     s: &mut Stroke,
     want: i32,
@@ -478,22 +636,21 @@ fn build_on(
     reach: f64,
     world: &mut impl DragWorld,
 ) -> Vec<RegionEdit> {
-    let mut out = Vec::new();
-    while s.next <= want {
-        let k = s.next * cells;
-        let min: [i32; 3] = std::array::from_fn(|i| s.base[i] + k * s.dir[i]);
-        if !s.fits(min, eye, reach, world) {
-            break;
-        }
-        out.push(s.fill(min));
-        s.next += 1;
+    if s.next > want {
+        return Vec::new();
     }
-    out
+    let k = s.next * cells;
+    let min: [i32; 3] = std::array::from_fn(|i| s.base[i] + k * s.dir[i]);
+    if !s.fits(min, eye, reach, world) {
+        return Vec::new();
+    }
+    s.next += 1;
+    vec![s.fill(min)]
 }
 
-/// A level's new pieces: the columns from the last aimed to the one the aim meets the level's
-/// plane in now, a 4-connected walk so a fast sweep leaves no gap; each filled once, and only
-/// beside a piece already filled or a block at the level.
+/// A level's next piece: on the 4-connected walk from the last column walked to the one the aim
+/// meets the level's plane in now, so a fast sweep leaves no gap; one a frame, each filled once,
+/// and only beside a piece already filled or a block at the level.
 fn level(
     s: &mut Stroke,
     eye: [f64; 3],
@@ -513,29 +670,10 @@ fn level(
         (eye[0] + t * dir[0]).div_euclid(CELL[0]) as i32,
         (eye[2] + t * dir[2]).div_euclid(CELL[2]) as i32,
     );
-    let (dx, dz) = (col.0 - s.last.0, col.1 - s.last.1);
-    let mut walk = Vec::new();
-    if dx.abs() + dz.abs() > MAX_SWEEP {
-        walk.push(col);
-    } else {
-        let (mut x, mut z) = s.last;
-        let (ax, az) = (dx.abs(), dz.abs());
-        let (mut ix, mut iz) = (0, 0);
-        while ix < ax || iz < az {
-            // Toward whichever axis's next crossing comes first along the segment.
-            if f64::from(2 * ix + 1) * f64::from(az) < f64::from(2 * iz + 1) * f64::from(ax) {
-                x += dx.signum();
-                ix += 1;
-            } else {
-                z += dz.signum();
-                iz += 1;
-            }
-            walk.push((x, z));
-        }
-    }
-    s.last = col;
-    let mut out = Vec::new();
+    // One a frame: the walk stops at the cell it fills and goes on from there next frame.
+    let walk = walk4(s.last, col);
     for (x, z) in walk {
+        s.last = (x, z);
         let min = [x, s.base[1], z];
         if s.filled.contains(&(x, z)) || !s.fits(min, eye, reach, world) {
             continue;
@@ -551,9 +689,9 @@ fn level(
             continue;
         }
         s.filled.insert((x, z));
-        out.push(s.fill(min));
+        return vec![s.fill(min)];
     }
-    out
+    Vec::new()
 }
 
 #[cfg(test)]
@@ -564,13 +702,21 @@ mod tests {
 
     /// A world of air with some solid cells, and cells the body is in (world cells).
     #[derive(Default)]
-    struct Fake(HashSet<[i32; 3]>, HashSet<[i32; 3]>, HashSet<[i32; 3]>);
+    struct Fake(
+        HashSet<[i32; 3]>,
+        HashSet<[i32; 3]>,
+        HashSet<[i32; 3]>,
+        bool,
+    );
 
     impl DragWorld for Fake {
+        fn settled(&mut self) -> bool {
+            !self.3
+        }
         fn holds(&mut self, cell: [i32; 3], _material: StateId) -> bool {
             !self.2.contains(&cell)
         }
-        fn free(&mut self, cell: [i32; 3]) -> bool {
+        fn free(&mut self, cell: [i32; 3], _material: StateId) -> bool {
             !self.0.contains(&cell) && !self.1.contains(&cell)
         }
         fn occupied(&mut self, cell: [i32; 3]) -> bool {
@@ -616,9 +762,25 @@ mod tests {
             world_dir,
             require("dwell:stone"),
             ItemDrag::Modes,
+            0.0,
         );
         assert!(d.active());
         d
+    }
+
+    impl BuildDrag {
+        /// A dozen frames' aims (a stroke builds one piece a frame).
+        fn aim_frames(
+            &mut self,
+            eye: [f64; 3],
+            dir: [f64; 3],
+            reach: f64,
+            world: &mut impl DragWorld,
+        ) {
+            for _ in 0..12 {
+                self.aim(eye, dir, reach, world);
+            }
+        }
     }
 
     fn sent(d: &mut BuildDrag) -> Vec<RegionEdit> {
@@ -650,7 +812,7 @@ mod tests {
             let eye = [3.0, 1.6, 0.5];
             // The first piece is rows 1–2 (0.5–1.5 m), its centre 1 m up: 3.2 m is 2.2 pieces on.
             let aim = |d: &mut BuildDrag, w: &mut Fake, y: f64| {
-                d.aim(f.point(eye), towards(f, eye, [0.5, y, 0.5]), 5.0, w);
+                d.aim_frames(f.point(eye), towards(f, eye, [0.5, y, 0.5]), 5.0, w);
             };
             aim(&mut d, &mut w, 3.2);
             assert_eq!(
@@ -691,7 +853,7 @@ mod tests {
             let down = f.vector([0.0, -1.0, 0.0]);
             let aim = |d: &mut BuildDrag, feet: f64| {
                 let eye = f.point([0.5, feet + 1.62, 0.5]);
-                d.aim(eye, down, 5.0, &mut body(feet));
+                d.aim_frames(eye, down, 5.0, &mut body(feet));
                 cells(f, &sent(d))
             };
             // Stood on the first piece (its top 1.5 m up): the next is in the body.
@@ -714,7 +876,7 @@ mod tests {
             let mut w = Fake::default();
             let eye = [0.5, 1.6, 6.5];
             // Aimed at the first piece's side, 4 cells on, 1 m up its middle.
-            d.aim(f.point(eye), towards(f, eye, [0.2, 0.5, 5.5]), 5.0, &mut w);
+            d.aim_frames(f.point(eye), towards(f, eye, [0.2, 0.5, 5.5]), 5.0, &mut w);
             let got = cells(f, &sent(&mut d));
             let mut want: Vec<[i32; 3]> = (2..=5).flat_map(|z| [[0, 0, z], [0, 1, z]]).collect();
             want.sort();
@@ -732,7 +894,7 @@ mod tests {
             let eye = [0.5, 3.6, -2.0];
             // The level's plane is the first piece's middle, 1.5 m up.
             let aim = |d: &mut BuildDrag, w: &mut Fake, x: f64, z: f64| {
-                d.aim(f.point(eye), towards(f, eye, [x, 1.5, z]), 8.0, w);
+                d.aim_frames(f.point(eye), towards(f, eye, [x, 1.5, z]), 8.0, w);
             };
             aim(&mut d, &mut w, 3.5, 2.5);
             let got = sent(&mut d);
@@ -778,49 +940,166 @@ mod tests {
             let mut w = Fake::default();
             w.1.insert(f.cell([1, 2, 0]));
             let eye = [0.5, 3.6, -2.0];
-            d.aim(f.point(eye), towards(f, eye, [2.5, 1.5, 0.5]), 8.0, &mut w);
+            d.aim_frames(f.point(eye), towards(f, eye, [2.5, 1.5, 0.5]), 8.0, &mut w);
             assert!(sent(&mut d).is_empty(), "(2,0) would float");
             // Swept again with the body gone: both.
             w.1.clear();
-            d.aim(f.point(eye), towards(f, eye, [0.5, 1.5, 0.5]), 8.0, &mut w);
-            d.aim(f.point(eye), towards(f, eye, [2.5, 1.5, 0.5]), 8.0, &mut w);
+            d.aim_frames(f.point(eye), towards(f, eye, [0.5, 1.5, 0.5]), 8.0, &mut w);
+            d.aim_frames(f.point(eye), towards(f, eye, [2.5, 1.5, 0.5]), 8.0, &mut w);
             let cols: Vec<_> = sent(&mut d).iter().map(|e| (e.min[0], e.min[2])).collect();
             assert_eq!(cols, vec![(1, 0), (2, 0)]);
         }
     );
 
     dwell_world::both_faces!(
-        /// Bridging help: the block under the feet (or the nearest under the body off its edge)
-        /// and the side faced.
-        fn the_edge_target_is_the_block_stood_on_and_the_side_faced(f: FaceFrame) {
+        /// Bridging help, aimed: the edge looked toward, at the level stood on — the cell past a
+        /// platform's end where the aim crosses that level, or back toward you to the first free
+        /// cell beside it; looking level, reach out along the look.
+        fn the_edge_target_is_the_edge_looked_toward(f: FaceFrame) {
             let mut w = Fake::default();
-            w.0.insert(f.cell([0, 3, 0]));
-            // Stood on it (its top 2 m up), facing +Z, then +X, then −X a little off +X's diagonal.
-            let feet = f.point([0.5, 2.0, 0.5]);
-            assert_eq!(
-                edge_target(feet, 0.3, 0.0, &mut w),
-                Some((f.cell([0, 3, 0]), [0, 0, 1]))
+            // A platform at row 3 (its top 2 m up): z 0, 1, 2 at x 0.
+            for z in 0..3 {
+                w.0.insert(f.cell([0, 3, z]));
+            }
+            let feet = [0.5, 2.0, 0.5];
+            let eye = [0.5, 3.62, 0.5];
+            let at = |w: &mut Fake, to: [f64; 3]| {
+                edge_target(
+                    f.point(feet),
+                    0.3,
+                    f.point(eye),
+                    towards(f, eye, to),
+                    5.0,
+                    require("dwell:stone"),
+                    w,
+                )
+                .map(|(c, d)| (f.cell(c), d))
+            };
+            // Looking down past the far end (the level's middle is 1.75 m up): the cell after it.
+            assert_eq!(at(&mut w, [0.5, 1.75, 3.5]), Some(([0, 3, 3], [0, 0, 1])));
+            // Further out, over open air: back to the same edge.
+            assert_eq!(at(&mut w, [0.5, 1.75, 4.6]), Some(([0, 3, 3], [0, 0, 1])));
+            // To the side of the platform's middle: beside it.
+            assert_eq!(at(&mut w, [1.5, 1.75, 1.5]), Some(([1, 3, 1], [1, 0, 0])));
+            // Looking level along it: out along the look, back to its end.
+            assert_eq!(at(&mut w, [0.5, 3.62, 9.0]), Some(([0, 3, 3], [0, 0, 1])));
+            // Nothing under the body: none.
+            let air = edge_target(
+                f.point([5.5, 2.0, 5.5]),
+                0.3,
+                f.point([5.5, 3.62, 5.5]),
+                towards(f, eye, [0.5, 1.75, 3.5]),
+                5.0,
+                require("dwell:stone"),
+                &mut w,
             );
-            assert_eq!(
-                edge_target(feet, 0.3, 90.0, &mut w).map(|t| t.1),
-                Some([1, 0, 0])
-            );
-            assert_eq!(
-                edge_target(feet, 0.3, -100.0, &mut w).map(|t| t.1),
-                Some([-1, 0, 0])
-            );
-            // Over its edge with the centre over air: still it, while the body overlaps it.
-            let off = f.point([1.2, 2.0, 0.5]);
-            assert_eq!(
-                edge_target(off, 0.3, 90.0, &mut w).map(|t| t.0),
-                Some(f.cell([0, 3, 0]))
-            );
-            assert_eq!(
-                edge_target(f.point([1.4, 2.0, 0.5]), 0.3, 90.0, &mut w),
-                None
+            assert_eq!(air, None);
+        }
+    );
+
+    dwell_world::both_faces!(
+        /// Regression (owner, 2026-10-28): crouch-jumping a tower while holding Place built over a
+        /// block the server refused (the body still in it as the server saw it), then above the
+        /// player's head. A line now waits for the server's answer before its next piece, and goes
+        /// back to a refused one. Red before: the second assertion built row 5 over the gap.
+        fn a_line_waits_for_the_server_and_goes_back_to_a_refused_piece(f: FaceFrame) {
+            let mut d = started(f, DragKind::Line, [0, 1, 0], [0, 1, 0]);
+            let mut w = Fake::default();
+            let eye = [3.0, 1.6, 0.5];
+            let up = towards(f, eye, [0.5, 3.2, 0.5]);
+            d.aim(f.point(eye), up, 5.0, &mut w);
+            let first = sent(&mut d);
+            assert_eq!(cells(f, &first), vec![[0, 3, 0], [0, 4, 0]]);
+            // Not answered yet: nothing more.
+            w.3 = true;
+            d.aim_frames(f.point(eye), up, 5.0, &mut w);
+            assert!(sent(&mut d).is_empty(), "waits for the server");
+            // Refused: the line builds that piece again, not the next.
+            w.3 = false;
+            assert!(d.refused(&first[0]), "the line takes it back");
+            d.aim(f.point(eye), up, 5.0, &mut w);
+            assert_eq!(cells(f, &sent(&mut d)), vec![[0, 3, 0], [0, 4, 0]]);
+        }
+    );
+
+    dwell_world::both_faces!(
+        /// Regression (owner, 2026-10-28): towering, the body clear of the cells over its head
+        /// too, built there. Only under the feet: with the next piece at head height, nothing.
+        /// Red before: rows 5–6 were built over the head.
+        fn a_tower_builds_under_the_feet_never_over_the_head(f: FaceFrame) {
+            let mut d = started(f, DragKind::Line, [0, 1, 0], [0, 1, 0]);
+            let mut w = Fake::default();
+            let down = f.vector([0.0, -1.0, 0.0]);
+            // Feet at 0.5 m (on nothing yet, as a crouch-jump falls back): the next piece is rows
+            // 3–4 (1–2 m), at the body, and the cells over the head are clear.
+            d.aim_frames(f.point([0.5, 0.5 + 1.62, 0.5]), down, 5.0, &mut w);
+            assert!(sent(&mut d).is_empty(), "nothing over the head");
+            // Up a jump, the feet over it: built.
+            d.aim(f.point([0.5, 2.1 + 1.62, 0.5]), down, 5.0, &mut w);
+            assert_eq!(cells(f, &sent(&mut d)), vec![[0, 3, 0], [0, 4, 0]]);
+        }
+    );
+
+    dwell_world::both_faces!(
+        /// A ladder (not solid) may go where the body is, as the server takes it; stone may not.
+        /// Red before (owner, 2026-10-28): every block was checked as stone, so a ladder didn't
+        /// build up from the ladder the player stood on.
+        fn a_ladder_may_go_in_the_body_and_stone_may_not(f: FaceFrame) {
+            let ladder = (0..dwell_blocks::STATES.len() as StateId)
+                .find(|&id| info(id).look == "ladder" && info(id).placeable)
+                .expect("a ladder");
+            let body = dwell_world::edit::EditCapsule {
+                center: f.point([0.5, 1.0, 0.5]),
+                radius: 0.3,
+                half_cylinder: 0.6,
+            };
+            let cell = f.cell([0, 2, 0]);
+            assert!(cell_free(0, ladder, cell, &[body]));
+            assert!(!cell_free(0, require("dwell:stone"), cell, &[body]));
+            assert!(
+                !cell_free(require("dwell:stone"), ladder, cell, &[]),
+                "not into a block"
             );
         }
     );
+
+    #[test]
+    fn a_stroke_builds_on_only_once_held_and_one_piece_a_frame() {
+        // face-a-only: timing and pacing have no up.
+        let f = FaceFrame::A;
+        let mut d = BuildDrag::new();
+        d.start(
+            Holder::Mouse,
+            &[[0, 2, 1]],
+            [0, 0, 1],
+            require("dwell:stone"),
+            ItemDrag::Modes,
+            1000.0,
+        );
+        assert!(!d.armed(1000.0 + BUILD_HOLD_MS - 1.0), "a click: one block");
+        assert!(d.armed(1000.0 + BUILD_HOLD_MS));
+        let mut touch = BuildDrag::new();
+        touch.start(
+            Holder::Touch,
+            &[[0, 2, 1]],
+            [0, 0, 1],
+            require("dwell:stone"),
+            ItemDrag::Modes,
+            1000.0,
+        );
+        assert!(touch.armed(1000.0), "a touch hold has waited already");
+        // Aimed 3 pieces out across the line: one a frame, and never past the aim.
+        let mut w = Fake::default();
+        let eye = [0.5, 3.6, -1.0];
+        let to = towards(f, eye, [0.5, 1.25, 4.5]);
+        d.aim(eye, to, 8.0, &mut w);
+        assert_eq!(sent(&mut d).len(), 1);
+        for _ in 0..10 {
+            d.aim(eye, to, 8.0, &mut w);
+        }
+        let more: Vec<i32> = sent(&mut d).iter().map(|e| e.min[2]).collect();
+        assert_eq!(more, vec![3, 4], "up to the crossing at z 4");
+    }
 
     dwell_world::both_faces!(
         /// Bridging: walking along a line the player stands on keeps it a piece ahead of the
@@ -830,7 +1109,7 @@ mod tests {
             let mut w = Fake::default();
             let ahead = f.vector([0.0, 0.0, 1.0]);
             let mut at = |d: &mut BuildDrag, z: f64| {
-                d.aim(f.point([0.5, 1.5 + 1.62, z]), ahead, 5.0, &mut w);
+                d.aim_frames(f.point([0.5, 1.5 + 1.62, z]), ahead, 5.0, &mut w);
                 cells(f, &sent(d))
             };
             // On the block behind the first piece: nothing yet.
@@ -847,7 +1126,7 @@ mod tests {
         let mut d = started(FaceFrame::A, DragKind::Line, [0, 1, 0], [0, 1, 0]);
         let mut w = Fake::default();
         let eye = [3.0, 1.6, 0.5];
-        d.aim(
+        d.aim_frames(
             eye,
             towards(FaceFrame::A, eye, [0.5, 30.0, 0.5]),
             64.0,
@@ -895,6 +1174,7 @@ mod tests {
                     [0, 0, -1],
                     ladder,
                     ItemDrag::Vertical,
+                    0.0,
                 );
                 assert!(d.active());
             };
@@ -909,20 +1189,20 @@ mod tests {
                 }
                 start(&mut d);
                 // Up the wall to 4 m (row 8): rows 5–7, held; row 8 isn't.
-                d.aim(f.point(eye), towards(f, eye, [0.5, 4.1, 0.5]), 5.0, &mut w);
+                d.aim_frames(f.point(eye), towards(f, eye, [0.5, 4.1, 0.5]), 5.0, &mut w);
                 assert_eq!(
                     cells(f, &sent(&mut d)),
                     vec![[0, 5, 0], [0, 6, 0], [0, 7, 0]],
                     "{kind:?}"
                 );
                 // Once up, the aim going down builds nothing below.
-                d.aim(f.point(eye), towards(f, eye, [0.5, 0.6, 0.5]), 5.0, &mut w);
+                d.aim_frames(f.point(eye), towards(f, eye, [0.5, 0.6, 0.5]), 5.0, &mut w);
                 assert!(sent(&mut d).is_empty());
             }
             // Aimed down first: down.
             let mut d = BuildDrag::new();
             start(&mut d);
-            d.aim(f.point(eye), towards(f, eye, [0.5, 0.8, 0.5]), 5.0, &mut w);
+            d.aim_frames(f.point(eye), towards(f, eye, [0.5, 0.8, 0.5]), 5.0, &mut w);
             assert_eq!(
                 cells(f, &sent(&mut d)),
                 vec![[0, 1, 0], [0, 2, 0], [0, 3, 0]]
@@ -939,7 +1219,14 @@ mod tests {
         for m in [ladder, require("dwell:torch"), require("dwell:tall_grass")] {
             assert!(!drags(m), "{}", info(m).name);
             let mut d = BuildDrag::new();
-            d.start(Holder::Mouse, &[[0, 1, 0]], [0, 1, 0], m, ItemDrag::Modes);
+            d.start(
+                Holder::Mouse,
+                &[[0, 1, 0]],
+                [0, 1, 0],
+                m,
+                ItemDrag::Modes,
+                0.0,
+            );
             assert!(!d.active(), "{}", info(m).name);
         }
     }
@@ -963,6 +1250,7 @@ mod tests {
             },
             dir: [0, 1, 0],
             material,
+            pressed_ms: 0.0,
         };
         let mut d = BuildDrag::new();
         d.wait(waiting(Holder::Touch, require("dwell:stone")));

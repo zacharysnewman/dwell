@@ -55,11 +55,12 @@ The engine is `dwell_world::edit::check_block_edit`; the registry sync carries t
 `dwell-world` `tests/placement.rs` (both faces): pieces of one or two cells against the face, up or
 down a side, refused when the second cell is taken, written together; slopes take plants only and are
 molded by their own group; ladders hang on a block's side (not a top, not a ramp; a 1 m ladder needs
-both blocks) and go with their block; a break takes one cell whatever the piece. `tests/world.rs`: tall grass on
+both blocks) and go with their block, and stay when what is under them breaks (0.38.9, red before:
+the ladders above went too); a break takes one cell whatever the piece. `tests/world.rs`: tall grass on
 a grass or dirt slope. `dwell-game`: the palette is the items, 1 m by default. `shared/items/gen.test.mjs`:
 the data's validation; an item added by data alone. Protocol vectors: the piece byte.
 
-## 5. Drag building **[built, 0.38.4; towering 0.38.5; bridging help 0.38.6; ladders 0.38.8]**
+## 5. Drag building **[built, 0.38.4; towering 0.38.5; bridging help 0.38.6; ladders 0.38.8; aimed 0.38.9]**
 
 Owner (2026-10-28): "When building you can build quickly in straight lines, if you place and hold
 place on any side and then move or visually drag, it'll keep building in that direction (sort of
@@ -92,17 +93,33 @@ controller button and a touch button switch the modes; mouse, controller and tou
   build mode), each piece only where the wall behind holds it (`DragWorld::holds`,
   `dwell_world::edit::held_in_place`), so it stops where the wall ends. The server keeps a region
   fill's ladder by the same rule (red before: it asked every cell to stand on the one under it).
-- **Bridging help** (owner, 2026-10-28, as Minecraft Bedrock's): Place with **nothing targeted**
-  builds off the block you stand on (under the body's centre, else the nearest under the body),
-  against its side you face (the look's yaw to the nearest of the four; `build_drag::edge_target`),
-  level with it (its top cell's row and down), from anywhere on the block. Held, the stroke builds on
+- **Bridging help** (owner, 2026-10-28, as Minecraft Bedrock's; aimed in 0.38.9): Place with
+  **nothing targeted** builds at the edge you look toward, at the level of the block you stand on
+  (under the body's centre, else the nearest under it; `build_drag::edge_target`): where the view
+  ray crosses that level's middle, then back along the way to you to the first free cell beside a
+  block of that level, within reach — the outside of a ledge 1, 2 or more blocks away. Looking
+  level, up, or down past reach: reach out along the look, level. A **ghost outline** shows the cell
+  while nothing is targeted. Held, the stroke builds on
   in either mode: Line walks the bridge ahead of you, Flat paints the level you stand on. A region
   fill (the side of the block underfoot is a face the eye can't see); plain blocks only.
+- **A click is one block** (owner, 2026-10-28): a stroke builds on only once Place has been held
+  `buildModes.holdMs` (200 ms, data; `BuildDrag::armed`); a touch hold has waited its 350 ms
+  already. Then **one piece a frame**, and a line across only **up to where the view ray crosses
+  its middle** (the spot looked at; level with the eye, the nearest point of the line), so a
+  shallow aim doesn't build several at once.
+- **Answered pieces** (owner, 2026-10-28: a crouch-jump tower built over a skipped block, then
+  above the head): a line builds its next piece only once the server has answered for the last
+  (`DragWorld::settled`), and goes back to a piece it refused or skipped (`BuildDrag::refused`; a
+  region fill skips a cell its view of the body is in without refusing, so the client checks the
+  cells after the answer). A tower's next piece goes only under the feet (`TOWER_FEET`, 1 m under
+  the eye), never above the head.
 - **The body**: a cell is free only clear of the player's body where it is and where the server may
   still see it, back along its motion by `buildModes.clearance` (0.15 m, data) plus its speed × the
   server's lag (half the round trip and two ticks of its input buffer; `build_drag::lagged_offset`):
   the server leaves a cell its view of the body is in. At rest, just where it is (a bridge's next
-  block, beside the feet, is free). A first place the body is in the way of (held on the ground, towering) waits,
+  block, beside the feet, is free). A block that doesn't block a body (a ladder) may go where it
+  is, as the server takes it (`build_drag::cell_free`; owner, 2026-10-28: ladders didn't build up
+  from the ladder the player stood on). A first place the body is in the way of (held on the ground, towering) waits,
   held, until a jump or a step clears it (`build_drag::Waiting`), then goes and starts the stroke.
 - **Holding**: the first block is the ordinary place; a stroke starts from the cells it filled and
   lasts until whoever started it lets go: the right button (`mouseUp`, or the window losing focus or

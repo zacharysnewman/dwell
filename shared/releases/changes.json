@@ -2,6 +2,15 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions card. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.38.9",
+      "changes": [
+        "Bridging help builds at the edge you look toward, even a few blocks away, with an outline showing where",
+        "A click places one block; holding builds on after a moment, one block at a time and never past where you aim",
+        "Towers no longer skip blocks or build over your head when you crouch-jump",
+        "Ladders build up from the ladder you stand on, and stay when the block under them breaks"
+      ]
+    },
+    {
       "version": "0.38.8",
       "changes": [
         "The hotbar's blocks are all ½ m: the 1 m blocks are gone",
