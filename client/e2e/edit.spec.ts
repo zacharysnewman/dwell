@@ -79,33 +79,43 @@ const feet = (page: Page) => call<Vec3>(page, 'd.state().feet');
  * HALF_HEIGHT_GRID.md): a fixed pitch can pass over or under a block just placed. Face A (the
  * tests' worlds): the box is face-local.
  */
-async function lookAt(page: Page, at: Vec3, at_height = 0.5): Promise<void> {
-  // A 1 m block's lower cell (the hotbar's blocks are two cells, docs/ITEMS.md): a look from above
-  // meets its upper cell first, so that one is aimed at, low on its side, so a break takes the
-  // cell under it too (down from the top face, or from the side's lower half).
-  const above: Vec3 = [at[0], at[1] + 1, at[2]];
-  const whole = (await voxel(page, above)) === (await voxel(page, at));
-  const cell = whole ? above : at;
-  const height = whole ? 0.25 : at_height;
+async function lookAt(page: Page, cell: Vec3, height = 0.5): Promise<void> {
   const f = await feet(page);
   const [x0, y0, z0, x1, y1, z1] = STATE_DEFS[await voxel(page, cell)]?.selection ?? [
     0, 0, 0, 1, 1, 1,
   ];
   const y = (cell[1] + y0 + (y1 - y0) * height) * CELL_HEIGHT;
-  let [x, z] = [cell[0] + (x0 + x1) / 2, cell[2] + (z0 + z1) / 2];
-  if (whole) {
-    // On the side facing the player, not the box's middle: a look down through the middle meets
-    // the side higher up than `height`.
-    const inset = 0.02;
-    if (Math.abs(x - f[0]) > Math.abs(z - f[2]))
-      x = x > f[0] ? cell[0] + x0 + inset : cell[0] + x1 - inset;
-    else z = z > f[2] ? cell[2] + z0 + inset : cell[2] + z1 - inset;
-  }
+  const [x, z] = [cell[0] + (x0 + x1) / 2, cell[2] + (z0 + z1) / 2];
   const d = [x - f[0], y - f[1] - EYE_HEIGHT, z - f[2]];
   const yaw = (Math.atan2(d[0] ?? 0, d[2] ?? 0) * 180) / Math.PI;
   const pitch = (Math.atan2(d[1] ?? 0, Math.hypot(d[0] ?? 0, d[2] ?? 0)) * 180) / Math.PI;
   await call(page, `d.look(${String(yaw)}, ${String(pitch)})`);
   await expect.poll(async () => (await state(page))?.target?.cell.join() ?? '').toBe(cell.join());
+}
+
+/**
+ * How long an edit may take to show on both pages. The server answers within milliseconds, but
+ * every check waits for the page's main thread, and under software rendering (SwiftShader) a frame
+ * of the first seconds of play has taken 3–4.7 s (measured with the CPU throttled 4×).
+ */
+const EDIT_ARRIVES_MS = 20_000;
+
+/**
+ * Breaks the block placed at `cell`: a break takes one ½ m cell (docs/ITEMS.md §2), so a 1 m block
+ * (the hotbar's blocks are two cells) goes in two breaks, its upper cell first (a look from above
+ * meets it first). Each waits until `pages` all show the cell empty.
+ */
+async function breakBlock(page: Page, cell: Vec3, pages: Page[] = [page]): Promise<void> {
+  const upper: Vec3 = [cell[0], cell[1] + 1, cell[2]];
+  const cells = (await voxel(page, upper)) === (await voxel(page, cell)) ? [upper, cell] : [cell];
+  for (const c of cells) {
+    await lookAt(page, c);
+    // edit() refuses (and sends nothing) within BLOCK_EDIT_INTERVAL_MS of the last edit.
+    await expect.poll(() => call<boolean>(page, `d.edit('break')`)).toBe(true);
+    for (const p of pages) {
+      await expect.poll(() => voxel(p, c), { timeout: EDIT_ARRIVES_MS }).toBe(0);
+    }
+  }
 }
 
 /**
@@ -179,21 +189,11 @@ test('local mode: every palette block can be picked from the hotbar, placed, and
     const placed = await voxel(page, cell);
     // Breaking targets the new block itself: looked at, as tall grass is aimed at by a box
     // smaller than its cell.
-    await lookAt(page, cell);
+    await breakBlock(page, cell);
     await page.waitForTimeout(120); // BLOCK_EDIT_INTERVAL_MS
-    expect(await call<boolean>(page, `d.edit('break')`)).toBe(true);
-    await expect.poll(() => voxel(page, cell), { timeout: 5_000 }).toBe(0);
-    await page.waitForTimeout(120);
     expect(placed, `slot ${String(slot)}`).toBeGreaterThan(0);
   }
 });
-
-/**
- * How long an edit may take to show on both pages. The server answers within milliseconds, but
- * every check waits for the page's main thread, and under software rendering (SwiftShader) a frame
- * of the first seconds of play has taken 3–4.7 s (measured with the CPU throttled 4×).
- */
-const EDIT_ARRIVES_MS = 20_000;
 
 interface Placement {
   cell: Vec3;
@@ -229,11 +229,9 @@ test('a placed block shows as the same state to a second client on a native serv
       await expect
         .poll(() => voxel(b, placement.cell), { timeout: EDIT_ARRIVES_MS })
         .toBe(expected);
-      await lookAt(a, placement.cell);
-      await expect.poll(() => call<boolean>(a, `d.edit('break')`)).toBe(true);
-      await expect.poll(() => voxel(b, placement.cell), { timeout: EDIT_ARRIVES_MS }).toBe(0);
-      // And on the builder's page, or its next aim still finds the block and places beside it.
-      await expect.poll(() => voxel(a, placement.cell), { timeout: EDIT_ARRIVES_MS }).toBe(0);
+      // Gone on both pages: on the builder's too, or its next aim still finds the block and
+      // places beside it.
+      await breakBlock(a, placement.cell, [b, a]);
     }
   } finally {
     await Promise.all(contexts.map((c) => c.close()));
@@ -257,10 +255,7 @@ test('an edit by one client appears for another on a native server', async ({ br
   await expect.poll(() => voxel(a, cell), { timeout: 5_000 }).toBe(stateId('dwell:stone'));
   await expect.poll(() => voxel(b, cell), { timeout: 5_000 }).toBe(stateId('dwell:stone'));
 
-  await a.waitForTimeout(120);
-  await lookAt(a, cell, 0.5);
-  expect(await call<boolean>(a, `d.edit('break')`)).toBe(true);
-  await expect.poll(() => voxel(b, cell), { timeout: 5_000 }).toBe(0);
+  await breakBlock(a, cell, [b]);
   // Closed so the pages stop rendering before later tests run.
   await Promise.all(contexts.map((c) => c.close()));
 });

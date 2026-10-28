@@ -26,12 +26,13 @@
     "lookY": 3
   },
   "play": {
-    "$comment": "While playing (no menu open). Held: jump (and fly up), crouch (and fly down), run (pressed once, it holds until the stick lets go). Pressed: the rest.",
+    "$comment": "While playing (no menu open). Held: jump (and fly up), crouch (and fly down), run (pressed once, it holds until the stick lets go), and place, which builds on while held (docs/ITEMS.md §5). Pressed: the rest; buildMode cycles the build modes.",
     "jump": "a",
     "crouch": "b",
     "run": "ls",
     "break": "rt",
     "place": "lt",
+    "buildMode": "right",
     "hotbarNext": "rb",
     "hotbarPrev": "lb",
     "fly": "y",

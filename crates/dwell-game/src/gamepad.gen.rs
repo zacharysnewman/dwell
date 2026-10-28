@@ -23,12 +23,13 @@ pub const BUTTONS: [Button; 16] = [
 ];
 
 /// The play actions' default buttons, in `PlayAction` order (by name).
-pub const PLAY: [(&str, &str); 13] = [
+pub const PLAY: [(&str, &str); 14] = [
     ("jump", "a"),
     ("crouch", "b"),
     ("run", "ls"),
     ("break", "rt"),
     ("place", "lt"),
+    ("buildMode", "right"),
     ("hotbarNext", "rb"),
     ("hotbarPrev", "lb"),
     ("fly", "y"),

@@ -2,6 +2,8 @@
 // Number keys and the scroll wheel (desktop) or tapping a slot (touch) change the selection.
 
 import { BrushPanel, type BrushPanelState } from './brushPanel';
+import { BUILD_MODES } from './buildModes.gen';
+import { keyLabel } from './controls';
 
 /** A palette slot as the hotbar shows it: its name and picture (`Client.palette()`, `hotbarSwatch`). */
 export interface HotbarSlot {
@@ -28,6 +30,8 @@ export class Hotbar {
   private readonly root: HTMLDivElement;
   private readonly slots: HTMLButtonElement[] = [];
   private readonly label: HTMLDivElement;
+  /** The build mode (what holding Place does, docs/ITEMS.md §5). */
+  private readonly build: HTMLSpanElement;
   /** The region tools' line (selection size, paste mode, the last tool's message). */
   private readonly region: HTMLDivElement;
   private readonly brush: BrushPanel;
@@ -42,6 +46,11 @@ export class Hotbar {
     this.root.id = 'hotbar';
     this.label = document.createElement('div');
     this.label.id = 'hotbar-label';
+    this.build = document.createElement('span');
+    this.build.id = 'hotbar-build';
+    const head = document.createElement('div');
+    head.className = 'hotbar-head';
+    head.append(this.label, this.build);
     this.region = document.createElement('div');
     this.region.id = 'hotbar-region';
     this.region.hidden = true;
@@ -71,8 +80,9 @@ export class Hotbar {
       this.slots.push(b);
       row.append(b);
     });
-    this.root.append(this.region, this.label, row);
+    this.root.append(this.region, head, row);
     parent.append(this.root);
+    this.setBuildMode(BUILD_MODES.modes[0].label);
     this.brush = new BrushPanel(this.root);
     this.root.prepend(this.root.lastChild as Node);
     this.refresh();
@@ -91,6 +101,12 @@ export class Hotbar {
     this.selected = slot;
     this.slots.forEach((b, i) => b.classList.toggle('selected', i === slot));
     this.refresh();
+  }
+
+  /** The build mode's label (`Client.buildMode()`, a `buildMode` event). */
+  setBuildMode(label: string): void {
+    this.build.textContent = label;
+    this.build.title = `Build mode: ${label} (${keyLabel(BUILD_MODES.key)} to switch)`;
   }
 
   /** The region tools' status line (`Client.hud().region`); hidden when empty. */

@@ -345,6 +345,12 @@ export const SOUND_DATA: SoundData = {
       "event:place",
       "event:deny"
     ],
+    "Keep building as you aim": [
+      "event:place"
+    ],
+    "Build mode": [
+      "event:tool"
+    ],
     "Choose block": [
       "action:hotbar"
     ],
@@ -469,6 +475,9 @@ export const SOUND_DATA: SoundData = {
       "event:hit",
       "event:deny",
       "action:touch_mode"
+    ],
+    "Keep building as you look": [
+      "event:place"
     ],
     "Jump, Run, Crouch, Fly": [
       "event:jump",

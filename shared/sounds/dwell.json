@@ -157,6 +157,8 @@
     "Slower / faster flight": ["action:fly_speed"],
     "Break block": ["event:break", "event:hit", "event:deny"],
     "Place block": ["event:place", "event:deny"],
+    "Keep building as you aim": ["event:place"],
+    "Build mode": ["event:tool"],
     "Choose block": ["action:hotbar"],
     "Select first corner": ["event:tool"],
     "Select second corner": ["event:tool"],
@@ -190,6 +192,7 @@
     "Map zoom": ["action:map_zoom"],
     "Copy block info": ["action:copy"],
     "Break or place": ["event:break", "event:place", "event:hit", "event:deny", "action:touch_mode"],
+    "Keep building as you look": ["event:place"],
     "Jump, Run, Crouch, Fly": ["event:jump", "event:sprint", "event:crouch_on", "action:fly_on"]
   },
   "sounds": {

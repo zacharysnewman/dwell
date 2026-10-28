@@ -18,7 +18,7 @@ pub struct ItemDef {
 mod table {
     include!("items.gen.rs");
 }
-pub use table::ITEMS;
+pub use table::{BUILD_MODE_KEY, BUILD_MODES, ITEMS};
 
 /// The item named `name`.
 pub fn item(name: &str) -> Option<&'static ItemDef> {

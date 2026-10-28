@@ -16,6 +16,9 @@ pub const TOUCH_LOOK_SENSITIVITY: f64 = 0.3;
 /// A touch on the view that moves less than this (px) and lifts within TAP_MS is a tap (§6.5).
 pub const TAP_SLOP: f64 = 12.0;
 pub const TAP_MS: f64 = 500.0;
+/// In Place mode, a touch on the view held this long (ms) without moving past TAP_SLOP places and
+/// builds on as the finger then drags the view, until it lifts (docs/ITEMS.md §5).
+pub const HOLD_MS: f64 = 350.0;
 
 /// Is a touch that moved (dx, dy) px in total and lasted `ms` a tap rather than a look drag?
 pub fn is_tap(dx: f64, dy: f64, ms: f64) -> bool {
@@ -67,6 +70,8 @@ pub enum TouchButton {
     Debug,
     Crouch,
     Jump,
+    /// The build mode (docs/ITEMS.md §5): each press, the next.
+    Build,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -78,13 +83,14 @@ pub struct TouchButtonSpec {
 
 impl TouchButton {
     /// Left to right (the debug button sits apart, top right).
-    pub const ALL: [TouchButton; 6] = [
+    pub const ALL: [TouchButton; 7] = [
         TouchButton::Edit,
         TouchButton::Run,
         TouchButton::Fly,
         TouchButton::Debug,
         TouchButton::Crouch,
         TouchButton::Jump,
+        TouchButton::Build,
     ];
 
     pub fn spec(self) -> TouchButtonSpec {
@@ -96,6 +102,7 @@ impl TouchButton {
             TouchButton::Debug => ("i", "touch-debug", Hold),
             TouchButton::Crouch => ("Crouch", "touch-crouch", Hold),
             TouchButton::Jump => ("Jump", "touch-jump", Hold),
+            TouchButton::Build => ("Line", "touch-build", Hold),
         };
         TouchButtonSpec { label, id, mode }
     }
@@ -154,6 +161,12 @@ pub enum TouchEvent {
     Fly,
     /// The debug button was pressed (toggles the overlay, as F3 does).
     Debug,
+    /// The Build button was pressed: the next build mode.
+    BuildMode,
+    /// In Place mode the view was held still for HOLD_MS: place, and build on while it is held.
+    Hold,
+    /// The finger that held lifted: stop building on (and no tap).
+    HoldEnd,
 }
 
 /// Where to draw the floating stick (screen px): its base and the knob's offset from it.
@@ -170,6 +183,8 @@ struct LookPointer {
     id: i32,
     last: (f64, f64),
     start: (f64, f64, f64),
+    /// It became a hold ([`TouchEvent::Hold`]).
+    held: bool,
 }
 
 /// The touch controls' state: stick, look area and buttons.
@@ -180,7 +195,7 @@ pub struct TouchControls {
     stick_origin: (f64, f64),
     stick_offset: (f64, f64),
     look_pointer: Option<LookPointer>,
-    buttons: [TouchButtonState; 6],
+    buttons: [TouchButtonState; 7],
     run_latched: bool,
     stick_run: bool,
 }
@@ -266,7 +281,23 @@ impl TouchControls {
             id: pointer_id,
             last: (x, y),
             start: (x, y, time_ms),
+            held: false,
         });
+    }
+
+    /// Each frame (`now_ms` on the events' clock): [`TouchEvent::Hold`] once, when the look finger
+    /// has been held still for HOLD_MS in Place mode.
+    pub fn hold_due(&mut self, now_ms: f64) -> Option<TouchEvent> {
+        let place = self.button_active(TouchButton::Edit);
+        let p = self.look_pointer.as_mut().filter(|p| !p.held && place)?;
+        let (sx, sy, st) = p.start;
+        let (lx, ly) = p.last;
+        let still = (lx - sx).hypot(ly - sy) <= TAP_SLOP;
+        if !still || now_ms - st < HOLD_MS {
+            return None;
+        }
+        p.held = true;
+        Some(TouchEvent::Hold)
     }
 
     /// Dragging in the look zone turns `look`.
@@ -291,6 +322,9 @@ impl TouchControls {
     ) -> Option<TouchEvent> {
         let p = self.look_pointer.filter(|p| p.id == pointer_id)?;
         self.look_pointer = None;
+        if p.held {
+            return Some(TouchEvent::HoldEnd);
+        }
         let (sx, sy, st) = p.start;
         // Travel up to the last move (a lifted touch may not report where it ended).
         let (lx, ly) = p.last;
@@ -341,6 +375,7 @@ impl TouchControls {
             TouchButton::Fly => on.then_some(TouchEvent::Fly),
             TouchButton::Debug => on.then_some(TouchEvent::Debug),
             TouchButton::Edit => Some(TouchEvent::PlaceMode(on)),
+            TouchButton::Build => on.then_some(TouchEvent::BuildMode),
         }
     }
 }
@@ -409,6 +444,38 @@ mod tests {
         assert!(is_tap(TAP_SLOP, 0.0, TAP_MS));
         assert!(!is_tap(TAP_SLOP + 1.0, 0.0, 80.0));
         assert!(!is_tap(3.0, 4.0, TAP_MS + 1.0));
+    }
+
+    #[test]
+    fn a_still_hold_in_place_mode_builds_on_until_it_lifts_and_is_no_tap() {
+        let mut t = TouchControls::new();
+        let mut look = Look::default();
+        // Break mode: a long still touch is nothing (a look that didn't move).
+        t.look_down(1, 100.0, 100.0, 0.0);
+        assert_eq!(t.hold_due(HOLD_MS + 1.0), None);
+        assert_eq!(t.look_up(1, TAP_MS + 1.0, false), None);
+        t.button_down(TouchButton::Edit);
+        t.button_up(TouchButton::Edit);
+        // Place mode: held still past HOLD_MS, once; dragging after it turns the view.
+        t.look_down(2, 100.0, 100.0, 1000.0);
+        assert_eq!(t.hold_due(1000.0 + HOLD_MS - 1.0), None);
+        assert_eq!(t.hold_due(1000.0 + HOLD_MS), Some(TouchEvent::Hold));
+        assert_eq!(t.hold_due(1000.0 + HOLD_MS + 16.0), None, "once");
+        t.look_move(2, 160.0, 100.0, &mut look);
+        assert!(look.yaw != 0.0);
+        assert_eq!(
+            t.look_up(2, 1000.0 + HOLD_MS + 20.0, false),
+            Some(TouchEvent::HoldEnd)
+        );
+        // Moved first: a look drag, never a hold; a quick tap is still a tap.
+        t.look_down(3, 100.0, 100.0, 3000.0);
+        t.look_move(3, 100.0 + TAP_SLOP + 1.0, 100.0, &mut look);
+        assert_eq!(t.hold_due(3000.0 + HOLD_MS * 2.0), None);
+        t.look_up(3, 3000.0 + HOLD_MS * 2.0, false);
+        t.look_down(4, 100.0, 100.0, 5000.0);
+        assert_eq!(t.hold_due(5000.0 + 50.0), None);
+        assert_eq!(t.look_up(4, 5000.0 + 60.0, false), Some(TouchEvent::Tap));
+        const { assert!(HOLD_MS < TAP_MS) };
     }
 
     // Beyond the TS suite (whose controls needed a DOM): the state machine the listeners feed.

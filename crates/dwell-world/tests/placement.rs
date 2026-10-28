@@ -175,34 +175,32 @@ dwell_world::both_faces!(
 );
 
 dwell_world::both_faces!(
-    /// A break takes as much as the held item is tall: a 1 m piece's two cells (into the block
-    /// from a top face), a ½ m one cell; nothing breakable behind it, the one.
-    fn breaking_takes_a_pieces_height(f: FaceFrame) {
+    /// A break takes one cell whatever the held item is (owner, 2026-10-28: the 1 m break, both
+    /// cells of a 1 m piece, is gone): a 1 m request breaks the aimed-at cell only.
+    fn a_break_takes_one_cell_whatever_the_piece(f: FaceFrame) {
         let mut w = ground(f);
         set(&mut w, f, [0, 0, 2], s("dwell:dirt"));
         set(&mut w, f, [0, 1, 2], s("dwell:dirt"));
-        let brk = |w: &mut VoxelWorld, rows: u8| {
+        let brk = |w: &mut VoxelWorld, rows: u8, face: usize, down: bool| {
             let r = BlockEditRequest {
                 action: BlockEditAction::Break,
                 cell: f.cell([0, 1, 2]),
-                face: f.cell_face(2) as u8,
+                face: f.cell_face(face) as u8,
                 material: 0,
                 rows,
-                down: false,
+                down,
             };
-            check_block_edit(w, &r, f.point([0.5, 1.62, 0.5]), &[], DEFAULT_REACH)
+            check_block_edit(w, &r, f.point([0.5, 1.62, -0.5]), &[], DEFAULT_REACH)
         };
-        let o = brk(&mut w, 2);
-        assert_eq!(
-            (o.check, cells(f, &o)),
-            (EditCheck::Ok, vec![[0, 1, 2], [0, 0, 2]])
-        );
-        assert_eq!(cells(f, &brk(&mut w, 1)), vec![[0, 1, 2]]);
-        set(&mut w, f, [0, 0, 2], s("dwell:air"));
-        assert_eq!(
-            cells(f, &brk(&mut w, 2)),
-            vec![[0, 1, 2]],
-            "air below: the one"
-        );
+        // From the top, and against a side (up, and down with `down`).
+        for (face, down) in [(2, false), (5, false), (5, true)] {
+            let o = brk(&mut w, 2, face, down);
+            assert_eq!(
+                (o.check, cells(f, &o)),
+                (EditCheck::Ok, vec![[0, 1, 2]]),
+                "face {face}, down {down}"
+            );
+            assert_eq!(cells(f, &brk(&mut w, 1, face, down)), vec![[0, 1, 2]]);
+        }
     }
 );

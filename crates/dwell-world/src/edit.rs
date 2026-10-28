@@ -693,33 +693,14 @@ pub fn check_block_edit(
         if unbreakable(target) {
             return EditOutcome::fail(EditCheck::Unbreakable);
         }
-        // A flooded shape leaves the water that filled its open part.
+        // A flooded shape leaves the water that filled its open part. A break takes the one cell,
+        // whatever the held piece's height (docs/ITEMS.md §2).
         let material = if info(target).flooded { M.water } else { M.air };
-        // A 1 m piece takes the next cell into the block too (down from a top face, up from a
-        // bottom one; against a side, up, or down with `down`), if it holds something breakable
-        // that leaves the same (docs/ITEMS.md).
-        let also = (request.rows > 1)
-            .then(|| {
-                let up = FaceFrame::at_row(c[1]).sign();
-                let dy = match request.face {
-                    2 => -1,
-                    3 => 1,
-                    _ if request.down => -up,
-                    _ => up,
-                };
-                [c[0], c[1] + dy, c[2]]
-            })
-            .filter(|p| {
-                let there = world.get_voxel(p[0], p[1], p[2]);
-                targetable(there)
-                    && !unbreakable(there)
-                    && info(there).flooded == info(target).flooded
-            });
         return EditOutcome {
             check: EditCheck::Ok,
             cell: c,
             material,
-            also,
+            also: None,
         };
     }
     if !placeable(request.material) {

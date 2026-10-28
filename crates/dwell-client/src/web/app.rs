@@ -7,6 +7,7 @@ use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::rc::Rc;
 
+use dwell_game::build_drag::Holder;
 use dwell_game::input::{EditAction, FLY_KEY, InputEvent, KeyboardMouseInput};
 use dwell_game::touch::{TouchButton, TouchControls, TouchEvent};
 use dwell_lod::fade::Fade;
@@ -525,6 +526,10 @@ impl Client {
         if s.game.is_none() {
             s.start_game();
         }
+        // A still hold on the view in Place mode places and builds on (docs/ITEMS.md §5).
+        if let Some(e) = s.touch.hold_due(now_ms) {
+            s.on_touch_event(e, now_ms);
+        }
         if let (Some(game), Some(session)) = (&mut s.game, &mut s.session) {
             while let Some((m, bytes)) = session.next_game() {
                 // An edit ack names the session's numbers: the game's ids come from the session,
@@ -735,7 +740,12 @@ impl Client {
         self.inner.borrow_mut().input.key_up(code);
     }
     pub fn blur(&self) {
-        self.inner.borrow_mut().input.blur();
+        let mut s = self.inner.borrow_mut();
+        s.input.blur();
+        // A button released while the window was away sends no mouseup here.
+        if let Some(g) = &mut s.game {
+            g.release_place(Holder::Mouse);
+        }
     }
     /// Presses or releases a key programmatically (tests and automation).
     pub fn press(&self, code: &str, down: bool) {
@@ -743,7 +753,11 @@ impl Client {
     }
     #[wasm_bindgen(js_name = setPointerLocked)]
     pub fn set_pointer_locked(&self, locked: bool) {
-        self.inner.borrow_mut().input.pointer_locked = locked;
+        let mut s = self.inner.borrow_mut();
+        s.input.pointer_locked = locked;
+        if !locked && let Some(g) = &mut s.game {
+            g.release_place(Holder::Mouse);
+        }
     }
     #[wasm_bindgen(js_name = mouseMove)]
     pub fn mouse_move(&self, dx: f64, dy: f64) {
@@ -768,8 +782,26 @@ impl Client {
             return;
         }
         if let Some(action) = s.input.mouse_down(button) {
-            s.edit(action, now_ms);
+            s.edit_held(action, Holder::Mouse, now_ms);
         }
+    }
+    /// A `mouseup`: letting go of Place stops building on (docs/ITEMS.md §5).
+    #[wasm_bindgen(js_name = mouseUp)]
+    pub fn mouse_up(&self, button: i16) {
+        let mut s = self.inner.borrow_mut();
+        if s.input.mouse_down(button) == Some(EditAction::Place)
+            && let Some(g) = &mut s.game
+        {
+            g.release_place(Holder::Mouse);
+        }
+    }
+    /// The build mode's label (`Line`, `Flat`; data), for the HUD and the touch Build button.
+    #[wasm_bindgen(js_name = buildMode)]
+    pub fn build_mode(&self) -> String {
+        self.inner.borrow().game.as_ref().map_or_else(
+            || dwell_game::build_drag::BUILD_MODES[0].label.to_owned(),
+            |g| g.drag.mode().label.to_owned(),
+        )
     }
     /// A `wheel` event: the hotbar, or with Alt held and the brush tool on, the brush's size, or
     /// while the spyglass is zoomed its steps (up zooms in; docs/SPYGLASS.md).
@@ -824,8 +856,9 @@ impl Client {
                     s.edit(EditAction::Break, now_ms);
                 }
                 A::Place => {
-                    s.edit(EditAction::Place, now_ms);
+                    s.edit_held(EditAction::Place, Holder::Gamepad, now_ms);
                 }
+                A::BuildMode => s.cycle_build_mode(),
                 A::HotbarNext | A::HotbarPrev => {
                     let step = if a == A::HotbarNext { 1 } else { -1 };
                     if let Some(g) = &mut s.game
@@ -858,6 +891,12 @@ impl Client {
                 A::Pause => shell.push(a.name().to_owned()),
                 A::Jump | A::Crouch | A::Run => {}
             }
+        }
+        // Place let go (or a menu opened): building on stops.
+        if (!playing || !s.input.gamepad.down(A::Place))
+            && let Some(g) = &mut s.game
+        {
+            g.release_place(Holder::Gamepad);
         }
         shell
     }
@@ -1046,6 +1085,28 @@ impl Client {
             EditAction::Break
         };
         self.inner.borrow_mut().edit(action, now_ms)
+    }
+    /// Presses (`on`) or lets go of Place as a held right button does: pressed, it places and builds
+    /// on in the build mode while held (docs/ITEMS.md §5); true if it placed.
+    #[wasm_bindgen(js_name = holdPlace)]
+    pub fn hold_place(&self, on: bool, now_ms: f64) -> bool {
+        let mut s = self.inner.borrow_mut();
+        if on {
+            return s.edit_held(EditAction::Place, Holder::Mouse, now_ms);
+        }
+        if let Some(g) = &mut s.game {
+            g.release_place(Holder::Mouse);
+        }
+        false
+    }
+    /// The next build mode, as its key does: its label.
+    #[wasm_bindgen(js_name = cycleBuildMode)]
+    pub fn cycle_build_mode(&self) -> String {
+        let mut s = self.inner.borrow_mut();
+        s.cycle_build_mode();
+        s.game
+            .as_ref()
+            .map_or_else(String::new, |g| g.drag.mode().label.to_owned())
     }
     /// Runs a region tool by name (`cornerA`, `cornerB`, `deselect`, `fill`, `hollow`, `replace`,
     /// `clear`, `copy`, `pasteMode`, `rotate`, `mirror`, `paste`, `undo`, `redo`) as its key would;
@@ -1896,6 +1957,7 @@ fn perf_now() -> f64 {
 fn touch_button(name: &str) -> Option<TouchButton> {
     Some(match name {
         "edit" => TouchButton::Edit,
+        "build" => TouchButton::Build,
         "run" => TouchButton::Run,
         "fly" => TouchButton::Fly,
         "debug" => TouchButton::Debug,
@@ -1908,6 +1970,21 @@ fn touch_button(name: &str) -> Option<TouchButton> {
 impl Inner {
     fn edit(&mut self, action: EditAction, now_ms: f64) -> bool {
         self.game.as_mut().is_some_and(|g| g.edit(action, now_ms))
+    }
+
+    /// [`edit`](Self::edit) with the button held by `holder`: a place builds on while it is held.
+    fn edit_held(&mut self, action: EditAction, holder: Holder, now_ms: f64) -> bool {
+        self.game
+            .as_mut()
+            .is_some_and(|g| g.edit_held(action, holder, now_ms))
+    }
+
+    /// The next build mode, told to the shell (the HUD and the touch Build button).
+    fn cycle_build_mode(&mut self) {
+        if let Some(g) = &mut self.game {
+            let label = g.cycle_build_mode();
+            self.shell_events.push(shell_event("buildMode", label));
+        }
     }
 
     fn on_input_event(&mut self, e: InputEvent, now_ms: f64) {
@@ -1936,6 +2013,7 @@ impl Inner {
                     g.brush_key(action);
                 }
             }
+            InputEvent::BuildMode => self.cycle_build_mode(),
         }
     }
 
@@ -1948,6 +2026,15 @@ impl Inner {
                     .map_or(EditAction::Break, |g| g.interaction.touch_action);
                 self.edit(action, now_ms);
             }
+            TouchEvent::Hold => {
+                self.edit_held(EditAction::Place, Holder::Touch, now_ms);
+            }
+            TouchEvent::HoldEnd => {
+                if let Some(g) = &mut self.game {
+                    g.release_place(Holder::Touch);
+                }
+            }
+            TouchEvent::BuildMode => self.cycle_build_mode(),
             TouchEvent::PlaceMode(place) => {
                 if let Some(g) = &mut self.game {
                     g.interaction.touch_action = if place {

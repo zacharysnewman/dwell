@@ -4,6 +4,7 @@
 // this table describes them, one entry per action, so a new binding is a new entry here.
 
 import { BRUSH_PRESETS } from './brushes.gen';
+import { BUILD_MODES } from './buildModes.gen';
 import { SPYGLASS } from './spyglass.gen';
 
 export interface Control {
@@ -41,6 +42,16 @@ export const KEYBOARD: ControlGroup[] = [
     controls: [
       { action: 'Break block', keys: ['Left click'] },
       { action: 'Place block', keys: ['Right click'] },
+      {
+        action: 'Keep building as you aim',
+        keys: ['Hold right click'],
+        when: 'line: straight out of the face; flat: at the first block’s level',
+      },
+      {
+        action: 'Build mode',
+        keys: [keyLabel(BUILD_MODES.key)],
+        when: BUILD_MODES.modes.map((m) => m.label).join(', '),
+      },
       { action: 'Choose block', keys: ['1 – 9', 'Wheel'] },
     ],
   },
@@ -129,6 +140,11 @@ export const TOUCH: Control[] = [
   { action: 'Walk', keys: ['Drag on the left'] },
   { action: 'Look', keys: ['Drag on the right'] },
   { action: 'Break or place', keys: ['Tap the view'], when: 'the Break/Place button switches' },
+  {
+    action: 'Keep building as you look',
+    keys: ['Hold the view, then drag'],
+    when: 'in Place mode; the build mode button switches line and flat',
+  },
   { action: 'Jump, Run, Crouch, Fly', keys: ['Buttons, bottom right'] },
   { action: 'Choose block', keys: ['Tap the hotbar'] },
   { action: 'Debug overlay', keys: ['ⓘ, top right'] },

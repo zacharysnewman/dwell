@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { BRUSH_PRESETS } from './brushes.gen';
+import { BUILD_MODES } from './buildModes.gen';
 import { SPYGLASS } from './spyglass.gen';
 import { DEBUG_KEYS, KEYBOARD, START_HINT, TOUCH, keyLabel, keysLabel } from './controls';
 
@@ -20,6 +21,19 @@ describe('controls', () => {
       .filter((c) => c !== zoom)
       .flatMap((c) => c.keys);
     expect(others).not.toContain(keyLabel(SPYGLASS.key));
+  });
+
+  it("lists the build mode with its key from the data, on no other control's key", () => {
+    const build = KEYBOARD.find((g) => g.title === 'Build')?.controls ?? [];
+    const mode = build.find((c) => c.action === 'Build mode');
+    expect(mode?.keys).toEqual([keyLabel(BUILD_MODES.key)]);
+    for (const m of BUILD_MODES.modes) expect(mode?.when).toContain(m.label);
+    const others = KEYBOARD.filter((g) => g.title !== 'Brushes')
+      .flatMap((g) => g.controls)
+      .filter((c) => c !== mode)
+      .flatMap((c) => c.keys);
+    expect(others).not.toContain(keyLabel(BUILD_MODES.key));
+    expect(build.some((c) => c.keys.includes('Hold right click'))).toBe(true);
   });
 
   it('lists each action once, with keys', () => {

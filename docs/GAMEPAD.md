@@ -25,7 +25,7 @@ Validation: every action bound once, to a known button; no button twice in a gro
 range; unknown keys fail with their path.
 
 Default play bindings: A jump (fly up), B crouch (fly down), left stick press run, RT break, LT
-place, RB / LB next / previous block, Y fly, D-pad up / down fly faster / slower, X spyglass, View
+place (held, it builds on: ITEMS.md §5), D-pad right the build mode, RB / LB next / previous block, Y fly, D-pad up / down fly faster / slower, X spyglass, View
 map, Menu the game menu. Menus: D-pad (or left stick) moves the focus, A presses, B goes back, Menu
 closes the game menu.
 
@@ -33,14 +33,15 @@ closes the game menu.
 
 - **Play** (`dwell-game` `gamepad.rs`, platform-free like `input.rs` and `touch.rs`): `PlayAction` —
   jump, crouch and run are held (run latches on its press until the move stick lets go); the rest act
-  on the press. The left stick moves (radial dead zone, rescaled to full tilt); the right stick turns
+  on the press, and place, pressed, places and then builds on until its button lets go
+  (`Gamepad::down`; ITEMS.md §5). The left stick moves (radial dead zone, rescaled to full tilt); the right stick turns
   the view at `lookDegPerS × lookSpeed × tilt^lookCurve` per second, right turning right on each
   face (`FaceFrame::handed`, as the mouse) and scaled by the spyglass as the mouse is. Its move and
   held buttons join the keys and touch in `KeyboardMouseInput::sample`. While a menu is open
   (`setMenuOpen`) nothing acts or is held, but the buttons are tracked, so one held over closing the
   menu isn't a press.
 - **WASM** (`web/app.rs`): `gamepad(buttons, axes, now)` each frame (actions: break and place as
-  clicks, the hotbar as the wheel, fly as F, fly faster/slower one level, the spyglass, the map as
+  clicks — place held as the right button is —, the build mode as `L`, the hotbar as the wheel, fly as F, fly faster/slower one level, the spyglass, the map as
   F4; returns `pause` for the shell), `gamepadDisconnected`, `setGamepadBinding`,
   `resetGamepadBindings`, `setGamepadLook`, `gamepadBinding`.
 - **Menus** (`client/src/input/gamepadMenu.ts`): the reachable controls are the open modal

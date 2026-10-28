@@ -143,6 +143,13 @@ interface DwellDebug {
    * `apply`, `gunpowder`, `pick` — `Client.brush`, BRUSHES.md), as its keys and clicks do.
    */
   brush(command: string): boolean;
+  /**
+   * Presses (`true`) or lets go of Place as a held right button does: pressed, it places and keeps
+   * building as the aim moves, in the build mode (docs/ITEMS.md §5). True if it placed.
+   */
+  holdPlace(on: boolean): boolean;
+  /** The next build mode, as its key does: its label (`Line`, `Flat`). */
+  buildMode(): string;
   /** Selects a hotbar slot, as a number key does. */
   select(slot: number): void;
   /** The state the selected slot would place at the crosshair, and where; null with no target. */
@@ -391,6 +398,11 @@ function forwardInput(app: App): void {
   canvas.addEventListener('mousedown', (e) => {
     client.mouseDown(e.button, performance.now(), e.altKey);
   });
+  // Letting go of Place stops building on (docs/ITEMS.md §5); on the document, so a release off
+  // the canvas counts too.
+  document.addEventListener('mouseup', (e) => {
+    client.mouseUp(e.button);
+  });
   canvas.addEventListener('contextmenu', (e) => {
     e.preventDefault();
   });
@@ -437,6 +449,9 @@ function handleEvents(app: App): void {
       app.touch?.setFlight(app.client.flightAllowed(), flying);
       app.flightSpeed.visible = flying;
       if (e.t === 'flight') audio().action(flying ? 'fly_on' : 'fly_off');
+    } else if (e.t === 'buildMode') {
+      app.hotbar?.setBuildMode(e.value as string);
+      app.touch?.setBuildMode(e.value as string);
     } else if (e.t === 'flySpeed') {
       app.flightSpeed.show(e.value as number);
       saveFlySpeedLevel(e.value as number);
@@ -739,6 +754,8 @@ async function start(): Promise<App | null> {
       return { yaw, pitch };
     },
     edit: (action) => client.edit(action, performance.now()),
+    holdPlace: (on) => client.holdPlace(on, performance.now()),
+    buildMode: () => client.cycleBuildMode(),
     tool: (name) => client.tool(name, performance.now()),
     brush: (command) => client.brush(command, performance.now()),
     select: (slot) => {
@@ -845,6 +862,9 @@ function play(app: App, joined: Extract<SessionReport, { phase: 'joined' }>): vo
     app.client.select(slot);
   });
   app.client.select(0);
+  // The build mode as the game has it: a `buildMode` event may have come before the hotbar.
+  app.hotbar.setBuildMode(app.client.buildMode());
+  app.touch?.setBuildMode(app.client.buildMode());
   app.touch?.setFlight(joined.mayFly, app.client.flying());
   startDebugTools(app);
   document.body.classList.add('in-game');
