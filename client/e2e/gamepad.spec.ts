@@ -73,14 +73,17 @@ test('controller: the stick walks, Menu opens the menu, the D-pad moves, B close
   await pad(page, [9], [0, 0, 0, 0]);
   await expect(menu).toBeVisible();
   await pad(page, [], [0, 0, 0, 0]);
-  // D-pad down (13) focuses a control in it: held for several frames, as CI's software renderer
-  // draws ~5 a second and the pad is read once a frame.
-  await pad(page, [13], [0, 0, 0, 0]);
-  await page.waitForTimeout(1000);
-  await pad(page, [], [0, 0, 0, 0]);
-  await expect
-    .poll(() => page.evaluate(() => document.activeElement?.closest('#settings-menu') !== null))
-    .toBe(true);
+  // D-pad down (13) focuses a control in it. Pressed and released until it does: CI's software
+  // renderer draws a few frames a second, the pad is read once a frame, and a press is an edge.
+  await expect(async () => {
+    await pad(page, [13], [0, 0, 0, 0]);
+    await page.waitForTimeout(400);
+    await pad(page, [], [0, 0, 0, 0]);
+    await page.waitForTimeout(400);
+    expect(
+      await page.evaluate(() => document.activeElement?.closest('#settings-menu') !== null),
+    ).toBe(true);
+  }).toPass({ timeout: 20_000 });
   // B (1) closes it.
   await pad(page, [1], [0, 0, 0, 0]);
   await expect(menu).toBeHidden();

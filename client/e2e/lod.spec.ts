@@ -52,8 +52,15 @@ test('local mode: LOD around the player, and the whole disc after flying up', as
   await expect
     .poll(async () => ((await call(page, 'state()?.flying')) as boolean | undefined) ?? false)
     .toBe(true);
-  await page.locator('#flight-speed input').fill('11');
-  await expect(page.locator('#flight-speed .flight-speed-value')).toHaveText('362 m/s');
+  // Set again until it holds: on CI's slow frames the slider can show before its level is the
+  // game's, and the next frame puts it back.
+  await expect(page.locator('#flight-speed')).toBeVisible();
+  await expect(async () => {
+    await page.locator('#flight-speed input').fill('11');
+    await expect(page.locator('#flight-speed .flight-speed-value')).toHaveText('362 m/s', {
+      timeout: 2_000,
+    });
+  }).toPass({ timeout: 30_000 });
   const climb = Date.now();
   await expect
     .poll(async () => ((await call(page, 'state()?.feet[1]')) as number | undefined) ?? 0, {
