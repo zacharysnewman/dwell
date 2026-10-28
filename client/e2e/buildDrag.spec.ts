@@ -127,6 +127,7 @@ test('walking back while holding Place in Line mode builds the line toward the p
   // runs out of that face toward the player as they walk back, the body kept clear of it.
   await lookAtPoint(page, [x + 0.5, (y + 1) * CELL_HEIGHT + 0.25, z + 0.02]);
   await expect.poll(async () => (await state(page))?.target?.face ?? -1).toBe(5);
+  await page.waitForTimeout(150); // BLOCK_EDIT_INTERVAL_MS since the first place
   expect(await call<boolean>(page, 'd.holdPlace(true)')).toBe(true);
   await call(page, 'd.press("KeyS", true)');
   await page.waitForTimeout(1_500);
@@ -134,4 +135,84 @@ test('walking back while holding Place in Line mode builds the line toward the p
   for (const dz of [1, 2, 3, 4])
     await expect.poll(() => voxel(page, [x, y + 1, z - dz]), { timeout: 10_000 }).toBe(stone);
   await call(page, 'd.holdPlace(false)');
+});
+
+/** Builds a tower 4 blocks high under the player (towering) and stands on it. */
+async function tower(page: Page): Promise<number> {
+  await start(page);
+  await call(page, 'd.look(0, -89)');
+  const f = (await state(page))?.feet ?? [0, 0, 0];
+  const under = [Math.floor(f[0]), Math.round(f[1] / CELL_HEIGHT) - 1, Math.floor(f[2])].join();
+  await expect.poll(async () => (await state(page))?.target?.cell.join() ?? '').toBe(under);
+  expect(await call<boolean>(page, 'd.holdPlace(true)')).toBe(true);
+  for (let i = 0; i < 4; i++) await jump(page);
+  await call(page, 'd.holdPlace(false)');
+  await expect.poll(async () => (await state(page))?.feet[1] ?? 0).toBeGreaterThan(f[1] + 3.99);
+  return (await state(page))?.feet[1] ?? 0;
+}
+
+test('bridging help: Place over the edge with nothing targeted builds on ahead as the player walks', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  const top = await tower(page);
+  const f = (await state(page))?.feet ?? [0, 0, 0];
+  const [x, z] = [Math.floor(f[0]), Math.floor(f[2])];
+  const row = Math.round(top / CELL_HEIGHT) - 1; // the tower's top cell, underfoot
+  const stone = stateId('dwell:stone');
+  // Looking ahead (+Z), at the horizon: nothing in reach is targeted.
+  await call(page, 'd.look(0, 0)');
+  await expect.poll(async () => (await state(page))?.target ?? null).toBeNull();
+  expect(await call<boolean>(page, 'd.holdPlace(true)')).toBe(true);
+  await expect.poll(() => voxel(page, [x, row, z + 1])).toBe(stone);
+  // Walking ahead along it: it keeps a block ahead of the feet.
+  await call(page, 'd.press("KeyW", true)');
+  await page.waitForTimeout(1_200);
+  await call(page, 'd.press("KeyW", false)');
+  await call(page, 'd.holdPlace(false)');
+  for (const dz of [2, 3, 4])
+    await expect.poll(() => voxel(page, [x, row, z + dz]), { timeout: 10_000 }).toBe(stone);
+  // Still up on it: walked along the bridge, not off it.
+  expect((await state(page))?.feet[1] ?? 0).toBeGreaterThan(top - 0.1);
+});
+
+test('bridging help in Flat mode paints the floor at the level stood on, joined to it', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  const top = await tower(page);
+  const f = (await state(page))?.feet ?? [0, 0, 0];
+  const [x, z] = [Math.floor(f[0]), Math.floor(f[2])];
+  const row = Math.round(top / CELL_HEIGHT) - 1;
+  const stone = stateId('dwell:stone');
+  expect(await call<string>(page, 'd.buildMode()')).toBe('Flat');
+  // Down ahead past the tower's top, the ground far below out of reach: nothing targeted.
+  await call(page, 'd.look(0, -30)');
+  await expect.poll(async () => (await state(page))?.target ?? null).toBeNull();
+  expect(await call<boolean>(page, 'd.holdPlace(true)')).toBe(true);
+  // Swept along the level a few cells out, side to side.
+  // The level's plane: the middle of the 1 m piece, its top cell the row stood on.
+  const level = row * CELL_HEIGHT;
+  for (const [dx, dz] of [
+    [0, 3],
+    [1, 3],
+    [-1, 3],
+  ] as const) {
+    await lookAtPoint(page, [x + dx + 0.5, level, z + dz + 0.5]);
+    await page.waitForTimeout(300); // frames to aim and build
+  }
+  await call(page, 'd.holdPlace(false)');
+  for (const [dx, dz] of [
+    [0, 1],
+    [0, 2],
+    [0, 3],
+    [1, 3],
+    [-1, 3],
+  ] as const)
+    await expect
+      .poll(() => voxel(page, [x + dx, row, z + dz]), {
+        message: `floor at ${String(dx)}, ${String(dz)}`,
+        timeout: 10_000,
+      })
+      .toBe(stone);
 });
