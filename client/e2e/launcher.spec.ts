@@ -133,8 +133,15 @@ test('the menu links to the version page, and a chosen older build still returns
   await seedWorlds(page, [world('wold0000001', 'Old line', '0.1.0')]);
   await openLauncher(page);
   await expect(page.locator('#app-version')).toContainText('Dwell 0.2.0');
-  await page.locator('#versions-link').click();
+  // Versions is a card of its own in the menu (owner, 2026-10-28), not a footer link.
+  await expect(page.locator('#versions-card')).toContainText('Dwell 0.2.0');
+  await expect(page.locator('#about #versions-link')).toHaveCount(0);
+  await page.locator('#versions-card #versions-link').click();
   await expect(page.locator('#version-list')).toBeVisible();
+  // Each row says what changed in it (shared/releases/changes.json).
+  await expect(
+    page.locator('.version-row[data-version="0.1.0"] .version-changes').first(),
+  ).toContainText('versioned release');
   expect(versionOf(page)).toBeUndefined();
   const row = (v: string) => page.locator(`.version-row[data-version="${v}"]`);
   await expect(page.locator('.version-row')).toHaveCount(3);

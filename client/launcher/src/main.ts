@@ -7,6 +7,7 @@ import './style.css';
 import { buildInfo } from '../../src/buildInfo';
 import { WorldIndex } from '../../src/local/worldIndex';
 import { withRoute } from '../../src/ui/launch';
+import { changesView } from '../../src/ui/changesView';
 import { showMenu, type PingServer } from '../../src/ui/menuPage';
 import { isBuildOf, parseManifest, type BuildEntry, type Manifest } from './manifest';
 import {
@@ -171,7 +172,8 @@ function showVersions(manifest: Manifest): void {
         ? `Can open: ${row.worlds.join(', ')}`
         : 'Opens none of your worlds yet.'
       : 'Needs a newer launcher: reload the page.';
-    item.append(head, note);
+    const changes = changesView(row.changes);
+    item.append(head, ...(changes ? [changes] : []), note);
     list.append(item);
   }
   // Older patches are retired from the site (RELEASES.md §4); each line's newest opens its worlds.

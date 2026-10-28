@@ -5,6 +5,8 @@
 // choice is a route the launcher sends to the build that carries it out (ui/launch.ts) — creating
 // and regenerating a world too, so the world is the build's own. A build served at the launcher's
 // path (a local or preview build) shows it itself (ui/menuPage.ts).
+import { changesFor } from '../version/changes';
+import { changesView } from './changesView';
 import {
   cleanName,
   typeLabel,
@@ -197,12 +199,47 @@ export class MainMenu {
     }
     const columns = document.createElement('div');
     columns.className = 'mm-columns';
-    columns.append(worlds, online);
+    columns.append(worlds, online, this.versionsCard());
     panel.append(hero, this.message, columns, this.aboutSection());
     this.root.append(backdrop, panel);
     parent.append(this.root);
     this.render();
     void this.adoptSavedWorlds();
+  }
+
+  /**
+   * Versions (owner, 2026-10-28: a first-class part of the menu, not a footer link): this build,
+   * what changed in it (shared/releases/changes.json) and the launcher's page of every build
+   * (RELEASES.md §5).
+   */
+  private versionsCard(): HTMLElement {
+    const card = document.createElement('section');
+    card.className = 'mm-card mm-versions';
+    card.id = 'versions-card';
+    const head = document.createElement('div');
+    head.className = 'mm-card-head';
+    const title = document.createElement('h2');
+    title.textContent = 'Versions';
+    const all = document.createElement('a');
+    all.id = 'versions-link';
+    all.className = 'quiet-button';
+    all.href = this.deps.versionsHref;
+    all.textContent = 'All versions';
+    head.append(title, all);
+    const current = document.createElement('div');
+    current.className = 'mm-version-current';
+    const { version, channel } = this.deps;
+    current.textContent = `Dwell ${version} · ${channel === 'stable' ? 'this build' : `${channel} build`}`;
+    card.append(head, current);
+    const changes = changesFor(version);
+    const view = changes && changesView([{ version, changes }]);
+    if (view) {
+      const label = document.createElement('div');
+      label.className = 'mm-version-label';
+      label.textContent = "What's new";
+      card.append(label, view);
+    }
+    return card;
   }
 
   /** The version, and the About details: licence and third-party notices (RELEASES.md §2). */
@@ -212,19 +249,11 @@ export class MainMenu {
     const line = document.createElement('p');
     line.className = 'menu-hint';
     const { version, channel } = this.deps;
-    // The version page is the launcher's (RELEASES.md §5).
-    const versions = document.createElement('a');
-    versions.id = 'versions-link';
-    versions.className = 'menu-link';
-    versions.href = this.deps.versionsHref;
-    versions.textContent = 'Versions';
     line.append(
       `Dwell ${version} (${channel}) · `,
       button('About', 'menu-link', () => {
         details.hidden = !details.hidden;
       }),
-      ' · ',
-      versions,
     );
     line.id = 'app-version';
     const details = document.createElement('div');

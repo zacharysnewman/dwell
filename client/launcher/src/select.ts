@@ -6,6 +6,7 @@ import {
   isVersion,
   sameLine,
 } from '../../src/version/semver';
+import { CHANGES, changesBetween, type VersionChanges } from '../../src/version/changes';
 import type { BuildEntry, Manifest } from './manifest';
 import { LAUNCHER_VERSION } from './manifest';
 
@@ -158,24 +159,41 @@ export interface VersionRow {
   openable: boolean;
   /** Names of the player's worlds this build can open (same line, not older than their last save). */
   worlds: string[];
+  /**
+   * What changed (shared/releases/changes.json), newest first: this build's, then a stable
+   * build's retired patches since the next older build listed (RELEASES.md §4).
+   */
+  changes: VersionChanges[];
 }
 
 /** Every published build for the version page, newest first; dev builds only when `showDev`. */
-export function listBuilds(manifest: Manifest, showDev: boolean, worlds: WorldRef[]): VersionRow[] {
-  return manifest.versions
+export function listBuilds(
+  manifest: Manifest,
+  showDev: boolean,
+  worlds: WorldRef[],
+  changes: VersionChanges[] = CHANGES,
+): VersionRow[] {
+  const listed = manifest.versions
     .filter((e) => showDev || e.channel === 'stable')
-    .sort((a, b) => compareVersionText(b.version, a.version))
-    .map((e) => ({
-      version: e.version,
-      channel: e.channel,
-      date: e.date,
-      line: e.channel === 'dev' ? e.version : `${compatibilityLine(e.version) ?? '?'}.x`,
-      recommended: e.version === manifest.latestStable,
-      openable: e.minLauncher <= LAUNCHER_VERSION,
-      worlds: worlds
-        .filter((w) => w.appVersion !== null && canOpenWorld(e.version, w.appVersion))
-        .map((w) => w.name),
-    }));
+    .sort((a, b) => compareVersionText(b.version, a.version));
+  const stable = listed.filter((e) => e.channel === 'stable').map((e) => e.version);
+  const changesOf = (e: BuildEntry): VersionChanges[] => {
+    if (e.channel === 'dev') return [];
+    const older = stable[stable.indexOf(e.version) + 1] ?? null;
+    return changesBetween(older, e.version, changes);
+  };
+  return listed.map((e) => ({
+    version: e.version,
+    channel: e.channel,
+    date: e.date,
+    line: e.channel === 'dev' ? e.version : `${compatibilityLine(e.version) ?? '?'}.x`,
+    recommended: e.version === manifest.latestStable,
+    openable: e.minLauncher <= LAUNCHER_VERSION,
+    worlds: worlds
+      .filter((w) => w.appVersion !== null && canOpenWorld(e.version, w.appVersion))
+      .map((w) => w.name),
+    changes: changesOf(e),
+  }));
 }
 
 /** Query parameters that route to a particular build or game: a visit with none is "plain". */

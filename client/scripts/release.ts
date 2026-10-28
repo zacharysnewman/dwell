@@ -99,6 +99,11 @@ export function releasePlan(input: {
   previousPackageVersion?: string;
   /** The manual run's channel (absent: stable): `dev` builds a dev pre-release of any branch. */
   channel?: 'stable' | 'dev';
+  /**
+   * `shared/releases/changes.json`, parsed (RELEASES.md §3): a stable release needs its version's
+   * entry. Absent: not checked.
+   */
+  changes?: unknown;
 }): ReleasePlan {
   const { event, ref, run, sha, packageVersion, latestStable: latest } = input;
   const devByHand = input.channel === 'dev';
@@ -165,6 +170,11 @@ export function releasePlan(input: {
         `${version} is below package.json's version ${packageVersion}: lower package.json first if that is intended.`,
       );
     }
+    if (input.changes !== undefined && !hasChanges(input.changes, version)) {
+      throw new Error(
+        `${version} has no entry in shared/releases/changes.json: say what changed before releasing it.`,
+      );
+    }
     return {
       version,
       buildVersion: version,
@@ -183,6 +193,25 @@ export function releasePlan(input: {
     channel: 'dev',
     archive: `dwell-${version}.tar.gz`,
   };
+}
+
+/**
+ * Whether `changes` (`shared/releases/changes.json`, parsed) lists what changed in `version`: an
+ * entry with at least one line. Its full checks are the client's (`src/version/changes.ts`).
+ */
+export function hasChanges(changes: unknown, version: string): boolean {
+  const versions = (changes as { versions?: unknown } | null)?.versions;
+  return (
+    Array.isArray(versions) &&
+    versions.some((e: unknown) => {
+      const entry = e as { version?: unknown; changes?: unknown } | null;
+      return (
+        entry?.version === version &&
+        Array.isArray(entry.changes) &&
+        entry.changes.some((c: unknown) => typeof c === 'string' && c.trim() !== '')
+      );
+    })
+  );
 }
 
 /**
@@ -308,6 +337,7 @@ function main(args: string[]): number {
       ...(requested ? { requested } : {}),
       ...(previous ? { previousPackageVersion: previous } : {}),
       ...(channel ? { channel: channel as 'stable' | 'dev' } : {}),
+      changes: JSON.parse(readFileSync('../shared/releases/changes.json', 'utf8')) as unknown,
     });
     const out = { ...plan, ...releaseNotes(plan, event, ref, sha) };
     for (const [key, value] of Object.entries(out)) {

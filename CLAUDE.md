@@ -223,6 +223,9 @@ that touches the public API, a release or the workflows:
   merges, one release per PR. The owner has given standing approval for these bumps. A push that
   leaves `package.json` at or below the newest release (e.g. a direct push) is a dev build
   (`v<next>-dev.<run>`).
+- **Every release says what changed:** the PR that raises `package.json` adds the version's entry,
+  one to six short lines, at the top of `shared/releases/changes.json` (a client test and
+  `release.ts` fail without it; `docs/RELEASES.md` §3). Write them for players, not as commit subjects.
 - **A breaking change to the public API — the saved world format, the terrain a seed generates, the
   network protocols, the cross-version browser storage — needs a new compatibility line** (before
   `1.0.0`, the next MINOR). Say so in the PR and let the owner raise `package.json`; do not leave
