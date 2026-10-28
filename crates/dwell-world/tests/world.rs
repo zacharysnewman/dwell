@@ -431,8 +431,8 @@ fn a_part_is_only_placed_with_its_block() {
 
 #[test]
 fn tall_grass_is_placed_on_a_grass_or_dirt_slope() {
-    // docs/ITEMS.md (owner, 2026-10-26): plants are the blocks that may stand on a slope's top
-    // (`onSlopes`); tall grass's `placeOn` lists the grass and dirt ramps. (HALF_HEIGHT_GRID.md §5
+    // docs/ITEMS.md (owner, 2026-10-26): plants stand on a slope's top (any block may since
+    // 0.39.0); tall grass's `placeOn` lists the grass and dirt ramps. (HALF_HEIGHT_GRID.md §5
     // kept plants to flat tops before.)
     let grass = s("dwell:tall_grass");
     let mut world = ground();

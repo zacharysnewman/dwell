@@ -1,5 +1,5 @@
 //! Placement rules (docs/ITEMS.md; owner 2026-10-26): pieces 1 m (two ½ m cells) or ½ m tall,
-//! against the face aimed at; nothing but plants on a slope's top, and a moldable material of the
+//! against the face aimed at; any block on a slope's top (0.39.0), and a moldable material of the
 //! slope's own group replacing it; ladders hung on a block's side and gone with it. All face-local,
 //! on both faces.
 
@@ -91,20 +91,19 @@ dwell_world::both_faces!(
 );
 
 dwell_world::both_faces!(
-    /// Nothing but plants is placed on a slope's top; a moldable material of the slope's group
-    /// (dirt, grass and snowy grass are dirt; sand) replaces the slope instead.
-    fn slopes_take_plants_and_are_molded_by_their_own_material(f: FaceFrame) {
+    /// A block of another material is placed on a slope's top, in the cell above it, the slope
+    /// staying under it (owner, 2026-10-28: "make it so we can build on slopes again"; it was
+    /// refused, `OnSlope`, red before); a moldable material of the slope's own group (dirt, grass
+    /// and snowy grass are dirt; sand) replaces the slope, as before; a plant stands on it.
+    fn slopes_are_built_on_and_molded_by_their_own_material(f: FaceFrame) {
         let mut w = ground(f);
         set(&mut w, f, [1, 0, 2], ramp("dwell:dirt_ramp"));
         let top = 2;
-        assert_eq!(
-            place(&mut w, f, [1, 0, 2], top, s("dwell:stone"), 2, false).check,
-            EditCheck::OnSlope
-        );
-        assert_eq!(
-            place(&mut w, f, [1, 0, 2], top, s("dwell:sand"), 2, false).check,
-            EditCheck::OnSlope
-        );
+        for m in ["dwell:stone", "dwell:sand"] {
+            let o = place(&mut w, f, [1, 0, 2], top, s(m), 1, false);
+            assert_eq!(o.check, EditCheck::Ok, "{m} on a dirt slope");
+            assert_eq!(cells(f, &o), vec![[1, 1, 2]], "{m} on top of it");
+        }
         for m in ["dwell:dirt", "dwell:grass"] {
             let o = place(&mut w, f, [1, 0, 2], top, s(m), 2, false);
             assert_eq!(o.check, EditCheck::Ok, "{m}");
@@ -119,9 +118,10 @@ dwell_world::both_faces!(
         assert_eq!(cells(f, &plant), vec![[1, 1, 2]], "a plant on top of it");
         // Sand molds a sand slope.
         set(&mut w, f, [2, 0, 2], ramp("dwell:sand_ramp"));
+        let sand = place(&mut w, f, [2, 0, 2], top, s("dwell:sand"), 1, false);
         assert_eq!(
-            place(&mut w, f, [2, 0, 2], top, s("dwell:sand"), 1, false).check,
-            EditCheck::Ok
+            (sand.check, cells(f, &sand)),
+            (EditCheck::Ok, vec![[2, 0, 2]])
         );
     }
 );
