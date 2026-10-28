@@ -80,7 +80,8 @@ pub fn open_cell(m: StateId) -> bool {
 }
 
 /// [`DragWorld::free`]'s rule: `material` may go in `cell`, which holds `there`, with the player's
-/// body as `bodies` (where it is and where the server may still see it): the cell open, and the
+/// body as `bodies` (where it is and where the server may still see it): the cell open, or a slope
+/// the block molds (`molds_into`: building with a slope's own material replaces it), and the
 /// block clear of the body unless it doesn't block one (a ladder, a plant: not solid), as the
 /// server's own check (`dwell_world::edit::overlaps_player`). Regression (owner, 2026-10-28): every
 /// block was checked as stone, so a ladder never built where the player stood on the ladder.
@@ -90,7 +91,8 @@ pub fn cell_free(
     cell: [i32; 3],
     bodies: &[dwell_world::edit::EditCapsule],
 ) -> bool {
-    open_cell(there) && !dwell_world::edit::overlaps_player(material, cell, bodies)
+    (open_cell(there) || dwell_world::edit::molds_into(there, material))
+        && !dwell_world::edit::overlaps_player(material, cell, bodies)
 }
 
 /// How far (m) under the eye a tower's next piece's top must be: under the feet of a crouched body
@@ -1039,6 +1041,26 @@ mod tests {
             assert_eq!(cells(f, &sent(&mut d)), vec![[0, 3, 0], [0, 4, 0]]);
         }
     );
+
+    #[test]
+    fn a_slope_of_the_drags_own_material_is_free_to_mold() {
+        // face-a-only: which block may replace a slope has no up.
+        // Regression (owner, 2026-10-28): a line placed by molding slopes (building with their
+        // own material replaces them) stopped at the next slope, which counted as taken.
+        let dirt_ramp = dwell_blocks::find_block("dwell:dirt_ramp")
+            .expect("a dirt ramp")
+            .first_state;
+        let cell = [0, 2, 0];
+        assert!(cell_free(dirt_ramp, require("dwell:dirt"), cell, &[]));
+        assert!(
+            cell_free(dirt_ramp, require("dwell:grass"), cell, &[]),
+            "the dirt group"
+        );
+        assert!(
+            !cell_free(dirt_ramp, require("dwell:stone"), cell, &[]),
+            "stone goes on top"
+        );
+    }
 
     dwell_world::both_faces!(
         /// A ladder (not solid) may go where the body is, as the server takes it; stone may not.
