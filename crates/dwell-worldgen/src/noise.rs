@@ -251,3 +251,144 @@ pub fn fbm3(
     }
     sum / norm
 }
+
+/// [`fbm3`] down one column (x and z fixed), row by row: the same value as `fbm3` at every row,
+/// bit for bit. Each octave keeps the lattice cell's eight corner hashes and the parts of their
+/// gradients that don't depend on y, so a row costs its y terms, the fades and the lerps.
+pub struct ColumnFbm3 {
+    wavelength_y: i32,
+    octaves: Vec<ColumnOctave>,
+}
+
+struct ColumnOctave {
+    seed: u32,
+    x: LatticeCoord,
+    z: LatticeCoord,
+    u: f32,
+    w: f32,
+    /// The lattice row the corners below are for.
+    cell_y: Option<i32>,
+    /// Per corner (dx + 2 dy + 4 dz): its gradient's x/z part, and the sign of its y part.
+    k: [f32; 8],
+    s: [i8; 8],
+}
+
+impl ColumnFbm3 {
+    pub fn new(
+        seed: u32,
+        x: i64,
+        z: i64,
+        wavelength: i32,
+        wavelength_y: i32,
+        octaves: u32,
+    ) -> Self {
+        let octaves = (0..octaves)
+            .map(|o| {
+                let (x, z) = (lattice(x, wavelength, o), lattice(z, wavelength, o));
+                ColumnOctave {
+                    seed: octave_seed(seed, o),
+                    x,
+                    z,
+                    u: fade(x.frac),
+                    w: fade(z.frac),
+                    cell_y: None,
+                    k: [0.0; 8],
+                    s: [0; 8],
+                }
+            })
+            .collect();
+        Self {
+            wavelength_y,
+            octaves,
+        }
+    }
+
+    /// `fbm3(seed, (x, y, z), wavelength, wavelength_y, octaves)` for this column's x and z.
+    pub fn at(&mut self, y: i64) -> f32 {
+        let mut sum = 0.0f32;
+        let mut norm = 0.0f32;
+        let mut amplitude = 1.0f32;
+        for (o, oct) in self.octaves.iter_mut().enumerate() {
+            sum += oct.at(lattice(y, self.wavelength_y, o as u32)) * amplitude;
+            norm += amplitude;
+            amplitude *= 0.5;
+        }
+        sum / norm
+    }
+}
+
+impl ColumnOctave {
+    /// [`perlin3`] at this octave's x and z and lattice row `y`.
+    fn at(&mut self, y: LatticeCoord) -> f32 {
+        if self.cell_y != Some(y.cell) {
+            self.cell_y = Some(y.cell);
+            let (fx, fz) = (self.x.frac, self.z.frac);
+            for c in 0..8 {
+                let (dx, dy, dz) = ((c & 1) as i32, ((c >> 1) & 1) as i32, ((c >> 2) & 1) as i32);
+                let h = hash3(
+                    self.seed,
+                    self.x.cell.wrapping_add(dx),
+                    y.cell.wrapping_add(dy),
+                    self.z.cell.wrapping_add(dz),
+                );
+                let (x, z) = (fx - dx as f32, fz - dz as f32);
+                // grad3's cases as a y-free part plus ±y: each is one exact addition either way.
+                (self.k[c], self.s[c]) = match h % 12 {
+                    0 => (x, 1),
+                    1 => (-x, 1),
+                    2 => (x, -1),
+                    3 => (-x, -1),
+                    4 => (x + z, 0),
+                    5 => (-x + z, 0),
+                    6 => (x - z, 0),
+                    7 => (-x - z, 0),
+                    8 => (z, 1),
+                    9 => (z, -1),
+                    10 => (-z, 1),
+                    _ => (-z, -1),
+                };
+            }
+        }
+        let fy = y.frac;
+        let corner = |c: usize| {
+            let yy = fy - ((c >> 1) & 1) as f32;
+            match self.s[c] {
+                0 => self.k[c],
+                1 => self.k[c] + yy,
+                _ => self.k[c] - yy,
+            }
+        };
+        let (u, v, w) = (self.u, fade(fy), self.w);
+        let y0 = lerp(
+            lerp(corner(0), corner(1), u),
+            lerp(corner(4), corner(5), u),
+            w,
+        );
+        let y1 = lerp(
+            lerp(corner(2), corner(3), u),
+            lerp(corner(6), corner(7), u),
+            w,
+        );
+        lerp(y0, y1, v)
+    }
+}
+
+#[cfg(test)]
+mod column_tests {
+    use super::*;
+
+    #[test]
+    fn a_column_of_fbm3_is_fbm3_bit_for_bit() {
+        for (seed, x, z, wl, wly, oct) in [
+            (7u32, 12_345i64, -987i64, 24, 48, 1),
+            (99, -40_000, 31_337, 40, 80, 2),
+            (1, 0, 0, 7, 3, 4),
+        ] {
+            let mut col = ColumnFbm3::new(seed, x, z, wl, wly, oct);
+            for y in -300..300 {
+                let want = fbm3(seed, (x, y, z), wl, wly, oct);
+                assert_eq!(col.at(y).to_bits(), want.to_bits(), "{seed} {x} {y} {z}");
+            }
+        }
+    }
+}

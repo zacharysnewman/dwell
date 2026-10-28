@@ -389,3 +389,24 @@ test('a bad terrace fails with its path and the problem', () => {
   const { stream: _, ...missing } = ok;
   assert.throws(() => validateVolume(vol(missing)), /terrace: missing stream/);
 });
+
+test('an identical subtree is one node', () => {
+  const warp = { add: ['surface', { mul: [3, { noise: { wavelength: 90, octaves: 2, stretchY: 0, stream: 4 } }] }] };
+  const data = {
+    terrain: null,
+    volumes: [
+      {
+        name: 'v',
+        reach: 8,
+        material: 'dwell:stone',
+        soilDepth: 3,
+        floorGrass: 3,
+        strength: 1,
+        density: { add: ['depth', { min: [warp, { abs: warp }] }] },
+      },
+    ],
+  };
+  const rust = volumeRust(validateVolume(data));
+  assert.equal(rust.match(/Node::Noise/g)?.length, 1);
+  assert.equal(rust.match(/Node::Surface/g)?.length, 1);
+});

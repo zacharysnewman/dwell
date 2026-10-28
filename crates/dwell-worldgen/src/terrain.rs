@@ -168,8 +168,75 @@ const SHAPED_KEPT: usize = 1 << 16;
 thread_local! {
     /// Reshaped columns by generator (`cache_id`), x, z and cell: a cache only, the same values
     /// either way.
-    static SHAPED: std::cell::RefCell<std::collections::HashMap<(u64, i64, i64, i64), Column>> =
-        std::cell::RefCell::new(std::collections::HashMap::new());
+    static SHAPED: std::cell::RefCell<FastMap<(u64, i64, i64, i64), Shaped>> =
+        std::cell::RefCell::new(FastMap::default());
+    /// Height-field columns by generator, x, z and cell, where a terrain volume reads them (its
+    /// own and its slope's neighbours, each read by several columns): a cache only.
+    static BASE: std::cell::RefCell<FastMap<(u64, i64, i64, i64), Column>> =
+        std::cell::RefCell::new(FastMap::default());
+}
+
+/// A hash map keyed by small integer tuples, with a cheap multiplicative hash (the default
+/// SipHash was a twentieth of a cliff chunk's time): a cache's lookups, never iterated.
+type FastMap<K, V> = std::collections::HashMap<K, V, std::hash::BuildHasherDefault<FastHash>>;
+
+#[derive(Default)]
+struct FastHash(u64);
+
+impl FastHash {
+    fn mix(&mut self, v: u64) {
+        self.0 = (self.0.rotate_left(5) ^ v).wrapping_mul(0x517c_c1b7_2722_0a95);
+    }
+}
+
+impl std::hash::Hasher for FastHash {
+    fn finish(&self) -> u64 {
+        self.0
+    }
+    fn write(&mut self, bytes: &[u8]) {
+        for &b in bytes {
+            self.mix(u64::from(b));
+        }
+    }
+    fn write_u64(&mut self, v: u64) {
+        self.mix(v);
+    }
+    fn write_i64(&mut self, v: i64) {
+        self.mix(v as u64);
+    }
+}
+
+/// A column as the terrain volume left it, with which of its rows within the volume's reach of
+/// the height field's top are solid (`Rows`), where the volume reshapes it: what the column's
+/// fill, the carving and the LOD all read, worked out once.
+#[derive(Clone, Copy, Debug)]
+struct Shaped {
+    col: Column,
+    rows: Option<Rows>,
+}
+
+/// The solid rows of a reshaped column: row `base_top − reach + i` is bit i, for i in
+/// 0..=2 × reach, the density's where it is over the core (the core over the midplane is never
+/// reshaped); beyond them the height field stands.
+#[derive(Clone, Copy, Debug)]
+struct Rows {
+    base_top: i32,
+    reach: i32,
+    bits: [u64; ROWS_WORDS],
+}
+
+/// Words of `Rows::bits`: a reach of 64 m is 128 rows each side, 257 rows.
+const ROWS_WORDS: usize = 5;
+
+impl Rows {
+    fn solid(&self, y: i32) -> bool {
+        let i = y - (self.base_top - self.reach);
+        if i < 0 || i > 2 * self.reach {
+            y <= self.base_top
+        } else {
+            self.bits[(i / 64) as usize] >> (i % 64) & 1 == 1
+        }
+    }
 }
 
 /// A key no generator has had (`TerrainGenerator::cache_id`).
@@ -604,18 +671,33 @@ impl TerrainGenerator {
     /// volume its top is the reshaped ground's topmost solid cell (WORLD_GENERATION.md §5), so the
     /// fill, the ramps, the decorations, the trees and the LOD all stand on the final surface.
     fn column(&self, x: i64, z: i64, cell: i64) -> Column {
+        match &self.volume {
+            None => self.base_column(x, z, cell),
+            Some(_) => self.shaped_column(x, z, cell).col,
+        }
+    }
+
+    /// The column at (x, z) under the terrain volume, with its solid rows where the volume
+    /// reshapes it (none without a volume, or where it leaves the column alone).
+    fn shaped_column(&self, x: i64, z: i64, cell: i64) -> Shaped {
         let Some(v) = &self.volume else {
-            return self.base_column(x, z, cell);
+            return Shaped {
+                col: self.base_column(x, z, cell),
+                rows: None,
+            };
         };
         // A reshaped column costs a scan of the density: each thread keeps the latest ones, as
-        // the chunks stacked over a column, their neighbours and the trees all ask for them.
+        // the chunks stacked over a column, their neighbours, the carving and the trees all ask.
         let key = (self.cache_id, x, z, cell);
         if let Some(c) = SHAPED.with(|m| m.borrow().get(&key).copied()) {
             return c;
         }
-        let base = self.base_column(x, z, cell);
+        let base = self.base_cached(x, z, cell);
         let c = if base.outside {
-            base
+            Shaped {
+                col: base,
+                rows: None,
+            }
         } else {
             self.shaped(v, x, z, cell, base)
         };
@@ -630,24 +712,57 @@ impl TerrainGenerator {
     }
 
     /// `base` (the height field's column at (x, z)) with its top raised or lowered to the volume's
-    /// topmost solid cell.
-    fn shaped(&self, v: &Volume, x: i64, z: i64, cell: i64, base: Column) -> Column {
+    /// topmost solid cell, and its rows within the reach.
+    fn shaped(&self, v: &Volume, x: i64, z: i64, cell: i64, base: Column) -> Shaped {
+        let plain = Shaped {
+            col: base,
+            rows: None,
+        };
         let Some(eval) = self.volume_eval(v, x, z, cell, &base) else {
-            return base;
+            return plain;
         };
         if eval.plain {
-            return base;
+            return plain;
         }
         let base_top = top_voxel(base.height);
+        let reach = v.reach_rows;
+        let mut rows = Rows {
+            base_top,
+            reach,
+            bits: [0; ROWS_WORDS],
+        };
+        // Within the reach and over the core the density decides (`volume_solid`), elsewhere the
+        // height field.
+        let core = MIDPLANE_Y + CORE_LAYERS;
+        let mut highest = None;
+        let (lo, hi) = (base_top - reach, base_top + reach);
+        let mut set = |y: i32, solid: bool| {
+            if solid {
+                let i = y - lo;
+                rows.bits[(i / 64) as usize] |= 1 << (i % 64);
+                highest = Some(y);
+            }
+        };
+        for y in lo..core.min(hi + 1) {
+            set(y, y <= base_top);
+        }
+        v.densities(&eval, lo.max(core)..=hi, |y, d| set(y, d > 0.0));
         // Dry ground above the sea is never lowered under its surface (it would stand open beside
         // the sea's water).
-        let top = Self::shaped_top(v, &eval, base_top).max(base_top.min(Self::sea_top()));
-        if top == base_top {
-            return base;
-        }
-        Column {
-            height: ((f64::from(top) + 1.0) * CELL_H) as f32,
-            ..base
+        let top = highest
+            .unwrap_or(base_top - reach - 1)
+            .max(base_top.min(Self::sea_top()));
+        let col = if top == base_top {
+            base
+        } else {
+            Column {
+                height: ((f64::from(top) + 1.0) * CELL_H) as f32,
+                ..base
+            }
+        };
+        Shaped {
+            col,
+            rows: Some(rows),
         }
     }
 
@@ -673,7 +788,7 @@ impl TerrainGenerator {
         }
         let h = base.height;
         let at = |dx: i64, dz: i64| {
-            let c = self.base_column(x + dx, z + dz, cell);
+            let c = self.base_cached(x + dx, z + dz, cell);
             if c.outside { h } else { c.height }
         };
         // The height field's slope over ±r m, measured only where the density asks for it.
@@ -692,30 +807,26 @@ impl TerrainGenerator {
         }))
     }
 
-    /// Whether row `y` is solid under the volume over a height field topped at `base_top`: its
-    /// density within its reach of the surface, the height field beyond it and in the core.
-    fn volume_solid(v: &Volume, eval: &ColumnEval, base_top: i32, y: i32) -> bool {
-        // Face-local rows: the core over the midplane is never reshaped.
-        let core = MIDPLANE_Y + CORE_LAYERS;
-        if y < core || (y - base_top).abs() > v.reach_rows {
-            y <= base_top
-        } else {
-            v.density(eval, y) > 0.0
-        }
-    }
-
     /// The row under the sea's surface (face-local): the lowest a volume leaves dry ground's top.
     fn sea_top() -> i32 {
         top_voxel(SEA_LEVEL_M as f32)
     }
 
-    /// The topmost solid row under the volume over a height field topped at `base_top`.
-    fn shaped_top(v: &Volume, eval: &ColumnEval, base_top: i32) -> i32 {
-        let reach = v.reach_rows;
-        (base_top - reach..=base_top + reach)
-            .rev()
-            .find(|&y| Self::volume_solid(v, eval, base_top, y))
-            .unwrap_or(base_top - reach - 1)
+    /// [`TerrainGenerator::base_column`] through this thread's cache (`BASE`).
+    fn base_cached(&self, x: i64, z: i64, cell: i64) -> Column {
+        let key = (self.cache_id, x, z, cell);
+        if let Some(c) = BASE.with(|m| m.borrow().get(&key).copied()) {
+            return c;
+        }
+        let c = self.base_column(x, z, cell);
+        BASE.with(|m| {
+            let mut m = m.borrow_mut();
+            if m.len() >= SHAPED_KEPT {
+                m.clear();
+            }
+            m.insert(key, c);
+        });
+        c
     }
 
     /// The height field's column at (x, z) (`column` without the volume).
@@ -1332,18 +1443,17 @@ impl TerrainGenerator {
                     continue;
                 }
                 let (wx, wz) = (i64::from(x0 + x), i64::from(z0 + z));
-                let base = self.base_column(wx, wz, 1);
-                let Some(eval) = self.volume_eval(v, wx, wz, 1, &base).filter(|e| !e.plain) else {
+                let Some(rows) = self.shaped_column(wx, wz, 1).rows else {
                     continue;
                 };
-                let base_top = top_voxel(base.height);
+                let base_top = rows.base_top;
                 let top = top_voxel(col.height);
                 // Nor is dry ground carved under the sea's surface.
                 let floor = (base_top - reach).max(Self::sea_top() + 1).min(top);
                 if y0 + S <= floor || y0 >= top {
                     continue;
                 }
-                let solid = |y: i32| Self::volume_solid(v, &eval, base_top, y);
+                let solid = |y: i32| rows.solid(y);
                 let water = if col.water == Water::None {
                     i32::MIN
                 } else {
@@ -1802,20 +1912,16 @@ impl TerrainGenerator {
                 // The terrain volume's density at this column's sample point, where it reshapes:
                 // the cells it leaves empty under the top are air, as in the chunks, so the
                 // LOD draws an overhang's underside (WORLD_GENERATION.md §5).
-                let carved = self.volume.as_deref().and_then(|v| {
+                let carved = self.volume.as_deref().and_then(|_| {
                     let wx = o.x + i64::from(x) * cell + half;
                     let wz = o.z + i64::from(z) * cell + half;
-                    let base = self.base_column(wx, wz, cell);
-                    let eval = self
-                        .volume_eval(v, wx, wz, cell, &base)
-                        .filter(|e| !e.plain)?;
-                    Some((v, eval, top_voxel(base.height)))
+                    self.shaped_column(wx, wz, cell).rows
                 });
                 // Whether the volume leaves the cell from row `a` empty (sampled at its middle row).
                 let empty = |a: i64| {
-                    carved.as_ref().is_some_and(|(v, e, base_top)| {
-                        !Self::volume_solid(v, e, *base_top, (a + cell / 2) as i32)
-                    })
+                    carved
+                        .as_ref()
+                        .is_some_and(|r| !r.solid((a + cell / 2) as i32))
                 };
                 // The soil as the chunks mantle it: down to the lowest neighbouring cell's top.
                 // Under a terrain volume, as `soil_at`: at most its `soilDepth` where it changed the

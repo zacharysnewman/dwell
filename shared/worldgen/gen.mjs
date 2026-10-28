@@ -899,7 +899,11 @@ export function flattenDensity(node, fail, path = 'density', out = []) {
     const missing = keys.filter((k) => !(k in o));
     if (missing.length) at(`${what}: missing ${missing.join(', ')}`);
   };
+  // Identical subtrees are one node (a value used twice is computed once per column).
   const push = (n) => {
+    const key = JSON.stringify(n);
+    const same = out.findIndex((o) => JSON.stringify(o) === key);
+    if (same >= 0) return same;
     if (out.length >= VOLUME_MAX_NODES) at(`more than ${VOLUME_MAX_NODES} nodes`);
     out.push(n);
     return out.length - 1;
