@@ -108,6 +108,8 @@ test('touch controls: stick, look, and jump', async ({ page }) => {
 test('touch controls: Break/Place toggle, tapping the view edits, tapping the hotbar picks', async ({
   page,
 }) => {
+  // Each tap waits for a frame of CI's software renderer: 30 s ran out there.
+  test.setTimeout(90_000);
   await page.goto('./?world=flat');
   await expect
     .poll(

@@ -37,7 +37,9 @@ const voxel = (page: Page, c: Vec3) => call<number>(page, `d.voxel(${c.join(',')
 
 async function ready(page: Page): Promise<void> {
   await expect
-    .poll(async () => (await state(page))?.terrainReady ?? false, { timeout: 20_000 })
+    // 60 s: on CI's runners the native server's suite world (the generated terrain, its cliffs
+    // ~4x slower to generate since 0.35.0; CLAUDE.md) has taken over 20 s to stream in.
+    .poll(async () => (await state(page))?.terrainReady ?? false, { timeout: 60_000 })
     .toBe(true);
   await expect
     .poll(

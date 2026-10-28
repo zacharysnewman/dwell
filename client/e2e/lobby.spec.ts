@@ -67,8 +67,9 @@ test('a public server and a public friend world are listed, and joined from the 
     // Joining the server from the list.
     await listed.locator('.lobby-join').click();
     await expect(player).toHaveURL(new RegExp(`[?&]code=${serverCode}`));
+    // 60 s: the join waits on the suite world's terrain (generated, ~4x slower since 0.35.0).
     await expect(player.locator('#net-status')).toContainText('(WebTransport) · player', {
-      timeout: 20_000,
+      timeout: 60_000,
     });
 
     // Back to the menu; joining the friend world from the list.
