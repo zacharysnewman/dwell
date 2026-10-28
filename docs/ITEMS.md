@@ -119,7 +119,9 @@ controller button and a touch button switch the modes; mouse, controller and tou
   the server leaves a cell its view of the body is in. At rest, just where it is (a bridge's next
   block, beside the feet, is free). A block that doesn't block a body (a ladder) may go where it
   is, as the server takes it (`build_drag::cell_free`; owner, 2026-10-28: ladders didn't build up
-  from the ladder the player stood on). A first place the body is in the way of (held on the ground, towering) waits,
+  from the ladder the player stood on). A slope the block molds (its own material's group,
+  `dwell_world::edit::molds_into`, the same rule a place uses) counts as free, so a drag molds a row
+  of slopes as a click molds one (0.39.1; red before: the line stopped at the next slope). A first place the body is in the way of (held on the ground, towering) waits,
   held, until a jump or a step clears it (`build_drag::Waiting`), then goes and starts the stroke.
 - **Holding**: the first block is the ordinary place; a stroke starts from the cells it filled and
   lasts until whoever started it lets go: the right button (`mouseUp`, or the window losing focus or

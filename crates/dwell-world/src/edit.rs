@@ -354,6 +354,14 @@ pub fn supported_on(m: StateId, under: StateId) -> bool {
     s.needs_support != Support::Below || info(under).solid
 }
 
+/// Whether placing `material` onto `there` replaces it: `there` a slope (a stored ramp) of the
+/// placed block's own moldable group (block data `moldable`: dirt, grass and snowy grass are dirt;
+/// sand), molded into the block (docs/ITEMS.md §3).
+pub fn molds_into(there: StateId, material: StateId) -> bool {
+    let (s, placed) = (info(there), info(material));
+    s.shape == VoxelShape::Shaped && s.moldable.is_some() && s.moldable == placed.moldable
+}
+
 /// Whether `m` in `cell` is held where it is: a block hung on a wall (`needsSupport: behind`, a
 /// ladder) by the full block behind it, anything else by what is under it ([`supported_on`]). What
 /// a region edit keeps of what it put down (ARCHITECTURE.md §6.5).
@@ -726,10 +734,7 @@ pub fn check_block_edit(
     // A slope (a stored ramp) is built on like any block, the placed one going in the cell above
     // it (owner, 2026-10-28); a moldable material of the slope's own group replaces it instead
     // (docs/ITEMS.md).
-    let molds = |there: StateId| {
-        let s = info(there);
-        s.shape == VoxelShape::Shaped && s.moldable.is_some() && s.moldable == placed.moldable
-    };
+    let molds = |there: StateId| molds_into(there, request.material);
     // A replaceable target (tall grass) or a slope being molded is placed into; anything else is
     // placed against.
     let n = FACE_DIRS[usize::from(request.face)];
