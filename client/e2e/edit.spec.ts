@@ -37,7 +37,9 @@ const voxel = (page: Page, c: Vec3) => call<number>(page, `d.voxel(${c.join(',')
 
 async function ready(page: Page): Promise<void> {
   await expect
-    .poll(async () => (await state(page))?.terrainReady ?? false, { timeout: 20_000 })
+    // 60 s: on CI's runners the native server's suite world (the generated terrain, its cliffs
+    // ~4x slower to generate since 0.35.0; CLAUDE.md) has taken over 20 s to stream in.
+    .poll(async () => (await state(page))?.terrainReady ?? false, { timeout: 60_000 })
     .toBe(true);
   await expect
     .poll(
@@ -77,13 +79,29 @@ const feet = (page: Page) => call<Vec3>(page, 'd.state().feet');
  * HALF_HEIGHT_GRID.md): a fixed pitch can pass over or under a block just placed. Face A (the
  * tests' worlds): the box is face-local.
  */
-async function lookAt(page: Page, cell: Vec3, height = 0.5): Promise<void> {
+async function lookAt(page: Page, at: Vec3, at_height = 0.5): Promise<void> {
+  // A 1 m block's lower cell (the hotbar's blocks are two cells, docs/ITEMS.md): a look from above
+  // meets its upper cell first, so that one is aimed at, low on its side, so a break takes the
+  // cell under it too (down from the top face, or from the side's lower half).
+  const above: Vec3 = [at[0], at[1] + 1, at[2]];
+  const whole = (await voxel(page, above)) === (await voxel(page, at));
+  const cell = whole ? above : at;
+  const height = whole ? 0.25 : at_height;
   const f = await feet(page);
   const [x0, y0, z0, x1, y1, z1] = STATE_DEFS[await voxel(page, cell)]?.selection ?? [
     0, 0, 0, 1, 1, 1,
   ];
   const y = (cell[1] + y0 + (y1 - y0) * height) * CELL_HEIGHT;
-  const d = [cell[0] + (x0 + x1) / 2 - f[0], y - f[1] - EYE_HEIGHT, cell[2] + (z0 + z1) / 2 - f[2]];
+  let [x, z] = [cell[0] + (x0 + x1) / 2, cell[2] + (z0 + z1) / 2];
+  if (whole) {
+    // On the side facing the player, not the box's middle: a look down through the middle meets
+    // the side higher up than `height`.
+    const inset = 0.02;
+    if (Math.abs(x - f[0]) > Math.abs(z - f[2]))
+      x = x > f[0] ? cell[0] + x0 + inset : cell[0] + x1 - inset;
+    else z = z > f[2] ? cell[2] + z0 + inset : cell[2] + z1 - inset;
+  }
+  const d = [x - f[0], y - f[1] - EYE_HEIGHT, z - f[2]];
   const yaw = (Math.atan2(d[0] ?? 0, d[2] ?? 0) * 180) / Math.PI;
   const pitch = (Math.atan2(d[1] ?? 0, Math.hypot(d[0] ?? 0, d[2] ?? 0)) * 180) / Math.PI;
   await call(page, `d.look(${String(yaw)}, ${String(pitch)})`);
@@ -141,6 +159,9 @@ test('local mode: every palette block can be picked from the hotbar, placed, and
       .locator(`.hotbar-slot[data-slot="${String(slot)}"]`)
       .getAttribute('title');
     if (title === 'Ladder') continue;
+    // Leaves with no log in reach fall at once and are gone (docs/FELLING.md §2: riders hold
+    // nothing up; dwell-world tests/support.rs, dwell-sim tests/felling.rs).
+    if (title?.toLowerCase().includes('leaves')) continue;
 
     // Back to the ground cell, and wait until it is the target: the target is the previous look's
     // (aimed at the block just broken, so past it now) until the next frame re-targets.
@@ -252,7 +273,7 @@ test('local mode: an edited world is saved in the browser and survives a reload'
   await ready(page);
   const target = await aim(page);
   const cell = add(target.cell, FACE_DIRS[target.face] ?? [0, 0, 0]);
-  await page.locator('.hotbar-slot[title="sand"]').click(); // not a fixed slot: the palette grows
+  await page.locator('.hotbar-slot[title="Sand"]').click(); // not a fixed slot: the palette grows
   const sand = stateId('dwell:sand');
   expect(await call<boolean>(page, `d.edit('place')`)).toBe(true);
   await expect.poll(() => voxel(page, cell), { timeout: 5_000 }).toBe(sand);

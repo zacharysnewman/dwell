@@ -1735,7 +1735,7 @@ pub static PRESETS: &[Preset] = &[
             jitter: 1,
             growth: 0.5,
             structures: &[],
-            wood: "dwell:log",
+            wood: "dwell:log[axis=y]",
             leaves: "dwell:leaves",
             branches: 4,
             branch_length: 4,

@@ -28,7 +28,7 @@ async function call(page: Page, expression: string): Promise<unknown> {
 }
 
 test('local mode: LOD around the player, and the whole disc after flying up', async ({ page }) => {
-  test.setTimeout(240_000);
+  test.setTimeout(330_000);
   await page.goto('./?local=1');
   // The streamed chunks around the player, then LOD sections beyond them (the chunks may show
   // first: they never wait for the coarse levels).
@@ -42,7 +42,9 @@ test('local mode: LOD around the player, and the whole disc after flying up', as
     .toBeGreaterThan(0);
 
   // Fly up (running doubles the climb) to 150 km, looking straight down: the disc (radius 50 km)
-  // fills ~2/3 of the view. There is no ceiling (Phase 16, ADR 0025 D3).
+  // fills ~2/3 of the view. There is no ceiling (Phase 16, ADR 0025 D3). At the flight speed
+  // slider's top level (11: 362 m/s, 905 m/s running; PLAYER_CONTROLLER.md §6.7) the climb takes
+  // about 170 s.
   await call(page, 'fly(true)');
   await call(page, 'look(0, -89)');
   await call(page, "press('Space', true)");
@@ -50,10 +52,19 @@ test('local mode: LOD around the player, and the whole disc after flying up', as
   await expect
     .poll(async () => ((await call(page, 'state()?.flying')) as boolean | undefined) ?? false)
     .toBe(true);
+  // Set again until it holds: on CI's slow frames the slider can show before its level is the
+  // game's, and the next frame puts it back.
+  await expect(page.locator('#flight-speed')).toBeVisible();
+  await expect(async () => {
+    await page.locator('#flight-speed input').fill('11');
+    await expect(page.locator('#flight-speed .flight-speed-value')).toHaveText('362 m/s', {
+      timeout: 2_000,
+    });
+  }).toPass({ timeout: 30_000 });
   const climb = Date.now();
   await expect
     .poll(async () => ((await call(page, 'state()?.feet[1]')) as number | undefined) ?? 0, {
-      timeout: 150_000,
+      timeout: 220_000,
     })
     .toBeGreaterThan(150_000);
   console.log(`flew to 150 km in ${((Date.now() - climb) / 1000).toFixed(1)} s`);

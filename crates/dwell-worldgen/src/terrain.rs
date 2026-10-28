@@ -2142,24 +2142,39 @@ impl TerrainGenerator {
     /// The feet on column (x, z) when it is the centre of a level dry patch SPAWN_CLEAR columns
     /// either side, between the spawn heights, clear of structures and portals.
     fn spawn_patch(&self, x: i32, z: i32) -> Option<[f64; 3]> {
-        let col = self.column_at(x, z);
-        if col.outside || col.wet() {
+        // First on the ground before the cliffs reshape it (a column's volume pass is most of its
+        // cost): a patch that is not a level dry one there is passed over without it.
+        if self.volume.is_some() && !self.level_patch(x, z, |x, z| self.base_column(x, z, 1)) {
             return None;
+        }
+        if !self.level_patch(x, z, |x, z| self.column(x, z, 1)) {
+            return None;
+        }
+        self.spawn_clear(x, z)
+    }
+
+    /// Whether (x, z) is the centre of a level dry patch between the spawn heights, by `column`.
+    fn level_patch(&self, x: i32, z: i32, column: impl Fn(i64, i64) -> Column) -> bool {
+        let col = column(i64::from(x), i64::from(z));
+        if col.outside || col.wet() {
+            return false;
         }
         let g = top_voxel(col.height);
         let above = m_of_row(g + 1) - SEA_LEVEL_M;
         if above < S.spawn_min_height.min(1.0) || above > S.spawn_max_height * 2.0 {
-            return None;
+            return false;
         }
-        let level = (-SPAWN_CLEAR..=SPAWN_CLEAR).all(|pz| {
+        (-SPAWN_CLEAR..=SPAWN_CLEAR).all(|pz| {
             (-SPAWN_CLEAR..=SPAWN_CLEAR).all(|px| {
-                let c = self.column_at(x + px, z + pz);
+                let c = column(i64::from(x + px), i64::from(z + pz));
                 !c.outside && !c.wet() && top_voxel(c.height) == g
             })
-        });
-        if !level {
-            return None;
-        }
+        })
+    }
+
+    /// The feet on a level patch's centre (x, z) when the patch is clear of structures and portals.
+    fn spawn_clear(&self, x: i32, z: i32) -> Option<[f64; 3]> {
+        let g = top_voxel(self.column_at(x, z).height);
         // Never in (or under) a placed structure: the patch is clear of their boxes; nor by a
         // portal's opening.
         let lo = (x - SPAWN_CLEAR, z - SPAWN_CLEAR);

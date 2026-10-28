@@ -108,6 +108,8 @@ test('touch controls: stick, look, and jump', async ({ page }) => {
 test('touch controls: Break/Place toggle, tapping the view edits, tapping the hotbar picks', async ({
   page,
 }) => {
+  // Each tap waits for a frame of CI's software renderer: 30 s ran out there.
+  test.setTimeout(90_000);
   await page.goto('./?world=flat');
   await expect
     .poll(
@@ -155,23 +157,22 @@ test('touch controls: Break/Place toggle, tapping the view edits, tapping the ho
     .toBe(stateId('dwell:dirt'));
 
   // Back to Break: a tap removes it again, once the new block is the one targeted (on a slow
-  // runner the target could still be the ground below, which the tap would break instead). The
-  // crosshair is turned onto it: the new block is one ½ m cell (CELL_HEIGHT), which the look that
-  // placed it may pass over.
+  // runner the target could still be the ground below, which the tap would break instead). Dirt
+  // is a 1 m block, two ½ m cells (CELL_HEIGHT; docs/ITEMS.md): the crosshair is turned onto its
+  // upper cell, low on the side facing the player, so the break takes the cell under it too.
   await tap(edit.x, edit.y, 7);
   await expect(page.locator('#touch-edit')).toHaveText('Break');
   const feet = (await read(page))?.feet ?? [0, 0, 0];
-  const d = [
-    x + 0.5 - feet[0],
-    (y + 1.5) * CELL_HEIGHT - feet[1] - 1.62,
-    z + 0.5 - feet[2],
-  ] as const; // eye 1.62 m
+  let [px, pz] = [x + 0.5, z + 0.5];
+  if (Math.abs(px - feet[0]) > Math.abs(pz - feet[2])) px = px > feet[0] ? x + 0.02 : x + 0.98;
+  else pz = pz > feet[2] ? z + 0.02 : z + 0.98;
+  const d = [px - feet[0], (y + 2.25) * CELL_HEIGHT - feet[1] - 1.62, pz - feet[2]] as const; // eye 1.62 m
   const lookYaw = (Math.atan2(d[0], d[2]) * 180) / Math.PI;
   const lookPitch = (Math.atan2(d[1], Math.hypot(d[0], d[2])) * 180) / Math.PI;
   await page.evaluate(`globalThis.__dwell.look(${String(lookYaw)}, ${String(lookPitch)})`);
   await expect
     .poll(() => page.evaluate<string>('globalThis.__dwell.state()?.target?.cell.join() ?? ""'))
-    .toBe([x, y + 1, z].join());
+    .toBe([x, y + 2, z].join());
   await page.waitForTimeout(150); // BLOCK_EDIT_INTERVAL_MS
   await tap(600, 150, 8);
   await expect.poll(() => page.evaluate<number>(above), { timeout: 5_000 }).toBe(0);

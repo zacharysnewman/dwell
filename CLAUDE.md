@@ -278,8 +278,15 @@ Check these before chasing an e2e failure:
   the slide and leaves 1.5 m up held it crouched (a crouched body's arms read `idle`). Fixed
   2026-10-20: the spec runs its own flat-world server (`--generator 0`). A test that moves a player
   far should not depend on the suite world's terrain.
-- The hotbar slot count in `e2e/edit.spec.ts` is the palette's length (9); update it when the palette
-  changes.
+- The hotbar slot count in `e2e/edit.spec.ts` is the items' count (16, `shared/items/items.json`);
+  update it when the items change.
+- Main's e2e failed from 0.28.x to 0.37.1 (fixed 0.37.2). Part was specs left behind by features:
+  1 m hotbar blocks (two cells), leaves falling when no log holds them, flight capped at level
+  11, new settings values. The rest were timeouts waiting for the generated terrain. The cliffs,
+  the default terrain since 0.35.0, made generation ~4x slower natively (245 chunks: 121 → 476 ms).
+  The spawn search took 6.6 s and now takes 1.2 s: it pre-checks patches on the pre-cliff ground.
+  If a terrain wait times out again, time `generator_for`/`spawn_point_for` natively against the
+  last green commit before widening the timeout.
 
 ## Running the browser in a sandbox
 

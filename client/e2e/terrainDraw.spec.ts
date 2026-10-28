@@ -20,16 +20,18 @@ async function frame(page: Page): Promise<{ stats: Stats; lodDrawn: number; chun
 }
 
 test('terrain and LOD drawn, and the memory they hold reported', async ({ page }) => {
-  test.setTimeout(120_000);
+  test.setTimeout(240_000);
   await page.goto('./?local=1');
-  // The streamed chunks and LOD sections beyond them.
+  // The streamed chunks and LOD sections beyond them. On CI's software renderer this took 1.2 min
+  // at 0.26.x; the cliffs (the default terrain since 0.35.0) made generation ~4x slower (245
+  // chunks natively: 121 -> 476 ms), so it is given 3 min.
   await expect
     .poll(
       async () => {
         const f = await frame(page);
         return f.chunks > 0 && f.lodDrawn > 20;
       },
-      { timeout: 90_000 },
+      { timeout: 180_000 },
     )
     .toBe(true);
   const { stats } = await frame(page);

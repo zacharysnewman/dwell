@@ -3,11 +3,11 @@
 pub static STRUCTURES: [StructureDef; 6] = [
     StructureDef {
         name: "dwell:pine_tree",
-        hash: 0x22c49f8195961466,
+        hash: 0xc5b6911efbb295e1,
         body: Body::Voxels {
             size: [5, 10, 5],
             anchor: [2, 0, 2],
-            palette: &[('.', None), ('L', Some("dwell:leaves")), ('l', Some("dwell:log"))],
+            palette: &[('.', None), ('L', Some("dwell:leaves")), ('l', Some("dwell:log[axis=y]"))],
             cells: "............l........................l..............L...LLL.LLlLL.LLL...L....L...LLL.LLlLL.LLL...L........LLL..LlL..LLL............LLL..LlL..LLL.............L...LlL...L..............L...LlL...L...................L........................L............",
         },
         variants: &[],
@@ -47,22 +47,22 @@ pub static STRUCTURES: [StructureDef; 6] = [
     },
     StructureDef {
         name: "dwell:proto_tree",
-        hash: 0xfcdde47292b12c4b,
+        hash: 0xec2876b2abf5eea6,
         body: Body::Voxels {
             size: [5, 7, 5],
             anchor: [2, 0, 2],
-            palette: &[('.', None), ('l', Some("dwell:leaves")), ('w', Some("dwell:log"))],
+            palette: &[('.', None), ('l', Some("dwell:leaves")), ('w', Some("dwell:log[axis=y]"))],
             cells: "............w........................w........................w.............lll.lllllllwlllllll.lll..lll.lllllllwlllllll.lll.......lll..lwl..lll.............l...lll...l.......",
         },
         variants: &[Variant::Rotate(&[0, 90, 180, 270]), Variant::Mirror(&[Axis::X])],
     },
     StructureDef {
         name: "dwell:tall_pine_tree",
-        hash: 0xa6e171b1e8f745b6,
+        hash: 0x86c682be7270ec61,
         body: Body::Voxels {
             size: [7, 18, 7],
             anchor: [3, 0, 3],
-            palette: &[('.', None), ('L', Some("dwell:leaves")), ('l', Some("dwell:log"))],
+            palette: &[('.', None), ('L', Some("dwell:leaves")), ('l', Some("dwell:log[axis=y]"))],
             cells: "........................l................................................l................................................l................................................l...........................L.....LLL...LLLLL.LLLlLLL.LLLLL...LLL.....L......L.....LLL...LLLLL.LLLlLLL.LLLLL...LLL.....L....................L.....LlL.....L..................................L.....LlL.....L...........................L.....LLL...LLlLL...LLL.....L....................L.....LLL...LLlLL...LLL.....L...........................L.....LlL.....L..................................L.....LlL.....L..................................L.....LlL.....L..................................L.....LlL.....L.........................................L................................................L................................................L................................................L........................",
         },
         variants: &[],

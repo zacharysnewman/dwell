@@ -36,6 +36,8 @@ test('settings menu: opens from the corner, without fog sliders, and is kept', a
     '',
     '100%',
     '',
+    // Settings → Controller's look speed (ui/controllerPanel.ts).
+    '1.00×',
   ]);
 
   await expect(menu).not.toContainText('Fog');
@@ -51,7 +53,7 @@ test('settings menu: opens from the corner, without fog sliders, and is kept', a
   await page.locator('#menu-button').click();
   await expect(page.locator('#settings-menu .settings-value').nth(7)).toHaveText('60°');
   await expect(page.locator('#settings-menu .settings-value').nth(6)).toHaveText('1024 MB');
-  await page.locator('#settings-menu .settings-reset').click();
+  await page.locator('#settings-menu .settings-reset[title="Back to the defaults"]').click();
   await expect(page.locator('#settings-menu .settings-value').nth(7)).toHaveText('75°');
   await expect(page.locator('#settings-menu .settings-value').nth(6)).toHaveText('256 MB');
 
