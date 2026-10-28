@@ -1,30 +1,33 @@
 {
-  "$comment": "What the creative hotbar places (docs/ITEMS.md; owner, 2026-10-26: \"build in 1 m blocks by default in creative, but we're going to be able to build in half blocks too, it's just a different piece (item)\"). Each item names the block it places (shared/blocks) and its height in ½ m cells: 2 a 1 m block (two cells against the face aimed at), 1 a ½ m one. A block that brings its own other cells (a torch's flame, `extends`) is a 1-cell item. The order is the hotbar's. Prototype content. Run `node shared/items/gen.mjs` after editing; CI fails if crates/dwell-game/src/items.gen.rs is stale.",
+  "$comment": "What the creative hotbar places (docs/ITEMS.md). Each item names the block it places (shared/blocks) and its height in ½ m cells (`rows`, up to 2). Owner, 2026-10-28: the hotbar's blocks are ½ m (the 1 m items are gone; `rows` stays for a taller piece later). `drag`: what holding Place does with it (docs/ITEMS.md §5): `modes` (the default) builds on in the build mode, for a plain block only; `vertical` a line straight up or down only, each piece where it is held (ladders on their wall); `none` one click at a time (a block with other cells or something to stand on). The order is the hotbar's. Prototype content. Run `node shared/items/gen.mjs` after editing; CI fails if crates/dwell-game/src/items.gen.rs is stale.",
   "items": [
-    { "name": "dwell:stone", "label": "Stone", "block": "dwell:stone", "rows": 2 },
-    { "name": "dwell:dirt", "label": "Dirt", "block": "dwell:dirt", "rows": 2 },
-    { "name": "dwell:grass", "label": "Grass", "block": "dwell:grass", "rows": 2 },
-    { "name": "dwell:ladder", "label": "Ladder", "block": "dwell:ladder", "rows": 2 },
-    { "name": "dwell:sand", "label": "Sand", "block": "dwell:sand", "rows": 2 },
-    { "name": "dwell:log", "label": "Log", "block": "dwell:log", "rows": 2 },
-    { "name": "dwell:leaves", "label": "Leaves", "block": "dwell:leaves", "rows": 2 },
-    { "name": "dwell:tall_grass", "label": "Tall grass", "block": "dwell:tall_grass", "rows": 1 },
-    { "name": "dwell:torch", "label": "Torch", "block": "dwell:torch", "rows": 1 },
-    { "name": "dwell:snowy_grass", "label": "Snowy grass", "block": "dwell:snowy_grass", "rows": 2 },
-    { "name": "dwell:snowy_leaves", "label": "Snowy leaves", "block": "dwell:snowy_leaves", "rows": 2 },
-    { "name": "dwell:stone_half", "label": "Stone, ½ m", "block": "dwell:stone", "rows": 1 },
-    { "name": "dwell:dirt_half", "label": "Dirt, ½ m", "block": "dwell:dirt", "rows": 1 },
-    { "name": "dwell:grass_half", "label": "Grass, ½ m", "block": "dwell:grass", "rows": 1 },
-    { "name": "dwell:sand_half", "label": "Sand, ½ m", "block": "dwell:sand", "rows": 1 },
-    { "name": "dwell:log_half", "label": "Log, ½ m", "block": "dwell:log", "rows": 1 }
+    { "name": "dwell:stone", "label": "Stone", "block": "dwell:stone", "rows": 1 },
+    { "name": "dwell:dirt", "label": "Dirt", "block": "dwell:dirt", "rows": 1 },
+    { "name": "dwell:grass", "label": "Grass", "block": "dwell:grass", "rows": 1 },
+    { "name": "dwell:ladder", "label": "Ladder", "block": "dwell:ladder", "rows": 1, "drag": "vertical" },
+    { "name": "dwell:sand", "label": "Sand", "block": "dwell:sand", "rows": 1 },
+    { "name": "dwell:log", "label": "Log", "block": "dwell:log", "rows": 1 },
+    { "name": "dwell:leaves", "label": "Leaves", "block": "dwell:leaves", "rows": 1 },
+    { "name": "dwell:tall_grass", "label": "Tall grass", "block": "dwell:tall_grass", "rows": 1, "drag": "none" },
+    { "name": "dwell:torch", "label": "Torch", "block": "dwell:torch", "rows": 1, "drag": "none" },
+    { "name": "dwell:snowy_grass", "label": "Snowy grass", "block": "dwell:snowy_grass", "rows": 1 },
+    { "name": "dwell:snowy_leaves", "label": "Snowy leaves", "block": "dwell:snowy_leaves", "rows": 1 }
   ],
   "buildModes": {
     "$comment": "What holding Place does after the first block (docs/ITEMS.md §5; owner, 2026-10-28): keep building as the aim moves, in the mode chosen. `key` (KeyboardEvent.code) cycles the modes, as does the controller's buildMode button (shared/input/gamepad.json) and the touch Build button; the first is the default. Kinds (the engine's vocabulary, crates/dwell-game/src/build_drag.rs): `line` builds on in a straight line out of the face first clicked, as far as the aim reaches along it; `level` paints the cells the aim sweeps over at the first block's level (floors and ceilings). `clearance` (m): how far the player's own body must be clear of a cell before a block goes in it (above it, jumping, when towering): the server sees the body a little later, and refuses a block placed into it.",
     "key": "KeyL",
     "clearance": 0.15,
     "modes": [
-      { "name": "dwell:line", "label": "Line", "kind": "line" },
-      { "name": "dwell:flat", "label": "Flat", "kind": "level" }
+      {
+        "name": "dwell:line",
+        "label": "Line",
+        "kind": "line"
+      },
+      {
+        "name": "dwell:flat",
+        "label": "Flat",
+        "kind": "level"
+      }
     ]
   }
 }

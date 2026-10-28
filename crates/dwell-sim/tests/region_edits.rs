@@ -91,6 +91,52 @@ fn a_fill_of_tall_grass_keeps_only_the_plants_that_stand_on_grass() {
 }
 
 #[test]
+fn a_fill_of_ladders_keeps_those_hung_on_a_wall() {
+    // A ladder hangs on the block behind it (block data `needsSupport: behind`), not on what is
+    // under it: a column filled against a stone wall stays (drag building's ladders, docs/ITEMS.md
+    // §5); one with no wall behind goes. Red before: the region pass asked every cell to stand
+    // on the one under it, and a ladder doesn't stand on a ladder.
+    let north = (0..STATES.len() as u16)
+        .find(|&id| {
+            let s = dwell_blocks::info(id);
+            s.look == "ladder" && s.placeable && s.facing == dwell_blocks::Facing::North
+        })
+        .expect("a ladder facing north");
+    let mut f = Fixture::new(flat());
+    join_streaming(&mut f, 1);
+    f.server.step();
+    f.take_all();
+    // The wall: stone at z = 3, four cells up; a north-facing ladder at z = 2 hangs on it.
+    f.send(1, fill([0, G, 3], [1, 4, 1], M.stone));
+    f.server.step();
+    for _ in 0..30 {
+        f.server.step();
+    }
+    f.send(1, fill([0, G + 1, 2], [1, 3, 1], north));
+    f.server.step();
+    for y in 1..4 {
+        assert_eq!(
+            f.server.world().get_voxel(0, G + y, 2),
+            north,
+            "hung, row {y}"
+        );
+    }
+    for _ in 0..30 {
+        f.server.step();
+    }
+    // No wall behind: none kept.
+    f.send(1, fill([4, G + 1, 2], [1, 3, 1], north));
+    f.server.step();
+    for y in 1..4 {
+        assert_eq!(
+            f.server.world().get_voxel(4, G + y, 2),
+            M.air,
+            "no wall, row {y}"
+        );
+    }
+}
+
+#[test]
 fn the_welcome_announces_region_edits() {
     let mut f = Fixture::new(flat());
     let w = join_streaming(&mut f, 1);

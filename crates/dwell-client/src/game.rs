@@ -1345,11 +1345,12 @@ impl<S: Scene> Game<S> {
                 .interaction
                 .palette()
                 .get(self.interaction.selected())?;
-            Some((t, material, slot.rows))
+            Some((t, material, slot.rows, slot.drag))
         })
         .flatten();
         // The piece the place will fill, as predicted, before the edit predicts it.
-        let piece = start.and_then(|(t, material, rows)| {
+        let drag = start.map_or(dwell_game::items::ItemDrag::None, |s| s.3);
+        let piece = start.and_then(|(t, material, rows, _)| {
             let m = Message::BlockEditRequest(dwell_protocol::BlockEditRequest {
                 action: dwell_protocol::BlockEditAction::Place,
                 cell: t.cell,
@@ -1385,7 +1386,7 @@ impl<S: Scene> Game<S> {
         }
         let placed = self.edit(action, now_ms);
         if placed && let Some(cells) = piece {
-            self.drag.start(holder, &cells, dir, material);
+            self.drag.start(holder, &cells, dir, material, drag);
         }
         placed
     }
@@ -1444,7 +1445,13 @@ impl<S: Scene> Game<S> {
             .swing_arms(dwell_characters::animator::Swing::Place);
         self.send_drag_fill(fill, 0);
         if let Some(holder) = holder {
-            self.drag.start(holder, &cells, dir, material);
+            self.drag.start(
+                holder,
+                &cells,
+                dir,
+                material,
+                dwell_game::items::ItemDrag::Modes,
+            );
         }
         true
     }
@@ -1492,7 +1499,13 @@ impl<S: Scene> Game<S> {
                 self.bodies
                     .swing_arms(dwell_characters::animator::Swing::Place);
                 self.send_edit(m, None);
-                self.drag.start(w.holder, &cells, w.dir, w.material);
+                self.drag.start(
+                    w.holder,
+                    &cells,
+                    w.dir,
+                    w.material,
+                    dwell_game::items::ItemDrag::Modes,
+                );
             }
         }
         if let Some(eye) = eye
@@ -2991,6 +3004,9 @@ fn open_cell(m: StateId) -> bool {
 impl dwell_game::build_drag::DragWorld for DragCells<'_> {
     fn occupied(&mut self, [x, y, z]: [i32; 3]) -> bool {
         !open_cell(self.world.get_voxel(x, y, z))
+    }
+    fn holds(&mut self, cell: [i32; 3], material: StateId) -> bool {
+        dwell_world::edit::held_in_place(self.world, cell, material)
     }
 
     fn free(&mut self, [x, y, z]: [i32; 3]) -> bool {

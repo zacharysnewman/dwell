@@ -19,7 +19,12 @@ all just modified dirt") and sand.
 block registry, CI stale check). An item names the block it places and its height in ½ m cells
 (`rows`: 2 a 1 m block, 1 a ½ m one). The hotbar is the items in order (`block_interaction::palette`);
 a ½ m piece of a full block shows its swatch's lower half. A block that brings its own other cells
-(a torch, `extends`) is a 1-cell item. Adding a piece is a new entry.
+(a torch, `extends`) is a 1-cell item. Adding a piece is a new entry. **0.38.8** (owner, 2026-10-28:
+"remove the 1m tall blocks"): every hotbar item is ½ m (11 items); `rows` stays for a taller piece
+later. `drag` says what holding Place does with it (§5): `modes` (the default; a plain block only),
+`vertical` (a block hung on a wall: a line up or down only) or `none` (a torch, tall grass); the
+generator fails an item whose block has place rules (`palette`, `extends`, `placeOn`,
+`needsSupport`) left on `modes`.
 
 ## 2. Pieces on the wire
 
@@ -54,7 +59,7 @@ both blocks) and go with their block; a break takes one cell whatever the piece.
 a grass or dirt slope. `dwell-game`: the palette is the items, 1 m by default. `shared/items/gen.test.mjs`:
 the data's validation; an item added by data alone. Protocol vectors: the piece byte.
 
-## 5. Drag building **[built, 0.38.4; towering 0.38.5; bridging help 0.38.6]**
+## 5. Drag building **[built, 0.38.4; towering 0.38.5; bridging help 0.38.6; ladders 0.38.8]**
 
 Owner (2026-10-28): "When building you can build quickly in straight lines, if you place and hold
 place on any side and then move or visually drag, it'll keep building in that direction (sort of
@@ -81,6 +86,12 @@ controller button and a touch button switch the modes; mouse, controller and tou
   each filled once, and only beside a piece of the stroke or a block at the level (owner,
   2026-10-28: a floor never floats apart from what it started from). Within `REACH_DISTANCE` of the eye; only free cells
   (air, a replaceable plant, water, not the player's own body), so nothing is overwritten.
+- **Ladders** (owner, 2026-10-28: "I do want ladders supported with held input … a vertical only
+  line"): an item with `drag: vertical` builds a line straight up or down from the first ladder,
+  whichever way the aim first goes half a piece along its column (kind `Vertical`, whatever the
+  build mode), each piece only where the wall behind holds it (`DragWorld::holds`,
+  `dwell_world::edit::held_in_place`), so it stops where the wall ends. The server keeps a region
+  fill's ladder by the same rule (red before: it asked every cell to stand on the one under it).
 - **Bridging help** (owner, 2026-10-28, as Minecraft Bedrock's): Place with **nothing targeted**
   builds off the block you stand on (under the body's centre, else the nearest under the body),
   against its side you face (the look's yaw to the nearest of the four; `build_drag::edge_target`),

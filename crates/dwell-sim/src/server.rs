@@ -24,8 +24,8 @@ use dwell_protocol::{
 use dwell_storage::{PlayerRecord, SaveBatch, SavedLodSection, WorldMeta, WorldStore};
 use dwell_world::brush::brush_policy;
 use dwell_world::edit::{
-    DEFAULT_REACH, EditCapsule, EditCheck, below, check_block_edit, edit_writes, medium_kept,
-    overlaps_player, supported_on,
+    DEFAULT_REACH, EditCapsule, EditCheck, check_block_edit, edit_writes, held_in_place,
+    medium_kept, overlaps_player,
 };
 use dwell_world::lod::{INDEX_LEVEL, LodCoord, in_world, lod_of_chunk, parent};
 use dwell_world::region::{RegionCheck, check_region_edit, region_reach};
@@ -1860,12 +1860,11 @@ impl Server {
                     changes.set_and_unsupport(&mut self.world, cell, m);
                 }
                 // A region may put blocks that need support where nothing holds them (tall grass
-                // filled into the air, or onto itself): those are not kept.
+                // filled into the air, or onto itself; a ladder with no wall behind it): those are
+                // not kept.
                 for cell in cells {
                     let m = self.world.get_voxel(cell[0], cell[1], cell[2]);
-                    let under = below(cell);
-                    let ground = self.world.get_voxel(under[0], under[1], under[2]);
-                    if m != M.air && !supported_on(m, ground) {
+                    if m != M.air && !held_in_place(&mut self.world, cell, m) {
                         let left = if info(m).flooded { M.water } else { M.air };
                         changes.set_and_unsupport(&mut self.world, cell, left);
                     }

@@ -17,6 +17,8 @@ export const MAX_ROWS = 2;
 const NAME = /^[a-z0-9_]+:[a-z0-9_]+$/;
 /** The build modes' kinds the engine knows (crates/dwell-game/src/build_drag.rs `DragKind`). */
 export const DRAG_KINDS = { line: 'Line', level: 'Level' };
+/** What holding Place does with an item (crates/dwell-game/src/items.rs `ItemDrag`). */
+export const ITEM_DRAGS = { modes: 'Modes', vertical: 'Vertical', none: 'None' };
 /** A `KeyboardEvent.code`. */
 const KEY_CODE = /^[A-Z][A-Za-z0-9]*$/;
 
@@ -40,7 +42,7 @@ export function validateItems(data, blocks) {
   data.items.forEach((it, i) => {
     const at = `items[${i}]`;
     if (typeof it !== 'object' || it === null) fail(`${at} must be an object`);
-    const e = Object.keys(it).filter((k) => !['$comment', 'name', 'label', 'block', 'rows'].includes(k));
+    const e = Object.keys(it).filter((k) => !['$comment', 'name', 'label', 'block', 'rows', 'drag'].includes(k));
     if (e.length) fail(`${at}: unknown ${e.join(', ')}`);
     if (typeof it.name !== 'string' || !NAME.test(it.name)) fail(`${at}.name must be namespace:name`);
     if (names.has(it.name)) fail(`${at}.name ${it.name} is listed twice`);
@@ -53,6 +55,13 @@ export function validateItems(data, blocks) {
     if (!placeable) fail(`${at}.block ${it.block} is not placeable`);
     if (!Number.isInteger(it.rows) || it.rows < 1 || it.rows > MAX_ROWS) fail(`${at}.rows must be 1..${MAX_ROWS} (½ m cells)`);
     if (it.rows > 1 && b.extends) fail(`${at}: ${it.block} brings its own other cells (extends): rows must be 1`);
+    const drag = it.drag ?? 'modes';
+    if (!Object.hasOwn(ITEM_DRAGS, drag)) fail(`${at}.drag ${JSON.stringify(drag)} must be one of ${Object.keys(ITEM_DRAGS).join(', ')}`);
+    // A drag's pieces after the first are region fills, which run no place rules: building on in
+    // the modes is for a plain block; one hung on a wall builds a vertical line, each piece held.
+    const rules = ['palette', 'extends', 'placeOn', 'needsSupport'].filter((k) => b[k] !== undefined);
+    if (drag === 'modes' && rules.length) fail(`${at}: ${it.block} has place rules (${rules.join(', ')}): drag must be vertical or none`);
+    if (drag === 'vertical' && b.needsSupport !== 'behind') fail(`${at}: drag vertical is for a block hung on a wall (needsSupport behind)`);
   });
   validateBuildModes(data.buildModes);
   return data;
@@ -82,11 +91,11 @@ function validateBuildModes(m) {
 
 /** The Rust table. */
 export function itemsRust(data) {
-  const rs = [`// ${header}`, '', 'use crate::build_drag::{BuildModeDef, DragKind};', 'use crate::items::ItemDef;', ''];
+  const rs = [`// ${header}`, '', 'use crate::build_drag::{BuildModeDef, DragKind};', 'use crate::items::{ItemDef, ItemDrag};', ''];
   rs.push(`/// The creative hotbar's items, in its order (shared/items/items.json).`);
   rs.push(`pub const ITEMS: [ItemDef; ${data.items.length}] = [`);
   for (const it of data.items) {
-    rs.push(`    ItemDef { name: ${JSON.stringify(it.name)}, label: ${JSON.stringify(it.label)}, block: ${JSON.stringify(it.block)}, rows: ${it.rows} },`);
+    rs.push(`    ItemDef { name: ${JSON.stringify(it.name)}, label: ${JSON.stringify(it.label)}, block: ${JSON.stringify(it.block)}, rows: ${it.rows}, drag: ItemDrag::${ITEM_DRAGS[it.drag ?? 'modes']} },`);
   }
   rs.push('];', '');
   const m = data.buildModes;

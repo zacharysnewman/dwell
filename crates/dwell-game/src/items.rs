@@ -2,6 +2,17 @@
 //! height in ½ m cells (2: a 1 m block, 1: a ½ m one). Data: `shared/items/items.json`, validated
 //! and generated into `items.gen.rs`; the placement rules are the blocks' (`dwell_world::edit`).
 
+/// What holding Place does with an item (data `drag`; docs/ITEMS.md §5).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ItemDrag {
+    /// Builds on in the build mode (a plain block).
+    Modes,
+    /// A line straight up or down only, each piece where it is held (a ladder on its wall).
+    Vertical,
+    /// One click at a time.
+    None,
+}
+
 /// An item (data).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ItemDef {
@@ -13,6 +24,7 @@ pub struct ItemDef {
     pub block: &'static str,
     /// Its height in ½ m cells.
     pub rows: u8,
+    pub drag: ItemDrag,
 }
 
 mod table {
@@ -45,11 +57,12 @@ mod tests {
                 i.name
             );
         }
+        // Owner, 2026-10-28: the hotbar's blocks are ½ m; the 1 m items are gone.
+        assert!(ITEMS.iter().all(|i| i.rows == 1), "½ m pieces only");
+        assert_eq!(item("dwell:stone_half"), None);
         assert_eq!(
-            item("dwell:stone").map(|i| i.rows),
-            Some(2),
-            "1 m by default"
+            item("dwell:ladder").map(|i| i.drag),
+            Some(ItemDrag::Vertical)
         );
-        assert_eq!(item("dwell:stone_half").map(|i| i.rows), Some(1));
     }
 }
