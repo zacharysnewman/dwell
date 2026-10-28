@@ -54,7 +54,7 @@ both blocks) and go with their block; a break takes one cell whatever the piece.
 a grass or dirt slope. `dwell-game`: the palette is the items, 1 m by default. `shared/items/gen.test.mjs`:
 the data's validation; an item added by data alone. Protocol vectors: the piece byte.
 
-## 5. Drag building **[built, 0.38.4; towering 0.38.5]**
+## 5. Drag building **[built, 0.38.4; towering 0.38.5; bridging help 0.38.6]**
 
 Owner (2026-10-28): "When building you can build quickly in straight lines, if you place and hold
 place on any side and then move or visually drag, it'll keep building in that direction (sort of
@@ -74,14 +74,24 @@ controller button and a touch button switch the modes; mouse, controller and tou
   aim's nearest point moves with the eye, so backing away from a line out of a side face builds it
   toward you. **Towering** (owner, 2026-10-28): a line up out of a top face with the eye over its
   column (standing on it) builds on whatever the aim, each piece as soon as the body is clear of
-  it, so each jump puts a block under the feet. `level` — the cells where the view ray
-  crosses the first piece's mid-height plane, joined to the last frame's by a 4-connected walk so a
-  fast sweep leaves no gap, each filled once. Within `REACH_DISTANCE` of the eye; only free cells
+  it, so each jump puts a block under the feet. **Walking along** a line across that you stand on
+  (the eye 1–3 m over its top, over a piece already built) keeps it one piece (`LEAD`) ahead of the
+  feet, whatever the aim. `level` — the cells where the view ray crosses the first piece's
+  mid-height plane, joined to the last frame's by a 4-connected walk so a fast sweep leaves no gap,
+  each filled once, and only beside a piece of the stroke or a block at the level (owner,
+  2026-10-28: a floor never floats apart from what it started from). Within `REACH_DISTANCE` of the eye; only free cells
   (air, a replaceable plant, water, not the player's own body), so nothing is overwritten.
-- **The body**: a cell is free only with the player's body clear of it by `build_drag::body_margin`:
-  `buildModes.clearance` (0.15 m, data) plus the body's speed × how long the server's view of it
-  lags (half the round trip and two ticks of its input buffer), as the server leaves a cell its view
-  of the body is in. A first place the body is in the way of (held on the ground, towering) waits,
+- **Bridging help** (owner, 2026-10-28, as Minecraft Bedrock's): Place with **nothing targeted**
+  builds off the block you stand on (under the body's centre, else the nearest under the body),
+  against its side you face (the look's yaw to the nearest of the four; `build_drag::edge_target`),
+  level with it (its top cell's row and down), from anywhere on the block. Held, the stroke builds on
+  in either mode: Line walks the bridge ahead of you, Flat paints the level you stand on. A region
+  fill (the side of the block underfoot is a face the eye can't see); plain blocks only.
+- **The body**: a cell is free only clear of the player's body where it is and where the server may
+  still see it, back along its motion by `buildModes.clearance` (0.15 m, data) plus its speed × the
+  server's lag (half the round trip and two ticks of its input buffer; `build_drag::lagged_offset`):
+  the server leaves a cell its view of the body is in. At rest, just where it is (a bridge's next
+  block, beside the feet, is free). A first place the body is in the way of (held on the ground, towering) waits,
   held, until a jump or a step clears it (`build_drag::Waiting`), then goes and starts the stroke.
 - **Holding**: the first block is the ordinary place; a stroke starts from the cells it filled and
   lasts until whoever started it lets go: the right button (`mouseUp`, or the window losing focus or
@@ -92,8 +102,9 @@ controller button and a touch button switch the modes; mouse, controller and tou
 - **On the wire**: the pieces after the first are `RegionEdit` Fills of one piece each (no protocol
   change). A `BlockEditRequest` is refused against a face the eye can't see (line of sight), which a
   floor reaching away or a line past the eye needs; region edits are checked for reach and the world
-  only. They go out at half the server's region queue a tick (`MAX_QUEUED` 4 → 2 a tick), predicted
-  at once. Only plain blocks drag (`build_drag::drags`): a region fill runs no place rules, so a
+  only. They go out at a quarter of the server's region queue a tick (`MAX_QUEUED` 4 → 1 a tick:
+  edits bunch, and a local world's worker refused a Flat sweep's at 2), predicted at once; one the
+  server refuses goes again while its cells are free, up to `RETRIES` (3) times. Only plain blocks drag (`build_drag::drags`): a region fill runs no place rules, so a
   ladder (facing, support), a torch (other cells) or tall grass (`placeOn`) is placed a click at a time.
 - **Tests**: `build_drag.rs` (both faces: a line up and across, a level's swept cells around a block,
   each once; the pacing; plain blocks only; the holder), `input.rs` (the key while playing, on no
@@ -104,6 +115,9 @@ controller button and a touch button switch the modes; mouse, controller and tou
   went into the body, and a look down the column built nothing more): `build_drag.rs`
   `a_line_up_under_the_player_builds_as_each_jump_clears_it` and the e2e. Walking back left the
   first block out until the margin counted the body's speed (the server, a moment behind, refused it).
+  Bridging help (0.38.6): `build_drag.rs` (the edge target on both faces, walking along a line, a
+  level joining only what it touches — red on 0.38.5, which filled a cell past a skipped one — the
+  retries) and the e2e (off a tower's edge: walking ahead in Line, painting the level in Flat).
 
 ## 6. Not yet
 

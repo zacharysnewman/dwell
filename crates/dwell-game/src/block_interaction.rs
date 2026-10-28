@@ -198,6 +198,11 @@ impl BlockInteraction {
         self.selected
     }
 
+    /// The look's yaw (degrees) at the last [`update`](Self::update).
+    pub fn yaw(&self) -> f64 {
+        self.yaw
+    }
+
     pub fn target(&self) -> Option<BlockTarget> {
         self.current
     }

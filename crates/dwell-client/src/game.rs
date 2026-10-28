@@ -504,6 +504,8 @@ pub struct Game<S: Scene> {
     pub interaction: BlockInteraction,
     /// Holding Place builds on in the build mode (docs/ITEMS.md §5).
     pub drag: dwell_game::build_drag::BuildDrag,
+    /// Drag fills sent and not yet answered (prediction id → the fill and its tries so far).
+    drag_sent: std::collections::HashMap<u32, (dwell_protocol::RegionEdit, u8)>,
     /// Box select, fill, copy/paste, undo (§6.5); `enabled` once the server announces region edits.
     pub region: RegionTools,
     /// VoxelSniper-style brushes (BRUSHES.md); `available` where the server announces them.
@@ -664,6 +666,7 @@ impl<S: Scene> Game<S> {
             eye,
             interaction: BlockInteraction::new(),
             drag: dwell_game::build_drag::BuildDrag::new(),
+            drag_sent: std::collections::HashMap::new(),
             region: RegionTools::new(),
             brush: BrushTool::new(),
             portals: (Vec::new(), ""),
@@ -1261,6 +1264,17 @@ impl<S: Scene> Game<S> {
     /// Breaks or places at the crosshair (§6.5): only while alive and playing. Shown and sounded at
     /// once (edit prediction); nothing targeted sounds a refusal.
     pub fn edit(&mut self, action: EditAction, now_ms: f64) -> bool {
+        self.edit_with(action, None, now_ms)
+    }
+
+    /// [`edit`](Self::edit), held by `holder` if any (a place with nothing targeted then starts a
+    /// drag stroke from the edge it builds off).
+    fn edit_with(
+        &mut self,
+        action: EditAction,
+        holder: Option<dwell_game::build_drag::Holder>,
+        now_ms: f64,
+    ) -> bool {
         if self.dead || !self.terrain_ready() {
             return false;
         }
@@ -1277,6 +1291,9 @@ impl<S: Scene> Game<S> {
             return self.tool(tool, now_ms);
         }
         let Some(target) = self.interaction.target() else {
+            if action == EditAction::Place && self.edge_place(holder, now_ms) {
+                return true;
+            }
             self.sounds.push(sound_event(SoundKind::Deny));
             return false;
         };
@@ -1350,7 +1367,7 @@ impl<S: Scene> Game<S> {
             Some((m, cells, dir, material))
         });
         let Some((m, piece, dir, material)) = piece else {
-            return self.edit(action, now_ms);
+            return self.edit_with(action, Some(holder), now_ms);
         };
         // Standing where the block goes (towering): it waits, held, until a jump lifts the body
         // clear (docs/ITEMS.md §5).
@@ -1371,6 +1388,65 @@ impl<S: Scene> Game<S> {
             self.drag.start(holder, &cells, dir, material);
         }
         placed
+    }
+
+    /// Bridging help (docs/ITEMS.md §5): Place with nothing targeted builds off the block stood
+    /// on, against its side faced (`build_drag::edge_target`), level with it; held, the stroke
+    /// builds on from there. A region fill: the server refuses a place against a face the eye
+    /// can't see, as the side of the block underfoot is. Plain blocks only (`build_drag::drags`).
+    fn edge_place(&mut self, holder: Option<dwell_game::build_drag::Holder>, now_ms: f64) -> bool {
+        use dwell_game::build_drag::{DragWorld, drags, edge_target};
+        let Some(slot) = self.interaction.palette().get(self.interaction.selected()) else {
+            return false;
+        };
+        let (material, rows) = (slot.material, i32::from(slot.rows));
+        if !self.region.enabled || !drags(material) {
+            return false;
+        }
+        let Some(body) = self.own_capsule() else {
+            return false;
+        };
+        let feet = self.current.feet();
+        let yaw = self.interaction.yaw();
+        let me = self.drag_body();
+        let mut world = DragCells {
+            world: self.streamer.store_mut(),
+            me,
+        };
+        let Some((under, dir)) = edge_target(feet, f64::from(body.radius), yaw, &mut world) else {
+            return false;
+        };
+        // Level with the block stood on: its top cell's row and down from it (a 1 m piece lines up
+        // with a 1 m block underfoot; up would be where the body is).
+        let up = dwell_world::FaceFrame::at_row(under[1]).sign();
+        let cells: Vec<[i32; 3]> = (0..rows)
+            .map(|r| [under[0] + dir[0], under[1] - r * up, under[2] + dir[2]])
+            .collect();
+        if !cells.iter().all(|&c| world.free(c)) {
+            return false;
+        }
+        let min = [
+            cells[0][0],
+            cells.iter().map(|c| c[1]).min().unwrap_or(under[1]),
+            cells[0][2],
+        ];
+        let fill = dwell_protocol::RegionEdit {
+            op: dwell_protocol::RegionEditOp::Fill,
+            min,
+            size: [1, rows as u8, 1],
+            material,
+            from: 0,
+            cells: Vec::new(),
+        };
+        self.edit_sounds
+            .local_place(min, material, now_ms, &mut self.sounds);
+        self.bodies
+            .swing_arms(dwell_characters::animator::Swing::Place);
+        self.send_drag_fill(fill, 0);
+        if let Some(holder) = holder {
+            self.drag.start(holder, &cells, dir, material);
+        }
+        true
     }
 
     /// `holder` let go of Place: its drag stroke ends.
@@ -1434,12 +1510,15 @@ impl<S: Scene> Game<S> {
                 &mut world,
             );
         }
-        for fill in self.drag.pump(now_ms) {
+        for (fill, tries) in self.drag.pump_tries(now_ms) {
             let at = fill.min;
             let material = fill.material;
-            self.send_edit(Message::RegionEdit(fill), None);
-            self.edit_sounds
-                .local_place(at, material, now_ms, &mut self.sounds);
+            // A retry sounds no second time.
+            if tries == 0 {
+                self.edit_sounds
+                    .local_place(at, material, now_ms, &mut self.sounds);
+            }
+            self.send_drag_fill(fill, tries);
         }
     }
 
@@ -1531,7 +1610,7 @@ impl<S: Scene> Game<S> {
 
     /// Sends an edit, shown at once (edit prediction, §6.5): `id` when it was predicted already
     /// (a queued region edit), else predicted now.
-    fn send_edit(&mut self, m: Message, id: Option<u32>) {
+    fn send_edit(&mut self, m: Message, id: Option<u32>) -> u32 {
         let id = id.unwrap_or_else(|| {
             let id = self.prediction.next_id();
             if let Some(changes) = self.predicted_changes(&m) {
@@ -1540,6 +1619,14 @@ impl<S: Scene> Game<S> {
             id
         });
         self.outbox.borrow_mut().push(Send::Edit(m, id));
+        id
+    }
+
+    /// Sends a drag building fill, kept until the server answers so a refused one is tried again
+    /// (`build_drag::RETRIES`; the server's per-tick region queue refuses a bunch of them).
+    fn send_drag_fill(&mut self, fill: dwell_protocol::RegionEdit, tries: u8) {
+        let id = self.send_edit(Message::RegionEdit(fill.clone()), None);
+        self.drag_sent.insert(id, (fill, tries));
     }
 
     /// Queued region edits (a brush stroke, the undo of one) shown at once, before they are sent.
@@ -1613,16 +1700,22 @@ impl<S: Scene> Game<S> {
         }
     }
 
-    /// Our body as drag building keeps clear of it: grown by `build_drag::body_margin` for our speed
-    /// and round trip, as the server's view of it lags (docs/ITEMS.md §5).
-    fn drag_body(&self) -> Option<dwell_world::edit::EditCapsule> {
-        let c = self.own_capsule()?;
-        let speed = f64::from(self.predictor.velocity().length());
-        let margin = dwell_game::build_drag::body_margin(speed, self.rtt_ms) as f32;
-        Some(dwell_world::edit::EditCapsule {
-            radius: c.radius + margin,
+    /// Our body as drag building keeps clear of it: where it is, and where the server may still
+    /// see it (`build_drag::lagged_offset`, for our velocity and round trip; docs/ITEMS.md §5).
+    fn drag_body(&self) -> Vec<dwell_world::edit::EditCapsule> {
+        let Some(c) = self.own_capsule() else {
+            return Vec::new();
+        };
+        let v = self.predictor.velocity();
+        let back = dwell_game::build_drag::lagged_offset(
+            [f64::from(v.x), f64::from(v.y), f64::from(v.z)],
+            self.rtt_ms,
+        );
+        let lagged = dwell_world::edit::EditCapsule {
+            center: std::array::from_fn(|i| c.center[i] + back[i]),
             ..c
-        })
+        };
+        vec![c, lagged]
     }
 
     /// Our predicted body as an edit capsule (the server builds its players' the same way), or
@@ -1645,6 +1738,27 @@ impl<S: Scene> Game<S> {
     pub fn on_edit_results(&mut self, results: &[(u32, bool)]) {
         if !results.is_empty() {
             self.prediction.resolve(results, &mut self.streamer);
+        }
+        // A refused drag fill goes again while its cells are still free (docs/ITEMS.md §5).
+        for &(id, refused) in results {
+            if let Some((fill, tries)) = self.drag_sent.remove(&id)
+                && refused
+            {
+                let me = self.drag_body();
+                let mut world = DragCells {
+                    world: self.streamer.store_mut(),
+                    me,
+                };
+                let free = (0..i32::from(fill.size[1])).all(|r| {
+                    dwell_game::build_drag::DragWorld::free(
+                        &mut world,
+                        [fill.min[0], fill.min[1] + r, fill.min[2]],
+                    )
+                });
+                if free {
+                    self.drag.retry(fill, tries + 1);
+                }
+            }
         }
     }
 
@@ -2860,23 +2974,28 @@ impl Puppets {
 }
 
 /// The client's world as drag building reads it (docs/ITEMS.md §5): a cell is free for air, a
-/// replaceable plant or water, unless it is in `me`, our body grown by the margin it must be clear
-/// by (`Game::drag_body`).
+/// replaceable plant or water, unless one of `me` is in it: our body where it is and where the
+/// server may still see it (`Game::drag_body`).
 struct DragCells<'a> {
     world: &'a mut dwell_world::VoxelWorld,
-    me: Option<dwell_world::edit::EditCapsule>,
+    me: Vec<dwell_world::edit::EditCapsule>,
+}
+
+/// A block may go into a cell holding `m`: air, a replaceable plant or water (an unknown id: no).
+fn open_cell(m: StateId) -> bool {
+    dwell_blocks::try_info(m).is_some_and(|s| {
+        m == dwell_world::M.air || (s.replaceable && !s.indestructible) || s.liquid
+    })
 }
 
 impl dwell_game::build_drag::DragWorld for DragCells<'_> {
+    fn occupied(&mut self, [x, y, z]: [i32; 3]) -> bool {
+        !open_cell(self.world.get_voxel(x, y, z))
+    }
+
     fn free(&mut self, [x, y, z]: [i32; 3]) -> bool {
-        let m = self.world.get_voxel(x, y, z);
-        let Some(s) = dwell_blocks::try_info(m) else {
-            return false;
-        };
-        let open = m == dwell_world::M.air || (s.replaceable && !s.indestructible) || s.liquid;
-        open && !self.me.is_some_and(|c| {
-            dwell_world::edit::overlaps_player(dwell_world::M.stone, [x, y, z], &[c])
-        })
+        open_cell(self.world.get_voxel(x, y, z))
+            && !dwell_world::edit::overlaps_player(dwell_world::M.stone, [x, y, z], &self.me)
     }
 }
 

@@ -49,29 +49,87 @@ pub enum Holder {
 
 /// What drag building reads from the client's world.
 pub trait DragWorld {
-    /// The cell may be filled: air, a replaceable plant or water, and the player's body clear of it
-    /// by [`BUILD_CLEARANCE`].
+    /// The cell may be filled: air, a replaceable plant or water, and clear of the player's body,
+    /// where it is and where the server may still see it ([`lagged_offset`]).
     fn free(&mut self, cell: [i32; 3]) -> bool;
+    /// A block is in the cell (not air, a replaceable plant or water): what a floor joins onto and
+    /// what the player stands on.
+    fn occupied(&mut self, cell: [i32; 3]) -> bool;
 }
 
-/// Region edits sent per server tick at most: half the server's per-tick queue
-/// (`region_edit::MAX_QUEUED`), so edits bunched by the network still fit it.
-const PER_TICK: f64 = region_edit::MAX_QUEUED as f64 / 2.0;
+/// Pieces a line keeps built ahead of the player walking along it (bridging).
+const LEAD: i32 = 1;
+
+/// Bridging help (owner, 2026-10-28, as Minecraft Bedrock's): Place with nothing targeted builds
+/// off the block the player stands on, against its side they face. The block under `feet` (m,
+/// world) — under the body's centre, else the nearest under the body (`radius`, m) — and the
+/// side's direction, the horizontal look (`yaw_deg`) to the nearest of the four. None with nothing
+/// under the body.
+pub fn edge_target(
+    feet: [f64; 3],
+    radius: f64,
+    yaw_deg: f64,
+    world: &mut impl DragWorld,
+) -> Option<([i32; 3], [i32; 3])> {
+    let face = dwell_world::FaceFrame::at_height(feet[1]);
+    let local = face.point(feet);
+    // Stood on, the feet are at a cell's bottom: a little under it is the row below.
+    let row = (local[1] / CELL[1] - 0.25).floor() as i32;
+    let (cx, cz) = (
+        local[0].div_euclid(CELL[0]) as i32,
+        local[2].div_euclid(CELL[2]) as i32,
+    );
+    let gap = |x: i32, z: i32| {
+        let g = |p: f64, lo: f64| (lo - p).max(p - (lo + 1.0)).max(0.0);
+        g(local[0], f64::from(x)).hypot(g(local[2], f64::from(z)))
+    };
+    let mut under: Option<([i32; 3], f64)> = None;
+    for dz in -1..=1 {
+        for dx in -1..=1 {
+            let (x, z) = (cx + dx, cz + dz);
+            let d = gap(x, z);
+            let cell = face.cell([x, row, z]);
+            if d <= radius && under.is_none_or(|(_, best)| d < best) && world.occupied(cell) {
+                under = Some((cell, d));
+            }
+        }
+    }
+    let (cell, _) = under?;
+    let look = face.look(yaw_deg, 0.0);
+    let dir = if look[0].abs() > look[2].abs() {
+        [look[0].signum() as i32, 0, 0]
+    } else {
+        [0, 0, look[2].signum() as i32]
+    };
+    Some((cell, dir))
+}
+
+/// Region edits sent per server tick at most: a quarter of the server's per-tick queue
+/// (`region_edit::MAX_QUEUED`), which refuses the rest. Edits bunch on the way: a local world's
+/// worker took two frames' fills in one tick and refused a Flat sweep's at two a tick.
+const PER_TICK: f64 = region_edit::MAX_QUEUED as f64 / 4.0;
+/// Times a refused fill is sent again ([`BuildDrag::retry`]).
+pub const RETRIES: u8 = 3;
 /// Columns a level's sweep fills between two frames' aims at most (a jump further is not a sweep).
 const MAX_SWEEP: i32 = 64;
 
 /// Server ticks an input waits for on the server beyond half the round trip (its input buffer),
-/// in [`body_margin`].
+/// in [`lagged_offset`].
 const INPUT_TICKS: f64 = 2.0;
 
-/// How far (m) the player's own body must be clear of a cell before a block goes in it, moving at
-/// `speed` (m/s) with `rtt_ms` to the server: [`BUILD_CLEARANCE`], plus how far the body moves while
-/// the server's view of it catches up (half the round trip and its input buffer). The server
-/// leaves a cell its view of the body is in; towering and walking back while building both place
-/// just behind the moving body.
-pub fn body_margin(speed: f64, rtt_ms: Option<f64>) -> f64 {
+/// Where the server may still see the player's body, from where it is moving at `velocity` (m/s)
+/// with `rtt_ms` to the server: back along the motion by [`BUILD_CLEARANCE`] plus how far it moves
+/// while the server's view catches up (half the round trip and its input buffer); at rest, where it
+/// is. The server leaves a cell its view of the body is in, so drag building keeps clear of the body
+/// here as well as where it is (towering: below the rising body; walking back: ahead of it).
+pub fn lagged_offset(velocity: [f64; 3], rtt_ms: Option<f64>) -> [f64; 3] {
+    let speed = velocity.iter().map(|v| v * v).sum::<f64>().sqrt();
+    if speed < 0.1 {
+        return [0.0; 3];
+    }
     let lag_s = (rtt_ms.unwrap_or(0.0) / 2.0) / 1000.0 + INPUT_TICKS / f64::from(SIM_HZ);
-    BUILD_CLEARANCE + speed.abs() * lag_s
+    let back = BUILD_CLEARANCE + speed * lag_s;
+    velocity.map(|v| -v / speed * back)
 }
 
 /// Whether a block is built on by dragging: a plain block. A region fill runs none of the place
@@ -154,7 +212,8 @@ pub struct BuildDrag {
     mode: usize,
     stroke: Option<Stroke>,
     waiting: Option<Waiting>,
-    pending: VecDeque<RegionEdit>,
+    /// Fills waiting for the rate, each with the times it was refused already.
+    pending: VecDeque<(RegionEdit, u8)>,
     credit: f64,
     credit_ms: f64,
 }
@@ -269,11 +328,26 @@ impl BuildDrag {
             DragKind::Line => line(s, eye, dir, reach, world),
             DragKind::Level => level(s, eye, dir, reach, world),
         };
-        self.pending.extend(new);
+        self.pending.extend(new.into_iter().map(|e| (e, 0)));
+    }
+
+    /// A fill the server refused, `tries` times now: it goes again first, up to [`RETRIES`] times.
+    pub fn retry(&mut self, fill: RegionEdit, tries: u8) {
+        if tries <= RETRIES {
+            self.pending.push_front((fill, tries));
+        }
     }
 
     /// The fills the server's region queue takes now (each frame): [`PER_TICK`] a tick.
     pub fn pump(&mut self, now_ms: f64) -> Vec<RegionEdit> {
+        self.pump_tries(now_ms)
+            .into_iter()
+            .map(|(e, _)| e)
+            .collect()
+    }
+
+    /// [`pump`](Self::pump), with the times each was refused already.
+    pub fn pump_tries(&mut self, now_ms: f64) -> Vec<(RegionEdit, u8)> {
         if self.credit_ms.is_finite() {
             let ticks = (now_ms - self.credit_ms).max(0.0) * f64::from(SIM_HZ) / 1000.0;
             self.credit = (self.credit + ticks * PER_TICK).min(PER_TICK);
@@ -316,21 +390,31 @@ fn line(
     if axis == 1 && over && dot(u, w) < 0.0 {
         return build_on(s, i32::MAX, cells, eye, reach, world);
     }
+    let step = f64::from(cells) * CELL[axis];
+    // Bridging: walking along a line across that the player stands on — the eye 1–3 m over its top,
+    // within a cell of it sideways, over a piece already built — keeps it LEAD pieces ahead of the
+    // feet, whatever the aim.
+    let up = f64::from(dwell_world::FaceFrame::at_row(s.base[1]).sign());
+    let above_top = (eye[1] - a[1]) * up - 0.5 * f64::from(s.rows) * CELL[1];
+    let side = 2 - axis; // the other horizontal axis (x ↔ z)
+    let on = (-dot(u, w) / step + 0.5).floor() as i32;
+    let walk = (axis != 1
+        && (1.0..=3.0).contains(&above_top)
+        && (eye[side] - a[side]).abs() <= CELL[side]
+        && on < s.next)
+        .then_some(on + LEAD);
     // The nearest points of the line a + σu and the ray eye + τ·dir (both unit).
     let b = dot(u, dir);
     let denom = 1.0 - b * b;
-    if denom < 1e-6 {
-        return Vec::new(); // looking along the line: no point of it is aimed at
-    }
     let (d, e) = (dot(u, w), dot(dir, w));
-    let sigma = (b * e - d) / denom;
-    let tau = (e - b * d) / denom;
-    if tau <= 0.0 {
-        return Vec::new();
+    let aimed = (denom >= 1e-6) // looking along the line: no point of it is aimed at
+        .then(|| ((b * e - d) / denom, (e - b * d) / denom))
+        .filter(|&(_, tau)| tau > 0.0)
+        .map(|(sigma, _)| (sigma / step + 0.5).floor() as i32);
+    match aimed.max(walk) {
+        Some(want) => build_on(s, want, cells, eye, reach, world),
+        None => Vec::new(),
     }
-    let step = f64::from(cells) * CELL[axis];
-    let want = (sigma / step + 0.5).floor() as i32;
-    build_on(s, want, cells, eye, reach, world)
 }
 
 /// The line's pieces from the next through `want`, `cells` apart, while they fit.
@@ -356,7 +440,8 @@ fn build_on(
 }
 
 /// A level's new pieces: the columns from the last aimed to the one the aim meets the level's
-/// plane in now, a 4-connected walk so a fast sweep leaves no gap; each filled once.
+/// plane in now, a 4-connected walk so a fast sweep leaves no gap; each filled once, and only
+/// beside a piece already filled or a block at the level.
 fn level(
     s: &mut Stroke,
     eye: [f64; 3],
@@ -403,6 +488,16 @@ fn level(
         if s.filled.contains(&(x, z)) || !s.fits(min, eye, reach, world) {
             continue;
         }
+        // Joined (owner, 2026-10-28): beside a piece of the stroke or a block at the level, so a
+        // floor never floats apart from what it started from (a cell skipped out of reach or in
+        // the body would otherwise leave the next one alone).
+        let joined = [(1, 0), (-1, 0), (0, 1), (0, -1)].iter().any(|&(ox, oz)| {
+            let n = (x + ox, z + oz);
+            s.filled.contains(&n) || (0..s.rows).any(|r| world.occupied([n.0, s.base[1] + r, n.1]))
+        });
+        if !joined {
+            continue;
+        }
         s.filled.insert((x, z));
         out.push(s.fill(min));
     }
@@ -415,13 +510,16 @@ mod tests {
     use dwell_blocks::require;
     use dwell_world::FaceFrame;
 
-    /// A world of air with some solid cells (world cells).
+    /// A world of air with some solid cells, and cells the body is in (world cells).
     #[derive(Default)]
-    struct Fake(HashSet<[i32; 3]>);
+    struct Fake(HashSet<[i32; 3]>, HashSet<[i32; 3]>);
 
     impl DragWorld for Fake {
         fn free(&mut self, cell: [i32; 3]) -> bool {
-            !self.0.contains(&cell)
+            !self.0.contains(&cell) && !self.1.contains(&cell)
+        }
+        fn occupied(&mut self, cell: [i32; 3]) -> bool {
+            self.0.contains(&cell)
         }
     }
 
@@ -611,6 +709,77 @@ mod tests {
         }
     );
 
+    dwell_world::both_faces!(
+        /// Flat: a cell the sweep skipped (the body in it) leaves the next one with nothing to
+        /// join: it isn't built, so the floor stays one piece.
+        fn a_level_builds_only_beside_what_it_joins(f: FaceFrame) {
+            let mut d = started(f, DragKind::Level, [0, 2, 0], [0, 1, 0]);
+            let mut w = Fake::default();
+            w.1.insert(f.cell([1, 2, 0]));
+            let eye = [0.5, 3.6, -2.0];
+            d.aim(f.point(eye), towards(f, eye, [2.5, 1.5, 0.5]), 8.0, &mut w);
+            assert!(sent(&mut d).is_empty(), "(2,0) would float");
+            // Swept again with the body gone: both.
+            w.1.clear();
+            d.aim(f.point(eye), towards(f, eye, [0.5, 1.5, 0.5]), 8.0, &mut w);
+            d.aim(f.point(eye), towards(f, eye, [2.5, 1.5, 0.5]), 8.0, &mut w);
+            let cols: Vec<_> = sent(&mut d).iter().map(|e| (e.min[0], e.min[2])).collect();
+            assert_eq!(cols, vec![(1, 0), (2, 0)]);
+        }
+    );
+
+    dwell_world::both_faces!(
+        /// Bridging help: the block under the feet (or the nearest under the body off its edge)
+        /// and the side faced.
+        fn the_edge_target_is_the_block_stood_on_and_the_side_faced(f: FaceFrame) {
+            let mut w = Fake::default();
+            w.0.insert(f.cell([0, 3, 0]));
+            // Stood on it (its top 2 m up), facing +Z, then +X, then −X a little off +X's diagonal.
+            let feet = f.point([0.5, 2.0, 0.5]);
+            assert_eq!(
+                edge_target(feet, 0.3, 0.0, &mut w),
+                Some((f.cell([0, 3, 0]), [0, 0, 1]))
+            );
+            assert_eq!(
+                edge_target(feet, 0.3, 90.0, &mut w).map(|t| t.1),
+                Some([1, 0, 0])
+            );
+            assert_eq!(
+                edge_target(feet, 0.3, -100.0, &mut w).map(|t| t.1),
+                Some([-1, 0, 0])
+            );
+            // Over its edge with the centre over air: still it, while the body overlaps it.
+            let off = f.point([1.2, 2.0, 0.5]);
+            assert_eq!(
+                edge_target(off, 0.3, 90.0, &mut w).map(|t| t.0),
+                Some(f.cell([0, 3, 0]))
+            );
+            assert_eq!(
+                edge_target(f.point([1.4, 2.0, 0.5]), 0.3, 90.0, &mut w),
+                None
+            );
+        }
+    );
+
+    dwell_world::both_faces!(
+        /// Bridging: walking along a line the player stands on keeps it a piece ahead of the
+        /// feet, looking straight along it.
+        fn walking_along_a_line_builds_it_ahead(f: FaceFrame) {
+            let mut d = started(f, DragKind::Line, [0, 2, 1], [0, 0, 1]);
+            let mut w = Fake::default();
+            let ahead = f.vector([0.0, 0.0, 1.0]);
+            let mut at = |d: &mut BuildDrag, z: f64| {
+                d.aim(f.point([0.5, 1.5 + 1.62, z]), ahead, 5.0, &mut w);
+                cells(f, &sent(d))
+            };
+            // On the block behind the first piece: nothing yet.
+            assert!(at(&mut d, 0.5).is_empty());
+            // On the first piece: the next one ahead; then the next.
+            assert_eq!(at(&mut d, 1.5), vec![[0, 2, 2], [0, 3, 2]]);
+            assert_eq!(at(&mut d, 2.5), vec![[0, 2, 3], [0, 3, 3]]);
+        }
+    );
+
     #[test]
     fn fills_go_out_at_half_the_servers_region_queue_a_tick() {
         // face-a-only: pacing has no up.
@@ -632,6 +801,22 @@ mod tests {
         let tick = 1000.0 / f64::from(SIM_HZ);
         assert_eq!(d.pump(1.0 + tick).len(), PER_TICK as usize);
         assert!(PER_TICK as usize * 2 <= region_edit::MAX_QUEUED);
+    }
+
+    #[test]
+    fn a_refused_fill_goes_again_first_up_to_the_retries() {
+        // face-a-only: retries have no up.
+        let mut d = started(FaceFrame::A, DragKind::Line, [0, 1, 0], [0, 1, 0]);
+        let fill = d.stroke.as_ref().expect("a stroke").fill([0, 3, 0]);
+        for tries in 1..=RETRIES {
+            d.retry(fill.clone(), tries);
+            assert_eq!(
+                d.pump_tries(f64::from(tries) * 1000.0),
+                vec![(fill.clone(), tries)]
+            );
+        }
+        d.retry(fill, RETRIES + 1);
+        assert!(d.pump_tries(10_000.0).is_empty(), "given up");
     }
 
     #[test]
@@ -683,17 +868,27 @@ mod tests {
     }
 
     #[test]
-    fn the_body_margin_grows_with_speed_and_lag() {
-        // face-a-only: a distance, no up.
+    fn the_lagged_body_is_back_along_the_motion() {
+        // face-a-only: a displacement along the motion, the same on both faces.
         assert_eq!(
-            body_margin(0.0, Some(200.0)),
-            BUILD_CLEARANCE,
-            "at rest: the clearance"
+            lagged_offset([0.0, 0.05, 0.0], Some(200.0)),
+            [0.0; 3],
+            "at rest: here"
         );
-        let walking = body_margin(5.0, Some(30.0));
-        assert!((walking - (BUILD_CLEARANCE + 5.0 * (0.015 + 2.0 / 60.0))).abs() < 1e-9);
-        assert!(body_margin(5.0, Some(200.0)) > walking);
-        assert!(body_margin(-5.0, None) > BUILD_CLEARANCE);
+        let walking = lagged_offset([0.0, 0.0, 5.0], Some(30.0));
+        let back = BUILD_CLEARANCE + 5.0 * (0.015 + 2.0 / 60.0);
+        assert!(
+            (walking[2] + back).abs() < 1e-9 && walking[0] == 0.0,
+            "{walking:?}"
+        );
+        assert!(
+            lagged_offset([0.0, 0.0, 5.0], Some(200.0))[2] < walking[2],
+            "more lag, further"
+        );
+        assert!(
+            lagged_offset([0.0, 2.0, 0.0], None)[1] < 0.0,
+            "rising: below"
+        );
     }
 
     #[test]
