@@ -545,8 +545,8 @@ round-robin alternatives — with per-sound variation ranges (pitch, gain, cutof
 and an intensity mapping. A block names its **sound set** (`"sound": "dwell:stone"`, §6.1); a set
 gives the sound per event (step, land, break, place, hit; enter, exit, swim for liquids; slide;
 burn, the loop of a burning light source such as the torch's `dwell:torch` set); the data
-also holds the event kinds, the ambient tunables (`ambient`: the fires' radius and voice cap, the
-wind's height and speed ranges, the night's stars range), footstep gaits (stride and loudness), game-action sounds, the menu
+also holds the event kinds, the ambient tunables (`ambient`: the fires' radius and voice cap; the
+wind and night loops were removed, owner 2026-10-21 and 2026-10-28), footstep gaits (stride and loudness), game-action sounds, the menu
 vocabulary (hover, click, back, tab, toggle on/off, slider, error, success — never varied) and the
 sounds of every control of `ui/controls.ts` (a test fails on an action without one).
 `shared/sounds/gen.mjs` validates it and generates `client/src/audio/sounds.gen.ts` and

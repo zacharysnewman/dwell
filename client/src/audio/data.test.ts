@@ -204,11 +204,11 @@ describe('sound data', () => {
       /ambient\.fire\.radiusM: 0 is outside/,
     ],
     [
-      'an ambient range that starts where it is full',
+      'an ambience the engine has no voice for (the night: removed, owner 2026-10-28)',
       (f) => {
-        (rec(f, 'ambient').night as Record<string, unknown>).stars = [0.5, 0.5];
+        rec(f, 'ambient').night = { stars: [0.15, 0.85], aloftM: [24, 160] };
       },
-      /ambient\.night\.stars: starts and is full at the same value/,
+      /ambient: unknown field "night"/,
     ],
     [
       'a fallback set without a slide',

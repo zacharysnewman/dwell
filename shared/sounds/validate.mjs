@@ -284,24 +284,14 @@ export function validateSound(where, s) {
 
 /**
  * The ambient sounds' tunables (AUDIO.md §2): `fire` — burning light sources (a placed torch, one
- * in a hand) crackle within `radiusM`, the nearest `max`; `night` — from the sky's stars (0 by
- * day, 1 by night; `stars`: [starts, full]), fading out as the listener rises over sea level
- * (`aloftM`: [starts, gone]). (No wind loop: removed, owner 2026-10-21.)
+ * in a hand) crackle within `radiusM`, the nearest `max`. (No wind loop: removed, owner
+ * 2026-10-21; no night crickets: removed, owner 2026-10-28.)
  */
 function validateAmbient(a) {
-  keysIn("ambient", a, ["fire", "night"]);
+  keysIn("ambient", a, ["fire"]);
   keysIn("ambient.fire", a.fire, ["radiusM", "max"]);
   number("ambient.fire.radiusM", a.fire.radiusM, 1, 48);
   number("ambient.fire.max", a.fire.max, 0, 16, { integer: true });
-  keysIn("ambient.night", a.night, ["stars", "aloftM"]);
-  pair("ambient.night.stars", a.night.stars, 0, 1, { ordered: true });
-  pair("ambient.night.aloftM", a.night.aloftM, -4096, 4096, { ordered: true });
-  for (const [k, v] of [
-    ["night.stars", a.night.stars],
-    ["night.aloftM", a.night.aloftM],
-  ])
-    if (v[0] === v[1])
-      fail(`ambient.${k}`, "starts and is full at the same value");
   return a;
 }
 

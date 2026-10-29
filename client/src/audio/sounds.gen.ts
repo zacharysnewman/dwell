@@ -192,19 +192,6 @@ export const SOUND_DATA: SoundData = {
     {
       "name": "burn_end",
       "loop": "stop"
-    },
-    {
-      "name": "night",
-      "sound": "dwell:night",
-      "loop": "start"
-    },
-    {
-      "name": "night_level",
-      "loop": "update"
-    },
-    {
-      "name": "night_end",
-      "loop": "stop"
     }
   ],
   "sets": {
@@ -490,16 +477,6 @@ export const SOUND_DATA: SoundData = {
     "fire": {
       "radiusM": 10,
       "max": 4
-    },
-    "night": {
-      "stars": [
-        0.15,
-        0.85
-      ],
-      "aloftM": [
-        24,
-        160
-      ]
     }
   },
   "sounds": {
@@ -5232,38 +5209,6 @@ export const SOUND_DATA: SoundData = {
       "layers": [
         {
           "source": "noise",
-          "color": "brown",
-          "gain": 0.32,
-          "filters": [
-            {
-              "type": "lowpass",
-              "freq": 320,
-              "q": 0.7
-            }
-          ],
-          "tremolo": {
-            "rate": 2.3,
-            "depth": 0.5
-          }
-        },
-        {
-          "source": "noise",
-          "color": "pink",
-          "gain": 0.1,
-          "filters": [
-            {
-              "type": "bandpass",
-              "freq": 1100,
-              "q": 0.8
-            }
-          ],
-          "tremolo": {
-            "rate": 5.5,
-            "depth": 0.6
-          }
-        },
-        {
-          "source": "noise",
           "color": "crackle",
           "gain": 0.55,
           "filters": [
@@ -5277,72 +5222,6 @@ export const SOUND_DATA: SoundData = {
               "freq": 900
             }
           ]
-        }
-      ]
-    },
-    "dwell:night": {
-      "gain": 1.2,
-      "reverb": 0.15,
-      "loop": true,
-      "variation": {
-        "pitch": 1,
-        "gain": 1
-      },
-      "intensity": {
-        "gain": [
-          0,
-          1
-        ]
-      },
-      "layers": [
-        {
-          "source": "osc",
-          "wave": "sine",
-          "freq": 4400,
-          "gain": 0.035,
-          "tremolo": {
-            "rate": 26,
-            "depth": 1
-          },
-          "pan": -0.4
-        },
-        {
-          "source": "osc",
-          "wave": "sine",
-          "freq": 3950,
-          "gain": 0.03,
-          "tremolo": {
-            "rate": 19,
-            "depth": 1
-          },
-          "pan": 0.45
-        },
-        {
-          "source": "osc",
-          "wave": "sine",
-          "freq": 4800,
-          "gain": 0.018,
-          "tremolo": {
-            "rate": 31,
-            "depth": 1
-          },
-          "pan": 0.1
-        },
-        {
-          "source": "noise",
-          "color": "pink",
-          "gain": 0.08,
-          "filters": [
-            {
-              "type": "lowpass",
-              "freq": 700,
-              "q": 0.6
-            }
-          ],
-          "tremolo": {
-            "rate": 0.11,
-            "depth": 0.5
-          }
         }
       ]
     }

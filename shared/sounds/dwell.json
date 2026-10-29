@@ -38,14 +38,10 @@
     "respawn": {"sound": "respawn"},
     "burn": {"set": "burn", "loop": "start", "fallback": false},
     "burn_level": {"loop": "update"},
-    "burn_end": {"loop": "stop"},
-    "night": {"sound": "night", "loop": "start"},
-    "night_level": {"loop": "update"},
-    "night_end": {"loop": "stop"}
+    "burn_end": {"loop": "stop"}
   },
   "ambient": {
-    "fire": {"radiusM": 10, "max": 4},
-    "night": {"stars": [0.15, 0.85], "aloftM": [24, 160]}
+    "fire": {"radiusM": 10, "max": 4}
   },
   "sets": {
     "stone": {
@@ -2002,20 +1998,7 @@
       "variation": {"pitch": 2, "gain": 1, "cutoff": 0.12},
       "intensity": {"gain": [0, 1], "cutoff": [0.7, 1]},
       "layers": [
-        {"source": "noise", "color": "brown", "gain": 0.32, "filters": [{"type": "lowpass", "freq": 320, "q": 0.7}], "tremolo": {"rate": 2.3, "depth": 0.5}},
-        {"source": "noise", "color": "pink", "gain": 0.1, "filters": [{"type": "bandpass", "freq": 1100, "q": 0.8}], "tremolo": {"rate": 5.5, "depth": 0.6}},
         {"source": "noise", "color": "crackle", "gain": 0.55, "filters": [{"type": "bandpass", "freq": 2800, "q": 0.8}, {"type": "highpass", "freq": 900}]}
-      ]
-    },
-    "night": {
-      "gain": 1.2, "reverb": 0.15, "loop": true,
-      "variation": {"pitch": 1, "gain": 1},
-      "intensity": {"gain": [0, 1]},
-      "layers": [
-        {"source": "osc", "wave": "sine", "freq": 4400, "gain": 0.035, "tremolo": {"rate": 26, "depth": 1}, "pan": -0.4},
-        {"source": "osc", "wave": "sine", "freq": 3950, "gain": 0.03, "tremolo": {"rate": 19, "depth": 1}, "pan": 0.45},
-        {"source": "osc", "wave": "sine", "freq": 4800, "gain": 0.018, "tremolo": {"rate": 31, "depth": 1}, "pan": 0.1},
-        {"source": "noise", "color": "pink", "gain": 0.08, "filters": [{"type": "lowpass", "freq": 700, "q": 0.6}], "tremolo": {"rate": 0.11, "depth": 0.5}}
       ]
     }
   }
