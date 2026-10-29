@@ -2,6 +2,14 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions card. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.39.2",
+      "changes": [
+        "The night's cricket ambience is gone",
+        "A torch only crackles now, without the roar under it",
+        "The torch in your hand looks like the one on the ground: a bark stick with a dark wrap"
+      ]
+    },
+    {
       "version": "0.39.1",
       "changes": [
         "Holding Place builds on across slopes of the block's own material, replacing each as a click does"

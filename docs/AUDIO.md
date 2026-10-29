@@ -50,7 +50,7 @@ the Rust game). CI regenerates both and fails on a diff, as for the block regist
       ± `depth` / 2 (a scrape's grit).
   - **`loop: true`**: a continuous sound (the slide's scrape), played on a voice until stopped:
     noise and oscillator layers only, sustained (no `env`, `grains`, `at`, `chance` or sweeps).
-    A loop layer may have a `pan` (the night's crickets either side). Its `intensity` (0–1) moves
+    A loop layer may have a `pan` (a sound either side of the listener). Its `intensity` (0–1) moves
     while it plays: `gain`, filter `cutoff` and `pitch` (a factor on
     every source's rate and tremolo; loop sounds only), each gliding with a 60 ms time constant;
     below 0.05 the voice fades to silence.
@@ -75,10 +75,9 @@ the Rust game). CI regenerates both and fails on a diff, as for the block regist
   loop sounds, every other event's are not. For `hurt` the `speed` range is in health points (the
   damage taken).
 - **`ambient`** — the ambient sounds' tunables, emitted into `sound.gen.rs` as `ambient::…`:
-  `fire` (`radiusM`: burning light sources crackle within it; `max`: the nearest this many),
-  `night` (`stars`: [starts, full] on the sky's stars, 0 by day, 1 by night; `aloftM`: [starts,
-  gone] over sea level, no crickets aloft). There is no wind loop: it was removed (owner,
-  2026-10-21: too intense).
+  `fire` (`radiusM`: burning light sources crackle within it; `max`: the nearest this many).
+  There is no wind loop (removed, owner 2026-10-21: too intense) and no night loop (the crickets,
+  removed, owner 2026-10-28: "it's bad").
 - **`gaits`** — `walk`, `run`, `crouch`, `climb`, `swim`: footstep `stride` (m between steps) and
   `gain`.
 - **`actions`** — sounds the TS shell plays for game actions it handles (hotbar, flight, the game
@@ -213,10 +212,9 @@ so it never sounds for a hit the server did not count.
 in other players' hands (at their hand) — a light with a `flame` (LIGHTS.md §6) burns; the
 nearest `ambient.fire.max` within `ambient.fire.radiusM` each hold a loop voice (`FIRE_VOICE` on)
 while they stay among them, at a level `(1 − (d / r)²)²` (full beside it, 0 at the radius; the
-panner's rolloff on top). A nearer one takes a farther one's voice. **Night**
-(`AmbientSounds`): one voice at the listener (`NIGHT_VOICE`), its level the stars' ramp, fading as
-the height over sea level rises (`aloftM`; no crickets aloft), × the sky light at the eye (none in
-a cave). Loops start above 0.03 and stop at 0.01; updates go at most 10 times a second, on a change
+panner's rolloff on top). A nearer one takes a farther one's voice. A torch's loop
+(`torch_fire`) is its crackle alone (owner, 2026-10-28: the low roar under it was removed). Loops
+start above 0.03 and stop at 0.01; updates go at most 10 times a second, on a change
 of 0.02 or a move of 0.25 m. The shell remembers each loop's start and restarts a voice an update
 finds not playing (a hidden tab or a context still starting), so the long loops survive both.
 

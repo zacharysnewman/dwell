@@ -5023,7 +5023,7 @@ const DATA = {
    ]
   },
   "torch": {
-   "label": "A torch (a block whose registry entry says held: torch; docs/LIGHTS.md)",
+   "label": "A torch (a block whose registry entry says held: torch; docs/LIGHTS.md): the placed torch's look, a square bark stick with a dark bark wrap at its tip (owner, 2026-10-28: the round stick under a pale wrap looked like a marshmallow on fire)",
    "on": "grip_r",
    "light": [
     0,
@@ -5034,11 +5034,11 @@ const DATA = {
     {
      "id": "torch_stick",
      "on": "grip_r",
-     "kind": "cylinder",
+     "kind": "box",
      "size": [
-      0.045,
+      0.05,
       0.38,
-      0.045
+      0.05
      ],
      "at": [
       0,
@@ -5050,28 +5050,28 @@ const DATA = {
       0,
       0
      ],
-     "material": "bark"
+     "material": "bark.light"
     },
     {
      "id": "torch_wrap",
      "on": "grip_r",
-     "kind": "cylinder",
+     "kind": "box",
      "size": [
-      0.06,
-      0.06,
-      0.06
+      0.058,
+      0.07,
+      0.058
      ],
      "at": [
       0,
       0.02,
-      0.24
+      0.235
      ],
      "rot": [
       90,
       0,
       0
      ],
-     "material": "heartwood.shadow"
+     "material": "bark.shadow"
     }
    ]
   },

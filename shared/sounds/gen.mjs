@@ -92,14 +92,6 @@ rs.push(
 rs.push(`    pub const FIRE_RADIUS_M: f64 = ${rf(am.fire.radiusM)};`);
 rs.push("    /// ... the nearest this many.");
 rs.push(`    pub const FIRE_MAX: usize = ${am.fire.max};`);
-rs.push(
-  "    /// The night: from the sky's stars (0 by day, 1 by night), starting and full.",
-);
-rs.push(`    pub const NIGHT_STARS: (f64, f64) = ${rpair(am.night.stars)};`);
-rs.push(
-  "    /// ... fading out as the listener rises over sea level (m), starting and gone.",
-);
-rs.push(`    pub const NIGHT_ALOFT_M: (f64, f64) = ${rpair(am.night.aloftM)};`);
 rs.push("}");
 rs.push("");
 writeFileSync(join(root, "crates/dwell-game/src/sound.gen.rs"), rs.join("\n"));

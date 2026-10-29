@@ -33,13 +33,10 @@ pub enum SoundKind {
     Burn = 26,
     BurnLevel = 27,
     BurnEnd = 28,
-    Night = 29,
-    NightLevel = 30,
-    NightEnd = 31,
 }
 
 impl SoundKind {
-    pub const ALL: [SoundKind; 32] = [
+    pub const ALL: [SoundKind; 29] = [
         SoundKind::Step,
         SoundKind::Climb,
         SoundKind::Land,
@@ -69,9 +66,6 @@ impl SoundKind {
         SoundKind::Burn,
         SoundKind::BurnLevel,
         SoundKind::BurnEnd,
-        SoundKind::Night,
-        SoundKind::NightLevel,
-        SoundKind::NightEnd,
     ];
 
     /// The event's name in the data.
@@ -106,9 +100,6 @@ impl SoundKind {
             SoundKind::Burn => "burn",
             SoundKind::BurnLevel => "burn_level",
             SoundKind::BurnEnd => "burn_end",
-            SoundKind::Night => "night",
-            SoundKind::NightLevel => "night_level",
-            SoundKind::NightEnd => "night_end",
         }
     }
 
@@ -144,9 +135,6 @@ impl SoundKind {
             SoundKind::Burn => None,
             SoundKind::BurnLevel => None,
             SoundKind::BurnEnd => None,
-            SoundKind::Night => None,
-            SoundKind::NightLevel => None,
-            SoundKind::NightEnd => None,
         }
     }
 }
@@ -181,8 +169,4 @@ pub mod ambient {
     pub const FIRE_RADIUS_M: f64 = 10.0;
     /// ... the nearest this many.
     pub const FIRE_MAX: usize = 4;
-    /// The night: from the sky's stars (0 by day, 1 by night), starting and full.
-    pub const NIGHT_STARS: (f64, f64) = (0.15, 0.85);
-    /// ... fading out as the listener rises over sea level (m), starting and gone.
-    pub const NIGHT_ALOFT_M: (f64, f64) = (24.0, 160.0);
 }

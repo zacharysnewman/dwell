@@ -30,7 +30,8 @@ describe('offline renders', () => {
     for (const e of SOUND_DATA.events)
       if (e.sound && SOUND_DATA.sounds[e.sound]?.loop)
         expect(names).toContain(`loop_${e.name}_faint_to_full`);
-    expect(names).toContain('loop_night_faint_to_full');
+    // The night's crickets were removed (owner, 2026-10-28).
+    expect(names).not.toContain('loop_night_faint_to_full');
     expect(new Set(names).size).toBe(names.length);
     const walk = renderPlan(SOUND_DATA).find((j) => j.name === 'steps_stone_walk_x10');
     expect(walk?.plays.length).toBe(10);

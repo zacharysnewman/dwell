@@ -133,28 +133,29 @@ describe('sound events', () => {
         playing.delete(voice);
       },
     });
-    const night = (name: string, intensity: number): SoundEvent => ({
-      ...event(name, 0),
+    const torch = state('dwell:torch');
+    const fire = (name: string, intensity: number): SoundEvent => ({
+      ...event(name, torch),
       intensity,
-      voice: 0x20001,
+      voice: 0x10000,
     });
-    // The night's crickets start while the tab is hidden (the engine cannot start it) ...
-    player.playAll([night('night', 0.4)]);
+    // A torch's crackle starts while the tab is hidden (the engine cannot start it) ...
+    player.playAll([fire('burn', 0.4)]);
     canStart = true;
     // ... and its next update restarts it; later ones only move it.
-    player.playAll([night('night_level', 0.5), night('night_level', 0.6), night('night_end', 0)]);
-    const sound = String(SOUND_DATA.events.find((e) => e.name === 'night')?.sound);
+    player.playAll([fire('burn_level', 0.5), fire('burn_level', 0.6), fire('burn_end', 0)]);
+    const sound = String(SOUND_DATA.sets['dwell:torch']?.burn);
     expect(calls).toEqual([
-      `start mover:131073 ${sound}`,
-      'update mover:131073 0.5',
-      `start mover:131073 ${sound}`,
-      'update mover:131073 0.6',
-      'stop mover:131073',
+      `start mover:65536 ${sound}`,
+      'update mover:65536 0.5',
+      `start mover:65536 ${sound}`,
+      'update mover:65536 0.6',
+      'stop mover:65536',
     ]);
     // After its stop, an update starts nothing.
     calls.length = 0;
-    player.playAll([night('night_level', 0.3)]);
-    expect(calls).toEqual(['update mover:131073 0.3']);
+    player.playAll([fire('burn_level', 0.3)]);
+    expect(calls).toEqual(['update mover:65536 0.3']);
   });
 
   it("play the set's sound for set events, with the gait's loudness for steps", () => {

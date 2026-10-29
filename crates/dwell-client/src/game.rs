@@ -27,8 +27,8 @@ use dwell_game::loading::{
 use dwell_game::region_tools::{RegionTools, ToolAction, ToolBoxKind, ToolContext};
 use dwell_game::remotes::RemotePlayers;
 use dwell_game::sound::{
-    AmbientInput, AmbientSounds, CellChange, EditSounds, FireSounds, FireSource, ImpactSounds,
-    MoverSample, MoverSounds, SoundEvent, SoundKind, Surroundings, ambient, player_event_sound,
+    CellChange, EditSounds, FireSounds, FireSource, ImpactSounds, MoverSample, MoverSounds,
+    SoundEvent, SoundKind, Surroundings, ambient, player_event_sound,
 };
 use dwell_game::touch::TouchState;
 use dwell_lod::fade::Fade;
@@ -559,7 +559,6 @@ pub struct Game<S: Scene> {
     remote_sounds: dwell_world::hash::HashMap<u16, MoverSounds>,
     /// The crackle of torches near the listener, and the wind and the night (docs/AUDIO.md §5).
     fire_sounds: FireSounds,
-    ambient_sounds: AmbientSounds,
     /// Other players' health events, held until their bodies are drawn at that moment (the
     /// interpolation delay), so a hurt sounds with the hit that caused it: (local ms, event).
     pending_player_events: Vec<(f64, dwell_protocol::PlayerEvent)>,
@@ -694,7 +693,6 @@ impl<S: Scene> Game<S> {
             mover_sounds: MoverSounds::new(),
             remote_sounds: Default::default(),
             fire_sounds: FireSounds::new(),
-            ambient_sounds: AmbientSounds::new(),
             pending_player_events: Vec::new(),
             remote_impacts: Default::default(),
             pending_sounds: Vec::new(),
@@ -2446,28 +2444,6 @@ impl<S: Scene> Game<S> {
             });
         }
         self.fire_sounds.update(eye, &fires, dt, &mut self.sounds);
-
-        let face = self.current.face;
-        let outdoors = self
-            .streamer
-            .store()
-            .light()
-            .map_or(1.0, |l| f64::from(l.sample(eye)[0]));
-        let stars = self.day.viewer(if face.is_b() { 0.0 } else { 1.0 }).stars;
-        let speed = self
-            .current
-            .velocity
-            .iter()
-            .map(|v| v * v)
-            .sum::<f64>()
-            .sqrt();
-        let input = AmbientInput {
-            height_m: face.y(eye[1]) - dwell_world::SEA_LEVEL_M,
-            speed: if self.current.active { speed } else { 0.0 },
-            outdoors,
-            stars,
-        };
-        self.ambient_sounds.update(&input, dt, &mut self.sounds);
     }
 
     /// The day/night cycle's state at the last frame.
