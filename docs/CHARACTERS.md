@@ -430,6 +430,11 @@ crouch-walk by speed (0.4 m/s). The rest, as built:
   on change, reliably, validated by the server against its character data (unknown names fall back to
   the default look, as unknown blocks do in registry sync, ADR 0038). The renderer already draws any
   look by name (`PlayerView::look`).
+- **What the hand shows** **[built, 0.39.3]**: a block's registry `held` names its item (`torch`;
+  `card`, a flat card of its tile, for the ladder and tall grass); any other block is the `block`
+  item, a ½ m piece on its edge whose sides show the tile's top half (part `sideV`, for a `$block`
+  box). Owner, 2026-10-28: the held blocks didn't look like the hotbar's ½ m pieces, and a ladder or
+  grass held as a textured block looked bad.
 - **The held item** **[built, protocol v17]**: a `u16` per remote player in every snapshot (a block
   state, the server's id, in the low 15 bits; `0x8000` the brush tool painting with it; 0 an empty
   hand), from a reliable `HeldItem` the client sends when its hand changes (the hotbar's block, the

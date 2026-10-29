@@ -274,6 +274,19 @@ pub fn swatch(state: dwell_blocks::StateId) -> Vec<u8> {
     out
 }
 
+/// A ½ m piece's swatch from a full block's (`tile` × `tile` RGBA8, top row first): the tile's
+/// top half — where a grass block's fringe is, as the world draws a ½ m cell (tiles hang from a
+/// block's top) — on the picture's lower half, the upper half clear. Owner, 2026-10-28: the
+/// hotbar's grass lost its top (the lower half was kept).
+pub fn half_swatch(px: &mut [u8], tile: usize) {
+    let row = tile * 4;
+    let half = tile / 2;
+    px.copy_within(0..half * row, (tile - half) * row);
+    for b in px.iter_mut().take((tile - half) * row).skip(3).step_by(4) {
+        *b = 0;
+    }
+}
+
 fn shared_atlas() -> &'static [u8] {
     static ATLAS: OnceLock<Vec<u8>> = OnceLock::new();
     ATLAS.get_or_init(build_atlas)
@@ -500,6 +513,34 @@ mod tests {
 #[cfg(test)]
 mod swatch_tests {
     use super::*;
+
+    #[test]
+    fn a_half_swatch_shows_the_tiles_top_half_at_the_bottom() {
+        // Red before (owner, 2026-10-28): the swatch kept its lower half, so a ½ m grass block lost
+        // its fringe in the hotbar.
+        let tile = 4;
+        let mut px: Vec<u8> = (0..tile)
+            .flat_map(|y| [y as u8 * 10, 0, 0, 255].repeat(tile))
+            .collect();
+        half_swatch(&mut px, tile);
+        let at = |y: usize| &px[y * tile * 4..y * tile * 4 + 4];
+        assert_eq!((at(0)[3], at(1)[3]), (0, 0), "the upper half clear");
+        assert_eq!(
+            (at(2)[0], at(3)[0]),
+            (0, 10),
+            "the tile's top rows at the bottom"
+        );
+        assert_eq!(at(3)[3], 255);
+        // A grass block's swatch keeps its green top.
+        let grass = dwell_blocks::require("dwell:grass");
+        let mut g = swatch(grass);
+        let top = g[..4].to_vec();
+        half_swatch(&mut g, TILE);
+        assert_eq!(
+            &g[(TILE / 2) * TILE * 4..(TILE / 2) * TILE * 4 + 4],
+            &top[..]
+        );
+    }
 
     #[test]
     fn swatches_are_a_tile_of_the_side_texture_or_the_flat_colour() {

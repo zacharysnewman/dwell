@@ -31,7 +31,7 @@ const CHARACTER_KEYS = [
   '$comment', 'name', 'label', 'rig', 'height', 'bones', 'sockets', 'slots', 'parts', 'accessories',
   'variants', 'clips', 'firstPerson', 'chains',
 ];
-const PART_KEYS = ['id', 'on', 'kind', 'size', 'at', 'rot', 'material', 'round', 'tip', 'mirror', 'view', 'with'];
+const PART_KEYS = ['id', 'on', 'kind', 'size', 'at', 'rot', 'material', 'round', 'tip', 'sideV', 'mirror', 'view', 'with'];
 const ACCESSORY_KEYS = ['$comment', 'label', 'place', 'fits', 'slots', 'hides', 'parts'];
 const ITEM_KEYS = ['$comment', 'label', 'on', 'light', 'parts'];
 const VARIANT_KEYS = ['label', 'accessories', 'slots'];
@@ -144,6 +144,13 @@ function validatePart(p, where, ctx) {
   if (p.tip !== undefined) {
     if (p.kind !== 'cone') fail(w, 'only a cone takes "tip"');
     if (!isNum(p.tip) || p.tip < 0 || p.tip > 1) fail(`${w}.tip`, 'must be 0–1 (the top radius as a fraction)');
+  }
+  if (p.sideV !== undefined) {
+    // The part of its tile a `$block` box shows on its sides, from the tile's bottom (0) to its top
+    // (1): a ½ m piece shows the top half (a grass block's fringe), as the world draws a ½ m cell.
+    if (p.material !== '$block') fail(w, 'only a $block part takes "sideV"');
+    const ok = Array.isArray(p.sideV) && p.sideV.length === 2 && p.sideV.every(isNum) && p.sideV[0] >= 0 && p.sideV[1] <= 1 && p.sideV[0] < p.sideV[1];
+    if (!ok) fail(`${w}.sideV`, 'must be [from, to] within 0–1, from below to');
   }
   if (p.view !== undefined) oneOf(p.view, VIEWS, `${w}.view`);
   if (p.with !== undefined) {
@@ -490,6 +497,7 @@ export function compose(data, style, id, opts = {}) {
         rot: p.rot ?? [0, 0, 0],
         round: p.round ?? (p.kind === 'round_box' ? 0.25 : 0),
         tip: p.tip ?? 0,
+        ...(p.sideV ? { sideV: p.sideV } : {}),
         view: p.view ?? 'both',
         with: p.with,
         material: slots[p.material] ?? p.material,

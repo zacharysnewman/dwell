@@ -62,8 +62,8 @@ pub const NO_FLUID: f32 = 255.0;
 
 pub use textures::{
     ATLAS_CELLS, ATLAS_SIZE, ATLAS_TILES, CELL, GUTTER, MISSING_TILE, PAINTERLY_TILE,
-    PAINTERLY_TILES, TILE, TILE_ORDER, TileRect, average_tile_color, build_atlas, has_tile,
-    linear_to_srgb_byte, srgb_to_linear, swatch, texel_of, tile_emissive, tile_grids,
+    PAINTERLY_TILES, TILE, TILE_ORDER, TileRect, average_tile_color, build_atlas, half_swatch,
+    has_tile, linear_to_srgb_byte, srgb_to_linear, swatch, texel_of, tile_emissive, tile_grids,
     tile_has_alpha, tile_rect,
 };
 
