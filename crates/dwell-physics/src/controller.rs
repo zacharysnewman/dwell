@@ -932,7 +932,10 @@ impl Players {
         let center = Self::pos(physics, p);
         let half_height = cfg.half_height(p.c.crouching);
         let ring_radius = cfg.body.radius * cfg.advanced.probe_ring_radius;
-        let vq = VoxelQuery::new(world, physics);
+        let mut vq = VoxelQuery::new(world, physics);
+        if p.c.climb.climbing {
+            vq = vq.without_ladder_tops(); // one-way: a climber passes a ladder's top
+        }
         let q = FaceQuery {
             q: &vq,
             f: Self::frame(p),
@@ -1295,6 +1298,9 @@ impl Players {
         let mut found = None;
         let mut in_released = false;
         let reach = f64::from(p.cfg.climb.grab_reach);
+        let feet = center.y as f32 - p.cfg.half_height(c.crouching);
+        let climb_down =
+            c.input.look_pitch < -p.cfg.climb.look_down_threshold && c.input.move_y > 0.0;
         q.for_each_overlapping_cell(&capsule, |x, y, z, m| {
             if !info(m).climbable {
                 return;
@@ -1302,6 +1308,12 @@ impl Players {
             // Only near the plate: the cell's slab from its wall side out to the plate's front
             // and `grab_reach` past it (a body elsewhere in the cell doesn't grab it).
             if !near_plate(&capsule, Cell { x, y, z }, m, reach) {
+                return;
+            }
+            // Not from on top of it: standing on a ladder's top (its plate is a floor) holds there
+            // (owner, 2026-10-29: "no magnetism on top of it"), unless looking down and walking
+            // forward, which climbs down it (as off a ledge onto its ladder).
+            if !c.climb.climbing && feet >= m_of_row(y + 1) as f32 - 0.02 && !climb_down {
                 return;
             }
             // A contiguous ladder column counts as one ladder for `released`.
@@ -1313,6 +1325,47 @@ impl Players {
                 found = Some(Cell { x, y, z });
             }
         });
+        // Stood on a ladder's top, looking down and walking forward: the ladder under the feet
+        // (the body doesn't reach into its cell from on top of it), near its plate across; and
+        // the climb down it from there holds until the body is in its cell.
+        if found.is_none() && climb_down {
+            let y = row_of_m(f64::from(feet) - 0.01);
+            for z in
+                (center.z - f64::from(r)).floor() as i32..=(center.z + f64::from(r)).floor() as i32
+            {
+                for x in (center.x - f64::from(r)).floor() as i32
+                    ..=(center.x + f64::from(r)).floor() as i32
+                {
+                    let m = q.material(x, y, z);
+                    if !info(m).climbable || info(q.material(x, y + 1, z)).climbable {
+                        continue;
+                    }
+                    let level = Capsule {
+                        center: DVec3::new(
+                            center.x,
+                            m_of_row(y) + 0.5 * dwell_world::CELL_H,
+                            center.z,
+                        ),
+                        radius: r,
+                        half_cylinder: 0.0,
+                    };
+                    // Out past the plate's front: from the wall side the snap would hold the body
+                    // there.
+                    let frame = frame_of(Cell { x, y, z }, m);
+                    let depth = (center - frame.plate).as_vec3().dot(frame.facing);
+                    if depth <= LADDER_PLATE_HALF_DEPTH
+                        || !near_plate(&level, Cell { x, y, z }, m, reach)
+                    {
+                        continue;
+                    }
+                    if c.climb.has_released && x == c.climb.released.x && z == c.climb.released.z {
+                        in_released = true;
+                        continue;
+                    }
+                    return (Some(Cell { x, y, z }), in_released);
+                }
+            }
+        }
         if found.is_some() || !c.climb.climbing {
             return (found, in_released);
         }
