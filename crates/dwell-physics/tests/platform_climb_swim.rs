@@ -481,3 +481,63 @@ fn shallow_water_is_walked_through() {
         w.horizontal_speed(e)
     );
 }
+
+/// Regression (owner, 2026-10-29): walking forward off a ½ m ledge onto the one-cell ladder on its
+/// side, looking down the whole time, climbed down it and never let go at the bottom. A ½ m
+/// descent never leaves the ground, so the climb never saw a landing to let go on.
+#[test]
+fn walking_down_a_half_metre_ladder_lets_go_at_the_bottom() {
+    let mut w = PlayerTestWorld::new();
+    w.floor();
+    // A ½ m ledge (one row of cells) from z = 2 on, a ladder cell on its −z side.
+    for x in -2..=2 {
+        for z in 2..=12 {
+            w.set_cell(x, 0, z, cube_block());
+        }
+    }
+    w.set_cell(0, 0, 1, require("dwell:ladder[facing=north]"));
+    let e = w.spawn_yaw(v(0.5, 0.5, 3.0), 180.0);
+    w.set_input(|_, _| look(0.0, 1.0, 180.0, -45.0));
+    w.step(ticks(3.0));
+    assert!(
+        !w.c(e).climb.climbing,
+        "still on the ladder at {:?}",
+        w.pos(e)
+    );
+    assert!(approx(w.feet(e), 0.0, 0.01), "on the floor: {}", w.feet(e));
+    assert!(
+        w.pos(e).z < 0.5,
+        "walked on past the ladder: {:?}",
+        w.pos(e)
+    );
+}
+
+/// The ladder grabs only a body within `climb.grab_reach` of its plate (owner, 2026-10-29: "the
+/// pull … should only stick out a little from the ladder itself"), not one anywhere in its cell:
+/// standing in the cell well out from the plate holds the floor; walking into the plate grabs.
+/// Red before: the whole cell grabbed.
+#[test]
+fn a_ladder_grabs_only_near_its_plate() {
+    let mut w = ladder_world();
+    // The plate is on the cell's +z side (z ≈ 1.9 to 2.0); the body's front at z 1.5.
+    let e = w.spawn(v(0.5, 0.0, 1.2));
+    w.step(30);
+    assert!(!w.c(e).climb.climbing, "grabbed from {:?}", w.pos(e));
+    assert!(w.c(e).ground.grounded);
+    // Walking on into it grabs it.
+    w.set_input(|_, _| mv(0.0, 1.0));
+    w.step(30);
+    assert!(w.c(e).climb.climbing, "not grabbed at {:?}", w.pos(e));
+}
+
+/// Standing at the very top of a ladder — on the ledge's edge, the body over the ladder's column —
+/// holds the ledge (owner, 2026-10-29: "be able to stand at the top of the ladder").
+#[test]
+fn standing_at_the_ledges_edge_over_a_ladder_does_not_grab_it() {
+    let mut w = ladder_world();
+    let e = w.spawn_yaw(v(0.5, 3.0, 2.05), 180.0);
+    w.step(60);
+    assert!(!w.c(e).climb.climbing, "grabbed at {:?}", w.pos(e));
+    assert!(w.c(e).ground.grounded);
+    assert!(approx(w.feet(e), 3.0, 0.01), "{}", w.feet(e));
+}
