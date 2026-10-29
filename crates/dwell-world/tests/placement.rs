@@ -234,3 +234,19 @@ dwell_world::both_faces!(
         );
     }
 );
+
+dwell_world::both_faces!(
+    /// Leaves don't block a body (players pass through them): a leaf may go, or land, where a
+    /// player stands; stone may not. Red before (owner, 2026-10-28): a leaf landing beside the
+    /// player who placed it was destroyed as if it were stone in their body.
+    fn leaves_never_overlap_a_player(f: FaceFrame) {
+        let body = EditCapsule {
+            center: f.point([0.5, 0.9, 0.5]),
+            radius: 0.3,
+            half_cylinder: 0.6,
+        };
+        let cell = f.cell([0, 1, 0]);
+        assert!(!overlaps_player(s("dwell:leaves"), cell, &[body]));
+        assert!(overlaps_player(s("dwell:stone"), cell, &[body]));
+    }
+);

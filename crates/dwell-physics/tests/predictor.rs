@@ -286,7 +286,7 @@ fn the_local_player_rides_a_falling_pieces_stand_in() {
             center: DVec3::new(f64::from(x), 0.0, 0.0),
             half: DVec3::new(0.5, 0.5, 2.0),
             mass: 300.0,
-            collides: true,
+            collide: dwell_physics::Collide::All,
         })
         .collect();
     let start = DVec3::new(0.5, top + 0.5, 0.5);

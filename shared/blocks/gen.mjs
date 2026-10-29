@@ -77,7 +77,7 @@ const RENDER_MODES = ['opaque', 'cutout', 'translucent'];
 // the cell opposite its facing, a ladder's wall, docs/ITEMS.md).
 const SUPPORTS = ['below', 'behind'];
 // What a block counts as for holding things up (docs/FELLING.md §2); absent: ground.
-const SUPPORT_ROLES = ['ground', 'carrier', 'rider'];
+const SUPPORT_ROLES = ['ground', 'carrier', 'rider', 'falls'];
 const AXES = ['x', 'y', 'z'];
 // The natural, moldable material groups (`moldable`; docs/ITEMS.md): building with one of a group
 // onto a slope of the same group replaces the slope.

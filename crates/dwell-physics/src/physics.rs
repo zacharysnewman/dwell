@@ -100,8 +100,20 @@ pub struct PieceCell {
     pub half: DVec3,
     /// Its mass (kg).
     pub mass: f64,
-    /// Whether it collides (carriers do; riders only add mass).
-    pub collides: bool,
+    /// What it collides with.
+    pub collide: Collide,
+}
+
+/// What a falling piece's cell collides with (docs/FELLING.md §3).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Collide {
+    /// Nothing: it only adds mass (leaves riding a falling trunk).
+    None,
+    /// The terrain and other pieces, not players (leaves falling on their own: they land, and
+    /// players pass through leaves).
+    World,
+    /// Everything (a trunk's logs, sand).
+    All,
 }
 
 /// A box body to add (`Physics::add_box`).
@@ -233,10 +245,14 @@ impl Physics {
             .build();
         let h = self.w.bodies.insert(body);
         for c in cells {
-            let groups = if c.collides {
-                groups(Layer::Tier1)
-            } else {
-                InteractionGroups::new(TIER1, Group::NONE, InteractionTestMode::And)
+            let groups = match c.collide {
+                Collide::All => groups(Layer::Tier1),
+                Collide::World => {
+                    InteractionGroups::new(TIER1, TERRAIN | TIER1, InteractionTestMode::And)
+                }
+                Collide::None => {
+                    InteractionGroups::new(TIER1, Group::NONE, InteractionTestMode::And)
+                }
             };
             let collider = ColliderBuilder::cuboid(c.half.x, c.half.y, c.half.z)
                 .translation(c.center)
@@ -268,7 +284,7 @@ impl Physics {
             .user_data(TIER1_BODY)
             .build();
         let h = self.w.bodies.insert(body);
-        for c in cells.iter().filter(|c| c.collides) {
+        for c in cells.iter().filter(|c| c.collide == Collide::All) {
             let collider = ColliderBuilder::cuboid(c.half.x, c.half.y, c.half.z)
                 .translation(c.center)
                 .friction(0.8)

@@ -324,6 +324,7 @@ pub fn state_fields(s: &StateInfo) -> Fields {
                 SupportRole::Ground => 0,
                 SupportRole::Carrier => 1,
                 SupportRole::Rider => 2,
+                SupportRole::Falls => 3,
             })
         }));
     }
@@ -792,6 +793,7 @@ fn apply_rules(
                     0 => SupportRole::Ground,
                     1 => SupportRole::Carrier,
                     2 => SupportRole::Rider,
+                    3 => SupportRole::Falls,
                     other => {
                         notes.push(format!("support role {other} not in this version (ground)"));
                         SupportRole::Ground

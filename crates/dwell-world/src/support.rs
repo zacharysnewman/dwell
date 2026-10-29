@@ -5,7 +5,8 @@
 //! `Rider` (leaves) holds nothing up, staying while the carrier it belongs to stands. After a
 //! removal the cells round it are searched ([`detached_pieces`]): each component of carriers no
 //! longer reaching the ground, with the riders that belong to it, is one piece to fall; riders
-//! that belong to no carrier fall on their own. The search is bounded: a system of carriers and
+//! that belong to no carrier fall on their own unless they rest on something, and a block that
+//! falls (`Falls`: sand) with nothing solid under it falls with what of its kind is stacked on it. The search is bounded: a system of carriers and
 //! riders larger than `max_cells` is left standing (and judged again by a later change).
 
 use std::collections::{HashMap, VecDeque};
@@ -56,10 +57,51 @@ fn role(m: StateId) -> Option<SupportRole> {
     (s.solid && !s.liquid).then_some(s.support_role)
 }
 
-/// Whether `m` anchors a carrier touching it: a solid ground block (not air, a liquid or a plant).
+/// Whether `m` anchors a carrier touching it: a solid ground block (not air, a liquid or a plant),
+/// or one that falls (sand), as ground does while it rests.
 fn anchors(m: StateId) -> bool {
     let s = info(m);
-    s.solid && !s.liquid && !s.passable && s.support_role == SupportRole::Ground
+    s.solid
+        && !s.liquid
+        && !s.passable
+        && matches!(s.support_role, SupportRole::Ground | SupportRole::Falls)
+}
+
+/// Whether what rests on a cell holding `m` is held there: a solid block (leaves too), not air or
+/// a liquid.
+fn rests_on(m: StateId) -> bool {
+    let s = info(m);
+    s.solid && !s.liquid
+}
+
+/// The cell under `c` and the one over it, toward its face's ground and sky.
+fn under(c: [i32; 3]) -> [i32; 3] {
+    crate::edit::below(c)
+}
+fn over(c: [i32; 3]) -> [i32; 3] {
+    crate::edit::above(c)
+}
+
+/// The sand (blocks that fall) from `start` up, if nothing solid holds `start` from under it: the
+/// column of them stacked on it, falling as one piece (all carriers: solid to everything).
+fn falling_column(world: &mut VoxelWorld, start: [i32; 3]) -> Option<Piece> {
+    let falls = |m: StateId| info(m).solid && info(m).support_role == SupportRole::Falls;
+    let [x, y, z] = start;
+    if !falls(world.get_voxel(x, y, z)) {
+        return None;
+    }
+    let [ux, uy, uz] = under(start);
+    if rests_on(world.get_voxel(ux, uy, uz)) {
+        return None;
+    }
+    let mut cells = vec![start];
+    let mut c = over(start);
+    while falls(world.get_voxel(c[0], c[1], c[2])) && cells.len() < 4096 {
+        cells.push(c);
+        c = over(c);
+    }
+    let carriers = cells.len();
+    Some(Piece { cells, carriers })
 }
 
 fn add(a: [i32; 3], d: [i32; 3]) -> [i32; 3] {
@@ -86,6 +128,16 @@ pub fn detached_pieces(
             let Some(r) = role(world.get_voxel(start[0], start[1], start[2])) else {
                 continue;
             };
+            if r == SupportRole::Falls {
+                // Sand: the column from here up falls if nothing holds it from under.
+                if let Some(p) = falling_column(world, start) {
+                    for &cell in &p.cells {
+                        seen.insert(cell, SupportRole::Falls);
+                    }
+                    pieces.push(p);
+                }
+                continue;
+            }
             if r == SupportRole::Ground {
                 continue;
             }
@@ -128,7 +180,7 @@ fn system(
             }
             let m = world.get_voxel(n[0], n[1], n[2]);
             match role(m) {
-                Some(SupportRole::Ground) => touches_ground |= anchors(m),
+                Some(SupportRole::Ground | SupportRole::Falls) => touches_ground |= anchors(m),
                 Some(r) => {
                     roles.insert(n, r);
                     queue.push_back(n);
@@ -243,7 +295,15 @@ fn system(
             }
         }
         cells.sort_unstable();
-        out.push(Piece { cells, carriers: 0 });
+        // Resting on something solid outside it (the ground, a block), loose leaves stay where
+        // they are: they fall only to land (owner, 2026-10-28).
+        let resting = cells.iter().any(|&c| {
+            let u = under(c);
+            cells.binary_search(&u).is_err() && rests_on(world.get_voxel(u[0], u[1], u[2]))
+        });
+        if !resting {
+            out.push(Piece { cells, carriers: 0 });
+        }
     }
     Some(out)
 }

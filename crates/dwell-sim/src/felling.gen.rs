@@ -11,7 +11,6 @@ pub const FELLING: FellingData = FellingData {
     sleep_linear: 0.05,
     sleep_angular: 0.05,
     sleep_seconds: 2.0,
-    loose_rider_seconds: 1.5,
     max_seconds: 30.0,
     max_settles: 3,
     hit_speed: 4.0,

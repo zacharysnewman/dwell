@@ -202,3 +202,215 @@ fn a_falling_trunk_hurts_a_player_it_lands_on_and_not_the_one_who_cut_it() {
     let y = f.server.feet_of(2).expect("player 2")[1];
     assert!(y > feet - 0.1, "on the floor: feet at {y}, floor {feet}");
 }
+
+/// Breaks `cell` as player 1 (on its −x face, as `fell_and_settle` does), then steps until `done`
+/// holds (at most 15 s), true if it did.
+fn break_and_wait(
+    f: &mut Fixture,
+    cell: [i32; 3],
+    done: impl Fn(&mut dwell_world::VoxelWorld) -> bool,
+) -> bool {
+    f.send(
+        1,
+        Message::BlockEditRequest(BlockEditRequest {
+            action: BlockEditAction::Break,
+            cell,
+            face: 1,
+            material: 0,
+            rows: 1,
+            down: false,
+        }),
+    );
+    for _ in 0..(60 * 15) {
+        f.server.step();
+        f.take_all();
+        if done(f.server.world()) {
+            return true;
+        }
+    }
+    false
+}
+
+#[test]
+fn a_leaf_no_tree_holds_falls_and_lands_as_a_leaf() {
+    // face-a-only: the flat test world is face A's (the rule's both faces: dwell-world tests).
+    // Owner, 2026-10-28: leaves no log holds fall to the ground and stay there, solid to the
+    // world (never to players). Red before: it fell through the ground and was gone.
+    let leaves = dwell_blocks::require("dwell:leaves");
+    let mut f = Fixture::new(flat());
+    join_streaming(&mut f, 1);
+    f.server.step();
+    f.take_all();
+    {
+        let w = f.server.world();
+        for y in G..G + 3 {
+            w.set_voxel(1, y, 1, M.stone);
+        }
+        // A leaf beside the stone, a row over the ground.
+        w.set_voxel(2, G + 1, 1, leaves);
+    }
+    let landed = break_and_wait(&mut f, [1, G + 1, 1], |w| {
+        w.get_voxel(2, G, 1) == leaves && w.get_voxel(2, G + 1, 1) == M.air
+    });
+    assert!(landed, "the leaf lies on the ground");
+    // Far from every player too: the terrain collides round a leaves-only piece (red before: it
+    // was left out, so the leaf fell through the world).
+    {
+        let w = f.server.world();
+        for y in G..G + 6 {
+            w.set_voxel(1, y, 3, M.stone);
+        }
+        w.set_voxel(2, G + 5, 3, leaves);
+    }
+    f.send(
+        1,
+        Message::BlockEditRequest(BlockEditRequest {
+            action: BlockEditAction::Break,
+            cell: [1, G + 5, 3],
+            face: 1,
+            material: 0,
+            rows: 1,
+            down: false,
+        }),
+    );
+    f.server.step();
+    f.move_to(1, -200.0, f64::from(G) * dwell_world::CELL_H, -200.0);
+    let mut far = false;
+    for _ in 0..(60 * 15) {
+        f.server.step();
+        f.take_all();
+        let w = f.server.world();
+        // Within a cell of where it fell (it may bounce over one).
+        let near = (1..=3).any(|x| (2..=4).any(|z| w.get_voxel(x, G, z) == leaves));
+        if near {
+            far = true;
+            break;
+        }
+    }
+    assert!(
+        far,
+        "the far leaf lies on the ground, within a cell of where it fell"
+    );
+}
+
+#[test]
+fn sand_with_nothing_under_it_falls_and_lands_as_sand() {
+    // face-a-only: as above. Owner, 2026-10-28: sand falls, with the sand on it. Red before:
+    // sand stood in the air.
+    let sand = dwell_blocks::require("dwell:sand");
+    let mut f = Fixture::new(flat());
+    join_streaming(&mut f, 1);
+    f.server.step();
+    f.take_all();
+    {
+        let w = f.server.world();
+        w.set_voxel(1, G, 1, M.stone);
+        for y in G + 1..G + 4 {
+            w.set_voxel(1, y, 1, sand);
+        }
+    }
+    let landed = break_and_wait(&mut f, [1, G, 1], |w| {
+        (G..G + 3).all(|y| w.get_voxel(1, y, 1) == sand) && w.get_voxel(1, G + 3, 1) == M.air
+    });
+    assert!(landed, "the column lies on the ground, a row lower");
+}
+
+#[test]
+fn a_leaf_placed_against_a_side_in_the_air_falls_and_lands() {
+    // face-a-only: as above. Owner, 2026-10-28: "placing leaves by themselves fall through the
+    // world". Placed against a pillar's side two metres up, no tree near: it lands at its foot.
+    let leaves = dwell_blocks::require("dwell:leaves");
+    let mut f = Fixture::new(flat());
+    join_streaming(&mut f, 1);
+    f.server.step();
+    f.take_all();
+    {
+        let w = f.server.world();
+        for y in G..G + 5 {
+            w.set_voxel(1, y, 1, M.stone);
+        }
+    }
+    f.send(
+        1,
+        Message::BlockEditRequest(BlockEditRequest {
+            action: BlockEditAction::Place,
+            cell: [1, G + 3, 1],
+            face: 1,
+            material: leaves,
+            rows: 1,
+            down: false,
+        }),
+    );
+    let mut landed = false;
+    let mut placed = false;
+    for _ in 0..(60 * 15) {
+        f.server.step();
+        f.take_all();
+        let w = f.server.world();
+        placed |= w.get_voxel(0, G + 3, 1) == leaves;
+        if (-1..=1).any(|x| (0..=2).any(|z| w.get_voxel(x, G, z) == leaves)) {
+            landed = true;
+            break;
+        }
+    }
+    assert!(
+        landed,
+        "the leaf lies at the pillar's foot (placed at all: {placed})"
+    );
+}
+
+#[test]
+fn sand_falling_on_a_player_passes_them_and_lands_beside_them() {
+    // face-a-only: as above. Owner, 2026-10-28 ("slide off for now"): falling sand may hurt a
+    // player but never settles on or in one. Red before: it came to rest on the head (then hung
+    // in the air), or in the player's own cells it was destroyed.
+    let sand = dwell_blocks::require("dwell:sand");
+    let mut f = Fixture::new(flat());
+    join_streaming(&mut f, 1);
+    f.server.step();
+    f.take_all();
+    // Player 1 stands at (−1, ·, −0.25): a stone over their head, two sand on it.
+    {
+        let w = f.server.world();
+        w.set_voxel(-1, G + 5, -1, M.stone);
+        w.set_voxel(-1, G + 6, -1, sand);
+        w.set_voxel(-1, G + 7, -1, sand);
+    }
+    f.send(
+        1,
+        Message::BlockEditRequest(BlockEditRequest {
+            action: BlockEditAction::Break,
+            cell: [-1, G + 5, -1],
+            face: 3,
+            material: 0,
+            rows: 1,
+            down: false,
+        }),
+    );
+    let in_body = |x: i32, z: i32| (x == -1 || x == -2) && (z == -1 || z == 0);
+    let mut done = false;
+    for _ in 0..(60 * 15) {
+        f.server.step();
+        f.take_all();
+        let w = f.server.world();
+        let mut cells = Vec::new();
+        for x in -4..=2 {
+            for z in -4..=2 {
+                for y in G..G + 9 {
+                    if w.get_voxel(x, y, z) == sand {
+                        cells.push([x, y, z]);
+                    }
+                }
+            }
+        }
+        if cells.len() == 2 && cells.iter().all(|c| c[1] < G + 2) {
+            assert!(
+                cells.iter().all(|c| !in_body(c[0], c[2])),
+                "landed in the player's cells: {cells:?}"
+            );
+            done = true;
+            break;
+        }
+    }
+    assert!(done, "both sand blocks lie on the ground beside the player");
+}

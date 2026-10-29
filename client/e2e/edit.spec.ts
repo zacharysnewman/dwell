@@ -169,9 +169,7 @@ test('local mode: every palette block can be picked from the hotbar, placed, and
       .locator(`.hotbar-slot[data-slot="${String(slot)}"]`)
       .getAttribute('title');
     if (title === 'Ladder') continue;
-    // Leaves with no log in reach fall at once and are gone (docs/FELLING.md §2: riders hold
-    // nothing up; dwell-world tests/support.rs, dwell-sim tests/felling.rs).
-    if (title?.toLowerCase().includes('leaves')) continue;
+    // Leaves placed on the ground stay there (docs/FELLING.md §2: loose leaves fall only to land).
 
     // Back to the ground cell, and wait until it is the target: the target is the previous look's
     // (aimed at the block just broken, so past it now) until the next frame re-targets.

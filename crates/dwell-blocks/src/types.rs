@@ -118,6 +118,9 @@ pub enum SupportRole {
     Carrier,
     /// Holds nothing up; stays while a carrier it belongs to stands (leaves).
     Rider,
+    /// Rests on what is under it, falling (with what of its kind is stacked on it) when nothing
+    /// solid is (sand; owner, 2026-10-28). Anchors a carrier as ground does.
+    Falls,
 }
 
 /// The axis a block's ends lie along (block data `axisProperty`): a log's `top` and `bottom` tiles

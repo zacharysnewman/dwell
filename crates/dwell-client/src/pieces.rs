@@ -74,7 +74,16 @@ impl Pieces {
                 center: DVec3::new(f64::from(o[0]), f64::from(o[1]) * CELL_H, f64::from(o[2])),
                 half: DVec3::new(0.5, 0.5 * CELL_H, 0.5),
                 mass: f64::from(info(m).density_kg_m3).max(1.0) * CELL_H,
-                collides: k < usize::from(e.carriers),
+                // Players stand on a piece's carriers only: not its leaves, nor falling sand,
+                // which passes them (the server's `felling.rs`).
+                collide: if k < usize::from(e.carriers)
+                    && dwell_blocks::try_info(m)
+                        .is_some_and(|s| s.support_role != dwell_blocks::SupportRole::Falls)
+                {
+                    dwell_physics::Collide::All
+                } else {
+                    dwell_physics::Collide::None
+                },
             })
             .collect();
         let pose = Pose {

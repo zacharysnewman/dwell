@@ -4,6 +4,7 @@
 //! physics step, and sends the voxel changes and the entity messages.
 
 use dwell_blocks::{Axis, StateId, info, state_property, with_property};
+use dwell_physics::Collide;
 use dwell_physics::{BodyHandle, DQuat, DVec3, Physics, PieceCell};
 use dwell_world::support::{SupportRules, detached_pieces};
 use dwell_world::{CELL_H, M, VoxelWorld};
@@ -18,7 +19,6 @@ pub struct FellingData {
     pub sleep_linear: f64,
     pub sleep_angular: f64,
     pub sleep_seconds: f64,
-    pub loose_rider_seconds: f64,
     pub max_seconds: f64,
     pub max_settles: u8,
     pub hit_speed: f64,
@@ -40,8 +40,6 @@ pub struct FellingRules {
     pub sleep_linear: f64,
     pub sleep_angular: f64,
     pub sleep_ticks: u32,
-    /// A riders-only piece (leaves) falls this long, then is gone.
-    pub loose_rider_ticks: u32,
     /// A piece still moving after this long settles where it is.
     pub max_ticks: u32,
     /// A piece that settles unanchored this many times stays where it is.
@@ -79,7 +77,6 @@ impl From<FellingData> for FellingRules {
             sleep_linear: d.sleep_linear,
             sleep_angular: d.sleep_angular,
             sleep_ticks: ticks(d.sleep_seconds),
-            loose_rider_ticks: ticks(d.loose_rider_seconds),
             max_ticks: ticks(d.max_seconds),
             max_settles: d.max_settles,
             max_piece_cells: d.max_piece_cells,
@@ -204,7 +201,21 @@ impl Felling {
                     center: offset_m(o),
                     half: DVec3::new(0.5, 0.5 * CELL_H, 0.5),
                     mass: f64::from(s.density_kg_m3).max(1.0) * CELL_H,
-                    collides: k < piece.carriers,
+                    // Carriers (logs, sand) hit everything; leaves riding them nothing; leaves
+                    // falling on their own the world but not players, so they land.
+                    // Sand passes players (it may hurt them, `hits`, but never rests on one:
+                    // owner, 2026-10-28, "slide off").
+                    collide: if k < piece.carriers {
+                        if s.support_role == dwell_blocks::SupportRole::Falls {
+                            Collide::World
+                        } else {
+                            Collide::All
+                        }
+                    } else if piece.carriers == 0 {
+                        Collide::World
+                    } else {
+                        Collide::None
+                    },
                 });
                 cells.push((o, m));
                 clear(world, c, if s.flooded { M.water } else { M.air });
@@ -242,11 +253,11 @@ impl Felling {
     }
 
     /// The box (world metres) round each piece the terrain collision must cover over the next
-    /// tick: its cells' reach from the body, plus a tick's travel and a margin.
+    /// tick: its cells' reach from the body, plus a tick's travel and a margin. Every piece: leaves
+    /// falling on their own land on the terrain too (owner, 2026-10-28).
     pub fn terrain_boxes(&self, physics: &Physics) -> Vec<(DVec3, DVec3)> {
         self.pieces
             .iter()
-            .filter(|p| p.carriers > 0)
             .map(|p| {
                 let c = physics.position(p.body);
                 let reach = p
@@ -336,11 +347,11 @@ impl Felling {
             } else {
                 p.still = 0;
             }
-            // Riders alone fall a while and are gone; anything past the world's rows is lost.
+            // Anything past the world's rows is lost; the rest settles at rest or out of time
+            // (leaves falling on their own too: they land, owner 2026-10-28).
             let y = physics.position(p.body).y;
             let lost = !in_world_rows(y);
-            let loose = lost || (p.carriers == 0 && p.age >= r.loose_rider_ticks);
-            if p.still >= r.sleep_ticks || p.age >= r.max_ticks || loose {
+            if p.still >= r.sleep_ticks || p.age >= r.max_ticks || lost {
                 due.push(i);
             }
         }
@@ -353,13 +364,14 @@ impl Felling {
     /// whose centre lies in a cell of the piece taking that cell's block (a log's axis turned with
     /// it). A rider whose cell is taken is destroyed; if a carrier's is, the whole piece tries one
     /// and two rows higher, else that carrier is lost. `taken` says whether a cell can't be filled
-    /// (terrain, a player). A riders-only piece leaves nothing.
+    /// (terrain, or a player for a block that blocks a body), asked for each block. A riders-only
+    /// piece (leaves falling on their own) lands as leaves too.
     pub fn settle(
         &mut self,
         world: &mut VoxelWorld,
         physics: &mut Physics,
         i: usize,
-        taken: &dyn Fn(&mut VoxelWorld, [i32; 3]) -> bool,
+        taken: &dyn Fn(&mut VoxelWorld, [i32; 3], StateId) -> bool,
     ) -> Settled {
         let p = self.pieces.remove(i);
         let origin = physics.position(p.body);
@@ -372,16 +384,17 @@ impl Felling {
         };
         let y = origin.y;
         let lost = !in_world_rows(y);
-        if p.carriers == 0 || lost {
+        if lost {
             return out;
         }
         let placed = resample(&p, origin, rotation);
         let carrier = |m: StateId| info(m).support_role == dwell_blocks::SupportRole::Carrier;
+        let falls = |m: StateId| info(m).support_role == dwell_blocks::SupportRole::Falls;
         let mut lift = 0;
         for up in 0..=2 {
             let blocked = placed
                 .iter()
-                .any(|&(c, m)| carrier(m) && taken(world, [c[0], c[1] + up, c[2]]));
+                .any(|&(c, m)| carrier(m) && taken(world, [c[0], c[1] + up, c[2]], m));
             if !blocked {
                 lift = up;
                 break;
@@ -389,10 +402,21 @@ impl Felling {
         }
         for (c, m) in placed {
             let at = [c[0], c[1] + lift, c[2]];
-            if taken(world, at) {
+            if !taken(world, at, m) {
+                out.cells.push((at, m));
                 continue;
             }
-            out.cells.push((at, m));
+            // Sand landing where a player stands slides off beside them (a free cell next to it
+            // on the same row), rather than being lost.
+            if falls(m) {
+                let beside = [[1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1]]
+                    .map(|d| [at[0] + d[0], at[1], at[2] + d[2]])
+                    .into_iter()
+                    .find(|&n| !taken(world, n, m) && !out.cells.iter().any(|(c, _)| *c == n));
+                if let Some(n) = beside {
+                    out.cells.push((n, m));
+                }
+            }
         }
         out
     }
@@ -587,7 +611,7 @@ mod tests {
                 center: offset_m(o),
                 half: DVec3::new(0.5, 0.25, 0.5),
                 mass: 300.0,
-                collides: true,
+                collide: Collide::All,
             })
             .collect();
         let body = physics.add_piece(at, &boxes, true);

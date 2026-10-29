@@ -19,7 +19,6 @@ export const FELLING_RANGES = {
   sleepLinear: [0, 10, false],
   sleepAngular: [0, 10, false],
   sleepSeconds: [0, 60, false],
-  looseRiderSeconds: [0, 60, false],
   maxSeconds: [1, 600, false],
   maxSettles: [1, 255, true],
   hitSpeed: [0, 100, false],

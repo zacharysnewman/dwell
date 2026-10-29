@@ -2005,10 +2005,12 @@ impl Server {
         let mut gone = Vec::new();
         let mut placed: Vec<([i32; 3], u8)> = Vec::new();
         for i in due {
-            let taken = |world: &mut VoxelWorld, c: [i32; 3]| {
+            // A cell is taken by a block there, or by a player for a block that blocks a body (a
+            // leaf may land where a player stands: players pass through leaves).
+            let taken = |world: &mut VoxelWorld, c: [i32; 3], placing: dwell_blocks::StateId| {
                 let m = world.get_voxel(c[0], c[1], c[2]);
                 let s = info(m);
-                !(m == M.air || s.liquid || s.replaceable) || overlaps_player(M.stone, c, &capsules)
+                !(m == M.air || s.liquid || s.replaceable) || overlaps_player(placing, c, &capsules)
             };
             let settled = self
                 .felling
