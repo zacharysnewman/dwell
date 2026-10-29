@@ -541,3 +541,77 @@ fn standing_at_the_ledges_edge_over_a_ladder_does_not_grab_it() {
     assert!(w.c(e).ground.grounded);
     assert!(approx(w.feet(e), 3.0, 0.01), "{}", w.feet(e));
 }
+
+/// A wall 5 m tall with a ladder up its −z side to 3 m: the ladder ends partway up.
+fn short_ladder_world() -> PlayerTestWorld {
+    let mut w = PlayerTestWorld::new();
+    w.floor();
+    w.fill(-2, 0, 2, 2, 4, 12, cube_block());
+    w.fill(0, 0, 1, 0, 2, 1, require("dwell:ladder[facing=north]"));
+    w
+}
+
+/// The top of a ladder is solid to stand on (owner, 2026-10-29: "stand on top of the ladder … it's
+/// solid on top"; only the ladder itself, its plate's top): climbed to the top of a ladder ending
+/// partway up a wall, the player lets go and stands on it, holding there without being pulled back
+/// on. Red before: with nothing under them they fell to the floor.
+#[test]
+fn a_ladders_top_is_solid_to_stand_on() {
+    let mut w = short_ladder_world();
+    let e = w.spawn(v(0.5, 0.0, -0.5));
+    w.set_input(|t, _| {
+        if t < ticks(2.5) {
+            mv(0.0, 1.0)
+        } else {
+            mv(0.0, 0.0)
+        }
+    });
+    w.step(ticks(4.0));
+    assert!(!w.c(e).climb.climbing, "still climbing at {:?}", w.pos(e));
+    assert!(w.c(e).ground.grounded, "not standing at {:?}", w.pos(e));
+    assert!(
+        approx(w.feet(e), 3.0, 0.02),
+        "on the ladder's top: {}",
+        w.feet(e)
+    );
+    // Standing there: no pull back onto it.
+    w.step(60);
+    assert!(!w.c(e).climb.climbing);
+    assert!(approx(w.feet(e), 3.0, 0.02), "{}", w.feet(e));
+}
+
+/// From the top of a ladder, looking down and walking forward (out over it) climbs down it.
+#[test]
+fn from_a_ladders_top_looking_down_and_walking_forward_climbs_down() {
+    let mut w = short_ladder_world();
+    let e = w.spawn(v(0.5, 0.0, -0.5));
+    w.set_input(|t, _| {
+        if t < ticks(2.5) {
+            mv(0.0, 1.0)
+        } else {
+            mv(0.0, 0.0)
+        }
+    });
+    w.step(ticks(4.0));
+    assert!(approx(w.feet(e), 3.0, 0.02), "on top first: {}", w.feet(e));
+    // Turn round (yaw 180: facing −z, out over the ladder), look down, walk forward.
+    w.set_input(|_, _| look(0.0, 1.0, 180.0, -45.0));
+    let mut fastest_fall = 0.0f32;
+    for _ in 0..ticks(3.0) {
+        w.step(1);
+        if !w.c(e).climb.climbing && !w.c(e).ground.grounded {
+            fastest_fall = fastest_fall.max(-w.vel(e).y);
+        }
+    }
+    assert!(
+        w.count(e, ev::CLIMB_STARTED) >= 2,
+        "grabbed it again on the way down"
+    );
+    assert!(
+        approx(w.feet(e), 0.0, 0.02),
+        "down at the floor: {}",
+        w.feet(e)
+    );
+    assert!(fastest_fall < 4.0, "climbed, not fell: {fastest_fall}");
+}
+

@@ -419,6 +419,14 @@ openings), **crouch height 0.9** (fits 1-tall crawlspaces with skin to spare).
   column's foot while climbing down lets go too, landing or not: a ½ m ladder is climbed down
   without ever leaving the ground (owner, 2026-10-29;
   `walking_down_a_half_metre_ladder_lets_go_at_the_bottom`).
+- **The top of a ladder column is a floor** (owner, 2026-10-29: "stand on top of the ladder … no
+  magnetism on top of it, and it's solid on top"; only the ladder itself, the 0.1 m plate's top):
+  the controller's downward probes meet it (`VoxelQuery::cast_voxels`, `ladder_top`), one way — a
+  climber's ground probe passes it (`without_ladder_tops`), and no body or block collides with it.
+  Standing on it doesn't grab the ladder; looking down and walking forward out past the plate's
+  front grabs the ladder under the feet and climbs down it, as off a ledge onto its ladder
+  (`a_ladders_top_is_solid_to_stand_on`,
+  `from_a_ladders_top_looking_down_and_walking_forward_climbs_down`).
 - Targeting (§6.5 of the architecture) is not the climb zone: the crosshair meets only the ladder's
   plate, its `selectionBox` (⅛ m against the wall, turned per facing), while the climb zone stays
   the whole cell.

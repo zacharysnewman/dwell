@@ -6,8 +6,8 @@ use std::cell::RefCell;
 use dwell_blocks::shape::{ray_enter_shape, vertical_segment_distance_sq};
 use dwell_blocks::{ShapeInfo, StateId, info};
 use dwell_world::{
-    CELL, CELL_H, CHUNK_SIZE, VoxelWorld, cell_dir, cell_space, chunk_of, m_of_row, normal_to_m,
-    pos_of_cell, row_of_m,
+    CELL, CELL_H, CHUNK_SIZE, FaceFrame, VoxelWorld, cell_dir, cell_space, chunk_of, m_of_row,
+    normal_to_m, pos_of_cell, row_of_m,
 };
 use rapier3d_f64::parry::query::Ray;
 use rapier3d_f64::parry::shape::Capsule as ParryCapsule;
@@ -33,6 +33,9 @@ impl GroundRef {
         }
     }
 }
+
+/// A ladder's plate depth (m, from the wall it hangs on): its top is a floor (`cast_voxels`).
+pub const LADDER_PLATE_DEPTH: f32 = 0.1;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ProbeHit {
@@ -68,6 +71,9 @@ pub struct VoxelQuery<'a> {
     /// Shapes derived during this query (the world does not change while it lives): a ring of
     /// probes reads the same few cells, and an adaptive block's shape reads 18 voxels.
     shapes: RefCell<dwell_world::hash::HashMap<[i32; 3], &'static ShapeInfo>>,
+    /// Whether a ray coming down meets a ladder column's top (`cast_voxels`): not for a climber,
+    /// who passes it.
+    ladder_tops: bool,
 }
 
 const STEP: [[i32; 3]; 6] = [
@@ -85,7 +91,14 @@ impl<'a> VoxelQuery<'a> {
             world: RefCell::new(world),
             physics,
             shapes: RefCell::new(dwell_world::hash::HashMap::default()),
+            ladder_tops: true,
         }
+    }
+
+    /// This query without the ladder tops' floors: a climber passes them.
+    pub fn without_ladder_tops(mut self) -> Self {
+        self.ladder_tops = false;
+        self
     }
 
     /// The state of a voxel (generating its chunk if needed).
@@ -194,6 +207,20 @@ impl<'a> VoxelQuery<'a> {
         while t_cell <= max {
             let t_next = t_max[0].min(t_max[1]).min(t_max[2]);
             let (cx, cy, cz) = (base[0] + cell[0], base[1] + cell[1], base[2] + cell[2]);
+            // A ladder column's top plate is a floor to a ray coming down (one-way: nothing else
+            // meets it, so climbing passes it; owner, 2026-10-29, "solid on top").
+            if self.ladder_tops
+                && let Some(t) = self.ladder_top(cx, cy, cz, cell, o, d, t_cell, t_next)
+                && t <= max
+            {
+                let up = FaceFrame::at_row(cy).sign_f32();
+                return Some(ProbeHit {
+                    distance: t,
+                    point: origin + dir.as_dvec3() * f64::from(t),
+                    normal: Vec3::new(0.0, up, 0.0),
+                    ground: GroundRef::Terrain,
+                });
+            }
             let shape = self.shape(cx, cy, cz);
             if shape.face_count > 0 {
                 // Faces against a solid neighbour are internal: a ray crossing them is inside.
@@ -237,6 +264,55 @@ impl<'a> VoxelQuery<'a> {
             cell[axis] += step[axis];
         }
         None
+    }
+
+    /// Where a ray in cell space (`o` + `d`·t, relative to the walk's base; this cell at `cell`)
+    /// meets the top of the ladder plate in world cell (cx, cy, cz) between `t0` and `t1`, coming
+    /// down onto it: the cell climbable with no climbable cell over it (the column's top), the
+    /// plate the `LADDER_PLATE_DEPTH` of the cell against the wall it hangs on.
+    #[allow(clippy::too_many_arguments)]
+    fn ladder_top(
+        &self,
+        cx: i32,
+        cy: i32,
+        cz: i32,
+        cell: [i32; 3],
+        o: [f32; 3],
+        d: [f32; 3],
+        t0: f32,
+        t1: f32,
+    ) -> Option<f32> {
+        let m = self.material(cx, cy, cz);
+        let s = info(m);
+        if !s.climbable {
+            return None;
+        }
+        let face = FaceFrame::at_row(cy);
+        let up = face.sign();
+        // Coming down: toward the face's ground.
+        if d[1] * up as f32 >= 0.0 || info(self.material(cx, cy + up, cz)).climbable {
+            return None;
+        }
+        // The plate's top: the cell's face-local top, in rows relative to the base.
+        let top = cell[1] as f32 + if face.is_b() { 0.0 } else { 1.0 };
+        let t = (top - o[1]) / d[1];
+        if !(t >= t0 - 1e-5 && t <= t1 + 1e-5 && t >= 0.0) {
+            return None;
+        }
+        let at = |k: usize| o[k] + d[k] * t - cell[k] as f32;
+        let (x, z) = (at(0), at(2));
+        if !(0.0..=1.0).contains(&x) || !(0.0..=1.0).contains(&z) {
+            return None;
+        }
+        // Against the wall behind it: the side opposite its facing.
+        let on_plate = match s.facing {
+            dwell_blocks::Facing::North => z >= 1.0 - LADDER_PLATE_DEPTH,
+            dwell_blocks::Facing::South => z <= LADDER_PLATE_DEPTH,
+            dwell_blocks::Facing::East => x <= LADDER_PLATE_DEPTH,
+            dwell_blocks::Facing::West => x >= 1.0 - LADDER_PLATE_DEPTH,
+            dwell_blocks::Facing::None => false,
+        };
+        on_plate.then_some(t)
     }
 
     pub fn cast_bodies(
