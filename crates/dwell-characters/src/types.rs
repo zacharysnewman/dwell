@@ -70,6 +70,9 @@ pub struct Part {
     pub round: f32,
     /// `cone`: the top radius, 0–1.
     pub tip: f32,
+    /// A `$block` box's sides show this part of its tile, bottom (0) to top (1): a ½ m held piece
+    /// the top half, as the world draws a ½ m cell (data `sideV`; default the whole tile).
+    pub side_v: [f32; 2],
     pub view: View,
     /// An index into `MATERIALS`, or `BLOCK_MATERIAL`.
     pub material: u16,

@@ -120,6 +120,7 @@
     },
     {
       "name": "ladder",
+      "held": "card",
       "sound": "dwell:wood",
       "density": 600,
       "shape": "empty",
@@ -247,6 +248,7 @@
     {
       "$comment": "Prototype content (docs/TRANSPARENT_BLOCKS.md §6): blades of grass, the first plant. No collision; crossed quads drawn cutout, jittered per cell, swaying in the wind and fading out before the LOD; placed by hand only (world generation doesn't grow it), on grass or dirt, replaced by what is placed into it, and gone with the block under it.",
       "name": "tall_grass",
+      "held": "card",
       "sound": "dwell:grass",
       "density": 200,
       "shape": "empty",

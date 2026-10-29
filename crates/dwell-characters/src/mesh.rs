@@ -117,10 +117,12 @@ fn add_part(m: &mut Mesh, p: &Part) {
         };
         let face = (axis * 2 + usize::from(n[axis] < 0.0)) as u8;
         let rel = |k: usize| pos[k] / p.size[k].max(1e-6) + 0.5;
+        // Up a side: the part of the tile it shows (`side_v`, a ½ m piece's top half).
+        let up = p.side_v[0] + rel(1) * (p.side_v[1] - p.side_v[0]);
         let uv = match axis {
-            0 => [if n[0] > 0.0 { 1.0 - rel(2) } else { rel(2) }, rel(1)],
+            0 => [if n[0] > 0.0 { 1.0 - rel(2) } else { rel(2) }, up],
             1 => [rel(0), if n[1] > 0.0 { 1.0 - rel(2) } else { rel(2) }],
-            _ => [if n[2] > 0.0 { rel(0) } else { 1.0 - rel(0) }, rel(1)],
+            _ => [if n[2] > 0.0 { rel(0) } else { 1.0 - rel(0) }, up],
         };
         m.positions.push(place.apply(*pos));
         m.normals.push(normalize(place.rotate(*n)));
@@ -350,6 +352,7 @@ mod tests {
                 rot: [0.0; 3],
                 round: 0.3,
                 tip: 0.4,
+                side_v: [0.0, 1.0],
                 view: View::Both,
                 material: 0,
             };
@@ -445,6 +448,43 @@ mod tests {
             m.uvs
                 .iter()
                 .all(|uv| (0.0..=1.0).contains(&uv[0]) && (0.0..=1.0).contains(&uv[1]))
+        );
+    }
+
+    #[test]
+    fn the_held_block_is_a_half_metre_piece_showing_its_tiles_top_half_on_its_sides() {
+        // Owner, 2026-10-28: the hotbar's blocks are ½ m, so the hand holds a ½ m piece, its sides
+        // the top half of the tile (a grass block's fringe), as the world draws a ½ m cell. Red
+        // before: a cube, its sides the whole tile.
+        let ch = crate::player();
+        let p = &ch.item("block").unwrap().parts[0];
+        assert!(
+            (p.size[1] * 2.0 - p.size[0]).abs() < 1e-6,
+            "half as tall as wide: {:?}",
+            p.size
+        );
+        assert_eq!(p.side_v, [0.5, 1.0]);
+        let m = build(std::slice::from_ref(p), View::Body, &[]);
+        for (uv, f) in m.uvs.iter().zip(&m.faces) {
+            if matches!(f, 0 | 1 | 4 | 5) {
+                assert!((0.5..=1.0).contains(&uv[1]), "side face {f}: {uv:?}");
+            }
+        }
+    }
+
+    /// A ladder or a plant is held as a flat card of its tile (owner, 2026-10-28: as an item, not
+    /// a block with its texture on it).
+    #[test]
+    fn a_card_item_is_a_thin_block_material_box() {
+        let ch = crate::player();
+        let card = ch.item("card").expect("the card item");
+        assert_eq!(card.parts.len(), 1);
+        let p = &card.parts[0];
+        assert_eq!(p.material, crate::BLOCK_MATERIAL);
+        assert!(
+            p.size[2] < 0.02 && p.size[0] > 0.1 && p.size[1] > 0.1,
+            "{:?}",
+            p.size
         );
     }
 

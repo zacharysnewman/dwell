@@ -145,7 +145,7 @@ export function rustTables(data, textures, { header, tilesFile }) {
   const clipNames = Object.keys(data.clips);
   const clipIndex = (n) => clipNames.indexOf(n);
   const part = (p, bones) =>
-    `Part { id: ${str(p.id)}, bone: ${bones.indexOf(p.bone)}, kind: Kind::${camel(p.kind)}, size: ${v3(p.size)}, at: ${v3(p.at)}, rot: ${v3(p.rot)}, round: ${f32(p.round)}, tip: ${f32(p.tip)}, view: View::${camel(p.view)}, material: ${mat(p.material)} }`;
+    `Part { id: ${str(p.id)}, bone: ${bones.indexOf(p.bone)}, kind: Kind::${camel(p.kind)}, size: ${v3(p.size)}, at: ${v3(p.at)}, rot: ${v3(p.rot)}, round: ${f32(p.round)}, tip: ${f32(p.tip)}, side_v: ${p.sideV ? `[${f32(p.sideV[0])}, ${f32(p.sideV[1])}]` : '[0.0, 1.0]'}, view: View::${camel(p.view)}, material: ${mat(p.material)} }`;
   const parts = (list, bones) => `&[\n${list.map((p) => `                ${part(p, bones)},\n`).join('')}            ]`;
   const roles = (r) => `&[${Object.entries(r).map(([k, v]) => `(${str(k)}, ${clipIndex(v)})`).join(', ')}]`;
   const chars = [];
