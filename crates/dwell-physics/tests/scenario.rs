@@ -418,7 +418,7 @@ fn scenario_world() -> PlayerTestWorld {
     w.explosion(300, Vec3::new(0.0, 1.0, 6.0), 8.0, 10.0, 0.5);
     w.spawn(Vec3::new(-6.0, 0.0, 0.0)); // ramp
     w.spawn(Vec3::new(0.5, 0.0, 4.0)); // crawlspace
-    w.spawn(Vec3::new(12.5, 0.0, -1.0)); // ladder
+    w.spawn(Vec3::new(12.5, 0.0, -0.5)); // ladder
     w.spawn(Vec3::new(-12.0, 0.5, 0.0)); // platform
     w.spawn(Vec3::new(5.5, 0.0, 3.0)); // half step
     w

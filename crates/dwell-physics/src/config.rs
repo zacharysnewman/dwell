@@ -74,6 +74,9 @@ pub struct Climb {
     pub jump_off_away: f32,
     /// 1/s
     pub snap_strength: f32,
+    /// ◆ How far (m) in front of a ladder's plate a body grabs it (owner, 2026-10-29: the pull
+    /// sticks out only a little from the ladder); the rest of its cell doesn't.
+    pub grab_reach: f32,
 }
 
 /// ◆ Dwell addition.
@@ -289,6 +292,7 @@ impl Default for PlayerControllerConfig {
                 jump_off_up: 4.0,
                 jump_off_away: 3.0,
                 snap_strength: 10.0,
+                grab_reach: 0.25,
             },
             swim: Swim {
                 speed: 3.0,

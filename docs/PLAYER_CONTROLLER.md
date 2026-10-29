@@ -398,8 +398,11 @@ openings), **crouch height 0.9** (fits 1-tall crawlspaces with skin to spare).
   **climbable block** in the block data (`shared/blocks`, `"climbable": true`) with a **facing
   property** (`dwell:ladder[facing=north|east|south|west]`); the generated state table gives each
   state's `climbable`, `facing` and `climb_speed_scale`.
-- Detection: any climbable cell the capsule overlaps (capsule–cell test). The ladder is a thin
-  plate (0.1 m) on the cell's back face; the ladder frame (facing axis, plate position) comes from
+- Detection: a climbable cell the capsule overlaps **within `climb.grab_reach` (0.25 m) of its
+  plate's front** (the capsule against the slab of the cell from the plate to that far in front of
+  it; owner, 2026-10-29: "the pull … should only stick out a little from the ladder itself"; was
+  the whole cell, `a_ladder_grabs_only_near_its_plate`). The ladder is a thin plate (0.1 m) on the
+  cell's back face; the ladder frame (facing axis, plate position) comes from
   the cell and its facing, replacing the trigger box's transform and extents in the climb velocity
   and the jump-off direction. The face snap therefore holds the capsule against the wall the
   ladder is mounted on.
@@ -412,7 +415,10 @@ openings), **crouch height 0.9** (fits 1-tall crawlspaces with skin to spare).
   pull the player back on. The jump that grabs isn't also read as a jump off that tick, and landing
   lets go only while climbing down (`vertical < 0`), so a jump-grab from the floor holds on
   (`a_jump_in_a_ladders_cells_after_getting_off_grabs_it_again`,
-  `jumping_off_near_the_floor_and_tapping_jump_again_does_not_re_grab`).
+  `jumping_off_near_the_floor_and_tapping_jump_again_does_not_re_grab`). Standing at the
+  column's foot while climbing down lets go too, landing or not: a ½ m ladder is climbed down
+  without ever leaving the ground (owner, 2026-10-29;
+  `walking_down_a_half_metre_ladder_lets_go_at_the_bottom`).
 - Targeting (§6.5 of the architecture) is not the climb zone: the crosshair meets only the ladder's
   plate, its `selectionBox` (⅛ m against the wall, turned per facing), while the climb zone stays
   the whole cell.
@@ -742,6 +748,7 @@ PPC default for voxels.
 | | `speed` / `mid_air_boost` | 1.6 m/s / 0 | same | |
 | `climb` | `speed` / `look_down_threshold` | 3 m/s / 30° | same | |
 | | `jump_off_up` / `jump_off_away` / `snap_strength` | 4 m/s / 3 m/s / 10 /s | `jumpOffVelocity` (0, 4, 3) | |
+| | `grab_reach` ◆ | 0.25 m | (the trigger box) | How far in front of a ladder's plate it grabs (the least that still catches a walk off its ledge) |
 | `swim` ◆ | `speed` / `enter_fraction` / `exit_fraction` | 3 m/s / 0.6 / 0.4 | — | Dwell addition |
 | | `buoyancy` / `drag` / `float_fraction` | 12 m/s² / 2 /s / 0.7 | — | |
 | `band` ◆ | `boost_gravities` | 2 | — | The flip band (§11) |

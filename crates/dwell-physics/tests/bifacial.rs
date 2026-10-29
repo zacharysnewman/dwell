@@ -240,8 +240,9 @@ dwell_world::both_faces!(
         let h = w.spawn_at(DVec3::new(0.5, f.y(MID + 8.0), 0.5), 0.0);
         assert_eq!(w.c(h).face, f);
         // Out of the flip band (where the body swims), walk into the ladder (it holds the player), then look down and hold forward.
+        // The ladder grabs near its plate (`climb.grab_reach`), so walk up to it.
         w.set_input(|_, _| mv(0.0, 1.0));
-        w.step(20);
+        w.step(40);
         assert!(w.c(h).climb.climbing);
         let (mut yaw, mut pitch, mut face) = (0.0f64, -80.0f64, f);
         let (mut crossed_at, mut moving) = (None, 0);

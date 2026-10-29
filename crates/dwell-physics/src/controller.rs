@@ -434,6 +434,25 @@ fn frame_of(cell: Cell, material: dwell_blocks::StateId) -> LadderFrame {
     }
 }
 
+/// Whether `capsule` comes within `reach` (m) of the front of the ladder plate in `cell` (state
+/// `m`): its distance to the slab of the cell from the plate's back to `reach` past its front.
+fn near_plate(capsule: &Capsule, cell: Cell, m: dwell_blocks::StateId, reach: f64) -> bool {
+    let frame = frame_of(cell, m);
+    let f = frame.facing.as_dvec3();
+    let back = frame.plate - f * f64::from(LADDER_PLATE_HALF_DEPTH);
+    let front = frame.plate + f * (f64::from(LADDER_PLATE_HALF_DEPTH) + reach);
+    let corner = DVec3::from_array(dwell_world::pos_of_cell([cell.x, cell.y, cell.z]));
+    let size = DVec3::from_array(dwell_world::CELL);
+    let (mut lo, mut hi) = (corner, corner + size);
+    for k in 0..3 {
+        if f[k] != 0.0 {
+            lo[k] = back[k].min(front[k]);
+            hi[k] = back[k].max(front[k]);
+        }
+    }
+    VoxelQuery::segment_box_distance(capsule, lo, hi) < capsule.radius
+}
+
 fn capsule_shape(cfg: &PlayerControllerConfig, crouching: bool) -> SharedShape {
     let r = cfg.body.radius;
     SharedShape::capsule_y(
@@ -1275,8 +1294,14 @@ impl Players {
         };
         let mut found = None;
         let mut in_released = false;
+        let reach = f64::from(p.cfg.climb.grab_reach);
         q.for_each_overlapping_cell(&capsule, |x, y, z, m| {
             if !info(m).climbable {
+                return;
+            }
+            // Only near the plate: the cell's slab from its wall side out to the plate's front
+            // and `grab_reach` past it (a body elsewhere in the cell doesn't grab it).
+            if !near_plate(&capsule, Cell { x, y, z }, m, reach) {
                 return;
             }
             // A contiguous ladder column counts as one ladder for `released`.
@@ -1386,7 +1411,21 @@ impl Players {
         // Landing while climbing down lets go (onto the floor). Only then: a jump that grabbed
         // the ladder from the floor lands back on the floor the next tick, and holds on.
         let landed = c.ground.grounded && !c.ground.was_grounded && vertical < 0.0;
-        let Some(ladder) = found.filter(|_| !landed) else {
+        // Standing at the column's foot while climbing down lets go too: a ½ m ladder is climbed
+        // down without ever leaving the ground, so no landing comes (owner, 2026-10-29). On the
+        // ledge over a ladder the feet are above its foot, and the climb down holds.
+        let at_foot = found.is_some_and(|l| {
+            let mut bottom = l.y;
+            for _ in 0..256 {
+                if !info(q.material(l.x, bottom - 1, l.z)).climbable {
+                    break;
+                }
+                bottom -= 1;
+            }
+            let feet = position.y as f32 - cfg.half_height(c.crouching);
+            c.ground.grounded && vertical < 0.0 && feet <= m_of_row(bottom) as f32 + 0.05
+        });
+        let Some(ladder) = found.filter(|_| !landed && !at_foot) else {
             release(c, false);
             return;
         };

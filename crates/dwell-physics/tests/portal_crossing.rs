@@ -34,10 +34,10 @@ fn a_player_climbs_down_a_portal_from_face_a_and_up_to_face_b() {
     let yaw0 = f64::from(wx).atan2(f64::from(wz)).to_degrees();
     let h = w.spawn_at(start, yaw0 as f32);
     assert_eq!(w.c(h).face, FaceFrame::A);
-    // Walk into the ladder: it holds the player.
+    // Walk into the ladder: it holds the player (near its plate, `climb.grab_reach`).
     let y0 = yaw0 as f32;
     w.set_input(move |_, _| input(0.0, 1.0, false, false, false, y0, 0.0));
-    w.step(20);
+    w.step(40);
     assert!(w.c(h).climb.climbing, "the ladder didn't hold");
     // Look down and hold forward; across the midplane the client continues the look on face B
     // (`FaceFrame::look_across`), which reads as a look up face B's ladder.
