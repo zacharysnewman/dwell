@@ -20,8 +20,8 @@ block registry, CI stale check). An item names the block it places and its heigh
 (`rows`: 2 a 1 m block, 1 a ½ m one). The hotbar is the items in order (`block_interaction::palette`);
 a ½ m piece of a full block shows its tile's top half on its swatch's lower half (owner, 2026-10-28:
 the grass's fringe had been cropped away; `dwell_mesh::half_swatch`). In the hand (`shared/characters`
-items) a block is a ½ m piece stood on its edge, the hand on its thin side, its sides the tile's
-top half (`sideV`); a ladder or a plant (`held: card` in the block's data) is a flat card of its tile. A block that brings its own other cells
+items) a block is a ½ m piece carried on the upturned palm, its bottom face on the hand, its sides
+the tile's top half (`sideV`, the item's `pose` turning the hand); a ladder or a plant (`held: card` in the block's data) is a flat card of its tile. A block that brings its own other cells
 (a torch, `extends`) is a 1-cell item. Adding a piece is a new entry. **0.38.8** (owner, 2026-10-28:
 "remove the 1m tall blocks"): every hotbar item is ½ m (11 items); `rows` stays for a taller piece
 later. `drag` says what holding Place does with it (§5): `modes` (the default; a plain block only),

@@ -5,7 +5,7 @@
 //! The arms are posed in view space (+x left, +y up, +z ahead) and turned into the world by the
 //! camera's basis (`arms_frame`), so none of this depends on the face.
 
-use dwell_characters::anim::{arm_transforms, sample};
+use dwell_characters::anim::{arm_transforms, sample, with_item};
 use dwell_characters::animator::{Animator, MoveInput, Space};
 use dwell_characters::{TABLES, View, mesh, player};
 use dwell_physics::config::PlayerControllerConfig;
@@ -76,7 +76,9 @@ fn hand_box(role: &str, t: f32, held: bool) -> ([f32; 2], [f32; 2]) {
     let fp = ch.first_person.expect("the player has an arms view");
     let hand = ch.bone("hand_r").expect("the rig has hand_r");
     let clip = fp.clips.iter().find(|(r, _)| *r == role).expect("role").1;
-    let bones = arm_transforms(ch, &sample(TABLES.clip(clip), t));
+    // As drawn: the held block's turns on the clip (it is carried on the upturned palm).
+    let item = held.then(|| ch.item("block")).flatten();
+    let bones = arm_transforms(ch, &with_item(&sample(TABLES.clip(clip), t), item));
     let f = 1.0 / (fp.fov.to_radians() / 2.0).tan();
     let mut meshes = vec![mesh::build(ch.looks[0].parts, View::Arms, fp.bones)];
     if held {

@@ -432,9 +432,13 @@ crouch-walk by speed (0.4 m/s). The rest, as built:
   look by name (`PlayerView::look`).
 - **What the hand shows** **[built, 0.39.3]**: a block's registry `held` names its item (`torch`;
   `card`, a flat card of its tile, for the ladder and tall grass); any other block is the `block`
-  item, a ½ m piece on its edge whose sides show the tile's top half (part `sideV`, for a `$block`
-  box). Owner, 2026-10-28: the held blocks didn't look like the hotbar's ½ m pieces, and a ladder or
-  grass held as a textured block looked bad.
+  item, a ½ m piece whose sides show the tile's top half (part `sideV`, for a `$block` box),
+  **carried on the upturned palm** (0.39.4): an item's `pose` adds turns to bones while it is held,
+  on top of the clips (`anim::with_item`; the block's turns the right hand palm up and lifts the
+  forearm a little), so the torch keeps its forward grip. Owner, 2026-10-28: the held blocks didn't
+  look like the hotbar's ½ m pieces, a ladder or grass held as a textured block looked bad, and a
+  piece held on its edge made no sense for a hand ("hand facing forward would make sense for
+  torch").
 - **The held item** **[built, protocol v17]**: a `u16` per remote player in every snapshot (a block
   state, the server's id, in the low 15 bits; `0x8000` the brush tool painting with it; 0 an empty
   hand), from a reliable `HeldItem` the client sends when its hand changes (the hotbar's block, the

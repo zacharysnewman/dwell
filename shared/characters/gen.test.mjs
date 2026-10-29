@@ -24,6 +24,7 @@ test('a bad entry fails with its path named', () => {
     [(d) => (d.characters.player.parts[0].tip = 0.5), /only a cone takes "tip"/],
     [(d) => (d.characters.player.parts[0].sideV = [0.5, 1]), /only a \$block part takes "sideV"/],
     [(d) => (d.items.block.parts[0].sideV = [0.8, 0.2]), /\.sideV: must be \[from, to\] within 0–1/],
+    [(d) => (d.items.block.pose = { hand_r: [0, 400, 0] }), /items\.block\.pose\.hand_r/],
     [(d) => (d.characters.player.parts[0].colour = 'red'), /parts\[0\]: unknown entry "colour"/],
     [(d) => (d.characters.player.parts[1].id = 'head'), /part id "head" is repeated/],
     [(d) => (d.characters.player.parts[3].id = 'brow'), /a mirrored part's id ends in "_l"/],

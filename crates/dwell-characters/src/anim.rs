@@ -18,6 +18,21 @@ pub struct Pose {
     pub root_keyed: bool,
 }
 
+/// `pose` with `item`'s turns added (data `pose`: a block carried on an upturned palm), each a
+/// turn on top of whatever the clips put there.
+pub fn with_item(pose: &Pose, item: Option<&crate::Item>) -> Pose {
+    let mut out = *pose;
+    for &(bone, turn) in item.map_or(&[][..], |i| i.pose) {
+        if let Some(r) = out.rot.get_mut(bone) {
+            for k in 0..3 {
+                r[k] += turn[k];
+            }
+            out.keyed |= 1 << bone;
+        }
+    }
+    out
+}
+
 impl Default for Pose {
     fn default() -> Self {
         Self::REST
@@ -179,6 +194,32 @@ pub fn arm_transforms(ch: &Character, pose: &Pose) -> [Affine; MAX_BONES] {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_held_items_turns_go_on_top_of_the_pose() {
+        // Owner, 2026-10-28: a block is carried on the upturned palm; a torch keeps the grip.
+        let ch = crate::player();
+        let hand = ch.bone("hand_r").expect("a right hand");
+        let block = ch.item("block").expect("the block item");
+        let torch = ch.item("torch").expect("the torch item");
+        let turn = block
+            .pose
+            .iter()
+            .find(|(b, _)| *b == hand)
+            .map(|(_, t)| *t)
+            .expect("the block turns the hand palm up");
+        let mut pose = Pose::REST;
+        pose.rot[hand] = [10.0, 0.0, 0.0];
+        let held = with_item(&pose, Some(block));
+        assert_eq!(held.rot[hand], [10.0 + turn[0], turn[1], turn[2]]);
+        assert!(held.keyed & (1 << hand) != 0);
+        assert_eq!(
+            with_item(&pose, Some(torch)),
+            pose,
+            "the torch keeps the grip"
+        );
+        assert_eq!(with_item(&pose, None), pose);
+    }
     use crate::TABLES;
 
     fn clip(name: &str) -> &'static Clip {
