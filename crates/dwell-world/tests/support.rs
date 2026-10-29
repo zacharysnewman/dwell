@@ -1,6 +1,6 @@
 //! Support (docs/FELLING.md §2): logs carry, leaves ride, and what loses its hold falls as pieces.
-//! Support has no up or down (a log anchors on ground touching it from any side), so these tests
-//! need no face frame.
+//! A tree's support has no up or down (a log anchors on ground touching it from any side), so its
+//! tests need no face frame; sand and loose leaves rest on what is under them (both faces).
 
 use std::sync::Arc;
 
@@ -185,3 +185,62 @@ fn the_same_cut_gives_the_same_pieces() {
     let (mut a, mut b) = (build(), build());
     assert_eq!(cut(&mut a, [0, 3, 0]), cut(&mut b, [0, 3, 0]));
 }
+
+dwell_world::both_faces!(
+    /// Sand falls (block data `support: falls`; owner, 2026-10-28): with nothing solid under it, a
+    /// sand block and the sand stacked on it are one piece (carriers: all of it, solid to
+    /// everything); resting on something, it stays. Red before: sand was ground, never falling.
+    fn sand_falls_with_the_sand_on_it_when_what_is_under_it_goes(f: FaceFrame) {
+        let sand = dwell_blocks::require("dwell:sand");
+        let mut w = VoxelWorld::new(Arc::new(|_, _| {}), None);
+        let set = |w: &mut VoxelWorld, c: [i32; 3], m: u16| {
+            let [x, y, z] = f.cell(c);
+            w.set_voxel(x, y, z, f.state(m));
+        };
+        set(&mut w, [0, 0, 0], M.stone);
+        for row in 1..4 {
+            set(&mut w, [0, row, 0], sand);
+        }
+        // On the stone: nothing falls.
+        assert!(detached_pieces(&mut w, &[f.cell([0, 1, 0])], SupportRules::default()).is_empty());
+        // The stone gone: the column falls as one piece.
+        set(&mut w, [0, 0, 0], M.air);
+        let pieces = detached_pieces(&mut w, &[f.cell([0, 0, 0])], SupportRules::default());
+        assert_eq!(pieces.len(), 1, "{pieces:?}");
+        let mut cells: Vec<[i32; 3]> = pieces[0].cells.iter().map(|&c| f.cell(c)).collect();
+        cells.sort_unstable();
+        assert_eq!(cells, vec![[0, 1, 0], [0, 2, 0], [0, 3, 0]]);
+        assert_eq!(pieces[0].carriers, 3, "solid to everything");
+        // Sand placed in the air falls; placed on leaves, it rests.
+        set(&mut w, [5, 4, 0], sand);
+        assert_eq!(
+            detached_pieces(&mut w, &[f.cell([5, 4, 0])], SupportRules::default()).len(),
+            1
+        );
+    }
+);
+
+dwell_world::both_faces!(
+    /// Loose leaves (no log within reach) resting on something stay: a leaf placed on the ground
+    /// doesn't fall in place; one placed in the air falls (owner, 2026-10-28: all leaves fall to
+    /// the ground unless a tree holds them). Red before: a loose leaf on the ground fell too.
+    fn loose_leaves_resting_on_something_stay(f: FaceFrame) {
+        let leaves = dwell_blocks::require("dwell:leaves");
+        let mut w = VoxelWorld::new(Arc::new(|_, _| {}), None);
+        let set = |w: &mut VoxelWorld, c: [i32; 3], m: u16| {
+            let [x, y, z] = f.cell(c);
+            w.set_voxel(x, y, z, f.state(m));
+        };
+        set(&mut w, [0, 0, 0], M.stone);
+        set(&mut w, [0, 1, 0], leaves);
+        set(&mut w, [0, 2, 0], leaves);
+        assert!(
+            detached_pieces(&mut w, &[f.cell([0, 2, 0])], SupportRules::default()).is_empty(),
+            "a stack of leaves on the stone stays"
+        );
+        set(&mut w, [4, 6, 0], leaves);
+        let pieces = detached_pieces(&mut w, &[f.cell([4, 6, 0])], SupportRules::default());
+        assert_eq!(pieces.len(), 1);
+        assert_eq!(pieces[0].carriers, 0);
+    }
+);

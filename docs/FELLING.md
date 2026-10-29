@@ -28,8 +28,10 @@ data; a bad value fails generation):
 | `ground` (default) | Anchors whatever touches it; never falls. | Every block not listed below: terrain, player builds. |
 | `carrier` | Stands while a path of carriers leads to a `ground` block it touches; holds up the riders on it. | `dwell:log` |
 | `rider` | Holds nothing up; stays while a carrier it belongs to stands. | `dwell:leaves`, `dwell:snowy_leaves` |
+| `falls` | Rests on what is under it; with nothing solid there it falls, with what of its kind is stacked on it, and lands as itself. Anchors a carrier as `ground` does. (0.40.0, owner 2026-10-28: "make sand fall".) | `dwell:sand` |
 
-And `passable: true` (leaves): players and falling pieces pass through it; targeting still hits it,
+And `passable: true` (leaves): players pass through it (and a block of it may go, or land, where a
+player stands: `overlaps_player`); targeting still hits it,
 so it can be broken and built on.
 
 **The rule (integrity).** When a block is removed (or a piece settles), the server looks at the
@@ -42,7 +44,14 @@ carriers and riders around the change, budgeted per tick (`INTEGRITY_BUDGET_VOXE
    trunks and leaves never hold up a neighbour's crown.
 3. Each unanchored component, with its riders, becomes one **piece**: its cells leave the grid in the
    same reliable change (reason `Collapse`) and it becomes a body. Riders that belong to no carrier
-   within reach fall alone (a leaves-only piece, §3).
+   within reach fall alone (a leaves-only piece, §3) — unless they rest on something solid under
+   them (0.40.0: a leaf placed on the ground stays; owner, 2026-10-28: "all leaves fall to the
+   ground unless they're connected … to a tree trunk").
+4. A `falls` block (sand) next to the change with nothing solid under it falls with the column of
+   its kind stacked on it (a piece of all carriers). It collides with the terrain and other pieces
+   but passes players (`Collide::World`): it may hurt one (`hits` is by the geometry, not contact)
+   but never rests on or in one; sand landing where a player stands slides off into a free cell
+   beside them (owner, 2026-10-28: "slide off for now").
 
 ## 3. The falling piece
 
@@ -50,9 +59,12 @@ carriers and riders around the change, budgeted per tick (`INTEGRITY_BUDGET_VOXE
   cell (1 × ½ × 1 m), its mass, centre of mass and inertia from every cell's `density` (riders add
   mass but no collider). Gravity is its face's (toward the midplane, through the flip band as
   bodies already do). A trunk cut low tips over because its centre of mass is over the cut.
-- **What it hits:** terrain, other pieces, players. Its riders don't collide (the owner: falling
-  leaves pass through terrain). A leaves-only piece has no collider at all: it falls for
-  `looseRiderSeconds` and is removed (leaves falling away), never settling inside the ground.
+- **What it hits:** terrain, other pieces, players (`Collide::All`: logs; sand passes players, §2). The leaves riding a
+  trunk don't collide (`Collide::None`). A leaves-only piece (§2) collides with the terrain and
+  other pieces but not players (`Collide::World`): it falls, lands and settles as leaves (0.40.0;
+  owner, 2026-10-28: detached leaves "become solid to blocks when detached from the tree, falling
+  down to the ground, settling", non-solid to players always). The terrain collision covers every
+  piece's box, leaves-only ones too (red before: they fell through the world far from players).
 - **Players:** pushed by it (as by any Tier 1 body, PLAYER_CONTROLLER.md §6.6); pushing it back
   only while it is lighter than `pushableMass` — a heavier piece is held from players' pushes
   (Rapier's dominance group) while it moves slower than `heavyHoldSpeed` (held while falling fast,
@@ -86,12 +98,12 @@ When a piece has moved less than `SLEEP_LINEAR_THRESHOLD` / `SLEEP_ANGULAR_THRES
 
 ## 5. Data and tunables
 
-Block data: `support` (`ground` | `carrier` | `rider`), `passable`, `density` (exists), log `axis`
+Block data: `support` (`ground` | `carrier` | `rider` | `falls`), `passable`, `density` (exists), log `axis`
 (`y` | `x` | `z`, its texture turned by it). Felling tunables (`shared/physics/felling.json`,
 generated into `crates/dwell-sim/src/felling.gen.rs` by `shared/physics/gen.mjs`, validated, CI
 failing on stale output): `riderReach` (cells, 6), `maxSystemCells` (16384), `maxPieceCells`
 (4096), `toppleSpin` (0.6 rad/s), `sleepLinear` / `sleepAngular` (0.05), `sleepSeconds` (2),
-`looseRiderSeconds` (1.5), `maxSeconds` (30), `maxSettles` (3), `hitSpeed` (4 m/s),
+`maxSeconds` (30), `maxSettles` (3), `hitSpeed` (4 m/s),
 `hitDamagePerSpeed` (6), `pushableMass` (400 kg), `heavyHoldSpeed` (1 m/s). Sounds
 (`shared/sounds/dwell.json`): `fell` (the crack, `fell_crack`, as a carrying piece spawns) and
 `piece_land` (the block's `land` sound when a piece's velocity changes by over 2 m/s between

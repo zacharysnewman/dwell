@@ -863,7 +863,9 @@ pub fn flooded_for(material: StateId, existing: StateId) -> StateId {
 
 /// `material` is solid and would overlap one of the players' capsules at `cell`.
 pub fn overlaps_player(material: StateId, cell: [i32; 3], players: &[EditCapsule]) -> bool {
-    if !info(material).solid {
+    // Players pass through what isn't solid, and through what is passable (leaves): neither blocks
+    // a body (owner, 2026-10-28: a leaf landing where a player stood was destroyed).
+    if !info(material).solid || info(material).passable {
         return false;
     }
     let shape = shape_of(material);

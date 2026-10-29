@@ -183,6 +183,7 @@
     },
     {
       "name": "sand",
+      "support": "falls",
       "sound": "dwell:sand",
       "density": 1600,
       "shape": "full",
