@@ -819,7 +819,7 @@ const CHARACTER_KEYS = [
 ];
 const PART_KEYS = ['id', 'on', 'kind', 'size', 'at', 'rot', 'material', 'round', 'tip', 'sideV', 'mirror', 'view', 'with'];
 const ACCESSORY_KEYS = ['$comment', 'label', 'place', 'fits', 'slots', 'hides', 'parts'];
-const ITEM_KEYS = ['$comment', 'label', 'on', 'light', 'parts'];
+const ITEM_KEYS = ['$comment', 'label', 'on', 'light', 'pose', 'parts'];
 const VARIANT_KEYS = ['label', 'accessories', 'slots'];
 const CLIP_KEYS = ['$comment', 'rig', 'space', 'layer', 'duration', 'loop', 'ease', 'cycle', 'grounded', 'blend', 'keys'];
 const KEY_KEYS = ['t', 'bones', 'root'];
@@ -1062,6 +1062,12 @@ function validate(data, style) {
     // `light` (docs/LIGHTS.md): where the light a held block gives off sits, on the item's socket
     // (metres in its frame): a torch's flame.
     if (it.light !== undefined) vec3(it.light, `${w}.light`);
+    // `pose`: turns (degrees) added to bones while the item is held, on top of any clip (a block
+    // carried on an upturned palm; a torch keeps the grip). Bones a character lacks are skipped.
+    if (it.pose !== undefined) {
+      if (typeof it.pose !== 'object' || it.pose === null || Array.isArray(it.pose)) fail(`${w}.pose`, 'must map bone names to turns');
+      for (const [b, r] of Object.entries(it.pose)) vec3(r, `${w}.pose.${b}`, -180, 180);
+    }
   }
 
   for (const [id, ch] of Object.entries(data.characters)) {
@@ -5009,8 +5015,20 @@ const DATA = {
  },
  "items": {
   "block": {
-   "label": "The hotbar's block: a ½ m piece (owner, 2026-10-28), stood on its edge so the hand holds its thin side, its sides the top half of the tile as the world draws a ½ m cell",
+   "label": "The hotbar's block: a ½ m piece (owner, 2026-10-28) carried on the upturned palm, its bottom face on the hand, its sides the top half of the tile as the world draws a ½ m cell; the torch keeps the grip",
    "on": "grip_r",
+   "pose": {
+    "forearm_r": [
+     -12,
+     0,
+     0
+    ],
+    "hand_r": [
+     0,
+     -90,
+     0
+    ]
+   },
    "parts": [
     {
      "id": "held_block",
@@ -5022,14 +5040,14 @@ const DATA = {
       0.2
      ],
      "at": [
-      0,
+      0.1,
       0.03,
-      0.07
+      0
      ],
      "rot": [
       0,
       0,
-      72
+      -90
      ],
      "sideV": [
       0.5,

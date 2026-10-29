@@ -33,7 +33,7 @@ const CHARACTER_KEYS = [
 ];
 const PART_KEYS = ['id', 'on', 'kind', 'size', 'at', 'rot', 'material', 'round', 'tip', 'sideV', 'mirror', 'view', 'with'];
 const ACCESSORY_KEYS = ['$comment', 'label', 'place', 'fits', 'slots', 'hides', 'parts'];
-const ITEM_KEYS = ['$comment', 'label', 'on', 'light', 'parts'];
+const ITEM_KEYS = ['$comment', 'label', 'on', 'light', 'pose', 'parts'];
 const VARIANT_KEYS = ['label', 'accessories', 'slots'];
 const CLIP_KEYS = ['$comment', 'rig', 'space', 'layer', 'duration', 'loop', 'ease', 'cycle', 'grounded', 'blend', 'keys'];
 const KEY_KEYS = ['t', 'bones', 'root'];
@@ -276,6 +276,12 @@ export function validate(data, style) {
     // `light` (docs/LIGHTS.md): where the light a held block gives off sits, on the item's socket
     // (metres in its frame): a torch's flame.
     if (it.light !== undefined) vec3(it.light, `${w}.light`);
+    // `pose`: turns (degrees) added to bones while the item is held, on top of any clip (a block
+    // carried on an upturned palm; a torch keeps the grip). Bones a character lacks are skipped.
+    if (it.pose !== undefined) {
+      if (typeof it.pose !== 'object' || it.pose === null || Array.isArray(it.pose)) fail(`${w}.pose`, 'must map bone names to turns');
+      for (const [b, r] of Object.entries(it.pose)) vec3(r, `${w}.pose.${b}`, -180, 180);
+    }
   }
 
   for (const [id, ch] of Object.entries(data.characters)) {

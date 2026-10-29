@@ -453,10 +453,11 @@
   },
   "items": {
     "block": {
-      "label": "The hotbar's block: a ½ m piece (owner, 2026-10-28), stood on its edge so the hand holds its thin side, its sides the top half of the tile as the world draws a ½ m cell",
+      "label": "The hotbar's block: a ½ m piece (owner, 2026-10-28) carried on the upturned palm, its bottom face on the hand, its sides the top half of the tile as the world draws a ½ m cell; the torch keeps the grip",
       "on": "grip_r",
+      "pose": { "forearm_r": [-12, 0, 0], "hand_r": [0, -90, 0] },
       "parts": [
-        { "id": "held_block", "on": "grip_r", "kind": "box", "size": [0.2, 0.1, 0.2], "at": [0, 0.03, 0.07], "rot": [0, 0, 72], "sideV": [0.5, 1], "material": "$block" }
+        { "id": "held_block", "on": "grip_r", "kind": "box", "size": [0.2, 0.1, 0.2], "at": [0.1, 0.03, 0], "rot": [0, 0, -90], "sideV": [0.5, 1], "material": "$block" }
       ]
     },
     "card": {

@@ -922,17 +922,17 @@ pub static CHARACTERS: &[Character] = &[
             ] },
         ],
         items: &[
-            Item { name: "block", light: None, parts: &[
-                Part { id: "held_block", bone: 9, kind: Kind::Box, size: [0.2, 0.1, 0.2], at: [0.0, -0.07, 0.09], rot: [0.0, 0.0, 72.0], round: 0.0, tip: 0.0, side_v: [0.5, 1.0], view: View::Both, material: 65535 },
+            Item { name: "block", light: None, pose: &[(8, [-12.0, 0.0, 0.0]), (9, [0.0, -90.0, 0.0])], parts: &[
+                Part { id: "held_block", bone: 9, kind: Kind::Box, size: [0.2, 0.1, 0.2], at: [0.1, -0.07, 0.02], rot: [0.0, 0.0, -90.0], round: 0.0, tip: 0.0, side_v: [0.5, 1.0], view: View::Both, material: 65535 },
             ] },
-            Item { name: "card", light: None, parts: &[
+            Item { name: "card", light: None, pose: &[], parts: &[
                 Part { id: "held_card", bone: 9, kind: Kind::Box, size: [0.24, 0.24, 0.006], at: [0.0, -0.08, 0.19], rot: [90.0, 0.0, 0.0], round: 0.0, tip: 0.0, side_v: [0.0, 1.0], view: View::Both, material: 65535 },
             ] },
-            Item { name: "torch", light: Some((9, [0.0, -0.08, 0.29])), parts: &[
+            Item { name: "torch", light: Some((9, [0.0, -0.08, 0.29])), pose: &[], parts: &[
                 Part { id: "torch_stick", bone: 9, kind: Kind::Box, size: [0.05, 0.38, 0.05], at: [0.0, -0.08, 0.09], rot: [90.0, 0.0, 0.0], round: 0.0, tip: 0.0, side_v: [0.0, 1.0], view: View::Both, material: 17 },
                 Part { id: "torch_wrap", bone: 9, kind: Kind::Box, size: [0.058, 0.07, 0.058], at: [0.0, -0.08, 0.255], rot: [90.0, 0.0, 0.0], round: 0.0, tip: 0.0, side_v: [0.0, 1.0], view: View::Both, material: 18 },
             ] },
-            Item { name: "brush", light: None, parts: &[
+            Item { name: "brush", light: None, pose: &[], parts: &[
                 Part { id: "brush_handle", bone: 9, kind: Kind::Cylinder, size: [0.04, 0.32, 0.04], at: [0.0, -0.08, 0.08], rot: [90.0, 0.0, 0.0], round: 0.0, tip: 0.0, side_v: [0.0, 1.0], view: View::Both, material: 19 },
                 Part { id: "brush_pommel", bone: 9, kind: Kind::Ellipsoid, size: [0.06, 0.06, 0.06], at: [0.0, -0.08, -0.08], rot: [0.0, 0.0, 0.0], round: 0.0, tip: 0.0, side_v: [0.0, 1.0], view: View::Both, material: 7 },
                 Part { id: "brush_ferrule", bone: 9, kind: Kind::Cylinder, size: [0.058, 0.07, 0.058], at: [0.0, -0.08, 0.25], rot: [90.0, 0.0, 0.0], round: 0.0, tip: 0.0, side_v: [0.0, 1.0], view: View::Both, material: 7 },

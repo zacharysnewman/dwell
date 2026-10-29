@@ -93,6 +93,9 @@ pub struct Item {
     /// Where the light a held block gives off sits (a torch's flame; docs/LIGHTS.md): a bone and
     /// the point in its frame (metres), the item's socket resolved. None: no light point.
     pub light: Option<(usize, [f32; 3])>,
+    /// Turns (degrees, Euler XYZ) added to bones while it is held, on top of any clip: a block
+    /// carried on an upturned palm (data `pose`; [`crate::anim::with_item`]).
+    pub pose: &'static [(usize, [f32; 3])],
     pub parts: &'static [Part],
 }
 

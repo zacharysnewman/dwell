@@ -20,7 +20,7 @@
 //!   its fragments within `own_discard_m` of the eye discarded as a safety net. Its shadow is the
 //!   whole body's, cast separately (`cast_only`).
 
-use dwell_characters::anim::{MAX_BONES, Pose, arm_transforms, bone_transforms};
+use dwell_characters::anim::{MAX_BONES, Pose, arm_transforms, bone_transforms, with_item};
 use dwell_characters::math::Affine;
 use dwell_characters::mesh::{self, Mesh};
 use dwell_characters::{BLOCK_MATERIAL, Character, FirstPersonBody, TABLES, TILE, View, own};
@@ -913,7 +913,9 @@ impl CharacterRenderer {
             };
             let casts = casts && own.is_none();
             let far = dist > OUTLINE_M && own.is_none();
-            let posed = bone_transforms(self.character, &d.pose);
+            // The held item's turns on top of the clips (a block carried on an upturned palm).
+            let held_item = item_name(d.held).and_then(|n| self.character.item(n));
+            let posed = bone_transforms(self.character, &with_item(&d.pose, held_item));
             let frame = match own {
                 Some(b) => {
                     let character = self.character;
@@ -962,7 +964,9 @@ impl CharacterRenderer {
         }
         if let Some(a) = arms {
             let frame = arms_frame(basis);
-            let bones = arm_transforms(self.character, &a.pose).map(|b| frame.then(&b));
+            let held_item = item_shown(self.character, a.held).and_then(|n| self.character.item(n));
+            let bones = arm_transforms(self.character, &with_item(&a.pose, held_item))
+                .map(|b| frame.then(&b));
             let instance = push(&bones, a.held, true, true, 0.0, a.light);
             if let Some(l) = light_at(a.held, &bones, 0) {
                 own_light = Some(l);
