@@ -482,6 +482,8 @@ pub struct Game<S: Scene> {
     proxies: HashSet<u16>,
     /// The falling pieces (docs/FELLING.md §3).
     pieces: crate::pieces::Pieces,
+    /// Settled pieces drawn gliding into their blocks' places (docs/FELLING.md §4.1).
+    glides: crate::settle_glide::Glides,
     recent: VecDeque<InputFrame>,
     accumulator: f64,
     last_frame_ms: Option<f64>,
@@ -649,6 +651,7 @@ impl<S: Scene> Game<S> {
             remotes: RemotePlayers::default(),
             proxies: HashSet::default(),
             pieces: crate::pieces::Pieces::default(),
+            glides: crate::settle_glide::Glides::default(),
             recent: VecDeque::new(),
             accumulator: 0.0,
             last_frame_ms: None,
@@ -995,7 +998,15 @@ impl<S: Scene> Game<S> {
                     let changes = self.cell_changes(&v.chunks);
                     self.edit_sounds.changes(&changes, now_ms, &mut self.sounds);
                 }
-                self.streamer.on_voxel_modification(&v.chunks)
+                // A settling piece's blocks: hidden from the terrain while its glide draws them.
+                let settled = (v.reason == dwell_protocol::VoxelModificationReason::Rebake)
+                    .then(|| self.cell_changes(&v.chunks));
+                self.streamer.on_voxel_modification(&v.chunks);
+                if let Some(changes) = settled {
+                    let cells: Vec<_> = changes.iter().map(|c| (c.cell, c.new)).collect();
+                    let hide = self.glides.rebaked(&cells, now_ms);
+                    self.streamer.hide_cells(&hide, true);
+                }
             }
             Message::LodIndex(_) | Message::LodIndexUpdate(_) | Message::LodData(_) => {
                 if let Some(lod) = &mut self.lod {
@@ -1092,9 +1103,16 @@ impl<S: Scene> Game<S> {
                     .set_piece(e.id, Some((&meshes, radius)));
             }
             Message::EntityDespawn(id) => {
-                self.pieces.despawn(id);
+                let settled = self.pieces.despawn(id, now_ms);
                 self.predictor.remove_piece(id);
-                self.scene.borrow_mut().set_piece(id, None);
+                let mut scene = self.scene.borrow_mut();
+                scene.set_piece(id, None);
+                if let Some(piece) = settled {
+                    for (part, cells, mirror) in self.glides.settled(&piece, now_ms) {
+                        let (meshes, radius) = crate::settle_glide::part_meshes(&cells, mirror);
+                        scene.set_piece(part, Some((&meshes, radius)));
+                    }
+                }
             }
             Message::PlayerEvent(e) if e.player_id == self.player_id => {
                 // Ours: hurt, death and respawn sound at once, at the listener.
@@ -2302,7 +2320,16 @@ impl<S: Scene> Game<S> {
             crate::render::flames::portals_near(&self.portals.0, self.portals.1, camera_eye);
         self.scene.borrow_mut().set_portal_motes(motes);
         // The falling pieces, where they are now (interpolated).
-        let poses = self.pieces.poses(now_ms);
+        // And the settled ones gliding into place, handed to the terrain once it draws them.
+        let step = self
+            .glides
+            .step(now_ms, |cells| self.streamer.cells_drawn(cells));
+        self.streamer.hide_cells(&step.show, false);
+        for id in step.remove {
+            self.scene.borrow_mut().set_piece(id, None);
+        }
+        let mut poses = self.pieces.poses(now_ms);
+        poses.extend(self.glides.poses(now_ms));
         self.scene.borrow_mut().show_pieces(poses);
         self.update_day(now_ms);
         self.ambient_sounds(&views, dt);

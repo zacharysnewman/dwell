@@ -25,6 +25,8 @@ export const FELLING_RANGES = {
   hitDamagePerSpeed: [0, 100, false],
   pushableMass: [0, 1e7, false],
   heavyHoldSpeed: [0, 100, false],
+  settleGlideSeconds: [0, 2, false],
+  settleBounce: [0, 1, false],
 };
 
 const fail = (m) => {

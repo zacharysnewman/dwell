@@ -12,6 +12,7 @@ pub mod net;
 pub mod pieces;
 pub mod pool;
 pub mod render;
+pub mod settle_glide;
 pub mod telemetry;
 #[cfg(target_arch = "wasm32")]
 mod web;

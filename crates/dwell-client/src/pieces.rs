@@ -30,6 +30,8 @@ struct Pose {
 
 struct Piece {
     cells: Vec<PieceCell>,
+    /// Its cells' offsets and states (this client's), for its settle glide.
+    blocks: Vec<([i32; 3], StateId)>,
     poses: VecDeque<Pose>,
     /// The block its landings sound like (its first carrier's; 0: riders only, silent).
     block: StateId,
@@ -100,6 +102,7 @@ impl Pieces {
             e.id,
             Piece {
                 cells: boxes,
+                blocks: cells.clone(),
                 poses: VecDeque::from([pose]),
                 block,
                 landed_ms: f64::NEG_INFINITY,
@@ -108,8 +111,17 @@ impl Pieces {
         piece_meshes(&cells)
     }
 
-    pub fn despawn(&mut self, id: u32) {
-        self.map.remove(&id);
+    /// The piece settled (or went): forgotten, and returned as it was drawn at `now_ms` and last
+    /// sent, for its settle glide.
+    pub fn despawn(&mut self, id: u32, now_ms: f64) -> Option<crate::settle_glide::SettledPiece> {
+        let p = self.map.remove(&id)?;
+        let drawn = pose_at(&p.poses, now_ms - players::INTERP_DELAY_MS as f64);
+        let last = p.poses.back()?;
+        Some(crate::settle_glide::SettledPiece {
+            cells: p.blocks,
+            drawn,
+            last: (last.position, last.rotation),
+        })
     }
 
     pub fn ids(&self) -> Vec<u32> {
@@ -217,6 +229,15 @@ fn pose_at(poses: &VecDeque<Pose>, at: f64) -> (DVec3, DQuat) {
 /// apron, so faces between blocks are hidden), the positions moved to be relative to its reference
 /// cell's centre; and how far its cells reach from it (m).
 pub fn piece_meshes(cells: &[([i32; 3], StateId)]) -> (Vec<ChunkMeshes>, f64) {
+    piece_meshes_mirrored(cells, false)
+}
+
+/// [`piece_meshes`], meshed as face B's chunks are (`mirror`: its faces toward face B's up take
+/// the top texture), for blocks drawn where face B's terrain will draw them.
+pub fn piece_meshes_mirrored(
+    cells: &[([i32; 3], StateId)],
+    mirror: bool,
+) -> (Vec<ChunkMeshes>, f64) {
     let n = CHUNK_SIZE;
     let lo = cells.iter().fold([i32::MAX; 3], |a, (o, _)| {
         std::array::from_fn(|k| a[k].min(o[k]))
@@ -246,7 +267,7 @@ pub fn piece_meshes(cells: &[([i32; 3], StateId)]) -> (Vec<ChunkMeshes>, f64) {
     let mut keys: Vec<[i32; 3]> = blocks.keys().copied().collect();
     keys.sort_unstable();
     for b in keys {
-        let Ok(mut meshes) = mesh_chunk(&blocks[&b], false) else {
+        let Ok(mut meshes) = mesh_chunk(&blocks[&b], mirror) else {
             continue;
         };
         // Block-local metres → the piece's frame (its reference cell's centre at the origin).

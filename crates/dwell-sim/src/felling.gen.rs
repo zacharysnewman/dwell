@@ -17,4 +17,6 @@ pub const FELLING: FellingData = FellingData {
     hit_damage_per_speed: 6.0,
     pushable_mass: 400.0,
     heavy_hold_speed: 1.0,
+    settle_glide_seconds: 0.3,
+    settle_bounce: 0.12,
 };

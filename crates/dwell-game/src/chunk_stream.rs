@@ -392,6 +392,56 @@ const NEIGHBOURS: [Coord; 6] = [
 /// Mesh jobs in flight at once when the mesher does not say.
 pub const DEFAULT_MESH_JOBS: usize = 8;
 
+/// The chunks whose mesh block (the chunk and `dwell_world::SKY_APRON` round it) holds world
+/// `cell`.
+fn chunks_holding(cell: [i32; 3]) -> Vec<Coord> {
+    let n = CHUNK_SIZE;
+    let apron = dwell_world::SKY_APRON;
+    let home = cell.map(|v| v.div_euclid(n));
+    let local = cell.map(|v| v.rem_euclid(n));
+    let sides = |a: usize| {
+        [
+            (local[a] < apron[a]).then_some(-1),
+            Some(0),
+            (local[a] >= n - apron[a]).then_some(1),
+        ]
+    };
+    let mut out = Vec::new();
+    for dz in sides(2).into_iter().flatten() {
+        for dy in sides(1).into_iter().flatten() {
+            for dx in sides(0).into_iter().flatten() {
+                out.push(add(home, [dx, dy, dz]));
+            }
+        }
+    }
+    out
+}
+
+/// A chunk's mesh block (the one-voxel padded block, or the sky apron's) with the `hidden` world
+/// cells in it as air.
+fn mask_hidden(hidden: &HashSet<[i32; 3]>, coord: Coord, mut block: Vec<u16>) -> Vec<u16> {
+    if hidden.is_empty() {
+        return block;
+    }
+    let n = CHUNK_SIZE;
+    let apron = if block.len() == PADDED_VOLUME {
+        [1; 3]
+    } else {
+        dwell_world::SKY_APRON
+    };
+    let ext = apron.map(|a| n + 2 * a);
+    if block.len() != (ext[0] * ext[1] * ext[2]) as usize {
+        return block;
+    }
+    for h in hidden {
+        let l: [i32; 3] = std::array::from_fn(|k| h[k] - coord[k] * n + apron[k]);
+        if (0..3).all(|k| (0..ext[k]).contains(&l[k])) {
+            block[(l[0] + ext[0] * (l[2] + ext[2] * l[1])) as usize] = 0;
+        }
+    }
+    block
+}
+
 fn add(a: Coord, b: Coord) -> Coord {
     [a[0] + b[0], a[1] + b[1], a[2] + b[2]]
 }
@@ -416,6 +466,9 @@ impl DirtySet {
     }
     fn len(&self) -> usize {
         self.order.len()
+    }
+    fn contains(&self, c: &Coord) -> bool {
+        self.order.contains_key(c)
     }
     fn in_order(&self) -> Vec<Coord> {
         let mut v: Vec<_> = self.order.iter().map(|(&c, &i)| (i, c)).collect();
@@ -474,6 +527,12 @@ pub struct ChunkStreamer<S, G, M: Mesher, V> {
     unlit_set: HashSet<Coord>,
     /// Lit and meshed after the near ring, before the rest (`set_second_centre`).
     second: Option<SecondCentre>,
+    /// World cells meshed as air while held here (`hide_cells`): a settling piece's blocks while
+    /// its glide draws them (docs/FELLING.md §4). The world holds them (collision, targeting).
+    hidden: HashSet<[i32; 3]>,
+    /// Chunks whose mesh job in flight began before a cell in them was hidden or shown: its result
+    /// is dropped (the chunk is dirty again).
+    stale: HashSet<Coord>,
     /// First worldgen failure (the workers are unusable).
     pub error: Option<String>,
 }
@@ -516,6 +575,8 @@ where
             unlit: Default::default(),
             unlit_set: HashSet::default(),
             second: None,
+            hidden: HashSet::default(),
+            stale: HashSet::default(),
             error: None,
         }
     }
@@ -780,7 +841,7 @@ where
             self.dirty.remove(&c);
             self.token += 1;
             self.meshing.insert(c, self.token);
-            let padded = self.store.mesh_block(c);
+            let padded = mask_hidden(&self.hidden, c, self.store.mesh_block(c));
             let light = self.store.mesh_light(c);
             self.mesher.mesh(MeshJob {
                 coord: c,
@@ -803,12 +864,48 @@ where
             return; // unloaded or superseded meanwhile
         }
         self.meshing.remove(&coord);
+        if self.stale.remove(&coord) {
+            return; // a cell in it was hidden or shown since: meshed again
+        }
         if !self.loaded.contains_key(&coord) || self.air.contains(&coord) {
             return;
         }
         self.view
             .set_terrain_chunk(coord, coord.map(|c| c * CHUNK_SIZE), Some(meshes));
         self.meshed.insert(coord);
+    }
+
+    /// Leaves world `cells` out of the terrain meshes (`hide`), or draws them again: the chunks
+    /// whose mesh block holds one mesh again, and a job in flight for one is dropped.
+    pub fn hide_cells(&mut self, cells: &[[i32; 3]], hide: bool) {
+        for &c in cells {
+            let changed = if hide {
+                self.hidden.insert(c)
+            } else {
+                self.hidden.remove(&c)
+            };
+            if !changed {
+                continue;
+            }
+            for k in chunks_holding(c) {
+                if self.loaded.contains_key(&k) && !self.air.contains(&k) {
+                    self.dirty.mark(k);
+                    if self.meshing.contains_key(&k) {
+                        self.stale.insert(k);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Whether the terrain draws `cells` as they are now: the chunk holding each has no mesh job
+    /// waiting or in flight (or isn't drawn here).
+    pub fn cells_drawn(&self, cells: &[[i32; 3]]) -> bool {
+        cells.iter().all(|c| {
+            let k = c.map(|v| v.div_euclid(CHUNK_SIZE));
+            !self.loaded.contains_key(&k)
+                || !(self.dirty.contains(&k) || self.meshing.contains_key(&k))
+        })
     }
 
     pub fn stats(&self) -> StreamStats {
@@ -1141,6 +1238,8 @@ mod tests {
         lit: Vec<Coord>,
         /// Each `unload_chunks` call: (stored, air).
         unloads: Vec<(Vec<Coord>, Vec<Coord>)>,
+        /// What every padded block holds.
+        fill: u16,
     }
     impl ChunkStore for FakeStore {
         fn keeps_light(&self) -> bool {
@@ -1177,7 +1276,7 @@ mod tests {
         }
         fn padded_chunk(&mut self, coord: Coord) -> Vec<u16> {
             self.meshed_from.push(coord);
-            vec![0; PADDED_VOLUME]
+            vec![self.fill; PADDED_VOLUME]
         }
     }
 
@@ -1671,6 +1770,43 @@ mod tests {
         s.on_voxel_modification(&[modification([0, 0, 0], 8, &[0, 3])]);
         assert_eq!(s.store().edits.len(), 2);
         assert_eq!(s.revision([0, 0, 0]), Some(8));
+    }
+
+    #[test]
+    fn hidden_cells_mesh_as_air_until_shown_and_a_job_in_flight_is_dropped() {
+        // docs/FELLING.md §4.1: a settling piece's blocks are left out of the terrain meshes while
+        // its glide draws them; the world (and so collision) holds them all along.
+        let (mut s, _) = setup();
+        s.store_mut().fill = 7;
+        s.on_chunk_data(explicit([0, 0, 0], 0, 0));
+        s.mesh_dirty([0.0; 3], 100.0, 100.0, no_clock);
+        // A job in flight when a cell is hidden: its result (unmasked) is dropped.
+        s.on_voxel_modification(&[modification([0, 0, 0], 1, &[0, 2])]);
+        flush(&mut s);
+        s.mesh_dirty([0.0; 3], 100.0, 100.0, no_clock);
+        assert_eq!(s.mesher_mut().jobs.len(), 1);
+        let cell = [3, 4, 5];
+        s.hide_cells(&[cell], true);
+        assert!(!s.cells_drawn(&[cell]));
+        flush(&mut s);
+        assert!(
+            !s.cells_drawn(&[cell]),
+            "the dropped job's chunk meshes again"
+        );
+        s.mesh_dirty([0.0; 3], 100.0, 100.0, no_clock);
+        let job = s.mesher_mut().jobs.pop().expect("a job");
+        assert_eq!(job.padded[padded_index(3, 4, 5)], 0, "hidden: air");
+        assert_eq!(job.padded[padded_index(3, 4, 6)], 7, "the rest as stored");
+        s.on_meshed(job.coord, job.token, ());
+        assert!(s.cells_drawn(&[cell]));
+        // Shown again: meshed with it.
+        s.hide_cells(&[cell], false);
+        assert!(!s.cells_drawn(&[cell]));
+        s.mesh_dirty([0.0; 3], 100.0, 100.0, no_clock);
+        let job = s.mesher_mut().jobs.pop().expect("a job");
+        assert_eq!(job.padded[padded_index(3, 4, 5)], 7);
+        s.on_meshed(job.coord, job.token, ());
+        assert!(s.cells_drawn(&[cell]));
     }
 
     #[test]
