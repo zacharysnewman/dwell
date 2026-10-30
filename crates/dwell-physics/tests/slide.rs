@@ -433,9 +433,11 @@ fn the_slide_reaches_its_terminal_speed_and_a_crouched_slide_is_faster_and_lower
 
 #[test]
 fn jumping_off_a_slide_keeps_the_downhill_momentum() {
+    // The jump goes out along the face's normal, added to the slide (owner, 2026-10-30): it rises
+    // little, so it starts high enough up the ramp to stay clear of the floor for the check.
     let mut w = PlayerTestWorld::new();
     long_ramp(&mut w);
-    let z0 = 14.0;
+    let z0 = 19.0;
     let e = w.spawn(v(0.5, long_ramp_y(z0) + 0.05, z0));
     let jump_at = ticks(0.7);
     w.set_input(move |t, _| input(0.0, 0.0, false, t == jump_at, false, 0.0, 0.0));
