@@ -27,6 +27,7 @@ export const FELLING_RANGES = {
   heavyHoldSpeed: [0, 100, false],
   settleGlideSeconds: [0, 2, false],
   settleBounce: [0, 1, false],
+  terrainChunksPerTick: [1, 4096, true],
 };
 
 const fail = (m) => {

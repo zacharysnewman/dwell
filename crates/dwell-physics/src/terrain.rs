@@ -386,6 +386,51 @@ impl TerrainCollision {
         }
     }
 
+    /// Loads the chunks the `boxes` (world metres) overlap, at most `budget` new ones, nearest their
+    /// box's centre first (then in a fixed order, so every run builds the same); the rest wait for
+    /// the next call. Returns how many it built.
+    pub fn ensure_boxes_within(
+        &mut self,
+        physics: &mut Physics,
+        world: &mut VoxelWorld,
+        boxes: &[(DVec3, DVec3)],
+        budget: usize,
+    ) -> usize {
+        let mut missing: Vec<(f64, ChunkCoord)> = Vec::new();
+        for &(lo, hi) in boxes {
+            let centre = (lo + hi) * 0.5;
+            let a = chunk_of_pos(lo.to_array());
+            let b = chunk_of_pos(hi.to_array());
+            for cy in a.y.max(MIN_CHUNK_Y)..=b.y.min(MAX_CHUNK_Y) {
+                for cz in a.z..=b.z {
+                    for cx in a.x..=b.x {
+                        let c = ChunkCoord::new(cx, cy, cz);
+                        if self.chunks.contains_key(&c) {
+                            continue;
+                        }
+                        let m = DVec3::from_array(dwell_world::chunk_centre_m(c));
+                        missing.push(((m - centre).length_squared(), c));
+                    }
+                }
+            }
+        }
+        missing.sort_by(|a, b| {
+            a.0.total_cmp(&b.0)
+                .then((a.1.y, a.1.z, a.1.x).cmp(&(b.1.y, b.1.z, b.1.x)))
+        });
+        let mut built = 0;
+        for (_, c) in missing {
+            if built >= budget {
+                break;
+            }
+            if !self.chunks.contains_key(&c) {
+                self.load(physics, world, c);
+                built += 1;
+            }
+        }
+        built
+    }
+
     /// Rebuilds the loaded chunks whose collision the world has changed: the chunk itself or any
     /// chunk around it (edits, streamed or replaced chunks). An unmodified chunk the world evicted
     /// reads the same when regenerated; rebuilding anyway is the simple, safe path.

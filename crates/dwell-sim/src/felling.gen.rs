@@ -19,4 +19,5 @@ pub const FELLING: FellingData = FellingData {
     heavy_hold_speed: 1.0,
     settle_glide_seconds: 0.3,
     settle_bounce: 0.12,
+    terrain_chunks_per_tick: 4,
 };

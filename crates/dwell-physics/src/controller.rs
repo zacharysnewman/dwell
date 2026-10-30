@@ -468,6 +468,8 @@ pub struct Players {
     /// Boxes (world metres) whose terrain collision other bodies need this tick (falling pieces,
     /// docs/FELLING.md): loaded with the players', and kept while asked for.
     terrain_boxes: Vec<(DVec3, DVec3)>,
+    /// The most new terrain chunks built a tick for `terrain_boxes`.
+    terrain_boxes_per_tick: usize,
     ticks: u32,
     ring: [Vec3; RING_RAYS],
 }
@@ -479,6 +481,7 @@ impl Players {
             players: Vec::new(),
             terrain: terrain.then(|| TerrainCollision::new(physics)),
             terrain_boxes: Vec::new(),
+            terrain_boxes_per_tick: usize::MAX,
             ticks: 0,
             ring: ring(),
         }
@@ -759,17 +762,23 @@ impl Players {
 
     /// The boxes (world metres) whose terrain collision other bodies need from the next tick on
     /// (each falling piece's, docs/FELLING.md): loaded with the players' and kept while they are
-    /// asked for, so a piece far from every player still meets the ground.
-    pub fn set_terrain_boxes(&mut self, boxes: Vec<(DVec3, DVec3)>) {
+    /// asked for, so a piece far from every player still meets the ground. At most `per_tick`
+    /// new chunks a tick are built for them, nearest their box's centre first, so a long piece's
+    /// ground loads over a few ticks rather than stalling one.
+    pub fn set_terrain_boxes(&mut self, boxes: Vec<(DVec3, DVec3)>, per_tick: u32) {
         self.terrain_boxes = boxes;
+        self.terrain_boxes_per_tick = per_tick as usize;
     }
 
     /// Runs the pipeline (§4) for every player. Call before the physics step.
     pub fn tick(&mut self, world: &mut VoxelWorld, physics: &mut Physics) {
         if let Some(terrain) = &mut self.terrain {
-            for &(lo, hi) in &self.terrain_boxes {
-                terrain.ensure_box(physics, world, lo, hi);
-            }
+            terrain.ensure_boxes_within(
+                physics,
+                world,
+                &self.terrain_boxes,
+                self.terrain_boxes_per_tick,
+            );
             for p in self.players.iter().flatten() {
                 let pos = physics.position(p.body);
                 // Capped: fast flight must not ask for kilometres of collision.

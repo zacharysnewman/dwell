@@ -65,6 +65,12 @@ carriers and riders around the change, budgeted per tick (`INTEGRITY_BUDGET_VOXE
   owner, 2026-10-28: detached leaves "become solid to blocks when detached from the tree, falling
   down to the ground, settling", non-solid to players always). The terrain collision covers every
   piece's box, leaves-only ones too (red before: they fell through the world far from players).
+  The box is the piece's own bounds at its pose, grown by two ticks' travel of its farthest point
+  and a margin, and at most `terrainChunksPerTick` (4) new chunks are built a tick, nearest the
+  box's centre first (owner, 2026-10-30: a 40-log column cut at its foot stalled the game). It had
+  been a cube round the reference cell as wide as twice the piece's reach: 44 m across for a
+  20 m trunk, its cut's tick 19 ms natively (137 ms for 80 logs), now about 1 ms
+  (`cutting_a_tall_trunk_loads_terrain_collision_round_it_…`).
 - **Players:** pushed by it (as by any Tier 1 body, PLAYER_CONTROLLER.md §6.6); pushing it back
   only while it is lighter than `pushableMass` — a heavier piece is held from players' pushes
   (Rapier's dominance group) while it moves slower than `heavyHoldSpeed` (held while falling fast,
@@ -133,7 +139,7 @@ failing on stale output): `riderReach` (cells, 6), `maxSystemCells` (16384), `ma
 (4096), `toppleSpin` (0.6 rad/s), `sleepLinear` / `sleepAngular` (0.05), `sleepSeconds` (2),
 `maxSeconds` (30), `maxSettles` (3), `hitSpeed` (4 m/s),
 `hitDamagePerSpeed` (6), `pushableMass` (400 kg), `heavyHoldSpeed` (1 m/s), `settleGlideSeconds`
-(0.3 s) and `settleBounce` (0.12, §4.1). Sounds
+(0.3 s) and `settleBounce` (0.12, §4.1), `terrainChunksPerTick` (4, §3). Sounds
 (`shared/sounds/dwell.json`): `fell` (the crack, `fell_crack`, as a carrying piece spawns) and
 `piece_land` (the block's `land` sound when a piece's velocity changes by over 2 m/s between
 snapshots, at most every 250 ms).
