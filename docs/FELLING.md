@@ -136,7 +136,11 @@ Block data: `support` (`ground` | `carrier` | `rider` | `falls`), `passable`, `d
 (`y` | `x` | `z`, its texture turned by it). Felling tunables (`shared/physics/felling.json`,
 generated into `crates/dwell-sim/src/felling.gen.rs` by `shared/physics/gen.mjs`, validated, CI
 failing on stale output): `riderReach` (cells, 6), `maxSystemCells` (16384), `maxPieceCells`
-(4096), `toppleSpin` (0.6 rad/s), `sleepLinear` / `sleepAngular` (0.05), `sleepSeconds` (2),
+(4096), `toppleSpin` (0.6 rad/s) and `toppleTipSpeed` (4 m/s: the spin is about the piece's foot,
+the face-local bottom under its centre of mass, so the foot starts still, and at most this fast at
+its farthest point; owner, 2026-10-30: 40–120 log trunks "flip out", spun about their centre of mass
+the foot of a 60 m one skidded back at 18 m/s; on face B the old spin tipped toward the cutter,
+`a_tall_trunk_tips_about_its_foot_away_from_who_cut_it`), `sleepLinear` / `sleepAngular` (0.05), `sleepSeconds` (2),
 `maxSeconds` (30), `maxSettles` (3), `hitSpeed` (4 m/s),
 `hitDamagePerSpeed` (6), `pushableMass` (400 kg), `heavyHoldSpeed` (1 m/s), `settleGlideSeconds`
 (0.3 s) and `settleBounce` (0.12, §4.1), `terrainChunksPerTick` (4, §3). Sounds
