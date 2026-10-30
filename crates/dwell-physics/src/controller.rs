@@ -1018,7 +1018,14 @@ impl Players {
             } else {
                 0.0
             };
-            let rising = c.vertical.accumulated_y > ground_vy + RISING_MARGIN;
+            // Or, after a jump, leaving the ground along its normal: a jump off a steep face goes
+            // out more than up (§6.8), and the face is still within the probe's reach.
+            let leaving = c.jump.jumping && {
+                let v = c.horizontal.contribution - flat(c.platform.base_velocity)
+                    + Vec3::Y * (c.vertical.accumulated_y - ground_vy);
+                v.dot(hit.normal) > RISING_MARGIN
+            };
+            let rising = c.vertical.accumulated_y > ground_vy + RISING_MARGIN || leaving;
             g.grounded = walkable && (!rising || g.was_grounded);
         } else {
             g.grounded = false;
@@ -1155,6 +1162,34 @@ impl Players {
         } else if !p.c.input.crouch && p.c.crouching {
             try_stand(world, physics, p);
         }
+        Self::land_into_slide(p);
+    }
+
+    /// Landing crouched slides on (◆ Dwell, owner 2026-10-30: "sliding should continue from midair
+    /// like jumping, falling when crouch is held on landing"): crouch held on the tick the player
+    /// lands, moving at least `min_start_speed` across the ground (a fall straight down doesn't
+    /// slide), from a fall, a bounce or a jump out of a slide alike. A continuation: no start
+    /// boost, no run needed, and the cooldown doesn't hold it back.
+    fn land_into_slide(p: &mut Player) {
+        let s = p.cfg.sprint_slide;
+        let c = &mut p.c;
+        if !c.crouching
+            || !c.input.crouch
+            || !c.ground.grounded
+            || c.ground.was_grounded
+            || c.sprint_slide.active
+        {
+            return;
+        }
+        let base = flat(c.platform.base_velocity);
+        let v = c.horizontal.current + c.horizontal.external - base;
+        if v.length() < s.min_start_speed {
+            return;
+        }
+        c.horizontal.current = v + base;
+        c.horizontal.external = Vec3::ZERO;
+        c.sprint_slide.active = true;
+        c.events |= events::SPRINT_SLIDE_STARTED;
     }
 
     /// The sprint slide (◆ Dwell, §6.9) starts on the tick crouch is pressed on the ground while
@@ -1281,7 +1316,18 @@ impl Players {
             p.c.jump.buffer_ticks = p.cfg.jump.buffer_ticks;
         }
         if (grounded || p.c.jump.coyote_ticks > 0) && p.c.jump.buffer_ticks > 0 {
+            let steep = grounded && p.c.sliding(p.cfg.slide.min_angle);
+            let body = Self::vel(physics, p);
             Self::perform_jump(p);
+            if steep {
+                // Off a face too steep to walk: the jump is added to the velocity the player has,
+                // out along the face's normal (owner, 2026-10-30: "angled out along the slope face
+                // angle", forces additive), so a run of steep blocks can't be jumped straight up.
+                let n = p.c.ground.under_normal;
+                let j = p.cfg.jump_velocity();
+                p.c.vertical.accumulated_y = body.y + n.y * j;
+                p.c.horizontal.external += flat(n) * j;
+            }
         } else if p.cfg.movement.auto_jump && grounded && !p.c.crouching {
             let center = Self::pos(physics, p);
             let vq = VoxelQuery::new(world, physics);
@@ -2051,11 +2097,20 @@ impl Players {
         };
         let input = c.input;
         let move_dir = move_direction(&input);
-        let speed = Self::walk_speed(c, &cfg);
-        let player_target = move_dir * speed;
         // Accelerate in the platform's frame so standing on a moving body needs no input.
         let base = flat(c.platform.base_velocity);
         let relative = c.horizontal.current - base;
+        let speed = if !grounded && c.crouching {
+            // Crouching in the air doesn't slow the player (owner, 2026-10-30): the speed they
+            // have, between the crouch speed and the uncrouched one.
+            let standing = if input.run { m.run_speed } else { m.walk_speed };
+            relative
+                .length()
+                .clamp(cfg.crouch.speed, standing.max(cfg.crouch.speed))
+        } else {
+            Self::walk_speed(c, &cfg)
+        };
+        let player_target = move_dir * speed;
         let relative_delta = player_target - relative;
         let dot = if relative.length() > MIN_DIRECTION && player_target.length() > MIN_DIRECTION {
             normalized(relative).dot(normalized(player_target))

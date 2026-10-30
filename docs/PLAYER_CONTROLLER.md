@@ -160,8 +160,8 @@ The server tick (ARCHITECTURE §4.2) runs, for every player, **before** `Physics
 | 2 | `step_probe` | `PPCProbeSystem` | Ground ring (16 + centre), ceiling ring, 4 axis wall rays via `VoxelQuery` + moving bodies (§5) |
 | 3 | `step_platform` | `PPCPlatformSystem` | Velocity of the ground under the player (`v + ω × r` for Tier 1 bodies; zero for terrain; zero for players unless `carried_by_characters`) |
 | 4 | `step_fly` | — (Dwell) | Exclusive creative-flight layer while `fly` is held (§6.7) |
-| 5 | `step_crouch` | `PPCCrouchSystem` | Hold-to-crouch; shape swap; feet planted when grounded, head kept in the air; stand-up overlap test; the sprint slide's cooldown and start (§6.9) |
-| 6 | `step_jump` | `PPCJumpSystem` | Buffer + coyote (in ticks); `accumulated_y = max(accumulated_y, jump_v + platform_y)`; no coyote after a real jump; auto-jump (§6.2) |
+| 5 | `step_crouch` | `PPCCrouchSystem` | Hold-to-crouch; shape swap; feet planted when grounded, head kept in the air; stand-up overlap test; the sprint slide's cooldown and start, and its start on landing crouched (§6.9) |
+| 6 | `step_jump` | `PPCJumpSystem` | Buffer + coyote (in ticks); `accumulated_y = max(accumulated_y, jump_v + platform_y)`, or off ground steeper than `slide.min_angle` the jump added along its normal (§6.8); no coyote after a real jump; auto-jump (§6.2) |
 | 7 | `step_climb` | `PPCClimbSystem` | Exclusive layer on climbable voxels (§6.3); not while flying |
 | 8 | `step_swim` | — (Dwell) | Exclusive layer in water voxels (§6.4) and in the flip band (§11); not while climbing or flying |
 | 9 | `step_horizontal` | `PPCMovementLayerSystem` | Absorb external; on ground steeper than 44° the slide (§6.8); else during a sprint slide the sprint slide (§6.9); else accel/decel/reverse in the platform's frame; air control; step-up; edge guard |
@@ -555,7 +555,13 @@ data (`PlayerControllerConfig::slide`, §7).
   its foot at most). **Crouching** slides lower (the crouched capsule), with `crouch_friction` 0.2
   and the terminal speed × `crouch_terminal_factor` (1.15). The **step-up** never steps onto
   ground steeper than `min_angle`, and a sliding player does not step at all. **Jumping** off a
-  slide is a normal jump. **Ladders and water** override sliding (exclusive layers).
+  slide (ground steeper than `min_angle`) is **added** to the velocity the player has, out along the
+  face's normal (`under_normal × jump_velocity`: its up part to the vertical, its level part to
+  `external`), not a jump straight up that replaces the vertical (owner, 2026-10-30: "angled out
+  along the slope face angle", "forces are additive"; so a run of steep blocks can't be jumped up;
+  `a_jump_off_a_steep_slope_adds_the_jump_along_its_face`). Such a jump rises little, so after a
+  jump the ground check counts leaving the ground along its normal as airborne too, not only
+  rising (else the face, still within the probe's reach, caught the player the next tick). **Ladders and water** override sliding (exclusive layers).
 - **The ramp's foot** (the half-height playtest, 2026-10-20). Walking into a 45° face
   from below, the ground ring's highest hit is the ramp while the centre still stands on the floor:
   the ground following climbed the ramp's face (and the solver turned the drive into the face into
@@ -604,6 +610,16 @@ Fortnite-style. The numbers below are defaults chosen for this, all data
   not yet up to speed, only crouches), not climbing, swimming or flying, and the cooldown over.
   The speed gains `start_boost` (1.5 m/s; never above `max_speed` unless already faster), all of it
   the player's own `current`. `SPRINT_SLIDE_STARTED` is raised.
+- **Landing crouched** (owner, 2026-10-30: "sliding should continue from midair like jumping,
+  falling when crouch is held on landing"). On the tick the player lands crouched with crouch held
+  and at least `min_start_speed` across the ground, the slide starts too: from a fall, a bounce or
+  a jump out of a slide alike. A fall straight down doesn't slide. It is a continuation: no start
+  boost, no run needed, and the cooldown doesn't hold it back (`land_into_slide`;
+  `landing_with_crouch_held_while_moving_slides`, `a_jump_out_of_a_slide_with_crouch_held_…`,
+  `falling_straight_down_with_crouch_held_does_not_slide`).
+- **Crouching in the air** doesn't slow the player (owner, 2026-10-30): airborne and crouched, the
+  air control steers toward the speed the player has, between the crouch speed and the uncrouched
+  walk or run speed, not toward the crouch speed (`crouching_in_the_air_keeps_the_speed_you_had`).
 - **The crouch.** The slide is a crouch: the crouch capsule (0.9 m) and the crouch eye height
   throughout; crouch must stay held. Releasing it ends the slide and stands up only where the
   standing capsule fits, as crouch always does, so under a low ceiling the player stays crouched

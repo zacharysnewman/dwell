@@ -278,7 +278,8 @@ fn a_jump_out_of_a_slide_keeps_its_momentum() {
         }
         assert_eq!(w.count(e, events::JUMPED), 1);
         if sprint {
-            assert!(!w.c(e).sprint_slide.active);
+            // Crouch still held: it slides on where it lands (owner, 2026-10-30).
+            assert!(w.c(e).sprint_slide.active);
             assert_eq!(w.count(e, events::SPRINT_SLIDE_ENDED), 1);
             assert!(
                 min_speed > at - 0.05,
@@ -369,5 +370,152 @@ fn a_wall_stops_a_slide() {
         c.horizontal.external.length() < 0.05,
         "{}",
         c.horizontal.external
+    );
+}
+
+// --- Owner, 2026-10-30: crouching in the air, sliding on landing, jumping off a steep slope ---
+
+/// Runs +z on a 2 m platform (z < −9) and off its edge at the run speed: returns the player once
+/// airborne past the edge, `crouch` held from then on.
+fn run_off_a_ledge(w: &mut PlayerTestWorld, crouch: bool) -> u32 {
+    w.floor_at(0, 64);
+    w.fill(-4, 0, -40, 4, 1, -10, cube_block());
+    let e = w.spawn(v(0.5, 2.0, -30.0));
+    w.set_input(|_, _| input(0.0, 1.0, true, false, false, 0.0, 0.0));
+    for _ in 0..ticks(6.0) {
+        w.step(1);
+        if !w.c(e).ground.grounded && w.pos(e).z > -9.0 {
+            break;
+        }
+    }
+    assert!(!w.c(e).ground.grounded, "off the edge");
+    w.set_input(move |_, _| input(0.0, 1.0, true, false, crouch, 0.0, 0.0));
+    e
+}
+
+#[test]
+fn crouching_in_the_air_keeps_the_speed_you_had() {
+    // Owner: "crouching shouldn't slow your in air velocity". Before, the air control steered the
+    // speed toward the crouch speed (1.6 m/s) for the rest of the fall.
+    let mut w = PlayerTestWorld::new();
+    let e = run_off_a_ledge(&mut w, true);
+    let at = w.horizontal_speed(e);
+    assert!(at > 7.0, "running off the edge: {at}");
+    let mut slowest = f32::MAX;
+    w.step(1);
+    while !w.c(e).ground.grounded {
+        slowest = slowest.min(w.horizontal_speed(e));
+        w.step(1);
+    }
+    assert!(w.c(e).crouching);
+    assert!(
+        slowest > at - 0.1,
+        "kept {slowest} of {at} m/s crouched in the air"
+    );
+}
+
+#[test]
+fn landing_with_crouch_held_while_moving_slides() {
+    // Owner: "sliding should continue from midair … falling when crouch is held on landing", with
+    // horizontal speed (a fall straight down doesn't slide).
+    let mut w = PlayerTestWorld::new();
+    let e = run_off_a_ledge(&mut w, true);
+    assert_eq!(w.count(e, events::SPRINT_SLIDE_STARTED), 0);
+    while !w.c(e).ground.grounded {
+        w.step(1);
+    }
+    w.step(2);
+    assert!(w.c(e).sprint_slide.active, "slid on landing");
+    assert_eq!(w.count(e, events::SPRINT_SLIDE_STARTED), 1);
+    // Not crouching: lands running.
+    let mut w = PlayerTestWorld::new();
+    let e = run_off_a_ledge(&mut w, false);
+    w.step(ticks(1.0));
+    assert!(!w.c(e).sprint_slide.active);
+}
+
+#[test]
+fn a_jump_out_of_a_slide_with_crouch_held_slides_on_where_it_lands() {
+    let mut w = PlayerTestWorld::new();
+    w.floor_at(0, 64);
+    let e = w.spawn(v(0.5, 0.0, -50.0));
+    let jump = 75;
+    w.set_input(move |t, _| {
+        input(
+            0.0,
+            1.0,
+            true,
+            (jump..jump + 2).contains(&t),
+            t >= 60,
+            0.0,
+            0.0,
+        )
+    });
+    w.step(jump + 2);
+    assert!(!w.c(e).ground.grounded, "jumped");
+    assert_eq!(w.count(e, events::SPRINT_SLIDE_STARTED), 1);
+    while !w.c(e).ground.grounded {
+        w.step(1);
+    }
+    let landed = w.horizontal_speed(e);
+    w.step(2);
+    assert!(w.c(e).sprint_slide.active, "slid on landing");
+    assert_eq!(w.count(e, events::SPRINT_SLIDE_STARTED), 2);
+    // A continuation: no second start boost.
+    assert!(
+        w.horizontal_speed(e) <= landed + 0.05,
+        "{} after {landed}",
+        w.horizontal_speed(e)
+    );
+}
+
+#[test]
+fn falling_straight_down_with_crouch_held_does_not_slide() {
+    let mut w = PlayerTestWorld::new();
+    w.floor_at(0, 16);
+    let e = w.spawn(v(0.5, 3.0, 0.5));
+    w.set_input(|_, _| input(0.0, 0.0, true, false, true, 0.0, 0.0));
+    w.step(ticks(2.0));
+    assert!(w.c(e).ground.grounded);
+    assert_eq!(w.count(e, events::SPRINT_SLIDE_STARTED), 0);
+}
+
+#[test]
+fn a_jump_off_a_steep_slope_adds_the_jump_along_its_face() {
+    // Owner: jumping from a steep slope "should be angled out along the slope face angle" and add
+    // to the velocity the player has ("forces are additive"), not replace it. A 45° face (steeper
+    // than `slide.min_angle`, 44°: it slides) rising to +z: its normal leans to −z.
+    let degrees = 45.0f32;
+    let mut w = PlayerTestWorld::new();
+    let a = degrees.to_radians();
+    w.boxed(
+        v(0.5, 0.0, 0.0),
+        v(10.0, 0.5, 40.0),
+        euler(f64::from(-degrees), 0.0, 0.0),
+        Vec3::ZERO,
+        0.0,
+    );
+    let surface_y = |z: f32| 0.5 * a.cos() + (z + 0.5 * a.sin()) * a.tan();
+    let e = w.spawn(v(0.5, surface_y(10.0) + 0.05, 10.0));
+    let jump = 40;
+    w.set_input(move |t, _| input(0.0, 0.0, false, t == jump, false, 0.0, 0.0));
+    w.step(jump);
+    assert!(w.c(e).sliding(44.0), "sliding down the face");
+    let before = w.vel(e);
+    w.step(1);
+    let after = w.vel(e);
+    assert_eq!(w.count(e, events::JUMPED), 1);
+    let j = dwell_physics::config::PlayerControllerConfig::default().jump_velocity();
+    let n = Vec3::new(0.0, a.cos(), -a.sin());
+    let added = after - before;
+    // Along the face's normal (gravity takes a tick's 0.33 m/s off y).
+    assert!(
+        (added - n * j).length() < 0.6,
+        "added {added:?}, the jump along the normal is {:?} (before {before:?})",
+        n * j
+    );
+    assert!(
+        after.z < before.z - 0.5 * j * a.sin(),
+        "out from the face: {after:?}"
     );
 }

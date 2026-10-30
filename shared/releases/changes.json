@@ -2,6 +2,14 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions card. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.40.7",
+      "changes": [
+        "Crouching in the air no longer slows you down",
+        "Landing with crouch held while moving slides on, from a fall or a jump out of a slide",
+        "Jumping off a steep slope pushes you out from its face and adds to your speed"
+      ]
+    },
+    {
       "version": "0.40.6",
       "changes": [
         "Very tall trees and columns tip over from their base instead of flipping out",
