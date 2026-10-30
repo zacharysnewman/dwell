@@ -96,6 +96,29 @@ When a piece has moved less than `SLEEP_LINEAR_THRESHOLD` / `SLEEP_ANGULAR_THRES
    carriers then pass through integrity again (a log left resting only on leaves falls again; a
    piece that settles three times without anchoring stays where it is).
 
+### 4.1 The settle glide (clients; owner, 2026-10-29)
+
+"No visual teleporting" between a piece's resting pose and its blocks. Owner's answers: **visual
+only** (the server writes the blocks at once, so collision and targeting have them at once);
+**settle with a small bounce**; the **snap to the grid and moved cells** glide (cells lost at
+settling simply go); **one setting in `felling.json`** (`settleGlideSeconds`, `settleBounce`), the
+same for every block.
+
+- **Hidden while gliding:** a `Rebake` modification's cells are left out of the terrain meshes
+  (`ChunkStreamer::hide_cells`: meshed as air, and a mesh job in flight for one is dropped). The
+  world holds them. A cell no piece claims within 0.5 s is drawn again.
+- **Where each cell went:** at the piece's `EntityDespawn` the client resamples its cells the
+  server's way (`felling::resample` at `snap` of its latest pose). It takes the lift (0–2 rows)
+  that most cells were written at. A falling-role cell written beside its spot (sand that slid off
+  a player) is a part of its own. Nothing is added to the wire.
+- **The glide:** each part's blocks, meshed as the terrain will mesh them (face B's mirrored), are
+  drawn from where the piece was drawn (the rigid move from its settled pose to its drawn pose) to
+  their cells over `settleGlideSeconds`. The easing is "back" ease-out, swinging `settleBounce` of
+  the move past the end. Then the cells are drawn by the terrain again, and the glide's meshes go
+  once the terrain has meshed them (at most 1 s later).
+- **Tests:** `settle_glide.rs` (start pose on both faces, a lift, slid sand, the easing, the
+  lifecycle) and `chunk_stream.rs` `hidden_cells_mesh_as_air_until_shown_…`.
+
 ## 5. Data and tunables
 
 Block data: `support` (`ground` | `carrier` | `rider` | `falls`), `passable`, `density` (exists), log `axis`
@@ -104,7 +127,8 @@ generated into `crates/dwell-sim/src/felling.gen.rs` by `shared/physics/gen.mjs`
 failing on stale output): `riderReach` (cells, 6), `maxSystemCells` (16384), `maxPieceCells`
 (4096), `toppleSpin` (0.6 rad/s), `sleepLinear` / `sleepAngular` (0.05), `sleepSeconds` (2),
 `maxSeconds` (30), `maxSettles` (3), `hitSpeed` (4 m/s),
-`hitDamagePerSpeed` (6), `pushableMass` (400 kg), `heavyHoldSpeed` (1 m/s). Sounds
+`hitDamagePerSpeed` (6), `pushableMass` (400 kg), `heavyHoldSpeed` (1 m/s), `settleGlideSeconds`
+(0.3 s) and `settleBounce` (0.12, §4.1). Sounds
 (`shared/sounds/dwell.json`): `fell` (the crack, `fell_crack`, as a carrying piece spawns) and
 `piece_land` (the block's `land` sound when a piece's velocity changes by over 2 m/s between
 snapshots, at most every 250 ms).

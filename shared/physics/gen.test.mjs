@@ -27,6 +27,7 @@ test('bad entries fail with their path named', () => {
     [(d) => (d.riderReach = 1.5), /riderReach must be a whole number/],
     [(d) => (d.maxPieceCells = 5000), /maxPieceCells must be a whole number in \[1, 4096\]/],
     [(d) => delete d.hitSpeed, /missing entry \(root\)\.hitSpeed/],
+    [(d) => (d.settleBounce = 1.5), /settleBounce must be a number in \[0, 1\]/],
     [(d) => (d.spin = 1), /unknown entry \(root\)\.spin/],
   ]) {
     const d = data();

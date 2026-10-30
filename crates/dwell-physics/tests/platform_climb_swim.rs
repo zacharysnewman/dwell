@@ -614,4 +614,3 @@ fn from_a_ladders_top_looking_down_and_walking_forward_climbs_down() {
     );
     assert!(fastest_fall < 4.0, "climbed, not fell: {fastest_fall}");
 }
-

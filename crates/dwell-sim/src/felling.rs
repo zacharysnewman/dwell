@@ -25,6 +25,10 @@ pub struct FellingData {
     pub hit_damage_per_speed: f64,
     pub pushable_mass: f64,
     pub heavy_hold_speed: f64,
+    /// How long (s) a settling piece is drawn gliding into its blocks' places (the clients').
+    pub settle_glide_seconds: f64,
+    /// How far past its place (a fraction of the glide) it swings before it rests.
+    pub settle_bounce: f64,
 }
 
 #[path = "felling.gen.rs"]
@@ -387,7 +391,7 @@ impl Felling {
         if lost {
             return out;
         }
-        let placed = resample(&p, origin, rotation);
+        let placed = resample(&p.cells, origin, rotation).1;
         let carrier = |m: StateId| info(m).support_role == dwell_blocks::SupportRole::Carrier;
         let falls = |m: StateId| info(m).support_role == dwell_blocks::SupportRole::Falls;
         let mut lift = 0;
@@ -422,16 +426,20 @@ impl Felling {
     }
 }
 
-/// The grid cells the piece covers at `origin` turned by `rotation`, each with its block: the
-/// piece is first moved (under half a cell) so its edges lie on grid lines, then each grid cell
+/// The grid cells a piece of `cells` covers at `origin` turned by `rotation`, each with its block,
+/// and the origin it was moved to: the piece is first moved (under half a cell) so its edges lie on grid lines, then each grid cell
 /// takes the piece cell its centre lies in (half-open, so a centre on a shared edge belongs to one
 /// cell: cells tipped from ½ m rows into 1 m columns pair up, two rows to a cell).
-fn resample(p: &Falling, origin: DVec3, rotation: DQuat) -> Vec<([i32; 3], StateId)> {
-    let index: std::collections::HashMap<[i32; 3], StateId> = p.cells.iter().copied().collect();
+pub fn resample(
+    cells: &[([i32; 3], StateId)],
+    origin: DVec3,
+    rotation: DQuat,
+) -> (DVec3, Vec<([i32; 3], StateId)>) {
+    let index: std::collections::HashMap<[i32; 3], StateId> = cells.iter().copied().collect();
     let inverse = rotation.inverse();
     let bounds = |origin: DVec3| {
         let (mut lo, mut hi) = (DVec3::splat(f64::INFINITY), DVec3::splat(f64::NEG_INFINITY));
-        for &(o, _) in &p.cells {
+        for &(o, _) in cells {
             for corner in 0..8 {
                 let d = DVec3::new(
                     if corner & 1 == 0 { -0.5 } else { 0.5 },
@@ -471,7 +479,7 @@ fn resample(p: &Falling, origin: DVec3, rotation: DQuat) -> Vec<([i32; 3], State
             }
         }
     }
-    out
+    (origin, out)
 }
 
 /// `m` with its axis turned by `rotation` (a log lying down).
@@ -580,14 +588,14 @@ mod tests {
         let p = piece((0..8).map(|y| ([0, y, 0], log())).collect());
         let origin = DVec3::new(10.5, 20.25, 3.5);
         let tipped = DQuat::from_rotation_z(-std::f64::consts::FRAC_PI_2);
-        let cells = resample(&p, origin, tipped);
+        let cells = resample(&p.cells, origin, tipped).1;
         assert_eq!(cells.len(), 8, "{cells:?}");
         let xs: std::collections::BTreeSet<i32> = cells.iter().map(|(c, _)| c[0]).collect();
         let ys: std::collections::BTreeSet<i32> = cells.iter().map(|(c, _)| c[1]).collect();
         assert_eq!((xs.len(), ys.len()), (4, 2), "{cells:?}");
         assert!(cells.iter().all(|(_, m)| info(*m).axis == Axis::X));
         // Untipped it lands where it was, upright.
-        let upright = resample(&p, origin, DQuat::IDENTITY);
+        let upright = resample(&p.cells, origin, DQuat::IDENTITY).1;
         let want: Vec<[i32; 3]> = (0..8).map(|y| [10, 40 + y, 3]).collect();
         let got: Vec<[i32; 3]> = upright.iter().map(|(c, _)| *c).collect();
         let mut got = got;
