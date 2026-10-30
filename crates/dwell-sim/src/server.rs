@@ -1272,7 +1272,8 @@ impl Server {
         // 3. Controller pipeline (PLAYER_CONTROLLER.md §4), then its server-side consequences. The
         // falling pieces' terrain collision loads with the players' (docs/FELLING.md §3).
         let boxes = self.felling.terrain_boxes(&self.physics);
-        self.players.set_terrain_boxes(boxes);
+        self.players
+            .set_terrain_boxes(boxes, self.felling.rules.terrain_chunks_per_tick);
         self.players.tick(&mut self.world, &mut self.physics);
         let ids: Vec<SessionId> = self.sessions.keys().copied().collect();
         for &id in &ids {

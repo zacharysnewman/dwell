@@ -29,6 +29,8 @@ pub struct FellingData {
     pub settle_glide_seconds: f64,
     /// How far past its place (a fraction of the glide) it swings before it rests.
     pub settle_bounce: f64,
+    /// The most terrain-collision chunks built a tick round falling pieces (nearest first).
+    pub terrain_chunks_per_tick: u32,
 }
 
 #[path = "felling.gen.rs"]
@@ -62,6 +64,8 @@ pub struct FellingRules {
     /// squeeze a player under it through the ground.
     pub pushable_mass: f64,
     pub heavy_hold_speed: f64,
+    /// The most terrain-collision chunks built a tick round falling pieces.
+    pub terrain_chunks_per_tick: u32,
 }
 
 /// The server's ticks a second.
@@ -89,6 +93,7 @@ impl From<FellingData> for FellingRules {
             hit_damage_per_speed: d.hit_damage_per_speed,
             pushable_mass: d.pushable_mass,
             heavy_hold_speed: d.heavy_hold_speed,
+            terrain_chunks_per_tick: d.terrain_chunks_per_tick,
         }
     }
 }
@@ -257,21 +262,32 @@ impl Felling {
     }
 
     /// The box (world metres) round each piece the terrain collision must cover over the next
-    /// tick: its cells' reach from the body, plus a tick's travel and a margin. Every piece: leaves
-    /// falling on their own land on the terrain too (owner, 2026-10-28).
+    /// ticks: its cells' bounds at its pose now, grown by two ticks' travel of its farthest point
+    /// (its speed and its spin times its reach) and a margin. Every piece: leaves falling on their
+    /// own land on the terrain too (owner, 2026-10-28). Its own bounds, not a cube of its reach
+    /// round its reference cell: for a 20 m trunk standing on its foot that cube was 44 m across
+    /// and its terrain stalled the cut's tick (owner, 2026-10-30).
     pub fn terrain_boxes(&self, physics: &Physics) -> Vec<(DVec3, DVec3)> {
+        // A cell's corners are within this of its centre (1 × ½ × 1 m).
+        let half_diagonal = DVec3::new(0.5, 0.5 * CELL_H, 0.5).length();
+        let dt = 1.0 / f64::from(dwell_protocol::SIM_HZ);
         self.pieces
             .iter()
             .map(|p| {
                 let c = physics.position(p.body);
-                let reach = p
-                    .cells
-                    .iter()
-                    .map(|&(o, _)| offset_m(o).length())
-                    .fold(0.0f64, f64::max)
-                    + 2.0
-                    + physics.velocity(p.body).length() / f64::from(dwell_protocol::SIM_HZ) * 2.0;
-                (c - DVec3::splat(reach), c + DVec3::splat(reach))
+                let r = physics.rotation(p.body);
+                let (mut lo, mut hi) = (c, c);
+                let mut reach = 0.0f64;
+                for &(o, _) in &p.cells {
+                    let at = c + r * offset_m(o);
+                    lo = lo.min(at);
+                    hi = hi.max(at);
+                    reach = reach.max(offset_m(o).length());
+                }
+                let travel = physics.velocity(p.body).length()
+                    + physics.angular_velocity(p.body).length() * (reach + half_diagonal);
+                let grow = half_diagonal + 2.0 * travel * dt + 1.0;
+                (lo - DVec3::splat(grow), hi + DVec3::splat(grow))
             })
             .collect()
     }

@@ -423,3 +423,81 @@ fn sand_falling_on_a_player_passes_them_and_lands_beside_them() {
     }
     assert!(done, "both sand blocks lie on the ground beside the player");
 }
+
+#[test]
+fn cutting_a_tall_trunk_loads_terrain_collision_round_it_not_a_cube_of_its_length() {
+    // face-a-only: as above (the flat test world is face A's).
+    // Owner, 2026-10-30: a column of 40 logs (20 m) cut at its foot stalled the game. The server
+    // loaded terrain collision in a cube round the piece's foot, half as wide as its length plus
+    // 2 m (44 m across): ~36 chunks in the cut's tick. Now the piece's own bounds (a 1 × 20 × 1 m
+    // stick, plus a tick's travel), at most `terrainChunksPerTick` new chunks a tick, nearest
+    // first. Pinned by the chunk count (deterministic); the time is printed to compare.
+    let mut f = Fixture::new(flat());
+    join_streaming(&mut f, 1);
+    f.server.step();
+    f.take_all();
+    let (x, z) = (1, 1);
+    {
+        let w = f.server.world();
+        for y in G..G + 40 {
+            w.set_voxel(x, y, z, log());
+        }
+        w.set_voxel(x + 1, G + 39, z, log()); // leaning: it tips
+    }
+    for _ in 0..30 {
+        f.server.step();
+    }
+    f.take_all();
+    let before = f
+        .server
+        .players()
+        .terrain()
+        .map_or(0, |t| t.loaded_chunks());
+    f.send(
+        1,
+        Message::BlockEditRequest(BlockEditRequest {
+            action: BlockEditAction::Break,
+            cell: [x, G, z],
+            face: 1,
+            material: 0,
+            rows: 1,
+            down: false,
+        }),
+    );
+    let t = std::time::Instant::now();
+    f.server.step();
+    let ms = t.elapsed().as_secs_f64() * 1000.0;
+    let after = f
+        .server
+        .players()
+        .terrain()
+        .map_or(0, |t| t.loaded_chunks());
+    let budget = dwell_sim::felling::FELLING.terrain_chunks_per_tick as usize;
+    eprintln!(
+        "cut tick: {ms:.1} ms, {} terrain chunks loaded",
+        after - before
+    );
+    assert!(
+        after - before <= budget,
+        "the cut's tick loaded {} terrain chunks (at most {budget})",
+        after - before
+    );
+    // It still falls, tips and settles on the ground: nothing lost through unloaded terrain.
+    let mut settled = false;
+    for _ in 0..(60 * 20) {
+        f.server.step();
+        for o in f.server.take_outbox() {
+            if let Some(Message::EntityDespawn(_)) = Message::decode(&o.bytes) {
+                settled = true;
+            }
+        }
+    }
+    assert!(settled, "it settled");
+    let w = f.server.world();
+    let logs = (x - 30..=x + 30)
+        .flat_map(|xx| (z - 30..=z + 30).map(move |zz| (xx, zz)))
+        .flat_map(|(xx, zz)| (G - 2..G + 50).map(move |y| (xx, y, zz)))
+        .filter(|&(xx, y, zz)| is_log(w.get_voxel(xx, y, zz)))
+        .count();
+    assert!(logs >= 40, "the trunk lies on the ground: {logs} logs");
+}
