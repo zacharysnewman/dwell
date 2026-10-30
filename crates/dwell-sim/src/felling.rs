@@ -7,7 +7,7 @@ use dwell_blocks::{Axis, StateId, info, state_property, with_property};
 use dwell_physics::Collide;
 use dwell_physics::{BodyHandle, DQuat, DVec3, Physics, PieceCell};
 use dwell_world::support::{SupportRules, detached_pieces};
-use dwell_world::{CELL_H, M, VoxelWorld};
+use dwell_world::{CELL_H, FaceFrame, M, VoxelWorld};
 
 /// The felling tunables as data (shared/physics/felling.json → `felling.gen.rs`; seconds, m/s).
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -462,23 +462,54 @@ pub fn resample(
         );
     let (lo, hi) = bounds(origin);
     let rows = |m: f64| (m / CELL_H).floor() as i32;
-    let mut out = Vec::new();
+    // Each grid cell's candidates: the piece cells whose box holds its centre, both of them where
+    // it lies on their shared face (a ½ m cell tipped onto its side half fills two rows of one
+    // column; its centres lie on its faces).
+    let mut grid: Vec<([i32; 3], Vec<[i32; 3]>)> = Vec::new();
     for z in lo.z.floor() as i32..=hi.z.floor() as i32 {
         for y in rows(lo.y)..=rows(hi.y) {
             for x in lo.x.floor() as i32..=hi.x.floor() as i32 {
                 let l = inverse * (cell_centre([x, y, z]) - origin);
-                // The piece cell holding it, half-open: [o − ½, o + ½) on each axis.
-                let o = [
-                    (l.x + 0.5 + 1e-9).floor() as i32,
-                    (l.y / CELL_H + 0.5 + 1e-9).floor() as i32,
-                    (l.z + 0.5 + 1e-9).floor() as i32,
-                ];
-                if let Some(&m) = index.get(&o) {
-                    out.push(([x, y, z], turned(m, rotation)));
+                let along = [l.x + 0.5, l.y / CELL_H + 0.5, l.z + 0.5];
+                let options = along.map(|v| {
+                    let o = (v + 1e-9).floor() as i32;
+                    if (v - v.round()).abs() < 1e-6 {
+                        vec![o, o - 1]
+                    } else {
+                        vec![o]
+                    }
+                });
+                let mut held = Vec::new();
+                for &ox in &options[0] {
+                    for &oy in &options[1] {
+                        for &oz in &options[2] {
+                            if index.contains_key(&[ox, oy, oz]) {
+                                held.push([ox, oy, oz]);
+                            }
+                        }
+                    }
+                }
+                if !held.is_empty() {
+                    grid.push(([x, y, z], held));
                 }
             }
         }
     }
+    // Each piece cell fills at most one grid cell (a piece keeps its volume): the grid cells with
+    // the fewest candidates first, then the ground side first (face-local lowest), so a lone tipped
+    // cell lands on its lower row and a tipped pair fills its column.
+    let ground = |y: i32| if FaceFrame::at_row(y).is_b() { -y } else { y };
+    grid.sort_by_key(|(c, held)| (held.len(), ground(c[1]), c[0], c[2]));
+    let mut used = std::collections::HashSet::new();
+    let mut out = Vec::new();
+    for (c, held) in grid {
+        if let Some(&o) = held.iter().find(|o| !used.contains(*o)) {
+            used.insert(o);
+            out.push((c, turned(index[&o], rotation)));
+        }
+    }
+    // In grid order (z, then rows, then x), as before.
+    out.sort_by_key(|(c, _)| (c[2], c[1], c[0]));
     (origin, out)
 }
 
@@ -602,6 +633,60 @@ mod tests {
         got.sort_unstable();
         assert_eq!(got, want);
     }
+
+    dwell_world::both_faces!(
+        /// A ½ m cell tipped onto its side is ½ m wide and 1 m tall: it half fills two rows of
+        /// one column, and settles as one cell, the one nearer the ground (owner, 2026-10-29: it
+        /// settled as both, "effectively doubling itself"; tipped the other way, as none). Three
+        /// tipped cells settle as three: a pair fills a column, the odd one its lower cell. Either
+        /// way over, and the same on face B, mirrored.
+        fn a_half_cell_tipped_onto_its_side_settles_as_one_cell(f: dwell_world::FaceFrame) {
+            let settle = |f: dwell_world::FaceFrame, n: i32, turn: f64| {
+                let p = piece(
+                    (0..n)
+                        .map(|y| {
+                            (
+                                [0, if f.is_b() { -y } else { y }, 0],
+                                dwell_blocks::require("dwell:stone"),
+                            )
+                        })
+                        .collect(),
+                );
+                let origin = DVec3::from_array(f.point([10.5, 20.25, 3.5]));
+                // Tipped 90° about z (on face B its mirror: the turn about z reversed).
+                let a = DQuat::from_rotation_z(turn);
+                let tipped = if f.is_b() {
+                    DQuat::from_xyzw(-a.x, a.y, -a.z, a.w)
+                } else {
+                    a
+                };
+                let mut cells: Vec<[i32; 3]> = resample(&p.cells, origin, tipped)
+                    .1
+                    .into_iter()
+                    .map(|(c, _)| c)
+                    .collect();
+                cells.sort_unstable();
+                cells
+            };
+            for turn in [-std::f64::consts::FRAC_PI_2, std::f64::consts::FRAC_PI_2] {
+                let a = dwell_world::FaceFrame::A;
+                let one = settle(a, 1, turn);
+                assert_eq!(one.len(), 1, "one cell, turned {turn}: {one:?}");
+                let three = settle(a, 3, turn);
+                assert_eq!(three.len(), 3, "turned {turn}: {three:?}");
+                let lowest = three.iter().map(|c| c[1]).min().unwrap();
+                assert_eq!(one[0][1], lowest, "on the ground side, turned {turn}");
+                let columns: std::collections::BTreeSet<i32> = three.iter().map(|c| c[0]).collect();
+                assert_eq!(columns.len(), 2, "a full column and a half: {three:?}");
+                for n in [1, 3] {
+                    let mut mirrored: Vec<[i32; 3]> =
+                        settle(a, n, turn).iter().map(|&c| f.cell(c)).collect();
+                    mirrored.sort_unstable();
+                    assert_eq!(settle(f, n, turn), mirrored, "{n} cells turned {turn}");
+                }
+            }
+        }
+    );
 
     /// A 1 m log falling at `speed` m/s onto a standing player's head (capsule 0.3 m round,
     /// 1.8 m tall, centre 0.9 m up): what it hurts, twice over (a piece hurts each player once).

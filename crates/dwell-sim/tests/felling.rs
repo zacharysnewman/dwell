@@ -100,9 +100,11 @@ fn fell_and_settle(walk_away: bool) {
     if walk_away {
         f.move_to(1, -200.0, f64::from(G) * dwell_world::CELL_H, -200.0);
     }
-    // It falls and is seen falling; within 15 s it is at rest and settled.
+    // It falls and is seen falling; within 15 s it is at rest and settled, and so is anything
+    // that settled on nothing and fell again (a trunk resting on its leaves).
     let mut posed = false;
     let mut despawned = false;
+    let mut live: std::collections::HashSet<u32> = [spawns[0].id].into();
     for _ in 0..(60 * 15) {
         f.server.step();
         // Datagrams too (the snapshots): the whole outbox.
@@ -114,16 +116,23 @@ fn fell_and_settle(walk_away: bool) {
         {
             match Message::decode(&o.bytes) {
                 Some(Message::PhysicsSnapshot(s)) if !s.pieces.is_empty() => posed = true,
-                Some(Message::EntityDespawn(id)) if id == spawns[0].id => despawned = true,
+                Some(Message::EntityDespawn(id)) => {
+                    despawned |= id == spawns[0].id;
+                    live.remove(&id);
+                }
+                Some(Message::EntitySpawn(e)) => {
+                    live.insert(e.id);
+                }
                 _ => {}
             }
         }
-        if despawned {
+        if despawned && live.is_empty() {
             break;
         }
     }
     assert!(posed, "snapshots carried its pose");
     assert!(despawned, "it settled");
+    assert!(live.is_empty(), "everything that fell settled: {live:?}");
     // It lies on the ground: logs along x or z on the first rows over the floor, none upright
     // over the stump's height, and about as many as fell (½ m rows lying as 1 m cells: half).
     let w = f.server.world();

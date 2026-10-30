@@ -88,7 +88,12 @@ When a piece has moved less than `SLEEP_LINEAR_THRESHOLD` / `SLEEP_ANGULAR_THRES
 
 1. Its rotation snaps to the nearest of the 24 axis-aligned orientations and its position to the
    grid; each cell maps to a world cell, its state turned with it (a log's `axis`: a felled trunk
-   lies along x or z).
+   lies along x or z). A piece keeps its cell count: a grid cell takes a piece cell whose box holds
+   its centre (both, where the centre is on their shared face), and each piece cell fills at most
+   one grid cell, the grid cells with fewest candidates and then the ground side first. A ½ m cell
+   tipped onto its side is ½ m wide and 1 m tall: alone it lands as the lower cell of its column,
+   and two side by side fill the column (owner, 2026-10-29: it had filled both rows, "effectively
+   doubling itself", or tipped the other way neither; `a_half_cell_tipped_onto_its_side_…`).
 2. A rider whose cell is taken (by terrain, a player or another piece's cell) is destroyed (the
    owner). A carrier whose cell is taken tries one cell up, then sideways; else it is destroyed.
    Cells overlapping a player count as taken, so nobody is buried.
