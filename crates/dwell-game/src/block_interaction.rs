@@ -87,6 +87,9 @@ pub struct PaletteSlot {
     pub rows: u8,
     /// What holding Place does with it (docs/ITEMS.md §5).
     pub drag: crate::items::ItemDrag,
+    /// How its `facing` follows the look, and a 2-row piece's upper cell (item data).
+    pub facing: crate::items::ItemFacing,
+    pub upper: &'static [(&'static str, &'static str)],
 }
 
 const LOOK_LADDER: &str = "ladder";
@@ -98,8 +101,13 @@ pub fn palette() -> Vec<PaletteSlot> {
         .iter()
         .filter_map(|it| {
             let block = dwell_blocks::find_block(it.block)?;
-            let material = (block.first_state..block.first_state + block.state_count)
-                .find(|&id| placeable(id))?;
+            let material = if it.state.is_empty() {
+                (block.first_state..block.first_state + block.state_count)
+                    .find(|&id| placeable(id))?
+            } else {
+                // The item's state (a slope's shape), face A's, facing as the block's first.
+                with_values(block.first_state, it.state).filter(|&id| placeable(id))?
+            };
             Some(PaletteSlot {
                 name: it.label.to_owned(),
                 item: it.name,
@@ -108,9 +116,30 @@ pub fn palette() -> Vec<PaletteSlot> {
                 ladder: info(material).look == LOOK_LADDER,
                 rows: it.rows,
                 drag: it.drag,
+                facing: it.facing,
+                upper: it.upper,
             })
         })
         .collect()
+}
+
+/// `m` with the property `values` set; None if the registry has no such state.
+fn with_values(m: StateId, values: &[(&str, &str)]) -> Option<StateId> {
+    values
+        .iter()
+        .try_fold(m, |m, (k, v)| dwell_blocks::with_property(m, k, v))
+}
+
+/// The compass facing (`north` −Z, `east` +X, `south` +Z, `west` −X) nearest the level part of the
+/// world direction `dir`.
+fn compass(dir: [f64; 3]) -> &'static str {
+    if dir[0].abs() > dir[2].abs() {
+        if dir[0] > 0.0 { "east" } else { "west" }
+    } else if dir[2] > 0.0 {
+        "south"
+    } else {
+        "north"
+    }
 }
 
 /// The face a ladder's plate faces out of (0 +X, 1 −X, 4 +Z, 5 −Z): north is −Z, east +X.
@@ -170,6 +199,8 @@ pub struct BlockInteraction {
     /// The current target's state.
     target_state: StateId,
     yaw: f64,
+    /// The face the look was on at the last update.
+    face: FaceFrame,
     last_edit_ms: f64,
 }
 
@@ -189,6 +220,7 @@ impl BlockInteraction {
             into_target: false,
             target_state: 0,
             yaw: 0.0,
+            face: FaceFrame::A,
             last_edit_ms: f64::NEG_INFINITY,
         }
     }
@@ -220,6 +252,7 @@ impl BlockInteraction {
         face: FaceFrame,
     ) -> Option<BlockTarget> {
         self.yaw = yaw_deg;
+        self.face = face;
         let dir = view_direction(yaw_deg, pitch_deg, face).map(|v| v as f32);
         self.current = eye.and_then(|e| world.target(e, dir, players::REACH_DISTANCE));
         self.into_target = self.current.is_some_and(|t| world.replaceable(t.cell));
@@ -252,7 +285,60 @@ impl BlockInteraction {
             };
             return Some((cell, ladder_for(face, self.yaw)));
         }
-        Some((cell, slot.material))
+        Some((cell, self.faced(slot, slot.material, cell)))
+    }
+
+    /// `m`, a slot's face-local state, as it goes in `cell`: its `facing` turned by the look (a
+    /// slope: uphill ahead, owner 2026-10-30), and in face B's mirror there.
+    fn faced(&self, slot: &PaletteSlot, m: StateId, cell: [i32; 3]) -> StateId {
+        use crate::items::ItemFacing;
+        let look = view_direction(self.yaw, 0.0, self.face);
+        let m = match slot.facing {
+            ItemFacing::None => m,
+            ItemFacing::Away => {
+                dwell_blocks::with_property(m, "facing", compass(look)).unwrap_or(m)
+            }
+            ItemFacing::Toward => {
+                dwell_blocks::with_property(m, "facing", compass(look.map(|v| -v))).unwrap_or(m)
+            }
+        };
+        if slot.facing == ItemFacing::None && slot.upper.is_empty() {
+            m
+        } else {
+            FaceFrame::at_row(cell[1]).state(m)
+        }
+    }
+
+    /// The selected item's upper cell, for a 2-row piece with its own upper state (the steep
+    /// slope's top half): where, and what, against the current target. None for any other item.
+    pub fn upper_placement(&self) -> Option<([i32; 3], StateId)> {
+        let slot = self.palette.get(self.selected)?;
+        if slot.upper.is_empty() {
+            return None;
+        }
+        let (cell, _) = self.placement()?;
+        let f = FaceFrame::at_row(cell[1]);
+        let upper = with_values(slot.material, slot.upper)?;
+        Some((
+            [cell[0], cell[1] + f.sign(), cell[2]],
+            self.faced(slot, upper, cell),
+        ))
+    }
+
+    /// The request placing the upper cell of the piece just placed (after [`act`](Self::act)'s
+    /// place): against the top, face-locally, of the lower cell.
+    pub fn act_upper(&self) -> Option<Message> {
+        let (lower, _) = self.placement()?;
+        let (_, material) = self.upper_placement()?;
+        let up = FaceFrame::at_row(lower[1]).sign();
+        Some(Message::BlockEditRequest(BlockEditRequest {
+            action: BlockEditAction::Place,
+            cell: lower,
+            face: if up > 0 { 2 } else { 3 },
+            material,
+            rows: 1,
+            down: false,
+        }))
     }
 
     /// Selects a slot (wrapping around); returns the new selection, for the hotbar to redraw.
@@ -292,9 +378,13 @@ impl BlockInteraction {
         };
         self.last_edit_ms = now_ms;
         // A place fills as much as the held item is tall; a break takes one cell (docs/ITEMS.md).
+        // A piece with its own upper state goes as two places, lower then upper (`act_upper`).
         let rows = match action {
             BlockEditAction::Break => 1,
-            _ => self.palette.get(self.selected).map_or(1, |s| s.rows),
+            _ => self
+                .palette
+                .get(self.selected)
+                .map_or(1, |s| if s.upper.is_empty() { s.rows } else { 1 }),
         };
         Some(Message::BlockEditRequest(BlockEditRequest {
             action,
@@ -329,7 +419,8 @@ mod tests {
         let names: Vec<_> = slots.iter().map(|s| s.name.as_str()).collect();
         let want: Vec<_> = crate::items::ITEMS.iter().map(|i| i.label).collect();
         assert_eq!(names, want);
-        assert!(slots.iter().all(|s| s.rows == 1));
+        // ½ m pieces, but for a piece of two states (the steep slope, owner 2026-10-30).
+        assert!(slots.iter().all(|s| s.rows == 1 || !s.upper.is_empty()));
         let ladder = slots.iter().find(|s| s.ladder).expect("a ladder slot");
         assert_eq!(ladder.drag, crate::items::ItemDrag::Vertical);
     }
@@ -423,7 +514,7 @@ mod tests {
                 .act(EditAction::Place, 1000.0 + interval - 1.0)
                 .is_none()
         );
-        interaction.select(1);
+        select_item(&mut interaction, "dwell:dirt");
         sent.extend(interaction.act(EditAction::Place, 1000.0 + interval));
         assert_eq!(
             sent,
@@ -515,6 +606,71 @@ mod tests {
         seen.push(interaction.select(4));
         assert_eq!(seen, vec![n - 1, 0, 4]);
     }
+
+    fn select_item(i: &mut BlockInteraction, item: &str) {
+        let at = i.palette().iter().position(|s| s.item == item).expect(item);
+        i.select(at as i64);
+    }
+
+    #[test]
+    fn a_slope_is_placed_uphill_along_the_look() {
+        // face-a-only: the compass by yaw (both faces: the steep slope's test below).
+        // Owner, 2026-10-30: slopes "always rotated so uphill is forward from your look angle"; a
+        // stored ramp's facing is its downhill side, so it faces back at the player.
+        for (yaw, facing) in [
+            (0.0, "north"),
+            (90.0, "west"),
+            (180.0, "south"),
+            (270.0, "east"),
+        ] {
+            let mut world = FakeTarget::default();
+            let mut i = BlockInteraction::new();
+            select_item(&mut i, "dwell:stone_slope");
+            i.update(&mut world, Some([3.5, 1.6, 0.0]), yaw, 0.0, FaceFrame::A);
+            let (_, m) = i.placement().unwrap();
+            assert_eq!(
+                name(m),
+                format!("dwell:stone_ramp[facing={facing},flooded=false,half=bottom,shape=ramp]"),
+                "looking at yaw {yaw}"
+            );
+            assert!(i.upper_placement().is_none(), "one cell");
+        }
+    }
+
+    dwell_world::both_faces!(
+        /// The steep slope (1 m over 1 m, two cells) goes as two places: its lower half against
+        /// the face aimed at, then its upper half on top of that, face-locally, both facing back at
+        /// the player; on face B in its mirror.
+        fn a_steep_slope_goes_as_its_lower_then_its_upper_half(f: FaceFrame) {
+            let mut world = VoxelWorld::new(dwell_world::empty_generator(), None);
+            let [x, y, z] = f.cell([0, 40, 5]);
+            world.set_voxel(x, y, z, f.state(require("dwell:stone")));
+            let mut i = BlockInteraction::new();
+            select_item(&mut i, "dwell:stone_steep_slope");
+            let eye = f.point([0.5, 40.5 * dwell_world::CELL_H, 0.5]);
+            i.update(&mut world, Some(eye), 0.0, 0.0, f);
+            let half = |shape: &str| {
+                f.state(require(&format!(
+                    "dwell:stone_ramp[facing=north,flooded=false,half=bottom,shape={shape}]"
+                )))
+            };
+            let upper = i.act_upper().expect("an upper half");
+            let lower = i.act(EditAction::Place, 0.0).expect("a place");
+            let (lower, upper) = (request(&lower), request(&upper));
+            assert_eq!((lower.rows, lower.material), (1, half("steep_lower")));
+            assert_eq!(upper.material, half("steep_upper"));
+            assert_eq!(upper.cell, f.cell([0, 40, 4]), "against the lower half");
+            assert_eq!(
+                upper.face,
+                if f.is_b() { 3 } else { 2 },
+                "its top, face-locally"
+            );
+            assert_eq!(
+                i.upper_placement().map(|(c, _)| c),
+                Some(f.cell([0, 41, 4]))
+            );
+        }
+    );
 
     #[test]
     fn places_the_selected_block_against_the_targeted_face() {

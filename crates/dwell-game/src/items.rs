@@ -13,6 +13,17 @@ pub enum ItemDrag {
     None,
 }
 
+/// Which way an item's `facing` property is turned when placed (data `facing`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ItemFacing {
+    /// As its data's state.
+    None,
+    /// Pointing back at the player (a stored ramp: downhill toward them, uphill ahead).
+    Toward,
+    /// Pointing along the look.
+    Away,
+}
+
 /// An item (data).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ItemDef {
@@ -25,6 +36,12 @@ pub struct ItemDef {
     /// Its height in ½ m cells.
     pub rows: u8,
     pub drag: ItemDrag,
+    /// Property values of the state it places (none: its block's first placeable state).
+    pub state: &'static [(&'static str, &'static str)],
+    /// How its `facing` property follows the look.
+    pub facing: ItemFacing,
+    /// A 2-row piece's upper cell: its state with these values over the lower's (none: the same).
+    pub upper: &'static [(&'static str, &'static str)],
 }
 
 mod table {
@@ -57,8 +74,12 @@ mod tests {
                 i.name
             );
         }
-        // Owner, 2026-10-28: the hotbar's blocks are ½ m; the 1 m items are gone.
-        assert!(ITEMS.iter().all(|i| i.rows == 1), "½ m pieces only");
+        // Owner, 2026-10-28: the hotbar's blocks are ½ m; the 1 m items are gone. A 2-row piece
+        // is one of two states (the steep slope, 2026-10-30).
+        assert!(
+            ITEMS.iter().all(|i| i.rows == 1 || !i.upper.is_empty()),
+            "½ m pieces only"
+        );
         assert_eq!(item("dwell:stone_half"), None);
         assert_eq!(
             item("dwell:ladder").map(|i| i.drag),

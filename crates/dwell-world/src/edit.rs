@@ -359,7 +359,11 @@ pub fn supported_on(m: StateId, under: StateId) -> bool {
 /// sand), molded into the block (docs/ITEMS.md §3).
 pub fn molds_into(there: StateId, material: StateId) -> bool {
     let (s, placed) = (info(there), info(material));
-    s.shape == VoxelShape::Shaped && s.moldable.is_some() && s.moldable == placed.moldable
+    // A slope placed against a slope (the hotbar's stone slopes) is built on, not molded.
+    s.shape == VoxelShape::Shaped
+        && placed.shape != VoxelShape::Shaped
+        && s.moldable.is_some()
+        && s.moldable == placed.moldable
 }
 
 /// Whether `m` in `cell` is held where it is: a block hung on a wall (`needsSupport: behind`, a

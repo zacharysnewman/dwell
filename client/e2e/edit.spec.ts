@@ -151,7 +151,7 @@ test('local mode: every palette block can be picked from the hotbar, placed, and
   await ready(page);
   // The hotbar is built once the page has taken the join, which can be a frame after the terrain.
   // One slot per item (shared/items/items.json, docs/ITEMS.md).
-  await expect(page.locator('.hotbar-slot')).toHaveCount(11);
+  await expect(page.locator('.hotbar-slot')).toHaveCount(13);
   const slots = await page.locator('.hotbar-slot').count();
   const ground = await aim(page);
   expect(ground.face).toBe(2);
@@ -189,6 +189,12 @@ test('local mode: every palette block can be picked from the hotbar, placed, and
     // smaller than its cell.
     await breakBlock(page, cell);
     await page.waitForTimeout(120); // BLOCK_EDIT_INTERVAL_MS
+    // A steep slope's upper half (a piece of two cells) is broken on its own.
+    const above = add(cell, [0, 1, 0]);
+    if ((await voxel(page, above)) !== 0) {
+      await breakBlock(page, above);
+      await page.waitForTimeout(120);
+    }
     expect(placed, `slot ${String(slot)}`).toBeGreaterThan(0);
   }
 });

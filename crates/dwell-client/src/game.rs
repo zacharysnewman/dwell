@@ -1317,6 +1317,11 @@ impl<S: Scene> Game<S> {
             return false;
         };
         let placement = self.interaction.placement();
+        // A steep slope's upper half goes with it (`act_upper`), read before the place's
+        // prediction changes the target.
+        let upper = (action == EditAction::Place)
+            .then(|| self.interaction.act_upper())
+            .flatten();
         match self.interaction.act(action, now_ms) {
             Some(m) => {
                 // The sound first: the prediction changes the block at once.
@@ -1338,6 +1343,9 @@ impl<S: Scene> Game<S> {
                     EditAction::Place => dwell_characters::animator::Swing::Place,
                 });
                 self.send_edit(m, None);
+                if let Some(u) = upper {
+                    self.send_edit(u, None);
+                }
                 true
             }
             None => false,
@@ -1364,9 +1372,12 @@ impl<S: Scene> Game<S> {
                 .interaction
                 .palette()
                 .get(self.interaction.selected())?;
-            Some((t, material, slot.rows, slot.drag))
+            // A piece with its own upper state (a steep slope) is placed as two single cells.
+            let rows = if slot.upper.is_empty() { slot.rows } else { 1 };
+            Some((t, material, rows, slot.drag))
         })
         .flatten();
+        let upper = self.interaction.upper_placement();
         // The piece the place will fill, as predicted, before the edit predicts it.
         let drag = start.map_or(dwell_game::items::ItemDrag::None, |s| s.3);
         let piece = start.and_then(|(t, material, rows, _)| {
@@ -1390,8 +1401,9 @@ impl<S: Scene> Game<S> {
             return self.edit_with(action, Some(holder), now_ms);
         };
         // Standing where the block goes (towering): it waits, held, until a jump lifts the body
-        // clear (docs/ITEMS.md §5).
+        // clear (docs/ITEMS.md §5). Not a two-state piece (a steep slope): it is placed or not.
         if piece.is_none()
+            && upper.is_none()
             && self.predicted_changes_with(&m, false).is_some()
             && let Message::BlockEditRequest(request) = m
         {
@@ -1405,8 +1417,19 @@ impl<S: Scene> Game<S> {
             return self.drag.waiting().is_some() || self.edit(action, now_ms);
         }
         let placed = self.edit(action, now_ms);
-        if placed && let Some(cells) = piece {
-            self.drag.start(holder, &cells, dir, material, drag, now_ms);
+        if placed && let Some(mut cells) = piece {
+            // Each row's state from the lowest up: a steep slope's halves (face B's upper half is
+            // below its lower).
+            let mut rows: Vec<([i32; 3], StateId)> = cells.iter().map(|&c| (c, material)).collect();
+            if let Some((c, m)) = upper {
+                rows.push((c, m));
+                cells.push(c);
+            }
+            rows.sort_by_key(|(c, _)| c[1]);
+            cells.sort_by_key(|c| c[1]);
+            let materials: Vec<StateId> = rows.iter().map(|&(_, m)| m).collect();
+            self.drag
+                .start_with(holder, &cells, dir, &materials, drag, now_ms);
         }
         placed
     }
@@ -1416,6 +1439,15 @@ impl<S: Scene> Game<S> {
     /// builds on from there. A region fill: the server refuses a place against a face the eye
     /// can't see, as the side of the block underfoot is. Plain blocks only (`build_drag::drags`).
     fn edge_place(&mut self, holder: Option<dwell_game::build_drag::Holder>, now_ms: f64) -> bool {
+        // Not a slope: it faces by the look and a target (`BlockInteraction::placement`).
+        if self
+            .interaction
+            .palette()
+            .get(self.interaction.selected())
+            .is_some_and(|s| s.facing != dwell_game::items::ItemFacing::None || !s.upper.is_empty())
+        {
+            return false;
+        }
         let Some((cells, dir, material)) = self.edge_spot() else {
             return false;
         };
