@@ -29,11 +29,30 @@ const fail = (m) => {
 /** The registry's blocks by id (`dwell:stone` → its definition). */
 export function registryBlocks() {
   const ns = JSON.parse(readFileSync(join(root, 'shared/blocks/dwell.json'), 'utf8'));
-  return new Map(ns.blocks.filter((b) => !b.family).map((b) => [`${ns.namespace}:${b.name}`, b]));
+  return new Map(ns.blocks.map((b) => [`${ns.namespace}:${b.name}`, b]));
 }
 
+/** The registry's states (`dwell:stone_ramp[facing=east,…]` → placeable), from the generated table
+ * (crates/dwell-blocks/src/blocks.gen.rs, itself checked by CI). */
+export function registryStates() {
+  const rs = readFileSync(join(root, 'crates/dwell-blocks/src/blocks.gen.rs'), 'utf8');
+  const out = new Map();
+  for (const m of rs.matchAll(/StateInfo \{ name: "([^"]+)",.*?placeable: (true|false)/g)) out.set(m[1], m[2] === 'true');
+  return out;
+}
+
+/** The facings an item's `facing` turns its block to (the property `facing`). */
+export const ITEM_FACINGS = { toward: 'Toward', away: 'Away' };
+const COMPASS = ['north', 'east', 'south', 'west'];
+
+/** A state's canonical name: `block[k=v,…]` with the properties in name order. */
+export const stateName = (block, values) => {
+  const keys = Object.keys(values).sort();
+  return keys.length ? `${block}[${keys.map((k) => `${k}=${values[k]}`).join(',')}]` : block;
+};
+
 /** Checks the items against `blocks` (id → definition); returns them. */
-export function validateItems(data, blocks) {
+export function validateItems(data, blocks, states = registryStates()) {
   if (typeof data !== 'object' || data === null || Array.isArray(data)) fail('must be an object');
   const extra = Object.keys(data).filter((k) => !['$comment', 'items', 'buildModes'].includes(k));
   if (extra.length) fail(`unknown ${extra.join(', ')}`);
@@ -42,7 +61,7 @@ export function validateItems(data, blocks) {
   data.items.forEach((it, i) => {
     const at = `items[${i}]`;
     if (typeof it !== 'object' || it === null) fail(`${at} must be an object`);
-    const e = Object.keys(it).filter((k) => !['$comment', 'name', 'label', 'block', 'rows', 'drag'].includes(k));
+    const e = Object.keys(it).filter((k) => !['$comment', 'name', 'label', 'block', 'rows', 'drag', 'state', 'facing', 'upper'].includes(k));
     if (e.length) fail(`${at}: unknown ${e.join(', ')}`);
     if (typeof it.name !== 'string' || !NAME.test(it.name)) fail(`${at}.name must be namespace:name`);
     if (names.has(it.name)) fail(`${at}.name ${it.name} is listed twice`);
@@ -51,15 +70,34 @@ export function validateItems(data, blocks) {
     const b = blocks.get(it.block);
     if (!b) fail(`${at}.block ${JSON.stringify(it.block)} is not in the registry`);
     // Placeable: `placeable`, or states listed in its `palette` (a ladder's facings).
-    const placeable = b.placeable === true || (Array.isArray(b.palette) && b.palette.length > 0);
+    const placeable = b.placeable === true || b.palette === 'all' || (Array.isArray(b.palette) && b.palette.length > 0);
     if (!placeable) fail(`${at}.block ${it.block} is not placeable`);
     if (!Number.isInteger(it.rows) || it.rows < 1 || it.rows > MAX_ROWS) fail(`${at}.rows must be 1..${MAX_ROWS} (½ m cells)`);
     if (it.rows > 1 && b.extends) fail(`${at}: ${it.block} brings its own other cells (extends): rows must be 1`);
+    // A state (property values), turned to face along the look (`facing`), with a different upper
+    // cell (`upper`: property values over its own, for a 2-row piece): every state it can place is
+    // a placeable state of the registry.
+    const isValues = (v) => typeof v === 'object' && v !== null && !Array.isArray(v) && Object.values(v).every((x) => typeof x === 'string');
+    if (it.state !== undefined && !isValues(it.state)) fail(`${at}.state must be property values ({"shape": "ramp"})`);
+    if (it.upper !== undefined && !isValues(it.upper)) fail(`${at}.upper must be property values ({"shape": "steep_upper"})`);
+    if (it.upper !== undefined && it.rows !== 2) fail(`${at}.upper is a 2-row piece's upper cell: rows must be 2`);
+    if (it.facing !== undefined && !Object.hasOwn(ITEM_FACINGS, it.facing)) fail(`${at}.facing must be one of ${Object.keys(ITEM_FACINGS).join(', ')}`);
+    if (it.state !== undefined || it.facing !== undefined || it.upper !== undefined) {
+      for (const facing of it.facing ? COMPASS : [null]) {
+        const base = { ...(it.state ?? {}), ...(facing ? { facing } : {}) };
+        for (const values of [base, ...(it.upper ? [{ ...base, ...it.upper }] : [])]) {
+          const name = stateName(it.block, values);
+          if (!states.has(name)) fail(`${at}: ${name} is not a state of the registry`);
+          if (!states.get(name)) fail(`${at}: ${name} is not placeable`);
+        }
+      }
+    }
     const drag = it.drag ?? 'modes';
     if (!Object.hasOwn(ITEM_DRAGS, drag)) fail(`${at}.drag ${JSON.stringify(drag)} must be one of ${Object.keys(ITEM_DRAGS).join(', ')}`);
     // A drag's pieces after the first are region fills, which run no place rules: building on in
     // the modes is for a plain block; one hung on a wall builds a vertical line, each piece held.
-    const rules = ['palette', 'extends', 'placeOn', 'needsSupport'].filter((k) => b[k] !== undefined);
+    // (`palette: "all"`, every state of a shaped family, is no rule.)
+    const rules = ['palette', 'extends', 'placeOn', 'needsSupport'].filter((k) => b[k] !== undefined && !(k === 'palette' && b[k] === 'all'));
     if (drag === 'modes' && rules.length) fail(`${at}: ${it.block} has place rules (${rules.join(', ')}): drag must be vertical or none`);
     if (drag === 'vertical' && b.needsSupport !== 'behind') fail(`${at}: drag vertical is for a block hung on a wall (needsSupport behind)`);
   });
@@ -92,11 +130,13 @@ function validateBuildModes(m) {
 
 /** The Rust table. */
 export function itemsRust(data) {
-  const rs = [`// ${header}`, '', 'use crate::build_drag::{BuildModeDef, DragKind};', 'use crate::items::{ItemDef, ItemDrag};', ''];
+  const rs = [`// ${header}`, '', 'use crate::build_drag::{BuildModeDef, DragKind};', 'use crate::items::{ItemDef, ItemDrag, ItemFacing};', ''];
   rs.push(`/// The creative hotbar's items, in its order (shared/items/items.json).`);
   rs.push(`pub const ITEMS: [ItemDef; ${data.items.length}] = [`);
   for (const it of data.items) {
-    rs.push(`    ItemDef { name: ${JSON.stringify(it.name)}, label: ${JSON.stringify(it.label)}, block: ${JSON.stringify(it.block)}, rows: ${it.rows}, drag: ItemDrag::${ITEM_DRAGS[it.drag ?? 'modes']} },`);
+    const pairs = (o) => `&[${Object.entries(o ?? {}).sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => `(${JSON.stringify(k)}, ${JSON.stringify(v)})`).join(', ')}]`;
+    const facing = it.facing ? `ItemFacing::${ITEM_FACINGS[it.facing]}` : 'ItemFacing::None';
+    rs.push(`    ItemDef { name: ${JSON.stringify(it.name)}, label: ${JSON.stringify(it.label)}, block: ${JSON.stringify(it.block)}, rows: ${it.rows}, drag: ItemDrag::${ITEM_DRAGS[it.drag ?? 'modes']}, state: ${pairs(it.state)}, facing: ${facing}, upper: ${pairs(it.upper)} },`);
   }
   rs.push('];', '');
   const m = data.buildModes;

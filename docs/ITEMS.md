@@ -27,7 +27,27 @@ the tile's top half (`sideV`, the item's `pose` turning the hand); a ladder or a
 later. `drag` says what holding Place does with it (§5): `modes` (the default; a plain block only),
 `vertical` (a block hung on a wall: a line up or down only) or `none` (a torch, tall grass); the
 generator fails an item whose block has place rules (`palette`, `extends`, `placeOn`,
-`needsSupport`) left on `modes`.
+`needsSupport`) left on `modes` (`palette: "all"`, every state of a shaped family, is no rule).
+
+**Slopes** **[built, 0.40.8]** (owner, 2026-10-30: "add slope blocks … always rotated so uphill is
+forward from your look angle"; stone only, the shallow and the steep one, each its own slot, held
+Place building a run). The stored ramps' stone family is placeable (`"palette": "all"` on
+`stone_ramp`; the registry hash is unchanged). Three item fields:
+
+- `state`: the property values it places (`{"shape": "ramp", "half": "bottom", "flooded": "false"}`).
+- `facing`: `toward` turns the state's `facing` property to point back at the player (a stored
+  ramp's facing is its downhill side, so uphill is ahead), `away` along the look; the nearest
+  compass direction to the look's level part (`block_interaction::faced`). On face B the state is
+  mirrored (`FaceFrame::state`: `half` turned over).
+- `upper`: a 2-row piece whose upper cell is another state (the steep slope: `shape: steep_upper`
+  over its `steep_lower`). It goes as two ordinary places, its lower half against the face aimed at,
+  then its upper half on that one's face-local top (`act_upper`), so nothing on the wire or in the
+  registry's rules changes; each half breaks on its own, as the generator's steep slopes do. Held, a
+  run fills each row with its own state (`BuildDrag::start_with`). Not towering or bridging help.
+
+The generator checks every state an item can place (each facing, and the upper cell) is a placeable
+state of the registry (`blocks.gen.rs`). A slope placed on a slope is built on, never molded:
+`molds_into` takes a full block only. (13 items.)
 
 ## 2. Pieces on the wire
 

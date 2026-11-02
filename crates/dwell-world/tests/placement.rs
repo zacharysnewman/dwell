@@ -127,6 +127,45 @@ dwell_world::both_faces!(
 );
 
 dwell_world::both_faces!(
+    /// A slope placed on a slope of its own material (the hotbar's stone slopes, owner
+    /// 2026-10-30) is built on, not molded: the steep slope's upper half goes on its lower half,
+    /// and a slope on a slope's top. In a molding group a full block still molds a slope, a slope
+    /// doesn't (red before: `molds_into` held for two dirt slopes).
+    fn a_slope_placed_on_a_slope_is_built_on(f: FaceFrame) {
+        let half = |shape: &str| {
+            f.state(s(&format!(
+                "dwell:stone_ramp[facing=north,flooded=false,half=bottom,shape={shape}]"
+            )))
+        };
+        let mut w = ground(f);
+        set(&mut w, f, [1, 0, 2], half("steep_lower"));
+        let top = 2;
+        let o = place(&mut w, f, [1, 0, 2], top, half("steep_upper"), 1, false);
+        assert_eq!(o.check, EditCheck::Ok);
+        assert_eq!(cells(f, &o), vec![[1, 1, 2]], "the upper half on the lower");
+        let o = place(&mut w, f, [1, 0, 2], top, half("ramp"), 1, false);
+        assert_eq!(cells(f, &o), vec![[1, 1, 2]], "a slope on a slope");
+        // Stone has no molding group: a stone block goes on top too.
+        let o = place(&mut w, f, [1, 0, 2], top, s("dwell:stone"), 1, false);
+        assert_eq!(cells(f, &o), vec![[1, 1, 2]], "stone on the stone slope");
+        // In a molding group (dirt), a slope doesn't mold a slope; a full block does.
+        let dirt = |shape: &str| {
+            f.state(s(&format!(
+                "dwell:dirt_ramp[facing=north,flooded=false,half=bottom,shape={shape}]"
+            )))
+        };
+        assert!(!dwell_world::edit::molds_into(
+            dirt("steep_lower"),
+            dirt("steep_upper")
+        ));
+        assert!(dwell_world::edit::molds_into(
+            dirt("steep_lower"),
+            s("dwell:dirt")
+        ));
+    }
+);
+
+dwell_world::both_faces!(
     /// A ladder hangs on the side of a full block it was placed against (each cell of a 1 m one
     /// needs its block), never on a top; breaking the block takes the ladder with it.
     fn ladders_hang_on_a_blocks_side_and_go_with_it(f: FaceFrame) {

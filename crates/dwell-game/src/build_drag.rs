@@ -253,7 +253,8 @@ struct Stroke {
     holder: Holder,
     /// When Place was pressed (ms): it builds on only once held `BUILD_HOLD_MS` ([`BuildDrag::armed`]).
     pressed_ms: f64,
-    material: StateId,
+    /// Each row's state, from the lowest up (a steep slope: its lower half, then its upper).
+    materials: Vec<StateId>,
     /// The first piece: its lowest cell and its height in cells.
     base: [i32; 3],
     rows: i32,
@@ -266,16 +267,22 @@ struct Stroke {
 }
 
 impl Stroke {
-    /// The piece whose lowest cell is `min`, as a fill.
-    fn fill(&self, min: [i32; 3]) -> RegionEdit {
-        RegionEdit {
+    /// The piece whose lowest cell is `min`, as fills: one, or a row each where its rows differ.
+    fn fill(&self, min: [i32; 3]) -> Vec<RegionEdit> {
+        let one = |min: [i32; 3], rows: i32, material: StateId| RegionEdit {
             op: RegionEditOp::Fill,
             min,
-            size: [1, self.rows as u8, 1],
-            material: self.material,
+            size: [1, rows as u8, 1],
+            material,
             from: 0,
             cells: Vec::new(),
+        };
+        if self.materials.iter().all(|&m| m == self.materials[0]) {
+            return vec![one(min, self.rows, self.materials[0])];
         }
+        (0..self.rows)
+            .map(|r| one([min[0], min[1] + r, min[2]], 1, self.materials[r as usize]))
+            .collect()
     }
 
     fn size(&self) -> [i32; 3] {
@@ -288,7 +295,8 @@ impl Stroke {
             && box_distance_sq(min, self.size(), eye) <= reach * reach
             && (0..self.rows).all(|r| {
                 let c = [min[0], min[1] + r, min[2]];
-                world.free(c, self.material) && world.holds(c, self.material)
+                let m = self.materials[r as usize];
+                world.free(c, m) && world.holds(c, m)
             })
     }
 
@@ -384,7 +392,24 @@ impl BuildDrag {
         drag: ItemDrag,
         pressed_ms: f64,
     ) {
+        self.start_with(holder, cells, dir, &[material], drag, pressed_ms);
+    }
+
+    /// [`start`](Self::start) with a state for each row of the piece, from the lowest up (one: the
+    /// same in every row): a steep slope's halves.
+    pub fn start_with(
+        &mut self,
+        holder: Holder,
+        cells: &[[i32; 3]],
+        dir: [i32; 3],
+        materials: &[StateId],
+        drag: ItemDrag,
+        pressed_ms: f64,
+    ) {
         self.stroke = None;
+        let Some(&material) = materials.first() else {
+            return;
+        };
         let Some(&first) = cells.first() else {
             return;
         };
@@ -407,7 +432,11 @@ impl BuildDrag {
             kind,
             holder,
             pressed_ms,
-            material,
+            materials: if materials.len() == rows as usize {
+                materials.to_vec()
+            } else {
+                vec![material; rows as usize]
+            },
             base,
             rows,
             dir,
@@ -647,7 +676,7 @@ fn build_on(
         return Vec::new();
     }
     s.next += 1;
-    vec![s.fill(min)]
+    s.fill(min)
 }
 
 /// A level's next piece: on the 4-connected walk from the last column walked to the one the aim
@@ -691,7 +720,7 @@ fn level(
             continue;
         }
         s.filled.insert((x, z));
-        return vec![s.fill(min)];
+        return s.fill(min);
     }
     Vec::new()
 }
@@ -1166,10 +1195,56 @@ mod tests {
     }
 
     #[test]
+    fn a_two_state_piece_fills_each_row_with_its_own_state() {
+        // face-a-only: the rows are the stroke's, lowest up (game.rs orders face B's).
+        // A steep slope's run (owner, 2026-10-30): each piece its lower half, then its upper.
+        let half = |shape: &str| {
+            require(&format!(
+                "dwell:stone_ramp[facing=north,flooded=false,half=bottom,shape={shape}]"
+            ))
+        };
+        let (lo, hi) = (half("steep_lower"), half("steep_upper"));
+        let mut d = BuildDrag::new();
+        d.start_with(
+            Holder::Mouse,
+            &[[0, 3, 0], [0, 4, 0]],
+            [1, 0, 0],
+            &[lo, hi],
+            ItemDrag::Modes,
+            0.0,
+        );
+        let fills = d.stroke.as_ref().expect("a stroke").fill([2, 3, 0]);
+        let got: Vec<([i32; 3], [u8; 3], StateId)> =
+            fills.iter().map(|f| (f.min, f.size, f.material)).collect();
+        assert_eq!(
+            got,
+            vec![([2, 3, 0], [1, 1, 1], lo), ([2, 4, 0], [1, 1, 1], hi)]
+        );
+        // One state: one fill, as before.
+        d.start(
+            Holder::Mouse,
+            &[[0, 3, 0], [0, 4, 0]],
+            [1, 0, 0],
+            lo,
+            ItemDrag::Modes,
+            0.0,
+        );
+        assert_eq!(
+            d.stroke.as_ref().expect("a stroke").fill([2, 3, 0]).len(),
+            1
+        );
+    }
+
+    #[test]
     fn a_refused_fill_goes_again_first_up_to_the_retries() {
         // face-a-only: retries have no up.
         let mut d = started(FaceFrame::A, DragKind::Line, [0, 1, 0], [0, 1, 0]);
-        let fill = d.stroke.as_ref().expect("a stroke").fill([0, 3, 0]);
+        let fill = d
+            .stroke
+            .as_ref()
+            .expect("a stroke")
+            .fill([0, 3, 0])
+            .remove(0);
         for tries in 1..=RETRIES {
             d.retry(fill.clone(), tries);
             assert_eq!(

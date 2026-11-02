@@ -77,10 +77,16 @@ fn flat_world_layers_and_revisions() {
 
 #[test]
 fn the_palette_is_the_registrys_placeable_states() {
-    let names: Vec<&str> = (0..dwell_blocks::STATES.len() as StateId)
+    let all: Vec<&str> = (0..dwell_blocks::STATES.len() as StateId)
         .filter(|&m| placeable(m))
         .map(|m| dwell_blocks::info(m).name)
         .collect();
+    // The stone slopes (owner, 2026-10-30): every stone ramp state, 4 facings × flooded × half ×
+    // 3 shapes; the hotbar picks the shape and the facing.
+    let (ramps, names): (Vec<&str>, Vec<&str>) = all
+        .into_iter()
+        .partition(|n| n.starts_with("dwell:stone_ramp["));
+    assert_eq!(ramps.len(), 48, "{ramps:?}");
     assert_eq!(
         names,
         [

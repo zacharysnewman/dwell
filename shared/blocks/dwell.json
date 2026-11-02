@@ -298,10 +298,11 @@
       "onSlopes": true
     },
     {
-      "$comment": "The stored ramps (rampFamilies) at their own slots, as generated before the torch was added: blocks added after them keep every earlier state id (the worldgen goldens hash ids).",
+      "$comment": "The stored ramps (rampFamilies) at their own slots, as generated before the torch was added: blocks added after them keep every earlier state id (the worldgen goldens hash ids). Stone's are placeable: the hotbar's stone slopes (shared/items, owner 2026-10-30).",
       "name": "stone_ramp",
       "family": "ramp",
-      "of": "stone"
+      "of": "stone",
+      "palette": "all"
     },
     {
       "name": "dirt_ramp",
