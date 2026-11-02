@@ -121,9 +121,13 @@ controller button and a touch button switch the modes; mouse, controller and tou
   (under the body's centre, else the nearest under it; `build_drag::edge_target`): where the view
   ray crosses that level's middle, then back along the way to you to the first free cell beside a
   block of that level, within reach — the outside of a ledge 1, 2 or more blocks away. Looking
-  level, up, or down past reach: reach out along the look, level. A **ghost outline** shows the cell
-  while nothing is targeted. Held, the stroke builds on
-  in either mode: Line walks the bridge ahead of you, Flat paints the level you stand on. A region
+  down past reach: reach out along the look, level. **Only looking below the horizon** (owner,
+  2026-11-02: "it shouldn't bridge if you are looking above the midline"; strictly below, face-local
+  pitch < 0): looking level or up bridges nothing and shows no outline. A **ghost outline** shows the
+  cell while nothing is targeted, only where Place would build. Held, the stroke builds on
+  in either mode: Line walks the bridge ahead of you, Flat paints the level you stand on; a bridge
+  stops building while the look is at or above the horizon and goes on when it drops below
+  (`BuildDrag::bridging`; `a_held_bridge_stops_while_looking_at_or_above_the_horizon`). A region
   fill (the side of the block underfoot is a face the eye can't see); plain blocks only.
 - **A click is one block** (owner, 2026-10-28): a stroke builds on only once Place has been held
   `buildModes.holdMs` (200 ms, data; `BuildDrag::armed`); a touch hold has waited its 350 ms

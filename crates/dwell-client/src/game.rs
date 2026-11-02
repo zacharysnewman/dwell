@@ -1479,6 +1479,8 @@ impl<S: Scene> Game<S> {
                 dwell_game::items::ItemDrag::Modes,
                 now_ms,
             );
+            // Held, it builds on only while the look stays below the horizon (owner, 2026-11-02).
+            self.drag.bridging();
         }
         true
     }

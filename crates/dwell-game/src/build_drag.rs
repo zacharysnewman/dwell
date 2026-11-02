@@ -106,7 +106,7 @@ const LEAD: i32 = 1;
 /// nothing targeted builds at the edge you look toward, at the level of the block you stand on.
 /// The level: the block under `feet` (m, world) — under the body's centre, else the nearest under
 /// the body (`radius`, m). The spot: where the view ray (`eye`, unit `dir`) crosses that level's
-/// middle (looking level or up, or past `reach`: `reach` out along the look, level), then back along
+/// middle (looking down past `reach`: `reach` out along the look, level), then back along
 /// the way to you to the first free cell beside a block of that level, within `reach` of the eye.
 /// The cell, and its direction out from the block it is beside; None with nothing under the body
 /// or no such cell.
@@ -120,6 +120,11 @@ pub fn edge_target(
     world: &mut impl DragWorld,
 ) -> Option<([i32; 3], [i32; 3])> {
     let face = dwell_world::FaceFrame::at_height(feet[1]);
+    // Only looking below the horizon, strictly (owner, 2026-11-02): looking level or up bridges
+    // nothing, and the outline shows nothing.
+    if !below_horizon(face, dir) {
+        return None;
+    }
     let local = face.point(feet);
     // Stood on, the feet are at a cell's bottom: a little under it is the row below.
     let row = (local[1] / CELL[1] - 0.25).floor() as i32;
@@ -181,6 +186,11 @@ pub fn edge_target(
         }
     }
     None
+}
+
+/// Whether the world direction `dir` points below the horizon of `face` (face-locally down).
+fn below_horizon(face: dwell_world::FaceFrame, dir: [f64; 3]) -> bool {
+    face.vector(dir)[1] < -1e-9
 }
 
 /// The columns of a 4-connected walk from `from` (not included) to `to`, toward whichever axis's
@@ -264,6 +274,8 @@ struct Stroke {
     /// Level: the columns filled (or queued), and the one aimed at last.
     filled: HashSet<(i32, i32)>,
     last: (i32, i32),
+    /// Started by bridging help: it builds on only looking below the horizon.
+    bridge: bool,
 }
 
 impl Stroke {
@@ -443,7 +455,15 @@ impl BuildDrag {
             next: 1,
             filled: HashSet::from([(base[0], base[2])]),
             last: (base[0], base[2]),
+            bridge: false,
         });
+    }
+
+    /// The stroke was started by bridging help: it builds on only looking below the horizon.
+    pub fn bridging(&mut self) {
+        if let Some(s) = self.stroke.as_mut() {
+            s.bridge = true;
+        }
     }
 
     /// `holder` let go of Place: its stroke ends (the fills already made still go out), and a
@@ -486,6 +506,10 @@ impl BuildDrag {
         let Some(s) = self.stroke.as_mut() else {
             return;
         };
+        // A bridge builds on only looking below the horizon (owner, 2026-11-02), face-locally.
+        if s.bridge && !below_horizon(dwell_world::FaceFrame::at_row(s.base[1]), dir) {
+            return;
+        }
         let new = match s.kind {
             DragKind::Line => line(s, eye, dir, reach, world),
             DragKind::Level => level(s, eye, dir, reach, world),
@@ -985,7 +1009,9 @@ mod tests {
     dwell_world::both_faces!(
         /// Bridging help, aimed: the edge looked toward, at the level stood on — the cell past a
         /// platform's end where the aim crosses that level, or back toward you to the first free
-        /// cell beside it; looking level, reach out along the look.
+        /// cell beside it; looking down past reach, reach out along the look. Only looking below
+        /// the horizon (owner, 2026-11-02: "it shouldn't bridge if you are looking above the
+        /// midline", strictly below: level doesn't bridge either).
         fn the_edge_target_is_the_edge_looked_toward(f: FaceFrame) {
             let mut w = Fake::default();
             // A platform at row 3 (its top 2 m up): z 0, 1, 2 at x 0.
@@ -1012,8 +1038,11 @@ mod tests {
             assert_eq!(at(&mut w, [0.5, 1.75, 4.6]), Some(([0, 3, 3], [0, 0, 1])));
             // To the side of the platform's middle: beside it.
             assert_eq!(at(&mut w, [1.5, 1.75, 1.5]), Some(([1, 3, 1], [1, 0, 0])));
-            // Looking level along it: out along the look, back to its end.
-            assert_eq!(at(&mut w, [0.5, 3.62, 9.0]), Some(([0, 3, 3], [0, 0, 1])));
+            // Looking level along it, or above the horizon: none (red before: it bridged).
+            assert_eq!(at(&mut w, [0.5, 3.62, 9.0]), None, "level");
+            assert_eq!(at(&mut w, [0.5, 4.5, 9.0]), None, "above the horizon");
+            // Just below it, past reach: out along the look, back to its end.
+            assert_eq!(at(&mut w, [0.5, 3.5, 30.0]), Some(([0, 3, 3], [0, 0, 1])));
             // Nothing under the body: none.
             let air = edge_target(
                 f.point([5.5, 2.0, 5.5]),
@@ -1025,6 +1054,54 @@ mod tests {
                 &mut w,
             );
             assert_eq!(air, None);
+        }
+    );
+
+    dwell_world::both_faces!(
+        /// A bridge held on stops building while the look is at or above the horizon (owner,
+        /// 2026-11-02: "yes stop building"), and builds on again looking down. A stroke that
+        /// isn't a bridge builds looking up (a tower's line, a wall). Red before: it built on.
+        fn a_held_bridge_stops_while_looking_at_or_above_the_horizon(f: FaceFrame) {
+            let mut w = Fake::default();
+            for z in 0..3 {
+                w.0.insert(f.cell([0, 3, z]));
+            }
+            // Walked out onto the first piece bridged (z 3): a line walked along keeps pieces built
+            // ahead of the feet, whatever the aim.
+            let eye = [0.5, 3.62, 3.5];
+            let start = |bridge: bool| {
+                let mut d = BuildDrag::new();
+                while d.mode().kind != DragKind::Line {
+                    d.cycle();
+                }
+                d.start(
+                    Holder::Mouse,
+                    &[f.cell([0, 3, 3])],
+                    f.vector([0.0, 0.0, 1.0]).map(|v| v as i32),
+                    require("dwell:stone"),
+                    ItemDrag::Modes,
+                    -1000.0,
+                );
+                if bridge {
+                    d.bridging();
+                }
+                d
+            };
+            let ahead = |y: f64| towards(f, eye, [0.5, y, 6.0]);
+            for (look, what) in [(3.62, "level"), (5.0, "up")] {
+                let mut d = start(true);
+                d.aim_frames(f.point(eye), ahead(look), 8.0, &mut w);
+                assert!(sent(&mut d).is_empty(), "a bridge looking {what}");
+            }
+            let mut d = start(true);
+            d.aim_frames(f.point(eye), ahead(1.0), 8.0, &mut w);
+            assert!(!sent(&mut d).is_empty(), "a bridge looking down builds on");
+            let mut d = start(false);
+            d.aim_frames(f.point(eye), ahead(5.0), 8.0, &mut w);
+            assert!(
+                !sent(&mut d).is_empty(),
+                "a line that isn't a bridge, looking up"
+            );
         }
     );
 

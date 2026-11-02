@@ -2,6 +2,12 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions card. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.40.9",
+      "changes": [
+        "Bridging only builds while you look below the horizon; looking up stops it, and its outline only shows where it would build"
+      ]
+    },
+    {
       "version": "0.40.8",
       "changes": [
         "Stone slopes in the hotbar: a shallow one and a steep one, placed with the uphill side facing where you look",
