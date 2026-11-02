@@ -1316,12 +1316,14 @@ impl Players {
             p.c.jump.buffer_ticks = p.cfg.jump.buffer_ticks;
         }
         if (grounded || p.c.jump.coyote_ticks > 0) && p.c.jump.buffer_ticks > 0 {
-            let steep = grounded && p.c.sliding(p.cfg.slide.min_angle);
+            // Sliding (the steep slide, or a sprint slide on any slope; owner, 2026-11-02): the
+            // jump goes along the ground's normal. Walking and standing jumps stay straight up.
+            let steep = grounded && (p.c.sliding(p.cfg.slide.min_angle) || p.c.sprint_slide.active);
             let body = Self::vel(physics, p);
             Self::perform_jump(p);
             if steep {
-                // Off a face too steep to walk: the jump is added to the velocity the player has,
-                // out along the face's normal (owner, 2026-10-30: "angled out along the slope face
+                // Off a slide: the jump is added to the velocity the player has, out along the
+                // ground's normal (owner, 2026-10-30: "angled out along the slope face
                 // angle", forces additive), so a run of steep blocks can't be jumped straight up.
                 let n = p.c.ground.under_normal;
                 let j = p.cfg.jump_velocity();
