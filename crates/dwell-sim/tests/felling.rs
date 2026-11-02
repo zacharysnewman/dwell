@@ -501,3 +501,66 @@ fn cutting_a_tall_trunk_loads_terrain_collision_round_it_not_a_cube_of_its_lengt
         .count();
     assert!(logs >= 40, "the trunk lies on the ground: {logs} logs");
 }
+
+#[test]
+fn every_falling_piece_reaches_the_snapshots_however_many_fall() {
+    // face-a-only: as above (the flat test world is face A's).
+    // Owner, 2026-11-02: past ~30 falling pieces the rest stuttered: a snapshot's datagram holds
+    // ~28 piece poses and was filled nearest first, so the others were never sent. 100 single sand
+    // pieces (a checkerboard, each its own piece): within a second of falling, every one has been
+    // in this player's snapshots. Red before: only the nearest ~28.
+    let mut f = Fixture::new(flat());
+    join_streaming(&mut f, 1);
+    for _ in 0..30 {
+        f.server.step();
+    }
+    f.take_all();
+    let sand = dwell_blocks::require("dwell:sand");
+    let n = 14usize;
+    let mut cells = vec![0u16; n * n];
+    for z in 0..n {
+        for x in 0..n {
+            if (x + z) % 2 == 0 {
+                cells[x + n * z] = sand;
+            }
+        }
+    }
+    f.send(
+        1,
+        Message::RegionEdit(RegionEdit {
+            op: RegionEditOp::Paste,
+            min: [-7, G + 30, -7],
+            size: [n as u8, 1, n as u8],
+            material: 0,
+            from: 0,
+            cells,
+        }),
+    );
+    let mut spawned = std::collections::HashSet::new();
+    let mut seen = std::collections::HashSet::new();
+    for _ in 0..60 {
+        f.server.step();
+        for o in f
+            .server
+            .take_outbox()
+            .into_iter()
+            .filter(|o| o.session == 1)
+        {
+            match Message::decode(&o.bytes) {
+                Some(Message::EntitySpawn(e)) => {
+                    spawned.insert(e.id);
+                }
+                Some(Message::PhysicsSnapshot(s)) => seen.extend(s.pieces.iter().map(|p| p.id)),
+                _ => {}
+            }
+        }
+    }
+    assert_eq!(spawned.len(), 98, "the checkerboard's pieces");
+    let missing = spawned.difference(&seen).count();
+    assert_eq!(
+        missing,
+        0,
+        "{missing} of {} pieces never sent",
+        spawned.len()
+    );
+}

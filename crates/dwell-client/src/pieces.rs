@@ -26,7 +26,13 @@ struct Pose {
     position: DVec3,
     rotation: DQuat,
     velocity: DVec3,
+    /// Its spin (rad/s, the axis scaled by the rate).
+    angular: DVec3,
 }
+
+/// How far past its newest snapshot (ms) a piece is drawn going on at its velocity and spin: a
+/// snapshot carries each of many pieces only every few (docs/FELLING.md §3.1).
+const EXTRAPOLATE_MS: f64 = 250.0;
 
 struct Piece {
     cells: Vec<PieceCell>,
@@ -93,6 +99,7 @@ impl Pieces {
             position: DVec3::from(e.origin),
             rotation: quat(e.rotation),
             velocity: DVec3::ZERO,
+            angular: DVec3::ZERO,
         };
         let block = if e.carriers > 0 { cells[0].1 } else { 0 };
         if block != 0 {
@@ -167,6 +174,11 @@ impl Pieces {
                 position: DVec3::from(s.position),
                 rotation: quat(s.rotation),
                 velocity,
+                angular: DVec3::new(
+                    f64::from(s.angular[0]),
+                    f64::from(s.angular[1]),
+                    f64::from(s.angular[2]),
+                ),
             });
             while p.poses.len() > KEEP {
                 p.poses.pop_front();
@@ -205,7 +217,7 @@ impl Pieces {
 }
 
 /// The pose at time `at` among `poses` (oldest first): between the two round it, the first before
-/// the oldest, the newest past the newest.
+/// the oldest, and past the newest, on from it at its velocity and spin (EXTRAPOLATE_MS at most).
 fn pose_at(poses: &VecDeque<Pose>, at: f64) -> (DVec3, DQuat) {
     let first = poses.front().expect("a pose");
     if at <= first.at_ms {
@@ -221,8 +233,14 @@ fn pose_at(poses: &VecDeque<Pose>, at: f64) -> (DVec3, DQuat) {
             );
         }
     }
+    // Past the newest: on at its velocity and spin, for up to EXTRAPOLATE_MS.
     let last = poses.back().expect("a pose");
-    (last.position, last.rotation)
+    let dt = (at - last.at_ms).clamp(0.0, EXTRAPOLATE_MS) / 1000.0;
+    let turn = DQuat::from_scaled_axis(last.angular * dt);
+    (
+        last.position + last.velocity * dt,
+        (turn * last.rotation).normalize(),
+    )
 }
 
 /// A piece's cells meshed in blocks of up to a chunk each (each with its neighbours' cells in its
@@ -339,12 +357,38 @@ mod tests {
                 position: DVec3::new(x, 0.0, 0.0),
                 rotation: DQuat::IDENTITY,
                 velocity: DVec3::ZERO,
+                angular: DVec3::ZERO,
             });
         }
         assert!((pose_at(&p, 75.0).0.x - 1.5).abs() < 1e-9);
         assert_eq!(pose_at(&p, -10.0).0.x, 0.0);
         assert_eq!(pose_at(&p, 500.0).0.x, 2.0);
         assert!(delay > 0.0);
+    }
+
+    #[test]
+    fn past_its_newest_snapshot_a_piece_goes_on_along_its_velocity_and_spin() {
+        // Owner, 2026-11-02: with many pieces a snapshot carries each only every few (FELLING.md
+        // §3.1); past its newest pose a piece goes on at its velocity and spin (for up to
+        // EXTRAPOLATE_MS), not frozen there. Red before: it held its newest pose.
+        let mut p = VecDeque::new();
+        p.push_back(Pose {
+            at_ms: 0.0,
+            position: DVec3::new(0.0, 10.0, 0.0),
+            rotation: DQuat::IDENTITY,
+            velocity: DVec3::new(0.0, -4.0, 2.0),
+            angular: DVec3::new(0.0, 1.0, 0.0),
+        });
+        let (at, r) = pose_at(&p, 100.0);
+        assert!((at - DVec3::new(0.0, 9.6, 0.2)).length() < 1e-9, "{at}");
+        assert!(
+            (r.to_axis_angle().1 - 0.1).abs() < 1e-6,
+            "turned 0.1 rad: {r:?}"
+        );
+        // Not past EXTRAPOLATE_MS.
+        let (far, _) = pose_at(&p, 10_000.0);
+        let most = EXTRAPOLATE_MS / 1000.0;
+        assert!((far.y - (10.0 - 4.0 * most)).abs() < 1e-9, "{far}");
     }
 
     #[test]
