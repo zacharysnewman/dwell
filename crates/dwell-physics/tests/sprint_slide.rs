@@ -507,12 +507,16 @@ fn a_jump_off_a_steep_slope_adds_the_jump_along_its_face() {
     assert_eq!(w.count(e, events::JUMPED), 1);
     let j = dwell_physics::config::PlayerControllerConfig::default().jump_velocity();
     let n = Vec3::new(0.0, a.cos(), -a.sin());
-    let added = after - before;
-    // Along the face's normal (gravity takes a tick's 0.33 m/s off y).
+    // Out along the face's normal, added; the vertical at least a full jump (owner, 2026-11-02:
+    // a real arc out of a slide; gravity takes a tick's 0.33 m/s off y).
+    let want = Vec3::new(
+        before.x + n.x * j,
+        (before.y + n.y * j).max(j),
+        before.z + n.z * j,
+    );
     assert!(
-        (added - n * j).length() < 0.6,
-        "added {added:?}, the jump along the normal is {:?} (before {before:?})",
-        n * j
+        (after - want).length() < 0.6,
+        "after {after:?}, due {want:?} (before {before:?})"
     );
     assert!(
         after.z < before.z - 0.5 * j * a.sin(),
@@ -549,12 +553,16 @@ fn a_jump_out_of_a_slide_on_a_shallow_slope_adds_the_jump_along_its_face() {
     assert_eq!(w.count(e, events::JUMPED), 1);
     let j = dwell_physics::config::PlayerControllerConfig::default().jump_velocity();
     let n = Vec3::new(0.0, a.cos(), -a.sin());
-    let added = after - before;
-    assert!(
-        (added - n * j).length() < 0.6,
-        "added {added:?}, the jump along the normal is {:?} (before {before:?})",
-        n * j
+    let want = Vec3::new(
+        before.x + n.x * j,
+        (before.y + n.y * j).max(j),
+        before.z + n.z * j,
     );
+    assert!(
+        (after - want).length() < 0.6,
+        "after {after:?}, due {want:?} (before {before:?})"
+    );
+    assert!(after.y > j - 0.6, "a full jump at least: {after:?}");
     // A walk down the same slope jumps straight up, as ever (the vertical set, not added).
     let mut w = PlayerTestWorld::new();
     w.boxed(

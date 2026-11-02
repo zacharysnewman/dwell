@@ -218,6 +218,8 @@ fn walking_up_single_block_stairs_fails() {
 
 #[test]
 fn steering_moves_the_slider_across_the_slope_with_reduced_acceleration() {
+    // A gentle drift across (owner, 2026-11-02: "minimal" side control, as Tomb Raider's
+    // slides): at most `steer_speed` 1.5 m/s (5 m/s before: red, it moved 2.3 m+ in 0.6 s).
     let mut w = PlayerTestWorld::new();
     wide_ramp(&mut w);
     // Facing up the ramp (+z), right is −x.
@@ -228,10 +230,18 @@ fn steering_moves_the_slider_across_the_slope_with_reduced_acceleration() {
     let early = w.vel(steerer).x;
     // Walking accelerates at 50 m/s² (5 m/s within 0.1 s); steering on a slide is slower.
     assert!(early < -0.3, "steering: {early}");
-    assert!(early > -3.5, "with reduced acceleration: {early}");
-    w.step(ticks(0.5));
+    assert!(early > -1.55, "with reduced acceleration: {early}");
+    let mut fastest = 0.0f32;
+    for _ in 0..ticks(0.5) {
+        w.step(1);
+        fastest = fastest.max(-w.vel(steerer).x);
+    }
     let (s, c) = (w.pos(steerer), w.pos(coaster));
-    assert!(s.x < -2.3, "moved across: {s}");
+    assert!(s.x < -1.9, "moved across: {s}");
+    assert!(
+        fastest <= 1.5 + 0.05,
+        "a gentle drift: {fastest} m/s across"
+    );
     assert!((c.x - 3.5).abs() < 0.05, "no drift without input: {c}");
     assert!(s.z < 7.0 && c.z < 7.0, "both slid down: {s} {c}");
 }
@@ -432,6 +442,30 @@ fn the_slide_reaches_its_terminal_speed_and_a_crouched_slide_is_faster_and_lower
 }
 
 #[test]
+fn holding_up_the_slope_takes_at_most_half_off_the_slides_speed() {
+    // Owner, 2026-11-02: slides mostly uncontrolled, as Tomb Raider's; `brake` 0.5 (0.6 before:
+    // red, holding up the slope slowed it to 40 % of the top speed).
+    let mut w = PlayerTestWorld::new();
+    long_ramp(&mut w);
+    let z0 = 19.0;
+    let e = w.spawn(v(0.5, long_ramp_y(z0) + 0.05, z0));
+    // Facing up the ramp (+z), holding forward: up the slope.
+    w.set_input(|_, _| mv(0.0, 1.0));
+    let mut slowest_late = f32::MAX;
+    for t in 0..ticks(2.0) {
+        w.step(1);
+        if t > ticks(1.2) && w.c(e).state == State::Sliding {
+            slowest_late = slowest_late.min(w.vel(e).length());
+        }
+    }
+    let half = 0.5 * w.config.slide.terminal_speed;
+    assert!(
+        slowest_late > half - 0.4 && slowest_late < half + 0.6,
+        "braked to {slowest_late} m/s (half the top speed is {half})"
+    );
+}
+
+#[test]
 fn jumping_off_a_slide_keeps_the_downhill_momentum() {
     // The jump goes out along the face's normal, added to the slide (owner, 2026-10-30): it rises
     // little, so it starts high enough up the ramp to stay clear of the floor for the check.
@@ -511,10 +545,11 @@ fn swimming_and_climbing_override_sliding() {
     w.fill(-6, 0, 5, -2, 6, 9, require("dwell:water"));
     w.fill(3, 0, 5, 3, 4, 9, require("dwell:ladder[facing=east]"));
     let swimmer = w.spawn(v(-4.0, ramp_y(7.5) + 0.05, 7.5));
-    let climber = w.spawn(v(4.9, ramp_y(7.5) + 0.05, 7.5));
-    let steer = ticks(0.4);
+    // Near the ladder: steering across a slide is a gentle drift (1.5 m/s, owner 2026-11-02).
+    let climber = w.spawn(v(4.2, ramp_y(7.5) + 0.05, 7.5));
+    let steer = ticks(0.6);
     w.set_input(move |t, h| mv(if h == climber && t < steer { 1.0 } else { 0.0 }, 0.0));
-    w.step(ticks(0.5));
+    w.step(ticks(0.7));
     assert_eq!(w.count(climber, events::CLIMB_STARTED), 1);
     let at = w.pos(climber);
     let mut slid = 0;

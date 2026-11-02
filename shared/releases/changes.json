@@ -2,6 +2,13 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions card. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.40.11",
+      "changes": [
+        "Jumping out of a slide is always at least a full jump, angled out from the slope",
+        "Steep slides are harder to steer and to slow down, like a classic slide trap"
+      ]
+    },
+    {
       "version": "0.40.10",
       "changes": [
         "Jumping out of a slide on any slope pushes you out from the slope and adds to your speed: fast and low downhill, high and slower uphill"

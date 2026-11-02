@@ -548,8 +548,9 @@ data (`PlayerControllerConfig::slide`, §7).
   (holding forward there adds no boost), and a jump off a slide keeps its downhill momentum
   (the player's own part slows with air control, as after any jump).
 - **Control.** Input across the slope steers at `steering` (0.4) × the walking acceleration, up
-  to `steer_speed` (5 m/s). Input up the slope brakes: the terminal speed falls by up to `brake`
-  (60 %), never to zero, and up-slope input never drives the player up. Momentum carried up a
+  to `steer_speed` (1.5 m/s: a gentle drift, owner 2026-11-02, "minimal" side control as early Tomb
+  Raider's slides; 5 m/s before). Input up the slope brakes: the terminal speed falls by up to
+  `brake` (50 %; 60 % before), never to zero, and up-slope input never drives the player up. Momentum carried up a
   steep face (walking or running into a ramp) dies at `uphill_deceleration` (60 m/s²) plus the
   slope's pull, so a 45° ramp is never walked or run up (the capsule's round bottom climbs onto
   its foot at most). **Crouching** slides lower (the crouched capsule), with `crouch_friction` 0.2
@@ -562,7 +563,11 @@ data (`PlayerControllerConfig::slide`, §7).
   `a_jump_off_a_steep_slope_adds_the_jump_along_its_face`). The same for a jump out of a sprint
   slide (§6.9) on any slope (owner, 2026-11-02, option 1 over a straight-up additive jump: a slide
   down a 27° slope launches fast and low, up it high and slower; walking and standing jumps stay
-  straight up; `a_jump_out_of_a_slide_on_a_shallow_slope_adds_the_jump_along_its_face`). Such a jump rises little, so after a
+  straight up; `a_jump_out_of_a_slide_on_a_shallow_slope_adds_the_jump_along_its_face`). **Its
+  vertical is at least a full jump** (`max(vertical + the jump's up part, jump_velocity)`; owner,
+  2026-11-02: the added jump barely rose out of a fast downhill slide; a real arc out of a slide,
+  Tomb Raider's timed jump past spikes); the push down and out still lands it lower on a steep
+  slope than it left, so a run of them can't be climbed. Such a jump may rise little, so after a
   jump the ground check counts leaving the ground along its normal as airborne too, not only
   rising (else the face, still within the probe's reach, caught the player the next tick). **Ladders and water** override sliding (exclusive layers).
 - **The ramp's foot** (the half-height playtest, 2026-10-20). Walking into a 45° face
@@ -782,8 +787,8 @@ PPC default for voxels.
 | `fly` ◆ | `speed` / `run_factor` / `drag` | 8 m/s / 2.5 / 8 /s | — | Dwell addition (§6.7): speed × 2^(speed level / 2), the same at every height (11 m/s with a speed-up by height until 2026-10-26) |
 | | `position_limit` | 33,553 km | — | \|x\|, \|y\|, \|z\| (the wire range; no world limit, Phase 16) |
 | `slide` ◆ | `min_angle` / `friction` / `terminal_speed` | 44° / 0.3 / 14 m/s | — | Dwell addition (§6.8): ground steeper than `min_angle` slides; pull `g (sin θ − friction cos θ)`; speed along the slope |
-| | `steering` / `steer_speed` | 0.4 × `acceleration` / 5 m/s | — | Across the slope |
-| | `brake` / `brake_deceleration` / `uphill_deceleration` | 0.6 / 10 m/s² / 60 m/s² | — | Up-slope input lowers the terminal speed by up to 60 %; momentum up a steep face dies fast |
+| | `steering` / `steer_speed` | 0.4 × `acceleration` / 1.5 m/s | — | Across the slope: a gentle drift (5 m/s until 2026-11-02) |
+| | `brake` / `brake_deceleration` / `uphill_deceleration` | 0.5 / 10 m/s² / 60 m/s² | — | Up-slope input lowers the terminal speed by up to 50 % (60 % until 2026-11-02); momentum up a steep face dies fast |
 | | `crouch_terminal_factor` / `crouch_friction` | 1.15 / 0.2 | — | A crouched slide |
 | `sprint_slide` ◆ | `min_start_speed` / `start_boost` / `max_speed` | 6.5 m/s / 1.5 m/s / 14 m/s | — | Dwell addition (§6.9): crouch while sprinting; horizontal speeds |
 | | `friction` / `slope_gravity` | 6 m/s² / 1 | — | Deceleration; `gravity × slope_gravity × tilt` along the slide |
