@@ -611,6 +611,67 @@ pub fn axis_rotations() -> Vec<DQuat> {
     out
 }
 
+/// Which pieces a player's snapshots carry (docs/FELLING.md §3.1): a snapshot's datagram holds
+/// only so many (`room`), and nearest first left every piece past the nearest ~28 out of every
+/// snapshot, frozen on the player's screen (owner, 2026-11-02: "the server can't handle more than
+/// like 30 dynamic blocks"). Each piece gains priority every snapshot it is left out — more for a
+/// near or a fast one — and the snapshot takes the highest, so every moving piece is sent, the near
+/// and fast ones most often. A piece at rest is sent once and then not again until it moves.
+#[derive(Clone, Debug, Default)]
+pub struct PieceBook {
+    priority: std::collections::HashMap<u32, f64>,
+    rest_sent: std::collections::HashSet<u32>,
+}
+
+/// Slower than this (m/s, rad/s) a piece is at rest for the snapshots.
+const AT_REST: f64 = 0.05;
+
+impl PieceBook {
+    /// The pieces of `states` to send to a player at `at` (m), at most `room`, in send order.
+    pub fn choose(
+        &mut self,
+        states: &[dwell_protocol::PieceState],
+        at: [f64; 3],
+        room: usize,
+    ) -> Vec<dwell_protocol::PieceState> {
+        let live: std::collections::HashSet<u32> = states.iter().map(|p| p.id).collect();
+        self.priority.retain(|id, _| live.contains(id));
+        self.rest_sent.retain(|id| live.contains(id));
+        let speed = |v: [f32; 3]| v.iter().map(|x| f64::from(*x).powi(2)).sum::<f64>().sqrt();
+        let mut candidates: Vec<(f64, &dwell_protocol::PieceState)> = Vec::new();
+        for p in states {
+            let (v, w) = (speed(p.velocity), speed(p.angular));
+            let resting = v < AT_REST && w < AT_REST;
+            if resting && self.rest_sent.contains(&p.id) {
+                continue;
+            }
+            if !resting {
+                self.rest_sent.remove(&p.id);
+            }
+            let distance = (0..3)
+                .map(|i| (p.position[i] - at[i]).powi(2))
+                .sum::<f64>()
+                .sqrt();
+            let gain = 1.0 + v / 4.0 + 8.0 / (1.0 + distance / 4.0);
+            let priority = self.priority.entry(p.id).or_insert(0.0);
+            *priority += gain;
+            candidates.push((*priority, p));
+        }
+        candidates.sort_by(|a, b| b.0.total_cmp(&a.0).then(a.1.id.cmp(&b.1.id)));
+        candidates.truncate(room);
+        candidates
+            .into_iter()
+            .map(|(_, p)| {
+                self.priority.insert(p.id, 0.0);
+                if speed(p.velocity) < AT_REST && speed(p.angular) < AT_REST {
+                    self.rest_sent.insert(p.id);
+                }
+                *p
+            })
+            .collect()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -775,6 +836,59 @@ mod tests {
             );
         }
     );
+
+    fn moving(id: u32, x: f64, speed: f32) -> dwell_protocol::PieceState {
+        dwell_protocol::PieceState {
+            id,
+            position: [x, 40.0, 0.0],
+            rotation: [0.0, 0.0, 0.0, 1.0],
+            velocity: [0.0, -speed, 0.0],
+            angular: [0.0; 3],
+        }
+    }
+
+    #[test]
+    fn every_moving_piece_is_sent_though_a_snapshot_holds_few() {
+        // face-a-only: which pieces a snapshot carries has no up.
+        // Owner, 2026-11-02: past ~28 pieces the rest froze (nearest first, never sent). 100
+        // falling pieces, room for 25: within a few snapshots every one has been sent, and the
+        // near ones more often than the far. Red before: the 75 farthest never were.
+        let states: Vec<_> = (0..100)
+            .map(|i| moving(i, f64::from(i) * 2.0, 5.0))
+            .collect();
+        let mut book = PieceBook::default();
+        let mut sent = std::collections::HashMap::<u32, u32>::new();
+        for _ in 0..8 {
+            for p in book.choose(&states, [0.0, 40.0, 0.0], 25) {
+                *sent.entry(p.id).or_default() += 1;
+            }
+        }
+        assert_eq!(sent.len(), 100, "every piece sent: {} of 100", sent.len());
+        assert!(
+            sent[&0] > sent[&99],
+            "near ones more often: {} vs {}",
+            sent[&0],
+            sent[&99]
+        );
+    }
+
+    #[test]
+    fn a_piece_at_rest_is_sent_once_until_it_moves() {
+        // face-a-only: as above.
+        let mut book = PieceBook::default();
+        let rest = [moving(1, 0.0, 0.0)];
+        assert_eq!(
+            book.choose(&rest, [0.0; 3], 25).len(),
+            1,
+            "its resting pose, once"
+        );
+        assert!(book.choose(&rest, [0.0; 3], 25).is_empty(), "then nothing");
+        assert_eq!(
+            book.choose(&[moving(1, 0.0, 3.0)], [0.0; 3], 25).len(),
+            1,
+            "moving again"
+        );
+    }
 
     /// A 1 m log falling at `speed` m/s onto a standing player's head (capsule 0.3 m round,
     /// 1.8 m tall, centre 0.9 m up): what it hurts, twice over (a piece hurts each player once).

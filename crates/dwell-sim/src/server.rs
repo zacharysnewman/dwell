@@ -425,6 +425,8 @@ struct Session {
     /// (`swing_flags`), both carried to the others in snapshots (CHARACTERS.md §9.3).
     held: u16,
     swing: u8,
+    /// Which falling pieces this player's snapshots carry (`felling::PieceBook`).
+    piece_book: crate::felling::PieceBook,
 
     stats: SessionStats,
     // Terrain streaming.
@@ -484,6 +486,7 @@ impl Session {
             edit_refused: Vec::new(),
             held: 0,
             swing: 0,
+            piece_book: crate::felling::PieceBook::default(),
             stats: SessionStats::default(),
             chunk_mode: ChunkMode::AwaitingCheck,
             streamed: HashSet::default(),
@@ -2194,21 +2197,17 @@ impl Server {
                 remotes.truncate((MAX_DATAGRAM_BYTES - base) / each);
             }
             snap.remotes = remotes;
-            // The falling pieces, nearest first, in what room is left (docs/FELLING.md §3).
-            let mut pieces = pieces.clone();
-            let near = |p: &PieceState| {
-                (0..3)
-                    .map(|i| (p.position[i] - l.position[i]).powi(2))
-                    .sum::<f64>()
-            };
-            pieces.sort_by(|a, b| near(a).total_cmp(&near(b)).then(a.id.cmp(&b.id)));
+            // The falling pieces in what room is left: chosen by the player's ledger below
+            // (docs/FELLING.md §3.1).
             let used = encode(&Message::PhysicsSnapshot(snap.clone())).len();
-            pieces.truncate(MAX_DATAGRAM_BYTES.saturating_sub(used) / PIECE_STATE_BYTES);
-            snap.pieces = pieces;
-            out.push((id, Message::PhysicsSnapshot(snap)));
+            let room = MAX_DATAGRAM_BYTES.saturating_sub(used) / PIECE_STATE_BYTES;
+            out.push((id, snap, room, l.position));
         }
-        for (id, m) in out {
-            self.send_datagram(id, &m);
+        for (id, mut snap, room, at) in out {
+            if let Some(s) = self.sessions.get_mut(&id) {
+                snap.pieces = s.piece_book.choose(&pieces, at, room);
+            }
+            self.send_datagram(id, &Message::PhysicsSnapshot(snap));
         }
     }
 
