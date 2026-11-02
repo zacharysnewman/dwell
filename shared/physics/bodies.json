@@ -1,0 +1,7 @@
+{
+  "$comment": "Body kinds (docs/BUILT_BODIES.md §2, ADR 0052): what may be done to a moving body of voxel cells, by its kind. The order is the wire's (EntitySpawn's `kind`: 0 is the first). place: a block placed against one of its cells joins it. break: a cell of it may be broken. split: a break that leaves its cells in more than one connected group splits it into bodies of the same kind. settles: at rest it becomes blocks again (docs/FELLING.md §4); else it stays a body. saved: saved with the world. Owner, 2026-11-02: natural objects (felled trees, falling sand, loose leaves) can only be broken, not built on; built ones (the build platform's) both; splits for both; built ones never settle. Run `node shared/physics/gen.mjs` after editing; CI fails if crates/dwell-sim/src/bodies.gen.rs is stale.",
+  "kinds": [
+    { "name": "natural", "place": false, "break": true, "split": true, "settles": true, "saved": true },
+    { "name": "built", "place": true, "break": true, "split": true, "settles": false, "saved": true }
+  ]
+}

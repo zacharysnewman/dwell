@@ -130,7 +130,7 @@ output):
 
 - `kinds`: `natural` and `built`, each `{ place, break, split, settles, saved }` (§2).
 - `buoyancy`: `waterDrag` (/s), `waterAngularDrag` (/s), `samples` (points per cell).
-- `bodies`: `maxBodies` (a world's most built bodies), `editReach` (m, as `REACH_DISTANCE`).
+- Body edits reach as far as block edits (`REACH_DISTANCE`).
 
 Block data: `"support": "platform"` (§3). `maxPieceCells` (4096, `felling.json`) bounds a body's
 cells, built ones too.
@@ -142,15 +142,13 @@ Bodies have no up of their own: their cells are offsets in the body's frame, gra
 midplane). A platform placed on face B starts a body there. Tests: the targeting, the edits, the
 splits and the floating on both faces (`dwell_world::both_faces!`).
 
-## 10. Open questions (for the owner)
+## 10. The owner's further answers (2026-11-02)
 
-- **Hollow hulls:** count the air a hull encloses (a flood fill from its open side per tick, or once
-  per edit) so a hollow stone boat floats, or keep "floats by its material"?
-- **How many built bodies** a world may hold (`maxBodies`), and what happens past it (refuse the
-  platform)?
-- **Body edit prediction** later, if the round trip feels slow?
-- **Interest:** today every piece is sent to every player; with saved bodies across a large world,
-  send each player only the bodies near them (as chunks are)?
+- **Hollow hulls:** not for now: a boat floats by its material (§6).
+- **How many built bodies:** no limit for now (`maxBodies` left out).
+- **Interest:** as-is for now: every body is sent to every player.
+- **The compatibility line:** B1 opens 0.41.0 (the owner raises `package.json`).
+- **Body edit prediction:** none in the first version (§4); later if the round trip feels slow.
 
 ## 11. Stages (each its own release; B1–B2 on the new compatibility line)
 

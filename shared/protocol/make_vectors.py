@@ -112,10 +112,21 @@ ENTITY_SPAWN = (
     struct.pack("<BI", T["EntitySpawn"], 7)
     + f64s(10.5, 40.25, -3.5)
     + f32s(0.0, 0.0, 0.0, 1.0)
+    + struct.pack("<B", 1)  # kind (protocol v21): built
     + struct.pack("<HH", 2, 3)
     + struct.pack("<hhhH", 0, 0, 0, 20)
     + struct.pack("<hhhH", 0, 1, 0, 20)
     + struct.pack("<hhhH", -1, 1, 2, 21)
+)
+def body_edit_request(body, cell, face, action, material=None):
+    out = struct.pack("<BIhhhBB", T["BodyEditRequest"], body, *cell, face, action)
+    return out + (struct.pack("<H", material) if material is not None else b"")
+
+
+BODY_EDIT = (
+    struct.pack("<BIH", T["BodyEdit"], 9, 2)
+    + struct.pack("<hhhH", 0, 3, 0, 0)
+    + struct.pack("<hhhH", -2, 1, 5, 20)
 )
 EVENT_HEAD = lambda kind: struct.pack("<BBHII", T["PlayerEvent"], kind, 5, 1200, 77)
 
@@ -304,6 +315,9 @@ vectors = {
     "physics_snapshot_min": SNAPSHOT_MIN,
     "entity_spawn": ENTITY_SPAWN,
     "entity_despawn": struct.pack("<BI", T["EntityDespawn"], 7),
+    "body_edit_request_break": body_edit_request(9, (0, 3, -1), 5, BA["Break"]),
+    "body_edit_request_place": body_edit_request(9, (-2, 1, 5), 2, BA["Place"], 20),
+    "body_edit": BODY_EDIT,
     "player_event_knockback": EVENT_HEAD(EK["Knockback"]) + f32s(0.0, 14.0, -0.5),
     "player_event_damage": EVENT_HEAD(EK["Damage"]) + struct.pack("<BB", 17, DC["Fall"]),
     "player_event_death": EVENT_HEAD(EK["Death"]) + struct.pack("<B", DC["Crush"]),
@@ -422,7 +436,11 @@ malformed = {
     "!snapshot_truncated_remote": SNAPSHOT[:-1],
     "!snapshot_no_pieces_count": SNAPSHOT_MIN[:-1],
     "!entity_spawn_truncated": ENTITY_SPAWN[:-1],
-    "!entity_spawn_too_many_carriers": ENTITY_SPAWN[:1 + 4 + 24 + 16] + struct.pack("<HH", 4, 3) + ENTITY_SPAWN[1 + 4 + 24 + 16 + 4:],
+    "!entity_spawn_too_many_carriers": ENTITY_SPAWN[:1 + 4 + 24 + 16 + 1] + struct.pack("<HH", 4, 3) + ENTITY_SPAWN[1 + 4 + 24 + 16 + 1 + 4:],
+    "!body_edit_request_bad_face": body_edit_request(9, (0, 0, 0), 6, BA["Break"]),
+    "!body_edit_request_place_no_material": body_edit_request(9, (0, 0, 0), 2, BA["Place"]),
+    "!body_edit_truncated": BODY_EDIT[:-1],
+    "!body_edit_too_many": struct.pack("<BIH", T["BodyEdit"], 9, 4097),
     "!snapshot_missing_ladder": SNAPSHOT_MIN[:9 + 44] + bytes([CF["climbing"]]) + SNAPSHOT_MIN[9 + 45:],
     "!snapshot_position_nan": SNAPSHOT_MIN[:9] + f64s(float("nan")) + SNAPSHOT_MIN[9 + 8:],
     "!respawn_out_of_range": EVENT_HEAD(EK["Respawn"]) + f64s(4e7, 0.0, 0.0),

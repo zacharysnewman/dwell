@@ -1956,6 +1956,7 @@ impl Server {
                 id: p.id,
                 origin: origin.to_array(),
                 rotation: [0.0, 0.0, 0.0, 1.0],
+                kind: 0,
                 carriers: p.carriers as u16,
                 cells: p
                     .cells

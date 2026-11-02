@@ -353,6 +353,12 @@ impl Session {
                     ..e.clone()
                 })
             }
+            Message::BodyEditRequest(e) if e.action == BlockEditAction::Place => {
+                Message::BodyEditRequest(dwell_protocol::BodyEditRequest {
+                    material: id(e.material)?,
+                    ..e.clone()
+                })
+            }
             Message::RegionEdit(e) => {
                 let mut e = e.clone();
                 match e.op {
@@ -388,6 +394,12 @@ impl Session {
             Message::ChunkData(c) => map.to_client_ids(&mut c.voxels),
             Message::LodData(l) => map.to_client_ids(&mut l.cells),
             Message::EntitySpawn(e) => e.cells.iter_mut().all(|c| {
+                let mut one = [c.state];
+                let ok = map.to_client_ids(&mut one);
+                c.state = one[0];
+                ok
+            }),
+            Message::BodyEdit(e) => e.cells.iter_mut().all(|c| {
                 let mut one = [c.state];
                 let ok = map.to_client_ids(&mut one);
                 c.state = one[0];
@@ -485,6 +497,7 @@ impl Session {
                     | Message::VoxelModification(_)
                     | Message::EntitySpawn(_)
                     | Message::EntityDespawn(_)
+                    | Message::BodyEdit(_)
                     | Message::EditAck(_)
                     | Message::LodIndex(_)
                     | Message::LodIndexUpdate(_)
