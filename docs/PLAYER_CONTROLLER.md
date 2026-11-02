@@ -161,7 +161,7 @@ The server tick (ARCHITECTURE §4.2) runs, for every player, **before** `Physics
 | 3 | `step_platform` | `PPCPlatformSystem` | Velocity of the ground under the player (`v + ω × r` for Tier 1 bodies; zero for terrain; zero for players unless `carried_by_characters`) |
 | 4 | `step_fly` | — (Dwell) | Exclusive creative-flight layer while `fly` is held (§6.7) |
 | 5 | `step_crouch` | `PPCCrouchSystem` | Hold-to-crouch; shape swap; feet planted when grounded, head kept in the air; stand-up overlap test; the sprint slide's cooldown and start, and its start on landing crouched (§6.9) |
-| 6 | `step_jump` | `PPCJumpSystem` | Buffer + coyote (in ticks); `accumulated_y = max(accumulated_y, jump_v + platform_y)`, or off ground steeper than `slide.min_angle` the jump added along its normal (§6.8); no coyote after a real jump; auto-jump (§6.2) |
+| 6 | `step_jump` | `PPCJumpSystem` | Buffer + coyote (in ticks); `accumulated_y = max(accumulated_y, jump_v + platform_y)`, or sliding (steeper than `slide.min_angle`, or a sprint slide) the jump added along the ground's normal (§6.8); no coyote after a real jump; auto-jump (§6.2) |
 | 7 | `step_climb` | `PPCClimbSystem` | Exclusive layer on climbable voxels (§6.3); not while flying |
 | 8 | `step_swim` | — (Dwell) | Exclusive layer in water voxels (§6.4) and in the flip band (§11); not while climbing or flying |
 | 9 | `step_horizontal` | `PPCMovementLayerSystem` | Absorb external; on ground steeper than 44° the slide (§6.8); else during a sprint slide the sprint slide (§6.9); else accel/decel/reverse in the platform's frame; air control; step-up; edge guard |
@@ -559,7 +559,10 @@ data (`PlayerControllerConfig::slide`, §7).
   face's normal (`under_normal × jump_velocity`: its up part to the vertical, its level part to
   `external`), not a jump straight up that replaces the vertical (owner, 2026-10-30: "angled out
   along the slope face angle", "forces are additive"; so a run of steep blocks can't be jumped up;
-  `a_jump_off_a_steep_slope_adds_the_jump_along_its_face`). Such a jump rises little, so after a
+  `a_jump_off_a_steep_slope_adds_the_jump_along_its_face`). The same for a jump out of a sprint
+  slide (§6.9) on any slope (owner, 2026-11-02, option 1 over a straight-up additive jump: a slide
+  down a 27° slope launches fast and low, up it high and slower; walking and standing jumps stay
+  straight up; `a_jump_out_of_a_slide_on_a_shallow_slope_adds_the_jump_along_its_face`). Such a jump rises little, so after a
   jump the ground check counts leaving the ground along its normal as airborne too, not only
   rising (else the face, still within the probe's reach, caught the player the next tick). **Ladders and water** override sliding (exclusive layers).
 - **The ramp's foot** (the half-height playtest, 2026-10-20). Walking into a 45° face

@@ -519,3 +519,60 @@ fn a_jump_off_a_steep_slope_adds_the_jump_along_its_face() {
         "out from the face: {after:?}"
     );
 }
+
+#[test]
+fn a_jump_out_of_a_slide_on_a_shallow_slope_adds_the_jump_along_its_face() {
+    // Owner, 2026-11-02 (option 1): sliding (a sprint slide too) on any slope, the jump is added
+    // along the slope's normal, as off a steep face; walking jumps stay straight up. A 26.57°
+    // slope (a ½ m ramp's) rising to +z, its normal leaning to −z; a sprint slide down it (−z).
+    let degrees = 26.565f32;
+    let mut w = PlayerTestWorld::new();
+    let a = degrees.to_radians();
+    w.boxed(
+        v(0.5, 0.0, 0.0),
+        v(10.0, 0.5, 40.0),
+        euler(f64::from(-degrees), 0.0, 0.0),
+        Vec3::ZERO,
+        0.0,
+    );
+    let surface_y = |z: f32| 0.5 * a.cos() + (z + 0.5 * a.sin()) * a.tan();
+    let e = w.spawn_yaw(v(0.5, surface_y(25.0) + 0.05, 25.0), 180.0);
+    let crouch = ticks(1.0);
+    let jump = crouch + 10;
+    w.set_input(move |t, _| input(0.0, 1.0, true, t == jump, t >= crouch, 180.0, 0.0));
+    w.step(jump);
+    assert!(w.c(e).sprint_slide.active, "sliding down the slope");
+    assert!(!w.c(e).sliding(44.0), "not the steep slide");
+    let before = w.vel(e);
+    w.step(1);
+    let after = w.vel(e);
+    assert_eq!(w.count(e, events::JUMPED), 1);
+    let j = dwell_physics::config::PlayerControllerConfig::default().jump_velocity();
+    let n = Vec3::new(0.0, a.cos(), -a.sin());
+    let added = after - before;
+    assert!(
+        (added - n * j).length() < 0.6,
+        "added {added:?}, the jump along the normal is {:?} (before {before:?})",
+        n * j
+    );
+    // A walk down the same slope jumps straight up, as ever (the vertical set, not added).
+    let mut w = PlayerTestWorld::new();
+    w.boxed(
+        v(0.5, 0.0, 0.0),
+        v(10.0, 0.5, 40.0),
+        euler(f64::from(-degrees), 0.0, 0.0),
+        Vec3::ZERO,
+        0.0,
+    );
+    let e = w.spawn_yaw(v(0.5, surface_y(25.0) + 0.05, 25.0), 180.0);
+    w.set_input(move |t, _| input(0.0, 1.0, false, t == jump, false, 180.0, 0.0));
+    w.step(jump);
+    let before = w.vel(e);
+    w.step(1);
+    let after = w.vel(e);
+    assert!(
+        (after.z - before.z).abs() < 0.3,
+        "no push out: {before:?} → {after:?}"
+    );
+    assert!((after.y - j).abs() < 0.6, "straight up: {after:?}");
+}
