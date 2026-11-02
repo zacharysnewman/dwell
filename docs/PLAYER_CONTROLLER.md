@@ -548,8 +548,7 @@ data (`PlayerControllerConfig::slide`, §7).
   (holding forward there adds no boost), and a jump off a slide keeps its downhill momentum
   (the player's own part slows with air control, as after any jump).
 - **Control.** Input across the slope steers at `steering` (0.4) × the walking acceleration, up
-  to `steer_speed` (1.5 m/s: a gentle drift, owner 2026-11-02, "minimal" side control as early Tomb
-  Raider's slides; 5 m/s before). Input up the slope brakes: the terminal speed falls by up to
+  to `steer_speed` (5 m/s). Input up the slope brakes: the terminal speed falls by up to
   `brake` (50 %; 60 % before), never to zero, and up-slope input never drives the player up. Momentum carried up a
   steep face (walking or running into a ramp) dies at `uphill_deceleration` (60 m/s²) plus the
   slope's pull, so a 45° ramp is never walked or run up (the capsule's round bottom climbs onto
@@ -633,10 +632,13 @@ Fortnite-style. The numbers below are defaults chosen for this, all data
   standing capsule fits, as crouch always does, so under a low ceiling the player stays crouched
   and crouch-walks out.
 - **Motion** (`sprint_slide()` in `controller.rs`, in the horizontal pass in place of walking). The
-  slide keeps its speed in its direction of travel. Friction takes `friction` (6 m/s²); the ground's
+  slide keeps its speed in its direction of travel. Friction takes `friction` (5 m/s²; 6 until 2026-11-02); the ground's
   horizontal tilt along the slide (`under_normal`'s horizontal part · the direction, > 0 downhill)
-  adds `gravity × slope_gravity × tilt` (`slope_gravity` 1). On flat ground a slide from a sprint
-  (8 → 9.5 m/s) lasts 1.3 s and ~7 m; on a 15° slope downhill gravity (5.2 m/s²) out-pulls friction
+  adds `gravity × slope_gravity × tilt` (`slope_gravity` 1.5; 1 until 2026-11-02: owner, "slide
+  doesn't continue very well … flat->shallow->flat->shallow downhills", the friction outweighed a
+  ½ m slope's pull; now a slide holds its speed down terraces of a flat cell and a ½ m slope,
+  `a_slide_keeps_its_speed_down_terraces_of_a_flat_cell_and_a_slope`). On flat ground a slide from
+  a sprint (8 → 9.5 m/s) lasts ~1.6 s; on a 15° slope downhill gravity (5.2 m/s²) out-pulls friction
   and the slide speeds up to `max_speed` (14 m/s) and goes on while the slope does; uphill it lasts
   ~0.7 s. It steps up half steps as walking does (along the slide's direction; any shift paid the
   same way, §4). On ground
@@ -763,7 +765,7 @@ PPC default for voxels.
 | | `gravity` | 20 m/s² | ×2 of 10 | Absolute value instead of a scale |
 | | `eye_height` / `crouch_eye_height` ◆ | 1.62 m / 0.8 m | (view) | Client camera |
 | `movement` | `walk_speed` / `run_speed` | 5 / 8 m/s | same | |
-| | `acceleration` / `deceleration` / `reverse_deceleration` | 50 / 12 / 60 m/s² | same | |
+| | `acceleration` / `deceleration` / `reverse_deceleration` | 50 / 15 / 60 m/s² | 50 / 12 / 60 | Stopping 25 % stronger (owner, 2026-11-02): a walk stops in 1/3 s |
 | | `air_control` | 0.2 | same | |
 | | `max_step_height` ◆ | 0.55 m | 0.45 | Half steps step up; full blocks need a jump |
 | | `air_external_drag` / `ground_external_friction` | 0 /s / 15 m/s² | same | |
@@ -787,11 +789,11 @@ PPC default for voxels.
 | `fly` ◆ | `speed` / `run_factor` / `drag` | 8 m/s / 2.5 / 8 /s | — | Dwell addition (§6.7): speed × 2^(speed level / 2), the same at every height (11 m/s with a speed-up by height until 2026-10-26) |
 | | `position_limit` | 33,553 km | — | \|x\|, \|y\|, \|z\| (the wire range; no world limit, Phase 16) |
 | `slide` ◆ | `min_angle` / `friction` / `terminal_speed` | 44° / 0.3 / 14 m/s | — | Dwell addition (§6.8): ground steeper than `min_angle` slides; pull `g (sin θ − friction cos θ)`; speed along the slope |
-| | `steering` / `steer_speed` | 0.4 × `acceleration` / 1.5 m/s | — | Across the slope: a gentle drift (5 m/s until 2026-11-02) |
+| | `steering` / `steer_speed` | 0.4 × `acceleration` / 5 m/s | — | Across the slope (0.40.11 lowered it to 1.5 m/s by mistake; back to 5, owner 2026-11-02) |
 | | `brake` / `brake_deceleration` / `uphill_deceleration` | 0.5 / 10 m/s² / 60 m/s² | — | Up-slope input lowers the terminal speed by up to 50 % (60 % until 2026-11-02); momentum up a steep face dies fast |
 | | `crouch_terminal_factor` / `crouch_friction` | 1.15 / 0.2 | — | A crouched slide |
 | `sprint_slide` ◆ | `min_start_speed` / `start_boost` / `max_speed` | 6.5 m/s / 1.5 m/s / 14 m/s | — | Dwell addition (§6.9): crouch while sprinting; horizontal speeds |
-| | `friction` / `slope_gravity` | 6 m/s² / 1 | — | Deceleration; `gravity × slope_gravity × tilt` along the slide |
+| | `friction` / `slope_gravity` | 5 m/s² / 1.5 | — | Deceleration; `gravity × slope_gravity × tilt` along the slide (6 / 1 until 2026-11-02: slides faded down stepped hills) |
 | | `steer_rate` / `cooldown_ticks` | 90 °/s / 30 ticks (0.5 s, at most 255: the wire's `u8`) | — | Turning toward the move input; before another slide |
 | `damage` ◆ | `impact_damage_min_speed` / `impact_damage_per_speed` | 12 m/s / 8 per m/s | — | From the `IMPACTED` event's speed into the surface (§6.10) |
 | | `impact_surfaces` | `Ground` | — | The contacts that hit (§6.10): `Ground`, a normal no steeper than `probes.max_slope_angle` (landings, ramps); `All`, walls and ceilings too |

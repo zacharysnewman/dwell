@@ -584,3 +584,63 @@ fn a_jump_out_of_a_slide_on_a_shallow_slope_adds_the_jump_along_its_face() {
     );
     assert!((after.y - j).abs() < 0.6, "straight up: {after:?}");
 }
+
+#[test]
+fn a_slide_on_flat_ground_lasts_about_one_and_a_half_seconds() {
+    // Owner, 2026-11-02: slide friction 6 → 5 m/s²: from a sprint (9.5 m/s) to the crouch speed
+    // in ~1.6 s (1.3 s before: red).
+    let mut w = PlayerTestWorld::new();
+    let e = sprint_then_crouch(&mut w, 60, i32::MAX);
+    w.step(61);
+    let mut sliding = 0;
+    while w.c(e).sprint_slide.active && sliding < 600 {
+        w.step(1);
+        sliding += 1;
+    }
+    let took = sliding as f32 / 60.0;
+    assert!((1.45..=1.75).contains(&took), "lasted {took} s");
+}
+
+#[test]
+fn a_slide_keeps_its_speed_down_terraces_of_a_flat_cell_and_a_slope() {
+    // Owner, 2026-11-02: "slide doesn't continue very well … flat->shallow->flat->shallow
+    // downhills": friction (6 m/s²) outweighed a ½ m slope's pull (+3 m/s² net on it), so the
+    // slide faded (9.4 → ~5 m/s in 2 s: red). Now friction 5 and `slope_gravity` 1.5: a slope
+    // gives back more than a flat cell takes. Terraces 1 m flat + one ½ m ramp, down toward +z.
+    let stone = dwell_blocks::require("dwell:stone");
+    let ramp = dwell_world::ramps::ramp_state(
+        "dwell:stone",
+        "ramp",
+        dwell_world::ramps::RampFacing::South,
+        false,
+    )
+    .expect("a stone ramp");
+    let mut w = PlayerTestWorld::new();
+    let top = |z: i32| if z < 0 { 40 } else { 39 - z / 2 };
+    for z in -40..60 {
+        for x in -3..=3 {
+            for r in 0..top(z) {
+                w.set_cell(x, r, z, stone);
+            }
+            if z >= 0 && z % 2 == 0 {
+                w.set_cell(x, top(z), z, ramp);
+            }
+        }
+    }
+    let e = w.spawn_yaw(v(0.5, 20.0, -30.0), 0.0);
+    let crouch = ticks(3.4);
+    w.set_input(move |t, _| input(0.0, 1.0, true, false, t >= crouch, 0.0, 0.0));
+    // Sliding onto the terraces (z ≥ 0).
+    w.step(crouch);
+    while w.pos(e).z < 0.0 {
+        w.step(1);
+    }
+    let on = w.horizontal_speed(e);
+    w.step(ticks(2.0));
+    assert!(w.c(e).sprint_slide.active, "still sliding");
+    let after = w.horizontal_speed(e);
+    assert!(
+        after > on - 0.5,
+        "kept its speed down the terraces: {on} → {after} m/s"
+    );
+}

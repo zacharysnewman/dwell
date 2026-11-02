@@ -238,6 +238,31 @@ fn releasing_input_decelerates_to_a_stop() {
 }
 
 #[test]
+fn a_walk_stops_within_a_third_of_a_second_of_letting_go() {
+    // Owner, 2026-11-02: walking friction 25 % higher (`deceleration` 12 → 15 m/s²): from the walk
+    // speed (5 m/s) it stops in 1/3 s (it took 0.42 s before: red).
+    let mut w = PlayerTestWorld::new();
+    w.floor();
+    let e = w.spawn(v(0.5, 0.0, -12.0));
+    let release = ticks(1.0);
+    w.set_input(move |t, _| {
+        if t < release {
+            mv(0.0, 1.0)
+        } else {
+            mv(0.0, 0.0)
+        }
+    });
+    w.step(release);
+    assert!(approx(w.horizontal_speed(e), 5.0, 0.05), "walking");
+    w.step(ticks(0.36));
+    assert!(
+        w.horizontal_speed(e) < 0.05,
+        "stopped: {}",
+        w.horizontal_speed(e)
+    );
+}
+
+#[test]
 fn reversing_brakes_faster_than_releasing() {
     let after = |brake: dwell_physics::controller::Input| {
         let mut w = PlayerTestWorld::new();
