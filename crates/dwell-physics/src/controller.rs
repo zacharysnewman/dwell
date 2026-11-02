@@ -1325,9 +1325,12 @@ impl Players {
                 // Off a slide: the jump is added to the velocity the player has, out along the
                 // ground's normal (owner, 2026-10-30: "angled out along the slope face
                 // angle", forces additive), so a run of steep blocks can't be jumped straight up.
+                // The vertical at least a full jump (owner, 2026-11-02): a real arc out of the
+                // slide (Tomb Raider's timed jump past spikes), never a hop that barely rises; the
+                // push down and out still lands it lower on the slope than it left.
                 let n = p.c.ground.under_normal;
                 let j = p.cfg.jump_velocity();
-                p.c.vertical.accumulated_y = body.y + n.y * j;
+                p.c.vertical.accumulated_y = (body.y + n.y * j).max(j + p.c.vertical.platform_y);
                 p.c.horizontal.external += flat(n) * j;
             }
         } else if p.cfg.movement.auto_jump && grounded && !p.c.crouching {
