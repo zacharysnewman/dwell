@@ -87,6 +87,25 @@ carriers and riders around the change, budgeted per tick (`INTEGRITY_BUDGET_VOXE
   their own player collides with and rides it. Drawn as a greedy mesh of its cells with the body's
   transform (ADR 0044).
 
+### 3.1 Many pieces in the snapshots (0.40.13)
+
+Owner, 2026-11-02: "the server can't handle more than like 30 dynamic blocks at a time (I spawned in
+a lot of sand) and the physics steps stutter". Measured natively, the physics was not it (313
+falling sand pieces stepped in 0.23 ms a tick): a snapshot's datagram (1,200 bytes) holds ~28 piece
+poses (36 bytes each), filled nearest first, so every piece past those was never sent and froze on
+the screen. Now:
+
+- **A ledger per player** (`felling::PieceBook`): each piece gains priority every snapshot it is left
+  out (1 + speed / 4 + 8 / (1 + distance / 4)), and the snapshot takes the highest, so every moving
+  piece is sent, the near and fast ones most often; a sent one starts again from 0.
+- **Pieces at rest** are sent once and then not again until they move.
+- **The client goes on** from a piece's newest pose at its velocity and spin, for up to 250 ms
+  (`pieces.rs` `EXTRAPOLATE_MS`), so a piece updated every few snapshots moves smoothly.
+- Tests: `every_falling_piece_reaches_the_snapshots_however_many_fall` (98 sand pieces; red: 68 never
+  sent), the ledger's unit tests, `past_its_newest_snapshot_a_piece_goes_on_…`.
+- Next (with Phase 51's protocol change): more room per snapshot for pieces (extra datagrams within a
+  bandwidth budget, or smaller poses).
+
 ## 4. Settling
 
 When a piece has moved less than `SLEEP_LINEAR_THRESHOLD` / `SLEEP_ANGULAR_THRESHOLD` for
