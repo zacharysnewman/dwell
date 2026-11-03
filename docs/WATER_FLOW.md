@@ -1,8 +1,10 @@
 # Water flow (basins, outlets, currents)
 
-> **Status: adopted (the owner's answers, 2026-11-03; [ADR 0053](./adr/0053-water-flow.md)),
-> Phase 52. W1 built (the server's basins, §15); W2–W5 planned.** First water only; lava, lahar,
-> jets, evaporation and weather later (§10).
+> **Status: adopted (the owner's answers, 2026-11-03; [ADR 0053](./adr/0053-water-flow.md),
+> amended by [ADR 0055](./adr/0055-water-at-rest.md)), Phase 52. W1 built (the server's basins, §15),
+> redesigned in 0.42.2 after the review (§16): the world as found is at rest (§2.2), its flow the
+> world map's. W2's rest (saved basins, fast-forward, live from load) and W3–W5 planned.** First water
+> only; lava, lahar, jets, evaporation and weather later (§10).
 
 The owner's request (2026-11-03): *"There's some systems I want to model, it's water flow, input and
 output in any body of water in the game, but my focus is on rivers. So if you dammed a river, it
@@ -55,6 +57,30 @@ along its whole length, its flow downstream what its channel was carved for. Whi
 steady, rivers never run dry on their own; only dams and diversions change them. Later the rate
 comes from glaciers' melt (a store of ice released by temperature) and weather (rain from the
 evaporation budget), so rivers rise in the melt season and small streams can run dry (§10).
+
+### 2.2 The world as found is at rest
+
+*(ADR 0055, 0.42.2.)* The generated world's water is not laid down by the basins' rules: the terrain
+places it by the map's river surfaces, ½ m terraces every few metres, with plants, banks and the
+next step's water beside it. Measured by the basins' rules it is not in balance (§16), so a body
+of water is **at rest as it is found**, and flows only as edits change it:
+
+- **What holds it.** An open cell beside a found body that it didn't fill (a plant's cell, a notch
+  in the bank) and a leaking block it stands against hold it like walls (`rest`), until an edit
+  touches them.
+- **Its natural outlets.** The ways out it was found with (an open cell onto air, a fall, or onto
+  the next pool's water, a step) together pass **the world map's flow** through it (the river's
+  discharge, a lake's outflow; §2.1) at the level it was found at. With none (the river goes on out
+  of the loaded world, or into ground), that flow leaves unseen (a **seep**). A natural outlet an
+  edit blocks still counts (so a dam holds back the river), one inside the body after a merge
+  doesn't.
+- **The flow network.** A natural outlet found running into another found body **links** them.
+  Each tick, upstream first, a found body passes the more of its map flow and what its links bring,
+  and takes in its map flow less what they bring, so a river of fifty pools passes its flow once,
+  and a dam above takes it from the pools below.
+
+So a found river with a block in its bed is the same river (the block's ½ m³ raises it a hair), and
+damming, draining and diverting change it as in §5.
 
 ## 3. What is stored
 
@@ -256,48 +282,94 @@ sends its writes as one `Rebake` modification.
 
 - **Found by edits.** An edit beside or on a liquid cell nobody has found finds its body: up the
   column to its surface, then every cell of that liquid at or below it whose column reaches the
-  surface (a river's lower pool, past its step, is a body of its own). Its inflow is what its outlets
-  passed in the world before the edit (W1's stand-in for runoff, §2.1); liquid an edit put there
-  brings nothing in. A body over `maxBasinCells` (65,536) is a reservoir at its surface's top.
+  surface (a river's lower pool, past its step, is a body of its own). It is found at rest (§2.2):
+  what holds it, its natural outlets passing the world map's flow (`Water::with_runoff`: the
+  server's from `dwell_worldgen::runoff_for`, `TerrainGenerator::discharge_at`; none for the flat
+  world), a seep with none. Liquid an edit put there is not at rest and brings nothing in. A body
+  over `maxBasinCells` (65,536) is a reservoir at its surface's top.
 - **The container**, row by row from its bottom: each row from the cells over the row below (and its
   own), spread sideways over open cells held up by a solid block or the row below; as many rows as
   its volume fills. Rows a basin meets another basin's cells in merge the two; a reservoir's cells
   are walls (a basin beside the sea fills toward its level through the outlets between, drowned).
+  A body's own liquid cells stay in its rows whatever is under them. Basins merge only at one level
+  (`MERGE_GAP`); a higher one met below its surface is a neighbour the lower may rise to, a lower one
+  the next step of a river.
 - **Outlets**: an open cell beside a container cell with nothing holding it up (sill: that row's
   floor) or under one (a hole in the floor), and a block of `leaks` data beside it with an open cell
   past it. A weir passes `weir × head^1.5` per cell, drowned (`head` over the higher of the sill and
   the level it runs into), a leak `leak × ½ m² × head`; no more in a tick than the basin holds over
   its lowest way out.
-- **Where it goes** (`follow`, up to 64 routes a tick): down while open, then along the floor for an
-  open cell with nothing under it within `streamReach` (16); onto liquid (that body, found if new),
-  or it pools there as a new basin, or out of the loaded world (lost).
+- **Where it goes** (`follow`, up to 1,024 routes a tick, in rounds, so the bodies a round finds have
+  their ways found the same tick): down while open, then along the floor for an open cell with
+  nothing under it within `streamReach` (16); onto liquid (that body, found if new), or it pools
+  there as a new basin, or out of the loaded world (lost). What leaves by a way not found yet
+  waits in transit (`pending`) and arrives when it is.
+- **Flow steps.** A water tick (7.2 s of water time by default) is taken in up to 64 steps, short
+  enough that no basin moves more than half way to its balance in one (its surface over how fast its
+  outflow grows with its level).
 - **Rows** are written when the level crosses half a row; a row the level falls below goes, and a
   container that falls apart splits, each part with the liquid over its own cells. An empty basin
   with nothing coming in goes.
-- **Near players**: basins within `liveRadiusM` (160 m) of a player tick; the rest wait.
+- **Near players**: basins within `liveRadiusM` (160 m) of a player, all of whose chunks are loaded,
+  tick; the rest wait: hold their level and pass on what comes in, shared as their ways out would
+  share it (an unloaded cell is a wall to water, so a basin flowing on beside one would lose what
+  stands there). A basin whose cells another's level wets or dries finds its ways out again.
+- **The edge**: a block with a `flooded` state (a ramp) beside a row the water writes takes it, and
+  loses it when no liquid is beside it (`flood_edge`).
 - **The day** of a new world is 20 minutes since this change (owner, 2026-11-03; DAY_NIGHT.md),
   so water time runs 72× real time × the water speed; both are the world's settings (ADR 0054), a
   new world's water speed the server's `water_speed` (`flow.json` `speed` by default).
 
 **Playtest fix (0.42.1; owner, 2026-11-03, docs/BUGS.md 16).** Blocks set in a riverbed under a
 stepped fall flooded it to the fall's top and then drained the river. Now: a pool's inflow comes in
-at a cell (its farthest from its outlets) and what a pool found upstream sends it is taken off once
-(`credit`); basins merge only when their levels meet (`MERGE_GAP` 2 cm), and only rising (a basin
-met below another's level records it as a neighbour, merged when it reaches it); a receding basin
+at a cell (its farthest from its outlets; the map's flow by place since 0.42.2, `Steady::feeds`);
+basins merge only when their levels meet (`MERGE_GAP` 2 cm), and only rising (a basin met below
+another's level records it as a neighbour, merged when it reaches it); a receding basin
 whose surface row is about to dry leaves the parts of that row on a floor of their own that water
 comes into as basins of their own (`spin_off_shelves`), so a flood over a river's steps leaves each
 step its pool.
 
+**Redesign (0.42.2; owner, 2026-11-03, docs/BUGS.md 17–18).** After the review (§16): bodies are
+found at rest and fed by the world map (§2.2), replacing the inflow measured off what left them
+(and 0.42.1's `credit`, which counted again at whatever level a pool had); merges only at one level;
+the flow steps; ways found in rounds, water in transit while they are; waiting basins pass on what
+comes in, and wait while a chunk of them is unloaded; the edge's ramps flood.
+
 Deviations, for W2–W3: basins aren't saved (after a restart a body is found again by the next edit
-touching it, at the inflow it then has), waiting basins aren't fast-forwarded, running water between
+touching it, at rest as it then is), waiting basins aren't fast-forwarded, running water between
 basins isn't drawn (it arrives where it lands), and a sheet spreading wider than `maxRowCells` over a
 plain is capped there (the excess lost).
 
-Tests (`water/tests.rs`, both faces): `a_dammed_channel_fills_and_spills_over_the_dam` (rises a row,
+Tests (`water/tests.rs`, both faces): `a_river_found_at_rest_keeps_its_banks_dry`,
+`a_basin_waits_while_a_chunk_of_it_is_unloaded`, `ramps_at_the_waters_edge_flood_and_dry_with_it`,
+`a_waiting_basin_passes_on_what_comes_in` (0.42.2, red on 0.42.1); `tests/water.rs`
+`a_block_set_in_a_generated_rivers_bed_changes_nothing_else` (seed 1, two rivers, six hours of water
+time: no other cell changes; red on 0.42.1, 173,921 cells); `dwell-worldgen` `tests/worldmap.rs`
+`a_rivers_flow_is_read_where_its_water_lies`; `a_dammed_channel_fills_and_spills_over_the_dam` (rises a row,
 spills at its old flow within 5 %, a pool below, the water conserved to 1e-6),
 `a_cut_drains_a_lake_to_the_cuts_floor`, `a_deeper_trench_takes_the_flow_from_the_old_way` (the
 notch dry, the trench within 5 %), `a_cut_from_the_sea_floods_a_hollow_to_sea_level` (a 68,600-cell
 sea, its level unmoved), `the_flow_data_resolves`; `tests/water.rs`
 `breaking_a_lakes_wall_drains_its_top_row_and_clients_see_it` (through the server; red with the water
 tick off); `shared/fluids/gen.test.mjs`.
+
+## 16. Review (2026-11-03)
+
+The owner, after 0.42.1: a block set at the bottom of any river flooded it without end or drained
+it, and flying away seemed to delete basins; then *"Do an evaluation on the system as a whole and
+look for flaws in design or spec."* Reproduced in a generated world (seed 1): one block in a river's
+bed found a pool with an inflow of 61 m³/s and no outflow, and a lake beside it with 3,978 outlets
+and 1,059 m³/s. What the review found, and where each stands:
+
+| Flaw | Status |
+|---|---|
+| **Inflow measured off the generated water.** W1's inflow (what left a body just before the edit) assumed the water was in balance by the basins' rules; the generated world's isn't (plants, banks and the next step beside it are outlets by those rules), so every body found became a spring as large as its shore's gaps. | Replaced (0.42.2): the world as found is at rest, fed by the world map (§2.2). |
+| **Rivers aren't clean steps.** A generated river falls a row every few metres, its pools joined below their surfaces; merging a higher pool into a lower one it met collapsed the river into one basin with every pool's inflow. | Fixed (0.42.2): merges only at one level; the steps' water passes by their natural outlets. |
+| **Generated water and the containers disagree.** A body's container found again spread into cells it never filled, or dropped cells over a plant, so its level jumped as soon as it was rebuilt. | Fixed (0.42.2): what holds a found body is the world as found; its own cells stay in its rows. |
+| **Discovery depends on order.** 64 ways a tick, a way not found yet keeping its water: a pool found downstream filled 1.4 m in one tick before its ways were found. | Fixed (0.42.2): ways found in rounds, up to 1,024 a tick; water in transit while they aren't. |
+| **No integration scheme.** A tick of 7.2 s of water time on a pool of a few dozen cells overshot (flows swinging to 666 m³/s). | Fixed (0.42.2): flow steps by the fastest basin. |
+| **Live radius and loaded chunks.** Basins were live to 160 m but unmodified chunks are evicted past 3 chunks; an unloaded cell is a wall, so a basin rebuilt beside one lost its water; a waiting basin took what a live one sent it and let nothing out. | Fixed (0.42.2): a basin waits while a chunk of it is unloaded; a waiting basin passes on what comes in. |
+| **Silent losses.** A sheet capped at `maxRowCells` loses its excess; water running out of the loaded world is lost. | Counted in `lost` (the conservation test sees them); kept, as W1's deviations. |
+| **The water's edge.** A ramp beside the water at its row stood dry, the water ending in a wall (the owner's screenshot). | The water's writes flood the ramps beside them (0.42.2). The generator's own ramps beside its water are its choice: changing them changes the terrain a seed generates, a new compatibility line the owner raises (open). |
+| **Nothing saved.** After a restart the basins are gone; the water stays where it was left. | W2 (planned). |
 

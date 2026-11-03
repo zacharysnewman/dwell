@@ -2374,7 +2374,7 @@ flies high above the disc and the whole disc is drawn by the time it arrives.
 
 ---
 
-### 6.7 Water Flow **[in progress, Phase 52: W1 built]**
+### 6.7 Water Flow **[in progress, Phase 52: W1 built, the world map's flow (W2) built]**
 
 [ADR 0053](./adr/0053-water-flow.md), [`WATER_FLOW.md`](./WATER_FLOW.md). Liquid is simulated as
 **basins**, each a connected body with one level and volume, joined by **outlets** (the weir law,
@@ -2385,10 +2385,13 @@ merge and split. Simulated near players, fast-forwarded elsewhere; rates counted
 Each liquid cell has a derived current, which the water drag (§7, BUILT_BODIES.md §6) and the swim
 layer use. **Built (W1):** `dwell-sim` `water.rs` on the server, data `shared/fluids/flow.json` (→
 `flow.gen.rs`: the speed, the water tick's period, the live radius, the size limits, each liquid's
-weir coefficient and the blocks' leaks); bodies found by the edits that touch them (their inflow what
-left them before), each face's sea a reservoir by size; its writes sent as `Rebake` modifications
-(WATER_FLOW.md §15). **Planned:** runoff from the world map, a saved basins table (§6.4), basin
-messages, currents (a new compatibility line).
+weir coefficient and the blocks' leaks); bodies found by the edits that touch them, **at rest as
+found** (ADR 0055, 0.42.2: what they didn't fill holds them, their natural outlets pass the world
+map's flow, `dwell_worldgen::runoff_for` → `TerrainGenerator::discharge_at`, linked into one flow
+network), each face's sea a reservoir by size; flow steps by the fastest basin; basins out of reach
+or with a chunk unloaded wait, passing on what comes in; ramps at the written edge flooded; its
+writes sent as `Rebake` modifications (WATER_FLOW.md §15, the review §16). **Planned:** a saved
+basins table (§6.4), fast-forward, basin messages, currents (a new compatibility line).
 
 ## 7. Physics Pipeline
 

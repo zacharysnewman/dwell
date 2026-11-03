@@ -144,6 +144,18 @@ pub fn spawn_point_for(version: u32, world_seed: u64) -> [f64; 3] {
     [0.5, feet, 0.5]
 }
 
+/// The world map's flow through a column (m³/s; docs/WATER_FLOW.md §2.1), by face and face-local
+/// x, z: what feeds the water flow's basins. `None` for a generator without a world map (the flat
+/// world, the sandbox): their water has no flow of its own.
+pub type Runoff = Arc<dyn Fn(dwell_world::Face, i32, i32) -> f64 + Send + Sync>;
+
+pub fn runoff_for(version: u32, world_seed: u64) -> Option<Runoff> {
+    let terrain = Arc::new(BifacialTerrain::for_generator(version, world_seed)?);
+    Some(Arc::new(move |face, x, z| {
+        terrain.local(face).discharge_at(x, z)
+    }))
+}
+
 pub fn lod_generator_for(version: u32, world_seed: u64) -> LodGenerator {
     if let Some(terrain) = BifacialTerrain::for_generator(version, world_seed) {
         let terrain = Arc::new(terrain);

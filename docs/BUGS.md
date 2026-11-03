@@ -10,6 +10,43 @@ None. Report new ones here.
 
 ## Fixed
 
+### 18. Ramps beside the water stood dry, the water ending in a wall (water's edge fixed in 0.42.2)
+
+*Reported 2026-11-03 (0.42.1, screenshot).* "Slopes next to water aren't flooded at generation time
+or update: you can see the water wall edge."
+
+- **Cause:** a ramp's open part holds water only in its `flooded` state; neither the water flow's
+  writes nor the generator gave it to a ramp beside the water at its row (the generator floods a
+  ramp only in a column under water).
+- **Fix (update):** the water's writes flood the blocks with a `flooded` state beside the rows they
+  wet, and unflood them when no liquid is beside them (`water.rs` `flood_edge`).
+- **Open (generation):** the generator's own ramps beside its water: changing them changes the
+  terrain a seed generates, a new compatibility line for the owner to raise.
+- **Test:** `ramps_at_the_waters_edge_flood_and_dry_with_it` (both faces; red on 0.42.1).
+
+### 17. A block set at the bottom of any river flooded it without end, or drained it (fixed in 0.42.2)
+
+*Reported 2026-11-03 (0.42.1).* "Putting a single block at the bottom of the river causes it to
+flood continuously, rising higher and higher … flying around seems to delete basins?" and "just
+adding a block to the bottom of any river makes it flood endlessly, or seemingly randomly drain
+completely."
+
+- **Cause:** W1 took a body's inflow from what left it just before the edit, by the basins' rules,
+  which the generated water doesn't keep: plants, banks and the next step beside it counted as
+  outlets (one pool 61 m³/s in, a lake 1,059 m³/s); a higher pool merged with the lower ones it met
+  below its surface, the river one basin with every pool's inflow and no way out; a pool found
+  downstream filled before its ways were found; 7.2 s ticks overshot small pools; basins whose
+  chunks were evicted lost their water, and waiting ones filled with what live ones sent them
+  (WATER_FLOW.md §16).
+- **Fix:** the redesign (ADR 0055, WATER_FLOW.md §2.2): the world as found is at rest, its natural
+  outlets passing the world map's flow, linked into one flow network; merges at one level; flow
+  steps; ways found in rounds with water in transit; waiting basins pass on what comes in and wait
+  while a chunk of them is unloaded.
+- **Test:** `a_block_set_in_a_generated_rivers_bed_changes_nothing_else` (seed 1, two rivers, six
+  hours of water time; red on 0.42.1: 173,921 cells changed), `a_river_found_at_rest_keeps_its_banks_dry`,
+  `a_basin_waits_while_a_chunk_of_it_is_unloaded`, `a_waiting_basin_passes_on_what_comes_in` (both
+  faces; red on 0.42.1).
+
 ### 16. Blocks in a riverbed flooded a stepped fall, then the river drained dry (fixed in 0.42.1)
 
 *Reported 2026-11-03 (0.42.0, a local terrain world).* "I added a row of 3 half blocks to the bottom

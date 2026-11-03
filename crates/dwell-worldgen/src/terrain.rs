@@ -1017,6 +1017,79 @@ impl TerrainGenerator {
         }
     }
 
+    /// The flow (m³/s) through face-local column (x, z) by the world map (docs/WATER_FLOW.md §2.1):
+    /// a river's discharge where its channel lies (the map's, between its vertices), a lake's
+    /// outflow (the discharge its outlet river starts with) inside its shore; 0 elsewhere. The
+    /// lookups are the column's own (`base_column`): the same warps, the same nearest channel.
+    pub fn discharge_at(&self, x: i32, z: i32) -> f64 {
+        let (x, z) = (i64::from(x), i64::from(z));
+        let map = &self.map;
+        if !map.shores.fields.is_empty() {
+            let (sx, sz) = self.warp(
+                self.shore_seeds,
+                x,
+                z,
+                S.lake_shore_noise,
+                S.lake_shore_wavelength,
+            );
+            if let Some(l) = map.shores.query(map, sx, sz)
+                && l.sdf > 0.0
+            {
+                let id = l.lake + 1;
+                return map
+                    .rivers
+                    .iter()
+                    .filter(|r| r.from_lake == id)
+                    .filter_map(|r| r.path.first())
+                    .map(|v| f64::from(v.discharge))
+                    .fold(0.0, f64::max);
+            }
+        }
+        if !map.channels.near(x as f64, z as f64, 0.0) {
+            return 0.0;
+        }
+        let (wx, wz) = self.warp(
+            self.meander_seeds,
+            x,
+            z,
+            S.river_meander,
+            S.river_meander_wavelength,
+        );
+        let Some(hit) = map.channels.query(wx, wz, 0.0, f64::INFINITY) else {
+            return 0.0;
+        };
+        if hit.d > hit.half {
+            return 0.0;
+        }
+        let Some(river) = map.rivers.get(hit.river as usize) else {
+            return 0.0;
+        };
+        // Between the course's two vertices nearest (the segment it projects onto).
+        let mut best = (f64::INFINITY, 0.0);
+        for w in river.path.windows(2) {
+            let (a, b) = (w[0], w[1]);
+            let (ax, az) = (f64::from(a.x), f64::from(a.z));
+            let (dx, dz) = (f64::from(b.x) - ax, f64::from(b.z) - az);
+            let len2 = dx * dx + dz * dz;
+            let t = if len2 > 0.0 {
+                (((wx - ax) * dx + (wz - az) * dz) / len2).clamp(0.0, 1.0)
+            } else {
+                0.0
+            };
+            let (px, pz) = (ax + dx * t, az + dz * t);
+            let d2 = (wx - px).powi(2) + (wz - pz).powi(2);
+            if d2 < best.0 {
+                let q =
+                    f64::from(a.discharge) + (f64::from(b.discharge) - f64::from(a.discharge)) * t;
+                best = (d2, q);
+            }
+        }
+        if best.0.is_infinite() {
+            return river.path.first().map_or(0.0, |v| f64::from(v.discharge));
+        }
+        best.1
+    }
+
     /// A column with exactly the chunk path's arithmetic (spawn, tools, tests).
     pub fn column_at(&self, x: i32, z: i32) -> Column {
         self.column(i64::from(x), i64::from(z), 1)
