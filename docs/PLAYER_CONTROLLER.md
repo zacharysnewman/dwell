@@ -466,11 +466,15 @@ openings), **crouch height 0.9** (fits 1-tall crawlspaces with skin to spare).
   position; the horizontal layer accelerates in that frame, and the vertical layer follows its
   vertical velocity, so standing on a falling slab or tipping tower needs no input. `yaw_delta`
   turns the camera with rotating bodies (clamped to `max_platform_yaw_speed`).
-- **Push strength [planned, Phase 20].** The aggregate pass sets velocity directly, which by itself
-  would let an 80 kg player shove a 20-tonne cluster. Contacts between a player and a Tier 1 body
-  are to be limited so the effective push force never exceeds `max_push_force`; clusters heavier
-  than `pushable_mass_limit` are immovable by players. The player is still fully pushed *by* the
-  cluster. (The config fields exist; the contact mechanism on Rapier is built with the clusters.)
+- **Push strength [built for pieces, 0.41.5].** The aggregate pass sets velocity directly, which by
+  itself would let an 80 kg player shove a 20-tonne cluster. A piece slow enough (the server's
+  `holdSpeed`) is held from players' contacts by a dominance group, and the **push pass**
+  (`step_push`, after the aggregate) moves it instead: a body touched from the side gets the
+  player's speed into it (its velocity or its input's wish, the larger), at most `max_push_force`
+  over its mass a tick, at its centre of mass; the pass records each push (`Players::pushes`) for
+  the prediction, which moves its kinematic stand-in by it (docs/BUILT_BODIES.md §6). Weight resists
+  by friction and drag, so `pushable_mass_limit` is unused. The player is still fully pushed *by* a
+  body. Clusters (Phase 20) are not yet in this.
 - **Crush [planned, Phase 20]:** from the player's contacts. A player with contacts of roughly
   opposing normals (dot < −0.7) where one is a Tier 1 body approaching faster than `crush_speed`,
   sustained for `crush_ticks`, is crushed (damage/death, ARCHITECTURE §9.6).
@@ -772,7 +776,7 @@ PPC default for voxels.
 | | `carried_by_characters` | false | same | |
 | | `auto_jump` ◆ | false (touch preset: true) | — | Dwell addition |
 | | `edge_guard` ◆ | false | — | Dwell addition |
-| | `max_push_force` ◆ | 800 N | — | Contact limit (Phase 20) |
+| | `max_push_force` ◆ | 800 N | — | The push pass's most force on a body (0.41.5; BUILT_BODIES.md §6) |
 | | `pushable_mass_limit` ◆ | 400 kg | — | Heavier clusters are immovable by players (Phase 20) |
 | `probes` | `ground_probe_margin` / `ceiling_probe_margin` | 0.15 / 0.10 m | same | |
 | | `max_slope_angle` | 56° ◆ (the steepest ground: above the 45° ramps; steeper than `slide.min_angle` slides) | same | |

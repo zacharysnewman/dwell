@@ -72,9 +72,12 @@ carriers and riders around the change, budgeted per tick (`INTEGRITY_BUDGET_VOXE
   20 m trunk, its cut's tick 19 ms natively (137 ms for 80 logs), now about 1 ms
   (`cutting_a_tall_trunk_loads_terrain_collision_round_it_…`).
 - **Players:** pushed by it (as by any Tier 1 body, PLAYER_CONTROLLER.md §6.6); pushing it back
-  only while it is lighter than `pushableMass` — a heavier piece is held from players' pushes
-  (Rapier's dominance group) while it moves slower than `heavyHoldSpeed` (held while falling fast,
-  it squeezed a player under it through the ground, `a_falling_trunk_hurts_…`); hurt by it: a
+  by the controller's push (0.41.5, BUILT_BODIES.md §6): a piece slower than `holdSpeed`, or pushed
+  in the last `pushHoldSeconds`, is held from players' contacts (Rapier's dominance group) and
+  given their speed into it at most `maxPushForce` over its mass a tick, the same in the clients'
+  prediction; a heavy one on the ground doesn't move (its friction is more). Faster, it moves as
+  the physics says (held while falling fast, it squeezed a player under it through the ground,
+  `a_falling_trunk_hurts_…`); hurt by it: a
   carrying cell closing on a player faster than `hitSpeed` (its speed toward them, less theirs away;
   a player falling onto a still log takes fall damage instead) does `hitDamagePerSpeed` points per
   m/s over it, `Crush`, once per piece and player (`Felling::hits`, before the physics step); and
@@ -123,8 +126,8 @@ When a piece has moved less than `SLEEP_LINEAR_THRESHOLD` / `SLEEP_ANGULAR_THRES
    owner). A carrier whose cell is taken tries one cell up, then sideways; else it is destroyed.
    Cells overlapping a player count as taken, so nobody is buried.
 3. The cells are written in one reliable change (reason `Rebake`) with `EntityDespawn`; the placed
-   carriers then pass through integrity again (a log left resting only on leaves falls again; a
-   piece that settles three times without anchoring stays where it is).
+   carriers then pass through integrity again (owner, 2026-11-02: a piece falls once; with
+   `maxSettles` 1 what settled stays where it lands, anchored or not, a log on leaves included).
 
 ### 4.1 The settle glide (clients; owner, 2026-10-29)
 
@@ -160,8 +163,8 @@ the face-local bottom under its centre of mass, so the foot starts still, and at
 its farthest point; owner, 2026-10-30: 40–120 log trunks "flip out", spun about their centre of mass
 the foot of a 60 m one skidded back at 18 m/s; on face B the old spin tipped toward the cutter,
 `a_tall_trunk_tips_about_its_foot_away_from_who_cut_it`), `sleepLinear` / `sleepAngular` (0.05), `sleepSeconds` (2),
-`maxSeconds` (30), `maxSettles` (3), `hitSpeed` (4 m/s),
-`hitDamagePerSpeed` (6), `pushableMass` (400 kg), `heavyHoldSpeed` (1 m/s), `settleGlideSeconds`
+`maxSeconds` (30), `maxSettles` (1), `hitSpeed` (4 m/s),
+`hitDamagePerSpeed` (6), `holdSpeed` (1 m/s), `pushHoldSeconds` (0.25 s), `settleGlideSeconds`
 (0.3 s) and `settleBounce` (0.12, §4.1), `terrainChunksPerTick` (4, §3). Sounds
 (`shared/sounds/dwell.json`): `fell` (the crack, `fell_crack`, as a carrying piece spawns) and
 `piece_land` (the block's `land` sound when a piece's velocity changes by over 2 m/s between

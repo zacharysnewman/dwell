@@ -24,8 +24,8 @@ pub struct FellingData {
     pub max_settles: u8,
     pub hit_speed: f64,
     pub hit_damage_per_speed: f64,
-    pub pushable_mass: f64,
-    pub heavy_hold_speed: f64,
+    pub hold_speed: f64,
+    pub push_hold_seconds: f64,
     /// How long (s) a settling piece is drawn gliding into its blocks' places (the clients').
     pub settle_glide_seconds: f64,
     /// How far past its place (a fraction of the glide) it swings before it rests.
@@ -229,11 +229,13 @@ pub struct FellingRules {
     /// points per m/s over it.
     pub hit_speed: f64,
     pub hit_damage_per_speed: f64,
-    /// Players push pieces lighter than this (kg); heavier ones they cannot move while slower
-    /// than `heavy_hold_speed` (m/s, at any point): held fast while falling, a heavy piece would
-    /// squeeze a player under it through the ground.
-    pub pushable_mass: f64,
-    pub heavy_hold_speed: f64,
+    /// A piece slower than this (m/s, at any point) is held from players' contacts (a dominance
+    /// group), and moved by their push instead (`Players::step_push`, the same in the clients'
+    /// prediction); faster, it moves as the physics says (held fast while falling, it would
+    /// squeeze a player under it through the ground). Docs/BUILT_BODIES.md §6.
+    pub hold_speed: f64,
+    /// A piece pushed is held this many ticks after its last push, however fast it goes.
+    pub push_hold_ticks: u32,
     /// The most terrain-collision chunks built a tick round falling pieces.
     pub terrain_chunks_per_tick: u32,
 }
@@ -262,8 +264,8 @@ impl From<FellingData> for FellingRules {
             topple_tip_speed: d.topple_tip_speed,
             hit_speed: d.hit_speed,
             hit_damage_per_speed: d.hit_damage_per_speed,
-            pushable_mass: d.pushable_mass,
-            heavy_hold_speed: d.heavy_hold_speed,
+            hold_speed: d.hold_speed,
+            push_hold_ticks: ticks(d.push_hold_seconds),
             terrain_chunks_per_tick: d.terrain_chunks_per_tick,
         }
     }
@@ -292,14 +294,12 @@ pub struct Falling {
     pub kind: u8,
     /// The players it has hurt (their keys, `hits`), each hurt once by a piece.
     hurt: Vec<u64>,
-    /// Too heavy for players to push (`pushable_mass`), and whether it is held from them now.
-    heavy: bool,
+    /// Whether it is held from players' contacts now (slow, or pushed lately).
     held: bool,
+    /// Ticks it stays held for its last push (`push_hold_ticks`).
+    pushed: u32,
     /// Held still on its build platform (docs/BUILT_BODIES.md §3) until no cell of it rests on one.
     anchored: bool,
-    /// Some of it was in a liquid last tick: the water carries its weight, so players push it
-    /// however heavy (docs/BUILT_BODIES.md §6).
-    floating: bool,
     /// How far its cells reach from its body's origin (m).
     reach: f64,
 }
@@ -451,7 +451,6 @@ impl Felling {
                 cells.push((o, m));
                 clear(world, c, if s.flooded { M.water } else { M.air });
             }
-            // Too heavy for players to push (docs/FELLING.md §4, `pushableMass`).
             let mass: f64 = boxes.iter().map(|b| b.mass).sum();
             let body = physics.add_piece(origin, &boxes, false);
             let reach = boxes.iter().map(|b| b.center.length()).fold(0.0, f64::max) + 0.9;
@@ -495,10 +494,9 @@ impl Felling {
                 still: 0,
                 age: 0,
                 hurt: Vec::new(),
-                heavy: mass >= self.rules.pushable_mass,
                 held: false,
+                pushed: 0,
                 anchored: false,
-                floating: false,
                 reach,
             });
             out.push(self.pieces.len() - 1);
@@ -563,7 +561,6 @@ impl Felling {
                 .collect();
             let (cells, carriers) = carriers_first(rel);
             let boxes = piece_boxes(&cells, carriers, self.pieces[i].kind);
-            let mass: f64 = boxes.iter().map(|b| b.mass).sum();
             let reach = boxes.iter().map(|b| b.center.length()).fold(0.0, f64::max) + 0.9;
             let new = physics.add_piece(origin, &boxes, false);
             physics.set_rotation(new, rotation);
@@ -580,10 +577,9 @@ impl Felling {
                 still: 0,
                 age: old.age,
                 hurt: old.hurt.clone(),
-                heavy: mass >= self.rules.pushable_mass,
                 held: false,
+                pushed: 0,
                 anchored: false,
-                floating: false,
                 reach,
             };
             self.next_id += 1;
@@ -594,7 +590,6 @@ impl Felling {
         let boxes = piece_boxes(&cells, carriers, self.pieces[i].kind);
         physics.set_piece_cells(body, &boxes);
         let p = &mut self.pieces[i];
-        p.heavy = boxes.iter().map(|b| b.mass).sum::<f64>() >= self.rules.pushable_mass;
         p.reach = boxes.iter().map(|b| b.center.length()).fold(0.0, f64::max) + 0.9;
         p.cells = cells;
         p.carriers = carriers;
@@ -643,7 +638,6 @@ impl Felling {
         let boxes = piece_boxes(&cells, carriers, p.kind);
         physics.set_piece_cells(p.body, &boxes);
         let p = &mut self.pieces[i];
-        p.heavy = boxes.iter().map(|b| b.mass).sum::<f64>() >= self.rules.pushable_mass;
         p.reach = boxes.iter().map(|b| b.center.length()).fold(0.0, f64::max) + 0.9;
         p.cells = cells;
         p.carriers = carriers;
@@ -774,7 +768,6 @@ impl Felling {
     ) -> usize {
         let (cells, carriers) = carriers_first(cells);
         let boxes = piece_boxes(&cells, carriers, kind);
-        let mass: f64 = boxes.iter().map(|b| b.mass).sum();
         let reach = boxes.iter().map(|b| b.center.length()).fold(0.0, f64::max) + 0.9;
         let body = physics.add_piece(position, &boxes, false);
         physics.set_rotation(body, rotation);
@@ -792,11 +785,10 @@ impl Felling {
             still: 0,
             age: 0,
             hurt: Vec::new(),
-            heavy: mass >= self.rules.pushable_mass,
             held: false,
+            pushed: 0,
             reach,
             anchored: false,
-            floating: false,
         });
         self.pieces.len() - 1
     }
@@ -887,7 +879,6 @@ impl Felling {
                 );
                 under += fraction;
             }
-            p.floating = under > 0.0;
             if under > 0.0 {
                 let share = under / p.cells.len() as f64;
                 let v = physics.velocity(p.body) * (-WATER.drag * share * dt).exp();
@@ -898,9 +889,18 @@ impl Felling {
         }
     }
 
-    /// Whether the body `id` is held from players' pushes now (too heavy and slow; not afloat).
-    pub fn held_from_players(&self, id: u32) -> Option<bool> {
-        self.pieces.iter().find(|p| p.id == id).map(|p| p.held)
+    /// The bodies players pushed this tick (`Players::pushes`): held from their contacts for
+    /// `push_hold_ticks` more, so the push alone moves them (as the clients predict it).
+    pub fn pushed(&mut self, physics: &mut Physics, bodies: &[(BodyHandle, DVec3)]) {
+        for p in &mut self.pieces {
+            if bodies.iter().any(|&(b, _)| b == p.body) {
+                p.pushed = self.rules.push_hold_ticks;
+                if !p.held {
+                    physics.set_dominant(p.body, true);
+                    p.held = true;
+                }
+            }
+        }
     }
 
     /// The box (world metres) round each piece the terrain collision must cover over the next
@@ -991,7 +991,8 @@ impl Felling {
 
     /// Counts each piece's still ticks after a physics step; returns the indices of those to
     /// settle now (at rest, or out of time), last first (so removing them keeps the rest).
-    /// And holds the heavy pieces moving slowly from players' pushes, letting the faster go.
+    /// And holds the pieces moving slowly (or pushed lately) from players' contacts, letting the
+    /// faster go.
     pub fn step(&mut self, physics: &mut Physics) -> Vec<usize> {
         let r = self.rules;
         let mut due = Vec::new();
@@ -999,8 +1000,8 @@ impl Felling {
             p.age += 1;
             let v = physics.velocity(p.body).length();
             let w = physics.angular_velocity(p.body).length();
-            // Not while floating (owner, 2026-11-02: a log raft afloat "I couldn't push it").
-            let held = p.heavy && !p.floating && v + w * p.reach < r.heavy_hold_speed;
+            p.pushed = p.pushed.saturating_sub(1);
+            let held = p.pushed > 0 || v + w * p.reach < r.hold_speed;
             if held != p.held {
                 physics.set_dominant(p.body, held);
                 p.held = held;
@@ -1320,10 +1321,9 @@ mod tests {
             still: 0,
             age: 0,
             hurt: Vec::new(),
-            heavy: false,
             held: false,
+            pushed: 0,
             anchored: false,
-            floating: false,
             reach: 1.0,
         }
     }
@@ -1465,6 +1465,25 @@ mod tests {
         }
     );
 
+    #[test]
+    fn a_piece_that_settled_once_stays_put_even_unsupported() {
+        // face-a-only: counts settles, no up. Owner, 2026-11-02: "The piece should only fall once
+        // not 3 times." A piece that settled on nothing (a log on leaves) stays where it settled.
+        // Red before: maxSettles 3 let it fall twice more.
+        let mut world = VoxelWorld::new(dwell_world::empty_generator(), None);
+        let mut physics = Physics::new(dwell_physics::PhysicsConfig::default());
+        let mut felling = Felling::default();
+        world.set_voxel(0, 41, 0, log());
+        let mut clear =
+            |w: &mut VoxelWorld, c: [i32; 3], m: StateId| w.set_voxel(c[0], c[1], c[2], m);
+        let first = felling.detach(&mut world, &mut physics, &[[0, 41, 0]], 0, None, &mut clear);
+        assert_eq!(first.len(), 1, "a first fall");
+        world.set_voxel(4, 41, 0, log());
+        let again = felling.detach(&mut world, &mut physics, &[[4, 41, 0]], 1, None, &mut clear);
+        assert!(again.is_empty(), "settled once: it stays");
+        assert_eq!(world.get_voxel(4, 41, 0), log());
+    }
+
     fn moving(id: u32, x: f64, speed: f32) -> dwell_protocol::PieceState {
         dwell_protocol::PieceState {
             id,
@@ -1564,71 +1583,6 @@ mod tests {
         }
     );
 
-    #[test]
-    fn a_heavy_raft_afloat_is_not_held_from_players_pushes() {
-        // face-a-only: the push hold has no up (the floating test is both faces').
-        // Owner, 2026-11-02: a 2 × 2 log raft (1,400 kg, over `pushableMass`) dropped in water
-        // floated, "but I couldn't push it": slow and heavy, it was held from players as a felled
-        // trunk is. Afloat, the water carries it. Red before: held.
-        let mut world = VoxelWorld::new(dwell_world::empty_generator(), None);
-        let mut physics = Physics::default();
-        let mut felling = Felling::default();
-        let water = dwell_blocks::require("dwell:water");
-        for x in -4..=4 {
-            for z in -4..=4 {
-                for y in 70..76 {
-                    world.set_voxel(x, y, z, water);
-                }
-            }
-        }
-        let cells: Vec<([i32; 3], StateId)> = (0..2)
-            .flat_map(|x| (0..2).map(move |z| ([x, 0, z], log())))
-            .collect();
-        let i = felling.spawn_body(
-            &mut physics,
-            None,
-            1,
-            0,
-            cells.clone(),
-            DVec3::new(0.5, 38.0, 0.5),
-            DQuat::IDENTITY,
-            DVec3::ZERO,
-            DVec3::ZERO,
-        );
-        let id = felling.pieces[i].id;
-        for _ in 0..(60 * 6) {
-            felling.float(&mut world, &mut physics);
-            felling.step(&mut physics);
-            physics.step(1.0 / 60.0);
-        }
-        assert_eq!(
-            felling.held_from_players(id),
-            Some(false),
-            "afloat: pushable"
-        );
-        // The same raft on dry ground: held, as a heavy trunk is.
-        let mut dry = VoxelWorld::new(dwell_world::empty_generator(), None);
-        let j = felling.spawn_body(
-            &mut physics,
-            None,
-            1,
-            0,
-            cells,
-            DVec3::new(20.5, 38.0, 0.5),
-            DQuat::IDENTITY,
-            DVec3::ZERO,
-            DVec3::ZERO,
-        );
-        let dry_id = felling.pieces[j].id;
-        felling.float(&mut dry, &mut physics);
-        felling.step(&mut physics);
-        assert_eq!(
-            felling.held_from_players(dry_id),
-            Some(true),
-            "dry and still: held"
-        );
-    }
-
     /// A 1 m log falling at `speed` m/s onto a standing player's head (capsule 0.3 m round,
     /// 1.8 m tall, centre 0.9 m up): what it hurts, twice over (a piece hurts each player once).
     type Hits = Vec<(u64, i32)>;
@@ -1660,10 +1614,9 @@ mod tests {
             still: 0,
             age: 0,
             hurt: Vec::new(),
-            heavy: false,
             held: false,
+            pushed: 0,
             anchored: false,
-            floating: false,
             reach: 1.0,
         });
         let player = PlayerBody {
@@ -1696,6 +1649,6 @@ mod tests {
         assert_eq!(r.sleep_ticks, (FELLING.sleep_seconds * 60.0).round() as u32);
         assert_eq!(r.max_ticks, (FELLING.max_seconds * 60.0).round() as u32);
         assert_eq!(r.support.rider_reach, FELLING.rider_reach);
-        assert_eq!(r.pushable_mass, FELLING.pushable_mass);
+        assert_eq!(r.hold_speed, FELLING.hold_speed);
     }
 }

@@ -300,6 +300,7 @@ fn the_local_player_rides_a_falling_pieces_stand_in() {
             at,
             dwell_physics::DQuat::IDENTITY,
             Vec3::new(speed as f32, 0.0, 0.0),
+            seq,
         );
         p.tick(&mut world, &quantize_input(&Input::default(), seq));
     }

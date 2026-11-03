@@ -289,17 +289,80 @@ impl Physics {
             .user_data(TIER1_BODY)
             .build();
         let h = self.w.bodies.insert(body);
-        for c in cells.iter().filter(|c| c.collide == Collide::All) {
-            let collider = ColliderBuilder::cuboid(c.half.x, c.half.y, c.half.z)
-                .translation(c.center)
-                .friction(0.8)
-                .collision_groups(groups(Layer::Tier1))
-                .build();
+        // Every cell, as the server's piece has them: the colliding ones touch the player, and
+        // all of them give it the piece's mass (a player's push is predicted by it).
+        for c in cells {
             self.w
                 .colliders
-                .insert_with_parent(collider, h, &mut self.w.bodies);
+                .insert_with_parent(piece_collider(c), h, &mut self.w.bodies);
         }
         BodyHandle(h)
+    }
+
+    /// A body's mass (kg; a kinematic stand-in's too, from its cells).
+    pub fn mass(&self, h: BodyHandle) -> f64 {
+        self.w.bodies.get(h.0).map_or(0.0, |b| b.mass())
+    }
+
+    /// An impulse (N·s) on the body at its centre of mass.
+    pub fn apply_impulse(&mut self, h: BodyHandle, impulse: DVec3) {
+        if let Some(b) = self.w.bodies.get_mut(h.0) {
+            b.apply_impulse(impulse, true);
+        }
+    }
+
+    /// Whether players move this Tier 1 body by a push of their own (`Players`' push pass), not
+    /// by their contacts: a dominant piece (the server holds a slow piece so) or a kinematic
+    /// stand-in (the client's prediction of one).
+    pub fn pushed_by_players(&self, h: BodyHandle) -> bool {
+        self.w.bodies.get(h.0).is_some_and(|b| {
+            b.user_data == TIER1_BODY
+                && (b.is_kinematic() || (b.is_dynamic() && b.dominance_group() > 0))
+        })
+    }
+
+    /// The Tier 1 bodies `body` touched in the last step, each with its contacts' push-out normal
+    /// toward `body` (world), at most `max` (as [`Physics::contact_normals`]).
+    pub fn tier1_contacts(&self, body: BodyHandle, max: usize, out: &mut Vec<(BodyHandle, DVec3)>) {
+        out.clear();
+        let Some(b) = self.w.bodies.get(body.0) else {
+            return;
+        };
+        let reach = self.w.integration_parameters.prediction_distance();
+        for &collider in b.colliders() {
+            for pair in self.w.narrow_phase.contact_pairs_with(collider) {
+                let other = if pair.collider1 == collider {
+                    pair.collider2
+                } else {
+                    pair.collider1
+                };
+                let Some(parent) = self.w.colliders.get(other).and_then(|c| c.parent()) else {
+                    continue;
+                };
+                if self
+                    .w
+                    .bodies
+                    .get(parent)
+                    .is_none_or(|o| o.user_data != TIER1_BODY)
+                {
+                    continue;
+                }
+                for m in pair.manifolds() {
+                    let touching = m.points.iter().any(|p| p.dist < reach);
+                    if !touching || out.len() >= max {
+                        continue;
+                    }
+                    out.push((
+                        BodyHandle(parent),
+                        if pair.collider2 == collider {
+                            m.data.normal
+                        } else {
+                            -m.data.normal
+                        },
+                    ));
+                }
+            }
+        }
     }
 
     /// Moves a position-based kinematic body (`add_kinematic_piece`) to this pose over the next

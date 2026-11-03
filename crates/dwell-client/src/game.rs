@@ -1038,6 +1038,21 @@ impl<S: Scene> Game<S> {
                 }
                 self.last_snapshot_tick = s.server_tick;
                 self.clock.observe(s.server_tick, now_ms);
+                // The pieces' poses first: drawn interpolated, and stood in for in the prediction
+                // at their latest carried on to the present, so a replay meets them where the
+                // server had them (docs/FELLING.md §3, BUILT_BODIES.md §6).
+                self.pieces
+                    .on_snapshot(&s.pieces, s.ack_input_seq, now_ms, &mut self.sounds);
+                for (id, cells, position, rotation, velocity, seq) in self.pieces.latest() {
+                    self.predictor.set_piece(
+                        id,
+                        cells,
+                        position,
+                        rotation,
+                        velocity.as_vec3(),
+                        seq,
+                    );
+                }
                 self.predictor.on_snapshot(self.streamer.store_mut(), &s);
                 self.health = s.local.health;
                 self.dead = s.local.flags & player_flags::DEAD != 0;
@@ -1053,13 +1068,6 @@ impl<S: Scene> Game<S> {
                     1.0
                 };
                 self.remotes.push(s.server_tick, &s.remotes, now_ms);
-                // The falling pieces' poses: drawn interpolated, and stood in for in the prediction
-                // at their latest (docs/FELLING.md §3).
-                self.pieces.on_snapshot(&s.pieces, now_ms, &mut self.sounds);
-                for (id, cells, position, rotation, velocity) in self.pieces.latest() {
-                    self.predictor
-                        .set_piece(id, cells, position, rotation, velocity.as_vec3());
-                }
                 let mut seen = HashSet::default();
                 let latest = self.remotes.latest();
                 self.remote_impacts(&latest, now_ms);
@@ -2485,6 +2493,11 @@ impl<S: Scene> Game<S> {
         for id in step.remove {
             self.scene.borrow_mut().set_piece(id, None);
         }
+        // Pieces near the player drawn at the present it is drawn in (docs/BUILT_BODIES.md §6).
+        let me = self.predictor.active().then(|| self.predictor.position());
+        let predictor = &self.predictor;
+        self.pieces
+            .set_present(|id| predictor.piece_pose(id), me, dt);
         let mut poses = self.pieces.poses(now_ms);
         poses.extend(self.glides.poses(now_ms));
         self.scene.borrow_mut().show_pieces(poses);

@@ -104,8 +104,8 @@ easy to get wrong; added later if it feels slow.
 - **Far from every player** a body is **frozen**: kinematic and still while the terrain round it
   isn't loaded (no player near), so it never falls through unloaded ground; it thaws when the
   terrain loads again.
-- **Riding and pushing:** as pieces already do (players stand on and ride them, push those lighter
-  than `pushableMass`).
+- **Riding and pushing:** as pieces already do (players stand on and ride them, push them by the
+  controller's push, §6).
 
 ## 6. Floating
 
@@ -233,6 +233,33 @@ one rests on the pool's floor), the water rules' data tests. Cost: nine voxel re
   (`a_player_stands_steadily_on_a_floating_raft`: 0 → 180 of 180 ticks grounded).
 - *The hover outline tilted unevenly*: the line shader left out a draw's rotation; it turns lines as
   meshes (`the_block_outline_turns_with_its_draw_as_meshes_do`; checked on the GPU on a tipping trunk).
+
+**Pushing, predicted (0.41.5; owner, 2026-11-02: "Movement gets really jittery when pushing a
+floating log raft, you can kind of push into it, feels soft"; the owner chose fixes 1 and 2).**
+- *The push* (`dwell-physics` `Players::step_push`, after the aggregate pass): a Tier 1 body players
+  don't move by contact (`Physics::pushed_by_players`: the server holds a piece slower than
+  felling.json's `holdSpeed`, or pushed in the last `pushHoldSeconds`, by a dominance group; a
+  client's stand-in is kinematic) that the player walks, swims, flies or slides into from the side is
+  given the player's speed into it (the larger of the body's velocity into it and the speed the
+  input asks for: against the body the layers' velocity is cut), at most `maxPushForce` (800 N) over
+  its mass a tick, at its centre of mass. The server applies the impulse; the prediction moves its
+  stand-in by it (`Players::pushes`). A heavy log on the ground doesn't move (friction is more than
+  the push); a 1.4 t raft afloat goes ~0.2 m/s. This replaced `pushableMass`: weight now resists by
+  friction and water drag, not a cut-off.
+- *The stand-in* (`Predictor::set_piece`): at the server's pose as of the input seq its snapshot
+  acknowledged, carried on at its velocity to each tick predicted (replays too), plus the local
+  player's own pushes since: where the server will have it, not where it was a round trip ago. The
+  client sets the pieces before reconciling (`game.rs`).
+- *Drawn at the present near the player* (`dwell-client` `pieces.rs` `set_present`): a body within
+  2.5 m of the player past its reach is drawn at its stand-in's pose, blended over 0.25 s; others as
+  before, 100 ms in the past (so a raft being pushed no longer showed the player inside it).
+- Tests: `netcode.rs` `pushing_a_floating_raft_is_predicted_without_snaps_at_150_ms_rtt` (a player
+  swims into a 2 × 2 log raft at 150 ms RTT, 20 ms jitter, 5 % loss: it moves; the stand-in within
+  3 cm of the server's raft at each input; corrections at most 1.8 cm, 4.9 cm before);
+  `pieces.rs` (physics) `a_player_pushes_a_held_light_piece_by_its_push` (red before: 0 m);
+  `pieces.rs` (client) `a_body_near_the_player_is_drawn_at_its_present_…` (red before).
+- Not predicted: water drag and buoyancy on the stand-in (the server's snapshots correct them; the
+  stand-in stays within ~1 cm), and the body's spin.
 
 ## 12. Not in this design
 
