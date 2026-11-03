@@ -707,7 +707,15 @@ impl Server {
             outbox: Vec::new(),
             knockbacks: Vec::new(),
             felling: crate::felling::Felling::default(),
-            water: crate::water::Water::new(),
+            water: match (
+                &config.generator_override,
+                dwell_worldgen::runoff_for(config.generator_version, config.world_seed),
+            ) {
+                (None, Some(runoff)) => crate::water::Water::with_runoff(std::sync::Arc::new(
+                    move |f: dwell_world::FaceFrame, x, z| runoff(f.face, x, z),
+                )),
+                _ => crate::water::Water::new(),
+            },
             settings: default_settings(config.water_speed),
             settings_fields: SettingsFields::default().with(default_settings(config.water_speed)),
             tick: 0,

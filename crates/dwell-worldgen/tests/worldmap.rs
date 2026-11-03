@@ -149,6 +149,23 @@ fn a_river_added_by_data_alone_is_carved_with_water_at_its_level() {
     }
 }
 
+#[test]
+fn a_rivers_flow_is_read_where_its_water_lies() {
+    // face-a-only: a fixture map of one face; the faces' code is one (the parity test).
+    // The water flow's runoff (docs/WATER_FLOW.md §2.1): the map river's discharge in its
+    // channel, none on its banks.
+    let g = TerrainGenerator::with_map(3, Arc::new(fixture(3)));
+    for x in [-500, 0, 700] {
+        assert!(g.column_at(x, 50).wet(), "x {x}");
+        let q = g.discharge_at(x, 50);
+        assert!((q - 6.0).abs() < 1e-6, "x {x}: {q}");
+    }
+    for z in [26, 74, 170] {
+        assert!(!g.column_at(0, z).wet());
+        assert_eq!(g.discharge_at(0, z), 0.0, "z {z}");
+    }
+}
+
 /// The columns of a ring of points round (x, z) every `step` m out to `r`.
 fn wet_columns_near(
     g: &TerrainGenerator,

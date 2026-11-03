@@ -13,6 +13,16 @@ struct Scene {
 
 const G: i32 = FLAT_TOP_Y + 40;
 
+/// The scenes' world map flow (m³/s): a three-cell channel's over a fall half a row deep.
+fn channel_q() -> f64 {
+    1.7 * 3.0 * 0.5f64.powf(1.5)
+}
+
+/// Water fed `q` m³/s through every column (a scene's stand-in for the world map).
+fn fed(q: f64) -> Water {
+    Water::with_runoff(std::sync::Arc::new(move |_, _, _| q))
+}
+
 impl Scene {
     fn new(f: FaceFrame) -> Self {
         Self::with_air(f, [-16, -8, -8], [32, 8, 16])
@@ -22,7 +32,7 @@ impl Scene {
         let mut s = Self {
             world: VoxelWorld::new(empty_generator(), None),
             f,
-            water: Water::new(),
+            water: fed(channel_q()),
         };
         s.fill(lo, hi, M.air);
         s
@@ -154,6 +164,7 @@ dwell_world::both_faces!(
         s.fill([10, -1, -1], [10, 3, 10], stone);
         s.fill([11, -6, -2], [24, -6, 12], stone);
         s.fill([0, 0, 0], [9, 3, 9], M.water);
+        s.water = fed(0.0); // on no river of the map
         s.edit(&[[10, 2, 4], [10, 3, 4]], M.air);
         s.run(1, 0.0);
         let lake = s.water.basin_at(s.cell(4, 0, 4)).expect("the lake").clone();
@@ -195,6 +206,7 @@ dwell_world::both_faces!(
         s.fill([0, 0, 0], [9, 1, 2], M.water);
         s.set(10, 1, 1, M.water); // water in the notch, spilling
         s.fill([11, -6, -2], [24, -6, 4], stone);
+        s.water = fed(1.7 * 0.5f64.powf(1.5));
         // Found by an edit beside it (the notch as it was), then the trench.
         s.edit(&[[-1, 0, 0], [-1, 0, 1], [-1, 1, 0], [-1, 1, 1]], M.air);
         s.run(1, 0.0);
@@ -374,6 +386,179 @@ dwell_world::both_faces!(
             "pool B as it was"
         );
         assert!(row(&s, -9, 9, 0) && dry(&s, -10, 9, 1), "pool C as it was");
+    }
+);
+
+dwell_world::both_faces!(
+    /// Owner, 2026-11-03: a block set at the bottom of any river flooded it without end, or
+    /// drained it. A body as generated is at rest (docs/WATER_FLOW.md §2.2): an open cell beside it
+    /// that it didn't fill (here a gap in the bank over a plant) holds it in, and its natural
+    /// outlets (the fall) pass the map's flow. Red before: the gap was an outlet, its flow counted
+    /// in the river's inflow, and water ran out onto the bank and pooled there.
+    fn a_river_found_at_rest_keeps_its_banks_dry(f: FaceFrame) {
+        let mut s = channel(f);
+        let stone = require("dwell:stone");
+        // A gap in the near wall at the water's row, over a plant on a ledge, and a walled ledge
+        // beyond it where water would pool.
+        s.set(4, 0, 3, M.air);
+        s.set(4, -1, 3, require("dwell:tall_grass"));
+        s.set(4, -2, 3, stone);
+        s.fill([2, -2, 4], [6, -2, 7], stone);
+        s.fill([1, -2, 3], [1, 1, 8], stone);
+        s.fill([7, -2, 3], [7, 1, 8], stone);
+        s.fill([1, -2, 8], [7, 1, 8], stone);
+        s.fill([2, -1, 3], [3, 1, 3], stone);
+        s.fill([5, -1, 3], [6, 1, 3], stone);
+        // One block in the bed.
+        s.edit(&[[2, 0, 1]], stone);
+        s.run(600, 1.0);
+        for x in 2..=6 {
+            for z in 4..=7 {
+                assert!(!s.wet(x, -1, z), "water on the ledge at x {x}, z {z}");
+            }
+        }
+        for x in [0, 4, 8] {
+            assert!(
+                s.wet(x, 0, 1) && !s.wet(x, 1, 1),
+                "the river as it was at x {x}"
+            );
+        }
+        let pool = s.water.basin_at(s.cell(4, 0, 1)).expect("the river");
+        let over: f64 = pool.outlets.iter().map(|o| o.flow).sum();
+        assert!(
+            (over - channel_q()).abs() < 0.02 * channel_q(),
+            "passes {over} m³/s of the map's {}",
+            channel_q()
+        );
+    }
+);
+
+dwell_world::both_faces!(
+    /// A basin part of whose container is in a chunk that isn't loaded waits (docs/WATER_FLOW.md
+    /// §15): an unloaded cell is a wall to water, so flowing on would lose what stands there. Red
+    /// before: the lake drained on in what it could see, and the rows in the missing chunk, back,
+    /// stayed wet over a lake drained below them.
+    fn a_basin_waits_while_a_chunk_of_it_is_unloaded(f: FaceFrame) {
+        let mut s = Scene::new(f);
+        let stone = require("dwell:stone");
+        // A closed lake four rows deep across the chunk edge at x = 0 (x −6 to 5).
+        s.fill([-7, -1, -1], [6, -1, 6], stone);
+        s.fill([-7, -1, -1], [6, 3, -1], stone);
+        s.fill([-7, -1, 6], [6, 3, 6], stone);
+        s.fill([-7, -1, -1], [-7, 3, 6], stone);
+        s.fill([6, -1, -1], [6, 3, 6], stone);
+        s.fill([7, -6, -2], [20, -6, 8], stone);
+        s.fill([-6, 0, 0], [5, 3, 5], M.water);
+        s.water = fed(0.0); // on no river of the map
+        s.edit(&[[6, 2, 2], [6, 3, 2]], M.air);
+        s.run(3, 1.0);
+        let west = chunk_of(
+            s.cell(-3, 0, 2)[0],
+            s.cell(-3, 0, 2)[1],
+            s.cell(-3, 0, 2)[2],
+        );
+        assert_ne!(
+            west,
+            chunk_of(s.cell(3, 0, 2)[0], s.cell(3, 0, 2)[1], s.cell(3, 0, 2)[2])
+        );
+        let saved = s.world.find(west).expect("loaded").clone();
+        s.world.remove(west);
+        let (stored, lost) = (s.water.stored(), s.water.lost);
+        s.run(200, 1.0);
+        assert!(
+            (s.water.stored() - stored).abs() < 1e-9 && s.water.lost == lost,
+            "waits: stored {stored} → {}, lost {lost} → {}",
+            s.water.stored(),
+            s.water.lost
+        );
+        s.world.put(west, saved);
+        s.run(600, 1.0);
+        for x in [-6, -3, 0, 3, 5] {
+            assert!(
+                !s.wet(x, 3, 2) && !s.wet(x, 2, 2),
+                "dry above the cut's floor at x {x}"
+            );
+            assert!(s.wet(x, 1, 2), "still water below it at x {x}");
+        }
+    }
+);
+
+dwell_world::both_faces!(
+    /// Owner, 2026-11-03: a ramp beside the water stood dry, the water ending in a wall at it. A
+    /// block with a `flooded` state at the edge of a row the water writes takes it, and loses it
+    /// when the row dries. Red before: never flooded.
+    fn ramps_at_the_waters_edge_flood_and_dry_with_it(f: FaceFrame) {
+        let mut s = channel(f);
+        let stone = require("dwell:stone");
+        let ramp = f.state(
+            dwell_blocks::with_property(require("dwell:stone_ramp"), "flooded", "false")
+                .expect("a ramp with a flooded state"),
+        );
+        s.set(4, 1, 3, ramp);
+        let dam: Vec<[i32; 3]> = (0..=2).map(|z| [9, 0, z]).collect();
+        s.edit(&dam, stone);
+        s.run(600, 1.0);
+        assert!(s.wet(4, 1, 2), "the pool rose into row 1");
+        assert!(
+            dwell_blocks::info(s.get(4, 1, 3)).flooded,
+            "the ramp beside it is flooded"
+        );
+        s.edit(&dam, M.air);
+        s.run(900, 1.0);
+        assert!(!s.wet(4, 1, 2), "row 1 dried");
+        assert!(
+            !dwell_blocks::info(s.get(4, 1, 3)).flooded,
+            "the ramp dried with it"
+        );
+    }
+);
+
+dwell_world::both_faces!(
+    /// A basin out of every player's reach waits (docs/WATER_FLOW.md §15): it holds its level and
+    /// passes on what comes in. Red before: the lower pool ran dry.
+    fn a_waiting_basin_passes_on_what_comes_in(f: FaceFrame) {
+        // A long upper pool (x −200 to 9) falling at x = 10 into a pool (x 10–19) falling at x = 20
+        // into a catch basin; the player 180 m out past the upper pool's far end.
+        let mut s = Scene::with_air(f, [-210, -8, -4], [40, 6, 8]);
+        let stone = require("dwell:stone");
+        s.fill([-201, -1, -1], [9, 0, 3], stone);
+        s.fill([-201, -1, -1], [19, 4, -1], stone);
+        s.fill([-201, -1, 3], [19, 4, 3], stone);
+        s.fill([-201, -1, -1], [-201, 4, 3], stone);
+        s.fill([10, -1, -1], [19, -1, 3], stone);
+        s.fill([-200, 1, 0], [9, 1, 2], M.water);
+        s.fill([10, 0, 0], [19, 0, 2], M.water);
+        s.fill([19, -6, -3], [32, -6, 5], stone);
+        s.fill([19, -6, -3], [19, -3, 5], stone);
+        s.fill([32, -6, -3], [32, -3, 5], stone);
+        s.fill([19, -6, -3], [32, -3, -3], stone);
+        s.fill([19, -6, 5], [32, -3, 5], stone);
+        s.edit(&[[-100, 2, 1], [15, 1, 1]], M.air);
+        let near = [s.f.point([-350.0, m_of_row(G) + 1.0, 1.5])];
+        for _ in 0..600 {
+            s.water.tick(&mut s.world, &near, 1.0);
+        }
+        for x in [10, 15, 19] {
+            assert!(
+                s.wet(x, 0, 1) && !s.wet(x, 1, 1),
+                "the lower pool as it was at x {x}"
+            );
+        }
+        let lower = s.water.basin_at(s.cell(15, 0, 1)).expect("the lower pool");
+        assert!(
+            !lower.near(&near, FLOW.live_radius_m),
+            "the lower pool is out of reach"
+        );
+        let upper = s.water.basin_at(s.cell(0, 1, 1)).expect("the upper pool");
+        assert!(
+            upper.near(&near, FLOW.live_radius_m),
+            "the upper pool is live"
+        );
+        assert!(
+            (upper.level() - m_of_row(G + 2)).abs() < 0.05,
+            "the upper pool's level {}",
+            upper.level()
+        );
     }
 );
 

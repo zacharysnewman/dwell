@@ -2,6 +2,15 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions card. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.42.2",
+      "changes": [
+        "Rivers and lakes stay as they are until you change them: a block in a riverbed no longer floods or drains the river",
+        "Rivers carry the world map's flow, so a dam fills at the river's real rate and the river below it runs low",
+        "Water out of reach, or beside unloaded ground, waits instead of flooding or vanishing",
+        "Slopes at the water's edge fill with water when the water reaches them"
+      ]
+    },
+    {
       "version": "0.42.1",
       "changes": [
         "Blocks placed in a riverbed no longer flood a waterfall and then drain the river dry",
