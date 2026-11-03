@@ -4,6 +4,6 @@ use crate::felling::BodyKind;
 
 /// The body kinds, in wire order (shared/physics/bodies.json).
 pub const BODY_KINDS: [BodyKind; 2] = [
-    BodyKind { name: "natural", place: false, breaks: true, split: true, settles: true, saved: true },
-    BodyKind { name: "built", place: true, breaks: true, split: true, settles: false, saved: true },
+    BodyKind { name: "natural", place: false, breaks: true, split: true, settles: true, saved: true, started_by: &[] },
+    BodyKind { name: "built", place: true, breaks: true, split: true, settles: false, saved: true, started_by: &["dwell:build_platform"] },
 ];

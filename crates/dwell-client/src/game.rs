@@ -427,6 +427,8 @@ pub struct DebugState {
     pub terrain: StreamStats,
     pub terrain_ready: bool,
     pub target: Option<BlockTarget>,
+    /// The moving body's cell aimed at (docs/BUILT_BODIES.md §4): body, cell (its grid), face.
+    pub body_target: Option<(u32, [i32; 3], u8)>,
     pub lod: Option<dwell_lod::LodStats>,
     pub flying: bool,
     /// The bodies drawn for remote players: their roles now and lately (docs/CHARACTERS.md §6).
@@ -1299,6 +1301,7 @@ impl<S: Scene> Game<S> {
             terrain: self.streamer.stats(),
             terrain_ready: self.terrain_ready(),
             target: self.interaction.target(),
+            body_target: self.body_target.map(|b| (b.body, b.cell, b.face)),
             lod: self.lod.as_ref().map(LodSystem::debug_stats),
             flying: c.state == PlayerState::Flying,
             loading_enabled: self.loading.enabled(),
@@ -1383,10 +1386,16 @@ impl<S: Scene> Game<S> {
         }
     }
 
-    /// Breaks the cell of a moving body aimed at (`BodyEditRequest`; docs/BUILT_BODIES.md §4); a
-    /// place on one is refused until bodies may be built on (B2). Shown when the server answers.
+    /// Breaks the cell of a moving body aimed at, or places the selected block against the face
+    /// aimed at (a body its kind lets be built on: a built one; else refused), as `BodyEditRequest`
+    /// (docs/BUILT_BODIES.md §4). Shown when the server answers.
     fn edit_body(&mut self, action: EditAction, b: crate::pieces::BodyHit, now_ms: f64) -> bool {
-        if action != EditAction::Break {
+        let builds = self
+            .pieces
+            .kind_of(b.body)
+            .is_some_and(|k| dwell_sim::felling::body_kind(k).place);
+        let material = self.selected_material();
+        if action == EditAction::Place && (!builds || material == 0) {
             self.sounds.push(sound_event(SoundKind::Deny));
             return false;
         }
@@ -1394,6 +1403,22 @@ impl<S: Scene> Game<S> {
             return false;
         }
         self.body_edit_ms = now_ms;
+        if action == EditAction::Place {
+            self.bodies
+                .swing_arms(dwell_characters::animator::Swing::Place);
+            self.outbox
+                .borrow_mut()
+                .push(Send::Control(Message::BodyEditRequest(
+                    dwell_protocol::BodyEditRequest {
+                        body: b.body,
+                        cell: b.cell.map(|v| v as i16),
+                        face: b.face,
+                        action: dwell_protocol::BlockEditAction::Place,
+                        material,
+                    },
+                )));
+            return true;
+        }
         // Its block's break sound where it was hit.
         if let (Some(eye), Some(block)) = (self.target_eye, self.pieces.block_at(b.body, b.cell)) {
             let at: [f64; 3] = std::array::from_fn(|k| eye[k] + self.view_dir[k] * b.distance);

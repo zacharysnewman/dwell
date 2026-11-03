@@ -14,6 +14,7 @@
     "leaves": "leaves",
     "tallGrass": "tall_grass",
     "ladder": "ladder_wood",
+    "planks": "planks",
     "dirtSkirt": "dirt_skirt",
     "snow": "snow_top",
     "snowSide": "snow_side",
@@ -180,6 +181,18 @@
         { "kind": "fill", "color": "@base" },
         { "kind": "blade", "at": [[5.5, 0, 21], [7.5, 0, 28], [9.5, 0, 16], [11, 0, 24], [13, 0, 12], [14.5, 0, 29], [16.5, 0, 19], [18, 0, 26], [20, 0, 14], [21.5, 0, 27], [23.5, 0, 18], [25, 0, 23], [26.5, 0, 15]], "colors": ["@base", "@shadow", "@light"], "width": [2.2, 3], "length": 1, "angle": 90, "angleJitter": 7, "bend": [-3, 3], "softness": 2 },
         { "kind": "gradient", "from": "@shadow", "to": "@light", "direction": "up", "opacity": 0.55, "clip": true }
+      ]
+    },
+    "planks": {
+      "$comment": "The build platform's boards (docs/BUILT_BODIES.md §3; prototype content): the ladder's heartwood, four boards with shadowed seams and a light grain.",
+      "use": "block",
+      "ramp": "heartwood",
+      "overlay": 1,
+      "layers": [
+        { "kind": "fill", "color": "@base" },
+        { "kind": "streak", "count": 10, "colors": ["@light"], "width": [1, 1.6], "length": [10, 22], "angle": 0, "angleJitter": 3, "opacity": 0.35 },
+        { "kind": "slab", "at": [[16, 0.5, 40], [16, 8.5, 40], [16, 16.5, 40], [16, 24.5, 40]], "colors": ["@shadow"], "width": 1, "length": 1, "angle": 0, "opacity": 0.7, "clip": true },
+        { "kind": "slab", "at": [[16, 1.5, 40], [16, 9.5, 40], [16, 17.5, 40], [16, 25.5, 40]], "colors": ["@light"], "width": 0.8, "length": 1, "angle": 0, "opacity": 0.4, "clip": true }
       ]
     },
     "ladder_wood": {

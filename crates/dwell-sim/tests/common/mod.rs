@@ -44,6 +44,9 @@ impl Client {
 pub struct Fixture {
     pub server: Server,
     pub binding: [u8; 32],
+    /// Reliable messages queued after a join's Welcome (bodies already in the world, …), handed out
+    /// by the next `take` or `take_all`.
+    left: Vec<(SessionId, Message)>,
 }
 
 impl Fixture {
@@ -51,6 +54,7 @@ impl Fixture {
         Self {
             server: Server::new(config, Box::new(CountingEntropy(1))),
             binding: [0; 32],
+            left: Vec::new(),
         }
     }
 
@@ -61,6 +65,9 @@ impl Fixture {
     /// Reliable messages per session since the last call (outbox drained).
     pub fn take_all(&mut self) -> BTreeMap<SessionId, Vec<Message>> {
         let mut out: BTreeMap<SessionId, Vec<Message>> = BTreeMap::new();
+        for (id, m) in std::mem::take(&mut self.left) {
+            out.entry(id).or_default().push(m);
+        }
         for o in self.server.take_outbox() {
             if matches!(o.kind, OutKind::Reliable(_)) {
                 out.entry(o.session)
@@ -73,12 +80,22 @@ impl Fixture {
 
     /// Reliable messages to `id` since the last call (outbox drained), with their encoded sizes.
     pub fn take(&mut self, id: SessionId) -> Vec<(Message, usize)> {
-        self.server
-            .take_outbox()
+        let mut out: Vec<(Message, usize)> = std::mem::take(&mut self.left)
             .into_iter()
-            .filter(|o| o.session == id && matches!(o.kind, OutKind::Reliable(_)))
-            .map(|o| (Message::decode(&o.bytes).expect("decodes"), o.bytes.len()))
-            .collect()
+            .filter(|(s, _)| *s == id)
+            .map(|(_, m)| {
+                let n = m.encode().len();
+                (m, n)
+            })
+            .collect();
+        out.extend(
+            self.server
+                .take_outbox()
+                .into_iter()
+                .filter(|o| o.session == id && matches!(o.kind, OutKind::Reliable(_)))
+                .map(|o| (Message::decode(&o.bytes).expect("decodes"), o.bytes.len())),
+        );
+        out
     }
 
     pub fn join(&mut self, id: SessionId, who: &Client) -> Welcome {
@@ -114,6 +131,7 @@ impl Fixture {
                         dwell_blocks::sync::definitions_hash(&registry),
                         "Welcome carries the hash of the registry sent before it"
                     );
+                    self.left.extend(out.map(|m| (id, m)));
                     return w;
                 }
                 other => panic!("expected BlockRegistry or Welcome, got {other:?}"),

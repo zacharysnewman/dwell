@@ -433,6 +433,16 @@
         "bottom": "leaves"
       },
       "lightFilter": 2
+    },
+    {
+      "$comment": "Prototype content (docs/BUILT_BODIES.md §3, owner 2026-11-02): the build platform. Placed, it starts a built body (shared/physics/bodies.json `startedBy`) instead of going in the world's grid: blocks placed against it join that body, which never settles back into the world.",
+      "name": "build_platform",
+      "sound": "dwell:wood",
+      "density": 600,
+      "shape": "full",
+      "placeable": true,
+      "color": "#a36b3c",
+      "textures": "planks"
     }
   ]
 }

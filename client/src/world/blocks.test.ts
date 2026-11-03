@@ -98,17 +98,18 @@ describe('block registry (docs/BLOCK_REGISTRY.md)', () => {
     // Appended: the blocks before it keep their ids (and tall grass, Phase 33, came after it; the
     // torch, Phase 47, after the stored ramps, placed at their own slots; the bedrock between the
     // faces after it, 2026-10-21; the snowy grass, its ramp and the snowy leaves of the world map,
-    // generator 21, after that).
+    // generator 21, after that; the build platform of built bodies, 2026-11-02, after those).
     expect(data.blocks.findIndex((b) => b.name === 'sandbox_floor')).toBe(7);
-    expect(data.blocks.map((b) => b.name).slice(-6)).toEqual([
+    expect(data.blocks.map((b) => b.name).slice(-7)).toEqual([
       'torch',
       'torch_upper',
       'bedrock',
       'snowy_grass',
       'snowy_grass_ramp',
       'snowy_leaves',
+      'build_platform',
     ]);
-    expect(STATE_DEFS.at(-1)?.state).toBe('dwell:snowy_leaves');
+    expect(STATE_DEFS.at(-1)?.state).toBe('dwell:build_platform');
     const floor = STATE_DEFS[stateId('dwell:sandbox_floor')];
     expect(floor).toMatchObject({ look: 'cube', color: 0xffffff, placeable: false });
     expect(floor?.textures).toEqual({ top: 'grid', side: 'grid', bottom: 'grid' });

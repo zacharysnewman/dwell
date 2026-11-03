@@ -83,6 +83,7 @@ fn everything_round_trips_through_a_file() {
                 },
             ],
             clear_lod: false,
+            bodies: None,
         };
         db.save(&batch).expect("saves");
         db.set_setting("motd", "hello").expect("setting");
@@ -410,4 +411,44 @@ fn peeking_a_world_files_meta_writes_nothing() {
     );
     assert!(WorldDb::peek_meta(&temp_path("missing")).unwrap().is_none());
     let _ = std::fs::remove_file(&path);
+}
+
+#[test]
+fn moving_bodies_are_saved_with_the_world_and_replaced_on_each_save() {
+    // docs/BUILT_BODIES.md §7 (owner, 2026-11-02: built objects "saved with the world"): a body's
+    // kind, pose, velocities and cells come back as saved, its states by name; a save with bodies
+    // replaces those saved before, one without leaves them.
+    let db = WorldDb::in_memory().expect("db");
+    let log = require("dwell:log[axis=x]");
+    let leaves = require("dwell:leaves");
+    let raft = SavedBody {
+        id: 7,
+        kind: 1,
+        settles: 0,
+        position: [12.5, 40.25, -3.5],
+        rotation: [0.0, 0.38268343236508984, 0.0, 0.9238795325112867],
+        velocity: [0.5, 0.0, -0.25],
+        angular: [0.0, 0.1, 0.0],
+        cells: vec![([0, 0, 0], log), ([1, 0, 0], log), ([0, 1, 0], leaves)],
+    };
+    let tree = SavedBody {
+        id: 9,
+        cells: vec![([0, 0, 0], log)],
+        ..SavedBody::default()
+    };
+    db.save(&SaveBatch {
+        bodies: Some(vec![raft.clone(), tree.clone()]),
+        ..SaveBatch::default()
+    })
+    .expect("saved");
+    assert_eq!(db.bodies(), vec![raft.clone(), tree]);
+    // A save without bodies leaves them; one with replaces them.
+    db.save(&SaveBatch::default()).expect("saved");
+    assert_eq!(db.bodies().len(), 2);
+    db.save(&SaveBatch {
+        bodies: Some(vec![raft.clone()]),
+        ..SaveBatch::default()
+    })
+    .expect("saved");
+    assert_eq!(db.bodies(), vec![raft]);
 }

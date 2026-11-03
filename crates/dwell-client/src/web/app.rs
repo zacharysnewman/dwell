@@ -1824,6 +1824,21 @@ impl Client {
         );
         set(
             &o,
+            "bodyTarget",
+            d.body_target.map_or(JsValue::NULL, |(body, cell, face)| {
+                let r = Object::new();
+                set(&r, "body", body);
+                set(
+                    &r,
+                    "cell",
+                    cell.iter().map(|&v| JsValue::from(v)).collect::<Array>(),
+                );
+                set(&r, "face", face);
+                r.into()
+            }),
+        );
+        set(
+            &o,
             "lod",
             d.lod.map_or(JsValue::NULL, |l| {
                 let r = Object::new();
