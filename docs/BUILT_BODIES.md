@@ -152,13 +152,30 @@ splits and the floating on both faces (`dwell_world::both_faces!`).
 
 ## 11. Stages (each its own release; B1–B2 on the new compatibility line)
 
-- **B1 — Editing pieces.** Targeting bodies on the client; `BodyEditRequest` / `BodyEdit`; break a
+- **B1 — Editing pieces** **[built, 0.41.0]**. Targeting bodies on the client; `BodyEditRequest` / `BodyEdit`; break a
   cell of any piece, splits, the body kinds as data (`natural` only so far). Protocol change: the
   compatibility line opens here (0.41.0, the owner raises `package.json`).
 - **B2 — The build platform and built bodies.** The platform block and support role; built bodies
   (place onto them, never settle); saving bodies with the world (the save format change, same line).
 - **B3 — Floating.** Buoyancy and water drag per cell; natural and built bodies.
 - **Later:** driving (seats, rudders, wheels), hollow hulls, interest management, edit prediction.
+
+**B1 as built.** The client casts the crosshair's ray into every body's frame at its drawn pose
+(`pieces.rs` `raycast`, `ray_cells`: an exact cell and face); a body's cell nearer than the block
+aimed at is the target, outlined turned with the body (`Scene::set_block_outline_turned`). Break
+sends `BodyEditRequest` (the block's break sound and the swing at once; the change when the server
+answers); Place on a body is refused (natural bodies, the deny sound). The server queues it per
+player (`MAX_QUEUED_EDITS`), pays it from the edit rate, checks the cell is within reach of the eye
+at the body's pose, and `Felling::break_cell` takes it: the body's colliders made again
+(`Physics::set_piece_cells`), and a body left in more than one 6-connected group split, each group
+but the largest a body of the same kind at its cells' world pose, moving as that part did. Clients
+hear `BodyEdit` (re-mesh; the prediction's stand-in made again from the next snapshot),
+`EntitySpawn` for each part split off, `EntityDespawn` for a body left empty. Tests: the protocol
+vectors; `felling` `a_cell_broken_off_a_falling_trunk_goes_and_a_break_through_it_splits_it` (13 → 12
+logs settled, the split's 2 cells their own piece, a place refused); `pieces.rs` the ray into a
+body's frame and an edit's re-mesh; the body kinds' data tests. Checked on the GPU: a falling log
+column's cell broken mid-fall, 8 of 10 logs settled (10 less the cut and the broken one). Not yet:
+a player joining mid-fall isn't sent the pieces already falling (needed for saved bodies, B2).
 
 ## 12. Not in this design
 

@@ -36,8 +36,11 @@ const EXTRAPOLATE_MS: f64 = 250.0;
 
 struct Piece {
     cells: Vec<PieceCell>,
-    /// Its cells' offsets and states (this client's), for its settle glide.
+    /// Its cells' offsets and states (this client's), for its settle glide, its edits and aiming
+    /// at it.
     blocks: Vec<([i32; 3], StateId)>,
+    /// Its kind (`dwell_sim::felling::BODY_KINDS`; 0 natural).
+    kind: u8,
     poses: VecDeque<Pose>,
     /// The block its landings sound like (its first carrier's; 0: riders only, silent).
     block: StateId,
@@ -75,25 +78,7 @@ impl Pieces {
             .iter()
             .map(|c| (c.offset.map(i32::from), c.state))
             .collect();
-        let boxes = cells
-            .iter()
-            .enumerate()
-            .map(|(k, &(o, m))| PieceCell {
-                center: DVec3::new(f64::from(o[0]), f64::from(o[1]) * CELL_H, f64::from(o[2])),
-                half: DVec3::new(0.5, 0.5 * CELL_H, 0.5),
-                mass: f64::from(info(m).density_kg_m3).max(1.0) * CELL_H,
-                // Players stand on a piece's carriers only: not its leaves, nor falling sand,
-                // which passes them (the server's `felling.rs`).
-                collide: if k < usize::from(e.carriers)
-                    && dwell_blocks::try_info(m)
-                        .is_some_and(|s| s.support_role != dwell_blocks::SupportRole::Falls)
-                {
-                    dwell_physics::Collide::All
-                } else {
-                    dwell_physics::Collide::None
-                },
-            })
-            .collect();
+        let boxes = piece_boxes(&cells, e.kind);
         let pose = Pose {
             at_ms: now_ms,
             position: DVec3::from(e.origin),
@@ -110,6 +95,7 @@ impl Pieces {
             Piece {
                 cells: boxes,
                 blocks: cells.clone(),
+                kind: e.kind,
                 poses: VecDeque::from([pose]),
                 block,
                 landed_ms: f64::NEG_INFINITY,
@@ -129,6 +115,60 @@ impl Pieces {
             drawn,
             last: (last.position, last.rotation),
         })
+    }
+
+    /// A body's cells changed (`BodyEdit`, docs/BUILT_BODIES.md §4; state 0: removed): its boxes
+    /// follow, and its new meshes and reach are returned (None: no such body here).
+    pub fn edit(&mut self, e: &dwell_protocol::BodyEdit) -> Option<(Vec<ChunkMeshes>, f64)> {
+        let p = self.map.get_mut(&e.body)?;
+        for c in &e.cells {
+            let o = c.offset.map(i32::from);
+            p.blocks.retain(|&(b, _)| b != o);
+            if c.state != 0 {
+                p.blocks.push((o, c.state));
+            }
+        }
+        p.cells = piece_boxes(&p.blocks, p.kind);
+        Some(piece_meshes(&p.blocks))
+    }
+
+    /// The cell of a body the ray from `origin` along unit `dir` enters first within `max` (m), at
+    /// the poses drawn at `now_ms`: the body, its cell (in its grid), the face entered (0 +X, 1 −X,
+    /// 2 +Y, 3 −Y, 4 +Z, 5 −Z, in its frame) and the distance.
+    pub fn raycast(&self, origin: DVec3, dir: DVec3, max: f64, now_ms: f64) -> Option<BodyHit> {
+        let at = now_ms - players::INTERP_DELAY_MS as f64;
+        let mut best: Option<BodyHit> = None;
+        for (&id, p) in &self.map {
+            let (position, rotation) = pose_at(&p.poses, at);
+            let inverse = rotation.inverse();
+            let local_origin = inverse * (origin - position);
+            let local_dir = inverse * dir;
+            let limit = best.map_or(max, |b| b.distance);
+            if let Some((cell, face, distance)) =
+                ray_cells(local_origin, local_dir, &p.blocks, limit)
+            {
+                best = Some(BodyHit {
+                    body: id,
+                    cell,
+                    face,
+                    distance,
+                    position,
+                    rotation,
+                });
+            }
+        }
+        best
+    }
+
+    /// The body `id`'s kind (an index into the body kinds; 0 natural).
+    pub fn kind_of(&self, id: u32) -> Option<u8> {
+        self.map.get(&id).map(|p| p.kind)
+    }
+
+    /// The block in the body `id`'s cell `cell` (its grid).
+    pub fn block_at(&self, id: u32, cell: [i32; 3]) -> Option<StateId> {
+        let p = self.map.get(&id)?;
+        p.blocks.iter().find(|&&(o, _)| o == cell).map(|&(_, m)| m)
     }
 
     pub fn ids(&self) -> Vec<u32> {
@@ -214,6 +254,91 @@ impl Pieces {
             })
             .collect()
     }
+}
+
+/// A body's cell aimed at ([`Pieces::raycast`]), with the body's drawn pose.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct BodyHit {
+    pub body: u32,
+    pub cell: [i32; 3],
+    pub face: u8,
+    pub distance: f64,
+    pub position: DVec3,
+    pub rotation: DQuat,
+}
+
+/// A body's boxes for its cells: in a natural body (kind 0) logs collide with players and the rest
+/// don't (sand passes players, leaves are passable: the server's `felling.rs`); in a built one every
+/// solid, non-passable block does.
+fn piece_boxes(cells: &[([i32; 3], StateId)], kind: u8) -> Vec<PieceCell> {
+    cells
+        .iter()
+        .map(|&(o, m)| {
+            let s = dwell_blocks::try_info(m);
+            let collides = if kind == 0 {
+                s.is_some_and(|s| s.support_role == dwell_blocks::SupportRole::Carrier)
+            } else {
+                s.is_some_and(|s| s.solid && !s.passable)
+            };
+            PieceCell {
+                center: DVec3::new(f64::from(o[0]), f64::from(o[1]) * CELL_H, f64::from(o[2])),
+                half: DVec3::new(0.5, 0.5 * CELL_H, 0.5),
+                mass: f64::from(info(m).density_kg_m3).max(1.0) * CELL_H,
+                collide: if collides {
+                    dwell_physics::Collide::All
+                } else {
+                    dwell_physics::Collide::None
+                },
+            }
+        })
+        .collect()
+}
+
+/// The first of `cells` (offsets in a body's grid, each a 1 × ½ × 1 m box about its centre) the
+/// ray from `o` along `d` (the body's frame) enters within `max`: the cell, the face entered and the
+/// distance along `d`.
+pub fn ray_cells(
+    o: DVec3,
+    d: DVec3,
+    cells: &[([i32; 3], StateId)],
+    max: f64,
+) -> Option<([i32; 3], u8, f64)> {
+    let half = DVec3::new(0.5, 0.5 * CELL_H, 0.5);
+    let mut best: Option<([i32; 3], u8, f64)> = None;
+    for &(c, _) in cells {
+        let centre = DVec3::new(f64::from(c[0]), f64::from(c[1]) * CELL_H, f64::from(c[2]));
+        let (lo, hi) = (centre - half, centre + half);
+        let (mut t0, mut t1, mut axis) = (0.0f64, max, usize::MAX);
+        let mut miss = false;
+        for k in 0..3 {
+            if d[k].abs() < 1e-12 {
+                if o[k] < lo[k] || o[k] > hi[k] {
+                    miss = true;
+                    break;
+                }
+                continue;
+            }
+            let (a, b) = ((lo[k] - o[k]) / d[k], (hi[k] - o[k]) / d[k]);
+            let (near, far) = if a < b { (a, b) } else { (b, a) };
+            if near > t0 {
+                t0 = near;
+                axis = k;
+            }
+            t1 = t1.min(far);
+            if t0 > t1 {
+                miss = true;
+                break;
+            }
+        }
+        // Started inside a cell: no face to enter (it isn't a target).
+        if miss || axis == usize::MAX || best.is_some_and(|b| t0 >= b.2) {
+            continue;
+        }
+        // Entered through the face toward the ray's start.
+        let face = 2 * axis as u8 + u8::from(d[axis] > 0.0);
+        best = Some((c, face, t0));
+    }
+    best
 }
 
 /// The pose at time `at` among `poses` (oldest first): between the two round it, the first before
@@ -392,6 +517,70 @@ mod tests {
     }
 
     #[test]
+    fn the_ray_enters_the_nearest_cell_of_a_body_through_the_face_toward_it() {
+        // face-a-only: a body's own frame has no up (the faces are in it); its pose is the caller's.
+        let log = dwell_blocks::parse_state("dwell:log[axis=y]").expect("log");
+        let cells: Vec<([i32; 3], StateId)> = (0..4).map(|y| ([0, y, 0], log)).collect();
+        // From −x, level with row 2 (1 m up): cell [0, 2, 0], through its −X face (1), 2.5 m.
+        let hit = ray_cells(DVec3::new(-3.0, 1.0, 0.0), DVec3::X, &cells, 8.0);
+        assert_eq!(hit.map(|h| (h.0, h.1)), Some(([0, 2, 0], 1)));
+        assert!((hit.unwrap().2 - 2.5).abs() < 1e-9);
+        // From above: the top cell's +Y face (2).
+        let top = ray_cells(DVec3::new(0.0, 5.0, 0.0), -DVec3::Y, &cells, 8.0);
+        assert_eq!(top.map(|h| (h.0, h.1)), Some(([0, 3, 0], 2)));
+        // Out of reach, or passing beside it: none.
+        assert!(ray_cells(DVec3::new(-3.0, 1.0, 0.0), DVec3::X, &cells, 2.0).is_none());
+        assert!(ray_cells(DVec3::new(-3.0, 1.0, 2.0), DVec3::X, &cells, 8.0).is_none());
+    }
+
+    #[test]
+    fn a_body_aimed_at_in_the_world_is_turned_into_its_frame() {
+        // face-a-only: as above. A 4-cell log lying along x (turned 90° about z), at (10, 20, 5):
+        // aimed at from −y below its second cell, the ray meets that cell.
+        let log = dwell_blocks::parse_state("dwell:log[axis=y]").expect("log");
+        let mut pieces = Pieces::default();
+        let mut sounds = Vec::new();
+        let rotation = DQuat::from_rotation_z(-std::f64::consts::FRAC_PI_2);
+        let r = rotation;
+        pieces.spawn(
+            &EntitySpawn {
+                id: 4,
+                origin: [10.0, 20.0, 5.0],
+                rotation: [r.x as f32, r.y as f32, r.z as f32, r.w as f32],
+                kind: 0,
+                carriers: 4,
+                cells: (0..4)
+                    .map(|y| dwell_protocol::PieceCellNet {
+                        offset: [0, y, 0],
+                        state: log,
+                    })
+                    .collect(),
+            },
+            0.0,
+            &mut sounds,
+        );
+        // Cell y = 2 is 1 m along the body's +y, which the turn takes to +x.
+        let hit = pieces
+            .raycast(DVec3::new(11.0, 17.0, 5.0), DVec3::Y, 8.0, 1000.0)
+            .expect("a hit");
+        assert_eq!((hit.body, hit.cell), (4, [0, 2, 0]));
+        assert!((hit.distance - 2.5).abs() < 1e-6, "{}", hit.distance);
+        // Broken off by an edit: the ray goes past it.
+        pieces.edit(&dwell_protocol::BodyEdit {
+            body: 4,
+            cells: vec![dwell_protocol::PieceCellNet {
+                offset: [0, 2, 0],
+                state: 0,
+            }],
+        });
+        assert!(
+            pieces
+                .raycast(DVec3::new(11.0, 17.0, 5.0), DVec3::Y, 8.0, 1000.0)
+                .is_none()
+        );
+    }
+
+    #[test]
     fn a_tree_cracks_as_it_goes_and_thuds_as_it_lands_once() {
         let log = dwell_blocks::parse_state("dwell:log[axis=y]").expect("log");
         let mut pieces = Pieces::default();
@@ -400,6 +589,7 @@ mod tests {
             id: 9,
             origin: [0.0, 100.0, 0.0],
             rotation: [0.0, 0.0, 0.0, 1.0],
+            kind: 0,
             carriers: 2,
             cells: (0..2)
                 .map(|y| dwell_protocol::PieceCellNet {

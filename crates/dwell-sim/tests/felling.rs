@@ -564,3 +564,120 @@ fn every_falling_piece_reaches_the_snapshots_however_many_fall() {
         spawned.len()
     );
 }
+
+#[test]
+fn a_cell_broken_off_a_falling_trunk_goes_and_a_break_through_it_splits_it() {
+    // face-a-only: as above (the flat test world is face A's; splits have no up).
+    // docs/BUILT_BODIES.md §4 (owner, 2026-11-02: natural bodies "can only be broken", with
+    // splits): a trunk cut at its foot is a piece; breaking its third cell from the bottom while
+    // it stands takes that cell and splits the two below it off as a piece of their own, the rest
+    // staying the old body. Placing on a natural body is refused.
+    let mut f = Fixture::new(flat());
+    join_streaming(&mut f, 1);
+    f.server.step();
+    f.take_all();
+    let (x, z) = (1, 1);
+    for y in G..G + 14 {
+        f.server.world().set_voxel(x, y, z, log());
+    }
+    f.send(
+        1,
+        Message::BlockEditRequest(BlockEditRequest {
+            action: BlockEditAction::Break,
+            cell: [x, G, z],
+            face: 1,
+            material: 0,
+            rows: 1,
+            down: false,
+        }),
+    );
+    f.server.step();
+    let out = f.take_all();
+    let spawn = out[&1]
+        .iter()
+        .find_map(|m| match m {
+            Message::EntitySpawn(e) => Some(e.clone()),
+            _ => None,
+        })
+        .expect("the trunk falls");
+    assert_eq!(
+        (spawn.kind, spawn.cells.len()),
+        (0, 13),
+        "a natural piece of 13"
+    );
+    let mut ys: Vec<i16> = spawn.cells.iter().map(|c| c.offset[1]).collect();
+    ys.sort_unstable();
+    let column = |y: i16| [spawn.cells[0].offset[0], y, spawn.cells[0].offset[2]];
+    let third = column(ys[2]);
+    // Placing on a natural body: refused (nothing changes).
+    f.send(
+        1,
+        Message::BodyEditRequest(BodyEditRequest {
+            body: spawn.id,
+            cell: third,
+            face: 1,
+            action: BlockEditAction::Place,
+            material: dwell_blocks::require("dwell:stone"),
+        }),
+    );
+    f.server.step();
+    let out = f.take_all();
+    assert!(
+        !out[&1].iter().any(|m| matches!(m, Message::BodyEdit(_))),
+        "no place on a natural body"
+    );
+    // Break its third cell from the bottom: it and the two below leave the body.
+    f.send(
+        1,
+        Message::BodyEditRequest(BodyEditRequest {
+            body: spawn.id,
+            cell: third,
+            face: 1,
+            action: BlockEditAction::Break,
+            material: 0,
+        }),
+    );
+    f.server.step();
+    let out = f.take_all();
+    let edit = out[&1]
+        .iter()
+        .find_map(|m| match m {
+            Message::BodyEdit(e) => Some(e.clone()),
+            _ => None,
+        })
+        .expect("the body edited");
+    let mut removed: Vec<[i16; 3]> = edit.cells.iter().map(|c| c.offset).collect();
+    removed.sort_unstable();
+    let mut want = vec![column(ys[0]), column(ys[1]), third];
+    want.sort_unstable();
+    assert_eq!(
+        (edit.body, removed),
+        (spawn.id, want),
+        "the broken cell and the two below"
+    );
+    assert!(edit.cells.iter().all(|c| c.state == 0));
+    let split = out[&1]
+        .iter()
+        .find_map(|m| match m {
+            Message::EntitySpawn(e) => Some(e.clone()),
+            _ => None,
+        })
+        .expect("the part split off");
+    assert_eq!(
+        (split.kind, split.cells.len()),
+        (0, 2),
+        "a natural piece of 2"
+    );
+    assert_ne!(split.id, spawn.id);
+    // Both fall on and settle: 12 logs on the ground (13 less the one broken), none lost.
+    for _ in 0..(60 * 15) {
+        f.server.step();
+    }
+    let w = f.server.world();
+    let logs = (x - 12..=x + 12)
+        .flat_map(|xx| (z - 12..=z + 12).map(move |zz| (xx, zz)))
+        .flat_map(|(xx, zz)| (G - 2..G + 20).map(move |y| (xx, y, zz)))
+        .filter(|&(xx, y, zz)| is_log(w.get_voxel(xx, y, zz)))
+        .count();
+    assert_eq!(logs, 12, "the two bodies settled, the broken cell gone");
+}
