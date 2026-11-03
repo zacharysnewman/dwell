@@ -34,11 +34,11 @@ fn handshake(f: &mut Fixture, id: SessionId, who: &Client, kind: TransportKind) 
     };
     let signature = who.sign(&auth_transcript(&nonce, &f.binding, &who.public_key));
     f.send(id, Message::ClientAuth(signature));
-    // The registry's parts precede Welcome (ADR 0038).
+    // The registry's parts (ADR 0038) and the world's settings precede Welcome.
     f.take(id)
         .into_iter()
         .map(|(m, _)| m)
-        .find(|m| !matches!(m, Message::BlockRegistry(_)))
+        .find(|m| !matches!(m, Message::BlockRegistry(_) | Message::WorldSettings(_)))
         .expect("a reply")
 }
 

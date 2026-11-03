@@ -13,7 +13,7 @@ including fog, so it looks good. Make the sun and moon look better too."
 
 Known decisions (owner):
 
-- The day is **20 minutes: 800 s of day, 400 of night** (owner, 2026-11-03, with water flow's game
+- A new world's day is **20 minutes: 800 s of day, 400 of night** (owner, 2026-11-03, with water flow's game
   time, WATER_FLOW.md §4.1; it was 30 minutes, 20 of day and 10 of night, first recorded in
   [`TREE_GROWTH.md`](./TREE_GROWTH.md)). Tree growth counts in-game days, so the day length is **one
   shared data value** both use.
@@ -48,9 +48,14 @@ offset, never turning back for a late one) and derives everything from it:
 
 **Compatibility.** This needs no protocol change: the tick was already in `Welcome` and every
 snapshot, in every build of the 0.11 line. Older 0.11 servers drive the cycle as well. The clock
-itself (day length, start hour) is now **public API**: two builds that disagree on it show
-different skies on one server, and tree growth (Phase 30) will count days with it. Changing it is a
-compatibility change until it becomes a per-world setting sent in `Welcome` (§8).
+itself (day length, start hour) was **public API** until 0.42.0: two builds that disagreed on it
+showed different skies on one server. **Since 0.42.0 (protocol v22) it is the world's setting**:
+the server sends it at join (`WorldSettings`, before `Welcome`: tagged fields, the clock required,
+later settings optional; `dwell_protocol::world_settings`), saves it in the world file's `meta`
+(`world_settings`), and the client draws the sky from it (`Game::set_world_clock`). A new world
+takes this build's `daynight.json` clock, so changing that default changes new worlds only, with no
+new compatibility line; an existing world keeps its own. Tree growth (Phase 30) counts the world's
+days.
 
 ## 3. The sun's path
 

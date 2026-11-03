@@ -480,6 +480,9 @@ pub enum Message {
     BodyEditRequest(BodyEditRequest),
     /// S→C, world channel: a body's changed cells (protocol v21).
     BodyEdit(BodyEdit),
+    /// S→C reliable, control channel, before `Welcome` (protocol v22): the world's settings
+    /// (`crate::world_settings`: its clock, its water speed) as tagged fields.
+    WorldSettings(crate::world_settings::SettingsFields),
 }
 
 impl Message {
@@ -519,6 +522,7 @@ impl Message {
             M::EntitySpawn(_) => MessageType::EntitySpawn,
             M::EntityDespawn(_) => MessageType::EntityDespawn,
             M::BodyEditRequest(_) => MessageType::BodyEditRequest,
+            M::WorldSettings(_) => MessageType::WorldSettings,
             M::BodyEdit(_) => MessageType::BodyEdit,
         }
     }
@@ -1079,6 +1083,7 @@ fn write_body(w: &mut ByteWriter, m: &Message) {
             }
         }
         M::EntityDespawn(id) => w.u32(*id),
+        M::WorldSettings(f) => f.write(w),
         M::BodyEditRequest(m) => {
             w.u32(m.body);
             for v in m.cell {
@@ -1379,6 +1384,7 @@ fn read_body(r: &mut ByteReader, t: MessageType) -> Option<Message> {
             })
         }
         T::EntityDespawn => M::EntityDespawn(r.u32()),
+        T::WorldSettings => M::WorldSettings(crate::world_settings::SettingsFields::read(r)?),
         T::BodyEditRequest => {
             let body = r.u32();
             let cell = [r.i16(), r.i16(), r.i16()];

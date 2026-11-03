@@ -112,8 +112,9 @@ The rates are real (m³/s, the weir law, runoff), counted in game time, not real
 `daynight.json`'s day length (20 minutes, owner 2026-11-03, so game time runs 72× real time;
 DAY_NIGHT.md §2), and
 water's tick is a real tick × `86,400 s ÷ the day length` × the world's **water speed** setting (a
-multiplier, by default fairly fast so changes can be seen). A longer day slows the water with the
-sun; a faster water setting speeds the water alone. Fast-forward (§6) counts the same game time.
+multiplier, by default fairly fast so changes can be seen). Both are the world's settings (ADR
+0054: sent at join, saved with the world), so a world keeps its own. A longer day slows the water
+with the sun; a faster water setting speeds the water alone. Fast-forward (§6) counts the same game time.
 
 Liquid is conserved: it comes in as runoff (and later melt and rain) and leaves to the sea, the world's edge
 or evaporation, so a diverted river really takes the water from the old one.
@@ -250,7 +251,7 @@ None blocking. Lava and lahar contact rules, jets, evaporation and weather are l
 (`shared/fluids/gen.mjs`, validated, CI on stale output). The server's `TickChanges` records each
 changed cell's state before its first change; `broadcast_changes` hands them to water (not water's
 own writes). Every `tickEvery` (6) ticks `Server::flow_water` runs a water tick of
-`6 / 60 s × 86,400 / the day length × water_speed` (7.2 s of water time at a 20-minute day) and
+`6 / 60 s × 86,400 / the world's day length × its water speed` (7.2 s of water time at a 20-minute day) and
 sends its writes as one `Rebake` modification.
 
 - **Found by edits.** An edit beside or on a liquid cell nobody has found finds its body: up the
@@ -274,8 +275,9 @@ sends its writes as one `Rebake` modification.
   container that falls apart splits, each part with the liquid over its own cells. An empty basin
   with nothing coming in goes.
 - **Near players**: basins within `liveRadiusM` (160 m) of a player tick; the rest wait.
-- **The day** is 20 minutes since this change (owner, 2026-11-03; DAY_NIGHT.md), so water time
-  runs 72× real time × `water_speed`.
+- **The day** of a new world is 20 minutes since this change (owner, 2026-11-03; DAY_NIGHT.md),
+  so water time runs 72× real time × the water speed; both are the world's settings (ADR 0054), a
+  new world's water speed the server's `water_speed` (`flow.json` `speed` by default).
 
 Deviations, for W2–W3: basins aren't saved (after a restart a body is found again by the next edit
 touching it, at the inflow it then has), waiting basins aren't fast-forwarded, running water between

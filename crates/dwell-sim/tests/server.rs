@@ -169,14 +169,21 @@ fn a_new_login_replaces_the_old_session_for_the_same_key() {
     assert_eq!(to_old.len(), 1);
     assert_eq!(reject_reason(&to_old[0]), RejectReason::Replaced);
     assert!(old_closed);
-    // The new session gets the registry and its Welcome (then its first world messages: the
-    // spawn's events).
+    // The new session gets the registry, the world's settings and its Welcome (then its first
+    // world messages: the spawn's events).
     let parts = to_new
         .iter()
         .take_while(|m| matches!(m, Message::BlockRegistry(_)))
         .count();
     assert!(parts >= 1, "{to_new:?}");
-    assert!(matches!(to_new[parts], Message::Welcome(_)), "{to_new:?}");
+    assert!(
+        matches!(to_new[parts], Message::WorldSettings(_)),
+        "{to_new:?}"
+    );
+    assert!(
+        matches!(to_new[parts + 1], Message::Welcome(_)),
+        "{to_new:?}"
+    );
     assert!(!new_closed);
     assert_eq!(f.server.joined_players(), 1);
 }

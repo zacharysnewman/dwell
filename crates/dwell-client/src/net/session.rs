@@ -96,6 +96,9 @@ pub struct Session {
     registry: Option<Vec<u8>>,
     /// The server's ids ↔ this client's (ADR 0038), from Welcome on.
     mapping: Option<Mapping>,
+    /// The world's settings as the server sent them (before Welcome), and as read.
+    world_fields: Option<world_settings::SettingsFields>,
+    world: Option<world_settings::WorldSettings>,
     /// The Welcome waiting on the player's answer (Confirming).
     pending: Option<Welcome>,
     /// A definitions hash the player said not to ask about again for this server.
@@ -136,6 +139,8 @@ impl Session {
             registry_parts_total: 0,
             registry: None,
             mapping: None,
+            world_fields: None,
+            world: None,
             pending: None,
             trusted_registry: None,
             sent_edits: VecDeque::new(),
@@ -153,6 +158,11 @@ impl Session {
     /// The id translation, once Welcome has arrived.
     pub fn mapping(&self) -> Option<&Mapping> {
         self.mapping.as_ref()
+    }
+
+    /// The world's settings (its clock, its water speed), once Welcome has arrived.
+    pub fn world_settings(&self) -> Option<world_settings::WorldSettings> {
+        self.world
     }
 
     /// The player chose Continue in the join prompt.
@@ -214,6 +224,25 @@ impl Session {
 
     /// Welcome: map the server's registry, then join, or ask the player first.
     fn on_welcome(&mut self, w: Welcome) {
+        let Some(fields) = self.world_fields.take() else {
+            self.fail("The server sent no world settings.".into());
+            return;
+        };
+        match fields.settings(dwell_sim::server::default_settings(
+            dwell_sim::water::FLOW.speed,
+        )) {
+            Ok(s) => self.world = Some(s),
+            Err(world_settings::SettingsError::Unknown(_)) => {
+                self.fail("This world needs a newer version of Dwell.".into());
+                return;
+            }
+            Err(e) => {
+                self.fail(format!(
+                    "The server's world settings can't be used ({e:?})."
+                ));
+                return;
+            }
+        }
         let Some(bytes) = self.registry.take() else {
             self.fail("The server sent no block registry.".into());
             return;
@@ -519,6 +548,9 @@ impl Session {
             Message::BlockRegistry(b) if self.state == SessionState::Handshaking => {
                 self.on_registry_part(b);
             }
+            Message::WorldSettings(f) if self.state == SessionState::Handshaking => {
+                self.world_fields = Some(f);
+            }
             Message::Welcome(w) if self.state == SessionState::Handshaking => self.on_welcome(w),
             Message::Reject(r) => {
                 self.set_state(SessionState::Rejected {
@@ -597,6 +629,50 @@ mod tests {
             });
             s.on_reliable(Channel::Control, &m.encode(), 1000.0);
         }
+        // Then the world's settings, as the server sends them before Welcome.
+        send_settings(
+            s,
+            &world_settings::SettingsFields::default().with(settings()),
+        );
+    }
+
+    /// A world's settings: a 10-minute day, water at twice the speed.
+    fn settings() -> world_settings::WorldSettings {
+        world_settings::WorldSettings {
+            clock: world_settings::WorldClock {
+                day_s: 400.0,
+                night_s: 200.0,
+                start_hour: 9.0,
+            },
+            water_speed: 2.0,
+        }
+    }
+
+    fn send_settings(s: &mut Session, f: &world_settings::SettingsFields) {
+        let m = Message::WorldSettings(f.clone());
+        s.on_reliable(Channel::Control, &m.encode(), 1000.0);
+    }
+
+    #[test]
+    fn the_worlds_settings_are_the_servers_and_a_newer_worlds_are_refused() {
+        // DAY_NIGHT.md §2: the clock is the world's, sent at join; a field this build must
+        // understand and doesn't is a newer build's world.
+        let (_, mut s) = setup();
+        send_registry(&mut s, &build_registry(), 1 << 20);
+        s.on_reliable(Channel::Control, &welcome(0).encode(), 1000.0);
+        assert_eq!(s.world_settings(), Some(settings()));
+        let (_, mut s) = setup();
+        send_registry(&mut s, &build_registry(), 1 << 20);
+        let mut newer = world_settings::SettingsFields::default().with(settings());
+        newer.0.push((0x10, vec![1]));
+        send_settings(&mut s, &newer);
+        s.on_reliable(Channel::Control, &welcome(0).encode(), 1000.0);
+        assert_eq!(
+            s.state(),
+            &SessionState::Closed {
+                message: "This world needs a newer version of Dwell.".into()
+            }
+        );
     }
 
     fn build_registry() -> Vec<u8> {
