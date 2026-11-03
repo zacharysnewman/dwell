@@ -46,5 +46,5 @@ again; ramps at the water's written edge take their `flooded` state.
 - The world map's flow is per column through a callback (`Water::with_runoff`), so the engine stays
   free of the generator; a world without a map (flat, sandbox) has none, and its water rests.
 - No saved-world, protocol or generator change: a patch on the 0.42 line (0.42.2). The generator's
-  own dry ramps beside its water stay until the owner raises a new line for it.
+  own ramps beside its water were flooded in 0.43.0, a new line (the owner, 2026-11-03).
 - W2 still owes saved basins, fast-forward and every body near players live from load.
