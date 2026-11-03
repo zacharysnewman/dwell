@@ -2066,6 +2066,15 @@ impl Server {
     }
 
     /// A body's pose now (its reference cell's centre and rotation), if it is still one.
+    /// Body `id`'s physics handle (tests).
+    pub fn body_handle(&self, id: u32) -> Option<dwell_physics::BodyHandle> {
+        self.felling
+            .pieces
+            .iter()
+            .find(|p| p.id == id)
+            .map(|p| p.body)
+    }
+
     pub fn body_pose(&self, id: u32) -> Option<(DVec3, dwell_physics::DQuat)> {
         let p = self.felling.pieces.iter().find(|p| p.id == id)?;
         Some((self.physics.position(p.body), self.physics.rotation(p.body)))

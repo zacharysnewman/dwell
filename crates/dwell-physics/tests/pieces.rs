@@ -50,6 +50,29 @@ fn a_player_pushes_a_held_light_piece_by_its_push() {
     assert!(d > 0.3, "a held 15 kg log moved {d} m");
 }
 
+/// The log's speed (m/s, along the push) over the last second of three the player walked into it.
+fn pushed_speed(total_mass: f64) -> f64 {
+    let mut w = PlayerTestWorld::new();
+    w.floor();
+    let _p = w.spawn(Vec3::new(0.5, 0.0, -2.0));
+    w.step(5);
+    let log = log_across(&mut w, total_mass / 3.0, true);
+    w.step(30);
+    w.set_input(|_, _| mv(0.0, 1.0));
+    w.step(ticks(2.0));
+    let start = to_local(w.physics.position(log));
+    w.step(ticks(1.0));
+    f64::from(to_local(w.physics.position(log)).z - start.z)
+}
+
+#[test]
+fn a_player_slides_a_log_on_the_ground_at_a_walk() {
+    // Owner, 2026-11-03: a single log (a 1 m log block, 700 kg) slides on land at about 0.5 m/s.
+    // Red before: the 800 N push was under its friction, and it stayed put.
+    let v = pushed_speed(700.0);
+    assert!((0.4..0.6).contains(&v), "a 700 kg log slid at {v} m/s");
+}
+
 #[test]
 fn a_player_cannot_push_a_piece_too_heavy() {
     // A 1.5 t log held (as the server holds slow pieces) stays where it lies: the push

@@ -289,6 +289,20 @@ pub struct PlayerController {
     pub impact_speed: f32,
     /// That hit's surface normal (face-local, out of the surface toward the player).
     pub impact_normal: Vec3,
+    /// The body last pushed, kept for a few ticks after its contact is lost (`step_push`).
+    pub push: PushGrace,
+}
+
+/// How many ticks a push outlasts its contact (`Players::step_push`).
+pub const PUSH_GRACE_TICKS: u8 = 4;
+
+/// The body a player pushed last ([`PlayerController::push`]): its push direction (face-local,
+/// flat) and the ticks it is still pushed without a contact.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct PushGrace {
+    pub body: Option<BodyHandle>,
+    pub dir: Vec3,
+    pub ticks: u8,
 }
 
 impl Default for PlayerController {
@@ -312,6 +326,7 @@ impl Default for PlayerController {
             events: 0,
             impact_speed: 0.0,
             impact_normal: Vec3::ZERO,
+            push: PushGrace::default(),
         }
     }
 }
@@ -430,6 +445,49 @@ struct Player {
 struct LadderFrame {
     facing: Vec3,
     plate: DVec3,
+}
+
+/// The friction coefficient under a Tier 1 body resting on something (the terrain or another
+/// body), or 0 when nothing is under it (afloat, in the air): rays a little down from its bottom
+/// face's centre and corners (face-local), the coefficient as rapier combines the two colliders'
+/// (their average). The push ([`Players::step_push`]) must beat it.
+pub fn ground_friction(
+    world: &mut VoxelWorld,
+    physics: &Physics,
+    frame: Frame,
+    body: BodyHandle,
+) -> f64 {
+    const REACH: f64 = 0.05; // m below the bottom face
+    const INSET: f64 = 0.1;
+    let Some((lo, hi)) = physics.aabb(body) else {
+        return 0.0;
+    };
+    let (a, b) = (frame.p(lo), frame.p(hi));
+    let (lo, hi) = (a.min(b), a.max(b));
+    let vq = VoxelQuery::new(world, physics);
+    let q = FaceQuery { q: &vq, f: frame };
+    let (x0, x1) = (lo.x + INSET, (hi.x - INSET).max(lo.x + INSET));
+    let (z0, z1) = (lo.z + INSET, (hi.z - INSET).max(lo.z + INSET));
+    let points = [
+        ((x0 + x1) / 2.0, (z0 + z1) / 2.0),
+        (x0, z0),
+        (x0, z1),
+        (x1, z0),
+        (x1, z1),
+    ];
+    for (x, z) in points {
+        let origin = DVec3::new(x, lo.y + REACH, z);
+        let Some(hit) = q.cast_ray(origin, -Vec3::Y, (2.0 * REACH) as f32, Some(body), true) else {
+            continue;
+        };
+        let other = match hit.ground {
+            GroundRef::Terrain => crate::physics::TERRAIN_FRICTION,
+            GroundRef::Tier1Body(_) => crate::physics::PIECE_FRICTION,
+            GroundRef::None | GroundRef::Player(_) => continue,
+        };
+        return (crate::physics::PIECE_FRICTION + other) / 2.0;
+    }
+    0.0
 }
 
 fn frame_of(cell: Cell, material: dwell_blocks::StateId) -> LadderFrame {
@@ -2462,13 +2520,17 @@ impl Players {
 
     // Dwell — the push (§6.6; docs/BUILT_BODIES.md §6): a Tier 1 body players don't move by contact
     // (held slow on the server, a stand-in in the prediction) the player walks, swims or slides
-    // into is given the player's speed into it (the larger of its velocity and the speed its input
-    // asks for: against the body the layers' velocity is cut), at most `max_push_force` over its
-    // mass a tick:
-    // the same on the server and in the prediction, which then moves its stand-in by it rather
-    // than meeting a wall the server doesn't have (owner, 2026-11-02: pushing a floating raft
-    // jittered). Sideways only (its face-local up kept): standing on a body doesn't press it.
-    fn step_push(&mut self, i: usize, _: &mut VoxelWorld, physics: &mut Physics) {
+    // into is pushed toward the player's speed into it (the larger of its velocity and the speed
+    // its input asks for: against the body the layers' velocity is cut). The push is a person's:
+    // `max_push_force` at a standstill, falling to nothing at that speed (owner, 2026-11-03: a
+    // 1 m log slides on land at about 0.5 m/s). On the ground ([`ground_friction`]) it must first
+    // beat the body's friction, so a body slides at the speed where the two meet and a heavy one
+    // not at all; afloat nothing holds it but its mass and the water's drag (`Felling::float`).
+    // The same on the server and in the prediction, which moves its stand-in by the push less the
+    // friction (the server's solver takes that friction) rather than meeting a wall the server
+    // doesn't have (owner, 2026-11-02: pushing a floating raft jittered). Sideways only (its
+    // face-local up kept): standing on a body doesn't press it.
+    fn step_push(&mut self, i: usize, world: &mut VoxelWorld, physics: &mut Physics) {
         let p = self.players[i].as_ref().expect("live");
         if p.c.climb.climbing {
             return;
@@ -2483,7 +2545,8 @@ impl Players {
             p.cfg.movement.walk_speed
         };
         let wish = (move_direction(&p.c.input) * speed).as_dvec3();
-        let max_dv_force = f64::from(p.cfg.movement.max_push_force) * f64::from(DT);
+        let max_force = f64::from(p.cfg.movement.max_push_force);
+        let dt = f64::from(DT);
         let mut best: Vec<(BodyHandle, DVec3, f64)> = Vec::new();
         for &(body, n) in &p.tier1 {
             if !physics.pushed_by_players(body) {
@@ -2506,6 +2569,34 @@ impl Players {
                 None => best.push((body, dir, into)),
             }
         }
+        // A contact lost for a tick or two while still pushing (the body slid a hair ahead) keeps
+        // the push: else each gap is a tick of friction alone.
+        let grace = p.c.push;
+        let push = if let Some((body, dir, _)) = best.first() {
+            PushGrace {
+                body: Some(*body),
+                dir: dir.as_vec3(),
+                ticks: PUSH_GRACE_TICKS,
+            }
+        } else if let Some(body) = grace
+            .body
+            .filter(|&b| grace.ticks > 0 && physics.pushed_by_players(b))
+        {
+            let dir = grace.dir.as_dvec3();
+            let into = velocity.dot(dir).max(wish.dot(dir));
+            if into > 0.0 {
+                best.push((body, dir, into));
+            }
+            PushGrace {
+                ticks: grace.ticks - 1,
+                ..grace
+            }
+        } else {
+            PushGrace::default()
+        };
+        self.players[i].as_mut().expect("live").c.push = push;
+        let mut follow = 0.0f64; // the speed (along `dir`) the player keeps up with
+        let mut follow_dir = DVec3::ZERO;
         for (body, dir, into) in best {
             let mass = physics.mass(body);
             if mass <= 0.0 {
@@ -2519,13 +2610,66 @@ impl Players {
             if want <= 0.0 {
                 continue;
             }
-            let dv = dir * want.min(max_dv_force / mass);
-            let world = frame.v(dv.as_vec3()).as_dvec3();
-            if physics.is_dynamic(body) {
-                physics.apply_impulse(body, world * mass);
+            let force = max_force * (1.0 - along.max(0.0) / into);
+            let resist = ground_friction(world, physics, frame, body) * physics.gravity();
+            let net = force / mass - resist; // m/s²
+            if net <= 0.0 {
+                continue; // it holds its ground
             }
-            self.pushes.push((body, world));
+            let dv = dir * want.min(net * dt);
+            let world_dv = frame.v(dv.as_vec3()).as_dvec3();
+            if physics.is_dynamic(body) {
+                // The solver takes the friction off again.
+                let friction = frame.v((dir * resist * dt).as_vec3()).as_dvec3();
+                physics.apply_impulse(body, (world_dv + friction) * mass);
+            }
+            self.pushes.push((body, world_dv));
+            let after = along + dv.length();
+            if after > follow {
+                (follow, follow_dir) = (after, dir);
+            }
         }
+        // The player keeps up with what it pushes (it walks or swims on behind it): else a body
+        // gliding off loses its push and the contact comes and goes, never alike on the server
+        // and in the prediction.
+        if follow > 0.0 {
+            let p = self.players[i].as_mut().expect("live");
+            let v = Self::vel(physics, p).as_dvec3();
+            let short = follow - v.dot(follow_dir);
+            if short > 0.0 {
+                let v = (v + follow_dir * short).as_vec3();
+                Self::set_vel(physics, p, v);
+                p.pre_step = physics.velocity(p.body).as_vec3();
+            }
+        }
+        Self::press(self.players[i].as_ref().expect("live"), physics);
+    }
+
+    /// Dwell — standing on a held body presses it down (owner, 2026-11-03: jumping on a log pushes
+    /// it down, with a true force): the player's weight (its mass at the bodies' gravity) each
+    /// tick, and on landing the momentum the landing took, at the feet, so a raft dips and tips
+    /// under a player off its middle. Only a held piece on the server: a body not held takes it
+    /// from the contacts, and a stand-in is the server's pose (a dip arrives in its snapshots).
+    fn press(p: &Player, physics: &mut Physics) {
+        let c = &p.c;
+        let GroundRef::Tier1Body(body) = c.ground.ground else {
+            return;
+        };
+        if !c.ground.grounded || !physics.pushed_by_players(body) || !physics.is_dynamic(body) {
+            return;
+        }
+        let mass = f64::from(p.cfg.body.mass);
+        let landed = c.events & events::LANDED != 0 && c.events & events::IMPACTED != 0;
+        let landing = if landed {
+            f64::from(c.impact_speed)
+        } else {
+            0.0
+        };
+        let impulse = mass * (physics.gravity() * f64::from(DT) + landing);
+        let frame = Self::frame(p);
+        let feet = Self::pos(physics, p) - DVec3::Y * f64::from(p.cfg.half_height(c.crouching));
+        let down = frame.v(-Vec3::Y).as_dvec3();
+        physics.apply_impulse_at(body, down * impulse, frame.p(feet));
     }
 
     // 11 — PPCStateSystem
