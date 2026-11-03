@@ -836,13 +836,14 @@ struct LineOut {
 };
 
 // Lines (the block outline, debug lines): unlit sRGB colours, drawn over the composite (so neither
-// tone-mapped nor fogged) with the near pass's projection.
+// tone-mapped nor fogged) with the near pass's projection. Turned by the draw's own rotation about
+// its offset, as meshes are: the outline of a moving body's cell turns with the body.
 @vertex
 fn line_vs(v: LineIn, @builtin(instance_index) k: u32) -> LineOut {
     let draw = draws[k];
     var o: LineOut;
     o.draw = k;
-    let rel = draw.offset.xyz + v.position * draw.offset.w;
+    let rel = draw.offset.xyz + qrot(draw.quat, v.position * draw.offset.w);
     o.clip = frame.view_proj * vec4f(rel, 1.0);
     o.color = v.color;
     o.depth = view_depth(rel);
@@ -2307,6 +2308,24 @@ pub fn lighting_source() -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn the_block_outline_turns_with_its_draw_as_meshes_do() {
+        // Owner, 2026-11-02: a moving body's hover outline was "tilted at uneven angles": the line
+        // stage left out the draw's rotation, so the box about the body's origin didn't turn with
+        // it. Every stage that places a vertex by a draw's offset turns it by the draw's quat.
+        let src = super::source(1);
+        let body = |name: &str| {
+            let at = src.find(&format!("fn {name}(")).expect(name);
+            src[at..at + src[at..].find("\n}\n").expect("end")].to_string()
+        };
+        for stage in ["terrain_vs", "cutout_vs", "line_vs"] {
+            assert!(
+                body(stage).contains("qrot(draw.quat, v.position * draw.offset.w)"),
+                "{stage} turns by the draw's rotation"
+            );
+        }
+    }
+
     #[test]
     fn the_sky_behind_the_world_takes_the_other_faces_below_the_horizon() {
         // docs/BUGS.md 10 and 13: the composite's sky behind the world is the other face's below

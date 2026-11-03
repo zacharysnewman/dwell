@@ -218,6 +218,22 @@ one rests on the pool's floor), the water rules' data tests. Cost: nine voxel re
 (37k for a body at the 4,096-cell cap). Natural pieces float too: a felled tree in a lake bobs until
 `maxSeconds` (30 s) and settles where it is.
 
+**Playtest fixes (0.41.4; owner, 2026-11-02).**
+- *"I couldn't push it"* (a 2 × 2 log raft afloat): heavy pieces are held from players' pushes while
+  slow (`pushableMass`, a felled trunk's rule); not while any of the piece is in a liquid
+  (`Falling::floating`, set by `float`), the water carrying its weight
+  (`a_heavy_raft_afloat_is_not_held_from_players_pushes`).
+- *"It froze until I broke a block"*: a piece slower than 0.05 m/s counted as at rest and was not sent
+  again (0.40.13's ledger), so a drifting raft froze on screen. At rest now means within 1 cm and
+  0.002 (quaternion) of the pose last sent to that player (`a_piece_drifting_slowly_is_sent_as_it_moves`).
+- *"My character freaks out when standing on a floating object"*: on a dynamic body the contact
+  hands the player ~0.12 m/s upward each tick, which the controller read as a launch (over 0.1 m/s), so
+  the player never stood (Falling, every tick). On a dynamic body underfoot the launch threshold is
+  0.5 m/s (`DYNAMIC_GROUND_LAUNCH_THRESHOLD`; PLAYER_CONTROLLER.md)
+  (`a_player_stands_steadily_on_a_floating_raft`: 0 → 180 of 180 ticks grounded).
+- *The hover outline tilted unevenly*: the line shader left out a draw's rotation; it turns lines as
+  meshes (`the_block_outline_turns_with_its_draw_as_meshes_do`; checked on the GPU on a tipping trunk).
+
 ## 12. Not in this design
 
 Driving or powering bodies; joints between bodies (hinges, wheels on axles); bodies merging when

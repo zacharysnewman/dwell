@@ -378,6 +378,10 @@ impl Physics {
             b.set_translation(p, true);
         }
     }
+    /// Whether the body moves under forces (not fixed, not kinematic).
+    pub fn is_dynamic(&self, h: BodyHandle) -> bool {
+        self.w.bodies.get(h.0).is_some_and(|b| b.is_dynamic())
+    }
     /// Gravity's strength for Tier 1 bodies (m/s²; toward the midplane on either face).
     pub fn gravity(&self) -> f64 {
         self.config.gravity_y.abs()

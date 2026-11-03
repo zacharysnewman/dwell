@@ -54,6 +54,11 @@ const STEP_SAME_DIRECTION: f32 = 0.985;
 const LAUNCH_THRESHOLD: f32 = 0.10;
 /// Dwell: during step_grace.
 const STEP_LAUNCH_THRESHOLD: f32 = 1.5;
+/// Dwell: on a dynamic body underfoot (a raft afloat), the deviation a launch must exceed (m/s).
+/// The player's weight presses such ground down and the contact hands back a little upward speed
+/// (~0.12 m/s), which is no launch (owner, 2026-11-02: on a floating raft the player was never
+/// grounded and its animations twitched); a real one (knockback, an explosion) is metres a second.
+const DYNAMIC_GROUND_LAUNCH_THRESHOLD: f32 = 0.5;
 const STEP_GRACE_TICKS: u8 = 6;
 /// The vertical pass's `step_grace` on the tick after a step-up: then the ground snap holds the
 /// step's height while the player moves on over the edge (the probe ran before the move).
@@ -2300,6 +2305,8 @@ impl Players {
         let gravity = -cfg.body.gravity;
         let body_y = Self::vel(physics, p).y;
         let drive_lift = p.drive_lift;
+        let on_dynamic =
+            matches!(p.c.ground.ground, GroundRef::Tier1Body(b) if physics.is_dynamic(b));
         p.ceiling_stop = false;
         let c = &mut p.c;
         let v = &mut c.vertical;
@@ -2324,6 +2331,8 @@ impl Players {
             let explained = v.target_y.max(c.platform.ground_velocity.y);
             let threshold = if v.step_grace > 0 {
                 STEP_LAUNCH_THRESHOLD
+            } else if on_dynamic {
+                DYNAMIC_GROUND_LAUNCH_THRESHOLD
             } else {
                 LAUNCH_THRESHOLD
             };
