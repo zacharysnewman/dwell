@@ -176,6 +176,36 @@ struct SimClient {
     last_render: Vec3,
     max_render_step: f32,
     modifications: Vec<VoxelModification>,
+    /// The bodies spawned (their boxes, as the client's `pieces.rs` makes them).
+    pieces: BTreeMap<u32, Vec<dwell_physics::PieceCell>>,
+    /// Each body pose the snapshots carried: the input seq acknowledged and the position.
+    piece_seen: Vec<(u32, DVec3)>,
+}
+
+/// A body's boxes as the client makes them (`dwell-client` `pieces.rs` `piece_boxes`).
+fn piece_boxes(e: &EntitySpawn) -> Vec<dwell_physics::PieceCell> {
+    e.cells
+        .iter()
+        .map(|c| {
+            let s = dwell_blocks::info(c.state);
+            let collides = if e.kind == 0 {
+                s.support_role == dwell_blocks::SupportRole::Carrier
+            } else {
+                s.solid && !s.passable
+            };
+            let o = c.offset.map(f64::from);
+            dwell_physics::PieceCell {
+                center: DVec3::new(o[0], o[1] * dwell_world::CELL_H, o[2]),
+                half: DVec3::new(0.5, 0.5 * dwell_world::CELL_H, 0.5),
+                mass: f64::from(s.density_kg_m3).max(1.0) * dwell_world::CELL_H,
+                collide: if collides {
+                    dwell_physics::Collide::All
+                } else {
+                    dwell_physics::Collide::None
+                },
+            }
+        })
+        .collect()
 }
 
 impl SimClient {
@@ -326,6 +356,8 @@ impl NetSim {
             last_render: Vec3::ZERO,
             max_render_step: 0.0,
             modifications: Vec::new(),
+            pieces: BTreeMap::new(),
+            piece_seen: Vec::new(),
         });
         self.clients.len() - 1
     }
@@ -371,6 +403,22 @@ impl NetSim {
                             );
                         }
                     }
+                    // The bodies' poses first, as the client sets them (`game.rs`).
+                    for ps in &snap.pieces {
+                        c.piece_seen
+                            .push((snap.ack_input_seq, DVec3::from(ps.position)));
+                        if let Some(cells) = c.pieces.get(&ps.id) {
+                            let r = ps.rotation.map(f64::from);
+                            c.predictor.set_piece(
+                                ps.id,
+                                cells,
+                                DVec3::from(ps.position),
+                                dwell_physics::DQuat::from_xyzw(r[0], r[1], r[2], r[3]),
+                                Vec3::from(ps.velocity),
+                                snap.ack_input_seq,
+                            );
+                        }
+                    }
                     let (replays, snapshots) =
                         (c.predictor.stats().replays, c.predictor.stats().snapshots);
                     c.predictor.on_snapshot(&mut c.world, &snap);
@@ -391,6 +439,19 @@ impl NetSim {
                         apply_chunk_changes(&mut c.world, changes);
                     }
                     c.modifications.push(m);
+                }
+                Message::EntitySpawn(e) => {
+                    let cells = piece_boxes(&e);
+                    let r = e.rotation.map(f64::from);
+                    c.predictor.set_piece(
+                        e.id,
+                        &cells,
+                        DVec3::from(e.origin),
+                        dwell_physics::DQuat::from_xyzw(r[0], r[1], r[2], r[3]),
+                        Vec3::ZERO,
+                        0,
+                    );
+                    c.pieces.insert(e.id, cells);
                 }
                 Message::PlayerEvent(e) => {
                     if e.kind == PlayerEventKind::Knockback && e.player_id == c.player_id {
@@ -1416,4 +1477,118 @@ fn stepping_up_predicts_without_snaps_at_150_ms_rtt_20_ms_jitter_5_percent_loss(
     );
     assert_eq!(s.snaps, 0);
     assert!(percentile(c.ack_errors.clone(), 0.95) < 0.05);
+}
+
+// --- bodies --------------------------------------------------------------------------------------
+
+/// The flat world with a pool 8 rows (4 m) deep over x 20..44, z −12..12.
+fn pool_generator() -> ChunkGenerator {
+    let base = flat_generator();
+    let water = require("dwell:water");
+    let g = dwell_world::FLAT_TOP_Y;
+    Arc::new(move |coord, chunk| {
+        base(coord, chunk);
+        let voxels = chunk.voxels_mut();
+        let o = [
+            coord.x * CHUNK_SIZE,
+            coord.y * CHUNK_SIZE,
+            coord.z * CHUNK_SIZE,
+        ];
+        for z in -12..12 {
+            for x in 20..44 {
+                for y in g - 8..g {
+                    let l = [x - o[0], y - o[1], z - o[2]];
+                    if l.iter().all(|&v| (0..CHUNK_SIZE).contains(&v)) {
+                        voxels[dwell_world::local_index(l[0], l[1], l[2])] = water;
+                    }
+                }
+            }
+        }
+    })
+}
+
+/// A player swims into a 2 × 2 log raft (1,400 kg) floating in the pool and keeps swimming:
+/// returns how far the raft went, and the client.
+fn pushing_a_raft(conditions: LinkConditions) -> (f64, Vec<f32>, NetSim, usize) {
+    let mut sim = NetSim::with_world(conditions, pool_generator(), [25.5, G - 1.2, 0.5]);
+    let log = require("dwell:log[axis=y]");
+    let cells: Vec<([i32; 3], u16)> = (0..2)
+        .flat_map(|x| (0..2).map(move |z| ([x, 0, z], log)))
+        .collect();
+    let swim = Rc::new(Cell::new(false));
+    let go = swim.clone();
+    let a = sim.join(
+        Some(Box::new(move |_, c| {
+            if go.get() {
+                steer_to(c, 42.0, 0.5, false)
+            } else {
+                Input::default()
+            }
+        })),
+        false,
+    );
+    sim.step(ticks(0.5));
+    // After the join (the harness drops what comes during it), as a body built then.
+    let at = to_world(29.5, G - 0.1, 0.0);
+    let raft = sim.server.add_body(1, cells, at.to_array());
+    sim.step(ticks(3.0)); // the raft settles afloat
+    let (start, _) = sim.server.body_pose(raft).expect("the raft");
+    swim.set(true);
+    sim.clients[a].corrections.clear();
+    sim.clients[a].ack_errors.clear();
+    let mut predicted: BTreeMap<u32, f64> = BTreeMap::new();
+    let mut errs: Vec<f32> = Vec::new();
+    for _ in 0..ticks(6.0) {
+        sim.step(1);
+        {
+            let c = &sim.clients[a];
+            let seq = c.predictor.next_seq() - 1;
+            if let Some((x, _)) = c.predictor.piece_pose(raft) {
+                predicted.entry(seq).or_insert(to_local(x).x as f64);
+            }
+        }
+    }
+    let (end, _) = sim.server.body_pose(raft).expect("the raft");
+    for &(ack, at) in &sim.clients[a].piece_seen {
+        if let Some(&px) = predicted.get(&ack) {
+            errs.push((px - to_local(at).x as f64) as f32);
+        }
+    }
+    let c = &sim.clients[a];
+    let s = c.predictor.stats();
+    eprintln!(
+        "raft err p50 {} p95 {} min {}; raft pushed {:.2} m; {} snapshots, {} replays, error at ack p95 {} m; corrections p95 {} max {} m, snaps {}, render step max {}",
+        percentile(errs.clone(), 0.5),
+        percentile(errs.clone(), 0.95),
+        -percentile(errs.iter().map(|e| -e).collect(), 1.0),
+        (end - start).x,
+        s.snapshots,
+        s.replays,
+        percentile(c.ack_errors.clone(), 0.95),
+        percentile(c.corrections.clone(), 0.95),
+        percentile(c.corrections.clone(), 1.0),
+        s.snaps,
+        c.max_render_step
+    );
+    ((end - start).x, errs, sim, a)
+}
+
+#[test]
+fn pushing_a_floating_raft_is_predicted_without_snaps_at_150_ms_rtt() {
+    // Owner, 2026-11-02: "Movement gets really jittery when pushing a floating log raft, you can
+    // kind of push into it, feels soft." The server let the player's contact shove the raft while
+    // the prediction met an unmovable stand-in at its last pose, so every snapshot corrected the
+    // player. Now slow bodies are moved by the controller's push, the same in the prediction,
+    // whose stand-in is carried on to the predicted present (docs/BUILT_BODIES.md §6).
+    // Red before: corrections up to 4.9 cm, 71 replays in the 6 s; now under 2 cm.
+    let (pushed, errs, sim, a) = pushing_a_raft(lossy());
+    assert!(pushed > 0.8, "the raft went {pushed} m");
+    let c = &sim.clients[a];
+    assert_eq!(c.predictor.stats().snaps, 0, "{:?}", c.predictor.stats());
+    let worst = percentile(c.corrections.clone(), 1.0);
+    assert!(worst < 0.03, "corrections max {worst} m");
+    // The stand-in was where the server had the raft, each input.
+    assert!(errs.len() > 100, "{} poses compared", errs.len());
+    let off = percentile(errs.iter().map(|e| e.abs()).collect(), 0.95);
+    assert!(off < 0.03, "the stand-in off by {off} m (p95)");
 }

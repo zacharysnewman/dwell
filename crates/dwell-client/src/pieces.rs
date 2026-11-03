@@ -1,7 +1,10 @@
 //! The falling pieces as this client sees them (docs/FELLING.md §3): each spawned by the server
 //! (`EntitySpawn`, its cells), meshed once into blocks of its own cells, drawn at its pose
 //! interpolated `INTERP_DELAY_MS` behind the latest snapshots (as remote players are), and stood in
-//! for in the prediction by a kinematic body at its latest pose.
+//! for in the prediction by a kinematic body at its latest pose carried on to the predicted present.
+//! A piece near the local player is drawn where that stand-in is, the present the player is drawn
+//! in, blended in over `NEAR_BLEND_SECONDS` (docs/BUILT_BODIES.md §6: pushing a raft drawn 100 ms
+//! in the past put the player inside it).
 
 use std::collections::VecDeque;
 
@@ -20,9 +23,16 @@ const KEEP: usize = 8;
 /// at every snapshot.
 const LAND_EVERY_MS: f64 = 250.0;
 
+/// A piece within this (m) of the local player, past its cells' reach, is drawn at the present.
+const NEAR_M: f64 = 2.5;
+/// How long (s) a piece takes to go between its past (interpolated) and present (predicted) poses.
+const NEAR_BLEND_SECONDS: f64 = 0.25;
+
 #[derive(Clone, Copy, Debug)]
 struct Pose {
     at_ms: f64,
+    /// The input seq the snapshot carrying it acknowledged (0: from its spawn).
+    seq: u32,
     position: DVec3,
     rotation: DQuat,
     velocity: DVec3,
@@ -42,10 +52,18 @@ struct Piece {
     /// Its kind (`dwell_sim::felling::BODY_KINDS`; 0 natural).
     kind: u8,
     poses: VecDeque<Pose>,
+    /// Its stand-in's pose in the prediction (the present), and how far it is drawn there (0 at
+    /// its past pose, 1 at the present).
+    present: Option<(DVec3, DQuat)>,
+    near: f64,
     /// The block its landings sound like (its first carrier's; 0: riders only, silent).
     block: StateId,
     landed_ms: f64,
 }
+
+/// A piece's latest pose for the prediction: its id, boxes, position, rotation, velocity and the
+/// input seq its snapshot acknowledged.
+pub type Latest<'a> = (u32, &'a [PieceCell], DVec3, DQuat, DVec3, u32);
 
 /// The pieces falling now.
 #[derive(Default)]
@@ -81,6 +99,7 @@ impl Pieces {
         let boxes = piece_boxes(&cells, e.kind);
         let pose = Pose {
             at_ms: now_ms,
+            seq: 0,
             position: DVec3::from(e.origin),
             rotation: quat(e.rotation),
             velocity: DVec3::ZERO,
@@ -97,6 +116,8 @@ impl Pieces {
                 blocks: cells.clone(),
                 kind: e.kind,
                 poses: VecDeque::from([pose]),
+                present: None,
+                near: 0.0,
                 block,
                 landed_ms: f64::NEG_INFINITY,
             },
@@ -108,7 +129,7 @@ impl Pieces {
     /// sent, for its settle glide.
     pub fn despawn(&mut self, id: u32, now_ms: f64) -> Option<crate::settle_glide::SettledPiece> {
         let p = self.map.remove(&id)?;
-        let drawn = pose_at(&p.poses, now_ms - players::INTERP_DELAY_MS as f64);
+        let drawn = p.drawn(now_ms);
         let last = p.poses.back()?;
         Some(crate::settle_glide::SettledPiece {
             cells: p.blocks,
@@ -136,10 +157,9 @@ impl Pieces {
     /// the poses drawn at `now_ms`: the body, its cell (in its grid), the face entered (0 +X, 1 −X,
     /// 2 +Y, 3 −Y, 4 +Z, 5 −Z, in its frame) and the distance.
     pub fn raycast(&self, origin: DVec3, dir: DVec3, max: f64, now_ms: f64) -> Option<BodyHit> {
-        let at = now_ms - players::INTERP_DELAY_MS as f64;
         let mut best: Option<BodyHit> = None;
         for (&id, p) in &self.map {
-            let (position, rotation) = pose_at(&p.poses, at);
+            let (position, rotation) = p.drawn(now_ms);
             let inverse = rotation.inverse();
             let local_origin = inverse * (origin - position);
             let local_dir = inverse * dir;
@@ -181,6 +201,7 @@ impl Pieces {
     pub fn on_snapshot(
         &mut self,
         states: &[PieceState],
+        seq: u32,
         now_ms: f64,
         sounds: &mut Vec<SoundEvent>,
     ) {
@@ -211,6 +232,7 @@ impl Pieces {
             }
             p.poses.push_back(Pose {
                 at_ms: now_ms,
+                seq,
                 position: DVec3::from(s.position),
                 rotation: quat(s.rotation),
                 velocity,
@@ -229,11 +251,10 @@ impl Pieces {
     /// Each piece's pose to draw at `now_ms`: interpolated between the snapshots round
     /// `now_ms − INTERP_DELAY_MS` (the newest one past them).
     pub fn poses(&self, now_ms: f64) -> Vec<(u32, [f64; 3], [f32; 4])> {
-        let at = now_ms - players::INTERP_DELAY_MS as f64;
         self.map
             .iter()
             .map(|(&id, p)| {
-                let (position, rotation) = pose_at(&p.poses, at);
+                let (position, rotation) = p.drawn(now_ms);
                 let r = rotation;
                 (
                     id,
@@ -244,15 +265,58 @@ impl Pieces {
             .collect()
     }
 
-    /// Each piece's latest pose and velocity with its boxes, for the prediction's stand-ins.
-    pub fn latest(&self) -> Vec<(u32, &[PieceCell], DVec3, DQuat, DVec3)> {
+    /// Each piece's latest pose and velocity with its boxes and the input seq its snapshot
+    /// acknowledged, for the prediction's stand-ins.
+    pub fn latest(&self) -> Vec<Latest<'_>> {
         self.map
             .iter()
             .filter_map(|(&id, p)| {
                 let l = p.poses.back()?;
-                Some((id, p.cells.as_slice(), l.position, l.rotation, l.velocity))
+                Some((
+                    id,
+                    p.cells.as_slice(),
+                    l.position,
+                    l.rotation,
+                    l.velocity,
+                    l.seq,
+                ))
             })
             .collect()
+    }
+
+    /// Each frame: the stand-ins' present poses (`present`, by piece) and the local player's
+    /// position: a piece near the player moves toward being drawn at the present, the rest toward
+    /// their past poses, over `NEAR_BLEND_SECONDS`.
+    pub fn set_present(
+        &mut self,
+        present: impl Fn(u32) -> Option<(DVec3, DQuat)>,
+        player: Option<DVec3>,
+        dt: f64,
+    ) {
+        let step = dt / NEAR_BLEND_SECONDS;
+        for (&id, p) in &mut self.map {
+            p.present = present(id);
+            let near = match (p.present, player) {
+                (Some((at, _)), Some(me)) => {
+                    let reach = p
+                        .blocks
+                        .iter()
+                        .map(|&(o, _)| {
+                            DVec3::new(f64::from(o[0]), f64::from(o[1]) * CELL_H, f64::from(o[2]))
+                                .length()
+                        })
+                        .fold(0.0, f64::max)
+                        + 1.0;
+                    (me - at).length() < reach + NEAR_M
+                }
+                _ => false,
+            };
+            p.near = if near {
+                (p.near + step).min(1.0)
+            } else {
+                (p.near - step).max(0.0)
+            };
+        }
     }
 }
 
@@ -339,6 +403,21 @@ pub fn ray_cells(
         best = Some((c, face, t0));
     }
     best
+}
+
+impl Piece {
+    /// Where it is drawn at `now_ms`: its past pose (interpolated `INTERP_DELAY_MS` behind),
+    /// blended toward its present (its stand-in's) as it nears the player.
+    fn drawn(&self, now_ms: f64) -> (DVec3, DQuat) {
+        let past = pose_at(&self.poses, now_ms - players::INTERP_DELAY_MS as f64);
+        match self.present {
+            Some((at, turn)) if self.near > 0.0 => {
+                let t = self.near * self.near * (3.0 - 2.0 * self.near);
+                (past.0.lerp(at, t), past.1.slerp(turn, t))
+            }
+            _ => past,
+        }
+    }
 }
 
 /// The pose at time `at` among `poses` (oldest first): between the two round it, the first before
@@ -478,6 +557,7 @@ mod tests {
         let mut p = VecDeque::new();
         for (t, x) in [(0.0, 0.0), (50.0, 1.0), (100.0, 2.0)] {
             p.push_back(Pose {
+                seq: 0,
                 at_ms: t,
                 position: DVec3::new(x, 0.0, 0.0),
                 rotation: DQuat::IDENTITY,
@@ -498,6 +578,7 @@ mod tests {
         // EXTRAPOLATE_MS), not frozen there. Red before: it held its newest pose.
         let mut p = VecDeque::new();
         p.push_back(Pose {
+            seq: 0,
             at_ms: 0.0,
             position: DVec3::new(0.0, 10.0, 0.0),
             rotation: DQuat::IDENTITY,
@@ -531,6 +612,49 @@ mod tests {
         // Out of reach, or passing beside it: none.
         assert!(ray_cells(DVec3::new(-3.0, 1.0, 0.0), DVec3::X, &cells, 2.0).is_none());
         assert!(ray_cells(DVec3::new(-3.0, 1.0, 2.0), DVec3::X, &cells, 8.0).is_none());
+    }
+
+    #[test]
+    fn a_body_near_the_player_is_drawn_at_its_present_and_one_far_off_in_the_past() {
+        // Docs/BUILT_BODIES.md §6 (owner, 2026-11-02: pushing a floating raft "feels soft"): drawn
+        // 100 ms in the past, a raft the player pushes showed them inside it. Near the player a
+        // body is drawn where its stand-in is (the present), blended in over 0.25 s; far off, in
+        // the past as before. Red before: always in the past.
+        let mut pieces = Pieces::default();
+        let mut sounds = Vec::new();
+        let log = dwell_blocks::parse_state("dwell:log[axis=y]").expect("log");
+        pieces.spawn(
+            &EntitySpawn {
+                id: 4,
+                kind: 1,
+                origin: [0.5, 40.25, 0.5],
+                rotation: [0.0, 0.0, 0.0, 1.0],
+                carriers: 1,
+                cells: vec![dwell_protocol::PieceCellNet {
+                    offset: [0, 0, 0],
+                    state: log,
+                }],
+            },
+            0.0,
+            &mut sounds,
+        );
+        let present = |_| Some((DVec3::new(1.5, 40.25, 0.5), DQuat::IDENTITY));
+        let x = |p: &Pieces| p.poses(1000.0)[0].1[0];
+        // Far: the past.
+        for _ in 0..30 {
+            pieces.set_present(present, Some(DVec3::new(30.5, 40.0, 0.5)), 1.0 / 60.0);
+        }
+        assert!((x(&pieces) - 0.5).abs() < 1e-9, "far: {}", x(&pieces));
+        // Near: halfway in after a few frames, at the present after 0.25 s.
+        for _ in 0..5 {
+            pieces.set_present(present, Some(DVec3::new(2.5, 40.0, 0.5)), 1.0 / 60.0);
+        }
+        let partway = x(&pieces);
+        assert!(partway > 0.5 && partway < 1.5, "blending: {partway}");
+        for _ in 0..15 {
+            pieces.set_present(present, Some(DVec3::new(2.5, 40.0, 0.5)), 1.0 / 60.0);
+        }
+        assert!((x(&pieces) - 1.5).abs() < 1e-9, "near: {}", x(&pieces));
     }
 
     #[test]
@@ -614,7 +738,7 @@ mod tests {
             .into_iter()
             .enumerate()
         {
-            pieces.on_snapshot(&[state(vy)], 50.0 * k as f64 + 50.0, &mut sounds);
+            pieces.on_snapshot(&[state(vy)], 0, 50.0 * k as f64 + 50.0, &mut sounds);
         }
         // -3 to -8 is a shove, not a stop: still a change over 2 m/s, so it sounds (a hit).
         assert_eq!(
@@ -625,8 +749,8 @@ mod tests {
         );
         sounds.clear();
         // It hits the ground: -8 → 0, a landing; the bounce right after stays quiet.
-        pieces.on_snapshot(&[state(0.0)], 600.0, &mut sounds);
-        pieces.on_snapshot(&[state(-3.0)], 650.0, &mut sounds);
+        pieces.on_snapshot(&[state(0.0)], 0, 600.0, &mut sounds);
+        pieces.on_snapshot(&[state(-3.0)], 0, 650.0, &mut sounds);
         assert_eq!(
             sounds
                 .iter()

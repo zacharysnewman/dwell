@@ -42,8 +42,18 @@ fn a_player_pushes_a_light_piece() {
 }
 
 #[test]
+fn a_player_pushes_a_held_light_piece_by_its_push() {
+    // Docs/BUILT_BODIES.md §6 (owner, 2026-11-02: pushing a floating raft jittered): the server
+    // holds slow pieces from players' contacts (`dominant`) and the controller's push moves them,
+    // as the prediction does its stand-ins. Red before: a held piece never moved.
+    let d = pushed(5.0, true);
+    assert!(d > 0.3, "a held 15 kg log moved {d} m");
+}
+
+#[test]
 fn a_player_cannot_push_a_piece_too_heavy() {
-    // A 1.5 t log (over felling.json's pushableMass) stays where it lies.
+    // A 1.5 t log held (as the server holds slow pieces) stays where it lies: the push
+    // (`max_push_force`) is less than its friction on the ground.
     let d = pushed(500.0, true);
     assert!(d < 0.02, "a 1.5 t log moved {d} m");
 }

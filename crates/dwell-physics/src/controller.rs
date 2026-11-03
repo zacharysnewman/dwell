@@ -413,6 +413,8 @@ struct Player {
     collider: ColliderHandle,
     /// Push-out normals (toward the player, world) of the body's contacts in the last step.
     contacts: Vec<DVec3>,
+    /// The Tier 1 bodies touched in the last step, with the push-out normal toward the player.
+    tier1: Vec<(BodyHandle, DVec3)>,
     /// Upward velocity the contacts gave the body by deflecting last tick's horizontal drive.
     drive_lift: f32,
     /// The body's velocity (world) going into the physics step: what the controller set, plus
@@ -476,6 +478,8 @@ pub struct Players {
     /// The most new terrain chunks built a tick for `terrain_boxes`.
     terrain_boxes_per_tick: usize,
     ticks: u32,
+    /// This tick's pushes: each body a player pushed, and the velocity it gave it (world, m/s).
+    pushes: Vec<(BodyHandle, DVec3)>,
     ring: [Vec3; RING_RAYS],
 }
 
@@ -488,6 +492,7 @@ impl Players {
             terrain_boxes: Vec::new(),
             terrain_boxes_per_tick: usize::MAX,
             ticks: 0,
+            pushes: Vec::new(),
             ring: ring(),
         }
     }
@@ -558,6 +563,7 @@ impl Players {
             body: BodyHandle(body),
             collider,
             contacts: Vec::new(),
+            tier1: Vec::new(),
             drive_lift: 0.0,
             pre_step: Vec3::ZERO,
             touched: Vec::new(),
@@ -822,10 +828,12 @@ impl Players {
         }
         for p in self.players.iter_mut().flatten() {
             physics.contact_normals(p.body, MAX_CONTACTS, &mut p.contacts);
+            physics.tier1_contacts(p.body, MAX_CONTACTS, &mut p.tier1);
         }
+        self.pushes.clear();
         // Pass-major, like the PPC's Quantum system group.
         type Pass = fn(&mut Players, usize, &mut VoxelWorld, &mut Physics);
-        const PASSES: [Pass; 13] = [
+        const PASSES: [Pass; 14] = [
             Players::step_input,
             Players::step_probe,
             Players::step_platform,
@@ -838,6 +846,7 @@ impl Players {
             Players::step_vertical,
             Players::step_impact,
             Players::step_aggregate,
+            Players::step_push,
             Players::step_state,
         ];
         for pass in PASSES {
@@ -2443,6 +2452,80 @@ impl Players {
         c.target_velocity = target;
         Self::set_vel(physics, p, target);
         p.pre_step = physics.velocity(p.body).as_vec3();
+    }
+
+    /// This tick's pushes ([`Players::step_push`]): each body pushed and the velocity it was given
+    /// (world, m/s). The client's prediction moves its stand-ins by them.
+    pub fn pushes(&self) -> &[(BodyHandle, DVec3)] {
+        &self.pushes
+    }
+
+    // Dwell — the push (§6.6; docs/BUILT_BODIES.md §6): a Tier 1 body players don't move by contact
+    // (held slow on the server, a stand-in in the prediction) the player walks, swims or slides
+    // into is given the player's speed into it (the larger of its velocity and the speed its input
+    // asks for: against the body the layers' velocity is cut), at most `max_push_force` over its
+    // mass a tick:
+    // the same on the server and in the prediction, which then moves its stand-in by it rather
+    // than meeting a wall the server doesn't have (owner, 2026-11-02: pushing a floating raft
+    // jittered). Sideways only (its face-local up kept): standing on a body doesn't press it.
+    fn step_push(&mut self, i: usize, _: &mut VoxelWorld, physics: &mut Physics) {
+        let p = self.players[i].as_ref().expect("live");
+        if p.c.climb.climbing {
+            return;
+        }
+        let frame = Self::frame(p);
+        let velocity = frame.v(physics.velocity(p.body).as_vec3()).as_dvec3();
+        let speed = if p.c.swim.swimming {
+            p.cfg.swim.speed
+        } else if p.c.fly.flying || p.c.input.run {
+            p.cfg.movement.run_speed
+        } else {
+            p.cfg.movement.walk_speed
+        };
+        let wish = (move_direction(&p.c.input) * speed).as_dvec3();
+        let max_dv_force = f64::from(p.cfg.movement.max_push_force) * f64::from(DT);
+        let mut best: Vec<(BodyHandle, DVec3, f64)> = Vec::new();
+        for &(body, n) in &p.tier1 {
+            if !physics.pushed_by_players(body) {
+                continue;
+            }
+            let n = frame.v(n.as_vec3()).as_dvec3();
+            // Its sideways part: toward the body, flat.
+            let dir = -DVec3::new(n.x, 0.0, n.z);
+            if dir.length() < 0.5 {
+                continue; // a floor or a ceiling, not a side
+            }
+            let dir = dir.normalize();
+            let into = velocity.dot(dir).max(wish.dot(dir));
+            if into <= 0.0 {
+                continue;
+            }
+            match best.iter_mut().find(|b| b.0 == body) {
+                Some(b) if b.2 < into => *b = (body, dir, into),
+                Some(_) => {}
+                None => best.push((body, dir, into)),
+            }
+        }
+        for (body, dir, into) in best {
+            let mass = physics.mass(body);
+            if mass <= 0.0 {
+                continue;
+            }
+            let along = frame
+                .v(physics.velocity(body).as_vec3())
+                .as_dvec3()
+                .dot(dir);
+            let want = into - along;
+            if want <= 0.0 {
+                continue;
+            }
+            let dv = dir * want.min(max_dv_force / mass);
+            let world = frame.v(dv.as_vec3()).as_dvec3();
+            if physics.is_dynamic(body) {
+                physics.apply_impulse(body, world * mass);
+            }
+            self.pushes.push((body, world));
+        }
     }
 
     // 11 — PPCStateSystem

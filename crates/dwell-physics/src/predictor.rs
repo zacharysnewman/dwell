@@ -54,13 +54,32 @@ struct Entry {
     touched: bool,
 }
 
-/// A falling piece's stand-in in the prediction (docs/FELLING.md §3).
+/// A falling piece's stand-in in the prediction (docs/FELLING.md §3): at the server's pose as of
+/// the input `seq` its snapshot acknowledged, carried on at its velocity to each tick predicted,
+/// and moved by the local player's own pushes since (docs/BUILT_BODIES.md §6).
 struct PieceProxy {
     body: BodyHandle,
-    target: DVec3,
+    position: DVec3,
     rotation: crate::DQuat,
     velocity: Vec3,
-    dead_reckoning_ticks: i32,
+    seq: u32,
+    /// The local player's pushes after `seq`: the tick's input seq and the velocity given (world).
+    pushes: Vec<(u32, DVec3)>,
+}
+
+impl PieceProxy {
+    /// Where it is after the tick of input `seq` (the server's pose carried on, plus the pushes).
+    fn at(&self, seq: u32) -> DVec3 {
+        let cap = (MAX_DEAD_RECKONING / DT) as u32;
+        let ticks = |from: u32| f64::from(seq.saturating_sub(from).min(cap)) * f64::from(DT);
+        let mut p = self.position + self.velocity.as_dvec3() * ticks(self.seq);
+        for &(s, dv) in &self.pushes {
+            if s <= seq {
+                p += dv * ticks(s.saturating_sub(1));
+            }
+        }
+        p
+    }
 }
 
 struct Remote {
@@ -181,17 +200,26 @@ impl Predictor {
                 r.dead_reckoning_ticks += 1;
                 self.physics.move_kinematic(r.body, r.target, f64::from(DT));
             }
-            for p in self.pieces.values_mut() {
-                if p.dead_reckoning_ticks < max_ticks {
-                    p.target += (p.velocity * DT).as_dvec3();
-                }
-                p.dead_reckoning_ticks += 1;
-                self.physics
-                    .set_kinematic_pose(p.body, p.target, p.rotation);
-            }
         }
         self.players.set_input(h, dequantize_input(input));
         self.players.tick(world, &mut self.physics);
+        // The stand-ins, replays too: where each is after this tick, this tick's push included.
+        let seq = input.seq;
+        for p in self.pieces.values_mut() {
+            p.pushes.retain(|&(s, _)| s != seq);
+            p.pushes.extend(
+                self.players
+                    .pushes()
+                    .iter()
+                    .filter(|&&(b, _)| b == p.body)
+                    .map(|&(_, dv)| (seq, dv)),
+            );
+            if p.pushes.len() > HISTORY as usize {
+                p.pushes.remove(0);
+            }
+            self.physics
+                .set_kinematic_pose(p.body, p.at(seq), p.rotation);
+        }
         if let Some(&dv) = self.knockbacks.get(&input.seq) {
             self.players.add_velocity(&mut self.physics, h, dv);
         }
@@ -489,6 +517,8 @@ impl Predictor {
 
     /// A falling piece's stand-in (docs/FELLING.md §3), at the server's latest pose and moving on
     /// by its velocity (dead reckoning, as remote players): created on first sight with `cells`.
+    /// A piece's pose and velocity as of the input `seq` its snapshot acknowledged (call before
+    /// [`Predictor::on_snapshot`], so a replay meets it where the server had it).
     pub fn set_piece(
         &mut self,
         id: u32,
@@ -496,18 +526,30 @@ impl Predictor {
         position: DVec3,
         rotation: crate::DQuat,
         velocity: Vec3,
+        seq: u32,
     ) {
         let p = self.pieces.entry(id).or_insert_with(|| PieceProxy {
             body: self.physics.add_kinematic_piece(position, rotation, cells),
-            target: position,
+            position,
             rotation,
             velocity,
-            dead_reckoning_ticks: 0,
+            seq,
+            pushes: Vec::new(),
         });
-        p.target = position;
+        if seq < p.seq {
+            return; // an older pose
+        }
+        p.position = position;
         p.rotation = rotation;
         p.velocity = velocity;
-        p.dead_reckoning_ticks = 0;
+        p.seq = seq;
+        p.pushes.retain(|&(s, _)| s > seq);
+    }
+
+    /// A piece's stand-in's pose now (the predicted present), if it has one.
+    pub fn piece_pose(&self, id: u32) -> Option<(DVec3, crate::DQuat)> {
+        let p = self.pieces.get(&id)?;
+        Some((self.physics.position(p.body), self.physics.rotation(p.body)))
     }
 
     pub fn remove_piece(&mut self, id: u32) {

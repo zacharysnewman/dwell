@@ -1299,6 +1299,9 @@ impl Server {
         self.players
             .set_terrain_boxes(boxes, self.felling.rules.terrain_chunks_per_tick);
         self.players.tick(&mut self.world, &mut self.physics);
+        // Pieces pushed are held from contacts while pushed (docs/BUILT_BODIES.md §6).
+        let pushes = self.players.pushes().to_vec();
+        self.felling.pushed(&mut self.physics, &pushes);
         let ids: Vec<SessionId> = self.sessions.keys().copied().collect();
         for &id in &ids {
             if self.sessions.get(&id).is_some_and(Session::joined) {
