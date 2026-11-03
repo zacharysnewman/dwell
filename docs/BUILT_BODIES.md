@@ -141,7 +141,8 @@ body kind in `EntitySpawn`): a **new compatibility line** (0.41.0), which the ow
 output):
 
 - `kinds`: `natural` and `built`, each `{ place, break, split, settles, saved }` (§2).
-- `buoyancy`: `waterDrag` (/s), `waterAngularDrag` (/s), `samples` (points per cell).
+- `water` (as built): `dragCoefficient` (the speed-squared drag), `drag` (/s, sideways), `heaveDrag`
+  (/s, the bob) and `angularDrag` (/s, the spin), each by the share under (§6, 0.41.6).
 - Body edits reach as far as block edits (`REACH_DISTANCE`).
 
 Block data: `"support": "platform"` (§3). `maxPieceCells` (4096, `felling.json`) bounds a body's
@@ -208,11 +209,11 @@ A world opened by 0.41.0 (before B2) ignores the bodies table: its bodies are dr
 
 **B3 as built.** Each tick before the physics step, `Felling::float` pushes every cell of every body
 by the liquid it displaces: `cell_in_liquid` reads its centre and corners (none or all), and a cell at
-the surface 40 points (five columns at eight heights, so a raft floats at its own depth to 1/16 of a
-cell); the push is the liquid's own density (its block's `density`: water 1000 kg/m³) × gravity ×
+the surface its five columns (centre and corners) measured exactly, row by row (0.41.6; before,
+40 points at eight heights, which stepped the buoyancy 6 cm at a time); the push is the liquid's own density (its block's `density`: water 1000 kg/m³) × gravity ×
 the cell's ½ m³ × that share, face-locally up, at the cell's centre; a body in water slows by
-`shared/physics/bodies.json`'s `water` drags (`drag` 1.2 /s, `angularDrag` 1.5 /s) times its share
-under. Tests: `a_cells_share_under_water_is_read_on_either_face` (both faces), `tests/built_bodies.rs`
+`shared/physics/bodies.json`'s `water` rules (0.41.6, below; `drag` 1.2 /s on its velocity before),
+`angularDrag` 1.5 /s on its spin, times its share under. Tests: `a_cells_share_under_water_is_read_on_either_face` (both faces), `tests/built_bodies.rs`
 `a_wooden_raft_floats_and_a_stone_one_sinks` (a 3 × 3 log raft floats 0.1 m under, level; a stone
 one rests on the pool's floor), the water rules' data tests. Cost: nine voxel reads a cell a tick
 (37k for a body at the 4,096-cell cap). Natural pieces float too: a felled tree in a lake bobs until
@@ -258,8 +259,36 @@ floating log raft, you can kind of push into it, feels soft"; the owner chose fi
   3 cm of the server's raft at each input; corrections at most 1.8 cm, 4.9 cm before);
   `pieces.rs` (physics) `a_player_pushes_a_held_light_piece_by_its_push` (red before: 0 m);
   `pieces.rs` (client) `a_body_near_the_player_is_drawn_at_its_present_…` (red before).
-- Not predicted: water drag and buoyancy on the stand-in (the server's snapshots correct them; the
-  stand-in stays within ~1 cm), and the body's spin.
+- Not predicted then: water drag and buoyancy on the stand-in, and the body's spin (0.41.6 predicts
+  the drag and the ground's friction, below).
+
+**Weight, friction and water as in life (0.41.6; owner, 2026-11-03: "It's too heavy", "a single log
+should slide on land, at about 0.5m/s", "jumping on the log should push it down, with relevant
+force").** Masses stay real (density × ½ m³ a cell: a 1 m log 700 kg, a 2 × 2 log raft 1,400 kg).
+- *The push is a person's* (PLAYER_CONTROLLER.md "Push strength"): `max_push_force` 3,050 N at a
+  standstill, falling to nothing at the player's speed, less the body's friction on the ground
+  (`ground_friction`). A 700 kg log slides at ~0.5 m/s walking; afloat a raft gets ~2 m/s² and nears
+  ~1.8 m/s swimming. Contacts with held bodies count within 0.1 m, a lost one keeps the push 4 ticks,
+  and the pusher keeps up with the body it pushes. Only pieces are pushed (`Physics::pieces`), not
+  moving platforms.
+- *Water resists as water does* (`felling::water_drag`): sideways ½ · the liquid's density ·
+  `dragCoefficient` (1) · the area of its sides under water facing the motion (its bounds, as deep as
+  its share under) · speed², plus `drag` (0.15 /s) to still a slow drift; the bob by `heaveDrag`
+  (2 /s), the waves a bob makes. A raft let go at 1 m/s still goes ~0.5 m/s two seconds on (0.19
+  before) and drifts metres.
+- *Standing on a held body presses it down* (`Players::press`, server only: a stand-in is the
+  server's pose): the player's weight at the bodies' gravity (80 kg × 9.81) each tick and on landing
+  the momentum it took, at the feet. An 80 kg player sinks a 2 × 2 raft ~2 cm (with the exact
+  buoyancy above; the 8-level sampling sank it a 6 cm step), a landing from 2 m dips it further.
+- *The stand-in is slowed as the server's body* (`PieceProxy::at`, tick by tick): the push less
+  friction, the ground's friction on ticks it isn't pushed, and the water's drag through the sim's
+  `water_drag` (`Predictor::set_water_drag`, set by `game.rs`; `dwell-physics` can't see the sim's
+  data).
+- Tests: physics `pieces.rs` `a_player_slides_a_log_on_the_ground_at_a_walk` (red before: 0 m/s);
+  `built_bodies.rs` `a_raft_let_go_in_water_glides_on` (red: 0.16 m/s), `a_player_on_a_floating_raft_
+  presses_it_down` (red: 0 cm); `netcode.rs` `pushing_a_log_on_land_is_predicted_without_snaps_at_
+  150_ms_rtt` (red: the log went 0 m; now ~1.9 m, corrections at most 1.6 cm) and the raft's (now
+  3.95 m in 6 s, corrections at most 2.2 cm, the stand-in within 1.9 cm p95).
 
 ## 12. Not in this design
 

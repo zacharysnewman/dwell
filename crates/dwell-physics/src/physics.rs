@@ -152,6 +152,8 @@ impl BoxBody {
 pub struct Physics {
     pub(crate) w: PhysicsWorld,
     config: PhysicsConfig,
+    /// The pieces' bodies (`add_piece`, `add_kinematic_piece`): what players push.
+    pieces: dwell_world::hash::HashSet<RigidBodyHandle>,
 }
 
 impl Physics {
@@ -159,7 +161,11 @@ impl Physics {
         let mut w = PhysicsWorld::new();
         w.gravity = DVec3::new(0.0, config.gravity_y, 0.0);
         w.integration_parameters.dt = 1.0 / f64::from(dwell_protocol::SIM_HZ);
-        Self { w, config }
+        Self {
+            w,
+            config,
+            pieces: Default::default(),
+        }
     }
 
     /// Steps the world. First sets each dynamic Tier 1 body's gravity by its side of the midplane
@@ -244,6 +250,7 @@ impl Physics {
             .user_data(TIER1_BODY)
             .build();
         let h = self.w.bodies.insert(body);
+        self.pieces.insert(h);
         for c in cells {
             self.w
                 .colliders
@@ -289,6 +296,7 @@ impl Physics {
             .user_data(TIER1_BODY)
             .build();
         let h = self.w.bodies.insert(body);
+        self.pieces.insert(h);
         // Every cell, as the server's piece has them: the colliding ones touch the player, and
         // all of them give it the piece's mass (a player's push is predicted by it).
         for c in cells {
@@ -297,6 +305,39 @@ impl Physics {
                 .insert_with_parent(piece_collider(c), h, &mut self.w.bodies);
         }
         BodyHandle(h)
+    }
+
+    /// How far off a Tier 1 body a contact with it counts as touching it ([`Physics::tier1_contacts`]).
+    pub const TIER1_CONTACT_REACH: f64 = 0.1;
+
+    /// A body's world bounds (its colliders' AABB), if it has any.
+    pub fn aabb(&self, h: BodyHandle) -> Option<(DVec3, DVec3)> {
+        let b = self.w.bodies.get(h.0)?;
+        let mut out: Option<(DVec3, DVec3)> = None;
+        for c in b
+            .colliders()
+            .iter()
+            .filter_map(|&c| self.w.colliders.get(c))
+        {
+            let a = c.compute_aabb();
+            out = Some(out.map_or((a.mins, a.maxs), |(lo, hi)| {
+                (lo.min(a.mins), hi.max(a.maxs))
+            }));
+        }
+        out
+    }
+
+    /// The world centres of a body's colliders (a piece's cells), into `out`.
+    pub fn collider_centres(&self, h: BodyHandle, out: &mut Vec<DVec3>) {
+        out.clear();
+        if let Some(b) = self.w.bodies.get(h.0) {
+            out.extend(
+                b.colliders()
+                    .iter()
+                    .filter_map(|&c| self.w.colliders.get(c))
+                    .map(|c| c.position().translation),
+            );
+        }
     }
 
     /// A body's mass (kg; a kinematic stand-in's too, from its cells).
@@ -311,24 +352,28 @@ impl Physics {
         }
     }
 
-    /// Whether players move this Tier 1 body by a push of their own (`Players`' push pass), not
-    /// by their contacts: a dominant piece (the server holds a slow piece so) or a kinematic
-    /// stand-in (the client's prediction of one).
+    /// Whether players move this piece by a push of their own (`Players`' push pass), not by
+    /// their contacts: a dominant piece (the server holds a slow piece so) or a kinematic
+    /// stand-in (the client's prediction of one). Other bodies (a moving platform) are not.
     pub fn pushed_by_players(&self, h: BodyHandle) -> bool {
-        self.w.bodies.get(h.0).is_some_and(|b| {
-            b.user_data == TIER1_BODY
-                && (b.is_kinematic() || (b.is_dynamic() && b.dominance_group() > 0))
-        })
+        self.pieces.contains(&h.0)
+            && self
+                .w
+                .bodies
+                .get(h.0)
+                .is_some_and(|b| b.is_kinematic() || (b.is_dynamic() && b.dominance_group() > 0))
     }
 
     /// The Tier 1 bodies `body` touched in the last step, each with its contacts' push-out normal
-    /// toward `body` (world), at most `max` (as [`Physics::contact_normals`]).
+    /// toward `body` (world), at most `max` (as [`Physics::contact_normals`]), within
+    /// [`Physics::TIER1_CONTACT_REACH`]: rapier's speculative contact holds a player that far off
+    /// a dominant body (a held piece) without touching it.
     pub fn tier1_contacts(&self, body: BodyHandle, max: usize, out: &mut Vec<(BodyHandle, DVec3)>) {
         out.clear();
         let Some(b) = self.w.bodies.get(body.0) else {
             return;
         };
-        let reach = self.w.integration_parameters.prediction_distance();
+        let reach = Self::TIER1_CONTACT_REACH;
         for &collider in b.colliders() {
             for pair in self.w.narrow_phase.contact_pairs_with(collider) {
                 let other = if pair.collider1 == collider {
@@ -414,6 +459,7 @@ impl Physics {
     }
 
     pub fn remove_body(&mut self, h: BodyHandle) {
+        self.pieces.remove(&h.0);
         self.w.remove_body_with_colliders(h.0, true);
     }
 
@@ -491,9 +537,27 @@ impl Physics {
         let Some(b) = self.w.bodies.get(body.0) else {
             return;
         };
-        let reach = self.w.integration_parameters.prediction_distance();
+        let prediction = self.w.integration_parameters.prediction_distance();
         for &collider in b.colliders() {
             for pair in self.w.narrow_phase.contact_pairs_with(collider) {
+                let other = if pair.collider1 == collider {
+                    pair.collider2
+                } else {
+                    pair.collider1
+                };
+                // A held piece or a stand-in holds the player off it a little (as
+                // `tier1_contacts`): that contact still stops the player.
+                let reach = if self
+                    .w
+                    .colliders
+                    .get(other)
+                    .and_then(|c| c.parent())
+                    .is_some_and(|h| self.pushed_by_players(BodyHandle(h)))
+                {
+                    Self::TIER1_CONTACT_REACH
+                } else {
+                    prediction
+                };
                 for m in pair.manifolds() {
                     let touching = m
                         .data
@@ -524,6 +588,11 @@ impl Default for Physics {
 /// `user_data` of Tier 1 bodies; a player body's is its handle + 1 (below this).
 pub(crate) const TIER1_BODY: u128 = u128::MAX;
 
+/// A piece cell's friction coefficient (rapier averages the two colliders' coefficients).
+pub const PIECE_FRICTION: f64 = 0.8;
+/// Terrain's friction coefficient (`terrain.rs`).
+pub const TERRAIN_FRICTION: f64 = 0.0;
+
 /// The cell `c` of a piece as its collider: a box of its mass, colliding as its `collide` says.
 fn piece_collider(c: &PieceCell) -> Collider {
     let groups = match c.collide {
@@ -534,7 +603,7 @@ fn piece_collider(c: &PieceCell) -> Collider {
     ColliderBuilder::cuboid(c.half.x, c.half.y, c.half.z)
         .translation(c.center)
         .mass(c.mass)
-        .friction(0.8)
+        .friction(PIECE_FRICTION)
         .restitution(0.05)
         .collision_groups(groups)
         .build()

@@ -33,7 +33,8 @@ pub struct Movement {
     pub auto_jump: bool,
     /// ◆ Dwell addition
     pub edge_guard: bool,
-    /// ◆ contact mass scaling (Phase 20)
+    /// ◆ The push (N) at a standstill, falling to nothing at the player's speed (§6.6): a
+    /// 700 kg log (a 1 m log block) slides on terrain (friction 0.4) at about 0.5 m/s walking.
     pub max_push_force: f32,
     pub pushable_mass_limit: f32,
 }
@@ -268,7 +269,7 @@ impl Default for PlayerControllerConfig {
                 carried_by_characters: false,
                 auto_jump: false,
                 edge_guard: false,
-                max_push_force: 800.0,
+                max_push_force: 3050.0,
                 pushable_mass_limit: 400.0,
             },
             probes: Probes {

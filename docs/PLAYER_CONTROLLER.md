@@ -466,15 +466,27 @@ openings), **crouch height 0.9** (fits 1-tall crawlspaces with skin to spare).
   position; the horizontal layer accelerates in that frame, and the vertical layer follows its
   vertical velocity, so standing on a falling slab or tipping tower needs no input. `yaw_delta`
   turns the camera with rotating bodies (clamped to `max_platform_yaw_speed`).
-- **Push strength [built for pieces, 0.41.5].** The aggregate pass sets velocity directly, which by
-  itself would let an 80 kg player shove a 20-tonne cluster. A piece slow enough (the server's
-  `holdSpeed`) is held from players' contacts by a dominance group, and the **push pass**
-  (`step_push`, after the aggregate) moves it instead: a body touched from the side gets the
-  player's speed into it (its velocity or its input's wish, the larger), at most `max_push_force`
-  over its mass a tick, at its centre of mass; the pass records each push (`Players::pushes`) for
-  the prediction, which moves its kinematic stand-in by it (docs/BUILT_BODIES.md §6). Weight resists
-  by friction and drag, so `pushable_mass_limit` is unused. The player is still fully pushed *by* a
-  body. Clusters (Phase 20) are not yet in this.
+- **Push strength [built for pieces, 0.41.5; a person's push, 0.41.6].** The aggregate pass sets
+  velocity directly, which by itself would let an 80 kg player shove a 20-tonne cluster. A piece
+  slow enough (the server's `holdSpeed`) is held from players' contacts by a dominance group, and
+  the **push pass** (`step_push`, after the aggregate) moves it instead. A piece touched from the
+  side (within `Physics::TIER1_CONTACT_REACH`, 0.1 m: Rapier holds a player that far off a dominant
+  or kinematic body without touching it) is pushed toward the player's speed into it (its velocity
+  or its input's wish, the larger) by a person's push: `max_push_force` at a standstill, falling
+  linearly to nothing at that speed. On the ground (`ground_friction`: short rays down from the
+  body's bottom face; Rapier's average of the two colliders' coefficients, 0.4 on terrain, 0.8 on
+  another piece) the push must first beat its friction, so a body slides at the speed where the two
+  meet: a 700 kg log (a 1 m log block) at ~0.5 m/s walking (owner, 2026-11-03), a ½ m log at ~2.7
+  m/s, ½ m of stone not at all. Afloat nothing holds it but its mass and the water's drag. The
+  server applies the push plus the friction its solver takes back; the pass records the push less
+  the friction (`Players::pushes`) for the prediction, which moves its kinematic stand-in by it
+  (docs/BUILT_BODIES.md §6). A contact lost for up to `PUSH_GRACE_TICKS` (4) keeps the push
+  (`PlayerController::push`), and the player keeps up with what it pushes (its velocity raised to
+  the body's along the push), so a body gliding off doesn't lose its pusher. Standing on a held
+  body presses it down (`press`): the player's weight at the bodies' gravity each tick and the
+  momentum a landing took, at the feet (owner, 2026-11-03: jumping on a log pushes it down, with a
+  true force). Other bodies (moving platforms) are not pushed. `pushable_mass_limit` is unused.
+  The player is still fully pushed *by* a body. Clusters (Phase 20) are not yet in this.
 - **Crush [planned, Phase 20]:** from the player's contacts. A player with contacts of roughly
   opposing normals (dot < −0.7) where one is a Tier 1 body approaching faster than `crush_speed`,
   sustained for `crush_ticks`, is crushed (damage/death, ARCHITECTURE §9.6).
@@ -776,7 +788,7 @@ PPC default for voxels.
 | | `carried_by_characters` | false | same | |
 | | `auto_jump` ◆ | false (touch preset: true) | — | Dwell addition |
 | | `edge_guard` ◆ | false | — | Dwell addition |
-| | `max_push_force` ◆ | 800 N | — | The push pass's most force on a body (0.41.5; BUILT_BODIES.md §6) |
+| | `max_push_force` ◆ | 3,050 N | — | The push pass's force at a standstill, falling to nothing at the player's speed: a 700 kg log slides on terrain at ~0.5 m/s (0.41.6; 800 N in 0.41.5; BUILT_BODIES.md §6) |
 | | `pushable_mass_limit` ◆ | 400 kg | — | Heavier clusters are immovable by players (Phase 20) |
 | `probes` | `ground_probe_margin` / `ceiling_probe_margin` | 0.15 / 0.10 m | same | |
 | | `max_slope_angle` | 56° ◆ (the steepest ground: above the 45° ramps; steeper than `slide.min_angle` slides) | same | |

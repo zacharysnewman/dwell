@@ -65,18 +65,67 @@ struct PieceProxy {
     seq: u32,
     /// The local player's pushes after `seq`: the tick's input seq and the velocity given (world).
     pushes: Vec<(u32, DVec3)>,
+    /// What slows it as the server's body is slowed, as of the last tick predicted: the water
+    /// (`Predictor::set_water_drag`) and, unpushed, its friction on the ground (m/s²).
+    water: WaterDrag,
+    friction: f64,
+}
+
+/// How water slows a body sideways (the sim's `felling::water_drag`, docs/BUILT_BODIES.md §6),
+/// for the prediction's stand-ins: a speed-squared drag of `kx`/`kz` (1/m) moving along x/z
+/// (`k · speed²` m/s², blended by the direction) and a linear `linear` (/s).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct WaterDrag {
+    pub kx: f64,
+    pub kz: f64,
+    pub linear: f64,
+}
+
+/// Where a body is in water and how that slows it (the sim's, which `dwell-physics` can't see).
+pub type WaterDragFn = fn(&mut VoxelWorld, &Physics, BodyHandle) -> WaterDrag;
+
+impl WaterDrag {
+    /// A sideways velocity (world x, z) after a tick of it.
+    pub fn slow(self, v: DVec3, dt: f64) -> DVec3 {
+        let side = DVec3::new(v.x, 0.0, v.z);
+        let speed = side.length();
+        if speed < 1e-9 {
+            return v;
+        }
+        let k = (v.x.abs() * self.kx + v.z.abs() * self.kz) / speed;
+        let keep = (-self.linear * dt).exp() / (1.0 + k * speed * dt);
+        DVec3::new(v.x * keep, v.y, v.z * keep)
+    }
 }
 
 impl PieceProxy {
-    /// Where it is after the tick of input `seq` (the server's pose carried on, plus the pushes).
+    /// Where it is after the tick of input `seq`: the server's pose carried on tick by tick, plus
+    /// the pushes, slowed as the server slows it (the water, and the ground while unpushed).
     fn at(&self, seq: u32) -> DVec3 {
         let cap = (MAX_DEAD_RECKONING / DT) as u32;
-        let ticks = |from: u32| f64::from(seq.saturating_sub(from).min(cap)) * f64::from(DT);
-        let mut p = self.position + self.velocity.as_dvec3() * ticks(self.seq);
-        for &(s, dv) in &self.pushes {
-            if s <= seq {
-                p += dv * ticks(s.saturating_sub(1));
+        let dt = f64::from(DT);
+        let mut p = self.position;
+        let mut v = self.velocity.as_dvec3();
+        for s in self.seq + 1..=seq.min(self.seq + cap) {
+            let mut pushed = false;
+            for &(at, dv) in &self.pushes {
+                if at == s {
+                    v += dv;
+                    pushed = true;
+                }
             }
+            if !pushed && self.friction > 0.0 {
+                let side = DVec3::new(v.x, 0.0, v.z);
+                let speed = side.length();
+                let keep = if speed > 1e-9 {
+                    (speed - self.friction * dt).max(0.0) / speed
+                } else {
+                    0.0
+                };
+                v = DVec3::new(v.x * keep, v.y, v.z * keep);
+            }
+            v = self.water.slow(v, dt);
+            p += v * dt;
         }
         p
     }
@@ -104,6 +153,7 @@ pub struct Predictor {
     remotes: HashMap<u16, Remote>,
     /// The falling pieces' stand-ins (docs/FELLING.md §3).
     pieces: HashMap<u32, PieceProxy>,
+    water_drag: Option<WaterDragFn>,
     offset: Vec3,
     stats: PredictorStats,
 }
@@ -130,6 +180,7 @@ impl Predictor {
             knockbacks: HashMap::default(),
             remotes: HashMap::default(),
             pieces: HashMap::default(),
+            water_drag: None,
             offset: Vec3::ZERO,
             stats: PredictorStats::default(),
         }
@@ -217,6 +268,14 @@ impl Predictor {
             if p.pushes.len() > HISTORY as usize {
                 p.pushes.remove(0);
             }
+            if let Some(water) = self.water_drag {
+                p.water = water(world, &self.physics, p.body);
+            }
+            let frame = crate::frame::Frame {
+                face: FaceFrame::at_height(self.physics.position(p.body).y),
+            };
+            p.friction = crate::controller::ground_friction(world, &self.physics, frame, p.body)
+                * self.physics.gravity();
             self.physics
                 .set_kinematic_pose(p.body, p.at(seq), p.rotation);
         }
@@ -535,6 +594,8 @@ impl Predictor {
             velocity,
             seq,
             pushes: Vec::new(),
+            water: WaterDrag::default(),
+            friction: 0.0,
         });
         if seq < p.seq {
             return; // an older pose
@@ -544,6 +605,11 @@ impl Predictor {
         p.velocity = velocity;
         p.seq = seq;
         p.pushes.retain(|&(s, _)| s > seq);
+    }
+
+    /// How the stand-ins are slowed in water (the sim's `felling::water_drag`); none: not at all.
+    pub fn set_water_drag(&mut self, f: WaterDragFn) {
+        self.water_drag = Some(f);
     }
 
     /// A piece's stand-in's pose now (the predicted present), if it has one.

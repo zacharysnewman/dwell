@@ -2,6 +2,15 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions card. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.41.6",
+      "changes": [
+        "You push like a person: a single log slides along the ground at a slow walk, stone stays put",
+        "Rafts glide through the water when you let go instead of stopping dead",
+        "Standing or landing on a floating raft presses it down under your weight",
+        "Pushing keeps you up against what you push, smooth with lag too"
+      ]
+    },
+    {
       "version": "0.41.5",
       "changes": [
         "Pushing a floating raft is smooth: your game predicts the push instead of correcting you",

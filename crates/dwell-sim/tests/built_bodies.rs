@@ -7,6 +7,7 @@
 mod common;
 
 use common::*;
+use dwell_physics::DVec3;
 use dwell_protocol::*;
 use dwell_sim::server::{ServerConfig, SessionId};
 use dwell_storage::{WorldDb, WorldStore};
@@ -318,6 +319,25 @@ fn a_player_stands_steadily_on_a_floating_raft() {
     // animations twitch and spam". A raft afloat accelerates as it bobs (buoyancy, ~0.12 m/s a
     // tick): the controller read the player carried with it as launched off it every tick, so
     // never grounded (Falling). Settled on it, the player stays grounded. Red before: 0 of 180.
+    let (mut f, raft) = floating_raft();
+    let (at, _) = f.server.body_pose(raft).expect("the raft");
+    f.move_to(1, 1.0, at.y + 0.25 + 0.02, 1.0);
+    let h = f.server.player_handle_of(1).expect("the player");
+    steps(&mut f, 60);
+    let mut grounded = 0;
+    for _ in 0..180 {
+        f.server.step();
+        let (_, _, players) = f.server.sim();
+        grounded += i32::from(players.controller(h).ground.grounded);
+    }
+    assert!(
+        grounded >= 175,
+        "grounded on the raft {grounded} of 180 ticks"
+    );
+}
+
+/// A 2 × 2 log raft (1,400 kg) settled afloat in a pool: the fixture, the raft's id.
+fn floating_raft() -> (Fixture, u32) {
     let mut f = Fixture::new(flat());
     join_streaming(&mut f, 1);
     f.server.step();
@@ -336,18 +356,58 @@ fn a_player_stands_steadily_on_a_floating_raft() {
         .collect();
     let raft = f.server.add_body(1, cells, [0.5, surface, 0.5]);
     steps(&mut f, 240);
+    (f, raft)
+}
+
+#[test]
+fn a_raft_let_go_in_water_glides_on() {
+    // Owner, 2026-11-03: water resists as real water does, by the area facing the motion and the
+    // speed squared, so a heavy raft let go glides. Red before: a drag of 1.2/s on its velocity
+    // took 70% of its speed a second, and 1 m/s was 0.19 m/s two seconds on.
+    let (mut f, raft) = floating_raft();
+    let body = f.server.body_handle(raft).expect("the raft");
+    {
+        let (_, physics, _) = f.server.sim();
+        let v = physics.velocity(body);
+        physics.set_velocity(body, DVec3::new(1.0, v.y, 0.0));
+    }
+    steps(&mut f, 120);
+    let (_, physics, _) = f.server.sim();
+    let v = physics.velocity(body);
+    let speed = DVec3::new(v.x, 0.0, v.z).length();
+    assert!(
+        (0.4..0.8).contains(&speed),
+        "two seconds on the raft goes {speed} m/s"
+    );
+}
+
+#[test]
+fn a_player_on_a_floating_raft_presses_it_down() {
+    // Owner, 2026-11-03: jumping on a log pushes it down, with a true force. An 80 kg player on a
+    // 2 × 2 m raft sinks it by their weight's water (80 kg / (1000 kg/m³ · 4 m²) = 2 cm), and a
+    // landing from a jump dips it further. Red before: the held raft ignored its rider.
+    let (mut f, raft) = floating_raft();
     let (at, _) = f.server.body_pose(raft).expect("the raft");
+    let unladen = at.y;
     f.move_to(1, 1.0, at.y + 0.25 + 0.02, 1.0);
-    let h = f.server.player_handle_of(1).expect("the player");
-    steps(&mut f, 60);
-    let mut grounded = 0;
-    for _ in 0..180 {
+    steps(&mut f, 240);
+    let laden = f.server.body_pose(raft).expect("the raft").0.y;
+    let dip = unladen - laden;
+    assert!(
+        (0.012..0.03).contains(&dip),
+        "the rider sank the raft {dip} m"
+    );
+    // Dropped onto it from 2 m up.
+    f.move_to(1, 1.0, laden + 0.25 + 2.0, 1.0);
+    let mut lowest = laden;
+    for _ in 0..90 {
         f.server.step();
-        let (_, _, players) = f.server.sim();
-        grounded += i32::from(players.controller(h).ground.grounded);
+        f.take_all();
+        lowest = lowest.min(f.server.body_pose(raft).expect("the raft").0.y);
     }
     assert!(
-        grounded >= 175,
-        "grounded on the raft {grounded} of 180 ticks"
+        unladen - lowest > dip + 0.01,
+        "the landing dipped the raft {} m (standing: {dip} m)",
+        unladen - lowest
     );
 }

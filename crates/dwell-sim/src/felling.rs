@@ -5,9 +5,10 @@
 
 use dwell_blocks::{Axis, StateId, info, state_property, with_property};
 use dwell_physics::Collide;
+use dwell_physics::predictor::WaterDrag;
 use dwell_physics::{BodyHandle, DQuat, DVec3, Physics, PieceCell};
 use dwell_world::support::{SupportRules, detached_pieces};
-use dwell_world::{CELL_H, FaceFrame, M, VoxelWorld};
+use dwell_world::{CELL_H, FaceFrame, M, VoxelWorld, m_of_row, row_of_m};
 
 /// The felling tunables as data (shared/physics/felling.json → `felling.gen.rs`; seconds, m/s).
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -83,8 +84,15 @@ pub enum Divert {
 /// How bodies float (`shared/physics/bodies.json` `water`; docs/BUILT_BODIES.md §6).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct WaterRules {
-    /// Slowing of a body's velocity in water (/s), by how much of it is under.
+    /// The drag coefficient of a body moving through water: the water's resistance is
+    /// ½ · its density · this · the area under water facing the motion · speed².
+    pub drag_coefficient: f64,
+    /// A further slowing of a body's sideways velocity in water (/s), by how much of it is under:
+    /// what stills a slow drift, which the speed-squared drag barely touches.
     pub drag: f64,
+    /// The slowing of its up-and-down velocity (/s), the same way: a bobbing body makes waves,
+    /// which still it in a few bobs.
+    pub heave_drag: f64,
     /// Slowing of its spin (/s), the same way.
     pub angular_drag: f64,
 }
@@ -94,6 +102,34 @@ mod bodies_generated {
     include!("bodies.gen.rs");
 }
 pub use bodies_generated::{BODY_KINDS, WATER};
+
+/// How water slows body `body` sideways (docs/BUILT_BODIES.md §6), the server's and the clients'
+/// stand-ins' alike: ½ · the liquid's density · `WATER.drag_coefficient` · the area of its sides
+/// under water facing the motion (its bounds' sides, as deep as the share of it under) · speed²,
+/// and `WATER.drag` by that share. Nothing out of the water.
+pub fn water_drag(world: &mut VoxelWorld, physics: &Physics, body: BodyHandle) -> WaterDrag {
+    let mut centres = Vec::new();
+    physics.collider_centres(body, &mut centres);
+    let rotation = physics.rotation(body);
+    let (mut under, mut liquid) = (0.0, 0.0);
+    for &c in &centres {
+        let (fraction, density) = cell_in_liquid(world, c, rotation);
+        under += fraction;
+        liquid += fraction * density;
+    }
+    let Some((lo, hi)) = physics.aabb(body).filter(|_| under > 0.0) else {
+        return WaterDrag::default();
+    };
+    let share = under / centres.len() as f64;
+    let size = hi - lo;
+    let depth = size.y * share;
+    let k = 0.5 * (liquid / under) * WATER.drag_coefficient / physics.mass(body).max(1e-6);
+    WaterDrag {
+        kx: k * depth * size.z,
+        kz: k * depth * size.x,
+        linear: WATER.drag * share,
+    }
+}
 
 /// The kind of wire index `k`; an unknown one is natural (the first).
 pub fn body_kind(k: u8) -> &'static BodyKind {
@@ -350,8 +386,8 @@ pub fn cell_centre(c: [i32; 3]) -> DVec3 {
 /// A cell offset from a piece's reference cell, in the body's frame (m).
 /// How much of a cell of a body (its centre `centre`, turned by `rotation`; 1 × ½ × 1 m) is in a
 /// liquid, and that liquid's density (kg/m³, its block's; docs/BUILT_BODIES.md §6): none or all by
-/// its centre and corners, else the share of 40 points (five columns at eight heights) in a
-/// liquid's cell, fine enough that a raft floats at its own depth.
+/// its centre and corners, else the share of five columns (its centre and corners) in liquid
+/// cells, measured exactly so the buoyancy changes smoothly with depth.
 pub fn cell_in_liquid(world: &mut VoxelWorld, centre: DVec3, rotation: DQuat) -> (f64, f64) {
     let half = DVec3::new(0.5, 0.5 * CELL_H, 0.5);
     let mut read = |p: DVec3| {
@@ -382,24 +418,37 @@ pub fn cell_in_liquid(world: &mut VoxelWorld, centre: DVec3, rotation: DQuat) ->
     if wet.len() == quick.len() {
         return (1.0, density);
     }
-    // At the surface: five columns (its centre and corners) read at eight heights.
-    const LEVELS: usize = 8;
-    let (mut under, mut total) = (0usize, 0usize);
+    // At the surface: five columns (its centre and corners), each measured exactly: the length of
+    // it in liquid cells, row by row (a sampled share stepped the buoyancy, so a rider's weight
+    // sank a raft a whole step).
+    let mut under = 0.0;
     for k in 0..5 {
-        for l in 0..LEVELS {
-            let h = -half.y + (l as f64 + 0.5) / LEVELS as f64 * 2.0 * half.y;
-            let local = if k == 4 {
-                DVec3::new(0.0, h, 0.0)
-            } else {
-                corner(k, h)
-            };
-            total += 1;
-            if read(centre + rotation * local).is_some() {
-                under += 1;
+        let at = if k == 4 { DVec3::ZERO } else { corner(k, 0.0) };
+        let (a, b) = (
+            centre + rotation * (at - DVec3::Y * half.y),
+            centre + rotation * (at + DVec3::Y * half.y),
+        );
+        let (lo, hi) = if a.y <= b.y { (a, b) } else { (b, a) };
+        let span = hi.y - lo.y;
+        if span < 1e-3 {
+            under += f64::from(u8::from(read((lo + hi) * 0.5).is_some())); // lying flat
+            continue;
+        }
+        let mut wet = 0.0;
+        let (first, last) = (row_of_m(lo.y), row_of_m(hi.y));
+        for row in first..=last {
+            let (y0, y1) = (m_of_row(row).max(lo.y), m_of_row(row + 1).min(hi.y));
+            if y1 <= y0 {
+                continue;
+            }
+            let mid = lo + (hi - lo) * (((y0 + y1) * 0.5 - lo.y) / span);
+            if read(mid).is_some() {
+                wet += y1 - y0;
             }
         }
+        under += wet / span;
     }
-    (under as f64 / total as f64, density)
+    (under / 5.0, density)
 }
 
 /// A cell's centre in its piece's frame (m) from its offset in the piece's grid.
@@ -881,7 +930,11 @@ impl Felling {
             }
             if under > 0.0 {
                 let share = under / p.cells.len() as f64;
-                let v = physics.velocity(p.body) * (-WATER.drag * share * dt).exp();
+                // Sideways (the vertical axis is the same on both faces), as the clients'
+                // stand-ins are slowed; the bob is the heave drag's.
+                let v = water_drag(world, physics, p.body).slow(physics.velocity(p.body), dt);
+                let heave = (-WATER.heave_drag * share * dt).exp();
+                let v = DVec3::new(v.x, v.y * heave, v.z);
                 let w = physics.angular_velocity(p.body) * (-WATER.angular_drag * share * dt).exp();
                 physics.set_velocity(p.body, v);
                 physics.set_angular_velocity(p.body, w);

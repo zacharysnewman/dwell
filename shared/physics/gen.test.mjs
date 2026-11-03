@@ -62,6 +62,7 @@ test('bad body kinds fail with their path named', () => {
     [(d) => (d.kinds[1].fly = true), /kinds\[1\]: unknown fly/],
     [(d) => d.kinds.reverse(), /kinds\[0\] must be natural/],
     [(d) => (d.water.drag = -1), /water\.drag must be a number in \[0, 50\]/],
+    [(d) => (d.water.dragCoefficient = 9), /water\.dragCoefficient must be a number in \[0, 5\]/],
     [(d) => delete d.water, /water must be an object/],
     [(d) => (d.kinds[1].builtOn = ['dwell:nope']), /kinds\[1\]\.builtOn: "dwell:nope" is not a block of the registry/],
     [(d) => (d.kinds[0].builtOn = ['dwell:build_platform']), /builtOn: dwell:build_platform already builds natural/],

@@ -224,7 +224,7 @@ impl TerrainCollision {
         // stalled the server's tick for a fast flyer streaming new terrain).
         let collider = ColliderBuilder::new(shape)
             .collision_groups(groups(Layer::Terrain))
-            .friction(0.0)
+            .friction(crate::physics::TERRAIN_FRICTION)
             .mass_properties(MassProperties::default())
             .build();
         let collider =
@@ -289,7 +289,7 @@ impl TerrainCollision {
         let collider = ColliderBuilder::new(shape)
             .translation(origin)
             .collision_groups(groups(Layer::Terrain))
-            .friction(0.0)
+            .friction(crate::physics::TERRAIN_FRICTION)
             .mass_properties(MassProperties::default())
             .build();
         Some(physics.w.insert_collider(collider, Some(self.body)))

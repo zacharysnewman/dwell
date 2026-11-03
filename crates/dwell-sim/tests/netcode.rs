@@ -343,7 +343,12 @@ impl NetSim {
             player_id: welcome.player_id,
             welcome_flags: welcome.flags,
             world,
-            predictor: Predictor::new(*self.server.player_config()),
+            predictor: {
+                // As the client makes it (`game.rs`).
+                let mut p = Predictor::new(*self.server.player_config());
+                p.set_water_drag(dwell_sim::felling::water_drag);
+                p
+            },
             up: Link::new(self.conditions, seed * 2 + 1),
             down: Link::new(self.conditions, seed * 2 + 2),
             script,
@@ -1510,11 +1515,32 @@ fn pool_generator() -> ChunkGenerator {
 /// A player swims into a 2 × 2 log raft (1,400 kg) floating in the pool and keeps swimming:
 /// returns how far the raft went, and the client.
 fn pushing_a_raft(conditions: LinkConditions) -> (f64, Vec<f32>, NetSim, usize) {
-    let mut sim = NetSim::with_world(conditions, pool_generator(), [25.5, G - 1.2, 0.5]);
     let log = require("dwell:log[axis=y]");
     let cells: Vec<([i32; 3], u16)> = (0..2)
         .flat_map(|x| (0..2).map(move |z| ([x, 0, z], log)))
         .collect();
+    pushing_a_body(
+        conditions,
+        pool_generator(),
+        G - 1.2,
+        cells,
+        to_world(29.5, G - 0.1, 0.0),
+        "raft",
+    )
+}
+
+/// A player (from x 25.5 at height `spawn_y`) goes on +x into a built body of `cells` added at
+/// `at` and settled for 3 s, and keeps going for 6 s: how far the body went, the stand-in's
+/// offsets from the server's body at each input the client saw it for, the sim and the client.
+fn pushing_a_body(
+    conditions: LinkConditions,
+    generator: ChunkGenerator,
+    spawn_y: f64,
+    cells: Vec<([i32; 3], u16)>,
+    at: DVec3,
+    name: &str,
+) -> (f64, Vec<f32>, NetSim, usize) {
+    let mut sim = NetSim::with_world(conditions, generator, [25.5, spawn_y, 0.5]);
     let swim = Rc::new(Cell::new(false));
     let go = swim.clone();
     let a = sim.join(
@@ -1529,7 +1555,6 @@ fn pushing_a_raft(conditions: LinkConditions) -> (f64, Vec<f32>, NetSim, usize) 
     );
     sim.step(ticks(0.5));
     // After the join (the harness drops what comes during it), as a body built then.
-    let at = to_world(29.5, G - 0.1, 0.0);
     let raft = sim.server.add_body(1, cells, at.to_array());
     sim.step(ticks(3.0)); // the raft settles afloat
     let (start, _) = sim.server.body_pose(raft).expect("the raft");
@@ -1557,7 +1582,7 @@ fn pushing_a_raft(conditions: LinkConditions) -> (f64, Vec<f32>, NetSim, usize) 
     let c = &sim.clients[a];
     let s = c.predictor.stats();
     eprintln!(
-        "raft err p50 {} p95 {} min {}; raft pushed {:.2} m; {} snapshots, {} replays, error at ack p95 {} m; corrections p95 {} max {} m, snaps {}, render step max {}",
+        "{name} err p50 {} p95 {} min {}; pushed {:.2} m; {} snapshots, {} replays, error at ack p95 {} m; corrections p95 {} max {} m, snaps {}, render step max {}",
         percentile(errs.clone(), 0.5),
         percentile(errs.clone(), 0.95),
         -percentile(errs.iter().map(|e| -e).collect(), 1.0),
@@ -1574,13 +1599,40 @@ fn pushing_a_raft(conditions: LinkConditions) -> (f64, Vec<f32>, NetSim, usize) 
 }
 
 #[test]
+fn pushing_a_log_on_land_is_predicted_without_snaps_at_150_ms_rtt() {
+    // Owner, 2026-11-03: a single log slides on land at about 0.5 m/s. The stand-in is moved by
+    // the push less its friction and, unpushed, slowed by it, as the server's log.
+    // Red before: the 800 N push never moved the 700 kg log.
+    let log = require("dwell:log[axis=y]");
+    let (pushed, errs, sim, a) = pushing_a_body(
+        lossy(),
+        flat_generator(),
+        G,
+        vec![([0, 0, 0], log), ([0, 1, 0], log)],
+        to_world(29.5, G + 0.25, 0.0),
+        "log",
+    );
+    assert!((1.5..4.0).contains(&pushed), "the log went {pushed} m");
+    let c = &sim.clients[a];
+    assert_eq!(c.predictor.stats().snaps, 0, "{:?}", c.predictor.stats());
+    let worst = percentile(c.corrections.clone(), 1.0);
+    assert!(worst < 0.03, "corrections max {worst} m");
+    // A log at rest sends no poses until it is pushed (`PieceBook`).
+    assert!(errs.len() > 60, "{} poses compared", errs.len());
+    let off = percentile(errs.iter().map(|e| e.abs()).collect(), 0.95);
+    assert!(off < 0.03, "the stand-in off by {off} m (p95)");
+}
+
+#[test]
 fn pushing_a_floating_raft_is_predicted_without_snaps_at_150_ms_rtt() {
     // Owner, 2026-11-02: "Movement gets really jittery when pushing a floating log raft, you can
     // kind of push into it, feels soft." The server let the player's contact shove the raft while
     // the prediction met an unmovable stand-in at its last pose, so every snapshot corrected the
     // player. Now slow bodies are moved by the controller's push, the same in the prediction,
     // whose stand-in is carried on to the predicted present (docs/BUILT_BODIES.md §6).
-    // Red before: corrections up to 4.9 cm, 71 replays in the 6 s; now under 2 cm.
+    // Red before: corrections up to 4.9 cm, 71 replays in the 6 s; now under 3 cm (2026-11-03:
+    // the raft, now gliding off ahead, keeps the player who pushes it behind it, and the stand-in
+    // is slowed by the water as the server's raft).
     let (pushed, errs, sim, a) = pushing_a_raft(lossy());
     assert!(pushed > 0.8, "the raft went {pushed} m");
     let c = &sim.clients[a];
