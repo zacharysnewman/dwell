@@ -67,11 +67,20 @@ pub fn kind_started_by(m: StateId) -> Option<u8> {
         .map(|i| i as u8)
 }
 
+/// How bodies float (`shared/physics/bodies.json` `water`; docs/BUILT_BODIES.md §6).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct WaterRules {
+    /// Slowing of a body's velocity in water (/s), by how much of it is under.
+    pub drag: f64,
+    /// Slowing of its spin (/s), the same way.
+    pub angular_drag: f64,
+}
+
 // Included (not a `#[path]` module) so rustfmt leaves the generated file as written.
 mod bodies_generated {
     include!("bodies.gen.rs");
 }
-pub use bodies_generated::BODY_KINDS;
+pub use bodies_generated::{BODY_KINDS, WATER};
 
 /// The kind of wire index `k`; an unknown one is natural (the first).
 pub fn body_kind(k: u8) -> &'static BodyKind {
@@ -321,6 +330,60 @@ pub fn cell_centre(c: [i32; 3]) -> DVec3 {
 }
 
 /// A cell offset from a piece's reference cell, in the body's frame (m).
+/// How much of a cell of a body (its centre `centre`, turned by `rotation`; 1 × ½ × 1 m) is in a
+/// liquid, and that liquid's density (kg/m³, its block's; docs/BUILT_BODIES.md §6): none or all by
+/// its centre and corners, else the share of 40 points (five columns at eight heights) in a
+/// liquid's cell, fine enough that a raft floats at its own depth.
+pub fn cell_in_liquid(world: &mut VoxelWorld, centre: DVec3, rotation: DQuat) -> (f64, f64) {
+    let half = DVec3::new(0.5, 0.5 * CELL_H, 0.5);
+    let mut read = |p: DVec3| {
+        let [x, y, z] = dwell_world::cell_of_pos(p.to_array());
+        let s = info(world.get_voxel(x, y, z));
+        s.liquid.then_some(f64::from(s.density_kg_m3))
+    };
+    // A quick look: its centre and corners (a little inside, so a point on a cell's face reads the
+    // cell it belongs to). All dry: none; all under: all of it.
+    let corner = |k: usize, h: f64| {
+        DVec3::new(
+            if k & 1 == 0 { -half.x } else { half.x } * 0.98,
+            h,
+            if k & 2 == 0 { -half.z } else { half.z } * 0.98,
+        )
+    };
+    let mut quick = vec![read(centre)];
+    for k in 0..4 {
+        for h in [-half.y * 0.98, half.y * 0.98] {
+            quick.push(read(centre + rotation * corner(k, h)));
+        }
+    }
+    let wet: Vec<f64> = quick.iter().flatten().copied().collect();
+    if wet.is_empty() {
+        return (0.0, 0.0);
+    }
+    let density = wet.iter().sum::<f64>() / wet.len() as f64;
+    if wet.len() == quick.len() {
+        return (1.0, density);
+    }
+    // At the surface: five columns (its centre and corners) read at eight heights.
+    const LEVELS: usize = 8;
+    let (mut under, mut total) = (0usize, 0usize);
+    for k in 0..5 {
+        for l in 0..LEVELS {
+            let h = -half.y + (l as f64 + 0.5) / LEVELS as f64 * 2.0 * half.y;
+            let local = if k == 4 {
+                DVec3::new(0.0, h, 0.0)
+            } else {
+                corner(k, h)
+            };
+            total += 1;
+            if read(centre + rotation * local).is_some() {
+                under += 1;
+            }
+        }
+    }
+    (under as f64 / total as f64, density)
+}
+
 /// A cell's centre in its piece's frame (m) from its offset in the piece's grid.
 pub fn cell_offset_m(o: [i32; 3]) -> DVec3 {
     offset_m(o)
@@ -644,6 +707,42 @@ impl Felling {
                 DVec3::from_array(b.velocity),
                 DVec3::from_array(b.angular),
             );
+        }
+    }
+
+    /// Floats the bodies for a tick (docs/BUILT_BODIES.md §6): each cell in a liquid is pushed up
+    /// (face-locally: away from the midplane) by the liquid it displaces — its fraction under, its
+    /// volume, the liquid's density and gravity — at its centre, so a raft rights itself and a heavy
+    /// end sinks first; a body in water slows by `WATER`'s drags times how much of it is under.
+    pub fn float(&self, world: &mut VoxelWorld, physics: &mut Physics) {
+        let dt = 1.0 / f64::from(dwell_protocol::SIM_HZ);
+        let g = physics.gravity();
+        // A cell is 1 × ½ × 1 m.
+        let volume = CELL_H;
+        for p in &self.pieces {
+            let (position, rotation) = (physics.position(p.body), physics.rotation(p.body));
+            let mut under = 0.0;
+            for &(o, _) in &p.cells {
+                let centre = position + rotation * offset_m(o);
+                let (fraction, density) = cell_in_liquid(world, centre, rotation);
+                if fraction <= 0.0 {
+                    continue;
+                }
+                let up = DVec3::Y * FaceFrame::at_height(centre.y).sign_f64();
+                physics.apply_impulse_at(
+                    p.body,
+                    up * (density * g * volume * fraction * dt),
+                    centre,
+                );
+                under += fraction;
+            }
+            if under > 0.0 {
+                let share = under / p.cells.len() as f64;
+                let v = physics.velocity(p.body) * (-WATER.drag * share * dt).exp();
+                let w = physics.angular_velocity(p.body) * (-WATER.angular_drag * share * dt).exp();
+                physics.set_velocity(p.body, v);
+                physics.set_angular_velocity(p.body, w);
+            }
         }
     }
 
@@ -1254,6 +1353,35 @@ mod tests {
             "moving again"
         );
     }
+
+    dwell_world::both_faces!(
+        /// How much of a cell is under water, face-locally (docs/BUILT_BODIES.md §6): all of one
+        /// inside the water; a quarter of one whose centre is an eighth of a metre over the
+        /// surface; none in the air. Water's density, 1000 kg/m³.
+        fn a_cells_share_under_water_is_read_on_either_face(f: dwell_world::FaceFrame) {
+            let mut world = VoxelWorld::new(dwell_world::empty_generator(), None);
+            let water = dwell_blocks::require("dwell:water");
+            for x in -2..=2 {
+                for z in -2..=2 {
+                    for y in 36..40 {
+                        let [cx, cy, cz] = f.cell([x, y, z]);
+                        world.set_voxel(cx, cy, cz, f.state(water));
+                    }
+                }
+            }
+            let at = |y: f64| DVec3::from_array(f.point([0.5, y, 0.5]));
+            let surface = 40.0 * CELL_H;
+            let (all, density) = cell_in_liquid(&mut world, at(surface - 1.0), DQuat::IDENTITY);
+            assert_eq!((all, density), (1.0, 1000.0), "inside the water");
+            let (some, _) = cell_in_liquid(&mut world, at(surface + 0.125), DQuat::IDENTITY);
+            // Its centre an eighth of a metre over the surface: its lower quarter under.
+            assert!((some - 0.25).abs() < 1e-9, "a quarter under: {some}");
+            assert_eq!(
+                cell_in_liquid(&mut world, at(surface + 1.0), DQuat::IDENTITY).0,
+                0.0
+            );
+        }
+    );
 
     /// A 1 m log falling at `speed` m/s onto a standing player's head (capsule 0.3 m round,
     /// 1.8 m tall, centre 0.9 m up): what it hurts, twice over (a piece hurts each player once).

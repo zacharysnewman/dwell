@@ -157,7 +157,7 @@ splits and the floating on both faces (`dwell_world::both_faces!`).
   compatibility line opens here (0.41.0, the owner raises `package.json`).
 - **B2 — The build platform and built bodies** **[built, 0.41.1]**. The platform block and support role; built bodies
   (place onto them, never settle); saving bodies with the world (the save format change, same line).
-- **B3 — Floating.** Buoyancy and water drag per cell; natural and built bodies.
+- **B3 — Floating** **[built, 0.41.2]**. Buoyancy and water drag per cell; natural and built bodies.
 - **Later:** driving (seats, rudders, wheels), hollow hulls, interest management, edit prediction.
 
 **B1 as built.** The client casts the crosshair's ray into every body's frame at its drawn pose
@@ -196,6 +196,18 @@ was. **Deviation (§5):** bodies far from every player aren't frozen: the terrai
 round every moving body anyway (`Felling::terrain_boxes`, budgeted per tick since 0.40.5), so none
 falls through unloaded ground; idle built bodies keep simulating (Rapier sleep for them is later).
 A world opened by 0.41.0 (before B2) ignores the bodies table: its bodies are dropped if it saves.
+
+**B3 as built.** Each tick before the physics step, `Felling::float` pushes every cell of every body
+by the liquid it displaces: `cell_in_liquid` reads its centre and corners (none or all), and a cell at
+the surface 40 points (five columns at eight heights, so a raft floats at its own depth to 1/16 of a
+cell); the push is the liquid's own density (its block's `density`: water 1000 kg/m³) × gravity ×
+the cell's ½ m³ × that share, face-locally up, at the cell's centre; a body in water slows by
+`shared/physics/bodies.json`'s `water` drags (`drag` 1.2 /s, `angularDrag` 1.5 /s) times its share
+under. Tests: `a_cells_share_under_water_is_read_on_either_face` (both faces), `tests/built_bodies.rs`
+`a_wooden_raft_floats_and_a_stone_one_sinks` (a 3 × 3 log raft floats 0.1 m under, level; a stone
+one rests on the pool's floor), the water rules' data tests. Cost: nine voxel reads a cell a tick
+(37k for a body at the 4,096-cell cap). Natural pieces float too: a felled tree in a lake bobs until
+`maxSeconds` (30 s) and settles where it is.
 
 ## 12. Not in this design
 

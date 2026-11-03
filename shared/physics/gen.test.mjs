@@ -61,6 +61,8 @@ test('bad body kinds fail with their path named', () => {
     [(d) => (d.kinds[1].name = 'natural'), /kinds\[1\]\.name natural is listed twice/],
     [(d) => (d.kinds[1].fly = true), /kinds\[1\]: unknown fly/],
     [(d) => d.kinds.reverse(), /kinds\[0\] must be natural/],
+    [(d) => (d.water.drag = -1), /water\.drag must be a number in \[0, 50\]/],
+    [(d) => delete d.water, /water must be an object/],
     [(d) => (d.kinds[1].startedBy = ['dwell:nope']), /kinds\[1\]\.startedBy: "dwell:nope" is not a block of the registry/],
     [(d) => (d.kinds[0].startedBy = ['dwell:build_platform']), /startedBy: dwell:build_platform already starts natural/],
   ]) {

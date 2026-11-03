@@ -173,3 +173,61 @@ fn a_built_body_is_saved_with_the_world_and_comes_back() {
         "at rest on the ground: {y}"
     );
 }
+
+#[test]
+fn a_wooden_raft_floats_and_a_stone_one_sinks() {
+    // docs/BUILT_BODIES.md §6 (owner, 2026-11-02: built objects "float in water"): each cell is
+    // pushed up by the water it displaces, by the water's density. A raft of logs (700 kg/m³, under
+    // water's 1000) floats with about 70 % of it under; one of stone (2400) sinks to the bottom.
+    let mut f = Fixture::new(flat());
+    join_streaming(&mut f, 1);
+    f.server.step();
+    f.take_all();
+    // A pool 12 × 12, four rows (2 m) deep, full of water, its surface level with the ground.
+    let (water, air) = (dwell_blocks::require("dwell:water"), 0);
+    for x in 4..16 {
+        for z in 4..16 {
+            for y in G - 4..G {
+                f.server.world().set_voxel(x, y, z, water);
+            }
+            f.server.world().set_voxel(x, G, z, air);
+        }
+    }
+    let surface = f64::from(G) * 0.5;
+    let raft = |m: u16| -> Vec<([i32; 3], u16)> {
+        (0..3)
+            .flat_map(|x| (0..3).map(move |z| ([x, 0, z], m)))
+            .collect()
+    };
+    let log = f.server.add_body(
+        1,
+        raft(dwell_blocks::require("dwell:log[axis=y]")),
+        [6.5, surface + 1.0, 6.5],
+    );
+    let stone = f.server.add_body(
+        1,
+        raft(dwell_blocks::require("dwell:stone")),
+        [11.5, surface + 1.0, 11.5],
+    );
+    for _ in 0..(60 * 12) {
+        f.server.step();
+    }
+    let (at, turn) = f.server.body_pose(log).expect("the log raft");
+    // Floating: its cells' centres 0.1 m under the surface (70 % of a ½ m cell under), level.
+    assert!(
+        (at.y - (surface - 0.1)).abs() < 0.06,
+        "the log raft floats: its centre {:.3} m, the surface {surface}",
+        at.y
+    );
+    assert!(
+        turn.angle_between(dwell_physics::DQuat::IDENTITY) < 0.1,
+        "level: {turn:?}"
+    );
+    let (at, _) = f.server.body_pose(stone).expect("the stone raft");
+    let bottom = f64::from(G - 4) * 0.5 + 0.25;
+    assert!(
+        (at.y - bottom).abs() < 0.06,
+        "the stone raft sank: {:.3} m (bottom {bottom})",
+        at.y
+    );
+}
