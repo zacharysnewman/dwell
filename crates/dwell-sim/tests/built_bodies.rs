@@ -34,44 +34,94 @@ fn platform() -> u16 {
     dwell_blocks::require("dwell:build_platform")
 }
 
-/// Player 1 places a build platform on the ground beside it, then a log on the platform's top:
-/// returns the body's spawn.
-fn build_a_raft(f: &mut Fixture) -> EntitySpawn {
-    join_streaming(f, 1);
-    for _ in 0..30 {
-        f.server.step();
-    }
-    f.take_all();
+fn log() -> u16 {
+    dwell_blocks::require("dwell:log[axis=y]")
+}
+
+fn place(f: &mut Fixture, cell: [i32; 3], face: u8, m: u16) {
     f.send(
         1,
         Message::BlockEditRequest(BlockEditRequest {
             action: BlockEditAction::Place,
-            cell: [1, G - 1, 1],
-            face: 2,
-            material: platform(),
+            cell,
+            face,
+            material: m,
             rows: 1,
             down: false,
         }),
     );
     f.server.step();
+}
+
+fn steps(f: &mut Fixture, n: u32) {
+    for _ in 0..n {
+        f.server.step();
+    }
+}
+
+/// Player 1 lays a build platform on the ground beside it (a block of the world's grid), puts a
+/// log on its top (a held body), a log on that log (it joins), and a log beside the first over
+/// the open ground, as a drag's fill does (it joins too): returns the body's spawn.
+fn build_on_a_platform(f: &mut Fixture) -> EntitySpawn {
+    join_streaming(f, 1);
+    steps(f, 30);
+    f.take_all();
+    place(f, [1, G - 1, 1], 2, platform());
+    assert_eq!(
+        f.server.world().get_voxel(1, G, 1),
+        platform(),
+        "the platform is a grid block"
+    );
+    // A platform on a platform: ground too (red before: it started a body).
+    steps(f, 6);
+    place(f, [1, G, 1], 2, platform());
+    assert_eq!(
+        f.server.world().get_voxel(1, G + 1, 1),
+        platform(),
+        "stacked, in the grid"
+    );
+    assert!(
+        spawns(&f.take_all()[&1]).is_empty(),
+        "the platforms start no body"
+    );
+    steps(f, 6);
+    f.send(
+        1,
+        Message::BlockEditRequest(BlockEditRequest {
+            action: BlockEditAction::Break,
+            cell: [1, G + 1, 1],
+            face: 2,
+            material: 0,
+            rows: 1,
+            down: false,
+        }),
+    );
+    f.server.step();
+    f.take_all();
+    assert_eq!(
+        f.server.world().get_voxel(1, G + 1, 1),
+        0,
+        "the second one broken"
+    );
+    steps(f, 6);
+    place(f, [1, G, 1], 2, log());
     let out = f.take_all();
-    let spawn = spawns(&out[&1]).pop().expect("the platform starts a body");
+    let spawn = spawns(&out[&1])
+        .pop()
+        .expect("a log on the platform starts a body");
     assert_eq!(
         (spawn.kind, spawn.cells.len()),
         (1, 1),
         "a built body of one cell"
     );
-    assert_eq!(spawn.cells[0].state, platform());
     assert_eq!(
-        f.server.world().get_voxel(1, G, 1),
+        f.server.world().get_voxel(1, G + 1, 1),
         0,
-        "not in the world's grid"
+        "not in the grid"
     );
-    // Let it come to rest on the ground, then put a log on its top (+Y).
-    for _ in 0..60 {
-        f.server.step();
-    }
-    f.take_all();
+    steps(f, 6);
+    // A log on its top: a block placed into the cell over it (the world's), as a click against the
+    // log's top sends it (the client aims at the body; the server's rule is the cell's).
     f.send(
         1,
         Message::BodyEditRequest(BodyEditRequest {
@@ -79,98 +129,128 @@ fn build_a_raft(f: &mut Fixture) -> EntitySpawn {
             cell: [0, 0, 0],
             face: 2,
             action: BlockEditAction::Place,
-            material: dwell_blocks::require("dwell:log[axis=y]"),
+            material: log(),
+        }),
+    );
+    f.server.step();
+    steps(f, 6);
+    // Beside the first log, over the ground past the platform's edge: a drag's one-cell fill.
+    f.send(
+        1,
+        Message::RegionEdit(RegionEdit {
+            op: RegionEditOp::Fill,
+            min: [2, G + 1, 1],
+            size: [1, 1, 1],
+            material: log(),
+            from: 0,
+            cells: Vec::new(),
         }),
     );
     f.server.step();
     let out = f.take_all();
-    let edit = out[&1]
+    let mut joined: Vec<[i16; 3]> = out[&1]
         .iter()
-        .find_map(|m| match m {
-            Message::BodyEdit(e) => Some(e.clone()),
+        .filter_map(|m| match m {
+            Message::BodyEdit(e) if e.body == spawn.id => Some(e.cells[0].offset),
             _ => None,
         })
-        .expect("the log joins the body");
-    assert_eq!(edit.body, spawn.id);
-    assert_eq!(edit.cells.len(), 1);
-    assert_eq!(edit.cells[0].offset, [0, 1, 0], "on its top");
+        .collect();
+    joined.sort_unstable();
+    assert_eq!(
+        joined,
+        vec![[0, 1, 0], [1, 0, 0]],
+        "the log on it and the one beside it join"
+    );
+    assert_eq!(
+        f.server.world().get_voxel(2, G + 1, 1),
+        0,
+        "the fill went into the body"
+    );
     spawn
 }
 
 #[test]
-fn a_build_platform_starts_a_body_that_takes_blocks_and_never_settles() {
+fn blocks_built_on_a_platform_are_one_held_body_until_the_platform_goes() {
     let mut f = Fixture::new(flat());
-    let raft = build_a_raft(&mut f);
-    // Ten seconds at rest: a natural piece would have settled (2 s); this one stays a body.
-    for _ in 0..(60 * 10) {
-        f.server.step();
-    }
-    let out = f.take_all();
+    let raft = build_on_a_platform(&mut f);
+    let held = f.server.body_pose(raft.id).expect("the body");
+    // Held: an overhang (the log beside it over open air) doesn't tip it, nor does time.
+    steps(&mut f, 120);
+    let (at, turn) = f.server.body_pose(raft.id).expect("still a body");
     assert!(
-        !out.get(&1)
-            .into_iter()
-            .flatten()
-            .any(|m| matches!(m, Message::EntityDespawn(id) if *id == raft.id)),
-        "it never settles"
+        (at - held.0).length() < 1e-9 && turn.angle_between(held.1) < 1e-9,
+        "held still"
     );
+    // A player joining sees it whole.
+    join_streaming(&mut f, 2);
+    f.server.step();
+    let seen = spawns(&f.take_all()[&2]);
+    assert_eq!(seen.len(), 1);
+    assert_eq!(
+        (seen[0].id, seen[0].kind, seen[0].cells.len()),
+        (raft.id, 1, 3)
+    );
+    // The platform broken from under it: it moves (the overhang tips it off), and never settles.
+    f.send(
+        1,
+        Message::BlockEditRequest(BlockEditRequest {
+            action: BlockEditAction::Break,
+            cell: [1, G, 1],
+            face: 1,
+            material: 0,
+            rows: 1,
+            down: false,
+        }),
+    );
+    steps(&mut f, 60 * 4);
     assert_eq!(
         f.server.world().get_voxel(1, G, 1),
         0,
-        "nothing written into the grid"
+        "the platform is gone"
     );
-    // A player joining now is sent it, with its two cells.
-    join_streaming(&mut f, 2);
-    f.server.step();
-    let out = f.take_all();
-    let seen = spawns(&out[&2]);
-    assert_eq!(seen.len(), 1, "the joiner sees the body");
-    assert_eq!(
-        (seen[0].id, seen[0].kind, seen[0].cells.len()),
-        (raft.id, 1, 2)
+    let (at, _) = f
+        .server
+        .body_pose(raft.id)
+        .expect("still a body: it never settles");
+    assert!(
+        (at - held.0).length() > 0.2,
+        "it moved once let go: {at:?} from {:?}",
+        held.0
     );
 }
 
 #[test]
-fn a_built_body_is_saved_with_the_world_and_comes_back() {
+fn a_held_body_is_saved_with_the_world_and_comes_back_held() {
     let db = WorldDb::in_memory().expect("db");
     let config = || ServerConfig {
         store: Some(WorldStore::new(db.clone(), false)),
         ..flat()
     };
-    let raft = {
+    let (raft, held) = {
         let mut f = Fixture::new(config());
-        let raft = build_a_raft(&mut f);
+        let raft = build_on_a_platform(&mut f);
+        let held = f.server.body_pose(raft.id).expect("the body");
         f.server.save_now();
         f.server.flush_store();
-        raft
+        (raft, held)
     };
     assert_eq!(db.bodies().len(), 1, "saved");
-    // A new server over the same world: a player joining is sent the raft, both its cells.
     let mut f = Fixture::new(config());
     join_streaming(&mut f, 1);
     f.server.step();
-    let out = f.take_all();
-    let seen = spawns(&out[&1]);
-    assert_eq!(seen.len(), 1, "the raft came back");
-    let mut cells: Vec<([i16; 3], u16)> =
-        seen[0].cells.iter().map(|c| (c.offset, c.state)).collect();
-    cells.sort_unstable();
+    let seen = spawns(&f.take_all()[&1]);
+    assert_eq!(seen.len(), 1, "it came back");
     assert_eq!(
-        (seen[0].id, seen[0].kind, cells),
-        (
-            raft.id,
-            1,
-            vec![
-                ([0, 0, 0], platform()),
-                ([0, 1, 0], dwell_blocks::require("dwell:log[axis=y]"))
-            ]
-        )
+        (seen[0].id, seen[0].kind, seen[0].cells.len()),
+        (raft.id, 1, 3)
     );
-    // Where it rested: on the ground (its reference cell's centre a quarter metre up).
-    let y = seen[0].origin[1];
+    // Held again on its platform: the overhang doesn't tip it.
+    steps(&mut f, 120);
+    let (at, _) = f.server.body_pose(raft.id).expect("a body");
     assert!(
-        (y - (f64::from(G) * 0.5 + 0.25)).abs() < 0.05,
-        "at rest on the ground: {y}"
+        (at - held.0).length() < 1e-6,
+        "held where it was: {at:?} vs {:?}",
+        held.0
     );
 }
 

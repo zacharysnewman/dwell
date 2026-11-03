@@ -40,16 +40,28 @@ splits) is a new entry, not a branch in code. The engine's vocabulary: `place`, 
 
 ## 3. The build platform
 
-A block, `dwell:build_platform` (prototype content: one block, a plank-like look), with block data
-`"support": "platform"`, a new support role (`dwell_world::support`):
+**Corrected 2026-11-02 (0.41.3).** The owner: *"The platform wasn't supposed to 'make up' the
+structure. It was supposed to be the platform on which the structure is built."* (0.41.1–0.41.2 made
+the platform block itself the body's first cell.) Owner's answers: the platform is a static block of
+the world; what is placed on it becomes the moving object; the object is **held still until
+released**; blocks touching it join it (**one object if they touch**).
 
-- **Placing it starts a built body** of that one cell, a body from the start (owner): the server
-  never writes it into the world grid. It falls, lands and rests like any piece.
-- **Blocks placed against a built body join it** (§4): a deck, a hull, a cart's box.
-- A body keeps being `built` whether or not it still holds a platform cell: breaking the platform
-  out of a finished boat doesn't make the boat settle into the ground.
-- The platform is placed from the hotbar like any block (`shared/items/items.json`, `drag: none`:
-  each one is its own body; dragging builds onto a body, not a row of new bodies).
+- `dwell:build_platform` (prototype content: planks) is an ordinary block of the world's grid, placed
+  and dragged like any block. `shared/physics/bodies.json`'s `built` kind lists it in `builtOn`.
+- **A block placed on a platform's top** (the cell face-locally over a `builtOn` block) doesn't go in
+  the grid: it starts a body of that kind there, unturned on the grid, **held** (Rapier fixed) while
+  any of its cells rests on a `builtOn` block (`Felling::divert`, `place_diverted`).
+- **A block placed touching a held body** (any of its six neighbours) joins it, whether by a click on
+  the body (`BodyEditRequest`), a click on the ground or platform beside it, or a drag's fill
+  (`RegionEdit`): the server diverts every placed cell by the same rule, so a drag that starts on the
+  body builds the object on (the client starts the stroke in the world cells next to it).
+- **Released**: once no cell rests on a platform (the platform broken from under it), the body moves
+  (`Felling::release_unheld`, each tick): it falls, tips, floats, is pushed; it never settles back. A
+  released body isn't held again; one loaded with the world unturned on its platform is.
+- Tests: `dwell-sim` `tests/built_bodies.rs`: a platform is a grid block and starts no body; a log on
+  it is a held body; a log on that and a drag's fill beside it (over open ground) join it; held, the
+  overhang doesn't tip it; a joiner sees it; the platform broken, it moves and doesn't settle; saved,
+  it comes back held.
 
 ## 4. Editing a body
 
@@ -177,11 +189,8 @@ body's frame and an edit's re-mesh; the body kinds' data tests. Checked on the G
 column's cell broken mid-fall, 8 of 10 logs settled (10 less the cut and the broken one). Not yet:
 a player joining mid-fall isn't sent the pieces already falling (needed for saved bodies, B2).
 
-**B2 as built.** `dwell:build_platform` (planks, wood: 600 kg/m³) is in the hotbar (`drag: none`);
-`shared/physics/bodies.json`'s `built` kind lists it in `startedBy` (validated against the registry).
-A place that passes the block-edit checks with a block some kind starts becomes a body of that kind
-there (`Felling::spawn_body`), not a write to the grid; the client's predicted block rolls back (the
-edit is refused in its ack) and `EntitySpawn` (kind 1) follows. Aiming at a built body, Place sends
+**B2 as built** (its platform rule corrected in 0.41.3, §3). `dwell:build_platform` (planks, wood:
+600 kg/m³) is in the hotbar. Aiming at a built body, Place sends
 `BodyEditRequest` with the selected block (`edit_body`); the server's `Felling::place_cell` adds the
 cell against the face aimed at (its kind's `place`; refused where a player's capsule is within
 0.45 m of the cell's centre beyond its radius) and every client hears `BodyEdit`. Built bodies never

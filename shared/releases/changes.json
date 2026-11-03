@@ -2,6 +2,15 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions card. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.41.3",
+      "changes": [
+        "The build platform is now ground you build on: blocks placed on it make a moving object, held still while you build",
+        "Blocks you place touching the object join it, by click or by dragging",
+        "Break the platform out from under it to set the object free",
+        "Build platforms drag in Line and Flat mode like any block"
+      ]
+    },
+    {
       "version": "0.41.2",
       "changes": [
         "Moving objects float: a raft of wood floats and rights itself, stone sinks",

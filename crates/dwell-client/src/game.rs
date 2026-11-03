@@ -1451,6 +1451,39 @@ impl<S: Scene> Game<S> {
         holder: dwell_game::build_drag::Holder,
         now_ms: f64,
     ) -> bool {
+        // On a held body (built on a build platform, so lined up with the world's grid): the click
+        // places against it, and the drag builds on in the world's cells next to it, which the
+        // server puts into the body (docs/BUILT_BODIES.md §3).
+        if action == EditAction::Place
+            && let Some(b) = self.body_target
+            && self.region.enabled
+            && !self.brush.active()
+            && !self.region.pasting()
+        {
+            let lined_up = b.rotation.angle_between(dwell_physics::DQuat::IDENTITY) < 1e-3;
+            let placed = self.edit(action, now_ms);
+            if placed && lined_up {
+                let dir = dwell_world::edit::FACE_DIRS[usize::from(b.face)];
+                let new = [b.cell[0] + dir[0], b.cell[1] + dir[1], b.cell[2] + dir[2]];
+                let at = b.position
+                    + DVec3::new(
+                        f64::from(new[0]),
+                        f64::from(new[1]) * dwell_world::CELL_H,
+                        f64::from(new[2]),
+                    );
+                let cell = dwell_world::cell_of_pos(at.to_array());
+                let material = self.selected_material();
+                self.drag.start(
+                    holder,
+                    &[cell],
+                    dir,
+                    material,
+                    dwell_game::items::ItemDrag::Modes,
+                    now_ms,
+                );
+            }
+            return placed;
+        }
         let start = (action == EditAction::Place
             && self.region.enabled
             && !self.brush.active()

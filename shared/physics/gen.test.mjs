@@ -50,7 +50,7 @@ test('a body kind added by data alone is generated', () => {
   d.kinds.push({ name: 'cart', place: false, break: true, split: false, settles: false, saved: true });
   assert.match(
     bodiesRust(validateBodies(d)),
-    /BodyKind \{ name: "cart", place: false, breaks: true, split: false, settles: false, saved: true, started_by: &\[\] \}/,
+    /BodyKind \{ name: "cart", place: false, breaks: true, split: false, settles: false, saved: true, built_on: &\[\] \}/,
   );
 });
 
@@ -63,8 +63,8 @@ test('bad body kinds fail with their path named', () => {
     [(d) => d.kinds.reverse(), /kinds\[0\] must be natural/],
     [(d) => (d.water.drag = -1), /water\.drag must be a number in \[0, 50\]/],
     [(d) => delete d.water, /water must be an object/],
-    [(d) => (d.kinds[1].startedBy = ['dwell:nope']), /kinds\[1\]\.startedBy: "dwell:nope" is not a block of the registry/],
-    [(d) => (d.kinds[0].startedBy = ['dwell:build_platform']), /startedBy: dwell:build_platform already starts natural/],
+    [(d) => (d.kinds[1].builtOn = ['dwell:nope']), /kinds\[1\]\.builtOn: "dwell:nope" is not a block of the registry/],
+    [(d) => (d.kinds[0].builtOn = ['dwell:build_platform']), /builtOn: dwell:build_platform already builds natural/],
   ]) {
     const d = bodies();
     change(d);

@@ -588,6 +588,9 @@ impl SavedChunks for StoreChunks {
     }
 }
 
+/// A block gone into a body in a tick: (the body, its new cell; none: a new body), the block.
+type BodyBuilt = ((u32, Option<[i32; 3]>), dwell_blocks::StateId);
+
 pub struct Server {
     config: ServerConfig,
     entropy: Box<dyn Entropy>,
@@ -1320,7 +1323,10 @@ impl Server {
         // 4. The falling pieces' hard hits hurt (before the step resolves them), physics, then the
         // pieces at rest settle (docs/FELLING.md §4).
         self.piece_hits();
-        // Bodies in water float (docs/BUILT_BODIES.md §6).
+        // Held bodies whose build platform is gone move (docs/BUILT_BODIES.md §3); bodies in water
+        // float (§6).
+        self.felling
+            .release_unheld(&mut self.world, &mut self.physics);
         self.felling.float(&mut self.world, &mut self.physics);
         self.physics.step(1.0 / f64::from(SIM_HZ));
         self.tick += 1;
@@ -1828,7 +1834,8 @@ impl Server {
         // Changes of this tick per chunk, in the order chunks were first touched.
         let mut changes = TickChanges::default();
         // Bodies placed blocks start (cell, block, kind).
-        let mut new_bodies: Vec<([i32; 3], dwell_blocks::StateId, u8)> = Vec::new();
+        // Blocks gone into bodies this tick: (body, its new cell; none: a new body), the block.
+        let mut bodies_built: Vec<BodyBuilt> = Vec::new();
         let reach = region_reach(self.config.generator_version);
         let ids: Vec<SessionId> = self.sessions.keys().copied().collect();
         for id in ids {
@@ -1856,13 +1863,25 @@ impl Server {
                 }
                 s.edit_credit -= 1.0;
                 s.stats.edits_applied += 1;
-                // A block that starts a body (the build platform, docs/BUILT_BODIES.md §3) becomes
-                // one there instead of going in the grid; the client's predicted block rolls back.
+                // On a build platform's top, or touching a held body, a block goes into that body,
+                // not the grid (docs/BUILT_BODIES.md §3); the client's predicted block gives way to
+                // it when the edit is acknowledged.
                 if edit.action == BlockEditAction::Place
-                    && let Some(kind) = crate::felling::kind_started_by(outcome.material)
+                    && let Some(d) = self.felling.divert(
+                        &mut self.world,
+                        &self.physics,
+                        outcome.cell,
+                        outcome.material,
+                    )
                 {
-                    new_bodies.push((outcome.cell, outcome.material, kind));
-                    s.edit_refused.push(seq);
+                    if let Some(done) = self.felling.place_diverted(
+                        &mut self.physics,
+                        d,
+                        outcome.cell,
+                        outcome.material,
+                    ) {
+                        bodies_built.push((done, outcome.material));
+                    }
                     continue;
                 }
                 // Every cell of the piece (a 1 m block's two; docs/ITEMS.md) in one set of writes.
@@ -1892,6 +1911,18 @@ impl Server {
                 s.stats.region_cells_changed += outcome.changes.len() as u64;
                 let cells: Vec<[i32; 3]> = outcome.changes.iter().map(|(c, _)| *c).collect();
                 for (cell, m) in outcome.changes {
+                    // As a block edit's: into a held body, or a new one on a build platform.
+                    let d = (m != M.air && !info(m).liquid)
+                        .then(|| self.felling.divert(&mut self.world, &self.physics, cell, m))
+                        .flatten();
+                    if let Some(d) = d {
+                        if let Some(done) =
+                            self.felling.place_diverted(&mut self.physics, d, cell, m)
+                        {
+                            bodies_built.push((done, m));
+                        }
+                        continue;
+                    }
                     changes.set_and_unsupport(&mut self.world, cell, m);
                 }
                 // A region may put blocks that need support where nothing holds them (tall grass
@@ -1908,20 +1939,22 @@ impl Server {
         }
         let edited = changes.cells();
         self.broadcast_changes(changes, VoxelModificationReason::Edit);
-        for (cell, m, kind) in new_bodies {
-            let i = self.felling.spawn_body(
-                &mut self.physics,
-                None,
-                kind,
-                0,
-                vec![([0, 0, 0], m)],
-                crate::felling::cell_centre(cell),
-                dwell_physics::DQuat::IDENTITY,
-                DVec3::ZERO,
-                DVec3::ZERO,
-            );
-            let spawn = self.spawn_message(i);
-            self.broadcast_world(&spawn);
+        for ((id, joined), m) in bodies_built {
+            match joined {
+                Some(cell) => self.broadcast_world(&Message::BodyEdit(BodyEdit {
+                    body: id,
+                    cells: vec![PieceCellNet {
+                        offset: cell.map(|v| v as i16),
+                        state: m,
+                    }],
+                })),
+                None => {
+                    if let Some(i) = self.felling.pieces.iter().position(|p| p.id == id) {
+                        let spawn = self.spawn_message(i);
+                        self.broadcast_world(&spawn);
+                    }
+                }
+            }
         }
         // What the edits left without support falls (docs/FELLING.md §2), tipped away from the
         // nearest player (who cut it, as a rule).
@@ -2616,8 +2649,6 @@ impl Server {
         if let Some(m) = &meta {
             self.tick = m.world_tick;
         }
-        // The moving bodies saved with it (docs/BUILT_BODIES.md §7), as they were.
-        self.felling.restore(&mut self.physics, db.bodies());
         let saved: HashMap<ChunkCoord, u32> = db.chunk_index().into_iter().collect();
         // The LOD cache (§6.6): restored as saved, rebuilt from the chunks when it belongs to
         // another generator version, and derived for saved chunks it does not cover.
@@ -2643,10 +2674,15 @@ impl Server {
             }
         }
         *self.saved.lock().expect("saved index") = saved;
+        let bodies = db.bodies();
         self.world.set_saved(Box::new(StoreChunks {
             db,
             saved: self.saved.clone(),
         }));
+        // The moving bodies saved with it (docs/BUILT_BODIES.md §7), as they were: after the saved
+        // chunks are the world's source, so one resting on its build platform is held again.
+        self.felling
+            .restore(&mut self.world, &mut self.physics, bodies);
         self.next_save_tick = self.tick + self.config.autosave_seconds * SIM_HZ;
         if meta.is_none() {
             self.save_now(); // record the new world's seed, generator and spawn right away
