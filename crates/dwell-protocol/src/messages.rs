@@ -384,7 +384,33 @@ pub struct EntitySpawn {
     pub id: u32,
     pub origin: [f64; 3],
     pub rotation: [f32; 4],
+    /// Its kind: an index into the body kinds (`shared/physics/bodies.json`; 0 natural; protocol
+    /// v21, docs/BUILT_BODIES.md §2). Not checked here: an unknown kind reads as natural.
+    pub kind: u8,
     pub carriers: u16,
+    pub cells: Vec<PieceCellNet>,
+}
+
+/// C→S, world channel: break a cell of a moving body, or place a block against one of its cells'
+/// faces (protocol v21, docs/BUILT_BODIES.md §4). `cell` is in the body's own grid (offsets from its
+/// reference cell, as `EntitySpawn` sends them); `face` as `BlockEditRequest`'s, in the body's frame.
+/// Not counted in `EditAck`'s numbering: a body edit isn't predicted.
+#[derive(Clone, Debug, PartialEq)]
+pub struct BodyEditRequest {
+    pub body: u32,
+    pub cell: [i16; 3],
+    pub face: u8,
+    pub action: BlockEditAction,
+    /// The placed block's state (Place only).
+    pub material: u16,
+}
+
+/// S→C, world channel: cells of a body that changed (state 0: removed), in its own grid (protocol
+/// v21, docs/BUILT_BODIES.md §4). A split sends this for the cells that left and `EntitySpawn` for
+/// each new body.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct BodyEdit {
+    pub body: u32,
     pub cells: Vec<PieceCellNet>,
 }
 
@@ -450,6 +476,10 @@ pub enum Message {
     EntitySpawn(EntitySpawn),
     /// S→C, world channel: a piece is gone (settled into blocks, after their `VoxelModification`).
     EntityDespawn(u32),
+    /// C→S, world channel: an edit of a moving body (protocol v21).
+    BodyEditRequest(BodyEditRequest),
+    /// S→C, world channel: a body's changed cells (protocol v21).
+    BodyEdit(BodyEdit),
 }
 
 impl Message {
@@ -488,6 +518,8 @@ impl Message {
             M::HeldItem(_) => MessageType::HeldItem,
             M::EntitySpawn(_) => MessageType::EntitySpawn,
             M::EntityDespawn(_) => MessageType::EntityDespawn,
+            M::BodyEditRequest(_) => MessageType::BodyEditRequest,
+            M::BodyEdit(_) => MessageType::BodyEdit,
         }
     }
 
@@ -1035,6 +1067,7 @@ fn write_body(w: &mut ByteWriter, m: &Message) {
             for v in m.rotation {
                 w.f32(v);
             }
+            w.u8(m.kind);
             w.u16(m.carriers);
             let count = m.cells.len().min(limits::MAX_PIECE_CELLS);
             w.u16(count as u16);
@@ -1046,6 +1079,28 @@ fn write_body(w: &mut ByteWriter, m: &Message) {
             }
         }
         M::EntityDespawn(id) => w.u32(*id),
+        M::BodyEditRequest(m) => {
+            w.u32(m.body);
+            for v in m.cell {
+                w.i16(v);
+            }
+            w.u8(m.face);
+            w.u8(m.action as u8);
+            if m.action == BlockEditAction::Place {
+                w.u16(m.material);
+            }
+        }
+        M::BodyEdit(m) => {
+            w.u32(m.body);
+            let count = m.cells.len().min(limits::MAX_PIECE_CELLS);
+            w.u16(count as u16);
+            for c in &m.cells[..count] {
+                for v in c.offset {
+                    w.i16(v);
+                }
+                w.u16(c.state);
+            }
+        }
         M::EditAck(m) => {
             w.u32(m.through);
             w.u16(m.rejected.len() as u16);
@@ -1300,6 +1355,7 @@ fn read_body(r: &mut ByteReader, t: MessageType) -> Option<Message> {
             let origin = read_pos64(r);
             let rotation = [r.f32(), r.f32(), r.f32(), r.f32()];
             r.check(rotation.iter().all(|v| v.is_finite()));
+            let kind = r.u8();
             let carriers = r.u16();
             let count = usize::from(r.u16());
             r.check(count <= limits::MAX_PIECE_CELLS && usize::from(carriers) <= count);
@@ -1317,11 +1373,47 @@ fn read_body(r: &mut ByteReader, t: MessageType) -> Option<Message> {
                 id,
                 origin,
                 rotation,
+                kind,
                 carriers,
                 cells,
             })
         }
         T::EntityDespawn => M::EntityDespawn(r.u32()),
+        T::BodyEditRequest => {
+            let body = r.u32();
+            let cell = [r.i16(), r.i16(), r.i16()];
+            let face = r.u8();
+            r.check(face < 6);
+            let action = BlockEditAction::from_u8(r.u8())?;
+            let material = if r.ok() && action == BlockEditAction::Place {
+                r.u16()
+            } else {
+                0
+            };
+            M::BodyEditRequest(BodyEditRequest {
+                body,
+                cell,
+                face,
+                action,
+                material,
+            })
+        }
+        T::BodyEdit => {
+            let body = r.u32();
+            let count = usize::from(r.u16());
+            r.check(count <= limits::MAX_PIECE_CELLS);
+            let mut cells = Vec::new();
+            for _ in 0..count {
+                if !r.ok() {
+                    break;
+                }
+                cells.push(PieceCellNet {
+                    offset: [r.i16(), r.i16(), r.i16()],
+                    state: r.u16(),
+                });
+            }
+            M::BodyEdit(BodyEdit { body, cells })
+        }
         T::EditAck => {
             let through = r.u32();
             let count = usize::from(r.u16());

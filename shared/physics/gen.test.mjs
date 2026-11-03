@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { fellingRust, validateFelling } from './gen.mjs';
+import { bodiesRust, fellingRust, validateBodies, validateFelling } from './gen.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const data = () => JSON.parse(readFileSync(join(here, 'felling.json'), 'utf8'));
@@ -33,5 +33,37 @@ test('bad entries fail with their path named', () => {
     const d = data();
     change(d);
     assert.throws(() => validateFelling(d), message);
+  }
+});
+
+const bodies = () => JSON.parse(readFileSync(join(here, 'bodies.json'), 'utf8'));
+
+test('the checked-in body kinds validate and generate the checked-in Rust', () => {
+  assert.equal(
+    bodiesRust(validateBodies(bodies())),
+    readFileSync(join(here, '../../crates/dwell-sim/src/bodies.gen.rs'), 'utf8'),
+  );
+});
+
+test('a body kind added by data alone is generated', () => {
+  const d = bodies();
+  d.kinds.push({ name: 'cart', place: false, break: true, split: false, settles: false, saved: true });
+  assert.match(
+    bodiesRust(validateBodies(d)),
+    /BodyKind \{ name: "cart", place: false, breaks: true, split: false, settles: false, saved: true \}/,
+  );
+});
+
+test('bad body kinds fail with their path named', () => {
+  for (const [change, message] of [
+    [(d) => (d.kinds[1].place = 'yes'), /kinds\[1\]\.place must be true or false/],
+    [(d) => delete d.kinds[0].settles, /kinds\[0\]\.settles must be true or false/],
+    [(d) => (d.kinds[1].name = 'natural'), /kinds\[1\]\.name natural is listed twice/],
+    [(d) => (d.kinds[1].fly = true), /kinds\[1\]: unknown fly/],
+    [(d) => d.kinds.reverse(), /kinds\[0\] must be natural/],
+  ]) {
+    const d = bodies();
+    change(d);
+    assert.throws(() => validateBodies(d), message);
   }
 });

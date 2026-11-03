@@ -116,8 +116,29 @@ fn decoded_fields_are_the_vectors_values() {
     let Some(Message::EntitySpawn(e)) = Message::decode(&get("entity_spawn")) else {
         panic!("entity_spawn")
     };
-    assert_eq!((e.id, e.carriers, e.cells.len()), (7, 2, 3));
+    assert_eq!((e.id, e.kind, e.carriers, e.cells.len()), (7, 1, 2, 3));
     assert_eq!((e.cells[2].offset, e.cells[2].state), ([-1, 1, 2], 21));
+    // v21: editing moving bodies (docs/BUILT_BODIES.md §4).
+    assert_eq!(
+        Message::decode(&get("body_edit_request_place")),
+        Some(Message::BodyEditRequest(BodyEditRequest {
+            body: 9,
+            cell: [-2, 1, 5],
+            face: 2,
+            action: BlockEditAction::Place,
+            material: 20,
+        }))
+    );
+    let Some(Message::BodyEditRequest(b)) = Message::decode(&get("body_edit_request_break")) else {
+        panic!("body_edit_request_break")
+    };
+    assert_eq!((b.body, b.cell, b.face, b.material), (9, [0, 3, -1], 5, 0));
+    let Some(Message::BodyEdit(b)) = Message::decode(&get("body_edit")) else {
+        panic!("body_edit")
+    };
+    assert_eq!((b.body, b.cells.len()), (9, 2));
+    assert_eq!((b.cells[0].offset, b.cells[0].state), ([0, 3, 0], 0));
+    assert_eq!((b.cells[1].offset, b.cells[1].state), ([-2, 1, 5], 20));
     assert_eq!(
         Message::decode(&get("entity_despawn")),
         Some(Message::EntityDespawn(7))

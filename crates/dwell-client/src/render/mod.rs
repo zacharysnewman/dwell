@@ -977,6 +977,8 @@ pub struct Renderer {
     outline: Option<V3>,
     /// The outline's box in its cell, and its lines.
     outline_box: ([f32; 3], [f32; 3]),
+    /// The outline's turn about its origin (a body's cell; identity for a block).
+    outline_quat: [f32; 4],
     outline_mesh: GpuMesh,
     debug: Option<GpuMesh>,
     /// The region tools' boxes, each with its edges (rebuilt only when the boxes change).
@@ -1655,6 +1657,7 @@ impl Renderer {
             portal_motes: Vec::new(),
             outline: None,
             outline_box,
+            outline_quat: IDENTITY_QUAT,
             outline_mesh,
             debug: None,
             region_boxes: Vec::new(),
@@ -2072,11 +2075,24 @@ impl Renderer {
     /// Outlines the targeted block: its cell's minimum corner and the box in the cell (min, max),
     /// or none.
     pub fn set_block_outline(&mut self, cell: Option<V3>, bounds: ([f32; 3], [f32; 3])) {
+        self.outline_quat = IDENTITY_QUAT;
         self.outline = cell;
         if cell.is_some() && bounds != self.outline_box {
             self.outline_box = bounds;
             self.outline_mesh = Self::outline_lines(&self.arena, bounds);
         }
+    }
+
+    /// Outlines a cell of a moving body (docs/BUILT_BODIES.md §4): the box about `origin`, turned by
+    /// `rotation` about it.
+    pub fn set_block_outline_turned(
+        &mut self,
+        origin: Option<V3>,
+        bounds: ([f32; 3], [f32; 3]),
+        rotation: [f32; 4],
+    ) {
+        self.set_block_outline(origin, bounds);
+        self.outline_quat = rotation;
     }
 
     /// The outline's twelve edges about a box in the cell, slightly enlarged (2 mm each side).
@@ -2739,7 +2755,7 @@ impl Renderer {
                 fade: 0.0,
                 tint: [c[0], c[1], c[2], 0.8],
                 rotation: NO_ROTATION,
-                quat: IDENTITY_QUAT,
+                quat: self.outline_quat,
                 page: 0,
                 passes,
                 key: 0,
@@ -4763,6 +4779,14 @@ impl crate::game::Scene for Renderer {
     }
     fn set_block_outline(&mut self, cell: Option<V3>, bounds: ([f32; 3], [f32; 3])) {
         Renderer::set_block_outline(self, cell, bounds);
+    }
+    fn set_block_outline_turned(
+        &mut self,
+        origin: Option<V3>,
+        bounds: ([f32; 3], [f32; 3]),
+        rotation: [f32; 4],
+    ) {
+        Renderer::set_block_outline_turned(self, origin, bounds, rotation);
     }
     fn set_region_boxes(&mut self, boxes: &[RegionBox]) {
         Renderer::set_region_boxes(self, boxes);

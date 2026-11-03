@@ -413,6 +413,8 @@ struct Session {
     rate_window_tick: u32,
     rate_window_count: u32,
     edits: Vec<(u32, BlockEditRequest)>, // applied at the start of the next step, by edit number
+    /// Body edits (docs/BUILT_BODIES.md §4), applied after the block edits.
+    body_edits: Vec<BodyEditRequest>,
     edit_credit: f64,
     region_edits: Vec<(u32, RegionEdit)>, // applied after the block edits, in order
     region_credit: f64,                   // cells
@@ -478,6 +480,7 @@ impl Session {
             rate_window_tick: 0,
             rate_window_count: 0,
             edits: Vec::new(),
+            body_edits: Vec::new(),
             edit_credit: 0.0,
             region_edits: Vec::new(),
             region_credit: 0.0,
@@ -1072,6 +1075,14 @@ impl Server {
                     s.edit_refused.push(s.edit_seq);
                 }
             }
+            Message::BodyEditRequest(edit) => {
+                s.swing = next_swing(s.swing, edit.action == BlockEditAction::Break);
+                if s.body_edits.len() < MAX_QUEUED_EDITS {
+                    s.body_edits.push(edit);
+                } else {
+                    s.stats.edits_rejected += 1;
+                }
+            }
             Message::RegionEdit(edit) => {
                 s.swing = next_swing(s.swing, false);
                 s.edit_seq += 1;
@@ -1227,6 +1238,7 @@ impl Server {
 
         // 1. Block edits queued since the last tick (§6.5); collision syncs in the controller pass.
         self.apply_edits();
+        self.apply_body_edits();
 
         // 2. One input per player per tick, in sequence order (§9.3). Starved: repeat the last one.
         for s in self.sessions.values_mut() {
@@ -1953,23 +1965,95 @@ impl Server {
         );
         self.broadcast_changes(collapse, VoxelModificationReason::Collapse);
         for i in new {
-            let p = &self.felling.pieces[i];
-            let origin = self.physics.position(p.body);
-            let m = Message::EntitySpawn(EntitySpawn {
-                id: p.id,
-                origin: origin.to_array(),
-                rotation: [0.0, 0.0, 0.0, 1.0],
-                carriers: p.carriers as u16,
-                cells: p
-                    .cells
-                    .iter()
-                    .map(|&(o, state)| PieceCellNet {
-                        offset: o.map(|v| v as i16),
-                        state,
-                    })
-                    .collect(),
-            });
+            let m = self.spawn_message(i);
             self.broadcast_world(&m);
+        }
+    }
+
+    /// Piece `i`'s `EntitySpawn`: its id, pose now, kind and cells.
+    fn spawn_message(&self, i: usize) -> Message {
+        let p = &self.felling.pieces[i];
+        let origin = self.physics.position(p.body);
+        let q = self.physics.rotation(p.body);
+        Message::EntitySpawn(EntitySpawn {
+            id: p.id,
+            origin: origin.to_array(),
+            rotation: [q.x as f32, q.y as f32, q.z as f32, q.w as f32],
+            kind: p.kind,
+            carriers: p.carriers as u16,
+            cells: p
+                .cells
+                .iter()
+                .map(|&(o, state)| PieceCellNet {
+                    offset: o.map(|v| v as i16),
+                    state,
+                })
+                .collect(),
+        })
+    }
+
+    /// The body edits queued this tick (docs/BUILT_BODIES.md §4), each paid from its player's edit
+    /// rate as a block edit is, within reach of their eye at the body's pose now: a break takes the
+    /// cell (`Felling::break_cell`), and every client hears `BodyEdit` (the cells gone, a split's
+    /// too), `EntitySpawn` for each part split off, or `EntityDespawn` for a body left empty.
+    /// Places (built bodies, B2) are not taken yet.
+    fn apply_body_edits(&mut self) {
+        let ids: Vec<SessionId> = self.sessions.keys().copied().collect();
+        let reach = f64::from(players::REACH_DISTANCE) + 1.0;
+        for id in ids {
+            let Some(s) = self.sessions.get(&id) else {
+                continue;
+            };
+            if !s.joined() || s.body_edits.is_empty() {
+                continue;
+            }
+            let (may_edit, handle) = (self.may_edit(s), s.handle);
+            let eye = handle.map(|h| DVec3::from(self.eye_of(h)));
+            let edits =
+                std::mem::take(&mut self.sessions.get_mut(&id).expect("session").body_edits);
+            for e in edits {
+                let s = self.sessions.get_mut(&id).expect("session");
+                let Some(eye) = eye.filter(|_| may_edit && s.edit_credit >= 1.0) else {
+                    continue;
+                };
+                if e.action != BlockEditAction::Break {
+                    continue;
+                }
+                let cell = e.cell.map(i32::from);
+                let Some(p) = self.felling.pieces.iter().find(|p| p.id == e.body) else {
+                    continue;
+                };
+                let at = self.physics.position(p.body)
+                    + self.physics.rotation(p.body) * crate::felling::cell_offset_m(cell);
+                if (at - eye).length() > reach {
+                    continue;
+                }
+                let Some(out) = self.felling.break_cell(&mut self.physics, e.body, cell) else {
+                    continue;
+                };
+                if let Some(s) = self.sessions.get_mut(&id) {
+                    s.edit_credit -= 1.0;
+                }
+                let edit = Message::BodyEdit(BodyEdit {
+                    body: e.body,
+                    cells: out
+                        .removed
+                        .iter()
+                        .map(|&o| PieceCellNet {
+                            offset: o.map(|v| v as i16),
+                            state: 0,
+                        })
+                        .collect(),
+                });
+                self.broadcast_world(&edit);
+                for &i in &out.spawned {
+                    let m = self.spawn_message(i);
+                    self.broadcast_world(&m);
+                }
+                if out.gone {
+                    self.broadcast_world(&Message::EntityDespawn(e.body));
+                }
+            }
         }
     }
 

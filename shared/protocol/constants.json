@@ -1,6 +1,6 @@
 {
   "$comment": "Single source of truth for protocol constants (ARCHITECTURE.md §7.4, §8). Run `node shared/protocol/gen.mjs` after editing; CI fails if generated files are stale.",
-  "protocolVersion": 20,
+  "protocolVersion": 21,
   "simHz": 60,
   "snapshotHz": 20,
   "maxDatagramBytes": 1200,
@@ -114,7 +114,9 @@
     "EditAck": 81,
     "HeldItem": 82,
     "EntitySpawn": 22,
-    "EntityDespawn": 23
+    "EntityDespawn": 23,
+    "BodyEdit": 24,
+    "BodyEditRequest": 83
   },
   "rejectReasons": {
     "ProtocolVersion": 1,

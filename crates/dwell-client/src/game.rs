@@ -142,6 +142,16 @@ pub trait Scene: TerrainRenderer {
     /// Outlines the targeted block: its cell's minimum corner and the box in the cell (min, max
     /// corner; `dwell_world::edit::target_box`), or none.
     fn set_block_outline(&mut self, cell: Option<[f64; 3]>, bounds: ([f32; 3], [f32; 3]));
+    /// Outlines a cell of a moving body: the box (min, max) about `origin` (the body's reference
+    /// cell's centre), turned by `rotation` (a unit quaternion x, y, z, w) about it.
+    fn set_block_outline_turned(
+        &mut self,
+        origin: Option<[f64; 3]>,
+        bounds: ([f32; 3], [f32; 3]),
+        _rotation: [f32; 4],
+    ) {
+        self.set_block_outline(origin, bounds);
+    }
     /// The frame's vertical FOV (degrees; the speed boost, docs/MOTION_EFFECTS.md): the same value
     /// the LOD selection uses. `None`: the screen's own.
     fn set_fov(&mut self, fov_y_deg: Option<f64>);
@@ -482,6 +492,11 @@ pub struct Game<S: Scene> {
     proxies: HashSet<u16>,
     /// The falling pieces (docs/FELLING.md §3).
     pieces: crate::pieces::Pieces,
+    /// The moving body's cell under the crosshair, when nearer than the block aimed at
+    /// (docs/BUILT_BODIES.md §4).
+    body_target: Option<crate::pieces::BodyHit>,
+    /// When the last body edit went (ms), for the edit interval.
+    body_edit_ms: f64,
     /// Settled pieces drawn gliding into their blocks' places (docs/FELLING.md §4.1).
     glides: crate::settle_glide::Glides,
     recent: VecDeque<InputFrame>,
@@ -651,6 +666,8 @@ impl<S: Scene> Game<S> {
             remotes: RemotePlayers::default(),
             proxies: HashSet::default(),
             pieces: crate::pieces::Pieces::default(),
+            body_target: None,
+            body_edit_ms: f64::NEG_INFINITY,
             glides: crate::settle_glide::Glides::default(),
             recent: VecDeque::new(),
             accumulator: 0.0,
@@ -1102,6 +1119,16 @@ impl<S: Scene> Game<S> {
                     .borrow_mut()
                     .set_piece(e.id, Some((&meshes, radius)));
             }
+            Message::BodyEdit(e) => {
+                // Its cells changed (docs/BUILT_BODIES.md §4): drawn anew, and stood in for anew
+                // from the next snapshot.
+                if let Some((meshes, radius)) = self.pieces.edit(&e) {
+                    self.scene
+                        .borrow_mut()
+                        .set_piece(e.body, Some((&meshes, radius)));
+                    self.predictor.remove_piece(e.body);
+                }
+            }
             Message::EntityDespawn(id) => {
                 let settled = self.pieces.despawn(id, now_ms);
                 self.predictor.remove_piece(id);
@@ -1301,6 +1328,10 @@ impl<S: Scene> Game<S> {
         if self.brush.active() {
             return self.brush_apply(action == EditAction::Place, now_ms);
         }
+        // A moving body aimed at, nearer than any block (docs/BUILT_BODIES.md §4): break its cell.
+        if let Some(b) = self.body_target.filter(|_| !self.region.pasting()) {
+            return self.edit_body(action, b, now_ms);
+        }
         // In paste mode the buttons paste (right) or leave paste mode (left).
         if self.region.pasting() {
             let tool = match action {
@@ -1350,6 +1381,40 @@ impl<S: Scene> Game<S> {
             }
             None => false,
         }
+    }
+
+    /// Breaks the cell of a moving body aimed at (`BodyEditRequest`; docs/BUILT_BODIES.md §4); a
+    /// place on one is refused until bodies may be built on (B2). Shown when the server answers.
+    fn edit_body(&mut self, action: EditAction, b: crate::pieces::BodyHit, now_ms: f64) -> bool {
+        if action != EditAction::Break {
+            self.sounds.push(sound_event(SoundKind::Deny));
+            return false;
+        }
+        if now_ms - self.body_edit_ms < players::BLOCK_EDIT_INTERVAL_MS as f64 {
+            return false;
+        }
+        self.body_edit_ms = now_ms;
+        // Its block's break sound where it was hit.
+        if let (Some(eye), Some(block)) = (self.target_eye, self.pieces.block_at(b.body, b.cell)) {
+            let at: [f64; 3] = std::array::from_fn(|k| eye[k] + self.view_dir[k] * b.distance);
+            let cell = dwell_world::cell_of_pos(at);
+            self.edit_sounds
+                .local_break(cell, block, now_ms, &mut self.sounds);
+        }
+        self.bodies
+            .swing_arms(dwell_characters::animator::Swing::Break);
+        self.outbox
+            .borrow_mut()
+            .push(Send::Control(Message::BodyEditRequest(
+                dwell_protocol::BodyEditRequest {
+                    body: b.body,
+                    cell: b.cell.map(|v| v as i16),
+                    face: b.face,
+                    action: dwell_protocol::BlockEditAction::Break,
+                    material: 0,
+                },
+            )));
+        true
     }
 
     /// Breaks or places as [`edit`](Self::edit), with the button held by `holder`: a place
@@ -2672,6 +2737,18 @@ impl<S: Scene> Game<S> {
         self.target_eye = eye;
         let dir = view_direction(input.look.yaw, input.look.pitch, face);
         self.view_dir = dir;
+        // A moving body's cell nearer than the block aimed at (docs/BUILT_BODIES.md §4).
+        self.body_target = eye.filter(|_| !self.brush.active()).and_then(|e| {
+            let (o, d) = (DVec3::from(e), DVec3::from(dir));
+            let reach = f64::from(players::REACH_DISTANCE);
+            let hit = self.pieces.raycast(o, d, reach, now_ms)?;
+            let block = t.and_then(|t| {
+                let corner = DVec3::from(dwell_world::pos_of_cell(t.cell));
+                let centre = corner + DVec3::new(0.5, 0.5 * dwell_world::CELL_H, 0.5);
+                crate::pieces::ray_cells(o - centre, d, &[([0, 0, 0], 0)], reach).map(|h| h.2)
+            });
+            block.is_none_or(|b| hit.distance < b).then_some(hit)
+        });
         self.drag_build(eye, dir, now_ms);
         self.region
             .aim(self.interaction.placement().map(|(c, _)| c));
@@ -2697,6 +2774,25 @@ impl<S: Scene> Game<S> {
         self.scene
             .borrow_mut()
             .set_brush_outline(self.brush.outline());
+        // A moving body's cell aimed at: its box outlined, turned with the body.
+        if let Some(b) = self.body_target {
+            let half = [0.5f32, 0.5 * dwell_world::CELL_H as f32, 0.5];
+            let c = [
+                b.cell[0] as f32,
+                b.cell[1] as f32 * dwell_world::CELL_H as f32,
+                b.cell[2] as f32,
+            ];
+            let r = b.rotation;
+            self.scene.borrow_mut().set_block_outline_turned(
+                Some(b.position.to_array()),
+                (
+                    std::array::from_fn(|k| c[k] - half[k]),
+                    std::array::from_fn(|k| c[k] + half[k]),
+                ),
+                [r.x as f32, r.y as f32, r.z as f32, r.w as f32],
+            );
+            return;
+        }
         let Some(t) = t else {
             // Bridging help's ghost: where Place would build, the edge looked toward.
             let ghost = self.edge_spot().map(|(cells, _, _)| {

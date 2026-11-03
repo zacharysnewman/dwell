@@ -245,27 +245,32 @@ impl Physics {
             .build();
         let h = self.w.bodies.insert(body);
         for c in cells {
-            let groups = match c.collide {
-                Collide::All => groups(Layer::Tier1),
-                Collide::World => {
-                    InteractionGroups::new(TIER1, TERRAIN | TIER1, InteractionTestMode::And)
-                }
-                Collide::None => {
-                    InteractionGroups::new(TIER1, Group::NONE, InteractionTestMode::And)
-                }
-            };
-            let collider = ColliderBuilder::cuboid(c.half.x, c.half.y, c.half.z)
-                .translation(c.center)
-                .mass(c.mass)
-                .friction(0.8)
-                .restitution(0.05)
-                .collision_groups(groups)
-                .build();
             self.w
                 .colliders
-                .insert_with_parent(collider, h, &mut self.w.bodies);
+                .insert_with_parent(piece_collider(c), h, &mut self.w.bodies);
         }
         BodyHandle(h)
+    }
+
+    /// A piece's cells changed (docs/BUILT_BODIES.md §4: a cell broken off it, or one placed on it):
+    /// its colliders are made again from `cells`, in its own frame; its pose and velocities stay,
+    /// its mass, centre of mass and inertia follow the colliders.
+    pub fn set_piece_cells(&mut self, h: BodyHandle, cells: &[PieceCell]) {
+        let Some(body) = self.w.bodies.get(h.0) else {
+            return;
+        };
+        let old: Vec<_> = body.colliders().to_vec();
+        for c in old {
+            self.w.remove_collider(c);
+        }
+        for c in cells {
+            self.w
+                .colliders
+                .insert_with_parent(piece_collider(c), h.0, &mut self.w.bodies);
+        }
+        if let Some(b) = self.w.bodies.get_mut(h.0) {
+            b.wake_up(true);
+        }
     }
 
     /// A falling piece's stand-in in a client's prediction (docs/FELLING.md §3): a kinematic body
@@ -354,6 +359,11 @@ impl Physics {
             b.set_translation(p, true);
         }
     }
+    pub fn set_rotation(&mut self, h: BodyHandle, q: DQuat) {
+        if let Some(b) = self.w.bodies.get_mut(h.0) {
+            b.set_rotation(q, true);
+        }
+    }
     /// Raises the engine's speed limit (Rapier's default is 400 m/s) to at least `v` m/s.
     pub fn raise_max_linear_velocity(&mut self, v: f64) {
         let p = &mut self.w.integration_parameters;
@@ -417,3 +427,19 @@ impl Default for Physics {
 
 /// `user_data` of Tier 1 bodies; a player body's is its handle + 1 (below this).
 pub(crate) const TIER1_BODY: u128 = u128::MAX;
+
+/// The cell `c` of a piece as its collider: a box of its mass, colliding as its `collide` says.
+fn piece_collider(c: &PieceCell) -> Collider {
+    let groups = match c.collide {
+        Collide::All => groups(Layer::Tier1),
+        Collide::World => InteractionGroups::new(TIER1, TERRAIN | TIER1, InteractionTestMode::And),
+        Collide::None => InteractionGroups::new(TIER1, Group::NONE, InteractionTestMode::And),
+    };
+    ColliderBuilder::cuboid(c.half.x, c.half.y, c.half.z)
+        .translation(c.center)
+        .mass(c.mass)
+        .friction(0.8)
+        .restitution(0.05)
+        .collision_groups(groups)
+        .build()
+}

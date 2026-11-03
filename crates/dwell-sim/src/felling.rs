@@ -38,6 +38,126 @@ pub struct FellingData {
 mod generated;
 pub use generated::FELLING;
 
+/// A body kind's rules (`shared/physics/bodies.json`; docs/BUILT_BODIES.md §2): what may be done to
+/// a moving body of cells. Its index in [`BODY_KINDS`] is the wire's kind.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct BodyKind {
+    pub name: &'static str,
+    /// A block placed against one of its cells joins it.
+    pub place: bool,
+    /// A cell of it may be broken.
+    pub breaks: bool,
+    /// A break that leaves it in more than one connected group splits it.
+    pub split: bool,
+    /// At rest it becomes blocks again.
+    pub settles: bool,
+    /// Saved with the world.
+    pub saved: bool,
+}
+
+// Included (not a `#[path]` module) so rustfmt leaves the generated file as written.
+mod bodies_generated {
+    include!("bodies.gen.rs");
+}
+pub use bodies_generated::BODY_KINDS;
+
+/// The kind of wire index `k`; an unknown one is natural (the first).
+pub fn body_kind(k: u8) -> &'static BodyKind {
+    BODY_KINDS.get(usize::from(k)).unwrap_or(&BODY_KINDS[0])
+}
+
+/// What breaking a cell of a body did (docs/BUILT_BODIES.md §4).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct BreakOutcome {
+    /// The cells that left the body, in its grid: the broken one, then those split off.
+    pub removed: Vec<[i32; 3]>,
+    /// The new bodies split off it (indices in `pieces`).
+    pub spawned: Vec<usize>,
+    /// The body had no cells left: it is gone.
+    pub gone: bool,
+}
+
+/// A cell's box in its piece (`offset` in the piece's grid): its block's mass, colliding as a
+/// carrier (logs: everything; falling sand: the world, it passes players) or a rider (leaves:
+/// nothing, or the world in a piece of riders only, which lands as leaves).
+fn piece_box(offset: [i32; 3], m: StateId, carrier: bool, riders_only: bool) -> PieceCell {
+    let s = info(m);
+    PieceCell {
+        center: offset_m(offset),
+        half: DVec3::new(0.5, 0.5 * CELL_H, 0.5),
+        mass: f64::from(s.density_kg_m3).max(1.0) * CELL_H,
+        collide: if carrier {
+            if s.support_role == dwell_blocks::SupportRole::Falls {
+                Collide::World
+            } else {
+                Collide::All
+            }
+        } else if riders_only {
+            Collide::World
+        } else {
+            Collide::None
+        },
+    }
+}
+
+/// Whether a cell of state `m` carries in a piece (it, not riders, collides).
+fn carries(m: StateId) -> bool {
+    matches!(
+        info(m).support_role,
+        dwell_blocks::SupportRole::Carrier | dwell_blocks::SupportRole::Falls
+    )
+}
+
+/// `cells` with the carriers first (as `Falling::cells` keeps them), and how many there are.
+fn carriers_first(mut cells: Vec<([i32; 3], StateId)>) -> (Vec<([i32; 3], StateId)>, usize) {
+    cells.sort_by_key(|&(_, m)| !carries(m));
+    let n = cells.iter().filter(|&&(_, m)| carries(m)).count();
+    (cells, n)
+}
+
+/// The piece's boxes for its cells (carriers first, `carriers` of them).
+fn piece_boxes(cells: &[([i32; 3], StateId)], carriers: usize) -> Vec<PieceCell> {
+    cells
+        .iter()
+        .enumerate()
+        .map(|(k, &(o, m))| piece_box(o, m, k < carriers, carriers == 0))
+        .collect()
+}
+
+/// The 6-connected groups of `cells` (offsets in a piece's grid), largest first.
+fn connected_groups(cells: &[([i32; 3], StateId)]) -> Vec<Vec<([i32; 3], StateId)>> {
+    let index: std::collections::HashMap<[i32; 3], StateId> = cells.iter().copied().collect();
+    let mut seen = std::collections::HashSet::new();
+    let mut groups = Vec::new();
+    for &(start, _) in cells {
+        if !seen.insert(start) {
+            continue;
+        }
+        let mut group = Vec::new();
+        let mut stack = vec![start];
+        while let Some(c) = stack.pop() {
+            group.push((c, index[&c]));
+            for d in [
+                [1, 0, 0],
+                [-1, 0, 0],
+                [0, 1, 0],
+                [0, -1, 0],
+                [0, 0, 1],
+                [0, 0, -1],
+            ] {
+                let n = [c[0] + d[0], c[1] + d[1], c[2] + d[2]];
+                if index.contains_key(&n) && seen.insert(n) {
+                    stack.push(n);
+                }
+            }
+        }
+        groups.push(group);
+    }
+    // Largest first; ties in the order found (the cells' order).
+    groups.sort_by_key(|g| std::cmp::Reverse(g.len()));
+    groups
+}
+
 /// The felling tunables in the server's units (docs/FELLING.md §5; ARCHITECTURE.md §7.4's sleep
 /// values), from [`FELLING`].
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -121,6 +241,8 @@ pub struct Falling {
     pub settles: u8,
     still: u32,
     age: u32,
+    /// Its kind (an index into [`BODY_KINDS`]; 0 natural).
+    pub kind: u8,
     /// The players it has hurt (their keys, `hits`), each hurt once by a piece.
     hurt: Vec<u64>,
     /// Too heavy for players to push (`pushable_mass`), and whether it is held from them now.
@@ -174,6 +296,11 @@ pub fn cell_centre(c: [i32; 3]) -> DVec3 {
 }
 
 /// A cell offset from a piece's reference cell, in the body's frame (m).
+/// A cell's centre in its piece's frame (m) from its offset in the piece's grid.
+pub fn cell_offset_m(o: [i32; 3]) -> DVec3 {
+    offset_m(o)
+}
+
 fn offset_m(o: [i32; 3]) -> DVec3 {
     DVec3::new(f64::from(o[0]), f64::from(o[1]) * CELL_H, f64::from(o[2]))
 }
@@ -210,26 +337,11 @@ impl Felling {
                     c[2] - reference[2],
                 ];
                 let s = info(m);
-                boxes.push(PieceCell {
-                    center: offset_m(o),
-                    half: DVec3::new(0.5, 0.5 * CELL_H, 0.5),
-                    mass: f64::from(s.density_kg_m3).max(1.0) * CELL_H,
-                    // Carriers (logs, sand) hit everything; leaves riding them nothing; leaves
-                    // falling on their own the world but not players, so they land.
-                    // Sand passes players (it may hurt them, `hits`, but never rests on one:
-                    // owner, 2026-10-28, "slide off").
-                    collide: if k < piece.carriers {
-                        if s.support_role == dwell_blocks::SupportRole::Falls {
-                            Collide::World
-                        } else {
-                            Collide::All
-                        }
-                    } else if piece.carriers == 0 {
-                        Collide::World
-                    } else {
-                        Collide::None
-                    },
-                });
+                // Carriers (logs, sand) hit everything; leaves riding them nothing; leaves
+                // falling on their own the world but not players, so they land. Sand passes
+                // players (it may hurt them, `hits`, but never rests on one: owner, 2026-10-28,
+                // "slide off").
+                boxes.push(piece_box(o, m, k < piece.carriers, piece.carriers == 0));
                 cells.push((o, m));
                 clear(world, c, if s.flooded { M.water } else { M.air });
             }
@@ -272,6 +384,7 @@ impl Felling {
                 body,
                 cells,
                 carriers: piece.carriers,
+                kind: 0,
                 settles,
                 still: 0,
                 age: 0,
@@ -283,6 +396,100 @@ impl Felling {
             out.push(self.pieces.len() - 1);
         }
         out
+    }
+
+    /// Breaks the cell `cell` (in its own grid) of the piece `id` (docs/BUILT_BODIES.md §4): its
+    /// collider goes and its mass follows; a body left in more than one connected group splits (its
+    /// kind's `split`), each group but the largest a new body of the same kind at its cells' world
+    /// pose, moving as that part of the old one was; a body with no cells left is removed. None if
+    /// there is no such body or cell, or its kind can't be broken.
+    pub fn break_cell(
+        &mut self,
+        physics: &mut Physics,
+        id: u32,
+        cell: [i32; 3],
+    ) -> Option<BreakOutcome> {
+        let i = self.pieces.iter().position(|p| p.id == id)?;
+        let kind = *body_kind(self.pieces[i].kind);
+        if !kind.breaks {
+            return None;
+        }
+        let k = self.pieces[i].cells.iter().position(|&(o, _)| o == cell)?;
+        self.pieces[i].cells.remove(k);
+        let mut out = BreakOutcome {
+            removed: vec![cell],
+            ..BreakOutcome::default()
+        };
+        if self.pieces[i].cells.is_empty() {
+            let p = self.pieces.remove(i);
+            physics.remove_body(p.body);
+            out.gone = true;
+            return Some(out);
+        }
+        let body = self.pieces[i].body;
+        let (position, rotation) = (physics.position(body), physics.rotation(body));
+        let spin = physics.angular_velocity(body);
+        let mut groups = if kind.split {
+            connected_groups(&self.pieces[i].cells)
+        } else {
+            vec![self.pieces[i].cells.clone()]
+        };
+        let keep = groups.remove(0);
+        for group in groups {
+            out.removed.extend(group.iter().map(|&(o, _)| o));
+            // Its own frame: its first cell the reference, the old body's turn.
+            let reference = group[0].0;
+            let origin = position + rotation * offset_m(reference);
+            let rel = group
+                .iter()
+                .map(|&(o, m)| {
+                    (
+                        [
+                            o[0] - reference[0],
+                            o[1] - reference[1],
+                            o[2] - reference[2],
+                        ],
+                        m,
+                    )
+                })
+                .collect();
+            let (cells, carriers) = carriers_first(rel);
+            let boxes = piece_boxes(&cells, carriers);
+            let mass: f64 = boxes.iter().map(|b| b.mass).sum();
+            let reach = boxes.iter().map(|b| b.center.length()).fold(0.0, f64::max) + 0.9;
+            let new = physics.add_piece(origin, &boxes, false);
+            physics.set_rotation(new, rotation);
+            physics.set_velocity(new, physics.point_velocity(body, origin));
+            physics.set_angular_velocity(new, spin);
+            let old = &self.pieces[i];
+            let piece = Falling {
+                id: self.next_id + 1,
+                body: new,
+                cells,
+                carriers,
+                kind: old.kind,
+                settles: old.settles,
+                still: 0,
+                age: old.age,
+                hurt: old.hurt.clone(),
+                heavy: mass >= self.rules.pushable_mass,
+                held: false,
+                reach,
+            };
+            self.next_id += 1;
+            self.pieces.push(piece);
+            out.spawned.push(self.pieces.len() - 1);
+        }
+        let (cells, carriers) = carriers_first(keep);
+        let boxes = piece_boxes(&cells, carriers);
+        physics.set_piece_cells(body, &boxes);
+        let p = &mut self.pieces[i];
+        p.heavy = boxes.iter().map(|b| b.mass).sum::<f64>() >= self.rules.pushable_mass;
+        p.reach = boxes.iter().map(|b| b.center.length()).fold(0.0, f64::max) + 0.9;
+        p.cells = cells;
+        p.carriers = carriers;
+        p.still = 0;
+        Some(out)
     }
 
     /// The box (world metres) round each piece the terrain collision must cover over the next
@@ -395,7 +602,9 @@ impl Felling {
             // (leaves falling on their own too: they land, owner 2026-10-28).
             let y = physics.position(p.body).y;
             let lost = !in_world_rows(y);
-            if p.still >= r.sleep_ticks || p.age >= r.max_ticks || lost {
+            // A kind that doesn't settle (a built body) stays a body; lost past the rows, it goes.
+            let settles = body_kind(p.kind).settles;
+            if lost || (settles && (p.still >= r.sleep_ticks || p.age >= r.max_ticks)) {
                 due.push(i);
             }
         }
@@ -690,6 +899,7 @@ mod tests {
             )),
             carriers: cells.len(),
             cells,
+            kind: 0,
             settles: 0,
             still: 0,
             age: 0,
@@ -916,6 +1126,7 @@ mod tests {
             body,
             cells: cells.to_vec(),
             carriers: 2,
+            kind: 0,
             settles: 0,
             still: 0,
             age: 0,
