@@ -318,6 +318,25 @@ impl Physics {
         }
     }
 
+    /// Holds a body still where it is (`held`: fixed, colliding as a wall does) or lets it move again
+    /// (dynamic): a built body resting on its build platform (docs/BUILT_BODIES.md §3).
+    pub fn set_held(&mut self, h: BodyHandle, held: bool) {
+        if let Some(b) = self.w.bodies.get_mut(h.0) {
+            let want = if held {
+                RigidBodyType::Fixed
+            } else {
+                RigidBodyType::Dynamic
+            };
+            if b.body_type() != want {
+                if held {
+                    b.set_linvel(DVec3::ZERO, false);
+                    b.set_angvel(DVec3::ZERO, false);
+                }
+                b.set_body_type(want, true);
+            }
+        }
+    }
+
     /// A body's rotation.
     pub fn rotation(&self, h: BodyHandle) -> DQuat {
         self.w

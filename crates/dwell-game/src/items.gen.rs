@@ -15,7 +15,7 @@ pub const ITEMS: [ItemDef; 14] = [
     ItemDef { name: "dwell:log", label: "Log", block: "dwell:log", rows: 1, drag: ItemDrag::Modes, state: &[], facing: ItemFacing::None, upper: &[] },
     ItemDef { name: "dwell:leaves", label: "Leaves", block: "dwell:leaves", rows: 1, drag: ItemDrag::Modes, state: &[], facing: ItemFacing::None, upper: &[] },
     ItemDef { name: "dwell:tall_grass", label: "Tall grass", block: "dwell:tall_grass", rows: 1, drag: ItemDrag::None, state: &[], facing: ItemFacing::None, upper: &[] },
-    ItemDef { name: "dwell:build_platform", label: "Build platform", block: "dwell:build_platform", rows: 1, drag: ItemDrag::None, state: &[], facing: ItemFacing::None, upper: &[] },
+    ItemDef { name: "dwell:build_platform", label: "Build platform", block: "dwell:build_platform", rows: 1, drag: ItemDrag::Modes, state: &[], facing: ItemFacing::None, upper: &[] },
     ItemDef { name: "dwell:torch", label: "Torch", block: "dwell:torch", rows: 1, drag: ItemDrag::None, state: &[], facing: ItemFacing::None, upper: &[] },
     ItemDef { name: "dwell:snowy_grass", label: "Snowy grass", block: "dwell:snowy_grass", rows: 1, drag: ItemDrag::Modes, state: &[], facing: ItemFacing::None, upper: &[] },
     ItemDef { name: "dwell:snowy_leaves", label: "Snowy leaves", block: "dwell:snowy_leaves", rows: 1, drag: ItemDrag::Modes, state: &[], facing: ItemFacing::None, upper: &[] },

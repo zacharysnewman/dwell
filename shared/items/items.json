@@ -82,8 +82,7 @@
       "name": "dwell:build_platform",
       "label": "Build platform",
       "block": "dwell:build_platform",
-      "rows": 1,
-      "drag": "none"
+      "rows": 1
     },
     {
       "name": "dwell:torch",

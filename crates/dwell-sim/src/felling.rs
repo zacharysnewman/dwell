@@ -53,18 +53,31 @@ pub struct BodyKind {
     pub settles: bool,
     /// Saved with the world.
     pub saved: bool,
-    /// Blocks that, placed, start a body of this kind instead of going in the world's grid.
-    pub started_by: &'static [&'static str],
+    /// Blocks a body of this kind is built on (the build platform): they stay in the world's grid;
+    /// a block placed on one's top starts a body of this kind there, held still while it rests on
+    /// one (docs/BUILT_BODIES.md §3).
+    pub built_on: &'static [&'static str],
 }
 
-/// The kind a placed block of state `m` starts a body of (its block in a kind's `startedBy`).
-pub fn kind_started_by(m: StateId) -> Option<u8> {
+/// The kind a body built on a block of state `m` is (its block in a kind's `builtOn`).
+pub fn kind_built_on(m: StateId) -> Option<u8> {
     let name = info(m).name;
     let block = name.split('[').next().unwrap_or(name);
     BODY_KINDS
         .iter()
-        .position(|k| k.started_by.contains(&block))
+        .position(|k| k.built_on.contains(&block))
         .map(|i| i as u8)
+}
+
+/// Where a block placed into the world's cell goes instead of the grid (docs/BUILT_BODIES.md §3).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Divert {
+    /// Into the held body `id`, as its cell `cell` (its grid): it touches that body.
+    Join { id: u32, cell: [i32; 3] },
+    /// A new body of `kind`: it is on a build platform's top.
+    New { kind: u8 },
+    /// Nowhere: a held body's cell is already there.
+    Taken,
 }
 
 /// How bodies float (`shared/physics/bodies.json` `water`; docs/BUILT_BODIES.md §6).
@@ -282,6 +295,8 @@ pub struct Falling {
     /// Too heavy for players to push (`pushable_mass`), and whether it is held from them now.
     heavy: bool,
     held: bool,
+    /// Held still on its build platform (docs/BUILT_BODIES.md §3) until no cell of it rests on one.
+    anchored: bool,
     /// How far its cells reach from its body's origin (m).
     reach: f64,
 }
@@ -479,6 +494,7 @@ impl Felling {
                 hurt: Vec::new(),
                 heavy: mass >= self.rules.pushable_mass,
                 held: false,
+                anchored: false,
                 reach,
             });
             out.push(self.pieces.len() - 1);
@@ -562,6 +578,7 @@ impl Felling {
                 hurt: old.hurt.clone(),
                 heavy: mass >= self.rules.pushable_mass,
                 held: false,
+                anchored: false,
                 reach,
             };
             self.next_id += 1;
@@ -607,6 +624,14 @@ impl Felling {
         if taken(at) {
             return None;
         }
+        self.join(physics, i, new, material);
+        Some(new)
+    }
+
+    /// Adds the cell `new` (its grid) holding `material` to piece `i`: its colliders, mass and reach
+    /// follow.
+    fn join(&mut self, physics: &mut Physics, i: usize, new: [i32; 3], material: StateId) {
+        let p = &self.pieces[i];
         let mut cells = p.cells.clone();
         cells.push((new, material));
         let (cells, carriers) = carriers_first(cells);
@@ -618,7 +643,112 @@ impl Felling {
         p.cells = cells;
         p.carriers = carriers;
         p.still = 0;
-        Some(new)
+    }
+
+    /// The world cell each cell of piece `i` is in now.
+    fn world_cells(&self, physics: &Physics, i: usize) -> Vec<([i32; 3], [i32; 3])> {
+        let p = &self.pieces[i];
+        let (position, rotation) = (physics.position(p.body), physics.rotation(p.body));
+        p.cells
+            .iter()
+            .map(|&(o, _)| {
+                let at = position + rotation * offset_m(o);
+                (o, dwell_world::cell_of_pos(at.to_array()))
+            })
+            .collect()
+    }
+
+    /// Whether any cell of piece `i` rests on a block its kind is built on (face-locally under it).
+    fn rests_on_platform(&self, world: &mut VoxelWorld, physics: &Physics, i: usize) -> bool {
+        let kind = self.pieces[i].kind;
+        self.world_cells(physics, i).into_iter().any(|(_, c)| {
+            let below = c[1] - FaceFrame::at_row(c[1]).sign();
+            kind_built_on(world.get_voxel(c[0], below, c[2])) == Some(kind)
+        })
+    }
+
+    /// Where a block of `material` placed into the world's cell `cell` goes instead of the grid
+    /// (docs/BUILT_BODIES.md §3): into a held body it touches (or nowhere, a held body's cell being
+    /// there), else a new body when it is on a build platform's top; None: the grid. A build
+    /// platform itself always goes in the grid (it is ground, never part of a body).
+    pub fn divert(
+        &self,
+        world: &mut VoxelWorld,
+        physics: &Physics,
+        cell: [i32; 3],
+        material: StateId,
+    ) -> Option<Divert> {
+        if kind_built_on(material).is_some() {
+            return None;
+        }
+        for (i, p) in self.pieces.iter().enumerate() {
+            if !p.anchored || !body_kind(p.kind).place {
+                continue;
+            }
+            let cells = self.world_cells(physics, i);
+            if cells.iter().any(|&(_, c)| c == cell) {
+                return Some(Divert::Taken);
+            }
+            for &(o, c) in &cells {
+                for d in &dwell_world::edit::FACE_DIRS {
+                    if [c[0] + d[0], c[1] + d[1], c[2] + d[2]] == cell {
+                        // Its grid is the world's turned by none (a held body is never turned).
+                        return Some(Divert::Join {
+                            id: p.id,
+                            cell: [o[0] + d[0], o[1] + d[1], o[2] + d[2]],
+                        });
+                    }
+                }
+            }
+        }
+        let below = cell[1] - FaceFrame::at_row(cell[1]).sign();
+        kind_built_on(world.get_voxel(cell[0], below, cell[2])).map(|kind| Divert::New { kind })
+    }
+
+    /// Applies a [`Divert`] of `material` at the world's cell `cell`: the body it joined or started
+    /// (its id) and, for a join, the new cell in its grid; None for `Taken`. A new one starts held.
+    pub fn place_diverted(
+        &mut self,
+        physics: &mut Physics,
+        divert: Divert,
+        cell: [i32; 3],
+        material: StateId,
+    ) -> Option<(u32, Option<[i32; 3]>)> {
+        match divert {
+            Divert::Taken => None,
+            Divert::Join { id, cell: new } => {
+                let i = self.pieces.iter().position(|p| p.id == id)?;
+                self.join(physics, i, new, material);
+                Some((id, Some(new)))
+            }
+            Divert::New { kind } => {
+                let i = self.spawn_body(
+                    physics,
+                    None,
+                    kind,
+                    0,
+                    vec![([0, 0, 0], material)],
+                    cell_centre(cell),
+                    DQuat::IDENTITY,
+                    DVec3::ZERO,
+                    DVec3::ZERO,
+                );
+                self.pieces[i].anchored = true;
+                physics.set_held(self.pieces[i].body, true);
+                Some((self.pieces[i].id, None))
+            }
+        }
+    }
+
+    /// Lets go of the held bodies no cell of which rests on a build platform any more (one broken
+    /// under it): they move from now on (docs/BUILT_BODIES.md §3).
+    pub fn release_unheld(&mut self, world: &mut VoxelWorld, physics: &mut Physics) {
+        for i in 0..self.pieces.len() {
+            if self.pieces[i].anchored && !self.rests_on_platform(world, physics, i) {
+                self.pieces[i].anchored = false;
+                physics.set_held(self.pieces[i].body, false);
+            }
+        }
     }
 
     /// Starts a body of `kind` with `cells` (offsets in its grid, its reference cell's centre at
@@ -660,6 +790,7 @@ impl Felling {
             heavy: mass >= self.rules.pushable_mass,
             held: false,
             reach,
+            anchored: false,
         });
         self.pieces.len() - 1
     }
@@ -690,10 +821,16 @@ impl Felling {
     }
 
     /// Brings back the bodies saved with the world, as they were.
-    pub fn restore(&mut self, physics: &mut Physics, bodies: Vec<dwell_storage::SavedBody>) {
+    /// A body unturned and resting on its build platform is held again.
+    pub fn restore(
+        &mut self,
+        world: &mut VoxelWorld,
+        physics: &mut Physics,
+        bodies: Vec<dwell_storage::SavedBody>,
+    ) {
         for b in bodies.into_iter().filter(|b| !b.cells.is_empty()) {
             let r = b.rotation;
-            self.spawn_body(
+            let i = self.spawn_body(
                 physics,
                 Some(b.id),
                 b.kind,
@@ -707,6 +844,14 @@ impl Felling {
                 DVec3::from_array(b.velocity),
                 DVec3::from_array(b.angular),
             );
+            let turned = physics
+                .rotation(self.pieces[i].body)
+                .angle_between(DQuat::IDENTITY)
+                > 1e-3;
+            if !turned && self.rests_on_platform(world, physics, i) {
+                self.pieces[i].anchored = true;
+                physics.set_held(self.pieces[i].body, true);
+            }
         }
     }
 
@@ -1160,6 +1305,7 @@ mod tests {
             hurt: Vec::new(),
             heavy: false,
             held: false,
+            anchored: false,
             reach: 1.0,
         }
     }
@@ -1416,6 +1562,7 @@ mod tests {
             hurt: Vec::new(),
             heavy: false,
             held: false,
+            anchored: false,
             reach: 1.0,
         });
         let player = PlayerBody {

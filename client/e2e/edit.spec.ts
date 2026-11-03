@@ -169,9 +169,6 @@ test('local mode: every palette block can be picked from the hotbar, placed, and
       .locator(`.hotbar-slot[data-slot="${String(slot)}"]`)
       .getAttribute('title');
     if (title === 'Ladder') continue;
-    // The build platform starts a moving body instead of going in the grid (docs/BUILT_BODIES.md;
-    // the server's tests/built_bodies.rs).
-    if (title === 'Build platform') continue;
     // Leaves placed on the ground stay there (docs/FELLING.md §2: loose leaves fall only to land).
 
     // Back to the ground cell, and wait until it is the target: the target is the previous look's

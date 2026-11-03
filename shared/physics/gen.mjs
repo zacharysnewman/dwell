@@ -95,16 +95,16 @@ export function validateBodies(data, blocks = registryBlockNames()) {
   data.kinds.forEach((k, i) => {
     const at = `kinds[${i}]`;
     if (typeof k !== 'object' || k === null || Array.isArray(k)) bad(`${at} must be an object`);
-    for (const key of Object.keys(k)) if (!['$comment', 'name', 'startedBy', ...KIND_RULES].includes(key)) bad(`${at}: unknown ${key}`);
+    for (const key of Object.keys(k)) if (!['$comment', 'name', 'builtOn', ...KIND_RULES].includes(key)) bad(`${at}: unknown ${key}`);
     if (typeof k.name !== 'string' || !/^[a-z][a-z0-9_]*$/.test(k.name)) bad(`${at}.name must be a lower-case name`);
     if (names.has(k.name)) bad(`${at}.name ${k.name} is listed twice`);
     names.add(k.name);
     for (const r of KIND_RULES) if (typeof k[r] !== 'boolean') bad(`${at}.${r} must be true or false`);
-    const started = k.startedBy ?? [];
-    if (!Array.isArray(started)) bad(`${at}.startedBy must be a list of block names`);
+    const started = k.builtOn ?? [];
+    if (!Array.isArray(started)) bad(`${at}.builtOn must be a list of block names`);
     for (const b of started) {
-      if (!blocks.has(b)) bad(`${at}.startedBy: ${JSON.stringify(b)} is not a block of the registry`);
-      if (starters.has(b)) bad(`${at}.startedBy: ${b} already starts ${starters.get(b)}`);
+      if (!blocks.has(b)) bad(`${at}.builtOn: ${JSON.stringify(b)} is not a block of the registry`);
+      if (starters.has(b)) bad(`${at}.builtOn: ${b} already builds ${starters.get(b)}`);
       starters.set(b, k.name);
     }
   });
@@ -121,8 +121,8 @@ export function bodiesRust(data) {
   lines.push('/// The body kinds, in wire order (shared/physics/bodies.json).');
   lines.push(`pub const BODY_KINDS: [BodyKind; ${data.kinds.length}] = [`);
   for (const k of data.kinds) {
-    const started = `&[${(k.startedBy ?? []).map((b) => JSON.stringify(b)).join(', ')}]`;
-    lines.push(`    BodyKind { name: ${JSON.stringify(k.name)}, ${KIND_RULES.map((r) => `${r === 'break' ? 'breaks' : r}: ${k[r]}`).join(', ')}, started_by: ${started} },`);
+    const started = `&[${(k.builtOn ?? []).map((b) => JSON.stringify(b)).join(', ')}]`;
+    lines.push(`    BodyKind { name: ${JSON.stringify(k.name)}, ${KIND_RULES.map((r) => `${r === 'break' ? 'breaks' : r}: ${k[r]}`).join(', ')}, built_on: ${started} },`);
   }
   lines.push('];', '');
   return lines.join('\n');
