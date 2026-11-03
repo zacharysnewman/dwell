@@ -38,6 +38,9 @@ const PERMISSIONS: TableDefinition<(&[u8; 32], u8), PermissionRow> =
     TableDefinition::new("permissions");
 /// World state id → canonical state string.
 const BLOCK_STATES: TableDefinition<u32, &str> = TableDefinition::new("block_states");
+/// Moving body id → its record (`encode_body`; docs/BUILT_BODIES.md §7): its kind, pose,
+/// velocities and cells, their states by name. Rewritten whole on each save that carries bodies.
+const BODIES: TableDefinition<u32, &[u8]> = TableDefinition::new("bodies");
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct WorldMeta {
@@ -91,6 +94,86 @@ pub struct PermissionEntry {
     pub at: i64,
 }
 
+/// A moving body saved with the world (docs/BUILT_BODIES.md §7): its kind (an index into the body
+/// kinds), settles so far, pose and velocities, and cells (offsets in its grid, runtime states).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct SavedBody {
+    pub id: u32,
+    pub kind: u8,
+    pub settles: u8,
+    pub position: [f64; 3],
+    /// A unit quaternion (x, y, z, w).
+    pub rotation: [f64; 4],
+    pub velocity: [f64; 3],
+    pub angular: [f64; 3],
+    pub cells: Vec<([i16; 3], StateId)>,
+}
+
+/// A body's record: kind, settles, pose (f64s), velocities, then each cell's offset and its state's
+/// canonical name (so a registry change keeps it, as chunks' state names do).
+fn encode_body(b: &SavedBody) -> Vec<u8> {
+    let mut out = vec![b.kind, b.settles];
+    for v in b
+        .position
+        .iter()
+        .chain(&b.rotation)
+        .chain(&b.velocity)
+        .chain(&b.angular)
+    {
+        out.extend_from_slice(&v.to_le_bytes());
+    }
+    out.extend_from_slice(&(b.cells.len() as u32).to_le_bytes());
+    for &(o, m) in &b.cells {
+        for v in o {
+            out.extend_from_slice(&v.to_le_bytes());
+        }
+        let name = dwell_blocks::try_info(m)
+            .map_or("dwell:air", |s| s.name)
+            .as_bytes();
+        out.extend_from_slice(&(name.len() as u16).to_le_bytes());
+        out.extend_from_slice(name);
+    }
+    out
+}
+
+/// [`encode_body`] read back; a cell whose state this build doesn't know is left out, a record cut
+/// short is none.
+fn decode_body(id: u32, bytes: &[u8]) -> Option<SavedBody> {
+    let mut at = 0usize;
+    let mut take = |n: usize| {
+        let s = bytes.get(at..at + n)?;
+        at += n;
+        Some(s)
+    };
+    let (kind, settles) = (take(1)?[0], take(1)?[0]);
+    let mut f = || take(8).map(|s| f64::from_le_bytes(s.try_into().expect("8 bytes")));
+    let position = [f()?, f()?, f()?];
+    let rotation = [f()?, f()?, f()?, f()?];
+    let velocity = [f()?, f()?, f()?];
+    let angular = [f()?, f()?, f()?];
+    let count = u32::from_le_bytes(take(4)?.try_into().ok()?) as usize;
+    let mut cells = Vec::with_capacity(count.min(4096));
+    for _ in 0..count {
+        let mut i = || take(2).map(|s| i16::from_le_bytes(s.try_into().expect("2 bytes")));
+        let o = [i()?, i()?, i()?];
+        let len = usize::from(u16::from_le_bytes(take(2)?.try_into().ok()?));
+        let name = std::str::from_utf8(take(len)?).ok()?;
+        if let Some(m) = parse_state(name).ok().filter(|&m| m != 0) {
+            cells.push((o, m));
+        }
+    }
+    Some(SavedBody {
+        id,
+        kind,
+        settles,
+        position,
+        rotation,
+        velocity,
+        angular,
+        cells,
+    })
+}
+
 /// Everything one autosave writes, committed in one transaction.
 #[derive(Clone, Debug, Default)]
 pub struct SaveBatch {
@@ -100,6 +183,8 @@ pub struct SaveBatch {
     /// LOD rows written or re-marked since the last save; `clear_lod` drops the table first.
     pub lod_sections: Vec<SavedLodSection>,
     pub clear_lod: bool,
+    /// The world's moving bodies now, replacing those saved before (None: leave them).
+    pub bodies: Option<Vec<SavedBody>>,
 }
 
 fn err(e: impl std::fmt::Display) -> String {
@@ -428,6 +513,23 @@ impl WorldDb {
         })
     }
 
+    /// The world's saved moving bodies (docs/BUILT_BODIES.md §7), in id order; an unreadable record
+    /// is left out.
+    pub fn bodies(&self) -> Vec<SavedBody> {
+        let Ok(txn) = self.db.begin_read() else {
+            return Vec::new();
+        };
+        let Ok(t) = txn.open_table(BODIES) else {
+            return Vec::new();
+        };
+        let Ok(rows) = t.iter() else {
+            return Vec::new();
+        };
+        rows.filter_map(|r| r.ok())
+            .filter_map(|(k, v)| decode_body(k.value(), v.value()))
+            .collect()
+    }
+
     /// The world's block states: world state id → canonical string.
     pub fn block_states(&self) -> Vec<String> {
         let _ = self.refresh_states();
@@ -685,6 +787,13 @@ impl WorldDb {
                         (p.display_name.as_str(), state.as_slice(), first, last),
                     )
                     .map_err(err)?;
+            }
+        }
+        if let Some(bodies) = &batch.bodies {
+            txn.delete_table(BODIES).map_err(err)?;
+            let mut t = txn.open_table(BODIES).map_err(err)?;
+            for b in bodies {
+                t.insert(b.id, encode_body(b).as_slice()).map_err(err)?;
             }
         }
         if let Some(hook) = &self.before_commit {

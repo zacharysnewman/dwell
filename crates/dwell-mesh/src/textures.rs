@@ -43,7 +43,7 @@ pub const ATLAS_SIZE: usize = CELL * ATLAS_CELLS;
 pub const ATLAS_TILES: usize = ATLAS_CELLS * ATLAS_CELLS;
 
 /// The tiles in atlas order (the registry's texture names).
-pub const TILE_ORDER: [&str; 23] = [
+pub const TILE_ORDER: [&str; 24] = [
     "plain",
     "grass",
     "grassSide",
@@ -70,6 +70,8 @@ pub const TILE_ORDER: [&str; 23] = [
     "dirtSnowSkirt",
     "snowyLeavesTop",
     "snowyLeavesSide",
+    // The build platform's boards (docs/BUILT_BODIES.md §3).
+    "planks",
     // The fallback look of a state whose look or textures this build lacks (synced from a server,
     // ADR 0038): a magenta and black checker, never content.
     MISSING_TILE,

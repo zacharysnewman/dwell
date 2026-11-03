@@ -980,6 +980,12 @@ impl Server {
             self.send_reliable(id, &m, Channel::Control);
         }
         self.send_reliable(id, &Message::Welcome(welcome), Channel::Control);
+        // The moving bodies already here (falling pieces, built bodies; docs/BUILT_BODIES.md §4):
+        // a player joining sees them, not only the ones that start after.
+        for i in 0..self.felling.pieces.len() {
+            let m = self.spawn_message(i);
+            self.send_reliable(id, &m, Channel::World);
+        }
         // A returning player continues where it left the world (§6.4), unless it was dead, or the
         // launch puts players at its spawn (keeping their health).
         let saved = self
@@ -1819,6 +1825,8 @@ impl Server {
             .collect();
         // Changes of this tick per chunk, in the order chunks were first touched.
         let mut changes = TickChanges::default();
+        // Bodies placed blocks start (cell, block, kind).
+        let mut new_bodies: Vec<([i32; 3], dwell_blocks::StateId, u8)> = Vec::new();
         let reach = region_reach(self.config.generator_version);
         let ids: Vec<SessionId> = self.sessions.keys().copied().collect();
         for id in ids {
@@ -1846,6 +1854,15 @@ impl Server {
                 }
                 s.edit_credit -= 1.0;
                 s.stats.edits_applied += 1;
+                // A block that starts a body (the build platform, docs/BUILT_BODIES.md §3) becomes
+                // one there instead of going in the grid; the client's predicted block rolls back.
+                if edit.action == BlockEditAction::Place
+                    && let Some(kind) = crate::felling::kind_started_by(outcome.material)
+                {
+                    new_bodies.push((outcome.cell, outcome.material, kind));
+                    s.edit_refused.push(seq);
+                    continue;
+                }
                 // Every cell of the piece (a 1 m block's two; docs/ITEMS.md) in one set of writes.
                 for (at, m) in outcome.writes(&mut self.world, medium_kept) {
                     changes.set(&mut self.world, at, m);
@@ -1889,6 +1906,21 @@ impl Server {
         }
         let edited = changes.cells();
         self.broadcast_changes(changes, VoxelModificationReason::Edit);
+        for (cell, m, kind) in new_bodies {
+            let i = self.felling.spawn_body(
+                &mut self.physics,
+                None,
+                kind,
+                0,
+                vec![([0, 0, 0], m)],
+                crate::felling::cell_centre(cell),
+                dwell_physics::DQuat::IDENTITY,
+                DVec3::ZERO,
+                DVec3::ZERO,
+            );
+            let spawn = self.spawn_message(i);
+            self.broadcast_world(&spawn);
+        }
         // What the edits left without support falls (docs/FELLING.md §2), tipped away from the
         // nearest player (who cut it, as a rule).
         let near = edited.first().and_then(|&c| {
@@ -1996,7 +2028,7 @@ impl Server {
     /// rate as a block edit is, within reach of their eye at the body's pose now: a break takes the
     /// cell (`Felling::break_cell`), and every client hears `BodyEdit` (the cells gone, a split's
     /// too), `EntitySpawn` for each part split off, or `EntityDespawn` for a body left empty.
-    /// Places (built bodies, B2) are not taken yet.
+    /// A place joins the body (a built one), clear of every player.
     fn apply_body_edits(&mut self) {
         let ids: Vec<SessionId> = self.sessions.keys().copied().collect();
         let reach = f64::from(players::REACH_DISTANCE) + 1.0;
@@ -2016,10 +2048,62 @@ impl Server {
                 let Some(eye) = eye.filter(|_| may_edit && s.edit_credit >= 1.0) else {
                     continue;
                 };
+                let cell = e.cell.map(i32::from);
+                if e.action == BlockEditAction::Place {
+                    // A block placed against a body's cell joins it (a built body; its kind's
+                    // `place`), clear of every player.
+                    if !dwell_world::edit::placeable(e.material) {
+                        continue;
+                    }
+                    let Some(p) = self.felling.pieces.iter().find(|p| p.id == e.body) else {
+                        continue;
+                    };
+                    let at = self.physics.position(p.body)
+                        + self.physics.rotation(p.body) * crate::felling::cell_offset_m(cell);
+                    if (at - eye).length() > reach {
+                        continue;
+                    }
+                    let radius = f64::from(self.config.player_config.body.radius);
+                    let bodies: Vec<(DVec3, f64)> = self
+                        .sessions
+                        .values()
+                        .filter_map(|s| s.handle)
+                        .map(|h| {
+                            let half = f64::from(self.players.half_height(h)) - radius;
+                            (self.players.position(&self.physics, h), half)
+                        })
+                        .collect();
+                    let taken = |w: DVec3| {
+                        bodies.iter().any(|&(c, half)| {
+                            let y = (w.y - c.y).clamp(-half, half);
+                            (w - (c + DVec3::new(0.0, y, 0.0))).length() < radius + 0.45
+                        })
+                    };
+                    let Some(new) = self.felling.place_cell(
+                        &mut self.physics,
+                        e.body,
+                        cell,
+                        e.face,
+                        e.material,
+                        &taken,
+                    ) else {
+                        continue;
+                    };
+                    if let Some(s) = self.sessions.get_mut(&id) {
+                        s.edit_credit -= 1.0;
+                    }
+                    self.broadcast_world(&Message::BodyEdit(BodyEdit {
+                        body: e.body,
+                        cells: vec![PieceCellNet {
+                            offset: new.map(|v| v as i16),
+                            state: e.material,
+                        }],
+                    }));
+                    continue;
+                }
                 if e.action != BlockEditAction::Break {
                     continue;
                 }
-                let cell = e.cell.map(i32::from);
                 let Some(p) = self.felling.pieces.iter().find(|p| p.id == e.body) else {
                     continue;
                 };
@@ -2499,6 +2583,8 @@ impl Server {
         if let Some(m) = &meta {
             self.tick = m.world_tick;
         }
+        // The moving bodies saved with it (docs/BUILT_BODIES.md §7), as they were.
+        self.felling.restore(&mut self.physics, db.bodies());
         let saved: HashMap<ChunkCoord, u32> = db.chunk_index().into_iter().collect();
         // The LOD cache (§6.6): restored as saved, rebuilt from the chunks when it belongs to
         // another generator version, and derived for saved chunks it does not cover.
@@ -2588,6 +2674,8 @@ impl Server {
             revisions.push((c, chunk.revision()));
         }
         batch.players = std::mem::take(&mut self.departed);
+        // The world's moving bodies, all of them each save (docs/BUILT_BODIES.md §7).
+        batch.bodies = Some(self.felling.saved(&self.physics));
         // LOD sections written since the last save; sections still to compute (dirty, or computing
         // now) are saved dirty, to recompute on load.
         let mut lod_saved = Vec::new();

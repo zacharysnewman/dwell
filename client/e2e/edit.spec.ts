@@ -151,7 +151,7 @@ test('local mode: every palette block can be picked from the hotbar, placed, and
   await ready(page);
   // The hotbar is built once the page has taken the join, which can be a frame after the terrain.
   // One slot per item (shared/items/items.json, docs/ITEMS.md).
-  await expect(page.locator('.hotbar-slot')).toHaveCount(13);
+  await expect(page.locator('.hotbar-slot')).toHaveCount(14);
   const slots = await page.locator('.hotbar-slot').count();
   const ground = await aim(page);
   expect(ground.face).toBe(2);
@@ -169,6 +169,9 @@ test('local mode: every palette block can be picked from the hotbar, placed, and
       .locator(`.hotbar-slot[data-slot="${String(slot)}"]`)
       .getAttribute('title');
     if (title === 'Ladder') continue;
+    // The build platform starts a moving body instead of going in the grid (docs/BUILT_BODIES.md;
+    // the server's tests/built_bodies.rs).
+    if (title === 'Build platform') continue;
     // Leaves placed on the ground stay there (docs/FELLING.md §2: loose leaves fall only to land).
 
     // Back to the ground cell, and wait until it is the target: the target is the previous look's

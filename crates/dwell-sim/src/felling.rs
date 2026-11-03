@@ -53,6 +53,18 @@ pub struct BodyKind {
     pub settles: bool,
     /// Saved with the world.
     pub saved: bool,
+    /// Blocks that, placed, start a body of this kind instead of going in the world's grid.
+    pub started_by: &'static [&'static str],
+}
+
+/// The kind a placed block of state `m` starts a body of (its block in a kind's `startedBy`).
+pub fn kind_started_by(m: StateId) -> Option<u8> {
+    let name = info(m).name;
+    let block = name.split('[').next().unwrap_or(name);
+    BODY_KINDS
+        .iter()
+        .position(|k| k.started_by.contains(&block))
+        .map(|i| i as u8)
 }
 
 // Included (not a `#[path]` module) so rustfmt leaves the generated file as written.
@@ -115,12 +127,25 @@ fn carriers_first(mut cells: Vec<([i32; 3], StateId)>) -> (Vec<([i32; 3], StateI
     (cells, n)
 }
 
-/// The piece's boxes for its cells (carriers first, `carriers` of them).
-fn piece_boxes(cells: &[([i32; 3], StateId)], carriers: usize) -> Vec<PieceCell> {
+/// The piece's boxes for its cells (carriers first, `carriers` of them). In a body that isn't
+/// natural (`kind` > 0: a built one) every solid, non-passable block collides with everything.
+fn piece_boxes(cells: &[([i32; 3], StateId)], carriers: usize, kind: u8) -> Vec<PieceCell> {
     cells
         .iter()
         .enumerate()
-        .map(|(k, &(o, m))| piece_box(o, m, k < carriers, carriers == 0))
+        .map(|(k, &(o, m))| {
+            if kind == 0 {
+                return piece_box(o, m, k < carriers, carriers == 0);
+            }
+            let s = info(m);
+            let mut b = piece_box(o, m, true, false);
+            b.collide = if s.solid && !s.passable {
+                Collide::All
+            } else {
+                Collide::None
+            };
+            b
+        })
         .collect()
 }
 
@@ -454,7 +479,7 @@ impl Felling {
                 })
                 .collect();
             let (cells, carriers) = carriers_first(rel);
-            let boxes = piece_boxes(&cells, carriers);
+            let boxes = piece_boxes(&cells, carriers, self.pieces[i].kind);
             let mass: f64 = boxes.iter().map(|b| b.mass).sum();
             let reach = boxes.iter().map(|b| b.center.length()).fold(0.0, f64::max) + 0.9;
             let new = physics.add_piece(origin, &boxes, false);
@@ -481,7 +506,7 @@ impl Felling {
             out.spawned.push(self.pieces.len() - 1);
         }
         let (cells, carriers) = carriers_first(keep);
-        let boxes = piece_boxes(&cells, carriers);
+        let boxes = piece_boxes(&cells, carriers, self.pieces[i].kind);
         physics.set_piece_cells(body, &boxes);
         let p = &mut self.pieces[i];
         p.heavy = boxes.iter().map(|b| b.mass).sum::<f64>() >= self.rules.pushable_mass;
@@ -490,6 +515,136 @@ impl Felling {
         p.carriers = carriers;
         p.still = 0;
         Some(out)
+    }
+
+    /// Places `material` in the cell against face `face` (0 +X, 1 −X, 2 +Y, 3 −Y, 4 +Z, 5 −Z, in its
+    /// frame) of the cell `cell` of the body `id` (docs/BUILT_BODIES.md §4): it joins the body. The
+    /// new cell, or None if there is no such body or cell, its kind can't be built on, or the cell
+    /// is taken (`taken`: given its world centre, e.g. a player there).
+    pub fn place_cell(
+        &mut self,
+        physics: &mut Physics,
+        id: u32,
+        cell: [i32; 3],
+        face: u8,
+        material: StateId,
+        taken: &dyn Fn(DVec3) -> bool,
+    ) -> Option<[i32; 3]> {
+        let i = self.pieces.iter().position(|p| p.id == id)?;
+        let p = &self.pieces[i];
+        if !body_kind(p.kind).place || !p.cells.iter().any(|&(o, _)| o == cell) {
+            return None;
+        }
+        let d = dwell_world::edit::FACE_DIRS.get(usize::from(face))?;
+        let new = [cell[0] + d[0], cell[1] + d[1], cell[2] + d[2]];
+        if p.cells.iter().any(|&(o, _)| o == new) {
+            return None;
+        }
+        let at = physics.position(p.body) + physics.rotation(p.body) * offset_m(new);
+        if taken(at) {
+            return None;
+        }
+        let mut cells = p.cells.clone();
+        cells.push((new, material));
+        let (cells, carriers) = carriers_first(cells);
+        let boxes = piece_boxes(&cells, carriers, p.kind);
+        physics.set_piece_cells(p.body, &boxes);
+        let p = &mut self.pieces[i];
+        p.heavy = boxes.iter().map(|b| b.mass).sum::<f64>() >= self.rules.pushable_mass;
+        p.reach = boxes.iter().map(|b| b.center.length()).fold(0.0, f64::max) + 0.9;
+        p.cells = cells;
+        p.carriers = carriers;
+        p.still = 0;
+        Some(new)
+    }
+
+    /// Starts a body of `kind` with `cells` (offsets in its grid, its reference cell's centre at
+    /// `position`), at its pose and velocities (a placed build platform, docs/BUILT_BODIES.md §3; a
+    /// body loaded with the world, §7). Its index in `pieces`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn spawn_body(
+        &mut self,
+        physics: &mut Physics,
+        id: Option<u32>,
+        kind: u8,
+        settles: u8,
+        cells: Vec<([i32; 3], StateId)>,
+        position: DVec3,
+        rotation: DQuat,
+        velocity: DVec3,
+        angular: DVec3,
+    ) -> usize {
+        let (cells, carriers) = carriers_first(cells);
+        let boxes = piece_boxes(&cells, carriers, kind);
+        let mass: f64 = boxes.iter().map(|b| b.mass).sum();
+        let reach = boxes.iter().map(|b| b.center.length()).fold(0.0, f64::max) + 0.9;
+        let body = physics.add_piece(position, &boxes, false);
+        physics.set_rotation(body, rotation);
+        physics.set_velocity(body, velocity);
+        physics.set_angular_velocity(body, angular);
+        let id = id.unwrap_or(self.next_id + 1);
+        self.next_id = self.next_id.max(id);
+        self.pieces.push(Falling {
+            id,
+            body,
+            cells,
+            carriers,
+            kind,
+            settles,
+            still: 0,
+            age: 0,
+            hurt: Vec::new(),
+            heavy: mass >= self.rules.pushable_mass,
+            held: false,
+            reach,
+        });
+        self.pieces.len() - 1
+    }
+
+    /// The bodies to save with the world (their kind's `saved`; docs/BUILT_BODIES.md §7).
+    pub fn saved(&self, physics: &Physics) -> Vec<dwell_storage::SavedBody> {
+        self.pieces
+            .iter()
+            .filter(|p| body_kind(p.kind).saved)
+            .map(|p| {
+                let q = physics.rotation(p.body);
+                dwell_storage::SavedBody {
+                    id: p.id,
+                    kind: p.kind,
+                    settles: p.settles,
+                    position: physics.position(p.body).to_array(),
+                    rotation: [q.x, q.y, q.z, q.w],
+                    velocity: physics.velocity(p.body).to_array(),
+                    angular: physics.angular_velocity(p.body).to_array(),
+                    cells: p
+                        .cells
+                        .iter()
+                        .map(|&(o, m)| (o.map(|v| v as i16), m))
+                        .collect(),
+                }
+            })
+            .collect()
+    }
+
+    /// Brings back the bodies saved with the world, as they were.
+    pub fn restore(&mut self, physics: &mut Physics, bodies: Vec<dwell_storage::SavedBody>) {
+        for b in bodies.into_iter().filter(|b| !b.cells.is_empty()) {
+            let r = b.rotation;
+            self.spawn_body(
+                physics,
+                Some(b.id),
+                b.kind,
+                b.settles,
+                b.cells
+                    .iter()
+                    .map(|&(o, m)| (o.map(i32::from), m))
+                    .collect(),
+                DVec3::from_array(b.position),
+                DQuat::from_xyzw(r[0], r[1], r[2], r[3]).normalize(),
+                DVec3::from_array(b.velocity),
+                DVec3::from_array(b.angular),
+            );
+        }
     }
 
     /// The box (world metres) round each piece the terrain collision must cover over the next

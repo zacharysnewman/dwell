@@ -103,7 +103,8 @@ fn the_palette_is_the_registrys_placeable_states() {
             "dwell:tall_grass",
             "dwell:torch",
             "dwell:snowy_grass[flooded=false]",
-            "dwell:snowy_leaves"
+            "dwell:snowy_leaves",
+            "dwell:build_platform"
         ]
     );
     assert!(!placeable(dwell_blocks::STATES.len() as StateId));

@@ -155,7 +155,7 @@ splits and the floating on both faces (`dwell_world::both_faces!`).
 - **B1 — Editing pieces** **[built, 0.41.0]**. Targeting bodies on the client; `BodyEditRequest` / `BodyEdit`; break a
   cell of any piece, splits, the body kinds as data (`natural` only so far). Protocol change: the
   compatibility line opens here (0.41.0, the owner raises `package.json`).
-- **B2 — The build platform and built bodies.** The platform block and support role; built bodies
+- **B2 — The build platform and built bodies** **[built, 0.41.1]**. The platform block and support role; built bodies
   (place onto them, never settle); saving bodies with the world (the save format change, same line).
 - **B3 — Floating.** Buoyancy and water drag per cell; natural and built bodies.
 - **Later:** driving (seats, rudders, wheels), hollow hulls, interest management, edit prediction.
@@ -176,6 +176,26 @@ logs settled, the split's 2 cells their own piece, a place refused); `pieces.rs`
 body's frame and an edit's re-mesh; the body kinds' data tests. Checked on the GPU: a falling log
 column's cell broken mid-fall, 8 of 10 logs settled (10 less the cut and the broken one). Not yet:
 a player joining mid-fall isn't sent the pieces already falling (needed for saved bodies, B2).
+
+**B2 as built.** `dwell:build_platform` (planks, wood: 600 kg/m³) is in the hotbar (`drag: none`);
+`shared/physics/bodies.json`'s `built` kind lists it in `startedBy` (validated against the registry).
+A place that passes the block-edit checks with a block some kind starts becomes a body of that kind
+there (`Felling::spawn_body`), not a write to the grid; the client's predicted block rolls back (the
+edit is refused in its ack) and `EntitySpawn` (kind 1) follows. Aiming at a built body, Place sends
+`BodyEditRequest` with the selected block (`edit_body`); the server's `Felling::place_cell` adds the
+cell against the face aimed at (its kind's `place`; refused where a player's capsule is within
+0.45 m of the cell's centre beyond its radius) and every client hears `BodyEdit`. Built bodies never
+settle (`Felling::step` skips kinds that don't). Every body is sent to a player joining (after
+`Welcome`). Bodies are saved with the world on every save (`SaveBatch::bodies`, the `bodies` table:
+kind, settles, pose, velocities, cells by state name; `dwell-storage` `encode_body`) and brought back
+on load (`Felling::restore`). Tests: `dwell-sim` `tests/built_bodies.rs` (a platform starts a body
+that takes a log on its top, never settles, is sent to a joiner, and comes back after a save over the
+same world), `dwell-storage` the bodies' round trip; the page's debug state reports `bodyTarget`.
+Checked on the GPU: a platform placed, two logs built onto it, the page reloaded, the raft where it
+was. **Deviation (§5):** bodies far from every player aren't frozen: the terrain collision loads
+round every moving body anyway (`Felling::terrain_boxes`, budgeted per tick since 0.40.5), so none
+falls through unloaded ground; idle built bodies keep simulating (Rapier sleep for them is later).
+A world opened by 0.41.0 (before B2) ignores the bodies table: its bodies are dropped if it saves.
 
 ## 12. Not in this design
 
