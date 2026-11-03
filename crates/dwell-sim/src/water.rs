@@ -52,6 +52,8 @@ pub use flow_generated::FLOW;
 const MAX_ROWS: usize = 512;
 /// Outlets whose way is found again a water tick at most.
 const ROUTES_PER_TICK: usize = 64;
+/// Two basins that meet merge when their levels are this close (m).
+const MERGE_GAP: f64 = 0.02;
 
 /// The weir coefficient of a liquid state, if it flows.
 fn weir_of(m: StateId) -> Option<f64> {
@@ -193,8 +195,18 @@ pub struct Basin {
     bottom: i32,
     /// m³ of liquid in it.
     pub volume: f64,
-    /// Its inflow (m³/s, real): W1's stand-in for runoff.
-    pub inflow: f64,
+    /// Its inflows (m³/s, real), each where it comes in: W1's stand-in for runoff. Kept by place
+    /// so that a basin that comes apart (a flood over a river's steps receding) leaves each part
+    /// the water that comes into it.
+    inflows: Vec<([i32; 3], f64)>,
+    /// The outlets (source basin, its cell) whose flow has been taken off this basin's inflows:
+    /// found as it was, its inflow already held what they send it.
+    credited: HashSet<(u32, [i32; 3])>,
+    /// Basins it met at its rows and didn't merge with (their level above its own): merged when
+    /// the levels meet.
+    neighbours: Vec<u32>,
+    /// Its volume a tick ago (falling: a flood receding).
+    last_volume: f64,
     pub outlets: Vec<Outlet>,
     /// The cells drawn as liquid.
     wet: HashSet<[i32; 3]>,
@@ -210,6 +222,11 @@ pub struct Basin {
 }
 
 impl Basin {
+    /// Its inflow (m³/s, real).
+    pub fn inflow(&self) -> f64 {
+        self.inflows.iter().map(|(_, q)| q).sum()
+    }
+
     fn capacity(&self) -> f64 {
         self.rows.iter().map(|r| r.len() as f64 * CELL_H).sum()
     }
@@ -412,8 +429,8 @@ impl Water {
                 self.brought += total * dt;
             } else {
                 b.volume -= total * dt;
-                b.volume += b.inflow * dt;
-                self.brought += b.inflow * dt;
+                b.volume += b.inflow() * dt;
+                self.brought += b.inflow() * dt;
             }
             for o in &b.outlets {
                 match o.target {
@@ -519,7 +536,7 @@ impl Water {
                 if let Some(b) = self.basins.get_mut(&id)
                     && !b.reservoir
                 {
-                    b.inflow = 0.0;
+                    b.inflows.clear();
                 }
                 dirty.insert(id);
             }
@@ -622,7 +639,10 @@ impl Water {
                     rows: Vec::new(),
                     bottom: surface,
                     volume: 0.0,
-                    inflow: 0.0,
+                    inflows: Vec::new(),
+                    credited: HashSet::default(),
+                    neighbours: Vec::new(),
+                    last_volume: 0.0,
                     outlets: Vec::new(),
                     wet: HashSet::default(),
                     capped: false,
@@ -652,7 +672,10 @@ impl Water {
             rows,
             bottom,
             volume,
-            inflow: 0.0,
+            inflows: Vec::new(),
+            credited: HashSet::default(),
+            neighbours: Vec::new(),
+            last_volume: volume,
             outlets: Vec::new(),
             wet: seen.iter().copied().collect(),
             capped: false,
@@ -661,13 +684,18 @@ impl Water {
             hi: seed,
             arriving: 0.0,
         };
-        // Its inflow: what left it as it was (steady then).
+        // Its inflow: what left it as it was (steady then), coming in at its cell farthest from its
+        // ways out (a river pool's upstream end).
         let outlets = scan_outlets(&view, &b, &self.owner, id);
         let level = b.level();
-        b.inflow = outlets
+        let rate: f64 = outlets
             .iter()
             .map(|o| o.rate(level, weir, f64::NEG_INFINITY))
             .sum();
+        if rate > 0.0 {
+            let entry = farthest_from(&seen, outlets.iter().map(|o| o.from));
+            b.inflows.push((entry, rate));
+        }
         for c in b.cells() {
             self.owner.insert(c, id);
         }
@@ -737,8 +765,12 @@ impl Water {
                 }
                 lr += 1;
             }
-            // What it met at its rows: merged, then found again.
+            // What it met at its rows: merged once the levels meet (until then the other's
+            // liquid is a wall to it, and the other falls into it), then found again.
             let mut merged = false;
+            let mut neighbours: Vec<u32> = Vec::new();
+            let mine = self.basins[&id].level();
+            let receding = self.basins[&id].volume < self.basins[&id].last_volume;
             for c in met {
                 let other = match self.owner.get(&c) {
                     Some(&o) if o != id => Some(o),
@@ -747,15 +779,21 @@ impl Water {
                 };
                 if let Some(o) = other
                     && o != id
-                    && self.basins.get(&o).is_some_and(|b| !b.reservoir)
+                    && let Some(ob) = self.basins.get(&o)
+                    && !ob.reservoir
                 {
-                    self.merge(id, o);
-                    merged = true;
+                    if mine >= ob.level() - MERGE_GAP && !receding {
+                        self.merge(id, o);
+                        merged = true;
+                    } else if !neighbours.contains(&o) {
+                        neighbours.push(o);
+                    }
                 }
             }
             if merged {
                 continue;
             }
+            self.basins.get_mut(&id).expect("basin").neighbours = neighbours;
             let b = self.basins.get_mut(&id).expect("basin");
             for c in b.cells() {
                 if self.owner.get(&c) == Some(&id) {
@@ -828,7 +866,9 @@ impl Water {
         }
         let me = self.basins.get_mut(&a).expect("basin");
         me.volume += other.volume;
-        me.inflow += other.inflow;
+        me.inflows.extend(other.inflows);
+        me.credited.extend(other.credited);
+        me.neighbours.retain(|&n| n != b);
         me.wet.extend(other.wet);
         // Its rows into ours, by local row.
         let lo = me.bottom.min(other.bottom);
@@ -905,7 +945,44 @@ impl Water {
             {
                 o.target = target;
             }
+            if let Target::Basin(t) = target {
+                self.credit(id, i, t);
+            }
         }
+    }
+
+    /// Outlet `i` of basin `id` runs into basin `t`: the first time, its flow comes off `t`'s
+    /// inflows (nearest where it lands first), which held it already (`t` was found steady, its
+    /// inflow what left it, this flow included).
+    fn credit(&mut self, id: u32, i: usize, t: u32) {
+        if t == id {
+            return;
+        }
+        let Some(b) = self.basins.get(&id) else {
+            return;
+        };
+        let Some(o) = b.outlets.get(i).copied() else {
+            return;
+        };
+        let below = self.basins.get(&t).map_or(f64::NEG_INFINITY, Basin::level);
+        let mut q = o.rate(b.level(), b.weir, below);
+        let Some(tb) = self.basins.get_mut(&t) else {
+            return;
+        };
+        if tb.reservoir || !tb.credited.insert((id, o.from)) {
+            return;
+        }
+        let d2 = |c: [i32; 3]| -> i64 { (0..3).map(|a| i64::from(c[a] - o.from[a]).pow(2)).sum() };
+        tb.inflows.sort_by_key(|(c, _)| d2(*c));
+        for (_, rate) in &mut tb.inflows {
+            let take = q.min(*rate);
+            *rate -= take;
+            q -= take;
+            if q <= 0.0 {
+                break;
+            }
+        }
+        tb.inflows.retain(|(_, r)| *r > 1e-12);
     }
 
     /// A new, empty basin at the open cell `c` where running liquid pools.
@@ -930,7 +1007,10 @@ impl Water {
                 rows: vec![vec![c]],
                 bottom: f.row(c[1]),
                 volume: 0.0,
-                inflow: 0.0,
+                inflows: Vec::new(),
+                credited: HashSet::default(),
+                neighbours: Vec::new(),
+                last_volume: 0.0,
                 outlets: Vec::new(),
                 wet: HashSet::default(),
                 capped: false,
@@ -976,12 +1056,15 @@ impl Water {
                 self.rebuild(world, id, writes);
             }
         }
+        self.meet_neighbours(world, id, writes);
+        self.spin_off_shelves(world, id, writes);
         let Some(b) = self.basins.get_mut(&id) else {
             return;
         };
-        if b.volume <= 1e-6 && b.inflow <= 0.0 && b.arriving <= 0.0 {
+        if b.volume <= 1e-6 && b.inflow() <= 0.0 && b.arriving <= 0.0 {
             b.volume = 0.0;
         }
+        b.last_volume = b.volume;
         let want = b.wet_now();
         let liquid = b.liquid;
         let gone: Vec<[i32; 3]> = b.wet.difference(&want).copied().collect();
@@ -1003,7 +1086,7 @@ impl Water {
             }
         }
         b.wet = want;
-        let empty = b.volume <= 0.0 && b.inflow <= 0.0 && b.arriving <= 0.0;
+        let empty = b.volume <= 0.0 && b.inflow() <= 0.0 && b.arriving <= 0.0;
         if empty {
             let b = self.basins.remove(&id).expect("basin");
             for c in b.cells() {
@@ -1015,6 +1098,146 @@ impl Water {
                 if o.target == Target::Basin(id) {
                     o.target = Target::Unresolved;
                 }
+            }
+        }
+    }
+
+    /// A rising basin whose level has reached a basin it met (a higher pool it was filling
+    /// toward) merges with it.
+    fn meet_neighbours(
+        &mut self,
+        world: &mut VoxelWorld,
+        id: u32,
+        writes: &mut Vec<([i32; 3], StateId)>,
+    ) {
+        let Some(b) = self.basins.get(&id) else {
+            return;
+        };
+        if b.volume < b.last_volume || b.neighbours.is_empty() {
+            return;
+        }
+        let level = b.level();
+        let meet: Vec<u32> = b
+            .neighbours
+            .iter()
+            .copied()
+            .filter(|n| {
+                self.basins
+                    .get(n)
+                    .is_some_and(|o| !o.reservoir && level >= o.level() - MERGE_GAP)
+            })
+            .collect();
+        if meet.is_empty() {
+            return;
+        }
+        for n in meet {
+            if self.basins.contains_key(&n) {
+                self.merge(id, n);
+            }
+        }
+        self.rebuild(world, id, writes);
+    }
+
+    /// A receding basin whose surface row is about to dry: the parts of that row on a floor of
+    /// their own (a shelf: solid under it, not the basin) that water comes into become basins of
+    /// their own, keeping their water and inflow (a flood over a river's steps receding leaves
+    /// each step its pool).
+    fn spin_off_shelves(
+        &mut self,
+        world: &mut VoxelWorld,
+        id: u32,
+        writes: &mut Vec<([i32; 3], StateId)>,
+    ) {
+        let Some(b) = self.basins.get(&id) else {
+            return;
+        };
+        let (k, frac) = b.fill();
+        if b.reservoir || k == 0 || frac >= 0.5 || b.volume >= b.last_volume || b.inflows.is_empty()
+        {
+            return;
+        }
+        let f = b.face;
+        let row: HashSet<[i32; 3]> = b.rows[k].iter().copied().collect();
+        let under: HashSet<[i32; 3]> = b.rows[k - 1].iter().copied().collect();
+        let view = View { world, old: None };
+        let shelf: HashSet<[i32; 3]> = row
+            .iter()
+            .copied()
+            .filter(|&c| {
+                let d = up(f, c, -1);
+                !under.contains(&d) && view.kind(d) == Kind::Solid
+            })
+            .collect();
+        let mut parts: Vec<HashSet<[i32; 3]>> = Vec::new();
+        let mut seen: HashSet<[i32; 3]> = HashSet::default();
+        for &start in &shelf {
+            if !seen.insert(start) {
+                continue;
+            }
+            let mut part = HashSet::default();
+            let mut q = vec![start];
+            while let Some(c) = q.pop() {
+                part.insert(c);
+                for s in SIDES {
+                    let n = side(c, s);
+                    if shelf.contains(&n) && seen.insert(n) {
+                        q.push(n);
+                    }
+                }
+            }
+            if b.inflows.iter().any(|(c, _)| part.contains(c)) {
+                parts.push(part);
+            }
+        }
+        if parts.is_empty() {
+            return;
+        }
+        let mut made = Vec::new();
+        for part in parts {
+            let main = self.basins.get_mut(&id).expect("basin");
+            let moved = part.len() as f64 * CELL_H * frac;
+            main.volume -= moved;
+            main.last_volume -= moved;
+            main.rows[k].retain(|c| !part.contains(c));
+            let inflows: Vec<([i32; 3], f64)> = main
+                .inflows
+                .iter()
+                .filter(|(c, _)| part.contains(c))
+                .copied()
+                .collect();
+            main.inflows.retain(|(c, _)| !part.contains(c));
+            let wet: HashSet<[i32; 3]> = main.wet.intersection(&part).copied().collect();
+            main.wet.retain(|c| !part.contains(c));
+            let mut nb = main.clone();
+            let pid = self.next;
+            self.next += 1;
+            nb.id = pid;
+            nb.rows = vec![part.iter().copied().collect()];
+            nb.bottom = f.row(part.iter().next().expect("cells")[1]);
+            nb.volume = moved;
+            nb.last_volume = moved;
+            nb.inflows = inflows;
+            nb.wet = wet;
+            nb.outlets = Vec::new();
+            nb.neighbours = Vec::new();
+            for &c in &part {
+                self.owner.insert(c, pid);
+            }
+            self.basins.insert(pid, nb);
+            made.push(pid);
+        }
+        self.retarget_all(id);
+        self.rebuild(world, id, writes);
+        for pid in made {
+            self.rebuild(world, pid, writes);
+        }
+    }
+
+    /// Outlets running into `id` find their way again (it came apart: they may land in a part).
+    fn retarget_all(&mut self, id: u32) {
+        for o in self.basins.values_mut().flat_map(|b| b.outlets.iter_mut()) {
+            if o.target == Target::Basin(id) {
+                o.target = Target::Unresolved;
             }
         }
     }
@@ -1096,7 +1319,23 @@ impl Water {
             nb.rows = rows;
             nb.bottom = lo;
             nb.volume = share(part);
-            nb.inflow = if n == 0 { template.inflow } else { 0.0 };
+            nb.inflows = template
+                .inflows
+                .iter()
+                .filter(|(c, _)| part.contains(c))
+                .copied()
+                .collect();
+            if n == 0 {
+                // An inflow at a cell no part holds stays with the largest.
+                let all: HashSet<[i32; 3]> = parts.iter().flatten().copied().collect();
+                nb.inflows.extend(
+                    template
+                        .inflows
+                        .iter()
+                        .filter(|(c, _)| !all.contains(c))
+                        .copied(),
+                );
+            }
             nb.wet = template.wet.intersection(part).copied().collect();
             nb.outlets = Vec::new();
             for &c in part {
@@ -1105,6 +1344,7 @@ impl Water {
             self.basins.insert(pid, nb);
             made.push(pid);
         }
+        self.retarget_all(id);
         for pid in made {
             let view = View { world, old: None };
             let outlets = scan_outlets(&view, &self.basins[&pid], &self.owner, pid);
@@ -1252,6 +1492,52 @@ fn scan_outlets(
         }
     }
     out
+}
+
+/// The cell of `cells` farthest (in steps through them) from those beside `from`: where a pool's
+/// water comes in, as far as it can be from where it goes out. Ties: the least cell.
+fn farthest_from(cells: &HashSet<[i32; 3]>, from: impl Iterator<Item = [i32; 3]>) -> [i32; 3] {
+    let near = |c: [i32; 3]| {
+        let mut n: Vec<[i32; 3]> = SIDES.iter().map(|&s| side(c, s)).collect();
+        n.push([c[0], c[1] + 1, c[2]]);
+        n.push([c[0], c[1] - 1, c[2]]);
+        n
+    };
+    let mut dist: HashMap<[i32; 3], u32> = HashMap::default();
+    let mut frontier: Vec<[i32; 3]> = Vec::new();
+    for o in from {
+        for n in near(o) {
+            if cells.contains(&n) && !dist.contains_key(&n) {
+                dist.insert(n, 0);
+                frontier.push(n);
+            }
+        }
+    }
+    let mut d = 0;
+    while !frontier.is_empty() {
+        d += 1;
+        let mut next = Vec::new();
+        for c in frontier {
+            for n in near(c) {
+                if cells.contains(&n) && !dist.contains_key(&n) {
+                    dist.insert(n, d);
+                    next.push(n);
+                }
+            }
+        }
+        frontier = next;
+    }
+    cells
+        .iter()
+        .copied()
+        .max_by(|a, b| {
+            let (da, db) = (
+                dist.get(a).copied().unwrap_or(u32::MAX),
+                dist.get(b).copied().unwrap_or(u32::MAX),
+            );
+            da.cmp(&db).then(b.cmp(a))
+        })
+        .expect("cells")
 }
 
 /// Where running liquid from an open cell ends.

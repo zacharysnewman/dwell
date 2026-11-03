@@ -10,6 +10,26 @@ None. Report new ones here.
 
 ## Fixed
 
+### 16. Blocks in a riverbed flooded a stepped fall, then the river drained dry (fixed in 0.42.1)
+
+*Reported 2026-11-03 (0.42.0, a local terrain world).* "I added a row of 3 half blocks to the bottom
+of the river, just below a ~3 block high stepped water fall. The river flooded up to the full height
+of the waterfall top … then it filled downstream, then it suddenly drained completely."
+
+- **Cause:** water flow W1 (docs/WATER_FLOW.md) found the pool and the pools above it together, each
+  with the inflow that left it, so the fall's water was counted twice and the pool rose; rising, it
+  merged with the pool above at once, though that pool's surface was higher, and so up the falls; the
+  merged river had one level, set by its lowest way out, which left the upper steps dry, their
+  inflow no longer where it came in.
+- **Fix:** a basin's inflow from a pool now found upstream is taken off it (`Water::credit`); basins
+  merge only when their levels meet (until then the higher pool's water is a wall, and it falls into
+  the lower); inflows are kept where they come in, and a receding flood leaves each step that water
+  comes into its own pool (`spin_off_shelves`).
+- **Test:** `blocks_set_in_a_riverbed_under_a_stepped_fall_change_nothing` (three pools falling two
+  rows each, three cells set under the fall; red on 0.42.0),
+  `a_pool_and_the_pool_above_it_found_together_count_the_falls_water_once`,
+  `a_flood_over_a_rivers_steps_leaves_each_step_its_water_when_it_recedes` (both faces; red before).
+
 ### 15. Cliffs walled the rivers in, and water stood open beside them (fixed in 0.35.0)
 
 *Reported 2026-10-27 (0.34.0, the cliffs world, seed 3764472973 face A near (-3794, 240, -5614)).*

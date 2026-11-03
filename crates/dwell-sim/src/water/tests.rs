@@ -111,9 +111,9 @@ dwell_world::both_faces!(
         // Its flow over the fall before the dam: three cells over a sill half a row down.
         let want = 1.7 * 3.0 * 0.5f64.powf(1.5);
         assert!(
-            (b.inflow - want).abs() < 1e-6,
+            (b.inflow() - want).abs() < 1e-6,
             "inflow {} (want {want})",
-            b.inflow
+            b.inflow()
         );
         let stored0 = s.water.stored();
         s.run(600, 1.0);
@@ -157,7 +157,7 @@ dwell_world::both_faces!(
         s.edit(&[[10, 2, 4], [10, 3, 4]], M.air);
         s.run(1, 0.0);
         let lake = s.water.basin_at(s.cell(4, 0, 4)).expect("the lake").clone();
-        assert_eq!(lake.inflow, 0.0, "a closed lake has no inflow");
+        assert_eq!(lake.inflow(), 0.0, "a closed lake has no inflow");
         s.run(400, 1.0);
         for x in 0..=9 {
             assert!(
@@ -201,9 +201,9 @@ dwell_world::both_faces!(
         let pool = s.water.basin_at(s.cell(4, 0, 1)).expect("the pool").clone();
         let want = 1.7 * 0.5f64.powf(1.5);
         assert!(
-            (pool.inflow - want).abs() < 1e-6,
+            (pool.inflow() - want).abs() < 1e-6,
             "inflow {} (want {want})",
-            pool.inflow
+            pool.inflow()
         );
         s.run(600, 1.0);
         let old = s.outlet_from(11, 1, 1).map_or(0.0, |o| o.flow);
@@ -260,6 +260,120 @@ dwell_world::both_faces!(
         let sea_now = s.water.basin_at(s.cell(69, -1, 32)).expect("the sea");
         assert_eq!(sea_now.level(), sea.level(), "the sea's level holds");
         assert!(s.wet(10, -1, 10), "the sea is still there");
+    }
+);
+
+/// A river of two steps along +x (z 0–2, walled to row 5): the upper pool (x −10 to −1, floor row
+/// 0, water row 1) falls at x = 0 into the lower pool (x 0–9, floor row −1, water row 0), which falls
+/// at x = 10 into a walled catch basin below.
+fn two_steps(f: FaceFrame) -> Scene {
+    let mut s = Scene::with_air(f, [-16, -8, -8], [32, 8, 16]);
+    let stone = require("dwell:stone");
+    s.fill([-11, -1, -1], [9, -1, 3], stone);
+    s.fill([-11, 0, -1], [-1, 0, 3], stone);
+    s.fill([-11, -1, -1], [9, 5, -1], stone);
+    s.fill([-11, -1, 3], [9, 5, 3], stone);
+    s.fill([-11, -1, -1], [-11, 5, 3], stone);
+    s.fill([9, -6, -3], [21, -6, 5], stone);
+    s.fill([9, -6, -3], [9, -3, 5], stone);
+    s.fill([21, -6, -3], [21, -3, 5], stone);
+    s.fill([9, -6, -3], [21, -3, -3], stone);
+    s.fill([9, -6, 5], [21, -3, 5], stone);
+    s.fill([0, 0, 0], [9, 0, 2], M.water);
+    s.fill([-10, 1, 0], [-1, 1, 2], M.water);
+    s
+}
+
+dwell_world::both_faces!(
+    /// Owner, 2026-11-03: half blocks placed in a river's bed below a stepped waterfall flooded it
+    /// to the top of the fall. Found together, the lower pool's inflow (what left it) already held
+    /// what the upper pool sends it, which then arrived again: counted once, nothing changes. Red
+    /// before: the lower pool rose into row 1.
+    fn a_pool_and_the_pool_above_it_found_together_count_the_falls_water_once(f: FaceFrame) {
+        let mut s = two_steps(f);
+        // Edits that change nothing, beside each pool.
+        s.edit(&[[-5, 2, 1], [5, 1, 1]], M.air);
+        s.run(600, 1.0);
+        for x in [0, 5, 8] {
+            assert!(!s.wet(x, 1, 1), "the lower pool rose at x {x}");
+            assert!(s.wet(x, 0, 1), "the lower pool is there at x {x}");
+        }
+        for x in [-10, -5, -1] {
+            assert!(s.wet(x, 1, 1), "the upper pool is there at x {x}");
+        }
+    }
+);
+
+dwell_world::both_faces!(
+    /// Owner, 2026-11-03: a flood that joined a river's steps drained the upper ones dry when it
+    /// went. A dam floods the lower pool up over the upper one (one basin); taken away, the flood
+    /// recedes and the upper pool, fed where its water comes in, stays. Red before: dry.
+    fn a_flood_over_a_rivers_steps_leaves_each_step_its_water_when_it_recedes(f: FaceFrame) {
+        let mut s = two_steps(f);
+        let stone = require("dwell:stone");
+        // Found first (as the river was), then dammed to row 2.
+        s.edit(&[[-5, 2, 1], [5, 1, 1]], M.air);
+        s.run(5, 1.0);
+        let dam: Vec<[i32; 3]> = (0..=2)
+            .flat_map(|z| (0..=2).map(move |r| [9, r, z]))
+            .collect();
+        s.edit(&dam, stone);
+        s.run(900, 1.0);
+        assert!(s.wet(-5, 2, 1), "the flood covers the upper step");
+        s.edit(&dam, M.air);
+        s.run(900, 1.0);
+        for x in [-10, -5, -1] {
+            assert!(s.wet(x, 1, 1), "the upper pool is back at x {x}");
+            assert!(!s.wet(x, 2, 1), "and no higher at x {x}");
+        }
+        for x in [0, 5] {
+            assert!(
+                s.wet(x, 0, 1) && !s.wet(x, 1, 1),
+                "the lower pool as it was at x {x}"
+            );
+        }
+    }
+);
+
+dwell_world::both_faces!(
+    /// The owner's case (2026-11-03): three cells set in a river's bed just below a stepped fall
+    /// (three pools, each falling two rows to the next) change nothing: no pool rises or drains.
+    /// Red before: the bottom pool rose, merged up the falls, and the river drained.
+    fn blocks_set_in_a_riverbed_under_a_stepped_fall_change_nothing(f: FaceFrame) {
+        let mut s = Scene::with_air(f, [-32, -8, -8], [32, 12, 16]);
+        let stone = require("dwell:stone");
+        // Walls along z to row 8; the pools' floors: A rows ≤ 3 (x −30 to −21), B ≤ 1 (x −20 to
+        // −11), C ≤ −1 (x −10 to 9); each one row of water; C falls at x = 10 into a catch basin.
+        s.fill([-31, -1, -1], [9, 8, -1], stone);
+        s.fill([-31, -1, 3], [9, 8, 3], stone);
+        s.fill([-31, -1, -1], [-31, 8, 3], stone);
+        s.fill([-30, -1, 0], [-21, 3, 2], stone);
+        s.fill([-20, -1, 0], [-11, 1, 2], stone);
+        s.fill([-10, -1, 0], [9, -1, 2], stone);
+        s.fill([-30, 4, 0], [-21, 4, 2], M.water);
+        s.fill([-20, 2, 0], [-11, 2, 2], M.water);
+        s.fill([-10, 0, 0], [9, 0, 2], M.water);
+        s.fill([9, -6, -3], [21, -6, 5], stone);
+        s.fill([9, -6, -3], [9, -3, 5], stone);
+        s.fill([21, -6, -3], [21, -3, 5], stone);
+        s.fill([9, -6, -3], [21, -3, -3], stone);
+        s.fill([9, -6, 5], [21, -3, 5], stone);
+        // Found by an edit at each pool (as a player's edits would), then the half blocks.
+        s.edit(&[[-25, 5, 1], [-15, 3, 1], [5, 1, 1]], M.air);
+        s.run(5, 1.0);
+        s.edit(&[[-10, 0, 0], [-10, 0, 1], [-10, 0, 2]], stone);
+        s.run(900, 1.0);
+        let row = |s: &Scene, x0: i32, x1: i32, r: i32| (x0..=x1).all(|x| s.wet(x, r, 1));
+        let dry = |s: &Scene, x0: i32, x1: i32, r: i32| (x0..=x1).all(|x| !s.wet(x, r, 1));
+        assert!(
+            row(&s, -30, -21, 4) && dry(&s, -30, -21, 5),
+            "pool A as it was"
+        );
+        assert!(
+            row(&s, -20, -11, 2) && dry(&s, -20, -11, 3),
+            "pool B as it was"
+        );
+        assert!(row(&s, -9, 9, 0) && dry(&s, -10, 9, 1), "pool C as it was");
     }
 );
 

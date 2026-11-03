@@ -85,5 +85,5 @@ fn breaking_a_lakes_wall_drains_its_top_row_and_clients_see_it() {
         .water()
         .basin_at([0, G, 5])
         .expect("the lake is a basin");
-    assert_eq!(lake.inflow, 0.0, "a closed lake has no inflow");
+    assert_eq!(lake.inflow(), 0.0, "a closed lake has no inflow");
 }

@@ -279,6 +279,15 @@ sends its writes as one `Rebake` modification.
   so water time runs 72× real time × the water speed; both are the world's settings (ADR 0054), a
   new world's water speed the server's `water_speed` (`flow.json` `speed` by default).
 
+**Playtest fix (0.42.1; owner, 2026-11-03, docs/BUGS.md 16).** Blocks set in a riverbed under a
+stepped fall flooded it to the fall's top and then drained the river. Now: a pool's inflow comes in
+at a cell (its farthest from its outlets) and what a pool found upstream sends it is taken off once
+(`credit`); basins merge only when their levels meet (`MERGE_GAP` 2 cm), and only rising (a basin
+met below another's level records it as a neighbour, merged when it reaches it); a receding basin
+whose surface row is about to dry leaves the parts of that row on a floor of their own that water
+comes into as basins of their own (`spin_off_shelves`), so a flood over a river's steps leaves each
+step its pool.
+
 Deviations, for W2–W3: basins aren't saved (after a restart a body is found again by the next edit
 touching it, at the inflow it then has), waiting basins aren't fast-forwarded, running water between
 basins isn't drawn (it arrives where it lands), and a sheet spreading wider than `maxRowCells` over a
