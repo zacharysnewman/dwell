@@ -126,7 +126,9 @@ registry lacks fails generation with a message.
 - **Water.** Every ramp piece whose cell lies below sea level is generated with `flooded=true` and
   drawn holding the sea in its open part — a ramp in the sea's top row too, and a 1 m ramp's lower
   piece when only it is under (owner, 2026-10-20: the ramps stood dry beside the water, which was
-  drawn with flat blue walls against them; `WATER_RENDERING.md` §9). The natural blocks carry
+  drawn with flat blue walls against them; `WATER_RENDERING.md` §9). Likewise a ramp piece under a
+  lake's or river's water, and, since 0.43.0, one beside it: in a row where a neighbouring column
+  holds water over its ground (owner, 2026-11-03, BUGS.md 18; `terrain.rs` `generate`). The natural blocks carry
   `flooded` as on `main` (a flat top below sea level holds water when broken).
 
 ## 6. What changes where

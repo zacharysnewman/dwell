@@ -1409,6 +1409,34 @@ impl TerrainGenerator {
                     self.top_pieces(&cols, x0, z0, x, z, top)
                 };
                 let first_piece = top + 1 - pieces.len() as i32;
+                // The rows of water beside the column (its four neighbours' water over their
+                // ground): a ramp piece in them holds the water in its open part, as one under the
+                // column's own water does, so the water never ends in a wall at a dry bank's ramp
+                // (owner, 2026-11-03; docs/BUGS.md 18).
+                let beside: [(i32, i32); 4] = if pieces.is_empty() {
+                    [(0, 0); 4]
+                } else {
+                    [(1, 0), (-1, 0), (0, 1), (0, -1)].map(|(dx, dz)| {
+                        let (ix, iz) = (x + dx, z + dz);
+                        let n = if (0..S).contains(&ix) && (0..S).contains(&iz) {
+                            cols[(iz * S + ix) as usize]
+                        } else {
+                            self.column_at(x0 + ix, z0 + iz)
+                        };
+                        if n.outside || n.water == Water::None {
+                            (0, 0)
+                        } else {
+                            (top_voxel(n.height) + 1, n.water_row())
+                        }
+                    })
+                };
+                let flood_at = |y: i32| {
+                    if beside.iter().any(|&(lo, hi)| (lo..hi).contains(&y)) {
+                        y + 1
+                    } else {
+                        flood
+                    }
+                };
                 // The soil down to the lowest neighbour's top (neighbours past the chunk from
                 // `column_at`, so the answer doesn't depend on the chunk asking).
                 let soil = self.soil_at(x0 + x, z0 + z, &col, |nx, nz| {
@@ -1431,7 +1459,7 @@ impl TerrainGenerator {
                     {
                         *v = m;
                     } else if y <= top && y >= first_piece {
-                        *v = under_water(pieces[(y - first_piece) as usize], y, flood);
+                        *v = under_water(pieces[(y - first_piece) as usize], y, flood_at(y));
                     } else if y == top {
                         *v = under_water(fill(col.band, top, 0), y, flood);
                     } else if y < top {

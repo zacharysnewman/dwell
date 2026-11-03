@@ -370,6 +370,6 @@ and 1,059 m³/s. What the review found, and where each stands:
 | **No integration scheme.** A tick of 7.2 s of water time on a pool of a few dozen cells overshot (flows swinging to 666 m³/s). | Fixed (0.42.2): flow steps by the fastest basin. |
 | **Live radius and loaded chunks.** Basins were live to 160 m but unmodified chunks are evicted past 3 chunks; an unloaded cell is a wall, so a basin rebuilt beside one lost its water; a waiting basin took what a live one sent it and let nothing out. | Fixed (0.42.2): a basin waits while a chunk of it is unloaded; a waiting basin passes on what comes in. |
 | **Silent losses.** A sheet capped at `maxRowCells` loses its excess; water running out of the loaded world is lost. | Counted in `lost` (the conservation test sees them); kept, as W1's deviations. |
-| **The water's edge.** A ramp beside the water at its row stood dry, the water ending in a wall (the owner's screenshot). | The water's writes flood the ramps beside them (0.42.2). The generator's own ramps beside its water are its choice: changing them changes the terrain a seed generates, a new compatibility line the owner raises (open). |
+| **The water's edge.** A ramp beside the water at its row stood dry, the water ending in a wall (the owner's screenshot). | Fixed: the water's writes flood the ramps beside them (0.42.2), and the generator floods its ramps beside its water (0.43.0, a new compatibility line). |
 | **Nothing saved.** After a restart the basins are gone; the water stays where it was left. | W2 (planned). |
 

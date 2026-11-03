@@ -166,6 +166,77 @@ fn a_rivers_flow_is_read_where_its_water_lies() {
     }
 }
 
+#[test]
+fn ramps_beside_a_rivers_water_hold_it() {
+    // face-a-only: a fixture map of one face; the faces' code is one (the parity test).
+    // Owner, 2026-11-03 (docs/BUGS.md 18): a ramp on a bank beside the water at its row stood dry,
+    // the water ending in a wall. Every ramp with water beside it at its row is flooded. Red
+    // before: dry ramps beside the fixture river's water.
+    use dwell_world::{CHUNK_SIZE, Chunk, ChunkCoord, M};
+    let g = TerrainGenerator::with_map(3, Arc::new(fixture(3)));
+    let level_row = (g.column_at(0, 50).water_row()).div_euclid(CHUNK_SIZE);
+    let mut world = std::collections::HashMap::new();
+    for cx in -4..4 {
+        for cz in 0..4 {
+            for cy in level_row - 1..=level_row + 1 {
+                let coord = ChunkCoord {
+                    x: cx,
+                    y: cy,
+                    z: cz,
+                };
+                let mut c = Chunk::default();
+                g.generate(coord, &mut c);
+                world.insert((cx, cy, cz), c);
+            }
+        }
+    }
+    let at = |x: i32, y: i32, z: i32| -> Option<u16> {
+        let (cx, cy, cz) = (
+            x.div_euclid(CHUNK_SIZE),
+            y.div_euclid(CHUNK_SIZE),
+            z.div_euclid(CHUNK_SIZE),
+        );
+        world.get(&(cx, cy, cz)).map(|c| {
+            c.get(
+                x.rem_euclid(CHUNK_SIZE),
+                y.rem_euclid(CHUNK_SIZE),
+                z.rem_euclid(CHUNK_SIZE),
+            )
+        })
+    };
+    let (mut ramps, mut dry) = (0, Vec::new());
+    for x in -4 * CHUNK_SIZE + 1..4 * CHUNK_SIZE - 1 {
+        for z in 1..4 * CHUNK_SIZE - 1 {
+            for y in (level_row - 1) * CHUNK_SIZE..(level_row + 2) * CHUNK_SIZE {
+                let Some(m) = at(x, y, z) else { continue };
+                // A ramp (an open part to hold water) not flooded.
+                let ramp = dwell_blocks::BLOCKS[dwell_blocks::info(m).block]
+                    .name
+                    .ends_with("_ramp");
+                if !ramp {
+                    continue;
+                }
+                let beside = [(1, 0), (-1, 0), (0, 1), (0, -1)]
+                    .iter()
+                    .any(|&(dx, dz)| at(x + dx, y, z + dz) == Some(M.water));
+                if beside {
+                    ramps += 1;
+                    if !dwell_blocks::info(m).flooded {
+                        dry.push((x, y, z));
+                    }
+                }
+            }
+        }
+    }
+    assert!(ramps > 0, "ramps beside the water");
+    assert!(
+        dry.is_empty(),
+        "{} dry ramps beside water (of {ramps}), e.g. {:?}",
+        dry.len(),
+        dry.first()
+    );
+}
+
 /// The columns of a ring of points round (x, z) every `step` m out to `r`.
 fn wet_columns_near(
     g: &TerrainGenerator,

@@ -10,7 +10,7 @@ None. Report new ones here.
 
 ## Fixed
 
-### 18. Ramps beside the water stood dry, the water ending in a wall (water's edge fixed in 0.42.2)
+### 18. Ramps beside the water stood dry, the water ending in a wall (fixed in 0.42.2 and 0.43.0)
 
 *Reported 2026-11-03 (0.42.1, screenshot).* "Slopes next to water aren't flooded at generation time
 or update: you can see the water wall edge."
@@ -20,9 +20,13 @@ or update: you can see the water wall edge."
   ramp only in a column under water).
 - **Fix (update):** the water's writes flood the blocks with a `flooded` state beside the rows they
   wet, and unflood them when no liquid is beside them (`water.rs` `flood_edge`).
-- **Open (generation):** the generator's own ramps beside its water: changing them changes the
-  terrain a seed generates, a new compatibility line for the owner to raise.
-- **Test:** `ramps_at_the_waters_edge_flood_and_dry_with_it` (both faces; red on 0.42.1).
+- **Fix (generation, 0.43.0, a new compatibility line; owner, 2026-11-03: "world gen should fill
+  slopes"):** a ramp piece in a row where a neighbouring column holds water over its ground is
+  generated flooded (`terrain.rs` `generate`). Treating ramps as open to water was considered and
+  set aside (owner: "weird directional edge cases").
+- **Test:** `ramps_at_the_waters_edge_flood_and_dry_with_it` (both faces; red on 0.42.1);
+  `dwell-worldgen` `tests/worldmap.rs` `ramps_beside_a_rivers_water_hold_it` (red before: 244 of 499
+  ramps beside the fixture river's water dry).
 
 ### 17. A block set at the bottom of any river flooded it without end, or drained it (fixed in 0.42.2)
 
