@@ -69,7 +69,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 49 — Mountains, rivers and lakes: the world map terrain | 🚧 In progress — built and tested natively, the browser join checked in Chrome on the GPU (ADR 0049; generator version 21, a new compatibility line): the hydrology map per face as the terrain (bicubic heights, river channels, flat lakes, bands with a snow line), ranges ~2,300–2,500 m, `dwell:snowy_grass` and `dwell:snowy_leaves`, maps built in workers and kept in IndexedDB ("Shaping the world…"). Outstanding: CI; the owner's look; the compatibility-line bump; polish (deltas, falls, bench scenarios) in a follow-up | Follow-up (2026-10-21): the LOD colour map preview (`?lodmap=on`, ARCHITECTURE.md §6.6 "Colour map"): rivers painted continuous on clipmap rings and valleys lowered in the LOD; outstanding: the owner's look, CI
 | 50 — Terrain volumes (the cliffs) | 🚧 In progress — the cliffs are the terrain's default since 0.35.0 (WORLD_GENERATION.md §5): a density node graph as data (`shared/worldgen/volume.json`, `strength` 0–1 the slider for biomes later), shaped first then the surface, kept off the water. 0.35.1: the LOD draws the undersides. 0.38.0 (owner: "redesign to look more like real cliffs"): terraces along the hill (the `terrace` node), stepped country and escarpments by region, more in the mountains, slight overhangs; built and tested, the owner's look outstanding. 0.38.1: 1.9–2.3× faster, the same cells. Outstanding: a coarse lattice; waterfalls (with moving water); caves and floating islands not started |
 | 51 — Built bodies | 🚧 In progress — B1 built (0.41.0, a new compatibility line: protocol v21; editing moving pieces, splits, body kinds as data); B2 built (0.41.1: the build platform, built bodies taking blocks and never settling, saved with the world, sent to joiners); B3 built (0.41.2: floating by buoyancy per cell); 0.41.3 corrects the platform (the ground a held object is built on, not its first block; owner, 2026-11-02). 0.41.4–0.41.5 playtest fixes: floating rafts pushable, never frozen, steady underfoot, true outlines; the push predicted (the controller's push pass, stand-ins carried to the present, near bodies drawn at the present); pieces settle once. 0.41.6 tuning: weight as in life (a person's push less the ground's friction, a 1 m log sliding at ~0.5 m/s; water drag by area and speed squared, rafts gliding; a rider presses a raft down; the stand-ins slowed alike). Outstanding: the owner's look at a raft in a lake; later: driving. Designed (ADR 0052, [`BUILT_BODIES.md`](./BUILT_BODIES.md), the owner's answers 2026-11-02): editing moving pieces (B1), the build platform and built bodies saved with the world (B2), floating (B3). B1 opens a new compatibility line (0.41.0, the owner raises it). Open questions for the owner: hollow hulls, `maxBodies`, edit prediction, interest |
-| 52 — Water flow | ⏳ Not started — designed (ADR 0053, [`WATER_FLOW.md`](./WATER_FLOW.md), the owner's answers 2026-11-03): basins with one level joined by outlets, rivers as chains of pools fed by runoff, damming, draining, diverting, currents on bodies and swimmers, placed water as a small basin; W2 opens a new compatibility line (0.42.0, the owner raises it) |
+| 52 — Water flow | 🚧 In progress — W1 built (the server's basins: damming, draining, diverting, the sea as a reservoir; the day 20 minutes); outstanding W2–W5 and the owner's look; designed (ADR 0053, [`WATER_FLOW.md`](./WATER_FLOW.md), the owner's answers 2026-11-03): basins with one level joined by outlets, rivers as chains of pools fed by runoff, damming, draining, diverting, currents on bodies and swimmers, placed water as a small basin; W2 opens a new compatibility line (0.42.0, the owner raises it) |
 
 Phase numbering: Phase 4 was inserted on 2026-09-29 for the planet-scale world (ADRs 0011, 0012);
 the former Phases 4–7 are now 5–8, and Phase 3's former 3c and 3d are now 3d and 3e.
@@ -5182,13 +5182,14 @@ Exit criteria
 
 ## Phase 52 — Water Flow: Basins, Outlets, Currents
 
-**Status:** ⏳ Not started. Designed in [`WATER_FLOW.md`](./WATER_FLOW.md) (ADR 0053, the owner's
-answers 2026-11-03). W2 changes the saved world and the generator's water state, W3 the protocol: a
+**Status:** 🚧 In progress: W1 built (the server's basins, WATER_FLOW.md §15; with it the day is 20
+minutes, a change to the clock's public API on a new compatibility line). Designed in
+[`WATER_FLOW.md`](./WATER_FLOW.md) (ADR 0053, the owner's answers 2026-11-03). W2 changes the saved world and the generator's water state, W3 the protocol: a
 new compatibility line (0.42.0), which the owner raises. Water only; lava, lahar, jets, evaporation
 and weather later.
 
 Deliverables
-- [ ] W1 — Basins (server): the liquid data (`shared/fluids/flow.json`, generated and validated),
+- [x] W1 — Basins (server): the liquid data (`shared/fluids/flow.json`, generated and validated),
   the blocks' `leak`; basins found from the liquid cells, level ↔ volume, outlets by the weir law,
   leaks, row crossings at the rim, merge and split, streams over dry ground; each face's sea a fixed
   reservoir; rates in game time (the day/night clock's) × a water speed world setting (fast by
@@ -5202,10 +5203,10 @@ Deliverables
   its level.
 
 Exit criteria
-- [ ] A dammed river fills behind the dam at its inflow less the dam's leaks and spills over its
+- [x] A dammed river fills behind the dam at its inflow less the dam's leaks and spills over its
   lowest rim; a cut drains a lake to the cut's floor; a trench below a pool takes the river and the
   old bed drains (automated, both faces).
-- [ ] Water is conserved: in − out over a run equals the change in stored volume (automated).
+- [x] Water is conserved: in − out over a run equals the change in stored volume (automated).
 - [ ] A raft on a river drifts downstream with the current, the same on the server and in the
   prediction; a swimmer at swim speed holds still in a current of that speed (automated).
 - [ ] A river far from players comes back at its steady state when a player returns (automated).

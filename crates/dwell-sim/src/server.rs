@@ -91,6 +91,10 @@ struct TickChanges {
     chunks: Vec<ChunkChanges>,
     /// Chunk → (its index in `chunks`, local index → its index in that chunk's changes).
     index: HashMap<ChunkCoord, (usize, HashMap<u16, usize>)>,
+    /// Each changed cell's state before its first change (for water flow, docs/WATER_FLOW.md).
+    before: Vec<([i32; 3], u16)>,
+    /// Water's own writes: not told to water again.
+    water: bool,
 }
 
 impl TickChanges {
@@ -131,6 +135,7 @@ impl TickChanges {
             cell[1] - coord.y * CHUNK_SIZE,
             cell[2] - coord.z * CHUNK_SIZE,
         );
+        let old = world.get_voxel_if_loaded(cell);
         world.get_or_create(coord).set_at(local, material);
         let chunks = &mut self.chunks;
         let (at, cells) = self.index.entry(coord).or_insert_with(|| {
@@ -150,6 +155,7 @@ impl TickChanges {
                     index: local as u16,
                     material,
                 });
+                self.before.push((cell, old));
             }
         }
     }
@@ -213,6 +219,9 @@ pub struct ServerConfig {
     pub generator_override: Option<ChunkGenerator>,
     pub air_test_override: Option<AirChunkTest>,
     pub player_config: PlayerControllerConfig,
+    /// The world's water speed (docs/WATER_FLOW.md §4.1): × game time; `shared/fluids/flow.json`'s
+    /// `speed` by default.
+    pub water_speed: f64,
 }
 
 impl Default for ServerConfig {
@@ -245,6 +254,7 @@ impl Default for ServerConfig {
             generator_override: None,
             air_test_override: None,
             player_config: PlayerControllerConfig::default(),
+            water_speed: crate::water::FLOW.speed,
         }
     }
 }
@@ -603,6 +613,8 @@ pub struct Server {
     knockbacks: Vec<(u16, Vec3)>, // applied in the next step
     /// The falling pieces (docs/FELLING.md).
     felling: crate::felling::Felling,
+    /// Water flow (docs/WATER_FLOW.md): the basins edits have touched.
+    water: crate::water::Water,
     tick: u32,
     next_player_id: u16,
     worldgen: WorldgenPool,
@@ -677,6 +689,7 @@ impl Server {
             outbox: Vec::new(),
             knockbacks: Vec::new(),
             felling: crate::felling::Felling::default(),
+            water: crate::water::Water::new(),
             tick: 0,
             next_player_id: 1,
             worldgen: WorldgenPool::new(generator.clone(), config.worldgen_threads),
@@ -1334,6 +1347,7 @@ impl Server {
         self.physics.step(1.0 / f64::from(SIM_HZ));
         self.tick += 1;
         self.settle_pieces();
+        self.flow_water();
 
         // 5. Respawns, then snapshots at SNAPSHOT_HZ.
         for &id in &ids {
@@ -1977,8 +1991,13 @@ impl Server {
     fn broadcast_changes(&mut self, changes: TickChanges, reason: VoxelModificationReason) {
         let TickChanges {
             chunks: mut changed,
+            before,
+            water,
             ..
         } = changes;
+        if !water {
+            self.water.touch(before);
+        }
         if changed.is_empty() {
             return;
         }
@@ -2280,6 +2299,41 @@ impl Server {
         let settles = placed.iter().map(|&(_, n)| n).max().unwrap_or(0);
         let cells: Vec<[i32; 3]> = placed.into_iter().map(|(c, _)| c).collect();
         self.fell(&cells, settles, None);
+    }
+
+    /// Every `tickEvery` ticks, water's tick (docs/WATER_FLOW.md §4): its time is game time (the
+    /// day/night clock's day against a real one) × the world's water speed; its writes go out as
+    /// one modification.
+    fn flow_water(&mut self) {
+        let every = crate::water::FLOW.tick_every;
+        if !self.tick.is_multiple_of(every) {
+            return;
+        }
+        let game = 86_400.0 / dwell_look::daynight::DAY_NIGHT.day_length_s();
+        let dt = f64::from(every) / f64::from(SIM_HZ) * game * self.config.water_speed;
+        let players: Vec<[f64; 3]> = self
+            .sessions
+            .values()
+            .filter_map(|s| s.handle)
+            .map(|h| self.players.position(&self.physics, h).to_array())
+            .collect();
+        let writes = self.water.tick(&mut self.world, &players, dt);
+        if writes.is_empty() {
+            return;
+        }
+        let mut changes = TickChanges {
+            water: true,
+            ..TickChanges::default()
+        };
+        for (c, m) in writes {
+            changes.set(&mut self.world, c, m);
+        }
+        self.broadcast_changes(changes, VoxelModificationReason::Rebake);
+    }
+
+    /// Water flow, for tests and tools (docs/WATER_FLOW.md).
+    pub fn water(&self) -> &crate::water::Water {
+        &self.water
     }
 
     /// The players' capsules (cells overlapping one are taken).

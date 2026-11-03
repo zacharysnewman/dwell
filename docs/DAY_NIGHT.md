@@ -1,7 +1,7 @@
 # Dwell — The Day/Night Cycle
 
-The sky, light and fog follow the time of day: a 30-minute day of 20 minutes daylight and 10 of
-night, driven by the server's world time so every player sees the same sky. Phase 32 of
+The sky, light and fog follow the time of day: a 20-minute day of 13⅓ minutes daylight and 6⅔ of
+night (owner, 2026-11-03; 30 minutes until then), driven by the server's world time so every player sees the same sky. Phase 32 of
 [`IMPLEMENTATION_PLAN.md`](./IMPLEMENTATION_PLAN.md); decision record
 [ADR 0035](./adr/0035-day-night-cycle.md); architecture in [`ARCHITECTURE.md`](./ARCHITECTURE.md)
 §6.3 (Bifacial world: light and sky) and §6.6 (Day/night cycle).
@@ -13,7 +13,8 @@ including fog, so it looks good. Make the sun and moon look better too."
 
 Known decisions (owner):
 
-- The day is **30 minutes: 20 of day, 10 of night** (first recorded in
+- The day is **20 minutes: 800 s of day, 400 of night** (owner, 2026-11-03, with water flow's game
+  time, WATER_FLOW.md §4.1; it was 30 minutes, 20 of day and 10 of night, first recorded in
   [`TREE_GROWTH.md`](./TREE_GROWTH.md)). Tree growth counts in-game days, so the day length is **one
   shared data value** both use.
 - Fog matters: it must look right at every time of day.

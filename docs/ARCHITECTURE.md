@@ -2231,8 +2231,8 @@ Each frame the octree is walked from the root around the **camera** (the eye):
   [`DAY_NIGHT.md`](./DAY_NIGHT.md)): world time is the server's tick (60 Hz; saved in the world
   file's `meta` as `world_tick` and resumed on load; sent in `Welcome` and every `PhysicsSnapshot`),
   so it needed no protocol change. The client's estimate between snapshots is `world_clock.rs`
-  (shared with the clouds' drift). `shared/look/daynight.json` holds the clock (`dayS` 1200 +
-  `nightS` 600: a 30-minute day; `startHour` 7 at tick 0 — public API, and tree growth's day,
+  (shared with the clouds' drift). `shared/look/daynight.json` holds the clock (`dayS` 800 +
+  `nightS` 400: a 20-minute day, owner 2026-11-03, 30 minutes before; `startHour` 7 at tick 0 — public API, and tree growth's day,
   Phase 30), the sun's path (rising toward `riseYawDeg`, culminating `noonElevationDeg` 60° over
   face A), the sun's, moon's and stars' looks and 14 **keyframes** keyed by the solar angle (0°
   rising, 90° noon, 180° setting, 270° lowest), each setting the sky's zenith and horizon, the sun
@@ -2371,7 +2371,7 @@ flies high above the disc and the whole disc is drawn by the time it arrives.
 
 ---
 
-### 6.7 Water Flow **[planned, Phase 52]**
+### 6.7 Water Flow **[in progress, Phase 52: W1 built]**
 
 [ADR 0053](./adr/0053-water-flow.md), [`WATER_FLOW.md`](./WATER_FLOW.md). Liquid is simulated as
 **basins**, each a connected body with one level and volume, joined by **outlets** (the weir law,
@@ -2380,8 +2380,12 @@ are rewritten only when the level crosses a ½ m row. Rivers are chains of pools
 map's runoff; damming, draining and diverting are edits that change outlets; basins fill, spill,
 merge and split. Simulated near players, fast-forwarded elsewhere; rates counted in game time (the day/night clock's) × a water speed world setting; each face's sea a fixed reservoir at sea level (a sink, and a source for land below it).
 Each liquid cell has a derived current, which the water drag (§7, BUILT_BODIES.md §6) and the swim
-layer use. Planned data: `shared/fluids/flow.json`; a saved basins table (§6.4) and basin messages
-(a new compatibility line).
+layer use. **Built (W1):** `dwell-sim` `water.rs` on the server, data `shared/fluids/flow.json` (→
+`flow.gen.rs`: the speed, the water tick's period, the live radius, the size limits, each liquid's
+weir coefficient and the blocks' leaks); bodies found by the edits that touch them (their inflow what
+left them before), each face's sea a reservoir by size; its writes sent as `Rebake` modifications
+(WATER_FLOW.md §15). **Planned:** runoff from the world map, a saved basins table (§6.4), basin
+messages, currents (a new compatibility line).
 
 ## 7. Physics Pipeline
 

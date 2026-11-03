@@ -741,6 +741,7 @@ name = "dwell-sim"
 version = "0.0.0"
 dependencies = [
  "dwell-blocks",
+ "dwell-look",
  "dwell-physics",
  "dwell-protocol",
  "dwell-storage",

@@ -5,8 +5,8 @@ use crate::daynight::*;
 /// The day/night cycle's data (shared/look/daynight.json).
 pub const DAY_NIGHT: DayNight = DayNight {
     clock: Clock {
-        day_s: 1200.0,
-        night_s: 600.0,
+        day_s: 800.0,
+        night_s: 400.0,
         start_hour: 7.0,
     },
     sun_path: SunPath {

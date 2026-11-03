@@ -1,0 +1,20 @@
+{
+  "$comment": "Water flow (docs/WATER_FLOW.md, ADR 0053): basins with one level joined by outlets. Rates are real and counted in game time (the day/night clock's: a 20-minute day is 72x real time) x the world's water speed (`speed`, the default of the server's `water_speed`). tickEvery: server ticks per water tick. liveRadiusM: basins within it of a player are simulated, the rest wait. maxBasinCells: a body of water bigger than this (the sea, a large lake) is a fixed reservoir at its level until W2. maxRowCells: a row spreading wider (a sheet over a plain) caps the basin there, the excess lost. streamReach: how far (cells) water running over flat ground looks for a way down before it pools. liquids: each liquid block's weir coefficient (m^0.5/s; an outlet passes weir x width x head^1.5). leaks: how much a block lets through (m3/s per m2 of face per m of head; a hydraulic conductivity over a 1 m block); a block not listed is sealed. Run `node shared/fluids/gen.mjs` after editing; CI fails if crates/dwell-sim/src/flow.gen.rs is stale.",
+  "speed": 1,
+  "tickEvery": 6,
+  "liveRadiusM": 160,
+  "maxBasinCells": 65536,
+  "maxRowCells": 16384,
+  "streamReach": 16,
+  "liquids": [
+    { "block": "dwell:water", "weir": 1.7 }
+  ],
+  "leaks": {
+    "dwell:sand": 0.0001,
+    "dwell:dirt": 0.000001,
+    "dwell:grass": 0.000001,
+    "dwell:snowy_grass": 0.000001,
+    "dwell:leaves": 0.05,
+    "dwell:snowy_leaves": 0.05
+  }
+}

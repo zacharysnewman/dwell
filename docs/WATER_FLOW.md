@@ -1,8 +1,8 @@
 # Water flow (basins, outlets, currents)
 
 > **Status: adopted (the owner's answers, 2026-11-03; [ADR 0053](./adr/0053-water-flow.md)),
-> planned as Phase 52 (W1–W5). Nothing is built yet.** First water only; lava, lahar, jets,
-> evaporation and weather later (§10).
+> Phase 52. W1 built (the server's basins, §15); W2–W5 planned.** First water only; lava, lahar,
+> jets, evaporation and weather later (§10).
 
 The owner's request (2026-11-03): *"There's some systems I want to model, it's water flow, input and
 output in any body of water in the game, but my focus is on rivers. So if you dammed a river, it
@@ -109,7 +109,8 @@ For each live basin, in order downstream:
 
 The rates are real (m³/s, the weir law, runoff), counted in game time, not real time (owner,
 2026-11-03: "also scaled by game time scale, what time of day uses"). The day/night clock's day is
-`daynight.json`'s day length (30 minutes, so game time runs 48× real time; DAY_NIGHT.md §2), and
+`daynight.json`'s day length (20 minutes, owner 2026-11-03, so game time runs 72× real time;
+DAY_NIGHT.md §2), and
 water's tick is a real tick × `86,400 s ÷ the day length` × the world's **water speed** setting (a
 multiplier, by default fairly fast so changes can be seen). A longer day slows the water with the
 sun; a faster water setting speeds the water alone. Fast-forward (§6) counts the same game time.
@@ -242,3 +243,50 @@ the world map (the terrain a seed generates is unchanged; its water's state is n
 ## 14. Open questions
 
 None blocking. Lava and lahar contact rules, jets, evaporation and weather are later (§10).
+
+## 15. W1 as built
+
+`dwell-sim` `water.rs` (`Water`, `Basin`, `Outlet`), data `shared/fluids/flow.json` → `flow.gen.rs`
+(`shared/fluids/gen.mjs`, validated, CI on stale output). The server's `TickChanges` records each
+changed cell's state before its first change; `broadcast_changes` hands them to water (not water's
+own writes). Every `tickEvery` (6) ticks `Server::flow_water` runs a water tick of
+`6 / 60 s × 86,400 / the day length × water_speed` (7.2 s of water time at a 20-minute day) and
+sends its writes as one `Rebake` modification.
+
+- **Found by edits.** An edit beside or on a liquid cell nobody has found finds its body: up the
+  column to its surface, then every cell of that liquid at or below it whose column reaches the
+  surface (a river's lower pool, past its step, is a body of its own). Its inflow is what its outlets
+  passed in the world before the edit (W1's stand-in for runoff, §2.1); liquid an edit put there
+  brings nothing in. A body over `maxBasinCells` (65,536) is a reservoir at its surface's top.
+- **The container**, row by row from its bottom: each row from the cells over the row below (and its
+  own), spread sideways over open cells held up by a solid block or the row below; as many rows as
+  its volume fills. Rows a basin meets another basin's cells in merge the two; a reservoir's cells
+  are walls (a basin beside the sea fills toward its level through the outlets between, drowned).
+- **Outlets**: an open cell beside a container cell with nothing holding it up (sill: that row's
+  floor) or under one (a hole in the floor), and a block of `leaks` data beside it with an open cell
+  past it. A weir passes `weir × head^1.5` per cell, drowned (`head` over the higher of the sill and
+  the level it runs into), a leak `leak × ½ m² × head`; no more in a tick than the basin holds over
+  its lowest way out.
+- **Where it goes** (`follow`, up to 64 routes a tick): down while open, then along the floor for an
+  open cell with nothing under it within `streamReach` (16); onto liquid (that body, found if new),
+  or it pools there as a new basin, or out of the loaded world (lost).
+- **Rows** are written when the level crosses half a row; a row the level falls below goes, and a
+  container that falls apart splits, each part with the liquid over its own cells. An empty basin
+  with nothing coming in goes.
+- **Near players**: basins within `liveRadiusM` (160 m) of a player tick; the rest wait.
+- **The day** is 20 minutes since this change (owner, 2026-11-03; DAY_NIGHT.md), so water time
+  runs 72× real time × `water_speed`.
+
+Deviations, for W2–W3: basins aren't saved (after a restart a body is found again by the next edit
+touching it, at the inflow it then has), waiting basins aren't fast-forwarded, running water between
+basins isn't drawn (it arrives where it lands), and a sheet spreading wider than `maxRowCells` over a
+plain is capped there (the excess lost).
+
+Tests (`water/tests.rs`, both faces): `a_dammed_channel_fills_and_spills_over_the_dam` (rises a row,
+spills at its old flow within 5 %, a pool below, the water conserved to 1e-6),
+`a_cut_drains_a_lake_to_the_cuts_floor`, `a_deeper_trench_takes_the_flow_from_the_old_way` (the
+notch dry, the trench within 5 %), `a_cut_from_the_sea_floods_a_hollow_to_sea_level` (a 68,600-cell
+sea, its level unmoved), `the_flow_data_resolves`; `tests/water.rs`
+`breaking_a_lakes_wall_drains_its_top_row_and_clients_see_it` (through the server; red with the water
+tick off); `shared/fluids/gen.test.mjs`.
+

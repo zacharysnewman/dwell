@@ -169,7 +169,7 @@ a stage; world format and protocol both change at G3.
 
 Notes:
 - The day length now lives in the day/night cycle's data (Phase 32, [`DAY_NIGHT.md`](./DAY_NIGHT.md)):
-  `clock` in `shared/look/daynight.json` (`dayS` 1200 + `nightS` 600 = a 30-minute day), generated
+  `clock` in `shared/look/daynight.json` (`dayS` 800 + `nightS` 400 = a 20-minute day since 2026-11-03; 30 minutes before), generated
   into `dwell_look::daynight::DAY_NIGHT`; `DAY_NIGHT.days(world_s)` is the in-game day count from
   world time (the server's tick, saved in `meta` as `world_tick`), which `stage(t)` reads. Growth catch-up uses world time, not wall-clock time, so a world that isn't
   running doesn't grow.

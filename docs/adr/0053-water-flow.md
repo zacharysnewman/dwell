@@ -29,7 +29,7 @@ Option 2. Liquids and the blocks' leaks are data; the engine is a fixed vocabula
 outlets, leaks, streams, runoff, sinks, currents). Water comes in as the world map's runoff and
 leaves to the sea, the world's edge or (later) evaporation, so it is conserved. Basins near players
 are simulated; the rest are frozen and fast-forwarded when next live. Rates are real, counted in game
-time (the day/night clock's, 48× real time) × a water speed world setting, fast by default. The
+time (the day/night clock's: a 20-minute day, 72× real time) × a water speed world setting, fast by default. The
 sea is a reservoir at sea level: a sink, and a source for land below it. Currents act on bodies through the water drag relative to the current,
 and swimmers are carried at the current's speed less their swim. Placed water is a small basin.
 Water only at first; lava, lahar, jets (pressure), evaporation and weather later.

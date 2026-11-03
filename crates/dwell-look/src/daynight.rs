@@ -753,22 +753,22 @@ mod tests {
 
     #[test]
     fn the_clock_runs_from_world_time() {
-        // A 30-minute day: 20 minutes of daylight, 10 of night (owner, TREE_GROWTH.md).
-        assert_eq!(D.day_length_s(), 1800.0);
-        assert_eq!((D.clock.day_s, D.clock.night_s), (1200.0, 600.0));
+        // A 20-minute day: 13⅓ minutes of daylight, 6⅔ of night (owner, 2026-11-03; 30 minutes before).
+        assert_eq!(D.day_length_s(), 1200.0);
+        assert_eq!((D.clock.day_s, D.clock.night_s), (800.0, 400.0));
         near(D.time_of_day(0.0), D.clock.start_hour / 24.0, 1e-12);
-        near(D.time_of_day(1800.0), D.time_of_day(0.0), 1e-12);
+        near(D.time_of_day(1200.0), D.time_of_day(0.0), 1e-12);
         near(
-            D.time_of_day(900.0),
+            D.time_of_day(600.0),
             (D.clock.start_hour / 24.0 + 0.5).rem_euclid(1.0),
             1e-12,
         );
         assert_eq!(D.day_number(0.0), 0);
         // Day 1 starts at the first midnight.
-        let to_midnight = (1.0 - D.clock.start_hour / 24.0) * 1800.0;
+        let to_midnight = (1.0 - D.clock.start_hour / 24.0) * 1200.0;
         assert_eq!(D.day_number(to_midnight - 0.01), 0);
         assert_eq!(D.day_number(to_midnight + 0.01), 1);
-        assert_eq!(D.day_number(to_midnight + 1800.0 * 9.5), 10);
+        assert_eq!(D.day_number(to_midnight + 1200.0 * 9.5), 10);
     }
 
     #[test]
@@ -848,7 +848,7 @@ mod tests {
         near(DayNight::moon_lit(0.25), 0.5, 1e-12);
         // Driven by the day count: a day moves the phase on by 1/8.
         let a = D.state(0.0, Some(0.0), None).moon_phase;
-        let b = D.state(1800.0, Some(0.0), None).moon_phase;
+        let b = D.state(D.day_length_s(), Some(0.0), None).moon_phase;
         near((b - a).rem_euclid(1.0), 1.0 / 8.0, 1e-9);
         assert_eq!(D.state(0.0, None, Some(0.25)).moon_phase, 0.25);
     }
