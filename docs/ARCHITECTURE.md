@@ -2378,7 +2378,7 @@ flies high above the disc and the whole disc is drawn by the time it arrives.
 blocks' `leak` data), not per cell: a basin's level changes by in − out each tick and its rim cells
 are rewritten only when the level crosses a ½ m row. Rivers are chains of pools fed by the world
 map's runoff; damming, draining and diverting are edits that change outlets; basins fill, spill,
-merge and split. Simulated near players, fast-forwarded elsewhere; the time scale a world setting.
+merge and split. Simulated near players, fast-forwarded elsewhere; rates counted in game time (the day/night clock's) × a water speed world setting; each face's sea a fixed reservoir at sea level (a sink, and a source for land below it).
 Each liquid cell has a derived current, which the water drag (§7, BUILT_BODIES.md §6) and the swim
 layer use. Planned data: `shared/fluids/flow.json`; a saved basins table (§6.4) and basin messages
 (a new compatibility line).

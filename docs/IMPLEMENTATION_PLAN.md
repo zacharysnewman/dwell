@@ -5190,8 +5190,9 @@ and weather later.
 Deliverables
 - [ ] W1 — Basins (server): the liquid data (`shared/fluids/flow.json`, generated and validated),
   the blocks' `leak`; basins found from the liquid cells, level ↔ volume, outlets by the weir law,
-  leaks, row crossings at the rim, merge and split, streams over dry ground; the time scale as a
-  world setting (fast by default).
+  leaks, row crossings at the rim, merge and split, streams over dry ground; each face's sea a fixed
+  reservoir; rates in game time (the day/night clock's) × a water speed world setting (fast by
+  default).
 - [ ] W2 — Runoff and rivers: the world map's runoff into basins, rivers as chains of pools at their
   map levels, basins saved with the world, fast-forward far from players.
 - [ ] W3 — Clients: basin levels and currents on the wire; clients rewrite their own rim cells.

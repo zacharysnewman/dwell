@@ -21,7 +21,7 @@ model"*, and *"We'd also want physics applied to objects in the water based on f
 | How far does it reach? | Simulated near players; the rest fast-forwarded. |
 | In scope | Damming (filling, flooding over), draining lakes, diverting rivers, currents pushing floating objects. |
 | Lava and lahar on contact | Later. |
-| Time scale | A world setting, by default fairly fast, so changes can be seen. |
+| Time scale | A world setting, by default fairly fast, so changes can be seen; and scaled by the game's time, as the time of day is (§4.1). |
 | The smallest basin | Whatever it takes for water to behave consistently: no minimum (§3). |
 | Placed water | A small basin: it spreads and finds its level. A placeable water block is added to the hotbar. |
 | Currents on swimmers | The current carries a swimmer at its speed, less what they can swim against it (§7). |
@@ -91,8 +91,8 @@ Per liquid (a new data file, `shared/fluids/flow.json`, beside the looks in the 
 
 For each live basin, in order downstream:
 
-1. **In:** runoff (§2.1) + streams arriving + upstream outlets' flow (m³/s × dt), all × the
-   world's **time scale** (a world setting, by default fairly fast).
+1. **In:** runoff (§2.1) + streams arriving + upstream outlets' flow (m³/s × dt), with `dt` in
+   **game time** (§4.1).
 2. **Out:** each outlet's flow by the **weir law**, `Q = c · width · head^1.5` (`head` the level over
    the sill, `c` from the liquid's viscosity), plus leaks through blocks below the level
    (`leak × area × head`), plus evaporation (`rate × surface area`).
@@ -105,8 +105,34 @@ For each live basin, in order downstream:
 5. Outlet flow out over dry ground runs downhill cell by cell (the steepest drop) as a stream until
    a low spot, where a new basin forms and fills.
 
+### 4.1 Time
+
+The rates are real (m³/s, the weir law, runoff), counted in game time, not real time (owner,
+2026-11-03: "also scaled by game time scale, what time of day uses"). The day/night clock's day is
+`daynight.json`'s day length (30 minutes, so game time runs 48× real time; DAY_NIGHT.md §2), and
+water's tick is a real tick × `86,400 s ÷ the day length` × the world's **water speed** setting (a
+multiplier, by default fairly fast so changes can be seen). A longer day slows the water with the
+sun; a faster water setting speeds the water alone. Fast-forward (§6) counts the same game time.
+
 Liquid is conserved: it comes in as runoff (and later melt and rain) and leaves to the sea, the world's edge
 or evaporation, so a diverted river really takes the water from the old one.
+
+## 4.2 The sea
+
+The sea is not simulated: each face's sea is one **reservoir basin** at sea level, of unlimited
+volume, whose level never moves. Its cells stay the static water blocks they are now.
+
+- **A sink:** every river and outlet that reaches it ends there; what flows in is gone.
+- **A source:** a channel cut from the sea into land below sea level floods it, by the weir law at
+  the sea's level (a hollow behind the shore fills to sea level and stays). A dam across a river's
+  mouth makes the river's last pool a basin of its own, filling and spilling into the sea.
+- **No currents or tides** at first. Tides would be the reservoir's level following the clock, and
+  currents a field of the sea's own; both later, as data.
+- **The water cycle, later:** the sea is where most evaporation comes from (§10), so the rain and
+  snow that refill the rivers come from it, and the cycle closes: water is conserved over the world,
+  the sea the store that balances it.
+- The two faces' seas are separate reservoirs; the disc's rim (BIFACIAL_WORLD.md) is a cliff between
+  them, so nothing spills from one to the other.
 
 ## 5. Player edits
 
@@ -201,7 +227,7 @@ the world map (the terrain a seed generates is unchanged; its water's state is n
 
 - **W1 — Basins.** The liquid data (`shared/fluids/flow.json`), the blocks' `leak`, basins found from
   the liquid cells, their level ↔ volume, outlets by the weir law, leaks, row crossings at the rim,
-  merge and split, streams over dry ground; the time scale as a world setting. Server only, tested
+  merge and split, streams over dry ground; the sea as a fixed reservoir; game time × the water speed setting (§4.1). Server only, tested
   natively (a dammed pool fills and spills, a cut drains a lake to its floor, a trench takes a river).
 - **W2 — Runoff and rivers.** The world map's runoff into basins (§2.1), rivers as chains of pools
   at their map levels, the basins saved with the world, fast-forward far from players. A new
