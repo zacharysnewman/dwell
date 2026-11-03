@@ -58,6 +58,7 @@ one's status line. Resolving an item in `ARCHITECTURE.md` Open Decisions require
 | [0050](0050-the-world-owns-its-look.md) | The world owns its look: sky, fog and clouds per ray, not per viewer | Accepted |
 | [0051](0051-felling.md) | Felling: support as block data, pieces as server bodies | Accepted |
 | [0052](0052-built-bodies.md) | Built bodies: editable pieces, the build platform, saved and floating | Accepted (stages B1–B3 planned) |
+| [0053](0053-water-flow.md) | Water flow: basins with one level, joined by outlets | Accepted (Phase 52, W1–W5 planned) |
 
 Phase numbers in ADRs follow the implementation plan as it was then. In ADRs 0001–0010, Phases
 4–7 became 5–8 when the world-LOD phase (Phase 4) was added on 2026-09-29, and then 6–9 when the

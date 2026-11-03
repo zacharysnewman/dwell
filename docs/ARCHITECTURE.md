@@ -2371,6 +2371,18 @@ flies high above the disc and the whole disc is drawn by the time it arrives.
 
 ---
 
+### 6.7 Water Flow **[planned, Phase 52]**
+
+[ADR 0053](./adr/0053-water-flow.md), [`WATER_FLOW.md`](./WATER_FLOW.md). Liquid is simulated as
+**basins**, each a connected body with one level and volume, joined by **outlets** (the weir law,
+blocks' `leak` data), not per cell: a basin's level changes by in − out each tick and its rim cells
+are rewritten only when the level crosses a ½ m row. Rivers are chains of pools fed by the world
+map's runoff; damming, draining and diverting are edits that change outlets; basins fill, spill,
+merge and split. Simulated near players, fast-forwarded elsewhere; the time scale a world setting.
+Each liquid cell has a derived current, which the water drag (§7, BUILT_BODIES.md §6) and the swim
+layer use. Planned data: `shared/fluids/flow.json`; a saved basins table (§6.4) and basin messages
+(a new compatibility line).
+
 ## 7. Physics Pipeline
 
 ### 7.1 Voxel Awakening & Clustering **[in progress: built for felling, 0.37.0]**

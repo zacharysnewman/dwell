@@ -1,8 +1,8 @@
-# Proposal: water flow (basins, outlets, currents)
+# Water flow (basins, outlets, currents)
 
-> **Status: proposal, not adopted.** Nothing here is built; ARCHITECTURE.md does not describe it.
-> It is adopted by the owner's answers to §13, an ADR (the next, 0053) and phases in the
-> implementation plan.
+> **Status: adopted (the owner's answers, 2026-11-03; [ADR 0053](./adr/0053-water-flow.md)),
+> planned as Phase 52 (W1–W5). Nothing is built yet.** First water only; lava, lahar, jets,
+> evaporation and weather later (§10).
 
 The owner's request (2026-11-03): *"There's some systems I want to model, it's water flow, input and
 output in any body of water in the game, but my focus is on rivers. So if you dammed a river, it
@@ -20,6 +20,13 @@ model"*, and *"We'd also want physics applied to objects in the water based on f
 | A dam bursting | Draining only at first. Later, "pressure": water shooting out a distance by its head. |
 | How far does it reach? | Simulated near players; the rest fast-forwarded. |
 | In scope | Damming (filling, flooding over), draining lakes, diverting rivers, currents pushing floating objects. |
+| Lava and lahar on contact | Later. |
+| Time scale | A world setting, by default fairly fast, so changes can be seen. |
+| The smallest basin | Whatever it takes for water to behave consistently: no minimum (§3). |
+| Placed water | A small basin: it spreads and finds its level. A placeable water block is added to the hotbar. |
+| Currents on swimmers | The current carries a swimmer at its speed, less what they can swim against it (§7). |
+| First phase | Water only. |
+| Do rivers run dry? | Not on their own while their feed is steady: runoff (§2.1). Later, glaciers' melt and weather vary it, so rivers rise and fall and small streams can run dry. |
 
 ## 2. The idea: simulate bodies of water, draw voxels from them
 
@@ -36,11 +43,25 @@ row, and then only on its rim. Cost follows what changes, not how much water the
   cells, a shallow line of liquid whose depth comes from its flow.
 
 The world map's rivers (WORLD_GENERATION.md §4: a flow direction per 100 m cell, a discharge up to
-~21 m³/s) seed the chains: their sources become **springs**, their water the initial levels.
+~21 m³/s) seed the chains and their initial levels.
+
+### 2.1 Where the water comes from: runoff
+
+The world map has no river sources: a river's discharge is the rain-weighted drainage area above it
+(`dwell-worldgen` `hydrology/erosion.rs`), so a creek is small and grows downstream. The flow model
+keeps that rule: every 100 m map cell adds its **runoff** (the map's rain there × a rate in data) to
+the basin or stream its water drains into, without simulating the rain on the ground. A river is fed
+along its whole length, its flow downstream what its channel was carved for. While the rate is
+steady, rivers never run dry on their own; only dams and diversions change them. Later the rate
+comes from glaciers' melt (a store of ice released by temperature) and weather (rain from the
+evaporation budget), so rivers rise in the melt season and small streams can run dry (§10).
 
 ## 3. What is stored
 
-Per basin (the world's save, a new table; sent to clients):
+Per basin (the world's save, a new table; sent to clients). There is no minimum size (the owner:
+whatever water needs to behave consistently): a placed water block is a basin of one cell, which
+spreads over the floor it lands on and settles at its level, a thin film merging into whatever it
+reaches.
 
 - `id`, its liquid, its **level** (m, f64), its **volume** (m³).
 - Its **cells** are not stored: they are the connected cells below the level, found by a flood fill
@@ -49,7 +70,7 @@ Per basin (the world's save, a new table; sent to clients):
   the same fill.
 - Its **outlets**: each a rim cell span where the liquid can leave, with its sill height and width,
   and where it goes (another basin, or a stream).
-- Its **inflows**: springs, streams and other basins' outlets that end in it.
+- Its **inflows**: runoff (§2.1), streams and other basins' outlets that end in it.
 
 Per cell, nothing new is stored. The liquid cells stay the registry's liquid states (`dwell:water`),
 rewritten at row crossings. A **current** per cell for drawing and physics (§7) is derived, not stored.
@@ -70,7 +91,8 @@ Per liquid (a new data file, `shared/fluids/flow.json`, beside the looks in the 
 
 For each live basin, in order downstream:
 
-1. **In:** springs + streams arriving + upstream outlets' flow (m³/s × dt).
+1. **In:** runoff (§2.1) + streams arriving + upstream outlets' flow (m³/s × dt), all × the
+   world's **time scale** (a world setting, by default fairly fast).
 2. **Out:** each outlet's flow by the **weir law**, `Q = c · width · head^1.5` (`head` the level over
    the sill, `c` from the liquid's viscosity), plus leaks through blocks below the level
    (`leak × area × head`), plus evaporation (`rate × surface area`).
@@ -83,7 +105,7 @@ For each live basin, in order downstream:
 5. Outlet flow out over dry ground runs downhill cell by cell (the steepest drop) as a stream until
    a low spot, where a new basin forms and fills.
 
-Liquid is conserved: it comes in at springs (and later rain) and leaves to the sea, the world's edge
+Liquid is conserved: it comes in as runoff (and later melt and rain) and leaves to the sea, the world's edge
 or evaporation, so a diverted river really takes the water from the old one.
 
 ## 5. Player edits
@@ -119,21 +141,23 @@ Every liquid cell gets a **current**: the velocity of its liquid, derived from i
 
 Objects take it through the water drag already built (0.41.6, BUILT_BODIES.md §6): the drag acts on
 the body's velocity **relative to the current**, so a raft at rest is carried toward the current's
-speed, faster in a narrow fast run than on a lake. The same for players swimming (the swim layer's
-drift) and, later, items. The clients get the currents with the basins, so the prediction carries a
+speed, faster in a narrow fast run than on a lake. **Swimmers** (owner, 2026-11-03) are carried at
+the current's speed less what they swim against it: the swim layer's velocity is the input's wish
+plus the current, so a swimmer at the swim speed (3 m/s) holds still in a 3 m/s current and goes
+backward in a faster one, and a slow lake drift is barely felt. Items later. The clients get the currents with the basins, so the prediction carries a
 raft or a swimmer as the server does.
 
 ## 8. On the wire and in the save
 
-- **Save:** the basins table (id, liquid, level, volume, seed cell, outlets) and the springs. The
-  liquid cells stay in the chunks as now.
+- **Save:** the basins table (id, liquid, level, volume, seed cell, outlets). The liquid cells stay
+  in the chunks as now.
 - **Network:** a basin's level and currents when they change (a few bytes); the clients rewrite
   their own rim cells at row crossings, as the server does. Chunk edits from the basins are not
   sent cell by cell.
 
 ## 9. Liquids as data, and what is general
 
-One engine, a small fixed vocabulary: basins, outlets (weir), leaks, streams, springs, sinks,
+One engine, a small fixed vocabulary: basins, outlets (weir), leaks, streams, runoff, sinks,
 evaporation, currents. Each liquid is a data entry:
 
 | Liquid | density | viscosity | evaporation | contact (later) |
@@ -151,7 +175,7 @@ a liquid's contact rules and deposition are later additions to the vocabulary.
   `v = √(2 g · head)`; the jet's reach is a projectile from the opening, drawn as particles and
   landing as a stream where it falls. The outlet law already knows the head.
 - **Evaporation → rain and snow:** evaporated volume goes into an atmosphere budget per region; rain
-  and snow return it over land (as springs spread over an area), snow by the bands' snow line. Needs
+  and snow return it over land (as runoff), snow by the bands' snow line. Needs
   a weather system (none today: the clouds are only drawn).
 - **Flood waves** (a dam breaking): a short-lived per-cell shallow-water solve near the break,
   handing back to the basins when it settles. Not planned.
@@ -170,21 +194,25 @@ Measure with the bench before relying on these.
 ## 12. Compatibility
 
 A new compatibility line (pre-1.0, the next MINOR, which the owner raises): the saved world gains
-the basins table, the protocol gains basin messages, and the generator seeds springs and levels from
+the basins table, the protocol gains basin messages, and the generator seeds runoff and levels from
 the world map (the terrain a seed generates is unchanged; its water's state is new).
 
-## 13. Open questions for the owner
+## 13. Phases (IMPLEMENTATION_PLAN.md Phase 52)
 
-1. **Lava and lahar on contact:** lava meeting water (stone? obsidian-like?), lava burning blocks,
-   lahar depositing mud as it slows. Decide now, or later as data?
-2. **Time scale:** at real rates a large lake drains over hours. Real rates, or a world setting that
-   speeds the water up?
-3. **The smallest basin:** do puddles count (a basin of a few cells), or is there a minimum size below
-   which water is just static blocks?
-4. **Players' own water:** does placing a water block make a basin (it spreads and finds its level), or
-   is placed water static as now?
-5. **Currents on players:** should a strong current carry a swimmer away, or only drift them a
-   little?
-6. **First phase:** I would start with water only: basins, outlets, damming, draining, diverting,
-   currents on floating bodies, near players with fast-forward. Lava, lahar, jets and evaporation
-   later. Agreed?
+- **W1 — Basins.** The liquid data (`shared/fluids/flow.json`), the blocks' `leak`, basins found from
+  the liquid cells, their level ↔ volume, outlets by the weir law, leaks, row crossings at the rim,
+  merge and split, streams over dry ground; the time scale as a world setting. Server only, tested
+  natively (a dammed pool fills and spills, a cut drains a lake to its floor, a trench takes a river).
+- **W2 — Runoff and rivers.** The world map's runoff into basins (§2.1), rivers as chains of pools
+  at their map levels, the basins saved with the world, fast-forward far from players. A new
+  compatibility line (0.42.0, the owner raises it): the saved world and the generator's water state.
+- **W3 — Clients.** Basin levels and currents on the wire; clients rewrite their own rim cells.
+  Protocol change (on the 0.42 line).
+- **W4 — Currents.** Water drag relative to the current on bodies (the server and the prediction's
+  stand-ins) and swimmers carried by it.
+- **W5 — Placed water.** A water block in the hotbar (`shared/items/items.json`), placed as a small
+  basin that spreads and finds its level.
+
+## 14. Open questions
+
+None blocking. Lava and lahar contact rules, jets, evaporation and weather are later (§10).
