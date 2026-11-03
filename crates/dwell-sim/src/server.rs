@@ -1320,6 +1320,8 @@ impl Server {
         // 4. The falling pieces' hard hits hurt (before the step resolves them), physics, then the
         // pieces at rest settle (docs/FELLING.md §4).
         self.piece_hits();
+        // Bodies in water float (docs/BUILT_BODIES.md §6).
+        self.felling.float(&mut self.world, &mut self.physics);
         self.physics.step(1.0 / f64::from(SIM_HZ));
         self.tick += 1;
         self.settle_pieces();
@@ -2000,6 +2002,37 @@ impl Server {
             let m = self.spawn_message(i);
             self.broadcast_world(&m);
         }
+    }
+
+    /// Adds a moving body of `kind` from `cells` (offsets in its grid), its reference cell's centre
+    /// at `position`, unturned and still, as a placed build platform starts one (tests and tools;
+    /// docs/BUILT_BODIES.md). Every client hears its spawn. Its id.
+    pub fn add_body(
+        &mut self,
+        kind: u8,
+        cells: Vec<([i32; 3], dwell_blocks::StateId)>,
+        position: [f64; 3],
+    ) -> u32 {
+        let i = self.felling.spawn_body(
+            &mut self.physics,
+            None,
+            kind,
+            0,
+            cells,
+            DVec3::from(position),
+            dwell_physics::DQuat::IDENTITY,
+            DVec3::ZERO,
+            DVec3::ZERO,
+        );
+        let m = self.spawn_message(i);
+        self.broadcast_world(&m);
+        self.felling.pieces[i].id
+    }
+
+    /// A body's pose now (its reference cell's centre and rotation), if it is still one.
+    pub fn body_pose(&self, id: u32) -> Option<(DVec3, dwell_physics::DQuat)> {
+        let p = self.felling.pieces.iter().find(|p| p.id == id)?;
+        Some((self.physics.position(p.body), self.physics.rotation(p.body)))
     }
 
     /// Piece `i`'s `EntitySpawn`: its id, pose now, kind and cells.

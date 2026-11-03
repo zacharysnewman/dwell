@@ -359,6 +359,16 @@ impl Physics {
             b.set_translation(p, true);
         }
     }
+    /// Gravity's strength for Tier 1 bodies (m/s²; toward the midplane on either face).
+    pub fn gravity(&self) -> f64 {
+        self.config.gravity_y.abs()
+    }
+    /// An impulse (N·s) on the body at a world point (a cell's buoyancy, docs/BUILT_BODIES.md §6).
+    pub fn apply_impulse_at(&mut self, h: BodyHandle, impulse: DVec3, point: DVec3) {
+        if let Some(b) = self.w.bodies.get_mut(h.0) {
+            b.apply_impulse_at_point(impulse, point, true);
+        }
+    }
     pub fn set_rotation(&mut self, h: BodyHandle, q: DQuat) {
         if let Some(b) = self.w.bodies.get_mut(h.0) {
             b.set_rotation(q, true);

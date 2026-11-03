@@ -81,7 +81,13 @@ export function validateBodies(data, blocks = registryBlockNames()) {
     throw new Error(`bodies.json: ${m}`);
   };
   if (typeof data !== 'object' || data === null || Array.isArray(data)) bad('(root) must be an object');
-  for (const k of Object.keys(data)) if (k !== '$comment' && k !== 'kinds') bad(`unknown entry (root).${k}`);
+  for (const k of Object.keys(data)) if (!['$comment', 'kinds', 'water'].includes(k)) bad(`unknown entry (root).${k}`);
+  const w = data.water;
+  if (typeof w !== 'object' || w === null || Array.isArray(w)) bad('water must be an object');
+  for (const k of Object.keys(w)) if (!['drag', 'angularDrag'].includes(k)) bad(`water: unknown ${k}`);
+  for (const k of ['drag', 'angularDrag']) {
+    if (typeof w[k] !== 'number' || !(w[k] >= 0 && w[k] <= 50)) bad(`water.${k} must be a number in [0, 50] (/s)`);
+  }
   if (!Array.isArray(data.kinds) || data.kinds.length === 0) bad('kinds must be a non-empty list');
   if (data.kinds.length > 256) bad('kinds: at most 256 (the wire has a byte)');
   const names = new Set();
@@ -108,7 +114,10 @@ export function validateBodies(data, blocks = registryBlockNames()) {
 
 /** The Rust source for validated body kinds. */
 export function bodiesRust(data) {
-  const lines = [`// ${bodiesHeader}`, '', 'use crate::felling::BodyKind;', ''];
+  const lines = [`// ${bodiesHeader}`, '', 'use crate::felling::{BodyKind, WaterRules};', ''];
+  const rf = (v) => (Number.isInteger(v) ? `${v}.0` : String(v));
+  lines.push('/// How bodies float (shared/physics/bodies.json `water`).');
+  lines.push(`pub const WATER: WaterRules = WaterRules { drag: ${rf(data.water.drag)}, angular_drag: ${rf(data.water.angularDrag)} };`, '');
   lines.push('/// The body kinds, in wire order (shared/physics/bodies.json).');
   lines.push(`pub const BODY_KINDS: [BodyKind; ${data.kinds.length}] = [`);
   for (const k of data.kinds) {
