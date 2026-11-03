@@ -297,6 +297,9 @@ pub struct Falling {
     held: bool,
     /// Held still on its build platform (docs/BUILT_BODIES.md §3) until no cell of it rests on one.
     anchored: bool,
+    /// Some of it was in a liquid last tick: the water carries its weight, so players push it
+    /// however heavy (docs/BUILT_BODIES.md §6).
+    floating: bool,
     /// How far its cells reach from its body's origin (m).
     reach: f64,
 }
@@ -495,6 +498,7 @@ impl Felling {
                 heavy: mass >= self.rules.pushable_mass,
                 held: false,
                 anchored: false,
+                floating: false,
                 reach,
             });
             out.push(self.pieces.len() - 1);
@@ -579,6 +583,7 @@ impl Felling {
                 heavy: mass >= self.rules.pushable_mass,
                 held: false,
                 anchored: false,
+                floating: false,
                 reach,
             };
             self.next_id += 1;
@@ -791,6 +796,7 @@ impl Felling {
             held: false,
             reach,
             anchored: false,
+            floating: false,
         });
         self.pieces.len() - 1
     }
@@ -859,12 +865,12 @@ impl Felling {
     /// (face-locally: away from the midplane) by the liquid it displaces — its fraction under, its
     /// volume, the liquid's density and gravity — at its centre, so a raft rights itself and a heavy
     /// end sinks first; a body in water slows by `WATER`'s drags times how much of it is under.
-    pub fn float(&self, world: &mut VoxelWorld, physics: &mut Physics) {
+    pub fn float(&mut self, world: &mut VoxelWorld, physics: &mut Physics) {
         let dt = 1.0 / f64::from(dwell_protocol::SIM_HZ);
         let g = physics.gravity();
         // A cell is 1 × ½ × 1 m.
         let volume = CELL_H;
-        for p in &self.pieces {
+        for p in &mut self.pieces {
             let (position, rotation) = (physics.position(p.body), physics.rotation(p.body));
             let mut under = 0.0;
             for &(o, _) in &p.cells {
@@ -881,6 +887,7 @@ impl Felling {
                 );
                 under += fraction;
             }
+            p.floating = under > 0.0;
             if under > 0.0 {
                 let share = under / p.cells.len() as f64;
                 let v = physics.velocity(p.body) * (-WATER.drag * share * dt).exp();
@@ -889,6 +896,11 @@ impl Felling {
                 physics.set_angular_velocity(p.body, w);
             }
         }
+    }
+
+    /// Whether the body `id` is held from players' pushes now (too heavy and slow; not afloat).
+    pub fn held_from_players(&self, id: u32) -> Option<bool> {
+        self.pieces.iter().find(|p| p.id == id).map(|p| p.held)
     }
 
     /// The box (world metres) round each piece the terrain collision must cover over the next
@@ -987,7 +999,8 @@ impl Felling {
             p.age += 1;
             let v = physics.velocity(p.body).length();
             let w = physics.angular_velocity(p.body).length();
-            let held = p.heavy && v + w * p.reach < r.heavy_hold_speed;
+            // Not while floating (owner, 2026-11-02: a log raft afloat "I couldn't push it").
+            let held = p.heavy && !p.floating && v + w * p.reach < r.heavy_hold_speed;
             if held != p.held {
                 physics.set_dominant(p.body, held);
                 p.held = held;
@@ -1228,11 +1241,16 @@ pub fn axis_rotations() -> Vec<DQuat> {
 #[derive(Clone, Debug, Default)]
 pub struct PieceBook {
     priority: std::collections::HashMap<u32, f64>,
-    rest_sent: std::collections::HashSet<u32>,
+    /// The pose each piece was last sent at (position, rotation).
+    sent: std::collections::HashMap<u32, ([f64; 3], [f32; 4])>,
 }
 
-/// Slower than this (m/s, rad/s) a piece is at rest for the snapshots.
-const AT_REST: f64 = 0.05;
+/// A piece within this of the pose last sent (m, and the rotation's quaternion components) is at
+/// rest for the snapshots: not sent again. By its pose, not its speed: a raft drifting slower than
+/// any speed threshold still moves (owner, 2026-11-02: a floating raft "froze until I broke a
+/// block": below 0.05 m/s it counted as at rest and was never sent again).
+const REST_MOVE: f64 = 0.01;
+const REST_TURN: f32 = 0.002;
 
 impl PieceBook {
     /// The pieces of `states` to send to a player at `at` (m), at most `room`, in send order.
@@ -1244,17 +1262,18 @@ impl PieceBook {
     ) -> Vec<dwell_protocol::PieceState> {
         let live: std::collections::HashSet<u32> = states.iter().map(|p| p.id).collect();
         self.priority.retain(|id, _| live.contains(id));
-        self.rest_sent.retain(|id| live.contains(id));
+        self.sent.retain(|id, _| live.contains(id));
         let speed = |v: [f32; 3]| v.iter().map(|x| f64::from(*x).powi(2)).sum::<f64>().sqrt();
         let mut candidates: Vec<(f64, &dwell_protocol::PieceState)> = Vec::new();
         for p in states {
-            let (v, w) = (speed(p.velocity), speed(p.angular));
-            let resting = v < AT_REST && w < AT_REST;
-            if resting && self.rest_sent.contains(&p.id) {
+            let v = speed(p.velocity);
+            // At rest where it was last sent: nothing new to send.
+            let unmoved = self.sent.get(&p.id).is_some_and(|(at, q)| {
+                (0..3).all(|k| (p.position[k] - at[k]).abs() < REST_MOVE)
+                    && (0..4).all(|k| (p.rotation[k] - q[k]).abs() < REST_TURN)
+            });
+            if unmoved && v < REST_MOVE && speed(p.angular) < f64::from(REST_TURN) {
                 continue;
-            }
-            if !resting {
-                self.rest_sent.remove(&p.id);
             }
             let distance = (0..3)
                 .map(|i| (p.position[i] - at[i]).powi(2))
@@ -1271,9 +1290,7 @@ impl PieceBook {
             .into_iter()
             .map(|(_, p)| {
                 self.priority.insert(p.id, 0.0);
-                if speed(p.velocity) < AT_REST && speed(p.angular) < AT_REST {
-                    self.rest_sent.insert(p.id);
-                }
+                self.sent.insert(p.id, (p.position, p.rotation));
                 *p
             })
             .collect()
@@ -1306,6 +1323,7 @@ mod tests {
             heavy: false,
             held: false,
             anchored: false,
+            floating: false,
             reach: 1.0,
         }
     }
@@ -1483,6 +1501,23 @@ mod tests {
     }
 
     #[test]
+    fn a_piece_drifting_slowly_is_sent_as_it_moves() {
+        // face-a-only: as above. Owner, 2026-11-02: a floating raft "froze until I broke a block":
+        // drifting at 0.03 m/s it counted as at rest and was never sent again. Each time it has
+        // moved a centimetre from the pose last sent, it is sent. Red before: once only.
+        let mut book = PieceBook::default();
+        let mut sends = 0;
+        for tick in 0..60 {
+            let mut p = moving(1, 0.0, 0.0);
+            p.velocity = [0.03, 0.0, 0.0];
+            p.position[0] = 0.03 * f64::from(tick) / 3.0; // a snapshot every 3 ticks
+            sends += book.choose(&[p], [0.0; 3], 25).len();
+        }
+        // 0.6 m over the run: a send each centimetre or so (every snapshot here).
+        assert!(sends >= 30, "sent {sends} times");
+    }
+
+    #[test]
     fn a_piece_at_rest_is_sent_once_until_it_moves() {
         // face-a-only: as above.
         let mut book = PieceBook::default();
@@ -1529,6 +1564,71 @@ mod tests {
         }
     );
 
+    #[test]
+    fn a_heavy_raft_afloat_is_not_held_from_players_pushes() {
+        // face-a-only: the push hold has no up (the floating test is both faces').
+        // Owner, 2026-11-02: a 2 × 2 log raft (1,400 kg, over `pushableMass`) dropped in water
+        // floated, "but I couldn't push it": slow and heavy, it was held from players as a felled
+        // trunk is. Afloat, the water carries it. Red before: held.
+        let mut world = VoxelWorld::new(dwell_world::empty_generator(), None);
+        let mut physics = Physics::default();
+        let mut felling = Felling::default();
+        let water = dwell_blocks::require("dwell:water");
+        for x in -4..=4 {
+            for z in -4..=4 {
+                for y in 70..76 {
+                    world.set_voxel(x, y, z, water);
+                }
+            }
+        }
+        let cells: Vec<([i32; 3], StateId)> = (0..2)
+            .flat_map(|x| (0..2).map(move |z| ([x, 0, z], log())))
+            .collect();
+        let i = felling.spawn_body(
+            &mut physics,
+            None,
+            1,
+            0,
+            cells.clone(),
+            DVec3::new(0.5, 38.0, 0.5),
+            DQuat::IDENTITY,
+            DVec3::ZERO,
+            DVec3::ZERO,
+        );
+        let id = felling.pieces[i].id;
+        for _ in 0..(60 * 6) {
+            felling.float(&mut world, &mut physics);
+            felling.step(&mut physics);
+            physics.step(1.0 / 60.0);
+        }
+        assert_eq!(
+            felling.held_from_players(id),
+            Some(false),
+            "afloat: pushable"
+        );
+        // The same raft on dry ground: held, as a heavy trunk is.
+        let mut dry = VoxelWorld::new(dwell_world::empty_generator(), None);
+        let j = felling.spawn_body(
+            &mut physics,
+            None,
+            1,
+            0,
+            cells,
+            DVec3::new(20.5, 38.0, 0.5),
+            DQuat::IDENTITY,
+            DVec3::ZERO,
+            DVec3::ZERO,
+        );
+        let dry_id = felling.pieces[j].id;
+        felling.float(&mut dry, &mut physics);
+        felling.step(&mut physics);
+        assert_eq!(
+            felling.held_from_players(dry_id),
+            Some(true),
+            "dry and still: held"
+        );
+    }
+
     /// A 1 m log falling at `speed` m/s onto a standing player's head (capsule 0.3 m round,
     /// 1.8 m tall, centre 0.9 m up): what it hurts, twice over (a piece hurts each player once).
     type Hits = Vec<(u64, i32)>;
@@ -1563,6 +1663,7 @@ mod tests {
             heavy: false,
             held: false,
             anchored: false,
+            floating: false,
             reach: 1.0,
         });
         let player = PlayerBody {

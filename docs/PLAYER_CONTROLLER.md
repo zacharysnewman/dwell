@@ -778,6 +778,7 @@ PPC default for voxels.
 | | `max_slope_angle` | 56° ◆ (the steepest ground: above the 45° ramps; steeper than `slide.min_angle` slides) | same | |
 | `jump` | `height` | 1.25 m | same | Clears one block |
 | | `buffer_ticks` / `coyote_ticks` ◆ | 12 / 12 ticks (0.2 / 0.2 s) | 0.2 / 0.1 s | Coyote time doubled: 0.1 s felt stingy next to other games |
+| `launch` ◆ | on a dynamic body underfoot | 0.5 m/s (else 0.1, 1.5 in step grace) | — | Dwell (2026-11-02): a raft afloat hands the player ~0.12 m/s upward each tick; not a launch (`DYNAMIC_GROUND_LAUNCH_THRESHOLD`) |
 | `crouch` | `height` ◆ | 0.9 m | 1.0 | Fits 1-tall crawlspaces |
 | | `speed` / `mid_air_boost` | 1.6 m/s / 0 | same | |
 | `climb` | `speed` / `look_down_threshold` | 3 m/s / 30° | same | |

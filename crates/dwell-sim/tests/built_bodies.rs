@@ -311,3 +311,43 @@ fn a_wooden_raft_floats_and_a_stone_one_sinks() {
         at.y
     );
 }
+
+#[test]
+fn a_player_stands_steadily_on_a_floating_raft() {
+    // Owner, 2026-11-02: "my character freaks out when standing on a floating object, hand and feet
+    // animations twitch and spam". A raft afloat accelerates as it bobs (buoyancy, ~0.12 m/s a
+    // tick): the controller read the player carried with it as launched off it every tick, so
+    // never grounded (Falling). Settled on it, the player stays grounded. Red before: 0 of 180.
+    let mut f = Fixture::new(flat());
+    join_streaming(&mut f, 1);
+    f.server.step();
+    f.take_all();
+    let water = dwell_blocks::require("dwell:water");
+    for x in -6..8 {
+        for z in -6..8 {
+            for y in G - 6..G {
+                f.server.world().set_voxel(x, y, z, water);
+            }
+        }
+    }
+    let surface = f64::from(G) * 0.5;
+    let cells: Vec<([i32; 3], u16)> = (0..2)
+        .flat_map(|x| (0..2).map(move |z| ([x, 0, z], log())))
+        .collect();
+    let raft = f.server.add_body(1, cells, [0.5, surface, 0.5]);
+    steps(&mut f, 240);
+    let (at, _) = f.server.body_pose(raft).expect("the raft");
+    f.move_to(1, 1.0, at.y + 0.25 + 0.02, 1.0);
+    let h = f.server.player_handle_of(1).expect("the player");
+    steps(&mut f, 60);
+    let mut grounded = 0;
+    for _ in 0..180 {
+        f.server.step();
+        let (_, _, players) = f.server.sim();
+        grounded += i32::from(players.controller(h).ground.grounded);
+    }
+    assert!(
+        grounded >= 175,
+        "grounded on the raft {grounded} of 180 ticks"
+    );
+}
