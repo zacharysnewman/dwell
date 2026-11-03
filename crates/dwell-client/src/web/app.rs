@@ -2203,6 +2203,9 @@ impl Inner {
         game.set_capabilities(region_edits, brushes, generator_version);
         game.set_world(generator_version, world_seed);
         game.day_override = self.options.day;
+        if let Some(w) = self.session.as_ref().and_then(|s| s.world_settings()) {
+            game.set_world_clock(w.clock);
+        }
         game.set_loading_screen(self.options.loading_screen);
         game.set_crossing_roll(self.crossing_roll);
         game.set_respawn_preload(dwell_game::loading::respawn_preload_from_query(

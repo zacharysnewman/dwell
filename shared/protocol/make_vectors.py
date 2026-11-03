@@ -413,6 +413,19 @@ def edit_ack(through, rejected):
     )
 
 
+# WorldSettings (protocol v22): u8 field count, each u8 tag, u16 length, bytes; the clock (tag 1:
+# f32 day s, f32 night s, f32 start hour), the water speed (0x81: f32), and an optional field a
+# newer build added (0x9f), which this build passes on.
+def world_settings(fields):
+    out = struct.pack("<BB", T["WorldSettings"], len(fields))
+    for tag, data in fields:
+        out += struct.pack("<BH", tag, len(data)) + data
+    return out
+
+
+vectors["world_settings"] = world_settings(
+    [(0x01, f32s(800.0, 400.0, 7.0)), (0x81, f32s(1.0)), (0x9F, b"\x01\x02")]
+)
 vectors["block_registry_part"] = block_registry(1, 2, REGISTRY_PAYLOAD[40:])
 vectors["edit_ack"] = edit_ack(7, [])
 vectors["edit_ack_rejected"] = edit_ack(0x01020304, [2, 0x01020303, 0x01020304])
@@ -505,6 +518,8 @@ malformed = {
     "!chunk_request_empty": struct.pack("<BH", T["ChunkRequest"], 0),
     "!resync_too_many": struct.pack("<BH", T["ChunkResync"], c["limits"]["maxResyncChunks"] + 1)
     + struct.pack("<iii", 0, 0, 0) * (c["limits"]["maxResyncChunks"] + 1),
+    "!world_settings_truncated": world_settings([(0x01, f32s(800.0, 400.0, 7.0))])[:-1],
+    "!world_settings_tag_twice": world_settings([(0x81, f32s(1.0)), (0x81, f32s(2.0))]),
     "!block_registry_zero_parts": block_registry(0, 0, b""),
     "!block_registry_part_past_end": block_registry(2, 2, b"\x00"),
     "!block_registry_truncated": block_registry(0, 1, REGISTRY_PAYLOAD)[:-1],

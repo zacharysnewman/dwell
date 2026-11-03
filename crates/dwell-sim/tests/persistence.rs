@@ -66,6 +66,40 @@ fn place(cell: [i32; 3], face: u8, m: u16) -> Message {
 }
 
 #[test]
+fn a_worlds_settings_are_saved_with_it_and_kept_over_a_new_servers_defaults() {
+    // DAY_NIGHT.md §2, WATER_FLOW.md §4.1: a new world takes the server's water speed (and this
+    // build's clock) and keeps them; a server opening it later with other defaults uses the
+    // world's, and sends them at join.
+    let scratch = Scratch::new("settings");
+    let path = scratch.world("settings");
+    {
+        let store = WorldStore::open_file(&path).expect("opens");
+        let mut f = Fixture::new(ServerConfig {
+            store: Some(store),
+            water_speed: 3.0,
+            ..flat()
+        });
+        assert_eq!(f.server.world_settings().water_speed, 3.0);
+        f.server.save_now();
+        f.server.flush_store();
+    }
+    let store = WorldStore::open_file(&path).expect("reopens");
+    let mut f = Fixture::new(ServerConfig {
+        store: Some(store),
+        water_speed: 1.0,
+        ..flat()
+    });
+    let s = f.server.world_settings();
+    assert_eq!(s.water_speed, 3.0, "the world's own");
+    assert_eq!(
+        s.clock,
+        dwell_sim::server::default_settings(1.0).clock,
+        "the clock it was made with"
+    );
+    f.join(1, &Client::new(1)); // checks the settings sent are these
+}
+
+#[test]
 fn an_edited_world_survives_a_server_restart() {
     let scratch = Scratch::new("server");
     let path = scratch.world("server");

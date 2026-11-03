@@ -610,6 +610,8 @@ pub struct Game<S: Scene> {
     /// The dev switches over the day/night cycle, and its state at the last frame (world time is
     /// `clock`'s).
     pub day_override: DayOverride,
+    /// The world's clock (the server's world settings; this build's until they arrive).
+    world_clock: dwell_look::daynight::Clock,
     day: DayState,
     first_draw_ms: Option<f64>,
     /// The loading screen (ARCHITECTURE.md §6.3): off unless `set_loading_screen` turns it on.
@@ -733,6 +735,7 @@ impl<S: Scene> Game<S> {
             reduced_motion: false,
             lod_camera: None,
             day_override: DayOverride::default(),
+            world_clock: DAY_NIGHT.clock,
             day: DayState::default(),
             first_draw_ms: None,
             loading: LoadingGate::new(LOADING, false),
@@ -2549,6 +2552,15 @@ impl<S: Scene> Game<S> {
         }
     }
 
+    /// Uses the world's clock (its settings, DAY_NIGHT.md §2) for the sky.
+    pub fn set_world_clock(&mut self, c: dwell_protocol::world_settings::WorldClock) {
+        self.world_clock = dwell_look::daynight::Clock {
+            day_s: f64::from(c.day_s),
+            night_s: f64::from(c.night_s),
+            start_hour: f64::from(c.start_hour),
+        };
+    }
+
     /// The day/night cycle at `now_ms`: world time from the server (none before the first
     /// snapshot: the world's start), sped up or replaced by the dev switches.
     fn update_day(&mut self, now_ms: f64) {
@@ -2556,7 +2568,11 @@ impl<S: Scene> Game<S> {
         let o = self.day_override;
         let world_s =
             self.clock.seconds(now_ms).unwrap_or(0.0) + (o.speed - 1.0) * (now_ms - first) / 1000.0;
-        self.day = DAY_NIGHT.state(world_s, o.time, o.moon);
+        let d = dwell_look::daynight::DayNight {
+            clock: self.world_clock,
+            ..DAY_NIGHT
+        };
+        self.day = d.state(world_s, o.time, o.moon);
         self.scene
             .borrow_mut()
             .set_day(&self.day, (now_ms - first) / 1000.0);

@@ -2,8 +2,8 @@
   "$comment": "The day/night cycle (docs/DAY_NIGHT.md, ADR 0034): the world clock, the sun's path, how the sun, moon, stars and sky are drawn, and the sky keyframes over the day. Colours are sRGB #rrggbb. Run `node shared/look/daynight.mjs` after editing; CI fails if crates/dwell-look/src/daynight.gen.rs is stale. The clock is public API: every build on a compatibility line must agree on it (tree growth counts its days).",
   "clock": {
     "$comment": "Seconds of daylight and of night on face A; startHour is the 24-hour clock at world tick 0 (a new world starts in the morning).",
-    "dayS": 1200,
-    "nightS": 600,
+    "dayS": 800,
+    "nightS": 400,
     "startHour": 7
   },
   "sunPath": {

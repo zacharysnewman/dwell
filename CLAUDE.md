@@ -62,6 +62,9 @@ and friend worlds), with a small master server for discovery; there are no offic
 - `docs/BUILT_BODIES.md` — design for Phase 51 (ADR 0052): moving pieces edited while they move
   (natural ones break only, built ones break and place, splits), the build platform block whose builds
   are bodies that never settle, bodies saved with the world and floating in water.
+- `docs/WATER_FLOW.md` — design for Phase 52 (ADR 0053): water flow as basins with one level joined by
+  outlets (weir law, block leaks), rivers as chains of pools fed by the world map's runoff; damming,
+  draining, diverting; currents on bodies and swimmers; near players, fast-forwarded elsewhere.
 - `docs/BUGS.md` — the open bugs the owner reported, with repros and suspects; fixed ones move to its Fixed list.
 - `docs/ITEMS.md` — the creative hotbar's items (1 m and ½ m pieces, `shared/items/items.json`) and the
   placement rules as block data (attach, placeOn, onSlopes, moldable).
@@ -238,6 +241,10 @@ that touches the public API, a release or the workflows:
   breaking: removing or renaming a state (or adding/removing a property), changing an existing
   state's shape or rules, changing the shapes or the adaptive shape rules, and changing worldgen
   (`docs/RELEASES.md` §3).
+- **World settings (ADR 0054)** — the clock, the water speed — are the world's, sent at join
+  (`WorldSettings`) and saved with it: changing a build's default changes new worlds only. A new
+  setting an older build on the line can do without is an **optional** tag (top bit set), not a
+  breaking change; a required one is.
 - **The browser's shared stores are append-only** (the world index, settings, device key): new
   fields optional, unknown fields and unreadable records preserved on rewrite (a test pins it).
 - **Release logic lives in tested scripts** (`client/scripts/release.ts`, `site.ts`), not in workflow

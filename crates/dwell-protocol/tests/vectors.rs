@@ -143,6 +143,29 @@ fn decoded_fields_are_the_vectors_values() {
         Message::decode(&get("entity_despawn")),
         Some(Message::EntityDespawn(7))
     );
+    let Some(Message::WorldSettings(f)) = Message::decode(&get("world_settings")) else {
+        panic!("world_settings")
+    };
+    let d = world_settings::WorldSettings {
+        clock: world_settings::WorldClock {
+            day_s: 1.0,
+            night_s: 1.0,
+            start_hour: 0.0,
+        },
+        water_speed: 9.0,
+    };
+    let s = f
+        .settings(d)
+        .expect("a newer build's optional field is skipped");
+    assert_eq!(
+        (
+            s.clock.day_s,
+            s.clock.night_s,
+            s.clock.start_hour,
+            s.water_speed
+        ),
+        (800.0, 400.0, 7.0, 1.0)
+    );
     assert_eq!(
         Message::decode(&get("held_item_brush")),
         Some(Message::HeldItem(held_item::BRUSH | 4))

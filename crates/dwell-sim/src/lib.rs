@@ -9,4 +9,5 @@ pub mod felling;
 pub mod fixed_step;
 pub mod lod_propagation;
 pub mod server;
+pub mod water;
 pub mod worldgen_pool;

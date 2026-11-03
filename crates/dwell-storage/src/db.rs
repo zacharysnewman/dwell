@@ -21,6 +21,7 @@ type Key3 = (i32, i32, i32);
 type Key4 = (i32, i32, i32, i32);
 
 /// Scalars by name: format_version, registry_hash, world_seed, generator_version, world_tick,
+/// world_settings (the world's settings, tagged fields),
 /// created_at, saved_at (little-endian u64/i64), spawn (3 × f64), app versions (UTF-8).
 const META: TableDefinition<&str, &[u8]> = TableDefinition::new("meta");
 const SETTINGS: TableDefinition<&str, &str> = TableDefinition::new("settings");
@@ -56,6 +57,10 @@ pub struct WorldMeta {
     /// `created` is kept if the file already has one.
     pub app_version_created: String,
     pub app_version_last: String,
+    /// The world's settings (`dwell_protocol::world_settings`: its clock, its water speed) in
+    /// their tagged form, fields a newer build added kept; none: a world from before them (the
+    /// build's defaults).
+    pub settings: Option<Vec<u8>>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -296,6 +301,7 @@ fn meta_from(get: impl Fn(&str) -> Option<Vec<u8>>) -> Option<WorldMeta> {
         }),
         app_version_created: text("app_version_created"),
         app_version_last: text("app_version_last"),
+        settings: get("world_settings"),
     })
 }
 
@@ -676,6 +682,9 @@ impl WorldDb {
                     &u64::from(m.generator_version).to_le_bytes(),
                 )?;
                 put("world_tick", &u64::from(m.world_tick).to_le_bytes())?;
+                if let Some(s) = &m.settings {
+                    put("world_settings", s)?;
+                }
                 put("saved_at", &now.to_le_bytes())?;
                 match m.spawn {
                     Some(s) => put(

@@ -1606,7 +1606,7 @@ lives in side files. Chunk and LOD blobs are the protocol's palette + RLE compre
 
 | Table | Contents |
 |---|---|
-| `meta` | Scalars by name: format version, block registry hash, world seed, generator version, spawn, world time (`world_tick`, the server's tick: the day/night cycle's clock, §6.6), timestamps, **[built, Phase 6]** the app versions that created and last saved the world; **[planned]** preview image |
+| `meta` | Scalars by name: format version, block registry hash, world seed, generator version, spawn, world time (`world_tick`, the server's tick: the day/night cycle's clock, §6.6), **[built, 0.42.0]** the world's settings (`world_settings`: the `WorldSettings` fields as sent, its clock and water speed, unknown optional fields kept; a new world takes this build's clock and the server's `water_speed`), timestamps, **[built, Phase 6]** the app versions that created and last saved the world; **[planned]** preview image |
 | `settings` | Name, MOTD, max players, edit and flight policies, autosave interval, allow-list switch, the server key **[built]**; **[planned]** icon, visibility, password hash, online/offline mode, physics/view caps, backup policy; **[planned, Phase 30]** the growth-speed multiplier (default 1), applied by the server to tree growth |
 | `block_states` | **[built, Phase 8]** world state id → canonical string (§6.1), ids assigned densely in order of first use and stable for the life of the file |
 | `chunks` | Modified chunks only: `(cx, cy, cz)` → revision, generator version, LZ4 palette + RLE blob (same encoding as `ChunkData Explicit`, but the palette lists **world state ids** of `block_states`, not runtime ids) |
@@ -2230,9 +2230,12 @@ Each frame the octree is walked from the root around the **camera** (the eye):
 - **Day/night cycle [built, Phase 32]** ([ADR 0035](./adr/0035-day-night-cycle.md),
   [`DAY_NIGHT.md`](./DAY_NIGHT.md)): world time is the server's tick (60 Hz; saved in the world
   file's `meta` as `world_tick` and resumed on load; sent in `Welcome` and every `PhysicsSnapshot`),
-  so it needed no protocol change. The client's estimate between snapshots is `world_clock.rs`
-  (shared with the clouds' drift). `shared/look/daynight.json` holds the clock (`dayS` 1200 +
-  `nightS` 600: a 30-minute day; `startHour` 7 at tick 0 — public API, and tree growth's day,
+  and since 0.42.0 (protocol v22) the clock is the world's: the server sends it at join
+  (`WorldSettings`) and saves it in the world's `meta`, so a world keeps its day length and a
+  build's default (`daynight.json`, a new world's) can change without a new compatibility line.
+  The client's estimate between snapshots is `world_clock.rs`
+  (shared with the clouds' drift). `shared/look/daynight.json` holds the clock (`dayS` 800 +
+  `nightS` 400: a 20-minute day, owner 2026-11-03, 30 minutes before; `startHour` 7 at tick 0 — public API, and tree growth's day,
   Phase 30), the sun's path (rising toward `riseYawDeg`, culminating `noonElevationDeg` 60° over
   face A), the sun's, moon's and stars' looks and 14 **keyframes** keyed by the solar angle (0°
   rising, 90° noon, 180° setting, 270° lowest), each setting the sky's zenith and horizon, the sun
@@ -2370,6 +2373,22 @@ top level's speed, 11.3 km/s, above). In the browser test (local mode, SwiftShad
 flies high above the disc and the whole disc is drawn by the time it arrives.
 
 ---
+
+### 6.7 Water Flow **[in progress, Phase 52: W1 built]**
+
+[ADR 0053](./adr/0053-water-flow.md), [`WATER_FLOW.md`](./WATER_FLOW.md). Liquid is simulated as
+**basins**, each a connected body with one level and volume, joined by **outlets** (the weir law,
+blocks' `leak` data), not per cell: a basin's level changes by in − out each tick and its rim cells
+are rewritten only when the level crosses a ½ m row. Rivers are chains of pools fed by the world
+map's runoff; damming, draining and diverting are edits that change outlets; basins fill, spill,
+merge and split. Simulated near players, fast-forwarded elsewhere; rates counted in game time (the day/night clock's) × a water speed world setting; each face's sea a fixed reservoir at sea level (a sink, and a source for land below it).
+Each liquid cell has a derived current, which the water drag (§7, BUILT_BODIES.md §6) and the swim
+layer use. **Built (W1):** `dwell-sim` `water.rs` on the server, data `shared/fluids/flow.json` (→
+`flow.gen.rs`: the speed, the water tick's period, the live radius, the size limits, each liquid's
+weir coefficient and the blocks' leaks); bodies found by the edits that touch them (their inflow what
+left them before), each face's sea a reservoir by size; its writes sent as `Rebake` modifications
+(WATER_FLOW.md §15). **Planned:** runoff from the world map, a saved basins table (§6.4), basin
+messages, currents (a new compatibility line).
 
 ## 7. Physics Pipeline
 
@@ -2777,6 +2796,13 @@ C→S  ClientAuth    u8[64] signature over (nonce ‖ transport binding ‖ publ
 S→C  BlockRegistry u16 part, u16 parts, u32 length, u8[length] — part of the registry
                    payload (ADR 0038, BLOCK_REGISTRY.md §8), before Welcome; the client
                    maps every state id it receives or sends through it
+S→C  WorldSettings 0x54 (protocol v22): u8 count, each u8 tag, u16 length, bytes — the
+                   world's settings (`dwell_protocol::world_settings`): tag 1 the clock
+                   (f32 day s, f32 night s, f32 start hour), 0x81 the water speed (f32);
+                   a tag with the top bit set is optional (skipped by a build that doesn't
+                   know it), any other must be understood ("This world needs a newer
+                   version of Dwell."); before Welcome. The client uses the world's clock
+                   for the sky, not its own
 S→C  Welcome       u16 playerId, u64 worldSeed, u32 generatorVersion, u32 serverTick,
                    i32×3 verificationChunk, u8 flags (WelcomeFlags: 1 = flight — this
                    player may use creative flight; 2 = regionEdits — the server takes

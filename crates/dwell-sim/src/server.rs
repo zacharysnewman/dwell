@@ -14,6 +14,7 @@ use dwell_physics::controller::{Input, PlayerHandle, Players, events};
 use dwell_physics::net::{dequantize_input, player_flags_of, quantize_pitch, quantize_yaw, to_net};
 use dwell_physics::query::GroundRef;
 use dwell_physics::{DVec3, Physics, Vec3};
+use dwell_protocol::world_settings::{SettingsFields, WorldClock, WorldSettings};
 use dwell_protocol::*;
 use dwell_protocol::{
     Channel, ChunkForm, DamageCause, HostState, LodForm, MAX_DATAGRAM_BYTES, Message,
@@ -91,6 +92,10 @@ struct TickChanges {
     chunks: Vec<ChunkChanges>,
     /// Chunk → (its index in `chunks`, local index → its index in that chunk's changes).
     index: HashMap<ChunkCoord, (usize, HashMap<u16, usize>)>,
+    /// Each changed cell's state before its first change (for water flow, docs/WATER_FLOW.md).
+    before: Vec<([i32; 3], u16)>,
+    /// Water's own writes: not told to water again.
+    water: bool,
 }
 
 impl TickChanges {
@@ -131,6 +136,7 @@ impl TickChanges {
             cell[1] - coord.y * CHUNK_SIZE,
             cell[2] - coord.z * CHUNK_SIZE,
         );
+        let old = world.get_voxel_if_loaded(cell);
         world.get_or_create(coord).set_at(local, material);
         let chunks = &mut self.chunks;
         let (at, cells) = self.index.entry(coord).or_insert_with(|| {
@@ -150,6 +156,7 @@ impl TickChanges {
                     index: local as u16,
                     material,
                 });
+                self.before.push((cell, old));
             }
         }
     }
@@ -213,6 +220,22 @@ pub struct ServerConfig {
     pub generator_override: Option<ChunkGenerator>,
     pub air_test_override: Option<AirChunkTest>,
     pub player_config: PlayerControllerConfig,
+    /// A new world's water speed (docs/WATER_FLOW.md §4.1): × game time; `shared/fluids/flow.json`'s
+    /// `speed` by default. A saved world keeps its own (its settings, DAY_NIGHT.md §2).
+    pub water_speed: f64,
+}
+
+/// A new world's settings: this build's clock (`shared/look/daynight.json`) and `water_speed`.
+pub fn default_settings(water_speed: f64) -> WorldSettings {
+    let c = dwell_look::daynight::DAY_NIGHT.clock;
+    WorldSettings {
+        clock: WorldClock {
+            day_s: c.day_s as f32,
+            night_s: c.night_s as f32,
+            start_hour: c.start_hour as f32,
+        },
+        water_speed: water_speed as f32,
+    }
 }
 
 impl Default for ServerConfig {
@@ -245,6 +268,7 @@ impl Default for ServerConfig {
             generator_override: None,
             air_test_override: None,
             player_config: PlayerControllerConfig::default(),
+            water_speed: crate::water::FLOW.speed,
         }
     }
 }
@@ -603,6 +627,12 @@ pub struct Server {
     knockbacks: Vec<(u16, Vec3)>, // applied in the next step
     /// The falling pieces (docs/FELLING.md).
     felling: crate::felling::Felling,
+    /// Water flow (docs/WATER_FLOW.md): the basins edits have touched.
+    water: crate::water::Water,
+    /// The world's settings (DAY_NIGHT.md §2): sent at join, saved in the world's meta, fields a
+    /// newer build added kept in `settings_fields`.
+    settings: WorldSettings,
+    settings_fields: SettingsFields,
     tick: u32,
     next_player_id: u16,
     worldgen: WorldgenPool,
@@ -677,6 +707,9 @@ impl Server {
             outbox: Vec::new(),
             knockbacks: Vec::new(),
             felling: crate::felling::Felling::default(),
+            water: crate::water::Water::new(),
+            settings: default_settings(config.water_speed),
+            settings_fields: SettingsFields::default().with(default_settings(config.water_speed)),
             tick: 0,
             next_player_id: 1,
             worldgen: WorldgenPool::new(generator.clone(), config.worldgen_threads),
@@ -982,6 +1015,9 @@ impl Server {
             });
             self.send_reliable(id, &m, Channel::Control);
         }
+        // The world's settings (its clock, its water speed), which the client uses over its own.
+        let settings = Message::WorldSettings(self.settings_fields.clone());
+        self.send_reliable(id, &settings, Channel::Control);
         self.send_reliable(id, &Message::Welcome(welcome), Channel::Control);
         // The moving bodies already here (falling pieces, built bodies; docs/BUILT_BODIES.md §4):
         // a player joining sees them, not only the ones that start after.
@@ -1334,6 +1370,7 @@ impl Server {
         self.physics.step(1.0 / f64::from(SIM_HZ));
         self.tick += 1;
         self.settle_pieces();
+        self.flow_water();
 
         // 5. Respawns, then snapshots at SNAPSHOT_HZ.
         for &id in &ids {
@@ -1977,8 +2014,13 @@ impl Server {
     fn broadcast_changes(&mut self, changes: TickChanges, reason: VoxelModificationReason) {
         let TickChanges {
             chunks: mut changed,
+            before,
+            water,
             ..
         } = changes;
+        if !water {
+            self.water.touch(before);
+        }
         if changed.is_empty() {
             return;
         }
@@ -2280,6 +2322,46 @@ impl Server {
         let settles = placed.iter().map(|&(_, n)| n).max().unwrap_or(0);
         let cells: Vec<[i32; 3]> = placed.into_iter().map(|(c, _)| c).collect();
         self.fell(&cells, settles, None);
+    }
+
+    /// Every `tickEvery` ticks, water's tick (docs/WATER_FLOW.md §4): its time is game time (the
+    /// day/night clock's day against a real one) × the world's water speed; its writes go out as
+    /// one modification.
+    fn flow_water(&mut self) {
+        let every = crate::water::FLOW.tick_every;
+        if !self.tick.is_multiple_of(every) {
+            return;
+        }
+        let game = 86_400.0 / self.settings.clock.day_length_s();
+        let dt = f64::from(every) / f64::from(SIM_HZ) * game * f64::from(self.settings.water_speed);
+        let players: Vec<[f64; 3]> = self
+            .sessions
+            .values()
+            .filter_map(|s| s.handle)
+            .map(|h| self.players.position(&self.physics, h).to_array())
+            .collect();
+        let writes = self.water.tick(&mut self.world, &players, dt);
+        if writes.is_empty() {
+            return;
+        }
+        let mut changes = TickChanges {
+            water: true,
+            ..TickChanges::default()
+        };
+        for (c, m) in writes {
+            changes.set(&mut self.world, c, m);
+        }
+        self.broadcast_changes(changes, VoxelModificationReason::Rebake);
+    }
+
+    /// The world's settings (its clock, its water speed).
+    pub fn world_settings(&self) -> WorldSettings {
+        self.settings
+    }
+
+    /// Water flow, for tests and tools (docs/WATER_FLOW.md).
+    pub fn water(&self) -> &crate::water::Water {
+        &self.water
     }
 
     /// The players' capsules (cells overlapping one are taken).
@@ -2660,6 +2742,18 @@ impl Server {
         let meta = db.load_meta();
         if let Some(m) = &meta {
             self.tick = m.world_tick;
+            // A world saved with settings keeps them (a world from before them takes this build's).
+            if let Some(f) = m.settings.as_deref().and_then(SettingsFields::from_bytes) {
+                match f.settings(self.settings) {
+                    Ok(s) => {
+                        self.settings = s;
+                        self.settings_fields = f;
+                    }
+                    Err(e) => eprintln!(
+                        "dwell: the world's settings can't be used ({e:?}); this build's instead"
+                    ),
+                }
+            }
         }
         let saved: HashMap<ChunkCoord, u32> = db.chunk_index().into_iter().collect();
         // The LOD cache (§6.6): restored as saved, rebuilt from the chunks when it belongs to
@@ -2737,6 +2831,7 @@ impl Server {
                 saved_at: 0,
                 app_version_created: APP_VERSION.into(),
                 app_version_last: APP_VERSION.into(),
+                settings: Some(self.settings_fields.to_bytes()),
             }),
             ..SaveBatch::default()
         };

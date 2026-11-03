@@ -119,13 +119,23 @@ impl Fixture {
         };
         let signature = who.sign(&auth_transcript(&nonce, &self.binding, &who.public_key));
         self.send(id, Message::ClientAuth(signature));
-        // The registry's parts come first (ADR 0038), then Welcome.
+        // The registry's parts come first (ADR 0038), then the world's settings, then Welcome.
         let mut out = self.take(id).into_iter().map(|(m, _)| m);
         let mut registry = Vec::new();
+        let mut settings = None;
         loop {
             match out.next() {
                 Some(Message::BlockRegistry(b)) => registry.extend_from_slice(&b.data),
+                Some(Message::WorldSettings(f)) => settings = Some(f),
                 Some(Message::Welcome(w)) => {
+                    let defaults = self.server.world_settings();
+                    assert_eq!(
+                        settings
+                            .expect("the world's settings before Welcome")
+                            .settings(defaults),
+                        Ok(defaults),
+                        "the server's settings"
+                    );
                     assert_eq!(
                         w.registry_hash,
                         dwell_blocks::sync::definitions_hash(&registry),
@@ -134,7 +144,7 @@ impl Fixture {
                     self.left.extend(out.map(|m| (id, m)));
                     return w;
                 }
-                other => panic!("expected BlockRegistry or Welcome, got {other:?}"),
+                other => panic!("expected BlockRegistry, WorldSettings or Welcome, got {other:?}"),
             }
         }
     }
