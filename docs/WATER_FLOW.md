@@ -1,7 +1,7 @@
 # Water flow (basins, outlets, currents)
 
 > **Status: adopted (the owner's answers, 2026-11-03; [ADR 0053](./adr/0053-water-flow.md),
-> amended by [ADR 0055](./adr/0055-water-at-rest.md)), Phase 52. W1 built (the server's basins, §15),
+> amended by [ADR 0055](./adr/0055-water-at-rest.md) and [ADR 0056](./adr/0056-one-opening-law.md)), Phase 52. W1 built (the server's basins, §15),
 > redesigned in 0.42.2 after the review (§16): the world as found is at rest (§2.2), its flow the
 > world map's. W2's rest (saved basins, fast-forward, live from load) and W3–W5 planned.** First water
 > only; lava, lahar, jets, evaporation and weather later (§10).
@@ -119,15 +119,21 @@ For each live basin, in order downstream:
 
 1. **In:** runoff (§2.1) + streams arriving + upstream outlets' flow (m³/s × dt), with `dt` in
    **game time** (§4.1).
-2. **Out:** each outlet's flow by the **weir law**, `Q = c · width · head^1.5` (`head` the level over
-   the sill, `c` from the liquid's viscosity), plus leaks through blocks below the level
+2. **Out:** each opening's flow by **the opening law** (*0.43.2, ADR 0056*): water at depth `d`
+   presses with `ρ g d`, so across a submerged opening between two levels the difference is
+   `ρ g Δh` at every depth, and it passes `Q = C · area · √(2 g Δh)`; where the far side's water is
+   below part of the opening that part pours freely, each strip by its own depth under the
+   surface, which summed up an opening open above is the **weir law**, `weir · width · head^1.5`
+   (`weir = C · ⅔ · √(2g)`, so `C` comes from the liquid's weir coefficient). One law for a sill,
+   a hole in a wall, a gap and the faces two pools share; plus leaks through blocks below the level
    (`leak × area × head`), plus evaporation (`rate × surface area`).
 3. **Volume** += in − out; **level** from the table.
 4. If the level crossed a row: the rim cells of that row become liquid (rising) or air (falling).
-   A rise that reaches a new outlet adds it; a rise that reaches another basin at the same level
-   **merges** the two; a fall below a ridge in the bed **splits** the basin in two
-   ("fill, spill, merge", the hydrology standard; the world map already finds lakes by priority
-   flood).
+   A rise that reaches a new outlet adds it. Two basins that touch exchange water through the
+   faces they share by the same law; they **merge** when those faces would even them out at once
+   (a wide gap: one body), and a basin narrowed by an edit to an opening that can't (a wall with a
+   hole) **splits** at it ("fill, spill, merge", the hydrology standard; the world map already
+   finds lakes by priority flood).
 5. Outlet flow out over dry ground runs downhill cell by cell (the steepest drop) as a stream until
    a low spot, where a new basin forms and fills.
 
@@ -289,16 +295,24 @@ sends its writes as one `Rebake` modification.
   over `maxBasinCells` (65,536) is a reservoir at its surface's top.
 - **The container**, row by row from its bottom: each row from the cells over the row below (and its
   own), spread sideways over open cells held up by a solid block or the row below; as many rows as
-  its volume fills. Rows a basin meets another basin's cells in merge the two; a reservoir's cells
-  are walls (a basin beside the sea fills toward its level through the outlets between, drowned).
-  A body's own liquid cells stay in its rows whatever is under them. Basins merge only at one level
-  (`MERGE_GAP`); a higher one met below its surface is a neighbour the lower may rise to, a lower one
-  the next step of a river.
-- **Outlets**: an open cell beside a container cell with nothing holding it up (sill: that row's
-  floor) or under one (a hole in the floor), and a block of `leaks` data beside it with an open cell
-  past it. A weir passes `weir × head^1.5` per cell, drowned (`head` over the higher of the sill and
-  the level it runs into), a leak `leak × ½ m² × head`; no more in a tick than the basin holds over
-  its lowest way out.
+  its volume fills, never into another basin's container (met there: a contact); a reservoir's
+  cells are walls (a basin beside the sea fills toward its level through the outlets between,
+  drowned). A body's own liquid cells stay in its rows whatever is under them.
+- **Openings** (the opening law, 0.43.2): an open cell beside a container cell with nothing holding
+  it up (a face from that row's floor, open above, or capped by a block over it: a hole in a wall),
+  an open cell under one (a hole in its floor, `C × 1 m² × √(2 g head)`), a face shared with
+  another basin's container (a **contact**, both ways by the two levels; none where found bodies
+  touched as found, `held`, a river's steps under their surfaces), and a block of `leaks` data
+  beside it with an open cell past it (`leak × ½ m² × head`); no more in a tick than the basin holds
+  over its lowest way out, and no more into another basin in a flow step than evens the two out.
+- **One body or two** (0.43.2): two basins sharing faces within `MERGE_GAP` (2 cm) of each other
+  merge when the faces would even them out within `mergeSeconds` (0.5 s, about the shortest flow
+  step) and carry what flows through them (inflow and arrivals) within `MERGE_GAP`; a basin whose
+  full rows (the surface row once half full) are joined only through a narrowing an edit made (the
+  cells beside a block an edit placed don't join parts) is as many basins as fail that test, its
+  liquid shared by its cells. A wide gap is one body; a hole in a wall, or a sheet over a crest, an
+  opening between two (a river behind a wall with one cell open at its foot rises ~2 m before the
+  hole carries its 1.8 m³/s). The generated ground never splits a body.
 - **Where it goes** (`follow`, up to 1,024 routes a tick, in rounds, so the bodies a round finds have
   their ways found the same tick): down while open, then along the floor for an open cell with
   nothing under it within `streamReach` (16); onto liquid (that body, found if new), or it pools
@@ -322,11 +336,9 @@ sends its writes as one `Rebake` modification.
   where it lands (`follow_path`: the fall, the run along the floor) as the liquid's `running` block
   (`flow.json`; `dwell:running_water`, the same fluid), taken away when it stops. The basins treat a
   running block as open: none is found in it, and a basin rising fills over it.
-- **Crests** (0.43.1): a basin's parts joined only above its full rows (the surface row counts once
-  half full) are basins of their own, and a basin's rows don't spread into another's container
-  (met there); two basins merge only through a row both fill. So a wall level with a river's water
-  splits the pool, and the river above rises until it passes its flow over the wall by the weir
-  law; a wall stays a wall until the water is a row deep over it.
+- **Crests** (0.43.1, by the opening law since 0.43.2): a wall level with a river's water splits the
+  pool (the sheet over its top too thin to even the sides out), and the river above rises until it
+  passes its flow over the wall.
 - **What a found body passes** (0.43.1): each flow step, its own map flow and what arrived the step
   before (over a dam, from the pools above), by its natural outlets at the level it was found at;
   its links are found from where its natural outlets ran as found (an edit may block them now), so
@@ -355,7 +367,10 @@ touching it, at rest as it then is), waiting basins aren't fast-forwarded, a nat
 running (the river's own steps stay as generated), and a sheet spreading wider than `maxRowCells` over a
 plain is capped there (the excess lost).
 
-Tests (`water/tests.rs`, both faces): `a_river_found_at_rest_keeps_its_banks_dry`,
+Tests (`water/tests.rs`, both faces): `a_hole_in_a_wall_passes_what_its_size_and_depth_drive` (the
+rise within 5 % of the law), `a_gap_wide_enough_is_one_body_a_hole_two` (0.43.2, red on 0.43.1);
+`a_wall_across_a_river_is_spilled_over_and_the_river_below_holds` (0.43.1);
+`a_river_found_at_rest_keeps_its_banks_dry`,
 `a_basin_waits_while_a_chunk_of_it_is_unloaded`, `ramps_at_the_waters_edge_flood_and_dry_with_it`,
 `a_waiting_basin_passes_on_what_comes_in` (0.42.2, red on 0.42.1); `tests/water.rs`
 `a_block_set_in_a_generated_rivers_bed_changes_nothing_else` (seed 1, two rivers, six hours of water
@@ -388,5 +403,5 @@ and 1,059 m³/s. What the review found, and where each stands:
 | **The water's edge.** A ramp beside the water at its row stood dry, the water ending in a wall (the owner's screenshot). | Fixed: the water's writes flood the ramps beside them (0.42.2), and the generator floods its ramps beside its water (0.43.0, a new compatibility line). |
 | **Nothing saved.** After a restart the basins are gone; the water stays where it was left. | W2 (planned). |
 | **No step at a crest** (owner, 2026-11-03: a wall across a river filled the water up to it, not over it and down the other side; a wall level with the water didn't raise it). One basin over a wall had one level; the spill wasn't drawn; the pool below, cut off from the map's flow, filled with the spill. | Fixed (0.43.1): crests split basins, spills drawn as running water, found bodies pass what comes in. |
-| **A hole below the water in a wall** joins the two sides into one basin at one level, so the wall holds nothing back; a small hole should pass only what its size and the water's depth drive through it (an orifice). | Open: an orifice law, with the pressure jets (§10). |
+| **A hole below the water in a wall** joined the two sides into one basin at one level, so the wall held nothing back. | Fixed (0.43.2, ADR 0056): one opening law, `C·A·√(2gΔh)`, for every opening and every face two basins share; one body or two by whether the faces even them out at once. Jets (§10) later from the same law. |
 
