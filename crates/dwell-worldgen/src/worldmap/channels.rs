@@ -121,6 +121,98 @@ fn project(course: &[Point], x: f64, z: f64) -> Option<Point> {
     best.map(|(_, p)| p)
 }
 
+/// Each river's flow along its course, in whole lip cells (`terrain::lip_cells`), as discharge:
+/// its head's, the same down to each river joining it, which adds its own from the point it
+/// joins at (rivers given by index; a join loop, never made by the map, is cut).
+fn step_flows(rivers: &[super::MapRiver], courses: &mut [Vec<Point>]) {
+    let per_cell =
+        dwell_world::flow::sill_flow(dwell_world::flow::water_weir(), 1.0, dwell_world::CELL_H);
+    if per_cell <= 0.0 {
+        return;
+    }
+    let n = rivers.len().min(courses.len());
+    let cells_at_head = |k: usize| -> u32 {
+        courses[k]
+            .first()
+            .map_or(1, |p| ((p.q / per_cell).round() as u32).max(1))
+    };
+    let mut joins: Vec<Vec<(usize, usize)>> = vec![Vec::new(); n];
+    for k in 0..n {
+        let RiverEnd::Joins(j) = rivers[k].end else {
+            continue;
+        };
+        let j = j as usize;
+        if j == k || j >= n || courses[k].is_empty() || courses[j].is_empty() {
+            continue;
+        }
+        let last = courses[k][courses[k].len() - 1];
+        let at = courses[j]
+            .iter()
+            .enumerate()
+            .min_by(|a, b| {
+                let d = |p: &Point| (p.x - last.x).powi(2) + (p.z - last.z).powi(2);
+                d(a.1).total_cmp(&d(b.1))
+            })
+            .map_or(0, |(i, _)| i);
+        joins[j].push((k, at));
+    }
+    // Each river's flow at its end (cells), tributaries first.
+    let mut total: Vec<Option<u32>> = vec![None; n];
+    let mut state = vec![0u8; n];
+    fn end_cells(
+        k: usize,
+        joins: &[Vec<(usize, usize)>],
+        head: &dyn Fn(usize) -> u32,
+        total: &mut [Option<u32>],
+        state: &mut [u8],
+    ) -> u32 {
+        if let Some(t) = total[k] {
+            return t;
+        }
+        if state[k] == 1 {
+            return 0; // a loop
+        }
+        state[k] = 1;
+        let mut t = head(k);
+        for &(trib, _) in &joins[k] {
+            t += end_cells(trib, joins, head, total, state);
+        }
+        state[k] = 2;
+        total[k] = Some(t);
+        t
+    }
+    let mut along: Vec<Vec<f64>> = Vec::with_capacity(n);
+    for k in 0..n {
+        let head = cells_at_head(k);
+        let mut add = vec![0u32; courses[k].len()];
+        for &(trib, at) in &joins[k] {
+            let c = end_cells(trib, &joins, &cells_at_head, &mut total, &mut state);
+            if let Some(a) = add.get_mut(at) {
+                *a += c;
+            }
+        }
+        let mut run = head;
+        along.push(
+            add.iter()
+                .map(|&a| {
+                    run += a;
+                    f64::from(run) * per_cell
+                })
+                .collect(),
+        );
+    }
+    // A channel wide enough for its lips' cells on any heading (√2 as many metres across the
+    // grid's diagonal) and two cells either side, so a lip has room to pour into all of them
+    // (`terrain::LipPlan`).
+    for (k, qs) in along.into_iter().enumerate() {
+        for (p, q) in courses[k].iter_mut().zip(qs) {
+            p.q = q;
+            p.w =
+                p.w.max(std::f64::consts::SQRT_2 * (q / per_cell).round() + 4.0);
+        }
+    }
+}
+
 /// Arc length from each point to the course's end (m).
 fn to_end(course: &[Point]) -> Vec<f64> {
     let mut out = vec![0.0; course.len()];
@@ -208,6 +300,12 @@ impl Channels {
                 ease_fall(&mut courses[k][..=bank], S.river_join_slope);
             }
         }
+        // The flow its lips are sized for (ADR 0058): water comes into a stretch only where it is
+        // seen to, so a river carries the same flow from its head to where another joins it and
+        // their two flows together below: each river's lips the cells its head's discharge needs
+        // (at least one), and a river joined the more by the joining river's own from there on.
+        // The map's discharge growing along a river (runoff nobody sees come in) sizes no lip.
+        step_flows(rivers, &mut courses);
         let mut river_of: Vec<u32> = (0..courses.len() as u32).collect();
         // Deltas: distributaries from a point upstream of the mouth, fanning out to the sea.
         if S.delta_branches > 0 {
