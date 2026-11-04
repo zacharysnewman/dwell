@@ -383,16 +383,30 @@ impl Basin {
     /// runs as a whole.
     fn runs(&self, o: &Outlet) -> bool {
         let made = |x: &Outlet| !self.natural.contains_key(&x.from);
-        if !made(o) || o.flow < FLOW.stream_min_flow / 16.0 {
+        if !made(o) || o.flow <= 0.0 {
             return false;
         }
-        let spill: f64 = self
-            .outlets
+        // Spilling (`spillMinFlow`): every way it pours by is drawn running, however thin.
+        self.spilling() || o.flow >= FLOW.stream_min_flow
+    }
+
+    /// What it pours over edges an edit made (m³/s): into the open (not a face it shares with
+    /// another body), not its lips as generated.
+    fn spill(&self) -> f64 {
+        self.outlets
             .iter()
-            .filter(|x| made(x))
+            .filter(|x| !x.contact && !self.natural.contains_key(&x.from))
             .map(|x| x.flow)
-            .sum();
-        o.flow >= FLOW.stream_min_flow || spill >= FLOW.stream_min_flow
+            .sum()
+    }
+
+    /// Whether it is drawn spilling (owner, 2026-11-04: "it should flow over at a full voxel
+    /// height 0.5m, at least visually"): fed, and pouring `spillMinFlow` over edges an edit made
+    /// (overflowing; not a lake draining away through a cut).
+    fn spilling(&self) -> bool {
+        !self.reservoir
+            && self.spill() >= FLOW.spill_min_flow
+            && self.inflow() + self.arriving >= FLOW.spill_min_flow
     }
 
     #[doc(hidden)]
@@ -492,6 +506,21 @@ impl Basin {
                     return (kf, s - kf * n);
                 }
             }
+        }
+        // Spilling over an edit's edge at its surface row's floor (water over a dam's top): that
+        // row drawn full, a half block over the edge (the level rounded up, however thin the sheet
+        // over it).
+        let floor = m_of_row(self.bottom + k as i32);
+        if frac > 0.0
+            && self.spilling()
+            && self.outlets.iter().any(|o| {
+                o.flow > 0.0
+                    && !o.contact
+                    && !self.natural.contains_key(&o.from)
+                    && (o.floor() - floor).abs() < 0.01
+            })
+        {
+            return (k, n);
         }
         let nearest = ((frac * n as f64).round() as usize).min(n);
         let (dk, dq) = self.drawn_fill;
@@ -3299,6 +3328,7 @@ fn chunks_of(cells: impl Iterator<Item = [i32; 3]>) -> Vec<dwell_world::ChunkCoo
 }
 
 /// Where running liquid from an open cell ends.
+#[derive(Debug)]
 enum End {
     /// On a body of liquid (this cell of it).
     Liquid([i32; 3]),
@@ -3307,10 +3337,14 @@ enum End {
     Lost,
 }
 
-/// Follows liquid from the open cell `from`: down while open; on the floor, the nearest open cell
-/// with nothing under it within `streamReach` (breadth first), and down again; with the open cells
-/// it runs through on its way (from `from`: the cells it falls through and runs along the floor),
-/// which are drawn running while it flows.
+/// Follows liquid from the open cell `from` to the nearest lower water (owner, 2026-11-04: "it would
+/// pour down the banks into the nearest lower point … steps should be like slopes to water"): over
+/// the ground's surface, a step down of any height taken as part of the way (a slope to water),
+/// breadth first by cells across, so it goes the shortest way down into water; with none within
+/// `streamReach` cells across, out of the loaded world if it can fall there, else it pools at the
+/// lowest place it reached. Returns where it ends and
+/// the open cells it runs through on its way (from `from`: the cells it falls through and runs
+/// along), which are drawn running while it flows.
 fn follow_path(
     view: &View<'_>,
     f: FaceFrame,
@@ -3319,91 +3353,124 @@ fn follow_path(
 ) -> (End, Vec<[i32; 3]>) {
     // The source's own cells are walls to its water.
     let kind_of = |c: [i32; 3]| if own(c) { Kind::Solid } else { view.kind(c) };
-    let mut path = vec![from];
-    let mut c = from;
-    for _ in 0..64 {
-        // Down.
-        let mut falls = 0;
-        loop {
-            let d = up(f, c, -1);
+    // From an open cell down to where it rests: the cells it falls through, and how it ends.
+    enum Fall {
+        Rests([i32; 3]),
+        Water([i32; 3]),
+        Lost,
+    }
+    let fall = |c: [i32; 3], cells: &mut Vec<[i32; 3]>| -> Fall {
+        let mut at = c;
+        for _ in 0..2048 {
+            let d = up(f, at, -1);
+            if view.get(d).is_none() {
+                return Fall::Lost; // the floor is unloaded
+            }
             match kind_of(d) {
                 Kind::Open => {
-                    c = d;
-                    path.push(d);
-                    falls += 1;
-                    if falls > 2048 {
-                        return (End::Lost, path);
-                    }
+                    at = d;
+                    cells.push(d);
                 }
-                Kind::Liquid(_) => return (End::Liquid(d), path),
-                Kind::Solid | Kind::Holds { .. } => break,
-            }
-            if view.get(d).is_none() {
-                return (End::Lost, path);
+                Kind::Liquid(_) => return Fall::Water(d),
+                Kind::Solid | Kind::Holds { .. } => return Fall::Rests(at),
             }
         }
-        if view.get(up(f, c, -1)).is_none() {
-            return (End::Lost, path); // the floor is unloaded
-        }
-        // Along the floor, each cell's way back kept.
-        let mut back: HashMap<[i32; 3], [i32; 3]> = HashMap::default();
-        back.insert(c, c);
-        let mut frontier = vec![c];
-        let mut end = None;
-        'search: for _ in 0..FLOW.stream_reach {
-            let mut next = Vec::new();
-            for &p in &frontier {
-                for s in SIDES {
-                    let n = side(p, s);
-                    if back.contains_key(&n) {
-                        continue;
+        Fall::Lost
+    };
+    let mut first = vec![from];
+    let start = match fall(from, &mut first) {
+        Fall::Rests(c) => c,
+        Fall::Water(w) => return (End::Liquid(w), first),
+        Fall::Lost => return (End::Lost, first),
+    };
+    // Breadth first over where it rests, each place's way back (the place before, and the cells
+    // from it to here).
+    let mut back: HashMap<[i32; 3], ([i32; 3], Vec<[i32; 3]>)> = HashMap::default();
+    back.insert(start, (start, Vec::new()));
+    let mut frontier = vec![start];
+    let mut lowest = start;
+    let mut end: Option<(End, [i32; 3], Vec<[i32; 3]>)> = None;
+    let mut lost: Option<([i32; 3], Vec<[i32; 3]>)> = None;
+    'search: for _ in 0..FLOW.stream_reach {
+        let mut next = Vec::new();
+        for &p in &frontier {
+            for s in SIDES {
+                let n = side(p, s);
+                if back.contains_key(&n) || view.get(n).is_none() {
+                    continue;
+                }
+                match kind_of(n) {
+                    Kind::Liquid(_) => {
+                        end = Some((End::Liquid(n), p, Vec::new()));
+                        break 'search;
                     }
-                    back.insert(n, p);
-                    match kind_of(n) {
-                        Kind::Open => {
-                            if view.get(n).is_none() {
-                                continue;
-                            }
-                            match kind_of(up(f, n, -1)) {
-                                Kind::Open | Kind::Liquid(_) => {
-                                    end = Some((n, false));
-                                    break 'search;
+                    Kind::Open => {
+                        let mut cells = vec![n];
+                        match fall(n, &mut cells) {
+                            Fall::Rests(r) => {
+                                if back.contains_key(&r) {
+                                    continue;
                                 }
-                                Kind::Solid | Kind::Holds { .. } => next.push(n),
+                                if f.row(r[1]) < f.row(lowest[1]) {
+                                    lowest = r;
+                                }
+                                back.insert(r, (p, cells));
+                                next.push(r);
+                            }
+                            Fall::Water(w) => {
+                                end = Some((End::Liquid(w), p, cells));
+                                break 'search;
+                            }
+                            Fall::Lost => {
+                                // Out of the loaded world: only if no water is nearer.
+                                if lost.is_none() {
+                                    lost = Some((p, cells));
+                                }
                             }
                         }
-                        Kind::Liquid(_) => {
-                            end = Some((n, true));
-                            break 'search;
-                        }
-                        Kind::Solid | Kind::Holds { .. } => {}
                     }
+                    Kind::Solid | Kind::Holds { .. } => {}
                 }
             }
-            if next.is_empty() {
-                break;
-            }
-            frontier = next;
         }
-        let Some((n, liquid)) = end else {
-            return (End::Pool(c), path);
-        };
-        // The run along the floor, from where it landed.
-        let mut run = Vec::new();
-        let mut at = back[&n];
-        while at != c {
-            run.push(at);
-            at = back[&at];
+        if next.is_empty() {
+            break;
         }
-        run.reverse();
-        path.extend(run);
-        if liquid {
-            return (End::Liquid(n), path);
-        }
-        path.push(n);
-        c = n;
+        frontier = next;
     }
-    (End::Lost, path)
+    // The way there, from the start.
+    let way = |mut at: [i32; 3]| {
+        let mut parts: Vec<Vec<[i32; 3]>> = Vec::new();
+        while at != start {
+            let (prev, cells) = &back[&at];
+            parts.push(cells.clone());
+            at = *prev;
+        }
+        parts.reverse();
+        parts.concat()
+    };
+    match end {
+        Some((e, p, last)) => {
+            let mut path = first;
+            path.extend(way(p));
+            path.extend(last);
+            (e, path)
+        }
+        None if lost.is_some() => {
+            // No water within reach, but a way out of the loaded world: gone there.
+            let (p, last) = lost.expect("lost");
+            let mut path = first;
+            path.extend(way(p));
+            path.extend(last);
+            (End::Lost, path)
+        }
+        None => {
+            // No water within reach: it pools at the lowest place it reached.
+            let mut path = first;
+            path.extend(way(lowest));
+            (End::Pool(lowest), path)
+        }
+    }
 }
 
 mod rivers;

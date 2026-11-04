@@ -851,9 +851,15 @@ dwell_world::both_faces!(
         s.world.remove(k);
         s.run(600, 1.0);
         s.world.put(k, saved);
-        assert!(!s.wet(4, 1, 1), "waited as it was");
-        s.run(3, 1.0);
         let level = |s: &Scene| s.water.basin_at(s.cell(4, 0, 1)).expect("the pool").level();
+        // (Its level: already pouring over the low dam, it is drawn a full row over it.)
+        assert!(
+            level(&s) < level(&watched) - 0.1,
+            "waited as it was: {} (watched: {})",
+            level(&s),
+            level(&watched)
+        );
+        s.run(3, 1.0);
         assert!(
             (level(&s) - level(&watched)).abs() < 0.1,
             "at {} (watched: {})",
@@ -1545,5 +1551,76 @@ dwell_world::both_faces!(
         );
         let now = pool.map_or(0.0, |b| b.volume);
         assert!(now < 0.2 * full, "drained over its fall: {now} of {full}");
+    }
+);
+
+dwell_world::both_faces!(
+    /// Owner, 2026-11-04 (0.48.0, their dam level with its banks): "overflowing means, flowing OVER
+    /// the dam … water should be above the dam height … it should flow over at a full voxel height
+    /// 0.5m, at least visually". A dam as high as the channel's walls: the river pours out over
+    /// the dam and the walls together, a sheet a few millimetres deep. Drawn spilling
+    /// (`spillMinFlow`): its water a full row over the dam's top, and running down the dam's far
+    /// side. Red before: the sheet was too thin to draw: the dam's top dry, nothing running.
+    fn a_thin_spill_over_a_dam_is_drawn_a_full_row_over_it_and_running(f: FaceFrame) {
+        let mut s = channel(f);
+        let per = dwell_worldgen::terrain::lip_cell_flow();
+        let q = 0.05;
+        s.water = fed(0.0).with_rivers(std::sync::Arc::new(Graph {
+            pools: vec![(Graph::key(1), [0, 9], [0, 2], 30.0, q)],
+            lips: vec![Graph::lip(1, -9, (9, 1), 1)],
+        }));
+        let _ = per;
+        let stone = require("dwell:stone");
+        // A dam across the channel at x = 9, as high as its walls (row 3).
+        let dam: Vec<[i32; 3]> = (0..=2)
+            .flat_map(|z| (0..=3).map(move |r| [9, r, z]))
+            .collect();
+        s.edit(&dam, stone);
+        s.run(1500, 1.0);
+        let pool = s.water.basin_at(s.cell(4, 0, 1)).expect("the pool");
+        let over = pool.level() - m_of_row(G + 4);
+        assert!(
+            over > 0.0 && over < 0.05,
+            "a thin sheet over the dam: {over} m"
+        );
+        assert!(s.wet(4, 4, 1), "drawn a full row over the dam's top");
+        let running = require("dwell:running_water");
+        assert!(
+            (-6..=4).any(|r| s.get(10, r, 1) == running),
+            "running down the dam's far side"
+        );
+    }
+);
+
+dwell_world::both_faces!(
+    /// Owner, 2026-11-04: "water in real life wouldn't pour down the banks to infinity, it would
+    /// pour down the banks into the nearest lower point … steps should be like slopes to water".
+    /// A bank whose top steps down along the river (terraces a row each, every 2 cells) beside a
+    /// river 3 cells away: water spilling onto it runs into the river, the nearest lower water,
+    /// not down the terraces along the bank. Red before: it took each nearest drop in turn and ran
+    /// along the bank.
+    fn spilled_water_runs_to_the_nearest_lower_water_not_along_the_banks_steps(f: FaceFrame) {
+        let mut s = Scene::new(f);
+        let stone = require("dwell:stone");
+        // The river: x 0–20, z = 0, a row of water on a floor.
+        s.fill([0, -1, -1], [20, -1, 0], stone);
+        s.fill([0, 0, 0], [20, 0, 0], M.water);
+        s.fill([0, -1, -1], [20, 2, -1], stone);
+        // The bank: z 1–6, its top stepping down a row every 2 cells along x (row 2 at x 0–1).
+        for x in 0..=20 {
+            let top = 2 - x / 2;
+            s.fill([x, -6, 1], [x, top.max(-5), 6], stone);
+        }
+        let from = s.cell(0, 3, 3);
+        let view = View {
+            world: &s.world,
+            old: None,
+        };
+        let (end, path) = follow_path(&view, f, from, &|_| false);
+        let End::Liquid(c) = end else {
+            panic!("into water: {end:?}");
+        };
+        assert_eq!(c[2], 0, "into the river beside it, not down the bank: {c:?}");
+        assert!(path.len() <= 8, "straight there: {} cells {path:?}", path.len());
     }
 );

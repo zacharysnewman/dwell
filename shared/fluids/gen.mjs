@@ -30,6 +30,7 @@ export const FLOW_RANGES = {
   lakeOutletHead: [0.01, 100, false],
   fillHysteresis: [0, 0.5, false],
   foundSnapM: [0, 0.2, false],
+  spillMinFlow: [0, 10, false],
 };
 
 /** The registry's blocks (name → liquid?), from shared/blocks/dwell.json. */

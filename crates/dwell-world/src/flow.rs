@@ -48,6 +48,9 @@ pub struct FlowData {
     pub fill_hysteresis: f64,
     /// How near its level as found (m) a body found at rest is drawn at that level.
     pub found_snap_m: f64,
+    /// How much (m³/s) a body must pour over edges an edit made to be drawn spilling: its surface
+    /// row full, every way it pours by running.
+    pub spill_min_flow: f64,
     pub liquids: &'static [LiquidFlow],
     /// Block name → m³/s per m² of face per m of head.
     pub leaks: &'static [(&'static str, f64)],
