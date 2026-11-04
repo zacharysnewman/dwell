@@ -402,6 +402,10 @@ pub struct Basin {
 struct Steady {
     /// The flow it passes at `level` (m³/s).
     through: f64,
+    /// Where its seep is (with no natural outlet: the river leaves it there, unseen): only the part
+    /// of it holding this cell passes the flow on (a dam cutting it off holds the river back).
+    /// `None`: anywhere (a record from before 0.44.3).
+    exit: Option<[i32; 3]>,
     /// The world map's discharge where it lies (m³/s, as found; a piece of it split off keeps it,
     /// a merge the larger): its natural outlets pass it at `level`, so its level follows what
     /// actually comes in (a river with less coming in drops, one with more rises).
@@ -553,7 +557,20 @@ impl Basin {
         if st.law > 0.0 || st.through <= 0.0 {
             return None;
         }
-        let from = *self.rows.first()?.first()?;
+        // Only where the river leaves it: a part cut off from that has no way out unseen.
+        let from = match st.exit {
+            Some(c) => {
+                let here = self
+                    .rows
+                    .iter()
+                    .any(|r| r.binary_search(&c).is_ok() || r.contains(&c));
+                if !here {
+                    return None;
+                }
+                c
+            }
+            None => *self.rows.first()?.first()?,
+        };
         Some(Outlet {
             from,
             kind: OutKind::Seep {
@@ -812,7 +829,11 @@ impl Water {
                 })
                 .collect();
             let seep = b.outlets.iter().find(|o| o.is_seep()).map(rate);
-            let first = b.rows.first().and_then(|r| r.first()).copied();
+            let first = b
+                .steady
+                .as_ref()
+                .and_then(|st| st.exit)
+                .or_else(|| b.rows.first().and_then(|r| r.first()).copied());
             for (from, c, q) in leaving {
                 for at in [from, c] {
                     if self.locate(at).is_some() {
@@ -1589,11 +1610,59 @@ impl Water {
                 .iter()
                 .map(|o| (o.from, o.rate(level, weir, f64::NEG_INFINITY)))
                 .collect();
-            let entry = farthest_from(&seen, outlets.iter().map(|o| o.from));
+            // With no way out of its own (closed by its riverbed's ramps, or the river going on out
+            // of the loaded world) it passes the map's flow unseen where the river leaves it: its
+            // cell farthest down the map's river (or from where it comes in), so a dam that cuts
+            // it in two leaves the seep to the part below (docs/WATER_FLOW.md §2.2).
+            let (entry, exit) = if outlets.is_empty() {
+                // Along the one map river most of its cells lie on (by a junction a few lie on
+                // another, measured along that one).
+                let mut along: Vec<([i32; 3], f64)> = Vec::new();
+                if self.river_map.is_some() {
+                    let mut cells: Vec<[i32; 3]> = seen.iter().copied().collect();
+                    cells.sort_unstable();
+                    let mut on: Vec<([i32; 3], u32, f64)> = Vec::new();
+                    for c in cells {
+                        if let Some((_, r, s)) = self.locate(c) {
+                            on.push((c, r, s));
+                        }
+                    }
+                    let mut count: HashMap<u32, usize> = HashMap::default();
+                    for &(_, r, _) in &on {
+                        *count.entry(r).or_default() += 1;
+                    }
+                    if let Some((&main, _)) = count
+                        .iter()
+                        .max_by_key(|(r, n)| (**n, std::cmp::Reverse(**r)))
+                    {
+                        along = on
+                            .into_iter()
+                            .filter(|&(_, r, _)| r == main)
+                            .map(|(c, _, s)| (c, s))
+                            .collect();
+                    }
+                }
+                let lo = along
+                    .iter()
+                    .min_by(|a, b| a.1.total_cmp(&b.1).then(a.0.cmp(&b.0)));
+                let hi = along
+                    .iter()
+                    .max_by(|a, b| a.1.total_cmp(&b.1).then(b.0.cmp(&a.0)));
+                match (lo, hi) {
+                    (Some(&(e, _)), Some(&(x, _))) if e != x => (e, Some(x)),
+                    _ => {
+                        let e = farthest_from(&seen, std::iter::empty());
+                        (e, Some(farthest_from(&seen, std::iter::once(e))))
+                    }
+                }
+            } else {
+                (farthest_from(&seen, outlets.iter().map(|o| o.from)), None)
+            };
             b.outlets = outlets;
             b.steady = Some(Steady {
                 through: 0.0,
                 flow: q,
+                exit,
                 law,
                 level,
                 feeds: if q > 0.0 {
@@ -1927,6 +1996,7 @@ impl Water {
             (Some(mut x), Some(o)) => {
                 x.through += o.through;
                 x.flow = x.flow.max(o.flow);
+                x.exit = x.exit.or(o.exit);
                 x.law += o.law;
                 x.level = x.level.min(o.level);
                 x.feeds.extend(o.feeds);
@@ -2789,10 +2859,28 @@ impl Water {
             }
             nb.wet = template.wet.intersection(part).copied().collect();
             nb.outlets = Vec::new();
-            // The map's flow comes in at one place: the part there keeps it (the largest, if none).
+            // The map's flow comes in at one place: the part there keeps it (the nearest part, if it
+            // is in none: a cell an edit filled).
+            let nearest = |c: &[i32; 3]| -> usize {
+                parts
+                    .iter()
+                    .enumerate()
+                    .min_by_key(|(_, p)| {
+                        p.iter()
+                            .map(|q| {
+                                let d = [q[0] - c[0], q[1] - c[1], q[2] - c[2]];
+                                i64::from(d[0]).pow(2)
+                                    + i64::from(d[1]).pow(2)
+                                    + i64::from(d[2]).pow(2)
+                            })
+                            .min()
+                            .unwrap_or(i64::MAX)
+                    })
+                    .map_or(0, |(i, _)| i)
+            };
             if let Some(st) = &mut nb.steady {
                 st.feeds.retain(|(c, _)| {
-                    part.contains(c) || (n == 0 && !parts.iter().any(|p| p.contains(c)))
+                    part.contains(c) || (!parts.iter().any(|p| p.contains(c)) && nearest(c) == n)
                 });
             }
             for &c in part {

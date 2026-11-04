@@ -75,7 +75,10 @@ of water is **at rest as it is found**, and flows only as edits change it:
   (0.43.6: the map's discharge where the body lies, which a piece split off keeps), so its level
   follows what actually comes in — a river with less coming in falls, one with more rises, and a
   river below a dam runs low while the dam fills. With none (the river goes on out
-  of the loaded world, or into ground), that flow leaves unseen (a **seep**): its map flow and what
+  of the loaded world, or into ground, or a stretch closed by its riverbed's ramps), that flow leaves
+  unseen (a **seep**) where the river leaves the body: its cell farthest down the map's river (on the
+  river most of its cells lie on), else farthest from where the water comes in (0.44.3: only the part
+  of it holding that cell has the seep, so a dam cutting it off holds the river back): its map flow and what
   found bodies' natural outlets bring it, no more (what an edit or a flood beside it sends it fills
   it). A natural outlet an
   edit blocks still counts (so a dam holds back the river), one inside the body after a merge
@@ -428,7 +431,7 @@ Deviations, for W3: a natural outlet's water isn't drawn
 running (the river's own steps stay as generated), and a sheet spreading wider than `maxRowCells` over a
 plain is capped there (the excess lost).
 
-Tests (`water/tests.rs`, both faces): `a_small_spill_shared_over_a_wide_edge_is_drawn_running` (0.44.2), `a_rising_pool_s_surface_row_is_written_at_its_fill` (0.44.0; `dwell-mesh` `water_part_full_is_drawn_at_its_fill_and_its_step_to_full_water_closed`; 0.44.1 `a_part_full_water_cell_is_drawn_at_its_share`, `dwell-world` `a_coarse_water_cell_holds_the_share_its_finer_cells_fill`), `a_dam_upstream_reaches_the_river_far_below_across_unfound_country` (0.43.6; `dwell-worldgen` `a_rivers_course_is_read_along_it_and_on_to_where_it_ends`, `every_river_of_a_generated_map_goes_on_to_an_end`; the generated sweep now sends nothing down the map's rivers), `a_dam_out_of_reach_fills_on_until_it_settles`, `a_dammed_river_unloaded_comes_back_as_if_watched` (0.43.5; `tests/water.rs` `a_lake_cut_open_drains_on_after_its_player_leaves`),
+Tests (`water/tests.rs`, both faces): `a_dam_across_a_closed_stretch_holds_the_river_back` (0.44.3), `a_small_spill_shared_over_a_wide_edge_is_drawn_running` (0.44.2), `a_rising_pool_s_surface_row_is_written_at_its_fill` (0.44.0; `dwell-mesh` `water_part_full_is_drawn_at_its_fill_and_its_step_to_full_water_closed`; 0.44.1 `a_part_full_water_cell_is_drawn_at_its_share`, `dwell-world` `a_coarse_water_cell_holds_the_share_its_finer_cells_fill`), `a_dam_upstream_reaches_the_river_far_below_across_unfound_country` (0.43.6; `dwell-worldgen` `a_rivers_course_is_read_along_it_and_on_to_where_it_ends`, `every_river_of_a_generated_map_goes_on_to_an_end`; the generated sweep now sends nothing down the map's rivers), `a_dam_out_of_reach_fills_on_until_it_settles`, `a_dammed_river_unloaded_comes_back_as_if_watched` (0.43.5; `tests/water.rs` `a_lake_cut_open_drains_on_after_its_player_leaves`),
 `a_basin_saved_with_the_world_goes_on_as_it_was`, `a_saved_basin_whose_chunk_changed_since_is_found_again`
 (0.43.4; `tests/persistence.rs` `the_waters_basins_survive_a_server_restart`, `dwell-storage`
 `the_waters_basins_are_saved_with_the_world_and_replaced_on_each_save`);
