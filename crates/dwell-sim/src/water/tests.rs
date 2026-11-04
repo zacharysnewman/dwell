@@ -1309,3 +1309,33 @@ dwell_world::both_faces!(
         );
     }
 );
+
+dwell_world::both_faces!(
+    /// Owner, 2026-11-04 (seed 0, their dam): the river below a dam rose 0.3 m. The dam split the
+    /// river's pool; the small part above it, where the pool above falls in, took a new id, and
+    /// that fall's link stayed with the part below. The part above counted the river's flow as its
+    /// own besides what fell in, and the part below took in more than the river. A link goes with
+    /// the part nearest where it lands. Red before: the river below rose.
+    fn a_dam_that_splits_a_pool_leaves_the_river_below_at_its_level(f: FaceFrame) {
+        let mut s = two_steps(f);
+        s.edit(&[[5, 1, 1], [-5, 2, 1]], M.air);
+        s.run(5, 1.0);
+        let found = s
+            .water
+            .basin_at(s.cell(7, 0, 1))
+            .expect("the lower pool")
+            .level();
+        let dam: Vec<[i32; 3]> = (0..=2)
+            .flat_map(|z| (0..=1).map(move |r| [2, r, z]))
+            .collect();
+        s.edit(&dam, require("dwell:stone"));
+        s.run(900, 1.0);
+        let below = s.water.basin_at(s.cell(7, 0, 1)).expect("the river below");
+        assert!(
+            below.level() < found + 0.02,
+            "the river below rose to {} (found at {found})",
+            below.level()
+        );
+        assert!(s.wet(1, 1, 1), "the part above rose behind the dam");
+    }
+);
