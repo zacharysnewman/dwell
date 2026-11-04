@@ -88,6 +88,70 @@ fn breaking_a_lakes_wall_drains_its_top_row_and_clients_see_it() {
     assert_eq!(lake.inflow(), 0.0, "a closed lake has no inflow");
 }
 
+#[test]
+fn a_lake_cut_open_drains_on_after_its_player_leaves() {
+    // face-a-only: the server's flat world is face A's; the basins' both faces are tested in
+    // `water::tests`.
+    // Owner, 2026-11-03: water an edit set going changes whether or not anyone is near (two
+    // players far apart on one river). A lake cut open, its player leaving at once (no one near): the lake
+    // drains on (its chunks kept loaded, not evicted) and settles. Red before: it waited as left.
+    let mut f = Fixture::new(flat());
+    join_streaming(&mut f, 1);
+    f.server.step();
+    f.take_all();
+    let stone = dwell_blocks::require("dwell:stone");
+    let w = f.server.world();
+    for x in -3..=3 {
+        for z in 2..=9 {
+            for y in G..G + 4 {
+                let wall = x == -3 || x == 3 || z == 2 || z == 9;
+                w.set_voxel(x, y, z, if wall { stone } else { M.water });
+            }
+        }
+    }
+    f.send(
+        1,
+        Message::BlockEditRequest(BlockEditRequest {
+            action: BlockEditAction::Break,
+            cell: [0, G + 3, 2],
+            face: 5,
+            material: 0,
+            rows: 1,
+            down: false,
+        }),
+    );
+    for _ in 0..7 {
+        f.server.step();
+    }
+    let lake_chunk = dwell_world::chunk_of(0, G, 5);
+    f.server.on_disconnected(1);
+    for _ in 0..1200 {
+        f.server.step();
+        f.take_all();
+    }
+    assert!(
+        f.server.world().find(lake_chunk).is_some(),
+        "the lake's chunk kept loaded"
+    );
+    let w = f.server.world();
+    for x in -2..=2 {
+        for z in 3..=8 {
+            assert_eq!(w.get_voxel(x, G + 3, z), M.air, "drained at {x}, {z}");
+            assert_eq!(
+                w.get_voxel(x, G + 2, z),
+                M.water,
+                "below the cut at {x}, {z}"
+            );
+        }
+    }
+    let lake = f.server.water().basin_at([0, G, 5]).expect("the lake");
+    assert!(!lake.active, "settled");
+    assert!(
+        f.server.water().wanted_chunks().is_empty(),
+        "no chunks wanted once settled"
+    );
+}
+
 /// Owner, 2026-11-03: a block set at the bottom of any river flooded it without end, or drained
 /// it. In a generated world (seed 1), a stone set in the bed of two rivers' steps changes no other
 /// cell within 48 m over six hours of water time: the bodies found are at rest as generated, their

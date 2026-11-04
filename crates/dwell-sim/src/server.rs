@@ -1482,6 +1482,24 @@ impl Server {
             }
         }
         wanted.extend_from_slice(&self.explicit_wanted);
+        // Then those of the water filling or draining with no player near (docs/WATER_FLOW.md §6):
+        // it flows on until it settles.
+        let water = self.water.wanted_chunks();
+        for &c in &water {
+            if !BUILD_VOLUME.chunk_may_hold(c) || self.world.find(c).is_some() {
+                continue;
+            }
+            if self.is_saved(c) {
+                if loads < MAX_SAVED_LOADS_PER_TICK {
+                    self.world.get_or_create(c);
+                }
+                loads += 1;
+            } else if !self.is_air(c) {
+                wanted.push(c);
+            } else {
+                self.world.get_or_create(c);
+            }
+        }
         self.worldgen.set_wanted(&wanted);
 
         if self.tick.is_multiple_of(EVICT_EVERY_TICKS) {
@@ -1489,8 +1507,9 @@ impl Server {
             // not yet saved stay.
             let saved = self.saved.lock().expect("saved index").clone();
             let (verification, dirty) = (self.verification_chunk, &self.dirty);
+            let water: HashSet<ChunkCoord> = water.into_iter().collect();
             self.world.evict(|c, chunk| {
-                if c == verification || dirty.contains(&c) {
+                if c == verification || dirty.contains(&c) || water.contains(&c) {
                     return false;
                 }
                 let clean = chunk.revision() == 0 || saved.get(&c) == Some(&chunk.revision());

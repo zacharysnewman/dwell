@@ -781,19 +781,21 @@ dwell_world::both_faces!(
 );
 
 dwell_world::both_faces!(
-    /// A river far from players comes back at its steady state when a player returns
-    /// (docs/WATER_FLOW.md §6): a dam set in a channel, then ten minutes of water time with the
-    /// player out of reach (the pool waits, as it was), then a few ticks with the player back: the
-    /// pool is up a row and spilling over the dam at the river's flow, as one watched all along.
-    /// Red before: it waited and came back as it was left, filling from there.
-    fn a_dammed_river_out_of_reach_comes_back_full_and_spilling(f: FaceFrame) {
+    /// Owner, 2026-11-03: a dam must fill whether or not anyone is near, so the river below it
+    /// changes for whoever is there. A dam set in a channel, the player then 4 km away: the pool
+    /// behind it is filling (active), so it flows on with no player near, rises a row and spills
+    /// over the dam at the river's flow, then settles. Red before: it waited as it was.
+    fn a_dam_out_of_reach_fills_on_until_it_settles(f: FaceFrame) {
         let mut s = channel(f);
         let far = f.point([4000.5, m_of_row(G) + 1.0, 4.5]);
         s.edit(&[[9, 0, 0], [9, 0, 1], [9, 0, 2]], require("dwell:stone"));
-        s.run(1, 0.0);
-        s.run_at(600, 1.0, far);
-        assert!(!s.wet(4, 1, 1), "waits out of reach");
-        s.run(3, 1.0);
+        s.run_at(1, 1.0, far);
+        assert!(
+            s.water.basin_at(s.cell(4, 0, 1)).expect("the pool").active,
+            "filling"
+        );
+        assert!(!s.water.wanted_chunks().is_empty(), "its chunks wanted");
+        s.run_at(900, 1.0, far);
         for x in 0..=8 {
             assert!(s.wet(x, 1, 1), "the pool rose into row 1 at x {x}");
         }
@@ -804,6 +806,43 @@ dwell_world::both_faces!(
             (over - want).abs() < 0.05 * want,
             "spills {over} m³/s of {want}"
         );
+        assert!(!pool.active, "settled");
+    }
+);
+
+dwell_world::both_faces!(
+    /// A river far from players comes back at its steady state when a player returns
+    /// (docs/WATER_FLOW.md §6): a dam set in a channel whose chunk then unloads for ten minutes of
+    /// water time (the pool waits, as it was, owing the time), then loads again: within a few ticks
+    /// the pool stands where the same dam watched all along does. Red before: it came back as it
+    /// was left, filling from there.
+    fn a_dammed_river_unloaded_comes_back_as_if_watched(f: FaceFrame) {
+        let dam = [[9, 0, 0], [9, 0, 1], [9, 0, 2]];
+        let mut watched = channel(f);
+        watched.edit(&dam, require("dwell:stone"));
+        watched.run(604, 1.0);
+        let mut s = channel(f);
+        s.edit(&dam, require("dwell:stone"));
+        s.run(1, 1.0);
+        let c = s.cell(4, 0, 1);
+        let k = chunk_of(c[0], c[1], c[2]);
+        let saved = s.world.find(k).expect("loaded").clone();
+        s.world.remove(k);
+        s.run(600, 1.0);
+        s.world.put(k, saved);
+        assert!(!s.wet(4, 1, 1), "waited as it was");
+        s.run(3, 1.0);
+        let level = |s: &Scene| s.water.basin_at(s.cell(4, 0, 1)).expect("the pool").level();
+        assert!(
+            (level(&s) - level(&watched)).abs() < 0.1,
+            "at {} (watched: {})",
+            level(&s),
+            level(&watched)
+        );
+        for x in 0..=8 {
+            assert!(s.wet(x, 1, 1), "the pool rose into row 1 at x {x}");
+        }
+        let pool = s.water.basin_at(s.cell(4, 0, 1)).expect("the pool");
         assert_eq!(pool.owed, 0.0, "caught up");
     }
 );

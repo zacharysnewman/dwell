@@ -49,6 +49,8 @@ pub struct FlowData {
     pub merge_seconds: f64,
     /// The most flow steps a water tick spends bringing waiting basins forward.
     pub catch_up_steps: u32,
+    /// A basin whose level moves slower than this (mm an hour of water time) is settled.
+    pub settle_mm_per_hour: f64,
     pub liquids: &'static [LiquidFlow],
     /// Block name → m³/s per m² of face per m of head.
     pub leaks: &'static [(&'static str, f64)],
@@ -337,6 +339,9 @@ pub struct Basin {
     /// Water time (s) it waited out of reach or unloaded: brought forward when it is live again
     /// (`Water::catch_up`, docs/WATER_FLOW.md §6).
     pub owed: f64,
+    /// Filling or draining (its level moved faster than `settleMmPerHour` last tick, or it owes
+    /// time): it flows with no player near, its chunks kept loaded (`Water::wanted_chunks`).
+    pub active: bool,
     /// Cells that hold it like walls: the world as it was found is at rest (docs/WATER_FLOW.md
     /// §2.2), so an open cell beside a body as generated that it didn't fill, and a leaking block
     /// it stood against, keep it in until an edit touches them.
@@ -648,6 +653,20 @@ impl Water {
     pub fn basins(&self) -> impl Iterator<Item = &Basin> {
         self.basins.values()
     }
+    /// The chunks water needs loaded besides the players': those of the basins filling or
+    /// draining (and beside them, to grow into), so they flow on with no player near.
+    pub fn wanted_chunks(&self) -> Vec<dwell_world::ChunkCoord> {
+        let mut out: Vec<dwell_world::ChunkCoord> = self
+            .basins
+            .values()
+            .filter(|b| b.active && !b.reservoir)
+            .flat_map(|b| b.chunks.iter().chain(&b.edge).copied())
+            .collect();
+        out.sort_unstable_by_key(|c| (c.x, c.y, c.z));
+        out.dedup();
+        out
+    }
+
     /// The liquid held in all basins but reservoirs (m³).
     pub fn stored(&self) -> f64 {
         self.basins
@@ -685,9 +704,10 @@ impl Water {
         let live: HashSet<u32> = self
             .basins
             .values()
-            .filter(|b| b.near(players, FLOW.live_radius_m) && b.loaded(world))
+            .filter(|b| (b.active || b.near(players, FLOW.live_radius_m)) && b.loaded(world))
             .map(|b| b.id)
             .collect();
+        let start: HashMap<u32, f64> = self.basins.values().map(|b| (b.id, b.volume)).collect();
         // In steps short enough that no pool overshoots: a step moves a pool's level no more
         // than half the way to where its outflow would balance (its surface over how fast its
         // outflow grows with its level).
@@ -755,6 +775,16 @@ impl Water {
         for id in back {
             budget = self.catch_up(world, id, budget, &live, &mut writes);
         }
+        // Still filling or draining: flows on wherever the players are, until settled.
+        for b in self.basins.values_mut() {
+            if b.reservoir || !live.contains(&b.id) {
+                continue;
+            }
+            let moved = start
+                .get(&b.id)
+                .map_or(f64::INFINITY, |v| (b.volume - v).abs());
+            b.active = b.owed > 0.0 || !settled(moved, b.surface_area(), dt);
+        }
         self.draw_running(world, &mut writes);
         writes
     }
@@ -793,11 +823,39 @@ impl Water {
                     o.growth(level, b.weir, below)
                 })
                 .sum();
-            let sub = if grow > 0.0 {
-                (0.5 * b.surface_area() / grow).min(b.owed)
-            } else {
-                b.owed
-            };
+            // As long as it affords: half the time its outflow takes to balance a change, and its
+            // level moving no more than a quarter row (in − out at the level now).
+            let out: f64 = b
+                .outlets
+                .iter()
+                .map(|o| {
+                    let below = match o.target {
+                        Target::Basin(t) => levels.get(&t).copied().unwrap_or(f64::NEG_INFINITY),
+                        _ => f64::NEG_INFINITY,
+                    };
+                    o.rate(level, b.weir, below)
+                })
+                .sum();
+            let net = (b.inflow() + b.arriving - out).abs();
+            let mut sub = b.owed;
+            if grow > 0.0 {
+                sub = sub.min(0.5 * b.surface_area() / grow);
+            }
+            if net > 0.0 {
+                sub = sub.min(0.25 * CELL_H * b.surface_area() / net);
+            }
+            // And no longer than its outflow takes to run what stands over its lowest way out (a
+            // step can't send more, so a longer one would hold back the rest).
+            let floor = b
+                .outlets
+                .iter()
+                .filter(|o| o.rate(level, b.weir, f64::NEG_INFINITY) > 0.0)
+                .map(Outlet::floor)
+                .fold(f64::INFINITY, f64::min);
+            if out > 0.0 && floor.is_finite() {
+                let above = (b.volume - b.volume_below(floor)).max(0.0);
+                sub = sub.min((above / out).max(1e-3));
+            }
             let before = b.volume;
             self.flow_step(live, sub, 1, Some(id));
             budget -= 1;
@@ -807,9 +865,8 @@ impl Water {
                 break;
             };
             b.owed -= sub;
-            // In balance (its level moving less than a millimetre an hour): where it would be.
-            let rate = (b.volume - before).abs() / sub.max(1e-9);
-            if b.owed <= 0.0 || rate < b.surface_area() * 1e-3 / 3600.0 {
+            // In balance: where it would be.
+            if b.owed <= 0.0 || settled((b.volume - before).abs(), b.surface_area(), sub) {
                 b.owed = 0.0;
             }
         }
@@ -868,9 +925,13 @@ impl Water {
                     o.rate(level, b.weir, below)
                 })
                 .collect();
-            if waiting {
-                // Out of reach (or not all loaded): it holds its level and passes on what comes
-                // in, shared as its ways out would share it (with none, it keeps it).
+            if waiting && b.active {
+                // Filling or draining but not all loaded: it holds what it has, passing nothing,
+                // and is brought forward once loaded (`catch_up`), sending then what it would have.
+                out.iter_mut().for_each(|q| *q = 0.0);
+            } else if waiting {
+                // Settled and out of reach: it holds its level and passes on what comes in, shared
+                // as its ways out would share it (with none, it keeps it).
                 let pass = b.inflow() + b.through;
                 let law: f64 = out.iter().sum();
                 let s = if law > 0.0 { pass / law } else { 0.0 };
@@ -935,7 +996,8 @@ impl Water {
             let total: f64 = out.iter().sum();
             if b.reservoir {
                 self.brought += total * dt;
-            } else {
+            } else if !(waiting && b.active) {
+                // (One filling or draining that waits takes its own inflow when brought forward.)
                 b.volume -= total * dt;
                 b.volume += b.inflow() * dt;
                 self.brought += b.inflow() * dt;
@@ -958,18 +1020,14 @@ impl Water {
                 }
             }
         }
-        if let Some(id) = only {
-            // Brought forward alone: what comes in from the bodies around it, as it came last
-            // tick, and what it sends them, kept (they hold their levels meanwhile).
+        if only.is_some() {
+            // Brought forward alone: what it sends the bodies around it is theirs (they hold their
+            // levels meanwhile); what they sent it while it waited is already in it.
             for (t, q) in arriving {
                 match self.basins.get_mut(&t) {
                     Some(b) if !b.reservoir => b.volume += q * dt,
                     _ => self.lost += q * dt,
                 }
-            }
-            if let Some(b) = self.basins.get_mut(&id) {
-                b.volume += b.arriving * dt;
-                self.brought += b.arriving * dt;
             }
             return;
         }
@@ -1076,6 +1134,9 @@ impl Water {
             }
         }
         for id in dirty {
+            if let Some(b) = self.basins.get_mut(&id) {
+                b.active = true;
+            }
             self.rebuild(world, id, writes);
         }
     }
@@ -1190,6 +1251,7 @@ impl Water {
                     extra: 0.0,
                     linked: 0.0,
                     owed: 0.0,
+                    active: false,
                     rest: HashSet::default(),
                     held: HashSet::default(),
                     natural: HashMap::default(),
@@ -1231,6 +1293,7 @@ impl Water {
             extra: 0.0,
             linked: 0.0,
             owed: 0.0,
+            active: false,
             rest: HashSet::default(),
             held: HashSet::default(),
             natural: HashMap::default(),
@@ -1854,6 +1917,7 @@ impl Water {
                 extra: 0.0,
                 linked: 0.0,
                 owed: 0.0,
+                active: false,
                 rest: HashSet::default(),
                 held: HashSet::default(),
                 natural: HashMap::default(),
@@ -2657,6 +2721,12 @@ fn flood_edge(world: &mut VoxelWorld, c: [i32; 3], writes: &mut Vec<([i32; 3], S
         world.set_voxel(c[0], c[1], c[2], to);
         writes.push((c, to));
     }
+}
+
+/// Whether a basin of surface `area` (m²) whose volume moved by `moved` (m³) in `dt` (s) is
+/// settled: its level moving slower than `settleMmPerHour`.
+fn settled(moved: f64, area: f64, dt: f64) -> bool {
+    moved < area * FLOW.settle_mm_per_hour / 1000.0 / 3600.0 * dt.max(1e-9)
 }
 
 /// The chunks beside `cells` (a side, above or below) that aren't loaded.
