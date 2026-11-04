@@ -13,7 +13,7 @@
   "riverSpeed": 1.0,
   "riverChangeMin": 0.02,
   "riverChangeShare": 0.05,
-  "riverChangeHoldS": 120,
+  "riverChangeHoldS": 600,
   "lakeOutletHead": 1.0,
   "fillHysteresis": 0.25,
   "liquids": [

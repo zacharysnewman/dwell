@@ -225,90 +225,165 @@ fn a_lake_cut_open_drains_on_after_its_player_leaves() {
 }
 
 /// Owner, 2026-11-03: a block set at the bottom of any river flooded it without end, or drained
-/// it. In a generated world (seed 1), a stone set in the bed of two rivers' steps changes no other
-/// cell within 48 m over six hours of water time: the bodies found are at rest as generated, their
-/// natural outlets passing the world map's flow (docs/WATER_FLOW.md §2.2); a ramp at the water's
-/// edge may take its flooded state. Red before: one river
-/// rose without end (an inflow measured off its shore's gaps, 61 m³/s, and the pools below merged
-/// into it), the other drained.
+/// it; 2026-11-04 (ADR 0057): generated water must rest by the one law, as any water does. In
+/// generated worlds (seeds 0–2), a stone set in the bed of river pools picked along the world
+/// map's rivers changes no other cell within 48 m over six hours of water time, and sends no change
+/// down the map's rivers: each pool's lip carries its river's flow with the pool a full row over its
+/// sill (WATER_FLOW.md §17); a ramp at the water's edge may take its flooded state.
 #[test]
 fn a_block_set_in_a_generated_rivers_bed_changes_nothing_else() {
     // face-a-only: the generated world's face A; the basins' both faces are tested in
     // `water::tests`.
-    use dwell_world::{GENERATOR_TERRAIN, VoxelWorld};
-    const SEED: u64 = 1;
+    use dwell_world::{Face, GENERATOR_TERRAIN, VoxelWorld};
     const R: i32 = 48;
-    let runoff = dwell_worldgen::runoff_for(GENERATOR_TERRAIN, SEED).expect("a world map");
-    let rivers = std::sync::Arc::new(
-        dwell_worldgen::BifacialTerrain::for_generator(GENERATOR_TERRAIN, SEED).expect("terrain"),
-    );
-    // Each a river's bed cell, its water the lowest of a step (found by a search of seed 1).
-    for bed in [[-5432, 217, -4184], [-5860, 208, -4161]] {
-        let mut w = VoxelWorld::new(
-            dwell_worldgen::generator_for(GENERATOR_TERRAIN, SEED),
-            Some(dwell_worldgen::air_test_for(GENERATOR_TERRAIN, SEED)),
+    let liquid = |m: u16| dwell_blocks::try_info(m).is_some_and(|i| i.liquid);
+    let mut checked = 0;
+    for seed in [0u64, 1, 2] {
+        let runoff = dwell_worldgen::runoff_for(GENERATOR_TERRAIN, seed).expect("a world map");
+        let rivers = std::sync::Arc::new(
+            dwell_worldgen::BifacialTerrain::for_generator(GENERATOR_TERRAIN, seed)
+                .expect("terrain"),
         );
-        let (lo, hi) = (bed[1] - 24, bed[1] + 24);
-        for x in (bed[0] - R..=bed[0] + R).step_by(8) {
-            for z in (bed[2] - R..=bed[2] + R).step_by(8) {
-                for y in (lo..=hi).step_by(8) {
-                    w.get_voxel(x, y, z);
+        let map = rivers.local(Face::A).map().clone();
+        // Vertices along the map's rivers, inland, of small and medium flows.
+        let mut picks: Vec<(i32, i32)> = Vec::new();
+        for r in &map.rivers {
+            for (i, v) in r.path.iter().enumerate() {
+                if i % 40 == 20 && v.surface > 3.0 && (0.3..30.0).contains(&v.discharge) {
+                    picks.push((v.x as i32, v.z as i32));
                 }
             }
         }
-        assert_eq!(
-            w.get_voxel(bed[0], bed[1], bed[2]),
-            M.water,
-            "a river at {bed:?}"
-        );
-        assert_ne!(
-            w.get_voxel(bed[0], bed[1] - 1, bed[2]),
-            M.water,
-            "its bed under {bed:?}"
-        );
-        let snapshot = |w: &VoxelWorld| -> Vec<u16> {
-            let mut v = Vec::new();
-            for x in bed[0] - R..=bed[0] + R {
-                for z in bed[2] - R..=bed[2] + R {
-                    for y in lo..=hi {
-                        v.push(w.get_voxel_if_loaded([x, y, z]));
+        let mut sites = 0;
+        for (px, pz) in picks {
+            if sites == 2 {
+                break;
+            }
+            let mut w = VoxelWorld::new(
+                dwell_worldgen::generator_for(GENERATOR_TERRAIN, seed),
+                Some(dwell_worldgen::air_test_for(GENERATOR_TERRAIN, seed)),
+            );
+            // A column of the river two or more cells deep near the vertex: its bed cell.
+            let mut bed = None;
+            'find: for dx in -6..=6 {
+                for dz in -6..=6 {
+                    let (x, z) = (px + dx, pz + dz);
+                    let Some(top) = (0..700).rev().find(|&y| {
+                        let m = w.get_voxel(x, y, z);
+                        m != dwell_world::M.air
+                            && !dwell_blocks::try_info(m).is_some_and(|i| i.replaceable)
+                    }) else {
+                        continue;
+                    };
+                    if !liquid(w.get_voxel(x, top, z)) {
+                        continue;
+                    }
+                    let mut b = top;
+                    while liquid(w.get_voxel(x, b - 1, z)) {
+                        b -= 1;
+                    }
+                    if top - b >= 1 {
+                        bed = Some([x, b, z]);
+                        break 'find;
                     }
                 }
             }
-            v
-        };
-        let stone = dwell_blocks::require("dwell:stone");
-        w.set_voxel(bed[0], bed[1], bed[2], stone);
-        let before = snapshot(&w);
-        let runoff = runoff.clone();
-        // With the map's rivers too, as the server's: a river at rest sends nothing down them.
-        let mut water = dwell_sim::water::Water::with_runoff(std::sync::Arc::new(
-            move |f: dwell_world::FaceFrame, x, z| runoff(f.face, x, z),
-        ))
-        .with_rivers(rivers.clone());
-        water.touch([(bed, M.water)]);
-        let player = [
-            f64::from(bed[0]) + 0.5,
-            dwell_world::m_of_row(bed[1]) + 2.0,
-            f64::from(bed[2]) + 0.5,
-        ];
-        // Six hours of water time at a 20-minute day (7.2 s a water tick).
-        for _ in 0..3000 {
-            water.tick(&mut w, &[player], 7.2);
+            let Some(bed) = bed else {
+                continue;
+            };
+            sites += 1;
+            let (lo, hi) = (bed[1] - 24, bed[1] + 24);
+            // Loaded well past what is checked: a river running on out of the loaded world
+            // seeps away there, not a part of this check.
+            const LOAD: i32 = R + 80;
+            for x in (bed[0] - LOAD..=bed[0] + LOAD).step_by(8) {
+                for z in (bed[2] - LOAD..=bed[2] + LOAD).step_by(8) {
+                    for y in (lo - 16..=hi + 16).step_by(8) {
+                        w.get_voxel(x, y, z);
+                    }
+                }
+            }
+            let snapshot = |w: &VoxelWorld| -> Vec<u16> {
+                let mut v = Vec::new();
+                for x in bed[0] - R..=bed[0] + R {
+                    for z in bed[2] - R..=bed[2] + R {
+                        for y in lo..=hi {
+                            v.push(w.get_voxel_if_loaded([x, y, z]));
+                        }
+                    }
+                }
+                v
+            };
+            let stone = dwell_blocks::require("dwell:stone");
+            let was = w.get_voxel(bed[0], bed[1], bed[2]);
+            w.set_voxel(bed[0], bed[1], bed[2], stone);
+            let before = snapshot(&w);
+            let runoff = runoff.clone();
+            // With the map's rivers too, as the server's: a river at rest sends nothing down them.
+            let mut water = dwell_sim::water::Water::with_runoff(std::sync::Arc::new(
+                move |f: dwell_world::FaceFrame, x, z| runoff(f.face, x, z),
+            ))
+            .with_rivers(rivers.clone());
+            water.touch([(bed, was)]);
+            let player = [
+                f64::from(bed[0]) + 0.5,
+                dwell_world::m_of_row(bed[1]) + 2.0,
+                f64::from(bed[2]) + 0.5,
+            ];
+            // Six hours of water time at a 20-minute day (7.2 s a water tick).
+            for t in 0..3000 {
+                water.tick(&mut w, &[player], 7.2);
+                if std::env::var("WDBG").is_ok() && bed[2] == 1448 && t == 2 {
+                    eprintln!("TICK {t} {}", water.report(bed, 200));
+                }
+            }
+            let after = snapshot(&w);
+            if std::env::var("WDBG").is_ok() && !water.fronts().is_empty() {
+                eprintln!("REPORT {}", water.report(bed, 200));
+            }
+            if std::env::var("WDBG").is_ok() {
+                eprintln!(
+                    "SITE seed {seed} bed {bed:?} basins {} report {}",
+                    water.basins().count(),
+                    &water.report(bed, 2)[..200.min(water.report(bed, 2).len())]
+                );
+            }
+            assert!(
+                water.fronts().is_empty(),
+                "seed {seed}, bed {bed:?}: a river at rest sent changes down the map's: {:?}",
+                water.fronts()
+            );
+            // A ramp at the water's edge may take its flooded state: nothing else.
+            let flooded =
+                |a: u16, b: u16| dwell_blocks::with_property(a, "flooded", "true") == Some(b);
+            let changed = before
+                .iter()
+                .zip(&after)
+                .filter(|&(&a, &b)| a != b && !flooded(a, b))
+                .count();
+            if changed > 0 && std::env::var("WDBG").is_ok() {
+                let n = |m: u16| {
+                    dwell_blocks::try_info(m).map_or(format!("{m}"), |s| s.name.to_string())
+                };
+                let mut i = 0;
+                for x in bed[0] - R..=bed[0] + R {
+                    for z in bed[2] - R..=bed[2] + R {
+                        for y in lo..=hi {
+                            if before[i] != after[i] && !flooded(before[i], after[i]) {
+                                eprintln!("CHG {x} {y} {z}: {} -> {}", n(before[i]), n(after[i]));
+                            }
+                            i += 1;
+                        }
+                    }
+                }
+                eprintln!("REPORT {}", water.report(bed, 60));
+            }
+            assert_eq!(
+                changed, 0,
+                "seed {seed}: {changed} cells changed near {bed:?}"
+            );
+            checked += 1;
         }
-        let after = snapshot(&w);
-        assert!(
-            water.fronts().is_empty(),
-            "a river at rest sent changes down the map's: {:?}",
-            water.fronts()
-        );
-        // A ramp at the water's edge may take its flooded state (the edge fix): nothing else.
-        let flooded = |a: u16, b: u16| dwell_blocks::with_property(a, "flooded", "true") == Some(b);
-        let changed = before
-            .iter()
-            .zip(&after)
-            .filter(|&(&a, &b)| a != b && !flooded(a, b))
-            .count();
-        assert_eq!(changed, 0, "{changed} cells changed near {bed:?}");
     }
+    assert!(checked >= 5, "river pools checked: {checked}");
 }
