@@ -46,6 +46,8 @@ pub struct FlowData {
     /// How far past half a step (fill steps) a level must move before its surface is drawn at
     /// another fill.
     pub fill_hysteresis: f64,
+    /// How near its level as found (m) a body found at rest is drawn at that level.
+    pub found_snap_m: f64,
     pub liquids: &'static [LiquidFlow],
     /// Block name → m³/s per m² of face per m of head.
     pub leaks: &'static [(&'static str, f64)],

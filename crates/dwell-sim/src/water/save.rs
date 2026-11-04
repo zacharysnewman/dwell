@@ -201,7 +201,8 @@ fn put_basin(o: &mut Out, b: &Basin, revision: &dyn Fn(ChunkCoord) -> u32) {
     o.u8(u8::from(b.capped));
     o.cell(b.lo);
     o.cell(b.hi);
-    for v in [b.arriving, b.through, b.extra, b.linked, b.owed] {
+    // (The fourth, what came in by links before ADR 0058, kept as nothing.)
+    for v in [b.arriving, b.through, b.extra, 0.0, b.owed] {
         o.f64(v);
     }
     o.u8(u8::from(b.active));
@@ -258,7 +259,7 @@ fn get_basin(
     let capped = i.bool()?;
     let lo = i.cell()?;
     let hi = i.cell()?;
-    let [arriving, through, extra, linked, owed] =
+    let [arriving, through, extra, _linked, owed] =
         [i.f64()?, i.f64()?, i.f64()?, i.f64()?, i.f64()?];
     let active = version >= 2 && i.bool()?;
     let rest = i.set()?;
@@ -322,7 +323,6 @@ fn get_basin(
         arriving,
         through,
         extra,
-        linked,
         owed,
         active,
         // Its cells are written at its fill again once loaded.
@@ -359,19 +359,8 @@ impl Water {
         for id in &ids {
             put_basin(&mut o, &self.basins[id], &revision);
         }
-        let mut links: Vec<_> = self
-            .links
-            .iter()
-            .filter(|((f, _), (t, _))| saved.contains(f) && saved.contains(t))
-            .collect();
-        links.sort_unstable_by_key(|((f, c), _)| (*f, *c));
-        o.len(links.len());
-        for (&(f, c), &(t, w)) in links {
-            o.u32(f);
-            o.cell(c);
-            o.u32(t);
-            o.f64(w);
-        }
+        // (Links between found bodies, before ADR 0058: none now, the section kept empty.)
+        o.len(0);
         let mut pending: Vec<_> = self
             .pending
             .iter()
@@ -398,19 +387,8 @@ impl Water {
         }
         o.set(&self.drawn);
         o.set(&self.edited);
-        let mut lands: Vec<_> = self.lands.iter().collect();
-        lands.sort_unstable_by_key(|(c, _)| **c);
-        o.len(lands.len());
-        for (&c, v) in lands {
-            o.cell(c);
-            let v: Vec<&Land> = v.iter().filter(|(b, _, _)| saved.contains(b)).collect();
-            o.len(v.len());
-            for &&(b, from, w) in &v {
-                o.u32(b);
-                o.cell(from);
-                o.f64(w);
-            }
-        }
+        // (Natural outlets waiting to be linked, before ADR 0058: none now.)
+        o.len(0);
         o.len(self.touched.len());
         for &(c, m) in &self.touched {
             o.cell(c);
@@ -483,12 +461,10 @@ impl Water {
             }
         }
         let kept = |b: &u32| basins.contains_key(b);
-        let mut links = HashMap::default();
+        // Links a world saved before ADR 0058 kept: read past (water moves between found bodies
+        // only by their ways out now).
         for _ in 0..i.len()? {
-            let (f, c, t, w) = (i.u32()?, i.cell()?, i.u32()?, i.f64()?);
-            if kept(&f) && kept(&t) {
-                links.insert((f, c), (t, w));
-            }
+            let _ = (i.u32()?, i.cell()?, i.u32()?, i.f64()?);
         }
         let mut pending = HashMap::default();
         let mut gone = 0.0;
@@ -509,18 +485,10 @@ impl Water {
         }
         let drawn = i.set()?;
         let edited = i.set()?;
-        let mut lands: HashMap<[i32; 3], Vec<Land>> = HashMap::default();
         for _ in 0..i.len()? {
-            let c = i.cell()?;
-            let mut v = Vec::new();
+            let _ = i.cell()?;
             for _ in 0..i.len()? {
-                let land = (i.u32()?, i.cell()?, i.f64()?);
-                if kept(&land.0) {
-                    v.push(land);
-                }
-            }
-            if !v.is_empty() {
-                lands.insert(c, v);
+                let _ = (i.u32()?, i.cell()?, i.f64()?);
             }
         }
         let mut touched = Vec::new();
@@ -603,12 +571,10 @@ impl Water {
         self.next = next.max(self.next);
         self.brought = brought;
         self.lost = lost + gone;
-        self.links = links;
         self.pending = pending;
         self.paths = paths;
         self.drawn = drawn;
         self.edited = edited;
-        self.lands = lands;
         self.touched = touched;
         self.flows = flows;
         Some(n)

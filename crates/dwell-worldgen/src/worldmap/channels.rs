@@ -125,11 +125,8 @@ fn project(course: &[Point], x: f64, z: f64) -> Option<Point> {
 /// its head's, the same down to each river joining it, which adds its own from the point it
 /// joins at (rivers given by index; a join loop, never made by the map, is cut).
 fn step_flows(rivers: &[super::MapRiver], courses: &mut [Vec<Point>]) {
-    let per_cell = dwell_world::flow::sill_flow(
-        dwell_world::flow::water_weir(),
-        1.0,
-        dwell_world::CELL_H,
-    );
+    let per_cell =
+        dwell_world::flow::sill_flow(dwell_world::flow::water_weir(), 1.0, dwell_world::CELL_H);
     if per_cell <= 0.0 {
         return;
     }
@@ -204,9 +201,14 @@ fn step_flows(rivers: &[super::MapRiver], courses: &mut [Vec<Point>]) {
                 .collect(),
         );
     }
+    // A channel wide enough for its lips' cells on any heading (√2 as many metres across the
+    // grid's diagonal) and two cells either side, so a lip has room to pour into all of them
+    // (`terrain::LipPlan`).
     for (k, qs) in along.into_iter().enumerate() {
         for (p, q) in courses[k].iter_mut().zip(qs) {
             p.q = q;
+            p.w =
+                p.w.max(std::f64::consts::SQRT_2 * (q / per_cell).round() + 4.0);
         }
     }
 }

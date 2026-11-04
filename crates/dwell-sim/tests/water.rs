@@ -256,7 +256,7 @@ fn a_block_set_in_a_generated_rivers_bed_changes_nothing_else() {
         }
         let mut sites = 0;
         for (px, pz) in picks {
-            if sites == 2 {
+            if sites == 4 {
                 break;
             }
             let mut w = VoxelWorld::new(

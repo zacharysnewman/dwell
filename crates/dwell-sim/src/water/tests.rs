@@ -1116,44 +1116,29 @@ dwell_world::both_faces!(
 );
 
 dwell_world::both_faces!(
-    /// Owner, 2026-11-03 (seed 0, a river by the spawn): a dam across a river stretch with no way
-    /// out of its own (closed at both ends, as a generated riverbed's ramps close it: it passes
-    /// the map's flow unseen, a seep) didn't raise the river: split in two, both halves kept the
-    /// seep, and the half behind the dam drained the river through it. The seep is where the
-    /// river leaves the stretch (its downstream end by the map); the half without it has no way
-    /// out but over the dam. Red before: the river behind the dam stayed where it was found.
-    fn a_dam_across_a_closed_stretch_holds_the_river_back(f: FaceFrame) {
+    /// ADR 0058 (owner, 2026-11-04: water leaves only where it is seen to): a river stretch closed
+    /// at both ends in the loaded world (as a riverbed's ramps may close it) passed the map's flow
+    /// on unseen through a seep (ADR 0055). With water coming in seen and no way out, it fills,
+    /// a dam across it changing nothing of that: nothing leaves unseen. A seep is only where a
+    /// river leaves the loaded world. Red before: it seeped the flow away and held its level.
+    fn a_closed_stretch_fills_with_nothing_leaving_unseen(f: FaceFrame) {
         let mut s = tall_channel(f);
         let stone = require("dwell:stone");
-        // Closed at its downstream end too (x = 10): no natural outlet, a seep.
+        // Closed at its downstream end too (x = 10).
         s.fill([10, -1, -1], [10, 8, 3], stone);
         s.water = fed(channel_q()).with_rivers(std::sync::Arc::new(Straight));
         s.edit(&[[2, 1, 1]], M.air);
         s.run(5, 1.0);
-        // A block at a time, as a player places a dam.
         for z in 0..=2 {
             s.edit(&[[5, 0, z], [5, 1, z]], stone);
             s.run(1, 1.0);
         }
-        s.run(900, 1.0);
-        for x in [0, 2, 4] {
-            assert!(
-                s.wet(x, 2, 1),
-                "the river behind the dam rose over it at x {x}"
-            );
+        // (Filling at ~8 cm a second: before it reaches its walls' top, ~50 s.)
+        s.run(20, 1.0);
+        assert_eq!(s.water.lost, 0.0, "nothing left unseen");
+        for x in [0, 2, 4, 7, 9] {
+            assert!(s.wet(x, 2, 1), "the stretch filled at x {x}");
         }
-        // The river below takes in what comes over the dam, not the map's flow besides: it stays
-        // where it was found.
-        for x in [7, 9] {
-            assert!(s.wet(x, 0, 1), "the river below the dam at x {x}");
-        }
-        let below = s.water.basin_at(s.cell(8, 0, 1)).expect("the river below");
-        assert!(
-            below.level() < m_of_row(G + 1) + 0.02,
-            "the river below rose to {} (found at {})",
-            below.level(),
-            m_of_row(G + 1)
-        );
     }
 );
 
@@ -1435,5 +1420,68 @@ dwell_world::both_faces!(
                 );
             }
         }
+    }
+);
+
+dwell_world::both_faces!(
+    /// Owner, 2026-11-04 (seed 3695715780, their dam): "Water is invisibly filling nearby pools":
+    /// the pool below a dam kept its level, fed the river's flow unseen where it lay. Water comes
+    /// into a pool only where it is seen to (ADR 0058): a dam across where the upper pool pours
+    /// into the lower one leaves the lower one nothing coming in, so it drains away over its fall
+    /// while the upper one rises behind the dam. (Pins the behaviour: both pools found first, the
+    /// links of 0.45 gave the same; `a_pool_nothing_is_seen_pouring_into_takes_nothing_in` is the
+    /// red case.)
+    fn a_pool_below_a_dam_takes_in_only_what_pours_over_it(f: FaceFrame) {
+        let mut s = two_steps(f);
+        let stone = require("dwell:stone");
+        s.edit(&[[5, 1, 1], [-5, 2, 1]], M.air);
+        s.run(5, 1.0);
+        let lower = |s: &Scene| s.water.basin_at(s.cell(5, 0, 1)).map_or(0.0, |b| b.volume);
+        let full = lower(&s);
+        assert!(full > 10.0, "the lower pool found: {full}");
+        let dam: Vec<[i32; 3]> = (0..=2)
+            .flat_map(|z| (1..=4).map(move |r| [0, r, z]))
+            .collect();
+        s.edit(&dam, stone);
+        // While the dam fills (it spills again after ~25 s).
+        s.run(12, 1.0);
+        let b = s.water.basin_at(s.cell(5, 0, 1)).expect("the lower pool");
+        assert_eq!(b.inflow(), 0.0, "nothing comes in unseen");
+        assert!(
+            lower(&s) < 0.5 * full,
+            "the lower pool drains: {} of {full}",
+            lower(&s)
+        );
+        assert!(s.wet(-5, 2, 1), "the upper pool rises behind the dam");
+    }
+);
+
+dwell_world::both_faces!(
+    /// Owner, 2026-11-04: "Water should have to visibly connect pools, or they shouldn't be
+    /// connected" (ADR 0058). A river's pool with nothing seen pouring into it (no water above
+    /// beside it, no fall onto it), though the world map has a river's flow there: found by an
+    /// edit, nothing comes in, and it drains over its fall. Red before: the map's flow came in
+    /// unseen and it kept its level.
+    fn a_pool_nothing_is_seen_pouring_into_takes_nothing_in(f: FaceFrame) {
+        let mut s = Scene::new(f);
+        let stone = require("dwell:stone");
+        s.fill([-1, -1, -1], [9, -1, 3], stone);
+        s.fill([-1, -1, -1], [9, 3, -1], stone);
+        s.fill([-1, -1, 3], [9, 3, 3], stone);
+        s.fill([-1, -1, -1], [-1, 3, 3], stone);
+        s.fill([9, -6, -3], [21, -6, 5], stone);
+        s.fill([0, 0, 0], [9, 0, 2], M.water);
+        s.water = fed(channel_q());
+        s.edit(&[[4, 1, 1]], M.air);
+        s.run(1, 0.0);
+        let full = s.water.basin_at(s.cell(4, 0, 1)).expect("the pool").volume;
+        s.run(600, 1.0);
+        let pool = s.water.basin_at(s.cell(4, 0, 1));
+        assert!(
+            pool.is_none_or(|b| b.inflow() == 0.0),
+            "nothing comes in unseen"
+        );
+        let now = pool.map_or(0.0, |b| b.volume);
+        assert!(now < 0.2 * full, "drained over its fall: {now} of {full}");
     }
 );
