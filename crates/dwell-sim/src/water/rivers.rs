@@ -9,7 +9,7 @@
 
 use super::*;
 use dwell_world::Face;
-pub use dwell_worldgen::terrain::{PoolInflows, PoolKey, RiverNext};
+pub use dwell_worldgen::terrain::{GraphLip, GraphPool, PoolInflows, PoolKey, RiverNext};
 
 /// The world map's rivers, as water needs them: where a column lies on one, how long each is and
 /// where it goes (the server's: `dwell_worldgen`'s terrain; a test's: its own).
@@ -28,6 +28,14 @@ pub trait Rivers: Send + Sync {
     fn inflows(&self, _face: Face, _key: PoolKey) -> PoolInflows {
         PoolInflows::default()
     }
+    /// Pool `key`'s lip out, by the graph.
+    fn lip(&self, _face: Face, _key: PoolKey) -> Option<GraphLip> {
+        None
+    }
+    /// Pool `key` (its reach and surface estimate), by the graph.
+    fn graph_pool(&self, _face: Face, _key: PoolKey) -> Option<GraphPool> {
+        None
+    }
 }
 
 impl Rivers for dwell_worldgen::BifacialTerrain {
@@ -45,6 +53,12 @@ impl Rivers for dwell_worldgen::BifacialTerrain {
     }
     fn inflows(&self, face: Face, key: PoolKey) -> PoolInflows {
         self.local(face).pool_inflows(key)
+    }
+    fn lip(&self, face: Face, key: PoolKey) -> Option<GraphLip> {
+        self.local(face).pool_lip(key)
+    }
+    fn graph_pool(&self, face: Face, key: PoolKey) -> Option<GraphPool> {
+        self.local(face).graph_pool(key)
     }
 }
 

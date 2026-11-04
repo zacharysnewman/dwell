@@ -146,13 +146,48 @@ fn put_outlet(o: &mut Out, x: &Outlet) {
             o.u32(t);
         }
         Target::Lost => o.u8(2),
+        Target::Virtual(face, key) => {
+            o.u8(3);
+            put_pool(o, face, key);
+        }
     }
     o.f64(x.flow);
     o.f64(x.scale);
     o.u8(u8::from(x.contact));
+    o.f64(x.cells);
 }
 
-fn get_outlet(i: &mut In<'_>) -> Option<Outlet> {
+/// A generated pool of the graph (ADR 0059): its face, then its river and row (the sea: none).
+fn put_pool(o: &mut Out, face: dwell_world::Face, key: PoolKey) {
+    o.u8(u8::from(face == dwell_world::Face::B));
+    match key {
+        PoolKey::River { river, row } => {
+            o.u8(1);
+            o.u32(river);
+            o.i32(row);
+        }
+        PoolKey::Sea => o.u8(0),
+    }
+}
+
+fn get_pool(i: &mut In<'_>) -> Option<(dwell_world::Face, PoolKey)> {
+    let face = if i.u8()? == 1 {
+        dwell_world::Face::B
+    } else {
+        dwell_world::Face::A
+    };
+    let key = match i.u8()? {
+        1 => PoolKey::River {
+            river: i.u32()?,
+            row: i.i32()?,
+        },
+        0 => PoolKey::Sea,
+        _ => return None,
+    };
+    Some((face, key))
+}
+
+fn get_outlet(i: &mut In<'_>, version: u8) -> Option<Outlet> {
     let from = i.cell()?;
     let kind = match i.u8()? {
         0 => OutKind::Face {
@@ -171,6 +206,10 @@ fn get_outlet(i: &mut In<'_>) -> Option<Outlet> {
         0 => Target::Unresolved,
         1 => Target::Basin(i.u32()?),
         2 => Target::Lost,
+        3 => {
+            let (face, key) = get_pool(i)?;
+            Target::Virtual(face, key)
+        }
         _ => return None,
     };
     Some(Outlet {
@@ -180,6 +219,7 @@ fn get_outlet(i: &mut In<'_>) -> Option<Outlet> {
         flow: i.f64()?,
         scale: i.f64()?,
         contact: i.bool()?,
+        cells: if version >= 5 { i.f64()? } else { 1.0 },
     })
 }
 
@@ -255,7 +295,7 @@ fn get_basin(
     let inflows = i.weighed()?;
     let last_volume = i.f64()?;
     let outlets: Vec<Outlet> = (0..i.len()?)
-        .map(|_| get_outlet(i))
+        .map(|_| get_outlet(i, version))
         .collect::<Option<_>>()?;
     let wet = i.set()?;
     let capped = i.bool()?;
@@ -337,6 +377,7 @@ fn get_basin(
         edge: chunks.clone(),
         chunks,
         steady,
+        keys: Vec::new(),
     };
     Some((b, fresh))
 }
@@ -436,6 +477,16 @@ impl Water {
             o.u32(x.river);
             o.f64(x.s);
             o.f64(x.dq);
+        }
+        // The virtual pools off their rest (version 5, ADR 0059).
+        let mut virtuals: Vec<_> = self.virtuals.iter().collect();
+        virtuals.sort_unstable_by_key(|(fk, _)| (u8::from(fk.0 == dwell_world::Face::B), fk.1));
+        o.len(virtuals.len());
+        for (&(face, key), v) in virtuals {
+            put_pool(&mut o, face, key);
+            o.f64(v.dv);
+            o.f64(v.area);
+            o.f64(v.q_out);
         }
         o.0
     }
@@ -552,6 +603,20 @@ impl Water {
                 }
             }
         }
+        let mut virtuals = HashMap::default();
+        if version >= 5 {
+            for _ in 0..i.len()? {
+                let k = get_pool(&mut i)?;
+                virtuals.insert(
+                    k,
+                    super::virtuals::Virtual {
+                        dv: i.f64()?,
+                        area: i.f64()?,
+                        q_out: i.f64()?,
+                    },
+                );
+            }
+        }
         // Ways into a basin left out (or a reservoir, not saved) are found again.
         let ids: HashSet<u32> = basins.keys().copied().collect();
         for b in basins.values_mut() {
@@ -572,6 +637,16 @@ impl Water {
             }
         }
         self.basins = basins;
+        // The generated pools each holds (ADR 0059): asked of the graph again.
+        let ids: Vec<u32> = self.basins.keys().copied().collect();
+        for id in ids {
+            let (f, cells): (FaceFrame, HashSet<[i32; 3]>) = {
+                let b = &self.basins[&id];
+                (b.face, b.cells().collect())
+            };
+            let keys = self.graph_keys(f, &cells);
+            self.basins.get_mut(&id).expect("basin").keys = keys;
+        }
         self.next = next.max(self.next);
         self.brought = brought;
         self.lost = lost + gone;
@@ -581,6 +656,7 @@ impl Water {
         self.edited = edited;
         self.touched = touched;
         self.flows = flows;
+        self.virtuals = virtuals;
         Some(n)
     }
 }

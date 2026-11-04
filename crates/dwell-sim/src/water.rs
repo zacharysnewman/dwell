@@ -223,6 +223,8 @@ pub enum Target {
     Basin(u32),
     /// Out of the loaded world, or spread too thin: gone.
     Lost,
+    /// Into a generated pool of the world map's pool graph nobody has measured (ADR 0059).
+    Virtual(dwell_world::Face, PoolKey),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -252,6 +254,8 @@ pub struct Outlet {
     /// A face it shares with another basin's container (its target): water crosses it by the
     /// opening law between the two levels, never routed or drawn running.
     contact: bool,
+    /// How many cells wide it is (1 but for a lip out of sight by the graph, ADR 0059).
+    cells: f64,
 }
 
 impl Outlet {
@@ -366,6 +370,8 @@ pub struct Basin {
     edge: Vec<dwell_world::ChunkCoord>,
     /// Found at rest: what it passed then (`Steady`).
     steady: Option<Steady>,
+    /// The generated pools of the world map's pool graph it holds (ADR 0059).
+    keys: Vec<PoolKey>,
 }
 
 /// What a body found at rest passed then (docs/WATER_FLOW.md §2.2): it passes it at the level it
@@ -436,7 +442,7 @@ impl Basin {
             self.steady.as_ref().map(|s| (s.flow, s.law, s.level)),
             self.outlets
                 .iter()
-                .filter(|o| o.flow > 1e-4)
+                .filter(|o| o.flow > 1e-4 || std::env::var("DWELL_ALL_OUTS").is_ok())
                 .map(|o| (
                     o.from,
                     (o.flow * 1000.0).round() / 1000.0,
@@ -573,7 +579,7 @@ impl Basin {
         let scale = self.natural_scale();
         for o in &mut self.outlets {
             if !o.is_seep() && self.natural.contains_key(&o.from) {
-                o.scale = scale;
+                o.scale = scale * o.cells;
             }
         }
         self.outlets.retain(|o| !o.is_seep());
@@ -593,7 +599,8 @@ impl Basin {
 
     /// Its seep (with no natural outlet: the flow it was found passing, gone unseen).
     fn seep(&self) -> Option<Outlet> {
-        let st = self.steady.as_ref()?;
+        // (ADR 0059: a river goes on by its lips, found in the graph where out of sight.)
+        let st = self.steady.as_ref().filter(|_| false)?;
         if st.law > 0.0 || st.through <= 0.0 {
             return None;
         }
@@ -616,6 +623,7 @@ impl Basin {
             flow: 0.0,
             scale: st.through / (self.weir * CELL_H.powf(1.5)),
             contact: false,
+            cells: 1.0,
         })
     }
 
@@ -689,6 +697,10 @@ pub struct Water {
     flows: rivers::Flows,
     /// Where cells lie on the map's rivers (asked once each).
     located: HashMap<[i32; 3], Option<(dwell_world::Face, u32, f64)>>,
+    /// The generated pools nobody measured that are off their rest (ADR 0059, `virtuals.rs`).
+    virtuals: HashMap<(dwell_world::Face, PoolKey), virtuals::Virtual>,
+    /// What measured pools poured into virtual ones this tick (m³).
+    virtual_in: HashMap<(dwell_world::Face, PoolKey), f64>,
 }
 
 /// The flow (m³/s) through a face's column by the world map: (face, face-local x, z).
@@ -725,6 +737,8 @@ impl Water {
             river_map: None,
             flows: rivers::Flows::default(),
             located: HashMap::default(),
+            virtuals: HashMap::default(),
+            virtual_in: HashMap::default(),
         }
     }
 
@@ -906,7 +920,7 @@ impl Water {
                         .get(&t)
                         .and_then(|x| x.rows.first()?.first().copied())
                         .map(|c| (o.from, c, rate(o))),
-                    Target::Unresolved => None,
+                    Target::Unresolved | Target::Virtual(..) => None,
                 })
                 .collect();
             // A seep passes what it is given (the flow step): what it passed last.
@@ -1034,15 +1048,11 @@ impl Water {
         (self.seen_feeds(view, f, cells, level, weir, away), 0.0)
     }
 
-    /// A body's inflow by the world map's pool graph (ADR 0059), if its cells lie in generated
-    /// pools: each lip into those pools from a pool it doesn't hold brings what that lip passes at
-    /// rest, at the lip's crest (the water above it), and a river's head its source.
-    fn graph_feeds(
-        &self,
-        f: FaceFrame,
-        cells: &HashSet<[i32; 3]>,
-    ) -> Option<(Vec<([i32; 3], f64)>, f64)> {
-        let rivers = self.river_map.as_ref()?;
+    /// The generated pools of the world map's pool graph a body of cells `cells` holds (ADR 0059).
+    fn graph_keys(&self, f: FaceFrame, cells: &HashSet<[i32; 3]>) -> Vec<PoolKey> {
+        let Some(rivers) = self.river_map.as_ref() else {
+            return Vec::new();
+        };
         let mut cols: Vec<[i32; 2]> = cells.iter().map(|c| [c[0], c[2]]).collect();
         cols.sort_unstable();
         cols.dedup();
@@ -1054,10 +1064,23 @@ impl Water {
                 keys.push(k);
             }
         }
+        keys.sort_unstable();
+        keys
+    }
+
+    /// A body's inflow by the world map's pool graph (ADR 0059), if its cells lie in generated
+    /// pools: each lip into those pools from a pool it doesn't hold brings what that lip passes at
+    /// rest, at the lip's crest (the water above it), and a river's head its source.
+    fn graph_feeds(
+        &self,
+        f: FaceFrame,
+        cells: &HashSet<[i32; 3]>,
+    ) -> Option<(Vec<([i32; 3], f64)>, f64)> {
+        let rivers = self.river_map.as_ref()?;
+        let keys = self.graph_keys(f, cells);
         if keys.is_empty() {
             return None;
         }
-        keys.sort_unstable();
         let mut feeds: Vec<([i32; 3], f64)> = Vec::new();
         let mut spring = 0.0;
         for &k in &keys {
@@ -1074,6 +1097,52 @@ impl Water {
             }
         }
         Some((feeds, spring))
+    }
+
+    /// The lips of the generated pools a body holds that lie out of sight (a chunk not loaded):
+    /// its ways out by the graph there, each at its sill with its cells, into the pool below it
+    /// (measured or virtual; ADR 0059).
+    fn graph_outlets(&self, world: &VoxelWorld, b: &Basin) -> Vec<Outlet> {
+        let Some(rivers) = &self.river_map else {
+            return Vec::new();
+        };
+        let f = b.face;
+        let mut out = Vec::new();
+        for &key in &b.keys {
+            let PoolKey::River { row, .. } = key else {
+                continue;
+            };
+            let Some(lip) = rivers.lip(f.face, key) else {
+                continue;
+            };
+            if b.keys.contains(&lip.to) {
+                continue;
+            }
+            let from = f.cell([lip.at.0 as i32, row - 1, lip.at.1 as i32]);
+            // In sight (its crest and the cells it pours into loaded): its faces are found on
+            // the blocks.
+            let loaded = |c: [i32; 3]| world.find(chunk_of(c[0], c[1], c[2])).is_some();
+            if loaded(from) && SIDES.iter().all(|&s| loaded(side(from, s))) {
+                continue;
+            }
+            let lo = m_of_row(row - 1);
+            out.push(Outlet {
+                from,
+                kind: OutKind::Face {
+                    lo,
+                    hi: lo + CELL_H,
+                },
+                target: match self.measured(f.face, lip.to) {
+                    Some(t) => Target::Basin(t),
+                    None => Target::Virtual(f.face, lip.to),
+                },
+                flow: 0.0,
+                scale: lip.pours as f64,
+                contact: false,
+                cells: lip.pours as f64,
+            });
+        }
+        out
     }
 
     /// A body's inflow seen from the blocks (no pool graph: a world without a map, a test's).
@@ -1182,9 +1251,13 @@ impl Water {
         let cells: HashSet<[i32; 3]> = b.cells().collect();
         let away: Vec<[i32; 3]> = b.natural.keys().copied().chain(st.exit).collect();
         let (feeds, spring) = self.feeds_of(&view, b.face, &cells, b.level(), b.weir, &away);
-        if let Some(st) = self.basins.get_mut(&id).and_then(|b| b.steady.as_mut()) {
-            st.feeds = feeds;
-            st.spring = spring;
+        let keys = self.graph_keys(b.face, &cells);
+        if let Some(b) = self.basins.get_mut(&id) {
+            b.keys = keys;
+            if let Some(st) = b.steady.as_mut() {
+                st.feeds = feeds;
+                st.spring = spring;
+            }
         }
     }
 
@@ -1274,6 +1347,10 @@ impl Water {
                         Target::Basin(t) => t.to_string(),
                         Target::Lost => "\"lost\"".to_owned(),
                         Target::Unresolved => "\"unresolved\"".to_owned(),
+                        Target::Virtual(_, PoolKey::River { river, row }) => {
+                            format!("\"pool {river}:{row}\"")
+                        }
+                        Target::Virtual(_, PoolKey::Sea) => "\"sea\"".to_owned(),
                     };
                     format!(
                         "{{\"from\":{},\"flow\":{},\"kind\":\"{kind}\",\"to\":{to},\"natural\":{},\"contact\":{}}}",
@@ -1440,7 +1517,11 @@ impl Water {
         for id in back {
             budget = self.catch_up(world, id, budget, &live, &mut writes);
         }
-        self.carry_down(&live, dt);
+        // The generated pools nobody measured that something changed (ADR 0059).
+        let arrived = std::mem::take(&mut self.virtual_in);
+        for (face, key) in self.step_virtuals(arrived, dt) {
+            self.measure_virtual(world, face, key, &mut writes);
+        }
         // Still filling or draining: flows on wherever the players are, until settled.
         for b in self.basins.values_mut() {
             if b.reservoir || !live.contains(&b.id) {
@@ -1701,6 +1782,9 @@ impl Water {
                         *extra.entry(t).or_default() += o.flow;
                     }
                     Target::Lost => self.lost += o.flow * dt,
+                    Target::Virtual(face, k) => {
+                        *self.virtual_in.entry((face, k)).or_default() += o.flow * dt;
+                    }
                     // Waits for its way (found next tick).
                     Target::Unresolved => {
                         *self.pending.entry((id, o.from)).or_default() += o.flow * dt;
@@ -1912,9 +1996,7 @@ impl Water {
                     )
             })
             .collect();
-        let b = self.basins.get_mut(&id).expect("basin");
-        b.rest.extend(rest);
-        b.held.extend(held);
+        let _ = (rest, held); // (ADR 0059: no hidden walls)
     }
 
     /// A body at its level as found, grown into a chunk that loaded since: the ways out it found
@@ -2080,6 +2162,8 @@ impl Water {
                     natural: HashMap::default(),
                     chunks: Vec::new(),
                     edge: Vec::new(),
+
+                    keys: Vec::new(),
                     steady: None,
                 },
             );
@@ -2126,6 +2210,8 @@ impl Water {
             natural: HashMap::default(),
             chunks: Vec::new(),
             edge: Vec::new(),
+
+            keys: Vec::new(),
             steady: None,
         };
         if resting {
@@ -2134,6 +2220,9 @@ impl Water {
                 .iter()
                 .flat_map(|&c| {
                     let mut n: Vec<[i32; 3]> = SIDES.iter().map(|&s| side(c, s)).collect();
+            // (ADR 0059: no hidden walls; the generator closes its pools.)
+            b.rest.clear();
+            b.held.clear();
                     n.push([c[0], c[1] + 1, c[2]]);
                     n.push([c[0], c[1] - 1, c[2]]);
                     n
@@ -2158,7 +2247,10 @@ impl Water {
                 .collect();
             // Its natural outlets pass the map's flow at the level it was found at, coming in at
             // its cell farthest from them (a river pool's upstream end).
-            let outlets = scan_outlets(&view, &b, &self.owner, &self.reservoir_ids(), id);
+            // Its ways out: those on the blocks, and its lips out of sight by the graph.
+            b.keys = self.graph_keys(f, &seen);
+            let mut outlets = scan_outlets(&view, &b, &self.owner, &self.reservoir_ids(), id);
+            outlets.extend(self.graph_outlets(world, &b));
             let level = b.level();
             // Each way out by what stands beyond it: a face shared with a body found before (the
             // next pool's water beside it) by that body's level, drowned, never as a free fall.
@@ -2301,6 +2393,7 @@ impl Water {
             let mut met: Vec<[i32; 3]> = Vec::new();
             let mut capacity = 0.0;
             let mut capped = false;
+            let mut under: Option<u32> = None;
             let mut prev: HashSet<[i32; 3]> = HashSet::default();
             let mut lr = bottom;
             loop {
@@ -2320,6 +2413,16 @@ impl Water {
                     i == 0,
                     &rest,
                 );
+                // Another body's water over its top row: the same water (a ramp's open part
+                // under a pool), joined to it below.
+                if scan.cells.is_empty()
+                    && let Some(&t) = prev
+                        .iter()
+                        .filter_map(|&c| self.owner.get(&up(f, c, 1)))
+                        .find(|&&t| t != id && !reservoirs.contains(&t))
+                {
+                    under = Some(t);
+                }
                 met.extend(scan.met);
                 if scan.cells.is_empty() {
                     capped = true; // a ceiling: it can rise no higher
@@ -2370,9 +2473,17 @@ impl Water {
             let view = View { world, old: None };
             let b = &self.basins[&id];
             let mut outlets = scan_outlets(&view, b, &self.owner, &self.reservoir_ids(), id);
-            outlets.extend(b.seep());
+            outlets.extend(self.graph_outlets(world, b));
             self.basins.get_mut(&id).expect("basin").outlets = outlets;
             self.split_if_apart(world, id, writes);
+            // Under another body's water (its top row covered by it): one body with it.
+            if let Some(t) = under
+                && self.basins.contains_key(&id)
+                && self.basins.contains_key(&t)
+            {
+                self.merge(t, id);
+                self.rebuild(world, t, writes);
+            }
         }
     }
 
@@ -2458,7 +2569,7 @@ impl Water {
         }
         let view = View { world, old: None };
         let mut outlets = scan_outlets(&view, b, &self.owner, &self.reservoir_ids(), id);
-        outlets.extend(b.seep());
+        outlets.extend(self.graph_outlets(world, b));
         for o in &mut outlets {
             if let Some(old) = b
                 .outlets
@@ -2503,6 +2614,7 @@ impl Water {
                         flow: 0.0,
                         contact: false,
                         scale: 1.0,
+                        cells: 1.0,
                     });
                 }
             }
@@ -2523,6 +2635,11 @@ impl Water {
         me.rest.extend(other.rest);
         me.held.extend(other.held);
         me.natural.extend(other.natural);
+        for k in other.keys {
+            if !me.keys.contains(&k) {
+                me.keys.push(k);
+            }
+        }
         me.steady = match (me.steady.take(), other.steady) {
             (Some(mut x), Some(o)) => {
                 x.through += o.through;
@@ -2656,15 +2773,30 @@ impl Water {
                 }
                 None => end,
             };
+            let last_cell = path.last().copied();
             self.paths.insert((id, from), path);
+            // Into a generated pool nobody measured: it feeds that pool of the graph (ADR 0059).
+            let generated = |w: &Self, c: [i32; 3]| {
+                let k = w.generated_pool(f, c)?;
+                match w.measured(f.face, k) {
+                    Some(t) if t == id => None, // its own: not a way out
+                    Some(t) => Some(Target::Basin(t)),
+                    None => Some(Target::Virtual(f.face, k)),
+                }
+            };
             let target = match end {
-                End::Lost => Target::Lost,
+                End::Lost => last_cell
+                    .and_then(|c| generated(self, up(f, c, -1)).or_else(|| generated(self, c)))
+                    .unwrap_or(Target::Lost),
                 End::Liquid(c) => match self.owner.get(&c) {
                     Some(&o) if o != id => Target::Basin(o),
                     Some(_) => Target::Lost, // unreachable: its own cells are walls to it
-                    None => self
-                        .discover(world, None, c, true)
-                        .map_or(Target::Lost, Target::Basin),
+                    None => match generated(self, c) {
+                        Some(t) => t,
+                        None => self
+                            .discover(world, None, c, true)
+                            .map_or(Target::Lost, Target::Basin),
+                    },
                 },
                 End::Pool(c) => match self.owner.get(&c) {
                     Some(&o) => Target::Basin(o),
@@ -2694,40 +2826,43 @@ impl Water {
     /// sends down the map's river through country nobody has found comes with it, W2d) and
     /// passes what its ways out carry at its level as found; with none, it seeps what comes in.
     fn balance(&mut self) {
-        let entries: Vec<(u32, [i32; 3])> = self
-            .basins
-            .values()
-            .filter_map(|b| Some((b.id, b.steady.as_ref()?.feeds.first()?.0)))
-            .collect();
-        let mut offsets: HashMap<u32, f64> = HashMap::default();
-        if self.river_map.is_some() {
-            for (id, c) in entries {
-                let off = self.offset_at(c);
-                if off != 0.0 {
-                    offsets.insert(id, off);
-                }
+        // What a virtual pool above passes now, for the feeds from its lip (ADR 0059).
+        let rivers = self.river_map.clone();
+        let virtuals = &self.virtuals;
+        let now = |face: dwell_world::Face, c: [i32; 3], q: f64| -> f64 {
+            let Some(r) = &rivers else {
+                return q;
+            };
+            match r.pool(face, c[0], c[2]) {
+                Some(k) => virtuals.get(&(face, k)).map_or(q, |v| v.q_out),
+                None => q,
             }
-        }
-        for b in self.basins.values_mut() {
-            let id = b.id;
-            let Some(st) = b.steady.as_mut() else {
+        };
+        let mut set: Vec<(u32, Vec<([i32; 3], f64)>, f64)> = Vec::new();
+        for b in self.basins.values() {
+            let Some(st) = b.steady.as_ref() else {
                 continue;
             };
-            let own0 = st.feed().max(0.0);
-            let mut own = own0;
-            if own > 0.0
-                && let Some(&off) = offsets.get(&id)
-            {
-                own = (own + off).max(0.0);
-            }
-            let scale = if own0 > 1e-12 { own / own0 } else { 0.0 };
-            b.inflows = st
+            let mut inflows: Vec<([i32; 3], f64)> = st
                 .feeds
                 .iter()
-                .map(|&(c, q)| (c, q.max(0.0) * scale))
+                .map(|&(c, q)| (c, now(b.face.face, c, q.max(0.0))))
                 .filter(|(_, q)| *q > 1e-12)
                 .collect();
-            st.through = if st.law > 0.0 { st.law } else { own0 };
+            if st.spring > 0.0
+                && let Some(c) = b.rows.iter().flatten().next()
+            {
+                inflows.push((*c, st.spring));
+            }
+            let own: f64 = inflows.iter().map(|(_, q)| q).sum();
+            set.push((b.id, inflows, own));
+        }
+        for (id, inflows, own) in set {
+            let b = self.basins.get_mut(&id).expect("basin");
+            b.inflows = inflows;
+            if let Some(st) = b.steady.as_mut() {
+                st.through = if st.law > 0.0 { st.law } else { own };
+            }
         }
     }
 
@@ -2811,6 +2946,8 @@ impl Water {
                 natural: HashMap::default(),
                 chunks: Vec::new(),
                 edge: Vec::new(),
+
+                keys: Vec::new(),
                 steady: None,
             },
         );
@@ -3459,7 +3596,7 @@ impl Water {
             };
             let view = View { world, old: None };
             let mut outlets = scan_outlets(&view, b, &self.owner, &self.reservoir_ids(), pid);
-            outlets.extend(b.seep());
+            outlets.extend(self.graph_outlets(world, b));
             self.basins.get_mut(&pid).expect("basin").outlets = outlets;
             self.settle_rows(world, pid, writes);
         }
@@ -3578,6 +3715,7 @@ fn scan_outlets(
         Some(&o) if o != id && !reservoirs.contains(&o) && !cells.contains(&c) => Some(o),
         _ => None,
     };
+    let level = b.level();
     let mut out: Vec<Outlet> = Vec::new();
     let mut at: HashSet<([i32; 3], bool)> = HashSet::default();
     let mut add =
@@ -3594,6 +3732,7 @@ fn scan_outlets(
                         1.0
                     },
                     contact: to.is_some(),
+                    cells: 1.0,
                 });
             }
         };
@@ -3656,6 +3795,17 @@ fn scan_outlets(
                                 None,
                             );
                         }
+                    }
+                    // Water no body holds yet standing lower (the next pool, meeting this one
+                    // under its surface): a way out, found when it is followed (ADR 0059).
+                    Kind::Liquid(_) | Kind::Holds { flooded: true }
+                        if source_of(view, f, n).is_some_and(|(top, _)| top < level - 0.01) =>
+                    {
+                        let face = OutKind::Face {
+                            lo: floor,
+                            hi: floor + CELL_H,
+                        };
+                        add(&mut out, n, face, false, None);
                     }
                     Kind::Liquid(_) | Kind::Holds { .. } => {}
                 }
@@ -3927,8 +4077,9 @@ fn follow_path(
 
 mod rivers;
 mod save;
+mod virtuals;
 
-pub use rivers::{PoolInflows, PoolKey, RiverNext, Rivers};
+pub use rivers::{GraphLip, GraphPool, PoolInflows, PoolKey, RiverNext, Rivers};
 
 #[cfg(test)]
 mod tests;

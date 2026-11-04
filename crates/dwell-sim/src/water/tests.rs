@@ -411,12 +411,12 @@ dwell_world::both_faces!(
 );
 
 dwell_world::both_faces!(
-    /// Owner, 2026-11-03: a block set at the bottom of any river flooded it without end, or
-    /// drained it. A body as generated is at rest (docs/WATER_FLOW.md §2.2): an open cell beside it
-    /// that it didn't fill (here a gap in the bank over a plant) holds it in, and its natural
-    /// outlets (the fall) pass the map's flow. Red before: the gap was an outlet, its flow counted
-    /// in the river's inflow, and water ran out onto the bank and pooled there.
-    fn a_river_found_at_rest_keeps_its_banks_dry(f: FaceFrame) {
+    /// Owner, 2026-11-04 (ADR 0059): no hidden walls; a gap the water can run out by is a way out,
+    /// "I'd like it to spill into the gap as it would". A gap in a river's bank at its water's row,
+    /// over a walled ledge: once an edit wakes the river, water runs out through the gap and pools
+    /// on the ledge, in sight, until the ledge holds it at the river's level; the river keeps its
+    /// level and passes its flow on. Red before (0.47): the gap was a hidden wall, the ledge dry.
+    fn a_gap_in_a_rivers_bank_spills_and_pools_beside_it(f: FaceFrame) {
         let mut s = channel(f);
         let stone = require("dwell:stone");
         // A gap in the near wall at the water's row, over a plant on a ledge, and a walled ledge
@@ -435,7 +435,7 @@ dwell_world::both_faces!(
         s.run(600, 1.0);
         for x in 2..=6 {
             for z in 4..=7 {
-                assert!(!s.wet(x, -1, z), "water on the ledge at x {x}, z {z}");
+                assert!(s.wet(x, -1, z), "the ledge pooled at x {x}, z {z}");
             }
         }
         for x in [0, 4, 8] {
@@ -953,6 +953,77 @@ impl Rivers for Straight {
     }
 }
 
+/// A hand-made pool graph for a scene (ADR 0059): each pool by the columns it lies in (scene
+/// local x, z ranges, inclusive), its surface estimate and its river head's source; and its lips.
+struct Graph {
+    pools: Vec<(PoolKey, [i32; 2], [i32; 2], f64, f64)>,
+    lips: Vec<GraphLip>,
+}
+
+impl Graph {
+    /// A pool of the graph, keyed by `row` (its first dry row, scene-local).
+    fn key(row: i32) -> PoolKey {
+        PoolKey::River {
+            river: 0,
+            row: G + row,
+        }
+    }
+    /// A lip from pool `from` to `to` at crest column (x, z), `cells` wide.
+    fn lip(from: i32, to: i32, at: (i64, i64), cells: usize) -> GraphLip {
+        GraphLip {
+            from: Self::key(from),
+            to: Self::key(to),
+            at,
+            want: cells,
+            pours: cells,
+            room: cells,
+            fall: 0.0,
+        }
+    }
+}
+
+impl Rivers for Graph {
+    fn at(&self, _: dwell_world::Face, _: i32, _: i32) -> Option<(u32, f64)> {
+        None
+    }
+    fn length(&self, _: dwell_world::Face, _: u32) -> f64 {
+        0.0
+    }
+    fn next(&self, _: dwell_world::Face, _: u32) -> RiverNext {
+        RiverNext::End
+    }
+    fn pool(&self, _: dwell_world::Face, x: i32, z: i32) -> Option<PoolKey> {
+        self.pools
+            .iter()
+            .find(|p| (p.1[0]..=p.1[1]).contains(&x) && (p.2[0]..=p.2[1]).contains(&z))
+            .map(|p| p.0)
+    }
+    fn inflows(&self, _: dwell_world::Face, key: PoolKey) -> PoolInflows {
+        let per = dwell_worldgen::terrain::lip_cell_flow();
+        PoolInflows {
+            lips: self
+                .lips
+                .iter()
+                .filter(|l| l.to == key)
+                .map(|l| (l.from, l.at, l.pours as f64 * per))
+                .collect(),
+            source: self.pools.iter().filter(|p| p.0 == key).map(|p| p.4).sum(),
+        }
+    }
+    fn lip(&self, _: dwell_world::Face, key: PoolKey) -> Option<GraphLip> {
+        self.lips.iter().find(|l| l.from == key).cloned()
+    }
+    fn graph_pool(&self, _: dwell_world::Face, key: PoolKey) -> Option<GraphPool> {
+        let p = self.pools.iter().find(|p| p.0 == key)?;
+        Some(GraphPool {
+            key,
+            reach: (0.0, 0.0),
+            area: p.3,
+            source: p.4,
+        })
+    }
+}
+
 /// [`channel`] moved `dx` along x (a stretch of the same river farther down), walled to row `top`.
 fn channel_at(s: &mut Scene, dx: i32, top: i32) {
     let stone = require("dwell:stone");
@@ -973,18 +1044,32 @@ fn channel_at(s: &mut Scene, dx: i32, top: i32) {
 
 dwell_world::both_faces!(
     /// Owner, 2026-11-03: two players far apart on one river: a dam upstream must reach the river
-    /// downstream across the country between. Two stretches of one map river 40 m apart, nothing
-    /// found between them: a dam across the upper one holds its flow back while it fills, the
-    /// change goes down the map's river at `riverSpeed` and the lower stretch, taking in less,
-    /// falls; once the dam spills the river's flow again, the lower one comes back. Red before:
-    /// the lower stretch never knew.
+    /// downstream across the country between. ADR 0059: the country between is a pool of the
+    /// world map's graph nobody measured (a virtual pool): what the upper stretch's lip passes
+    /// feeds it, and its lip feeds the lower stretch. A dam across the upper stretch holds its
+    /// flow back while it fills; the pool between, taking in nothing, falls and passes less, and
+    /// the lower stretch, taking in less, falls; once the dam spills the river's flow again, both
+    /// come back. Red before: (0.47) the change went down the map's rivers as a front, unseen.
     fn a_dam_upstream_reaches_the_river_far_below_across_unfound_country(f: FaceFrame) {
         let mut s = Scene::with_air(f, [-16, -8, -8], [72, 10, 16]);
-        // A small river: each stretch leaves through one cell of its fall (ADR 0057: it carries
-        // what its lip does, ~0.6 m³/s), so the dam takes minutes to fill, longer than a change
-        // must last to be sent (`riverChangeHoldS`) and travel down.
-        let q = 0.6;
-        s.water = fed(q).with_rivers(std::sync::Arc::new(Straight));
+        let per = dwell_worldgen::terrain::lip_cell_flow();
+        // The graph: the upper stretch (row 3's key) with the river's head; the country between
+        // (row −4's: the water under the upper stretch's fall, its lip out in country nobody
+        // loaded); the lower stretch (row 1's), fed by that lip.
+        let graph = Graph {
+            pools: vec![
+                (Graph::key(3), [0, 9], [0, 2], 30.0, per),
+                (Graph::key(-4), [10, 20], [-2, 4], 40.0, 0.0),
+                (Graph::key(-4), [1000, 1000], [1, 1], 40.0, 0.0),
+                (Graph::key(1), [40, 49], [0, 2], 30.0, 0.0),
+            ],
+            lips: vec![
+                Graph::lip(3, -4, (9, 1), 1),
+                Graph::lip(-4, 1, (1000, 1), 1),
+                Graph::lip(1, -9, (49, 1), 1),
+            ],
+        };
+        s.water = fed(0.0).with_rivers(std::sync::Arc::new(graph));
         channel_at(&mut s, 0, 8);
         channel_at(&mut s, 40, 3);
         let stone = require("dwell:stone");
@@ -992,40 +1077,31 @@ dwell_world::both_faces!(
             s.set(x, 0, 0, stone);
             s.set(x, 0, 2, stone);
         }
-        // Where each stretch's river comes in, seen (ADR 0058): one cell a row over its ledge.
-        inlet(&mut s, -1, 10, 1, 1);
-        inlet(&mut s, 39, 5, 1, 1);
+        // The pool between's water, where the upper stretch's fall lands.
+        s.fill([10, -5, -2], [20, -5, 4], M.water);
         // Both found as they were (an edit beside each), at rest.
         s.edit(&[[4, 1, 1], [44, 1, 1]], M.air);
         s.run(5, 1.0);
         let lower = |s: &Scene| s.water.basin_at(s.cell(44, 0, 1)).expect("lower").volume;
         let full = lower(&s);
+        assert!(s.water.virtuals.is_empty(), "the river at rest: nothing off it");
         // A dam six rows high: it takes a while to fill.
         let dam: Vec<[i32; 3]> = (0..=2)
             .flat_map(|z| (0..=5).map(move |r| [9, r, z]))
             .collect();
-        s.edit(&dam, require("dwell:stone"));
-        // Sent once it lasts `riverChangeHoldS`, then 40 m at 1 m/s: nothing yet before.
-        let hold = FLOW.river_change_hold_s as u32;
-        s.run(hold + 20, 1.0);
-        assert!(
-            (lower(&s) - full).abs() < 1e-6,
-            "not reached yet: {} of {full}",
-            lower(&s)
-        );
-        // Reached: the lower stretch takes in nothing and falls.
-        s.run(60, 1.0);
+        s.edit(&dam, stone);
+        s.run(90, 1.0);
         assert!(
             lower(&s) < 0.8 * full,
             "the river below falls: {} of {full}",
             lower(&s)
         );
-        // What is going down the river is saved with the basins.
+        // The pool between, off its rest, is saved with the basins.
+        assert!(!s.water.virtuals.is_empty(), "the pool between off its rest");
         let bytes = s.water.save(revisions(&s));
-        let mut back = fed(q);
+        let mut back = fed(0.0);
         back.restore(&bytes, revisions(&s)).expect("read back");
-        assert!(!s.water.fronts().is_empty(), "changes going down the river");
-        assert_eq!(back.fronts(), s.water.fronts());
+        assert_eq!(back.virtuals, s.water.virtuals);
         // The dam fills and spills the flow again: the lower stretch comes back.
         s.run(2500, 1.0);
         assert!(
@@ -1216,8 +1292,8 @@ dwell_world::both_faces!(
         let stone = require("dwell:stone");
         // A river's step across the chunk edge at x = 0 (x −6 to 5): two rows of water west of the
         // edge, one east of it, with open cells over it there (as a river's step is generated);
-        // its water comes in seen at the west end (ADR 0058) and goes on over a fall at x = 6,
-        // each a row over its sill six cells wide.
+        // it goes on over a fall at x = 6, each a row over its sill six cells wide. While the east
+        // is unloaded, the west pool's lip into it is the graph's (ADR 0059: no seep).
         s.fill([-7, -1, -1], [6, -1, 6], stone);
         s.fill([-7, -1, -1], [6, 3, -1], stone);
         s.fill([-7, -1, 6], [6, 3, 6], stone);
@@ -1226,8 +1302,19 @@ dwell_world::both_faces!(
         s.fill([-6, 0, 0], [5, 0, 5], M.water);
         s.fill([-6, 1, 0], [-1, 1, 5], M.water);
         s.fill([6, 0, 0], [6, 0, 5], M.water);
-        inlet(&mut s, -7, 5, 0, 5);
-        s.water = fed(0.0);
+        // The west pool's lip: its crest column's bed the sill a row under its water (as the
+        // generator's lips are), so the pools meet only over it.
+        s.fill([-1, 0, 0], [-1, 0, 5], stone);
+        // The graph (ADR 0059): the west pool (row 2's key) with its river's head, six cells
+        // over its lip into the east pool (row 1's), six over its fall.
+        let per = dwell_worldgen::terrain::lip_cell_flow();
+        s.water = fed(0.0).with_rivers(std::sync::Arc::new(Graph {
+            pools: vec![
+                (Graph::key(2), [-6, -1], [0, 5], 36.0, 6.0 * per),
+                (Graph::key(1), [0, 6], [0, 5], 42.0, 0.0),
+            ],
+            lips: vec![Graph::lip(2, 1, (-1, 2), 6), Graph::lip(1, -9, (6, 2), 6)],
+        }));
         let east = chunk_of(s.cell(3, 0, 2)[0], s.cell(3, 0, 2)[1], s.cell(3, 0, 2)[2]);
         assert_ne!(
             east,
