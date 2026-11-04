@@ -5225,7 +5225,8 @@ Deliverables
   opening law shared by the generator and the engine; river and lake levels solved from the mouth up
   for the map's discharge (big rivers' steps drowned); the waterline generated flooded; ADR 0055's
   special cases removed (natural scaling, seeps, `rest`/`held`, links, `hold_grown`,
-  `natural_grown`); water drawn as a slope over a ½ m step between pools. Exit: the strict sweep
+  `natural_grown`); water drawn as a slope over a ½ m step between pools, and a fall's faces down to
+  the drawn surface of the water it lands in (no gap under waterfalls). Exit: the strict sweep
   (§17.4) with no special cases.
 - [ ] W3 — Clients: basin levels and currents on the wire; clients rewrite their own rim cells.
 - [ ] W4 — Currents: water drag relative to the current on bodies (server and stand-ins), swimmers

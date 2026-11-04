@@ -597,5 +597,10 @@ fill's part-full cells (0.44.0). Small and medium rivers fit within a ½ m terra
   really bad right now." Where water pours from one pool over a ½ m step to the next, the mesher
   draws its surface as a slope down to the lower pool (rapids), not a vertical sheet: visual only,
   the basins still flat. Drops of a block or more stay waterfalls.
+- **Falls meet the water** (owner, 2026-11-04: "there's often a half block gap between the bottom of
+  waterfalls and the river below, possible visual only"): a fall is drawn down to the bottom of the
+  cell over the pool it lands in, while that pool's top is drawn below its cell's top (the surface
+  drop, and part-full rows lower still), leaving a strip of air. The fall's faces reach down to the
+  drawn surface of the water under it. Visual; in the same release, with a regression test.
 - **Release: 0.45.0 on its own**, as soon as it passes the strict sweep (§17.4); the owner raises the
   version.
