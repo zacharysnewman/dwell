@@ -711,3 +711,51 @@ the pool below took in the river's whole flow from nowhere while the pool above 
   `every_lip_pours_into_exactly_its_cells` (generator), and the strict sweep (red with lips sized
   column by column: 405 cells changed at a seed 0 pool).
 
+## 19. The pool graph (built G1–G3, ADR 0059, 0.48.0)
+
+Water is data first (the proposal `docs/proposals/WATER_GRAPH.md`, adopted): each face's rivers are
+a graph of pools joined by lips, derived from the world map; the terrain is carved from it and the
+engine reads it. It supersedes the parts of §17–18 that inferred generated water from its blocks.
+
+### 19.1 The graph (`dwell-worldgen` `pool_graph.rs`)
+
+- Per river, on demand, from its course (no chunk loaded; cached per generator): pools by row from
+  its head, each from where the surface crosses into its row to where it crosses out; a lip at each
+  step, found on the ground by a column of its band near the crossing (`band_near`, the meander
+  warp undone), its crest from the lip plan (`LipPlan`: `want` cells = the river's flow in lip cells,
+  `pours` = what its crest pours into). A river's head pool carries its source (`GraphPool::source`).
+  A river joining another ends in a lip into the other's pool there (or is one pool with it).
+- **Chutes** (`RiverRows`, `STEEP_FALL` 0.2 m per m): a pool shorter than a row's step at that fall
+  is a chute's. No pools there: the terrain's bed is a row under the surface, dry but for a stream of
+  running water as wide as the lip cells; the pool above pours into it by an exact lip; the graph's
+  lip runs from the pool above to the pool at its foot. Both the terrain and the graph read the same
+  rows, so they agree.
+- Measured (seeds 0–5): 44,401 lips, every step found, one a cell short (a junction at a chute's
+  top, BUGS 28). `tests/pool_graph.rs`.
+
+### 19.2 The engine (`dwell-sim` `water.rs`, `water/virtuals.rs`)
+
+- `Rivers` gives the graph: `pool(face, x, z)`, `inflows(face, key)` (each lip into the pool with its
+  rest flow, and the head source), `lip(face, key)`, `graph_pool(face, key)`.
+- **A woken generated pool** (`Basin::keys`: the graph pools it holds) takes in each lip into those
+  pools from a pool it doesn't hold, at that lip's crest (its rest flow, or what a virtual pool
+  above passes now), and its river's head (`Steady::spring`). Its lips out of sight (crest or far
+  side unloaded) are ways out from the graph (`graph_outlets`, `Outlet::cells` wide).
+- **Virtual pools**: a generated pool nobody measured, implicit at rest. Stepped (implicitly, so a
+  small one never overshoots) when off its rest or below a measured pool: in by its lips (measured
+  pools' by what they poured, `Target::Virtual`; virtual ones' by what they passed), out by its lip
+  at its level (cells × weir × head^1.5). Kept while off by 1 mm or 1 % of its flow; measured when
+  its level moves `foundSnapM` in a loaded chunk; saved (water record v5).
+- **Ways out into generated water nobody measured** feed that virtual pool instead of waking it.
+- **No hidden walls** (`rest`/`held` removed). Lower water nobody holds yet is a way out; a body
+  under another's water merges with it.
+- **Gone:** fronts down the map's rivers (W2d), seeps, `hold_grown`, the hidden walls, edge sources;
+  the block-seen feeds stay only where no graph covers a body (worlds without a map, tests).
+- **Tests:** the scene tests' graph fixture (`Graph` in `water/tests.rs`); `a_dam_upstream_reaches_
+  the_river_far_below_across_unfound_country` (through a virtual pool, saved and restored),
+  `a_gap_in_a_rivers_bank_spills_and_pools_beside_it`, the strict sweep (twelve pools, nothing off
+  rest). The owner's seed 3695715780 dam natively: above it rises to 86.5 m and spills; below it
+  takes in nothing until the spill and falls to its lip; the change goes on down the virtual pools.
+- **Not yet:** G4 (edits as graph changes), G5 (floods over banks as graph growth), G6 (currents and
+  levels to clients), the graph inspector page.
+

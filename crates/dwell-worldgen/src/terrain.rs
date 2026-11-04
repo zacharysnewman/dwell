@@ -293,6 +293,8 @@ pub struct Column {
     /// Part of a river's lip (its crest, wall, or a rock at its foot; ADR 0058): its top stays
     /// flat (no ramp pieces), so no ramp's open part lets the water by.
     pub lip: bool,
+    /// In a chute's stream (ADR 0059): running water over its top, no still water.
+    pub stream: bool,
 }
 
 /// A column's `shore` with no river valley or lake shore reaching it.
@@ -352,13 +354,18 @@ enum Lip {
 /// wall beside it. None at sea level or where the surface doesn't fall.
 /// How far above its step down a channel column lies (m along the river), if in a lip's band.
 fn lip_band(r: &worldmap::Hit) -> Option<f64> {
+    above_step(r).filter(|&a| a <= S.river_lip_reach)
+}
+
+/// How far above its next step down a channel column lies (m along the river); none at the sea's
+/// level or where the surface doesn't fall.
+fn above_step(r: &worldmap::Hit) -> Option<f64> {
     if r.level <= CELL_H || r.fall <= 1e-9 {
         return None;
     }
     let abs = SEA_LEVEL_M + r.level;
     let k = f64::from(surface_row(abs as f32));
-    let above_step = (abs - (k - 0.5) * CELL_H) / r.fall;
-    (above_step <= S.river_lip_reach).then_some(above_step)
+    Some((abs - (k - 0.5) * CELL_H) / r.fall)
 }
 
 /// The row a water surface (m, face-local) lies on: the rows below it are water.
@@ -376,6 +383,13 @@ fn top_voxel(h: f32) -> i32 {
     let r = rows(h);
     let f = floor_to_int(r);
     if f as f32 == r { f - 1 } else { f }
+}
+
+/// Water's running block (a chute's stream, ADR 0059), resolved by name once.
+fn running_water() -> StateId {
+    static RUNNING: std::sync::LazyLock<StateId> =
+        std::sync::LazyLock::new(|| dwell_blocks::require("dwell:running_water"));
+    *RUNNING
 }
 
 /// The bedrock's state (`shared/worldgen/midplane.json`), resolved by name once.
@@ -511,6 +525,10 @@ pub struct TerrainGenerator {
     /// Each river lip's plan (`LipPlan`, ADR 0058), by every column of its band: made once,
     /// whichever chunk asks first, so a lip comes out the same in every chunk.
     lips: Arc<std::sync::Mutex<LipPlans>>,
+    /// Each river's pool graph (`pool_graph.rs`), built on demand.
+    graphs: Arc<std::sync::Mutex<HashMap<u32, Arc<RiverGraph>>>>,
+    /// Each river's rows (`RiverRows`: which are a chute's), built on demand.
+    rows: Arc<std::sync::RwLock<HashMap<u32, Arc<RiverRows>>>>,
 }
 
 /// The lips planned, by every column of their bands.
@@ -550,6 +568,8 @@ struct LipCol {
     d: f64,
     q: f64,
     band: bool,
+    /// In a chute (its river's surface falling faster than `STEEP_FALL`): no pools, no lips.
+    steep: bool,
 }
 
 /// The ramp pieces of the natural surface materials, resolved by name once: for each material,
@@ -637,6 +657,8 @@ impl TerrainGenerator {
             cache_id: next_cache_id(),
             world_seed,
             lips: Arc::default(),
+            graphs: Arc::default(),
+            rows: Arc::default(),
         }
         .with_placements(&PLACEMENTS)
     }
@@ -952,6 +974,16 @@ impl TerrainGenerator {
         (r.d < r.half && r.level > CELL_H).then(|| surface_row((SEA_LEVEL_M + r.level) as f32))
     }
 
+    /// Whether river `a`'s water goes on into river `b`'s: the same river, or `a` joining `b`
+    /// (its last lip pours into `b`).
+    fn flows_into(&self, a: u32, b: u32) -> bool {
+        a == b
+            || matches!(
+                self.map.rivers.get(a as usize).map(|r| r.end),
+                Some(worldmap::RiverEnd::Joins(j)) if j == b
+            )
+    }
+
     /// Full-detail channel column (x, z)'s part in its river's lips (ADR 0058): in a lip's band,
     /// its crest or wall (`LipPlan`); in the pool below one, walled where that lip blocks it.
     fn lip_role(&self, x: i64, z: i64) -> Lip {
@@ -962,10 +994,16 @@ impl TerrainGenerator {
             .iter()
             .map(|&(dx, dz)| ((x + dx, z + dz), self.channel_col(x + dx, z + dz)))
             .collect();
+        if me.steep {
+            return Lip::None;
+        }
         let band = me.band
-            || near
-                .iter()
-                .any(|(_, n)| n.is_some_and(|n| n.river == me.river && n.row < me.row));
+            || near.iter().any(|(_, n)| {
+                n.is_some_and(|n| {
+                    self.flows_into(me.river, n.river)
+                        && (n.row < me.row || (n.steep && n.row <= me.row))
+                })
+            });
         if band {
             return if self.lip_plan(x, z).crest.contains(&(x, z)) {
                 Lip::Crest
@@ -975,7 +1013,7 @@ impl TerrainGenerator {
         }
         for &(n, l) in &near {
             if let Some(l) = l
-                && l.river == me.river
+                && self.flows_into(l.river, me.river)
                 && l.row > me.row
                 && self.lip_col(n.0, n.1).is_some_and(|l| l.band)
                 && self.lip_plan(n.0, n.1).block.contains(&(x, z))
@@ -991,16 +1029,21 @@ impl TerrainGenerator {
     /// row lower (the pools never meet but over a lip).
     fn lip_col(&self, x: i64, z: i64) -> Option<LipCol> {
         let mut l = self.channel_col(x, z)?;
-        if !l.band {
+        if !l.band && !l.steep {
             let beside_lower = [(1i64, 0i64), (-1, 0), (0, 1), (0, -1)]
                 .iter()
                 .any(|&(dx, dz)| {
-                    self.channel_col(x + dx, z + dz)
-                        .is_some_and(|n| n.river == l.river && n.row < l.row)
+                    self.channel_col(x + dx, z + dz).is_some_and(|n| {
+                        self.flows_into(l.river, n.river)
+                            && (n.row < l.row || (n.steep && n.row <= l.row))
+                    })
                 });
             if beside_lower {
+                // (Its distance above the step kept: the crest's columns behind it follow it up.)
                 l.band = true;
-                l.above = 0.0;
+                if !l.above.is_finite() {
+                    l.above = 0.0;
+                }
             }
         }
         Some(l)
@@ -1022,14 +1065,17 @@ impl TerrainGenerator {
         if r.d >= r.half || r.level <= CELL_H {
             return None;
         }
-        let band = lip_band(&r);
+        let row = surface_row((SEA_LEVEL_M + r.level) as f32);
+        let steep = self.river_rows(r.river).steep.contains(&row);
+        let band = lip_band(&r).filter(|_| !steep);
         Some(LipCol {
             river: r.river,
-            row: surface_row((SEA_LEVEL_M + r.level) as f32),
-            above: band.unwrap_or(f64::INFINITY),
+            row,
+            above: above_step(&r).unwrap_or(f64::INFINITY),
             d: r.d,
             q: r.q,
             band: band.is_some(),
+            steep,
         })
     }
 
@@ -1099,8 +1145,8 @@ impl TerrainGenerator {
         // (A column in the next lip's band down is the pool below where that lip's crest is.)
         let lower = |n: (i64, i64), l: Option<LipCol>| {
             l.is_some_and(|l| {
-                l.river == me.river
-                    && l.row < me.row
+                self.flows_into(me.river, l.river)
+                    && (l.row < me.row || (l.steep && l.row <= me.row))
                     && (!l.band || self.lip_plan(n.0, n.1).crest.contains(&n))
             })
         };
@@ -1301,6 +1347,7 @@ impl TerrainGenerator {
         }
         let mut h = base + detail * fade;
         let mut on_lip = false;
+        let mut stream = false;
         let mut water = Water::None;
         let mut level = 0.0f64;
         if let Some(l) = &lake {
@@ -1353,6 +1400,24 @@ impl TerrainGenerator {
                         // The gap's bed is the sill, one row under the water's top: the river
                         // pours off its edge, and below the water the pools meet only its side.
                         Lip::Crest => h = drawn - CELL_H,
+                        // A chute (G2, ADR 0059): steps too close for pools; its bed a row under
+                        // its surface, dry but for a stream running down its middle as wide as its
+                        // river's lip cells (on any heading), carried by the pools' lips above it.
+                        Lip::None
+                            if cell == 1
+                                && self
+                                    .river_rows(r.river)
+                                    .steep
+                                    .contains(&surface_row((SEA_LEVEL_M + r.level) as f32)) =>
+                        {
+                            h = drawn - CELL_H;
+                            water = Water::None;
+                            level = 0.0;
+                            on_lip = true;
+                            let faces = (r.dir.0.abs() + r.dir.1.abs()).max(1.0);
+                            let half = (0.5 * f64::from(lip_cells(r.q)) / faces).max(0.71);
+                            stream = r.d < half;
+                        }
                         Lip::None => {}
                     }
                 }
@@ -1451,6 +1516,7 @@ impl TerrainGenerator {
             shore,
             base: height,
             lip: on_lip,
+            stream,
         }
     }
 
@@ -2004,6 +2070,8 @@ impl TerrainGenerator {
                         *v = fill_soil(col.band, top, i64::from(top - y), soil);
                     } else if y < water {
                         *v = M.water;
+                    } else if col.stream && y == top + 1 {
+                        *v = running_water();
                     }
                 }
                 // A decoration in the air cell over the ground, if this chunk holds that cell
@@ -2012,6 +2080,7 @@ impl TerrainGenerator {
                 if part == Part::None
                     && (y0..y0 + S).contains(&above)
                     && above >= water
+                    && !col.stream
                     && (FACE_MIN_Y..FACE_MAX_Y).contains(&above)
                     && let Some(m) = self.decoration_at(&cols, x0, z0, x, z, top)
                 {
@@ -2948,6 +3017,10 @@ fn smooth_min(a: f64, b: f64, k: f64) -> f64 {
     let h = (0.5 + 0.5 * (b - a) / k).clamp(0.0, 1.0);
     b + (a - b) * h - k * h * (1.0 - h)
 }
+
+#[path = "pool_graph.rs"]
+mod pool_graph;
+pub use pool_graph::*;
 
 #[cfg(test)]
 mod tests {
