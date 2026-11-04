@@ -279,6 +279,37 @@ fn cutout_blocks_without_a_solid_are_air_at_lod() {
 }
 
 #[test]
+fn a_coarse_water_cell_holds_the_share_its_finer_cells_fill() {
+    // face-a-only: the downsample's own rule; face B reads the block upside down
+    // (`downsample_block_face`), the same rule.
+    // docs/WATER_FLOW.md §15: a LOD cell of water takes the share of its height the cells under
+    // it fill, so the coarse surface stands where the fine one does: a full row under a half-full
+    // row is ¾; a full row under air is ½; water over stone is the stone's row plus the water's.
+    let fill = |m: StateId| f64::from(dwell_blocks::info(m).fill);
+    let water = s("dwell:water");
+    let half = s("dwell:water[fill=4]");
+    let stone = s("dwell:stone");
+    let lower_upper = |lo: StateId, up: StateId| -> [StateId; 8] {
+        std::array::from_fn(|i| if i & 2 == 0 { lo } else { up })
+    };
+    let m = lod::downsample_block(&lower_upper(water, half));
+    assert!(
+        dwell_blocks::info(m).liquid && (fill(m) - 0.75).abs() < 1e-6,
+        "{}",
+        fill(m)
+    );
+    let m = lod::downsample_block(&lower_upper(water, 0));
+    assert!((fill(m) - 0.5).abs() < 1e-6, "{}", fill(m));
+    let m = lod::downsample_block(&lower_upper(stone, water));
+    assert!(
+        dwell_blocks::info(m).liquid && fill(m) == 1.0,
+        "{}",
+        fill(m)
+    );
+    assert_eq!(lod::downsample_block(&lower_upper(water, water)), water);
+}
+
+#[test]
 fn tall_grass_is_placed_only_on_grass_or_dirt() {
     let grass = s("dwell:tall_grass");
     let mut world = ground();

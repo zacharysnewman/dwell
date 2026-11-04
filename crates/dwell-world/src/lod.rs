@@ -242,12 +242,38 @@ pub fn downsample_block(cells: &[StateId; 8]) -> StateId {
     for a in 0..n {
         let count = candidates[..n]
             .iter()
-            .filter(|&&c| c == candidates[a])
+            .filter(|&&c| dwell_blocks::liquid_full(c) == dwell_blocks::liquid_full(candidates[a]))
             .count();
         if count > best_count {
             best = candidates[a];
             best_count = count;
         }
+    }
+    // Water: the share of the cell it fills (docs/WATER_FLOW.md §15), so a coarse cell's surface
+    // stands where the finer cells' does: each column's two halves, a liquid's own fill, anything
+    // else under it full, air empty.
+    if info(best).liquid {
+        let part = |m: StateId| {
+            if m == air {
+                0.0
+            } else if info(m).liquid {
+                f64::from(info(m).fill)
+            } else {
+                1.0
+            }
+        };
+        let fill: f64 = (0..4)
+            .map(|col| {
+                let (dx, dz) = (col & 1, col >> 1);
+                let lower = cells[dx | (dz << 2)];
+                let upper = cells[dx | 2 | (dz << 2)];
+                // The upper half holds water only over a filled lower half.
+                let up = if part(lower) >= 1.0 { part(upper) } else { 0.0 };
+                (part(lower).min(1.0) + up) / 2.0
+            })
+            .sum::<f64>()
+            / 4.0;
+        best = dwell_blocks::liquid_at_fill(best, fill);
     }
     best
 }

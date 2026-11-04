@@ -51,6 +51,58 @@ pub fn state(name: &str) -> Option<StateId> {
     parse_state(name).ok()
 }
 
+/// The full state of liquid state `m` (fill 1, `fillProperty`'s default): one liquid at any
+/// fill is the same water. Any other state is its own.
+pub fn liquid_full(m: StateId) -> StateId {
+    static FULL: std::sync::LazyLock<Vec<StateId>> = std::sync::LazyLock::new(|| {
+        (0..STATES.len())
+            .map(|m| {
+                let s = &STATES[m];
+                if !s.liquid || s.fill >= 1.0 {
+                    return m as StateId;
+                }
+                STATES
+                    .iter()
+                    .position(|x| x.block == s.block && x.fill >= 1.0)
+                    .map_or(m as StateId, |i| i as StateId)
+            })
+            .collect()
+    });
+    FULL.get(usize::from(m)).copied().unwrap_or(m)
+}
+
+/// Liquid `m`'s state nearest fill `frac` (0..1; at least its least fill): how a cell part full
+/// of it is written (docs/WATER_FLOW.md §15). A liquid without a fill is always full.
+pub fn liquid_at_fill(m: StateId, frac: f64) -> StateId {
+    static FILLS: std::sync::LazyLock<std::collections::HashMap<StateId, Vec<(f32, StateId)>>> =
+        std::sync::LazyLock::new(|| {
+            let mut out: std::collections::HashMap<StateId, Vec<(f32, StateId)>> =
+                std::collections::HashMap::new();
+            for (i, s) in STATES.iter().enumerate() {
+                if s.liquid {
+                    out.entry(liquid_full(i as StateId))
+                        .or_default()
+                        .push((s.fill, i as StateId));
+                }
+            }
+            for v in out.values_mut() {
+                v.sort_by(|a, b| a.0.total_cmp(&b.0));
+            }
+            out
+        });
+    let full = liquid_full(m);
+    let Some(v) = FILLS.get(&full) else {
+        return m;
+    };
+    v.iter()
+        .min_by(|a, b| {
+            (f64::from(a.0) - frac)
+                .abs()
+                .total_cmp(&(f64::from(b.0) - frac).abs())
+        })
+        .map_or(full, |&(_, s)| s)
+}
+
 /// The build's own state with this exact canonical string (never a registered one).
 pub fn build_state(name: &str) -> Option<StateId> {
     STATES
