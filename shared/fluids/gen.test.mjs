@@ -30,6 +30,9 @@ test('bad entries fail with their path named', () => {
     [(d) => (d.liquids[0].block = 'dwell:stone'), /liquids\[0\]\.block: dwell:stone is not a liquid/],
     [(d) => (d.liquids[0].block = 'dwell:nope'), /is not a block of the registry/],
     [(d) => (d.liquids[0].weir = 0), /liquids\[0\]\.weir must be a number in \(0, 10\]/],
+    [(d) => (d.liquids[0].running = 'dwell:stone'), /liquids\[0\]\.running: dwell:stone is not a liquid/],
+    [(d) => (d.liquids[0].running = 'dwell:water'), /must not be the liquid's own block/],
+    [(d) => (d.streamMinFlow = -1), /streamMinFlow must be a number/],
     [(d) => (d.leaks['dwell:water'] = 1), /leaks: dwell:water is a liquid/],
     [(d) => (d.leaks['dwell:sand'] = -1), /leaks\.dwell:sand must be a number in \[0, 10\]/],
   ]) {

@@ -443,6 +443,20 @@
       "placeable": true,
       "color": "#a36b3c",
       "textures": "planks"
+    },
+    {
+      "$comment": "Water running between basins (docs/WATER_FLOW.md §15): a spill over a dam, a fall down the other side, a stream to where it lands. Drawn and swum as water (the same fluid); the water flow draws it while an outlet runs and takes it away when it stops, and treats it as open: no basin is found in it, and a basin rising fills over it. Named by flow.json's `running` for its liquid.",
+      "name": "running_water",
+      "sound": "dwell:water",
+      "density": 1000,
+      "shape": "empty",
+      "look": "fluid",
+      "fluid": "dwell:water",
+      "liquid": true,
+      "render": "translucent",
+      "color": "#2f86e0",
+      "textures": "water",
+      "lightFilter": 1
     }
   ]
 }

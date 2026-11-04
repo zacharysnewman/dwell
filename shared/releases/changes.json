@@ -2,6 +2,14 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions card. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.43.1",
+      "changes": [
+        "A wall across a river raises the water behind it until it spills over, even a wall level with the water",
+        "Water spilling over a wall or through a cut is drawn running down the other side",
+        "The river below a wall keeps its level instead of filling with the spill"
+      ]
+    },
+    {
       "version": "0.43.0",
       "changes": [
         "New worlds: slopes at the edge of rivers and lakes hold water, so the water no longer ends in a wall",

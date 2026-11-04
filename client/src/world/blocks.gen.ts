@@ -75,7 +75,7 @@ export interface ShapeDef {
 }
 
 /** FNV-1a 64 over the canonical state strings (each followed by "\n") in id order. */
-export const REGISTRY_HASH = 0x2e3cd7274371e51en;
+export const REGISTRY_HASH = 0x80c5492196791f0fn;
 
 export const BLOCK_DEFS: readonly BlockDef[] = [
   { id: 'dwell:air', first: 0, count: 1, properties: [] },
@@ -100,6 +100,7 @@ export const BLOCK_DEFS: readonly BlockDef[] = [
   { id: 'dwell:snowy_grass_ramp', first: 221, count: 48, properties: [{ name: 'facing', values: ['north', 'east', 'south', 'west'] }, { name: 'flooded', values: ['false', 'true'] }, { name: 'half', values: ['bottom', 'top'] }, { name: 'shape', values: ['ramp', 'steep_lower', 'steep_upper'] }], sound: 'dwell:snow' },
   { id: 'dwell:snowy_leaves', first: 269, count: 1, properties: [], sound: 'dwell:snow' },
   { id: 'dwell:build_platform', first: 270, count: 1, properties: [], sound: 'dwell:wood' },
+  { id: 'dwell:running_water', first: 271, count: 1, properties: [], sound: 'dwell:water' },
 ];
 
 /** The shapes block states use. */
@@ -410,6 +411,7 @@ const STATES_2: readonly StateDef[] = [
   { id: 268, state: 'dwell:snowy_grass_ramp[facing=west,flooded=true,half=top,shape=steep_upper]', block: 19, values: { facing: 'west', flooded: 'true', half: 'top', shape: 'steep_upper' }, look: 'shaped', render: 'opaque', color: 0xe9eff6, opacity: 1, textures: { top: 'snow', side: 'snowSide', bottom: 'dirt' }, shape: 25, flooded: true, placeable: false },
   { id: 269, state: 'dwell:snowy_leaves', block: 20, values: {  }, look: 'cube', render: 'cutout', color: 0xc9dccb, opacity: 1, textures: { top: 'snowyLeavesTop', side: 'snowyLeavesSide', bottom: 'leaves' }, shape: 1, flooded: false, placeable: true },
   { id: 270, state: 'dwell:build_platform', block: 21, values: {  }, look: 'cube', render: 'opaque', color: 0xa36b3c, opacity: 1, textures: { top: 'planks', side: 'planks', bottom: 'planks' }, shape: 1, flooded: false, placeable: true },
+  { id: 271, state: 'dwell:running_water', block: 22, values: {  }, look: 'fluid', render: 'translucent', color: 0x2f86e0, opacity: 0.72, textures: { top: 'water', side: 'water', bottom: 'water' }, shape: 0, flooded: false, placeable: false },
 ];
 
 export const STATE_DEFS: readonly StateDef[] = [

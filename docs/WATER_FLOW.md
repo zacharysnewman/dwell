@@ -316,6 +316,21 @@ sends its writes as one `Rebake` modification.
   stands there). A basin whose cells another's level wets or dries finds its ways out again.
 - **The edge**: a block with a `flooded` state (a ramp) beside a row the water writes takes it, and
   loses it when no liquid is beside it (`flood_edge`).
+- **Running water** (0.43.1): an outlet an edit made (not a natural one) passing at least
+  `streamMinFlow` (0.05 m³/s a cell, a sheet ~7 cm deep) is drawn: its crest (the surface row's
+  cells beside it, however thin the sheet) as the liquid, and the cells its water runs through to
+  where it lands (`follow_path`: the fall, the run along the floor) as the liquid's `running` block
+  (`flow.json`; `dwell:running_water`, the same fluid), taken away when it stops. The basins treat a
+  running block as open: none is found in it, and a basin rising fills over it.
+- **Crests** (0.43.1): a basin's parts joined only above its full rows (the surface row counts once
+  half full) are basins of their own, and a basin's rows don't spread into another's container
+  (met there); two basins merge only through a row both fill. So a wall level with a river's water
+  splits the pool, and the river above rises until it passes its flow over the wall by the weir
+  law; a wall stays a wall until the water is a row deep over it.
+- **What a found body passes** (0.43.1): each flow step, its own map flow and what arrived the step
+  before (over a dam, from the pools above), by its natural outlets at the level it was found at;
+  its links are found from where its natural outlets ran as found (an edit may block them now), so
+  a pool below a wall never counts the river's flow as its own.
 - **The day** of a new world is 20 minutes since this change (owner, 2026-11-03; DAY_NIGHT.md),
   so water time runs 72× real time × the water speed; both are the world's settings (ADR 0054), a
   new world's water speed the server's `water_speed` (`flow.json` `speed` by default).
@@ -336,8 +351,8 @@ the flow steps; ways found in rounds, water in transit while they are; waiting b
 comes in, and wait while a chunk of them is unloaded; the edge's ramps flood.
 
 Deviations, for W2–W3: basins aren't saved (after a restart a body is found again by the next edit
-touching it, at rest as it then is), waiting basins aren't fast-forwarded, running water between
-basins isn't drawn (it arrives where it lands), and a sheet spreading wider than `maxRowCells` over a
+touching it, at rest as it then is), waiting basins aren't fast-forwarded, a natural outlet's water isn't drawn
+running (the river's own steps stay as generated), and a sheet spreading wider than `maxRowCells` over a
 plain is capped there (the excess lost).
 
 Tests (`water/tests.rs`, both faces): `a_river_found_at_rest_keeps_its_banks_dry`,
@@ -372,4 +387,6 @@ and 1,059 m³/s. What the review found, and where each stands:
 | **Silent losses.** A sheet capped at `maxRowCells` loses its excess; water running out of the loaded world is lost. | Counted in `lost` (the conservation test sees them); kept, as W1's deviations. |
 | **The water's edge.** A ramp beside the water at its row stood dry, the water ending in a wall (the owner's screenshot). | Fixed: the water's writes flood the ramps beside them (0.42.2), and the generator floods its ramps beside its water (0.43.0, a new compatibility line). |
 | **Nothing saved.** After a restart the basins are gone; the water stays where it was left. | W2 (planned). |
+| **No step at a crest** (owner, 2026-11-03: a wall across a river filled the water up to it, not over it and down the other side; a wall level with the water didn't raise it). One basin over a wall had one level; the spill wasn't drawn; the pool below, cut off from the map's flow, filled with the spill. | Fixed (0.43.1): crests split basins, spills drawn as running water, found bodies pass what comes in. |
+| **A hole below the water in a wall** joins the two sides into one basin at one level, so the wall holds nothing back; a small hole should pass only what its size and the water's depth drive through it (an orifice). | Open: an orifice law, with the pressure jets (§10). |
 

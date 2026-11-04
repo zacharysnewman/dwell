@@ -562,6 +562,47 @@ dwell_world::both_faces!(
     }
 );
 
+dwell_world::both_faces!(
+    /// Owner, 2026-11-03: a wall across a river filled the water up to the wall but not over it
+    /// and down the other side, and a wall level with the water didn't raise it at all. The river
+    /// above rises until it passes its flow over the wall, the spill is drawn over the wall's top
+    /// and running down its far side, and the river below keeps its level. Red on 0.43.0: the
+    /// river above a wall level with its water didn't rise (one pool over the wall, one level).
+    fn a_wall_across_a_river_is_spilled_over_and_the_river_below_holds(f: FaceFrame) {
+        let stone = require("dwell:stone");
+        let running = require("dwell:running_water");
+        for top in [0, 1] {
+            let mut s = channel(f);
+            // Found as it was (an edit beside it), then the wall at x = 5 up to row `top`.
+            s.edit(&[[4, 1, 1]], M.air);
+            s.run(5, 1.0);
+            let wall: Vec<[i32; 3]> = (0..=2)
+                .flat_map(|z| (0..=top).map(move |r| [5, r, z]))
+                .collect();
+            s.edit(&wall, stone);
+            s.run(900, 1.0);
+            let over = top + 1;
+            for x in [0, 2, 4] {
+                assert!(s.wet(x, over, 1), "top {top}: risen to row {over} at x {x}");
+            }
+            assert!(s.wet(5, over, 1), "top {top}: drawn over the wall's top");
+            for r in 1..=over {
+                assert_eq!(
+                    s.get(6, r, 1),
+                    running,
+                    "top {top}: running down the far side at row {r}"
+                );
+            }
+            for x in [7, 8, 9] {
+                assert!(
+                    s.wet(x, 0, 1) && !s.wet(x, 1, 1),
+                    "top {top}: the river below as it was at x {x}"
+                );
+            }
+        }
+    }
+);
+
 #[test]
 fn the_flow_data_resolves() {
     for l in FLOW.liquids {
