@@ -33,14 +33,23 @@ pub struct GraphLip {
     pub want: usize,
     pub pours: usize,
     pub room: usize,
-    /// How fast the river's surface falls there (m per m): a step steeper than `STEEP_FALL` is
-    /// part of a chute, not a pool's lip (G2).
+    /// How fast the river's surface falls below it (m per m): a lip steeper than `STEEP_FALL`
+    /// pours into a chute, running down it to the pool at its foot (`to`).
     pub fall: f64,
 }
 
 /// A river surface falling faster than this (m per m: a row every 2.5 m) is a chute (G2): its
-/// steps come too close for pools between them.
+/// steps come too close for pools between them, so it has none: its bed is dry but for a stream
+/// running down it from the lip of the pool above to the pool at its foot. A pool is a chute's
+/// when its reach along the river is shorter than a row over this (`RiverRows`).
 pub const STEEP_FALL: f64 = 0.2;
+
+/// A river's pools by row as its course alone gives them (no terrain): which rows are a chute's
+/// (`STEEP_FALL`). The terrain and the graph both read it, so they agree.
+#[derive(Debug, Default)]
+pub struct RiverRows {
+    pub steep: dwell_world::hash::HashSet<i32>,
+}
 
 /// A pool of a river: its key, its reach along the river's course (m from its head), an estimate of
 /// its surface (m²: the reach's length times the channel's width), and what comes in at its head
@@ -72,14 +81,6 @@ impl RiverGraph {
     /// Its lips that don't pour into exactly their cells (each with what it pours and wants).
     pub fn unbalanced(&self) -> Vec<&GraphLip> {
         self.lips.iter().filter(|l| l.pours != l.want).collect()
-    }
-
-    /// [`Self::unbalanced`] but for the chutes' steps (`STEEP_FALL`).
-    pub fn unbalanced_pools(&self) -> Vec<&GraphLip> {
-        self.lips
-            .iter()
-            .filter(|l| l.pours != l.want && l.fall < STEEP_FALL)
-            .collect()
     }
 }
 
@@ -167,6 +168,59 @@ impl TerrainGenerator {
         None
     }
 
+    /// River `river`'s rows (`RiverRows`), made once.
+    pub(super) fn river_rows(&self, river: u32) -> Arc<RiverRows> {
+        if let Some(r) = self.rows.read().expect("rows").get(&river) {
+            return r.clone();
+        }
+        let r = Arc::new(self.build_river_rows(river));
+        self.rows
+            .write()
+            .expect("rows")
+            .entry(river)
+            .or_insert(r)
+            .clone()
+    }
+
+    fn build_river_rows(&self, river: u32) -> RiverRows {
+        let mut out = RiverRows::default();
+        let Some(course) = self.map.channels.courses.get(river as usize) else {
+            return out;
+        };
+        if course.len() < 2 {
+            return out;
+        }
+        let row_of = |s: f64| surface_row((SEA_LEVEL_M + s) as f32);
+        let mut along = 0.0;
+        let mut start: Option<f64> = None;
+        let mut row = row_of(course[0].s);
+        let chute = CELL_H / STEEP_FALL;
+        for i in 1..course.len() {
+            let (a, b) = (course[i - 1], course[i]);
+            let len = (b.x - a.x).hypot(b.z - a.z);
+            let kb = row_of(b.s);
+            while row > kb {
+                let edge = (f64::from(row) - 0.5) * CELL_H - SEA_LEVEL_M;
+                let t = if (a.s - b.s).abs() > 1e-9 {
+                    ((a.s - edge) / (a.s - b.s)).clamp(0.0, 1.0)
+                } else {
+                    1.0
+                };
+                let at = along + len * t;
+                // The pool at `row` (not the head's) ended here: a chute's if shorter than a row.
+                if let Some(s0) = start
+                    && at - s0 < chute
+                {
+                    out.steep.insert(row);
+                }
+                start = Some(at);
+                row -= 1;
+            }
+            along += len;
+        }
+        out
+    }
+
     fn build_river_graph(&self, river: u32) -> RiverGraph {
         let mut g = RiverGraph {
             river,
@@ -200,10 +254,14 @@ impl TerrainGenerator {
         let mut row = row_of(course[0].s);
         let mut width = course[0].w;
         let mut source = course[0].q;
+        // The lip pouring into a chute, until the chute ends in a pool (its `to` set then).
+        let mut chute: Option<Option<usize>> = None;
         for i in 1..course.len() {
             let (a, b) = (course[i - 1], course[i]);
             width = width.max(b.w);
             let kb = row_of(b.s);
+            let slope = (a.s - b.s) / (along[i] - along[i - 1]).max(1e-9);
+            let rows = self.river_rows(river);
             while row > kb && key(row) != PoolKey::Sea {
                 // The step from `row` down a row: where the surface crosses its rounding edge.
                 let edge = (f64::from(row) - 0.5) * CELL_H - SEA_LEVEL_M;
@@ -213,6 +271,17 @@ impl TerrainGenerator {
                     1.0
                 };
                 let at = along[i - 1] + (along[i] - along[i - 1]) * t;
+                if rows.steep.contains(&row) {
+                    // Down a chute: no pool here; it ends in the first pool below.
+                    start = at;
+                    if !rows.steep.contains(&(row - 1))
+                        && let Some(Some(k)) = chute.take()
+                    {
+                        g.lips[k].to = key(row - 1);
+                    }
+                    row -= 1;
+                    continue;
+                }
                 g.pools.push(GraphPool {
                     key: key(row),
                     reach: (start, at),
@@ -222,12 +291,11 @@ impl TerrainGenerator {
                 source = 0.0;
                 start = at;
                 width = b.w;
-                let slope = (a.s - b.s) / (along[i] - along[i - 1]).max(1e-9);
                 // Its band lies upstream of the crossing, within `lipReach`.
                 let (px, pz) = (a.x + (b.x - a.x) * t, a.z + (b.z - a.z) * t);
                 let near = self.unwarp(px, pz);
                 let reach = (0.5 * b.w).ceil() as i64 + 6;
-                match self.band_near(river, row, near, reach) {
+                let lip = match self.band_near(river, row, near, reach) {
                     Some(c) => {
                         let plan = self.lip_plan(c.0, c.1);
                         g.lips.push(GraphLip {
@@ -239,14 +307,24 @@ impl TerrainGenerator {
                             room: plan.room,
                             fall: slope,
                         });
+                        Some(g.lips.len() - 1)
                     }
-                    None => g.missing.push((at, row, slope)),
+                    None => {
+                        g.missing.push((at, row, slope));
+                        None
+                    }
+                };
+                if rows.steep.contains(&(row - 1)) {
+                    chute = Some(lip);
                 }
                 row -= 1;
             }
             if key(row) == PoolKey::Sea {
                 break;
             }
+        }
+        if let Some(Some(k)) = chute.take() {
+            g.lips[k].to = key(row);
         }
         let end = along[course.len() - 1];
         if key(row) != PoolKey::Sea {
@@ -327,7 +405,9 @@ impl TerrainGenerator {
                 let s = match self.lip_col(cx, cz) {
                     None => "  .".to_string(),
                     Some(l) => {
-                        let tag = if l.band {
+                        let tag = if l.steep {
+                            "s"
+                        } else if l.band {
                             if self.lip_plan(cx, cz).crest.contains(&(cx, cz)) {
                                 "c"
                             } else {
@@ -344,5 +424,26 @@ impl TerrainGenerator {
             out.push('\n');
         }
         out
+    }
+}
+
+impl TerrainGenerator {
+    /// The plan of the lip at (x, z), for diagnosis: its band's size, want, room, pours, crest.
+    #[doc(hidden)]
+    pub fn debug_plan(&self, x: i64, z: i64) -> String {
+        let p = self.lip_plan(x, z);
+        let (band, _) = self.plan_lip(x, z);
+        format!(
+            "band {} want {} room {} pours {} crest {:?}",
+            band.len(),
+            p.want,
+            p.room,
+            p.pours,
+            {
+                let mut c: Vec<_> = p.crest.iter().copied().collect();
+                c.sort_unstable();
+                c
+            }
+        )
     }
 }

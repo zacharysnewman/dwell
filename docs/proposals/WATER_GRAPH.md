@@ -190,7 +190,20 @@ on `main` until G3 replaces it in one release.
 - **Two faces:** one graph per face, both built face-locally (`FaceFrame`), with the both-faces
   parity test.
 
-## 10. Open questions for the owner
+## 10. The owner's answers (2026-11-04)
+
+- **Go ahead with G1–G3.**
+- **Scope: all water is the graph** — "We don't want legacy water behavior, player made water would
+  just be another graph or part of the graph … Wouldn't it need to be to be consistent?" Generated
+  pools come from the map; pools edits make (a puddle where a spill lands, a pond dug and flooded, a
+  lake behind a dam) are added to the same graph as nodes, and a dam or wall splits a node, a cut
+  adds a lip. Flood-filling blocks only measures a new node's shape; one engine, one model.
+- **Park the stopgap** (`claude/no-hidden-walls`; its junction lips taken into G2).
+- Taken as recommended (not answered): pools at rest need no simulation, every pool that moved
+  is simulated wherever it is; a river's graph built from the seed on demand (not saved); a leak the
+  build finds a visible stream.
+
+## 11. Open questions for the owner (asked before the answers above)
 
 1. **Scope:** generated rivers and lakes only (player water stays today's flood-fill basins, as dynamic
    pools), or every body of water a graph node, including a bucket's puddle?
