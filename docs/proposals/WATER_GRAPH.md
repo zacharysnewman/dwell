@@ -190,6 +190,28 @@ on `main` until G3 replaces it in one release.
 - **Two faces:** one graph per face, both built face-locally (`FaceFrame`), with the both-faces
   parity test.
 
+## 9b. G3 as decided (2026-11-04)
+
+The engine keeps its pool machinery (a pool's cells measured by flood-filling the blocks, its
+level, its ways out by the one law, splits and merges): that is how any graph node's shape is
+measured, generated or made. What changes is what it knows without measuring:
+
+1. **The graph through `Rivers`**: `pool(face, x, z)` (the generated pool a cell lies in) and
+   `inflows(face, key)` (the lips into it, each from which pool, at which crest cell and how much
+   at rest, and the river's head source). Worldgen indexes the lips into each pool, junctions too.
+2. **A generated pool's inflow** is read from the graph when it is measured: each lip into it from
+   a pool not measured brings that pool's flow (its rest flow, or its virtual state's); a lip from
+   a measured pool brings nothing as a feed (that pool's own way out pours it).
+3. **Virtual pools**: a generated pool nobody measured is a node with a level offset (none at rest).
+   A measured pool's way out into one feeds it; its lip passes on by the law at its level
+   (cells × weir × head^1.5); what it passes feeds the next. This replaces the fronts down unloaded
+   rivers (W2d), seeps and catch-up for rivers. A virtual pool is measured when its drawn level
+   must change in a loaded chunk, or an edit touches it.
+4. **No hidden walls**: `rest`/`held` go (the parked branch's fixes come in: lower unfound water a
+   way out, a pool under another's water one with it).
+5. **Made pools** (a spill's puddle, a flooded pond) are measured nodes added to the graph; their
+   ways out into generated water feed those pools as any.
+
 ## 10. The owner's answers (2026-11-04)
 
 - **Go ahead with G1–G3.**

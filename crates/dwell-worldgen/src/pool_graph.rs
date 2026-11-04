@@ -447,3 +447,67 @@ impl TerrainGenerator {
         )
     }
 }
+
+/// What comes into a pool at rest, by the graph: each lip into it (from which pool, a column of its
+/// crest, the flow it passes: its cells × `lip_cell_flow`) and the river's head source (m³/s).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct PoolInflows {
+    pub lips: Vec<(PoolKey, (i64, i64), f64)>,
+    pub source: f64,
+}
+
+impl TerrainGenerator {
+    /// What comes into pool `key` at rest (`PoolInflows`): the lips into it from its own river
+    /// (the step above, or a chute's) and from the rivers joining it there, and its river's head.
+    pub fn pool_inflows(&self, key: PoolKey) -> PoolInflows {
+        let mut out = PoolInflows::default();
+        let PoolKey::River { river, .. } = key else {
+            return out;
+        };
+        let per = lip_cell_flow();
+        let mut add = |g: &RiverGraph| {
+            for l in g.lips.iter().filter(|l| l.to == key) {
+                out.lips.push((l.from, l.at, l.pours as f64 * per));
+            }
+        };
+        let own = self.river_graph(river);
+        add(&own);
+        out.source = own
+            .pools
+            .iter()
+            .filter(|p| p.key == key)
+            .map(|p| p.source)
+            .sum();
+        for (t, r) in self.map.rivers.iter().enumerate() {
+            if r.end == RiverEnd::Joins(river) && t as u32 != river {
+                add(&self.river_graph(t as u32));
+            }
+        }
+        out.lips.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)));
+        out
+    }
+
+    /// Pool `key`'s lip out (where it pours on), if any.
+    pub fn pool_lip(&self, key: PoolKey) -> Option<GraphLip> {
+        let PoolKey::River { river, .. } = key else {
+            return None;
+        };
+        self.river_graph(river)
+            .lips
+            .iter()
+            .find(|l| l.from == key)
+            .cloned()
+    }
+
+    /// Pool `key` (its reach and surface estimate), if a pool of the graph.
+    pub fn graph_pool(&self, key: PoolKey) -> Option<GraphPool> {
+        let PoolKey::River { river, .. } = key else {
+            return None;
+        };
+        self.river_graph(river)
+            .pools
+            .iter()
+            .find(|p| p.key == key)
+            .cloned()
+    }
+}

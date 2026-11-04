@@ -391,11 +391,14 @@ struct Steady {
     /// The world map's flow through it (m³/s), by where it comes in: what it passes, less what
     /// found basins upstream send it (`Water::links`).
     feeds: Vec<([i32; 3], f64)>,
+    /// What comes in at its river's head (m³/s): the world map's pool graph's source for the
+    /// generated pools it holds (ADR 0059).
+    spring: f64,
 }
 
 impl Steady {
     fn feed(&self) -> f64 {
-        self.feeds.iter().map(|(_, q)| q).sum()
+        self.feeds.iter().map(|(_, q)| q).sum::<f64>() + self.spring
     }
 }
 
@@ -1024,6 +1027,64 @@ impl Water {
         level: f64,
         weir: f64,
         away: &[[i32; 3]],
+    ) -> (Vec<([i32; 3], f64)>, f64) {
+        if let Some(found) = self.graph_feeds(f, cells) {
+            return found;
+        }
+        (self.seen_feeds(view, f, cells, level, weir, away), 0.0)
+    }
+
+    /// A body's inflow by the world map's pool graph (ADR 0059), if its cells lie in generated
+    /// pools: each lip into those pools from a pool it doesn't hold brings what that lip passes at
+    /// rest, at the lip's crest (the water above it), and a river's head its source.
+    fn graph_feeds(
+        &self,
+        f: FaceFrame,
+        cells: &HashSet<[i32; 3]>,
+    ) -> Option<(Vec<([i32; 3], f64)>, f64)> {
+        let rivers = self.river_map.as_ref()?;
+        let mut cols: Vec<[i32; 2]> = cells.iter().map(|c| [c[0], c[2]]).collect();
+        cols.sort_unstable();
+        cols.dedup();
+        let mut keys: Vec<PoolKey> = Vec::new();
+        for c in cols {
+            if let Some(k @ PoolKey::River { .. }) = rivers.pool(f.face, c[0], c[1])
+                && !keys.contains(&k)
+            {
+                keys.push(k);
+            }
+        }
+        if keys.is_empty() {
+            return None;
+        }
+        keys.sort_unstable();
+        let mut feeds: Vec<([i32; 3], f64)> = Vec::new();
+        let mut spring = 0.0;
+        for &k in &keys {
+            let inn = rivers.inflows(f.face, k);
+            spring += inn.source;
+            for (from, at, q) in inn.lips {
+                if keys.contains(&from) || q <= 0.0 {
+                    continue;
+                }
+                let PoolKey::River { row, .. } = from else {
+                    continue;
+                };
+                feeds.push((f.cell([at.0 as i32, row - 1, at.1 as i32]), q));
+            }
+        }
+        Some((feeds, spring))
+    }
+
+    /// A body's inflow seen from the blocks (no pool graph: a world without a map, a test's).
+    fn seen_feeds(
+        &self,
+        view: &View<'_>,
+        f: FaceFrame,
+        cells: &HashSet<[i32; 3]>,
+        level: f64,
+        weir: f64,
+        away: &[[i32; 3]],
     ) -> Vec<([i32; 3], f64)> {
         let mut edge: Vec<[i32; 3]> = Vec::new();
         // Each face a source pours over (a cell beside two of the cells it pours into pours over
@@ -1120,9 +1181,10 @@ impl Water {
         let view = View { world, old: None };
         let cells: HashSet<[i32; 3]> = b.cells().collect();
         let away: Vec<[i32; 3]> = b.natural.keys().copied().chain(st.exit).collect();
-        let feeds = self.feeds_of(&view, b.face, &cells, b.level(), b.weir, &away);
+        let (feeds, spring) = self.feeds_of(&view, b.face, &cells, b.level(), b.weir, &away);
         if let Some(st) = self.basins.get_mut(&id).and_then(|b| b.steady.as_mut()) {
             st.feeds = feeds;
+            st.spring = spring;
         }
     }
 
@@ -2185,7 +2247,7 @@ impl Water {
                 })
             });
             let away: Vec<[i32; 3]> = outlets.iter().map(|o| o.from).chain(exit).collect();
-            let feeds = self.feeds_of(&view, f, &seen, level, weir, &away);
+            let (feeds, spring) = self.feeds_of(&view, f, &seen, level, weir, &away);
             b.outlets = outlets;
             b.inflows = feeds.clone();
             b.steady = Some(Steady {
@@ -2195,6 +2257,7 @@ impl Water {
                 law,
                 level,
                 feeds,
+                spring,
             });
             b.pass(q);
         }
@@ -2468,6 +2531,7 @@ impl Water {
                 x.law += o.law;
                 x.level = x.level.min(o.level);
                 x.feeds.extend(o.feeds);
+                x.spring += o.spring;
                 Some(x)
             }
             (x, o) => x.or(o),
@@ -3864,7 +3928,7 @@ fn follow_path(
 mod rivers;
 mod save;
 
-pub use rivers::{RiverNext, Rivers};
+pub use rivers::{PoolInflows, PoolKey, RiverNext, Rivers};
 
 #[cfg(test)]
 mod tests;

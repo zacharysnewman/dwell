@@ -7,9 +7,10 @@
 use super::*;
 use dwell_world::ChunkCoord;
 
-/// The record's tag: version 4 adds where each seep is (0.44.3; before, anywhere), 3 adds each found body's map flow (0.43.6), 2 whether each basin is
+/// The record's tag: version 5 adds each found body's head source (`spring`, ADR 0059), version 4 adds where each seep is (0.44.3; before, anywhere), 3 adds each found body's map flow (0.43.6), 2 whether each basin is
 /// active (0.43.5; 1 reads as settled). Before 3 the map flow reads as its steady flow then.
-const MAGIC: &[u8; 4] = b"DWW4";
+const MAGIC: &[u8; 4] = b"DWW5";
+const MAGIC_4: &[u8; 4] = b"DWW4";
 const MAGIC_3: &[u8; 4] = b"DWW3";
 const MAGIC_2: &[u8; 4] = b"DWW2";
 const MAGIC_1: &[u8; 4] = b"DWW1";
@@ -227,6 +228,7 @@ fn put_basin(o: &mut Out, b: &Basin, revision: &dyn Fn(ChunkCoord) -> u32) {
                 }
                 None => o.u8(0),
             }
+            o.f64(st.spring);
         }
     }
     o.len(b.chunks.len());
@@ -281,6 +283,7 @@ fn get_basin(
                 } else {
                     None
                 },
+                spring: if version >= 5 { i.f64()? } else { 0.0 },
             })
         }
         _ => return None,
@@ -444,7 +447,8 @@ impl Water {
     pub fn restore(&mut self, bytes: &[u8], revision: impl Fn(ChunkCoord) -> u32) -> Option<usize> {
         let mut i = In { b: bytes, at: 0 };
         let version = match i.take(4)? {
-            m if m == MAGIC => 4,
+            m if m == MAGIC => 5,
+            m if m == MAGIC_4 => 4,
             m if m == MAGIC_3 => 3,
             m if m == MAGIC_2 => 2,
             m if m == MAGIC_1 => 1,
