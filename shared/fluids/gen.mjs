@@ -22,6 +22,7 @@ export const FLOW_RANGES = {
   streamMinFlow: [0, 1000, false],
   mergeSeconds: [0, 3600, false],
   catchUpSteps: [0, 1 << 20, true],
+  settleMmPerHour: [0, 100000, false],
 };
 
 /** The registry's blocks (name → liquid?), from shared/blocks/dwell.json. */

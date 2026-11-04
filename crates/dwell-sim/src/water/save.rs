@@ -7,7 +7,10 @@
 use super::*;
 use dwell_world::ChunkCoord;
 
-const MAGIC: &[u8; 4] = b"DWW1";
+/// The record's tag: version 2 adds whether each basin is active (0.43.5); version 1 reads as
+/// settled.
+const MAGIC: &[u8; 4] = b"DWW2";
+const MAGIC_1: &[u8; 4] = b"DWW1";
 
 #[derive(Default)]
 struct Out(Vec<u8>);
@@ -199,6 +202,7 @@ fn put_basin(o: &mut Out, b: &Basin, revision: &dyn Fn(ChunkCoord) -> u32) {
     for v in [b.arriving, b.through, b.extra, b.linked, b.owed] {
         o.f64(v);
     }
+    o.u8(u8::from(b.active));
     o.set(&b.rest);
     o.set(&b.held);
     let mut natural: Vec<([i32; 3], f64)> = b.natural.iter().map(|(&c, &w)| (c, w)).collect();
@@ -225,7 +229,11 @@ fn put_basin(o: &mut Out, b: &Basin, revision: &dyn Fn(ChunkCoord) -> u32) {
 
 /// A basin read back, and whether its chunks are at the revisions they were saved at; `None` for
 /// a record cut short; a basin of a liquid this build doesn't know reads as stale.
-fn get_basin(i: &mut In<'_>, revision: &dyn Fn(ChunkCoord) -> u32) -> Option<(Basin, bool)> {
+fn get_basin(
+    i: &mut In<'_>,
+    v2: bool,
+    revision: &dyn Fn(ChunkCoord) -> u32,
+) -> Option<(Basin, bool)> {
     let id = i.u32()?;
     let liquid = i.state()?;
     let bottom = i.i32()?;
@@ -242,6 +250,7 @@ fn get_basin(i: &mut In<'_>, revision: &dyn Fn(ChunkCoord) -> u32) -> Option<(Ba
     let hi = i.cell()?;
     let [arriving, through, extra, linked, owed] =
         [i.f64()?, i.f64()?, i.f64()?, i.f64()?, i.f64()?];
+    let active = v2 && i.bool()?;
     let rest = i.set()?;
     let held = i.set()?;
     let natural: HashMap<[i32; 3], f64> = i.weighed()?.into_iter().collect();
@@ -295,6 +304,7 @@ fn get_basin(i: &mut In<'_>, revision: &dyn Fn(ChunkCoord) -> u32) -> Option<(Ba
         extra,
         linked,
         owed,
+        active,
         rest,
         held,
         natural,
@@ -393,15 +403,17 @@ impl Water {
     /// kept, or `None` for a record this build can't read (then nothing is taken in).
     pub fn restore(&mut self, bytes: &[u8], revision: impl Fn(ChunkCoord) -> u32) -> Option<usize> {
         let mut i = In { b: bytes, at: 0 };
-        if i.take(4)? != MAGIC {
-            return None;
-        }
+        let v2 = match i.take(4)? {
+            m if m == MAGIC => true,
+            m if m == MAGIC_1 => false,
+            _ => return None,
+        };
         let next = i.u32()?;
         let brought = i.f64()?;
         let lost = i.f64()?;
         let mut basins: HashMap<u32, Basin> = HashMap::default();
         for _ in 0..i.len()? {
-            let (b, fresh) = get_basin(&mut i, &revision)?;
+            let (b, fresh) = get_basin(&mut i, v2, &revision)?;
             if fresh {
                 basins.insert(b.id, b);
             }

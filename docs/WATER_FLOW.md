@@ -28,6 +28,7 @@ model"*, and *"We'd also want physics applied to objects in the water based on f
 | Placed water | A small basin: it spreads and finds its level. A placeable water block is added to the hotbar. |
 | Currents on swimmers | The current carries a swimmer at its speed, less what they can swim against it (§7). |
 | First phase | Water only. |
+| Changes downstream (2026-11-03) | A dam or a release must reach a player far downstream across unloaded country, at the river's speed; water filling or draining keeps flowing (its chunks loaded) until it settles, wherever the players are. |
 | Do rivers run dry? | Not on their own while their feed is steady: runoff (§2.1). Later, glaciers' melt and weather vary it, so rivers rise and fall and small streams can run dry. |
 
 ## 2. The idea: simulate bodies of water, draw voxels from them
@@ -192,16 +193,25 @@ is brought forward by the time it was frozen: in a chain the inflows are steady,
 level at a later time is a small integration of in − out(level), cheap at large steps, upstream
 first. A long-frozen chain comes back at its steady state: each basin at the level where out equals in.
 
-**As built (0.43.4):** a basin out of reach or with a chunk unloaded waits (it holds its level and
-passes on what comes in, §15) and counts the water time it waited (`owed`). When it is live again,
-`Water::catch_up` brings it forward alone: flow steps of half the time its outflow takes to balance
-a change (no longer than it owes), what comes in from the bodies around it as it came the last tick,
-what it sends them kept by them, its container found again as it fills or drains; once its level
-moves less than a millimetre an hour it is in balance and caught up. A water tick spends at most
-`catchUpSteps` (512) such steps, the rest the next tick. Time doesn't pass while the server is off
-(the world's clock stops), so a restart owes nothing. Deviation: while it waited, the bodies below
-had what it passed on, as if it had been in balance, so a dam filled out of reach sends the river
-below its flow meanwhile and is found full on return (the water it holds is counted in, `brought`).
+**As built (0.43.4–0.43.5):** a basin is **active** while it fills or drains: its level moved
+faster than `settleMmPerHour` (10 mm an hour of water time) last tick, it owes time, or an edit
+just touched it. An active basin flows wherever the players are (owner, 2026-11-03: a dam must fill,
+and the river below it change, whether or not anyone is near), and water asks the server to load and
+keep its chunks and those beside it (`Water::wanted_chunks`: read or generated like the players',
+never evicted) until it settles; a settled one out of reach (beyond `liveRadiusM`) waits, holding
+its level and passing on what comes in, which is what it would do. A basin that waits with a chunk
+unloaded counts the water time it owes; an active one passes nothing meanwhile and takes no inflow
+(what other bodies send it is kept). When it is live again `Water::catch_up` brings it forward
+alone: flow steps no longer than half the time its outflow takes to balance a change, than moves
+its level a quarter row, or than its outflow takes to run what stands over its lowest way out; its
+container found again as it fills or drains; once settled, it is caught up. A water tick spends at
+most `catchUpSteps` (512) such steps, the rest the next tick. Time doesn't pass while the server is
+off (the world's clock stops), so a restart owes nothing.
+
+**Planned (W2d):** what a change sends down a river reaches the river far below through country
+nobody has loaded: the difference from the river's flow travels the world map's river path at the
+river's speed (owner, 2026-11-03), through lakes and confluences, to the bodies there.
+
 
 ## 7. Currents and objects in the water
 
@@ -388,7 +398,7 @@ Deviations, for W3: a natural outlet's water isn't drawn
 running (the river's own steps stay as generated), and a sheet spreading wider than `maxRowCells` over a
 plain is capped there (the excess lost).
 
-Tests (`water/tests.rs`, both faces): `a_dammed_river_out_of_reach_comes_back_full_and_spilling`,
+Tests (`water/tests.rs`, both faces): `a_dam_out_of_reach_fills_on_until_it_settles`, `a_dammed_river_unloaded_comes_back_as_if_watched` (0.43.5; `tests/water.rs` `a_lake_cut_open_drains_on_after_its_player_leaves`),
 `a_basin_saved_with_the_world_goes_on_as_it_was`, `a_saved_basin_whose_chunk_changed_since_is_found_again`
 (0.43.4; `tests/persistence.rs` `the_waters_basins_survive_a_server_restart`, `dwell-storage`
 `the_waters_basins_are_saved_with_the_world_and_replaced_on_each_save`);
