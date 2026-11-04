@@ -453,3 +453,25 @@ fn every_edit_is_acknowledged_after_its_changes_with_the_refused_ones_named() {
         rejected: vec![4],
     })));
 }
+
+#[test]
+fn the_edit_log_records_each_block_change_with_what_it_was_and_became() {
+    // Owner, 2026-11-04: a "block edits" log in the block dump, so a reported world can be
+    // replayed. A fill of two stone cells is logged per cell (tick, cell, from, to, reason);
+    // the water's own changes are not.
+    let mut f = Fixture::new(flat());
+    join_streaming(&mut f, 1);
+    f.server.step();
+    assert_eq!(f.server.edit_log_json(), "[]");
+    f.send(1, fill([0, G, 2], [2, 1, 1], M.stone));
+    f.server.step();
+    let log: serde_json::Value = serde_json::from_str(&f.server.edit_log_json()).unwrap();
+    let rows = log.as_array().unwrap();
+    assert_eq!(rows.len(), 2, "{log}");
+    for (i, r) in rows.iter().enumerate() {
+        assert_eq!(r["cell"], serde_json::json!([i as i32, G, 2]));
+        assert_eq!(r["from"], "dwell:air");
+        assert!(r["to"].as_str().unwrap().starts_with("dwell:stone"), "{r}");
+        assert!(r["tick"].as_u64().is_some() && r["reason"].is_string());
+    }
+}
