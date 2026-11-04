@@ -47,7 +47,7 @@
     "lodMinShare": 0.125,
     "lodMaxCell": 128,
     "lipReach": 1.5,
-    "lipRise": 1
+    "lipRise": 2
   },
   "mouths": {
     "$comment": "Where a big river meets the sea (the map marks deltas and estuaries): over its last reach m its channel widens, an estuary's to estuaryWiden × its width and estuaryDeepen × its depth (a funnel), a delta's to deltaWiden × its width, and a delta splits into deltaBranches distributaries at deltaSplit m from the sea, spreading deltaSpread degrees either side, each deltaBranchWidth of the river's width.",

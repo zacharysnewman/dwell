@@ -568,19 +568,16 @@ impl Basin {
         if st.law > 0.0 || st.through <= 0.0 {
             return None;
         }
-        // Only where the river leaves it: a part cut off from that has no way out unseen.
-        // At its exit, or its cell nearest it (its container found again since). A part split
-        // off without it has no flow to seep (`split_if_apart`).
-        let from = match st.exit {
-            Some(e) => self.rows.iter().flatten().copied().min_by_key(|c| {
-                let d = [c[0] - e[0], c[1] - e[1], c[2] - e[2]];
-                (
-                    i64::from(d[0]).pow(2) + i64::from(d[1]).pow(2) + i64::from(d[2]).pow(2),
-                    *c,
-                )
-            })?,
-            None => *self.rows.first()?.first()?,
-        };
+        // Only where the river leaves it (a part split off without its exit has none): at its
+        // exit, or its cell nearest it (its container found again since).
+        let e = st.exit?;
+        let from = self.rows.iter().flatten().copied().min_by_key(|c| {
+            let d = [c[0] - e[0], c[1] - e[1], c[2] - e[2]];
+            (
+                i64::from(d[0]).pow(2) + i64::from(d[1]).pow(2) + i64::from(d[2]).pow(2),
+                *c,
+            )
+        })?;
         Some(Outlet {
             from,
             kind: OutKind::Seep {
@@ -811,25 +808,6 @@ impl Water {
         }
         self.seeped.retain(|id, _| self.basins.contains_key(id));
         self.seeping.retain(|id, _| self.basins.contains_key(id));
-        if std::env::var("WDBGN").is_ok() {
-            for b in self.basins.values() {
-                if b.cells().count() == 81 {
-                    let mut n: Vec<_> = b
-                        .natural
-                        .iter()
-                        .map(|(c, w)| (*c, (w * 1000.0).round() / 1000.0))
-                        .collect();
-                    n.sort_by_key(|x| x.0);
-                    let mut o: Vec<_> = b
-                        .outlets
-                        .iter()
-                        .map(|o| (o.from, (o.flow * 1000.0).round() / 1000.0, o.contact))
-                        .collect();
-                    o.sort_by_key(|x| x.0);
-                    eprintln!("WDBGN {} natural {:?}\n   outlets {:?}", b.id, n, o);
-                }
-            }
-        }
         let mut now: Vec<(u32, [i32; 3], f64, f64)> = Vec::new();
         for &id in &ids {
             let b = &self.basins[&id];
@@ -955,32 +933,6 @@ impl Water {
                 continue;
             }
             self.flows.held.remove(&id);
-            if std::env::var("WDBG").is_ok() {
-                let into: Vec<_> = self.links.iter().filter(|(_, v)| v.0 == id).collect();
-                eprintln!(
-                    "WDBG links into {id}: {into:?}; lands pending {}",
-                    self.lands.len()
-                );
-                let b = &self.basins[&id];
-                eprintln!(
-                    "WDBG send {id} d {d} base {base} at {c:?} level {} steady {:?} cells {} lo {:?} hi {:?}",
-                    b.level(),
-                    b.steady.as_ref().map(|s| (s.level, s.flow, s.law)),
-                    b.cells().count(),
-                    b.lo,
-                    b.hi
-                );
-                for o in &b.outlets {
-                    eprintln!(
-                        "WDBG   out {:?} flow {} target {:?} contact {} natural {}",
-                        o.from,
-                        o.flow,
-                        o.target,
-                        o.contact,
-                        b.natural.contains_key(&o.from)
-                    );
-                }
-            }
             let (face, r, s) = match last {
                 Some(l) => (l.face, l.river, l.s),
                 None => match self.locate(c) {
@@ -1428,8 +1380,9 @@ impl Water {
             // comes in, its own and what stands over the level it was found at, so the body holds
             // that level whatever arrives; a dam above it lowers what it passes, never drains it.
             if let Some(st) = &b.steady {
+                // (What arrives lands after the step: as much as arrived last step goes on too.)
                 let over = (b.volume - b.volume_below(st.level)).max(0.0) / dt;
-                let pass = b.inflow().max(0.0) + over;
+                let pass = b.inflow().max(0.0) + over + b.through;
                 for (o, q) in b.outlets.iter().zip(out.iter_mut()) {
                     if o.is_seep() {
                         *q = pass;
@@ -1960,11 +1913,7 @@ impl Water {
             steady: None,
         };
         if resting {
-            b.rest = if std::env::var("NOREST").is_ok() {
-                HashSet::default()
-            } else {
-                at_rest(&view, f, &seen)
-            };
+            b.rest = at_rest(&view, f, &seen);
             b.held = seen
                 .iter()
                 .flat_map(|&c| {
@@ -1975,8 +1924,15 @@ impl Water {
                 })
                 .filter(|n| {
                     // Water beside it as found, or a block holding some (a flooded ramp of the
-                    // next step): faces that pass nothing as generated.
-                    std::env::var("NOHELD").is_err()
+                    // next step): faces that pass nothing as generated. Not a body found at its
+                    // own level (one river found in parts across a chunk's edge): one body.
+                    let same_level = self
+                        .owner
+                        .get(n)
+                        .and_then(|o| self.basins.get(o))
+                        .and_then(|x| x.steady.as_ref())
+                        .is_some_and(|st| (st.level - m_of_row(surface + 1)).abs() < 0.25);
+                    !same_level
                         && !seen.contains(n)
                         && matches!(
                             view.kind(*n),
@@ -2063,20 +2019,6 @@ impl Water {
             } else {
                 (farthest_from(&seen, outlets.iter().map(|o| o.from)), None)
             };
-            if std::env::var("WDBG").is_ok() && law > 10.0 {
-                let mut v: Vec<_> = outlets
-                    .iter()
-                    .map(|o| {
-                        (
-                            o.from,
-                            (o.rate(level, weir, beyond(o)) * 1000.0).round() / 1000.0,
-                            o.contact,
-                        )
-                    })
-                    .collect();
-                v.sort_by_key(|x| x.0);
-                eprintln!("WDBG found {id} level {level} law {law} outlets {:?}", v);
-            }
             b.outlets = outlets;
             b.steady = Some(Steady {
                 through: 0.0,
@@ -2209,38 +2151,6 @@ impl Water {
             for c in met {
                 if !self.owner.contains_key(&c) {
                     self.discover(world, None, c, true);
-                }
-            }
-            if std::env::var("WDBG").is_ok() {
-                let old: HashSet<[i32; 3]> = old_rows.iter().flatten().copied().collect();
-                let wet = &self.basins[&id].wet;
-                let added: Vec<[i32; 3]> = rows
-                    .iter()
-                    .flatten()
-                    .copied()
-                    .filter(|c| !old.contains(c) && !wet.contains(c))
-                    .collect();
-                let lvl = self.basins[&id].level();
-                let top_row = f.row(m_of_row(0).max(0.0) as i32);
-                let _ = top_row;
-                let under: Vec<String> = added
-                    .iter()
-                    .filter(|c| m_of_row(f.row(c[1])) < lvl)
-                    .take(6)
-                    .map(|c| {
-                        format!(
-                            "{c:?} {:?} under {:?}",
-                            view.kind(*c),
-                            view.kind(up(f, *c, -1))
-                        )
-                    })
-                    .collect();
-                if !under.is_empty() {
-                    eprintln!(
-                        "WDBG rebuild {id} lvl {lvl} below-level new cells {}: {:?}",
-                        added.iter().filter(|c| m_of_row(f.row(c[1])) < lvl).count(),
-                        under
-                    );
                 }
             }
             let b = self.basins.get_mut(&id).expect("basin");
@@ -2696,17 +2606,9 @@ impl Water {
         }
         let mut up: HashMap<u32, f64> = HashMap::default();
         for (_, id) in order {
-            let owner = &self.owner;
             let b = self.basins.get_mut(&id).expect("basin");
             // What its ways out carry at its level as found (set when found, split or merged).
             let law: f64 = b.steady.as_ref().map_or(0.0, |st| st.law);
-            if std::env::var("WDBG").is_ok() {
-                for (c, w) in &b.natural {
-                    if owner.get(c) == Some(&id) {
-                        eprintln!("WDBG inner natural {id} {c:?} w {w}");
-                    }
-                }
-            }
             let st = b.steady.as_mut().expect("found at rest");
             st.law = law;
             let feed = st.feed();
@@ -3416,12 +3318,16 @@ impl Water {
                 st.feeds.retain(|(c, _)| {
                     part.contains(c) || (!parts.iter().any(|p| p.contains(c)) && nearest(c) == n)
                 });
-                let exit = st.exit.is_some_and(|e| nearest(&e) == n);
+                // Only the part the river leaves by seeps; another passes what its own entries
+                // bring in, by the ways it has now.
+                if st.exit.is_none_or(|e| nearest(&e) != n) {
+                    st.exit = None;
+                }
+                let fed: f64 = st.feeds.iter().map(|(_, q)| q).sum();
                 if law > 0.0 {
                     (st.law, st.flow, st.through) = (law, law, law);
-                } else if !exit {
-                    (st.law, st.flow, st.through) = (0.0, 0.0, 0.0);
-                    st.feeds.clear();
+                } else if st.exit.is_none() {
+                    (st.law, st.flow, st.through) = (0.0, fed, fed);
                 }
             }
             for &c in part {
@@ -3488,7 +3394,9 @@ fn spread_row(
                 false
             }
             Kind::Open => !rest.contains(&s),
-            Kind::Liquid(m) if m == liquid && (ours(s) || !owner.contains_key(&s)) => true,
+            // Its own; liquid no one holds is another body's water, to be found (met), and
+            // joined if it stands at its level (`merge_wide`).
+            Kind::Liquid(m) if m == liquid && ours(s) => true,
             Kind::Liquid(_) if walled(s) => false,
             Kind::Liquid(_) => {
                 met.push(s);

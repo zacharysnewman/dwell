@@ -331,23 +331,10 @@ fn a_block_set_in_a_generated_rivers_bed_changes_nothing_else() {
                 f64::from(bed[2]) + 0.5,
             ];
             // Six hours of water time at a 20-minute day (7.2 s a water tick).
-            for t in 0..3000 {
+            for _ in 0..3000 {
                 water.tick(&mut w, &[player], 7.2);
-                if std::env::var("WDBG").is_ok() && bed[2] == 1448 && t == 2 {
-                    eprintln!("TICK {t} {}", water.report(bed, 200));
-                }
             }
             let after = snapshot(&w);
-            if std::env::var("WDBG").is_ok() && !water.fronts().is_empty() {
-                eprintln!("REPORT {}", water.report(bed, 200));
-            }
-            if std::env::var("WDBG").is_ok() {
-                eprintln!(
-                    "SITE seed {seed} bed {bed:?} basins {} report {}",
-                    water.basins().count(),
-                    &water.report(bed, 2)[..200.min(water.report(bed, 2).len())]
-                );
-            }
             assert!(
                 water.fronts().is_empty(),
                 "seed {seed}, bed {bed:?}: a river at rest sent changes down the map's: {:?}",
@@ -361,23 +348,6 @@ fn a_block_set_in_a_generated_rivers_bed_changes_nothing_else() {
                 .zip(&after)
                 .filter(|&(&a, &b)| a != b && !flooded(a, b))
                 .count();
-            if changed > 0 && std::env::var("WDBG").is_ok() {
-                let n = |m: u16| {
-                    dwell_blocks::try_info(m).map_or(format!("{m}"), |s| s.name.to_string())
-                };
-                let mut i = 0;
-                for x in bed[0] - R..=bed[0] + R {
-                    for z in bed[2] - R..=bed[2] + R {
-                        for y in lo..=hi {
-                            if before[i] != after[i] && !flooded(before[i], after[i]) {
-                                eprintln!("CHG {x} {y} {z}: {} -> {}", n(before[i]), n(after[i]));
-                            }
-                            i += 1;
-                        }
-                    }
-                }
-                eprintln!("REPORT {}", water.report(bed, 60));
-            }
             assert_eq!(
                 changed, 0,
                 "seed {seed}: {changed} cells changed near {bed:?}"

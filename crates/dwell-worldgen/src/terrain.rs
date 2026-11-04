@@ -1053,8 +1053,8 @@ impl TerrainGenerator {
                 }
             }
         }
-        // The waterline: dry ground beside a river's or lake's water stands at least to its
-        // top, so no open cell lies below the water beside it (ADR 0057).
+        // The waterline: dry ground beside a river's or lake's water stands a row over its top,
+        // so no open cell lies below the water beside it, nor a ramp's open part in it (ADR 0057).
         let near_water = river.as_ref().is_some_and(|r| r.d - r.half < 2.0)
             || lake.as_ref().is_some_and(|l| l.sdf > -2.0);
         if cell == 1 && water == Water::None && near_water {
@@ -1063,7 +1063,7 @@ impl TerrainGenerator {
                 .filter_map(|(dx, dz)| self.water_row_at(x + dx, z + dz))
                 .max();
             if let Some(k) = top {
-                h = h.max(f64::from(k) * CELL_H - SEA_LEVEL_M);
+                h = h.max(f64::from(k + 1) * CELL_H - SEA_LEVEL_M);
             }
         }
         if h < 0.0 && (water == Water::None || level < 0.0) {
