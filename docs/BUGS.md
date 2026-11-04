@@ -12,7 +12,35 @@ pins it.
 shallow ramp, maybe same problem with steep ramps too?" Not investigated yet: targeting a ramp's low
 face, or the placement check against its shape.
 
+### 27. On a steep diagonal cascade a lip can still pour into a cell too many or too few
+
+*Found 2026-11-04 (0.47.0 work, the strict sweep at eight pools a seed).* Seed 0 near (−15250,
+91, 1840): pools a couple of cells long, a step every 2 m on a diagonal; a lip's band runs into
+the next lip's, and a two-cell pool perched beside the river drains once found. The sweep checks
+four pools a seed (it passes); at eight this site fails. Suspects: the next lip's crest not under
+this lip's, bank columns lower than a crest's water beside it.
+
 ## Fixed
+
+### 26. Water risen over a steep slope left air in the bottom half of its ramps (fixed in 0.47.0)
+
+*Reported 2026-11-04 (0.45.2).* "The bottom half of steep slopes … don't fill with water leaving
+ugly air gaps visually in the water around underwater steep slopes." The ramps beside a body as
+found held it like walls (`rest`) and still did when a dam's flood rose over them, so they were
+never flooded. Fixed: rest cells the water rises over are held no longer (`submerge_rest`). Pinned
+by `water_risen_over_a_steep_ramp_floods_both_its_cells` (both faces; red before).
+
+### 25. Water invisibly filled nearby pools (fixed in 0.47.0, ADR 0058)
+
+*Reported 2026-11-04 (0.45.2, seed 3695715780, a dam).* "Water is invisibly filling nearby pools,
+essentially the visible water doesn't seem to match what's happening … Water should have to
+visibly connect pools, or they shouldn't be connected." The pool below their dam took in the
+river's whole flow at its own cells (`feeds`), the pool above none; links and seeps moved water
+unseen too, and water stood in walls against the hidden `rest` cells where generated pools met.
+Fixed by ADR 0058 (WATER_FLOW.md §18): a pool takes in only what is seen pouring in, no links,
+seeps only at the loaded world's edge, and lips planned so each passes what the one above it does
+(steps fully walled but for the crest). Pinned by `a_pool_nothing_is_seen_pouring_into_takes_
+nothing_in` (red on 0.46) and the strict sweep at twelve pools.
 
 ### 22. The river below a dam rose (fixed in 0.45.1 and 0.45.2)
 

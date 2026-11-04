@@ -2,6 +2,16 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions card. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.47.0",
+      "changes": [
+        "Water only fills a pool where you can see it pour in: no more pools filling from nowhere",
+        "Below a dam the river drains to standing pools until the dam spills over",
+        "River steps are walled all the way across, so water no longer stands in walls beside lower water",
+        "Water rising over a slope now fills the ramps under it",
+        "New world terrain: worlds from earlier versions open in their own version"
+      ]
+    },
+    {
       "version": "0.46.1",
       "changes": [
         "Copy block info now includes the world's last block edits, to help reproduce reported bugs"

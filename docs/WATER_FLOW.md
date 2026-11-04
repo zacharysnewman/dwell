@@ -618,35 +618,17 @@ fill's part-full cells (0.44.0). Small and medium rivers fit within a ½ m terra
 
 - **One law, shared.** Water's flow data and its opening law live in `dwell_world::flow`
   (`flow.gen.rs` from `shared/fluids/flow.json`), used by the engine and the generator.
-- **Lips** (`terrain.rs` `lip_of`, `terrain.json` `lipReach` 1.5 m, `lipRise` 2 rows): where a
+- **Lips** (`terrain.json` `lipReach` 1.5 m, `lipRise` 2 rows; planned since 0.47.0, §18): where a
   river's surface steps down a row, its columns within `lipReach` m upstream are a **wall**
-  `lipRise` rows over the water, but for a centred **crest** `lip_cells(q)` cells wide (the
-  discharge over water's weir at a full row's head, at least one), its bed at the sill one row
-  under the water's top: the pool pours off the crest's edge, and under the water the pools never
+  `lipRise` rows over the water, but for a **crest** `lip_cells(q)` cells (the discharge over
+  water's weir at a full row's head, at least one), its bed at the sill one row under the water's
+  top: the pool pours off the crest's edge, and under the water the pools never
   touch. **The waterline:** dry ground beside river and lake water stands a row over its top, so no
   open cell, nor a ramp's open part, lies in the water's rows. Full-detail chunks only (the LOD
   keeps its plain channels).
 - **Flows from the lips.** A body found at rest passes what its ways out carry at its level as
   found by the one law (`Steady::law`, unscaled; set when found, shared on a split, recomputed on a
-  merge): the map's flow no longer scales them. What comes in of its own is that less what the found
-  bodies above bring as found (a lip above carrying a little more makes a small loss to the
-  ground). Ways out into a body found before are rated against its level (drowned), and a corner
-  cell's faces all count.
-- **Seeps** (a body with no way out of its own: the river going on out of the loaded world) pass on
-  what comes in and what stands over the level found, so the body holds it; only the part holding
-  the exit seeps; its baseline for changes downstream is what it passes once settled (its mean
-  flow over a tick, steady five ticks).
-- **Creek crests** (0.46.0, a new line): a crest's half-width is its faces (`lip_cells`) over the
-  faces a column of it pours through along the river's direction (two on a diagonal), at least
-  0.71 m so every row of the lip keeps a crest column (picked row by row the crest could step
-  diagonally and seal); creeks' lips carry 1.0–2.6× the map's flow, from 2.2–3.3×.
-- **Own inflow by place** (0.45.2): what a body takes in of its own is kept with the cells it comes
-  in at (`Steady::feeds`): set when found (what its ways out carry less what the found bodies above
-  bring), taken off once as each body above links in later (`link_once`), carried by splits (each
-  part keeps the cells it holds) and summed by merges; never taken again from the links each tick.
-  A body with a way out of its own passes what that carries. A loss (a lip above carrying more
-  than its own) takes only what arrives, so a pool below a filling dam keeps its water. A split
-  moves each link's source and target to the parts that hold them (0.45.1: the target).
+  merge). What comes in, and where a river leaves, are §18's (0.47.0, ADR 0058): only where seen.
 - **One body where it is one.** A part wholly in the surface row (a crest) stays one body with its
   pool; faces against a found body at the same level aren't held (a river found in parts across a
   chunk's edge); a rebuild never absorbs water no one holds (it is another body, found and merged
@@ -659,9 +641,73 @@ fill's part-full cells (0.44.0). Small and medium rivers fit within a ½ m terra
 - **Drawing:** water over a ½ m step between pools is a slope across the cell below the crest
   (`mesher.rs` `slope_over`); a fall's sides reach down to the drawn surface of the water it lands
   in (`fall_into`). Not yet: the slope atop a made spill's running column (it stays a column).
-- **Tests:** `a_block_set_in_a_generated_rivers_bed_changes_nothing_else` (six pools of seeds 0–2
+- **Tests:** `a_block_set_in_a_generated_rivers_bed_changes_nothing_else` (twelve pools since
+  0.47.0; six of seeds 0–2
   picked from the map, six hours of water time, no cell changes, nothing sent downstream);
   `a_dammed_pool_stands_no_higher_than_its_crest_and_the_head_over_it` (the owner's backfill
   report; their seed 0 dam settles 17 cm over its 13-cell crest);
   `water_pouring_over_a_half_block_step_is_drawn_as_a_slope`,
   `a_fall_reaches_down_to_the_water_it_lands_in`, `an_unflooded_ramp_beside_water_as_found_holds_it`.
+
+## 18. Visible water (built, ADR 0058, 0.47.0)
+
+The owner, 2026-11-04: "Water is invisibly filling nearby pools … Water should have to visibly
+connect pools, or they shouldn't be connected." Until 0.47.0 found bodies balanced by unseen
+flows: each took the world map's flow in at its own cells, links told a body below what the body
+above sent it, a body with no way out seeped its flow into the ground. Their seed 3695715780 dam:
+the pool below took in the river's whole flow from nowhere while the pool above took in none.
+
+### 18.1 The owner's answers (2026-11-04)
+
+- Where a river comes into the simulated stretch: **a visible source at its edge**, no unseen rain.
+- The pools below a dam: **standing pools** — each drains over its lip to the lip and keeps what
+  stands below it, until the dam spills and the river refills them.
+- Where a river leaves it: **a visible pour off its edge**, no seep at its last pool.
+- Lips a cell off the lip above: **exact lips in the generator**, so pools stay where drawn.
+
+### 18.2 As built
+
+- **What comes in** (`Water::feeds_of`): the water standing as generated (no body's) higher than a
+  body beside it, over it, or beside the open cells over it up to `SOURCE_REACH_ROWS` (the top of a
+  fall onto it); each cell it pours into takes one face's flow by the opening law at the source's
+  depth over its floor, shared by the sources beside it — as the engine counts a body's ways out,
+  one per cell left into. A found body's water comes by its own ways out (the flow step), never as
+  a feed. A feed ends when its source is found or gone (`unfeed`); feeds are found again when a
+  body's container changes as a chunk loads (`refeed`). `Steady::feeds` holds them by source cell;
+  the report's `feeds` lists them.
+- **The loaded world's edge:** with nothing seen coming in, where a body runs into an unloaded chunk
+  at least `EDGE_SOURCE_AWAY` cells from its ways out, the river comes in there at the flow its lips
+  are sized for (`TerrainGenerator::discharge_at`: the stepped flow); when the chunk loads, the
+  water there takes over.
+- **Seeps** only where a body's exit is within `SEEP_EDGE_CELLS` of the unloaded world; elsewhere a
+  body with no way out fills until it spills.
+- **No links**: saved worlds' links are read past (their sections written empty).
+- **Lips planned** (`terrain.rs` `LipPlan`, cached per lip by every column of its band): the band
+  is every channel column within `lipReach` above the step and every channel column beside the
+  same river's channel a row lower (so the pools never meet but over the lip), joined at corners;
+  its columns beside the pool below are taken from the centre out while the cells they pour into
+  stay within `lip_cells` of the river's flow; one short, a column pouring into one cell is traded
+  for one adding two, or a column is taken and the cells beyond the lip's walled (`Lip::Block`, a
+  rock at the foot of the lip, as high as the lip's wall). The columns behind the crest up to the
+  pool above are crest too. A cell of the next lip's band counts as the pool below only where it is
+  that lip's crest. Lip columns keep flat tops (`Column::lip`: no ramp pieces).
+- **The river's flow** (`channels.rs` `step_flows`): its head's discharge in whole lip cells, the same
+  down to each river joining it, which adds its own from where it joins; a channel at least
+  √2 × its lip cells + 4 m wide, so a lip has room for them on any heading. The map's discharge
+  growing along a river sizes no lip.
+- **Drawing:** a found body within `foundSnapM` (4 cm) of its level as found is drawn there
+  (drawing only: the water is where the law puts it).
+- **Floods over banks:** `rest` cells a body's water rises over are held no longer
+  (`submerge_rest`), so a dam's flood floods the ramps it covers (owner, 2026-11-04: air in the
+  bottom half of steep slopes under water).
+- **Kept:** `rest`/`held` for generated banks and risers; the fronts down the map's rivers through
+  unloaded country (W2d), sent only by bodies water is seen coming into.
+- **Open:** on a steep diagonal cascade (seed 0 near −15250, 1840) a lip's band runs into the
+  next and a perched two-cell pool drains (docs/BUGS.md 27); the strict sweep checks twelve pools.
+- **Tests:** `a_pool_nothing_is_seen_pouring_into_takes_nothing_in` (red on 0.46),
+  `a_pool_below_a_dam_takes_in_only_what_pours_over_it`,
+  `a_closed_stretch_fills_with_nothing_leaving_unseen` (red on 0.46: it seeped),
+  `water_risen_over_a_steep_ramp_floods_both_its_cells` (red before `submerge_rest`),
+  `every_lip_pours_into_exactly_its_cells` (generator), and the strict sweep (red with lips sized
+  column by column: 405 cells changed at a seed 0 pool).
+
