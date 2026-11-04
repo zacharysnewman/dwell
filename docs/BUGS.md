@@ -21,6 +21,34 @@ block a tick) doesn't show it; the cause in the server's order of edits isn't pi
 
 ## Fixed
 
+### 24. Rising water vanished and came back higher at each step, and slopes didn't rise with it (fixed in 0.44.5)
+
+*Reported 2026-11-04 (0.44.4, seed 0, the dam at x 2359 z 7437).* "The water definitely isn't filling
+smoothly over time, it's still jumping 0.5m in height every few seconds as it rises." "The water
+actually disappears and then reappears at a slightly higher level." "And slopes with water don't
+correctly show this dynamic raising."
+
+- **Causes** (found in the browser: the cells read every frame, the page recorded and its frames
+  compared, the chunks meshed natively): (1) water's writes go out as `Rebake` modifications, and the
+  client hid every cell a `Rebake` wrote until a settling piece's glide claimed it or half a second
+  passed: each step of a rising pool drew its surface row as air, the row below showing, for half a
+  second. (2) The water wrote its cells with `set_voxel`, a chunk revision per cell, then sent them
+  as one modification: the client saw a gap every time and asked for the whole chunk again (1,845
+  resyncs in one session). (3) A body's surface was drawn at the nearest fill, so a level hovering at
+  a rounding point (the pool below the dam, fed in pulses) flipped each tick, and at a row's floor
+  the row came and went. (4) A flooded ramp's water was drawn at the full row whatever the water
+  beside it.
+- **Fix:** only cells within a falling piece's reach wait for its glide (`Pieces::near_cell`); the
+  water writes with `VoxelWorld::write_voxel` (no revision per cell); the drawn fill holds within
+  `fillHysteresis` (`shared/fluids/flow.json`, ¼ step) past the half step; a flooded ramp's water is
+  drawn at the fill of the water beside it in its row, none while the water is only below it.
+- **Tests:** `a_rebake_far_from_any_piece_hides_nothing`,
+  `the_waters_modifications_reach_a_client_in_revision_order` (red: revision 154 after 129),
+  `a_level_hovering_at_a_step_is_drawn_steadily` (both faces; red: the row drawn 0, 22, 0, 22, …),
+  `a_flooded_ramp_draws_its_water_at_the_fill_of_the_water_beside_it` (red: 3.875 against 3.219).
+  Checked in the browser on the owner's dam: no resyncs, and the recorded pool rises a step at a time
+  with no frame drawn lower or darker between.
+
 ### 21. A dam across a river didn't raise it (fixed in 0.44.3)
 
 *Reported 2026-11-03 (0.44.2, seed 0 by the spawn, screenshots).* "I dammed that river. When I did, it

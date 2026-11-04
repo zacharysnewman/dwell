@@ -389,8 +389,14 @@ sends its writes as one `Rebake` modification.
   share of its height the cells under it fill (`downsample_block`: each column's two halves, a
   liquid's own fill, anything else under it full, air empty; the nearest fill), and the LOD mesher
   draws its surface and sides at that share as the chunks do, so where the chunks give way to the
-  LOD the surfaces meet (within a fill step). Deviations: swimming and floating take a part-full cell as full; a ramp
-  beside part-full water is flooded at the full row.
+  LOD the surfaces meet (within a fill step). A flooded ramp's water is drawn at the fill of the
+  water beside it in its row (its sides first, then its corners; the fullest), and none over its floor
+  while the water stands only below it, so the water rises up a bank with the pool (0.44.5). The drawn
+  fill moves off the one drawn now only once the level is `fillHysteresis` (¼ step) past the half step,
+  so a level hovering at a step, or at a row's floor, isn't drawn flickering between two (0.44.5). The
+  water writes its cells without a revision each (`VoxelWorld::write_voxel`): the modification takes
+  one, so a client follows them and doesn't ask for the chunk again (0.44.5). Deviation: swimming and
+  floating take a part-full cell as full.
 - **The edge**: a block with a `flooded` state (a ramp) beside a row the water writes takes it, and
   loses it when no liquid is beside it (`flood_edge`).
 - **Running water** (0.43.1): an outlet an edit made (not a natural one) is drawn when the body's

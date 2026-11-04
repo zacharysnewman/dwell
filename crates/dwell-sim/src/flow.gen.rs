@@ -17,6 +17,7 @@ pub const FLOW: FlowData = FlowData {
     river_speed: 1.0,
     river_change_min: 0.02,
     lake_outlet_head: 1.0,
+    fill_hysteresis: 0.25,
     liquids: &[
         LiquidFlow { block: "dwell:water", weir: 1.7, running: "dwell:running_water" },
     ],

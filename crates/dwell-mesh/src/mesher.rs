@@ -1023,16 +1023,36 @@ fn fluid_side(
     b.tag_fluid(style.fluid);
 }
 
+/// How high (cells above its floor) a flooded cell's water stands: the cell's top under water or a
+/// solid, else the drawn surface of the water beside it in its row at that water's fill (the
+/// fullest, sides before corners), so a bank's water rises with the pool's; nothing above its floor
+/// while the water stands only below it (docs/WATER_FLOW.md §15).
+fn flooded_top(cells: &Cells<'_>, water: &Kind, x: i32, y: i32, z: i32) -> f64 {
+    let ka = cells.kind(x, y + 1, z);
+    if ka.liquid || ka.flooded || face_covered(cube(), 2, cover(&ka)) {
+        return 1.0;
+    }
+    let fill_of = |dx: i32, dz: i32| {
+        let k = cells.kind(x + dx, y, z + dz);
+        (k.liquid && same_fluid(water, &k)).then_some(k.fill)
+    };
+    let sides = [(1, 0), (-1, 0), (0, 1), (0, -1)];
+    let corners = [(1, 1), (1, -1), (-1, 1), (-1, -1)];
+    let best = |at: &[(i32, i32)]| {
+        at.iter()
+            .filter_map(|&(dx, dz)| fill_of(dx, dz))
+            .fold(None, |m: Option<f64>, f| Some(m.map_or(f, |m| m.max(f))))
+    };
+    best(&sides)
+        .or_else(|| best(&corners))
+        .map_or(0.0, |fill| fill * (1.0 - water.style.surface_drop))
+}
+
 /// Water in the open part of a flooded shaped cell: its faces, inset so the solid shows through.
 fn flooded_water(b: &mut Builder, cells: &Cells<'_>, x: i32, y: i32, z: i32) {
     let water = cells.kinds.flood();
     // Its sides reach its drawn surface, unless water or a solid is over it.
-    let ka = cells.kind(x, y + 1, z);
-    let top = if ka.liquid || ka.flooded || face_covered(cube(), 2, cover(&ka)) {
-        1.0
-    } else {
-        1.0 - water.style.surface_drop
-    };
+    let top = flooded_top(cells, &water, x, y, z);
     for (face, &(axis, sign)) in FACES.iter().enumerate() {
         let [nx, ny, nz] = neighbour_of(x, y, z, axis, sign);
         let kn = cells.kind(nx, ny, nz);
@@ -1040,6 +1060,9 @@ fn flooded_water(b: &mut Builder, cells: &Cells<'_>, x: i32, y: i32, z: i32) {
             continue;
         }
         if axis != 1 {
+            if top <= 0.0 {
+                continue;
+            }
             let plane = f64::from([x, y, z][axis])
                 + if sign > 0 {
                     1.0 - FLOOD_INSET
@@ -1060,7 +1083,7 @@ fn flooded_water(b: &mut Builder, cells: &Cells<'_>, x: i32, y: i32, z: i32) {
                 FLOOD_INSET
             };
         if face == 2 {
-            plane = fluid_top(y, &water.style, 1.0);
+            plane = f64::from(y) + top;
         }
         let (color, tile) = surface(&water.style, axis, sign);
         b.quad(

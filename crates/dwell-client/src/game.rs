@@ -1028,7 +1028,8 @@ impl<S: Scene> Game<S> {
                 self.streamer.on_voxel_modification(&v.chunks);
                 if let Some(changes) = settled {
                     let cells: Vec<_> = changes.iter().map(|c| (c.cell, c.new)).collect();
-                    let hide = self.glides.rebaked(&cells, now_ms);
+                    let pieces = &self.pieces;
+                    let hide = self.glides.rebaked(&cells, now_ms, |c| pieces.near_cell(c));
                     self.streamer.hide_cells(&hide, true);
                 }
             }

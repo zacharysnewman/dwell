@@ -175,14 +175,21 @@ pub struct Glides {
 
 impl Glides {
     /// A `Rebake` change wrote these cells (state, not air): returns the cells to hide from the
-    /// terrain until a piece's glide has claimed and shown them.
-    pub fn rebaked(&mut self, cells: &[([i32; 3], StateId)], now_ms: f64) -> Vec<[i32; 3]> {
+    /// terrain until a piece's glide has claimed and shown them: those `near_piece` (within a
+    /// falling piece's reach; water's writes are `Rebake`s too, and never a piece's).
+    pub fn rebaked(
+        &mut self,
+        cells: &[([i32; 3], StateId)],
+        now_ms: f64,
+        near_piece: impl Fn([i32; 3]) -> bool,
+    ) -> Vec<[i32; 3]> {
         if FELLING.settle_glide_seconds <= 0.0 {
             return Vec::new();
         }
         let mut hide = Vec::new();
         for &(c, m) in cells {
-            if m == 0 {
+            // Air, or out of every falling piece's reach (water's writes): nothing to glide in.
+            if m == 0 || !near_piece(c) {
                 continue;
             }
             self.written.insert(c, m);
@@ -495,6 +502,20 @@ mod tests {
         const { assert!(FELLING.settle_glide_seconds > 0.0 && FELLING.settle_bounce >= 0.0) };
     }
 
+    /// Owner, 2026-11-04: rising water "disappears and then reappears at a slightly higher level".
+    /// Water's writes go out as `Rebake` modifications (as settled pieces' do), and every cell one
+    /// wrote was hidden from the terrain until a piece claimed it, or for `UNCLAIMED_MS`: each
+    /// step of a rising pool drew its surface row as air for half a second. Only cells a falling
+    /// piece could have settled into wait for it. Red before: the water's cells were hidden.
+    #[test]
+    fn a_rebake_far_from_any_piece_hides_nothing() {
+        let water = state("dwell:water[fill=7]");
+        let mut g = Glides::default();
+        let hide = g.rebaked(&[([4, 80, 4], water), ([5, 80, 4], water)], 0.0, |_| false);
+        assert!(hide.is_empty(), "hidden: {hide:?}");
+        assert_eq!(g.step(UNCLAIMED_MS, |_| true), Step::default());
+    }
+
     /// The lifecycle: the cells are hidden while gliding, shown when it ends, and its meshes go
     /// once the terrain draws them; cells no piece claims show again.
     #[test]
@@ -505,7 +526,7 @@ mod tests {
         let (_, placed) = resample(&cells, rest.0, DQuat::IDENTITY);
         let mut g = Glides::default();
         let stray = ([9, 80, 9], log);
-        let hide = g.rebaked(&[placed[0], stray], 0.0);
+        let hide = g.rebaked(&[placed[0], stray], 0.0, |_| true);
         assert_eq!(hide.len(), 2);
         let parts = g.settled(
             &SettledPiece {

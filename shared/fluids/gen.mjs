@@ -26,6 +26,7 @@ export const FLOW_RANGES = {
   riverSpeed: [0.01, 100, false],
   riverChangeMin: [0, 1000, false],
   lakeOutletHead: [0.01, 100, false],
+  fillHysteresis: [0, 0.5, false],
 };
 
 /** The registry's blocks (name → liquid?), from shared/blocks/dwell.json. */
