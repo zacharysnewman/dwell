@@ -497,7 +497,7 @@ and 1,059 m³/s. What the review found, and where each stands:
 
 
 
-## 17. Balanced rivers (planned, ADR 0057, 0.45.0)
+## 17. Balanced rivers (built, ADR 0057, 0.45.0)
 
 *Adopted 2026-11-04 (the owner chose "Balanced generation" and answered the questions below). Replaces
 §2.2's "at rest as found" when built.*
@@ -613,3 +613,44 @@ fill's part-full cells (0.44.0). Small and medium rivers fit within a ½ m terra
   drawn surface of the water under it. Visual; in the same release, with a regression test.
 - **Release: 0.45.0 on its own**, as soon as it passes the strict sweep (§17.4); the owner raises the
   version.
+
+### 17.7 As built (0.45.0)
+
+- **One law, shared.** Water's flow data and its opening law live in `dwell_world::flow`
+  (`flow.gen.rs` from `shared/fluids/flow.json`), used by the engine and the generator.
+- **Lips** (`terrain.rs` `lip_of`, `terrain.json` `lipReach` 1.5 m, `lipRise` 2 rows): where a
+  river's surface steps down a row, its columns within `lipReach` m upstream are a **wall**
+  `lipRise` rows over the water, but for a centred **crest** `lip_cells(q)` cells wide (the
+  discharge over water's weir at a full row's head, at least one), its bed at the sill one row
+  under the water's top: the pool pours off the crest's edge, and under the water the pools never
+  touch. **The waterline:** dry ground beside river and lake water stands a row over its top, so no
+  open cell, nor a ramp's open part, lies in the water's rows. Full-detail chunks only (the LOD
+  keeps its plain channels).
+- **Flows from the lips.** A body found at rest passes what its ways out carry at its level as
+  found by the one law (`Steady::law`, unscaled; set when found, shared on a split, recomputed on a
+  merge): the map's flow no longer scales them. What comes in of its own is that less what the found
+  bodies above bring as found (a lip above carrying a little more makes a small loss to the
+  ground). Ways out into a body found before are rated against its level (drowned), and a corner
+  cell's faces all count.
+- **Seeps** (a body with no way out of its own: the river going on out of the loaded world) pass on
+  what comes in and what stands over the level found, so the body holds it; only the part holding
+  the exit seeps; its baseline for changes downstream is what it passes once settled (its mean
+  flow over a tick, steady five ticks).
+- **One body where it is one.** A part wholly in the surface row (a crest) stays one body with its
+  pool; faces against a found body at the same level aren't held (a river found in parts across a
+  chunk's edge); a rebuild never absorbs water no one holds (it is another body, found and merged
+  if level). A body found against an unloaded chunk takes the world there as found when it loads.
+- **Kept:** `rest` (open cells beside a found body it didn't fill) and `held` (faces between found
+  bodies at different levels) still stand for generated banks and risers the grid doesn't always
+  show (junctions, bends); with them removed one sweep site and the bank-gap scene still move.
+  Generated lips are physics, not scaled: every way out, generated or made, passes water by the
+  one law.
+- **Drawing:** water over a ½ m step between pools is a slope across the cell below the crest
+  (`mesher.rs` `slope_over`); a fall's sides reach down to the drawn surface of the water it lands
+  in (`fall_into`). Not yet: the slope atop a made spill's running column (it stays a column).
+- **Tests:** `a_block_set_in_a_generated_rivers_bed_changes_nothing_else` (six pools of seeds 0–2
+  picked from the map, six hours of water time, no cell changes, nothing sent downstream);
+  `a_dammed_pool_stands_no_higher_than_its_crest_and_the_head_over_it` (the owner's backfill
+  report; their seed 0 dam settles 17 cm over its 13-cell crest);
+  `water_pouring_over_a_half_block_step_is_drawn_as_a_slope`,
+  `a_fall_reaches_down_to_the_water_it_lands_in`, `an_unflooded_ramp_beside_water_as_found_holds_it`.

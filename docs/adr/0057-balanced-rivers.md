@@ -1,7 +1,7 @@
 # 0057. Balanced rivers: generated water at rest by the engine's one law
 
 - Status: Accepted (the owner, 2026-11-04: "Balanced generation", and the answers in WATER_FLOW.md
-  §17.6); supersedes ADR 0055 once built
+  §17.6); built (0.45.0); amends ADR 0055
 - Date: 2026-11-04
 - Design: [`WATER_FLOW.md`](../WATER_FLOW.md) §17
 
@@ -37,5 +37,7 @@ waterfalls). Shipped as 0.45.0 on its own.
 - Generated water, edited water and water in chunks that load later follow one law.
 - The terrain each seed generates changes: a new compatibility line (0.45.0).
 - The opening law and the liquids' weir coefficients are shared by the generator and the engine.
-- ADR 0055's machinery (`Steady`, natural scaling, seeps, `rest`/`held`, links, `hold_grown`,
-  `natural_grown`) is removed.
+- ADR 0055's scaling of natural outlets to the map's flow is gone: a found body passes what its
+  ways out carry by the one law. Kept as built (WATER_FLOW.md §17.7): `rest`/`held` for generated
+  banks and risers the grid doesn't always show, seeps where a river leaves the loaded world, and
+  the links between found bodies for what the unsimulated river brings.

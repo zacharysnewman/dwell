@@ -1278,3 +1278,34 @@ dwell_world::both_faces!(
         );
     }
 );
+
+dwell_world::both_faces!(
+    /// Owner, 2026-11-04: a dammed river "would backfill up river higher than height of the dam
+    /// + 1 half block". A pool behind a dam stands no higher than the dam's top and the head that
+    /// pours the river's flow over it (the weir law): a guard (not reproduced on the owner's dam:
+    /// 140.67 m over a 140.50 m crest, the head of the river's flow over 13 cells).
+    fn a_dammed_pool_stands_no_higher_than_its_crest_and_the_head_over_it(f: FaceFrame) {
+        let mut s = tall_channel(f);
+        let dam: Vec<[i32; 3]> = (0..=2)
+            .flat_map(|z| (0..=2).map(move |r| [9, r, z]))
+            .collect();
+        s.edit(&dam, require("dwell:stone"));
+        let crest = m_of_row(G + 3);
+        let head = (channel_q() / (1.7 * 3.0)).powf(2.0 / 3.0);
+        let mut highest = f64::MIN;
+        for _ in 0..1200 {
+            s.run(1, 1.0);
+            if let Some(b) = s.water.basin_at(s.cell(4, 0, 1)) {
+                highest = highest.max(b.level());
+            }
+        }
+        assert!(
+            highest > crest,
+            "it rose over the dam: {highest} (crest {crest})"
+        );
+        assert!(
+            highest <= crest + head + 0.02,
+            "it stood {highest}, over the crest {crest} and the head {head}"
+        );
+    }
+);
