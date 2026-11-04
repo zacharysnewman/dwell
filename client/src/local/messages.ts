@@ -36,7 +36,9 @@ export type ToWorker =
   /** Kill the local player (the bench's `die` step). */
   | { t: 'kill' }
   /** The respawn preload (ARCHITECTURE.md §6.3) on or off (`?respawnPreload=off`). */
-  | { t: 'respawnPreload'; on: boolean };
+  | { t: 'respawnPreload'; on: boolean }
+  /** The water near a cell (a diagnostic for the block dump); answered with `waterReport`. */
+  | { t: 'waterReport'; at: [number, number, number]; radius: number };
 
 export type FromWorker =
   /** `persisted`: the world is saved in the browser (OPFS, §6.4). */
@@ -48,4 +50,6 @@ export type FromWorker =
   | { t: 'datagram'; session: number; bytes: Uint8Array }
   | { t: 'close'; session: number }
   /** The server core's WebAssembly memory (bytes), every second. */
-  | { t: 'memory'; bytes: number };
+  | { t: 'memory'; bytes: number }
+  /** The water near a cell as JSON (in reply to `waterReport`). */
+  | { t: 'waterReport'; report: string };

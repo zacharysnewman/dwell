@@ -25,6 +25,7 @@ export class LoopbackTransport implements Transport {
   heapBytes = 0;
   /** Callers waiting for a save to finish, oldest first (the worker answers in order). */
   private readonly saving: ((ok: boolean) => void)[] = [];
+  private readonly reports: ((report: string | null) => void)[] = [];
 
   private constructor(private readonly worker: Worker) {
     worker.onmessage = (e: MessageEvent<FromWorker>) => {
@@ -83,6 +84,18 @@ export class LoopbackTransport implements Transport {
     });
   }
 
+  /**
+   * The water near a cell as the local server has it (JSON, a diagnostic for the block dump);
+   * null once the transport is closed.
+   */
+  waterReport(at: [number, number, number], radius: number): Promise<string | null> {
+    if (this.closed) return Promise.resolve(null);
+    return new Promise((resolve) => {
+      this.reports.push(resolve);
+      this.post({ t: 'waterReport', at, radius });
+    });
+  }
+
   close(): void {
     if (this.closed) return;
     this.post({ t: 'disconnect', session: SESSION });
@@ -101,6 +114,7 @@ export class LoopbackTransport implements Transport {
   private finish(message: string): void {
     this.closed = true;
     for (const resolve of this.saving.splice(0)) resolve(false);
+    for (const resolve of this.reports.splice(0)) resolve(null);
     this.handlers?.onClose({ message });
     this.handlers = null;
   }
@@ -125,6 +139,9 @@ export class LoopbackTransport implements Transport {
         break;
       case 'saved':
         this.saving.shift()?.(msg.ok);
+        break;
+      case 'waterReport':
+        this.reports.shift()?.(msg.report);
         break;
       case 'memory':
         this.heapBytes = msg.bytes;

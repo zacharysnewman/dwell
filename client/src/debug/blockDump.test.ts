@@ -51,3 +51,19 @@ describe('block dump', () => {
     expect(text).toContain('\n      [0,'); // one row per line
   });
 });
+
+describe('block dump water', () => {
+  it("carries the local server's water report when given one, and none otherwise", () => {
+    const base = {
+      voxel: () => 0,
+      target: null,
+      feet: [0.5, 10, 0.5],
+      view: { yaw: 0, pitch: 0 },
+      world: null,
+      build: { version: 't', sha: 's' },
+    };
+    expect('water' in blockDump(base)).toBe(false);
+    const water = { basins: [{ id: 1, level: 5 }] };
+    expect(blockDump({ ...base, water }).water).toEqual(water);
+  });
+});

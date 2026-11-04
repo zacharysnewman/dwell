@@ -213,6 +213,11 @@ impl LocalWorld {
     pub fn kill(&mut self) {
         self.core.kill_local_player();
     }
+    /// The water near a cell as this server has it (JSON; the block dump's `water`, a diagnostic).
+    #[wasm_bindgen(js_name = waterReport)]
+    pub fn water_report(&mut self, x: i32, y: i32, z: i32, radius: i32) -> String {
+        self.core.water_report([x, y, z], radius)
+    }
     /// The respawn preload on or off (`?respawnPreload=off`).
     #[wasm_bindgen(js_name = setRespawnPreload)]
     pub fn set_respawn_preload(&mut self, on: bool) {

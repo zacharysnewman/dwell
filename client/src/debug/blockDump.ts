@@ -25,6 +25,8 @@ export interface BlockDumpInput {
   build: { version: string; sha: string };
   /** Cells on each side of the centre: the dump covers a cube of 2 × radius + 1. */
   radius?: number;
+  /** The local server's water near the centre (`Water::report`, parsed), in a local world. */
+  water?: unknown;
 }
 
 export interface BlockDump {
@@ -46,6 +48,8 @@ export interface BlockDump {
    * south (z ascending), each row the palette indices west to east (x ascending).
    */
   layers: number[][][];
+  /** The local server's water near it (a local world only; docs/DEV_TOOLS.md). */
+  water?: unknown;
 }
 
 const round = (v: number) => Math.round(v * 1000) / 1000;
@@ -96,6 +100,7 @@ export function blockDump(input: BlockDumpInput): BlockDump {
     size,
     palette,
     layers,
+    ...(input.water === undefined ? {} : { water: input.water }),
   };
 }
 

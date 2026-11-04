@@ -1108,3 +1108,26 @@ dwell_world::both_faces!(
         );
     }
 );
+
+dwell_world::both_faces!(
+    /// The diagnostic report (the block dump's `water`, docs/DEV_TOOLS.md): the basins near a cell
+    /// with their level, flows, steady state and ways out; none far away.
+    fn the_water_report_lists_the_basins_near_a_cell(f: FaceFrame) {
+        let mut s = channel(f);
+        s.edit(&[[9, 0, 0], [9, 0, 1], [9, 0, 2]], require("dwell:stone"));
+        s.run(30, 1.0);
+        let r = s.water.report(s.cell(4, 0, 1), 8);
+        assert!(r.starts_with('{') && r.ends_with('}'), "{r}");
+        for key in [
+            "\"basins\":[{",
+            "\"level\":",
+            "\"inflow\":",
+            "\"steady\":{",
+            "\"outlets\":[",
+        ] {
+            assert!(r.contains(key), "{key} in {r}");
+        }
+        let far = s.water.report(s.cell(4000, 0, 1), 8);
+        assert!(far.contains("\"basins\":[]"), "{far}");
+    }
+);

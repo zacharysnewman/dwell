@@ -64,6 +64,9 @@ function handle(msg: ToWorker): void {
     case 'kill':
       core.kill();
       break;
+    case 'waterReport':
+      scope.postMessage({ t: 'waterReport', report: core.waterReport(msg.at, msg.radius) });
+      break;
     case 'respawnPreload':
       core.setRespawnPreload(msg.on);
       break;
