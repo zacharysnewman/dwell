@@ -18,6 +18,11 @@ face, or the placement check against its shape.
 were found as separate bodies, the lower keeping the map's flow and also taking what comes over the
 dam (0.805 + 0.79 m³/s), so it stands ~0.18 m over its found level. The scene test (a dam placed a
 block a tick) doesn't show it; the cause in the server's order of edits isn't pinned down yet.
+On 0.44.6 (water through flooded ramps) a native probe of the owner's dam, built at once or a block a
+tick, leaves the river below at 139.36 m, under its found 139.5 m, with the flood over the dam spilling
+into it: not seen there now. Kept open until a test reproduces the original order of edits; the
+planned balanced generation (one hydraulic law for all water) replaces the found-flow bookkeeping
+behind it.
 
 ## Fixed
 

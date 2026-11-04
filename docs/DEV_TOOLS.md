@@ -228,6 +228,20 @@ The same hooks work in any browser session: open `http://localhost:4173/dwell/?l
 browser tools (e.g. the Chrome DevTools MCP: `evaluate_script`, `performance_start_trace`,
 `take_screenshot`).
 
+**Into a world by link, no clicks** (0.44.6): a local world link (`?local=1&seed=<n>`, `&world=` for
+another generator) opens that seed's world file. Add:
+
+- `fresh=1` — the world starts again from its seed: its file deleted first, whatever build saved it
+  (no version lock, no prompt; every load of the link starts over).
+- `at=x,y,z` — the player starts at that world point (feet, metres), the world's spawn moved there,
+  however the world was left (`LocalCore::create_spawning`'s `at`).
+- `time=0.45` (the time of day), `debug=1`, `lod=off` and the other page parameters as usual.
+
+For example `?local=1&seed=0&fresh=1&at=2364.5,142,7443.5&time=0.45` opens a new seed 0 world at
+the owner's dam site; then `__dwell.fly(true)`, `__dwell.tool('cornerA@…')`, `tool('fill')` and
+`placeCamera` set the scene up. `?new=1&seed=<n>&name=<name>` instead adds a new world to the
+menu's list and opens it.
+
 **The water report** (0.44.4): `dwell_sim::water::Water::report(at, radius)` describes the water near a
 cell as JSON — each basin within `radius` cells: its id, level (world m), volume, inflow, what arrives,
 whether it is filling or draining (`active`) and owes time, its bounds, its steady state as found

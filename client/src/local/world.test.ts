@@ -2,6 +2,16 @@ import { describe, expect, it } from 'vitest';
 import { GENERATORS, parseLocalWorld, spawnOptions } from './world';
 
 describe('local world options', () => {
+  it('starts at a point given by ?at=x,y,z (docs/DEV_TOOLS.md)', () => {
+    expect(parseLocalWorld('?seed=0&at=2364,141.5,7443')).toEqual({
+      worldSeed: 0,
+      generatorVersion: GENERATORS.terrain,
+      spawnAt: [2364, 141.5, 7443],
+    });
+    expect(parseLocalWorld('?at=1,2').spawnAt).toBeUndefined();
+    expect(parseLocalWorld('?at=1,x,3').spawnAt).toBeUndefined();
+  });
+
   it('defaults to procedural terrain with seed 0', () => {
     expect(parseLocalWorld('')).toEqual({ worldSeed: 0, generatorVersion: GENERATORS.terrain });
   });

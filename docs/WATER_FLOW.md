@@ -219,7 +219,9 @@ country nobody has loaded (owner, 2026-11-03). Each found body measures what lea
 river now (by the opening law at its level: into the unfound, or into water collecting below it,
 where that lies on the map's river; not into the found river's other bodies, which carry it
 themselves) against what its natural outlets sent there as found, and sends a change of more than
-`riverChangeMin` (0.02 m³/s) down the map's river as a **front** (`water/rivers.rs`). Fronts travel
+`riverChangeMin` (0.02 m³/s) and `riverChangeShare` (5 %) of the river's flow, lasting
+`riverChangeHoldS` (120 s of water time: a pool settling after a block is set in it is no change
+downstream, a dam filling is; 0.44.6), down the map's river as a **front** (`water/rivers.rs`). Fronts travel
 at `riverSpeed` (1 m/s of water time) along the map's river courses (`TerrainGenerator::river_at`,
 `river_length`, `river_next`, through the `Rivers` trait); where a river joins another they go on
 along it, into the sea they end, and into a map lake its outflow follows them by the time the lake
@@ -399,6 +401,19 @@ sends its writes as one `Rebake` modification.
   floating take a part-full cell as full.
 - **The edge**: a block with a `flooded` state (a ramp) beside a row the water writes takes it, and
   loses it when no liquid is beside it (`flood_edge`).
+- **Through ramps** (0.44.6, owner 2026-11-03: "water flows through flooded ramps"): a block whose
+  open part holds water (a ramp with a `flooded` state, `Kind::Holds`) is part of a body's rows: the
+  water reaches it, and passes on, only through its open faces (`joins`: a side whose profile stands
+  lower than the cell somewhere, a top not full; never its full back or its bottom), and is written
+  `flooded` while the water stands in it, never written over. A river goes on through the flooded
+  ramps of its bed; a dam's flood rises up a bank of ramps and spills over a dam that the banks'
+  ramps once closed off. As found (§2.2), a flooded ramp of another body is held like its liquid,
+  and a ramp a body didn't flood holds it as an open cell does (`rest`).
+- **Chunks that load later** (0.44.6): a body found at rest that grows into a chunk loaded since,
+  still at its level as found, takes the world there as found too: the open cells beside its water
+  there hold it (`rest`), the other bodies' liquid it touches passes nothing (`held`), and the ways
+  out it finds there are natural, its natural outlets scaled again to pass the map's flow
+  (`hold_grown`, `natural_grown`). Risen or fallen since, what it meets there is the change's.
 - **Running water** (0.43.1): an outlet an edit made (not a natural one) is drawn when the body's
   spill together passes `streamMinFlow` (0.05 m³/s, a sheet ~7 cm deep over a cell) and it carries
   at least a sixteenth of that (0.44.2: a spill shared out over a wide edge, a flood over a low bank,

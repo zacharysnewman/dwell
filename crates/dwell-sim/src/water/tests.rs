@@ -959,7 +959,10 @@ dwell_world::both_faces!(
     /// the lower stretch never knew.
     fn a_dam_upstream_reaches_the_river_far_below_across_unfound_country(f: FaceFrame) {
         let mut s = Scene::with_air(f, [-16, -8, -8], [72, 10, 16]);
-        s.water = fed(channel_q()).with_rivers(std::sync::Arc::new(Straight));
+        // A small river (0.4 m³/s): the dam takes minutes to fill, longer than a change must last
+        // to be sent (`riverChangeHoldS`) and travel down.
+        let q = 0.4;
+        s.water = fed(q).with_rivers(std::sync::Arc::new(Straight));
         channel_at(&mut s, 0, 8);
         channel_at(&mut s, 40, 3);
         // Both found as they were (an edit beside each), at rest.
@@ -972,8 +975,9 @@ dwell_world::both_faces!(
             .flat_map(|z| (0..=5).map(move |r| [9, r, z]))
             .collect();
         s.edit(&dam, require("dwell:stone"));
-        // 40 m at 1 m/s: nothing yet after 20 s.
-        s.run(20, 1.0);
+        // Sent once it lasts `riverChangeHoldS`, then 40 m at 1 m/s: nothing yet before.
+        let hold = FLOW.river_change_hold_s as u32;
+        s.run(hold + 20, 1.0);
         assert!(
             (lower(&s) - full).abs() < 1e-6,
             "not reached yet: {} of {full}",
@@ -988,12 +992,12 @@ dwell_world::both_faces!(
         );
         // What is going down the river is saved with the basins.
         let bytes = s.water.save(revisions(&s));
-        let mut back = fed(channel_q());
+        let mut back = fed(q);
         back.restore(&bytes, revisions(&s)).expect("read back");
         assert!(!s.water.fronts().is_empty(), "changes going down the river");
         assert_eq!(back.fronts(), s.water.fronts());
         // The dam fills and spills the flow again: the lower stretch comes back.
-        s.run(1500, 1.0);
+        s.run(2500, 1.0);
         assert!(
             (lower(&s) - full).abs() < 0.05 * full,
             "the river below back: {} of {full}",
@@ -1166,5 +1170,92 @@ dwell_world::both_faces!(
         }
         seen.dedup();
         assert!(seen.len() <= 1, "row 1 drawn as {seen:?}");
+    }
+);
+
+dwell_world::both_faces!(
+    /// Sweep of seed 1 (the through-ramps rework): a river's pool found while a chunk of it wasn't
+    /// loaded, its open cells beside its water as generated held like walls only where it was
+    /// found. When the chunk loaded, the body grew into its water there and filled the open cells
+    /// beside it too, sinking below its level as found and spilling into the next pool. The water
+    /// a body grows into as a chunk loads is the world as found: the open cells beside it hold it
+    /// as well. Red before: the pool sank and the open cells filled.
+    fn a_pool_grown_into_a_chunk_that_loads_holds_its_level(f: FaceFrame) {
+        let mut s = Scene::new(f);
+        let stone = require("dwell:stone");
+        // A closed pool across the chunk edge at x = 0 (x −6 to 5): two rows of water west of the
+        // edge, one east of it, with open cells over it there (as a river's step is generated).
+        s.fill([-7, -1, -1], [6, -1, 6], stone);
+        s.fill([-7, -1, -1], [6, 3, -1], stone);
+        s.fill([-7, -1, 6], [6, 3, 6], stone);
+        s.fill([-7, -1, -1], [-7, 3, 6], stone);
+        s.fill([6, -1, -1], [6, 3, 6], stone);
+        s.fill([-6, 0, 0], [5, 0, 5], M.water);
+        s.fill([-6, 1, 0], [-1, 1, 5], M.water);
+        s.water = fed(0.0);
+        let east = chunk_of(s.cell(3, 0, 2)[0], s.cell(3, 0, 2)[1], s.cell(3, 0, 2)[2]);
+        assert_ne!(
+            east,
+            chunk_of(
+                s.cell(-3, 0, 2)[0],
+                s.cell(-3, 0, 2)[1],
+                s.cell(-3, 0, 2)[2]
+            )
+        );
+        let saved = s.world.find(east).expect("loaded").clone();
+        s.world.remove(east);
+        // Found from the west, the east unloaded.
+        s.edit(&[[-3, 2, 2]], M.air);
+        s.run(3, 1.0);
+        let level = s
+            .water
+            .basin_at(s.cell(-3, 0, 2))
+            .expect("the pool")
+            .level();
+        s.world.put(east, saved);
+        s.run(300, 1.0);
+        let pool = s.water.basin_at(s.cell(-3, 0, 2)).expect("the pool");
+        assert!(
+            (pool.level() - level).abs() < 1e-6,
+            "level {level} → {}",
+            pool.level()
+        );
+        for x in [0, 3, 5] {
+            assert!(!s.wet(x, 1, 2), "the open cell over the east half at x {x}");
+        }
+    }
+);
+
+dwell_world::both_faces!(
+    /// Sweep of seed 1 (the through-ramps rework): a river pool found with its top row just full,
+    /// unflooded ramps beside its surface. Rising a hair, it grew its container a row and took the
+    /// ramps into its top row; through their open sides it reached the open cells over the next
+    /// pool and spilled into it by the opening law, sinking 0.14 m below its level as found. A block
+    /// holding no water beside a body as found holds it, as an open cell does (`rest`). Red before:
+    /// the ramp wasn't held.
+    fn an_unflooded_ramp_beside_water_as_found_holds_it(f: FaceFrame) {
+        let mut s = Scene::new(f);
+        let stone = require("dwell:stone");
+        let ramp = f.state(
+            dwell_blocks::with_property(require("dwell:stone_ramp"), "flooded", "false")
+                .expect("a ramp with a flooded state"),
+        );
+        s.fill([-1, -1, -1], [6, -1, 3], stone);
+        s.fill([0, 0, 0], [4, 0, 2], M.water);
+        s.set(5, 0, 1, ramp);
+        let cells: HashSet<[i32; 3]> = (0..=4)
+            .flat_map(|x| (0..=2).map(move |z| (x, z)))
+            .map(|(x, z)| s.cell(x, 0, z))
+            .collect();
+        let view = View {
+            world: &s.world,
+            old: None,
+        };
+        let rest = at_rest(&view, f, &cells);
+        assert!(rest.contains(&s.cell(5, 0, 1)), "the ramp holds it");
+        assert!(
+            rest.contains(&s.cell(5, 0, 0)),
+            "and the open cell beside it"
+        );
     }
 );

@@ -40,6 +40,11 @@ export interface LocalWorld {
    * first one only.
    */
   spawnOnOpen?: boolean;
+  /**
+   * Dev link `?at=x,y,z` (world metres, the feet): the world's spawn is that point and its player
+   * starts there, however the world was left (docs/DEV_TOOLS.md).
+   */
+  spawnAt?: [number, number, number];
 }
 
 /** The spawns a world can start at (`?spawn=`, a new world's Spawn): "" is face A's usual one. */
@@ -58,6 +63,14 @@ export function spawnOptions(spawn: Spawn): Pick<LocalWorld, 'spawnFaceB' | 'spa
   };
 }
 
+/** `?at=x,y,z`: three finite numbers, or null. */
+export function parseAt(value: string | null): [number, number, number] | null {
+  if (value === null) return null;
+  const [x, y, z, ...rest] = value.split(',').map((v) => Number(v.trim()));
+  if (x === undefined || y === undefined || z === undefined || rest.length > 0) return null;
+  return [x, y, z].every(Number.isFinite) ? [x, y, z] : null;
+}
+
 export function parseLocalWorld(search: string): LocalWorld {
   const params = new URLSearchParams(search);
   const world = params.get('world') ?? 'terrain';
@@ -66,6 +79,8 @@ export function parseLocalWorld(search: string): LocalWorld {
   // Seeds are u64 on the wire; local mode accepts integers exactly representable in a double.
   const seed = Number(params.get('seed') ?? '0');
   const worldSeed = Number.isSafeInteger(seed) && seed >= 0 ? seed : 0;
+  const at = parseAt(params.get('at'));
+  if (at) return { worldSeed, generatorVersion, spawnAt: at };
   const spawn = params.get('spawn');
   if (spawn !== '' && isSpawn(spawn)) {
     // Each spawn is its own world file, so the others are untouched.
