@@ -75,6 +75,11 @@ fn cell(cells: &[u16], x: i32, y: i32, z: i32) -> StateId {
     cells[cell_index(x, y, z)]
 }
 
+/// A liquid state's fill (1 full; a synced state unknown to the build: full).
+fn fill_of(m: StateId) -> f64 {
+    dwell_blocks::try_info(m).map_or(1.0, |s| f64::from(s.fill).clamp(0.0, 1.0))
+}
+
 fn is_liquid(m: StateId) -> bool {
     static LIQUID: OnceLock<Vec<bool>> = OnceLock::new();
     let table = LIQUID.get_or_init(|| {
@@ -548,8 +553,11 @@ fn mesh_section_above(
                     };
                     // Water's surface where the chunks draw it (water_drop below the cell's top);
                     // a top skirt sunk under the ground above the plane (SKIRT_SINK).
+                    // A cell part full of it (`StateInfo::fill`: the share of the coarse cell the
+                    // water below fills, docs/WATER_FLOW.md §15) has its surface that far up.
+                    let fill = if water { fill_of(m) } else { 1.0 };
                     let drop = if axis == 1 && sign > 0 && is_liquid(m) {
-                        water_drop
+                        1.0 - fill * (1.0 - water_drop)
                     } else if skirt && face == 2 {
                         SKIRT_SINK
                     } else {
@@ -560,12 +568,23 @@ fn mesh_section_above(
                     } else {
                         lod_color(m, group)
                     };
+                    // Its sides up to that surface.
+                    let mut us = (i as f64, (i + w) as f64);
+                    let mut vs = (j as f64, (j + h) as f64);
+                    if water && axis != 1 && fill < 1.0 {
+                        let lid = fill * (1.0 - water_drop);
+                        if u == 1 {
+                            us.1 = us.1 - 1.0 + lid;
+                        } else if v == 1 {
+                            vs.1 = vs.1 - 1.0 + lid;
+                        }
+                    }
                     target.quad(
                         axis,
                         sign,
                         f64::from(if sign > 0 { d + 1 } else { d }) - drop,
-                        (i as f64, (i + w) as f64),
-                        (j as f64, (j + h) as f64),
+                        us,
+                        vs,
                         color,
                     );
                     if water {

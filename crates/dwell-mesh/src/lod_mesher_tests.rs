@@ -1081,3 +1081,21 @@ mod top_skirts {
         }
     );
 }
+
+#[test]
+fn a_part_full_water_cell_is_drawn_at_its_share() {
+    // docs/WATER_FLOW.md §15 (owner, 2026-11-03: the smooth fill blended into the LOD): a LOD water
+    // cell half full (a section built from edited chunks) has its surface at half the cell and its
+    // sides up to it, as the chunks draw their part-full water. Red before: a full cube.
+    let half = dwell_blocks::parse_state("dwell:water[fill=4]").expect("half");
+    let mut cells = new_cells();
+    put(&mut cells, 5, 4, 5, stone());
+    put(&mut cells, 5, 5, 5, half);
+    let m = mesh(&cells).water;
+    let ys: Vec<f32> = m.positions.chunks_exact(3).map(|p| p[1]).collect();
+    let top = ys.iter().copied().fold(f32::MIN, f32::max);
+    assert!(
+        (f64::from(top) - 5.5).abs() < 1e-5,
+        "surface at {top}, not 5.5"
+    );
+}

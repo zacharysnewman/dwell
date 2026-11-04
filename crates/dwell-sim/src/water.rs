@@ -132,62 +132,30 @@ enum Kind {
     Liquid(StateId),
 }
 
-/// Each liquid state's full state (its fill 1): a cell part full is the same liquid.
-static FULL: std::sync::LazyLock<Vec<StateId>> = std::sync::LazyLock::new(|| {
-    let states = dwell_blocks::STATES;
-    (0..states.len())
-        .map(|m| {
-            let s = &states[m];
-            if !s.liquid || s.fill >= 1.0 {
-                return m as StateId;
-            }
-            states
-                .iter()
-                .position(|x| x.block == s.block && x.fill >= 1.0)
-                .map_or(m as StateId, |i| i as StateId)
-        })
-        .collect()
-});
-
-/// The full state of liquid state `m` (itself when full or no liquid).
+/// The full state of liquid state `m` (itself when full or no liquid): a cell part full is the
+/// same liquid (`dwell_blocks::liquid_full`).
 fn full_of(m: StateId) -> StateId {
-    FULL.get(usize::from(m)).copied().unwrap_or(m)
+    dwell_blocks::liquid_full(m)
 }
-
-/// Each full liquid's states by fill, emptiest first (one, full, for a liquid without a fill).
-static FILLS: std::sync::LazyLock<HashMap<StateId, Vec<(f32, StateId)>>> =
-    std::sync::LazyLock::new(|| {
-        let mut out: HashMap<StateId, Vec<(f32, StateId)>> = HashMap::default();
-        for (m, s) in dwell_blocks::STATES.iter().enumerate() {
-            if s.liquid {
-                out.entry(full_of(m as StateId))
-                    .or_default()
-                    .push((s.fill, m as StateId));
-            }
-        }
-        for v in out.values_mut() {
-            v.sort_by(|a, b| a.0.total_cmp(&b.0));
-        }
-        out
-    });
 
 /// How many fills liquid `full` is drawn in (its cells from part full to full).
 fn fill_steps(full: StateId) -> usize {
-    FILLS.get(&full).map_or(1, Vec::len).max(1)
+    static STEPS: std::sync::LazyLock<HashMap<StateId, usize>> = std::sync::LazyLock::new(|| {
+        let mut out: HashMap<StateId, usize> = HashMap::default();
+        for (m, s) in dwell_blocks::STATES.iter().enumerate() {
+            if s.liquid {
+                *out.entry(full_of(m as StateId)).or_default() += 1;
+            }
+        }
+        out
+    });
+    STEPS.get(&full).copied().unwrap_or(1).max(1)
 }
 
-/// Liquid `full`'s state for a cell `frac` full: the nearest of its fills (at least its least).
+/// Liquid `full`'s state for a cell `frac` full: the nearest of its fills
+/// (`dwell_blocks::liquid_at_fill`).
 fn fill_state(full: StateId, frac: f64) -> StateId {
-    let Some(v) = FILLS.get(&full) else {
-        return full;
-    };
-    v.iter()
-        .min_by(|a, b| {
-            (f64::from(a.0) - frac)
-                .abs()
-                .total_cmp(&(f64::from(b.0) - frac).abs())
-        })
-        .map_or(full, |&(_, m)| m)
+    dwell_blocks::liquid_at_fill(full, frac)
 }
 
 fn kind(m: Option<StateId>) -> Kind {
