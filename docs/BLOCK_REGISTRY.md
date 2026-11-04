@@ -109,7 +109,11 @@ hits it (leaves; rule flag 512), out of the terrain collider and the controller'
 `"axisProperty"` names a property of `x`, `y`, `z` along which the block's top and bottom tiles face,
 its side tile turned to run along it (the log's `axis`; look tag `0x90` where not y); `"nearFade"`
 (m) dissolves its faces near the eye (leaves 1.2 m, so a canopy the eye is in shows round it), per
-atlas tile in the shader's tile table (look tag `0x91`). `StateInfo::support_role`, `passable`,
+atlas tile in the shader's tile table (look tag `0x91`); `"fillProperty"` names a liquid's property of
+whole numbers, its first (default) the largest, whose value over that is how full its cell is
+(`StateInfo::fill`; water's `fill`, eighths, 0.44.0): the mesher draws its surface that far up and the
+water flow writes a basin's surface row at its level's fill (WATER_FLOW.md §15; look tag `0x92` where
+not full). `StateInfo::support_role`, `passable`,
 `axis`, `near_fade`.
 
 **Light per block** (**built**, Phase 45; [`DAY_NIGHT.md`](./DAY_NIGHT.md) §11): `"lightFilter": 0–15`

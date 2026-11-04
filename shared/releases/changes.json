@@ -2,6 +2,13 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions card. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.44.0",
+      "changes": [
+        "Water fills and drains smoothly instead of jumping half a block at a time",
+        "A new compatibility line: worlds saved in 0.44 open in 0.44 builds"
+      ]
+    },
+    {
       "version": "0.43.6",
       "changes": [
         "Damming or releasing a river reaches players far downstream, travelling down the river at its own pace",

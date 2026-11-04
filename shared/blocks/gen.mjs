@@ -329,6 +329,17 @@ for (const ns of namespaces) {
       const p = props.find((q) => q.name === def.axisProperty);
       if (!p || p.values.some((v) => !AXES.includes(v))) fail(`${id}: axisProperty must name a property of x, y, z`);
     }
+    // A liquid's fill (docs/WATER_FLOW.md §15): how full its cell is, in parts of the largest value,
+    // the first (full) its default, so a liquid placed or generated fills its cell.
+    if (def.fillProperty !== undefined) {
+      const p = props.find((q) => q.name === def.fillProperty);
+      const n = p ? p.values.map(Number) : [];
+      if (!def.liquid) fail(`${id}: fillProperty is a liquid's`);
+      if (!p || n.some((v) => !Number.isInteger(v) || v < 1)) {
+        fail(`${id}: fillProperty must name a property of whole numbers from 1`);
+      }
+      if (n[0] !== Math.max(...n)) fail(`${id}: fillProperty's first value must be its largest (full)`);
+    }
     if (def.shape === 'shaped' && !def.slopeFamily) fail(`${id}: shaped blocks come from shapeFamilies`);
     // Adaptive blocks (shaped from their neighbours) were removed with ½ m cells (ADR 0042): natural
     // ground is shaped once, by the generator's stored ramps.
@@ -417,6 +428,11 @@ const shapeIndexOf = (shape) => {
 for (const st of states) {
   const d = st.block.def;
   st.flooded = st.values.flooded === 'true';
+  {
+    const fp = d.fillProperty;
+    const p = fp ? st.block.props.find((q) => q.name === fp) : null;
+    st.fill = p ? Number(st.values[fp]) / Math.max(...p.values.map(Number)) : 1;
+  }
   if (d.shape === 'empty') st.shapeIndex = 0;
   else if (d.shape === 'full') st.shapeIndex = shapeIndexOf(cubeShape());
   else {
@@ -738,6 +754,7 @@ if (!fixture) writeFileSync(join(root, 'client/src/world/blocks.gen.ts'), ts.joi
       `passable: ${!!d.passable}`,
       `axis: Axis::${d.axisProperty ? st.values[d.axisProperty].toUpperCase() : 'Y'}`,
       `near_fade: ${rf(d.nearFade ?? 0)}`,
+      `fill: ${rf(st.fill)}`,
     ];
     rs.push(`    StateInfo { ${fields.join(', ')} },`);
   }

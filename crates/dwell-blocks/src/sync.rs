@@ -100,6 +100,8 @@ pub mod tag {
     pub const AXIS: u8 = 0x90;
     /// `f32` m: how close to the eye its faces dissolve (`StateInfo::near_fade`), sent only when set.
     pub const NEAR_FADE: u8 = 0x91;
+    /// `f32` (0, 1): how full a liquid's cell is (`StateInfo::fill`), sent only when not full.
+    pub const FILL: u8 = 0x92;
 }
 
 /// Rule flag bits (tag `FLAGS`).
@@ -330,6 +332,9 @@ pub fn state_fields(s: &StateInfo) -> Fields {
     }
     if s.near_fade > 0.0 {
         out.push(field(tag::NEAR_FADE, |w| w.f32(s.near_fade)));
+    }
+    if s.fill < 1.0 {
+        out.push(field(tag::FILL, |w| w.f32(s.fill)));
     }
     if s.axis != Axis::Y {
         out.push(field(tag::AXIS, |w| {
@@ -700,6 +705,7 @@ fn default_row(name: &str) -> StateInfo {
         passable: false,
         axis: Axis::Y,
         near_fade: 0.0,
+        fill: 1.0,
     }
 }
 
@@ -870,6 +876,7 @@ fn apply_look(fields: &Fields, fluids: &[String], row: &mut StateInfo) {
     row.held = None;
     row.axis = Axis::Y;
     row.near_fade = 0.0;
+    row.fill = 1.0;
     let mut outline = None;
     let mut light = None;
     for (t, bytes) in fields {
@@ -973,6 +980,12 @@ fn apply_look(fields: &Fields, fluids: &[String], row: &mut StateInfo) {
                 let v = r.f32();
                 if r.ok() && v.is_finite() {
                     row.near_fade = v.clamp(0.0, 4.0);
+                }
+            }
+            tag::FILL => {
+                let v = r.f32();
+                if r.ok() && v.is_finite() {
+                    row.fill = v.clamp(1.0 / 64.0, 1.0);
                 }
             }
             tag::AXIS => {

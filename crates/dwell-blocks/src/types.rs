@@ -235,6 +235,9 @@ pub struct StateInfo {
     /// How close to the eye (m) its faces dissolve (block data `nearFade`; 0 never): leaves, so a
     /// canopy the eye is inside shows round it without faces against the lens (docs/FELLING.md).
     pub near_fade: f32,
+    /// A liquid's fill: how full its cell is (1 full, the default; `fillProperty`), its drawn
+    /// surface that far up (docs/WATER_FLOW.md §15).
+    pub fill: f32,
 }
 
 /// A named light source (`lights` in `shared/blocks/*.json`; docs/LIGHTS.md §2): looks only.

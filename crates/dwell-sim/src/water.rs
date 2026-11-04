@@ -132,6 +132,64 @@ enum Kind {
     Liquid(StateId),
 }
 
+/// Each liquid state's full state (its fill 1): a cell part full is the same liquid.
+static FULL: std::sync::LazyLock<Vec<StateId>> = std::sync::LazyLock::new(|| {
+    let states = dwell_blocks::STATES;
+    (0..states.len())
+        .map(|m| {
+            let s = &states[m];
+            if !s.liquid || s.fill >= 1.0 {
+                return m as StateId;
+            }
+            states
+                .iter()
+                .position(|x| x.block == s.block && x.fill >= 1.0)
+                .map_or(m as StateId, |i| i as StateId)
+        })
+        .collect()
+});
+
+/// The full state of liquid state `m` (itself when full or no liquid).
+fn full_of(m: StateId) -> StateId {
+    FULL.get(usize::from(m)).copied().unwrap_or(m)
+}
+
+/// Each full liquid's states by fill, emptiest first (one, full, for a liquid without a fill).
+static FILLS: std::sync::LazyLock<HashMap<StateId, Vec<(f32, StateId)>>> =
+    std::sync::LazyLock::new(|| {
+        let mut out: HashMap<StateId, Vec<(f32, StateId)>> = HashMap::default();
+        for (m, s) in dwell_blocks::STATES.iter().enumerate() {
+            if s.liquid {
+                out.entry(full_of(m as StateId))
+                    .or_default()
+                    .push((s.fill, m as StateId));
+            }
+        }
+        for v in out.values_mut() {
+            v.sort_by(|a, b| a.0.total_cmp(&b.0));
+        }
+        out
+    });
+
+/// How many fills liquid `full` is drawn in (its cells from part full to full).
+fn fill_steps(full: StateId) -> usize {
+    FILLS.get(&full).map_or(1, Vec::len).max(1)
+}
+
+/// Liquid `full`'s state for a cell `frac` full: the nearest of its fills (at least its least).
+fn fill_state(full: StateId, frac: f64) -> StateId {
+    let Some(v) = FILLS.get(&full) else {
+        return full;
+    };
+    v.iter()
+        .min_by(|a, b| {
+            (f64::from(a.0) - frac)
+                .abs()
+                .total_cmp(&(f64::from(b.0) - frac).abs())
+        })
+        .map_or(full, |&(_, m)| m)
+}
+
 fn kind(m: Option<StateId>) -> Kind {
     let Some(m) = m else {
         return Kind::Solid;
@@ -141,7 +199,7 @@ fn kind(m: Option<StateId>) -> Kind {
     }
     let s = info(m);
     if s.liquid {
-        Kind::Liquid(m)
+        Kind::Liquid(full_of(m))
     } else if s.replaceable && !s.solid {
         Kind::Open
     } else {
@@ -348,6 +406,8 @@ pub struct Basin {
     /// Filling or draining (its level moved faster than `settleMmPerHour` last tick, or it owes
     /// time): it flows with no player near, its chunks kept loaded (`Water::wanted_chunks`).
     pub active: bool,
+    /// The surface row and fill its cells were last written at (`top_steps`).
+    drawn_fill: (usize, usize),
     /// Cells that hold it like walls: the world as it was found is at rest (docs/WATER_FLOW.md
     /// §2.2), so an open cell beside a body as generated that it didn't fill, and a leaking block
     /// it stood against, keep it in until an edit touches them.
@@ -437,13 +497,21 @@ impl Basin {
         self.face.y(self.level())
     }
 
-    /// The cells drawn as liquid at this volume: the full rows, and the surface's row once half
-    /// full.
-    fn wet_now(&self) -> HashSet<[i32; 3]> {
+    /// The fill its surface's row is drawn at, in its liquid's steps (0 none, `fill_steps` full):
+    /// the nearest (docs/WATER_FLOW.md §15).
+    fn top_steps(&self) -> (usize, usize) {
         let (k, frac) = self.fill();
+        let n = fill_steps(self.liquid);
+        (k, ((frac * n as f64).round() as usize).min(n))
+    }
+
+    /// The cells drawn as liquid at this volume: the full rows, and the surface's row once its
+    /// least fill rounds in.
+    fn wet_now(&self) -> HashSet<[i32; 3]> {
+        let (k, q) = self.top_steps();
         let mut out = HashSet::default();
         for (i, r) in self.rows.iter().enumerate() {
-            if i < k || (i == k && frac >= 0.5) {
+            if i < k || (i == k && q >= 1) {
                 out.extend(r.iter().copied());
             }
         }
@@ -1455,6 +1523,7 @@ impl Water {
                     linked: 0.0,
                     owed: 0.0,
                     active: false,
+                    drawn_fill: (usize::MAX, 0),
                     rest: HashSet::default(),
                     held: HashSet::default(),
                     natural: HashMap::default(),
@@ -1473,7 +1542,11 @@ impl Water {
         for r in &mut rows {
             r.sort_unstable();
         }
-        let volume = seen.len() as f64 * CELL_H;
+        // A cell part full holds its fill (a surface row written at its level).
+        let volume: f64 = seen
+            .iter()
+            .map(|&c| view.get(c).map_or(1.0, |m| f64::from(info(m).fill)) * CELL_H)
+            .sum();
         let mut b = Basin {
             id,
             face: f,
@@ -1497,6 +1570,7 @@ impl Water {
             linked: 0.0,
             owed: 0.0,
             active: false,
+            drawn_fill: (usize::MAX, 0),
             rest: HashSet::default(),
             held: HashSet::default(),
             natural: HashMap::default(),
@@ -2159,6 +2233,7 @@ impl Water {
                 linked: 0.0,
                 owed: 0.0,
                 active: false,
+                drawn_fill: (usize::MAX, 0),
                 rest: HashSet::default(),
                 held: HashSet::default(),
                 natural: HashMap::default(),
@@ -2238,11 +2313,34 @@ impl Water {
             }
         }
         let liquid = b.liquid;
+        // Its surface's row at its fill, the rows under it full (docs/WATER_FLOW.md §15).
+        let (k, q) = b.top_steps();
+        let n = fill_steps(liquid);
+        let top: HashSet<[i32; 3]> = b
+            .rows
+            .get(k)
+            .map(|r| r.iter().copied().collect())
+            .unwrap_or_default();
+        let top_state = fill_state(liquid, q.max(1) as f64 / n as f64);
+        let state_of = |c: &[i32; 3]| {
+            if top.contains(c) && q < n {
+                top_state
+            } else {
+                liquid
+            }
+        };
         let gone: Vec<[i32; 3]> = b.wet.difference(&want).copied().collect();
         let new: Vec<[i32; 3]> = want.difference(&b.wet).copied().collect();
+        // A new fill (or surface row): its drawn cells written again at theirs.
+        let refill: Vec<[i32; 3]> = if b.drawn_fill != (k, q) {
+            want.intersection(&b.wet).copied().collect()
+        } else {
+            Vec::new()
+        };
+        let b_drawn = (k, q);
         for &c in &gone {
             if world.find(chunk_of(c[0], c[1], c[2])).is_some()
-                && world.get_voxel_if_loaded(c) == liquid
+                && full_of(world.get_voxel_if_loaded(c)) == liquid
             {
                 world.set_voxel(c[0], c[1], c[2], M.air);
                 writes.push((c, M.air));
@@ -2252,10 +2350,28 @@ impl Water {
             if kind(Some(world.get_voxel_if_loaded(c))) == Kind::Open
                 && world.find(chunk_of(c[0], c[1], c[2])).is_some()
             {
-                world.set_voxel(c[0], c[1], c[2], liquid);
-                writes.push((c, liquid));
+                let m = state_of(&c);
+                world.set_voxel(c[0], c[1], c[2], m);
+                writes.push((c, m));
             }
         }
+        for &c in &refill {
+            if world.find(chunk_of(c[0], c[1], c[2])).is_none() {
+                continue;
+            }
+            let now = world.get_voxel_if_loaded(c);
+            let m = state_of(&c);
+            if full_of(now) == liquid && now != m {
+                world.set_voxel(c[0], c[1], c[2], m);
+                writes.push((c, m));
+            }
+        }
+        if let Some(b) = self.basins.get_mut(&id) {
+            b.drawn_fill = b_drawn;
+        }
+        let Some(b) = self.basins.get_mut(&id) else {
+            return;
+        };
         // The blocks at its edge with an open part (ramps) hold the liquid in it, or not; the
         // basins beside find their ways out again.
         for c in gone.iter().chain(&new) {

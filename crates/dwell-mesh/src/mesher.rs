@@ -135,6 +135,10 @@ struct Kind {
     /// Blocks the ambient light (corner occlusion, sky rays): full cubes that are not see-through
     /// (leaves are; glass and fluids are not). Shaped blocks, plants and ladders let it through.
     blocks_light: bool,
+    /// A liquid's fill (1 full; `StateInfo::fill`): its drawn surface that far up its cell.
+    fill: f64,
+    /// A liquid's full state: cells of one liquid at any fill are the same water.
+    base: StateId,
     style: MaterialStyle,
 }
 
@@ -171,6 +175,8 @@ fn make_kind(id: StateId, style: MaterialStyle) -> Kind {
         } else {
             None
         },
+        fill: 1.0,
+        base: id,
         style,
     }
 }
@@ -187,7 +193,19 @@ impl Kinds {
         let table = states
             .iter()
             .enumerate()
-            .map(|(i, s)| make_kind(i as StateId, style_of(s, fluids)))
+            .map(|(i, s)| {
+                let mut k = make_kind(i as StateId, style_of(s, fluids));
+                k.fill = f64::from(s.fill).clamp(0.0, 1.0);
+                k.base = if s.liquid && s.fill < 1.0 {
+                    states
+                        .iter()
+                        .position(|x| x.block == s.block && x.fill >= 1.0)
+                        .map_or(i as StateId, |b| b as StateId)
+                } else {
+                    i as StateId
+                };
+                k
+            })
             .collect();
         Self {
             table,
@@ -214,9 +232,15 @@ impl Kinds {
     }
 }
 
-/// The drawn top of a fluid cell (chunk-local, cells): `surface_drop` below the cell's top.
-fn fluid_top(y: i32, style: &MaterialStyle) -> f64 {
-    f64::from(y) + (1.0 - style.surface_drop)
+/// The drawn top of a fluid cell (chunk-local, cells): `surface_drop` below the cell's top, a
+/// cell part full (`fill`) that share of it (docs/WATER_FLOW.md §15).
+fn fluid_top(y: i32, style: &MaterialStyle, fill: f64) -> f64 {
+    f64::from(y) + fill * (1.0 - style.surface_drop)
+}
+
+/// Whether two fluid kinds are the same water (one liquid at any fill).
+fn same_fluid(a: &Kind, b: &Kind) -> bool {
+    a.liquid && b.liquid && a.base == b.base
 }
 
 /// Whether the part of `shape` on its cell face `face` is completely covered by the opposite face
@@ -302,7 +326,7 @@ fn flood_keys(cells: &Cells<'_>, face: usize, front: [i32; 3]) -> CornerKeys {
 /// Is the full-cube face `face` of a cube or water voxel `m` (kind `km`) hidden by neighbour `n`
 /// (kind `kn`)?
 fn hidden(km: &Kind, kn: &Kind, m: StateId, n: StateId, face: usize) -> bool {
-    if km.liquid && (n == m || kn.flooded) {
+    if km.liquid && (n == m || same_fluid(km, kn) || kn.flooded) {
         return true;
     }
     // Between two cells of one see-through block (panes of glass, leaves) no face is drawn.
@@ -890,10 +914,10 @@ fn shaped_voxel(b: &mut Builder, cells: &Cells<'_>, k: &Kind, x: i32, y: i32, z:
 fn fluid_side_top(cells: &Cells<'_>, k: &Kind, m: StateId, x: i32, y: i32, z: i32) -> f64 {
     let ka = cells.kind(x, y + 1, z);
     let a = cells.state(x, y + 1, z);
-    if hidden(k, &ka, m, a, 2) || (a == m && ka.liquid) {
+    if hidden(k, &ka, m, a, 2) || (a == m && ka.liquid) || same_fluid(k, &ka) {
         1.0
     } else {
-        1.0 - k.style.surface_drop
+        k.fill * (1.0 - k.style.surface_drop)
     }
 }
 
@@ -1036,7 +1060,7 @@ fn flooded_water(b: &mut Builder, cells: &Cells<'_>, x: i32, y: i32, z: i32) {
                 FLOOD_INSET
             };
         if face == 2 {
-            plane = fluid_top(y, &water.style);
+            plane = fluid_top(y, &water.style, 1.0);
         }
         let (color, tile) = surface(&water.style, axis, sign);
         b.quad(
@@ -1265,7 +1289,7 @@ fn mesh_cells(
                     // column goes on up, the next ends here), the strip between the two surfaces
                     // is this cell's to draw, or the step shows a slit into the water
                     // (docs/BUGS.md 4).
-                    if k.liquid && axis != 1 && kn.liquid && cells.state(nx, ny, nz) == m {
+                    if k.liquid && axis != 1 && same_fluid(&k, &kn) {
                         let own = fluid_side_top(&cells, &k, m, cx, cy, cz);
                         let theirs = fluid_side_top(&cells, &kn, m, nx, ny, nz);
                         if own > theirs + 1e-9 {
@@ -1347,6 +1371,7 @@ fn mesh_cells(
                         .checked_sub(1)
                         .map(|r| r as usize);
                     let style = kinds.of(m).style;
+                    let fill = kinds.of(m).fill;
                     let (color, tile) = side_surface(&style, face, rule);
                     // A hanging tile runs from each block's top: its quads stay one cell tall.
                     let hang = tile.hang && axis != 1;
@@ -1369,7 +1394,7 @@ fn mesh_cells(
                     }
                     let mut plane = f64::from(if sign > 0 { d + 1 } else { d });
                     if style.look == Look::Fluid && face == 2 {
-                        plane = fluid_top(d, &style);
+                        plane = fluid_top(d, &style, fill);
                     }
                     let see_through = style.render == RenderMode::Translucent;
                     let target = match style.render {
@@ -1382,7 +1407,7 @@ fn mesh_cells(
                     let mut us = (i as f64, (i + w) as f64);
                     let mut vs = (j as f64, (j + h) as f64);
                     if key & SURFACE_BIT != 0 {
-                        let top = 1.0 - style.surface_drop;
+                        let top = fill * (1.0 - style.surface_drop);
                         if u == 1 {
                             us.1 = us.0 + top;
                         } else if v == 1 {
