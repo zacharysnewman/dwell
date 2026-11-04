@@ -432,3 +432,67 @@ fn a_world_opened_at_a_spawn_puts_a_returning_player_there() {
         "{p:?}"
     );
 }
+
+#[test]
+fn the_waters_basins_survive_a_server_restart() {
+    // face-a-only: the server's flat world is face A's; the basins' saves on both faces are tested
+    // in `water::tests`.
+    // docs/WATER_FLOW.md §8: a lake an edit drained, saved, comes back as a basin at its level.
+    let scratch = Scratch::new("water");
+    let path = scratch.world("water");
+    let stone = dwell_blocks::require("dwell:stone");
+    let level = {
+        let store = WorldStore::open_file(&path).expect("opens");
+        let mut f = Fixture::new(ServerConfig {
+            store: Some(store),
+            ..flat()
+        });
+        f.join(1, &Client::new(1));
+        f.server.step();
+        // A walled lake four rows deep (x 2–6, z 3–8) in one chunk, its near wall at z 2.
+        let w = f.server.world();
+        for x in 1..=7 {
+            for z in 2..=9 {
+                for y in G..G + 4 {
+                    let wall = x == 1 || x == 7 || z == 2 || z == 9;
+                    w.set_voxel(x, y, z, if wall { stone } else { M.water });
+                }
+            }
+        }
+        f.send(
+            1,
+            Message::BlockEditRequest(BlockEditRequest {
+                action: BlockEditAction::Break,
+                cell: [4, G + 3, 2],
+                face: 5,
+                material: 0,
+                rows: 1,
+                down: false,
+            }),
+        );
+        for _ in 0..240 {
+            f.server.step();
+        }
+        let lake = f.server.water().basin_at([4, G, 5]).expect("the lake");
+        let level = lake.world_level();
+        f.server.save_now();
+        f.server.flush_store();
+        f.server.step();
+        level
+    };
+    let store = WorldStore::open_file(&path).expect("reopens");
+    let f = Fixture::new(ServerConfig {
+        store: Some(store),
+        ..flat()
+    });
+    let lake = f
+        .server
+        .water()
+        .basin_at([4, G, 5])
+        .expect("the lake is a basin again");
+    assert!(
+        (lake.world_level() - level).abs() < 1e-9,
+        "at {} (saved at {level})",
+        lake.world_level()
+    );
+}

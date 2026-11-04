@@ -1613,11 +1613,12 @@ lives in side files. Chunk and LOD blobs are the protocol's palette + RLE compre
 | `lod_sections` | **[built, Phase 4b]** Cache of modified LOD sections (§6.6): `(level, i, j, k)` → `lodRevision`, dirty flag, generator version, LZ4 palette + RLE blob of the 34³ cells (empty while dirty and never computed); derivable from `chunks` (its cells are runtime ids: dropped when `meta`'s registry hash changes), rebuilt on a generator or registry change |
 | `players` | Keyed by device public key: display name, state blob (version 1: feet `f64×3`, health; later inventory), first/last seen |
 | `permissions` | `(public key, kind)` with kind `op` / `ban` / `allow` → reason, granted by, when |
-| `bodies` | **[planned, Phase 20]** In-flight Tier 1 clusters (voxel layout, transform, velocities) |
+| `bodies` | **[built, Phase 51 B2]** The world's moving bodies, rewritten whole each save: kind, pose, velocities, cells (states by name; BUILT_BODIES.md §7) |
+| `water` | **[built, 0.43.4]** The water's basins (WATER_FLOW.md §8): one LZ4 record of `Water::save`, every basin but the reservoirs (containers, volumes, outlets, what holds them at rest, steady flows, time owed), the flow network, water in transit, the ways drawn running, and each basin's chunks' revisions; on load a basin whose chunks are at other revisions (a build that doesn't save the water edited them) is left out and found again by its edits |
 | `tree_tombstones` | **[planned, Phase 30]** Per chunk: the sparse set of chopped procedural tree ids `(chunk, procedural index)` and the pruned node sets of partly cut ones (§6.3 tree growth) |
 | `growers` | **[planned, Phase 30]** Player-planted trees, keyed by the chunk holding the root: structure, variant seed, root, planted world time, pruned nodes |
 
-**Built (format 1, `dwell-storage` `db.rs`):** the tables above but `bodies`, `tree_tombstones` and `growers`. Format 1 is the first
+**Built (format 1, `dwell-storage` `db.rs`):** the tables above but `tree_tombstones` and `growers`. Format 1 is the first
 Rust format: the port started a new compatibility line (ADR 0028), so files of the C++ build's
 SQLite formats are not read (they are version-locked, ADR 0014, and open in their own builds).
 The server restores the LOD cache at startup (dirty rows are recomputed), drops and rebuilds it
@@ -1628,7 +1629,7 @@ to world state ids on save (a state new to the file gets the next id and its str
 the save's transaction) and back on load through the canonical strings, so a world outlives
 changes to the code's runtime ids; a chunk holding a string the build's registry does not know is
 unreadable and is generated again (aliases, upgrade rules and an unknown-state placeholder are
-deferred to world upgrades, `FUTURE.md`). `bodies` (Phase 20) arrives with a format bump.
+deferred to world upgrades, `FUTURE.md`). `bodies` and `water` are optional tables, added without a format bump: a build on the line that doesn't know one leaves it.
 
 - **Same code everywhere:** `dwell-storage` (`WorldDb`, the file's tables and records;
   `WorldStore`, the server's handle on it) runs natively on a file and in the browser on a redb
@@ -2391,8 +2392,7 @@ map's flow, `dwell_worldgen::runoff_for` → `TerrainGenerator::discharge_at`, l
 network), each face's sea a reservoir by size; flow steps by the fastest basin; basins out of reach
 or with a chunk unloaded wait, passing on what comes in, and are found again when a chunk beside them loads (0.43.3); ramps at the written edge flooded; spills are drawn (the liquid's
 `running` block, 0.43.1); one opening law, `C·A·√(2gΔh)`, for every opening and every face two
-basins share, merging and splitting by whether the faces even them out at once (ADR 0056, 0.43.2); its writes sent as `Rebake` modifications (WATER_FLOW.md §15, the review §16). **Planned:** a saved
-basins table (§6.4), fast-forward, basin messages, currents (a new compatibility line).
+basins share, merging and splitting by whether the faces even them out at once (ADR 0056, 0.43.2); its writes sent as `Rebake` modifications (WATER_FLOW.md §15, the review §16); **[built, 0.43.4]** the basins saved with the world (the `water` table, §6.4) and a basin that waited out of reach or unloaded brought forward by the time it waited when it is live again (`Water::catch_up`, at most `catchUpSteps` flow steps a tick). **Planned:** basin messages, currents (a new compatibility line).
 
 ## 7. Physics Pipeline
 

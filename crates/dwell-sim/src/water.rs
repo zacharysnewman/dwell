@@ -47,6 +47,8 @@ pub struct FlowData {
     pub stream_min_flow: f64,
     /// Basins sharing faces that would even out within this (s) merge.
     pub merge_seconds: f64,
+    /// The most flow steps a water tick spends bringing waiting basins forward.
+    pub catch_up_steps: u32,
     pub liquids: &'static [LiquidFlow],
     /// Block name → m³/s per m² of face per m of head.
     pub leaks: &'static [(&'static str, f64)],
@@ -332,6 +334,9 @@ pub struct Basin {
     /// natural outlet of its own, all it passes on unseen besides its map flow (water an edit
     /// sends it, or a flood beside it, fills it).
     linked: f64,
+    /// Water time (s) it waited out of reach or unloaded: brought forward when it is live again
+    /// (`Water::catch_up`, docs/WATER_FLOW.md §6).
+    pub owed: f64,
     /// Cells that hold it like walls: the world as it was found is at rest (docs/WATER_FLOW.md
     /// §2.2), so an open cell beside a body as generated that it didn't fill, and a leaking block
     /// it stood against, keep it in until an edit touches them.
@@ -718,9 +723,14 @@ impl Water {
             b.arriving = 0.0;
             b.extra = 0.0;
         }
+        for b in self.basins.values_mut() {
+            if !b.reservoir && !live.contains(&b.id) {
+                b.owed += dt;
+            }
+        }
         let sub = dt / steps as f64;
         for _ in 0..steps {
-            self.flow_step(&live, sub, steps);
+            self.flow_step(&live, sub, steps, None);
         }
         let mut all: Vec<u32> = self.basins.keys().copied().collect();
         all.sort_unstable();
@@ -734,17 +744,88 @@ impl Water {
         for id in again {
             self.rescan_outlets(world, id);
         }
+        // Bodies live again after waiting: brought forward by the time they waited.
+        let mut back: Vec<u32> = live
+            .iter()
+            .copied()
+            .filter(|id| self.basins.get(id).is_some_and(|b| b.owed > 0.0))
+            .collect();
+        back.sort_unstable();
+        let mut budget = FLOW.catch_up_steps as usize;
+        for id in back {
+            budget = self.catch_up(world, id, budget, &live, &mut writes);
+        }
         self.draw_running(world, &mut writes);
         writes
     }
 
+    /// Brings a basin that waited forward by the time it waited (docs/WATER_FLOW.md §6): its level
+    /// a small integration of in − out(level), in steps as long as it affords (half the time its
+    /// outflow takes to balance a change), its container found again as it fills or drains, what
+    /// comes in from the bodies around it as it came last tick; up to `budget` steps (the rest
+    /// next tick). Once in balance it is caught up. Returns the budget left.
+    fn catch_up(
+        &mut self,
+        world: &mut VoxelWorld,
+        id: u32,
+        mut budget: usize,
+        live: &HashSet<u32>,
+        writes: &mut Vec<([i32; 3], StateId)>,
+    ) -> usize {
+        while budget > 0 {
+            let Some(b) = self.basins.get(&id) else {
+                break;
+            };
+            if b.owed <= 0.0 || b.reservoir {
+                break;
+            }
+            let levels: HashMap<u32, f64> =
+                self.basins.values().map(|b| (b.id, b.level())).collect();
+            let level = b.level();
+            let grow: f64 = b
+                .outlets
+                .iter()
+                .map(|o| {
+                    let below = match o.target {
+                        Target::Basin(t) => levels.get(&t).copied().unwrap_or(f64::NEG_INFINITY),
+                        _ => f64::NEG_INFINITY,
+                    };
+                    o.growth(level, b.weir, below)
+                })
+                .sum();
+            let sub = if grow > 0.0 {
+                (0.5 * b.surface_area() / grow).min(b.owed)
+            } else {
+                b.owed
+            };
+            let before = b.volume;
+            self.flow_step(live, sub, 1, Some(id));
+            budget -= 1;
+            self.settle_rows(world, id, writes);
+            self.route(world, writes);
+            let Some(b) = self.basins.get_mut(&id) else {
+                break;
+            };
+            b.owed -= sub;
+            // In balance (its level moving less than a millimetre an hour): where it would be.
+            let rate = (b.volume - before).abs() / sub.max(1e-9);
+            if b.owed <= 0.0 || rate < b.surface_area() * 1e-3 / 3600.0 {
+                b.owed = 0.0;
+            }
+        }
+        budget
+    }
+
     /// One step of the flows (`dt` s), from the levels at its start; `arriving` gathers a share
     /// of what comes in (one of `steps`).
-    fn flow_step(&mut self, live: &HashSet<u32>, dt: f64, steps: usize) {
+    fn flow_step(&mut self, live: &HashSet<u32>, dt: f64, steps: usize, only: Option<u32>) {
         let mut arriving: HashMap<u32, f64> = HashMap::default();
         let mut extra: HashMap<u32, f64> = HashMap::default();
         let mut linked: HashMap<u32, f64> = HashMap::default();
-        let ids: Vec<u32> = self.basins.keys().copied().collect();
+        let ids: Vec<u32> = match only {
+            Some(id) => vec![id],
+            None => self.basins.keys().copied().collect(),
+        };
         // The levels outlets run into (the same face: a basin's local metres).
         let levels: HashMap<u32, f64> = self.basins.values().map(|b| (b.id, b.level())).collect();
         let areas: HashMap<u32, f64> = self
@@ -876,6 +957,21 @@ impl Water {
                     }
                 }
             }
+        }
+        if let Some(id) = only {
+            // Brought forward alone: what comes in from the bodies around it, as it came last
+            // tick, and what it sends them, kept (they hold their levels meanwhile).
+            for (t, q) in arriving {
+                match self.basins.get_mut(&t) {
+                    Some(b) if !b.reservoir => b.volume += q * dt,
+                    _ => self.lost += q * dt,
+                }
+            }
+            if let Some(b) = self.basins.get_mut(&id) {
+                b.volume += b.arriving * dt;
+                self.brought += b.arriving * dt;
+            }
+            return;
         }
         for b in self.basins.values_mut() {
             b.through = 0.0;
@@ -1093,6 +1189,7 @@ impl Water {
                     through: 0.0,
                     extra: 0.0,
                     linked: 0.0,
+                    owed: 0.0,
                     rest: HashSet::default(),
                     held: HashSet::default(),
                     natural: HashMap::default(),
@@ -1133,6 +1230,7 @@ impl Water {
             through: 0.0,
             extra: 0.0,
             linked: 0.0,
+            owed: 0.0,
             rest: HashSet::default(),
             held: HashSet::default(),
             natural: HashMap::default(),
@@ -1755,6 +1853,7 @@ impl Water {
                 through: 0.0,
                 extra: 0.0,
                 linked: 0.0,
+                owed: 0.0,
                 rest: HashSet::default(),
                 held: HashSet::default(),
                 natural: HashMap::default(),
@@ -2742,6 +2841,8 @@ fn follow_path(
     }
     (End::Lost, path)
 }
+
+mod save;
 
 #[cfg(test)]
 mod tests;

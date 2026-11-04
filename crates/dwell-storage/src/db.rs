@@ -42,6 +42,10 @@ const BLOCK_STATES: TableDefinition<u32, &str> = TableDefinition::new("block_sta
 /// Moving body id → its record (`encode_body`; docs/BUILT_BODIES.md §7): its kind, pose,
 /// velocities and cells, their states by name. Rewritten whole on each save that carries bodies.
 const BODIES: TableDefinition<u32, &[u8]> = TableDefinition::new("bodies");
+/// The water's basins (docs/WATER_FLOW.md §8): one record (key 0), `dwell_sim::water::Water::save`'s
+/// bytes compressed. Optional: a build that doesn't know it leaves it, and the water is found again
+/// by its edits (the record keeps its chunks' revisions, so it knows what such a build changed).
+const WATER: TableDefinition<u32, &[u8]> = TableDefinition::new("water");
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct WorldMeta {
@@ -190,6 +194,8 @@ pub struct SaveBatch {
     pub clear_lod: bool,
     /// The world's moving bodies now, replacing those saved before (None: leave them).
     pub bodies: Option<Vec<SavedBody>>,
+    /// The water's basins now (`Water::save`), replacing those saved before (None: leave them).
+    pub water: Option<Vec<u8>>,
 }
 
 fn err(e: impl std::fmt::Display) -> String {
@@ -536,6 +542,14 @@ impl WorldDb {
             .collect()
     }
 
+    /// The water's basins as last saved (`Water::save`'s bytes), if any.
+    pub fn water(&self) -> Option<Vec<u8>> {
+        let txn = self.db.begin_read().ok()?;
+        let t = txn.open_table(WATER).ok()?;
+        let v = t.get(0).ok()??;
+        decompress_bytes(v.value(), 1 << 30)
+    }
+
     /// The world's block states: world state id → canonical string.
     pub fn block_states(&self) -> Vec<String> {
         let _ = self.refresh_states();
@@ -804,6 +818,10 @@ impl WorldDb {
             for b in bodies {
                 t.insert(b.id, encode_body(b).as_slice()).map_err(err)?;
             }
+        }
+        if let Some(water) = &batch.water {
+            let mut t = txn.open_table(WATER).map_err(err)?;
+            t.insert(0, compress_bytes(water).as_slice()).map_err(err)?;
         }
         if let Some(hook) = &self.before_commit {
             hook()?; // dropping the transaction aborts it

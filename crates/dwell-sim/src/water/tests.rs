@@ -69,7 +69,11 @@ impl Scene {
         self.f.point([4.5, m_of_row(G) + 1.0, 4.5])
     }
     fn run(&mut self, ticks: u32, dt: f64) {
-        let p = [self.player()];
+        self.run_at(ticks, dt, self.player());
+    }
+    /// [`Scene::run`] with the player at `p`.
+    fn run_at(&mut self, ticks: u32, dt: f64, p: [f64; 3]) {
+        let p = [p];
         for _ in 0..ticks {
             self.water.tick(&mut self.world, &p, dt);
         }
@@ -773,5 +777,102 @@ dwell_world::both_faces!(
         for x in [-20, -10, -5, -1, 4] {
             assert!(s.wet(x, 3, 1), "the flood holds after an edit at x {x}");
         }
+    }
+);
+
+dwell_world::both_faces!(
+    /// A river far from players comes back at its steady state when a player returns
+    /// (docs/WATER_FLOW.md §6): a dam set in a channel, then ten minutes of water time with the
+    /// player out of reach (the pool waits, as it was), then a few ticks with the player back: the
+    /// pool is up a row and spilling over the dam at the river's flow, as one watched all along.
+    /// Red before: it waited and came back as it was left, filling from there.
+    fn a_dammed_river_out_of_reach_comes_back_full_and_spilling(f: FaceFrame) {
+        let mut s = channel(f);
+        let far = f.point([4000.5, m_of_row(G) + 1.0, 4.5]);
+        s.edit(&[[9, 0, 0], [9, 0, 1], [9, 0, 2]], require("dwell:stone"));
+        s.run(1, 0.0);
+        s.run_at(600, 1.0, far);
+        assert!(!s.wet(4, 1, 1), "waits out of reach");
+        s.run(3, 1.0);
+        for x in 0..=8 {
+            assert!(s.wet(x, 1, 1), "the pool rose into row 1 at x {x}");
+        }
+        let want = channel_q();
+        let pool = s.water.basin_at(s.cell(4, 0, 1)).expect("the pool");
+        let over: f64 = pool.outlets.iter().map(|o| o.flow).sum();
+        assert!(
+            (over - want).abs() < 0.05 * want,
+            "spills {over} m³/s of {want}"
+        );
+        assert_eq!(pool.owed, 0.0, "caught up");
+    }
+);
+
+/// Each chunk's revision in the scene's world now (0 unloaded).
+fn revisions(s: &Scene) -> impl Fn(dwell_world::ChunkCoord) -> u32 + '_ {
+    |c| s.world.find(c).map_or(0, |ch| ch.revision())
+}
+
+dwell_world::both_faces!(
+    /// The basins are saved with the world (docs/WATER_FLOW.md §8): a dammed pool half way to its
+    /// spill, saved and taken in by a new water (a restart), fills on as the one that went on did
+    /// (its level, its spill, and the flow network that feeds it). Red before: a restart lost the
+    /// pool, and the next edit found it at rest, as it then stood, below the dam's crest.
+    fn a_basin_saved_with_the_world_goes_on_as_it_was(f: FaceFrame) {
+        let mut s = channel(f);
+        s.edit(&[[9, 0, 0], [9, 0, 1], [9, 0, 2]], require("dwell:stone"));
+        s.run(10, 1.0);
+        let bytes = s.water.save(revisions(&s));
+        let mut back = fed(channel_q());
+        assert_eq!(
+            back.restore(&bytes, revisions(&s)),
+            Some(s.water.basins().count())
+        );
+        // The same world (its chunks as saved) under the restored water.
+        let mut t = Scene::new(f);
+        for x in (-16..=32).step_by(4) {
+            for r in (-8..=8).step_by(4) {
+                for z in (-8..=16).step_by(4) {
+                    let c = s.cell(x, r, z);
+                    let k = chunk_of(c[0], c[1], c[2]);
+                    if let Some(ch) = s.world.find(k) {
+                        t.world.put(k, ch.clone());
+                    }
+                }
+            }
+        }
+        t.water = back;
+        s.run(600, 1.0);
+        t.run(600, 1.0);
+        let level = |s: &Scene| s.water.basin_at(s.cell(4, 0, 1)).expect("the pool").level();
+        assert!(
+            (level(&s) - level(&t)).abs() < 1e-6,
+            "{} went on, {} restored",
+            level(&s),
+            level(&t)
+        );
+        for x in 0..=8 {
+            assert!(t.wet(x, 1, 1), "restored, risen into row 1 at x {x}");
+        }
+        // The same bytes again: the save is the state.
+        assert_eq!(
+            s.water.save(revisions(&s)).len(),
+            s.water.save(revisions(&s)).len()
+        );
+    }
+);
+
+dwell_world::both_faces!(
+    /// A saved basin whose chunk changed since (another build, which doesn't save the basins,
+    /// edited it) is left out: the next edit finds the water again as it then is.
+    fn a_saved_basin_whose_chunk_changed_since_is_found_again(f: FaceFrame) {
+        let mut s = channel(f);
+        s.edit(&[[9, 0, 0], [9, 0, 1], [9, 0, 2]], require("dwell:stone"));
+        s.run(10, 1.0);
+        let bytes = s.water.save(revisions(&s));
+        s.set(4, 2, 1, require("dwell:stone"));
+        let mut back = fed(channel_q());
+        assert_eq!(back.restore(&bytes, revisions(&s)), Some(0));
+        assert!(back.basin_at(s.cell(4, 0, 1)).is_none());
     }
 );
