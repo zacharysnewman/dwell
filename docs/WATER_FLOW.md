@@ -71,7 +71,9 @@ of water is **at rest as it is found**, and flows only as edits change it:
 - **Its natural outlets.** The ways out it was found with (an open cell onto air, a fall, or onto
   the next pool's water, a step) together pass **the world map's flow** through it (the river's
   discharge, a lake's outflow; §2.1) at the level it was found at. With none (the river goes on out
-  of the loaded world, or into ground), that flow leaves unseen (a **seep**). A natural outlet an
+  of the loaded world, or into ground), that flow leaves unseen (a **seep**): its map flow and what
+  found bodies' natural outlets bring it, no more (what an edit or a flood beside it sends it fills
+  it). A natural outlet an
   edit blocks still counts (so a dam holds back the river), one inside the body after a merge
   doesn't.
 - **The flow network.** A natural outlet found running into another found body **links** them.
@@ -327,7 +329,9 @@ sends its writes as one `Rebake` modification.
 - **Near players**: basins within `liveRadiusM` (160 m) of a player, all of whose chunks are loaded,
   tick; the rest wait: hold their level and pass on what comes in, shared as their ways out would
   share it (an unloaded cell is a wall to water, so a basin flowing on beside one would lose what
-  stands there). A basin whose cells another's level wets or dries finds its ways out again.
+  stands there). A basin whose cells another's level wets or dries finds its ways out again. A
+  basin keeps the unloaded chunks beside it (`edge`, walls to it then) and is found again when one
+  loads (0.43.3): a dam's flood goes on up the river as the player reaches it.
 - **The edge**: a block with a `flooded` state (a ramp) beside a row the water writes takes it, and
   loses it when no liquid is beside it (`flood_edge`).
 - **Running water** (0.43.1): an outlet an edit made (not a natural one) passing at least
@@ -367,7 +371,8 @@ touching it, at rest as it then is), waiting basins aren't fast-forwarded, a nat
 running (the river's own steps stay as generated), and a sheet spreading wider than `maxRowCells` over a
 plain is capped there (the excess lost).
 
-Tests (`water/tests.rs`, both faces): `a_hole_in_a_wall_passes_what_its_size_and_depth_drive` (the
+Tests (`water/tests.rs`, both faces): `a_dams_flood_goes_on_up_the_river_when_its_chunks_load`
+(0.43.3, red on 0.43.2); `a_hole_in_a_wall_passes_what_its_size_and_depth_drive` (the
 rise within 5 % of the law), `a_gap_wide_enough_is_one_body_a_hole_two` (0.43.2, red on 0.43.1);
 `a_wall_across_a_river_is_spilled_over_and_the_river_below_holds` (0.43.1);
 `a_river_found_at_rest_keeps_its_banks_dry`,
@@ -398,7 +403,7 @@ and 1,059 m³/s. What the review found, and where each stands:
 | **Generated water and the containers disagree.** A body's container found again spread into cells it never filled, or dropped cells over a plant, so its level jumped as soon as it was rebuilt. | Fixed (0.42.2): what holds a found body is the world as found; its own cells stay in its rows. |
 | **Discovery depends on order.** 64 ways a tick, a way not found yet keeping its water: a pool found downstream filled 1.4 m in one tick before its ways were found. | Fixed (0.42.2): ways found in rounds, up to 1,024 a tick; water in transit while they aren't. |
 | **No integration scheme.** A tick of 7.2 s of water time on a pool of a few dozen cells overshot (flows swinging to 666 m³/s). | Fixed (0.42.2): flow steps by the fastest basin. |
-| **Live radius and loaded chunks.** Basins were live to 160 m but unmodified chunks are evicted past 3 chunks; an unloaded cell is a wall, so a basin rebuilt beside one lost its water; a waiting basin took what a live one sent it and let nothing out. | Fixed (0.42.2): a basin waits while a chunk of it is unloaded; a waiting basin passes on what comes in. |
+| **Live radius and loaded chunks.** Basins were live to 160 m but unmodified chunks are evicted past 3 chunks; an unloaded cell is a wall, so a basin rebuilt beside one lost its water; a waiting basin took what a live one sent it and let nothing out. | Fixed (0.42.2): a basin waits while a chunk of it is unloaded; a waiting basin passes on what comes in. 0.43.3: a basin is found again when a chunk beside it loads (a flood stopped at the loaded edge), and a seep no longer passes on what a flood sends it. |
 | **Silent losses.** A sheet capped at `maxRowCells` loses its excess; water running out of the loaded world is lost. | Counted in `lost` (the conservation test sees them); kept, as W1's deviations. |
 | **The water's edge.** A ramp beside the water at its row stood dry, the water ending in a wall (the owner's screenshot). | Fixed: the water's writes flood the ramps beside them (0.42.2), and the generator floods its ramps beside its water (0.43.0, a new compatibility line). |
 | **Nothing saved.** After a restart the basins are gone; the water stays where it was left. | W2 (planned). |

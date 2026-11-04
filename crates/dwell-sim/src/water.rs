@@ -263,7 +263,10 @@ impl Outlet {
                     self.scale * discharge(weir) * (2.0 * G * (level - below.max(z))).sqrt()
                 }
             }
-            OutKind::Seep { sill } => self.scale * weir * (level - sill).max(0.0).powf(1.5),
+            // No more than it passed as found (at the level it was found at, a row over its sill).
+            OutKind::Seep { sill } => {
+                self.scale * weir * (level - sill).clamp(0.0, CELL_H).powf(1.5)
+            }
             OutKind::Leak { k, centre } => {
                 self.scale * k * CELL_H * (level - centre.max(below)).max(0.0)
             }
@@ -325,6 +328,10 @@ pub struct Basin {
     /// What arrived last tick by ways that aren't links (m³/s): a spill over a dam, a cut. A body
     /// found at rest passes it on with its steady flow.
     extra: f64,
+    /// What came in last flow step by found bodies' natural outlets (`Water::links`): with no
+    /// natural outlet of its own, all it passes on unseen besides its map flow (water an edit
+    /// sends it, or a flood beside it, fills it).
+    linked: f64,
     /// Cells that hold it like walls: the world as it was found is at rest (docs/WATER_FLOW.md
     /// §2.2), so an open cell beside a body as generated that it didn't fill, and a leaking block
     /// it stood against, keep it in until an edit touches them.
@@ -337,6 +344,9 @@ pub struct Basin {
     natural: HashMap<[i32; 3], f64>,
     /// The chunks its container lies in: it flows only while all are loaded.
     chunks: Vec<dwell_world::ChunkCoord>,
+    /// The chunks beside its cells that weren't loaded when it was found or rebuilt (walls to it
+    /// then): when one loads, it is found again there (the water goes on into it).
+    edge: Vec<dwell_world::ChunkCoord>,
     /// Found at rest: what it passed then (`Steady`).
     steady: Option<Steady>,
 }
@@ -653,6 +663,17 @@ impl Water {
     ) -> Vec<([i32; 3], StateId)> {
         let mut writes = Vec::new();
         self.split.clear();
+        // Bodies against a chunk that has loaded since: found again there.
+        let mut grown: Vec<u32> = self
+            .basins
+            .values()
+            .filter(|b| b.edge.iter().any(|&c| world.find(c).is_some()))
+            .map(|b| b.id)
+            .collect();
+        grown.sort_unstable();
+        for id in grown {
+            self.rebuild(world, id, &mut writes);
+        }
         self.apply_touched(world, &mut writes);
         self.route(world, &mut writes);
         self.balance();
@@ -722,6 +743,7 @@ impl Water {
     fn flow_step(&mut self, live: &HashSet<u32>, dt: f64, steps: usize) {
         let mut arriving: HashMap<u32, f64> = HashMap::default();
         let mut extra: HashMap<u32, f64> = HashMap::default();
+        let mut linked: HashMap<u32, f64> = HashMap::default();
         let ids: Vec<u32> = self.basins.keys().copied().collect();
         // The levels outlets run into (the same face: a basin's local metres).
         let levels: HashMap<u32, f64> = self.basins.values().map(|b| (b.id, b.level())).collect();
@@ -748,8 +770,9 @@ impl Water {
             // Found at rest, it passes what comes in: its own map flow and what arrived last step
             // (over a dam, from the pools above), by its natural outlets at the level it was found
             // at; those an edit blocked still count, so it rises behind them.
-            if b.steady.is_some() {
-                let pass = b.inflow() + b.through;
+            if let Some(st) = &b.steady {
+                let came = if st.law > 0.0 { b.through } else { b.linked };
+                let pass = b.inflow() + came;
                 b.pass(pass);
             }
             let level = b.level();
@@ -840,7 +863,9 @@ impl Water {
                 match o.target {
                     Target::Basin(t) => {
                         *arriving.entry(t).or_default() += o.flow;
-                        if !self.links.contains_key(&(id, o.from)) {
+                        if self.links.contains_key(&(id, o.from)) {
+                            *linked.entry(t).or_default() += o.flow;
+                        } else {
                             *extra.entry(t).or_default() += o.flow;
                         }
                     }
@@ -854,6 +879,7 @@ impl Water {
         }
         for b in self.basins.values_mut() {
             b.through = 0.0;
+            b.linked = linked.get(&b.id).copied().unwrap_or(0.0);
         }
         for (t, q) in extra {
             if let Some(b) = self.basins.get_mut(&t) {
@@ -1066,10 +1092,12 @@ impl Water {
                     arriving: 0.0,
                     through: 0.0,
                     extra: 0.0,
+                    linked: 0.0,
                     rest: HashSet::default(),
                     held: HashSet::default(),
                     natural: HashMap::default(),
                     chunks: Vec::new(),
+                    edge: Vec::new(),
                     steady: None,
                 },
             );
@@ -1104,10 +1132,12 @@ impl Water {
             arriving: 0.0,
             through: 0.0,
             extra: 0.0,
+            linked: 0.0,
             rest: HashSet::default(),
             held: HashSet::default(),
             natural: HashMap::default(),
             chunks: Vec::new(),
+            edge: Vec::new(),
             steady: None,
         };
         if resting {
@@ -1153,6 +1183,7 @@ impl Water {
             }
         }
         b.chunks = chunks_of(b.cells());
+        b.edge = edge_of(world, b.cells());
         // Where its natural outlets ran in the world as found (an edit may block them now): the
         // bodies there are linked to it, now or when found.
         let mut lands: Vec<([i32; 3], [i32; 3], f64)> = Vec::new();
@@ -1285,6 +1316,7 @@ impl Water {
             }
             (b.lo, b.hi) = (lo, hi);
             b.chunks = chunks_of(b.cells());
+            b.edge = edge_of(world, b.cells());
             let cells: Vec<[i32; 3]> = b.cells().collect();
             for c in cells {
                 self.owner.insert(c, id);
@@ -1722,10 +1754,12 @@ impl Water {
                 arriving: 0.0,
                 through: 0.0,
                 extra: 0.0,
+                linked: 0.0,
                 rest: HashSet::default(),
                 held: HashSet::default(),
                 natural: HashMap::default(),
                 chunks: Vec::new(),
+                edge: Vec::new(),
                 steady: None,
             },
         );
@@ -2524,6 +2558,27 @@ fn flood_edge(world: &mut VoxelWorld, c: [i32; 3], writes: &mut Vec<([i32; 3], S
         world.set_voxel(c[0], c[1], c[2], to);
         writes.push((c, to));
     }
+}
+
+/// The chunks beside `cells` (a side, above or below) that aren't loaded.
+fn edge_of(
+    world: &VoxelWorld,
+    cells: impl Iterator<Item = [i32; 3]>,
+) -> Vec<dwell_world::ChunkCoord> {
+    let mut out: Vec<dwell_world::ChunkCoord> = Vec::new();
+    for c in cells {
+        let mut near: Vec<[i32; 3]> = SIDES.iter().map(|&s| side(c, s)).collect();
+        near.push([c[0], c[1] + 1, c[2]]);
+        near.push([c[0], c[1] - 1, c[2]]);
+        for n in near {
+            let k = chunk_of(n[0], n[1], n[2]);
+            if !out.contains(&k) && world.find(k).is_none() {
+                out.push(k);
+            }
+        }
+    }
+    out.sort_unstable_by_key(|c| (c.x, c.y, c.z));
+    out
 }
 
 /// The chunks cells lie in.
