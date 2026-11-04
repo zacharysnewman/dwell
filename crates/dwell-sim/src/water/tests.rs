@@ -1399,3 +1399,41 @@ dwell_world::both_faces!(
         );
     }
 );
+
+dwell_world::both_faces!(
+    /// Owner, 2026-11-04: water risen over a steep slope leaves air in the bottom half of its
+    /// ramps. A dammed channel rising over a 1 m ramp (two cells) on its floor: both cells under
+    /// the water are flooded.
+    fn water_risen_over_a_steep_ramp_floods_both_its_cells(f: FaceFrame) {
+        let mut s = tall_channel(f);
+        // 1 m ramps (two cells) on the channel's floor along its side, facing each way.
+        let mut ramps = Vec::new();
+        for (x, facing) in [(2, "north"), (4, "south"), (6, "east"), (7, "west")] {
+            let lower = require(&format!(
+                "dwell:grass_ramp[facing={facing},half=bottom,shape=steep_lower]"
+            ));
+            let upper = require(&format!(
+                "dwell:grass_ramp[facing={facing},half=bottom,shape=steep_upper]"
+            ));
+            s.set(x, 0, 0, lower);
+            s.set(x, 1, 0, upper);
+            ramps.push(x);
+        }
+        let dam: Vec<[i32; 3]> = (0..=2)
+            .flat_map(|z| (0..=4).map(move |r| [9, r, z]))
+            .collect();
+        s.edit(&dam, require("dwell:stone"));
+        s.run(900, 1.0);
+        assert!(s.wet(4, 3, 1), "risen over the slopes");
+        for x in ramps {
+            for r in 0..=1 {
+                let m = s.get(x, r, 0);
+                assert!(
+                    dwell_blocks::info(m).flooded,
+                    "x {x} row {r}: {}",
+                    dwell_blocks::info(m).name
+                );
+            }
+        }
+    }
+);

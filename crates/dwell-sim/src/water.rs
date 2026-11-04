@@ -1329,6 +1329,7 @@ impl Water {
         for _ in 0..steps {
             self.flow_step(&live, sub, steps, None);
         }
+        self.submerge_rest(world, &mut writes);
         let mut all: Vec<u32> = self.basins.keys().copied().collect();
         all.sort_unstable();
         for id in all {
@@ -2666,6 +2667,28 @@ impl Water {
                 .filter(|(_, q)| *q > 1e-12)
                 .collect();
             st.through = if st.law > 0.0 { st.law } else { own0 };
+        }
+    }
+
+    /// The cells that held a body at rest as found (`Basin::rest`) that its water has risen
+    /// over (a dam's flood over a bank's ramps): held no longer, they are found into it, a ramp's
+    /// open part flooded (owner, 2026-11-04: water risen over a steep slope left air in its ramps).
+    fn submerge_rest(&mut self, world: &mut VoxelWorld, writes: &mut Vec<([i32; 3], StateId)>) {
+        let mut risen: Vec<u32> = Vec::new();
+        for b in self.basins.values_mut() {
+            if b.rest.is_empty() || b.reservoir {
+                continue;
+            }
+            let (f, level) = (b.face, b.level());
+            let before = b.rest.len();
+            b.rest.retain(|&c| m_of_row(f.row(c[1]) + 1) >= level - 0.01);
+            if b.rest.len() != before {
+                risen.push(b.id);
+            }
+        }
+        risen.sort_unstable();
+        for id in risen {
+            self.rebuild(world, id, writes);
         }
     }
 
