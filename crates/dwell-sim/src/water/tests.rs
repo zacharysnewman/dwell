@@ -1620,7 +1620,84 @@ dwell_world::both_faces!(
         let End::Liquid(c) = end else {
             panic!("into water: {end:?}");
         };
-        assert_eq!(c[2], 0, "into the river beside it, not down the bank: {c:?}");
-        assert!(path.len() <= 8, "straight there: {} cells {path:?}", path.len());
+        assert_eq!(
+            c[2], 0,
+            "into the river beside it, not down the bank: {c:?}"
+        );
+        assert!(
+            path.len() <= 8,
+            "straight there: {} cells {path:?}",
+            path.len()
+        );
+    }
+);
+
+dwell_world::both_faces!(
+    /// Owner, 2026-11-04 (their dam, level with its banks): "it flows out endlessly still along
+    /// the river banks at the same height … Water would flow over the dam and then down the banks
+    /// into the lower river" (downhill, not downstream). A river with flat banks a row over its
+    /// water, running on beside the river below a step; a dam level with the banks: the flood
+    /// stands in its channel and spreads no further than `sheetReach` over the banks; past that it
+    /// pours over and runs downhill into the river below. Red before: the flood spread along the
+    /// flat banks beside the river below as one sheet at its level.
+    fn a_flood_level_with_its_banks_pours_over_them_downhill_not_along_them(f: FaceFrame) {
+        let mut s = Scene::with_air(f, [-8, -10, -8], [40, 8, 12]);
+        let stone = require("dwell:stone");
+        // Ground: the banks' tops at row 0 (z −4..−1 and 3..6), x −2..36; upstream of the
+        // river's head the valley rises (to row 3).
+        s.fill([-2, -9, -4], [36, 0, 6], stone);
+        s.fill([-8, -9, -6], [-1, 3, 8], stone);
+        // The upper river (x 0..9): its bed at row −2, water rows −1..0... its channel z 0..2.
+        s.fill([0, -1, 0], [9, 0, 2], M.air);
+        s.fill([0, -1, 0], [9, -1, 2], M.water);
+        // The lower river past a step at x = 10: bed row −6, water row −5, channel z 0..2.
+        s.fill([10, -5, 0], [36, 0, 2], M.air);
+        s.fill([10, -5, 0], [36, -5, 2], M.water);
+        let per = dwell_worldgen::terrain::lip_cell_flow();
+        s.water = fed(0.0).with_rivers(std::sync::Arc::new(Graph {
+            pools: vec![
+                (Graph::key(0), [0, 9], [0, 2], 30.0, 3.0 * per),
+                (Graph::key(-4), [10, 36], [0, 2], 80.0, 0.0),
+            ],
+            lips: vec![
+                Graph::lip(0, -4, (9, 1), 3),
+                Graph::lip(-4, -20, (1000, 1), 3),
+            ],
+        }));
+        // A dam at x = 9 up to the banks' top (row 0).
+        let dam: Vec<[i32; 3]> = (0..=2)
+            .flat_map(|z| (-1..=0).map(move |r| [9, r, z]))
+            .collect();
+        s.edit(&dam, stone);
+        s.run(900, 1.0);
+        let flood = s.water.basin_at(s.cell(4, -1, 1)).expect("the flood");
+        // Not out along the banks beside the river below.
+        for x in [16, 24, 32] {
+            for z in [-2, 4] {
+                assert!(
+                    !flood.cells().any(|c| c == s.cell(x, 1, z)),
+                    "the flood spread along the bank at x {x}, z {z}"
+                );
+            }
+        }
+        // Its water goes on into the river below (a pool of the graph nobody measured, or found).
+        let into_lower: f64 = flood
+            .outlets
+            .iter()
+            .filter(|o| match o.target {
+                Target::Virtual(_, k) => k == Graph::key(-4),
+                Target::Basin(t) => s
+                    .water
+                    .basin(t)
+                    .is_some_and(|b| b.cells().any(|c| c == s.cell(20, -5, 1))),
+                _ => false,
+            })
+            .map(|o| o.flow)
+            .sum();
+        assert!(
+            (into_lower - 3.0 * per).abs() < 0.1 * 3.0 * per,
+            "into the river below: {into_lower} of {}",
+            3.0 * per
+        );
     }
 );

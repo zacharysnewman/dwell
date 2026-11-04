@@ -769,11 +769,7 @@ impl Water {
     /// A body's inflow by the world map's pool graph (ADR 0059), if its cells lie in generated
     /// pools: each lip into those pools from a pool it doesn't hold brings what that lip passes at
     /// rest, at the lip's crest (the water above it), and a river's head its source.
-    fn graph_feeds(
-        &self,
-        f: FaceFrame,
-        cells: &HashSet<[i32; 3]>,
-    ) -> Option<(Feeds, f64)> {
+    fn graph_feeds(&self, f: FaceFrame, cells: &HashSet<[i32; 3]>) -> Option<(Feeds, f64)> {
         let rivers = self.river_map.as_ref()?;
         let keys = self.graph_keys(f, cells);
         if keys.is_empty() {
@@ -3070,6 +3066,15 @@ fn spread_row(
         let d = up(f, c, -1);
         below.contains(&d) || walls(view.kind(d))
     };
+    // Over its own water (the row below it, or liquid): its surface stands there. Over bare
+    // ground only within `sheetReach` of that, but on its floor (owner, 2026-11-04: past it the
+    // water runs downhill, not out along the land at its level).
+    let wet_under = |c: [i32; 3]| {
+        let d = up(f, c, -1);
+        below.contains(&d) || matches!(view.kind(d), Kind::Liquid(_))
+    };
+    let reach = FLOW.sheet_reach as usize;
+    let mut dist: HashMap<[i32; 3], usize> = HashMap::default();
     // Another basin's container: met, not spread into (over a wall, the pool beyond).
     let theirs = |c: [i32; 3]| owner.get(&c).is_some_and(|&o| o != id) && !walled(c);
     let mut cells = Vec::new();
@@ -3103,12 +3108,14 @@ fn spread_row(
             Kind::Solid => false,
         };
         if open && (bottom || held(s) || ours(s)) {
+            dist.insert(s, 0);
             queue.push(s);
         }
     }
     let mut wide = false;
     while let Some(c) = queue.pop() {
         cells.push(c);
+        let dc = dist.get(&c).copied().unwrap_or(0);
         if cells.len() >= FLOW.max_row_cells as usize {
             wide = true;
             break;
@@ -3120,9 +3127,17 @@ fn spread_row(
                 continue;
             }
             seen.insert(n);
+            // Over bare ground, how far from its water (none on its floor).
+            let far = if bottom || wet_under(n) { 0 } else { dc + 1 };
             match view.kind(n) {
                 Kind::Open if theirs(n) => met.push(n),
-                Kind::Open if held(n) => queue.push(n),
+                Kind::Open if held(n) && far > reach => {
+                    seen.remove(&n); // its rim (reached nearer another way, it may be held yet)
+                }
+                Kind::Open if held(n) => {
+                    dist.insert(n, far);
+                    queue.push(n);
+                }
                 Kind::Liquid(m) if m == liquid && ours(n) => queue.push(n),
                 Kind::Liquid(_) if walled(n) => {}
                 Kind::Liquid(m) if m == liquid => met.push(n),
@@ -3210,10 +3225,12 @@ fn scan_outlets(
                     continue;
                 }
                 match view.kind(n) {
+                    // Open beside it: over nothing, a way down; over ground but past its rim
+                    // (`sheetReach`: not its container), a way over the rim and on downhill.
                     Kind::Open => {
                         let under = up(f, n, -1);
                         let held = ours(under) || walls(view.kind(under));
-                        if !held {
+                        if !held || !ours(n) {
                             add(&mut out, n, OutKind::Face { lo: floor, hi }, false, None);
                         }
                     }
@@ -3337,6 +3354,9 @@ enum End {
     Lost,
 }
 
+/// A place running water rests on its way: the place before it and the cells from there to here.
+type Step = ([i32; 3], Vec<[i32; 3]>);
+
 /// Follows liquid from the open cell `from` to the nearest lower water (owner, 2026-11-04: "it would
 /// pour down the banks into the nearest lower point … steps should be like slopes to water"): over
 /// the ground's surface, a step down of any height taken as part of the way (a slope to water),
@@ -3385,7 +3405,7 @@ fn follow_path(
     };
     // Breadth first over where it rests, each place's way back (the place before, and the cells
     // from it to here).
-    let mut back: HashMap<[i32; 3], ([i32; 3], Vec<[i32; 3]>)> = HashMap::default();
+    let mut back: HashMap<[i32; 3], Step> = HashMap::default();
     back.insert(start, (start, Vec::new()));
     let mut frontier = vec![start];
     let mut lowest = start;
