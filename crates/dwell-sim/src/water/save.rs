@@ -10,10 +10,6 @@ use dwell_world::ChunkCoord;
 /// The record's tag: version 5 adds each found body's head source (`spring`, ADR 0059), version 4 adds where each seep is (0.44.3; before, anywhere), 3 adds each found body's map flow (0.43.6), 2 whether each basin is
 /// active (0.43.5; 1 reads as settled). Before 3 the map flow reads as its steady flow then.
 const MAGIC: &[u8; 4] = b"DWW5";
-const MAGIC_4: &[u8; 4] = b"DWW4";
-const MAGIC_3: &[u8; 4] = b"DWW3";
-const MAGIC_2: &[u8; 4] = b"DWW2";
-const MAGIC_1: &[u8; 4] = b"DWW1";
 
 #[derive(Default)]
 struct Out(Vec<u8>);
@@ -134,10 +130,6 @@ fn put_outlet(o: &mut Out, x: &Outlet) {
             o.f64(k);
             o.f64(centre);
         }
-        OutKind::Seep { sill } => {
-            o.u8(3);
-            o.f64(sill);
-        }
     }
     match x.target {
         Target::Unresolved => o.u8(0),
@@ -199,7 +191,6 @@ fn get_outlet(i: &mut In<'_>, version: u8) -> Option<Outlet> {
             k: i.f64()?,
             centre: i.f64()?,
         },
-        3 => OutKind::Seep { sill: i.f64()? },
         _ => return None,
     };
     let target = match i.u8()? {
@@ -247,8 +238,6 @@ fn put_basin(o: &mut Out, b: &Basin, revision: &dyn Fn(ChunkCoord) -> u32) {
         o.f64(v);
     }
     o.u8(u8::from(b.active));
-    o.set(&b.rest);
-    o.set(&b.held);
     let mut natural: Vec<([i32; 3], f64)> = b.natural.iter().map(|(&c, &w)| (c, w)).collect();
     natural.sort_unstable_by_key(|&(c, _)| c);
     o.weighed(&natural);
@@ -261,13 +250,6 @@ fn put_basin(o: &mut Out, b: &Basin, revision: &dyn Fn(ChunkCoord) -> u32) {
             o.f64(st.law);
             o.f64(st.level);
             o.weighed(&st.feeds);
-            match st.exit {
-                Some(c) => {
-                    o.u8(1);
-                    o.cell(c);
-                }
-                None => o.u8(0),
-            }
             o.f64(st.spring);
         }
     }
@@ -304,8 +286,6 @@ fn get_basin(
     let [arriving, through, extra, _linked, owed] =
         [i.f64()?, i.f64()?, i.f64()?, i.f64()?, i.f64()?];
     let active = version >= 2 && i.bool()?;
-    let rest = i.set()?;
-    let held = i.set()?;
     let natural: HashMap<[i32; 3], f64> = i.weighed()?.into_iter().collect();
     let steady = match i.u8()? {
         0 => None,
@@ -318,11 +298,6 @@ fn get_basin(
                 law: i.f64()?,
                 level: i.f64()?,
                 feeds: i.weighed()?,
-                exit: if version >= 4 && i.bool()? {
-                    Some(i.cell()?)
-                } else {
-                    None
-                },
                 spring: if version >= 5 { i.f64()? } else { 0.0 },
             })
         }
@@ -370,8 +345,6 @@ fn get_basin(
         active,
         // Its cells are written at its fill again once loaded.
         drawn_fill: (usize::MAX, 0),
-        rest,
-        held,
         natural,
         // All unloaded now: it waits until they load, and is found again then.
         edge: chunks.clone(),
@@ -438,46 +411,6 @@ impl Water {
             o.cell(c);
             o.state(m);
         }
-        // The changes going down the map's rivers (version 3).
-        let face = |f: dwell_world::Face| u8::from(f == dwell_world::Face::B);
-        o.len(self.flows.fronts.len());
-        for f in &self.flows.fronts {
-            o.u8(face(f.face));
-            o.u32(f.river);
-            o.f64(f.from);
-            o.f64(f.at);
-            o.f64(f.dq);
-            o.u8(u8::from(f.done));
-        }
-        o.len(self.flows.lakes.len());
-        for l in &self.flows.lakes {
-            o.u8(face(l.face));
-            o.u32(l.lake);
-            o.f64(l.area);
-            o.len(l.out.len());
-            for &(r, q) in &l.out {
-                o.u32(r);
-                o.f64(q);
-            }
-            o.f64(l.inn);
-            o.f64(l.now);
-            o.f64(l.sent);
-        }
-        let mut sent: Vec<(&u32, &rivers::Sent)> = self
-            .flows
-            .sent
-            .iter()
-            .filter(|(b, _)| saved.contains(b))
-            .collect();
-        sent.sort_unstable_by_key(|(b, _)| **b);
-        o.len(sent.len());
-        for (&b, x) in sent {
-            o.u32(b);
-            o.u8(face(x.face));
-            o.u32(x.river);
-            o.f64(x.s);
-            o.f64(x.dq);
-        }
         // The virtual pools off their rest (version 5, ADR 0059).
         let mut virtuals: Vec<_> = self.virtuals.iter().collect();
         virtuals.sort_unstable_by_key(|(fk, _)| (u8::from(fk.0 == dwell_world::Face::B), fk.1));
@@ -498,11 +431,9 @@ impl Water {
     pub fn restore(&mut self, bytes: &[u8], revision: impl Fn(ChunkCoord) -> u32) -> Option<usize> {
         let mut i = In { b: bytes, at: 0 };
         let version = match i.take(4)? {
+            // (Earlier records are of earlier compatibility lines, whose worlds open in their own
+            // version: not read.)
             m if m == MAGIC => 5,
-            m if m == MAGIC_4 => 4,
-            m if m == MAGIC_3 => 3,
-            m if m == MAGIC_2 => 2,
-            m if m == MAGIC_1 => 1,
             _ => return None,
         };
         let next = i.u32()?;
@@ -551,56 +482,6 @@ impl Water {
             let c = i.cell()?;
             if let Some(m) = i.state()? {
                 touched.push((c, m));
-            }
-        }
-        let mut flows = rivers::Flows::default();
-        if version >= 3 {
-            let face = |v: u8| {
-                if v == 1 {
-                    dwell_world::Face::B
-                } else {
-                    dwell_world::Face::A
-                }
-            };
-            for _ in 0..i.len()? {
-                flows.fronts.push(rivers::Front {
-                    face: face(i.u8()?),
-                    river: i.u32()?,
-                    from: i.f64()?,
-                    at: i.f64()?,
-                    dq: i.f64()?,
-                    done: i.bool()?,
-                });
-            }
-            for _ in 0..i.len()? {
-                let (fc, lake, area) = (face(i.u8()?), i.u32()?, i.f64()?);
-                let out: Vec<(u32, f64)> = (0..i.len()?)
-                    .map(|_| Some((i.u32()?, i.f64()?)))
-                    .collect::<Option<_>>()?;
-                flows.lakes.push(rivers::Lagged {
-                    face: fc,
-                    lake,
-                    area,
-                    out,
-                    inn: i.f64()?,
-                    now: i.f64()?,
-                    sent: i.f64()?,
-                });
-            }
-            for _ in 0..i.len()? {
-                let b = i.u32()?;
-                let x = rivers::Sent {
-                    face: face(i.u8()?),
-                    river: i.u32()?,
-                    s: i.f64()?,
-                    dq: i.f64()?,
-                };
-                if kept(&b) {
-                    flows.sent.insert(b, x);
-                } else {
-                    // Left out: what it sent goes back (it is found again as it then is).
-                    flows.send(x.face, x.river, x.s, -x.dq);
-                }
             }
         }
         let mut virtuals = HashMap::default();
@@ -655,7 +536,6 @@ impl Water {
         self.drawn = drawn;
         self.edited = edited;
         self.touched = touched;
-        self.flows = flows;
         self.virtuals = virtuals;
         Some(n)
     }

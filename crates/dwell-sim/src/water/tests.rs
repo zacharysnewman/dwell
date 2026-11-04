@@ -953,10 +953,13 @@ impl Rivers for Straight {
     }
 }
 
+/// A pool of a scene's graph: its key, its columns (x, z ranges), surface estimate, head source.
+type GraphFixturePool = (PoolKey, [i32; 2], [i32; 2], f64, f64);
+
 /// A hand-made pool graph for a scene (ADR 0059): each pool by the columns it lies in (scene
 /// local x, z ranges, inclusive), its surface estimate and its river head's source; and its lips.
 struct Graph {
-    pools: Vec<(PoolKey, [i32; 2], [i32; 2], f64, f64)>,
+    pools: Vec<GraphFixturePool>,
     lips: Vec<GraphLip>,
 }
 
@@ -1084,7 +1087,10 @@ dwell_world::both_faces!(
         s.run(5, 1.0);
         let lower = |s: &Scene| s.water.basin_at(s.cell(44, 0, 1)).expect("lower").volume;
         let full = lower(&s);
-        assert!(s.water.virtuals.is_empty(), "the river at rest: nothing off it");
+        assert!(
+            s.water.virtuals.is_empty(),
+            "the river at rest: nothing off it"
+        );
         // A dam six rows high: it takes a while to fill.
         let dam: Vec<[i32; 3]> = (0..=2)
             .flat_map(|z| (0..=5).map(move |r| [9, r, z]))
@@ -1097,7 +1103,10 @@ dwell_world::both_faces!(
             lower(&s)
         );
         // The pool between, off its rest, is saved with the basins.
-        assert!(!s.water.virtuals.is_empty(), "the pool between off its rest");
+        assert!(
+            !s.water.virtuals.is_empty(),
+            "the pool between off its rest"
+        );
         let bytes = s.water.save(revisions(&s));
         let mut back = fed(0.0);
         back.restore(&bytes, revisions(&s)).expect("read back");
@@ -1345,40 +1354,6 @@ dwell_world::both_faces!(
         for x in [0, 3, 5] {
             assert!(!s.wet(x, 1, 2), "the open cell over the east half at x {x}");
         }
-    }
-);
-
-dwell_world::both_faces!(
-    /// Sweep of seed 1 (the through-ramps rework): a river pool found with its top row just full,
-    /// unflooded ramps beside its surface. Rising a hair, it grew its container a row and took the
-    /// ramps into its top row; through their open sides it reached the open cells over the next
-    /// pool and spilled into it by the opening law, sinking 0.14 m below its level as found. A block
-    /// holding no water beside a body as found holds it, as an open cell does (`rest`). Red before:
-    /// the ramp wasn't held.
-    fn an_unflooded_ramp_beside_water_as_found_holds_it(f: FaceFrame) {
-        let mut s = Scene::new(f);
-        let stone = require("dwell:stone");
-        let ramp = f.state(
-            dwell_blocks::with_property(require("dwell:stone_ramp"), "flooded", "false")
-                .expect("a ramp with a flooded state"),
-        );
-        s.fill([-1, -1, -1], [6, -1, 3], stone);
-        s.fill([0, 0, 0], [4, 0, 2], M.water);
-        s.set(5, 0, 1, ramp);
-        let cells: HashSet<[i32; 3]> = (0..=4)
-            .flat_map(|x| (0..=2).map(move |z| (x, z)))
-            .map(|(x, z)| s.cell(x, 0, z))
-            .collect();
-        let view = View {
-            world: &s.world,
-            old: None,
-        };
-        let rest = at_rest(&view, f, &cells);
-        assert!(rest.contains(&s.cell(5, 0, 1)), "the ramp holds it");
-        assert!(
-            rest.contains(&s.cell(5, 0, 0)),
-            "and the open cell beside it"
-        );
     }
 );
 

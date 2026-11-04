@@ -25,7 +25,10 @@ pub(super) struct Virtual {
 /// How deep under its surface (rows) a cell may lie and be a generated pool's water.
 const POOL_DEPTH_ROWS: i32 = 16;
 
-/// The least change (m³ off rest, and m³/s off what comes in at rest) a virtual pool keeps.
+/// The least change a virtual pool keeps: of its level (m), of what comes in (a share of its rest
+/// flow), and at least (m³/s).
+const VIRTUAL_LEVEL_EPS: f64 = 1e-3;
+const VIRTUAL_SHARE: f64 = 0.01;
 const VIRTUAL_EPS: f64 = 1e-4;
 
 impl Water {
@@ -86,7 +89,9 @@ impl Water {
                     .filter_map(|&k| Some((face, rivers.lip(face, k)?.to)))
                     .collect::<Vec<_>>()
             })
-            .filter(|&(face, to)| matches!(to, PoolKey::River { .. }) && self.measured(face, to).is_none())
+            .filter(|&(face, to)| {
+                matches!(to, PoolKey::River { .. }) && self.measured(face, to).is_none()
+            })
             .collect();
         let mut keys: Vec<(Face, PoolKey)> = self
             .virtuals
@@ -97,11 +102,8 @@ impl Water {
             .collect();
         keys.sort_unstable_by_key(|&(f, k)| (u8::from(f == Face::B), k));
         keys.dedup();
-        let last: HashMap<(Face, PoolKey), f64> = self
-            .virtuals
-            .iter()
-            .map(|(&k, v)| (k, v.q_out))
-            .collect();
+        let last: HashMap<(Face, PoolKey), f64> =
+            self.virtuals.iter().map(|(&k, v)| (k, v.q_out)).collect();
         let mut next: HashMap<(Face, PoolKey), Virtual> = HashMap::default();
         let mut downstream: Vec<(Face, PoolKey)> = Vec::new();
         for (face, key) in keys {
@@ -142,12 +144,15 @@ impl Water {
             }
             let dv = 0.5 * (lo + hi);
             let q_out = Self::virtual_out(cells, dv, v.area);
-            let moved = dv.abs() > VIRTUAL_EPS || (q_in - rest).abs() > VIRTUAL_EPS;
+            // Off its rest by a millimetre of level or a hundredth of its flow (a measured pool's
+            // faces may pass a hair off its lip's cells at rest: no change worth carrying).
+            let moved = (dv / v.area).abs() > VIRTUAL_LEVEL_EPS
+                || (q_in - rest).abs() > (VIRTUAL_SHARE * rest).max(VIRTUAL_EPS);
             if moved {
                 next.insert((face, key), Virtual { dv, ..v });
                 next.get_mut(&(face, key)).expect("virtual").q_out = q_out;
                 // What it passes goes on: the pool below takes it in next tick.
-                if (q_out - rest).abs() > VIRTUAL_EPS
+                if (q_out - rest).abs() > (VIRTUAL_SHARE * rest).max(VIRTUAL_EPS)
                     && let to @ PoolKey::River { .. } = lip.to
                 {
                     downstream.push((face, to));
@@ -157,9 +162,7 @@ impl Water {
         // A pool below one now off rest is stepped from the next tick on (at rest until then).
         for k in downstream {
             next.entry(k).or_insert_with(|| {
-                let area = rivers
-                    .graph_pool(k.0, k.1)
-                    .map_or(1.0, |p| p.area.max(1.0));
+                let area = rivers.graph_pool(k.0, k.1).map_or(1.0, |p| p.area.max(1.0));
                 let rest = rivers.lip(k.0, k.1).map_or(0.0, |l| l.pours as f64 * per);
                 Virtual {
                     dv: 0.0,

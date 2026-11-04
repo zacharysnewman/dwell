@@ -228,7 +228,7 @@ fn a_lake_cut_open_drains_on_after_its_player_leaves() {
 /// it; 2026-11-04 (ADR 0057): generated water must rest by the one law, as any water does. In
 /// generated worlds (seeds 0–2), a stone set in the bed of river pools picked along the world
 /// map's rivers changes no other cell within 48 m over six hours of water time, and sends no change
-/// down the map's rivers: each pool's lip carries its river's flow with the pool a full row over its
+/// down its pool graph (no pool nobody measured off its rest, ADR 0059): each pool's lip carries its river's flow with the pool a full row over its
 /// sill (WATER_FLOW.md §17); a ramp at the water's edge may take its flooded state.
 #[test]
 fn a_block_set_in_a_generated_rivers_bed_changes_nothing_else() {
@@ -335,10 +335,10 @@ fn a_block_set_in_a_generated_rivers_bed_changes_nothing_else() {
                 water.tick(&mut w, &[player], 7.2);
             }
             let after = snapshot(&w);
-            assert!(
-                water.fronts().is_empty(),
-                "seed {seed}, bed {bed:?}: a river at rest sent changes down the map's: {:?}",
-                water.fronts()
+            assert_eq!(
+                water.off_rest(),
+                0,
+                "seed {seed}, bed {bed:?}: a river at rest sent changes down its pools"
             );
             // A ramp at the water's edge may take its flooded state: nothing else.
             let flooded =
