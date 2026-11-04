@@ -1066,3 +1066,45 @@ dwell_world::both_faces!(
         assert_eq!(s.get(6, 1, 1), running, "running down the wall's far side");
     }
 );
+
+dwell_world::both_faces!(
+    /// Owner, 2026-11-03 (seed 0, a river by the spawn): a dam across a river stretch with no way
+    /// out of its own (closed at both ends, as a generated riverbed's ramps close it: it passes
+    /// the map's flow unseen, a seep) didn't raise the river: split in two, both halves kept the
+    /// seep, and the half behind the dam drained the river through it. The seep is where the
+    /// river leaves the stretch (its downstream end by the map); the half without it has no way
+    /// out but over the dam. Red before: the river behind the dam stayed where it was found.
+    fn a_dam_across_a_closed_stretch_holds_the_river_back(f: FaceFrame) {
+        let mut s = tall_channel(f);
+        let stone = require("dwell:stone");
+        // Closed at its downstream end too (x = 10): no natural outlet, a seep.
+        s.fill([10, -1, -1], [10, 8, 3], stone);
+        s.water = fed(channel_q()).with_rivers(std::sync::Arc::new(Straight));
+        s.edit(&[[2, 1, 1]], M.air);
+        s.run(5, 1.0);
+        // A block at a time, as a player places a dam.
+        for z in 0..=2 {
+            s.edit(&[[5, 0, z], [5, 1, z]], stone);
+            s.run(1, 1.0);
+        }
+        s.run(900, 1.0);
+        for x in [0, 2, 4] {
+            assert!(
+                s.wet(x, 2, 1),
+                "the river behind the dam rose over it at x {x}"
+            );
+        }
+        // The river below takes in what comes over the dam, not the map's flow besides: it stays
+        // where it was found.
+        for x in [7, 9] {
+            assert!(s.wet(x, 0, 1), "the river below the dam at x {x}");
+        }
+        let below = s.water.basin_at(s.cell(8, 0, 1)).expect("the river below");
+        assert!(
+            below.level() < m_of_row(G + 1) + 0.02,
+            "the river below rose to {} (found at {})",
+            below.level(),
+            m_of_row(G + 1)
+        );
+    }
+);

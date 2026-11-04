@@ -6,9 +6,39 @@ pins it.
 
 ## Open
 
-None. Report new ones here.
+### 23. A block can't be placed against the downhill side of a ramp
+
+*Reported 2026-11-03 (0.44.2).* "I can't place a block against the outer edge of (downhill) side of a
+shallow ramp, maybe same problem with steep ramps too?" Not investigated yet: targeting a ramp's low
+face, or the placement check against its shape.
+
+### 22. The river below a dam rises a little when the dam is built a block at a time
+
+*Found 2026-11-03 (0.44.3, the owner's seed 0 dam, through the server natively).* The river's two halves
+were found as separate bodies, the lower keeping the map's flow and also taking what comes over the
+dam (0.805 + 0.79 m³/s), so it stands ~0.18 m over its found level. The scene test (a dam placed a
+block a tick) doesn't show it; the cause in the server's order of edits isn't pinned down yet.
 
 ## Fixed
+
+### 21. A dam across a river didn't raise it (fixed in 0.44.3)
+
+*Reported 2026-11-03 (0.44.2, seed 0 by the spawn, screenshots).* "I dammed that river. When I did, it
+flooded that valley's bottom, but didn't continue filling, and there's no visual or effective water
+flowing over the banks and down the hill?"
+
+- **Cause:** the river's stretch there has no way out of its own (its riverbed's ramps close both ends,
+  walls to the water engine), so it passes the map's flow unseen (a seep). The seep had no place: the
+  dam split the stretch in two and both halves kept it, so the half behind the dam drained the river
+  through it and never rose.
+- **Fix:** a seep is where the river leaves the stretch: its cell farthest down the map's river (on the
+  river most of its cells lie on), else farthest from where the water comes in (`Steady::exit`, saved,
+  record version 4); only the part holding it has the seep (WATER_FLOW.md §2.2). A split's feed whose
+  cell is in no part goes to the nearest part. Rivers through flooded ramps (the owner's preferred
+  fix) were tried and collapsed the river's steps in the generated sweep; kept as a later option.
+- **Test:** `a_dam_across_a_closed_stretch_holds_the_river_back` (both faces, the dam a block a tick;
+  red on 0.44.2: the river behind it stayed where it was found). Checked natively through the server on
+  the owner's river (seed 0, x 2359 z 7437): the river behind the dam rose and spilled over it.
 
 ### 20. A dam's flood reached only so far up the river, and an edit there lowered it (fixed in 0.43.3)
 
