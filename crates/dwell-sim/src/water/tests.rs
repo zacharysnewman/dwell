@@ -1394,8 +1394,9 @@ dwell_world::both_faces!(
         // 1 m ramps (two cells) on the channel's floor along its side, facing each way.
         let mut ramps = Vec::new();
         for (x, facing) in [(2, "north"), (4, "south"), (6, "east"), (7, "west")] {
+            // Its lower cell in the water's row flooded, as the generator writes it.
             let lower = require(&format!(
-                "dwell:grass_ramp[facing={facing},half=bottom,shape=steep_lower]"
+                "dwell:grass_ramp[facing={facing},flooded=true,half=bottom,shape=steep_lower]"
             ));
             let upper = require(&format!(
                 "dwell:grass_ramp[facing={facing},half=bottom,shape=steep_upper]"

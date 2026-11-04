@@ -421,13 +421,15 @@ impl Basin {
     #[doc(hidden)]
     pub fn debug(&self) -> String {
         format!(
-            "id{} lvl{:.3} vol{:.1} in{:.3} arr{:.3} cells{} lo{:?} hi{:?} steady{:?} outs{:?}",
+            "id{} lvl{:.3} vol{:.1} in{:.3} arr{:.3} cells{} rows{} capped{} lo{:?} hi{:?} steady{:?} outs{:?}",
             self.id,
             self.world_level(),
             self.volume,
             self.inflow(),
             self.arriving,
             self.rows.iter().map(Vec::len).sum::<usize>(),
+            self.rows.len(),
+            self.capped,
             self.lo,
             self.hi,
             self.steady.as_ref().map(|s| (s.flow, s.law, s.level)),
@@ -1851,8 +1853,10 @@ impl Water {
             })
             .collect();
         let b = self.basins.get_mut(&id).expect("basin");
-        b.rest.extend(rest);
-        b.held.extend(held);
+        if std::env::var("DWELL_NO_REST").is_err() {
+            b.rest.extend(rest);
+            b.held.extend(held);
+        }
     }
 
     /// A body at its level as found, grown into a chunk that loaded since: the ways out it found
@@ -2072,6 +2076,10 @@ impl Water {
                 .iter()
                 .flat_map(|&c| {
                     let mut n: Vec<[i32; 3]> = SIDES.iter().map(|&s| side(c, s)).collect();
+            if std::env::var("DWELL_NO_REST").is_ok() {
+                b.rest.clear();
+                b.held.clear();
+            }
                     n.push([c[0], c[1] + 1, c[2]]);
                     n.push([c[0], c[1] - 1, c[2]]);
                     n
@@ -2238,6 +2246,7 @@ impl Water {
             let mut met: Vec<[i32; 3]> = Vec::new();
             let mut capacity = 0.0;
             let mut capped = false;
+            let mut under: Option<u32> = None;
             let mut prev: HashSet<[i32; 3]> = HashSet::default();
             let mut lr = bottom;
             loop {
@@ -2257,6 +2266,16 @@ impl Water {
                     i == 0,
                     &rest,
                 );
+                // Another body's water over its top row: the same water (a ramp's open part
+                // under a pool), joined to it below.
+                if scan.cells.is_empty()
+                    && let Some(&t) = prev
+                        .iter()
+                        .filter_map(|&c| self.owner.get(&up(f, c, 1)))
+                        .find(|&&t| t != id && !reservoirs.contains(&t))
+                {
+                    under = Some(t);
+                }
                 met.extend(scan.met);
                 if scan.cells.is_empty() {
                     capped = true; // a ceiling: it can rise no higher
@@ -2310,6 +2329,14 @@ impl Water {
             outlets.extend(b.seep());
             self.basins.get_mut(&id).expect("basin").outlets = outlets;
             self.split_if_apart(world, id, writes);
+            // Under another body's water (its top row covered by it): one body with it.
+            if let Some(t) = under
+                && self.basins.contains_key(&id)
+                && self.basins.contains_key(&t)
+            {
+                self.merge(t, id);
+                self.rebuild(world, t, writes);
+            }
         }
     }
 
@@ -3514,6 +3541,7 @@ fn scan_outlets(
         Some(&o) if o != id && !reservoirs.contains(&o) && !cells.contains(&c) => Some(o),
         _ => None,
     };
+    let level = b.level();
     let mut out: Vec<Outlet> = Vec::new();
     let mut at: HashSet<([i32; 3], bool)> = HashSet::default();
     let mut add =
@@ -3592,6 +3620,17 @@ fn scan_outlets(
                                 None,
                             );
                         }
+                    }
+                    // Water no body holds yet standing lower (the next pool, meeting this one
+                    // under its surface): a way out, found when it is followed (ADR 0058).
+                    Kind::Liquid(_) | Kind::Holds { flooded: true }
+                        if source_of(view, f, n).is_some_and(|(top, _)| top < level - 0.01) =>
+                    {
+                        let face = OutKind::Face {
+                            lo: floor,
+                            hi: floor + CELL_H,
+                        };
+                        add(&mut out, n, face, false, None);
                     }
                     Kind::Liquid(_) | Kind::Holds { .. } => {}
                 }

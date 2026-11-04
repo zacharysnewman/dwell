@@ -952,6 +952,16 @@ impl TerrainGenerator {
         (r.d < r.half && r.level > CELL_H).then(|| surface_row((SEA_LEVEL_M + r.level) as f32))
     }
 
+    /// Whether river `a`'s water goes on into river `b`'s: the same river, or `a` joining `b`
+    /// (its last lip pours into `b`).
+    fn flows_into(&self, a: u32, b: u32) -> bool {
+        a == b
+            || matches!(
+                self.map.rivers.get(a as usize).map(|r| r.end),
+                Some(worldmap::RiverEnd::Joins(j)) if j == b
+            )
+    }
+
     /// Full-detail channel column (x, z)'s part in its river's lips (ADR 0058): in a lip's band,
     /// its crest or wall (`LipPlan`); in the pool below one, walled where that lip blocks it.
     fn lip_role(&self, x: i64, z: i64) -> Lip {
@@ -965,7 +975,7 @@ impl TerrainGenerator {
         let band = me.band
             || near
                 .iter()
-                .any(|(_, n)| n.is_some_and(|n| n.river == me.river && n.row < me.row));
+                .any(|(_, n)| n.is_some_and(|n| self.flows_into(me.river, n.river) && n.row < me.row));
         if band {
             return if self.lip_plan(x, z).crest.contains(&(x, z)) {
                 Lip::Crest
@@ -975,7 +985,7 @@ impl TerrainGenerator {
         }
         for &(n, l) in &near {
             if let Some(l) = l
-                && l.river == me.river
+                && self.flows_into(l.river, me.river)
                 && l.row > me.row
                 && self.lip_col(n.0, n.1).is_some_and(|l| l.band)
                 && self.lip_plan(n.0, n.1).block.contains(&(x, z))
@@ -996,7 +1006,7 @@ impl TerrainGenerator {
                 .iter()
                 .any(|&(dx, dz)| {
                     self.channel_col(x + dx, z + dz)
-                        .is_some_and(|n| n.river == l.river && n.row < l.row)
+                        .is_some_and(|n| self.flows_into(l.river, n.river) && n.row < l.row)
                 });
             if beside_lower {
                 l.band = true;
@@ -1099,7 +1109,7 @@ impl TerrainGenerator {
         // (A column in the next lip's band down is the pool below where that lip's crest is.)
         let lower = |n: (i64, i64), l: Option<LipCol>| {
             l.is_some_and(|l| {
-                l.river == me.river
+                self.flows_into(me.river, l.river)
                     && l.row < me.row
                     && (!l.band || self.lip_plan(n.0, n.1).crest.contains(&n))
             })
