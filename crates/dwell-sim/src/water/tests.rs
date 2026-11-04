@@ -106,7 +106,21 @@ fn channel(f: FaceFrame) -> Scene {
     s.fill([9, -6, -3], [21, -3, -3], stone);
     s.fill([9, -6, 5], [21, -3, 5], stone);
     s.fill([0, 0, 0], [9, 0, 2], M.water);
+    inlet(&mut s, -1, 7, 0, 2);
     s
+}
+
+/// Where a scene's river comes in, seen (ADR 0058): water standing as generated on a ledge at
+/// column `x`, row `r`, z `z0`–`z1`, over the open cells above the river's upstream end, pouring
+/// in by what it stands over its ledge.
+fn inlet(s: &mut Scene, x: i32, r: i32, z0: i32, z1: i32) {
+    inlet_of(s, x, r, z0, z1, M.water);
+}
+
+/// [`inlet`] of water state `m` (a part-full cell pours less).
+fn inlet_of(s: &mut Scene, x: i32, r: i32, z0: i32, z1: i32, m: StateId) {
+    s.fill([x, r - 1, z0], [x, r - 1, z1], require("dwell:stone"));
+    s.fill([x, r, z0], [x, r, z1], m);
 }
 
 dwell_world::both_faces!(
@@ -210,6 +224,7 @@ dwell_world::both_faces!(
         s.fill([0, 0, 0], [9, 1, 2], M.water);
         s.set(10, 1, 1, M.water); // water in the notch, spilling
         s.fill([11, -6, -2], [24, -6, 4], stone);
+        inlet(&mut s, 4, 5, -1, -1);
         s.water = fed(1.7 * 0.5f64.powf(1.5));
         // Found by an edit beside it (the notch as it was), then the trench.
         s.edit(&[[-1, 0, 0], [-1, 0, 1], [-1, 1, 0], [-1, 1, 1]], M.air);
@@ -297,6 +312,7 @@ fn two_steps(f: FaceFrame) -> Scene {
     s.fill([9, -6, 5], [21, -3, 5], stone);
     s.fill([0, 0, 0], [9, 0, 2], M.water);
     s.fill([-10, 1, 0], [-1, 1, 2], M.water);
+    inlet(&mut s, -11, 7, 0, 2);
     s
 }
 
@@ -374,6 +390,7 @@ dwell_world::both_faces!(
         s.fill([21, -6, -3], [21, -3, 5], stone);
         s.fill([9, -6, -3], [21, -3, -3], stone);
         s.fill([9, -6, 5], [21, -3, 5], stone);
+        inlet(&mut s, -31, 10, 0, 2);
         // Found by an edit at each pool (as a player's edits would), then the half blocks.
         s.edit(&[[-25, 5, 1], [-15, 3, 1], [5, 1, 1]], M.air);
         s.run(5, 1.0);
@@ -537,6 +554,7 @@ dwell_world::both_faces!(
         s.fill([32, -6, -3], [32, -3, 5], stone);
         s.fill([19, -6, -3], [32, -3, -3], stone);
         s.fill([19, -6, 5], [32, -3, 5], stone);
+        inlet(&mut s, -201, 6, 0, 2);
         s.edit(&[[-100, 2, 1], [15, 1, 1]], M.air);
         let near = [s.f.point([-350.0, m_of_row(G) + 1.0, 1.5])];
         for _ in 0..600 {
@@ -614,6 +632,7 @@ fn tall_channel(f: FaceFrame) -> Scene {
     s.fill([-1, 4, -1], [9, 8, -1], stone);
     s.fill([-1, 4, 3], [9, 8, 3], stone);
     s.fill([-1, 4, -1], [-1, 8, 3], stone);
+    inlet(&mut s, -1, 9, 0, 2);
     s
 }
 
@@ -755,6 +774,8 @@ dwell_world::both_faces!(
         s.fill([9, -6, -3], [21, -3, -3], stone);
         s.fill([9, -6, 5], [21, -3, 5], stone);
         s.fill([-20, 0, 0], [9, 0, 2], M.water);
+        // Where the river comes in, seen (ADR 0058); until its chunk loads, from the unloaded edge.
+        inlet(&mut s, -21, 10, 0, 2);
         let c = s.cell(-5, 0, 1);
         let west = chunk_of(c[0], c[1], c[2]);
         let e = s.cell(5, 0, 1);
@@ -971,6 +992,9 @@ dwell_world::both_faces!(
             s.set(x, 0, 0, stone);
             s.set(x, 0, 2, stone);
         }
+        // Where each stretch's river comes in, seen (ADR 0058): one cell a row over its ledge.
+        inlet(&mut s, -1, 10, 1, 1);
+        inlet(&mut s, 39, 5, 1, 1);
         // Both found as they were (an edit beside each), at rest.
         s.edit(&[[4, 1, 1], [44, 1, 1]], M.air);
         s.run(5, 1.0);
@@ -1069,6 +1093,7 @@ dwell_world::both_faces!(
         s.fill([8, -6, -3], [20, -6, 7], stone);
         s.fill([0, 0, 0], [9, 0, 4], require("dwell:water[fill=4]"));
         s.water = fed(0.0);
+        inlet_of(&mut s, -1, 5, 2, 2, require("dwell:water[fill=4]"));
         s.edit(&[[4, 1, 2]], M.air);
         s.run(5, 1.0);
         // A wall five cells wide across it: the spill over it, ~0.04 m³/s a cell.
@@ -1198,19 +1223,25 @@ dwell_world::both_faces!(
     /// found. When the chunk loaded, the body grew into its water there and filled the open cells
     /// beside it too, sinking below its level as found and spilling into the next pool. The water
     /// a body grows into as a chunk loads is the world as found: the open cells beside it hold it
-    /// as well. Red before: the pool sank and the open cells filled.
+    /// as well. Red before: the pool sank and the open cells filled. (ADR 0058: the step's water
+    /// comes in seen at its upstream end; what it passes over the step once the chunk loads is
+    /// what it took in, so it holds its level.)
     fn a_pool_grown_into_a_chunk_that_loads_holds_its_level(f: FaceFrame) {
         let mut s = Scene::new(f);
         let stone = require("dwell:stone");
-        // A closed pool across the chunk edge at x = 0 (x −6 to 5): two rows of water west of the
-        // edge, one east of it, with open cells over it there (as a river's step is generated).
+        // A river's step across the chunk edge at x = 0 (x −6 to 5): two rows of water west of the
+        // edge, one east of it, with open cells over it there (as a river's step is generated);
+        // its water comes in seen at the west end (ADR 0058) and goes on over a fall at x = 6,
+        // each a row over its sill six cells wide.
         s.fill([-7, -1, -1], [6, -1, 6], stone);
         s.fill([-7, -1, -1], [6, 3, -1], stone);
         s.fill([-7, -1, 6], [6, 3, 6], stone);
         s.fill([-7, -1, -1], [-7, 3, 6], stone);
-        s.fill([6, -1, -1], [6, 3, 6], stone);
+        s.fill([7, -6, -2], [20, -6, 8], stone);
         s.fill([-6, 0, 0], [5, 0, 5], M.water);
         s.fill([-6, 1, 0], [-1, 1, 5], M.water);
+        s.fill([6, 0, 0], [6, 0, 5], M.water);
+        inlet(&mut s, -7, 5, 0, 5);
         s.water = fed(0.0);
         let east = chunk_of(s.cell(3, 0, 2)[0], s.cell(3, 0, 2)[1], s.cell(3, 0, 2)[2]);
         assert_ne!(
