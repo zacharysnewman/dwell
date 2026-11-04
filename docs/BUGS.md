@@ -20,6 +20,13 @@ the next lip's, and a two-cell pool perched beside the river drains once found. 
 four pools a seed (it passes); at eight this site fails. Suspects: the next lip's crest not under
 this lip's, bank columns lower than a crest's water beside it.
 
+### 28. A junction at the top of a chute can leave a lip a cell short
+
+*Found 2026-11-04 (G1, the graph checker).* Seed 0, river 17 at (16555, 2142): a tributary joins
+where river 17 drops into a chute, so the step's band is split between the two rivers and river 17's
+lip has room for 3 of its 4 cells. One lip in 44,401 on seeds 0–5; the checker allows one in ten
+thousand. Fix: plan a junction step's band across both rivers.
+
 ## Fixed
 
 ### 26. Water risen over a steep slope left air in the bottom half of its ramps (fixed in 0.47.0)
