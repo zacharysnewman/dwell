@@ -26,8 +26,9 @@ generation time?"
 
 ## Decision
 
-Option 1, with the owner's answers: big rivers' steps drowned (long flat reaches balanced by the
-drowned law), levels exact (part-full top rows), the waterline generated flooded, and, in the same
+Option 1, with the owner's answers: pools rest on full half-block levels, the generator sizing each
+lip (whole cells wide, whole half-blocks of water over it) and the engine's flow for each pool being
+exactly what its lip carries there (the map's flow rounded to it); the waterline generated flooded, and, in the same
 release, water drawn as a slope over a ½ m step between pools (drops of a block or more stay
 waterfalls). Shipped as 0.45.0 on its own.
 

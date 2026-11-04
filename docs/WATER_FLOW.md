@@ -526,7 +526,8 @@ generated lip it spills over scaled or not?
 ### 17.2 The idea
 
 The generator places each river pool's surface where the engine's own law balances it: the level at
-which the pool's lip passes the river's discharge. Generated water is then at rest by the same law
+which the pool's lip passes the river's discharge (§17.6: the lip sized so that level is a full
+half-block row, and the pool's flow exactly what the lip carries there). Generated water is then at rest by the same law
 as any other water, and the special treatment goes.
 
 For a pool whose lip is a free (not drowned) sill of width `W` cells, the law is the weir:
@@ -585,11 +586,19 @@ fill's part-full cells (0.44.0). Small and medium rivers fit within a ½ m terra
 
 ### 17.6 The owner's answers (2026-11-04)
 
-- **Big rivers: drowned steps.** Over about 20 m³/s the water over a step's lip is deeper than the
-  step, so the step is under water: a big river is long, nearly flat reaches, each balanced against
-  the next by the drowned law. Small rivers keep visible steps.
-- **Levels exact.** A pool stands where balance puts it, its top row drawn part-full at the nearest
-  eighth (smooth fill), as any pool is.
+- **Levels on full half-blocks, lips sized** (the owner, 2026-11-04: "Levels should round to the
+  nearest half block for final levels"; asked to choose between this and the map's flow exactly).
+  Rounding a balanced level afterwards would leave the engine draining it back, so the full row
+  comes from the physics: the generator sizes each lip (its width in whole cells, the whole
+  half-blocks of water over it; bank across part of a wide channel where it needs a narrower lip,
+  the water pouring through the gap) to carry about the map's flow with the pool at a full row, and
+  the engine's flow for each pool is exactly what its lip carries there: the map's flow rounded to
+  it (within a few percent, the smallest creeks more, a lip being at least a cell). What a pool adds
+  to its river is its lip's flow less the lips' above it. Every generated pool rests on a half-block
+  level by the one law; part-full rows show only while water changes.
+- **Big rivers.** Their lips are wider or deeper (more half-blocks of water over them) at full rows,
+  as above; where a lip's water stands over the next lip's top the step below is under water
+  (drowned), the surface carrying on nearly flat.
 - **The waterline flooded.** Open cells and plants below a river's level beside its water are
   generated as water (a reed standing in it).
 - **Sloped edges, in the same release.** The owner (2026-11-04): "Would it make sense to add river
