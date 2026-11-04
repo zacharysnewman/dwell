@@ -495,3 +495,107 @@ and 1,059 m³/s. What the review found, and where each stands:
 | **No step at a crest** (owner, 2026-11-03: a wall across a river filled the water up to it, not over it and down the other side; a wall level with the water didn't raise it). One basin over a wall had one level; the spill wasn't drawn; the pool below, cut off from the map's flow, filled with the spill. | Fixed (0.43.1): crests split basins, spills drawn as running water, found bodies pass what comes in (0.43.6: their natural outlets scaled once to the map's flow, the level following what comes in; a spill lands in the container of a river below that ran dry). |
 | **A hole below the water in a wall** joined the two sides into one basin at one level, so the wall held nothing back. | Fixed (0.43.2, ADR 0056): one opening law, `C·A·√(2gΔh)`, for every opening and every face two basins share; one body or two by whether the faces even them out at once. Jets (§10) later from the same law. |
 
+
+
+## 17. Balanced rivers (planned, ADR 0057, 0.45.0)
+
+*Adopted 2026-11-04 (the owner chose "Balanced generation" and answered the questions below). Replaces
+§2.2's "at rest as found" when built.*
+
+### 17.1 Why
+
+
+Water behaves differently today depending on whether it was there when the world was generated
+(ADR 0055, [`WATER_FLOW.md`](../WATER_FLOW.md) §2.2). The terrain lays a river's surface in ½ m
+terraces at the world map's levels, without asking whether each step's lip carries the river's
+discharge. Under the water engine's one opening law (ADR 0056) it usually doesn't. Seed 1's sweep
+river carries 7.7 m³/s, and its lip passes about 3 m³/s at a full row's head. So the engine treats
+generated water specially:
+
+- **natural outlets** scaled once to pass the map's flow at the found level;
+- **seeps** where a stretch has no way out of its own;
+- **`rest` and `held` cells**, open cells and other bodies' water beside a found body, held like
+  walls;
+- the bookkeeping for chunks that load later (`hold_grown`, `natural_grown`, 0.44.6), links between
+  found bodies, and found-flow accounting.
+
+The owner (2026-11-04): "This seems wrong, why would water behave differently just because it
+existed on generation time?" The split also forces arbitrary choices: once a dam raises a pool, is a
+generated lip it spills over scaled or not?
+
+### 17.2 The idea
+
+The generator places each river pool's surface where the engine's own law balances it: the level at
+which the pool's lip passes the river's discharge. Generated water is then at rest by the same law
+as any other water, and the special treatment goes.
+
+For a pool whose lip is a free (not drowned) sill of width `W` cells, the law is the weir:
+`Q = weir × W × h^1.5`, so the pool stands `h = (Q / (weir × W))^(2/3)` over its sill. With water's
+weir 1.7 and today's width curve (`hydrology.json`):
+
+| Discharge Q (m³/s) | Channel width (m) | Head over the lip h (m) |
+|---|---|---|
+| 0.4 | 3 | 0.18 |
+| 5 | 12 | 0.39 |
+| 50 | 40 | 0.81 |
+| 500 | 120 | 1.82 |
+
+A pool's level is no longer the top of a row: it sits `h` over its step's sill, drawn with smooth
+fill's part-full cells (0.44.0). Small and medium rivers fit within a ½ m terrace. Above about
+20 m³/s the head is more than one step, which is §6's first question.
+
+### 17.3 How
+
+1. **One law, shared.** The engine's opening law (`face_flow`, the weir from `flow.json`) moves
+   where the generator can call it: a small module both `dwell-worldgen` and `dwell-sim` use, the
+   liquids' weir coefficients read from `shared/fluids/flow.json` by both. Generator and engine then
+   can't disagree.
+2. **Levels from the mouth up.** Per river, once per world map, from where it ends (the sea, a lake,
+   the river it joins) upstream, each terrace's level is solved from the next one down:
+   - a free sill: `h` from `Q` and the lip's width;
+   - drowned (the pool below stands over the sill): the drowned law with the level below.
+
+   The lip's width is counted the way the engine counts it: the faces where the pool's water at the
+   sill's row meets the open cell or lower water beyond.
+3. **The columns draw it.** A river column's water surface is its terrace's solved level (rows full
+   below it, the top row at its fill), not the row top.
+4. **Lakes.** A lake's level is its outlet's sill plus `h` for its outflow.
+5. **Beside the water.** Nothing open is left beside the water below its level: plant cells, notches
+   and ramps at the waterline are generated flooded, so no `rest` is needed.
+6. **The engine loses its special cases.** No natural scaling, seeps, `rest`, `held`, links or
+   found-flow bookkeeping; runoff still feeds every body (§2.1) by the same map discharge the
+   generator balanced against. A dam, a cut and a river in a newly loaded chunk all follow the one
+   law.
+
+### 17.4 Acceptance
+
+- **The sweep, made strict.** Rivers of several seeds, generated, run by the plain law (none of §3.6's
+  special cases) for six hours of water time: no cell changes beyond a fill step. Today's
+  `a_block_set_in_a_generated_rivers_bed_changes_nothing_else` passes only with the special cases.
+- The owner's seed 0 dam behaves as in 0.44.6: it fills, pours over the dam, and the river below
+  holds.
+- Generation stays a pure function of (seed, chunk), with the cost measured on the bench.
+
+### 17.5 Cost and compatibility
+
+- **Terrain changes for every seed** (river surfaces sit at new levels and some notches flood), so
+  this is a new compatibility line, 0.45.0, which the owner raises.
+- The per-map solve is per terrace, run once per map: small next to the erosion pass (*estimate*).
+- About a fifth of `water.rs`'s found-state code goes; saved worlds on 0.45 have no `Steady` to store.
+
+### 17.6 The owner's answers (2026-11-04)
+
+- **Big rivers: drowned steps.** Over about 20 m³/s the water over a step's lip is deeper than the
+  step, so the step is under water: a big river is long, nearly flat reaches, each balanced against
+  the next by the drowned law. Small rivers keep visible steps.
+- **Levels exact.** A pool stands where balance puts it, its top row drawn part-full at the nearest
+  eighth (smooth fill), as any pool is.
+- **The waterline flooded.** Open cells and plants below a river's level beside its water are
+  generated as water (a reed standing in it).
+- **Sloped edges, in the same release.** The owner (2026-11-04): "Would it make sense to add river
+  slopes for 'flowing' water edges to smooth out rivers big and small? Water edges (waterfalls) look
+  really bad right now." Where water pours from one pool over a ½ m step to the next, the mesher
+  draws its surface as a slope down to the lower pool (rapids), not a vertical sheet: visual only,
+  the basins still flat. Drops of a block or more stay waterfalls.
+- **Release: 0.45.0 on its own**, as soon as it passes the strict sweep (§17.4); the owner raises the
+  version.
