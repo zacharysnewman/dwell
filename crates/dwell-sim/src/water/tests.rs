@@ -1036,3 +1036,33 @@ dwell_world::both_faces!(
         assert_eq!(fill(&s, 0), 1.0, "row 0 full");
     }
 );
+
+dwell_world::both_faces!(
+    /// Owner, 2026-11-03: a dam's flood spreading over a low bank sat there as a still sheet,
+    /// not pouring down the slope: its spill, shared out over many edge cells, passed under
+    /// `streamMinFlow` in each, so none was drawn. A spill is drawn running by its body's whole
+    /// flow over the edge: a small river (0.12 m³/s) over a wall three cells wide, 0.04 a cell,
+    /// runs down the wall's far side. Red before: not drawn.
+    fn a_small_spill_shared_over_a_wide_edge_is_drawn_running(f: FaceFrame) {
+        let running = require("dwell:running_water");
+        let mut s = channel(f);
+        s.water = fed(0.12);
+        s.edit(&[[4, 1, 1]], M.air);
+        s.run(5, 1.0);
+        let wall: Vec<[i32; 3]> = (0..=2).map(|z| [5, 0, z]).collect();
+        s.edit(&wall, require("dwell:stone"));
+        s.run(900, 1.0);
+        let pool = s.water.basin_at(s.cell(2, 0, 1)).expect("the pool");
+        let over: Vec<f64> = pool
+            .outlets
+            .iter()
+            .filter(|o| o.flow > 0.0)
+            .map(|o| o.flow)
+            .collect();
+        assert!(
+            over.iter().all(|&q| q < FLOW.stream_min_flow) && over.iter().sum::<f64>() > 0.1,
+            "spread thin: {over:?}"
+        );
+        assert_eq!(s.get(6, 1, 1), running, "running down the wall's far side");
+    }
+);

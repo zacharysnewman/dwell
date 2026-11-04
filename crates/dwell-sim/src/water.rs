@@ -423,6 +423,24 @@ impl Steady {
 }
 
 impl Basin {
+    /// Whether outlet `o` of it is drawn running (docs/WATER_FLOW.md §15): one an edit made (not a
+    /// natural outlet or a seep), when its spill together passes `streamMinFlow` and this one
+    /// carries a share of it (at least a sixteenth of that): a spill shared out over a wide edge
+    /// runs as a whole.
+    fn runs(&self, o: &Outlet) -> bool {
+        let made = |x: &Outlet| !x.is_seep() && !self.natural.contains_key(&x.from);
+        if !made(o) || o.flow < FLOW.stream_min_flow / 16.0 {
+            return false;
+        }
+        let spill: f64 = self
+            .outlets
+            .iter()
+            .filter(|x| made(x))
+            .map(|x| x.flow)
+            .sum();
+        o.flow >= FLOW.stream_min_flow || spill >= FLOW.stream_min_flow
+    }
+
     /// Its inflow (m³/s, real).
     pub fn inflow(&self) -> f64 {
         self.inflows.iter().map(|(_, q)| q).sum()
@@ -1755,11 +1773,7 @@ impl Water {
             for o in &b.outlets {
                 // A natural outlet's water runs as generated (the river's own steps): drawn are the
                 // ways edits made (over a dam, through a cut).
-                if o.flow < FLOW.stream_min_flow
-                    || o.target == Target::Unresolved
-                    || o.is_seep()
-                    || b.natural.contains_key(&o.from)
-                {
+                if !b.runs(o) || o.target == Target::Unresolved {
                     continue;
                 }
                 if o.contact {
@@ -2265,11 +2279,7 @@ impl Water {
             let running: HashSet<[i32; 3]> = b
                 .outlets
                 .iter()
-                .filter(|o| {
-                    o.flow >= FLOW.stream_min_flow
-                        && !o.is_seep()
-                        && !b.natural.contains_key(&o.from)
-                })
+                .filter(|o| b.runs(o))
                 .map(|o| o.from)
                 .collect();
             if !running.is_empty() {
