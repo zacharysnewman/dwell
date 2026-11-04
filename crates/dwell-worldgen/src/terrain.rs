@@ -332,6 +332,10 @@ pub fn lip_cells(q: f64) -> u32 {
     ((q / per_cell).round() as u32).max(1)
 }
 
+/// The least half-width of a lip's crest (m): half the widest spacing of columns across a line
+/// (√2), so every row of the lip holds one.
+const LIP_MIN_HALF: f64 = 0.71;
+
 /// A channel column's part in its step's lip.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Lip {
@@ -355,11 +359,15 @@ fn lip_of(r: &worldmap::Hit) -> Lip {
     if above_step > S.river_lip_reach {
         return Lip::None;
     }
-    if r.d >= 0.5 * (f64::from(lip_cells(r.q)) + 1.0) {
-        Lip::Wall
-    } else {
-        Lip::Crest
-    }
+    // The crest's half-width: its faces (`lip_cells`) over the faces a column of it pours
+    // through (two where the river runs diagonally across the grid), at least half the widest
+    // spacing of columns across it (0.71 m), so every row of the lip has a column of the crest.
+    // The crest's half-width: its faces (`lip_cells`) over the faces a column of it pours
+    // through (two where the river runs diagonally across the grid), at least half the widest
+    // spacing of columns across it, so every row of the lip holds one and they join.
+    let faces_per_column = (r.dir.0.abs() + r.dir.1.abs()).max(1.0);
+    let half = (0.5 * f64::from(lip_cells(r.q)) / faces_per_column).max(LIP_MIN_HALF);
+    if r.d >= half { Lip::Wall } else { Lip::Crest }
 }
 
 /// The row a water surface (m, face-local) lies on: the rows below it are water.
@@ -2604,6 +2612,35 @@ fn smooth_min(a: f64, b: f64, k: f64) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Owner, 2026-11-04 (creek lips carried 2–4× the map's flow): a crest is as wide as the faces
+    /// its discharge needs, counted along the river's direction across the grid (a diagonal
+    /// column pours through two faces), no narrower than every row of the lip needs. A creek of
+    /// 0.5 m³/s running diagonally: a column 0.9 m off its centreline is wall. Red before: crest
+    /// (the old half-width was a cell's more).
+    #[test]
+    fn a_creeks_crest_is_as_narrow_as_its_flow_needs() {
+        let d = std::f64::consts::FRAC_1_SQRT_2;
+        let hit = |dist: f64| worldmap::Hit {
+            d: dist,
+            half: 3.0,
+            level: 20.0 + 0.6 * CELL_H,
+            depth: 1.0,
+            valley: 10.0,
+            dir: (d, d),
+            fall: 0.5,
+            q: 0.5,
+            river: 0,
+        };
+        assert_eq!(lip_cells(0.5), 1);
+        assert_eq!(lip_of(&hit(0.0)), Lip::Crest);
+        assert_eq!(
+            lip_of(&hit(0.6)),
+            Lip::Crest,
+            "every row keeps a crest column"
+        );
+        assert_eq!(lip_of(&hit(0.9)), Lip::Wall);
+    }
 
     #[test]
     fn natural_tops_are_shaped_with_stored_ramps_only_on_half_height_cells() {

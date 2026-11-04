@@ -636,6 +636,10 @@ fill's part-full cells (0.44.0). Small and medium rivers fit within a ½ m terra
   what comes in and what stands over the level found, so the body holds it; only the part holding
   the exit seeps; its baseline for changes downstream is what it passes once settled (its mean
   flow over a tick, steady five ticks).
+- **Creek crests** (0.46.0, a new line): a crest's half-width is its faces (`lip_cells`) over the
+  faces a column of it pours through along the river's direction (two on a diagonal), at least
+  0.71 m so every row of the lip keeps a crest column (picked row by row the crest could step
+  diagonally and seal); creeks' lips carry 1.0–2.6× the map's flow, from 2.2–3.3×.
 - **Own inflow by place** (0.45.2): what a body takes in of its own is kept with the cells it comes
   in at (`Steady::feeds`): set when found (what its ways out carry less what the found bodies above
   bring), taken off once as each body above links in later (`link_once`), carried by splits (each
