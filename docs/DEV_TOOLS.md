@@ -252,6 +252,12 @@ dump (F6, or the debug overlay's button) carries it as `water` (the player's fee
 worker asked, a second at most), and `__dwell.waterReport(x, y, z, radius?)` returns it; a native
 test or probe calls `server.water().report(...)`. A diagnostic only: nothing in the game reads it.
 
+**The edit log** (0.46.1, owner 2026-11-04): the local server keeps its last 256 block changes that
+aren't the water's own (edits, region fills, collapses, settles; `Server::edit_log_json`), oldest
+first, each one's `tick` (the server's, 60 a second), `cell`, `from` and `to` (canonical state
+strings) and `reason`. The local world's water report carries it as `edits`, so the block dump has
+it at `water.edits`: what was done near a reported spot, in order, to replay in a native probe.
+
 ## Adding to it
 
 - A metric: `telemetry::span("name", || …)` / `add` / `sample` / `count` where it happens; add it

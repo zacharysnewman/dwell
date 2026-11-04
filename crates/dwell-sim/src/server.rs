@@ -615,6 +615,20 @@ impl SavedChunks for StoreChunks {
 /// A block gone into a body in a tick: (the body, its new cell; none: a new body), the block.
 type BodyBuilt = ((u32, Option<[i32; 3]>), dwell_blocks::StateId);
 
+/// Block changes kept for the block dump's `edits`.
+const EDIT_LOG_LEN: usize = 256;
+
+/// One block change in the edit log: when (the server's tick), where, what it was and became, and
+/// why.
+#[derive(Clone, Copy, Debug)]
+struct EditLogEntry {
+    tick: u32,
+    cell: [i32; 3],
+    from: dwell_blocks::StateId,
+    to: dwell_blocks::StateId,
+    reason: VoxelModificationReason,
+}
+
 pub struct Server {
     config: ServerConfig,
     entropy: Box<dyn Entropy>,
@@ -629,6 +643,9 @@ pub struct Server {
     felling: crate::felling::Felling,
     /// Water flow (docs/WATER_FLOW.md): the basins edits have touched.
     water: crate::water::Water,
+    /// The last block changes not the water's own (edits, collapses, settles): a diagnostic for
+    /// the block dump (docs/DEV_TOOLS.md), oldest first, at most `EDIT_LOG_LEN`.
+    edit_log: std::collections::VecDeque<EditLogEntry>,
     /// The world's settings (DAY_NIGHT.md §2): sent at join, saved in the world's meta, fields a
     /// newer build added kept in `settings_fields`.
     settings: WorldSettings,
@@ -698,6 +715,7 @@ impl Server {
             dwell_worldgen::spawn_point_for(config.generator_version, config.world_seed)
         });
         let mut server = Self {
+            edit_log: std::collections::VecDeque::new(),
             entropy,
             physics,
             world: VoxelWorld::new(generator.clone(), air_test.clone()),
@@ -2056,6 +2074,18 @@ impl Server {
             ..
         } = changes;
         if !water {
+            for &(cell, from) in &before {
+                if self.edit_log.len() == EDIT_LOG_LEN {
+                    self.edit_log.pop_front();
+                }
+                self.edit_log.push_back(EditLogEntry {
+                    tick: self.tick,
+                    cell,
+                    from,
+                    to: self.world.get_voxel_if_loaded(cell),
+                    reason,
+                });
+            }
             self.water.touch(before);
         }
         if changed.is_empty() {
@@ -2394,6 +2424,28 @@ impl Server {
     /// The world's settings (its clock, its water speed).
     pub fn world_settings(&self) -> WorldSettings {
         self.settings
+    }
+
+    /// The last block changes not the water's own, oldest first, as JSON (a diagnostic for the
+    /// block dump, docs/DEV_TOOLS.md): each one's tick (the server's, 60 a second), cell, the
+    /// state it was and became (registry names) and why.
+    pub fn edit_log_json(&self) -> String {
+        let name = |m: dwell_blocks::StateId| {
+            dwell_blocks::STATES
+                .get(usize::from(m))
+                .map_or_else(|| format!("#{m}"), |s| s.name.to_string())
+        };
+        let rows: Vec<String> = self
+            .edit_log
+            .iter()
+            .map(|e| {
+                format!(
+                    "{{\"tick\":{},\"cell\":[{},{},{}],\"from\":{:?},\"to\":{:?},\"reason\":\"{:?}\"}}",
+                    e.tick, e.cell[0], e.cell[1], e.cell[2], name(e.from), name(e.to), e.reason
+                )
+            })
+            .collect();
+        format!("[{}]", rows.join(","))
     }
 
     /// Water flow, for tests and tools (docs/WATER_FLOW.md).
