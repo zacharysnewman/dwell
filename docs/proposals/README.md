@@ -10,6 +10,7 @@ Open proposals:
 | Proposal | What | Status |
 |---|---|---|
 | [`PIXEL_ART_LOOK.md`](./PIXEL_ART_LOOK.md) | The 3D pixel-art look (t3ssel8r style): a low-res frame, toon bands, a palette with ordered dither, an integer upscale; built as an opt-in preview (`?pixelart=<preset>`) to judge the look | Prototype built, off by default; open questions for the owner |
+| [`WATER_GRAPH.md`](./WATER_GRAPH.md) | Water as data: a pool graph per face derived from the world map (pools, lips, sources, sinks) as the source of truth; the terrain carved from it, the whole river network simulated from it, water blocks written from levels; edits change the graph | Written 2026-11-04; open questions for the owner |
 | [`TERRAIN_HYDROLOGY_AND_VOLUMES.md`](./TERRAIN_HYDROLOGY_AND_VOLUMES.md) | A world-scale hydrology map per seed and face (stream-power erosion, priority-flood lakes, rivers to the sea), then a 3D density function for rich caves, cliffs, arches, sea stacks, cross-face caves and floating islands | Hydrology prototype built (a viewer of images, not wired into generation); open questions for the owner |
 
 Adopted proposals, and where they went:
