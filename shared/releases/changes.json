@@ -2,6 +2,16 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions card. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.45.0",
+      "changes": [
+        "Rivers are shaped so their water stays at rest by the same physics as any other water",
+        "River steps have a lip that the water pours through, and pour as a slope down to the next pool",
+        "Waterfalls reach all the way down to the water below",
+        "A dammed river fills and pours over the dam without rising higher than it should",
+        "New world terrain: worlds from earlier versions open in their own version"
+      ]
+    },
+    {
       "version": "0.44.6",
       "changes": [
         "Water flows through flooded ramps: a dammed river rises up its banks and pours over the dam",

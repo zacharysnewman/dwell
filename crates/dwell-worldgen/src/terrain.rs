@@ -108,6 +108,10 @@ pub struct Surface {
     pub river_reach_per_width: f64,
     pub river_meander: f64,
     pub river_meander_wavelength: i32,
+    /// A step's lip reaches this far upstream of the step (m; WATER_FLOW.md §17).
+    pub river_lip_reach: f64,
+    /// A lip's wall stands this many rows over the water.
+    pub river_lip_rise: i32,
     pub river_lod_width: f64,
     pub river_lod_min_share: f64,
     pub river_lod_max_cell: i64,
@@ -315,6 +319,46 @@ impl Column {
     /// Whether water stands over the ground (cells of water above its top).
     pub fn wet(&self) -> bool {
         self.water_row() > top_voxel(self.height) + 1
+    }
+}
+
+/// The cells across a river's lip that pass `q` m³/s with the water a full row over the sill
+/// (water's weir, `dwell_world::flow`): at least one (docs/WATER_FLOW.md §17).
+pub fn lip_cells(q: f64) -> u32 {
+    let per_cell = dwell_world::flow::sill_flow(dwell_world::flow::water_weir(), 1.0, CELL_H);
+    if per_cell <= 0.0 {
+        return 1;
+    }
+    ((q / per_cell).round() as u32).max(1)
+}
+
+/// A channel column's part in its step's lip.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Lip {
+    None,
+    /// The wall over the water beside the gap the river pours through.
+    Wall,
+    /// The gap: its bed the sill, the water one row deep over it, the crest.
+    Crest,
+}
+
+/// A channel column's part in its step's lip (docs/WATER_FLOW.md §17): within `lipReach` m above
+/// where the river's surface steps down a row, the crest at the centre (`lip_cells` wide) or the
+/// wall beside it. None at sea level or where the surface doesn't fall.
+fn lip_of(r: &worldmap::Hit) -> Lip {
+    if r.level <= CELL_H || r.fall <= 1e-9 {
+        return Lip::None;
+    }
+    let abs = SEA_LEVEL_M + r.level;
+    let k = f64::from(surface_row(abs as f32));
+    let above_step = (abs - (k - 0.5) * CELL_H) / r.fall;
+    if above_step > S.river_lip_reach {
+        return Lip::None;
+    }
+    if r.d >= 0.5 * (f64::from(lip_cells(r.q)) + 1.0) {
+        Lip::Wall
+    } else {
+        Lip::Crest
     }
 }
 
@@ -830,6 +874,42 @@ impl TerrainGenerator {
     }
 
     /// The height field's column at (x, z) (`column` without the volume).
+    /// The row a river's or lake's water surface lies on at full-detail column (x, z) (the rows
+    /// below it water); none where no river channel or lake is. A light lookup for the waterline
+    /// (docs/WATER_FLOW.md §17).
+    fn water_row_at(&self, x: i64, z: i64) -> Option<i32> {
+        if !inside_world_disc(x, z) {
+            return None;
+        }
+        let map = &*self.map;
+        if !map.shores.fields.is_empty() {
+            let (sx, sz) = self.warp(
+                self.shore_seeds,
+                x,
+                z,
+                S.lake_shore_noise,
+                S.lake_shore_wavelength,
+            );
+            if let Some(l) = map.shores.query(map, sx, sz)
+                && l.sdf > 0.0
+            {
+                return Some(surface_row((SEA_LEVEL_M + l.level) as f32));
+            }
+        }
+        if !map.channels.near(x as f64, z as f64, 0.0) {
+            return None;
+        }
+        let (wx, wz) = self.warp(
+            self.meander_seeds,
+            x,
+            z,
+            S.river_meander,
+            S.river_meander_wavelength,
+        );
+        let r = map.channels.query(wx, wz, 0.0, f64::INFINITY)?;
+        (r.d < r.half && r.level > CELL_H).then(|| surface_row((SEA_LEVEL_M + r.level) as f32))
+    }
+
     fn base_column(&self, x: i64, z: i64, cell: i64) -> Column {
         if !inside_world_disc(x, z) {
             return Column {
@@ -932,6 +1012,19 @@ impl TerrainGenerator {
                 if water != Water::Lake {
                     water = Water::River;
                     level = r.level;
+                    // Its step's lip: a wall over the water but for the gap that passes the
+                    // river's discharge with the pool a full row over its sill (ADR 0057).
+                    match if cell == 1 { lip_of(r) } else { Lip::None } {
+                        Lip::Wall => {
+                            h = drawn + f64::from(S.river_lip_rise) * CELL_H;
+                            water = Water::None;
+                            level = 0.0;
+                        }
+                        // The gap's bed is the sill, one row under the water's top: the river
+                        // pours off its edge, and below the water the pools meet only its side.
+                        Lip::Crest => h = drawn - CELL_H,
+                        Lip::None => {}
+                    }
                 }
             } else if water != Water::Lake {
                 // The valley down to the banks, blended back into the land at its reach: by every
@@ -958,6 +1051,19 @@ impl TerrainGenerator {
                     let levee = bank - (edge - 1.0).max(0.0) * S.river_levee_fall;
                     h = h.max(levee);
                 }
+            }
+        }
+        // The waterline: dry ground beside a river's or lake's water stands a row over its top,
+        // so no open cell lies below the water beside it, nor a ramp's open part in it (ADR 0057).
+        let near_water = river.as_ref().is_some_and(|r| r.d - r.half < 2.0)
+            || lake.as_ref().is_some_and(|l| l.sdf > -2.0);
+        if cell == 1 && water == Water::None && near_water {
+            let top = [(1, 0), (-1, 0), (0, 1), (0, -1)]
+                .into_iter()
+                .filter_map(|(dx, dz)| self.water_row_at(x + dx, z + dz))
+                .max();
+            if let Some(k) = top {
+                h = h.max(f64::from(k + 1) * CELL_H - SEA_LEVEL_M);
             }
         }
         if h < 0.0 && (water == Water::None || level < 0.0) {

@@ -1023,6 +1023,121 @@ fn fluid_side(
     b.tag_fluid(style.fluid);
 }
 
+/// Water pouring over a step (WATER_FLOW.md §17, the owner's sloped edges): where a fluid
+/// cell's top shows and its side `face` meets an open cell over the same water half a block or so
+/// lower, its surface goes on as a slope across that cell, from its own drawn surface at the
+/// shared edge down to the lower water's at the far edge, in place of a vertical side (which the
+/// caller then skips). False where it isn't such a step.
+fn slope_over(
+    b: &mut Builder,
+    cells: &Cells<'_>,
+    k: &Kind,
+    [x, y, z]: [i32; 3],
+    face: usize,
+) -> bool {
+    let (axis, sign) = FACES[face];
+    if axis == 1 {
+        return false;
+    }
+    let above = cells.kind(x, y + 1, z);
+    if above.liquid || above.flooded || face_covered(cube(), 2, cover(&above)) {
+        return false;
+    }
+    let [nx, ny, nz] = neighbour_of(x, y, z, axis, sign);
+    let kn = cells.kind(nx, ny, nz);
+    if kn.shape != Shape::Empty || kn.liquid || kn.flooded || kn.style.look == Look::Cross {
+        return false;
+    }
+    let kb = cells.kind(nx, ny - 1, nz);
+    if !kb.liquid || kb.base != k.base {
+        return false;
+    }
+    let high = 1.0 + k.fill * (1.0 - k.style.surface_drop);
+    let low = kb.fill * (1.0 - kb.style.surface_drop);
+    if high - low < 0.05 || high - low > 1.5 {
+        return false;
+    }
+    // In cell units from (x, y - 1, z): the slope over the neighbour's footprint.
+    let near = if sign > 0 { 1.0 } else { 0.0 };
+    let far = near + f64::from(sign);
+    let run = if axis == 0 { 2 } else { 0 };
+    let corner = |along: f64, across: f64, h: f64| {
+        let mut p = [0.0; 3];
+        p[axis] = along;
+        p[run] = across;
+        p[1] = h;
+        p
+    };
+    let mut pts = vec![
+        corner(near, 0.0, high),
+        corner(near, 1.0, high),
+        corner(far, 1.0, low),
+        corner(far, 0.0, low),
+    ];
+    if polygon_normal(&pts)[1] < 0.0 {
+        pts.reverse();
+    }
+    let normal = polygon_normal(&pts);
+    let (color, tile) = surface(&k.style, 1, 1);
+    let at = [f64::from(x), f64::from(y - 1), f64::from(z)];
+    let lit = vec![cells.flood.cell([nx, ny, nz]); pts.len()];
+    let light = vec![1.0; pts.len()];
+    b.polygon(
+        &pts,
+        at,
+        normal,
+        face_tint(1, 1),
+        color,
+        &tile,
+        None,
+        Some((&light, &lit)),
+    );
+    b.tag_fluid(k.style.fluid);
+    true
+}
+
+/// A liquid falling onto another (running water onto a pool, WATER_FLOW.md §17): its sides go on
+/// down into the cell under it to that liquid's drawn surface, inset a hair, so no air shows
+/// between the fall and the water it lands in.
+fn fall_into(b: &mut Builder, cells: &Cells<'_>, k: &Kind, x: i32, y: i32, z: i32) {
+    let kb = cells.kind(x, y - 1, z);
+    if !kb.liquid || same_fluid(k, &kb) {
+        return;
+    }
+    let bottom = kb.fill * (1.0 - kb.style.surface_drop);
+    if bottom >= 1.0 - 1e-6 {
+        return;
+    }
+    for (face, &(axis, sign)) in FACES.iter().enumerate() {
+        if axis == 1 {
+            continue;
+        }
+        let [nx, ny, nz] = neighbour_of(x, y - 1, z, axis, sign);
+        let kn = cells.kind(nx, ny, nz);
+        if face_covered(cube(), face, cover(&kn)) {
+            continue;
+        }
+        let plane = f64::from([x, y - 1, z][axis])
+            + if sign > 0 {
+                1.0 - FLOOD_INSET
+            } else {
+                FLOOD_INSET
+            };
+        let lit = cells.flood.cell([nx, ny, nz]);
+        fluid_side(
+            b,
+            &k.style,
+            &kn,
+            [x, y - 1, z],
+            face,
+            plane,
+            bottom,
+            1.0,
+            lit,
+        );
+    }
+}
+
 /// How high (cells above its floor) a flooded cell's water stands: the cell's top under water or a
 /// solid, else the drawn surface of the water beside it in its row at that water's fill (the
 /// fullest, sides before corners), so a bank's water rises with the pool's; nothing above its floor
@@ -1335,6 +1450,9 @@ fn mesh_cells(
                     if hidden(&k, &kn, m, cells.state(nx, ny, nz), face) {
                         continue;
                     }
+                    if k.liquid && slope_over(&mut transparent, &cells, &k, cell, face) {
+                        continue;
+                    }
                     let mut surface_row = 0;
                     if k.liquid && axis != 1 {
                         let top = fluid_side_top(&cells, &k, m, cx, cy, cz);
@@ -1467,6 +1585,9 @@ fn mesh_cells(
                 let k = cells.kind(cx, cy, cz);
                 if k.shape == Shape::Shaped {
                     shaped_voxel(&mut opaque, &cells, &k, cx, cy, cz);
+                }
+                if k.liquid {
+                    fall_into(&mut transparent, &cells, &k, cx, cy, cz);
                 }
                 if k.style.look == Look::Cross {
                     let target = match k.style.render {

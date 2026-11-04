@@ -8,6 +8,7 @@ pub mod brush;
 mod cell;
 pub mod edit;
 mod face;
+pub mod flow;
 pub mod fluid;
 pub mod hash;
 pub mod light;

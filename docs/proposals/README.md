@@ -22,6 +22,7 @@ Adopted proposals, and where they went:
 | Tree growth (`TREE_GROWTH.md`): growing a hand-built tree from its extracted skeleton, and variations of it | 2026-10-14, [ADR 0033](../adr/0033-tree-growth.md), Phase 30 | [`docs/TREE_GROWTH.md`](../TREE_GROWTH.md) |
 | Half-height voxels (`HALF_HEIGHT_VOXELS.md`): ½ m cells, stored cardinal ramps, shaped at generation | 2026-10-19, [ADR 0042](../adr/0042-half-height-cells.md), Phase 41, for a playtest on the branch `claude/half-height-voxels` | [`docs/HALF_HEIGHT_GRID.md`](../HALF_HEIGHT_GRID.md); the proposal is kept beside it as the investigation's record |
 | Water flow (`WATER_FLOW.md`): basins with one level joined by outlets; damming, draining, diverting, currents | 2026-11-03, [ADR 0053](../adr/0053-water-flow.md), Phase 52 | [`docs/WATER_FLOW.md`](../WATER_FLOW.md) |
+| Balanced rivers (`BALANCED_RIVERS.md`): generated river pools at the levels the engine's one law balances, and sloped water edges | 2026-11-04, [ADR 0057](../adr/0057-balanced-rivers.md), Phase 52 W6 | [`docs/WATER_FLOW.md`](../WATER_FLOW.md) §17 |
 
 Numbers marked *estimate* in a proposal are extrapolated from published figures or arithmetic, not
 measured on Dwell. Measure them with the bench (`docs/DEV_TOOLS.md`) before relying on them.

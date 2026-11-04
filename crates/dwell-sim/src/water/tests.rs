@@ -959,12 +959,18 @@ dwell_world::both_faces!(
     /// the lower stretch never knew.
     fn a_dam_upstream_reaches_the_river_far_below_across_unfound_country(f: FaceFrame) {
         let mut s = Scene::with_air(f, [-16, -8, -8], [72, 10, 16]);
-        // A small river (0.4 m³/s): the dam takes minutes to fill, longer than a change must last
-        // to be sent (`riverChangeHoldS`) and travel down.
-        let q = 0.4;
+        // A small river: each stretch leaves through one cell of its fall (ADR 0057: it carries
+        // what its lip does, ~0.6 m³/s), so the dam takes minutes to fill, longer than a change
+        // must last to be sent (`riverChangeHoldS`) and travel down.
+        let q = 0.6;
         s.water = fed(q).with_rivers(std::sync::Arc::new(Straight));
         channel_at(&mut s, 0, 8);
         channel_at(&mut s, 40, 3);
+        let stone = require("dwell:stone");
+        for x in [10, 50] {
+            s.set(x, 0, 0, stone);
+            s.set(x, 0, 2, stone);
+        }
         // Both found as they were (an edit beside each), at rest.
         s.edit(&[[4, 1, 1], [44, 1, 1]], M.air);
         s.run(5, 1.0);
@@ -1049,14 +1055,27 @@ dwell_world::both_faces!(
     /// runs down the wall's far side. Red before: not drawn.
     fn a_small_spill_shared_over_a_wide_edge_is_drawn_running(f: FaceFrame) {
         let running = require("dwell:running_water");
-        let mut s = channel(f);
-        s.water = fed(0.12);
-        s.edit(&[[4, 1, 1]], M.air);
+        let stone = require("dwell:stone");
+        let mut s = Scene::new(f);
+        // A small river (ADR 0057: it carries what its lip does): a channel five cells wide, its
+        // water half a row deep, leaving through one cell at its end, ~0.21 m³/s.
+        s.fill([-1, -1, -1], [12, -1, 5], stone);
+        s.fill([-1, 0, -1], [12, 3, -1], stone);
+        s.fill([-1, 0, 5], [12, 3, 5], stone);
+        s.fill([-1, 0, -1], [-1, 3, 5], stone);
+        s.fill([10, 0, 0], [10, 3, 4], stone);
+        s.set(10, 0, 2, M.air);
+        s.fill([10, -5, 2], [10, -1, 2], M.air);
+        s.fill([8, -6, -3], [20, -6, 7], stone);
+        s.fill([0, 0, 0], [9, 0, 4], require("dwell:water[fill=4]"));
+        s.water = fed(0.0);
+        s.edit(&[[4, 1, 2]], M.air);
         s.run(5, 1.0);
-        let wall: Vec<[i32; 3]> = (0..=2).map(|z| [5, 0, z]).collect();
-        s.edit(&wall, require("dwell:stone"));
+        // A wall five cells wide across it: the spill over it, ~0.04 m³/s a cell.
+        let wall: Vec<[i32; 3]> = (0..=4).map(|z| [5, 0, z]).collect();
+        s.edit(&wall, stone);
         s.run(900, 1.0);
-        let pool = s.water.basin_at(s.cell(2, 0, 1)).expect("the pool");
+        let pool = s.water.basin_at(s.cell(2, 0, 2)).expect("the pool");
         let over: Vec<f64> = pool
             .outlets
             .iter()
@@ -1067,7 +1086,7 @@ dwell_world::both_faces!(
             over.iter().all(|&q| q < FLOW.stream_min_flow) && over.iter().sum::<f64>() > 0.1,
             "spread thin: {over:?}"
         );
-        assert_eq!(s.get(6, 1, 1), running, "running down the wall's far side");
+        assert_eq!(s.get(6, 1, 2), running, "running down the wall's far side");
     }
 );
 
@@ -1256,6 +1275,37 @@ dwell_world::both_faces!(
         assert!(
             rest.contains(&s.cell(5, 0, 0)),
             "and the open cell beside it"
+        );
+    }
+);
+
+dwell_world::both_faces!(
+    /// Owner, 2026-11-04: a dammed river "would backfill up river higher than height of the dam
+    /// + 1 half block". A pool behind a dam stands no higher than the dam's top and the head that
+    /// pours the river's flow over it (the weir law): a guard (not reproduced on the owner's dam:
+    /// 140.67 m over a 140.50 m crest, the head of the river's flow over 13 cells).
+    fn a_dammed_pool_stands_no_higher_than_its_crest_and_the_head_over_it(f: FaceFrame) {
+        let mut s = tall_channel(f);
+        let dam: Vec<[i32; 3]> = (0..=2)
+            .flat_map(|z| (0..=2).map(move |r| [9, r, z]))
+            .collect();
+        s.edit(&dam, require("dwell:stone"));
+        let crest = m_of_row(G + 3);
+        let head = (channel_q() / (1.7 * 3.0)).powf(2.0 / 3.0);
+        let mut highest = f64::MIN;
+        for _ in 0..1200 {
+            s.run(1, 1.0);
+            if let Some(b) = s.water.basin_at(s.cell(4, 0, 1)) {
+                highest = highest.max(b.level());
+            }
+        }
+        assert!(
+            highest > crest,
+            "it rose over the dam: {highest} (crest {crest})"
+        );
+        assert!(
+            highest <= crest + head + 0.02,
+            "it stood {highest}, over the crest {crest} and the head {head}"
         );
     }
 );

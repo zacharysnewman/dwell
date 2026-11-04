@@ -23,57 +23,8 @@ use dwell_blocks::{BLOCKS, StateId, info};
 use dwell_world::hash::{HashMap, HashSet};
 use dwell_world::{CELL_H, FaceFrame, M, VoxelWorld, chunk_of, m_of_row};
 
-/// A liquid's flow rules (`shared/fluids/flow.json` `liquids`).
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct LiquidFlow {
-    pub block: &'static str,
-    /// m^½/s: an outlet passes `weir × width × head^1.5` m³/s.
-    pub weir: f64,
-    /// The block it runs as between basins (drawn as it, open to the basins).
-    pub running: &'static str,
-}
-
-/// The water flow data (`shared/fluids/flow.json`).
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct FlowData {
-    /// The default water speed (the server's `water_speed`), × game time.
-    pub speed: f64,
-    pub tick_every: u32,
-    pub live_radius_m: f64,
-    pub max_basin_cells: u32,
-    pub max_row_cells: u32,
-    pub stream_reach: u32,
-    /// An outlet passing at least this (m³/s) is drawn running.
-    pub stream_min_flow: f64,
-    /// Basins sharing faces that would even out within this (s) merge.
-    pub merge_seconds: f64,
-    /// The most flow steps a water tick spends bringing waiting basins forward.
-    pub catch_up_steps: u32,
-    /// A basin whose level moves slower than this (mm an hour of water time) is settled.
-    pub settle_mm_per_hour: f64,
-    /// How fast a change to a river's flow travels down the map's rivers (m/s of water time).
-    pub river_speed: f64,
-    /// The least change (m³/s) a body sends down a river.
-    pub river_change_min: f64,
-    /// And the least share of the river's flow it must be.
-    pub river_change_share: f64,
-    /// And how long (water s) it must last before it is sent.
-    pub river_change_hold_s: f64,
-    /// A map lake's head over its outlet (m): how fast its outflow follows a change coming in.
-    pub lake_outlet_head: f64,
-    /// How far past half a step (fill steps) a level must move before its surface is drawn at
-    /// another fill.
-    pub fill_hysteresis: f64,
-    pub liquids: &'static [LiquidFlow],
-    /// Block name → m³/s per m² of face per m of head.
-    pub leaks: &'static [(&'static str, f64)],
-}
-
-// Included (not a `#[path]` module) so rustfmt leaves the generated file as written.
-mod flow_generated {
-    include!("flow.gen.rs");
-}
-pub use flow_generated::FLOW;
+pub use dwell_world::flow::{FLOW, FlowData, LiquidFlow};
+use dwell_world::flow::{G, discharge, face_flow, weir_of};
 
 /// Rows a basin may stack at most (a well 256 m deep).
 const MAX_ROWS: usize = 512;
@@ -81,21 +32,10 @@ const MAX_ROWS: usize = 512;
 const ROUTES_PER_TICK: usize = 1024;
 /// Two basins that meet merge when their levels are this close (m).
 const MERGE_GAP: f64 = 0.02;
+/// Water ticks a seeping body's flow must hold steady before it is its baseline downstream.
+const SEEP_SETTLE_TICKS: u32 = 5;
 /// Flow steps a water tick takes at most.
 const MAX_STEPS: usize = 64;
-
-/// The weir coefficient of a liquid state, if it flows.
-fn weir_of(m: StateId) -> Option<f64> {
-    let s = info(m);
-    if !s.liquid {
-        return None;
-    }
-    let name = BLOCKS[s.block].name;
-    FLOW.liquids
-        .iter()
-        .find(|l| l.block == name)
-        .map(|l| l.weir)
-}
 
 /// How much a block lets through (`leaks`; 0: sealed).
 fn leak_of(m: StateId) -> f64 {
@@ -304,41 +244,6 @@ pub struct Outlet {
     /// A face it shares with another basin's container (its target): water crosses it by the
     /// opening law between the two levels, never routed or drawn running.
     contact: bool,
-}
-
-/// g (m/s²).
-const G: f64 = 9.81;
-
-/// The discharge coefficient of an opening, from a liquid's weir coefficient: a free sill's
-/// `weir × head^1.5` is the opening law summed up its face, `C × (2/3) × √(2g) × head^1.5`.
-fn discharge(weir: f64) -> f64 {
-    weir / (2.0 / 3.0 * (2.0 * G).sqrt())
-}
-
-/// The flow (m³/s per m of width) through a vertical face from `lo` to `hi` (local m) for water
-/// standing at `high` on one side and `low` on the other (`-∞`: none): below `low` the face is
-/// drowned, every part of it pushed by the difference of the levels, `C × area × √(2 g Δh)`; between
-/// `low` and `high` the water pours freely, each part by its own depth under `high` (summed, the
-/// weir law). Hydrostatics: the pressure difference across a submerged opening is `ρ g Δh` at
-/// every depth (docs/WATER_FLOW.md §4).
-fn face_flow(c: f64, high: f64, low: f64, lo: f64, hi: f64) -> f64 {
-    if high <= lo {
-        return 0.0;
-    }
-    let top = hi.min(high);
-    let mut q = 0.0;
-    if low > lo {
-        let d_hi = low.min(top);
-        q += c * (d_hi - lo) * (2.0 * G * (high - low)).sqrt();
-    }
-    let f_lo = lo.max(low);
-    if top > f_lo {
-        q += c
-            * (2.0 * G).sqrt()
-            * (2.0 / 3.0)
-            * ((high - f_lo).powf(1.5) - (high - top).max(0.0).powf(1.5));
-    }
-    q
 }
 
 impl Outlet {
@@ -663,20 +568,16 @@ impl Basin {
         if st.law > 0.0 || st.through <= 0.0 {
             return None;
         }
-        // Only where the river leaves it: a part cut off from that has no way out unseen.
-        let from = match st.exit {
-            Some(c) => {
-                let here = self
-                    .rows
-                    .iter()
-                    .any(|r| r.binary_search(&c).is_ok() || r.contains(&c));
-                if !here {
-                    return None;
-                }
-                c
-            }
-            None => *self.rows.first()?.first()?,
-        };
+        // Only where the river leaves it (a part split off without its exit has none): at its
+        // exit, or its cell nearest it (its container found again since).
+        let e = st.exit?;
+        let from = self.rows.iter().flatten().copied().min_by_key(|c| {
+            let d = [c[0] - e[0], c[1] - e[1], c[2] - e[2]];
+            (
+                i64::from(d[0]).pow(2) + i64::from(d[1]).pow(2) + i64::from(d[2]).pow(2),
+                *c,
+            )
+        })?;
         Some(Outlet {
             from,
             kind: OutKind::Seep {
@@ -754,6 +655,13 @@ pub struct Water {
     /// Where found bodies' natural outlets ran, as found, into liquid no body owned yet (cell →
     /// basin, outlet cell, weight): linked when a body there is found.
     lands: HashMap<[i32; 3], Vec<Land>>,
+    /// What each seeping body passed when it first settled after being found (not saved: taken
+    /// again at the first settle after a load): its change downstream is measured from it.
+    seeped: HashMap<u32, f64>,
+    /// A seeping body's flow over the last ticks while it settles: (flow, ticks it held).
+    seeping: HashMap<u32, (f64, u32)>,
+    /// What each seep passed over this tick (m³), for its mean flow (`carry_down`).
+    seep_volume: HashMap<u32, f64>,
     /// The world map's rivers (docs/WATER_FLOW.md §6, W2d): changes carried down them.
     river_map: Option<std::sync::Arc<dyn Rivers>>,
     /// The fronts on them and the lakes they ran into.
@@ -796,6 +704,9 @@ impl Water {
             edited: HashSet::default(),
             split: HashSet::default(),
             lands: HashMap::default(),
+            seeped: HashMap::default(),
+            seeping: HashMap::default(),
+            seep_volume: HashMap::default(),
             river_map: None,
             flows: rivers::Flows::default(),
             located: HashMap::default(),
@@ -866,7 +777,38 @@ impl Water {
         // What each body sends into the unfound now, against what it did as found.
         let mut ids: Vec<u32> = self.basins.keys().copied().collect();
         ids.sort_unstable();
-        let mut now: Vec<(u32, [i32; 3], f64)> = Vec::new();
+        // A seeping body's baseline: what it passes once it has settled.
+        for b in self.basins.values() {
+            let at_found = b
+                .steady
+                .as_ref()
+                .is_some_and(|st| (b.level() - st.level).abs() < 0.005);
+            if self.seeped.contains_key(&b.id) {
+                continue;
+            }
+            if !b.outlets.iter().any(Outlet::is_seep) {
+                continue;
+            }
+            let mean = self.seep_volume.get(&b.id).copied().unwrap_or(0.0) / dt.max(1e-9);
+            if b.active || !at_found {
+                self.seeping.remove(&b.id);
+                continue;
+            }
+            // Settled: its flow the same (within 1 %) for SEEP_SETTLE_TICKS ticks.
+            let e = self.seeping.entry(b.id).or_insert((mean, 0));
+            if (mean - e.0).abs() <= 0.01 * e.0.abs().max(1e-6) {
+                e.1 += 1;
+            } else {
+                *e = (mean, 0);
+            }
+            if e.1 >= SEEP_SETTLE_TICKS {
+                self.seeped.insert(b.id, mean);
+                self.seeping.remove(&b.id);
+            }
+        }
+        self.seeped.retain(|id, _| self.basins.contains_key(id));
+        self.seeping.retain(|id, _| self.basins.contains_key(id));
+        let mut now: Vec<(u32, [i32; 3], f64, f64)> = Vec::new();
         for &id in &ids {
             let b = &self.basins[&id];
             // Only the found river's bodies: water collecting elsewhere came from them.
@@ -898,8 +840,12 @@ impl Water {
                     expected += st.flow * w / st.law;
                     site.get_or_insert(c);
                 }
-            } else if let Some(st) = &b.steady {
-                expected = st.flow;
+            } else if b.steady.is_some() {
+                // A seep: what it passed when it first settled (none sent before).
+                match self.seeped.get(&id) {
+                    Some(&q) => expected = q,
+                    None => continue,
+                }
             }
             let mut actual = 0.0;
             // Its flow by the opening law at its level now (an outlet just found has passed
@@ -934,7 +880,14 @@ impl Water {
                     Target::Unresolved => None,
                 })
                 .collect();
-            let seep = b.outlets.iter().find(|o| o.is_seep()).map(rate);
+            // A seep passes what it is given (the flow step): what it passed last.
+            let seep = b.outlets.iter().find(|o| o.is_seep()).map(|_| {
+                if holds {
+                    0.0
+                } else {
+                    self.seep_volume.get(&id).copied().unwrap_or(0.0) / dt.max(1e-9)
+                }
+            });
             let first = b
                 .steady
                 .as_ref()
@@ -954,10 +907,10 @@ impl Water {
                 site.get_or_insert(c);
             }
             if let Some(c) = site {
-                now.push((id, c, actual - expected));
+                now.push((id, c, actual - expected, expected));
             }
         }
-        for (id, c, d) in now {
+        for (id, c, d, expected) in now {
             let last = self.flows.sent.get(&id).copied();
             let base = last.map_or(0.0, |l| l.dq);
             // Changes worth sending: more than the least, and than a share of the river's flow (its
@@ -966,7 +919,8 @@ impl Water {
                 .basins
                 .get(&id)
                 .and_then(|b| b.steady.as_ref())
-                .map_or(0.0, |st| st.flow);
+                .map_or(0.0, |st| st.flow)
+                .max(expected);
             if (d - base).abs() < FLOW.river_change_min.max(FLOW.river_change_share * scale) {
                 self.flows.held.remove(&id);
                 continue;
@@ -1240,6 +1194,7 @@ impl Water {
             }
         }
         let sub = dt / steps as f64;
+        self.seep_volume.clear();
         for _ in 0..steps {
             self.flow_step(&live, sub, steps, None);
         }
@@ -1401,7 +1356,12 @@ impl Water {
             // (over a dam, from the pools above), by its natural outlets at the level it was found
             // at; those an edit blocked still count, so it rises behind them.
             if let Some(st) = &b.steady {
-                let flow = st.flow;
+                // (A seep passes what goes through it: its own and what the bodies above bring.)
+                let flow = if st.law > 0.0 {
+                    st.flow
+                } else {
+                    st.through.max(st.flow)
+                };
                 b.pass(flow);
             }
             let level = b.level();
@@ -1416,6 +1376,19 @@ impl Water {
                     o.rate(level, b.weir, below)
                 })
                 .collect();
+            // A seep is the river going on unseen (out of the loaded world): it passes on what
+            // comes in, its own and what stands over the level it was found at, so the body holds
+            // that level whatever arrives; a dam above it lowers what it passes, never drains it.
+            if let Some(st) = &b.steady {
+                // (What arrives lands after the step: as much as arrived last step goes on too.)
+                let over = (b.volume - b.volume_below(st.level)).max(0.0) / dt;
+                let pass = b.inflow().max(0.0) + over + b.through;
+                for (o, q) in b.outlets.iter().zip(out.iter_mut()) {
+                    if o.is_seep() {
+                        *q = pass;
+                    }
+                }
+            }
             if waiting && b.active {
                 // Filling or draining but not all loaded: it holds what it has, passing nothing,
                 // and is brought forward once loaded (`catch_up`), sending then what it would have.
@@ -1423,7 +1396,14 @@ impl Water {
             } else if waiting {
                 // Settled and out of reach: it holds its level and passes on what comes in, shared
                 // as its ways out would share it (with none, it keeps it).
-                let pass = b.inflow() + b.through;
+                let mut pass = b.inflow() + b.through;
+                // A body seeping the river on out of the loaded world passes on what stands over
+                // its level as found too (the river carries on there).
+                if let Some(st) = &b.steady
+                    && b.outlets.iter().any(Outlet::is_seep)
+                {
+                    pass += (b.volume - b.volume_below(st.level)).max(0.0) / dt;
+                }
                 let law: f64 = out.iter().sum();
                 let s = if law > 0.0 { pass / law } else { 0.0 };
                 out.iter_mut().for_each(|q| *q *= s);
@@ -1483,6 +1463,9 @@ impl Water {
             }
             for (o, &q) in b.outlets.iter_mut().zip(&out) {
                 o.flow = q;
+                if o.is_seep() {
+                    *self.seep_volume.entry(id).or_default() += q * dt;
+                }
             }
             let total: f64 = out.iter().sum();
             if b.reservoir {
@@ -1749,7 +1732,9 @@ impl Water {
         }
         let through = st.through;
         let added: f64 = new.iter().map(|(_, r)| r).sum();
-        b.natural.extend(new);
+        for (c, w) in new {
+            *b.natural.entry(c).or_default() += w;
+        }
         if let Some(st) = &mut b.steady {
             st.law += added;
         }
@@ -1939,8 +1924,16 @@ impl Water {
                 })
                 .filter(|n| {
                     // Water beside it as found, or a block holding some (a flooded ramp of the
-                    // next step): faces that pass nothing as generated.
-                    !seen.contains(n)
+                    // next step): faces that pass nothing as generated. Not a body found at its
+                    // own level (one river found in parts across a chunk's edge): one body.
+                    let same_level = self
+                        .owner
+                        .get(n)
+                        .and_then(|o| self.basins.get(o))
+                        .and_then(|x| x.steady.as_ref())
+                        .is_some_and(|st| (st.level - m_of_row(surface + 1)).abs() < 0.25);
+                    !same_level
+                        && !seen.contains(n)
                         && matches!(
                             view.kind(*n),
                             Kind::Liquid(_) | Kind::Holds { flooded: true }
@@ -1951,15 +1944,33 @@ impl Water {
             // its cell farthest from them (a river pool's upstream end).
             let outlets = scan_outlets(&view, &b, &self.owner, &self.reservoir_ids(), id);
             let level = b.level();
-            let law: f64 = outlets
+            // Each way out by what stands beyond it: a face shared with a body found before (the
+            // next pool's water beside it) by that body's level, drowned, never as a free fall.
+            let levels: HashMap<u32, f64> = outlets
                 .iter()
-                .map(|o| o.rate(level, weir, f64::NEG_INFINITY))
-                .sum();
-            let q = self.runoff_of(f, &seen);
-            b.natural = outlets
-                .iter()
-                .map(|o| (o.from, o.rate(level, weir, f64::NEG_INFINITY)))
+                .filter_map(|o| match o.target {
+                    Target::Basin(t) => Some((t, self.basins.get(&t)?.level())),
+                    _ => None,
+                })
                 .collect();
+            let beyond = |o: &Outlet| match o.target {
+                Target::Basin(t) => levels.get(&t).copied().unwrap_or(f64::NEG_INFINITY),
+                _ => f64::NEG_INFINITY,
+            };
+            let law: f64 = outlets.iter().map(|o| o.rate(level, weir, beyond(o))).sum();
+            // What it passes at rest: what its ways out carry at its level by the one law (its
+            // lips sized for the river's flow, ADR 0057); with none, the map's flow, seeping
+            // where the river leaves the loaded world.
+            let q = if law > 0.0 {
+                law
+            } else {
+                self.runoff_of(f, &seen)
+            };
+            // By the cell they leave from, all its faces together (a corner cell pours two ways).
+            b.natural = HashMap::default();
+            for o in &outlets {
+                *b.natural.entry(o.from).or_default() += o.rate(level, weir, beyond(o));
+            }
             // With no way out of its own (closed by its riverbed's ramps, or the river going on out
             // of the loaded world) it passes the map's flow unseen where the river leaves it: its
             // cell farthest down the map's river (or from where it comes in), so a dam that cuts
@@ -2162,6 +2173,14 @@ impl Water {
             b.chunks = chunks_of(b.cells());
             b.edge = edge_of(world, b.cells());
             let cells: Vec<[i32; 3]> = b.cells().collect();
+            // Natural outlets of bodies found before that ran where it reaches now.
+            for c in &cells {
+                for (u, from, w) in self.lands.remove(c).unwrap_or_default() {
+                    if u != id && self.basins.contains_key(&u) {
+                        self.links.entry((u, from)).or_insert((id, w));
+                    }
+                }
+            }
             for c in cells {
                 self.owner.insert(c, id);
             }
@@ -2380,6 +2399,22 @@ impl Water {
             })
             .filter(|((f, _), (t, _))| f != t)
             .collect();
+        // What it passes at rest now: its natural ways out but those inside it (the lip from one
+        // of the two into the other).
+        let owner = &self.owner;
+        if let Some(m) = self.basins.get_mut(&a) {
+            let law: f64 = m
+                .natural
+                .iter()
+                .filter(|(c, _)| owner.get(*c) != Some(&a))
+                .map(|(_, w)| w)
+                .sum();
+            if let Some(st) = &mut m.steady
+                && law > 0.0
+            {
+                (st.law, st.flow) = (law, law);
+            }
+        }
     }
 
     fn retarget(&mut self, from: u32, to: u32) {
@@ -2527,6 +2562,21 @@ impl Water {
     /// less what they bring (docs/WATER_FLOW.md §2.2), by its natural outlets that are still ways
     /// out of it, or unseen with none.
     fn balance(&mut self) {
+        // Natural outlets that ran where a body stands now (found, grown or split off since).
+        let owned: Vec<[i32; 3]> = self
+            .lands
+            .keys()
+            .filter(|c| self.owner.contains_key(*c))
+            .copied()
+            .collect();
+        for c in owned {
+            let t = self.owner[&c];
+            for (u, from, w) in self.lands.remove(&c).unwrap_or_default() {
+                if u != t && self.basins.contains_key(&u) {
+                    self.links.entry((u, from)).or_insert((t, w));
+                }
+            }
+        }
         // What changes upstream send down the map's rivers to where each body's water comes in.
         let entries: Vec<(u32, [i32; 3])> = self
             .basins
@@ -2556,22 +2606,27 @@ impl Water {
         }
         let mut up: HashMap<u32, f64> = HashMap::default();
         for (_, id) in order {
-            let owner = &self.owner;
             let b = self.basins.get_mut(&id).expect("basin");
-            let law: f64 = b
-                .natural
-                .iter()
-                .filter(|(c, _)| owner.get(*c) != Some(&id))
-                .map(|(_, w)| w)
-                .sum();
+            // What its ways out carry at its level as found (set when found, split or merged).
+            let law: f64 = b.steady.as_ref().map_or(0.0, |st| st.law);
             let st = b.steady.as_mut().expect("found at rest");
             st.law = law;
             let feed = st.feed();
             let brought = up.get(&id).copied().unwrap_or(0.0);
             // Its steady flow (what the links bring by the map, for the bodies below it); what it
             // passes each flow step is what comes in then (`flow_step`).
-            let through = feed.max(brought);
-            let mut own = (feed - brought).max(0.0);
+            // It passes what its ways out carry at its level as found, unscaled (its lips are
+            // sized for the river, ADR 0057); what comes in of its own is that less what the
+            // found bodies above bring as found: a lip above it carrying a little more than its
+            // own makes it a small loss to the ground.
+            // A body with no way out of its own (the river going on out of the loaded world)
+            // seeps what comes in, its own and what the bodies above bring, as found.
+            let through = if law > 0.0 { feed } else { feed.max(brought) };
+            let mut own = if law > 0.0 {
+                feed - brought
+            } else {
+                (feed - brought).max(0.0)
+            };
             // The head of the bodies found on its river: what a change upstream sends down it
             // through country nobody has found comes in with its own (W2d).
             if own > 0.0
@@ -2583,7 +2638,7 @@ impl Water {
                 st.feeds
                     .iter()
                     .map(|&(c, q)| (c, q * own / feed))
-                    .filter(|(_, q)| *q > 0.0)
+                    .filter(|(_, q)| *q != 0.0)
                     .collect()
             } else {
                 Vec::new()
@@ -3157,9 +3212,14 @@ impl Water {
         // And only if the faces carry what flows through the basin (its inflow and what arrives)
         // within MERGE_GAP: a river through a hole needs a head across it.
         let throughput = b.inflow() + b.arriving;
+        // A part wholly in the surface row (water over a sill: a lip's crest) is one body with
+        // the pool it joins: the river pours off its edge, a head over the sill, not across the
+        // faces between them (ADR 0057).
+        let crest = |p: &HashSet<[i32; 3]>| p.iter().all(|c| (f.row(c[1]) - bottom) as usize == k);
         for ((i, j), cond) in pairs {
             let a = surf(&parts[i]).min(surf(&parts[j]));
-            if cond > 0.0 && a / cond < FLOW.merge_seconds && cond * MERGE_GAP >= throughput {
+            let carries = cond * MERGE_GAP >= throughput || crest(&parts[i]) || crest(&parts[j]);
+            if cond > 0.0 && a / cond < FLOW.merge_seconds && carries {
                 let (ri, rj) = (find(&mut root, i), find(&mut root, j));
                 if ri != rj {
                     root[rj] = ri;
@@ -3249,10 +3309,26 @@ impl Water {
                     })
                     .map_or(0, |(i, _)| i)
             };
+            // Its natural ways out are the ones by it (each to the nearest part), and what it
+            // passes at rest is what they carry (ADR 0057); a part with none passes the map's
+            // flow only if the river leaves through it (its seep's exit), else nothing.
+            nb.natural.retain(|c, _| nearest(c) == n);
+            let law: f64 = nb.natural.values().sum();
             if let Some(st) = &mut nb.steady {
                 st.feeds.retain(|(c, _)| {
                     part.contains(c) || (!parts.iter().any(|p| p.contains(c)) && nearest(c) == n)
                 });
+                // Only the part the river leaves by seeps; another passes what its own entries
+                // bring in, by the ways it has now.
+                if st.exit.is_none_or(|e| nearest(&e) != n) {
+                    st.exit = None;
+                }
+                let fed: f64 = st.feeds.iter().map(|(_, q)| q).sum();
+                if law > 0.0 {
+                    (st.law, st.flow, st.through) = (law, law, law);
+                } else if st.exit.is_none() {
+                    (st.law, st.flow, st.through) = (0.0, fed, fed);
+                }
             }
             for &c in part {
                 self.owner.insert(c, pid);
@@ -3318,7 +3394,9 @@ fn spread_row(
                 false
             }
             Kind::Open => !rest.contains(&s),
-            Kind::Liquid(m) if m == liquid && (ours(s) || !owner.contains_key(&s)) => true,
+            // Its own; liquid no one holds is another body's water, to be found (met), and
+            // joined if it stands at its level (`merge_wide`).
+            Kind::Liquid(m) if m == liquid && ours(s) => true,
             Kind::Liquid(_) if walled(s) => false,
             Kind::Liquid(_) => {
                 met.push(s);

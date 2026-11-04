@@ -62,6 +62,7 @@ one's status line. Resolving an item in `ARCHITECTURE.md` Open Decisions require
 | [0054](0054-world-settings.md) | World settings sent at join (the clock, the water speed) | Accepted (built, 0.42.0) |
 | [0055](0055-water-at-rest.md) | Water found at rest, fed by the world map (amends 0053) | Accepted (built, 0.42.2) |
 | [0056](0056-one-opening-law.md) | One opening law, C·A·√(2gΔh), for every opening and shared face (amends 0053, 0055) | Accepted (built, 0.43.2) |
+| [0057](0057-balanced-rivers.md) | Balanced rivers: generated water at rest by the engine's one law, sloped water edges (supersedes 0055 once built) | Accepted (built, 0.45.0) |
 
 Phase numbers in ADRs follow the implementation plan as it was then. In ADRs 0001–0010, Phases
 4–7 became 5–8 when the world-LOD phase (Phase 4) was added on 2026-09-29, and then 6–9 when the

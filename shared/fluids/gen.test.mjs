@@ -12,7 +12,7 @@ const data = () => JSON.parse(readFileSync(join(here, 'flow.json'), 'utf8'));
 test('the checked-in flow data validates and generates the checked-in Rust', () => {
   assert.equal(
     flowRust(validateFlow(data())),
-    readFileSync(join(here, '../../crates/dwell-sim/src/flow.gen.rs'), 'utf8'),
+    readFileSync(join(here, '../../crates/dwell-world/src/flow.gen.rs'), 'utf8'),
   );
 });
 

@@ -1745,3 +1745,77 @@ fn a_flooded_ramp_draws_its_water_at_the_fill_of_the_water_beside_it() {
     let tops = water_tops_over(&m, 5.0);
     assert!(tops.iter().all(|&y| y <= 3.0 + 1e-6), "{tops:?}");
 }
+
+#[test]
+fn a_fall_reaches_down_to_the_water_it_lands_in() {
+    // Owner, 2026-11-04: "there's often a half block gap between the bottom of waterfalls and the
+    // river below". A fall is written down to the cell over the pool it lands in, and the pool's
+    // top is drawn below its cell's top (part full here): the fall's sides go on down to that
+    // surface. Red before: they stopped at the cell's floor, air showing under them.
+    let running = require("dwell:running_water");
+    let quarter = require("dwell:water[fill=2]");
+    let mut cells = Vec::new();
+    for x in 3..=7 {
+        for z in 3..=7 {
+            cells.push((x, 1, z, stone()));
+            cells.push((x, 2, z, quarter));
+        }
+    }
+    cells.push((5, 3, 5, running));
+    cells.push((5, 4, 5, running));
+    let m = mesh(&cells, false).transparent;
+    let full = 1.0 - dwell_blocks::require_fluid("dwell:water").surface_drop;
+    let surface = 2.0 + 0.25 * full;
+    let reaches = m.indices.chunks_exact(3).any(|t| {
+        let i = t[0] as usize * 3;
+        let side = m.normals[i + 1].abs() < 0.5;
+        let ps = [t[0], t[1], t[2]].map(|i| vertex(&m.positions, i));
+        let near = ps
+            .iter()
+            .all(|p| p[0] > 4.9 && p[0] < 6.1 && p[2] > 4.9 && p[2] < 6.1);
+        side && near && ps.iter().any(|p| (p[1] - surface).abs() < 1e-4)
+    });
+    assert!(reaches, "no fall face down to the surface at {surface}");
+}
+
+#[test]
+fn water_pouring_over_a_half_block_step_is_drawn_as_a_slope() {
+    // Owner, 2026-11-04: "Would it make sense to add river slopes for 'flowing' water edges to
+    // smooth out rivers big and small? Water edges (waterfalls) look really bad right now." A
+    // pool's edge over an open cell above water half a block lower is drawn as a slope across
+    // that cell down to the lower surface, not a vertical sheet. Red before: a vertical face.
+    let mut cells = Vec::new();
+    for z in 3..=5 {
+        for x in 0..=9 {
+            cells.push((x, 0, z, stone()));
+            cells.push((x, 1, z, water()));
+        }
+        for x in 0..=4 {
+            cells.push((x, 2, z, water()));
+        }
+    }
+    let m = mesh(&cells, false).transparent;
+    let full = 1.0 - dwell_blocks::require_fluid("dwell:water").surface_drop;
+    let (high, low) = (2.0 + full, 1.0 + full);
+    let mut slope = false;
+    let mut sheet = false;
+    for t in m.indices.chunks_exact(3) {
+        let i = t[0] as usize * 3;
+        let n = [m.normals[i], m.normals[i + 1], m.normals[i + 2]];
+        let ps = [t[0], t[1], t[2]].map(|i| vertex(&m.positions, i));
+        let over = ps.iter().all(|p| p[0] > 4.99 && p[0] < 6.01);
+        if over && n[1] > 0.2 && n[1] < 0.99 && n[0] > 0.0 {
+            let ys: Vec<f64> = ps.iter().map(|p| p[1]).collect();
+            if ys.iter().any(|y| (y - high).abs() < 1e-4)
+                && ys.iter().any(|y| (y - low).abs() < 1e-4)
+            {
+                slope = true;
+            }
+        }
+        if n[0] > 0.9 && ps.iter().all(|p| (p[0] - 5.0).abs() < 1e-6 && p[1] > 1.99) {
+            sheet = true;
+        }
+    }
+    assert!(slope, "no slope from {high} down to {low} over the step");
+    assert!(!sheet, "a vertical sheet at the step");
+}
