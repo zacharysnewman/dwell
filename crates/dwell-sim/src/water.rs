@@ -55,6 +55,10 @@ pub struct FlowData {
     pub river_speed: f64,
     /// The least change (m³/s) a body sends down a river.
     pub river_change_min: f64,
+    /// And the least share of the river's flow it must be.
+    pub river_change_share: f64,
+    /// And how long (water s) it must last before it is sent.
+    pub river_change_hold_s: f64,
     /// A map lake's head over its outlet (m): how fast its outflow follows a change coming in.
     pub lake_outlet_head: f64,
     /// How far past half a step (fill steps) a level must move before its surface is drawn at
@@ -133,6 +137,11 @@ enum Kind {
     /// Air, or a block water replaces (a plant).
     Open,
     Liquid(StateId),
+    /// A block whose open part holds water (a ramp, with a `flooded` state): the water's through
+    /// its open sides and top (`joins`), never written over; `flooded` while it holds some.
+    Holds {
+        flooded: bool,
+    },
 }
 
 /// The full state of liquid state `m` (itself when full or no liquid): a cell part full is the
@@ -161,6 +170,53 @@ fn fill_state(full: StateId, frac: f64) -> StateId {
     dwell_blocks::liquid_at_fill(full, frac)
 }
 
+/// Whether state `m` is a block whose open part holds water: a shaped block with a `flooded`
+/// state (a ramp; docs/WATER_FLOW.md §15).
+fn holds_water(m: StateId) -> bool {
+    static HOLDS: std::sync::LazyLock<Vec<bool>> = std::sync::LazyLock::new(|| {
+        (0..dwell_blocks::STATES.len())
+            .map(|m| {
+                let s = &dwell_blocks::STATES[m];
+                s.shape == dwell_blocks::VoxelShape::Shaped
+                    && dwell_blocks::with_property(m as StateId, "flooded", "true").is_some()
+            })
+            .collect()
+    });
+    HOLDS.get(usize::from(m)).copied().unwrap_or(false)
+}
+
+/// Whether water passes between neighbouring cells `a` and `b` (in `view`): a block holding water
+/// (a ramp) lets it through only its open faces — a side whose profile stands lower than the cell
+/// somewhere, a top not full — never its full back or its bottom (docs/WATER_FLOW.md §15).
+fn joins(view: &View<'_>, a: [i32; 3], b: [i32; 3]) -> bool {
+    let open = |c: [i32; 3], d: [i32; 3]| -> bool {
+        let Some(m) = view.get(c) else {
+            return false;
+        };
+        if !holds_water(m) {
+            return true;
+        }
+        let shape = dwell_blocks::shape::shape_of(m);
+        match d {
+            [1, 0, 0] => shape.sides[0].iter().any(|&h| h < 4),
+            [-1, 0, 0] => shape.sides[1].iter().any(|&h| h < 4),
+            [0, 0, 1] => shape.sides[2].iter().any(|&h| h < 4),
+            [0, 0, -1] => shape.sides[3].iter().any(|&h| h < 4),
+            [0, 1, 0] => !shape.full_top,
+            [0, -1, 0] => !shape.full_bottom,
+            _ => false,
+        }
+    };
+    let d = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+    open(a, d) && open(b, [-d[0], -d[1], -d[2]])
+}
+
+/// Whether a cell of kind `k` holds water up or back as a wall does (a block holding water in its
+/// open part too, for what stands on it or beside its full faces).
+fn walls(k: Kind) -> bool {
+    matches!(k, Kind::Solid | Kind::Holds { .. })
+}
+
 fn kind(m: Option<StateId>) -> Kind {
     let Some(m) = m else {
         return Kind::Solid;
@@ -171,6 +227,8 @@ fn kind(m: Option<StateId>) -> Kind {
     let s = info(m);
     if s.liquid {
         Kind::Liquid(full_of(m))
+    } else if holds_water(m) {
+        Kind::Holds { flooded: s.flooded }
     } else if s.replaceable && !s.solid {
         Kind::Open
     } else {
@@ -302,9 +360,12 @@ impl Outlet {
                     self.scale * discharge(weir) * (2.0 * G * (level - below.max(z))).sqrt()
                 }
             }
-            // No more than it passed as found (at the level it was found at, a row over its sill).
+            // At the level it was found at (a row over its sill) what it passed then; above it a
+            // little more, up to ~8 % more 2.5 cm higher: a hair more coming in (the map's flows
+            // round differently pool to pool) settles a hair up, but a flood beside it can't drain
+            // away unseen.
             OutKind::Seep { sill } => {
-                self.scale * weir * (level - sill).clamp(0.0, CELL_H).powf(1.5)
+                self.scale * weir * (level - sill).clamp(0.0, 1.05 * CELL_H).powf(1.5)
             }
             OutKind::Leak { k, centre } => {
                 self.scale * k * CELL_H * (level - centre.max(below)).max(0.0)
@@ -446,6 +507,33 @@ impl Basin {
             .map(|x| x.flow)
             .sum();
         o.flow >= FLOW.stream_min_flow || spill >= FLOW.stream_min_flow
+    }
+
+    #[doc(hidden)]
+    pub fn debug(&self) -> String {
+        format!(
+            "id{} lvl{:.3} vol{:.1} in{:.3} arr{:.3} cells{} lo{:?} hi{:?} steady{:?} outs{:?}",
+            self.id,
+            self.world_level(),
+            self.volume,
+            self.inflow(),
+            self.arriving,
+            self.rows.iter().map(Vec::len).sum::<usize>(),
+            self.lo,
+            self.hi,
+            self.steady.as_ref().map(|s| (s.flow, s.law, s.level)),
+            self.outlets
+                .iter()
+                .filter(|o| o.flow > 1e-4)
+                .map(|o| (
+                    o.from,
+                    (o.flow * 1000.0).round() / 1000.0,
+                    o.target,
+                    self.natural.contains_key(&o.from),
+                    o.contact
+                ))
+                .collect::<Vec<_>>()
+        )
     }
 
     /// Its inflow (m³/s, real).
@@ -872,9 +960,25 @@ impl Water {
         for (id, c, d) in now {
             let last = self.flows.sent.get(&id).copied();
             let base = last.map_or(0.0, |l| l.dq);
-            if (d - base).abs() < FLOW.river_change_min {
+            // Changes worth sending: more than the least, and than a share of the river's flow (its
+            // own level's wobble on a large river is no change downstream).
+            let scale = self
+                .basins
+                .get(&id)
+                .and_then(|b| b.steady.as_ref())
+                .map_or(0.0, |st| st.flow);
+            if (d - base).abs() < FLOW.river_change_min.max(FLOW.river_change_share * scale) {
+                self.flows.held.remove(&id);
                 continue;
             }
+            // And lasting: a change held `riverChangeHoldS` (a pool settling after a block is set
+            // in it is no change downstream; a dam filling is).
+            let held = self.flows.held.entry(id).or_insert(0.0);
+            *held += dt;
+            if *held < FLOW.river_change_hold_s {
+                continue;
+            }
+            self.flows.held.remove(&id);
             let (face, r, s) = match last {
                 Some(l) => (l.face, l.river, l.s),
                 None => match self.locate(c) {
@@ -1079,7 +1183,11 @@ impl Water {
             .collect();
         grown.sort_unstable();
         for id in grown {
+            let before: HashSet<[i32; 3]> =
+                self.basins[&id].outlets.iter().map(|o| o.from).collect();
+            self.hold_grown(world, id);
             self.rebuild(world, id, &mut writes);
+            self.natural_grown(id, &before);
         }
         self.apply_touched(world, &mut writes);
         self.route(world, &mut writes);
@@ -1445,7 +1553,7 @@ impl Water {
         let touched = std::mem::take(&mut self.touched);
         for &(c, _) in &touched {
             let solid = world.find(chunk_of(c[0], c[1], c[2])).is_some()
-                && kind(Some(world.get_voxel_if_loaded(c))) == Kind::Solid;
+                && walls(kind(Some(world.get_voxel_if_loaded(c))));
             if solid {
                 self.edited.insert(c);
             } else {
@@ -1524,6 +1632,130 @@ impl Water {
         }
     }
 
+    /// A body found at rest, at its level as found, growing into a chunk that has loaded since:
+    /// the water of it there is the world as found too, so the open cells beside it there hold it (`rest`) and the other
+    /// bodies' liquid it touches there passes nothing (`held`), as where it was found
+    /// (docs/WATER_FLOW.md §2.2). Otherwise it would fill them and sink below its level as found.
+    fn hold_grown(&mut self, world: &VoxelWorld, id: u32) {
+        let Some(b) = self.basins.get(&id) else {
+            return;
+        };
+        let Some(st) = &b.steady else {
+            return;
+        };
+        if b.reservoir || (b.level() - st.level).abs() > 0.01 {
+            return; // risen or fallen since: what it meets there is the change's to fill
+        }
+        let loaded: HashSet<dwell_world::ChunkCoord> = b
+            .edge
+            .iter()
+            .copied()
+            .filter(|&c| world.find(c).is_some())
+            .collect();
+        if loaded.is_empty() {
+            return;
+        }
+        let view = View { world, old: None };
+        let (f, liquid) = (b.face, b.liquid);
+        let Some(surface) = b.wet.iter().map(|c| f.row(c[1])).max() else {
+            return;
+        };
+        let same = |c: [i32; 3]| {
+            let k = view.kind(c);
+            k == Kind::Liquid(liquid) || (k == Kind::Holds { flooded: true } && liquid == M.water)
+        };
+        let in_loaded = |c: [i32; 3]| loaded.contains(&chunk_of(c[0], c[1], c[2]));
+        // Its water in the chunks that loaded, joined to what it was found with as discovery
+        // joins it: into a column reaching its surface, or down.
+        let mut grown: HashSet<[i32; 3]> = HashSet::default();
+        let mut queue: Vec<[i32; 3]> = b.wet.iter().copied().collect();
+        while let Some(c) = queue.pop() {
+            let mut next: Vec<[i32; 3]> = SIDES
+                .iter()
+                .map(|&s| side(c, s))
+                .filter(|n| same([n[0], f.row(surface), n[2]]))
+                .collect();
+            next.push(up(f, c, -1));
+            let above = up(f, c, 1);
+            if f.row(above[1]) <= surface {
+                next.push(above);
+            }
+            for n in next {
+                if in_loaded(n)
+                    && !b.wet.contains(&n)
+                    && !self.owner.contains_key(&n)
+                    && same(n)
+                    && joins(&view, c, n)
+                    && grown.insert(n)
+                {
+                    queue.push(n);
+                }
+            }
+        }
+        // The open cells beside its water (as found, and grown into) in the chunks that loaded,
+        // and the other bodies' liquid it touches there.
+        let cells: HashSet<[i32; 3]> = b.wet.iter().chain(&grown).copied().collect();
+        let rest: Vec<[i32; 3]> = at_rest(&view, f, &cells)
+            .into_iter()
+            .filter(|&c| in_loaded(c))
+            .collect();
+        let held: Vec<[i32; 3]> = cells
+            .iter()
+            .flat_map(|&c| {
+                let mut n: Vec<[i32; 3]> = SIDES.iter().map(|&s| side(c, s)).collect();
+                n.push(up(f, c, 1));
+                n.push(up(f, c, -1));
+                n
+            })
+            .filter(|&n| {
+                in_loaded(n)
+                    && !cells.contains(&n)
+                    && matches!(
+                        view.kind(n),
+                        Kind::Liquid(_) | Kind::Holds { flooded: true }
+                    )
+            })
+            .collect();
+        let b = self.basins.get_mut(&id).expect("basin");
+        b.rest.extend(rest);
+        b.held.extend(held);
+    }
+
+    /// A body at its level as found, grown into a chunk that loaded since: the ways out it found
+    /// there (`before`: the ones it had) are natural too, the world as found, and its natural
+    /// outlets together pass the map's flow again (docs/WATER_FLOW.md §2.2). Otherwise they ran by
+    /// the opening law and drained it to the next step's level.
+    fn natural_grown(&mut self, id: u32, before: &HashSet<[i32; 3]>) {
+        let Some(b) = self.basins.get_mut(&id) else {
+            return;
+        };
+        let Some(st) = &b.steady else {
+            return;
+        };
+        if (b.level() - st.level).abs() > 0.01 {
+            return; // risen or fallen since: a way it reaches now is the change's
+        }
+        let (level, weir) = (st.level, b.weir);
+        let new: Vec<([i32; 3], f64)> = b
+            .outlets
+            .iter()
+            .filter(|o| {
+                !o.is_seep() && !before.contains(&o.from) && !b.natural.contains_key(&o.from)
+            })
+            .map(|o| (o.from, o.rate(level, weir, f64::NEG_INFINITY)))
+            .collect();
+        if new.is_empty() {
+            return;
+        }
+        let through = st.through;
+        let added: f64 = new.iter().map(|(_, r)| r).sum();
+        b.natural.extend(new);
+        if let Some(st) = &mut b.steady {
+            st.law += added;
+        }
+        b.pass(through);
+    }
+
     /// Finds the body of liquid at `seed` (in the world as `old` had it): its cells and volume. A
     /// body found `resting` (as the world had it, not liquid an edit just put there) is at rest
     /// as found (docs/WATER_FLOW.md §2.2): the open cells beside it it didn't fill and the leaking
@@ -1543,10 +1775,15 @@ impl Water {
         };
         let weir = weir_of(liquid)?;
         let f = FaceFrame::at_row(seed[1]);
-        let same = |c: [i32; 3]| view.kind(c) == Kind::Liquid(liquid);
+        // Its liquid, or a block holding it (a flooded ramp in the riverbed: the river goes on
+        // through it).
+        let same = |c: [i32; 3]| {
+            let k = view.kind(c);
+            k == Kind::Liquid(liquid) || (k == Kind::Holds { flooded: true } && liquid == M.water)
+        };
         // The surface: up the seed's column.
         let mut top = seed;
-        while same(up(f, top, 1)) {
+        while same(up(f, top, 1)) && joins(&view, top, up(f, top, 1)) {
             top = up(f, top, 1);
         }
         let surface = f.row(top[1]);
@@ -1568,16 +1805,16 @@ impl Water {
                 let n = side(c, s);
                 // Into a column whose liquid reaches the same surface (a river's lower pool, past
                 // its step, is a body of its own).
-                if same(n) && same([n[0], f.row(surface), n[2]]) {
+                if same(n) && same([n[0], f.row(surface), n[2]]) && joins(&view, c, n) {
                     next.push(n);
                 }
             }
             let below = up(f, c, -1);
-            if same(below) {
+            if same(below) && joins(&view, c, below) {
                 next.push(below);
             }
             let above = up(f, c, 1);
-            if f.row(above[1]) <= surface && same(above) {
+            if f.row(above[1]) <= surface && same(above) && joins(&view, c, above) {
                 next.push(above);
             }
             for n in next {
@@ -1700,7 +1937,15 @@ impl Water {
                     n.push([c[0], c[1] - 1, c[2]]);
                     n
                 })
-                .filter(|n| !seen.contains(n) && matches!(view.kind(*n), Kind::Liquid(_)))
+                .filter(|n| {
+                    // Water beside it as found, or a block holding some (a flooded ramp of the
+                    // next step): faces that pass nothing as generated.
+                    !seen.contains(n)
+                        && matches!(
+                            view.kind(*n),
+                            Kind::Liquid(_) | Kind::Holds { flooded: true }
+                        )
+                })
                 .collect();
             // Its natural outlets pass the map's flow at the level it was found at, coming in at
             // its cell farthest from them (a river pool's upstream end).
@@ -2499,6 +2744,27 @@ impl Water {
                 writes.push((c, M.air));
             }
         }
+        // A block holding water (a ramp) in its rows is flooded while the water stands in it, and
+        // dried when it goes; never written over.
+        for (cells, wet) in [(&gone, false), (&new, true)] {
+            for &c in cells.iter() {
+                if world.find(chunk_of(c[0], c[1], c[2])).is_none() {
+                    continue;
+                }
+                let m = world.get_voxel_if_loaded(c);
+                if holds_water(m)
+                    && let Some(to) = dwell_blocks::with_property(
+                        m,
+                        "flooded",
+                        if wet { "true" } else { "false" },
+                    )
+                    && to != m
+                {
+                    world.write_voxel(c[0], c[1], c[2], to);
+                    writes.push((c, to));
+                }
+            }
+        }
         for &c in &new {
             if kind(Some(world.get_voxel_if_loaded(c))) == Kind::Open
                 && world.find(chunk_of(c[0], c[1], c[2])).is_some()
@@ -2651,7 +2917,7 @@ impl Water {
             .copied()
             .filter(|&c| {
                 let d = up(f, c, -1);
-                !under.contains(&d) && view.kind(d) == Kind::Solid
+                !under.contains(&d) && walls(view.kind(d))
             })
             .collect();
         let mut parts: Vec<HashSet<[i32; 3]>> = Vec::new();
@@ -3034,7 +3300,7 @@ fn spread_row(
     let walled = |c: [i32; 3]| owner.get(&c).is_some_and(|o| reservoirs.contains(o));
     let held = |c: [i32; 3]| {
         let d = up(f, c, -1);
-        below.contains(&d) || view.kind(d) == Kind::Solid
+        below.contains(&d) || walls(view.kind(d))
     };
     // Another basin's container: met, not spread into (over a wall, the pool beyond).
     let theirs = |c: [i32; 3]| owner.get(&c).is_some_and(|&o| o != id) && !walled(c);
@@ -3058,6 +3324,12 @@ fn spread_row(
                 met.push(s);
                 false
             }
+            // A block holding water (a ramp): its open part, reached through its open faces.
+            Kind::Holds { .. } if theirs(s) => {
+                met.push(s);
+                false
+            }
+            Kind::Holds { .. } => ours(s),
             Kind::Solid => false,
         };
         if open && (bottom || held(s) || ours(s)) {
@@ -3073,15 +3345,19 @@ fn spread_row(
         }
         for s in SIDES {
             let n = side(c, s);
-            if !seen.insert(n) {
+            // Not through a ramp's full side (it may be reached another way).
+            if seen.contains(&n) || !joins(view, c, n) {
                 continue;
             }
+            seen.insert(n);
             match view.kind(n) {
                 Kind::Open if theirs(n) => met.push(n),
                 Kind::Open if held(n) && !rest.contains(&n) => queue.push(n),
                 Kind::Liquid(m) if m == liquid && ours(n) => queue.push(n),
                 Kind::Liquid(_) if walled(n) => {}
                 Kind::Liquid(m) if m == liquid => met.push(n),
+                Kind::Holds { .. } if theirs(n) => met.push(n),
+                Kind::Holds { .. } if (ours(n) || held(n)) && !rest.contains(&n) => queue.push(n),
                 _ => {}
             }
         }
@@ -3134,7 +3410,7 @@ fn scan_outlets(
         let floor = m_of_row(lr);
         for &c in row {
             let d = up(f, c, -1);
-            if !ours(d) && !b.rest.contains(&d) {
+            if !ours(d) && !b.rest.contains(&d) && joins(view, c, d) {
                 if let Some(o) = theirs(d) {
                     if !b.held.contains(&d) {
                         add(&mut out, d, OutKind::Floor { z: floor }, false, Some(o));
@@ -3145,11 +3421,12 @@ fn scan_outlets(
             }
             for s in SIDES {
                 let n = side(c, s);
-                if ours(n) || b.rest.contains(&n) {
+                // Not out through a ramp's full side.
+                if ours(n) || b.rest.contains(&n) || !joins(view, c, n) {
                     continue;
                 }
                 // Open above it (another cell to pour over), or a hole capped by a block.
-                let hi = if view.kind(up(f, n, 1)) == Kind::Solid {
+                let hi = if walls(view.kind(up(f, n, 1))) {
                     floor + CELL_H
                 } else {
                     f64::INFINITY
@@ -3167,7 +3444,7 @@ fn scan_outlets(
                 match view.kind(n) {
                     Kind::Open => {
                         let under = up(f, n, -1);
-                        let held = ours(under) || view.kind(under) == Kind::Solid;
+                        let held = ours(under) || walls(view.kind(under));
                         if !held {
                             add(&mut out, n, OutKind::Face { lo: floor, hi }, false, None);
                         }
@@ -3188,7 +3465,7 @@ fn scan_outlets(
                             );
                         }
                     }
-                    Kind::Liquid(_) => {}
+                    Kind::Liquid(_) | Kind::Holds { .. } => {}
                 }
             }
         }
@@ -3213,7 +3490,8 @@ fn at_rest(view: &View<'_>, f: FaceFrame, cells: &HashSet<[i32; 3]>) -> HashSet<
                 continue;
             }
             match view.kind(n) {
-                Kind::Open if !falls(n) => {
+                // An open cell, or a block holding no water (a ramp it didn't flood).
+                Kind::Open | Kind::Holds { flooded: false } if !falls(n) => {
                     rest.insert(n);
                 }
                 Kind::Solid if view.get(n).is_some_and(|m| leak_of(m) > 0.0) => {
@@ -3370,7 +3648,7 @@ fn follow_path(
                     }
                 }
                 Kind::Liquid(_) => return (End::Liquid(d), path),
-                Kind::Solid => break,
+                Kind::Solid | Kind::Holds { .. } => break,
             }
             if view.get(d).is_none() {
                 return (End::Lost, path);
@@ -3403,14 +3681,14 @@ fn follow_path(
                                     end = Some((n, false));
                                     break 'search;
                                 }
-                                Kind::Solid => next.push(n),
+                                Kind::Solid | Kind::Holds { .. } => next.push(n),
                             }
                         }
                         Kind::Liquid(_) => {
                             end = Some((n, true));
                             break 'search;
                         }
-                        Kind::Solid => {}
+                        Kind::Solid | Kind::Holds { .. } => {}
                     }
                 }
             }

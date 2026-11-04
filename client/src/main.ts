@@ -1155,6 +1155,15 @@ async function connect(app: App): Promise<void> {
     // (ignored); a new one is this build's.
     const name =
       localWorld.file ?? localWorldName(localWorld.generatorVersion, localWorld.worldSeed);
+    // Dev link `?fresh=1`: the link's world starts again from its seed (docs/DEV_TOOLS.md), whatever
+    // build saved it.
+    if (params.get('fresh') === '1') {
+      if (!(await deleteWorldFiles(name))) {
+        openMainMenu(app, 'That world is open in another tab. Close it there first.');
+        return;
+      }
+      index.remove(name);
+    }
     const existed = (await listWorldFiles()).includes(name);
     const world = index.adopt(name, Date.now(), existed ? undefined : recordedVersion());
     const access = world ? worldAccess(world, buildInfo.version) : null;

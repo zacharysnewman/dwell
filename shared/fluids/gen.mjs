@@ -25,6 +25,8 @@ export const FLOW_RANGES = {
   settleMmPerHour: [0, 100000, false],
   riverSpeed: [0.01, 100, false],
   riverChangeMin: [0, 1000, false],
+  riverChangeShare: [0, 1, false],
+  riverChangeHoldS: [0, 86400, false],
   lakeOutletHead: [0.01, 100, false],
   fillHysteresis: [0, 0.5, false],
 };

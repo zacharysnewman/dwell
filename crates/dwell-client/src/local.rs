@@ -62,6 +62,7 @@ impl LocalCore {
         Self::create_spawning(
             face,
             false,
+            None,
             false,
             world_seed,
             generator_version,
@@ -71,11 +72,15 @@ impl LocalCore {
     }
 
     /// [`LocalCore::create_on`], with `portal` by the opening of the portal nearest the centre on
-    /// `face` (the dev link `?spawn=portal`, `portal-b`; BIFACIAL_WORLD.md §6), and with `at_spawn`
-    /// a saved world's player starting at that spawn, not where it left (a spawn link).
+    /// `face` (the dev link `?spawn=portal`, `portal-b`; BIFACIAL_WORLD.md §6), with `at` a spawn
+    /// at that world point (feet, m; the dev link `?at=x,y,z`, its player starting there however
+    /// the world was left), and with `at_spawn` a saved world's player starting at that spawn, not
+    /// where it left (a spawn link).
+    #[allow(clippy::too_many_arguments)]
     pub fn create_spawning(
         face: dwell_world::Face,
         portal: bool,
+        at: Option<[f64; 3]>,
         at_spawn: bool,
         world_seed: u64,
         generator_version: u32,
@@ -90,13 +95,18 @@ impl LocalCore {
                 let [dx, dz] = dwell_sim::server::spawn_spread(1);
                 [x - dx, y, z - dz]
             });
+        // A point given: the local player's feet there (its spawn spread taken back too).
+        let at_point = at.map(|[x, y, z]| {
+            let [dx, dz] = dwell_sim::server::spawn_spread(1);
+            [x - dx, y, z - dz]
+        });
         let mut config = ServerConfig {
-            spawn: at_portal.or_else(|| {
+            spawn: at_point.or(at_portal).or_else(|| {
                 (face == dwell_world::Face::B)
                     .then(|| dwell_worldgen::spawn_point_b_for(generator_version, world_seed))
             }),
             // A spawn link on a saved world: its player starts at the spawn (ServerConfig).
-            join_at_spawn: at_spawn,
+            join_at_spawn: at_spawn || at.is_some(),
             world_seed,
             generator_version,
             name: "Local world".into(),

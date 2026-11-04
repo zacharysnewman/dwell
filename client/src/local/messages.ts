@@ -12,6 +12,8 @@ export type ToWorker =
       spawnPortal?: boolean;
       /** A spawn link: a saved world's player starts at the spawn too (local/world.ts). */
       spawnOnOpen?: boolean;
+      /** Dev link `?at=x,y,z`: the spawn is that point, and the player starts there. */
+      spawnAt?: [number, number, number];
       /** The world's maps (faces A and B, ADR 0049), installed before the world starts. */
       maps?: Uint8Array[];
     }
