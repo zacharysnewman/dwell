@@ -51,6 +51,12 @@ pub struct FlowData {
     pub catch_up_steps: u32,
     /// A basin whose level moves slower than this (mm an hour of water time) is settled.
     pub settle_mm_per_hour: f64,
+    /// How fast a change to a river's flow travels down the map's rivers (m/s of water time).
+    pub river_speed: f64,
+    /// The least change (m³/s) a body sends down a river.
+    pub river_change_min: f64,
+    /// A map lake's head over its outlet (m): how fast its outflow follows a change coming in.
+    pub lake_outlet_head: f64,
     pub liquids: &'static [LiquidFlow],
     /// Block name → m³/s per m² of face per m of head.
     pub leaks: &'static [(&'static str, f64)],
@@ -368,6 +374,10 @@ pub struct Basin {
 struct Steady {
     /// The flow it passes at `level` (m³/s).
     through: f64,
+    /// The world map's discharge where it lies (m³/s, as found; a piece of it split off keeps it,
+    /// a merge the larger): its natural outlets pass it at `level`, so its level follows what
+    /// actually comes in (a river with less coming in drops, one with more rises).
+    flow: f64,
     /// Its natural outlets' flow at `level` at scale 1: those that are still ways out of it (a
     /// natural outlet inside it, a merged body's, is none; one an edit blocked still counts, so a
     /// dam holds back what it passed). Found again each tick (`Water::balance`).
@@ -567,6 +577,12 @@ pub struct Water {
     /// Where found bodies' natural outlets ran, as found, into liquid no body owned yet (cell →
     /// basin, outlet cell, weight): linked when a body there is found.
     lands: HashMap<[i32; 3], Vec<Land>>,
+    /// The world map's rivers (docs/WATER_FLOW.md §6, W2d): changes carried down them.
+    river_map: Option<std::sync::Arc<dyn Rivers>>,
+    /// The fronts on them and the lakes they ran into.
+    flows: rivers::Flows,
+    /// Where cells lie on the map's rivers (asked once each).
+    located: HashMap<[i32; 3], Option<(dwell_world::Face, u32, f64)>>,
 }
 
 /// A found body's natural outlet as it ran (basin, outlet cell, weight), waiting for a body where
@@ -603,6 +619,9 @@ impl Water {
             edited: HashSet::default(),
             split: HashSet::default(),
             lands: HashMap::default(),
+            river_map: None,
+            flows: rivers::Flows::default(),
+            located: HashMap::default(),
         }
     }
 
@@ -612,6 +631,190 @@ impl Water {
             runoff: Some(runoff),
             ..Self::new()
         }
+    }
+
+    /// The changes going down the map's rivers now: (river, from, at, m³/s) each.
+    pub fn fronts(&self) -> Vec<(u32, f64, f64, f64)> {
+        self.flows
+            .fronts
+            .iter()
+            .map(|f| (f.river, f.from, f.at, f.dq))
+            .collect()
+    }
+
+    /// Water whose changes go down the world map's rivers `rivers` (docs/WATER_FLOW.md §6).
+    pub fn with_rivers(mut self, rivers: std::sync::Arc<dyn Rivers>) -> Self {
+        self.river_map = Some(rivers);
+        self
+    }
+
+    /// Where cell `c` lies on the map's rivers (its face's river and how far along it).
+    fn locate(&mut self, c: [i32; 3]) -> Option<(dwell_world::Face, u32, f64)> {
+        let rivers = self.river_map.as_ref()?;
+        *self.located.entry(c).or_insert_with(|| {
+            let f = FaceFrame::at_row(c[1]);
+            rivers.at(f.face, c[0], c[2]).map(|(r, s)| (f.face, r, s))
+        })
+    }
+
+    /// The change in the map river's flow where a body's water comes in (`entry`).
+    fn offset_at(&mut self, entry: [i32; 3]) -> f64 {
+        match self.locate(entry) {
+            Some((face, r, s)) => self.flows.offset(face, r, s),
+            None => 0.0,
+        }
+    }
+
+    /// What the water sends down the map's rivers (docs/WATER_FLOW.md §6, W2d): each body's
+    /// change in what it sends into country nobody has found (its natural outlets' flow as
+    /// found against what leaves by its ways out onto the map's river now) goes down that river
+    /// as a front; the fronts go on `dt` s, stopping at the first body taking them in.
+    fn carry_down(&mut self, live: &HashSet<u32>, dt: f64) {
+        let Some(rivers) = self.river_map.clone() else {
+            return;
+        };
+        // The heads of the bodies found on each river: where its flow comes into them.
+        let mut heads: HashMap<(dwell_world::Face, u32), Vec<f64>> = HashMap::default();
+        let entries: Vec<[i32; 3]> = self
+            .basins
+            .values()
+            .filter(|b| !b.reservoir && b.inflow() > 0.0)
+            .filter_map(|b| b.steady.as_ref()?.feeds.first().map(|f| f.0))
+            .collect();
+        for c in entries {
+            if let Some((face, r, s)) = self.locate(c) {
+                heads.entry((face, r)).or_default().push(s);
+            }
+        }
+        // What each body sends into the unfound now, against what it did as found.
+        let mut ids: Vec<u32> = self.basins.keys().copied().collect();
+        ids.sort_unstable();
+        let mut now: Vec<(u32, [i32; 3], f64)> = Vec::new();
+        for &id in &ids {
+            let b = &self.basins[&id];
+            // Only the found river's bodies: water collecting elsewhere came from them.
+            if b.reservoir || b.steady.is_none() {
+                continue;
+            }
+            // Into the found river (bodies found at rest: their water is the river's, carried on
+            // by them) is not sent down the map's; anything else on the river is.
+            let found = |t: Target| match t {
+                Target::Basin(t) => self.basins.get(&t).is_some_and(|x| x.steady.is_some()),
+                _ => false,
+            };
+            let mut site: Option<[i32; 3]> = None;
+            let mut expected = 0.0;
+            if let Some(st) = &b.steady
+                && st.law > 0.0
+            {
+                let mut natural: Vec<([i32; 3], f64)> =
+                    b.natural.iter().map(|(&c, &w)| (c, w)).collect();
+                natural.sort_unstable_by_key(|&(c, _)| c);
+                for (c, w) in natural {
+                    let into_found = b.outlets.iter().any(|o| o.from == c && found(o.target));
+                    if self.owner.get(&c) == Some(&id)
+                        || self.links.contains_key(&(id, c))
+                        || into_found
+                    {
+                        continue;
+                    }
+                    expected += st.flow * w / st.law;
+                    site.get_or_insert(c);
+                }
+            } else if let Some(st) = &b.steady {
+                expected = st.flow;
+            }
+            let mut actual = 0.0;
+            // Its flow by the opening law at its level now (an outlet just found has passed
+            // nothing yet); one filling or draining that waits unloaded passes nothing.
+            let level = b.level();
+            let holds = b.active && !live.contains(&id);
+            let rate = |o: &Outlet| {
+                if holds {
+                    return 0.0;
+                }
+                let below = match o.target {
+                    Target::Basin(t) => {
+                        self.basins.get(&t).map_or(f64::NEG_INFINITY, |x| x.level())
+                    }
+                    _ => f64::NEG_INFINITY,
+                };
+                o.rate(level, b.weir, below)
+            };
+            // Where it goes on the map's river: out of the found world where it leaves, into water
+            // collecting below (a pool under a fall) where that lies.
+            let leaving: Vec<([i32; 3], [i32; 3], f64)> = b
+                .outlets
+                .iter()
+                .filter(|o| !o.contact && !o.is_seep() && !found(o.target))
+                .filter_map(|o| match o.target {
+                    Target::Lost => Some((o.from, o.from, rate(o))),
+                    Target::Basin(t) => self
+                        .basins
+                        .get(&t)
+                        .and_then(|x| x.rows.first()?.first().copied())
+                        .map(|c| (o.from, c, rate(o))),
+                    Target::Unresolved => None,
+                })
+                .collect();
+            let seep = b.outlets.iter().find(|o| o.is_seep()).map(rate);
+            let first = b.rows.first().and_then(|r| r.first()).copied();
+            for (from, c, q) in leaving {
+                for at in [from, c] {
+                    if self.locate(at).is_some() {
+                        actual += q;
+                        site.get_or_insert(at);
+                        break;
+                    }
+                }
+            }
+            if let (Some(q), Some(c)) = (seep, first) {
+                actual += q;
+                site.get_or_insert(c);
+            }
+            if let Some(c) = site {
+                now.push((id, c, actual - expected));
+            }
+        }
+        for (id, c, d) in now {
+            let last = self.flows.sent.get(&id).copied();
+            let base = last.map_or(0.0, |l| l.dq);
+            if (d - base).abs() < FLOW.river_change_min {
+                continue;
+            }
+            let (face, r, s) = match last {
+                Some(l) => (l.face, l.river, l.s),
+                None => match self.locate(c) {
+                    Some(at) => at,
+                    None => continue,
+                },
+            };
+            self.flows.send(face, r, s, d - base);
+            self.flows.sent.insert(
+                id,
+                rivers::Sent {
+                    face,
+                    river: r,
+                    s,
+                    dq: d,
+                },
+            );
+        }
+        // Bodies gone (merged, dried): what they sent is taken back.
+        let gone: Vec<u32> = self
+            .flows
+            .sent
+            .keys()
+            .copied()
+            .filter(|id| !self.basins.contains_key(id))
+            .collect();
+        for id in gone {
+            if let Some(l) = self.flows.sent.remove(&id) {
+                self.flows.send(l.face, l.river, l.s, -l.dq);
+            }
+        }
+        self.flows
+            .advance(rivers.as_ref(), &heads, FLOW.river_speed, dt);
     }
 
     /// The map's flow through a body of cells `cells` on face `f`: the most through any of its
@@ -775,6 +978,7 @@ impl Water {
         for id in back {
             budget = self.catch_up(world, id, budget, &live, &mut writes);
         }
+        self.carry_down(&live, dt);
         // Still filling or draining: flows on wherever the players are, until settled.
         for b in self.basins.values_mut() {
             if b.reservoir || !live.contains(&b.id) {
@@ -909,9 +1113,8 @@ impl Water {
             // (over a dam, from the pools above), by its natural outlets at the level it was found
             // at; those an edit blocked still count, so it rises behind them.
             if let Some(st) = &b.steady {
-                let came = if st.law > 0.0 { b.through } else { b.linked };
-                let pass = b.inflow() + came;
-                b.pass(pass);
+                let flow = st.flow;
+                b.pass(flow);
             }
             let level = b.level();
             let mut out: Vec<f64> = b
@@ -1330,6 +1533,7 @@ impl Water {
             b.outlets = outlets;
             b.steady = Some(Steady {
                 through: 0.0,
+                flow: q,
                 law,
                 level,
                 feeds: if q > 0.0 {
@@ -1666,6 +1870,7 @@ impl Water {
         me.steady = match (me.steady.take(), other.steady) {
             (Some(mut x), Some(o)) => {
                 x.through += o.through;
+                x.flow = x.flow.max(o.flow);
                 x.law += o.law;
                 x.level = x.level.min(o.level);
                 x.feeds.extend(o.feeds);
@@ -1772,6 +1977,20 @@ impl Water {
                 let owner = &self.owner;
                 follow_path(&view, f, from, &|c| owner.get(&c) == Some(&id))
             };
+            // Into another basin's container on the way (dry now: a river below a dam that ran
+            // dry while it filled), it lands there and fills it again.
+            let mut path = path;
+            let into = path
+                .iter()
+                .position(|c| self.owner.get(c).is_some_and(|&o| o != id));
+            let end = match into {
+                Some(k) => {
+                    let c = path[k];
+                    path.truncate(k);
+                    End::Pool(c)
+                }
+                None => end,
+            };
             self.paths.insert((id, from), path);
             let target = match end {
                 End::Lost => Target::Lost,
@@ -1832,6 +2051,21 @@ impl Water {
     /// less what they bring (docs/WATER_FLOW.md §2.2), by its natural outlets that are still ways
     /// out of it, or unseen with none.
     fn balance(&mut self) {
+        // What changes upstream send down the map's rivers to where each body's water comes in.
+        let entries: Vec<(u32, [i32; 3])> = self
+            .basins
+            .values()
+            .filter_map(|b| Some((b.id, b.steady.as_ref()?.feeds.first()?.0)))
+            .collect();
+        let mut offsets: HashMap<u32, f64> = HashMap::default();
+        if self.river_map.is_some() {
+            for (id, c) in entries {
+                let off = self.offset_at(c);
+                if off != 0.0 {
+                    offsets.insert(id, off);
+                }
+            }
+        }
         let mut order: Vec<(f64, u32)> = self
             .basins
             .values()
@@ -1861,7 +2095,14 @@ impl Water {
             // Its steady flow (what the links bring by the map, for the bodies below it); what it
             // passes each flow step is what comes in then (`flow_step`).
             let through = feed.max(brought);
-            let own = (feed - brought).max(0.0);
+            let mut own = (feed - brought).max(0.0);
+            // The head of the bodies found on its river: what a change upstream sends down it
+            // through country nobody has found comes in with its own (W2d).
+            if own > 0.0
+                && let Some(&off) = offsets.get(&id)
+            {
+                own = (own + off).max(0.0);
+            }
             b.inflows = if feed > 0.0 {
                 st.feeds
                     .iter()
@@ -2912,7 +3153,10 @@ fn follow_path(
     (End::Lost, path)
 }
 
+mod rivers;
 mod save;
+
+pub use rivers::{RiverNext, Rivers};
 
 #[cfg(test)]
 mod tests;

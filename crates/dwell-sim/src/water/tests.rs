@@ -915,3 +915,89 @@ dwell_world::both_faces!(
         assert!(back.basin_at(s.cell(4, 0, 1)).is_none());
     }
 );
+
+/// A straight map river along +x through z −1 to 3 (m along it: x + 1000), 5 km long, into the
+/// sea.
+struct Straight;
+
+impl Rivers for Straight {
+    fn at(&self, _: dwell_world::Face, x: i32, z: i32) -> Option<(u32, f64)> {
+        (-1..=3).contains(&z).then_some((0, f64::from(x) + 1000.0))
+    }
+    fn length(&self, _: dwell_world::Face, _: u32) -> f64 {
+        5000.0
+    }
+    fn next(&self, _: dwell_world::Face, _: u32) -> RiverNext {
+        RiverNext::End
+    }
+}
+
+/// [`channel`] moved `dx` along x (a stretch of the same river farther down), walled to row `top`.
+fn channel_at(s: &mut Scene, dx: i32, top: i32) {
+    let stone = require("dwell:stone");
+    let mut fill = |lo: [i32; 3], hi: [i32; 3], m| {
+        s.fill([lo[0] + dx, lo[1], lo[2]], [hi[0] + dx, hi[1], hi[2]], m);
+    };
+    fill([-1, -1, -1], [9, -1, 3], stone);
+    fill([-1, -1, -1], [9, top, -1], stone);
+    fill([-1, -1, 3], [9, top, 3], stone);
+    fill([-1, -1, -1], [-1, top, 3], stone);
+    fill([9, -6, -3], [21, -6, 5], stone);
+    fill([9, -6, -3], [9, -3, 5], stone);
+    fill([21, -6, -3], [21, -3, 5], stone);
+    fill([9, -6, -3], [21, -3, -3], stone);
+    fill([9, -6, 5], [21, -3, 5], stone);
+    fill([0, 0, 0], [9, 0, 2], M.water);
+}
+
+dwell_world::both_faces!(
+    /// Owner, 2026-11-03: two players far apart on one river: a dam upstream must reach the river
+    /// downstream across the country between. Two stretches of one map river 40 m apart, nothing
+    /// found between them: a dam across the upper one holds its flow back while it fills, the
+    /// change goes down the map's river at `riverSpeed` and the lower stretch, taking in less,
+    /// falls; once the dam spills the river's flow again, the lower one comes back. Red before:
+    /// the lower stretch never knew.
+    fn a_dam_upstream_reaches_the_river_far_below_across_unfound_country(f: FaceFrame) {
+        let mut s = Scene::with_air(f, [-16, -8, -8], [72, 10, 16]);
+        s.water = fed(channel_q()).with_rivers(std::sync::Arc::new(Straight));
+        channel_at(&mut s, 0, 8);
+        channel_at(&mut s, 40, 3);
+        // Both found as they were (an edit beside each), at rest.
+        s.edit(&[[4, 1, 1], [44, 1, 1]], M.air);
+        s.run(5, 1.0);
+        let lower = |s: &Scene| s.water.basin_at(s.cell(44, 0, 1)).expect("lower").volume;
+        let full = lower(&s);
+        // A dam six rows high: it takes a while to fill.
+        let dam: Vec<[i32; 3]> = (0..=2)
+            .flat_map(|z| (0..=5).map(move |r| [9, r, z]))
+            .collect();
+        s.edit(&dam, require("dwell:stone"));
+        // 40 m at 1 m/s: nothing yet after 20 s.
+        s.run(20, 1.0);
+        assert!(
+            (lower(&s) - full).abs() < 1e-6,
+            "not reached yet: {} of {full}",
+            lower(&s)
+        );
+        // Reached: the lower stretch takes in nothing and falls.
+        s.run(60, 1.0);
+        assert!(
+            lower(&s) < 0.8 * full,
+            "the river below falls: {} of {full}",
+            lower(&s)
+        );
+        // What is going down the river is saved with the basins.
+        let bytes = s.water.save(revisions(&s));
+        let mut back = fed(channel_q());
+        back.restore(&bytes, revisions(&s)).expect("read back");
+        assert!(!s.water.fronts().is_empty(), "changes going down the river");
+        assert_eq!(back.fronts(), s.water.fronts());
+        // The dam fills and spills the flow again: the lower stretch comes back.
+        s.run(1500, 1.0);
+        assert!(
+            (lower(&s) - full).abs() < 0.05 * full,
+            "the river below back: {} of {full}",
+            lower(&s)
+        );
+    }
+);
