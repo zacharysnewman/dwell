@@ -76,6 +76,8 @@ pub(super) struct Flows {
     pub lakes: Vec<Lagged>,
     /// Per body, what it sent last.
     pub sent: HashMap<u32, Sent>,
+    /// Per body, how long (water s) a change worth sending has lasted (not sent yet).
+    pub held: HashMap<u32, f64>,
 }
 
 impl Flows {

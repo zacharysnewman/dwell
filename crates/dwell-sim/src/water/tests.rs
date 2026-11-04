@@ -959,7 +959,10 @@ dwell_world::both_faces!(
     /// the lower stretch never knew.
     fn a_dam_upstream_reaches_the_river_far_below_across_unfound_country(f: FaceFrame) {
         let mut s = Scene::with_air(f, [-16, -8, -8], [72, 10, 16]);
-        s.water = fed(channel_q()).with_rivers(std::sync::Arc::new(Straight));
+        // A small river (0.4 m³/s): the dam takes minutes to fill, longer than a change must last
+        // to be sent (`riverChangeHoldS`) and travel down.
+        let q = 0.4;
+        s.water = fed(q).with_rivers(std::sync::Arc::new(Straight));
         channel_at(&mut s, 0, 8);
         channel_at(&mut s, 40, 3);
         // Both found as they were (an edit beside each), at rest.
@@ -972,8 +975,9 @@ dwell_world::both_faces!(
             .flat_map(|z| (0..=5).map(move |r| [9, r, z]))
             .collect();
         s.edit(&dam, require("dwell:stone"));
-        // 40 m at 1 m/s: nothing yet after 20 s.
-        s.run(20, 1.0);
+        // Sent once it lasts `riverChangeHoldS`, then 40 m at 1 m/s: nothing yet before.
+        let hold = FLOW.river_change_hold_s as u32;
+        s.run(hold + 20, 1.0);
         assert!(
             (lower(&s) - full).abs() < 1e-6,
             "not reached yet: {} of {full}",
@@ -988,12 +992,12 @@ dwell_world::both_faces!(
         );
         // What is going down the river is saved with the basins.
         let bytes = s.water.save(revisions(&s));
-        let mut back = fed(channel_q());
+        let mut back = fed(q);
         back.restore(&bytes, revisions(&s)).expect("read back");
         assert!(!s.water.fronts().is_empty(), "changes going down the river");
         assert_eq!(back.fronts(), s.water.fronts());
         // The dam fills and spills the flow again: the lower stretch comes back.
-        s.run(1500, 1.0);
+        s.run(2500, 1.0);
         assert!(
             (lower(&s) - full).abs() < 0.05 * full,
             "the river below back: {} of {full}",

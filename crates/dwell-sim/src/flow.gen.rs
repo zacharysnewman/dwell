@@ -16,6 +16,8 @@ pub const FLOW: FlowData = FlowData {
     settle_mm_per_hour: 10.0,
     river_speed: 1.0,
     river_change_min: 0.02,
+    river_change_share: 0.05,
+    river_change_hold_s: 120.0,
     lake_outlet_head: 1.0,
     liquids: &[
         LiquidFlow { block: "dwell:water", weir: 1.7, running: "dwell:running_water" },
