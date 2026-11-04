@@ -23,6 +23,8 @@ pub struct Point {
     pub s: f64,
     pub w: f64,
     pub d: f64,
+    /// The river's discharge here (m³/s).
+    pub q: f64,
 }
 
 impl Point {
@@ -34,6 +36,7 @@ impl Point {
             s: m(a.s, b.s),
             w: m(a.w, b.w),
             d: m(a.d, b.d),
+            q: m(a.q, b.q),
         }
     }
 }
@@ -63,6 +66,10 @@ pub struct Hit {
     pub valley: f64,
     /// The flow's direction (a unit vector, downstream).
     pub dir: (f64, f64),
+    /// How fast the water's surface falls downstream (m per m).
+    pub fall: f64,
+    /// The river's discharge here (m³/s).
+    pub q: f64,
     pub river: u32,
 }
 
@@ -143,6 +150,7 @@ impl Channels {
                     s: f64::from(v.surface),
                     w: f64::from(v.width),
                     d: f64::from(v.depth),
+                    q: f64::from(v.discharge),
                 })
                 .collect();
             // A lake's outlet: the channel starts in the lake, at its entry cell.
@@ -322,6 +330,8 @@ impl Channels {
                             depth: p.d,
                             valley,
                             dir: (ex / l, ez / l),
+                            fall: (s.a.s - s.b.s) / l,
+                            q: p.q,
                             river: s.river,
                         },
                     );

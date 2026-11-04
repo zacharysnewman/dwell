@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Generates the water flow data (docs/WATER_FLOW.md §3) for Rust (crates/dwell-sim/src/flow.gen.rs)
+// Generates the water flow data (docs/WATER_FLOW.md §3) for Rust (crates/dwell-world/src/flow.gen.rs)
 // from shared/fluids/flow.json, after validating it: an unknown, missing or out-of-range entry, or a
 // block the registry doesn't have, fails with its path named. The output is checked in; CI
 // regenerates it and fails on any diff.
@@ -80,7 +80,7 @@ const rf = (v) => (Number.isInteger(v) ? `${v}.0` : String(v));
 
 /** The Rust source for validated flow data. */
 export function flowRust(data) {
-  const lines = [`// ${header}`, '', 'use crate::water::{FlowData, LiquidFlow};', ''];
+  const lines = [`// ${header}`, '', 'use crate::flow::{FlowData, LiquidFlow};', ''];
   lines.push('/// The water flow data (shared/fluids/flow.json).');
   lines.push('pub const FLOW: FlowData = FlowData {');
   for (const [k, [, , int]] of Object.entries(FLOW_RANGES)) {
@@ -102,6 +102,6 @@ export function flowRust(data) {
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
   const data = validateFlow(JSON.parse(readFileSync(join(here, 'flow.json'), 'utf8')));
-  writeFileSync(join(root, 'crates/dwell-sim/src/flow.gen.rs'), flowRust(data));
+  writeFileSync(join(root, 'crates/dwell-world/src/flow.gen.rs'), flowRust(data));
   console.log('fluids: flow data generated');
 }

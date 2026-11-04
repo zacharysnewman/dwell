@@ -7,6 +7,7 @@ pub mod bounds;
 pub mod brush;
 mod cell;
 pub mod edit;
+pub mod flow;
 mod face;
 pub mod fluid;
 pub mod hash;
