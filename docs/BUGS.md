@@ -12,25 +12,29 @@ pins it.
 shallow ramp, maybe same problem with steep ramps too?" Not investigated yet: targeting a ramp's low
 face, or the placement check against its shape.
 
-### 22. The river below a dam rises a little
-
-*Found 2026-11-03 (0.44.3, the owner's seed 0 dam, through the server natively).* The river's two halves
-were found as separate bodies, the lower keeping the map's flow and also taking what comes over the
-dam (0.805 + 0.79 m³/s), so it stands ~0.18 m over its found level.
-
-- **0.45.1 (partly fixed):** on 0.45.0 the dam's split left the link from the pool above with the
-  part below the dam: the part above counted the river as its own besides what fell in, and the
-  river below rose 0.31 m. A link now goes with the part nearest where it comes in
-  (`a_dam_that_splits_a_pool_leaves_the_river_below_at_its_level`, red: 52.72 m against 52.5 m);
-  the first pool below the owner's dam now stands 0.12 m high.
-- **Open:** the river below the owner's dam runs as rapids, ~15 pools a few metres apart, and each
-  carries 2.05 m³/s where its lips were found carrying 1.2, standing 0.2–0.25 m high. They are found
-  one after another around the dam's split, each lip's flow taken against neighbours found at other
-  times (a lip into water not yet found isn't counted), so the flows found don't agree down the
-  chain. The fix is to find a river's chain of pools together, or to take each pool's flow from its
-  lip alone and its own inflow from the map's river (WATER_FLOW.md §17.7).
-
 ## Fixed
+
+### 22. The river below a dam rose (fixed in 0.45.1 and 0.45.2)
+
+*Found 2026-11-03 (0.44.3, the owner's seed 0 dam, through the server natively); on 0.45.0 the river
+below the dam rose 0.31 m, and the rapids further down (~15 pools a few metres apart) 0.2–0.25 m.*
+
+- **Causes:** (1) the dam's split left the link from the pool above with the part below it (0.45.1);
+  (2) each body's own inflow was taken again every tick as what its lip carries less what the found
+  bodies above bring: a part split off below a dam has no entry of its own, so it passed nothing on
+  in the books and the pools below counted the river as their own besides what arrived; (3) a loss
+  (a lip above carrying more than a pool's own) drained a pool dry while a dam above filled, and it
+  came back as another body; (4) a split left a link's source with the old part, so a fall's water
+  was taken off the pool below twice.
+- **Fix (0.45.2):** a body's own inflow is kept with the cells it comes in at (`Steady::feeds`): set
+  when it is found (what its ways out carry less what the found bodies above bring), taken off once
+  as each body above links in (`link_once`), carried by splits and summed by merges; a body with a
+  way out of its own passes what that carries; a loss takes only what arrives; a split moves a
+  link's source and target to the parts that hold them.
+- **Tests:** `a_dam_that_splits_a_pool_leaves_the_river_below_at_its_level` (0.45.1; red: 52.72 m
+  against 52.5 m), `a_pool_losing_to_the_ground_keeps_its_water_while_a_dam_above_fills` (red: the
+  pool empty at 52.0 m when the spill came back). On the owner's dam every pool below it, down the
+  rapids, stands at its found level; the dam's pool at 140.63 m over its 140.50 m crest.
 
 ### 24. Rising water vanished and came back higher at each step, and slopes didn't rise with it (fixed in 0.44.5)
 

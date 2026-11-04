@@ -1339,3 +1339,32 @@ dwell_world::both_faces!(
         assert!(s.wet(1, 1, 1), "the part above rose behind the dam");
     }
 );
+
+dwell_world::both_faces!(
+    /// Owner, 2026-11-04 (seed 0, the rapids below their dam): a pool whose lip carries less than
+    /// the lip above it (one cell against three) takes the difference as a small loss to the ground
+    /// (ADR 0057). While a dam above filled and nothing came down, that loss drained the pool dry,
+    /// and it came back at another level. The loss takes only what arrives. Red before: drained.
+    fn a_pool_losing_to_the_ground_keeps_its_water_while_a_dam_above_fills(f: FaceFrame) {
+        let mut s = two_steps(f);
+        let stone = require("dwell:stone");
+        s.set(10, 0, 0, stone);
+        s.set(10, 0, 2, stone);
+        s.edit(&[[5, 1, 1], [-5, 2, 1]], M.air);
+        s.run(300, 1.0);
+        let lower = |s: &Scene| s.water.basin_at(s.cell(5, 0, 1)).map(|b| (b.id, b.level()));
+        let (id, found) = lower(&s).expect("the lower pool");
+        // A dam three rows high above it: nothing comes down while it fills.
+        let dam: Vec<[i32; 3]> = (0..=2)
+            .flat_map(|z| (1..=3).map(move |r| [-2, r, z]))
+            .collect();
+        s.edit(&dam, stone);
+        s.run(1200, 1.0);
+        let (now_id, now) = lower(&s).expect("the lower pool");
+        assert_eq!(now_id, id, "the pool as found, not one made again");
+        assert!(
+            (now - found).abs() < 0.02,
+            "back at {now} (found at {found})"
+        );
+    }
+);
