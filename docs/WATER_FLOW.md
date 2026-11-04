@@ -374,6 +374,18 @@ sends its writes as one `Rebake` modification.
   stands there). A basin whose cells another's level wets or dries finds its ways out again. A
   basin keeps the unloaded chunks beside it (`edge`, walls to it then) and is found again when one
   loads (0.43.3): a dam's flood goes on up the river as the player reaches it.
+- **Smooth fill** (0.44.0, owner 2026-11-03): a basin's surface row is written at its level's
+  fill: water's `fill` property (`fillProperty`, eighths of the row, the first and default full), so
+  water rises and falls by 1/16 m steps, not ½ m rows; the rows under it full. The surface row is drawn
+  once its least fill rounds in; a new fill rewrites that row's cells (`drawn_fill`), a body found
+  from part-full cells holds what their fills hold, and every check of the liquid takes a cell at
+  any fill as the same water (`full_of`). The mesher draws a cell's surface and sides at
+  `fill × (1 − surfaceDrop)`, and the step between part-full and full water of one liquid is
+  closed. Generated water is full (the terrain a seed generates is unchanged; the registry's state
+  names are new: a new compatibility line). Deviations: LOD sections built from edited chunks draw
+  water as whole cells (no column surface data), so where a changed pool reaches the LOD the
+  surfaces step by up to a cell there; swimming and floating take a part-full cell as full; a ramp
+  beside part-full water is flooded at the full row.
 - **The edge**: a block with a `flooded` state (a ramp) beside a row the water writes takes it, and
   loses it when no liquid is beside it (`flood_edge`).
 - **Running water** (0.43.1): an outlet an edit made (not a natural one) passing at least
@@ -412,7 +424,7 @@ Deviations, for W3: a natural outlet's water isn't drawn
 running (the river's own steps stay as generated), and a sheet spreading wider than `maxRowCells` over a
 plain is capped there (the excess lost).
 
-Tests (`water/tests.rs`, both faces): `a_dam_upstream_reaches_the_river_far_below_across_unfound_country` (0.43.6; `dwell-worldgen` `a_rivers_course_is_read_along_it_and_on_to_where_it_ends`, `every_river_of_a_generated_map_goes_on_to_an_end`; the generated sweep now sends nothing down the map's rivers), `a_dam_out_of_reach_fills_on_until_it_settles`, `a_dammed_river_unloaded_comes_back_as_if_watched` (0.43.5; `tests/water.rs` `a_lake_cut_open_drains_on_after_its_player_leaves`),
+Tests (`water/tests.rs`, both faces): `a_rising_pool_s_surface_row_is_written_at_its_fill` (0.44.0; `dwell-mesh` `water_part_full_is_drawn_at_its_fill_and_its_step_to_full_water_closed`), `a_dam_upstream_reaches_the_river_far_below_across_unfound_country` (0.43.6; `dwell-worldgen` `a_rivers_course_is_read_along_it_and_on_to_where_it_ends`, `every_river_of_a_generated_map_goes_on_to_an_end`; the generated sweep now sends nothing down the map's rivers), `a_dam_out_of_reach_fills_on_until_it_settles`, `a_dammed_river_unloaded_comes_back_as_if_watched` (0.43.5; `tests/water.rs` `a_lake_cut_open_drains_on_after_its_player_leaves`),
 `a_basin_saved_with_the_world_goes_on_as_it_was`, `a_saved_basin_whose_chunk_changed_since_is_found_again`
 (0.43.4; `tests/persistence.rs` `the_waters_basins_survive_a_server_restart`, `dwell-storage`
 `the_waters_basins_are_saved_with_the_world_and_replaced_on_each_save`);

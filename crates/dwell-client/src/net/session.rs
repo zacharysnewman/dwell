@@ -889,7 +889,7 @@ mod tests {
         let (payload, p) = ladderless_registry();
         let mut s = joined_with(&payload);
         let (water, sand) = (
-            server_id(&p, "dwell:water"),
+            server_id(&p, "dwell:water[fill=8]"),
             server_id(&p, "dwell:sand[flooded=false]"),
         );
         assert_ne!(water, require("dwell:water"), "shifted on the server");
@@ -960,7 +960,7 @@ mod tests {
         let (payload, p) = ladderless_registry();
         let mut s = joined_with(&payload);
         let (water, sand) = (
-            server_id(&p, "dwell:water"),
+            server_id(&p, "dwell:water[fill=8]"),
             server_id(&p, "dwell:sand[flooded=false]"),
         );
         let place = |material| {

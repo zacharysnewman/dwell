@@ -614,14 +614,14 @@ fn plants_go_only_into_their_medium() {
     use dwell_blocks::fixture::STATES;
     let row = |name: &str| STATES.iter().find(|r| r.name == name).expect(name);
     let kelp = row("test:kelp[flooded=true]");
-    assert!(medium_allows(kelp, row("dwell:water")));
+    assert!(medium_allows(kelp, row("dwell:water[fill=8]")));
     assert!(!medium_allows(kelp, row("dwell:air")));
     let grass = row("dwell:tall_grass");
     assert!(medium_allows(grass, row("dwell:air")));
-    assert!(!medium_allows(grass, row("dwell:water")));
+    assert!(!medium_allows(grass, row("dwell:water[fill=8]")));
     assert!(medium_allows(
         row("dwell:stone[flooded=false]"),
-        row("dwell:water")
+        row("dwell:water[fill=8]")
     ));
     // An air plant never stays flooded; anything else is kept as it is.
     assert_eq!(medium_kept(tall), tall);

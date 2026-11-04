@@ -312,6 +312,8 @@ fn get_basin(
         linked,
         owed,
         active,
+        // Its cells are written at its fill again once loaded.
+        drawn_fill: (usize::MAX, 0),
         rest,
         held,
         natural,

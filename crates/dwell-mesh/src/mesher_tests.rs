@@ -218,7 +218,7 @@ fn a_fluid_added_by_data_alone_is_meshed_with_its_own_surface_drop_and_opacity()
     // else: the mesher draws it from its data, beside water at water's own height.
     use dwell_blocks::fixture::{FLUIDS, STATES};
     let id = |name: &str| STATES.iter().position(|s| s.name == name).expect(name) as u16;
-    let (oil, water) = (id("test:oil"), id("dwell:water"));
+    let (oil, water) = (id("test:oil"), id("dwell:water[fill=8]"));
     let kinds = Kinds::new(&STATES, &FLUIDS, Some(water));
     // Its opacity reaches the meshes through the registry row (the render mode picks the mesh).
     assert_eq!(STATES[usize::from(oil)].opacity, 0.8);
@@ -264,7 +264,7 @@ fn blocks_of_each_render_mode_added_by_data_alone_go_to_their_meshes() {
         id("test:glass"),
         id("test:reed"),
         id("dwell:stone[flooded=false]"),
-        id("dwell:water"),
+        id("dwell:water[fill=8]"),
     );
     let kinds = Kinds::new(&STATES, &FLUIDS, Some(water));
     let mesh_of = |cells: &[(i32, i32, i32, u16)]| {
@@ -1198,7 +1198,7 @@ fn a_side_tile_rule_added_by_data_alone_is_applied() {
     let (loam, stone, water) = (
         id("test:loam"),
         id("dwell:stone_ramp[facing=east,flooded=false,half=bottom,shape=ramp]"),
-        id("dwell:water"),
+        id("dwell:water[fill=8]"),
     );
     let kinds = Kinds::new(&STATES, &FLUIDS, Some(water));
     let mesh_of = |cells: &[(i32, i32, i32, u16)]| {
@@ -1238,7 +1238,7 @@ fn the_cutout_mesh_carries_which_vertices_take_no_ink() {
     assert!(!dwell_blocks::info(tall_grass()).outline);
     use dwell_blocks::fixture::{FLUIDS, STATES};
     let id = |name: &str| STATES.iter().position(|s| s.name == name).expect(name) as u16;
-    let kinds = Kinds::new(&STATES, &FLUIDS, Some(id("dwell:water")));
+    let kinds = Kinds::new(&STATES, &FLUIDS, Some(id("dwell:water[fill=8]")));
     for name in ["test:reed", "test:hedge"] {
         let m = mesh_chunk_with(&kinds, &voxels(&[(1, 1, 1, id(name))]), false, [0; 3])
             .expect("padded volume");
@@ -1314,7 +1314,11 @@ fn a_plant_that_does_not_sit_on_its_support_keeps_to_its_cells_floor_by_data_alo
     // tall grass keeps the default. Both over the same ramp.
     use dwell_blocks::fixture::{FLUIDS, STATES};
     let id = |name: &str| STATES.iter().position(|s| s.name == name).expect(name) as u16;
-    let (reed, plant, water) = (id("test:reed"), id("dwell:tall_grass"), id("dwell:water"));
+    let (reed, plant, water) = (
+        id("test:reed"),
+        id("dwell:tall_grass"),
+        id("dwell:water[fill=8]"),
+    );
     // The fixture keeps the build's blocks first, so the build's ramp states are the fixture's.
     let ground = id("dwell:grass[flooded=false]");
     assert_eq!(
@@ -1647,4 +1651,50 @@ fn a_log_lying_along_x_shows_its_end_grain_on_its_ends_and_its_bark_along_it() {
             }
         }
     }
+}
+
+#[test]
+fn water_part_full_is_drawn_at_its_fill_and_its_step_to_full_water_closed() {
+    // docs/WATER_FLOW.md §15 (owner, 2026-11-03: water fills smoothly): a water cell half full
+    // (`fill=4` of 8) has its surface at half its drawn height and its sides up to it; full water
+    // beside it in the same row closes the step between the two surfaces. Red before: drawn as
+    // full water.
+    let half = require("dwell:water[fill=4]");
+    let st = stone();
+    let mut cells = Vec::new();
+    for x in 4..8 {
+        for z in 4..7 {
+            cells.push((x, 0, z, st));
+        }
+    }
+    cells.push((5, 1, 5, half));
+    cells.push((6, 1, 5, water()));
+    let m = mesh(&cells, false).transparent;
+    let full = 1.0 - dwell_blocks::require_fluid("dwell:water").surface_drop;
+    let want = 1.0 + 0.5 * full;
+    let mut top = false;
+    let mut strip = false;
+    for t in m.indices.chunks_exact(3) {
+        let i = t[0] as usize * 3;
+        let n = [m.normals[i], m.normals[i + 1], m.normals[i + 2]];
+        let ps = [t[0], t[1], t[2]].map(|i| vertex(&m.positions, i));
+        let over_half = ps.iter().all(|p| p[0] >= 5.0 - 1e-6 && p[0] <= 6.0 + 1e-6);
+        if n[1] > 0.5 && over_half && ps.iter().all(|p| (p[1] - want).abs() < 1e-5) {
+            top = true;
+        }
+        // The full cell's side facing the half one (−x, on x = 6) from the half surface up.
+        if n[0] < -0.5 && ps.iter().all(|p| (p[0] - 6.0).abs() < 1e-6) {
+            let lo = ps.iter().map(|p| p[1]).fold(f64::MAX, f64::min);
+            let hi = ps.iter().map(|p| p[1]).fold(f64::MIN, f64::max);
+            if (lo - want).abs() < 1e-5 && (hi - (1.0 + full)).abs() < 1e-5 {
+                strip = true;
+            }
+        }
+    }
+    assert!(top, "no surface at y {want} over the half-full cell");
+    assert!(
+        strip,
+        "no face closes the step from {want} to {}",
+        1.0 + full
+    );
 }

@@ -1001,3 +1001,38 @@ dwell_world::both_faces!(
         );
     }
 );
+
+dwell_world::both_faces!(
+    /// Owner, 2026-11-03: water should fill up smoothly, not by whole ½ m rows. A dammed pool's
+    /// surface row is written at its fill (eighths of the row, `fillProperty`): as it rises the
+    /// fill goes up step by step, the rows under it full, and a body found from it holds what the
+    /// fills hold. Red before: the row appeared whole once half full.
+    fn a_rising_pool_s_surface_row_is_written_at_its_fill(f: FaceFrame) {
+        let mut s = tall_channel(f);
+        // A dam three rows high, the river flowing in: the pool rises through rows 1 and 2.
+        let dam: Vec<[i32; 3]> = (0..=2)
+            .flat_map(|z| (0..=2).map(move |r| [9, r, z]))
+            .collect();
+        s.edit(&dam, require("dwell:stone"));
+        let fill = |s: &Scene, r: i32| {
+            let m = s.get(4, r, 1);
+            dwell_blocks::try_info(m)
+                .filter(|i| i.liquid)
+                .map_or(0.0, |i| f64::from(i.fill))
+        };
+        let mut seen: Vec<f64> = Vec::new();
+        for _ in 0..40 {
+            s.run(1, 1.0);
+            let f1 = fill(&s, 1);
+            if f1 > 0.0 && f1 < 1.0 && seen.last() != Some(&f1) {
+                seen.push(f1);
+            }
+        }
+        assert!(seen.len() >= 4, "row 1 filled by steps, saw {seen:?}");
+        assert!(seen.windows(2).all(|w| w[1] > w[0]), "rising: {seen:?}");
+        // Under the surface row, full.
+        let pool = s.water.basin_at(s.cell(4, 0, 1)).expect("the pool");
+        assert!(pool.level() > m_of_row(G + 1), "risen into row 1");
+        assert_eq!(fill(&s, 0), 1.0, "row 0 full");
+    }
+);
