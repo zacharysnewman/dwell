@@ -298,6 +298,8 @@ const TERRAIN = {
     lodWidth: [0, 4],
     lodMinShare: [0, 1],
     lodMaxCell: [1, 4096, true],
+    lipReach: [0, 8],
+    lipRise: [0, 8, true],
   },
   mouths: {
     reach: [0, 20_000],
@@ -410,6 +412,8 @@ export function terrainRust(t) {
     ['river_reach_per_width', rf(r.reachPerWidth)],
     ['river_meander', rf(r.meander)],
     ['river_meander_wavelength', `${r.meanderWavelength}`],
+    ['river_lip_reach', rf(r.lipReach)],
+    ['river_lip_rise', `${r.lipRise}`],
     ['river_lod_width', rf(r.lodWidth)],
     ['river_lod_min_share', rf(r.lodMinShare)],
     ['river_lod_max_cell', `${r.lodMaxCell}`],

@@ -108,6 +108,10 @@ pub struct Surface {
     pub river_reach_per_width: f64,
     pub river_meander: f64,
     pub river_meander_wavelength: i32,
+    /// A step's lip reaches this far upstream of the step (m; WATER_FLOW.md §17).
+    pub river_lip_reach: f64,
+    /// A lip's wall stands this many rows over the water.
+    pub river_lip_rise: i32,
     pub river_lod_width: f64,
     pub river_lod_min_share: f64,
     pub river_lod_max_cell: i64,
@@ -316,6 +320,34 @@ impl Column {
     pub fn wet(&self) -> bool {
         self.water_row() > top_voxel(self.height) + 1
     }
+}
+
+/// The cells across a river's lip that pass `q` m³/s with the water a full row over the sill
+/// (water's weir, `dwell_world::flow`): at least one (docs/WATER_FLOW.md §17).
+pub fn lip_cells(q: f64) -> u32 {
+    let per_cell = dwell_world::flow::sill_flow(dwell_world::flow::water_weir(), 1.0, CELL_H);
+    if per_cell <= 0.0 {
+        return 1;
+    }
+    ((q / per_cell).round() as u32).max(1)
+}
+
+/// Whether a channel column is part of its step's lip wall: within `lipReach` m upstream of where
+/// the river's surface steps down a row, and outside the gap at the centre (`lip_cells` wide).
+/// None at sea level or where the surface doesn't fall.
+fn lip_wall(r: &worldmap::Hit) -> bool {
+    if r.level <= CELL_H || r.fall <= 1e-9 {
+        return false;
+    }
+    let abs = SEA_LEVEL_M + r.level;
+    let k = surface_row(abs as f32);
+    let boundary = (f64::from(k) - 0.5) * CELL_H;
+    let upstream = (abs - boundary) / r.fall;
+    if upstream > S.river_lip_reach {
+        return false;
+    }
+    let gap = f64::from(lip_cells(r.q));
+    r.d >= 0.5 * (gap + 1.0)
 }
 
 /// The row a water surface (m, face-local) lies on: the rows below it are water.
@@ -932,6 +964,13 @@ impl TerrainGenerator {
                 if water != Water::Lake {
                     water = Water::River;
                     level = r.level;
+                    // Its step's lip: a wall over the water but for the gap that passes the
+                    // river's discharge with the pool a full row over its sill (ADR 0057).
+                    if cell == 1 && lip_wall(r) {
+                        h = drawn + f64::from(S.river_lip_rise) * CELL_H;
+                        water = Water::None;
+                        level = 0.0;
+                    }
                 }
             } else if water != Water::Lake {
                 // The valley down to the banks, blended back into the land at its reach: by every

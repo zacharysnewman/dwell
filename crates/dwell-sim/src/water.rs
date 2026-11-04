@@ -35,7 +35,6 @@ const MERGE_GAP: f64 = 0.02;
 /// Flow steps a water tick takes at most.
 const MAX_STEPS: usize = 64;
 
-
 /// How much a block lets through (`leaks`; 0: sealed).
 fn leak_of(m: StateId) -> f64 {
     let name = BLOCKS[info(m).block].name;
@@ -244,7 +243,6 @@ pub struct Outlet {
     /// opening law between the two levels, never routed or drawn running.
     contact: bool,
 }
-
 
 impl Outlet {
     /// Its flow (m³/s) at level `level` (local m), for a liquid of weir coefficient `weir`, into
