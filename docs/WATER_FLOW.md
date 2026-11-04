@@ -636,6 +636,8 @@ fill's part-full cells (0.44.0). Small and medium rivers fit within a ½ m terra
   what comes in and what stands over the level found, so the body holds it; only the part holding
   the exit seeps; its baseline for changes downstream is what it passes once settled (its mean
   flow over a tick, steady five ticks).
+- **Splits** (0.45.1): a link from a found body above goes with the part nearest where it comes in,
+  so the part above a dam doesn't count the river twice.
 - **One body where it is one.** A part wholly in the surface row (a crest) stays one body with its
   pool; faces against a found body at the same level aren't held (a river found in parts across a
   chunk's edge); a rebuild never absorbs water no one holds (it is another body, found and merged

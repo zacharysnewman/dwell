@@ -3336,6 +3336,27 @@ impl Water {
             self.basins.insert(pid, nb);
             made.push(pid);
         }
+        // A natural outlet linked into it goes with the part nearest where it comes in.
+        let near_part = |c: [i32; 3]| -> usize {
+            parts
+                .iter()
+                .enumerate()
+                .min_by_key(|(_, p)| {
+                    p.iter()
+                        .map(|q| {
+                            let d = [q[0] - c[0], q[1] - c[1], q[2] - c[2]];
+                            i64::from(d[0]).pow(2) + i64::from(d[1]).pow(2) + i64::from(d[2]).pow(2)
+                        })
+                        .min()
+                        .unwrap_or(i64::MAX)
+                })
+                .map_or(0, |(i, _)| i)
+        };
+        for ((_, from), (t, _)) in self.links.iter_mut() {
+            if *t == id {
+                *t = made[near_part(*from)];
+            }
+        }
         self.retarget_all(id);
         self.split.extend(made.iter().copied());
         for pid in made {

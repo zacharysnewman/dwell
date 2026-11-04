@@ -12,17 +12,23 @@ pins it.
 shallow ramp, maybe same problem with steep ramps too?" Not investigated yet: targeting a ramp's low
 face, or the placement check against its shape.
 
-### 22. The river below a dam rises a little when the dam is built a block at a time
+### 22. The river below a dam rises a little
 
 *Found 2026-11-03 (0.44.3, the owner's seed 0 dam, through the server natively).* The river's two halves
 were found as separate bodies, the lower keeping the map's flow and also taking what comes over the
-dam (0.805 + 0.79 m³/s), so it stands ~0.18 m over its found level. The scene test (a dam placed a
-block a tick) doesn't show it; the cause in the server's order of edits isn't pinned down yet.
-On 0.44.6 (water through flooded ramps) a native probe of the owner's dam, built at once or a block a
-tick, leaves the river below at 139.36 m, under its found 139.5 m, with the flood over the dam spilling
-into it: not seen there now. Kept open until a test reproduces the original order of edits; the
-planned balanced generation (one hydraulic law for all water) replaces the found-flow bookkeeping
-behind it.
+dam (0.805 + 0.79 m³/s), so it stands ~0.18 m over its found level.
+
+- **0.45.1 (partly fixed):** on 0.45.0 the dam's split left the link from the pool above with the
+  part below the dam: the part above counted the river as its own besides what fell in, and the
+  river below rose 0.31 m. A link now goes with the part nearest where it comes in
+  (`a_dam_that_splits_a_pool_leaves_the_river_below_at_its_level`, red: 52.72 m against 52.5 m);
+  the first pool below the owner's dam now stands 0.12 m high.
+- **Open:** the river below the owner's dam runs as rapids, ~15 pools a few metres apart, and each
+  carries 2.05 m³/s where its lips were found carrying 1.2, standing 0.2–0.25 m high. They are found
+  one after another around the dam's split, each lip's flow taken against neighbours found at other
+  times (a lip into water not yet found isn't counted), so the flows found don't agree down the
+  chain. The fix is to find a river's chain of pools together, or to take each pool's flow from its
+  lip alone and its own inflow from the map's river (WATER_FLOW.md §17.7).
 
 ## Fixed
 
