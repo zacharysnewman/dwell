@@ -1131,3 +1131,40 @@ dwell_world::both_faces!(
         assert!(far.contains("\"basins\":[]"), "{far}");
     }
 );
+
+dwell_world::both_faces!(
+    /// Owner, 2026-11-04: rising water "disappears and then reappears at a slightly higher
+    /// level". A body's surface was drawn at its nearest fill step, so a level hovering at a
+    /// rounding point (a pool below a dam fed in pulses by the one above it) flipped between two
+    /// fills each tick; at a row's floor the row came and went. The drawn fill now moves only once
+    /// the level is `fillHysteresis` past the half step. Red before: the row came and went.
+    fn a_level_hovering_at_a_step_is_drawn_steadily(f: FaceFrame) {
+        let mut s = Scene::new(f);
+        let stone = require("dwell:stone");
+        // A closed pool 3 × 3, walled to row 3, two rows of water.
+        s.fill([-1, -1, -1], [3, -1, 3], stone);
+        s.fill([-1, 0, -1], [3, 3, -1], stone);
+        s.fill([-1, 0, 3], [3, 3, 3], stone);
+        s.fill([-1, 0, -1], [-1, 3, 3], stone);
+        s.fill([3, 0, -1], [3, 3, 3], stone);
+        s.fill([0, 0, 0], [2, 1, 2], M.water);
+        s.water = fed(0.0);
+        // An edit over it: the pool is found.
+        s.edit(&[[1, 2, 1]], M.air);
+        s.run(1, 0.0);
+        let id = s.water.owner[&s.cell(1, 0, 1)];
+        let row = 9.0 * CELL_H;
+        let n = fill_steps(M.water) as f64;
+        let mut seen = Vec::new();
+        for k in 0..12 {
+            // Row 1 at half a step, a hair under then over: rounding to none or the least fill.
+            let frac = 0.5 / n + if k % 2 == 0 { -1e-3 } else { 1e-3 };
+            s.water.basins.get_mut(&id).expect("the pool").volume = row + frac * row;
+            let mut writes = Vec::new();
+            s.water.settle_rows(&mut s.world, id, &mut writes);
+            seen.push(s.get(1, 1, 1));
+        }
+        seen.dedup();
+        assert!(seen.len() <= 1, "row 1 drawn as {seen:?}");
+    }
+);

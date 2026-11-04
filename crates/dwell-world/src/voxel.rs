@@ -875,6 +875,19 @@ impl VoxelWorld {
         );
     }
 
+    /// Sets a voxel without bumping its chunk's revision: a write that goes out in a modification,
+    /// which bumps it once (§6.5). [`Self::set_voxel`] bumps it per voxel, so a client following
+    /// the modifications would see a gap and ask for the whole chunk again.
+    pub fn write_voxel(&mut self, x: i32, y: i32, z: i32, m: StateId) {
+        let c = chunk_of(x, y, z);
+        let index = local_index(
+            x - c.x * CHUNK_SIZE,
+            y - c.y * CHUNK_SIZE,
+            z - c.z * CHUNK_SIZE,
+        );
+        self.get_or_create(c).set_at(index, m);
+    }
+
     /// Inserts or replaces a chunk (streamed chunks; chunks generated off-thread).
     pub fn put(&mut self, coord: ChunkCoord, chunk: Chunk) {
         self.store(coord, chunk);

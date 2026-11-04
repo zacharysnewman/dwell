@@ -65,6 +65,10 @@ struct Piece {
 /// input seq its snapshot acknowledged.
 pub type Latest<'a> = (u32, &'a [PieceCell], DVec3, DQuat, DVec3, u32);
 
+/// How far past its farthest cell a piece's blocks may settle from where it was last sent (m):
+/// the server lifts a piece up to two cells to free it, and a snapshot may lag its last moves.
+const SETTLE_REACH_M: f64 = 4.0;
+
 /// The pieces falling now.
 #[derive(Default)]
 pub struct Pieces {
@@ -123,6 +127,25 @@ impl Pieces {
             },
         );
         piece_meshes(&cells)
+    }
+
+    /// Whether world cell `c` lies within reach of a piece where it was last sent (its farthest
+    /// cell and `SETTLE_REACH_M` more): a `Rebake` there may be its blocks settling.
+    pub fn near_cell(&self, c: [i32; 3]) -> bool {
+        let at = DVec3::from(dwell_world::pos_of_cell(c)) + DVec3::new(0.5, 0.5 * CELL_H, 0.5);
+        self.map.values().any(|p| {
+            let Some(last) = p.poses.back() else {
+                return false;
+            };
+            let reach = p
+                .blocks
+                .iter()
+                .map(|&(o, _)| {
+                    DVec3::new(f64::from(o[0]), f64::from(o[1]) * CELL_H, f64::from(o[2])).length()
+                })
+                .fold(0.0, f64::max);
+            last.position.distance(at) <= reach + SETTLE_REACH_M
+        })
     }
 
     /// The piece settled (or went): forgotten, and returned as it was drawn at `now_ms` and last

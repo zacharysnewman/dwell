@@ -89,6 +89,78 @@ fn breaking_a_lakes_wall_drains_its_top_row_and_clients_see_it() {
 }
 
 #[test]
+fn the_waters_modifications_reach_a_client_in_revision_order() {
+    // face-a-only: the server's flat world is face A's; the basins' both faces are tested in
+    // `water::tests`.
+    // Owner, 2026-11-04: rising water "disappears and then reappears at a slightly higher level".
+    // The water wrote its cells with `set_voxel`, a revision per cell, then sent them as one
+    // modification: every water modification skipped revisions, so the client asked for the whole
+    // chunk again and drew it dark until relit. Each chunk's modifications now follow one another.
+    let mut f = Fixture::new(flat());
+    join_streaming(&mut f, 1);
+    f.server.step();
+    f.take_all();
+    let stone = dwell_blocks::require("dwell:stone");
+    let w = f.server.world();
+    for x in -3..=3 {
+        for z in 2..=9 {
+            for y in G..G + 4 {
+                let wall = x == -3 || x == 3 || z == 2 || z == 9;
+                w.set_voxel(x, y, z, if wall { stone } else { M.water });
+            }
+        }
+    }
+    let mut seen: std::collections::HashMap<[i32; 3], u32> = std::collections::HashMap::new();
+    let w = f.server.world();
+    for x in -1..=0 {
+        for y in -1..=1 {
+            for z in -1..=0 {
+                if let Some(c) = w.find(ChunkCoord::new(x, y, z)) {
+                    seen.insert([x, y, z], c.revision());
+                }
+            }
+        }
+    }
+    f.send(
+        1,
+        Message::BlockEditRequest(BlockEditRequest {
+            action: BlockEditAction::Break,
+            cell: [0, G + 3, 2],
+            face: 5,
+            material: 0,
+            rows: 1,
+            down: false,
+        }),
+    );
+    let mut water = 0;
+    for _ in 0..240 {
+        f.server.step();
+        for (_, out) in f.take_all() {
+            for m in out {
+                let Message::VoxelModification(v) = m else {
+                    continue;
+                };
+                water += usize::from(v.reason == VoxelModificationReason::Rebake);
+                for c in &v.chunks {
+                    if let Some(last) = seen.get(&c.coord) {
+                        assert_eq!(
+                            c.revision,
+                            last + 1,
+                            "chunk {:?}: revision {} after {last} ({:?})",
+                            c.coord,
+                            c.revision,
+                            v.reason
+                        );
+                    }
+                    seen.insert(c.coord, c.revision);
+                }
+            }
+        }
+    }
+    assert!(water > 0, "the water sent its changes");
+}
+
+#[test]
 fn a_lake_cut_open_drains_on_after_its_player_leaves() {
     // face-a-only: the server's flat world is face A's; the basins' both faces are tested in
     // `water::tests`.

@@ -57,6 +57,9 @@ pub struct FlowData {
     pub river_change_min: f64,
     /// A map lake's head over its outlet (m): how fast its outflow follows a change coming in.
     pub lake_outlet_head: f64,
+    /// How far past half a step (fill steps) a level must move before its surface is drawn at
+    /// another fill.
+    pub fill_hysteresis: f64,
     pub liquids: &'static [LiquidFlow],
     /// Block name → m³/s per m² of face per m of head.
     pub leaks: &'static [(&'static str, f64)],
@@ -488,11 +491,26 @@ impl Basin {
     }
 
     /// The fill its surface's row is drawn at, in its liquid's steps (0 none, `fill_steps` full):
-    /// the nearest (docs/WATER_FLOW.md §15).
+    /// the nearest, but the one drawn now while the level is within `fillHysteresis` past half a
+    /// step of it, so a level hovering at a step (or a row's floor) doesn't flicker between two
+    /// (docs/WATER_FLOW.md §15).
     fn top_steps(&self) -> (usize, usize) {
         let (k, frac) = self.fill();
         let n = fill_steps(self.liquid);
-        (k, ((frac * n as f64).round() as usize).min(n))
+        let nearest = ((frac * n as f64).round() as usize).min(n);
+        let (dk, dq) = self.drawn_fill;
+        if dk == usize::MAX || dq > n {
+            return (k, nearest);
+        }
+        // In steps from its bottom row's floor.
+        let exact = (k * n) as f64 + frac * n as f64;
+        let drawn = dk * n + dq;
+        if (exact - drawn as f64).abs() <= 0.5 + FLOW.fill_hysteresis
+            && (k * n..=k * n + n).contains(&drawn)
+        {
+            return (k, drawn - k * n);
+        }
+        (k, nearest)
     }
 
     /// The cells drawn as liquid at this volume: the full rows, and the surface's row once its
@@ -1967,7 +1985,7 @@ impl Water {
             if world.find(chunk_of(c[0], c[1], c[2])).is_some()
                 && is_running(world.get_voxel_if_loaded(c))
             {
-                world.set_voxel(c[0], c[1], c[2], M.air);
+                world.write_voxel(c[0], c[1], c[2], M.air);
                 writes.push((c, M.air));
             }
         }
@@ -1976,7 +1994,7 @@ impl Water {
                 continue;
             }
             if world.get_voxel_if_loaded(c) == M.air {
-                world.set_voxel(c[0], c[1], c[2], run);
+                world.write_voxel(c[0], c[1], c[2], run);
                 writes.push((c, run));
                 self.drawn.insert(c);
             }
@@ -2477,7 +2495,7 @@ impl Water {
             if world.find(chunk_of(c[0], c[1], c[2])).is_some()
                 && full_of(world.get_voxel_if_loaded(c)) == liquid
             {
-                world.set_voxel(c[0], c[1], c[2], M.air);
+                world.write_voxel(c[0], c[1], c[2], M.air);
                 writes.push((c, M.air));
             }
         }
@@ -2486,7 +2504,7 @@ impl Water {
                 && world.find(chunk_of(c[0], c[1], c[2])).is_some()
             {
                 let m = state_of(&c);
-                world.set_voxel(c[0], c[1], c[2], m);
+                world.write_voxel(c[0], c[1], c[2], m);
                 writes.push((c, m));
             }
         }
@@ -2497,7 +2515,7 @@ impl Water {
             let now = world.get_voxel_if_loaded(c);
             let m = state_of(&c);
             if full_of(now) == liquid && now != m {
-                world.set_voxel(c[0], c[1], c[2], m);
+                world.write_voxel(c[0], c[1], c[2], m);
                 writes.push((c, m));
             }
         }
@@ -3228,7 +3246,7 @@ fn flood_edge(world: &mut VoxelWorld, c: [i32; 3], writes: &mut Vec<([i32; 3], S
     if let Some(to) = dwell_blocks::with_property(m, "flooded", want)
         && to != m
     {
-        world.set_voxel(c[0], c[1], c[2], to);
+        world.write_voxel(c[0], c[1], c[2], to);
         writes.push((c, to));
     }
 }

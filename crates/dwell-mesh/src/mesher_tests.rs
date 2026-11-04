@@ -1698,3 +1698,50 @@ fn water_part_full_is_drawn_at_its_fill_and_its_step_to_full_water_closed() {
         1.0 + full
     );
 }
+
+/// The heights of the water's upward faces over the cell column x..x+1 (z 5..6).
+fn water_tops_over(m: &MeshArrays, x: f64) -> Vec<f64> {
+    let mut tops = Vec::new();
+    for t in m.indices.chunks_exact(3) {
+        let i = t[0] as usize * 3;
+        if m.normals[i + 1] < 0.5 {
+            continue;
+        }
+        let ps = [t[0], t[1], t[2]].map(|i| vertex(&m.positions, i));
+        if ps
+            .iter()
+            .all(|p| p[0] >= x - 1e-6 && p[0] <= x + 1.0 + 1e-6)
+        {
+            tops.push(ps[0][1]);
+        }
+    }
+    tops
+}
+
+#[test]
+fn a_flooded_ramp_draws_its_water_at_the_fill_of_the_water_beside_it() {
+    // docs/WATER_FLOW.md §15 (owner, 2026-11-04: slopes don't show the water rising): a flooded
+    // ramp's water is drawn at the fill of the water beside it in its row, and none above its
+    // floor while the water stands only below it. Red before: always at the full row.
+    let quarter = require("dwell:water[fill=2]");
+    let full = 1.0 - dwell_blocks::require_fluid("dwell:water").surface_drop;
+    let bank = ramp("sand", "ramp", "east", "bottom", true);
+    let m = mesh(&[(5, 3, 5, bank), (6, 3, 5, quarter)], false).transparent;
+    let tops = water_tops_over(&m, 5.0);
+    let want = 3.0 + 0.25 * full;
+    assert!(!tops.is_empty(), "no water top over the ramp");
+    for y in &tops {
+        assert!(
+            (y - want).abs() < 1e-5,
+            "ramp water at {y}, the water beside at {want}: {tops:?}"
+        );
+    }
+    // Water only in the row below (the ramp's row not begun): nothing over the ramp's floor.
+    let m = mesh(
+        &[(5, 3, 5, bank), (5, 2, 5, water()), (6, 2, 5, water())],
+        false,
+    )
+    .transparent;
+    let tops = water_tops_over(&m, 5.0);
+    assert!(tops.iter().all(|&y| y <= 3.0 + 1e-6), "{tops:?}");
+}
