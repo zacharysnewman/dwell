@@ -10,6 +10,24 @@ None. Report new ones here.
 
 ## Fixed
 
+### 20. A dam's flood reached only so far up the river, and an edit there lowered it (fixed in 0.43.3)
+
+*Reported 2026-11-03 (0.43.2).* "When I dammed a river, it filled to the new level only so far back
+along upriver. And then attempting to update that part of the river by making a block edit, lowered
+the level of the river down to that up to the dam and stopped flowing in that direction."
+
+- **Cause:** an unloaded cell is a wall to water, and a basin was found again only when an edit or its
+  level changed it, not when the chunk beside it loaded: the flood stopped where the loaded world
+  ended when it rose. The river found later beyond that edge, its water touching the flood, had no
+  natural outlet, and its seep passed on everything that came in, the flood's water too: it drained
+  the flood unseen.
+- **Fix:** a basin keeps the unloaded chunks beside it (`edge`) and is found again when one loads; a
+  seep passes the body's map flow and what found bodies' natural outlets bring it, not what an edit
+  or a flood sends it, which fills it (WATER_FLOW.md §15). Saving the basins and fast-forwarding the
+  ones out of reach stay W2.
+- **Test:** `a_dams_flood_goes_on_up_the_river_when_its_chunks_load` (both faces; red on 0.43.2: the
+  flood stopped at the chunk edge; with only the edge fix, the river found there drained it).
+
 ### 19. Water filled up to a wall across a river, not over it and down the other side (fixed in 0.43.1)
 
 *Reported 2026-11-03 (0.43.0, screenshot of a stone wall across a river).* "Water fills up to the

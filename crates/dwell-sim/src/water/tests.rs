@@ -732,3 +732,46 @@ fn the_flow_data_resolves() {
     }
     assert_eq!(leak_of(require("dwell:stone")), 0.0);
 }
+
+dwell_world::both_faces!(
+    /// Owner, 2026-11-03: a dam's flood reached only so far up the river, and an edit there then
+    /// lowered it. A river runs out of the loaded world (the chunk west of x = 0 not loaded when
+    /// the dam goes in at x = 9): the flood stops at the unloaded edge, a wall to water. When the
+    /// chunk loads, the flood goes on up the river, and an edit there changes nothing.
+    fn a_dams_flood_goes_on_up_the_river_when_its_chunks_load(f: FaceFrame) {
+        let mut s = Scene::with_air(f, [-24, -8, -8], [32, 12, 16]);
+        let stone = require("dwell:stone");
+        s.fill([-21, -1, -1], [9, -1, 3], stone);
+        s.fill([-21, -1, -1], [9, 8, -1], stone);
+        s.fill([-21, -1, 3], [9, 8, 3], stone);
+        s.fill([-21, -1, -1], [-21, 8, 3], stone);
+        s.fill([9, -6, -3], [21, -6, 5], stone);
+        s.fill([9, -6, -3], [9, -3, 5], stone);
+        s.fill([21, -6, -3], [21, -3, 5], stone);
+        s.fill([9, -6, -3], [21, -3, -3], stone);
+        s.fill([9, -6, 5], [21, -3, 5], stone);
+        s.fill([-20, 0, 0], [9, 0, 2], M.water);
+        let c = s.cell(-5, 0, 1);
+        let west = chunk_of(c[0], c[1], c[2]);
+        let e = s.cell(5, 0, 1);
+        assert_ne!(west, chunk_of(e[0], e[1], e[2]));
+        let saved = s.world.find(west).expect("loaded").clone();
+        s.world.remove(west);
+        let dam: Vec<[i32; 3]> = (0..=2)
+            .flat_map(|z| (0..=2).map(move |r| [9, r, z]))
+            .collect();
+        s.edit(&dam, stone);
+        s.run(600, 1.0);
+        assert!(s.wet(4, 3, 1), "the flood behind the dam");
+        s.world.put(west, saved);
+        s.run(900, 1.0);
+        for x in [-20, -10, -5, -1, 4] {
+            assert!(s.wet(x, 3, 1), "the flood up the river at x {x}");
+        }
+        s.edit(&[[-10, 6, 1]], M.air);
+        s.run(900, 1.0);
+        for x in [-20, -10, -5, -1, 4] {
+            assert!(s.wet(x, 3, 1), "the flood holds after an edit at x {x}");
+        }
+    }
+);
