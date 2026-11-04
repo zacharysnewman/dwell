@@ -188,6 +188,8 @@ interface DwellDebug {
   memory(): MemoryReport | null;
   /** The block dump around the target (debug/blockDump.ts), or null before playing. */
   blockDump(): BlockDump | null;
+  /** The local server's water around a cell (JSON, `Water::report`); null outside a local world. */
+  waterReport(x: number, y: number, z: number, radius?: number): Promise<string | null>;
   /**
    * The water quality (as the settings menu sets it, not stored) and/or its cost-isolation
    * switches (`?waterdbg=` names, comma-separated; "" for none); null leaves either as it is.
@@ -807,6 +809,8 @@ async function start(): Promise<App | null> {
       client.telemetryReset();
     },
     sounds: () => [...sfx.recent],
+    waterReport: (x, y, z, radius) =>
+      app.loopback?.waterReport([x, y, z], radius ?? WATER_REPORT_RADIUS) ?? Promise.resolve(null),
     die: () => {
       app.loopback?.postToWorker({ t: 'kill' });
       return app.loopback !== null;
@@ -917,7 +921,7 @@ function startDebugTools(app: App): void {
 }
 
 /** The block dump (F6, or the debug overlay's button) of the client's world, once playing. */
-function blockDumpOf(app: App): BlockDump | null {
+function blockDumpOf(app: App, water?: unknown): BlockDump | null {
   const s = app.client.debugState() as GameDebugState | null;
   if (!s) return null;
   const [yaw = 0, pitch = 0] = app.client.look();
@@ -928,26 +932,67 @@ function blockDumpOf(app: App): BlockDump | null {
     view: { yaw, pitch },
     world: app.world,
     build: { version: buildInfo.version, sha: buildInfo.sha },
+    ...(water === undefined ? {} : { water }),
   });
+}
+
+/** How far around the player (cells) the block dump reports the local server's water. */
+const WATER_REPORT_RADIUS = 48;
+
+/**
+ * The local server's water around the player (a local world only; docs/DEV_TOOLS.md): parsed,
+ * or undefined where there is none or it doesn't answer within a second.
+ */
+async function waterReportOf(app: App): Promise<unknown> {
+  const s = app.client.debugState() as GameDebugState | null;
+  if (!app.loopback || !s) return undefined;
+  const [x, y, z] = s.feet;
+  const at: [number, number, number] = [Math.floor(x), Math.floor(y / 0.5), Math.floor(z)];
+  const report = await Promise.race([
+    app.loopback.waterReport(at, WATER_REPORT_RADIUS),
+    new Promise<null>((resolve) => {
+      setTimeout(() => {
+        resolve(null);
+      }, 1000);
+    }),
+  ]);
+  if (report === null) return undefined;
+  try {
+    return JSON.parse(report) as unknown;
+  } catch {
+    return report;
+  }
 }
 
 /** Copies the block dump to the clipboard, or shows it to copy by hand where that is refused. */
 function copyBlockDump(app: App): void {
-  const dump = blockDumpOf(app);
-  if (!dump) {
+  if (!blockDumpOf(app)) {
     app.hud.flash('No world to dump yet');
     audio().ui('error');
     return;
   }
-  const text = formatBlockDump(dump);
+  // In a local world the dump carries the server's water near the player, asked of the worker:
+  // the clipboard is given a promise of the text, within the tap that asked (Safari's rule).
+  const text = waterReportOf(app).then((water) => {
+    const dump = blockDumpOf(app, water);
+    return dump ? formatBlockDump(dump) : '';
+  });
   const shown = () => {
-    app.hud.showDump(text);
+    void text.then((t) => {
+      app.hud.showDump(t);
+    });
+  };
+  const copied = () => {
+    app.hud.flash('Block info copied');
+    audio().action('copy');
   };
   try {
-    navigator.clipboard.writeText(text).then(() => {
-      app.hud.flash('Block info copied');
-      audio().action('copy');
-    }, shown);
+    if (typeof ClipboardItem !== 'undefined') {
+      const blob = text.then((t) => new Blob([t], { type: 'text/plain' }));
+      navigator.clipboard.write([new ClipboardItem({ 'text/plain': blob })]).then(copied, shown);
+    } else {
+      void text.then((t) => navigator.clipboard.writeText(t)).then(copied, shown);
+    }
   } catch {
     shown(); // no clipboard (an insecure context)
   }

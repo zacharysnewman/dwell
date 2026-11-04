@@ -204,6 +204,11 @@ impl LocalCore {
             .set_respawn_preload(dwell_sim::server::RESPAWN_PRELOAD_RADIUS_CHUNKS.filter(|_| on));
     }
 
+    /// The water near cell `at` as the local server has it (a diagnostic, `Water::report`).
+    pub fn water_report(&mut self, at: [i32; 3], radius: i32) -> String {
+        self.server().water().report(at, radius)
+    }
+
     pub fn server(&mut self) -> &mut Server {
         &mut self.server
     }

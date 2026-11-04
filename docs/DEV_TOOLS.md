@@ -228,6 +228,16 @@ The same hooks work in any browser session: open `http://localhost:4173/dwell/?l
 browser tools (e.g. the Chrome DevTools MCP: `evaluate_script`, `performance_start_trace`,
 `take_screenshot`).
 
+**The water report** (0.44.4): `dwell_sim::water::Water::report(at, radius)` describes the water near a
+cell as JSON — each basin within `radius` cells: its id, level (world m), volume, inflow, what arrives,
+whether it is filling or draining (`active`) and owes time, its bounds, its steady state as found
+(`flow`, natural outlets' `law`, `level`, the seep's `exit`) and its ways out that run (each one's
+`from` cell, `flow`, `kind` — face, floor, leak, seep — target basin or `lost`, `natural`, `contact`),
+and the world's totals (`brought`, `lost`, fronts down the map's rivers). In a local world the block
+dump (F6, or the debug overlay's button) carries it as `water` (the player's feet, 48 cells; the
+worker asked, a second at most), and `__dwell.waterReport(x, y, z, radius?)` returns it; a native
+test or probe calls `server.water().report(...)`. A diagnostic only: nothing in the game reads it.
+
 ## Adding to it
 
 - A metric: `telemetry::span("name", || …)` / `add` / `sample` / `count` where it happens; add it

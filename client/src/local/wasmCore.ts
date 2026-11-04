@@ -97,6 +97,10 @@ export class LocalCore {
   kill(): void {
     this.world.kill();
   }
+  /** The water near a cell (JSON, `Water::report`): a diagnostic for the block dump. */
+  waterReport(at: [number, number, number], radius: number): string {
+    return this.world.waterReport(at[0], at[1], at[2], radius);
+  }
   setRespawnPreload(on: boolean): void {
     this.world.setRespawnPreload(on);
   }

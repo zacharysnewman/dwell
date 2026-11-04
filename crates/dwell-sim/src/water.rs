@@ -945,6 +945,93 @@ impl Water {
         out
     }
 
+    /// A diagnostic report (JSON) of the water near cell `at` (within `radius` cells of a basin's
+    /// bounds): each basin's level, volume, flows in, whether it is filling or draining, its
+    /// steady state as found and its ways out (each one's flow, kind and where it goes); and the
+    /// world's totals. For the block dump and tools (docs/DEV_TOOLS.md); not part of the game.
+    pub fn report(&self, at: [i32; 3], radius: i32) -> String {
+        let num = |v: f64| {
+            if v.is_finite() {
+                format!("{}", (v * 1000.0).round() / 1000.0)
+            } else {
+                "null".to_owned()
+            }
+        };
+        let cell = |c: [i32; 3]| format!("[{},{},{}]", c[0], c[1], c[2]);
+        let near =
+            |b: &Basin| (0..3).all(|a| at[a] >= b.lo[a] - radius && at[a] <= b.hi[a] + radius);
+        let mut ids: Vec<u32> = self
+            .basins
+            .values()
+            .filter(|b| !b.reservoir && near(b))
+            .map(|b| b.id)
+            .collect();
+        ids.sort_unstable();
+        let mut basins = Vec::new();
+        for id in ids {
+            let b = &self.basins[&id];
+            let steady = b.steady.as_ref().map_or("null".to_owned(), |st| {
+                format!(
+                    "{{\"flow\":{},\"law\":{},\"level\":{},\"exit\":{}}}",
+                    num(st.flow),
+                    num(st.law),
+                    num(b.face.y(st.level)),
+                    st.exit.map_or("null".to_owned(), cell)
+                )
+            });
+            let outlets: Vec<String> = b
+                .outlets
+                .iter()
+                .filter(|o| o.flow > 1e-4)
+                .map(|o| {
+                    let kind = match o.kind {
+                        OutKind::Face { .. } => "face",
+                        OutKind::Floor { .. } => "floor",
+                        OutKind::Leak { .. } => "leak",
+                        OutKind::Seep { .. } => "seep",
+                    };
+                    let to = match o.target {
+                        Target::Basin(t) => t.to_string(),
+                        Target::Lost => "\"lost\"".to_owned(),
+                        Target::Unresolved => "\"unresolved\"".to_owned(),
+                    };
+                    format!(
+                        "{{\"from\":{},\"flow\":{},\"kind\":\"{kind}\",\"to\":{to},\"natural\":{},\"contact\":{}}}",
+                        cell(o.from),
+                        num(o.flow),
+                        b.natural.contains_key(&o.from),
+                        o.contact
+                    )
+                })
+                .collect();
+            basins.push(format!(
+                "{{\"id\":{},\"level\":{},\"volume\":{},\"inflow\":{},\"arriving\":{},\"active\":{},\"owed\":{},\"cells\":{},\"lo\":{},\"hi\":{},\"steady\":{},\"outlets\":[{}]}}",
+                b.id,
+                num(b.world_level()),
+                num(b.volume),
+                num(b.inflow()),
+                num(b.arriving),
+                b.active,
+                num(b.owed),
+                b.rows.iter().map(Vec::len).sum::<usize>(),
+                cell(b.lo),
+                cell(b.hi),
+                steady,
+                outlets.join(",")
+            ));
+        }
+        format!(
+            "{{\"at\":{},\"radius\":{},\"basins\":[{}],\"total\":{},\"brought\":{},\"lost\":{},\"fronts\":{}}}",
+            cell(at),
+            radius,
+            basins.join(","),
+            self.basins.len(),
+            num(self.brought),
+            num(self.lost),
+            self.flows.fronts.len()
+        )
+    }
+
     /// The liquid held in all basins but reservoirs (m³).
     pub fn stored(&self) -> f64 {
         self.basins
