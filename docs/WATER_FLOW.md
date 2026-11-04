@@ -3,7 +3,7 @@
 > **Status: adopted (the owner's answers, 2026-11-03; [ADR 0053](./adr/0053-water-flow.md),
 > amended by [ADR 0055](./adr/0055-water-at-rest.md) and [ADR 0056](./adr/0056-one-opening-law.md)), Phase 52. W1 built (the server's basins, §15),
 > redesigned in 0.42.2 after the review (§16): the world as found is at rest (§2.2), its flow the
-> world map's. W2's rest (saved basins, fast-forward, live from load) and W3–W5 planned.** First water
+> world map's. W2's saved basins and fast-forward built (0.43.4); live from load (pending the owner) and W3–W5 planned.** First water
 > only; lava, lahar, jets, evaporation and weather later (§10).
 
 The owner's request (2026-11-03): *"There's some systems I want to model, it's water flow, input and
@@ -192,6 +192,17 @@ is brought forward by the time it was frozen: in a chain the inflows are steady,
 level at a later time is a small integration of in − out(level), cheap at large steps, upstream
 first. A long-frozen chain comes back at its steady state: each basin at the level where out equals in.
 
+**As built (0.43.4):** a basin out of reach or with a chunk unloaded waits (it holds its level and
+passes on what comes in, §15) and counts the water time it waited (`owed`). When it is live again,
+`Water::catch_up` brings it forward alone: flow steps of half the time its outflow takes to balance
+a change (no longer than it owes), what comes in from the bodies around it as it came the last tick,
+what it sends them kept by them, its container found again as it fills or drains; once its level
+moves less than a millimetre an hour it is in balance and caught up. A water tick spends at most
+`catchUpSteps` (512) such steps, the rest the next tick. Time doesn't pass while the server is off
+(the world's clock stops), so a restart owes nothing. Deviation: while it waited, the bodies below
+had what it passed on, as if it had been in balance, so a dam filled out of reach sends the river
+below its flow meanwhile and is found full on return (the water it holds is counted in, `brought`).
+
 ## 7. Currents and objects in the water
 
 Every liquid cell gets a **current**: the velocity of its liquid, derived from its basin's flows.
@@ -212,7 +223,14 @@ raft or a swimmer as the server does.
 ## 8. On the wire and in the save
 
 - **Save:** the basins table (id, liquid, level, volume, seed cell, outlets). The liquid cells stay
-  in the chunks as now.
+  in the chunks as now. **As built (0.43.4):** the world file's optional `water` table, one record:
+  every basin but the reservoirs, whole (its container's rows rather than a seed cell, outlets, what
+  holds it at rest, its steady flow, the time it owes), the flow network, water in transit, the ways
+  drawn running, and the revision of each chunk a basin lies in, written in the autosave's
+  transaction with the chunks. On load a basin whose chunks are at other revisions (a build on the
+  line that doesn't save the water edited them) is left out with what pointed at it, and found
+  again, at rest as it then is, by the next edit that touches it; a reservoir is found again when an
+  edit meets it. Not a new compatibility line: an older build leaves the table, as today.
 - **Network:** a basin's level and currents when they change (a few bytes); the clients rewrite
   their own rim cells at row crossings, as the server does. Chunk edits from the basins are not
   sent cell by cell.
@@ -366,12 +384,15 @@ found at rest and fed by the world map (§2.2), replacing the inflow measured of
 the flow steps; ways found in rounds, water in transit while they are; waiting basins pass on what
 comes in, and wait while a chunk of them is unloaded; the edge's ramps flood.
 
-Deviations, for W2–W3: basins aren't saved (after a restart a body is found again by the next edit
-touching it, at rest as it then is), waiting basins aren't fast-forwarded, a natural outlet's water isn't drawn
+Deviations, for W3: a natural outlet's water isn't drawn
 running (the river's own steps stay as generated), and a sheet spreading wider than `maxRowCells` over a
 plain is capped there (the excess lost).
 
-Tests (`water/tests.rs`, both faces): `a_dams_flood_goes_on_up_the_river_when_its_chunks_load`
+Tests (`water/tests.rs`, both faces): `a_dammed_river_out_of_reach_comes_back_full_and_spilling`,
+`a_basin_saved_with_the_world_goes_on_as_it_was`, `a_saved_basin_whose_chunk_changed_since_is_found_again`
+(0.43.4; `tests/persistence.rs` `the_waters_basins_survive_a_server_restart`, `dwell-storage`
+`the_waters_basins_are_saved_with_the_world_and_replaced_on_each_save`);
+`a_dams_flood_goes_on_up_the_river_when_its_chunks_load`
 (0.43.3, red on 0.43.2); `a_hole_in_a_wall_passes_what_its_size_and_depth_drive` (the
 rise within 5 % of the law), `a_gap_wide_enough_is_one_body_a_hole_two` (0.43.2, red on 0.43.1);
 `a_wall_across_a_river_is_spilled_over_and_the_river_below_holds` (0.43.1);
@@ -406,7 +427,7 @@ and 1,059 m³/s. What the review found, and where each stands:
 | **Live radius and loaded chunks.** Basins were live to 160 m but unmodified chunks are evicted past 3 chunks; an unloaded cell is a wall, so a basin rebuilt beside one lost its water; a waiting basin took what a live one sent it and let nothing out. | Fixed (0.42.2): a basin waits while a chunk of it is unloaded; a waiting basin passes on what comes in. 0.43.3: a basin is found again when a chunk beside it loads (a flood stopped at the loaded edge), and a seep no longer passes on what a flood sends it. |
 | **Silent losses.** A sheet capped at `maxRowCells` loses its excess; water running out of the loaded world is lost. | Counted in `lost` (the conservation test sees them); kept, as W1's deviations. |
 | **The water's edge.** A ramp beside the water at its row stood dry, the water ending in a wall (the owner's screenshot). | Fixed: the water's writes flood the ramps beside them (0.42.2), and the generator floods its ramps beside its water (0.43.0, a new compatibility line). |
-| **Nothing saved.** After a restart the basins are gone; the water stays where it was left. | W2 (planned). |
+| **Nothing saved.** After a restart the basins are gone; the water stays where it was left. | Fixed (0.43.4): the basins saved with the world (§8), and a basin that waited brought forward when it is live again (§6). |
 | **No step at a crest** (owner, 2026-11-03: a wall across a river filled the water up to it, not over it and down the other side; a wall level with the water didn't raise it). One basin over a wall had one level; the spill wasn't drawn; the pool below, cut off from the map's flow, filled with the spill. | Fixed (0.43.1): crests split basins, spills drawn as running water, found bodies pass what comes in. |
 | **A hole below the water in a wall** joined the two sides into one basin at one level, so the wall held nothing back. | Fixed (0.43.2, ADR 0056): one opening law, `C·A·√(2gΔh)`, for every opening and every face two basins share; one body or two by whether the faces even them out at once. Jets (§10) later from the same law. |
 

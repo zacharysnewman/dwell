@@ -34,6 +34,7 @@ test('bad entries fail with their path named', () => {
     [(d) => (d.liquids[0].running = 'dwell:water'), /must not be the liquid's own block/],
     [(d) => (d.streamMinFlow = -1), /streamMinFlow must be a number/],
     [(d) => (d.mergeSeconds = -1), /mergeSeconds must be a number/],
+    [(d) => (d.catchUpSteps = 1.5), /catchUpSteps must be a whole number/],
     [(d) => (d.leaks['dwell:water'] = 1), /leaks: dwell:water is a liquid/],
     [(d) => (d.leaks['dwell:sand'] = -1), /leaks\.dwell:sand must be a number in \[0, 10\]/],
   ]) {

@@ -85,6 +85,7 @@ fn everything_round_trips_through_a_file() {
             ],
             clear_lod: false,
             bodies: None,
+            water: None,
         };
         db.save(&batch).expect("saves");
         db.set_setting("motd", "hello").expect("setting");
@@ -452,4 +453,27 @@ fn moving_bodies_are_saved_with_the_world_and_replaced_on_each_save() {
     })
     .expect("saved");
     assert_eq!(db.bodies(), vec![raft]);
+}
+
+#[test]
+fn the_waters_basins_are_saved_with_the_world_and_replaced_on_each_save() {
+    // docs/WATER_FLOW.md §8: the water's record comes back as saved; a save without it leaves it,
+    // one with replaces it; a world from before it has none.
+    let db = WorldDb::in_memory().expect("db");
+    assert_eq!(db.water(), None);
+    let a: Vec<u8> = (0..5000u32).map(|i| (i % 7) as u8).collect();
+    db.save(&SaveBatch {
+        water: Some(a.clone()),
+        ..SaveBatch::default()
+    })
+    .expect("saved");
+    assert_eq!(db.water().as_ref(), Some(&a));
+    db.save(&SaveBatch::default()).expect("saved");
+    assert_eq!(db.water().as_ref(), Some(&a));
+    db.save(&SaveBatch {
+        water: Some(vec![1, 2, 3]),
+        ..SaveBatch::default()
+    })
+    .expect("saved");
+    assert_eq!(db.water(), Some(vec![1, 2, 3]));
 }

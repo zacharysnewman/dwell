@@ -2787,6 +2787,18 @@ impl Server {
                 self.lod.mark_chunk(c);
             }
         }
+        // The water's basins as saved (docs/WATER_FLOW.md §8): those whose chunks are as they were
+        // saved; the rest are found again by the next edit that touches them.
+        if let Some(bytes) = db.water()
+            && self
+                .water
+                .restore(&bytes, |c| saved.get(&c).copied().unwrap_or(0))
+                .is_none()
+        {
+            eprintln!(
+                "dwell: the world's saved water can't be read; it is found again by its edits"
+            );
+        }
         *self.saved.lock().expect("saved index") = saved;
         let bodies = db.bodies();
         self.world.set_saved(Box::new(StoreChunks {
@@ -2860,6 +2872,17 @@ impl Server {
         batch.players = std::mem::take(&mut self.departed);
         // The world's moving bodies, all of them each save (docs/BUILT_BODIES.md §7).
         batch.bodies = Some(self.felling.saved(&self.physics));
+        // The water's basins (docs/WATER_FLOW.md §8), with the revisions of their chunks as this
+        // save leaves them.
+        {
+            let saved = self.saved.lock().expect("saved index");
+            let world = &self.world;
+            batch.water = Some(self.water.save(|c| {
+                world
+                    .find(c)
+                    .map_or_else(|| saved.get(&c).copied().unwrap_or(0), |ch| ch.revision())
+            }));
+        }
         // LOD sections written since the last save; sections still to compute (dirty, or computing
         // now) are saved dirty, to recompute on load.
         let mut lod_saved = Vec::new();
