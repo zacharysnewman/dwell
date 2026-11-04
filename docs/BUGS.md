@@ -10,6 +10,22 @@ None. Report new ones here.
 
 ## Fixed
 
+### 19. Water filled up to a wall across a river, not over it and down the other side (fixed in 0.43.1)
+
+*Reported 2026-11-03 (0.43.0, screenshot of a stone wall across a river).* "Water fills up to the
+wall blocking the river, not over it and down the other side. And it doesn't flood when the wall is
+at the same level as the water."
+
+- **Cause:** the pool stayed one basin over the wall (joined by the open row above it), so one level
+  and no step at the crest; the spill over a wall, a few centimetres deep, was under the half row a
+  row is drawn at, and running water wasn't drawn at all (W1); the pool below the wall, cut off from
+  the map's flow, kept passing only its links' flow and filled with the spill.
+- **Fix:** basins joined only above their full rows are separate and merge only through a row both
+  fill; spills drawn (the crest as water, the way down as `dwell:running_water`); a found body passes
+  what comes in each step, its links found where its natural outlets ran as found (WATER_FLOW.md §15).
+- **Test:** `a_wall_across_a_river_is_spilled_over_and_the_river_below_holds` (both faces; a wall
+  level with the water and one row higher; red on 0.43.0: the river above didn't rise).
+
 ### 18. Ramps beside the water stood dry, the water ending in a wall (fixed in 0.42.2 and 0.43.0)
 
 *Reported 2026-11-03 (0.42.1, screenshot).* "Slopes next to water aren't flooded at generation time

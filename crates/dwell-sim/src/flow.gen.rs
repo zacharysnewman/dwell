@@ -10,8 +10,9 @@ pub const FLOW: FlowData = FlowData {
     max_basin_cells: 65536,
     max_row_cells: 16384,
     stream_reach: 16,
+    stream_min_flow: 0.05,
     liquids: &[
-        LiquidFlow { block: "dwell:water", weir: 1.7 },
+        LiquidFlow { block: "dwell:water", weir: 1.7, running: "dwell:running_water" },
     ],
     leaks: &[
         ("dwell:sand", 0.0001),

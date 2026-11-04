@@ -2389,8 +2389,8 @@ weir coefficient and the blocks' leaks); bodies found by the edits that touch th
 found** (ADR 0055, 0.42.2: what they didn't fill holds them, their natural outlets pass the world
 map's flow, `dwell_worldgen::runoff_for` → `TerrainGenerator::discharge_at`, linked into one flow
 network), each face's sea a reservoir by size; flow steps by the fastest basin; basins out of reach
-or with a chunk unloaded wait, passing on what comes in; ramps at the written edge flooded; its
-writes sent as `Rebake` modifications (WATER_FLOW.md §15, the review §16). **Planned:** a saved
+or with a chunk unloaded wait, passing on what comes in; ramps at the written edge flooded; crests split basins and spills
+are drawn (the liquid's `running` block, 0.43.1); its writes sent as `Rebake` modifications (WATER_FLOW.md §15, the review §16). **Planned:** a saved
 basins table (§6.4), fast-forward, basin messages, currents (a new compatibility line).
 
 ## 7. Physics Pipeline

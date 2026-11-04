@@ -19,6 +19,7 @@ export const FLOW_RANGES = {
   maxBasinCells: [1, 1 << 24, true],
   maxRowCells: [1, 1 << 24, true],
   streamReach: [0, 256, true],
+  streamMinFlow: [0, 1000, false],
 };
 
 /** The registry's blocks (name → liquid?), from shared/blocks/dwell.json. */
@@ -46,7 +47,10 @@ export function validateFlow(data, blocks = registryBlocks()) {
   data.liquids.forEach((l, i) => {
     const at = `liquids[${i}]`;
     if (typeof l !== 'object' || l === null || Array.isArray(l)) bad(`${at} must be an object`);
-    for (const k of Object.keys(l)) if (!['$comment', 'block', 'weir'].includes(k)) bad(`${at}: unknown ${k}`);
+    for (const k of Object.keys(l)) if (!['$comment', 'block', 'weir', 'running'].includes(k)) bad(`${at}: unknown ${k}`);
+    if (!blocks.has(l.running)) bad(`${at}.running: ${JSON.stringify(l.running)} is not a block of the registry`);
+    if (!blocks.get(l.running)) bad(`${at}.running: ${l.running} is not a liquid`);
+    if (l.running === l.block) bad(`${at}.running: must not be the liquid's own block`);
     if (!blocks.has(l.block)) bad(`${at}.block: ${JSON.stringify(l.block)} is not a block of the registry`);
     if (!blocks.get(l.block)) bad(`${at}.block: ${l.block} is not a liquid`);
     if (seen.has(l.block)) bad(`${at}.block: ${l.block} is listed twice`);
@@ -74,7 +78,11 @@ export function flowRust(data) {
     lines.push(`    ${snake(k)}: ${int ? String(data[k]) : rf(data[k])},`);
   }
   lines.push('    liquids: &[');
-  for (const l of data.liquids) lines.push(`        LiquidFlow { block: ${JSON.stringify(l.block)}, weir: ${rf(l.weir)} },`);
+  for (const l of data.liquids) {
+    lines.push(
+      `        LiquidFlow { block: ${JSON.stringify(l.block)}, weir: ${rf(l.weir)}, running: ${JSON.stringify(l.running)} },`,
+    );
+  }
   lines.push('    ],');
   lines.push('    leaks: &[');
   for (const [b, v] of Object.entries(data.leaks)) lines.push(`        (${JSON.stringify(b)}, ${rf(v)}),`);
