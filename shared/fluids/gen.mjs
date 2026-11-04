@@ -20,6 +20,7 @@ export const FLOW_RANGES = {
   maxRowCells: [1, 1 << 24, true],
   streamReach: [0, 256, true],
   streamMinFlow: [0, 1000, false],
+  mergeSeconds: [0, 3600, false],
 };
 
 /** The registry's blocks (name → liquid?), from shared/blocks/dwell.json. */

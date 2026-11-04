@@ -45,6 +45,8 @@ pub struct FlowData {
     pub stream_reach: u32,
     /// An outlet passing at least this (m³/s) is drawn running.
     pub stream_min_flow: f64,
+    /// Basins sharing faces that would even out within this (s) merge.
+    pub merge_seconds: f64,
     pub liquids: &'static [LiquidFlow],
     /// Block name → m³/s per m² of face per m of head.
     pub leaks: &'static [(&'static str, f64)],
@@ -180,8 +182,11 @@ pub enum Target {
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum OutKind {
-    /// Over a sill (local m): `weir × width × head^1.5`.
-    Weir { sill: f64 },
+    /// Through a cell's side face from `lo` to `hi` (local m; `hi` infinite where it is open
+    /// above): the opening law (`face_flow`), over a sill `weir × width × head^1.5`.
+    Face { lo: f64, hi: f64 },
+    /// Down through a cell's floor at `z` (local m), a 1 m² hole: `C × area × √(2 g head)`.
+    Floor { z: f64 },
     /// Through a block: `leak × area × head` above the face's centre (local m).
     Leak { k: f64, centre: f64 },
     /// A body found at rest with no natural outlet: what it passed then, gone unseen, by the weir
@@ -199,6 +204,44 @@ pub struct Outlet {
     pub flow: f64,
     /// × the law's flow: 1, or a natural outlet's share of the map's flow (`Basin::natural`).
     scale: f64,
+    /// A face it shares with another basin's container (its target): water crosses it by the
+    /// opening law between the two levels, never routed or drawn running.
+    contact: bool,
+}
+
+/// g (m/s²).
+const G: f64 = 9.81;
+
+/// The discharge coefficient of an opening, from a liquid's weir coefficient: a free sill's
+/// `weir × head^1.5` is the opening law summed up its face, `C × (2/3) × √(2g) × head^1.5`.
+fn discharge(weir: f64) -> f64 {
+    weir / (2.0 / 3.0 * (2.0 * G).sqrt())
+}
+
+/// The flow (m³/s per m of width) through a vertical face from `lo` to `hi` (local m) for water
+/// standing at `high` on one side and `low` on the other (`-∞`: none): below `low` the face is
+/// drowned, every part of it pushed by the difference of the levels, `C × area × √(2 g Δh)`; between
+/// `low` and `high` the water pours freely, each part by its own depth under `high` (summed, the
+/// weir law). Hydrostatics: the pressure difference across a submerged opening is `ρ g Δh` at
+/// every depth (docs/WATER_FLOW.md §4).
+fn face_flow(c: f64, high: f64, low: f64, lo: f64, hi: f64) -> f64 {
+    if high <= lo {
+        return 0.0;
+    }
+    let top = hi.min(high);
+    let mut q = 0.0;
+    if low > lo {
+        let d_hi = low.min(top);
+        q += c * (d_hi - lo) * (2.0 * G * (high - low)).sqrt();
+    }
+    let f_lo = lo.max(low);
+    if top > f_lo {
+        q += c
+            * (2.0 * G).sqrt()
+            * (2.0 / 3.0)
+            * ((high - f_lo).powf(1.5) - (high - top).max(0.0).powf(1.5));
+    }
+    q
 }
 
 impl Outlet {
@@ -206,9 +249,19 @@ impl Outlet {
     /// water standing at `below` (local m; `-∞` for a free fall): drowned, the head is the
     /// difference of the two levels, so two bodies joined by it even out.
     fn rate(&self, level: f64, weir: f64, below: f64) -> f64 {
+        if below >= level {
+            return 0.0; // the other side is as high: it flows the other way, if at all
+        }
         match self.kind {
-            OutKind::Weir { sill } => {
-                self.scale * weir * (level - sill.max(below)).max(0.0).powf(1.5)
+            OutKind::Face { lo, hi } => {
+                self.scale * face_flow(discharge(weir), level, below, lo, hi)
+            }
+            OutKind::Floor { z } => {
+                if level <= z {
+                    0.0
+                } else {
+                    self.scale * discharge(weir) * (2.0 * G * (level - below.max(z))).sqrt()
+                }
             }
             OutKind::Seep { sill } => self.scale * weir * (level - sill).max(0.0).powf(1.5),
             OutKind::Leak { k, centre } => {
@@ -217,20 +270,19 @@ impl Outlet {
         }
     }
     /// How fast its flow grows with the level (m²/s) near `level`: what limits a flow step.
-    fn growth(&self, level: f64, weir: f64) -> f64 {
-        match self.kind {
-            OutKind::Weir { sill } | OutKind::Seep { sill } => {
-                self.scale * 1.5 * weir * (level - sill).max(0.1).sqrt()
-            }
-            OutKind::Leak { k, .. } => self.scale * k * CELL_H,
-        }
+    fn growth(&self, level: f64, weir: f64, below: f64) -> f64 {
+        // A secant over 0.1 m: the √ of a drowned opening grows without bound at no head.
+        let base = self.floor().max(below).max(level - 0.1);
+        (self.rate(base + 0.1, weir, below) - self.rate(base, weir, below)) / 0.1
     }
     fn is_seep(&self) -> bool {
         matches!(self.kind, OutKind::Seep { .. })
     }
     fn floor(&self) -> f64 {
         match self.kind {
-            OutKind::Weir { sill } | OutKind::Seep { sill } => sill,
+            OutKind::Face { lo, .. } => lo,
+            OutKind::Floor { z } => z,
+            OutKind::Seep { sill } => sill,
             OutKind::Leak { centre, .. } => centre,
         }
     }
@@ -254,9 +306,6 @@ pub struct Basin {
     /// so that a basin that comes apart (a flood over a river's steps receding) leaves each part
     /// the water that comes into it.
     inflows: Vec<([i32; 3], f64)>,
-    /// Basins it met at its rows and didn't merge with (their level above its own): merged when
-    /// the levels meet.
-    neighbours: Vec<(u32, i32)>,
     /// Its volume a tick ago (falling: a flood receding).
     last_volume: f64,
     pub outlets: Vec<Outlet>,
@@ -280,6 +329,9 @@ pub struct Basin {
     /// §2.2), so an open cell beside a body as generated that it didn't fill, and a leaking block
     /// it stood against, keep it in until an edit touches them.
     rest: HashSet<[i32; 3]>,
+    /// Liquid of other bodies it touched as found (a river's next step under its surface): faces
+    /// that pass nothing, as generated (the river's flow goes by the natural outlets).
+    held: HashSet<[i32; 3]>,
     /// Its natural outlets (the ways out it was found with: over a step onto the next pool, or a
     /// fall) and each one's scale: together they pass the map's flow at the level it was found at.
     natural: HashMap<[i32; 3], f64>,
@@ -426,6 +478,7 @@ impl Basin {
             target: Target::Lost,
             flow: 0.0,
             scale: st.through / (self.weir * CELL_H.powf(1.5)),
+            contact: false,
         })
     }
 
@@ -487,6 +540,10 @@ pub struct Water {
     paths: HashMap<(u32, [i32; 3]), Vec<[i32; 3]>>,
     /// The cells drawn running now.
     drawn: HashSet<[i32; 3]>,
+    /// Cells edits made solid: a body narrowed by them comes apart there (`split_if_apart`).
+    edited: HashSet<[i32; 3]>,
+    /// Basins split this tick: not merged again before the next (no split and merge in turn).
+    split: HashSet<u32>,
     /// Where found bodies' natural outlets ran, as found, into liquid no body owned yet (cell →
     /// basin, outlet cell, weight): linked when a body there is found.
     lands: HashMap<[i32; 3], Vec<Land>>,
@@ -523,6 +580,8 @@ impl Water {
             rescan: HashSet::default(),
             paths: HashMap::default(),
             drawn: HashSet::default(),
+            edited: HashSet::default(),
+            split: HashSet::default(),
             lands: HashMap::default(),
         }
     }
@@ -549,6 +608,14 @@ impl Water {
             .step_by(step)
             .map(|c| runoff(f, c[0], c[1]))
             .fold(0.0, f64::max)
+    }
+
+    fn reservoir_ids(&self) -> HashSet<u32> {
+        self.basins
+            .values()
+            .filter(|b| b.reservoir)
+            .map(|b| b.id)
+            .collect()
     }
 
     /// Cells an edit changed (not water's own), with what was there before.
@@ -585,6 +652,7 @@ impl Water {
         dt: f64,
     ) -> Vec<([i32; 3], StateId)> {
         let mut writes = Vec::new();
+        self.split.clear();
         self.apply_touched(world, &mut writes);
         self.route(world, &mut writes);
         self.balance();
@@ -597,6 +665,7 @@ impl Water {
         // In steps short enough that no pool overshoots: a step moves a pool's level no more
         // than half the way to where its outflow would balance (its surface over how fast its
         // outflow grows with its level).
+        let levels: HashMap<u32, f64> = self.basins.values().map(|b| (b.id, b.level())).collect();
         let mut fastest = f64::INFINITY;
         for b in self
             .basins
@@ -604,7 +673,17 @@ impl Water {
             .filter(|b| live.contains(&b.id) && !b.reservoir)
         {
             let level = b.level();
-            let grow: f64 = b.outlets.iter().map(|o| o.growth(level, b.weir)).sum();
+            let grow: f64 = b
+                .outlets
+                .iter()
+                .map(|o| {
+                    let below = match o.target {
+                        Target::Basin(t) => levels.get(&t).copied().unwrap_or(f64::NEG_INFINITY),
+                        _ => f64::NEG_INFINITY,
+                    };
+                    o.growth(level, b.weir, below)
+                })
+                .sum();
             if grow > 0.0 {
                 fastest = fastest.min(b.surface_area() / grow);
             }
@@ -646,6 +725,20 @@ impl Water {
         let ids: Vec<u32> = self.basins.keys().copied().collect();
         // The levels outlets run into (the same face: a basin's local metres).
         let levels: HashMap<u32, f64> = self.basins.values().map(|b| (b.id, b.level())).collect();
+        let areas: HashMap<u32, f64> = self
+            .basins
+            .values()
+            .map(|b| {
+                (
+                    b.id,
+                    if b.reservoir {
+                        f64::INFINITY
+                    } else {
+                        b.surface_area()
+                    },
+                )
+            })
+            .collect();
         for &id in &ids {
             let b = self.basins.get_mut(&id).expect("basin");
             let waiting = !live.contains(&id);
@@ -678,7 +771,45 @@ impl Water {
                 let law: f64 = out.iter().sum();
                 let s = if law > 0.0 { pass / law } else { 0.0 };
                 out.iter_mut().for_each(|q| *q *= s);
-            } else if !b.reservoir {
+            } else {
+                // Into water standing beyond: no more in a step, by all its ways there together,
+                // than evens the two out (the smaller surface's share of the difference), so the
+                // levels never cross.
+                let area = if b.reservoir {
+                    f64::INFINITY
+                } else {
+                    b.surface_area()
+                };
+                let mut into: HashMap<u32, f64> = HashMap::default();
+                for (o, q) in b.outlets.iter().zip(out.iter()) {
+                    if let Target::Basin(t) = o.target
+                        && levels
+                            .get(&t)
+                            .is_some_and(|l| l.is_finite() && *l > o.floor())
+                    {
+                        *into.entry(t).or_default() += *q;
+                    }
+                }
+                for (t, total) in into {
+                    let below = levels[&t];
+                    let other = areas.get(&t).copied().unwrap_or(area);
+                    let share = match (area.is_finite(), other.is_finite()) {
+                        (true, true) => area * other / (area + other),
+                        (true, false) => area, // into a reservoir: only this one moves
+                        (false, _) => other,   // out of one: only the other moves
+                    };
+                    let even = (level - below).max(0.0) * share / dt;
+                    if total > even && total > 0.0 {
+                        let k = even / total;
+                        for (o, q) in b.outlets.iter().zip(out.iter_mut()) {
+                            if o.target == Target::Basin(t) && below > o.floor() {
+                                *q *= k;
+                            }
+                        }
+                    }
+                }
+            }
+            if !waiting && !b.reservoir {
                 // No more than it holds above the lowest way out.
                 let floor = b
                     .outlets
@@ -749,6 +880,15 @@ impl Water {
             return;
         }
         let touched = std::mem::take(&mut self.touched);
+        for &(c, _) in &touched {
+            let solid = world.find(chunk_of(c[0], c[1], c[2])).is_some()
+                && kind(Some(world.get_voxel_if_loaded(c))) == Kind::Solid;
+            if solid {
+                self.edited.insert(c);
+            } else {
+                self.edited.remove(&c);
+            }
+        }
         let mut old: HashMap<[i32; 3], StateId> = HashMap::default();
         for &(c, m) in &touched {
             old.entry(c).or_insert(m);
@@ -916,7 +1056,6 @@ impl Water {
                     bottom: surface,
                     volume: 0.0,
                     inflows: Vec::new(),
-                    neighbours: Vec::new(),
                     last_volume: 0.0,
                     outlets: Vec::new(),
                     wet: HashSet::default(),
@@ -928,6 +1067,7 @@ impl Water {
                     through: 0.0,
                     extra: 0.0,
                     rest: HashSet::default(),
+                    held: HashSet::default(),
                     natural: HashMap::default(),
                     chunks: Vec::new(),
                     steady: None,
@@ -954,7 +1094,6 @@ impl Water {
             bottom,
             volume,
             inflows: Vec::new(),
-            neighbours: Vec::new(),
             last_volume: volume,
             outlets: Vec::new(),
             wet: seen.iter().copied().collect(),
@@ -966,15 +1105,26 @@ impl Water {
             through: 0.0,
             extra: 0.0,
             rest: HashSet::default(),
+            held: HashSet::default(),
             natural: HashMap::default(),
             chunks: Vec::new(),
             steady: None,
         };
         if resting {
             b.rest = at_rest(&view, f, &seen);
+            b.held = seen
+                .iter()
+                .flat_map(|&c| {
+                    let mut n: Vec<[i32; 3]> = SIDES.iter().map(|&s| side(c, s)).collect();
+                    n.push([c[0], c[1] + 1, c[2]]);
+                    n.push([c[0], c[1] - 1, c[2]]);
+                    n
+                })
+                .filter(|n| !seen.contains(n) && matches!(view.kind(*n), Kind::Liquid(_)))
+                .collect();
             // Its natural outlets pass the map's flow at the level it was found at, coming in at
             // its cell farthest from them (a river pool's upstream end).
-            let outlets = scan_outlets(&view, &b, &self.owner, id);
+            let outlets = scan_outlets(&view, &b, &self.owner, &self.reservoir_ids(), id);
             let level = b.level();
             let law: f64 = outlets
                 .iter()
@@ -1044,9 +1194,9 @@ impl Water {
     }
 
     /// Finds a basin's container again from its bottom row up (in the world now), as many rows
-    /// as its volume fills, merging what it meets, and its outlets; writes what changed.
+    /// as its volume fills (finding the bodies it meets), and its outlets; writes what changed.
     fn rebuild(&mut self, world: &mut VoxelWorld, id: u32, writes: &mut Vec<([i32; 3], StateId)>) {
-        for _ in 0..8 {
+        {
             let Some(b) = self.basins.get(&id) else {
                 return;
             };
@@ -1110,41 +1260,13 @@ impl Water {
                 }
                 lr += 1;
             }
-            // What it met at its rows: merged once the levels meet (until then the other's
-            // liquid is a wall to it, and the other falls into it), then found again.
-            let mut merged = false;
-            let mut neighbours: Vec<(u32, i32)> = Vec::new();
-            let mine = self.basins[&id].level();
-            let receding = self.basins[&id].volume < self.basins[&id].last_volume;
+            // What it met at its rows: bodies found now if no one has (they share faces with it,
+            // contacts: `merge_wide` joins the ones that even out with it at once).
             for c in met {
-                let other = match self.owner.get(&c) {
-                    Some(&o) if o != id => Some(o),
-                    Some(_) => None,
-                    None => self.discover(world, None, c, true),
-                };
-                if let Some(o) = other
-                    && o != id
-                    && let Some(ob) = self.basins.get(&o)
-                    && !ob.reservoir
-                {
-                    // Only at one level: a lower pool met below the surface is the next step of
-                    // a river (its water comes over the step, by the outlet there), and a higher
-                    // one a neighbour this one may rise to meet.
-                    let level = ob.level();
-                    // Through a row both fill: a crest the water is a row deep over is no step.
-                    let deep = m_of_row(f.row(c[1]) + 1) <= mine.min(level) + 1e-9;
-                    if (mine - level).abs() <= MERGE_GAP && !receding && deep {
-                        self.merge(id, o);
-                        merged = true;
-                    } else if level > mine && !neighbours.iter().any(|&(n, _)| n == o) {
-                        neighbours.push((o, f.row(c[1])));
-                    }
+                if !self.owner.contains_key(&c) {
+                    self.discover(world, None, c, true);
                 }
             }
-            if merged {
-                continue;
-            }
-            self.basins.get_mut(&id).expect("basin").neighbours = neighbours;
             let b = self.basins.get_mut(&id).expect("basin");
             for c in b.cells() {
                 if self.owner.get(&c) == Some(&id) {
@@ -1169,11 +1291,10 @@ impl Water {
             }
             let view = View { world, old: None };
             let b = &self.basins[&id];
-            let mut outlets = scan_outlets(&view, b, &self.owner, id);
+            let mut outlets = scan_outlets(&view, b, &self.owner, &self.reservoir_ids(), id);
             outlets.extend(b.seep());
             self.basins.get_mut(&id).expect("basin").outlets = outlets;
             self.split_if_apart(world, id, writes);
-            return;
         }
     }
 
@@ -1200,6 +1321,22 @@ impl Water {
                     || o.is_seep()
                     || b.natural.contains_key(&o.from)
                 {
+                    continue;
+                }
+                if o.contact {
+                    // Into another basin's dry rows: the column it pours down to its water.
+                    let mut c = o.from;
+                    for _ in 0..64 {
+                        if world.find(chunk_of(c[0], c[1], c[2])).is_none() {
+                            break;
+                        }
+                        let m = world.get_voxel_if_loaded(c);
+                        if m != M.air && !is_running(m) {
+                            break;
+                        }
+                        want.insert(c, run);
+                        c = up(b.face, c, -1);
+                    }
                     continue;
                 }
                 if let Some(path) = self.paths.get(&(b.id, o.from)) {
@@ -1246,7 +1383,7 @@ impl Water {
             return;
         }
         let view = View { world, old: None };
-        let mut outlets = scan_outlets(&view, b, &self.owner, id);
+        let mut outlets = scan_outlets(&view, b, &self.owner, &self.reservoir_ids(), id);
         outlets.extend(b.seep());
         for o in &mut outlets {
             if let Some(old) = b
@@ -1284,9 +1421,13 @@ impl Water {
                 {
                     outlets.push(Outlet {
                         from: n,
-                        kind: OutKind::Weir { sill },
+                        kind: OutKind::Face {
+                            lo: sill,
+                            hi: f64::INFINITY,
+                        },
                         target: Target::Unresolved,
                         flow: 0.0,
+                        contact: false,
                         scale: 1.0,
                     });
                 }
@@ -1327,6 +1468,7 @@ impl Water {
         me.volume += other.volume;
         me.inflows.extend(other.inflows);
         me.rest.extend(other.rest);
+        me.held.extend(other.held);
         me.natural.extend(other.natural);
         me.steady = match (me.steady.take(), other.steady) {
             (Some(mut x), Some(o)) => {
@@ -1338,7 +1480,6 @@ impl Water {
             }
             (x, o) => x.or(o),
         };
-        me.neighbours.retain(|&(n, _)| n != b);
         me.wet.extend(other.wet);
         // Its rows into ours, by local row.
         let lo = me.bottom.min(other.bottom);
@@ -1571,7 +1712,6 @@ impl Water {
                 bottom: f.row(c[1]),
                 volume: 0.0,
                 inflows: Vec::new(),
-                neighbours: Vec::new(),
                 last_volume: 0.0,
                 outlets: Vec::new(),
                 wet: HashSet::default(),
@@ -1583,6 +1723,7 @@ impl Water {
                 through: 0.0,
                 extra: 0.0,
                 rest: HashSet::default(),
+                held: HashSet::default(),
                 natural: HashMap::default(),
                 chunks: Vec::new(),
                 steady: None,
@@ -1624,7 +1765,7 @@ impl Water {
                 self.rebuild(world, id, writes);
             }
         }
-        self.meet_neighbours(world, id, writes);
+        self.merge_wide(world, id, writes);
         self.spin_off_shelves(world, id, writes);
         let Some(b) = self.basins.get_mut(&id) else {
             return;
@@ -1712,9 +1853,11 @@ impl Water {
         }
     }
 
-    /// A rising basin whose level has reached a basin it met (a higher pool it was filling
-    /// toward) merges with it.
-    fn meet_neighbours(
+    /// Basins it shares faces with that even out with it at once merge with it: within
+    /// `MERGE_GAP` of its level, and the faces between them wide enough that the difference would
+    /// be gone within `mergeSeconds` (their conductance against the smaller surface). A wide gap
+    /// is one body; a hole in a wall, or a sheet over a crest, stays an opening between two.
+    fn merge_wide(
         &mut self,
         world: &mut VoxelWorld,
         id: u32,
@@ -1723,29 +1866,52 @@ impl Water {
         let Some(b) = self.basins.get(&id) else {
             return;
         };
-        if b.volume < b.last_volume || b.neighbours.is_empty() {
+        if b.reservoir || self.split.contains(&id) {
             return;
         }
-        let level = b.level();
-        let meet: Vec<u32> = b
-            .neighbours
-            .iter()
-            .copied()
-            .filter(|&(n, row)| {
-                self.basins.get(&n).is_some_and(|o| {
-                    !o.reservoir
-                        && level >= o.level() - MERGE_GAP
-                        && m_of_row(row + 1) <= level.min(o.level()) + 1e-9
-                })
+        let mine = b.level();
+        let mut by: HashMap<u32, f64> = HashMap::default();
+        for o in b.outlets.iter().filter(|o| o.contact) {
+            let Target::Basin(t) = o.target else { continue };
+            let Some(tb) = self.basins.get(&t) else {
+                continue;
+            };
+            let theirs = tb.level();
+            if (mine - theirs).abs() > MERGE_GAP {
+                continue;
+            }
+            // Its conductance (m²/s): the flow a difference of MERGE_GAP drives, over it.
+            let high = mine.max(theirs);
+            let q = Outlet { scale: 1.0, ..*o }.rate(high, b.weir, high - MERGE_GAP);
+            *by.entry(t).or_default() += q / MERGE_GAP;
+        }
+        let area = b.surface_area();
+        let flow = b.inflow() + b.arriving;
+        let mut join: Vec<u32> = by
+            .into_iter()
+            .filter(|&(t, g)| {
+                let Some(tb) = self.basins.get(&t) else {
+                    return false;
+                };
+                if self.split.contains(&t) {
+                    return false;
+                }
+                let a = tb.surface_area().min(area);
+                // The same test a basin is kept whole by (`split_if_apart`): fast to even out,
+                // and the faces carry what flows through either within MERGE_GAP.
+                g > 0.0
+                    && a / g < FLOW.merge_seconds
+                    && g * MERGE_GAP >= flow.max(tb.inflow() + tb.arriving)
             })
-            .map(|(n, _)| n)
+            .map(|(t, _)| t)
             .collect();
-        if meet.is_empty() {
+        if join.is_empty() {
             return;
         }
-        for n in meet {
-            if self.basins.contains_key(&n) {
-                self.merge(id, n);
+        join.sort_unstable();
+        for t in join {
+            if self.basins.contains_key(&t) {
+                self.merge(id, t);
             }
         }
         self.rebuild(world, id, writes);
@@ -1832,7 +1998,6 @@ impl Water {
             nb.inflows = inflows;
             nb.wet = wet;
             nb.outlets = Vec::new();
-            nb.neighbours = Vec::new();
             // The map's flow coming in on the shelf comes in to it.
             if let Some(st) = &mut nb.steady {
                 st.feeds.retain(|(c, _)| part.contains(c));
@@ -1916,7 +2081,23 @@ impl Water {
             }
             out
         };
-        let mut parts = components(if full.is_empty() { &cells } else { &full });
+        // Narrowed by what edits built (a wall, a hole left in it): the cells beside a block an
+        // edit placed don't join parts; the generated ground never splits a body.
+        let edited = &self.edited;
+        let core: HashSet<[i32; 3]> = full
+            .iter()
+            .copied()
+            .filter(|&c| !SIDES.iter().any(|&s| edited.contains(&side(c, s))))
+            .collect();
+        let seeds = if !core.is_empty() {
+            &core
+        } else if !full.is_empty() {
+            &full
+        } else {
+            &cells
+        };
+        let mut parts = components(seeds);
+        let full = seeds.clone();
         if !full.is_empty() {
             // The rest of the container goes with the part it reaches first.
             let mut of: HashMap<[i32; 3], usize> = HashMap::default();
@@ -1955,7 +2136,73 @@ impl Water {
         if parts.len() < 2 {
             return;
         }
-        parts.sort_by_key(|p| std::cmp::Reverse(p.len()));
+        // Parts whose faces between them would even them out within `mergeSeconds` are one.
+        let level = b.level();
+        let c = discharge(b.weir);
+        let of: HashMap<[i32; 3], usize> = parts
+            .iter()
+            .enumerate()
+            .flat_map(|(i, p)| p.iter().map(move |&c| (c, i)))
+            .collect();
+        let mut g: HashMap<(usize, usize), f64> = HashMap::default();
+        for (&cell, &i) in &of {
+            let lo = m_of_row(f.row(cell[1]));
+            for s in SIDES {
+                if let Some(&j) = of.get(&side(cell, s))
+                    && j > i
+                {
+                    let q = face_flow(c, level, level - MERGE_GAP, lo, lo + CELL_H);
+                    *g.entry((i, j)).or_default() += q / MERGE_GAP;
+                }
+            }
+            if let Some(&j) = of.get(&up(f, cell, -1))
+                && j != i
+                && level > lo
+            {
+                let q = c * (2.0 * G * MERGE_GAP).sqrt();
+                *g.entry((i.min(j), i.max(j))).or_default() += q / MERGE_GAP;
+            }
+        }
+        let (k, _) = b.fill();
+        let surf = |p: &HashSet<[i32; 3]>| -> f64 {
+            (p.iter()
+                .filter(|c| (f.row(c[1]) - bottom) as usize == k)
+                .count() as f64)
+                .max(1.0)
+        };
+        let mut root: Vec<usize> = (0..parts.len()).collect();
+        fn find(root: &mut [usize], i: usize) -> usize {
+            let mut r = i;
+            while root[r] != r {
+                r = root[r];
+            }
+            root[i] = r;
+            r
+        }
+        let mut pairs: Vec<((usize, usize), f64)> = g.into_iter().collect();
+        pairs.sort_by_key(|&(p, _)| p);
+        // And only if the faces carry what flows through the basin (its inflow and what arrives)
+        // within MERGE_GAP: a river through a hole needs a head across it.
+        let throughput = b.inflow() + b.arriving;
+        for ((i, j), cond) in pairs {
+            let a = surf(&parts[i]).min(surf(&parts[j]));
+            if cond > 0.0 && a / cond < FLOW.merge_seconds && cond * MERGE_GAP >= throughput {
+                let (ri, rj) = (find(&mut root, i), find(&mut root, j));
+                if ri != rj {
+                    root[rj] = ri;
+                }
+            }
+        }
+        let mut joined: HashMap<usize, HashSet<[i32; 3]>> = HashMap::default();
+        for (i, p) in parts.into_iter().enumerate() {
+            let r = find(&mut root, i);
+            joined.entry(r).or_default().extend(p);
+        }
+        let mut parts: Vec<HashSet<[i32; 3]>> = joined.into_values().collect();
+        if parts.len() < 2 {
+            return;
+        }
+        parts.sort_by_key(|p| (std::cmp::Reverse(p.len()), p.iter().min().copied()));
         let template = b.clone();
         let share = |part: &HashSet<[i32; 3]>| -> f64 {
             part.iter()
@@ -2023,13 +2270,14 @@ impl Water {
             made.push(pid);
         }
         self.retarget_all(id);
+        self.split.extend(made.iter().copied());
         for pid in made {
             // A part settled before may have merged this one away.
             let Some(b) = self.basins.get(&pid) else {
                 continue;
             };
             let view = View { world, old: None };
-            let mut outlets = scan_outlets(&view, b, &self.owner, pid);
+            let mut outlets = scan_outlets(&view, b, &self.owner, &self.reservoir_ids(), pid);
             outlets.extend(b.seep());
             self.basins.get_mut(&pid).expect("basin").outlets = outlets;
             self.settle_rows(world, pid, writes);
@@ -2117,47 +2365,78 @@ fn spread_row(
     RowScan { cells, met, wide }
 }
 
-/// A basin's ways out (in `view`): open cells beside its cells with nothing under them (over a
-/// sill at that row's floor), open cells under its cells (a hole in its floor), and leaking blocks
-/// beside it with an open cell past them; none through the cells it rests against (`rest`), and a
-/// natural outlet at its scale.
+/// A basin's ways out (in `view`): open cells beside its cells with nothing under them (a face
+/// from that row's floor, open above unless a block closes it: a hole in a wall), open cells under
+/// its cells (a hole in its floor), leaking blocks beside it with an open cell past them, and the
+/// faces it shares with other basins' containers (contacts, but where found bodies touched as
+/// found: `held`); none through the cells it rests against (`rest`), and a natural outlet at its
+/// scale.
 fn scan_outlets(
     view: &View<'_>,
     b: &Basin,
     owner: &HashMap<[i32; 3], u32>,
+    reservoirs: &HashSet<u32>,
     id: u32,
 ) -> Vec<Outlet> {
     let f = b.face;
     let cells: HashSet<[i32; 3]> = b.cells().collect();
     let ours = |c: [i32; 3]| cells.contains(&c) || owner.get(&c) == Some(&id);
+    let theirs = |c: [i32; 3]| match owner.get(&c) {
+        Some(&o) if o != id && !reservoirs.contains(&o) && !cells.contains(&c) => Some(o),
+        _ => None,
+    };
     let mut out: Vec<Outlet> = Vec::new();
     let mut at: HashSet<([i32; 3], bool)> = HashSet::default();
-    let mut add = |out: &mut Vec<Outlet>, from: [i32; 3], kind: OutKind, leak: bool| {
-        if at.insert((from, leak)) {
-            out.push(Outlet {
-                from,
-                kind,
-                target: Target::Unresolved,
-                flow: 0.0,
-                scale: if !leak && b.natural.contains_key(&from) {
-                    b.natural_scale()
-                } else {
-                    1.0
-                },
-            });
-        }
-    };
+    let mut add =
+        |out: &mut Vec<Outlet>, from: [i32; 3], kind: OutKind, leak: bool, to: Option<u32>| {
+            if at.insert((from, leak)) {
+                out.push(Outlet {
+                    from,
+                    kind,
+                    target: to.map_or(Target::Unresolved, Target::Basin),
+                    flow: 0.0,
+                    scale: if !leak && b.natural.contains_key(&from) {
+                        b.natural_scale()
+                    } else {
+                        1.0
+                    },
+                    contact: to.is_some(),
+                });
+            }
+        };
     for (i, row) in b.rows.iter().enumerate() {
         let lr = b.bottom + i as i32;
         let floor = m_of_row(lr);
         for &c in row {
             let d = up(f, c, -1);
-            if !ours(d) && !b.rest.contains(&d) && view.kind(d) == Kind::Open {
-                add(&mut out, d, OutKind::Weir { sill: floor }, false);
+            if !ours(d) && !b.rest.contains(&d) {
+                if let Some(o) = theirs(d) {
+                    if !b.held.contains(&d) {
+                        add(&mut out, d, OutKind::Floor { z: floor }, false, Some(o));
+                    }
+                } else if view.kind(d) == Kind::Open {
+                    add(&mut out, d, OutKind::Floor { z: floor }, false, None);
+                }
             }
             for s in SIDES {
                 let n = side(c, s);
                 if ours(n) || b.rest.contains(&n) {
+                    continue;
+                }
+                // Open above it (another cell to pour over), or a hole capped by a block.
+                let hi = if view.kind(up(f, n, 1)) == Kind::Solid {
+                    floor + CELL_H
+                } else {
+                    f64::INFINITY
+                };
+                if let Some(o) = theirs(n) {
+                    if !b.held.contains(&n) {
+                        let face = OutKind::Face {
+                            lo: floor,
+                            hi: floor + CELL_H,
+                        };
+                        add(&mut out, n, face, false, Some(o));
+                    }
                     continue;
                 }
                 match view.kind(n) {
@@ -2165,7 +2444,7 @@ fn scan_outlets(
                         let under = up(f, n, -1);
                         let held = ours(under) || view.kind(under) == Kind::Solid;
                         if !held {
-                            add(&mut out, n, OutKind::Weir { sill: floor }, false);
+                            add(&mut out, n, OutKind::Face { lo: floor, hi }, false, None);
                         }
                     }
                     Kind::Solid => {
@@ -2180,6 +2459,7 @@ fn scan_outlets(
                                     centre: floor + CELL_H / 2.0,
                                 },
                                 true,
+                                None,
                             );
                         }
                     }

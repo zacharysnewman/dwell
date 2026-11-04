@@ -603,6 +603,124 @@ dwell_world::both_faces!(
     }
 );
 
+/// [`channel`] with its walls to row 8 (room to rise behind a wall).
+fn tall_channel(f: FaceFrame) -> Scene {
+    let mut s = channel(f);
+    let stone = require("dwell:stone");
+    s.fill([-1, 4, -1], [9, 8, -1], stone);
+    s.fill([-1, 4, 3], [9, 8, 3], stone);
+    s.fill([-1, 4, -1], [-1, 8, 3], stone);
+    s
+}
+
+dwell_world::both_faces!(
+    /// Owner, 2026-11-03: a hole below the water in a wall across a river passes what its size and
+    /// depth drive: `C × area × √(2 g Δh)` (C from the weir coefficient, docs/WATER_FLOW.md §4),
+    /// so the river behind a tall wall with one hole at its foot rises until the hole carries its
+    /// flow (here ~2 m), and the river below keeps its level. Red before: the hole joined the two
+    /// sides into one pool, and the river didn't rise.
+    fn a_hole_in_a_wall_passes_what_its_size_and_depth_drive(f: FaceFrame) {
+        let mut s = tall_channel(f);
+        let stone = require("dwell:stone");
+        s.edit(&[[4, 1, 1]], M.air);
+        s.run(5, 1.0);
+        let hole = [5, 0, 1];
+        let wall: Vec<[i32; 3]> = (0..=2)
+            .flat_map(|z| (0..=7).map(move |r| [5, r, z]))
+            .filter(|&c| c != hole)
+            .collect();
+        s.edit(&wall, stone);
+        s.run(1500, 1.0);
+        let up = s
+            .water
+            .basin_at(s.cell(2, 0, 1))
+            .expect("the river above")
+            .clone();
+        let down = s.water.basin_at(s.cell(8, 0, 1)).expect("the river below");
+        assert_ne!(up.id, down.id, "two pools, the hole between");
+        let c = discharge(1.7);
+        let head = (channel_q() / (c * CELL_H)).powi(2) / (2.0 * crate::water::G);
+        let rise = up.level() - down.level();
+        assert!(
+            (rise - head).abs() < 0.05 * head,
+            "risen {rise} m over the river below (the law: {head} m)"
+        );
+        for r in 1..=3 {
+            assert!(s.wet(2, r, 1), "risen through row {r}");
+        }
+        assert!(!s.wet(2, 6, 1), "not to the wall's top");
+        for x in [7, 8, 9] {
+            assert!(
+                s.wet(x, 0, 1) && !s.wet(x, 1, 1),
+                "the river below as it was at x {x}"
+            );
+        }
+    }
+);
+
+/// A closed lake (x 0–9, z 0–9, water rows 0–2 under walls to row 4) and a wall across it at
+/// x = 5 to row 3 (over the water, what it displaces included) but for `open` (cells left in it).
+fn walled_lake(f: FaceFrame, open: &[[i32; 3]]) -> Scene {
+    let mut s = Scene::with_air(f, [-4, -8, -4], [28, 8, 16]);
+    let stone = require("dwell:stone");
+    s.fill([-1, -1, -1], [10, -1, 10], stone);
+    s.fill([-1, -1, -1], [10, 4, -1], stone);
+    s.fill([-1, -1, 10], [10, 4, 10], stone);
+    s.fill([-1, -1, -1], [-1, 4, 10], stone);
+    s.fill([10, -1, -1], [10, 4, 10], stone);
+    s.fill([11, -6, -2], [24, -6, 12], stone);
+    s.fill([0, 0, 0], [9, 2, 9], M.water);
+    s.water = fed(0.0);
+    s.edit(&[[-1, 4, 4]], M.air);
+    s.run(3, 1.0);
+    let wall: Vec<[i32; 3]> = (0..=9)
+        .flat_map(|z| (0..=3).map(move |r| [5, r, z]))
+        .filter(|c| !open.contains(c))
+        .collect();
+    s.edit(&wall, stone);
+    s.run(3, 1.0);
+    s
+}
+
+dwell_world::both_faces!(
+    /// The opening law decides what is one body (docs/WATER_FLOW.md §4): a lake with a wall
+    /// across it but a wide gap (6 × 4 cells) is one basin; with only one cell open the two halves
+    /// are two, and a cut draining one half leaves the other above it a while, evening out through
+    /// the hole, both down to the cut's floor in the end. Red before: one basin, one level.
+    fn a_gap_wide_enough_is_one_body_a_hole_two(f: FaceFrame) {
+        let gap: Vec<[i32; 3]> = (2..=7)
+            .flat_map(|z| (0..=3).map(move |r| [5, r, z]))
+            .collect();
+        let s = walled_lake(f, &gap);
+        let a = s.water.basin_at(s.cell(2, 0, 4)).map(|b| b.id);
+        let b = s.water.basin_at(s.cell(8, 0, 4)).map(|b| b.id);
+        assert!(a.is_some() && a == b, "one body through the gap");
+
+        let mut s = walled_lake(f, &[[5, 0, 4]]);
+        let near = s.water.basin_at(s.cell(8, 0, 4)).map(|b| b.id);
+        let far = s.water.basin_at(s.cell(2, 0, 4)).map(|b| b.id);
+        assert!(near.is_some() && near != far, "two through a hole");
+        s.edit(&[[10, 1, 4], [10, 2, 4], [10, 3, 4]], M.air);
+        s.run(40, 1.0);
+        let level = |s: &Scene, x: i32| s.water.basin_at(s.cell(x, 0, 4)).expect("a half").level();
+        assert!(
+            level(&s, 2) > level(&s, 8) + 0.1,
+            "the far half lags: {} over {}",
+            level(&s, 2),
+            level(&s, 8)
+        );
+        s.run(2000, 1.0);
+        let floor = m_of_row(G + 1);
+        for x in [2, 8] {
+            assert!(
+                (level(&s, x) - floor).abs() < CELL_H / 2.0,
+                "drained to the cut's floor at x {x}: {}",
+                level(&s, x)
+            );
+        }
+    }
+);
+
 #[test]
 fn the_flow_data_resolves() {
     for l in FLOW.liquids {
