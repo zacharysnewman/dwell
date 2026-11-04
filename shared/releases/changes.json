@@ -2,6 +2,13 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions card. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.43.6",
+      "changes": [
+        "Damming or releasing a river reaches players far downstream, travelling down the river at its own pace",
+        "Rivers rise and fall with the water reaching them: a river below a filling dam runs low until it spills"
+      ]
+    },
+    {
       "version": "0.43.5",
       "changes": [
         "A dam keeps filling and a cut lake keeps draining after you walk away, until the water settles",

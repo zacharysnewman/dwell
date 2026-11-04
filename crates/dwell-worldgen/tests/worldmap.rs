@@ -167,6 +167,67 @@ fn a_rivers_flow_is_read_where_its_water_lies() {
 }
 
 #[test]
+fn a_rivers_course_is_read_along_it_and_on_to_where_it_ends() {
+    // face-a-only: a fixture map of one face; the faces' code is one (the parity test).
+    // Changes carried down the map's rivers (docs/WATER_FLOW.md §6, W2d): a column in the fixture
+    // river's channel lies on it, farther along downstream; off its banks on none; and the river
+    // goes on to where the map says it ends.
+    use dwell_worldgen::terrain::RiverNext;
+    let g = TerrainGenerator::with_map(3, Arc::new(fixture(3)));
+    let (r, s0) = g.river_at(-500, 50).expect("on the river");
+    let (r1, s1) = g.river_at(700, 50).expect("on the river");
+    assert_eq!(r, r1);
+    assert!(s0 >= 0.0 && s1 <= g.river_length(r) + 1e-6, "{s0} {s1}");
+    assert!((s1 - s0).abs() > 1000.0, "1.2 km apart along it: {s0} {s1}");
+    assert_eq!(g.river_at(0, 170), None);
+    let next = g.river_next(r);
+    assert!(
+        matches!(
+            next,
+            RiverNext::End | RiverNext::River(..) | RiverNext::Lake { .. }
+        ),
+        "{next:?}"
+    );
+}
+
+#[test]
+fn every_river_of_a_generated_map_goes_on_to_an_end() {
+    // face-a-only: one face's map of seed 7; the faces' code is one.
+    // Following the map's rivers down (W2d) ends: a river joins another farther along it, a lake
+    // has rivers out of it, and no course loops.
+    use dwell_worldgen::terrain::RiverNext;
+    let t = BifacialTerrain::new(7);
+    let g = t.local(dwell_world::Face::A);
+    let n = face_map(7, FaceFrame::A).rivers.len() as u32;
+    assert!(n > 0);
+    for r in 0..n {
+        let mut at = r;
+        let mut steps = 0;
+        loop {
+            steps += 1;
+            assert!(steps < 10_000, "river {r} loops");
+            match g.river_next(at) {
+                RiverNext::End => break,
+                RiverNext::River(j, s) => {
+                    assert!(
+                        s >= 0.0 && s <= g.river_length(j) + 1e-3,
+                        "river {at} → {j} at {s}"
+                    );
+                    at = j;
+                }
+                RiverNext::Lake { out, area, .. } => {
+                    assert!(area > 0.0, "river {at}'s lake");
+                    match out.first() {
+                        Some(&(o, _)) => at = o,
+                        None => break, // an endorheic lake
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn ramps_beside_a_rivers_water_hold_it() {
     // face-a-only: a fixture map of one face; the faces' code is one (the parity test).
     // Owner, 2026-11-03 (docs/BUGS.md 18): a ramp on a bank beside the water at its row stood dry,

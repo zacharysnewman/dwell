@@ -7,9 +7,10 @@
 use super::*;
 use dwell_world::ChunkCoord;
 
-/// The record's tag: version 2 adds whether each basin is active (0.43.5); version 1 reads as
-/// settled.
-const MAGIC: &[u8; 4] = b"DWW2";
+/// The record's tag: version 3 adds each found body's map flow (0.43.6), 2 whether each basin is
+/// active (0.43.5; 1 reads as settled). Before 3 the map flow reads as its steady flow then.
+const MAGIC: &[u8; 4] = b"DWW3";
+const MAGIC_2: &[u8; 4] = b"DWW2";
 const MAGIC_1: &[u8; 4] = b"DWW1";
 
 #[derive(Default)]
@@ -212,6 +213,7 @@ fn put_basin(o: &mut Out, b: &Basin, revision: &dyn Fn(ChunkCoord) -> u32) {
         None => o.u8(0),
         Some(st) => {
             o.u8(1);
+            o.f64(st.flow);
             o.f64(st.through);
             o.f64(st.law);
             o.f64(st.level);
@@ -231,7 +233,7 @@ fn put_basin(o: &mut Out, b: &Basin, revision: &dyn Fn(ChunkCoord) -> u32) {
 /// a record cut short; a basin of a liquid this build doesn't know reads as stale.
 fn get_basin(
     i: &mut In<'_>,
-    v2: bool,
+    version: u8,
     revision: &dyn Fn(ChunkCoord) -> u32,
 ) -> Option<(Basin, bool)> {
     let id = i.u32()?;
@@ -250,18 +252,23 @@ fn get_basin(
     let hi = i.cell()?;
     let [arriving, through, extra, linked, owed] =
         [i.f64()?, i.f64()?, i.f64()?, i.f64()?, i.f64()?];
-    let active = v2 && i.bool()?;
+    let active = version >= 2 && i.bool()?;
     let rest = i.set()?;
     let held = i.set()?;
     let natural: HashMap<[i32; 3], f64> = i.weighed()?.into_iter().collect();
     let steady = match i.u8()? {
         0 => None,
-        1 => Some(Steady {
-            through: i.f64()?,
-            law: i.f64()?,
-            level: i.f64()?,
-            feeds: i.weighed()?,
-        }),
+        1 => {
+            let flow = if version >= 3 { Some(i.f64()?) } else { None };
+            let through = i.f64()?;
+            Some(Steady {
+                flow: flow.unwrap_or(through),
+                through,
+                law: i.f64()?,
+                level: i.f64()?,
+                feeds: i.weighed()?,
+            })
+        }
         _ => return None,
     };
     let mut fresh = true;
@@ -394,6 +401,46 @@ impl Water {
             o.cell(c);
             o.state(m);
         }
+        // The changes going down the map's rivers (version 3).
+        let face = |f: dwell_world::Face| u8::from(f == dwell_world::Face::B);
+        o.len(self.flows.fronts.len());
+        for f in &self.flows.fronts {
+            o.u8(face(f.face));
+            o.u32(f.river);
+            o.f64(f.from);
+            o.f64(f.at);
+            o.f64(f.dq);
+            o.u8(u8::from(f.done));
+        }
+        o.len(self.flows.lakes.len());
+        for l in &self.flows.lakes {
+            o.u8(face(l.face));
+            o.u32(l.lake);
+            o.f64(l.area);
+            o.len(l.out.len());
+            for &(r, q) in &l.out {
+                o.u32(r);
+                o.f64(q);
+            }
+            o.f64(l.inn);
+            o.f64(l.now);
+            o.f64(l.sent);
+        }
+        let mut sent: Vec<(&u32, &rivers::Sent)> = self
+            .flows
+            .sent
+            .iter()
+            .filter(|(b, _)| saved.contains(b))
+            .collect();
+        sent.sort_unstable_by_key(|(b, _)| **b);
+        o.len(sent.len());
+        for (&b, x) in sent {
+            o.u32(b);
+            o.u8(face(x.face));
+            o.u32(x.river);
+            o.f64(x.s);
+            o.f64(x.dq);
+        }
         o.0
     }
 
@@ -403,9 +450,10 @@ impl Water {
     /// kept, or `None` for a record this build can't read (then nothing is taken in).
     pub fn restore(&mut self, bytes: &[u8], revision: impl Fn(ChunkCoord) -> u32) -> Option<usize> {
         let mut i = In { b: bytes, at: 0 };
-        let v2 = match i.take(4)? {
-            m if m == MAGIC => true,
-            m if m == MAGIC_1 => false,
+        let version = match i.take(4)? {
+            m if m == MAGIC => 3,
+            m if m == MAGIC_2 => 2,
+            m if m == MAGIC_1 => 1,
             _ => return None,
         };
         let next = i.u32()?;
@@ -413,7 +461,7 @@ impl Water {
         let lost = i.f64()?;
         let mut basins: HashMap<u32, Basin> = HashMap::default();
         for _ in 0..i.len()? {
-            let (b, fresh) = get_basin(&mut i, v2, &revision)?;
+            let (b, fresh) = get_basin(&mut i, version, &revision)?;
             if fresh {
                 basins.insert(b.id, b);
             }
@@ -466,6 +514,56 @@ impl Water {
                 touched.push((c, m));
             }
         }
+        let mut flows = rivers::Flows::default();
+        if version >= 3 {
+            let face = |v: u8| {
+                if v == 1 {
+                    dwell_world::Face::B
+                } else {
+                    dwell_world::Face::A
+                }
+            };
+            for _ in 0..i.len()? {
+                flows.fronts.push(rivers::Front {
+                    face: face(i.u8()?),
+                    river: i.u32()?,
+                    from: i.f64()?,
+                    at: i.f64()?,
+                    dq: i.f64()?,
+                    done: i.bool()?,
+                });
+            }
+            for _ in 0..i.len()? {
+                let (fc, lake, area) = (face(i.u8()?), i.u32()?, i.f64()?);
+                let out: Vec<(u32, f64)> = (0..i.len()?)
+                    .map(|_| Some((i.u32()?, i.f64()?)))
+                    .collect::<Option<_>>()?;
+                flows.lakes.push(rivers::Lagged {
+                    face: fc,
+                    lake,
+                    area,
+                    out,
+                    inn: i.f64()?,
+                    now: i.f64()?,
+                    sent: i.f64()?,
+                });
+            }
+            for _ in 0..i.len()? {
+                let b = i.u32()?;
+                let x = rivers::Sent {
+                    face: face(i.u8()?),
+                    river: i.u32()?,
+                    s: i.f64()?,
+                    dq: i.f64()?,
+                };
+                if kept(&b) {
+                    flows.sent.insert(b, x);
+                } else {
+                    // Left out: what it sent goes back (it is found again as it then is).
+                    flows.send(x.face, x.river, x.s, -x.dq);
+                }
+            }
+        }
         // Ways into a basin left out (or a reservoir, not saved) are found again.
         let ids: HashSet<u32> = basins.keys().copied().collect();
         for b in basins.values_mut() {
@@ -496,6 +594,7 @@ impl Water {
         self.edited = edited;
         self.lands = lands;
         self.touched = touched;
+        self.flows = flows;
         Some(n)
     }
 }

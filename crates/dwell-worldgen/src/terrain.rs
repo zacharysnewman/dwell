@@ -1045,8 +1045,16 @@ impl TerrainGenerator {
                     .fold(0.0, f64::max);
             }
         }
+        self.river_point(x, z).map_or(0.0, |p| p.2)
+    }
+
+    /// The river whose channel face-local column (x, z) lies in, by the world map
+    /// (docs/WATER_FLOW.md §6): its index, how far along its course the column projects (m from
+    /// its source) and its discharge there. The column's own lookups (`base_column`).
+    fn river_point(&self, x: i64, z: i64) -> Option<(u32, f64, f64)> {
+        let map = &self.map;
         if !map.channels.near(x as f64, z as f64, 0.0) {
-            return 0.0;
+            return None;
         }
         let (wx, wz) = self.warp(
             self.meander_seeds,
@@ -1055,17 +1063,14 @@ impl TerrainGenerator {
             S.river_meander,
             S.river_meander_wavelength,
         );
-        let Some(hit) = map.channels.query(wx, wz, 0.0, f64::INFINITY) else {
-            return 0.0;
-        };
+        let hit = map.channels.query(wx, wz, 0.0, f64::INFINITY)?;
         if hit.d > hit.half {
-            return 0.0;
+            return None;
         }
-        let Some(river) = map.rivers.get(hit.river as usize) else {
-            return 0.0;
-        };
+        let river = map.rivers.get(hit.river as usize)?;
         // Between the course's two vertices nearest (the segment it projects onto).
-        let mut best = (f64::INFINITY, 0.0);
+        let mut best = (f64::INFINITY, 0.0, 0.0);
+        let mut along = 0.0;
         for w in river.path.windows(2) {
             let (a, b) = (w[0], w[1]);
             let (ax, az) = (f64::from(a.x), f64::from(a.z));
@@ -1081,13 +1086,92 @@ impl TerrainGenerator {
             if d2 < best.0 {
                 let q =
                     f64::from(a.discharge) + (f64::from(b.discharge) - f64::from(a.discharge)) * t;
-                best = (d2, q);
+                best = (d2, q, along + len2.sqrt() * t);
             }
+            along += len2.sqrt();
         }
         if best.0.is_infinite() {
-            return river.path.first().map_or(0.0, |v| f64::from(v.discharge));
+            return Some((
+                hit.river,
+                0.0,
+                river.path.first().map_or(0.0, |v| f64::from(v.discharge)),
+            ));
         }
-        best.1
+        Some((hit.river, best.2, best.1))
+    }
+
+    /// The river at face-local column (x, z) and how far along it (m from its source), by the
+    /// world map: where a change to its flow there goes on from (docs/WATER_FLOW.md §6).
+    pub fn river_at(&self, x: i32, z: i32) -> Option<(u32, f64)> {
+        self.river_point(i64::from(x), i64::from(z))
+            .map(|(r, s, _)| (r, s))
+    }
+
+    /// A river's course length (m).
+    pub fn river_length(&self, river: u32) -> f64 {
+        self.map.rivers.get(river as usize).map_or(0.0, |r| {
+            r.path
+                .windows(2)
+                .map(|w| (f64::from(w[1].x - w[0].x)).hypot(f64::from(w[1].z - w[0].z)))
+                .sum()
+        })
+    }
+
+    /// Where a river goes at its end, by the world map: into another river (how far along it),
+    /// into a lake (its area, its outflow and the rivers out of it), or into the sea.
+    pub fn river_next(&self, river: u32) -> RiverNext {
+        let map = &self.map;
+        let Some(r) = map.rivers.get(river as usize) else {
+            return RiverNext::End;
+        };
+        match r.end {
+            crate::worldmap::RiverEnd::Sea => RiverNext::End,
+            crate::worldmap::RiverEnd::Joins(j) => {
+                let Some((last, other)) = r.path.last().zip(map.rivers.get(j as usize)) else {
+                    return RiverNext::End;
+                };
+                let (px, pz) = (f64::from(last.x), f64::from(last.z));
+                let mut best = (f64::INFINITY, 0.0);
+                let mut along = 0.0;
+                for w in other.path.windows(2) {
+                    let (ax, az) = (f64::from(w[0].x), f64::from(w[0].z));
+                    let (dx, dz) = (f64::from(w[1].x) - ax, f64::from(w[1].z) - az);
+                    let len2 = dx * dx + dz * dz;
+                    let t = if len2 > 0.0 {
+                        (((px - ax) * dx + (pz - az) * dz) / len2).clamp(0.0, 1.0)
+                    } else {
+                        0.0
+                    };
+                    let d2 = (px - ax - dx * t).powi(2) + (pz - az - dz * t).powi(2);
+                    if d2 < best.0 {
+                        best = (d2, along + len2.sqrt() * t);
+                    }
+                    along += len2.sqrt();
+                }
+                RiverNext::River(j, best.1)
+            }
+            crate::worldmap::RiverEnd::Lake(l) => {
+                let id = l + 1;
+                let out: Vec<(u32, f64)> = map
+                    .rivers
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, o)| o.from_lake == id)
+                    .map(|(i, o)| {
+                        (
+                            i as u32,
+                            o.path.first().map_or(0.0, |v| f64::from(v.discharge)),
+                        )
+                    })
+                    .collect();
+                let cells = map.lake.iter().filter(|&&k| k == id).count();
+                RiverNext::Lake {
+                    lake: u32::from(l),
+                    area: cells as f64 * map.cell * map.cell,
+                    out,
+                }
+            }
+        }
     }
 
     /// A column with exactly the chunk path's arithmetic (spawn, tools, tests).
@@ -2435,4 +2519,19 @@ mod tests {
             }
         }
     }
+}
+
+/// Where a river goes at its end (`TerrainGenerator::river_next`).
+#[derive(Clone, Debug, PartialEq)]
+pub enum RiverNext {
+    /// Into the sea, or off the map: it ends.
+    End,
+    /// Into another river, this far along it (m).
+    River(u32, f64),
+    /// Into a lake: its id, area (m²) and the rivers out of it with each one's discharge (m³/s).
+    Lake {
+        lake: u32,
+        area: f64,
+        out: Vec<(u32, f64)>,
+    },
 }

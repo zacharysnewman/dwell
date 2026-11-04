@@ -23,6 +23,9 @@ export const FLOW_RANGES = {
   mergeSeconds: [0, 3600, false],
   catchUpSteps: [0, 1 << 20, true],
   settleMmPerHour: [0, 100000, false],
+  riverSpeed: [0.01, 100, false],
+  riverChangeMin: [0, 1000, false],
+  lakeOutletHead: [0.01, 100, false],
 };
 
 /** The registry's blocks (name → liquid?), from shared/blocks/dwell.json. */

@@ -707,13 +707,23 @@ impl Server {
             outbox: Vec::new(),
             knockbacks: Vec::new(),
             felling: crate::felling::Felling::default(),
+            // Fed by the world map's runoff and carrying changes down its rivers (WATER_FLOW.md
+            // §2.1, §6): one terrain for both.
             water: match (
                 &config.generator_override,
-                dwell_worldgen::runoff_for(config.generator_version, config.world_seed),
+                dwell_worldgen::BifacialTerrain::for_generator(
+                    config.generator_version,
+                    config.world_seed,
+                ),
             ) {
-                (None, Some(runoff)) => crate::water::Water::with_runoff(std::sync::Arc::new(
-                    move |f: dwell_world::FaceFrame, x, z| runoff(f.face, x, z),
-                )),
+                (None, Some(terrain)) => {
+                    let terrain = std::sync::Arc::new(terrain);
+                    let map = terrain.clone();
+                    crate::water::Water::with_runoff(std::sync::Arc::new(
+                        move |f: dwell_world::FaceFrame, x, z| map.local(f.face).discharge_at(x, z),
+                    ))
+                    .with_rivers(terrain)
+                }
                 _ => crate::water::Water::new(),
             },
             settings: default_settings(config.water_speed),

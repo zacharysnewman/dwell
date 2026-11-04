@@ -167,6 +167,9 @@ fn a_block_set_in_a_generated_rivers_bed_changes_nothing_else() {
     const SEED: u64 = 1;
     const R: i32 = 48;
     let runoff = dwell_worldgen::runoff_for(GENERATOR_TERRAIN, SEED).expect("a world map");
+    let rivers = std::sync::Arc::new(
+        dwell_worldgen::BifacialTerrain::for_generator(GENERATOR_TERRAIN, SEED).expect("terrain"),
+    );
     // Each a river's bed cell, its water the lowest of a step (found by a search of seed 1).
     for bed in [[-5432, 217, -4184], [-5860, 208, -4161]] {
         let mut w = VoxelWorld::new(
@@ -206,9 +209,11 @@ fn a_block_set_in_a_generated_rivers_bed_changes_nothing_else() {
         w.set_voxel(bed[0], bed[1], bed[2], stone);
         let before = snapshot(&w);
         let runoff = runoff.clone();
+        // With the map's rivers too, as the server's: a river at rest sends nothing down them.
         let mut water = dwell_sim::water::Water::with_runoff(std::sync::Arc::new(
             move |f: dwell_world::FaceFrame, x, z| runoff(f.face, x, z),
-        ));
+        ))
+        .with_rivers(rivers.clone());
         water.touch([(bed, M.water)]);
         let player = [
             f64::from(bed[0]) + 0.5,
@@ -220,6 +225,11 @@ fn a_block_set_in_a_generated_rivers_bed_changes_nothing_else() {
             water.tick(&mut w, &[player], 7.2);
         }
         let after = snapshot(&w);
+        assert!(
+            water.fronts().is_empty(),
+            "a river at rest sent changes down the map's: {:?}",
+            water.fronts()
+        );
         // A ramp at the water's edge may take its flooded state (the edge fix): nothing else.
         let flooded = |a: u16, b: u16| dwell_blocks::with_property(a, "flooded", "true") == Some(b);
         let changed = before

@@ -71,7 +71,10 @@ of water is **at rest as it is found**, and flows only as edits change it:
   touches them.
 - **Its natural outlets.** The ways out it was found with (an open cell onto air, a fall, or onto
   the next pool's water, a step) together pass **the world map's flow** through it (the river's
-  discharge, a lake's outflow; §2.1) at the level it was found at. With none (the river goes on out
+  discharge, a lake's outflow; §2.1) at the level it was found at: they are scaled to it once
+  (0.43.6: the map's discharge where the body lies, which a piece split off keeps), so its level
+  follows what actually comes in — a river with less coming in falls, one with more rises, and a
+  river below a dam runs low while the dam fills. With none (the river goes on out
   of the loaded world, or into ground), that flow leaves unseen (a **seep**): its map flow and what
   found bodies' natural outlets bring it, no more (what an edit or a flood beside it sends it fills
   it). A natural outlet an
@@ -208,9 +211,20 @@ container found again as it fills or drains; once settled, it is caught up. A wa
 most `catchUpSteps` (512) such steps, the rest the next tick. Time doesn't pass while the server is
 off (the world's clock stops), so a restart owes nothing.
 
-**Planned (W2d):** what a change sends down a river reaches the river far below through country
-nobody has loaded: the difference from the river's flow travels the world map's river path at the
-river's speed (owner, 2026-11-03), through lakes and confluences, to the bodies there.
+**As built (W2d, 0.43.6):** what a change sends down a river reaches the river far below through
+country nobody has loaded (owner, 2026-11-03). Each found body measures what leaves it onto the map's
+river now (by the opening law at its level: into the unfound, or into water collecting below it,
+where that lies on the map's river; not into the found river's other bodies, which carry it
+themselves) against what its natural outlets sent there as found, and sends a change of more than
+`riverChangeMin` (0.02 m³/s) down the map's river as a **front** (`water/rivers.rs`). Fronts travel
+at `riverSpeed` (1 m/s of water time) along the map's river courses (`TerrainGenerator::river_at`,
+`river_length`, `river_next`, through the `Rivers` trait); where a river joins another they go on
+along it, into the sea they end, and into a map lake its outflow follows them by the time the lake
+takes to change its level that much (area × `lakeOutletHead` over 1.5 × its outflow), shared out
+by its rivers' discharge. The first body a front reaches on its river (the head of the bodies found
+there: one taking in the map's flow from upstream) takes it in with its own inflow and passes the
+change on itself, so the front stops there. A body gone takes back what it sent. Fronts, the lakes'
+lag and what each body sent are saved with the basins (record version 3).
 
 
 ## 7. Currents and objects in the water
@@ -398,7 +412,7 @@ Deviations, for W3: a natural outlet's water isn't drawn
 running (the river's own steps stay as generated), and a sheet spreading wider than `maxRowCells` over a
 plain is capped there (the excess lost).
 
-Tests (`water/tests.rs`, both faces): `a_dam_out_of_reach_fills_on_until_it_settles`, `a_dammed_river_unloaded_comes_back_as_if_watched` (0.43.5; `tests/water.rs` `a_lake_cut_open_drains_on_after_its_player_leaves`),
+Tests (`water/tests.rs`, both faces): `a_dam_upstream_reaches_the_river_far_below_across_unfound_country` (0.43.6; `dwell-worldgen` `a_rivers_course_is_read_along_it_and_on_to_where_it_ends`, `every_river_of_a_generated_map_goes_on_to_an_end`; the generated sweep now sends nothing down the map's rivers), `a_dam_out_of_reach_fills_on_until_it_settles`, `a_dammed_river_unloaded_comes_back_as_if_watched` (0.43.5; `tests/water.rs` `a_lake_cut_open_drains_on_after_its_player_leaves`),
 `a_basin_saved_with_the_world_goes_on_as_it_was`, `a_saved_basin_whose_chunk_changed_since_is_found_again`
 (0.43.4; `tests/persistence.rs` `the_waters_basins_survive_a_server_restart`, `dwell-storage`
 `the_waters_basins_are_saved_with_the_world_and_replaced_on_each_save`);
@@ -438,6 +452,6 @@ and 1,059 m³/s. What the review found, and where each stands:
 | **Silent losses.** A sheet capped at `maxRowCells` loses its excess; water running out of the loaded world is lost. | Counted in `lost` (the conservation test sees them); kept, as W1's deviations. |
 | **The water's edge.** A ramp beside the water at its row stood dry, the water ending in a wall (the owner's screenshot). | Fixed: the water's writes flood the ramps beside them (0.42.2), and the generator floods its ramps beside its water (0.43.0, a new compatibility line). |
 | **Nothing saved.** After a restart the basins are gone; the water stays where it was left. | Fixed (0.43.4): the basins saved with the world (§8), and a basin that waited brought forward when it is live again (§6). |
-| **No step at a crest** (owner, 2026-11-03: a wall across a river filled the water up to it, not over it and down the other side; a wall level with the water didn't raise it). One basin over a wall had one level; the spill wasn't drawn; the pool below, cut off from the map's flow, filled with the spill. | Fixed (0.43.1): crests split basins, spills drawn as running water, found bodies pass what comes in. |
+| **No step at a crest** (owner, 2026-11-03: a wall across a river filled the water up to it, not over it and down the other side; a wall level with the water didn't raise it). One basin over a wall had one level; the spill wasn't drawn; the pool below, cut off from the map's flow, filled with the spill. | Fixed (0.43.1): crests split basins, spills drawn as running water, found bodies pass what comes in (0.43.6: their natural outlets scaled once to the map's flow, the level following what comes in; a spill lands in the container of a river below that ran dry). |
 | **A hole below the water in a wall** joined the two sides into one basin at one level, so the wall held nothing back. | Fixed (0.43.2, ADR 0056): one opening law, `C·A·√(2gΔh)`, for every opening and every face two basins share; one body or two by whether the faces even them out at once. Jets (§10) later from the same law. |
 
