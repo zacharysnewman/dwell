@@ -1819,3 +1819,44 @@ fn water_pouring_over_a_half_block_step_is_drawn_as_a_slope() {
     assert!(slope, "no slope from {high} down to {low} over the step");
     assert!(!sheet, "a vertical sheet at the step");
 }
+
+#[test]
+fn a_spill_pouring_off_a_pool_is_drawn_sloped_at_its_top() {
+    // Owner, 2026-11-04: "sloped blocks are still shown at the top regardless, but waterfalls that
+    // are longer would have vertical water columns underneath the top slope". A spill's top cell
+    // beside the pool it pours from is drawn as a slope from the pool's surface down to its floor,
+    // the column going on below. Red before: a flat top and a vertical side.
+    let running = require("dwell:running_water");
+    let mut cells = Vec::new();
+    for z in 0..=2 {
+        for x in 0..=4 {
+            cells.push((x, 1, z, stone()));
+            cells.push((x, 2, z, water()));
+        }
+    }
+    for y in 0..=2 {
+        cells.push((5, y, 1, running));
+    }
+    let m = mesh(&cells, false).transparent;
+    let full = 1.0 - dwell_blocks::require_fluid("dwell:water").surface_drop;
+    let high = 2.0 + full;
+    let mut slope = false;
+    let mut flat = false;
+    for t in m.indices.chunks_exact(3) {
+        let i = t[0] as usize * 3;
+        let n = [m.normals[i], m.normals[i + 1], m.normals[i + 2]];
+        let ps = [t[0], t[1], t[2]].map(|i| vertex(&m.positions, i));
+        let over = ps.iter().all(|p| p[0] > 4.99 && p[0] < 6.01 && p[2] > 0.99 && p[2] < 2.01);
+        if over && n[1] > 0.2 && n[1] < 0.99 {
+            let ys: Vec<f64> = ps.iter().map(|p| p[1]).collect();
+            if ys.iter().any(|y| (y - high).abs() < 1e-4) && ys.iter().any(|y| (y - 2.0).abs() < 1e-4) {
+                slope = true;
+            }
+        }
+        if over && n[1] > 0.99 && ps.iter().all(|p| p[1] > 2.5) {
+            flat = true;
+        }
+    }
+    assert!(slope, "no slope from {high} down to 2 over the spill's top");
+    assert!(!flat, "a flat top over the spill");
+}

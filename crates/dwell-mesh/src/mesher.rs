@@ -1096,6 +1096,106 @@ fn slope_over(
     true
 }
 
+/// A spill's top (the owner, 2026-11-04: "sloped blocks are still shown at the top regardless,
+/// but waterfalls that are longer would have vertical water columns underneath the top slope"):
+/// a fluid cell whose top shows beside another liquid it pours from (running water beside its
+/// pool), that liquid's surface over its floor: the face toward it, and how high its surface
+/// stands (cells over this cell's floor), the slope running from there down to the far side's
+/// floor. None where it isn't such a cell.
+fn spill_of(cells: &Cells<'_>, k: &Kind, [x, y, z]: [i32; 3]) -> Option<(usize, f64)> {
+    let above = cells.kind(x, y + 1, z);
+    if above.liquid || above.flooded || face_covered(cube(), 2, cover(&above)) {
+        return None;
+    }
+    let mut best: Option<(usize, f64)> = None;
+    for (face, &(axis, sign)) in FACES.iter().enumerate() {
+        if axis == 1 {
+            continue;
+        }
+        let [nx, ny, nz] = neighbour_of(x, y, z, axis, sign);
+        let kn = cells.kind(nx, ny, nz);
+        if !kn.liquid || kn.base == k.base {
+            continue;
+        }
+        let top = kn.fill * (1.0 - kn.style.surface_drop);
+        if top > 0.25 && best.is_none_or(|(_, t)| top > t) {
+            best = Some((face, top));
+        }
+    }
+    best
+}
+
+/// The slope over a spill's top (`spill_of`), and its sides across the flow as wedges.
+fn spill_slope(b: &mut Builder, cells: &Cells<'_>, k: &Kind, [x, y, z]: [i32; 3], toward: usize, high: f64) {
+    let (axis, sign) = FACES[toward];
+    let run = if axis == 0 { 2 } else { 0 };
+    // Along the flow: 0 at the side it pours from, 1 at the far side.
+    let along = |t: f64| if sign > 0 { 1.0 - t } else { t };
+    let corner = |t: f64, across: f64, h: f64| {
+        let mut p = [0.0; 3];
+        p[axis] = along(t);
+        p[run] = across;
+        p[1] = h;
+        p
+    };
+    let at = [f64::from(x), f64::from(y), f64::from(z)];
+    let lit = cells.flood.cell([x, y + 1, z]);
+    let emit = |b: &mut Builder, mut pts: Vec<[f64; 3]>, want: [f64; 3], face: Option<(usize, i32)>| {
+        let n = polygon_normal(&pts);
+        if n[0] * want[0] + n[1] * want[1] + n[2] * want[2] < 0.0 {
+            pts.reverse();
+        }
+        let normal = polygon_normal(&pts);
+        let (color, tile) = match face {
+            Some((a, sg)) => surface(&k.style, a, sg),
+            None => surface(&k.style, 1, 1),
+        };
+        let tint = match face {
+            Some((a, sg)) => face_tint(a, sg),
+            None => face_tint(1, 1),
+        };
+        let light = vec![1.0; pts.len()];
+        let lits = vec![lit; pts.len()];
+        b.polygon(&pts, at, normal, tint, color, &tile, None, Some((&light, &lits)));
+    };
+    emit(
+        b,
+        vec![
+            corner(0.0, 0.0, high),
+            corner(0.0, 1.0, high),
+            corner(1.0, 1.0, 0.0),
+            corner(1.0, 0.0, 0.0),
+        ],
+        [0.0, 1.0, 0.0],
+        None,
+    );
+    // The sides across the flow, where they show: wedges under the slope.
+    for (face, &(a, sg)) in FACES.iter().enumerate() {
+        if a != run {
+            continue;
+        }
+        let [nx, ny, nz] = neighbour_of(x, y, z, a, sg);
+        let kn = cells.kind(nx, ny, nz);
+        if (kn.liquid && kn.base == k.base) || face_covered(cube(), face, cover(&kn)) {
+            continue;
+        }
+        let across = if sg > 0 { 1.0 } else { 0.0 };
+        let mut want = [0.0; 3];
+        want[a] = f64::from(sg);
+        emit(
+            b,
+            vec![
+                corner(0.0, across, 0.0),
+                corner(0.0, across, high),
+                corner(1.0, across, 0.0),
+            ],
+            want,
+            Some((a, sg)),
+        );
+    }
+    b.tag_fluid(k.style.fluid);
+}
+
 /// A liquid falling onto another (running water onto a pool, WATER_FLOW.md §17): its sides go on
 /// down into the cell under it to that liquid's drawn surface, inset a hair, so no air shows
 /// between the fall and the water it lands in.
@@ -1452,6 +1552,19 @@ fn mesh_cells(
                     }
                     if k.liquid && slope_over(&mut transparent, &cells, &k, cell, face) {
                         continue;
+                    }
+                    // A spill's top: its slope in place of its top, far side and the sides across.
+                    if k.liquid
+                        && let Some((toward, high)) = spill_of(&cells, &k, cell)
+                    {
+                        let (ta, _) = FACES[toward];
+                        if face == 2 {
+                            spill_slope(&mut transparent, &cells, &k, cell, toward, high);
+                            continue;
+                        }
+                        if face == toward ^ 1 || (axis != 1 && axis != ta) {
+                            continue;
+                        }
                     }
                     let mut surface_row = 0;
                     if k.liquid && axis != 1 {
