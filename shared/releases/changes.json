@@ -2,6 +2,15 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions card. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.48.2",
+      "changes": [
+        "Landing on a slope never hurts: only hard landings on flat ground do",
+        "Hold crouch as you land while moving fast and you slide, with or without sprint",
+        "Sliding down a steep slope with crouch held carries on as a slide where the ground levels out",
+        "Sliding fast up a ramp launches you off its top instead of stepping you onto it"
+      ]
+    },
+    {
       "version": "0.48.1",
       "changes": [
         "Spilled water always flows downhill to the lowest place nearby, and pools where it can't go lower",

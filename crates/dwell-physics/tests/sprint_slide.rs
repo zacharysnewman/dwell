@@ -644,3 +644,26 @@ fn a_slide_keeps_its_speed_down_terraces_of_a_flat_cell_and_a_slope() {
         "kept its speed down the terraces: {on} → {after} m/s"
     );
 }
+
+#[test]
+fn landing_with_crouch_held_slides_without_sprint_held() {
+    // Owner (2026-11-05): "if you're holding crouch when you land and you're moving quickly enough
+    // … you should start sliding regardless of sprint being held." Before, letting go of sprint in
+    // the air steered a crouched player's speed down to the walk speed (5 m/s), under
+    // `min_start_speed`, so the landing only crouched.
+    let mut w = PlayerTestWorld::new();
+    let e = run_off_a_ledge(&mut w, true);
+    w.set_input(|_, _| input(0.0, 1.0, false, false, true, 0.0, 0.0));
+    let at = w.horizontal_speed(e);
+    while !w.c(e).ground.grounded {
+        w.step(1);
+    }
+    let landed = w.horizontal_speed(e);
+    assert!(landed > at - 0.1, "kept {landed} of {at} m/s in the air");
+    w.step(2);
+    assert!(
+        w.c(e).sprint_slide.active,
+        "slid on landing at {landed} m/s"
+    );
+    assert_eq!(w.count(e, events::SPRINT_SLIDE_STARTED), 1);
+}

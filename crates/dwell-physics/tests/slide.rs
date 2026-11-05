@@ -588,3 +588,44 @@ fn a_face_b_player_slides_down_single_block_stairs_toward_the_midplane() {
     assert!(w.players.position(&w.physics, e).x < 0.0);
     assert!(feet.abs() < 0.02, "on the floor: {feet}");
 }
+
+#[test]
+fn a_crouched_steep_slide_slides_on_where_the_ground_flattens() {
+    // Owner (2026-11-05): crouch held and moving fast enough, the player slides on "regardless of
+    // sprint being held". Down a 45° face with crouch held (no sprint), where the face meets the
+    // floor the slide goes on with its momentum (the sprint slide, §6.9), as a landing crouched
+    // does. Before, ground friction took the momentum away in ~0.3 s while the player crouch-walked.
+    let mut w = PlayerTestWorld::new();
+    long_ramp(&mut w);
+    let e = w.spawn(v(0.5, long_ramp_y(19.0) + 0.05, 19.0));
+    w.set_input(|_, _| input(0.0, 0.0, false, false, true, 0.0, 0.0));
+    let mut slid_steep = false;
+    for _ in 0..ticks(4.0) {
+        w.step(1);
+        slid_steep |= w.c(e).sliding(44.0);
+        if slid_steep && !w.c(e).sliding(44.0) && w.c(e).ground.grounded {
+            break;
+        }
+    }
+    assert!(slid_steep, "slid down the face");
+    let off = w.horizontal_speed(e);
+    assert!(off > 6.5, "fast off the face: {off}");
+    w.step(2);
+    let c = w.c(e);
+    assert!(c.sprint_slide.active, "slides on at {off} m/s");
+    assert_eq!(c.state, State::Sliding);
+    w.step(ticks(0.5));
+    assert!(
+        w.horizontal_speed(e) > 4.0,
+        "still sliding: {} m/s",
+        w.horizontal_speed(e)
+    );
+    // Not crouching: friction stops it as before (`reaching_the_floor_keeps_the_momentum_…`).
+    let mut w = PlayerTestWorld::new();
+    long_ramp(&mut w);
+    let e = w.spawn(v(0.5, long_ramp_y(19.0) + 0.05, 19.0));
+    w.set_input(|_, _| mv(0.0, 0.0));
+    w.step(ticks(4.0));
+    assert!(!w.c(e).sprint_slide.active);
+    assert!(w.horizontal_speed(e) < 0.01);
+}

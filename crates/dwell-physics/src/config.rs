@@ -163,13 +163,18 @@ pub struct SprintSlide {
     pub steer_rate: f32,
     /// Ticks after a slide ends before another can start.
     pub cooldown_ticks: u16,
+    /// m/s: a slide carried up the ground at least this fast leaves it where the ground stops
+    /// rising (a crest: a ramp's lip, or a step-up at its top) with that rise, instead of following
+    /// it down flat (§6.9, owner 2026-11-05: ramp "jumps" keep their momentum).
+    pub crest_launch_min_rise: f32,
 }
 
 /// ◆ Which contacts an impact can hurt on (§6.10, `damage.impact_surfaces`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ImpactSurfaces {
-    /// Ground only (owner, 2026-10-21): a contact whose face-local slope is walkable
-    /// (`probes.max_slope_angle`), landings and ramps; walls, steep faces and ceilings never hurt.
+    /// Flat ground only (owner, 2026-10-21: "just ground"; 2026-11-05: a hit on "a half slope or
+    /// steep slope … should be 0"): a contact whose face-local slope is no steeper than
+    /// `damage.impact_max_slope_angle`; ramps, walls, steep faces and ceilings never hurt.
     Ground,
     /// Every contact: floors, ramps, walls and ceilings.
     All,
@@ -185,6 +190,10 @@ pub struct Damage {
     pub impact_damage_per_speed: f32,
     /// The contacts an impact can hurt on: the ground (default) or every surface.
     pub impact_surfaces: ImpactSurfaces,
+    /// ° (face-local): the steepest surface that is ground to `ImpactSurfaces::Ground`. Under the
+    /// ½ m ramp's 26.57°, so only flat ground (and near-flat bodies) hurts: a landing on a ramp of
+    /// either pitch slides on instead.
+    pub impact_max_slope_angle: f32,
     pub crush_speed: f32,
     pub crush_ticks: u16,
 }
@@ -332,11 +341,13 @@ impl Default for PlayerControllerConfig {
                 slope_gravity: 1.5,
                 steer_rate: 90.0,
                 cooldown_ticks: 30,
+                crest_launch_min_rise: 2.0,
             },
             damage: Damage {
                 impact_damage_min_speed: 12.0,
                 impact_damage_per_speed: 8.0,
                 impact_surfaces: ImpactSurfaces::Ground,
+                impact_max_slope_angle: 10.0,
                 crush_speed: 4.0,
                 crush_ticks: 6,
             },

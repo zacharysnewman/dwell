@@ -614,3 +614,72 @@ fn walking_and_running_over_diagonal_hillsides_has_no_hang_ups_or_flicker() {
     );
     assert!(fails.is_empty(), "{}", fails.join("\n"));
 }
+
+/// A kicker on a flat floor: ½ m ramps rising toward +z from z = 0, `rows(z)` cells high.
+fn kicker(w: &mut PlayerTestWorld, rows: fn(i32, i32) -> i32) {
+    terrain(w, (-4, -12, 4, 24), &rows);
+}
+
+/// The generated crest: two ½ m ramps up to a flat column 1.5 m high (the rule leaves a peak's
+/// column flat, so the ramps top out ½ m under it: a step at the top), then a drop.
+fn crest(_: i32, z: i32) -> i32 {
+    if (0..3).contains(&z) { z + 1 } else { 0 }
+}
+
+/// Launched along +z at `speed` m/s just above the floor at z = −6 (crouch held: it lands into a
+/// slide, §6.9; `slide` false: running, no crouch), over `kicker`. The highest the feet got past
+/// the kicker's top (z > `top_z`), and whether the player slid up the ramps.
+fn over_the_kicker(rows: fn(i32, i32) -> i32, top_z: f32, speed: f32, slide: bool) -> (f32, bool) {
+    let mut w = PlayerTestWorld::new();
+    kicker(&mut w, rows);
+    let e = w.spawn(Vec3::new(0.5, 0.3, -6.0));
+    if slide {
+        w.kick(0, e, Vec3::new(0.0, 0.0, speed));
+    }
+    w.set_input(move |_, _| input(0.0, 1.0, !slide, false, slide, 0.0, 0.0));
+    let (mut highest, mut slid) = (f32::MIN, false);
+    for _ in 0..ticks(2.0) {
+        w.step(1);
+        let z = w.pos(e).z;
+        if (0.0..top_z).contains(&z) {
+            slid |= w.c(e).sprint_slide.active;
+        }
+        if z > top_z {
+            highest = highest.max(w.feet(e));
+        }
+    }
+    (highest, slid)
+}
+
+#[test]
+fn a_slide_up_ramps_carries_its_rise_over_the_crest() {
+    // Owner (2026-11-05): "Step movement is ruining momentum off of slope 'jumps' … I can see where
+    // my character tries to 'step' forward at the top of the ramp, changing the trajectory." At
+    // 12 m/s up ½ m ramps the slide rises at ~5.4 m/s; the step-up onto the crest's flat column
+    // (1.5 m) stood the player on it with no rise, and the slide ran off its far side flat
+    // (highest 1.5 m). Now the rise carries on from the step: an arc over the top.
+    let (highest, slid) = over_the_kicker(crest, 2.0, 12.0, true);
+    assert!(slid, "slid up the ramps");
+    assert!(
+        highest > 2.0,
+        "flew over the crest: feet at most {highest} m (top 1.5 m)"
+    );
+    // A ramp that ends in the air (no step at its top, 1 m): the ground snap held the body over
+    // its lip and the rise was lost there too.
+    let lip: fn(i32, i32) -> i32 = |_, z| if (0..2).contains(&z) { z + 1 } else { 0 };
+    let (highest, slid) = over_the_kicker(lip, 2.0, 12.0, true);
+    assert!(slid, "slid up the ramp");
+    assert!(
+        highest > 1.5,
+        "flew off the lip: feet at most {highest} m (lip 1 m)"
+    );
+}
+
+#[test]
+fn running_over_a_crest_stays_on_the_ground() {
+    // Walking and running keep the ground (no hops, `walking_the_playground_…`): only a slide's
+    // momentum launches off a crest.
+    let (highest, slid) = over_the_kicker(crest, 2.0, 0.0, false);
+    assert!(!slid);
+    assert!(approx(highest, 1.5, 0.05), "ran over the top: {highest}");
+}
