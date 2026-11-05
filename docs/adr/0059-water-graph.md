@@ -1,5 +1,6 @@
 # 0059. Water as data: the pool graph
 
+- Superseded by [ADR 0060](0060-water-surface-grid.md): the basins were removed in 0.48.2, the river lips and the pool graph in 0.49.0.
 - Status: Accepted (the owner, 2026-11-04: "Go for it, implement G1-3"); built G1–G3 (0.48.0);
   amends ADR 0057 and 0058
 - Date: 2026-11-04

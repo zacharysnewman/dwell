@@ -6,18 +6,6 @@ pins it.
 
 ## Open
 
-### 29. Dirt walls stick out into rivers at their step-downs
-
-*Reported 2026-11-05 (0.48.1), seen "for quite a few versions".* Blocks of the bank (dirt, grass on
-top) reach into the channel where a river steps down a row, standing over the water. A river
-generation artifact: the step's **lip** (ADR 0058, `terrain.rs` `LipPlan`, `river_lip_rise`): the
-generator raises a crest across the channel `lip_cells` wide and walls the columns behind and beside
-it `river_lip_rise` rows over the water, so the basin engine's weir law held each pool exactly at its
-drawn level. Since 0.48.2 the water surface grid rests the world's water as drawn whatever its shape
-(its rest layer, WATER_SURFACE_GRID.md §3), so the lips do nothing. Fix: Phase 53 G1 stops drawing
-beds, levels and lips (a change to the terrain a seed generates: the 0.49.0 line), with a test that no
-generated solid stands over a river's water inside its channel.
-
 ### 23. A block can't be placed against the downhill side of a ramp
 
 *Reported 2026-11-03 (0.44.2).* "I can't place a block against the outer edge of (downhill) side of a
@@ -40,6 +28,18 @@ lip has room for 3 of its 4 cells. One lip in 44,401 on seeds 0–5; the checker
 thousand. Fix: plan a junction step's band across both rivers.
 
 ## Fixed
+
+### 29. Dirt walls stuck out into rivers at their step-downs (fixed in 0.49.0)
+
+*Reported 2026-11-05 (0.48.1), seen "for quite a few versions".* Blocks of the bank (dirt, grass on
+top) reach into the channel where a river steps down a row, standing over the water. A river
+generation artifact: the step's **lip** (ADR 0058, `terrain.rs` `LipPlan`, `river_lip_rise`): the
+generator raises a crest across the channel `lip_cells` wide and walls the columns behind and beside
+it `river_lip_rise` rows over the water, so the basin engine's weir law held each pool exactly at its
+drawn level. Since 0.48.2 the water surface grid rests the world's water as drawn whatever its shape
+(its rest layer, WATER_SURFACE_GRID.md §3), so the lips do nothing. Fixed in 0.49.0 (Phase 53
+G1a): the generator draws no lips; `terrain.rs` `no_dry_wall_stands_in_a_rivers_channel` (red before:
+seed 0's (−6159, 3946) stood a row over its river's water).
 
 ### 26. Water risen over a steep slope left air in the bottom half of its ramps (fixed in 0.47.0)
 

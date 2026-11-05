@@ -58,13 +58,13 @@ one's status line. Resolving an item in `ARCHITECTURE.md` Open Decisions require
 | [0050](0050-the-world-owns-its-look.md) | The world owns its look: sky, fog and clouds per ray, not per viewer | Accepted |
 | [0051](0051-felling.md) | Felling: support as block data, pieces as server bodies | Accepted |
 | [0052](0052-built-bodies.md) | Built bodies: editable pieces, the build platform, saved and floating | Accepted (stages B1–B3 planned) |
-| [0053](0053-water-flow.md) | Water flow: basins with one level, joined by outlets | Accepted (Phase 52; W1 built) |
+| [0053](0053-water-flow.md) | Water flow: basins with one level, joined by outlets | Accepted (Phase 52; W1 built); superseded by 0060 (basins removed 0.48.2) |
 | [0054](0054-world-settings.md) | World settings sent at join (the clock, the water speed) | Accepted (built, 0.42.0) |
-| [0055](0055-water-at-rest.md) | Water found at rest, fed by the world map (amends 0053) | Accepted (built, 0.42.2) |
-| [0056](0056-one-opening-law.md) | One opening law, C·A·√(2gΔh), for every opening and shared face (amends 0053, 0055) | Accepted (built, 0.43.2) |
-| [0057](0057-balanced-rivers.md) | Balanced rivers: generated water at rest by the engine's one law, sloped water edges (supersedes 0055 once built) | Accepted (built, 0.45.0; amended by 0058) |
-| [0058](0058-visible-water.md) | Visible water: water moves between pools only where it is seen to; lips planned exactly | Accepted (built, 0.47.0; amended by 0059) |
-| [0059](0059-water-graph.md) | Water as data: the pool graph from the world map, virtual pools, no hidden walls, one model for all water | Accepted (G1–G3 built, 0.48.0) |
+| [0055](0055-water-at-rest.md) | Water found at rest, fed by the world map (amends 0053) | Accepted (built, 0.42.2); superseded by 0060 (basins removed 0.48.2) |
+| [0056](0056-one-opening-law.md) | One opening law, C·A·√(2gΔh), for every opening and shared face (amends 0053, 0055) | Accepted (built, 0.43.2); superseded by 0060 (basins removed 0.48.2) |
+| [0057](0057-balanced-rivers.md) | Balanced rivers: generated water at rest by the engine's one law, sloped water edges (supersedes 0055 once built) | Accepted (built, 0.45.0; amended by 0058); superseded by 0060 (basins removed 0.48.2, lips 0.49.0) |
+| [0058](0058-visible-water.md) | Visible water: water moves between pools only where it is seen to; lips planned exactly | Accepted (built, 0.47.0; amended by 0059); superseded by 0060 (basins removed 0.48.2, lips 0.49.0) |
+| [0059](0059-water-graph.md) | Water as data: the pool graph from the world map, virtual pools, no hidden walls, one model for all water | Accepted (G1–G3 built, 0.48.0); superseded by 0060 (basins removed 0.48.2, lips 0.49.0) |
 | [0060](0060-water-surface-grid.md) | Water as a simulated surface grid (sleeping chunks, pools, held sea); generated water filled by it at world creation, no drawn beds, levels or lips | Accepted (2026-11-05; planned, Phase 53) |
 
 Phase numbers in ADRs follow the implementation plan as it was then. In ADRs 0001–0010, Phases

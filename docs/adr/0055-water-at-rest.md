@@ -1,5 +1,6 @@
 # 0055. Water found at rest, fed by the world map
 
+- Superseded by [ADR 0060](0060-water-surface-grid.md): the basins were removed in 0.48.2.
 - Status: Accepted (the owner, 2026-11-03: "implement the redesign now"); amends ADR 0053
 - Date: 2026-11-03
 - Design: [`WATER_FLOW.md`](../WATER_FLOW.md) §2.2, §15, §16
