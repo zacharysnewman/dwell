@@ -76,7 +76,7 @@
 <div id="panel">
   <div id="panel-head"><h1>Water Grid Lab</h1><button id="fold" aria-expanded="true">Hide</button></div>
   <div id="panel-body">
-  <p class="sub intro">Dwell's candidate water model: a depth on each 1 m ground column, flowing to its neighbours through virtual pipes (Timberborn's model). Ground steps are ½ m.</p>
+  <p class="sub intro">Dwell's candidate water model: a depth on each 1 m ground column, moving to its neighbours across their shared faces (shallow-water flow: it needs depth to move). Springs hold their cell full; water reaching the far edge is removed. Ground steps are ½ m.</p>
   <div class="sec">Scene</div>
   <div class="row" id="scenes"></div>
   <p id="scene-note"></p>
@@ -99,57 +99,80 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
 // ---- The model (the same as crates/dwell-sim/src/watergrid.rs) ----
-const W = 96, H = 48, CELL = 1, G = 9.81, PIPE = 1, KEEP = 0.5, DT = 0.1;
+// Local-inertial shallow water (Bates et al. 2010, LISFLOOD-FP): each face carries a discharge per
+// metre of width q (m²/s), pushed by the slope of the water surface across it, slowed by bed
+// friction (Manning), through the depth that stands over the higher of its two beds — so flow
+// needs depth, and water over a dam's top stands as deep as it must to pass what comes.
+const W = 96, H = 48, CELL = 1, G = 9.81, MANNING = 0.03, DT = 0.1, DRY = 1e-4;
 const N = W * H;
-let ground = new Float32Array(N), depth = new Float32Array(N), next = new Float32Array(N);
-let flow = new Float32Array(N * 4);
-let sources = [], sinks = [];
+let ground = new Float32Array(N), depth = new Float32Array(N);
+let qx = new Float32Array(N), qz = new Float32Array(N); // across each column's +x and +z faces
+const nqx = new Float32Array(N), nqz = new Float32Array(N), scale = new Float32Array(N);
+let sources = [], sinks = []; // springs: [column, depth held] (an infinite source); sinks: columns emptied
 let brought = 0, taken = 0, waterTime = 0;
-const DX = [1, -1, 0, 0], DZ = [0, 0, 1, -1];
 const at = (x, z) => z * W + x;
-function nb(i, d) {
-  const x = i % W + DX[d], z = ((i / W) | 0) + DZ[d];
-  return (x < 0 || z < 0 || x >= W || z >= H) ? -1 : z * W + x;
-}
-const NB = new Int32Array(N * 4);
-for (let i = 0; i < N; i++) for (let d = 0; d < 4; d++) NB[i * 4 + d] = nb(i, d);
 
-function step(dt) {
-  const area = CELL * CELL, keep = Math.pow(KEEP, dt);
-  for (const [i, q] of sources) { depth[i] += q * dt / area; brought += q * dt; }
-  for (let i = 0; i < N; i++) {
-    const hi = ground[i] + depth[i];
-    let total = 0;
-    for (let d = 0; d < 4; d++) {
-      const j = NB[i * 4 + d];
-      let f = 0;
-      if (j >= 0) {
-        const dh = hi - (ground[j] + depth[j]);
-        f = Math.max(0, flow[i * 4 + d] * keep + dt * PIPE * G * dh / CELL);
-      }
-      flow[i * 4 + d] = f; total += f;
-    }
+function face(a, b, q, dt) {
+  const ea = ground[a] + depth[a], eb = ground[b] + depth[b];
+  const h = Math.max(ea, eb) - Math.max(ground[a], ground[b]);
+  if (h <= DRY) return 0;
+  const friction = q === 0 ? 1 : 1 + G * dt * MANNING * MANNING * Math.abs(q) / Math.pow(h, 7 / 3);
+  const nq = (q - G * h * dt * (eb - ea) / CELL) / friction;
+  const limit = h * Math.sqrt(G * h); // no faster than critical flow over the face
+  return Math.max(-limit, Math.min(limit, nq));
+}
+function substep(dt) {
+  const area = CELL * CELL;
+  for (const [i, held] of sources) if (depth[i] < held) { brought += (held - depth[i]) * area; depth[i] = held; }
+  for (let z = 0; z < H; z++) for (let x = 0; x < W; x++) {
+    const i = z * W + x;
+    nqx[i] = x + 1 < W && (depth[i] > 0 || depth[i + 1] > 0) ? face(i, i + 1, qx[i], dt) : 0;
+    nqz[i] = z + 1 < H && (depth[i] > 0 || depth[i + W] > 0) ? face(i, i + W, qz[i], dt) : 0;
+  }
+  for (let z = 0; z < H; z++) for (let x = 0; x < W; x++) {
+    const i = z * W + x;
+    let out = Math.max(0, nqx[i]) + Math.max(0, nqz[i]);
+    if (x > 0) out += Math.max(0, -nqx[i - 1]);
+    if (z > 0) out += Math.max(0, -nqz[i - W]);
+    out *= CELL * dt;
     const have = depth[i] * area;
-    if (total * dt > have && total > 0) {
-      const k = have / (total * dt);
-      for (let d = 0; d < 4; d++) flow[i * 4 + d] *= k;
-    }
+    scale[i] = out > have ? have / out : 1;
   }
-  for (let i = 0; i < N; i++) {
-    let net = -(flow[i * 4] + flow[i * 4 + 1] + flow[i * 4 + 2] + flow[i * 4 + 3]);
-    for (let d = 0; d < 4; d++) { const j = NB[i * 4 + d]; if (j >= 0) net += flow[j * 4 + (d ^ 1)]; }
-    next[i] = Math.max(0, depth[i] + net * dt / area);
+  for (let z = 0; z < H; z++) for (let x = 0; x < W; x++) {
+    const i = z * W + x;
+    nqx[i] *= nqx[i] > 0 ? scale[i] : (x + 1 < W ? scale[i + 1] : 1);
+    nqz[i] *= nqz[i] > 0 ? scale[i] : (z + 1 < H ? scale[i + W] : 1);
   }
-  [depth, next] = [next, depth];
+  const k = CELL * dt / area;
+  for (let z = 0; z < H; z++) for (let x = 0; x < W; x++) {
+    const i = z * W + x;
+    let net = -nqx[i] - nqz[i];
+    if (x > 0) net += nqx[i - 1];
+    if (z > 0) net += nqz[i - W];
+    depth[i] = Math.max(0, depth[i] + net * k);
+  }
+  qx.set(nqx); qz.set(nqz);
   for (const i of sinks) { taken += depth[i] * area; depth[i] = 0; }
   waterTime += dt;
 }
+// One step of DT, in as many substeps as the deepest water needs to stay stable.
+function step(dt) {
+  let deepest = 0.01;
+  for (let i = 0; i < N; i++) if (depth[i] > deepest) deepest = depth[i];
+  const n = Math.max(1, Math.ceil(dt / (0.7 * CELL / Math.sqrt(G * deepest))));
+  for (let s = 0; s < n; s++) substep(dt / n);
+}
+// What leaves column i toward its neighbour j (m²/s, 0 if none).
+function outflow(i, j) {
+  if (j === i + 1) return Math.max(0, qx[i]);
+  if (j === i - 1) return Math.max(0, -qx[j]);
+  if (j === i + W) return Math.max(0, qz[i]);
+  return Math.max(0, -qz[j]);
+}
 function speedAt(i) {
-  const d = Math.max(depth[i], 0.05);
-  const jL = NB[i * 4 + 1], jR = NB[i * 4], jB = NB[i * 4 + 3], jF = NB[i * 4 + 2];
-  let vx = flow[i * 4] - flow[i * 4 + 1] + (jL >= 0 ? flow[jL * 4] : 0) - (jR >= 0 ? flow[jR * 4 + 1] : 0);
-  let vz = flow[i * 4 + 2] - flow[i * 4 + 3] + (jB >= 0 ? flow[jB * 4 + 2] : 0) - (jF >= 0 ? flow[jF * 4 + 3] : 0);
-  return 0.5 * Math.hypot(vx, vz) / (d * CELL);
+  const x = i % W, d = Math.max(depth[i], 0.05);
+  const vx = 0.5 * (qx[i] + (x > 0 ? qx[i - 1] : 0)), vz = 0.5 * (qz[i] + (i >= W ? qz[i - W] : 0));
+  return Math.hypot(vx, vz) / d;
 }
 
 // ---- Scenes ----
@@ -164,13 +187,13 @@ function valley(slope, bankH = 0.5) {
     if (off > 1) h += bankH + Math.max(0, off - 4) * 0.35;
     ground[at(x, z)] = q5(h);
   }
-  sources = [[at(0, mid), 0.25], [at(0, mid - 1), 0.25], [at(0, mid + 1), 0.25]];
+  sources = [[at(0, mid), 0.35], [at(0, mid - 1), 0.35], [at(0, mid + 1), 0.35]];
   sinks = []; for (let z = 0; z < H; z++) sinks.push(at(W - 1, z));
 }
 const SCENES = {
-  river: { cam: [[64, 24, 46], [44, 9, 24]], name: 'River', note: 'A river in its channel, banks ½ m over its bed, falling along the valley. It settles and flows; the surface slopes.',
+  river: { cam: [[64, 24, 46], [44, 9, 24]], name: 'River', note: 'Springs (cyan) hold the river\'s head full; water reaching the far edge (dark) is removed. A river in its channel, banks 1 m over its bed, falling along the valley. It settles and flows; the surface slopes.',
     make() { valley(0.04, 1.0); } },
-  damLevel: { cam: [[62, 18, 40], [47, 10, 24]], name: 'Dam level with banks', note: 'A dam across the river as high as the banks: the water rises to that height and leaves over the dam and the banks around its ends, as real water does.',
+  damLevel: { cam: [[62, 18, 40], [47, 10, 24]], name: 'Dam level with banks', note: 'A dam across the river as high as the banks: the water rises to that height, pours over the dam and over the banks beside it, and the banks\' water falls back into the channel below.',
     make() { valley(0.04, 1.0); const mid = H >> 1, x = 48; for (let z = mid - 1; z <= mid + 1; z++) { ground[at(x, z)] = ground[at(x, mid - 2)]; built.add(at(x, z)); } } },
   damLow: { cam: [[62, 18, 40], [47, 10, 24]], name: 'Dam below banks', note: 'A dam ½ m lower than the banks: the river backs up behind it and pours over its top into the river below.',
     make() { valley(0.04, 1.0); const mid = H >> 1, x = 48; for (let z = mid - 1; z <= mid + 1; z++) { ground[at(x, z)] = ground[at(x, mid - 2)] - 0.5; built.add(at(x, z)); } } },
@@ -183,20 +206,20 @@ const SCENES = {
       for (let x = 29; x <= 40; x++) { ground[at(x, H - 9)] += 1; ground[at(x, H - 2)] += 1; built.add(at(x, H - 9)); built.add(at(x, H - 2)); }
       for (let z = H - 9; z <= H - 2; z++) { ground[at(29, z)] += 1; ground[at(40, z)] += 1; built.add(at(29, z)); built.add(at(40, z)); }
       ground[at(35, H - 9)] -= 1.0;
-      sources.push([at(35, H - 5), 0.6]);
+      sources.push([at(35, H - 5), 0.9]);
     } },
   flood: { cam: [[60, 30, 64], [48, 9, 28]], name: 'Flood over a floodplain', note: 'A big flow down a channel with low banks beside a flat floodplain: the river overtops its banks and spreads over the plain, then drains back as the flow drops (use Remove water on the source end).',
     make() {
       valley(0.03, 0.5);
       const mid = H >> 1;
       for (let z = mid + 2; z < H - 2; z++) for (let x = 0; x < W; x++) ground[at(x, z)] = q5(12 - 0.03 * x + 0.5);
-      sources = sources.map(([i, q]) => [i, q * 16]);
+      sources = sources.map(([i]) => [i, 1.6]);
     } },
 };
 let scene = 'river';
 function load(name) {
   scene = name;
-  ground.fill(0); depth.fill(0); flow.fill(0); brought = 0; taken = 0; waterTime = 0;
+  ground.fill(0); depth.fill(0); qx.fill(0); qz.fill(0); brought = 0; taken = 0; waterTime = 0;
   built = new Set();
   SCENES[name].make();
   base = new Float32Array(ground);
@@ -271,7 +294,9 @@ function buildGround() {
     tmp.position.set(x + 0.5, BASE + h / 2, z + 0.5); tmp.scale.set(1, Math.max(h, 0.01), 1); tmp.updateMatrix();
     groundMesh.setMatrixAt(i, tmp.matrix);
     const v = ((x + z) & 1) ? 0.03 : 0; // a faint checker to read the cells
-    if (ground[i] > baseAt(x, z) + 0.01 || built.has(i)) col.setRGB(0.55 - v, 0.53 - v, 0.50 - v); // placed blocks: stone
+    if (sources.some(([j]) => j === i)) col.setRGB(0.25, 0.75, 0.85); // a spring: holds its column full
+    else if (sinks.includes(i)) col.setRGB(0.22, 0.2, 0.24); // the edge: water reaching it is removed
+    else if (ground[i] > baseAt(x, z) + 0.01 || built.has(i)) col.setRGB(0.55 - v, 0.53 - v, 0.50 - v); // placed blocks: stone
     else col.setRGB(0.36 - v, 0.56 - v, 0.27 - v); // grass
     groundMesh.setColorAt(i, col);
   }
@@ -288,49 +313,75 @@ wGeo.setAttribute('position', new THREE.BufferAttribute(wPos, 3));
 wGeo.setAttribute('color', new THREE.BufferAttribute(wCol, 4));
 const wMat = new THREE.MeshLambertMaterial({ vertexColors: true, transparent: true, opacity: 1, vertexAlpha: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2, side: THREE.DoubleSide });
 const water = new THREE.Mesh(wGeo, wMat); sceneG.add(water);
-water.frustumCulled = false; // its bounds change every frame (they were computed once, empty, and culled it)
+water.frustumCulled = false;
+// Curtains (water falling over an edge) in their own unlit mesh: foam reads as foam whatever the sun.
+const cGeo = new THREE.BufferGeometry();
+const cPos = new Float32Array(N * 24 * 3), cCol = new Float32Array(N * 24 * 4);
+cGeo.setAttribute('position', new THREE.BufferAttribute(cPos, 3));
+cGeo.setAttribute('color', new THREE.BufferAttribute(cCol, 4));
+const curtains = new THREE.Mesh(cGeo, new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, vertexAlpha: true, depthWrite: false, side: THREE.DoubleSide }));
+curtains.frustumCulled = false; sceneG.add(curtains); // its bounds change every frame (they were computed once, empty, and culled it)
 function surfaceOf(i, round) {
   const s = ground[i] + depth[i];
   return round ? Math.max(ground[i] + 0.5, Math.ceil(s * 2 - 0.25) / 2) - 0.06 : s;
 }
-function corner(x, z, round) {
+// A corner of column i's surface: the mean of the wet columns at that corner whose surface is
+// near its own (so a pour over an edge is a curtain, not a ramp).
+function cornerOf(i, own, cx, cz, round) {
   let sum = 0, n = 0;
   for (const [dx, dz] of [[-1, -1], [0, -1], [-1, 0], [0, 0]]) {
-    const cx = x + dx, cz = z + dz;
-    if (cx < 0 || cz < 0 || cx >= W || cz >= H) continue;
-    const i = at(cx, cz);
-    if (depth[i] > MIN_DRAW) { sum += surfaceOf(i, round); n++; }
+    const x = cx + dx, z = cz + dz;
+    if (x < 0 || z < 0 || x >= W || z >= H) continue;
+    const j = at(x, z);
+    if (depth[j] <= MIN_DRAW) continue;
+    const sj = surfaceOf(j, round);
+    if (Math.abs(sj - own) < 0.2) { sum += sj; n++; }
   }
-  return n ? sum / n : null;
+  return n ? sum / n : own;
+}
+const FOAM = new THREE.Color(0.86, 0.93, 0.98);
+function push(v, x, y, z, c, a, pos = wPos, cols = wCol) {
+  pos[v * 3] = x; pos[v * 3 + 1] = y; pos[v * 3 + 2] = z;
+  cols[v * 4] = c.r; cols[v * 4 + 1] = c.g; cols[v * 4 + 2] = c.b; cols[v * 4 + 3] = a;
 }
 function buildWater() {
   const round = document.getElementById('round').checked;
   const bySpeed = document.getElementById('speedcol').checked;
-  let v = 0;
-  const cornerH = new Float32Array((W + 1) * (H + 1));
-  for (let z = 0; z <= H; z++) for (let x = 0; x <= W; x++) cornerH[z * (W + 1) + x] = corner(x, z, round) ?? NaN;
+  let v = 0, cv = 0;
   for (let i = 0; i < N; i++) {
     if (depth[i] <= MIN_DRAW) continue;
     const x = i % W, z = (i / W) | 0;
     const own = surfaceOf(i, round);
-    const hAt = (cx, cz) => { const h = cornerH[cz * (W + 1) + cx]; return round ? own : (Number.isNaN(h) ? own : h); };
-    const p = [[x, z], [x + 1, z], [x + 1, z + 1], [x, z], [x + 1, z + 1], [x, z + 1]];
+    const h = (cx, cz) => round ? own : cornerOf(i, own, cx, cz, round);
     const sp = bySpeed && depth[i] > 0.08 ? Math.min(1, Math.max(0, speedAt(i) - 0.5) / 2.5) : 0;
     const deep = Math.min(1, depth[i] / 1.5);
-    const alpha = 0.45 + 0.5 * Math.min(1, depth[i] / 0.5); // thin water shows the ground under it
+    const alpha = 0.5 + 0.45 * Math.min(1, depth[i] / 0.4); // thin water shows the ground under it
     col.setRGB(0.12 + 0.68 * sp - 0.06 * deep, 0.38 + 0.52 * sp - 0.14 * deep, 0.78 + 0.18 * sp - 0.18 * deep);
-    for (const [cx, cz] of p) {
-      wPos[v * 3] = cx; wPos[v * 3 + 1] = hAt(cx, cz); wPos[v * 3 + 2] = cz;
-      wCol[v * 4] = col.r; wCol[v * 4 + 1] = col.g; wCol[v * 4 + 2] = col.b; wCol[v * 4 + 3] = alpha; v++;
+    for (const [cx, cz] of [[x, z], [x + 1, z], [x + 1, z + 1], [x, z], [x + 1, z + 1], [x, z + 1]]) push(v++, cx, h(cx, cz), cz, col, alpha);
+    // Curtains: where it pours into a lower neighbour, a falling sheet down the shared edge.
+    for (const [j, ax, az, bx, bz] of [[i + 1, x + 1, z, x + 1, z + 1], [i - 1, x, z, x, z + 1], [i + W, x, z + 1, x + 1, z + 1], [i - W, x, z, x + 1, z]]) {
+      if ((j === i + 1 && x + 1 >= W) || (j === i - 1 && x === 0) || j < 0 || j >= N) continue;
+      const below = ground[j] + depth[j];
+      const fall = own - below;
+      const q = outflow(i, j);
+      if (fall < 0.08 || q < 0.002) continue;
+      const a = Math.min(0.9, 0.5 + 2 * q);
+      const top = own, bot = Math.max(below, ground[j]);
+      // A few cm out from the edge, into the lower column, clear of the block face there.
+      const ox = (j === i + 1 ? 0.04 : j === i - 1 ? -0.04 : 0), oz = (j === i + W ? 0.04 : j === i - W ? -0.04 : 0);
+      const P = (vx, vy, vz) => push(cv++, vx + ox, vy, vz + oz, FOAM, a, cPos, cCol);
+      P(ax, top, az); P(bx, top, bz); P(bx, bot, bz); P(ax, top, az); P(bx, bot, bz); P(ax, bot, az);
     }
   }
   wGeo.setDrawRange(0, v);
   wGeo.attributes.position.needsUpdate = true; wGeo.attributes.color.needsUpdate = true;
   wGeo.computeVertexNormals();
+  cGeo.setDrawRange(0, cv);
+  cGeo.attributes.position.needsUpdate = true; cGeo.attributes.color.needsUpdate = true;
 }
 
 // ---- Tools ----
-const TOOLS = { raise: 'Place block (+½ m)', lower: 'Dig (−½ m)', source: 'Add a spring', drain: 'Remove water' };
+const TOOLS = { raise: 'Place block (+½ m)', lower: 'Dig (−½ m)', source: 'Add a spring', drain: 'Remove water + springs' };
 let tool = 'raise';
 const ray = new THREE.Raycaster(), mouse = new THREE.Vector2();
 function pick(ev) {
@@ -345,10 +396,10 @@ function apply(i) {
   if (i == null || i === last) return; last = i;
   if (tool === 'raise') { ground[i] += 0.5; buildGround(); }
   else if (tool === 'lower') { ground[i] = Math.max(0.5, ground[i] - 0.5); buildGround(); }
-  else if (tool === 'source') sources.push([i, 0.6]);
+  else if (tool === 'source') { sources.push([i, 0.5]); buildGround(); }
   else if (tool === 'drain') { for (let dz = -2; dz <= 2; dz++) for (let dx = -2; dx <= 2; dx++) {
     const x = i % W + dx, z = ((i / W) | 0) + dz; if (x >= 0 && z >= 0 && x < W && z < H) { const j = at(x, z); taken += depth[j]; depth[j] = 0; }
-  } sources = sources.filter(([j]) => Math.abs(j % W - i % W) > 2 || Math.abs(((j / W) | 0) - ((i / W) | 0)) > 2); }
+  } sources = sources.filter(([j]) => Math.abs(j % W - i % W) > 2 || Math.abs(((j / W) | 0) - ((i / W) | 0)) > 2); buildGround(); }
 }
 const down = new Set();
 renderer.domElement.addEventListener('pointerdown', (e) => {
@@ -420,7 +471,7 @@ function loop() {
   renderer.render(sceneG, cam);
   requestAnimationFrame(loop);
 }
-window.lab = { load, step, depth: () => depth, ground: () => ground, at, W, H, cam, controls };
+window.lab = { load, step, outflow, buildWater, count: () => cGeo.drawRange.count, depth: () => depth, ground: () => ground, at, W, H, cam, controls };
 load(location.hash.slice(1) in SCENES ? location.hash.slice(1) : 'river');
 loop();
 </script>

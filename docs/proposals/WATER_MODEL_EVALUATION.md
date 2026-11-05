@@ -129,42 +129,63 @@ further. If C fails the prototype, A with 0.48.1's rules stays, and the effort g
 ## 5. Prototype results (2026-11-04)
 
 The owner: the "only near players" scale assumption is unmeasured, prototype it. Built:
-`dwell-sim` `watergrid.rs` (the model, three tests, a cost and a stability bench) and the
+`dwell-sim` `watergrid.rs` (the model, five tests, a cost and a stability bench) and the
 [Water Grid Lab](../prototypes/water-grid-lab.html) (the same model in the browser, five scenes,
-tools to place, dig, add springs and remove water).
+camera and edit modes, tools to place, dig, add springs and remove water).
+
+**Two versions.** The first was the virtual-pipe model as Timberborn describes it (a pipe's flow
+accelerated by the difference in surface height). Its flaw showed at once: a pipe carries flow
+whatever the depth, so a 1 cm film carried the whole river over a dam, and nothing could be seen
+pouring over it (the owner: "that model still doesn't show water pouring over the top of the
+dam"). The second, now in both, is the **local-inertial** form of the shallow-water equations
+(Bates, Horritt & Fewtrell 2010; LISFLOOD-FP, used for flood mapping): each face carries a
+discharge per metre of width through the depth standing over the higher of its two beds, with
+Manning friction and no faster than critical flow. Flow needs depth: water over a crest stands at
+least critical depth (a test). **Springs** hold their column at a depth (an infinite source, so
+the river's flow is what its channel takes), and water reaching the scene's edge is removed: the
+water between is finite and conserved (the owner: "finite water, with infinite source, and delete
+at the bottom").
 
 **Behaviour** (tests and the lab):
 - Water is conserved (to 1e-7 of what came in).
-- A river settles in its channel, passing at its foot what its source brings (within 5 %), banks dry.
-- A dam level with its banks: the river rises over the dam (0.18 m over its top) and over the banks
-  next to it, and runs on below. No rule for it: it is what the levels do.
-- A spill from a pond through a gap in its rim runs straight down a terraced hillside into the river.
+- A river settles in its channel, passing at its foot what its springs bring (within 5 %), banks dry.
+- A dam below the banks: the river backs up behind it, stands 0.29 m over its top, and falls into
+  the river below; banks dry.
+- A dam level with the banks: the river rises over the dam and the banks beside it (0.14 m over
+  the dam), and the banks' water falls back into the channel along its edge.
+- A spill from a pond through a gap in its rim runs down a terraced hillside into the river.
+- Drawn: a surface per column, corners averaged only with neighbours at about its level, and an
+  unlit **curtain** of falling water wherever a column pours into a lower one (over a dam's face,
+  off a bank into the channel, down a terrace step).
 
 **Cost, measured** (native, release, one thread, Apple silicon; `cargo test -p dwell-sim --release
 --lib watergrid -- --ignored --nocapture`):
 
 | | |
 |---|---|
-| Per wet column per step | **8 ns** (the same at 256², 1024², 2048² columns: no cache cliff) |
-| Longest stable step | **0.2 s** (a 2 m dam break; 0.3 s overshoots to twice the depth) |
-| So, per column per second of water time | 40 ns |
-| One core, real time | **~25 million wet columns** |
-| The lab's JavaScript | 37 ns per column per step (WASM would sit between the two) |
+| Virtual pipes, per wet column per step | 8 ns idle (38 ns with the machine at load 5) |
+| Local-inertial, per wet column per step | 65–80 ns at load 5, about twice the pipes beside it: **~15–20 ns idle (estimated, to measure quiet)** |
+| Longest stable step | **0.15 s at 2 m deep** (0.7 × cell / √(g × depth): deeper water, shorter steps; the lab sub-steps by the deepest column) |
+| So, per column per second of water time | ~130 ns |
+| One core, real time | **~7 million wet columns** |
+| The lab's JavaScript | ~20–35 ns per column per substep |
 
 **What that means for scale** (the sizes are estimates from the world map, not measured):
-- Every river on a face, 1 m columns: ~370 km × ~15 m ≈ 5.5 million columns ≈ **a fifth of one
-  core**, natively, simulated all the time, no "near players" needed. Lakes add to it by their area.
-- Every column of a face, dry ones included (π × 25 km² of land ≈ 2 billion), is ~80 cores: out of
-  reach, and unnecessary: dry ground with no water beside it does no work and is skipped.
+- Every river on a face, 1 m columns: ~370 km × ~15 m ≈ 5.5 million columns ≈ **most of one
+  core**, natively, all the time, no "near players" needed; or a fraction of a core shared across
+  threads (the step is the same work per column, easy to split by rows). Lakes add by their area,
+  and deep still lakes would sleep (they force short steps for nothing).
+- Every column of a face, dry ones included (π × 25 km² of land ≈ 2 billion), is out of reach and
+  unnecessary: dry ground with no water beside it is skipped.
 - The sea is a boundary at a fixed level, not simulated.
-- **The real limits are memory and the browser**, not CPU: 5.5 million columns at ~24 bytes is
-  ~130 MB, too much for a browser-hosted friend world, fine on a dedicated server. A sparse store
-  (16 × 16 tiles holding only wet columns, f16 depths) or simulating at a coarser grid away from
-  players would bring it down. That is a memory choice, made after measuring, not a need of the CPU.
+- **The limits are memory, the browser and deep water**, more than CPU on a server: 5.5 million
+  columns at ~24 bytes is ~130 MB, too much for a browser-hosted friend world; a sparse store (only
+  tiles with water) or a coarser grid away from players would bring it down.
 
 So the earlier line ("it would simulate only active columns near players") was wrong as a
-requirement: natively the grid can run every river in the world at once on a fraction of a core.
-Not yet measured: layered columns (caves), the cost in WASM, and the memory of a whole face's rivers.
+requirement on a dedicated server; in a browser-hosted world some such limit is likely still
+needed. Not yet measured: layered columns (caves), the cost in WASM, the memory of a whole face's
+rivers, and a quiet-machine cost of the local-inertial step.
 
 ## 6. Questions for the owner
 
