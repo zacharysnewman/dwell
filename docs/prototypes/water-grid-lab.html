@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Water Grid Lab</title>
 <style>
   :root {
@@ -37,7 +37,27 @@
   #stats { font-variant-numeric: tabular-nums; display: grid; grid-template-columns: auto auto; gap: 2px 10px; margin-top: 6px; }
   #scene-note { color: var(--muted); margin: 0 0 8px; min-height: 2.8em; }
   .sec { font-weight: 600; margin-top: 10px; }
-  @media (max-width: 520px) { #panel { width: auto; right: 16px; left: 16px; top: auto; bottom: 16px; max-height: 45vh; } }
+  canvas { touch-action: none; display: block; }
+  #panel-head { display: flex; align-items: center; gap: 8px; }
+  #panel-head h1 { flex: 1; margin: 0; }
+  #fold { display: none; }
+  #modes { position: fixed; top: 12px; right: 12px; display: flex; gap: 0; background: var(--panel);
+    border: 1px solid var(--line); border-radius: 10px; padding: 4px; backdrop-filter: blur(6px); }
+  #modes button { border: none; background: transparent; padding: 8px 14px; font-weight: 600; min-height: 40px; }
+  #modes button.on { background: var(--accent); color: var(--accent-ink); }
+  #hint { position: fixed; top: 64px; right: 12px; max-width: 240px; color: var(--muted); background: var(--panel);
+    border: 1px solid var(--line); border-radius: 8px; padding: 6px 9px; font-size: 12px; }
+  @media (max-width: 640px), (orientation: portrait) {
+    #panel { width: auto; left: max(16px, env(safe-area-inset-left)); right: max(16px, env(safe-area-inset-right)); top: auto;
+      bottom: max(12px, env(safe-area-inset-bottom)); max-height: 46vh; max-width: none; padding: 10px 12px; }
+    #fold { display: inline-block; }
+    #panel.folded #panel-body { display: none; }
+    #modes { left: 50%; right: auto; transform: translateX(-50%); top: max(12px, env(safe-area-inset-top)); }
+    #modes button { padding: 10px 18px; }
+    #hint { left: 16px; right: 16px; max-width: none; top: calc(max(12px, env(safe-area-inset-top)) + 60px); text-align: center; }
+    button { padding: 8px 11px; }
+    .intro { display: none; }
+  }
 </style>
 <script type="importmap">
 { "imports": {
@@ -48,13 +68,19 @@
 </head>
 <body>
 <div id="view"></div>
+<div id="modes" role="group" aria-label="Mode">
+  <button id="m-camera" class="on">Camera</button>
+  <button id="m-edit">Edit</button>
+</div>
+<div id="hint"></div>
 <div id="panel">
-  <h1>Water Grid Lab</h1>
-  <p class="sub">Dwell's candidate water model: a depth on each 1 m ground column, flowing to its neighbours through virtual pipes (Timberborn's model). Ground steps are ½ m.</p>
+  <div id="panel-head"><h1>Water Grid Lab</h1><button id="fold" aria-expanded="true">Hide</button></div>
+  <div id="panel-body">
+  <p class="sub intro">Dwell's candidate water model: a depth on each 1 m ground column, flowing to its neighbours through virtual pipes (Timberborn's model). Ground steps are ½ m.</p>
   <div class="sec">Scene</div>
   <div class="row" id="scenes"></div>
   <p id="scene-note"></p>
-  <div class="sec">Tool (click or drag on the ground)</div>
+  <div class="sec">Edit tool</div>
   <div class="row" id="tools"></div>
   <div class="row">
     <button id="play" class="on">Pause</button>
@@ -65,7 +91,8 @@
   <label><input id="speedcol" type="checkbox" checked> Colour water by its speed</label>
   <div class="sec">Numbers</div>
   <div id="stats"></div>
-  <p class="sub" style="margin-top:8px">Orbit: drag with right button or two fingers; zoom: wheel. The native Rust version of this model costs ~8 ns per column per step.</p>
+  <p class="sub" style="margin-top:8px">Camera mode: drag to turn, right-drag or two fingers to pan, wheel or pinch to zoom. Edit mode: click or drag on the ground to use the tool; right-drag or two fingers still turn and zoom. Keys: C camera, E edit, hold Space to turn while editing. The native Rust version of this model costs ~8 ns per column per step.</p>
+  </div>
 </div>
 <script type="module">
 import * as THREE from 'three';
@@ -175,7 +202,15 @@ function load(name) {
   document.getElementById('scene-note').textContent = SCENES[name].note;
   document.querySelectorAll('#scenes button').forEach(b => b.classList.toggle('on', b.dataset.k === name));
   buildGround();
-  const c = SCENES[name].cam; cam.position.set(...c[0]); controls.target.set(...c[1]);
+  frameCam(SCENES[name].cam);
+}
+// A scene's camera, pulled back (and further on a narrow screen, so the valley fits across it).
+function frameCam(c) {
+  const t = new THREE.Vector3(...c[1]), off = new THREE.Vector3(...c[0]).sub(t);
+  const portrait = cam.aspect < 1;
+  if (portrait) off.y *= 1.6; // look down more steeply, so the valley fills a tall screen
+  off.multiplyScalar(portrait ? 3.2 * Math.sqrt(0.8 / Math.max(cam.aspect, 0.4)) : 2.2);
+  controls.target.copy(t); cam.position.copy(t).add(off); controls.update();
 }
 
 // ---- View ----
@@ -187,13 +222,36 @@ const cam = new THREE.PerspectiveCamera(45, 1, 0.1, 1000);
 cam.position.set(64, 24, 46);
 const controls = new OrbitControls(cam, renderer.domElement);
 controls.target.set(44, 9, 24);
-controls.mouseButtons = { LEFT: null, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE };
-controls.touches = { ONE: null, TWO: THREE.TOUCH.DOLLY_ROTATE };
+controls.enableDamping = true; controls.dampingFactor = 0.12;
+controls.maxPolarAngle = Math.PI * 0.49; controls.minDistance = 4; controls.maxDistance = 260;
+// Modes: Camera (every drag moves the view) and Edit (a left drag or one finger uses the tool;
+// right-drag and two fingers still move the view). Space held in Edit turns the view.
+let mode = 'camera', spaceHeld = false;
+function applyMode() {
+  const camNow = mode === 'camera' || spaceHeld;
+  controls.mouseButtons = camNow
+    ? { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN }
+    : { LEFT: null, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE };
+  controls.touches = camNow
+    ? { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN }
+    : { ONE: null, TWO: THREE.TOUCH.DOLLY_ROTATE };
+  document.getElementById('m-camera').classList.toggle('on', mode === 'camera');
+  document.getElementById('m-edit').classList.toggle('on', mode === 'edit');
+  const touch = matchMedia('(pointer: coarse)').matches;
+  document.getElementById('hint').textContent = mode === 'camera'
+    ? (touch ? 'Camera: one finger turns, two fingers pan and zoom' : 'Camera: drag turns, right-drag pans, wheel zooms')
+    : (touch ? 'Edit: tap or drag to use the tool; two fingers turn and zoom' : 'Edit: click or drag to use the tool; right-drag or hold Space to turn');
+  renderer.domElement.style.cursor = camNow ? 'grab' : 'crosshair';
+}
+function setMode(m) { mode = m; painting = false; applyMode(); }
 const sceneG = new THREE.Scene();
 sceneG.background = new THREE.Color(0xbfd8ea);
 sceneG.add(new THREE.HemisphereLight(0xffffff, 0x5a6b55, 1.1));
 const sun = new THREE.DirectionalLight(0xffffff, 1.4); sun.position.set(30, 60, 40); sceneG.add(sun);
-function resize() { const w = innerWidth, h = innerHeight; renderer.setSize(w, h); cam.aspect = w / h; cam.updateProjectionMatrix(); }
+function resize() {
+  const w = innerWidth, h = innerHeight; renderer.setSize(w, h); cam.aspect = w / h; cam.fov = w < h ? 55 : 45;
+  cam.updateProjectionMatrix();
+}
 addEventListener('resize', resize); resize();
 
 const boxGeo = new THREE.BoxGeometry(1, 1, 1);
@@ -288,9 +346,16 @@ function apply(i) {
     const x = i % W + dx, z = ((i / W) | 0) + dz; if (x >= 0 && z >= 0 && x < W && z < H) { const j = at(x, z); taken += depth[j]; depth[j] = 0; }
   } sources = sources.filter(([j]) => Math.abs(j % W - i % W) > 2 || Math.abs(((j / W) | 0) - ((i / W) | 0)) > 2); }
 }
-renderer.domElement.addEventListener('pointerdown', (e) => { if (e.button !== 0) return; painting = true; last = -1; apply(pick(e)); });
-renderer.domElement.addEventListener('pointermove', (e) => { if (painting) apply(pick(e)); });
-addEventListener('pointerup', () => { painting = false; });
+const down = new Set();
+renderer.domElement.addEventListener('pointerdown', (e) => {
+  down.add(e.pointerId);
+  if (down.size > 1) { painting = false; return; } // a second finger: the view, not the tool
+  if (mode !== 'edit' || spaceHeld || e.button !== 0) return;
+  painting = true; last = -1; apply(pick(e));
+});
+renderer.domElement.addEventListener('pointermove', (e) => { if (painting && down.size === 1) apply(pick(e)); });
+const up = (e) => { down.delete(e.pointerId); if (!down.size) painting = false; };
+addEventListener('pointerup', up); addEventListener('pointercancel', up);
 renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault());
 
 // ---- Panel ----
@@ -303,6 +368,21 @@ tl.querySelector('button').classList.add('on');
 let running = true;
 document.getElementById('play').onclick = (e) => { running = !running; e.target.textContent = running ? 'Pause' : 'Play'; e.target.classList.toggle('on', running); };
 document.getElementById('reset').onclick = () => load(scene);
+document.getElementById('m-camera').onclick = () => setMode('camera');
+document.getElementById('m-edit').onclick = () => setMode('edit');
+addEventListener('keydown', (e) => {
+  if (e.target.tagName === 'INPUT') return;
+  if (e.key === 'c' || e.key === 'C') setMode('camera');
+  else if (e.key === 'e' || e.key === 'E') setMode('edit');
+  else if (e.code === 'Space' && !spaceHeld) { spaceHeld = true; painting = false; applyMode(); e.preventDefault(); }
+});
+addEventListener('keyup', (e) => { if (e.code === 'Space') { spaceHeld = false; applyMode(); } });
+const panel = document.getElementById('panel'), fold = document.getElementById('fold');
+fold.onclick = () => { const f = panel.classList.toggle('folded'); fold.textContent = f ? 'Show' : 'Hide'; fold.setAttribute('aria-expanded', String(!f)); };
+// Picking a tool switches to Edit; on a phone the panel folds away so the ground is free.
+tl.querySelectorAll('button').forEach(b => b.addEventListener('click', () => { setMode('edit'); if (matchMedia('(max-width: 640px), (orientation: portrait)').matches && !panel.classList.contains('folded')) fold.click(); }));
+applyMode();
+if (matchMedia('(max-width: 640px), (orientation: portrait)').matches) fold.click(); // start folded on a phone
 const speed = document.getElementById('speed'), speedV = document.getElementById('speed-v');
 
 // ---- Loop ----
