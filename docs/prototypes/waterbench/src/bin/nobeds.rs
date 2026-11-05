@@ -93,6 +93,7 @@ fn main() {
     }
     sim.rebuild_inflow();
     let total_q: f64 = sim.src_total;
+    for &i in &src { let (x, z) = xy(i); let on_sink = sinks.contains(&i); let q = sim.inflow[i]; if q > 1.0 || on_sink { println!("spring at ({x}, {z}): {q:.2} m3/s{}", if on_sink { ", ON AN OUTLET" } else { "" }); } }
 
     // fill-and-spill: a priority flood from the outlets (each column's spill level and its way down)
     let t1 = Instant::now();
@@ -114,6 +115,16 @@ fn main() {
     let mut wet = vec![false; n];
     let mut flooded = vec![false; n];
     let mut path_cols = 0usize;
+    // each spring's way down (whole, for the routed flow) and the flow it adds to every column on it
+    let mut qcol = vec![0.0f32; n];
+    let mut chains: Vec<Vec<usize>> = Vec::new();
+    for &s in &src {
+        let q = sim.inflow[s];
+        let mut chain = Vec::new();
+        let mut i = s;
+        while i != usize::MAX { qcol[i] += q; chain.push(i); if sim.hold[i] > 0.0 || sinks.contains(&i) { break; } i = parent[i]; }
+        chains.push(chain);
+    }
     for &s in &src {
         let mut i = s;
         while i != usize::MAX && !wet[i] {
@@ -137,8 +148,60 @@ fn main() {
     for i in 0..n {
         if sim.hold[i] > 0.0 { continue; }
         if flooded[i] { sim.depth[i] = fill[i] - sim.ground[i]; lake_cols += 1; }
-        else if wet[i] { sim.depth[i] = 0.1; }
         vol += sim.depth[i] as f64;
+    }
+    // the river at the depth its flow needs: at each column of a way down (outside the filled hollows),
+    // a cut across the local direction; the level whose wet section carries the routed flow by
+    // Manning on the local slope (`STEADY=0`: a 10 cm film instead, as first tried)
+    let steady = std::env::var("STEADY").map_or(true, |v| v != "0");
+    let mut done = vec![false; n];
+    let mut level = vec![f32::NEG_INFINITY; n];
+    for chain in &chains {
+        for (k, &i) in chain.iter().enumerate() {
+            if done[i] || flooded[i] || sim.hold[i] > 0.0 || !wet[i] { continue; }
+            done[i] = true;
+            if !steady { level[i] = level[i].max(sim.ground[i] + 0.1); continue; }
+            let a = chain[k.saturating_sub(8)]; let b = chain[(k + 8).min(chain.len() - 1)];
+            let ((ax, az), (bx, bz)) = (xy(a), xy(b));
+            let (dx, dz) = ((bx - ax) as f32, (bz - az) as f32);
+            let len = (dx * dx + dz * dz).sqrt().max(1.0);
+            let slope = ((fill[a] - fill[b]) / len).max(1e-3);
+            let (nx, nz) = (-dz / len, dx / len);
+            let (cx, cz) = xy(i);
+            let line: Vec<(i32, Option<usize>)> = (-60..=60).map(|t| (t, idx((cx as f32 + nx * t as f32).round() as i32, (cz as f32 + nz * t as f32).round() as i32))).collect();
+            let carry = |l: f32| -> f32 {
+                let mut q = 0.0f32;
+                for side in [1i32, -1] {
+                    let mut t: i32 = if side == 1 { 0 } else { -1 };
+                    while t.abs() <= 60 {
+                        let Some(j) = line[(t + 60) as usize].1 else { break };
+                        let h = l - sim.ground[j];
+                        if sim.ground[j] >= VOID || h <= 0.0 { break; }
+                        q += h.powf(5.0 / 3.0) * slope.sqrt() / 0.03;
+                        t += side;
+                    }
+                }
+                q
+            };
+            let g = sim.ground[i];
+            let (mut lo, mut hi) = (g, g + 6.0);
+            for _ in 0..24 { let mid = 0.5 * (lo + hi); if carry(mid) < qcol[i] { lo = mid } else { hi = mid } }
+            for side in [1i32, -1] {
+                let mut t: i32 = if side == 1 { 0 } else { -1 };
+                while t.abs() <= 60 {
+                    let Some(j) = line[(t + 60) as usize].1 else { break };
+                    if sim.ground[j] >= VOID || hi - sim.ground[j] <= 0.0 { break; }
+                    level[j] = level[j].max(hi);
+                    t += side;
+                }
+            }
+        }
+    }
+    for i in 0..n {
+        if sim.hold[i] > 0.0 || flooded[i] || level[i] == f32::NEG_INFINITY { continue; }
+        let d = (level[i] - sim.ground[i]).max(0.0);
+        vol += (d - sim.depth[i]) as f64;
+        sim.depth[i] = d;
     }
     let fill_s = t1.elapsed().as_secs_f64();
     {
@@ -246,6 +309,66 @@ fn main() {
     for i in 0..n { if sim.ground[i] < VOID { sim.ground[i] = top(sim.ground[i]); } }
     for _ in 0..120 { sim.step(1.0); }
     let rock: Vec<bool> = (0..n).map(|i| g0[i] < VOID && sim.ground[i] <= stone[i] + 1e-3 && cols[i].3 == 0).collect();
+    {
+        // where the water is: held in the square against what the springs put in; the deepest places
+        let held: f64 = (0..n).filter(|&i| sim.hold[i] == 0.0 && !sinks.contains(&i)).map(|i| sim.depth[i] as f64).sum();
+        let added = sim.src_total * (sim.t);
+        let mut deep: Vec<usize> = (0..n).filter(|&i| sim.ground[i] < VOID && sim.hold[i] == 0.0).collect();
+        deep.sort_by(|&a, &b| sim.depth[b].partial_cmp(&sim.depth[a]).unwrap());
+        println!("water held in the square {held:.0} m3 (placed by the fill {vol:.0}); springs put in {added:.0} m3 over {:.0} s", sim.t);
+        let mut shown: Vec<(i32, i32)> = Vec::new();
+        for &i in &deep {
+            let (x, z) = xy(i);
+            if shown.iter().any(|&(a, b)| (a - x).abs() < 60 && (b - z).abs() < 60) { continue; }
+            // how big the wet patch around it is
+            let mut cnt = 0; let mut v = 0.0f64;
+            for dz in -60..=60 { for dx in -60..=60 { if let Some(j) = idx(x + dx, z + dz) { if sim.depth[j] > 0.05 { cnt += 1; v += sim.depth[j] as f64; } } } }
+            println!("   deep water at ({x}, {z}): {:.2} m over ground {:.1} (carved {:+.2} m); wet over 5 cm within 60 m: {cnt} columns, {v:.0} m3", sim.depth[i], sim.ground[i], sim.ground[i] - g0[i]);
+            shown.push((x, z));
+            if shown.len() >= 6 { break; }
+        }
+    }
+    // along each river's course (the map's), every 25 m: a cut across it (±40 m) — the deepest water,
+    // the flow across the cut, the fastest water, the floor's height
+    for (ri, r) in m.rivers.iter().enumerate() {
+        let p = &r.path;
+        let mut pts = Vec::new();
+        for k in 0..p.len().saturating_sub(1) {
+            let (a, b) = (p[k], p[k + 1]);
+            let len = (b.x - a.x).hypot(b.z - a.z);
+            let steps = (len / 25.0).ceil().max(1.0) as usize;
+            for s in 0..steps {
+                let t = s as f32 / steps as f32;
+                let (x, z) = (a.x + (b.x - a.x) * t, a.z + (b.z - a.z) * t);
+                if inside(x, z) { pts.push((x, z, (b.x - a.x) / len, (b.z - a.z) / len, a.discharge + (b.discharge - a.discharge) * t)); }
+            }
+        }
+        if pts.len() < 4 { continue; }
+        let mut line = Vec::new();
+        let mut dry = 0;
+        for (k, &(x, z, dx, dz, qmap)) in pts.iter().enumerate() {
+            let (nx, nz) = (-dz, dx);
+            let (mut dmax, mut flow, mut vmax, mut floor) = (0.0f32, 0.0f32, 0.0f32, f32::INFINITY);
+            for s in -40..=40 {
+                let Some(i) = idx((x + nx * s as f32).floor() as i32, (z + nz * s as f32).floor() as i32) else { continue };
+                if sim.ground[i] >= VOID { continue; }
+                floor = floor.min(sim.ground[i]);
+                let d = sim.depth[i];
+                dmax = dmax.max(d);
+                let (cx, cz) = xy(i);
+                let w = idx(cx - 1, cz).map_or(0.0, |j| sim.qx[j]);
+                let nn = idx(cx, cz - 1).map_or(0.0, |j| sim.qz[j]);
+                let (qx, qz) = (0.5 * (sim.qx[i] + w), 0.5 * (sim.qz[i] + nn));
+                flow += qx * dx + qz * dz; // discharge per m across the cut, summed over its 1 m columns
+                if d > 0.01 { vmax = vmax.max((qx * qx + qz * qz).sqrt() / d); }
+            }
+            if dmax < 0.01 { dry += 1; }
+            if k >= 32 && k <= 44 { println!("     point {k} ({:.0}, {:.0}): depth {:.2}, flow {:.1}, floor {:.1}; edge distance {:.0} m", x, z, dmax, flow, floor, (x - x0 as f32).min(z - z0 as f32).min((x0 + size) as f32 - x).min((z0 + size) as f32 - z)); }
+            if k % 4 == 0 { line.push(format!("{:>4}m d{:.2} Q{:.1}/{:.1} v{:.1} f{:.1}", k * 25, dmax, flow, qmap, vmax, floor)); }
+        }
+        println!("river {ri}: {} points every 25 m, {} with no water over 1 cm in ±40 m; every 100 m: depth, flow across / the map's, fastest, floor", pts.len(), dry);
+        for c in line.chunks(4) { println!("   {}", c.join(" | ")); }
+    }
     image_rock(&format!("{out}/eroded.ppm"), &sim.depth, &sim.ground, &rock, nc as usize);
     println!("erosion {} rounds in {:.1} s wall", rounds, t3.elapsed().as_secs_f64());
 }

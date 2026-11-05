@@ -83,6 +83,14 @@ now, or later allow a few stacked water layers in the columns that have overhang
   (`TerrainGenerator::ground_with_valleys`), fill-and-spill and erosion make a river in a channel it
   carved (2 km square: fill 0.4 s, 10 water minutes of erosion 37 s on one core). Shown to the owner;
   their verdict sets G1.
+- **The river at the depth its flow needs (G0 finding):** a fill that put the river in as a film left
+  it half an hour from reaching its lower reach (a 40 m-wide, nearly flat valley floor stores ~20,000 m³
+  before 11 m³/s passes on): the "broken" stretches. The fill now routes each spring's flow down its
+  way and, across each point of the way, sets the level whose wet section carries that flow by
+  Manning on the local slope; the river runs its whole length from the start. Open: below a steep drop
+  the river runs deep but carries less than the map's flow (sediment at the drop's foot ponding it, or
+  the measuring cut off the meandered course); a cut across a steep valley side sets water too high
+  for a moment.
 - **Sources:** springs where the map's rivers rise and where their discharge grows; the sea a held
   level. Rain everywhere later.
 - **No long spin-up** (the owner asked whether creation must run far faster than real time): the
