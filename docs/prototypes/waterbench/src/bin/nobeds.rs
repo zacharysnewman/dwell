@@ -74,6 +74,7 @@ fn main() {
         }
     }
     sim.hold_sea = true;
+    sim.sleep = false; // generation steps everything (and the outflow is counted exactly)
     for &i in &sinks { sim.sinks[i / CA].push((i % CA) as u16); }
     // springs: the map's river heads and growth inside the square
     let inside = |x: f32, z: f32| x >= x0 as f32 && z >= z0 as f32 && x < (x0 + size) as f32 && z < (z0 + size) as f32;
@@ -156,11 +157,12 @@ fn main() {
     let steady = std::env::var("STEADY").map_or(true, |v| v != "0");
     let mut done = vec![false; n];
     let mut level = vec![f32::NEG_INFINITY; n];
+    let mut near = vec![i32::MAX; n]; // how far along its cut a column's level came from (the nearest cut wins)
     for chain in &chains {
         for (k, &i) in chain.iter().enumerate() {
             if done[i] || flooded[i] || sim.hold[i] > 0.0 || !wet[i] { continue; }
             done[i] = true;
-            if !steady { level[i] = level[i].max(sim.ground[i] + 0.1); continue; }
+            if !steady { level[i] = level[i].max(sim.ground[i] + 0.1); near[i] = 0; continue; }
             let a = chain[k.saturating_sub(8)]; let b = chain[(k + 8).min(chain.len() - 1)];
             let ((ax, az), (bx, bz)) = (xy(a), xy(b));
             let (dx, dz) = ((bx - ax) as f32, (bz - az) as f32);
@@ -191,7 +193,7 @@ fn main() {
                 while t.abs() <= 60 {
                     let Some(j) = line[(t + 60) as usize].1 else { break };
                     if sim.ground[j] >= VOID || hi - sim.ground[j] <= 0.0 { break; }
-                    level[j] = level[j].max(hi);
+                    if t.abs() < near[j] { near[j] = t.abs(); level[j] = hi; }
                     t += side;
                 }
             }
