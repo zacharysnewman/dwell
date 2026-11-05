@@ -121,6 +121,7 @@ impl Grid {
         }
         // The depths.
         let mut next = self.depth.clone();
+        #[allow(clippy::needless_range_loop)] // i indexes the flows and the neighbours too
         for i in 0..n {
             let mut net = -self.flow[i].iter().sum::<f32>();
             for d in 0..4 {

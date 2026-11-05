@@ -126,7 +126,47 @@ river profile, the pool graph's topology kept. Pools and lips would retire, not 
 further. If C fails the prototype, A with 0.48.1's rules stays, and the effort goes into the look
 (sloped running water) instead.
 
-## 5. Questions for the owner
+## 5. Prototype results (2026-11-04)
+
+The owner: the "only near players" scale assumption is unmeasured, prototype it. Built:
+`dwell-sim` `watergrid.rs` (the model, three tests, a cost and a stability bench) and the
+[Water Grid Lab](../prototypes/water-grid-lab.html) (the same model in the browser, five scenes,
+tools to place, dig, add springs and remove water).
+
+**Behaviour** (tests and the lab):
+- Water is conserved (to 1e-7 of what came in).
+- A river settles in its channel, passing at its foot what its source brings (within 5 %), banks dry.
+- A dam level with its banks: the river rises over the dam (0.18 m over its top) and over the banks
+  next to it, and runs on below. No rule for it: it is what the levels do.
+- A spill from a pond through a gap in its rim runs straight down a terraced hillside into the river.
+
+**Cost, measured** (native, release, one thread, Apple silicon; `cargo test -p dwell-sim --release
+--lib watergrid -- --ignored --nocapture`):
+
+| | |
+|---|---|
+| Per wet column per step | **8 ns** (the same at 256², 1024², 2048² columns: no cache cliff) |
+| Longest stable step | **0.2 s** (a 2 m dam break; 0.3 s overshoots to twice the depth) |
+| So, per column per second of water time | 40 ns |
+| One core, real time | **~25 million wet columns** |
+| The lab's JavaScript | 37 ns per column per step (WASM would sit between the two) |
+
+**What that means for scale** (the sizes are estimates from the world map, not measured):
+- Every river on a face, 1 m columns: ~370 km × ~15 m ≈ 5.5 million columns ≈ **a fifth of one
+  core**, natively, simulated all the time, no "near players" needed. Lakes add to it by their area.
+- Every column of a face, dry ones included (π × 25 km² of land ≈ 2 billion), is ~80 cores: out of
+  reach, and unnecessary: dry ground with no water beside it does no work and is skipped.
+- The sea is a boundary at a fixed level, not simulated.
+- **The real limits are memory and the browser**, not CPU: 5.5 million columns at ~24 bytes is
+  ~130 MB, too much for a browser-hosted friend world, fine on a dedicated server. A sparse store
+  (16 × 16 tiles holding only wet columns, f16 depths) or simulating at a coarser grid away from
+  players would bring it down. That is a memory choice, made after measuring, not a need of the CPU.
+
+So the earlier line ("it would simulate only active columns near players") was wrong as a
+requirement: natively the grid can run every river in the world at once on a fraction of a core.
+Not yet measured: layered columns (caves), the cost in WASM, and the memory of a whole face's rivers.
+
+## 6. Questions for the owner
 
 1. **Prototype first?** A sandbox prototype of C (a few days), judged by you in the browser, before
    any decision.

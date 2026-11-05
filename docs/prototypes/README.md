@@ -12,6 +12,7 @@ link). They are not part of any build; Prettier and CI ignore `docs/`.
 | Tree Growth | [`tree-growth.html`](./tree-growth.html) | https://claude.ai/artifact/MRW4RcNKTHkYdxMyRKLLHz | A hand-built tree grown by revealing its skeleton, obstacles, and jitter variants (Phase 30, G0) |
 | Painterly Texture Lab | [`painterly-texture-lab.html`](./painterly-texture-lab.html) | https://claude.ai/artifact/4CTkNW4G6p8p67MkSNMUJA | The painterly materials and palette edited live with the game's generator; the JSON copied back (Phase 39) |
 | Character Lab | [`character-lab.html`](./character-lab.html) | https://claude.ai/artifact/YAieiGfJnp5f2FnoR6wQWB | The player's full body and first-person arms, the wolf and the deer, from `shared/characters` (Phase 40, C0) |
+| Water Grid Lab | [`water-grid-lab.html`](./water-grid-lab.html) | https://claude.ai/artifact/NynEuDz9qjjBq1U4GRrv75 | Water as a depth per column with virtual pipes: a river, dams, a spill on terraces, a flood; place, dig, springs ([evaluation](../proposals/WATER_MODEL_EVALUATION.md)) |
 
 The first two feed [`ADAPTIVE_BLOCKS.md`](../ADAPTIVE_BLOCKS.md) (Phase 18, formerly 9e) and
 [ADR 0024](../adr/0024-adaptive-natural-blocks.md); Tree Growth feeds
