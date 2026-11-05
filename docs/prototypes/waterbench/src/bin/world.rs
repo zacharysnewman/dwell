@@ -259,6 +259,7 @@ fn main() {
     let lakes = args.get(4).map_or(true, |s| s != "nolakes");
     let skip_a = args.get(5).is_some_and(|s| s == "skipA");
     let real = std::env::var("REAL").is_ok();
+    let only_build = args.get(7).is_some_and(|m| m == "build");
     let (mut sim, wetn) = if real { build_real(seed) } else { build(seed, lakes) };
     if std::env::var("HOLD_SEA").is_ok() { sim.hold_sea = true; for c in 0..sim.nch { for &l in &sim.sinks[c] { let i = c * CA + l as usize; sim.depth[i] = sim.hold[i]; } } }
     sim.theta = theta;
@@ -266,7 +267,7 @@ fn main() {
     if let Ok(v) = std::env::var("BAND_DQ") { unsafe { sim::BAND_DQ = v.parse().unwrap(); } }
     if let Ok(v) = std::env::var("WIN_SECS") { unsafe { sim::WIN_SECS = v.parse().unwrap(); } }
     if let Ok(v) = std::env::var("EMA_SECS") { sim.ema_secs = v.parse().unwrap(); }
-    unsafe { sim::SMOOTH = std::env::var("SMOOTH").is_ok(); }
+    unsafe { sim::SMOOTH = std::env::var("SMOOTH").is_ok(); sim::DRIFT = std::env::var("NO_DRIFT").is_err(); }
     sim.pools.on = std::env::var("POOLS").is_ok();
     if let Ok(v) = std::env::var("POOL_V") { unsafe { sim::POOL_V = v.parse().unwrap(); } }
     if let Ok(v) = std::env::var("POOL_BAND") { unsafe { sim::POOL_BAND = v.parse().unwrap(); } }
@@ -282,6 +283,7 @@ fn main() {
         t0.elapsed().as_secs_f64(), sim.nch, cols, (cols * 7 * 4) as f64 / 1e6, wetn, srcs, snks, rayon::current_num_threads()
     );
 
+    if only_build { return; }
     // A. everything awake: the raw cost per column per substep
     sim.sleep = false;
     let s0 = sim.stored();
@@ -342,6 +344,11 @@ fn main() {
     }
     if args.get(7).is_some_and(|m| m == "probe") {
         probe(&mut sim);
+        return;
+    }
+    if args.get(7).is_some_and(|m| m == "stuck") {
+        let secs: f64 = args.get(8).and_then(|v| v.parse().ok()).unwrap_or(300.0);
+        stuck(&mut sim, secs);
         return;
     }
     if args.get(7).is_some_and(|m| m == "who") {
@@ -799,7 +806,7 @@ fn short(sim: &mut Sim, secs: f64) {
     let n = sim.nch * CA;
     let (d0, qx0, qz0, t0) = (sim.depth.clone(), sim.qx.clone(), sim.qz.clone(), sim.t);
     let mut out = Vec::new();
-    let refp = format!("ref_{}{}_{}.bin", secs as i64, if sim.hold_sea { "_sea" } else { "" }, sim.nch);
+    let refp = format!("ref_{}{}_{}_{}.bin", secs as i64, if sim.hold_sea { "_sea" } else { "" }, sim.nch, sim.theta);
     for (label, sleep) in [("all stepped", false), ("sleeping", true)] {
         if !sleep {
             if let Ok(b) = std::fs::read(&refp) {
@@ -949,5 +956,56 @@ fn who(sim: &mut Sim) {
         let wetc = d0[c * CA..c * CA + CA].iter().filter(|&&d| d > 0.0).count();
         println!("    chunk at ({}, {}): kind {}, {} wet columns, awake {:.0}%, wakes face/owed/drift {}/{}/{}, real swing {:.1} cm, fastest {:.2} m/s, sink {} spring {}",
             cx * CS as i32, cz * CS as i32, kind[c], wetc, awake_frac(c) * 100.0, sim.why[c][0], sim.why[c][1], sim.why[c][2], swing[c] * 100.0, fast[c], has_sink(c), has_spring(c));
+    }
+}
+
+/// Why the chunks still awake after `secs` of sleeping aren't asleep.
+fn stuck(sim: &mut Sim, secs: f64) {
+    let band = unsafe { sim::BAND };
+    sim.sleep = true;
+    sim.pools.on = std::env::var("POOLS").is_ok();
+    sim.ex.copy_from_slice(&sim.qx.clone()); sim.ez.copy_from_slice(&sim.qz.clone());
+    let t0 = sim.t;
+    // when each chunk last woke
+    let mut woke_at = vec![t0; sim.nch];
+    let mut was = sim.awake.clone();
+    while sim.t < t0 + secs {
+        sim.step(1.0);
+        for c in 0..sim.nch { if sim.awake[c] != 0 && was[c] == 0 { woke_at[c] = sim.t; } }
+        was.copy_from_slice(&sim.awake);
+    }
+    let kind = unsafe { &*std::ptr::addr_of!(KIND) };
+    let awake: Vec<usize> = (0..sim.nch).filter(|&c| sim.awake[c] != 0).collect();
+    let (mut shore, mut fixed, mut dq, mut moved, mut fresh, mut other) = (0, 0, 0, 0, 0, 0);
+    let mut moved_v = Vec::new();
+    let mut since = Vec::new();
+    for &c in &awake {
+        let b = c * CA;
+        let mv = sim.depth[b..b + CA].iter().zip(&sim.win_depth[b..b + CA]).fold(0.0f32, |m, (a, w)| m.max((a - w).abs()));
+        since.push(sim.t - woke_at[c]);
+        if sim.pools.shore[c] == 1 { shore += 1; }
+        else if sim.div[c] >= 1.0 { fixed += 1; }
+        else if sim.dq[c] >= unsafe { sim::BIG_DQ } { dq += 1; }
+        else if sim.calm[c] > 0 && sim.t - sim.win_t[c] < unsafe { sim::WIN_SECS } { fresh += 1; }
+        else if mv > band { moved += 1; moved_v.push(mv); }
+        else { other += 1; }
+    }
+    since.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    let p = |v: &Vec<f64>, f: f64| if v.is_empty() { 0.0 } else { v[((v.len() - 1) as f64 * f) as usize] };
+    println!("after {secs:.0} s: {} awake (river {}, lake {}, other {})", awake.len(), awake.iter().filter(|&&c| kind[c] == 1).count(), awake.iter().filter(|&&c| kind[c] == 2).count(), awake.iter().filter(|&&c| kind[c] == 0).count());
+    println!("  why not asleep: a pool's shore {shore}, a spring or outlet {fixed}, a face jumping {dq}, in its calm window {fresh}, levels moved more than the band {moved}, none of these {other}");
+    println!("  awake since their last waking: median {:.0} s, p90 {:.0} s, max {:.0} s", p(&since, 0.5), p(&since, 0.9), p(&since, 1.0));
+    let mut mvs: Vec<f64> = moved_v.iter().map(|&v| v as f64).collect(); mvs.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    if !mvs.is_empty() { println!("  of those over the band, their level moved over the window: median {:.1} cm, p90 {:.1} cm", p(&mvs, 0.5) * 100.0, p(&mvs, 0.9) * 100.0); }
+    // a few of the 'none' and 'fresh' kind
+    let mut shown = 0;
+    for &c in &awake {
+        if shown >= 6 || sim.pools.shore[c] == 1 || sim.div[c] >= 1.0 { continue; }
+        let (cx, cz) = sim.key[c];
+        let b = c * CA;
+        let mv = sim.depth[b..b + CA].iter().zip(&sim.win_depth[b..b + CA]).fold(0.0f32, |m, (a, w)| m.max((a - w).abs()));
+        println!("    chunk ({}, {}): kind {}, calm {}, window {:.1} s, moved {:.2} cm, dq {:.1e}, div {:.1e}, wakes face/owed/drift {:?}, rel_left {:.2} m3",
+            cx * CS as i32, cz * CS as i32, kind[c], sim.calm[c], sim.t - sim.win_t[c], mv * 100.0, sim.dq[c], sim.div[c], &sim.why[c][..3], sim.rel_left[c]);
+        shown += 1;
     }
 }

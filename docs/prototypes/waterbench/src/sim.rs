@@ -33,6 +33,8 @@ fn sleep_dq() -> f32 { if band() > 0.0 { if unsafe { SMOOTH } { BIG_DQ } else { 
 /// wet columns half the band in REACT_SECS (or what it owes would), or a shared face jumps BIG_DQ in a
 /// substep (an edit, a flood front); a face's wobble alone no longer wakes it.
 pub static mut SMOOTH: bool = false;
+/// The neighbours'-drift wake (on by default): off, a sleeping chunk wakes on what it owes, a face's jump or an edit only.
+pub static mut DRIFT: bool = true;
 pub const REL_SECS: f64 = 5.0;
 pub const REACT_SECS: f64 = 10.0;
 pub const BIG_DQ: f32 = 0.1;
@@ -444,7 +446,7 @@ impl Sim {
             let mut wake: Vec<usize> = (0..self.nch).filter(|&c| self.awake[c] == 0 && (self.owed[c] + self.rate[c] * (t - self.t_rate[c])).abs() > (band() as f64 * self.wet_n[c].max(1) as f64) * 0.5).collect();
             self.wake_owed += wake.len() as u64;
             for &c in &wake { self.why[c][1] += 1; }
-            if smooth {
+            if smooth && unsafe { DRIFT } {
                 let drift: Vec<usize> = (0..self.nch).filter(|&c| self.awake[c] == 0 && !wake.contains(&c)
                     && (self.rate[c] - self.rate0[c]).abs() > band() as f64 * self.wet_n[c].max(1) as f64 * 0.5 / REACT_SECS).collect();
                 self.wake_rate += drift.len() as u64;
