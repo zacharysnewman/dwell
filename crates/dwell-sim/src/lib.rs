@@ -10,4 +10,5 @@ pub mod fixed_step;
 pub mod lod_propagation;
 pub mod server;
 pub mod water;
+pub mod watergrid;
 pub mod worldgen_pool;

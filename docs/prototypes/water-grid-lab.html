@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Water Grid Lab</title>
+<style>
+  :root {
+    --bg: #f4f2ec; --panel: rgba(255,255,255,0.92); --ink: #1f2328; --muted: #5d6470;
+    --line: #d9d5cb; --accent: #2f6fb3; --accent-ink: #ffffff; --chip: #ebe7dd;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #15181c; --panel: rgba(28,32,37,0.92); --ink: #e8e6e1; --muted: #a2a8b1;
+      --line: #343a42; --accent: #5b9be0; --accent-ink: #0d1117; --chip: #252a31;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #15181c; --panel: rgba(28,32,37,0.92); --ink: #e8e6e1; --muted: #a2a8b1;
+    --line: #343a42; --accent: #5b9be0; --accent-ink: #0d1117; --chip: #252a31;
+  }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink);
+    font: 13px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; overflow: hidden; }
+  #view { position: fixed; inset: 0; }
+  #panel { position: fixed; top: 12px; left: 12px; width: 300px; max-width: calc(100vw - 32px);
+    max-height: calc(100vh - 24px); overflow: auto; background: var(--panel); border: 1px solid var(--line);
+    border-radius: 10px; padding: 12px 14px; box-sizing: border-box; backdrop-filter: blur(6px); }
+  h1 { font-size: 15px; margin: 0 0 2px; }
+  .sub { color: var(--muted); margin: 0 0 10px; }
+  .row { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 10px; }
+  button { font: inherit; border: 1px solid var(--line); background: var(--chip); color: var(--ink);
+    border-radius: 7px; padding: 5px 9px; cursor: pointer; }
+  button.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  label { display: flex; align-items: center; gap: 8px; margin: 4px 0; }
+  input[type=range] { flex: 1; }
+  .k { color: var(--muted); }
+  #stats { font-variant-numeric: tabular-nums; display: grid; grid-template-columns: auto auto; gap: 2px 10px; margin-top: 6px; }
+  #scene-note { color: var(--muted); margin: 0 0 8px; min-height: 2.8em; }
+  .sec { font-weight: 600; margin-top: 10px; }
+  @media (max-width: 520px) { #panel { width: auto; right: 16px; left: 16px; top: auto; bottom: 16px; max-height: 45vh; } }
+</style>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<div id="view"></div>
+<div id="panel">
+  <h1>Water Grid Lab</h1>
+  <p class="sub">Dwell's candidate water model: a depth on each 1 m ground column, flowing to its neighbours through virtual pipes (Timberborn's model). Ground steps are ½ m.</p>
+  <div class="sec">Scene</div>
+  <div class="row" id="scenes"></div>
+  <p id="scene-note"></p>
+  <div class="sec">Tool (click or drag on the ground)</div>
+  <div class="row" id="tools"></div>
+  <div class="row">
+    <button id="play" class="on">Pause</button>
+    <button id="reset">Reset scene</button>
+  </div>
+  <label><span class="k">Speed</span><input id="speed" type="range" min="1" max="60" value="20"><span id="speed-v"></span></label>
+  <label><input id="round" type="checkbox"> Draw levels rounded to ½ m blocks</label>
+  <label><input id="speedcol" type="checkbox" checked> Colour water by its speed</label>
+  <div class="sec">Numbers</div>
+  <div id="stats"></div>
+  <p class="sub" style="margin-top:8px">Orbit: drag with right button or two fingers; zoom: wheel. The native Rust version of this model costs ~8 ns per column per step.</p>
+</div>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// ---- The model (the same as crates/dwell-sim/src/watergrid.rs) ----
+const W = 96, H = 48, CELL = 1, G = 9.81, PIPE = 1, KEEP = 0.5, DT = 0.1;
+const N = W * H;
+let ground = new Float32Array(N), depth = new Float32Array(N), next = new Float32Array(N);
+let flow = new Float32Array(N * 4);
+let sources = [], sinks = [];
+let brought = 0, taken = 0, waterTime = 0;
+const DX = [1, -1, 0, 0], DZ = [0, 0, 1, -1];
+const at = (x, z) => z * W + x;
+function nb(i, d) {
+  const x = i % W + DX[d], z = ((i / W) | 0) + DZ[d];
+  return (x < 0 || z < 0 || x >= W || z >= H) ? -1 : z * W + x;
+}
+const NB = new Int32Array(N * 4);
+for (let i = 0; i < N; i++) for (let d = 0; d < 4; d++) NB[i * 4 + d] = nb(i, d);
+
+function step(dt) {
+  const area = CELL * CELL, keep = Math.pow(KEEP, dt);
+  for (const [i, q] of sources) { depth[i] += q * dt / area; brought += q * dt; }
+  for (let i = 0; i < N; i++) {
+    const hi = ground[i] + depth[i];
+    let total = 0;
+    for (let d = 0; d < 4; d++) {
+      const j = NB[i * 4 + d];
+      let f = 0;
+      if (j >= 0) {
+        const dh = hi - (ground[j] + depth[j]);
+        f = Math.max(0, flow[i * 4 + d] * keep + dt * PIPE * G * dh / CELL);
+      }
+      flow[i * 4 + d] = f; total += f;
+    }
+    const have = depth[i] * area;
+    if (total * dt > have && total > 0) {
+      const k = have / (total * dt);
+      for (let d = 0; d < 4; d++) flow[i * 4 + d] *= k;
+    }
+  }
+  for (let i = 0; i < N; i++) {
+    let net = -(flow[i * 4] + flow[i * 4 + 1] + flow[i * 4 + 2] + flow[i * 4 + 3]);
+    for (let d = 0; d < 4; d++) { const j = NB[i * 4 + d]; if (j >= 0) net += flow[j * 4 + (d ^ 1)]; }
+    next[i] = Math.max(0, depth[i] + net * dt / area);
+  }
+  [depth, next] = [next, depth];
+  for (const i of sinks) { taken += depth[i] * area; depth[i] = 0; }
+  waterTime += dt;
+}
+function speedAt(i) {
+  const d = Math.max(depth[i], 0.05);
+  const jL = NB[i * 4 + 1], jR = NB[i * 4], jB = NB[i * 4 + 3], jF = NB[i * 4 + 2];
+  let vx = flow[i * 4] - flow[i * 4 + 1] + (jL >= 0 ? flow[jL * 4] : 0) - (jR >= 0 ? flow[jR * 4 + 1] : 0);
+  let vz = flow[i * 4 + 2] - flow[i * 4 + 3] + (jB >= 0 ? flow[jB * 4 + 2] : 0) - (jF >= 0 ? flow[jF * 4 + 3] : 0);
+  return 0.5 * Math.hypot(vx, vz) / (d * CELL);
+}
+
+// ---- Scenes ----
+const q5 = (h) => Math.round(h * 2) / 2; // ½ m ground steps
+function valley(slope, bankH = 0.5) {
+  // A valley falling along x; a channel 3 columns wide in the middle, banks `bankH` over its bed,
+  // the sides rising past them.
+  const mid = H >> 1;
+  for (let z = 0; z < H; z++) for (let x = 0; x < W; x++) {
+    const off = Math.abs(z - mid);
+    let h = 12 - slope * x;
+    if (off > 1) h += bankH + Math.max(0, off - 4) * 0.35;
+    ground[at(x, z)] = q5(h);
+  }
+  sources = [[at(0, mid), 1.2], [at(0, mid - 1), 1.2], [at(0, mid + 1), 1.2]];
+  sinks = []; for (let z = 0; z < H; z++) sinks.push(at(W - 1, z));
+}
+const SCENES = {
+  river: { cam: [[64, 24, 46], [44, 9, 24]], name: 'River', note: 'A river in its channel, banks ½ m over its bed, falling along the valley. It settles and flows; the surface slopes.',
+    make() { valley(0.04); } },
+  damLevel: { cam: [[62, 18, 40], [47, 10, 24]], name: 'Dam level with banks', note: 'A dam across the river as high as the banks: the water rises to that height and leaves over the dam and the banks around its ends, as real water does.',
+    make() { valley(0.04); const mid = H >> 1, x = 48; for (let z = mid - 1; z <= mid + 1; z++) ground[at(x, z)] = ground[at(x, mid - 2)]; } },
+  damLow: { cam: [[62, 18, 40], [47, 10, 24]], name: 'Dam below banks', note: 'A dam ½ m lower than the banks: the river backs up behind it and pours over its top into the river below.',
+    make() { valley(0.04, 1.0); const mid = H >> 1, x = 48; for (let z = mid - 1; z <= mid + 1; z++) ground[at(x, z)] = ground[at(x, mid - 2)] - 0.5; } },
+  terraces: { cam: [[44, 26, 2], [36, 13, 36]], name: 'Spill on terraces', note: 'A pond on a ledge with a gap in its rim, above a terraced hillside and a river: the spill runs downhill, step by step, into the river.',
+    make() {
+      valley(0.02);
+      const mid = H >> 1;
+      for (let z = mid + 4; z < H; z++) for (let x = 20; x < 60; x++) ground[at(x, z)] = q5(12 - 0.02 * x + 0.5 + (z - mid - 4) * 0.5);
+      for (let z = H - 8; z < H - 2; z++) for (let x = 30; x < 40; x++) { ground[at(x, z)] = q5(12 - 0.02 * x + 0.5 + (H - 9 - mid - 4) * 0.5); depth[at(x, z)] = 0.9; }
+      for (let x = 29; x <= 40; x++) { ground[at(x, H - 9)] += 1; ground[at(x, H - 2)] += 1; }
+      for (let z = H - 9; z <= H - 2; z++) { ground[at(29, z)] += 1; ground[at(40, z)] += 1; }
+      ground[at(35, H - 9)] -= 1.0;
+      sources.push([at(35, H - 5), 0.6]);
+    } },
+  flood: { cam: [[60, 30, 64], [48, 9, 28]], name: 'Flood over a floodplain', note: 'A big flow down a channel with low banks beside a flat floodplain: the river overtops its banks and spreads over the plain, then drains back as the flow drops (use Remove water on the source end).',
+    make() {
+      valley(0.03, 0.5);
+      const mid = H >> 1;
+      for (let z = mid + 2; z < H - 2; z++) for (let x = 0; x < W; x++) ground[at(x, z)] = q5(12 - 0.03 * x + 0.5);
+      sources = sources.map(([i, q]) => [i, q * 4]);
+    } },
+};
+let scene = 'river';
+function load(name) {
+  scene = name;
+  ground.fill(0); depth.fill(0); flow.fill(0); brought = 0; taken = 0; waterTime = 0;
+  SCENES[name].make();
+  base = new Float32Array(ground);
+  document.getElementById('scene-note').textContent = SCENES[name].note;
+  document.querySelectorAll('#scenes button').forEach(b => b.classList.toggle('on', b.dataset.k === name));
+  buildGround();
+  const c = SCENES[name].cam; cam.position.set(...c[0]); controls.target.set(...c[1]);
+}
+
+// ---- View ----
+const view = document.getElementById('view');
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+view.appendChild(renderer.domElement);
+const cam = new THREE.PerspectiveCamera(45, 1, 0.1, 1000);
+cam.position.set(64, 24, 46);
+const controls = new OrbitControls(cam, renderer.domElement);
+controls.target.set(44, 9, 24);
+controls.mouseButtons = { LEFT: null, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE };
+controls.touches = { ONE: null, TWO: THREE.TOUCH.DOLLY_ROTATE };
+const sceneG = new THREE.Scene();
+sceneG.background = new THREE.Color(0xbfd8ea);
+sceneG.add(new THREE.HemisphereLight(0xffffff, 0x5a6b55, 1.1));
+const sun = new THREE.DirectionalLight(0xffffff, 1.4); sun.position.set(30, 60, 40); sceneG.add(sun);
+function resize() { const w = innerWidth, h = innerHeight; renderer.setSize(w, h); cam.aspect = w / h; cam.updateProjectionMatrix(); }
+addEventListener('resize', resize); resize();
+
+const boxGeo = new THREE.BoxGeometry(1, 1, 1);
+const groundMat = new THREE.MeshLambertMaterial({ vertexColors: false });
+let groundMesh = null;
+const tmp = new THREE.Object3D(), col = new THREE.Color();
+const BASE = 0;
+let base = new Float32Array(N);
+const baseAt = (x, z) => base[at(x, z)];
+function buildGround() {
+  if (groundMesh) { sceneG.remove(groundMesh); groundMesh.dispose?.(); }
+  groundMesh = new THREE.InstancedMesh(boxGeo, groundMat, N);
+  for (let i = 0; i < N; i++) {
+    const x = i % W, z = (i / W) | 0, h = ground[i] - BASE;
+    tmp.position.set(x + 0.5, BASE + h / 2, z + 0.5); tmp.scale.set(1, Math.max(h, 0.01), 1); tmp.updateMatrix();
+    groundMesh.setMatrixAt(i, tmp.matrix);
+    const v = ((x + z) & 1) ? 0.03 : 0; // a faint checker to read the cells
+    if (ground[i] > baseAt(x, z) + 0.01) col.setRGB(0.55 - v, 0.53 - v, 0.50 - v); // placed blocks: stone
+    else col.setRGB(0.36 - v, 0.56 - v, 0.27 - v); // grass
+    groundMesh.setColorAt(i, col);
+  }
+  groundMesh.instanceMatrix.needsUpdate = true; groundMesh.instanceColor.needsUpdate = true;
+  sceneG.add(groundMesh);
+}
+
+// The water surface: each wet column a quad, its corners at the mean surface of the wet columns
+// sharing them (smooth, as Minecraft draws its water), or rounded to ½ m blocks.
+const MIN_DRAW = 0.02;
+const wGeo = new THREE.BufferGeometry();
+const wPos = new Float32Array(N * 6 * 3), wCol = new Float32Array(N * 6 * 3);
+wGeo.setAttribute('position', new THREE.BufferAttribute(wPos, 3));
+wGeo.setAttribute('color', new THREE.BufferAttribute(wCol, 3));
+const wMat = new THREE.MeshLambertMaterial({ vertexColors: true, transparent: true, opacity: 0.9, side: THREE.DoubleSide });
+const water = new THREE.Mesh(wGeo, wMat); sceneG.add(water);
+function surfaceOf(i, round) {
+  const s = ground[i] + depth[i];
+  return round ? Math.max(ground[i] + 0.5, Math.ceil(s * 2 - 0.25) / 2) - 0.06 : s;
+}
+function corner(x, z, round) {
+  let sum = 0, n = 0;
+  for (const [dx, dz] of [[-1, -1], [0, -1], [-1, 0], [0, 0]]) {
+    const cx = x + dx, cz = z + dz;
+    if (cx < 0 || cz < 0 || cx >= W || cz >= H) continue;
+    const i = at(cx, cz);
+    if (depth[i] > MIN_DRAW) { sum += surfaceOf(i, round); n++; }
+  }
+  return n ? sum / n : null;
+}
+function buildWater() {
+  const round = document.getElementById('round').checked;
+  const bySpeed = document.getElementById('speedcol').checked;
+  let v = 0;
+  const cornerH = new Float32Array((W + 1) * (H + 1));
+  for (let z = 0; z <= H; z++) for (let x = 0; x <= W; x++) cornerH[z * (W + 1) + x] = corner(x, z, round) ?? NaN;
+  for (let i = 0; i < N; i++) {
+    if (depth[i] <= MIN_DRAW) continue;
+    const x = i % W, z = (i / W) | 0;
+    const own = surfaceOf(i, round);
+    const hAt = (cx, cz) => { const h = cornerH[cz * (W + 1) + cx]; return round ? own : (Number.isNaN(h) ? own : h); };
+    const p = [[x, z], [x + 1, z], [x + 1, z + 1], [x, z], [x + 1, z + 1], [x, z + 1]];
+    const sp = bySpeed && depth[i] > 0.08 ? Math.min(1, Math.max(0, speedAt(i) - 0.5) / 2.5) : 0;
+    const deep = Math.min(1, depth[i] / 1.5);
+    col.setRGB(0.12 + 0.68 * sp - 0.06 * deep, 0.38 + 0.52 * sp - 0.14 * deep, 0.78 + 0.18 * sp - 0.18 * deep);
+    for (const [cx, cz] of p) {
+      wPos[v * 3] = cx; wPos[v * 3 + 1] = hAt(cx, cz); wPos[v * 3 + 2] = cz;
+      wCol[v * 3] = col.r; wCol[v * 3 + 1] = col.g; wCol[v * 3 + 2] = col.b; v++;
+    }
+  }
+  wGeo.setDrawRange(0, v);
+  wGeo.attributes.position.needsUpdate = true; wGeo.attributes.color.needsUpdate = true;
+  wGeo.computeVertexNormals();
+}
+
+// ---- Tools ----
+const TOOLS = { raise: 'Place block (+½ m)', lower: 'Dig (−½ m)', source: 'Add a spring', drain: 'Remove water' };
+let tool = 'raise';
+const ray = new THREE.Raycaster(), mouse = new THREE.Vector2();
+function pick(ev) {
+  const r = renderer.domElement.getBoundingClientRect();
+  mouse.set(((ev.clientX - r.left) / r.width) * 2 - 1, -((ev.clientY - r.top) / r.height) * 2 + 1);
+  ray.setFromCamera(mouse, cam);
+  const hit = ray.intersectObject(groundMesh)[0];
+  return hit ? hit.instanceId : null;
+}
+let painting = false, last = -1;
+function apply(i) {
+  if (i == null || i === last) return; last = i;
+  if (tool === 'raise') { ground[i] += 0.5; buildGround(); }
+  else if (tool === 'lower') { ground[i] = Math.max(0.5, ground[i] - 0.5); buildGround(); }
+  else if (tool === 'source') sources.push([i, 0.6]);
+  else if (tool === 'drain') { for (let dz = -2; dz <= 2; dz++) for (let dx = -2; dx <= 2; dx++) {
+    const x = i % W + dx, z = ((i / W) | 0) + dz; if (x >= 0 && z >= 0 && x < W && z < H) { const j = at(x, z); taken += depth[j]; depth[j] = 0; }
+  } sources = sources.filter(([j]) => Math.abs(j % W - i % W) > 2 || Math.abs(((j / W) | 0) - ((i / W) | 0)) > 2); }
+}
+renderer.domElement.addEventListener('pointerdown', (e) => { if (e.button !== 0) return; painting = true; last = -1; apply(pick(e)); });
+renderer.domElement.addEventListener('pointermove', (e) => { if (painting) apply(pick(e)); });
+addEventListener('pointerup', () => { painting = false; });
+renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault());
+
+// ---- Panel ----
+const sc = document.getElementById('scenes');
+for (const [k, s] of Object.entries(SCENES)) { const b = document.createElement('button'); b.textContent = s.name; b.dataset.k = k; b.onclick = () => load(k); sc.appendChild(b); }
+const tl = document.getElementById('tools');
+for (const [k, s] of Object.entries(TOOLS)) { const b = document.createElement('button'); b.textContent = s; b.dataset.k = k;
+  b.onclick = () => { tool = k; tl.querySelectorAll('button').forEach(x => x.classList.toggle('on', x.dataset.k === k)); }; tl.appendChild(b); }
+tl.querySelector('button').classList.add('on');
+let running = true;
+document.getElementById('play').onclick = (e) => { running = !running; e.target.textContent = running ? 'Pause' : 'Play'; e.target.classList.toggle('on', running); };
+document.getElementById('reset').onclick = () => load(scene);
+const speed = document.getElementById('speed'), speedV = document.getElementById('speed-v');
+
+// ---- Loop ----
+let stepMs = 0;
+const statsEl = document.getElementById('stats');
+function stats(steps) {
+  let wet = 0, stored = 0, fast = 0;
+  for (let i = 0; i < N; i++) if (depth[i] > MIN_DRAW) { wet++; stored += depth[i]; fast = Math.max(fast, speedAt(i)); }
+  const perCol = stepMs * 1e6 / N;
+  const rows = [
+    ['Columns', N.toLocaleString()], ['Wet columns', wet.toLocaleString()],
+    ['Steps per frame', steps], ['Step (all columns)', stepMs.toFixed(2) + ' ms'],
+    ['Per column per step', perCol.toFixed(0) + ' ns (JS)'], ['Water time', waterTime.toFixed(0) + ' s'],
+    ['Stored', stored.toFixed(1) + ' m³'], ['Fastest', fast.toFixed(2) + ' m/s'],
+    ['In / out so far', brought.toFixed(0) + ' / ' + taken.toFixed(0) + ' m³'],
+  ];
+  statsEl.innerHTML = rows.map(([k, v]) => `<span class="k">${k}</span><span>${v}</span>`).join('');
+}
+let frame = 0;
+function loop() {
+  const steps = +speed.value;
+  speedV.textContent = (steps * DT * 60).toFixed(0) + '× real time';
+  if (running) {
+    const t = performance.now();
+    for (let s = 0; s < steps; s++) step(DT);
+    stepMs = (performance.now() - t) / steps;
+  }
+  buildWater();
+  if (frame++ % 15 === 0) stats(steps);
+  controls.update();
+  renderer.render(sceneG, cam);
+  requestAnimationFrame(loop);
+}
+window.lab = { load, step, depth: () => depth, ground: () => ground, at, W, H, cam, controls };
+load(location.hash.slice(1) in SCENES ? location.hash.slice(1) : 'river');
+loop();
+</script>
+</body>
+</html>
