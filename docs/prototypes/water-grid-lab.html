@@ -76,9 +76,12 @@
 <div id="panel">
   <div id="panel-head"><h1>Water Grid Lab</h1><button id="fold" aria-expanded="true">Hide</button></div>
   <div id="panel-body">
-  <p class="sub intro">Dwell's candidate water model: a depth on each 1 m ground column, moving to its neighbours across their shared faces (shallow-water flow: it needs depth to move). Springs hold their cell full; water reaching the far edge is removed. Ground steps are ½ m.</p>
-  <div class="sec">Scene</div>
+  <p class="sub intro" id="intro-cell" style="display:none">Cellular water: each voxel (1 × ½ × 1 m) holds a fraction of water and passes it down, sideways and, when pressed over full, up. Fully 3D: caves, pipes, overhangs, falls. Springs (cyan) hold their cell full; sinks (the edge) remove water.</p>
+  <p class="sub intro" id="intro-grid">Surface grid: Dwell's candidate water model: a depth on each 1 m ground column, moving to its neighbours across their shared faces (shallow-water flow: it needs depth to move). Springs hold their cell full; water reaching the far edge is removed. Ground steps are ½ m.</p>
+  <div class="sec">Surface grid (one water surface per column)</div>
   <div class="row" id="scenes"></div>
+  <div class="sec">Cellular (3D, a fraction of water per voxel)</div>
+  <div class="row" id="cscenes"></div>
   <p id="scene-note"></p>
   <div class="sec">Edit tool</div>
   <div class="row" id="tools"></div>
@@ -87,8 +90,9 @@
     <button id="reset">Reset scene</button>
   </div>
   <label><span class="k">Speed</span><input id="speed" type="range" min="1" max="60" value="20"><span id="speed-v"></span></label>
-  <label><input id="round" type="checkbox"> Draw levels rounded to ½ m blocks</label>
-  <label><input id="speedcol" type="checkbox" checked> Colour water by its speed</label>
+  <label class="grid-only"><input id="round" type="checkbox"> Draw levels rounded to ½ m blocks</label>
+  <label class="grid-only"><input id="speedcol" type="checkbox" checked> Colour water by its speed</label>
+  <label class="cell-only" style="display:none"><span class="k">Cutaway</span><input id="cut" type="range" min="0" max="32" value="0"><span id="cut-v">off</span></label>
   <div class="sec">Numbers</div>
   <div id="stats"></div>
   <p class="sub" style="margin-top:8px">Camera mode: drag to turn, right-drag or two fingers to pan, wheel or pinch to zoom. Edit mode: click or drag on the ground to use the tool; right-drag or two fingers still turn and zoom. Keys: C camera, E edit, hold Space to turn while editing. The native Rust version of this model costs ~8 ns per column per step.</p>
@@ -219,21 +223,28 @@ const SCENES = {
 let scene = 'river';
 function load(name) {
   scene = name;
+  document.querySelectorAll('#scenes button, #cscenes button').forEach(b => b.classList.toggle('on', b.dataset.k === name));
+  if (name in CSCENES) {
+    showModel('cell'); loadCell(name);
+    document.getElementById('scene-note').textContent = CSCENES[name].note;
+    frameCam(CSCENES[name].cam, 1.3);
+    return;
+  }
+  showModel('grid');
   ground.fill(0); depth.fill(0); qx.fill(0); qz.fill(0); brought = 0; taken = 0; waterTime = 0;
   built = new Set();
   SCENES[name].make();
   base = new Float32Array(ground);
   document.getElementById('scene-note').textContent = SCENES[name].note;
-  document.querySelectorAll('#scenes button').forEach(b => b.classList.toggle('on', b.dataset.k === name));
   buildGround();
   frameCam(SCENES[name].cam);
 }
 // A scene's camera, pulled back (and further on a narrow screen, so the valley fits across it).
-function frameCam(c) {
+function frameCam(c, far = 2.2) {
   const t = new THREE.Vector3(...c[1]), off = new THREE.Vector3(...c[0]).sub(t);
   const portrait = cam.aspect < 1;
   if (portrait) off.y *= 1.6; // look down more steeply, so the valley fills a tall screen
-  off.multiplyScalar(portrait ? 3.2 * Math.sqrt(0.8 / Math.max(cam.aspect, 0.4)) : 2.2);
+  off.multiplyScalar(portrait ? 3.2 * Math.sqrt(0.8 / Math.max(cam.aspect, 0.4)) * far / 2.2 : far);
   controls.target.copy(t); cam.position.copy(t).add(off); controls.update();
 }
 
@@ -380,6 +391,224 @@ function buildWater() {
   cGeo.attributes.position.needsUpdate = true; cGeo.attributes.color.needsUpdate = true;
 }
 
+
+// =====================================================================================
+// ---- Cellular water (3D) ----
+// Each voxel (1 × ½ × 1 m) holds a fraction of water, 0 to a little over 1. Every step a cell
+// passes water down (filling the cell below up to what it can hold), then sideways (evening out
+// with its four neighbours), then up (only what is pressed over full, so pressure carries through
+// a pipe: a cell under others holds slightly more than 1). After w-shadow's "simple fluid
+// simulation with cellular automata", in 3D. Springs hold their cell full; sinks empty theirs.
+const CW = 48, CHT = 28, CD = 32, CN = CW * CHT * CD, CY = 0.5;
+const MAXM = 1, MAXC = 0.02, MINM = 0.0001, MINFLOW = 0.005, MAXSPEED = 1;
+const solid = new Uint8Array(CN), cbuilt = new Uint8Array(CN);
+let mass = new Float32Array(CN), nmass = new Float32Array(CN);
+let csprings = [], csinks = [], cBrought = 0, cTaken = 0, cSteps = 0;
+const ci = (x, y, z) => (y * CD + z) * CW + x;
+const inside = (x, y, z) => x >= 0 && y >= 0 && z >= 0 && x < CW && y < CHT && z < CD;
+function stable(total) {
+  if (total <= MAXM) return MAXM;
+  if (total < 2 * MAXM + MAXC) return (MAXM * MAXM + total * MAXC) / (MAXM + MAXC);
+  return (total + MAXC) / 2;
+}
+function cellStep() {
+  nmass.set(mass);
+  for (let y = 0; y < CHT; y++) for (let z = 0; z < CD; z++) for (let x = 0; x < CW; x++) {
+    const i = ci(x, y, z);
+    if (solid[i] || mass[i] <= MINM) continue;
+    let rem = mass[i];
+    // Down.
+    if (y > 0 && !solid[i - CW * CD]) {
+      const b = i - CW * CD;
+      let f = stable(rem + mass[b]) - mass[b];
+      if (f > MINFLOW) f *= 0.5;
+      f = Math.max(0, Math.min(f, MAXSPEED, rem));
+      nmass[i] -= f; nmass[b] += f; rem -= f;
+    }
+    if (rem <= 0) continue;
+    // Sideways: even out with each open neighbour.
+    for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const nx = x + dx, nz = z + dz;
+      if (nx < 0 || nz < 0 || nx >= CW || nz >= CD) continue;
+      const n = ci(nx, y, nz);
+      if (solid[n]) continue;
+      let f = (mass[i] - mass[n]) / 5;
+      if (f > MINFLOW) f *= 0.5;
+      f = Math.max(0, Math.min(f, rem));
+      nmass[i] -= f; nmass[n] += f; rem -= f;
+      if (rem <= 0) break;
+    }
+    if (rem <= 0) continue;
+    // Up: only what is pressed over what it can hold.
+    if (y + 1 < CHT && !solid[i + CW * CD]) {
+      const a = i + CW * CD;
+      let f = rem - stable(rem + mass[a]);
+      if (f > MINFLOW) f *= 0.5;
+      f = Math.max(0, Math.min(f, MAXSPEED, rem));
+      nmass[i] -= f; nmass[a] += f;
+    }
+  }
+  [mass, nmass] = [nmass, mass];
+  for (const i of csprings) if (mass[i] < MAXM) { cBrought += (MAXM - mass[i]) * CY; mass[i] = MAXM; }
+  for (const i of csinks) { cTaken += mass[i] * CY; mass[i] = 0; }
+  cSteps++;
+}
+function fillBox(x0, x1, y0, y1, z0, z1, v, built = false) {
+  for (let y = y0; y <= y1; y++) for (let z = z0; z <= z1; z++) for (let x = x0; x <= x1; x++) {
+    if (!inside(x, y, z)) continue;
+    const i = ci(x, y, z); solid[i] = v; if (v && built) cbuilt[i] = 1; if (v) mass[i] = 0;
+  }
+}
+function waterBox(x0, x1, y0, y1, z0, z1) {
+  for (let y = y0; y <= y1; y++) for (let z = z0; z <= z1; z++) for (let x = x0; x <= x1; x++) if (!solid[ci(x, y, z)]) mass[ci(x, y, z)] = 1;
+}
+const CSCENES = {
+  cave: { name: '3D: Cave under a pond', cut: 16, cam: [[24, 22, 52], [24, 5, 16]],
+    note: 'A spring fills a pond on the hillside; a shaft in its floor drains into a cave below, which fills; then the pond overflows down a notch and runs off the edge (dark). Drag Cutaway to see inside.',
+    make() {
+      fillBox(0, CW - 1, 0, 15, 0, CD - 1, 1);
+      fillBox(14, 34, 4, 9, 8, 24, 0);                // the cave
+      fillBox(18, 30, 13, 15, 12, 20, 0);             // the pond
+      fillBox(24, 24, 10, 12, 16, 16, 0);             // the shaft
+      fillBox(31, CW - 1, 15, 15, 15, 17, 0);         // the overflow notch and its run-off
+      csprings = [ci(19, 15, 13)];
+      csinks = [ci(CW - 1, 15, 15), ci(CW - 1, 15, 16), ci(CW - 1, 15, 17)];
+    } },
+  tanks: { name: '3D: Connected tanks', cut: 15, cam: [[24, 20, 50], [24, 6, 15]],
+    note: 'Two tanks joined by a pipe under the wall between them, one full: does pressure push water up into the other until the levels match (a U-bend)? Cellular water needs its "pressed over full" rule for this.',
+    make() {
+      fillBox(0, CW - 1, 0, 3, 0, CD - 1, 1);
+      fillBox(5, 41, 4, 23, 9, 21, 1, true);           // a block of stone
+      fillBox(6, 15, 4, 23, 10, 20, 0);                // the left tank
+      fillBox(31, 40, 4, 23, 10, 20, 0);               // the right tank
+      fillBox(16, 30, 4, 5, 15, 15, 0);                // the pipe, 1 m tall
+      waterBox(6, 15, 4, 19, 10, 20);
+      csprings = []; csinks = [];
+    } },
+  dam: { name: '3D: Dam on a river', cut: 0, cam: [[44, 18, 38], [26, 6, 16]],
+    note: 'The surface grid\'s dam below its banks, in cells: the river backs up behind the dam and pours over it into the river below.',
+    make() {
+      const mid = CD >> 1;
+      for (let x = 0; x < CW; x++) {
+        const bed = 8 - Math.floor(x / 8);             // a ½ m step down every 8 m
+        for (let z = 0; z < CD; z++) {
+          const off = Math.abs(z - mid);
+          const top = off <= 1 ? bed : bed + 2 + Math.max(0, off - 4);
+          fillBox(x, x, 0, Math.min(top, CHT - 1), z, z, 1);
+        }
+      }
+      const x = 26, bed = 8 - Math.floor(x / 8);
+      fillBox(x, x, bed + 1, bed + 1, mid - 1, mid + 1, 1, true);  // the dam: ½ m over the bed, banks 1 m
+      csprings = [ci(0, 9, mid - 1), ci(0, 9, mid), ci(0, 9, mid + 1)];
+      csinks = []; for (let y = 0; y < CHT; y++) for (let z = 0; z < CD; z++) csinks.push(ci(CW - 1, y, z));
+    } },
+  aqueduct: { name: '3D: Aqueduct', cut: 0, cam: [[46, 14, 30], [30, 5, 16]],
+    note: 'A trough on pillars, 7 m up, fed by a spring: its water runs along it and pours off its open end to the ground, spreads, and runs off the edges. Water over air over ground: one surface per column can\'t hold this.',
+    make() {
+      fillBox(0, CW - 1, 0, 3, 0, CD - 1, 1);
+      for (let x = 4; x <= 30; x += 6) fillBox(x, x, 4, 13, 15, 17, 1, true);  // pillars
+      fillBox(2, 30, 13, 13, 14, 18, 1, true);       // the trough's floor
+      fillBox(2, 30, 14, 15, 14, 14, 1, true);       // its sides
+      fillBox(2, 30, 14, 15, 18, 18, 1, true);
+      fillBox(2, 2, 14, 15, 14, 18, 1, true);        // its closed end
+      csprings = [ci(3, 14, 15), ci(3, 14, 16), ci(3, 14, 17)];
+      csinks = [];  // every edge of the ground drains
+      for (let z = 0; z < CD; z++) csinks.push(ci(0, 4, z), ci(CW - 1, 4, z));
+      for (let x = 1; x < CW - 1; x++) csinks.push(ci(x, 4, 0), ci(x, 4, CD - 1));
+    } },
+};
+let cut = 0;
+function loadCell(name) {
+  solid.fill(0); cbuilt.fill(0); mass.fill(0); nmass.fill(0); cBrought = 0; cTaken = 0; cSteps = 0;
+  CSCENES[name].make();
+  cut = CSCENES[name].cut;
+  const cs = document.getElementById('cut'); cs.value = cut; document.getElementById('cut-v').textContent = cut ? cut + ' m' : 'off';
+  buildSolids();
+}
+// Solids: the cells with an open side (the cut counts as open), drawn as blocks.
+const solidMat = new THREE.MeshLambertMaterial();
+let solidMesh = null, solidIds = [];
+const cutAway = (z) => cut > 0 && z >= cut;
+function open(x, y, z) { return !inside(x, y, z) ? (y >= CHT) : (!solid[ci(x, y, z)] || cutAway(z)); }
+function buildSolids() {
+  if (solidMesh) sceneG.remove(solidMesh);
+  solidIds = [];
+  for (let y = 0; y < CHT; y++) for (let z = 0; z < CD; z++) for (let x = 0; x < CW; x++) {
+    const i = ci(x, y, z);
+    if (!solid[i] || cutAway(z)) continue;
+    if (open(x + 1, y, z) || open(x - 1, y, z) || open(x, y + 1, z) || open(x, y - 1, z) || open(x, y, z + 1) || open(x, y, z - 1)) solidIds.push(i);
+  }
+  solidMesh = new THREE.InstancedMesh(boxGeo, solidMat, Math.max(1, solidIds.length));
+  solidIds.forEach((i, k) => {
+    const x = i % CW, z = ((i / CW) | 0) % CD, y = (i / (CW * CD)) | 0;
+    tmp.position.set(x + 0.5, y * CY + CY / 2, z + 0.5); tmp.scale.set(1, CY, 1); tmp.updateMatrix();
+    solidMesh.setMatrixAt(k, tmp.matrix);
+    const v = ((x + z + y) & 1) ? 0.03 : 0;
+    if (csprings.includes(i)) col.setRGB(0.25, 0.75, 0.85);
+    else if (cbuilt[i]) col.setRGB(0.58 - v, 0.56 - v, 0.53 - v);
+    else if (!inside(x, y + 1, z) || !solid[ci(x, y + 1, z)]) col.setRGB(0.36 - v, 0.56 - v, 0.27 - v);
+    else if (cutAway(z + 1)) col.setRGB(0.45 - v, 0.36 - v, 0.27 - v); // the cut face: earth
+    else col.setRGB(0.5 - v, 0.42 - v, 0.32 - v);
+    solidMesh.setColorAt(k, col);
+  });
+  solidMesh.count = solidIds.length;
+  solidMesh.instanceMatrix.needsUpdate = true; if (solidMesh.instanceColor) solidMesh.instanceColor.needsUpdate = true;
+  solidMesh.visible = model === 'cell';
+  sceneG.add(solidMesh);
+}
+// Water cells: settled water a box as deep as its fill; falling water (open, not full, below) a
+// narrower column of foam the cell's height; water under water drawn full.
+const cellWaterMat = new THREE.MeshLambertMaterial({ transparent: true, opacity: 0.8, depthWrite: false });
+const cellWater = new THREE.InstancedMesh(boxGeo, cellWaterMat, CN);
+cellWater.frustumCulled = false; cellWater.visible = false; sceneG.add(cellWater);
+const CBLUE = new THREE.Color(0.16, 0.42, 0.8), CDEEP = new THREE.Color(0.1, 0.3, 0.65), CFOAM = new THREE.Color(0.85, 0.93, 0.99);
+function buildCells() {
+  let k = 0;
+  for (let y = 0; y < CHT; y++) for (let z = 0; z < CD; z++) {
+    if (cutAway(z)) continue;
+    for (let x = 0; x < CW; x++) {
+      const i = ci(x, y, z), m = mass[i];
+      if (solid[i] || m < 0.001) continue;
+      const below = y > 0 ? i - CW * CD : -1;
+      const above = y + 1 < CHT ? i + CW * CD : -1;
+      const falling = below >= 0 && !solid[below] && mass[below] < 0.9;
+      if (!falling && m < 0.01) continue; // a falling stream carries little a cell: drawn anyway
+      const covered = above >= 0 && mass[above] > 0.01;
+      if (falling) {
+        const w = 0.3 + 0.6 * Math.min(1, Math.sqrt(m * 4));
+        tmp.position.set(x + 0.5, y * CY + CY / 2, z + 0.5); tmp.scale.set(w, CY, w);
+        cellWater.setColorAt(k, CFOAM);
+      } else {
+        const h = covered ? CY : CY * Math.min(1, m);
+        tmp.position.set(x + 0.5, y * CY + h / 2, z + 0.5); tmp.scale.set(1, h, 1);
+        cellWater.setColorAt(k, m > 1.005 ? CDEEP : CBLUE);
+      }
+      tmp.updateMatrix(); cellWater.setMatrixAt(k++, tmp.matrix);
+    }
+  }
+  cellWater.count = k;
+  cellWater.instanceMatrix.needsUpdate = true; if (cellWater.instanceColor) cellWater.instanceColor.needsUpdate = true;
+}
+function cellStats() {
+  let wet = 0, stored = 0;
+  for (let i = 0; i < CN; i++) if (mass[i] > 0.01) { wet++; stored += mass[i] * CY; }
+  return [['Cells', CN.toLocaleString()], ['Wet cells', wet.toLocaleString()], ['Steps', cSteps.toLocaleString()],
+    ['Step (all cells)', stepMs.toFixed(2) + ' ms'], ['Per cell per step', (stepMs * 1e6 / CN).toFixed(0) + ' ns (JS)'],
+    ['Stored', stored.toFixed(1) + ' m³'], ['In / out so far', cBrought.toFixed(0) + ' / ' + cTaken.toFixed(0) + ' m³']];
+}
+let model = 'grid';
+function showModel(m) {
+  model = m;
+  for (const o of [groundMesh, water, curtains]) if (o) o.visible = m === 'grid';
+  if (solidMesh) solidMesh.visible = m === 'cell';
+  cellWater.visible = m === 'cell';
+  document.querySelectorAll('.grid-only').forEach(e => e.style.display = m === 'grid' ? '' : 'none');
+  document.querySelectorAll('.cell-only').forEach(e => e.style.display = m === 'cell' ? '' : 'none');
+  document.getElementById('intro-grid').style.display = m === 'grid' ? '' : 'none';
+  document.getElementById('intro-cell').style.display = m === 'cell' ? '' : 'none';
+}
+// =====================================================================================
+
 // ---- Tools ----
 const TOOLS = { raise: 'Place block (+½ m)', lower: 'Dig (−½ m)', source: 'Add a spring', drain: 'Remove water + springs' };
 let tool = 'raise';
@@ -388,11 +617,33 @@ function pick(ev) {
   const r = renderer.domElement.getBoundingClientRect();
   mouse.set(((ev.clientX - r.left) / r.width) * 2 - 1, -((ev.clientY - r.top) / r.height) * 2 + 1);
   ray.setFromCamera(mouse, cam);
+  if (model === 'cell') {
+    const hit = solidMesh && ray.intersectObject(solidMesh)[0];
+    if (!hit) return null;
+    const i = solidIds[hit.instanceId], n = hit.face.normal;
+    return { i, nx: Math.round(n.x), ny: Math.round(n.y), nz: Math.round(n.z), key: i * 8 + (n.x > 0.5 ? 1 : n.x < -0.5 ? 2 : n.y > 0.5 ? 3 : n.y < -0.5 ? 4 : n.z > 0.5 ? 5 : 6) };
+  }
   const hit = ray.intersectObject(groundMesh)[0];
   return hit ? hit.instanceId : null;
 }
+function applyCell(h) {
+  const x = h.i % CW, z = ((h.i / CW) | 0) % CD, y = (h.i / (CW * CD)) | 0;
+  const ax = x + h.nx, ay = y + h.ny, az = z + h.nz; // the open cell against the face
+  if (tool === 'raise') { if (inside(ax, ay, az)) { const j = ci(ax, ay, az); solid[j] = 1; cbuilt[j] = 1; mass[j] = 0; } }
+  else if (tool === 'lower') { if (y > 0) { solid[h.i] = 0; cbuilt[h.i] = 0; } }
+  else if (tool === 'source') { if (inside(ax, ay, az)) csprings.push(ci(ax, ay, az)); }
+  else if (tool === 'drain') {
+    for (let dy = -3; dy <= 3; dy++) for (let dz = -2; dz <= 2; dz++) for (let dx = -2; dx <= 2; dx++) {
+      if (!inside(ax + dx, ay + dy, az + dz)) continue;
+      const j = ci(ax + dx, ay + dy, az + dz); cTaken += mass[j] * CY; mass[j] = 0;
+    }
+    csprings = csprings.filter(j => { const sx = j % CW, sz = ((j / CW) | 0) % CD, sy = (j / (CW * CD)) | 0; return Math.abs(sx - ax) > 2 || Math.abs(sz - az) > 2 || Math.abs(sy - ay) > 3; });
+  }
+  buildSolids();
+}
 let painting = false, last = -1;
 function apply(i) {
+  if (model === 'cell') { if (i == null || i.key === last) return; last = i.key; applyCell(i); return; }
   if (i == null || i === last) return; last = i;
   if (tool === 'raise') { ground[i] += 0.5; buildGround(); }
   else if (tool === 'lower') { ground[i] = Math.max(0.5, ground[i] - 0.5); buildGround(); }
@@ -416,6 +667,9 @@ renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault());
 // ---- Panel ----
 const sc = document.getElementById('scenes');
 for (const [k, s] of Object.entries(SCENES)) { const b = document.createElement('button'); b.textContent = s.name; b.dataset.k = k; b.onclick = () => load(k); sc.appendChild(b); }
+const csc = document.getElementById('cscenes');
+for (const [k, s] of Object.entries(CSCENES)) { const b = document.createElement('button'); b.textContent = s.name.replace('3D: ', ''); b.dataset.k = k; b.onclick = () => load(k); csc.appendChild(b); }
+document.getElementById('cut').oninput = (e) => { cut = +e.target.value; document.getElementById('cut-v').textContent = cut ? cut + ' m' : 'off'; buildSolids(); };
 const tl = document.getElementById('tools');
 for (const [k, s] of Object.entries(TOOLS)) { const b = document.createElement('button'); b.textContent = s; b.dataset.k = k;
   b.onclick = () => { tool = k; tl.querySelectorAll('button').forEach(x => x.classList.toggle('on', x.dataset.k === k)); }; tl.appendChild(b); }
@@ -444,6 +698,7 @@ const speed = document.getElementById('speed'), speedV = document.getElementById
 let stepMs = 0;
 const statsEl = document.getElementById('stats');
 function stats(steps) {
+  if (model === 'cell') { statsEl.innerHTML = cellStats().map(([k, v]) => `<span class="k">${k}</span><span>${v}</span>`).join(''); return; }
   let wet = 0, stored = 0, fast = 0;
   for (let i = 0; i < N; i++) if (depth[i] > MIN_DRAW) { wet++; stored += depth[i]; fast = Math.max(fast, speedAt(i)); }
   const perCol = stepMs * 1e6 / N;
@@ -459,20 +714,21 @@ function stats(steps) {
 let frame = 0;
 function loop() {
   const steps = +speed.value;
-  speedV.textContent = (steps * DT * 60).toFixed(0) + '× real time';
+  speedV.textContent = model === 'cell' ? steps + ' steps a frame' : (steps * DT * 60).toFixed(0) + '× real time';
   if (running) {
     const t = performance.now();
-    for (let s = 0; s < steps; s++) step(DT);
+    for (let s = 0; s < steps; s++) model === 'cell' ? cellStep() : step(DT);
     stepMs = (performance.now() - t) / steps;
   }
-  buildWater();
+  if (model === 'cell') buildCells(); else buildWater();
   if (frame++ % 15 === 0) stats(steps);
   controls.update();
   renderer.render(sceneG, cam);
   requestAnimationFrame(loop);
 }
-window.lab = { load, step, outflow, buildWater, count: () => cGeo.drawRange.count, depth: () => depth, ground: () => ground, at, W, H, cam, controls };
-load(location.hash.slice(1) in SCENES ? location.hash.slice(1) : 'river');
+window.lab = { cellStep, mass: () => mass, ci, loadCell, load, step, outflow, buildWater, count: () => cGeo.drawRange.count, depth: () => depth, ground: () => ground, at, W, H, cam, controls };
+const start = location.hash.slice(1);
+load(start in SCENES || start in CSCENES ? start : 'river');
 loop();
 </script>
 </body>

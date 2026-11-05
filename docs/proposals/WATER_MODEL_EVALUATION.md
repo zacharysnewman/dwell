@@ -187,6 +187,35 @@ requirement on a dedicated server; in a browser-hosted world some such limit is 
 needed. Not yet measured: layered columns (caves), the cost in WASM, the memory of a whole face's
 rivers, and a quiet-machine cost of the local-inertial step.
 
+### 5.1 Cellular water (3D), beside it
+
+The owner asked about particles a voxel in size; at that size SPH stops working (a river 1–2
+particles deep has no pressure field, and ~10 million particles at ~0.01 s steps is hundreds of
+cores), so the lab instead runs its cellular counterpart: each voxel (1 × ½ × 1 m) holds a fraction
+of water, passed down, sideways (evened with its four neighbours) and, when pressed over full, up
+(after w-shadow's cellular-automata fluid, in 3D). Springs hold a cell full; sinks empty theirs.
+Four scenes: a cave under a pond (a shaft drains the pond into the cave, which fills, then the pond
+overflows), connected tanks (a U-bend), a dam on a river, an aqueduct on pillars pouring 7 m to the
+ground. A cutaway shows inside.
+
+Measured in the lab (JavaScript, 48 × 28 × 32 = 43,008 cells):
+- **Fully 3D:** the cave fills through its shaft, the aqueduct's water runs along its trough and
+  falls as streams to the ground: none of that fits one water surface per column.
+- **Conserved:** the tanks hold exactly 1,760 cells of water after 100,000 steps.
+- **Cheap per step:** 0.24–0.28 ms for all 43,008 cells, ~6 ns a cell (JS; solid and dry cells
+  are skipped).
+- **Pressure is very slow:** the tanks, 19 cells full against empty, stand at 15/5 after 20,000
+  steps and 12/8 after 100,000 (level is about 12/12). Each cell can be pressed only 2 % over full,
+  so a level difference passes through a pipe a little a step: the known weakness (Dwarf Fortress
+  adds a separate pressure rule).
+- **Slow, thin flow:** water moves about a cell a step; a stream off the aqueduct carries 0.005 of
+  a cell per cell, and a dam's overflow is 6 cm. Rivers have no momentum.
+
+So cellular water answers the grid's one-surface limit (caves, pipes, overhangs, falls) and the grid
+answers cellular water's slow pressure and flow. The hybrid in §4 (grid for open water, cells only
+where the water isn't one surface) stays the strongest option; the cellular part would need a
+pressure rule.
+
 ## 6. Questions for the owner
 
 1. **Prototype first?** A sandbox prototype of C (a few days), judged by you in the browser, before
