@@ -2377,6 +2377,12 @@ flies high above the disc and the whole disc is drawn by the time it arrives.
 
 ### 6.7 Water Flow **[in progress, Phase 52: W1 built, the world map's flow (W2) built]**
 
+**[planned, Phase 53]** To be replaced by [ADR 0060](./adr/0060-water-surface-grid.md)'s surface grid
+([`WATER_SURFACE_GRID.md`](./WATER_SURFACE_GRID.md)): water a depth and flows per column in its own layer,
+simulated by the local-inertial law with sleeping chunks, pools and a held sea, and generated water filled
+by it at world creation (no drawn beds, levels or lips). Nothing of it is built in the game yet; until
+G2 lands, what follows is what runs.
+
 [ADR 0053](./adr/0053-water-flow.md), [`WATER_FLOW.md`](./WATER_FLOW.md). Liquid is simulated as
 **basins**, each a connected body with one level and volume, joined by **outlets** (the weir law,
 blocks' `leak` data), not per cell: a basin's level changes by in − out each tick and its rim cells

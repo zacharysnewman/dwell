@@ -70,6 +70,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 50 — Terrain volumes (the cliffs) | 🚧 In progress — the cliffs are the terrain's default since 0.35.0 (WORLD_GENERATION.md §5): a density node graph as data (`shared/worldgen/volume.json`, `strength` 0–1 the slider for biomes later), shaped first then the surface, kept off the water. 0.35.1: the LOD draws the undersides. 0.38.0 (owner: "redesign to look more like real cliffs"): terraces along the hill (the `terrace` node), stepped country and escarpments by region, more in the mountains, slight overhangs; built and tested, the owner's look outstanding. 0.38.1: 1.9–2.3× faster, the same cells. Outstanding: a coarse lattice; waterfalls (with moving water); caves and floating islands not started |
 | 51 — Built bodies | 🚧 In progress — B1 built (0.41.0, a new compatibility line: protocol v21; editing moving pieces, splits, body kinds as data); B2 built (0.41.1: the build platform, built bodies taking blocks and never settling, saved with the world, sent to joiners); B3 built (0.41.2: floating by buoyancy per cell); 0.41.3 corrects the platform (the ground a held object is built on, not its first block; owner, 2026-11-02). 0.41.4–0.41.5 playtest fixes: floating rafts pushable, never frozen, steady underfoot, true outlines; the push predicted (the controller's push pass, stand-ins carried to the present, near bodies drawn at the present); pieces settle once. 0.41.6 tuning: weight as in life (a person's push less the ground's friction, a 1 m log sliding at ~0.5 m/s; water drag by area and speed squared, rafts gliding; a rider presses a raft down; the stand-ins slowed alike). Outstanding: the owner's look at a raft in a lake; later: driving. Designed (ADR 0052, [`BUILT_BODIES.md`](./BUILT_BODIES.md), the owner's answers 2026-11-02): editing moving pieces (B1), the build platform and built bodies saved with the world (B2), floating (B3). B1 opens a new compatibility line (0.41.0, the owner raises it). Open questions for the owner: hollow hulls, `maxBodies`, edit prediction, interest |
 | 52 — Water flow | 🚧 In progress — W1 built (the server's basins: damming, draining, diverting, the sea as a reservoir; world settings at join, ADR 0054, a new world's day 20 minutes; 0.42.0); 0.42.1–0.42.2 playtest fixes and the redesign after the review (WATER_FLOW.md §16, ADR 0055: the world as found is at rest, fed by the world map's flow, W2a); 0.43.0 the generator's ramps beside its water flooded (a new line); 0.43.1 a wall across a river spilled over (crests split basins, spills drawn as running water); 0.43.2 one opening law for holes, gaps and shared faces (ADR 0056); 0.43.3 a basin found again when a chunk beside it loads (a dam's flood went no further than the loaded world); 0.43.4 basins saved with the world and fast-forward (W2b); 0.43.5 water filling or draining flows with no player near; 0.43.6 changes carried down the map's rivers at the river's speed (W2d); 0.44.0 smooth fill (W3a, a new line), 0.44.1 blended into the LOD; 0.44.5–0.44.6 smooth rising and water through flooded ramps; 0.45.0 balanced rivers (W6, ADR 0057, a new line: lips sized for the river, flows by the one law, sloped edges); 0.45.1–0.45.2 a dam's river below at its level; 0.46.0 creek crests sized along the river's direction (a new line); 0.47.0 visible water (W7, ADR 0058, a new line: inflow only where seen, lips planned exactly); 0.48.0 the pool graph G1–G3 (ADR 0059, a new line: chutes, virtual pools, no hidden walls); 0.48.1 spills always flow down and pools pour over their rims (WATER_FLOW.md §19.3); outstanding G4–G6, BUGS 28; outstanding the steep-cascade lips (BUGS 27); outstanding W2c (live from load, pending the owner), W3–W5 and the owner's look; designed (ADR 0053, [`WATER_FLOW.md`](./WATER_FLOW.md), the owner's answers 2026-11-03): basins with one level joined by outlets, rivers as chains of pools fed by runoff, damming, draining, diverting, currents on bodies and swimmers, placed water as a small basin; W2 opens a new compatibility line (0.42.0, the owner raises it) |
+| 53 — Water surface grid | ⏳ Not started — accepted 2026-11-05 (ADR 0060, [`WATER_SURFACE_GRID.md`](./WATER_SURFACE_GRID.md)): water simulated as a surface grid in its own layer (sleeping chunks, pools, a held sea), generated water filled by it at world creation (no drawn beds, levels or lips); replaces Phase 52's basins and pool graph when G2 lands. Next: G0 (the prototype finished at world scale, then rivers without beds shown to the owner). Prototyped in the lab and a scratch benchmark (WATER_MODEL_EVALUATION.md §5), nothing in the game yet |
 
 Phase numbering: Phase 4 was inserted on 2026-09-29 for the planet-scale world (ADRs 0011, 0012);
 the former Phases 4–7 are now 5–8, and Phase 3's former 3c and 3d are now 3d and 3e.
@@ -5264,4 +5265,42 @@ Exit criteria
 - [x] A river far from players comes back at its steady state when a player returns
   (`a_dammed_river_unloaded_comes_back_as_if_watched`, `a_dam_out_of_reach_fills_on_until_it_settles`, both faces).
 - [ ] The owner's look at a dam filling and a lake draining in game.
+
+## Phase 53 — Water Surface Grid: Simulated Water, Generated by Filling
+
+**Status:** ⏳ Not started. Accepted 2026-11-05 ([ADR 0060](./adr/0060-water-surface-grid.md), the
+owner's answers in [`WATER_SURFACE_GRID.md`](./WATER_SURFACE_GRID.md) §1). Water is a depth and flows per
+1 m column in its own layer, simulated by the local-inertial law with sleeping chunks, pools and a held
+sea; the block-scale generator stops drawing beds, levels and lips, and a whole-world fill-and-spill at
+creation places the water. Replaces Phase 52's basins, outlets and pool graph (ADR 0053, 0057, 0059)
+when G2 lands; Phase 52's outstanding items (G4–G6, W3–W5) are carried here instead. G1 changes the
+terrain a seed generates and G2 the saved world: a new compatibility line, which the owner raises.
+Evidence: [`WATER_MODEL_EVALUATION.md`](./proposals/WATER_MODEL_EVALUATION.md) §5. Deferred by the
+owner: water in caves and under overhangs (one surface per column until then).
+
+Deliverables
+- [ ] G0 — The prototype finished (the scratch benchmark on the game's terrain): a whole face settles
+  (the awake count stops climbing), no column more than 10 cm from stepping everything, the pools'
+  passes parallel; then the fill-and-spill start on the game's ground with no beds: its time, the
+  settle after it, and rivers without beds shown to the owner.
+- [ ] G1 — Generation: the whole-world fill (priority flood and discharge routing from the map's river
+  flows, a held sea) on block-scale ground with no drawn beds, levels or lips; deterministic natively
+  and in WASM; creation under a minute with its stages shown (the map filling, visually if possible).
+- [ ] G2 — The runtime grid in `dwell-sim`: the water layer per chunk (its own storage), sleeping
+  chunks with the band and smooth waking, pools, held outlets, springs; block edits wake it; saving
+  only chunks changed from the fill; both faces; basins and the pool graph removed.
+- [ ] G3 — Clients: awake water chunks' changes on the wire, the surface drawn from depth as its own
+  mesh (the water renderer, LOD), currents on bodies and swimmers.
+- [ ] G4 — Data: `shared/water/*.json` (sleep and band, flow physics, pools, sources) with a generator,
+  validation, a fixture test, and per-world values in WorldSettings.
+- [ ] Later — Rain as a source layer; block-scale carving by the same flow.
+
+Exit criteria
+- [ ] A dam, a diversion, a flood over a bank and placed water behave by the one law, water conserved
+  (automated, both faces).
+- [ ] A settled face keeps nearly all chunks asleep, every level within 10 cm of stepping everything
+  (automated, a window of the game's terrain).
+- [ ] A world is created in under a minute with rivers and lakes in place (measured natively and in
+  the browser).
+- [ ] The owner's look at rivers without beds, a dam filling and a lake draining in game.
 

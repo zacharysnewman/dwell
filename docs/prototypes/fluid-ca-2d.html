@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fluid CA Conserved</title>
+    <script src="https://cdn.tailwindcss.com/3.4.5"></script>
+    <style>
+        :root { --bg: #020617; }
+        body { background-color: var(--bg); color: #f8fafc; touch-action: none; overflow-x: hidden; }
+        canvas {
+            image-rendering: pixelated;
+            cursor: crosshair;
+            border: 2px solid #1e293b;
+            background: #000;
+            width: 100%;
+            max-width: 800px;
+            height: auto;
+        }
+        .tool-active { outline: 2px solid #60a5fa; background-color: #1e293b !important; }
+    </style>
+</head>
+<body class="flex flex-col items-center p-4">
+
+    <div class="w-full max-w-4xl flex flex-col items-center gap-4">
+        <header class="text-center">
+            <h1 class="text-2xl font-bold text-sky-400">Conserved Fluid Logic</h1>
+            <p class="text-slate-500 text-xs italic">Water is never created or destroyed by the rules: every move is a swap. Only the brush adds or removes it.</p>
+        </header>
+
+        <canvas id="simCanvas" class="rounded-lg shadow-2xl"></canvas>
+
+        <div class="bg-slate-900/90 p-5 rounded-xl w-full grid grid-cols-1 md:grid-cols-3 gap-6 border border-slate-800">
+            <!-- Brush Selection -->
+            <div>
+                <span class="text-[10px] font-bold uppercase text-slate-500 mb-2 block tracking-widest">Materials</span>
+                <div class="grid grid-cols-2 gap-2">
+                    <button onclick="setTool(1)" id="tool1" class="tool-btn bg-amber-400/20 text-amber-400 p-2 rounded text-xs font-bold">Sand</button>
+                    <button onclick="setTool(2)" id="tool2" class="tool-btn bg-blue-500/20 text-blue-400 p-2 rounded text-xs font-bold tool-active">Water</button>
+                    <button onclick="setTool(3)" id="tool3" class="tool-btn bg-slate-500/20 text-slate-400 p-2 rounded text-xs font-bold">Stone</button>
+                    <button onclick="setTool(0)" id="tool0" class="tool-btn bg-red-500/20 text-red-400 p-2 rounded text-xs font-bold">Eraser</button>
+                </div>
+            </div>
+
+            <!-- Rules Summary -->
+            <div class="bg-slate-950/50 p-3 rounded-lg border border-slate-800 flex flex-col justify-center">
+                <span class="text-[10px] font-bold uppercase text-slate-500 mb-2 block">Water rules (in order)</span>
+                <ol class="space-y-1 text-[10px] text-slate-300 list-decimal list-inside">
+                    <li>Fall into an empty cell below.</li>
+                    <li>Slide down a diagonal (only past an open side, so it can't squeeze through a wall's corner).</li>
+                    <li>Otherwise look along its row, through empty cells, for the nearest place it can fall, and step toward it.</li>
+                    <li>No place to fall: stay still. (A lone droplet rests instead of being deleted.)</li>
+                </ol>
+                <div class="text-[9px] text-slate-500 mt-2 font-mono">Each cell moves at most once a generation.</div>
+            </div>
+
+            <!-- Controls -->
+            <div class="flex flex-col justify-between">
+                <div class="flex gap-2">
+                    <button id="playPause" class="flex-1 bg-sky-600 hover:bg-sky-500 p-2 rounded text-xs font-bold">Pause</button>
+                    <button id="reset" class="flex-1 bg-slate-800 hover:bg-slate-700 p-2 rounded text-xs font-bold">Clear</button>
+                </div>
+                <div class="mt-3 flex gap-2" id="speeds">
+                    <button data-every="15" class="speed-btn flex-1 bg-slate-800 p-1 rounded text-[10px] font-bold">4/s</button>
+                    <button data-every="4" class="speed-btn flex-1 bg-slate-800 p-1 rounded text-[10px] font-bold">15/s</button>
+                    <button data-every="1" class="speed-btn flex-1 bg-slate-800 p-1 rounded text-[10px] font-bold tool-active">Full</button>
+                </div>
+                <div class="mt-4 flex justify-between items-center">
+                    <div class="flex flex-col">
+                        <span class="text-[9px] text-slate-500 font-bold uppercase">Brush</span>
+                        <input type="range" id="brushSize" min="1" max="10" value="3" class="w-24 h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-sky-500">
+                    </div>
+                    <div class="flex flex-col items-end">
+                        <span class="text-[9px] text-slate-500 font-bold uppercase">Generation</span>
+                        <span id="genCount" class="font-mono text-lg text-sky-600">0</span>
+                    </div>
+                </div>
+                <div class="mt-3 flex justify-between items-center">
+                    <span class="text-[9px] text-slate-500 font-bold uppercase">Water cells</span>
+                    <span id="waterCount" class="font-mono text-lg text-sky-400">0</span>
+                </div>
+                <div id="waterNote" class="text-[9px] text-slate-500 text-right">changes only when you paint</div>
+                <div class="mt-3 flex justify-between items-center">
+                    <span class="text-[9px] text-slate-500 font-bold uppercase">Cells moving</span>
+                    <span id="movingCount" class="font-mono text-lg text-emerald-400">0</span>
+                </div>
+                <div class="text-[9px] text-slate-500 text-right">0 = settled</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('simCanvas');
+        const ctx = canvas.getContext('2d');
+        const genDisplay = document.getElementById('genCount');
+        const waterDisplay = document.getElementById('waterCount');
+        const movingDisplay = document.getElementById('movingCount');
+
+        const EMPTY = 0, SAND = 1, WATER = 2, STONE = 3;
+        const CELL_SIZE = 5;
+        // How far along its row water looks for somewhere to fall: the whole row (through empty cells),
+        // so a pool's surface ends level to within one cell instead of in a staircase of ledges.
+        const REACH = 1e9;
+        const COLORS = { [EMPTY]: '#000', [SAND]: '#fbbf24', [WATER]: '#3b82f6', [STONE]: '#475569' };
+
+        let cols, rows, grid, moved, moves = 0, isPaused = false, generation = 0, currentTool = WATER, isDrawing = false;
+
+        function init() {
+            canvas.width = 800;
+            canvas.height = 400;
+            cols = Math.floor(canvas.width / CELL_SIZE);
+            rows = Math.floor(canvas.height / CELL_SIZE);
+            grid = Array.from({ length: cols }, () => new Uint8Array(rows).fill(EMPTY));
+            // The generation (+1) in which each cell last received a moved particle: a particle moves
+            // at most once a generation, however the scan meets it again.
+            moved = Array.from({ length: cols }, () => new Uint32Array(rows));
+        }
+
+        function setTool(t) {
+            currentTool = t;
+            document.querySelectorAll('.tool-btn').forEach(btn => btn.classList.remove('tool-active'));
+            document.getElementById('tool' + t).classList.add('tool-active');
+        }
+
+        function getCell(x, y) {
+            if (x < 0 || x >= cols || y < 0 || y >= rows) return STONE;
+            return grid[x][y];
+        }
+
+        function update() {
+            if (isPaused) return;
+            const stamp = generation + 1;
+            moves = 0;
+            for (let y = rows - 1; y >= 0; y--) {
+                let xDir = (generation % 2 === 0) ? 1 : -1;
+                let startX = xDir === 1 ? 0 : cols - 1;
+
+                for (let count = 0; count < cols; count++) {
+                    let x = startX + (count * xDir);
+                    if (moved[x][y] === stamp) continue;
+                    let state = grid[x][y];
+                    if (state === SAND) handleSand(x, y);
+                    else if (state === WATER) handleWater(x, y);
+                }
+            }
+            generation++;
+            genDisplay.innerText = generation;
+        }
+
+        function handleSand(x, y) {
+            if (y >= rows - 1) return;
+            if (grid[x][y + 1] === EMPTY || grid[x][y + 1] === WATER) swap(x, y, x, y + 1);
+            else {
+                let dir = Math.random() < 0.5 ? 1 : -1;
+                if (x + dir >= 0 && x + dir < cols && (grid[x + dir][y + 1] === EMPTY || grid[x + dir][y + 1] === WATER)) swap(x, y, x + dir, y + 1);
+                else if (x - dir >= 0 && x - dir < cols && (grid[x - dir][y + 1] === EMPTY || grid[x - dir][y + 1] === WATER)) swap(x, y, x - dir, y + 1);
+            }
+        }
+
+        function handleWater(x, y) {
+            // 1. Fall.
+            if (getCell(x, y + 1) === EMPTY) { swap(x, y, x, y + 1); return; }
+            // 2. Slide down a diagonal, past an open side.
+            const first = Math.random() < 0.5 ? 1 : -1;
+            for (const dir of [first, -first]) {
+                if (getCell(x + dir, y) === EMPTY && getCell(x + dir, y + 1) === EMPTY) { swap(x, y, x + dir, y + 1); return; }
+            }
+            // 3. Step toward the nearest place along the row where it can fall.
+            let best = 0, bestDist = Infinity;
+            for (const dir of [first, -first]) {
+                for (let d = 1; d <= REACH && d < cols; d++) {
+                    const nx = x + dir * d;
+                    if (getCell(nx, y) !== EMPTY) break;      // blocked: water, sand, stone or the edge
+                    if (getCell(nx, y + 1) === EMPTY) {        // a drop
+                        if (d < bestDist) { bestDist = d; best = dir; }
+                        break;
+                    }
+                }
+            }
+            if (best) swap(x, y, x + best, y);
+            // 4. Nowhere lower within reach: rest.
+        }
+
+        // Every move is a swap, so nothing is created or destroyed.
+        function swap(x1, y1, x2, y2) {
+            let temp = grid[x1][y1];
+            grid[x1][y1] = grid[x2][y2];
+            grid[x2][y2] = temp;
+            moved[x1][y1] = moved[x2][y2] = generation + 1;
+            moves++;
+        }
+
+        function countWater() {
+            let n = 0;
+            for (let x = 0; x < cols; x++) for (let y = 0; y < rows; y++) if (grid[x][y] === WATER) n++;
+            return n;
+        }
+
+        function draw() {
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            for (let x = 0; x < cols; x++) {
+                for (let y = 0; y < rows; y++) {
+                    if (grid[x][y] !== EMPTY) {
+                        ctx.fillStyle = COLORS[grid[x][y]];
+                        ctx.fillRect(x * CELL_SIZE, y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+                    }
+                }
+            }
+        }
+
+        let every = 1, frameN = 0; // generations: one every `every` frames
+        document.querySelectorAll('.speed-btn').forEach(b => b.addEventListener('click', () => {
+            every = +b.dataset.every; document.querySelectorAll('.speed-btn').forEach(x => x.classList.toggle('tool-active', x === b));
+        }));
+        function loop() { if (frameN++ % every === 0) update(); draw(); waterDisplay.innerText = countWater(); movingDisplay.innerText = isPaused ? '–' : moves; requestAnimationFrame(loop); }
+
+        function paint(e) {
+            if (!isDrawing) return;
+            const rect = canvas.getBoundingClientRect();
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+            const clientX = (e.touches ? e.touches[0].clientX : e.clientX);
+            const clientY = (e.touches ? e.touches[0].clientY : e.clientY);
+            const x = Math.floor((clientX - rect.left) * scaleX / CELL_SIZE);
+            const y = Math.floor((clientY - rect.top) * scaleY / CELL_SIZE);
+            const size = parseInt(document.getElementById('brushSize').value);
+
+            for (let i = -size; i <= size; i++) {
+                for (let j = -size; j <= size; j++) {
+                    if (x + i >= 0 && x + i < cols && y + j >= 0 && y + j < rows) {
+                        grid[x + i][y + j] = currentTool;
+                    }
+                }
+            }
+        }
+
+        canvas.addEventListener('mousedown', (e) => { isDrawing = true; paint(e); });
+        window.addEventListener('mouseup', () => isDrawing = false);
+        canvas.addEventListener('mousemove', paint);
+        canvas.addEventListener('touchstart', (e) => { isDrawing = true; paint(e); e.preventDefault(); }, {passive: false});
+        canvas.addEventListener('touchmove', (e) => { paint(e); e.preventDefault(); }, {passive: false});
+        canvas.addEventListener('touchend', () => isDrawing = false);
+        document.getElementById('playPause').addEventListener('click', function() {
+            isPaused = !isPaused; this.innerText = isPaused ? 'Play' : 'Pause';
+        });
+        document.getElementById('reset').addEventListener('click', () => {
+            grid.forEach(col => col.fill(EMPTY)); generation = 0; genDisplay.innerText = 0;
+        });
+
+        // A starting scene: a stone basin with a step, a block of water above it, a pile of sand.
+        function seed() {
+            for (let x = 10; x < 150; x++) grid[x][70] = STONE;
+            for (let y = 40; y < 70; y++) { grid[10][y] = STONE; grid[149][y] = STONE; }
+            for (let y = 55; y < 70; y++) grid[80][y] = STONE;
+            for (let x = 20; x < 60; x++) for (let y = 5; y < 25; y++) grid[x][y] = WATER;
+            for (let x = 100; x < 120; x++) for (let y = 10; y < 20; y++) grid[x][y] = SAND;
+        }
+
+        init();
+        seed();
+        window.ca = { update, countWater, moves: () => moves, grid: () => grid, pause: () => { isPaused = true; } };
+        loop();
+    </script>
+</body>
+</html>

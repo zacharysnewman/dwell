@@ -65,6 +65,9 @@ and friend worlds), with a small master server for discovery; there are no offic
 - `docs/WATER_FLOW.md` — design for Phase 52 (ADR 0053): water flow as basins with one level joined by
   outlets (weir law, block leaks), rivers as chains of pools fed by the world map's runoff; damming,
   draining, diverting; currents on bodies and swimmers; near players, fast-forwarded elsewhere.
+- `docs/WATER_SURFACE_GRID.md` — design for Phase 53 (ADR 0060): water as a simulated surface grid in its own
+  layer (sleeping chunks, pools, a held sea), generated water filled by it at world creation; replaces
+  Phase 52's basins and pool graph when built.
 - `docs/BUGS.md` — the open bugs the owner reported, with repros and suspects; fixed ones move to its Fixed list.
 - `docs/ITEMS.md` — the creative hotbar's items (1 m and ½ m pieces, `shared/items/items.json`) and the
   placement rules as block data (attach, placeOn, onSlopes, moldable).
