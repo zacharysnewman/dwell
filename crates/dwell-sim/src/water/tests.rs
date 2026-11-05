@@ -1643,10 +1643,12 @@ dwell_world::both_faces!(
     fn a_flood_level_with_its_banks_pours_over_them_downhill_not_along_them(f: FaceFrame) {
         let mut s = Scene::with_air(f, [-8, -10, -8], [40, 8, 12]);
         let stone = require("dwell:stone");
-        // Ground: the banks' tops at row 0 (z −4..−1 and 3..6), x −2..36; upstream of the
-        // river's head the valley rises (to row 3).
-        s.fill([-2, -9, -4], [36, 0, 6], stone);
-        s.fill([-8, -9, -6], [-1, 3, 8], stone);
+        // Ground: the banks' tops at row 0 (z −4..−1 and 3..6), x −2..36, the valley's sides
+        // rising past them (to row 3); upstream of the river's head the valley rises too.
+        s.fill([-2, -9, -8], [36, 0, 12], stone);
+        s.fill([-2, 1, -8], [36, 3, -5], stone);
+        s.fill([-2, 1, 7], [36, 3, 12], stone);
+        s.fill([-8, -9, -8], [-1, 3, 12], stone);
         // The upper river (x 0..9): its bed at row −2, water rows −1..0... its channel z 0..2.
         s.fill([0, -1, 0], [9, 0, 2], M.air);
         s.fill([0, -1, 0], [9, -1, 2], M.water);
@@ -1680,24 +1682,43 @@ dwell_world::both_faces!(
                 );
             }
         }
-        // Its water goes on into the river below (a pool of the graph nobody measured, or found).
-        let into_lower: f64 = flood
+        // Its water goes on downhill, none of it out of the world unseen.
+        let lost: f64 = flood
             .outlets
             .iter()
-            .filter(|o| match o.target {
-                Target::Virtual(_, k) => k == Graph::key(-4),
-                Target::Basin(t) => s
-                    .water
-                    .basin(t)
-                    .is_some_and(|b| b.cells().any(|c| c == s.cell(20, -5, 1))),
-                _ => false,
-            })
+            .filter(|o| o.target == Target::Lost)
             .map(|o| o.flow)
             .sum();
-        assert!(
-            (into_lower - 3.0 * per).abs() < 0.1 * 3.0 * per,
-            "into the river below: {into_lower} of {}",
-            3.0 * per
-        );
+        assert!(lost < 1e-6, "lost: {lost}");
+        assert!(s.water.lost < 1e-6, "lost: {}", s.water.lost);
+    }
+);
+
+dwell_world::both_faces!(
+    /// Owner, 2026-11-04: "the lowest nearby block path? Always try to flow down … running water
+    /// pathfinding down until it finds a flat area to spread into". Spilled water on a ledge with a
+    /// shallow puddle two cells one way (a row lower) and a river three cells the other way, three
+    /// rows lower: it goes down to the river, the lowest place near, not the nearer puddle. Red
+    /// before: it ran into the nearest lower water.
+    fn spilled_water_flows_to_the_lowest_place_near_not_the_nearest_water(f: FaceFrame) {
+        let mut s = Scene::new(f);
+        let stone = require("dwell:stone");
+        // The ledge: rows ≤ 2 at x −2..6, z 0..2.
+        s.fill([-2, -6, 0], [6, 2, 2], stone);
+        // A puddle in it at x = 3: its water a row lower (row 2), a cell deep.
+        s.set(3, 2, 1, M.water);
+        // The river: x −6..−3, a row of water at row −1 on a floor, three rows below the ledge.
+        s.fill([-6, -6, 0], [-3, -2, 2], stone);
+        s.fill([-6, -1, 0], [-3, -1, 2], M.water);
+        let from = s.cell(1, 3, 1);
+        let view = View {
+            world: &s.world,
+            old: None,
+        };
+        let (end, _) = follow_path(&view, f, from, &|_| false);
+        let End::Liquid(c) = end else {
+            panic!("into water: {end:?}");
+        };
+        assert!(c[0] <= -3, "into the river, the lowest place near: {c:?}");
     }
 );

@@ -759,3 +759,30 @@ engine reads it. It supersedes the parts of §17–18 that inferred generated wa
 - **Not yet:** G4 (edits as graph changes), G5 (floods over banks as graph growth), G6 (currents and
   levels to clients), the graph inspector page.
 
+### 19.3 Spills and rims (0.48.1)
+
+The owner's dam level with its banks (seed 3695715780): the flood spread over the flat banks as one
+sheet at its level, beside the river below, and its overflow ran down the banks' steps along the
+river. The owner: water "would flow over the dam and then down the banks into the lower river"
+(downhill); "Always try to flow down"; overflow "should flow over at a full voxel height 0.5m, at
+least visually".
+
+- **Always down** (`follow_path`): from where spilled water rests, the lowest place it can reach
+  within `streamReach` (4) cells across — a step down of any height part of the way, never up;
+  water there counts by its cell — nearest first among equals; there it goes and looks again. Into
+  water it ends; with nothing lower around it pools (a flat or a hollow); out of the loaded world
+  only with nothing lower in sight.
+- **Rims** (`spread_row`): above its floor a pool's surface spreads over bare ground only
+  `sheetReach` (2) cells beyond the water under it, and a sheet over bare ground stops where a way
+  down lies within `streamReach` straight out. Past that is the rim: an open cell over ground beside
+  it that isn't its container is a way out (`scan_outlets`), poured over and run downhill.
+- **Drawn spilling** (`spillMinFlow`): a pool fed and pouring at least that over an edit's edge at
+  its surface row's floor (a dam's top) has that row drawn full, a half block over the edge, and every
+  way it pours by drawn running.
+- Tests: `spilled_water_flows_to_the_lowest_place_near_not_the_nearest_water`,
+  `spilled_water_runs_to_the_nearest_lower_water_not_along_the_banks_steps`,
+  `a_flood_level_with_its_banks_pours_over_them_downhill_not_along_them`,
+  `a_thin_spill_over_a_dam_is_drawn_a_full_row_over_it_and_running` (each red before its change).
+- Open: running water is drawn as full blocks, so a thin spill over a bank shows as a block of water;
+  the rendering pass (thin sloped, flow-textured running water) is the fix.
+

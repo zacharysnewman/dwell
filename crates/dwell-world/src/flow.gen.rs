@@ -9,7 +9,7 @@ pub const FLOW: FlowData = FlowData {
     live_radius_m: 160.0,
     max_basin_cells: 65536,
     max_row_cells: 16384,
-    stream_reach: 16,
+    stream_reach: 4,
     stream_min_flow: 0.05,
     merge_seconds: 0.5,
     catch_up_steps: 512,
