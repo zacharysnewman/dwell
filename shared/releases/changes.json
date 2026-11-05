@@ -5,6 +5,7 @@
       "version": "0.48.2",
       "changes": [
         "Landing on a slope never hurts: only hard landings on flat ground do",
+        "Letting go of sprint in the air no longer slows you down: sprint and crouch don't change your speed mid-air",
         "Hold crouch as you land while moving fast and you slide, with or without sprint",
         "Sliding down a steep slope with crouch held carries on as a slide where the ground levels out",
         "Sliding fast up a ramp launches you off its top instead of stepping you onto it"

@@ -2192,15 +2192,19 @@ impl Players {
         // Accelerate in the platform's frame so standing on a moving body needs no input.
         let base = flat(c.platform.base_velocity);
         let relative = c.horizontal.current - base;
-        let speed = if !grounded && c.crouching {
-            // Crouching in the air doesn't slow the player (owner, 2026-10-30): the speed they
-            // have, between the crouch speed and the run speed, run held or not (2026-11-05: a
-            // crouched landing slides "regardless of sprint being held"; letting go of it in the
-            // air steered the speed down to the walk speed).
-            let standing = m.run_speed.max(m.walk_speed);
-            relative
-                .length()
-                .clamp(cfg.crouch.speed, standing.max(cfg.crouch.speed))
+        let speed = if !grounded {
+            // In the air neither sprint nor crouch changes the speed (owner, 2026-11-05: "Sprint
+            // shouldn't change in air control or speed … we want a true physics controller";
+            // 2026-10-30: crouching doesn't slow the player): air control steers toward the speed
+            // the player has, between the walk (or crouch) speed and the run speed. Before, the
+            // target was the tick's walking speed, so letting go of sprint mid-air pulled 8 m/s
+            // down to 5 and pressing it sped a walk up to 8.
+            let floor = if c.crouching {
+                cfg.crouch.speed
+            } else {
+                m.walk_speed
+            };
+            relative.length().clamp(floor, m.run_speed.max(floor))
         } else {
             Self::walk_speed(c, &cfg)
         };

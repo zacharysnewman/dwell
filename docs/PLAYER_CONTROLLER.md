@@ -164,7 +164,7 @@ The server tick (ARCHITECTURE §4.2) runs, for every player, **before** `Physics
 | 6 | `step_jump` | `PPCJumpSystem` | Buffer + coyote (in ticks); `accumulated_y = max(accumulated_y, jump_v + platform_y)`, or sliding (steeper than `slide.min_angle`, or a sprint slide) the jump added along the ground's normal (§6.8); no coyote after a real jump; auto-jump (§6.2) |
 | 7 | `step_climb` | `PPCClimbSystem` | Exclusive layer on climbable voxels (§6.3); not while flying |
 | 8 | `step_swim` | — (Dwell) | Exclusive layer in water voxels (§6.4) and in the flip band (§11); not while climbing or flying |
-| 9 | `step_horizontal` | `PPCMovementLayerSystem` | Absorb external; on ground steeper than 44° the slide (§6.8); else during a sprint slide the sprint slide (§6.9); else accel/decel/reverse in the platform's frame; air control; step-up; edge guard |
+| 9 | `step_horizontal` | `PPCMovementLayerSystem` | Absorb external; on ground steeper than 44° the slide (§6.8); else during a sprint slide the sprint slide (§6.9); else accel/decel/reverse in the platform's frame; air control (toward the speed the player has, walk to run: sprint and crouch change nothing in the air, §6.9); step-up; edge guard |
 | 10 | `step_vertical` | `PPCVerticalLayerSystem` | Gravity; walk-off keeps platform Y; ceiling cancel; launch detection; ground following + snap |
 | 10a | `step_impact` | — (Dwell) | This tick's hit from the new contacts, the landing and a ceiling cancel: `IMPACTED` (§6.10) |
 | 11 | `step_aggregate` | `PPCAggregateSystem` | `target = exclusive ? layer.velocity : horizontal.contribution + (0, vertical.target_y, 0)`; set the body's linear velocity |
@@ -647,12 +647,15 @@ Fortnite-style. The numbers below are defaults chosen for this, all data
   momentum (`slide_on`, no boost), so where the face meets gentler ground the player slides on
   instead of ground friction taking the steep slide's momentum away in ~0.3 s
   (`slide.rs` `a_crouched_steep_slide_slides_on_where_the_ground_flattens`).
-- **Crouching in the air** doesn't slow the player (owner, 2026-10-30): airborne and crouched, the
-  air control steers toward the speed the player has, between the crouch speed and the run speed
-  whether run is held or not, not toward the crouch speed
-  (`crouching_in_the_air_keeps_the_speed_you_had`). Until 0.48.2 the bound was the walk speed
-  while run was not held, so letting go of sprint in the air took a crouched player from 8 to
-  5 m/s, under `min_start_speed`, and the landing only crouched.
+- **In the air neither crouch nor sprint changes the speed** (owner, 2026-10-30: crouching
+  "shouldn't slow your in air velocity"; 2026-11-05: *"Sprint shouldn't change in air control or
+  speed … we want a true physics controller"*): airborne, the air control steers toward the speed
+  the player has, held between the walk speed (the crouch speed, crouched) and the run speed, so
+  pressing or letting go of crouch or sprint mid-air changes nothing; only the move input's
+  direction steers (`crouching_in_the_air_keeps_the_speed_you_had`, `movement.rs`
+  `sprint_changes_nothing_in_the_air`). Until 0.48.2 the target was the tick's walking speed:
+  letting go of sprint mid-air pulled 8 m/s down to 5 over ~0.2 s (air control's 10 m/s², under
+  `min_start_speed`, so a crouched landing only crouched) and pressing it sped a walk up to 8.
 - **The crest launch** (owner, 2026-11-05: *"Step movement is ruining momentum off of slope
   'jumps' … I can see where my character tries to 'step' forward at the top of the ramp"*). The
   generation rule leaves a crest's column flat, so a run of ramps tops out in a ½ m step, and the
@@ -809,7 +812,7 @@ PPC default for voxels.
 | | `eye_height` / `crouch_eye_height` ◆ | 1.62 m / 0.8 m | (view) | Client camera |
 | `movement` | `walk_speed` / `run_speed` | 5 / 8 m/s | same | |
 | | `acceleration` / `deceleration` / `reverse_deceleration` | 50 / 15 / 60 m/s² | 50 / 12 / 60 | Stopping 25 % stronger (owner, 2026-11-02): a walk stops in 1/3 s |
-| | `air_control` | 0.2 | same | |
+| | `air_control` | 0.2 | same | Dwell: steers toward the speed the player has (walk to run speed), not the tick's walking speed (§6.9) |
 | | `max_step_height` ◆ | 0.55 m | 0.45 | Half steps step up; full blocks need a jump |
 | | `air_external_drag` / `ground_external_friction` | 0 /s / 15 m/s² | same | |
 | | `carried_by_characters` | false | same | |
