@@ -164,24 +164,24 @@ function valley(slope, bankH = 0.5) {
     if (off > 1) h += bankH + Math.max(0, off - 4) * 0.35;
     ground[at(x, z)] = q5(h);
   }
-  sources = [[at(0, mid), 1.2], [at(0, mid - 1), 1.2], [at(0, mid + 1), 1.2]];
+  sources = [[at(0, mid), 0.25], [at(0, mid - 1), 0.25], [at(0, mid + 1), 0.25]];
   sinks = []; for (let z = 0; z < H; z++) sinks.push(at(W - 1, z));
 }
 const SCENES = {
   river: { cam: [[64, 24, 46], [44, 9, 24]], name: 'River', note: 'A river in its channel, banks ½ m over its bed, falling along the valley. It settles and flows; the surface slopes.',
-    make() { valley(0.04); } },
+    make() { valley(0.04, 1.0); } },
   damLevel: { cam: [[62, 18, 40], [47, 10, 24]], name: 'Dam level with banks', note: 'A dam across the river as high as the banks: the water rises to that height and leaves over the dam and the banks around its ends, as real water does.',
-    make() { valley(0.04); const mid = H >> 1, x = 48; for (let z = mid - 1; z <= mid + 1; z++) ground[at(x, z)] = ground[at(x, mid - 2)]; } },
+    make() { valley(0.04, 1.0); const mid = H >> 1, x = 48; for (let z = mid - 1; z <= mid + 1; z++) { ground[at(x, z)] = ground[at(x, mid - 2)]; built.add(at(x, z)); } } },
   damLow: { cam: [[62, 18, 40], [47, 10, 24]], name: 'Dam below banks', note: 'A dam ½ m lower than the banks: the river backs up behind it and pours over its top into the river below.',
-    make() { valley(0.04, 1.0); const mid = H >> 1, x = 48; for (let z = mid - 1; z <= mid + 1; z++) ground[at(x, z)] = ground[at(x, mid - 2)] - 0.5; } },
+    make() { valley(0.04, 1.0); const mid = H >> 1, x = 48; for (let z = mid - 1; z <= mid + 1; z++) { ground[at(x, z)] = ground[at(x, mid - 2)] - 0.5; built.add(at(x, z)); } } },
   terraces: { cam: [[44, 26, 2], [36, 13, 36]], name: 'Spill on terraces', note: 'A pond on a ledge with a gap in its rim, above a terraced hillside and a river: the spill runs downhill, step by step, into the river.',
     make() {
       valley(0.02);
       const mid = H >> 1;
       for (let z = mid + 4; z < H; z++) for (let x = 20; x < 60; x++) ground[at(x, z)] = q5(12 - 0.02 * x + 0.5 + (z - mid - 4) * 0.5);
       for (let z = H - 8; z < H - 2; z++) for (let x = 30; x < 40; x++) { ground[at(x, z)] = q5(12 - 0.02 * x + 0.5 + (H - 9 - mid - 4) * 0.5); depth[at(x, z)] = 0.9; }
-      for (let x = 29; x <= 40; x++) { ground[at(x, H - 9)] += 1; ground[at(x, H - 2)] += 1; }
-      for (let z = H - 9; z <= H - 2; z++) { ground[at(29, z)] += 1; ground[at(40, z)] += 1; }
+      for (let x = 29; x <= 40; x++) { ground[at(x, H - 9)] += 1; ground[at(x, H - 2)] += 1; built.add(at(x, H - 9)); built.add(at(x, H - 2)); }
+      for (let z = H - 9; z <= H - 2; z++) { ground[at(29, z)] += 1; ground[at(40, z)] += 1; built.add(at(29, z)); built.add(at(40, z)); }
       ground[at(35, H - 9)] -= 1.0;
       sources.push([at(35, H - 5), 0.6]);
     } },
@@ -190,13 +190,14 @@ const SCENES = {
       valley(0.03, 0.5);
       const mid = H >> 1;
       for (let z = mid + 2; z < H - 2; z++) for (let x = 0; x < W; x++) ground[at(x, z)] = q5(12 - 0.03 * x + 0.5);
-      sources = sources.map(([i, q]) => [i, q * 4]);
+      sources = sources.map(([i, q]) => [i, q * 16]);
     } },
 };
 let scene = 'river';
 function load(name) {
   scene = name;
   ground.fill(0); depth.fill(0); flow.fill(0); brought = 0; taken = 0; waterTime = 0;
+  built = new Set();
   SCENES[name].make();
   base = new Float32Array(ground);
   document.getElementById('scene-note').textContent = SCENES[name].note;
@@ -260,6 +261,7 @@ let groundMesh = null;
 const tmp = new THREE.Object3D(), col = new THREE.Color();
 const BASE = 0;
 let base = new Float32Array(N);
+let built = new Set(); // cells a scene built on the ground (dams, rims): drawn as stone
 const baseAt = (x, z) => base[at(x, z)];
 function buildGround() {
   if (groundMesh) { sceneG.remove(groundMesh); groundMesh.dispose?.(); }
@@ -269,7 +271,7 @@ function buildGround() {
     tmp.position.set(x + 0.5, BASE + h / 2, z + 0.5); tmp.scale.set(1, Math.max(h, 0.01), 1); tmp.updateMatrix();
     groundMesh.setMatrixAt(i, tmp.matrix);
     const v = ((x + z) & 1) ? 0.03 : 0; // a faint checker to read the cells
-    if (ground[i] > baseAt(x, z) + 0.01) col.setRGB(0.55 - v, 0.53 - v, 0.50 - v); // placed blocks: stone
+    if (ground[i] > baseAt(x, z) + 0.01 || built.has(i)) col.setRGB(0.55 - v, 0.53 - v, 0.50 - v); // placed blocks: stone
     else col.setRGB(0.36 - v, 0.56 - v, 0.27 - v); // grass
     groundMesh.setColorAt(i, col);
   }
@@ -279,13 +281,14 @@ function buildGround() {
 
 // The water surface: each wet column a quad, its corners at the mean surface of the wet columns
 // sharing them (smooth, as Minecraft draws its water), or rounded to ½ m blocks.
-const MIN_DRAW = 0.02;
+const MIN_DRAW = 0.005; // a thin overflow (a dam's 1 cm) still shows
 const wGeo = new THREE.BufferGeometry();
-const wPos = new Float32Array(N * 6 * 3), wCol = new Float32Array(N * 6 * 3);
+const wPos = new Float32Array(N * 6 * 3), wCol = new Float32Array(N * 6 * 4);
 wGeo.setAttribute('position', new THREE.BufferAttribute(wPos, 3));
-wGeo.setAttribute('color', new THREE.BufferAttribute(wCol, 3));
-const wMat = new THREE.MeshLambertMaterial({ vertexColors: true, transparent: true, opacity: 0.9, side: THREE.DoubleSide });
+wGeo.setAttribute('color', new THREE.BufferAttribute(wCol, 4));
+const wMat = new THREE.MeshLambertMaterial({ vertexColors: true, transparent: true, opacity: 1, vertexAlpha: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2, side: THREE.DoubleSide });
 const water = new THREE.Mesh(wGeo, wMat); sceneG.add(water);
+water.frustumCulled = false; // its bounds change every frame (they were computed once, empty, and culled it)
 function surfaceOf(i, round) {
   const s = ground[i] + depth[i];
   return round ? Math.max(ground[i] + 0.5, Math.ceil(s * 2 - 0.25) / 2) - 0.06 : s;
@@ -314,10 +317,11 @@ function buildWater() {
     const p = [[x, z], [x + 1, z], [x + 1, z + 1], [x, z], [x + 1, z + 1], [x, z + 1]];
     const sp = bySpeed && depth[i] > 0.08 ? Math.min(1, Math.max(0, speedAt(i) - 0.5) / 2.5) : 0;
     const deep = Math.min(1, depth[i] / 1.5);
+    const alpha = 0.45 + 0.5 * Math.min(1, depth[i] / 0.5); // thin water shows the ground under it
     col.setRGB(0.12 + 0.68 * sp - 0.06 * deep, 0.38 + 0.52 * sp - 0.14 * deep, 0.78 + 0.18 * sp - 0.18 * deep);
     for (const [cx, cz] of p) {
       wPos[v * 3] = cx; wPos[v * 3 + 1] = hAt(cx, cz); wPos[v * 3 + 2] = cz;
-      wCol[v * 3] = col.r; wCol[v * 3 + 1] = col.g; wCol[v * 3 + 2] = col.b; v++;
+      wCol[v * 4] = col.r; wCol[v * 4 + 1] = col.g; wCol[v * 4 + 2] = col.b; wCol[v * 4 + 3] = alpha; v++;
     }
   }
   wGeo.setDrawRange(0, v);
