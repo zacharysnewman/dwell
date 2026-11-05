@@ -35,6 +35,10 @@ fn sleep_dq() -> f32 { if band() > 0.0 { if unsafe { SMOOTH } { BIG_DQ } else { 
 pub static mut SMOOTH: bool = false;
 /// The neighbours'-drift wake (on by default): off, a sleeping chunk wakes on what it owes, a face's jump or an edit only.
 pub static mut DRIFT: bool = true;
+/// The absorbing edge (SPONGE, 0 = off): each substep, a face between an awake chunk and a sleeping one
+/// is pulled this share of the way back to its recent average, so a wave's swing is damped where it
+/// meets a sleeping chunk instead of bouncing off it; steady flow (its own average) passes untouched.
+pub static mut SPONGE: f32 = 0.0;
 pub const REL_SECS: f64 = 5.0;
 pub const REACT_SECS: f64 = 10.0;
 pub const BIG_DQ: f32 = 0.1;
@@ -128,6 +132,9 @@ pub struct Sim {
     /// each face's discharge averaged over the last ~EMA_SECS (band mode: what a chunk sleeps with)
     pub ex: Vec<f32>,
     pub ez: Vec<f32>,
+    /// each column's depth averaged over the last ~ema_secs (MEAN_SLEEP: a chunk sleeps at it)
+    pub ed: Vec<f32>,
+    pub mean_sleep: bool,
     pub ema_secs: f32,
     pub wake_owed: u64,
     pub wake_edit: u64,
@@ -288,6 +295,8 @@ impl Sim {
             wake_rate: 0,
             ex: vec![0.0; n],
             ez: vec![0.0; n],
+            ed: vec![0.0; n],
+            mean_sleep: false,
             ema_secs: 0.0,
             wake_owed: 0,
             wake_edit: 0,
@@ -633,6 +642,7 @@ impl Sim {
         let exv = Ptr(self.ex.as_mut_ptr());
         let ezv = Ptr(self.ez.as_mut_ptr());
         let alpha = if self.ema_secs > 0.0 { (dt / self.ema_secs).min(1.0) } else { 0.0 };
+        let sponge = unsafe { SPONGE };
         self.active.par_iter().with_min_len(4).for_each(|&c| unsafe {
             let c = c as usize;
             let m = mode[c];
@@ -674,6 +684,7 @@ impl Sim {
                     let i = b + z * CS + CS - 1;
                     let j = e as usize * CA + z * CS;
                     let d = settle(qx, nqx, exv, i, j);
+                    let d = if sponge > 0.0 && (!me_awake || !e_awake) { let v = *qx.at(i); let nv = v + sponge * (*exv.at(i) - v); *qx.at(i) = nv; d + (nv - v) } else { d };
                     dq_e = dq_e.max(d.abs());
                     if !me_awake { own_charge -= d as f64; } else if !e_awake { chg_e += d; }
                 }
@@ -683,6 +694,7 @@ impl Sim {
                     let i = b + (CS - 1) * CS + x;
                     let j = s as usize * CA + x;
                     let d = settle(qz, nqz, ezv, i, j);
+                    let d = if sponge > 0.0 && (!me_awake || !s_awake) { let v = *qz.at(i); let nv = v + sponge * (*ezv.at(i) - v); *qz.at(i) = nv; d + (nv - v) } else { d };
                     dq_s = dq_s.max(d.abs());
                     if !me_awake { own_charge -= d as f64; } else if !s_awake { chg_s += d; }
                 }
@@ -713,6 +725,8 @@ impl Sim {
         let sinks = &self.sinks;
         let inflow = Ptr(self.inflow.as_mut_ptr());
         let rell = Ptr(self.rel_left.as_mut_ptr());
+        let edv = Ptr(self.ed.as_mut_ptr());
+        let dalpha = if self.mean_sleep && self.ema_secs > 0.0 { (dt / self.ema_secs).min(1.0) } else { 0.0 };
         let pof = Ptr(self.pools.of.as_mut_ptr());
         let pany = self.pools.any;
         let holdv = Ptr(self.hold.as_mut_ptr());
@@ -736,6 +750,7 @@ impl Sim {
                     let nd = *depth.at(i) + net * kdt;
                     let nd = if nd > 0.0 { nd } else { 0.0 };
                     *depth.at(i) = nd;
+                    if dalpha > 0.0 { *edv.at(i) += dalpha * (nd - *edv.at(i)); }
                     dv = dv.max(net.abs());
                     mx = mx.max(nd);
                 }
@@ -855,6 +870,7 @@ impl Sim {
                 }
                 if ready {
                     if self.ema_secs > 0.0 { self.faces_to_mean(c, w, n, tnow); }
+                    if self.mean_sleep { self.depths_to_mean(c); }
                     // its imbalance from now
                     let b = c * CA;
                     let mut r = 0.0f64;
@@ -952,6 +968,27 @@ impl Sim {
         }
         if w != NONE { for z in 0..CS { let i = w as usize * CA + z * CS + CS - 1; let d = self.ex[i] - self.qx[i]; self.qx[i] = self.ex[i]; charge(self, w, -(d as f64)); } }
         if n != NONE { for x in 0..CS { let i = n as usize * CA + (CS - 1) * CS + x; let d = self.ez[i] - self.qz[i]; self.qz[i] = self.ez[i]; charge(self, n, -(d as f64)); } }
+    }
+
+    /// A chunk falling asleep takes each column at its recent average level, its water unchanged (the
+    /// difference spread over its wet columns): it doesn't freeze a wave's crest or trough to release
+    /// later as a new wave.
+    fn depths_to_mean(&mut self, c: usize) {
+        let b = c * CA;
+        let (mut now, mut mean, mut n) = (0.0f64, 0.0f64, 0usize);
+        for l in 0..CA {
+            let i = b + l;
+            if self.pools.of[i] >= 0 || self.ground[i] >= VOID { continue; }
+            now += self.depth[i] as f64; mean += self.ed[i].max(0.0) as f64;
+            if self.ed[i] > 0.0 { n += 1; }
+        }
+        if n == 0 || mean <= 0.0 { return; }
+        let k = (now / mean) as f32; // keep the chunk's water exact
+        for l in 0..CA {
+            let i = b + l;
+            if self.pools.of[i] >= 0 || self.ground[i] >= VOID { continue; }
+            self.depth[i] = self.ed[i].max(0.0) * k;
+        }
     }
 
     pub fn totals(&mut self) {
