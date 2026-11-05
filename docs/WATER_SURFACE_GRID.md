@@ -16,6 +16,7 @@ planned, nothing built in the game yet. Evidence: [`WATER_MODEL_EVALUATION.md`](
 | Visible noise | Anything under 10 cm reads as noise on ½ m blocks |
 | World creation time | "Preferably under a minute, that would be the goal"; the creation screen shows what work is being done, "maybe even visually" (e.g. the map filling as the fill runs) |
 | Rivers as sheets (no beds) | Prototype it first, before G1 ships |
+| Carving at generation | "Let's try it with eroding, but only dirt and sand get eroded, not stone" (after the first bed-free fill made chains of ponds) |
 | Storage | Asked for a recommendation; the one in §3 (storage): "Good to go on storage" |
 | Caves and overhangs | "We'll save the caves/overhangs question for later" (§2a) |
 
@@ -71,6 +72,17 @@ now, or later allow a few stacked water layers in the columns that have overhang
   flood from the sea and the world's edge fills every depression to its spill level; the sources'
   discharge is routed down the flood's tree; (2) a short grid settle from that state, so the stored
   water is at rest under the runtime law; (3) the water layer stored with the world. Both faces.
+- **Erosion at generation (G0 prototype, `waterbench` `nobeds`):** after the fill, the same grid runs
+  and the water carves its own channels: each column's water carries a load of sediment (more the
+  faster it runs), picks up soil where it carries less than it can (the top block and the dirt under
+  it, 3.5 m; never stone, nothing where the band is rock), drops it where it carries more; the load moves
+  with the water, so pits fill as channels cut. Sped up: 10 water minutes carve years.
+- **Valleys kept (G0 finding):** with no valleys either, the map's coarse ground puts saddles 15–47 m
+  high across a river's course, so fill-and-spill makes deep ponds that 3.5 m of soil can't drain. With
+  the generator's valleys kept (from the map's courses) and only the bed, lips and drawn water dropped
+  (`TerrainGenerator::ground_with_valleys`), fill-and-spill and erosion make a river in a channel it
+  carved (2 km square: fill 0.4 s, 10 water minutes of erosion 37 s on one core). Shown to the owner;
+  their verdict sets G1.
 - **Sources:** springs where the map's rivers rise and where their discharge grows; the sea a held
   level. Rain everywhere later.
 - **No long spin-up** (the owner asked whether creation must run far faster than real time): the
