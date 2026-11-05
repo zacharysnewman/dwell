@@ -1694,6 +1694,41 @@ impl TerrainGenerator {
         }
     }
 
+    /// The ground at face-local column (x, z) with no water shaped into it: the map's eroded height
+    /// and the fine detail, without the river cut, valley, levees or lake shore (`base_column`'s first
+    /// two layers); none outside the world's disc. For the water surface grid's prototype (Phase 53
+    /// G0: rivers without beds, ADR 0060); the chunk path doesn't use it.
+    pub fn ground_without_water(&self, x: i32, z: i32) -> Option<f32> {
+        let (x, z) = (i64::from(x), i64::from(z));
+        if !inside_world_disc(x, z) {
+            return None;
+        }
+        let (base, _, _) = self.map.height_at(x as f64, z as f64);
+        let amplitude = S.detail_amplitude
+            + (S.detail_mountain_amplitude - S.detail_amplitude)
+                * f64::from(smooth_step(
+                    S.detail_mountain_from as f32,
+                    S.detail_mountain_full as f32,
+                    base as f32,
+                ));
+        let kept = octaves_resolved(S.detail_wavelength, S.detail_octaves, 1);
+        let detail = if kept == 0 {
+            0.0
+        } else {
+            2.0 * amplitude
+                * f64::from(fbm2(
+                    self.detail_seed,
+                    x + self.offset_x,
+                    z + self.offset_z,
+                    S.detail_wavelength,
+                    S.detail_octaves,
+                    Some(kept),
+                ))
+        };
+        let h = base + detail;
+        Some(((SEA_LEVEL_M + h).max(dwell_world::MIDPLANE_M + dwell_world::CORE_M)) as f32)
+    }
+
     /// A column with exactly the chunk path's arithmetic (spawn, tools, tests).
     pub fn column_at(&self, x: i32, z: i32) -> Column {
         self.column(i64::from(x), i64::from(z), 1)

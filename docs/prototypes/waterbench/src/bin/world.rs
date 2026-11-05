@@ -265,8 +265,10 @@ fn main() {
     sim.theta = theta;
     if let Ok(v) = std::env::var("BAND") { unsafe { sim::BAND = v.parse().unwrap(); } }
     if let Ok(v) = std::env::var("BAND_DQ") { unsafe { sim::BAND_DQ = v.parse().unwrap(); } }
+    if let Ok(v) = std::env::var("WAKE_BAND") { unsafe { sim::WAKE_BAND = v.parse().unwrap(); } }
     if let Ok(v) = std::env::var("WIN_SECS") { unsafe { sim::WIN_SECS = v.parse().unwrap(); } }
     if let Ok(v) = std::env::var("EMA_SECS") { sim.ema_secs = v.parse().unwrap(); }
+    sim.mean_sleep = std::env::var("MEAN_SLEEP").is_ok();
     unsafe { sim::SMOOTH = std::env::var("SMOOTH").is_ok(); sim::DRIFT = std::env::var("NO_DRIFT").is_err(); }
     sim.pools.on = std::env::var("POOLS").is_ok();
     if let Ok(v) = std::env::var("POOL_V") { unsafe { sim::POOL_V = v.parse().unwrap(); } }
@@ -817,7 +819,7 @@ fn short(sim: &mut Sim, secs: f64) {
             }
         }
         sim.depth.copy_from_slice(&d0); sim.qx.copy_from_slice(&qx0); sim.qz.copy_from_slice(&qz0); sim.t = t0;
-        sim.ex.copy_from_slice(&qx0); sim.ez.copy_from_slice(&qz0);
+        sim.ex.copy_from_slice(&qx0); sim.ez.copy_from_slice(&qz0); sim.ed.copy_from_slice(&d0);
         sim.rel_left.iter_mut().for_each(|v| *v = 0.0);
         sim.owed.iter_mut().for_each(|v| *v = 0.0); sim.rate.iter_mut().for_each(|v| *v = 0.0);
         sim.awake.iter_mut().for_each(|a| *a = 1); sim.calm.iter_mut().for_each(|c| *c = 0); sim.dirty = true;

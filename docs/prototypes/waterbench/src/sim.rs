@@ -26,6 +26,13 @@ pub static mut BAND_DQ: f32 = 1e-3;
 pub static mut WIN_SECS: f64 = 0.0;
 #[inline(always)]
 fn band() -> f32 { unsafe { BAND } }
+/// The wake band (WAKE_BAND, m; 0 = the band): how far a sleeping chunk's account may drift (what it
+/// owes, its neighbours' flow) before it wakes. Separate from the band a chunk must be still within to
+/// fall asleep: that one must be tight (a chunk asleep off its level gives it back as a wave), this one
+/// is the visible scale.
+pub static mut WAKE_BAND: f32 = 0.0;
+#[inline(always)]
+fn wake_band() -> f32 { let w = unsafe { WAKE_BAND }; if w > 0.0 { w } else { band() } }
 #[inline(always)]
 fn sleep_dq() -> f32 { if band() > 0.0 { if unsafe { SMOOTH } { BIG_DQ } else { unsafe { BAND_DQ } } } else { SLEEP_DQ } }
 /// Smooth waking (band mode): a woken chunk takes the water it owes over REL_SECS, not at once; a
@@ -452,12 +459,12 @@ impl Sim {
             // a sleeping chunk whose owed water would now move its level by the band wakes
             let t = self.t;
             let smooth = unsafe { SMOOTH };
-            let mut wake: Vec<usize> = (0..self.nch).filter(|&c| self.awake[c] == 0 && (self.owed[c] + self.rate[c] * (t - self.t_rate[c])).abs() > (band() as f64 * self.wet_n[c].max(1) as f64) * 0.5).collect();
+            let mut wake: Vec<usize> = (0..self.nch).filter(|&c| self.awake[c] == 0 && (self.owed[c] + self.rate[c] * (t - self.t_rate[c])).abs() > (wake_band() as f64 * self.wet_n[c].max(1) as f64) * 0.5).collect();
             self.wake_owed += wake.len() as u64;
             for &c in &wake { self.why[c][1] += 1; }
             if smooth && unsafe { DRIFT } {
                 let drift: Vec<usize> = (0..self.nch).filter(|&c| self.awake[c] == 0 && !wake.contains(&c)
-                    && (self.rate[c] - self.rate0[c]).abs() > band() as f64 * self.wet_n[c].max(1) as f64 * 0.5 / REACT_SECS).collect();
+                    && (self.rate[c] - self.rate0[c]).abs() > wake_band() as f64 * self.wet_n[c].max(1) as f64 * 0.5 / REACT_SECS).collect();
                 self.wake_rate += drift.len() as u64;
                 for &c in &drift { self.why[c][2] += 1; }
                 wake.extend(drift);
