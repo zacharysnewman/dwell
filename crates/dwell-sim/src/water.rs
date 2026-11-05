@@ -383,16 +383,30 @@ impl Basin {
     /// runs as a whole.
     fn runs(&self, o: &Outlet) -> bool {
         let made = |x: &Outlet| !self.natural.contains_key(&x.from);
-        if !made(o) || o.flow < FLOW.stream_min_flow / 16.0 {
+        if !made(o) || o.flow <= 0.0 {
             return false;
         }
-        let spill: f64 = self
-            .outlets
+        // Spilling (`spillMinFlow`): every way it pours by is drawn running, however thin.
+        self.spilling() || o.flow >= FLOW.stream_min_flow
+    }
+
+    /// What it pours over edges an edit made (m³/s): into the open (not a face it shares with
+    /// another body), not its lips as generated.
+    fn spill(&self) -> f64 {
+        self.outlets
             .iter()
-            .filter(|x| made(x))
+            .filter(|x| !x.contact && !self.natural.contains_key(&x.from))
             .map(|x| x.flow)
-            .sum();
-        o.flow >= FLOW.stream_min_flow || spill >= FLOW.stream_min_flow
+            .sum()
+    }
+
+    /// Whether it is drawn spilling (owner, 2026-11-04: "it should flow over at a full voxel
+    /// height 0.5m, at least visually"): fed, and pouring `spillMinFlow` over edges an edit made
+    /// (overflowing; not a lake draining away through a cut).
+    fn spilling(&self) -> bool {
+        !self.reservoir
+            && self.spill() >= FLOW.spill_min_flow
+            && self.inflow() + self.arriving >= FLOW.spill_min_flow
     }
 
     #[doc(hidden)]
@@ -492,6 +506,21 @@ impl Basin {
                     return (kf, s - kf * n);
                 }
             }
+        }
+        // Spilling over an edit's edge at its surface row's floor (water over a dam's top): that
+        // row drawn full, a half block over the edge (the level rounded up, however thin the sheet
+        // over it).
+        let floor = m_of_row(self.bottom + k as i32);
+        if frac > 0.0
+            && self.spilling()
+            && self.outlets.iter().any(|o| {
+                o.flow > 0.0
+                    && !o.contact
+                    && !self.natural.contains_key(&o.from)
+                    && (o.floor() - floor).abs() < 0.01
+            })
+        {
+            return (k, n);
         }
         let nearest = ((frac * n as f64).round() as usize).min(n);
         let (dk, dq) = self.drawn_fill;
@@ -740,11 +769,7 @@ impl Water {
     /// A body's inflow by the world map's pool graph (ADR 0059), if its cells lie in generated
     /// pools: each lip into those pools from a pool it doesn't hold brings what that lip passes at
     /// rest, at the lip's crest (the water above it), and a river's head its source.
-    fn graph_feeds(
-        &self,
-        f: FaceFrame,
-        cells: &HashSet<[i32; 3]>,
-    ) -> Option<(Feeds, f64)> {
+    fn graph_feeds(&self, f: FaceFrame, cells: &HashSet<[i32; 3]>) -> Option<(Feeds, f64)> {
         let rivers = self.river_map.as_ref()?;
         let keys = self.graph_keys(f, cells);
         if keys.is_empty() {
@@ -3041,6 +3066,15 @@ fn spread_row(
         let d = up(f, c, -1);
         below.contains(&d) || walls(view.kind(d))
     };
+    // Over its own water (the row below it, or liquid): its surface stands there. Over bare
+    // ground only within `sheetReach` of that, but on its floor (owner, 2026-11-04: past it the
+    // water runs downhill, not out along the land at its level).
+    let wet_under = |c: [i32; 3]| {
+        let d = up(f, c, -1);
+        below.contains(&d) || matches!(view.kind(d), Kind::Liquid(_))
+    };
+    let reach = FLOW.sheet_reach as usize;
+    let mut dist: HashMap<[i32; 3], usize> = HashMap::default();
     // Another basin's container: met, not spread into (over a wall, the pool beyond).
     let theirs = |c: [i32; 3]| owner.get(&c).is_some_and(|&o| o != id) && !walled(c);
     let mut cells = Vec::new();
@@ -3074,12 +3108,39 @@ fn spread_row(
             Kind::Solid => false,
         };
         if open && (bottom || held(s) || ours(s)) {
+            dist.insert(s, 0);
             queue.push(s);
         }
     }
     let mut wide = false;
+    // A cell of a sheet over bare ground (not over its water, not its own) with a way down (an
+    // open cell over nothing) within `streamReach` straight out: its water goes over there, not
+    // on sideways (owner, 2026-11-04; as running water heads for a drop near).
+    let at_edge = |c: [i32; 3]| {
+        !wet_under(c)
+            && !ours(c)
+            && SIDES.iter().any(|&s| {
+                // Straight out over the ground, within `streamReach`, a way down.
+                let mut at = c;
+                for _ in 0..FLOW.stream_reach {
+                    let n = side(at, s);
+                    if !matches!(view.kind(n), Kind::Open) || theirs(n) || !joins(view, at, n) {
+                        return false;
+                    }
+                    if !ours(n) && !held(n) {
+                        return true;
+                    }
+                    at = n;
+                }
+                false
+            })
+    };
     while let Some(c) = queue.pop() {
         cells.push(c);
+        if at_edge(c) {
+            continue;
+        }
+        let dc = dist.get(&c).copied().unwrap_or(0);
         if cells.len() >= FLOW.max_row_cells as usize {
             wide = true;
             break;
@@ -3091,9 +3152,17 @@ fn spread_row(
                 continue;
             }
             seen.insert(n);
+            // Over bare ground, how far from its water (none on its floor).
+            let far = if bottom || wet_under(n) { 0 } else { dc + 1 };
             match view.kind(n) {
                 Kind::Open if theirs(n) => met.push(n),
-                Kind::Open if held(n) => queue.push(n),
+                Kind::Open if held(n) && far > reach => {
+                    seen.remove(&n); // its rim (reached nearer another way, it may be held yet)
+                }
+                Kind::Open if held(n) => {
+                    dist.insert(n, far);
+                    queue.push(n);
+                }
                 Kind::Liquid(m) if m == liquid && ours(n) => queue.push(n),
                 Kind::Liquid(_) if walled(n) => {}
                 Kind::Liquid(m) if m == liquid => met.push(n),
@@ -3181,10 +3250,12 @@ fn scan_outlets(
                     continue;
                 }
                 match view.kind(n) {
+                    // Open beside it: over nothing, a way down; over ground but past its rim
+                    // (`sheetReach`: not its container), a way over the rim and on downhill.
                     Kind::Open => {
                         let under = up(f, n, -1);
                         let held = ours(under) || walls(view.kind(under));
-                        if !held {
+                        if !held || !ours(n) {
                             add(&mut out, n, OutKind::Face { lo: floor, hi }, false, None);
                         }
                     }
@@ -3299,6 +3370,7 @@ fn chunks_of(cells: impl Iterator<Item = [i32; 3]>) -> Vec<dwell_world::ChunkCoo
 }
 
 /// Where running liquid from an open cell ends.
+#[derive(Debug)]
 enum End {
     /// On a body of liquid (this cell of it).
     Liquid([i32; 3]),
@@ -3307,10 +3379,17 @@ enum End {
     Lost,
 }
 
-/// Follows liquid from the open cell `from`: down while open; on the floor, the nearest open cell
-/// with nothing under it within `streamReach` (breadth first), and down again; with the open cells
-/// it runs through on its way (from `from`: the cells it falls through and runs along the floor),
-/// which are drawn running while it flows.
+/// The lowest place found around: its row, whether water, the place, the place before it, and
+/// the cells from there.
+type Lowest = (i32, bool, [i32; 3], [i32; 3], Vec<[i32; 3]>);
+
+/// A place running water rests on its way: the place before it and the cells from there to here.
+type Step = ([i32; 3], Vec<[i32; 3]>);
+
+/// Follows liquid from the open cell `from` downhill (owner, 2026-11-04: "Always try to flow
+/// down"): from where it rests, to the lowest place within `streamReach` cells across, again and
+/// again, until it reaches water or nothing around is lower (it pools there). Returns where it ends
+/// and the open cells it runs through on its way (from `from`), drawn running while it flows.
 fn follow_path(
     view: &View<'_>,
     f: FaceFrame,
@@ -3319,62 +3398,83 @@ fn follow_path(
 ) -> (End, Vec<[i32; 3]>) {
     // The source's own cells are walls to its water.
     let kind_of = |c: [i32; 3]| if own(c) { Kind::Solid } else { view.kind(c) };
-    let mut path = vec![from];
-    let mut c = from;
-    for _ in 0..64 {
-        // Down.
-        let mut falls = 0;
-        loop {
-            let d = up(f, c, -1);
+    // From an open cell down to where it rests: the cells it falls through, and how it ends.
+    enum Fall {
+        Rests([i32; 3]),
+        Water([i32; 3]),
+        Lost,
+    }
+    let fall = |c: [i32; 3], cells: &mut Vec<[i32; 3]>| -> Fall {
+        let mut at = c;
+        for _ in 0..2048 {
+            let d = up(f, at, -1);
+            if view.get(d).is_none() {
+                return Fall::Lost; // the floor is unloaded
+            }
             match kind_of(d) {
                 Kind::Open => {
-                    c = d;
-                    path.push(d);
-                    falls += 1;
-                    if falls > 2048 {
-                        return (End::Lost, path);
-                    }
+                    at = d;
+                    cells.push(d);
                 }
-                Kind::Liquid(_) => return (End::Liquid(d), path),
-                Kind::Solid | Kind::Holds { .. } => break,
-            }
-            if view.get(d).is_none() {
-                return (End::Lost, path);
+                Kind::Liquid(_) => return Fall::Water(d),
+                Kind::Solid | Kind::Holds { .. } => return Fall::Rests(at),
             }
         }
-        if view.get(up(f, c, -1)).is_none() {
-            return (End::Lost, path); // the floor is unloaded
-        }
-        // Along the floor, each cell's way back kept.
-        let mut back: HashMap<[i32; 3], [i32; 3]> = HashMap::default();
-        back.insert(c, c);
-        let mut frontier = vec![c];
-        let mut end = None;
-        'search: for _ in 0..FLOW.stream_reach {
+        Fall::Lost
+    };
+    let mut path = vec![from];
+    let mut at = match fall(from, &mut path) {
+        Fall::Rests(c) => c,
+        Fall::Water(w) => return (End::Liquid(w), path),
+        Fall::Lost => return (End::Lost, path),
+    };
+    let row = |c: [i32; 3]| f.row(c[1]);
+    // Always down (owner, 2026-11-04: "the lowest nearby block path? Always try to flow down"):
+    // from where it rests, the lowest place it can reach within `streamReach` cells across (a step
+    // down of any height part of the way, never up; water there counts by its cell), nearest first
+    // among equals; there it goes, and looks again. Into water, it ends there; with nothing lower
+    // around, it pools where it is (a flat or a hollow); out of the loaded world only with nothing
+    // lower in sight.
+    for _ in 0..256 {
+        let mut back: HashMap<[i32; 3], Step> = HashMap::default();
+        back.insert(at, (at, Vec::new()));
+        let mut frontier = vec![at];
+        // The lowest found: (row, is water, the place, the last cells to it).
+        let mut best: Option<Lowest> = None;
+        let mut lost: Option<([i32; 3], Vec<[i32; 3]>)> = None;
+        for _ in 0..FLOW.stream_reach {
             let mut next = Vec::new();
             for &p in &frontier {
                 for s in SIDES {
                     let n = side(p, s);
-                    if back.contains_key(&n) {
+                    if back.contains_key(&n) || view.get(n).is_none() {
                         continue;
                     }
-                    back.insert(n, p);
-                    match kind_of(n) {
-                        Kind::Open => {
-                            if view.get(n).is_none() {
-                                continue;
-                            }
-                            match kind_of(up(f, n, -1)) {
-                                Kind::Open | Kind::Liquid(_) => {
-                                    end = Some((n, false));
-                                    break 'search;
-                                }
-                                Kind::Solid | Kind::Holds { .. } => next.push(n),
-                            }
+                    let mut take = |r: i32, water: bool, c: [i32; 3], cells: Vec<[i32; 3]>| {
+                        if best.as_ref().is_none_or(|b| r < b.0) {
+                            best = Some((r, water, c, p, cells));
                         }
-                        Kind::Liquid(_) => {
-                            end = Some((n, true));
-                            break 'search;
+                    };
+                    match kind_of(n) {
+                        Kind::Liquid(_) => take(row(n), true, n, Vec::new()),
+                        Kind::Open => {
+                            let mut cells = vec![n];
+                            match fall(n, &mut cells) {
+                                Fall::Rests(r) => {
+                                    if back.contains_key(&r) {
+                                        continue;
+                                    }
+                                    back.insert(r, (p, cells.clone()));
+                                    take(row(r), false, r, cells);
+                                    next.push(r);
+                                }
+                                Fall::Water(w) => take(row(w), true, w, cells),
+                                Fall::Lost => {
+                                    if lost.is_none() {
+                                        lost = Some((p, cells));
+                                    }
+                                }
+                            }
                         }
                         Kind::Solid | Kind::Holds { .. } => {}
                     }
@@ -3385,25 +3485,38 @@ fn follow_path(
             }
             frontier = next;
         }
-        let Some((n, liquid)) = end else {
-            return (End::Pool(c), path);
+        // The way from `at` to place `p` (through the places before it).
+        let way = |mut q: [i32; 3]| {
+            let mut parts: Vec<Vec<[i32; 3]>> = Vec::new();
+            while q != at {
+                let (prev, cells) = &back[&q];
+                parts.push(cells.clone());
+                q = *prev;
+            }
+            parts.reverse();
+            parts.concat()
         };
-        // The run along the floor, from where it landed.
-        let mut run = Vec::new();
-        let mut at = back[&n];
-        while at != c {
-            run.push(at);
-            at = back[&at];
+        match best {
+            Some((r, true, w, p, cells)) if r < row(at) || r == row(at) => {
+                path.extend(way(p));
+                path.extend(cells);
+                return (End::Liquid(w), path);
+            }
+            Some((r, false, c, _, _)) if r < row(at) => {
+                path.extend(way(c));
+                at = c;
+            }
+            _ => {
+                if let Some((p, cells)) = lost {
+                    path.extend(way(p));
+                    path.extend(cells);
+                    return (End::Lost, path);
+                }
+                return (End::Pool(at), path);
+            }
         }
-        run.reverse();
-        path.extend(run);
-        if liquid {
-            return (End::Liquid(n), path);
-        }
-        path.push(n);
-        c = n;
     }
-    (End::Lost, path)
+    (End::Pool(at), path)
 }
 
 mod rivers;

@@ -9,7 +9,7 @@ pub const FLOW: FlowData = FlowData {
     live_radius_m: 160.0,
     max_basin_cells: 65536,
     max_row_cells: 16384,
-    stream_reach: 16,
+    stream_reach: 4,
     stream_min_flow: 0.05,
     merge_seconds: 0.5,
     catch_up_steps: 512,
@@ -21,6 +21,8 @@ pub const FLOW: FlowData = FlowData {
     lake_outlet_head: 1.0,
     fill_hysteresis: 0.25,
     found_snap_m: 0.04,
+    spill_min_flow: 0.001,
+    sheet_reach: 2,
     liquids: &[
         LiquidFlow { block: "dwell:water", weir: 1.7, running: "dwell:running_water" },
     ],

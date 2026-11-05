@@ -2,6 +2,14 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions card. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.48.1",
+      "changes": [
+        "Spilled water always flows downhill to the lowest place nearby, and pools where it can't go lower",
+        "A flood pours over a river's banks into the river below instead of spreading along them",
+        "Water overflowing a dam shows standing over the dam's top"
+      ]
+    },
+    {
       "version": "0.48.0",
       "changes": [
         "Rivers are now planned as a chain of pools and steps, so water stays where it was made and moves only where you can see it",
