@@ -42,9 +42,9 @@ const BLOCK_STATES: TableDefinition<u32, &str> = TableDefinition::new("block_sta
 /// Moving body id → its record (`encode_body`; docs/BUILT_BODIES.md §7): its kind, pose,
 /// velocities and cells, their states by name. Rewritten whole on each save that carries bodies.
 const BODIES: TableDefinition<u32, &[u8]> = TableDefinition::new("bodies");
-/// The water's basins (docs/WATER_FLOW.md §8): one record (key 0), `dwell_sim::water::Water::save`'s
-/// bytes compressed. Optional: a build that doesn't know it leaves it, and the water is found again
-/// by its edits (the record keeps its chunks' revisions, so it knows what such a build changed).
+/// The water (docs/WATER_SURFACE_GRID.md §2b): one record (key 0), `dwell_sim::water::Water::save`'s
+/// bytes compressed (the free water; held water is found again from the blocks). Optional: a build
+/// that doesn't know it leaves it, and a build that doesn't read its format finds the water again.
 const WATER: TableDefinition<u32, &[u8]> = TableDefinition::new("water");
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -194,7 +194,7 @@ pub struct SaveBatch {
     pub clear_lod: bool,
     /// The world's moving bodies now, replacing those saved before (None: leave them).
     pub bodies: Option<Vec<SavedBody>>,
-    /// The water's basins now (`Water::save`), replacing those saved before (None: leave them).
+    /// The water now (`Water::save`), replacing what was saved before (None: leave it).
     pub water: Option<Vec<u8>>,
 }
 
@@ -542,7 +542,7 @@ impl WorldDb {
             .collect()
     }
 
-    /// The water's basins as last saved (`Water::save`'s bytes), if any.
+    /// The water as last saved (`Water::save`'s bytes), if any.
     pub fn water(&self) -> Option<Vec<u8>> {
         let txn = self.db.begin_read().ok()?;
         let t = txn.open_table(WATER).ok()?;

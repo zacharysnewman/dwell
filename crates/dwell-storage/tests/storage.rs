@@ -456,8 +456,8 @@ fn moving_bodies_are_saved_with_the_world_and_replaced_on_each_save() {
 }
 
 #[test]
-fn the_waters_basins_are_saved_with_the_world_and_replaced_on_each_save() {
-    // docs/WATER_FLOW.md §8: the water's record comes back as saved; a save without it leaves it,
+fn the_waters_record_is_saved_with_the_world_and_replaced_on_each_save() {
+    // WATER_SURFACE_GRID.md §2b: the water's record comes back as saved; a save without it leaves it,
     // one with replaces it; a world from before it has none.
     let db = WorldDb::in_memory().expect("db");
     assert_eq!(db.water(), None);

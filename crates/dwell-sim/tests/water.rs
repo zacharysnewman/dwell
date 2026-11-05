@@ -1,5 +1,5 @@
-//! Water flow through the server (docs/WATER_FLOW.md, W1): a player's edit reaches the basins, the
-//! water ticks in game time, and its changes go out as modifications.
+//! Water through the server (the water surface grid, docs/WATER_SURFACE_GRID.md): a player's edit
+//! frees the water near it, the water ticks in game time, and its changes go out as modifications.
 
 mod common;
 
@@ -19,7 +19,7 @@ fn join_streaming(f: &mut Fixture, id: SessionId) {
 
 #[test]
 fn breaking_a_lakes_wall_drains_its_top_row_and_clients_see_it() {
-    // face-a-only: the server's flat world is face A's; the basins' both faces are tested in
+    // face-a-only: the server's flat world is face A's; the water's both faces are tested in
     // `water::tests`.
     let mut f = Fixture::new(flat());
     join_streaming(&mut f, 1);
@@ -80,17 +80,21 @@ fn breaking_a_lakes_wall_drains_its_top_row_and_clients_see_it() {
         "the client was sent the drained cells ({} changes)",
         drained.len()
     );
-    let lake = f
+    let sill = dwell_world::m_of_row(G + 3);
+    let level = f
         .server
         .water()
-        .basin_at([0, G, 5])
-        .expect("the lake is a basin");
-    assert_eq!(lake.inflow(), 0.0, "a closed lake has no inflow");
+        .level_at(dwell_world::FaceFrame::A, 0, 5)
+        .expect("the lake");
+    assert!(
+        (level - sill).abs() < 0.06,
+        "the lake drained to the gap's sill: {level:.3} against {sill:.3}"
+    );
 }
 
 #[test]
 fn the_waters_modifications_reach_a_client_in_revision_order() {
-    // face-a-only: the server's flat world is face A's; the basins' both faces are tested in
+    // face-a-only: the server's flat world is face A's; the water's both faces are tested in
     // `water::tests`.
     // Owner, 2026-11-04: rising water "disappears and then reappears at a slightly higher level".
     // The water wrote its cells with `set_voxel`, a revision per cell, then sent them as one
@@ -162,7 +166,7 @@ fn the_waters_modifications_reach_a_client_in_revision_order() {
 
 #[test]
 fn a_lake_cut_open_drains_on_after_its_player_leaves() {
-    // face-a-only: the server's flat world is face A's; the basins' both faces are tested in
+    // face-a-only: the server's flat world is face A's; the water's both faces are tested in
     // `water::tests`.
     // Owner, 2026-11-03: water an edit set going changes whether or not anyone is near (two
     // players far apart on one river). A lake cut open, its player leaving at once (no one near): the lake
@@ -216,23 +220,24 @@ fn a_lake_cut_open_drains_on_after_its_player_leaves() {
             );
         }
     }
-    let lake = f.server.water().basin_at([0, G, 5]).expect("the lake");
-    assert!(!lake.active, "settled");
     assert!(
-        f.server.water().wanted_chunks().is_empty(),
-        "no chunks wanted once settled"
+        f.server
+            .water()
+            .level_at(dwell_world::FaceFrame::A, 0, 5)
+            .is_some_and(|l| (l - dwell_world::m_of_row(G + 3)).abs() < 0.06),
+        "drained to the sill"
     );
 }
 
 /// Owner, 2026-11-03: a block set at the bottom of any river flooded it without end, or drained
-/// it; 2026-11-04 (ADR 0057): generated water must rest by the one law, as any water does. In
-/// generated worlds (seeds 0–2), a stone set in the bed of river pools picked along the world
-/// map's rivers changes no other cell within 48 m over six hours of water time, and sends no change
-/// down its pool graph (no pool nobody measured off its rest, ADR 0059): each pool's lip carries its river's flow with the pool a full row over its
-/// sill (WATER_FLOW.md §17); a ramp at the water's edge may take its flooded state.
+/// it; generated water must rest by the one law, as any water does. In generated worlds (seeds 0–2),
+/// a stone set in the bed of rivers picked along the world map's rivers changes no other cell within
+/// 48 m over six hours of water time, and the water sleeps again (the grid's rest layer,
+/// WATER_SURFACE_GRID.md §2b: red without it, 1049 cells changed on seed 0); a ramp at the water's
+/// edge may take its flooded state.
 #[test]
 fn a_block_set_in_a_generated_rivers_bed_changes_nothing_else() {
-    // face-a-only: the generated world's face A; the basins' both faces are tested in
+    // face-a-only: the generated world's face A; the water's both faces are tested in
     // `water::tests`.
     use dwell_world::{Face, GENERATOR_TERRAIN, VoxelWorld};
     const R: i32 = 48;
@@ -322,8 +327,7 @@ fn a_block_set_in_a_generated_rivers_bed_changes_nothing_else() {
             // With the map's rivers too, as the server's: a river at rest sends nothing down them.
             let mut water = dwell_sim::water::Water::with_runoff(std::sync::Arc::new(
                 move |f: dwell_world::FaceFrame, x, z| runoff(f.face, x, z),
-            ))
-            .with_rivers(rivers.clone());
+            ));
             water.touch([(bed, was)]);
             let player = [
                 f64::from(bed[0]) + 0.5,
@@ -336,9 +340,9 @@ fn a_block_set_in_a_generated_rivers_bed_changes_nothing_else() {
             }
             let after = snapshot(&w);
             assert_eq!(
-                water.off_rest(),
+                water.awake_chunks(),
                 0,
-                "seed {seed}, bed {bed:?}: a river at rest sent changes down its pools"
+                "seed {seed}, bed {bed:?}: the water settled again"
             );
             // A ramp at the water's edge may take its flooded state: nothing else.
             let flooded =
@@ -348,6 +352,35 @@ fn a_block_set_in_a_generated_rivers_bed_changes_nothing_else() {
                 .zip(&after)
                 .filter(|&(&a, &b)| a != b && !flooded(a, b))
                 .count();
+            if changed > 0 {
+                let mut kinds: std::collections::BTreeMap<(String, String), usize> =
+                    Default::default();
+                for (&a, &b) in before.iter().zip(&after) {
+                    if a != b {
+                        let n = |m: u16| {
+                            dwell_blocks::try_info(m).map_or("?".to_string(), |i| {
+                                format!(
+                                    "{}{}",
+                                    i.name,
+                                    if i.liquid {
+                                        format!(" {:.2}", i.fill)
+                                    } else {
+                                        String::new()
+                                    }
+                                )
+                            })
+                        };
+                        *kinds.entry((n(a), n(b))).or_default() += 1;
+                    }
+                }
+                eprintln!(
+                    "DIAG {kinds:?} held {:?} free {:.1} awake {} {}",
+                    water.held(),
+                    water.free_volume(),
+                    water.awake_chunks(),
+                    water.report(bed, 6)
+                );
+            }
             assert_eq!(
                 changed, 0,
                 "seed {seed}: {changed} cells changed near {bed:?}"

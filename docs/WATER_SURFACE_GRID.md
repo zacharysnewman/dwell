@@ -62,6 +62,30 @@ Today water is blocks inside terrain chunks (ADR 0059's "water was blocks first"
 a lake or under an arch (the terrain volume's cliffs and arches) can't be held. Accept dry caves for
 now, or later allow a few stacked water layers in the columns that have overhangs?
 
+## 2b. As built: the runtime grid, G2a (0.48.2)
+
+`dwell-sim` `water.rs` replaced the basins with the grid, before G1, on the generator's drawn rivers:
+
+- **Generated water is held, not stepped.** A loaded chunk's water joins at the level its blocks show,
+  held: it keeps its level and trades with free water beside it, at no cost. An edit frees the water
+  within 3 columns; a free column 2.5 cm off its rest frees its held neighbours, so a change spreads
+  exactly as far as it reaches. This is the prototype's "sleeping chunk" taken one step further: water
+  nobody changed was never awake.
+- **The rest layer.** The drawn rivers are flat pools stepping down a row, which no steady flow
+  matches: freed as drawn, every step poured and the release ran down the whole river (a stone in a
+  seed-0 river's bed emptied 844 cells). Each chunk keeps the water as generated beside the water as
+  it is, stepped by the same law with its depths fixed, and a column changes by the difference of
+  their flows. The generated state is then exactly at rest whatever its shape, while a dam, a cut or
+  a flood still move water by the law: a dammed river backs up by the flow it was drawn with (in the
+  browser, seed 0's river rose 0.5 m above a dam and fell 0.25 m below it). The rest layer's
+  divergence is an implicit spring per column; after G1 those springs are the map's river sources.
+- **A block set over water** traps what is below it (left as blocks, out of the grid); one set in it
+  lifts its water by its volume.
+- **Water spreads only into loaded world**; the chunks of moving water and those beside it are kept
+  loaded, so it goes on with no player near.
+- **Not yet:** pools and the held sea (G2b), the water layer's own storage and the wire (G3), data (G4).
+  Settings are constants in `water.rs` until G4.
+
 ## 3. Generation
 
 - **Kept:** the world map (ADR 0049): uplift, stream-power erosion (the valleys), fill-and-spill lakes,
