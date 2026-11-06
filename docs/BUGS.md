@@ -6,6 +6,17 @@ pins it.
 
 ## Open
 
+### 30. A held Place stops building at a few frames a second
+
+*Found 2026-11-05 (0.48.2), from CI.* Under the e2e suite's software renderer (CI ~5 fps, a Mac's
+SwiftShader ~3 fps) every held-Place build in `e2e/buildDrag.spec.ts` builds its first piece and no
+more: towering (feet stay at 33 after four jumps), walking back in Line mode, bridging help, held
+ladders, crouch-jump towers. All pass on a real GPU. Main's e2e shards 1 and 4 have failed on these
+since at least 0.47 (#320). Repro: `npx playwright test e2e/buildDrag.spec.ts -g towering` with the
+SwiftShader config. Suspect: the held stroke's next piece is decided per frame (`game.rs`
+`edit_held`, `build_drag` waiting for a jump to clear the body), and at 200–300 ms frames the jump's
+window is missed between frames.
+
 ### 23. A block can't be placed against the downhill side of a ramp
 
 *Reported 2026-11-03 (0.44.2).* "I can't place a block against the outer edge of (downhill) side of a

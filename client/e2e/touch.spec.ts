@@ -144,10 +144,11 @@ test('touch controls: Break/Place toggle, tapping the view edits, tapping the ho
   const [x, y, z] = target.cell;
   const above = `globalThis.__dwell.voxel(${String(x)}, ${String(y + 1)}, ${String(z)})`;
 
-  // Pick dirt (slot 2) on the hotbar, switch to Place, and tap the view.
-  const dirt = await center('.hotbar-slot[data-slot="1"]');
+  // Pick dirt on the hotbar (by its title: the slots move as items are added), switch to Place,
+  // and tap the view.
+  const dirt = await center('.hotbar-slot[title="Dirt"]');
   await tap(dirt.x, dirt.y, 4);
-  await expect(page.locator('.hotbar-slot.selected')).toHaveAttribute('data-slot', '1');
+  await expect(page.locator('.hotbar-slot.selected')).toHaveAttribute('title', 'Dirt');
   const edit = await center('#touch-edit');
   await tap(edit.x, edit.y, 5);
   await expect(page.locator('#touch-edit')).toHaveText('Place');
