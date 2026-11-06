@@ -1102,7 +1102,7 @@ fn a_part_full_water_cell_is_drawn_at_its_share() {
 
 #[test]
 fn a_column_whose_top_no_longer_holds_the_surface_is_drawn_at_its_cells() {
-    // BUGS.md #40: a modified section is meshed with its generated surface. An edited column (its
+    // BUGS.md #43: a modified section is meshed with its generated surface. An edited column (its
     // topmost solid cell no longer the one the surface lies in) is drawn as its cells; the rest at
     // their exact heights.
     let mut cells = new_cells();

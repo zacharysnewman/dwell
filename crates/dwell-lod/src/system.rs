@@ -380,7 +380,7 @@ struct Node {
     /// Content to mesh (dropped once meshed unless modified: neighbours' aprons read it).
     cells: Option<Vec<u16>>,
     /// Each column's exact surface, as generated (a modified section's too: the mesher draws the
-    /// columns its content still tops where generation did at their exact height, BUGS.md #40).
+    /// columns its content still tops where generation did at their exact height, BUGS.md #43).
     surface: Option<Vec<f32>>,
     /// A modified section whose generated surface is still to be computed (`generate_surface`).
     wants_surface: bool,

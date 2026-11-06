@@ -1994,7 +1994,7 @@ fn a_section_fading_out_keeps_its_mesh_until_its_fade_ends() {
 fn a_modified_section_is_meshed_with_its_generated_surface() {
     // face-a-only: the request harness views face A; a face-B section's surface takes the same
     // path (`on_generated` keeps `surface_b` for it, `surface_in_cells` mirrors it).
-    // BUGS.md #40 (owner, 2026-11-06): an edited area's distant view was a coarse, blocky plateau.
+    // BUGS.md #43 (owner, 2026-11-06): an edited area's distant view was a coarse, blocky plateau.
     // A modified section (the server's content) was meshed with no surface, its columns drawn at
     // their cells' tops: kilometre-wide terraces at coarse levels, at any distance. It now asks
     // the generator for its surface (a pure function of where it is) and the mesher draws each

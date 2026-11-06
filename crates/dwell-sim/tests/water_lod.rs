@@ -375,10 +375,7 @@ fn probe_a_reopened_flooded_worlds_lod() {
     std::fs::create_dir_all(&dir).expect("dir");
     let path = dir.join("w.dwellworld");
     let store = || {
-        dwell_storage::WorldStore::new(
-            dwell_storage::WorldDb::open(&path).expect("opens"),
-            false,
-        )
+        dwell_storage::WorldStore::new(dwell_storage::WorldDb::open(&path).expect("opens"), false)
     };
     let generator = dwell_worldgen::lod_generator_for(dwell_world::GENERATOR_TERRAIN, 0);
     {
@@ -398,7 +395,10 @@ fn probe_a_reopened_flooded_worlds_lod() {
         }
         f.server.save_now();
         f.server.flush_store();
-        println!("first session: {} sections", f.server.lod().sections().len());
+        println!(
+            "first session: {} sections",
+            f.server.lod().sections().len()
+        );
     }
     let mut f = Fixture::new(ServerConfig {
         store: Some(store()),
@@ -434,5 +434,9 @@ fn probe_a_reopened_flooded_worlds_lod() {
         }
     }
     let bad = lod_matches_world(&mut f, generator);
-    println!("{} sections differ from the world's: {:?}", bad.len(), &bad[..bad.len().min(10)]);
+    println!(
+        "{} sections differ from the world's: {:?}",
+        bad.len(),
+        &bad[..bad.len().min(10)]
+    );
 }
