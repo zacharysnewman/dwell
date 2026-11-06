@@ -164,23 +164,11 @@ dwell_world::both_faces!(
         s.run(900);
         let up = s.level(12, 1).expect("above");
         let down = s.level(20, 1).expect("below");
-        eprintln!("dammed: up {up:.3} down {down:.3}");
         // the notch: its floor a row below the backwater's level
         let r = dwell_world::row_of_m(up + m_of_row(BASE)) - BASE - 1;
         let notch: Vec<(i32, i32, i32)> = (r..=8).map(|r| (16, r, 1)).collect();
         s.edit(&notch, M.air);
-        for t in 0..12 {
-            s.run(10);
-            eprintln!(
-                "t {}: up {:?} notch {:?} foot {:?} down {:?} cells {:?}",
-                (t + 1) * 10,
-                s.level(12, 1),
-                s.level(16, 1),
-                s.level(17, 1),
-                s.level(20, 1),
-                (-3..3).map(|r| s.get(17, r, 1)).collect::<Vec<_>>()
-            );
-        }
+        s.run(120);
         let foot = s.level(17, 1).expect("the foot");
         assert!(foot > down + 0.05, "the foot rose: {down:.3} → {foot:.3}");
     }
