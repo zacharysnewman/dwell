@@ -4,7 +4,7 @@
 mod common;
 use common::*;
 use dwell_physics::config::PlayerControllerConfig;
-use dwell_physics::controller::events;
+use dwell_physics::controller::{Input, accelerate, events};
 use dwell_physics::query::GroundRef;
 use dwell_physics::{DQuat, Vec3};
 
@@ -642,4 +642,149 @@ fn crouching_against_a_wall_never_moves_the_player_backwards() {
             "jump {jump}: from z {against:.3} back to {lowest:.3}"
         );
     }
+}
+
+// --- the walking rule: input only adds, up to the target (owner, 2026-11-06) --------------------
+
+/// Run along +z for 1 s, jump on the last tick, then `air` for `seconds` in the air: the horizontal
+/// velocity (x, z) at the end, and whether it stayed in the air throughout.
+fn running_jump_then(air: Input, seconds: f32) -> (Vec3, bool) {
+    let mut w = PlayerTestWorld::new();
+    w.floor();
+    let e = w.spawn(v(0.5, 0.05, 0.5));
+    let go = ticks(1.0);
+    w.set_input(move |t, _| {
+        if t < go {
+            input(0.0, 1.0, true, t == go - 1, false, 0.0, 0.0)
+        } else {
+            air
+        }
+    });
+    w.step(go);
+    assert!(approx(w.horizontal_speed(e), 8.0, 0.05), "ran at 8 m/s");
+    let mut airborne = true;
+    for _ in 0..ticks(seconds) {
+        w.step(1);
+        airborne &= !w.c(e).ground.grounded;
+    }
+    let vel = w.vel(e);
+    (Vec3::new(vel.x, 0.0, vel.z), airborne)
+}
+
+#[test]
+fn letting_go_in_the_air_keeps_the_speed() {
+    // Owner (2026-11-06): input "shouldn't slow you down to reach the target speed". Until 0.49.11
+    // air control braked a running jump with nothing held: 8 → 6.5 m/s in 0.5 s.
+    let (vel, airborne) = running_jump_then(Input::default(), 0.5);
+    assert!(airborne);
+    assert!(approx(vel.length(), 8.0, 0.01), "{vel}");
+}
+
+#[test]
+fn holding_sideways_in_the_air_turns_without_slowing_or_speeding() {
+    // Until 0.49.11 air control steered toward the held direction's velocity, taking the rest away:
+    // a running jump with right held lost half its forward speed in 0.5 s (8 → 4.0 m/s). Now the
+    // held direction gains speed, the total stays 8 m/s (the cap: no strafe-jumping), and the
+    // forward part gives way only as the velocity turns.
+    let right = input(-1.0, 0.0, true, false, false, 0.0, 0.0);
+    let (vel, airborne) = running_jump_then(right, 0.5);
+    assert!(airborne);
+    assert!(approx(vel.length(), 8.0, 0.01), "the speed kept: {vel}");
+    assert!(vel.x > 2.0 && vel.z > 6.0, "turned toward +x: {vel}");
+}
+
+#[test]
+fn input_never_builds_speed_past_the_target_whatever_its_direction() {
+    // Strafe-jumping (Quake): input held nearly across the velocity, turned with it each tick,
+    // adds speed the "along the input" test never sees. The rule caps the velocity's length.
+    let wish_at = |v: Vec3, degrees: f32| {
+        let a = libm::atan2f(v.x, v.z) + degrees.to_radians();
+        Vec3::new(libm::sinf(a), 0.0, libm::cosf(a))
+    };
+    for degrees in [30.0f32, 60.0, 80.0, 89.0, 95.0] {
+        let mut vel = Vec3::new(0.0, 0.0, 8.0);
+        for _ in 0..ticks(5.0) {
+            vel = accelerate(vel, wish_at(vel, degrees), 5.0, 10.0 / 60.0);
+        }
+        assert!(vel.length() <= 8.0 + 1e-4, "{degrees}°: {}", vel.length());
+    }
+    // Up to the target it adds; at or past it, along the input, it adds nothing and takes nothing;
+    // across it, it turns the velocity and keeps its speed.
+    let forward = Vec3::new(0.0, 0.0, 1.0);
+    assert!(approx(
+        accelerate(Vec3::ZERO, forward, 5.0, 0.2).z,
+        0.2,
+        1e-6
+    ));
+    assert!(approx(
+        accelerate(forward * 4.9, forward, 5.0, 0.2).z,
+        5.0,
+        1e-6
+    ));
+    assert_eq!(
+        accelerate(forward * 12.0, forward, 5.0, 0.2),
+        forward * 12.0
+    );
+    let turned = accelerate(forward * 12.0, Vec3::new(0.6, 0.0, 0.8), 5.0, 0.2);
+    assert!(
+        approx(turned.length(), 12.0, 1e-4) && turned.x > 0.1,
+        "{turned}"
+    );
+}
+
+#[test]
+fn a_kick_and_walking_do_not_stack() {
+    // Until 0.49.11 the player's own speed was added on top of a knockback's: kicked at 12 m/s
+    // with run held, the body went 17 m/s on the ground and 15 (10 + 5) in the air. Now holding
+    // forward adds nothing to a body already faster than the target.
+    let mut w = PlayerTestWorld::new();
+    w.floor();
+    let e = w.spawn(v(0.5, 0.05, 0.5));
+    w.step(5);
+    w.kick(6, e, v(0.0, 0.0, 12.0));
+    w.set_input(|_, _| input(0.0, 1.0, true, false, false, 0.0, 0.0));
+    // The kick lands on the speed the player had (1.7 m/s): 13.7, and from there it only falls.
+    w.step(2);
+    let kicked = w.horizontal_speed(e);
+    assert!(kicked > 13.0, "{kicked}");
+    for _ in 0..ticks(1.2) {
+        let before = w.horizontal_speed(e);
+        w.step(1);
+        assert!(
+            w.horizontal_speed(e) <= before + 1e-4,
+            "ground: {before} → {}",
+            w.horizontal_speed(e)
+        );
+    }
+    assert!(
+        approx(w.horizontal_speed(e), 8.0, 0.05),
+        "friction to the run speed"
+    );
+    let mut w = PlayerTestWorld::new();
+    w.floor();
+    let e = w.spawn(v(0.5, 30.0, 0.5));
+    w.kick(0, e, v(0.0, 0.0, 10.0));
+    w.set_input(|_, _| input(0.0, 1.0, true, false, false, 0.0, 0.0));
+    w.step(2);
+    let kicked = w.horizontal_speed(e);
+    w.step(ticks(1.0));
+    assert!(
+        kicked < 10.2 && approx(w.horizontal_speed(e), kicked, 1e-4),
+        "air: {kicked} → {} (until 0.49.11: 15)",
+        w.horizontal_speed(e)
+    );
+}
+
+#[test]
+fn a_standing_jump_still_steers_up_to_the_walk_speed() {
+    let mut w = PlayerTestWorld::new();
+    w.floor();
+    let e = w.spawn(v(0.5, 30.0, 0.5));
+    w.set_input(|_, _| mv(0.0, 1.0));
+    w.step(ticks(1.0));
+    assert!(
+        approx(w.horizontal_speed(e), 5.0, 0.01),
+        "{}",
+        w.horizontal_speed(e)
+    );
 }

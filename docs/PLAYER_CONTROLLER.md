@@ -164,7 +164,7 @@ The server tick (ARCHITECTURE §4.2) runs, for every player, **before** `Physics
 | 6 | `step_jump` | `PPCJumpSystem` | Buffer + coyote (in ticks); `accumulated_y = max(accumulated_y, jump_v + platform_y)`, or sliding (steeper than `slide.min_angle`, or a sprint slide) the jump added along the ground's normal (§6.8); no coyote after a real jump; auto-jump (§6.2) |
 | 7 | `step_climb` | `PPCClimbSystem` | Exclusive layer on climbable voxels (§6.3); not while flying |
 | 8 | `step_swim` | — (Dwell) | Exclusive layer in water voxels (§6.4) and in the flip band (§11); not while climbing or flying |
-| 9 | `step_horizontal` | `PPCMovementLayerSystem` | Absorb external; on ground steeper than 44° the slide (§6.8); else during a sprint slide the sprint slide (§6.9); else accel/decel/reverse in the platform's frame; air control (toward the speed the player has, walk to run: sprint and crouch change nothing in the air, §6.9); step-up; edge guard |
+| 9 | `step_horizontal` | `PPCMovementLayerSystem` | Absorb external; on ground steeper than 44° the slide (§6.8); else during a sprint slide the sprint slide (§6.9); else the walking rule on the whole velocity in the platform's frame: on the ground accel/reverse along the input up to the walking speed, friction above it and when nothing is held; in the air input only adds, up to `max(walk speed, |v|)`, and turns a faster body (§6.12); step-up; edge guard |
 | 10 | `step_vertical` | `PPCVerticalLayerSystem` | Gravity; walk-off keeps platform Y; ceiling cancel; launch detection; ground following + snap |
 | 10a | `step_impact` | — (Dwell) | This tick's hit from the new contacts, the landing and a ceiling cancel: `IMPACTED` (§6.10) |
 | 11 | `step_aggregate` | `PPCAggregateSystem` | `target = exclusive ? layer.velocity : horizontal.contribution + (0, vertical.target_y, 0)`; set the body's linear velocity |
@@ -563,10 +563,10 @@ data (`PlayerControllerConfig::slide`, §7).
 - **Momentum.** The slide's whole velocity is split between the layer's two terms: the first
   walking speed's worth (the tick's walk, run or crouch speed) is the player's own `current`,
   which walks on where the slope ends; the rest is `external`, which ground friction
-  (`ground_external_friction`) takes away on flat ground and nothing does in the air. So the
+  (`deceleration`, §6.12) takes away on flat ground and nothing does in the air. So the
   player keeps its speed off the bottom of a slope and slows with the normal ground friction
   (holding forward there adds no boost), and a jump off a slide keeps its downhill momentum
-  (the player's own part slows with air control, as after any jump).
+  (air control never takes speed away, §6.12).
 - **Control.** Input across the slope steers at `steering` (0.4) × the walking acceleration, up
   to `steer_speed` (5 m/s). Input up the slope brakes: the terminal speed falls by up to
   `brake` (50 %; 60 % before), never to zero, and up-slope input never drives the player up. Momentum carried up a
@@ -657,8 +657,8 @@ Fortnite-style. The numbers below are defaults chosen for this, all data
   (`slide.rs` `a_crouched_steep_slide_slides_on_where_the_ground_flattens`).
 - **In the air neither crouch nor sprint changes the speed** (owner, 2026-10-30: crouching
   "shouldn't slow your in air velocity"; 2026-11-05: *"Sprint shouldn't change in air control or
-  speed … we want a true physics controller"*): airborne, the air control steers toward the speed
-  the player has, held between the walk speed (the crouch speed, crouched) and the run speed, so
+  speed … we want a true physics controller"*): airborne, input only adds speed up to the walk
+  speed (the crouch speed, crouched) and turns a faster body without slowing it (§6.12), so
   pressing or letting go of crouch or sprint mid-air changes nothing; only the move input's
   direction steers (`crouching_in_the_air_keeps_the_speed_you_had`, `movement.rs`
   `sprint_changes_nothing_in_the_air`). Until 0.49.2 the target was the tick's walking speed:
@@ -885,6 +885,55 @@ air held the body over its lip; a run over a downhill edge was held to the face 
   left the ground) and `a_slide_down_a_hill_keeps_to_its_ramps` (red before: off ½ m ramps' top at
   12 m/s).
 
+### 6.12 The walking rule: input only adds (Dwell addition) **[built, 0.49.11]**
+
+Owner (2026-11-06): input *"should add force up to the target speed, but if speed is already at or
+greater than that speed it doesn't add more speed in that direction, but it shouldn't slow you down
+to reach the target speed, the only exception to this could be if you're grounded and attempting to
+walk/run away from your movement direction, in order to make it more responsive"*; of strafe-jumping
+(the Quake rule's loophole), cap the speed's length (*"let's give it a shot"*).
+
+Before, the horizontal layer steered the player's own velocity (`current`) toward a target
+*velocity* (input direction × walking speed) and kept other momentum (`external`, a knockback, a
+slide's speed past walking) apart. So input stacked on momentum (kicked at 12 m/s with run held, the
+body went 17 m/s on the ground, 15 in the air from 10), and air control took speed away: a running
+jump with nothing held went 8 → 6.5 m/s in 0.5 s, and holding sideways halved its forward speed.
+
+- **One velocity.** The layer works on the whole horizontal velocity relative to the ground's
+  carry (`current + external − base`), whatever gave it; `external` is folded in each tick (the
+  slides keep their split, §6.8–6.9).
+- **In the air** (`controller::accelerate`): input pushes at `acceleration × air_control`
+  (`reverse_deceleration × air_control` pushing back against the motion) along the held
+  direction, and the result is no longer than `max(target, |v|)`, the target being the walk speed
+  (the crouch speed crouched; sprint and crouch change nothing in the air, §6.9). Under the target
+  it speeds the body up to it; at or past it, it only turns the velocity toward the input, at
+  `push ÷ |v|` radians a tick (~38°/s at 15 m/s), never adding speed; nothing held, nothing
+  changes (`air_external_drag`, 0, aside). The cap is on the velocity's length, so holding a
+  direction nearly across the motion (strafe-jumping) builds nothing.
+- **On the ground** the feet steer, the owner's exception: along the held direction input adds
+  up to the walking speed at `acceleration` (`reverse_deceleration` turning back), and friction
+  (`deceleration`, 15 m/s²) takes any speed above it (a knockback, a run let go to a walk, a
+  slide's end); across it the velocity goes at `acceleration` (`reverse_deceleration` turning
+  back). Nothing held, friction stops the body. This is the old ground feel, without stacking.
+  `ground_external_friction` is gone: `deceleration` is the ground's friction for all speed.
+- **Walls.** On the ground the feet keep driving into a wall (the velocity a contact removed
+  because the player pushed into it is not external), as before. In the air a wall takes what it
+  stops: the stopped speed would otherwise come back at once past its corner, where the engine's
+  corner contact decides how (the five-player trace diverged on face B). A ledge's edge the body
+  rolls over (a face-local contact normal rising more than `AIR_LEDGE_MIN_UP`, 0.01) keeps the
+  input's push into it up to the walk speed, so a jump at a step still lands on it.
+- **Tests:** `movement.rs` `letting_go_in_the_air_keeps_the_speed` (red: 6.5 m/s),
+  `holding_sideways_in_the_air_turns_without_slowing_or_speeding` (red: forward 4.0 m/s),
+  `a_kick_and_walking_do_not_stack` (red: 13.7 → 14.25 m/s holding run),
+  `input_never_builds_speed_past_the_target_whatever_its_direction` (strafing at 30–95° for 5 s),
+  `a_standing_jump_still_steers_up_to_the_walk_speed`. Kicked ramp fixtures (`ramps.rs`) take the
+  speeds their slides ran at with the old stacking (12 m/s kicks ran 13.6 crouched, 17 standing).
+  The golden trace is regenerated; the five-player world's crawlspace roof reaches x = 10 (x = 2
+  before), as player 1 now slides along it in the air past the old corner, where whether the
+  capsule still touched the corner on the tick it cleared it (inside Rapier's contact margin)
+  differed far from the origin. Both faces, far from the origin, and bit-exact under
+  `wasm32-wasip1`.
+
 ## 7. Configuration
 
 `PlayerControllerConfig` lives in `crates/dwell-physics/src/config.rs` — both sides compile the
@@ -902,10 +951,10 @@ PPC default for voxels.
 | | `gravity` | 20 m/s² | ×2 of 10 | Absolute value instead of a scale |
 | | `eye_height` / `crouch_eye_height` ◆ | 1.62 m / 0.8 m | (view) | Client camera |
 | `movement` | `walk_speed` / `run_speed` | 5 / 8 m/s | same | |
-| | `acceleration` / `deceleration` / `reverse_deceleration` | 50 / 15 / 60 m/s² | 50 / 12 / 60 | Stopping 25 % stronger (owner, 2026-11-02): a walk stops in 1/3 s |
-| | `air_control` | 0.2 | same | Dwell: steers toward the speed the player has (walk to run speed), not the tick's walking speed (§6.9) |
+| | `acceleration` / `deceleration` / `reverse_deceleration` | 50 / 15 / 60 m/s² | 50 / 12 / 60 | Stopping 25 % stronger (owner, 2026-11-02): a walk stops in 1/3 s. `deceleration` is the ground's friction for all speed: above the walking speed and with nothing held (§6.12, 0.49.11; it was the player's own part only, with `ground_external_friction` for the rest) |
+| | `air_control` | 0.2 | same | Dwell: the air's push is `acceleration × air_control`; it only adds up to the walk speed and turns a faster body, never slowing it (§6.12, 0.49.11) |
 | | `max_step_height` ◆ | 0.55 m | 0.45 | Half steps step up; full blocks need a jump |
-| | `air_external_drag` / `ground_external_friction` | 0 /s / 15 m/s² | same | |
+| | `air_external_drag` | 0 /s | same | Drag on the whole velocity in the air (§6.12) |
 | | `carried_by_characters` | false | same | |
 | | `auto_jump` ◆ | false (touch preset: true) | — | Dwell addition |
 | | `edge_guard` ◆ | false | — | Dwell addition |

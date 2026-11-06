@@ -82,6 +82,9 @@ const SAME_CONTACT_DOT: f64 = 0.95;
 /// A contact whose normal's face-local up exceeds this faces up: the ground layer's while the
 /// player was grounded, not an impact (§6.10).
 const FLOOR_MIN_UP: f32 = 0.1;
+/// Dwell: in the air, a contact whose face-local normal rises more than this is a ledge's edge the
+/// body rolls over (it keeps the input's push into it); flatter, a wall (it takes what it stops).
+const AIR_LEDGE_MIN_UP: f32 = 0.01;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum State {
@@ -360,6 +363,16 @@ fn move_towards(current: Vec3, target: Vec3, max_delta: f32) -> Vec3 {
         return target;
     }
     current + delta * (max_delta / length)
+}
+
+/// The air's walking rule (◆ Dwell, PLAYER_CONTROLLER.md §6.12, owner 2026-11-06): input pushes
+/// `step` m/s a tick along `wish` (a unit vector), and the result is no faster than `target` or the
+/// speed `v` already had, whichever is more. Under the target it speeds the body up to it; at or
+/// past it, it only turns the velocity toward the input (at `step ÷ |v|` radians a tick), never
+/// speeding it up, so no direction of input (strafing) builds speed past the target: the cap is on
+/// the velocity's length, not its part along the input. Only pushing against the motion slows it.
+pub fn accelerate(v: Vec3, wish: Vec3, target: f32, step: f32) -> Vec3 {
+    clamp_length(v + wish * step.max(0.0), target.max(v.length()))
 }
 
 fn clamp_length(v: Vec3, max: f32) -> Vec3 {
@@ -2109,8 +2122,15 @@ impl Players {
         let actual = flat(Self::vel(physics, p));
         let h = p.c.horizontal;
         let mut external_delta = actual - h.contribution;
-        // Dwell: velocity a contact removed because the player pushed into it is not external.
+        // Dwell: velocity a contact removed because the player pushed into it is not external: the
+        // feet keep driving into a wall (on the ground the walking rule caps it at the target). In
+        // the air momentum is the body's (owner, 2026-11-06): a wall takes what it stops, or the
+        // stopped speed would come back at once past its corner (where the engine's corner contact
+        // decides how); only a ledge's edge the body rolls over (a contact facing partly up) keeps
+        // what the input pushes into it, up to the walk speed, so a jump at a step lands on it.
         let driven = h.contribution + Vec3::new(0.0, p.c.vertical.target_y, 0.0);
+        let air_push =
+            (!grounded).then(|| flat(move_direction(&p.c.input)) * cfg.movement.walk_speed);
         for &n in &p.contacts {
             let normal = frame.v(n.as_vec3());
             // Driving into a contact that faces partly up deflects part of the drive upwards.
@@ -2124,7 +2144,14 @@ impl Players {
                 continue; // floors and ceilings: the vertical layer's business
             }
             let fl = fl / length;
-            let into = -driven.dot(normal);
+            let mut into = -driven.dot(normal);
+            if let Some(push) = air_push {
+                into = if normal.y > AIR_LEDGE_MIN_UP {
+                    into.min(-push.dot(normal))
+                } else {
+                    0.0
+                };
+            }
             let removed = external_delta.dot(fl);
             if into > 0.0 && removed > 0.0 {
                 external_delta -= fl * removed.min(into * length);
@@ -2157,58 +2184,69 @@ impl Players {
             Self::sprint_slide(world, physics, p, actual, h.contribution);
             return;
         }
-        c.horizontal.external = if grounded {
-            move_towards(
-                c.horizontal.external,
-                Vec3::ZERO,
-                m.ground_external_friction * DT,
-            )
-        } else {
-            c.horizontal.external * libm::expf(-m.air_external_drag * DT)
-        };
         let input = c.input;
         let move_dir = move_direction(&input);
-        // Accelerate in the platform's frame so standing on a moving body needs no input.
+        // Move in the platform's frame so standing on a moving body needs no input.
         let base = flat(c.platform.base_velocity);
-        let relative = c.horizontal.current - base;
-        let speed = if !grounded {
-            // In the air neither sprint nor crouch changes the speed (owner, 2026-11-05: "Sprint
-            // shouldn't change in air control or speed … we want a true physics controller";
-            // 2026-10-30: crouching doesn't slow the player): air control steers toward the speed
-            // the player has, between the walk (or crouch) speed and the run speed. Before, the
-            // target was the tick's walking speed, so letting go of sprint mid-air pulled 8 m/s
-            // down to 5 and pressing it sped a walk up to 8.
-            let floor = if c.crouching {
-                cfg.crouch.speed
-            } else {
-                m.walk_speed
-            };
-            relative.length().clamp(floor, m.run_speed.max(floor))
-        } else {
+        // Momentum is the body's, whatever gave it (owner, 2026-11-06): the walking layer works on
+        // the whole velocity, the player's own and any knockback alike.
+        let mut v = c.horizontal.current + c.horizontal.external - base;
+        let move_length = move_dir.length();
+        let held = move_length > INPUT_DEADZONE;
+        // The tick's walking speed on the ground; in the air neither sprint nor crouch changes the
+        // speed (owner, 2026-11-05: "Sprint shouldn't change in air control or speed"): the walk
+        // (or crouch) speed, and a faster jump keeps its speed because the rule never takes any.
+        let speed = if grounded {
             Self::walk_speed(c, &cfg)
-        };
-        let player_target = move_dir * speed;
-        let relative_delta = player_target - relative;
-        let dot = if relative.length() > MIN_DIRECTION && player_target.length() > MIN_DIRECTION {
-            normalized(relative).dot(normalized(player_target))
+        } else if c.crouching {
+            cfg.crouch.speed
         } else {
-            1.0
-        };
-        let move_length = (input.move_x * input.move_x + input.move_y * input.move_y).sqrt();
-        let mut rate = if move_length > INPUT_DEADZONE {
-            if dot < REVERSE_DOT {
-                m.reverse_deceleration
-            } else {
-                m.acceleration
+            m.walk_speed
+        } * move_length.min(1.0);
+        if !held {
+            if grounded {
+                // Nothing held: the ground's friction (`deceleration`) stops the body.
+                v = move_towards(v, Vec3::ZERO, m.deceleration * DT);
             }
         } else {
-            m.deceleration
-        };
-        if !grounded {
-            rate *= m.air_control;
+            let wish = move_dir / move_length;
+            let reversing = v.length() > MIN_DIRECTION && normalized(v).dot(wish) < REVERSE_DOT;
+            if grounded {
+                // On the ground the feet steer (owner, 2026-11-06: the exception "if you're
+                // grounded and attempting to walk/run away from your movement direction, in order
+                // to make it more responsive"): motion across the held direction goes at the
+                // acceleration (the reverse deceleration when turning back); along it, input adds
+                // up to the target, and friction takes any speed above the target (a knockback, a
+                // run let go to a walk) at `deceleration`, as it did before.
+                let along = v.dot(wish);
+                let turn = if reversing {
+                    m.reverse_deceleration
+                } else {
+                    m.acceleration
+                };
+                let across = move_towards(v - wish * along, Vec3::ZERO, turn * DT);
+                let along = if along > speed {
+                    (along - m.deceleration * DT).max(speed)
+                } else {
+                    (along + turn * DT).min(speed)
+                };
+                v = wish * along + across;
+            } else {
+                // In the air input only adds, up to the target, and never takes speed away or
+                // builds it past what the body had (`accelerate`).
+                let rate = if reversing {
+                    m.reverse_deceleration
+                } else {
+                    m.acceleration
+                } * m.air_control;
+                v = accelerate(v, wish, speed, rate * DT);
+            }
         }
-        let change = move_towards(Vec3::ZERO, relative_delta, rate * DT);
-        c.horizontal.current = relative + change + base;
+        if !grounded {
+            v *= libm::expf(-m.air_external_drag * DT);
+        }
+        c.horizontal.current = v + base;
+        c.horizontal.external = Vec3::ZERO;
         c.horizontal.contribution = c.horizontal.current + c.horizontal.external;
         if grounded {
             let motion = c.horizontal.contribution - base;

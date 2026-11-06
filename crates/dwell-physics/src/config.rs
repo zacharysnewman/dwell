@@ -27,7 +27,6 @@ pub struct Movement {
     /// ◆ slabs (0.5 m) step up; full blocks need a jump
     pub max_step_height: f32,
     pub air_external_drag: f32,
-    pub ground_external_friction: f32,
     pub carried_by_characters: bool,
     /// ◆ Dwell addition (touch preset: true)
     pub auto_jump: bool,
@@ -319,7 +318,6 @@ impl Default for PlayerControllerConfig {
                 air_control: 0.2,
                 max_step_height: 0.55,
                 air_external_drag: 0.0,
-                ground_external_friction: 15.0,
                 carried_by_characters: false,
                 auto_jump: false,
                 edge_guard: false,
@@ -463,7 +461,6 @@ impl PlayerControllerConfig {
         c.movement.air_control = 1.0;
         c.movement.max_step_height = 0.5;
         c.movement.air_external_drag = 0.5;
-        c.movement.ground_external_friction = 15.0;
         c.jump.height = 5.0;
         c.crouch.speed = 2.0;
         c

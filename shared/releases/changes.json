@@ -6,7 +6,9 @@
       "changes": [
         "Sliding up a ramp launches you off its top on your own momentum, at the ramp's angle, instead of holding you to the top and sending you off its far edge flat",
         "Sliding down a hill keeps you on the ramps instead of bouncing you off each edge",
-        "Falls of 5 m or less never hurt; past that the damage climbs quickly, and a 12 m fall is lethal"
+        "Falls of 5 m or less never hurt; past that the damage climbs quickly, and a 12 m fall is lethal",
+        "In the air you keep your speed: letting go or steering no longer slows you, and holding a direction turns you instead",
+        "Walking no longer adds on top of a knockback's speed"
       ]
     },
     {
