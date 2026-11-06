@@ -189,11 +189,26 @@ pub type AirChunkTest = Arc<dyn Fn(ChunkCoord) -> bool + Send + Sync>;
 /// Generator versions announced in Welcome (§6.3): 0 the flat test world, 8 procedural terrain
 /// (its height field with the terrain volume over it, `dwell_worldgen::volume`), 100 the structure
 /// sandbox (the flat world in its floor block; numbered away from the terrain's versions, which
-/// grow). 1–7 and 9 onward were earlier terrain versions and 101 the cliffs prototype (0.31.4–
-/// 0.34.0), retired; they load as the flat world, as any unknown version does.
+/// grow). 1 was the movement playground (retired in Phase 15), 2–7 and 9 onward earlier terrain
+/// versions and 101 the cliffs prototype (0.31.4–0.34.0); a world saved under one opens on this
+/// build's generator of its kind ([`current_generator`]).
 pub const GENERATOR_FLAT: u32 = 0;
 pub const GENERATOR_TERRAIN: u32 = 8;
 pub const GENERATOR_SANDBOX: u32 = 100;
+/// The retired movement playground (Phase 15): its worlds load as the flat world.
+pub const GENERATOR_RETIRED_PLAYGROUND: u32 = 1;
+
+/// The generator a world saved under `generator_version` opens with in this build (owner,
+/// 2026-11-06: older-line worlds open in newer builds after a warning, RELEASES.md §6). A build
+/// has only its own terrain, so any terrain version, retired or unknown, is this build's terrain:
+/// the world's unexplored land generates with it. The flat world, the sandbox and the retired
+/// playground keep their own (`client/src/local/worldIndex.ts` `typeOfGenerator` agrees).
+pub fn current_generator(generator_version: u32) -> u32 {
+    match generator_version {
+        GENERATOR_FLAT | GENERATOR_SANDBOX | GENERATOR_RETIRED_PLAYGROUND => generator_version,
+        _ => GENERATOR_TERRAIN,
+    }
+}
 
 /// Whether a generator version is the procedural terrain (plain or with a volume over it): it has
 /// world maps, two faces, portals and an LOD of its own.

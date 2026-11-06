@@ -5,7 +5,7 @@
 use std::time::Duration;
 
 use dwell_protocol::{Channel, HostState, TransportKind};
-use dwell_sim::app_version::{APP_VERSION, world_version_error};
+use dwell_sim::app_version::{APP_VERSION, world_open_error};
 use dwell_sim::entropy::Entropy;
 use dwell_sim::fixed_step::FixedStep;
 use dwell_sim::server::{EditPolicy, OutKind, Outgoing, Server, ServerConfig};
@@ -64,6 +64,7 @@ impl LocalCore {
             false,
             None,
             false,
+            false,
             world_seed,
             generator_version,
             storage,
@@ -75,13 +76,15 @@ impl LocalCore {
     /// `face` (the dev link `?spawn=portal`, `portal-b`; BIFACIAL_WORLD.md §6), with `at` a spawn
     /// at that world point (feet, m; the dev link `?at=x,y,z`, its player starting there however
     /// the world was left), and with `at_spawn` a saved world's player starting at that spawn, not
-    /// where it left (a spawn link).
+    /// where it left (a spawn link). With `upgrade` (the player confirmed the warning, owner
+    /// 2026-11-06) a world file from an older version line opens too.
     #[allow(clippy::too_many_arguments)]
     pub fn create_spawning(
         face: dwell_world::Face,
         portal: bool,
         at: Option<[f64; 3]>,
         at_spawn: bool,
+        upgrade: bool,
         world_seed: u64,
         generator_version: u32,
         storage: Option<impl StorageBackend>,
@@ -123,7 +126,7 @@ impl LocalCore {
             match WorldDb::open_backend(backend) {
                 Ok(db) => {
                     if let Some(meta) = db.load_meta() {
-                        let locked = world_version_error(APP_VERSION, &meta.app_version_last);
+                        let locked = world_open_error(APP_VERSION, &meta.app_version_last, upgrade);
                         if !locked.is_empty() {
                             return Err(LocalError::VersionLocked(locked));
                         }

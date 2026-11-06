@@ -45,6 +45,11 @@ export interface LocalWorld {
    * starts there, however the world was left (docs/DEV_TOOLS.md).
    */
   spawnAt?: [number, number, number];
+  /**
+   * The player confirmed opening a world from an older version line (owner, 2026-11-06;
+   * ui/upgradePrompt.ts): the world file opens though its line is older.
+   */
+  upgrade?: boolean;
 }
 
 /** The spawns a world can start at (`?spawn=`, a new world's Spawn): "" is face A's usual one. */
