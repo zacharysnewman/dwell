@@ -6,16 +6,7 @@ pins it.
 
 ## Open
 
-### 23. A block can't be placed against the downhill side of a ramp
-
-*Reported 2026-11-03 (0.44.2).* "I can't place a block against the outer edge of (downhill) side of a
-shallow ramp, maybe same problem with steep ramps too?" Not investigated yet: targeting a ramp's low
-face, or the placement check against its shape.
-
-
-## Fixed
-
-### 30. A held Place stopped building at a few frames a second (fixed in 0.49.2)
+### 30. A held Place builds too little at a few frames a second (partly fixed in 0.49.2)
 
 *Found 2026-11-05 (0.48.2), from CI.* Under the e2e suite's software renderer (CI ~5 fps, a Mac's
 SwiftShader ~3 fps) a held-Place build in `e2e/buildDrag.spec.ts` built its first piece and no more
@@ -26,7 +17,7 @@ sampled: the jump was lost. The server checked each piece against
 its view of the player's body, which lags the client's by the inputs still queued, a whole slow
 frame of them: a piece the client placed once its body was clear went into the server's body and was
 refused (a region fill's cell skipped). And the client looked for the moment a jump cleared the next
-piece once a frame, and at 200–300 ms frames that ~0.25 s moment fell between frames. Fixed: a key tapped between ticks counts for the next tick (`input.rs` `tapped`); a
+piece once a frame, and at 200–300 ms frames that ~0.25 s moment fell between frames. Fixed in 0.49.2: a key tapped between ticks counts for the next tick (`input.rs` `tapped`); a
 place into a player, or a region edit entirely into one, waits up to `EDIT_HOLD_TICKS` (30) checked
 each tick (`server.rs`), and the held stroke is checked at every predicted tick (`game.rs`
 `drag_tick`). `game_local.rs` `towering_builds_a_metre_a_jump_at_five_and_three_frames_a_second`
@@ -34,6 +25,20 @@ each tick (`server.rs`), and the held stroke is checked at every predicted tick 
 before: 0 m). The e2e spec now holds each jump for 9 of the controller's ticks by its tick trace, not
 150 ms of the clock, which at a few frames a second can be one tick (a hop too low to build under).
 At 2 fps a tower still misses some jumps.
+
+**Still open:** on CI after 0.49.2, walking back in Line mode and the crouch-jump tower pass, but
+towering, both bridging tests (a tower first) and the held ladder still fall a piece short (34.5 or
+35.5 m of 36; the ladder's first piece missing). Main's shard 1 failed six of these before. Next:
+the tick trace on CI (it builds a metre a jump locally at 3 fps).
+
+### 23. A block can't be placed against the downhill side of a ramp
+
+*Reported 2026-11-03 (0.44.2).* "I can't place a block against the outer edge of (downhill) side of a
+shallow ramp, maybe same problem with steep ramps too?" Not investigated yet: targeting a ramp's low
+face, or the placement check against its shape.
+
+
+## Fixed
 
 ### 28. A junction at the top of a chute can leave a lip a cell short (gone in 0.49.0)
 

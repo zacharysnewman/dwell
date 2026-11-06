@@ -4,7 +4,7 @@
     {
       "version": "0.49.2",
       "changes": [
-        "Holding Place to tower up, bridge or build a line keeps building on slow devices, where it used to stop after the first block"
+        "On slow devices, a quick tap of jump is no longer lost, and holding Place builds on more reliably when walking back or crouch-jumping a tower"
       ]
     },
     {
