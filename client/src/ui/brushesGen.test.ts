@@ -60,7 +60,8 @@ function generate(data: object): {
 const base = (presets: object[]): object => ({
   formatVersion: 1,
   sizes: { min: 1, max: 16 },
-  worldTypes: { sandbox: { brushes: true, reach: 128 } },
+  modes: { creative: { brushes: true, reachM: 256 } },
+  defaultMode: 'creative',
   presets,
 });
 
@@ -98,6 +99,21 @@ describe('brush presets (shared/brushes/gen.mjs)', () => {
     expect(out.rust).toContain('fill_iterations: 0');
     expect(out.rust).toContain('key: Some("Semicolon")');
     expect(out.ts).toContain("name: 'tall_ellipsoid'");
+  }, 20_000);
+
+  it('adds a game mode by data alone', () => {
+    // The coming adventure mode (owner, 2026-11-06): no brushes, a short reach.
+    const out = generate({
+      ...base([ball]),
+      modes: {
+        creative: { brushes: true, reachM: 256 },
+        adventure: { brushes: false, reachM: 5 },
+      },
+    });
+    expect(out.status, out.output).toBe(0);
+    expect(out.rust).toContain('pub const DEFAULT_MODE: &str = "creative";');
+    expect(out.rust).toContain('mode: "adventure",\n        brushes: false,\n        reach: 5.0,');
+    expect(out.rust).toContain('mode: "creative",\n        brushes: true,\n        reach: 256.0,');
   }, 20_000);
 
   it('a stencil and a tree name their structures and blocks', () => {
@@ -154,14 +170,13 @@ describe('brush presets (shared/brushes/gen.mjs)', () => {
       ],
       [base([{ ...ball, params: { width: 2 } }]), /width is for ring/],
       [base([{ ...ball, params: { mask: 'sometimes' } }]), /mask must be/],
-      [
-        { ...base([ball]), worldTypes: { moon: { brushes: true, reach: 128 } } },
-        /moon: not a world type/,
-      ],
-      [
-        { ...base([ball]), worldTypes: { sandbox: { brushes: true, reach: 999 } } },
-        /reach must be/,
-      ],
+      [{ ...base([ball]), modes: { creative: { brushes: true, reachM: 999 } } }, /reachM must be/],
+      [{ ...base([ball]), modes: { Creative: { brushes: true, reachM: 9 } } }, /a mode's name/],
+      [{ ...base([ball]), modes: { creative: { brushes: 'yes', reachM: 9 } } }, /brushes must be/],
+      [{ ...base([ball]), modes: { creative: { brushes: true, reachM: 9, ops: 1 } } }, /unknown field ops/],
+      [{ ...base([ball]), modes: {} }, /modes: at least one/],
+      [{ ...base([ball]), defaultMode: 'adventure' }, /defaultMode must name one of the modes/],
+      [{ ...base([ball]), worldTypes: {} }, /worldTypes: replaced by modes/],
     ];
     for (const [data, message] of cases) {
       const out = generate(data);
