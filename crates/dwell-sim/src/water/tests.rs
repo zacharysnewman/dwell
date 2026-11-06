@@ -259,7 +259,10 @@ dwell_world::both_faces!(
 dwell_world::both_faces!(
     fn a_dam_across_a_drawn_river_backs_it_up(f: FaceFrame) {
         // The flow the river was drawn with goes on: dammed, the pool above rises and the one
-        // below falls.
+        // below falls. Two water minutes: the reach below is closed (its water stays in it since
+        // 0.49.25, the rest's sinks no longer taking it, BUGS.md #41), and later the pool above,
+        // spilling over the channel's walls onto the plain round it, fills the plain until it
+        // comes back in.
         let mut s = Scene::new(f);
         s.stepped_river();
         s.run(2);
@@ -269,10 +272,10 @@ dwell_world::both_faces!(
         );
         let stone = require("dwell:stone");
         let dam: Vec<(i32, i32, i32)> = (0..=2)
-            .flat_map(|z| (-1..=6).map(move |r| (16, r, z)))
+            .flat_map(|z| (-1..=12).map(move |r| (16, r, z)))
             .collect();
         s.edit(&dam, stone);
-        s.run(900);
+        s.run(120);
         let (up, down) = (
             s.level(12, 1).expect("above"),
             s.level(20, 1).expect("below"),
@@ -986,3 +989,147 @@ dwell_world::both_faces!(
         );
     }
 );
+
+impl Scene {
+    /// A generated river with a level reach and a step, running into a lake below it: a channel 3
+    /// wide (z 0..=2) along x 0..=31, its bed row 0 to x 15 and row -1 from x 16 (a drawn step),
+    /// its water 2 rows deep; `hollow`, a dip in the lower bed (x 20..=21, row -2) that holds its
+    /// water. At x 31 it pours over a step into a lake (x 32..=39, z -20..=22, floor row -5, 1 m
+    /// deep), its level 1 m under the lower bed. The map's flow `Q` runs along +x in the river,
+    /// none in the lake.
+    fn river_into_a_lake(&mut self, hollow: bool) {
+        let stone = require("dwell:stone");
+        for x in -1..=40 {
+            for z in -21..=23 {
+                for r in -6..=6 {
+                    let m = if x <= 31 {
+                        let floor = if x < 16 {
+                            0
+                        } else if hollow && (20..=21).contains(&x) {
+                            -2
+                        } else {
+                            -1
+                        };
+                        let level = if x < 16 { 2 } else { 1 };
+                        if x == -1 || !(0..=2).contains(&z) || r < floor {
+                            stone
+                        } else if r < level {
+                            M.water
+                        } else {
+                            M.air
+                        }
+                    } else if x == 40 || !(-20..=22).contains(&z) || r < -5 {
+                        stone
+                    } else if r < -3 {
+                        M.water
+                    } else {
+                        M.air
+                    };
+                    self.set(x, r, z, m);
+                }
+            }
+        }
+        self.water = Water::new()
+            .with_rivers(std::sync::Arc::new(|_, x, _, depth| {
+                (x <= 31 && depth >= 0.05).then_some([(Q / depth).min(1.5), 0.0])
+            }))
+            .with_river_flow(std::sync::Arc::new(|_, x, _| (x <= 31).then_some([Q, 0.0])));
+        self.run(2);
+    }
+    /// The river's liquid cells from column `x0` down to the lake (x ≤ 31), skipping columns
+    /// `skip`, and the deepest water among those columns (m).
+    fn wet_below(&self, x0: i32, skip: std::ops::RangeInclusive<i32>) -> (usize, f64) {
+        let mut cells = 0;
+        let mut deepest = 0.0f64;
+        for x in (x0..=31).filter(|x| !skip.contains(x)) {
+            for z in 0..=2 {
+                for r in -3..=4 {
+                    cells += usize::from(info(self.get(x, r, z)).liquid);
+                }
+                if let Some((c, l)) = self.water.find(self.f, x, z) {
+                    let k = &self.water.chunks[c];
+                    if !k.w.floor[l].is_nan() {
+                        deepest = deepest.max(f64::from(k.w.depth[l]));
+                    }
+                }
+            }
+        }
+        (cells, deepest)
+    }
+    /// The river's water chunks awake (x 0..=31, z 0..=2: two chunks; the lake's are others).
+    fn river_awake(&self) -> usize {
+        [0, 1]
+            .into_iter()
+            .filter(|&cx| {
+                self.water
+                    .index
+                    .get(&(self.f, cx, 0))
+                    .is_some_and(|&c| self.water.chunks[c as usize].awake)
+            })
+            .count()
+    }
+}
+
+/// Water seconds a dammed river has to drain the reach below the dam (BUGS.md #41).
+const DRY_S: usize = 900;
+
+dwell_world::both_faces!(
+    fn the_river_below_a_dam_dries_completely(f: FaceFrame) {
+        // Owner, 2026-11-06 (BUGS.md #41): "Water never dries up below a dam ... Like
+        // completely." With no other inflow, every water cell from the dam down to the lake goes,
+        // and its chunks sleep; the lake takes what ran into it, no more and no less.
+        let mut s = Scene::new(f);
+        s.river_into_a_lake(false);
+        assert!(s.wet_below(2, 0..=-1).0 > 100, "the river as generated");
+        s.dam(0, 6);
+        s.dam(1, 6);
+        s.run(DRY_S);
+        let (cells, deepest) = s.wet_below(2, 0..=-1);
+        assert!(
+            cells == 0 && deepest < f64::from(STEP) * 0.5,
+            "below the dam: {cells} water cells, the deepest {deepest:.4} m"
+        );
+        assert_eq!(s.river_awake(), 0, "the dry river sleeps");
+        let lake = s.level(36, 1).expect("the lake");
+        assert!(
+            lake > -1.5 && lake < -1.2,
+            "the lake rose by the river it took: {lake:.3}"
+        );
+    }
+);
+
+dwell_world::both_faces!(
+    fn a_hollow_below_a_dam_keeps_its_water_still(f: FaceFrame) {
+        // A dip in the bed that can't drain keeps its water, still, and lets its chunk sleep; the
+        // rest of the reach dries.
+        let mut s = Scene::new(f);
+        s.river_into_a_lake(true);
+        s.dam(0, 6);
+        s.dam(1, 6);
+        s.run(DRY_S);
+        // full to under its lip (row -1's floor, 0.5 m over the hollow's), and level
+        let levels: Vec<f64> = (20..=21)
+            .flat_map(|x| (0..=2).map(move |z| (x, z)))
+            .map(|(x, z)| s.level(x, z).expect("the hollow's water"))
+            .collect();
+        let (lo, hi) = levels
+            .iter()
+            .fold((f64::MAX, f64::MIN), |(a, b), &v| (a.min(v), b.max(v)));
+        assert!(
+            lo > -0.6 && hi < -0.5 + f64::from(STEP) * 0.5 && hi - lo < 0.005,
+            "the hollow holds its water, level: {levels:.3?}"
+        );
+        let (cells, deepest) = s.wet_below(2, 20..=21);
+        assert!(
+            cells == 0 && deepest < f64::from(STEP) * 0.5,
+            "outside the hollow: {cells} water cells, the deepest {deepest:.4} m"
+        );
+        assert_eq!(s.river_awake(), 0, "the hollow's water sleeps");
+        assert_eq!(s.run(60), 0, "and writes nothing");
+    }
+);
+
+
+
+
+
