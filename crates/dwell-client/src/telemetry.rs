@@ -171,6 +171,28 @@ impl Telemetry {
         self.counters.iter().map(|(k, v)| (*k, *v))
     }
 
+    /// The mean of the per-frame series `name` over the last `n` frames kept (None if it was never
+    /// recorded, or no frame is kept): the status line's CPU time.
+    pub fn recent_frame_mean(&self, name: &str, n: usize) -> Option<f64> {
+        let i = self.names.iter().position(|k| *k == name)?;
+        let last: Vec<f64> = self
+            .frames
+            .iter()
+            .rev()
+            .take(n)
+            .map(|f| f.values.get(i).copied().unwrap_or(0.0))
+            .collect();
+        (!last.is_empty()).then(|| last.iter().sum::<f64>() / last.len() as f64)
+    }
+
+    /// The mean of the last `n` events of the series `name` (None if there are none): the status
+    /// line's GPU time.
+    pub fn recent_sample_mean(&self, name: &str, n: usize) -> Option<f64> {
+        let q = self.samples.get(name)?;
+        let last: Vec<f64> = q.iter().rev().take(n).copied().collect();
+        (!last.is_empty()).then(|| last.iter().sum::<f64>() / last.len() as f64)
+    }
+
     /// Each per-frame series' summary over the kept frames, `interval` (the time from one frame
     /// to the next) first.
     pub fn frame_stats(&self) -> Vec<(&'static str, Stats)> {
@@ -253,6 +275,22 @@ pub fn span<R>(name: &'static str, f: impl FnOnce() -> R) -> R {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn recent_means_take_the_last_frames_and_events() {
+        let mut t = Telemetry::default();
+        for i in 0..10 {
+            t.begin_frame(f64::from(i) * 16.0);
+            t.add("frame.cpu", f64::from(i));
+            t.sample("gpu.frame", f64::from(i) * 2.0);
+        }
+        t.begin_frame(200.0);
+        // Frames 6..=9 kept last: 6, 7, 8, 9.
+        assert_eq!(t.recent_frame_mean("frame.cpu", 4), Some(7.5));
+        assert_eq!(t.recent_sample_mean("gpu.frame", 2), Some(17.0));
+        assert_eq!(t.recent_frame_mean("nothing", 4), None);
+        assert_eq!(t.recent_sample_mean("gpu.none", 4), None);
+    }
 
     #[test]
     fn frames_sum_their_series_and_summarise_intervals() {

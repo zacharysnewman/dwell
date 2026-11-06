@@ -60,6 +60,7 @@ describe('settings JSON', () => {
       motion: { speedEffects: false, fovBoost: 0.456, plantSway: false },
       fovDeg: 82.4,
       showArms: false,
+      hud: { shown: { hotbar: false } },
     });
     const parsed = JSON.parse(json) as { detail: unknown };
     expect(parsed).toEqual({
@@ -72,6 +73,7 @@ describe('settings JSON', () => {
       motion: { speedEffects: false, fovBoost: 0.46, plantSway: false },
       fovDeg: 82,
       showArms: false,
+      hud: { shown: { hotbar: false } },
     });
     expect(sanitizeDetail(parsed.detail, defaultDetail(false))).toEqual({
       distanceM: 200,
