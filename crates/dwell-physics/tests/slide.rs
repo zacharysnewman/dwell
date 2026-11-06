@@ -355,7 +355,12 @@ fn reaching_the_floor_keeps_the_momentum_without_a_hop_then_friction_stops_it() 
 }
 
 #[test]
-fn running_over_a_crest_onto_a_45_degree_ramp_slides_down_without_a_launch() {
+fn running_off_a_crest_above_a_45_degree_ramp_flies_over_it() {
+    // The ground is a floor (owner, 2026-11-05: "I'd like to try without" gluing downhill): at a
+    // run (8 m/s) following the 45° face would pull the body down 8 m/s at once, more than
+    // `ground_stick_speed`, so it leaves the edge on its own momentum, never rising, and flies
+    // the arc a ball would. Until 0.48.2 the ground held it to the face from the edge (≤ 3 ticks
+    // in the air).
     let mut w = PlayerTestWorld::new();
     w.floor_at(0, 24);
     // A platform 3 m high for z ≤ 2, and from its edge a 45° ramp down toward +z to the floor at
@@ -375,27 +380,32 @@ fn running_over_a_crest_onto_a_45_degree_ramp_slides_down_without_a_launch() {
     let mut rise = Rise::default();
     let mut airborne_run = 0;
     let mut longest_airborne = 0;
-    let mut peak = 0.0f32;
+    let mut landed_at = None;
     for _ in 0..ticks(2.0) {
         w.step(1);
         rise.watch(&w, e);
         if w.c(e).ground.grounded {
+            if airborne_run > 3 {
+                landed_at.get_or_insert(w.pos(e).z);
+            }
             airborne_run = 0;
         } else {
             airborne_run += 1;
             longest_airborne = longest_airborne.max(airborne_run);
         }
-        peak = peak.max(w.horizontal_speed(e));
     }
     assert!(w.pos(e).z > 6.0, "down the ramp: {}", w.pos(e));
     assert_eq!(rise.rising_airborne, 0, "{rise:?}");
     assert!(rise.max_up < 0.5, "{rise:?}");
     assert!(
-        longest_airborne <= 3,
-        "follows the ramp: {longest_airborne}"
+        longest_airborne > 3,
+        "flew off the edge: {longest_airborne} ticks"
     );
-    let run = w.config.movement.run_speed;
-    assert!(peak > run + 0.5, "the slide gained speed: {peak}");
+    // At 8 m/s the arc falls 3 m over ~4.4 m, the face over 3 m: it clears the face (its foot at
+    // z ≈ 5) and lands on the floor beyond, a 3 m drop's ~11 m/s, under the 12 m/s that hurts.
+    let landed_at = landed_at.expect("landed");
+    assert!(landed_at > 5.0, "cleared the face: landed at z {landed_at}");
+    assert!(approx(w.feet(e), 0.0, 0.05), "on the floor: {}", w.feet(e));
     assert_eq!(w.count(e, events::JUMPED), 0);
 }
 

@@ -683,3 +683,28 @@ fn running_over_a_crest_stays_on_the_ground() {
     assert!(!slid);
     assert!(approx(highest, 1.5, 0.05), "ran over the top: {highest}");
 }
+
+#[test]
+fn any_momentum_up_a_crest_flies_not_only_a_slide() {
+    // The ground is a floor for every movement (owner, 2026-11-05: "without any special cases"):
+    // standing, not crouched, carried at 12 m/s up the ramps by a kick (momentum, not a slide),
+    // the rise (~6 m/s) carries over the crest. The slide-only crest launch held it to the top.
+    let mut w = PlayerTestWorld::new();
+    kicker(&mut w, crest);
+    let e = w.spawn(Vec3::new(0.5, 0.3, -3.0));
+    w.kick(0, e, Vec3::new(0.0, 0.0, 12.0));
+    w.set_input(|_, _| input(0.0, 1.0, true, false, false, 0.0, 0.0));
+    let (mut highest, mut slid) = (f32::MIN, false);
+    for _ in 0..ticks(1.5) {
+        w.step(1);
+        slid |= w.c(e).sprint_slide.active || w.c(e).sliding(44.0);
+        if w.pos(e).z > 2.0 {
+            highest = highest.max(w.feet(e));
+        }
+    }
+    assert!(!slid, "never slid");
+    assert!(
+        highest > 1.9,
+        "flew over the crest: feet at most {highest} m (top 1.5 m)"
+    );
+}

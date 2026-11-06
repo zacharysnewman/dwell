@@ -635,9 +635,17 @@ fn a_slide_keeps_its_speed_down_terraces_of_a_flat_cell_and_a_slope() {
     while w.pos(e).z < 0.0 {
         w.step(1);
     }
+    // The ground is a floor (owner, 2026-11-05: not glued downhill): past ~10 m/s the slide
+    // leaves each terrace's edge and flies over its slope, and slides on where it lands (crouch
+    // held): on the ground it is always sliding.
     let on = w.horizontal_speed(e);
-    w.step(ticks(2.0));
-    assert!(w.c(e).sprint_slide.active, "still sliding");
+    let mut walking = 0;
+    for _ in 0..ticks(2.0) {
+        w.step(1);
+        let c = w.c(e);
+        walking += i32::from(c.ground.grounded && c.ground.was_grounded && !c.sprint_slide.active);
+    }
+    assert_eq!(walking, 0, "slid on every landing");
     let after = w.horizontal_speed(e);
     assert!(
         after > on - 0.5,

@@ -37,6 +37,13 @@ pub struct Movement {
     /// 700 kg log (a 1 m log block) slides on terrain (friction 0.4) at about 0.5 m/s walking.
     pub max_push_force: f32,
     pub pushable_mass_limit: f32,
+    /// ◆ m/s: the ground is a floor (PLAYER_CONTROLLER.md §6.11, owner 2026-11-05: "without any
+    /// special cases"): grounded, the body keeps its vertical speed as momentum. Following the
+    /// ground may take away at most this much of its rise in a tick, and pull it down by at most
+    /// this much more than gravity does; more either way and it leaves the ground (over a crest, a
+    /// ramp's lip, a step-up onto a flat top, a downslope's edge). 4.5: above a run's rise up a
+    /// ½ m ramp (8 m/s × ½), like Source's 140 units/s against its run speed.
+    pub ground_stick_speed: f32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -163,10 +170,6 @@ pub struct SprintSlide {
     pub steer_rate: f32,
     /// Ticks after a slide ends before another can start.
     pub cooldown_ticks: u16,
-    /// m/s: a slide carried up the ground at least this fast leaves it where the ground stops
-    /// rising (a crest: a ramp's lip, or a step-up at its top) with that rise, instead of following
-    /// it down flat (§6.9, owner 2026-11-05: ramp "jumps" keep their momentum).
-    pub crest_launch_min_rise: f32,
 }
 
 /// ◆ Which contacts an impact can hurt on (§6.10, `damage.impact_surfaces`).
@@ -280,6 +283,7 @@ impl Default for PlayerControllerConfig {
                 edge_guard: false,
                 max_push_force: 3050.0,
                 pushable_mass_limit: 400.0,
+                ground_stick_speed: 4.5,
             },
             probes: Probes {
                 ground_probe_margin: 0.15,
@@ -341,7 +345,6 @@ impl Default for PlayerControllerConfig {
                 slope_gravity: 1.5,
                 steer_rate: 90.0,
                 cooldown_ticks: 30,
-                crest_launch_min_rise: 2.0,
             },
             damage: Damage {
                 impact_damage_min_speed: 12.0,

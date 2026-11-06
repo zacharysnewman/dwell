@@ -60,9 +60,6 @@ const STEP_LAUNCH_THRESHOLD: f32 = 1.5;
 /// grounded and its animations twitched); a real one (knockback, an explosion) is metres a second.
 const DYNAMIC_GROUND_LAUNCH_THRESHOLD: f32 = 0.5;
 const STEP_GRACE_TICKS: u8 = 6;
-/// A crest launch (§6.9): the ground's rise this tick under this fraction of the body's rise going
-/// into it is the ground no longer rising (a ramp's slowing uphill, or 45° to 26.57°, is not).
-const CREST_RISE_FRACTION: f32 = 0.25;
 /// The vertical pass's `step_grace` on the tick after a step-up: then the ground snap holds the
 /// step's height while the player moves on over the edge (the probe ran before the move).
 const STEP_HOLD: u8 = STEP_GRACE_TICKS - 2;
@@ -2396,7 +2393,6 @@ impl Players {
         let on_dynamic =
             matches!(p.c.ground.ground, GroundRef::Tier1Body(b) if physics.is_dynamic(b));
         p.ceiling_stop = false;
-        let sliding = p.c.sprint_slide.active || p.c.sliding(cfg.slide.min_angle);
         let c = &mut p.c;
         let v = &mut c.vertical;
         v.step_grace = v.step_grace.saturating_sub(1);
@@ -2443,21 +2439,25 @@ impl Players {
                 } else {
                     c.ground.gap.max(0.0)
                 };
-                let follow = v.platform_y + along_slope - gap / DT;
-                // A crest launch (◆ Dwell, §6.9): sliding up the ground fast, where the ground
-                // stops rising (a ramp's lip, or the step-up onto a crest's top, which lifted the
-                // body this tick) the slide leaves it with the rise it had, flying the ramp's arc,
-                // instead of being held to the top and running off it flat.
-                let rise = body_y - v.platform_y;
-                if sliding
-                    && !c.jump.jumped_this_tick
-                    && rise > cfg.sprint_slide.crest_launch_min_rise
-                    && follow - v.platform_y < rise * CREST_RISE_FRACTION
-                {
-                    v.accumulated_y = body_y + gravity * DT;
+                // The ground is a floor (◆ Dwell, §6.11, owner 2026-11-05): the body's vertical speed
+                // is momentum, the speed the layer drove last tick (`target_y`; not the body's,
+                // which the solver rolling the capsule over a step's edge lifts, and which the
+                // launch check above reads for real kicks), relative to the ground's carry.
+                // Following the slope may take away at most `ground_stick_speed` of its rise (a
+                // crest, a ramp's lip, a step-up onto a flat top, which lifts the body but keeps
+                // its speed), and pull it down by at most that much more than gravity does (a
+                // downslope's edge); more either way, and it leaves the ground with its momentum.
+                // Closing a gap below (stepping down) is not counted.
+                let limit = cfg.movement.ground_stick_speed;
+                let ballistic = v.target_y - v.last_platform_y + gravity * DT;
+                let slope = along_slope;
+                let lost_rise = ballistic.max(0.0) - slope.max(0.0);
+                let pulled_down = ballistic.min(0.0) - slope.min(0.0);
+                if lost_rise > limit || pulled_down > limit {
+                    v.accumulated_y = v.platform_y + ballistic;
                     c.ground.grounded = false;
                 } else {
-                    v.accumulated_y = follow;
+                    v.accumulated_y = v.platform_y + along_slope - gap / DT;
                 }
             }
         } else {
