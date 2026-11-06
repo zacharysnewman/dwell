@@ -23,6 +23,11 @@ export type ToWorker =
        * (ADR 0062; the bench's before/after).
        */
       waterInline?: boolean;
+      /**
+       * Dev link `?serverjobs=inline`: the server's chunks to generate and LOD sections on its
+       * tick, not their own worker.
+       */
+      jobsInline?: boolean;
     }
   | { t: 'connect'; session: number; kind: TransportKind; binding: Uint8Array }
   | { t: 'reliable'; session: number; channel: Channel; bytes: Uint8Array }

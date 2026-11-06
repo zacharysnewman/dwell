@@ -137,7 +137,9 @@ impl LocalWorld {
     /// the player starts there. With `upgrade` (the player confirmed the warning, owner 2026-11-06)
     /// a file from an older version line opens too. With `water_worker` the water runs in the
     /// water worker this worker's script starts (ADR 0062: `takeWaterOut`, `waterIn`); without,
-    /// on this worker's thread.
+    /// on this worker's thread. With `jobs_worker` the chunks to generate and the LOD's
+    /// sections are done in the server-jobs worker this worker's script starts (`takeJob`,
+    /// `jobIn`); without, on the tick within its budgets.
     // Positional, as JS passes them (wasm-bindgen constructor), like `LocalCore::create_spawning`.
     #[allow(clippy::too_many_arguments)]
     #[wasm_bindgen(constructor)]
@@ -151,6 +153,7 @@ impl LocalWorld {
         spawn_at: Option<Vec<f64>>,
         upgrade: Option<bool>,
         water_worker: Option<bool>,
+        jobs_worker: Option<bool>,
     ) -> Result<LocalWorld, JsError> {
         let backend = file.map(OpfsBackend::register);
         let face = if spawn_face_b == Some(true) {
@@ -173,6 +176,7 @@ impl LocalWorld {
             } else {
                 dwell_sim::water::host::Placement::Inline
             },
+            jobs_worker == Some(true),
         ) {
             Ok(core) => Ok(Self { core }),
             Err(LocalError::VersionLocked(m)) => Err(JsError::new(&m)),
@@ -249,6 +253,26 @@ impl LocalWorld {
     #[wasm_bindgen(js_name = waterIn)]
     pub fn water_in(&mut self, bytes: &[u8]) -> bool {
         self.core.server().deliver_water(bytes)
+    }
+    /// The world's generator (a saved world's own), for the server-jobs worker.
+    #[wasm_bindgen(getter, js_name = generatorVersion)]
+    pub fn generator_version(&mut self) -> u32 {
+        self.core.server().config().generator_version
+    }
+    /// The world's seed (a saved world's own), for the server-jobs worker.
+    #[wasm_bindgen(getter, js_name = worldSeed)]
+    pub fn world_seed(&mut self) -> u64 {
+        self.core.server().config().world_seed
+    }
+    /// The next job for the server-jobs worker, if any.
+    #[wasm_bindgen(js_name = takeJob)]
+    pub fn take_job(&mut self) -> Option<Vec<u8>> {
+        self.core.server().take_job()
+    }
+    /// The server-jobs worker's answer to a job; false if unreadable.
+    #[wasm_bindgen(js_name = jobIn)]
+    pub fn job_in(&mut self, bytes: &[u8]) -> bool {
+        self.core.server().deliver_job(bytes)
     }
     /// Asks the water for its record (before `save`, when the world closes).
     #[wasm_bindgen(js_name = requestWaterRecord)]

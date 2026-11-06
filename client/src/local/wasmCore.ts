@@ -78,6 +78,7 @@ export class LocalCore {
     spawnAt?: [number, number, number],
     upgrade = false,
     waterWorker = false,
+    jobsWorker = false,
   ): Promise<LocalCore> {
     const exports = (await loadWasm()) as { memory?: WebAssembly.Memory };
     const core = new LocalCore(
@@ -91,6 +92,7 @@ export class LocalCore {
         spawnAt ? Float64Array.from(spawnAt) : undefined,
         upgrade,
         waterWorker,
+        jobsWorker,
       ),
     );
     core.memory = exports.memory ?? null;
@@ -135,6 +137,21 @@ export class LocalCore {
   /** A report the water worker sent back. */
   takeWaterReport(): string | undefined {
     return this.world.takeWaterReport();
+  }
+  /** The world's generator and seed (a saved world's own), for the server-jobs worker. */
+  get generatorVersion(): number {
+    return this.world.generatorVersion;
+  }
+  get worldSeed(): bigint {
+    return this.world.worldSeed;
+  }
+  /** The next job for the server-jobs worker (a chunk to generate, a LOD section). */
+  takeJob(): Uint8Array | undefined {
+    return this.world.takeJob();
+  }
+  /** The server-jobs worker's answer to a job. */
+  jobIn(bytes: Uint8Array): boolean {
+    return this.world.jobIn(bytes);
   }
   /** The next batch for the water worker (ADR 0062). */
   takeWaterOut(): Uint8Array | undefined {

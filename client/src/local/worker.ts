@@ -15,6 +15,11 @@ const scope = self as unknown as WorkerScope;
 let core: LocalCore | null = null;
 /** The water worker (ADR 0062): the server's water grid on its own thread; null: inline. */
 let water: Worker | null = null;
+/**
+ * The server-jobs worker: the chunks to generate and the LOD's sections off the server's tick
+ * (WATER_SURFACE_GRID.md §2d); null: on it.
+ */
+let jobs: Worker | null = null;
 /** Water reports asked for and not yet come back from the water worker. */
 let reportsDue = 0;
 /** This second's server ticks: their count and wall time, and the worst `advance` call (ms). */
@@ -41,6 +46,36 @@ function startWater(maps: Uint8Array[]): Worker | null {
   } catch (err) {
     console.warn('Dwell: no water worker; the water runs on the server thread', err);
     return null;
+  }
+}
+
+/**
+ * Starts the server-jobs worker (the chunks to generate, the LOD's sections: WATER_SURFACE_GRID.md
+ * §2d); null where workers can't start workers (the jobs run on the tick).
+ */
+function startJobs(maps: Uint8Array[]): Worker | null {
+  if (typeof Worker === 'undefined') return null;
+  try {
+    const w = new Worker(new URL('./serverJobsWorker.ts', import.meta.url), { type: 'module' });
+    w.onmessage = (e: MessageEvent<ArrayBuffer>) => {
+      core?.jobIn(new Uint8Array(e.data));
+    };
+    w.onerror = (e) => {
+      console.warn('Dwell: the server-jobs worker failed; new terrain stops coming', e.message);
+    };
+    w.postMessage({ t: 'start', maps: maps.map((m) => m.slice()) });
+    return w;
+  } catch (err) {
+    console.warn('Dwell: no server-jobs worker; its jobs run on the server thread', err);
+    return null;
+  }
+}
+
+/** The server's jobs for the server-jobs worker (transferred). */
+function pumpJobs(): void {
+  if (!core || !jobs) return;
+  for (let b = core.takeJob(); b; b = core.takeJob()) {
+    jobs.postMessage(b.buffer, [b.buffer]);
   }
 }
 
@@ -79,6 +114,7 @@ async function save(): Promise<boolean> {
 function flush(): void {
   if (!core) return;
   pumpWater();
+  pumpJobs();
   for (const out of core.takeOutbox()) {
     switch (out.kind) {
       case OutgoingKind.Reliable:
@@ -162,6 +198,7 @@ async function start(
   spawnAt?: [number, number, number],
   upgrade = false,
   waterInline = false,
+  jobsInline = false,
 ): Promise<void> {
   // The world file (§6.4): the chosen world's (by default one per generator and seed), in OPFS.
   // Without it the world lives in memory only (no OPFS, or the world is open in another tab).
@@ -179,6 +216,8 @@ async function start(
     }
     // The water on its own worker (ADR 0062), unless asked for inline or workers can't start one.
     water = waterInline ? null : startWater(maps);
+    // And the server's jobs on theirs (`?serverjobs=inline`: on the tick, for comparison).
+    jobs = jobsInline ? null : startJobs(maps);
     core = await LocalCore.load(
       worldSeed,
       generatorVersion,
@@ -189,7 +228,13 @@ async function start(
       spawnAt,
       upgrade,
       water !== null,
+      jobs !== null,
     );
+    jobs?.postMessage({
+      t: 'init',
+      generatorVersion: core.generatorVersion,
+      worldSeed: core.worldSeed,
+    });
   } catch (err) {
     scope.postMessage({
       t: 'error',
@@ -261,6 +306,7 @@ scope.onmessage = (e) => {
       msg.spawnAt,
       msg.upgrade,
       msg.waterInline,
+      msg.jobsInline,
     );
   else handle(msg);
 };

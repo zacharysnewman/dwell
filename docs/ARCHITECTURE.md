@@ -428,7 +428,10 @@ with the autosave when due (§6.4). Integrity and re-bake arrive with later phas
 fixed step is fed elapsed seconds). Its only threads are the optional worldgen pool's
 (`ServerConfig::worldgen_threads`; the dedicated server runs `cores − 2`, at least 1, the browser's
 single-threaded local mode none, §6.3), the LOD propagation thread (one natively, none in the
-browser, §6.6) and the world store's save thread (native only). `std::time` panics on
+browser, §6.6), the water's thread (§6.7) and the world store's save thread (native only). In the
+browser the generation and the LOD's sections are instead jobs for the **server-jobs worker**
+(`ServerConfig::jobs_remote`, `jobs.rs`: `Server::take_job`, `deliver_job`, run by a `JobRunner`;
+§5.1), and the water a batch for the water worker. `std::time` panics on
 `wasm32-unknown-unknown`, so there the tick's time budgets count work items instead of measuring
 time (`clock.rs`: about one chunk or section per millisecond of budget). It consumes decoded
 transport events and emits encoded messages **[built]**: `dwell_sim::server::Server` —
@@ -527,7 +530,7 @@ Per [ADR 0007](./adr/0007-threading-model.md):
 |---|---|---|
 | Main thread | The Rust `Client`: input, prediction, networking, streaming, LOD selection, rendering; the TS shell's DOM UI | Main loop (tick); Rapier steps on it |
 | Sim core (integrated server) | **[built]** `LocalWorld` in a module worker (local mode and friend worlds), single-threaded | Native, on the main loop |
-| Generation (chunks, the verification chunk, LOD bounds and sections, the F4 map) | **[built]** Job workers (cores − 2, 1–4; at most 2 on phones), each its own WASM instance; LOD jobs queue behind chunk jobs. The local-mode server generates on its tick within a budget | **[built]** Thread pool (cores − 2, at least 1) |
+| Generation (chunks, the verification chunk, LOD bounds and sections, the F4 map) | **[built]** Job workers (cores − 2, 1–4; at most 2 on phones), each its own WASM instance; LOD jobs queue behind chunk jobs. The local-mode server's own (the chunks it wants generated, its modified LOD sections) run in the **server-jobs worker** the local-mode worker starts (`local/serverJobsWorker.ts`, `web/server_jobs.rs`; the world's maps installed), a job and its answer one transferred buffer each, a chunk job before a LOD one and at most 4 chunks out at once; without nested workers or with `?serverjobs=inline`, on its tick within budgets | **[built]** Thread pool (cores − 2, at least 1) |
 | Meshing (chunks, LOD sections; lighting later) | **[built]** A second set of job workers, as many | — (the server does not mesh; it downsamples LOD sections on its LOD thread, §6.6) |
 | Storage (redb) | **[built]** Inside the local-mode worker (an OPFS sync access handle), committed on the tick | **[built]** Save thread |
 | Water grid (§6.7; [ADR 0062](./adr/0062-water-off-the-tick-thread.md)) | **[built, G5]** The **water worker**, a second module worker the local-mode worker starts (`local/waterWorker.ts`, `web/water_worker.rs`: its own WASM instance, the world's maps installed), fed binary batches both ways (transferred `ArrayBuffer`s); without nested workers, or with `?water=inline`, on the sim core's thread | **[built, G5]** Its own thread (`dwell-water`, channels); inline in tests |
@@ -1927,8 +1930,15 @@ the octant of each *modified* child replaced by that child's downsample (unmodif
 the generated cells, so a build changes only the octants above it). Writing a section gives it the
 next `lodRevision` from a server-wide counter and marks its parent dirty, up to the root (19
 sections per edited chunk; a section dirtied again while being computed is recomputed after).
-The dedicated server computes on one thread; the browser's local mode on its tick within a 2 ms
-budget (about two sections a tick in the browser, §4.3).
+The dedicated server computes on one thread; the browser's local mode in its server-jobs worker
+(§5.1; on its tick within a 2 ms budget, about two sections a tick, without one). Computing a
+section is mostly generating its base (2–10 ms natively at seed 0's dam site): a modified section's
+generated cells are kept once computed (`MAX_BASES` 96, oldest out; the worker keeps its own), so
+computing it again is its downsample only. A chunk changed by the water's writes, which go on
+changing it while it moves, holds its section `WATER_LOD_HOLD_TICKS` (2 s) from the first such
+change before it is computed (`mark_chunk_settling`: once a hold, not every water tick; an edit
+computes it at once; a held section is saved dirty). Sections held or computed this way are those
+computed from scratch from the world (`water_lod.rs`).
 A modified section's stored apron is generated; the server fills it from its modified same-level
 neighbours' borders when it sends the section. Sections are cached in `lod_sections` (§6.4). In a
 test, an edit reaches the root within 19 ticks and a far client's index 8 ticks after the edit.
@@ -2703,6 +2713,8 @@ in the code yet.
 | `LOD_REQUESTS_PER_SECOND` | 64 | Per-client `LodRequest` rate limit |
 | `LOD_INDEX_UPDATE_MS` | 1 000 ms | Coalescing interval for `LodIndexUpdate` broadcasts |
 | `LOD_PROPAGATION_SECTIONS_PER_TICK` | 8 | Server downsampling budget (off the tick) |
+| LOD bases kept, the water's hold (`dwell-sim` `lod_propagation.rs` `MAX_BASES`; `server.rs` `WATER_LOD_HOLD_TICKS`) | 96 sections; 120 ticks (2 s) | A modified section's generated cells kept, so computing it again is its downsample only; a section the water rewrites is computed once a hold (§6.6) |
+| Chunks out at the server-jobs worker (`worldgen_pool.rs` `REMOTE_IN_FLIGHT`) | 4 | The rest wait in the queue, which the tick reorders by distance (§5.1) |
 | Exposure (client, `dwell-look` `DEFAULT_EXPOSURE`) | 1.0 (0.4–2.5) | Tone-mapping exposure, a slider in the settings menu (Phase 7); the time of day's keyframe exposure multiplies it (Phase 32) |
 | Day length (`shared/look/daynight.json` `clock`) | 20 min day + 10 min night; 07:00 at tick 0 | The day/night cycle's clock (Phase 32), shared with tree growth; public API (every build of a line must agree) |
 | Shadows (`shared/look/shadows.json`; DAY_NIGHT.md §10) | Low: 2 cascades of 1024², 80 m, split λ 0.6, PCF 1.25 texels × 2² taps, moving casters every 6 frames; High: 3 of 2048², 160 m, λ 0.75, 1.25 texels × 2², every 4 frames; both at most 1 far cascade drawn a frame; far boxes 10 % wider than their distance (the slack), drawn again after the light turns 0.25°; the maps' light in steps of 0.05° along its path; first range from 0.5 m, radius step 1 m, casters 120 m toward the light, the last 20 % faded to the stand-in, spyglass up to 640 m; normal offset 1.5 texels, compare bias 0.04 m, slope scale 1.5; the sun's shadows fade in from 0° to 8° of elevation, the moon's from 2° to 12°, both at strength 1 | The sun's and moon's cascaded shadow maps (Phase 44): how many maps, how big and how far per Shadows setting; the bias against acne and peter-panning on ½ m steps and ramps; how the shadows follow the time of day |

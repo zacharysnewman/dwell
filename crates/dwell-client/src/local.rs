@@ -70,6 +70,7 @@ impl LocalCore {
             storage,
             entropy,
             dwell_sim::water::host::Placement::Inline,
+            false,
         )
     }
 
@@ -80,7 +81,9 @@ impl LocalCore {
     /// where it left (a spawn link). With `upgrade` (the player confirmed the warning, owner
     /// 2026-11-06) a world file from an older version line opens too. `water`: where the water
     /// grid runs (ADR 0062; the browser's water worker is `Remote`, its messages carried by the
-    /// worker script: `take_water_outgoing`, `deliver_water`).
+    /// worker script: `take_water_outgoing`, `deliver_water`). With `jobs_worker` the chunks to
+    /// generate and the LOD's sections are done in the server-jobs worker (`Server::take_job`,
+    /// `deliver_job`), not on the tick.
     #[allow(clippy::too_many_arguments)]
     pub fn create_spawning(
         face: dwell_world::Face,
@@ -93,6 +96,7 @@ impl LocalCore {
         storage: Option<impl StorageBackend>,
         entropy: Box<dyn Entropy>,
         water: dwell_sim::water::host::Placement,
+        jobs_worker: bool,
     ) -> Result<Self, LocalError> {
         // The local player (player 1) lands on the point itself: its spawn spread taken back.
         let at_portal = portal
@@ -121,6 +125,7 @@ impl LocalCore {
             // Single-threaded in the browser: generation and LOD run on the tick within budgets.
             worldgen_threads: 0,
             lod_threads: Some(0),
+            jobs_remote: jobs_worker,
             // A browser tab can close at any moment: save often (and on hide or close, §6.4).
             autosave_seconds: LOCAL_AUTOSAVE_SECONDS,
             water,
