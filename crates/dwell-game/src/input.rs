@@ -141,6 +141,10 @@ impl Default for Look {
 #[derive(Clone, Debug)]
 pub struct KeyboardMouseInput {
     keys: HashSet<String>,
+    /// Keys pressed since a tick last took the input ([`Self::took`]): held for that tick even if
+    /// let go already, so a press shorter than the gap between ticks (a slow frame, the prediction
+    /// held while the server catches up) still counts (docs/BUGS.md 30: a lost jump).
+    tapped: HashSet<String>,
     pub look: Look,
     /// Degrees per pixel of mouse movement.
     pub sensitivity: f64,
@@ -160,6 +164,7 @@ impl Default for KeyboardMouseInput {
     fn default() -> Self {
         Self {
             keys: HashSet::new(),
+            tapped: HashSet::new(),
             look: Look::default(),
             sensitivity: 0.12,
             flight: FlightToggle::new(),
@@ -180,6 +185,7 @@ impl KeyboardMouseInput {
     pub fn set_key(&mut self, code: &str, down: bool) {
         if down {
             self.keys.insert(code.to_owned());
+            self.tapped.insert(code.to_owned());
         } else {
             self.keys.remove(code);
         }
@@ -191,7 +197,7 @@ impl KeyboardMouseInput {
 
     /// This tick's input, with the on-screen touch controls (if any) and the controller merged in.
     pub fn sample(&self, touch: Option<&TouchState>) -> PlayerInputState {
-        let k = |code: &str| self.keys.contains(code);
+        let k = |code: &str| self.keys.contains(code) || self.tapped.contains(code);
         let b = |v: bool| if v { 1.0 } else { 0.0 };
         let pad = &self.gamepad;
         let [pad_x, pad_y] = pad.move_xy();
@@ -211,6 +217,11 @@ impl KeyboardMouseInput {
             fly: self.flight.flying(),
             fly_speed: f64::from(self.flight.speed_level()),
         }
+    }
+
+    /// A tick has taken this input ([`Self::sample`]): the keys tapped since count as held no longer.
+    pub fn took(&mut self) {
+        self.tapped.clear();
     }
 
     /// A `keydown`: `code` is `KeyboardEvent.code`.
@@ -272,6 +283,9 @@ impl KeyboardMouseInput {
             };
         }
         self.keys.insert(code.to_owned());
+        if !repeat {
+            self.tapped.insert(code.to_owned());
+        }
         let mut events = Vec::new();
         // The fly key, unless a browser shortcut (Ctrl/⌘+F, find) is meant.
         if code == FLY_KEY
@@ -300,6 +314,7 @@ impl KeyboardMouseInput {
     /// The window lost focus: every key is released.
     pub fn blur(&mut self) {
         self.keys.clear();
+        self.tapped.clear();
     }
 
     /// A controller frame (`Gamepad::frame`) turning this input's view; the actions it pressed.
@@ -411,6 +426,7 @@ mod tests {
         };
         let s = input.sample(Some(&touch));
         assert_eq!((s.move_x, s.crouch), (-0.5, true));
+        input.took();
         input.key_up("KeyW");
         assert_eq!(input.sample(None).move_y, 0.0);
         input.blur();
@@ -637,6 +653,21 @@ mod tests {
     }
 
     #[test]
+    fn a_key_tapped_between_two_ticks_counts_for_the_next_one() {
+        // docs/BUGS.md 30: a jump pressed and let go before a tick took the input was lost.
+        let mut input = KeyboardMouseInput::new();
+        input.key_down("Space", false, false, false);
+        input.key_up("Space");
+        assert!(input.sample(None).jump, "the tap counts for the next tick");
+        input.took();
+        assert!(!input.sample(None).jump, "and only that one");
+        // Held, it is down until let go, whatever the ticks took.
+        input.key_down("Space", false, false, false);
+        input.took();
+        assert!(input.sample(None).jump);
+    }
+
+    #[test]
     fn the_controller_joins_the_keys_and_touch_in_the_sample() {
         use crate::gamepad::{PlayAction, button};
         let mut input = KeyboardMouseInput::new();
@@ -650,6 +681,7 @@ mod tests {
         input.set_key("KeyW", true);
         assert_eq!(input.sample(None).move_y, 1.0);
         // While a menu is open the controller holds nothing.
+        input.took();
         input.set_key("KeyW", false);
         input.gamepad_frame(&b, &[0.0, -1.0, 0.0, 0.0], 0.016, false, 1.0);
         let s = input.sample(None);
