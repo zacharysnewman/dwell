@@ -2425,6 +2425,26 @@ in 0.48.2.
   proportion to the face depth left of the rest's). Untouched, both carry the same; a dam stops it
   in the water as it is, so the river backs up by its discharge (WATER_SURFACE_GRID.md §2b). A
   restored record's free columns find their flow again from the map (no record change).
+  **A column built out of its generated water** (0.49.23, BUGS.md #40) — its floor raised to or
+  over the level its water stood at, a dam — changes by its own flows alone: the rest layer's
+  divergence there (an implicit spring wherever the drawn river's flow changes: a step, a narrowing)
+  no longer pours water onto the dam's top; its neighbours keep their rest flows across its faces,
+  so a dam still backs the river up and drains the reach below. Read from the state each substep, so
+  saved worlds heal on load.
+  **The reach below a dam leaves the rest** (0.49.25, BUGS.md #41): the rest layer's divergence is
+  springs and sinks all along a river (the law's θ-weighting spreads each drawn step's pour up its
+  pool), which refilled the reach below a dam for ever and drained the lake at its mouth. A free
+  column's rest divergence counts only while its rest inflow (the rest's flow in, by face) comes at
+  least `restCut` (0.25) from columns still in the rest (`Water::share`, latched: back over
+  `restBack`, 0.75); a column out of its generated water is out of it. So the cut runs down the
+  rest's own flow from the dam to a junction whose other river brings most of the flow, or into the
+  lake it ran into, and that reach moves by the law and the carried flow alone: it drains, and a
+  hollow in its bed keeps its water still. A column out of the rest keeps its river's flow out past
+  the grid (`runs_on`: where the rest has no face, the loaded world's edge). The carried flow is
+  upwind (the sending column's water over the face), so it lifts nothing out of a hollow; a sleeping
+  chunk's account counts the rest's flow by its column's share; what it owes past the water it has
+  is dropped; and a column out of the rest is calm only once it moves less than a tenth of its
+  water (a film still draining isn't). Read from the state, so saved worlds dry on load.
 - **Sleep.** A chunk whose free levels held within `sleepBandM` (5 mm) for `calmS` (10 s) sleeps
   and isn't stepped; what awake neighbours send it is kept exactly (`owed`) and it wakes when that
   would move its water half `wakeBandM` (5 cm) or a shared face jumps (`jumpM2s`); woken, it takes what
@@ -2483,7 +2503,8 @@ in 0.48.2.
 - **[built, G4a, 0.49.1]** Its settings are data: `shared/fluids/flow.json` (→ `flow.gen.rs`,
   `FlowData`): the speed, the tick period, θ, the CFL, the substep cap, the step budget (and its own
   thread's, `threadStepBudget`, with the most it may owe, `maxOwedS`, G5), the sleep and wake bands, the
-  calm and release times, the jump, the release distance, the edit reach, the draw margin, and the
+  calm and release times, the jump, the release distance, the edit reach, the draw margin, the
+  currents' still speed and depth, the river current's cap and fall reach, and the
   liquids (block, Manning's roughness, the weir the generator sizes chute streams by, the running
   block; the first is the one drawn); `water::Settings::of` reads it, `Water::with_settings` runs other
   settings.
@@ -2493,15 +2514,18 @@ in 0.48.2.
   chunk keeps the currents it fell asleep with). A swimmer swims in the water's frame (the swim
   layer's wish velocity plus the current, PLAYER_CONTROLLER.md §6.4) and a floating body's water drag
   pulls it toward the current (`felling::water_drag`, `WaterDrag::current`), on the server and in the
-  client's prediction and stand-ins alike. The server sends each player the chunks within 2 of theirs
-  as `WaterCurrents` datagrams (§8.3: an i8 per axis per column in 5 cm/s steps), looked at every 15
-  ticks, a chunk sent when its currents changed or 3 s after it was last sent, 4 at most a time,
+  client's prediction and stand-ins alike. The server sends each player the chunks as far out as its
+  flow is drawn (`waterflow.json` `fadeToM` from anywhere in its chunk: 4 chunks; `server::currents_radius`,
+  0.49.24, BUGS.md #42) as `WaterCurrents` datagrams (§8.3: an i8 per axis per column in 5 cm/s steps), looked at every 15
+  ticks, a chunk sent when its currents changed or 3 s after it was last sent, 8 at most a time,
   none in a session's first 5 s (its terrain first), a chunk gone still once as zeros; a client
   forgets a chunk not sent again within 8 s.
   **[built, G3b]** Held water (generated, never freed) runs as the world map's river does
   (`Water::with_rivers`, `TerrainGenerator::river_current`, computed once as a chunk's water is
   found): downstream along the channel as the column sees it (the map's direction through the
-  meander warp's inverse), at Manning's speed for the column's depth on the river's fall or its flow
+  meander warp's inverse), at Manning's speed for the column's depth on the river's fall (its segment's,
+  or its course's mean over `riverFallReachM` 256 m up and down stream where steeper: a reach held level
+  where the land dips runs as the river round it, 0.49.24, BUGS.md #42) or its flow
   over its depth where faster (so level and shallow reaches run, 0.49.18), at most
   `riverCurrentMaxMs` (1.5 m/s: a swimmer, at 3 m/s, still makes headway); a lake is still.
 - **[built, G3d] The flow shown** (owner, 2026-11-05: all three, each a setting; data
@@ -2655,7 +2679,7 @@ in the code yet.
 | `movement.ground_stick_speed` (`config.rs`) | 5 m/s | The ground is a floor (owner, 2026-11-05; PLAYER_CONTROLLER.md §6.11): grounded vertical speed is momentum; following the ground may take away at most this much of the rise in a tick, and pull the body down at most this much beyond gravity; more and it leaves the ground (crests, lips, step-ups onto a flat top, downhill edges at speed). Walking, running and momentum; walking and running keep the ground |
 | `movement.slide_stick_rise_speed` / `slide_stick_drop_speed` (`config.rs`) | 0 / ∞ m/s | The same limits for a slide (a sprint slide, a crouched steep slide; owner, 2026-11-06; PLAYER_CONTROLLER.md §6.11): none of its rise is taken, so it flies off a ramp's top at the ramp's angle on its own momentum, and it follows every ramp down (glued) |
 | `movement.acceleration` / `deceleration` / `reverse_deceleration` / `air_control` (`config.rs`) | 50 / 15 / 60 m/s², 0.2 | The walking rule (owner, 2026-11-06, 0.49.18; PLAYER_CONTROLLER.md §6.12): the horizontal layer works on the whole velocity; input adds up to the walking speed and never stacks on momentum; `deceleration` is the ground's friction for any speed above that or with nothing held; in the air the push (`acceleration × air_control`) never slows the body or builds speed past `max(walk speed, |v|)`, only turning a faster body (no strafe-jumping) |
-| `damage.impact_safe_height` / `impact_lethal_height` / `impact_curve_exponent` (`config.rs`) | 5 m / 12 m / 2 | Impact damage (owner, 2026-10-21; 2026-11-06, 0.49.18; PLAYER_CONTROLLER.md §6.10): a hit's speed into the surface, read as the fall that lands at it (`v² ÷ 2g`), hurts nothing up to the safe height and `MAX_HEALTH × t ^ exponent` past it, lethal at the lethal height |
+| `damage.impact_safe_height` / `impact_lethal_height` / `impact_curve_exponent` (`config.rs`) | 10 m / 20 m / 2 (landing at 20 / 28.3 m/s) | Impact damage (owner, 2026-10-21; 2026-11-06, 0.49.18; 10 m / 20 m in 0.49.22; PLAYER_CONTROLLER.md §6.10): a hit's speed into the surface, read as the fall that lands at it (`v² ÷ 2g`), hurts nothing up to the safe height and `MAX_HEALTH × t ^ exponent` past it, lethal at the lethal height |
 | `damage.impact_surfaces` / `impact_measure` (`config.rs`) | `Ground` / `DownwardIntoSurface` | Impacts (PLAYER_CONTROLLER.md §6.10): `Ground` counts a normal no steeper than `probes.max_slope_angle`, floors and ramps (owner, 2026-10-21: "just ground"), walls, steep faces and ceilings never; `All` every contact. `DownwardIntoSurface` hurts by the downward speed × the surface's cos θ, `max(0, −v.y) · n.y` (owner, 2026-11-06: "only … based on Y", and the angle "reduces fall damage too"), so a fast hit into a slope never hurts and a steep ramp softens a fall; `IntoSurface` by `max(0, −v · n)`. Server damage only |
 | `SLIDE_HOLD` / `SLIDE_UPDATE_EVERY` (*client*, `dwell-game` `sound.rs`) | 0.15 s / 50 ms | A slide's sound: a pause shorter than the hold keeps the same voice; speed updates at most this often (AUDIO.md §5) |
 | `IMPACT_HOLD` / `IMPACT_KEEPS` / `IMPACT_PROBE_M` (*client*, `dwell-game` `sound.rs`) | 70 ms / 0.35 / 0.06 m | An impact sound: the speed toward a surface touching the body (within the probe) dropping in a sample to at most `KEEPS` of its fastest in the last `HOLD`; then quiet that long (AUDIO.md §5) |
@@ -3281,8 +3305,8 @@ animated from `State` and flags in snapshots.
   fall and a fast hit into a slope does not hurt at all; on the ground only (`damage.impact_surfaces`: a normal no
   steeper than `probes.max_slope_angle`), floors and ramps, never walls, steep faces or ceilings (the wall and ceiling impact
   sounds stay: they are read from motion), once per contact, the largest of a tick's; read as
-  a fall height, nothing up to `damage.impact_safe_height` 5 m, then `MAX_HEALTH × t ^
-  impact_curve_exponent` (2) to lethal at `impact_lethal_height` 12 m; flight,
+  a fall height, nothing up to `damage.impact_safe_height` 10 m (20 m/s), then `MAX_HEALTH × t ^
+  impact_curve_exponent` (2) to lethal at `impact_lethal_height` 20 m (28.3 m/s); flight,
   swimming and climbing exempt; sent with cause `Fall`; PLAYER_CONTROLLER.md §6.10; and falling out
   of the world), crush
   (Phase 20), explosion (Phase 21). `Damage`, `Death`, and `Respawn` are `PlayerEvent`s to every

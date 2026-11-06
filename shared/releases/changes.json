@@ -2,6 +2,38 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions card. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.49.25",
+      "changes": [
+        "The river below a dam now dries up completely, down to where the next stream joins it, in saved worlds too",
+        "Water left in a dip of the dry riverbed stays there, still"
+      ]
+    },
+    {
+      "version": "0.49.24",
+      "changes": [
+        "Rivers no longer seem to stop on their level stretches: a reach that lies flat runs as fast as the river around it",
+        "The flow on rivers now shows as far out as it is drawn, not stopping 30 to 50 m away"
+      ]
+    },
+    {
+      "version": "0.49.23",
+      "changes": [
+        "Water no longer stands on top of a dam and pours off it for ever: once the dam is higher than the river, what covered it drains away, in saved worlds too"
+      ]
+    },
+    {
+      "version": "0.49.22",
+      "changes": [
+        "Falls of up to 10 m never hurt; past that the damage climbs quickly, and a 20 m fall is lethal"
+      ]
+    },
+    {
+      "version": "0.49.21",
+      "changes": [
+        "Slow creeks show their flow too: faint foam and drifting flecks start on water moving at a walking crawl, not only on fast rivers"
+      ]
+    },
+    {
       "version": "0.49.20",
       "changes": [
         "No more triangle-shaped holes in the water where a river steps up to its next pool"

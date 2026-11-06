@@ -105,6 +105,55 @@ now, or later allow a few stacked water layers in the columns that have overhang
   (`a_world_saved_before_the_rivers_flow_backs_up_when_dammed`, both faces).
 - **A block set over water** traps what is below it (left as blocks, out of the grid); one set in it
   lifts its water by its volume.
+- **A column built out of its generated water** (0.49.23, BUGS.md #40; owner, 2026-11-06: water
+  that covered a dam "will never drain away even if you raise the height of the dam"): the rest
+  layer's divergence is an implicit spring or sink per column, wherever the drawn river's flow
+  changes (a step's lip pours, a narrowing or a junction carries more out than in). A dam built on
+  such a column kept its spring, so water was poured onto its top for ever, whatever its height,
+  and spilled off both sides. A column whose floor is at or over the level its water stood at as
+  generated (`out_of_rest`) now changes by its own flows alone, as one an edit opened does; its
+  neighbours keep their rest flows across its faces, so the reach above still backs up and the one
+  below still drains. **Measured:** natively, seed 0's river by z 7380 (below a step), a wall
+  overtopped for 20 water minutes and raised 2 m: 20 cells of water stood on its top for the next
+  2.5 hours (red), none after (`water_on_a_raised_dam_across_seed0s_river_drains`; both faces in
+  `water_on_a_raised_dam_drains_off_it`). Read from the state each substep, so a world saved with
+  water on a dam heals on load (`a_world_saved_with_water_on_a_dam_drains_it_on_load`).
+- **The reach below a dam leaves the rest** (0.49.25, BUGS.md #41; owner, 2026-11-06: "Water never
+  dries up below a dam." … "Like completely."). Held water "keeps its level and trades with free
+  water beside it, at no cost", and free water changes by the difference of the two layers' flows;
+  but the rest layer's divergence is not only at a drawn step's lip: the law's θ-weighting spreads
+  each step's pour up its pool, so every column of a river has a small spring or sink (seed 0's
+  fixture: 0.14 m/s mid-pool, 0.99 at a lip, and the lake at a river's mouth a sink of the river's
+  inflow and the pour). Below a dam those springs kept the reach full (natively at seed 0's dam site,
+  575 water columns left below the wall after ten water minutes), and its chunks never slept. Now a
+  free column's rest divergence counts only while it is **in the rest**: `Water::share`, latched,
+  out once less than `restCut` (0.25, `flow.json`) of its rest inflow (the rest's flow into it, by
+  face) comes from columns in the rest, back once more than `restBack` (0.75) does; a column out of
+  its generated water (`out_of_rest`) is out. So the cut runs down the rest's own flow from the dam,
+  to a junction whose other river brings most of the flow, or into the lake the river ran into, and
+  that reach moves by the law and the carried flow alone. A wave, a stone in the bed or an edit's
+  slosh moves no column out (the rule reads the rest's flow and the neighbours' state, not the
+  water's flows), so an untouched river still stays exactly as drawn
+  (`a_block_set_in_a_generated_rivers_bed_changes_nothing_else`, seeds 0–2). Built with it: a column
+  out of the rest keeps its map river's flow out past the grid (`runs_on`: across faces the rest has
+  no flow by, the loaded world's edge or a wall it was drawn into), so a cut reach still runs on out of
+  the world; the carried flow is upwind (the sending column's water over the face, not the deeper
+  side's), so it lifts nothing over a hollow's lip; a sleeping chunk owes its edges' flows less the
+  rest's by its column's share (a dry reach asleep owes nothing for the river no longer in it), and
+  what it owes past the water it has is dropped (as an awake column's depth stops at none); a column
+  out of the rest is calm only once it moves less than a tenth of its water (at least a tenth of the
+  sleep band), so a film still draining off a bed doesn't fall asleep on it. **Measured:** the
+  fixture (`water::tests` `the_river_below_a_dam_dries_completely`, both faces: a level reach, a
+  step and a lake below; red 180 water cells, 1.05 m deep, green none, its chunks asleep;
+  `a_hollow_below_a_dam_keeps_its_water_still`, red its water the river's level, green under its
+  lip, level and asleep); seed 0's dam site (`tests/water.rs`
+  `the_river_below_a_dam_across_seed0s_river_dries_to_the_next_inflow`, the wall at z 7452: red 575
+  water columns from the wall down to the creek's backwater at z 7526 after ten water minutes and 8
+  chunks awake there, green none and none awake, dry within five minutes); in the browser (the same wall, `?local=1&seed=0&fresh=1&at=2364.5,142,7443.5`) the 1,150 water cells from the wall to z 7525 were gone within 10 s real, the bed dry sand. The creek that joins
+  by (2457, 7541) backs the river up to z 7526 and runs on below. A freed column's current is the
+  law's and the carried flow's over its depth (a level reach's ~0.1 m/s), not the map's mean-fall
+  current a held one has (BUGS.md #42: 1.28 m/s): unchanged here. Read from the state each substep,
+  so a saved world's reach below a dam dries on load.
 - **A tick keeps to a budget** (0.49.7, BUGS.md #33): water runs on game time, so a water tick is
   seconds of water; with much water awake (a dammed river) its substeps took 50 ms of the server's
   thread a tick and the game stopped and started. A tick now takes at most `stepBudget`
@@ -140,15 +189,18 @@ The owner approved these recommendations (2026-11-05):
   idle swimmer drifts at the current's speed and swimming adds to it (PLAYER_CONTROLLER.md §6.4).
 - **Floating bodies**: water's drag acts on the velocity relative to the current, so a raft let be
   comes up to it (slowly, by the area it shows and the speed squared).
-- **On the wire**: `WaterCurrents` datagrams (ARCHITECTURE.md §8.3), the chunks within 2 of a player's,
-  each sent when its currents change or 3 s after it was last sent, 4 at most a time and none in a
+- **On the wire**: `WaterCurrents` datagrams (ARCHITECTURE.md §8.3), the chunks as far out as the flow
+  is drawn (`waterflow.json` `fadeToM`, 60 m, from anywhere in the player's chunk: 4 chunks; 2 before
+  0.49.24, when a river's flow stopped 33–48 m out, BUGS.md #42),
+  each sent when its currents change or 3 s after it was last sent, 8 at most a time and none in a
   session's first 5 s, a chunk gone still once as zeros; a client forgets one not sent again within
   8 s. The client's prediction and stand-ins read
   the same table, so a swimmer in a current predicts as the server moves it.
 - **Untouched rivers (G3b):** held water's current is the world map's river's
   (`TerrainGenerator::river_current`, found once as the chunk's water joins the grid): downstream as
   the column sees the channel (the map's direction through the meander warp's inverse), at the speed
-  Manning's law gives the column's depth on the river's fall with the liquid's roughness (the grid's
+  Manning's law gives the column's depth on the river's fall (its segment's, or its course's mean over
+  `riverFallReachM`, 256 m, up and down stream where steeper; below) with the liquid's roughness (the grid's
   own law), or at its flow over the column's depth (`river_flow / depth`) where that is faster, at most
   `riverCurrentMaxMs` (1.5 m/s: a steep chute's would be a torrent, and a swimmer at 3 m/s still makes headway); a lake is still.
   **Level and shallow reaches run** (0.49.19, BUGS.md #38; owner, 2026-11-06: "dead rivers ... the
@@ -157,8 +209,21 @@ The owner approved these recommendations (2026-11-05):
   over the depth keeps them running (`every_reach_of_a_river_runs_level_ones_too`; seed 0's dam
   site 0.11 m/s at 1 m deep), and once freed they run by the flow they carry (§2b,
   `a_shallow_flat_reach_runs_downstream_held_and_freed`, both faces). A slow creek's current (0.1
-  m/s) is under the flecks' `fromMs` (0.3) and the streaks' (0.4): its ripples move, but it shows
-  no flecks or foam. It goes to clients as any other chunk's currents.
+  m/s) was under the flecks' `fromMs` (0.3) and the streaks' (0.4), so it showed no flecks or foam;
+  since 0.49.21 both begin at 0.05 m/s (owner, 2026-11-06), faint at a creek's pace. It goes to clients as any other chunk's currents.
+  **A reach held level runs as the river round it** (0.49.24, BUGS.md #42; owner, 2026-11-06: "in
+  this spot the river stops flowing too"): the map's courses never rise, so where the land dips a
+  course is held level, often for 100–200 m, and drops what it held back after it. On its own fall
+  such a reach ran at its flow over its depth alone: seed 3974502447's creek by (12855, -3330), a
+  0.6 m³/s creek 5.4 m wide and 1 m deep, at 0.11 m/s, just below a reach at the 1.5 m/s cap, so the
+  river seemed to stop. Its current's fall is now the larger of its segment's and its course's mean
+  over `riverFallReachM` (`flow.json`) up and down stream (`Seg::mean_fall`, `channels::mean_falls`):
+  that creek runs at 1.28 m/s, as the reaches round it do
+  (`the_owners_level_creek_runs_as_the_river_round_it`; on both faces' maps
+  `a_level_reach_runs_on_its_courses_fall`, red: ~100 level reaches a face under 0.4 m/s). Only the
+  current changes: the map's levels, the terrain and the flow carried (`river_flow`) are as they were,
+  so no world changes. A held chunk's current is found as its water joins the grid, so a saved world
+  runs on load.
 - **The flow shown (G3d):** from the client's current table, so generated and player-moved water
   look alike: ripples carried by the current (a flow map), foam streaks along it, flecks drifting
   on it, each a setting and per liquid as data (`shared/look/waterflow.json`; ARCHITECTURE.md §6.7).

@@ -766,8 +766,11 @@ Owner (2026-10-21): fall damage became **impact damage**, by the angle of the su
   landing was ever raised): flying into a wall is harmless, as flying into the ground was. Water's
   behaviour is unchanged: entering it raises no hit.
 - **Damage** (server, `dwell-sim` `after_controller_tick`): `PlayerControllerConfig::impact_damage`
-  of the speed, read as the free-fall height that lands at it (`h = v² ÷ 2g`): nothing up to
-  `damage.impact_safe_height` (5 m), all of `MAX_HEALTH` (100) at `impact_lethal_height` (12 m),
+  of the speed, read as the free-fall height that lands at it (`h = v² ÷ 2g`; a landing speed
+  written as a drop, never the distance fallen: horizontal speed and time in the air never
+  count): nothing up to `damage.impact_safe_height` (10 m, 20 m/s), all of `MAX_HEALTH` (100) at
+  `impact_lethal_height` (20 m, 28.3 m/s; owner, 2026-11-06, 0.49.22: *"Scale it so approximately
+  safe is 10m and lethal is 20m"*; 5 m and 12 m in 0.49.18–0.49.20),
   and between them `MAX_HEALTH × t ^ impact_curve_exponent` (2) for `t` the height's share of the
   way, at least 1 point (owner, 2026-11-06, 0.49.18: *"I don't want to get nickeled and dimed all
   the time for small drops"*, *"a higher threshold for taking damage and a smaller area between
@@ -780,10 +783,10 @@ Owner (2026-10-21): fall damage became **impact damage**, by the angle of the su
 
 | Case | Speed counted | Damage |
 |---|---|---|
-| 3 m / 5 m drop, flat | 10.7 / 14.0 m/s | 0 / 0 (until 0.49.18: 0 / 16) |
-| 6 m / 7 m / 8 m / 9 m / 10 m / 11 m drop, flat | 15.5 – 21.0 m/s | 2 / 8 / 18 / 33 / 51 / 73 (`tests/impact.rs`) |
-| 12 m drop or more, flat | 21.9 m/s | 100: lethal from full health (until 0.49.18 ~15 m) |
-| 25 m/s straight down, at 60° or along a ½ m ramp (from 0.6 m over it) | the downward speed × 0.894 | less than the same hit on the flat (the whole speed into the ramp until 0.49.1; 0 in 0.49.2) |
+| 5 m / 8 m / 10 m drop, flat | 14.0 / 17.9 / 20.0 m/s | 0 (0.49.18–0.49.20: 0 / 18 / 51; until 0.49.18: 16 / 47 / 64) |
+| 12 m / 14 m / 15 m / 16 m / 18 m / 19 m drop, flat | 21.9 – 27.6 m/s | 4 / 16 / 25 / 36 / 64 / 81 (`tests/impact.rs`) |
+| 20 m drop or more, flat | 28.3 m/s | 100: lethal from full health (12 m in 0.49.18–0.49.20, ~15 m before) |
+| 35 m/s straight down, at 60° or along a ½ m ramp (from 0.6 m over it) | the downward speed × 0.894 | less than the same hit on the flat; along the slope under the safe height, nothing (the whole speed into the ramp until 0.49.1; 0 in 0.49.2) |
 | 25 m/s straight down onto a 1 m ramp (45°) | 26.0 m/s down × 0.707 | 51 (112 on the flat; 0 in 0.49.2) |
 | Launched along the ground at 25 m/s into a 45° slope | ~0 m/s down | 0 (into the slope: ~46 until 0.49.1) |
 | Launched at 25 m/s into a wall | 25 m/s (a wall) | 0 (104 when walls hurt) |
@@ -987,7 +990,7 @@ PPC default for voxels.
 | `sprint_slide` ◆ | `min_start_speed` / `start_boost` / `max_speed` | 6.5 m/s / 1.5 m/s / 14 m/s | — | Dwell addition (§6.9): crouch while sprinting; horizontal speeds |
 | | `friction` / `slope_gravity` | 5 m/s² / 1 | — | Deceleration; `gravity × slope_gravity × tilt` along the slide (6 / 1 until 2026-11-02; 1.5 from then to 0.49.5; 1 again, owner 2026-11-06: plain gravity) |
 | | `steer_rate` / `cooldown_ticks` | 90 °/s / 30 ticks (0.5 s, at most 255: the wire's `u8`) | — | Turning toward the move input; before another slide |
-| `damage` ◆ | `impact_safe_height` / `impact_lethal_height` / `impact_curve_exponent` | 5 m / 12 m / 2 | — | From the `IMPACTED` event's speed into the surface, read as a fall height (§6.10, 0.49.18; until then 12 m/s and 8 points per m/s, linear) |
+| `damage` ◆ | `impact_safe_height` / `impact_lethal_height` / `impact_curve_exponent` | 10 m / 20 m / 2 (20 / 28.3 m/s) | — | From the `IMPACTED` event's speed into the surface, read as a fall height (§6.10, 0.49.18; until then 12 m/s and 8 points per m/s, linear) |
 | | `impact_surfaces` / `impact_measure` | `Ground` / `DownwardIntoSurface` | — | The contacts that hit (§6.10): `Ground`, a normal no steeper than `probes.max_slope_angle` (floors and ramps); `All`, every contact. The speed: `DownwardIntoSurface`, the downward speed × the surface's cos θ (owner, 2026-11-06); `IntoSurface`, the whole speed into the normal |
 | | `crush_speed` / `crush_ticks` | 4 m/s / 6 | — | Phase 20 |
 | `step_view` ◆ | `slope` / `max_slope` / `min_speed` | 0.5 / 1.0 / 1 m/s | (PPC `SmoothSteps`: 4 m/s) | Client camera only (§9, Steps): the virtual ramp the eye follows over a step; never read by the sim |
