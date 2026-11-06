@@ -2,7 +2,7 @@
 
 - Status: Accepted (the owner, 2026-11-06: "make it so I can still play older version worlds with
   newer versions it just shows a warning you have to confirm so it's obvious when it's happening");
-  built 0.49.1; amends ADR 0014
+  built 0.49.2; amends ADR 0014
 - Date: 2026-11-06
 - Design: [`RELEASES.md`](../RELEASES.md) §5 ("Older worlds in newer builds")
 
@@ -39,7 +39,7 @@ one, with a warning that makes it obvious, and answered the design questions (20
 - **This build's generator** (`dwell_world::current_generator`): a world saved under a retired or
   unknown terrain generator opens on this build's terrain (it fell back to the flat world); flat,
   sandbox and the retired playground keep theirs. The index records it on play (`touch`).
-- **The version page** lists, for each build from 0.49.1 (`UPGRADE_SINCE`), the older line's
+- **The version page** lists, for each build from 0.49.2 (`UPGRADE_SINCE`), the older line's
   worlds it opens "with a warning".
 
 ## Consequences

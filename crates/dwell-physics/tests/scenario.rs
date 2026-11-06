@@ -563,7 +563,7 @@ fn the_five_player_scenario_matches_the_golden_trace() {
         }
     }
     // Half-height branch: 1.3 mm at 49 km on ½ m cells (twice the cell boundaries crossed), over
-    // main's 1 mm; the bound was 2 mm (HALF_HEIGHT_GRID.md §7). 0.49.1's trace (the air control
+    // main's 1 mm; the bound was 2 mm (HALF_HEIGHT_GRID.md §7). 0.49.2's trace (the air control
     // keeping the speed) walks player 3 off a ½ m step at tick 173 where the one-tick step-down
     // catches the upper step's edge (the probe ring is 0.9 of the capsule's radius): where the
     // contact lands rounds differently far out, 2.3 mm for that tick and a steady 1.9 mm after.

@@ -233,7 +233,7 @@ export function isPlainVisit(search: string): boolean {
  * The first build that opens a world from an older line after a warning (owner, 2026-11-06):
  * older builds refuse one, so the version page doesn't list it for them.
  */
-export const UPGRADE_SINCE = '0.49.1';
+export const UPGRADE_SINCE = '0.49.2';
 
 export function supportsUpgrade(version: string): boolean {
   return compareVersionText(version, UPGRADE_SINCE) >= 0;

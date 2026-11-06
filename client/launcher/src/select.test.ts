@@ -159,15 +159,15 @@ describe('the launcher', () => {
   });
 
   it("lists an older line's worlds as opening with a warning, from builds that warn (owner, 2026-11-06)", () => {
-    const rows = listBuilds(manifest(['0.50.0', '0.49.1', '0.49.0', '0.48.2']), false, [
+    const rows = listBuilds(manifest(['0.50.0', '0.49.2', '0.49.1', '0.48.2']), false, [
       { name: 'Old', appVersion: '0.48.2' },
-      { name: 'Now', appVersion: '0.49.0' },
+      { name: 'Now', appVersion: '0.49.1' },
     ]);
     const row = (v: string) => rows.find((r) => r.version === v);
-    expect(row('0.49.1')).toMatchObject({ worlds: ['Now'], olderWorlds: ['Old'] });
+    expect(row('0.49.2')).toMatchObject({ worlds: ['Now'], olderWorlds: ['Old'] });
     expect(row('0.50.0')).toMatchObject({ worlds: [], olderWorlds: ['Old', 'Now'] });
     // Before the warning was built, a build refuses them: none listed.
-    expect(row('0.49.0')).toMatchObject({ worlds: ['Now'], olderWorlds: [] });
+    expect(row('0.49.1')).toMatchObject({ worlds: ['Now'], olderWorlds: [] });
     expect(row('0.48.2')).toMatchObject({ worlds: ['Old'], olderWorlds: [] });
   });
 
