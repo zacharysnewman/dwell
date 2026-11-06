@@ -288,6 +288,171 @@ dwell_world::both_faces!(
     }
 );
 
+impl Scene {
+    /// A generated river's level reach, as the generator draws it since G1a: a channel 3 wide
+    /// (z 0..=2) along x 0..40 between walls 3.5 m tall, its bed flat (row 0), its water `rows`
+    /// deep and flat, no steps. The water is the river's by a fixture map running `Q` m²/s along
+    /// +x (and its current that over the depth, as `TerrainGenerator::river_current`).
+    fn flat_river(&mut self, rows: i32) {
+        let stone = require("dwell:stone");
+        for x in -1..=40 {
+            for r in -6..=6 {
+                for z in -1..=3 {
+                    let wall = x == -1 || x == 40 || z == -1 || z == 3;
+                    let m = if wall || r < 0 {
+                        stone
+                    } else if r < rows {
+                        M.water
+                    } else {
+                        M.air
+                    };
+                    self.set(x, r, z, m);
+                }
+            }
+        }
+    }
+    fn with_river_map(&mut self) {
+        self.water = river_map(Water::new());
+    }
+    /// The current at face-local column (x, z), mid-river, from the current table.
+    fn current(&self, x: i32, z: i32) -> [f32; 2] {
+        self.world.currents.at(self.f.point([
+            f64::from(x) + 0.5,
+            m_of_row(BASE) + 0.2,
+            f64::from(z) + 0.5,
+        ]))
+    }
+    /// A dam across the flat river at x 24.
+    fn dam_flat_river(&mut self) {
+        let dam: Vec<(i32, i32, i32)> = (0..=2)
+            .flat_map(|z| (0..=6).map(move |r| (24, r, z)))
+            .collect();
+        self.edit(&dam, require("dwell:stone"));
+    }
+}
+
+/// The fixture river's flow (m²/s along +x).
+const Q: f64 = 0.1;
+
+fn river_map(w: Water) -> Water {
+    w.with_rivers(std::sync::Arc::new(|_, _, _, depth| {
+        (depth >= 0.05).then_some([(Q / depth).min(1.5), 0.0])
+    }))
+    .with_river_flow(std::sync::Arc::new(|_, _, _| Some([Q, 0.0])))
+}
+
+dwell_world::both_faces!(
+    fn a_dam_across_a_flat_river_backs_it_up_by_the_maps_flow(f: FaceFrame) {
+        // Owner, 2026-11-06 (BUGS.md #38): "damming should raise the water and does". A level
+        // reach is drawn flat, so by the law alone the water as generated carried no flow and a
+        // dam had nothing to back up (red: 0 cm). Carrying the map's flow, the reach above the
+        // dam rises by it (0.3 m³/s over 72 m²) and the reach below it falls.
+        let mut s = Scene::new(f);
+        s.with_river_map();
+        s.flat_river(2);
+        s.run(2);
+        let (up0, down0) = (
+            s.level(12, 1).expect("above"),
+            s.level(30, 1).expect("below"),
+        );
+        s.dam_flat_river();
+        s.run(300);
+        let (up, down) = (
+            s.level(12, 1).expect("above"),
+            s.level(30, 1).unwrap_or(0.0),
+        );
+        assert!(
+            up > up0 + 0.25,
+            "the reach above the dam rose: {up0:.3} → {up:.3}"
+        );
+        assert!(
+            down < down0 - 0.05,
+            "the reach below fell: {down0:.3} → {down:.3}"
+        );
+    }
+);
+
+dwell_world::both_faces!(
+    fn a_flowing_flat_river_rests_when_an_edit_frees_it(f: FaceFrame) {
+        // The flow is carried through the water as generated as through the water as it is: an
+        // untouched river, freed by a stone in its bed, stays as drawn (no drift, no release
+        // down the river) and sleeps again.
+        let mut s = Scene::new(f);
+        s.with_river_map();
+        s.flat_river(2);
+        s.run(2);
+        let before = s.snapshot();
+        s.edit(&[(11, 0, 1)], require("dwell:stone"));
+        s.run(600);
+        let after = s.snapshot();
+        let changed = before.iter().zip(&after).filter(|(a, b)| a != b).count();
+        assert!(
+            changed <= 2,
+            "{changed} cells changed (the stone, and the water it lifted)"
+        );
+        assert_eq!(s.water.awake_chunks(), 0, "settled");
+        let lv = s.level(30, 1).expect("water");
+        assert!((lv - 1.0).abs() < 0.03, "the river kept its level: {lv:.3}");
+    }
+);
+
+dwell_world::both_faces!(
+    fn a_shallow_flat_reach_runs_downstream_held_and_freed(f: FaceFrame) {
+        // Owner, 2026-11-06: "dead rivers ... the shallow ones missing currents". One cell deep
+        // and level, the river still runs downstream in the current table (swimmers, bodies,
+        // the flow shown): held, by its map; freed by an edit, by the flow it carries (red: the
+        // law alone left a freed level reach still).
+        let mut s = Scene::new(f);
+        s.with_river_map();
+        s.flat_river(1);
+        s.run(1);
+        let [u, v] = s.current(10, 1);
+        assert!(
+            u > 0.1 && v.abs() < 0.01,
+            "held, it runs: {u:.3}, {v:.3} m/s"
+        );
+        // A wall beside it cut and set again: the water near it is free, the reach unchanged.
+        s.edit(&[(10, 0, 3)], M.air);
+        s.edit(&[(10, 0, 3)], require("dwell:stone"));
+        s.run(5);
+        assert!(!s.water.held_at(f, 10, 1), "freed");
+        let [u, v] = s.current(10, 1);
+        assert!(
+            u > 0.1 && v.abs() < 0.05,
+            "freed, it runs on downstream: {u:.3}, {v:.3} m/s"
+        );
+    }
+);
+
+dwell_world::both_faces!(
+    fn a_world_saved_before_the_rivers_flow_backs_up_when_dammed(f: FaceFrame) {
+        // Owner, 2026-11-06: existing worlds are fixed on load. A record saved by a build whose
+        // water carried no river flow (its rest flows ~0) is restored as it is (the same record,
+        // DWG1); the flow is the map's, found again for its generated columns, so the reach runs
+        // and a dam backs it up.
+        let mut s = Scene::new(f);
+        s.flat_river(2);
+        s.edit(&[(11, 0, 1)], require("dwell:stone"));
+        s.run(30);
+        assert!(!s.water.held_at(f, 12, 1), "free water to save");
+        let bytes = s.water.save(|_| 0);
+        let mut back = river_map(Water::new());
+        assert!(
+            back.restore(&bytes, |_| 0).is_some(),
+            "the old record reads"
+        );
+        s.water = back;
+        s.run(5);
+        let [u, _] = s.current(12, 1);
+        assert!(u > 0.04, "the restored reach runs: {u:.3} m/s");
+        let up0 = s.level(12, 1).expect("above");
+        s.dam_flat_river();
+        s.run(300);
+        let up = s.level(12, 1).expect("above");
+        assert!(up > up0 + 0.25, "dammed, it rose: {up0:.3} → {up:.3}");
+    }
+);
+
 #[test]
 fn the_report_is_json() {
     // face-a-only: a diagnostic's format, not the water's behaviour
