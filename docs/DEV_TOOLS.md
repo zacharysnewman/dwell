@@ -62,7 +62,7 @@ and, in a local world, its time per tick. At 60 fps each has 16.7 ms: the one ov
 ```
 
 `seed` (default 7), `window`, `settings` (the settings menu's stored values, as in named views:
-`detail`, `exposure`, `clouds`, `water`, `motion` and `timeOfDay` (0–1, 0 midnight: `?time=`; the fog is fixed look data, not a setting) —
+`detail`, `exposure`, `clouds`, `water` (`quality`, and optionally the flow's `flowRipples`, `flowFoam`, `flowParticles` switches, e.g. `false` to see one without the others), `motion` and `timeOfDay` (0–1, 0 midnight: `?time=`; the fog is fixed look data, not a setting) —
 `{ "speedEffects": false }` turns the motion effects off, for a before/after of their cost in one
 build),
 `debug` (`?debug=1`), `scale`, `split` (`near` or `far`: which part of the view it measures, for

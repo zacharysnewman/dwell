@@ -131,6 +131,13 @@ The owner approved these recommendations (2026-11-05):
   look alike: ripples carried by the current (a flow map), foam streaks along it, flecks drifting
   on it, each a setting and per liquid as data (`shared/look/waterflow.json`; ARCHITECTURE.md §6.7).
   Seen from above seed 0's river at (6745, 9644), the streaks run downstream and the flecks drift.
+  **The look (owner, 2026-11-06: "perfect white circles on top of flowing water"):** the circles
+  were mostly the foam streaks (2 m of taps over 0.3 m noise broke into round blobs) and partly the
+  flecks (0.2 m white discs). The streaks are now thin dashes along the flow (0.5 × 0.12 m, tinted;
+  validated `lengthM` ≤ 4.5 `widthM`); the flecks are small ragged scraps drawn out along the current,
+  translucent and tinted, lit as the surface is (shadows, dusk), eased in and out, kept as often and
+  shown as strongly as the current between `fromMs` and `fullMs` allows, and faded where under a few
+  pixels wide (ARCHITECTURE.md §6.7 lists the tunables).
 
 **Showing the flow (owner, 2026-11-05):** all three of: ripples that move with the current, foam
 streaks along it, and particles drifting on it; each can be turned off in Settings. All water

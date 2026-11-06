@@ -1007,16 +1007,30 @@ mod tests {
         assert_eq!(n, 1);
         let span = |k: usize| {
             let c: Vec<f32> = v.chunks_exact(VERTEX_FLOATS).map(|c| c[k]).collect();
-            f64::from(c.iter().cloned().fold(f32::MIN, f32::max) - c.iter().cloned().fold(f32::MAX, f32::min))
+            f64::from(
+                c.iter().cloned().fold(f32::MIN, f32::max)
+                    - c.iter().cloned().fold(f32::MAX, f32::min),
+            )
         };
         let (along, across) = (span(2), span(0));
-        assert!(across < 0.2 - 1e-3, "smaller than the old discs: {across} m across");
-        assert!(along >= 2.0 * across, "drawn out along the flow: {along} by {across}");
+        assert!(
+            across < 0.2 - 1e-3,
+            "smaller than the old discs: {across} m across"
+        );
+        assert!(
+            along >= 2.0 * across,
+            "drawn out along the flow: {along} by {across}"
+        );
         // Just over the threshold: barely stretched; at it or under: not drawn.
-        let (_, l, w) = crate::flecks::fleck_shape(look, [0.0, (look.particle_from_ms + 0.01) as f32]);
+        let (_, l, w) =
+            crate::flecks::fleck_shape(look, [0.0, (look.particle_from_ms + 0.01) as f32]);
         assert!(l / w < 1.05, "slow water's are not stretched: {}", l / w);
         for s in [0.0, 0.5 * look.particle_from_ms, look.particle_from_ms] {
-            assert_eq!(fleck_quads(&[fleck([s as f32, 0.0])], [0.0; 3], 0.0, 16).1, 0, "{s} m/s");
+            assert_eq!(
+                fleck_quads(&[fleck([s as f32, 0.0])], [0.0; 3], 0.0, 16).1,
+                0,
+                "{s} m/s"
+            );
         }
     }
 

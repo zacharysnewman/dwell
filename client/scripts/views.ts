@@ -189,7 +189,8 @@ function parseView(index: string, raw: unknown): View {
     for (const k of flows) {
       const v = w[k];
       if (v === undefined) continue;
-      if (typeof v !== 'boolean') throw new ViewError(`${at}.settings.water.${k}: expected true or false`);
+      if (typeof v !== 'boolean')
+        throw new ViewError(`${at}.settings.water.${k}: expected true or false`);
       water[k] = v;
     }
     settings.water = water;

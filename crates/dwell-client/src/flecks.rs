@@ -160,7 +160,10 @@ impl Flecks {
             p.at[2] += f64::from(c[1]) * dt;
             p.age += dt;
             let k = (VEL_EASE * dt).min(1.0) as f32;
-            p.vel = [p.vel[0] + (c[0] - p.vel[0]) * k, p.vel[1] + (c[1] - p.vel[1]) * k];
+            p.vel = [
+                p.vel[0] + (c[0] - p.vel[0]) * k,
+                p.vel[1] + (c[1] - p.vel[1]) * k,
+            ];
             let far = (p.at[0] - eye[0]).hypot(p.at[2] - eye[2]) > look.particle_radius_m * 1.5;
             // Gone once its eased current is as slow as `particle_from_ms`: it has faded out by
             // then (`speed_share`), so it doesn't pop.
@@ -347,10 +350,21 @@ mod tests {
         let l = &LIQUID_FLOWS[0];
         let fast = l.particle_full_ms + 0.5;
         let a = |age: f64| fleck_alpha(l, age, fast);
-        let (life, fin, fout) = (l.particle_life_s, l.particle_fade_in_s, l.particle_fade_out_s);
-        assert!(fin >= 1.0 && fout >= 1.0, "seconds, not a pop: {fin} {fout}");
+        let (life, fin, fout) = (
+            l.particle_life_s,
+            l.particle_fade_in_s,
+            l.particle_fade_out_s,
+        );
+        assert!(
+            fin >= 1.0 && fout >= 1.0,
+            "seconds, not a pop: {fin} {fout}"
+        );
         assert_eq!(a(0.0), 0.0);
-        assert!(a(0.25 * fin) < 0.2 * l.particle_opacity, "{}", a(0.25 * fin));
+        assert!(
+            a(0.25 * fin) < 0.2 * l.particle_opacity,
+            "{}",
+            a(0.25 * fin)
+        );
         assert!((a(0.5 * fin) - 0.5 * l.particle_opacity).abs() < 1e-9);
         let mid = 0.5 * (fin + life - fout);
         assert!((a(mid) - l.particle_opacity).abs() < 1e-9 && l.particle_opacity < 1.0);

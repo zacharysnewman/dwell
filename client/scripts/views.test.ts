@@ -81,7 +81,10 @@ describe('views', () => {
     [{ ...minimal, settings: { clouds: 'ultra' } }, 'settings.clouds: expected "off"'],
     [{ ...minimal, settings: { timeOfDay: 1.5 } }, 'settings.timeOfDay: 1.5 is outside'],
     [{ ...minimal, settings: { water: { quality: 'ultra' } } }, 'settings.water.quality: expected'],
-    [{ ...minimal, settings: { water: { quality: 'low', flowFoam: 1 } } }, 'settings.water.flowFoam: expected true'],
+    [
+      { ...minimal, settings: { water: { quality: 'low', flowFoam: 1 } } },
+      'settings.water.flowFoam: expected true',
+    ],
     [{ ...minimal, pitch: 0 }, 'views["a"]: unknown field "pitch"'],
     [{ ...minimal, seed: 1.5 }, 'seed: expected a whole number'],
     [{ ...minimal, debug: 'yes' }, 'debug: expected true or false'],
