@@ -624,6 +624,7 @@ async function start(): Promise<App | null> {
     sfx.setVolumes(s.audio);
     client.setExposure(s.exposure);
     client.setWaterQuality(waterQualityLevel(s.water.quality));
+    client.setWaterFlow(s.water.flowRipples, s.water.flowFoam, s.water.flowParticles);
     // ?waterdbg=caustics,foam,… turns pieces of the water's shading off (a dev tool, DEV_TOOLS.md).
     const waterDebug = new URLSearchParams(location.search).get('waterdbg');
     if (waterDebug) client.setWaterDebug(waterDebug);

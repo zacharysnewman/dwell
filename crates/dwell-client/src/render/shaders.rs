@@ -1906,6 +1906,14 @@ fn seen_from_inside(i: FluidOut, front: bool) -> bool {
     return !front && (abs(i.normal.y) > 0.5 || frame.water.x > 0.5);
 }
 
+// A surface's underside seen from outside the water (owner, 2026-11-05: flat blue sheets on
+// rivers): through a step's riser, from below the upper pool's level, the eye sees the underside
+// of that pool's surface. Drawn as seen from inside it was a flat sheet of the body's colour; from
+// outside the water it isn't drawn, and the riser shows the bed behind it through the water.
+fn underside_from_outside(i: FluidOut, front: bool) -> bool {
+    return !front && abs(i.normal.y) > 0.5 && frame.water.x < 0.5;
+}
+
 // A fluid's surface seen from inside (the W4 stub): the body's colour, out through Snell's window,
 // else totally reflected.
 fn from_below(s: Surface, f: Fluid) -> vec4f {
@@ -1940,6 +1948,9 @@ fn water_fs(i: FluidOut, @builtin(front_facing) front: bool) -> SceneOut {
         o.color = vec4f(lambert_lit(i.color * draw.tint.rgb, select(-n, n, front), frame.eye.x + i.rel.y, see_through_light(i, n)), 0.5);
         return o;
     }
+    if (underside_from_outside(i, front)) {
+        discard;
+    }
     let f = fluids[i.fluid];
     let s = water_surface(i, front, footprint, f, draw);
     if (seen_from_inside(i, front)) {
@@ -1951,7 +1962,55 @@ fn water_fs(i: FluidOut, @builtin(front_facing) front: bool) -> SceneOut {
     let alpha = 1.0 - (1.0 - fres) * t;
     let refl = vec4f(reflected_env(reflected_dir(s), i.rel, deck_fw) * s.sky, 0.0);
     o.color = vec4f((surface_light(i, s, f, fres, footprint, refl) + (1.0 - fres) * (1.0 - t) * s.body) / alpha, alpha);
+    // Foam streaks along the current (docs/WATER_SURFACE_GRID.md §2c), opaque where they are.
+    let streaks = flow_streaks(i, f, footprint);
+    if (streaks > 0.0) {
+        o.color = vec4f(mix(o.color.rgb, streak_lit(s, f), streaks), mix(o.color.a, 1.0, streaks));
+    }
     return o;
+}
+
+// Foam streaks along the current (docs/WATER_SURFACE_GRID.md §2c; shared/look/waterflow.json):
+// noise stretched along the flow (`flow_shape`: a streak's length and width), carried with the
+// water as the ripples are (two copies half a cycle apart, faded in and out), from the current
+// where they begin to where they are full (`flow.zw`) at the look's strength; faded out where a
+// pixel covers more than a streak's width (no shimmer far off). 0 with the Foam streaks setting
+// off, for a liquid without a flow look, or in still water.
+fn flow_streaks(i: FluidOut, f: Fluid, footprint: f32) -> f32 {
+    if (!flow_on(FLOW_FOAM) || f.flow_foam.a <= 0.0 || f.flow.y <= 0.0) {
+        return 0.0;
+    }
+    let cur = flow_at(i.wrapped, i.rel);
+    let speed = length(cur);
+    let fine = 1.0 - smoothstep(0.5 * f.flow_shape.y, 2.0 * f.flow_shape.y, footprint);
+    let amount = smoothstep(f.flow.z, f.flow.w, speed) * f.flow_foam.a * fine;
+    if (amount <= 0.0) {
+        return 0.0;
+    }
+    let dir = cur / speed;
+    let p0 = fract(frame.fog.z / f.flow.y);
+    let p1 = fract(frame.fog.z / f.flow.y + 0.5);
+    let carry = cur * f.flow.y;
+    let w0 = 1.0 - abs(2.0 * p0 - 1.0);
+    return amount * (flow_streak(i.wrapped - carry * p0, dir, f) * w0
+        + flow_streak(i.wrapped - carry * p1, dir, f) * (1.0 - w0));
+}
+
+// One copy of the streaks: fine noise (a streak's width) averaged over taps back along the flow
+// over a streak's length, so it is drawn out along the current (no turned frame: turning world
+// coordinates by the local direction swings the pattern where the direction bends).
+fn flow_streak(xz: vec2f, dir: vec2f, f: Fluid) -> f32 {
+    let step = dir * (f.flow_shape.x / 3.0);
+    var n = 0.0;
+    for (var k = 0; k < 4; k++) {
+        n += noise_t((xz - step * f32(k)) / f.flow_shape.y).x;
+    }
+    return smoothstep(0.12, 0.32, n * 0.25);
+}
+
+// The streaks' colour, lit as the shoreline foam is.
+fn streak_lit(s: Surface, f: Fluid) -> vec3f {
+    return lambert_lit(f.flow_foam.rgb, vec3f(0.0, s.up, 0.0), s.frag_y, TerrainLight(s.light.ambient, s.shadow, s.light.glow, s.light.points));
 }
 
 // The length of the view ray in the fluid (render/water.rs `ray_thickness`).
@@ -1984,6 +2043,9 @@ fn water_scene_fs(i: FluidOut, @builtin(front_facing) front: bool) -> @location(
     }
     if (water_off(DBG_FLAT)) {
         return vec4f(0.02, 0.1, 0.2, 1.0);
+    }
+    if (underside_from_outside(i, front)) {
+        discard;
     }
     let f = fluids[i.fluid];
     let s = water_surface(i, front, footprint, f, draw);
@@ -2048,6 +2110,11 @@ fn water_scene_fs(i: FluidOut, @builtin(front_facing) front: bool) -> @location(
     if (foam > 0.0) {
         let lit = lambert_lit(f.foam.rgb, vec3f(0.0, s.up, 0.0), s.frag_y, TerrainLight(s.light.ambient, s.shadow, s.light.glow, s.light.points));
         color = mix(color, lit, foam);
+    }
+    // Foam streaks along the current (docs/WATER_SURFACE_GRID.md §2c).
+    let streaks = flow_streaks(i, f, footprint);
+    if (streaks > 0.0) {
+        color = mix(color, streak_lit(s, f), streaks);
     }
     return vec4f(color, 1.0);
 }
@@ -2382,6 +2449,30 @@ mod tests {
         assert!(b.contains("return mix(mix(c, other_clear, far), clear, own);"));
         let at = src.find("fn composited_scene(").expect("composited_scene");
         assert!(src[at..].contains("fogged(scene_display(c, self_lit), s.ray * depth, s.clear)"));
+    }
+
+    #[test]
+    fn a_water_surfaces_underside_is_drawn_only_from_inside_the_water() {
+        // Owner, 2026-11-05: flat blue sheets on rivers. From below a stepped river's upper pool,
+        // the eye saw that pool's surface from underneath through the step's riser, and it was drawn
+        // as seen from inside (the body's flat colour). Both fluid shaders discard an underside seen
+        // from outside the water before shading it.
+        let src = super::source(1);
+        let at = src.find("fn underside_from_outside(").expect("the rule");
+        let rule = &src[at..at + src[at..].find("\n}\n").expect("end")];
+        assert!(rule.contains("!front && abs(i.normal.y) > 0.5 && frame.water.x < 0.5"));
+        for entry in ["fn water_fs(", "fn water_scene_fs("] {
+            let at = src.find(entry).expect(entry);
+            let b = &src[at..at + src[at..].find("\n}\n").expect("end")];
+            let skip = b
+                .find("if (underside_from_outside(i, front)) {\n        discard;")
+                .expect(entry);
+            let shade = b.find("water_surface(i, front").expect(entry);
+            assert!(
+                skip < shade,
+                "{entry} discards the underside before shading"
+            );
+        }
     }
 
     #[test]

@@ -536,6 +536,8 @@ pub struct Game<S: Scene> {
     /// What the renderer's flow window was last built from: the table's revision, the eye's face
     /// and column (`update_flow`).
     flow_sent: Option<(u64, bool, i32, i32)>,
+    /// The Drifting flecks setting: particles on moving water (render/flames.rs's flecks).
+    flow_particles: bool,
     /// Box select, fill, copy/paste, undo (§6.5); `enabled` once the server announces region edits.
     pub region: RegionTools,
     /// VoxelSniper-style brushes (BRUSHES.md); `available` where the server announces them.
@@ -706,6 +708,7 @@ impl<S: Scene> Game<S> {
             drag_sent: std::collections::HashMap::new(),
             currents_seen: Default::default(),
             flow_sent: None,
+            flow_particles: true,
             region: RegionTools::new(),
             brush: BrushTool::new(),
             portals: (Vec::new(), ""),
@@ -2308,6 +2311,11 @@ impl<S: Scene> Game<S> {
     /// The water's current (m/s along x and z) at world point `p`, as this client has it.
     pub fn current_at(&mut self, p: [f64; 3]) -> [f32; 2] {
         self.streamer.store_mut().currents.at(p)
+    }
+
+    /// The Drifting flecks setting (docs/WATER_SURFACE_GRID.md §2c).
+    pub fn set_flow_particles(&mut self, on: bool) {
+        self.flow_particles = on;
     }
 
     /// The renderer's flow window around `eye` (render/flow.rs), built again when the current table

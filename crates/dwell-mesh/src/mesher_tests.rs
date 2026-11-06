@@ -1819,3 +1819,89 @@ fn water_pouring_over_a_half_block_step_is_drawn_as_a_slope() {
     assert!(slope, "no slope from {high} down to {low} over the step");
     assert!(!sheet, "a vertical sheet at the step");
 }
+
+#[test]
+fn water_over_a_flooded_ramp_draws_no_face_between_them() {
+    // Owner, 2026-11-05 (0.49.x, seed 0's river at (6735, 9636)): flat blue patches on rivers,
+    // the bottom faces of water cells over the flooded sand ramps of the banks, seen through the
+    // water from above. A flooded ramp's cell holds water above its slope: the water above meets
+    // water, so no face lies between them.
+    let water = require("dwell:water[fill=8]");
+    for facing in ["north", "east", "south", "west"] {
+        let mut cells = Vec::new();
+        for x in 3..=7 {
+            for z in 3..=7 {
+                cells.push((x, 1, z, stone()));
+                cells.push((x, 3, z, water));
+                cells.push((
+                    x,
+                    2,
+                    z,
+                    if (x, z) == (5, 5) {
+                        ramp("sand", "ramp", facing, "bottom", true)
+                    } else {
+                        water
+                    },
+                ));
+            }
+        }
+        let m = mesh(&cells, false).transparent;
+        let between = m.indices.chunks_exact(3).any(|t| {
+            let ps = [t[0], t[1], t[2]].map(|i| vertex(&m.positions, i));
+            ps.iter()
+                .all(|p| (p[1] - 3.0 * dwell_world::CELL_H).abs() < 1e-4)
+                && ps
+                    .iter()
+                    .all(|p| p[0] > 4.99 && p[0] < 6.01 && p[2] > 4.99 && p[2] < 6.01)
+        });
+        assert!(
+            !between,
+            "facing {facing}: a water face lies on the flooded ramp's top"
+        );
+    }
+}
+
+#[test]
+fn a_flooded_ramps_water_top_faces_up_as_any_waters_does() {
+    // Owner, 2026-11-05: flat blue patches on rivers by their banks. The water shader draws a level
+    // face seen from its back as seen from inside (flat): a flooded ramp's water top at the
+    // surface must turn its front up, as a water cell's top does.
+    let water = require("dwell:water[fill=8]");
+    for facing in ["north", "east", "south", "west"] {
+        let mut cells = Vec::new();
+        for x in 3..=7 {
+            for z in 3..=7 {
+                cells.push((x, 1, z, stone()));
+                cells.push((
+                    x,
+                    2,
+                    z,
+                    if (x, z) == (5, 5) {
+                        ramp("sand", "ramp", facing, "bottom", true)
+                    } else {
+                        water
+                    },
+                ));
+            }
+        }
+        let m = mesh(&cells, false).transparent;
+        for t in m.indices.chunks_exact(3) {
+            let ps = [t[0], t[1], t[2]].map(|i| vertex(&m.positions, i));
+            let flat = ps.iter().all(|p| (p[1] - ps[0][1]).abs() < 1e-4);
+            let inside = ps
+                .iter()
+                .all(|p| p[0] > 4.99 && p[0] < 6.01 && p[2] > 4.99 && p[2] < 6.01);
+            if !flat || !inside || ps[0][1] < 2.0 * dwell_world::CELL_H + 0.01 {
+                continue;
+            }
+            // Its winding's normal (the side a GPU calls front) and its stored normal: both up.
+            let n = normal_of(&m.positions, t[0], t[1], t[2]);
+            let stored = m.normals[t[0] as usize * 3 + 1];
+            assert!(
+                n[1] > 0.5 && stored > 0.5,
+                "facing {facing}: a water top at y {} wound {n:?}, normal y {stored}",
+                ps[0][1]
+            );
+        }
+    }
+}

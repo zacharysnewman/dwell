@@ -17,7 +17,6 @@ pub mod lod_colour;
 pub mod lod_map;
 pub mod lod_shadows;
 pub mod motes;
-pub mod waterflow;
 pub mod motion;
 pub mod outline;
 pub mod pixel_art;
@@ -28,6 +27,7 @@ pub mod shadows;
 #[path = "shadows.gen.rs"]
 mod shadows_gen;
 pub mod spyglass;
+pub mod waterflow;
 
 use daynight::{DAY_NIGHT, DayState, Sample};
 use dwell_world::FaceFrame;

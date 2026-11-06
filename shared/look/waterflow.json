@@ -7,7 +7,7 @@
   "liquids": {
     "dwell:water": {
       "ripples": { "advect": 1, "cycleS": 1.6 },
-      "foam": { "fromMs": 0.4, "toMs": 1.4, "color": "#f2f7f8", "strength": 0.55, "lengthM": 3, "widthM": 0.3 },
+      "foam": { "fromMs": 0.4, "toMs": 1.4, "color": "#f2f7f8", "strength": 0.4, "lengthM": 3, "widthM": 0.3 },
       "particles": { "count": 160, "cpuCount": 0, "fromMs": 0.15, "sizeM": 0.05, "color": "#e6eeee", "lifeS": 6, "radiusM": 20 }
     }
   }

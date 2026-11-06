@@ -264,6 +264,8 @@ struct Inner {
     signature: SignatureSlot,
     game: Option<Game<Renderer>>,
     lod_settings: LodSettings,
+    /// The Drifting flecks setting (docs/WATER_SURFACE_GRID.md §2c), for each game made.
+    flow_particles: bool,
     /// Input events for the shell (toggles, hotbar changes, flight), drained by `takeEvents`.
     shell_events: Vec<JsValue>,
     /// The F3 overlay is on: kept here so it holds for a game started later (`?debug=1`).
@@ -404,6 +406,7 @@ impl Client {
             netsim: None,
             signature: Rc::default(),
             game: None,
+            flow_particles: true,
             lod_settings: LodSettings {
                 pixel_error: 2.0,
                 cache_bytes: 256 << 20,
@@ -1355,6 +1358,21 @@ impl Client {
             .borrow_mut()
             .set_water_quality(crate::render::water::WaterQuality::from_level(level));
     }
+    /// How moving water shows its flow (docs/WATER_SURFACE_GRID.md §2c, the Water settings):
+    /// ripples carried by the current, foam streaks, drifting particles.
+    #[wasm_bindgen(js_name = setWaterFlow)]
+    pub fn set_water_flow(&self, ripples: bool, foam: bool, particles: bool) {
+        let s = self.inner.borrow();
+        let switches = u32::from(ripples) * crate::render::flow::FLOW_RIPPLES
+            | u32::from(foam) * crate::render::flow::FLOW_FOAM;
+        s.renderer.borrow_mut().set_flow_switches(switches);
+        drop(s);
+        let mut s = self.inner.borrow_mut();
+        if let Some(g) = &mut s.game {
+            g.set_flow_particles(particles);
+        }
+        s.flow_particles = particles;
+    }
     /// The distant terrain (LOD) drawn or not, a debug switch (`?lod=off`, `__dwell.setLod`): the
     /// full-detail chunks alone show what they hold. True when in a world.
     #[wasm_bindgen(js_name = setLod)]
@@ -2244,6 +2262,7 @@ impl Inner {
         if self.options.lod_map && self.lod_map_supported() {
             game.set_lod_map(true);
         }
+        game.set_flow_particles(self.flow_particles);
         self.game = Some(game);
     }
 
