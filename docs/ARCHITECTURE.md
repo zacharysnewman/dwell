@@ -2425,6 +2425,12 @@ in 0.48.2.
   proportion to the face depth left of the rest's). Untouched, both carry the same; a dam stops it
   in the water as it is, so the river backs up by its discharge (WATER_SURFACE_GRID.md §2b). A
   restored record's free columns find their flow again from the map (no record change).
+  **A column built out of its generated water** (0.49.23, BUGS.md #40) — its floor raised to or
+  over the level its water stood at, a dam — changes by its own flows alone: the rest layer's
+  divergence there (an implicit spring wherever the drawn river's flow changes: a step, a narrowing)
+  no longer pours water onto the dam's top; its neighbours keep their rest flows across its faces,
+  so a dam still backs the river up and drains the reach below. Read from the state each substep, so
+  saved worlds heal on load.
 - **Sleep.** A chunk whose free levels held within `sleepBandM` (5 mm) for `calmS` (10 s) sleeps
   and isn't stepped; what awake neighbours send it is kept exactly (`owed`) and it wakes when that
   would move its water half `wakeBandM` (5 cm) or a shared face jumps (`jumpM2s`); woken, it takes what

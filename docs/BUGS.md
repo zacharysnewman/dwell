@@ -6,6 +6,27 @@ pins it.
 
 ## Open
 
+### 41. A dammed river never falls asleep
+
+*Found 2026-11-06, measuring #40.* Natively at seed 0's river (`dwell-sim` `tests/water.rs`
+`measure_a_raised_dams_churn`, ignored), a wall raised across it keeps 17–30 water chunks awake for
+as long as it runs (170 water minutes), before and after #40's fix. For the first ~2 water hours
+that is the river filling its valley behind the wall at its discharge (~28 m³ a minute, 300–1,000
+cells written a minute in 6–10 terrain chunks, each of whose LOD sections is computed again: the
+LOD churn another agent saw in the browser); once it spills, the volume holds (±10 m³) but the
+water never settles: 20–300 cells a minute in 1–7 chunks. Two causes found in a fixture (a flat
+river dammed, `water::tests`): (1) the reach drained below a dam keeps its rest flow, a steady
+difference of the two layers across its chunks' edges; a sleeping chunk owes that difference in
+full each substep, so it wakes, takes what films of water it has and sleeps again, for ever;
+(2) a deep still reach stirred by an edit sloshes ±1 cm for 10–25 water minutes, past the 5 mm
+sleep band, and the large reservoir behind seed 0's dam ±3 cm at its spill level. Tried and
+dropped: owing only the change from an edge's flow when the chunk fell asleep (a filling lake
+slower than the sleep band then stopped filling); with the chunk's rate of change carried on asleep
+(sleep-time noise then woke rivers that should rest exactly); the rest flow owed in proportion to
+the column's water left (broke `a_block_set_in_a_generated_rivers_bed_changes_nothing_else`, seed
+1). Next: per-face accounting of a sleeper's frozen inner faces, or a damped sleep test on the
+water's mean level rather than each column's.
+
 ### 34. e2e play.spec's two-client test times out on CI since 0.49.4
 
 *Found 2026-11-06, from CI.* "two clients on a native server see each other move": page B (on a
@@ -49,6 +70,27 @@ face, or the placement check against its shape.
 
 
 ## Fixed
+
+### 40. Water on top of a dam never drained, even after it was raised (fixed in 0.49.23)
+
+*Reported 2026-11-06, present "for many versions".* "Once water has entered the column (covered
+the top of the dam with water) that water will never drain away even if you raise the height of
+the dam, you end up with standing water that continues to 'flow over' into the river bed beyond";
+"it just goes up and down, never drains or deletes". Screenshots: a stone wall across a river, a
+pale slab of water along its raised top, water pouring off its downstream edge. Cause: the rest
+layer (WATER_SURFACE_GRID.md §2b) keeps the river as generated beside the water as it is, and a
+free column changes by the difference of their flows; where the drawn river's flow changes (a
+step's lip, a narrowing, a junction) the rest's divergence is an implicit spring. A column built up
+into a dam kept its spring, so the grid kept pouring water onto the dam's top whatever its height;
+raising the dam also lifted what stood on it. Not trapped water, nor flooded blocks. Fixed: a
+column whose floor is at or over its generated water's level changes by its own flows alone
+(`Water::out_of_rest`); its neighbours keep their rest flows, so dams still back rivers up (#38's
+tests pass). Read from the state, so saved worlds heal on load. Tests: `water::tests`
+`water_on_a_raised_dam_drains_off_it` and `a_world_saved_with_water_on_a_dam_drains_it_on_load`
+(both faces; a flat river whose flow begins at the dam; red: 3.9 cm standing on the raised dam, 3
+cells drawn over it, and the same after a save and load; green: dry), `tests/water.rs`
+`water_on_a_raised_dam_across_seed0s_river_drains` (seed 0 by z 7380; red 20 cells on the raised
+top, green none). The river around a dam still never falls asleep (#41).
 
 ### 39. Triangle-shaped holes in the water at a river's steps (fixed in 0.49.20)
 
