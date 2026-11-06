@@ -5353,6 +5353,10 @@ from the map's hydrology (its fill-and-spill lakes and river discharges), as ter
   engine's `Settings` from it, a fixture liquid run by data alone (both faces).
 - [ ] G4 — Data: `shared/water/*.json` (sleep and band, flow physics, pools, sources) with a generator,
   validation, a fixture test, and per-world values in WorldSettings.
+- [ ] G6 — Waterfalls (owner, 2026-11-06; WATER_SURFACE_GRID.md §2e): falls found from the water cells and
+  the current table by one shared function; a falling sheet with foam and spray where it lands (look data);
+  pushes players and bodies down and out (no swimming up); a rushing sound by flow and distance (sounds
+  data).
 - [ ] Later — Rain as a source layer; block-scale carving by the same flow.
 
 **Deviation (G3, owner, 2026-11-05):** G3 is split. Clients keep the water as blocks, which the

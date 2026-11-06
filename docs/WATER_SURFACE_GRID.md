@@ -138,6 +138,29 @@ behaves and looks the same by the same law whether the generator or a player put
 river's current is the map's, a freed one's the law's; both are drawn alike from the one current
 table). As built: G3d below.
 
+## 2e. Waterfalls (the owner, 2026-11-06; planned, G6)
+
+The owner, on a dam with a notch, the water standing in the notch and nothing below it: "Do we not do
+waterfalls or flowing water over a certain height?" The grid holds one level per column; water crossing a
+drop goes from the high column to the low one within a step, and only the water standing in columns is
+drawn, so nothing is drawn where it falls. The owner's answers:
+
+- **The look:** a falling sheet from the lip to where it lands, its width and thickness from the flow,
+  with foam and spray where it lands; look values as data.
+- **Physics:** a fall pushes players and floating bodies in it down and out, by how much flows; it can't
+  be swum up.
+- **Sound:** a rushing sound from each fall, louder with more flow and nearer, from the sounds data.
+
+Design (to confirm in building): a **fall** is a face between two columns where water flows (the current
+at the high column points across it, over `minFlow`) and the far side's surface (its water, or its floor
+if dry) lies more than `minDropM` below the near side's level, with the cell over the far side open. Falls
+are found from what both server and clients already have (the world's water cells and the current
+table, `VoxelWorld::currents`), by one shared function in `dwell-world`, so the server's physics and the
+client's prediction and drawing agree with no new message: the lip (the near level at the face), the
+landing (the far surface), the width (1 m per face, merged along a lip) and the flow per metre (depth ×
+speed). Data in `shared/fluids/` (detection) and `shared/look/` (the sheet, foam, spray) and
+`shared/sounds/` (the sound).
+
 ## 3. Generation
 
 - **Kept:** the world map (ADR 0049): uplift, stream-power erosion (the valleys), fill-and-spill lakes,
