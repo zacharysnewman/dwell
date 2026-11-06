@@ -434,10 +434,10 @@ fn a_world_opened_at_a_spawn_puts_a_returning_player_there() {
 }
 
 #[test]
-fn the_waters_basins_survive_a_server_restart() {
-    // face-a-only: the server's flat world is face A's; the basins' saves on both faces are tested
+fn the_waters_free_water_survives_a_server_restart() {
+    // face-a-only: the server's flat world is face A's; the water's saves on both faces are tested
     // in `water::tests`.
-    // docs/WATER_FLOW.md §8: a lake an edit drained, saved, comes back as a basin at its level.
+    // docs/WATER_SURFACE_GRID.md §3 (storage): a lake an edit drained, saved, comes back at its level.
     let scratch = Scratch::new("water");
     let path = scratch.world("water");
     let stone = dwell_blocks::require("dwell:stone");
@@ -473,8 +473,11 @@ fn the_waters_basins_survive_a_server_restart() {
         for _ in 0..240 {
             f.server.step();
         }
-        let lake = f.server.water().basin_at([4, G, 5]).expect("the lake");
-        let level = lake.world_level();
+        let level = f
+            .server
+            .water()
+            .level_at(dwell_world::FaceFrame::A, 4, 5)
+            .expect("the lake");
         f.server.save_now();
         f.server.flush_store();
         f.server.step();
@@ -485,16 +488,12 @@ fn the_waters_basins_survive_a_server_restart() {
         store: Some(store),
         ..flat()
     });
-    let lake = f
+    let back = f
         .server
         .water()
-        .basin_at([4, G, 5])
-        .expect("the lake is a basin again");
-    assert!(
-        (lake.world_level() - level).abs() < 1e-9,
-        "at {} (saved at {level})",
-        lake.world_level()
-    );
+        .level_at(dwell_world::FaceFrame::A, 4, 5)
+        .expect("the lake's water again");
+    assert!((back - level).abs() < 1e-4, "at {back} (saved at {level})");
 }
 
 #[test]

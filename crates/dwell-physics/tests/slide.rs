@@ -359,7 +359,7 @@ fn running_off_a_crest_above_a_45_degree_ramp_flies_over_it() {
     // The ground is a floor (owner, 2026-11-05: "I'd like to try without" gluing downhill): at a
     // run (8 m/s) following the 45° face would pull the body down 8 m/s at once, more than
     // `ground_stick_speed`, so it leaves the edge on its own momentum, never rising, and flies
-    // the arc a ball would. Until 0.48.2 the ground held it to the face from the edge (≤ 3 ticks
+    // the arc a ball would. Until 0.49.1 the ground held it to the face from the edge (≤ 3 ticks
     // in the air).
     let mut w = PlayerTestWorld::new();
     w.floor_at(0, 24);

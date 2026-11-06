@@ -1,5 +1,6 @@
 # 0057. Balanced rivers: generated water at rest by the engine's one law
 
+- Superseded by [ADR 0060](0060-water-surface-grid.md): the basins were removed in 0.48.2, the river lips and the pool graph in 0.49.0.
 - Status: Accepted (the owner, 2026-11-04: "Balanced generation", and the answers in WATER_FLOW.md
   §17.6); built (0.45.0); amends ADR 0055
 - Date: 2026-11-04

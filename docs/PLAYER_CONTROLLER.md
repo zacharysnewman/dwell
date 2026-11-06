@@ -653,7 +653,7 @@ Fortnite-style. The numbers below are defaults chosen for this, all data
   the player has, held between the walk speed (the crouch speed, crouched) and the run speed, so
   pressing or letting go of crouch or sprint mid-air changes nothing; only the move input's
   direction steers (`crouching_in_the_air_keeps_the_speed_you_had`, `movement.rs`
-  `sprint_changes_nothing_in_the_air`). Until 0.48.2 the target was the tick's walking speed:
+  `sprint_changes_nothing_in_the_air`). Until 0.49.1 the target was the tick's walking speed:
   letting go of sprint mid-air pulled 8 m/s down to 5 over ~0.2 s (air control's 10 m/s², under
   `min_start_speed`, so a crouched landing only crouched) and pressing it sped a walk up to 8.
 - **Off a crest, a lip or a downhill edge** the slide flies as anything with its momentum does:
@@ -729,7 +729,7 @@ Owner (2026-10-21): fall damage became **impact damage**, by the angle of the su
   (2026-11-05): *"Fall damage was supposed to only impact you when you hit the ground vertically
   fast, but currently if you hit a half slope or steep slope really fast you take some up to lethal
   fall damage … it should be 0."* So ramps of either pitch (26.57°, 45°) never hit, nor do walls,
-  steep faces and ceilings (the ceiling probe's −y), at any speed; until 0.48.2 the bound was
+  steep faces and ceilings (the ceiling probe's −y), at any speed; until 0.49.1 the bound was
   `probes.max_slope_angle` (56°) and a ½ m ramp hit by its own normal (× 0.894 of a vertical fall). A step's side is a wall like any other, so it
   needs no rule of its own (0.24.8's step-as-ramp normal, which made it hit as the ramp it stands
   for, was removed with wall damage: it would have turned harmless wall contacts into ramp hits). A
@@ -757,8 +757,8 @@ Owner (2026-10-21): fall damage became **impact damage**, by the angle of the su
 |---|---|---|
 | 3 m drop, flat | 10.7 m/s | 0 |
 | 5 m / 10 m / 20 m / 30 m drop, flat | 14.0 / 20.0 / 28.3 / 34.7 m/s | 16 / 64 / 131 / 181 (as before) |
-| 25 m/s straight down, at 60° or along a ½ m ramp | (a ramp) | 0 (88 / 21 / 0 until 0.48.2) |
-| 25 m/s straight down onto a 1 m ramp (45°) | (a ramp) | 0 (51 until 0.48.2) |
+| 25 m/s straight down, at 60° or along a ½ m ramp | (a ramp) | 0 (88 / 21 / 0 until 0.49.1) |
+| 25 m/s straight down onto a 1 m ramp (45°) | (a ramp) | 0 (51 until 0.49.1) |
 | Launched at 25 m/s into a wall | 25 m/s (a wall) | 0 (104 when walls hurt) |
 | Launched at 25 m/s along a wall, 1 m/s into it | < 2 m/s | 0 |
 | Launched up at 25 m/s into a ceiling 2.2 m over the head | ~23 m/s (a ceiling) | 0 (91 when ceilings hurt) |
@@ -774,7 +774,7 @@ Owner (2026-10-21): fall damage became **impact damage**, by the angle of the su
   onto the flat deal the 16 / 64 / 131 / 181 they did before; a short drop nothing; landings at
   25 m/s onto the ½ m ramp hillside (straight down, 60°, a skim) and onto a 45° hillside nothing
   (`landing_on_a_half_metre_ramp_never_hurts`, `landing_on_a_steep_ramp_never_hurts`: 88 and 51
-  points before 0.48.2); a
+  points before 0.49.1); a
   25 m/s launch into a wall nothing (and with `impact_surfaces: All` the 104 it did), one brushing
   along it and flying into it nothing; a hard ceiling hit nothing; walking and sprinting into a
   wall, stepping up ½ m, auto-climb and walking the ramp hillside stay under 9 m/s; launches into a
@@ -782,7 +782,7 @@ Owner (2026-10-21): fall damage became **impact damage**, by the angle of the su
   into a ½ m step at up to 25 m/s steps up with no hit. `dwell-sim` `tests/netcode.rs` damages and
   kills by falls through the server.
 
-### 6.11 The ground is a floor (Dwell addition) **[built, 0.48.2]**
+### 6.11 The ground is a floor (Dwell addition) **[built, 0.49.1]**
 
 Owner (2026-11-05): *"Step movement is ruining momentum off of slope 'jumps' … I can see where my
 character tries to 'step' forward at the top of the ramp"*, then, of treating the ground as a

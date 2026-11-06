@@ -108,10 +108,6 @@ pub struct Surface {
     pub river_reach_per_width: f64,
     pub river_meander: f64,
     pub river_meander_wavelength: i32,
-    /// A step's lip reaches this far upstream of the step (m; WATER_FLOW.md §17).
-    pub river_lip_reach: f64,
-    /// A lip's wall stands this many rows over the water.
-    pub river_lip_rise: i32,
     pub river_lod_width: f64,
     pub river_lod_min_share: f64,
     pub river_lod_max_cell: i64,
@@ -337,37 +333,6 @@ pub fn lip_cells(q: f64) -> u32 {
     ((q / per_cell).round() as u32).max(1)
 }
 
-/// A channel column's part in its step's lip.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Lip {
-    None,
-    /// The wall over the water beside the gap the river pours through.
-    Wall,
-    /// The gap: its bed the sill, the water one row deep over it, the crest.
-    Crest,
-    /// A cell of the pool below walled (`LipPlan::block`): as high as the lip's wall above it.
-    Block,
-}
-
-/// A channel column's part in its step's lip (docs/WATER_FLOW.md §17): within `lipReach` m above
-/// where the river's surface steps down a row, the crest at the centre (`lip_cells` wide) or the
-/// wall beside it. None at sea level or where the surface doesn't fall.
-/// How far above its step down a channel column lies (m along the river), if in a lip's band.
-fn lip_band(r: &worldmap::Hit) -> Option<f64> {
-    above_step(r).filter(|&a| a <= S.river_lip_reach)
-}
-
-/// How far above its next step down a channel column lies (m along the river); none at the sea's
-/// level or where the surface doesn't fall.
-fn above_step(r: &worldmap::Hit) -> Option<f64> {
-    if r.level <= CELL_H || r.fall <= 1e-9 {
-        return None;
-    }
-    let abs = SEA_LEVEL_M + r.level;
-    let k = f64::from(surface_row(abs as f32));
-    Some((abs - (k - 0.5) * CELL_H) / r.fall)
-}
-
 /// The row a water surface (m, face-local) lies on: the rows below it are water.
 fn surface_row(level: f32) -> i32 {
     floor_to_int(level / CELL_H as f32 + 0.5)
@@ -522,54 +487,8 @@ pub struct TerrainGenerator {
     /// none for the plain terrain. Chunks only: the LOD draws the height field's top.
     volume: Option<Arc<Volume>>,
     world_seed: u64,
-    /// Each river lip's plan (`LipPlan`, ADR 0058), by every column of its band: made once,
-    /// whichever chunk asks first, so a lip comes out the same in every chunk.
-    lips: Arc<std::sync::Mutex<LipPlans>>,
-    /// Each river's pool graph (`pool_graph.rs`), built on demand.
-    graphs: Arc<std::sync::Mutex<HashMap<u32, Arc<RiverGraph>>>>,
     /// Each river's rows (`RiverRows`: which are a chute's), built on demand.
     rows: Arc<std::sync::RwLock<HashMap<u32, Arc<RiverRows>>>>,
-}
-
-/// The lips planned, by every column of their bands.
-type LipPlans = dwell_world::hash::HashMap<(i64, i64), Arc<LipPlan>>;
-
-/// A column beside a lip's pool below: the column, the cells of that pool beside it, its
-/// distance from the centreline (m).
-type LipEdge = ((i64, i64), Vec<(i64, i64)>, f64);
-
-/// A river lip's crest, planned as a whole (ADR 0058): the columns of its band the river pours
-/// through, chosen from the centre out until the faces they pour off (each onto the pool below)
-/// are exactly the lip's cells (`lip_cells` of the river's flow), with the columns behind them up
-/// to the pool above; the rest of the band is wall.
-#[derive(Debug, Default)]
-struct LipPlan {
-    crest: dwell_world::hash::HashSet<(i64, i64)>,
-    /// Cells of the pool below walled (a rock at the foot of the lip): a crest column on a
-    /// diagonal step beside two of them pours into one, so the lip pours into exactly its cells.
-    block: dwell_world::hash::HashSet<(i64, i64)>,
-    /// The cells of the pool below its crest pours into, the lip's cells (`lip_cells`), and how
-    /// many its band is beside (at most what it can pour into): for the tests.
-    #[cfg_attr(not(test), allow(dead_code))]
-    pours: usize,
-    #[cfg_attr(not(test), allow(dead_code))]
-    want: usize,
-    #[cfg_attr(not(test), allow(dead_code))]
-    room: usize,
-}
-
-/// A full-detail column's place in a river's lips: its river, the row its water lies on, how
-/// far above the step down it lies (m), its distance from the centreline (m), and its discharge.
-#[derive(Clone, Copy, Debug)]
-struct LipCol {
-    river: u32,
-    row: i32,
-    above: f64,
-    d: f64,
-    q: f64,
-    band: bool,
-    /// In a chute (its river's surface falling faster than `STEEP_FALL`): no pools, no lips.
-    steep: bool,
 }
 
 /// The ramp pieces of the natural surface materials, resolved by name once: for each material,
@@ -656,8 +575,6 @@ impl TerrainGenerator {
             volume: None,
             cache_id: next_cache_id(),
             world_seed,
-            lips: Arc::default(),
-            graphs: Arc::default(),
             rows: Arc::default(),
         }
         .with_placements(&PLACEMENTS)
@@ -941,6 +858,24 @@ impl TerrainGenerator {
     /// The row a river's or lake's water surface lies on at full-detail column (x, z) (the rows
     /// below it water); none where no river channel or lake is. A light lookup for the waterline
     /// (docs/WATER_FLOW.md §17).
+    /// The river whose channel holds full-detail column (x, z), and its surface row (none off a
+    /// channel, or at the sea's level).
+    fn river_row_at(&self, x: i64, z: i64) -> Option<(u32, i32)> {
+        if !inside_world_disc(x, z) || !self.map.channels.near(x as f64, z as f64, 0.0) {
+            return None;
+        }
+        let (wx, wz) = self.warp(
+            self.meander_seeds,
+            x,
+            z,
+            S.river_meander,
+            S.river_meander_wavelength,
+        );
+        let r = self.map.channels.query(wx, wz, 0.0, f64::INFINITY)?;
+        (r.d < r.half && r.level > CELL_H)
+            .then(|| (r.river, surface_row((SEA_LEVEL_M + r.level) as f32)))
+    }
+
     fn water_row_at(&self, x: i64, z: i64) -> Option<i32> {
         if !inside_world_disc(x, z) {
             return None;
@@ -974,306 +909,14 @@ impl TerrainGenerator {
         (r.d < r.half && r.level > CELL_H).then(|| surface_row((SEA_LEVEL_M + r.level) as f32))
     }
 
-    /// Whether river `a`'s water goes on into river `b`'s: the same river, or `a` joining `b`
-    /// (its last lip pours into `b`).
-    fn flows_into(&self, a: u32, b: u32) -> bool {
-        a == b
-            || matches!(
-                self.map.rivers.get(a as usize).map(|r| r.end),
-                Some(worldmap::RiverEnd::Joins(j)) if j == b
-            )
-    }
-
-    /// Full-detail channel column (x, z)'s part in its river's lips (ADR 0058): in a lip's band,
-    /// its crest or wall (`LipPlan`); in the pool below one, walled where that lip blocks it.
-    fn lip_role(&self, x: i64, z: i64) -> Lip {
-        let Some(me) = self.channel_col(x, z) else {
-            return Lip::None;
-        };
-        let near: Vec<((i64, i64), Option<LipCol>)> = [(1i64, 0i64), (-1, 0), (0, 1), (0, -1)]
-            .iter()
-            .map(|&(dx, dz)| ((x + dx, z + dz), self.channel_col(x + dx, z + dz)))
-            .collect();
-        if me.steep {
-            return Lip::None;
-        }
-        let band = me.band
-            || near.iter().any(|(_, n)| {
-                n.is_some_and(|n| {
-                    self.flows_into(me.river, n.river)
-                        && (n.row < me.row || (n.steep && n.row <= me.row))
-                })
-            });
-        if band {
-            return if self.lip_plan(x, z).crest.contains(&(x, z)) {
-                Lip::Crest
-            } else {
-                Lip::Wall
-            };
-        }
-        for &(n, l) in &near {
-            if let Some(l) = l
-                && self.flows_into(l.river, me.river)
-                && l.row > me.row
-                && self.lip_col(n.0, n.1).is_some_and(|l| l.band)
-                && self.lip_plan(n.0, n.1).block.contains(&(x, z))
-            {
-                return Lip::Block;
-            }
-        }
-        Lip::None
-    }
-
-    /// Full-detail column (x, z)'s place in its river's lips, if in a channel (`LipCol`): in its
-    /// step's band within `lipReach` above the step, and always beside the same river's channel a
-    /// row lower (the pools never meet but over a lip).
-    fn lip_col(&self, x: i64, z: i64) -> Option<LipCol> {
-        let mut l = self.channel_col(x, z)?;
-        if !l.band && !l.steep {
-            let beside_lower = [(1i64, 0i64), (-1, 0), (0, 1), (0, -1)]
-                .iter()
-                .any(|&(dx, dz)| {
-                    self.channel_col(x + dx, z + dz).is_some_and(|n| {
-                        self.flows_into(l.river, n.river)
-                            && (n.row < l.row || (n.steep && n.row <= l.row))
-                    })
-                });
-            if beside_lower {
-                // (Its distance above the step kept: the crest's columns behind it follow it up.)
-                l.band = true;
-                if !l.above.is_finite() {
-                    l.above = 0.0;
-                }
-            }
-        }
-        Some(l)
-    }
-
-    /// Full-detail column (x, z)'s channel, its band by `lipReach` only.
-    fn channel_col(&self, x: i64, z: i64) -> Option<LipCol> {
-        if !inside_world_disc(x, z) || !self.map.channels.near(x as f64, z as f64, 0.0) {
-            return None;
-        }
-        let (wx, wz) = self.warp(
-            self.meander_seeds,
-            x,
-            z,
-            S.river_meander,
-            S.river_meander_wavelength,
-        );
-        let r = self.map.channels.query(wx, wz, 0.0, f64::INFINITY)?;
-        if r.d >= r.half || r.level <= CELL_H {
-            return None;
-        }
-        let row = surface_row((SEA_LEVEL_M + r.level) as f32);
-        let steep = self.river_rows(r.river).steep.contains(&row);
-        let band = lip_band(&r).filter(|_| !steep);
-        Some(LipCol {
-            river: r.river,
-            row,
-            above: above_step(&r).unwrap_or(f64::INFINITY),
-            d: r.d,
-            q: r.q,
-            band: band.is_some(),
-            steep,
-        })
-    }
-
-    /// The plan of the lip whose band holds column (x, z) (`LipPlan`), made once.
-    fn lip_plan(&self, x: i64, z: i64) -> Arc<LipPlan> {
-        if let Some(p) = self.lips.lock().expect("lips").get(&(x, z)) {
-            return p.clone();
-        }
-        let plan = self.plan_lip(x, z);
-        let mut lips = self.lips.lock().expect("lips");
-        if let Some(p) = lips.get(&(x, z)) {
-            return p.clone(); // another thread planned it meanwhile
-        }
-        let (cols, plan) = plan;
-        let plan = Arc::new(plan);
-        for c in cols {
-            lips.insert(c, plan.clone());
-        }
-        plan
-    }
-
-    /// Plans the lip whose band holds (x, z): its band's columns (joined sideways, the same river
-    /// and row) and its crest (`LipPlan`).
-    fn plan_lip(&self, x: i64, z: i64) -> (Vec<(i64, i64)>, LipPlan) {
-        const MAX_BAND: usize = 50_000;
-        let Some(me) = self.lip_col(x, z) else {
-            return (vec![(x, z)], LipPlan::default());
-        };
-        let mut cols: dwell_world::hash::HashMap<(i64, i64), Option<LipCol>> =
-            dwell_world::hash::HashMap::default();
-        let mut col = |c: (i64, i64)| *cols.entry(c).or_insert_with(|| self.lip_col(c.0, c.1));
-        let same = |a: &LipCol| a.river == me.river && a.row == me.row;
-        let sides = [(1i64, 0i64), (-1, 0), (0, 1), (0, -1)];
-        // The band: every column of this lip joined to (x, z).
-        let mut band: Vec<(i64, i64)> = vec![(x, z)];
-        let mut seen: dwell_world::hash::HashSet<(i64, i64)> =
-            dwell_world::hash::HashSet::default();
-        seen.insert((x, z));
-        let mut i = 0;
-        // (Joined at corners too: a step across the grid's diagonal is a band one column deep.)
-        let around = [
-            (1i64, 0i64),
-            (-1, 0),
-            (0, 1),
-            (0, -1),
-            (1, 1),
-            (1, -1),
-            (-1, 1),
-            (-1, -1),
-        ];
-        while i < band.len() && band.len() < MAX_BAND {
-            let c = band[i];
-            i += 1;
-            for (dx, dz) in around {
-                let n = (c.0 + dx, c.1 + dz);
-                if seen.contains(&n) {
-                    continue;
-                }
-                if col(n).is_some_and(|l| l.band && same(&l)) {
-                    seen.insert(n);
-                    band.push(n);
-                }
-            }
-        }
-        // The faces each pours off onto the pool below (the same river's channel a row lower,
-        // not a band itself).
-        // (A column in the next lip's band down is the pool below where that lip's crest is.)
-        let lower = |n: (i64, i64), l: Option<LipCol>| {
-            l.is_some_and(|l| {
-                self.flows_into(me.river, l.river)
-                    && (l.row < me.row || (l.steep && l.row <= me.row))
-                    && (!l.band || self.lip_plan(n.0, n.1).crest.contains(&n))
-            })
-        };
-        // Each column beside the pool below, with the cells of it beside it (the water pours off
-        // into each: a way out each, as the water counts them).
-        let mut edge: Vec<LipEdge> = Vec::new();
-        for &c in &band {
-            let below: Vec<(i64, i64)> = sides
-                .iter()
-                .map(|&(dx, dz)| (c.0 + dx, c.1 + dz))
-                .filter(|&n| lower(n, col(n)))
-                .collect();
-            if !below.is_empty() {
-                edge.push((c, below, col(c).map_or(0.0, |l| l.d)));
-            }
-        }
-        edge.sort_by(|a, b| a.2.total_cmp(&b.2).then(a.0.cmp(&b.0)));
-        // The lip's cells: those its flow needs (`lip_cells`), from the column nearest the centre.
-        let want = edge
-            .first()
-            .and_then(|e| col(e.0))
-            .map_or(1, |l| lip_cells(l.q)) as usize;
-        let mut crest: dwell_world::hash::HashSet<(i64, i64)> =
-            dwell_world::hash::HashSet::default();
-        // From the centre out, each that keeps the cells poured into within the lip's; one short,
-        // the outermost taken that alone pours into one cell traded for one adding two.
-        let union = |taken: &[usize]| -> dwell_world::hash::HashSet<(i64, i64)> {
-            taken
-                .iter()
-                .flat_map(|&i| edge[i].1.iter().copied())
-                .collect()
-        };
-        let mut taken: Vec<usize> = Vec::new();
-        let mut cells: dwell_world::hash::HashSet<(i64, i64)> =
-            dwell_world::hash::HashSet::default();
-        for (i, e) in edge.iter().enumerate() {
-            let new = e.1.iter().filter(|n| !cells.contains(n)).count();
-            if cells.len() + new <= want {
-                cells.extend(e.1.iter().copied());
-                taken.push(i);
-            }
-            if cells.len() == want {
-                break;
-            }
-        }
-        let mut block: dwell_world::hash::HashSet<(i64, i64)> =
-            dwell_world::hash::HashSet::default();
-        if cells.len() + 1 == want {
-            'trade: for k in (0..taken.len()).rev() {
-                let mut rest = taken.clone();
-                rest.remove(k);
-                let without = union(&rest);
-                if without.len() + 1 != cells.len() {
-                    continue;
-                }
-                for (i, e) in edge.iter().enumerate() {
-                    if taken.contains(&i) {
-                        continue;
-                    }
-                    if e.1.iter().filter(|n| !without.contains(n)).count() == 2 {
-                        rest.push(i);
-                        taken = rest;
-                        break 'trade;
-                    }
-                }
-            }
-        }
-        // Still short (every column left pours into more than is wanted, as on a diagonal step):
-        // the nearest such column taken, and the cells it would pour into beyond the lip's walled.
-        let now = union(&taken);
-        if now.len() < want
-            && let Some(i) = (0..edge.len()).find(|i| !taken.contains(i))
-        {
-            let mut new: Vec<(i64, i64)> = edge[i]
-                .1
-                .iter()
-                .copied()
-                .filter(|n| !now.contains(n))
-                .collect();
-            new.sort_unstable();
-            // (Never a cell of the next lip down: its crest or wall is its own plan's.)
-            new.sort_by_key(|n| col(*n).is_some_and(|l| l.band));
-            let keep = want - now.len();
-            for &n in new.iter().skip(keep) {
-                block.insert(n);
-            }
-            taken.push(i);
-        }
-        for &i in &taken {
-            crest.insert(edge[i].0);
-        }
-        let pours = union(&taken).len() - block.len();
-        let room = union(&(0..edge.len()).collect::<Vec<_>>()).len();
-        // Behind each, up the band to the pool above: the band's columns farther above the step.
-        let edges: dwell_world::hash::HashSet<(i64, i64)> = edge.iter().map(|e| e.0).collect();
-        let starts: Vec<(i64, i64)> = crest.iter().copied().collect();
-        for s in starts {
-            let mut at = s;
-            for _ in 0..64 {
-                let here = col(at).map_or(f64::INFINITY, |l| l.above);
-                let next = sides
-                    .iter()
-                    .map(|&(dx, dz)| (at.0 + dx, at.1 + dz))
-                    .filter(|n| seen.contains(n) && !edges.contains(n))
-                    .filter_map(|n| col(n).map(|l| (n, l.above)))
-                    .filter(|&(_, a)| a > here)
-                    .max_by(|a, b| a.1.total_cmp(&b.1).then(b.0.cmp(&a.0)));
-                let Some((n, _)) = next else {
-                    break;
-                };
-                crest.insert(n);
-                at = n;
-            }
-        }
-        (
-            band,
-            LipPlan {
-                crest,
-                block,
-                pours,
-                want,
-                room,
-            },
-        )
-    }
-
     fn base_column(&self, x: i64, z: i64, cell: i64) -> Column {
+        self.base_column_with(x, z, cell, true)
+    }
+
+    /// `base_column`, or with `beds` false the ground with the rivers' valleys but no beds: a
+    /// channel's columns take the valley floor at its banks' height (no bed cut, no lips, no water
+    /// drawn), for the water surface grid's prototype (Phase 53 G0, ADR 0060).
+    fn base_column_with(&self, x: i64, z: i64, cell: i64, beds: bool) -> Column {
         if !inside_world_disc(x, z) {
             return Column {
                 outside: true,
@@ -1365,7 +1008,7 @@ impl TerrainGenerator {
         }
         if let Some(r) = &river {
             let edge = r.d - r.half;
-            if edge < 0.0 {
+            if edge < 0.0 && beds {
                 // The channel: its bed below the water, deepest on the centreline.
                 let f = r.d / r.half;
                 let depth = (r.depth * (1.0 - f * f)).max(S.river_min_depth);
@@ -1377,48 +1020,33 @@ impl TerrainGenerator {
                 if water != Water::Lake {
                     water = Water::River;
                     level = r.level;
-                    // Its step's lip: a wall over the water but for the gap that passes the
-                    // river's discharge with the pool a full row over its sill (ADR 0057).
-                    let lip = if cell == 1 {
-                        self.lip_role(x, z)
-                    } else {
-                        Lip::None
+                    // No lips (BUGS.md #29, Phase 53 G1a): a step is the water falling a row from
+                    // one pool to the next, the bed under each at its own depth; the water grid
+                    // rests what is drawn (WATER_SURFACE_GRID.md §2b), so nothing holds a pool up.
+                    // A chute (G2, ADR 0059): steps too close for pools; its bed a row under its
+                    // surface, dry but for a stream running down its middle as wide as its river's
+                    // flow's cells (on any heading).
+                    // So is a column of a river standing two rows or more over another's water
+                    // beside it (where a river joins one lower than it reaches): no wall of water.
+                    let row = surface_row((SEA_LEVEL_M + r.level) as f32);
+                    let over_another = || {
+                        [(1, 0), (-1, 0), (0, 1), (0, -1)]
+                            .into_iter()
+                            .any(|(dx, dz)| {
+                                self.river_row_at(x + dx, z + dz)
+                                    .is_some_and(|(n, k)| n != r.river && k <= row - 2)
+                            })
                     };
-                    on_lip = lip != Lip::None;
-                    match lip {
-                        Lip::Wall => {
-                            h = drawn + f64::from(S.river_lip_rise) * CELL_H;
-                            water = Water::None;
-                            level = 0.0;
-                        }
-                        // (Its own water a row under the lip's: a row higher, as high as it.)
-                        Lip::Block => {
-                            h = drawn + f64::from(S.river_lip_rise + 1) * CELL_H;
-                            water = Water::None;
-                            level = 0.0;
-                        }
-                        // The gap's bed is the sill, one row under the water's top: the river
-                        // pours off its edge, and below the water the pools meet only its side.
-                        Lip::Crest => h = drawn - CELL_H,
-                        // A chute (G2, ADR 0059): steps too close for pools; its bed a row under
-                        // its surface, dry but for a stream running down its middle as wide as its
-                        // river's lip cells (on any heading), carried by the pools' lips above it.
-                        Lip::None
-                            if cell == 1
-                                && self
-                                    .river_rows(r.river)
-                                    .steep
-                                    .contains(&surface_row((SEA_LEVEL_M + r.level) as f32)) =>
-                        {
-                            h = drawn - CELL_H;
-                            water = Water::None;
-                            level = 0.0;
-                            on_lip = true;
-                            let faces = (r.dir.0.abs() + r.dir.1.abs()).max(1.0);
-                            let half = (0.5 * f64::from(lip_cells(r.q)) / faces).max(0.71);
-                            stream = r.d < half;
-                        }
-                        Lip::None => {}
+                    if cell == 1
+                        && (self.river_rows(r.river).steep.contains(&row) || over_another())
+                    {
+                        h = drawn - CELL_H;
+                        water = Water::None;
+                        level = 0.0;
+                        on_lip = true;
+                        let faces = (r.dir.0.abs() + r.dir.1.abs()).max(1.0);
+                        let half = (0.5 * f64::from(lip_cells(r.q)) / faces).max(0.71);
+                        stream = r.d < half;
                     }
                 }
             } else if water != Water::Lake {
@@ -1452,7 +1080,7 @@ impl TerrainGenerator {
         // so no open cell lies below the water beside it, nor a ramp's open part in it (ADR 0057).
         let near_water = river.as_ref().is_some_and(|r| r.d - r.half < 2.0)
             || lake.as_ref().is_some_and(|l| l.sdf > -2.0);
-        if cell == 1 && water == Water::None && near_water {
+        if beds && cell == 1 && water == Water::None && near_water {
             let top = [(1, 0), (-1, 0), (0, 1), (0, -1)]
                 .into_iter()
                 .filter_map(|(dx, dz)| self.water_row_at(x + dx, z + dz))
@@ -1692,6 +1320,49 @@ impl TerrainGenerator {
                 }
             }
         }
+    }
+
+    /// The ground at face-local column (x, z) with no water shaped into it: the map's eroded height
+    /// and the fine detail, without the river cut, valley, levees or lake shore (`base_column`'s first
+    /// two layers); none outside the world's disc. For the water surface grid's prototype (Phase 53
+    /// G0: rivers without beds, ADR 0060); the chunk path doesn't use it.
+    pub fn ground_without_water(&self, x: i32, z: i32) -> Option<f32> {
+        let (x, z) = (i64::from(x), i64::from(z));
+        if !inside_world_disc(x, z) {
+            return None;
+        }
+        let (base, _, _) = self.map.height_at(x as f64, z as f64);
+        let amplitude = S.detail_amplitude
+            + (S.detail_mountain_amplitude - S.detail_amplitude)
+                * f64::from(smooth_step(
+                    S.detail_mountain_from as f32,
+                    S.detail_mountain_full as f32,
+                    base as f32,
+                ));
+        let kept = octaves_resolved(S.detail_wavelength, S.detail_octaves, 1);
+        let detail = if kept == 0 {
+            0.0
+        } else {
+            2.0 * amplitude
+                * f64::from(fbm2(
+                    self.detail_seed,
+                    x + self.offset_x,
+                    z + self.offset_z,
+                    S.detail_wavelength,
+                    S.detail_octaves,
+                    Some(kept),
+                ))
+        };
+        let h = base + detail;
+        Some(((SEA_LEVEL_M + h).max(dwell_world::MIDPLANE_M + dwell_world::CORE_M)) as f32)
+    }
+
+    /// The ground at face-local column (x, z) with the rivers' valleys but no beds (no cut, lips or
+    /// drawn river water; lake beds as generated): the valley floor runs through where the channel
+    /// was, at its banks' height. For the water surface grid's prototype (Phase 53 G0, ADR 0060).
+    pub fn ground_with_valleys(&self, x: i32, z: i32) -> Option<f32> {
+        let c = self.base_column_with(i64::from(x), i64::from(z), 1, false);
+        (!c.outside).then_some(c.height)
     }
 
     /// A column with exactly the chunk path's arithmetic (spawn, tools, tests).
@@ -3018,24 +2689,23 @@ fn smooth_min(a: f64, b: f64, k: f64) -> f64 {
     b + (a - b) * h - k * h * (1.0 - h)
 }
 
-#[path = "pool_graph.rs"]
-mod pool_graph;
-pub use pool_graph::*;
+#[path = "river_rows.rs"]
+mod river_rows;
+pub use river_rows::*;
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// Owner, 2026-11-04 ("Exact lips in generator", ADR 0058): with nothing coming in unseen,
-    /// each lip must pass exactly what the lip above it does, or the pool between settles off
-    /// its drawn level when found. Every lip near rivers of seeds 0 and 1 pours into exactly its
-    /// cells (`lip_cells` of its river's flow, the same down to a junction), where its band is
-    /// beside that many. Red before: lips sized column by column by their distance from the
-    /// centreline came out a cell wider or narrower on diagonals.
+    /// BUGS.md #29 (owner, 2026-11-05: "dirt walls extending into the river, usually at step
+    /// downs"): the lips stood the channel's columns at a step `lipRise` rows over the water. Near
+    /// rivers of seeds 0 and 1 no column inside a river's channel stands dry over its water but a
+    /// chute's (a stream down a dry bed a row under its surface). Red before: the lips' walls.
     #[test]
-    fn every_lip_pours_into_exactly_its_cells() {
+    fn no_dry_wall_stands_in_a_rivers_channel() {
+        // face-a-only: the generator's columns are face-local; face B is generated by the same
+        // code through its mirror.
         let mut checked = 0;
-        let mut short = 0;
         for seed in [0u64, 1] {
             let g = TerrainGenerator::new(seed);
             let mut picks = Vec::new();
@@ -3047,33 +2717,43 @@ mod tests {
                 }
             }
             picks.truncate(60);
-            let mut seen: dwell_world::hash::HashSet<usize> = Default::default();
             for (px, pz) in picks {
                 for dx in -12..=12 {
                     for dz in -12..=12 {
                         let (x, z) = (px + dx, pz + dz);
-                        if !g.lip_col(x, z).is_some_and(|l| l.band) {
+                        // the river's channel here (as the column finds it), off the sea's level
+                        let (wx, wz) = g.warp(
+                            g.meander_seeds,
+                            x,
+                            z,
+                            S.river_meander,
+                            S.river_meander_wavelength,
+                        );
+                        let Some(r) = g.map.channels.query(wx, wz, 0.0, f64::INFINITY) else {
+                            continue;
+                        };
+                        if r.d >= r.half || r.level <= CELL_H {
                             continue;
                         }
-                        let plan = g.lip_plan(x, z);
-                        if !seen.insert(Arc::as_ptr(&plan) as usize) || plan.room == 0 {
-                            continue;
+                        let row = surface_row((SEA_LEVEL_M + r.level) as f32);
+                        if g.river_rows(r.river).steep.contains(&row) {
+                            continue; // a chute's dry bed, a row under its surface
+                        }
+                        let col = g.base_column(x, z, 1);
+                        if col.water == Water::Lake {
+                            continue; // in a lake, the lake's surface
                         }
                         checked += 1;
-                        if plan.room >= plan.want {
-                            assert_eq!(plan.pours, plan.want, "seed {seed}: lip at {x} {z}");
-                        } else {
-                            short += 1;
-                        }
+                        assert!(
+                            top_voxel(col.height) < row,
+                            "seed {seed}: ({x}, {z}) stands at row {} over its river's water at row {row}",
+                            top_voxel(col.height)
+                        );
                     }
                 }
             }
         }
-        assert!(checked >= 30, "lips checked: {checked}");
-        assert!(
-            short * 10 <= checked,
-            "{short} of {checked} lips too narrow for their flow"
-        );
+        assert!(checked >= 1000, "channel columns checked: {checked}");
     }
 
     #[test]

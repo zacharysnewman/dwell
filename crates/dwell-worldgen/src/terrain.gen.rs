@@ -38,8 +38,6 @@ pub const SURFACE: Surface = Surface {
     river_reach_per_width: 2.0,
     river_meander: 5.0,
     river_meander_wavelength: 96,
-    river_lip_reach: 1.5,
-    river_lip_rise: 2,
     river_lod_width: 0.75,
     river_lod_min_share: 0.125,
     river_lod_max_cell: 128,

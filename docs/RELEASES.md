@@ -13,7 +13,7 @@
    tags**.
 2. **Worlds record the app version that saved them** and open by default in their
    **compatibility line** (§6): that version or any later compatible one (SemVer, §3). A newer
-   line opens one only after a warning the player confirms (owner, 2026-11-06, ADR 0060; §5
+   line opens one only after a warning the player confirms (owner, 2026-11-06, ADR 0061; §5
    "Older worlds in newer builds"); an older build never does.
 3. **The source stays public, under a restrictive license.** A split into a private source repo
    and a public deploy repo was considered and dropped (§2): a license covers what the split was
@@ -266,14 +266,14 @@ networking, loaded from its fixed-name `tools.js`. Older builds (0.1.0, 0.10.0�
 start from these routes and return to `/dwell/` on Quit; their own menus are never shown. No new
 infrastructure: everything is served from Pages, same origin.
 
-### Older worlds in newer builds **[built, 0.48.2]** ([ADR 0060](./adr/0060-older-worlds-in-newer-builds.md))
+### Older worlds in newer builds **[built, 0.49.1]** ([ADR 0061](./adr/0061-older-worlds-in-newer-builds.md))
 
 Owner (2026-11-06): *"make it so I can still play older version worlds with newer versions it just
 shows a warning you have to confirm so it's obvious when it's happening."*
 
 - **Choosing the build:** Play on the main menu still opens a world in the newest build of its own
   line. To play it in a newer line, pick that build on the version page (`?versions`); its row lists
-  the older line's worlds it opens "with a warning" (builds from `UPGRADE_SINCE`, 0.48.2), and its
+  the older line's worlds it opens "with a warning" (builds from `UPGRADE_SINCE`, 0.49.1), and its
   pinned menu (`?version=`) sends Play to it.
 - **The rule:** both stable releases, the build newer and on another line (`canUpgradeWorld`,
   `can_upgrade_world`, the vectors' `upgrade` lines). Never a newer world, a dev build's, or a save

@@ -79,8 +79,8 @@ follows the light; and the angle comes from the server's tick, so every player s
 
 **Today (built):** a world records the app version that saved it and opens in builds of the same
 compatibility line — that version or a later compatible one ([`RELEASES.md`](./RELEASES.md) §6) —
-and, since 0.48.2, in a newer line after a warning, as itself or a copy, its unexplored land on the
-newer terrain (ADR 0060). What remains of the idea is real migration: aliases and upgrade rules
+and, since 0.49.1, in a newer line after a warning, as itself or a copy, its unexplored land on the
+newer terrain (ADR 0061). What remains of the idea is real migration: aliases and upgrade rules
 for renamed or removed blocks, and blending terrain at the border.
 
 **Idea:** let a world move forward across a breaking change, to a newer compatibility line — upgrade its file (block-registry aliases and

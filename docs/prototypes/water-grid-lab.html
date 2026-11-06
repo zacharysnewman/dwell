@@ -1,0 +1,1888 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Water Grid Lab</title>
+<style>
+  :root {
+    --bg: #f4f2ec; --panel: rgba(255,255,255,0.92); --ink: #1f2328; --muted: #5d6470;
+    --line: #d9d5cb; --accent: #2f6fb3; --accent-ink: #ffffff; --chip: #ebe7dd;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #15181c; --panel: rgba(28,32,37,0.92); --ink: #e8e6e1; --muted: #a2a8b1;
+      --line: #343a42; --accent: #5b9be0; --accent-ink: #0d1117; --chip: #252a31;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #15181c; --panel: rgba(28,32,37,0.92); --ink: #e8e6e1; --muted: #a2a8b1;
+    --line: #343a42; --accent: #5b9be0; --accent-ink: #0d1117; --chip: #252a31;
+  }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink);
+    font: 13px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; overflow: hidden; }
+  #view { position: fixed; inset: 0; }
+  #panel { position: fixed; top: 12px; left: 12px; width: 300px; max-width: calc(100vw - 32px);
+    max-height: calc(100vh - 24px); overflow: auto; background: var(--panel); border: 1px solid var(--line);
+    border-radius: 10px; padding: 12px 14px; box-sizing: border-box; backdrop-filter: blur(6px); }
+  h1 { font-size: 15px; margin: 0 0 2px; }
+  .sub { color: var(--muted); margin: 0 0 10px; }
+  .row { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 10px; }
+  button { font: inherit; border: 1px solid var(--line); background: var(--chip); color: var(--ink);
+    border-radius: 7px; padding: 5px 9px; cursor: pointer; }
+  button.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  label { display: flex; align-items: center; gap: 8px; margin: 4px 0; }
+  input[type=range] { flex: 1; }
+  .k { color: var(--muted); }
+  #stats { font-variant-numeric: tabular-nums; display: grid; grid-template-columns: auto auto; gap: 2px 10px; margin-top: 6px; }
+  #scene-note { color: var(--muted); margin: 0 0 8px; min-height: 2.8em; }
+  .sec { font-weight: 600; margin-top: 10px; }
+  canvas { touch-action: none; display: block; }
+  #panel-head { display: flex; align-items: center; gap: 8px; }
+  #panel-head h1 { flex: 1; margin: 0; }
+  #fold { display: none; }
+  #modes { position: fixed; top: 12px; right: 12px; display: flex; gap: 0; background: var(--panel);
+    border: 1px solid var(--line); border-radius: 10px; padding: 4px; backdrop-filter: blur(6px); }
+  #modes button { border: none; background: transparent; padding: 8px 14px; font-weight: 600; min-height: 40px; }
+  #modes button.on { background: var(--accent); color: var(--accent-ink); }
+  #hint { position: fixed; top: 64px; right: 12px; max-width: 240px; color: var(--muted); background: var(--panel);
+    border: 1px solid var(--line); border-radius: 8px; padding: 6px 9px; font-size: 12px; }
+  @media (max-width: 640px), (orientation: portrait) {
+    #panel { width: auto; left: max(16px, env(safe-area-inset-left)); right: max(16px, env(safe-area-inset-right)); top: auto;
+      bottom: max(12px, env(safe-area-inset-bottom)); max-height: 46vh; max-width: none; padding: 10px 12px; }
+    #fold { display: inline-block; }
+    #panel.folded #panel-body { display: none; }
+    #modes { left: 50%; right: auto; transform: translateX(-50%); top: max(12px, env(safe-area-inset-top)); }
+    #modes button { padding: 10px 18px; }
+    #hint { left: 16px; right: 16px; max-width: none; top: calc(max(12px, env(safe-area-inset-top)) + 60px); text-align: center; }
+    button { padding: 8px 11px; }
+    .intro { display: none; }
+  }
+</style>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<div id="view"></div>
+<div id="modes" role="group" aria-label="Mode">
+  <button id="m-camera" class="on">Camera</button>
+  <button id="m-edit">Edit</button>
+</div>
+<div id="hint"></div>
+<div id="panel">
+  <div id="panel-head"><h1>Water Grid Lab</h1><button id="fold" aria-expanded="true">Hide</button></div>
+  <div id="panel-body">
+  <p class="sub intro" id="intro-cell" style="display:none">Cellular water: each voxel (1 × ½ × 1 m) holds a fraction of water and passes it down, sideways and, when pressed over full, up. Fully 3D: caves, pipes, overhangs, falls. Springs (cyan) hold their cell full; sinks (the edge) remove water.</p>
+  <p class="sub intro" id="intro-grid">Surface grid: Dwell's candidate water model: a depth on each 1 m ground column, moving to its neighbours across their shared faces (shallow-water flow: it needs depth to move). Springs hold their cell full; water reaching the far edge is removed. Ground steps are ½ m.</p>
+  <p class="sub intro" id="intro-graph" style="display:none">Water graph: the ground is cut into pools (flats: a lake with its rim, a river's stretch between two steps, a bank; cut into 4 m pieces by default), each holding a volume, its level from that volume. Each face between two pools carries a discharge by the grid's own law (pushed by the pools' levels, slowed by friction, through the water over the crest, capped at critical flow): a fall where the lower pool is below the crest (flowing water, drawn as curtains), a drowned crest where both stand over it. Only volumes and face discharges are stepped; water is conserved exactly. "Every column" makes it the grid.</p>
+  <p class="sub intro" id="intro-steady" style="display:none">Steady solve: no water is stepped through time. From the ground and the springs' discharge (m³/s), a priority-flood finds every column's spill level, a lake's crest (orange) and where each column drains; the discharge is summed downhill; a lake stands at its crest plus the head its outflow needs, a stream at the depth that carries its flow. A dry pit stays dry. Edits re-solve at once (the change is eased in, not simulated).</p>
+  <div class="sec">Surface grid (one water surface per column)</div>
+  <div class="row" id="scenes"></div>
+  <div class="row" id="solver" role="group" aria-label="Solver"><button data-s="sim" class="on">Simulate (grid)</button><button data-s="steady">Steady solve</button><button data-s="graph">Water graph</button></div>
+  <div class="sec">Cellular (3D, a fraction of water per voxel)</div>
+  <div class="row" id="cscenes"></div>
+  <p id="scene-note"></p>
+  <div class="sec">Edit tool</div>
+  <div class="row" id="tools"></div>
+  <div class="row">
+    <button id="play" class="on">Pause</button>
+    <button id="reset">Reset scene</button>
+  </div>
+  <label><span class="k">Speed</span><input id="speed" type="range" min="1" max="60" value="20"><span id="speed-v"></span></label>
+  <label class="grid-only"><input id="round" type="checkbox"> Draw levels rounded to ½ m blocks</label>
+  <label class="grid-only"><input id="speedcol" type="checkbox" checked> Colour water by its speed</label>
+  <label class="grid-only"><input id="sleepOn" type="checkbox" checked> Simulate: sleep settled chunks (8 × 8), wake them in cascades</label>
+  <label class="grid-only"><input id="showChunks" type="checkbox" checked> Simulate: outline awake chunks, tint pools</label>
+  <label class="grid-only"><input id="poolsOn" type="checkbox" checked> Simulate: still water as pools (one level each, green)</label>
+  <label class="grid-only"><span class="k">Simulate θ</span><select id="theta"><option value="1" selected>1 (plain)</option><option value="0.95">0.95 (damped: chunks resleep)</option><option value="0.9">0.9</option></select></label>
+  <label class="grid-only"><input id="flowfield" type="checkbox" checked> Show the flow field (moving streaks)</label>
+  <label class="grid-only"><span class="k">Graph law</span><select id="graphLaw"><option value="face" selected>Face law (the grid's)</option><option value="weir">Weir</option></select></label>
+  <label class="grid-only"><span class="k">Graph pools</span><select id="graphTile"><option value="0">Whole flats</option><option value="4" selected>Flats cut 4 m</option><option value="2">Flats cut 2 m</option><option value="1">Every column (= the grid)</option></select></label>
+  <label class="grid-only"><input id="graphShape" type="checkbox" checked> Water graph, weir law: shape pools by the steady solve</label>
+  <label class="grid-only"><input id="drawPools" type="checkbox" checked> Draw pools (still water)</label>
+  <label class="grid-only"><input id="drawFalls" type="checkbox" checked> Draw falls (flowing water)</label>
+  <label class="grid-only"><input id="crests" type="checkbox" checked> Mark lakes' crests (steady solve)</label>
+  <label class="cell-only" style="display:none"><span class="k">Cutaway</span><input id="cut" type="range" min="0" max="32" value="0"><span id="cut-v">off</span></label>
+  <div class="sec">Numbers</div>
+  <div id="stats"></div>
+  <p class="sub" style="margin-top:8px">Camera mode: drag to turn, right-drag or two fingers to pan, wheel or pinch to zoom. Edit mode: click or drag on the ground to use the tool; right-drag or two fingers still turn and zoom. Keys: C camera, E edit, hold Space to turn while editing. The native Rust version of this model costs ~8 ns per column per step.</p>
+  </div>
+</div>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// ---- The model (the same as crates/dwell-sim/src/watergrid.rs) ----
+// Local-inertial shallow water (Bates et al. 2010, LISFLOOD-FP): each face carries a discharge per
+// metre of width q (m²/s), pushed by the slope of the water surface across it, slowed by bed
+// friction (Manning), through the depth that stands over the higher of its two beds — so flow
+// needs depth, and water over a dam's top stands as deep as it must to pass what comes.
+const W = 96, H = 48, CELL = 1, G = 9.81, MANNING = 0.03, DT = 0.1, DRY = 1e-4;
+const N = W * H;
+let ground = new Float32Array(N), depth = new Float32Array(N);
+let qx = new Float32Array(N), qz = new Float32Array(N); // across each column's +x and +z faces
+const nqx = new Float32Array(N), nqz = new Float32Array(N), scale = new Float32Array(N);
+let sources = [], sinks = []; // springs: [column, depth held] (an infinite source); sinks: columns emptied
+let brought = 0, taken = 0, waterTime = 0;
+const at = (x, z) => z * W + x;
+
+// THETA < 1: de Almeida et al. (2012)'s θ-weighting — a face's previous discharge is blended with
+// its two neighbours' along the same line (qa, qb), which damps the scheme's oscillation in deep, fast
+// water. 1 = the plain scheme. Measured in this lab: at 0.95 an edit's slosh (±0.3 mm across the
+// channel, never fading at 1) dies, so chunks go back to sleep (the dam: 85 s, against never), and
+// the river and the low dam settle within 0.01 mm of 1. But on steep, fast flow it settles elsewhere
+// (terraces up to 69 mm, the flood's spring 240 mm): in non-uniform flow the blend is a bias, not
+// only a damper.
+let THETA = 1;
+function face(a, b, q, dt, qa = q, qb = q) {
+  const ea = ground[a] + depth[a], eb = ground[b] + depth[b];
+  const h = Math.max(ea, eb) - Math.max(ground[a], ground[b]);
+  if (h <= DRY) return 0;
+  const friction = q === 0 ? 1 : 1 + G * dt * MANNING * MANNING * Math.abs(q) / Math.pow(h, 7 / 3);
+  const qt = THETA * q + (1 - THETA) * 0.5 * (qa + qb);
+  const nq = (qt - G * h * dt * (eb - ea) / CELL) / friction;
+  const limit = h * Math.sqrt(G * h); // no faster than critical flow over the face
+  return Math.max(-limit, Math.min(limit, nq));
+}
+function substep(dt) {
+  if (((SLEEP && SKIP_SLEEPING) || POOLS) && !sleepOff) return substepSkip(dt);
+  const area = CELL * CELL;
+  for (const [i, held] of sources) if (depth[i] < held) { brought += (held - depth[i]) * area; depth[i] = held; }
+  // Momentum: each face's discharge by the face law — when settled chunks sleep, only for the faces
+  // of awake chunks (and the faces they share with sleeping neighbours); a sleeping chunk's faces keep
+  // their discharge.
+  const sleepOn = SLEEP && !sleepOff;
+  facesDone = 0;
+  if (!sleepOn) {
+    for (let z = 0; z < H; z++) for (let x = 0; x < W; x++) {
+      const i = z * W + x;
+      nqx[i] = x + 1 < W && (depth[i] > 0 || depth[i + 1] > 0) ? face(i, i + 1, qx[i], dt, x > 0 ? qx[i - 1] : qx[i], x + 2 < W ? qx[i + 1] : qx[i]) : 0;
+      nqz[i] = z + 1 < H && (depth[i] > 0 || depth[i + W] > 0) ? face(i, i + W, qz[i], dt, z > 0 ? qz[i - W] : qz[i], z + 2 < H ? qz[i + W] : qz[i]) : 0;
+    }
+    facesDone = 2 * N;
+  } else {
+    nqx.set(qx); nqz.set(qz);
+    const fx = (i, x) => { // the +x face of column i
+      if (x + 1 >= W) { nqx[i] = 0; return; }
+      nqx[i] = depth[i] > 0 || depth[i + 1] > 0 ? face(i, i + 1, qx[i], dt, x > 0 ? qx[i - 1] : qx[i], x + 2 < W ? qx[i + 1] : qx[i]) : 0; facesDone++;
+      noteFace(chunkOf[i], chunkOf[i + 1], Math.abs(nqx[i] - qx[i]));
+    };
+    const fz = (i, z) => { // the +z face of column i
+      if (z + 1 >= H) { nqz[i] = 0; return; }
+      nqz[i] = depth[i] > 0 || depth[i + W] > 0 ? face(i, i + W, qz[i], dt, z > 0 ? qz[i - W] : qz[i], z + 2 < H ? qz[i + W] : qz[i]) : 0; facesDone++;
+      noteFace(chunkOf[i], chunkOf[i + W], Math.abs(nqz[i] - qz[i]));
+    };
+    for (let c = 0; c < NCH; c++) {
+      if (!awake[c]) continue;
+      const cx = c % CWN, cz = (c / CWN) | 0, x0 = cx * CHUNK, z0 = cz * CHUNK, x1 = Math.min(W, x0 + CHUNK), z1 = Math.min(H, z0 + CHUNK);
+      for (let z = z0; z < z1; z++) for (let x = x0; x < x1; x++) { const i = z * W + x; fx(i, x); fz(i, z); }
+      // The faces it shares with a sleeping chunk to its −x or −z side (owned by that chunk's columns).
+      if (x0 > 0 && !awake[c - 1]) for (let z = z0; z < z1; z++) fx(z * W + x0 - 1, x0 - 1);
+      if (z0 > 0 && !awake[c - CWN]) for (let x = x0; x < x1; x++) fz((z0 - 1) * W + x, z0 - 1);
+    }
+  }
+  for (let z = 0; z < H; z++) for (let x = 0; x < W; x++) {
+    const i = z * W + x;
+    let out = Math.max(0, nqx[i]) + Math.max(0, nqz[i]);
+    if (x > 0) out += Math.max(0, -nqx[i - 1]);
+    if (z > 0) out += Math.max(0, -nqz[i - W]);
+    out *= CELL * dt;
+    const have = depth[i] * area;
+    scale[i] = out > have ? have / out : 1;
+  }
+  for (let z = 0; z < H; z++) for (let x = 0; x < W; x++) {
+    const i = z * W + x;
+    nqx[i] *= nqx[i] > 0 ? scale[i] : (x + 1 < W ? scale[i + 1] : 1);
+    nqz[i] *= nqz[i] > 0 ? scale[i] : (z + 1 < H ? scale[i + W] : 1);
+  }
+  const k = CELL * dt / area;
+  for (let z = 0; z < H; z++) for (let x = 0; x < W; x++) {
+    const i = z * W + x;
+    let net = -nqx[i] - nqz[i];
+    if (x > 0) net += nqx[i - 1];
+    if (z > 0) net += nqz[i - W];
+    depth[i] = Math.max(0, depth[i] + net * k);
+    // How fast its level moves: a sleeping chunk whose level starts to move wakes (a slowly filling
+    // lake never sleeps: more comes in than goes out).
+    if (sleepOn) { const c = chunkOf[i], rate = Math.abs(net) * CELL / area; if (awake[c]) { if (rate > chunkDiv[c]) chunkDiv[c] = rate; } else if (rate > SLEEP_DIV) wakeSoon[c] = 1; }
+  }
+  qx.set(nqx); qz.set(nqz);
+  // Sinks: 'empty' (each step the column is emptied: the lab's original edge, which keeps sending
+  // small waves upstream) or 'free' (a free outfall: the column drains at critical flow for its depth).
+  for (const i of sinks) {
+    const out = FREE_OUTFALL ? Math.min(depth[i], SQRT_G * depth[i] ** 1.5 * dt / CELL) : depth[i];
+    taken += out * area; depth[i] -= out;
+  }
+  waterTime += dt;
+  if (sleepOn) settleChunks();
+}
+// ---- Sleeping chunks: settled water stops being stepped, and wakes in a cascade when it changes ----
+// The grid is cut into CHUNK × CHUNK chunks. A chunk sleeps once, for SLEEP_CALM substeps running,
+// none of its faces' discharges changed by more than SLEEP_DQ and none of its columns' levels moved
+// faster than SLEEP_DIV: water may run through it (a steady river), but nothing about it is changing.
+// A sleeping chunk's faces keep their discharges; every column still adds up its inflow and outflow,
+// so water is conserved exactly. It wakes on an edit nearby, when its own water starts to rise or
+// fall, or when an awake neighbour computes a discharge across their shared faces that differs from
+// the one it froze — so a change cascades upstream (a dam's backwater) and downstream (a diversion's
+// lost flow), and stops where it no longer changes anything.
+const CHUNK = 8, CWN = Math.ceil(W / CHUNK), CHN = Math.ceil(H / CHUNK), NCH = CWN * CHN;
+const SLEEP_DQ = 1e-4, SLEEP_DIV = 1e-5, SLEEP_CALM = 20;
+let SLEEP = true, sleepOff = false, facesDone = 0, FREE_OUTFALL = false;
+const chunkOf = new Int32Array(N);
+for (let i = 0; i < N; i++) chunkOf[i] = (((i / W) | 0) / CHUNK | 0) * CWN + ((i % W) / CHUNK | 0);
+const lastDq = new Float64Array(NCH), lastDiv = new Float64Array(NCH);
+// Diagnostics: where each chunk's worst face (2·column + axis) and fastest-moving column were, and why chunks woke.
+const dqAt = new Int32Array(NCH).fill(-1), divAt = new Int32Array(NCH).fill(-1), lastDqAt = new Int32Array(NCH), lastDivAt = new Int32Array(NCH), wakeLog = [];
+const awake = new Uint8Array(NCH).fill(1), calm = new Int32Array(NCH), chunkDq = new Float64Array(NCH), chunkDiv = new Float64Array(NCH), wakeSoon = new Uint8Array(NCH);
+function noteFace(ci, cj, dq, f = -1) {
+  if (awake[ci]) { if (dq > chunkDq[ci]) { chunkDq[ci] = dq; dqAt[ci] = f; } } else if (dq > SLEEP_DQ) wakeSoon[ci] = 1;
+  if (awake[cj]) { if (dq > chunkDq[cj]) { chunkDq[cj] = dq; dqAt[cj] = f; } } else if (dq > SLEEP_DQ) wakeSoon[cj] = 1;
+}
+function settleChunks() {
+  for (let c = 0; c < NCH; c++) {
+    if (awake[c]) {
+      if (chunkDq[c] < SLEEP_DQ && chunkDiv[c] < SLEEP_DIV) { if (++calm[c] >= SLEEP_CALM) awake[c] = 0; } else calm[c] = 0;
+    } else if (wakeSoon[c]) { awake[c] = 1; calm[c] = 0; }
+    lastDq[c] = chunkDq[c]; lastDiv[c] = chunkDiv[c];
+    chunkDq[c] = 0; chunkDiv[c] = 0; wakeSoon[c] = 0;
+  }
+}
+// ---- Skipping sleeping chunks entirely (SKIP_SLEEPING) ----
+// A step then touches only awake chunks' columns and faces (and the faces they share with sleeping
+// neighbours), plus one number per sleeping chunk. A sleeping chunk isn't perfectly balanced (a
+// leftover under the sleep threshold, and its shared faces may drift under the waking threshold), so
+// each keeps its imbalance rate (m³/s: its columns' net flow when it fell asleep, updated whenever an
+// awake neighbour changes a face they share) and the volume that rate has added up to since; waking,
+// it spreads that volume back over its columns. Water stays exact.
+const lostLog = [];
+let SKIP_SLEEPING = true, owedLost = 0, substepCount = 0, wakes = 0, sleeps = 0;
+const rate = new Float64Array(NCH), owed = new Float64Array(NCH), chunkMax = new Float64Array(NCH);
+const awakeList = new Int32Array(NCH), faceList = new Int32Array(4 * N);
+const boxX0 = new Int32Array(NCH), boxZ0 = new Int32Array(NCH), boxX1 = new Int32Array(NCH), boxZ1 = new Int32Array(NCH);
+const chunkArea = new Float64Array(NCH);
+for (let c = 0; c < NCH; c++) { const x0 = (c % CWN) * CHUNK, z0 = ((c / CWN) | 0) * CHUNK; chunkArea[c] = (Math.min(W, x0 + CHUNK) - x0) * (Math.min(H, z0 + CHUNK) - z0); }
+function chunkBox(c) { const x0 = (c % CWN) * CHUNK, z0 = ((c / CWN) | 0) * CHUNK; return [x0, z0, Math.min(W, x0 + CHUNK), Math.min(H, z0 + CHUNK)]; }
+function substepSkip(dt) {
+  for (const [i, held] of sources) if (depth[i] < held) { brought += held - depth[i]; depth[i] = held; }
+  let nA = 0;
+  for (let c = 0; c < NCH; c++) if (awake[c]) {
+    const x0 = (c % CWN) * CHUNK, z0 = ((c / CWN) | 0) * CHUNK;
+    awakeList[nA] = c; boxX0[nA] = x0; boxZ0[nA] = z0; boxX1[nA] = Math.min(W, x0 + CHUNK); boxZ1[nA] = Math.min(H, z0 + CHUNK); nA++;
+  }
+  // 1. Momentum, for the faces awake chunks touch (a face id is 2·column + 0 for +x, 1 for +z).
+  let nF = 0;
+  for (let a = 0; a < nA; a++) {
+    const c = awakeList[a], x0 = boxX0[a], z0 = boxZ0[a], x1 = boxX1[a], z1 = boxZ1[a];
+    const xs = x0 > 0 && !awake[c - 1] ? x0 - 1 : x0, zs = z0 > 0 && !awake[c - CWN] ? z0 - 1 : z0;
+    for (let z = zs; z < z1; z++) for (let x = xs; x < x1; x++) {
+      const i = z * W + x, inX = x >= x0, inZ = z >= z0;
+      const pi = poolOf[i];
+      if (inZ && x + 1 < W && pi < 0 && poolOf[i + 1] < 0) { // the +x face (also the shared face from a sleeping −x neighbour); a pool's faces are its own
+        nqx[i] = depth[i] > 0 || depth[i + 1] > 0 ? face(i, i + 1, qx[i], dt, x > 0 ? qx[i - 1] : qx[i], x + 2 < W ? qx[i + 1] : qx[i]) : 0;
+        faceList[nF++] = 2 * i;
+      }
+      if (inX && z + 1 < H && pi < 0 && poolOf[i + W] < 0) {
+        nqz[i] = depth[i] > 0 || depth[i + W] > 0 ? face(i, i + W, qz[i], dt, z > 0 ? qz[i - W] : qz[i], z + 2 < H ? qz[i + W] : qz[i]) : 0;
+        faceList[nF++] = 2 * i + 1;
+      }
+    }
+  }
+  if (pools.length) poolMomentum(dt);
+  facesDone = nF + poolFaces.length;
+  // 2. The outflow limiter, for awake columns (a sleeping column's scale is 1).
+  const kdt = CELL * dt;
+  for (let a = 0; a < nA; a++) {
+    const x0 = boxX0[a], z0 = boxZ0[a], x1 = boxX1[a], z1 = boxZ1[a];
+    for (let z = z0; z < z1; z++) for (let x = x0; x < x1; x++) {
+      const i = z * W + x;
+      if (poolOf[i] >= 0) continue;
+      let out = 0;
+      if (x + 1 < W && nqx[i] > 0) out += nqx[i];
+      if (z + 1 < H && nqz[i] > 0) out += nqz[i];
+      if (x > 0 && nqx[i - 1] < 0) out -= nqx[i - 1];
+      if (z > 0 && nqz[i - W] < 0) out -= nqz[i - W];
+      out *= kdt;
+      scale[i] = out > depth[i] ? depth[i] / out : 1;
+    }
+  }
+  if (pools.length) poolLimit(kdt);
+  // 3. Scale, settle the faces, and charge any change to a sleeping side's imbalance.
+  for (let k = 0; k < nF; k++) {
+    const f = faceList[k], i = f >> 1, isZ = f & 1, j = isZ ? i + W : i + 1;
+    let nq = isZ ? nqz[i] : nqx[i];
+    nq *= nq > 0 ? scale[i] : scale[j];
+    const old = isZ ? qz[i] : qx[i], d = nq - old;
+    if (d !== 0) {
+      const ci = chunkOf[i], cj = chunkOf[j];
+      if (ci !== cj) {
+        if (!awake[ci]) rate[ci] -= d * CELL; if (!awake[cj]) rate[cj] += d * CELL;
+        noteFace(ci, cj, d < 0 ? -d : d, f);
+      } else { const ad = d < 0 ? -d : d; if (ad > chunkDq[ci]) { chunkDq[ci] = ad; dqAt[ci] = f; } }
+    }
+    if (isZ) qz[i] = nq; else qx[i] = nq;
+  }
+  if (pools.length) poolSettle();
+  // 4. The water balance, for awake columns (a pool's columns are the pool's).
+  for (let a = 0; a < nA; a++) {
+    const c = awakeList[a], x0 = boxX0[a], z0 = boxZ0[a], x1 = boxX1[a], z1 = boxZ1[a];
+    let mx = 0, dv = chunkDiv[c];
+    for (let z = z0; z < z1; z++) for (let x = x0; x < x1; x++) {
+      const i = z * W + x;
+      if (poolOf[i] >= 0) continue;
+      let net = 0;
+      if (x + 1 < W) net -= qx[i];
+      if (z + 1 < H) net -= qz[i];
+      if (x > 0) net += qx[i - 1];
+      if (z > 0) net += qz[i - W];
+      const nd = depth[i] + net * kdt; depth[i] = nd > 0 ? nd : 0;
+      const r = net < 0 ? -net : net; if (r > dv) { dv = r; divAt[c] = i; }
+      if (depth[i] > mx) mx = depth[i];
+    }
+    chunkDiv[c] = dv; chunkMax[c] = mx;
+  }
+  if (pools.length) poolUpdate(dt);
+  // 5. Sleeping chunks: one number each.
+  for (let c = 0; c < NCH; c++) if (!awake[c]) owed[c] += rate[c] * dt;
+  for (const i of sinks) { const out = FREE_OUTFALL ? Math.min(depth[i], SQRT_G * depth[i] ** 1.5 * dt / CELL) : depth[i]; taken += out; depth[i] -= out; }
+  waterTime += dt;
+  if (SLEEP) settleSkip();
+  if (POOLS && (poolClock += dt) >= POOL_EVERY) { poolClock = 0; detectPools(); }
+}
+function settleSkip() {
+  for (let c = 0; c < NCH; c++) {
+    if (awake[c]) {
+      let sleepNow = false;
+      if (chunkDq[c] < SLEEP_DQ && chunkDiv[c] < SLEEP_DIV) sleepNow = ++calm[c] >= SLEEP_CALM;
+      else calm[c] = 0;
+      if (sleepNow) { // to sleep: its imbalance from now
+          const [x0, z0, x1, z1] = chunkBox(c); let r = 0;
+          for (let z = z0; z < z1; z++) for (let x = x0; x < x1; x++) {
+            const i = z * W + x;
+            if (poolOf[i] >= 0) continue;
+            r += -(x + 1 < W ? qx[i] : 0) - (z + 1 < H ? qz[i] : 0) + (x > 0 ? qx[i - 1] : 0) + (z > 0 ? qz[i - W] : 0);
+            scale[i] = 1;
+          }
+          rate[c] = r * CELL; owed[c] = 0; awake[c] = 0; sleeps++;
+      }
+    } else if (wakeSoon[c] || Math.abs(rate[c]) / chunkArea[c] > SLEEP_DIV) { wakeLog.push([+waterTime.toFixed(1), c % CWN, (c / CWN) | 0, wakeSoon[c] ? 'face' : 'rate']); if (wakeLog.length > 400) wakeLog.shift(); wakeChunk(c); }
+    lastDq[c] = chunkDq[c]; lastDiv[c] = chunkDiv[c]; lastDqAt[c] = dqAt[c]; lastDivAt[c] = divAt[c];
+    chunkDq[c] = 0; chunkDiv[c] = 0; wakeSoon[c] = 0;
+  }
+}
+
+// Waking: what the chunk owes goes back over its wet columns, by depth (removed the same way).
+function wakeChunk(c) {
+  if (awake[c]) return;
+  wakes++; awake[c] = 1; calm[c] = 0;
+  const v = owed[c]; owed[c] = 0; rate[c] = 0;
+  if (v === 0) return;
+  const [x0, z0, x1, z1] = chunkBox(c); let tot = 0, n = 0;
+  for (let z = z0; z < z1; z++) for (let x = x0; x < x1; x++) { const i = z * W + x; if (poolOf[i] >= 0) continue; tot += depth[i]; n++; }
+  if (n === 0) { owedLost += Math.abs(v); lostLog.push(['allpool', c, v]); return; }
+  if (v < 0 && -v > tot) { owedLost += -v - tot; lostLog.push(['short', c, v, tot]); for (let z = z0; z < z1; z++) for (let x = x0; x < x1; x++) if (poolOf[z * W + x] < 0) depth[z * W + x] = 0; return; }
+  for (let z = z0; z < z1; z++) for (let x = x0; x < x1; x++) {
+    const i = z * W + x; if (poolOf[i] >= 0) continue; depth[i] += tot > 0 ? v * depth[i] / tot : v / n;
+  }
+}
+
+// ---- Still water as pools (POOLS) ----
+// Flat, slow water — a lake, a filled hollow, a ponded plain — is one body with one level: a change
+// anywhere in it reaches all of it at once, which the grid can only do as waves, chunk by chunk. So
+// such a body becomes a pool, as in the water graph: its columns stop being stepped, it keeps a
+// volume, and its level comes from that volume over its columns' grounds (sorted, with prefix sums:
+// a binary search). The faces between a pool and the grid's water (or another pool) are still the
+// grid's face law, against the pool's level, every substep, whichever chunks are asleep: a river
+// pours in, a crest spills out, a trickle fills it. Its own faces carry nothing (still water). It
+// forms where, at a check every POOL_EVERY seconds, at least POOL_MIN connected columns at least
+// POOL_DEPTH deep move slower than POOL_V with levels within POOL_BAND; it takes in neighbours that
+// match its level; it goes back to the grid on an edit nearby or when its level moves faster than
+// POOL_RATE (fast change travels as waves, which a pool can't show). Water stays exact: every face
+// flux goes to both sides.
+let POOLS = true;
+const POOL_EVERY = 1, POOL_MIN = 16, POOL_DEPTH = 0.02, POOL_RATE = 0.01;
+let POOL_BAND = 2e-3, POOL_V = 0.03;
+const poolOf = new Int32Array(N).fill(-1);
+let pools = [], poolFaces = new Int32Array(0), poolClock = 0, poolDeep = 0, poolsFormed = 0, poolsDissolved = 0;
+const faceStamp = new Uint8Array(2 * N), poolMark = new Int32Array(N);
+let poolOut = new Float64Array(0), poolScale = new Float64Array(0), poolNet = new Float64Array(0);
+function poolLevel(P) { // the level that holds volume P.V over P's sorted grounds
+  const g = P.g, pre = P.pre, n = g.length, V = P.V;
+  if (V <= 0) return g[0];
+  let lo = 0, hi = n - 1; // the largest m with volume at level g[m] (m·g[m] − pre[m]) ≤ V
+  while (lo < hi) { const m = (lo + hi + 1) >> 1; if (m * g[m] - pre[m] <= V) lo = m; else hi = m - 1; }
+  return (V + pre[lo + 1]) / (lo + 1);
+}
+function syncPool(P) { for (const i of P.members) depth[i] = Math.max(0, P.L - ground[i]); P.Ldrawn = P.L; }
+function syncPools() { for (const P of pools) if (P.L !== P.Ldrawn) syncPool(P); }
+// Rebuild the pools' arrays (after any pool forms, grows or goes): ids, sorted grounds, the boundary
+// members whose depth the face law reads, and every face between a pool and anything else.
+function rebuildPools() {
+  pools = pools.filter(P => P.alive);
+  poolOf.fill(-1);
+  pools.forEach((P, k) => { for (const i of P.members) poolOf[i] = k; });
+  faceStamp.fill(0); const faces = [];
+  pools.forEach((P, k) => {
+    const g = Float64Array.from(P.members, i => ground[i]).sort(), pre = new Float64Array(g.length + 1);
+    for (let m = 0; m < g.length; m++) pre[m + 1] = pre[m] + g[m];
+    P.g = g; P.pre = pre; P.bnd = []; P.bndMinG = Infinity;
+    for (const i of P.members) {
+      const x = i % W, z = (i / W) | 0; let edge = false;
+      for (const [j, f] of [[x + 1 < W ? i + 1 : -1, 2 * i], [x > 0 ? i - 1 : -1, 2 * (i - 1)], [z + 1 < H ? i + W : -1, 2 * i + 1], [z > 0 ? i - W : -1, 2 * (i - W) + 1]]) {
+        if (j < 0) continue;
+        if (poolOf[j] === k) { if (f & 1) qz[f >> 1] = 0; else qx[f >> 1] = 0; continue; } // still water inside
+        edge = true; if (!faceStamp[f]) { faceStamp[f] = 1; faces.push(f); }
+      }
+      if (edge) { P.bnd.push(i); if (ground[i] < P.bndMinG) P.bndMinG = ground[i]; }
+    }
+    P.L = poolLevel(P); syncPool(P);
+  });
+  poolFaces = Int32Array.from(faces);
+  poolOut = new Float64Array(pools.length); poolScale = new Float64Array(pools.length); poolNet = new Float64Array(pools.length);
+}
+// Wake the chunks under some columns while they are still pool (a waking chunk spreads what it owes
+// over its grid columns only), so each chunk's imbalance is counted afresh with them in or out.
+function wakeUnder(cols) { const seen = new Set(); for (const i of cols) seen.add(chunkOf[i]); for (const c of seen) { wakeChunk(c); calm[c] = 0; } }
+function dissolvePool(P) {
+  if (!P.alive) return;
+  wakeUnder(P.members); syncPool(P);
+  for (const i of P.members) poolOf[i] = -1;
+  P.alive = false; poolsDissolved++;
+}
+function poolsClear() { pools = []; poolOf.fill(-1); poolFaces = new Int32Array(0); poolClock = 0; poolDeep = 0; }
+function dissolveNear(i) {
+  if (!pools.length) return;
+  const x0 = i % W, z0 = (i / W) | 0; let any = false;
+  for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
+    const x = x0 + dx, z = z0 + dz; if (x < 0 || z < 0 || x >= W || z >= H) continue;
+    const k = poolOf[z * W + x]; if (k >= 0 && pools[k].alive) { dissolvePool(pools[k]); any = true; }
+  }
+  if (any) rebuildPools();
+}
+// The check: grow pools by matching neighbours, form new ones, let go of ones nearly empty.
+function detectPools() {
+  if (!pools.length && awakeCount() === 0) return;
+  syncPools();
+  const fixed = new Set(); for (const [i] of sources) fixed.add(i); for (const i of sinks) fixed.add(i);
+  const still = (i) => {
+    if (poolOf[i] >= 0 || fixed.has(i) || depth[i] < POOL_DEPTH) return false;
+    const x = i % W, z = (i / W) | 0;
+    const q = Math.max(Math.abs(qx[i]), x > 0 ? Math.abs(qx[i - 1]) : 0, Math.abs(qz[i]), z > 0 ? Math.abs(qz[i - W]) : 0);
+    return q / depth[i] < POOL_V;
+  };
+  poolMark.fill(0); let changed = false;
+  const grow = (seeds, level, out) => { // flood over still columns within the band of `level`
+    const stack = seeds.slice();
+    while (stack.length) {
+      const i = stack.pop(), x = i % W, z = (i / W) | 0;
+      for (const j of [x + 1 < W ? i + 1 : -1, x > 0 ? i - 1 : -1, z + 1 < H ? i + W : -1, z > 0 ? i - W : -1]) {
+        if (j < 0 || poolMark[j] || !still(j) || Math.abs(ground[j] + depth[j] - level) > POOL_BAND) continue;
+        poolMark[j] = 1; out.push(j); stack.push(j);
+      }
+    }
+    return out;
+  };
+  for (const P of pools) {
+    const wet = P.members.reduce((n, i) => n + (depth[i] > DRY ? 1 : 0), 0);
+    if (wet < POOL_MIN / 2) { dissolvePool(P); changed = true; continue; }
+    const add = grow(P.members, P.L, []);
+    if (add.length) { wakeUnder(add); for (const i of add) P.V += depth[i]; P.members = P.members.concat(add); changed = true; }
+  }
+  if (changed) rebuildPools();
+  poolMark.fill(0);
+  // new pools are looked for only in awake chunks: still water in a sleeping chunk already costs nothing
+  for (let c = 0; c < NCH; c++) if (awake[c]) { const [x0, z0, x1, z1] = chunkBox(c); for (let z = z0; z < z1; z++) for (let x = x0; x < x1; x++) {
+    const i = z * W + x;
+    if (poolMark[i] || !still(i)) continue;
+    poolMark[i] = 1;
+    const region = grow([i], ground[i] + depth[i], [i]);
+    if (region.length < POOL_MIN) continue;
+    wakeUnder(region);
+    let V = 0; for (const j of region) V += depth[j];
+    pools.push({ members: region, V, L: 0, Ldrawn: NaN, alive: true }); poolsFormed++; changed = true;
+  } }
+  if (changed) rebuildPools();
+}
+// Each substep: the faces' momentum (after the grid's), the pools' outflow limit, then settling the
+// faces (charging a sleeping grid side's imbalance, waking it on a jump), then the pools' volumes and levels.
+function poolMomentum(dt) {
+  for (let k = 0; k < poolFaces.length; k++) {
+    const f = poolFaces[k], i = f >> 1;
+    if (f & 1) { const j = i + W, z = (i / W) | 0; nqz[i] = depth[i] > 0 || depth[j] > 0 ? face(i, j, qz[i], dt, z > 0 ? qz[i - W] : qz[i], z + 2 < H ? qz[j] : qz[i]) : 0; }
+    else { const j = i + 1, x = i % W; nqx[i] = depth[i] > 0 || depth[j] > 0 ? face(i, j, qx[i], dt, x > 0 ? qx[i - 1] : qx[i], x + 2 < W ? qx[j] : qx[i]) : 0; }
+  }
+}
+function poolLimit(kdt) {
+  poolOut.fill(0);
+  for (let k = 0; k < poolFaces.length; k++) {
+    const f = poolFaces[k], i = f >> 1, j = f & 1 ? i + W : i + 1, nq = f & 1 ? nqz[i] : nqx[i];
+    if (nq > 0 && poolOf[i] >= 0) poolOut[poolOf[i]] += nq; else if (nq < 0 && poolOf[j] >= 0) poolOut[poolOf[j]] -= nq;
+  }
+  for (let p = 0; p < pools.length; p++) { const o = poolOut[p] * kdt; poolScale[p] = o > pools[p].V ? pools[p].V / o : 1; }
+}
+function poolSettle() {
+  poolNet.fill(0);
+  for (let k = 0; k < poolFaces.length; k++) {
+    const f = poolFaces[k], i = f >> 1, isZ = f & 1, j = isZ ? i + W : i + 1;
+    let nq = isZ ? nqz[i] : nqx[i];
+    const src = nq > 0 ? i : j, ps = poolOf[src];
+    nq *= ps >= 0 ? poolScale[ps] : scale[src];
+    const old = isZ ? qz[i] : qx[i], d = nq - old;
+    if (d !== 0) for (const [col, sign] of [[i, -1], [j, 1]]) {
+      if (poolOf[col] >= 0) continue;
+      const c = chunkOf[col], ad = d < 0 ? -d : d;
+      if (!awake[c]) { rate[c] += sign * d * CELL; if (ad > SLEEP_DQ) wakeSoon[c] = 1; }
+      else if (ad > chunkDq[c]) { chunkDq[c] = ad; dqAt[c] = f; }
+    }
+    if (isZ) qz[i] = nq; else qx[i] = nq;
+    if (poolOf[i] >= 0) poolNet[poolOf[i]] -= nq;
+    if (poolOf[j] >= 0) poolNet[poolOf[j]] += nq;
+  }
+}
+function poolUpdate(dt) {
+  let deep = 0, gone = false;
+  for (let p = 0; p < pools.length; p++) {
+    const P = pools[p];
+    P.V = Math.max(0, P.V + poolNet[p] * CELL * dt);
+    const L = poolLevel(P);
+    if (Math.abs(L - P.L) / dt > POOL_RATE) { P.L = L; dissolvePool(P); gone = true; continue; }
+    P.L = L;
+    for (const i of P.bnd) depth[i] = Math.max(0, L - ground[i]);
+    if (L - P.bndMinG > deep) deep = L - P.bndMinG;
+  }
+  poolDeep = deep;
+  if (gone) rebuildPools();
+}
+function wakeAround(i) {
+  dissolveNear(i);
+  const cx = (i % W) / CHUNK | 0, cz = ((i / W) | 0) / CHUNK | 0;
+  for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
+    const x = cx + dx, z = cz + dz; if (x < 0 || z < 0 || x >= CWN || z >= CHN) continue;
+    wakeChunk(z * CWN + x); calm[z * CWN + x] = 0;
+  }
+}
+function wakeAll() {
+  for (let c = 0; c < NCH; c++) wakeChunk(c);
+  awake.fill(1); calm.fill(0); scale.fill(1);
+  chunkMax.fill(0); for (let i = 0; i < N; i++) { const c = chunkOf[i]; if (depth[i] > chunkMax[c]) chunkMax[c] = depth[i]; }
+}
+function awakeCount() { let n = 0; for (let c = 0; c < NCH; c++) n += awake[c]; return n; }
+// One step of DT, in as many substeps as the deepest water needs to stay stable.
+function step(dt) {
+  let deepest = 0.01;
+  if (((SLEEP && SKIP_SLEEPING) || POOLS) && !sleepOff) { for (let c = 0; c < NCH; c++) if (chunkMax[c] > deepest) deepest = chunkMax[c]; if (poolDeep > deepest) deepest = poolDeep; }
+  else for (let i = 0; i < N; i++) if (depth[i] > deepest) deepest = depth[i];
+  const n = Math.max(1, Math.ceil(dt / (0.7 * CELL / Math.sqrt(G * deepest))));
+  substepCount += n;
+  for (let s = 0; s < n; s++) substep(dt / n);
+}
+// What leaves column i toward its neighbour j (m²/s, 0 if none).
+function outflow(i, j) {
+  if (j === i + 1) return Math.max(0, qx[i]);
+  if (j === i - 1) return Math.max(0, -qx[j]);
+  if (j === i + W) return Math.max(0, qz[i]);
+  return Math.max(0, -qz[j]);
+}
+function speedAt(i) {
+  const x = i % W, d = Math.max(depth[i], 0.05);
+  const vx = 0.5 * (qx[i] + (x > 0 ? qx[i - 1] : 0)), vz = 0.5 * (qz[i] + (i >= W ? qz[i - W] : 0));
+  return Math.hypot(vx, vz) / d;
+}
+
+// ---- Scenes ----
+const q5 = (h) => Math.round(h * 2) / 2; // ½ m ground steps
+// Each spring holds a depth (the simulation) and gives a discharge (the steady solve): the
+// discharges are what the simulation's held depths settle to deliver, measured in this lab.
+// (Measured: the simulation settled 6,000 steps, then its outflow at the sinks over 1,000 more.)
+const RIVER_Q = 0.5, FLOOD_Q = 8.7, POND_Q = 4.1, BASIN_Q = 3.3;
+function valley(slope, bankH = 0.5) {
+  // A valley falling along x; a channel 3 columns wide in the middle, banks `bankH` over its bed,
+  // the sides rising past them.
+  const mid = H >> 1;
+  for (let z = 0; z < H; z++) for (let x = 0; x < W; x++) {
+    const off = Math.abs(z - mid);
+    let h = 12 - slope * x;
+    if (off > 1) h += bankH + Math.max(0, off - 4) * 0.35;
+    ground[at(x, z)] = q5(h);
+  }
+  sources = [[at(0, mid), 0.35, RIVER_Q], [at(0, mid - 1), 0.35, RIVER_Q], [at(0, mid + 1), 0.35, RIVER_Q]];
+  sinks = []; for (let z = 0; z < H; z++) sinks.push(at(W - 1, z));
+}
+// A deep river with a trench dug off its side at x = DIV_X, two columns wide, down to its own outlet
+// at the far side of the valley; `lip` is the trench's floor where it meets the river, over the bed.
+const DIV_X = 40, DIV_Q = 2.84; // (measured: the three springs held 1 m deep deliver 8.5 m³/s)
+function diversion(lip) {
+  valley(0.03, 1.5);
+  const mid = H >> 1;
+  sources = sources.map(([i]) => [i, 1.0, DIV_Q]);
+  for (const x of [DIV_X, DIV_X + 1]) {
+    const bed = ground[at(x, mid)];
+    for (let z = mid + 2; z < H; z++) {
+      const k = z - (mid + 2), floor = bed + lip - 0.5 * Math.floor(k / 3);
+      ground[at(x, z)] = Math.min(ground[at(x, z)], floor);
+    }
+    sinks.push(at(x, H - 1));
+  }
+}
+// The discharge (m³/s) down the river past the trench, and down the trench, from the face fluxes.
+function splitOf(fx, fz) {
+  const mid = H >> 1;
+  let river = 0, trench = 0;
+  for (let z = 0; z < H; z++) river += fx[at(DIV_X + 12, z)];
+  for (const x of [DIV_X, DIV_X + 1]) trench += fz[at(x, mid + 8)];
+  return { river, trench };
+}
+// The steady solve's split: what reaches the trench's outlet and the river's.
+function splitSteady() {
+  let river = 0, trench = 0;
+  for (const i of sinks) { if (i % W === W - 1) river += Qc[i]; else trench += Qc[i]; }
+  return { river, trench };
+}
+const SCENES = {
+  river: { cam: [[64, 24, 46], [44, 9, 24]], name: 'River', note: 'Springs (cyan) hold the river\'s head full; water reaching the far edge (dark) is removed. A river in its channel, banks 1 m over its bed, falling along the valley. It settles and flows; the surface slopes.',
+    make() { valley(0.04, 1.0); } },
+  damLevel: { cam: [[62, 18, 40], [47, 10, 24]], name: 'Dam level with banks', note: 'A dam across the river as high as the banks: the water rises to that height, pours over the dam and over the banks beside it, and the banks\' water falls back into the channel below.',
+    make() { valley(0.04, 1.0); const mid = H >> 1, x = 48; for (let z = mid - 1; z <= mid + 1; z++) { ground[at(x, z)] = ground[at(x, mid - 2)]; built.add(at(x, z)); } } },
+  damLow: { cam: [[62, 18, 40], [47, 10, 24]], name: 'Dam below banks', note: 'A dam ½ m lower than the banks: the river backs up behind it and pours over its top into the river below.',
+    make() { valley(0.04, 1.0); const mid = H >> 1, x = 48; for (let z = mid - 1; z <= mid + 1; z++) { ground[at(x, z)] = ground[at(x, mid - 2)] - 0.5; built.add(at(x, z)); } } },
+  terraces: { cam: [[44, 26, 2], [36, 13, 36]], name: 'Spill on terraces', note: 'A pond on a ledge with a gap in its rim, above a terraced hillside and a river: the spill runs downhill, step by step, into the river.',
+    make() {
+      valley(0.02); sources.forEach(s => s[2] = 0.41); // a gentler river delivers less
+      const mid = H >> 1;
+      for (let z = mid + 4; z < H; z++) for (let x = 20; x < 60; x++) ground[at(x, z)] = q5(12 - 0.02 * x + 0.5 + (z - mid - 4) * 0.5);
+      for (let z = H - 8; z < H - 2; z++) for (let x = 30; x < 40; x++) { ground[at(x, z)] = q5(12 - 0.02 * x + 0.5 + (H - 9 - mid - 4) * 0.5); depth[at(x, z)] = 0.9; }
+      for (let x = 29; x <= 40; x++) { ground[at(x, H - 9)] += 1; ground[at(x, H - 2)] += 1; built.add(at(x, H - 9)); built.add(at(x, H - 2)); }
+      for (let z = H - 9; z <= H - 2; z++) { ground[at(29, z)] += 1; ground[at(40, z)] += 1; built.add(at(29, z)); built.add(at(40, z)); }
+      ground[at(35, H - 9)] -= 1.0;
+      sources.push([at(35, H - 5), 0.9, POND_Q]);
+    } },
+  flood: { cam: [[60, 30, 64], [48, 9, 28]], name: 'Flood over a floodplain', note: 'A big flow down a channel with low banks beside a flat floodplain: the river overtops its banks and spreads over the plain, then drains back as the flow drops (use Remove water on the source end).',
+    make() {
+      valley(0.03, 0.5);
+      const mid = H >> 1;
+      for (let z = mid + 2; z < H - 2; z++) for (let x = 0; x < W; x++) ground[at(x, z)] = q5(12 - 0.03 * x + 0.5);
+      sources = sources.map(([i]) => [i, 1.6, FLOOD_Q]);
+    } },
+  divertDeep: { cam: [[62, 26, 58], [42, 10, 30]], name: 'Diversion: trench below the bed', note: 'A deep river (banks 1½ m) with a trench dug off its side to its own outlet, its floor ½ m below the river\'s bed where they meet: how much of the river does it take?',
+    make() { diversion(-0.5); } },
+  divertBed: { cam: [[62, 26, 58], [42, 10, 30]], name: 'Diversion: trench level with the bed', note: 'The same river and trench, the trench\'s floor level with the river\'s bed where they meet.',
+    make() { diversion(0); } },
+  divertHigh: { cam: [[62, 26, 58], [42, 10, 30]], name: 'Diversion: trench above the bed', note: 'The same, the trench\'s floor ½ m above the river\'s bed: above the bed but below the water, so water pours in over its lip.',
+    make() { diversion(0.5); } },
+  basins: { cam: [[70, 34, 58], [48, 9, 24]], name: 'Chain of basins', note: 'Rolling ground with hollows and one spring: each hollow the water reaches fills to its lowest rim and spills on to the next; hollows it never reaches stay dry. The simulation takes minutes of water time to fill the chain; the steady solve has it at once.',
+    make() {
+      for (let z = 0; z < H; z++) for (let x = 0; x < W; x++)
+        ground[at(x, z)] = q5(14 - 0.07 * x + 1.3 * Math.sin(x * 0.21 + 0.6) * Math.cos(z * 0.23 - 0.4) + 0.7 * Math.sin(x * 0.09 + z * 0.19) + 0.04 * Math.abs(z - 24) ** 1.5 / 4);
+      sources = [[at(3, 22), 0.5, BASIN_Q]];
+      sinks = []; for (let z = 0; z < H; z++) sinks.push(at(W - 1, z));
+    } },
+};
+let scene = 'river';
+function load(name) {
+  scene = name;
+  document.querySelectorAll('#scenes button, #cscenes button').forEach(b => b.classList.toggle('on', b.dataset.k === name));
+  if (name in CSCENES) {
+    showModel('cell'); loadCell(name);
+    document.getElementById('scene-note').textContent = CSCENES[name].note;
+    frameCam(CSCENES[name].cam, 1.3);
+    return;
+  }
+  showModel('grid');
+  poolsClear(); wakeAll(); // (waking first: a waking chunk writes its levels)
+  ground.fill(0); depth.fill(0); qx.fill(0); qz.fill(0); brought = 0; taken = 0; waterTime = 0; wakeAll();
+  built = new Set();
+  SCENES[name].make();
+  base = new Float32Array(ground);
+  document.getElementById('scene-note').textContent = SCENES[name].note;
+  buildGround();
+  setSurf(surf, true);
+  frameCam(SCENES[name].cam);
+}
+// A scene's camera, pulled back (and further on a narrow screen, so the valley fits across it).
+function frameCam(c, far = 2.2) {
+  const t = new THREE.Vector3(...c[1]), off = new THREE.Vector3(...c[0]).sub(t);
+  const portrait = cam.aspect < 1;
+  if (portrait) off.y *= 1.6; // look down more steeply, so the valley fills a tall screen
+  off.multiplyScalar(portrait ? 3.2 * Math.sqrt(0.8 / Math.max(cam.aspect, 0.4)) * far / 2.2 : far);
+  controls.target.copy(t); cam.position.copy(t).add(off); controls.update();
+}
+
+// ---- View ----
+const view = document.getElementById('view');
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+view.appendChild(renderer.domElement);
+const cam = new THREE.PerspectiveCamera(45, 1, 0.1, 1000);
+cam.position.set(64, 24, 46);
+const controls = new OrbitControls(cam, renderer.domElement);
+controls.target.set(44, 9, 24);
+controls.enableDamping = true; controls.dampingFactor = 0.12;
+controls.maxPolarAngle = Math.PI * 0.49; controls.minDistance = 4; controls.maxDistance = 260;
+// Modes: Camera (every drag moves the view) and Edit (a left drag or one finger uses the tool;
+// right-drag and two fingers still move the view). Space held in Edit turns the view.
+let mode = 'camera', spaceHeld = false;
+function applyMode() {
+  const camNow = mode === 'camera' || spaceHeld;
+  controls.mouseButtons = camNow
+    ? { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN }
+    : { LEFT: null, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE };
+  controls.touches = camNow
+    ? { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN }
+    : { ONE: null, TWO: THREE.TOUCH.DOLLY_ROTATE };
+  document.getElementById('m-camera').classList.toggle('on', mode === 'camera');
+  document.getElementById('m-edit').classList.toggle('on', mode === 'edit');
+  const touch = matchMedia('(pointer: coarse)').matches;
+  document.getElementById('hint').textContent = mode === 'camera'
+    ? (touch ? 'Camera: one finger turns, two fingers pan and zoom' : 'Camera: drag turns, right-drag pans, wheel zooms')
+    : (touch ? 'Edit: tap or drag to use the tool; two fingers turn and zoom' : 'Edit: click or drag to use the tool; right-drag or hold Space to turn');
+  renderer.domElement.style.cursor = camNow ? 'grab' : 'crosshair';
+}
+function setMode(m) { mode = m; painting = false; applyMode(); }
+const sceneG = new THREE.Scene();
+sceneG.background = new THREE.Color(0xbfd8ea);
+sceneG.add(new THREE.HemisphereLight(0xffffff, 0x5a6b55, 1.1));
+const sun = new THREE.DirectionalLight(0xffffff, 1.4); sun.position.set(30, 60, 40); sceneG.add(sun);
+function resize() {
+  const w = innerWidth, h = innerHeight; renderer.setSize(w, h); cam.aspect = w / h; cam.fov = w < h ? 55 : 45;
+  cam.updateProjectionMatrix();
+}
+addEventListener('resize', resize); resize();
+
+const boxGeo = new THREE.BoxGeometry(1, 1, 1);
+const groundMat = new THREE.MeshLambertMaterial({ vertexColors: false });
+let groundMesh = null;
+const tmp = new THREE.Object3D(), col = new THREE.Color();
+const BASE = 0;
+let base = new Float32Array(N);
+let built = new Set(); // cells a scene built on the ground (dams, rims): drawn as stone
+const baseAt = (x, z) => base[at(x, z)];
+function buildGround() {
+  if (groundMesh) { sceneG.remove(groundMesh); groundMesh.dispose?.(); }
+  groundMesh = new THREE.InstancedMesh(boxGeo, groundMat, N);
+  for (let i = 0; i < N; i++) {
+    const x = i % W, z = (i / W) | 0, h = ground[i] - BASE;
+    tmp.position.set(x + 0.5, BASE + h / 2, z + 0.5); tmp.scale.set(1, Math.max(h, 0.01), 1); tmp.updateMatrix();
+    groundMesh.setMatrixAt(i, tmp.matrix);
+    const v = ((x + z) & 1) ? 0.03 : 0; // a faint checker to read the cells
+    if (sources.some(([j]) => j === i)) col.setRGB(0.25, 0.75, 0.85); // a spring: holds its column full
+    else if (sinks.includes(i)) col.setRGB(0.22, 0.2, 0.24); // the edge: water reaching it is removed
+    else if (ground[i] > baseAt(x, z) + 0.01 || built.has(i)) col.setRGB(0.55 - v, 0.53 - v, 0.50 - v); // placed blocks: stone
+    else col.setRGB(0.36 - v, 0.56 - v, 0.27 - v); // grass
+    groundMesh.setColorAt(i, col);
+  }
+  groundMesh.instanceMatrix.needsUpdate = true; groundMesh.instanceColor.needsUpdate = true;
+  sceneG.add(groundMesh);
+}
+
+// The water surface: each wet column a quad, its corners at the mean surface of the wet columns
+// sharing them (smooth, as Minecraft draws its water), or rounded to ½ m blocks.
+const MIN_DRAW = 0.005; // a thin overflow (a dam's 1 cm) still shows
+const wGeo = new THREE.BufferGeometry();
+const wPos = new Float32Array(N * 6 * 3), wCol = new Float32Array(N * 6 * 4);
+wGeo.setAttribute('position', new THREE.BufferAttribute(wPos, 3));
+wGeo.setAttribute('color', new THREE.BufferAttribute(wCol, 4));
+const wMat = new THREE.MeshLambertMaterial({ vertexColors: true, transparent: true, opacity: 1, vertexAlpha: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2, side: THREE.DoubleSide });
+const water = new THREE.Mesh(wGeo, wMat); sceneG.add(water);
+water.frustumCulled = false;
+// Curtains (water falling over an edge) in their own unlit mesh: foam reads as foam whatever the sun.
+const cGeo = new THREE.BufferGeometry();
+const cPos = new Float32Array(N * 24 * 3), cCol = new Float32Array(N * 24 * 4);
+cGeo.setAttribute('position', new THREE.BufferAttribute(cPos, 3));
+cGeo.setAttribute('color', new THREE.BufferAttribute(cCol, 4));
+const curtains = new THREE.Mesh(cGeo, new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, vertexAlpha: true, depthWrite: false, side: THREE.DoubleSide }));
+curtains.frustumCulled = false; sceneG.add(curtains); // its bounds change every frame (they were computed once, empty, and culled it)
+function surfaceOf(i, round) {
+  const s = ground[i] + depth[i];
+  return round ? Math.max(ground[i] + 0.5, Math.ceil(s * 2 - 0.25) / 2) - 0.06 : s;
+}
+// A corner of column i's surface: the mean of the wet columns at that corner whose surface is
+// near its own (so a pour over an edge is a curtain, not a ramp).
+function cornerOf(i, own, cx, cz, round) {
+  let sum = 0, n = 0;
+  for (const [dx, dz] of [[-1, -1], [0, -1], [-1, 0], [0, 0]]) {
+    const x = cx + dx, z = cz + dz;
+    if (x < 0 || z < 0 || x >= W || z >= H) continue;
+    const j = at(x, z);
+    if (depth[j] <= MIN_DRAW) continue;
+    const sj = surfaceOf(j, round);
+    if (Math.abs(sj - own) < 0.2) { sum += sj; n++; }
+  }
+  return n ? sum / n : own;
+}
+const FOAM = new THREE.Color(0.86, 0.93, 0.98);
+function push(v, x, y, z, c, a, pos = wPos, cols = wCol) {
+  pos[v * 3] = x; pos[v * 3 + 1] = y; pos[v * 3 + 2] = z;
+  cols[v * 4] = c.r; cols[v * 4 + 1] = c.g; cols[v * 4 + 2] = c.b; cols[v * 4 + 3] = a;
+}
+function buildWater() {
+  const round = document.getElementById('round').checked;
+  const bySpeed = document.getElementById('speedcol').checked;
+  const showPools = document.getElementById('drawPools').checked, showFalls = document.getElementById('drawFalls').checked;
+  const tintPools = surf === 'sim' && document.getElementById('showChunks').checked;
+  syncPools();
+  let v = 0, cv = 0;
+  for (let i = 0; i < N; i++) {
+    if (depth[i] <= MIN_DRAW) continue;
+    const x = i % W, z = (i / W) | 0;
+    const own = surfaceOf(i, round);
+    const h = (cx, cz) => round ? own : cornerOf(i, own, cx, cz, round);
+    const sp = bySpeed && depth[i] > 0.08 ? Math.min(1, Math.max(0, speedAt(i) - 0.5) / 2.5) : 0;
+    const deep = Math.min(1, depth[i] / 1.5);
+    const alpha = 0.5 + 0.45 * Math.min(1, depth[i] / 0.4); // thin water shows the ground under it
+    col.setRGB(0.12 + 0.68 * sp - 0.06 * deep, 0.38 + 0.52 * sp - 0.14 * deep, 0.78 + 0.18 * sp - 0.18 * deep);
+    if (tintPools && poolOf[i] >= 0) col.setRGB(0.16 - 0.06 * deep, 0.62 - 0.14 * deep, 0.52 - 0.12 * deep); // a pool: green-teal
+    if (showPools) for (const [cx, cz] of [[x, z], [x + 1, z], [x + 1, z + 1], [x, z], [x + 1, z + 1], [x, z + 1]]) push(v++, cx, h(cx, cz), cz, col, alpha);
+    if (!showFalls) continue;
+    // Curtains: where it pours into a lower neighbour, a falling sheet down the shared edge.
+    for (const [j, ax, az, bx, bz] of [[i + 1, x + 1, z, x + 1, z + 1], [i - 1, x, z, x, z + 1], [i + W, x, z + 1, x + 1, z + 1], [i - W, x, z, x + 1, z]]) {
+      if ((j === i + 1 && x + 1 >= W) || (j === i - 1 && x === 0) || j < 0 || j >= N) continue;
+      const below = ground[j] + depth[j];
+      const fall = own - below;
+      const q = outflow(i, j);
+      if (fall < 0.08 || q < 0.002) continue;
+      const a = Math.min(0.9, 0.5 + 2 * q);
+      const top = own, bot = Math.max(below, ground[j]);
+      // A few cm out from the edge, into the lower column, clear of the block face there.
+      const ox = (j === i + 1 ? 0.04 : j === i - 1 ? -0.04 : 0), oz = (j === i + W ? 0.04 : j === i - W ? -0.04 : 0);
+      const P = (vx, vy, vz) => push(cv++, vx + ox, vy, vz + oz, FOAM, a, cPos, cCol);
+      P(ax, top, az); P(bx, top, bz); P(bx, bot, bz); P(ax, top, az); P(bx, bot, bz); P(ax, bot, az);
+    }
+  }
+  wGeo.setDrawRange(0, v);
+  wGeo.attributes.position.needsUpdate = true; wGeo.attributes.color.needsUpdate = true;
+  wGeo.computeVertexNormals();
+  cGeo.setDrawRange(0, cv);
+  cGeo.attributes.position.needsUpdate = true; cGeo.attributes.color.needsUpdate = true;
+}
+
+// Awake chunks outlined (orange), just over their highest ground.
+const oGeo = new THREE.BufferGeometry(), oPos = new Float32Array(NCH * 8 * 3);
+oGeo.setAttribute('position', new THREE.BufferAttribute(oPos, 3));
+const outlines = new THREE.LineSegments(oGeo, new THREE.LineBasicMaterial({ color: 0xff8a2a, transparent: true, opacity: 0.85, depthTest: false }));
+outlines.frustumCulled = false; outlines.renderOrder = 4; sceneG.add(outlines);
+function buildOutlines() {
+  const on = model === 'grid' && surf === 'sim' && SLEEP && document.getElementById('showChunks').checked;
+  outlines.visible = on; if (!on) return;
+  let v = 0;
+  for (let c = 0; c < NCH; c++) {
+    if (!awake[c]) continue;
+    const x0 = (c % CWN) * CHUNK, z0 = ((c / CWN) | 0) * CHUNK, x1 = Math.min(W, x0 + CHUNK), z1 = Math.min(H, z0 + CHUNK);
+    let top = 0; for (let z = z0; z < z1; z++) for (let x = x0; x < x1; x++) top = Math.max(top, ground[at(x, z)] + depth[at(x, z)]);
+    top += 0.15;
+    for (const [ax, az, bx, bz] of [[x0, z0, x1, z0], [x1, z0, x1, z1], [x1, z1, x0, z1], [x0, z1, x0, z0]]) {
+      const ix = (v++) * 3; oPos[ix] = ax + 0.05; oPos[ix + 1] = top; oPos[ix + 2] = az + 0.05;
+      const jx = (v++) * 3; oPos[jx] = bx - 0.05; oPos[jx + 1] = top; oPos[jx + 2] = bz - 0.05;
+    }
+  }
+  oGeo.setDrawRange(0, v); oGeo.attributes.position.needsUpdate = true;
+}
+
+// =====================================================================================
+// ---- The steady solve: priority-flood, fill-and-spill, discharge, normal depth ----
+// No water is stepped through time. From the ground alone (and the springs' discharge):
+//  1. Priority-flood from the sinks (Barnes et al. 2014): every column's spill level — the level
+//     water stands at in it if it fills — and the column it drains to. Depressions (pits, lakes
+//     behind dams, a pond in a rim) come out filled to their lowest way out.
+//  2. Discharge: each spring's m³/s flows down to lower columns, shared by drop (multiple flow
+//     directions), and across a flat (a lake) to its way out; summed, so every column knows what
+//     passes through it.
+//  3. Levels: a lake that receives water stands at its crest plus the head that passes its outflow
+//     over the crest (the weir law); a dry pit stays dry. A running column stands at the depth that
+//     carries its discharge down its slope (Manning), across its cross-section, so water too deep
+//     for its channel spills sideways over the banks; never below the water downstream (backwater).
+// The answer is the water at rest-in-motion: what the grid simulation settles to, solved at once.
+let surf = 'sim'; // 'sim': the local-inertial grid; 'steady': this solve
+const SPRING_Q = 1.0, SLOPE_RUN = 8, SEC_MAX = 30, FLAT_RUN = 3, WEIR_C = 1.7, MIN_SLOPE = 0.002, MFD_P = 1.1;
+const fillL = new Float32Array(N), parent = new Int32Array(N), Qc = new Float32Array(N), order = new Int32Array(N);
+const sOf = new Float32Array(N), tgt = new Float32Array(N), tqx = new Float32Array(N), tqz = new Float32Array(N);
+const recv = new Int32Array(N), sf = new Float32Array(N), crestComp = new Int32Array(N);
+const crest = new Uint8Array(N), comp = new Int32Array(N), wetT = new Uint8Array(N), crestS = new Float32Array(N);
+// Re-routing by the water surface (ROUTE_ITERS rounds) is a failed experiment, kept for the record and
+// off: in the diversion scenes it never settled (the split swung 0% ↔ 75–87%) and, with flat bodies,
+// lost water. See WATER_MODEL_EVALUATION.md, the diversion test.
+let qLost = 0, splitHistory = [], ROUTE_ITERS = 0, ROUTE_DAMP = 0.5, FLAT_EPS = 0.005;
+const setOf = new Int32Array(N), lastOf = new Int32Array(N), sets = [];
+let nOrder = 0, solveMs = 0, lakes = { wet: 0, dry: 0 }, crestList = [], qIn = 0, qOut = 0;
+const isLake = (i) => fillL[i] > ground[i] + 1e-4;
+function nbrs(i, f) { const x = i % W, z = (i / W) | 0; if (x + 1 < W) f(i + 1); if (x > 0) f(i - 1); if (z + 1 < H) f(i + W); if (z > 0) f(i - W); }
+// A min-heap of (key, column); keys carry an insertion count so equal levels pop first-in first-out
+// (a flat fills outward from its way out, so its directions lead there).
+const hk = new Float64Array(N), hv = new Int32Array(N); let hn = 0;
+function hpush(k, v) { let i = hn++; while (i > 0) { const p = (i - 1) >> 1; if (hk[p] <= k) break; hk[i] = hk[p]; hv[i] = hv[p]; i = p; } hk[i] = k; hv[i] = v; }
+function hpop() { const top = hv[0], k = hk[--hn], v = hv[hn]; let i = 0; for (;;) { let c = 2 * i + 1; if (c >= hn) break; if (c + 1 < hn && hk[c + 1] < hk[c]) c++; if (hk[c] >= k) break; hk[i] = hk[c]; hv[i] = hv[c]; i = c; } hk[i] = k; hv[i] = v; return top; }
+// Column j + d, or -1 off the grid (d is ±1 or ±W).
+function step1(j, d) { const x = j % W, z = (j / W) | 0; if (d === 1 ? x + 1 >= W : d === -1 ? x === 0 : d === W ? z + 1 >= H : z === 0) return -1; return j + d; }
+// A 1 m ledge across the flow: the ground behind it higher, in front of it lower.
+function ledge(j, dir) { const a = step1(j, dir), b = step1(j, -dir); return a >= 0 && b >= 0 && ground[a] < ground[j] - 0.01 && ground[b] > ground[j] + 0.01; }
+// Walk column c's cross-section (perpendicular to `dir`) both ways while the ground is under s.
+function section(c, dir, s, f) {
+  f(c);
+  const step = Math.abs(dir) === 1 ? W : 1;
+  for (const sg of [1, -1]) {
+    let j = c, flat = 0;
+    for (let k = 0; k < SEC_MAX; k++) {
+      const x = j % W, z = (j / W) | 0;
+      if (step === 1 ? (x + sg < 0 || x + sg >= W) : (z + sg < 0 || z + sg >= H)) break;
+      j += sg * step;
+      if (ground[j] >= s || ground[j] < ground[c] - 0.01) break; // a section rises from its bed; ground falling away is downhill, not across
+      if (isLake(j) || (Qc[j] > 0 && recv[j] - j !== dir)) break; // another body of water: its own level
+      if (Math.abs(ground[j] - ground[c]) < 0.01 && !(Qc[j] > 0) && ++flat > FLAT_RUN) break; // a stream spreads a little over a flat, not across all of it
+      f(j);
+      if (ledge(j, dir)) break; // water reaching a ledge pours off it rather than running along it
+    }
+  }
+}
+// The surface at which c's cross-section carries what flows through it: by Manning on a slope, or
+// over a crest by the weir law. Bisection; both sides grow with s.
+// law: 'manning' (uniform flow down slope S), 'weir' (over a lake's crest), 'crit' (critical depth,
+// at a brink where the bed drops away).
+const SQRT_G = Math.sqrt(G);
+function sectionLevel(c, dir, S, law) {
+  let lo = ground[c], hi = ground[c] + 4;
+  const k = law === 'weir' ? WEIR_C : law === 'crit' ? SQRT_G : Math.sqrt(S) / MANNING, e = law === 'manning' ? 5 / 3 : 1.5;
+  for (let it = 0; it < 26; it++) {
+    const s = (lo + hi) / 2;
+    let cap = 0, q = 0;
+    section(c, dir, s, (j) => { cap += k * Math.pow(s - ground[j], e); q += Qc[j]; });
+    if (cap < q) lo = s; else hi = s;
+  }
+  return hi;
+}
+const downDir = (c) => parent[c] >= 0 ? parent[c] - c : 1;
+function slopeAt(c) {
+  let j = c, m = 0;
+  while (m < SLOPE_RUN && parent[j] >= 0) { j = parent[j]; m++; }
+  return Math.max(MIN_SLOPE, m ? (fillL[c] - fillL[j]) / m : MIN_SLOPE);
+}
+function solve() {
+  const t0 = performance.now();
+  // 1. Priority-flood from the sinks.
+  const closed = new Uint8Array(N); hn = 0; let seq = 0; nOrder = 0;
+  parent.fill(-2);
+  for (const i of sinks) if (!closed[i]) { closed[i] = 1; fillL[i] = ground[i]; parent[i] = -1; hpush(ground[i] + seq++ * 1e-9, i); }
+  while (hn) {
+    const c = hpop(); order[nOrder++] = c;
+    nbrs(c, (j) => { if (closed[j]) return; closed[j] = 1; fillL[j] = Math.max(ground[j], fillL[c]); parent[j] = c; hpush(fillL[j] + seq++ * 1e-9, j); });
+  }
+  // 2. Lakes: connected filled columns at one level. Their crests are the columns beside them, out
+  // of the lake, that don't drain back into it: the lake's rim where it is lowest.
+  comp.fill(-1); crest.fill(0); crestS.fill(-1); crestList = []; lakes = { wet: 0, dry: 0 };
+  const compCells = [], compCrests = [];
+  for (let i = 0; i < N; i++) {
+    if (!isLake(i) || comp[i] >= 0) continue;
+    const id = compCells.length, stack = [i], cells = [], cr = new Set(); comp[i] = id;
+    // Hollows joined by ground at their rim level are one lake: water standing over the rim joins them.
+    const lvl = fillL[i], seen = new Set([i]);
+    while (stack.length) {
+      const c = stack.pop(); if (isLake(c)) cells.push(c);
+      nbrs(c, (j) => { if (seen.has(j) || Math.abs(fillL[j] - lvl) > 1e-4 || ground[j] > lvl + 1e-4) return; seen.add(j); if (isLake(j)) comp[j] = id; stack.push(j); });
+    }
+    // (At any height: the weir counts a column once the lake stands over it, so a rising lake spills wider.)
+    for (const c of cells) nbrs(c, (j) => { if (!isLake(j) && parent[j] >= 0 && comp[parent[j]] !== id) cr.add(j); });
+    // The rim is the whole flat at the lake's level along those columns (a dam's top and the bank
+    // tops level with it), not only the columns touching the water.
+    // Walked across the flow (perpendicular to lake → crest), as a weir's line runs.
+    for (const c of [...cr]) {
+      if (Math.abs(ground[c] - fillL[i]) > 1e-4) continue;
+      let d = 0; nbrs(c, (l) => { if (comp[l] === id) d = c - l; });
+      const perp = Math.abs(d) === 1 ? W : 1;
+      for (const sg of [perp, -perp]) for (let j = step1(c, sg); j >= 0 && !isLake(j) && Math.abs(ground[j] - fillL[i]) < 1e-4 && parent[j] >= 0 && comp[parent[j]] !== id; j = step1(j, sg)) cr.add(j);
+    }
+    compCells.push(cells); compCrests.push([...cr]);
+  }
+  const nComp = compCells.length, compIn = new Float64Array(nComp), compLevel = new Array(nComp).fill(-Infinity);
+  const crestOf = new Int32Array(N).fill(-1); compCrests.forEach((cr, id) => { for (const c of cr) if (Math.abs(ground[c] - fillL[compCells[id][0]]) < 1e-4) crestOf[c] = id; }); // the rim at the lake's level
+  // 3. Discharge, from the top down. What reaches a lake is gathered and shared over its crest by
+  // the weir law (water pours over all of its low rim, not one column of it); a chain of lakes needs a
+  // pass per link, so repeat until settled. First routed by the ground (fill levels); then, as many
+  // times as ROUTE_ITERS, re-routed by the water surface the last solve found — so a trench dug off a
+  // river takes what the water over its lip can pour into it, not what the ground's slope says.
+  // The order discharge is passed in: from the top down. Routed by the ground, reverse pop order
+  // (every receiver is lower, so later); by the water, highest surface first (ties: reverse pop order).
+  const rank = new Int32Array(N); for (let k = 0; k < nOrder; k++) rank[order[k]] = k;
+  const routeOrder = new Int32Array(nOrder), done = new Uint8Array(N); const nRoute = nOrder;
+  const share = new Float32Array(N * 4); // what c sends to each of its 4 neighbours (+x, −x, +z, −z)
+  const inject = new Map();
+  // A flat body's total leaves over its lower edges, shared by the face law. False if it has none
+  // (then its last column passes the total on by the ground, as any column would).
+  function flatBody(mem, S) {
+    let total = 0; const faces = [];
+    for (const m of mem) { total += Qc[m]; Qc[m] = 0; }
+    for (const m of mem) {
+      const x = m % W, z = (m / W) | 0;
+      [x + 1 < W ? m + 1 : -1, x > 0 ? m - 1 : -1, z + 1 < H ? m + W : -1, z > 0 ? m - W : -1].forEach((j, d) => {
+        if (j < 0 || done[j] || setOf[j] === setOf[m] || !(S[j] < S[m] - 1e-4)) return;
+        const h = S[m] - Math.max(ground[m], ground[j]); if (h <= 0) return;
+        faces.push([m, j, d, h ** (5 / 3) * Math.sqrt(S[m] - S[j])]);
+      });
+    }
+    for (const m of mem) done[m] = 1;
+    if (!faces.length || total <= 0) { const last = mem[mem.length - 1]; Qc[last] = total; done[last] = total > 0 ? 0 : 1; return total <= 0; }
+    let tot = 0; for (const f of faces) tot += f[3];
+    const best = new Map();
+    for (const [m, j, d, w] of faces) {
+      const q = total * w / tot, lake = crestOf[j];
+      Qc[m] += q; // what passes through this column on its way out (its own sections see it)
+      if (lake >= 0 && crestOf[m] !== lake) compIn[lake] += q; else Qc[j] += q;
+      share[m * 4 + d] += q;
+      if (!best.has(m) || w > best.get(m)[1]) best.set(m, [j, w]);
+    }
+    for (const [m, [j]] of best) recv[m] = j;
+    return true;
+  }
+  function route(S) {
+    for (let k = 0; k < nOrder; k++) routeOrder[k] = order[nOrder - 1 - k];
+    if (S) routeOrder.sort((a, b) => (S[b] - S[a]) || (rank[b] - rank[a]));
+    // Flat water: connected wet columns (not lakes) standing at one level act as one body — what
+    // reaches any of them leaves over all their lower edges at once, shared by what each edge can
+    // pass (as a lake shares its outflow over its rim). Handled when its last column comes up.
+    setOf.fill(-1); sets.length = 0;
+    if (S) {
+      const wet = (i) => S[i] > ground[i] + 0.005 && !isLake(i) && parent[i] >= 0; // (a sink keeps its own way out)
+      for (let i = 0; i < N; i++) {
+        if (setOf[i] >= 0 || !wet(i)) continue;
+        const id = sets.length, st = [i], mem = []; setOf[i] = id;
+        while (st.length) { const c = st.pop(); mem.push(c); nbrs(c, (j) => { if (setOf[j] < 0 && wet(j) && Math.abs(S[j] - S[c]) < FLAT_EPS) { setOf[j] = id; st.push(j); } }); }
+        sets.push(mem);
+      }
+      lastOf.fill(-1);
+      for (let k = 0; k < nRoute; k++) { const c = routeOrder[k]; if (setOf[c] >= 0) lastOf[setOf[c]] = c; }
+    }
+    inject.clear(); compIn.fill(0); compLevel.fill(-Infinity);
+    for (let pass = 0; pass < 16; pass++) {
+      recv.set(parent); Qc.fill(0); share.fill(0); qIn = 0; qOut = 0; qLost = 0;
+      const before = Float64Array.from(compIn); compIn.fill(0);
+      for (const [i, , q = SPRING_Q] of sources) if (parent[i] !== -2) { Qc[i] += q; qIn += q; }
+      for (const [c, q] of inject) Qc[c] += q;
+      done.fill(0);
+      for (let k = 0; k < nRoute; k++) {
+        const c = routeOrder[k];
+        if (S && setOf[c] >= 0 && sets[setOf[c]].length > 1) {
+          if (lastOf[setOf[c]] !== c) continue; // not yet: its body is handled at its last column
+          if (flatBody(sets[setOf[c]], S)) continue;
+        }
+        done[c] = 1; if (Qc[c] <= 0) continue;
+        if (parent[c] < 0) { qOut += Qc[c]; continue; } // a sink: it leaves the world here
+        if (comp[c] >= 0 && comp[parent[c]] !== comp[c]) { compIn[comp[c]] += Qc[c]; continue; } // gathered by its lake
+        const x = c % W, z = (c / W) | 0, nb = [x + 1 < W ? c + 1 : -1, x > 0 ? c - 1 : -1, z + 1 < H ? c + W : -1, z > 0 ? c - W : -1];
+        let tot = 0; const w = [0, 0, 0, 0];
+        if (S) { // by the water: what each face can pass, from the depth over it and the surface's fall across it
+          nb.forEach((j, d) => {
+            if (j < 0 || done[j] || !(S[j] < S[c] - 1e-4)) return;
+            const h = S[c] - Math.max(ground[c], ground[j]); if (h <= 0) return;
+            w[d] = h ** (5 / 3) * Math.sqrt(S[c] - S[j]); tot += w[d];
+          });
+        }
+        if (tot === 0) nb.forEach((j, d) => { if (j >= 0 && !done[j] && fillL[j] < fillL[c] - 1e-4) { w[d] = Math.pow(fillL[c] - fillL[j], MFD_P); tot += w[d]; } });
+        if (tot === 0) { const d = nb.indexOf(parent[c]); if (d < 0 || done[parent[c]]) { qLost += Qc[c]; continue; } w[d] = 1; tot = 1; } // a flat or a lake: toward its way out
+        let best = 0; nb.forEach((j, d) => {
+          if (w[d] <= 0) return;
+          const f = Qc[c] * w[d] / tot, lake = crestOf[j];
+          // Water arriving on a lake's rim from outside it joins the lake (the rim is at its level).
+          if (lake >= 0 && crestOf[c] !== lake && comp[c] !== lake) compIn[lake] += f; else Qc[j] += f;
+          share[c * 4 + d] = f; if (w[d] > best) { best = w[d]; recv[c] = j; }
+        });
+      }
+      inject.clear();
+      for (let id = 0; id < nComp; id++) {
+        const qin = compIn[id], cr = compCrests[id]; if (qin <= 0 || !cr.length) continue;
+        let lo = fillL[compCells[id][0]], hi = lo + 4; // the level whose weir flow over the crest passes qin
+        for (let it = 0; it < 30; it++) { const m = (lo + hi) / 2; let cap = 0; for (const c of cr) if (m > ground[c]) cap += WEIR_C * (m - ground[c]) ** 1.5; if (cap < qin) lo = m; else hi = m; }
+        compLevel[id] = hi;
+        let cap = 0; for (const c of cr) if (hi > ground[c]) cap += WEIR_C * (hi - ground[c]) ** 1.5;
+        for (const c of cr) if (hi > ground[c]) inject.set(c, (inject.get(c) || 0) + qin * WEIR_C * (hi - ground[c]) ** 1.5 / cap);
+      }
+      let moved = 0; for (let id = 0; id < nComp; id++) moved = Math.max(moved, Math.abs(compIn[id] - before[id]));
+      if (pass > 0 && moved < 1e-6) break;
+    }
+  }
+  let surfA;
+  function levels() {
+    crest.fill(0); crestS.fill(-1); crestList = []; lakes = { wet: 0, dry: 0 };
+    for (let id = 0; id < nComp; id++) {
+      if (compIn[id] > 0) { lakes.wet++; for (const c of compCrests[id]) if (inject.has(c)) { crest[c] = 1; crestS[c] = compLevel[id]; crestComp[c] = id; crestList.push(c); } }
+      else lakes.dry++;
+    }
+    // 4. Levels, from the ways out up (pop order), so the water downstream is known first: a
+    // standard-step backwater profile. Each column stands at least at its control depth — critical
+    // depth at a brink (the bed drops away below it), otherwise the lesser of critical and uniform
+    // flow down its own slope — and at least as high as the water it runs into plus the friction
+    // that water's flow loses over a metre. So a flat above a ½ m step backs up behind the step, as
+    // the simulation does; a lake stands at its crest's weir head.
+    surfA = new Float32Array(ground); wetT.fill(0); sOf.fill(-Infinity); sf.fill(0);
+    for (let k = 0; k < nOrder; k++) {
+      const c = order[k];
+      if (isLake(c)) { const s = compLevel[comp[c]]; if (s > -Infinity) { sOf[c] = s; surfA[c] = Math.max(surfA[c], s); wetT[c] = 1; } continue; }
+      if (Qc[c] <= 0) continue;
+      const p = recv[c], dir = p >= 0 ? p - c : 1;
+      let s;
+      if (crest[c] && crestS[c] >= 0) { // a drowned crest: the water below backs up over it, and the lake rises with it
+        s = crestS[c];
+        if (p >= 0 && sOf[p] > -Infinity) s = Math.max(s, sOf[p] + (ground[p] < ground[c] - 0.01 ? 0 : sf[p]));
+        crestS[c] = s;
+        if (s > compLevel[crestComp[c]]) compLevel[crestComp[c]] = s;
+      }
+      else {
+        const sc = sectionLevel(c, dir, 0, 'crit');
+        const brink = p < 0 || ground[p] < ground[c] - 0.01;
+        s = brink ? sc : Math.min(sc, sectionLevel(c, dir, Math.max(MIN_SLOPE, ground[c] - ground[p]), 'manning'));
+        if (p >= 0 && sOf[p] > -Infinity) s = Math.max(s, sOf[p] + sf[p]); // backwater
+      }
+      sOf[c] = s;
+      let width = 0, qs = 0; section(c, dir, s, (j) => { width++; qs += Qc[j]; });
+      const q = qs / width, d = Math.max(0.03, s - ground[c]);
+      sf[c] = Math.min(0.5, (MANNING * q) ** 2 / d ** (10 / 3)); // the friction slope here (Manning)
+      section(c, dir, s, (j) => { if (s > surfA[j]) surfA[j] = s; wetT[j] = 1; });
+    }
+    // A hollow beside running water whose surface stands over its rim fills too (to its rim: nothing
+    // flows through it), and so may the next one beside that.
+    for (let pass = 0, more = true; more && pass < 8; pass++) {
+      more = false;
+      compCells.forEach((cells, id) => {
+        if (compLevel[id] > -Infinity) return;
+        const rim = fillL[cells[0]];
+        let fed = false;
+        for (const c of cells) nbrs(c, (j) => { if (!fed && comp[j] !== id && wetT[j] && surfA[j] > rim + 0.005) fed = true; });
+        if (!fed) return;
+        compLevel[id] = rim; lakes.wet++; lakes.dry--; more = true;
+        for (const c of cells) { sOf[c] = rim; surfA[c] = Math.max(surfA[c], rim); wetT[c] = 1; }
+      });
+    }
+  }
+  route(null); levels();
+  splitHistory = [splitSteady()];
+  // Damped: each round routes by a surface moved only part way toward the last solve's.
+  let S = Float32Array.from(surfA);
+  for (let it = 0; it < ROUTE_ITERS; it++) { if (it) for (let i = 0; i < N; i++) S[i] += (surfA[i] - S[i]) * ROUTE_DAMP; route(S); levels(); splitHistory.push(splitSteady()); }
+  // 5. Depths, and the discharge across each face (for the speed colour, the curtains, the field).
+  tqx.fill(0); tqz.fill(0);
+  for (let i = 0; i < N; i++) tgt[i] = wetT[i] ? Math.max(0, surfA[i] - ground[i]) : 0;
+  for (let c = 0; c < N; c++) {
+    if (tgt[c] <= 0) continue;
+    if (Qc[c] > 0) { // what it sends to each neighbour, per metre of face
+      tqx[c] += share[c * 4]; if (c % W > 0) tqx[c - 1] -= share[c * 4 + 1];
+      tqz[c] += share[c * 4 + 2]; if (c >= W) tqz[c - W] -= share[c * 4 + 3];
+    } else if (!isLake(c)) { // overflow beside a channel: its own depth's Manning flow, downhill
+      const d = downDir(c), q = Math.pow(tgt[c], 5 / 3) * Math.sqrt(slopeAt(c)) / MANNING;
+      if (d === 1) tqx[c] += q; else if (d === -1) tqx[c - 1] -= q; else if (d === W) tqz[c] += q; else tqz[c - W] -= q;
+    }
+  }
+  solveMs = performance.now() - t0;
+}
+function setSurf(s, jump = false) {
+  if (surf === 'sim' && s !== 'sim') syncPools();
+  poolsClear(); surf = s; wakeAll();
+  document.querySelectorAll('#solver button').forEach(b => b.classList.toggle('on', b.dataset.s === s));
+  document.getElementById('intro-grid').style.display = model === 'grid' && s === 'sim' ? '' : 'none';
+  document.getElementById('intro-steady').style.display = model === 'grid' && s === 'steady' ? '' : 'none';
+  document.getElementById('intro-graph').style.display = model === 'grid' && s === 'graph' ? '' : 'none';
+  if (s === 'graph') { buildGraph(); graphSplitReset(); }
+  if (s === 'steady') { solve(); if (jump) depth.set(tgt); qx.set(tqx); qz.set(tqz); }
+  buildMarkers();
+}
+// Ease the drawn water toward the solved answer (an animation, not physics: it neither conserves
+// water nor fills a lake at its inflow's pace — that is the transient prototype's job).
+function ease(rate) { for (let i = 0; i < N; i++) depth[i] += (tgt[i] - depth[i]) * rate; qx.set(tqx); qz.set(tqz); }
+// A lake's crest columns (where it spills), marked.
+const mGeo = new THREE.BufferGeometry(), mPos = new Float32Array(N * 3);
+mGeo.setAttribute('position', new THREE.BufferAttribute(mPos, 3));
+const markers = new THREE.Points(mGeo, new THREE.PointsMaterial({ color: 0xff8a2a, size: 0.7, sizeAttenuation: true, depthTest: false, transparent: true }));
+markers.frustumCulled = false; markers.renderOrder = 3; sceneG.add(markers);
+function buildMarkers() {
+  const on = model === 'grid' && surf === 'steady' && document.getElementById('crests').checked;
+  markers.visible = on; if (!on) return;
+  crestList.forEach((c, k) => { mPos[k * 3] = c % W + 0.5; mPos[k * 3 + 1] = crestS[c] + 0.15; mPos[k * 3 + 2] = ((c / W) | 0) + 0.5; });
+  mGeo.setDrawRange(0, crestList.length); mGeo.attributes.position.needsUpdate = true;
+}
+
+// =====================================================================================
+// ---- The water graph: pools (nodes) joined by crests (edges); flowing water is a fall ----
+// The terrain is cut into flats: connected columns with one fill level (the priority-flood's), so a
+// lake with its flat rim is one flat, a river's stretch between two ½ m steps another, a bank
+// another. Each flat is a pool: it holds a volume, and its level follows from its volume and its
+// columns' ground. Neighbouring flats are joined across their shared faces by crests (the higher
+// of the two grounds at each face); water crosses a crest by the weir law on the levels each side.
+// A lower side below the crest is a free fall: flowing water, over air. Both sides over the crest:
+// a drowned crest, passing water on the small difference of levels, so the two stand as one pool.
+// Only volumes are stepped, and every move takes from one pool what it gives another, so water is
+// conserved exactly. Springs add their discharge to their pool; a sink is a pool of its own, emptied.
+const GRAPH_C = 1.7; // the weir coefficient (m^½/s), as the steady solve's
+// Flats cut into tiles GRAPH_TILE columns across (0: whole flats). With the weir law this made things
+// much worse (a weir between tiles of one flat is the wrong law for water running along a channel);
+// with the face law (the grid's), smaller pools converge on the grid: 1 column reproduces it exactly.
+let GRAPH_TILE = 4; // with the face law, 4 m pools match the grid to 1–2 cm (see the evaluation, §5.6)
+const tileOf = (i) => GRAPH_TILE ? ((((i / W) | 0) / GRAPH_TILE) | 0) * 1000 + (((i % W) / GRAPH_TILE) | 0) : 0;
+let nNodes = 0, nodeOf = new Int32Array(N), nodeG = [], nodePre = [], nodeVol = new Float64Array(0), nodeLevel = new Float64Array(0);
+let nodeWet = new Int32Array(0), nodeSink = new Uint8Array(0), gEdges = [], graphMs = 0, graphFalls = 0, graphDrowned = 0;
+const gTakenAt = new Float64Array(N); // what each sink column has taken (for the diversion split)
+// Shaped pools (GRAPH_SHAPE): the graph holds the water, the steady solve gives each pool its shape.
+// A pool's columns the steady solve wets, and their depths relative to each other (a river's slope,
+// a stream's strip across a flat), are its shape; the pool's volume sets how high that shape stands:
+// one offset δ for the pool, so the water drawn is exactly the pool's volume. Edges read the surface
+// at the faces they cross. Where a stream pours over a brink the steady surface is critical depth
+// (q = √g·h^1.5); over a lake's crest it is the lake's head (q = 1.7·h^1.5): a pool holding lake
+// columns uses the latter. A pool the steady solve leaves dry stays a flat pool.
+let GRAPH_SHAPE = true;
+// The law on the edges: 'face' (the grid's: each face between two pools keeps its own discharge,
+// pushed by the difference of the pools' levels over the distance between their centres, slowed by
+// Manning friction, through the water over the crest, capped at critical flow), or 'weir' (the weir
+// law recomputed each step from the levels). With 'face', pools are drawn flat (no steady shapes).
+let GRAPH_LAW = 'face';
+// The cap over a crest: 'crit' (critical flow, √g·h^1.5, the grid's, for every pool) or 'size' (the
+// weir's 1.7·h^1.5 for a pool bigger than a column, whose level is its head upstream of the brink).
+let GRAPH_CAP = 'crit';
+let GRAPH_CFL_DIST = true, graphSubs = 1;
+let nodeCX = new Float64Array(0), nodeCZ = new Float64Array(0), nodeSize = new Int32Array(0);
+const shapeD = new Float32Array(N);
+let nodeShaped = new Uint8Array(0), nodeC = new Float64Array(0), nodeDelta = new Float64Array(0), nodePG = [], nodePP = [];
+function buildGraph() {
+  // Priority-flood from the sinks: each column's fill level.
+  const closed = new Uint8Array(N), fl = new Float32Array(N); hn = 0; let seq = 0;
+  for (const i of sinks) if (!closed[i]) { closed[i] = 1; fl[i] = ground[i]; hpush(ground[i] + seq++ * 1e-9, i); }
+  while (hn) { const c = hpop(); nbrs(c, (j) => { if (closed[j]) return; closed[j] = 1; fl[j] = Math.max(ground[j], fl[c]); hpush(fl[j] + seq++ * 1e-9, j); }); }
+  // Flats: connected columns with one fill level; each sink column is a pool of its own.
+  const isSink = new Uint8Array(N); for (const i of sinks) isSink[i] = 1;
+  nodeOf.fill(-1); const cells = [];
+  for (let i = 0; i < N; i++) {
+    if (nodeOf[i] >= 0) continue;
+    const id = cells.length, mem = [i]; nodeOf[i] = id;
+    if (!isSink[i]) for (let k = 0; k < mem.length; k++) nbrs(mem[k], (j) => { if (nodeOf[j] < 0 && !isSink[j] && Math.abs(fl[j] - fl[i]) < 1e-4 && tileOf(j) === tileOf(i)) { nodeOf[j] = id; mem.push(j); } });
+    cells.push(mem);
+  }
+  nNodes = cells.length;
+  nodeVol = new Float64Array(nNodes); nodeLevel = new Float64Array(nNodes); nodeWet = new Int32Array(nNodes); nodeSink = new Uint8Array(nNodes);
+  nodeG = []; nodePre = [];
+  nodeShaped = new Uint8Array(nNodes); nodeC = new Float64Array(nNodes).fill(GRAPH_C); nodeDelta = new Float64Array(nNodes); nodePG = []; nodePP = [];
+  shapeD.fill(0);
+  if (GRAPH_SHAPE && GRAPH_LAW !== 'face') { solve(); for (let i = 0; i < N; i++) shapeD[i] = tgt[i] > 0.005 ? tgt[i] : 0; }
+  nodeCX = new Float64Array(nNodes); nodeCZ = new Float64Array(nNodes); nodeSize = new Int32Array(nNodes);
+  cells.forEach((mem, n) => { for (const i of mem) { nodeCX[n] += i % W + 0.5; nodeCZ[n] += ((i / W) | 0) + 0.5; } nodeSize[n] = mem.length; nodeCX[n] /= mem.length; nodeCZ[n] /= mem.length; });
+  cells.forEach((mem, n) => {
+    const wetCells = mem.filter(i => shapeD[i] > 0);
+    if (wetCells.length) { // its shape: −depth sorted, so its deepest columns fill first
+      const pg = Float64Array.from(wetCells.map(i => -shapeD[i])).sort(), pp = new Float64Array(pg.length + 1);
+      for (let k = 0; k < pg.length; k++) pp[k + 1] = pp[k] + pg[k];
+      nodeShaped[n] = 1; nodePG.push(pg); nodePP.push(pp);
+      nodeC[n] = mem.some(i => isLake(i)) ? GRAPH_C : SQRT_G;
+    } else { nodePG.push(null); nodePP.push(null); }
+    const g = Float64Array.from(mem.map(i => ground[i])).sort(), pre = new Float64Array(g.length + 1);
+    for (let k = 0; k < g.length; k++) pre[k + 1] = pre[k] + g[k];
+    nodeG.push(g); nodePre.push(pre); nodeSink[n] = isSink[mem[0]];
+    for (const i of mem) nodeVol[n] += depth[i]; // the water already there stays (an edit keeps it)
+  });
+  // Edges: one per pair of neighbouring pools, with the crest at each face between them.
+  const map = new Map();
+  for (let i = 0; i < N; i++) {
+    const x = i % W;
+    for (const j of [x + 1 < W ? i + 1 : -1, i + W < N ? i + W : -1]) {
+      if (j < 0 || nodeOf[i] === nodeOf[j]) continue;
+      const a = nodeOf[i], b = nodeOf[j], key = a < b ? a * nNodes + b : b * nNodes + a;
+      let e = map.get(key);
+      if (!e) { e = { a: Math.min(a, b), b: Math.max(a, b), faces: [] }; map.set(key, e); }
+      e.faces.push([a < b ? i : j, a < b ? j : i, Math.max(ground[i], ground[j])]); // [column in a, column in b, crest]
+    }
+  }
+  gEdges = [...map.values()];
+  for (const e of gEdges) { e.dist = Math.max(1, Math.hypot(nodeCX[e.a] - nodeCX[e.b], nodeCZ[e.a] - nodeCZ[e.b])); e.qf = new Float64Array(e.faces.length); }
+  indexSinks();
+  for (let n = 0; n < nNodes; n++) levelFromVolume(n);
+}
+// A pool's level from its volume: the water fills its lowest columns first.
+function levelFromVolume(n) {
+  if (nodeShaped[n]) { // the offset that makes the shape hold the volume (the same fill, on −depth)
+    const g = nodePG[n], pre = nodePP[n], V = nodeVol[n];
+    if (V <= 1e-9) { nodeDelta[n] = g[0]; nodeWet[n] = 0; return; }
+    let k = 1;
+    while (k < g.length && (k * g[k] - pre[k]) < V) k++;
+    nodeDelta[n] = (V + pre[k]) / k; nodeWet[n] = k; return;
+  }
+  const g = nodeG[n], pre = nodePre[n], V = nodeVol[n];
+  if (V <= 1e-9) { nodeLevel[n] = g[0]; nodeWet[n] = 0; return; }
+  let k = 1;
+  while (k < g.length && (k * g[k] - pre[k]) < V) k++; // the first k columns hold V below the next one's ground
+  nodeLevel[n] = (V + pre[k]) / k; nodeWet[n] = k;
+}
+function graphStep(dt) {
+  if (GRAPH_LAW === 'face') return graphStepFace(dt);
+  const t0 = performance.now();
+  for (const [i, , q = SPRING_Q] of sources) { nodeVol[nodeOf[i]] += q * dt; brought += q * dt; }
+  for (let n = 0; n < nNodes; n++) levelFromVolume(n);
+  // Each edge: the weir flow over each face, from the higher pool to the lower, drowned when the
+  // lower stands over the crest too (Villemonte), limited so it never more than evens the two levels.
+  const out = new Float64Array(nNodes), flows = [];
+  graphFalls = 0; graphDrowned = 0;
+  for (const e of gEdges) {
+    // Each face: water passes from the column with the higher surface, if it holds water and stands
+    // over the crest; the edge moves the net, from the pool that gives it.
+    let net = 0, hmax = 0, fall = false, drowned = false; const per = [];
+    for (const [i, j, z] of e.faces) {
+      const wi = waterAt(i), wj = waterAt(j), si = ground[i] + wi, sj = ground[j] + wj;
+      const fromA = si > sj, wu = fromA ? wi : wj, su = fromA ? si : sj, sd = fromA ? sj : si;
+      const h1 = su - z;
+      if (wu <= 1e-6 || h1 <= 0) { per.push(0); continue; }
+      const h2 = sd - z;
+      let qf = nodeC[fromA ? e.a : e.b] * h1 ** 1.5;
+      if (h2 > 0) { qf *= Math.pow(1 - Math.pow(h2 / h1, 1.5), 0.385); drowned = true; } else fall = true;
+      per.push(fromA ? qf : -qf); net += fromA ? qf : -qf;
+      hmax = Math.max(hmax, su - Math.max(sd, z));
+    }
+    if (Math.abs(net) <= 1e-9) continue;
+    const up = net > 0 ? e.a : e.b, dn = up === e.a ? e.b : e.a, q = Math.abs(net);
+    if (nodeVol[up] <= 1e-9) continue;
+    // Never more than evens the surfaces where they meet (a free fall: brings the upper down to the crest).
+    const Au = Math.max(1, nodeWet[up]), Ad = Math.max(1, nodeWet[dn] || 1);
+    const room = drowned ? hmax * Au * Ad / (Au + Ad) : hmax * Au;
+    const v = Math.min(q * dt, Math.max(0, room));
+    flows.push([e, up, dn, v, per.map(x => (up === e.a ? x : -x)), q]); out[up] += v;
+    if (fall) graphFalls++; if (drowned) graphDrowned++;
+  }
+  // No pool gives more than it holds.
+  const scale = new Float64Array(nNodes).fill(1);
+  for (let n = 0; n < nNodes; n++) if (out[n] > nodeVol[n]) scale[n] = nodeVol[n] / out[n];
+  qx.fill(0); qz.fill(0);
+  for (const [e, up, dn, v0, per, q] of flows) {
+    const v = v0 * scale[up];
+    nodeVol[up] -= v; nodeVol[dn] += v;
+    // The faces' discharge, for the curtains, the speed colour and the streaks (m³/s per metre).
+    e.faces.forEach((f, k) => {
+      if (per[k] <= 0) return;
+      const qf = (v / dt) * per[k] / q, [i, j] = f, sgn = nodeOf[i] === up ? 1 : -1;
+      faceFlux(i, j, sgn * qf);
+    });
+  }
+  for (let n = 0; n < nNodes; n++) {
+    if (nodeVol[n] < 0) nodeVol[n] = 0;
+    if (nodeSink[n] && nodeVol[n] > 0) { taken += nodeVol[n]; gTakenAt[cellsOfSink(n)] += nodeVol[n]; nodeVol[n] = 0; }
+  }
+  for (let n = 0; n < nNodes; n++) levelFromVolume(n);
+  for (let i = 0; i < N; i++) depth[i] = waterAt(i);
+  waterTime += dt;
+  graphMs = performance.now() - t0;
+}
+// The water a column holds now, and its surface.
+function waterAt(i) {
+  const n = nodeOf[i];
+  if (nodeShaped[n]) return shapeD[i] > 0 ? Math.max(0, shapeD[i] + nodeDelta[n]) : 0;
+  return Math.max(0, nodeLevel[n] - ground[i]);
+}
+// The face law, the grid's own (as face() above), on the graph's edges. One step of dt, in as many
+// substeps as the deepest water needs to stay stable (as the grid's step()).
+function graphStepFace(dt) {
+  const t0 = performance.now();
+  // Stable step: the grid's CFL with the distance between the pools' centres (GRAPH_CFL_DIST) or a
+  // column (as the grid), over the edges with water.
+  let worst = 0;
+  for (const e of gEdges) {
+    if (nodeVol[e.a] <= 0 && nodeVol[e.b] <= 0) continue;
+    const h = Math.max(0.01, Math.max(nodeLevel[e.a], nodeLevel[e.b]) - Math.min(...e.faces.map(f => f[2])));
+    worst = Math.max(worst, Math.sqrt(G * h) / (GRAPH_CFL_DIST ? e.dist : CELL));
+  }
+  const subs = Math.max(1, Math.ceil(dt * worst / 0.7));
+  graphSubs = subs;
+  for (let s = 0; s < subs; s++) faceSubstep(dt / subs);
+  qx.fill(0); qz.fill(0);
+  graphFalls = 0; graphDrowned = 0;
+  for (const e of gEdges) {
+    let fall = false, drowned = false;
+    e.faces.forEach(([i, j, z], k) => {
+      const q = e.qf[k]; if (q === 0) return;
+      faceFlux(i, j, q); // faces run a → b: i in a, j in b
+      const dnL = q > 0 ? nodeLevel[e.b] : nodeLevel[e.a];
+      if (dnL > z) drowned = true; else fall = true;
+    });
+    if (fall) graphFalls++; if (drowned) graphDrowned++;
+  }
+  for (let i = 0; i < N; i++) depth[i] = waterAt(i);
+  graphMs = performance.now() - t0;
+}
+function faceSubstep(dt) {
+  for (const [i, , q = SPRING_Q] of sources) { nodeVol[nodeOf[i]] += q * dt; brought += q * dt; }
+  for (let n = 0; n < nNodes; n++) levelFromVolume(n);
+  // 1. Each face's discharge, from the pools' levels.
+  for (const e of gEdges) {
+    const La = nodeLevel[e.a], Lb = nodeLevel[e.b];
+    // Over a crest from a pool bigger than a column the level is the pool's head, not the brink's:
+    // the weir's coefficient caps it; a single column (the grid) is capped at critical flow.
+    for (let k = 0; k < e.faces.length; k++) {
+      const z = e.faces[k][2], h = Math.max(La, Lb) - z;
+      if (h <= DRY || (nodeVol[e.a] <= 1e-9 && nodeVol[e.b] <= 1e-9)) { e.qf[k] = 0; continue; }
+      const q = e.qf[k];
+      const friction = q === 0 ? 1 : 1 + G * dt * MANNING * MANNING * Math.abs(q) / Math.pow(h, 7 / 3);
+      const nq = (q - G * h * dt * (Lb - La) / e.dist) / friction;
+      const capC = GRAPH_CAP === 'crit' || nodeSize[La > Lb ? e.a : e.b] <= 1 ? SQRT_G : GRAPH_C;
+      const limit = capC * h * Math.sqrt(h);
+      e.qf[k] = Math.max(-limit, Math.min(limit, nq));
+    }
+  }
+  // 2. No pool gives more than it holds (as the grid's outflow scaling).
+  const out = new Float64Array(nNodes);
+  for (const e of gEdges) for (let k = 0; k < e.faces.length; k++) { const q = e.qf[k]; if (q > 0) out[e.a] += q * dt; else if (q < 0) out[e.b] -= q * dt; }
+  const scale = new Float64Array(nNodes).fill(1);
+  for (let n = 0; n < nNodes; n++) if (out[n] > nodeVol[n]) scale[n] = nodeVol[n] / out[n];
+  // 3. Move the water.
+  for (const e of gEdges) for (let k = 0; k < e.faces.length; k++) {
+    let q = e.qf[k]; if (q === 0) continue;
+    q *= q > 0 ? scale[e.a] : scale[e.b]; e.qf[k] = q;
+    nodeVol[e.a] -= q * dt; nodeVol[e.b] += q * dt;
+  }
+  for (let n = 0; n < nNodes; n++) {
+    if (nodeVol[n] < 0) nodeVol[n] = 0;
+    if (nodeSink[n] && nodeVol[n] > 0) { taken += nodeVol[n]; gTakenAt[cellsOfSink(n)] += nodeVol[n]; nodeVol[n] = 0; }
+  }
+  for (let n = 0; n < nNodes; n++) levelFromVolume(n);
+  waterTime += dt;
+}
+// q (m²/s) flowing from column i to its neighbour j, onto the grid's face arrays (for drawing).
+function faceFlux(i, j, q) { if (j === i + 1) qx[i] += q; else if (j === i - 1) qx[j] -= q; else if (j === i + W) qz[i] += q; else qz[j] -= q; }
+const sinkCell = new Map(); // a sink pool's one column
+function cellsOfSink(n) { return sinkCell.get(n); }
+function indexSinks() { sinkCell.clear(); for (const i of sinks) sinkCell.set(nodeOf[i], i); }
+// The diversion scenes' split, from what the sinks took: the river's outlet (x = W − 1) and the trench's.
+function graphSplitReset() { gTakenAt.fill(0); }
+function graphSplit() { let river = 0, trench = 0; for (const i of sinks) { if (i % W === W - 1) river += gTakenAt[i]; else trench += gTakenAt[i]; } return { river, trench }; }
+
+// ---- The flow field: a velocity per wet column, smoothed, carrying moving streaks ----
+// The same field could drive a flow-mapped water shader, currents on bodies and swimmers, and
+// floating debris; here it carries streaks. Built from the face discharges, so it reads the grid
+// simulation and the steady solve alike.
+const fvx = new Float32Array(N), fvz = new Float32Array(N), svx = new Float32Array(N), svz = new Float32Array(N);
+let wetList = [];
+function buildField() {
+  wetList = [];
+  for (let i = 0; i < N; i++) {
+    if (depth[i] <= 0.02) { fvx[i] = fvz[i] = 0; continue; }
+    wetList.push(i);
+    const x = i % W, d = Math.max(depth[i], 0.05);
+    fvx[i] = 0.5 * (qx[i] + (x > 0 ? qx[i - 1] : 0)) / d; fvz[i] = 0.5 * (qz[i] + (i >= W ? qz[i - W] : 0)) / d;
+  }
+  for (let pass = 0; pass < 2; pass++) {
+    for (const i of wetList) {
+      let sx = fvx[i] * 2, sz = fvz[i] * 2, n = 2;
+      nbrs(i, (j) => { if (depth[j] > 0.02) { sx += fvx[j]; sz += fvz[j]; n++; } });
+      svx[i] = sx / n; svz[i] = sz / n;
+    }
+    for (const i of wetList) { fvx[i] = Math.max(-4, Math.min(4, svx[i])); fvz[i] = Math.max(-4, Math.min(4, svz[i])); }
+  }
+}
+const NP = 1600, pX = new Float32Array(NP), pZ = new Float32Array(NP), pAge = new Float32Array(NP), pLife = new Float32Array(NP);
+const sGeo = new THREE.BufferGeometry(), sPos = new Float32Array(NP * 6), sCol = new Float32Array(NP * 8);
+sGeo.setAttribute('position', new THREE.BufferAttribute(sPos, 3)); sGeo.setAttribute('color', new THREE.BufferAttribute(sCol, 4));
+const streaks = new THREE.LineSegments(sGeo, new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, depthWrite: false }));
+streaks.frustumCulled = false; streaks.renderOrder = 2; sceneG.add(streaks);
+function field(x, z, out) { // bilinear between column centres
+  const fx = x - 0.5, fz = z - 0.5, x0 = Math.max(0, Math.min(W - 2, Math.floor(fx))), z0 = Math.max(0, Math.min(H - 2, Math.floor(fz)));
+  const tx = Math.max(0, Math.min(1, fx - x0)), tz = Math.max(0, Math.min(1, fz - z0));
+  const a = at(x0, z0), b = a + 1, c = a + W, d = c + 1;
+  out[0] = (fvx[a] * (1 - tx) + fvx[b] * tx) * (1 - tz) + (fvx[c] * (1 - tx) + fvx[d] * tx) * tz;
+  out[1] = (fvz[a] * (1 - tx) + fvz[b] * tx) * (1 - tz) + (fvz[c] * (1 - tx) + fvz[d] * tx) * tz;
+}
+function respawn(p) {
+  if (!wetList.length) { pAge[p] = pLife[p] = 1; return; }
+  const i = wetList[(Math.random() * wetList.length) | 0];
+  pX[p] = i % W + Math.random(); pZ[p] = ((i / W) | 0) + Math.random(); pAge[p] = 0; pLife[p] = 1.5 + Math.random() * 2.5;
+}
+for (let p = 0; p < NP; p++) pAge[p] = pLife[p] = 1;
+const fv = [0, 0];
+function stepStreaks(dt) {
+  const on = model === 'grid' && document.getElementById('flowfield').checked;
+  streaks.visible = on; if (!on) return;
+  let v = 0;
+  for (let p = 0; p < NP; p++) {
+    pAge[p] += dt;
+    let x = pX[p], z = pZ[p];
+    const i = at(Math.min(W - 1, Math.max(0, x | 0)), Math.min(H - 1, Math.max(0, z | 0)));
+    if (pAge[p] >= pLife[p] || x < 0 || z < 0 || x >= W || z >= H || depth[i] <= 0.02) { respawn(p); continue; }
+    field(x, z, fv);
+    pX[p] = x += fv[0] * dt; pZ[p] = z += fv[1] * dt;
+    const sp = Math.hypot(fv[0], fv[1]); if (sp < 0.01) continue;
+    const len = Math.min(0.9, 0.12 + sp * 0.3), y = ground[i] + depth[i] + 0.03;
+    const fade = Math.min(1, pAge[p] * 3, (pLife[p] - pAge[p]) * 3) * Math.min(1, 0.3 + sp);
+    sPos.set([x, y, z, x - fv[0] / sp * len, y, z - fv[1] / sp * len], v * 3);
+    sCol.set([1, 1, 1, 0.9 * fade, 1, 1, 1, 0], v * 4); v += 2;
+  }
+  sGeo.setDrawRange(0, v); sGeo.attributes.position.needsUpdate = true; sGeo.attributes.color.needsUpdate = true;
+}
+
+
+// =====================================================================================
+// ---- Cellular water (3D) ----
+// Each voxel (1 × ½ × 1 m) holds a fraction of water, 0 to a little over 1. Every step a cell
+// passes water down (filling the cell below up to what it can hold), then sideways (evening out
+// with its four neighbours), then up (only what is pressed over full, so pressure carries through
+// a pipe: a cell under others holds slightly more than 1). After w-shadow's "simple fluid
+// simulation with cellular automata", in 3D. Springs hold their cell full; sinks empty theirs.
+const CW = 48, CHT = 28, CD = 32, CN = CW * CHT * CD, CY = 0.5;
+const MAXM = 1, MAXC = 0.02, MINM = 0.0001, MINFLOW = 0.005, MAXSPEED = 1;
+const solid = new Uint8Array(CN), cbuilt = new Uint8Array(CN);
+let mass = new Float32Array(CN), nmass = new Float32Array(CN);
+let csprings = [], csinks = [], cBrought = 0, cTaken = 0, cSteps = 0;
+const ci = (x, y, z) => (y * CD + z) * CW + x;
+const inside = (x, y, z) => x >= 0 && y >= 0 && z >= 0 && x < CW && y < CHT && z < CD;
+function stable(total) {
+  if (total <= MAXM) return MAXM;
+  if (total < 2 * MAXM + MAXC) return (MAXM * MAXM + total * MAXC) / (MAXM + MAXC);
+  return (total + MAXC) / 2;
+}
+function cellStep() {
+  nmass.set(mass);
+  for (let y = 0; y < CHT; y++) for (let z = 0; z < CD; z++) for (let x = 0; x < CW; x++) {
+    const i = ci(x, y, z);
+    if (solid[i] || mass[i] <= MINM) continue;
+    let rem = mass[i];
+    // Down.
+    if (y > 0 && !solid[i - CW * CD]) {
+      const b = i - CW * CD;
+      let f = stable(rem + mass[b]) - mass[b];
+      if (f > MINFLOW) f *= 0.5;
+      f = Math.max(0, Math.min(f, MAXSPEED, rem));
+      nmass[i] -= f; nmass[b] += f; rem -= f;
+    }
+    if (rem <= 0) continue;
+    // Sideways: even out with each open neighbour.
+    for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const nx = x + dx, nz = z + dz;
+      if (nx < 0 || nz < 0 || nx >= CW || nz >= CD) continue;
+      const n = ci(nx, y, nz);
+      if (solid[n]) continue;
+      let f = (mass[i] - mass[n]) / 5;
+      if (f > MINFLOW) f *= 0.5;
+      f = Math.max(0, Math.min(f, rem));
+      nmass[i] -= f; nmass[n] += f; rem -= f;
+      if (rem <= 0) break;
+    }
+    if (rem <= 0) continue;
+    // Up: only what is pressed over what it can hold.
+    if (y + 1 < CHT && !solid[i + CW * CD]) {
+      const a = i + CW * CD;
+      let f = rem - stable(rem + mass[a]);
+      if (f > MINFLOW) f *= 0.5;
+      f = Math.max(0, Math.min(f, MAXSPEED, rem));
+      nmass[i] -= f; nmass[a] += f;
+    }
+  }
+  [mass, nmass] = [nmass, mass];
+  for (const i of csprings) if (mass[i] < MAXM) { cBrought += (MAXM - mass[i]) * CY; mass[i] = MAXM; }
+  for (const i of csinks) { cTaken += mass[i] * CY; mass[i] = 0; }
+  cSteps++;
+}
+function fillBox(x0, x1, y0, y1, z0, z1, v, built = false) {
+  for (let y = y0; y <= y1; y++) for (let z = z0; z <= z1; z++) for (let x = x0; x <= x1; x++) {
+    if (!inside(x, y, z)) continue;
+    const i = ci(x, y, z); solid[i] = v; if (v && built) cbuilt[i] = 1; if (v) mass[i] = 0;
+  }
+}
+function waterBox(x0, x1, y0, y1, z0, z1) {
+  for (let y = y0; y <= y1; y++) for (let z = z0; z <= z1; z++) for (let x = x0; x <= x1; x++) if (!solid[ci(x, y, z)]) mass[ci(x, y, z)] = 1;
+}
+const CSCENES = {
+  cave: { name: '3D: Cave under a pond', cut: 16, cam: [[24, 22, 52], [24, 5, 16]],
+    note: 'A spring fills a pond on the hillside; a shaft in its floor drains into a cave below, which fills; then the pond overflows down a notch and runs off the edge (dark). Drag Cutaway to see inside.',
+    make() {
+      fillBox(0, CW - 1, 0, 15, 0, CD - 1, 1);
+      fillBox(14, 34, 4, 9, 8, 24, 0);                // the cave
+      fillBox(18, 30, 13, 15, 12, 20, 0);             // the pond
+      fillBox(24, 24, 10, 12, 16, 16, 0);             // the shaft
+      fillBox(31, CW - 1, 15, 15, 15, 17, 0);         // the overflow notch and its run-off
+      csprings = [ci(19, 15, 13)];
+      csinks = [ci(CW - 1, 15, 15), ci(CW - 1, 15, 16), ci(CW - 1, 15, 17)];
+    } },
+  tanks: { name: '3D: Connected tanks', cut: 15, cam: [[24, 20, 50], [24, 6, 15]],
+    note: 'Two tanks joined by a pipe under the wall between them, one full: does pressure push water up into the other until the levels match (a U-bend)? Cellular water needs its "pressed over full" rule for this.',
+    make() {
+      fillBox(0, CW - 1, 0, 3, 0, CD - 1, 1);
+      fillBox(5, 41, 4, 23, 9, 21, 1, true);           // a block of stone
+      fillBox(6, 15, 4, 23, 10, 20, 0);                // the left tank
+      fillBox(31, 40, 4, 23, 10, 20, 0);               // the right tank
+      fillBox(16, 30, 4, 5, 15, 15, 0);                // the pipe, 1 m tall
+      waterBox(6, 15, 4, 19, 10, 20);
+      csprings = []; csinks = [];
+    } },
+  dam: { name: '3D: Dam on a river', cut: 0, cam: [[44, 18, 38], [26, 6, 16]],
+    note: 'The surface grid\'s dam below its banks, in cells: the river backs up behind the dam and pours over it into the river below.',
+    make() {
+      const mid = CD >> 1;
+      for (let x = 0; x < CW; x++) {
+        const bed = 8 - Math.floor(x / 8);             // a ½ m step down every 8 m
+        for (let z = 0; z < CD; z++) {
+          const off = Math.abs(z - mid);
+          const top = off <= 1 ? bed : bed + 2 + Math.max(0, off - 4);
+          fillBox(x, x, 0, Math.min(top, CHT - 1), z, z, 1);
+        }
+      }
+      const x = 26, bed = 8 - Math.floor(x / 8);
+      fillBox(x, x, bed + 1, bed + 1, mid - 1, mid + 1, 1, true);  // the dam: ½ m over the bed, banks 1 m
+      csprings = [ci(0, 9, mid - 1), ci(0, 9, mid), ci(0, 9, mid + 1)];
+      csinks = []; for (let y = 0; y < CHT; y++) for (let z = 0; z < CD; z++) csinks.push(ci(CW - 1, y, z));
+    } },
+  aqueduct: { name: '3D: Aqueduct', cut: 0, cam: [[46, 14, 30], [30, 5, 16]],
+    note: 'A trough on pillars, 7 m up, fed by a spring: its water runs along it and pours off its open end to the ground, spreads, and runs off the edges. Water over air over ground: one surface per column can\'t hold this.',
+    make() {
+      fillBox(0, CW - 1, 0, 3, 0, CD - 1, 1);
+      for (let x = 4; x <= 30; x += 6) fillBox(x, x, 4, 13, 15, 17, 1, true);  // pillars
+      fillBox(2, 30, 13, 13, 14, 18, 1, true);       // the trough's floor
+      fillBox(2, 30, 14, 15, 14, 14, 1, true);       // its sides
+      fillBox(2, 30, 14, 15, 18, 18, 1, true);
+      fillBox(2, 2, 14, 15, 14, 18, 1, true);        // its closed end
+      csprings = [ci(3, 14, 15), ci(3, 14, 16), ci(3, 14, 17)];
+      csinks = [];  // every edge of the ground drains
+      for (let z = 0; z < CD; z++) csinks.push(ci(0, 4, z), ci(CW - 1, 4, z));
+      for (let x = 1; x < CW - 1; x++) csinks.push(ci(x, 4, 0), ci(x, 4, CD - 1));
+    } },
+};
+let cut = 0;
+function loadCell(name) {
+  solid.fill(0); cbuilt.fill(0); mass.fill(0); nmass.fill(0); cBrought = 0; cTaken = 0; cSteps = 0;
+  CSCENES[name].make();
+  cut = CSCENES[name].cut;
+  const cs = document.getElementById('cut'); cs.value = cut; document.getElementById('cut-v').textContent = cut ? cut + ' m' : 'off';
+  buildSolids();
+}
+// Solids: the cells with an open side (the cut counts as open), drawn as blocks.
+const solidMat = new THREE.MeshLambertMaterial();
+let solidMesh = null, solidIds = [];
+const cutAway = (z) => cut > 0 && z >= cut;
+function open(x, y, z) { return !inside(x, y, z) ? (y >= CHT) : (!solid[ci(x, y, z)] || cutAway(z)); }
+function buildSolids() {
+  if (solidMesh) sceneG.remove(solidMesh);
+  solidIds = [];
+  for (let y = 0; y < CHT; y++) for (let z = 0; z < CD; z++) for (let x = 0; x < CW; x++) {
+    const i = ci(x, y, z);
+    if (!solid[i] || cutAway(z)) continue;
+    if (open(x + 1, y, z) || open(x - 1, y, z) || open(x, y + 1, z) || open(x, y - 1, z) || open(x, y, z + 1) || open(x, y, z - 1)) solidIds.push(i);
+  }
+  solidMesh = new THREE.InstancedMesh(boxGeo, solidMat, Math.max(1, solidIds.length));
+  solidIds.forEach((i, k) => {
+    const x = i % CW, z = ((i / CW) | 0) % CD, y = (i / (CW * CD)) | 0;
+    tmp.position.set(x + 0.5, y * CY + CY / 2, z + 0.5); tmp.scale.set(1, CY, 1); tmp.updateMatrix();
+    solidMesh.setMatrixAt(k, tmp.matrix);
+    const v = ((x + z + y) & 1) ? 0.03 : 0;
+    if (csprings.includes(i)) col.setRGB(0.25, 0.75, 0.85);
+    else if (cbuilt[i]) col.setRGB(0.58 - v, 0.56 - v, 0.53 - v);
+    else if (!inside(x, y + 1, z) || !solid[ci(x, y + 1, z)]) col.setRGB(0.36 - v, 0.56 - v, 0.27 - v);
+    else if (cutAway(z + 1)) col.setRGB(0.45 - v, 0.36 - v, 0.27 - v); // the cut face: earth
+    else col.setRGB(0.5 - v, 0.42 - v, 0.32 - v);
+    solidMesh.setColorAt(k, col);
+  });
+  solidMesh.count = solidIds.length;
+  solidMesh.instanceMatrix.needsUpdate = true; if (solidMesh.instanceColor) solidMesh.instanceColor.needsUpdate = true;
+  solidMesh.visible = model === 'cell';
+  sceneG.add(solidMesh);
+}
+// Water cells: settled water a box as deep as its fill; falling water (open, not full, below) a
+// narrower column of foam the cell's height; water under water drawn full.
+const cellWaterMat = new THREE.MeshLambertMaterial({ transparent: true, opacity: 0.8, depthWrite: false });
+const cellWater = new THREE.InstancedMesh(boxGeo, cellWaterMat, CN);
+cellWater.frustumCulled = false; cellWater.visible = false; sceneG.add(cellWater);
+const CBLUE = new THREE.Color(0.16, 0.42, 0.8), CDEEP = new THREE.Color(0.1, 0.3, 0.65), CFOAM = new THREE.Color(0.85, 0.93, 0.99);
+function buildCells() {
+  let k = 0;
+  for (let y = 0; y < CHT; y++) for (let z = 0; z < CD; z++) {
+    if (cutAway(z)) continue;
+    for (let x = 0; x < CW; x++) {
+      const i = ci(x, y, z), m = mass[i];
+      if (solid[i] || m < 0.001) continue;
+      const below = y > 0 ? i - CW * CD : -1;
+      const above = y + 1 < CHT ? i + CW * CD : -1;
+      const falling = below >= 0 && !solid[below] && mass[below] < 0.9;
+      if (!falling && m < 0.01) continue; // a falling stream carries little a cell: drawn anyway
+      const covered = above >= 0 && mass[above] > 0.01;
+      if (falling) {
+        const w = 0.3 + 0.6 * Math.min(1, Math.sqrt(m * 4));
+        tmp.position.set(x + 0.5, y * CY + CY / 2, z + 0.5); tmp.scale.set(w, CY, w);
+        cellWater.setColorAt(k, CFOAM);
+      } else {
+        const h = covered ? CY : CY * Math.min(1, m);
+        tmp.position.set(x + 0.5, y * CY + h / 2, z + 0.5); tmp.scale.set(1, h, 1);
+        cellWater.setColorAt(k, m > 1.005 ? CDEEP : CBLUE);
+      }
+      tmp.updateMatrix(); cellWater.setMatrixAt(k++, tmp.matrix);
+    }
+  }
+  cellWater.count = k;
+  cellWater.instanceMatrix.needsUpdate = true; if (cellWater.instanceColor) cellWater.instanceColor.needsUpdate = true;
+}
+function cellStats() {
+  let wet = 0, stored = 0;
+  for (let i = 0; i < CN; i++) if (mass[i] > 0.01) { wet++; stored += mass[i] * CY; }
+  return [['Cells', CN.toLocaleString()], ['Wet cells', wet.toLocaleString()], ['Steps', cSteps.toLocaleString()],
+    ['Step (all cells)', stepMs.toFixed(2) + ' ms'], ['Per cell per step', (stepMs * 1e6 / CN).toFixed(0) + ' ns (JS)'],
+    ['Stored', stored.toFixed(1) + ' m³'], ['In / out so far', cBrought.toFixed(0) + ' / ' + cTaken.toFixed(0) + ' m³']];
+}
+let model = 'grid';
+function showModel(m) {
+  model = m;
+  for (const o of [groundMesh, water, curtains]) if (o) o.visible = m === 'grid';
+  if (solidMesh) solidMesh.visible = m === 'cell';
+  cellWater.visible = m === 'cell';
+  document.querySelectorAll('.grid-only').forEach(e => e.style.display = m === 'grid' ? '' : 'none');
+  document.querySelectorAll('.cell-only').forEach(e => e.style.display = m === 'cell' ? '' : 'none');
+  document.getElementById('intro-grid').style.display = m === 'grid' && surf === 'sim' ? '' : 'none';
+  document.getElementById('intro-steady').style.display = m === 'grid' && surf === 'steady' ? '' : 'none';
+  document.getElementById('intro-graph').style.display = m === 'grid' && surf === 'graph' ? '' : 'none';
+  document.getElementById('solver').style.display = m === 'grid' ? '' : 'none';
+  buildMarkers(); if (m !== 'grid') streaks.visible = false;
+  document.getElementById('intro-cell').style.display = m === 'cell' ? '' : 'none';
+}
+// =====================================================================================
+
+// ---- Tools ----
+const TOOLS = { raise: 'Place block (+½ m)', lower: 'Dig (−½ m)', source: 'Add a spring', drain: 'Remove water + springs' };
+let tool = 'raise';
+const ray = new THREE.Raycaster(), mouse = new THREE.Vector2();
+function pick(ev) {
+  const r = renderer.domElement.getBoundingClientRect();
+  mouse.set(((ev.clientX - r.left) / r.width) * 2 - 1, -((ev.clientY - r.top) / r.height) * 2 + 1);
+  ray.setFromCamera(mouse, cam);
+  if (model === 'cell') {
+    const hit = solidMesh && ray.intersectObject(solidMesh)[0];
+    if (!hit) return null;
+    const i = solidIds[hit.instanceId], n = hit.face.normal;
+    return { i, nx: Math.round(n.x), ny: Math.round(n.y), nz: Math.round(n.z), key: i * 8 + (n.x > 0.5 ? 1 : n.x < -0.5 ? 2 : n.y > 0.5 ? 3 : n.y < -0.5 ? 4 : n.z > 0.5 ? 5 : 6) };
+  }
+  const hit = ray.intersectObject(groundMesh)[0];
+  return hit ? hit.instanceId : null;
+}
+function applyCell(h) {
+  const x = h.i % CW, z = ((h.i / CW) | 0) % CD, y = (h.i / (CW * CD)) | 0;
+  const ax = x + h.nx, ay = y + h.ny, az = z + h.nz; // the open cell against the face
+  if (tool === 'raise') { if (inside(ax, ay, az)) { const j = ci(ax, ay, az); solid[j] = 1; cbuilt[j] = 1; mass[j] = 0; } }
+  else if (tool === 'lower') { if (y > 0) { solid[h.i] = 0; cbuilt[h.i] = 0; } }
+  else if (tool === 'source') { if (inside(ax, ay, az)) csprings.push(ci(ax, ay, az)); }
+  else if (tool === 'drain') {
+    for (let dy = -3; dy <= 3; dy++) for (let dz = -2; dz <= 2; dz++) for (let dx = -2; dx <= 2; dx++) {
+      if (!inside(ax + dx, ay + dy, az + dz)) continue;
+      const j = ci(ax + dx, ay + dy, az + dz); cTaken += mass[j] * CY; mass[j] = 0;
+    }
+    csprings = csprings.filter(j => { const sx = j % CW, sz = ((j / CW) | 0) % CD, sy = (j / (CW * CD)) | 0; return Math.abs(sx - ax) > 2 || Math.abs(sz - az) > 2 || Math.abs(sy - ay) > 3; });
+  }
+  buildSolids();
+}
+let painting = false, last = -1;
+function apply(i) {
+  if (model === 'cell') { if (i == null || i.key === last) return; last = i.key; applyCell(i); return; }
+  if (i == null || i === last) return; last = i;
+  wakeAround(i);
+  if (tool === 'raise') { ground[i] += 0.5; buildGround(); }
+  else if (tool === 'lower') { ground[i] = Math.max(0.5, ground[i] - 0.5); buildGround(); }
+  else if (tool === 'source') { sources.push([i, 0.5, SPRING_Q]); buildGround(); }
+  else if (tool === 'drain') { for (let dz = -2; dz <= 2; dz++) for (let dx = -2; dx <= 2; dx++) {
+    const x = i % W + dx, z = ((i / W) | 0) + dz; if (x >= 0 && z >= 0 && x < W && z < H) { const j = at(x, z); taken += depth[j]; depth[j] = 0; }
+  } sources = sources.filter(([j]) => Math.abs(j % W - i % W) > 2 || Math.abs(((j / W) | 0) - ((i / W) | 0)) > 2); buildGround(); }
+  if (surf === 'steady') { solve(); buildMarkers(); }
+  if (surf === 'graph') buildGraph();
+}
+const down = new Set();
+renderer.domElement.addEventListener('pointerdown', (e) => {
+  down.add(e.pointerId);
+  if (down.size > 1) { painting = false; return; } // a second finger: the view, not the tool
+  if (mode !== 'edit' || spaceHeld || e.button !== 0) return;
+  painting = true; last = -1; apply(pick(e));
+});
+renderer.domElement.addEventListener('pointermove', (e) => { if (painting && down.size === 1) apply(pick(e)); });
+const up = (e) => { down.delete(e.pointerId); if (!down.size) painting = false; };
+addEventListener('pointerup', up); addEventListener('pointercancel', up);
+renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault());
+
+// ---- Panel ----
+const sc = document.getElementById('scenes');
+for (const [k, s] of Object.entries(SCENES)) { const b = document.createElement('button'); b.textContent = s.name; b.dataset.k = k; b.onclick = () => load(k); sc.appendChild(b); }
+const csc = document.getElementById('cscenes');
+for (const [k, s] of Object.entries(CSCENES)) { const b = document.createElement('button'); b.textContent = s.name.replace('3D: ', ''); b.dataset.k = k; b.onclick = () => load(k); csc.appendChild(b); }
+document.getElementById('cut').oninput = (e) => { cut = +e.target.value; document.getElementById('cut-v').textContent = cut ? cut + ' m' : 'off'; buildSolids(); };
+const tl = document.getElementById('tools');
+for (const [k, s] of Object.entries(TOOLS)) { const b = document.createElement('button'); b.textContent = s; b.dataset.k = k;
+  b.onclick = () => { tool = k; tl.querySelectorAll('button').forEach(x => x.classList.toggle('on', x.dataset.k === k)); }; tl.appendChild(b); }
+tl.querySelector('button').classList.add('on');
+let running = true;
+document.getElementById('play').onclick = (e) => { running = !running; e.target.textContent = running ? 'Pause' : 'Play'; e.target.classList.toggle('on', running); };
+document.getElementById('reset').onclick = () => load(scene);
+document.querySelectorAll('#solver button').forEach(b => b.onclick = () => setSurf(b.dataset.s));
+document.getElementById('crests').onchange = buildMarkers;
+document.getElementById('sleepOn').onchange = (e) => { SLEEP = e.target.checked; wakeAll(); };
+document.getElementById('poolsOn').onchange = (e) => { syncPools(); for (const P of pools) dissolvePool(P); rebuildPools(); POOLS = e.target.checked; wakeAll(); };
+document.getElementById('theta').onchange = (e) => { THETA = +e.target.value; wakeAll(); };
+document.getElementById('graphLaw').onchange = (e) => { GRAPH_LAW = e.target.value; if (surf === 'graph') buildGraph(); };
+document.getElementById('graphTile').onchange = (e) => { GRAPH_TILE = +e.target.value; if (surf === 'graph') buildGraph(); };
+document.getElementById('graphShape').onchange = (e) => { GRAPH_SHAPE = e.target.checked; if (surf === 'graph') buildGraph(); };
+document.getElementById('m-camera').onclick = () => setMode('camera');
+document.getElementById('m-edit').onclick = () => setMode('edit');
+addEventListener('keydown', (e) => {
+  if (e.target.tagName === 'INPUT') return;
+  if (e.key === 'c' || e.key === 'C') setMode('camera');
+  else if (e.key === 'e' || e.key === 'E') setMode('edit');
+  else if (e.code === 'Space' && !spaceHeld) { spaceHeld = true; painting = false; applyMode(); e.preventDefault(); }
+});
+addEventListener('keyup', (e) => { if (e.code === 'Space') { spaceHeld = false; applyMode(); } });
+const panel = document.getElementById('panel'), fold = document.getElementById('fold');
+fold.onclick = () => { const f = panel.classList.toggle('folded'); fold.textContent = f ? 'Show' : 'Hide'; fold.setAttribute('aria-expanded', String(!f)); };
+// Picking a tool switches to Edit; on a phone the panel folds away so the ground is free.
+tl.querySelectorAll('button').forEach(b => b.addEventListener('click', () => { setMode('edit'); if (matchMedia('(max-width: 640px), (orientation: portrait)').matches && !panel.classList.contains('folded')) fold.click(); }));
+applyMode();
+if (matchMedia('(max-width: 640px), (orientation: portrait)').matches) fold.click(); // start folded on a phone
+const speed = document.getElementById('speed'), speedV = document.getElementById('speed-v');
+
+// ---- Loop ----
+let stepMs = 0;
+const statsEl = document.getElementById('stats');
+function stats(steps) {
+  if (model === 'cell') { statsEl.innerHTML = cellStats().map(([k, v]) => `<span class="k">${k}</span><span>${v}</span>`).join(''); return; }
+  if (surf === 'graph') {
+    let wet = 0, stored = 0, wetPools = 0; for (let i = 0; i < N; i++) if (depth[i] > MIN_DRAW) { wet++; stored += depth[i]; }
+    for (let n = 0; n < nNodes; n++) if (nodeVol[n] > 1e-6) wetPools++;
+    const rows = [['Pools (wet / all)', wetPools + ' / ' + nNodes], ['Edges', gEdges.length], ['Falls flowing', graphFalls], ['Drowned crests', graphDrowned],
+      ['Wet columns', wet.toLocaleString()], ['Step (all pools)', graphMs.toFixed(2) + ' ms'], ['Water time', waterTime.toFixed(0) + ' s'],
+      ['Stored', stored.toFixed(1) + ' m³'], ['In / out so far', brought.toFixed(0) + ' / ' + taken.toFixed(0) + ' m³']];
+    statsEl.innerHTML = rows.map(([k, v]) => `<span class="k">${k}</span><span>${v}</span>`).join(''); return;
+  }
+  if (surf === 'steady') {
+    let wet = 0, stored = 0, fast = 0;
+    for (let i = 0; i < N; i++) if (tgt[i] > MIN_DRAW) { wet++; stored += tgt[i]; fast = Math.max(fast, Math.hypot(tqx[i], tqz[i]) / Math.max(tgt[i], 0.05)); }
+    const rows = [['Columns', N.toLocaleString()], ['Wet columns', wet.toLocaleString()],
+      ['Solve (all columns)', solveMs.toFixed(2) + ' ms'], ['Per column', (solveMs * 1e6 / N).toFixed(0) + ' ns (JS)'],
+      ['Lakes filled / dry', lakes.wet + ' / ' + lakes.dry], ['Crest columns', crestList.length],
+      ['Stored', stored.toFixed(1) + ' m³'], ['Springs give', qIn.toFixed(2) + ' m³/s'], ['Leaves at sinks', qOut.toFixed(2) + ' m³/s']];
+    statsEl.innerHTML = rows.map(([k, v]) => `<span class="k">${k}</span><span>${v}</span>`).join(''); return;
+  }
+  let wet = 0, stored = 0, fast = 0;
+  for (let i = 0; i < N; i++) if (depth[i] > MIN_DRAW) { wet++; stored += depth[i]; fast = Math.max(fast, speedAt(i)); }
+  const perCol = stepMs * 1e6 / N;
+  const rows = [
+    ['Columns', N.toLocaleString()], ['Wet columns', wet.toLocaleString()],
+    ['Steps per frame', steps], ['Step (all columns)', stepMs.toFixed(2) + ' ms'],
+    ['Per column per step', perCol.toFixed(0) + ' ns (JS)'], ['Water time', waterTime.toFixed(0) + ' s'],
+    ['Awake chunks', SLEEP ? awakeCount() + ' / ' + NCH : 'all (sleep off)'], ['Pools', POOLS ? pools.length + ' (' + pools.reduce((n, P) => n + P.members.length, 0).toLocaleString() + ' columns)' : 'off'], ['Faces computed', (facesDone / (2 * N) * 100).toFixed(0) + ' %'],
+    ['Stored', stored.toFixed(1) + ' m³'], ['Fastest', fast.toFixed(2) + ' m/s'],
+    ['In / out so far', brought.toFixed(0) + ' / ' + taken.toFixed(0) + ' m³'],
+  ];
+  statsEl.innerHTML = rows.map(([k, v]) => `<span class="k">${k}</span><span>${v}</span>`).join('');
+}
+let frame = 0;
+function loop() {
+  const steps = +speed.value;
+  speedV.textContent = model === 'cell' ? steps + ' steps a frame' : surf === 'steady' ? 'eases edits in' : surf === 'graph' ? (steps * DT * 60).toFixed(0) + '× real time' : (steps * DT * 60).toFixed(0) + '× real time';
+  if (running) {
+    const t = performance.now();
+    if (model === 'cell') for (let s = 0; s < steps; s++) cellStep();
+    else if (surf === 'sim') for (let s = 0; s < steps; s++) step(DT);
+    else if (surf === 'graph') for (let s = 0; s < steps; s++) graphStep(DT);
+    else ease(Math.min(1, steps * 0.0015));
+    stepMs = (performance.now() - t) / steps;
+  }
+  buildOutlines();
+  if (model === 'grid') { if (frame % 6 === 0) buildField(); stepStreaks(1 / 60); } // streaks move at real speed, whatever the simulation's pace
+  if (model === 'cell') buildCells(); else buildWater();
+  if (frame++ % 15 === 0) stats(steps);
+  controls.update();
+  renderer.render(sceneG, cam);
+  requestAnimationFrame(loop);
+}
+window.lab = { setPoolParams: (v, band) => { POOL_V = v; POOL_BAND = band; }, lostLog: () => lostLog, setPools: (b) => { syncPools(); for (const P of pools) dissolvePool(P); rebuildPools(); POOLS = b; wakeAll(); }, poolInfo: () => ({ formed: poolsFormed, dissolved: poolsDissolved, pools: pools.map(P => ({ n: P.members.length, V: +P.V.toFixed(2), L: +P.L.toFixed(4), faces: poolFaces.length })) }), poolVol: () => pools.reduce((v, P) => v + P.V, 0), poolOf: () => poolOf, syncPools, whyAwake: () => { const r = []; for (let c = 0; c < NCH; c++) if (awake[c]) { const f = lastDqAt[c], i = lastDivAt[c]; r.push({ c: [c % CWN, (c / CWN) | 0], dq: +lastDq[c].toExponential(1), dqFace: f < 0 ? null : [(f >> 1) % W, ((f >> 1) / W) | 0, f & 1 ? 'z' : 'x'], div: +lastDiv[c].toExponential(1), divCol: i < 0 ? null : [i % W, (i / W) | 0, +depth[i].toFixed(4)] }); } return r; }, wakeLog: () => wakeLog, counters: () => ({ substepCount, wakes, sleeps }), resetCounters: () => { substepCount = 0; wakes = 0; sleeps = 0; }, ledger: () => ({ brought, taken, waterTime }), setSkip: (b) => { SKIP_SLEEPING = b; wakeAll(); }, owedTotal: () => { let v = 0; for (let c = 0; c < NCH; c++) v += owed[c]; return v; }, owedLost: () => owedLost, setTheta: (t) => { THETA = t; }, setOutfall: (b) => { FREE_OUTFALL = b; }, chunkDiag: () => { const r = []; for (let c = 0; c < NCH; c++) if (awake[c]) r.push([c % CWN, (c / CWN) | 0, +lastDq[c].toExponential(1), +lastDiv[c].toExponential(1)]); return r; }, setSleep: (b) => { SLEEP = b; wakeAll(); }, awakeCount, facesDone: () => facesDone, wakeAround, setGround: (i, g) => { ground[i] = g; }, setCfl: (b) => { GRAPH_CFL_DIST = b; }, subs: () => graphSubs, setCap: (c) => { GRAPH_CAP = c; }, setLaw: (l) => { GRAPH_LAW = l; }, setShape: (b) => { GRAPH_SHAPE = b; }, setTile: (t) => { GRAPH_TILE = t; }, graphStep, buildGraph, graphSplit, graphSplitReset, graphInfo: () => ({ nNodes, edges: gEdges.length, falls: graphFalls, drowned: graphDrowned, ms: graphMs, vol: Array.from(nodeVol).reduce((a, b) => a + b, 0), brought, taken }), setRoute: (n, damp, eps) => { ROUTE_ITERS = n; ROUTE_DAMP = damp; FLAT_EPS = eps; }, splitHistory: () => splitHistory, setIters: (n) => { ROUTE_ITERS = n; }, lost: () => qLost, splitOf, splitSteady, flows: () => ({ qIn, qOut }), qx: () => qx, qz: () => qz, tqx, tqz, solve, setSurf, tgt, Qc, fillL, crestList: () => crestList, lakes: () => lakes, solveMs: () => solveMs, sources: () => sources, taken: () => taken, waterTime: () => waterTime, cellStep, mass: () => mass, ci, loadCell, load, step, outflow, buildWater, count: () => cGeo.drawRange.count, depth: () => depth, ground: () => ground, at, W, H, cam, controls };
+const start = location.hash.slice(1);
+load(start in SCENES || start in CSCENES ? start : 'river');
+loop();
+</script>
+</body>
+</html>

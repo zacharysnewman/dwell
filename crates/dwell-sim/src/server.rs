@@ -641,7 +641,7 @@ pub struct Server {
     knockbacks: Vec<(u16, Vec3)>, // applied in the next step
     /// The falling pieces (docs/FELLING.md).
     felling: crate::felling::Felling,
-    /// Water flow (docs/WATER_FLOW.md): the basins edits have touched.
+    /// The water surface grid (docs/WATER_SURFACE_GRID.md): the world's water, held as found until edits free it.
     water: crate::water::Water,
     /// The last block changes not the water's own (edits, collapses, settles): a diagnostic for
     /// the block dump (docs/DEV_TOOLS.md), oldest first, at most `EDIT_LOG_LEN`.
@@ -728,8 +728,9 @@ impl Server {
             outbox: Vec::new(),
             knockbacks: Vec::new(),
             felling: crate::felling::Felling::default(),
-            // Fed by the world map's runoff and carrying changes down its rivers (WATER_FLOW.md
-            // §2.1, §6): one terrain for both.
+            // The water surface grid (Phase 53, docs/WATER_SURFACE_GRID.md): the world's water read
+            // from its blocks, held at rest until edits free it; the world map's flow kept for
+            // the sources to come.
             water: match (
                 &config.generator_override,
                 dwell_worldgen::BifacialTerrain::for_generator(
@@ -738,12 +739,10 @@ impl Server {
                 ),
             ) {
                 (None, Some(terrain)) => {
-                    let terrain = std::sync::Arc::new(terrain);
-                    let map = terrain.clone();
+                    let map = std::sync::Arc::new(terrain);
                     crate::water::Water::with_runoff(std::sync::Arc::new(
                         move |f: dwell_world::FaceFrame, x, z| map.local(f.face).discharge_at(x, z),
                     ))
-                    .with_rivers(terrain)
                 }
                 _ => crate::water::Water::new(),
             },
@@ -1513,8 +1512,8 @@ impl Server {
             }
         }
         wanted.extend_from_slice(&self.explicit_wanted);
-        // Then those of the water filling or draining with no player near (docs/WATER_FLOW.md §6):
-        // it flows on until it settles.
+        // Then those of moving water and beside it, with no player near (WATER_SURFACE_GRID.md §2b):
+        // it flows on until it sleeps.
         let water = self.water.wanted_chunks();
         for &c in &water {
             if !BUILD_VOLUME.chunk_may_hold(c) || self.world.find(c).is_some() {
@@ -2394,7 +2393,7 @@ impl Server {
         self.fell(&cells, settles, None);
     }
 
-    /// Every `tickEvery` ticks, water's tick (docs/WATER_FLOW.md §4): its time is game time (the
+    /// Every `tickEvery` ticks, water's tick (docs/WATER_SURFACE_GRID.md): its time is game time (the
     /// day/night clock's day against a real one) × the world's water speed; its writes go out as
     /// one modification.
     fn flow_water(&mut self) {
@@ -2451,7 +2450,7 @@ impl Server {
         format!("[{}]", rows.join(","))
     }
 
-    /// Water flow, for tests and tools (docs/WATER_FLOW.md).
+    /// The water, for tests and tools (docs/WATER_SURFACE_GRID.md).
     pub fn water(&self) -> &crate::water::Water {
         &self.water
     }
@@ -2871,8 +2870,8 @@ impl Server {
                 self.lod.mark_chunk(c);
             }
         }
-        // The water's basins as saved (docs/WATER_FLOW.md §8): those whose chunks are as they were
-        // saved; the rest are found again by the next edit that touches them.
+        // The free water as saved (WATER_SURFACE_GRID.md §2b); held water is found again from the
+        // blocks, and an older world's basin record is ignored.
         if let Some(bytes) = db.water()
             && self
                 .water
@@ -2956,8 +2955,7 @@ impl Server {
         batch.players = std::mem::take(&mut self.departed);
         // The world's moving bodies, all of them each save (docs/BUILT_BODIES.md §7).
         batch.bodies = Some(self.felling.saved(&self.physics));
-        // The water's basins (docs/WATER_FLOW.md §8), with the revisions of their chunks as this
-        // save leaves them.
+        // The free water (WATER_SURFACE_GRID.md §2b).
         {
             let saved = self.saved.lock().expect("saved index");
             let world = &self.world;

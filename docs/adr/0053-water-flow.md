@@ -1,5 +1,6 @@
 # 0053. Water flow: basins with one level, joined by outlets
 
+- Superseded by [ADR 0060](0060-water-surface-grid.md): the basins were removed in 0.48.2.
 - Status: Accepted (the owner's answers, 2026-11-03); planned as Phase 52 (W1–W5)
 - Date: 2026-11-03
 - Design: [`WATER_FLOW.md`](../WATER_FLOW.md); builds on ADR 0049 (the world map's rivers) and

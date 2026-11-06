@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Fluid CA 3D</title>
+<style>
+  :root {
+    --bg: #0b1020; --panel: rgba(17,24,39,0.92); --ink: #e8eaf0; --muted: #9aa3b5;
+    --line: #2a3344; --accent: #5b9be0; --accent-ink: #0b1020; --chip: #1c2433;
+  }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) {
+      --bg: #eef1f6; --panel: rgba(255,255,255,0.92); --ink: #1f2328; --muted: #5d6470;
+      --line: #d5dae3; --accent: #2f6fb3; --accent-ink: #ffffff; --chip: #e7ebf2;
+    }
+  }
+  :root[data-theme="light"] {
+    --bg: #eef1f6; --panel: rgba(255,255,255,0.92); --ink: #1f2328; --muted: #5d6470;
+    --line: #d5dae3; --accent: #2f6fb3; --accent-ink: #ffffff; --chip: #e7ebf2;
+  }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink);
+    font: 13px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; overflow: hidden; }
+  #view { position: fixed; inset: 0; }
+  canvas { touch-action: none; display: block; }
+  #panel { position: fixed; top: 12px; left: 12px; width: 290px; max-width: calc(100vw - 32px);
+    max-height: calc(100vh - 24px); overflow: auto; background: var(--panel); border: 1px solid var(--line);
+    border-radius: 10px; padding: 12px 14px; box-sizing: border-box; backdrop-filter: blur(6px); }
+  #panel-head { display: flex; align-items: center; gap: 8px; }
+  h1 { font-size: 15px; margin: 0; flex: 1; }
+  .sub { color: var(--muted); margin: 6px 0 10px; }
+  .sec { font-weight: 600; margin-top: 10px; }
+  .row { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 8px; }
+  button { font: inherit; border: 1px solid var(--line); background: var(--chip); color: var(--ink);
+    border-radius: 7px; padding: 5px 9px; cursor: pointer; }
+  button.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  label { display: flex; align-items: center; gap: 8px; margin: 4px 0; }
+  input[type=range] { flex: 1; }
+  .k { color: var(--muted); }
+  #stats { font-variant-numeric: tabular-nums; display: grid; grid-template-columns: auto auto; gap: 2px 10px; margin-top: 6px; }
+  ol { margin: 4px 0 0; padding-left: 18px; color: var(--muted); }
+  #fold { display: none; }
+  #modes { position: fixed; top: 12px; right: 12px; display: flex; background: var(--panel);
+    border: 1px solid var(--line); border-radius: 10px; padding: 4px; backdrop-filter: blur(6px); }
+  #modes button { border: none; background: transparent; padding: 8px 14px; font-weight: 600; min-height: 40px; }
+  #modes button.on { background: var(--accent); color: var(--accent-ink); }
+  #hint { position: fixed; top: 64px; right: 12px; max-width: 240px; color: var(--muted); background: var(--panel);
+    border: 1px solid var(--line); border-radius: 8px; padding: 6px 9px; font-size: 12px; }
+  @media (max-width: 640px), (orientation: portrait) {
+    #panel { width: auto; left: max(16px, env(safe-area-inset-left)); right: max(16px, env(safe-area-inset-right)); top: auto;
+      bottom: max(12px, env(safe-area-inset-bottom)); max-height: 46vh; max-width: none; padding: 10px 12px; }
+    #fold { display: inline-block; }
+    #panel.folded #panel-body { display: none; }
+    #modes { left: 50%; right: auto; transform: translateX(-50%); top: max(12px, env(safe-area-inset-top)); }
+    #hint { left: 16px; right: 16px; max-width: none; top: calc(max(12px, env(safe-area-inset-top)) + 60px); text-align: center; }
+    button { padding: 8px 11px; }
+    .intro { display: none; }
+  }
+</style>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<div id="view"></div>
+<div id="modes" role="group" aria-label="Mode">
+  <button id="m-camera" class="on">Camera</button>
+  <button id="m-edit">Edit</button>
+</div>
+<div id="hint"></div>
+<div id="panel">
+  <div id="panel-head"><h1>Fluid CA 3D</h1><button id="fold" aria-expanded="true">Hide</button></div>
+  <div id="panel-body">
+  <p class="sub intro">Falling-sand water in 3D: each voxel is empty, sand, water or stone, and every move is a swap, so the rules never create or destroy water. Water settles: it rests when there is nowhere lower to go.</p>
+  <div class="sec">Scene</div>
+  <div class="row" id="scenes"></div>
+  <div class="sec">Tool</div>
+  <div class="row" id="tools"></div>
+  <label><span class="k">Brush</span><input id="brush" type="range" min="0" max="4" value="1"><span id="brush-v"></span></label>
+  <div class="row">
+    <button id="play" class="on">Pause</button>
+    <button id="stepb">Step</button>
+  </div>
+  <label><span class="k">Speed</span><input id="speed" type="range" min="-1" max="8" value="2"><span id="speed-v"></span></label>
+  <label><span class="k">Cutaway</span><input id="cut" type="range" min="0" max="48" value="0"><span id="cut-v">off</span></label>
+  <div class="sec">Numbers</div>
+  <div id="stats"></div>
+  <div class="sec">Water rules, in order</div>
+  <ol>
+    <li>Fall into an empty cell below.</li>
+    <li>Slide down a diagonal, past an open side (never through a wall's corner).</li>
+    <li>Step toward the nearest place in its layer, through empty cells, where it can fall (a distance field per layer, so it finds its way round corners).</li>
+    <li>Nowhere lower to go: rest. A lone droplet rests rather than skating forever.</li>
+  </ol>
+  <p class="sub">Each cell moves at most once a generation. Only the brush, springs (cyan, give a cell of water a generation into an empty neighbour) and drains (dark, remove water touching them) change the amount of water; the numbers count them. Not modelled: pressure (water won't rise up the far side of a U-bend).</p>
+  </div>
+</div>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// ---- The grid: y is up, y = 0 the bottom ----
+const W = 48, HT = 28, D = 48, N = W * HT * D;
+const EMPTY = 0, SAND = 1, WATER = 2, STONE = 3, SPRING = 4, DRAIN = 5;
+const cell = new Uint8Array(N), moved = new Uint32Array(N);
+const idx = (x, y, z) => (y * D + z) * W + x;
+const inside = (x, y, z) => x >= 0 && y >= 0 && z >= 0 && x < W && y < HT && z < D;
+const get = (x, y, z) => inside(x, y, z) ? cell[idx(x, y, z)] : STONE; // the box's walls hold everything
+let generation = 0, moves = 0, springAdded = 0, drained = 0, brushNet = 0;
+const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+
+function swap(a, b) {
+  const t = cell[a]; cell[a] = cell[b]; cell[b] = t;
+  moved[a] = moved[b] = generation + 1; moves++;
+}
+function shuffled() { // the four sideways directions in a random order (no bias)
+  const d = DIRS.slice();
+  for (let i = 3; i > 0; i--) { const j = (Math.random() * (i + 1)) | 0; [d[i], d[j]] = [d[j], d[i]]; }
+  return d;
+}
+
+// Rule 3's distance field for one layer: from every empty cell with an empty cell below it (a drop),
+// out through the layer's empty cells. A water cell with nowhere to fall steps to its neighbour with
+// the least distance. Built when the layer is processed, after the layers below have moved.
+const INF = 0xffff, dist = new Uint16Array(W * D), queue = new Int32Array(W * D);
+function layerField(y) {
+  dist.fill(INF);
+  let head = 0, tail = 0;
+  if (y === 0) return;
+  for (let z = 0; z < D; z++) for (let x = 0; x < W; x++) {
+    if (cell[idx(x, y, z)] === EMPTY && cell[idx(x, y - 1, z)] === EMPTY) { dist[z * W + x] = 0; queue[tail++] = z * W + x; }
+  }
+  while (head < tail) {
+    const k = queue[head++], x = k % W, z = (k / W) | 0, nd = dist[k] + 1;
+    for (const [dx, dz] of DIRS) {
+      const nx = x + dx, nz = z + dz;
+      if (nx < 0 || nz < 0 || nx >= W || nz >= D) continue;
+      const nk = nz * W + nx;
+      if (dist[nk] !== INF || cell[idx(nx, y, nz)] !== EMPTY) continue;
+      dist[nk] = nd; queue[tail++] = nk;
+    }
+  }
+}
+
+function water(x, y, z, i) {
+  // 1. Fall.
+  if (y > 0 && cell[i - W * D] === EMPTY) { swap(i, i - W * D); return; }
+  const dirs = shuffled();
+  // 2. Slide down a diagonal, past an open side.
+  if (y > 0) for (const [dx, dz] of dirs) {
+    if (get(x + dx, y, z + dz) === EMPTY && get(x + dx, y - 1, z + dz) === EMPTY) { swap(i, idx(x + dx, y - 1, z + dz)); return; }
+  }
+  // 3. Step toward the nearest drop in this layer.
+  let best = -1, bestD = INF;
+  for (const [dx, dz] of dirs) {
+    const nx = x + dx, nz = z + dz;
+    if (!inside(nx, y, nz) || cell[idx(nx, y, nz)] !== EMPTY) continue;
+    const d = dist[nz * W + nx];
+    if (d < bestD) { bestD = d; best = idx(nx, y, nz); }
+  }
+  if (best >= 0) swap(i, best);
+  // 4. Otherwise rest.
+}
+function sand(x, y, z, i) {
+  if (y === 0) return;
+  const b = cell[i - W * D];
+  if (b === EMPTY || b === WATER) { swap(i, i - W * D); return; }
+  for (const [dx, dz] of shuffled()) {
+    const t = get(x + dx, y - 1, z + dz);
+    if ((t === EMPTY || t === WATER) && get(x + dx, y, z + dz) !== STONE) { swap(i, idx(x + dx, y - 1, z + dz)); return; }
+  }
+}
+function generationStep() {
+  moves = 0;
+  const stamp = generation + 1;
+  // Springs and drains first (the only things besides the brush that change the water).
+  for (let i = 0; i < N; i++) {
+    const c = cell[i];
+    if (c !== SPRING && c !== DRAIN) continue;
+    const x = i % W, z = ((i / W) | 0) % D, y = (i / (W * D)) | 0;
+    for (const [dx, dy, dz] of [[0, -1, 0], [1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1], [0, 1, 0]]) {
+      if (!inside(x + dx, y + dy, z + dz)) continue;
+      const j = idx(x + dx, y + dy, z + dz);
+      if (c === SPRING && cell[j] === EMPTY && dy <= 0) { cell[j] = WATER; moved[j] = stamp; springAdded++; break; }
+      if (c === DRAIN && cell[j] === WATER) { cell[j] = EMPTY; drained++; }
+    }
+  }
+  // Bottom up, so what falls isn't met again; the scan's direction alternates against bias.
+  for (let y = 0; y < HT; y++) {
+    layerField(y);
+    const fx = (generation + y) & 1, fz = (generation >> 1) & 1;
+    for (let zz = 0; zz < D; zz++) {
+      const z = fz ? D - 1 - zz : zz;
+      for (let xx = 0; xx < W; xx++) {
+        const x = fx ? W - 1 - xx : xx, i = idx(x, y, z);
+        if (moved[i] === stamp) continue;
+        const c = cell[i];
+        if (c === WATER) water(x, y, z, i); else if (c === SAND) sand(x, y, z, i);
+      }
+    }
+  }
+  generation++;
+}
+
+// ---- Scenes ----
+function box(x0, x1, y0, y1, z0, z1, v, onlyEmpty = false) {
+  for (let y = y0; y <= y1; y++) for (let z = z0; z <= z1; z++) for (let x = x0; x <= x1; x++)
+    if (inside(x, y, z) && (!onlyEmpty || cell[idx(x, y, z)] === EMPTY)) cell[idx(x, y, z)] = v;
+}
+const SCENES = {
+  basins: { name: 'Steps and basins', cam: [[70, 46, 74], [24, 4, 24]], make() {
+    box(0, W - 1, 0, 0, 0, D - 1, STONE);
+    box(0, 19, 1, 6, 0, D - 1, STONE);              // a high shelf
+    box(20, 31, 1, 3, 0, D - 1, STONE);             // a lower one
+    box(4, 15, 4, 6, 8, 39, EMPTY);                 // a basin cut into the high shelf
+    box(16, 19, 6, 6, 20, 23, EMPTY);               // its notch, down to the lower shelf
+    box(24, 29, 2, 3, 10, 37, EMPTY);               // a basin in the lower shelf
+    box(6, 13, 14, 19, 14, 33, WATER);              // a block of water over the high basin
+    box(36, 42, 8, 12, 18, 26, SAND);               // a heap of sand on the floor
+  } },
+  pour: { name: 'Spring fills a valley', cut: D - 1, cam: [[8, 40, 96], [26, 5, 24]], make() {
+    // A staircase down to a walled valley floor; no drain, so the spring's water runs down the
+    // steps, pools at the foot and rises back up them a layer at a time. The spring stops by itself
+    // once the water reaches it (it only gives into an empty neighbour). The near wall is cut away.
+    box(0, W - 1, 0, 0, 0, D - 1, STONE);
+    for (let s = 0; s < 6; s++) box(s * 6, s * 6 + 5, 1, 12 - s * 2, 0, D - 1, STONE); // a staircase
+    box(0, W - 1, 1, 15, 0, 0, STONE); box(0, W - 1, 1, 15, D - 1, D - 1, STONE);         // side walls
+    box(W - 1, W - 1, 1, 15, 0, D - 1, STONE);                                            // the end wall
+    box(0, 2, 13, 13, 22, 25, SPRING);              // a spring at the top (12 cells, 12 cells of water a generation)
+  } },
+  tanks: { name: 'Tanks and a pipe', cam: [[66, 40, 70], [24, 6, 24]], make() {
+    box(0, W - 1, 0, 0, 0, D - 1, STONE);
+    box(8, 40, 1, 16, 16, 31, STONE);
+    box(9, 20, 1, 16, 17, 30, EMPTY);               // the left tank
+    box(28, 39, 1, 16, 17, 30, EMPTY);              // the right tank
+    box(21, 27, 1, 1, 23, 24, EMPTY);               // a pipe under the wall between them
+    box(9, 20, 1, 14, 17, 30, WATER);               // the left tank full
+  } },
+  empty: { name: 'Empty floor', cam: [[70, 46, 74], [24, 4, 24]], make() { box(0, W - 1, 0, 0, 0, D - 1, STONE); } },
+};
+let scene = 'basins';
+function load(name) {
+  scene = name; cell.fill(EMPTY); moved.fill(0); generation = 0; springAdded = 0; drained = 0; brushNet = 0;
+  SCENES[name].make();
+  cut = SCENES[name].cut || 0;
+  document.getElementById('cut').value = cut; document.getElementById('cut-v').textContent = cut ? 'z ≥ ' + cut : 'off';
+  document.querySelectorAll('#scenes button').forEach(b => b.classList.toggle('on', b.dataset.k === name));
+  frameCam(SCENES[name].cam);
+  dirty = true;
+}
+
+// ---- View ----
+const view = document.getElementById('view');
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+view.appendChild(renderer.domElement);
+const cam = new THREE.PerspectiveCamera(45, 1, 0.1, 1000);
+const controls = new OrbitControls(cam, renderer.domElement);
+controls.enableDamping = true; controls.dampingFactor = 0.12;
+controls.maxPolarAngle = Math.PI * 0.49; controls.minDistance = 6; controls.maxDistance = 220;
+function frameCam(c) {
+  const t = new THREE.Vector3(...c[1]), off = new THREE.Vector3(...c[0]).sub(t);
+  if (cam.aspect < 1) off.multiplyScalar(1.5 / Math.max(cam.aspect, 0.45));
+  controls.target.copy(t); cam.position.copy(t).add(off); controls.update();
+}
+const sceneG = new THREE.Scene();
+sceneG.background = new THREE.Color(0x16202e);
+sceneG.add(new THREE.HemisphereLight(0xffffff, 0x445566, 1.1));
+const sun = new THREE.DirectionalLight(0xffffff, 1.3); sun.position.set(30, 60, 40); sceneG.add(sun);
+function resize() { renderer.setSize(innerWidth, innerHeight); cam.aspect = innerWidth / innerHeight; cam.fov = cam.aspect < 1 ? 55 : 45; cam.updateProjectionMatrix(); }
+addEventListener('resize', resize); resize();
+
+const boxGeo = new THREE.BoxGeometry(1, 1, 1);
+const solids = new THREE.InstancedMesh(boxGeo, new THREE.MeshLambertMaterial(), N);
+const waters = new THREE.InstancedMesh(boxGeo, new THREE.MeshLambertMaterial({ color: 0x3b82f6, transparent: true, opacity: 0.78 }), N);
+solids.frustumCulled = waters.frustumCulled = false;
+sceneG.add(solids, waters);
+const solidIds = new Int32Array(N), waterIds = new Int32Array(N);
+const tmp = new THREE.Object3D(), col = new THREE.Color();
+const COLORS = { [SAND]: [0.98, 0.78, 0.25], [STONE]: [0.42, 0.46, 0.53], [SPRING]: [0.25, 0.8, 0.9], [DRAIN]: [0.12, 0.12, 0.16] };
+let cut = 0, dirty = true;
+const cutAway = (z) => cut > 0 && z >= cut;
+// A cell is drawn if any side is open (empty, the box's top, or the cutaway), so buried cells cost nothing.
+function exposed(x, y, z) {
+  for (const [dx, dy, dz] of [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]]) {
+    const nx = x + dx, ny = y + dy, nz = z + dz;
+    if (!inside(nx, ny, nz)) { if (ny >= HT || nx < 0 || nz < 0 || nx >= W || nz >= D) return true; continue; }
+    if (cutAway(nz)) return true;
+    const c = cell[idx(nx, ny, nz)];
+    if (c === EMPTY || (c === WATER && cell[idx(x, y, z)] !== WATER)) return true;
+  }
+  return false;
+}
+function build() {
+  let s = 0, w = 0;
+  for (let y = 0; y < HT; y++) for (let z = 0; z < D; z++) {
+    if (cutAway(z)) continue;
+    for (let x = 0; x < W; x++) {
+      const i = idx(x, y, z), c = cell[i];
+      if (c === EMPTY || !exposed(x, y, z)) continue;
+      tmp.position.set(x + 0.5, y + 0.5, z + 0.5); tmp.updateMatrix();
+      if (c === WATER) { waters.setMatrixAt(w, tmp.matrix); waterIds[w++] = i; continue; }
+      const v = ((x + y + z) & 1) ? 0.04 : 0, k = COLORS[c];
+      col.setRGB(k[0] - v, k[1] - v, k[2] - v);
+      solids.setMatrixAt(s, tmp.matrix); solids.setColorAt(s, col); solidIds[s++] = i;
+    }
+  }
+  solids.count = s; waters.count = w;
+  solids.instanceMatrix.needsUpdate = true; if (solids.instanceColor) solids.instanceColor.needsUpdate = true;
+  waters.instanceMatrix.needsUpdate = true;
+}
+
+// ---- Modes and tools ----
+let mode = 'camera', spaceHeld = false;
+function applyMode() {
+  const camNow = mode === 'camera' || spaceHeld;
+  controls.mouseButtons = camNow ? { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN }
+    : { LEFT: null, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE };
+  controls.touches = camNow ? { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN } : { ONE: null, TWO: THREE.TOUCH.DOLLY_ROTATE };
+  document.getElementById('m-camera').classList.toggle('on', mode === 'camera');
+  document.getElementById('m-edit').classList.toggle('on', mode === 'edit');
+  const touch = matchMedia('(pointer: coarse)').matches;
+  document.getElementById('hint').textContent = mode === 'camera'
+    ? (touch ? 'Camera: one finger turns, two fingers pan and zoom' : 'Camera: drag turns, right-drag pans, wheel zooms')
+    : (touch ? 'Edit: tap or drag to use the tool; two fingers turn and zoom' : 'Edit: click or drag to use the tool; right-drag or hold Space to turn');
+  renderer.domElement.style.cursor = camNow ? 'grab' : 'crosshair';
+}
+function setMode(m) { mode = m; painting = false; applyMode(); }
+const TOOLS = { [WATER]: 'Water', [SAND]: 'Sand', [STONE]: 'Stone', [EMPTY]: 'Erase', [SPRING]: 'Spring', [DRAIN]: 'Drain' };
+let tool = WATER;
+const ray = new THREE.Raycaster(), mouse = new THREE.Vector2();
+function pick(ev) {
+  const r = renderer.domElement.getBoundingClientRect();
+  mouse.set(((ev.clientX - r.left) / r.width) * 2 - 1, -((ev.clientY - r.top) / r.height) * 2 + 1);
+  ray.setFromCamera(mouse, cam);
+  const hits = [...ray.intersectObject(solids), ...ray.intersectObject(waters)].sort((a, b) => a.distance - b.distance);
+  const h = hits[0]; if (!h) return null;
+  const i = (h.object === solids ? solidIds : waterIds)[h.instanceId], n = h.face.normal;
+  return { i, nx: Math.round(n.x), ny: Math.round(n.y), nz: Math.round(n.z) };
+}
+function apply(h) {
+  if (!h) return;
+  const x = h.i % W, z = ((h.i / W) | 0) % D, y = (h.i / (W * D)) | 0;
+  const erase = tool === EMPTY;
+  const cx = erase ? x : x + h.nx, cy = erase ? y : y + h.ny, cz = erase ? z : z + h.nz; // place against the face; erase the cell hit
+  const r = +document.getElementById('brush').value;
+  for (let dy = -r; dy <= r; dy++) for (let dz = -r; dz <= r; dz++) for (let dx = -r; dx <= r; dx++) {
+    if (dx * dx + dy * dy + dz * dz > r * r + 0.5) continue;
+    const px = cx + dx, py = cy + dy, pz = cz + dz;
+    if (!inside(px, py, pz) || (erase && py === 0)) continue; // the floor stays
+    const j = idx(px, py, pz), was = cell[j];
+    if (!erase && tool !== STONE && was !== EMPTY) continue; // materials fill empty space; stone overwrites
+    if (was === WATER) brushNet--;
+    cell[j] = tool;
+    if (tool === WATER) brushNet++;
+  }
+  dirty = true;
+}
+let painting = false, lastKey = '';
+const down = new Set();
+renderer.domElement.addEventListener('pointerdown', (e) => {
+  down.add(e.pointerId);
+  if (down.size > 1) { painting = false; return; }
+  if (mode !== 'edit' || spaceHeld || e.button !== 0) return;
+  painting = true; lastKey = ''; const h = pick(e); apply(h); lastKey = h ? h.i + ',' + h.nx + h.ny + h.nz : '';
+});
+renderer.domElement.addEventListener('pointermove', (e) => {
+  if (!painting || down.size !== 1) return;
+  const h = pick(e); const key = h ? h.i + ',' + h.nx + h.ny + h.nz : '';
+  if (key !== lastKey) { lastKey = key; apply(h); }
+});
+const up = (e) => { down.delete(e.pointerId); if (!down.size) painting = false; };
+addEventListener('pointerup', up); addEventListener('pointercancel', up);
+renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault());
+
+// ---- Panel ----
+const sc = document.getElementById('scenes');
+for (const [k, s] of Object.entries(SCENES)) { const b = document.createElement('button'); b.textContent = s.name; b.dataset.k = k; b.onclick = () => load(k); sc.appendChild(b); }
+const tl = document.getElementById('tools'), panel = document.getElementById('panel'), fold = document.getElementById('fold');
+fold.onclick = () => { const f = panel.classList.toggle('folded'); fold.textContent = f ? 'Show' : 'Hide'; fold.setAttribute('aria-expanded', String(!f)); };
+for (const [k, s] of Object.entries(TOOLS)) {
+  const b = document.createElement('button'); b.textContent = s; b.dataset.k = k;
+  b.onclick = () => {
+    tool = +k; tl.querySelectorAll('button').forEach(x => x.classList.toggle('on', x.dataset.k === k)); setMode('edit');
+    if (matchMedia('(max-width: 640px), (orientation: portrait)').matches && !panel.classList.contains('folded')) fold.click();
+  };
+  tl.appendChild(b);
+}
+tl.querySelector(`button[data-k="${WATER}"]`).classList.add('on');
+let running = true;
+document.getElementById('play').onclick = (e) => { running = !running; e.target.textContent = running ? 'Pause' : 'Play'; e.target.classList.toggle('on', running); };
+document.getElementById('stepb').onclick = () => { generationStep(); dirty = true; };
+document.getElementById('m-camera').onclick = () => setMode('camera');
+document.getElementById('m-edit').onclick = () => setMode('edit');
+document.getElementById('cut').oninput = (e) => { cut = +e.target.value; document.getElementById('cut-v').textContent = cut ? 'z ≥ ' + cut : 'off'; dirty = true; };
+const brushV = () => document.getElementById('brush-v').textContent = (2 * +document.getElementById('brush').value + 1) + ' cells';
+document.getElementById('brush').oninput = brushV; brushV();
+addEventListener('keydown', (e) => {
+  if (e.target.tagName === 'INPUT') return;
+  if (e.key === 'c' || e.key === 'C') setMode('camera');
+  else if (e.key === 'e' || e.key === 'E') setMode('edit');
+  else if (e.code === 'Space' && !spaceHeld) { spaceHeld = true; painting = false; applyMode(); e.preventDefault(); }
+});
+addEventListener('keyup', (e) => { if (e.code === 'Space') { spaceHeld = false; applyMode(); } });
+applyMode();
+if (matchMedia('(max-width: 640px), (orientation: portrait)').matches) fold.click();
+
+// ---- Loop ----
+const statsEl = document.getElementById('stats'), speed = document.getElementById('speed'), speedV = document.getElementById('speed-v');
+let stepMs = 0, frame = 0, lastMoves = 0;
+function countWater() { let n = 0; for (let i = 0; i < N; i++) if (cell[i] === WATER) n++; return n; }
+function stats() {
+  const rows = [['Water cells', countWater().toLocaleString()], ['Cells moving', running ? lastMoves.toLocaleString() + (lastMoves === 0 ? ' (settled)' : '') : '–'],
+    ['Generation', generation.toLocaleString()], ['Added: brush', brushNet.toLocaleString()], ['Added: springs', springAdded.toLocaleString()], ['Removed: drains', drained.toLocaleString()],
+    ['Generation cost', stepMs.toFixed(2) + ' ms'], ['Cells', N.toLocaleString()]];
+  statsEl.innerHTML = rows.map(([k, v]) => `<span class="k">${k}</span><span>${v}</span>`).join('');
+}
+function loop() {
+  // Speeds 1–8: generations a frame. 0: one every 4th frame (15 a second); −1: one every 15th (4 a second).
+  const v = +speed.value, every = v === 0 ? 4 : v === -1 ? 15 : 1, steps = v >= 1 ? v : (frame % every === 0 ? 1 : 0);
+  speedV.textContent = v >= 1 ? v + ' a frame' : (v === 0 ? '15 a second' : '4 a second');
+  if (running && steps) {
+    const t = performance.now();
+    for (let s = 0; s < steps; s++) generationStep();
+    stepMs = (performance.now() - t) / steps; lastMoves = moves; dirty = true;
+  }
+  if (dirty) { build(); dirty = false; }
+  if (frame++ % 10 === 0) stats();
+  controls.update();
+  renderer.render(sceneG, cam);
+  requestAnimationFrame(loop);
+}
+window.ca3 = { generationStep, countWater, moves: () => moves, load, cell, idx, W, HT, D, pause: () => { running = false; } };
+const start = location.hash.slice(1);
+load(start in SCENES ? start : 'basins');
+loop();
+</script>
+</body>
+</html>

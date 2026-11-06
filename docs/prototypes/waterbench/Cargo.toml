@@ -1,0 +1,17 @@
+[package]
+name = "waterbench"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+dwell-worldgen = { path = "../../../crates/dwell-worldgen" }
+rayon = "1"
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+debug = false
+panic = "abort"
+
+[workspace]

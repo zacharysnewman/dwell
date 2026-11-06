@@ -1,5 +1,9 @@
 # Water flow (basins, outlets, currents)
 
+> **Replaced (0.48.2):** the basins, outlets and pool graph this document describes were removed from
+> the game; water is now the surface grid of [ADR 0060](./adr/0060-water-surface-grid.md) and
+> [`WATER_SURFACE_GRID.md`](./WATER_SURFACE_GRID.md). Kept as the record of Phase 52.
+
 > **Status: adopted (the owner's answers, 2026-11-03; [ADR 0053](./adr/0053-water-flow.md),
 > amended by [ADR 0055](./adr/0055-water-at-rest.md) and [ADR 0056](./adr/0056-one-opening-law.md)), Phase 52. W1 built (the server's basins, §15),
 > redesigned in 0.42.2 after the review (§16): the world as found is at rest (§2.2), its flow the
