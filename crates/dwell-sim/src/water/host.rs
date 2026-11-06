@@ -773,6 +773,11 @@ pub fn encode_out(seq: u32, outs: &[Out]) -> Vec<u8> {
                     w.cell(x.cell);
                     w.u16(x.state);
                     w.u8(x.was);
+                    w.u8(match x.flood {
+                        None => 0,
+                        Some(false) => 1,
+                        Some(true) => 2,
+                    });
                 }
                 w.u32(currents.len() as u32);
                 for ((b, cx, cz), c) in currents {
@@ -837,13 +842,19 @@ pub fn decode_out(b: &[u8]) -> Option<(u32, Vec<Out>)> {
     for _ in 0..n {
         outs.push(match r.u8()? {
             0 => {
-                let n = r.count(15)?;
+                let n = r.count(16)?;
                 let mut writes = Vec::with_capacity(n);
                 for _ in 0..n {
                     writes.push(Write {
                         cell: r.cell()?,
                         state: r.u16()?,
                         was: r.u8()?,
+                        flood: match r.u8()? {
+                            0 => None,
+                            1 => Some(false),
+                            2 => Some(true),
+                            _ => return None,
+                        },
                     });
                 }
                 let n = r.count(10)?;
@@ -942,11 +953,20 @@ mod tests {
         c[3] = [0.25, -1.5];
         let outs = vec![
             Out::Ran {
-                writes: vec![Write {
-                    cell: [1, 2, 3],
-                    state: dwell_world::M.water,
-                    was: OPEN,
-                }],
+                writes: vec![
+                    Write {
+                        cell: [1, 2, 3],
+                        state: dwell_world::M.water,
+                        was: OPEN,
+                        flood: None,
+                    },
+                    Write {
+                        cell: [1, 2, 4],
+                        state: 0,
+                        was: crate::water::cells::HOLDS_DRY,
+                        flood: Some(true),
+                    },
+                ],
                 currents: vec![((true, -1, 2), Some(c)), ((false, 3, 4), None)],
                 wanted: vec![ChunkCoord::new(1, 1, 1)],
                 stats: Stats {

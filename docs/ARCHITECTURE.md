@@ -2421,6 +2421,10 @@ in 0.48.2.
   cell in eighths of the liquid's `fill`, emptied cells cleared, never over a solid) when its level
   crosses a step by more than a quarter step, through `VoxelWorld::write_voxel` (one revision per
   chunk per modification) and sent as `Rebake` modifications; a chunk falling asleep is drawn exactly.
+  A block holding water in its open part (a ramp: shaped, with a `flooded` property) is solid to the
+  flow; drawing a column sets the `flooded` state (by name) of those in its rows and its neighbours'
+  while the water beside or over them stands half a fill step into their cell, and clears it when the
+  water goes (BUGS.md #36).
 - **Ticks** every `tickEvery` server ticks (`shared/fluids/flow.json`), its time game time (the
   day/night clock's) × the world's water speed (`WorldSettings`, ADR 0054). The chunks of awake water
   and those beside it are kept loaded (`Water::wanted_chunks`, sent back by the host), so moving

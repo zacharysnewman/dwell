@@ -170,8 +170,11 @@ for now, make a note about future possibly using shared memory threads"; the wat
 **As built (G5):**
 
 - **The copy** (`water/cells.rs`): `Cells`, a `ChunkCells` per loaded chunk (`Uniform(byte)` or a
-  32 KiB `Mixed` array); bytes 0 solid, 1 open, 2–9 liquid in eighths (`byte_of` from the registry's
-  `liquid`, `fill`, `replaceable` and `solid`). The grid's reads (`floor_at`, `found`, the scan, what
+  32 KiB `Mixed` array); bytes 0 solid, 1 open, 2–9 liquid in eighths, 10 and 11 a block holding
+  water in its open part (a ramp: shaped, with a `flooded` property), dry or flooded (`byte_of` from
+  the registry's `liquid`, `fill`, `replaceable`, `solid`, shape and properties). A ramp is solid to
+  the flow; drawing a column floods the ramps in its rows and its neighbours' while the water beside
+  or over them stands half a fill step into their cell, and dries them when it goes (BUGS.md #36). The grid's reads (`floor_at`, `found`, the scan, what
   an edit trapped, `draw`) all go through it; `draw` writes its own copy as it writes water. On the
   wire a mixed chunk is runs (a byte and a u16 length), a few hundred bytes for a terrain chunk.
 - **What changed** (`cells::Mirror`): each loaded chunk's `Chunk::stamp` and revision as last told.

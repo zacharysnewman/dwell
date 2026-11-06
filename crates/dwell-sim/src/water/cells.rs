@@ -18,6 +18,23 @@ pub const OPEN: u8 = 1;
 pub const LIQUID: u8 = 2;
 /// A full liquid cell.
 pub const FULL: u8 = LIQUID + 7;
+/// A block whose open part holds water (a ramp: a shaped block with a `flooded` property), dry or
+/// flooded: solid to the grid's flow, its `flooded` state drawn by the water beside it (BUGS.md #36).
+pub const HOLDS_DRY: u8 = 10;
+pub const HOLDS_WET: u8 = 11;
+
+/// Whether state `m` holds water in its open part: a shaped block with a `flooded` state.
+fn holds_water(m: StateId) -> bool {
+    static HOLDS: std::sync::LazyLock<Vec<bool>> = std::sync::LazyLock::new(|| {
+        (0..dwell_blocks::STATES.len())
+            .map(|m| {
+                dwell_blocks::STATES[m].shape == dwell_blocks::VoxelShape::Shaped
+                    && dwell_blocks::with_property(m as StateId, "flooded", "true").is_some()
+            })
+            .collect()
+    });
+    HOLDS.get(usize::from(m)).copied().unwrap_or(false)
+}
 
 /// What a cell is to water.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -38,23 +55,38 @@ pub fn byte_of(m: StateId) -> u8 {
         LIQUID + ((fill * 8.0).round().clamp(1.0, 8.0) as u8) - 1
     } else if s.replaceable && !s.solid {
         OPEN
+    } else if holds_water(m) {
+        if s.flooded { HOLDS_WET } else { HOLDS_DRY }
     } else {
         SOLID
     }
 }
 
+/// A byte's `flooded`, if it is a block holding water in its open part.
+pub fn holds(b: u8) -> Option<bool> {
+    match b {
+        HOLDS_DRY => Some(false),
+        HOLDS_WET => Some(true),
+        _ => None,
+    }
+}
+
+fn is_liquid(b: u8) -> bool {
+    (LIQUID..=FULL).contains(&b)
+}
+
 /// A byte's kind.
 pub fn kind_of(b: u8) -> Kind {
     match b {
-        SOLID => Kind::Solid,
         OPEN => Kind::Open,
-        _ => Kind::Liquid,
+        _ if is_liquid(b) => Kind::Liquid,
+        _ => Kind::Solid,
     }
 }
 
 /// A liquid byte's share of its cell (a full one, or its eighths); 0 for others.
 pub fn fill_of(b: u8) -> f32 {
-    if b < LIQUID {
+    if !is_liquid(b) {
         0.0
     } else {
         f32::from(b - LIQUID + 1) / 8.0
@@ -126,9 +158,9 @@ impl ChunkCells {
     /// The local indices of its liquid cells.
     pub fn liquids(&self) -> Vec<usize> {
         match self {
-            ChunkCells::Uniform(b) if *b >= LIQUID => (0..CHUNK_VOLUME).collect(),
+            ChunkCells::Uniform(b) if is_liquid(*b) => (0..CHUNK_VOLUME).collect(),
             ChunkCells::Uniform(_) => Vec::new(),
-            ChunkCells::Mixed(v) => (0..CHUNK_VOLUME).filter(|&i| v[i] >= LIQUID).collect(),
+            ChunkCells::Mixed(v) => (0..CHUNK_VOLUME).filter(|&i| is_liquid(v[i])).collect(),
         }
     }
 
@@ -347,6 +379,15 @@ mod tests {
         let half = dwell_blocks::liquid_at_fill(M.water, 0.5);
         assert_eq!(fill_of(byte_of(half)), 0.5);
         assert_eq!(kind_of(byte_of(half)), Kind::Liquid);
+        // a ramp holds water in its open part: solid to the flow, its `flooded` carried
+        let ramp = require("dwell:stone_ramp[facing=east,flooded=false,half=bottom,shape=ramp]");
+        let wet = dwell_blocks::with_property(ramp, "flooded", "true").expect("floodable");
+        assert_eq!((byte_of(ramp), byte_of(wet)), (HOLDS_DRY, HOLDS_WET));
+        assert_eq!(kind_of(HOLDS_WET), Kind::Solid);
+        assert_eq!(fill_of(HOLDS_WET), 0.0);
+        assert_eq!(holds(byte_of(wet)), Some(true));
+        // a full block with a `flooded` property doesn't
+        assert_eq!(byte_of(stone), SOLID);
     }
 
     #[test]

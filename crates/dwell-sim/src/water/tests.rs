@@ -456,11 +456,10 @@ impl Hosted {
                         .world
                         .find(chunk_of(w.cell[0], w.cell[1], w.cell[2]))
                         .is_some();
-                    let now = cells::byte_of(self.s.world.get_voxel_if_loaded(w.cell));
-                    if loaded && cells::kind_of(now) != Kind::Solid {
-                        self.s
-                            .world
-                            .write_voxel(w.cell[0], w.cell[1], w.cell[2], w.state);
+                    if let Some(m) = w.apply_to(self.s.world.get_voxel_if_loaded(w.cell))
+                        && loaded
+                    {
+                        self.s.world.write_voxel(w.cell[0], w.cell[1], w.cell[2], m);
                     }
                 }
             }
@@ -648,5 +647,75 @@ dwell_world::both_faces!(
             second.ran_s > 0.0 && second.owed_s < first.owed_s,
             "it runs what it owes: {second:?}"
         );
+    }
+);
+
+dwell_world::both_faces!(
+    fn water_risen_over_a_steep_slope_floods_its_ramps_and_dries_them_when_it_goes(f: FaceFrame) {
+        // Owner, 2026-11-06 (BUGS.md #36): "the bottom half of steep slopes is still either not
+        // flooded or visually not flooded". A ramp (a shaped block with a `flooded` state) was solid
+        // to the grid, so water rising over it never flooded its open part. The pit scene of
+        // `a_lake_cut_open_drains_into_a_pit_to_one_level`, a steep slope (two ramps) standing in
+        // the pit and a single ramp on its floor.
+        let mut s = Scene::new(f);
+        s.basin(0, 7, 0, 7, 3);
+        let stone = require("dwell:stone");
+        s.fill([10, -3, 0], [17, -1, 7], M.air);
+        for r in -3..=4 {
+            for z in -1..=8 {
+                s.set(18, r, z, stone);
+            }
+            for x in 9..=18 {
+                s.set(x, r, -1, stone);
+                s.set(x, r, 8, stone);
+            }
+        }
+        let ramp = |shape: &str| {
+            f.state(require(&format!(
+                "dwell:stone_ramp[facing=east,flooded=false,half=bottom,shape={shape}]"
+            )))
+        };
+        s.set(14, -3, 3, ramp("steep_lower"));
+        s.set(14, -2, 3, ramp("steep_upper"));
+        s.set(12, -3, 5, ramp("ramp"));
+        // a ramp on a pedestal in the lake, its top at the lake's level, flooded as the sea's are
+        // generated
+        s.set(3, 0, 3, stone);
+        s.set(3, 1, 3, stone);
+        s.set(
+            3,
+            2,
+            3,
+            f.state(require(
+                "dwell:stone_ramp[facing=east,flooded=true,half=bottom,shape=ramp]",
+            )),
+        );
+        s.run(5);
+        let flooded = |s: &Scene, x: i32, r: i32, z: i32| info(s.get(x, r, z)).flooded;
+        assert!(!flooded(&s, 14, -3, 3), "dry before the water comes");
+        let cut: Vec<(i32, i32, i32)> = (2..=5)
+            .flat_map(|z| (0..=4).flat_map(move |r| [(8, r, z), (9, r, z)]))
+            .collect();
+        s.edit(&cut, M.air);
+        s.run(600);
+        let pit = s.level(15, 3).expect("the pit holds water");
+        assert!(pit > -0.5, "the water stands over the slope: {pit:.3}");
+        assert!(
+            flooded(&s, 14, -3, 3),
+            "the steep slope's lower ramp is flooded"
+        );
+        assert!(flooded(&s, 14, -2, 3), "and its upper");
+        assert!(flooded(&s, 12, -3, 5), "the ramp on the floor is flooded");
+        assert!(
+            s.get(14, -3, 3)
+                == f.state(require(
+                    "dwell:stone_ramp[facing=east,flooded=true,half=bottom,shape=steep_lower]"
+                )),
+            "the same ramp, flooded"
+        );
+        // the lake's ramp, flooded as found, stands out of the lake now drained below it
+        let lake = s.level(2, 3).expect("the lake");
+        assert!(lake < 1.0, "the lake fell below its ramp's open part: {lake:.3}");
+        assert!(!flooded(&s, 3, 2, 3), "dried when the water left");
     }
 );

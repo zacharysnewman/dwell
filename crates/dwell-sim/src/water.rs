@@ -282,12 +282,30 @@ impl Chunk {
     }
 }
 
-/// A water cell written: its new state, and the byte (`cells::byte_of`) of what it replaced.
+/// A water cell written: its new state, and the byte (`cells::byte_of`) of what it replaced; or,
+/// with `flood`, a block holding water in its open part (a ramp) set flooded or dry, its state
+/// found from the world's (`flooded` by name; `state` unused).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Write {
     pub cell: [i32; 3],
     pub state: StateId,
     pub was: u8,
+    pub flood: Option<bool>,
+}
+
+impl Write {
+    /// The state this write leaves in a world whose cell is `now`, or None if it no longer applies
+    /// (overtaken: the cell made solid, or no longer a block holding water).
+    pub fn apply_to(&self, now: StateId) -> Option<StateId> {
+        let b = cells::byte_of(now);
+        match self.flood {
+            None => (cells::kind_of(b) != Kind::Solid).then_some(self.state),
+            Some(wet) => {
+                cells::holds(b)?;
+                dwell_blocks::with_property(now, "flooded", if wet { "true" } else { "false" })
+            }
+        }
+    }
 }
 
 /// A water chunk's key in `VoxelWorld::currents`: (face B, chunk x, chunk z).
@@ -567,9 +585,10 @@ impl Water {
         }
         step.writes
             .into_iter()
-            .map(|w| {
-                world.write_voxel(w.cell[0], w.cell[1], w.cell[2], w.state);
-                (w.cell, w.state)
+            .filter_map(|w| {
+                let m = w.apply_to(world.get_voxel_if_loaded(w.cell))?;
+                world.write_voxel(w.cell[0], w.cell[1], w.cell[2], m);
+                Some((w.cell, m))
             })
             .collect()
     }
@@ -1319,14 +1338,71 @@ impl Water {
                                 cell: w,
                                 state: want,
                                 was: now,
+                                flood: None,
                             });
                         }
                     }
                 }
                 self.chunks[c].drawn[l] = level;
+                self.flood_near(f, x, z, r0 - 2, r1, &mut writes);
             }
         }
         writes
+    }
+
+    /// The highest water level in face `f`'s column (x, z) and the four beside it (face-local m).
+    fn level_near(&self, f: FaceFrame, x: i32, z: i32) -> Option<f32> {
+        [(0, 0), (1, 0), (-1, 0), (0, 1), (0, -1)]
+            .into_iter()
+            .filter_map(|(dx, dz)| {
+                let (c, l) = self.find(f, x + dx, z + dz)?;
+                let k = &self.chunks[c];
+                (!k.w.floor[l].is_nan() && k.w.depth[l] > 0.01).then(|| k.w.floor[l] + k.w.depth[l])
+            })
+            .reduce(f32::max)
+    }
+
+    /// Blocks holding water in their open part (ramps, `cells::HOLDS_*`) in rows `r0..=r1` of
+    /// column (x, z) and the four beside it: flooded while the water beside or over them stands
+    /// half a fill step into their cell, dry when it goes (BUGS.md #36: the grid had kept them dry).
+    fn flood_near(
+        &mut self,
+        f: FaceFrame,
+        x: i32,
+        z: i32,
+        r0: i32,
+        r1: i32,
+        writes: &mut Vec<Write>,
+    ) {
+        for (dx, dz) in [(0, 0), (1, 0), (-1, 0), (0, 1), (0, -1)] {
+            let (cx, cz) = (x + dx, z + dz);
+            let mut near = None;
+            for r in r0..=r1 {
+                let w = cell(f, cx, r, cz);
+                let Some(now) = self.cells.get(w) else {
+                    continue;
+                };
+                let Some(wet) = cells::holds(now) else {
+                    continue;
+                };
+                let level = *near.get_or_insert_with(|| self.level_near(f, cx, cz));
+                let want = level.is_some_and(|lv| lv >= m_of_row(r) as f32 + STEP * 0.5);
+                if want != wet {
+                    let b = if want {
+                        cells::HOLDS_WET
+                    } else {
+                        cells::HOLDS_DRY
+                    };
+                    self.cells.set(w, b);
+                    writes.push(Write {
+                        cell: w,
+                        state: 0,
+                        was: now,
+                        flood: Some(want),
+                    });
+                }
+            }
+        }
     }
 
     /// The free water as saved (version 1 of the grid's record): each chunk with free columns,

@@ -2561,11 +2561,11 @@ impl Server {
                     ..
                 } => {
                     for w in writes {
-                        if !self.water_write_stands(w.cell) {
+                        let Some(m) = self.water_write_stands(&w) else {
                             self.water_link.overtaken += 1;
                             continue;
-                        }
-                        changes.set(&mut self.world, w.cell, w.state);
+                        };
+                        changes.set(&mut self.world, w.cell, m);
                     }
                     for (key, c) in currents {
                         self.world.currents.set(key, c);
@@ -2588,14 +2588,12 @@ impl Server {
         }
     }
 
-    /// Whether a water write to `cell` still stands: its chunk loaded and the cell open or water.
-    fn water_write_stands(&self, cell: [i32; 3]) -> bool {
-        self.world
-            .find(chunk_of(cell[0], cell[1], cell[2]))
-            .is_some()
-            && crate::water::cells::kind_of(crate::water::cells::byte_of(
-                self.world.get_voxel_if_loaded(cell),
-            )) != crate::water::cells::Kind::Solid
+    /// The state a water write leaves, if it still stands: its chunk loaded and the cell open or
+    /// water (or, for a ramp's flooding, still a block holding water: `Write::apply_to`).
+    fn water_write_stands(&self, w: &crate::water::Write) -> Option<dwell_blocks::StateId> {
+        let c = w.cell;
+        self.world.find(chunk_of(c[0], c[1], c[2]))?;
+        w.apply_to(self.world.get_voxel_if_loaded(c))
     }
 
     /// The world's settings (its clock, its water speed).

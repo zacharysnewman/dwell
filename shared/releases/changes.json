@@ -5,7 +5,8 @@
       "version": "0.49.12",
       "changes": [
         "Water runs on a thread of its own: damming a river or flooding a pit no longer makes the game stop and start",
-        "Floods and drains run at full speed again instead of slowing down when much water moves"
+        "Floods and drains run at full speed again instead of slowing down when much water moves",
+        "Water that rises over a steep slope fills the bottom half of the slope too, and leaves it when the water goes"
       ]
     },
     {
