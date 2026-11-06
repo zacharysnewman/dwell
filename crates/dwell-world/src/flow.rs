@@ -27,6 +27,8 @@ pub struct FlowData {
     pub cfl: f64,
     /// The most substeps a water tick takes.
     pub max_substeps: u32,
+    /// The most column-substeps a water tick may take.
+    pub step_budget: u32,
     /// A chunk sleeps once its levels held within this (m) for `calm_s`.
     pub sleep_band_m: f64,
     /// A sleeping chunk wakes when its account would move its water this far (m).
