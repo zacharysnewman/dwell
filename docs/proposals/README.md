@@ -10,6 +10,7 @@ Open proposals:
 | Proposal | What | Status |
 |---|---|---|
 | [`PIXEL_ART_LOOK.md`](./PIXEL_ART_LOOK.md) | The 3D pixel-art look (t3ssel8r style): a low-res frame, toon bands, a palette with ordered dither, an integer upscale; built as an opt-in preview (`?pixelart=<preset>`) to judge the look | Prototype built, off by default; open questions for the owner |
+| [`WATER_MODEL_EVALUATION.md`](./WATER_MODEL_EVALUATION.md) | Pools and lips (today) vs flowing 1-D reaches vs a water surface grid with virtual pipes (Timberborn's model): recommends against reaches as the main model (a second model with seams), and a sandbox prototype of the grid before deciding | Written 2026-11-04; questions for the owner |
 | [`TERRAIN_HYDROLOGY_AND_VOLUMES.md`](./TERRAIN_HYDROLOGY_AND_VOLUMES.md) | A world-scale hydrology map per seed and face (stream-power erosion, priority-flood lakes, rivers to the sea), then a 3D density function for rich caves, cliffs, arches, sea stacks, cross-face caves and floating islands | Hydrology prototype built (a viewer of images, not wired into generation); open questions for the owner |
 
 Adopted proposals, and where they went:
@@ -23,6 +24,7 @@ Adopted proposals, and where they went:
 | Half-height voxels (`HALF_HEIGHT_VOXELS.md`): ½ m cells, stored cardinal ramps, shaped at generation | 2026-10-19, [ADR 0042](../adr/0042-half-height-cells.md), Phase 41, for a playtest on the branch `claude/half-height-voxels` | [`docs/HALF_HEIGHT_GRID.md`](../HALF_HEIGHT_GRID.md); the proposal is kept beside it as the investigation's record |
 | Water flow (`WATER_FLOW.md`): basins with one level joined by outlets; damming, draining, diverting, currents | 2026-11-03, [ADR 0053](../adr/0053-water-flow.md), Phase 52 | [`docs/WATER_FLOW.md`](../WATER_FLOW.md) |
 | Water as data (`WATER_GRAPH.md`): the pool graph from the world map, virtual pools, one model for all water | 2026-11-04, [ADR 0059](../adr/0059-water-graph.md), Phase 52 G1–G3 | [`docs/WATER_FLOW.md`](../WATER_FLOW.md) §19 (the proposal kept as the investigation's record) |
+| Water surface grid (`WATER_SURFACE_GRID.md`): water simulated as a surface grid (sleeping chunks, pools, a held sea), its own layer; generated water filled by it at world creation, no drawn beds, levels or lips | 2026-11-05, [ADR 0060](../adr/0060-water-surface-grid.md), Phase 53 | [`docs/WATER_SURFACE_GRID.md`](../WATER_SURFACE_GRID.md) |
 | Balanced rivers (`BALANCED_RIVERS.md`): generated river pools at the levels the engine's one law balances, and sloped water edges | 2026-11-04, [ADR 0057](../adr/0057-balanced-rivers.md), Phase 52 W6 | [`docs/WATER_FLOW.md`](../WATER_FLOW.md) §17 |
 
 Numbers marked *estimate* in a proposal are extrapolated from published figures or arithmetic, not

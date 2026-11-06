@@ -1274,6 +1274,13 @@ impl TerrainGenerator {
     }
 
     fn base_column(&self, x: i64, z: i64, cell: i64) -> Column {
+        self.base_column_with(x, z, cell, true)
+    }
+
+    /// `base_column`, or with `beds` false the ground with the rivers' valleys but no beds: a
+    /// channel's columns take the valley floor at its banks' height (no bed cut, no lips, no water
+    /// drawn), for the water surface grid's prototype (Phase 53 G0, ADR 0060).
+    fn base_column_with(&self, x: i64, z: i64, cell: i64, beds: bool) -> Column {
         if !inside_world_disc(x, z) {
             return Column {
                 outside: true,
@@ -1365,7 +1372,7 @@ impl TerrainGenerator {
         }
         if let Some(r) = &river {
             let edge = r.d - r.half;
-            if edge < 0.0 {
+            if edge < 0.0 && beds {
                 // The channel: its bed below the water, deepest on the centreline.
                 let f = r.d / r.half;
                 let depth = (r.depth * (1.0 - f * f)).max(S.river_min_depth);
@@ -1452,7 +1459,7 @@ impl TerrainGenerator {
         // so no open cell lies below the water beside it, nor a ramp's open part in it (ADR 0057).
         let near_water = river.as_ref().is_some_and(|r| r.d - r.half < 2.0)
             || lake.as_ref().is_some_and(|l| l.sdf > -2.0);
-        if cell == 1 && water == Water::None && near_water {
+        if beds && cell == 1 && water == Water::None && near_water {
             let top = [(1, 0), (-1, 0), (0, 1), (0, -1)]
                 .into_iter()
                 .filter_map(|(dx, dz)| self.water_row_at(x + dx, z + dz))
@@ -1692,6 +1699,49 @@ impl TerrainGenerator {
                 }
             }
         }
+    }
+
+    /// The ground at face-local column (x, z) with no water shaped into it: the map's eroded height
+    /// and the fine detail, without the river cut, valley, levees or lake shore (`base_column`'s first
+    /// two layers); none outside the world's disc. For the water surface grid's prototype (Phase 53
+    /// G0: rivers without beds, ADR 0060); the chunk path doesn't use it.
+    pub fn ground_without_water(&self, x: i32, z: i32) -> Option<f32> {
+        let (x, z) = (i64::from(x), i64::from(z));
+        if !inside_world_disc(x, z) {
+            return None;
+        }
+        let (base, _, _) = self.map.height_at(x as f64, z as f64);
+        let amplitude = S.detail_amplitude
+            + (S.detail_mountain_amplitude - S.detail_amplitude)
+                * f64::from(smooth_step(
+                    S.detail_mountain_from as f32,
+                    S.detail_mountain_full as f32,
+                    base as f32,
+                ));
+        let kept = octaves_resolved(S.detail_wavelength, S.detail_octaves, 1);
+        let detail = if kept == 0 {
+            0.0
+        } else {
+            2.0 * amplitude
+                * f64::from(fbm2(
+                    self.detail_seed,
+                    x + self.offset_x,
+                    z + self.offset_z,
+                    S.detail_wavelength,
+                    S.detail_octaves,
+                    Some(kept),
+                ))
+        };
+        let h = base + detail;
+        Some(((SEA_LEVEL_M + h).max(dwell_world::MIDPLANE_M + dwell_world::CORE_M)) as f32)
+    }
+
+    /// The ground at face-local column (x, z) with the rivers' valleys but no beds (no cut, lips or
+    /// drawn river water; lake beds as generated): the valley floor runs through where the channel
+    /// was, at its banks' height. For the water surface grid's prototype (Phase 53 G0, ADR 0060).
+    pub fn ground_with_valleys(&self, x: i32, z: i32) -> Option<f32> {
+        let c = self.base_column_with(i64::from(x), i64::from(z), 1, false);
+        (!c.outside).then_some(c.height)
     }
 
     /// A column with exactly the chunk path's arithmetic (spawn, tools, tests).

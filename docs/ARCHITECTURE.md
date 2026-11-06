@@ -1614,7 +1614,7 @@ lives in side files. Chunk and LOD blobs are the protocol's palette + RLE compre
 | `players` | Keyed by device public key: display name, state blob (version 1: feet `f64×3`, health; later inventory), first/last seen |
 | `permissions` | `(public key, kind)` with kind `op` / `ban` / `allow` → reason, granted by, when |
 | `bodies` | **[built, Phase 51 B2]** The world's moving bodies, rewritten whole each save: kind, pose, velocities, cells (states by name; BUILT_BODIES.md §7) |
-| `water` | **[built, 0.43.4]** The water's basins (WATER_FLOW.md §8): one LZ4 record of `Water::save`, every basin but the reservoirs (containers, volumes, outlets, what holds them at rest, steady flows, time owed), the flow network, water in transit, the ways drawn running, and each basin's chunks' revisions; on load a basin whose chunks are at other revisions (a build that doesn't save the water edited them) is left out and found again by its edits |
+| `water` | **[built, 0.48.2]** The water surface grid's free water (§6.7, WATER_SURFACE_GRID.md): one LZ4 record of `Water::save` (`DWG1`): each water chunk with free columns, their floors, depths and flows (and the rest layer's), and what the chunk owes; held water is found again from the blocks. An older basin record (`DWW5`) is ignored |
 | `tree_tombstones` | **[planned, Phase 30]** Per chunk: the sparse set of chopped procedural tree ids `(chunk, procedural index)` and the pruned node sets of partly cut ones (§6.3 tree growth) |
 | `growers` | **[planned, Phase 30]** Player-planted trees, keyed by the chunk holding the root: structure, variant seed, root, planted world time, pruned nodes |
 
@@ -2375,24 +2375,63 @@ flies high above the disc and the whole disc is drawn by the time it arrives.
 
 ---
 
-### 6.7 Water Flow **[in progress, Phase 52: W1 built, the world map's flow (W2) built]**
+### 6.7 Water **[in progress, Phase 53: the runtime grid built (G2a, 0.48.2); generation fill (G1), the water layer on clients (G3), data (G4) planned]**
 
-[ADR 0053](./adr/0053-water-flow.md), [`WATER_FLOW.md`](./WATER_FLOW.md). Liquid is simulated as
-**basins**, each a connected body with one level and volume, joined by **outlets** (the weir law,
-blocks' `leak` data), not per cell: a basin's level changes by in − out each tick and its rim cells
-are rewritten only when the level crosses a ½ m row. Rivers are chains of pools fed by the world
-map's runoff; damming, draining and diverting are edits that change outlets; basins fill, spill,
-merge and split. Simulated near players, fast-forwarded elsewhere; rates counted in game time (the day/night clock's) × a water speed world setting; each face's sea a fixed reservoir at sea level (a sink, and a source for land below it).
-Each liquid cell has a derived current, which the water drag (§7, BUILT_BODIES.md §6) and the swim
-layer use. **Built (W1):** `dwell-sim` `water.rs` on the server, data `shared/fluids/flow.json` (→
-`flow.gen.rs`: the speed, the water tick's period, the live radius, the size limits, each liquid's
-weir coefficient and the blocks' leaks); bodies found by the edits that touch them, **at rest as
-found** (ADR 0055, 0.42.2: what they didn't fill holds them, their natural outlets pass the world
-map's flow, `dwell_worldgen::runoff_for` → `TerrainGenerator::discharge_at`, linked into one flow
-network), each face's sea a reservoir by size; flow steps by the fastest basin; basins out of reach
-or with a chunk unloaded wait, passing on what comes in, and are found again when a chunk beside them loads (0.43.3); ramps at the written edge flooded; spills are drawn (the liquid's
-`running` block, 0.43.1); one opening law, `C·A·√(2gΔh)`, for every opening and every face two
-basins share, merging and splitting by whether the faces even them out at once (ADR 0056, 0.43.2); its writes sent as `Rebake` modifications (WATER_FLOW.md §15, the review §16); **[built, 0.43.4]** the basins saved with the world (the `water` table, §6.4) and a basin that waited unloaded brought forward by the time it waited when it is live again (`Water::catch_up`, at most `catchUpSteps` flow steps a tick); **[built, 0.43.5]** a basin filling or draining (`active`, faster than `settleMmPerHour`) flows with no player near, the server loading and keeping its chunks (`Water::wanted_chunks`) until it settles. **[built, W2d, 0.43.6]** changes carried down the world map's rivers through unloaded country at the river's speed (`water/rivers.rs`: fronts along `TerrainGenerator::river_at`/`river_length`/`river_next`, lakes lagging, taken in by the first body found downstream; `riverSpeed`, `riverChangeMin`, `lakeOutletHead`), found bodies' natural outlets scaled once to the map's flow so their level follows what comes in; **[built, 0.44.0]** smooth fill: water's `fill` property (registry `fillProperty`, `StateInfo::fill`, look tag `0x92`), a basin's surface row written at its level's fill and the mesher drawing it there; **[built, 0.44.1]** a coarse LOD water cell takes the share of its height its cells fill (`downsample_block`) and the LOD mesher draws it there, so the chunks' surface meets the LOD's; **[built, 0.44.5]** a flooded ramp's water drawn at the fill of the water beside it, the drawn fill held within `fillHysteresis` of the level, and the water's writes taking one chunk revision per modification (`VoxelWorld::write_voxel`). **[built, 0.44.6]** water through flooded ramps (`Kind::Holds`, `joins` by their open faces), ramps a body didn't flood holding it as found, a body growing into a chunk that loads later taking the world there as found (`hold_grown`, `natural_grown`), and a downstream change sent only past `riverChangeShare` of the river's flow, lasting `riverChangeHoldS`. **[built, W6, 0.45.0, ADR 0057]** balanced rivers: water's flow data and opening law shared in `dwell_world::flow`; the generator's lips (a wall `lipRise` rows over the water, a crest `lip_cells(q)` wide at the sill; planned since 0.47.0) and waterline (banks a row over the water); a found body passes what its ways out carry at its found level by the one law, unscaled; seeps pass on what comes in; water over a ½ m step drawn as a slope and falls drawn down to the water (`mesher.rs` `slope_over`, `fall_into`); WATER_FLOW.md §17. **[built, W7, 0.47.0, ADR 0058]** visible water: a body takes in only what is seen pouring into it (`Water::feeds_of`: water standing as generated higher beside or over it, one face's flow per cell poured into), or the stepped river flow where it runs into the unloaded world; no links between bodies; seeps only beside the unloaded world; the generator plans each lip as a whole (`terrain.rs` `LipPlan`: a band walling the whole step, a crest pouring into exactly `lip_cells` cells, `Lip::Block` rocks, flat lip tops), the river's lip flow stepped between junctions and its channel widened to fit (`channels.rs` `step_flows`); a found body within `foundSnapM` of its found level drawn there; WATER_FLOW.md §18. **[built, G1–G3, 0.48.0, ADR 0059]** the pool graph: each face's rivers as pools joined by lips from the world map (`dwell-worldgen` `pool_graph.rs`, per river on demand), chutes where steps come too close for pools (`RiverRows`); the terrain carved from it; the engine reads it through `Rivers` (a woken pool's inflow and its lips out of sight from the graph), simulates generated pools nobody measured as virtual pools by the one law (`water/virtuals.rs`, saved), and has no hidden walls, fronts or seeps; WATER_FLOW.md §19. **[built, 0.48.1]** spilled water always flows down (the lowest place within `streamReach`, again and again, pooling where nothing is lower), a pool's surface spreads over bare ground only `sheetReach` past its water and pours over its rim beyond, and a fed pool overflowing an edit's edge is drawn a full row over it (`spillMinFlow`); WATER_FLOW.md §19.3. **Planned:** basin messages, currents (a new compatibility line).
+[ADR 0060](./adr/0060-water-surface-grid.md), [`WATER_SURFACE_GRID.md`](./WATER_SURFACE_GRID.md). Water is
+a **surface grid**: a depth on each 1 m column of ground, moving to its four neighbours across their
+shared faces by the local-inertial shallow-water law (θ-weighting 0.95, Manning friction from the
+flow's whole speed, no faster than critical, a column never sending more than it holds), stepped in
+**water chunks** of 16 × 16 columns, face-local (heights in `FaceFrame::row`'s frame, so face B is
+face A's mirror). Replaces Phase 52's basins, outlets and pool graph (ADR 0053, 0055–0059), removed
+in 0.48.2.
+
+**Built (G2a, `dwell-sim` `water.rs`, 0.48.2):**
+- **The world as generated rests and costs nothing.** A loaded chunk's water joins the grid **held**
+  at the level found in its blocks (`Water::scan`): a held column keeps its level, trading whatever
+  the free water beside it asks (the river beyond, a lake's far shore, the sea), and isn't stepped.
+- **Edits free it.** A changed cell (`Water::touch`) finds its column's floor again (the water keeps
+  its volume, less what a block set over it trapped below) and frees the water within
+  `EDIT_REACH` columns; a free column `RELEASE` (2.5 cm) off its rest frees the held columns beside
+  it, so a dam's backwater spreads upstream and a cut lake drains as far as the change reaches. Free
+  water spreads into dry neighbours (a ring of columns found as it wets), never into unloaded world.
+- **The rest layer.** Drawn rivers are flat pools in steps, not a steady flow: freed as they are,
+  every step would pour. Each chunk carries the water **as generated** beside the water as it is,
+  stepped by the same law with its depths fixed; a free column changes by how far its flows differ
+  from the rest's. The generated state is then exactly at rest, and a dam, a cut or a flood still
+  moves water (they change the water's flows, not the rest's): a dammed river backs up by the flow it
+  was drawn with. G1's steady fill replaces these implicit springs with the map's river sources.
+- **Sleep.** A chunk whose free levels held within `SLEEP_BAND` (5 mm) for `CALM_S` (10 s) sleeps
+  and isn't stepped; what awake neighbours send it is kept exactly (`owed`) and it wakes when that
+  would move its water half `WAKE_BAND` (5 cm) or a shared face jumps (`JUMP`); woken, it takes what
+  it owes over `RELEASE_S` (5 s) in proportion to depth. Substeps by the CFL of the deepest awake
+  water (0.7), at most `MAX_SUBSTEPS` a water tick.
+- **Conserved** among free columns exactly (springs aside); held columns are where water enters and
+  leaves.
+- **Drawn as blocks** until G3: a free column's water is written as water blocks (full cells, its top
+  cell in eighths of the liquid's `fill`, emptied cells cleared, never over a solid) when its level
+  crosses a step by more than a quarter step, through `VoxelWorld::write_voxel` (one revision per
+  chunk per modification) and sent as `Rebake` modifications; a chunk falling asleep is drawn exactly.
+- **Ticks** every `tickEvery` server ticks (`shared/fluids/flow.json`), its time game time (the
+  day/night clock's) × the world's water speed (`WorldSettings`, ADR 0054). The chunks of awake water
+  and those beside it are kept loaded (`Water::wanted_chunks`), so moving water goes on with no
+  player near and spreads into the world beside it.
+- **Saved** (the `water` table, §6.4): record `DWG1`, each chunk's free columns (floor, depth, flows,
+  and the rest layer's) and what it owes; held water is found again from the blocks. Older worlds'
+  basin records (`DWW5`) are ignored and their water found again from their blocks.
+- **Diagnostics:** `Water::report` (JSON: totals, and each column near a cell with its floor, level,
+  rest, held and awake), in the block dump and `__dwell.waterReport` (DEV_TOOLS.md).
+- The grid's constants (`MANNING`, `THETA`, `CFL`, the bands) are code until G4 moves them to data.
+
+**Still from earlier phases, unchanged:** water's `fill` property (registry `fillProperty`,
+`StateInfo::fill`, look tag `0x92`; 0.44.0) and the mesher drawing a surface at it; a coarse LOD water
+cell at the share of its height its cells fill (`downsample_block`, 0.44.1); a flooded ramp's water
+drawn at the fill of the water beside it (0.44.5). The generator still draws rivers with beds, levels
+and lips (`terrain.rs`, Phase 52 G2; BUGS.md #29) until G1.
+
+**Planned (Phase 53):** G1 the whole-world fill at creation (no drawn beds, levels or lips; valleys
+kept, erosion of soil only); G3 water as its own layer on clients (its chunks' changes on the wire,
+the surface meshed from depth, currents on bodies and swimmers); G4 the grid's settings as data
+(`shared/water/*.json`), pools for still water and the held sea as in the prototype.
 
 ## 7. Physics Pipeline
 
