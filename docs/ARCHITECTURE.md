@@ -1669,7 +1669,11 @@ deferred to world upgrades, `FUTURE.md`). `bodies` and `water` are optional tabl
   `dwell-server` refuses a world it may not open, with a message naming the version to use, before
   writing anything: it reads the meta through redb's read-only database (`WorldDb::peek_meta`),
   since opening a redb file for writing rewrites its header. The local-mode core refuses it too
-  (`LocalWorld` throws). A file with no app version was saved before versioned releases: no build
+  (`LocalWorld` throws), unless the page passes `upgrade`: **[built, 0.48.2]** a world from an
+  older line opens in a newer build after the player confirms a warning, as itself or a copy
+  ([ADR 0060](./adr/0060-older-worlds-in-newer-builds.md), RELEASES.md §5; `world_open_error`,
+  `canUpgradeWorld`), its unexplored land on this build's terrain (`dwell_world::current_generator`).
+  A file with no app version was saved before versioned releases: no build
   opens it, nothing migrates it, and the menu offers to delete it. The rule is implemented twice
   (`client/src/version/semver.ts`, `crates/dwell-sim/src/app_version.rs`) and both pass
   `shared/version/vectors.txt`. The browser's own stores shared by all versions (the world index,

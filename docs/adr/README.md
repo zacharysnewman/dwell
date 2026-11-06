@@ -65,6 +65,7 @@ one's status line. Resolving an item in `ARCHITECTURE.md` Open Decisions require
 | [0057](0057-balanced-rivers.md) | Balanced rivers: generated water at rest by the engine's one law, sloped water edges (supersedes 0055 once built) | Accepted (built, 0.45.0; amended by 0058) |
 | [0058](0058-visible-water.md) | Visible water: water moves between pools only where it is seen to; lips planned exactly | Accepted (built, 0.47.0; amended by 0059) |
 | [0059](0059-water-graph.md) | Water as data: the pool graph from the world map, virtual pools, no hidden walls, one model for all water | Accepted (G1–G3 built, 0.48.0) |
+| [0060](0060-older-worlds-in-newer-builds.md) | Older worlds open in newer builds after a warning: a copy or an upgrade, unexplored land on the new terrain | Accepted (built, 0.48.2; amends 0014) |
 
 Phase numbers in ADRs follow the implementation plan as it was then. In ADRs 0001–0010, Phases
 4–7 became 5–8 when the world-LOD phase (Phase 4) was added on 2026-09-29, and then 6–9 when the

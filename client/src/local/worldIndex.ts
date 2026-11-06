@@ -180,10 +180,43 @@ export class WorldIndex {
     this.write(this.entries().filter((e) => !hasId(e, id)));
   }
 
-  /** Marks a world as played now, by this build's version. */
+  /**
+   * Marks a world as played now, by this build's version, on this build's generator of its type:
+   * a world from an older line opens on this build's terrain (owner, 2026-11-06;
+   * `dwell_world::current_generator`), and its file then records that too.
+   */
   touch(id: string, now: number): void {
     const world = this.get(id);
-    if (world) this.put({ ...world, lastPlayedAt: now, appVersion: recordedVersion() });
+    if (!world) return;
+    const generatorVersion =
+      world.type === 'playground' ? world.generatorVersion : GENERATORS[world.type];
+    this.put({ ...world, lastPlayedAt: now, appVersion: recordedVersion(), generatorVersion });
+  }
+
+  /**
+   * A copy's entry, to play a world from an older line in this build and keep the original
+   * (owner, 2026-11-06): a new id and the name marked with the version it came from; the same
+   * seed, generator and spawn. Its file is the original's, copied by the caller
+   * (`copyWorldFile`), so it records the original's version until it is played.
+   */
+  copy(world: WorldMeta, now: number, random: () => number = Math.random): WorldMeta {
+    const taken = new Set(this.records().map((w) => w.id));
+    let id = newWorldId(random);
+    while (taken.has(id)) id = newWorldId(random);
+    const from = world.appVersion ? ` (from ${world.appVersion})` : ' (copy)';
+    const copy: WorldMeta = {
+      id,
+      name: cleanName(`${world.name.slice(0, MAX_NAME_LENGTH - from.length)}${from}`, world.name),
+      type: world.type,
+      seed: world.seed,
+      generatorVersion: world.generatorVersion,
+      createdAt: now,
+      lastPlayedAt: now,
+      ...(world.appVersion ? { appVersion: world.appVersion } : {}),
+      ...(world.spawn ? { spawn: world.spawn } : {}),
+    };
+    this.put(copy);
+    return copy;
   }
 
   /** Creates a new world's entry (its file is created when it is first played). */

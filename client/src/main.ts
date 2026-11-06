@@ -30,11 +30,17 @@ import { PROTOCOL_VERSION } from './protocol/constants.gen';
 import { regenerateWorld } from './local/regenerate';
 import type { SessionReport } from './net/sessionState';
 import { rememberTrust, showRegistryPrompt, trustedHash } from './ui/registryPrompt';
+import { showUpgradePrompt } from './ui/upgradePrompt';
 import { sameLine } from './version/semver';
 import { isSpawn, parseLocalWorld, spawnOptions, type LocalWorld } from './local/world';
 import { cleanName, creatableType, parseSeed, WorldIndex } from './local/worldIndex';
 import { worldAccess } from './local/worldAccess';
-import { deleteWorldFiles, listWorldFiles, localWorldName } from './local/worldFiles';
+import {
+  copyWorldFile,
+  deleteWorldFiles,
+  listWorldFiles,
+  localWorldName,
+} from './local/worldFiles';
 import { launchOf, launcherHref, pastedInvite, withRoute, type Launch } from './ui/launch';
 import { rememberServer } from './ui/recentServers';
 import { prefersTouch, TouchControls } from './ui/touchControls';
@@ -1136,19 +1142,49 @@ async function connect(app: App): Promise<void> {
       return;
     }
     const access = worldAccess(world, buildInfo.version);
-    if (!access.ok) {
+    let playing = world;
+    if (!access.ok && access.upgrade) {
+      // An older line's world, from the version page's choice of this build (owner,
+      // 2026-11-06): a warning to confirm, then the world itself or a copy of it.
+      status.textContent = '';
+      const answer = await showUpgradePrompt(
+        document,
+        world.name,
+        access.upgrade.from,
+        buildInfo.version,
+      );
+      if (answer === 'cancel') {
+        openMainMenu(app);
+        return;
+      }
+      if (answer === 'copy') {
+        const copy = index.copy(world, Date.now());
+        if (!(await copyWorldFile(world.id, copy.id))) {
+          index.remove(copy.id);
+          openMainMenu(
+            app,
+            `"${world.name}" couldn't be copied. If it is open in another tab, close it there first.`,
+          );
+          return;
+        }
+        playing = copy;
+        // A reload goes on with the copy.
+        history.replaceState(null, '', withRoute(location.search, { play: copy.id }));
+      }
+    } else if (!access.ok) {
       openMainMenu(app, access.message);
       return;
     }
     // The world's chosen spawn is its first one: read only when its file is created.
     localWorld = {
-      worldSeed: world.seed,
-      generatorVersion: world.generatorVersion,
-      file: world.id,
-      ...(isSpawn(world.spawn) ? spawnOptions(world.spawn) : {}),
+      worldSeed: playing.seed,
+      generatorVersion: playing.generatorVersion,
+      file: playing.id,
+      ...(isSpawn(playing.spawn) ? spawnOptions(playing.spawn) : {}),
+      ...(!access.ok && access.upgrade ? { upgrade: true } : {}),
     };
-    worldName = world.name;
-    index.touch(world.id, Date.now());
+    worldName = playing.name;
+    index.touch(playing.id, Date.now());
   } else if (launch.kind === 'link') {
     localWorld = parseLocalWorld(location.search);
     // A link to a world file that is already there opens a world saved before versioned releases

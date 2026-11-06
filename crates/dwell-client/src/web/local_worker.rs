@@ -134,7 +134,8 @@ impl LocalWorld {
     /// with `spawn_portal` by a portal's opening on that face (`?spawn=portal`, `portal-b`). With
     /// `spawn_on_open` (a spawn link) a saved world's player starts at that spawn too, not where it
     /// left the world. With `spawn_at` (x, y, z: the dev link `?at=`) the spawn is that point, and
-    /// the player starts there.
+    /// the player starts there. With `upgrade` (the player confirmed the warning, owner 2026-11-06)
+    /// a file from an older version line opens too.
     #[wasm_bindgen(constructor)]
     pub fn new(
         world_seed: f64,
@@ -144,6 +145,7 @@ impl LocalWorld {
         spawn_portal: Option<bool>,
         spawn_on_open: Option<bool>,
         spawn_at: Option<Vec<f64>>,
+        upgrade: Option<bool>,
     ) -> Result<LocalWorld, JsError> {
         let backend = file.map(OpfsBackend::register);
         let face = if spawn_face_b == Some(true) {
@@ -156,6 +158,7 @@ impl LocalWorld {
             spawn_portal == Some(true),
             spawn_at.and_then(|v| <[f64; 3]>::try_from(v).ok()),
             spawn_on_open == Some(true),
+            upgrade == Some(true),
             world_seed as u64,
             generator_version,
             backend,
