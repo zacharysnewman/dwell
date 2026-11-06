@@ -10,6 +10,8 @@ pub const FLOW: FlowData = FlowData {
     cfl: 0.7,
     max_substeps: 400,
     step_budget: 40000,
+    thread_step_budget: 200000,
+    max_owed_s: 360.0,
     sleep_band_m: 0.005,
     wake_band_m: 0.05,
     calm_s: 10.0,

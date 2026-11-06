@@ -2,7 +2,7 @@
 //! run on both faces.
 
 use super::*;
-use dwell_blocks::require;
+use dwell_blocks::{info, require};
 use dwell_world::{FLAT_TOP_Y, empty_generator};
 
 /// A scene in face `f`'s local frame: x, a row offset from `BASE`, z. Stone below `BASE`, air above.

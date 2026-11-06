@@ -40,6 +40,9 @@ test('bad entries fail with their path named', () => {
     [(d) => (d.editReach = 1.5), /editReach must be a whole number/],
     [(d) => (d.wakeBandM = 0.001), /wakeBandM must be at least sleepBandM/],
     [(d) => (d.leaks = {}), /unknown entry \(root\)\.leaks/],
+    [(d) => (d.threadStepBudget = 1000), /threadStepBudget must be at least stepBudget/],
+    [(d) => (d.maxOwedS = -1), /maxOwedS must be a number in \[0, 36000\]/],
+    [(d) => delete d.maxOwedS, /maxOwedS must be a number/],
   ]) {
     const d = data();
     change(d);
