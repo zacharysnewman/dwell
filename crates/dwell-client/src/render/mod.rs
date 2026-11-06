@@ -872,7 +872,12 @@ fn line_quads(points: &[([f32; 3], [f32; 3])]) -> (Vec<f32>, Vec<u32>) {
         let ((a, ca), (b, cb)) = (pair[0], pair[1]);
         // Seen from b the segment runs the other way, so its sides swap: corners 0 and 3 are one
         // side of the segment, 1 and 2 the other.
-        for (p, c, o, side) in [(a, ca, b, 1.0), (a, ca, b, -1.0), (b, cb, a, 1.0), (b, cb, a, -1.0)] {
+        for (p, c, o, side) in [
+            (a, ca, b, 1.0),
+            (a, ca, b, -1.0),
+            (b, cb, a, 1.0),
+            (b, cb, a, -1.0),
+        ] {
             v.extend_from_slice(&p);
             v.extend_from_slice(&c);
             v.extend_from_slice(&o);

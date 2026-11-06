@@ -2981,7 +2981,12 @@ impl<S: Scene> Game<S> {
             let dir = view_direction(input.look.yaw, input.look.pitch, face).map(|v| v as f32);
             let reach = self.brush.reach;
             let aim = eye.and_then(|e| {
-                let hit = dwell_game::block_interaction::target_hit(self.streamer.store_mut(), e, dir, reach);
+                let hit = dwell_game::block_interaction::target_hit(
+                    self.streamer.store_mut(),
+                    e,
+                    dir,
+                    reach,
+                );
                 let streamer = &self.streamer;
                 dwell_game::brush_tool::clamp_aim(e, dir, reach, hit, |c| {
                     streamer.is_loaded(dwell_world::chunk_of(c[0], c[1], c[2]).to_array())

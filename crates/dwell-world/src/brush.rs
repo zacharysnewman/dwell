@@ -2226,7 +2226,11 @@ mod tests {
         let creative = brush_policy(world_mode()).expect("every world's mode allows brushes");
         assert_eq!(creative.mode, "creative");
         assert_eq!(creative.reach, 256.0);
-        assert_eq!(brush_policy("adventure"), None, "no such mode in the data yet");
+        assert_eq!(
+            brush_policy("adventure"),
+            None,
+            "no such mode in the data yet"
+        );
         // A mode added by data alone, with brushes off (the coming adventure mode).
         let fixture = [
             ModePolicy {

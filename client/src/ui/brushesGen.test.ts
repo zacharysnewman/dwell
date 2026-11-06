@@ -173,7 +173,10 @@ describe('brush presets (shared/brushes/gen.mjs)', () => {
       [{ ...base([ball]), modes: { creative: { brushes: true, reachM: 999 } } }, /reachM must be/],
       [{ ...base([ball]), modes: { Creative: { brushes: true, reachM: 9 } } }, /a mode's name/],
       [{ ...base([ball]), modes: { creative: { brushes: 'yes', reachM: 9 } } }, /brushes must be/],
-      [{ ...base([ball]), modes: { creative: { brushes: true, reachM: 9, ops: 1 } } }, /unknown field ops/],
+      [
+        { ...base([ball]), modes: { creative: { brushes: true, reachM: 9, ops: 1 } } },
+        /unknown field ops/,
+      ],
       [{ ...base([ball]), modes: {} }, /modes: at least one/],
       [{ ...base([ball]), defaultMode: 'adventure' }, /defaultMode must name one of the modes/],
       [{ ...base([ball]), worldTypes: {} }, /worldTypes: replaced by modes/],

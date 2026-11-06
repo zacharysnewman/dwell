@@ -51,7 +51,11 @@ pub fn clamp_aim(
     mut editable: impl FnMut([i32; 3]) -> bool,
 ) -> Option<(BlockTarget, bool)> {
     let reach = f64::from(reach.max(0.0));
-    let len = dir.iter().map(|v| f64::from(*v).powi(2)).sum::<f64>().sqrt();
+    let len = dir
+        .iter()
+        .map(|v| f64::from(*v).powi(2))
+        .sum::<f64>()
+        .sqrt();
     if len == 0.0 {
         return None;
     }

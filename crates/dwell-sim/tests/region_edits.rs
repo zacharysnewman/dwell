@@ -357,7 +357,11 @@ fn brush_strokes_reach_256_m_in_every_world() {
         f.send(1, fill([200, G + 3, 0], [2, 2, 2], M.stone));
         f.server.step();
         let stats = f.server.stats_of(1).unwrap();
-        assert_eq!(stats.last_region_check, RegionCheck::Ok, "sandbox {sandboxed}");
+        assert_eq!(
+            stats.last_region_check,
+            RegionCheck::Ok,
+            "sandbox {sandboxed}"
+        );
         assert_eq!(f.server.world().get_voxel(200, G + 3, 0), M.stone);
         // Still bounded: 300 m is out of reach.
         f.send(1, fill([300, G + 3, 0], [1, 1, 1], M.stone));
@@ -389,7 +393,11 @@ fn a_creative_brush_stroke_lands_200_m_off_in_a_terrain_world_and_undoes() {
     // edit past 65 m.
     let mut f = Fixture::new(terrain());
     let w = f.join(1, &Client::new(1));
-    assert_ne!(w.flags & welcome_flags::BRUSHES, 0, "terrain worlds take brushes");
+    assert_ne!(
+        w.flags & welcome_flags::BRUSHES,
+        0,
+        "terrain worlds take brushes"
+    );
     for _ in 0..10 {
         f.server.step();
         f.take_all();
