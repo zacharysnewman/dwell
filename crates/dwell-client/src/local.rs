@@ -25,6 +25,8 @@ pub enum LocalError {
 
 pub struct LocalCore {
     server: Server,
+    /// The world's terrain for searches over its map (`find_on_map`), made on the first one.
+    map: Option<Option<dwell_worldgen::BifacialTerrain>>,
     fixed: FixedStep,
     /// The world is saved to a file (§6.4).
     pub persisted: bool,
@@ -139,6 +141,7 @@ impl LocalCore {
         }
         Ok(Self {
             server: Server::new(config, entropy),
+            map: None,
             fixed: FixedStep::new(dwell_protocol::SIM_HZ),
             persisted,
             storage_error,
@@ -208,6 +211,93 @@ impl LocalCore {
         if let Some(p) = self.server.player_of_session(LOCAL_SESSION) {
             self.server.kill_player(p);
         }
+    }
+
+    /// Moves the local player's feet to world point `feet` (m), at rest (the dev tools' `goto`,
+    /// docs/DEV_TOOLS.md): the server moves the body, the client's prediction snaps to it and the
+    /// chunks stream around it. Only on the face the player is on (crossing has its own path,
+    /// BIFACIAL_WORLD.md §6). False without a living local player or across the faces.
+    pub fn teleport_local_player(&mut self, feet: [f64; 3]) -> bool {
+        let Some(p) = self.server.player_of_session(LOCAL_SESSION) else {
+            return false;
+        };
+        let (Some(h), Some(now)) = (self.server.player_handle_of(p), self.server.feet_of(p)) else {
+            return false;
+        };
+        let f = dwell_world::FaceFrame::at_height(feet[1]);
+        if dwell_world::FaceFrame::at_height(now[1]) != f || !feet.iter().all(|v| v.is_finite()) {
+            return false;
+        }
+        let (_, physics, players) = self.server.sim();
+        let half = f64::from(players.half_height(h));
+        let centre = [feet[0], f.y(f.y(feet[1]) + half), feet[2]];
+        players.teleport(
+            physics,
+            h,
+            dwell_physics::DVec3::from_array(centre),
+            dwell_physics::Vec3::ZERO,
+        );
+        true
+    }
+
+    /// The nearest water of `kind` (`water` any, `sea`, `river`, `lake`) on the world map (the
+    /// generator's columns, loaded or not) from world point `from` (m), within `radius_m`, on
+    /// `face` (None: `from`'s): JSON `{"at":[x,y,z],"kind","face","ground","distance"}` with `at`
+    /// its column's centre at the water's level (world m), or `null`; an unknown kind is an error
+    /// (`{"error":…}`). For the dev tools' `goto` (docs/DEV_TOOLS.md): a coarse search to move the
+    /// player near, then a search of the cells (`find`).
+    pub fn find_on_map(
+        &mut self,
+        kind: &str,
+        from: [f64; 3],
+        radius_m: f64,
+        face: Option<dwell_world::FaceFrame>,
+    ) -> String {
+        use dwell_worldgen::terrain::Water;
+        let want: &[Water] = match kind {
+            "water" => &[Water::Sea, Water::River, Water::Lake],
+            "sea" => &[Water::Sea],
+            "river" => &[Water::River],
+            "lake" => &[Water::Lake],
+            _ => {
+                return format!(
+                    "{{\"error\":\"unknown water kind {kind:?} (water, sea, river or lake)\"}}"
+                );
+            }
+        };
+        let (version, seed) = {
+            let c = self.server.config();
+            (c.generator_version, c.world_seed)
+        };
+        let terrain = self
+            .map
+            .get_or_insert_with(|| dwell_worldgen::BifacialTerrain::for_generator(version, seed));
+        let Some(terrain) = terrain else {
+            return "{\"error\":\"this world has no map (not the terrain generator)\"}".into();
+        };
+        let f = face.unwrap_or_else(|| dwell_world::FaceFrame::at_height(from[1]));
+        let local = terrain.local(f.face);
+        let hit = crate::find::nearest_column([from[0], from[2]], radius_m, |x, z| {
+            let c = local.column_at(x, z);
+            (!c.outside && want.contains(&c.water)).then_some(c)
+        });
+        let Some(([x, z], c)) = hit else {
+            return "null".into();
+        };
+        let name = match c.water {
+            Water::Sea => "sea",
+            Water::River => "river",
+            Water::Lake => "lake",
+            Water::None => "none",
+        };
+        let (cx, cz) = (f64::from(x) + 0.5, f64::from(z) + 0.5);
+        let distance = (cx - from[0]).hypot(cz - from[2]);
+        format!(
+            "{{\"at\":[{cx},{},{cz}],\"kind\":\"{name}\",\"face\":\"{}\",\"ground\":{},\"distance\":{distance:.1}}}",
+            f.y(f64::from(c.level)),
+            if f.is_b() { "b" } else { "a" },
+            f.y(f64::from(c.height)),
+        )
     }
 
     /// The respawn preload (ARCHITECTURE.md §6.3) on (its radius from `shared/look/loading.json`)
