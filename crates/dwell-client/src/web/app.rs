@@ -1372,6 +1372,12 @@ impl Client {
             .borrow_mut()
             .set_water_quality(crate::render::water::WaterQuality::from_level(level));
     }
+    /// Whether this device is a phone (the shell's `prefersTouch`): the water's reflections draw
+    /// the phone's cheaper tiers (`shared/look/reflections.json` `phone`).
+    #[wasm_bindgen(js_name = setPhone)]
+    pub fn set_phone(&self, phone: bool) {
+        self.inner.borrow().renderer.borrow_mut().set_phone(phone);
+    }
     /// How moving water shows its flow (docs/WATER_SURFACE_GRID.md §2c, the Water settings):
     /// ripples carried by the current, foam streaks, drifting particles.
     #[wasm_bindgen(js_name = setWaterFlow)]

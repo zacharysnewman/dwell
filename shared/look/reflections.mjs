@@ -26,6 +26,7 @@ const SSR = {
   edgeFade: [0.001, 0.5],
   distanceFade: [0.001, 1],
   rippleScale: [0, 1],
+  minReflectance: [0, 0.5],
 };
 const TIER = {
   ssrSteps: ['count', 0, MAX_STEPS],
@@ -62,7 +63,7 @@ function checkValue(where, v, spec) {
 
 /** Checks the tunables against the schema and each other; returns them. Throws naming the entry. */
 export function validateReflections(data) {
-  checkKeys('(root)', data, ['ssr', 'tiers']);
+  checkKeys('(root)', data, ['ssr', 'tiers', 'phone']);
   checkKeys('ssr', data.ssr, Object.keys(SSR));
   for (const [k, spec] of Object.entries(SSR)) checkValue(`ssr.${k}`, data.ssr[k], spec);
   checkKeys('tiers', data.tiers, TIERS);
@@ -73,7 +74,30 @@ export function validateReflections(data) {
     if (tier === 'low' && t.ssrSteps !== 0) fail('tiers.low.ssrSteps must be 0 (Low reads no copy of the scene)');
     if (t.ssrSteps > 0 && t.maxDistanceM <= 0) fail(`tiers.${tier}.maxDistanceM must be over 0 when it marches`);
   }
+  const phone = data.phone;
+  if (typeof phone !== 'object' || phone === null || Array.isArray(phone)) fail('phone must be an object');
+  for (const [tier, o] of Object.entries(phone)) {
+    if (tier === '$comment') continue;
+    if (tier === 'low') fail('phone.low: Low marches nothing, so it has nothing to override');
+    if (!TIERS.includes(tier)) fail(`unknown entry phone.${tier}`);
+    if (typeof o !== 'object' || o === null || Array.isArray(o)) fail(`phone.${tier} must be an object`);
+    for (const [k, v] of Object.entries(o)) {
+      if (k === '$comment') continue;
+      if (!(k in TIER)) fail(`unknown entry phone.${tier}.${k}`);
+      checkValue(`phone.${tier}.${k}`, v, TIER[k]);
+    }
+    const t = phoneTier(data, tier);
+    if (t.ssrSteps > 0 && t.maxDistanceM <= 0) fail(`phone.${tier}.maxDistanceM must be over 0 when it marches`);
+  }
   return data;
+}
+
+/** A tier as a phone draws it: the tier's entries under the phone's overrides. */
+export function phoneTier(data, tier) {
+  const t = { ...data.tiers[tier] };
+  for (const [k, v] of Object.entries(data.phone?.[tier] ?? {})) if (k !== '$comment') t[k] = v;
+  delete t.$comment;
+  return t;
 }
 
 const rf = (v) => (Number.isInteger(v) ? `${v}.0` : `${v}`);
@@ -88,12 +112,18 @@ export function reflectionsRust(data) {
   for (const [k, spec] of Object.entries(SSR)) rs.push(`        ${snake(k)}: ${value(data.ssr[k], spec)},`);
   rs.push('    },');
   rs.push('    tiers: [');
-  for (const tier of TIERS) {
-    rs.push(`        // ${tier}`);
-    rs.push('        ReflectionTier {');
-    for (const [k, spec] of Object.entries(TIER)) rs.push(`            ${snake(k)}: ${value(data.tiers[tier][k], spec)},`);
-    rs.push('        },');
-  }
+  const tiers = (pick) => {
+    for (const tier of TIERS) {
+      rs.push(`        // ${tier}`);
+      rs.push('        ReflectionTier {');
+      for (const [k, spec] of Object.entries(TIER)) rs.push(`            ${snake(k)}: ${value(pick(tier)[k], spec)},`);
+      rs.push('        },');
+    }
+  };
+  tiers((tier) => data.tiers[tier]);
+  rs.push('    ],');
+  rs.push('    phone_tiers: [');
+  tiers((tier) => phoneTier(data, tier));
   rs.push('    ],');
   rs.push('};');
   rs.push('');

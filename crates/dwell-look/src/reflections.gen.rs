@@ -10,6 +10,7 @@ pub const REFLECTIONS: ReflectionTunables = ReflectionTunables {
         edge_fade: 0.12,
         distance_fade: 0.3,
         ripple_scale: 0.3,
+        min_reflectance: 0.05,
     },
     tiers: [
         // low
@@ -26,6 +27,32 @@ pub const REFLECTIONS: ReflectionTunables = ReflectionTunables {
             refine_steps: 8,
             max_distance_m: 24000.0,
             cloud_octaves: 3,
+            cloud_shadow: false,
+        },
+        // high
+        ReflectionTier {
+            ssr_steps: 28,
+            refine_steps: 10,
+            max_distance_m: 48000.0,
+            cloud_octaves: 5,
+            cloud_shadow: true,
+        },
+    ],
+    phone_tiers: [
+        // low
+        ReflectionTier {
+            ssr_steps: 0,
+            refine_steps: 0,
+            max_distance_m: 0.0,
+            cloud_octaves: 0,
+            cloud_shadow: false,
+        },
+        // medium
+        ReflectionTier {
+            ssr_steps: 8,
+            refine_steps: 5,
+            max_distance_m: 24000.0,
+            cloud_octaves: 2,
             cloud_shadow: false,
         },
         // high

@@ -150,6 +150,13 @@ pub const CAUSTIC_TILE: i32 = 16;
 pub const CAUSTIC_TEXELS: u32 = 32;
 pub const CAUSTIC_RES: u32 = CAUSTIC_TILE as u32 * CAUSTIC_TEXELS;
 
+/// Where a pixel covers fewer than this many caustic tile texels, the caustics are evaluated per
+/// pixel instead of sampled from the tile (0: always sampled). Sampled at every distance since
+/// 2026-11-06: close to the water every floor pixel evaluated two layers of Worley cells, ~4 ms of a
+/// 33 ms frame at 2880×1324 (owner: mobile slowed near the water), and magnified the tile (a
+/// texel is 1/32 of a cell, ~4 cm for water) draws the same lines.
+pub const CAUSTIC_EXACT_TEXELS: f32 = 0.0;
+
 /// How many cells of about `want` metres span `WRAP_M`, rounded to a whole number of `tile`s (a
 /// pattern sampled from a tile of `tile` cells then wraps with the position): (cells, cell size).
 pub fn tile_cells(want: f32, tile: i32) -> (i32, f32) {
@@ -441,7 +448,7 @@ pub fn wgsl() -> String {
         LAYERS.len()
     ));
     s.push_str(&format!(
-        "const NOISE_TILE: i32 = {NOISE_TILE};\nconst NOISE_TEXELS: f32 = {NOISE_TEXELS}.0;\nconst CAUSTIC_TILE: i32 = {CAUSTIC_TILE};\nconst CAUSTIC_TEXELS: f32 = {CAUSTIC_TEXELS}.0;\n"
+        "const NOISE_TILE: i32 = {NOISE_TILE};\nconst NOISE_TEXELS: f32 = {NOISE_TEXELS}.0;\nconst CAUSTIC_TILE: i32 = {CAUSTIC_TILE};\nconst CAUSTIC_TEXELS: f32 = {CAUSTIC_TEXELS}.0;\nconst CAUSTIC_EXACT_TEXELS: f32 = {CAUSTIC_EXACT_TEXELS:?};\n"
     ));
     for (name, bit) in DEBUG_SWITCHES {
         s.push_str(&format!(
@@ -622,6 +629,14 @@ mod tests {
             deep[2] > 2.0 * deep[1] && deep[0] < 0.05 * deep[2],
             "blue when deep: {deep:?}"
         );
+    }
+
+    #[test]
+    fn caustics_sample_the_tile_at_every_distance() {
+        // Per-pixel evaluation close to the water cost a phone its frame rate (owner, 2026-11-06).
+        assert_eq!(CAUSTIC_EXACT_TEXELS, 0.0);
+        let wgsl = crate::render::shaders::source(1);
+        assert!(wgsl.contains("const CAUSTIC_EXACT_TEXELS: f32 = 0.0;"));
     }
 
     #[test]
