@@ -10,7 +10,7 @@ use dwell_blocks::FluidInfo;
 use dwell_look::{hex, srgb_to_linear};
 
 /// vec4s per fluid in the buffer (`Fluid` in the WGSL).
-pub const FLUID_VEC4S: usize = 6;
+pub const FLUID_VEC4S: usize = 9;
 /// Bytes per fluid.
 pub const FLUID_STRIDE: u64 = (FLUID_VEC4S * 16) as u64;
 
@@ -206,6 +206,21 @@ pub fn pack_fluids(fluids: &[FluidInfo]) -> Vec<f32> {
             f.scattering,
         ]);
         out.extend_from_slice(&[f.refraction, f.caustic_scale, f.caustic_depth, f.sparkle]);
+        // Its flow look by name (shared/look/waterflow.json; none: zeros, no flow shown).
+        match dwell_look::waterflow::flow_look(f.name) {
+            Some(l) => {
+                let c = linear_rgb(l.foam_color);
+                out.extend_from_slice(&[
+                    l.advect as f32,
+                    l.cycle_s as f32,
+                    l.foam_from_ms as f32,
+                    l.foam_to_ms as f32,
+                ]);
+                out.extend_from_slice(&[c[0], c[1], c[2], l.foam_strength as f32]);
+                out.extend_from_slice(&[l.foam_length_m as f32, l.foam_width_m as f32, 0.0, 0.0]);
+            }
+            None => out.extend_from_slice(&[0.0; 12]),
+        }
     }
     if out.is_empty() {
         // A storage binding can't be empty: one zero fluid that nothing indexes.

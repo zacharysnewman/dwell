@@ -12,6 +12,7 @@ pub mod characters;
 pub mod display;
 pub mod face_shading;
 pub mod flames;
+pub mod flow;
 pub mod frame;
 pub mod geometry;
 pub mod lights;
@@ -1006,6 +1007,8 @@ pub struct Renderer {
     water_quality: WaterQuality,
     /// The water's cost-isolation switches (`water::debug_mask`, `?waterdbg=`; 0 in play).
     water_debug: u32,
+    /// The water's flow shown (flow.rs `FLOW_RIPPLES`, `FLOW_FOAM`; the Water flow settings).
+    flow_switches: u32,
     /// The water's noise and caustic tiles (water_tiles.rs).
     water_tiles: WaterTiles,
     /// Frames in flight on the GPU (pacing.rs).
@@ -1119,6 +1122,7 @@ impl Renderer {
             .chain([lights::layout_entry()])
             .chain(point_shadows::layout_entries())
             .chain(lod_map::layout_entries())
+            .chain([flow::layout_entry()])
             .collect();
         let frame_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("frame"),
@@ -1564,6 +1568,7 @@ impl Renderer {
             tile_grid_buffer,
             fluid_buffer,
             light_buffer: lights::buffer(&device),
+            flow: flow::FlowGpu::new(&device),
         };
         // No maps until the first frame asks for some (`ensure_shadow_maps`): a 1×1 stand-in.
         let shadow_maps = frame_bindings.shadow_maps(&device, (1, 1));
@@ -1674,6 +1679,7 @@ impl Renderer {
             eye_fluid: None,
             water_quality: WaterQuality::default(),
             water_debug: 0,
+            flow_switches: 0,
             water_tiles,
             pacer: pacing::FramePacer::default(),
             start_ms: crate::telemetry::now_ms(),
@@ -2062,6 +2068,12 @@ impl Renderer {
         self.pacer.ready(now_ms)
     }
     /// The water's cost-isolation switches (a dev tool: `water::debug_mask`).
+    /// What of the water's flow to show (flow.rs `FLOW_RIPPLES`, `FLOW_FOAM`; the Water flow
+    /// settings). The flow itself comes from the game (`Scene::set_water_flow`).
+    pub fn set_flow_switches(&mut self, switches: u32) {
+        self.flow_switches = switches;
+    }
+
     pub fn set_water_debug(&mut self, mask: u32) {
         self.water_debug = mask;
     }
@@ -2404,7 +2416,8 @@ impl Renderer {
         // The eye's x and z wrapped for the water's detail (the composite's caustics under it).
         let [wx, wz] = water::wrapped_origin(self.eye);
         // z: the water's cost-isolation switches (`water::debug_mask`; 0 in play).
-        put(&[wx, wz, self.water_debug as f32, 0.0]);
+        // w: the flow's switches (flow.rs: carried ripples, foam streaks).
+        put(&[wx, wz, self.water_debug as f32, self.flow_switches as f32]);
         // The water's reflections for its quality, under the Clouds setting (WATER_RENDERING.md §8).
         for v in reflection_uniforms(
             &REFLECTIONS,
@@ -4433,6 +4446,8 @@ struct FrameBindings {
     fluid_buffer: wgpu::Buffer,
     /// The dynamic lights' block (lights.rs), written each frame.
     light_buffer: wgpu::Buffer,
+    /// The water's flow around the eye (flow.rs), written when the game's current table changes.
+    flow: flow::FlowGpu,
 }
 
 impl FrameBindings {
@@ -4530,6 +4545,7 @@ impl FrameBindings {
                 .chain(lod_maps.group_entries())
                 .chain(point_maps.group_entries())
                 .chain(color_map.group_entries())
+                .chain([self.flow.group_entry()])
                 .collect();
             device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("frame"),
@@ -4755,6 +4771,9 @@ impl crate::game::Scene for Renderer {
     }
     fn set_placed_lights(&mut self, lights: Vec<lights::PlacedLight>) {
         Renderer::set_placed_lights(self, lights);
+    }
+    fn set_water_flow(&mut self, texels: Vec<i8>) {
+        self.frame_bindings.flow.write(&self.queue, &texels);
     }
     fn set_own_shadow(&mut self, body: Option<PlayerView>) {
         Renderer::set_own_shadow(self, body);

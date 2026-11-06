@@ -122,6 +122,12 @@ The owner approved these recommendations (2026-11-05):
   own law), at most `riverCurrentMaxMs` (1.5 m/s: a steep chute's would be a torrent, and a swimmer at 3 m/s still makes headway); a level reach
   and a lake are still. It goes to clients as any other chunk's currents.
 
+**Showing the flow (owner, 2026-11-05):** all three of: ripples that move with the current, foam
+streaks along it, and particles drifting on it; each can be turned off in Settings. All water
+behaves and looks the same by the same law whether the generator or a player put it there (a held
+river's current is the map's, a freed one's the law's; both are drawn alike from the one current
+table). As built: G3d below.
+
 ## 3. Generation
 
 - **Kept:** the world map (ADR 0049): uplift, stream-power erosion (the valleys), fill-and-spill lakes,

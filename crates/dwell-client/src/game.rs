@@ -122,6 +122,9 @@ pub trait Scene: TerrainRenderer {
     fn set_placed_lights(&mut self, _lights: Vec<crate::render::lights::PlacedLight>) {}
     /// The placed light sources' flames near the eye this frame (a torch's; docs/LIGHTS.md §6).
     fn set_placed_flames(&mut self, _flames: Vec<crate::render::flames::PlacedFlame>) {}
+    /// The water's currents around the eye (render/flow.rs; `Currents::window`'s texels), when they
+    /// changed.
+    fn set_water_flow(&mut self, _texels: Vec<i8>) {}
     /// The portals near the eye whose motes draw this frame (BIFACIAL_WORLD.md §12.1).
     fn set_portal_motes(&mut self, _portals: Vec<crate::render::flames::PortalMotes>) {}
     /// A falling piece's meshes (docs/FELLING.md §3), relative to its reference cell's centre,
@@ -530,6 +533,9 @@ pub struct Game<S: Scene> {
     /// When each water chunk's currents last came (docs/WATER_SURFACE_GRID.md §2c): forgotten
     /// `CURRENTS_KEEP_MS` after.
     currents_seen: dwell_world::hash::HashMap<dwell_world::currents::CurrentKey, f64>,
+    /// What the renderer's flow window was last built from: the table's revision, the eye's face
+    /// and column (`update_flow`).
+    flow_sent: Option<(u64, bool, i32, i32)>,
     /// Box select, fill, copy/paste, undo (§6.5); `enabled` once the server announces region edits.
     pub region: RegionTools,
     /// VoxelSniper-style brushes (BRUSHES.md); `available` where the server announces them.
@@ -699,6 +705,7 @@ impl<S: Scene> Game<S> {
             view_dir: [0.0, 0.0, 1.0],
             drag_sent: std::collections::HashMap::new(),
             currents_seen: Default::default(),
+            flow_sent: None,
             region: RegionTools::new(),
             brush: BrushTool::new(),
             portals: (Vec::new(), ""),
@@ -2297,6 +2304,22 @@ impl<S: Scene> Game<S> {
         self.streamer.store_mut().currents.at(p)
     }
 
+    /// The renderer's flow window around `eye` (render/flow.rs), built again when the current table
+    /// changed or the eye is over another column.
+    fn update_flow(&mut self, eye: [f64; 3]) {
+        let f = FaceFrame::at_height(eye[1]);
+        let (cx, cz) = (eye[0].floor() as i32, eye[2].floor() as i32);
+        let currents = &self.streamer.store().currents;
+        let key = (currents.revision(), f.is_b(), cx, cz);
+        if self.flow_sent == Some(key) {
+            return;
+        }
+        self.flow_sent = Some(key);
+        let t = dwell_look::waterflow::WATER_FLOW;
+        let texels = currents.window(f, cx, cz, t.window_columns as i32, t.range_ms as f32);
+        self.scene.borrow_mut().set_water_flow(texels);
+    }
+
     /// Forgets the currents of water chunks the server stopped sending (`CURRENTS_KEEP_MS`).
     fn expire_currents(&mut self, now_ms: f64) {
         let old: Vec<_> = self
@@ -2563,6 +2586,7 @@ impl<S: Scene> Game<S> {
             dwell_look::lights::LIGHTS.shadows.placed_m,
         );
         self.scene.borrow_mut().set_placed_lights(placed);
+        self.update_flow(camera_eye);
 
         self.hud.health = self.health;
         if self.debug_visible {

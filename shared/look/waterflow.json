@@ -1,0 +1,14 @@
+{
+  "$comment": "How moving water shows its flow (docs/WATER_SURFACE_GRID.md §2c G3d; owner, 2026-11-05: ripples that move with the current, foam streaks along it and particles drifting on it, each one a setting). The current is the water's, from the one current table (the grid's free water by the law, an untouched river's by the map), so water a player set moving and water the generator made look alike. windowColumns: the columns square around the eye the flow texture holds (a power of two; it wraps as the eye moves, 1 texel a column); rangeMs: the fastest current it holds (m/s; faster is clamped); fadeFromM, fadeToM: the flow shows fully within the first and fades out by the second (m from the eye; under half the window). liquids: per liquid (its fluid's name in the block registry; a liquid not listed shows no flow): ripples.advect, how far the ripples are carried per metre the water moves (1: with it), ripples.cycleS, the seconds the shader carries a ripple before it blends in afresh (shorter: less stretched, more often renewed); foam.fromMs and foam.toMs, the current where streaks begin and where they are full; foam.color (sRGB) and foam.strength (0 to 1, at full); foam.lengthM and foam.widthM, a streak's size along and across the flow; particles.count, how many drift near the eye at most (cpuCount on a CPU adapter); particles.fromMs, the least current they are spawned in; particles.sizeM; particles.color (sRGB); particles.lifeS, how long one drifts before it fades; particles.radiusM, how far from the eye they are spawned. Run `node shared/look/waterflow.mjs` after editing; CI fails if crates/dwell-look/src/waterflow.gen.rs is stale.",
+  "windowColumns": 128,
+  "rangeMs": 4,
+  "fadeFromM": 40,
+  "fadeToM": 60,
+  "liquids": {
+    "dwell:water": {
+      "ripples": { "advect": 1, "cycleS": 1.6 },
+      "foam": { "fromMs": 0.4, "toMs": 1.4, "color": "#f2f7f8", "strength": 0.55, "lengthM": 3, "widthM": 0.3 },
+      "particles": { "count": 160, "cpuCount": 0, "fromMs": 0.15, "sizeM": 0.05, "color": "#e6eeee", "lifeS": 6, "radiusM": 20 }
+    }
+  }
+}

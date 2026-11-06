@@ -108,6 +108,14 @@ struct Fluid {
     // x refraction (m per unit slope), y caustics' cell size (m), z caustics' fade depth (m),
     // w sparkle
     optics: vec4f,
+    // Its flow look (shared/look/waterflow.json; zeros: it shows none): x how far ripples are
+    // carried per metre the water moves, y the carry's cycle (s), z and w the current where foam
+    // streaks begin and are full (m/s)
+    flow: vec4f,
+    // The streaks' colour (linear), a their strength at full
+    flow_foam: vec4f,
+    // x a streak's length along the flow, y its width across (m)
+    flow_shape: vec4f,
 };
 @group(0) @binding(4) var<storage, read> fluids: array<Fluid>;
 // The water's tiles (render/water_tiles.rs): gradient noise and its derivatives over NOISE_TILE
@@ -1628,7 +1636,22 @@ fn water_surface(i: FluidOut, front: bool, footprint: f32, f: Fluid, draw: Draw)
     s.w = vec3f(0.0);
     s.n = seen;
     if (abs(face_n.y) > 0.5) {
-        s.w = water_slope(i.wrapped, f, footprint, select(WAVE_LAYERS, 1, frame.water.w < 0.5));
+        let layers = select(WAVE_LAYERS, 1, frame.water.w < 0.5);
+        // Carried by the current (docs/WATER_SURFACE_GRID.md §2c): two copies of the ripples half
+        // a cycle apart, each carried downstream over its cycle and faded in and out, so neither
+        // is stretched far (a flow map).
+        let cur = select(vec2f(0.0), flow_at(i.wrapped, i.rel), flow_on(FLOW_RIPPLES) && f.flow.x > 0.0);
+        if (dot(cur, cur) > 1e-4) {
+            let t = frame.fog.z / f.flow.y;
+            let p0 = fract(t);
+            let p1 = fract(t + 0.5);
+            let carry = cur * f.flow.x * f.flow.y;
+            let w0 = 1.0 - abs(2.0 * p0 - 1.0);
+            s.w = water_slope(i.wrapped - carry * p0, f, footprint, layers) * w0
+                + water_slope(i.wrapped - carry * p1, f, footprint, layers) * (1.0 - w0);
+        } else {
+            s.w = water_slope(i.wrapped, f, footprint, layers);
+        }
         s.n = ripple_normal(s.up, seen, s.w.xy);
         // A ripple can't face away from the eye: bend it back.
         s.n = normalize(s.n + max(0.02 - dot(s.n, s.v), 0.0) * s.v);
@@ -2255,10 +2278,11 @@ fn scene_bindings(samples: u32) -> String {
 /// shading and every entry point.
 pub fn source(samples: u32) -> String {
     format!(
-        "{}{DRAWS}\n{FADE}\n{}\n{}\n{}\n{TERRAIN}\n{MOTION}\n{OUTLINE}\n{WATER}\n{}",
+        "{}{DRAWS}\n{FADE}\n{}\n{}\n{}\n{}\n{TERRAIN}\n{MOTION}\n{OUTLINE}\n{WATER}\n{}",
         lighting_source(),
         dwell_look::lod_blend::LOD_BLEND.pattern.wgsl(),
         super::lod_map::wgsl(&dwell_look::lod_map::LOD_MAP),
+        super::flow::wgsl(),
         scene_bindings(samples),
         water_slope()
     )
