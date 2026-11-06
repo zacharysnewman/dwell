@@ -302,3 +302,43 @@ fn the_report_is_json() {
         "{v}"
     );
 }
+
+dwell_world::both_faces!(
+    fn a_liquid_given_by_data_alone_runs_by_its_own_roughness(f: FaceFrame) {
+        // G4 (WATER_SURFACE_GRID.md §4): the grid's liquids and settings are data. A fixture
+        // liquid ten times as rough, given only as flow data, drains the same cut lake slower.
+        use dwell_world::flow::{FLOW, FlowData, LiquidFlow};
+        static ROUGH: [LiquidFlow; 1] = [LiquidFlow {
+            block: "dwell:water",
+            manning: 0.3,
+            weir: 1.7,
+            running: "dwell:running_water",
+        }];
+        let rough = FlowData {
+            liquids: &ROUGH,
+            ..FLOW
+        };
+        let drained = |water: Water| {
+            let mut s = Scene::new(f);
+            s.water = water;
+            s.basin(0, 7, 0, 7, 3);
+            s.run(2);
+            // a gap in the far wall down to the lake's floor, onto the open ground beyond
+            let cut: Vec<(i32, i32, i32)> = (2..=5)
+                .flat_map(|z| (0..=4).map(move |r| (8, r, z)))
+                .collect();
+            s.edit(&cut, M.air);
+            s.run(20);
+            1.5 - s.level(3, 3).expect("the lake")
+        };
+        let (plain, slow) = (
+            drained(Water::new()),
+            drained(Water::with_settings(Settings::of(&rough))),
+        );
+        assert!(plain > 0.05, "the lake drains: {plain:.3} m");
+        assert!(
+            slow < 0.7 * plain,
+            "the rough liquid drains slower: {slow:.3} against {plain:.3} m"
+        );
+    }
+);

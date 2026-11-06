@@ -2391,7 +2391,7 @@ in 0.48.2.
   the free water beside it asks (the river beyond, a lake's far shore, the sea), and isn't stepped.
 - **Edits free it.** A changed cell (`Water::touch`) finds its column's floor again (the water keeps
   its volume, less what a block set over it trapped below) and frees the water within
-  `EDIT_REACH` columns; a free column `RELEASE` (2.5 cm) off its rest frees the held columns beside
+  `editReach` columns; a free column `releaseM` (2.5 cm) off its rest frees the held columns beside
   it, so a dam's backwater spreads upstream and a cut lake drains as far as the change reaches. Free
   water spreads into dry neighbours (a ring of columns found as it wets), never into unloaded world.
 - **The rest layer.** Drawn rivers are flat pools in steps, not a steady flow: freed as they are,
@@ -2400,11 +2400,11 @@ in 0.48.2.
   from the rest's. The generated state is then exactly at rest, and a dam, a cut or a flood still
   moves water (they change the water's flows, not the rest's): a dammed river backs up by the flow it
   was drawn with. G1's steady fill replaces these implicit springs with the map's river sources.
-- **Sleep.** A chunk whose free levels held within `SLEEP_BAND` (5 mm) for `CALM_S` (10 s) sleeps
+- **Sleep.** A chunk whose free levels held within `sleepBandM` (5 mm) for `calmS` (10 s) sleeps
   and isn't stepped; what awake neighbours send it is kept exactly (`owed`) and it wakes when that
-  would move its water half `WAKE_BAND` (5 cm) or a shared face jumps (`JUMP`); woken, it takes what
-  it owes over `RELEASE_S` (5 s) in proportion to depth. Substeps by the CFL of the deepest awake
-  water (0.7), at most `MAX_SUBSTEPS` a water tick.
+  would move its water half `wakeBandM` (5 cm) or a shared face jumps (`jumpM2s`); woken, it takes what
+  it owes over `releaseS` (5 s) in proportion to depth. Substeps by the CFL of the deepest awake
+  water (0.7), at most `maxSubsteps` a water tick.
 - **Conserved** among free columns exactly (springs aside); held columns are where water enters and
   leaves.
 - **Drawn as blocks** until G3: a free column's water is written as water blocks (full cells, its top
@@ -2420,7 +2420,12 @@ in 0.48.2.
   basin records (`DWW5`) are ignored and their water found again from their blocks.
 - **Diagnostics:** `Water::report` (JSON: totals, and each column near a cell with its floor, level,
   rest, held and awake), in the block dump and `__dwell.waterReport` (DEV_TOOLS.md).
-- The grid's constants (`MANNING`, `THETA`, `CFL`, the bands) are code until G4 moves them to data.
+- **[built, G4a, 0.49.1]** Its settings are data: `shared/fluids/flow.json` (→ `flow.gen.rs`,
+  `FlowData`): the speed, the tick period, θ, the CFL, the substep cap, the sleep and wake bands, the
+  calm and release times, the jump, the release distance, the edit reach, the draw margin, and the
+  liquids (block, Manning's roughness, the weir the generator sizes chute streams by, the running
+  block; the first is the one drawn); `water::Settings::of` reads it, `Water::with_settings` runs other
+  settings.
 
 **Still from earlier phases, unchanged:** water's `fill` property (registry `fillProperty`,
 `StateInfo::fill`, look tag `0x92`; 0.44.0) and the mesher drawing a surface at it; a coarse LOD water
