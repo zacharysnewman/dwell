@@ -529,6 +529,11 @@ impl Water {
         (n, v)
     }
 
+    /// Whether the water chunk holding face-local column (x, z) is awake (diagnostics, tests).
+    pub fn awake_at(&self, f: FaceFrame, x: i32, z: i32) -> bool {
+        self.find(f, x, z).is_some_and(|(c, _)| self.chunks[c].awake)
+    }
+
     /// Chunks awake (diagnostics, tests).
     pub fn awake_chunks(&self) -> usize {
         self.chunks.iter().filter(|k| k.awake).count()
@@ -1422,10 +1427,15 @@ impl Water {
                 k.share[l] = share;
                 k.w.depth[l] = (k.w.depth[l] + net * dt).max(0.0);
                 if k.calm_t >= 0.0 {
-                    // as a share of the band, or of a tenth of a shallow column's water (a film
-                    // still draining off a bed is not calm, however slowly its level falls)
-                    let band = (0.1 * k.w.depth[l].max(k.win[l]))
-                        .clamp(cfg.sleep_band * 0.1, cfg.sleep_band);
+                    // as a share of the band; in a reach out of the rest (cut off upstream), of
+                    // a tenth of a shallow column's water too: its film still draining off the
+                    // bed is not calm, however slowly its level falls (BUGS.md #41)
+                    let band = if share == 0.0 {
+                        (0.1 * k.w.depth[l].max(k.win[l]))
+                            .clamp(cfg.sleep_band * 0.1, cfg.sleep_band)
+                    } else {
+                        cfg.sleep_band
+                    };
                     moved = moved.max((k.w.depth[l] - k.win[l]).abs() / band);
                 }
             }
