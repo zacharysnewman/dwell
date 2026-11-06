@@ -144,8 +144,13 @@ pub struct Slide {
     /// m/s² along the slope: how fast braking (or a lower terminal speed) slows the slide.
     pub brake_deceleration: f32,
     /// m/s² along the slope: momentum carried up a steep face dies at this rate (with the slope's
-    /// pull), so walking or running at one never climbs it.
+    /// pull), so walking or running at one never climbs it: a few tenths of a metre up its toe,
+    /// then the slide carries the player back.
     pub uphill_deceleration: f32,
+    /// m/s² along the slope, crouched (a slide): the same, 0 by default (owner, 2026-11-06: slides
+    /// "feel like pure physics"): a slide's momentum carries up a steep face against gravity and
+    /// the slide's friction alone, so a fast slide clears a 1 m steep ramp.
+    pub crouch_uphill_deceleration: f32,
     /// Crouched: the terminal speed × this, and `crouch_friction` instead of `friction`.
     pub crouch_terminal_factor: f32,
     pub crouch_friction: f32,
@@ -349,6 +354,7 @@ impl Default for PlayerControllerConfig {
                 brake: 0.5,
                 brake_deceleration: 10.0,
                 uphill_deceleration: 60.0,
+                crouch_uphill_deceleration: 0.0,
                 crouch_terminal_factor: 1.15,
                 crouch_friction: 0.2,
             },
@@ -357,7 +363,7 @@ impl Default for PlayerControllerConfig {
                 start_boost: 1.5,
                 max_speed: 14.0,
                 friction: 5.0,
-                slope_gravity: 1.5,
+                slope_gravity: 1.0,
                 steer_rate: 90.0,
                 cooldown_ticks: 30,
             },

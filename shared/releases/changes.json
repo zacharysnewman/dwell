@@ -5,7 +5,10 @@
       "version": "0.49.6",
       "changes": [
         "Fall damage now counts only how fast you're falling: running or sliding fast into a slope never hurts",
-        "Landing on a slope softens a fall: the steeper the slope, the less it hurts"
+        "Landing on a slope softens a fall: the steeper the slope, the less it hurts",
+        "A fast slide carries up steep ramps and launches off their tops; slopes now speed up and slow down a slide by plain gravity",
+        "Walking into a steep ramp no longer stops you like a wall: you get a little way up and slide back",
+        "Dying on the underside of the world no longer turns the camera upside down"
       ]
     },
     {

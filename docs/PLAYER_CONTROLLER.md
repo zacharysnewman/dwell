@@ -571,9 +571,15 @@ data (`PlayerControllerConfig::slide`, §7).
   to `steer_speed` (5 m/s). Input up the slope brakes: the terminal speed falls by up to
   `brake` (50 %; 60 % before), never to zero, and up-slope input never drives the player up. Momentum carried up a
   steep face (walking or running into a ramp) dies at `uphill_deceleration` (60 m/s²) plus the
-  slope's pull, so a 45° ramp is never walked or run up (the capsule's round bottom climbs onto
-  its foot at most). **Crouching** slides lower (the crouched capsule), with `crouch_friction` 0.2
-  and the terminal speed × `crouch_terminal_factor` (1.15). The **step-up** never steps onto
+  slope's pull, so a 45° ramp is never walked or run up (walking gets ~0.45 m up a 1 m one,
+  running ~0.8 m, then the slide carries the player back). **Crouching** slides lower (the
+  crouched capsule), with `crouch_friction` 0.2, the terminal speed × `crouch_terminal_factor`
+  (1.15), and `crouch_uphill_deceleration` (0) in place of the uphill one (owner, 2026-11-06:
+  slides "feel like pure physics"): a crouched slide's momentum carries up a steep face against
+  gravity and the slide's friction alone, so a slide down a steep hill at ~11 m/s clears a 1 m
+  steep ramp after three flat cells and the ground-is-a-floor rule (§6.11) launches it off the
+  top (it stopped 0.9 m up and slid back before:
+  `ramps.rs` `a_slide_down_a_steep_hill_carries_up_a_single_steep_ramp`). The **step-up** never steps onto
   ground steeper than `min_angle`, and a sliding player does not step at all. **Jumping** off a
   slide (ground steeper than `min_angle`) is **added** to the velocity the player has, out along the
   face's normal (`under_normal × jump_velocity`: its up part to the vertical, its level part to
@@ -589,22 +595,20 @@ data (`PlayerControllerConfig::slide`, §7).
   slope than it left, so a run of them can't be climbed. Such a jump may rise little, so after a
   jump the ground check counts leaving the ground along its normal as airborne too, not only
   rising (else the face, still within the probe's reach, caught the player the next tick). **Ladders and water** override sliding (exclusive layers).
-- **The ramp's foot** (the half-height playtest, 2026-10-20). Walking into a 45° face
-  from below, the ground ring's highest hit is the ramp while the centre still stands on the floor:
-  the ground following climbed the ramp's face (and the solver turned the drive into the face into
-  a climb) until the centre crossed onto the toe, ~0.24 m up, slid back off it, and walked up
-  again, switching between Sliding and Walking every few ticks. Now, while the player drives into
-  such a ramp (its own velocity or the move input), the probe's ground is the ground under the
-  centre (`step_probe`: its normal and gap, `GroundInfo::foot_normal` keeps the ramp's), and the
-  horizontal pass removes the tick's motion into the ramp's horizontal normal, as a wall would
-  (`current` is kept, so it walks on along the foot or away at once). The player stops at the
-  foot, its round bottom against the toe (feet at most ~0.3 m up), in one state; running into the
-  ramp stops the same way rather than running up its toe and sliding back. Standing still beside a
-  ramp is unchanged (the ring's ramp holds the capsule where it rests). Derived from the probe each
-  tick, so it needs nothing on the wire. Tested by `tests/ramps.rs`
-  (`pressing_into_a_45_degree_ramps_foot_does_not_flicker_between_sliding_and_walking`: walking
-  and running at 0–60° from four starting distances; all 40 flickered before, 40–56 switches in
-  2.5 s) and the netcode suite's stairs run.
+- **The ramp's foot is no wall** (owner, 2026-11-06: *"you should be able to walk into them
+  instead of them acting like a wall. You walk up become ungrounded or whatever and slide back"*).
+  Walking into a 45° face from below, the ground ring's highest hit is the ramp while the centre
+  still stands on the floor: the ground following climbs the ramp's toe until the centre crosses
+  onto it, the slide takes over and carries the player back, and, pressing on, it walks up again
+  (walking and sliding alternate while the player presses into the foot, as a person scrabbling at
+  a slope would). From 2026-10-20 to 0.49.5 the foot was a wall to walking (the probe took the
+  ground under the centre while the player drove into the ramp, `GroundInfo::foot_normal`, and the
+  horizontal pass removed the motion into the ramp) because a playtest found the switching
+  between Sliding and Walking on the toe; it also stopped a slide's momentum dead at the foot of a
+  steep ramp, and is removed. Tested by `tests/ramps.rs`
+  (`pressing_into_a_45_degree_ramps_foot_climbs_its_toe_and_slides_back`: walking and running at
+  0–60° from four starting distances climb past the toe, never to the 1 m face's top) and the
+  netcode suite's stairs run (still predicted exactly, the stairs never climbed).
 - **State.** `State::Sliding` (the PPC's state enum always had it; nothing set it before) when
   sliding, above Crouching in `step_state`'s priority: Climbing > Swimming > Flying > Sliding >
   Crouching > Jumping/Falling > Running/Walking/Idle.
@@ -669,10 +673,12 @@ Fortnite-style. The numbers below are defaults chosen for this, all data
 - **Motion** (`sprint_slide()` in `controller.rs`, in the horizontal pass in place of walking). The
   slide keeps its speed in its direction of travel. Friction takes `friction` (5 m/s²; 6 until 2026-11-02); the ground's
   horizontal tilt along the slide (`under_normal`'s horizontal part · the direction, > 0 downhill)
-  adds `gravity × slope_gravity × tilt` (`slope_gravity` 1.5; 1 until 2026-11-02: owner, "slide
-  doesn't continue very well … flat->shallow->flat->shallow downhills", the friction outweighed a
-  ½ m slope's pull; now a slide holds its speed down terraces of a flat cell and a ½ m slope,
-  `a_slide_keeps_its_speed_down_terraces_of_a_flat_cell_and_a_slope`). On flat ground a slide from
+  adds `gravity × slope_gravity × tilt` (`slope_gravity` 1: plain gravity, owner, 2026-11-06,
+  slides "feel like pure physics". It was 1.5 from 2026-11-02, when the owner found slides didn't
+  "continue very well … flat->shallow->flat->shallow downhills", which also cost 1.5× gravity up
+  every ½ m ramp; with friction 5 a slide now nearly keeps its speed down terraces of a flat cell
+  and a ½ m slope, ~0.6 m/s lost over 2 s,
+  `a_slide_nearly_keeps_its_speed_down_terraces_of_a_flat_cell_and_a_slope`). On flat ground a slide from
   a sprint (8 → 9.5 m/s) lasts ~1.6 s; on a 15° slope downhill gravity (5.2 m/s²) out-pulls friction
   and the slide speeds up to `max_speed` (14 m/s) and goes on while the slope does; uphill it lasts
   ~0.7 s. It steps up half steps as walking does (along the slide's direction; any shift paid the
@@ -897,10 +903,10 @@ PPC default for voxels.
 | | `position_limit` | 33,553 km | — | \|x\|, \|y\|, \|z\| (the wire range; no world limit, Phase 16) |
 | `slide` ◆ | `min_angle` / `friction` / `terminal_speed` | 44° / 0.3 / 14 m/s | — | Dwell addition (§6.8): ground steeper than `min_angle` slides; pull `g (sin θ − friction cos θ)`; speed along the slope |
 | | `steering` / `steer_speed` | 0.4 × `acceleration` / 5 m/s | — | Across the slope (0.40.11 lowered it to 1.5 m/s by mistake; back to 5, owner 2026-11-02) |
-| | `brake` / `brake_deceleration` / `uphill_deceleration` | 0.5 / 10 m/s² / 60 m/s² | — | Up-slope input lowers the terminal speed by up to 50 % (60 % until 2026-11-02); momentum up a steep face dies fast |
-| | `crouch_terminal_factor` / `crouch_friction` | 1.15 / 0.2 | — | A crouched slide |
+| | `brake` / `brake_deceleration` / `uphill_deceleration` | 0.5 / 10 m/s² / 60 m/s² | — | Up-slope input lowers the terminal speed by up to 50 % (60 % until 2026-11-02); momentum up a steep face dies fast (walking and running) |
+| | `crouch_terminal_factor` / `crouch_friction` / `crouch_uphill_deceleration` | 1.15 / 0.2 / 0 m/s² | — | A crouched slide; its momentum carries up steep faces against gravity and friction alone (owner, 2026-11-06) |
 | `sprint_slide` ◆ | `min_start_speed` / `start_boost` / `max_speed` | 6.5 m/s / 1.5 m/s / 14 m/s | — | Dwell addition (§6.9): crouch while sprinting; horizontal speeds |
-| | `friction` / `slope_gravity` | 5 m/s² / 1.5 | — | Deceleration; `gravity × slope_gravity × tilt` along the slide (6 / 1 until 2026-11-02: slides faded down stepped hills) |
+| | `friction` / `slope_gravity` | 5 m/s² / 1 | — | Deceleration; `gravity × slope_gravity × tilt` along the slide (6 / 1 until 2026-11-02; 1.5 from then to 0.49.5; 1 again, owner 2026-11-06: plain gravity) |
 | | `steer_rate` / `cooldown_ticks` | 90 °/s / 30 ticks (0.5 s, at most 255: the wire's `u8`) | — | Turning toward the move input; before another slide |
 | `damage` ◆ | `impact_damage_min_speed` / `impact_damage_per_speed` | 12 m/s / 8 per m/s | — | From the `IMPACTED` event's speed into the surface (§6.10) |
 | | `impact_surfaces` / `impact_measure` | `Ground` / `DownwardIntoSurface` | — | The contacts that hit (§6.10): `Ground`, a normal no steeper than `probes.max_slope_angle` (floors and ramps); `All`, every contact. The speed: `DownwardIntoSurface`, the downward speed × the surface's cos θ (owner, 2026-11-06); `IntoSurface`, the whole speed into the normal |
