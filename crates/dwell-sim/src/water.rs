@@ -1211,6 +1211,19 @@ impl Water {
         edges
     }
 
+    /// Whether column `l` of chunk `k` is out of the water as generated: no rest there (a column an
+    /// edit opened), or generated water whose floor has been built up to or over the level it stood
+    /// at (a dam across a river). Such a column changes by its own flows alone: the rest layer's
+    /// divergence there (the implicit spring of a drawn river's step, or of a reach whose flow
+    /// varies) is water that can't be there any more, and applied to the top of a dam it poured
+    /// water onto it for ever (BUGS.md #40). Its neighbours keep their rest flows across its faces,
+    /// so the reach above a dam still backs up and the one below still drains. Read from the
+    /// column's state each substep, so a world saved with water standing on a dam heals on load.
+    fn out_of_rest(k: &Chunk, l: usize) -> bool {
+        let (floor, depth) = (k.r.floor[l], k.r.depth[l]);
+        floor.is_nan() || (depth > DRY && k.w.floor[l] >= floor + depth - DRY)
+    }
+
     /// A layer's net flow into column (c, l) (m/s).
     fn net(&self, c: usize, l: usize, rest: bool) -> f32 {
         let k = lay(&self.chunks[c], rest);
@@ -1283,7 +1296,7 @@ impl Water {
                     continue;
                 }
                 let net = self.net(c, l, false)
-                    - if k.r.floor[l].is_nan() {
+                    - if Self::out_of_rest(k, l) {
                         0.0
                     } else {
                         self.net(c, l, true)

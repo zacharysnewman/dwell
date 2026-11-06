@@ -105,6 +105,20 @@ now, or later allow a few stacked water layers in the columns that have overhang
   (`a_world_saved_before_the_rivers_flow_backs_up_when_dammed`, both faces).
 - **A block set over water** traps what is below it (left as blocks, out of the grid); one set in it
   lifts its water by its volume.
+- **A column built out of its generated water** (0.49.23, BUGS.md #40; owner, 2026-11-06: water
+  that covered a dam "will never drain away even if you raise the height of the dam"): the rest
+  layer's divergence is an implicit spring or sink per column, wherever the drawn river's flow
+  changes (a step's lip pours, a narrowing or a junction carries more out than in). A dam built on
+  such a column kept its spring, so water was poured onto its top for ever, whatever its height,
+  and spilled off both sides. A column whose floor is at or over the level its water stood at as
+  generated (`out_of_rest`) now changes by its own flows alone, as one an edit opened does; its
+  neighbours keep their rest flows across its faces, so the reach above still backs up and the one
+  below still drains. **Measured:** natively, seed 0's river by z 7380 (below a step), a wall
+  overtopped for 20 water minutes and raised 2 m: 20 cells of water stood on its top for the next
+  2.5 hours (red), none after (`water_on_a_raised_dam_across_seed0s_river_drains`; both faces in
+  `water_on_a_raised_dam_drains_off_it`). Read from the state each substep, so a world saved with
+  water on a dam heals on load (`a_world_saved_with_water_on_a_dam_drains_it_on_load`). The river
+  around a dam still doesn't fall asleep once it has filled (BUGS.md #41).
 - **A tick keeps to a budget** (0.49.7, BUGS.md #33): water runs on game time, so a water tick is
   seconds of water; with much water awake (a dammed river) its substeps took 50 ms of the server's
   thread a tick and the game stopped and started. A tick now takes at most `stepBudget`
