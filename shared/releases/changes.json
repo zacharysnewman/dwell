@@ -5,7 +5,8 @@
       "version": "0.49.11",
       "changes": [
         "Sliding up a ramp launches you off its top on your own momentum, at the ramp's angle, instead of holding you to the top and sending you off its far edge flat",
-        "Sliding down a hill keeps you on the ramps instead of bouncing you off each edge"
+        "Sliding down a hill keeps you on the ramps instead of bouncing you off each edge",
+        "Falls of 5 m or less never hurt; past that the damage climbs quickly, and a 12 m fall is lethal"
       ]
     },
     {

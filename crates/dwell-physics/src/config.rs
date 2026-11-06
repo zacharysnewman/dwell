@@ -221,11 +221,19 @@ pub enum ImpactMeasure {
 /// ◆ Dwell addition.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Damage {
-    /// m/s (the controller's `impact_speed`, by `impact_measure`) a hit must exceed to hurt, on the
-    /// surfaces `impact_surfaces` names (§6.10).
-    pub impact_damage_min_speed: f32,
-    /// Health points per m/s above the minimum.
-    pub impact_damage_per_speed: f32,
+    /// m: the fall a hit must exceed to hurt, on the surfaces `impact_surfaces` names (§6.10). A
+    /// hit's speed (the controller's `impact_speed`, by `impact_measure`) is read as the free-fall
+    /// height that lands at it, `v² ÷ 2g`, so a hit straight down on flat ground hurts by the drop.
+    /// 5 (owner, 2026-11-06: "I don't want to get nickeled and dimed all the time for small
+    /// drops"; until 0.49.11 a hit hurt past 12 m/s, a 3.6 m drop, 5 points at 4 m).
+    pub impact_safe_height: f32,
+    /// m: the fall that kills from full health (`players.MAX_HEALTH`). 12 (owner, 2026-11-06: "a
+    /// smaller area between taking damage and lethal damage"; until 0.49.11 ~15 m).
+    pub impact_lethal_height: f32,
+    /// The curve between them: the share of full health lost is `t ^ exponent` for `t` the
+    /// height's share of the way from safe to lethal. 2: past the safe height a hit first takes
+    /// little (6 m: 2 points) and then fast (10 m: 51, 11 m: 73); 1 is a straight line.
+    pub impact_curve_exponent: f32,
     /// The contacts an impact can hurt on: the ground (default) or every surface.
     pub impact_surfaces: ImpactSurfaces,
     /// The speed a hit hurts by: the downward speed into the surface (default) or the whole speed
@@ -384,8 +392,9 @@ impl Default for PlayerControllerConfig {
                 cooldown_ticks: 30,
             },
             damage: Damage {
-                impact_damage_min_speed: 12.0,
-                impact_damage_per_speed: 8.0,
+                impact_safe_height: 5.0,
+                impact_lethal_height: 12.0,
+                impact_curve_exponent: 2.0,
                 impact_surfaces: ImpactSurfaces::Ground,
                 impact_measure: ImpactMeasure::DownwardIntoSurface,
                 crush_speed: 4.0,
@@ -411,17 +420,29 @@ impl Default for PlayerControllerConfig {
 }
 
 impl Damage {
-    /// Health points an impact at `speed` m/s into a surface takes (0 at or under the minimum).
-    pub fn impact_damage(&self, speed: f32) -> i32 {
-        if speed > self.impact_damage_min_speed {
-            ((speed - self.impact_damage_min_speed) * self.impact_damage_per_speed).round() as i32
-        } else {
-            0
+    /// Health points an impact at `speed` m/s into a surface takes under `gravity` (m/s²): 0 up to
+    /// `impact_safe_height`, all of `MAX_HEALTH` from `impact_lethal_height`, on the curve between.
+    /// A tick's hit can take more than full health (a long fall), as before.
+    pub fn impact_damage(&self, speed: f32, gravity: f32) -> i32 {
+        let height = speed * speed / (2.0 * gravity);
+        if height <= self.impact_safe_height {
+            return 0;
         }
+        let band = (self.impact_lethal_height - self.impact_safe_height).max(f32::EPSILON);
+        let t = (height - self.impact_safe_height) / band;
+        let full = dwell_protocol::players::MAX_HEALTH as f32;
+        let points = (full * libm::powf(t, self.impact_curve_exponent)).round() as i32;
+        // Past the safe height a hit always takes at least a point.
+        points.max(1)
     }
 }
 
 impl PlayerControllerConfig {
+    /// [`Damage::impact_damage`] under this config's gravity: what the server deals for a hit.
+    pub fn impact_damage(&self, speed: f32) -> i32 {
+        self.damage.impact_damage(speed, self.body.gravity)
+    }
+
     /// Touch preset: auto-jump on (PLAYER_CONTROLLER.md §6.2).
     pub fn touch() -> Self {
         let mut c = Self::default();

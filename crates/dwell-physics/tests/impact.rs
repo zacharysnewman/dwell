@@ -10,12 +10,6 @@
 
 mod common;
 
-/// What 5, 10, 20 and 30 m drops onto flat ground dealt before walls and ceilings stopped hurting.
-const DROP_5: i32 = 16;
-const DROP_10: i32 = 64;
-const DROP_20: i32 = 131;
-const DROP_30: i32 = 181;
-
 use common::*;
 use dwell_blocks::StateId;
 use dwell_blocks::require;
@@ -32,7 +26,7 @@ fn hurt(w: &PlayerTestWorld, h: PlayerHandle) -> i32 {
     if c.events & events::IMPACTED == 0 {
         return 0;
     }
-    w.config.damage.impact_damage(c.impact_speed)
+    w.config.impact_damage(c.impact_speed)
 }
 
 /// The damage dealt over `n` ticks, tick by tick (the ticks that hurt).
@@ -68,15 +62,19 @@ fn fastest_impact(w: &mut PlayerTestWorld, h: PlayerHandle, n: i32) -> f32 {
 // --- floors -------------------------------------------------------------------------------------
 
 #[test]
-fn a_perpendicular_landing_on_flat_ground_damages_as_before() {
-    // 20 m of free fall at 20 m/s²: ~28.3 m/s, (28.3 − 12) × 8 ≈ 131 points, exactly what the
-    // vertical landing speed gave before impacts (pinned from that code).
+fn a_perpendicular_landing_on_flat_ground_hits_once_and_a_20_m_fall_kills() {
+    // 20 m of free fall at 20 m/s²: ~28.3 m/s, one hit on the floor's normal, past the lethal 12 m
+    // (until 0.49.11 the linear rule's 131 points, which also killed).
     let mut w = PlayerTestWorld::new();
     w.floor();
     let e = w.spawn(Vec3::new(0.5, 20.0, 0.5));
     let dealt = hits_at(&mut w, e, ticks(2.5));
     assert_eq!(dealt.len(), 1, "one hit: {dealt:?}");
-    assert_eq!(dealt[0].0, 131, "as before");
+    assert!(
+        dealt[0].0 >= dwell_protocol::players::MAX_HEALTH as i32,
+        "lethal: {}",
+        dealt[0].0
+    );
     assert_eq!(w.count(e, events::LANDED), 1);
     let n = dealt[0].1;
     assert!(
@@ -86,29 +84,43 @@ fn a_perpendicular_landing_on_flat_ground_damages_as_before() {
 }
 
 #[test]
-fn drops_of_5_10_20_and_30_m_deal_what_they_did_before_ground_only() {
-    // Landings keep the angle rule: pinned from the code before walls and ceilings stopped hurting.
-    for (height, expected) in [
-        (5.0, DROP_5),
-        (10.0, DROP_10),
-        (20.0, DROP_20),
-        (30.0, DROP_30),
+fn small_drops_never_hurt_and_damage_climbs_steeply_to_lethal_at_12_m() {
+    // Owner (2026-11-06): "You also still take fall damage at most heights even if it's a small
+    // amount … I don't want to get nickeled and dimed all the time for small drops", wanting "a
+    // higher threshold for taking damage and a smaller area between taking damage and lethal".
+    // Until 0.49.11 a hit hurt linearly past 12 m/s (a 3.6 m drop): 4.5 m took 11 points, 6 m
+    // 28, and death came at ~15 m. Now nothing up to 5 m, then the quadratic curve to 12 m.
+    for (height, least, most) in [
+        (3.0, 0, 0),
+        (4.5, 0, 0),
+        (4.95, 0, 0),
+        (6.0, 1, 4),
+        (8.0, 15, 21),
+        (10.0, 46, 56),
+        (12.2, 100, 110),
     ] {
         let mut w = PlayerTestWorld::new();
         w.floor();
         let e = w.spawn(Vec3::new(0.5, height, 0.5));
-        let dealt = hits(&mut w, e, ticks(3.0));
-        assert_eq!(dealt, vec![expected], "{height} m");
+        let dealt: i32 = hits(&mut w, e, ticks(3.0)).iter().sum();
+        assert!(
+            (least..=most).contains(&dealt),
+            "{height} m: {dealt} points (expected {least}–{most})"
+        );
     }
 }
 
 #[test]
-fn a_short_drop_does_not_hurt() {
-    // 3 m: ~11 m/s, under the 12 m/s threshold.
-    let mut w = PlayerTestWorld::new();
-    w.floor();
-    let e = w.spawn(Vec3::new(0.5, 3.0, 0.5));
-    assert_eq!(hits(&mut w, e, ticks(1.5)), Vec::<i32>::new());
+fn the_damage_curve_is_data() {
+    // The curve's three numbers are the config's: a straight line (exponent 1) from 2 m to 4 m.
+    let mut config = PlayerControllerConfig::default();
+    config.damage.impact_safe_height = 2.0;
+    config.damage.impact_lethal_height = 4.0;
+    config.damage.impact_curve_exponent = 1.0;
+    let at = |h: f32| config.impact_damage((2.0 * config.body.gravity * h).sqrt());
+    assert_eq!((at(1.9), at(3.0), at(4.0)), (0, 50, 100));
+    // Just past the safe height a hit always takes a point.
+    assert_eq!(at(2.001), 1);
 }
 
 // --- ramps --------------------------------------------------------------------------------------
@@ -201,7 +213,7 @@ fn landing_on_a_ramp_hurts_by_its_downward_speed_into_it() {
             "{angle}°: {} vs {down} m/s down into the ramp",
             l.fastest
         );
-        let damage = PlayerControllerConfig::default().damage.impact_damage(down);
+        let damage = PlayerControllerConfig::default().impact_damage(down);
         assert!(
             damage > 0 && l.dealt == vec![damage],
             "{angle}°: {:?} vs {damage}",
@@ -261,7 +273,7 @@ fn landing_on_a_steep_ramp_hurts_less_than_on_the_flat() {
         (fastest - into).abs() < 0.05,
         "{fastest} vs {into} ({down} down)"
     );
-    let damage = &w.config.damage;
+    let damage = &w.config;
     assert!(
         damage.impact_damage(fastest) > 0
             && damage.impact_damage(fastest) < damage.impact_damage(down),
@@ -282,11 +294,7 @@ fn a_fast_horizontal_hit_into_a_slope_does_not_hurt() {
     w.kick(0, e, Vec3::new(0.0, 0.0, 25.0));
     let fastest = fastest_impact(&mut w, e, ticks(1.0));
     assert!(w.pos(e).z > -0.5, "reached the slope: {}", w.pos(e));
-    assert_eq!(
-        w.config.damage.impact_damage(fastest),
-        0,
-        "{fastest} m/s counted"
-    );
+    assert_eq!(w.config.impact_damage(fastest), 0, "{fastest} m/s counted");
 }
 
 // --- walls --------------------------------------------------------------------------------------

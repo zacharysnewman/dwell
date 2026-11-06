@@ -1330,11 +1330,7 @@ impl Server {
         };
         let c = self.players.controller(h);
         if c.events & events::IMPACTED != 0 {
-            let amount = self
-                .config
-                .player_config
-                .damage
-                .impact_damage(c.impact_speed);
+            let amount = self.config.player_config.impact_damage(c.impact_speed);
             self.damage(id, amount, DamageCause::Fall);
         }
     }

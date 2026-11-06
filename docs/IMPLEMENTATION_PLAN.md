@@ -254,6 +254,10 @@ step) hits as the ramp it stands for, not a wall (`damage.impact_step_as_ramp`, 
 Then (owner, 2026-10-21, built: *"just ground"*): only the ground hurts, a walkable normal
 (`damage.impact_surfaces: Ground`, §6.10); walls and ceilings never do, and the step-as-ramp rule
 was removed with them (a step's side is a wall).
+Then (owner, 2026-11-06, built, 0.49.11: no "nickel and diming" for small drops): the damage curve
+is three data numbers, `damage.impact_safe_height` (5 m), `impact_lethal_height` (12 m) and
+`impact_curve_exponent` (2), the hit's speed read as a fall height; it replaces
+`impact_damage_min_speed` / `impact_damage_per_speed` (linear from 3.6 m, lethal at ~15 m).
 Later finding: jumping onto a block while holding forward gave a
 burst of speed as the player came down on the edge — the step-up's forward nudge was added on top
 of the tick's movement (also on every slab step, and on slopes every tick); it is now taken out of
