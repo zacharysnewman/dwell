@@ -637,9 +637,9 @@ fn a_slide_nearly_keeps_its_speed_down_terraces_of_a_flat_cell_and_a_slope() {
     while w.pos(e).z < 0.0 {
         w.step(1);
     }
-    // The ground is a floor (owner, 2026-11-05: not glued downhill): past ~10 m/s the slide
-    // leaves each terrace's edge and flies over its slope, and slides on where it lands (crouch
-    // held): on the ground it is always sliding.
+    // A slide is glued to ramps going down (owner, 2026-11-06, `slide_stick_drop_speed`): it
+    // follows each terrace's slope (until 0.49.11 it flew over them past ~10 m/s); on the ground
+    // it is always sliding.
     let on = w.horizontal_speed(e);
     let mut walking = 0;
     for _ in 0..ticks(2.0) {

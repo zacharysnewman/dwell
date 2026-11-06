@@ -44,8 +44,22 @@ pub struct Movement {
     /// ramp's lip, a step-up onto a flat top, a downslope's edge). 5: above a run's rise up a
     /// ½ m ramp (8 m/s × ½) and a walk's pull onto a 45° face (5 m/s, less gravity's 0.33), so
     /// walking keeps the ground everywhere (owner, 2026-11-06; 4.5 hopped a walker off a stair
-    /// top onto a 45° face for a tick); a slide at 11–12 m/s up ½ m ramps still flies off a crest.
+    /// top onto a 45° face for a tick). Walking and running only: a slide has its own limits.
     pub ground_stick_speed: f32,
+    /// ◆ m/s: `ground_stick_speed` for a slide (a sprint slide, or a crouched slide down a steep
+    /// face): the most of its rise following the ground takes away in a tick, beyond gravity's
+    /// own pull that tick. 0 (owner, 2026-11-06: "when sliding up off a ramp you should be
+    /// launched … by your own momentum"): a slide has no stride to soak up a crest, so over a
+    /// ramp's top, a lip or a step-up onto a flat top it flies on with the ramp's rise, at the
+    /// ramp's angle. Before, the 5 m/s limit held any slide under ~10 m/s to the top of ½ m ramps
+    /// and it ran off the far edge flat.
+    pub slide_stick_rise_speed: f32,
+    /// ◆ m/s: how much more than gravity following the ground may pull a slide down in a tick. ∞
+    /// (owner, 2026-11-06: "I do like you being sort of 'glued' to ramps when sliding down"): a
+    /// slide follows every ramp and face down; only a drop with no ramp (a step, a cliff) leaves
+    /// the ground. Before, the 5 m/s limit flew a slide off every flat top's edge above a 45° face
+    /// (and above a ½ m ramp past 10 m/s): it bounced its way down a hill.
+    pub slide_stick_drop_speed: f32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -304,6 +318,8 @@ impl Default for PlayerControllerConfig {
                 max_push_force: 3050.0,
                 pushable_mass_limit: 400.0,
                 ground_stick_speed: 5.0,
+                slide_stick_rise_speed: 0.0,
+                slide_stick_drop_speed: f32::INFINITY,
             },
             probes: Probes {
                 ground_probe_margin: 0.15,

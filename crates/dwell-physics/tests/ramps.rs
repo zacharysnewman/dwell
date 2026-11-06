@@ -749,3 +749,101 @@ fn a_slide_down_a_steep_hill_carries_up_a_single_steep_ramp() {
         );
     }
 }
+
+/// A slide at `speed` along +z: dropped in moving just above `rows`' ground at z = −9 with
+/// crouch held, so it lands into a slide (§6.9) and slides along +z. Over the slide's 2.5 s
+/// across z ∈ [−1, 28]: whether it slid, the ticks off the ground, and the velocity (rise, along)
+/// the first tick it left the ground.
+fn slide_over(rows: fn(i32, i32) -> i32, speed: f32) -> (bool, i32, Option<(f32, f32)>) {
+    let mut w = PlayerTestWorld::new();
+    terrain(&mut w, (-4, -12, 4, 30), &rows);
+    let e = w.spawn(Vec3::new(0.5, surface(&rows, 0.5, -9.0) + 0.3, -9.0));
+    w.kick(0, e, Vec3::new(0.0, 0.0, speed));
+    w.set_input(|_, _| input(0.0, 1.0, false, false, true, 0.0, 0.0));
+    let (mut slid, mut airborne, mut left) = (false, 0, None);
+    for _ in 0..ticks(2.5) {
+        w.step(1);
+        let z = w.pos(e).z;
+        if !(-1.0..28.0).contains(&z) {
+            continue;
+        }
+        slid |= w.c(e).sprint_slide.active;
+        if !w.c(e).ground.grounded {
+            airborne += 1;
+            left.get_or_insert((w.vel(e).y, w.vel(e).z));
+        }
+    }
+    (slid, airborne, left)
+}
+
+#[test]
+fn a_slide_up_a_ramp_flies_off_its_top_at_the_ramps_angle() {
+    // Owner (2026-11-06): "when sliding up off a ramp you should be launched (not by some extra
+    // physics force but by your own momentum). Something is still killing that upward momentum",
+    // and "you … still fly at a forward angle regardless of the slope of the ramp". The ground
+    // took up to `ground_stick_speed` (5 m/s) of a slide's rise at a ramp's top, so a slide under
+    // ~10 m/s up ½ m ramps was held to the flat top (never in the air) and ran off its far edge
+    // flat. Now a slide keeps all its rise (`slide_stick_rise_speed` 0): it leaves the top at the
+    // ramp's angle, 26.57° for ½ m ramps and 45° for a 1 m one.
+    let one: fn(i32, i32) -> i32 = |_, z| i32::from(z >= 0);
+    let two: fn(i32, i32) -> i32 = |_, z| if z < 0 { 0 } else { (z + 1).min(2) };
+    let peak: fn(i32, i32) -> i32 = |_, z| if (0..3).contains(&z) { z + 1 } else { 0 };
+    let steep: fn(i32, i32) -> i32 = |_, z| if z < 3 { 0 } else { 2 };
+    for (name, rows, speed, angle) in [
+        ("one ½ m ramp", one, 8.0, 26.57),
+        ("one ½ m ramp", one, 10.0, 26.57),
+        ("two ½ m ramps", two, 10.0, 26.57),
+        ("three ½ m ramps to a peak", peak, 10.0, 26.57),
+        ("a 1 m ramp", steep, 12.0, 45.0),
+    ] {
+        let (slid, airborne, left) = slide_over(rows, speed);
+        assert!(slid, "{name} at {speed} m/s: slid");
+        let (rise, along) = left.unwrap_or_else(|| panic!("{name} at {speed} m/s: never left"));
+        let leaving = libm::atan2f(rise, along).to_degrees();
+        assert!(
+            airborne > 4 && (leaving - angle).abs() < 4.0,
+            "{name} at {speed} m/s: {airborne} ticks in the air, left at {leaving}° (ramp {angle}°)"
+        );
+    }
+}
+
+#[test]
+fn a_slide_down_a_hill_keeps_to_its_ramps() {
+    // Owner (2026-11-06): "now you kinda bounce your way down a hill … I do like you being sort
+    // of 'glued' to ramps when sliding down". Following the ground could pull a slide down at most
+    // `ground_stick_speed` (5 m/s) more than gravity, so a slide left every flat top's edge above
+    // a 45° face (and above ½ m ramps past 10 m/s) and flew down the hill: 35–68 ticks in the air
+    // on these. Now (`slide_stick_drop_speed` ∞) it follows every ramp down.
+    let gentle: fn(i32, i32) -> i32 = |_, z| if z < 0 { 12 } else { (12 - z).max(0) };
+    let steep: fn(i32, i32) -> i32 = |_, z| if z < 0 { 12 } else { (12 - 2 * z).max(0) };
+    let mixed: fn(i32, i32) -> i32 = |_, z| {
+        const DOWN: [i32; 13] = [0, 1, 3, 4, 6, 7, 8, 10, 11, 13, 14, 15, 16];
+        if z < 0 {
+            16
+        } else {
+            16 - DOWN[z.min(12) as usize]
+        }
+    };
+    let terraces: fn(i32, i32) -> i32 = |_, z| {
+        if z < 0 {
+            12
+        } else {
+            (12 - (z / 3) * 2 - i32::from(z % 3 == 2)).max(0)
+        }
+    };
+    for (name, rows) in [
+        ("½ m ramps", gentle),
+        ("45° ramps", steep),
+        ("mixed ramps", mixed),
+        ("terraces", terraces),
+    ] {
+        for speed in [8.0, 10.0, 12.0] {
+            let (slid, airborne, left) = slide_over(rows, speed);
+            assert!(slid, "{name} at {speed} m/s: slid");
+            assert_eq!(
+                airborne, 0,
+                "{name} at {speed} m/s: left the ground at {left:?}"
+            );
+        }
+    }
+}

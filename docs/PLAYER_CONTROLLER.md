@@ -800,7 +800,7 @@ Owner (2026-10-21): fall damage became **impact damage**, by the angle of the su
   into a ½ m step at up to 25 m/s steps up with no hit. `dwell-sim` `tests/netcode.rs` damages and
   kills by falls through the server.
 
-### 6.11 The ground is a floor (Dwell addition) **[built, 0.49.2]**
+### 6.11 The ground is a floor (Dwell addition) **[built, 0.49.2; a slide's limits 0.49.11]**
 
 Owner (2026-11-05): *"Step movement is ruining momentum off of slope 'jumps' … I can see where my
 character tries to 'step' forward at the top of the ramp"*, then, of treating the ground as a
@@ -823,8 +823,8 @@ air held the body over its lip; a run over a downhill edge was held to the face 
   (`max(b, 0) − max(slope, 0)`), and pull it down by at most that much more than gravity does
   (`min(b, 0) − min(slope, 0)`). More either way, and the body leaves the ground with its
   ballistic speed; otherwise it follows the ground as before, closing any gap below (stepping down
-  ½ m, which is not counted). One limit for every movement: walking, running, sliding, momentum.
-  The two parts are counted apart, so a ridge (rising on one face, falling on the next) is no more
+  ½ m, which is not counted). Walking, running and momentum share this limit; a slide has its
+  own (below). The two parts are counted apart, so a ridge (rising on one face, falling on the next) is no more
   than the larger of the two.
 - **The step-up keeps the speed.** It lifts the body (position only); the speed going into it is
   the ramp's rise, and against the flat top that is lost rise: above the limit the body flies on
@@ -835,17 +835,34 @@ air held the body over its lip; a run over a downhill edge was held to the face 
   and about half its run speed, scaled to Dwell's run; Quake 180, ~5.5 m/s at its scale) hopped a
   walker off a stair top onto a 45° face for a tick, landing it sliding (`dwell-sim`
   `sliding_on_steep_stairs`; owner, 2026-11-06: raised to 5). A slide at 11–12 m/s up ½ m ramps
-  still flies off a crest (~5.1 m/s lost); slower than ~11.5 m/s it follows the crest.
+  under the walking limit flew off a crest only past ~11.5 m/s (below).
+- **A slide's limits** (owner, 2026-11-06: *"You still don't fly off the ramp with inertia, still
+  fly at a forward angle regardless of the slope of the ramp … when sliding up off a ramp you
+  should be launched (not by some extra physics force but by your own momentum)"*, and *"now you
+  kinda bounce your way down a hill … I do like you being sort of 'glued' to ramps when sliding
+  down"*). A slide (a sprint slide, or a crouched slide on a steep face) has no stride to soak up a
+  crest, so it has its own pair: `movement.slide_stick_rise_speed` (0: none of its rise is taken,
+  so over a ramp's top, a lip or the step-up at a crest it flies on at the ramp's angle, 26.57° off
+  ½ m ramps, 45° off a 1 m one) and `movement.slide_stick_drop_speed` (∞: it follows every ramp
+  and face down; only a drop with no ramp under it, a step or a cliff, leaves the ground). Under
+  the shared 5 m/s, a slide under ~10 m/s up ½ m ramps was held to the top and ran off the far edge
+  flat (−2° to −12°), and a slide flew off every flat top's edge above a 45° face (and above ½ m
+  ramps past 10 m/s), 35–68 ticks in the air down a hill. Zero is safe from spurious hops: the
+  slide's own braking up a face (gravity and friction along it) lowers its rise by less than
+  gravity does in a tick, so on one plane the ground never takes any. A non-crouched slide on a
+  steep face keeps the walking limit: its `uphill_deceleration` (60 m/s²) would otherwise read as
+  lost rise and hop it off the toe it walked into.
 
 | Case | Rise lost / extra pull | Result |
 |---|---|---|
 | Walk (5 m/s) or run (8 m/s) up ½ m ramps to a crest or a step, over a ridge | 2.2 / 3.7 m/s | Keeps the ground (no hops), as before |
 | Walk off a stair top onto a 45° face | 4.67 m/s | Keeps the ground |
 | Walk or run down ½ m ramps, down ½ m steps | ≤ 3.7 m/s (steps not counted) | Keeps the ground, as before |
-| A slide or a kick at 11–12 m/s up ½ m ramps into a crest | ~5 m/s | Flies the arc: 1.5 m top cleared to 2.17 m |
+| A slide up ½ m ramps to a flat top or a crest (8–12 m/s) | any | Flies off the top at the ramp's angle (26.57°; 45° off a 1 m ramp) |
+| A kick at 11–12 m/s up ½ m ramps into a crest (not sliding) | ~5 m/s | Flies the arc: 1.5 m top cleared to 2.17 m |
 | Up a ramp ending in the air (a placed lip, 1 m) at 12 m/s | ~5.5 m/s | Flies: to 1.89 m |
 | Run (8 m/s) over a 3 m platform's edge onto a 45° face | 7.7 m/s | Flies, never rising, over the whole face: lands on the floor beyond (~11 m/s, harmless) |
-| A slide past ~10.5 m/s down terraces (a flat cell and a ½ m ramp) | > 5 m/s | Flies over each ramp, slides on where it lands (crouch held); keeps its speed |
+| A slide down a hill: ½ m or 45° ramps, mixed, terraces (8–12 m/s) | any | Follows every ramp down, never in the air (until 0.49.11 it flew off each edge above a steeper face) |
 | A knockback, an explosion | — | The launch check, unchanged |
 
 - **Tests:** `ramps.rs` `a_slide_up_ramps_carries_its_rise_over_the_crest` (red before: 1.5 m),
@@ -855,9 +872,10 @@ air held the body over its lip; a run over a downhill edge was held to the face 
   before: held to the face, ≤ 3 ticks in the air); `sprint_slide.rs`
   `a_slide_keeps_its_speed_down_terraces_of_a_flat_cell_and_a_slope` (slides on every landing);
   `step_up.rs`'s approach matrix (ramp then step at every gait) unchanged. The golden trace is
-  unchanged. Both faces.
-- **Possible later:** gluing downhill (the owner: "more fun later"): the pull-down part with no
-  limit, or a larger one, so fast slides hug downhills again.
+  unchanged. Both faces. A slide's limits (0.49.11): `ramps.rs`
+  `a_slide_up_a_ramp_flies_off_its_top_at_the_ramps_angle` (red before: one ½ m ramp at 8 m/s never
+  left the ground) and `a_slide_down_a_hill_keeps_to_its_ramps` (red before: off ½ m ramps' top at
+  12 m/s).
 
 ## 7. Configuration
 
@@ -885,7 +903,8 @@ PPC default for voxels.
 | | `edge_guard` ◆ | false | — | Dwell addition |
 | | `max_push_force` ◆ | 3,050 N | — | The push pass's force at a standstill, falling to nothing at the player's speed: a 700 kg log slides on terrain at ~0.5 m/s (0.41.6; 800 N in 0.41.5; BUILT_BODIES.md §6) |
 | | `pushable_mass_limit` ◆ | 400 kg | — | Heavier clusters are immovable by players (Phase 20) |
-| | `ground_stick_speed` ◆ | 5 m/s | — | The ground is a floor (§6.11): the most of the body's rise following the ground takes away in a tick, and the most it pulls the body down beyond gravity; more either way and it leaves the ground |
+| | `ground_stick_speed` ◆ | 5 m/s | — | The ground is a floor (§6.11): the most of the body's rise following the ground takes away in a tick, and the most it pulls the body down beyond gravity; more either way and it leaves the ground. Walking, running and momentum |
+| | `slide_stick_rise_speed` / `slide_stick_drop_speed` ◆ | 0 / ∞ m/s | — | The same two limits for a slide (a sprint slide, a crouched steep slide; §6.11, 0.49.11): it flies off a ramp's top on its own rise, at the ramp's angle, and follows every ramp down |
 | `probes` | `ground_probe_margin` / `ceiling_probe_margin` | 0.15 / 0.10 m | same | |
 | | `max_slope_angle` | 56° ◆ (the steepest ground: above the 45° ramps; steeper than `slide.min_angle` slides) | same | |
 | `jump` | `height` | 1.25 m | same | Clears one block |

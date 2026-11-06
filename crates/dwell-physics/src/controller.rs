@@ -2367,6 +2367,7 @@ impl Players {
             matches!(p.c.ground.ground, GroundRef::Tier1Body(b) if physics.is_dynamic(b));
         p.ceiling_stop = false;
         let c = &mut p.c;
+        let sliding = c.sprint_slide.active || (c.crouching && c.sliding(cfg.slide.min_angle));
         let v = &mut c.vertical;
         v.step_grace = v.step_grace.saturating_sub(1);
         if c.climb.climbing || c.swim.swimming || c.fly.flying {
@@ -2420,13 +2421,24 @@ impl Players {
                 // crest, a ramp's lip, a step-up onto a flat top, which lifts the body but keeps
                 // its speed), and pull it down by at most that much more than gravity does (a
                 // downslope's edge); more either way, and it leaves the ground with its momentum.
-                // Closing a gap below (stepping down) is not counted.
-                let limit = cfg.movement.ground_stick_speed;
+                // Closing a gap below (stepping down) is not counted. A slide (a sprint slide, a
+                // crouched steep slide) has its own limits (owner, 2026-11-06): none of its rise
+                // is taken (it flies off a ramp's top on its own momentum, at the ramp's angle),
+                // and it follows every ramp down (glued).
+                let (rise_limit, drop_limit) = if sliding {
+                    (
+                        cfg.movement.slide_stick_rise_speed,
+                        cfg.movement.slide_stick_drop_speed,
+                    )
+                } else {
+                    let limit = cfg.movement.ground_stick_speed;
+                    (limit, limit)
+                };
                 let ballistic = v.target_y - v.last_platform_y + gravity * DT;
                 let slope = along_slope;
                 let lost_rise = ballistic.max(0.0) - slope.max(0.0);
                 let pulled_down = ballistic.min(0.0) - slope.min(0.0);
-                if lost_rise > limit || pulled_down > limit {
+                if lost_rise > rise_limit || pulled_down > drop_limit {
                     v.accumulated_y = v.platform_y + ballistic;
                     c.ground.grounded = false;
                 } else {
