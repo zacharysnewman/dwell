@@ -10,7 +10,7 @@ use dwell_world::{
 };
 use rapier3d_f64::prelude::*;
 
-use crate::config::{ImpactSurfaces, PlayerControllerConfig};
+use crate::config::{ImpactMeasure, ImpactSurfaces, PlayerControllerConfig};
 use crate::frame::{FaceQuery, Frame};
 use crate::physics::{BodyHandle, DVec3, Layer, Physics, Vec3, groups};
 use crate::query::{Capsule, GroundRef, ProbeHit, VoxelQuery};
@@ -2479,12 +2479,13 @@ impl Players {
         p.ceiling_stop = ceiling_stop;
     }
 
-    /// Dwell (§6.10): this tick's hit, `max(0, −v · n)` for the body's velocity `v` going into the
-    /// step that met the surface and its normal `n`, the largest over the tick's new contacts,
-    /// its landing (the ground's normal) and a rise the ceiling probe stopped. Flight, swimming and
-    /// climbing are exempt, as they always were from falls. Only the surfaces
-    /// `damage.impact_surfaces` names count: by default flat ground, a normal no steeper than
-    /// `damage.impact_max_slope_angle` (ramps, walls, steep faces and ceilings never hit).
+    /// Dwell (§6.10): this tick's hit for the body's velocity `v` going into the step that met the
+    /// surface: by default its downward speed alone, face-local `max(0, −v.y)`
+    /// (`damage.impact_measure`; or the speed into the surface's normal `n`, `max(0, −v · n)`), the
+    /// largest over the tick's new contacts, its landing (the ground's normal) and a rise the
+    /// ceiling probe stopped. Flight, swimming and climbing are exempt, as they always were from
+    /// falls. Only the surfaces `damage.impact_surfaces` names count: by default the ground, a
+    /// normal no steeper than `probes.max_slope_angle` (walls, steep faces and ceilings never hit).
     fn step_impact(&mut self, i: usize, _: &mut VoxelWorld, _: &mut Physics) {
         let p = self.players[i].as_mut().expect("live");
         let frame = Self::frame(p);
@@ -2492,13 +2493,18 @@ impl Players {
         let c = &p.c;
         let exempt = c.fly.flying || c.swim.swimming || c.climb.climbing;
         let surfaces = p.cfg.damage.impact_surfaces;
-        let max_slope = p.cfg.damage.impact_max_slope_angle;
+        let max_slope = p.cfg.probes.max_slope_angle;
+        let measure = p.cfg.damage.impact_measure;
         let mut hit = (0.0f32, Vec3::ZERO);
         let mut meet = |n: Vec3| {
             if surfaces == ImpactSurfaces::Ground && slope_angle(n) > max_slope {
-                return; // a ramp, a wall, a steep face or a ceiling: not flat ground
+                return; // a wall, a steep face or a ceiling: not the ground
             }
-            let speed = (-v.dot(n)).max(0.0);
+            let speed = match measure {
+                ImpactMeasure::Vertical => -v.y,
+                ImpactMeasure::IntoSurface => -v.dot(n),
+            }
+            .max(0.0);
             if speed > hit.0 {
                 hit = (speed, n);
             }

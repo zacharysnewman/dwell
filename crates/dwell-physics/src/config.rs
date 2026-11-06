@@ -177,28 +177,38 @@ pub struct SprintSlide {
 /// ◆ Which contacts an impact can hurt on (§6.10, `damage.impact_surfaces`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ImpactSurfaces {
-    /// Flat ground only (owner, 2026-10-21: "just ground"; 2026-11-05: a hit on "a half slope or
-    /// steep slope … should be 0"): a contact whose face-local slope is no steeper than
-    /// `damage.impact_max_slope_angle`; ramps, walls, steep faces and ceilings never hurt.
+    /// The ground only (owner, 2026-10-21: "just ground"): a contact whose face-local slope is
+    /// walkable (`probes.max_slope_angle`), floors and ramps; walls, steep faces and ceilings never
+    /// hurt.
     Ground,
     /// Every contact: floors, ramps, walls and ceilings.
     All,
 }
 
+/// ◆ What speed an impact hurts by (§6.10, `damage.impact_measure`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ImpactMeasure {
+    /// The downward speed alone, face-local `max(0, −v.y)` (owner, 2026-11-06: "fall damage should
+    /// only be applied based on Y (vertical downward velocity)"): a landing on a ramp hurts as one
+    /// on the flat at the same downward speed, and a fast run or slide into a slope never hurts.
+    Vertical,
+    /// The speed into the surface, `max(0, −v · n)` (the rule from 2026-10-21 to 0.49.1), which a
+    /// mode with `ImpactSurfaces::All` (walls and ceilings) needs.
+    IntoSurface,
+}
+
 /// ◆ Dwell addition.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Damage {
-    /// m/s into a surface (`max(0, −v · n)`, the controller's `impact_speed`) a hit must exceed to
-    /// hurt, on the surfaces `impact_surfaces` names (§6.10).
+    /// m/s (the controller's `impact_speed`, by `impact_measure`) a hit must exceed to hurt, on the
+    /// surfaces `impact_surfaces` names (§6.10).
     pub impact_damage_min_speed: f32,
     /// Health points per m/s above the minimum.
     pub impact_damage_per_speed: f32,
     /// The contacts an impact can hurt on: the ground (default) or every surface.
     pub impact_surfaces: ImpactSurfaces,
-    /// ° (face-local): the steepest surface that is ground to `ImpactSurfaces::Ground`. Under the
-    /// ½ m ramp's 26.57°, so only flat ground (and near-flat bodies) hurts: a landing on a ramp of
-    /// either pitch slides on instead.
-    pub impact_max_slope_angle: f32,
+    /// The speed a hit hurts by: the downward speed (default) or the speed into the surface.
+    pub impact_measure: ImpactMeasure,
     pub crush_speed: f32,
     pub crush_ticks: u16,
 }
@@ -352,7 +362,7 @@ impl Default for PlayerControllerConfig {
                 impact_damage_min_speed: 12.0,
                 impact_damage_per_speed: 8.0,
                 impact_surfaces: ImpactSurfaces::Ground,
-                impact_max_slope_angle: 10.0,
+                impact_measure: ImpactMeasure::Vertical,
                 crush_speed: 4.0,
                 crush_ticks: 6,
             },

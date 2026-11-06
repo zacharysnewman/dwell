@@ -713,29 +713,31 @@ Owner (2026-10-21): fall damage became **impact damage**, by the angle of the su
 (2026-10-21, *"Let's throw out wall and ceiling damage too, just ground"*) only the ground hurts.
 `step_impact` (pass 10a) raises `IMPACTED` with the tick's hit:
 
-- **The speed** is `max(0, −v · n)`: the body's velocity `v` going into the physics step that met
-  the surface (`Player::pre_step`: the velocity `step_aggregate` gave the body, plus any instant
-  change after it, such as a knockback; not what the collide-and-slide left, nor the layers' wish),
-  into the surface's normal `n` (face-local, out of the surface toward the player). Only the part
-  into the surface counts; the part along it is kept by sliding and is not damage. A perpendicular
-  landing counts in full, a glancing one less, a skim along a slope nothing.
+- **The speed** is the downward speed alone, face-local `max(0, −v.y)` (`damage.impact_measure`,
+  default `Vertical`; owner, 2026-11-06: *"fall damage should only be applied based on Y (vertical
+  downward velocity)"*): the body's velocity `v` going into the physics step that met the surface
+  (`Player::pre_step`: the velocity `step_aggregate` gave the body, plus any instant change after
+  it, such as a knockback; not what the collide-and-slide left, nor the layers' wish). A landing on
+  a ramp hurts as one on the flat at the same downward speed; a run, slide or launch along the
+  ground into a slope, however fast, never does. `ImpactMeasure::IntoSurface` is the speed into the
+  surface's normal `n`, `max(0, −v · n)`: the rule from 2026-10-21 to 0.49.1 (a ½ m ramp × 0.894 of
+  a vertical fall, and a fast horizontal hit into a slope by its normal's share: the owner's report
+  of "up to lethal fall damage" on slopes), kept as data for a mode that hurts on walls.
 - **The surfaces:** each of the tick's contacts (`Physics::contact_normals`, from the last step)
   that is new; the ground's normal when the tick lands (`LANDED`: the ground probe meets the ground
   before the capsule does, and the ground snap then closes the gap gently); and a rise the ceiling
-  probe cancels (normal −y), which likewise stops the body short of the ceiling. Flat ground gives
-  the vertical speed, as falls always did.
-- **Flat ground only** (`damage.impact_surfaces`, default `Ground`): of those, only a normal whose
-  face-local slope is no steeper than `damage.impact_max_slope_angle` (10°) counts. Owner
-  (2026-11-05): *"Fall damage was supposed to only impact you when you hit the ground vertically
-  fast, but currently if you hit a half slope or steep slope really fast you take some up to lethal
-  fall damage … it should be 0."* So ramps of either pitch (26.57°, 45°) never hit, nor do walls,
-  steep faces and ceilings (the ceiling probe's −y), at any speed; until 0.49.2 the bound was
-  `probes.max_slope_angle` (56°) and a ½ m ramp hit by its own normal (× 0.894 of a vertical fall). A step's side is a wall like any other, so it
+  probe cancels (normal −y), which likewise stops the body short of the ceiling.
+- **Ground only** (`damage.impact_surfaces`, default `Ground`): of those, only a normal whose
+  face-local slope is walkable counts, no steeper than `probes.max_slope_angle` (56°, the slope the
+  ground probe stands on): floors and ramps of either pitch. Walls, steep faces and ceilings (the
+  ceiling probe's −y) never hit, at any speed. (0.49.2 counted flat ground only,
+  `damage.impact_max_slope_angle` 10°, so ramps never hurt: the owner's report was of fast
+  horizontal hits, which the downward speed answers instead.) A step's side is a wall like any other, so it
   needs no rule of its own (0.24.8's step-as-ramp normal, which made it hit as the ramp it stands
   for, was removed with wall damage: it would have turned harmless wall contacts into ramp hits). A
   step's top edge met from below by the capsule's base is ground by its own normal when that is
-  flat. `ImpactSurfaces::All` counts every contact (the rule before, kept as data for a mode
-  that wants it). The wall and ceiling impact *sounds* are unchanged: they are read from the
+  walkable. `ImpactSurfaces::All` counts every contact (the rule before, kept as data for a mode
+  that wants it, with `IntoSurface`). The wall and ceiling impact *sounds* are unchanged: they are read from the
   sampled motion, not from `IMPACTED` (AUDIO.md §5); the hurt follows the server's damage.
 - **Once per contact:** a contact whose normal is within `SAME_CONTACT_DOT` (0.95) of one of last
   tick's is the same contact, so a launch that keeps pressing the body into a wall hits once, and
@@ -753,12 +755,13 @@ Owner (2026-10-21): fall damage became **impact damage**, by the angle of the su
   The client predicts the event too but nothing reads it there; landing sounds still come from
   the mover's sampled velocity (`dwell-game` `sound.rs`).
 
-| Case | Speed into the surface | Damage |
+| Case | Speed counted | Damage |
 |---|---|---|
 | 3 m drop, flat | 10.7 m/s | 0 |
 | 5 m / 10 m / 20 m / 30 m drop, flat | 14.0 / 20.0 / 28.3 / 34.7 m/s | 16 / 64 / 131 / 181 (as before) |
-| 25 m/s straight down, at 60° or along a ½ m ramp | (a ramp) | 0 (88 / 21 / 0 until 0.49.2) |
-| 25 m/s straight down onto a 1 m ramp (45°) | (a ramp) | 0 (51 until 0.49.2) |
+| 25 m/s straight down, at 60° or along a ½ m ramp (from 0.6 m over it) | 25.7 / 22.7 / 15.8 m/s down | 109 / 85 / 31 (into the ramp: 88 / 21 / 0 until 0.49.1; 0 in 0.49.2) |
+| 25 m/s straight down onto a 1 m ramp (45°) | 26.0 m/s down | 112 (51 until 0.49.1; 0 in 0.49.2) |
+| Launched along the ground at 25 m/s into a 45° slope | ~0 m/s down | 0 (into the slope: ~46 until 0.49.1) |
 | Launched at 25 m/s into a wall | 25 m/s (a wall) | 0 (104 when walls hurt) |
 | Launched at 25 m/s along a wall, 1 m/s into it | < 2 m/s | 0 |
 | Launched up at 25 m/s into a ceiling 2.2 m over the head | ~23 m/s (a ceiling) | 0 (91 when ceilings hurt) |
@@ -772,10 +775,11 @@ Owner (2026-10-21): fall damage became **impact damage**, by the angle of the su
 
 - **Tests:** `tests/impact.rs` (17, both faces and far from the origin): 5, 10, 20 and 30 m falls
   onto the flat deal the 16 / 64 / 131 / 181 they did before; a short drop nothing; landings at
-  25 m/s onto the ½ m ramp hillside (straight down, 60°, a skim) and onto a 45° hillside nothing
-  (`landing_on_a_half_metre_ramp_never_hurts`, `landing_on_a_steep_ramp_never_hurts`: 88 and 51
-  points before 0.49.2); a
-  25 m/s launch into a wall nothing (and with `impact_surfaces: All` the 104 it did), one brushing
+  25 m/s onto the ½ m ramp hillside (straight down, 60°, along it) and onto a 45° hillside hurt by
+  their downward speed (`landing_on_a_ramp_hurts_by_the_vertical_speed_alone`,
+  `landing_on_a_steep_ramp_…`: nothing in 0.49.2); a 25 m/s launch along the ground into a 45°
+  slope nothing (`a_fast_horizontal_hit_into_a_slope_does_not_hurt`); a
+  25 m/s launch into a wall nothing (and with `impact_surfaces: All`, `IntoSurface` the 104 it did), one brushing
   along it and flying into it nothing; a hard ceiling hit nothing; walking and sprinting into a
   wall, stepping up ½ m, auto-climb and walking the ramp hillside stay under 9 m/s; launches into a
   ½ m step's side (14, 25, 40 m/s), a 1 m block and a step's edge nothing; running
@@ -891,7 +895,7 @@ PPC default for voxels.
 | | `friction` / `slope_gravity` | 5 m/s² / 1.5 | — | Deceleration; `gravity × slope_gravity × tilt` along the slide (6 / 1 until 2026-11-02: slides faded down stepped hills) |
 | | `steer_rate` / `cooldown_ticks` | 90 °/s / 30 ticks (0.5 s, at most 255: the wire's `u8`) | — | Turning toward the move input; before another slide |
 | `damage` ◆ | `impact_damage_min_speed` / `impact_damage_per_speed` | 12 m/s / 8 per m/s | — | From the `IMPACTED` event's speed into the surface (§6.10) |
-| | `impact_surfaces` / `impact_max_slope_angle` | `Ground` / 10° | — | The contacts that hit (§6.10): `Ground`, a normal no steeper than `impact_max_slope_angle` (flat ground; ramps never hit, owner 2026-11-05); `All`, every contact |
+| | `impact_surfaces` / `impact_measure` | `Ground` / `Vertical` | — | The contacts that hit (§6.10): `Ground`, a normal no steeper than `probes.max_slope_angle` (floors and ramps); `All`, every contact. The speed: `Vertical`, the downward speed alone (owner, 2026-11-06); `IntoSurface`, the speed into the normal |
 | | `crush_speed` / `crush_ticks` | 4 m/s / 6 | — | Phase 20 |
 | `step_view` ◆ | `slope` / `max_slope` / `min_speed` | 0.5 / 1.0 / 1 m/s | (PPC `SmoothSteps`: 4 m/s) | Client camera only (§9, Steps): the virtual ramp the eye follows over a step; never read by the sim |
 | `advanced` | `step_probe_distance` ◆ / `probe_ring_radius` / `wall_check_distance` | 0.05 m / 0.9 / 0.16 m | 0.01 / same / same | The step's top is read this far past its face (§4) |
