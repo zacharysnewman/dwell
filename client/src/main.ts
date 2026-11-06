@@ -71,6 +71,16 @@ import { type LoadingHud, LoadingScreen, loadingScreenEnabled } from './ui/loadi
 import { START_HINT, TOUCH_START_HINT } from './ui/controls';
 import { formatMemory, jsHeapBytes, type MemoryReport } from './ui/memory';
 import type { LoopbackTransport } from './net/loopback';
+import {
+  findPlace,
+  gotoPlace,
+  type Camera,
+  type FindHost,
+  type FindOptions,
+  type FoundPlace,
+  type GotoOptions,
+  type GotoResult,
+} from './debug/find';
 import { audio } from './audio/engine';
 import { decodeSounds, EventPlayer } from './audio/events';
 import { installPageSounds } from './audio/page';
@@ -186,6 +196,25 @@ interface DwellDebug {
   showArms(on: boolean): void;
   /** Back to the player's eyes. */
   releaseCamera(): void;
+  /**
+   * The placed camera (`placeCamera`, `goto`), or null while the view is the player's eyes
+   * (`view()` is the player's look, not a placed camera's).
+   */
+  camera(): Camera | null;
+  /**
+   * The nearest loaded place matching `query` (docs/DEV_TOOLS.md "Finding places"): a block or
+   * fluid by name (`dwell:sand`, `water`) or `fluid`, from the player's feet (or `from`) within
+   * `radius` m, with filters. Null when there is none; throws for a name no block has.
+   */
+  find(query: string, options?: FindOptions): FoundPlace | null;
+  /**
+   * Finds `query` (the world map's water first with `scope: 'world'`), moves the player there
+   * with `move`, and places the camera `height` m over it aimed `downstream`, at a `yaw`, or
+   * `toward` a point. Rejects with what it looked for when nothing is found.
+   */
+  goto(query: string, options?: GotoOptions): Promise<GotoResult>;
+  /** Moves the local player's feet there (a local world, on its face); false otherwise. */
+  teleport(feet: Vec3): boolean;
   /** Plants' wind scale (0 still, 1 the data's) and whether cutout meshes draw (cost A/B). */
   plants(wind: number, shown: boolean): void;
   /** The last frame's draw calls and triangles. */
@@ -790,6 +819,10 @@ async function start(): Promise<App | null> {
     releaseCamera: () => {
       client.releaseCamera();
     },
+    camera: () => client.camera() as Camera | null,
+    find: (query, options) => findPlace(findHost(app), query, options),
+    goto: (query, options) => gotoPlace(findHost(app), query, options),
+    teleport: (feet) => teleport(app, feet),
     plants: (wind, shown) => {
       client.setPlants(wind, shown);
     },
@@ -845,6 +878,43 @@ async function start(): Promise<App | null> {
   };
   requestAnimationFrame(frame);
   return app;
+}
+
+/** Moves the local player's feet (a local world; the dev tools' `goto`). */
+function teleport(app: App, feet: Vec3): boolean {
+  app.loopback?.postToWorker({ t: 'teleport', at: feet });
+  return app.loopback !== null;
+}
+
+/** The page's side of the dev tools' place search (debug/find.ts). */
+function findHost(app: App): FindHost {
+  const { client } = app;
+  return {
+    feet: () => (client.debugState() as GameDebugState | null)?.feet ?? null,
+    find: (query, [x, y, z], radius, surface, minDepth, minArea, minCurrent, face, keep) =>
+      client.find(
+        query,
+        x,
+        y,
+        z,
+        radius,
+        surface,
+        minDepth,
+        minArea,
+        minCurrent,
+        face,
+        keep,
+      ) as FoundPlace | null,
+    viewFound: (height, aim, yaw, [x, y, z], pitch, turn) =>
+      client.viewFound(height, aim, yaw, x, y, z, pitch, turn) as Camera,
+    fly: (on) => {
+      client.fly(on);
+    },
+    teleport: (feet) => teleport(app, feet),
+    findOnMap: (kind, at, radius, face, minDepth) =>
+      app.loopback?.findOnMap(kind, at, radius, face, minDepth) ?? Promise.resolve(null),
+    wait: (ms) => new Promise((r) => setTimeout(r, ms)),
+  };
 }
 
 /** The WebAssembly memories and GPU estimates (F3's memory line), once playing. */

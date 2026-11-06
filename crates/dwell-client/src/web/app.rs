@@ -275,6 +275,8 @@ struct Inner {
     menu_open: bool,
     /// The last controller frame's time (ms), for its look's dt.
     gamepad_ms: Option<f64>,
+    /// The last place `find` found (docs/DEV_TOOLS.md "Finding places"), for `viewFound`.
+    found: Option<crate::find::Found>,
     /// The Field of view setting (degrees, vertical).
     fov_setting: f64,
     /// The browser asks for reduced motion (the spyglass zooms at once).
@@ -418,6 +420,7 @@ impl Client {
             motion: Default::default(),
             menu_open: false,
             gamepad_ms: None,
+            found: None,
             fov_setting: dwell_lod::frustum::VERTICAL_FOV,
             reduced_motion: false,
             show_arms: true,
@@ -627,6 +630,145 @@ impl Client {
         let mut out = vec![f64::from(u), f64::from(v), g.fleck_count() as f64];
         out.extend(g.fleck_positions().into_iter().take(3).flatten());
         out
+    }
+
+    /// The nearest loaded cell matching `query` (`crate::find`; docs/DEV_TOOLS.md "Finding
+    /// places") from world point (x, y, z) within `radius` m: a block or fluid by name
+    /// (`dwell:sand`, `water`) or `fluid`; with `surface` open above it, at least `min_depth` m
+    /// deep, `min_area` cells joined at its row and its current `min_current` m/s; on face `face`
+    /// (1 face A, -1 face B, 0 the start point's, 2 either). `{ cell, at, surfaceY, face, block,
+    /// depth, area, distance, current, flow }` (`at` its surface over the cell's centre; `face` 1
+    /// or -1), or null; with `keep`, kept for `viewFound`. Throws for a query naming no block.
+    #[allow(clippy::too_many_arguments)]
+    pub fn find(
+        &self,
+        query: &str,
+        x: f64,
+        y: f64,
+        z: f64,
+        radius: f64,
+        surface: bool,
+        min_depth: f64,
+        min_area: u32,
+        min_current: f64,
+        face: i32,
+        keep: bool,
+    ) -> Result<JsValue, JsError> {
+        use crate::find::{Matcher, Query};
+        let what = Matcher::parse(query).map_err(err)?;
+        let q = Query {
+            radius_m: radius,
+            surface,
+            min_depth_m: min_depth,
+            min_area: min_area.max(1),
+            min_current: min_current as f32,
+            face: match face {
+                0 => Some(dwell_world::FaceFrame::at_height(y)),
+                1 | -1 => Some(dwell_world::FaceFrame::of_sign(f64::from(face))),
+                _ => None,
+            },
+            ..Query::new(what)
+        };
+        let mut s = self.inner.borrow_mut();
+        let Some(g) = &mut s.game else {
+            return Ok(JsValue::NULL);
+        };
+        let found = crate::find::find(g.world(), [x, y, z], &q);
+        if keep {
+            s.found = found;
+        }
+        let Some(f) = found else {
+            return Ok(JsValue::NULL);
+        };
+        let o = Object::new();
+        let arr = |v: &[f64]| Array::from_iter(v.iter().map(|&n| JsValue::from(n)));
+        set(&o, "cell", arr(&f.cell.map(f64::from)));
+        set(&o, "at", arr(&f.point()));
+        set(&o, "surfaceY", f.surface_y);
+        set(&o, "face", f.face.sign());
+        set(&o, "block", dwell_blocks::info(f.state).name);
+        set(&o, "depth", f.depth_m);
+        set(&o, "area", f.area);
+        set(&o, "distance", f.distance_m);
+        set(&o, "current", arr(&f.current.map(f64::from)));
+        set(&o, "flow", arr(&f.flow.map(f64::from)));
+        Ok(o.into())
+    }
+
+    /// Places the camera `height` m over the last place `find` found (along its face's up), looking
+    /// `aim` (`downstream`, `upstream`, `across` its flow; `toward` the point (tx, ty, tz); else
+    /// heading `yaw`), turned `turn` degrees more, at `pitch` (degrees toward the face's up; NaN:
+    /// toward the point with `toward`, else 0). `{ position, yaw, pitch }`; throws with nothing found, or for a flow still there.
+    #[wasm_bindgen(js_name = viewFound)]
+    #[allow(clippy::too_many_arguments)]
+    pub fn view_found(
+        &self,
+        height: f64,
+        aim: &str,
+        yaw: f64,
+        tx: f64,
+        ty: f64,
+        tz: f64,
+        pitch: f64,
+        turn: f64,
+    ) -> Result<JsValue, JsError> {
+        use crate::find::Aim;
+        let mut s = self.inner.borrow_mut();
+        let found = s
+            .found
+            .ok_or_else(|| JsError::new("viewFound: nothing found yet"))?;
+        let how = match aim {
+            "toward" => Aim::Toward([tx, ty, tz]),
+            "" | "yaw" => Aim::Yaw(yaw),
+            other => Aim::parse(other).ok_or_else(|| {
+                JsError::new(&format!(
+                    "viewFound: unknown aim {other:?} (downstream, upstream, across, toward, yaw)"
+                ))
+            })?,
+        };
+        let eye = found.over(height);
+        let (yaw, toward_pitch) = crate::find::aim(&found, eye, how).map_err(err)?;
+        let yaw = (yaw + turn).rem_euclid(360.0);
+        let pitch = if pitch.is_nan() {
+            toward_pitch.unwrap_or(0.0)
+        } else {
+            pitch
+        };
+        let Some(g) = &mut s.game else {
+            return Err(JsError::new("viewFound: not playing"));
+        };
+        g.set_view(Some(crate::game::ViewOverride {
+            eye,
+            yaw_deg: yaw,
+            pitch_deg: pitch,
+        }));
+        let o = Object::new();
+        set(
+            &o,
+            "position",
+            Array::from_iter(eye.iter().map(|&n| JsValue::from(n))),
+        );
+        set(&o, "yaw", yaw);
+        set(&o, "pitch", pitch);
+        Ok(o.into())
+    }
+
+    /// The placed camera (`placeCamera`, `viewFound`): `{ position, yaw, pitch }` (degrees, as
+    /// `placeCamera` takes them), or null while the view is the player's eyes.
+    pub fn camera(&self) -> JsValue {
+        let s = self.inner.borrow();
+        let Some(v) = s.game.as_ref().and_then(|g| g.view()) else {
+            return JsValue::NULL;
+        };
+        let o = Object::new();
+        set(
+            &o,
+            "position",
+            Array::from_iter(v.eye.iter().map(|&n| JsValue::from(n))),
+        );
+        set(&o, "yaw", v.yaw_deg);
+        set(&o, "pitch", v.pitch_deg);
+        o.into()
     }
 
     /// The kept frames: `{ names, frames: [[atMs, ...values in names' order]] }`.

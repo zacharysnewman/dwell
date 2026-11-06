@@ -26,6 +26,7 @@ export class LoopbackTransport implements Transport {
   /** Callers waiting for a save to finish, oldest first (the worker answers in order). */
   private readonly saving: ((ok: boolean) => void)[] = [];
   private readonly reports: ((report: string | null) => void)[] = [];
+  private readonly mapFinds: ((result: string | null) => void)[] = [];
 
   private constructor(private readonly worker: Worker) {
     worker.onmessage = (e: MessageEvent<FromWorker>) => {
@@ -96,6 +97,24 @@ export class LoopbackTransport implements Transport {
     });
   }
 
+  /**
+   * The world map's nearest water as the local server finds it (JSON or `null`, local.rs
+   * `find_on_map`; the dev tools' `goto`); null once the transport is closed.
+   */
+  findOnMap(
+    kind: string,
+    at: [number, number, number],
+    radius: number,
+    face: number,
+    minDepth: number,
+  ): Promise<string | null> {
+    if (this.closed) return Promise.resolve(null);
+    return new Promise((resolve) => {
+      this.mapFinds.push(resolve);
+      this.post({ t: 'findOnMap', kind, at, radius, face, minDepth });
+    });
+  }
+
   close(): void {
     if (this.closed) return;
     this.post({ t: 'disconnect', session: SESSION });
@@ -115,6 +134,7 @@ export class LoopbackTransport implements Transport {
     this.closed = true;
     for (const resolve of this.saving.splice(0)) resolve(false);
     for (const resolve of this.reports.splice(0)) resolve(null);
+    for (const resolve of this.mapFinds.splice(0)) resolve(null);
     this.handlers?.onClose({ message });
     this.handlers = null;
   }
@@ -142,6 +162,9 @@ export class LoopbackTransport implements Transport {
         break;
       case 'waterReport':
         this.reports.shift()?.(msg.report);
+        break;
+      case 'findOnMap':
+        this.mapFinds.shift()?.(msg.result);
         break;
       case 'memory':
         this.heapBytes = msg.bytes;

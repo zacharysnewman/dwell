@@ -2067,11 +2067,11 @@ fn the_map_finds_water_the_player_is_moved_over_it_and_its_cells_are_found() {
             .is_some_and(|g| g.debug_state().terrain_ready)
     }));
     let feet = rig.game.as_ref().unwrap().debug_state().feet;
-    let json = rig.core.find_on_map("water", feet, 20_000.0, None);
+    let json = rig.core.find_on_map("water", feet, 20_000.0, None, 0.5);
     assert!(json.starts_with("{\"at\":["), "{json}");
     assert!(
         rig.core
-            .find_on_map("lava", feet, 100.0, None)
+            .find_on_map("lava", feet, 100.0, None, 0.0)
             .contains("unknown water kind")
     );
     let nums: Vec<f64> = json["{\"at\":[".len()..]
@@ -2092,7 +2092,10 @@ fn the_map_finds_water_the_player_is_moved_over_it_and_its_cells_are_found() {
         let g = rig.game.as_mut().unwrap();
         let at = g.debug_state().feet;
         if (at[0] - over[0]).hypot(at[2] - over[2]) < 1.0 {
-            let q = Query::new(Matcher::parse("water").unwrap());
+            let q = Query {
+                min_depth_m: 0.5,
+                ..Query::new(Matcher::parse("water").unwrap())
+            };
             found = find(g.world(), at, &q);
             if found.is_some() {
                 break;

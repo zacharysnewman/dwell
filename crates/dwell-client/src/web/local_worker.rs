@@ -221,6 +221,31 @@ impl LocalWorld {
     pub fn kill(&mut self) {
         self.core.kill_local_player();
     }
+    /// Moves the local player's feet to (x, y, z) (m), at rest, on its face (the dev tools'
+    /// `goto`, docs/DEV_TOOLS.md); false otherwise.
+    pub fn teleport(&mut self, x: f64, y: f64, z: f64) -> bool {
+        self.core.teleport_local_player([x, y, z])
+    }
+    /// The nearest water of `kind` (`water`, `sea`, `river`, `lake`) on the world map from (x, y,
+    /// z) within `radius` m, on face `face` (1 A, -1 B, 0 the point's), `min_depth` m deep at
+    /// least: JSON or `null`
+    /// (`LocalCore::find_on_map`).
+    #[wasm_bindgen(js_name = findOnMap)]
+    #[allow(clippy::too_many_arguments)]
+    pub fn find_on_map(
+        &mut self,
+        kind: &str,
+        x: f64,
+        y: f64,
+        z: f64,
+        radius: f64,
+        face: i32,
+        min_depth: f64,
+    ) -> String {
+        let face = (face != 0).then(|| dwell_world::FaceFrame::of_sign(f64::from(face)));
+        self.core
+            .find_on_map(kind, [x, y, z], radius, face, min_depth)
+    }
     /// The water near a cell as this server has it (JSON; the block dump's `water`, a diagnostic).
     #[wasm_bindgen(js_name = waterReport)]
     pub fn water_report(&mut self, x: i32, y: i32, z: i32, radius: i32) -> String {

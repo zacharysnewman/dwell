@@ -94,6 +94,83 @@ describe('scenarios', () => {
     });
   });
 
+  it('finds places by what is there (goto, docs/DEV_TOOLS.md "Finding places")', () => {
+    const [s] = parseScenarios(
+      file([
+        {
+          name: 'g',
+          steps: [
+            {
+              do: 'goto',
+              find: 'water',
+              scope: 'world',
+              water: 'sea',
+              minDepth: 3,
+              minArea: 2000,
+              height: 2,
+              lookAt: 'dwell:sand',
+              turn: 180,
+              pitch: -3,
+              maxS: 120,
+            },
+            { do: 'goto', find: 'dwell:sand', yaw: 90, move: true, face: 'any' },
+            { do: 'goto', find: 'water', minCurrent: 0.1, aim: 'downstream', height: -0.5 },
+            { do: 'camera', position: [5, 2, 0], yaw: 0, pitch: -10, aroundFound: true },
+          ],
+        },
+      ]),
+    );
+    expect(s.steps[0]).toEqual({
+      do: 'goto',
+      find: 'water',
+      scope: 'world',
+      water: 'sea',
+      minDepth: 3,
+      minArea: 2000,
+      height: 2,
+      lookAt: 'dwell:sand',
+      turn: 180,
+      pitch: -3,
+      maxS: 120,
+    });
+    expect(s.steps[1]).toEqual({
+      do: 'goto',
+      find: 'dwell:sand',
+      yaw: 90,
+      move: true,
+      face: 'any',
+    });
+    expect(s.steps[2]).toMatchObject({ aim: 'downstream', minCurrent: 0.1, height: -0.5 });
+    expect(s.steps[3]).toMatchObject({ aroundFound: true });
+
+    const bad =
+      (step: unknown): (() => unknown) =>
+      () =>
+        parseScenarios(file([{ name: 'a', steps: [step] }]));
+    expect(bad({ do: 'goto' })).toThrow(/find: expected a string/);
+    expect(bad({ do: 'goto', find: 'water; drop' })).toThrow(/expected a block name/);
+    expect(bad({ do: 'goto', find: 'water', aim: 'sideways' })).toThrow(/downstream, upstream/);
+    expect(bad({ do: 'goto', find: 'water', aim: 'downstream', yaw: 3 })).toThrow(/aim one way/);
+    expect(bad({ do: 'goto', find: 'water', water: 'sea' })).toThrow(/only with scope "world"/);
+    expect(bad({ do: 'goto', find: 'water', scope: 'world', water: 'pond' })).toThrow(
+      /water, sea, river, lake/,
+    );
+    expect(bad({ do: 'goto', find: 'water', face: 'c' })).toThrow(/"a", "b" or "any"/);
+    expect(bad({ do: 'goto', find: 'water', minArea: 2.5 })).toThrow(/whole number/);
+    expect(bad({ do: 'goto', find: 'water', minDepth: -1 })).toThrow(/outside 0–256/);
+    expect(bad({ do: 'goto', find: 'water', speed: 1 })).toThrow(/unknown field "speed"/);
+    expect(
+      bad({
+        do: 'camera',
+        position: [0, 0, 0],
+        yaw: 0,
+        pitch: 0,
+        aroundFound: true,
+        aroundPlayer: true,
+      }),
+    ).toThrow(/not with aroundPlayer/);
+  });
+
   it('times of day and timelapse frames are checked', () => {
     const bad =
       (step: unknown): (() => unknown) =>

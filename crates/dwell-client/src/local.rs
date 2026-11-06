@@ -242,7 +242,8 @@ impl LocalCore {
 
     /// The nearest water of `kind` (`water` any, `sea`, `river`, `lake`) on the world map (the
     /// generator's columns, loaded or not) from world point `from` (m), within `radius_m`, on
-    /// `face` (None: `from`'s): JSON `{"at":[x,y,z],"kind","face","ground","distance"}` with `at`
+    /// `face` (None: `from`'s), at least `min_depth_m` deep (the map's level over its ground; a
+    /// sea's first column off the beach is a few centimetres): JSON `{"at":[x,y,z],"kind","face","ground","distance"}` with `at`
     /// its column's centre at the water's level (world m), or `null`; an unknown kind is an error
     /// (`{"error":…}`). For the dev tools' `goto` (docs/DEV_TOOLS.md): a coarse search to move the
     /// player near, then a search of the cells (`find`).
@@ -252,6 +253,7 @@ impl LocalCore {
         from: [f64; 3],
         radius_m: f64,
         face: Option<dwell_world::FaceFrame>,
+        min_depth_m: f64,
     ) -> String {
         use dwell_worldgen::terrain::Water;
         let want: &[Water] = match kind {
@@ -279,7 +281,8 @@ impl LocalCore {
         let local = terrain.local(f.face);
         let hit = crate::find::nearest_column([from[0], from[2]], radius_m, |x, z| {
             let c = local.column_at(x, z);
-            (!c.outside && want.contains(&c.water)).then_some(c)
+            (!c.outside && want.contains(&c.water) && f64::from(c.level - c.height) >= min_depth_m)
+                .then_some(c)
         });
         let Some(([x, z], c)) = hit else {
             return "null".into();
