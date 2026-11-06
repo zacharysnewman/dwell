@@ -11,6 +11,8 @@ export type Vec3 = [number, number, number];
 export type Step =
   /** Waits. */
   | { do: 'wait'; s: number }
+  /** Samples the local server's figures (`__dwell.serverStats`) once a second for `s` seconds. */
+  | { do: 'server'; name: string; s: number }
   /** Presses or releases a key (`KeyboardEvent.code`), as the keyboard does. */
   | { do: 'key'; code: string; down: boolean }
   /** Holds a key for `s`, then releases it. */
@@ -227,6 +229,7 @@ function drift(where: string, v: unknown): { position: Vec3; yaw: number; pitch:
 
 const STEP_FIELDS: Record<Step['do'], readonly string[]> = {
   wait: ['s'],
+  server: ['name', 's'],
   key: ['code', 'down'],
   hold: ['code', 's'],
   look: ['yaw', 'pitch'],
@@ -262,6 +265,7 @@ const STEP_FIELDS: Record<Step['do'], readonly string[]> = {
 /** Steps that name an output or change the run's state, so can't run more than once in a row. */
 const NOT_REPEATED: readonly Step['do'][] = [
   'mark',
+  'server',
   'record',
   'shot',
   'traceStart',
@@ -283,6 +287,8 @@ export function parseStep(where: string, v: unknown): Step {
   switch (d) {
     case 'wait':
       return { do: d, s: num(at('s'), o.s, 0, 3600) };
+    case 'server':
+      return { do: d, name: name(at('name'), o.name), s: num(at('s'), o.s, 1, 3600) };
     case 'key':
       return { do: d, code: str(at('code'), o.code), down: bool(at('down'), o.down) };
     case 'hold':

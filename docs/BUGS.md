@@ -50,6 +50,20 @@ face, or the placement check against its shape.
 
 ## Fixed
 
+### 36. The bottom half of steep slopes under moving water stayed dry (fixed in 0.49.13)
+
+*Reported 2026-11-06.* "The bottom half of steep slopes is still either not flooded or visually not
+flooded, creating more water visual artifacts." BUGS.md #26 again, on the surface grid: a ramp (a
+shaped block with a `flooded` state; steep slopes are two, `steep_lower` under `steep_upper`) was solid
+to the grid (0.48.2), and the grid's drawing never wrote over a solid cell, so water rising over a
+ramp never set its `flooded` state and its open part showed air (nor did it dry when the water went).
+Fixed: the grid's copy of the world marks such blocks (`cells::HOLDS_DRY`, `HOLDS_WET`), and drawing a
+column floods the ones in its rows and its neighbours' while the water beside or over them stands
+half a fill step into their cell, dry otherwise (`Water::flood_near`; written as the `flooded`
+property by name, `Write::flood`, checked against the world as other writes are). Pinned by
+`water_risen_over_a_steep_slope_floods_its_ramps_and_dries_them_when_it_goes` (both faces; red before:
+the steep slope's lower ramp stayed dry under the flooded pit).
+
 ### 35. The status line read 60 fps on a phone drawing 30 (fixed in 0.49.10)
 
 *Reported 2026-11-06 (0.49.9).* "It's saying I'm running at 60FPS but I'm clearly running at 30 or even

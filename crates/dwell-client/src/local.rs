@@ -69,6 +69,7 @@ impl LocalCore {
             generator_version,
             storage,
             entropy,
+            dwell_sim::water::host::Placement::Inline,
         )
     }
 
@@ -77,7 +78,9 @@ impl LocalCore {
     /// at that world point (feet, m; the dev link `?at=x,y,z`, its player starting there however
     /// the world was left), and with `at_spawn` a saved world's player starting at that spawn, not
     /// where it left (a spawn link). With `upgrade` (the player confirmed the warning, owner
-    /// 2026-11-06) a world file from an older version line opens too.
+    /// 2026-11-06) a world file from an older version line opens too. `water`: where the water
+    /// grid runs (ADR 0062; the browser's water worker is `Remote`, its messages carried by the
+    /// worker script: `take_water_outgoing`, `deliver_water`).
     #[allow(clippy::too_many_arguments)]
     pub fn create_spawning(
         face: dwell_world::Face,
@@ -89,6 +92,7 @@ impl LocalCore {
         generator_version: u32,
         storage: Option<impl StorageBackend>,
         entropy: Box<dyn Entropy>,
+        water: dwell_sim::water::host::Placement,
     ) -> Result<Self, LocalError> {
         // The local player (player 1) lands on the point itself: its spawn spread taken back.
         let at_portal = portal
@@ -119,6 +123,7 @@ impl LocalCore {
             lod_threads: Some(0),
             // A browser tab can close at any moment: save often (and on hide or close, §6.4).
             autosave_seconds: LOCAL_AUTOSAVE_SECONDS,
+            water,
             ..ServerConfig::default()
         };
         let (mut persisted, mut storage_error) = (false, String::new());
@@ -219,9 +224,20 @@ impl LocalCore {
 
     /// The water near cell `at` as the local server has it (a diagnostic, `Water::report`), with
     /// the last block edits (`edits`, `Server::edit_log_json`) so a dump can be replayed.
-    pub fn water_report(&mut self, at: [i32; 3], radius: i32) -> String {
-        let water = self.server().water().report(at, radius);
-        let edits = self.server().edit_log_json();
+    /// None while a remote water's report is on its way (`take_water_report`).
+    pub fn water_report(&mut self, at: [i32; 3], radius: i32) -> Option<String> {
+        let water = self.server.water_report(at, radius)?;
+        Some(self.with_edits(water))
+    }
+
+    /// A remote water's report come back (with the edits, as `water_report`).
+    pub fn take_water_report(&mut self) -> Option<String> {
+        let water = self.server.take_water_report()?;
+        Some(self.with_edits(water))
+    }
+
+    fn with_edits(&self, water: String) -> String {
+        let edits = self.server.edit_log_json();
         match water.strip_suffix('}') {
             Some(body) => format!("{body},\"edits\":{edits}}}"),
             None => water,

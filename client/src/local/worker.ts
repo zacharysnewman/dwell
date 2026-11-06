@@ -13,12 +13,72 @@ interface WorkerScope {
 const scope = self as unknown as WorkerScope;
 
 let core: LocalCore | null = null;
+/** The water worker (ADR 0062): the server's water grid on its own thread; null: inline. */
+let water: Worker | null = null;
+/** Water reports asked for and not yet come back from the water worker. */
+let reportsDue = 0;
+/** This second's server ticks: their count and wall time, and the worst `advance` call (ms). */
+const tickStats = { ticks: 0, ms: 0, maxMs: 0 };
 /** The host paused the world (their page is hidden, §10.2): no simulation steps. */
 let paused = false;
 const queued: ToWorker[] = [];
 
+/** Starts the water worker; null where workers can't start workers (the water runs inline). */
+function startWater(maps: Uint8Array[]): Worker | null {
+  if (typeof Worker === 'undefined') return null;
+  try {
+    const w = new Worker(new URL('./waterWorker.ts', import.meta.url), { type: 'module' });
+    w.onmessage = (e: MessageEvent<ArrayBuffer>) => {
+      if (!core) return;
+      core.waterIn(new Uint8Array(e.data));
+      postReports();
+    };
+    w.onerror = (e) => {
+      console.warn('Dwell: the water worker failed; the water stands still', e.message);
+    };
+    w.postMessage({ t: 'start', maps: maps.map((m) => m.slice()) });
+    return w;
+  } catch (err) {
+    console.warn('Dwell: no water worker; the water runs on the server thread', err);
+    return null;
+  }
+}
+
+/** The server's batches for the water worker (transferred). */
+function pumpWater(): void {
+  if (!core || !water) return;
+  for (let b = core.takeWaterOut(); b; b = core.takeWaterOut()) {
+    water.postMessage(b.buffer, [b.buffer]);
+  }
+}
+
+function postReports(): void {
+  if (!core) return;
+  while (reportsDue > 0) {
+    const report = core.takeWaterReport();
+    if (report === undefined) break;
+    reportsDue--;
+    scope.postMessage({ t: 'waterReport', report });
+  }
+}
+
+/** Saves, with a fresh water record from the water worker (a second at most, ADR 0062). */
+async function save(): Promise<boolean> {
+  if (!core) return false;
+  if (water) {
+    core.requestWaterRecord();
+    pumpWater();
+    const end = performance.now() + 1000;
+    while (!core.waterRecordReady() && performance.now() < end) {
+      await new Promise((r) => setTimeout(r, 5));
+    }
+  }
+  return core.save();
+}
+
 function flush(): void {
   if (!core) return;
+  pumpWater();
   for (const out of core.takeOutbox()) {
     switch (out.kind) {
       case OutgoingKind.Reliable:
@@ -64,9 +124,12 @@ function handle(msg: ToWorker): void {
     case 'kill':
       core.kill();
       break;
-    case 'waterReport':
-      scope.postMessage({ t: 'waterReport', report: core.waterReport(msg.at, msg.radius) });
+    case 'waterReport': {
+      const report = core.waterReport(msg.at, msg.radius);
+      if (report !== undefined) scope.postMessage({ t: 'waterReport', report });
+      else reportsDue++;
       break;
+    }
     case 'respawnPreload':
       core.setRespawnPreload(msg.on);
       break;
@@ -80,7 +143,9 @@ function handle(msg: ToWorker): void {
       core.disconnected(msg.session);
       break;
     case 'save':
-      scope.postMessage({ t: 'saved', ok: core.save() });
+      void save().then((ok) => {
+        scope.postMessage({ t: 'saved', ok });
+      });
       break;
   }
   flush();
@@ -96,6 +161,7 @@ async function start(
   maps: Uint8Array[] = [],
   spawnAt?: [number, number, number],
   upgrade = false,
+  waterInline = false,
 ): Promise<void> {
   // The world file (§6.4): the chosen world's (by default one per generator and seed), in OPFS.
   // Without it the world lives in memory only (no OPFS, or the world is open in another tab).
@@ -111,6 +177,8 @@ async function start(
         console.warn('Dwell: a world map was refused', err);
       }
     }
+    // The water on its own worker (ADR 0062), unless asked for inline or workers can't start one.
+    water = waterInline ? null : startWater(maps);
     core = await LocalCore.load(
       worldSeed,
       generatorVersion,
@@ -120,6 +188,7 @@ async function start(
       spawnOnOpen,
       spawnAt,
       upgrade,
+      water !== null,
     );
   } catch (err) {
     scope.postMessage({
@@ -141,19 +210,37 @@ async function start(
   let busyMs = 0;
   let tick: number | null = null;
   setInterval(() => {
-    if (core) scope.postMessage({ t: 'memory', bytes: core.heapBytes() });
+    if (!core) return;
+    scope.postMessage({ t: 'memory', bytes: core.heapBytes() });
     scope.postMessage({ t: 'perf', ticks, busyMs });
+    scope.postMessage({
+      t: 'stats',
+      stats: {
+        ticks: tickStats.ticks,
+        tickMeanMs: tickStats.ticks ? tickStats.ms / tickStats.ticks : 0,
+        advanceMaxMs: tickStats.maxMs,
+        water: water ? 'worker' : 'inline',
+        waterStats: core.waterStats(),
+      },
+    });
     ticks = 0;
     busyMs = 0;
+    Object.assign(tickStats, { ticks: 0, ms: 0, maxMs: 0 });
   }, 1000);
   setInterval(() => {
     const now = performance.now();
     if (!paused && core) {
       // `advance` returns the server's tick: the ticks run are its difference.
       const t = core.advance((now - last) / 1000);
-      if (tick !== null) ticks += t - tick;
+      const ms = performance.now() - now;
+      busyMs += ms;
+      if (tick !== null && t !== tick) {
+        ticks += t - tick;
+        tickStats.ticks += t - tick;
+        tickStats.ms += ms;
+        tickStats.maxMs = Math.max(tickStats.maxMs, ms);
+      }
       tick = t;
-      busyMs += performance.now() - now;
     }
     last = now;
     flush();
@@ -173,6 +260,7 @@ scope.onmessage = (e) => {
       msg.maps,
       msg.spawnAt,
       msg.upgrade,
+      msg.waterInline,
     );
   else handle(msg);
 };

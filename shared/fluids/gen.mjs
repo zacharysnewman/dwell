@@ -19,6 +19,8 @@ export const FLOW_RANGES = {
   cfl: [0.05, 1, false],
   maxSubsteps: [1, 100000, true],
   stepBudget: [256, 100000000, true],
+  threadStepBudget: [256, 1000000000, true],
+  maxOwedS: [0, 36000, false],
   sleepBandM: [0.0001, 0.5, false],
   wakeBandM: [0.001, 5, false],
   calmS: [0.1, 3600, false],
@@ -71,6 +73,7 @@ export function validateFlow(data, blocks = registryBlocks()) {
     }
   });
   if (data.wakeBandM < data.sleepBandM) bad('wakeBandM must be at least sleepBandM');
+  if (data.threadStepBudget < data.stepBudget) bad('threadStepBudget must be at least stepBudget');
   return data;
 }
 

@@ -36,6 +36,8 @@ export interface ScenarioReport {
   settles: number[];
   /** Each `burst` step's flicker, by name. */
   bursts?: Record<string, Flicker>;
+  /** Each `server` step's samples of the local server's figures, by name. */
+  servers?: Record<string, unknown[]>;
   /** Page opened → playing (s), and the loading screen's state then (ARCHITECTURE.md §6.3). */
   join?: { playingS: number; loading: Record<string, unknown> | null };
   /** Each `until` step's seconds since the page was opened (null: not reached). */

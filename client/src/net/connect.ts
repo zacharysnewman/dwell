@@ -103,7 +103,14 @@ export async function connectLocal(
     // The server computes its own (slower to start, the same terrain).
     console.warn('Dwell: the world maps are unavailable', err);
   }
-  const loopback = await LoopbackTransport.start(worker, maps ? { ...world, maps } : world);
+  // `?water=inline`: the water on the server's thread (ADR 0062; the bench's before/after).
+  const waterInline =
+    typeof location !== 'undefined' && /[?&]water=inline(&|$)/.test(location.search);
+  const loopback = await LoopbackTransport.start(worker, {
+    ...world,
+    ...(maps ? { maps } : {}),
+    ...(waterInline ? { waterInline } : {}),
+  });
   // The world saves every few seconds, and at once when the page is hidden or closed (§6.4).
   const save = () => {
     void loopback.save();

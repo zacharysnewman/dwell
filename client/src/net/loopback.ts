@@ -1,4 +1,4 @@
-import type { FromWorker, ToWorker } from '../local/messages';
+import type { FromWorker, ServerStats, ToWorker } from '../local/messages';
 import type { LocalWorld } from '../local/world';
 import { Channel, TransportKind } from '../protocol/constants.gen';
 import type { Transport, TransportHandlers } from './Transport';
@@ -23,6 +23,8 @@ export class LoopbackTransport implements Transport {
   onGuestOutput: ((msg: GuestOutput) => void) | null = null;
   /** The local server core's WebAssembly memory (bytes), as the worker last reported it. */
   heapBytes = 0;
+  /** The local server's figures, as the worker last reported them (every second). */
+  serverStats: ServerStats | null = null;
   /** The local server's last second: its ticks, and their mean time (ms; null before a tick). */
   serverTicks: number | null = null;
   serverTickMs: number | null = null;
@@ -39,7 +41,7 @@ export class LoopbackTransport implements Transport {
   /** Starts the worker and resolves once the WASM core is loaded. */
   static start(
     worker: Worker,
-    world: LocalWorld & { maps?: Uint8Array[] },
+    world: LocalWorld & { maps?: Uint8Array[]; waterInline?: boolean },
   ): Promise<LoopbackTransport> {
     return new Promise((resolve, reject) => {
       worker.onmessage = (e: MessageEvent<FromWorker>) => {
@@ -148,6 +150,9 @@ export class LoopbackTransport implements Transport {
         break;
       case 'memory':
         this.heapBytes = msg.bytes;
+        break;
+      case 'stats':
+        this.serverStats = msg.stats;
         break;
       case 'perf':
         this.serverTicks = msg.ticks;
