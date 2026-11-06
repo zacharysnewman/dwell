@@ -552,6 +552,10 @@ flat, unlit blue walls stand at the banks. Measured on `main` (1 m cells, adapti
    seen from the air, through a stepped river's riser from below the upper pool's level, the
    upper pool's surface from underneath was a flat sheet of the body's colour (owner, 2026-11-05).
    From outside the water that underside isn't drawn; the riser shows the bed behind it.
+5. **(0.49.20) A slope over a step is a closed wedge.** The water under a pool's sloped edge
+   (`slope_over`) is closed at each end whose neighbour is open and pours no such slope, so rule 4
+   never leaves a hole: from outside the water the eye meets an end's front before the slope's back
+   (owner, 2026-11-06: triangle holes at a diagonal river's staircase steps; BUGS.md #39).
 
 Tests: `crates/dwell-worldgen/tests/terrain.rs`
 (`the_sea_floods_the_open_part_of_every_natural_top_block_below_sea_level`,

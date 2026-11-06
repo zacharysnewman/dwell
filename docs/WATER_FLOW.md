@@ -643,7 +643,8 @@ fill's part-full cells (0.44.0). Small and medium rivers fit within a ½ m terra
   Generated lips are physics, not scaled: every way out, generated or made, passes water by the
   one law.
 - **Drawing:** water over a ½ m step between pools is a slope across the cell below the crest
-  (`mesher.rs` `slope_over`); a fall's sides reach down to the drawn surface of the water it lands
+  (`mesher.rs` `slope_over`; since 0.49.20 a closed wedge, its ends drawn where the cell beside it is
+  open, BUGS.md #39); a fall's sides reach down to the drawn surface of the water it lands
   in (`fall_into`). Not yet: the slope atop a made spill's running column (it stays a column).
 - **Tests:** `a_block_set_in_a_generated_rivers_bed_changes_nothing_else` (twelve pools since
   0.47.0; six of seeds 0–2

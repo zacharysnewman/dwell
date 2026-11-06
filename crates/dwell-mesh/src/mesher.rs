@@ -1023,11 +1023,50 @@ fn fluid_side(
     b.tag_fluid(style.fluid);
 }
 
+/// The slope a fluid cell's surface pours down over its side `face` (WATER_FLOW.md §17, the
+/// owner's sloped edges): where the cell's top shows and that side meets an open cell over the same
+/// water half a block or so lower, its own drawn surface at the shared edge (`high`) and the lower
+/// water's (`low`), in cells from the floor of the row below. None where it isn't such a step.
+fn slope_profile(
+    cells: &Cells<'_>,
+    k: &Kind,
+    [x, y, z]: [i32; 3],
+    face: usize,
+) -> Option<(f64, f64)> {
+    let (axis, sign) = FACES[face];
+    if axis == 1 || !k.liquid {
+        return None;
+    }
+    let above = cells.kind(x, y + 1, z);
+    if above.liquid || above.flooded || face_covered(cube(), 2, cover(&above)) {
+        return None;
+    }
+    let [nx, ny, nz] = neighbour_of(x, y, z, axis, sign);
+    let kn = cells.kind(nx, ny, nz);
+    if kn.shape != Shape::Empty || kn.liquid || kn.flooded || kn.style.look == Look::Cross {
+        return None;
+    }
+    let kb = cells.kind(nx, ny - 1, nz);
+    if !kb.liquid || kb.base != k.base {
+        return None;
+    }
+    let high = 1.0 + k.fill * (1.0 - k.style.surface_drop);
+    let low = kb.fill * (1.0 - kb.style.surface_drop);
+    if high - low < 0.05 || high - low > 1.5 {
+        return None;
+    }
+    Some((high, low))
+}
+
 /// Water pouring over a step (WATER_FLOW.md §17, the owner's sloped edges): where a fluid
 /// cell's top shows and its side `face` meets an open cell over the same water half a block or so
-/// lower, its surface goes on as a slope across that cell, from its own drawn surface at the
-/// shared edge down to the lower water's at the far edge, in place of a vertical side (which the
-/// caller then skips). False where it isn't such a step.
+/// lower ([`slope_profile`]), its surface goes on as a slope across that cell, from its own drawn
+/// surface at the shared edge down to the lower water's at the far edge, in place of a vertical
+/// side (which the caller then skips). The wedge of water under the slope is closed at its ends
+/// where the cell beside it is open and pours no such slope (a river crossing the grid on the
+/// diagonal steps in a staircase; owner, 2026-11-06, BUGS.md #39): else the eye saw in through the
+/// open end to the slope's back, which isn't drawn from outside the water. False where it isn't
+/// such a step.
 fn slope_over(
     b: &mut Builder,
     cells: &Cells<'_>,
@@ -1035,28 +1074,11 @@ fn slope_over(
     [x, y, z]: [i32; 3],
     face: usize,
 ) -> bool {
+    let Some((high, low)) = slope_profile(cells, k, [x, y, z], face) else {
+        return false;
+    };
     let (axis, sign) = FACES[face];
-    if axis == 1 {
-        return false;
-    }
-    let above = cells.kind(x, y + 1, z);
-    if above.liquid || above.flooded || face_covered(cube(), 2, cover(&above)) {
-        return false;
-    }
     let [nx, ny, nz] = neighbour_of(x, y, z, axis, sign);
-    let kn = cells.kind(nx, ny, nz);
-    if kn.shape != Shape::Empty || kn.liquid || kn.flooded || kn.style.look == Look::Cross {
-        return false;
-    }
-    let kb = cells.kind(nx, ny - 1, nz);
-    if !kb.liquid || kb.base != k.base {
-        return false;
-    }
-    let high = 1.0 + k.fill * (1.0 - k.style.surface_drop);
-    let low = kb.fill * (1.0 - kb.style.surface_drop);
-    if high - low < 0.05 || high - low > 1.5 {
-        return false;
-    }
     // In cell units from (x, y - 1, z): the slope over the neighbour's footprint.
     let near = if sign > 0 { 1.0 } else { 0.0 };
     let far = near + f64::from(sign);
@@ -1092,6 +1114,48 @@ fn slope_over(
         None,
         Some((&light, &lit)),
     );
+    // The wedge's ends: a triangle from the lower surface up to the slope, on each side across
+    // the run whose cell is open and doesn't pour the same slope beside this one.
+    for (end, s) in [(0.0, -1), (1.0, 1)] {
+        let side = FACES
+            .iter()
+            .position(|&f| f == (run, s))
+            .expect("a side face");
+        let [lx, ly, lz] = neighbour_of(nx, ny, nz, run, s);
+        let kl = cells.kind(lx, ly, lz);
+        if kl.liquid || kl.flooded || face_covered(cube(), side, cover(&kl)) {
+            continue;
+        }
+        let beside = neighbour_of(x, y, z, run, s);
+        let kk = cells.kind(beside[0], beside[1], beside[2]);
+        let same = slope_profile(cells, &kk, beside, face)
+            .is_some_and(|(h, l)| (h - high).abs() < 1e-9 && (l - low).abs() < 1e-9);
+        if same {
+            continue;
+        }
+        let mut tri = vec![
+            corner(near, end, low),
+            corner(near, end, high),
+            corner(far, end, low),
+        ];
+        if polygon_normal(&tri)[run] * f64::from(s) < 0.0 {
+            tri.reverse();
+        }
+        let normal = polygon_normal(&tri);
+        let (color, tile) = surface(&k.style, run, s);
+        let lit = vec![cells.flood.cell([lx, ly, lz]); tri.len()];
+        let light = vec![1.0; tri.len()];
+        b.polygon(
+            &tri,
+            at,
+            normal,
+            face_tint(run, s),
+            color,
+            &tile,
+            None,
+            Some((&light, &lit)),
+        );
+    }
     b.tag_fluid(k.style.fluid);
     true
 }
