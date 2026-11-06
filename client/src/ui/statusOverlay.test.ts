@@ -42,8 +42,7 @@ describe('formatStatus', () => {
 });
 
 describe('the frame rate', () => {
-  it('is shown once measured', () => {
-    expect(formatStatus('Home', 'loopback', joined, stats, 58.6)).toMatch(/ · 59 fps$/);
+  it("is the performance line's, not the status line's (ui/perfLine.ts)", () => {
     expect(formatStatus('Home', 'loopback', joined, stats)).not.toMatch(/fps/);
   });
 });

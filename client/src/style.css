@@ -1590,6 +1590,30 @@ body.menu-open #menu-button {
   white-space: nowrap;
 }
 
+/* What holds the frame back (ui/perfLine.ts): a pill under the connection line. */
+#perf-status:empty {
+  display: none;
+}
+
+#perf-status {
+  position: fixed;
+  left: calc(var(--safe-left) + 54px);
+  top: calc(var(--safe-top) + 41px);
+  z-index: var(--z-widgets);
+  box-sizing: border-box;
+  max-width: calc(100vw - var(--safe-left) - var(--safe-right) - 64px);
+  overflow: hidden;
+  padding: 4px 12px;
+  border: 1px solid var(--glass-line);
+  border-radius: 999px;
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  font: 11px var(--font-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* The build: in the menus (their own lines), not over the game. */
 #build-info {
   position: fixed;
@@ -2130,6 +2154,14 @@ body:has(#main-menu) #build-info {
     font-size: 10.5px;
   }
 
+  #perf-status {
+    left: var(--safe-left);
+    top: calc(var(--safe-top) + 110px);
+    max-width: calc(100vw - var(--safe-left) - var(--safe-right));
+    padding: 3px 10px;
+    font-size: 10px;
+  }
+
   #debug-overlay {
     left: var(--safe-left);
     right: var(--safe-right);
@@ -2234,6 +2266,7 @@ body.loading-wait #hotbar-region,
 body.loading-wait #touch-controls,
 body.loading-wait #flight-speed,
 body.loading-wait #net-status,
+body.loading-wait #perf-status,
 body.loading-wait #brush-panel {
   visibility: hidden;
 }
