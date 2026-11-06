@@ -1,31 +1,87 @@
 //! Flecks drifting on moving water (docs/WATER_SURFACE_GRID.md §2c, Phase 53 G3d; the Drifting
-//! flecks setting): small specks spawned on the surface of water whose current is at least the
-//! liquid's `particle_from_ms` within `particle_radius_m` of the eye, carried by the current table
-//! (`VoxelWorld::currents`, the same the swimmers and bodies read), kept on the surface, faded in
-//! and out over their `particle_life_s`, per liquid as `shared/look/waterflow.json` says. The
-//! renderer draws them (`render::flames::fleck_quads`). Face-local: a column's surface is found
-//! toward the face's up, through `FaceFrame`.
+//! flecks setting): small scraps of foam spawned on the surface of water running faster than the
+//! liquid's `particle_from_ms` within `particle_radius_m` of the eye (more often and more opaque
+//! up to `particle_full_ms`: few in slow water, none in still), carried by the current table
+//! (`VoxelWorld::currents`, the same the swimmers and bodies read), kept on the surface, eased in
+//! and out over their `particle_life_s`, drawn out along the current, per liquid as
+//! `shared/look/waterflow.json` says (owner, 2026-11-06: not "perfect white circles"). The
+//! renderer draws them (`render::flames::fleck_quads`, its shader the ragged outline). Face-local:
+//! a column's surface is found toward the face's up, through `FaceFrame`.
 
 use dwell_blocks::{FLUIDS, try_info};
 use dwell_look::waterflow::{LIQUID_FLOWS, LiquidFlowLook};
 use dwell_world::{CELL_H, FaceFrame, VoxelWorld, m_of_row};
 
-/// A fleck: where it is (world m), how old (s), its liquid's look (index in `LIQUID_FLOWS`).
+/// A fleck: where it is (world m), how old (s), its liquid's look (index in `LIQUID_FLOWS`), the
+/// current carrying it (world x, z m/s; eased toward the column's, so it turns smoothly where the
+/// current bends) and its seed (its ragged outline's).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Fleck {
     pub at: [f64; 3],
     pub age: f64,
     pub look: usize,
+    pub vel: [f32; 2],
+    pub seed: u32,
+}
+
+/// `x` from 0 to 1 eased (0 below, 1 above).
+fn ease(x: f64) -> f64 {
+    let x = x.clamp(0.0, 1.0);
+    x * x * (3.0 - 2.0 * x)
+}
+
+/// How strongly a fleck shows, and how often one is spawned, in a current of `speed` (m/s): none
+/// at `particle_from_ms` or slower, all at `particle_full_ms`, eased between.
+pub fn speed_share(l: &LiquidFlowLook, speed: f64) -> f64 {
+    ease((speed - l.particle_from_ms) / (l.particle_full_ms - l.particle_from_ms))
+}
+
+/// A fleck's opacity at `age` (s) in a current of `speed` (m/s): at most `particle_opacity`,
+/// eased in over its first `particle_fade_in_s` and out over its last `particle_fade_out_s` (no
+/// popping), times its current's `speed_share` (none in slow water).
+pub fn fleck_alpha(l: &LiquidFlowLook, age: f64, speed: f64) -> f64 {
+    let life = l.particle_life_s;
+    if age <= 0.0 || age >= life {
+        return 0.0;
+    }
+    let ramp = |t: f64, over: f64| if over > 0.0 { ease(t / over) } else { 1.0 };
+    l.particle_opacity
+        * ramp(age, l.particle_fade_in_s)
+        * ramp(life - age, l.particle_fade_out_s)
+        * speed_share(l, speed)
+}
+
+/// A fleck's outline on the water in a current `vel` (world x, z m/s): the unit direction along
+/// the flow, and its half-length along it and half-width across (m): `particle_size_m` across,
+/// drawn out along the flow up to `particle_stretch` times at `particle_full_ms`.
+pub fn fleck_shape(l: &LiquidFlowLook, vel: [f32; 2]) -> ([f64; 2], f64, f64) {
+    let v = [f64::from(vel[0]), f64::from(vel[1])];
+    let speed = v[0].hypot(v[1]);
+    let along = if speed > 1e-6 {
+        [v[0] / speed, v[1] / speed]
+    } else {
+        [1.0, 0.0]
+    };
+    let w = l.particle_size_m;
+    let stretch = 1.0 + (l.particle_stretch - 1.0) * speed_share(l, speed);
+    (along, w * stretch, w)
 }
 
 impl Fleck {
-    /// Its opacity now: faded in over its first half second and out over its last second.
+    /// The current's speed carrying it (m/s).
+    pub fn speed(&self) -> f64 {
+        f64::from(self.vel[0].hypot(self.vel[1]))
+    }
+
+    /// Its opacity now (`fleck_alpha`).
     pub fn alpha(&self) -> f32 {
-        let life = LIQUID_FLOWS[self.look].particle_life_s;
-        let a = (self.age / 0.5).min(1.0) * ((life - self.age) / 1.0).clamp(0.0, 1.0);
-        a as f32
+        fleck_alpha(&LIQUID_FLOWS[self.look], self.age, self.speed()) as f32
     }
 }
+
+/// How fast a fleck's carrying current eases toward its column's (1/s): a bend turns it over a
+/// fraction of a second, not in a frame.
+const VEL_EASE: f64 = 4.0;
 
 /// The flecks near the eye.
 pub struct Flecks {
@@ -103,8 +159,15 @@ impl Flecks {
             p.at[0] += f64::from(c[0]) * dt;
             p.at[2] += f64::from(c[1]) * dt;
             p.age += dt;
+            let k = (VEL_EASE * dt).min(1.0) as f32;
+            p.vel = [
+                p.vel[0] + (c[0] - p.vel[0]) * k,
+                p.vel[1] + (c[1] - p.vel[1]) * k,
+            ];
             let far = (p.at[0] - eye[0]).hypot(p.at[2] - eye[2]) > look.particle_radius_m * 1.5;
-            if p.age >= look.particle_life_s || far || speed(c) < 0.5 * look.particle_from_ms {
+            // Gone once its eased current is as slow as `particle_from_ms`: it has faded out by
+            // then (`speed_share`), so it doesn't pop.
+            if p.age >= look.particle_life_s || far || p.speed() <= look.particle_from_ms {
                 return false;
             }
             match surface_at(
@@ -120,7 +183,8 @@ impl Flecks {
                 _ => false,
             }
         });
-        // New ones: each liquid's count over its life a second, a few tries a frame.
+        // New ones: each liquid's count over its life a second, a few tries a frame; slower water
+        // keeps fewer of its tries (`speed_share`), so slow water has few and still water none.
         let Some(first) = LIQUID_FLOWS.first() else {
             return;
         };
@@ -138,13 +202,24 @@ impl Flecks {
             let l = &LIQUID_FLOWS[look];
             let at = [x, y, z];
             let here = self.list.iter().filter(|p| p.look == look).count();
-            if speed(world.currents.at(at)) < l.particle_from_ms
-                || here >= l.particle_count as usize
-            {
+            let vel = world.currents.at(at);
+            let share = speed_share(l, speed(vel));
+            if share <= 0.0 || here >= l.particle_count as usize {
                 continue;
             }
+            // A try in slower water is spent without a fleck as often as the water is slow.
             self.credit -= 1.0;
-            self.list.push(Fleck { at, age: 0.0, look });
+            if self.random() >= share {
+                continue;
+            }
+            let seed = (self.random() * f64::from(u32::MAX)) as u32;
+            self.list.push(Fleck {
+                at,
+                age: 0.0,
+                look,
+                vel,
+                seed,
+            });
         }
         // Still water all round: no backlog.
         self.credit = self.credit.min(4.0);
@@ -244,4 +319,66 @@ mod tests {
             assert!(fl.list.is_empty(), "the setting off clears them");
         }
     );
+
+    dwell_world::both_faces!(
+        fn slow_water_has_fewer_flecks_than_fast(f: FaceFrame) {
+            // Owner, 2026-11-06: fewer (or none) in slow water.
+            let l = &LIQUID_FLOWS[0];
+            let count = |speed: f64| {
+                let w = pool(f, [speed as f32, 0.0]);
+                let mut fl = Flecks::default();
+                let mut most = 0;
+                for _ in 0..360 {
+                    fl.update(&w, eye(f), 1.0 / 60.0, true);
+                    most = most.max(fl.list.len());
+                }
+                most
+            };
+            let slow = count(l.particle_from_ms + 0.25 * (l.particle_full_ms - l.particle_from_ms));
+            let fast = count(l.particle_full_ms + 0.2);
+            assert_eq!(count(l.particle_from_ms), 0, "none at the threshold");
+            assert!(fast > 10 && slow * 2 < fast, "slow {slow}, fast {fast}");
+        }
+    );
+
+    #[test]
+    fn a_fleck_eases_in_and_out_and_is_never_opaque() {
+        // Owner, 2026-11-06: no popping and no solid white. Its opacity rises from 0 over
+        // `particle_fade_in_s` (eased: a quarter of the way in, under a fifth of its most), holds
+        // at `particle_opacity` (< 1) and falls to 0 over `particle_fade_out_s`; scaled by the
+        // current, none at `particle_from_ms`.
+        let l = &LIQUID_FLOWS[0];
+        let fast = l.particle_full_ms + 0.5;
+        let a = |age: f64| fleck_alpha(l, age, fast);
+        let (life, fin, fout) = (
+            l.particle_life_s,
+            l.particle_fade_in_s,
+            l.particle_fade_out_s,
+        );
+        assert!(
+            fin >= 1.0 && fout >= 1.0,
+            "seconds, not a pop: {fin} {fout}"
+        );
+        assert_eq!(a(0.0), 0.0);
+        assert!(
+            a(0.25 * fin) < 0.2 * l.particle_opacity,
+            "{}",
+            a(0.25 * fin)
+        );
+        assert!((a(0.5 * fin) - 0.5 * l.particle_opacity).abs() < 1e-9);
+        let mid = 0.5 * (fin + life - fout);
+        assert!((a(mid) - l.particle_opacity).abs() < 1e-9 && l.particle_opacity < 1.0);
+        assert!(a(life - 0.25 * fout) < 0.2 * l.particle_opacity);
+        assert_eq!(a(life), 0.0);
+        // Rising through the fade-in, falling through the fade-out, step by step.
+        let steps: Vec<f64> = (0..=100).map(|k| a(life * f64::from(k) / 100.0)).collect();
+        let peak = steps.iter().cloned().fold(0.0, f64::max);
+        let top = steps.iter().position(|&v| v == peak).unwrap();
+        assert!(steps[..=top].windows(2).all(|w| w[1] >= w[0]));
+        assert!(steps[top..].windows(2).all(|w| w[1] <= w[0]));
+        // The current: none at the threshold, part way between, all at full.
+        assert_eq!(fleck_alpha(l, mid, l.particle_from_ms), 0.0);
+        let half = fleck_alpha(l, mid, 0.5 * (l.particle_from_ms + l.particle_full_ms));
+        assert!((half - 0.5 * l.particle_opacity).abs() < 1e-9, "{half}");
+    }
 }

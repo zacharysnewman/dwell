@@ -2507,10 +2507,18 @@ in 0.48.2.
   **Foam streaks:** isotropic noise a streak's width, averaged over six taps back along the flow
   over its length, its ridges drawn in the streaks' colour lit as the shoreline foam is, from
   `foam.fromMs` to `toMs` of current, carried as the ripples are, faded where a pixel covers more
-  than a width. **Drifting flecks** (`dwell-client` `flecks.rs`): spawned on water moving at least
-  `particles.fromMs` within `radiusM` of the eye, carried by the current table, kept on the drawn
-  surface, faded in and out over `lifeS`, drawn as level discs in the flames' billboard pass
-  (`KIND_FLECK`, lit by the sky; `cpuCount` on a CPU adapter). The switches are the Water section's
+  than a width; `lengthM` is at most 4.5 `widthM` (validated: taps further apart than about three
+  quarters of a width no longer join, and a streak breaks into round blobs, the owner's "perfect
+  white circles" of 2026-11-06; now 0.5 by 0.12 m, tinted, strength 0.4). **Drifting flecks**
+  (`dwell-client` `flecks.rs`; owner 2026-11-06: bits of foam, not discs): spawned within `radiusM`
+  of the eye on water faster than `particles.fromMs`, kept as often as `speed_share` (eased from
+  `fromMs` to `fullMs`: few in slow water, none in still), carried by the current table, kept on
+  the drawn surface, eased in over `fadeInS` and out over `fadeOutS` of `lifeS` to at most
+  `opacity`, times `speed_share`. Drawn in the flames' billboard pass (`KIND_FLECK`) as a level quad
+  `sizeM` half-wide, up to `stretch` times as long along its (eased) current; the shader breaks its
+  outline into `lumps` lobes and finer tears by its seed (`ragged`), mottles it, fades it under
+  `minPixels` wide on screen (`fwidth`, no shimmer far off), and lights it as the water's surface
+  is (the sky, the sun and moon through the shadow maps). `cpuCount` (0) on a CPU adapter. The switches are the Water section's
   **Flowing ripples**, **Foam streaks** and **Drifting flecks** settings (`dwell.water`'s optional
   `flowRipples`, `flowFoam`, `flowParticles`; on by default), the first two in the frame's `wrap.w`.
   Water a player set moving and generated water show alike: both read the one table.

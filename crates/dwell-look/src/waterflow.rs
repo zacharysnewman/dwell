@@ -38,16 +38,29 @@ pub struct LiquidFlowLook {
     pub foam_strength: f64,
     pub foam_length_m: f64,
     pub foam_width_m: f64,
-    /// Particles: at most this many near the eye (`particle_cpu_count` on a CPU adapter), spawned
-    /// in currents of at least `particle_from_ms` within `particle_radius_m`, each this size (m)
-    /// and colour (sRGB), drifting for `particle_life_s`.
+    /// Particles (flecks): at most this many near the eye (`particle_cpu_count` on a CPU
+    /// adapter), spawned within `particle_radius_m` in currents of at least `particle_from_ms`,
+    /// more often and more opaque up to `particle_full_ms`; each `particle_size_m` half-width
+    /// across the flow and up to `particle_stretch` times as long along it (at `particle_full_ms`),
+    /// this colour (sRGB) at most `particle_opacity`, drifting for `particle_life_s`, faded in
+    /// over its first `particle_fade_in_s` and out over its last `particle_fade_out_s`; its edge
+    /// broken by `particle_ragged` (0–1) in `particle_lumps` lobes; faded out where it is under
+    /// `particle_min_pixels` wide on screen.
     pub particle_count: u32,
     pub particle_cpu_count: u32,
     pub particle_from_ms: f64,
+    pub particle_full_ms: f64,
     pub particle_size_m: f64,
+    pub particle_stretch: f64,
     pub particle_color: u32,
+    pub particle_opacity: f64,
     pub particle_life_s: f64,
+    pub particle_fade_in_s: f64,
+    pub particle_fade_out_s: f64,
     pub particle_radius_m: f64,
+    pub particle_ragged: f64,
+    pub particle_lumps: u32,
+    pub particle_min_pixels: f64,
 }
 
 /// Liquid `fluid`'s flow look, if it has one (none: its water shows no flow).

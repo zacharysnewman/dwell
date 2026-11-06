@@ -483,7 +483,10 @@ close-up water does per pixel. **Caustics** were evaluated per pixel wherever a 
 texel of their tile (two layers of Worley cells, 18 hashed points), which close to the water is every
 floor pixel. **The land's reflection** marched every pixel's ray, and looking down nearly every ray goes to
 the sky and takes all its steps, where the water reflects 2–4 %. **The reflected clouds** were drawn there
-too. The flow's ripples and foam streaks (§2c) cost nothing measurable in the water pass.
+too. The flow's ripples and foam streaks (WATER_SURFACE_GRID.md §2c) cost nothing measurable in the water pass;
+the streaks are thin dashes along the flow (`lengthM` at most 4.5 `widthM`, or they break into round
+blobs), and the drifting flecks are ragged scraps of foam lit as the surface is, drawn in the flames'
+pass (a few dozen small quads, none on a CPU adapter).
 
 **Fixes:**
 
