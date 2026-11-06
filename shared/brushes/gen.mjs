@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Generates the brush presets and the per-world-type brush policy for Rust and TypeScript from
+// Generates the brush presets and the game modes' brush policy for Rust and TypeScript from
 // shared/brushes/brushes.json (docs/BRUSHES.md). Outputs are checked in; CI regenerates and fails on
 // any diff. A bad entry fails with a message naming it.
 import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -44,8 +44,12 @@ const blockName = (v) => {
     return false;
   }
 };
-/** World types a policy may name (client/src/local/worldIndex.ts WORLD_TYPES; dwell-world `world_type`). */
-const WORLD_TYPES = ['terrain', 'flat', 'sandbox'];
+/** A game mode's name (`creative`; later `adventure`, BRUSHES.md §2). */
+const MODE_NAME = /^[a-z][a-z0-9_]*$/;
+/** The fields of a mode's entry. */
+const MODE_FIELDS = ['brushes', 'reachM'];
+/** The file's top-level fields. */
+const TOP_FIELDS = ['formatVersion', 'sizes', 'modes', 'defaultMode', 'presets'];
 /** Keys a preset may take while the brush tool is on: none of the game's other bindings
  * (client/src/ui/controls.ts) nor the brush tool's own (V, Q, E, P, Z, [, ]). */
 const PRESET_KEYS = ['KeyU', 'KeyI', 'KeyO', 'KeyJ', 'KeyK', 'KeyL', 'KeyY', 'Semicolon', 'Quote', 'Comma', 'Period', 'Slash'];
@@ -113,12 +117,27 @@ const sizes = data.sizes ?? {};
 if (!int(1, SIZE_CAP)(sizes.min) || !int(1, SIZE_CAP)(sizes.max) || sizes.min > sizes.max) {
   fail(`sizes: min and max must be integers 1–${SIZE_CAP}, min ≤ max`);
 }
-const policies = Object.entries(data.worldTypes ?? {}).map(([type, p]) => {
-  if (!WORLD_TYPES.includes(type)) fail(`worldTypes.${type}: not a world type (${WORLD_TYPES.join(', ')})`);
-  if (typeof p.brushes !== 'boolean') fail(`worldTypes.${type}.brushes must be true or false`);
-  if (!num(1, MAX_REACH)(p.reach)) fail(`worldTypes.${type}.reach must be a number 1–${MAX_REACH} (m)`);
-  return { type, brushes: p.brushes, reach: p.reach };
+for (const k of Object.keys(data)) {
+  if (k === 'worldTypes') fail('worldTypes: replaced by modes (a game mode allows brushes, not a world type)');
+  if (!TOP_FIELDS.includes(k)) fail(`unknown field ${k} (${TOP_FIELDS.join(', ')})`);
+}
+const modesData = data.modes;
+if (typeof modesData !== 'object' || modesData === null || Object.keys(modesData).length === 0) {
+  fail('modes: at least one game mode, e.g. { "creative": { "brushes": true, "reachM": 256 } }');
+}
+const modes = Object.entries(modesData).map(([mode, p]) => {
+  if (!MODE_NAME.test(mode)) fail(`modes.${mode}: a mode's name is lower case letters, digits and _`);
+  if (typeof p !== 'object' || p === null) fail(`modes.${mode} must be an object`);
+  for (const k of Object.keys(p)) {
+    if (!MODE_FIELDS.includes(k)) fail(`modes.${mode}: unknown field ${k} (${MODE_FIELDS.join(', ')})`);
+  }
+  if (typeof p.brushes !== 'boolean') fail(`modes.${mode}.brushes must be true or false`);
+  if (!num(1, MAX_REACH)(p.reachM)) fail(`modes.${mode}.reachM must be a number 1–${MAX_REACH} (m)`);
+  return { mode, brushes: p.brushes, reach: p.reachM };
 });
+if (typeof data.defaultMode !== 'string' || !modes.some((m) => m.mode === data.defaultMode)) {
+  fail(`defaultMode must name one of the modes (${modes.map((m) => m.mode).join(', ')}), not ${data.defaultMode}`);
+}
 if (!Array.isArray(data.presets) || data.presets.length === 0) fail('presets: at least one');
 const names = new Set();
 const keys = new Set();
@@ -165,18 +184,21 @@ const f32 = (v) => (Number.isInteger(v) ? `${v}.0` : `${v}`);
 const rs = [];
 rs.push(`// ${header}`);
 rs.push('');
-rs.push('use crate::brush::{BrushKind, Mask, Params, PerformerKind, Preset, WorldPolicy};');
+rs.push('use crate::brush::{BrushKind, Mask, ModePolicy, Params, PerformerKind, Preset};');
 rs.push('');
 rs.push(`pub const FORMAT_VERSION: u32 = ${data.formatVersion};`);
 rs.push(`pub const MIN_SIZE: u8 = ${sizes.min};`);
 rs.push(`pub const MAX_SIZE: u8 = ${sizes.max};`);
 rs.push('');
-rs.push('pub static WORLD_POLICIES: &[WorldPolicy] = &[');
-for (const w of policies) {
-  rs.push('    WorldPolicy {');
-  rs.push(`        world_type: "${w.type}",`);
-  rs.push(`        brushes: ${w.brushes},`);
-  rs.push(`        reach: ${f32(w.reach)},`);
+rs.push('/// The mode every world plays in until a world picks its own (BRUSHES.md §2).');
+rs.push(`pub const DEFAULT_MODE: &str = "${data.defaultMode}";`);
+rs.push('');
+rs.push('pub static MODES: &[ModePolicy] = &[');
+for (const m of modes) {
+  rs.push('    ModePolicy {');
+  rs.push(`        mode: "${m.mode}",`);
+  rs.push(`        brushes: ${m.brushes},`);
+  rs.push(`        reach: ${f32(m.reach)},`);
   rs.push('    },');
 }
 rs.push('];');

@@ -23,7 +23,7 @@ use dwell_protocol::{
     players as pc, welcome_flags, world as wc,
 };
 use dwell_storage::{PlayerRecord, SaveBatch, SavedLodSection, WorldMeta, WorldStore};
-use dwell_world::brush::brush_policy;
+use dwell_world::brush::{brush_policy, world_mode};
 use dwell_world::edit::{
     DEFAULT_REACH, EditCapsule, EditCheck, check_block_edit, edit_writes, held_in_place,
     medium_kept, overlaps_player,
@@ -1130,10 +1130,11 @@ impl Server {
             // REGION_EDITS: this server understands RegionEdit (older builds of the line reject an
             // unknown message, so clients send one only when this is set).
             // BRUSHES (BRUSHES.md): pastes may hold KEEP cells and region edits reach as far as
-            // the world type's brush policy says; set only in world types that allow brushes.
+            // the game mode's brush policy says; set only in modes that allow brushes (every world
+            // is creative for now, which does).
             flags: welcome_flags::REGION_EDITS
                 | if flight { welcome_flags::FLIGHT } else { 0 }
-                | if brush_policy(self.config.generator_version).is_some() {
+                | if brush_policy(world_mode()).is_some() {
                     welcome_flags::BRUSHES
                 } else {
                     0
@@ -2043,7 +2044,7 @@ impl Server {
         // Bodies placed blocks start (cell, block, kind).
         // Blocks gone into bodies this tick: (body, its new cell; none: a new body), the block.
         let mut bodies_built: Vec<BodyBuilt> = Vec::new();
-        let reach = region_reach(self.config.generator_version);
+        let reach = region_reach(world_mode());
         let ids: Vec<SessionId> = self.sessions.keys().copied().collect();
         for id in ids {
             let s = &self.sessions[&id];

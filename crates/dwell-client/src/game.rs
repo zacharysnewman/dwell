@@ -10,7 +10,7 @@ use std::collections::VecDeque;
 use std::rc::Rc;
 
 use dwell_blocks::StateId;
-use dwell_game::block_interaction::{BlockInteraction, BlockTarget, TargetSource, view_direction};
+use dwell_game::block_interaction::{BlockInteraction, BlockTarget, view_direction};
 use dwell_game::brush_tool::{BrushAction, BrushOutline, BrushPanel, BrushTool};
 use dwell_game::chunk_stream::{
     ChunkMessage, ChunkStreamer, Coord, SecondCentre, StreamStats, TerrainView,
@@ -1796,16 +1796,17 @@ impl<S: Scene> Game<S> {
         }
     }
 
-    /// What the server announced it takes (Welcome flags) in a world of this generator: region
-    /// edits, and brush strokes with the world type's brush reach (BRUSHES.md).
     /// The world's portals (BIFACIAL_WORLD.md §12): their axes and mote look, from the generator
     /// and seed the server announced, for the motes drawn in their shafts.
     pub fn set_world(&mut self, generator_version: u32, world_seed: u64) {
         self.portals = dwell_worldgen::portal_axes_for(generator_version, world_seed);
     }
 
-    pub fn set_capabilities(&mut self, region_edits: bool, brushes: bool, generator_version: u32) {
-        let policy = dwell_world::brush::brush_policy(generator_version).filter(|_| brushes);
+    /// What the server announced it takes (Welcome flags): region edits, and brush strokes with
+    /// the game mode's brush reach (BRUSHES.md; every world is creative for now).
+    pub fn set_capabilities(&mut self, region_edits: bool, brushes: bool) {
+        let policy =
+            dwell_world::brush::brush_policy(dwell_world::brush::world_mode()).filter(|_| brushes);
         self.region.enabled = region_edits;
         self.region.keep = brushes;
         self.region.reach = policy.map_or(dwell_protocol::region_edit::REACH, |p| {
@@ -2973,12 +2974,31 @@ impl<S: Scene> Game<S> {
         self.region
             .aim(self.interaction.placement().map(|(c, _)| c));
         self.show_region_boxes();
-        // The brush aims much further along the same ray (its world's brush reach).
+        // The brush aims much further along the same ray (its mode's brush reach), and where the
+        // ray meets nothing editable in reach, at the farthest editable cell along it: it always
+        // shows where it acts (BRUSHES.md §3).
         let t = if self.brush.active() {
             let dir = view_direction(input.look.yaw, input.look.pitch, face).map(|v| v as f32);
-            let far = eye.and_then(|e| self.streamer.store_mut().target(e, dir, self.brush.reach));
-            self.brush.aim(far);
-            far
+            let reach = self.brush.reach;
+            let aim = eye.and_then(|e| {
+                let hit = dwell_game::block_interaction::target_hit(
+                    self.streamer.store_mut(),
+                    e,
+                    dir,
+                    reach,
+                );
+                // Editable: in the world, with every chunk a stroke there reads loaded.
+                let extent = self.brush.read_extent(dwell_world::cell_of_pos(e));
+                let streamer = &self.streamer;
+                dwell_game::brush_tool::clamp_aim(e, dir, reach, hit, |c| {
+                    dwell_world::region::box_in_world(c, [1, 1, 1])
+                        && extent.is_none_or(|(lo, size)| {
+                            streamer.box_loaded(std::array::from_fn(|i| c[i] + lo[i]), size)
+                        })
+                })
+            });
+            self.brush.aim_clamped(aim);
+            aim.map(|a| a.0)
         } else {
             t
         };

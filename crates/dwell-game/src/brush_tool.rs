@@ -32,6 +32,69 @@ fn local_aim(f: FaceFrame, aim: Aim) -> Aim {
     }
 }
 
+/// How finely [`clamp_aim`] samples the view ray (m): finer than a cell's ½ m height.
+const AIM_STEP_M: f64 = 0.25;
+
+/// Where the brush aims along the view ray (owner, 2026-11-06: "if it doesn't reach it should
+/// ensure it always shows where it will place or destroy"). `hit` is the block the ray meets and
+/// its distance (m); `editable` says whether a cell can be edited (its chunk loaded, inside the
+/// build volume and the world's disc). The hit is the aim when it is within `reach` and no
+/// uneditable cell comes before it. Otherwise — the ray meets nothing, meets it past the reach, or
+/// runs into unloaded terrain first — the aim is the farthest editable cell along the ray, short
+/// of the first uneditable one and of the reach, as a free point (true): aimed at from its face's
+/// up. None when even the eye's cell can't be edited.
+pub fn clamp_aim(
+    eye: [f64; 3],
+    dir: [f32; 3],
+    reach: f32,
+    hit: Option<(BlockTarget, f32)>,
+    mut editable: impl FnMut([i32; 3]) -> bool,
+) -> Option<(BlockTarget, bool)> {
+    let reach = f64::from(reach.max(0.0));
+    let len = dir
+        .iter()
+        .map(|v| f64::from(*v).powi(2))
+        .sum::<f64>()
+        .sqrt();
+    if len == 0.0 {
+        return None;
+    }
+    let d = dir.map(|v| f64::from(v) / len);
+    let at = |t: f64| dwell_world::cell_of_pos(std::array::from_fn(|i| eye[i] + d[i] * t));
+    // Walk out to the first uneditable cell, or the reach.
+    let mut last = None;
+    let mut blocked = None;
+    let steps = (reach / AIM_STEP_M).floor() as i64;
+    for k in 0..=steps {
+        let t = (k as f64 * AIM_STEP_M).min(reach);
+        let c = at(t);
+        if last.map(|(l, _)| l) == Some(c) {
+            continue;
+        }
+        if !editable(c) {
+            blocked = Some(t);
+            break;
+        }
+        last = Some((c, t));
+    }
+    if let Some((target, distance)) = hit
+        && f64::from(distance) <= reach
+        && blocked.is_none_or(|b| f64::from(distance) < b)
+        && editable(target.cell)
+    {
+        return Some((target, false));
+    }
+    let (cell, _) = last?;
+    Some((
+        BlockTarget {
+            cell,
+            face: dwell_world::FaceFrame::at_row(cell[1]).cell_face(2) as u8,
+            aim_up: 0.5,
+        },
+        true,
+    ))
+}
+
 /// What a key asks of the brush tool ([`brush_key`]; the controls table in
 /// `client/src/ui/controls.ts`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -242,6 +305,8 @@ pub struct BrushTool {
     preset: usize,
     spec: BrushSpec,
     target: Option<BlockTarget>,
+    /// The target is a free point along the view ([`clamp_aim`]): both clicks centre on it.
+    free: bool,
     replace: Option<StateId>,
     /// The earlier clicks of a line or triangle (oldest first).
     points: Vec<[i32; 3]>,
@@ -253,6 +318,8 @@ pub struct BrushTool {
     preview_key: Option<(Aim, BrushSpec, Materials, bool)>,
     preview_ms: f64,
     version: u64,
+    /// The last [`BrushTool::read_extent`]: its brush, its face (B) and the extent.
+    extent: std::cell::Cell<Option<(BrushSpec, bool, Option<([i32; 3], [i32; 3])>)>>,
 }
 
 impl Default for BrushTool {
@@ -281,6 +348,7 @@ impl BrushTool {
             preset: 0,
             spec: PRESETS[0].spec(),
             target: None,
+            free: false,
             replace: None,
             points: Vec::new(),
             note: String::new(),
@@ -289,6 +357,7 @@ impl BrushTool {
             preview_key: None,
             preview_ms: f64::NEG_INFINITY,
             version: 0,
+            extent: std::cell::Cell::new(None),
         }
     }
 
@@ -383,14 +452,21 @@ impl BrushTool {
 
     /// The block the view ray hits within the brush reach (each frame).
     pub fn aim(&mut self, target: Option<BlockTarget>) {
-        self.target = target;
+        self.aim_clamped(target.map(|t| (t, false)));
+    }
+
+    /// The aim [`clamp_aim`] gives: a block hit, or a free point (true) the stroke centres on
+    /// whichever click makes it, so it acts exactly where the preview shows.
+    pub fn aim_clamped(&mut self, aim: Option<(BlockTarget, bool)>) {
+        self.target = aim.map(|a| a.0);
+        self.free = aim.is_some_and(|a| a.1);
     }
 
     /// The cell a stroke is centred on: the aimed-at block (arrow), or the cell in front of the
     /// face aimed at (gunpowder).
     pub fn center(&self, gunpowder: bool) -> Option<[i32; 3]> {
         let t = self.target?;
-        if !gunpowder {
+        if !gunpowder || self.free {
             return Some(t.cell);
         }
         let d = FACE_DIRS
@@ -461,6 +537,36 @@ impl BrushTool {
         // Layer order (x fastest, then z, then y) in the world, as `perform` gives it.
         changes.sort_by_key(|&([x, y, z], _)| (y, z, x));
         Some((changes, grid))
+    }
+
+    /// The box a stroke centred at `at` reads, as offsets from its centre (its min, its size), its
+    /// clicks aside: what must be loaded for a stroke there, so the aim can stop short of where it
+    /// isn't ([`clamp_aim`]). A brush's cells move with its centre; only the face (A or B) turns
+    /// them, so this is the same all along a view ray on one face.
+    pub fn read_extent(&self, at: [i32; 3]) -> Option<([i32; 3], [i32; 3])> {
+        let f = FaceFrame::at_row(at[1]);
+        if let Some((spec, b, extent)) = self.extent.get()
+            && spec == self.spec
+            && b == f.is_b()
+        {
+            return extent;
+        }
+        let aim = local_aim(
+            f,
+            Aim {
+                center: at,
+                face: f.cell_face(2) as u8,
+                from: None,
+                before: None,
+            },
+        );
+        let cells = brush_cells(&self.spec, aim);
+        let extent = read_bounds(&self.spec, &cells).map(|(min, size)| {
+            let wmin = f.box_min(min, size);
+            (std::array::from_fn(|i| wmin[i] - at[i]), size)
+        });
+        self.extent.set(Some((self.spec, f.is_b(), extent)));
+        extent
     }
 
     /// The cells the brush covers at `c`, in the world.
@@ -611,6 +717,8 @@ impl BrushTool {
         {
             cells = changes.len();
             match ghost_faces(&changes, &grid, c, cap) {
+                // A stroke that changes nothing there still shows where it is: the box below.
+                Some(f) if f.is_empty() => {}
                 Some(f) => {
                     faces = f;
                     ghosted = true;
@@ -1227,6 +1335,77 @@ mod tests {
                     local
                 };
                 assert_eq!(stroke(f), stroke(a), "{}: {:?}", p.name, f.face);
+            }
+        }
+    );
+
+    dwell_world::both_faces!(
+        /// The brush always shows where it acts (owner, 2026-11-06): with nothing hit in reach, a
+        /// hit past it, or unloaded terrain first, the aim is the farthest editable cell along the
+        /// view ray, a free point both clicks centre on; a hit in front of all that is the aim.
+        fn the_aim_clamps_to_the_farthest_editable_cell_along_the_view(f: dwell_world::FaceFrame) {
+            // Face-local: the eye 20 m up, looking along +x and a little down.
+            let eye = f.point([0.5, 20.0, 0.5]);
+            let dir = f.vector_f32([1.0, -0.05, 0.0]);
+            let n = (1.0f32 + 0.05 * 0.05).sqrt();
+            let along = |t: f32| -> [i32; 3] {
+                let p: [f64; 3] = std::array::from_fn(|i| eye[i] + f64::from(dir[i] / n * t));
+                dwell_world::cell_of_pos(p)
+            };
+            let all = |_: [i32; 3]| true;
+            let up = f.cell_face(2) as u8;
+            // Nothing hit: the reach's end.
+            let (t, free) = clamp_aim(eye, dir, 256.0, None, all).expect("an aim");
+            assert!(free);
+            assert_eq!(t.cell, along(256.0));
+            assert_eq!(t.face, up);
+            // Unloaded past 100 m (face-local x ≥ 100): the last cell before it.
+            let loaded = |c: [i32; 3]| c[0] < 100;
+            let (t, free) = clamp_aim(eye, dir, 256.0, None, loaded).expect("an aim");
+            assert!(free);
+            assert_eq!(t.cell[0], 99);
+            // A hit beyond the unloaded edge is not the aim; one before it is.
+            let block = |x: f32| {
+                (
+                    BlockTarget {
+                        cell: along(x),
+                        face: 0,
+                        aim_up: 0.5,
+                    },
+                    x,
+                )
+            };
+            let (t, free) = clamp_aim(eye, dir, 256.0, Some(block(150.0)), loaded).unwrap();
+            assert!(free);
+            assert_eq!(t.cell[0], 99);
+            let (t, free) = clamp_aim(eye, dir, 256.0, Some(block(50.0)), loaded).unwrap();
+            assert!(!free);
+            assert_eq!(t, block(50.0).0);
+            // A hit past the reach: the reach's end.
+            let (t, free) = clamp_aim(eye, dir, 80.0, Some(block(90.0)), all).unwrap();
+            assert!(free);
+            assert_eq!(t.cell, along(80.0));
+            // The eye's own cell uneditable: no aim.
+            assert_eq!(clamp_aim(eye, dir, 256.0, None, |_| false), None);
+            // Both clicks centre a free aim on its cell: the stroke goes where the preview is.
+            let mut tool = tool();
+            tool.aim_clamped(clamp_aim(eye, dir, 256.0, None, loaded));
+            assert_eq!(tool.center(false), tool.center(true));
+            assert_eq!(tool.center(false).map(|c| c[0]), Some(99));
+            // What must be loaded for a stroke at a cell (the game's editable test): a box about
+            // it holding every cell the brush covers there, the same along the ray.
+            for name in ["ball", "cylinder", "ellipsoid"] {
+                select(&mut tool, name);
+                for x in [10, 200] {
+                    let at = along(x as f32);
+                    let (lo, size) = tool.read_extent(at).expect("an extent");
+                    for c in tool.covered_at(at) {
+                        assert!(
+                            (0..3).all(|i| c[i] >= at[i] + lo[i] && c[i] < at[i] + lo[i] + size[i]),
+                            "{name}: {c:?} outside {lo:?} {size:?} at {at:?}"
+                        );
+                    }
+                }
             }
         }
     );

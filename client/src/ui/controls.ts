@@ -75,10 +75,14 @@ export const KEYBOARD: ControlGroup[] = [
     ],
   },
   {
-    // The brush tool (dwell-game brush_tool.rs `brush_key`; BRUSHES.md), in sandbox worlds.
+    // The brush tool (dwell-game brush_tool.rs `brush_key`; BRUSHES.md), in creative worlds.
     title: 'Brushes',
     controls: [
-      { action: 'Brush tool on or off', keys: ['V'], when: 'in sandbox worlds' },
+      {
+        action: 'Brush tool on or off',
+        keys: ['V'],
+        when: 'in creative worlds (every world for now)',
+      },
       { action: 'Paint at the targeted block', keys: ['Left click'], when: 'up to 128 m away' },
       { action: 'Paint in front of it', keys: ['Right click'] },
       { action: 'Pick the block to replace', keys: ['Middle click', '⌥+Click', 'Alt+Click'] },
