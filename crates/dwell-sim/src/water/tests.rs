@@ -259,7 +259,10 @@ dwell_world::both_faces!(
 dwell_world::both_faces!(
     fn a_dam_across_a_drawn_river_backs_it_up(f: FaceFrame) {
         // The flow the river was drawn with goes on: dammed, the pool above rises and the one
-        // below falls.
+        // below falls. Two water minutes: the reach below is closed (its water stays in it since
+        // 0.49.25, the rest's sinks no longer taking it, BUGS.md #41), and later the pool above,
+        // spilling over the channel's walls onto the plain round it, fills the plain until it
+        // comes back in.
         let mut s = Scene::new(f);
         s.stepped_river();
         s.run(2);
@@ -269,10 +272,10 @@ dwell_world::both_faces!(
         );
         let stone = require("dwell:stone");
         let dam: Vec<(i32, i32, i32)> = (0..=2)
-            .flat_map(|z| (-1..=6).map(move |r| (16, r, z)))
+            .flat_map(|z| (-1..=12).map(move |r| (16, r, z)))
             .collect();
         s.edit(&dam, stone);
-        s.run(900);
+        s.run(120);
         let (up, down) = (
             s.level(12, 1).expect("above"),
             s.level(20, 1).expect("below"),
@@ -885,5 +888,266 @@ dwell_world::both_faces!(
             "the lake fell below its ramp's open part: {lake:.3}"
         );
         assert!(!flooded(&s, 3, 2, 3), "dried when the water left");
+    }
+);
+
+impl Scene {
+    /// A stone dam across the fixture river (z 0..=2) at column `x`, from the bed to row `top`.
+    fn dam(&mut self, x: i32, top: i32) {
+        let stone = require("dwell:stone");
+        let cells: Vec<(i32, i32, i32)> = (0..=2)
+            .flat_map(|z| (-6..=top).map(move |r| (x, r, z)))
+            .filter(|&(x, r, z)| self.get(x, r, z) != stone)
+            .collect();
+        self.edit(&cells, stone);
+    }
+    /// The water standing on the dam at column `x` whose top is row `top`: its deepest (m) and the
+    /// liquid cells drawn over it.
+    fn on_dam(&self, x: i32, top: i32) -> (f64, usize) {
+        let surface = m_of_row(top + 1);
+        let deepest = (0..=2)
+            .filter_map(|z| self.level(x, z))
+            .map(|lv| lv - surface)
+            .fold(0.0, f64::max);
+        let cells = (0..=2)
+            .flat_map(|z| (top + 1..=top + 4).map(move |r| (r, z)))
+            .filter(|&(r, z)| info(self.get(x, r, z)).liquid)
+            .count();
+        (deepest, cells)
+    }
+    /// The flat river (2 rows deep) whose map flow begins below the dam site at x 24: none in the
+    /// reach above (x ≤ 24), `Q` from x 25 on, as where a creek joins. The face between the two
+    /// carries their mean, so the column at x 24 sends more than it gets: its rest-layer
+    /// divergence is a spring of Q/2 (5 cm/s), as a river's columns have wherever its flow per
+    /// metre changes (a narrowing, a junction, a drawn step).
+    fn river_joined_below_the_dam(&mut self) {
+        self.water = Water::new()
+            .with_rivers(std::sync::Arc::new(|_, x, _, depth| {
+                (x >= 25 && depth >= 0.05).then_some([(Q / depth).min(1.5), 0.0])
+            }))
+            .with_river_flow(std::sync::Arc::new(|_, x, _| (x >= 25).then_some([Q, 0.0])));
+        self.flat_river(2);
+        self.run(2);
+    }
+}
+
+/// Water seconds the water standing on a dam has to drain off it (it does in seconds; the river
+/// beside it goes on moving: BUGS.md #41).
+const DRAIN_S: usize = 120;
+
+dwell_world::both_faces!(
+    fn water_on_a_raised_dam_drains_off_it(f: FaceFrame) {
+        // Owner, 2026-11-06 (BUGS.md #40): "once water has entered the column (covered the top of
+        // the dam with water) that water will never drain away even if you raise the height of
+        // the dam ... standing water that continues to 'flow over' into the river bed beyond". A
+        // dam column kept its rest-layer divergence (here the spring of a column whose flow
+        // changes), which poured water onto the dam's top for ever, whatever its height (red:
+        // water stood 4 cm on the raised dam, drawn over it, spilling both ways).
+        let mut s = Scene::new(f);
+        s.river_joined_below_the_dam();
+        // A dam to the river's level: the water it displaced stands on it and spills.
+        s.dam(24, 1);
+        s.water.tick(&mut s.world, &[], 0.01);
+        let (over, _) = s.on_dam(24, 1);
+        assert!(over > 0.5, "the low dam was overtopped: {over:.3} m");
+        s.run(60);
+        // Raised 2 m: what stood on it drains off, and nothing more comes.
+        s.dam(24, 5);
+        s.run(DRAIN_S);
+        let (deepest, cells) = s.on_dam(24, 5);
+        assert!(
+            deepest < 0.01 && cells == 0,
+            "water stands on the raised dam: {deepest:.3} m, {cells} cells drawn over it"
+        );
+    }
+);
+
+dwell_world::both_faces!(
+    fn a_world_saved_with_water_on_a_dam_drains_it_on_load(f: FaceFrame) {
+        // Existing worlds heal on load (BUGS.md #40): a record saved with water standing on a dam
+        // (DWG1, as before) is restored as it is, and the dam's column, its floor over the level
+        // its water stood at as generated, no longer keeps that water's spring.
+        let mut s = Scene::new(f);
+        s.river_joined_below_the_dam();
+        s.dam(24, 5);
+        s.water.tick(&mut s.world, &[], 0.01);
+        let (over, _) = s.on_dam(24, 5);
+        assert!(
+            over > 0.5,
+            "saved with the water it lifted on it: {over:.3} m"
+        );
+        let bytes = s.water.save(|_| 0);
+        let mut back = Water::new()
+            .with_river_flow(std::sync::Arc::new(|_, x, _| (x >= 25).then_some([Q, 0.0])));
+        assert!(back.restore(&bytes, |_| 0).is_some(), "the record reads");
+        s.water = back;
+        s.run(DRAIN_S);
+        let (deepest, cells) = s.on_dam(24, 5);
+        assert!(
+            deepest < 0.01 && cells == 0,
+            "water stands on the dam after loading: {deepest:.3} m, {cells} cells"
+        );
+    }
+);
+
+impl Scene {
+    /// A generated river with a level reach and a step, running into a lake below it: a channel 3
+    /// wide (z 0..=2) along x 0..=31, its bed row 0 to x 15 and row -1 from x 16 (a drawn step),
+    /// its water 2 rows deep; `hollow`, a dip in the lower bed (x 20..=21, row -2) that holds its
+    /// water. At x 31 it pours over a step into a lake (x 32..=39, z -20..=22, floor row -5, 1 m
+    /// deep), its level 1 m under the lower bed. The map's flow `Q` runs along +x in the river,
+    /// none in the lake.
+    fn river_into_a_lake(&mut self, hollow: bool) {
+        let stone = require("dwell:stone");
+        for x in -1..=40 {
+            for z in -21..=23 {
+                for r in -6..=6 {
+                    let m = if x <= 31 {
+                        let floor = if x < 16 {
+                            0
+                        } else if hollow && (20..=21).contains(&x) {
+                            -2
+                        } else {
+                            -1
+                        };
+                        let level = if x < 16 { 2 } else { 1 };
+                        if x == -1 || !(0..=2).contains(&z) || r < floor {
+                            stone
+                        } else if r < level {
+                            M.water
+                        } else {
+                            M.air
+                        }
+                    } else if x == 40 || !(-20..=22).contains(&z) || r < -5 {
+                        stone
+                    } else if r < -3 {
+                        M.water
+                    } else {
+                        M.air
+                    };
+                    self.set(x, r, z, m);
+                }
+            }
+        }
+        self.water = Water::new()
+            .with_rivers(std::sync::Arc::new(|_, x, _, depth| {
+                (x <= 31 && depth >= 0.05).then_some([(Q / depth).min(1.5), 0.0])
+            }))
+            .with_river_flow(std::sync::Arc::new(|_, x, _| (x <= 31).then_some([Q, 0.0])));
+        self.run(2);
+    }
+    /// The river's liquid cells from column `x0` down to the lake (x ≤ 31), skipping columns
+    /// `skip`, and the deepest water among those columns (m).
+    fn wet_below(&self, x0: i32, skip: &[i32]) -> (usize, f64) {
+        let mut cells = 0;
+        let mut deepest = 0.0f64;
+        for x in (x0..=31).filter(|x| !skip.contains(x)) {
+            for z in 0..=2 {
+                for r in -3..=4 {
+                    cells += usize::from(info(self.get(x, r, z)).liquid);
+                }
+                if let Some((c, l)) = self.water.find(self.f, x, z) {
+                    let k = &self.water.chunks[c];
+                    if !k.w.floor[l].is_nan() {
+                        deepest = deepest.max(f64::from(k.w.depth[l]));
+                    }
+                }
+            }
+        }
+        (cells, deepest)
+    }
+    /// The river's water chunks awake (x 0..=31, z 0..=2: two chunks; the lake's are others).
+    fn river_awake(&self) -> usize {
+        [0, 1]
+            .into_iter()
+            .filter(|&cx| {
+                self.water
+                    .index
+                    .get(&(self.f, cx, 0))
+                    .is_some_and(|&c| self.water.chunks[c as usize].awake)
+            })
+            .count()
+    }
+}
+
+/// Water seconds a dammed river has to drain the reach below the dam (BUGS.md #41).
+const DRY_S: usize = 900;
+
+dwell_world::both_faces!(
+    fn the_river_below_a_dam_dries_completely(f: FaceFrame) {
+        // Owner, 2026-11-06 (BUGS.md #41): "Water never dries up below a dam ... Like
+        // completely." With no other inflow, every water cell from the dam down to the lake goes,
+        // and its chunks sleep; the lake takes what ran into it, no more and no less.
+        let mut s = Scene::new(f);
+        s.river_into_a_lake(false);
+        assert!(s.wet_below(2, &[]).0 > 100, "the river as generated");
+        s.dam(0, 6);
+        s.dam(1, 6);
+        s.run(DRY_S);
+        let (cells, deepest) = s.wet_below(2, &[]);
+        assert!(
+            cells == 0 && deepest < f64::from(STEP) * 0.5,
+            "below the dam: {cells} water cells, the deepest {deepest:.4} m"
+        );
+        assert_eq!(s.river_awake(), 0, "the dry river sleeps");
+        let lake = s.level(36, 1).expect("the lake");
+        assert!(
+            lake > -1.5 && lake < -1.2,
+            "the lake rose by the river it took: {lake:.3}"
+        );
+    }
+);
+
+dwell_world::both_faces!(
+    fn a_hollow_below_a_dam_keeps_its_water_still(f: FaceFrame) {
+        // A dip in the bed that can't drain keeps its water, still, and lets its chunk sleep; the
+        // rest of the reach dries.
+        let mut s = Scene::new(f);
+        s.river_into_a_lake(true);
+        s.dam(0, 6);
+        s.dam(1, 6);
+        s.run(DRY_S);
+        // full to under its lip (row -1's floor, 0.5 m over the hollow's), and level
+        let levels: Vec<f64> = (20..=21)
+            .flat_map(|x| (0..=2).map(move |z| (x, z)))
+            .map(|(x, z)| s.level(x, z).expect("the hollow's water"))
+            .collect();
+        let (lo, hi) = levels
+            .iter()
+            .fold((f64::MAX, f64::MIN), |(a, b), &v| (a.min(v), b.max(v)));
+        assert!(
+            lo > -0.6 && hi < -0.5 + f64::from(STEP) * 0.5 && hi - lo < 0.005,
+            "the hollow holds its water, level: {levels:.3?}"
+        );
+        let (cells, deepest) = s.wet_below(2, &[20, 21]);
+        assert!(
+            cells == 0 && deepest < f64::from(STEP) * 0.5,
+            "outside the hollow: {cells} water cells, the deepest {deepest:.4} m"
+        );
+        assert_eq!(s.river_awake(), 0, "the hollow's water sleeps");
+        assert_eq!(s.run(60), 0, "and writes nothing");
+    }
+);
+
+dwell_world::both_faces!(
+    fn a_world_saved_below_a_dam_dries_on_load(f: FaceFrame) {
+        // Existing worlds dry on load (BUGS.md #41): a record saved just after the dam (DWG1, as
+        // before) is restored as it is, and the reach below leaves the rest from the dam down.
+        let mut s = Scene::new(f);
+        s.river_into_a_lake(false);
+        s.dam(0, 6);
+        s.dam(1, 6);
+        s.run(2);
+        let bytes = s.water.save(|_| 0);
+        let mut back = Water::new()
+            .with_river_flow(std::sync::Arc::new(|_, x, _| (x <= 31).then_some([Q, 0.0])));
+        assert!(back.restore(&bytes, |_| 0).is_some(), "the record reads");
+        s.water = back;
+        s.run(DRY_S);
+        let (cells, deepest) = s.wet_below(2, &[]);
+        assert!(
+            cells == 0 && deepest < f64::from(STEP) * 0.5,
+            "below the dam after loading: {cells} water cells, the deepest {deepest:.4} m"
+        );
     }
 );

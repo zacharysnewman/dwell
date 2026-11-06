@@ -45,6 +45,11 @@ pub struct FlowData {
     pub jump_m2s: f64,
     /// A free column this far off its rest frees the held water beside it (m).
     pub release_m: f64,
+    /// A free column whose rest inflow comes less than this share from columns in the rest leaves
+    /// the rest (BUGS.md #41).
+    pub rest_cut: f64,
+    /// ... and one whose comes more than this share from them returns.
+    pub rest_back: f64,
     /// An edit frees the water within this many columns.
     pub edit_reach: u32,
     /// How far past half a drawn step (fill steps) a level moves before it is drawn again.
@@ -55,6 +60,8 @@ pub struct FlowData {
     pub current_depth_m: f64,
     /// The fastest an untouched river's current runs (m/s).
     pub river_current_max_ms: f64,
+    /// How far up and down its course (m) an untouched river's fall is averaged for its current.
+    pub river_fall_reach_m: f64,
     /// The liquids the grid moves; the first is the one it draws.
     pub liquids: &'static [LiquidFlow],
 }

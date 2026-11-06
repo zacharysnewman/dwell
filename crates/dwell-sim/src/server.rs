@@ -69,15 +69,23 @@ const EVICT_EVERY_TICKS: u32 = 64;
 const MAX_EXPLICIT_WANTED: usize = 64; // full-mode chunks queued for generation per tick
 const MAX_QUEUED_EDITS: usize = 8; // per session per tick; more are dropped
 /// Water currents to the players (docs/WATER_SURFACE_GRID.md §2c): looked at every
-/// `CURRENTS_EVERY` ticks, a water chunk within `CURRENTS_RADIUS` chunks of a player sent when its
-/// currents changed or `CURRENTS_REFRESH` ticks after it was last sent (a lost datagram made good),
-/// the nearest `CURRENTS_PER_SEND` at most; a chunk gone still is sent once as all zero.
+/// `CURRENTS_EVERY` ticks, a water chunk within `currents_radius()` chunks of a player sent when
+/// its currents changed or `CURRENTS_REFRESH` ticks after it was last sent (a lost datagram made
+/// good), the nearest `CURRENTS_PER_SEND` at most; a chunk gone still is sent once as all zero.
 const CURRENTS_EVERY: u32 = 15;
 /// A water chunk's currents as sent (`WaterCurrents::cells`).
 type SentCurrents = Box<[[i8; 2]; 256]>;
 const CURRENTS_REFRESH: u32 = 180;
-const CURRENTS_RADIUS: i32 = 2;
-const CURRENTS_PER_SEND: usize = 4;
+const CURRENTS_PER_SEND: usize = 8;
+
+/// The water chunks round a player's whose currents it is sent: as far as its flow is drawn
+/// (`waterflow.json` `fadeToM`) from anywhere in its own chunk, so the river it sees runs all the
+/// way out (BUGS.md #42: at 2 chunks the flow stopped 33–48 m out, inside the 40 m it is drawn
+/// fully).
+pub fn currents_radius() -> i32 {
+    let cs = f64::from(dwell_world::currents::CS);
+    (dwell_look::waterflow::WATER_FLOW.fade_to_m / cs).ceil() as i32
+}
 /// Ticks after a session joins before its currents are sent: its terrain first.
 const CURRENTS_AFTER_JOIN: u32 = 300;
 /// Ticks a place into a player's body waits before it is refused (docs/BUGS.md 30): the server's
@@ -3262,14 +3270,15 @@ impl Server {
         // The free water (WATER_SURFACE_GRID.md §2b): the newest record the water sent (none
         // yet: the one saved before stays).
         batch.water = self.water_link.record.take();
-        // LOD sections written since the last save; sections still to compute (dirty, or computing
-        // now) are saved dirty, to recompute on load.
+        // LOD sections written since the last save; sections still to compute (dirty, held, or
+        // computing now, at the server-jobs worker too) are saved dirty, to recompute on load: a
+        // page closed before the next save would otherwise keep the old content (BUGS.md #44).
         let mut lod_saved = Vec::new();
         for &c in &self.lod_unsaved {
             let Some(section) = self.lod.find(c) else {
                 continue;
             };
-            let dirty = self.lod.dirty().contains(&c);
+            let dirty = self.lod.recomputing(c);
             batch.lod_sections.push(SavedLodSection {
                 coord: c,
                 revision: section.revision,
@@ -3498,7 +3507,7 @@ impl Server {
                 p.x.floor() as i32,
                 p.z.floor() as i32,
             );
-            let r = CURRENTS_RADIUS;
+            let r = currents_radius();
             let mut near: Vec<(i32, i32)> = (-r..=r)
                 .flat_map(|dx| (-r..=r).map(move |dz| (dx, dz)))
                 .collect();

@@ -10,7 +10,7 @@ use std::time::Duration;
 use common::*;
 use dwell_protocol::*;
 use dwell_sim::lod_propagation::LodPropagation;
-use dwell_sim::server::{OutKind, SessionId};
+use dwell_sim::server::{OutKind, ServerConfig, SessionId};
 use dwell_world::lod::{
     INDEX_LEVEL, LodCells, LodCoord, MAX_LEVEL, ORIGIN_X, ORIGIN_Y, ORIGIN_Z, VOLUME, ancestor,
     cell_index, cell_size, generate_flat_lod, lod_of_chunk, section_origin, section_size,
@@ -515,4 +515,92 @@ fn a_large_build_is_in_the_sections_drawn_from_50_km_away_and_from_altitude() {
         assert_eq!(cells[at(x, 768, 256)], M.stone, "level {level}"); // the wall, in mid air above ground
         assert_eq!(cells[at(x + 4 * cell, 768, 256)], M.air, "level {level}");
     }
+}
+
+// ---- lod: saving ----
+
+/// A player's edit: one cell of stone.
+fn fill(at: [i32; 3]) -> Message {
+    Message::RegionEdit(RegionEdit {
+        op: RegionEditOp::Fill,
+        min: at,
+        size: [1, 1, 1],
+        material: M.stone,
+        from: 0,
+        cells: Vec::new(),
+    })
+}
+
+/// BUGS.md #44: a section written since the last save whose recompute is out at the browser's
+/// server-jobs worker when the world saves was saved with its old content marked clean, so a page
+/// closed before the next save never recomputed it. It is saved dirty, and recomputed on load.
+#[test]
+fn a_section_whose_recompute_is_out_at_the_worker_is_saved_dirty_and_recomputed_on_load() {
+    // face-a-only: the save path does not depend on which way is up.
+    let dir = std::env::temp_dir().join(format!("dwell-lod-in-flight-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("dir");
+    let path = dir.join("w.dwellworld");
+    let store = || {
+        dwell_storage::WorldStore::new(dwell_storage::WorldDb::open(&path).expect("opens"), false)
+    };
+    let g = dwell_world::FLAT_TOP_Y;
+    let edited = chunk_of(4, g + 4, 4);
+    let section = above(edited, 1);
+    let expected = {
+        let mut f = Fixture::new(ServerConfig {
+            store: Some(store()),
+            lod_threads: Some(0),
+            jobs_remote: true,
+            ..flat()
+        });
+        f.join(1, &Client::new(1));
+        let mut runner = dwell_sim::jobs::JobRunner::for_world(dwell_world::GENERATOR_FLAT, 0);
+        // A first edit, its sections computed at the worker and written (not saved yet).
+        f.send(1, fill([4, g + 4, 4]));
+        for _ in 0..60 {
+            f.server.step();
+            f.take_all();
+            while let Some(job) = f.server.take_job() {
+                assert!(f.server.deliver_job(&runner.run(&job).expect("an answer")));
+            }
+        }
+        assert!(f.server.lod().find(section).is_some());
+        assert_eq!(f.server.lod().pending(), 0);
+        // A second edit: the section's recompute goes out to the worker and is still there when
+        // the world saves; then the page closes.
+        f.send(1, fill([5, g + 4, 4]));
+        f.server.step();
+        f.take_all();
+        while f.server.take_job().is_some() {} // never answered
+        assert!(
+            f.server.lod().in_flight().contains(&section),
+            "out at the worker"
+        );
+        f.server.save_now();
+        f.server.flush_store();
+        // What the section holds once recomputed.
+        let mut scratch = LodPropagation::new(
+            dwell_worldgen::lod_generator_for(dwell_world::GENERATOR_FLAT, 0),
+            0,
+        );
+        let world = f.server.world();
+        scratch.mark_chunk(edited);
+        scratch.drain(&[], &mut |c| {
+            dwell_sim::lod_propagation::modified_voxels(world.find(c))
+        });
+        scratch.find(section).expect("computed").encoded.clone()
+    };
+    let mut f = Fixture::new(ServerConfig {
+        store: Some(store()),
+        lod_threads: Some(0),
+        ..flat()
+    });
+    assert!(f.server.lod().dirty().contains(&section), "saved dirty");
+    f.server.drain_lod();
+    assert!(
+        f.server.lod().find(section).expect("restored").encoded == expected,
+        "recomputed on load with the second edit"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
 }

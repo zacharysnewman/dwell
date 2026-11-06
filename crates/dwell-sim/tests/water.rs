@@ -521,3 +521,244 @@ fn a_dam_across_a_generated_flat_reach_backs_the_river_up() {
         "the river behind the wall rose: {level0:.3} → {level:.3}"
     );
 }
+
+/// Seed 0's river dammed as the owner did it (BUGS.md #40): a stone wall 32 m across it at `z0`
+/// (two thick), its top at the river's level, run `low` water minutes (the water it displaced
+/// stands on it and the river overtops it), then raised 2 m and run `raised` minutes. Calls
+/// `each` after every water minute with the wet cells over the raised top (0 before the raise),
+/// the cells the water wrote that minute and the terrain chunks they fell in, and the water.
+fn dam_seed0_river(
+    z0: i32,
+    low: usize,
+    raised: usize,
+    mut each: impl FnMut(usize, usize, usize, usize, &dwell_sim::water::Water),
+) {
+    use dwell_world::{FaceFrame, GENERATOR_TERRAIN, VoxelWorld};
+    let mut w = VoxelWorld::new(
+        dwell_worldgen::generator_for(GENERATOR_TERRAIN, 0),
+        Some(dwell_worldgen::air_test_for(GENERATOR_TERRAIN, 0)),
+    );
+    let (x0, x1, z1) = (2349, 2380, z0 + 1);
+    for x in (x0 - 100..=x1 + 100).step_by(8) {
+        for z in (z0 - 120..=z1 + 80).step_by(8) {
+            for y in (240..=320).step_by(8) {
+                w.get_voxel(x, y, z);
+            }
+        }
+    }
+    let mut water = dwell_sim::water::Water::for_world(GENERATOR_TERRAIN, 0, true);
+    water.tick(&mut w, &[], 0.1);
+    let level = (x0..=x1)
+        .filter_map(|x| water.level_at(FaceFrame::A, x, z0))
+        .fold(f64::NAN, f64::max);
+    assert!(level.is_finite(), "the river at z {z0}");
+    let top = dwell_world::row_of_m(level);
+    let stone = dwell_blocks::require("dwell:stone");
+    let build = |w: &mut VoxelWorld, water: &mut dwell_sim::water::Water, top: i32| {
+        let mut old = Vec::new();
+        for x in x0..=x1 {
+            for y in top - 30..=top {
+                for z in z0..=z1 {
+                    let was = w.get_voxel(x, y, z);
+                    if was != stone {
+                        old.push(([x, y, z], was));
+                        w.set_voxel(x, y, z, stone);
+                    }
+                }
+            }
+        }
+        water.touch(old);
+    };
+    let player = [2364.5, 142.0, f64::from(z0) - 8.0];
+    build(&mut w, &mut water, top);
+    for m in 0..low + raised {
+        if m == low {
+            build(&mut w, &mut water, top + 4);
+        }
+        let (mut writes, mut chunks) = (0, std::collections::HashSet::new());
+        for _ in 0..60 {
+            for (c, _) in water.tick(&mut w, &[player], 1.0) {
+                writes += 1;
+                chunks.insert(dwell_world::chunk_of(c[0], c[1], c[2]));
+            }
+        }
+        let mut wet = 0;
+        if m >= low {
+            for x in x0..=x1 {
+                for z in z0..=z1 {
+                    for y in top + 5..=top + 8 {
+                        wet += usize::from(dwell_blocks::info(w.get_voxel(x, y, z)).liquid);
+                    }
+                }
+            }
+        }
+        each(m, wet, writes, chunks.len(), &water);
+    }
+}
+
+/// Owner, 2026-11-06 (BUGS.md #40): "once water has entered the column (covered the top of the
+/// dam with water) that water will never drain away even if you raise the height of the dam". At
+/// seed 0's river by z 7380, below a drawn step, a wall overtopped and raised 2 m kept water
+/// standing on its top and pouring off it (red: 20 cells of water over the raised top).
+#[test]
+fn water_on_a_raised_dam_across_seed0s_river_drains() {
+    // face-a-only: the generated world's face A; both faces in `water::tests`
+    // (`water_on_a_raised_dam_drains_and_the_river_settles`).
+    let mut last = usize::MAX;
+    dam_seed0_river(7380, 20, 15, |_, wet, _, _, _| last = wet);
+    assert_eq!(last, 0, "{last} cells of water stand on the raised dam");
+}
+
+/// The water's churn after a dam across seed 0's river is raised (BUGS.md #40): the cells it
+/// writes a minute, the terrain chunks they fall in (each one's LOD section computed again) and
+/// the water chunks awake, every 10 water minutes. `cargo test -p dwell-sim --test water
+/// measure_a_raised_dams_churn -- --ignored --nocapture`.
+#[test]
+#[ignore]
+fn measure_a_raised_dams_churn() {
+    // face-a-only: a measurement on the generated world's face A
+    for z0 in [7452, 7380] {
+        dam_seed0_river(z0, 20, 150, |m, wet, writes, chunks, water| {
+            if m % 10 == 9 {
+                eprintln!(
+                    "z {z0} minute {:>3}{}: {wet} wet over the top, {writes} cells written, {chunks} chunks, {} awake, {:.0} m³ free",
+                    m + 1,
+                    if m >= 20 { " (raised)" } else { "" },
+                    water.awake_chunks(),
+                    water.free_volume()
+                );
+            }
+        });
+    }
+}
+
+dwell_world::both_faces!(
+    /// BUGS.md #42 (owner, 2026-11-06: "in this spot the river stops flowing too"): a client is
+    /// sent the currents of every water chunk as far out as it draws the flow (`waterflow.json`
+    /// `fadeToM`), so a river doesn't stop running where the currents stopped being sent. Red
+    /// before: 2 chunks, 33 m out from a chunk's edge, inside the 40 m the flow shows fully.
+    fn a_player_is_sent_the_currents_as_far_as_the_flow_is_drawn(f: dwell_world::FaceFrame) {
+        use dwell_world::currents::{CS, current_key};
+        let mut fx = Fixture::new(flat());
+        join_streaming(&mut fx, 1);
+        let feet = f.point([1.5, dwell_world::FLAT_TOP_M, 1.5]);
+        let reach = dwell_look::waterflow::WATER_FLOW.fade_to_m;
+        // Every water chunk with a column within the flow's reach of the player runs.
+        let ((fb, pcx, pcz), _) = current_key(f, 1, 1);
+        let mut want = std::collections::BTreeSet::new();
+        for cx in pcx - 8..=pcx + 8 {
+            for cz in pcz - 8..=pcz + 8 {
+                let near = |p: f64, c: i32| {
+                    let (lo, hi) = (f64::from(c * CS), f64::from((c + 1) * CS));
+                    (lo - p).max(p - hi).max(0.0)
+                };
+                if near(1.5, cx).hypot(near(1.5, cz)) <= reach {
+                    want.insert((fb, cx, cz));
+                }
+            }
+        }
+        let w = fx.server.world();
+        for &k in &want {
+            w.currents
+                .set(k, Some(Box::new([[0.5, 0.0]; dwell_world::currents::CA])));
+        }
+        let mut got = std::collections::BTreeSet::new();
+        for _ in 0..900 {
+            fx.move_to(1, feet[0], feet[1], feet[2]);
+            fx.server.step();
+            for o in fx.server.take_outbox() {
+                if o.session == 1
+                    && matches!(o.kind, dwell_sim::server::OutKind::Datagram)
+                    && let Some(Message::WaterCurrents(c)) = Message::decode(&o.bytes)
+                    && c.cells.iter().any(|q| *q != [0, 0])
+                {
+                    got.insert((c.face_b, c.cx, c.cz));
+                }
+            }
+        }
+        let missed: Vec<_> = want.difference(&got).collect();
+        assert!(
+            missed.is_empty(),
+            "{} of {} chunks within {reach} m never sent: {missed:?}",
+            missed.len(),
+            want.len()
+        );
+    }
+);
+
+/// Owner, 2026-11-06 (BUGS.md #41): "Water never dries up below a dam." … "Like completely." Seed
+/// 0's river at the bench's dam site, walled across at z 7452 as in #38's test: the river below
+/// the wall, down its course (south-east) to where a creek joins it by (2457, 7541) and backs its
+/// water up to z 7526, is dry within ten water minutes, no water cell left in its channel, and its
+/// water chunks asleep. Red before: the reach kept its water (its rest layer's springs refilled
+/// it), awake.
+#[test]
+fn the_river_below_a_dam_across_seed0s_river_dries_to_the_next_inflow() {
+    // face-a-only: the generated world's face A; both faces in `water::tests`
+    // (`the_river_below_a_dam_dries_completely`, `a_hollow_below_a_dam_keeps_its_water_still`).
+    use dwell_world::{FaceFrame, GENERATOR_TERRAIN, VoxelWorld};
+    let mut w = VoxelWorld::new(
+        dwell_worldgen::generator_for(GENERATOR_TERRAIN, 0),
+        Some(dwell_worldgen::air_test_for(GENERATOR_TERRAIN, 0)),
+    );
+    let (x0, x1, z0, z1) = (2349, 2380, 7452, 7453);
+    for x in (x0 - 100..=x1 + 100).step_by(8) {
+        for z in (z0 - 120..=z1 + 160).step_by(8) {
+            for y in (240..=320).step_by(8) {
+                w.get_voxel(x, y, z);
+            }
+        }
+    }
+    let mut water = dwell_sim::water::Water::for_world(GENERATOR_TERRAIN, 0, true);
+    water.tick(&mut w, &[], 0.1);
+    let liquid = |m: u16| dwell_blocks::try_info(m).is_some_and(|i| i.liquid);
+    // The channel below the wall to the creek's backwater (z 7454..7525), and its columns.
+    let below = |w: &VoxelWorld| -> (usize, usize) {
+        let (mut cells, mut cols) = (0, 0);
+        for z in z1 + 1..7526 {
+            for x in x0 - 100..=x1 + 100 {
+                let n = (240..=320)
+                    .filter(|&y| liquid(w.get_voxel_if_loaded([x, y, z])))
+                    .count();
+                cells += n;
+                cols += usize::from(n > 0);
+            }
+        }
+        (cells, cols)
+    };
+    let (cells0, cols0) = below(&w);
+    assert!(
+        cols0 > 400,
+        "the river below the site: {cells0} cells in {cols0} columns"
+    );
+    let stone = dwell_blocks::require("dwell:stone");
+    let mut old = Vec::new();
+    for x in x0..=x1 {
+        for y in 262..=293 {
+            for z in z0..=z1 {
+                old.push(([x, y, z], w.get_voxel(x, y, z)));
+                w.set_voxel(x, y, z, stone);
+            }
+        }
+    }
+    water.touch(old);
+    let player = [2364.5, 142.0, 7443.5];
+    for _ in 0..600 {
+        water.tick(&mut w, &[player], 1.0);
+    }
+    let (cells, cols) = below(&w);
+    let awake: usize = (x0 - 100..=x1 + 100)
+        .step_by(16)
+        .flat_map(|x| (7456..7520).step_by(16).map(move |z| (x, z)))
+        .filter(|&(x, z)| water.awake_at(FaceFrame::A, x, z))
+        .count();
+    eprintln!(
+        "below the wall: {cells0} water cells in {cols0} columns → {cells} in {cols}; {awake} chunks awake there; {}",
+        water.report([2400, 278, 7490], 2)
+    );
+    assert_eq!(
+        cells, 0,
+        "{cells} water cells left below the wall ({cols} columns)"
+    );
+    assert_eq!(awake, 0, "the dry river's chunks sleep");
+}

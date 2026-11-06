@@ -222,16 +222,17 @@ pub enum ImpactMeasure {
 pub struct Damage {
     /// m: the fall a hit must exceed to hurt, on the surfaces `impact_surfaces` names (§6.10). A
     /// hit's speed (the controller's `impact_speed`, by `impact_measure`) is read as the free-fall
-    /// height that lands at it, `v² ÷ 2g`, so a hit straight down on flat ground hurts by the drop.
-    /// 5 (owner, 2026-11-06: "I don't want to get nickeled and dimed all the time for small
-    /// drops"; until 0.49.18 a hit hurt past 12 m/s, a 3.6 m drop, 5 points at 4 m).
+    /// height that lands at it, `v² ÷ 2g`: a landing speed written as a drop, never the distance
+    /// fallen (horizontal speed never counts). 10 m, 20 m/s (owner, 2026-11-06: "Scale it so
+    /// approximately safe is 10m and lethal is 20m"; 5 m in 0.49.18–0.49.20; until 0.49.18 a hit
+    /// hurt past 12 m/s, a 3.6 m drop).
     pub impact_safe_height: f32,
-    /// m: the fall that kills from full health (`players.MAX_HEALTH`). 12 (owner, 2026-11-06: "a
-    /// smaller area between taking damage and lethal damage"; until 0.49.18 ~15 m).
+    /// m: the fall that kills from full health (`players.MAX_HEALTH`). 20 m, 28.3 m/s (owner,
+    /// 2026-11-06; 12 m in 0.49.18–0.49.20; ~15 m before).
     pub impact_lethal_height: f32,
     /// The curve between them: the share of full health lost is `t ^ exponent` for `t` the
     /// height's share of the way from safe to lethal. 2: past the safe height a hit first takes
-    /// little (6 m: 2 points) and then fast (10 m: 51, 11 m: 73); 1 is a straight line.
+    /// little (12 m: 4 points) and then fast (15 m: 25, 18 m: 64); 1 is a straight line.
     pub impact_curve_exponent: f32,
     /// The contacts an impact can hurt on: the ground (default) or every surface.
     pub impact_surfaces: ImpactSurfaces,
@@ -390,8 +391,8 @@ impl Default for PlayerControllerConfig {
                 cooldown_ticks: 30,
             },
             damage: Damage {
-                impact_safe_height: 5.0,
-                impact_lethal_height: 12.0,
+                impact_safe_height: 10.0,
+                impact_lethal_height: 20.0,
                 impact_curve_exponent: 2.0,
                 impact_surfaces: ImpactSurfaces::Ground,
                 impact_measure: ImpactMeasure::DownwardIntoSurface,
