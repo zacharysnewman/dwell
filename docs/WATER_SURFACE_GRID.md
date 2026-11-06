@@ -116,9 +116,10 @@ The owner approved these recommendations (2026-11-05):
   idle swimmer drifts at the current's speed and swimming adds to it (PLAYER_CONTROLLER.md §6.4).
 - **Floating bodies**: water's drag acts on the velocity relative to the current, so a raft let be
   comes up to it (slowly, by the area it shows and the speed squared).
-- **On the wire**: `WaterCurrents` datagrams (ARCHITECTURE.md §8.3), the chunks within 3 of a player's,
-  each sent when its currents change or a second after it was last sent, a chunk gone still once as
-  zeros; a client forgets one not sent again within 3 s. The client's prediction and stand-ins read
+- **On the wire**: `WaterCurrents` datagrams (ARCHITECTURE.md §8.3), the chunks within 2 of a player's,
+  each sent when its currents change or 3 s after it was last sent, 4 at most a time and none in a
+  session's first 5 s, a chunk gone still once as zeros; a client forgets one not sent again within
+  8 s. The client's prediction and stand-ins read
   the same table, so a swimmer in a current predicts as the server moves it.
 - **Untouched rivers (G3b):** held water's current is the world map's river's
   (`TerrainGenerator::river_current`, found once as the chunk's water joins the grid): downstream as

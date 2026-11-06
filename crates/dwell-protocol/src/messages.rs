@@ -59,7 +59,7 @@ impl Default for WaterCurrents {
 }
 
 /// How long a client keeps a chunk's currents not sent again (ms).
-pub const CURRENTS_KEEP_MS: f64 = 3000.0;
+pub const CURRENTS_KEEP_MS: f64 = 8000.0;
 
 impl WaterCurrents {
     /// A current (m/s) in steps, clamped to the range.

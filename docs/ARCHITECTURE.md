@@ -2440,10 +2440,11 @@ in 0.48.2.
   chunk keeps the currents it fell asleep with). A swimmer swims in the water's frame (the swim
   layer's wish velocity plus the current, PLAYER_CONTROLLER.md §6.4) and a floating body's water drag
   pulls it toward the current (`felling::water_drag`, `WaterDrag::current`), on the server and in the
-  client's prediction and stand-ins alike. The server sends each player the chunks within 3 of theirs
+  client's prediction and stand-ins alike. The server sends each player the chunks within 2 of theirs
   as `WaterCurrents` datagrams (§8.3: an i8 per axis per column in 5 cm/s steps), looked at every 15
-  ticks, a chunk sent when its currents changed or a second after it was last sent, 16 at most a
-  time, a chunk gone still once as zeros; a client forgets a chunk not sent again within 3 s.
+  ticks, a chunk sent when its currents changed or 3 s after it was last sent, 4 at most a time,
+  none in a session's first 5 s (its terrain first), a chunk gone still once as zeros; a client
+  forgets a chunk not sent again within 8 s.
   **[built, G3b]** Held water (generated, never freed) runs as the world map's river does
   (`Water::with_rivers`, `TerrainGenerator::river_current`, computed once as a chunk's water is
   found): downstream along the channel as the column sees it (the map's direction through the

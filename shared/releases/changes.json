@@ -4,7 +4,8 @@
     {
       "version": "0.49.6",
       "changes": [
-        "Damming a river no longer makes the game stop and start: while a lot of water is moving it flows a little slower instead"
+        "Damming a river no longer makes the game stop and start: while a lot of water is moving it flows a little slower instead",
+        "Less network traffic for river currents, so joining a world near water loads its terrain sooner"
       ]
     },
     {
