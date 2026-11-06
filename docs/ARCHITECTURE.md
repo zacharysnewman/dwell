@@ -2375,7 +2375,7 @@ flies high above the disc and the whole disc is drawn by the time it arrives.
 
 ---
 
-### 6.7 Water **[in progress, Phase 53: the runtime grid built (G2a, 0.48.2), currents (G3a); generation fill (G1), currents in held rivers (G3b), data (G4) planned]**
+### 6.7 Water **[in progress, Phase 53: the runtime grid built (G2a, 0.48.2), currents (G3a, G3b); generation fill (G1), pools (G2b), the rest of the data (G4) planned]**
 
 [ADR 0060](./adr/0060-water-surface-grid.md), [`WATER_SURFACE_GRID.md`](./WATER_SURFACE_GRID.md). Water is
 a **surface grid**: a depth on each 1 m column of ground, moving to its four neighbours across their
@@ -2435,8 +2435,12 @@ in 0.48.2.
   client's prediction and stand-ins alike. The server sends each player the chunks within 3 of theirs
   as `WaterCurrents` datagrams (§8.3: an i8 per axis per column in 5 cm/s steps), looked at every 15
   ticks, a chunk sent when its currents changed or a second after it was last sent, 16 at most a
-  time, a chunk gone still once as zeros; a client forgets a chunk not sent again within 3 s. Held
-  water (generated, never freed) has no current yet (G3b: the map's rivers).
+  time, a chunk gone still once as zeros; a client forgets a chunk not sent again within 3 s.
+  **[built, G3b]** Held water (generated, never freed) runs as the world map's river does
+  (`Water::with_rivers`, `TerrainGenerator::river_current`, computed once as a chunk's water is
+  found): downstream along the channel as the column sees it (the map's direction through the
+  meander warp's inverse), at Manning's speed for the column's depth on the river's fall, at most
+  `riverCurrentMaxMs` (2.5 m/s); a level reach or a lake is still.
 
 **Still from earlier phases, unchanged:** water's `fill` property (registry `fillProperty`,
 `StateInfo::fill`, look tag `0x92`; 0.44.0) and the mesher drawing a surface at it; a coarse LOD water
@@ -2452,8 +2456,7 @@ stands; the pool graph went with the basins.
 world loads as terrain is (no drawn beds or stepped levels: the map's lakes at their levels, each
 river's level the one its map discharge needs across its valley by Manning, valleys kept), then
 erosion of soil only (G1c); a whole-world pass at 1 m was measured out (a face is ~2,000 × the
-prototype's 4 km² window: an hour on one core); G3b currents in held rivers from the map (their
-direction and discharge); later, water as its own layer on clients (its chunks' changes on the wire,
+prototype's 4 km² window: an hour on one core); later, water as its own layer on clients (its chunks' changes on the wire,
 the surface meshed from depth; deferred by the owner, 2026-11-05: clients keep water as blocks); G4 the grid's settings as data
 (`shared/water/*.json`), pools for still water and the held sea as in the prototype.
 

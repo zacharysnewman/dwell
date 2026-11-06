@@ -28,6 +28,7 @@ export const FLOW_RANGES = {
   fillHysteresis: [0, 0.5, false],
   currentStillMs: [0, 10, false],
   currentDepthM: [0, 10, false],
+  riverCurrentMaxMs: [0, 20, false],
 };
 
 /** The registry's blocks (name → liquid?), from shared/blocks/dwell.json. */

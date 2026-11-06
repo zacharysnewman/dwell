@@ -36,6 +36,9 @@ pub use dwell_world::flow::{FLOW, FlowData, LiquidFlow};
 /// The world map's flow through a face-local column (m³/s): kept for sources (rain, springs) to
 /// come; the grid reads the world's generated water itself.
 pub type Runoff = Arc<dyn Fn(FaceFrame, i32, i32) -> f64 + Send + Sync>;
+/// An untouched river's current (m/s along x and z) at face `f`'s column (x, z) whose water is
+/// `depth` m deep, by the world map (Phase 53 G3b; `TerrainGenerator::river_current`).
+pub type RiverCurrent = Arc<dyn Fn(FaceFrame, i32, i32, f64) -> Option<[f64; 2]> + Send + Sync>;
 
 /// Columns a water chunk spans each way.
 pub const CS: i32 = 16;
@@ -251,6 +254,8 @@ struct Chunk {
     r: Layer,
     /// Held at its level (generated water at rest, or the loaded world's edge).
     held: [bool; CA],
+    /// A held column's current by the world map's river (G3b; m/s along x and z).
+    river: [[f32; 2]; CA],
     /// The level last written as blocks (NaN: none, or to write).
     drawn: [f32; CA],
     /// The calm window's depths and start.
@@ -274,6 +279,7 @@ impl Chunk {
             w: Layer::new(),
             r: Layer::new(),
             held: [false; CA],
+            river: [[0.0; 2]; CA],
             drawn: [f32::NAN; CA],
             win: [0.0; CA],
             calm_t: -1.0,
@@ -308,6 +314,10 @@ pub struct Water {
     /// The world's chunks already read for water.
     scanned: HashSet<ChunkCoord>,
     runoff: Option<Runoff>,
+    /// Held water's currents by the world map's rivers (G3b); none: held water is still.
+    rivers: Option<RiverCurrent>,
+    /// Chunks whose held water joined since their currents were last published.
+    fresh: HashSet<usize>,
     /// Water time (s).
     t: f64,
     /// Counters (diagnostics, tests).
@@ -344,6 +354,12 @@ impl Water {
             runoff: Some(runoff),
             ..Self::default()
         }
+    }
+
+    /// Held water runs as the world map's rivers say (G3b): its currents, for swimmers and bodies.
+    pub fn with_rivers(mut self, rivers: RiverCurrent) -> Self {
+        self.rivers = Some(rivers);
+        self
     }
 
     /// The world map's flow through face-local column (x, z), if known (m³/s).
@@ -546,9 +562,10 @@ impl Water {
     /// The awake chunks' currents into the world (`VoxelWorld::currents`, docs/WATER_SURFACE_GRID.md
     /// §2c), for swimmers and floating bodies; a sleeping chunk keeps the currents it fell asleep
     /// with (its flows are kept too).
-    fn publish_currents(&self, world: &mut VoxelWorld) {
+    fn publish_currents(&mut self, world: &mut VoxelWorld) {
+        let fresh = std::mem::take(&mut self.fresh);
         for (c, k) in self.chunks.iter().enumerate() {
-            if k.awake {
+            if k.awake || fresh.contains(&c) {
                 world
                     .currents
                     .set((k.f.is_b(), k.cx, k.cz), self.currents_of(c));
@@ -557,14 +574,22 @@ impl Water {
     }
 
     /// Chunk `c`'s currents: each free column's velocity (m/s), the mean of its faces' discharges
-    /// over its depth; none if all are still (`Settings::still`).
+    /// over its depth, and each held column's by the world map's river (G3b); none if all are still
+    /// (`Settings::still`).
     fn currents_of(&self, c: usize) -> Option<ChunkCurrents> {
         let k = &self.chunks[c];
         let mut out: ChunkCurrents = Box::new([[0.0; 2]; CA]);
         let mut any = false;
         for l in 0..CA {
             let h = k.w.depth[l];
-            if k.held[l] || k.w.floor[l].is_nan() || h < self.cfg.current_depth {
+            if k.held[l] {
+                if k.river[l] != [0.0; 2] {
+                    out[l] = k.river[l];
+                    any = true;
+                }
+                continue;
+            }
+            if k.w.floor[l].is_nan() || h < self.cfg.current_depth {
                 continue;
             }
             let behind = |d: usize, z: bool| {
@@ -631,6 +656,13 @@ impl Water {
                 k.drawn[l] = level;
                 k.r.floor[l] = floor;
                 k.r.depth[l] = k.w.depth[l];
+                k.river[l] = [0.0; 2];
+                if let Some(rivers) = &self.rivers
+                    && let Some([u, v]) = rivers(f, x, z, f64::from(k.w.depth[l]))
+                {
+                    k.river[l] = [u as f32, v as f32];
+                    self.fresh.insert(c);
+                }
             }
         }
     }

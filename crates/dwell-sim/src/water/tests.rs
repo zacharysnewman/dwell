@@ -370,3 +370,31 @@ dwell_world::both_faces!(
         );
     }
 );
+
+dwell_world::both_faces!(
+    fn held_water_runs_as_the_map_says_and_freed_water_by_the_law(f: FaceFrame) {
+        // Phase 53 G3b: held (generated) water's current is the world map's river's, given here by
+        // a fixture map running 0.4 m/s along +z; once an edit frees it, the law's.
+        let mut s = Scene::new(f);
+        s.water = Water::new().with_rivers(std::sync::Arc::new(|_, _, _, depth| {
+            (depth >= 0.05).then_some([0.0, 0.4])
+        }));
+        s.basin(0, 7, 0, 7, 3);
+        s.run(1);
+        let at = |s: &Scene, x: i32| {
+            s.world
+                .currents
+                .at(s.f.point([f64::from(x) + 0.5, m_of_row(BASE) + 0.75, 3.5]))
+        };
+        assert_eq!(at(&s, 3), [0.0, 0.4], "the held lake runs as its map says");
+        // A wall cut by the lake: the water near it is free, and still (the law's: it is level).
+        s.edit(&[(7, 0, 3)], M.air);
+        s.edit(&[(7, 0, 3)], require("dwell:stone"));
+        s.run(1);
+        let [u, v] = at(&s, 6);
+        assert!(
+            u.abs() < 0.1 && v.abs() < 0.1,
+            "freed, it moves by the law: {u:.3}, {v:.3} m/s"
+        );
+    }
+);

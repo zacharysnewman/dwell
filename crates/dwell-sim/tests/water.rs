@@ -390,3 +390,72 @@ fn a_block_set_in_a_generated_rivers_bed_changes_nothing_else() {
     }
     assert!(checked >= 5, "river pools checked: {checked}");
 }
+
+#[test]
+fn an_untouched_rivers_water_has_its_maps_current() {
+    // face-a-only: the generated world's face A; the water's both faces are tested in
+    // `water::tests`. Phase 53 G3b: held river water runs as the world map's river does, so a
+    // swimmer in a river nobody changed drifts downstream.
+    use dwell_world::{Face, FaceFrame, GENERATOR_TERRAIN, VoxelWorld};
+    let liquid = |m: u16| dwell_blocks::try_info(m).is_some_and(|i| i.liquid);
+    let terrain = std::sync::Arc::new(
+        dwell_worldgen::BifacialTerrain::for_generator(GENERATOR_TERRAIN, 0).expect("terrain"),
+    );
+    let map = terrain.local(Face::A).map().clone();
+    let mut checked = 0;
+    for r in &map.rivers {
+        let Some(v) = r.path.get(r.path.len() / 2) else {
+            continue;
+        };
+        if v.surface <= 3.0 || checked == 3 {
+            continue;
+        }
+        let mut w = VoxelWorld::new(
+            dwell_worldgen::generator_for(GENERATOR_TERRAIN, 0),
+            Some(dwell_worldgen::air_test_for(GENERATOR_TERRAIN, 0)),
+        );
+        // A river column (its water at least a cell deep) near the course's midpoint.
+        let (px, pz) = (v.x as i32, v.z as i32);
+        let mut at = None;
+        'find: for dx in -6..=6 {
+            for dz in -6..=6 {
+                let (x, z) = (px + dx, pz + dz);
+                let Some(top) = (0..700).rev().find(|&y| {
+                    let m = w.get_voxel(x, y, z);
+                    m != dwell_world::M.air
+                        && !dwell_blocks::try_info(m).is_some_and(|i| i.replaceable)
+                }) else {
+                    continue;
+                };
+                if liquid(w.get_voxel(x, top, z))
+                    && liquid(w.get_voxel(x, top - 1, z))
+                    && let Some(want) = terrain.local(Face::A).river_current(x, z, 0.75)
+                {
+                    at = Some(([x, top, z], want));
+                    break 'find;
+                }
+            }
+        }
+        let Some((cell, want)) = at else {
+            continue;
+        };
+        let rivers = terrain.clone();
+        let mut water = dwell_sim::water::Water::new().with_rivers(std::sync::Arc::new(
+            move |f: FaceFrame, x, z, depth| rivers.local(f.face).river_current(x, z, depth),
+        ));
+        water.tick(&mut w, &[], 0.1);
+        let p = [
+            f64::from(cell[0]) + 0.5,
+            dwell_world::m_of_row(cell[1]) + 0.1,
+            f64::from(cell[2]) + 0.5,
+        ];
+        let [u, v] = w.currents.at(p);
+        let along = f64::from(u) * want[0] + f64::from(v) * want[1];
+        assert!(
+            f64::from(u.hypot(v)) > 0.05 && along > 0.0,
+            "the river at {cell:?} runs {u:.3}, {v:.3} m/s; its map says {want:?}"
+        );
+        checked += 1;
+    }
+    assert!(checked >= 2, "{checked} rivers checked");
+}

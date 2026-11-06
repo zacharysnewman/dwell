@@ -750,8 +750,15 @@ impl Server {
             ) {
                 (None, Some(terrain)) => {
                     let map = std::sync::Arc::new(terrain);
+                    let rivers = map.clone();
                     crate::water::Water::with_runoff(std::sync::Arc::new(
                         move |f: dwell_world::FaceFrame, x, z| map.local(f.face).discharge_at(x, z),
+                    ))
+                    // Untouched rivers' currents (Phase 53 G3b).
+                    .with_rivers(std::sync::Arc::new(
+                        move |f: dwell_world::FaceFrame, x, z, depth| {
+                            rivers.local(f.face).river_current(x, z, depth)
+                        },
                     ))
                 }
                 _ => crate::water::Water::new(),

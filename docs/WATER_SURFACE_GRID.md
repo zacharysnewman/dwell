@@ -115,9 +115,12 @@ The owner approved these recommendations (2026-11-05):
   each sent when its currents change or a second after it was last sent, a chunk gone still once as
   zeros; a client forgets one not sent again within 3 s. The client's prediction and stand-ins read
   the same table, so a swimmer in a current predicts as the server moves it.
-- **Not yet (G3b):** held water (generated and never freed) has no current, so an untouched river
-  doesn't push yet; its current will come from the map's river (its direction and discharge), on the
-  server and clients alike.
+- **Untouched rivers (G3b):** held water's current is the world map's river's
+  (`TerrainGenerator::river_current`, found once as the chunk's water joins the grid): downstream as
+  the column sees the channel (the map's direction through the meander warp's inverse), at the speed
+  Manning's law gives the column's depth on the river's fall with the liquid's roughness (the grid's
+  own law), at most `riverCurrentMaxMs` (2.5 m/s: a steep chute's would be a torrent); a level reach
+  and a lake are still. It goes to clients as any other chunk's currents.
 
 ## 3. Generation
 

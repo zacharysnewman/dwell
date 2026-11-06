@@ -4,8 +4,8 @@
     {
       "version": "0.49.3",
       "changes": [
-        "Moving water now has a current: it carries swimmers and floating rafts along where it flows, such as a lake let out through a cut or a dammed river let go",
-        "Untouched rivers don't push yet; that comes next"
+        "Rivers now have a current: they carry swimmers and floating rafts downstream, faster where they fall steeply",
+        "Water you set moving does too, such as a lake let out through a cut or a dammed river let go"
       ]
     },
     {
