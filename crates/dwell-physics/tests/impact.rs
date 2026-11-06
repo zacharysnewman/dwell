@@ -62,12 +62,13 @@ fn fastest_impact(w: &mut PlayerTestWorld, h: PlayerHandle, n: i32) -> f32 {
 // --- floors -------------------------------------------------------------------------------------
 
 #[test]
-fn a_perpendicular_landing_on_flat_ground_hits_once_and_a_20_m_fall_kills() {
-    // 20 m of free fall at 20 m/s²: ~28.3 m/s, one hit on the floor's normal, past the lethal 12 m
-    // (until 0.49.18 the linear rule's 131 points, which also killed).
+fn a_perpendicular_landing_on_flat_ground_hits_once_and_a_22_m_fall_kills() {
+    // 22 m of free fall at 20 m/s²: ~29.7 m/s, one hit on the floor's normal, past the lethal 20 m
+    // (0.49.21; a 20 m fall killed under the 12 m lethal height before, and the linear rule's 131
+    // points before 0.49.18).
     let mut w = PlayerTestWorld::new();
     w.floor();
-    let e = w.spawn(Vec3::new(0.5, 20.0, 0.5));
+    let e = w.spawn(Vec3::new(0.5, 22.0, 0.5));
     let dealt = hits_at(&mut w, e, ticks(2.5));
     assert_eq!(dealt.len(), 1, "one hit: {dealt:?}");
     assert!(
@@ -84,20 +85,20 @@ fn a_perpendicular_landing_on_flat_ground_hits_once_and_a_20_m_fall_kills() {
 }
 
 #[test]
-fn small_drops_never_hurt_and_damage_climbs_steeply_to_lethal_at_12_m() {
-    // Owner (2026-11-06): "You also still take fall damage at most heights even if it's a small
-    // amount … I don't want to get nickeled and dimed all the time for small drops", wanting "a
-    // higher threshold for taking damage and a smaller area between taking damage and lethal".
-    // Until 0.49.18 a hit hurt linearly past 12 m/s (a 3.6 m drop): 4.5 m took 11 points, 6 m
-    // 28, and death came at ~15 m. Now nothing up to 5 m, then the quadratic curve to 12 m.
+fn drops_up_to_10_m_never_hurt_and_damage_climbs_steeply_to_lethal_at_20_m() {
+    // Owner (2026-11-06): "I don't want to get nickeled and dimed all the time for small drops",
+    // then "Scale it so approximately safe is 10m and lethal is 20m". The thresholds are landing
+    // speeds written as the drop that reaches them (`v² ÷ 2g`): safe 10 m is 20 m/s, lethal 20 m is
+    // 28.3 m/s; horizontal speed never counts. Until 0.49.21 safe was 5 m and lethal 12 m (8 m took
+    // 18 points, 12 m killed); before 0.49.18 it hurt from 3.6 m.
     for (height, least, most) in [
-        (3.0, 0, 0),
-        (4.5, 0, 0),
-        (4.95, 0, 0),
-        (6.0, 1, 4),
-        (8.0, 15, 21),
-        (10.0, 46, 56),
-        (12.2, 100, 110),
+        (5.0, 0, 0),
+        (8.0, 0, 0),
+        (9.9, 0, 0),
+        (12.0, 2, 8),
+        (15.0, 22, 28),
+        (18.0, 60, 68),
+        (20.2, 100, 110),
     ] {
         let mut w = PlayerTestWorld::new();
         w.floor();
@@ -205,8 +206,9 @@ fn landing_on_a_ramp_hurts_by_its_downward_speed_into_it() {
     // its horizontal speed never counts (until 0.49.1 the speed into the normal counted it: 60°
     // below the horizontal dealt 21, along the slope 0; in 0.49.2 ramps dealt nothing).
     let cos = Vec3::new(0.0, 2.0, -1.0).normalize().y;
+    // (35 m/s since 0.49.21's 10 m safe height: 25 m/s straight down was under it on the ramp.)
     for angle in [90.0, 60.0, 26.565] {
-        let l = launch_onto_hillside(25.0, angle);
+        let l = launch_onto_hillside(35.0, angle);
         let down = -l.before.y * cos;
         assert!(
             (l.fastest - down).abs() < 0.05,
@@ -214,8 +216,10 @@ fn landing_on_a_ramp_hurts_by_its_downward_speed_into_it() {
             l.fastest
         );
         let damage = PlayerControllerConfig::default().impact_damage(down);
+        // Along the slope the downward speed is under the safe height: nothing.
+        let expected = if damage > 0 { vec![damage] } else { vec![] };
         assert!(
-            damage > 0 && l.dealt == vec![damage],
+            (angle < 30.0 || damage > 0) && l.dealt == expected,
             "{angle}°: {:?} vs {damage}",
             l.dealt
         );
@@ -249,13 +253,13 @@ fn steep_hillside(w: &mut PlayerTestWorld) -> f32 {
 
 #[test]
 fn landing_on_a_steep_ramp_hurts_less_than_on_the_flat() {
-    // 25 m/s straight down onto a 45° ramp: the downward speed × cos 45°, so less than the same fall
+    // 35 m/s straight down onto a 45° ramp: the downward speed × cos 45°, so less than the same fall
     // onto the flat (owner, 2026-11-06: "landing straight down on a steep ramp would mitigate some
     // damage"; 0.49.2: nothing).
     let mut w = PlayerTestWorld::new();
     let ground = steep_hillside(&mut w);
     let e = w.spawn(Vec3::new(0.5, ground + 0.8, 20.5));
-    w.kick(0, e, Vec3::new(0.0, -25.0, 0.0));
+    w.kick(0, e, Vec3::new(0.0, -35.0, 0.0));
     let mut before = Vec3::ZERO;
     let mut fastest = 0.0f32;
     for _ in 0..ticks(1.0) {
@@ -334,7 +338,7 @@ fn walls_and_ceilings_hurt_again_when_the_config_says_so() {
     w.floor_at(0, 32);
     w.fill(-8, 0, 6, 8, 9, 6, cube_block());
     let e = w.spawn(Vec3::new(0.5, 3.0, 0.5));
-    w.kick(0, e, Vec3::new(0.0, 0.0, 25.0));
+    w.kick(0, e, Vec3::new(0.0, 0.0, 30.0));
     let dealt = hits_at(&mut w, e, ticks(1.5));
     assert_eq!(dealt.len(), 1, "{dealt:?}");
     assert!(dealt[0].0 >= 100, "{dealt:?}");

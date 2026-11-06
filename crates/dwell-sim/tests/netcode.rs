@@ -715,9 +715,9 @@ fn a_hard_fall_damages_a_lethal_one_kills_and_every_client_sees_the_respawn() {
         let (_, physics, players) = sim.server.sim();
         players.teleport(physics, h, to_world(8.5, y, -8.5), Vec3::ZERO);
     };
-    // Drop player A from 8 m (damaged: ~18 points; 5 m is safe since 0.49.18) and later from
+    // Drop player A from 15 m (damaged: ~25 points; 10 m is safe since 0.49.21) and later from
     // 30 m (lethal).
-    teleport(&mut sim, G + 8.9);
+    teleport(&mut sim, G + 15.9);
     sim.step(90);
     let health = sim.server.health_of(pa);
     assert!(
