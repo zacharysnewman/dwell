@@ -379,8 +379,11 @@ struct Node {
     meshing: bool,
     /// Content to mesh (dropped once meshed unless modified: neighbours' aprons read it).
     cells: Option<Vec<u16>>,
-    /// Generated sections: each column's exact surface.
+    /// Each column's exact surface, as generated (a modified section's too: the mesher draws the
+    /// columns its content still tops where generation did at their exact height, BUGS.md #40).
     surface: Option<Vec<f32>>,
+    /// A modified section whose generated surface is still to be computed (`generate_surface`).
+    wants_surface: bool,
     meshed: bool,
     /// Needs a (new) mesh: its content or a neighbour's border changed.
     remesh: bool,
@@ -641,6 +644,7 @@ impl LodSystem {
                 }
                 if let Some(n) = self.nodes.get_mut(&id) {
                     n.revision = 0;
+                    n.wants_surface = false;
                 }
             }
             LodForm::Explicit => {
@@ -654,6 +658,8 @@ impl LodSystem {
                 self.set_cells(id, cells);
                 if let Some(n) = self.nodes.get_mut(&id) {
                     n.remesh = true;
+                    // Its generated surface (a pure function of where it is), if not had yet.
+                    n.wants_surface = n.surface.is_none();
                 }
                 if changed {
                     self.children_stale(id);
@@ -830,10 +836,23 @@ impl LodSystem {
             n.generating = false;
         }
         let Some(s) = section else { return };
-        if n.token != token || n.modified {
+        let coord = n.coord;
+        if n.modified {
+            // The server's content stays; the generated surface is kept for its columns.
+            if n.wants_surface {
+                n.wants_surface = false;
+                n.surface = if coord.level <= MAX_ALIGNED_LEVEL && is_face_b_section(coord) {
+                    s.surface_b
+                } else {
+                    s.surface
+                };
+                n.remesh = n.surface.is_some();
+            }
             return;
         }
-        let coord = n.coord;
+        if n.token != token {
+            return;
+        }
         self.set_cells(id, Some(s.cells));
         let n = self.nodes.get_mut(&id).expect("node");
         // A face-B section's surfaces are face-local, those of its mirror image. A section that
@@ -931,7 +950,7 @@ impl LodSystem {
         if (n.needs_answer || n.stale) && n.asked.is_none() {
             self.due.push(id);
         }
-        if n.remesh {
+        if n.remesh || (n.wants_surface && !n.generating) {
             self.remeshed.push(id);
         }
     }
@@ -1104,7 +1123,7 @@ impl LodSystem {
             if (n.needs_answer || n.stale) && n.asked.is_none() {
                 self.due.push(kid);
             }
-            if n.remesh {
+            if n.remesh || (n.wants_surface && !n.generating) {
                 self.remeshed.push(kid);
             }
             if !ready_node(n) {
@@ -1449,6 +1468,7 @@ impl LodSystem {
                     meshing: false,
                     cells: None,
                     surface: None,
+                    wants_surface: false,
                     meshed: false,
                     remesh: false,
                     bytes: 0,
@@ -1643,6 +1663,10 @@ impl LodSystem {
             if n.needs_answer {
                 continue; // waiting for the server
             }
+            if n.modified && n.wants_surface && !n.generating {
+                self.generate_surface(id, host);
+            }
+            let n = self.n(id);
             match n.kind {
                 None => self.classify(id, host),
                 Some(LodKind::Content) if !n.meshed || n.remesh => {
@@ -1700,6 +1724,22 @@ impl LodSystem {
         host.lod(n.coord, token);
     }
 
+    /// A modified section's generated surface (its content stays the server's): a generation job
+    /// that leaves the node's token alone, so a mesh on its way still lands.
+    fn generate_surface<P>(&mut self, id: LodId, host: &mut dyn LodHost<P>) {
+        if self.generating >= self.options.max_generation_jobs {
+            return;
+        }
+        self.generating += 1;
+        self.token += 1;
+        let token = self.token;
+        let n = self.nodes.get_mut(&id).expect("node");
+        n.generating = true;
+        n.gen_token = token;
+        self.gen_jobs.insert(token, id);
+        host.lod(n.coord, token);
+    }
+
     fn mesh<P>(&mut self, id: LodId, host: &mut dyn LodHost<P>) {
         let n = self.n(id);
         if n.meshing || n.cells.is_none() || self.meshing >= self.options.max_mesh_jobs {
@@ -1744,11 +1784,10 @@ impl LodSystem {
     }
 
     /// The section's column surfaces with heights in cells from its bottom (the mesher's units).
+    /// A modified section's too: its generated surface, which the mesher uses only for the columns
+    /// whose topmost solid cell still holds it (an edited column is drawn as its cells).
     fn surface_in_cells(&self, id: LodId) -> Option<Vec<f32>> {
         let n = self.n(id);
-        if n.modified {
-            return None;
-        }
         let mut out = n.surface.clone()?;
         let y0 = if is_face_b_section(n.coord) {
             mirror_section_origin(n.coord)

@@ -297,3 +297,142 @@ fn the_lod_after_a_flood_matches_a_recompute_on_the_tick_and_in_its_worker() {
         "the worker's LOD is the tick's"
     );
 }
+
+#[test]
+#[ignore = "a measurement: LOD revisions written over a dam's minutes"]
+fn measure_the_lod_churn_of_a_dam() {
+    // face-a-only: a measurement at seed 0's dam site.
+    let mut f = Fixture::new(ServerConfig {
+        water: dwell_sim::water::host::Placement::Inline,
+        ..dam_site()
+    });
+    f.join(1, &Client::new(1));
+    for _ in 0..120 {
+        f.server.step();
+        f.take_all();
+    }
+    let stone = dwell_blocks::require("dwell:stone");
+    let (x, y, z) = (2364, 284, 7443);
+    f.send(
+        1,
+        region(
+            RegionEditOp::Fill,
+            [x - 15, y - 12, z + 4],
+            [31, 19, 1],
+            stone,
+        ),
+    );
+    let mut last = f.server.lod().last_revision();
+    for minute_tenth in 0..30 {
+        for _ in 0..600 {
+            f.server.step();
+            f.take_all();
+        }
+        let now = f.server.lod().last_revision();
+        println!(
+            "{:>4} s: {} LOD sections written, {} dirty, {} held",
+            (minute_tenth + 1) * 10,
+            now - last,
+            f.server.lod().dirty().len(),
+            f.server.lod().held()
+        );
+        last = now;
+    }
+}
+
+/// Every modified section's content against a from-scratch computation of the server's world.
+fn lod_matches_world(f: &mut Fixture, generator: dwell_world::lod::LodGenerator) -> Vec<String> {
+    let mut scratch = dwell_sim::lod_propagation::LodPropagation::new(generator, 0);
+    let world = f.server.world();
+    let modified: Vec<dwell_world::ChunkCoord> = world
+        .chunks()
+        .filter(|(_, c)| c.revision() > 0)
+        .map(|(c, _)| *c)
+        .collect();
+    for &c in &modified {
+        scratch.mark_chunk(c);
+    }
+    scratch.drain(&[], &mut |c| {
+        dwell_sim::lod_propagation::modified_voxels(world.find(c))
+    });
+    let mut bad = Vec::new();
+    for (c, s) in scratch.sections() {
+        match f.server.lod().find(*c) {
+            Some(have) if have.encoded == s.encoded => {}
+            Some(_) => bad.push(format!("{c:?} differs")),
+            None => bad.push(format!("{c:?} missing")),
+        }
+    }
+    bad
+}
+
+#[test]
+#[ignore = "a probe: a world flooded and saved, reopened with the LOD jobs in their worker"]
+fn probe_a_reopened_flooded_worlds_lod() {
+    // face-a-only: seed 0's dam site, on face A.
+    let dir = std::env::temp_dir().join(format!("dwell-lod-reopen-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("dir");
+    let path = dir.join("w.dwellworld");
+    let store = || {
+        dwell_storage::WorldStore::new(
+            dwell_storage::WorldDb::open(&path).expect("opens"),
+            false,
+        )
+    };
+    let generator = dwell_worldgen::lod_generator_for(dwell_world::GENERATOR_TERRAIN, 0);
+    {
+        let mut f = Fixture::new(ServerConfig {
+            store: Some(store()),
+            ..dam_site()
+        });
+        f.join(1, &Client::new(1));
+        for _ in 0..120 {
+            f.server.step();
+            f.take_all();
+        }
+        dam_and_pit(&mut f);
+        for _ in 0..1800 {
+            f.server.step();
+            f.take_all();
+        }
+        f.server.save_now();
+        f.server.flush_store();
+        println!("first session: {} sections", f.server.lod().sections().len());
+    }
+    let mut f = Fixture::new(ServerConfig {
+        store: Some(store()),
+        jobs_remote: true,
+        ..dam_site()
+    });
+    let mut runner = dwell_sim::jobs::JobRunner::for_world(dwell_world::GENERATOR_TERRAIN, 0);
+    f.join(1, &Client::new(1));
+    let mut queue: std::collections::VecDeque<Vec<u8>> = Default::default();
+    for t in 0..3600 {
+        f.server.step();
+        f.take_all();
+        while let Some(job) = f.server.take_job() {
+            queue.push_back(job);
+        }
+        // the worker answers a job a tick, late
+        if t % 2 == 0
+            && let Some(job) = queue.pop_front()
+        {
+            let done = runner.run(&job).expect("an answer");
+            f.server.deliver_job(&done);
+        }
+        if t % 600 == 599 {
+            let lod = f.server.lod();
+            println!(
+                "{} s: {} sections, {} dirty, {} in flight, {} queued",
+                (t + 1) / 60,
+                lod.sections().len(),
+                lod.dirty().len(),
+                lod.in_flight().len(),
+                queue.len()
+            );
+        }
+    }
+    let bad = lod_matches_world(&mut f, generator);
+    println!("{} sections differ from the world's: {:?}", bad.len(), &bad[..bad.len().min(10)]);
+}
