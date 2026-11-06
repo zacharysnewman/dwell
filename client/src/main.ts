@@ -872,9 +872,9 @@ async function start(): Promise<App | null> {
   };
 
   const frame = (now: number): void => {
-    app.fps.frame(now);
     pad.poll(now);
-    client.frame(now);
+    // Only the frames drawn count (one is skipped while the GPU is behind).
+    app.fps.frame(now, client.frame(now));
     handleEvents(app);
     playSounds(app, sounds);
     showHud(app, now);

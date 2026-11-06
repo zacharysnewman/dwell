@@ -1,18 +1,20 @@
-// Frames per second for the status line: frames counted over each full second (a steady figure
-// rather than one that flickers every frame).
+// Frames per second for the status line: frames drawn, counted over each full second (a steady
+// figure rather than one that flickers every frame). An animation frame the game skipped (the GPU
+// behind, render/pacing.rs) isn't one: counting every animation frame read 60 on a phone drawing 30
+// (owner, 2026-11-06).
 
 export class FpsMeter {
   private windowStart: number | null = null;
   private frames = 0;
   private value: number | null = null;
 
-  /** Call once per rendered frame with its timestamp (ms). */
-  frame(nowMs: number): void {
+  /** Call once per animation frame with its timestamp (ms) and whether the game drew it. */
+  frame(nowMs: number, drew: boolean): void {
     if (this.windowStart === null) {
       this.windowStart = nowMs;
       return;
     }
-    this.frames++;
+    if (drew) this.frames++;
     const elapsed = nowMs - this.windowStart;
     if (elapsed >= 1000) {
       this.value = (this.frames * 1000) / elapsed;

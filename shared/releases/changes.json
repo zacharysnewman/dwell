@@ -9,6 +9,12 @@
       ]
     },
     {
+      "version": "0.49.10",
+      "changes": [
+        "The frame rate in the status line counts only the frames actually drawn: a phone whose graphics fall behind showed 60 while it drew 30"
+      ]
+    },
+    {
       "version": "0.49.9",
       "changes": [
         "Water is much cheaper to draw up close: looking down into a river on Medium took about a quarter less of the frame, and on High about a third less",
