@@ -154,15 +154,18 @@ The owner approved these recommendations (2026-11-05):
   idle swimmer drifts at the current's speed and swimming adds to it (PLAYER_CONTROLLER.md §6.4).
 - **Floating bodies**: water's drag acts on the velocity relative to the current, so a raft let be
   comes up to it (slowly, by the area it shows and the speed squared).
-- **On the wire**: `WaterCurrents` datagrams (ARCHITECTURE.md §8.3), the chunks within 2 of a player's,
-  each sent when its currents change or 3 s after it was last sent, 4 at most a time and none in a
+- **On the wire**: `WaterCurrents` datagrams (ARCHITECTURE.md §8.3), the chunks as far out as the flow
+  is drawn (`waterflow.json` `fadeToM`, 60 m, from anywhere in the player's chunk: 4 chunks; 2 before
+  0.49.24, when a river's flow stopped 33–48 m out, BUGS.md #42),
+  each sent when its currents change or 3 s after it was last sent, 8 at most a time and none in a
   session's first 5 s, a chunk gone still once as zeros; a client forgets one not sent again within
   8 s. The client's prediction and stand-ins read
   the same table, so a swimmer in a current predicts as the server moves it.
 - **Untouched rivers (G3b):** held water's current is the world map's river's
   (`TerrainGenerator::river_current`, found once as the chunk's water joins the grid): downstream as
   the column sees the channel (the map's direction through the meander warp's inverse), at the speed
-  Manning's law gives the column's depth on the river's fall with the liquid's roughness (the grid's
+  Manning's law gives the column's depth on the river's fall (its segment's, or its course's mean over
+  `riverFallReachM`, 256 m, up and down stream where steeper; below) with the liquid's roughness (the grid's
   own law), or at its flow over the column's depth (`river_flow / depth`) where that is faster, at most
   `riverCurrentMaxMs` (1.5 m/s: a steep chute's would be a torrent, and a swimmer at 3 m/s still makes headway); a lake is still.
   **Level and shallow reaches run** (0.49.19, BUGS.md #38; owner, 2026-11-06: "dead rivers ... the
@@ -173,6 +176,19 @@ The owner approved these recommendations (2026-11-05):
   `a_shallow_flat_reach_runs_downstream_held_and_freed`, both faces). A slow creek's current (0.1
   m/s) was under the flecks' `fromMs` (0.3) and the streaks' (0.4), so it showed no flecks or foam;
   since 0.49.21 both begin at 0.05 m/s (owner, 2026-11-06), faint at a creek's pace. It goes to clients as any other chunk's currents.
+  **A reach held level runs as the river round it** (0.49.24, BUGS.md #42; owner, 2026-11-06: "in
+  this spot the river stops flowing too"): the map's courses never rise, so where the land dips a
+  course is held level, often for 100–200 m, and drops what it held back after it. On its own fall
+  such a reach ran at its flow over its depth alone: seed 3974502447's creek by (12855, -3330), a
+  0.6 m³/s creek 5.4 m wide and 1 m deep, at 0.11 m/s, just below a reach at the 1.5 m/s cap, so the
+  river seemed to stop. Its current's fall is now the larger of its segment's and its course's mean
+  over `riverFallReachM` (`flow.json`) up and down stream (`Seg::mean_fall`, `channels::mean_falls`):
+  that creek runs at 1.28 m/s, as the reaches round it do
+  (`the_owners_level_creek_runs_as_the_river_round_it`; on both faces' maps
+  `a_level_reach_runs_on_its_courses_fall`, red: ~100 level reaches a face under 0.4 m/s). Only the
+  current changes: the map's levels, the terrain and the flow carried (`river_flow`) are as they were,
+  so no world changes. A held chunk's current is found as its water joins the grid, so a saved world
+  runs on load.
 - **The flow shown (G3d):** from the client's current table, so generated and player-moved water
   look alike: ripples carried by the current (a flow map), foam streaks along it, flecks drifting
   on it, each a setting and per liquid as data (`shared/look/waterflow.json`; ARCHITECTURE.md §6.7).

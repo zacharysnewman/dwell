@@ -32,6 +32,7 @@ export const FLOW_RANGES = {
   currentStillMs: [0, 10, false],
   currentDepthM: [0, 10, false],
   riverCurrentMaxMs: [0, 20, false],
+  riverFallReachM: [0, 4096, false],
 };
 
 /** The registry's blocks (name → liquid?), from shared/blocks/dwell.json. */

@@ -71,6 +71,27 @@ face, or the placement check against its shape.
 
 ## Fixed
 
+### 42. A river stopped flowing below a fast reach, and further out (fixed in 0.49.24)
+
+*Reported 2026-11-06* (build 0.49.22, seed 3974502447, feet (12833.97, 348.16, -3298.34), yaw
+139, pitch -32): "in this spot the river stops flowing too". Every river column of the creek in
+view (x 12844–12865, z -3347…-3316) held, asleep, level with its rest. Two causes, both seen in the
+browser with `__dwell.waterFlowAt` along the creek
+(`?local=1&seed=3974502447&fresh=1&at=12834,348,-3298`): (1) z > -3314 ran at 1.5 m/s and z -3316
+to -3344 at 0.10 m/s: the map's course there is held level for 167 m where the land dips (its levels
+never rise), and on a segment's own fall of 0 a held river's current was its flow over its depth
+alone (0.6 m³/s over 5.4 m × 1 m); (2) past z -3345 nothing: the server sent the currents of the
+chunks within 2 of the player's, so 33–48 m out the flow stopped, inside the 40 m it is drawn fully.
+Fixed: a held river's current runs on the larger of its segment's fall and its course's mean over
+`riverFallReachM` (256 m, `flow.json`) up and down stream (1.28 m/s there), and the currents are sent
+as far as the flow is drawn (`waterflow.json` `fadeToM`: 4 chunks, 8 a send). Pinned by
+`the_owners_level_creek_runs_as_the_river_round_it` (red: 0.11 m/s),
+`a_level_reach_runs_on_its_courses_fall` (both faces' maps; red: 103 and 104 level reaches under
+0.4 m/s), `a_level_reach_takes_its_courses_mean_fall` (a fixture course) and
+`a_player_is_sent_the_currents_as_far_as_the_flow_is_drawn` (both faces; red: 35 of the 60 chunks
+within 60 m never sent). No world or terrain changes: the currents are found as a chunk's water
+joins the grid, so saved worlds run on load. WATER_SURFACE_GRID.md §2c.
+
 ### 40. Water on top of a dam never drained, even after it was raised (fixed in 0.49.23)
 
 *Reported 2026-11-06, present "for many versions".* "Once water has entered the column (covered

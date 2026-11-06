@@ -1200,7 +1200,9 @@ impl TerrainGenerator {
     /// is `depth` m deep (Phase 53 G3b, docs/WATER_SURFACE_GRID.md §2c): downstream along its
     /// channel as the column sees it (the meander's warp undone: the map's direction through the
     /// warp's inverse, found from its neighbours), at the speed Manning's law gives that depth on the
-    /// river's fall with the drawn liquid's roughness (`flow.json`), the grid's own law, or that its
+    /// river's fall (its segment's, or its course's mean over `riverFallReachM` up and down stream
+    /// where steeper: BUGS.md #42) with the drawn liquid's roughness (`flow.json`), the grid's own
+    /// law, or that its
     /// flow (`river_flow`) gives over that depth where faster, so a level reach and a shallow one
     /// run too (owner, 2026-11-06: "dead rivers"); at most `riverCurrentMaxMs`.
     /// None off a river's channel, under `currentDepthM` or slower than `currentStillMs`.
@@ -1211,9 +1213,11 @@ impl TerrainGenerator {
         }
         let (hit, [u, v]) = self.river_heading(x, z)?;
         let n = flow.liquids.first().map_or(0.03, |l| l.manning);
-        // Manning's on the river's fall, or its flow over the column's depth where that is faster
-        // (a level reach has no fall, but the river still runs through it).
-        let manning = depth.powf(2.0 / 3.0) * hit.fall.max(0.0).sqrt() / n;
+        // Manning's on the river's fall (its own, or its course's mean round it where steeper: a
+        // reach held level where the land dips runs as the river round it does, BUGS.md #42), or
+        // its flow over the column's depth where that is faster.
+        let fall = hit.fall.max(hit.mean_fall).max(0.0);
+        let manning = depth.powf(2.0 / 3.0) * fall.sqrt() / n;
         let carried = Self::unit_flow(&hit) / depth;
         let speed = manning.max(carried).min(flow.river_current_max_ms);
         (speed >= flow.current_still_ms).then_some([u * speed, v * speed])
@@ -2889,6 +2893,99 @@ mod tests {
             .expect("the dam site runs");
         assert!(c[1] > 0.05, "downstream (+z) at the dam site: {c:?}");
     }
+
+    /// BUGS.md #42 (owner, 2026-11-06: "in this spot the river stops flowing too"). Seed
+    /// 3974502447's creek below (12850, -3300): its course is held level for 167 m where the land
+    /// dips (the map's levels never rise), so on its own fall it ran at its flow over its depth,
+    /// 0.11 m/s, just below a reach at 1.5. On its course's mean fall round it, it runs as the
+    /// river round it does. Red before: 0.11 m/s.
+    #[test]
+    fn the_owners_level_creek_runs_as_the_river_round_it() {
+        // face-a-only: the owner's spot is on face A; `a_level_reach_runs_on_its_courses_fall`
+        // checks both faces.
+        let g = TerrainGenerator::new(3974502447);
+        let mut checked = 0;
+        for z in -3347..=-3316 {
+            for x in 12840..=12870 {
+                if g.column_at(x, z).water != Water::River {
+                    continue;
+                }
+                let c = g.river_current(x, z, 1.0).expect("the creek runs");
+                assert!(
+                    c[0].hypot(c[1]) >= 0.5 && c[1] < 0.0,
+                    "({x}, {z}) runs {c:?} (downstream is -z)"
+                );
+                checked += 1;
+            }
+        }
+        assert!(checked > 100, "{checked} creek columns");
+    }
+
+    dwell_world::both_faces!(
+        /// BUGS.md #42: a river's reach held level where the land dips (fall 0) runs on its
+        /// course's mean fall round it, not at its flow over its depth alone, on either face's
+        /// map. Red before: every such reach of a creek at ~0.1 m/s.
+        fn a_level_reach_runs_on_its_courses_fall(f: dwell_world::FaceFrame) {
+            let t = crate::BifacialTerrain::height_field(0);
+            let g = t.local(f.face);
+            let channels = &g.map.channels;
+            // Each segment's course falling over 256 m up and down from it (m per m).
+            let mut round: HashMap<(i64, i64, i64, i64), f64> = HashMap::default();
+            for c in &channels.courses {
+                let falls = crate::worldmap::channels::mean_falls(c, 256.0);
+                for (w, f) in c.windows(2).zip(falls) {
+                    let k = |v: f64| (v * 1000.0).round() as i64;
+                    round.insert((k(w[0].x), k(w[0].z), k(w[1].x), k(w[1].z)), f);
+                }
+            }
+            let (mut level, mut slow) = (0, Vec::new());
+            for r in &g.map.rivers {
+                for (i, v) in r.path.iter().enumerate() {
+                    if i % 3 != 1 || v.surface <= 3.0 {
+                        continue;
+                    }
+                    let (x, z) = (v.x as i32, v.z as i32);
+                    let Some((hit, _)) = g.river_heading(x, z) else {
+                        continue;
+                    };
+                    // The segment the column found, by its ends.
+                    let (wx, wz) = g.warp(
+                        g.meander_seeds,
+                        i64::from(x),
+                        i64::from(z),
+                        S.river_meander,
+                        S.river_meander_wavelength,
+                    );
+                    let mut fall_round = 0.0;
+                    channels.each_near(wx, wz, 0.0, f64::INFINITY, |id, h| {
+                        if h == hit {
+                            let s = &channels.segs[id as usize];
+                            let k = |v: f64| (v * 1000.0).round() as i64;
+                            fall_round = round
+                                .get(&(k(s.a.x), k(s.a.z), k(s.b.x), k(s.b.z)))
+                                .copied()
+                                .unwrap_or(0.0);
+                        }
+                    });
+                    if hit.fall > 0.0 || fall_round < 2e-4 {
+                        continue;
+                    }
+                    level += 1;
+                    let c = g.river_current(x, z, 1.0).expect("a level reach runs");
+                    if c[0].hypot(c[1]) < 0.4 {
+                        slow.push((x, z, c, hit.q));
+                    }
+                }
+            }
+            assert!(level >= 10, "{level} level reaches checked");
+            assert!(
+                slow.is_empty(),
+                "{} of {level} level reaches crawl: {:?}",
+                slow.len(),
+                &slow[..slow.len().min(5)]
+            );
+        }
+    );
 
     /// BUGS.md #29 (owner, 2026-11-05: "dirt walls extending into the river, usually at step
     /// downs"): the lips stood the channel's columns at a step `lipRise` rows over the water. Near
