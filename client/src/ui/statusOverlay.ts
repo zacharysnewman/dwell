@@ -12,15 +12,14 @@ function ms(v: number | null): string {
 }
 
 /**
- * One-line connection status for the overlay (Phase 1 exit criterion: show RTT), with the frame
- * rate once known.
+ * One-line connection status for the overlay (Phase 1 exit criterion: show RTT). The frame rate is
+ * the performance line's (ui/perfLine.ts).
  */
 export function formatStatus(
   target: string,
   transport: string,
   state: SessionState,
   stats: SessionStats,
-  fps: number | null = null,
 ): string {
   switch (state.phase) {
     case 'connecting':
@@ -29,7 +28,7 @@ export function formatStatus(
     case 'confirming':
       return `Joining ${target}: its blocks differ from this version’s…`;
     case 'joined':
-      return `${stats.hostPaused ? 'Host paused · ' : ''}${target} (${TRANSPORT_NAMES[transport] ?? transport}) · player ${String(state.playerId)} · RTT ${ms(stats.rttMs)} (datagram ${ms(stats.datagramRttMs)}) · tick ${String(stats.serverTick)}${fps === null ? '' : ` · ${String(Math.round(fps))} fps`}`;
+      return `${stats.hostPaused ? 'Host paused · ' : ''}${target} (${TRANSPORT_NAMES[transport] ?? transport}) · player ${String(state.playerId)} · RTT ${ms(stats.rttMs)} (datagram ${ms(stats.datagramRttMs)}) · tick ${String(stats.serverTick)}`;
     case 'rejected':
       return state.reason === RejectReason.Replaced || state.reason === RejectReason.ServerClosing
         ? `Disconnected from ${target}: ${state.message}`

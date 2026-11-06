@@ -45,6 +45,14 @@ Output per scenario, in `OUT/<scenario>/`:
   p95, p99 and max, totals (jobs done, chunks and sections uploaded, bytes, ticks), each job kind's
   run and queue times, the GPU pass times (`gpu.*`), and long tasks.
 
+## In the game: the performance line
+
+Under the status line (Settings, On screen, Performance; `ui/perfLine.ts`): frames drawn a second, the CPU's
+time per frame (`frame.cpu`, the last 60 frames), the GPU's (`gpu.frame`, the last 30 timed frames; `–` where
+the browser has no `timestamp-query`, as many phones), the server's ticks a second (from the tick it sends)
+and, in a local world, its time per tick. At 60 fps each has 16.7 ms: the one over it holds the frame back
+(a GPU over it with the CPU under: draw less; the server under 60/s: the server, e.g. its water).
+
 ## Scenarios (`client/bench/scenarios.json`)
 
 ```json

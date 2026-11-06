@@ -136,12 +136,25 @@ async function start(
 
   // Fixed-step simulation clock (the core accumulates real time into 60 Hz steps).
   let last = performance.now();
+  // The server's ticks and their time over each second, for the status line's server figures.
+  let ticks = 0;
+  let busyMs = 0;
+  let tick: number | null = null;
   setInterval(() => {
     if (core) scope.postMessage({ t: 'memory', bytes: core.heapBytes() });
+    scope.postMessage({ t: 'perf', ticks, busyMs });
+    ticks = 0;
+    busyMs = 0;
   }, 1000);
   setInterval(() => {
     const now = performance.now();
-    if (!paused) core?.advance((now - last) / 1000);
+    if (!paused && core) {
+      // `advance` returns the server's tick: the ticks run are its difference.
+      const t = core.advance((now - last) / 1000);
+      if (tick !== null) ticks += t - tick;
+      tick = t;
+      busyMs += performance.now() - now;
+    }
     last = now;
     flush();
   }, 4);

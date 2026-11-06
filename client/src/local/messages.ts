@@ -55,5 +55,7 @@ export type FromWorker =
   | { t: 'close'; session: number }
   /** The server core's WebAssembly memory (bytes), every second. */
   | { t: 'memory'; bytes: number }
+  /** The server's last second: ticks run and the time they took (ms), for the status line. */
+  | { t: 'perf'; ticks: number; busyMs: number }
   /** The water near a cell as JSON (in reply to `waterReport`). */
   | { t: 'waterReport'; report: string };

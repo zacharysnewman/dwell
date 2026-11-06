@@ -65,6 +65,8 @@ import { displayScale } from './ui/displayScale';
 import { FlightSpeedControl } from './ui/flightSpeedControl';
 import { loadFlySpeedLevel, saveFlySpeedLevel } from './predict/flightSpeed';
 import { formatStatus } from './ui/statusOverlay';
+import { formatPerf, TickRate } from './ui/perfLine';
+import { applyHud } from './ui/hudSettings';
 import { startupMessage } from './ui/startupError';
 import { FpsMeter } from './ui/fps';
 import { type LoadingHud, LoadingScreen, loadingScreenEnabled } from './ui/loadingScreen';
@@ -626,6 +628,8 @@ async function start(): Promise<App | null> {
   const settings = new SettingsMenu(document.body, mobile, (s) => {
     sfx.setVolumes(s.audio);
     client.setExposure(s.exposure);
+    // What the screen shows (Settings, On screen; shared/ui/hud.json).
+    applyHud(document, s.hud, mobile);
     client.setWaterQuality(waterQualityLevel(s.water.quality));
     // A phone draws the water's cheaper reflection tiers (shared/look/reflections.json `phone`).
     client.setPhone(mobile);
@@ -1270,6 +1274,8 @@ async function connect(app: App): Promise<void> {
     if (local && app.settings) enableHosting(app.settings, local, prefersTouch(), worldName);
     let started = false;
     let asking = false;
+    const perf = element('perf-status', HTMLDivElement);
+    const tickRate = new TickRate();
     const showStatus = () => {
       const s = client.sessionState() as SessionReport;
       const stats = s.stats ?? {
@@ -1278,7 +1284,22 @@ async function connect(app: App): Promise<void> {
         serverTick: 0,
         hostPaused: false,
       };
-      status.textContent = formatStatus(target, s.transport, s, stats, app.fps.fps);
+      status.textContent = formatStatus(target, s.transport, s, stats);
+      // What holds the frame back (owner, 2026-11-06): the frames drawn, the CPU's and the GPU's
+      // time, the server's ticks (and a local server's time per tick).
+      if (s.phase === 'joined') {
+        tickRate.sample(performance.now(), stats.serverTick);
+        const [cpuMs = null, gpuMs = null] = client.perf();
+        perf.textContent = formatPerf({
+          fps: app.fps.fps,
+          cpuMs,
+          gpuMs,
+          serverTicks: app.loopback?.serverTicks ?? tickRate.rate,
+          serverTickMs: app.loopback?.serverTickMs ?? null,
+        });
+      } else {
+        perf.textContent = '';
+      }
       // Turned away or cut off: the status line says why, not a loading screen that never opens.
       if (s.phase === 'rejected' || s.phase === 'closed') app.loading.abort();
       if (s.phase === 'confirming' && !asking) {

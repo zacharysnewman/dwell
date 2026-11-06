@@ -585,6 +585,17 @@ impl Client {
         drew
     }
 
+    /// The status line's performance figures (owner, 2026-11-06: what is chugging, not one number):
+    /// the CPU's time per frame (`frame.cpu`, the last 60 frames' mean) and the GPU's (`gpu.frame`,
+    /// the last 30 timed frames' mean; NaN where the browser can't time the GPU) in ms.
+    pub fn perf(&self) -> Vec<f64> {
+        telemetry::with(|t| {
+            let cpu = t.recent_frame_mean("frame.cpu", 60).unwrap_or(f64::NAN);
+            let gpu = t.recent_sample_mean("gpu.frame", 30).unwrap_or(f64::NAN);
+            vec![cpu, gpu]
+        })
+    }
+
     /// Dev telemetry (docs/DEV_TOOLS.md): `{ frames: {name: stats}, samples: {name: stats},
     /// counters: {name: total}, frameCount }`, each stats `{ n, mean, p50, p95, p99, max, sum }`
     /// over the last frames kept (per-frame series) or events kept (samples).
