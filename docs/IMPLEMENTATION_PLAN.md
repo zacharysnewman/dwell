@@ -70,7 +70,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 50 — Terrain volumes (the cliffs) | 🚧 In progress — the cliffs are the terrain's default since 0.35.0 (WORLD_GENERATION.md §5): a density node graph as data (`shared/worldgen/volume.json`, `strength` 0–1 the slider for biomes later), shaped first then the surface, kept off the water. 0.35.1: the LOD draws the undersides. 0.38.0 (owner: "redesign to look more like real cliffs"): terraces along the hill (the `terrace` node), stepped country and escarpments by region, more in the mountains, slight overhangs; built and tested, the owner's look outstanding. 0.38.1: 1.9–2.3× faster, the same cells. Outstanding: a coarse lattice; waterfalls (with moving water); caves and floating islands not started |
 | 51 — Built bodies | 🚧 In progress — B1 built (0.41.0, a new compatibility line: protocol v21; editing moving pieces, splits, body kinds as data); B2 built (0.41.1: the build platform, built bodies taking blocks and never settling, saved with the world, sent to joiners); B3 built (0.41.2: floating by buoyancy per cell); 0.41.3 corrects the platform (the ground a held object is built on, not its first block; owner, 2026-11-02). 0.41.4–0.41.5 playtest fixes: floating rafts pushable, never frozen, steady underfoot, true outlines; the push predicted (the controller's push pass, stand-ins carried to the present, near bodies drawn at the present); pieces settle once. 0.41.6 tuning: weight as in life (a person's push less the ground's friction, a 1 m log sliding at ~0.5 m/s; water drag by area and speed squared, rafts gliding; a rider presses a raft down; the stand-ins slowed alike). Outstanding: the owner's look at a raft in a lake; later: driving. Designed (ADR 0052, [`BUILT_BODIES.md`](./BUILT_BODIES.md), the owner's answers 2026-11-02): editing moving pieces (B1), the build platform and built bodies saved with the world (B2), floating (B3). B1 opens a new compatibility line (0.41.0, the owner raises it). Open questions for the owner: hollow hulls, `maxBodies`, edit prediction, interest |
 | 52 — Water flow | ✖ Replaced by Phase 53 (ADR 0060): its basins, outlets and pool graph were removed from the game in 0.48.2, when the water surface grid's runtime (G2a) took their place; what was built is in its section below, and its outstanding items (G4–G6, W3–W5) are carried by Phase 53 |
-| 53 — Water surface grid | 🚧 In progress — G2a built (0.48.2): the runtime grid in `dwell-sim` replaces the basins; generated water held at rest as found, edits free it, a rest layer keeps drawn rivers exactly at rest under the law, sleeping chunks with a 5 mm sleep and 5 cm wake band and smooth waking, written as blocks, saved as `DWG1`; both faces tested; a dam across seed 0's river backs it up 0.5 m in the browser. G0's prototype done but for the owner's look at the eroded rivers. Outstanding: G1 (the whole-world fill with no drawn beds, levels or lips — fixes BUGS.md #29 — a new compatibility line, 0.49.0), G2b (pools, the held sea, the water layer's own storage), G3 (clients), G4 (data) |
+| 53 — Water surface grid | 🚧 In progress — G2a built (0.48.2): the runtime grid in `dwell-sim` replaces the basins; generated water held at rest as found, edits free it, a rest layer keeps drawn rivers exactly at rest under the law, sleeping chunks with a 5 mm sleep and 5 cm wake band and smooth waking, written as blocks, saved as `DWG1`; both faces tested; a dam across seed 0's river backs it up 0.5 m in the browser. G0's prototype done but for the owner's look at the eroded rivers. G1a built (0.49.0): no river lips (BUGS.md #29 fixed), the pool graph removed. Outstanding: G1b (the water computed from the map where the world loads: no beds or stepped levels; replaces the design's whole-world fill, measured too slow), G1c (erosion), G2b (pools, the held sea, the water layer's own storage), G3 (clients), G4 (data) |
 
 Phase numbering: Phase 4 was inserted on 2026-09-29 for the planet-scale world (ADRs 0011, 0012);
 the former Phases 4–7 are now 5–8, and Phase 3's former 3c and 3d are now 3d and 3e.
@@ -5289,9 +5289,20 @@ Deliverables
   (the awake count stops climbing), no column more than 10 cm from stepping everything, the pools'
   passes parallel; then the fill-and-spill start on the game's ground with no beds: its time, the
   settle after it, and rivers without beds shown to the owner.
-- [ ] G1 — Generation: the whole-world fill (priority flood and discharge routing from the map's river
-  flows, a held sea) on block-scale ground with no drawn beds, levels or lips; deterministic natively
-  and in WASM; creation under a minute with its stages shown (the map filling, visually if possible).
+- [x] G1a — No lips (0.49.0, BUGS.md #29): the generator stops drawing lips; a step is the water
+  falling a row; a junction two rows or more over another river drawn as a chute; the pool graph and
+  the lip planning removed (`no_dry_wall_stands_in_a_rivers_channel`, `rivers_meet_at_one_level`).
+- [ ] G1b — Generation: the water a pure function of the seed computed where the world loads (no drawn
+  beds or stepped levels: lakes at the map's levels, each river at the level its map discharge needs
+  across its valley by Manning, valleys kept); deterministic natively and in WASM; rivers and lakes in
+  place at first start with the stages shown.
+- [ ] G1c — Erosion at generation (soil only, never stone), deterministic across tiles.
+
+**Deviation (G1):** the design's whole-world fill at creation at 1 m doesn't fit the minute: a face
+(radius 50 km, ~7,850 km²) is ~2,000 × the prototype's 4 km² window, which took 2.3 s on one core
+(ground and fill), so a face needs over an hour on one core and gigabytes of columns. The owner's
+need (rivers and lakes in place at first start) is met by computing the water where the world loads,
+from the map's hydrology (its fill-and-spill lakes and river discharges), as terrain is.
 - [x] G2a — The runtime grid in `dwell-sim` (0.48.2): water chunks of 16 × 16 columns, the face law,
   sleeping chunks with the sleep and wake bands and smooth waking; generated water joins held at its
   level as found and edits free it (the release spreading as far as the change reaches); a rest

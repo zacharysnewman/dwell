@@ -294,6 +294,9 @@ Check these before chasing an e2e failure:
   the slide and leaves 1.5 m up held it crouched (a crouched body's arms read `idle`). Fixed
   2026-10-20: the spec runs its own flat-world server (`--generator 0`). A test that moves a player
   far should not depend on the suite world's terrain.
+- `e2e/buildDrag.spec.ts`'s held-Place tests (shards 1 and 4) fail under the software renderer: a
+  held Place builds one piece and no more at a few frames a second (BUGS.md #30, open). They pass on a
+  real GPU; not caused by other work.
 - The hotbar slot count in `e2e/edit.spec.ts` is the items' count (14, `shared/items/items.json`);
   update it when the items change.
 - Main's e2e failed from 0.28.x to 0.37.1 (fixed 0.37.2). Part was specs left behind by features:

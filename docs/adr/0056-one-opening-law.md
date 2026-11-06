@@ -1,5 +1,6 @@
 # 0056. One opening law: water through any opening by C·A·√(2gΔh)
 
+- Superseded by [ADR 0060](0060-water-surface-grid.md): the basins were removed in 0.48.2.
 - Status: Accepted (the owner, 2026-11-03: "Yes go ahead"); amends ADR 0053 and 0055
 - Date: 2026-11-03
 - Design: [`WATER_FLOW.md`](../WATER_FLOW.md) §4, §15, §16

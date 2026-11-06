@@ -1,5 +1,6 @@
 # 0058. Visible water: water moves between pools only where it is seen to
 
+- Superseded by [ADR 0060](0060-water-surface-grid.md): the basins were removed in 0.48.2, the river lips and the pool graph in 0.49.0.
 - Status: Accepted (the owner, 2026-11-04); built (0.47.0); amends ADR 0057
 - Date: 2026-11-04
 - Design: [`WATER_FLOW.md`](../WATER_FLOW.md) §18

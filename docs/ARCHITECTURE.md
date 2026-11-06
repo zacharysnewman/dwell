@@ -2425,11 +2425,18 @@ in 0.48.2.
 **Still from earlier phases, unchanged:** water's `fill` property (registry `fillProperty`,
 `StateInfo::fill`, look tag `0x92`; 0.44.0) and the mesher drawing a surface at it; a coarse LOD water
 cell at the share of its height its cells fill (`downsample_block`, 0.44.1); a flooded ramp's water
-drawn at the fill of the water beside it (0.44.5). The generator still draws rivers with beds, levels
-and lips (`terrain.rs`, Phase 52 G2; BUGS.md #29) until G1.
+drawn at the fill of the water beside it (0.44.5). The generator still draws rivers with beds and
+stepped levels (`terrain.rs`) until G1b; **[built, G1a, 0.49.0]** without lips: a step is the water
+falling a row from one pool to the next (BUGS.md #29), a chute (steps closer than a row every 2.5 m,
+`river_rows.rs`) or a river's column two rows or more over another river's water beside it (a
+junction) drawn as a dry bed a row under its surface with a stream down it, so no wall of water
+stands; the pool graph went with the basins.
 
-**Planned (Phase 53):** G1 the whole-world fill at creation (no drawn beds, levels or lips; valleys
-kept, erosion of soil only); G3 water as its own layer on clients (its chunks' changes on the wire,
+**Planned (Phase 53):** G1b the generated water as a pure function of the seed, computed where the
+world loads as terrain is (no drawn beds or stepped levels: the map's lakes at their levels, each
+river's level the one its map discharge needs across its valley by Manning, valleys kept), then
+erosion of soil only (G1c); a whole-world pass at 1 m was measured out (a face is ~2,000 × the
+prototype's 4 km² window: an hour on one core); G3 water as its own layer on clients (its chunks' changes on the wire,
 the surface meshed from depth, currents on bodies and swimmers); G4 the grid's settings as data
 (`shared/water/*.json`), pools for still water and the held sea as in the prototype.
 
