@@ -136,6 +136,8 @@ impl LocalWorld {
     /// left the world. With `spawn_at` (x, y, z: the dev link `?at=`) the spawn is that point, and
     /// the player starts there. With `upgrade` (the player confirmed the warning, owner 2026-11-06)
     /// a file from an older version line opens too.
+    // Positional, as JS passes them (wasm-bindgen constructor), like `LocalCore::create_spawning`.
+    #[allow(clippy::too_many_arguments)]
     #[wasm_bindgen(constructor)]
     pub fn new(
         world_seed: f64,
