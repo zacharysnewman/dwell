@@ -2379,7 +2379,7 @@ flies high above the disc and the whole disc is drawn by the time it arrives.
 
 ---
 
-### 6.7 Water **[in progress, Phase 53: the runtime grid built (G2a, 0.48.2); generation fill (G1), the water layer on clients (G3), data (G4) planned]**
+### 6.7 Water **[in progress, Phase 53: the runtime grid built (G2a, 0.48.2), currents (G3a, G3b); generation fill (G1), pools (G2b), the rest of the data (G4) planned]**
 
 [ADR 0060](./adr/0060-water-surface-grid.md), [`WATER_SURFACE_GRID.md`](./WATER_SURFACE_GRID.md). Water is
 a **surface grid**: a depth on each 1 m column of ground, moving to its four neighbours across their
@@ -2430,6 +2430,21 @@ in 0.48.2.
   liquids (block, Manning's roughness, the weir the generator sizes chute streams by, the running
   block; the first is the one drawn); `water::Settings::of` reads it, `Water::with_settings` runs other
   settings.
+- **[built, G3a] Currents.** Each awake chunk's free columns' velocity (m/s: the mean of a column's
+  faces' discharges over its depth; none under `currentStillMs` 2 cm/s or `currentDepthM` 5 cm deep, `flow.json`) goes into the world's current
+  table (`VoxelWorld::currents`, `dwell-world` `currents.rs`: per water chunk and face; a sleeping
+  chunk keeps the currents it fell asleep with). A swimmer swims in the water's frame (the swim
+  layer's wish velocity plus the current, PLAYER_CONTROLLER.md §6.4) and a floating body's water drag
+  pulls it toward the current (`felling::water_drag`, `WaterDrag::current`), on the server and in the
+  client's prediction and stand-ins alike. The server sends each player the chunks within 3 of theirs
+  as `WaterCurrents` datagrams (§8.3: an i8 per axis per column in 5 cm/s steps), looked at every 15
+  ticks, a chunk sent when its currents changed or a second after it was last sent, 16 at most a
+  time, a chunk gone still once as zeros; a client forgets a chunk not sent again within 3 s.
+  **[built, G3b]** Held water (generated, never freed) runs as the world map's river does
+  (`Water::with_rivers`, `TerrainGenerator::river_current`, computed once as a chunk's water is
+  found): downstream along the channel as the column sees it (the map's direction through the
+  meander warp's inverse), at Manning's speed for the column's depth on the river's fall, at most
+  `riverCurrentMaxMs` (1.5 m/s: a swimmer, at 3 m/s, still makes headway); a level reach or a lake is still.
 
 **Still from earlier phases, unchanged:** water's `fill` property (registry `fillProperty`,
 `StateInfo::fill`, look tag `0x92`; 0.44.0) and the mesher drawing a surface at it; a coarse LOD water
@@ -2445,8 +2460,8 @@ stands; the pool graph went with the basins.
 world loads as terrain is (no drawn beds or stepped levels: the map's lakes at their levels, each
 river's level the one its map discharge needs across its valley by Manning, valleys kept), then
 erosion of soil only (G1c); a whole-world pass at 1 m was measured out (a face is ~2,000 × the
-prototype's 4 km² window: an hour on one core); G3 water as its own layer on clients (its chunks' changes on the wire,
-the surface meshed from depth, currents on bodies and swimmers); G4 the grid's settings as data
+prototype's 4 km² window: an hour on one core); later, water as its own layer on clients (its chunks' changes on the wire,
+the surface meshed from depth; deferred by the owner, 2026-11-05: clients keep water as blocks); G4 the grid's settings as data
 (`shared/water/*.json`), pools for still water and the held sea as in the prototype.
 
 ## 7. Physics Pipeline
@@ -2746,7 +2761,7 @@ protocol v5); `LodIndex` 0x13, `LodIndexUpdate` 0x14, `LodData` 0x15, `LodReques
 state and flags, and the wider `pos64` range for creative flight (Phase 4; protocol v7); `ChunkRequest`
 0x4D for full detail beyond the view (Phase 4; protocol v8); the flight speed level in `PlayerInput`'s
 `buttons` (Phase 4; protocol v9); `HostStatus` 0x4E and the `ServerClosing` reject reason
-(Phase 5c; protocol v10); the block registry hash in `Welcome` (Phase 8; protocol v11); the row `j` in `LodIndex` entries and the `faceB` bits of `controllerFlags` and `playerFlags` (Phase 13; protocol v12); `RegionEdit` 0x4F and the `regionEdits` Welcome flag (structure sandbox S3; still protocol v12, an addition within the 0.10 line negotiated by the flag, §10.5); the `KEEP` paste cell and the `brushes` Welcome flag (Phase 34; still protocol v12, negotiated by the flag); `BlockRegistry` 0x50 and the definitions hash in `Welcome` (registry sync, ADR 0038; protocol v14); `slideFlags` and the slide cooldown in the local player's controller state (the sprint slide, Phase 37; protocol v15); `EditAck` 0x51 (edit prediction, Phase 34 B4; protocol v16); `HeldItem` 0x52 and each remote player's `held` and `swing` in `PhysicsSnapshot` (characters, Phase 40 C1; protocol v17); ½ m cells (Phase 41, ADR 0042; protocol v18: no layout change, but positions, chunk rows and the registry's shapes mean ½ m cells, and the registry's `adaptive` rule flag is gone); the piece byte (`rows`, `down`) on every `BlockEditRequest` and the registry's `onSlopes` flag, `moldable` field and `behind` support (items and placement rules, 0.29.0, [`ITEMS.md`](./ITEMS.md); protocol v19); `EntitySpawn` 0x16, `EntityDespawn` 0x17 and the pieces in `PhysicsSnapshot` (falling pieces, 0.37.0, [`FELLING.md`](./FELLING.md); protocol v20); the body kind in `EntitySpawn`, `BodyEditRequest` 0x53 and `BodyEdit` 0x18 (editing moving bodies, 0.41.0, [`BUILT_BODIES.md`](./BUILT_BODIES.md); protocol v21) — layouts pinned by `shared/protocol/vectors.txt` (made by the independent Python
+(Phase 5c; protocol v10); the block registry hash in `Welcome` (Phase 8; protocol v11); the row `j` in `LodIndex` entries and the `faceB` bits of `controllerFlags` and `playerFlags` (Phase 13; protocol v12); `RegionEdit` 0x4F and the `regionEdits` Welcome flag (structure sandbox S3; still protocol v12, an addition within the 0.10 line negotiated by the flag, §10.5); the `KEEP` paste cell and the `brushes` Welcome flag (Phase 34; still protocol v12, negotiated by the flag); `BlockRegistry` 0x50 and the definitions hash in `Welcome` (registry sync, ADR 0038; protocol v14); `slideFlags` and the slide cooldown in the local player's controller state (the sprint slide, Phase 37; protocol v15); `EditAck` 0x51 (edit prediction, Phase 34 B4; protocol v16); `HeldItem` 0x52 and each remote player's `held` and `swing` in `PhysicsSnapshot` (characters, Phase 40 C1; protocol v17); ½ m cells (Phase 41, ADR 0042; protocol v18: no layout change, but positions, chunk rows and the registry's shapes mean ½ m cells, and the registry's `adaptive` rule flag is gone); the piece byte (`rows`, `down`) on every `BlockEditRequest` and the registry's `onSlopes` flag, `moldable` field and `behind` support (items and placement rules, 0.29.0, [`ITEMS.md`](./ITEMS.md); protocol v19); `EntitySpawn` 0x16, `EntityDespawn` 0x17 and the pieces in `PhysicsSnapshot` (falling pieces, 0.37.0, [`FELLING.md`](./FELLING.md); protocol v20); the body kind in `EntitySpawn`, `BodyEditRequest` 0x53 and `BodyEdit` 0x18 (editing moving bodies, 0.41.0, [`BUILT_BODIES.md`](./BUILT_BODIES.md); protocol v21); `WaterCurrents` 0x83, an optional datagram (water currents, Phase 53 G3a, §6.7; still protocol v22: a client that doesn't know it drops it as any unknown datagram) — layouts pinned by `shared/protocol/vectors.txt` (made by the independent Python
 reference encoder, including half floats; the Rust codec, `dwell-protocol`, round-trips every
 vector byte for byte and rejects every malformed one). The Rust port kept protocol v12's layouts. **Protocol v13** (Phase 18) changed no layout: client and server derived the same adaptive shapes from the same table, so a build that shaped differently could not connect (the adaptive blocks were removed in Phase 41, protocol v18). The remaining formats below are drafts, finalized in the
 phase that builds them. Enumerations and bit sets (`inputButtons`, `playerStates`, `playerFlags`,
@@ -2779,6 +2794,14 @@ repeat count:
                                 // (flySpeed 0x3F0, 0–63 on the wire, used up to 39; §9.1)
   i16  yaw                      // wrapped fraction of a turn (65536 per 360°); 0 = +Z
   i16  pitch                    // ±32767 for ±90°
+```
+
+**Server → Client: `WaterCurrents` (datagram, optional) [built, Phase 53 G3a]** (§6.7)
+```
+u8   type = 0x83
+u8   faceB                      // 0 | 1; anything else is malformed
+i32  cx, cz                     // the water chunk (16 × 16 columns)
+i8   current[256][2]            // column x + 16 z: m/s along x, z in 0.05 m/s steps; all 0 = still
 ```
 
 **Server → Client: `PhysicsSnapshot` (datagram, SNAPSHOT_HZ) [built for players]**

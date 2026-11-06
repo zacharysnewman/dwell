@@ -304,6 +304,34 @@ fn the_report_is_json() {
 }
 
 dwell_world::both_faces!(
+    fn a_lake_cut_open_has_a_current_toward_the_cut_until_it_settles(f: FaceFrame) {
+        // Phase 53 G3a (docs/WATER_SURFACE_GRID.md §2c): the grid writes its awake water's
+        // velocity into the world's currents, read by swimmers and floating bodies.
+        let mut s = Scene::new(f);
+        s.basin(0, 7, 0, 7, 3);
+        s.run(5);
+        let at = |s: &Scene, x: i32| {
+            s.world
+                .currents
+                .at(s.f.point([f64::from(x) + 0.5, m_of_row(BASE) + 0.75, 3.5]))
+        };
+        assert_eq!(at(&s, 6), [0.0; 2], "a lake at rest is still");
+        // open its +x wall onto the ground beyond, down to the lake's floor
+        let cut: Vec<(i32, i32, i32)> = (8..=9)
+            .flat_map(|x| (2..=5).flat_map(move |z| (0..=4).map(move |r| (x, r, z))))
+            .collect();
+        s.edit(&cut, M.air);
+        s.run(2);
+        let [u, v] = at(&s, 6);
+        assert!(
+            u > 0.1,
+            "the water by the cut runs toward it: {u:.3}, {v:.3} m/s"
+        );
+        assert!(v.abs() < u, "mostly toward the cut: {u:.3}, {v:.3} m/s");
+    }
+);
+
+dwell_world::both_faces!(
     fn a_liquid_given_by_data_alone_runs_by_its_own_roughness(f: FaceFrame) {
         // G4 (WATER_SURFACE_GRID.md §4): the grid's liquids and settings are data. A fixture
         // liquid ten times as rough, given only as flow data, drains the same cut lake slower.
@@ -339,6 +367,34 @@ dwell_world::both_faces!(
         assert!(
             slow < 0.7 * plain,
             "the rough liquid drains slower: {slow:.3} against {plain:.3} m"
+        );
+    }
+);
+
+dwell_world::both_faces!(
+    fn held_water_runs_as_the_map_says_and_freed_water_by_the_law(f: FaceFrame) {
+        // Phase 53 G3b: held (generated) water's current is the world map's river's, given here by
+        // a fixture map running 0.4 m/s along +z; once an edit frees it, the law's.
+        let mut s = Scene::new(f);
+        s.water = Water::new().with_rivers(std::sync::Arc::new(|_, _, _, depth| {
+            (depth >= 0.05).then_some([0.0, 0.4])
+        }));
+        s.basin(0, 7, 0, 7, 3);
+        s.run(1);
+        let at = |s: &Scene, x: i32| {
+            s.world
+                .currents
+                .at(s.f.point([f64::from(x) + 0.5, m_of_row(BASE) + 0.75, 3.5]))
+        };
+        assert_eq!(at(&s, 3), [0.0, 0.4], "the held lake runs as its map says");
+        // A wall cut by the lake: the water near it is free, and still (the law's: it is level).
+        s.edit(&[(7, 0, 3)], M.air);
+        s.edit(&[(7, 0, 3)], require("dwell:stone"));
+        s.run(1);
+        let [u, v] = at(&s, 6);
+        assert!(
+            u.abs() < 0.1 && v.abs() < 0.1,
+            "freed, it moves by the law: {u:.3}, {v:.3} m/s"
         );
     }
 );

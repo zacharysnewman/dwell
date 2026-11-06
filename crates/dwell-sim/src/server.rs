@@ -68,6 +68,16 @@ const KEEP_CHUNKS: i32 = 3; // unmodified chunks kept around players; farther: e
 const EVICT_EVERY_TICKS: u32 = 64;
 const MAX_EXPLICIT_WANTED: usize = 64; // full-mode chunks queued for generation per tick
 const MAX_QUEUED_EDITS: usize = 8; // per session per tick; more are dropped
+/// Water currents to the players (docs/WATER_SURFACE_GRID.md §2c): looked at every
+/// `CURRENTS_EVERY` ticks, a water chunk within `CURRENTS_RADIUS` chunks of a player sent when its
+/// currents changed or `CURRENTS_REFRESH` ticks after it was last sent (a lost datagram made good),
+/// the nearest `CURRENTS_PER_SEND` at most; a chunk gone still is sent once as all zero.
+const CURRENTS_EVERY: u32 = 15;
+/// A water chunk's currents as sent (`WaterCurrents::cells`).
+type SentCurrents = Box<[[i8; 2]; 256]>;
+const CURRENTS_REFRESH: u32 = 60;
+const CURRENTS_RADIUS: i32 = 3;
+const CURRENTS_PER_SEND: usize = 16;
 /// Ticks a place into a player's body waits before it is refused (docs/BUGS.md 30): the server's
 /// view of a body lags the client's by the inputs still queued, a whole frame of them on a slow
 /// device (a 2 fps frame's 30 ticks), so a place the client made once its body was clear goes in
@@ -441,6 +451,8 @@ struct Session {
     last_knockback_seq: u32,
     rate_window_tick: u32,
     rate_window_count: u32,
+    /// The water chunks' currents last sent (`send_currents`) and when.
+    currents_sent: HashMap<dwell_world::currents::CurrentKey, (SentCurrents, u32)>,
     /// Applied at the start of the next step, by edit number: (edit number, edit, ticks held while
     /// it would go into a player, EDIT_HOLD_TICKS).
     edits: Vec<(u32, BlockEditRequest, u8)>,
@@ -500,6 +512,7 @@ impl Session {
             player_id: 0,
             handle: None,
             inputs: VecDeque::new(),
+            currents_sent: HashMap::default(),
             primed: false,
             low_water: usize::MAX,
             window_ticks: 0,
@@ -749,8 +762,15 @@ impl Server {
             ) {
                 (None, Some(terrain)) => {
                     let map = std::sync::Arc::new(terrain);
+                    let rivers = map.clone();
                     crate::water::Water::with_runoff(std::sync::Arc::new(
                         move |f: dwell_world::FaceFrame, x, z| map.local(f.face).discharge_at(x, z),
+                    ))
+                    // Untouched rivers' currents (Phase 53 G3b).
+                    .with_rivers(std::sync::Arc::new(
+                        move |f: dwell_world::FaceFrame, x, z, depth| {
+                            rivers.local(f.face).river_current(x, z, depth)
+                        },
                     ))
                 }
                 _ => crate::water::Water::new(),
@@ -1437,6 +1457,9 @@ impl Server {
         }
         if self.tick.is_multiple_of(SNAPSHOT_EVERY) {
             self.send_snapshots();
+        }
+        if self.tick.is_multiple_of(CURRENTS_EVERY) {
+            self.send_currents();
         }
 
         // 6. Terrain streaming, then what to generate next and what to forget.
@@ -3204,6 +3227,71 @@ impl Server {
             bytes: encode(m),
         });
     }
+    /// The water's currents near each player (`CURRENTS_EVERY`), as `WaterCurrents` datagrams.
+    fn send_currents(&mut self) {
+        use dwell_world::currents::current_key;
+        let ids: Vec<SessionId> = self.sessions.keys().copied().collect();
+        for id in ids {
+            let s = &self.sessions[&id];
+            let Some(h) = s.handle.filter(|_| s.joined()) else {
+                continue;
+            };
+            let p = self.players.position(&self.physics, h);
+            let ((fb, cx, cz), _) = current_key(
+                FaceFrame::at_height(p.y),
+                p.x.floor() as i32,
+                p.z.floor() as i32,
+            );
+            let r = CURRENTS_RADIUS;
+            let mut near: Vec<(i32, i32)> = (-r..=r)
+                .flat_map(|dx| (-r..=r).map(move |dz| (dx, dz)))
+                .collect();
+            near.sort_by_key(|&(dx, dz)| dx * dx + dz * dz);
+            let mut out = Vec::new();
+            let s = self.sessions.get_mut(&id).expect("session");
+            for (dx, dz) in near {
+                if out.len() >= CURRENTS_PER_SEND {
+                    break;
+                }
+                let key = (fb, cx + dx, cz + dz);
+                let now = self.world.currents.get(key).map(|c| {
+                    Box::new(
+                        c.map(|[u, v]| [WaterCurrents::quantize(u), WaterCurrents::quantize(v)]),
+                    )
+                });
+                let sent = s.currents_sent.get(&key);
+                let cells = match (now, sent) {
+                    (Some(q), Some((was, at)))
+                        if *was == q && self.tick.wrapping_sub(*at) < CURRENTS_REFRESH =>
+                    {
+                        continue;
+                    }
+                    (Some(q), _) => {
+                        s.currents_sent.insert(key, (q.clone(), self.tick));
+                        q
+                    }
+                    (None, Some(_)) => {
+                        s.currents_sent.remove(&key);
+                        Box::new([[0; 2]; 256])
+                    }
+                    (None, None) => continue,
+                };
+                out.push(WaterCurrents {
+                    face_b: key.0,
+                    cx: key.1,
+                    cz: key.2,
+                    cells,
+                });
+            }
+            // Chunks left behind: the client forgets them (CURRENTS_KEEP_MS).
+            s.currents_sent
+                .retain(|k, _| k.0 == fb && (k.1 - cx).abs() <= r && (k.2 - cz).abs() <= r);
+            for m in out {
+                self.send_datagram(id, &Message::WaterCurrents(m));
+            }
+        }
+    }
+
     fn send_datagram(&mut self, id: SessionId, m: &Message) {
         self.outbox.push(Outgoing {
             session: id,

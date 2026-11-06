@@ -411,3 +411,33 @@ fn a_player_on_a_floating_raft_presses_it_down() {
         unladen - lowest
     );
 }
+
+#[test]
+fn a_floating_raft_drifts_with_the_current() {
+    // Phase 53 G3a (docs/WATER_SURFACE_GRID.md §2c): water slows a body toward the water's own
+    // velocity, so in a 0.5 m/s current a raft let be comes up to it (a 1,400 kg raft slowly: by
+    // the area it shows the water and the speed squared, as it glides on, above).
+    let (mut f, raft) = floating_raft();
+    let face = dwell_world::FaceFrame::A;
+    for x in -6..8 {
+        for z in -6..8 {
+            let (key, i) = dwell_world::currents::current_key(face, x, z);
+            let world = f.server.world();
+            let mut cells = world
+                .currents
+                .get(key)
+                .cloned()
+                .unwrap_or_else(|| Box::new([[0.0; 2]; dwell_world::currents::CA]));
+            cells[i] = [0.0, 0.5];
+            world.currents.set(key, Some(cells));
+        }
+    }
+    let body = f.server.body_handle(raft).expect("the raft");
+    steps(&mut f, 600);
+    let (_, physics, _) = f.server.sim();
+    let v = physics.velocity(body);
+    assert!(
+        v.x.abs() < 0.05 && (0.3..0.51).contains(&v.z),
+        "ten seconds on the raft goes {v:?} in a 0.5 m/s current along z"
+    );
+}

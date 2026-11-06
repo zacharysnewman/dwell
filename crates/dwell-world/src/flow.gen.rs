@@ -17,6 +17,9 @@ pub const FLOW: FlowData = FlowData {
     release_m: 0.025,
     edit_reach: 3,
     fill_hysteresis: 0.25,
+    current_still_ms: 0.02,
+    current_depth_m: 0.05,
+    river_current_max_ms: 1.5,
     liquids: &[
         LiquidFlow { block: "dwell:water", manning: 0.03, weir: 1.7, running: "dwell:running_water" },
     ],

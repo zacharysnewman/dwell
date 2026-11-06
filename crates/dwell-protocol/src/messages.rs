@@ -30,6 +30,48 @@ pub struct DatagramPong {
     pub server_tick: u32,
 }
 
+/// Steps a water current is sent in (m/s) in [`WaterCurrents`]: an i8 each way, ±6.35 m/s.
+pub const CURRENT_STEP_MS: f32 = 0.05;
+
+/// A water chunk's currents (docs/WATER_SURFACE_GRID.md §2c, Phase 53 G3a), server → client as a
+/// datagram, sent again every so often while it has any (a lost one is made good by the next; a
+/// client forgets a chunk not sent again within `CURRENTS_KEEP_MS`): the chunk of 16 × 16 columns
+/// (`face_b`, `cx`, `cz`), and each column's current along x and z in [`CURRENT_STEP_MS`] steps,
+/// column `x + 16 z`; all zero: the chunk's water is still. An optional message: a client that
+/// doesn't know it drops it, as any unknown datagram.
+#[derive(Clone, Debug, PartialEq)]
+pub struct WaterCurrents {
+    pub face_b: bool,
+    pub cx: i32,
+    pub cz: i32,
+    pub cells: Box<[[i8; 2]; 256]>,
+}
+
+impl Default for WaterCurrents {
+    fn default() -> Self {
+        Self {
+            face_b: false,
+            cx: 0,
+            cz: 0,
+            cells: Box::new([[0; 2]; 256]),
+        }
+    }
+}
+
+/// How long a client keeps a chunk's currents not sent again (ms).
+pub const CURRENTS_KEEP_MS: f64 = 3000.0;
+
+impl WaterCurrents {
+    /// A current (m/s) in steps, clamped to the range.
+    pub fn quantize(v: f32) -> i8 {
+        (v / CURRENT_STEP_MS).round().clamp(-127.0, 127.0) as i8
+    }
+    /// A column's current (m/s along x and z).
+    pub fn current(&self, i: usize) -> [f32; 2] {
+        self.cells[i].map(|q| f32::from(q) * CURRENT_STEP_MS)
+    }
+}
+
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct StatusResponse {
     pub protocol_version: u16,
@@ -435,6 +477,7 @@ pub struct PlayerEvent {
 pub enum Message {
     DatagramPing(DatagramPing),
     DatagramPong(DatagramPong),
+    WaterCurrents(WaterCurrents),
     StatusRequest,
     StatusResponse(StatusResponse),
     ClientHello(ClientHello),
@@ -491,6 +534,7 @@ impl Message {
         match self {
             M::DatagramPing(_) => MessageType::DatagramPing,
             M::DatagramPong(_) => MessageType::DatagramPong,
+            M::WaterCurrents(_) => MessageType::WaterCurrents,
             M::StatusRequest => MessageType::StatusRequest,
             M::StatusResponse(_) => MessageType::StatusResponse,
             M::ClientHello(_) => MessageType::ClientHello,
@@ -874,6 +918,15 @@ fn write_body(w: &mut ByteWriter, m: &Message) {
             w.f64(m.client_time_ms);
             w.u32(m.server_tick);
         }
+        M::WaterCurrents(m) => {
+            w.u8(u8::from(m.face_b));
+            w.i32(m.cx);
+            w.i32(m.cz);
+            for c in m.cells.iter() {
+                w.i8(c[0]);
+                w.i8(c[1]);
+            }
+        }
         M::StatusRequest => {}
         M::StatusResponse(m) => {
             w.u16(m.protocol_version);
@@ -1165,6 +1218,23 @@ fn read_body(r: &mut ByteReader, t: MessageType) -> Option<Message> {
             client_time_ms: r.f64(),
             server_tick: r.u32(),
         }),
+        T::WaterCurrents => {
+            let face = r.u8();
+            if face > 1 {
+                return None;
+            }
+            let (cx, cz) = (r.i32(), r.i32());
+            let mut cells = Box::new([[0i8; 2]; 256]);
+            for c in cells.iter_mut() {
+                *c = [r.i8(), r.i8()];
+            }
+            M::WaterCurrents(WaterCurrents {
+                face_b: face == 1,
+                cx,
+                cz,
+                cells,
+            })
+        }
         T::StatusRequest => M::StatusRequest,
         T::StatusResponse => M::StatusResponse(StatusResponse {
             protocol_version: r.u16(),

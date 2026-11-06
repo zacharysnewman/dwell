@@ -106,7 +106,7 @@ pub use bodies_generated::{BODY_KINDS, WATER};
 /// How water slows body `body` sideways (docs/BUILT_BODIES.md §6), the server's and the clients'
 /// stand-ins' alike: ½ · the liquid's density · `WATER.drag_coefficient` · the area of its sides
 /// under water facing the motion (its bounds' sides, as deep as the share of it under) · speed²,
-/// and `WATER.drag` by that share. Nothing out of the water.
+/// and `WATER.drag` by that share, relative to the water's current. Nothing out of the water.
 pub fn water_drag(world: &mut VoxelWorld, physics: &Physics, body: BodyHandle) -> WaterDrag {
     let mut centres = Vec::new();
     physics.collider_centres(body, &mut centres);
@@ -124,10 +124,13 @@ pub fn water_drag(world: &mut VoxelWorld, physics: &Physics, body: BodyHandle) -
     let size = hi - lo;
     let depth = size.y * share;
     let k = 0.5 * (liquid / under) * WATER.drag_coefficient / physics.mass(body).max(1e-6);
+    // The water's current where the body is (docs/WATER_SURFACE_GRID.md §2c): it drifts with it.
+    let [cu, cv] = world.currents.at(physics.position(body).to_array());
     WaterDrag {
         kx: k * depth * size.z,
         kz: k * depth * size.x,
         linear: WATER.drag * share,
+        current: [f64::from(cu), f64::from(cv)],
     }
 }
 

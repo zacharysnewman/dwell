@@ -95,6 +95,7 @@ export const MessageType = {
   PlayerInput: 1,
   DatagramPing: 2,
   DatagramPong: 130,
+  WaterCurrents: 131,
   StatusRequest: 64,
   StatusResponse: 65,
   ClientHello: 66,
