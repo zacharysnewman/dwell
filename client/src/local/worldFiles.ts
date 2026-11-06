@@ -55,6 +55,39 @@ export async function deleteWorldFiles(name: string): Promise<boolean> {
 }
 
 /**
+ * Copies a world's file to a new name, to play an older line's world as a copy (owner,
+ * 2026-11-06). True once copied, or when the world was never saved (nothing to copy); false if it
+ * could not be read or written: open in another tab, or a browser without writable OPFS streams.
+ */
+export async function copyWorldFile(from: string, to: string): Promise<boolean> {
+  type WritableFileHandle = FileSystemFileHandle & {
+    createWritable(): Promise<WritableStream<Uint8Array>>;
+  };
+  let dir: FileSystemDirectoryHandle;
+  try {
+    dir = await worldsDirectory();
+  } catch {
+    return true; // no OPFS: nothing was saved
+  }
+  let source: File;
+  try {
+    source = await (await dir.getFileHandle(`${from}.dwellworld`)).getFile();
+  } catch (err) {
+    return err instanceof DOMException && err.name === 'NotFoundError';
+  }
+  try {
+    const target = (await dir.getFileHandle(`${to}.dwellworld`, {
+      create: true,
+    })) as WritableFileHandle;
+    await source.stream().pipeTo(await target.createWritable());
+    return true;
+  } catch {
+    await deleteWorldFiles(to);
+    return false;
+  }
+}
+
+/**
  * Opens (creating) the world's file in OPFS. Null where OPFS or sync handles are unavailable, or
  * when another tab holds the world.
  */

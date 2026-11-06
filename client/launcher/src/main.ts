@@ -168,9 +168,15 @@ function showVersions(manifest: Manifest): void {
     const note = document.createElement('div'); // not <p>: keeps Safari's Reader off
     note.className = 'version-worlds';
     note.textContent = row.openable
-      ? row.worlds.length
-        ? `Can open: ${row.worlds.join(', ')}`
-        : 'Opens none of your worlds yet.'
+      ? [
+          row.worlds.length
+            ? `Can open: ${row.worlds.join(', ')}`
+            : 'Opens none of your worlds yet.',
+          // An older line's worlds open after a warning (owner, 2026-11-06).
+          ...(row.olderWorlds.length
+            ? [`With a warning (older version): ${row.olderWorlds.join(', ')}`]
+            : []),
+        ].join(' · ')
       : 'Needs a newer launcher: reload the page.';
     const changes = changesView(row.changes);
     item.append(head, ...(changes ? [changes] : []), note);

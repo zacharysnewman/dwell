@@ -54,6 +54,7 @@ export class LocalCore {
     spawnPortal = false,
     spawnOnOpen = false,
     spawnAt?: [number, number, number],
+    upgrade = false,
   ): Promise<LocalCore> {
     const exports = (await loadWasm()) as { memory?: WebAssembly.Memory };
     const core = new LocalCore(
@@ -65,6 +66,7 @@ export class LocalCore {
         spawnPortal,
         spawnOnOpen,
         spawnAt ? Float64Array.from(spawnAt) : undefined,
+        upgrade,
       ),
     );
     core.memory = exports.memory ?? null;

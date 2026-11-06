@@ -488,6 +488,48 @@ fn air_control_scales_airborne_acceleration() {
     );
 }
 
+/// Runs (or walks) off a 1 m ledge along +z, then in the air holds forward with run `air_run`.
+/// The horizontal speed at the edge, and the slowest and fastest in the air until landing.
+fn off_a_ledge_then(run: bool, air_run: bool) -> (f32, f32, f32) {
+    let mut w = PlayerTestWorld::new();
+    w.floor_at(0, 64);
+    w.fill(-4, 0, -40, 4, 1, -10, cube_block());
+    let e = w.spawn(v(0.5, 2.0, -30.0));
+    w.set_input(move |_, _| input(0.0, 1.0, run, false, false, 0.0, 0.0));
+    while w.c(e).ground.grounded || w.pos(e).z < -9.0 {
+        w.step(1);
+    }
+    w.set_input(move |_, _| input(0.0, 1.0, air_run, false, false, 0.0, 0.0));
+    let at = w.horizontal_speed(e);
+    let (mut slowest, mut fastest) = (f32::MAX, 0.0f32);
+    w.step(1);
+    while !w.c(e).ground.grounded {
+        slowest = slowest.min(w.horizontal_speed(e));
+        fastest = fastest.max(w.horizontal_speed(e));
+        w.step(1);
+    }
+    (at, slowest, fastest)
+}
+
+#[test]
+fn sprint_changes_nothing_in_the_air() {
+    // Owner (2026-11-05): "Sprint shouldn't change in air control or speed … we want a true
+    // physics controller." Letting go of sprint in the air steered the speed from 8 down to the
+    // walk speed (5 m/s over ~0.2 s); pressing it in the air sped a walk up to 8.
+    let (at, slowest, fastest) = off_a_ledge_then(true, false);
+    assert!(at > 7.9, "ran off the edge at {at}");
+    assert!(
+        slowest > at - 0.01 && fastest < at + 0.01,
+        "let go of sprint: {slowest}..{fastest} of {at} m/s"
+    );
+    let (at, slowest, fastest) = off_a_ledge_then(false, true);
+    assert!(approx(at, 5.0, 0.05), "walked off the edge at {at}");
+    assert!(
+        slowest > at - 0.01 && fastest < at + 0.01,
+        "pressed sprint: {slowest}..{fastest} of {at} m/s"
+    );
+}
+
 #[test]
 fn a_ground_kick_is_absorbed_then_decays() {
     let mut w = PlayerTestWorld::new();

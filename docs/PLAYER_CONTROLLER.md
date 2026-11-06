@@ -164,7 +164,7 @@ The server tick (ARCHITECTURE §4.2) runs, for every player, **before** `Physics
 | 6 | `step_jump` | `PPCJumpSystem` | Buffer + coyote (in ticks); `accumulated_y = max(accumulated_y, jump_v + platform_y)`, or sliding (steeper than `slide.min_angle`, or a sprint slide) the jump added along the ground's normal (§6.8); no coyote after a real jump; auto-jump (§6.2) |
 | 7 | `step_climb` | `PPCClimbSystem` | Exclusive layer on climbable voxels (§6.3); not while flying |
 | 8 | `step_swim` | — (Dwell) | Exclusive layer in water voxels (§6.4) and in the flip band (§11); not while climbing or flying |
-| 9 | `step_horizontal` | `PPCMovementLayerSystem` | Absorb external; on ground steeper than 44° the slide (§6.8); else during a sprint slide the sprint slide (§6.9); else accel/decel/reverse in the platform's frame; air control; step-up; edge guard |
+| 9 | `step_horizontal` | `PPCMovementLayerSystem` | Absorb external; on ground steeper than 44° the slide (§6.8); else during a sprint slide the sprint slide (§6.9); else accel/decel/reverse in the platform's frame; air control (toward the speed the player has, walk to run: sprint and crouch change nothing in the air, §6.9); step-up; edge guard |
 | 10 | `step_vertical` | `PPCVerticalLayerSystem` | Gravity; walk-off keeps platform Y; ceiling cancel; launch detection; ground following + snap |
 | 10a | `step_impact` | — (Dwell) | This tick's hit from the new contacts, the landing and a ceiling cancel: `IMPACTED` (§6.10) |
 | 11 | `step_aggregate` | `PPCAggregateSystem` | `target = exclusive ? layer.velocity : horizontal.contribution + (0, vertical.target_y, 0)`; set the body's linear velocity |
@@ -637,12 +637,27 @@ Fortnite-style. The numbers below are defaults chosen for this, all data
   falling when crouch is held on landing"). On the tick the player lands crouched with crouch held
   and at least `min_start_speed` across the ground, the slide starts too: from a fall, a bounce or
   a jump out of a slide alike. A fall straight down doesn't slide. It is a continuation: no start
-  boost, no run needed, and the cooldown doesn't hold it back (`land_into_slide`;
+  boost, no run needed, and the cooldown doesn't hold it back (`land_into_slide`, `slide_on`;
   `landing_with_crouch_held_while_moving_slides`, `a_jump_out_of_a_slide_with_crouch_held_…`,
-  `falling_straight_down_with_crouch_held_does_not_slide`).
-- **Crouching in the air** doesn't slow the player (owner, 2026-10-30): airborne and crouched, the
-  air control steers toward the speed the player has, between the crouch speed and the uncrouched
-  walk or run speed, not toward the crouch speed (`crouching_in_the_air_keeps_the_speed_you_had`).
+  `falling_straight_down_with_crouch_held_does_not_slide`). Owner (2026-11-05): *"if you're
+  holding crouch when you land and you're moving quickly enough … you should start sliding
+  regardless of sprint being held"* (`landing_with_crouch_held_slides_without_sprint_held`).
+- **A crouched steep slide slides on** (owner, 2026-11-05, the same rule): on ground steeper than
+  `slide.min_angle` with crouch held and at least `min_start_speed`, the sprint slide takes over the
+  momentum (`slide_on`, no boost), so where the face meets gentler ground the player slides on
+  instead of ground friction taking the steep slide's momentum away in ~0.3 s
+  (`slide.rs` `a_crouched_steep_slide_slides_on_where_the_ground_flattens`).
+- **In the air neither crouch nor sprint changes the speed** (owner, 2026-10-30: crouching
+  "shouldn't slow your in air velocity"; 2026-11-05: *"Sprint shouldn't change in air control or
+  speed … we want a true physics controller"*): airborne, the air control steers toward the speed
+  the player has, held between the walk speed (the crouch speed, crouched) and the run speed, so
+  pressing or letting go of crouch or sprint mid-air changes nothing; only the move input's
+  direction steers (`crouching_in_the_air_keeps_the_speed_you_had`, `movement.rs`
+  `sprint_changes_nothing_in_the_air`). Until 0.49.2 the target was the tick's walking speed:
+  letting go of sprint mid-air pulled 8 m/s down to 5 over ~0.2 s (air control's 10 m/s², under
+  `min_start_speed`, so a crouched landing only crouched) and pressing it sped a walk up to 8.
+- **Off a crest, a lip or a downhill edge** the slide flies as anything with its momentum does:
+  the ground is a floor (§6.11).
 - **The crouch.** The slide is a crouch: the crouch capsule (0.9 m) and the crouch eye height
   throughout; crouch must stay held. Releasing it ends the slide and stands up only where the
   standing capsule fits, as crouch always does, so under a low ceiling the player stays crouched
@@ -708,16 +723,18 @@ Owner (2026-10-21): fall damage became **impact damage**, by the angle of the su
   that is new; the ground's normal when the tick lands (`LANDED`: the ground probe meets the ground
   before the capsule does, and the ground snap then closes the gap gently); and a rise the ceiling
   probe cancels (normal −y), which likewise stops the body short of the ceiling. Flat ground gives
-  the vertical speed, as falls always did; a ½ m ramp gives its own normal (26.57°: × 0.894 of a
-  vertical fall).
-- **Ground only** (`damage.impact_surfaces`, default `Ground`): of those, only a normal whose
-  face-local slope is walkable counts, no steeper than `probes.max_slope_angle` (56°, the slope the
-  ground probe stands on: face-local `n.y ≥ cos 56° ≈ 0.56`). Walls, steep faces and ceilings
-  (the ceiling probe's −y) never hit, at any speed. A step's side is a wall like any other, so it
+  the vertical speed, as falls always did.
+- **Flat ground only** (`damage.impact_surfaces`, default `Ground`): of those, only a normal whose
+  face-local slope is no steeper than `damage.impact_max_slope_angle` (10°) counts. Owner
+  (2026-11-05): *"Fall damage was supposed to only impact you when you hit the ground vertically
+  fast, but currently if you hit a half slope or steep slope really fast you take some up to lethal
+  fall damage … it should be 0."* So ramps of either pitch (26.57°, 45°) never hit, nor do walls,
+  steep faces and ceilings (the ceiling probe's −y), at any speed; until 0.49.2 the bound was
+  `probes.max_slope_angle` (56°) and a ½ m ramp hit by its own normal (× 0.894 of a vertical fall). A step's side is a wall like any other, so it
   needs no rule of its own (0.24.8's step-as-ramp normal, which made it hit as the ramp it stands
   for, was removed with wall damage: it would have turned harmless wall contacts into ramp hits). A
   step's top edge met from below by the capsule's base is ground by its own normal when that is
-  walkable. `ImpactSurfaces::All` counts every contact (the rule before, kept as data for a mode
+  flat. `ImpactSurfaces::All` counts every contact (the rule before, kept as data for a mode
   that wants it). The wall and ceiling impact *sounds* are unchanged: they are read from the
   sampled motion, not from `IMPACTED` (AUDIO.md §5); the hurt follows the server's damage.
 - **Once per contact:** a contact whose normal is within `SAME_CONTACT_DOT` (0.95) of one of last
@@ -740,9 +757,8 @@ Owner (2026-10-21): fall damage became **impact damage**, by the angle of the su
 |---|---|---|
 | 3 m drop, flat | 10.7 m/s | 0 |
 | 5 m / 10 m / 20 m / 30 m drop, flat | 14.0 / 20.0 / 28.3 / 34.7 m/s | 16 / 64 / 131 / 181 (as before) |
-| 25 m/s straight down onto a ½ m ramp | 23.0 m/s | 88 |
-| 25 m/s at 60° / 45° below level, downhill onto it | 14.7 / 9.1 m/s | 21 / 0 |
-| 25 m/s along the ramp (a skim) | 4.2 m/s (gravity) | 0 |
+| 25 m/s straight down, at 60° or along a ½ m ramp | (a ramp) | 0 (88 / 21 / 0 until 0.49.2) |
+| 25 m/s straight down onto a 1 m ramp (45°) | (a ramp) | 0 (51 until 0.49.2) |
 | Launched at 25 m/s into a wall | 25 m/s (a wall) | 0 (104 when walls hurt) |
 | Launched at 25 m/s along a wall, 1 m/s into it | < 2 m/s | 0 |
 | Launched up at 25 m/s into a ceiling 2.2 m over the head | ~23 m/s (a ceiling) | 0 (91 when ceilings hurt) |
@@ -755,14 +771,75 @@ Owner (2026-10-21): fall damage became **impact damage**, by the angle of the su
 | 25 m/s off the ground (0.3 m up) into a ½ m step's top edge | ~1 m/s (its own normal, glancing) | 0 |
 
 - **Tests:** `tests/impact.rs` (17, both faces and far from the origin): 5, 10, 20 and 30 m falls
-  onto the flat deal the 16 / 64 / 131 / 181 they did before; a short drop nothing; onto the ½ m
-  ramp hillside a vertical landing by the ramp's normal, a glancing one less and a skim nothing; a
+  onto the flat deal the 16 / 64 / 131 / 181 they did before; a short drop nothing; landings at
+  25 m/s onto the ½ m ramp hillside (straight down, 60°, a skim) and onto a 45° hillside nothing
+  (`landing_on_a_half_metre_ramp_never_hurts`, `landing_on_a_steep_ramp_never_hurts`: 88 and 51
+  points before 0.49.2); a
   25 m/s launch into a wall nothing (and with `impact_surfaces: All` the 104 it did), one brushing
   along it and flying into it nothing; a hard ceiling hit nothing; walking and sprinting into a
   wall, stepping up ½ m, auto-climb and walking the ramp hillside stay under 9 m/s; launches into a
   ½ m step's side (14, 25, 40 m/s), a 1 m block and a step's edge nothing; running
   into a ½ m step at up to 25 m/s steps up with no hit. `dwell-sim` `tests/netcode.rs` damages and
   kills by falls through the server.
+
+### 6.11 The ground is a floor (Dwell addition) **[built, 0.49.2]**
+
+Owner (2026-11-05): *"Step movement is ruining momentum off of slope 'jumps' … I can see where my
+character tries to 'step' forward at the top of the ramp"*, then, of treating the ground as a
+floor, *"without any special cases"*, one limit for everyone, and *"We may switch to gluing
+downhill to be more fun later, but I'd like to try without."*
+
+Before, grounded vertical speed was not momentum: the vertical pass set it from the ground every
+tick (`platform_y + along_slope − gap / DT`), so whatever the ground stopped doing the body
+stopped doing. A run of ramps tops out in a ½ m step (the generation rule leaves a crest's column
+flat), and the step-up stood a slide rising at 5.4 m/s on the top with none; a ramp ending in the
+air held the body over its lip; a run over a downhill edge was held to the face below.
+
+- **Momentum.** Grounded, the body's vertical speed is the speed the vertical layer drove last tick
+  (`target_y`), relative to the ground's carry (`last_platform_y`), plus this tick's gravity: its
+  ballistic speed. The body's own velocity is not used: the solver rolling the capsule over a
+  step's edge lifts it by up to ~1.5 m/s that is no motion of the player's (the launch check, which
+  reads the body, keeps catching real kicks, as before).
+- **The floor.** Following the slope (`along_slope`, from the ground's normal and the horizontal
+  drive) may take away at most `movement.ground_stick_speed` (5 m/s) of the body's rise
+  (`max(b, 0) − max(slope, 0)`), and pull it down by at most that much more than gravity does
+  (`min(b, 0) − min(slope, 0)`). More either way, and the body leaves the ground with its
+  ballistic speed; otherwise it follows the ground as before, closing any gap below (stepping down
+  ½ m, which is not counted). One limit for every movement: walking, running, sliding, momentum.
+  The two parts are counted apart, so a ridge (rising on one face, falling on the next) is no more
+  than the larger of the two.
+- **The step-up keeps the speed.** It lifts the body (position only); the speed going into it is
+  the ramp's rise, and against the flat top that is lost rise: above the limit the body flies on
+  from the lifted spot, the ramp's arc ½ m higher. Without the step-up a slide would hit the step's
+  ½ m face, so it stays.
+- **The limit.** 5 m/s: above a run's rise up a ½ m ramp (8 m/s × ½) and a walk's pull onto a
+  45° face (4.67 m/s), so walking keeps the ground everywhere. 4.5 (Source's 140 units/s, ~3.6 m/s
+  and about half its run speed, scaled to Dwell's run; Quake 180, ~5.5 m/s at its scale) hopped a
+  walker off a stair top onto a 45° face for a tick, landing it sliding (`dwell-sim`
+  `sliding_on_steep_stairs`; owner, 2026-11-06: raised to 5). A slide at 11–12 m/s up ½ m ramps
+  still flies off a crest (~5.1 m/s lost); slower than ~11.5 m/s it follows the crest.
+
+| Case | Rise lost / extra pull | Result |
+|---|---|---|
+| Walk (5 m/s) or run (8 m/s) up ½ m ramps to a crest or a step, over a ridge | 2.2 / 3.7 m/s | Keeps the ground (no hops), as before |
+| Walk off a stair top onto a 45° face | 4.67 m/s | Keeps the ground |
+| Walk or run down ½ m ramps, down ½ m steps | ≤ 3.7 m/s (steps not counted) | Keeps the ground, as before |
+| A slide or a kick at 11–12 m/s up ½ m ramps into a crest | ~5 m/s | Flies the arc: 1.5 m top cleared to 2.17 m |
+| Up a ramp ending in the air (a placed lip, 1 m) at 12 m/s | ~5.5 m/s | Flies: to 1.89 m |
+| Run (8 m/s) over a 3 m platform's edge onto a 45° face | 7.7 m/s | Flies, never rising, over the whole face: lands on the floor beyond (~11 m/s, harmless) |
+| A slide past ~10.5 m/s down terraces (a flat cell and a ½ m ramp) | > 5 m/s | Flies over each ramp, slides on where it lands (crouch held); keeps its speed |
+| A knockback, an explosion | — | The launch check, unchanged |
+
+- **Tests:** `ramps.rs` `a_slide_up_ramps_carries_its_rise_over_the_crest` (red before: 1.5 m),
+  `any_momentum_up_a_crest_flies_not_only_a_slide` (red with the slide-only rule that preceded
+  this: 1.50 m), `running_over_a_crest_stays_on_the_ground`, and the playground and hillside walks
+  that never launch; `slide.rs` `running_off_a_crest_above_a_45_degree_ramp_flies_over_it` (red
+  before: held to the face, ≤ 3 ticks in the air); `sprint_slide.rs`
+  `a_slide_keeps_its_speed_down_terraces_of_a_flat_cell_and_a_slope` (slides on every landing);
+  `step_up.rs`'s approach matrix (ramp then step at every gait) unchanged. The golden trace is
+  unchanged. Both faces.
+- **Possible later:** gluing downhill (the owner: "more fun later"): the pull-down part with no
+  limit, or a larger one, so fast slides hug downhills again.
 
 ## 7. Configuration
 
@@ -782,7 +859,7 @@ PPC default for voxels.
 | | `eye_height` / `crouch_eye_height` ◆ | 1.62 m / 0.8 m | (view) | Client camera |
 | `movement` | `walk_speed` / `run_speed` | 5 / 8 m/s | same | |
 | | `acceleration` / `deceleration` / `reverse_deceleration` | 50 / 15 / 60 m/s² | 50 / 12 / 60 | Stopping 25 % stronger (owner, 2026-11-02): a walk stops in 1/3 s |
-| | `air_control` | 0.2 | same | |
+| | `air_control` | 0.2 | same | Dwell: steers toward the speed the player has (walk to run speed), not the tick's walking speed (§6.9) |
 | | `max_step_height` ◆ | 0.55 m | 0.45 | Half steps step up; full blocks need a jump |
 | | `air_external_drag` / `ground_external_friction` | 0 /s / 15 m/s² | same | |
 | | `carried_by_characters` | false | same | |
@@ -790,6 +867,7 @@ PPC default for voxels.
 | | `edge_guard` ◆ | false | — | Dwell addition |
 | | `max_push_force` ◆ | 3,050 N | — | The push pass's force at a standstill, falling to nothing at the player's speed: a 700 kg log slides on terrain at ~0.5 m/s (0.41.6; 800 N in 0.41.5; BUILT_BODIES.md §6) |
 | | `pushable_mass_limit` ◆ | 400 kg | — | Heavier clusters are immovable by players (Phase 20) |
+| | `ground_stick_speed` ◆ | 5 m/s | — | The ground is a floor (§6.11): the most of the body's rise following the ground takes away in a tick, and the most it pulls the body down beyond gravity; more either way and it leaves the ground |
 | `probes` | `ground_probe_margin` / `ceiling_probe_margin` | 0.15 / 0.10 m | same | |
 | | `max_slope_angle` | 56° ◆ (the steepest ground: above the 45° ramps; steeper than `slide.min_angle` slides) | same | |
 | `jump` | `height` | 1.25 m | same | Clears one block |
@@ -813,7 +891,7 @@ PPC default for voxels.
 | | `friction` / `slope_gravity` | 5 m/s² / 1.5 | — | Deceleration; `gravity × slope_gravity × tilt` along the slide (6 / 1 until 2026-11-02: slides faded down stepped hills) |
 | | `steer_rate` / `cooldown_ticks` | 90 °/s / 30 ticks (0.5 s, at most 255: the wire's `u8`) | — | Turning toward the move input; before another slide |
 | `damage` ◆ | `impact_damage_min_speed` / `impact_damage_per_speed` | 12 m/s / 8 per m/s | — | From the `IMPACTED` event's speed into the surface (§6.10) |
-| | `impact_surfaces` | `Ground` | — | The contacts that hit (§6.10): `Ground`, a normal no steeper than `probes.max_slope_angle` (landings, ramps); `All`, walls and ceilings too |
+| | `impact_surfaces` / `impact_max_slope_angle` | `Ground` / 10° | — | The contacts that hit (§6.10): `Ground`, a normal no steeper than `impact_max_slope_angle` (flat ground; ramps never hit, owner 2026-11-05); `All`, every contact |
 | | `crush_speed` / `crush_ticks` | 4 m/s / 6 | — | Phase 20 |
 | `step_view` ◆ | `slope` / `max_slope` / `min_speed` | 0.5 / 1.0 / 1 m/s | (PPC `SmoothSteps`: 4 m/s) | Client camera only (§9, Steps): the virtual ramp the eye follows over a step; never read by the sim |
 | `advanced` | `step_probe_distance` ◆ / `probe_ring_radius` / `wall_check_distance` | 0.05 m / 0.9 / 0.16 m | 0.01 / same / same | The step's top is read this far past its face (§4) |

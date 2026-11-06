@@ -1,6 +1,7 @@
 // Which build the launcher opens (RELEASES.md §5): the world's, the host's, or the latest.
 import {
   canOpenWorld,
+  canUpgradeWorld,
   compareVersionText,
   compatibilityLine,
   isVersion,
@@ -160,6 +161,11 @@ export interface VersionRow {
   /** Names of the player's worlds this build can open (same line, not older than their last save). */
   worlds: string[];
   /**
+   * Names of the player's worlds from an older line that this build opens after a warning (owner,
+   * 2026-11-06; from `UPGRADE_SINCE`): played as a copy, or upgraded.
+   */
+  olderWorlds: string[];
+  /**
    * What changed (shared/releases/changes.json), newest first: this build's, then a stable
    * build's retired patches since the next older build listed (RELEASES.md §4).
    */
@@ -192,6 +198,11 @@ export function listBuilds(
     worlds: worlds
       .filter((w) => w.appVersion !== null && canOpenWorld(e.version, w.appVersion))
       .map((w) => w.name),
+    olderWorlds: supportsUpgrade(e.version)
+      ? worlds
+          .filter((w) => w.appVersion !== null && canUpgradeWorld(e.version, w.appVersion))
+          .map((w) => w.name)
+      : [],
     changes: changesOf(e),
   }));
 }
@@ -216,6 +227,16 @@ const ROUTING_PARAMS = [
 export function isPlainVisit(search: string): boolean {
   const params = new URLSearchParams(search);
   return !ROUTING_PARAMS.some((key) => params.has(key));
+}
+
+/**
+ * The first build that opens a world from an older line after a warning (owner, 2026-11-06):
+ * older builds refuse one, so the version page doesn't list it for them.
+ */
+export const UPGRADE_SINCE = '0.49.2';
+
+export function supportsUpgrade(version: string): boolean {
+  return compareVersionText(version, UPGRADE_SINCE) >= 0;
 }
 
 /**
